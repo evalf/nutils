@@ -300,6 +300,11 @@ class ArrayFunc( Evaluable ):
 
     return ( self.grad(coords) * coords.normal() ).sum()
 
+  def nsymgrad( self, coords ):
+    'normal gradient'
+
+    return ( self.symgrad(coords) * coords.normal() ).sum()
+
   def norm2( self, axis ):
     'norm2'
 
@@ -550,7 +555,7 @@ class UFunc( ArrayFunc ):
     'gradient'
 
     assert coords is self.coords
-    return UFunc( self.coords, self.ufuncs[1:] )
+    return UFunc( self.coords, *self.ufuncs[1:] )
 
 class Function( ArrayFunc ):
   'function'
@@ -1085,6 +1090,10 @@ class Cos( UnaryFunc ):
 
     return -Sin(self.args[0]) * self.args[0].grad( coords )
 
+class Log( UnaryFunc ):
+  'cosine'
+
+  eval = staticmethod( numpy.log )
 
 #############################33
 

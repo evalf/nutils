@@ -367,9 +367,18 @@ class Locals( object ):
 def run( func=None ):
   'call function specified on command line'
 
-  args = sys.argv[1:]
   N = func.func_code.co_argcount - len( func.func_defaults )
   kwargs = dict( zip( func.func_code.co_varnames[N:], func.func_defaults ) )
+  args = sys.argv[1:]
+  if '-h' in args or '--help' in args:
+    print 'Usage: %s [OPTIONS]' % sys.argv[0]
+    print
+    print 'Generated from "%s".' % func.func_name
+    print '  -h, --help         Display this help.'
+    for kwarg, default in sorted( kwargs.items() ):
+      print >> sys.stderr, '  -%s, --%-12s Default: %s' % ( kwarg.lower()[0], kwarg.lower(), default )
+    return
+    
   for arg in args:
     assert '=' in arg, 'function arguments must be of type "key=value"'
     key, value = arg.split( '=', 1 )
