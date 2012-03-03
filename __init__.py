@@ -6,7 +6,6 @@ __all__ = [
   'numpy',
   'element',
   'function',
-  'library',
   'mesh',
   'plot',
   'topology',
