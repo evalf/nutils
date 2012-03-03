@@ -352,7 +352,7 @@ class progressbar( object ):
     else:
       n = int( numpy.log10( dt ) )
       dts = '%.0fe%.0f' % ( dt / 10.**n, n )
-    sys.stdout.write( ' (%s)\n' % dts )
+    sys.stdout.write( ' %s\n' % dts )
     sys.stdout.flush()
 
 class Locals( object ):
@@ -364,32 +364,81 @@ class Locals( object ):
     frame = sys._getframe( 1 )
     self.__dict__.update( frame.f_locals )
 
-def run( func=None ):
-  'call function specified on command line'
+def getkwargdefaults( func ):
+  'helper for run'
 
   N = func.func_code.co_argcount - len( func.func_defaults )
-  kwargs = dict( zip( func.func_code.co_varnames[N:], func.func_defaults ) )
+  return zip( func.func_code.co_varnames[N:], func.func_defaults )
+
+def run( *functions ):
+  'call function specified on command line'
+
+  assert functions
   args = sys.argv[1:]
   if '-h' in args or '--help' in args:
     print 'Usage: %s [OPTIONS]' % sys.argv[0]
     print
-    print 'Generated from "%s".' % func.func_name
-    print '  -h, --help         Display this help.'
-    for kwarg, default in sorted( kwargs.items() ):
-      print >> sys.stderr, '  -%s, --%-12s Default: %s' % ( kwarg.lower()[0], kwarg.lower(), default )
+    print '  -h    --help         Display this help.'
+    print '  -f F  --function=F   Select function.'
+    for i, func in enumerate( functions ):
+      print
+      print 'Arguments for -f %s%s' % ( func.func_name, '' if i else ' (default)' )
+      print
+      for kwarg, default in getkwargdefaults( func ):
+        tmp = '--%s=%s' % ( kwarg.lower(), kwarg[0].upper() )
+        print >> sys.stderr, '  %-20s Default: %s' % ( tmp, default )
     return
-    
+
+  if '-f' in args:
+    index = args.index( '-f' )
+    if index == len(args)-1:
+      print 'error: -f requires an argument'
+      return
+    args.pop( index )
+    funcname = args.pop( index )
+  else:
+    for index, arg in enumerate( args ):
+      if arg.startswith( '--function=' ):
+        funcname = arg[11:]
+        args.pop( index )
+        break
+    else:
+      funcname = functions[0].func_name
+
+  for func in functions:
+    if func.func_name == funcname:
+      break
+  else:
+    print 'error: invalid function name: %s' % funcname
+    return
+
+  kwargs = dict( getkwargdefaults( func ) )
   for arg in args:
-    assert '=' in arg, 'function arguments must be of type "key=value"'
-    key, value = arg.split( '=', 1 )
+    if arg[:2] != '--' or '=' not in arg:
+      print 'error: function arguments must be of type --key=value'
+      return
+    key, value = arg[2:].split( '=', 1 )
+    for kwarg, default in kwargs.iteritems():
+      if kwarg.lower() == key.lower():
+        break
+    else:
+      print 'error: invalid argument for %s: %s' % ( funcname, key )
+      return
     try:
       value = eval( value )
     except:
       pass
-    kwargs[ key ] = value
-  print func.func_name.upper()
-  for arg in func.func_code.co_varnames[:func.func_code.co_argcount]:
-    print '+ %s = %s' % ( arg, kwargs[arg] )
-  func( **kwargs )
+    kwargs[ kwarg ] = value
+
+  title = '%s.%s' % ( sys.argv[0].split('/')[-1].lower(), funcname.lower() )
+  print title, ( ' ' + time.ctime() ).rjust( 70-len(title), '=' ), '|>|'
+  maxlen = max( len(arg) for arg in kwargs )
+  for arg, val in kwargs.items():
+    print '.'.rjust( len(title) ), '%s = %s' % ( arg.lower(), val )
+
+  try:
+    func( **kwargs )
+  finally:
+    print ( ' ' + time.ctime() ).rjust( 71, '=' ), '|<|'
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
