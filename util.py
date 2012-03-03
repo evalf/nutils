@@ -1,5 +1,7 @@
 import sys, time, numpy
 
+LINEWIDTH = 70
+
 def obj2str( obj ):
   'convert object to string'
 
@@ -307,8 +309,6 @@ def ipdb():
 class progressbar( object ):
   'progress bar class'
 
-  length = 70
-
   def __init__( self, iterable=None, n=0, title='iterating' ):
     'constructor'
 
@@ -318,7 +318,7 @@ class progressbar( object ):
     self.t0 = time.time()
     sys.stdout.write( title + ' ' )
     sys.stdout.flush()
-    self.length -= len( title )
+    self.length = LINEWIDTH - len(title)
 
   def __iter__( self ):
     'iterate'
@@ -431,7 +431,7 @@ def run( *functions ):
     kwargs[ kwarg ] = value
 
   title = '%s.%s' % ( sys.argv[0].split('/')[-1].lower(), funcname.lower() )
-  print title, ( ' ' + time.ctime() ).rjust( 70-len(title), '=' ), '|>|'
+  print title, ( ' ' + time.ctime() ).rjust( LINEWIDTH-len(title), '=' ), '|>|'
   maxlen = max( len(arg) for arg in kwargs )
   for arg, val in kwargs.items():
     print '.'.rjust( len(title) ), '%s = %s' % ( arg.lower(), val )
@@ -439,6 +439,6 @@ def run( *functions ):
   try:
     func( **kwargs )
   finally:
-    print ( ' ' + time.ctime() ).rjust( 71, '=' ), '|<|'
+    print ( ' ' + time.ctime() ).rjust( LINEWIDTH+1, '=' ), '|<|'
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
