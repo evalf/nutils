@@ -1,12 +1,18 @@
 from . import topology, util, numpy
 
+def figure():
+  'new figure'
+
+  from matplotlib import pyplot
+  return pyplot.figure()
+
 def clf():
   'clear figure'
 
   from matplotlib import pyplot
   pyplot.clf()
 
-def mesh( coords, topology, color=None, edgecolors='none', linewidth=1, xmargin=0, ymargin=0, ax=None, aspect='equal', cbar='horizontal' ):
+def mesh( coords, topology, color=None, edgecolors='none', linewidth=1, xmargin=0, ymargin=0, ax=None, aspect='equal', cbar='horizontal', title=None ):
   'plot mesh'
 
   from matplotlib import collections, pyplot
@@ -40,6 +46,8 @@ def mesh( coords, topology, color=None, edgecolors='none', linewidth=1, xmargin=
   if aspect:
     ax.set_aspect( aspect )
     ax.set_autoscale_on( False )
+  if title:
+    pyplot.title( title )
 
 def quiver( coords, topology, quiver, sample='uniform3' ):
   'quiver builder'

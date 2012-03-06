@@ -14,37 +14,22 @@ class Topology( object ):
   def integrate( self, func, coords, ischeme='gauss2' ):
     'integrate'
 
-    if coords:
-      J = function.Jacobian( coords )
-      ndims, = coords.shape
-      if ndims == self.ndims:
-        detJ = J.det( 0, 1 )
-      elif self.ndims == 1:
-        detJ = J[:,0].norm2( 0 )
-      elif ndims == 3 and self.ndims == 2:
-        detJ = function.Cross( J[:,0], J[:,1], axis=1 ).norm2( 0 )
-      elif self.ndims == 0:
-        detJ = 1.
-      else:
-        raise NotImplementedError, 'cannot compute determinant for %dx%d jacobian' % J.shape[:2]
-    else:
-      detJ = 1.
-
-    topo = util.progressbar( self, title='integrating' )
+    topo = util.progressbar( self, title='integrating %d elements' % len(self) )
+    weights = function.IntegrationWeights( coords, self.ndims )
     if isinstance( func, (list,tuple) ):
       A = [ numpy.zeros( f.shape ) for f in func ]
-      func = function.Tuple( function.Tuple(( function.ArrayIndex(f), function.Integrate(f,detJ) )) for f in func )
+      func = function.Tuple( function.Tuple(( function.ArrayIndex(f), f, weights )) for f in func )
       for elem in topo:
         xi = elem(ischeme)
-        for Ai, (index,data) in zip( A, func(xi) ):
-          Ai[ index ] += data
+        for Ai, (index,data,weights) in zip( A, func(xi) ):
+          Ai[ index ] += numpy.dot( data, weights ) if data.shape[-1] > 1 else data[...,0] * weights.sum(0)
     else:
       A = numpy.zeros( func.shape )
-      func = function.Tuple(( function.ArrayIndex(func), function.Integrate(func,detJ) ))
+      func = function.Tuple(( function.ArrayIndex(func), func, weights ))
       for elem in topo:
         xi = elem(ischeme)
-        index, data = func(xi)
-        A[ index ] += data
+        index, data, weights = func(xi)
+        A[ index ] += numpy.dot( data, weights ) if data.shape[-1] > 1 else data[...,0] * weights.sum(0)
     return A
 
 class StructuredTopology( Topology ):

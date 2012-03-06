@@ -124,9 +124,7 @@ class Evaluable( object ):
     try:
       for op, arglist in self.operations:
         args = [ values[arg] if isinstance( arg, StackIndex ) else arg for arg in arglist ]
-        if op.needxi:
-          args = [ xi ] + args
-        values.append( op.eval( *args ) )
+        values.append( op.eval( xi, *args ) if op.needxi else op.eval( *args ) )
     except:
       self.printstack( pointer=(op,arglist), values=values )
       raise
@@ -224,28 +222,6 @@ class Tuple( Evaluable ):
     'evaluate'
 
     return f
-
-class Integrate( Evaluable ):
-  'integration weights'
-
-  needxi = True
-
-  def __init__( self, integrand, detJ ):
-    'constructor'
-
-    self.args = integrand, detJ
-    self.shape = integrand.shape
-
-  @staticmethod
-  def eval( xi, f, detJ ):
-    'evaluate'
-
-    return util.dot( f, detJ * xi.weights )
-
-  def __str__( self ):
-    'string representation'
-
-    return 'Integrate(%s * %s)' % self.args
 
 # ARRAY FUNCTIONS
 
@@ -397,7 +373,7 @@ class ArrayFunc( Evaluable ):
       bfun = ( self * fun ).sum( 1 )
     else:
       raise Exception
-    A, b = topology.integrate( [Afun,bfun], coords=coords )
+    A, b = topology.integrate( [Afun,bfun], coords=coords, ischeme=ischeme )
 
     zero = ( numpy.abs( A ) < tol ).all( axis=0 )
     constrain[zero] = 0
@@ -407,6 +383,39 @@ class ArrayFunc( Evaluable ):
       u = util.solve( A, b, constrain )
     u[zero] = numpy.nan
     return u
+
+class IntegrationWeights( ArrayFunc ):
+  'integration weights'
+
+  needxi = True
+
+  def __init__( self, coords, ndims ):
+    'constructor'
+
+    if coords:
+      J = Jacobian( coords )
+      cndims, = coords.shape
+      if cndims == ndims:
+        detJ = J.det( 0, 1 )
+      elif ndims == 1:
+        detJ = J[:,0].norm2( 0 )
+      elif cndims == 3 and ndims == 2:
+        detJ = Cross( J[:,0], J[:,1], axis=1 ).norm2( 0 )
+      elif ndims == 0:
+        detJ = 1.
+      else:
+        raise NotImplementedError, 'cannot compute determinant for %dx%d jacobian' % J.shape[:2]
+    else:
+      detJ = 1.
+
+    self.args = detJ,
+    self.shape = ()
+
+  @staticmethod
+  def eval( xi, detJ ):
+    'evaluate'
+
+    return detJ * xi.weights
 
 class Concatenate( ArrayFunc ):
   'concatenate'
@@ -542,20 +551,63 @@ class Stack( ArrayFunc ):
 class UFunc( ArrayFunc ):
   'user function'
 
-  def __init__( self, coords, *ufuncs ):
+  def __init__( self, coords, ufunc, *gradients ):
     'constructor'
 
     self.coords = coords
-    self.ufuncs = ufuncs
-    self.eval = ufuncs[0]
-    self.shape = self.eval( numpy.zeros( coords.shape ) ).shape
-    self.args = coords,
+    self.gradients = gradients
+    self.shape = ufunc( numpy.zeros( coords.shape ) ).shape
+    self.args = ufunc, coords
+
+  @staticmethod
+  def eval( f, x ):
+    'evaluate'
+
+    return f( x )
 
   def grad( self, coords ):
     'gradient'
 
     assert coords is self.coords
-    return UFunc( self.coords, *self.ufuncs[1:] )
+    return UFunc( self.coords, *self.gradients )
+
+class PieceWise( ArrayFunc ):
+  'differentiate by topology'
+
+  needxi = True
+
+  def __init__( self, *func_and_topo ):
+    'constructor'
+    
+    assert func_and_topo and len(func_and_topo) % 2 == 0
+    fmap = {}
+    args = ()
+    shape = ()
+    for topo, func in reversed( zip( func_and_topo[::2], func_and_topo[1::2] ) ):
+      if not isinstance( func, ArrayFunc ):
+        assert isinstance( func, (numpy.ndarray,int,float,list,tuple) )
+        func = StaticArray( func )
+      n = len(shape) - len(func.shape)
+      if n < 0:
+        assert shape == func.shape[-n:]
+        shape = func.shape
+      else:
+        assert func.shape == shape[n:]
+      n = len(args)
+      args += func.args
+      s = slice(n,len(args))
+      fmap.update( dict.fromkeys( topo, (func,s) ) )
+    self.args = (fmap,)+args
+    self.shape = shape
+
+  @staticmethod
+  def eval( xi, fmap, *args ):
+    'evaluate'
+
+    while xi.elem not in fmap:
+      xi = xi.next
+    func, s = fmap[ xi.elem ]
+    return func.eval( xi, *args[s] ) if func.needxi else func.eval( *args[s] )
 
 class Function( ArrayFunc ):
   'function'
@@ -814,7 +866,8 @@ class StaticArray( ArrayFunc ):
   def __init__( self, array ):
     'constructor'
 
-    self.args = UsableArray( array ),
+    array = UsableArray( array )
+    self.args = array,
     self.shape = array.shape
 
   @staticmethod

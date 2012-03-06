@@ -340,18 +340,10 @@ class progressbar( object ):
     'destructor'
 
     sys.stdout.write( '-' * (self.length-self.x) )
-    dt = time.time() - self.t0
-    if dt < 1:
-      dts = '.%02.0f' % ( dt * 100 )
-    elif dt < 10:
-      dts = '%3.1f' % dt
-    elif dt < 100:
-      dts = '%2.0f.' % dt
-    elif dt < 1000:
-      dts = '%3.0f' % dt
-    else:
-      n = int( numpy.log10( dt ) )
-      dts = '%.0fe%.0f' % ( dt / 10.**n, n )
+    dt = '%.2f' % ( time.time() - self.t0 )
+    dts = dt[1:] if dt[0] == '0' else \
+          dt[:3] if len(dt) <= 6 else \
+          '%se%d' % ( dt[0], len(dt)-3 )
     sys.stdout.write( ' %s\n' % dts )
     sys.stdout.flush()
 
