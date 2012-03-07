@@ -152,7 +152,7 @@ class QuadElement( Element ):
     elif where.startswith( 'uniform' ):
       N = int( where[7:] )
       x = numpy.arange( .5, N ) / N
-      w = numpy.ones( N ) / N
+      w = util.appendaxes( 1./N, N )
     elif where.startswith( 'subdivision' ):
       N = int( where[11:] ) + 1
       x = numpy.linspace( 0, 1, N )

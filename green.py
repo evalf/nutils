@@ -58,7 +58,7 @@ class IterData( function.Evaluable ):
       if elem is xi.elem:
         y, funcs = cachefunc.func(elem('uniform1000'))
       d = x[:,:,_] - y[:,_,:] # FIX count number of axes in x
-      r2 = ( d * d ).sum( 0 )
+      r2 = util.contract( d, d, 0 )
       logr = .5 * numpy.log( r2 )
       iterdata.append( (d,r2,logr) + funcs )
     return xi.points.coords.shape[1:], iterdata
@@ -135,7 +135,7 @@ class LaplaceletReconstruct( function.ArrayFunc ):
 
     retval = 0
     for D, R2, logR, w, bval, flux, normal in iterdata:
-      retval += numpy.dot( logR * flux + ( D * normal[:,_,:] ).sum(0) * bval / R2, w ) # TODO fix for arbitrary axes
+      retval += numpy.dot( logR * flux + util.contract( D, normal[:,_,:], 0 ) * bval / R2, w ) # TODO fix for arbitrary axes
     return retval / (-2*numpy.pi)
 
 class Stokeslet( function.ArrayFunc ):
@@ -219,9 +219,9 @@ class StokesletReconstruct( function.ArrayFunc ):
     retval = 0
     for D, R2, logR, w, velo, trac, norm in iterdata:
       D_R2 = D / R2
-      Dtrac = ( D_R2 * trac[:,_,:] ).sum(0)
-      Dvelo = ( D_R2 * velo[:,_,:] ).sum(0)
-      Dnorm = ( D_R2 * norm[:,_,:] ).sum(0)
+      Dtrac = util.contract( D_R2, trac[:,_,:], 0 )
+      Dvelo = util.contract( D_R2, velo[:,_,:], 0 )
+      Dnorm = util.contract( D_R2, norm[:,_,:], 0 )
       retval += numpy.dot( ( D * Dtrac - trac[:,_,:] * logR ) / (4*mu) - D * Dnorm * Dvelo, w )
     return retval / numpy.pi
 

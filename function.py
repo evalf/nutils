@@ -701,7 +701,7 @@ class Grad( ArrayFunc ):
     np = Jinv.ndim - 2
     n = F.ndim - np
     index = (slice(None),) * n + (_,Ellipsis)
-    return ( F[index] * Jinv ).sum( n-1 )
+    return util.contract( F[index], Jinv, n-1 )
 
   def __str__( self ):
     'string representation'
@@ -752,7 +752,7 @@ class Norm2( ArrayFunc ):
   def eval( fval, axis ):
     'evaluate'
 
-    return numpy.sqrt( ( fval**2 ).sum( axis ) )
+    return numpy.sqrt( util.contract( fval, fval, axis ) )
 
 class Jacobian( ArrayFunc ):
   'jacobian'
@@ -873,7 +873,7 @@ class StaticArray( ArrayFunc ):
   @staticmethod
   def eval( xi, array ):
 
-    return array.reshape( array.shape + (1,)*(xi.points.coords.ndim-1) )
+    return util.appendaxes( array, xi.points.coords.shape[1:] )
 
   def __str__( self ):
     'string representation'
@@ -1044,14 +1044,7 @@ class Dot( ArrayFunc ):
       shape.pop( axis )
     self.shape = tuple(shape)
 
-  @staticmethod
-  def eval( func1, func2, axes ):
-    'evaluate'
-
-    retval = func1 * func2
-    for axis in axes:
-      retval = retval.sum( axis )
-    return retval
+  eval = staticmethod( util.contract )
 
   def __str__( self ):
     'string representation'

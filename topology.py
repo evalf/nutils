@@ -22,14 +22,14 @@ class Topology( object ):
       for elem in topo:
         xi = elem(ischeme)
         for Ai, (index,data,weights) in zip( A, func(xi) ):
-          Ai[ index ] += numpy.dot( data, weights ) if data.shape[-1] > 1 else data[...,0] * weights.sum(0)
+          Ai[ index ] += util.contract( data, weights )
     else:
       A = numpy.zeros( func.shape )
       func = function.Tuple(( function.ArrayIndex(func), func, weights ))
       for elem in topo:
         xi = elem(ischeme)
         index, data, weights = func(xi)
-        A[ index ] += numpy.dot( data, weights ) if data.shape[-1] > 1 else data[...,0] * weights.sum(0)
+        A[ index ] += util.contract( data, weights )
     return A
 
 class StructuredTopology( Topology ):

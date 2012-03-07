@@ -1,4 +1,5 @@
 import sys, time, numpy
+from numpyextra import *
 
 LINEWIDTH = 70
 
@@ -139,10 +140,6 @@ def transform( arr, trans, axis ):
 
   return transformed
 
-# if trans.ndim == 1:
-#   arr.
-# arr.swapaxes(axis,-1), trans.swapaxes(0,-2 )
-
 def inv( arr, axes ):
   'linearized inverse'
 
@@ -200,66 +197,6 @@ def det( A, ax1, ax2 ):
       det[I] = numpy.linalg.det( A[I] )
   return det
 
-def dot( A, B, axis=-1 ):
-  'efficient evaluation of ( A * B ).sum( axis ), using dot where possible'
-
-  A = numpy.asarray( A )
-  B = numpy.asarray( B )
-
-  if A.ndim < B.ndim:
-    A = A.reshape( (1,)*(B.ndim-A.ndim) + A.shape )
-  elif B.ndim < A.ndim:
-    B = B.reshape( (1,)*(A.ndim-B.ndim) + B.shape )
-
-# AB_ = A*B # TEMPORARY, JUST FOR VERIFICATION
-
-  try:
-    axis, = axis
-  except:
-    pass
-
-  if isinstance( axis, tuple ):
-    T = range( A.ndim )
-    for i in sorted( axis, reverse=True ):
-      T.append( T.pop( i ) )
-    A = A.transpose(T)
-    B = B.transpose(T)
-    A = A.reshape( A.shape[:-len(axis)] + (-1,) )
-    B = B.reshape( B.shape[:-len(axis)] + (-1,) )
-  else:
-    if axis < 0:
-      axis += A.ndim
-    T = range(axis) + range(axis+1,A.ndim) + [axis]
-    A = A.transpose(T)
-    B = B.transpose(T)
-
-  Asingle = numpy.array([ s==1 for s in A.shape ], dtype=bool )
-  Bsingle = numpy.array([ s==1 for s in B.shape ], dtype=bool )
-
-  if Asingle[-1] or Bsingle[-1]:
-    AB = A.sum(-1) * B.sum(-1)
-  elif ~numpy.all( numpy.logical_or( Asingle[:-1], Bsingle[:-1]) ):
-    C = A * B
-    AB = C.sum( -1 )
-  else:
-    Bsel = Asingle # Bsel[-1] == False
-    Asel = ~Bsel # Asel[-1] = True
-    Bsel[-1] = True
-    A = A[ tuple( numpy.where( Asel, slice(None), 0 ) ) ]
-    B = B[ tuple( numpy.where( Bsel, slice(None), 0 ) ) ].swapaxes(-1,-2)
-    U = numpy.empty( Asingle.size-1, dtype=int )
-    U[ Asel[:-1] ] = numpy.arange( A.ndim-1 )
-    U[ Bsel[:-1] ] = numpy.arange( A.ndim-1, Asingle.size-1 )
-    AB = numpy.dot( A, B ).transpose( U )
-
-# #BEGIN VERIFICATION
-# for i in sorted( axis, reverse=True ) if isinstance( axis, tuple ) else [axis]:
-#   AB_ = AB_.sum(i)
-# assert ( abs( AB - AB_ ) < 1e-5 ).all()
-# #END VERIFICATION
-
-  return AB
-
 def reshape( A, *shape ):
   'more useful reshape'
 
@@ -290,7 +227,7 @@ def mean( A, weights=None, axis=-1 ):
 def norm2( A, axis=-1 ):
   'L2 norm over specified axis'
 
-  return numpy.sqrt( dot( A, A, axis ) )
+  return numpy.sqrt( contract( A, A, axis ) )
 
 def ipdb():
   'invoke debugger'
