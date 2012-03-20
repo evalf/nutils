@@ -53,7 +53,7 @@ class Topology( object ):
       A = [ numpy.zeros( f.shape ) for f in func ]
       idata = function.Tuple([ detJ, function.Tuple( makeindex(f) for f in func ) ])
       for elem in topo:
-        xi = elem(ischeme)
+        xi = elem.eval(ischeme)
         detj, alldata = idata(xi)
         weights = detj * xi.weights
         for Ai, (index,data) in zip( A, alldata ):
@@ -62,7 +62,7 @@ class Topology( object ):
       A = numpy.zeros( func.shape )
       idata = function.Tuple( [ detJ, makeindex(func) ] )
       for elem in topo:
-        xi = elem(ischeme)
+        xi = elem.eval(ischeme)
         detj, (index,data) = idata(xi)
         weights = detj * xi.weights
         A[ index ] += util.contract( data, weights )

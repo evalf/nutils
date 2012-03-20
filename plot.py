@@ -19,9 +19,9 @@ def mesh( coords, topology, color=None, edgecolors='none', linewidth=1, xmargin=
   poly = []
   values = []
   for elem in util.progressbar( topology, title='plotting mesh' ):
-    poly.append( coords( elem(cscheme) ).T )
+    poly.append( coords( elem.eval(cscheme) ).T )
     if color is not None:
-      xi = elem(ischeme)
+      xi = elem.eval(ischeme)
       values.append( util.mean( color(xi), weights=xi.weights ) )
 
   if values:
@@ -55,7 +55,7 @@ def quiver( coords, topology, quiver, sample='uniform3' ):
   from matplotlib import collections, pyplot
   XYUV = []
   for elem in util.progressbar( topology, title='plotting quiver' ):
-    xi = elem(sample)
+    xi = elem.eval(sample)
     XYUV.append( numpy.concatenate( [ coords(xi), quiver(xi) ], axis=0 ) )
   pyplot.quiver( *numpy.concatenate( XYUV, 1 ) )
 

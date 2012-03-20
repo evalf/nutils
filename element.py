@@ -28,7 +28,7 @@ class ElemEval( object ):
       raise AttributeError, 'next'
 
     elem, transform = self.elem.parent
-    points = transform( self.points )
+    points = transform.eval( self.points )
     return ElemEval( elem, points, transform.transform )
 
 class Element( object ):
@@ -36,7 +36,7 @@ class Element( object ):
 
   Represents the topological shape.'''
 
-  def __call__( self, where ):
+  def eval( self, where ):
     'get points'
 
     if isinstance( where, str ):
@@ -65,23 +65,19 @@ class AffineTransformation( object ):
 
     self.offset = numpy.asarray( offset )
     self.transform = numpy.asarray( transform )
-    self.cache = {}
 
-  def __call__( self, points ):
+  @util.cachefunc
+  def eval( self, points ):
     'apply transformation'
 
-    transformed = self.cache.get( points )
-    if not transformed:
-      if self.transform.ndim == 0:
-        coords = self.offset[:,_] + self.transform * points.coords
-      elif self.transform.shape[1] == 0:
-        assert points.coords.shape == (0,1)
-        coords = self.offset[:,_]
-      else:
-        coords = self.offset[:,_] + numpy.dot( self.transform, points.coords )
-      transformed = LocalPoints( coords, points.weights )
-      self.cache[ points ] = transformed
-    return transformed
+    if self.transform.ndim == 0:
+      coords = self.offset[:,_] + self.transform * points.coords
+    elif self.transform.shape[1] == 0:
+      assert points.coords.shape == (0,1)
+      coords = self.offset[:,_]
+    else:
+      coords = self.offset[:,_] + numpy.dot( self.transform, points.coords )
+    return LocalPoints( coords, points.weights )
 
 class QuadElement( Element ):
   'quadrilateral element'
@@ -268,10 +264,7 @@ class LocalPoints( object ):
 class StdElem( object ):
   'stdelem base class'
 
-  def dot( self, weights ):
-    'dot'
-
-    return FuncWrapper( self, weights )
+  pass
 
 class PolyQuad( StdElem ):
   'poly quod'
@@ -283,7 +276,6 @@ class PolyQuad( StdElem ):
     self = object.__new__( cls )
     self.degree = degree
     self.ndims = len( degree )
-    self.cache = {}
     return self
 
   @util.classcache
@@ -302,13 +294,9 @@ class PolyQuad( StdElem ):
 
     return 'PolyQuad#%x<degree=%s>' % ( id(self), ','.join( map( str, self.degree ) ) )
 
+  @util.cachefunc
   def eval( self, points, grad=0 ):
     'evaluate'
-
-    key = points, grad
-    data = self.cache.get( key )
-    if data is not None:
-      return data
 
     polydata = [ ( x, p, self.comb(p) ) for ( x, p ) in zip( points.coords, self.degree ) ]
     nshapes = numpy.prod( self.degree )
@@ -317,9 +305,7 @@ class PolyQuad( StdElem ):
                    else [ comb[i] * (1-x)**(p-1-i) * x**i for i in range(p) ]
                       ) for x, p, comb in polydata ]
     if grad == 0:
-      data = reduce( lambda f, fi: ( f[:,_] * fi ).reshape( -1, points.npoints ), F0 )
-      self.cache[ key ] = data
-      return data
+      return reduce( lambda f, fi: ( f[:,_] * fi ).reshape( -1, points.npoints ), F0 )
 
     F1 = [ numpy.array( [ [0.] ] if p < 2
                    else [ [-1.],[1.] ] if p == 2
@@ -332,7 +318,6 @@ class PolyQuad( StdElem ):
       for n in range( points.ndims ):
         Gi = [( F1 if m == n else F0 )[m] for m in range( points.ndims ) ]
         data[:,n] = reduce( lambda g, gi: ( g[:,_] * gi ).reshape( g.shape[0] * gi.shape[0], -1 ), Gi )
-      self.cache[ key ] = data
       return data
 
     F2 = [ numpy.array( [ [0.] ] * p if p < 3
@@ -347,7 +332,6 @@ class PolyQuad( StdElem ):
         for nj in range( ni, points.ndims ):
           Di = [( F2 if m == ni == nj else F1 if m == ni or m == nj else F0 )[m] for m in range( points.ndims ) ]
           data[:,nj,ni] = D[:,ni,nj] = reduce( lambda d, di: ( d[:,_] * di ).reshape( d.shape[0] * di.shape[0], -1 ), Di )
-      self.cache[ key ] = data
       return data
 
     raise Exception
@@ -361,16 +345,11 @@ class PolyTriangle( StdElem ):
 
     assert order == 1
     self = object.__new__( cls )
-    self.cache = {}
     return self
 
+  @util.cachefunc
   def eval( self, points, grad=0 ):
     'eval'
-
-    key = points, grad
-    data = self.cache.get( key )
-    if data is not None:
-      return data
 
     if grad == 0:
       x, y = points.coords
@@ -379,8 +358,6 @@ class PolyTriangle( StdElem ):
       data = numpy.array( [[[1],[0]],[[0],[1]],[[-1],[-1]]], dtype=float )
     else:
       data = numpy.array( 0 ).reshape( (1,) * (grad+1+points.ndim) )
-
-    self.cache[ key ] = data
     return data
 
   def __repr__( self ):
@@ -389,75 +366,19 @@ class PolyTriangle( StdElem ):
     return '%s#%x' % ( self.__class__.__name__, id(self) )
 
 class ExtractionWrapper( object ):
-  '''extraction wrapper
-
-  like FuncWrapper but cached.'''
+  'extraction wrapper'
 
   def __init__( self, stdelem, extraction ):
     'constructor'
 
     self.stdelem = stdelem
     self.extraction = extraction
-    self.cache = {}
 
+  @util.cachefunc
   def eval( self, points, grad=0 ):
     'call'
 
-    key = points, grad
-    data = self.cache.get( key )
-    if data is None:
-      data = numpy.dot( self.stdelem.eval( points, grad ).T, self.extraction.T ).T
-      self.cache[ key ] = data
-    return data
-
-  def dot( self, weights ):
-    'dot'
-
-    weights = numpy.tensordot( self.extraction, weights, (0,0) )
-    return self.stdelem.dot( weights )
-
-  def __repr__( self ):
-    'string representation'
-
-    return '%s#%x:%s' % ( self.__class__.__name__, id(self), self.stdelem )
-
-class FuncWrapper( object ):
-  'scalar/vector function evaluation'
-
-  def __init__( self, stdelem, dofs ):
-    'constructor'
-
-    self.stdelem = stdelem
-    self.dofs = dofs
-
-# def __getitem__( self, item ):
-#   'get item'
-
-#   assert self.dofs.ndim == 2
-#   return FuncWrapper( self.stdelem, self.dofs[:,item] )
-
-  def eval( self, points, grad=0 ):
-    'evaluate'
-
-    return numpy.dot( self.stdelem.eval( points, grad ).T, self.dofs ).T
-
-  def dot( self, weights ):
-    'dot'
-
-    raise Exception, 'cannot ddot a function'
-
-  def unary_op( self, op ):
-    'subtract functions'
-
-    return FuncWrapper( self.stdelem, op( self.dofs ) )
-
-  def binary_op( self, other, op ):
-    'subtract functions'
-
-    if not isinstance( other, (int,float) ):
-      assert other.__class__ is self.__class__ and self.stdelem is other.stdelem
-      other = other.dofs
-    return FuncWrapper( self.stdelem, op( self.dofs, other ) )
+    return numpy.dot( self.stdelem.eval( points, grad ).T, self.extraction.T ).T
 
   def __repr__( self ):
     'string representation'

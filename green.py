@@ -28,7 +28,7 @@ class CacheFunc( object ):
     J = coords.localgradient( topo )
     detJ = J[:,0].norm2( 0 )
     self.F = function.Tuple([ coords, func * detJ, function.Tuple(other) ])
-    self.data = [ (elem,) + self.get(elem('gauss10')) for elem in topo ]
+    self.data = [ (elem,) + self.get(elem.eval('gauss10')) for elem in topo ]
 
   def get( self, xi ):
     'generate data'
@@ -59,7 +59,7 @@ class IterData( function.Evaluable ):
     iterdata = []
     for elem, y, funcs in cachefunc.data:
       if elem is xi.elem:
-        y, funcs = cachefunc.get( elem('uniform1000') )
+        y, funcs = cachefunc.get( elem.eval('uniform1000') )
       d = x[:,:,_] - y[:,_,:] # FIX count number of axes in x
       r2 = util.contract( d, d, 0 )
       logr = .5 * numpy.log( r2 )
@@ -235,21 +235,21 @@ def stokeslet_multidom( domains, coordss, funcsps, mu ):
 
   assert len(domains) == len(coordss) == len(funcsps)
   for mycoords, mydomain in zip( coordss, domains ):
-    slets = []
+    stokeslets = []
     tracs = []
     for domain, coords, funcsp in zip( domains, coordss, funcsps ):
-      slet = green.Stokeslet( mycoords, domain, coords, funcsp, mu )
-      grad = green.StokesletGrad( mycoords, domain, coords, funcsp )
-      trac = ( grad * mycoords.normal( mydomain ) ).sum()
-      slets.append( slet )
+      stokeslet = Stokeslet( mycoords, domain, coords, funcsp, mu )
+      stress = StokesletStress( mycoords, domain, coords, funcsp )
+      trac = ( stress * mycoords.normal( mydomain ) ).sum()
+      stokeslets.append( stokeslet )
       tracs.append( trac if coords is not mycoords else AddPart( trac, .5 * funcsp.vector(2) ) )
-    yield function.Stack( slets ), function.Stack( tracs )
+    yield function.Stack( stokeslets ), function.Stack( tracs )
 
-def stokeslet_reconstruct_multidom( coords, domains, coordss, velos, tracs, mu ):
+def stokeslet_reconstruct_multidom( mycoords, domains, coordss, velos, tracs, mu ):
   'create stokeslet on multiple domains'
 
   assert len(domains) == len(coordss) == len(velos) == len(tracs)
-  return sum( green.StokesletReconstruct( mycoords, domain, coords, velo, trac, mu )
+  return sum( StokesletReconstruct( mycoords, domain, coords, velo, trac, mu )
                 for domain, coords, velo, trac in zip( domains, coordss, velos, tracs ) )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

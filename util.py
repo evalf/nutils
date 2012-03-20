@@ -59,17 +59,16 @@ def cachefunc( func ):
   def wrapped( self, *args, **kwargs ):
     funcache = self.__dict__.setdefault( '_funcache', {} )
 
-    token = object()
-    args = list(args) + [token] * ( func.func_code.co_argcount - len(args) ) if func.func_defaults is None \
-      else list(args) + [token] * ( func.func_code.co_argcount - len(func.func_defaults) - len(args) ) + list(func.func_defaults)
+    unspecified = object()
+    argcount = func.func_code.co_argcount - 1 # minus self
+    args = list(args) + [unspecified] * ( argcount - len(args) ) if func.func_defaults is None \
+      else list(args) + list(func.func_defaults[ len(args) + len(func.func_defaults) - argcount: ]) if len(args) + len(func.func_defaults) > argcount \
+      else list(args) + [unspecified] * ( argcount - len(func.func_defaults) - len(args) ) + list(func.func_defaults)
     for kwarg, val in kwargs.items():
-      args[ func.func_code.co_varnames.index(kwarg) ] = val
-    assert args[0] is token
-    args[0] = func.func_name
-    key = tuple(args)
-    args = key[1:]
-    assert token not in args
-
+      args[ func.func_code.co_varnames.index(kwarg)-1 ] = val
+    args = tuple( args )
+    assert unspecified not in args, 'not all arguments were specified'
+    key = (func.func_name,) + args
     value = funcache.get( key )
     if value is None:
       value = func( self, *args )
@@ -77,6 +76,19 @@ def cachefunc( func ):
     return value
 
   return wrapped
+
+def classcache( fun ):
+  'wrapper to cache return values'
+
+  cache = {}
+  def wrapped_fun( cls, *args ):
+    data = cache.get( args )
+    if data is None:
+      data = fun( cls, *args )
+      cache[ args ] = data
+    return data
+  return wrapped_fun if fun.func_name == '__new__' \
+    else classmethod( wrapped_fun )
 
 class NanVec( numpy.ndarray ):
   'nan-initialized vector'
@@ -200,19 +212,6 @@ def arraymap( f, dtype, *args ):
 
   return numpy.array( map( f, args[0] ) if len( args ) == 1
                  else [ f( *arg ) for arg in numpy.broadcast( *args ) ], dtype=dtype )
-
-def classcache( fun ):
-  'wrapper to cache return values'
-
-  cache = {}
-  def wrapped_fun( cls, *args ):
-    data = cache.get( args )
-    if data is None:
-      data = fun( cls, *args )
-      cache[ args ] = data
-    return data
-  return wrapped_fun if fun.func_name == '__new__' \
-    else classmethod( wrapped_fun )
 
 def det( A, ax1, ax2 ):
   'determinant'
