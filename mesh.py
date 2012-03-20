@@ -21,7 +21,7 @@ def revolve( coords, nelems, degree=4, axis=0 ):
 
   structure = numpy.array([ [ element.QuadElement( ndims=topo.ndims+1 ) for elem in topo ] for ielem in range(nelems) ])
   revolved_topo = topology.StructuredTopology( structure.reshape( nelems, *topo.structure.shape ), periodic=0 )
-  revolved_coords = function.Function( topology=revolved_topo, ndims=coords.ndims+1 )
+  revolved_coords = function.Function( ndims=coords.ndims+1 )
 
   if nelems % 2 == 0:
     revolved_topo.groups[ 'top' ] = revolved_topo[:nelems//2]
@@ -87,7 +87,6 @@ def gmesh( path, btags=[] ):
   linearinfo = {}
   connected = [ set() for i in range( nNodes ) ]
 
-
   nmap = {}
   fmap = {}
 
@@ -140,9 +139,8 @@ def gmesh( path, btags=[] ):
       bgroups.setdefault( tag, [] ).append( belem )
 
   shape = function.DofAxis(nNodes,nmap),
-  linearfunc = function.Function( topodims=ndims, shape=shape, mapping=fmap )
+  linearfunc = function.Function( shape=shape, mapping=fmap )
   namedfuncs = { 'spline2': linearfunc }
-
   topo = topology.UnstructuredTopology( elements, ndims=2, namedfuncs=namedfuncs )
   topo.boundary = topology.UnstructuredTopology( belements, ndims=1 )
   topo.boundary.groups = dict( ( btags[tag], topology.UnstructuredTopology( group, ndims=1 ) ) for tag, group in bgroups.items() )
@@ -246,7 +244,8 @@ def fromfunc( func, nelems, ndims, degree=2 ):
     nelems = [ nelems ]
   assert len( nelems ) == func.func_code.co_argcount
   topo, ref = rectilinear( *[ numpy.linspace(0,1,n+1) for n in nelems ] )
-  coords = topo.splinefunc( degree=degree, ndims=ndims ).projection( fval=lambda x: func( *x.fval ), coords=ref, exact_boundaries=True )
+  funcsp = topo.splinefunc( degree=degree ).vector( ndims )
+  coords = topo.projection( func, onto=funcsp, coords=ref, exact_boundaries=True )
   return topo, coords
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=1

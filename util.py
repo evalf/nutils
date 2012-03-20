@@ -3,6 +3,15 @@ from numpyextra import *
 
 LINEWIDTH = 70
 
+def iterate():
+  'iterate forever'
+
+  i = 0
+  while True:
+    i += 1
+    print 'iteration %d' % i
+    yield i
+
 def obj2str( obj ):
   'convert object to string'
 
@@ -27,6 +36,8 @@ def obj2str( obj ):
     if obj.step is not None:
       I += ':' + str(obj.step)
     return I
+  if obj is None:
+    return '_'
   return str(obj)
 
 def cacheprop( func ):
@@ -41,6 +52,31 @@ def cacheprop( func ):
     return value
 
   return property( wrapped )
+
+def cachefunc( func ):
+  'cached property'
+
+  def wrapped( self, *args, **kwargs ):
+    funcache = self.__dict__.setdefault( '_funcache', {} )
+
+    token = object()
+    args = list(args) + [token] * ( func.func_code.co_argcount - len(args) ) if func.func_defaults is None \
+      else list(args) + [token] * ( func.func_code.co_argcount - len(func.func_defaults) - len(args) ) + list(func.func_defaults)
+    for kwarg, val in kwargs.items():
+      args[ func.func_code.co_varnames.index(kwarg) ] = val
+    assert args[0] is token
+    args[0] = func.func_name
+    key = tuple(args)
+    args = key[1:]
+    assert token not in args
+
+    value = funcache.get( key )
+    if value is None:
+      value = func( self, *args )
+      funcache[ key ] = value
+    return value
+
+  return wrapped
 
 class NanVec( numpy.ndarray ):
   'nan-initialized vector'

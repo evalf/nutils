@@ -12,42 +12,45 @@ class AddPart( function.ArrayFunc ):
     self.shape = func1.shape
 
   @staticmethod
-  def eval( xi, func1, func2, idxmap ):
+  def eval( xi, func1, func2, I ):
     'evaluate'
 
     retval = func1.copy()
-    index = idxmap.get( xi.elem )
-    while index is None:
-      xi = xi.next
-      index = idxmap.get( xi.elem )
-    retval[ index ] += func2
+    retval[ I ] += func2
     return retval
 
 class CacheFunc( object ):
   'cached function evaluation'
 
-  def __init__( self, topo, func ):
+  def __init__( self, topo, coords, func, other ):
     'compare'
 
-    self.topo = topo
-    self.func = func
-    self.data = [ (elem,) + func(elem('gauss10')) for elem in topo ]
+    J = coords.localgradient( topo )
+    detJ = J[:,0].norm2( 0 )
+    self.F = function.Tuple([ coords, func * detJ, function.Tuple(other) ])
+    self.data = [ (elem,) + self.get(elem('gauss10')) for elem in topo ]
+
+  def get( self, xi ):
+    'generate data'
+
+    y, func, other = self.F( xi )
+    func *= xi.weights
+    return y, (func,) + other
 
   def __eq__( self, other ):
     'compare'
 
-    return isinstance( other, CacheFunc ) and self.topo == other.topo and self.func == other.func
+    return isinstance( other, CacheFunc ) and self.F == other.F
 
 class IterData( function.Evaluable ):
   'integrate iterator'
 
   needxi = True
 
-  def __init__( self, topo, coords, *funcs ):
+  def __init__( self, mycoords, topo, coords, func, *other ):
     'constructor'
 
-    Y_Funcs = function.Tuple(( coords, function.Tuple(funcs) ))
-    self.args = coords, CacheFunc( topo, Y_Funcs )
+    self.args = mycoords, CacheFunc( topo, coords, func, other )
 
   @staticmethod
   def eval( xi, x, cachefunc ):
@@ -56,7 +59,7 @@ class IterData( function.Evaluable ):
     iterdata = []
     for elem, y, funcs in cachefunc.data:
       if elem is xi.elem:
-        y, funcs = cachefunc.func(elem('uniform1000'))
+        y, funcs = cachefunc.get( elem('uniform1000') )
       d = x[:,:,_] - y[:,_,:] # FIX count number of axes in x
       r2 = util.contract( d, d, 0 )
       logr = .5 * numpy.log( r2 )
@@ -66,14 +69,15 @@ class IterData( function.Evaluable ):
 class Laplacelet( function.ArrayFunc ):
   'Laplacelet'
 
-  def __init__( self, topo, coords, funcsp ):
+  def __init__( self, mycoords, topo, coords, funcsp ):
     'constructor'
 
     self.topo = topo
+    self.mycoords = mycoords
     self.coords = coords
     self.funcsp = funcsp
     self.shape = int(funcsp.shape[0]),
-    self.args = int(funcsp.shape[0]), IterData( topo, coords, funcsp * function.IntegrationWeights( coords, ndims=1 ), function.ArrayIndex(funcsp) )
+    self.args = int(funcsp.shape[0]), IterData( mycoords, topo, coords, funcsp, funcsp.shape[0] )
 
   @staticmethod
   def eval( ndofs, (shape,iterdata) ):
@@ -85,30 +89,29 @@ class Laplacelet( function.ArrayFunc ):
       retval[ I ] += numpy.tensordot( wf, kernel, (-1,-1) )
     return retval
 
-  def grad( self, coords ):
+  def grad( self ):
     'gradient'
 
-    assert coords == self.coords
-    return LaplaceletGrad( self.topo, self.coords, self.funcsp )
+    return LaplaceletGrad( self.mycoords, self.topo, self.coords, self.funcsp )
 
-  def ngrad( self, coords ):
+  def flux( self ):
     'flux'
 
-    return AddPart( ( self.grad( coords ) * coords.normal() ).sum(), .5 * self.funcsp )
+    return AddPart( ( self.grad() * self.coords.normal(self.topo) ).sum(), .5 * self.funcsp )
 
   def reconstruct( self, bval, flux ):
     'reconstruct'
 
-    return LaplaceletReconstruct( self.topo, self.coords, bval, flux )
+    return LaplaceletReconstruct( self.mycoords, self.topo, self.coords, bval, flux )
 
 class LaplaceletGrad( function.ArrayFunc ):
   'laplacelet gradient'
 
-  def __init__( self, topo, coords, funcsp ):
+  def __init__( self, mycoords, topo, coords, funcsp ):
     'constructor'
 
     self.shape = int(funcsp.shape[0]), 2
-    self.args = int(funcsp.shape[0]), IterData( topo, coords, funcsp * function.IntegrationWeights( coords, ndims=1 ), function.ArrayIndex(funcsp) )
+    self.args = int(funcsp.shape[0]), IterData( mycoords, topo, coords, funcsp, funcsp.shape[0] )
 
   @staticmethod
   def eval( ndofs, (shape,iterdata) ):
@@ -123,11 +126,11 @@ class LaplaceletGrad( function.ArrayFunc ):
 class LaplaceletReconstruct( function.ArrayFunc ):
   'laplacelet reconstruction'
 
-  def __init__( self, topo, coords, bval, flux ):
+  def __init__( self, mycoords, topo, coords, bval, flux ):
     'constructor'
 
     self.shape = ()
-    self.args = IterData( topo, coords, function.IntegrationWeights( coords, ndims=1 ), bval, flux, coords.normal() ),
+    self.args = IterData( mycoords, topo, coords, 1, bval, flux, coords.normal(topo) ),
 
   @staticmethod
   def eval( (shape,iterdata) ):
@@ -141,15 +144,16 @@ class LaplaceletReconstruct( function.ArrayFunc ):
 class Stokeslet( function.ArrayFunc ):
   'stokeslet'
 
-  def __init__( self, topo, coords, funcsp, mu ):
+  def __init__( self, mycoords, topo, coords, funcsp, mu ):
     'constructor'
 
     self.topo = topo
     self.coords = coords
+    self.mycoords = mycoords
     self.funcsp = funcsp
     self.mu = mu
     self.shape = int( funcsp.shape[0] ) * 2, 2
-    self.args = int(funcsp.shape[0]), IterData( topo, coords, funcsp * function.IntegrationWeights( coords, ndims=1 ), function.ArrayIndex(funcsp) ), mu
+    self.args = int(funcsp.shape[0]), IterData( mycoords, topo, coords, funcsp, funcsp.shape[0] ), mu
 
   @staticmethod
   def eval( ndofs, (shape,iterdata), mu ):
@@ -166,30 +170,29 @@ class Stokeslet( function.ArrayFunc ):
       retval_swap[I] += numpy.tensordot( wf, kernel, (-1,-1) )
     return retval
 
-  def stress( self, coords ):
+  def stress( self ):
     'gradient'
 
-    assert coords == self.coords
-    return StokesletStress( self.topo, self.coords, self.funcsp )
+    return StokesletStress( self.mycoords, self.topo, self.coords, self.funcsp )
 
-  def traction( self, coords ):
+  def traction( self ):
     'flux'
 
-    return AddPart( ( self.stress( coords ) * coords.normal() ).sum(), .5 * self.funcsp.vector(2) )
+    return AddPart( ( self.stress() * self.coords.normal( self.topo ) ).sum(), .5 * self.funcsp.vector(2) )
 
   def reconstruct( self, bval, flux ):
     'reconstruct'
 
-    return StokesletReconstruct( self.topo, self.coords, bval, flux, self.mu )
+    return StokesletReconstruct( self.mycoords, self.topo, self.coords, bval, flux, self.mu )
 
 class StokesletStress( function.ArrayFunc ):
   'stokeslet stress'
 
-  def __init__( self, topo, coords, funcsp ):
+  def __init__( self, mycoords, topo, coords, funcsp ):
     'constructor'
 
     self.shape = int( funcsp.shape[0] ) * 2, 2, 2
-    self.args = int(funcsp.shape[0]), IterData( topo, coords, funcsp * function.IntegrationWeights( coords, ndims=1 ), function.ArrayIndex(funcsp) )
+    self.args = int(funcsp.shape[0]), IterData( mycoords, topo, coords, funcsp, funcsp.shape[0] )
 
   @staticmethod
   def eval( ndofs, (shape,iterdata) ):
@@ -206,11 +209,13 @@ class StokesletStress( function.ArrayFunc ):
 class StokesletReconstruct( function.ArrayFunc ):
   'stokeslet reconstruction'
 
-  def __init__( self, topo, coords, velo, trac, mu ):
+  def __init__( self, mycoords, topo, coords, velo, trac, mu ):
     'constructor'
 
     self.shape = 2,
-    self.args = IterData( topo, coords, function.IntegrationWeights( coords, ndims=1 ), velo, trac, coords.normal() ), mu
+    assert velo.shape == (2,)
+    assert trac.shape == (2,)
+    self.args = IterData( mycoords, topo, coords, 1, velo, trac, coords.normal(topo) ), mu
 
   @staticmethod
   def eval( (shape,iterdata), mu ):
@@ -224,5 +229,27 @@ class StokesletReconstruct( function.ArrayFunc ):
       Dnorm = util.contract( D_R2, norm[:,_,:], 0 )
       retval += numpy.dot( ( D * Dtrac - trac[:,_,:] * logR ) / (4*mu) - D * Dnorm * Dvelo, w )
     return retval / numpy.pi
+
+def stokeslet_multidom( domains, coordss, funcsps, mu ):
+  'create stokeslet on multiple domains'
+
+  assert len(domains) == len(coordss) == len(funcsps)
+  for mycoords, mydomain in zip( coordss, domains ):
+    slets = []
+    tracs = []
+    for domain, coords, funcsp in zip( domains, coordss, funcsps ):
+      slet = green.Stokeslet( mycoords, domain, coords, funcsp, mu )
+      grad = green.StokesletGrad( mycoords, domain, coords, funcsp )
+      trac = ( grad * mycoords.normal( mydomain ) ).sum()
+      slets.append( slet )
+      tracs.append( trac if coords is not mycoords else AddPart( trac, .5 * funcsp.vector(2) ) )
+    yield function.Stack( slets ), function.Stack( tracs )
+
+def stokeslet_reconstruct_multidom( coords, domains, coordss, velos, tracs, mu ):
+  'create stokeslet on multiple domains'
+
+  assert len(domains) == len(coordss) == len(velos) == len(tracs)
+  return sum( green.StokesletReconstruct( mycoords, domain, coords, velo, trac, mu )
+                for domain, coords, velo, trac in zip( domains, coordss, velos, tracs ) )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

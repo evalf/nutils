@@ -14,23 +14,101 @@ class Topology( object ):
   def integrate( self, func, coords, ischeme='gauss2' ):
     'integrate'
 
+    def makeindex( func ):
+      indices = []
+      count = sum( isinstance(sh,function.DofAxis) for sh in func.shape )
+      iaxis = 0
+      for sh in func.shape:
+        if isinstance(sh,function.DofAxis):
+          index = sh
+          if count > 1:
+            reshape = [ numpy.newaxis ] * count
+            reshape[iaxis] = slice(None)
+            index = index[ tuple(reshape) ]
+          iaxis += 1
+        else:
+          index = slice(None)
+        indices.append( index )
+      assert iaxis == count
+      return function.Tuple([ function.Tuple(indices), func ])
+
+    if coords:
+      J = coords.localgradient( self )
+      cndims, = coords.shape
+      if cndims == self.ndims:
+        detJ = J.det( 0, 1 )
+      elif self.ndims == 1:
+        detJ = J[:,0].norm2( 0 )
+      elif cndims == 3 and self.ndims == 2:
+        detJ = Cross( J[:,0], J[:,1], axis=1 ).norm2( 0 )
+      elif self.ndims == 0:
+        detJ = 1.
+      else:
+        raise NotImplementedError, 'cannot compute determinant for %dx%d jacobian' % J.shape[:2]
+    else:
+      detJ = 1.
+
     topo = util.progressbar( self, title='integrating %d elements' % len(self) )
-    weights = function.IntegrationWeights( coords, self.ndims )
     if isinstance( func, (list,tuple) ):
       A = [ numpy.zeros( f.shape ) for f in func ]
-      func = function.Tuple( function.Tuple(( function.ArrayIndex(f), f, weights )) for f in func )
+      idata = function.Tuple([ detJ, function.Tuple( makeindex(f) for f in func ) ])
       for elem in topo:
         xi = elem(ischeme)
-        for Ai, (index,data,weights) in zip( A, func(xi) ):
+        detj, alldata = idata(xi)
+        weights = detj * xi.weights
+        for Ai, (index,data) in zip( A, alldata ):
           Ai[ index ] += util.contract( data, weights )
     else:
       A = numpy.zeros( func.shape )
-      func = function.Tuple(( function.ArrayIndex(func), func, weights ))
+      idata = function.Tuple( [ detJ, makeindex(func) ] )
       for elem in topo:
         xi = elem(ischeme)
-        index, data, weights = func(xi)
+        detj, (index,data) = idata(xi)
+        weights = detj * xi.weights
         A[ index ] += util.contract( data, weights )
     return A
+
+  def projection( self, fun, onto, **kwargs ):
+    'project and return as function'
+
+    weights = self.project( fun, onto, **kwargs )
+    return onto.dot( weights )
+
+  def project( self, fun, onto, coords=None, ischeme='gauss8', title='projecting', tol=1e-8, exact_boundaries=False, constrain=None ):
+    'L2 projection of function onto function space'
+
+    if exact_boundaries:
+      assert constrain is None
+      constrain = self.boundary.project( fun, onto, coords, ischeme=ischeme, title=None, tol=tol )
+    elif constrain is None:
+      constrain = util.NanVec( onto.shape[0] )
+    else:
+      assert isinstance( constrain, util.NanVec )
+      assert constrain.shape == onto.shape[:1]
+
+    if not isinstance( fun, function.Evaluable ):
+      if callable( fun ):
+        assert coords
+        fun = function.UFunc( coords, fun )
+
+    if len( onto.shape ) == 1:
+      Afun = onto[:,_] * onto[_,:]
+      bfun = onto * fun
+    elif len( onto.shape ) == 2:
+      Afun = ( onto[:,_,:] * onto[_,:,:] ).sum( 2 )
+      bfun = ( onto * fun ).sum( 1 )
+    else:
+      raise Exception
+    A, b = self.integrate( [Afun,bfun], coords=coords, ischeme=ischeme )
+
+    zero = ( numpy.abs( A ) < tol ).all( axis=0 )
+    constrain[zero] = 0
+    if bfun == 0:
+      u = constrain | 0
+    else:
+      u = util.solve( A, b, constrain )
+    u[zero] = numpy.nan
+    return u
 
 class StructuredTopology( Topology ):
   'structured topology'
@@ -83,12 +161,13 @@ class StructuredTopology( Topology ):
       structure = numpy.concatenate([ boundaries[i].structure for i in [0,2,1,3] ])
       topo = StructuredTopology( structure, periodic=0 )
     else:
-      allbelems = [ belem for belem in boundary.structure.flat for boundary in boundaries ]
+      allbelems = [ belem for boundary in boundaries for belem in boundary.structure.flat ]
       topo = UnstructuredTopology( allbelems, ndims=self.ndims-1 )
 
     topo.groups = dict( zip( ( 'left', 'right', 'bottom', 'top', 'front', 'back' ), boundaries ) )
     return topo
 
+  @util.cachefunc
   def splinefunc( self, degree ):
     'spline from nodes'
 
@@ -141,7 +220,7 @@ class StructuredTopology( Topology ):
     shape = function.DofAxis( dofcount, mapping ),
     mapping = dict( ( elem, wrapper ) for elem, wrapper in numpy.broadcast( self.structure, stdelems[indices] ) )
 
-    return function.Function( topodims=self.ndims, shape=shape, mapping=mapping )
+    return function.Function( shape=shape, mapping=mapping )
 
   def linearfunc( self ):
     'linears'

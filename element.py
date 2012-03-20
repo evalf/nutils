@@ -25,7 +25,7 @@ class ElemEval( object ):
     'get parent'
 
     if self.elem.parent is None:
-      return None
+      raise AttributeError, 'next'
 
     elem, transform = self.elem.parent
     points = transform( self.points )
@@ -413,7 +413,7 @@ class ExtractionWrapper( object ):
   def dot( self, weights ):
     'dot'
 
-    weights = numpy.dot( weights.T, self.extraction ).T
+    weights = numpy.tensordot( self.extraction, weights, (0,0) )
     return self.stdelem.dot( weights )
 
   def __repr__( self ):

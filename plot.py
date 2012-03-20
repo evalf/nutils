@@ -12,16 +12,16 @@ def clf():
   from matplotlib import pyplot
   pyplot.clf()
 
-def mesh( coords, topology, color=None, edgecolors='none', linewidth=1, xmargin=0, ymargin=0, ax=None, aspect='equal', cbar='horizontal', title=None ):
+def mesh( coords, topology, color=None, edgecolors='none', linewidth=1, xmargin=0, ymargin=0, ax=None, aspect='equal', cbar='horizontal', title=None, ischeme='gauss2', cscheme='contour3' ):
   'plot mesh'
 
   from matplotlib import collections, pyplot
   poly = []
   values = []
   for elem in util.progressbar( topology, title='plotting mesh' ):
-    poly.append( coords( elem('contour3') ).T )
+    poly.append( coords( elem(cscheme) ).T )
     if color is not None:
-      xi = elem('gauss2')
+      xi = elem(ischeme)
       values.append( util.mean( color(xi), weights=xi.weights ) )
 
   if values:
