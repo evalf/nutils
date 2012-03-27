@@ -245,16 +245,6 @@ class ArrayFunc( Evaluable ):
 
     return ( self[i] for i in range(self.shape[0]) )
 
-# def transform( self, transformation, axis ):
-#   'transform'
-
-#   assert len(transformation.shape) == 2
-#   if axis >= 0:
-#     axis -= len(self.shape)
-#   tail = -1 - axis
-#   return Dot( self[(Ellipsis,_)+(slice(None),)*tail],
-#               transformation[(Ellipsis,)+(_,)*tail], (axis,) )
-
   def normal( self, topo ):
     'normal'
 
@@ -268,6 +258,15 @@ class ArrayFunc( Evaluable ):
     else:
       raise NotImplementedError, 'cannot compute normal for %dx%d jacobian' % grad.shape
     return normal / normal.norm2(0)
+
+  def curvature( self, topo ):
+    'curvature'
+
+    J = self.localgradient( topo )[:,0]
+    H = self.localdoublegradient( topo )[:,0,0]
+    dx, dy = J
+    ddx, ddy = H
+    return ( dy * ddx - dx * ddy ) / J.norm2(0)**3
 
   def dot( self, weights ):
     'dot'
@@ -288,8 +287,14 @@ class ArrayFunc( Evaluable ):
     'gradient'
 
     assert len(coords.shape) == 1
-    return ( self.localgradient(topo)[...,_] * coords.localgradient(topo).inv() ).sum( -2 )
-    #return self.localgradient(topo).transform( coords.localgradient(topo).inv(), -1 )
+    J = coords.localgradient(topo)
+    if J.shape[0] == J.shape[1]:
+      Jinv = J.inv()
+    elif J.shape[0] == J.shape[1] + 1: # gamma gradient
+      Jinv = Stack( [[ J, coords.normal(topo)[:,_] ]] ).inv()[:-1,:]
+    else:
+      raise Exception, 'cannot invert jacobian'
+    return ( self.localgradient(topo)[...,_] * Jinv ).sum( -2 )
 
   def symgrad( self, coords, topo ):
     'gradient'
@@ -381,6 +386,11 @@ class ArrayFunc( Evaluable ):
 
     return Negate( self )
 
+  def __pow__( self, n ):
+    'power'
+
+    return Power( self, n )
+
   @property
   def T( self ):
     'transpose'
@@ -425,6 +435,11 @@ class StaticDot( ArrayFunc ):
     'local gradient'
 
     return StaticDot( self.func.localgradient(topo), self.array )
+
+  def localdoublegradient( self, topo ):
+    'local gradient'
+
+    return StaticDot( self.func.localdoublegradient(topo), self.array )
 
   def __mul__( self, other ):
     'multiply'
@@ -471,6 +486,11 @@ class Function( ArrayFunc ):
     'local derivative'
 
     return LocalGradient( self, topo )
+
+  def localdoublegradient( self, topo ):
+    'local derivative'
+
+    return LocalDoubleGradient( self, topo )
 
   def __str__( self ):
     'string representation'
@@ -705,10 +725,13 @@ class Stack( ArrayFunc ):
               f = func
             else:
               assert f.shape[idim] == func.shape[idim]
-        assert f is not None, 'no ArrayFuncs found in row/column'
-        index.append( flatfuncs.index(f) )
         n0 = n1
-        n1 += f.shape[idim]
+        if f is None: # no ArrayFuncs found in row/column
+          index.append( None )
+          n1 += 1
+        else:
+          index.append( flatfuncs.index(f) )
+          n1 += f.shape[idim]
         slices.append( slice(n0,n1) )
       indices.append( index )
       shape.append( n1 )
@@ -738,12 +761,16 @@ class Stack( ArrayFunc ):
       slices = []
       for iblk in index:
         n0 = n1
-        n1 += blocks[iblk].shape[idim]
+        if iblk is None:
+          n1 += 1
+        else:
+          block = blocks[iblk]
+          n1 += block.shape[idim]
         slices.append( slice(n0,n1) )
       shape.append( n1 )
       partitions.append( slices )
 
-    stacked = numpy.empty( tuple(shape) + blocks[iblk].shape[len(shape):] )
+    stacked = numpy.empty( tuple(shape) + block.shape[len(shape):] )
     for I, block in zip( numpy.broadcast( *numpy.ix_( *partitions ) ) if len(partitions) > 1 else partitions[0], blocks ):
       stacked[ I ] = block
     return stacked
@@ -800,6 +827,32 @@ class LocalGradient( ArrayFunc ):
       T = numpy.dot( T, xi.transform )
     F = fmap[ xi.elem ].eval( xi.points, grad=1 )
     return util.transform( F, T, axis=-2 )
+
+class LocalDoubleGradient( ArrayFunc ):
+  'local gradient'
+
+  needxi = True
+
+  def __init__( self, func, topo ):
+    'constructor'
+
+    self.topo = topo
+    self.shape = func.shape + (topo.ndims,)*2
+    self.args = func.mapping, topo
+
+  @staticmethod
+  def eval( xi, fmap, topo ):
+    'evaluate'
+
+    while xi.elem not in topo:
+      xi = xi.next
+    T = 1
+    while xi.elem not in fmap:
+      xi = xi.next
+      T = numpy.dot( T, xi.transform )
+    assert T is 1 # TODO for now
+    F = fmap[ xi.elem ].eval( xi.points, grad=2 )
+    return F
 
 class Norm2( ArrayFunc ):
   'integration weights'
@@ -1193,6 +1246,22 @@ class Log( UnaryFunc ):
   'cosine'
 
   eval = staticmethod( numpy.log )
+
+class Power( ArrayFunc ):
+  'power'
+
+  def __init__( self, func, n ):
+    'constructor'
+
+    self.args = func, n
+    self.shape = func.shape
+
+  eval = staticmethod( numpy.ndarray.__pow__ )
+
+  def __str__( self ):
+    'string representation'
+
+    return '%s**%d' % self.args
 
 #############################33
 

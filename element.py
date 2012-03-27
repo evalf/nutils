@@ -331,7 +331,7 @@ class PolyQuad( StdElem ):
       for ni in range( points.ndims ):
         for nj in range( ni, points.ndims ):
           Di = [( F2 if m == ni == nj else F1 if m == ni or m == nj else F0 )[m] for m in range( points.ndims ) ]
-          data[:,nj,ni] = D[:,ni,nj] = reduce( lambda d, di: ( d[:,_] * di ).reshape( d.shape[0] * di.shape[0], -1 ), Di )
+          data[:,nj,ni] = data[:,ni,nj] = reduce( lambda d, di: ( d[:,_] * di ).reshape( d.shape[0] * di.shape[0], -1 ), Di )
       return data
 
     raise Exception

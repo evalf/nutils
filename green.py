@@ -185,6 +185,34 @@ class Stokeslet( function.ArrayFunc ):
 
     return StokesletReconstruct( self.mycoords, self.topo, self.coords, bval, flux, self.mu )
 
+class StokesletGrad( function.ArrayFunc ):
+  'stokeslet gradient'
+
+  def __init__( self, mycoords, topo, coords, funcsp, mu ):
+    'constructor'
+
+    self.shape = int( funcsp.shape[0] ) * 2, 2, 2
+    self.args = int(funcsp.shape[0]), IterData( mycoords, topo, coords, funcsp, funcsp.shape[0] ), mu
+
+  @staticmethod
+  def eval( ndofs, (shape,iterdata), mu ):
+    'evaluate'
+
+    retval = numpy.zeros( (ndofs*2,2,2) + shape )
+    retval_swap = retval.reshape( 2, ndofs, 2, 2, *shape ).swapaxes(0,1) # follows ordering Vectorize
+    for D, R2, logR, wf, I in iterdata:
+      kernel = D[:,_,_] * D[_,:,_] * D[_,_,:]
+      kernel /= -.5 * R2
+      kernel[:,0,0] += D
+      kernel[:,1,1] += D
+      kernel[1,0,1] += D[0]
+      kernel[1,1,0] -= D[0]
+      kernel[0,0,1] -= D[1]
+      kernel[0,1,0] += D[1]
+      kernel /= (4 * numpy.pi * mu) * R2
+      retval_swap[I] += numpy.tensordot( wf, kernel, (-1,-1) )
+    return retval
+
 class StokesletStress( function.ArrayFunc ):
   'stokeslet stress'
 
@@ -251,5 +279,30 @@ def stokeslet_reconstruct_multidom( mycoords, domains, coordss, velos, tracs, mu
   assert len(domains) == len(coordss) == len(velos) == len(tracs)
   return sum( StokesletReconstruct( mycoords, domain, coords, velo, trac, mu )
                 for domain, coords, velo, trac in zip( domains, coordss, velos, tracs ) )
+
+def testgrad( domain, coords, funcsp ):
+  'numeric differentiation test'
+
+  import mesh
+  testdomain, testcoords = mesh.rectilinear( [0,1], [0,1] )
+  elem, = testdomain
+  eps = 1e-10
+  p = elem.eval( numpy.array([[.5],[.5]]) )
+  px = elem.eval( numpy.array([[.5-.5*eps,.5+.5*eps],[.5,.5]]) )
+  py = elem.eval( numpy.array([[.5,.5],[.5-.5*eps,.5+.5*eps]]) )
+
+  fval = Stokeslet( testcoords, domain, coords, funcsp, 1. )
+  grad = StokesletGrad( testcoords, domain, coords, funcsp, 1. )
+
+  dx = fval(px)
+  print numpy.hstack([ ( dx[...,1] - dx[...,0] ) / eps, grad( p )[...,0,0] ])
+  print ( dx[...,1] - dx[...,0] ) / eps - grad( p )[...,0,0]
+  print
+
+  dy = fval(py)
+  print numpy.hstack([ ( dy[...,1] - dy[...,0] ) / eps, grad( p )[...,1,0] ])
+  print ( dy[...,1] - dy[...,0] ) / eps - grad( p )[...,1,0]
+
+  raise SystemExit
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
