@@ -62,8 +62,6 @@ class Topology( set ):
     else:
       A = numpy.zeros( func.shape )
       idata = function.Tuple( [ detJ, func, makeindex(func.shape) ] )
-      idata.printstack()
-      raise
       for elem in topo:
         xi = elem.eval(ischeme)
         detj, data, index = idata(xi)
