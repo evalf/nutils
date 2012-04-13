@@ -10,50 +10,34 @@ def rectilinear( *gridnodes ):
   coords = topo.rectilinearfunc( gridnodes )
   return topo, coords
 
-def revolve( coords, nelems, degree=4, axis=0 ):
+def revolve( topo, coords, nelems, degree=4, axis=0 ):
   'revolve coordinates'
 
-  topo = coords.topology
-  enumtopo = util.progressbar( list(enumerate(topo)), title='revolving elements' )
-
-  phi = ( numpy.arange( 1, nelems+degree ) - .5*degree ) * ( 2 * numpy.pi / nelems )
-  PHI = numpy.array([ numpy.cos(phi), numpy.sin(phi) ]).T
+  # This is a hack. We need to be able to properly multiply topologies.
+  DEGREE = (2,) # Degree of coords element
 
   structure = numpy.array([ [ element.QuadElement( ndims=topo.ndims+1 ) for elem in topo ] for ielem in range(nelems) ])
   revolved_topo = topology.StructuredTopology( structure.reshape( nelems, *topo.structure.shape ), periodic=0 )
-  revolved_coords = function.Function( ndims=coords.ndims+1 )
-
   if nelems % 2 == 0:
     revolved_topo.groups[ 'top' ] = revolved_topo[:nelems//2]
     revolved_topo.groups[ 'bottom' ] = revolved_topo[nelems//2:]
 
-  p = degree
-  n = 2*(p-1)-1
-  ex = numpy.zeros(( n, p, p ))
-  ex[0] = numpy.eye( p )
-  for i in range( 1, n ):
-    ex[i] = numpy.eye( p )
-    for j in range( 2, p ):
-      for k in reversed( range( j, p ) ):
-        alpha = 1. / min( 2+k-j, n-i+1 )
-        ex[i-1,:,k] = alpha * ex[i-1,:,k] + (1-alpha) * ex[i-1,:,k-1]
-      ex[i,-j-1:-1,-j-1] = ex[i-1,-j:,-1]
-  EX = ex[p-2]
+  print 'topo:', revolved_topo.structure.shape
+  revolved_func = revolved_topo.splinefunc( degree=(degree,)+DEGREE )
 
-  for jelem, elem in enumtopo:
-    stdelem = coords.mapping[ elem ]
-    assert isinstance( stdelem, function.FuncWrapper )
-    assert isinstance( stdelem.stdelem, element.PolyQuad )
-    poly = element.PolyQuad( (degree,)+stdelem.stdelem.degree )
-    dofs = numpy.empty(( nelems+degree-1, stdelem.dofs.shape[0], coords.ndims+1 ))
-    dofs[:,:,:axis] = stdelem.dofs[_,:,:axis]
-    dofs[:,:,axis:axis+2] = stdelem.dofs[_,:,axis,_] * PHI[:,_,:]
-    dofs[:,:,axis+2:] = stdelem.dofs[_,:,axis+1:]
-    for ielem in range( nelems ):
-      D = util.dot( EX[:,:,_,_], dofs[ielem:ielem+degree,_,:,:], axis=0 )
-      revolved_coords.mapping[ structure[ielem,jelem] ] = function.FuncWrapper( poly, util.reshape( D, 2, 1 ) )
+  assert isinstance( coords, function.StaticDot )
+  assert coords.array.ndim == 2
+  nnodes, ndims = coords.array.shape
 
-  return revolved_coords
+  phi = ( 1 + numpy.arange(nelems) - .5*degree ) * ( 2 * numpy.pi / nelems )
+  weights = numpy.empty(( nelems, nnodes, ndims+1 ))
+  weights[...,:axis] = coords.array[:,:axis]
+  weights[...,axis] = numpy.cos(phi)[:,_] * coords.array[:,axis]
+  weights[...,axis+1] = numpy.sin(phi)[:,_] * coords.array[:,axis]
+  weights[...,axis+2:] = coords.array[:,axis+1:]
+  weights = util.reshape( weights, 2, 1 )
+
+  return revolved_topo, revolved_func.dot( weights )
 
 def gmesh( path, btags=[] ):
   'gmesh'

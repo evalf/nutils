@@ -207,7 +207,7 @@ def writevtu( coords, path, topology=None, refine=1 ):
   vtkWriter.SetDataModeToAscii()
   vtkWriter.Write()
 
-def preview( coords, topology ):
+def preview( coords, topology, cscheme='contour8' ):
   'preview function'
 
   if topology.ndims == 3:
@@ -217,7 +217,7 @@ def preview( coords, topology ):
   from matplotlib import collections
   figure()
   if coords.shape[0] == 2:
-    mesh( coords, topology )
+    mesh( coords, topology, cscheme=cscheme )
   elif coords.shape[0] == 3:
     polys = [ [] for i in range(4) ]
     sqrt2 = numpy.sqrt( 2 )
@@ -225,7 +225,7 @@ def preview( coords, topology ):
     sqrt6 = numpy.sqrt( 6 )
     R = numpy.array( [[ sqrt3, 0, -sqrt3 ], [ 1, 2, 1 ], [ sqrt2, -sqrt2, sqrt2 ]] ) / sqrt6
     for elem in topo:
-      contour = coords( elem('contour8') )
+      contour = coords( elem.eval(cscheme) )
       polys[0].append( util.transform( contour, R[:,::2], axis=0 ).T )
       polys[1].append( contour[:2].T )
       polys[2].append( contour[1:].T )

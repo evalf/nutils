@@ -18,7 +18,7 @@ def obj2str( obj ):
   if isinstance( obj, numpy.ndarray ) and obj.ndim > 0:
     return 'array[%s]' % 'x'.join( map( str, obj.shape ) )
   if isinstance( obj, (list,dict,tuple) ):
-    if len(obj) > 3:
+    if len(obj) > 4:
       return '%s[(%s items)]' % ( obj.__class__.__name__, len(obj) )
     if isinstance( obj, list ):
       return '[%s]' % ','.join( obj2str(o) for o in obj )
@@ -64,10 +64,14 @@ def cachefunc( func ):
     args = list(args) + [unspecified] * ( argcount - len(args) ) if func.func_defaults is None \
       else list(args) + list(func.func_defaults[ len(args) + len(func.func_defaults) - argcount: ]) if len(args) + len(func.func_defaults) > argcount \
       else list(args) + [unspecified] * ( argcount - len(func.func_defaults) - len(args) ) + list(func.func_defaults)
-    for kwarg, val in kwargs.items():
-      args[ func.func_code.co_varnames.index(kwarg)-1 ] = val
+    try:
+      for kwarg, val in kwargs.items():
+        args[ func.func_code.co_varnames.index(kwarg)-1 ] = val
+    except ValueError:
+      raise TypeError, '%s() got an unexpected keyword argument %r' % ( func.func_name, kwarg )
     args = tuple( args )
-    assert unspecified not in args, 'not all arguments were specified'
+    if unspecified in args:
+      raise TypeError, '%s() not all arguments were specified' % func.func_name
     key = (func.func_name,) + args
     value = funcache.get( key )
     if value is None:
@@ -331,8 +335,9 @@ class Locals( object ):
 def getkwargdefaults( func ):
   'helper for run'
 
-  N = func.func_code.co_argcount - len( func.func_defaults )
-  return zip( func.func_code.co_varnames[N:], func.func_defaults )
+  defaults = func.func_defaults or []
+  N = func.func_code.co_argcount - len( defaults )
+  return zip( func.func_code.co_varnames[N:], defaults )
 
 def run( *functions ):
   'call function specified on command line'
@@ -396,7 +401,6 @@ def run( *functions ):
 
   title = '%s.%s' % ( sys.argv[0].split('/')[-1].lower(), funcname.lower() )
   print title, ( ' ' + time.ctime() ).rjust( LINEWIDTH-len(title), '=' ), '|>|'
-  maxlen = max( len(arg) for arg in kwargs )
   for arg, val in kwargs.items():
     print '.'.rjust( len(title) ), '%s = %s' % ( arg.lower(), val )
 

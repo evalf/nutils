@@ -1,6 +1,6 @@
 from . import element, function, util, numpy, _
 
-class Topology( object ):
+class Topology( set ):
   'topology base class'
 
   def __add__( self, other ):
@@ -11,14 +11,14 @@ class Topology( object ):
     assert self.ndims == other.ndims
     return UnstructuredTopology( set(self) | set(other), ndims=self.ndims )
 
-  def integrate( self, func, coords, ischeme='gauss2' ):
+  def integrate( self, func, coords, ischeme='gauss2', title=True ):
     'integrate'
 
-    def makeindex( func ):
+    def makeindex( shape ):
       indices = []
-      count = sum( isinstance(sh,function.DofAxis) for sh in func.shape )
+      count = sum( isinstance(sh,function.DofAxis) for sh in shape )
       iaxis = 0
-      for sh in func.shape:
+      for sh in shape:
         if isinstance(sh,function.DofAxis):
           index = sh
           if count > 1:
@@ -30,10 +30,10 @@ class Topology( object ):
           index = slice(None)
         indices.append( index )
       assert iaxis == count
-      return function.Tuple([ function.Tuple(indices), func ])
+      return function.Tuple(indices)
 
     if coords:
-      J = coords.localgradient( self )
+      J = coords.localgradient( self, level=1 )
       cndims, = coords.shape
       if cndims == self.ndims:
         detJ = J.det( 0, 1 )
@@ -48,22 +48,25 @@ class Topology( object ):
     else:
       detJ = 1.
 
-    topo = util.progressbar( self, title='integrating %d elements' % len(self) )
+    topo = self if not title \
+      else util.progressbar( self, title='integrating %d elements' % len(self) if title is True else title )
     if isinstance( func, (list,tuple) ):
       A = [ numpy.zeros( f.shape ) for f in func ]
-      idata = function.Tuple([ detJ, function.Tuple( makeindex(f) for f in func ) ])
+      idata = function.Tuple([ detJ, function.Tuple( function.Tuple([ f, makeindex(f.shape) ]) for f in func ) ])
       for elem in topo:
         xi = elem.eval(ischeme)
         detj, alldata = idata(xi)
         weights = detj * xi.weights
-        for Ai, (index,data) in zip( A, alldata ):
+        for Ai, (data,index) in zip( A, alldata ):
           Ai[ index ] += util.contract( data, weights )
     else:
       A = numpy.zeros( func.shape )
-      idata = function.Tuple( [ detJ, makeindex(func) ] )
+      idata = function.Tuple( [ detJ, func, makeindex(func.shape) ] )
+      idata.printstack()
+      raise
       for elem in topo:
         xi = elem.eval(ischeme)
-        detj, (index,data) = idata(xi)
+        detj, data, index = idata(xi)
         weights = detj * xi.weights
         A[ index ] += util.contract( data, weights )
     return A
@@ -74,7 +77,7 @@ class Topology( object ):
     weights = self.project( fun, onto, **kwargs )
     return onto.dot( weights )
 
-  def project( self, fun, onto, coords=None, ischeme='gauss8', title='projecting', tol=1e-8, exact_boundaries=False, constrain=None ):
+  def project( self, fun, onto, coords=None, ischeme='gauss8', title=True, tol=1e-8, exact_boundaries=False, constrain=None ):
     'L2 projection of function onto function space'
 
     if exact_boundaries:
@@ -99,7 +102,7 @@ class Topology( object ):
       bfun = ( onto * fun ).sum( 1 )
     else:
       raise Exception
-    A, b = self.integrate( [Afun,bfun], coords=coords, ischeme=ischeme )
+    A, b = self.integrate( [Afun,bfun], coords=coords, ischeme=ischeme, title=title )
 
     zero = ( numpy.abs( A ) < tol ).all( axis=0 )
     constrain[zero] = 0
@@ -121,6 +124,8 @@ class StructuredTopology( Topology ):
     self.structure = structure
     self.periodic = periodic
     self.groups = {}
+
+    Topology.__init__( self, structure.flat )
 
   def __len__( self ):
     'number of elements'
@@ -178,7 +183,7 @@ class StructuredTopology( Topology ):
     indices = numpy.array( 0 )
     slices = []
     for p, nelems in zip( degree, self.structure.shape ):
-      n = min( nelems, 2*(p-1)-1 )
+      n = min( nelems, 2*(p-1)-1 ) if self.periodic != len( slices ) else (2*(p-1)-1)
       ex = numpy.empty(( n, p, p ))
       ex[0] = numpy.eye( p )
       for i in range( 1, n ):
@@ -259,24 +264,15 @@ class UnstructuredTopology( Topology ):
   def __init__( self, elements, ndims, namedfuncs={} ):
     'constructor'
 
-    self.elements = elements
     self.namedfuncs = namedfuncs
     self.ndims = ndims
 
-  def __len__( self ):
-    'number of elements'
-
-    return len( self.elements )
+    Topology.__init__( self, elements )
 
   def __getitem__( self, item ):
     'subtopology'
 
     return self.groups[item]
-
-  def __iter__( self ):
-    'iterate'
-
-    return iter( self.elements )
 
   def splinefunc( self, degree ):
     'spline func'

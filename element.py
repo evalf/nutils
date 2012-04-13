@@ -20,6 +20,12 @@ class ElemEval( object ):
     self.weights = points.weights
     self.transform = transform
 
+  def offset( self, offset ):
+    'shift points'
+
+    shifted = LocalPoints( self.points.coords + offset )
+    return ElemEval( self.elem, shifted, self.transform )
+
   @util.cacheprop
   def next( self ):
     'get parent'
@@ -154,11 +160,15 @@ class QuadElement( Element ):
       x = numpy.linspace( 0, 1, N )
       w = None
     elif where.startswith( 'contour' ):
-      assert ndims == 2
       N = int( where[7:] )
       p = numpy.linspace( 0, 1, N )
-      coords = numpy.array([ p[ range(N) + [N-1]*(N-2) + range(N)[::-1] + [0]*(N-2) ],
-                             p[ [0]*(N-1) + range(N) + [N-1]*(N-2) + range(1,N)[::-1] ] ])
+      if ndims == 1:
+        coords = p[_]
+      elif ndims == 2:
+        coords = numpy.array([ p[ range(N) + [N-1]*(N-2) + range(N)[::-1] + [0]*(N-2) ],
+                               p[ [0]*(N-1) + range(N) + [N-1]*(N-2) + range(1,N)[::-1] ] ])
+      else:
+        raise Exception, 'contour not supported for ndims=%d' % ndims
     else:
       raise Exception, 'invalid element evaluation %r' % where
     if x is not None:

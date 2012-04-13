@@ -25,10 +25,18 @@ class CacheFunc( object ):
   def __init__( self, topo, coords, func, other ):
     'compare'
 
-    J = coords.localgradient( topo )
+    J = coords.localgradient( topo, level=1 )
     detJ = J[:,0].norm2( 0 )
     self.F = function.Tuple([ coords, func * detJ, function.Tuple(other) ])
     self.data = [ (elem,) + self.get(elem.eval('gauss10')) for elem in topo ]
+
+  def iterdata( self, myelem ):
+    'iterate'
+
+    for elem, y, funcs in self.data:
+      if elem is myelem:
+        y, funcs = self.get( elem.eval('uniform1000') )
+      yield elem, y, funcs
 
   def get( self, xi ):
     'generate data'
@@ -57,9 +65,7 @@ class IterData( function.Evaluable ):
     'convolute shapes'
 
     iterdata = []
-    for elem, y, funcs in cachefunc.data:
-      if elem is xi.elem:
-        y, funcs = cachefunc.get( elem.eval('uniform1000') )
+    for elem, y, funcs in cachefunc.iterdata( xi.elem ):
       d = x[:,:,_] - y[:,_,:] # FIX count number of axes in x
       r2 = util.contract( d, d, 0 )
       logr = .5 * numpy.log( r2 )
@@ -205,10 +211,10 @@ class StokesletGrad( function.ArrayFunc ):
       kernel /= -.5 * R2
       kernel[:,0,0] += D
       kernel[:,1,1] += D
-      kernel[1,0,1] += D[0]
-      kernel[1,1,0] -= D[0]
-      kernel[0,0,1] -= D[1]
-      kernel[0,1,0] += D[1]
+      kernel[0,:,0] += D
+      kernel[1,:,1] += D
+      kernel[0,0,:] -= D
+      kernel[1,1,:] -= D
       kernel /= (4 * numpy.pi * mu) * R2
       retval_swap[I] += numpy.tensordot( wf, kernel, (-1,-1) )
     return retval
@@ -258,20 +264,27 @@ class StokesletReconstruct( function.ArrayFunc ):
       retval += numpy.dot( ( D * Dtrac - trac[:,_,:] * logR ) / (4*mu) - D * Dnorm * Dvelo, w )
     return retval / numpy.pi
 
-def stokeslet_multidom( domains, coordss, funcsps, mu ):
+def stokeslet_multidom( domain, coords, funcsp, mu ):
   'create stokeslet on multiple domains'
 
-  assert len(domains) == len(coordss) == len(funcsps)
-  for mycoords, mydomain in zip( coordss, domains ):
-    stokeslets = []
+  n = len(domain)
+  assert n == len(coords)
+  assert n == len(funcsp)
+  for i in range(n):
+    fvals = []
     tracs = []
-    for domain, coords, funcsp in zip( domains, coordss, funcsps ):
-      stokeslet = Stokeslet( mycoords, domain, coords, funcsp, mu )
-      stress = StokesletStress( mycoords, domain, coords, funcsp )
-      trac = ( stress * mycoords.normal( mydomain ) ).sum()
-      stokeslets.append( stokeslet )
-      tracs.append( trac if coords is not mycoords else AddPart( trac, .5 * funcsp.vector(2) ) )
-    yield function.Stack( stokeslets ), function.Stack( tracs )
+    curvs = []
+    normal = coords[i].normal( domain[i] )
+    for j in range(n):
+      stokeslet = Stokeslet( coords[i], domain[j], coords[j], funcsp[j], mu )
+      grad = StokesletGrad( coords[i], domain[j], coords[j], funcsp[j], mu )
+      stress = StokesletStress( coords[i], domain[j], coords[j], funcsp[j] )
+      trac = ( stress * normal ).sum()
+      curv = grad.trace(1,2) - ( ( grad * normal ).sum() * normal ).sum()
+      fvals.append( stokeslet )
+      tracs.append( trac if i != j else AddPart( trac, .5 * funcsp[j].vector(2) ) )
+      curvs.append( curv if i != j else AddPart( curv, ( funcsp[j].vector(2) * normal ).sum() / (2*numpy.pi*mu) ) )
+    yield function.Stack( fvals ), function.Stack( tracs ), function.Stack( curvs )
 
 def stokeslet_reconstruct_multidom( mycoords, domains, coordss, velos, tracs, mu ):
   'create stokeslet on multiple domains'
