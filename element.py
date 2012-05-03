@@ -106,8 +106,8 @@ class QuadElement( Element ):
         offset[idim:] = 1-iside
         offset[:idim+1] = iside
         transform = numpy.zeros(( ndims, ndims-1 ))
-        transform.flat[                :(ndims-1)*idim:ndims] = 1 - 2 * iside
-        transform.flat[ndims*(idim+1)-1:              :ndims] = 2 * iside - 1
+        transform.flat[ :(ndims-1)*idim :ndims] = 1 - 2 * iside
+        transform.flat[ndims*(idim+1)-1::ndims] = 2 * iside - 1
         transforms.append( AffineTransformation( offset=offset, transform=transform ) )
     return transforms
 

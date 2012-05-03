@@ -11,7 +11,7 @@ class Topology( set ):
     assert self.ndims == other.ndims
     return UnstructuredTopology( set(self) | set(other), ndims=self.ndims )
 
-  def integrate( self, func, coords, ischeme='gauss2', title=True ):
+  def integrate( self, func, coords=None, ischeme='gauss2', title=True ):
     'integrate'
 
     def makeindex( shape ):
@@ -33,7 +33,7 @@ class Topology( set ):
       return function.Tuple(indices)
 
     if coords:
-      J = coords.localgradient( self, level=1 )
+      J = coords.localgradient( self.ndims, level=1 )
       cndims, = coords.shape
       if cndims == self.ndims:
         detJ = J.det( 0, 1 )

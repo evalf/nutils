@@ -212,7 +212,6 @@ def preview( coords, topology, cscheme='contour8' ):
 
   if topology.ndims == 3:
     topology = topology.boundary
-  assert topology.ndims == 2
 
   from matplotlib import collections
   figure()
@@ -240,6 +239,8 @@ def preview( coords, topology, cscheme='contour8' ):
         box( 'off' )
       else:
         title( '?ZXY'[iplt] )
+  else:
+    raise Exception, 'need 2D or 3D coordinates'
   show()
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
