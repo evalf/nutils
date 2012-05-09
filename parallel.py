@@ -20,8 +20,6 @@ def shzeros( shape, dtype=float ):
 def pariter( iterable, nprocs=None, verbose=False ):
   'fork and iterate, handing equal-sized chunks to all processors'
 
-  from os import fork, wait, _exit
-
   if nprocs is None:
     nprocs = cpu_count()
 
@@ -34,6 +32,8 @@ def pariter( iterable, nprocs=None, verbose=False ):
 
   if verbose:
     print 'pariter: iterating in parallel mode (nprocs=%d)' % nprocs
+
+  from os import fork, wait, _exit
 
   iterable = tuple( iterable )
   pids = set()
