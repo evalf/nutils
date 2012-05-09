@@ -27,13 +27,13 @@ def pariter( iterable, nprocs=None, verbose=False ):
 
   if nprocs == 1:
     if verbose:
-      print 'pariter: iterating in standard mode: nprocs=1'
+      print 'pariter: iterating in sequential mode (nprocs=1)'
     for i in iterable:
       yield iterable
     return
 
   if verbose:
-    print 'pariter: iterating in parallel: nprocs=%d' % nprocs
+    print 'pariter: iterating in parallel mode (nprocs=%d)' % nprocs
 
   iterable = tuple( iterable )
   pids = set()
