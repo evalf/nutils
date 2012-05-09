@@ -4,9 +4,13 @@ def shzeros( shape, dtype=float ):
   'create zero-initialized array in shared memory'
 
   from multiprocessing import RawArray
-  from numpy import frombuffer, product
+  from numpy import frombuffer, product, array
 
-  size = product( shape )
+  try:
+    shape = map(int,shape)
+  except TypeError:
+    shape = [int(shape)]
+  size = product( shape ) if shape else 1
   typecode = {
     int: 'i',
     float: 'd' }
@@ -34,7 +38,8 @@ def pariter( iterable, nprocs=None, verbose=False ):
   while pids:
     pid, status = wait()
     pids.remove( pid )
-    print 'process #%d finished, %d pending' % ( pid, len(pids) )
+    if verbose:
+      print 'process #%d finished, %d pending' % ( pid, len(pids) )
 
 def example():
   'simple example demonstrating a parallel loop'

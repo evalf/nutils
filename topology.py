@@ -1,4 +1,4 @@
-from . import element, function, util, numpy, _
+from . import element, function, util, numpy, parallel, _
 
 class Topology( set ):
   'topology base class'
@@ -11,7 +11,7 @@ class Topology( set ):
     assert self.ndims == other.ndims
     return UnstructuredTopology( set(self) | set(other), ndims=self.ndims )
 
-  def integrate( self, func, coords=None, ischeme='gauss2', title=True ):
+  def integrate( self, func, coords=None, ischeme='gauss2', title=True, nprocs=None ):
     'integrate'
 
     def makeindex( shape ):
@@ -50,23 +50,26 @@ class Topology( set ):
 
     topo = self if not title \
       else util.progressbar( self, title='integrating %d elements' % len(self) if title is True else title )
+    lock = parallel.Lock()
     if isinstance( func, (list,tuple) ):
-      A = [ numpy.zeros( f.shape ) for f in func ]
+      A = [ parallel.shzeros( f.shape ) for f in func ]
       idata = function.Tuple([ detJ, function.Tuple( function.Tuple([ f, makeindex(f.shape) ]) for f in func ) ])
       for elem in topo:
         xi = elem.eval(ischeme)
         detj, alldata = idata(xi)
         weights = detj * xi.weights
         for Ai, (data,index) in zip( A, alldata ):
-          Ai[ index ] += util.contract( data, weights )
+          with lock:
+            Ai[ index ] += util.contract( data, weights )
     else:
-      A = numpy.zeros( func.shape )
+      A = parallel.shzeros( func.shape )
       idata = function.Tuple( [ detJ, func, makeindex(func.shape) ] )
-      for elem in topo:
+      for elem in parallel.pariter( topo, nprocs=nprocs ):
         xi = elem.eval(ischeme)
         detj, data, index = idata(xi)
         weights = detj * xi.weights
-        A[ index ] += util.contract( data, weights )
+        with lock:
+          A[ index ] += util.contract( data, weights )
     return A
 
   def projection( self, fun, onto, **kwargs ):
