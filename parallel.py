@@ -24,6 +24,17 @@ def pariter( iterable, nprocs=None, verbose=False ):
 
   if nprocs is None:
     nprocs = cpu_count()
+
+  if nprocs == 1:
+    if verbose:
+      print 'pariter: iterating in standard mode: nprocs=1'
+    for i in iterable:
+      yield iterable
+    return
+
+  if verbose:
+    print 'pariter: iterating in parallel: nprocs=%d' % nprocs
+
   iterable = tuple( iterable )
   pids = set()
   for iproc in range( nprocs ):
@@ -39,7 +50,7 @@ def pariter( iterable, nprocs=None, verbose=False ):
     pid, status = wait()
     pids.remove( pid )
     if verbose:
-      print 'process #%d finished, %d pending' % ( pid, len(pids) )
+      print 'pariter: process #%d finished, %d pending' % ( pid, len(pids) )
 
 def example():
   'simple example demonstrating a parallel loop'
