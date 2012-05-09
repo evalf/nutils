@@ -27,7 +27,7 @@ def pariter( iterable, nprocs=None, verbose=False ):
     if verbose:
       print 'pariter: iterating in sequential mode (nprocs=1)'
     for i in iterable:
-      yield iterable
+      yield i
     return
 
   if verbose:
