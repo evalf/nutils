@@ -335,7 +335,7 @@ class PolyQuad( StdElem ):
                    else [ (p-1) * (p-2) * (1-x)**(p-3), (p-1) * (p-2) * (1-x)**(p-4) * ((p-1)*x-2) ]
                       + [ comb[i] * (1-x)**(p-i-3) * x**(i-2) * (x*(2*i-(p-1)*x)*(2-p)+i*(i-1)) for i in range(2,p-2) ]
                       + [ (p-1) * (p-2) * x**(p-4) * ((p-1)*(1-x)-2), (p-1) * (p-2) * x**(p-3) ]
-                        ) for x, p, comb in polydata ]
+                      ) for x, p, comb in polydata ]
     if grad == 2:
       data = numpy.empty(( nshapes, points.ndims, points.ndims, points.npoints ))
       for ni in range( points.ndims ):
@@ -344,7 +344,8 @@ class PolyQuad( StdElem ):
           data[:,nj,ni] = data[:,ni,nj] = reduce( lambda d, di: ( d[:,_] * di ).reshape( d.shape[0] * di.shape[0], -1 ), Di )
       return data
 
-    raise Exception
+    assert all( p <= 3 for p in self.degree ) # for now
+    return numpy.zeros(( nshapes, points.ndims, points.ndims, points.ndims, points.npoints ))
 
 class PolyTriangle( StdElem ):
   'poly triangle'

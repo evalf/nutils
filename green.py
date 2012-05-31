@@ -25,7 +25,7 @@ class CacheFunc( object ):
   def __init__( self, topo, coords, func, other ):
     'compare'
 
-    J = coords.localgradient( topo.ndims, level=1 )
+    J = coords.localgradient( topo.ndims )
     detJ = J[:,0].norm2( 0 )
     self.F = function.Tuple([ coords, func * detJ, function.Tuple(other) ])
     self.data = [ (elem,) + self.get(elem.eval('gauss10')) for elem in topo ]

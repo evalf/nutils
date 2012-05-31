@@ -3,6 +3,22 @@ from numpyextra import *
 
 LINEWIDTH = 70
 
+class UsableArray( numpy.ndarray ):
+  'array wrapper that can be compared'
+
+  def __new__( cls, array ):
+    'new'
+
+    return numpy.asarray( array ).view( cls )
+
+  def __eq__( self, other ):
+    'compare'
+
+    return self is other \
+        or isinstance( other, numpy.ndarray ) \
+       and other.shape == self.shape \
+       and numpy.ndarray.__eq__( self, other ).all()
+
 def iterate():
   'iterate forever'
 
@@ -143,25 +159,34 @@ def solve_system( matrix, rhs, title='solving system', symmetric=False, tol=0, m
   assert status == 0, 'solution failed to converge'
   return lhs
 
-def solve( A, b=None, constrain=None, **kwargs ):
+def solve( A, b=None, constrain=None, lconstrain=None, rconstrain=None, **kwargs ):
   'solve'
 
   assert A.ndim == 2
-  if constrain is None:
+  if constrain is None and lconstrain is None and rconstrain is None:
     assert b is not None
     return solve_system( A, b, **kwargs )
 
-  assert isinstance( constrain, NanVec )
-  if constrain.size < A.shape[1]: # be tolerant for now
-    tmp = constrain
-    constrain = NanVec( A.shape[1] )
-    constrain[:tmp.size] = tmp
-  where = numpy.isnan( constrain )
-  matrix = A[ numpy.ix_(where,where) ]
-  rhs = -numpy.dot( A[ numpy.ix_(where,~where) ], constrain[ ~where ] )
+  rcons = numpy.ones( A.shape[0], dtype=bool )
+  lcons = NanVec( A.shape[1] )
+  if constrain is not None:
+    assert isinstance( constrain, NanVec )
+    rcons[:constrain.size] = numpy.isnan( constrain )
+    lcons[:constrain.size] = constrain
+  if lconstrain is not None:
+    assert isinstance( lconstrain, NanVec )
+    lcons[:lconstrain.size] = lconstrain
+  if rconstrain is not None:
+    assert isinstance( rconstrain, numpy.ndarray ) and rconstrain.dtype == bool
+    rcons[:rconstrain.size] = rconstrain
+
+  where = numpy.isnan( lcons )
+  matrix = A[ numpy.ix_(rcons,where) ]
+  rhs = -numpy.dot( A[ numpy.ix_(rcons,~where) ], lcons[~where] )
   if b is not None:
-    rhs += b[ where ]
-  lhs = constrain.copy()
+    tmp = b[ rcons[:b.size] ]
+    rhs[:tmp.size] += tmp
+  lhs = lcons.view( numpy.ndarray )
   lhs[ where ] = solve_system( matrix, rhs, **kwargs )
   return lhs
 

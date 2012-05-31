@@ -67,22 +67,6 @@ def is_unit( obj ):
 
   return obj == 1
 
-class UsableArray( numpy.ndarray ):
-  'array wrapper that can be compared'
-
-  def __new__( cls, array ):
-    'new'
-
-    return numpy.asarray( array ).view( cls )
-
-  def __eq__( self, other ):
-    'compare'
-
-    return self is other \
-        or isinstance( other, numpy.ndarray ) \
-       and other.shape == self.shape \
-       and numpy.ndarray.__eq__( self, other ).all()
-
 def normdim( length, n ):
   'sort and make positive'
 
@@ -258,13 +242,13 @@ class ArrayFunc( Evaluable ):
       ndims += self.shape[0]
 
     if self.shape[0] == 2 and ndims == 1:
-      grad = self.localgradient( ndims=1, level=1 )
+      grad = self.localgradient( ndims=1 )
       normal = Concatenate([ grad[1,:], -grad[0,:] ])
     elif self.shape[0] == 3 and ndims == 2:
-      grad = self.localgradient( ndims=2, level=1 )
+      grad = self.localgradient( ndims=2 )
       normal = Cross( grad[:,0], grad[:,1], axis=0 )
     elif self.shape[0] == 2 and ndims == 0:
-      grad = self.localgradient( ndims=1, level=1 )
+      grad = self.localgradient( ndims=1 )
       normal = grad[:,0] * Orientation()
 #   elif grad.shape[:2] == (3,1):
 #     normal = numpy.cross( grad.next.normal.T, grad[:,0,:].T ).T
@@ -278,21 +262,21 @@ class ArrayFunc( Evaluable ):
     if ndims <= 0:
       ndims += self.shape[0]
     assert ndims == 1 and self.shape == (2,)
-    J = self.localgradient( ndims, level=1 )[:,0]
-    H = self.localgradient( ndims, level=2 )[:,0,0]
-    dx, dy = J
-    ddx, ddy = H
-    return ( dy * ddx - dx * ddy ) / J.norm2(0)**3
+    J = self.localgradient( ndims )
+    H = J.localgradient( ndims )
+    dx, dy = J[:,0]
+    ddx, ddy = H[:,0,0]
+    return ( dy * ddx - dx * ddy ) / J[:,0].norm2(0)**3
 
   def dot( self, weights ):
     'dot'
 
     return StaticDot( self, weights )
 
-  def inv( self ):
+  def inv( self, ax1, ax2 ):
     'inverse'
 
-    return Inverse( self )
+    return Inverse( self, ax1, ax2 )
 
   def swapaxes( self, n1, n2 ):
     'swap axes'
@@ -305,14 +289,14 @@ class ArrayFunc( Evaluable ):
     assert len(coords.shape) == 1
     if ndims <= 0:
       ndims += coords.shape[0]
-    J = coords.localgradient( ndims, level=1 )
+    J = coords.localgradient( ndims )
     if J.shape[0] == J.shape[1]:
-      Jinv = J.inv()
+      Jinv = J.inv(0,1)
     elif J.shape[0] == J.shape[1] + 1: # gamma gradient
-      Jinv = Stack( [[ J, coords.normal()[:,_] ]] ).inv()[:-1,:]
+      Jinv = Stack( [[ J, coords.normal()[:,_] ]] ).inv(0,1)[:-1,:]
     else:
       raise Exception, 'cannot invert jacobian'
-    return ( self.localgradient( ndims, level=1 )[...,_] * Jinv ).sum( -2 )
+    return ( self.localgradient( ndims )[...,_] * Jinv ).sum( -2 )
 
   def symgrad( self, coords, ndims=0 ):
     'gradient'
@@ -344,20 +328,6 @@ class ArrayFunc( Evaluable ):
     'determinant'
 
     return Determinant( self, ax1, ax2 )
-
-  def piola_transform( self, coords, topo ):
-    'piola transformation'
-
-    J = coords.localgradient( topo, level=1 )
-    assert len(J.shape) == 2 and J.shape[0] == J.shape[1]
-    if len(self.shape) == 2 and self.shape[1] == J.shape[0]:
-      H = coords.localgradient( topo, level=2 )
-      transformed = ( self[...,_] * Piola(J,H) ).sum(-2)
-    elif len(self.shape) == 1:
-      transformed = self / J.det(0,1)
-    else:
-      raise Exception, 'cannot piola transform this function'
-    return transformed
 
   def __mul__( self, other ):
     'multiply'
@@ -466,7 +436,7 @@ class StaticDot( ArrayFunc ):
   def __init__( self, func, array ):
     'constructor'
 
-    array = UsableArray( array )
+    array = util.UsableArray( array )
     dofaxis = func.shape[0]
     assert isinstance( dofaxis, DofAxis )
     assert int(dofaxis) == array.shape[0]
@@ -483,13 +453,19 @@ class StaticDot( ArrayFunc ):
 
     return numpy.tensordot( array[I], func, (0,0) )
 
-  def localgradient( self, ndims, level ):
+  def localgradient( self, ndims ):
     'local gradient'
 
-    return StaticDot( self.func.localgradient(ndims,level), self.array )
+    return StaticDot( self.func.localgradient(ndims), self.array )
 
   def __mul__( self, other ):
     'multiply'
+
+    if is_zero(other):
+      return ZERO
+
+    if is_unit(other):
+      return self
 
     if isinstance( other, (int,float) ):
       return StaticDot( self.func, self.array * other )
@@ -529,10 +505,10 @@ class Function( ArrayFunc ):
 
     return Vectorize( [self]*ndims )
 
-  def localgradient( self, ndims, level ):
+  def localgradient( self, ndims ):
     'local derivative'
 
-    return LocalGradient( self, ndims, level )
+    return LocalGradient( self, ndims, level=1 )
 
   def __str__( self ):
     'string representation'
@@ -580,12 +556,22 @@ class PieceWise( ArrayFunc ):
 class Inverse( ArrayFunc ):
   'inverse'
 
-  def __init__( self, func ):
+  def __init__( self, func, ax1, ax2 ):
     'constructor'
 
-    assert len(func.shape) == 2 and func.shape[0] == func.shape[1]
-    self.args = func, (0,1)
+    ax1, ax2 = normdim( len(func.shape), (ax1,ax2) )
+    assert func.shape[ax1] == func.shape[ax2]
+    self.args = func, (ax1,ax2)
     self.shape = func.shape
+
+  def localgradient( self, ndims ):
+    'local gradient'
+
+    func, (ax1,ax2) = self.args
+    G = func.localgradient( ndims )
+    H = ( self[...,_,_].swapaxes(ax1,-1) * G[...,_].swapaxes(ax2,-1) ).sum()
+    I = ( self[...,_,_].swapaxes(ax2,-1) * H[...,_].swapaxes(ax1,-1) ).sum()
+    return -I
 
   eval = staticmethod( util.inv )
 
@@ -678,10 +664,10 @@ class Concatenate( ArrayFunc ):
     self.args = (axis,) + tuple(funcs)
     self.shape = ( sum( func.shape[0] for func in funcs ), ) + funcs[0].shape[1:]
 
-  def localgradient( self, ndims, level ):
+  def localgradient( self, ndims ):
     'gradient'
 
-    funcs = [ func.localgradient(ndims,level) for func in self.args[1:] ]
+    funcs = [ func.localgradient(ndims) for func in self.args[1:] ]
     return Concatenate( funcs, axis=self.args[0] )
 
   @staticmethod
@@ -714,10 +700,10 @@ class Vectorize( ArrayFunc ):
     assert count == N
     return data
 
-  def localgradient( self, ndims, level ):
+  def localgradient( self, ndims ):
     'gradient'
 
-    return Vectorize([ func.localgradient(ndims,level) for func in self.args ])
+    return Vectorize([ func.localgradient(ndims) for func in self.args ])
 
   def trace( self, n1, n2 ):
     'trace'
@@ -834,7 +820,7 @@ class UFunc( ArrayFunc ):
 
     return f( x )
 
-  def localgradient( self, ndims, level ):
+  def localgradient( self, ndims ):
     'local gradient'
 
     raise NotImplementedError
@@ -854,8 +840,16 @@ class LocalGradient( ArrayFunc ):
     'constructor'
 
     self.ndims = ndims
+    self.func = func
+    self.level = level
     self.shape = func.shape + (ndims,) * level
     self.args = func.mapping, ndims, level
+
+  def localgradient( self, ndims ):
+    'local gradient'
+
+    assert ndims == self.ndims
+    return LocalGradient( self.func, ndims, self.level+1 )
 
   @staticmethod
   def eval( xi, fmap, ndims, level ):
@@ -868,7 +862,8 @@ class LocalGradient( ArrayFunc ):
       xi = xi.next
       T = numpy.dot( T, xi.transform )
     F = fmap[ xi.elem ].eval( xi.points, grad=level )
-    return util.transform( F, T, axis=-2 ) # TODO fix for higher orders
+    assert isinstance( T, (int,float) ) or level == 1 # TODO fix for higher orders
+    return util.transform( F, T, axis=-2 )
 
 class Norm2( ArrayFunc ):
   'integration weights'
@@ -913,6 +908,12 @@ class Determinant( ArrayFunc ):
     self.args = fun, ax1, ax2
     self.shape = tuple(shape)
 
+  def localgradient( self, ndims ):
+    'local gradient; jacobi formula'
+
+    fun, ax1, ax2 = self.args
+    return self * ( fun.inv(ax1,ax2).swapaxes(ax1,ax2)[...,_] * fun.localgradient(ndims) ).sum(ax1,ax2)
+
   eval = staticmethod( util.det )
 
   def __str__( self ):
@@ -931,11 +932,11 @@ class GetItem( ArrayFunc ):
 
   eval = staticmethod( numpy.ndarray.__getitem__ )
 
-  def localgradient( self, ndims, level ):
+  def localgradient( self, ndims ):
     'local gradient'
 
     func, item = self.args
-    return func.localgradient( ndims, level )[item+(slice(None),)*level]
+    return func.localgradient( ndims )[item+(slice(None),)]
 
   def __str__( self ):
     'string representation'
@@ -950,7 +951,7 @@ class StaticArray( ArrayFunc ):
   def __init__( self, array, shape=None ):
     'constructor'
 
-    array = UsableArray( array )
+    array = util.UsableArray( array )
     self.args = array,
     if shape is None:
       shape = array.shape
@@ -979,14 +980,17 @@ class StaticArray( ArrayFunc ):
         if it != _:
           break
         shape.append( nulaxis )
-      if not isinstance( it, int ):
+      if sh is nulaxis:
+        assert it == slice(None)
+        shape.append( sh )
+      elif not isinstance( it, int ):
         shape.append( len( numpy.arange(sh)[it] ) )
     for it in iter_item:
       assert it == _
       shape.append( nulaxis )
     return StaticArray( array[item], tuple(shape) )
 
-  def localgradient( self, ndims, level ):
+  def localgradient( self, ndims ):
     'local gradient'
 
     return ZERO
@@ -1018,19 +1022,11 @@ class Multiply( ArrayFunc ):
     func1, func2 = self.args
     return Dot( func1, func2, (ax1,)+axes )
 
-  def localgradient( self, ndims, level ):
+  def localgradient( self, ndims ):
     'gradient'
 
-    if level == 1:
-      grad = self.args[0][...,_] * self.args[1].localgradient(ndims,1) \
-           + self.args[1][...,_] * self.args[0].localgradient(ndims,1)
-    elif level == 2:
-      tmp = self.args[0].localgradient(topo,1)[...,_,:] * self.args[1].localgradient(topo,1)[...,:,_]
-      grad = self.args[0][...,_,_] * self.args[1].localgradient(ndims,2) + tmp \
-           + self.args[1][...,_,_] * self.args[0].localgradient(ndims,2) + tmp.swapaxes(-2,-1)
-    else:
-      raise Exception, 'operation not supported'
-    return grad
+    return self.args[0][...,_] * self.args[1].localgradient(ndims) \
+         + self.args[1][...,_] * self.args[0].localgradient(ndims)
 
   def __str__( self ):
     'string representation'
@@ -1066,6 +1062,13 @@ class Divide( ArrayFunc ):
         shape.append( sh1 )
     self.shape = tuple( shape )
 
+  def localgradient( self, ndims ):
+    'local gradient'
+
+    func1, func2 = self.args
+    return ( func1.localgradient(ndims)
+           - func1[...,_] * func2.localgradient(ndims) / func2[...,_] ) / func2[...,_]
+
   eval = staticmethod( numpy.ndarray.__div__ )
 
   def __str__( self ):
@@ -1079,8 +1082,14 @@ class Negate( ArrayFunc ):
   def __init__( self, func ):
     'constructor'
 
+    self.func = func
     self.shape = func.shape
     self.args = func,
+
+  def localgradient( self, ndims ):
+    'local gradient'
+
+    return -self.func.localgradient( ndims )
 
   eval = staticmethod( numpy.ndarray.__neg__ )
 
@@ -1118,6 +1127,11 @@ class Add( ArrayFunc ):
     self.shape = tuple( shape )
 
   eval = staticmethod( numpy.ndarray.__add__ )
+
+  def localgradient( self, ndims ):
+    'gradient'
+
+    return self.args[0].localgradient(ndims) + self.args[1].localgradient(ndims)
 
   def __str__( self ):
     'string representation'
@@ -1157,6 +1171,11 @@ class Subtract( ArrayFunc ):
 
     return Subtract( self.args[1], self.args[0] )
 
+  def localgradient( self, ndims ):
+    'gradient'
+
+    return self.args[0].localgradient(ndims) - self.args[1].localgradient(ndims)
+
   eval = staticmethod( numpy.ndarray.__sub__ )
 
   def __str__( self ):
@@ -1180,13 +1199,12 @@ class Dot( ArrayFunc ):
 
   eval = staticmethod( util.contract )
 
-  def localgradient( self, ndims, level ):
+  def localgradient( self, ndims ):
     'local gradient'
 
-    assert level == 1
     func1, func2, axes = self.args
-    return ( func1.localgradient(ndims,level) * func2[...,_] ).sum( *axes ) \
-         + ( func1[...,_] * func2.localgradient(ndims,level) ).sum( *axes )
+    return ( func1.localgradient(ndims) * func2[...,_] ).sum( *axes ) \
+         + ( func1[...,_] * func2.localgradient(ndims) ).sum( *axes )
 
   def __str__( self ):
     'string representation'
@@ -1208,6 +1226,12 @@ class SwapAxes( ArrayFunc ):
     shape[n2] = func.shape[n1]
     self.shape = tuple(shape)
     self.args = func, n1, n2
+
+  def localgradient( self, ndims ):
+    'local gradient'
+
+    func, n1, n2 = self.args
+    return func.localgradient( ndims ).swapaxes( n1, n2 )
 
   eval = staticmethod( numpy.ndarray.swapaxes )
 
@@ -1232,28 +1256,6 @@ class Trace( ArrayFunc ):
 
     return '%s.trace(%d,%d)' % ( self.args[0], self.args[2], self.args[3] )
 
-class Piola( ArrayFunc ):
-  'piola transformation'
-
-  def __init__( self, J, H ):
-    'constructor'
-
-    assert len(J.shape) == 2
-    assert len(H.shape) == 3
-    self.J = J
-    self.H = H
-    self.args = J, J.det(0,1)
-    self.shape = J.shape
-
-  eval = staticmethod( numpy.ndarray.__div__ )
-
-  def localgradient( self, ndims, level ):
-    'local gradient'
-
-    # TODO use ndims!
-    assert level == 1
-    return self.H - self.J[:,_,:] * ( self.H.swapaxes(0,2) * self.J.inv() ).sum(1,2)[_,:,_]
-
 # MATHEMATICAL EXPRESSIONS
 
 class UnaryFunc( ArrayFunc ):
@@ -1275,20 +1277,20 @@ class Exp( UnaryFunc ):
 
   eval = staticmethod( numpy.exp )
 
-  def localgradient( self, ndims, level ):
+  def localgradient( self, ndims ):
     'gradient'
 
-    return self * self.args[0].localgradient(ndims,level)
+    return self * self.args[0].localgradient(ndims)
 
 class Sin( UnaryFunc ):
   'sine'
 
   eval = staticmethod( numpy.sin )
 
-  def localgradient( self, ndims, level ):
+  def localgradient( self, ndims ):
     'gradient'
 
-    return Cos(self.args[0]) * self.args[0].localgradient(ndims,level)
+    return Cos(self.args[0]) * self.args[0].localgradient(ndims)
     
 class Cos( UnaryFunc ):
   'cosine'
@@ -1320,6 +1322,21 @@ class Power( ArrayFunc ):
     'string representation'
 
     return '%s**%d' % self.args
+
+class MultiAdd( ArrayFunc ):
+  'multi addition'
+
+  def __init__( self, terms ):
+    'constructor'
+
+    self.terms = terms
+    self.args, self.factors = zip( *self.terms.items() )
+
+  @property
+  def eval( self ):
+    'evaluate'
+
+
 
 #############################33
 

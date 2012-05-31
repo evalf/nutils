@@ -42,12 +42,18 @@ def pariter( iterable, nprocs=None, verbose=False ):
     if pid:
       pids.add( pid )
       continue
-    for i in range( iproc, len(iterable), nprocs ):
-      yield iterable[ i ]
-    _exit( 0 )
+    try:
+      for i in range( iproc, len(iterable), nprocs ):
+        yield iterable[ i ]
+    except Exception, e:
+      print 'an error occured:', e
+      _exit( 1 )
+    else:
+      _exit( 0 )
 
   while pids:
     pid, status = wait()
+    assert status == 0, 'subprocess #%d failed'
     pids.remove( pid )
     if verbose:
       print 'pariter: process #%d finished, %d pending' % ( pid, len(pids) )

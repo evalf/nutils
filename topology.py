@@ -33,7 +33,7 @@ class Topology( set ):
       return function.Tuple(indices)
 
     if coords:
-      J = coords.localgradient( self.ndims, level=1 )
+      J = coords.localgradient( self.ndims )
       cndims, = coords.shape
       if cndims == self.ndims:
         detJ = J.det( 0, 1 )
@@ -50,26 +50,23 @@ class Topology( set ):
 
     topo = self if not title \
       else util.progressbar( self, title='integrating %d elements' % len(self) if title is True else title )
-    lock = parallel.Lock()
+
     if isinstance( func, (list,tuple) ):
       A = [ parallel.shzeros( f.shape ) for f in func ]
-      idata = function.Tuple([ detJ, function.Tuple( function.Tuple([ f, makeindex(f.shape) ]) for f in func ) ])
-      for elem in topo:
-        xi = elem.eval(ischeme)
-        detj, alldata = idata(xi)
-        weights = detj * xi.weights
-        for Ai, (data,index) in zip( A, alldata ):
-          with lock:
-            Ai[ index ] += util.contract( data, weights )
+      d = [ function.Tuple([ util.UsableArray(Ai), f, makeindex(f.shape) ]) for (Ai,f) in zip(A,func) ]
     else:
       A = parallel.shzeros( func.shape )
-      idata = function.Tuple( [ detJ, func, makeindex(func.shape) ] )
-      for elem in parallel.pariter( topo, nprocs=nprocs ):
-        xi = elem.eval(ischeme)
-        detj, data, index = idata(xi)
-        weights = detj * xi.weights
-        with lock:
-          A[ index ] += util.contract( data, weights )
+      d = [ function.Tuple([ util.UsableArray(A), func, makeindex(func.shape) ]) ]
+
+    idata = function.Tuple([ detJ, function.Tuple(d) ])
+    lock = parallel.Lock()
+    for elem in parallel.pariter( topo, nprocs=nprocs ):
+      xi = elem.eval(ischeme)
+      detj, alldata = idata(xi)
+      weights = detj * xi.weights
+      with lock:
+        for Ai, data, index in alldata:
+          Ai[ index ] += util.contract( data, weights )
     return A
 
   def projection( self, fun, onto, **kwargs ):
@@ -112,7 +109,7 @@ class Topology( set ):
     else:
       u = util.solve( A, b, constrain )
     u[zero] = numpy.nan
-    return u
+    return u.view( util.NanVec )
 
 class StructuredTopology( Topology ):
   'structured topology'
