@@ -40,7 +40,7 @@ class Topology( set ):
       elif self.ndims == 1:
         detJ = J[:,0].norm2( 0 )
       elif cndims == 3 and self.ndims == 2:
-        detJ = Cross( J[:,0], J[:,1], axis=1 ).norm2( 0 )
+        detJ = function.Cross( J[:,0], J[:,1], axis=0 ).norm2( 0 )
       elif self.ndims == 0:
         detJ = 1.
       else:
@@ -51,6 +51,7 @@ class Topology( set ):
     topo = self if not title \
       else util.progressbar( self, title='integrating %d elements' % len(self) if title is True else title )
 
+    nprocs = 1 # TEMP disable parallel
     if isinstance( func, (list,tuple) ):
       A = [ parallel.shzeros( f.shape ) for f in func ]
       d = [ function.Tuple([ util.UsableArray(Ai), f, makeindex(f.shape) ]) for (Ai,f) in zip(A,func) ]

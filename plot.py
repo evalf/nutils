@@ -12,14 +12,30 @@ def clf():
   from matplotlib import pyplot
   pyplot.clf()
 
-def mesh( coords, topology, color=None, edgecolors='none', linewidth=1, xmargin=0, ymargin=0, ax=None, aspect='equal', cbar='horizontal', title=None, ischeme='gauss2', cscheme='contour3' ):
+def project3d( C ):
+  sqrt2 = numpy.sqrt( 2 )
+  sqrt3 = numpy.sqrt( 3 )
+  sqrt6 = numpy.sqrt( 6 )
+  R = numpy.array( [[ sqrt3, 0, -sqrt3 ], [ 1, 2, 1 ], [ sqrt2, -sqrt2, sqrt2 ]] ) / sqrt6
+  return util.transform( C, R[:,::2], axis=0 )
+
+
+def mesh( coords, topology, color=None, edgecolors='none', linewidth=1, xmargin=0, ymargin=0, ax=None, aspect='equal', cbar='horizontal', title=None, ischeme='gauss2', cscheme='contour3', clim=None ):
   'plot mesh'
 
   from matplotlib import collections, pyplot
   poly = []
   values = []
+  ndims, = coords.shape
+  assert ndims in (2,3)
   for elem in util.progressbar( topology, title='plotting mesh' ):
-    poly.append( coords( elem.eval(cscheme) ).T )
+    C = coords( elem.eval(cscheme) )
+    if ndims == 3:
+      C = project3d( C )
+      cx, cy = numpy.hstack( [ C, C[:,:1] ] )
+      if ( (cx[1:]-cx[:-1]) * (cy[1:]+cy[:-1]) ).sum() > 0:
+        continue
+    poly.append( C.T )
     if color is not None:
       xi = elem.eval(ischeme)
       values.append( util.mean( color(xi), weights=xi.weights ) )
@@ -31,8 +47,14 @@ def mesh( coords, topology, color=None, edgecolors='none', linewidth=1, xmargin=
       pyplot.colorbar( elements, orientation=cbar )
   else:
     elements = collections.PolyCollection( poly, edgecolors='black', facecolors='none', linewidth=linewidth )
+  if clim:
+    elements.set_clim( *clim )
   if ax is None:
     ax = pyplot.gca()
+  if ndims == 3:
+    ax.get_xaxis().set_visible( False )
+    ax.get_yaxis().set_visible( False )
+    pyplot.box( 'off' )
   ax.add_collection( elements )
   vertices = numpy.concatenate( poly )
   xmin, ymin = vertices.min(0)
@@ -64,6 +86,7 @@ def show( block=True ):
 
   from matplotlib import pyplot
   if block:
+    print 'close plot window to continue ...'
     pyplot.show()
   else:
     fig = pyplot.gcf()
@@ -152,14 +175,6 @@ def build_image( coords, n=3, extent=(0,1,0,1), ax=None, ticks=True, clim=None, 
   if cbar:
     colorbar( im, orientation='vertical' )
 
-def show_bg():
-  'show in bg'
-
-  fig = gcf()
-  fig.show()
-  fig.canvas.draw()
-  fig.canvas.draw()
-
 def plotmatr( A, **kwargs ):
   'Plot 10^log magnitudes of numpy matrix elements'
 
@@ -185,18 +200,17 @@ def savepdf( name, fig=None ):
     os.makedirs( dirname )
   fig.savefig( path, bbox_inches='tight', pad_inches=0 )
 
-def writevtu( coords, path, topology=None, refine=1 ):
+def writevtu( topology, coords, path ):
   'write vtu from coords function'
 
-  topo = util.progressbar( ( topology or coords.topology ).refine( refine ), title='saving %s' % path )
   import vtk
   vtkPoints = vtk.vtkPoints()
   vtkMesh = vtk.vtkUnstructuredGrid()
-  for elem in topo:
-    xi = elem( 'contour2' )
+  for elem in util.progressbar( topology, title='saving %s' % path ):
+    xi = elem.eval( 'contour2' )
     x = coords( xi )  
     cellpoints = vtk.vtkIdList()
-    for c in x.fval.T:
+    for c in x.T:
       id = vtkPoints.InsertNextPoint( *c )
       cellpoints.InsertNextId( id )
     vtkMesh.InsertNextCell( vtk.VTK_QUAD, cellpoints )  
@@ -213,32 +227,32 @@ def preview( coords, topology, cscheme='contour8' ):
   if topology.ndims == 3:
     topology = topology.boundary
 
-  from matplotlib import collections
+  from matplotlib import pyplot, collections
   figure()
   if coords.shape[0] == 2:
     mesh( coords, topology, cscheme=cscheme )
   elif coords.shape[0] == 3:
     polys = [ [] for i in range(4) ]
-    sqrt2 = numpy.sqrt( 2 )
-    sqrt3 = numpy.sqrt( 3 )
-    sqrt6 = numpy.sqrt( 6 )
-    R = numpy.array( [[ sqrt3, 0, -sqrt3 ], [ 1, 2, 1 ], [ sqrt2, -sqrt2, sqrt2 ]] ) / sqrt6
-    for elem in topo:
+    for elem in topology:
       contour = coords( elem.eval(cscheme) )
-      polys[0].append( util.transform( contour, R[:,::2], axis=0 ).T )
+      polys[0].append( project3d( contour ).T )
       polys[1].append( contour[:2].T )
       polys[2].append( contour[1:].T )
       polys[3].append( contour[::2].T )
-    for iplt, poly in enumerate( polycolls ):
+    for iplt, poly in enumerate( polys ):
       elements = collections.PolyCollection( poly, edgecolors='black', facecolors='none', linewidth=1 )
-      ax = subplot( 2, 2, iplt+1 )
+      ax = pyplot.subplot( 2, 2, iplt+1 )
       ax.add_collection( elements )
+      xmin, ymin = numpy.min( [ numpy.min(p,axis=0) for p in poly ], axis=0 )
+      xmax, ymax = numpy.max( [ numpy.max(p,axis=0) for p in poly ], axis=0 )
+      d = .02 * (xmax-xmin+ymax-ymin)
+      pyplot.axis([ xmin-d, xmax+d, ymin-d, ymax+d ])
       if iplt == 0:
         ax.get_xaxis().set_visible( False )
         ax.get_yaxis().set_visible( False )
-        box( 'off' )
+        pyplot.box( 'off' )
       else:
-        title( '?ZXY'[iplt] )
+        pyplot.title( '?ZXY'[iplt] )
   else:
     raise Exception, 'need 2D or 3D coordinates'
   show()

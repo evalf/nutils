@@ -148,6 +148,7 @@ def solve_system( matrix, rhs, title='solving system', symmetric=False, tol=0, m
 
   assert matrix.shape[:-1] == rhs.shape
   if not tol:
+    print 'solving system, condition number:', numpy.linalg.cond( matrix )
     return numpy.linalg.solve( matrix, rhs )
 
   from scipy.sparse import linalg

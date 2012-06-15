@@ -15,6 +15,8 @@ class ElemEval( object ):
   def __init__( self, elem, points, transform=1 ):
     'constructor'
 
+    assert isinstance( points, LocalPoints )
+    assert points.ndims == elem.ndims
     self.elem = elem
     self.points = points
     self.weights = points.weights
@@ -141,7 +143,7 @@ class QuadElement( Element ):
     'get integration scheme'
 
     if ndims == 0:
-      return LocalPoints( numpy.zeros([0,1]), 1. )
+      return LocalPoints( numpy.zeros([0,1]), numpy.array([1.]) )
 
     x = w = None
     if where.startswith( 'gauss' ):
@@ -230,7 +232,9 @@ class TriangularElement( Element ):
 
   @util.classcache
   def getischeme( cls, ndims, where ):
-    'get integration scheme'
+    '''get integration scheme
+    gaussian quadrature: http://www.cs.rpi.edu/~flaherje/pdf/fea6.pdf
+    '''
 
     assert ndims == 2
     if where.startswith( 'contour' ):
@@ -242,16 +246,40 @@ class TriangularElement( Element ):
     elif where == 'gauss1':
       coords = numpy.array( [[1],[1]] ) / 3.
       weights = numpy.array( [1] ) / 2.
-    elif where == 'gauss2':
+    elif where in 'gauss2':
       coords = numpy.array( [[4,1,1],[1,4,1]] ) / 6.
       weights = numpy.array( [1,1,1] ) / 6.
     elif where == 'gauss3':
       coords = numpy.array( [[5,9,3,3],[5,3,9,3]] ) / 15.
       weights = numpy.array( [-27,25,25,25] ) / 96.
     elif where == 'gauss4':
-      A = 0.091576213509771; B = 0.445948490915965; W = 0.329855230965966
+      A = 0.091576213509771; B = 0.445948490915965; W = 0.109951743655322
       coords = numpy.array( [[1-2*A,A,A,1-2*B,B,B],[A,1-2*A,A,B,1-2*B,B]] )
-      weights = numpy.array( [W,W,W,1-W,1-W,1-W] ) / 6.
+      weights = numpy.array( [W,W,W,1/3.-W,1/3.-W,1/3.-W] ) / 2.
+    elif where == 'gauss5':
+      A = 0.101286507323456; B = 0.470142064105115; V = 0.125939180544827; W = 0.132394152788506
+      coords = numpy.array( [[1./3,1-2*A,A,A,1-2*B,B,B],[1./3,A,1-2*A,A,B,1-2*B,B]] )
+      weights = numpy.array( [1-3*V-3*W,V,V,V,W,W,W] ) / 2.
+    elif where == 'gauss6':
+      A = 0.063089014491502; B = 0.249286745170910; C = 0.310352451033785; D = 0.053145049844816; V = 0.050844906370207; W = 0.116786275726379
+      VW = 1/6. - (V+W) / 2.
+      coords = numpy.array( [[1-2*A,A,A,1-2*B,B,B,1-C-D,1-C-D,C,C,D,D],[A,1-2*A,A,B,1-2*B,B,C,D,1-C-D,D,1-C-D,C]] )
+      weights = numpy.array( [V,V,V,W,W,W,VW,VW,VW,VW,VW,VW] ) / 2.
+    elif where == 'gauss7':
+      A = 0.260345966079038; B = 0.065130102902216; C = 0.312865496004875; D = 0.048690315425316; U = 0.175615257433204; V = 0.053347235608839; W = 0.077113760890257
+      coords = numpy.array( [[1./3,1-2*A,A,A,1-2*B,B,B,1-C-D,1-C-D,C,C,D,D],[1./3,A,1-2*A,A,B,1-2*B,B,C,D,1-C-D,D,1-C-D,C]] )
+      weights = numpy.array( [1-3*U-3*V-6*W,U,U,U,V,V,V,W,W,W,W,W,W] ) / 2.
+    elif where[:7] == 'uniform':
+      N = int( where[7:] )
+      NN = N**2
+      points = ( numpy.arange( N ) + 1./3 ) / N
+      C = numpy.empty( [2,N,N] )
+      C[0] = points[:,_]
+      C[1] = points[_,:]
+      coords = C.reshape( 2, NN )
+      flip = coords[0] + coords[1] > 1
+      coords[:,flip] = 1 - coords[::-1,flip]
+      weights = util.appendaxes( .5/NN, NN )
     else:
       raise Exception, 'invalid element evaluation: %r' % where
     return LocalPoints( coords, weights )

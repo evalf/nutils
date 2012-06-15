@@ -250,10 +250,11 @@ class ArrayFunc( Evaluable ):
     elif self.shape[0] == 2 and ndims == 0:
       grad = self.localgradient( ndims=1 )
       normal = grad[:,0] * Orientation()
-#   elif grad.shape[:2] == (3,1):
-#     normal = numpy.cross( grad.next.normal.T, grad[:,0,:].T ).T
+    elif self.shape[0] == 3 and ndims == 1:
+      grad = self.localgradient( ndims=1 )
+      normal = Cross( grad[:,0], self.normal(), axis=0 )
     else:
-      raise NotImplementedError, 'cannot compute normal for %dx%d jacobian' % grad.shape
+      raise NotImplementedError, 'cannot compute normal for %dx%d jacobian' % ( self.shape[0], ndims )
     return normal / normal.norm2(0)
 
   def curvature( self, ndims=-1 ):
@@ -625,23 +626,23 @@ class DofAxis( ArrayFunc ):
 
     assert isinstance( other, DofAxis )
 
-    #mapping = self.mapping.copy()
-    #for elem, idx2 in other.mapping.iteritems():
-    #  idx1 = mapping.get( elem )
-    #  mapping[ elem ] = idx2 + self.ndofs if idx1 is None \
-    #               else numpy.hstack([ idx1, idx2 + self.ndofs ])
-    #return DofAxis( self.ndofs + other.ndofs, mapping )
-
-    other_mapping = other.mapping.copy()
-    try:
-      mapping = dict( ( elem, numpy.hstack([ idx, other_mapping.pop(elem) + self.ndofs ]) )
-                        for elem, idx in self.mapping.iteritems() )
-    except KeyError, e:
-      raise Exception, 'element not in other: %s' % e.args[0]
-    if other_mapping:
-      raise Exception, 'element not in self: %s' % other_mapping.popitem()[0]
-
+    mapping = self.mapping.copy()
+    for elem, idx2 in other.mapping.iteritems():
+      idx1 = mapping.get( elem )
+      mapping[ elem ] = idx2 + self.ndofs if idx1 is None \
+                   else numpy.hstack([ idx1, idx2 + self.ndofs ])
     return DofAxis( self.ndofs + other.ndofs, mapping )
+
+#   other_mapping = other.mapping.copy()
+#   try:
+#     mapping = dict( ( elem, numpy.hstack([ idx, other_mapping.pop(elem) + self.ndofs ]) )
+#                       for elem, idx in self.mapping.iteritems() )
+#   except KeyError, e:
+#     raise Exception, 'element not in other: %s' % e.args[0]
+#   if other_mapping:
+#     raise Exception, 'element not in self: %s' % other_mapping.popitem()[0]
+
+#   return DofAxis( self.ndofs + other.ndofs, mapping )
 
   __radd__ = __add__
 
@@ -890,7 +891,7 @@ class Cross( ArrayFunc ):
 
     assert f1.shape == f2.shape
     self.shape = f1.shape
-    self.args = fun1, fun2, -1, -1, -1, axis
+    self.args = f1, f2, -1, -1, -1, axis
 
   eval = staticmethod( numpy.cross )
 
