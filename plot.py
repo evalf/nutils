@@ -1,10 +1,32 @@
 from . import topology, util, numpy
 
-def figure():
-  'new figure'
+import matplotlib
+matplotlib.use( 'Agg' )
+
+import os, tempfile
+
+class _fig( object ):
+  path = tempfile.mkdtemp()
+  count = 0
+
+def show():
+  'write to file and show in eog'
 
   from matplotlib import pyplot
-  return pyplot.figure()
+  _fig.count += 1
+  path = '%s/%04d.png' % ( _fig.path, _fig.count )
+  print 'saving to', path
+  pyplot.savefig( path )
+  if os.environ.get( 'DISPLAY' ) and os.fork() == 0:
+    os.setsid()
+    ostream = open( '/dev/null', 'w' )
+    istream = open( '/dev/null', 'r' )
+    os.dup2( ostream.fileno(), 0 )
+    os.dup2( ostream.fileno(), 1 )
+    os.dup2( istream.fileno(), 2 )
+    if os.fork() == 0:
+      os.execlp( 'eog', 'eog', '-w', path )
+    os._exit( 1 ) # failed
 
 def clf():
   'clear figure'
@@ -80,19 +102,6 @@ def quiver( coords, topology, quiver, sample='uniform3' ):
     xi = elem.eval(sample)
     XYUV.append( numpy.concatenate( [ coords(xi), quiver(xi) ], axis=0 ) )
   pyplot.quiver( *numpy.concatenate( XYUV, 1 ) )
-
-def show( block=True ):
-  'show'
-
-  from matplotlib import pyplot
-  if block:
-    print 'close plot window to continue ...'
-    pyplot.show()
-  else:
-    fig = pyplot.gcf()
-    fig.show()
-    fig.canvas.draw()
-    fig.canvas.draw()
 
 # OLD
 
@@ -228,7 +237,6 @@ def preview( coords, topology, cscheme='contour8' ):
     topology = topology.boundary
 
   from matplotlib import pyplot, collections
-  figure()
   if coords.shape[0] == 2:
     mesh( coords, topology, cscheme=cscheme )
   elif coords.shape[0] == 3:
