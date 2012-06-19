@@ -223,6 +223,8 @@ class TriangularElement( Element ):
   def refined( self, n ):
     'refine'
 
+    if n == 1:
+      return self
     return [ TriangularElement( parent=(self,transform) ) for transform in self.refinedtransform( n ) ]
 
   @util.classcache
