@@ -213,16 +213,11 @@ class TriangularElement( Element ):
   def refinedtransform( cls, n ):
     'refined transform'
 
-    offset = numpy.array( [.5,.5] )
-    ROT = numpy.array( [[-.5,.5],[-.5,-.5]] )
-    ROT = ROT, ROT.T
-    if n == 2:
-      transforms = [ AffineTransformation( offset=offset, transform=rot ) for rot in ROT ]
-    else:
-      assert n > 2
-      transforms = [ AffineTransformation( offset = transform.offset + numpy.dot( transform.transform, offset ),
-                                           transform = numpy.dot( transform.transform, rot ) )
-                       for transform in cls.refinedtransform( n-1 ) for rot in ROT ]
+    transforms = []
+    scale = 1./n
+    for i in range( n ):
+      transforms.extend( AffineTransformation( offset=numpy.array( [i,j], dtype=float ) / n, transform=scale ) for j in range(0,n-i) )
+      transforms.extend( AffineTransformation( offset=numpy.array( [n-j,n-i], dtype=float ) / n, transform=-scale ) for j in range(n-i,n) )
     return transforms
 
   def refined( self, n ):
