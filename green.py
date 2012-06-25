@@ -57,7 +57,7 @@ class CacheFunc3D( object ):
 
     for elem, y, funcs in self.data:
       if elem is myelem:
-        y, funcs = self.get( elem.eval('uniform123') )
+        y, funcs = self.get( elem.eval('uniform345') )
       yield elem, y, funcs
 
   def get( self, xi ):

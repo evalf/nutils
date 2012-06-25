@@ -11,7 +11,7 @@ class Topology( set ):
     assert self.ndims == other.ndims
     return UnstructuredTopology( set(self) | set(other), ndims=self.ndims )
 
-  def integrate( self, func, coords=None, ischeme='gauss2', title=True, nprocs=None ):
+  def integrate( self, func, coords=None, ischeme='gauss2', title=True, nprocs=1 ):
     'integrate'
 
     def makeindex( shape ):
@@ -49,9 +49,8 @@ class Topology( set ):
       detJ = 1.
 
     topo = self if not title \
-      else util.progressbar( self, title='integrating %d elements' % len(self) if title is True else title )
+      else util.progressbar( self, title='integrating %d elements (nprocs=%d)' % ( len(self), nprocs ) if title is True else title )
 
-    nprocs = 1 # TEMP disable parallel
     if isinstance( func, (list,tuple) ):
       A = [ parallel.shzeros( f.shape ) for f in func ]
       d = [ function.Tuple([ util.UsableArray(Ai), f, makeindex(f.shape) ]) for (Ai,f) in zip(A,func) ]
