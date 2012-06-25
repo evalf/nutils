@@ -209,21 +209,31 @@ def savepdf( name, fig=None ):
     os.makedirs( dirname )
   fig.savefig( path, bbox_inches='tight', pad_inches=0 )
 
-def writevtu( topology, coords, path ):
+def writevtu( path, topology, coords, **arrays ):
   'write vtu from coords function'
 
   import vtk
   vtkPoints = vtk.vtkPoints()
   vtkMesh = vtk.vtkUnstructuredGrid()
+  vtkarrays = []
+  for key, func in arrays.iteritems():
+    array = vtk.vtkFloatArray()
+    array.SetName( key )
+    vtkarrays.append(( array, func ))
   for elem in util.progressbar( topology, title='saving %s' % path ):
     xi = elem.eval( 'contour2' )
     x = coords( xi )  
     cellpoints = vtk.vtkIdList()
     for c in x.T:
-      id = vtkPoints.InsertNextPoint( *c )
-      cellpoints.InsertNextId( id )
+      pid = vtkPoints.InsertNextPoint( *c )
+      cellpoints.InsertNextId( pid )
     vtkMesh.InsertNextCell( vtk.VTK_QUAD, cellpoints )  
+    for array, func in vtkarrays:
+      for v in func( xi ):
+        array.InsertNextValue( v )
   vtkMesh.SetPoints( vtkPoints )
+  for array, func in vtkarrays:
+    vtkMesh.GetPointData().AddArray( array )
   vtkWriter = vtk.vtkXMLUnstructuredGridWriter()
   vtkWriter.SetInput( vtkMesh )
   vtkWriter.SetFileName( path )
