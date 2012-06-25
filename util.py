@@ -32,8 +32,6 @@ class Cache( object ):
       print 'failed:', e
       raise
 
-    os.rename( self.path, self.newpath )
-    print 'RENAMED'
     return arrays if len( arrays ) > 1 else arrays[0]
 
   @staticmethod
