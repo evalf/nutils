@@ -15,7 +15,7 @@ class Zero( int ):
 
     return self
 
-  def sum( self, axes ):
+  def sum( self, *axes ):
     'sum'
 
     return self

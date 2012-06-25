@@ -1,7 +1,53 @@
-import sys, time, numpy
+import sys, os, time, numpy, cPickle
 from numpyextra import *
 
 LINEWIDTH = 70
+
+class Cache( object ):
+  'data cacher'
+
+  fmt = 'cache/%s.npz'
+
+  def __init__( self, *args ):
+    'constructor'
+
+    self.myhash = '%+09x' % hash( args )
+    self.path = self.fmt % self.myhash
+
+  def load( self ):
+    'load or create snapshot'
+
+    print 'loading data:',
+    try:
+      npzobj = numpy.load( self.path, mmap_mode='c' )
+      arrays = [ val for (key,val) in sorted( npzobj.items() ) ]
+      print self.format_arrays( arrays )
+    except IOError, e:
+      print 'failed: not in cache.'
+      raise
+    except Exception, e:
+      print 'failed:', e
+      raise
+
+    return arrays if len( arrays ) > 1 else arrays[0]
+
+  @staticmethod
+  def format_arrays( arrays ):
+    'format as string'
+
+    return ', '.join( '%s(%s)' % ( arr.dtype, 'x'.join( str(n) for n in arr.shape ) ) for arr in arrays )
+
+  def chain( self, *args ):
+
+    return Cache( self.myhash, *args )
+
+  def save( self, *arrays ):
+
+    print 'saving data:', self.format_arrays( arrays )
+    dirname = os.path.dirname( self.path )
+    if not os.path.isdir( dirname ):
+      os.makedirs( dirname )
+    numpy.savez( self.path, *arrays )
 
 class UsableArray( numpy.ndarray ):
   'array wrapper that can be compared'
@@ -171,11 +217,9 @@ def solve( A, b=None, constrain=None, lconstrain=None, rconstrain=None, **kwargs
   rcons = numpy.ones( A.shape[0], dtype=bool )
   lcons = NanVec( A.shape[1] )
   if constrain is not None:
-    assert isinstance( constrain, NanVec )
     rcons[:constrain.size] = numpy.isnan( constrain )
     lcons[:constrain.size] = constrain
   if lconstrain is not None:
-    assert isinstance( lconstrain, NanVec )
     lcons[:lconstrain.size] = lconstrain
   if rconstrain is not None:
     assert isinstance( rconstrain, numpy.ndarray ) and rconstrain.dtype == bool
