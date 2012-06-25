@@ -1,4 +1,4 @@
-import sys, os, time, numpy, cPickle
+import sys, os, time, numpy, cPickle, hashlib
 from numpyextra import *
 
 LINEWIDTH = 70
@@ -11,7 +11,10 @@ class Cache( object ):
   def __init__( self, *args ):
     'constructor'
 
-    self.myhash = '%+09x' % hash( args )
+    m = hashlib.md5()
+    for arg in args:
+      m.update( '%s\0' % arg )
+    self.myhash = m.hexdigest()
     self.path = self.fmt % self.myhash
 
   def load( self ):
@@ -29,6 +32,8 @@ class Cache( object ):
       print 'failed:', e
       raise
 
+    os.rename( self.path, self.newpath )
+    print 'RENAMED'
     return arrays if len( arrays ) > 1 else arrays[0]
 
   @staticmethod
