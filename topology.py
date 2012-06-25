@@ -11,7 +11,7 @@ class Topology( set ):
     assert self.ndims == other.ndims
     return UnstructuredTopology( set(self) | set(other), ndims=self.ndims )
 
-  def integrate( self, func, coords=None, ischeme='gauss2', title=True, nprocs=1 ):
+  def integrate( self, func, coords=None, ischeme='gauss2', title=True ):
     'integrate'
 
     def makeindex( shape ):
@@ -49,7 +49,7 @@ class Topology( set ):
       detJ = 1.
 
     topo = self if not title \
-      else util.progressbar( self, title='integrating %d elements (nprocs=%d)' % ( len(self), nprocs ) if title is True else title )
+      else util.progressbar( self, title='integrating %d elements (nprocs=%d)' % ( len(self), parallel.nprocs ) if title is True else title )
 
     if isinstance( func, (list,tuple) ):
       A = [ parallel.shzeros( f.shape ) for f in func ]
@@ -60,7 +60,7 @@ class Topology( set ):
 
     idata = function.Tuple([ detJ, function.Tuple(d) ])
     lock = parallel.Lock()
-    for elem in parallel.pariter( topo, nprocs=nprocs ):
+    for elem in parallel.pariter( topo ):
       xi = elem.eval(ischeme)
       detj, alldata = idata(xi)
       weights = detj * xi.weights

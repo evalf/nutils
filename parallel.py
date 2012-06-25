@@ -1,5 +1,7 @@
 from multiprocessing import Lock, cpu_count
 
+nprocs = cpu_count()
+
 def shzeros( shape, dtype=float ):
   'create zero-initialized array in shared memory'
 
@@ -17,11 +19,8 @@ def shzeros( shape, dtype=float ):
   buf = RawArray( typecode[dtype], size )
   return frombuffer( buf, dtype ).reshape( shape )
 
-def pariter( iterable, nprocs=None, verbose=False ):
+def pariter( iterable, verbose=False ):
   'fork and iterate, handing equal-sized chunks to all processors'
-
-  if nprocs is None:
-    nprocs = cpu_count()
 
   if nprocs == 1:
     if verbose:

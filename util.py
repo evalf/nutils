@@ -418,6 +418,7 @@ def run( *functions ):
     print 'Usage: %s [OPTIONS]' % sys.argv[0]
     print
     print '  -h    --help         Display this help.'
+    print '  -p P  --parallel=P   Select number of processors.'
     print '  -f F  --function=F   Select function.'
     for i, func in enumerate( functions ):
       print
@@ -428,21 +429,20 @@ def run( *functions ):
         print >> sys.stderr, '  %-20s Default: %s' % ( tmp, default )
     return
 
-  if '-f' in args:
-    index = args.index( '-f' )
-    if index == len(args)-1:
-      print 'error: -f requires an argument'
-      return
-    args.pop( index )
-    funcname = args.pop( index )
+  for index, arg in enumerate( args ):
+    if arg == '-p' or arg.startswith( '--parallel=' ):
+      args.pop( index )
+      import parallel
+      parallel.nprocs = int( args.pop( index ) if arg == '-p' else arg[11:] )
+      break
+
+  for index, arg in enumerate( args ):
+    if arg == '-f' or arg.startswith( '--function=' ):
+      args.pop( index )
+      funcname = args.pop( index ) if arg == '-f' else arg[11:]
+      break
   else:
-    for index, arg in enumerate( args ):
-      if arg.startswith( '--function=' ):
-        funcname = arg[11:]
-        args.pop( index )
-        break
-    else:
-      funcname = functions[0].func_name
+    funcname = functions[0].func_name
 
   for func in functions:
     if func.func_name == funcname:
