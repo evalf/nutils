@@ -5,28 +5,16 @@ matplotlib.use( 'Agg' )
 
 import os, tempfile
 
-class _fig( object ):
-  path = tempfile.mkdtemp()
-  count = 0
-
 def show():
   'write to file and show in eog'
 
   from matplotlib import pyplot
-  _fig.count += 1
-  path = '%s/%04d.png' % ( _fig.path, _fig.count )
-  print 'saving to', path
-  pyplot.savefig( path )
-  if os.environ.get( 'DISPLAY' ) and os.fork() == 0:
-    os.setsid()
-    ostream = open( '/dev/null', 'w' )
-    istream = open( '/dev/null', 'r' )
-    os.dup2( ostream.fileno(), 0 )
-    os.dup2( ostream.fileno(), 1 )
-    os.dup2( istream.fileno(), 2 )
-    if os.fork() == 0:
-      os.execlp( 'eog', 'eog', '-w', path )
-    os._exit( 1 ) # failed
+  fileobj = tempfile.NamedTemporaryFile( dir=util.DUMPDIR, suffix='.png', delete=False )
+  path = fileobj.name
+  name = os.path.basename( path )
+  print 'saving to', name
+  pyplot.savefig( fileobj )
+  os.chmod( path, 0644 )
 
 def clf():
   'clear figure'
@@ -200,7 +188,6 @@ def plotmatr( A, **kwargs ):
 def savepdf( name, fig=None ):
   'save figure in plots dir'
 
-  import os
   if fig is None:
     fig = gcf()
   path = os.path.join( 'plots', name + '.pdf' )
@@ -221,13 +208,15 @@ def writevtu( path, topology, coords, **arrays ):
     array.SetName( key )
     vtkarrays.append(( array, func ))
   for elem in util.progressbar( topology, title='saving %s' % path ):
-    xi = elem.eval( 'contour2' )
+    xi = elem.eval( 'contour0' )
     x = coords( xi )  
-    cellpoints = vtk.vtkIdList()
-    for c in x.T:
-      pid = vtkPoints.InsertNextPoint( *c )
-      cellpoints.InsertNextId( pid )
-    vtkMesh.InsertNextCell( vtk.VTK_QUAD, cellpoints )  
+    id0, id1, id2 = [ vtkPoints.InsertNextPoint( *c ) for c in x.T ]
+    triangle = vtk.vtkTriangle()
+    cellpoints = triangle.GetPointIds()
+    cellpoints.SetId( 0, id0 )
+    cellpoints.SetId( 1, id1 )
+    cellpoints.SetId( 2, id2 )
+    vtkMesh.InsertNextCell( triangle.GetCellType(), cellpoints )
     for array, func in vtkarrays:
       for v in func( xi ):
         array.InsertNextValue( v )

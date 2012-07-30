@@ -2,6 +2,8 @@ import sys, os, time, numpy, cPickle, hashlib
 from numpyextra import *
 
 LINEWIDTH = 50
+BASEPATH = os.path.expanduser( '~/public_html/' )
+DUMPDIR = BASEPATH + 'latest'
 
 class Cache( object ):
   'data cacher'
@@ -412,6 +414,43 @@ def getkwargdefaults( func ):
   N = func.func_code.co_argcount - len( defaults )
   return zip( func.func_code.co_varnames[N:], defaults )
 
+class StdOut( object ):
+  'stdout wrapper'
+
+  def __init__( self, stdout, html ):
+    'constructor'
+
+    self.html = html
+    self.html.write( '<html><body><pre>' )
+    self.html.flush()
+    self.stdout = stdout
+    self.linebuf = ''
+
+  def write( self, s ):
+    'write string'
+
+    self.stdout.write( s )
+
+    for line in s.splitlines( True ):
+      self.html.write( line )
+      if not line.endswith( '\n' ):
+        self.linebuf = line
+        continue
+      if self.linebuf:
+        line = self.linebuf + line
+        self.linebuf = ''
+      if '.png' in line:
+        for word in line.split():
+          if word.endswith( '.png' ):
+            self.html.write( '\n<a href="%s"><img src="%s" width="435pt" border="1px"/></a>\n\n' % ( word, word ) )
+    self.html.flush()
+
+  def flush( self ):
+    'flush'
+
+    self.stdout.flush()
+    self.html.flush()
+
 def run( *functions ):
   'call function specified on command line'
 
@@ -473,6 +512,16 @@ def run( *functions ):
     kwargs[ kwarg ] = value
 
   title = '%s.%s' % ( sys.argv[0].split('/')[-1].lower(), funcname.lower() )
+
+  path = time.strftime( '%Y-%m-%d/%H-%M-%S-%%s/' ) % title
+  os.makedirs( BASEPATH + path )
+  if os.path.islink( DUMPDIR ):
+    os.remove( DUMPDIR )
+  os.symlink( path, DUMPDIR )
+  output = open( BASEPATH + path + 'index.html', 'w' )
+
+  sys.stdout = StdOut( sys.stdout, output )
+
   print title, ( ' ' + time.ctime() ).rjust( LINEWIDTH-len(title), '=' ), '|>|'
   for arg, val in kwargs.items():
     print '.'.rjust( len(title) ), '%s = %s' % ( arg.lower(), val )
@@ -481,5 +530,7 @@ def run( *functions ):
     func( **kwargs )
   finally:
     print ( ' ' + time.ctime() ).rjust( LINEWIDTH+1, '=' ), '|<|'
+
+  output.write( '</body></html>' )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
