@@ -1,7 +1,7 @@
 import sys, os, time, numpy, cPickle, hashlib
 from numpyextra import *
 
-LINEWIDTH = 70
+LINEWIDTH = 50
 
 class Cache( object ):
   'data cacher'

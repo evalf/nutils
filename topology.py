@@ -254,6 +254,51 @@ class StructuredTopology( Topology ):
 
     return '%s(%s)' % ( self.__class__.__name__, 'x'.join(map(str,self.structure.shape)) )
 
+  def manifold( self, xi0, xi1 ):
+    'create lower dimensional manifold in parent'
+
+    assert self.ndims == 2
+    scale = numpy.array( self.structure.shape ) + 1
+    i0, j0 = numpy.asarray(xi0) * scale
+    i1, j1 = numpy.asarray(xi1) * scale
+    # j = A + B * i
+    # j0 = A + B * i0
+    # j1 = A + B * i1
+    # B = (j1-j0) / float(i1-i0)
+    # A = (j0*i1-j1*i0) / float(i1-i0)
+    Ia = numpy.arange( int(i0), int(i1) ) + 1
+    Ja = ( j0*i1 - j1*i0 + (j1-j0) * Ia ) / float(i1-i0)
+    # i = C + D * j
+    # i0 = C + D * j0
+    # i1 = C + D * j1
+    # D = (i1-i0) / float(j1-j0)
+    # C = (i0*j1-i1*j0) / float(j1-j0)
+    Jb = numpy.arange( int(j0), int(j1) ) + 1
+    Ib = ( i0*j1 - i1*j0 + (i1-i0) * Jb ) / float(j1-j0)
+
+    points = numpy.array( sorted( [(i0,j0),(i1,j1)] + zip(Ia,Ja) + zip(Ib,Jb) ) )
+    keep = numpy.hstack( [ ( numpy.diff( points, axis=0 )**2 ).sum( axis=1 ) > 1e-9, [True] ] )
+    points = points[keep]
+
+    offsets = points - points.astype(int)
+    transforms = numpy.diff( points, axis=0 )
+    n, m = ( points[:-1] + .5 * transforms ).astype( int ).T
+    pelems = self.structure[ n, m ]
+
+    structure = []
+    for pelem, offset, transform in zip( pelems, offsets, transforms ):
+      trans = element.AffineTransformation( offset=offset, transform=transform[:,_] )
+      elem = element.QuadElement( ndims=1, parent=(pelem,trans) )
+      structure.append( elem )
+
+    topo = StructuredTopology( numpy.asarray(structure) )
+
+    weights = numpy.sqrt( ( ( points - points[0] )**2 ).sum( axis=1 ) / ( (i1-i0)**2 + (j1-j0)**2 ) )
+    coords = topo.splinefunc( degree=2 ).dot( weights )
+
+    return topo, coords
+    
+
 class UnstructuredTopology( Topology ):
   'externally defined topology'
 

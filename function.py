@@ -785,6 +785,7 @@ class Stack( ArrayFunc ):
 
     shape = []
     partitions = []
+    block = blocks[0] # in case all indices are newaxis
     for idim, index in enumerate( indices ):
       n1 = 0
       slices = []
@@ -1259,21 +1260,24 @@ class Trace( ArrayFunc ):
 
 # MATHEMATICAL EXPRESSIONS
 
-class UnaryFunc( ArrayFunc ):
+class BaseFunc( ArrayFunc ):
   'unary base class'
 
-  def __init__( self, func ):
+  def __init__( self, *funcs ):
     'constructor'
 
-    self.args = func,
-    self.shape = func.shape
+    assert isinstance( funcs[0], ArrayFunc )
+    self.shape = funcs[0].shape
+    for f in funcs[1:]:
+      assert not isinstance( f, ArrayFunc ) or f.shape == self.shape
+    self.args = funcs
 
   def __str__( self ):
     'string representation'
 
-    return '%s(%s)' % ( self.__class__.__name__, self.args[0] )
+    return '%s(%s)' % ( self.__class__.__name__, ','.join( str(f) for f in self.args ) )
 
-class Exp( UnaryFunc ):
+class Exp( BaseFunc ):
   'exponent'
 
   eval = staticmethod( numpy.exp )
@@ -1283,7 +1287,7 @@ class Exp( UnaryFunc ):
 
     return self * self.args[0].localgradient(ndims)
 
-class Sin( UnaryFunc ):
+class Sin( BaseFunc ):
   'sine'
 
   eval = staticmethod( numpy.sin )
@@ -1293,7 +1297,7 @@ class Sin( UnaryFunc ):
 
     return Cos(self.args[0]) * self.args[0].localgradient(ndims)
     
-class Cos( UnaryFunc ):
+class Cos( BaseFunc ):
   'cosine'
 
   eval = staticmethod( numpy.cos )
@@ -1303,39 +1307,33 @@ class Cos( UnaryFunc ):
 
     return -Sin(self.args[0]) * self.args[0].grad(coords,topo)
 
-class Log( UnaryFunc ):
+class Log( BaseFunc ):
   'cosine'
 
   eval = staticmethod( numpy.log )
 
-class Power( ArrayFunc ):
+class Arctan2( BaseFunc ):
+  'arctan2'
+
+  eval = staticmethod( numpy.arctan2 )
+
+class Power( BaseFunc ):
   'power'
-
-  def __init__( self, func, n ):
-    'constructor'
-
-    self.args = func, n
-    self.shape = func.shape
 
   eval = staticmethod( numpy.ndarray.__pow__ )
 
-  def __str__( self ):
-    'string representation'
-
-    return '%s**%d' % self.args
-
-class MultiAdd( ArrayFunc ):
-  'multi addition'
-
-  def __init__( self, terms ):
-    'constructor'
-
-    self.terms = terms
-    self.args, self.factors = zip( *self.terms.items() )
-
-  @property
-  def eval( self ):
-    'evaluate'
+#class MultiAdd( ArrayFunc ):
+#  'multi addition'
+#
+#  def __init__( self, terms ):
+#    'constructor'
+#
+#    self.terms = terms
+#    self.args, self.factors = zip( *self.terms.items() )
+#
+#  @property
+#  def eval( self ):
+#    'evaluate'
 
 
 
