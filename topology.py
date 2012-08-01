@@ -11,7 +11,7 @@ class Topology( set ):
     assert self.ndims == other.ndims
     return UnstructuredTopology( set(self) | set(other), ndims=self.ndims )
 
-  def integrate( self, func, coords=None, ischeme='gauss2', title=True ):
+  def integrate( self, func, ischeme, coords=None, title=True ):
     'integrate'
 
     def makeindex( shape ):
@@ -51,22 +51,62 @@ class Topology( set ):
     topo = self if not title \
       else util.progressbar( self, title='integrating %d elements (nprocs=%d)' % ( len(self), parallel.nprocs ) if title is True else title )
 
-    if isinstance( func, (list,tuple) ):
-      A = [ parallel.shzeros( f.shape ) for f in func ]
-      d = [ function.Tuple([ util.UsableArray(Ai), f, makeindex(f.shape) ]) for (Ai,f) in zip(A,func) ]
-    else:
-      A = parallel.shzeros( func.shape )
-      d = [ function.Tuple([ util.UsableArray(A), func, makeindex(func.shape) ]) ]
+    if isinstance( func, tuple ) or isinstance( func, function.ArrayFunc ) and len( func.shape ) == 2:
+      # quickly implemented single array for now, needs to be extended for
+      # multiple inputs. requires thinking of separating types for separate
+      # arguments.
 
-    idata = function.Tuple([ detJ, function.Tuple(d) ])
-    lock = parallel.Lock()
-    for elem in parallel.pariter( topo ):
-      xi = elem.eval(ischeme)
-      detj, alldata = idata(xi)
-      weights = detj * xi.weights
-      with lock:
-        for Ai, data, index in alldata:
-          Ai[ index ] += util.contract( data, weights )
+      import scipy.sparse
+
+      if isinstance( func, tuple ):
+        d = function.Tuple( [ function.Tuple( [ f, makeindex(f.shape) ] ) for f in func ] )
+        shape = map( int, func[0].shape )
+        for f in func[1:]:
+          assert shape == map( int, f.shape )
+      else:
+        assert isinstance( func, function.ArrayFunc )
+        d = function.Tuple( [ function.Tuple( [ func, makeindex(func.shape) ] ) ] )
+        shape = func.shape
+
+      idata = function.Tuple([ d, detJ ])
+      indices = []
+      values = []
+      for elem in topo:
+        xi = elem.eval(ischeme)
+        datas, detj = idata(xi)
+        weights = detj * xi.weights
+        for data, index in datas:
+          evalues = util.contract( data, weights )
+          ndims = evalues.ndim
+          eindices = numpy.empty( (ndims,) + evalues.shape )
+          for i, n in enumerate( index ):
+            eindices[i] = n
+          values.append( evalues.ravel() )
+          indices.append( eindices.reshape(ndims,-1) )
+
+      v = numpy.hstack( values )
+      ij = numpy.hstack( indices )
+      A = scipy.sparse.csr_matrix( (v,ij), shape=shape )
+
+    else:
+
+      if isinstance( func, list ):
+        A = [ parallel.shzeros( f.shape ) for f in func ]
+        d = [ function.Tuple([ util.UsableArray(Ai), f, makeindex(f.shape) ]) for (Ai,f) in zip(A,func) ]
+      else:
+        A = parallel.shzeros( func.shape )
+        d = [ function.Tuple([ util.UsableArray(A), func, makeindex(func.shape) ]) ]
+
+      idata = function.Tuple([ detJ, function.Tuple(d) ])
+      lock = parallel.Lock()
+      for elem in parallel.pariter( topo ):
+        xi = elem.eval(ischeme)
+        detj, alldata = idata(xi)
+        weights = detj * xi.weights
+        with lock:
+          for Ai, data, index in alldata:
+            Ai[ index ] += util.contract( data, weights )
+
     return A
 
   def projection( self, fun, onto, **kwargs ):

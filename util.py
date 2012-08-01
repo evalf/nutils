@@ -70,6 +70,13 @@ class UsableArray( numpy.ndarray ):
        and other.shape == self.shape \
        and numpy.ndarray.__eq__( self, other ).all()
 
+def clone( obj ):
+  'clone object'
+
+  clone = object.__new__( obj.__class__ )
+  clone.__dict__.update( obj.__dict__ )
+  return clone
+
 def iterate():
   'iterate forever'
 
@@ -184,14 +191,16 @@ class NanVec( numpy.ndarray ):
     return self.copy().__ior__( other )
 
 class Iter_CallBack:
-  def __init__( self, tol, title ):
+  def __init__( self, tol, title, matrix, rhs ):
     self.t = time.time()
     self.progressbar = progressbar( n=numpy.log(tol), title=title )
+    self.matrix = matrix
+    self.rhs = rhs
   def __call__( self, arg ):
     if time.time() > self.t:
       self.t = time.time() + .1
       if isinstance( arg, numpy.ndarray ):
-        arg = numpy.linalg.norm( b - A * arg ) # for cg
+        arg = numpy.linalg.norm( self.rhs - self.matrix * arg ) # for cg
       self.progressbar.update( numpy.log(arg) )
 
 def solve_system( matrix, rhs, title='solving system', symmetric=False, tol=0, maxiter=99999 ):
@@ -199,13 +208,14 @@ def solve_system( matrix, rhs, title='solving system', symmetric=False, tol=0, m
 
   assert matrix.shape[:-1] == rhs.shape
   if not tol:
-    print 'solving system, condition number:', numpy.linalg.cond( matrix )
+    p = progressbar( title=title, n=1 )
+    #print 'solving system:'#, condition number:', numpy.linalg.cond( matrix )
     return numpy.linalg.solve( matrix, rhs )
 
   from scipy.sparse import linalg
   solver = linalg.cg if symmetric else linalg.gmres
   lhs, status = solver( matrix, rhs,
-                        callback=title and Iter_CallBack(tol,'%s [%s:%d]' % (title,symmetric and 'CG' or 'GMRES', matrix.shape[0]) ),
+                        callback=title and Iter_CallBack(tol,'%s [%s:%d]' % (title,symmetric and 'CG' or 'GMRES', matrix.shape[0]), matrix, rhs ),
                         tol=tol,
                         maxiter=maxiter )
   assert status == 0, 'solution failed to converge'
@@ -220,7 +230,8 @@ def solve( A, b=None, constrain=None, lconstrain=None, rconstrain=None, **kwargs
     return solve_system( A, b, **kwargs )
 
   rcons = numpy.ones( A.shape[0], dtype=bool )
-  lcons = NanVec( A.shape[1] )
+  lcons = numpy.empty( A.shape[1] )
+  lcons[:] = numpy.nan
   if constrain is not None:
     rcons[:constrain.size] = numpy.isnan( constrain )
     lcons[:constrain.size] = constrain
@@ -231,14 +242,27 @@ def solve( A, b=None, constrain=None, lconstrain=None, rconstrain=None, **kwargs
     rcons[:rconstrain.size] = rconstrain
 
   where = numpy.isnan( lcons )
-  matrix = A[ numpy.ix_(rcons,where) ]
-  rhs = -numpy.dot( A[ numpy.ix_(rcons,~where) ], lcons[~where] )
+  if isinstance( A, numpy.ndarray ):
+    matrix = A[ numpy.ix_(rcons,where) ]
+    rhs = -numpy.dot( A[ numpy.ix_(rcons,~where) ], lcons[~where] )
+  else:
+    from scipy.sparse import linalg
+    tmpvec = numpy.zeros( A.shape[1] )
+    def matvec( v ):
+      tmpvec[where] = v
+      return ( A * tmpvec )[rcons]
+    shape = numpy.sum(rcons), numpy.sum(where)
+    matrix = linalg.LinearOperator( matvec=matvec, shape=shape, dtype=float )
+    lcons[where] = 0
+    rhs = -( A * lcons )[rcons]
+
+  assert matrix.shape[0] == matrix.shape[1]
   if b is not None:
     tmp = b[ rcons[:b.size] ]
     rhs[:tmp.size] += tmp
-  lhs = lcons.view( numpy.ndarray )
-  lhs[ where ] = solve_system( matrix, rhs, **kwargs )
-  return lhs
+
+  lcons[ where ] = solve_system( matrix, rhs, **kwargs )
+  return lcons
 
 def transform( arr, trans, axis ):
   'transform one axis by matrix multiplication'
@@ -338,6 +362,11 @@ def mean( A, weights=None, axis=-1 ):
 
   return A.mean( axis ) if weights is None else transform( A, weights / weights.sum(), axis )
 
+def fail( msg, *args ):
+  'generate exception'
+
+  raise Exception, msg % args
+
 def norm2( A, axis=-1 ):
   'L2 norm over specified axis'
 
@@ -417,11 +446,31 @@ def getkwargdefaults( func ):
 class StdOut( object ):
   'stdout wrapper'
 
+  HEAD = '''\
+<html>
+<head>
+<script type="text/JavaScript">
+<!--
+function timedRefresh(timeoutPeriod) {
+  setTimeout("location.reload(true);",timeoutPeriod);
+}
+</script>
+</head>
+<body onload="JavaScript:timedRefresh(1000);">
+<pre>
+'''
+
+  TAIL = '''\
+</pre>
+</body>
+</html>
+'''
+
   def __init__( self, stdout, html ):
     'constructor'
 
     self.html = html
-    self.html.write( '<html><body><pre>' )
+    self.html.write( self.HEAD )
     self.html.flush()
     self.stdout = stdout
     self.linebuf = ''
@@ -450,6 +499,11 @@ class StdOut( object ):
 
     self.stdout.flush()
     self.html.flush()
+
+  def __del__( self ):
+    'destructor'
+
+    self.html.write( self.TAIL )
 
 def run( *functions ):
   'call function specified on command line'
@@ -530,7 +584,5 @@ def run( *functions ):
     func( **kwargs )
   finally:
     print ( ' ' + time.ctime() ).rjust( LINEWIDTH+1, '=' ), '|<|'
-
-  output.write( '</body></html>' )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

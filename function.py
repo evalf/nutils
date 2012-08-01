@@ -27,6 +27,17 @@ class Zero( int ):
 
 ZERO = Zero()
 
+def unite( *funcs ):
+  'create unified consecutive numbering'
+
+  ndofs = sum( f.shape[0].ndofs for f in funcs )
+  n = 0
+  for f in funcs:
+    newf = util.clone( f )
+    newf.shape = ( f.shape[0].transform(ndofs=ndofs,shift=n), ) + f.shape[1:]
+    yield newf
+    n += f.shape[0].ndofs
+
 def align_shapes( func1, func2 ):
   'align shapes'
 
@@ -269,8 +280,16 @@ class ArrayFunc( Evaluable ):
     ddx, ddy = H[:,0,0]
     return ( dy * ddx - dx * ddy ) / J[:,0].norm2(0)**3
 
+  def __mod__( self, weights ):
+    'dot, new notation'
+
+    return self.dot( weights )
+
   def dot( self, weights ):
     'dot'
+
+    if is_zero(weights):
+      return ZERO
 
     return StaticDot( self, weights )
 
@@ -320,7 +339,7 @@ class ArrayFunc( Evaluable ):
 
     return ( self.symgrad(coords,ndims) * coords.normal(ndims-1) ).sum()
 
-  def norm2( self, axis ):
+  def norm2( self, axis=-1 ):
     'norm2'
 
     return Norm2( self, axis )
@@ -590,6 +609,12 @@ class DofAxis( ArrayFunc ):
     self.args = mapping,
     self.shape = ndofs,
 
+  def transform( self, ndofs, shift ):
+    'shift numbering and widen axis'
+
+    mapping = dict( (elem,idx+shift) for elem, idx in self.mapping.iteritems() )
+    return DofAxis( ndofs, mapping )
+
   @staticmethod
   def eval( xi, idxmap ):
     'evaluate'
@@ -680,11 +705,11 @@ class Concatenate( ArrayFunc ):
 class Vectorize( ArrayFunc ):
   'vectorize'
 
-  def __init__( self, funcs ):
+  def __init__( self, funcs, shape=False ):
     'constructor'
 
     self.args = tuple( funcs )
-    self.shape = ( sum( func.shape[0] for func in funcs ), len(funcs) ) + funcs[0].shape[1:]
+    self.shape = shape or ( sum( func.shape[0] for func in funcs ), len(funcs) ) + funcs[0].shape[1:]
 
   @staticmethod
   def eval( *funcs ):
@@ -704,7 +729,7 @@ class Vectorize( ArrayFunc ):
   def localgradient( self, ndims ):
     'gradient'
 
-    return Vectorize([ func.localgradient(ndims) for func in self.args ])
+    return Vectorize([ func.localgradient(ndims) for func in self.args ], shape=self.shape+(ndims,))
 
   def trace( self, n1, n2 ):
     'trace'
@@ -805,6 +830,41 @@ class Stack( ArrayFunc ):
       stacked[ I ] = block
     return stacked
 
+class Stack22( ArrayFunc ):
+  'special 2x2 stack based on unified axes'
+
+  def __init__( self, *funcs ):
+    'constructor'
+
+    for func in funcs:
+      assert len(func.shape) == 2
+
+  @staticmethod
+  def eval( a11, a12, a21, a22 ):
+    'evaluate'
+
+    def unique( n, *args ):
+      N = -1
+      for arg in args:
+        if isinstance( arg, numpy.ndarray ):
+          if N == -1:
+            N = arg.shape[n]
+          else:
+            assert arg.shape[n] == N
+      assert N != -1
+      return N
+
+    nrows = unique(0,a11,a12), unique(0,a21,a22)
+    ncols = unique(1,a11,a21), unique(1,a12,a22)
+    npoints = unique(2,a11,a12,a21,a22) # blatantly assuming 1D points
+
+    data = numpy.empty( [ sum(nrows), sum(ncols), npoints ] )
+    data[:nrows[0],:ncols[0]] = a11
+    data[:nrows[0],ncols[0]:] = a12
+    data[nrows[0]:,:ncols[0]] = a21
+    data[nrows[0]:,ncols[0]:] = a22
+    return data
+
 class UFunc( ArrayFunc ):
   'user function'
 
@@ -870,8 +930,12 @@ class LocalGradient( ArrayFunc ):
 class Norm2( ArrayFunc ):
   'integration weights'
 
-  def __init__( self, fun, axis=0 ):
+  def __init__( self, fun, axis ):
     'constructor'
+
+    if axis < 0:
+      axis += len(fun.shape)
+    assert 0 <= axis < len(fun.shape)
 
     self.args = fun, axis
     shape = list( fun.shape )

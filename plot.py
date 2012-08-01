@@ -5,22 +5,94 @@ matplotlib.use( 'Agg' )
 
 import os, tempfile
 
-def show():
-  'write to file and show in eog'
+class Pylab( object ):
 
-  from matplotlib import pyplot
-  fileobj = tempfile.NamedTemporaryFile( dir=util.DUMPDIR, suffix='.png', delete=False )
-  path = fileobj.name
-  name = os.path.basename( path )
-  print 'saving to', name
-  pyplot.savefig( fileobj )
-  os.chmod( path, 0644 )
+  def __init__( self ):
+    'constructor'
 
-def clf():
-  'clear figure'
+    from matplotlib import pyplot
+    self.__dict__.update( pyplot.__dict__ )
 
-  from matplotlib import pyplot
-  pyplot.clf()
+  def __enter__( self ):
+    'enter with block'
+
+    self.figure()
+    return self
+
+  def __exit__( self, exc, msg, tb ):
+    'exit with block'
+
+    if exc:
+      print 'ERROR: plot failed:', msg or exc
+      return #True
+
+    fileobj = tempfile.NamedTemporaryFile( dir=util.DUMPDIR, prefix='fig', suffix='.png', delete=False )
+    path = fileobj.name
+    name = os.path.basename( path )
+    print 'saving to', name
+    self.savefig( fileobj )
+    os.chmod( path, 0644 )
+    self.close()
+
+  def add_mesh( self, coords, topology, color=None, edgecolors='none', linewidth=1, xmargin=0, ymargin=0, ax=None, aspect='equal', cbar='vertical', title=None, ischeme='gauss2', cscheme='contour3', clim=None ):
+    'plot mesh'
+  
+    from matplotlib import collections
+    poly = []
+    values = []
+    ndims, = coords.shape
+    assert ndims in (2,3)
+    for elem in util.progressbar( topology, title='plotting mesh' ):
+      C = coords( elem.eval(cscheme) )
+      if ndims == 3:
+        C = project3d( C )
+        cx, cy = numpy.hstack( [ C, C[:,:1] ] )
+        if ( (cx[1:]-cx[:-1]) * (cy[1:]+cy[:-1]) ).sum() > 0:
+          continue
+      poly.append( C.T )
+      if color is not None:
+        xi = elem.eval(ischeme)
+        values.append( util.mean( color(xi), weights=xi.weights ) )
+  
+    if values:
+      elements = collections.PolyCollection( poly, edgecolors=edgecolors, linewidth=linewidth )
+      elements.set_array( numpy.asarray(values) )
+      if cbar:
+        self.colorbar( elements, orientation=cbar )
+    else:
+      elements = collections.PolyCollection( poly, edgecolors='black', facecolors='none', linewidth=linewidth )
+    if clim:
+      elements.set_clim( *clim )
+    if ax is None:
+      ax = self.gca()
+    if ndims == 3:
+      ax.get_xaxis().set_visible( False )
+      ax.get_yaxis().set_visible( False )
+      self.box( 'off' )
+    ax.add_collection( elements )
+    vertices = numpy.concatenate( poly )
+    xmin, ymin = vertices.min(0)
+    xmax, ymax = vertices.max(0)
+    if not isinstance( xmargin, tuple ):
+      xmargin = xmargin, xmargin
+    ax.set_xlim( xmin - xmargin[0], xmax + xmargin[1] )
+    if not isinstance( ymargin, tuple ):
+      ymargin = ymargin, ymargin
+    ax.set_ylim( ymin - ymargin[0], ymax + ymargin[1] )
+    if aspect:
+      ax.set_aspect( aspect )
+      ax.set_autoscale_on( False )
+    if title:
+      self.title( title )
+  
+  def add_quiver( self, coords, topology, quiver, sample='uniform3' ):
+    'quiver builder'
+  
+    XYUV = []
+    for elem in util.progressbar( topology, title='plotting quiver' ):
+      xi = elem.eval(sample)
+      XYUV.append( numpy.concatenate( [ coords(xi), quiver(xi) ], axis=0 ) )
+    self.quiver( *numpy.concatenate( XYUV, 1 ) )
 
 def project3d( C ):
   sqrt2 = numpy.sqrt( 2 )
@@ -28,173 +100,6 @@ def project3d( C ):
   sqrt6 = numpy.sqrt( 6 )
   R = numpy.array( [[ sqrt3, 0, -sqrt3 ], [ 1, 2, 1 ], [ sqrt2, -sqrt2, sqrt2 ]] ) / sqrt6
   return util.transform( C, R[:,::2], axis=0 )
-
-
-def mesh( coords, topology, color=None, edgecolors='none', linewidth=1, xmargin=0, ymargin=0, ax=None, aspect='equal', cbar='horizontal', title=None, ischeme='gauss2', cscheme='contour3', clim=None ):
-  'plot mesh'
-
-  from matplotlib import collections, pyplot
-  poly = []
-  values = []
-  ndims, = coords.shape
-  assert ndims in (2,3)
-  for elem in util.progressbar( topology, title='plotting mesh' ):
-    C = coords( elem.eval(cscheme) )
-    if ndims == 3:
-      C = project3d( C )
-      cx, cy = numpy.hstack( [ C, C[:,:1] ] )
-      if ( (cx[1:]-cx[:-1]) * (cy[1:]+cy[:-1]) ).sum() > 0:
-        continue
-    poly.append( C.T )
-    if color is not None:
-      xi = elem.eval(ischeme)
-      values.append( util.mean( color(xi), weights=xi.weights ) )
-
-  if values:
-    elements = collections.PolyCollection( poly, edgecolors=edgecolors, linewidth=linewidth )
-    elements.set_array( numpy.asarray(values) )
-    if cbar:
-      pyplot.colorbar( elements, orientation=cbar )
-  else:
-    elements = collections.PolyCollection( poly, edgecolors='black', facecolors='none', linewidth=linewidth )
-  if clim:
-    elements.set_clim( *clim )
-  if ax is None:
-    ax = pyplot.gca()
-  if ndims == 3:
-    ax.get_xaxis().set_visible( False )
-    ax.get_yaxis().set_visible( False )
-    pyplot.box( 'off' )
-  ax.add_collection( elements )
-  vertices = numpy.concatenate( poly )
-  xmin, ymin = vertices.min(0)
-  xmax, ymax = vertices.max(0)
-  if not isinstance( xmargin, tuple ):
-    xmargin = xmargin, xmargin
-  ax.set_xlim( xmin - xmargin[0], xmax + xmargin[1] )
-  if not isinstance( ymargin, tuple ):
-    ymargin = ymargin, ymargin
-  ax.set_ylim( ymin - ymargin[0], ymax + ymargin[1] )
-  if aspect:
-    ax.set_aspect( aspect )
-    ax.set_autoscale_on( False )
-  if title:
-    pyplot.title( title )
-
-def quiver( coords, topology, quiver, sample='uniform3' ):
-  'quiver builder'
-
-  from matplotlib import collections, pyplot
-  XYUV = []
-  for elem in util.progressbar( topology, title='plotting quiver' ):
-    xi = elem.eval(sample)
-    XYUV.append( numpy.concatenate( [ coords(xi), quiver(xi) ], axis=0 ) )
-  pyplot.quiver( *numpy.concatenate( XYUV, 1 ) )
-
-# OLD
-
-class Quiver( object ):
-  'quiver builder'
-
-  def __init__( self ):
-    'constructor'
-
-    self.XYUV = []
-
-  def add( self, xy, uv ):
-    'add vectors'
-
-    self.XYUV.append( numpy.concatenate([xy,uv]) )
-
-  def plot( self, ax=None, color='k' ):
-    'plot'
-
-    if ax is None:
-      ax = gca()
-    quiver( *numpy.concatenate( self.XYUV, 1 ), color=color )
-
-class Line( object ):
-  'plot builder'
-
-  def __init__( self, *lt ):
-    'constructor'
-
-    self.lt = lt
-    self.XY = []
-
-  def add( self, *xy ):
-    'add vectors'
-
-    xy = numpy.array(xy)
-    self.XY.append( xy )
-
-  def plot( self, xlim=None, ylim=None, ax=None, xlog=False, ylog=False, aspect=None ):
-    'plot'
-
-    XY = numpy.concatenate( self.XY, axis=1 )
-    if ax is None:
-      ax = gca()
-    plotfun = loglog if xlog and ylog \
-         else semilogx if xlog \
-         else semilogy if ylog \
-         else plot
-    for i, lt in enumerate( self.lt ):
-      plotfun( XY[0], XY[i+1], lt )
-    if xlim is not None:
-      ax.set_xlim( xlim )
-    if ylim is not None:
-      ax.set_ylim( ylim )
-    if aspect:
-      ax.set_aspect( aspect )
-      ax.set_autoscale_on( False )
-
-def build_image( coords, n=3, extent=(0,1,0,1), ax=None, ticks=True, clim=None, cbar=False, title='plotting' ):
-  'image builder'
-
-  if ax is None:
-    ax = gca()
-  assert isinstance( coords.topology, topology.StructuredTopology )
-  assert coords.topology.ndims == 2
-  image = numpy.zeros( coords.topology.structure.shape + (n,n) )
-  scheme = 'uniform%d' % n
-  items = zip( coords.topology, image.reshape(-1,n,n) )
-  if title:
-    items = util.progressbar( items, title=title )
-  for elem, im in items:
-    yield coords( elem(scheme) ), im.ravel()
-  image = image.swapaxes(1,2).reshape( image.shape[0]*n, image.shape[1]*n )
-  im = ax.imshow( image.T, extent=extent, origin='lower' )
-  if not ticks:
-    ax.xaxis.set_ticks( [] )
-    ax.yaxis.set_ticks( [] )
-  if clim:
-    im.set_clim( *clim )
-  if cbar:
-    colorbar( im, orientation='vertical' )
-
-def plotmatr( A, **kwargs ):
-  'Plot 10^log magnitudes of numpy matrix elements'
-
-  A = numpy.log10( abs( A ) )
-  if numpy.all( numpy.isinf( A ) ):
-    A = numpy.zeros( A.shape )
-  else:
-    A[numpy.isinf( A )] = numpy.amin( A[~numpy.isinf( A )] ) - 1.
-  pcolor( A, **kwargs )
-  colorbar()
-  ylim( ylim()[-1::-1] ) # invert y axis: equiv to MATLAB axis ij
-  axis( 'tight' )
-
-def savepdf( name, fig=None ):
-  'save figure in plots dir'
-
-  if fig is None:
-    fig = gcf()
-  path = os.path.join( 'plots', name + '.pdf' )
-  dirname = os.path.dirname( path )
-  if not os.path.isdir( dirname ):
-    os.makedirs( dirname )
-  fig.savefig( path, bbox_inches='tight', pad_inches=0 )
 
 def writevtu( path, topology, coords, **arrays ):
   'write vtu from coords function'
@@ -263,5 +168,55 @@ def preview( coords, topology, cscheme='contour8' ):
   else:
     raise Exception, 'need 2D or 3D coordinates'
   show()
+
+# OLD
+
+def build_image( coords, n=3, extent=(0,1,0,1), ax=None, ticks=True, clim=None, cbar=False, title='plotting' ):
+  'image builder'
+
+  if ax is None:
+    ax = gca()
+  assert isinstance( coords.topology, topology.StructuredTopology )
+  assert coords.topology.ndims == 2
+  image = numpy.zeros( coords.topology.structure.shape + (n,n) )
+  scheme = 'uniform%d' % n
+  items = zip( coords.topology, image.reshape(-1,n,n) )
+  if title:
+    items = util.progressbar( items, title=title )
+  for elem, im in items:
+    yield coords( elem(scheme) ), im.ravel()
+  image = image.swapaxes(1,2).reshape( image.shape[0]*n, image.shape[1]*n )
+  im = ax.imshow( image.T, extent=extent, origin='lower' )
+  if not ticks:
+    ax.xaxis.set_ticks( [] )
+    ax.yaxis.set_ticks( [] )
+  if clim:
+    im.set_clim( *clim )
+  if cbar:
+    colorbar( im, orientation='vertical' )
+
+def plotmatr( A, **kwargs ):
+  'Plot 10^log magnitudes of numpy matrix elements'
+
+  A = numpy.log10( abs( A ) )
+  if numpy.all( numpy.isinf( A ) ):
+    A = numpy.zeros( A.shape )
+  else:
+    A[numpy.isinf( A )] = numpy.amin( A[~numpy.isinf( A )] ) - 1.
+  pcolor( A, **kwargs )
+  colorbar()
+  ylim( ylim()[-1::-1] ) # invert y axis: equiv to MATLAB axis ij
+  axis( 'tight' )
+
+def savepdf( name, fig=None ):
+  'save figure in plots dir'
+
+  if fig is None:
+    fig = gcf()
+  path = os.path.join( 'plots', name + '.pdf' )
+  dirname = os.path.dirname( path )
+  if not os.path.isdir( dirname ):
+    os.makedirs( dirname )
+  fig.savefig( path, bbox_inches='tight', pad_inches=0 )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
