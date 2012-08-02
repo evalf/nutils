@@ -83,6 +83,24 @@ def normdim( length, n ):
 
   return sorted( ni + length if ni < 0 else ni for ni in n )
 
+def indent( key, *items ):
+  'indent string  by two spaces'
+
+  #return key + ''.join( '\n. ' + '\n  '.join( str(s).splitlines() ) for s in items )
+  #indent = '\n' + '.' + ' ' * len(key)
+  #indent1 = '\n' + ' ' + ' ' * len(key)
+  #return key + ' ' + indent2.join( [ indent.join( str(s).splitlines() ) for s in items ] )
+
+  lines = []
+  indent = '\n' + ' ' + ' ' * len(key)
+  for it in reversed( items ):
+    lines.append( indent.join( str(it).splitlines() ) )
+    indent = '\n' + '|' + ' ' * len(key)
+
+  indent = '\n' + '+' + '-' * (len(key)-1) + ' '
+  return key + ' ' + indent.join( reversed( lines ) )
+  
+
 class StackIndex( int ):
   'stack index'
 
@@ -360,8 +378,7 @@ class ArrayFunc( Evaluable ):
 
     if not isinstance( other, Evaluable ):
       other = numpy.asarray( other )
-      if other.ndim:
-        other = StaticArray( other )
+      other = StaticArray( other ) if other.ndim else Scalar( other )
 
     return Multiply( self, other )
 
@@ -372,6 +389,9 @@ class ArrayFunc( Evaluable ):
 
     if is_unit(other):
       return self
+
+    if isinstance( other, (int,float) ) or isinstance( other, numpy.ndarray ) and other.ndim == 0:
+      return self * float(1./other)
 
     if not isinstance( other, Evaluable ):
       other = numpy.asarray( other )
@@ -410,6 +430,12 @@ class ArrayFunc( Evaluable ):
 
   def __pow__( self, n ):
     'power'
+
+    if n == 0:
+      return 1
+
+    if n == 1:
+      return self
 
     return Power( self, n )
 
@@ -500,6 +526,29 @@ class StaticDot( ArrayFunc ):
 
     return ArrayFunc.__add__( self, other )
 
+  def __getitem__( self, item ):
+    'get item'
+
+    if isinstance( item, int ):
+      item = item,
+    for i in range( self.array.ndim-1 ):
+      if isinstance( item[i], int ):
+        item = list(item)
+        index = item.pop( i )
+        array = self.array[ (slice(None),)*(i+1) + (index,) ]
+        return StaticDot( self.func, array )[ tuple(item) ]
+
+    if all( it == slice(None) for it in item ):
+      return self
+
+    return ArrayFunc.__getitem__( self, item )
+
+  def __str__( self ):
+    'string representation'
+
+    #return '%s%%[#%s]' % ( self.func, 'x'.join( str(d) for d in self.array.shape ) )
+    return indent( 'StaticDot(%s)' % 'x'.join( str(d) for d in self.array.shape ), self.func )
+
 class Function( ArrayFunc ):
   'function'
 
@@ -533,7 +582,7 @@ class Function( ArrayFunc ):
   def __str__( self ):
     'string representation'
 
-    return 'Function:%x' % id(self.mapping)
+    return 'F@%x' % id(self.mapping)
 
 class PieceWise( ArrayFunc ):
   'differentiate by topology'
@@ -594,6 +643,12 @@ class Inverse( ArrayFunc ):
     return -I
 
   eval = staticmethod( util.inv )
+
+  def __str__( self ):
+    'string representation'
+
+    f, axes = self.args
+    return indent( 'Inv:%d,%d' % axes, f )
 
 class DofAxis( ArrayFunc ):
   'dof axis'
@@ -757,78 +812,44 @@ class Vectorize( ArrayFunc ):
     return Concatenate( funcs )
 
 class Stack( ArrayFunc ):
-  'stack'
+  'stack functions'
 
-  def __init__( self, funcs ):
+  def __init__( self, funcs, axis=-1 ):
     'constructor'
 
-    funcs = numpy.array( funcs, dtype=object )
-    flatfuncs = tuple( funcs.flat )
-    shape = []
-    indices = []
-    partitions = []
-    for idim in range( funcs.ndim ):
-      n1 = 0
-      index = []
-      slices = []
-      for n in range( funcs.shape[idim] ):
-        f = None
-        for func in funcs.take( [n], axis=idim ).flat:
-          if isinstance( func, ArrayFunc ) and func.shape[idim] is not nulaxis:
-            if not f:
-              f = func
-            else:
-              assert f.shape[idim] == func.shape[idim]
-        n0 = n1
-        if f is None: # no ArrayFuncs found in row/column
-          index.append( None )
-          n1 += 1
-        else:
-          index.append( flatfuncs.index(f) )
-          n1 += f.shape[idim]
-        slices.append( slice(n0,n1) )
-      indices.append( index )
-      shape.append( n1 )
-      partitions.append( slices )
-    f = None
-    for func in funcs.flat:
-      if isinstance( func, ArrayFunc ):
-        if not f:
-          f = func
-        else:
-          assert func.shape[funcs.ndim:] == f.shape[funcs.ndim:]
-    shape.extend( f.shape[funcs.ndim:] )
+    shape = funcs[0].shape
+    assert all( f.shape == shape for f in funcs[1:] )
+    if axis < 0:
+      axis += len(shape) + 1
+    assert 0 <= axis < len(shape)+1
 
     self.funcs = funcs
-    self.args = (indices,) + flatfuncs
-    self.shape = tuple(shape)
-    self.partitions = partitions
+    self.axis = axis
+    self.shape = shape[:axis] + (len(funcs),) + shape[axis+1:]
+    self.args = (axis,) + tuple(funcs)
 
   @staticmethod
-  def eval( indices, *blocks ):
+  def eval( axis, *funcs ):
     'evaluate'
 
-    shape = []
-    partitions = []
-    block = blocks[0] # in case all indices are newaxis
-    for idim, index in enumerate( indices ):
-      n1 = 0
-      slices = []
-      for iblk in index:
-        n0 = n1
-        if iblk is None:
-          n1 += 1
-        else:
-          block = blocks[iblk]
-          n1 += block.shape[idim]
-        slices.append( slice(n0,n1) )
-      shape.append( n1 )
-      partitions.append( slices )
-
-    stacked = numpy.empty( tuple(shape) + block.shape[len(shape):] )
-    for I, block in zip( numpy.broadcast( *numpy.ix_( *partitions ) ) if len(partitions) > 1 else partitions[0], blocks ):
-      stacked[ I ] = block
+    stacked = numpy.array( funcs )
+    if axis: # untested!
+      stacked = stacked.transpose( range( 1,axis+1 ) + [0] + range( axis+1, len(stacked.shape) ) )
     return stacked
+
+  def localgradient( self, ndims ):
+    'local gradient'
+
+    grads = [ f.localgradient( ndims ) for f in self.funcs ]
+    return Stack( grads, self.axis )
+
+  def __str__( self ):
+    'string representation'
+
+    #return 'Stack(%s,axis=%d)' % ( ','.join( str(f) for f in self.funcs ), self.axis )
+
+    return indent( 'Stack:%d' % self.axis, *self.funcs )
+
 
 class Stack22( ArrayFunc ):
   'special 2x2 stack based on unified axes'
@@ -927,6 +948,11 @@ class LocalGradient( ArrayFunc ):
     assert isinstance( T, (int,float) ) or level == 1 # TODO fix for higher orders
     return util.transform( F, T, axis=-2 )
 
+  def __str__( self ):
+    'string representation'
+
+    return indent( 'Grad:%d;nd%d' % (self.level,self.ndims), self.func )
+
 class Norm2( ArrayFunc ):
   'integration weights'
 
@@ -1007,7 +1033,22 @@ class GetItem( ArrayFunc ):
   def __str__( self ):
     'string representation'
 
-    return '%s[%s]' % ( self.args[0], ','.join( util.obj2str(arg) for arg in self.args[1] ) )
+    #return '%s[%s]' % ( self.args[0], ','.join( util.obj2str(arg) for arg in self.args[1] ) )
+    return indent( 'GetItem:%s' % ','.join( util.obj2str(arg) for arg in self.args[1] ), self.args[0] )
+
+class Scalar( float ):
+  'scalar'
+
+  def localgradient( self, ndims ):
+    'local gradient'
+
+    return ZERO
+
+  def __getitem__( self, item ):
+    'get item'
+
+    assert all( it in ( slice(None), _, Ellipsis ) for it in item )
+    return self
 
 class StaticArray( ArrayFunc ):
   'static array'
@@ -1069,7 +1110,7 @@ class StaticArray( ArrayFunc ):
   def __str__( self ):
     'string representation'
 
-    return 'StaticArray(%s)' % self.args[0]
+    return 'StaticArray(%s)' % 'x'.join( str(d) for d in self.args[0].shape )
 
 class Multiply( ArrayFunc ):
   'multiply'
@@ -1097,7 +1138,8 @@ class Multiply( ArrayFunc ):
   def __str__( self ):
     'string representation'
 
-    return '%s * %s' % self.args
+    #return '%s * %s' % self.args
+    return indent( 'Mul', *self.args )
 
 class Divide( ArrayFunc ):
   'divide'
@@ -1132,15 +1174,17 @@ class Divide( ArrayFunc ):
     'local gradient'
 
     func1, func2 = self.args
-    return ( func1.localgradient(ndims)
-           - func1[...,_] * func2.localgradient(ndims) / func2[...,_] ) / func2[...,_]
+    grad1 = func1.localgradient(ndims)
+    grad2 = func2.localgradient(ndims) 
+    return ( grad1 - func1[...,_] * grad2 / func2[...,_] ) / func2[...,_]
 
   eval = staticmethod( numpy.ndarray.__div__ )
 
   def __str__( self ):
     'string representation'
 
-    return '%s / %s' % self.args
+    #return '%s / %s' % self.args
+    return indent( 'Div', *self.args )
 
 class Negate( ArrayFunc ):
   'negate'
@@ -1162,7 +1206,8 @@ class Negate( ArrayFunc ):
   def __str__( self ):
     'string representation'
 
-    return '-%s' % self.args[0]
+    #return '-%s' % self.args[0]
+    return indent( 'Neg', *self.args )
 
 class Add( ArrayFunc ):
   'add'
@@ -1202,7 +1247,8 @@ class Add( ArrayFunc ):
   def __str__( self ):
     'string representation'
 
-    return '(%s + %s)' % self.args
+    #return '(%s + %s)' % self.args
+    return indent( 'Add', *self.args )
 
 class Subtract( ArrayFunc ):
   'subtract'
@@ -1247,7 +1293,8 @@ class Subtract( ArrayFunc ):
   def __str__( self ):
     'string representation'
 
-    return '(%s - %s)' % self.args
+    #return '(%s - %s)' % self.args
+    return indent( 'Sub', *self.args )
 
 class Dot( ArrayFunc ):
   'dot'
@@ -1275,7 +1322,9 @@ class Dot( ArrayFunc ):
   def __str__( self ):
     'string representation'
 
-    return '(%s * %s).sum(%s)' % ( self.args[0], self.args[1], ','.join( str(n) for n in self.args[2] ) )
+    #return '(%s * %s).sum(%s)' % ( self.args[0], self.args[1], ','.join( str(n) for n in self.args[2] ) )
+    f1, f2, axes = self.args
+    return indent( 'Dot:%s' % ','.join(str(a) for a in axes), f1, f2 )
 
 class SwapAxes( ArrayFunc ):
   'swapaxes'
@@ -1376,29 +1425,49 @@ class Log( BaseFunc ):
 
   eval = staticmethod( numpy.log )
 
+  def localgradient( self, ndims ):
+    'local gradient'
+
+    f, = self.args
+    return f.localgradient(ndims) / f
+
+  def __str__( self ):
+    'string representation'
+
+    return indent( 'Log', *self.args )
+
 class Arctan2( BaseFunc ):
   'arctan2'
 
   eval = staticmethod( numpy.arctan2 )
+
+  def localgradient( self, ndims ):
+    'local gradient'
+
+    y, x = self.args
+    return ( x * y.localgradient(ndims) - y * x.localgradient(ndims) ) / ( x**2 + y**2 )
+
+  def __str__( self ):
+    'string representation'
+
+    return indent( 'Atan2', *self.args )
 
 class Power( BaseFunc ):
   'power'
 
   eval = staticmethod( numpy.ndarray.__pow__ )
 
-#class MultiAdd( ArrayFunc ):
-#  'multi addition'
-#
-#  def __init__( self, terms ):
-#    'constructor'
-#
-#    self.terms = terms
-#    self.args, self.factors = zip( *self.terms.items() )
-#
-#  @property
-#  def eval( self ):
-#    'evaluate'
+  def localgradient( self, ndims ):
+    'local gradient'
 
+    func, power = self.args
+    return power * func**(power-1) * func.localgradient(ndims)
+
+  def __str__( self ):
+    'string representation'
+
+    func, power = self.args
+    return indent( 'Pow:%d' % power, func )
 
 
 #############################33

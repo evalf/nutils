@@ -298,7 +298,7 @@ class StructuredTopology( Topology ):
     'create lower dimensional manifold in parent'
 
     assert self.ndims == 2
-    scale = numpy.array( self.structure.shape ) + 1
+    scale = numpy.array( self.structure.shape )
     i0, j0 = numpy.asarray(xi0) * scale
     i1, j1 = numpy.asarray(xi1) * scale
     # j = A + B * i
@@ -338,7 +338,6 @@ class StructuredTopology( Topology ):
 
     return topo, coords
     
-
 class UnstructuredTopology( Topology ):
   'externally defined topology'
 

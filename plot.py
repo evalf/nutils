@@ -6,17 +6,20 @@ matplotlib.use( 'Agg' )
 import os, tempfile
 
 class Pylab( object ):
+  'numpy figure'
 
-  def __init__( self ):
+  def __init__( self, title ):
     'constructor'
 
     from matplotlib import pyplot
     self.__dict__.update( pyplot.__dict__ )
+    self._title = title
 
   def __enter__( self ):
     'enter with block'
 
     self.figure()
+    self.title( self._title )
     return self
 
   def __exit__( self, exc, msg, tb ):
