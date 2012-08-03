@@ -331,6 +331,7 @@ class ArrayFunc( Evaluable ):
     if J.shape[0] == J.shape[1]:
       Jinv = J.inv(0,1)
     elif J.shape[0] == J.shape[1] + 1: # gamma gradient
+      print 'WARNING: implementation of stack changed, needs checking'
       Jinv = Stack( [[ J, coords.normal()[:,_] ]] ).inv(0,1)[:-1,:]
     else:
       raise Exception, 'cannot invert jacobian'
@@ -408,8 +409,7 @@ class ArrayFunc( Evaluable ):
 
     if not isinstance( other, Evaluable ):
       other = numpy.asarray( other )
-      if other.ndim:
-        other = StaticArray( other )
+      other = StaticArray( other ) if other.ndim else Scalar( other )
 
     return Add( self, other )
 
@@ -421,6 +421,11 @@ class ArrayFunc( Evaluable ):
   
     if other == 0:
       return self
+
+    if not isinstance( other, Evaluable ):
+      other = numpy.asarray( other )
+      other = StaticArray( other ) if other.ndim else Scalar( other )
+
     return Subtract( self, other )
 
   def __neg__( self ):
@@ -451,7 +456,7 @@ class ArrayFunc( Evaluable ):
 
     return Symmetric( self, n1, n2 )
 
-  def trace( self, n1, n2 ):
+  def trace( self, n1=-2, n2=-1 ):
     'symmetric'
 
     return Trace( self, n1, n2 )
@@ -583,6 +588,27 @@ class Function( ArrayFunc ):
     'string representation'
 
     return 'F@%x' % id(self.mapping)
+
+class Choose( ArrayFunc ):
+  'piecewise function'
+
+  def __init__( self, x, intervals, *funcs ):
+    'constructor'
+
+    shape = funcs[0].shape
+    assert all( f.shape == shape for f in funcs )
+    assert len(intervals) == len(funcs)-1
+    self.shape = shape
+    self.args = (x,intervals) + funcs
+
+  @staticmethod
+  def eval( x, intervals, *choices ):
+    'evaluate'
+
+    which = 0
+    for i in intervals:
+      which += ( x > i ).astype( int )
+    return numpy.choose( which, choices )
 
 class PieceWise( ArrayFunc ):
   'differentiate by topology'
@@ -814,7 +840,7 @@ class Vectorize( ArrayFunc ):
 class Stack( ArrayFunc ):
   'stack functions'
 
-  def __init__( self, funcs, axis=-1 ):
+  def __init__( self, funcs, axis=0 ):
     'constructor'
 
     shape = funcs[0].shape
@@ -825,7 +851,7 @@ class Stack( ArrayFunc ):
 
     self.funcs = funcs
     self.axis = axis
-    self.shape = shape[:axis] + (len(funcs),) + shape[axis+1:]
+    self.shape = shape[:axis] + (len(funcs),) + shape[axis:]
     self.args = (axis,) + tuple(funcs)
 
   @staticmethod
@@ -849,7 +875,6 @@ class Stack( ArrayFunc ):
     #return 'Stack(%s,axis=%d)' % ( ','.join( str(f) for f in self.funcs ), self.axis )
 
     return indent( 'Stack:%d' % self.axis, *self.funcs )
-
 
 class Stack22( ArrayFunc ):
   'special 2x2 stack based on unified axes'
@@ -1028,7 +1053,9 @@ class GetItem( ArrayFunc ):
     'local gradient'
 
     func, item = self.args
-    return func.localgradient( ndims )[item+(slice(None),)]
+    grad = func.localgradient( ndims )
+    index = item+(slice(None),)
+    return grad[index]
 
   def __str__( self ):
     'string representation'
@@ -1038,6 +1065,8 @@ class GetItem( ArrayFunc ):
 
 class Scalar( float ):
   'scalar'
+
+  shape = ()
 
   def localgradient( self, ndims ):
     'local gradient'
@@ -1256,32 +1285,24 @@ class Subtract( ArrayFunc ):
   def __init__( self, func1, func2 ):
     'constructor'
 
-    if isinstance( func1, (int,float) ):
-      func1 = numpy.asarray( func1 )
-    func1_shape = func1.shape
-
-    if isinstance( func2, (int,float) ):
-      func2 = numpy.asarray( func2 )
-    func2_shape = func2.shape
-
     self.args = func1, func2
-    D = len(func1_shape) - len(func2_shape)
+    D = len(func1.shape) - len(func2.shape)
     nul = (nulaxis,)
     shape = []
-    for sh1, sh2 in zip( nul*-D + func1_shape, nul*D + func2_shape ):
+    for sh1, sh2 in zip( nul*-D + func1.shape, nul*D + func2.shape ):
       if sh1 is nulaxis:
         shape.append( sh2 )
       elif sh2 is nulaxis:
         shape.append( sh1 )
       else:
-        assert sh1 == sh2, 'incompatible dimensions: %s and %s' % ( func1_shape, func2_shape )
+        assert sh1 == sh2, 'incompatible dimensions: %s and %s' % ( func1.shape, func2.shape )
         shape.append( sh1 )
     self.shape = tuple( shape )
 
   def __neg__( self ):
     'negate'
 
-    return Subtract( self.args[1], self.args[0] )
+    return self.args[1] - self.args[0]
 
   def localgradient( self, ndims ):
     'gradient'
@@ -1361,10 +1382,19 @@ class Trace( ArrayFunc ):
     s1 = shape.pop( n2 )
     s2 = shape.pop( n1 )
     assert s1 == s2
+    self.func = func
+    self.n1 = n1
+    self.n2 = n2
     self.args = func, 0, n1, n2
     self.shape = tuple( shape )
 
   eval = staticmethod( numpy.ndarray.trace )
+
+  def localgradient( self, ndims ):
+    'local gradient'
+
+    grad = self.func.localgradient( ndims )
+    return Trace( grad, self.n1, self.n2 )
 
   def __str__( self ):
     'string representation'
