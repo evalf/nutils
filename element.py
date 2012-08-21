@@ -384,7 +384,59 @@ class PolyQuad( StdElem ):
           data[:,nj,ni] = data[:,ni,nj] = reduce( lambda d, di: ( d[:,_] * di ).reshape( d.shape[0] * di.shape[0], -1 ), Di )
       return data
 
-    assert all( p <= 3 for p in self.degree ) # for now
+    F3 = [ numpy.array( [ [0.] ] * p if p < 4
+                   else [ [-6],[18],[-18],[6] ] if p == 4
+                   else [ 24*(x-1), 72-96*x, 72*(2*x-1), 24-96*x, 24*x ] if p == 5
+                   else [ -(p-3)*(p-2)*(p-1)*(1-x)**(p-4), -(-6+11*p-6*p**2+p**3)*(1-x)**(p-5)*((p-1)*x-3), -comb[2]*(p-3)*(1-x)**(p-6)*(6-6*(p-2)*x+(2-3*p+p**2)*x**2) ]
+                      + [ comb[i]*(1-x)**(p-i-4)*x**(i-3)*(i**3-(-6+11*p-6*p**2+p**3)*x**3-3*i**2*(1+(p-3)*x)+i*(2+3*(p-3)*x+3*(6-5*p+p**2)*x**2)) for i in range(3,p-3) ]
+                      + [ comb[p-3]*(p-3)*x**(p-6)*(p**2*(x-1)**2+2*(10-8*x+x**2)-3*p*(3-4*x+x**2)), -(-6+11*p-6*p**2+p**3)*(4+p*(x-1)-x)*x**(p-5), (p-3)*(p-2)*(p-1)*x**(p-4) ]
+                      ) for x, p, comb in polydata ]
+
+    if grad == 3:
+      data = numpy.empty(( nshapes, points.ndims, points.ndims, points.ndims, points.npoints ))
+      for ni in range( points.ndims ):
+        for nj in range( ni, points.ndims ):
+          for nk in range( nj, points.ndims ):
+            Dijk = [( F3 if m == ni == nj == nk
+                 else F2 if m == ni == nj or m == ni == nk or m == nj == nk
+                 else F1 if m == ni or m == nj or m == nk
+                 else F0 )[m] for m in range( points.ndims )]
+            data[:,ni,nj,nk] = data[:,ni,nk,nj] = data[:,nj,ni,nk] = \
+            data[:,nj,nk,ni] = data[:,nk,ni,nj] = data[:,nk,nj,ni] = \
+              reduce( lambda d, di: ( d[:,_] * di ).reshape( d.shape[0] * di.shape[0], -1 ), Dijk )
+      return data
+
+    F4 = [ numpy.array( [ [0.] ] * p if p < 5
+                   else [ [24], [-96], [24*comb[2]], [-96], [24] ] if p == 5
+                   else [ -120*(x-1), 120*(5*x-4), 24*comb[2]*(3-5*x), 24*comb[p-3]*(5*x-2), 120-600*x, 120*x ] if p == 6
+                   else [ 360*(x-1)**2, -720*(2-5*x+3*x**2), 24*comb[2]*(6-20*x+15*x**2), -72*comb[3]*(1-5*x+5*x**2), -72*comb[p-4]*(1-5*x+5*x**2), 24*comb[p-3]*(1-10*x+15*x**2), -720*x*(3*x-1), 360*x**2 ] if p == 7
+                   else [ (p-4)*(p-3)*(p-2)*(p-1)*(1-x)**(p-5), (24-50*p+35*p**2-10*p**3+p**4)*(1-x)**(p-6)*((p-1)*x-4), comb[2]*(12-7*p+p**2)*(1-x)**(p-7)*(12-8*(p-2)*x+(2-3*p+p**2)*x**2),
+                          comb[3]*(p-4)*(1-x)**(p-8)*(-24+36*(p-3)*x-12*(6-5*p+p**2)*x**2+(-6+11*p-6*p**2+p**3)*x**3) ]
+                      + [ comb[i]*(1-x)**(p-i-5)*x**(i-4)*(i**4+(24-50*p+35*p**2-10*p**3+p**4)*x**4-2*i**3*(3+2*(p-4)*x)+i**2*(11+12*(p-4)*x+6*(12-7*p+p**2)*x**2)-2*i*(3+4*(p-4)*x+3*(12-7*p+p**2)*x**2 + 
+                          2*(-24+26*p-9*p**2+p**3)*x**3)) for i in range(4,p-4) ]
+                      + [ -comb[p-4]*(p-4)*x**(p-8)*(-6*p**2*(x-3)*(x-1)**2+p**3*(x-1)**3-6*(-35+45*x-15*x**2+x**3)+p*(-107+189*x-93*x**2+11*x**3)), comb[p-3]*(12-7*p+p**2)*x**(p-7)*(p**2*(x-1)**2 +
+                          p*(-11+14*x-3*x**2)+2*(15-10*x+x**2)), -(24-50*p+35*p**2-10*p**3+p**4)*(5+p*(x-1)-x)*x**(p-6), (p-4)*(p-3)*(p-2)*(p-1)*x**(p-5) ]
+                      ) for x, p, comb in polydata ]
+
+    if grad == 4:
+      data = numpy.empty(( nshapes, points.ndims, points.ndims, points.ndims, points.ndims, points.npoints ))
+      for ni in range( points.ndims ):
+        for nj in range( ni, points.ndims ):
+          for nk in range( nj, points.ndims ):
+            for nl in range( nk, points.ndims ):
+              Dijkl = [( F4 if m == ni == nj == nk == nl
+                    else F3 if m == ni == nj == nk or m == ni == nj == nl or m == ni == nk == nl or m == nj == nk == nl
+                    else F2 if m == ni == nj or m == ni == nk or m == ni == nl or m == nj == nk or m == nj == nl or m == nk == nl
+                    else F1 if m == ni or m == nj or m == nk or m == nl
+                    else F0 )[m] for m in range( points.ndims )]
+              data[:,ni,nj,nk,nl] = data[:,ni,nj,nl,nk] = data[:,ni,nk,nj,nl] = data[:,ni,nk,nl,nj] = data[:,ni,nl,nj,nk] = data[:,ni,nl,nk,nj] = \
+              data[:,nj,ni,nk,nl] = data[:,nj,ni,nl,nk] = data[:,nj,nk,ni,nl] = data[:,nj,nk,nl,ni] = data[:,nj,nl,ni,nk] = data[:,nj,nl,nk,ni] = \
+              data[:,nk,ni,nj,nl] = data[:,nk,ni,nl,nj] = data[:,nk,nj,ni,nl] = data[:,nk,nj,nl,ni] = data[:,nk,nl,ni,nj] = data[:,nk,nl,nj,ni] = \
+              data[:,nl,ni,nj,nk] = data[:,nl,ni,nk,nl] = data[:,nl,nj,ni,nk] = data[:,nl,nj,nk,ni] = data[:,nl,nk,ni,nj] = data[:,nl,nk,nj,ni] = \
+                reduce( lambda d, di: ( d[:,_] * di ).reshape( d.shape[0] * di.shape[0], -1 ), Dijkl )
+      return data
+
+    assert all( p <= 5 for p in self.degree ) # for now
     return numpy.zeros(( nshapes, points.ndims, points.ndims, points.ndims, points.npoints ))
 
 class PolyTriangle( StdElem ):
