@@ -337,6 +337,30 @@ class StructuredTopology( Topology ):
     coords = topo.splinefunc( degree=2 ).dot( weights )
 
     return topo, coords
+
+  def manifold2d( self, C0, C1, C2 ):
+    'manifold 2d'
+
+    np = 100
+    n = numpy.arange( .5, np ) / np
+    i = n[:,_]
+    j = n[_,:]
+
+    xyz = coordfunc( i, j ).reshape( 3, -1 )
+    nxyz = int( xyz )
+    fxyz = xyz - nxyz
+
+    while len(n):
+      ielem = nxyz[:,0]
+      select = ( nxyz == ielem ).all( axis=0 )
+      pelem = self.structure[ ielem ]
+
+      trans = element.AffineTransformation( offset=offset, transform=transform[:,_] )
+      elem = element.QuadElement( ndims=1, parent=(pelem,trans) )
+      structure.append( elem )
+
+
+
     
 class UnstructuredTopology( Topology ):
   'externally defined topology'

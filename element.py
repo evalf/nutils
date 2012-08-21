@@ -87,6 +87,20 @@ class AffineTransformation( object ):
       coords = self.offset[:,_] + numpy.dot( self.transform, points.coords )
     return LocalPoints( coords, points.weights )
 
+class CustomElement( Element ):
+  'custom element'
+
+  def __init__( self, **ischemes ):
+    'constructor'
+
+    self.ischemes = ischemes
+
+  def getischeme( self, ndims, where ):
+    'get integration scheme'
+
+    assert ndims == self.ndims
+    return self.ischemes[ where ]
+
 class QuadElement( Element ):
   'quadrilateral element'
 
