@@ -108,6 +108,18 @@ class Pylab( object ):
     x, y = numpy.hstack( C )
     self.plot( x, y, linestyle )
 
+  def add_graph( self, coords, topology, function, linestyle ):
+    'plot graph of function on 1d topology'
+
+    C = []
+    for elem in topology:
+      xi = elem.eval( 'contour3' )
+      x = coords( xi ).flatten()
+      f = function( xi )
+      C.append( (x, f) )
+    x, y = numpy.hstack( C )
+    self.plot( x, y, linestyle )
+
 def project3d( C ):
   sqrt2 = numpy.sqrt( 2 )
   sqrt3 = numpy.sqrt( 3 )
