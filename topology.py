@@ -358,9 +358,6 @@ class StructuredTopology( Topology ):
       trans = element.AffineTransformation( offset=offset, transform=transform[:,_] )
       elem = element.QuadElement( ndims=1, parent=(pelem,trans) )
       structure.append( elem )
-
-
-
     
 class UnstructuredTopology( Topology ):
   'externally defined topology'
