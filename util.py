@@ -77,7 +77,7 @@ def clone( obj ):
   clone.__dict__.update( obj.__dict__ )
   return clone
 
-def iterate():
+def iterate( nmax=-1 ):
   'iterate forever'
 
   i = 0
@@ -85,6 +85,8 @@ def iterate():
     i += 1
     print 'iteration %d' % i
     yield i
+    if i == nmax:
+      break
 
 def obj2str( obj ):
   'convert object to string'
@@ -472,6 +474,7 @@ function timedRefresh(timeoutPeriod) {
 
     self.html = html
     self.html.write( self.HEAD )
+    #self.html.write( '<a href="../%s">permanent</a>\n' % os.readlink(DUMPDIR) )
     self.html.flush()
     self.stdout = stdout
     self.linebuf = ''

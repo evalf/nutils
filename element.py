@@ -133,6 +133,7 @@ class QuadElement( Element ):
       transforms.append( AffineTransformation( offset=offset, transform=transform ) )
     return transforms
 
+  @util.cachefunc
   def refined( self, n ):
     'refine'
 

@@ -37,7 +37,7 @@ class Pylab( object ):
     os.chmod( path, 0644 )
     self.close()
 
-  def add_mesh( self, coords, topology, color=None, edgecolors='none', linewidth=1, xmargin=0, ymargin=0, ax=None, aspect='equal', cbar='vertical', title=None, ischeme='gauss2', cscheme='contour3', clim=None ):
+  def add_mesh( self, coords, topology, color=None, edgecolors='none', linewidth=1, xmargin=0, ymargin=0, ax=None, aspect='equal', cbar='vertical', title=None, ischeme='gauss2', cscheme='contour3', clim=None, frame=True ):
     'plot mesh'
   
     from matplotlib import collections
@@ -87,6 +87,7 @@ class Pylab( object ):
       ax.set_autoscale_on( False )
     if title:
       self.title( title )
+    ax.set_frame_on( frame )
   
   def add_quiver( self, coords, topology, quiver, sample='uniform3' ):
     'quiver builder'
@@ -96,6 +97,16 @@ class Pylab( object ):
       xi = elem.eval(sample)
       XYUV.append( numpy.concatenate( [ coords(xi), quiver(xi) ], axis=0 ) )
     self.quiver( *numpy.concatenate( XYUV, 1 ) )
+
+  def add_line( self, coords, topology, linestyle ):
+    'plot line'
+
+    C = []
+    for elem in topology:
+      xi = elem.eval( 'contour3' )
+      C.append( coords( xi ) )
+    x, y = numpy.hstack( C )
+    self.plot( x, y, linestyle )
 
 def project3d( C ):
   sqrt2 = numpy.sqrt( 2 )
