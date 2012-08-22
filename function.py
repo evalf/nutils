@@ -602,10 +602,11 @@ class Choose( ArrayFunc ):
   def __init__( self, x, intervals, *funcs ):
     'constructor'
 
-    shape = funcs[0].shape
-    assert all( f.shape == shape for f in funcs )
+    shapes = [ f.shape for f in funcs if isinstance( f, ArrayFunc ) ]
+    shape = shapes.pop()
+    assert all( sh == shape for sh in shapes )
     assert len(intervals) == len(funcs)-1
-    self.shape = shape
+    self.shape = x.shape + shape
     self.args = (x,intervals) + funcs
 
   @staticmethod

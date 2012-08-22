@@ -108,12 +108,12 @@ class Pylab( object ):
     x, y = numpy.hstack( C )
     self.plot( x, y, linestyle )
 
-  def add_graph( self, coords, topology, function, linestyle ):
+  def add_graph( self, coords, topology, function, linestyle, sample='uniform10' ):
     'plot graph of function on 1d topology'
 
     C = []
     for elem in topology:
-      xi = elem.eval( 'contour3' )
+      xi = elem.eval( sample )
       x = coords( xi ).flatten()
       f = function( xi )
       C.append( (x, f) )
