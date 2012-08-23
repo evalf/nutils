@@ -263,7 +263,7 @@ class ArrayFunc( Evaluable ):
 
     return ( self[i] for i in range(self.shape[0]) )
 
-  def normalize( self, axis=-1 ):
+  def normalized( self, axis=-1 ):
     'normalize dimension'
 
     reshape = [ slice(None) ] * len(self.shape)
@@ -291,7 +291,7 @@ class ArrayFunc( Evaluable ):
       normal = Cross( grad[:,0], self.normal(), axis=0 )
     else:
       raise NotImplementedError, 'cannot compute normal for %dx%d jacobian' % ( self.shape[0], ndims )
-    return normal.normalize(0)
+    return normal.normalized(0)
 
   def curvature( self, ndims=-1 ):
     'curvature'
