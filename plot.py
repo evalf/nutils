@@ -108,7 +108,7 @@ class Pylab( object ):
     x, y = numpy.hstack( C )
     self.plot( x, y, linestyle )
 
-  def add_graph( self, coords, topology, function, linestyle, sample='uniform10' ):
+  def add_graph( self, coords, topology, function, linestyle, sample='uniform10', **kwargs ):
     'plot graph of function on 1d topology'
 
     C = []
@@ -118,7 +118,7 @@ class Pylab( object ):
       f = function( xi )
       C.append( (x, f) )
     x, y = numpy.hstack( C )
-    self.plot( x, y, linestyle )
+    self.plot( x, y, linestyle, **kwargs )
 
 def project3d( C ):
   sqrt2 = numpy.sqrt( 2 )
