@@ -11,6 +11,12 @@ class Topology( set ):
     assert self.ndims == other.ndims
     return UnstructuredTopology( set(self) | set(other), ndims=self.ndims )
 
+  def __getitem__( self, item ):
+    'subtopology'
+
+    items = ( self.groups[it] for it in item.split( ',' ) )
+    return sum( items, items.next() )
+
   def integrate( self, func, ischeme, coords=None, title=True ):
     'integrate'
 
@@ -178,8 +184,9 @@ class StructuredTopology( Topology ):
   def __getitem__( self, item ):
     'subtopology'
 
-    return self.groups[ item ] if isinstance( item, str ) \
-      else StructuredTopology( self.structure[item] )
+    if isinstance( item, str ):
+      return Topology.__getitem__( self, item )
+    return StructuredTopology( self.structure[item] )
 
   @util.cacheprop
   def boundary( self ):
@@ -371,11 +378,6 @@ class UnstructuredTopology( Topology ):
     self.ndims = ndims
 
     Topology.__init__( self, elements )
-
-  def __getitem__( self, item ):
-    'subtopology'
-
-    return self.groups[item]
 
   def splinefunc( self, degree ):
     'spline func'

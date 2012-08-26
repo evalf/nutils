@@ -118,7 +118,7 @@ class Pylab( object ):
       f = function( xi )
       C.append( (x, f) )
     x, y = numpy.hstack( C )
-    self.plot( x, y, linestyle, **kwargs )
+    return self.plot( x, y, linestyle, **kwargs )
 
 def project3d( C ):
   sqrt2 = numpy.sqrt( 2 )

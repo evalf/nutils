@@ -978,8 +978,9 @@ class LocalGradient( ArrayFunc ):
       xi = xi.next
       T = numpy.dot( T, xi.transform )
     F = fmap[ xi.elem ].eval( xi.points, grad=level )
-    assert isinstance( T, (int,float) ) or level == 1 # TODO fix for higher orders
-    return util.transform( F, T, axis=-2 )
+    for axis in range( -1-level, -1 ): # assumes 1D points!
+      F = util.transform( F, T, axis=axis )
+    return F
 
   def __str__( self ):
     'string representation'
@@ -1252,25 +1253,20 @@ class Add( ArrayFunc ):
   def __init__( self, func1, func2 ):
     'constructor'
 
-    if isinstance( func1, (int,float) ):
-      func1 = numpy.asarray( func1 )
-    func1_shape = func1.shape
-
-    if isinstance( func2, (int,float) ):
-      func2 = numpy.asarray( func2 )
-    func2_shape = func2.shape
+    assert isinstance( func1, (Evaluable,Scalar) )
+    assert isinstance( func2, (Evaluable,Scalar) )
 
     self.args = func1, func2
-    D = len(func1_shape) - len(func2_shape)
+    D = len(func1.shape) - len(func2.shape)
     nul = (nulaxis,)
     shape = []
-    for sh1, sh2 in zip( nul*-D + func1_shape, nul*D + func2_shape ):
+    for sh1, sh2 in zip( nul*-D + func1.shape, nul*D + func2.shape ):
       if sh1 is nulaxis:
         shape.append( sh2 )
       elif sh2 is nulaxis:
         shape.append( sh1 )
       else:
-        assert sh1 == sh2, 'incompatible dimensions: %s and %s' % ( func1_shape, func2_shape )
+        assert sh1 == sh2, 'incompatible dimensions: %s and %s' % ( func1.shape, func2.shape )
         shape.append( sh1 )
     self.shape = tuple( shape )
 
@@ -1453,10 +1449,10 @@ class Cos( BaseFunc ):
 
   eval = staticmethod( numpy.cos )
 
-  def grad( self, coords, topo ):
+  def localgradient( self, ndims ):
     'gradient'
 
-    return -Sin(self.args[0]) * self.args[0].grad(coords,topo)
+    return -Sin(self.args[0]) * self.args[0].localgradient(ndims)
 
 class Log( BaseFunc ):
   'cosine'
@@ -1505,7 +1501,7 @@ class Power( BaseFunc ):
     'string representation'
 
     func, power = self.args
-    return indent( 'Pow:%d' % power, func )
+    return indent( 'Pow:%.1f' % power, func )
 
 
 #############################33
