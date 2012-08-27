@@ -1,4 +1,4 @@
-from . import topology, util, numpy
+from . import topology, util, numpy, _
 
 import matplotlib
 matplotlib.use( 'Agg' )
@@ -6,21 +6,29 @@ matplotlib.use( 'Agg' )
 import os, tempfile
 
 class Pylab( object ):
-  'numpy figure'
+  'matplotlib figure'
 
   def __init__( self, title ):
     'constructor'
 
-    from matplotlib import pyplot
-    self.__dict__.update( pyplot.__dict__ )
-    self._title = title
+    if isinstance( title, (list,tuple) ):
+      self.title = numpy.array( title, dtype=object )
+      self.shape = self.title.shape
+      if self.title.ndim == 1:
+        self.title = self.title[:,_]
+      assert self.title.ndim == 2
+    else:
+      self.title = numpy.array( [[ title ]] )
+      self.shape = ()
 
   def __enter__( self ):
     'enter with block'
 
-    self.figure()
-    self.title( self._title )
-    return self
+    from matplotlib import pyplot
+    pyplot.figure()
+    n, m = self.title.shape
+    axes = [ PylabAxis( pyplot.subplot(n,m,iax+1), title ) for iax, title in enumerate( self.title.ravel() ) ]
+    return numpy.array( axes, dtype=object ).reshape( self.shape ) if self.shape else axes[0]
 
   def __exit__( self, exc, msg, tb ):
     'exit with block'
@@ -29,18 +37,33 @@ class Pylab( object ):
       print 'ERROR: plot failed:', msg or exc
       return #True
 
+    from matplotlib import pyplot
     fileobj = tempfile.NamedTemporaryFile( dir=util.DUMPDIR, prefix='fig', suffix='.png', delete=False )
     path = fileobj.name
     name = os.path.basename( path )
     print 'saving to', name
-    self.savefig( fileobj )
+    pyplot.savefig( fileobj )
     os.chmod( path, 0644 )
-    self.close()
+    pyplot.close()
 
-  def add_mesh( self, coords, topology, color=None, edgecolors='none', linewidth=1, xmargin=0, ymargin=0, ax=None, aspect='equal', cbar='vertical', title=None, ischeme='gauss2', cscheme='contour3', clim=None, frame=True ):
+class PylabAxis( object ):
+  'matplotlib axis augmented with finity-specific functions'
+
+  def __init__( self, ax, title ):
+    'constructor'
+
+    ax.set_title( title )
+    self._ax = ax
+
+  def __getattr__( self, attr ):
+    'forward getattr to axis'
+
+    return getattr( self._ax, attr )
+
+  def add_mesh( self, coords, topology, color=None, edgecolors='none', linewidth=1, xmargin=0, ymargin=0, aspect='equal', cbar='vertical', title=None, ischeme='gauss2', cscheme='contour3', clim=None, frame=True ):
     'plot mesh'
   
-    from matplotlib import collections
+    from matplotlib import pylab, collections
     poly = []
     values = []
     ndims, = coords.shape
@@ -61,33 +84,31 @@ class Pylab( object ):
       elements = collections.PolyCollection( poly, edgecolors=edgecolors, linewidth=linewidth )
       elements.set_array( numpy.asarray(values) )
       if cbar:
-        self.colorbar( elements, orientation=cbar )
+        pylab.colorbar( elements, orientation=cbar )
     else:
       elements = collections.PolyCollection( poly, edgecolors='black', facecolors='none', linewidth=linewidth )
     if clim:
       elements.set_clim( *clim )
-    if ax is None:
-      ax = self.gca()
     if ndims == 3:
-      ax.get_xaxis().set_visible( False )
-      ax.get_yaxis().set_visible( False )
+      self.get_xaxis().set_visible( False )
+      self.get_yaxis().set_visible( False )
       self.box( 'off' )
-    ax.add_collection( elements )
+    self.add_collection( elements )
     vertices = numpy.concatenate( poly )
     xmin, ymin = vertices.min(0)
     xmax, ymax = vertices.max(0)
     if not isinstance( xmargin, tuple ):
       xmargin = xmargin, xmargin
-    ax.set_xlim( xmin - xmargin[0], xmax + xmargin[1] )
+    self.set_xlim( xmin - xmargin[0], xmax + xmargin[1] )
     if not isinstance( ymargin, tuple ):
       ymargin = ymargin, ymargin
-    ax.set_ylim( ymin - ymargin[0], ymax + ymargin[1] )
+    self.set_ylim( ymin - ymargin[0], ymax + ymargin[1] )
     if aspect:
-      ax.set_aspect( aspect )
-      ax.set_autoscale_on( False )
+      self.set_aspect( aspect )
+      self.set_autoscale_on( False )
     if title:
       self.title( title )
-    ax.set_frame_on( frame )
+    self.set_frame_on( frame )
   
   def add_quiver( self, coords, topology, quiver, sample='uniform3' ):
     'quiver builder'
@@ -96,29 +117,22 @@ class Pylab( object ):
     for elem in util.progressbar( topology, title='plotting quiver' ):
       xi = elem.eval(sample)
       XYUV.append( numpy.concatenate( [ coords(xi), quiver(xi) ], axis=0 ) )
-    self.quiver( *numpy.concatenate( XYUV, 1 ) )
+    return self.quiver( *numpy.concatenate( XYUV, 1 ) )
 
-  def add_line( self, coords, topology, linestyle ):
-    'plot line'
-
-    C = []
-    for elem in topology:
-      xi = elem.eval( 'contour3' )
-      C.append( coords( xi ) )
-    x, y = numpy.hstack( C )
-    self.plot( x, y, linestyle )
-
-  def add_graph( self, coords, topology, function, linestyle, sample='uniform10', **kwargs ):
+  def add_graph( self, coords, topology, function, linestyle, sample='contour10', **kwargs ):
     'plot graph of function on 1d topology'
 
-    C = []
+    X = []
+    Y = []
     for elem in topology:
       xi = elem.eval( sample )
-      x = coords( xi ).flatten()
-      f = function( xi )
-      C.append( (x, f) )
-    x, y = numpy.hstack( C )
-    return self.plot( x, y, linestyle, **kwargs )
+      X.extend( coords( xi ).flatten() )
+      X.append( numpy.nan )
+      Y.extend( function( xi ) )
+      Y.append( numpy.nan )
+    p = self.plot( X, Y, linestyle, **kwargs )
+    self.set_xlim( min(X), max(X) )
+    return p
 
 def project3d( C ):
   sqrt2 = numpy.sqrt( 2 )
@@ -193,7 +207,7 @@ def preview( coords, topology, cscheme='contour8' ):
         pyplot.title( '?ZXY'[iplt] )
   else:
     raise Exception, 'need 2D or 3D coordinates'
-  show()
+  pyplot.show()
 
 # OLD
 
