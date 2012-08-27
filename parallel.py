@@ -1,6 +1,6 @@
 from multiprocessing import Lock, cpu_count
 
-nprocs = cpu_count()
+nprocs = 1#cpu_count()
 
 def shzeros( shape, dtype=float ):
   'create zero-initialized array in shared memory'
