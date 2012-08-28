@@ -131,7 +131,7 @@ class PylabAxis( object ):
       Y.extend( function( xi ) )
       Y.append( numpy.nan )
     p = self.plot( X, Y, linestyle, **kwargs )
-    self.set_xlim( min(X), max(X) )
+    #self.set_xlim( min(X), max(X) )
     return p
 
 def project3d( C ):
