@@ -280,7 +280,13 @@ class StructuredTopology( Topology ):
   def rectilinearfunc( self, gridnodes ):
     'rectilinear func'
 
-    return function.RectilinearFunc( self, gridnodes )
+    assert len( gridnodes ) == self.ndims
+    nodes_structure = numpy.empty( map( len, gridnodes ) + [self.ndims] )
+    for idim, inodes in enumerate( gridnodes ):
+      shape = [1,] * self.ndims
+      shape[idim] = -1
+      nodes_structure[...,idim] = numpy.asarray( inodes ).reshape( shape )
+    return self.linearfunc().dot( nodes_structure.reshape( -1, self.ndims ) )
 
   def refine( self, n ):
     'refine entire topology'
@@ -350,10 +356,10 @@ class StructuredTopology( Topology ):
 
     np = 100
     n = numpy.arange( .5, np ) / np
-    i = n[:,_]
-    j = n[_,:]
+    i = n[_,:,_]
+    j = n[_,_,:]
 
-    xyz = coordfunc( i, j ).reshape( 3, -1 )
+    xyz = C0[:,_,_] + i * C1 + j * C2
     nxyz = int( xyz )
     fxyz = xyz - nxyz
 

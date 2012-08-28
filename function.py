@@ -1504,20 +1504,6 @@ class Power( BaseFunc ):
     return indent( 'Pow:%.1f' % power, func )
 
 
-#############################33
-
-def RectilinearFunc( topo, gridnodes ):
-  'rectilinear mesh generator'
-
-  assert len( gridnodes ) == topo.ndims
-  nodes_structure = numpy.empty( map( len, gridnodes ) + [topo.ndims] )
-  for idim, inodes in enumerate( gridnodes ):
-    shape = [1,] * topo.ndims
-    shape[idim] = -1
-    nodes_structure[...,idim] = numpy.asarray( inodes ).reshape( shape )
-
-  return topo.linearfunc().dot( nodes_structure.reshape( -1, topo.ndims ) )
-
 # def find( self, x, title=False ):
 #   'find physical coordinates in all elements'
 
