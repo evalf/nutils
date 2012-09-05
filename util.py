@@ -223,7 +223,7 @@ def solve_system( matrix, rhs, title='solving system', symmetric=False, tol=0, m
   assert status == 0, 'solution failed to converge'
   return lhs
 
-def solve( A, b=None, constrain=None, lconstrain=None, rconstrain=None, **kwargs ):
+def solve( A, b=None, constrain=None, lconstrain=None, rconstrain=None, tol=0, **kwargs ):
   'solve'
 
   assert A.ndim == 2
@@ -242,6 +242,9 @@ def solve( A, b=None, constrain=None, lconstrain=None, rconstrain=None, **kwargs
   if rconstrain is not None:
     assert isinstance( rconstrain, numpy.ndarray ) and rconstrain.dtype == bool
     rcons[:rconstrain.size] = rconstrain
+
+  if tol == 0 and not isinstance( A, numpy.ndarray ):
+    A = A.toarray()
 
   where = numpy.isnan( lcons )
   if isinstance( A, numpy.ndarray ):
@@ -263,7 +266,7 @@ def solve( A, b=None, constrain=None, lconstrain=None, rconstrain=None, **kwargs
     tmp = b[ rcons[:b.size] ]
     rhs[:tmp.size] += tmp
 
-  lcons[ where ] = solve_system( matrix, rhs, **kwargs )
+  lcons[ where ] = solve_system( matrix, rhs, tol=tol, **kwargs )
   return lcons
 
 def transform( arr, trans, axis ):

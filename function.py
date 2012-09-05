@@ -20,6 +20,11 @@ class Zero( int ):
 
     return self
 
+  def grad( self, coords, ndims=0 ):
+    'gradient'
+
+    return self
+
   def __sub__( self, other ):
     'subtract'
 
@@ -1080,6 +1085,12 @@ class Scalar( float ):
   def localgradient( self, ndims ):
     'local gradient'
 
+    return ZERO
+
+  def grad( self, coords, ndims=0 ):
+    'gradient'
+
+    # quick insert; is this the best way?
     return ZERO
 
   def __getitem__( self, item ):
