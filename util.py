@@ -545,7 +545,7 @@ def run( *functions ):
         print >> sys.stderr, '  %-20s Default: %s' % ( tmp, default )
     return
 
-  if args and args[0].startswith( '-' ):
+  if args and not args[0].startswith( '-' ):
     funcname = args.pop(0)
   else:
     funcname = functions[0].func_name
