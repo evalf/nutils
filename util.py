@@ -454,12 +454,26 @@ class StdOut( object ):
   HEAD = '''\
 <html>
 <head>
-<script type="text/JavaScript">
+<script type="text/javascript" src="http://code.jquery.com/jquery-1.8.0.min.js"></script>
 <!--
+<script type="text/javascript">
+var timeout;
+
+$(window).focus(function (){
+  timeout = timedRefresh(1000);
+})
+.blur(function() {
+  window.clearTimeout(timeout);
+})
+.load(function (){
+  timeout = timedRefresh(1000);
+  $(window).scrollTop($(document).height());
+});
 function timedRefresh(timeoutPeriod) {
-  setTimeout("location.reload(true);",timeoutPeriod);
+  return window.setTimeout("location.reload(true);",timeoutPeriod);
 }
 </script>
+-->
 </head>
 <body>
 <pre>
@@ -518,19 +532,23 @@ def run( *functions ):
   assert functions
   args = sys.argv[1:]
   if '-h' in args or '--help' in args:
-    print 'Usage: %s [OPTIONS]' % sys.argv[0]
+    print 'Usage: %s [FUNC] [ARGS]' % sys.argv[0]
     print
     print '  -h    --help         Display this help.'
     print '  -p P  --parallel=P   Select number of processors.'
-    print '  -f F  --function=F   Select function.'
     for i, func in enumerate( functions ):
       print
-      print 'Arguments for -f %s%s' % ( func.func_name, '' if i else ' (default)' )
+      print 'Arguments for %s%s' % ( func.func_name, '' if i else ' (default)' )
       print
       for kwarg, default in getkwargdefaults( func ):
         tmp = '--%s=%s' % ( kwarg.lower(), kwarg[0].upper() )
         print >> sys.stderr, '  %-20s Default: %s' % ( tmp, default )
     return
+
+  if not args[0].startswith( '-' ):
+    funcname = args.pop(0)
+  else:
+    funcname = functions[0].func_name
 
   for index, arg in enumerate( args ):
     if arg == '-p' or arg.startswith( '--parallel=' ):
@@ -538,14 +556,6 @@ def run( *functions ):
       import parallel
       parallel.nprocs = int( args.pop( index ) if arg == '-p' else arg[11:] )
       break
-
-  for index, arg in enumerate( args ):
-    if arg == '-f' or arg.startswith( '--function=' ):
-      args.pop( index )
-      funcname = args.pop( index ) if arg == '-f' else arg[11:]
-      break
-  else:
-    funcname = functions[0].func_name
 
   for func in functions:
     if func.func_name == funcname:
