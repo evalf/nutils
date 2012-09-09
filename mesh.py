@@ -1,6 +1,6 @@
 from . import topology, function, util, element, numpy, _
 
-def rectilinear( *gridnodes ):
+def rectilinear( gridnodes, periodic=() ):
   'rectilinear mesh'
 
   ndims = len( gridnodes )
@@ -8,6 +8,7 @@ def rectilinear( *gridnodes ):
   structure = numpy.frompyfunc( lambda *s: element.QuadElement( ndims ), ndims, 1 )( *indices )
   topo = topology.StructuredTopology( structure )
   coords = topo.rectilinearfunc( gridnodes )
+  topo.periodic = tuple(periodic)
   return topo, coords
 
 def revolve( topo, coords, nelems, degree=4, axis=0 ):
@@ -227,7 +228,7 @@ def fromfunc( func, nelems, ndims, degree=2 ):
   if isinstance( nelems, int ):
     nelems = [ nelems ]
   assert len( nelems ) == func.func_code.co_argcount
-  topo, ref = rectilinear( *[ numpy.linspace(0,1,n+1) for n in nelems ] )
+  topo, ref = rectilinear( [ numpy.linspace(0,1,n+1) for n in nelems ] )
   funcsp = topo.splinefunc( degree=degree ).vector( ndims )
   coords = topo.projection( func, onto=funcsp, coords=ref, exact_boundaries=True )
   return topo, coords

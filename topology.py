@@ -160,7 +160,7 @@ class Topology( set ):
 class StructuredTopology( Topology ):
   'structured topology'
 
-  def __init__( self, structure, periodic=None ):
+  def __init__( self, structure, periodic=() ):
     'constructor'
 
     assert isinstance( structure, numpy.ndarray )
@@ -209,7 +209,7 @@ class StructuredTopology( Topology ):
 
     if self.ndims == 2:
       structure = numpy.concatenate([ boundaries[i].structure for i in [0,2,1,3] ])
-      topo = StructuredTopology( structure, periodic=0 )
+      topo = StructuredTopology( structure, periodic=[0] )
     else:
       allbelems = [ belem for boundary in boundaries for belem in boundary.structure.flat ]
       topo = UnstructuredTopology( allbelems, ndims=self.ndims-1 )
@@ -228,7 +228,7 @@ class StructuredTopology( Topology ):
     indices = numpy.array( 0 )
     slices = []
     for p, nelems in zip( degree, self.structure.shape ):
-      n = min( nelems, 2*(p-1)-1 ) if self.periodic != len( slices ) else (2*(p-1)-1)
+      n = (2*(p-1)-1) if len(slices) in self.periodic else min( nelems, 2*(p-1)-1 )
       ex = numpy.empty(( n, p, p ))
       ex[0] = numpy.eye( p )
       for i in range( 1, n ):
@@ -240,7 +240,7 @@ class StructuredTopology( Topology ):
           ex[i,-j-1:-1,-j-1] = ex[i-1,-j:,-1]
       extractions = util.reshape( extractions[:,_,:,_,:,_]
                                          * ex[_,:,_,:,_,:], 2, 2, 2 )
-      if self.periodic == len( slices ):
+      if len(slices) in self.periodic:
         I = [p-2] * nelems
       else:
         I = range( n )
@@ -253,15 +253,41 @@ class StructuredTopology( Topology ):
     stdelems = numpy.array( [ poly ] if all( p==2 for p in degree )
                        else [ element.ExtractionWrapper( poly, ex ) for ex in extractions ] )
 
-    shape = [ n + p - 1 for n, p in zip( self.structure.shape, degree ) ]
-    nodes_structure = numpy.arange( numpy.product(shape) ).reshape( shape )
-    if self.periodic is None:
-      dofcount = nodes_structure.size
-    else:
-      tmp = nodes_structure.swapaxes( 0, self.periodic )
-      overlap = degree[self.periodic] - 1
-      tmp[ -overlap: ] = tmp[ :overlap ]
-      dofcount = tmp[ :-overlap ].size
+#   shape = [ n + p - 1 for n, p in zip( self.structure.shape, degree ) ]
+#   nodes_structure = numpy.arange( numpy.product(shape) ).reshape( shape )
+
+#   if not self.periodic:
+#     dofcount = nodes_structure.size
+#   else:
+#     tmp = nodes_structure.swapaxes( 0, self.periodic )
+#     overlap = degree[self.periodic] - 1
+#     tmp[ -overlap: ] = tmp[ :overlap ]
+#     dofcount = tmp[ :-overlap ].size
+
+#   shape = numpy.asarray( nodes_structure.shape )
+#   for idim in self.periodic:
+#     tmp = nodes_structure.swapaxes( 0, idim )
+#     overlap = degree[idim] - 1
+#     tmp[ -overlap: ] = tmp[ :overlap ]
+#     shape[idim] -= overlap
+#   dofcount = int( numpy.product( shape ) )
+#   print dofcount
+
+    nodes_structure = numpy.array( 0 )
+    dofcount = 1
+    for idim in range( self.ndims ):
+      n = self.structure.shape[idim]
+      p = degree[idim]
+      nd = n + p - 1
+      numbers = numpy.arange( nd )
+      if idim in self.periodic:
+        overlap = p - 1
+        numbers[ -overlap: ] = numbers[ :overlap ]
+      else:
+        overlap = 0
+      nodes_structure = nodes_structure[...,_] * dofcount + numbers
+      dofcount *= nd - overlap
+
     mapping = {}
     for item in numpy.broadcast( self.structure, *numpy.ix_(*slices) ):
       elem = item[0]
@@ -272,7 +298,7 @@ class StructuredTopology( Topology ):
 
     return function.Function( shape=shape, mapping=mapping )
 
-  def linearfunc( self ):
+  def linearfunc( self, periodic=None ):
     'linears'
 
     return self.splinefunc( degree=2 )
