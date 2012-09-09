@@ -3,7 +3,7 @@ from numpyextra import *
 
 LINEWIDTH = 50
 BASEPATH = os.path.expanduser( '~/public_html/' )
-DUMPDIR = BASEPATH + 'latest'
+DUMPDIR = BASEPATH + time.strftime( '%Y-%m-%d/%H-%M-%S/' )
 
 class Cache( object ):
   'data cacher'
@@ -584,12 +584,12 @@ def run( *functions ):
 
   title = '%s.%s' % ( sys.argv[0].split('/')[-1].lower(), funcname.lower() )
 
-  path = time.strftime( '%Y-%m-%d/%H-%M-%S-%%s/' ) % title
-  os.makedirs( BASEPATH + path )
-  if os.path.islink( DUMPDIR ):
-    os.remove( DUMPDIR )
-  os.symlink( path, DUMPDIR )
-  output = open( BASEPATH + path + 'index.html', 'w' )
+  LINK = BASEPATH + 'latest'
+  os.makedirs( DUMPDIR )
+  if os.path.islink( LINK ):
+    os.remove( LINK )
+  os.symlink( DUMPDIR, LINK )
+  output = open( DUMPDIR + 'index.html', 'w' )
 
   sys.stdout = StdOut( sys.stdout, output )
 
