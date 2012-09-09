@@ -268,6 +268,16 @@ class ArrayFunc( Evaluable ):
 
     return ( self[i] for i in range(self.shape[0]) )
 
+  def sum( self, axis=-1 ):
+    'sum'
+
+    if self.shape[axis] == 1:
+      s = [ slice(None) ] * len(self.shape)
+      s[axis] = 0
+      return self[ tuple(s) ]
+
+    raise NotImplementedError, 'summation not supported yet!'
+
   def normalized( self, axis=-1 ):
     'normalize dimension'
 
@@ -294,6 +304,8 @@ class ArrayFunc( Evaluable ):
     elif self.shape[0] == 3 and ndims == 1:
       grad = self.localgradient( ndims=1 )
       normal = Cross( grad[:,0], self.normal(), axis=0 )
+    elif self.shape[0] == 1 and ndims == 0:
+      return Scalar( 1 ) # TODO fix direction!!!!
     else:
       raise NotImplementedError, 'cannot compute normal for %dx%d jacobian' % ( self.shape[0], ndims )
     return normal.normalized(0)

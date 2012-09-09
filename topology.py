@@ -218,7 +218,7 @@ class StructuredTopology( Topology ):
     return topo
 
   @util.cachefunc
-  def splinefunc( self, degree ):
+  def splinefunc( self, degree, neumann=() ):
     'spline from nodes'
 
     if isinstance( degree, int ):
@@ -227,8 +227,10 @@ class StructuredTopology( Topology ):
     extractions = numpy.ones( (1,1,1), dtype=float )
     indices = numpy.array( 0 )
     slices = []
-    for p, nelems in zip( degree, self.structure.shape ):
-      n = (2*(p-1)-1) if len(slices) in self.periodic else min( nelems, 2*(p-1)-1 )
+    for idim in range( self.ndims ):
+      p = degree[idim]
+      nelems = self.structure.shape[idim]
+      n = (2*(p-1)-1) if idim in self.periodic else min( nelems, 2*(p-1)-1 )
       ex = numpy.empty(( n, p, p ))
       ex[0] = numpy.eye( p )
       for i in range( 1, n ):
@@ -238,9 +240,15 @@ class StructuredTopology( Topology ):
             alpha = 1. / min( 2+k-j, n-i+1 )
             ex[i-1,:,k] = alpha * ex[i-1,:,k] + (1-alpha) * ex[i-1,:,k-1]
           ex[i,-j-1:-1,-j-1] = ex[i-1,-j:,-1]
+
+      if idim * 2 in neumann:
+        ex[0,1,:] += ex[0,0,:]
+      if idim * 2 + 1 in neumann:
+        ex[-1,-2,:] += ex[-1,-1,:]
+
       extractions = util.reshape( extractions[:,_,:,_,:,_]
                                          * ex[_,:,_,:,_,:], 2, 2, 2 )
-      if len(slices) in self.periodic:
+      if idim in self.periodic:
         I = [p-2] * nelems
       else:
         I = range( n )
