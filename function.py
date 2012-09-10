@@ -1518,7 +1518,7 @@ class Power( BaseFunc ):
     'local gradient'
 
     func, power = self.args
-    return power * func**(power-1) * func.localgradient(ndims)
+    return power * ( func**(power-1) )[...,_] * func.localgradient(ndims)
 
   def __str__( self ):
     'string representation'

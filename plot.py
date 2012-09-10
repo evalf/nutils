@@ -38,7 +38,8 @@ class Pylab( object ):
       return #True
 
     from matplotlib import pyplot
-    fileobj = tempfile.NamedTemporaryFile( dir=util.DUMPDIR, prefix='fig', suffix='.png', delete=False )
+    n = len( os.listdir( util.DUMPDIR ) )
+    fileobj = tempfile.NamedTemporaryFile( dir=util.DUMPDIR, prefix='f%04d' % n, suffix='.png', delete=False )
     path = fileobj.name
     name = os.path.basename( path )
     print 'saving to', name

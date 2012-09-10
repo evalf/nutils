@@ -205,7 +205,7 @@ class Iter_CallBack:
         arg = numpy.linalg.norm( self.rhs - self.matrix * arg ) # for cg
       self.progressbar.update( numpy.log(arg) )
 
-def solve_system( matrix, rhs, title='solving system', symmetric=False, tol=0, maxiter=99999 ):
+def solve_system( matrix, rhs, title='solving system', symmetric=False, tol=0, maxiter=999999 ):
   'solve linear system iteratively'
 
   assert matrix.shape[:-1] == rhs.shape
@@ -220,7 +220,7 @@ def solve_system( matrix, rhs, title='solving system', symmetric=False, tol=0, m
                         callback=title and Iter_CallBack(tol,'%s [%s:%d]' % (title,symmetric and 'CG' or 'GMRES', matrix.shape[0]), matrix, rhs ),
                         tol=tol,
                         maxiter=maxiter )
-  assert status == 0, 'solution failed to converge'
+  assert status == 0, 'solution failed to converge (status=%d)' % status
   return lhs
 
 def solve( A, b=None, constrain=None, lconstrain=None, rconstrain=None, tol=0, **kwargs ):
@@ -451,29 +451,91 @@ def getkwargdefaults( func ):
 class StdOut( object ):
   'stdout wrapper'
 
+# var timeout;
+# $(window).focus(function (){
+#   timeout = timedRefresh(1000);
+# })
+# .blur(function() {
+#   window.clearTimeout(timeout);
+# })
+# .load(function (){
+#   timeout = timedRefresh(1000);
+# });
+# function timedRefresh(timeoutPeriod) {
+#   return window.setTimeout("location.reload(true);",timeoutPeriod);
+# }
+# 
+# $(window).scroll(function(){
+#   if ($(window).scrollTop() == $(window).height()){
+#     location.reload(true);
+#   }
+# });
+
   HEAD = '''\
 <html>
 <head>
 <script type="text/javascript" src="http://code.jquery.com/jquery-1.8.0.min.js"></script>
-<!--
 <script type="text/javascript">
-var timeout;
 
-$(window).focus(function (){
-  timeout = timedRefresh(1000);
-})
-.blur(function() {
-  window.clearTimeout(timeout);
-})
-.load(function (){
-  timeout = timedRefresh(1000);
-  $(window).scrollTop($(document).height());
+this.imagePreview = function(){ 
+  $("a.preview").hover(function(e){
+    $("body").append("<p id='preview'><img src='"+ this.href +"' alt='Image preview' width='600' /></p>");                
+    $("#preview").fadeIn("fast");            
+  },
+  function(){
+    this.title = this.t;  
+    $("#preview").remove();
+  }); 
+};
+
+// starting the script on page load
+$(document).ready(function(){
+  imagePreview();
 });
-function timedRefresh(timeoutPeriod) {
-  return window.setTimeout("location.reload(true);",timeoutPeriod);
-}
+
 </script>
--->
+<style>
+body {
+  margin:0;
+  padding:20px;
+  background:#fff;
+  font:80% Arial, Helvetica, sans-serif;
+  color:#555;
+  line-height:180%;
+}
+
+a{
+  text-decoration:none;
+  color:#f30; 
+}
+
+p{
+  clear:both;
+  margin:0;
+  padding:.5em 0;
+}
+
+pre{
+  display:block;
+  font:100% "Courier New", Courier, monospace;
+  padding:10px;
+  border:1px solid #bae2f0;
+  background:#e3f4f9; 
+  margin:.5em 0;
+  overflow:auto;
+  width:450px;
+}
+
+#preview {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  border: 1px solid gray;
+  padding: 0px;
+  display: none;
+}
+
+</style>
 </head>
 <body>
 <pre>
@@ -494,25 +556,15 @@ function timedRefresh(timeoutPeriod) {
     #self.html.write( '<a href="../%s">permanent</a>\n' % os.readlink(DUMPDIR) )
     self.html.flush()
     self.stdout = stdout
-    self.linebuf = ''
+
+    import re
+    self.pattern = re.compile( r'\b(\w+[.]png)\b' )
 
   def write( self, s ):
     'write string'
 
     self.stdout.write( s )
-
-    for line in s.splitlines( True ):
-      self.html.write( line )
-      if not line.endswith( '\n' ):
-        self.linebuf = line
-        continue
-      if self.linebuf:
-        line = self.linebuf + line
-        self.linebuf = ''
-      if '.png' in line:
-        for word in line.split():
-          if word.endswith( '.png' ):
-            self.html.write( '\n<a href="%s"><img src="%s" width="435pt" border="1px"/></a>\n\n' % ( word, word ) )
+    self.html.write( self.pattern.sub( r'<a href="\1" class="preview">\1</a>', s ) )
     self.html.flush()
 
   def flush( self ):
