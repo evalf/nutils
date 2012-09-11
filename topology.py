@@ -293,7 +293,7 @@ class StructuredTopology( Topology ):
         numbers[ -overlap: ] = numbers[ :overlap ]
       else:
         overlap = 0
-      nodes_structure = nodes_structure[...,_] * dofcount + numbers
+      nodes_structure = nodes_structure[...,_] * nd + numbers
       dofcount *= nd - overlap
 
     mapping = {}

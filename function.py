@@ -854,6 +854,8 @@ class Vectorize( ArrayFunc ):
     if all( func == self.args[0] for func in self.args[1:] ):
       return self.args[0].dot( weights.reshape( len(self.args), -1 ).T )
 
+    # TODO broken for merged functions!
+
     n1 = 0
     funcs = []
     for func in self.args:
