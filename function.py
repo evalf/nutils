@@ -43,25 +43,21 @@ def unite( *funcs ):
     yield newf
     n += f.shape[0].ndofs
 
-def align_shapes( func1, func2 ):
+def align_shapes( *funcs ):
   'align shapes'
 
-  if not isinstance( func1, ArrayFunc ):
-    func1 = numpy.asarray( func1 )
-  if not isinstance( func2, ArrayFunc ):
-    func2 = numpy.asarray( func2 )
-
-  D = len(func1.shape) - len(func2.shape)
-  nul = (nulaxis,)
+  funcs = map( as_evaluable, funcs )
   shape = []
-  for sh1, sh2 in zip( nul*-D + func1.shape, nul*D + func2.shape ):
-    if sh1 is nulaxis:
-      shape.append( sh2 )
-    elif sh2 is nulaxis:
-      shape.append( sh1 )
-    else:
-      assert sh1 == sh2, 'incompatible dimensions: %s and %s' % ( func1.shape, func2.shape )
-      shape.append( sh1 )
+  for f in funcs:
+    d = len(shape) - len(f.shape)
+    if d < 0:
+      shape = list(f.shape[:-d]) + shape
+      d = 0
+    for i, sh in enumerate( f.shape ):
+      if shape[d+i] is nulaxis:
+        shape[d+i] = sh
+      else:
+        assert sh == shape[d+i] or sh is nulaxis
   return shape
 
 def is_zero( obj ):
@@ -105,6 +101,21 @@ def indent( key, *items ):
   indent = '\n' + '+' + '-' * (len(key)-1) + ' '
   return key + ' ' + indent.join( reversed( lines ) )
   
+def as_evaluable( f ):
+  'convert to evaluable'
+
+  if isinstance( f, Evaluable ):
+    return f
+
+  if isinstance( f, (int,float) ):
+    return Scalar( f )
+
+  if isinstance( f, numpy.ndarray ):
+    if not f.shape:
+      return Scalar( f )
+    return StaticArray( f )
+
+  raise Exception, 'not sure how to convert %r to evaluable' % f
 
 class StackIndex( int ):
   'stack index'
@@ -200,6 +211,14 @@ class Tuple( Evaluable ):
 
     return f
 
+def Zip( *args ):
+  'zip items together'
+
+  args = map( tuple, args )
+  n = len( args[0] )
+  assert all( len(arg) == n for arg in args[1:] ), 'zipping items of different length'
+  return Tuple( [ Tuple(v) for v in zip( *args ) ] )
+
 # ARRAY FUNCTIONS
 
 def merge( func0, *funcs ): # temporary
@@ -265,6 +284,9 @@ class ArrayFunc( Evaluable ):
 
   def __iter__( self ):
     'split first axis'
+
+    if not self.shape:
+      raise TypeError, 'scalar function is not iterable'
 
     return ( self[i] for i in range(self.shape[0]) )
 
@@ -578,6 +600,19 @@ class StaticDot( ArrayFunc ):
     #return '%s%%[#%s]' % ( self.func, 'x'.join( str(d) for d in self.array.shape ) )
     return indent( 'StaticDot(%s)' % 'x'.join( str(d) for d in self.array.shape ), self.func )
 
+class Const( float ): # for select
+  def eval( self, points ):
+    return self
+
+def const( *args ):
+  'select by topology'
+
+  assert len(args)%2 == 0
+  mapping = {}
+  for topo, val in zip( args[::2], args[1::2] ):
+    mapping.update( dict.fromkeys( topo, Const(val) ) )
+  return Function( shape=(), mapping=mapping )
+
 class Function( ArrayFunc ):
   'function'
 
@@ -867,27 +902,31 @@ class Vectorize( ArrayFunc ):
 class Stack( ArrayFunc ):
   'stack functions'
 
-  def __init__( self, funcs, axis=0 ):
+  needxi = True
+
+  def __init__( self, funcs, axis=-1 ):
     'constructor'
 
-    shape = funcs[0].shape
-    assert all( f.shape == shape for f in funcs[1:] )
+    funcs = map( as_evaluable, funcs )
+    shape = align_shapes( *funcs )
     if axis < 0:
       axis += len(shape) + 1
     assert 0 <= axis < len(shape)+1
 
     self.funcs = funcs
     self.axis = axis
-    self.shape = shape[:axis] + (len(funcs),) + shape[axis:]
-    self.args = (axis,) + tuple(funcs)
+    self.shape = tuple( shape[:axis] + [len(funcs)] + shape[axis:] )
+    self.args = ( axis, self.shape ) + tuple(funcs)
 
   @staticmethod
-  def eval( axis, *funcs ):
+  def eval( xi, axis, shape, *funcs ):
     'evaluate'
 
-    stacked = numpy.array( funcs )
-    if axis: # untested!
-      stacked = stacked.transpose( range( 1,axis+1 ) + [0] + range( axis+1, len(stacked.shape) ) )
+    n = xi.points.npoints # TODO generalize to shape
+    stacked = numpy.empty( shape + (n,) )
+    #print stacked.shape, axis
+    for array, f in zip( util.ndiag( stacked, [axis] ), funcs ):
+      array[:] = f
     return stacked
 
   def localgradient( self, ndims ):
@@ -1219,18 +1258,8 @@ class Divide( ArrayFunc ):
       if func2.ndim:
         func2 = StaticArray( func2 )
 
+    shape = align_shapes( func1, func2 )
     self.args = func1, func2
-    D = len(func1.shape) - len(func2.shape)
-    nul = (nulaxis,)
-    shape = []
-    for sh1, sh2 in zip( nul*-D + func1.shape, nul*D + func2.shape ):
-      if sh1 is nulaxis:
-        shape.append( sh2 )
-      elif sh2 is nulaxis:
-        shape.append( sh1 )
-      else:
-        assert sh1 == sh2, 'incompatible dimensions: %s and %s' % ( func1.shape, func2.shape )
-        shape.append( sh1 )
     self.shape = tuple( shape )
 
   def localgradient( self, ndims ):
@@ -1278,21 +1307,11 @@ class Add( ArrayFunc ):
   def __init__( self, func1, func2 ):
     'constructor'
 
+    shape = align_shapes( func1, func2 )
     assert isinstance( func1, (Evaluable,Scalar) )
     assert isinstance( func2, (Evaluable,Scalar) )
 
     self.args = func1, func2
-    D = len(func1.shape) - len(func2.shape)
-    nul = (nulaxis,)
-    shape = []
-    for sh1, sh2 in zip( nul*-D + func1.shape, nul*D + func2.shape ):
-      if sh1 is nulaxis:
-        shape.append( sh2 )
-      elif sh2 is nulaxis:
-        shape.append( sh1 )
-      else:
-        assert sh1 == sh2, 'incompatible dimensions: %s and %s' % ( func1.shape, func2.shape )
-        shape.append( sh1 )
     self.shape = tuple( shape )
 
   eval = staticmethod( numpy.ndarray.__add__ )
@@ -1314,18 +1333,8 @@ class Subtract( ArrayFunc ):
   def __init__( self, func1, func2 ):
     'constructor'
 
+    shape = align_shapes( func1, func2 )
     self.args = func1, func2
-    D = len(func1.shape) - len(func2.shape)
-    nul = (nulaxis,)
-    shape = []
-    for sh1, sh2 in zip( nul*-D + func1.shape, nul*D + func2.shape ):
-      if sh1 is nulaxis:
-        shape.append( sh2 )
-      elif sh2 is nulaxis:
-        shape.append( sh1 )
-      else:
-        assert sh1 == sh2, 'incompatible dimensions: %s and %s' % ( func1.shape, func2.shape )
-        shape.append( sh1 )
     self.shape = tuple( shape )
 
   def __neg__( self ):
@@ -1447,7 +1456,7 @@ class BaseFunc( ArrayFunc ):
   def __str__( self ):
     'string representation'
 
-    return '%s(%s)' % ( self.__class__.__name__, ','.join( str(f) for f in self.args ) )
+    return indent( self.__class__.__name__, *self.args )
 
 class Exp( BaseFunc ):
   'exponent'

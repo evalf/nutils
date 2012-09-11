@@ -218,8 +218,7 @@ class Stokeslet( function.ArrayFunc ):
     retval_swap = retval.reshape( 2, ndofs, 2, *shape ).swapaxes(0,1) # follows ordering Vectorize
     for D_R, R, R2, logR, w, f, n, M in iterdata:
       kernel = D_R[:,_] * D_R[_,:]
-      kernel[0,0] -= logR
-      kernel[1,1] -= logR
+      util.ndiag( kernel, [0,1] )[:] -= logR
       retval_swap[M] += numpy.dot( f[:,_,_,_,:] * kernel, w )
 
       flux = util.contract( kernel, n[:,_,:], axis=-3 )
@@ -308,12 +307,9 @@ class StokesletGrad( function.ArrayFunc ):
     for D_R, R, R2, logR, w, f, I in iterdata:
       kernel = D_R[:,_,_] * D_R[_,:,_] * D_R[_,_,:]
       kernel *= -2
-      kernel[:,0,0] += D_R
-      kernel[:,1,1] += D_R
-      kernel[0,:,0] += D_R
-      kernel[1,:,1] += D_R
-      kernel[0,0,:] -= D_R
-      kernel[1,1,:] -= D_R
+      util.ndiag( kernel, [1,2] )[:] += D_R
+      util.ndiag( kernel, [0,1] )[:] -= D_R
+      util.ndiag( kernel, [2,0] )[:] += D_R
       kernel /= R
       retval_swap[I] += numpy.tensordot( w * f, kernel, (-1,-1) )
     retval /= 4 * numpy.pi * mu
@@ -336,9 +332,9 @@ class StokesletReconstruct( function.ArrayFunc ):
 
     retval = 0
     for D_R, R, R2, logR, w, velo, trac, norm in iterdata:
-      Dtrac = util.contract( D_R, trac[:,_,:], 0 )
-      Dvelo = util.contract( D_R, velo[:,_,:], 0 )
-      Dnorm = util.contract( D_R, norm[:,_,:], 0 )
+      Dtrac = util.contract( D_R, trac[:,_,:], axis=0 )
+      Dvelo = util.contract( D_R, velo[:,_,:], axis=0 )
+      Dnorm = util.contract( D_R, norm[:,_,:], axis=0 )
       retval += numpy.dot( ( D_R * Dtrac - trac[:,_,:] * logR ) / (4*mu) - (D_R/R) * Dnorm * Dvelo, w )
     return retval / numpy.pi
 

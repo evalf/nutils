@@ -20,23 +20,24 @@ class Topology( set ):
   def integrate( self, func, ischeme, coords=None, title=True ):
     'integrate'
 
-    def makeindex( shape ):
-      indices = []
-      count = sum( isinstance(sh,function.DofAxis) for sh in shape )
-      iaxis = 0
-      for sh in shape:
-        if isinstance(sh,function.DofAxis):
-          index = sh
-          if count > 1:
-            reshape = [ numpy.newaxis ] * count
-            reshape[iaxis] = slice(None)
-            index = index[ tuple(reshape) ]
-          iaxis += 1
-        else:
-          index = slice(None)
-        indices.append( index )
-      assert iaxis == count
-      return function.Tuple(indices)
+    def makeindex( ff ):
+      for f in ff:
+        indices = []
+        count = sum( isinstance(sh,function.DofAxis) for sh in f.shape )
+        iaxis = 0
+        for sh in f.shape:
+          if isinstance(sh,function.DofAxis):
+            index = sh
+            if count > 1:
+              reshape = [ numpy.newaxis ] * count
+              reshape[iaxis] = slice(None)
+              index = index[ tuple(reshape) ]
+            iaxis += 1
+          else:
+            index = slice(None)
+          indices.append( index )
+        assert iaxis == count
+        yield function.Tuple(indices)
 
     if coords:
       J = coords.localgradient( self.ndims )
@@ -64,17 +65,12 @@ class Topology( set ):
 
       import scipy.sparse
 
-      if isinstance( func, tuple ):
-        d = function.Tuple( [ function.Tuple( [ f, makeindex(f.shape) ] ) for f in func ] )
-        shape = map( int, func[0].shape )
-        for f in func[1:]:
-          assert shape == map( int, f.shape )
-      else:
-        assert isinstance( func, function.ArrayFunc )
-        d = function.Tuple( [ function.Tuple( [ func, makeindex(func.shape) ] ) ] )
-        shape = func.shape
+      if not isinstance( func, tuple ):
+        func = func,
+      shape = map( int, func[0].shape )
+      assert all( shape == map( int, f.shape ) for f in func[1:] )
 
-      idata = function.Tuple([ d, detJ ])
+      idata = function.Tuple([ function.Zip( func, makeindex(func) ), detJ ])
       indices = []
       values = []
       for elem in topo:
@@ -96,14 +92,15 @@ class Topology( set ):
 
     else:
 
-      if isinstance( func, list ):
-        A = [ parallel.shzeros( f.shape ) for f in func ]
-        d = [ function.Tuple([ util.UsableArray(Ai), f, makeindex(f.shape) ]) for (Ai,f) in zip(A,func) ]
-      else:
+      if not isinstance( func, list ):
         A = parallel.shzeros( func.shape )
-        d = [ function.Tuple([ util.UsableArray(A), func, makeindex(func.shape) ]) ]
+        func = [ func ]
+        arrays = util.UsableArray(A),
+      else:
+        A = [ parallel.shzeros( f.shape ) for f in func ]
+        arrays = map(util.UsableArray,A)
 
-      idata = function.Tuple([ detJ, function.Tuple(d) ])
+      idata = function.Tuple([ detJ, function.Zip( arrays, func, makeindex(func) ) ])
       lock = parallel.Lock()
       for elem in parallel.pariter( topo ):
         xi = elem.eval(ischeme)

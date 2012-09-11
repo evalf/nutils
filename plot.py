@@ -1,4 +1,4 @@
-from . import topology, util, numpy, _
+from . import topology, util, numpy, function, _
 
 import matplotlib
 matplotlib.use( 'Agg' )
@@ -64,7 +64,7 @@ class PylabAxis( object ):
   def add_mesh( self, coords, topology, color=None, edgecolors='none', linewidth=1, xmargin=0, ymargin=0, aspect='equal', cbar='vertical', title=None, ischeme='gauss2', cscheme='contour3', clim=None, frame=True ):
     'plot mesh'
   
-    from matplotlib import pylab, collections
+    from matplotlib import pyplot, collections
     poly = []
     values = []
     ndims, = coords.shape
@@ -85,7 +85,7 @@ class PylabAxis( object ):
       elements = collections.PolyCollection( poly, edgecolors=edgecolors, linewidth=linewidth )
       elements.set_array( numpy.asarray(values) )
       if cbar:
-        pylab.colorbar( elements, orientation=cbar )
+        pyplot.colorbar( elements, ax=self._ax, orientation=cbar )
     else:
       elements = collections.PolyCollection( poly, edgecolors='black', facecolors='none', linewidth=linewidth )
     if clim:
@@ -120,20 +120,43 @@ class PylabAxis( object ):
       XYUV.append( numpy.concatenate( [ coords(xi), quiver(xi) ], axis=0 ) )
     return self.quiver( *numpy.concatenate( XYUV, 1 ) )
 
-  def add_graph( self, coords, topology, function, linestyle, sample='contour10', **kwargs ):
+  def add_graph( self, xfun, yfun, topology, sample='contour10', **kwargs ):
     'plot graph of function on 1d topology'
 
-    X = []
-    Y = []
+    try:
+      xfun = [ xf for xf in xfun ]
+    except TypeError:
+      xfun = [ xfun ]
+
+    try:
+      yfun = [ yf for yf in yfun ]
+    except TypeError:
+      yfun = [ yfun ]
+
+    if len(xfun) == 1:
+      xfun *= len(yfun)
+
+    if len(yfun) == 1:
+      yfun *= len(xfun)
+
+    nfun = len(xfun)
+    assert len(yfun) == nfun
+
+    special_args = zip( *[ zip( [key]*nfun, val ) for (key,val) in kwargs.iteritems() if isinstance(val,list) and len(val) == nfun ] )
+    XYD = [ ([],[],dict(d)) for d in special_args or [[]] * nfun ]
+    xypairs = function.Zip( xfun, yfun, XYD )
+
     for elem in topology:
       xi = elem.eval( sample )
-      X.extend( coords( xi ).flatten() )
-      X.append( numpy.nan )
-      Y.extend( function( xi ) )
-      Y.append( numpy.nan )
-    p = self.plot( X, Y, linestyle, **kwargs )
-    #self.set_xlim( min(X), max(X) )
-    return p
+      for x, y, xyd in xypairs( xi ):
+        xyd[0].extend( x )
+        xyd[0].append( numpy.nan )
+        xyd[1].extend( y )
+        xyd[1].append( numpy.nan )
+
+    for x, y, d in XYD:
+      kwargs.update(d)
+      self.plot( x, y, **kwargs )
 
 def project3d( C ):
   sqrt2 = numpy.sqrt( 2 )
