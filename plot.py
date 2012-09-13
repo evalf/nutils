@@ -8,7 +8,7 @@ import os, tempfile
 class Pylab( object ):
   'matplotlib figure'
 
-  def __init__( self, title ):
+  def __init__( self, title, filename=None ):
     'constructor'
 
     if isinstance( title, (list,tuple) ):
@@ -20,6 +20,7 @@ class Pylab( object ):
     else:
       self.title = numpy.array( [[ title ]] )
       self.shape = ()
+    self.filename = filename
 
   def __enter__( self ):
     'enter with block'
@@ -39,9 +40,14 @@ class Pylab( object ):
 
     from matplotlib import pyplot
     n = len( os.listdir( util.DUMPDIR ) )
-    fileobj = tempfile.NamedTemporaryFile( dir=util.DUMPDIR, prefix='f%04d' % n, suffix='.png', delete=False )
-    path = fileobj.name
-    name = os.path.basename( path )
+    if self.filename:
+      name = self.filename + '.png'
+      path = os.path.join( util.DUMPDIR, name )
+      fileobj = open( path, 'w' )
+    else:
+      fileobj = tempfile.NamedTemporaryFile( dir=util.DUMPDIR, prefix='f%04d' % n, suffix='.png', delete=False )
+      path = fileobj.name
+      name = os.path.basename( path )
     print 'saving to', name
     pyplot.savefig( fileobj )
     os.chmod( path, 0644 )

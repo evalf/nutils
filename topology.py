@@ -17,68 +17,32 @@ class Topology( set ):
     items = ( self.groups[it] for it in item.split( ',' ) )
     return sum( items, items.next() )
 
-  def integrate( self, func, ischeme, coords=None, title=True ):
+  def integrate( self, func, ischeme, coords, title=True, dense=None ):
     'integrate'
-
-    def makeindex( ff ):
-      for f in ff:
-        indices = []
-        count = sum( isinstance(sh,function.DofAxis) for sh in f.shape )
-        iaxis = 0
-        for sh in f.shape:
-          if isinstance(sh,function.DofAxis):
-            index = sh
-            if count > 1:
-              reshape = [ numpy.newaxis ] * count
-              reshape[iaxis] = slice(None)
-              index = index[ tuple(reshape) ]
-            iaxis += 1
-          else:
-            index = slice(None)
-          indices.append( index )
-        assert iaxis == count
-        yield function.Tuple(indices)
-
-    if coords:
-      J = coords.localgradient( self.ndims )
-      cndims, = coords.shape
-      if cndims == self.ndims:
-        detJ = J.det( 0, 1 )
-      elif self.ndims == 1:
-        detJ = J[:,0].norm2( 0 )
-      elif cndims == 3 and self.ndims == 2:
-        detJ = function.Cross( J[:,0], J[:,1], axis=0 ).norm2( 0 )
-      elif self.ndims == 0:
-        detJ = 1.
-      else:
-        raise NotImplementedError, 'cannot compute determinant for %dx%d jacobian' % J.shape[:2]
-    else:
-      detJ = 1.
 
     topo = self if not title \
       else util.progressbar( self, title='integrating %d elements (nprocs=%d)' % ( len(self), parallel.nprocs ) if title is True else title )
 
-    if isinstance( func, tuple ) or isinstance( func, function.ArrayFunc ) and len( func.shape ) == 2:
+    funcs = func if isinstance( func, (list,tuple) ) else [func]
+    shapes = [ map(int,f.shape) for f in funcs ]
+
+    iweights = coords.iweights( self.ndims )
+    idata = function.Tuple([ function.Tuple([ f, f.indices(), iweights ]) for f in funcs ])
+
+    if not dense and isinstance( func, tuple ) or isinstance( func, function.ArrayFunc ) and len( func.shape ) == 2:
       # quickly implemented single array for now, needs to be extended for
       # multiple inputs. requires thinking of separating types for separate
       # arguments.
 
       import scipy.sparse
 
-      if not isinstance( func, tuple ):
-        func = func,
-      shape = map( int, func[0].shape )
-      assert all( shape == map( int, f.shape ) for f in func[1:] )
+      assert all( sh == shapes[0] for sh in shapes[1:] )
 
-      idata = function.Tuple([ function.Zip( func, makeindex(func) ), detJ ])
       indices = []
       values = []
       for elem in topo:
-        xi = elem.eval(ischeme)
-        datas, detj = idata(xi)
-        weights = detj * xi.weights
-        for data, index in datas:
-          evalues = util.contract( data, weights )
+        for data, index, w in idata( elem.eval(ischeme) ):
+          evalues = util.contract( data, w )
           ndims = evalues.ndim
           eindices = numpy.empty( (ndims,) + evalues.shape )
           for i, n in enumerate( index ):
@@ -88,37 +52,30 @@ class Topology( set ):
 
       v = numpy.hstack( values )
       ij = numpy.hstack( indices )
-      A = scipy.sparse.csr_matrix( (v,ij), shape=shape )
+      A = scipy.sparse.csr_matrix( (v,ij), shape=shapes[0] )
 
     else:
 
-      if not isinstance( func, list ):
-        A = parallel.shzeros( func.shape )
-        func = [ func ]
-        arrays = util.UsableArray(A),
-      else:
-        A = [ parallel.shzeros( f.shape ) for f in func ]
-        arrays = map(util.UsableArray,A)
+      A = map( parallel.shzeros, shapes )
 
-      idata = function.Tuple([ detJ, function.Zip( arrays, func, makeindex(func) ) ])
       lock = parallel.Lock()
       for elem in parallel.pariter( topo ):
-        xi = elem.eval(ischeme)
-        detj, alldata = idata(xi)
-        weights = detj * xi.weights
         with lock:
-          for Ai, data, index in alldata:
-            Ai[ index ] += util.contract( data, weights )
+          for i, (data,index,w) in enumerate( idata( elem.eval(ischeme) ) ):
+            A[i][ index ] += util.contract( data, w )
+
+      if funcs is not func: # unpack single function
+        A, = A
 
     return A
 
-  def projection( self, fun, onto, **kwargs ):
+  def projection( self, fun, onto, coords, **kwargs ):
     'project and return as function'
 
-    weights = self.project( fun, onto, **kwargs )
+    weights = self.project( fun, onto, coords, **kwargs )
     return onto.dot( weights )
 
-  def project( self, fun, onto, coords=None, ischeme='gauss8', title=True, tol=1e-8, exact_boundaries=False, constrain=None ):
+  def project( self, fun, onto, coords, ischeme='gauss8', title=True, tol=1e-8, exact_boundaries=False, constrain=None ):
     'L2 projection of function onto function space'
 
     if exact_boundaries:
@@ -132,7 +89,6 @@ class Topology( set ):
 
     if not isinstance( fun, function.Evaluable ):
       if callable( fun ):
-        assert coords
         fun = function.UFunc( coords, fun )
 
     if len( onto.shape ) == 1:

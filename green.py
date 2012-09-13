@@ -19,37 +19,35 @@ class AddPart( function.ArrayFunc ):
     retval[ I ] += func2
     return retval
 
-class CacheFuncND( object ):
-  'cached function evaluation'
+class CacheFuncColoc( object ):
+  'cached function evaluation for colocation'
 
-  def __init__( self, topo, coords, payload ):
+  def __init__( self, coords, *payload ):
     'compare'
 
-    if coords.shape == (2,):
-      J = coords.localgradient( topo.ndims )
-      detJ = J[:,0].norm2( 0 )
-    elif coords.shape == (3,):
-      J = coords.localgradient( topo.ndims )
-      detJ = function.Cross( J[:,0], J[:,1], axis=0 ).norm2( 0 )
-    else:
-      raise Exception, 'invalid coords shape: %d' % coords.shape
-
-    self.F = function.Tuple([ coords, detJ, function.Tuple(payload) ])
-    self.data = [ (elem,) + self.get(elem.eval('gauss7')) for elem in topo ]
+    self.data = coords, payload
 
   def iterdata( self, myelem ):
     'iterate'
 
-    for elem, y, funcs in self.data:
+    yield self.data
+  
+class CacheFuncND( object ):
+  'cached function evaluation'
+
+  def __init__( self, topo, coords, *payload ):
+    'compare'
+
+    self.F = function.Tuple([ coords, function.Tuple( payload ) ])
+    self.data = [ (elem,) + self.F(elem.eval('gauss7')) for elem in topo ]
+
+  def iterdata( self, myelem ):
+    'iterate'
+
+    for elem, y, w_payload in self.data:
       if elem is myelem:
-        y, funcs = self.get( elem.eval('uniform345') )
-      yield elem, y, funcs
-
-  def get( self, xi ):
-    'generate data'
-
-    y, detJ, payload = self.F( xi )
-    return y, ( detJ * xi.weights, ) + payload
+        y, w_payload = self.F( elem.eval('uniform345') )
+      yield y, w_payload
 
   def __eq__( self, other ):
     'compare'
@@ -61,22 +59,22 @@ class Convolution( function.Evaluable ):
 
   needxi = True
 
-  def __init__( self, mycoords, topo, coords, *payload ):
+  def __init__( self, coords, cache ):
     'constructor'
 
-    self.args = mycoords, CacheFuncND( topo, coords, payload )
+    self.args = coords, cache
 
   @staticmethod
   def eval( xi, x, cachefunc ):
     'convolute shapes'
 
     iterdata = []
-    for elem, y, payload in cachefunc.iterdata( xi.elem ):
+    for y, w_payload in cachefunc.iterdata( xi.elem ):
       d = x[:,:,_] - y[:,_,:] # FIX count number of axes in x
       r2 = util.contract( d, d, 0 )
       r = numpy.sqrt( r2 )
       logr = .5 * numpy.log( r2 )
-      iterdata.append( (d/r,r,r2,logr) + payload )
+      iterdata.append( (d/r,r,r2,logr) + w_payload )
     return xi.points.coords.shape[1:], iterdata
 
 class Convolution3D( function.Evaluable ):
@@ -193,18 +191,26 @@ class Stokeslet( function.ArrayFunc ):
     self.funcsp = funcsp
     self.mu = mu
     self.shape = int( funcsp.shape[0] ) * 2, 2
-    self.args = int(funcsp.shape[0]), funcsp.shape[0], funcsp, Convolution( mycoords, topo, coords, funcsp, funcsp.shape[0] ), mu
+
+    if isinstance( funcsp, function.Evaluable ):
+      iweights = coords.iweights( topo.ndims ) * funcsp
+      cache = CacheFuncND( topo, coords, iweights, funcsp.shape[0] )
+    else:
+      assert isinstance( funcsp, numpy.ndarray )
+      cache = CacheFuncColoc( funcsp.T, numpy.eye(funcsp.shape[0]), slice(None) )
+
+    self.args = int(funcsp.shape[0]), funcsp.shape[0], Convolution( mycoords, cache ), mu
 
   @staticmethod
-  def eval( ndofs, N, func, (shape,iterdata), mu ):
+  def eval( ndofs, N, (shape,iterdata), mu ):
     'evaluate'
 
     retval = numpy.zeros( (ndofs*2,2) + shape )
     retval_swap = retval.reshape( 2, ndofs, 2, *shape ).swapaxes(0,1) # follows ordering Vectorize
-    for D_R, R, R2, logR, w, f, M in iterdata:
+    for D_R, R, R2, logR, w, M in iterdata:
       kernel = D_R[:,_] * D_R[_,:]
       util.ndiag( kernel, [0,1] )[:] -= logR
-      retval_swap[M] += numpy.tensordot( w * f, kernel, (-1,-1) )
+      retval_swap[M] += numpy.tensordot( w, kernel, (-1,-1) )
     retval /= 4 * numpy.pi * mu
     return retval
 
@@ -232,7 +238,11 @@ class StokesletTrac( function.ArrayFunc ):
     'constructor'
 
     self.shape = int( funcsp.shape[0] ) * 2, 2
-    self.args = int(funcsp.shape[0]), funcsp.shape[0], funcsp, mycoords.normal(), Convolution( mycoords, topo, coords, funcsp, coords.normal(), funcsp.shape[0] )
+
+    assert isinstance( funcsp, function.Evaluable )
+    iweights = coords.iweights( topo.ndims )
+    cache = CacheFuncND( topo, coords, iweights, funcsp, coords.normal(), funcsp.shape[0] )
+    self.args = int(funcsp.shape[0]), funcsp.shape[0], funcsp, mycoords.normal(), Convolution( mycoords, cache )
 
   @staticmethod
   def eval( ndofs, N, func, norm, (shape,iterdata) ):
@@ -252,9 +262,6 @@ class StokesletTrac( function.ArrayFunc ):
         retval_swap[M] += numpy.dot( trac, w )
         retval_swap[N] += numpy.dot( kernsub, w )
     retval /= -numpy.pi
-    ## instead of kernsub:
-    #retval_swap[N,0,0] += .5 * func
-    #retval_swap[N,1,1] += .5 * func
     return retval
 
 class StokesletGrad( function.ArrayFunc ):
@@ -264,7 +271,9 @@ class StokesletGrad( function.ArrayFunc ):
     'constructor'
 
     self.shape = int( funcsp.shape[0] ) * 2, 2, 2
-    self.args = int(funcsp.shape[0]), Convolution( mycoords, topo, coords, funcsp, funcsp.shape[0] ), mu
+
+    iweights = coords.iweights( topo.ndims ) * funcsp
+    self.args = int(funcsp.shape[0]), Convolution( mycoords, topo, coords, iweights, funcsp.shape[0] ), mu
 
   @staticmethod
   def eval( ndofs, (shape,iterdata), mu ):
@@ -272,14 +281,14 @@ class StokesletGrad( function.ArrayFunc ):
 
     retval = numpy.zeros( (ndofs*2,2,2) + shape )
     retval_swap = retval.reshape( 2, ndofs, 2, 2, *shape ).swapaxes(0,1) # follows ordering Vectorize
-    for D_R, R, R2, logR, w, f, I in iterdata:
+    for D_R, R, R2, logR, w, I in iterdata:
       kernel = D_R[:,_,_] * D_R[_,:,_] * D_R[_,_,:]
       kernel *= -2
       util.ndiag( kernel, [1,2] )[:] += D_R
       util.ndiag( kernel, [0,1] )[:] -= D_R
       util.ndiag( kernel, [2,0] )[:] += D_R
       kernel /= R
-      retval_swap[I] += numpy.tensordot( w * f, kernel, (-1,-1) )
+      retval_swap[I] += numpy.tensordot( w, kernel, (-1,-1) )
     retval /= 4 * numpy.pi * mu
     return retval
 
@@ -292,7 +301,10 @@ class StokesletReconstruct( function.ArrayFunc ):
     self.shape = 2,
     assert velo is 0 or velo.shape == (2,)
     assert trac is 0 or trac.shape == (2,)
-    self.args = Convolution( mycoords, topo, coords, velo, trac, coords.normal() ), surftens, mu
+
+    iweights = coords.iweights( topo.ndims )
+    cache = CacheFuncND( topo, coords, iweights, velo, trac, coords.normal() )
+    self.args = Convolution( mycoords, cache ), surftens, mu
 
   @staticmethod
   def eval( (shape,iterdata), surftens, mu ):

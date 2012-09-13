@@ -30,6 +30,11 @@ class Zero( int ):
 
     return -other
 
+  def indices( self ):
+    'get indices for numpy array'
+
+    return ()
+
 ZERO = Zero()
 
 def unite( *funcs ):
@@ -288,7 +293,7 @@ class ArrayFunc( Evaluable ):
     if not self.shape:
       raise TypeError, 'scalar function is not iterable'
 
-    return ( self[i] for i in range(self.shape[0]) )
+    return ( self[i,...] for i in range(self.shape[0]) )
 
   def sum( self, axis=-1 ):
     'sum'
@@ -331,6 +336,43 @@ class ArrayFunc( Evaluable ):
     else:
       raise NotImplementedError, 'cannot compute normal for %dx%d jacobian' % ( self.shape[0], ndims )
     return normal.normalized(0)
+
+  def iweights( self, ndims ):
+    'integration weights for [ndims] topology'
+
+    J = self.localgradient( ndims )
+    cndims, = self.shape
+    if cndims == ndims:
+      detJ = J.det( 0, 1 )
+    elif ndims == 1:
+      detJ = J[:,0].norm2( 0 )
+    elif cndims == 3 and ndims == 2:
+      detJ = function.Cross( J[:,0], J[:,1], axis=0 ).norm2( 0 )
+    elif ndims == 0:
+      detJ = 1
+    else:
+      raise NotImplementedError, 'cannot compute determinant for %dx%d jacobian' % J.shape[:2]
+    return detJ * IWeights()
+
+  def indices( self ):
+    'get indices for numpy array'
+
+    indices = []
+    count = sum( isinstance(sh,DofAxis) for sh in self.shape )
+    iaxis = 0
+    for sh in self.shape:
+      if isinstance(sh,DofAxis):
+        index = sh
+        if count > 1:
+          reshape = [ numpy.newaxis ] * count
+          reshape[iaxis] = slice(None)
+          index = index[ tuple(reshape) ]
+        iaxis += 1
+      else:
+        index = slice(None)
+      indices.append( index )
+    assert iaxis == count
+    return Tuple(indices)
 
   def curvature( self, ndims=-1 ):
     'curvature'
@@ -506,6 +548,19 @@ class ArrayFunc( Evaluable ):
     'symmetric'
 
     return Trace( self, n1, n2 )
+
+class IWeights( ArrayFunc ):
+  'integration weights'
+
+  needxi = True
+  shape = ()
+  args = ()
+
+  @staticmethod
+  def eval( xi ):
+    'evaluate'
+
+    return xi.weights
 
 class Orientation( ArrayFunc ):
   'point orientation'
