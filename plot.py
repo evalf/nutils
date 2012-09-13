@@ -98,12 +98,14 @@ class PylabAxis( object ):
     vertices = numpy.concatenate( poly )
     xmin, ymin = vertices.min(0)
     xmax, ymax = vertices.max(0)
-    if not isinstance( xmargin, tuple ):
-      xmargin = xmargin, xmargin
-    self.set_xlim( xmin - xmargin[0], xmax + xmargin[1] )
-    if not isinstance( ymargin, tuple ):
-      ymargin = ymargin, ymargin
-    self.set_ylim( ymin - ymargin[0], ymax + ymargin[1] )
+    if xmargin is not None:
+      if not isinstance( xmargin, tuple ):
+        xmargin = xmargin, xmargin
+      self.set_xlim( xmin - xmargin[0], xmax + xmargin[1] )
+    if ymargin is not None:
+      if not isinstance( ymargin, tuple ):
+        ymargin = ymargin, ymargin
+      self.set_ylim( ymin - ymargin[0], ymax + ymargin[1] )
     if aspect:
       self.set_aspect( aspect )
       self.set_autoscale_on( False )

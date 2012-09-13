@@ -160,13 +160,18 @@ class StructuredTopology( Topology ):
   def __init__( self, structure, periodic=() ):
     'constructor'
 
-    assert isinstance( structure, numpy.ndarray )
+    structure = numpy.asarray(structure)
     self.ndims = structure.ndim
     self.structure = structure
-    self.periodic = periodic
+    self.periodic = tuple(periodic)
     self.groups = {}
 
     Topology.__init__( self, structure.flat )
+
+  def make_periodic( self, periodic ):
+    'add periodicity'
+
+    return StructuredTopology( self.structure, periodic=periodic )
 
   def __len__( self ):
     'number of elements'

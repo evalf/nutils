@@ -19,37 +19,22 @@ class AddPart( function.ArrayFunc ):
     retval[ I ] += func2
     return retval
 
-class CacheFunc( object ):
+class CacheFuncND( object ):
   'cached function evaluation'
 
-  def __init__( self, topo, coords, other ):
+  def __init__( self, topo, coords, payload ):
     'compare'
 
-    J = coords.localgradient( topo.ndims )
-    detJ = J[:,0].norm2( 0 )
-    self.F = function.Tuple([ coords, detJ, function.Tuple( other ) ])
+    if coords.shape == (2,):
+      J = coords.localgradient( topo.ndims )
+      detJ = J[:,0].norm2( 0 )
+    elif coords.shape == (3,):
+      J = coords.localgradient( topo.ndims )
+      detJ = function.Cross( J[:,0], J[:,1], axis=0 ).norm2( 0 )
+    else:
+      raise Exception, 'invalid coords shape: %d' % coords.shape
 
-    self.data = []
-    for elem in topo:
-      xi = elem.eval( 'gauss9' )
-      y, detJ, other = self.F( xi )
-      items = elem, y, ( detJ * xi.weights, ) + other
-      self.data.append( items )
-
-  def __eq__( self, other ):
-    'compare'
-
-    return isinstance( other, CacheFunc ) and self.F == other.F
-
-class CacheFunc3D( object ):
-  'cached function evaluation'
-
-  def __init__( self, topo, coords, func, other ):
-    'compare'
-
-    J = coords.localgradient( topo.ndims )
-    detJ = function.Cross( J[:,0], J[:,1], axis=0 ).norm2( 0 )
-    self.F = function.Tuple([ coords, func, detJ, coords.normal(), function.Tuple(other) ])
+    self.F = function.Tuple([ coords, detJ, function.Tuple(payload) ])
     self.data = [ (elem,) + self.get(elem.eval('gauss7')) for elem in topo ]
 
   def iterdata( self, myelem ):
@@ -63,35 +48,35 @@ class CacheFunc3D( object ):
   def get( self, xi ):
     'generate data'
 
-    y, func, detJ, normal, other = self.F( xi )
-    return y, ( func, detJ * xi.weights, normal ) + other
+    y, detJ, payload = self.F( xi )
+    return y, ( detJ * xi.weights, ) + payload
 
   def __eq__( self, other ):
     'compare'
 
-    return isinstance( other, CacheFunc ) and self.F == other.F
+    return isinstance( other, CacheFuncND ) and self.F == other.F
 
 class Convolution( function.Evaluable ):
   'integrate iterator'
 
   needxi = True
 
-  def __init__( self, mycoords, topo, coords, *other ):
+  def __init__( self, mycoords, topo, coords, *payload ):
     'constructor'
 
-    self.args = mycoords, CacheFunc( topo, coords, other )
+    self.args = mycoords, CacheFuncND( topo, coords, payload )
 
   @staticmethod
   def eval( xi, x, cachefunc ):
     'convolute shapes'
 
     iterdata = []
-    for elem, y, funcs in cachefunc.data:
+    for elem, y, payload in cachefunc.iterdata( xi.elem ):
       d = x[:,:,_] - y[:,_,:] # FIX count number of axes in x
       r2 = util.contract( d, d, 0 )
       r = numpy.sqrt( r2 )
       logr = .5 * numpy.log( r2 )
-      iterdata.append( (d/r,r,r2,logr) + funcs )
+      iterdata.append( (d/r,r,r2,logr) + payload )
     return xi.points.coords.shape[1:], iterdata
 
 class Convolution3D( function.Evaluable ):
@@ -208,35 +193,18 @@ class Stokeslet( function.ArrayFunc ):
     self.funcsp = funcsp
     self.mu = mu
     self.shape = int( funcsp.shape[0] ) * 2, 2
-    self.args = int(funcsp.shape[0]), funcsp.shape[0], funcsp, coords.normal(), Convolution( mycoords, topo, coords, funcsp, coords.normal(), funcsp.shape[0] ), mu
+    self.args = int(funcsp.shape[0]), funcsp.shape[0], funcsp, Convolution( mycoords, topo, coords, funcsp, funcsp.shape[0] ), mu
 
   @staticmethod
-  def eval( ndofs, N, func, norm, (shape,iterdata), mu ):
+  def eval( ndofs, N, func, (shape,iterdata), mu ):
     'evaluate'
 
     retval = numpy.zeros( (ndofs*2,2) + shape )
     retval_swap = retval.reshape( 2, ndofs, 2, *shape ).swapaxes(0,1) # follows ordering Vectorize
-    for D_R, R, R2, logR, w, f, n, M in iterdata:
+    for D_R, R, R2, logR, w, f, M in iterdata:
       kernel = D_R[:,_] * D_R[_,:]
       util.ndiag( kernel, [0,1] )[:] -= logR
-      retval_swap[M] += numpy.dot( f[:,_,_,_,:] * kernel, w )
-
-      flux = util.contract( kernel, n[:,_,:], axis=-3 )
-      shift = func[:,:,_] * util.contract( norm[:,:,_], flux, axis=0 )
-
-#     if M is N:
-#       tmp = f[:,_,_,_,:] * kernel
-#       tmp[:,0,0] -= shift
-#       tmp[:,1,1] -= shift
-#       if n[0,0] > .3:
-#         from matplotlib import pylab
-#         print tmp.shape
-#         pylab.plot( tmp[1,0,0].T )
-#         pylab.show()
-
-      retval_swap[N,0,0] -= numpy.dot( shift, w )
-      retval_swap[N,1,1] -= numpy.dot( shift, w )
-
+      retval_swap[M] += numpy.tensordot( w * f, kernel, (-1,-1) )
     retval /= 4 * numpy.pi * mu
     return retval
 
@@ -252,10 +220,10 @@ class Stokeslet( function.ArrayFunc ):
     normal = self.coords.normal()
     return grad.trace(1,2) - ( ( grad * normal ).sum() * normal ).sum()
 
-  def reconstruct( self, bval, flux ):
+  def reconstruct( self, velo, trac, surftens=0 ):
     'reconstruct'
 
-    return StokesletReconstruct( self.mycoords, self.topo, self.coords, bval, flux, self.mu )
+    return StokesletReconstruct( self.mycoords, self.topo, self.coords, velo, trac, surftens, self.mu )
 
 class StokesletTrac( function.ArrayFunc ):
   'stokeslet stress'
@@ -318,24 +286,31 @@ class StokesletGrad( function.ArrayFunc ):
 class StokesletReconstruct( function.ArrayFunc ):
   'stokeslet reconstruction'
 
-  def __init__( self, mycoords, topo, coords, velo, trac, mu ):
+  def __init__( self, mycoords, topo, coords, velo, trac, surftens, mu ):
     'constructor'
 
     self.shape = 2,
-    assert velo.shape == (2,)
-    assert trac.shape == (2,)
-    self.args = Convolution( mycoords, topo, coords, velo, trac, coords.normal() ), mu
+    assert velo is 0 or velo.shape == (2,)
+    assert trac is 0 or trac.shape == (2,)
+    self.args = Convolution( mycoords, topo, coords, velo, trac, coords.normal() ), surftens, mu
 
   @staticmethod
-  def eval( (shape,iterdata), mu ):
+  def eval( (shape,iterdata), surftens, mu ):
     'evaluate'
 
     retval = 0
     for D_R, R, R2, logR, w, velo, trac, norm in iterdata:
-      Dtrac = util.contract( D_R, trac[:,_,:], axis=0 )
-      Dvelo = util.contract( D_R, velo[:,_,:], axis=0 )
       Dnorm = util.contract( D_R, norm[:,_,:], axis=0 )
-      retval += numpy.dot( ( D_R * Dtrac - trac[:,_,:] * logR ) / (4*mu) - (D_R/R) * Dnorm * Dvelo, w )
+      d = 0
+      if velo is not 0:
+        Dvelo = util.contract( D_R, velo[:,_,:], axis=0 )
+        d -= (D_R/R) * Dnorm * Dvelo
+      if trac is not 0:
+        Dtrac = util.contract( D_R, trac[:,_,:], axis=0 )
+        d += ( D_R * Dtrac - trac[:,_,:] * logR ) / (4*mu)
+      if surftens is not 0:
+        d += (D_R/R) * ( 1 - Dnorm**2 ) * (surftens/(2*mu))
+      retval += numpy.dot( d, w )
     return retval / numpy.pi
 
 # STOKES 3D

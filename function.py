@@ -465,7 +465,7 @@ class ArrayFunc( Evaluable ):
   def __sub__( self, other ):
     'subtract'
   
-    if other == 0:
+    if is_zero(other):
       return self
 
     if not isinstance( other, Evaluable ):
@@ -569,6 +569,8 @@ class StaticDot( ArrayFunc ):
 
     return ArrayFunc.__mul__( self, other )
 
+  __rmul__ = __mul__
+
   def __add__( self, other ):
     'add'
 
@@ -669,6 +671,30 @@ class Choose( ArrayFunc ):
     for i in intervals:
       which += ( x > i ).astype( int )
     return numpy.choose( which, choices )
+
+class Choose2D( ArrayFunc ):
+  'piecewise function'
+
+  def __init__( self, coords, contour, fin, fout ):
+    'constructor'
+
+    self.shape = align_shapes( fin, fout )
+    if not isinstance( fin, ArrayFunc ):
+      fin = numpy.asarray( fin )
+    if not isinstance( fout, ArrayFunc ):
+      fout = numpy.asarray( fout )
+    self.args = coords, contour, fin, fout
+
+  @staticmethod
+  def eval( xy, contour, fin, fout ):
+    'evaluate'
+
+    from matplotlib import nxutils
+    mask = nxutils.points_inside_poly( xy.T, contour )
+    out = numpy.empty( fin.shape or fout.shape )
+    out[...,mask] = fin[...,mask] if fin.shape else fin
+    out[...,~mask] = fout[...,~mask] if fout.shape else fout
+    return out
 
 class PieceWise( ArrayFunc ):
   'differentiate by topology'
@@ -898,6 +924,11 @@ class Vectorize( ArrayFunc ):
       n1 += int(func.shape[0])
       funcs.append( func.dot( weights[n0:n1,_] ) )
     return Concatenate( funcs )
+
+  def __str__( self ):
+    'string representation'
+
+    return indent( 'Vec', *self.args )
 
 class Stack( ArrayFunc ):
   'stack functions'

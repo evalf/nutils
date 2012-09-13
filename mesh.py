@@ -8,8 +8,7 @@ def rectilinear( gridnodes, periodic=() ):
   structure = numpy.frompyfunc( lambda *s: element.QuadElement( ndims ), ndims, 1 )( *indices )
   topo = topology.StructuredTopology( structure )
   coords = topo.rectilinearfunc( gridnodes )
-  topo.periodic = tuple(periodic)
-  return topo, coords
+  return topo.make_periodic( periodic ), coords
 
 def revolve( topo, coords, nelems, degree=4, axis=0 ):
   'revolve coordinates'
@@ -131,6 +130,41 @@ def gmesh( path, btags=[] ):
   topo.boundary.groups = dict( ( btags[tag], topology.UnstructuredTopology( group, ndims=1 ) ) for tag, group in bgroups.items() )
 
   return topo, linearfunc.dot( coords )
+
+def triangulation( nodes, nnodes ):
+  'triangulation'
+
+  bedges = {}
+  nmap = {}
+  I = numpy.array( [[2,0],[0,1],[1,2]] )
+  for n123 in nodes:
+    elem = element.TriangularElement()
+    nmap[ elem ] = n123
+    for iedge, (n1,n2) in enumerate( n123[I] ):
+      try:
+        del bedges[ (n2,n1) ]
+      except KeyError:
+        bedges[ (n1,n2) ] = elem, iedge
+
+  shape = function.DofAxis( nnodes, nmap ),
+  stdelem = element.PolyTriangle( 1 )
+  linearfunc = function.Function( shape=shape, mapping=dict.fromkeys(nmap,stdelem) )
+  namedfuncs = { 'spline2': linearfunc }
+
+  connectivity = dict( bedges.iterkeys() )
+  N = list( connectivity.popitem() )
+  while connectivity:
+    N.append( connectivity.pop( N[-1] ) )
+  assert N[0] == N[-1]
+
+  structure = []
+  for n12 in zip( N[:-1], N[1:] ):
+    elem, iedge = bedges[ n12 ]
+    structure.append( elem.edge( iedge ) )
+    
+  topo = topology.UnstructuredTopology( list(nmap), ndims=2, namedfuncs=namedfuncs )
+  topo.boundary = topology.StructuredTopology( structure, periodic=(1,) )
+  return topo
 
 def igatool( path ):
   'igatool mesh'
