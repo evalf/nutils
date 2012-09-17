@@ -44,10 +44,10 @@ class CacheFuncND( object ):
   def iterdata( self, myelem ):
     'iterate'
 
-    for elem, y, w_payload in self.data:
+    for elem, y, payload in self.data:
       if elem is myelem:
-        y, w_payload = self.F( elem.eval('uniform345') )
-      yield y, w_payload
+        y, payload = self.F( elem.eval('uniform345') )
+      yield y, payload
 
   def __eq__( self, other ):
     'compare'
@@ -69,12 +69,12 @@ class Convolution( function.Evaluable ):
     'convolute shapes'
 
     iterdata = []
-    for y, w_payload in cachefunc.iterdata( xi.elem ):
+    for y, payload in cachefunc.iterdata( xi.elem ):
       d = x[:,:,_] - y[:,_,:] # FIX count number of axes in x
       r2 = util.contract( d, d, 0 )
       r = numpy.sqrt( r2 )
       logr = .5 * numpy.log( r2 )
-      iterdata.append( (d/r,r,r2,logr) + w_payload )
+      iterdata.append( (d/r,r,r2,logr) + payload )
     return xi.points.coords.shape[1:], iterdata
 
 class Convolution3D( function.Evaluable ):
@@ -82,22 +82,22 @@ class Convolution3D( function.Evaluable ):
 
   needxi = True
 
-  def __init__( self, mycoords, topo, coords, func, *other ):
+  def __init__( self, coords, cache ):
     'constructor'
 
-    self.args = mycoords, CacheFunc3D( topo, coords, func, other )
+    self.args = coords, cache
 
   @staticmethod
   def eval( xi, x, cachefunc ):
     'convolute shapes'
 
     iterdata = []
-    for elem, y, funcs in cachefunc.iterdata( xi.elem ):
+    for y, payload in cachefunc.iterdata( xi.elem ):
       d = x[:,:,_] - y[:,_,:] # FIX count number of axes in x
       r2 = util.contract( d, d, 0 )
       r1 = numpy.sqrt( r2 )
       d_r = d / r1
-      iterdata.append( (d_r,r1,r2) + funcs )
+      iterdata.append( (d_r,r1,r2) + payload )
     return xi.points.coords.shape[1:], iterdata
 
 # LAPLACE
@@ -272,8 +272,9 @@ class StokesletGrad( function.ArrayFunc ):
 
     self.shape = int( funcsp.shape[0] ) * 2, 2, 2
 
-    iweights = coords.iweights( topo.ndims ) * funcsp
-    self.args = int(funcsp.shape[0]), Convolution( mycoords, topo, coords, iweights, funcsp.shape[0] ), mu
+    iweights = coords.iweights( topo.ndims )
+    cache = CacheFuncND( topo, coords, iweights * funcsp, funcsp.shape[0] )
+    self.args = int(funcsp.shape[0]), Convolution( mycoords, cache ), mu
 
   @staticmethod
   def eval( ndofs, (shape,iterdata), mu ):
@@ -339,7 +340,10 @@ class Stokeslet3D( function.ArrayFunc ):
     self.funcsp = funcsp
     self.mu = mu
     self.shape = int( funcsp.shape[0] ) * 3, 3
-    self.args = int(funcsp.shape[0]), funcsp.shape[0], funcsp, coords.normal(), Convolution3D( mycoords, topo, coords, funcsp, funcsp.shape[0] ), mu
+
+    iweights = coords.iweights( topo.ndims )
+    cache = CacheFuncND( topo, coords, funcsp, iweights, coords.normal(), funcsp.shape[0] )
+    self.args = int(funcsp.shape[0]), funcsp.shape[0], funcsp, coords.normal(), Convolution3D( mycoords, cache ), mu
 
   @staticmethod
   def eval( ndofs, N, func, norm, (shape,iterdata), mu ):
@@ -402,7 +406,10 @@ class StokesletGrad3D( function.ArrayFunc ):
     'constructor'
 
     self.shape = int( funcsp.shape[0] ) * 3, 3, 3
-    self.args = int(funcsp.shape[0]), Convolution3D( mycoords, topo, coords, funcsp, funcsp.shape[0] ), mu
+
+    iweights = coords.iweights( topo.ndims )
+    cache = CacheFuncND( topo, coords, funcsp, iweights, coords.normal(), funcsp.shape[0] )
+    self.args = int(funcsp.shape[0]), Convolution3D( mycoords, cache ), mu
 
   @staticmethod
   def eval( ndofs, (shape,iterdata), mu ):
@@ -434,7 +441,10 @@ class StokesletPres3D( function.ArrayFunc ):
     'constructor'
 
     self.shape = int( funcsp.shape[0] ) * 3
-    self.args = int(funcsp.shape[0]), Convolution3D( mycoords, topo, coords, funcsp, funcsp.shape[0] )
+
+    iweights = coords.iweights( topo.ndims )
+    cache = CacheFuncND( topo, coords, funcsp, iweights, coords.normal(), funcsp.shape[0] )
+    self.args = int(funcsp.shape[0]), Convolution3D( mycoords, cache )
 
   @staticmethod
   def eval( ndofs, (shape,iterdata) ):
@@ -454,7 +464,10 @@ class StokesletTrac3D( function.ArrayFunc ):
     'constructor'
 
     self.shape = int( funcsp.shape[0] ) * 3, 3
-    self.args = int(funcsp.shape[0]), funcsp.shape[0], funcsp, mycoords.normal(), Convolution3D( mycoords, topo, coords, funcsp, funcsp.shape[0] )
+
+    iweights = coords.iweights( topo.ndims )
+    cache = CacheFuncND( topo, coords, funcsp, iweights, coords.normal(), funcsp.shape[0] )
+    self.args = int(funcsp.shape[0]), funcsp.shape[0], funcsp, mycoords.normal(), Convolution3D( mycoords, cache )
 
   @staticmethod
   def eval( ndofs, N, func, norm, (shape,iterdata) ):

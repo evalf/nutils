@@ -347,7 +347,7 @@ class ArrayFunc( Evaluable ):
     elif ndims == 1:
       detJ = J[:,0].norm2( 0 )
     elif cndims == 3 and ndims == 2:
-      detJ = function.Cross( J[:,0], J[:,1], axis=0 ).norm2( 0 )
+      detJ = Cross( J[:,0], J[:,1], axis=0 ).norm2( 0 )
     elif ndims == 0:
       detJ = 1
     else:

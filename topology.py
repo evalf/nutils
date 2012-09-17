@@ -60,9 +60,10 @@ class Topology( set ):
 
       lock = parallel.Lock()
       for elem in parallel.pariter( topo ):
-        with lock:
-          for i, (data,index,w) in enumerate( idata( elem.eval(ischeme) ) ):
-            A[i][ index ] += util.contract( data, w )
+        for i, (data,index,w) in enumerate( idata( elem.eval(ischeme) ) ):
+          emat = util.contract( data, w )
+          with lock:
+            A[i][index] += emat
 
       if funcs is not func: # unpack single function
         A, = A

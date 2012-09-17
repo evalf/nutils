@@ -19,7 +19,7 @@ def shzeros( shape, dtype=float ):
   buf = RawArray( typecode[dtype], size )
   return frombuffer( buf, dtype ).reshape( shape )
 
-def pariter( iterable, verbose=False ):
+def oldpariter( iterable, verbose=False ):
   'fork and iterate, handing equal-sized chunks to all processors'
 
   if nprocs == 1:
@@ -56,6 +56,43 @@ def pariter( iterable, verbose=False ):
     pids.remove( pid )
     if verbose:
       print 'pariter: process #%d finished, %d pending' % ( pid, len(pids) )
+
+def pariter( iterable, verbose=False ):
+  'fork and iterate, handing equal-sized chunks to all processors'
+
+  if nprocs == 1:
+    if verbose:
+      print 'pariter: iterating in sequential mode (nprocs=1)'
+    for item in iterable:
+      yield item
+
+  if verbose:
+    print 'pariter: iterating in parallel mode (nprocs=%d)' % nprocs
+
+  from os import fork, wait, _exit
+
+  pids = set()
+
+  for item in iterable:
+    pid = fork()
+    if not pid: # child
+      try:
+        yield item
+      except Exception, e:
+        print 'an error occured:', e
+        _exit( 1 )
+      _exit( 0 )
+
+    pids.add( pid )
+    if len(pids) >= nprocs:
+      pid, status = wait()
+      assert status == 0, 'subprocess #%d failed'
+      pids.remove( pid )
+
+  while pids:
+    pid, status = wait()
+    assert status == 0, 'subprocess #%d failed'
+    pids.remove( pid )
 
 def example():
   'simple example demonstrating a parallel loop'

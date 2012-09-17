@@ -119,14 +119,14 @@ class PylabAxis( object ):
       self.title( title )
     self.set_frame_on( frame )
   
-  def add_quiver( self, coords, topology, quiver, sample='uniform3' ):
+  def add_quiver( self, coords, topology, quiver, sample='uniform3', scale=None ):
     'quiver builder'
   
     XYUV = []
     for elem in util.progressbar( topology, title='plotting quiver' ):
       xi = elem.eval(sample)
       XYUV.append( numpy.concatenate( [ coords(xi), quiver(xi) ], axis=0 ) )
-    return self.quiver( *numpy.concatenate( XYUV, 1 ) )
+    self.quiver( *numpy.concatenate( XYUV, 1 ), scale=scale )
 
   def add_graph( self, xfun, yfun, topology, sample='contour10', **kwargs ):
     'plot graph of function on 1d topology'
