@@ -29,7 +29,7 @@ class Topology( set ):
     iweights = coords.iweights( self.ndims )
     idata = function.Tuple([ function.Tuple([ f, f.indices(), iweights ]) for f in funcs ])
 
-    if not dense and isinstance( func, tuple ) or isinstance( func, function.ArrayFunc ) and len( func.shape ) == 2:
+    if not dense and ( isinstance( func, tuple ) or isinstance( func, function.ArrayFunc ) and len( func.shape ) == 2 ):
       # quickly implemented single array for now, needs to be extended for
       # multiple inputs. requires thinking of separating types for separate
       # arguments.
