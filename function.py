@@ -1623,6 +1623,15 @@ class Power( BaseFunc ):
     func, power = self.args
     return indent( 'Pow:%.1f' % power, func )
 
+class Tanh( BaseFunc ):
+  'hyperbolic tangent'
+
+  eval = staticmethod( numpy.tanh )
+
+  def localgradient( self, ndims ):
+    'gradient'
+
+    return (1 + Tanh( self.args[0] )**2) * self.args[0].localgradient(ndims)
 
 # def find( self, x, title=False ):
 #   'find physical coordinates in all elements'

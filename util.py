@@ -209,8 +209,11 @@ def solve_system( matrix, rhs, title='solving system', symmetric=False, tol=0, m
   'solve linear system iteratively'
 
   assert matrix.shape[:-1] == rhs.shape
+
   if not tol:
-    p = progressbar( title=title, n=1 )
+    if title:
+      if title is True: title='solving system'
+      p = progressbar( title=title, n=1 )
     #print 'solving system:'#, condition number:', numpy.linalg.cond( matrix )
     return numpy.linalg.solve( matrix, rhs )
 
