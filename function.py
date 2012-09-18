@@ -909,6 +909,8 @@ class Concatenate( ArrayFunc ):
   def __init__( self, funcs, axis=0 ):
     'constructor'
 
+    self.axis = axis
+    self.funcs = funcs
     self.args = (axis,) + tuple(funcs)
     self.shape = ( sum( func.shape[0] for func in funcs ), ) + funcs[0].shape[1:]
 
@@ -923,6 +925,11 @@ class Concatenate( ArrayFunc ):
     'evaluate'
 
     return numpy.concatenate( funcs, axis=axis )
+
+  def __str__( self ):
+    'string representation'
+
+    return indent( 'Concat:%d' % self.axis, *self.funcs )
 
 class Vectorize( ArrayFunc ):
   'vectorize'
@@ -1141,6 +1148,8 @@ class Norm2( ArrayFunc ):
       axis += len(fun.shape)
     assert 0 <= axis < len(fun.shape)
 
+    self.axis = axis
+    self.fun = fun
     self.args = fun, axis
     shape = list( fun.shape )
     shape.pop( axis )
@@ -1151,6 +1160,11 @@ class Norm2( ArrayFunc ):
     'evaluate'
 
     return numpy.sqrt( util.contract( fval, fval, axis ) )
+
+  def __str__( self ):
+    'string representation'
+
+    return indent( 'Norm2:%d' % self.axis, self.fun )
 
 class Cross( ArrayFunc ):
   'normal'
