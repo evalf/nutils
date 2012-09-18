@@ -17,7 +17,7 @@ class Topology( set ):
     items = ( self.groups[it] for it in item.split( ',' ) )
     return sum( items, items.next() )
 
-  def integrate( self, func, ischeme, coords=None, title=True, dense=None ):
+  def integrate( self, func, ischeme=None, coords=None, title=True, dense=None ):
     'integrate'
 
     topo = self if not title \
@@ -26,10 +26,13 @@ class Topology( set ):
     funcs = func if isinstance( func, (list,tuple) ) else [func]
     shapes = [ map(int,f.shape) for f in funcs ]
 
-    if ischeme == 'none':
+    if self.ndims == 0:
+      # simple point evaluation
       iweights = 1
+      ischeme = 'none'
     else:
-      assert coords, 'must specify coords if specifying integration scheme'
+      assert coords, 'must specify coords'
+      assert ischeme, 'must specify integration scheme'
       iweights = coords.iweights( self.ndims )
     idata = function.Tuple([ function.Tuple([ f, f.indices(), iweights ]) for f in funcs ])
 

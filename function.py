@@ -30,6 +30,11 @@ class Zero( int ):
 
     return -other
 
+  def __neg__( self ):
+    'negate'
+
+    return self
+
   def indices( self ):
     'get indices for numpy array'
 
@@ -1645,7 +1650,12 @@ class Tanh( BaseFunc ):
   def localgradient( self, ndims ):
     'gradient'
 
-    return (1 + Tanh( self.args[0] )**2) * self.args[0].localgradient(ndims)
+    return (-Tanh( self.args[0] )**2 + 1) * self.args[0].localgradient(ndims)
+
+
+def Tanh( x ):
+
+  return -StaticArray( 2. ) / ( Exp( 2 * x ) + 1 ) + 1
 
 # def find( self, x, title=False ):
 #   'find physical coordinates in all elements'
