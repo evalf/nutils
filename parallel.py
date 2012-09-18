@@ -65,6 +65,7 @@ def pariter( iterable, verbose=False ):
       print 'pariter: iterating in sequential mode (nprocs=1)'
     for item in iterable:
       yield item
+    return
 
   if verbose:
     print 'pariter: iterating in parallel mode (nprocs=%d)' % nprocs
