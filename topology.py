@@ -118,6 +118,25 @@ class Topology( set ):
     u[zero] = numpy.nan
     return u.view( util.NanVec )
 
+  def select( self, levelset, maxrefine ):
+    'create new domain based on levelset'
+
+    newelems = []
+    for elem in util.progressbar( self, title='refining topology' ):
+      elempool = [ elem ]
+      for level in range( maxrefine ):
+        nextelempool = []
+        for elem in elempool:
+          xi = elem.eval( 'bezier3' )
+          inside = levelset( xi ) > 0
+          if inside.all():
+            newelems.append( elem )
+          elif inside.any():
+            nextelempool.extend( elem.refined(2) )
+        elempool = nextelempool
+      # TODO select >50% overlapping elements from elempool
+    return UnstructuredTopology( newelems, ndims=2 )
+
 class StructuredTopology( Topology ):
   'structured topology'
 

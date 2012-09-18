@@ -172,6 +172,10 @@ class QuadElement( Element ):
       N = int( where[7:] )
       x = numpy.arange( .5, N ) / N
       w = util.appendaxes( 1./N, N )
+    elif where.startswith( 'bezier' ):
+      N = int( where[6:] )
+      x = numpy.linspace( 0, 1, N )
+      w = util.appendaxes( 1./N, N )
     elif where.startswith( 'subdivision' ):
       N = int( where[11:] ) + 1
       x = numpy.linspace( 0, 1, N )
@@ -281,10 +285,14 @@ class TriangularElement( Element ):
       A = 0.260345966079038; B = 0.065130102902216; C = 0.312865496004875; D = 0.048690315425316; U = 0.175615257433204; V = 0.053347235608839; W = 0.077113760890257
       coords = numpy.array( [[1./3,1-2*A,A,A,1-2*B,B,B,1-C-D,1-C-D,C,C,D,D],[1./3,A,1-2*A,A,B,1-2*B,B,C,D,1-C-D,D,1-C-D,C]] )
       weights = numpy.array( [1-3*U-3*V-6*W,U,U,U,V,V,V,W,W,W,W,W,W] ) / 2.
-    elif where[:7] == 'uniform':
-      N = int( where[7:] )
+    elif where[:7] == 'uniform' or where[:6] == 'bezier':
+      if where[:7] == 'uniform':
+        N = int( where[7:] )
+        points = ( numpy.arange( N ) + 1./3 ) / N
+      else:
+        N = int( where[6:] )
+        points = numpy.linspace( 0, 1, N )
       NN = N**2
-      points = ( numpy.arange( N ) + 1./3 ) / N
       C = numpy.empty( [2,N,N] )
       C[0] = points[:,_]
       C[1] = points[_,:]
