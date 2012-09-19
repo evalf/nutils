@@ -1650,7 +1650,7 @@ class Tanh( BaseFunc ):
   def localgradient( self, ndims ):
     'gradient'
 
-    return (-Tanh( self.args[0] )**2 + 1) * self.args[0].localgradient(ndims)
+    return (-Tanh( self.args[0] )**2 + 1.) * self.args[0].localgradient(ndims)
 
 
 def Tanh( x ):
