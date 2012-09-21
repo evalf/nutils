@@ -664,7 +664,7 @@ class StaticDot( ArrayFunc ):
 
 class Const( float ): # for select
   def eval( self, points ):
-    return self
+    return numpy.array(self)[...,_]
 
 def const( *args ):
   'select by topology'
@@ -1652,6 +1652,22 @@ class Tanh( BaseFunc ):
 
     return (-Tanh( self.args[0] )**2 + 1.) * self.args[0].localgradient(ndims)
 
+class Voigt( ArrayFunc ):
+  'turn 3x3 matrix into voight vector'
+
+  def __init__( self, func ):
+    'constructor'
+
+    assert func.shape[-2:] == (3,3)
+    self.func = func
+    self.args = func, func.shape[:-2] + (9,-1)
+    self.shape = func.shape[:-2] + (6,)
+
+  @staticmethod
+  def eval( data, shape ):
+    'evaluation'
+
+    return data.reshape( shape )[...,[0,4,8,5,2,1],:]
 
 def Tanh( x ):
 

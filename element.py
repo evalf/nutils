@@ -188,6 +188,9 @@ class QuadElement( Element ):
       elif ndims == 2:
         coords = numpy.array([ p[ range(N) + [N-1]*(N-2) + range(N)[::-1] + [0]*(N-2) ],
                                p[ [0]*(N-1) + range(N) + [N-1]*(N-2) + range(1,N)[::-1] ] ])
+      elif ndims == 3:
+        assert N == 0
+        coords = numpy.array([ [0,0,0], [1,0,0], [0,1,0], [1,1,0], [0,0,1], [1,0,1], [0,1,1], [1,1,1] ]).T
       else:
         raise Exception, 'contour not supported for ndims=%d' % ndims
     else:

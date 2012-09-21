@@ -20,9 +20,6 @@ class Topology( set ):
   def integrate( self, func, ischeme=None, coords=None, title=True, dense=None ):
     'integrate'
 
-    topo = self if not title \
-      else util.progressbar( self, title='integrating %d elements (nprocs=%d)' % ( len(self), parallel.nprocs ) if title is True else title )
-
     funcs = func if isinstance( func, (list,tuple) ) else [func]
     shapes = [ map(int,f.shape) for f in funcs ]
 
@@ -40,6 +37,9 @@ class Topology( set ):
       # quickly implemented single array for now, needs to be extended for
       # multiple inputs. requires thinking of separating types for separate
       # arguments.
+
+      topo = self if not title \
+        else util.progressbar( self, title='integrating %d elements sparse' % len(self) if title is True else title )
 
       import scipy.sparse
 
@@ -62,6 +62,9 @@ class Topology( set ):
       A = scipy.sparse.csr_matrix( (v,ij), shape=shapes[0] )
 
     else:
+
+      topo = self if not title \
+        else util.progressbar( self, title='integrating %d elems dense nproc=%d' % ( len(self), parallel.nprocs ) if title is True else title )
 
       A = map( parallel.shzeros, shapes )
 
@@ -135,7 +138,8 @@ class Topology( set ):
             nextelempool.extend( elem.refined(2) )
         elempool = nextelempool
       # TODO select >50% overlapping elements from elempool
-    return UnstructuredTopology( newelems, ndims=2 )
+      newelems.extend( elempool )
+    return UnstructuredTopology( newelems, ndims=self.ndims )
 
 class StructuredTopology( Topology ):
   'structured topology'

@@ -1,4 +1,4 @@
-from . import topology, util, numpy, function, _
+from . import topology, util, numpy, function, element, _
 
 import matplotlib
 matplotlib.use( 'Agg' )
@@ -173,33 +173,52 @@ def project3d( C ):
   R = numpy.array( [[ sqrt3, 0, -sqrt3 ], [ 1, 2, 1 ], [ sqrt2, -sqrt2, sqrt2 ]] ) / sqrt6
   return util.transform( C, R[:,::2], axis=0 )
 
-def writevtu( path, topology, coords, **arrays ):
+def writevtu( path, topology, coords, pointdata={}, celldata={} ):
   'write vtu from coords function'
 
   import vtk
   vtkPoints = vtk.vtkPoints()
   vtkMesh = vtk.vtkUnstructuredGrid()
-  vtkarrays = []
-  for key, func in arrays.iteritems():
+  pointdata_arrays = []
+  for key, func in pointdata.iteritems():
     array = vtk.vtkFloatArray()
     array.SetName( key )
-    vtkarrays.append(( array, func ))
-  for elem in util.progressbar( topology, title='saving %s' % path ):
-    xi = elem.eval( 'contour0' )
-    x = coords( xi )  
-    id0, id1, id2 = [ vtkPoints.InsertNextPoint( *c ) for c in x.T ]
-    triangle = vtk.vtkTriangle()
-    cellpoints = triangle.GetPointIds()
-    cellpoints.SetId( 0, id0 )
-    cellpoints.SetId( 1, id1 )
-    cellpoints.SetId( 2, id2 )
-    vtkMesh.InsertNextCell( triangle.GetCellType(), cellpoints )
-    for array, func in vtkarrays:
-      for v in func( xi ):
-        array.InsertNextValue( v )
-  vtkMesh.SetPoints( vtkPoints )
-  for array, func in vtkarrays:
+    if func.shape:
+      assert len(func.shape) == 1
+      array.SetNumberOfComponents( func.shape[0] )
+    pointdata_arrays.append( function.Tuple([ array, func ]) )
     vtkMesh.GetPointData().AddArray( array )
+  coords_pointdata = function.Tuple([ coords, function.Tuple( pointdata_arrays ) ])
+  celldata_arrays = []
+  for key, func in celldata.iteritems():
+    array = vtk.vtkFloatArray()
+    array.SetName( key )
+    celldata_arrays.append( function.Tuple([ array, func ]) )
+    vtkMesh.GetCellData().AddArray( array )
+  celldatafun = function.Tuple( celldata_arrays )
+  for elem in util.progressbar( topology, title='saving %s' % path ):
+    x, pdata = coords_pointdata( elem.eval( 'contour0' ) )
+    if isinstance( elem, element.TriangularElement ):
+      vtkelem = vtk.vtkTriangle()
+    elif isinstance( elem, element.QuadElement ) and elem.ndims == 2:
+      vtkelem = vtk.vtkQuad()
+    elif isinstance( elem, element.QuadElement ) and elem.ndims == 3:
+      vtkelem = vtk.vtkVoxel() # TODO hexahedron for not rectilinear NOTE ordering changes!
+    else:
+      raise Exception, 'not sure what to do with element %r' % elem
+    cellpoints = vtkelem.GetPointIds()
+    for i, c in enumerate( x.T ):
+      pointid = vtkPoints.InsertNextPoint( *c )
+      cellpoints.SetId( i, pointid )
+    vtkMesh.InsertNextCell( vtkelem.GetCellType(), cellpoints )
+    for vtkArray, data in pdata:
+      for v in data.T.flat:
+        vtkArray.InsertNextValue( v )
+    xi = elem.eval( 'gauss1' )
+    cdata = celldatafun( xi )
+    for vtkArray, data in cdata:
+      vtkArray.InsertNextValue( util.mean( data, weights=xi.weights ) )
+  vtkMesh.SetPoints( vtkPoints )
   vtkWriter = vtk.vtkXMLUnstructuredGridWriter()
   vtkWriter.SetInput( vtkMesh )
   vtkWriter.SetFileName( path )
