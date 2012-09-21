@@ -47,6 +47,7 @@ class Topology( set ):
 
       indices = []
       values = []
+      length = 0
       for elem in topo:
         for data, index, w in idata( elem.eval(ischeme) ):
           evalues = util.contract( data, w )
@@ -56,9 +57,18 @@ class Topology( set ):
             eindices[i] = n
           values.append( evalues.ravel() )
           indices.append( eindices.reshape(ndims,-1) )
+          length += evalues.size
 
-      v = numpy.hstack( values )
-      ij = numpy.hstack( indices )
+      print 'length=%d' % length
+      v = numpy.empty( length, dtype=float )
+      ij = numpy.empty( [2,length], dtype=float )
+      n0 = 0
+      for val, ind in zip( values, indices ):
+        n1 = n0 + val.size
+        v[n0:n1] = val
+        ij[:,n0:n1] = ind
+        n0 = n1
+      assert n0 == length
       A = scipy.sparse.csr_matrix( (v,ij), shape=shapes[0] )
 
     else:
