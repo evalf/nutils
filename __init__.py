@@ -11,4 +11,5 @@ __all__ = [
   'topology',
   'util',
   'green',
+  'parallel',
 ]

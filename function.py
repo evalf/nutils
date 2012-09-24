@@ -271,6 +271,7 @@ class ArrayFunc( Evaluable ):
       n = len(item) - item.count(_) - 1
       item = item[:idx] + (slice(None),)*(len(self.shape)-n) + item[idx+1:]
       assert Ellipsis not in item
+    print len(item), ' - ', item.count(_), ' == ', len(self.shape)
     assert len(item) - item.count(_) == len(self.shape)
     shape = []
     itershape = iter( self.shape )
