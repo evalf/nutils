@@ -70,22 +70,26 @@ class PylabAxis( object ):
   def add_mesh( self, coords, topology, color=None, edgecolors='none', linewidth=1, xmargin=0, ymargin=0, aspect='equal', cbar='vertical', title=None, ischeme='gauss2', cscheme='contour3', clim=None, frame=True ):
     'plot mesh'
   
+    assert topology.ndims == 2
     from matplotlib import pyplot, collections
     poly = []
     values = []
     ndims, = coords.shape
     assert ndims in (2,3)
+    if color:
+      assert color.ndim == 0
+      color = function.Tuple([ color, coords.iweights(ndims=2) ])
     for elem in util.progressbar( topology, title='plotting mesh' ):
-      C = coords( elem.eval(cscheme) )
+      C = coords( elem, cscheme )
       if ndims == 3:
         C = project3d( C )
         cx, cy = numpy.hstack( [ C, C[:,:1] ] )
         if ( (cx[1:]-cx[:-1]) * (cy[1:]+cy[:-1]) ).sum() > 0:
           continue
-      poly.append( C.T )
-      if color is not None:
-        xi = elem.eval(ischeme)
-        values.append( util.mean( color(xi), weights=xi.weights ) )
+      poly.append( C )
+      if color:
+        c, w = color( elem, ischeme )
+        values.append( util.mean( c, weights=w ) )
   
     if values:
       elements = collections.PolyCollection( poly, edgecolors=edgecolors, linewidth=linewidth )
@@ -122,11 +126,9 @@ class PylabAxis( object ):
   def add_quiver( self, coords, topology, quiver, sample='uniform3', scale=None ):
     'quiver builder'
   
-    XYUV = []
-    for elem in util.progressbar( topology, title='plotting quiver' ):
-      xi = elem.eval(sample)
-      XYUV.append( numpy.concatenate( [ coords(xi), quiver(xi) ], axis=0 ) )
-    self.quiver( *numpy.concatenate( XYUV, 1 ), scale=scale )
+    xyuv = function.Concatenate( [ coords, quiver ] )
+    XYUV = [ xyuv(elem,sample) for elem in util.progressbar( topology, title='plotting quiver' ) ]
+    self.quiver( *numpy.concatenate( XYUV, 0 ).T, scale=scale )
 
   def add_graph( self, xfun, yfun, topology, sample='contour10', **kwargs ):
     'plot graph of function on 1d topology'
@@ -155,8 +157,7 @@ class PylabAxis( object ):
     xypairs = function.Zip( xfun, yfun, XYD )
 
     for elem in topology:
-      xi = elem.eval( sample )
-      for x, y, xyd in xypairs( xi ):
+      for x, y, xyd in xypairs( elem, sample ):
         xyd[0].extend( x )
         xyd[0].append( numpy.nan )
         xyd[1].extend( y )
@@ -259,55 +260,5 @@ def preview( coords, topology, cscheme='contour8' ):
   else:
     raise Exception, 'need 2D or 3D coordinates'
   pyplot.show()
-
-# OLD
-
-def build_image( coords, n=3, extent=(0,1,0,1), ax=None, ticks=True, clim=None, cbar=False, title='plotting' ):
-  'image builder'
-
-  if ax is None:
-    ax = gca()
-  assert isinstance( coords.topology, topology.StructuredTopology )
-  assert coords.topology.ndims == 2
-  image = numpy.zeros( coords.topology.structure.shape + (n,n) )
-  scheme = 'uniform%d' % n
-  items = zip( coords.topology, image.reshape(-1,n,n) )
-  if title:
-    items = util.progressbar( items, title=title )
-  for elem, im in items:
-    yield coords( elem(scheme) ), im.ravel()
-  image = image.swapaxes(1,2).reshape( image.shape[0]*n, image.shape[1]*n )
-  im = ax.imshow( image.T, extent=extent, origin='lower' )
-  if not ticks:
-    ax.xaxis.set_ticks( [] )
-    ax.yaxis.set_ticks( [] )
-  if clim:
-    im.set_clim( *clim )
-  if cbar:
-    colorbar( im, orientation='vertical' )
-
-def plotmatr( A, **kwargs ):
-  'Plot 10^log magnitudes of numpy matrix elements'
-
-  A = numpy.log10( abs( A ) )
-  if numpy.all( numpy.isinf( A ) ):
-    A = numpy.zeros( A.shape )
-  else:
-    A[numpy.isinf( A )] = numpy.amin( A[~numpy.isinf( A )] ) - 1.
-  pcolor( A, **kwargs )
-  colorbar()
-  ylim( ylim()[-1::-1] ) # invert y axis: equiv to MATLAB axis ij
-  axis( 'tight' )
-
-def savepdf( name, fig=None ):
-  'save figure in plots dir'
-
-  if fig is None:
-    fig = gcf()
-  path = os.path.join( 'plots', name + '.pdf' )
-  dirname = os.path.dirname( path )
-  if not os.path.isdir( dirname ):
-    os.makedirs( dirname )
-  fig.savefig( path, bbox_inches='tight', pad_inches=0 )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

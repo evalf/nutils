@@ -17,7 +17,7 @@ class Topology( set ):
     items = ( self.groups[it] for it in item.split( ',' ) )
     return sum( items, items.next() )
 
-  def integrate( self, func, ischeme=None, coords=None, title=True, dense=None ):
+  def integrate( self, func, ischeme=None, coords=None, title=True, dense=None, shape=None ):
     'integrate'
 
     funcs = func if isinstance( func, (list,tuple) ) else [func]
@@ -43,23 +43,26 @@ class Topology( set ):
 
       import scipy.sparse
 
-      assert all( sh == shapes[0] for sh in shapes[1:] )
+      #assert all( sh == shapes[0] for sh in shapes[1:] )
+      if shape:
+        assert len(shape) == 2
+        assert all( n1 <= shape[0] and n2 <= shape[1] for (n1,n2) in shapes )
+      else:
+        shape = max( sh[0] for sh in shapes ), max( sh[1] for sh in shapes )
 
       indices = []
       values = []
       length = 0
       for elem in topo:
-        for data, index, w in idata( elem.eval(ischeme) ):
-          evalues = util.contract( data, w )
-          ndims = evalues.ndim
-          eindices = numpy.empty( (ndims,) + evalues.shape )
-          for i, n in enumerate( index ):
-            eindices[i] = n
+        for data, (I,J), w in idata( elem, ischeme ):
+          evalues = util.contract( data.T, w ).T # TEMP
+          eindices = numpy.empty( (2,) + evalues.shape )
+          eindices[0] = I[:,_]
+          eindices[1] = J[_,:]
           values.append( evalues.ravel() )
-          indices.append( eindices.reshape(ndims,-1) )
+          indices.append( eindices.reshape(2,-1) )
           length += evalues.size
 
-      print 'length=%d' % length
       v = numpy.empty( length, dtype=float )
       ij = numpy.empty( [2,length], dtype=float )
       n0 = 0
@@ -69,7 +72,7 @@ class Topology( set ):
         ij[:,n0:n1] = ind
         n0 = n1
       assert n0 == length
-      A = scipy.sparse.csr_matrix( (v,ij), shape=shapes[0] )
+      A = scipy.sparse.csr_matrix( (v,ij), shape=shape )
 
     else:
 
@@ -80,8 +83,23 @@ class Topology( set ):
 
       lock = parallel.Lock()
       for elem in parallel.pariter( topo ):
-        for i, (data,index,w) in enumerate( idata( elem.eval(ischeme) ) ):
-          emat = util.contract( data, w )
+        for i, (data,index,w) in enumerate( idata( elem, ischeme ) ):
+        #for i, (data,index,w) in enumerate( idata.eval( elem, ischeme ) ):
+
+          # BEGIN
+          # This is of course a big waste but the whole numpy indexing way is
+          # ridiculous anyway. Will go away soon.
+          where, = numpy.where( [ isinstance(ni,numpy.ndarray) for ni in index ] )
+          if where.size > 1:
+            index = list(index)
+            for ni in where:
+              I = [_] * where.size
+              I[ni] = slice(None)
+              index[ni] = index[ni][ tuple(I) ]
+            index = tuple(index)
+          # END
+
+          emat = util.contract( data.T, w ).T # TEMP
           with lock:
             A[i][index] += emat
 
@@ -117,7 +135,9 @@ class Topology( set ):
       bfun = onto * fun
     elif len( onto.shape ) == 2:
       Afun = ( onto[:,_,:] * onto[_,:,:] ).sum( 2 )
-      bfun = ( onto * fun ).sum( 1 )
+      bfun = onto * fun
+      if bfun:
+        bfun = bfun.sum( 1 )
     else:
       raise Exception
     A, b = self.integrate( [Afun,bfun], coords=coords, ischeme=ischeme, title=title )
@@ -131,7 +151,7 @@ class Topology( set ):
     u[zero] = numpy.nan
     return u.view( util.NanVec )
 
-  def select( self, levelset, maxrefine ):
+  def trim( self, levelset, maxrefine ):
     'create new domain based on levelset'
 
     newelems = []
@@ -140,8 +160,7 @@ class Topology( set ):
       for level in range( maxrefine ):
         nextelempool = []
         for elem in elempool:
-          xi = elem.eval( 'bezier3' )
-          inside = levelset( xi ) > 0
+          inside = levelset( elem, 'bezier3' ) > 0
           if inside.all():
             newelems.append( elem )
           elif inside.any():

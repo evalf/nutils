@@ -54,21 +54,12 @@ class Cache( object ):
       os.makedirs( dirname )
     numpy.savez( self.path, *arrays )
 
-class UsableArray( numpy.ndarray ):
-  'array wrapper that can be compared'
+_sum = sum
+def sum( seq ):
+  'a better sum'
 
-  def __new__( cls, array ):
-    'new'
-
-    return numpy.asarray( array ).view( cls )
-
-  def __eq__( self, other ):
-    'compare'
-
-    return self is other \
-        or isinstance( other, numpy.ndarray ) \
-       and other.shape == self.shape \
-       and numpy.ndarray.__eq__( self, other ).all()
+  seq = iter(seq)
+  return _sum( seq, seq.next() )
 
 def clone( obj ):
   'clone object'
@@ -87,34 +78,6 @@ def iterate( nmax=-1 ):
     yield i
     if i == nmax:
       break
-
-def obj2str( obj ):
-  'convert object to string'
-
-  if isinstance( obj, numpy.ndarray ) and obj.ndim > 0:
-    return 'array[%s]' % 'x'.join( map( str, obj.shape ) )
-  if isinstance( obj, (list,dict,tuple) ):
-    if len(obj) > 4:
-      return '%s[(%s items)]' % ( obj.__class__.__name__, len(obj) )
-    if isinstance( obj, list ):
-      return '[%s]' % ','.join( obj2str(o) for o in obj )
-    if isinstance( obj, tuple ):
-      return '(%s)' % ','.join( obj2str(o) for o in obj )
-    if isinstance( obj, dict ):
-      return '{%s}' % ','.join( '%s:%s' % ( obj2str(k), obj2str(v) ) for k, v in obj.iteritems() )
-  if isinstance( obj, slice ):
-    I = ''
-    if obj.start is not None:
-      I += str(obj.start)
-    I += ':'
-    if obj.stop is not None:
-      I += str(obj.stop)
-    if obj.step is not None:
-      I += ':' + str(obj.step)
-    return I
-  if obj is None:
-    return '_'
-  return str(obj)
 
 def cacheprop( func ):
   'cached property'
@@ -192,42 +155,59 @@ class NanVec( numpy.ndarray ):
 
     return self.copy().__ior__( other )
 
-class Iter_CallBack:
-  def __init__( self, tol, title, matrix, rhs ):
-    self.t = time.time()
-    self.progressbar = progressbar( n=numpy.log(tol), title=title )
-    self.matrix = matrix
-    self.rhs = rhs
-  def __call__( self, arg ):
-    if time.time() > self.t:
-      self.t = time.time() + .1
-      if isinstance( arg, numpy.ndarray ):
-        arg = numpy.linalg.norm( self.rhs - self.matrix * arg ) # for cg
-      self.progressbar.update( numpy.log(arg) )
+class Clock( object ):
+  'simpel interval timer'
 
-def solve_system( matrix, rhs, title='solving system', symmetric=False, tol=0, maxiter=999999 ):
+  def __init__( self, interval ):
+    'constructor'
+
+    self.t = time.time()
+    self.dt = interval
+
+  def __nonzero__( self ):
+    'check time'
+
+    t = time.time()
+    if t > self.t + self.dt:
+      self.t = t
+      return True
+    return False
+
+def solve_system( matrix, rhs, title=True, symmetric=False, tol=0, maxiter=999999 ):
   'solve linear system iteratively'
 
   assert matrix.shape[:-1] == rhs.shape
 
+  if title is True:
+    title = 'solve system'
+
+  progress = None
   if not tol:
     if title:
-      if title is True: title='solving system'
-      p = progressbar( title=title, n=1 )
+      progress = progressbar( title=title, n=1 )
     #print 'solving system:'#, condition number:', numpy.linalg.cond( matrix )
-    return numpy.linalg.solve( matrix, rhs )
-
-  from scipy.sparse import linalg
-  solver = linalg.cg if symmetric else linalg.gmres
-  lhs, status = solver( matrix, rhs,
-                        callback=title and Iter_CallBack(tol,'%s [%s:%d]' % (title,symmetric and 'CG' or 'GMRES', matrix.shape[0]), matrix, rhs ),
-                        tol=tol,
-                        maxiter=maxiter )
-  assert status == 0, 'solution failed to converge (status=%d)' % status
+    lhs = numpy.linalg.solve( matrix, rhs )
+  else:
+    from scipy.sparse import linalg
+    callback = None
+    if title:
+      progress = progressbar( n=numpy.log(tol), title='%s [%s:%d]' % ( title, symmetric and 'CG' or 'GMRES', matrix.shape[0] ) )
+      clock = Clock( .1 )
+      callback = lambda vec: clock and progress.update(
+        numpy.log( vec if not symmetric else numpy.linalg.norm( rhs - matrix * vec ) ) )
+    solver = linalg.cg if symmetric else linalg.gmres
+    lhs, status = solver( matrix, rhs, callback=callback, tol=tol, maxiter=maxiter )
+    assert status == 0, 'solution failed to converge (status=%d)' % status
+  if progress:
+    progress.finish()
   return lhs
 
-def solve( A, b=None, constrain=None, lconstrain=None, rconstrain=None, tol=0, **kwargs ):
+def solve( A, b=0, constrain=None, lconstrain=None, rconstrain=None, tol=0, **kwargs ):
   'solve'
+
+  b = numpy.asarray( b )
+  if ( b == 0 ).all():
+    b = None
 
   assert A.ndim == 2
   if constrain is None and lconstrain is None and rconstrain is None:
@@ -278,11 +258,8 @@ def transform( arr, trans, axis ):
   if trans is 1:
     return arr
 
-  if isinstance( trans, (float,int) ):
+  if isinstance( trans, (float,int) ) or trans.ndim == 0:
     return arr * trans
-
-# assert trans.ndim == 2
-# return numpy.dot( arr.swapaxes(axis,-1), trans ).swapaxes(axis,-1)
 
   if axis < 0:
     axis += arr.ndim
@@ -292,12 +269,15 @@ def transform( arr, trans, axis ):
 
   assert arr.shape[axis] == trans.shape[0]
 
-  transformed = numpy.tensordot( arr, trans, [axis,0] )
-  if trans.ndim > 1 and axis != arr.ndim-1:
-    order = range(axis) + range(arr.ndim-trans.ndim+1,arr.ndim) + range(axis,arr.ndim-trans.ndim+1)
-    transformed = transformed.transpose( order )
+  s1 = [ slice(None) ] * arr.ndim
+  s1[axis+1:axis+1] = [ numpy.newaxis ] * (trans.ndim-1)
+  s1 = tuple(s1)
 
-  return transformed
+  s2 = [ numpy.newaxis ] * (arr.ndim-1)
+  s2[axis:axis] = [ slice(None) ] * trans.ndim
+  s2 = tuple(s2)
+
+  return contract( arr[s1], trans[s2], axis )
 
 def inv( arr, axes ):
   'linearized inverse'
@@ -380,6 +360,24 @@ def norm2( A, axis=-1 ):
 
   return numpy.sqrt( contract( A, A, axis ) )
 
+def align_arrays( *funcs ):
+  'align shapes'
+
+  shape = []
+  for f in funcs:
+    d = len(shape) - len(f.shape)
+    if d < 0:
+      shape = list(f.shape[:-d]) + shape
+      d = 0
+    for i, sh in enumerate( f.shape ):
+      if shape[d+i] == 1:
+        shape[d+i] = sh
+      else:
+        assert sh == shape[d+i] or sh == 1
+  ndim = len(shape)
+  return tuple(shape), tuple( f if ndim == f.ndim
+                         else f[ (numpy.newaxis,)*(ndim-f.ndim) + (slice(None),) * f.ndim ] for f in funcs )
+
 def ipdb():
   'invoke debugger'
 
@@ -414,6 +412,7 @@ class progressbar( object ):
     for i, item in enumerate( self.iterable ):
       self.update( i )
       yield item
+    self.finish()
 
   def update( self, i ):
     'update'
@@ -424,7 +423,7 @@ class progressbar( object ):
       sys.stdout.flush()
       self.x = x
 
-  def __del__( self ):
+  def finish( self ):
     'destructor'
 
     sys.stdout.write( '-' * (self.length-self.x) )

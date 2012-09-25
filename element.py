@@ -1,70 +1,5 @@
 from . import util, numpy, _
 
-class ElemEval( object ):
-  '''Element evaluation.
-
-  Combines a specific Element instance with a shared LocalPoints
-  instance, typically a set of integration points for this specific
-  element type.
-  
-  Members:
-   * elem: Element instance
-   * points: LocalPoints instance
-   * weights: integration weights (optional)'''
-
-  def __init__( self, elem, points, transform=1 ):
-    'constructor'
-
-    assert isinstance( points, LocalPoints )
-    assert points.ndims == elem.ndims
-    self.elem = elem
-    self.points = points
-    self.weights = points.weights
-    self.transform = transform
-
-  def offset( self, offset ):
-    'shift points'
-
-    shifted = LocalPoints( self.points.coords + offset )
-    return ElemEval( self.elem, shifted, self.transform )
-
-  @util.cacheprop
-  def next( self ):
-    'get parent'
-
-    if self.elem.parent is None:
-      raise AttributeError, 'next'
-
-    elem, transform = self.elem.parent
-    points = transform.eval( self.points )
-    return ElemEval( elem, points, transform.transform )
-
-class Element( object ):
-  '''Element base class.
-
-  Represents the topological shape.'''
-
-  def eval( self, where ):
-    'get points'
-
-    if isinstance( where, str ):
-      points = self.getischeme( self.ndims, where )
-    else:
-      where = numpy.asarray( where )
-      points = LocalPoints( where )
-    return ElemEval( self, points )
-
-  def zoom( self, elemset, points ):
-    'zoom points'
-
-    elem = self
-    totaltransform = 1
-    while elem not in elemset:
-      elem, transform = self.parent
-      points = transform( points )
-      totaltransform = numpy.dot( transform.transform, totaltransform )
-    return elem, points, totaltransform
-
 class AffineTransformation( object ):
   'affine transformation'
 
@@ -86,6 +21,32 @@ class AffineTransformation( object ):
     else:
       coords = self.offset[:,_] + numpy.dot( self.transform, points.coords )
     return LocalPoints( coords, points.weights )
+
+class Element( object ):
+  '''Element base class.
+
+  Represents the topological shape.'''
+
+  def eval( self, where ):
+    'get points'
+
+    if isinstance( where, str ):
+      points = self.getischeme( self.ndims, where )
+    else:
+      where = numpy.asarray( where )
+      points = LocalPoints( where )
+    return points
+
+  def zoom( self, elemset, points ):
+    'zoom points'
+
+    elem = self
+    totaltransform = 1
+    while elem not in elemset:
+      elem, transform = self.parent
+      points = transform( points )
+      totaltransform = numpy.dot( transform.transform, totaltransform )
+    return elem, points, totaltransform
 
 class CustomElement( Element ):
   'custom element'
@@ -364,21 +325,21 @@ class PolyQuad( StdElem ):
 
     F0 = [ numpy.array( [ [1.] ] if p == 1
                    else [ comb[i] * (1-x)**(p-1-i) * x**i for i in range(p) ]
-                      ) for x, p, comb in polydata ]
+                      ).T for x, p, comb in polydata ]
     if grad == 0:
-      return reduce( lambda f, fi: ( f[:,_] * fi ).reshape( -1, points.npoints ), F0 )
+      return reduce( lambda f, fi: ( f[:,:,_] * fi[:,_,:] ).reshape( points.npoints, -1 ), F0 )
 
     F1 = [ numpy.array( [ [0.] ] if p < 2
                    else [ [-1.],[1.] ] if p == 2
                    else [ (1-p) * (1-x)**(p-2) ]
                       + [ comb[i] * (1-x)**(p-i-2) * x**(i-1) * (i-(p-1)*x) for i in range(1,p-1) ]
                       + [ (p-1) * x**(p-2) ]
-                      ) for x, p, comb in polydata ]
+                      ).T for x, p, comb in polydata ]
     if grad == 1:
-      data = numpy.empty(( nshapes, points.ndims, points.npoints ))
+      data = numpy.empty(( points.npoints, nshapes, points.ndims ))
       for n in range( points.ndims ):
         Gi = [( F1 if m == n else F0 )[m] for m in range( points.ndims ) ]
-        data[:,n] = reduce( lambda g, gi: ( g[:,_] * gi ).reshape( g.shape[0] * gi.shape[0], -1 ), Gi )
+        data[:,:,n] = reduce( lambda g, gi: ( g[:,:,_] * gi[:,_,:] ).reshape( -1, g.shape[1] * gi.shape[1] ), Gi )
       return data
 
     F2 = [ numpy.array( [ [0.] ] * p if p < 3
@@ -386,13 +347,13 @@ class PolyQuad( StdElem ):
                    else [ (p-1) * (p-2) * (1-x)**(p-3), (p-1) * (p-2) * (1-x)**(p-4) * ((p-1)*x-2) ]
                       + [ comb[i] * (1-x)**(p-i-3) * x**(i-2) * (x*(2*i-(p-1)*x)*(2-p)+i*(i-1)) for i in range(2,p-2) ]
                       + [ (p-1) * (p-2) * x**(p-4) * ((p-1)*(1-x)-2), (p-1) * (p-2) * x**(p-3) ]
-                      ) for x, p, comb in polydata ]
+                      ).T for x, p, comb in polydata ]
     if grad == 2:
-      data = numpy.empty(( nshapes, points.ndims, points.ndims, points.npoints ))
+      data = numpy.empty(( points.npoints, nshapes, points.ndims, points.ndims ))
       for ni in range( points.ndims ):
         for nj in range( ni, points.ndims ):
           Di = [( F2 if m == ni == nj else F1 if m == ni or m == nj else F0 )[m] for m in range( points.ndims ) ]
-          data[:,nj,ni] = data[:,ni,nj] = reduce( lambda d, di: ( d[:,_] * di ).reshape( d.shape[0] * di.shape[0], -1 ), Di )
+          data[:,:,nj,ni] = data[:,:,ni,nj] = reduce( lambda d, di: ( d[:,:,_] * di[:,_,:] ).reshape( -1, d.shape[1] * di.shape[1] ), Di )
       return data
 
     F3 = [ numpy.array( [ [0.] ] * p if p < 4
@@ -401,10 +362,10 @@ class PolyQuad( StdElem ):
                    else [ -(p-3)*(p-2)*(p-1)*(1-x)**(p-4), -(-6+11*p-6*p**2+p**3)*(1-x)**(p-5)*((p-1)*x-3), -comb[2]*(p-3)*(1-x)**(p-6)*(6-6*(p-2)*x+(2-3*p+p**2)*x**2) ]
                       + [ comb[i]*(1-x)**(p-i-4)*x**(i-3)*(i**3-(-6+11*p-6*p**2+p**3)*x**3-3*i**2*(1+(p-3)*x)+i*(2+3*(p-3)*x+3*(6-5*p+p**2)*x**2)) for i in range(3,p-3) ]
                       + [ comb[p-3]*(p-3)*x**(p-6)*(p**2*(x-1)**2+2*(10-8*x+x**2)-3*p*(3-4*x+x**2)), -(-6+11*p-6*p**2+p**3)*(4+p*(x-1)-x)*x**(p-5), (p-3)*(p-2)*(p-1)*x**(p-4) ]
-                      ) for x, p, comb in polydata ]
+                      ).T for x, p, comb in polydata ]
 
     if grad == 3:
-      data = numpy.empty(( nshapes, points.ndims, points.ndims, points.ndims, points.npoints ))
+      data = numpy.empty(( points.npoints, nshapes, points.ndims, points.ndims, points.ndims ))
       for ni in range( points.ndims ):
         for nj in range( ni, points.ndims ):
           for nk in range( nj, points.ndims ):
@@ -412,9 +373,9 @@ class PolyQuad( StdElem ):
                  else F2 if m == ni == nj or m == ni == nk or m == nj == nk
                  else F1 if m == ni or m == nj or m == nk
                  else F0 )[m] for m in range( points.ndims )]
-            data[:,ni,nj,nk] = data[:,ni,nk,nj] = data[:,nj,ni,nk] = \
-            data[:,nj,nk,ni] = data[:,nk,ni,nj] = data[:,nk,nj,ni] = \
-              reduce( lambda d, di: ( d[:,_] * di ).reshape( d.shape[0] * di.shape[0], -1 ), Dijk )
+            data[:,:,ni,nj,nk] = data[:,:,ni,nk,nj] = data[:,:,nj,ni,nk] = \
+            data[:,:,nj,nk,ni] = data[:,:,nk,ni,nj] = data[:,:,nk,nj,ni] = \
+              reduce( lambda d, di: ( d[:,:,_] * di[:,_,:] ).reshape( -1, d.shape[1] * di.shape[1] ), Dijk )
       return data
 
     F4 = [ numpy.array( [ [0.] ] * p if p < 5
@@ -427,10 +388,10 @@ class PolyQuad( StdElem ):
                           2*(-24+26*p-9*p**2+p**3)*x**3)) for i in range(4,p-4) ]
                       + [ -comb[p-4]*(p-4)*x**(p-8)*(-6*p**2*(x-3)*(x-1)**2+p**3*(x-1)**3-6*(-35+45*x-15*x**2+x**3)+p*(-107+189*x-93*x**2+11*x**3)), comb[p-3]*(12-7*p+p**2)*x**(p-7)*(p**2*(x-1)**2 +
                           p*(-11+14*x-3*x**2)+2*(15-10*x+x**2)), -(24-50*p+35*p**2-10*p**3+p**4)*(5+p*(x-1)-x)*x**(p-6), (p-4)*(p-3)*(p-2)*(p-1)*x**(p-5) ]
-                      ) for x, p, comb in polydata ]
+                      ).T for x, p, comb in polydata ]
 
     if grad == 4:
-      data = numpy.empty(( nshapes, points.ndims, points.ndims, points.ndims, points.ndims, points.npoints ))
+      data = numpy.empty(( points.npoints, nshapes, points.ndims, points.ndims, points.ndims, points.ndims ))
       for ni in range( points.ndims ):
         for nj in range( ni, points.ndims ):
           for nk in range( nj, points.ndims ):
@@ -440,15 +401,15 @@ class PolyQuad( StdElem ):
                     else F2 if m == ni == nj or m == ni == nk or m == ni == nl or m == nj == nk or m == nj == nl or m == nk == nl
                     else F1 if m == ni or m == nj or m == nk or m == nl
                     else F0 )[m] for m in range( points.ndims )]
-              data[:,ni,nj,nk,nl] = data[:,ni,nj,nl,nk] = data[:,ni,nk,nj,nl] = data[:,ni,nk,nl,nj] = data[:,ni,nl,nj,nk] = data[:,ni,nl,nk,nj] = \
-              data[:,nj,ni,nk,nl] = data[:,nj,ni,nl,nk] = data[:,nj,nk,ni,nl] = data[:,nj,nk,nl,ni] = data[:,nj,nl,ni,nk] = data[:,nj,nl,nk,ni] = \
-              data[:,nk,ni,nj,nl] = data[:,nk,ni,nl,nj] = data[:,nk,nj,ni,nl] = data[:,nk,nj,nl,ni] = data[:,nk,nl,ni,nj] = data[:,nk,nl,nj,ni] = \
-              data[:,nl,ni,nj,nk] = data[:,nl,ni,nk,nl] = data[:,nl,nj,ni,nk] = data[:,nl,nj,nk,ni] = data[:,nl,nk,ni,nj] = data[:,nl,nk,nj,ni] = \
-                reduce( lambda d, di: ( d[:,_] * di ).reshape( d.shape[0] * di.shape[0], -1 ), Dijkl )
+              data[:,:,ni,nj,nk,nl] = data[:,:,ni,nj,nl,nk] = data[:,:,ni,nk,nj,nl] = data[:,:,ni,nk,nl,nj] = data[:,:,ni,nl,nj,nk] = data[:,:,ni,nl,nk,nj] = \
+              data[:,:,nj,ni,nk,nl] = data[:,:,nj,ni,nl,nk] = data[:,:,nj,nk,ni,nl] = data[:,:,nj,nk,nl,ni] = data[:,:,nj,nl,ni,nk] = data[:,:,nj,nl,nk,ni] = \
+              data[:,:,nk,ni,nj,nl] = data[:,:,nk,ni,nl,nj] = data[:,:,nk,nj,ni,nl] = data[:,:,nk,nj,nl,ni] = data[:,:,nk,nl,ni,nj] = data[:,:,nk,nl,nj,ni] = \
+              data[:,:,nl,ni,nj,nk] = data[:,:,nl,ni,nk,nl] = data[:,:,nl,nj,ni,nk] = data[:,:,nl,nj,nk,ni] = data[:,:,nl,nk,ni,nj] = data[:,:,nl,nk,nj,ni] = \
+                reduce( lambda d, di: ( d[:,:,_] * di[:,_,:] ).reshape( -1, d.shape[1] * di.shape[1] ), Dijkl )
       return data
 
     assert all( p <= 5 for p in self.degree ) # for now
-    return numpy.zeros(( nshapes, points.ndims, points.ndims, points.ndims, points.npoints ))
+    return numpy.zeros(( points.npoints, nshapes, points.ndims, points.ndims, points.ndims ))
 
 class PolyTriangle( StdElem ):
   'poly triangle'
@@ -467,9 +428,9 @@ class PolyTriangle( StdElem ):
 
     if grad == 0:
       x, y = points.coords
-      data = numpy.array( [ x, y, 1-x-y ] )
+      data = numpy.array( [ x, y, 1-x-y ] ).T
     elif grad == 1:
-      data = numpy.array( [[[1],[0]],[[0],[1]],[[-1],[-1]]], dtype=float )
+      data = numpy.array( [[[1,0],[0,1],[-1,-1]]], dtype=float )
     else:
       data = numpy.array( 0 ).reshape( (1,) * (grad+1+points.ndim) )
     return data
@@ -492,7 +453,7 @@ class ExtractionWrapper( object ):
   def eval( self, points, grad=0 ):
     'call'
 
-    return numpy.dot( self.stdelem.eval( points, grad ).T, self.extraction.T ).T
+    return util.transform( self.stdelem.eval( points, grad ), self.extraction.T, axis=1 )
 
   def __repr__( self ):
     'string representation'
