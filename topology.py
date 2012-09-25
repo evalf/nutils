@@ -155,7 +155,7 @@ class Topology( set ):
     'create new domain based on levelset'
 
     newelems = []
-    for elem in util.progressbar( self, title='refining topology' ):
+    for elem in util.progressbar( self, title='selecting/refining elements' ):
       elempool = [ elem ]
       for level in range( maxrefine ):
         nextelempool = []

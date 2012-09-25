@@ -1538,14 +1538,18 @@ class Voigt( ArrayFunc ):
 
     assert func.shape[-2:] == (3,3)
     self.func = func
-    self.args = func, func.shape[:-2] + (9,-1)
-    self.shape = func.shape[:-2] + (6,)
+    ArrayFunc.__init__( self, args=[func], shape=func.shape[:-2]+(6,) )
 
   @staticmethod
-  def eval( data, shape ):
+  def eval( data ):
     'evaluation'
 
-    return data.reshape( shape )[...,[0,4,8,5,2,1],:]
+    return data.reshape( data.shape[:-2]+(9,) )[...,[0,4,8,5,2,1]]
+
+  def __str__( self ):
+    'string representation'
+
+    return indent( 'Voigt', self.func )
 
 def Tanh( x ):
 

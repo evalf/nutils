@@ -497,41 +497,15 @@ $(document).ready(function(){
 
 </script>
 <style>
-body {
-  margin:0;
-  padding:20px;
-  background:#fff;
-  font:80% Arial, Helvetica, sans-serif;
-  color:#555;
-  line-height:180%;
-}
 
 a{
-  text-decoration:none;
-  color:#f30; 
-}
-
-p{
-  clear:both;
-  margin:0;
-  padding:.5em 0;
-}
-
-pre{
-  display:block;
-  font:100% "Courier New", Courier, monospace;
-  padding:10px;
-  border:1px solid #bae2f0;
-  background:#e3f4f9; 
-  margin:.5em 0;
-  overflow:auto;
-  width:450px;
+  text-decoration: none;
 }
 
 #preview {
   position: fixed;
-  top: 20px;
-  right: 20px;
+  top: 10px;
+  right: 10px;
   border: 1px solid gray;
   padding: 0px;
   display: none;
@@ -542,7 +516,6 @@ pre{
 <body>
 <pre>
 '''
-#<body onload="JavaScript:timedRefresh(1000);">
 
   TAIL = '''\
 </pre>
@@ -560,13 +533,25 @@ pre{
     self.stdout = stdout
 
     import re
-    self.pattern = re.compile( r'\b(\w+[.]png)\b' )
+    self.pattern = re.compile( r'\b(\w+[.]\w+)\b' )
+
+  @staticmethod
+  def filerep( match ):
+    'replace file occurrences'
+
+    name = match.group(0)
+    path = DUMPDIR + name
+    if not os.path.isfile( path ):
+      return name
+    if name.endswith('.png'):
+      return r'<a href="%s" class="preview">%s</a>' % (name,name)
+    return r'<a href="%s">%s</a>' % (name,name)
 
   def write( self, s ):
     'write string'
 
     self.stdout.write( s )
-    self.html.write( self.pattern.sub( r'<a href="\1" class="preview">\1</a>', s ) )
+    self.html.write( self.pattern.sub( self.filerep, s ) )
     self.html.flush()
 
   def flush( self ):
