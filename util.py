@@ -333,16 +333,15 @@ def reshape( A, *shape ):
       assert numpy.product( s ) == A.shape[i]
       newshape.extend( s )
       i += 1
-    elif s == 0:
-      newshape.extend( A.shape[i:] )
-      i = A.ndim
     elif s == 1:
       newshape.append( A.shape[i] )
       i += 1
     else:
-      iprev, i = i, i+s if s > 0 else A.ndim
-      newshape.append( numpy.product( A.shape[iprev:i] ) )
-  assert i == A.ndim
+      assert s > 1
+      newshape.append( numpy.product( A.shape[i:i+s] ) )
+      i += s
+  assert i <= A.ndim
+  newshape.extend( A.shape[i:] )
   return A.reshape( newshape )
 
 def mean( A, weights=None, axis=-1 ):

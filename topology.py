@@ -212,7 +212,6 @@ class StructuredTopology( Topology ):
 
     shape = numpy.asarray( self.structure.shape ) + 1
     nodes = numpy.arange( numpy.product(shape) ).reshape( shape )
-    stdelem = element.PolyQuad( (2,)*(self.ndims-1) )
 
     boundaries = []
     for iedge in range( 2 * self.ndims ):
@@ -242,87 +241,38 @@ class StructuredTopology( Topology ):
     if isinstance( degree, int ):
       degree = ( degree, ) * self.ndims
 
-    extractions = numpy.ones( (1,1,1), dtype=float )
-    indices = numpy.array( 0 )
-    slices = []
-    for idim in range( self.ndims ):
-      p = degree[idim]
-      nelems = self.structure.shape[idim]
-      n = (2*(p-1)-1) if idim in self.periodic else min( nelems, 2*(p-1)-1 )
-      ex = numpy.empty(( n, p, p ))
-      ex[0] = numpy.eye( p )
-      for i in range( 1, n ):
-        ex[i] = numpy.eye( p )
-        for j in range( 2, p ):
-          for k in reversed( range( j, p ) ):
-            alpha = 1. / min( 2+k-j, n-i+1 )
-            ex[i-1,:,k] = alpha * ex[i-1,:,k] + (1-alpha) * ex[i-1,:,k-1]
-          ex[i,-j-1:-1,-j-1] = ex[i-1,-j:,-1]
-
-      if idim * 2 in neumann:
-        ex[0,1,:] += ex[0,0,:]
-      if idim * 2 + 1 in neumann:
-        ex[-1,-2,:] += ex[-1,-1,:]
-
-      extractions = util.reshape( extractions[:,_,:,_,:,_]
-                                         * ex[_,:,_,:,_,:], 2, 2, 2 )
-      if idim in self.periodic:
-        I = [p-2] * nelems
-      else:
-        I = range( n )
-        if n < nelems:
-          I[p-2:p-1] *= nelems - n + 1
-      indices = indices[...,_] * n + I
-      slices.append( [ slice(j,j+p) for j in range(nelems) ] )
-
-    poly = element.PolyQuad( degree )
-    stdelems = numpy.array( [ poly ] if all( p==2 for p in degree )
-                       else [ element.ExtractionWrapper( poly, ex ) for ex in extractions ] )
-
-#   shape = [ n + p - 1 for n, p in zip( self.structure.shape, degree ) ]
-#   nodes_structure = numpy.arange( numpy.product(shape) ).reshape( shape )
-
-#   if not self.periodic:
-#     dofcount = nodes_structure.size
-#   else:
-#     tmp = nodes_structure.swapaxes( 0, self.periodic )
-#     overlap = degree[self.periodic] - 1
-#     tmp[ -overlap: ] = tmp[ :overlap ]
-#     dofcount = tmp[ :-overlap ].size
-
-#   shape = numpy.asarray( nodes_structure.shape )
-#   for idim in self.periodic:
-#     tmp = nodes_structure.swapaxes( 0, idim )
-#     overlap = degree[idim] - 1
-#     tmp[ -overlap: ] = tmp[ :overlap ]
-#     shape[idim] -= overlap
-#   dofcount = int( numpy.product( shape ) )
-#   print dofcount
-
     nodes_structure = numpy.array( 0 )
     dofcount = 1
+    slices = []
+
     for idim in range( self.ndims ):
+      periodic = idim in self.periodic
       n = self.structure.shape[idim]
       p = degree[idim]
+
+      stdelems_i = element.PolyLine.spline( degree=p, nelems=n, periodic=periodic )
+      stdelems = stdelems[:,_] * stdelems_i if idim else stdelems_i
+
       nd = n + p - 1
       numbers = numpy.arange( nd )
-      if idim in self.periodic:
+      if periodic:
         overlap = p - 1
         numbers[ -overlap: ] = numbers[ :overlap ]
-      else:
-        overlap = 0
+        nd -= overlap
       nodes_structure = nodes_structure[...,_] * nd + numbers
-      dofcount *= nd - overlap
+      dofcount *= nd
+      slices.append( [ slice(i,i+p) for i in range(n) ] )
 
-    mapping = {}
+    indexmap = {}
     for item in numpy.broadcast( self.structure, *numpy.ix_(*slices) ):
       elem = item[0]
       S = item[1:]
-      mapping[ elem ] = nodes_structure[S].ravel()
-    shape = function.DofAxis( dofcount, mapping ),
-    mapping = dict( ( elem, wrapper ) for elem, wrapper in numpy.broadcast( self.structure, stdelems[indices] ) )
+      indexmap[ elem ] = nodes_structure[S].ravel()
 
-    return function.Function( shape=shape, mapping=mapping )
+    shape = function.DofAxis( dofcount, indexmap ),
+    funcmap = dict( numpy.broadcast( self.structure, stdelems ) )
+
+    return function.Function( shape=shape, mapping=funcmap )
 
   def linearfunc( self, periodic=None ):
     'linears'

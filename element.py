@@ -283,133 +283,165 @@ class LocalPoints( object ):
     self.weights = weights
     self.ndims, self.npoints = coords.shape
 
+  def __getitem__( self, item ):
+    'get item'
+
+    return LocalPoints( self.coords[item], self.weights )
+
 class StdElem( object ):
   'stdelem base class'
 
-  pass
+  def __mul__( self, other ):
+    'multiply elements'
 
-class PolyQuad( StdElem ):
-  'poly quod'
+    return PolyProduct( self, other )
+
+class PolyProduct( StdElem ):
+  'multiply standard elements'
 
   @util.classcache
-  def __new__( cls, degree ):
+  def __new__( cls, std1, std2 ):
     'constructor'
 
     self = object.__new__( cls )
-    self.degree = degree
-    self.ndims = len( degree )
+    self.std1 = std1
+    self.std2 = std2
+    self.ndims = std1.ndims + std2.ndims
     return self
-
-  @util.classcache
-  def comb( cls, p ):
-    'comb'
-
-    comb = numpy.empty( p, dtype=int )
-    comb[0] = 1
-    for j in range( 1, p ):
-      comb[j] = ( comb[j-1] * (p-j) ) / j
-    assert comb[-1] == 1
-    return comb
-
-  def __repr__( self ):
-    'string representation'
-
-    return 'PolyQuad#%x<degree=%s>' % ( id(self), ','.join( map( str, self.degree ) ) )
 
   @util.cachefunc
   def eval( self, points, grad=0 ):
     'evaluate'
 
-    polydata = [ ( x, p, self.comb(p) ) for ( x, p ) in zip( points.coords, self.degree ) ]
-    nshapes = numpy.prod( self.degree )
+    s1 = slice(0,self.std1.ndims)
+    p1 = points[s1]
+    s2 = slice(self.std1.ndims,None)
+    p2 = points[s2]
 
-    F0 = [ numpy.array( [ [1.] ] if p == 1
-                   else [ comb[i] * (1-x)**(p-1-i) * x**i for i in range(p) ]
-                      ).T for x, p, comb in polydata ]
-    if grad == 0:
-      return reduce( lambda f, fi: ( f[:,:,_] * fi[:,_,:] ).reshape( points.npoints, -1 ), F0 )
+    S = slice(None),
+    N = numpy.newaxis,
 
-    F1 = [ numpy.array( [ [0.] ] if p < 2
-                   else [ [-1.],[1.] ] if p == 2
-                   else [ (1-p) * (1-x)**(p-2) ]
-                      + [ comb[i] * (1-x)**(p-i-2) * x**(i-1) * (i-(p-1)*x) for i in range(1,p-1) ]
-                      + [ (p-1) * x**(p-2) ]
-                      ).T for x, p, comb in polydata ]
-    if grad == 1:
-      data = numpy.empty(( points.npoints, nshapes, points.ndims ))
-      for n in range( points.ndims ):
-        Gi = [( F1 if m == n else F0 )[m] for m in range( points.ndims ) ]
-        data[:,:,n] = reduce( lambda g, gi: ( g[:,:,_] * gi[:,_,:] ).reshape( -1, g.shape[1] * gi.shape[1] ), Gi )
-      return data
+    G12 = [ util.reshape( self.std1.eval( p1, grad=i )[S+S+N+S*i+N*j]
+                        * self.std2.eval( p2, grad=j )[S+N+S+N*i+S*j], 1, 2 )
+            for i,j in zip( range(grad,-1,-1), range(grad+1) ) ]
 
-    F2 = [ numpy.array( [ [0.] ] * p if p < 3
-                   else [ [2.],[-4.],[2.] ] if p == 3
-                   else [ (p-1) * (p-2) * (1-x)**(p-3), (p-1) * (p-2) * (1-x)**(p-4) * ((p-1)*x-2) ]
-                      + [ comb[i] * (1-x)**(p-i-3) * x**(i-2) * (x*(2*i-(p-1)*x)*(2-p)+i*(i-1)) for i in range(2,p-2) ]
-                      + [ (p-1) * (p-2) * x**(p-4) * ((p-1)*(1-x)-2), (p-1) * (p-2) * x**(p-3) ]
-                      ).T for x, p, comb in polydata ]
-    if grad == 2:
-      data = numpy.empty(( points.npoints, nshapes, points.ndims, points.ndims ))
-      for ni in range( points.ndims ):
-        for nj in range( ni, points.ndims ):
-          Di = [( F2 if m == ni == nj else F1 if m == ni or m == nj else F0 )[m] for m in range( points.ndims ) ]
-          data[:,:,nj,ni] = data[:,:,ni,nj] = reduce( lambda d, di: ( d[:,:,_] * di[:,_,:] ).reshape( -1, d.shape[1] * di.shape[1] ), Di )
-      return data
+    data = numpy.empty( [ points.npoints, self.std1.nshapes * self.std2.nshapes ] + [ self.ndims ] * grad )
 
-    F3 = [ numpy.array( [ [0.] ] * p if p < 4
-                   else [ [-6],[18],[-18],[6] ] if p == 4
-                   else [ 24*(x-1), 72-96*x, 72*(2*x-1), 24-96*x, 24*x ] if p == 5
-                   else [ -(p-3)*(p-2)*(p-1)*(1-x)**(p-4), -(-6+11*p-6*p**2+p**3)*(1-x)**(p-5)*((p-1)*x-3), -comb[2]*(p-3)*(1-x)**(p-6)*(6-6*(p-2)*x+(2-3*p+p**2)*x**2) ]
-                      + [ comb[i]*(1-x)**(p-i-4)*x**(i-3)*(i**3-(-6+11*p-6*p**2+p**3)*x**3-3*i**2*(1+(p-3)*x)+i*(2+3*(p-3)*x+3*(6-5*p+p**2)*x**2)) for i in range(3,p-3) ]
-                      + [ comb[p-3]*(p-3)*x**(p-6)*(p**2*(x-1)**2+2*(10-8*x+x**2)-3*p*(3-4*x+x**2)), -(-6+11*p-6*p**2+p**3)*(4+p*(x-1)-x)*x**(p-5), (p-3)*(p-2)*(p-1)*x**(p-4) ]
-                      ).T for x, p, comb in polydata ]
+    s12 = numpy.array([s1,s2])
+    R = numpy.arange(grad)
+    for n in range(2**grad):
+      index = n>>R&1
+      data[S*2+tuple(s12[index])] = G12[index.sum()].transpose(0,1,*2+index.argsort())
 
-    if grad == 3:
-      data = numpy.empty(( points.npoints, nshapes, points.ndims, points.ndims, points.ndims ))
-      for ni in range( points.ndims ):
-        for nj in range( ni, points.ndims ):
-          for nk in range( nj, points.ndims ):
-            Dijk = [( F3 if m == ni == nj == nk
-                 else F2 if m == ni == nj or m == ni == nk or m == nj == nk
-                 else F1 if m == ni or m == nj or m == nk
-                 else F0 )[m] for m in range( points.ndims )]
-            data[:,:,ni,nj,nk] = data[:,:,ni,nk,nj] = data[:,:,nj,ni,nk] = \
-            data[:,:,nj,nk,ni] = data[:,:,nk,ni,nj] = data[:,:,nk,nj,ni] = \
-              reduce( lambda d, di: ( d[:,:,_] * di[:,_,:] ).reshape( -1, d.shape[1] * di.shape[1] ), Dijk )
-      return data
+    return data
 
-    F4 = [ numpy.array( [ [0.] ] * p if p < 5
-                   else [ [24], [-96], [24*comb[2]], [-96], [24] ] if p == 5
-                   else [ -120*(x-1), 120*(5*x-4), 24*comb[2]*(3-5*x), 24*comb[p-3]*(5*x-2), 120-600*x, 120*x ] if p == 6
-                   else [ 360*(x-1)**2, -720*(2-5*x+3*x**2), 24*comb[2]*(6-20*x+15*x**2), -72*comb[3]*(1-5*x+5*x**2), -72*comb[p-4]*(1-5*x+5*x**2), 24*comb[p-3]*(1-10*x+15*x**2), -720*x*(3*x-1), 360*x**2 ] if p == 7
-                   else [ (p-4)*(p-3)*(p-2)*(p-1)*(1-x)**(p-5), (24-50*p+35*p**2-10*p**3+p**4)*(1-x)**(p-6)*((p-1)*x-4), comb[2]*(12-7*p+p**2)*(1-x)**(p-7)*(12-8*(p-2)*x+(2-3*p+p**2)*x**2),
-                          comb[3]*(p-4)*(1-x)**(p-8)*(-24+36*(p-3)*x-12*(6-5*p+p**2)*x**2+(-6+11*p-6*p**2+p**3)*x**3) ]
-                      + [ comb[i]*(1-x)**(p-i-5)*x**(i-4)*(i**4+(24-50*p+35*p**2-10*p**3+p**4)*x**4-2*i**3*(3+2*(p-4)*x)+i**2*(11+12*(p-4)*x+6*(12-7*p+p**2)*x**2)-2*i*(3+4*(p-4)*x+3*(12-7*p+p**2)*x**2 + 
-                          2*(-24+26*p-9*p**2+p**3)*x**3)) for i in range(4,p-4) ]
-                      + [ -comb[p-4]*(p-4)*x**(p-8)*(-6*p**2*(x-3)*(x-1)**2+p**3*(x-1)**3-6*(-35+45*x-15*x**2+x**3)+p*(-107+189*x-93*x**2+11*x**3)), comb[p-3]*(12-7*p+p**2)*x**(p-7)*(p**2*(x-1)**2 +
-                          p*(-11+14*x-3*x**2)+2*(15-10*x+x**2)), -(24-50*p+35*p**2-10*p**3+p**4)*(5+p*(x-1)-x)*x**(p-6), (p-4)*(p-3)*(p-2)*(p-1)*x**(p-5) ]
-                      ).T for x, p, comb in polydata ]
+  def __str__( self ):
+    'string representation'
 
-    if grad == 4:
-      data = numpy.empty(( points.npoints, nshapes, points.ndims, points.ndims, points.ndims, points.ndims ))
-      for ni in range( points.ndims ):
-        for nj in range( ni, points.ndims ):
-          for nk in range( nj, points.ndims ):
-            for nl in range( nk, points.ndims ):
-              Dijkl = [( F4 if m == ni == nj == nk == nl
-                    else F3 if m == ni == nj == nk or m == ni == nj == nl or m == ni == nk == nl or m == nj == nk == nl
-                    else F2 if m == ni == nj or m == ni == nk or m == ni == nl or m == nj == nk or m == nj == nl or m == nk == nl
-                    else F1 if m == ni or m == nj or m == nk or m == nl
-                    else F0 )[m] for m in range( points.ndims )]
-              data[:,:,ni,nj,nk,nl] = data[:,:,ni,nj,nl,nk] = data[:,:,ni,nk,nj,nl] = data[:,:,ni,nk,nl,nj] = data[:,:,ni,nl,nj,nk] = data[:,:,ni,nl,nk,nj] = \
-              data[:,:,nj,ni,nk,nl] = data[:,:,nj,ni,nl,nk] = data[:,:,nj,nk,ni,nl] = data[:,:,nj,nk,nl,ni] = data[:,:,nj,nl,ni,nk] = data[:,:,nj,nl,nk,ni] = \
-              data[:,:,nk,ni,nj,nl] = data[:,:,nk,ni,nl,nj] = data[:,:,nk,nj,ni,nl] = data[:,:,nk,nj,nl,ni] = data[:,:,nk,nl,ni,nj] = data[:,:,nk,nl,nj,ni] = \
-              data[:,:,nl,ni,nj,nk] = data[:,:,nl,ni,nk,nl] = data[:,:,nl,nj,ni,nk] = data[:,:,nl,nj,nk,ni] = data[:,:,nl,nk,ni,nj] = data[:,:,nl,nk,nj,ni] = \
-                reduce( lambda d, di: ( d[:,:,_] * di[:,_,:] ).reshape( -1, d.shape[1] * di.shape[1] ), Dijkl )
-      return data
+    return '%s*%s' % ( self.std1, self.std2 )
 
-    assert all( p <= 5 for p in self.degree ) # for now
-    return numpy.zeros(( points.npoints, nshapes, points.ndims, points.ndims, points.ndims ))
+class PolyLine( StdElem ):
+  'polynomial on a line'
+
+  @classmethod
+  def bernstein_poly( cls, degree ):
+    'bernstein polynomial coefficients'
+
+    # magic bernstein triangle
+    n = degree - 1
+    poly = numpy.zeros( [n+1,n+1], dtype=int )
+    root = (-1)**n
+    for k in range(n//2+1):
+      poly[k,k] = root
+      for i in range(k+1,n+1-k):
+        root = poly[i,k] = poly[k,i] = ( root * (k+i-n-1) ) / i
+      root = ( poly[k,k+1] * (k*2-n+1) ) / (k+1)
+    return poly
+
+  @classmethod
+  def spline_poly( cls, p, n ):
+    'spline polynomial coefficients'
+
+    assert n < 2*(p-1)
+    extractions = numpy.empty(( n, p, p ))
+    extractions[0] = numpy.eye( p )
+    for i in range( 1, n ):
+      extractions[i] = numpy.eye( p )
+      for j in range( 2, p ):
+        for k in reversed( range( j, p ) ):
+          alpha = 1. / min( 2+k-j, n-i+1 )
+          extractions[i-1,:,k] = alpha * extractions[i-1,:,k] + (1-alpha) * extractions[i-1,:,k-1]
+        extractions[i,-j-1:-1,-j-1] = extractions[i-1,-j:,-1]
+
+    poly = cls.bernstein_poly( p )
+    return util.contract( extractions[:,_,:,:], poly[_,:,_,:], axis=-1 )
+
+  @util.classcache
+  def spline_elems( cls, p, n ):
+    'spline elements, minimum amount (just for caching)'
+
+    return map( cls, cls.spline_poly(p,n) )
+
+  @util.classcache
+  def spline_elems_neumann( cls, p, n ):
+    'spline elements, neumann endings (just for caching)'
+
+    polys = cls.spline_poly(p,n)
+    poly_0 = polys[0].copy()
+    poly_0[:,1] += poly_0[:,0]
+    poly_e = polys[-1].copy()
+    poly_e[:,-2] += poly_e[:,-1]
+    return cls(poly_0), cls(poly_e)
+
+  @classmethod
+  def spline( cls, degree, nelems, periodic=False, neumann=0 ):
+    'spline elements, any amount'
+
+    p = degree
+    n = 2*(p-1)-1
+    if periodic:
+      assert not neumann, 'periodic domains have no boundary'
+      elems = cls.spline_elems( p, n )[p-2:p-1] * nelems
+    else:
+      elems = cls.spline_elems( p, min(nelems,n) )
+      if len(elems) < nelems:
+        elems = elems[:p-2] + elems[p-2:p-1] * (nelems-2*(p-2)) + elems[p-1:]
+      if neumann:
+        elem_0, elem_e = cls.spline_elems_neumann( p, min(nelems,n) )
+        if neumann & 1:
+          elems[0] = elem_0
+        if neumann & 2:
+          elems[-1] = elem_e
+        
+    return numpy.array( elems )
+
+  def __init__( self, poly ):
+    'constructor'
+
+    self.ndims = 1
+    self.poly = numpy.asarray( poly, dtype=float )
+    self.degree, self.nshapes = self.poly.shape
+
+  @util.cachefunc
+  def eval( self, points, grad=0 ):
+    'evaluate'
+
+    poly = self.poly
+    for n in range(grad):
+      poly = poly[:-1] * numpy.arange( poly.shape[0]-1, 0, -1 )[:,_]
+
+    x, = points.coords
+    polyval = poly[0,_,:].repeat( x.size, axis=0 )
+    for p in poly[1:]:
+      polyval *= x[:,_]
+      polyval += p[_,:]
+
+    return polyval[(Ellipsis,)+(_,)*grad]
+
+  def __repr__( self ):
+    'string representation'
+
+    return 'PolyLine#%x' % id(self)
 
 class PolyTriangle( StdElem ):
   'poly triangle'
