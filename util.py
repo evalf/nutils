@@ -68,13 +68,14 @@ def clone( obj ):
   clone.__dict__.update( obj.__dict__ )
   return clone
 
-def iterate( nmax=-1 ):
+def iterate( nmax=-1, verbose=True ):
   'iterate forever'
 
   i = 0
   while True:
     i += 1
-    print 'iteration %d' % i
+    if verbose:
+      print 'iteration %d' % i
     yield i
     if i == nmax:
       break

@@ -25,7 +25,7 @@ class Topology( set ):
 
     if self.ndims == 0:
       # simple point evaluation
-      iweights = 1
+      iweights = numpy.array( [1.] )
       ischeme = 'none'
     else:
       assert coords, 'must specify coords'
@@ -250,7 +250,8 @@ class StructuredTopology( Topology ):
       n = self.structure.shape[idim]
       p = degree[idim]
 
-      stdelems_i = element.PolyLine.spline( degree=p, nelems=n, periodic=periodic )
+      neumann_i = (idim*2 in neumann and 1) | (idim*2+1 in neumann and 2)
+      stdelems_i = element.PolyLine.spline( degree=p, nelems=n, periodic=periodic, neumann=neumann_i )
       stdelems = stdelems[:,_] * stdelems_i if idim else stdelems_i
 
       nd = n + p - 1

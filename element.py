@@ -426,6 +426,9 @@ class PolyLine( StdElem ):
   def eval( self, points, grad=0 ):
     'evaluate'
 
+    if grad >= self.degree:
+      return util.appendaxes( 0., (points.npoints,self.nshapes)+(1,)*grad )
+
     poly = self.poly
     for n in range(grad):
       poly = poly[:-1] * numpy.arange( poly.shape[0]-1, 0, -1 )[:,_]
