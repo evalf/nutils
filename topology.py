@@ -23,7 +23,6 @@ class Topology( set ):
     funcs = func if isinstance( func, (list,tuple) ) else [func]
     shapes = [ map(int,f.shape) for f in funcs ]
 
-    print '->', self.ndims
     if self.ndims == 0:
       # simple point evaluation
       iweights = numpy.array( [1.] )
