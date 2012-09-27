@@ -23,6 +23,7 @@ class Topology( set ):
     funcs = func if isinstance( func, (list,tuple) ) else [func]
     shapes = [ map(int,f.shape) for f in funcs ]
 
+    print '->', self.ndims
     if self.ndims == 0:
       # simple point evaluation
       iweights = numpy.array( [1.] )
@@ -217,11 +218,14 @@ class StructuredTopology( Topology ):
     for iedge in range( 2 * self.ndims ):
       idim = iedge // 2
       iside = iedge % 2
-      s = [ slice(None,None,1-2*iside) ] * idim \
-        + [ -iside ] \
-        + [ slice(None,None,2*iside-1) ] * (self.ndims-idim-1)
-      # TODO: check that this is correct for all dimensions; should match conventions in elem.edge
-      belems = numpy.frompyfunc( lambda elem: elem.edge( iedge ), 1, 1 )( self.structure[s] )
+      if idim > 1:
+        s = ( slice(None,None,1-2*iside), ) * idim \
+          + ( -iside, ) \
+          + ( slice(None,None,2*iside-1), ) * (self.ndims-idim-1)
+        # TODO: check that this is correct for all dimensions; should match conventions in elem.edge
+        belems = numpy.frompyfunc( lambda elem: elem.edge( iedge ), 1, 1 )( self.structure[s] )
+      else:
+        belems = numpy.array( self.structure[-iside].edge( iedge ) )
       boundaries.append( StructuredTopology( belems ) )
 
     if self.ndims == 2:
