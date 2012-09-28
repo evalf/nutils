@@ -307,6 +307,7 @@ class PolyProduct( StdElem ):
     self.std1 = std1
     self.std2 = std2
     self.ndims = std1.ndims + std2.ndims
+    self.nshapes = std1.nshapes * std2.nshapes
     return self
 
   @util.cachefunc

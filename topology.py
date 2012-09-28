@@ -217,7 +217,7 @@ class StructuredTopology( Topology ):
     for iedge in range( 2 * self.ndims ):
       idim = iedge // 2
       iside = iedge % 2
-      if idim > 1:
+      if self.ndims > 1:
         s = ( slice(None,None,1-2*iside), ) * idim \
           + ( -iside, ) \
           + ( slice(None,None,2*iside-1), ) * (self.ndims-idim-1)
