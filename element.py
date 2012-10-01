@@ -445,9 +445,6 @@ class PolyLine( StdElem ):
       polyval *= x[:,_]
       polyval += p[_,:]
 
-    if grad == 0:
-      print polyval
-
     return polyval[(Ellipsis,)+(_,)*grad]
 
   def __repr__( self ):
