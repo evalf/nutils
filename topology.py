@@ -126,9 +126,9 @@ class Topology( set ):
       assert isinstance( constrain, util.NanVec )
       assert constrain.shape == onto.shape[:1]
 
-    if not isinstance( fun, function.Evaluable ):
-      if callable( fun ):
-        fun = function.UFunc( coords, fun )
+#   if not isinstance( fun, function.Evaluable ):
+#     if callable( fun ):
+#       fun = function.UFunc( coords, fun )
 
     if len( onto.shape ) == 1:
       Afun = onto[:,_] * onto[_,:]
@@ -147,7 +147,7 @@ class Topology( set ):
     if bfun == 0:
       u = constrain | 0
     else:
-      u = util.solve( A, b, constrain )
+      u = util.solve( A, b, constrain, title=None )
     u[zero] = numpy.nan
     return u.view( util.NanVec )
 

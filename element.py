@@ -14,12 +14,12 @@ class AffineTransformation( object ):
     'apply transformation'
 
     if self.transform.ndim == 0:
-      coords = self.offset[:,_] + self.transform * points.coords
+      coords = self.offset + self.transform * points.coords
     elif self.transform.shape[1] == 0:
-      assert points.coords.shape == (0,1)
-      coords = self.offset[:,_]
+      assert points.coords.shape == (1,0)
+      coords = self.offset[_,:]
     else:
-      coords = self.offset[:,_] + numpy.dot( self.transform, points.coords )
+      coords = self.offset + numpy.dot( points.coords, self.transform.T )
     return LocalPoints( coords, points.weights )
 
 class Element( object ):
@@ -164,7 +164,7 @@ class QuadElement( Element ):
       weights = reduce( lambda weights, i: ( weights * w[:,_] ).ravel(), range( 1, ndims ), w )
     else:
       weights = None
-    return LocalPoints( coords, weights )
+    return LocalPoints( coords.T, weights )
 
   def __repr__( self ):
     'string representation'
@@ -266,7 +266,7 @@ class TriangularElement( Element ):
       weights = util.appendaxes( .5/NN, NN )
     else:
       raise Exception, 'invalid element evaluation: %r' % where
-    return LocalPoints( coords, weights )
+    return LocalPoints( coords.T, weights )
 
   def __repr__( self ):
     'string representation'
@@ -281,12 +281,17 @@ class LocalPoints( object ):
 
     self.coords = coords
     self.weights = weights
-    self.ndims, self.npoints = coords.shape
+    self.npoints, self.ndims = coords.shape
+
+  def offset( self, offset ):
+    'offset coords by constant vector'
+
+    return LocalPoints( self.coords+offset, weights=self.weights )
 
   def __getitem__( self, item ):
     'get item'
 
-    return LocalPoints( self.coords[item], self.weights )
+    return LocalPoints( self.coords[:,item], self.weights )
 
 class StdElem( object ):
   'stdelem base class'
@@ -434,7 +439,7 @@ class PolyLine( StdElem ):
     for n in range(grad):
       poly = poly[:-1] * numpy.arange( poly.shape[0]-1, 0, -1 )[:,_]
 
-    x, = points.coords
+    x, = points.coords.T
     polyval = poly[0,_,:].repeat( x.size, axis=0 )
     for p in poly[1:]:
       polyval *= x[:,_]
@@ -463,7 +468,7 @@ class PolyTriangle( StdElem ):
     'eval'
 
     if grad == 0:
-      x, y = points.coords
+      x, y = points.coords.T
       data = numpy.array( [ x, y, 1-x-y ] ).T
     elif grad == 1:
       data = numpy.array( [[[1,0],[0,1],[-1,-1]]], dtype=float )
