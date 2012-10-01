@@ -8,7 +8,9 @@ def rectilinear( gridnodes, periodic=() ):
   structure = numpy.frompyfunc( lambda *s: element.QuadElement( ndims ), ndims, 1 )( *indices )
   topo = topology.StructuredTopology( structure )
   coords = topo.rectilinearfunc( gridnodes )
-  return topo.make_periodic( periodic ), coords
+  if periodic:
+    topo = topo.make_periodic( periodic )
+  return topo, coords
 
 def revolve( topo, coords, nelems, degree=4, axis=0 ):
   'revolve coordinates'

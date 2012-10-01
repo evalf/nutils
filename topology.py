@@ -143,6 +143,7 @@ class Topology( set ):
     A, b = self.integrate( [Afun,bfun], coords=coords, ischeme=ischeme, title=title )
 
     zero = ( numpy.abs( A ) < tol ).all( axis=0 )
+    print 'unconstrained:', zero.sum(), 'constrained:', (~zero).sum()
     constrain[zero] = 0
     if bfun == 0:
       u = constrain | 0

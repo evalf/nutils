@@ -331,6 +331,21 @@ class ArrayFunc( Evaluable ):
 
     return ( self[i,...] for i in range(self.shape[0]) )
 
+  def find( self, elem, target, start, tol=1e-10, maxiter=999 ):
+    'iteratively find x for f(x) = target, starting at x=start'
+
+    points = start
+    Jinv = self.localgradient( elem.ndims ).inv(0,1)
+    r = target - self( elem, points )
+    niter = 0
+    while numpy.any( util.contract( r, r, axis=-1 ) > tol ):
+      niter += 1
+      if niter >= maxiter:
+        raise Exception, 'failed to converge in %d iterations' % maxiter
+      points = points.offset( util.contract( Jinv( elem, points ), r[:,_,:], axis=-1 ) )
+      r = target - self( elem, points )
+    return points
+
   def chain( self, func ):
     'chain function spaces together'
     
