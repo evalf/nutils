@@ -256,7 +256,7 @@ class StructuredTopology( Topology ):
 
       neumann_i = (idim*2 in neumann and 1) | (idim*2+1 in neumann and 2)
       stdelems_i = element.PolyLine.spline( degree=p, nelems=n, periodic=periodic, neumann=neumann_i )
-      stdelems = stdelems[:,_] * stdelems_i if idim else stdelems_i
+      stdelems = stdelems[...,_] * stdelems_i if idim else stdelems_i
 
       nd = n + p - 1
       numbers = numpy.arange( nd )

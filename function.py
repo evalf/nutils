@@ -1020,6 +1020,26 @@ class Stack( ArrayFunc ):
 
     return indent( 'Stack:%d' % self.axis, *self.funcs )
 
+class Heaviside( ArrayFunc ):
+  'heaviside function'
+
+  def __init__( self, levelset ):
+    'constructor'
+
+    self.levelset = levelset
+    ArrayFunc.__init__( self, args=[levelset], shape=levelset.shape )
+
+  @staticmethod
+  def eval( f ):
+    'evaluate'
+
+    return ( f > 0 ).astype( float )
+
+  def __str__( self ):
+    'string representation'
+
+    return indent( 'Heaviside', self.levelset )
+
 #class Stack22( ArrayFunc ):
 #  'special 2x2 stack based on unified axes'
 #
