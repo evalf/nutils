@@ -29,6 +29,10 @@ def obj2str( obj ):
     return '...'
   if obj is None:
     return '_'
+  if obj is POINTS:
+    return '<points>'
+  if obj is ELEM:
+    return '<elem>'
   return str(obj)
 
 class StaticArray( numpy.ndarray ):
@@ -44,10 +48,9 @@ class StaticArray( numpy.ndarray ):
 
     if self is other:
       return True
-    equal = numpy.ndarray.__eq__( self, other )
-    if isinstance( equal, numpy.ndarray ):
-      equal = equal.view( numpy.ndarray ).all()
-    return equal
+    if not isinstance( other, numpy.ndarray ) or self.shape != other.shape:
+      return False
+    return ( self.view(numpy.ndarray) == other.view(numpy.ndarray) ).all()
 
   def __ne__( self, other ):
     'not equal'
@@ -57,7 +60,7 @@ class StaticArray( numpy.ndarray ):
   def __nonzero__( self ):
     'nonzero'
 
-    return self != 0
+    return bool( ( self.view( numpy.ndarray ) != 0 ).any() )
 
   def indices( self ):
     'get indices for numpy array'
@@ -98,114 +101,113 @@ def normdim( length, n ):
 
   return sorted( ni + length if ni < 0 else ni for ni in n )
 
-def indent( key, *items ):
-  'indent string  by two spaces'
-
-  #return key + ''.join( '\n. ' + '\n  '.join( str(s).splitlines() ) for s in items )
-  #indent = '\n' + '.' + ' ' * len(key)
-  #indent1 = '\n' + ' ' + ' ' * len(key)
-  #return key + ' ' + indent2.join( [ indent.join( str(s).splitlines() ) for s in items ] )
-
-  lines = []
-  indent = '\n' + ' ' + ' ' * len(key)
-  for it in reversed( items ):
-    lines.append( indent.join( str(it).splitlines() ) )
-    indent = '\n' + '|' + ' ' * len(key)
-
-  indent = '\n' + '+' + '-' * (len(key)-1) + ' '
-  return key + ' ' + indent.join( reversed( lines ) )
-  
-class StackIndex( int ):
-  'stack index'
-
-  def __str__( self ):
-    'string representation'
-
-    return '%%%d' % self
+class StackFun( object ):
+  def __init__( self, op, indices ):
+    self.op = op
+    self.indices = indices
 
 class Evaluable( object ):
   'evaluable base classs'
 
   operations = None
 
-  def __init__( self, args=None, clone=None ):
+  def __init__( self, args, evalf ):
     'constructor'
 
-    if clone:
-      assert isinstance( clone, Evaluable )
-      assert args is None
-      self.__args = clone.__args
-    else:
-      assert clone is None
-      self.__args = tuple(args)
+    self.__args = tuple(args)
+    self.__evalf = evalf
 
   def recurse_index( self, operations ):
     'compile'
 
-    for i, (op,idx) in enumerate( operations ):
-      if op == self:
-        return StackIndex( i )
-
-    indices = [ arg.recurse_index( operations ) if isinstance( arg, Evaluable ) else arg for arg in self.__args ]
-    operations.append(( self, indices ))
-    return StackIndex( len(operations)-1 )
+    indices = numpy.empty( len(self.__args), dtype=int )
+    for iarg, arg in enumerate( self.__args ):
+      if isinstance(arg,Evaluable):
+        for idx, op in enumerate( operations ):
+          if isinstance(op,StackFun) and op.op == arg:
+            break
+        else:
+          idx = arg.recurse_index(operations)
+      else:
+        try:
+          idx = operations.index(arg)
+        except ValueError:
+          operations.append(arg)
+          idx = len(operations)-1
+      indices[iarg] = idx
+    operations.append( StackFun(self,indices) )
+    return len(operations)-1
 
   def compile( self ):
     'compile'
 
     if self.operations is None:
-      operations = [ (ELEM,None), (POINTS,None) ]
-      self.recurse_index( operations ) # compile expressions
-      self.operations = operations[2:]
-      
+      self.operations = [ ELEM, POINTS ]
+      self.recurse_index( self.operations ) # compile expressions
+
   def __call__( self, elem, points ):
     'evaluate'
 
     self.compile()
     if isinstance( points, str ):
       points = elem.eval(points)
-    values = [ elem, points ]
+    values = numpy.empty( len(self.operations), dtype=object )
+    enumops = enumerate( self.operations )
+    assert enumops.next() == (0,ELEM)
+    values[0] = elem
+    assert enumops.next() == (1,POINTS)
+    values[1] = points
     try:
-      for op, arglist in self.operations:
-        args = [ values[arg] if isinstance( arg, StackIndex ) else arg for arg in arglist ]
-        values.append( op.eval( *args ) )
+      for iop, op in enumops:
+        values[iop] = op.op.__evalf( *values[op.indices] ) if isinstance( op, StackFun ) else op
     except:
-      self.printstack( pointer=(op,arglist), values=values )
+      self.printstack( pointer=op, values=values[:iop] )
       raise
     return values[-1]
 
-  def printstack( self, pointer=None, values=None ):
+  def printstack( self, pointer=None, values=[] ):
     'print stack'
 
     self.compile()
     print 'call stack:'
-    for i in range( len(self.operations)+2 ):
-      if i < 2:
-        objstr = obj2str( values[i] )
-      else:
-        op, arglist = self.operations[i-2]
+    for i, op in enumerate( self.operations ):
+      if isinstance(op,StackFun):
         try:
-          code = op.eval.func_code
+          code = op.op.__evalf.func_code
           names = code.co_varnames[ :code.co_argcount ]
-          names += tuple( '%s[%d]' % ( code.co_varnames[ code.co_argcount ], n ) for n in range( len(arglist) - len(names) ) )
+          names += tuple( '%s[%d]' % ( code.co_varnames[ code.co_argcount ], n ) for n in range( len(op.indices) - len(names) ) )
         except:
-          args = [ obj2str(arg) for arg in arglist ]
+          args = [ '%%%d' % idx for idx in op.indices ]
         else:
-          args = [ '%s=%s' % ( name, obj2str(arg) ) for name, arg in zip( names, arglist ) ]
-        objstr = '%s( %s )' % ( op.__class__.__name__, ', '.join( args ) )
-        if values and len( values ) > i:
+          args = [ '%s=%%%d' % ( name, idx ) for name, idx in zip( names, op.indices ) ]
+        objstr = '%s( %s )' % ( op.op.__evalf.__name__, ', '.join( args ) )
+        if i < len(values):
           objstr += ' = ' + obj2str( values[i] )
-        if pointer and pointer[0] is op and pointer[1] is arglist:
-          objstr += ' <-----ERROR'
+      else:
+        objstr = obj2str( values[i] if i < len(values) else op )
+      if op is pointer:
+        objstr += ' <-----ERROR'
       print '%2d: %s' % ( i, objstr )
 
   def __eq__( self, other ):
     'compare'
 
-    return self is other or ( self.__class__ == other.__class__ and self.__args == other.__args )
+    return self is other or isinstance(other,Evaluable) and self.__evalf is other.__evalf and self.__args == other.__args
 
-ELEM   = Evaluable( args=[object()] )
-POINTS = Evaluable( args=[object()] )
+  def __str__( self ):
+    'string representation'
+
+    key = str(self.__evalf.__name__ )
+    lines = []
+    indent = '\n' + ' ' + ' ' * len(key)
+    for it in reversed( self.__args ):
+      lines.append( indent.join( obj2str(it).splitlines() ) )
+      indent = '\n' + '|' + ' ' * len(key)
+    indent = '\n' + '+' + '-' * (len(key)-1) + ' '
+    return key + ' ' + indent.join( reversed( lines ) )
+
+ELEM = object()
+POINTS = object()
 
 class Tuple( Evaluable ):
   'combine'
@@ -214,7 +216,7 @@ class Tuple( Evaluable ):
     'constructor'
 
     self.items = items
-    Evaluable.__init__( self, args=items )
+    Evaluable.__init__( self, args=items, evalf=self.vartuple )
 
   def __iter__( self ):
     'iterate'
@@ -232,7 +234,7 @@ class Tuple( Evaluable ):
     return Tuple( tuple(other) + self.items )
 
   @staticmethod
-  def eval( *f ):
+  def vartuple( *f ):
     'evaluate'
 
     return f
@@ -279,12 +281,13 @@ class ArrayFunc( Evaluable ):
 
   __array_priority__ = 1. # fix numpy's idiotic default behaviour
 
-  def __init__( self, shape, **kwargs ):
+  def __init__( self, evalf, args, shape ):
     'constructor'
 
+    self.evalf = evalf
     self.shape = tuple(shape)
     self.ndim = len(self.shape)
-    Evaluable.__init__( self, **kwargs )
+    Evaluable.__init__( self, evalf=evalf, args=args )
 
   def __getitem__( self, item ):
     'get item'
@@ -512,7 +515,7 @@ class ArrayFunc( Evaluable ):
   def __mul__( self, other ):
     'multiply'
   
-    if not isinstance( other, Evaluable ):
+    if not isinstance( other, ArrayFunc ):
       other = StaticArray( other )
 
     if other == 0:
@@ -526,7 +529,7 @@ class ArrayFunc( Evaluable ):
   def __div__( self, other ):
     'divide'
   
-    if isinstance( other, Evaluable ):
+    if isinstance( other, ArrayFunc ):
       return Divide( self, other )
 
     return self * numpy.reciprocal( other ) # faster
@@ -534,7 +537,7 @@ class ArrayFunc( Evaluable ):
   def __rdiv__( self, other ):
     'right divide'
 
-    if not isinstance( other, Evaluable ):
+    if not isinstance( other, ArrayFunc ):
       other = StaticArray( other )
 
     if other == 0:
@@ -545,7 +548,7 @@ class ArrayFunc( Evaluable ):
   def __add__( self, other ):
     'add'
 
-    if not isinstance( other, Evaluable ):
+    if not isinstance( other, ArrayFunc ):
       other = StaticArray( other )
 
     if other == 0:
@@ -559,7 +562,7 @@ class ArrayFunc( Evaluable ):
   def __sub__( self, other ):
     'subtract'
   
-    if not isinstance( other, Evaluable ):
+    if not isinstance( other, ArrayFunc ):
       other = StaticArray( other )
 
     if other == 0:
@@ -570,7 +573,7 @@ class ArrayFunc( Evaluable ):
   def __rsub__( self, other ):
     'right subtract'
 
-    if not isinstance( other, Evaluable ):
+    if not isinstance( other, ArrayFunc ):
       other = StaticArray( other )
 
     if other == 0:
@@ -620,6 +623,7 @@ class ConstFunc( ArrayFunc ):
   def __init__( self ):
     'constructor'
 
+    raise NotImplementedError
     ArrayFunc.__init__( self, shape=[1], args=() )
 
   @staticmethod
@@ -633,20 +637,13 @@ class OffsetWrapper( ArrayFunc ):
   def __init__( self, func, offset, ndofs ):
     'constructor'
 
-    self.eval = func.eval
-    self.func = func
-    self.offset = offset
-    ArrayFunc.__init__( self, clone=func, shape=( func.shape[0].transform(ndofs=ndofs,shift=offset), ) + func.shape[1:] )
+    self.__dict__.update( func.__dict__ )
+    self.shape = (func.shape[0].transform(ndofs=ndofs,shift=offset),) + func.shape[1:]
 
   def localgradient( self, ndims ):
     'local gradient'
 
     return OffsetWrapper( self.func.localgradient( ndims ), offset=self.offset, ndofs=int(self.shape[0]) )
-
-  def __str__( self ):
-    'string representation'
-
-    return '%s[++%d]' % ( self.func, self.offset )
 
 class IWeights( ArrayFunc ):
   'integration weights'
@@ -654,10 +651,10 @@ class IWeights( ArrayFunc ):
   def __init__( self ):
     'constructor'
 
-    ArrayFunc.__init__( self, args=[POINTS], shape=() )
+    ArrayFunc.__init__( self, args=[POINTS], evalf=self.iweights, shape=() )
 
   @staticmethod
-  def eval( points ):
+  def iweights( points ):
     'evaluate'
 
     return points.weights
@@ -668,10 +665,10 @@ class Orientation( ArrayFunc ):
   def __init__( self ):
     'constructor'
 
-    ArrayFunc.__init__( self, args=[ELEM], shape=() )
+    ArrayFunc.__init__( self, args=[ELEM], evalf=self.orientation, shape=() )
 
   @staticmethod
-  def eval( elem ):
+  def orientation( elem ):
     'evaluate'
 
     # VERY TEMPORARY
@@ -698,10 +695,10 @@ class Function( ArrayFunc ):
     'constructor'
 
     self.mapping = mapping
-    ArrayFunc.__init__( self, args=(ELEM,POINTS,mapping), shape=shape )
+    ArrayFunc.__init__( self, args=[ELEM,POINTS,mapping], evalf=self.function, shape=shape )
 
   @staticmethod
-  def eval( elem, points, fmap ):
+  def function( elem, points, fmap ):
     'evaluate'
 
     func = fmap.get( elem )
@@ -736,10 +733,10 @@ class Choose( ArrayFunc ):
     shape = shapes.pop()
     assert all( sh == shape for sh in shapes )
     assert len(intervals) == len(funcs)-1
-    ArrayFunc.__init__( self, args=(x,intervals)+funcs, shape=x.shape+shape )
+    ArrayFunc.__init__( self, args=(x,intervals)+funcs, evalf=self.choose, shape=x.shape+shape )
 
   @staticmethod
-  def eval( x, intervals, *choices ):
+  def choose( x, intervals, *choices ):
     'evaluate'
 
     which = 0
@@ -754,10 +751,10 @@ class Choose2D( ArrayFunc ):
     'constructor'
 
     shape, (fin,fout) = util.align_arrays( fin, fout )
-    ArrayFunc.__init__( self, args=(coords,contour,fin,fout), shape=shape )
+    ArrayFunc.__init__( self, args=(coords,contour,fin,fout), evalf=self.choose2d, shape=shape )
 
   @staticmethod
-  def eval( xy, contour, fin, fout ):
+  def choose2d( xy, contour, fin, fout ):
     'evaluate'
 
     from matplotlib import nxutils
@@ -777,7 +774,7 @@ class Inverse( ArrayFunc ):
     assert func.shape[ax1] == func.shape[ax2]
     self.func = func
     self.axes = ax1, ax2
-    ArrayFunc.__init__( self, args=(func,(ax1-func.ndim,ax2-func.ndim)), shape=func.shape )
+    ArrayFunc.__init__( self, args=(func,(ax1-func.ndim,ax2-func.ndim)), evalf=util.inv, shape=func.shape )
 
   def localgradient( self, ndims ):
     'local gradient'
@@ -787,13 +784,6 @@ class Inverse( ArrayFunc ):
     H = ( self[...,_,_].swapaxes(ax1,-1) * G[...,_].swapaxes(ax2,-1) ).sum()
     I = ( self[...,_,_].swapaxes(ax2,-1) * H[...,_].swapaxes(ax1,-1) ).sum()
     return -I
-
-  eval = staticmethod( util.inv )
-
-  def __str__( self ):
-    'string representation'
-
-    return indent( 'Inv:%d,%d' % self.axes, self.func )
 
 class TrivialAxis( object ):
   'trivial axis'
@@ -828,7 +818,7 @@ class DofAxis( Evaluable ):
     self.beg = beg
     self.end = end
     self.mapping = mapping
-    Evaluable.__init__( self, args=(ELEM,mapping) )
+    Evaluable.__init__( self, args=(ELEM,mapping), evalf=self.dofaxis )
 
   def transform( self, ndofs, shift ):
     'shift numbering and widen axis'
@@ -837,7 +827,7 @@ class DofAxis( Evaluable ):
     return DofAxis( ndofs, mapping )
 
   @staticmethod
-  def eval( elem, idxmap ):
+  def dofaxis( elem, idxmap ):
     'evaluate'
 
     index = idxmap.get( elem )
@@ -849,7 +839,7 @@ class DofAxis( Evaluable ):
   def __int__( self ):
     'integer'
 
-    return self.end
+    return int(self.end)
 
   def __eq__( self, other ):
     'equals'
@@ -900,7 +890,7 @@ class Concatenate( ArrayFunc ):
     self.axis = axis
     self.funcs = funcs
     shape = ( sum( func.shape[0] for func in funcs ), ) + funcs[0].shape[1:]
-    ArrayFunc.__init__( self, args=(axis-funcs[0].ndim,)+tuple(funcs), shape=shape )
+    ArrayFunc.__init__( self, args=[axis-funcs[0].ndim]+funcs, evalf=self.concatenate, shape=shape )
 
   def localgradient( self, ndims ):
     'gradient'
@@ -909,15 +899,10 @@ class Concatenate( ArrayFunc ):
     return Concatenate( funcs, axis=self.axis )
 
   @staticmethod
-  def eval( axis, *funcs ):
+  def concatenate( axis, *funcs ):
     'evaluate'
 
     return numpy.concatenate( funcs, axis=axis )
-
-  def __str__( self ):
-    'string representation'
-
-    return indent( 'Concat:%d' % self.axis, *self.funcs )
 
 class Vectorize( ArrayFunc ):
   'vectorize'
@@ -929,10 +914,10 @@ class Vectorize( ArrayFunc ):
     shape = (len(funcs),) + funcs[0].shape[1:] # TODO max over all funcs
     self.funcs = funcs
     shape = ( util.sum( func.shape[0] for func in funcs ), len(funcs) ) + funcs[0].shape[1:]
-    ArrayFunc.__init__( self, args=(shape[1:],)+tuple(funcs), shape=shape )
+    ArrayFunc.__init__( self, args=[shape[1:]]+funcs, evalf=self.vectorize, shape=shape )
 
   @staticmethod
-  def eval( shape, *funcs ):
+  def vectorize( shape, *funcs ):
     'evaluate'
 
     axis = -len(shape)
@@ -979,11 +964,6 @@ class Vectorize( ArrayFunc ):
       funcs.append( func.dot( weights[n0:n1,_] ) )
     return Concatenate( funcs )
 
-  def __str__( self ):
-    'string representation'
-
-    return indent( 'Vec', *self.funcs )
-
 class Stack( ArrayFunc ):
   'stack functions'
 
@@ -998,10 +978,10 @@ class Stack( ArrayFunc ):
     self.funcs = funcs
     self.axis = axis
     shape = shape[:axis] + (len(funcs),) + shape[axis:]
-    ArrayFunc.__init__( self, args=(axis-len(shape),shape)+tuple(funcs), shape=shape )
+    ArrayFunc.__init__( self, args=(axis-len(shape),shape)+funcs, evalf=self.stack, shape=shape )
 
   @staticmethod
-  def eval( axis, shape, *funcs ):
+  def stack( axis, shape, *funcs ):
     'evaluate'
 
     stacked = numpy.empty( funcs[0].shape[:funcs[0].ndim+1-len(shape)] + shape )
@@ -1015,11 +995,6 @@ class Stack( ArrayFunc ):
     grads = [ f.localgradient( ndims ) for f in self.funcs ]
     return Stack( grads, self.axis )
 
-  def __str__( self ):
-    'string representation'
-
-    return indent( 'Stack:%d' % self.axis, *self.funcs )
-
 class Heaviside( ArrayFunc ):
   'heaviside function'
 
@@ -1027,53 +1002,13 @@ class Heaviside( ArrayFunc ):
     'constructor'
 
     self.levelset = levelset
-    ArrayFunc.__init__( self, args=[levelset], shape=levelset.shape )
+    ArrayFunc.__init__( self, args=[levelset], evalf=self.heaviside, shape=levelset.shape )
 
   @staticmethod
-  def eval( f ):
+  def heaviside( f ):
     'evaluate'
 
     return ( f > 0 ).astype( float )
-
-  def __str__( self ):
-    'string representation'
-
-    return indent( 'Heaviside', self.levelset )
-
-#class Stack22( ArrayFunc ):
-#  'special 2x2 stack based on unified axes'
-#
-#  def __init__( self, *funcs ):
-#    'constructor'
-#
-#    for func in funcs:
-#      assert len(func.shape) == 2
-#
-#  @staticmethod
-#  def eval( a11, a12, a21, a22 ):
-#    'evaluate'
-#
-#    def unique( n, *args ):
-#      N = -1
-#      for arg in args:
-#        if isinstance( arg, numpy.ndarray ):
-#          if N == -1:
-#            N = arg.shape[n]
-#          else:
-#            assert arg.shape[n] == N
-#      assert N != -1
-#      return N
-#
-#    nrows = unique(0,a11,a12), unique(0,a21,a22)
-#    ncols = unique(1,a11,a21), unique(1,a12,a22)
-#    npoints = unique(2,a11,a12,a21,a22) # blatantly assuming 1D points
-#
-#    data = numpy.empty( [ sum(nrows), sum(ncols), npoints ] )
-#    data[:nrows[0],:ncols[0]] = a11
-#    data[:nrows[0],ncols[0]:] = a12
-#    data[nrows[0]:,:ncols[0]] = a21
-#    data[nrows[0]:,ncols[0]:] = a22
-#    return data
 
 class UFunc( ArrayFunc ):
   'user function'
@@ -1083,10 +1018,10 @@ class UFunc( ArrayFunc ):
 
     self.coords = coords
     self.gradients = gradients
-    ArrayFunc.__init__( self, args=(ufunc,coords), shape=ufunc( numpy.zeros( coords.shape ) ).shape )
+    ArrayFunc.__init__( self, args=(ufunc,coords), evalf=self.ufunc, shape=ufunc( numpy.zeros( coords.shape ) ).shape )
 
   @staticmethod
-  def eval( f, x ):
+  def ufunc( f, x ):
     'evaluate'
 
     return f( x )
@@ -1111,7 +1046,7 @@ class LocalGradient( ArrayFunc ):
     self.ndims = ndims
     self.func = func
     self.level = level
-    ArrayFunc.__init__( self, args=(ELEM,POINTS,func.mapping,ndims,level), shape=func.shape+(ndims,)*level )
+    ArrayFunc.__init__( self, args=(ELEM,POINTS,func.mapping,ndims,level), evalf=self.lgrad, shape=func.shape+(ndims,)*level )
 
   def localgradient( self, ndims ):
     'local gradient'
@@ -1120,7 +1055,7 @@ class LocalGradient( ArrayFunc ):
     return LocalGradient( self.func, ndims, self.level+1 )
 
   @staticmethod
-  def eval( elem, points, fmap, ndims, level ):
+  def lgrad( elem, points, fmap, ndims, level ):
     'evaluate'
 
     while elem.ndims != ndims:
@@ -1162,18 +1097,7 @@ class Norm2( ArrayFunc ):
     self.func = func
     shape = list( func.shape )
     shape.pop( axis )
-    ArrayFunc.__init__( self, args=(func,axis-func.ndim), shape=shape )
-
-  @staticmethod
-  def eval( fval, axis ):
-    'evaluate'
-
-    return numpy.sqrt( util.contract( fval, fval, axis ) )
-
-  def __str__( self ):
-    'string representation'
-
-    return indent( 'Norm2:%d' % self.axis, self.func )
+    ArrayFunc.__init__( self, args=(func,axis-func.ndim), evalf=util.norm2, shape=shape )
 
 class Cross( ArrayFunc ):
   'normal'
@@ -1182,9 +1106,7 @@ class Cross( ArrayFunc ):
     'contructor'
 
     assert f1.shape == f2.shape
-    ArrayFunc.__init__( self, args=(f1,f2,-1,-1,-1,axis-f1.ndim), shape=f1.shape )
-
-  eval = staticmethod( numpy.cross )
+    ArrayFunc.__init__( self, args=(f1,f2,-1,-1,-1,axis-f1.ndim), evalf=numpy.cross, shape=f1.shape )
 
 class Determinant( ArrayFunc ):
   'normal'
@@ -1199,20 +1121,13 @@ class Determinant( ArrayFunc ):
 
     self.axes = ax1, ax2
     self.func = func
-    ArrayFunc.__init__( self, args=(func,ax1-func.ndim,ax2-func.ndim), shape=shape )
+    ArrayFunc.__init__( self, args=(func,ax1-func.ndim,ax2-func.ndim), evalf=util.det, shape=shape )
 
   def localgradient( self, ndims ):
     'local gradient; jacobi formula'
 
     ax1, ax2 = self.axes
     return self * ( self.func.inv(ax1,ax2).swapaxes(ax1,ax2)[...,_] * self.func.localgradient(ndims) ).sum(ax1,ax2)
-
-  eval = staticmethod( util.det )
-
-  def __str__( self ):
-    'string representation'
-
-    return indent( 'Det:%d,%d' % self.axes, self.func )
 
 class GetItem( ArrayFunc ):
   'get item'
@@ -1222,9 +1137,7 @@ class GetItem( ArrayFunc ):
 
     self.func = func
     self.item = item
-    ArrayFunc.__init__( self, args=(func,(Ellipsis,)+item), shape=shape )
-
-  eval = staticmethod( numpy.ndarray.__getitem__ )
+    ArrayFunc.__init__( self, args=(func,(Ellipsis,)+item), evalf=numpy.ndarray.__getitem__, shape=shape )
 
   def localgradient( self, ndims ):
     'local gradient'
@@ -1236,11 +1149,6 @@ class GetItem( ArrayFunc ):
     index = self.item+(slice(None),)
     return grad[index]
 
-  def __str__( self ):
-    'string representation'
-
-    return indent( '[%s]' % ','.join( obj2str(arg) for arg in self.item ), self.func )
-
 class Multiply( ArrayFunc ):
   'multiply'
 
@@ -1248,9 +1156,7 @@ class Multiply( ArrayFunc ):
     'constructor'
 
     shape, self.funcs = util.align_arrays( func1, func2 )
-    ArrayFunc.__init__( self, args=self.funcs, shape=shape )
-
-  eval = staticmethod( numpy.ndarray.__mul__ )
+    ArrayFunc.__init__( self, args=self.funcs, evalf=numpy.ndarray.__mul__, shape=shape )
 
   def sum( self, ax1=-1, *axes ):
     'sum'
@@ -1265,24 +1171,19 @@ class Multiply( ArrayFunc ):
     return func1[...,_] * func2.localgradient(ndims) \
          + func2[...,_] * func1.localgradient(ndims)
 
-  def __str__( self ):
-    'string representation'
-
-    return indent( 'Mul', *self.funcs )
-
 class Divide( ArrayFunc ):
   'divide'
 
   def __init__( self, func1, func2 ):
     'constructor'
 
-    if not isinstance( func1, Evaluable ):
+    if not isinstance( func1, ArrayFunc ):
       func1 = StaticArray( func1 )
-    if not isinstance( func2, Evaluable ):
+    if not isinstance( func2, ArrayFunc ):
       func2 = StaticArray( func2 )
 
     shape, self.funcs = util.align_arrays( func1, func2 )
-    ArrayFunc.__init__( self, args=self.funcs, shape=shape )
+    ArrayFunc.__init__( self, args=self.funcs, evalf=numpy.ndarray.__div__, shape=shape )
 
   def localgradient( self, ndims ):
     'local gradient'
@@ -1292,13 +1193,6 @@ class Divide( ArrayFunc ):
     grad2 = func2.localgradient(ndims) 
     return ( grad1 - func1[...,_] * grad2 / func2[...,_] ) / func2[...,_]
 
-  eval = staticmethod( numpy.ndarray.__div__ )
-
-  def __str__( self ):
-    'string representation'
-
-    return indent( 'Div', *self.funcs )
-
 class Negate( ArrayFunc ):
   'negate'
 
@@ -1306,19 +1200,12 @@ class Negate( ArrayFunc ):
     'constructor'
 
     self.func = func
-    ArrayFunc.__init__( self, args=[func], shape=func.shape )
+    ArrayFunc.__init__( self, args=[func], evalf=numpy.ndarray.__neg__, shape=func.shape )
 
   def localgradient( self, ndims ):
     'local gradient'
 
     return -self.func.localgradient( ndims )
-
-  eval = staticmethod( numpy.ndarray.__neg__ )
-
-  def __str__( self ):
-    'string representation'
-
-    return indent( 'Neg', self.func )
 
 class Add( ArrayFunc ):
   'add'
@@ -1327,20 +1214,13 @@ class Add( ArrayFunc ):
     'constructor'
 
     shape, self.funcs = util.align_arrays( func1, func2 )
-    ArrayFunc.__init__( self, args=self.funcs, shape=shape )
-
-  eval = staticmethod( numpy.ndarray.__add__ )
+    ArrayFunc.__init__( self, args=self.funcs, evalf=numpy.ndarray.__add__, shape=shape )
 
   def localgradient( self, ndims ):
     'gradient'
 
     func1, func2 = self.funcs
     return func1.localgradient(ndims) + func2.localgradient(ndims)
-
-  def __str__( self ):
-    'string representation'
-
-    return indent( 'Add', *self.funcs )
 
 class Subtract( ArrayFunc ):
   'subtract'
@@ -1349,7 +1229,7 @@ class Subtract( ArrayFunc ):
     'constructor'
 
     shape, self.funcs = util.align_arrays( func1, func2 )
-    ArrayFunc.__init__( self, args=self.funcs, shape=shape )
+    ArrayFunc.__init__( self, args=self.funcs, evalf=numpy.ndarray.__sub__, shape=shape )
 
   def __neg__( self ):
     'negate'
@@ -1362,13 +1242,6 @@ class Subtract( ArrayFunc ):
 
     func1, func2 = self.funcs
     return func1.localgradient(ndims) - func2.localgradient(ndims)
-
-  eval = staticmethod( numpy.ndarray.__sub__ )
-
-  def __str__( self ):
-    'string representation'
-
-    return indent( 'Sub', *self.funcs )
 
 class Dot( ArrayFunc ):
   'dot'
@@ -1385,20 +1258,13 @@ class Dot( ArrayFunc ):
     self.func1 = func1
     self.func2 = func2
     self.axes = axes
-    ArrayFunc.__init__( self, args=(func1,func2,tuple( ax-func1.ndim for ax in axes )), shape=shape )
-
-  eval = staticmethod( util.contract )
+    ArrayFunc.__init__( self, args=(func1,func2,tuple( ax-func1.ndim for ax in axes )), evalf=util.contract, shape=shape )
 
   def localgradient( self, ndims ):
     'local gradient'
 
     return ( self.func1.localgradient(ndims) * self.func2[...,_] ).sum( *self.axes ) \
          + ( self.func1[...,_] * self.func2.localgradient(ndims) ).sum( *self.axes )
-
-  def __str__( self ):
-    'string representation'
-
-    return indent( 'Dot:%s' % ','.join(str(a) for a in self.axes), self.func1, self.func2 )
 
 class SwapAxes( ArrayFunc ):
   'swapaxes'
@@ -1415,20 +1281,13 @@ class SwapAxes( ArrayFunc ):
     shape[n2] = func.shape[n1]
     self.func = func
     self.axes = n1, n2
-    ArrayFunc.__init__( self, args=(func,n1-func.ndim,n2-func.ndim), shape=shape )
+    ArrayFunc.__init__( self, args=(func,n1-func.ndim,n2-func.ndim), evalf=numpy.ndarray.swapaxes, shape=shape )
 
   def localgradient( self, ndims ):
     'local gradient'
 
     n1, n2 = self.axes
     return self.func.localgradient( ndims ).swapaxes( n1, n2 )
-
-  eval = staticmethod( numpy.ndarray.swapaxes )
-
-  def __str__( self ):
-    'string representation'
-
-    return indent( 'SwapAxes:%d,%d' % self.axes, self.func )
 
 class Trace( ArrayFunc ):
   'trace'
@@ -1444,9 +1303,7 @@ class Trace( ArrayFunc ):
     self.func = func
     self.func = func
     self.axes = n1, n2
-    ArrayFunc.__init__( self, args=(func,0,n1-func.ndim,n2-func.ndim), shape=shape )
-
-  eval = staticmethod( numpy.ndarray.trace )
+    ArrayFunc.__init__( self, args=(func,0,n1-func.ndim,n2-func.ndim), evalf=numpy.ndarray.trace, shape=shape )
 
   def localgradient( self, ndims ):
     'local gradient'
@@ -1454,78 +1311,75 @@ class Trace( ArrayFunc ):
     grad = self.func.localgradient( ndims )
     return Trace( grad, *self.axes )
 
-  def __str__( self ):
-    'string representation'
-
-    return indent( 'Trace:%d,%d' % self.axes, self.func )
-
 # MATHEMATICAL EXPRESSIONS
 
-class BaseFunc( ArrayFunc ):
-  'unary base class'
-
-  def __init__( self, *args ):
-    'constructor'
-
-    args = [ arg if isinstance(arg,ArrayFunc) else StaticArray(arg) for arg in args ]
-    shape, self.args = util.align_arrays( *args )
-    ArrayFunc.__init__( self, args=self.args, shape=shape )
-
-  def __str__( self ):
-    'string representation'
-
-    return indent( self.__class__.__name__, *self.args )
-
-class Exp( BaseFunc ):
+class Exp( ArrayFunc ):
   'exponent'
 
-  eval = staticmethod( numpy.exp )
+  def __init__( self, func ):
+    'constructor'
+
+    assert isinstance( func, ArrayFunc )
+    self.func = func
+    ArrayFunc.__init__( self, args=[func], evalf=numpy.exp, shape=func.shape )
 
   def localgradient( self, ndims ):
     'gradient'
 
-    return self * self.args[0].localgradient(ndims)
+    return self * self.func.localgradient(ndims)
 
-class Sin( BaseFunc ):
+class Sin( ArrayFunc ):
   'sine'
 
-  eval = staticmethod( numpy.sin )
+  def __init__( self, func ):
+    'constructor'
+
+    assert isinstance( func, ArrayFunc )
+    ArrayFunc.__init__( self, args=[func], evalf=numpy.sin, shape=func.shape )
 
   def localgradient( self, ndims ):
     'gradient'
 
     return Cos(self.args[0]) * self.args[0].localgradient(ndims)
     
-class Cos( BaseFunc ):
+class Cos( ArrayFunc ):
   'cosine'
 
-  eval = staticmethod( numpy.cos )
+  def __init__( self, func ):
+    'constructor'
+
+    assert isinstance( func, ArrayFunc )
+    ArrayFunc.__init__( self, args=[func], evalf=numpy.cos, shape=func.shape )
 
   def localgradient( self, ndims ):
     'gradient'
 
     return -Sin(self.args[0]) * self.args[0].localgradient(ndims)
 
-class Log( BaseFunc ):
+class Log( ArrayFunc ):
   'cosine'
 
-  eval = staticmethod( numpy.log )
+  def __init__( self, func ):
+    'constructor'
+
+    assert isinstance( func, ArrayFunc )
+    self.func = func
+    ArrayFunc.__init__( self, args=[func], evalf=numpy.log, shape=func.shape )
 
   def localgradient( self, ndims ):
     'local gradient'
 
-    f, = self.args
-    return f.localgradient(ndims) / f
+    return self.func.localgradient(ndims) / self.func
 
-  def __str__( self ):
-    'string representation'
-
-    return indent( 'Log', *self.args )
-
-class Arctan2( BaseFunc ):
+class Arctan2( ArrayFunc ):
   'arctan2'
 
-  eval = staticmethod( numpy.arctan2 )
+  def __init__( self, numer, denom ):
+    'constructor'
+
+    shape, args = util.align_arrays( numer, denom )
+    self.args = numer, denom
+    ArrayFunc.__init__( self, args=args, evalf=numpy.arctan2, shape=shape )
 
   def localgradient( self, ndims ):
     'local gradient'
@@ -1533,29 +1387,24 @@ class Arctan2( BaseFunc ):
     y, x = self.args
     return ( x * y.localgradient(ndims) - y * x.localgradient(ndims) ) / ( x**2 + y**2 )
 
-  def __str__( self ):
-    'string representation'
-
-    return indent( 'Atan2', *self.args )
-
-class Power( BaseFunc ):
+class Power( ArrayFunc ):
   'power'
 
-  eval = staticmethod( numpy.ndarray.__pow__ )
+  def __init__( self, func, power ):
+    'constructor'
+
+    assert isinstance( func, ArrayFunc )
+    assert isinstance( power, (int,float,numpy.ndarray) )
+    self.func = func
+    self.power = power
+    ArrayFunc.__init__( self, args=[func,power], evalf=numpy.ndarray.__pow__, shape=func.shape )
 
   def localgradient( self, ndims ):
     'local gradient'
 
-    func, power = self.args
-    return power * ( func**(power-1) )[...,_] * func.localgradient(ndims)
+    return self.power * ( self.func**(self.power-1) )[...,_] * self.func.localgradient(ndims)
 
-  def __str__( self ):
-    'string representation'
-
-    func, power = self.args
-    return indent( 'Pow:%.1f' % power, func )
-
-#class Tanh( BaseFunc ):
+#class Tanh( ArrayFunc ):
 #  'hyperbolic tangent'
 #
 #  eval = staticmethod( numpy.tanh )
@@ -1573,18 +1422,13 @@ class Voigt( ArrayFunc ):
 
     assert func.shape[-2:] == (3,3)
     self.func = func
-    ArrayFunc.__init__( self, args=[func], shape=func.shape[:-2]+(6,) )
+    ArrayFunc.__init__( self, args=[func], evalf=self.voigt, shape=func.shape[:-2]+(6,) )
 
   @staticmethod
-  def eval( data ):
+  def voigt( data ):
     'evaluation'
 
     return data.reshape( data.shape[:-2]+(9,) )[...,[0,4,8,5,2,1]]
-
-  def __str__( self ):
-    'string representation'
-
-    return indent( 'Voigt', self.func )
 
 def Tanh( x ):
 

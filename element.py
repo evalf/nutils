@@ -301,6 +301,11 @@ class StdElem( object ):
 
     return PolyProduct( self, other )
 
+  def extract( self, extraction ):
+    'apply extraction matrix'
+
+    return ExtractionWrapper( self, extraction )
+
 class PolyProduct( StdElem ):
   'multiply standard elements'
 
@@ -447,6 +452,11 @@ class PolyLine( StdElem ):
 
     return polyval[(Ellipsis,)+(_,)*grad]
 
+  def extract( self, extraction ):
+    'apply extraction'
+
+    return PolyLine( numpy.dot( self.poly, extraction ) )
+
   def __repr__( self ):
     'string representation'
 
@@ -494,7 +504,7 @@ class ExtractionWrapper( object ):
   def eval( self, points, grad=0 ):
     'call'
 
-    return util.transform( self.stdelem.eval( points, grad ), self.extraction.T, axis=1 )
+    return util.transform( self.stdelem.eval( points, grad ), self.extraction, axis=1 )
 
   def __repr__( self ):
     'string representation'

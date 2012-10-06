@@ -259,7 +259,8 @@ def transform( arr, trans, axis ):
   if trans is 1:
     return arr
 
-  if isinstance( trans, (float,int) ) or trans.ndim == 0:
+  trans = numpy.asarray( trans )
+  if trans.ndim == 0:
     return arr * trans
 
   if axis < 0:
@@ -453,53 +454,98 @@ def getkwargdefaults( func ):
 class StdOut( object ):
   'stdout wrapper'
 
-# var timeout;
-# $(window).focus(function (){
-#   timeout = timedRefresh(1000);
-# })
-# .blur(function() {
-#   window.clearTimeout(timeout);
-# })
-# .load(function (){
-#   timeout = timedRefresh(1000);
-# });
-# function timedRefresh(timeoutPeriod) {
-#   return window.setTimeout("location.reload(true);",timeoutPeriod);
-# }
-# 
-# $(window).scroll(function(){
-#   if ($(window).scrollTop() == $(window).height()){
-#     location.reload(true);
-#   }
-# });
-
   HEAD = '''\
 <html>
 <head>
-<script type="text/javascript" src="http://code.jquery.com/jquery-1.8.0.min.js"></script>
-<script type="text/javascript">
-
-this.imagePreview = function(){ 
-  $("a.preview").hover(function(e){
-    $("body").append("<p id='preview'><img src='"+ this.href +"' alt='Image preview' width='600' /></p>");                
-    $("#preview").fadeIn("fast");            
-  },
-  function(){
-    this.title = this.t;  
-    $("#preview").remove();
-  }); 
+<script type='application/javascript'>
+var current_focus = null; // element under pointer
+var current_preview = null; // link nearest to focus
+window.onload = function() {
+  var body = document.body;
+  body.style.paddingTop = window.innerHeight/2;
+  body.style.paddingBottom = window.innerHeight/2;
+  var im = document.createElement( 'img' );
+  im.onmouseover = function () {
+    if (zoom) return;
+    zoom = true;
+    im.removeAttribute( 'width' );
+    im.setAttribute( 'height', body.clientHeight-20 );
+  };
+  im.onmouseout = function () {
+    if (!zoom) return;
+    zoom = false;
+    im.removeAttribute( 'height' );
+    im.setAttribute( 'width', '400px' );
+  };
+  var zoom = true;
+  im.onmouseout();
+  var preview = document.createElement( 'div' );
+  preview.setAttribute( 'id', 'preview' );
+  body.appendChild( preview );
+  document.onscroll = function () {
+    if ( body.scrollTop + body.clientHeight == body.scrollHeight ) {
+      window.scrollBy( 0, -20 );
+      console.log( 'reloading' );
+      if ( !zoom ) window.location.reload();
+      return;
+    }
+    var el = document.elementFromPoint( 10, window.innerHeight / 2 );
+    while ( !el.classList.contains('pre') ) {
+      el = el.parentNode;
+    }
+    if ( el == current_focus ) {
+      return;
+    }
+    current_focus = el;
+    console.log( 'updating focus to ' + current_focus );
+    up = current_focus;
+    dn = current_focus;
+    while ( up != null || dn != null ) {
+      var el_a = (up!=null) ? up.getElementsByTagName('a') : [];
+      if ( el_a.length == 0 ) {
+        el_a = (dn!=null) ? dn.getElementsByTagName('a') : [];
+        if ( el_a.length == 0 ) {
+          if ( up != null ) up = up.previousElementSibling;
+          if ( dn != null ) dn = dn.nextElementSibling;
+          continue;
+        }
+      }
+      if ( current_preview != el_a[0] ) {
+        if ( current_preview != null ) current_preview.classList.remove( 'highlight' );
+        current_preview = el_a[0];
+        console.log( 'updating preview to ' + current_preview );
+        current_preview.classList.add( 'highlight' );
+        im.setAttribute( 'src', current_preview.getAttribute( 'href' ) );
+        preview.innerHTML = '';
+        preview.appendChild( im );
+      }
+      break;
+    }
+  };
+  window.scrollBy( 0, body.scrollHeight - body.clientHeight - 20 );
 };
-
-// starting the script on page load
-$(document).ready(function(){
-  imagePreview();
-});
-
 </script>
 <style>
 
-a{
+body {
+  padding: 10px;
+  margin: 0px;
+}
+
+a {
   text-decoration: none;
+  color: blue;
+}
+
+a.highlight {
+  color: red;
+}
+
+p.pre {
+  white-space: pre;
+  font-family: monospace;
+  padding: 2px;
+  margin: 0px;
 }
 
 #preview {
@@ -508,17 +554,15 @@ a{
   right: 10px;
   border: 1px solid gray;
   padding: 0px;
-  display: none;
 }
 
 </style>
 </head>
 <body>
-<pre>
-'''
+<p class="pre">'''
 
   TAIL = '''\
-</pre>
+</p>
 </body>
 </html>
 '''
@@ -544,14 +588,14 @@ a{
     if not os.path.isfile( path ):
       return name
     if name.endswith('.png'):
-      return r'<a href="%s" class="preview">%s</a>' % (name,name)
+      return r'<a href="%s">%s</a>' % (name,name)
     return r'<a href="%s">%s</a>' % (name,name)
 
   def write( self, s ):
     'write string'
 
     self.stdout.write( s )
-    self.html.write( self.pattern.sub( self.filerep, s ) )
+    self.html.write( self.pattern.sub( self.filerep, s ).replace('\n','</p>\n<p class="pre">' ) )
     self.html.flush()
 
   def flush( self ):
