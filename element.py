@@ -16,7 +16,7 @@ class AffineTransformation( object ):
     if self.transform.ndim == 0:
       coords = self.offset + self.transform * points.coords
     elif self.transform.shape[1] == 0:
-      assert points.coords.shape == (1,0)
+      assert points.coords.shape == (0,1)
       coords = self.offset[_,:]
     else:
       coords = self.offset + numpy.dot( points.coords, self.transform.T )
