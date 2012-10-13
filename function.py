@@ -324,7 +324,7 @@ class ArrayFunc( Evaluable ):
     'constructor'
 
     self.evalf = evalf
-    self.shape = Tuple( shape )
+    self.shape = tuple(shape)
     self.ndim = len(self.shape)
     Evaluable.__init__( self, evalf=evalf, args=args )
 
@@ -927,7 +927,7 @@ class Concatenate( ArrayFunc ):
 
     self.axis = axis
     self.funcs = funcs
-    shape = Tuple([ sum( func.shape[0] for func in funcs ) ]) + funcs[0].shape[1:]
+    shape = ( sum( func.shape[0] for func in funcs ), ) + funcs[0].shape[1:]
     ArrayFunc.__init__( self, args=[axis-funcs[0].ndim]+funcs, evalf=self.concatenate, shape=shape )
 
   def localgradient( self, ndims ):

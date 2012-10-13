@@ -44,20 +44,24 @@ class Topology( set ):
       elif ndim == 1:
         length = 0
         for f in func:
-          length = max( length, int(f.shape[0]) )
-          integrands.append( function.Tuple([ ifunc, f.shape[0], f, iweights ]) )
+          sh0, = f.shape
+          length = max( length, int(sh0) )
+          shape = slice(None) if isinstance(sh0,int) else sh0
+          integrands.append( function.Tuple([ ifunc, shape, f, iweights ]) )
         A = numpy.zeros( length, dtype=float )
       elif ndim == 2:
         graph = []
         ncols = 0
         for f in func:
-          graph += [[]] * ( int(f.shape[0]) - len(graph) )
-          ncols = max( ncols, int(f.shape[1]) )
+          sh0, sh1 = f.shape
+          graph += [[]] * ( int(sh0) - len(graph) )
+          ncols = max( ncols, int(sh1) )
+          IJ = function.Tuple([ sh0, sh1 ])
           for elem in self:
-            I, J = f.shape( elem, None )
+            I, J = IJ( elem, None )
             for i in I:
               graph[i] = util.addsorted( graph[i], J, inplace=True )
-          integrands.append( function.Tuple([ ifunc, f.shape, f, iweights ]) )
+          integrands.append( function.Tuple([ ifunc, IJ, f, iweights ]) )
         A = matrix.SparseMatrix( graph, ncols )
       else:
         raise NotImplementedError, 'ndim=%d' % func.ndim
