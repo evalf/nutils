@@ -1,4 +1,4 @@
-from . import element, function, util, numpy, parallel, _
+from . import element, function, util, numpy, parallel, matrix, _
 
 class Topology( set ):
   'topology base class'
@@ -17,96 +17,60 @@ class Topology( set ):
     items = ( self.groups[it] for it in item.split( ',' ) )
     return sum( items, items.next() )
 
-  def integrate( self, func, ischeme=None, coords=None, title=True, dense=None, shape=None ):
+  def integrate( self, funcs, ischeme=None, coords=None, title=True, shape=None ):
     'integrate'
 
-    funcs = func if isinstance( func, (list,tuple) ) else [func]
-    shapes = [ map(int,f.shape) for f in funcs ]
+    if title is True:
+      title = 'integrating %d elements sparse' % len(self)
 
-    if self.ndims == 0:
-      # simple point evaluation
-      iweights = numpy.array( [1.] )
-      ischeme = 'none'
-    else:
-      assert coords, 'must specify coords'
-      assert ischeme, 'must specify integration scheme'
-      iweights = coords.iweights( self.ndims )
-    idata = function.Tuple([ function.Tuple([ f, f.indices(), iweights ]) for f in funcs ])
+    topo = self if not title else util.progressbar( self, title=title )
 
-    if not dense and ( isinstance( func, tuple ) or isinstance( func, function.ArrayFunc ) and len( func.shape ) == 2 ):
-      # quickly implemented single array for now, needs to be extended for
-      # multiple inputs. requires thinking of separating types for separate
-      # arguments.
+    single_arg = not isinstance(funcs,list)
+    if single_arg:
+      funcs = funcs,
 
-      topo = self if not title \
-        else util.progressbar( self, title='integrating %d elements sparse' % len(self) if title is True else title )
-
-      import scipy.sparse
-
-      #assert all( sh == shapes[0] for sh in shapes[1:] )
-      if shape:
-        assert len(shape) == 2
-        assert all( n1 <= shape[0] and n2 <= shape[1] for (n1,n2) in shapes )
+    iweights = coords.iweights( self.ndims )
+    integrands = []
+    retvals = []
+    for ifunc, func in enumerate( funcs ):
+      if not isinstance(func,tuple):
+        func = func,
+      ndim = func[0].ndim
+      assert all( f.ndim == ndim for f in func[1:] )
+      if ndim == 0:
+        for f in func:
+          integrands.append( function.Tuple([ ifunc, (), f, iweights ]) )
+        A = numpy.array( 0, dtype=float )
+      elif ndim == 1:
+        length = 0
+        for f in func:
+          length = max( length, int(f.shape[0]) )
+          integrands.append( function.Tuple([ ifunc, f.shape[0], f, iweights ]) )
+        A = numpy.zeros( length, dtype=float )
+      elif ndim == 2:
+        graph = []
+        ncols = 0
+        for f in func:
+          graph += [[]] * ( int(f.shape[0]) - len(graph) )
+          ncols = max( ncols, int(f.shape[1]) )
+          for elem in self:
+            I, J = f.shape( elem, None )
+            for i in I:
+              graph[i] = util.addsorted( graph[i], J, inplace=True )
+          integrands.append( function.Tuple([ ifunc, f.shape, f, iweights ]) )
+        A = matrix.SparseMatrix( graph, ncols )
       else:
-        shape = max( sh[0] for sh in shapes ), max( sh[1] for sh in shapes )
+        raise NotImplementedError, 'ndim=%d' % func.ndim
+      retvals.append( A )
 
-      indices = []
-      values = []
-      length = 0
-      for elem in topo:
-        for data, (I,J), w in idata( elem, ischeme ):
-          evalues = util.contract( data.T, w ).T # TEMP
-          eindices = numpy.empty( (2,) + evalues.shape )
-          eindices[0] = I[:,_]
-          eindices[1] = J[_,:]
-          values.append( evalues.ravel() )
-          indices.append( eindices.reshape(2,-1) )
-          length += evalues.size
+    idata = function.Tuple( integrands )
+    for elem in topo:
+      for ifunc, index, data, w in idata( elem, ischeme ):
+        retvals[ifunc][index] += util.contract( data.T, w ).T
 
-      v = numpy.empty( length, dtype=float )
-      ij = numpy.empty( [2,length], dtype=float )
-      n0 = 0
-      for val, ind in zip( values, indices ):
-        n1 = n0 + val.size
-        v[n0:n1] = val
-        ij[:,n0:n1] = ind
-        n0 = n1
-      assert n0 == length
-      A = scipy.sparse.csr_matrix( (v,ij), shape=shape )
-
-    else:
-
-      topo = self if not title \
-        else util.progressbar( self, title='integrating %d elems dense nproc=%d' % ( len(self), parallel.nprocs ) if title is True else title )
-
-      A = map( parallel.shzeros, shapes )
-
-      lock = parallel.Lock()
-      for elem in parallel.pariter( topo ):
-        for i, (data,index,w) in enumerate( idata( elem, ischeme ) ):
-        #for i, (data,index,w) in enumerate( idata.eval( elem, ischeme ) ):
-
-          # BEGIN
-          # This is of course a big waste but the whole numpy indexing way is
-          # ridiculous anyway. Will go away soon.
-          where, = numpy.where( [ isinstance(ni,numpy.ndarray) for ni in index ] )
-          if where.size > 1:
-            index = list(index)
-            for ni in where:
-              I = [_] * where.size
-              I[ni] = slice(None)
-              index[ni] = index[ni][ tuple(I) ]
-            index = tuple(index)
-          # END
-
-          emat = util.contract( data.T, w ).T # TEMP
-          with lock:
-            A[i][index] += emat
-
-      if funcs is not func: # unpack single function
-        A, = A
-
-    return A
+    if single_arg:
+      retvals, = retvals
+    return retvals
 
   def projection( self, fun, onto, coords, **kwargs ):
     'project and return as function'
@@ -126,10 +90,6 @@ class Topology( set ):
       assert isinstance( constrain, util.NanVec )
       assert constrain.shape == onto.shape[:1]
 
-#   if not isinstance( fun, function.Evaluable ):
-#     if callable( fun ):
-#       fun = function.UFunc( coords, fun )
-
     if len( onto.shape ) == 1:
       Afun = onto[:,_] * onto[_,:]
       bfun = onto * fun
@@ -141,16 +101,15 @@ class Topology( set ):
     else:
       raise Exception
     A, b = self.integrate( [Afun,bfun], coords=coords, ischeme=ischeme, title=title )
-
-    zero = ( numpy.abs( A ) < tol ).all( axis=0 )
+    supp = A.rowsupp( tol )
     if verify is not None:
-      assert (~zero).sum() == verify, 'number of constraints does not meet expectation'
-    constrain[zero] = 0
+      assert (~supp).sum() == verify, 'number of constraints does not meet expectation'
+    constrain[supp] = 0
     if bfun == 0:
       u = constrain | 0
     else:
-      u = util.solve( A, b, constrain, title=None )
-    u[zero] = numpy.nan
+      u = A.solve( b, constrain, title=None )
+    u[supp] = numpy.nan
     return u.view( util.NanVec )
 
   def trim( self, levelset, maxrefine ):

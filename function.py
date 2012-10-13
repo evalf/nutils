@@ -215,13 +215,23 @@ class Tuple( Evaluable ):
   def __init__( self, items ):
     'constructor'
 
-    self.items = items
+    self.items = tuple(items)
     Evaluable.__init__( self, args=items, evalf=self.vartuple )
 
   def __iter__( self ):
     'iterate'
 
     return iter(self.items)
+
+  def __len__( self ):
+    'length'
+
+    return len(self.items)
+
+  def __getitem__( self, item ):
+    'get item'
+
+    return self.items[item]
 
   def __add__( self, other ):
     'add'
@@ -246,6 +256,35 @@ def Zip( *args ):
   n = len( args[0] )
   assert all( len(arg) == n for arg in args[1:] ), 'zipping items of different length'
   return Tuple( [ Tuple(v) for v in zip( *args ) ] )
+
+#class ArrayFunc2( object ):
+#  'array function'
+#
+#  def __init__( self, .. ):
+#    pass
+#
+#  def __add__( self, other ):
+#    'add'
+#
+#    if not isinstance( other, ArrayFunc2 ):
+#      other = StaticArray( other )
+#      if not other:
+#        return self
+#
+#    p = _,
+#    a = self  [p*(other.ndim-self.ndim)]
+#    b = other [p*(self.ndim-other.ndim)]
+#
+#    assert all( sh1 == sh2 or sh1 == 1 or sh2 == 1 for sh1, sh2 in zip( a.shape, b.shape ) )
+#
+#    if isinstance( other, ArrayFunc2 ):
+#      assert other.indices = self.indices
+#    else:
+#      assert 
+#
+#    data = []
+#    for da, db in zip( a.data, b.data ):
+#      data.append( Add(da,db) )
 
 # ARRAY FUNCTIONS
 
@@ -285,7 +324,7 @@ class ArrayFunc( Evaluable ):
     'constructor'
 
     self.evalf = evalf
-    self.shape = tuple(shape)
+    self.shape = Tuple( shape )
     self.ndim = len(self.shape)
     Evaluable.__init__( self, evalf=evalf, args=args )
 
@@ -444,8 +483,7 @@ class ArrayFunc( Evaluable ):
     if not weights:
       return ZERO
 
-    #assert int(self.shape[0]) == weights.shape[0]
-    #  TODO reinsert range check
+    assert int(self.shape[0]) == weights.shape[0]
 
     func = self[ (slice(None),) + (_,) * (weights.ndim-1) + (slice(None),) * (self.ndim-1) ]
     shape = self.shape[:1] + weights.shape[1:] + self.shape[1:]
@@ -889,7 +927,7 @@ class Concatenate( ArrayFunc ):
 
     self.axis = axis
     self.funcs = funcs
-    shape = ( sum( func.shape[0] for func in funcs ), ) + funcs[0].shape[1:]
+    shape = Tuple([ sum( func.shape[0] for func in funcs ) ]) + funcs[0].shape[1:]
     ArrayFunc.__init__( self, args=[axis-funcs[0].ndim]+funcs, evalf=self.concatenate, shape=shape )
 
   def localgradient( self, ndims ):
@@ -1074,7 +1112,7 @@ class LocalGradient( ArrayFunc ):
       T = numpy.dot( T, transform.transform )
       func = fmap.get( elem )
     F = func.eval( points, grad=level )
-    for axis in range( -level, 0 ): # assumes 1D points!
+    for axis in range( -level, 0 ):
       F = util.transform( F, T, axis=axis )
     return F
 
