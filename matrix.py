@@ -93,8 +93,8 @@ class SparseMatrix( object ):
     import scipy.sparse
 
     if other.shape != self.shape: # quick resize hack, temporary!
-      intptr = numpy.concatenate([ other.matrix.indptr, [other.matrix.indptr[-1]] * (self.shape[0]-other.shape[0]) ])
-      dii = other.matrix.data, other.matrix.indices, intptr
+      indptr = numpy.concatenate([ other.matrix.indptr, [other.matrix.indptr[-1]] * (self.shape[0]-other.shape[0]) ])
+      dii = other.matrix.data, other.matrix.indices, indptr
       othermat = scipy.sparse.csr_matrix( dii, shape=self.shape )
     else:
       othermat = other.matrix
@@ -109,12 +109,45 @@ class SparseMatrix( object ):
   def __getitem__( self, (rows,cols) ):
     'isolate block (for addition)'
 
+    import scipy.sparse
+
     J = numpy.empty( [len(rows),len(cols)], dtype=int )
+    if cols.dtype == bool:
+      assert len(cols) == self.shape[1]
+      select = cols
+      ncols = select.sum()
+    else:
+      ncols = cols.size
+      select = numpy.zeros( self.shape[1], dtype=bool )
+      select[cols] = True
+
+    if rows.dtype == bool:
+      rows, = rows.nonzero()
+    nrows = rows.size
+
+    indptr = numpy.empty( len(rows)+1, dtype=int )
+    maxentries = numpy.minimum( self.matrix.indptr[rows+1] - self.matrix.indptr[rows], ncols ).sum()
+    indices = numpy.empty( maxentries, dtype=int ) # allocate for worst case
+
+    indptr[0] = 0
     for n, irow in enumerate( rows ):
       a, b = self.matrix.indptr[irow:irow+2]
-      J[n] = a + self.matrix.indices[a:b].searchsorted( cols )
-    assert ( self.matrix.indices[J] == cols ).all() # unfortunately numpy does not provide a findsorted
-    return SparseBlock( self.matrix.data, J )
+      where, = select[ self.matrix.indices[a:b] ].nonzero()
+      c = indptr[n]
+      d = c + where.size
+      indices[c:d] = a + where
+      indptr[n+1] = d
+
+    # TODO return proper CSR matrix
+    # matrix = scipy.sparse.csr_matrix( (self.matrix.data,indices,indptr), shape=(nrows,ncols) )
+
+    assert indptr[nrows] == nrows * ncols
+    return SparseBlock( self.matrix.data, indices.reshape(nrows,ncols) )
+
+  def __iadd__( self, other ):
+    'in place addition'
+
+    raise NotImplementedError
 
   def __setitem__( self, item, value ):
     'sucks'

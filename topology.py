@@ -82,7 +82,7 @@ class Topology( set ):
     weights = self.project( fun, onto, coords, **kwargs )
     return onto.dot( weights )
 
-  def project( self, fun, onto, coords, ischeme='gauss8', title=True, tol=1e-8, exact_boundaries=False, constrain=None, verify=None ):
+  def project( self, fun, onto, coords, tol=0, ischeme='gauss8', title=True, droptol=1e-8, exact_boundaries=False, constrain=None, verify=None ):
     'L2 projection of function onto function space'
 
     if exact_boundaries:
@@ -105,14 +105,14 @@ class Topology( set ):
     else:
       raise Exception
     A, b = self.integrate( [Afun,bfun], coords=coords, ischeme=ischeme, title=title )
-    supp = A.rowsupp( tol )
+    supp = A.rowsupp( droptol )
     if verify is not None:
       assert (~supp).sum() == verify, 'number of constraints does not meet expectation'
     constrain[supp] = 0
     if bfun == 0:
       u = constrain | 0
     else:
-      u = A.solve( b, constrain, title=None )
+      u = A.solve( b, constrain, tol=tol, title=None )
     u[supp] = numpy.nan
     return u.view( util.NanVec )
 
