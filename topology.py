@@ -116,7 +116,7 @@ class Topology( set ):
     u[supp] = numpy.nan
     return u.view( util.NanVec )
 
-  def trim( self, levelset, maxrefine ):
+  def trim( self, levelset, maxrefine, lscheme='bezier3' ):
     'create new domain based on levelset'
 
     newelems = []
@@ -125,7 +125,7 @@ class Topology( set ):
       for level in range( maxrefine ):
         nextelempool = []
         for elem in elempool:
-          inside = levelset( elem, 'bezier3' ) > 0
+          inside = levelset( elem, lscheme ) > 0
           if inside.all():
             newelems.append( elem )
           elif inside.any():
