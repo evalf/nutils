@@ -87,7 +87,7 @@ class Topology( set ):
 
     if exact_boundaries:
       assert constrain is None
-      constrain = self.boundary.project( fun, onto, coords, ischeme=ischeme, title=None, tol=tol )
+      constrain = self.boundary.project( fun, onto, coords, ischeme=ischeme, title=None, tol=tol, droptol=droptol )
     elif constrain is None:
       constrain = util.NanVec( onto.shape[0] )
     else:
