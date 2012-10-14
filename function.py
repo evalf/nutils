@@ -48,6 +48,8 @@ class StaticArray( numpy.ndarray ):
 
     if self is other:
       return True
+    if self.ndim == 0 and isinstance(other,(int,float)):
+      return self.view(numpy.ndarray) == other
     if not isinstance( other, numpy.ndarray ) or self.shape != other.shape:
       return False
     return ( self.view(numpy.ndarray) == other.view(numpy.ndarray) ).all()

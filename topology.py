@@ -37,6 +37,7 @@ class Topology( set ):
         func = func,
       ndim = func[0].ndim
       assert all( f.ndim == ndim for f in func[1:] )
+      func = filter( None, func ) # skip over zero integrands
       if ndim == 0:
         for f in func:
           integrands.append( function.Tuple([ ifunc, (), f, iweights ]) )
@@ -109,10 +110,10 @@ class Topology( set ):
     if verify is not None:
       assert (~supp).sum() == verify, 'number of constraints does not meet expectation'
     constrain[supp] = 0
-    if bfun == 0:
+    if numpy.all( b == 0 ):
       u = constrain | 0
     else:
-      u = A.solve( b, constrain, tol=tol, title=None )
+      u = A.solve( b, constrain, tol=tol, title=None, symmetric=True )
     u[supp] = numpy.nan
     return u.view( util.NanVec )
 
