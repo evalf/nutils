@@ -8,7 +8,7 @@ import os, tempfile
 class Pylab( object ):
   'matplotlib figure'
 
-  def __init__( self, title, filename=None ):
+  def __init__( self, title=None, filename=None ):
     'constructor'
 
     if isinstance( title, (list,tuple) ):
@@ -63,7 +63,8 @@ class PylabAxis( object ):
   def __init__( self, ax, title ):
     'constructor'
 
-    ax.set_title( title )
+    if title:
+      ax.set_title( title )
     self._ax = ax
 
   def __getattr__( self, attr ):
