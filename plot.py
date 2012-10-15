@@ -41,15 +41,19 @@ class Pylab( object ):
     from matplotlib import pyplot
     n = len( os.listdir( util.DUMPDIR ) )
     if self.filename:
-      name = self.filename + '.png'
+      name = self.filename
+      if '.' not in name:
+        name += '.png'
+      fmt = name.split('.')[-1]
       path = os.path.join( util.DUMPDIR, name )
       fileobj = open( path, 'w' )
     else:
       fileobj = tempfile.NamedTemporaryFile( dir=util.DUMPDIR, prefix='f%04d' % n, suffix='.png', delete=False )
       path = fileobj.name
       name = os.path.basename( path )
+      fmt = 'png'
     print 'saving to', name
-    pyplot.savefig( fileobj )
+    pyplot.savefig( fileobj, format=fmt )
     os.chmod( path, 0644 )
     pyplot.close()
 
@@ -67,7 +71,7 @@ class PylabAxis( object ):
 
     return getattr( self._ax, attr )
 
-  def add_mesh( self, coords, topology, color=None, edgecolors='none', linewidth=1, xmargin=0, ymargin=0, aspect='equal', cbar='vertical', title=None, ischeme='gauss2', cscheme='contour3', clim=None, frame=True ):
+  def add_mesh( self, coords, topology, color=None, edgecolors='none', linewidth=1, xmargin=0, ymargin=0, aspect='equal', cbar='vertical', title=None, ischeme='gauss2', cscheme='contour3', clim=None, frame=True, usecolor=True ):
     'plot mesh'
   
     assert topology.ndims == 2
@@ -94,6 +98,8 @@ class PylabAxis( object ):
     if values:
       elements = collections.PolyCollection( poly, edgecolors=edgecolors, linewidth=linewidth )
       elements.set_array( numpy.asarray(values) )
+      if not usecolor:
+        elements.set_cmap( pyplot.cm.gray )
       if cbar:
         pyplot.colorbar( elements, ax=self._ax, orientation=cbar )
     else:

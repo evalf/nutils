@@ -132,7 +132,7 @@ class Evaluable( object ):
           idx = arg.recurse_index(operations)
       else:
         try:
-          idx = operations.index(arg)
+          idx = operations[:2].index(arg) # :2 to restrict to elem & point until int/StaticArray conflict is resolved
         except ValueError:
           operations.append(arg)
           idx = len(operations)-1

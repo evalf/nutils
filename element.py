@@ -324,6 +324,8 @@ class PolyProduct( StdElem ):
   def eval( self, points, grad=0 ):
     'evaluate'
 
+    assert isinstance( grad, int ) and grad >= 0
+
     s1 = slice(0,self.std1.ndims)
     p1 = points[s1]
     s2 = slice(self.std1.ndims,None)

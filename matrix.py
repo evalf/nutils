@@ -1,4 +1,5 @@
 from . import util, numpy, _
+from scipy.sparse.sparsetools.csr import _csr
 
 def parsecons( constrain, lconstrain, rconstrain, shape ):
   'parse constraints'
@@ -67,28 +68,40 @@ class SparseMatrix( object ):
   def __init__( self, graph, ncols=None ):
     'constructor'
 
-    import scipy.sparse
-
-    if isinstance( graph, scipy.sparse.csr_matrix ):
-      assert ncols is None
-      self.matrix = graph
-      self.shape = graph.shape
+    if isinstance( graph, tuple ):
+      self.data, self.indices, self.indptr = graph
+      nrows = len(self.indptr) - 1
     else:
-      ndofs = len(graph)
+      nrows = len(graph)
       nzrow = map(len,graph)
       count = sum( nzrow )
-      data = numpy.zeros( count, dtype=float )
-      indptr = numpy.cumsum( [0] + nzrow, dtype=int )
-      indices = numpy.empty( count, dtype=int )
+      self.data = numpy.zeros( count, dtype=float )
+      self.indptr = numpy.cumsum( [0] + nzrow, dtype=int )
+      self.indices = numpy.empty( count, dtype=int )
       for irow, icols in enumerate( graph ):
-        a, b = indptr[irow:irow+2]
-        indices[a:b] = icols
-      self.shape = len(graph), ncols or len(graph)
-      self.matrix = scipy.sparse.csr_matrix( (data,indices,indptr), shape=self.shape )
+        a, b = self.indptr[irow:irow+2]
+        self.indices[a:b] = icols
+
+    self.shape = nrows, ncols or nrows
+
+  def reshape( self, (nrows,ncols) ):
+    'reshape matrix'
+
+    assert nrows >= self.shape[0] and ncols >= self.shape[1]
+    indptr = self.indptr
+    if nrows > self.shape[1]:
+      indptr = numpy.concatenate([ indptr, util.fastrepeat( indptr[-1:], nrows-self.shape[1] ) ])
+    return self.__class__( (self.data,self.indices,indptr), ncols )
+
+  def clone( self ):
+    'clone matrix'
+
+    return self.__class__( (self.data.copy(),self.indices,self.indptr), self.shape[1] )
 
   def __add__( self, other ):
     'addition'
 
+    raise NotImplementedError
     assert isinstance( other, SparseMatrix )
     import scipy.sparse
 
@@ -101,10 +114,13 @@ class SparseMatrix( object ):
 
     return SparseMatrix( self.matrix + othermat )
 
-  def __mul__( self, other ):
+  def matvec( self, other ):
     'matrix-vector multiplication'
 
-    return self.matrix * other
+    assert other.shape == self.shape[1:]
+    result = numpy.zeros( self.shape[0] )
+    _csr.csr_matvec( self.shape[0], self.shape[1], self.indptr, self.indices, self.data, other, result )
+    return result
 
   def __getitem__( self, (rows,cols) ):
     'isolate block (for addition)'
@@ -126,13 +142,13 @@ class SparseMatrix( object ):
     nrows = rows.size
 
     indptr = numpy.empty( len(rows)+1, dtype=int )
-    maxentries = numpy.minimum( self.matrix.indptr[rows+1] - self.matrix.indptr[rows], ncols ).sum()
+    maxentries = numpy.minimum( self.indptr[rows+1] - self.indptr[rows], ncols ).sum()
     indices = numpy.empty( maxentries, dtype=int ) # allocate for worst case
 
     indptr[0] = 0
     for n, irow in enumerate( rows ):
-      a, b = self.matrix.indptr[irow:irow+2]
-      where, = select[ self.matrix.indices[a:b] ].nonzero()
+      a, b = self.indptr[irow:irow+2]
+      where, = select[ self.indices[a:b] ].nonzero()
       c = indptr[n]
       d = c + where.size
       indices[c:d] = a + where
@@ -142,12 +158,27 @@ class SparseMatrix( object ):
     # matrix = scipy.sparse.csr_matrix( (self.matrix.data,indices,indptr), shape=(nrows,ncols) )
 
     assert indptr[nrows] == nrows * ncols
-    return SparseBlock( self.matrix.data, indices.reshape(nrows,ncols) )
+    return SparseBlock( self.data, indices.reshape(nrows,ncols) )
 
   def __iadd__( self, other ):
     'in place addition'
 
-    raise NotImplementedError
+    assert isinstance( other, self.__class__ )
+    assert self.shape == other.shape
+    if numpy.all( self.indptr == other.indptr ) and numpy.all( self.indices == other.indices ):
+      self.data += other.data
+      return self
+    for irow in range( self.shape[0] ):
+      c, d = other.indptr[irow:irow+2]
+      if c == d:
+        continue
+      a, b = self.indptr[irow:irow+2]
+      I = self.indices[a:b]
+      J = other.indices[c:d]
+      n = a + I.searchsorted( J )
+      assert numpy.all( self.indices[n] == J )
+      self.data[n] += other.data[c:d]
+    return self
 
   def __setitem__( self, item, value ):
     'sucks'
@@ -158,12 +189,17 @@ class SparseMatrix( object ):
   def T( self ):
     'transpose'
 
+    raise NotImplementedError
     return SparseMatrix( self.matrix.T.tocsr() )
 
   def toarray( self ):
     'convert to numpy array'
 
-    return self.matrix.toarray()
+    array = numpy.zeros( self.shape )
+    for irow in range( self.shape[0] ):
+      a, b = self.indptr[irow:irow+2]
+      array[irow,self.indices[a:b]] = self.data[a:b]
+    return array
 
   def todense( self ):
     'convert to dense matrix'
@@ -175,8 +211,8 @@ class SparseMatrix( object ):
 
     supp = numpy.empty( self.shape[0], dtype=bool )
     for irow in range( self.shape[0] ):
-      a, b = self.matrix.indptr[irow:irow+2]
-      supp[irow] = a == b or tol != 0 and numpy.all( numpy.abs( self.matrix.data[a:b] ) < tol )
+      a, b = self.indptr[irow:irow+2]
+      supp[irow] = a == b or tol != 0 and numpy.all( numpy.abs( self.data[a:b] ) < tol )
     return supp
 
   def solve( self, b=0, constrain=None, lconstrain=None, rconstrain=None, tol=0, **kwargs ):
@@ -195,14 +231,14 @@ class SparseMatrix( object ):
       assert b.shape == self.shape[:1]
   
     if constrain is lconstrain is rconstrain is None:
-      return iterative_solve( self.matrix.__mul__, b, tol=tol, **kwargs )
+      return iterative_solve( self.matvec, b, tol=tol, **kwargs )
 
     x, I, J = parsecons( constrain, lconstrain, rconstrain, self.shape )
-    b = ( b - self.matrix * x )[I]
+    b = ( b - self.matvec(x) )[I]
     tmpvec = numpy.zeros( self.shape[1] )
     def matvec( v ):
       tmpvec[J] = v
-      return ( self.matrix * tmpvec )[I]
+      return self.matvec(tmpvec)[I]
     x[J] = iterative_solve( matvec, b, tol=tol, **kwargs )
     return x
 

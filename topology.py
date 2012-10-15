@@ -17,7 +17,7 @@ class Topology( set ):
     items = ( self.groups[it] for it in item.split( ',' ) )
     return sum( items, items.next() )
 
-  def integrate( self, funcs, ischeme=None, coords=None, title=True, shape=None ):
+  def integrate( self, funcs, ischeme=None, coords=None, title=True ):
     'integrate'
 
     if title is True:

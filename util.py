@@ -404,12 +404,12 @@ window.onload = function() {
   preview.setAttribute( 'id', 'preview' );
   body.appendChild( preview );
   document.onscroll = function () {
-    if ( body.scrollTop + body.clientHeight == body.scrollHeight ) {
-      window.scrollBy( 0, -20 );
-      console.log( 'reloading' );
-      if ( !zoom ) window.location.reload();
-      return;
-    }
+//  if ( body.scrollTop + body.clientHeight == body.scrollHeight ) {
+//    window.scrollBy( 0, -20 );
+//    console.log( 'reloading' );
+//    if ( !zoom ) window.location.reload();
+//    return;
+//  }
     var el = document.elementFromPoint( 10, window.innerHeight / 2 );
     while ( !el.classList.contains('pre') ) {
       el = el.parentNode;
