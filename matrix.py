@@ -201,14 +201,16 @@ class SparseMatrix( Matrix ):
 
     if isinstance( graph, tuple ):
       self.data, self.indices, self.indptr = graph
+      assert self.indices.dtype == numpy.intc
+      assert self.indptr.dtype == numpy.intc
       nrows = len(self.indptr) - 1
     else:
       nrows = len(graph)
       nzrow = map(len,graph)
       count = sum( nzrow )
       self.data = numpy.zeros( count, dtype=float )
-      self.indptr = numpy.cumsum( [0] + nzrow, dtype=int )
-      self.indices = numpy.empty( count, dtype=int )
+      self.indptr = numpy.cumsum( [0] + nzrow, dtype=numpy.intc )
+      self.indices = numpy.empty( count, dtype=numpy.intc )
       for irow, icols in enumerate( graph ):
         a, b = self.indptr[irow:irow+2]
         self.indices[a:b] = icols
@@ -338,11 +340,11 @@ class SparseMatrix( Matrix ):
       supp[irow] = a == b or tol != 0 and numpy.all( numpy.abs( self.data[a:b] ) < tol )
     return supp
 
-  def solve( self, b=0, constrain=None, lconstrain=None, rconstrain=None, tol=0, symmetric=False, maxiter=99999 ):
+  def solve( self, b=0, constrain=None, lconstrain=None, rconstrain=None, tol=0, symmetric=False, maxiter=99999, title='solving system' ):
     'solve'
 
     if tol == 0:
-      return self.todense().solve( b=b, constrain=constrain, lconstrain=lconstrain, rconstrain=rconstrain )
+      return self.todense().solve( b=b, constrain=constrain, lconstrain=lconstrain, rconstrain=rconstrain, title=title )
   
     b = numpy.asarray( b, dtype=float )
     if b.ndim == 0:
@@ -356,7 +358,7 @@ class SparseMatrix( Matrix ):
     solver = cg if symmetric else gmres
 
     if constrain is lconstrain is rconstrain is None:
-      return solver( self.matvec, b, tol=tol, maxiter=maxiter )
+      return solver( self.matvec, b, tol=tol, maxiter=maxiter, title=title )
 
     x, I, J = parsecons( constrain, lconstrain, rconstrain, self.shape )
     b = ( b - self.matvec(x) )[I]
@@ -364,7 +366,7 @@ class SparseMatrix( Matrix ):
     def matvec( v ):
       tmpvec[J] = v
       return self.matvec(tmpvec)[I]
-    x[J] = solver( matvec, b, tol=tol, maxiter=maxiter )
+    x[J] = solver( matvec, b, tol=tol, maxiter=maxiter, title=title )
     return x
 
 class DenseMatrix( Matrix ):
@@ -407,7 +409,7 @@ class DenseMatrix( Matrix ):
 
     return self.data[ rows[:,_], cols[:,_] ]
 
-  def solve( self, b=0, constrain=None, lconstrain=None, rconstrain=None, tol=0, **kwargs ):
+  def solve( self, b=0, constrain=None, lconstrain=None, rconstrain=None, **dummy ):
     'solve'
 
     b = numpy.asarray( b, dtype=float )
