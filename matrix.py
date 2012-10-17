@@ -15,9 +15,11 @@ def cg( matvec, b, x0=None, tol=1e-5, maxiter=None, precon=None, title='solving 
 
   if x0 is None:
     x = numpy.zeros( n )
+    res0 = numpy.linalg.norm( b )
   else:
     assert len(x0) == n
     x = x0
+    res0 = numpy.linalg.norm( b - matvec(x) )
 
   if maxiter is None:
     maxiter = n*10
@@ -38,7 +40,7 @@ def cg( matvec, b, x0=None, tol=1e-5, maxiter=None, precon=None, title='solving 
   while True:
     x, iter_, resid, info, ndx1, ndx2, sclr1, sclr2, ijob = revcom( b, x, work, iter_, resid, info, ndx1, ndx2, ijob )
     if clock:
-      progress.update( numpy.log( numpy.linalg.norm( rhs - matrix * vec ) ) )
+      progress.update( numpy.log( numpy.linalg.norm( b - matvec(x) ) / res0 ) )
     slice1 = slice(ndx1-1, ndx1-1+n)
     slice2 = slice(ndx2-1, ndx2-1+n)
     if ijob == 1:
