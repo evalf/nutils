@@ -113,7 +113,7 @@ class Topology( set ):
     if numpy.all( b == 0 ):
       u = constrain | 0
     else:
-      u = A.solve( b, constrain, tol=tol, title=None, symmetric=True )
+      u = A.solve( b, constrain, tol=tol, title='projecting', symmetric=True )
     u[supp] = numpy.nan
     return u.view( util.NanVec )
 
@@ -244,7 +244,7 @@ class StructuredTopology( Topology ):
 
     return function.Function( shape=shape, mapping=funcmap )
 
-  def linearfunc( self, periodic=None ):
+  def linearfunc( self ):
     'linears'
 
     return self.splinefunc( degree=2 )

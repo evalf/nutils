@@ -244,7 +244,7 @@ def det( A, ax1, ax2 ):
     det = numpy.empty( A.shape[:-2] )
     for I in numpy.broadcast( *numpy.ix_( *[ range(n) for n in A.shape[:-2] ] ) ) if A.ndim > 3 else range( A.shape[0] ):
       det[I] = numpy.linalg.det( A[I] )
-  return det
+  return det.view( A.__class__ )
 
 def reshape( A, *shape ):
   'more useful reshape'
@@ -280,7 +280,7 @@ def fail( msg, *args ):
 def norm2( A, axis=-1 ):
   'L2 norm over specified axis'
 
-  return numpy.sqrt( contract( A, A, axis ) )
+  return numpy.asarray( numpy.sqrt( contract( A, A, axis ) ) )
 
 def align_arrays( *funcs ):
   'align shapes'

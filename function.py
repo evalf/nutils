@@ -84,6 +84,16 @@ class StaticArray( numpy.ndarray ):
     assert not axes # for now
     return self.view( numpy.ndarray ).sum( ax1 ).view( StaticArray ) # NOTE cast does not work for scalars
 
+  def det( self, *axes ):
+    'determinant'
+
+    return util.det( self, *axes )
+
+  def inv( self, *axes ):
+    'determinant'
+
+    return util.inv( self, axes )
+
   def localgradient( self, ndims ):
     'local derivative'
 
@@ -485,7 +495,8 @@ class ArrayFunc( Evaluable ):
     if not weights:
       return ZERO
 
-    assert int(self.shape[0]) == weights.shape[0]
+    # TODO restore:
+    #assert int(self.shape[0]) == weights.shape[0]
 
     func = self[ (slice(None),) + (_,) * (weights.ndim-1) + (slice(None),) * (self.ndim-1) ]
     shape = self.shape[:1] + weights.shape[1:] + self.shape[1:]
@@ -515,8 +526,7 @@ class ArrayFunc( Evaluable ):
     if J.shape[0] == J.shape[1]:
       Jinv = J.inv(0,1)
     elif J.shape[0] == J.shape[1] + 1: # gamma gradient
-      print 'WARNING: implementation of stack changed, needs checking'
-      Jinv = Stack( [[ J, coords.normal()[:,_] ]] ).inv(0,1)[:-1,:]
+      Jinv = Concatenate( [ J, coords.normal()[:,_] ], axis=1 ).inv(0,1)[:-1,:]
     else:
       raise Exception, 'cannot invert jacobian'
     return ( self.localgradient( ndims )[...,_] * Jinv ).sum( -2 )
@@ -656,6 +666,11 @@ class ArrayFunc( Evaluable ):
     'symmetric'
 
     return Trace( self, n1, n2 )
+
+  def __repr__( self ):
+    'string representation'
+
+    return '%s%s' % ( self.__class__.__name__, self.shape )
 
 class ConstFunc( ArrayFunc ):
   'constant function'
@@ -929,7 +944,7 @@ class Concatenate( ArrayFunc ):
 
     self.axis = axis
     self.funcs = funcs
-    shape = ( sum( func.shape[0] for func in funcs ), ) + funcs[0].shape[1:]
+    shape = funcs[0].shape[:axis] + ( sum( func.shape[axis] for func in funcs ), ) + funcs[0].shape[axis+1:]
     ArrayFunc.__init__( self, args=[axis-funcs[0].ndim]+funcs, evalf=self.concatenate, shape=shape )
 
   def localgradient( self, ndims ):
