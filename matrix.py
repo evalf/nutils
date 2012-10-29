@@ -41,21 +41,21 @@ def cg( matvec, b, x0=None, tol=1e-5, maxiter=None, precon=None, title='solving 
     x, iter_, resid, info, ndx1, ndx2, sclr1, sclr2, ijob = revcom( b, x, work, iter_, resid, info, ndx1, ndx2, ijob )
     if clock:
       progress.update( numpy.log( numpy.linalg.norm( b - matvec(x) ) / res0 ) )
-    slice1 = slice(ndx1-1, ndx1-1+n)
-    slice2 = slice(ndx2-1, ndx2-1+n)
+    vec1 = work[ndx1-1:ndx1-1+n]
+    vec2 = work[ndx2-1:ndx2-1+n]
     if ijob == 1:
-      work[slice2] *= sclr2
-      work[slice2] += sclr1 * matvec(work[slice1])
+      vec2 *= sclr2
+      vec2 += sclr1 * matvec(vec1)
     elif ijob == 2:
-      work[slice1] = precon(work[slice2]) if precon else work[slice2]
+      vec1[:] = precon(vec2) if precon else vec2
     elif ijob == 3:
-      work[slice2] *= sclr2
-      work[slice2] += sclr1 * matvec(x)
+      vec2 *= sclr2
+      vec2 += sclr1 * matvec(x)
     elif ijob == 4:
       if ftflag:
         info = -1
         ftflag = False
-      bnrm2, resid, info = stoptest(work[slice1], b, bnrm2, tol, info)
+      bnrm2, resid, info = stoptest(vec1, b, bnrm2, tol, info)
     else:
       assert ijob == -1
       break
@@ -116,9 +116,7 @@ def gmres( matvec, b, x0=None, tol=1e-5, restrt=None, maxiter=None, precon=None,
     x, iter_, resid, info, ndx1, ndx2, sclr1, sclr2, ijob = revcom(b, x, restrt, work, work2, iter_, resid, info, ndx1, ndx2, ijob)
     slice1 = slice(ndx1-1, ndx1-1+n)
     slice2 = slice(ndx2-1, ndx2-1+n)
-    if (ijob == -1): # gmres success, update last residual
-      break
-    elif (ijob == 1):
+    if (ijob == 1):
       work[slice2] *= sclr2
       work[slice2] += sclr1*matvec(x)
     elif (ijob == 2):
@@ -137,6 +135,9 @@ def gmres( matvec, b, x0=None, tol=1e-5, restrt=None, maxiter=None, precon=None,
         info = -1
         ftflag = False
       bnrm2, resid, info = stoptest(work[slice1], b, bnrm2, tol, info)
+    else:
+      assert ijob == -1
+      break
     old_ijob = ijob
     ijob = 2
 

@@ -1390,12 +1390,13 @@ class Sin( ArrayFunc ):
     'constructor'
 
     assert isinstance( func, ArrayFunc )
+    self.arg = func
     ArrayFunc.__init__( self, args=[func], evalf=numpy.sin, shape=func.shape )
 
   def localgradient( self, ndims ):
     'gradient'
 
-    return Cos(self.args[0]) * self.args[0].localgradient(ndims)
+    return Cos(self.arg) * self.arg.localgradient(ndims)
     
 class Cos( ArrayFunc ):
   'cosine'
@@ -1404,12 +1405,13 @@ class Cos( ArrayFunc ):
     'constructor'
 
     assert isinstance( func, ArrayFunc )
+    self.arg = func
     ArrayFunc.__init__( self, args=[func], evalf=numpy.cos, shape=func.shape )
 
   def localgradient( self, ndims ):
     'gradient'
 
-    return -Sin(self.args[0]) * self.args[0].localgradient(ndims)
+    return -Sin(self.arg) * self.arg.localgradient(ndims)
 
 class Log( ArrayFunc ):
   'cosine'
