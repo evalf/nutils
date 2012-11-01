@@ -39,14 +39,14 @@ class CacheFuncND( object ):
     'compare'
 
     self.F = function.Tuple([ coords, function.Tuple( payload ) ])
-    self.data = [ (elem,) + self.F(elem.eval('gauss7')) for elem in topo ]
+    self.data = [ (elem,) + self.F(elem,'gauss7') for elem in topo ]
 
   def iterdata( self, myelem ):
     'iterate'
 
     for elem, y, payload in self.data:
       if elem is myelem:
-        y, payload = self.F( elem.eval('uniform345') )
+        y, payload = self.F( elem, 'uniform345' )
       yield y, payload
 
   def __eq__( self, other ):
@@ -57,48 +57,44 @@ class CacheFuncND( object ):
 class Convolution( function.Evaluable ):
   'integrate iterator'
 
-  needxi = True
-
   def __init__( self, coords, cache ):
     'constructor'
 
-    self.args = coords, cache
+    function.Evaluable.__init__( self, args=[function.ELEM,function.POINTS,coords,cache], evalf=self.convolution )
 
   @staticmethod
-  def eval( xi, x, cachefunc ):
+  def convolution( elem, points, x, cachefunc ):
     'convolute shapes'
 
     iterdata = []
-    for y, payload in cachefunc.iterdata( xi.elem ):
+    for y, payload in cachefunc.iterdata( elem ):
       d = x[:,:,_] - y[:,_,:] # FIX count number of axes in x
       r2 = util.contract( d, d, 0 )
       r = numpy.sqrt( r2 )
       logr = .5 * numpy.log( r2 )
       iterdata.append( (d/r,r,r2,logr) + payload )
-    return xi.points.coords.shape[1:], iterdata
+    return points.coords.shape[1:], iterdata
 
 class Convolution3D( function.Evaluable ):
   'integrate iterator'
 
-  needxi = True
-
   def __init__( self, coords, cache ):
     'constructor'
 
-    self.args = coords, cache
+    function.Evaluable.__init__( self, args=[function.ELEM,function.POINTS,coords,cache], evalf=self.convolution3d )
 
   @staticmethod
-  def eval( xi, x, cachefunc ):
+  def convolution3d( elem, points, x, cachefunc ):
     'convolute shapes'
 
     iterdata = []
-    for y, payload in cachefunc.iterdata( xi.elem ):
+    for y, payload in cachefunc.iterdata( elem ):
       d = x[:,:,_] - y[:,_,:] # FIX count number of axes in x
       r2 = util.contract( d, d, 0 )
       r1 = numpy.sqrt( r2 )
       d_r = d / r1
       iterdata.append( (d_r,r1,r2) + payload )
-    return xi.points.coords.shape[1:], iterdata
+    return points.coords.shape[1:], iterdata
 
 # LAPLACE
 
@@ -112,11 +108,13 @@ class Laplacelet( function.ArrayFunc ):
     self.mycoords = mycoords
     self.coords = coords
     self.funcsp = funcsp
-    self.shape = int(funcsp.shape[0]),
-    self.args = int(funcsp.shape[0]), Convolution( mycoords, topo, coords, funcsp, funcsp.shape[0] )
+
+    sh, = funcsp.shape
+    args = int(sh), Convolution( mycoords, topo, coords, funcsp, sh )
+    function.ArrayFunc.__init__( self, args=args, evalf=self.laplacelet, shape=[int(sh)] )
 
   @staticmethod
-  def eval( ndofs, (shape,iterdata) ):
+  def laplacelet( ndofs, (shape,iterdata) ):
     'evaluate'
 
     retval = numpy.zeros( (ndofs,)+shape )
@@ -146,11 +144,12 @@ class LaplaceletGrad( function.ArrayFunc ):
   def __init__( self, mycoords, topo, coords, funcsp ):
     'constructor'
 
-    self.shape = int(funcsp.shape[0]), 2
-    self.args = int(funcsp.shape[0]), Convolution( mycoords, topo, coords, funcsp, funcsp.shape[0] )
+    sh, = funcsp.shape
+    args = int(sh), Convolution( mycoords, topo, coords, funcsp, funcsp.shape[0] )
+    function.ArrayFunc.__init__( self, args=args, evalf=self.laplaceletgrad, shape=[int(sh),2] )
 
   @staticmethod
-  def eval( ndofs, (shape,iterdata) ):
+  def laplaceletgrad( ndofs, (shape,iterdata) ):
     'evaluate'
 
     retval = numpy.zeros( (ndofs,2) + shape )
@@ -165,11 +164,11 @@ class LaplaceletReconstruct( function.ArrayFunc ):
   def __init__( self, mycoords, topo, coords, bval, flux ):
     'constructor'
 
-    self.shape = ()
-    self.args = Convolution( mycoords, topo, coords, 1, bval, flux, coords.normal() ),
+    args = Convolution( mycoords, topo, coords, 1, bval, flux, coords.normal() ),
+    function.ArrayFunc.__init__( self, args=args, evalf=self.laplaceletreconstruct, shape=() )
 
   @staticmethod
-  def eval( (shape,iterdata) ):
+  def laplaceletreconstruct( (shape,iterdata) ):
     'evaluate'
 
     retval = 0
@@ -190,7 +189,6 @@ class Stokeslet( function.ArrayFunc ):
     self.mycoords = mycoords
     self.funcsp = funcsp
     self.mu = mu
-    self.shape = int( funcsp.shape[0] ) * 2, 2
 
     if isinstance( funcsp, function.Evaluable ):
       iweights = coords.iweights( topo.ndims ) * funcsp
@@ -199,10 +197,12 @@ class Stokeslet( function.ArrayFunc ):
       assert isinstance( funcsp, numpy.ndarray )
       cache = CacheFuncColoc( funcsp.T, numpy.eye(funcsp.shape[0]), slice(None) )
 
-    self.args = int(funcsp.shape[0]), funcsp.shape[0], Convolution( mycoords, cache ), mu
+    sh, = funcsp.shape
+    args = int(sh), sh, Convolution( mycoords, cache ), mu
+    function.ArrayFunc.__init__( self, args=args, evalf=self.stokeslet, shape=[int(sh)*2,2] )
 
   @staticmethod
-  def eval( ndofs, N, (shape,iterdata), mu ):
+  def stokeslet( ndofs, N, (shape,iterdata), mu ):
     'evaluate'
 
     retval = numpy.zeros( (ndofs*2,2) + shape )
@@ -237,15 +237,16 @@ class StokesletTrac( function.ArrayFunc ):
   def __init__( self, mycoords, topo, coords, funcsp ):
     'constructor'
 
-    self.shape = int( funcsp.shape[0] ) * 2, 2
-
     assert isinstance( funcsp, function.Evaluable )
     iweights = coords.iweights( topo.ndims )
     cache = CacheFuncND( topo, coords, iweights, funcsp, coords.normal(), funcsp.shape[0] )
-    self.args = int(funcsp.shape[0]), funcsp.shape[0], funcsp, mycoords.normal(), Convolution( mycoords, cache )
+
+    sh, = funcsp.shape
+    args = int(sh), sh, funcsp, mycoords.normal(), Convolution( mycoords, cache )
+    function.ArrayFunc.__init__( self, args=args, evalf=self.stokeslettrac, shape=[int(sh)*2,2] )
 
   @staticmethod
-  def eval( ndofs, N, func, norm, (shape,iterdata) ):
+  def stokeslettrac( ndofs, N, func, norm, (shape,iterdata) ):
     'evaluate'
 
     retval = numpy.zeros( (ndofs*2,2) + shape )
@@ -270,14 +271,15 @@ class StokesletGrad( function.ArrayFunc ):
   def __init__( self, mycoords, topo, coords, funcsp, mu ):
     'constructor'
 
-    self.shape = int( funcsp.shape[0] ) * 2, 2, 2
-
     iweights = coords.iweights( topo.ndims )
     cache = CacheFuncND( topo, coords, iweights * funcsp, funcsp.shape[0] )
-    self.args = int(funcsp.shape[0]), Convolution( mycoords, cache ), mu
+
+    sh, = funcsp.shape
+    args = int(sh), Convolution( mycoords, cache ), mu
+    function.ArrayFunc.__init__( self, args=args, evalf=self.stokesletgrad, shape=[int(sh)*2,2,2] )
 
   @staticmethod
-  def eval( ndofs, (shape,iterdata), mu ):
+  def stokesletgrad( ndofs, (shape,iterdata), mu ):
     'evaluate'
 
     retval = numpy.zeros( (ndofs*2,2,2) + shape )
@@ -299,16 +301,17 @@ class StokesletReconstruct( function.ArrayFunc ):
   def __init__( self, mycoords, topo, coords, velo, trac, surftens, mu ):
     'constructor'
 
-    self.shape = 2,
     assert velo is 0 or velo.shape == (2,)
     assert trac is 0 or trac.shape == (2,)
 
     iweights = coords.iweights( topo.ndims )
     cache = CacheFuncND( topo, coords, iweights, velo, trac, coords.normal() )
-    self.args = Convolution( mycoords, cache ), surftens, mu
+
+    args = Convolution( mycoords, cache ), surftens, mu
+    function.ArrayFunc.__init__( self, args=args, evalf=self.stokesletreconstruct, shape=[2] )
 
   @staticmethod
-  def eval( (shape,iterdata), surftens, mu ):
+  def stokesletreconstruct( (shape,iterdata), surftens, mu ):
     'evaluate'
 
     retval = 0
@@ -339,14 +342,14 @@ class Stokeslet3D( function.ArrayFunc ):
     self.mycoords = mycoords
     self.funcsp = funcsp
     self.mu = mu
-    self.shape = int( funcsp.shape[0] ) * 3, 3
 
-    iweights = coords.iweights( topo.ndims )
-    cache = CacheFuncND( topo, coords, funcsp, iweights, coords.normal(), funcsp.shape[0] )
-    self.args = int(funcsp.shape[0]), funcsp.shape[0], funcsp, coords.normal(), Convolution3D( mycoords, cache ), mu
+    sh, = funcsp.shape
+    cache = CacheFuncND( topo, coords, funcsp, coords.iweights( topo.ndims ), coords.normal(), sh )
+    args = int(sh), sh, funcsp, coords.normal(), Convolution3D( mycoords, cache ), mu
+    function.ArrayFunc.__init__( self, args=args, evalf=self.stokeslet3d, shape=[slice(int(sh)*3),3] )
 
   @staticmethod
-  def eval( ndofs, N, func, norm, (shape,iterdata), mu ):
+  def stokeslet3d( ndofs, N, func, norm, (shape,iterdata), mu ):
     'evaluate'
 
     retval = numpy.zeros( (ndofs*3,3) + shape )
@@ -405,14 +408,13 @@ class StokesletGrad3D( function.ArrayFunc ):
   def __init__( self, mycoords, topo, coords, funcsp, mu ):
     'constructor'
 
-    self.shape = int( funcsp.shape[0] ) * 3, 3, 3
-
-    iweights = coords.iweights( topo.ndims )
-    cache = CacheFuncND( topo, coords, funcsp, iweights, coords.normal(), funcsp.shape[0] )
-    self.args = int(funcsp.shape[0]), Convolution3D( mycoords, cache ), mu
+    sh, = funcsp.shape
+    cache = CacheFuncND( topo, coords, funcsp, coords.iweights( topo.ndims ), coords.normal(), sh )
+    args = int(sh), Convolution3D( mycoords, cache ), mu
+    function.ArrayFunc.__init__( self, args=args, evalf=self.stokesletgrad3d, shape=[slice(int(sh)*3),3,3] )
 
   @staticmethod
-  def eval( ndofs, (shape,iterdata), mu ):
+  def stokesletgrad3d( ndofs, (shape,iterdata), mu ):
     'evaluate'
 
     retval = numpy.zeros( (ndofs*3,3,3) + shape )
@@ -440,14 +442,13 @@ class StokesletPres3D( function.ArrayFunc ):
   def __init__( self, mycoords, topo, coords, funcsp ):
     'constructor'
 
-    self.shape = int( funcsp.shape[0] ) * 3
-
-    iweights = coords.iweights( topo.ndims )
-    cache = CacheFuncND( topo, coords, funcsp, iweights, coords.normal(), funcsp.shape[0] )
-    self.args = int(funcsp.shape[0]), Convolution3D( mycoords, cache )
+    sh, = funcsp.shape
+    cache = CacheFuncND( topo, coords, funcsp, coords.iweights( topo.ndims ), coords.normal(), sh )
+    args = int(sh), Convolution3D( mycoords, cache )
+    function.ArrayFunc.__init__( self, args=args, evalf=self.stokesletpres3d, shape=[slice(int(sh)*3)] )
 
   @staticmethod
-  def eval( ndofs, (shape,iterdata) ):
+  def stokesletpres3d( ndofs, (shape,iterdata) ):
     'evaluate'
 
     retval = numpy.zeros( (ndofs*3,) + shape )
@@ -463,14 +464,13 @@ class StokesletTrac3D( function.ArrayFunc ):
   def __init__( self, mycoords, topo, coords, funcsp ):
     'constructor'
 
-    self.shape = int( funcsp.shape[0] ) * 3, 3
-
-    iweights = coords.iweights( topo.ndims )
-    cache = CacheFuncND( topo, coords, funcsp, iweights, coords.normal(), funcsp.shape[0] )
-    self.args = int(funcsp.shape[0]), funcsp.shape[0], funcsp, mycoords.normal(), Convolution3D( mycoords, cache )
+    sh, = funcsp.shape
+    cache = CacheFuncND( topo, coords, funcsp, coords.iweights( topo.ndims ), coords.normal(), sh )
+    args = int(sh), sh, funcsp, mycoords.normal(), Convolution3D( mycoords, cache )
+    function.ArrayFunc.__init__( self, args=args, evalf=self.stokeslettrac3d, shape=[slice(int(sh)*3),3] )
 
   @staticmethod
-  def eval( ndofs, N, func, norm, (shape,iterdata) ):
+  def stokeslettrac3d( ndofs, N, func, norm, (shape,iterdata) ):
     'evaluate'
 
     retval = numpy.zeros( (ndofs*3,3) + shape )

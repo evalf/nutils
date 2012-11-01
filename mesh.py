@@ -1,5 +1,103 @@
 from . import topology, function, util, element, numpy, _
 
+class Transform( function.ArrayFunc ):
+  'transform'
+
+  def __init__( self, ndims, mapping, todims ):
+    assert ndims <= todims
+    shape = () if ndims == todims else (ndims,todims)
+    self.__class__.__base__.__init__( self, args=[function.ELEM,ndims,mapping], evalf=self.transform, shape=shape )
+
+  @staticmethod
+  def transform( elem, ndims, mapping ):
+    'evaluate'
+
+    while elem.ndims < ndims:
+      elem, transform = elem.parent
+    trans = numpy.array( 1. )
+    while elem not in mapping:
+      elem, transform = elem.parent
+      trans = numpy.dot( trans, transform.transform )
+    return numpy.asarray( trans.T )
+
+class ElemMap( function.ArrayFunc ):
+  'element-constant array'
+
+  def __init__( self, mapping, shape ):
+    'constructor'
+
+    self.__class__.__base__.__init__( self, args=[mapping,function.ELEM], evalf=self.elemmap, shape=shape )
+
+  @staticmethod
+  def elemmap( mapping, elem ):
+    'evaluate'
+
+    f = mapping.get( elem )
+    while f is None:
+      elem, transform = elem.parent
+      f = mapping.get( elem )
+    return f
+
+class UniformFunc( function.ArrayFunc ):
+  'define function by affine transform of elem-local coords'
+
+  def __init__( self, ndims, offsetmap, scale ):
+    'constructor'
+
+    self.ndims = ndims
+    self.offsetmap = offsetmap
+    self.scale = scale
+    function.ArrayFunc.__init__( self, args=[function.ELEM,function.POINTS,offsetmap,self.scale], evalf=self.uniform, shape=[ndims] )
+
+  @staticmethod
+  def uniform( elem, points, offsetmap, scale ):
+    'evaluate'
+
+    offset = offsetmap.get( elem )
+    while offset is None:
+      elem, transform = elem.parent
+      points = transform.eval( points )
+      offset = offsetmap.get( elem )
+    return offset + points.coords * scale
+
+  def localgradient( self, ndims ):
+    'local gradient'
+
+    A = function.Diagonalize( self.scale, axis=0, toaxes=(0,1) )
+    T = Transform( ndims, self.offsetmap, self.ndims )
+    return A * T if not T.shape  \
+      else ( A[:,_,:] * T ).sum( -1 )
+
+# MESH GENERATORS
+
+def rectilinear_beta( *nodes ):
+  uniform = all( len(n) == 3 and isinstance(n,tuple) for n in nodes )
+  ndims = len(nodes)
+  indices = numpy.ogrid[ tuple( slice( n[2] if uniform else len(n)-1 ) for n in nodes ) ]
+  if uniform:
+    indices = numpy.ogrid[ tuple( slice(n-1) for (a,b,n) in nodes ) ]
+    scale = numpy.array( [ (b-a)/float(n-1) for (a,b,n) in nodes ], dtype=float )
+  else:
+    indices = numpy.ogrid[ tuple( slice(len(n)-1) for n in nodes ) ]
+    scalemap = {}
+  structure = numpy.frompyfunc( lambda *s: element.QuadElement( ndims ), ndims, 1 )( *indices )
+  topo = topology.StructuredTopology( structure )
+  offsetmap = {}
+  for elem_index in numpy.broadcast( structure, *indices ):
+    elem = elem_index[0]
+    index = elem_index[1:]
+    if uniform:
+      offset0 = scale * index
+    else:
+      offset0 = numpy.array([ n[i  ] for n, i in zip( nodes, index ) ])
+      offset1 = numpy.array([ n[i+1] for n, i in zip( nodes, index ) ])
+      scalemap[elem] = offset1 - offset0
+    offsetmap[elem] = offset0
+  if not uniform:
+    scale = ElemMap( scalemap, shape=(ndims,) )
+  coords = UniformFunc( ndims, offsetmap, scale )
+  return topo, coords
+
 def rectilinear( gridnodes, periodic=() ):
   'rectilinear mesh'
 

@@ -244,7 +244,7 @@ def det( A, ax1, ax2 ):
     det = numpy.empty( A.shape[:-2] )
     for I in numpy.broadcast( *numpy.ix_( *[ range(n) for n in A.shape[:-2] ] ) ) if A.ndim > 3 else range( A.shape[0] ):
       det[I] = numpy.linalg.det( A[I] )
-  return det.view( A.__class__ )
+  return numpy.asarray( det ).view( A.__class__ )
 
 def reshape( A, *shape ):
   'more useful reshape'

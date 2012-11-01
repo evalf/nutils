@@ -187,7 +187,13 @@ class DenseSubMatrix( Matrix ):
 
     self.data = data
     self.indices = indices
-    Matrix.__init__( self, indices.shape )
+    if isinstance( indices, numpy.ndarray ):
+      nrows, ncols = indices.shape
+    else:
+      I, J = indices
+      nrows = I.stop - I.start if isinstance(I,slice) else I.size
+      ncols = J.stop - J.start if isinstance(J,slice) else J.size
+    Matrix.__init__( self, (nrows,ncols) )
 
   def __iadd__( self, other ):
     'in place addition'
@@ -293,6 +299,11 @@ class SparseMatrix( Matrix ):
     return DenseSubMatrix( self.data, I.reshape(nrows,ncols) ) if d == nrows * ncols \
       else SparseMatrix( (self.data[I],self.indices[I],indptr), ncols )
 
+  def __setitem__( self, item, value ):
+    'set submatrix'
+
+    assert self.data is value.data # apparently we are assigning ourselves
+
   def __iadd__( self, other ):
     'in place addition'
 
@@ -304,11 +315,6 @@ class SparseMatrix( Matrix ):
                                                       other.indptr, other.indices, other.data,
                                                        self.indptr,  self.indices,  self.data )
     return self
-
-  def __setitem__( self, item, value ):
-    'set submatrix'
-
-    assert self.data is value.data # apparently we are assigning ourselves
 
   @property
   def T( self ):
@@ -386,6 +392,19 @@ class DenseMatrix( Matrix ):
       self.data = numpy.zeros( shape )
     Matrix.__init__( self, self.data.shape )
 
+  def __getitem__( self, (rows,cols) ):
+    'get submatrix'
+
+    if isinstance(rows,numpy.ndarray) and isinstance(cols,numpy.ndarray):
+      rows = rows[:,_]
+      cols = cols[_,:]
+    return DenseSubMatrix( self.data, (rows,cols) )
+
+  def __setitem__( self, item, value ):
+    'set submatrix'
+
+    assert self.data is value.data # apparently we are assigning ourselves
+
   def addblock( self, rows, cols, vals ):
     'add matrix data'
 
@@ -419,6 +438,9 @@ class DenseMatrix( Matrix ):
     if b.ndim == 0:
       b = util.fastrepeat( b[_], self.shape[0] )
     else:
+      if b.shape[0] < self.shape[0]: # quick resize hack, temporary!
+        b = b.copy()
+        b.resize( self.shape[0] )
       assert b.shape == self.shape[:1]
   
     if constrain is lconstrain is rconstrain is None:

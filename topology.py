@@ -35,35 +35,37 @@ class Topology( set ):
     for ifunc, func in enumerate( funcs ):
       if not isinstance(func,tuple):
         func = func,
-      ndim = func[0].ndim
-      assert all( f.ndim == ndim for f in func[1:] )
       func = filter( None, func ) # skip over zero integrands
+      ndim = func[0].ndim if func else 0
+      assert all( f.ndim == ndim for f in func[1:] )
       if ndim == 0:
         for f in func:
           integrands.append( function.Tuple([ ifunc, (), f, iweights ]) )
         A = numpy.array( 0, dtype=float )
       elif ndim == 1:
-        length = 0
+        length = max( f.shape[0].stop for f in func )
         for f in func:
-          sh0, = f.shape
-          length = max( length, int(sh0) )
-          shape = slice(None) if isinstance(sh0,int) else sh0
-          integrands.append( function.Tuple([ ifunc, shape, f, iweights ]) )
+          sh, = f.shape
+          integrands.append( function.Tuple([ ifunc, sh, f, iweights ]) )
         A = numpy.zeros( length, dtype=float )
       elif ndim == 2:
-        graph = []
-        ncols = 0
-        for f in func:
-          sh0, sh1 = f.shape
-          graph += [[]] * ( int(sh0) - len(graph) )
-          ncols = max( ncols, int(sh1) )
-          IJ = function.Tuple([ sh0, sh1 ])
-          for elem in self:
-            I, J = IJ( elem, None )
-            for i in I:
-              graph[i] = util.addsorted( graph[i], J, inplace=True )
-          integrands.append( function.Tuple([ ifunc, IJ, f, iweights ]) )
-        A = matrix.SparseMatrix( graph, ncols )
+        nrows = max( f.shape[0].stop for f in func )
+        ncols = max( f.shape[1].stop for f in func )
+        if any( isinstance(sh,slice) for f in func for sh in f.shape ):
+          for f in func:
+            IJ = function.Tuple( f.shape )
+            integrands.append( function.Tuple([ ifunc, IJ, f, iweights ]) )
+          A = matrix.DenseMatrix( (nrows,ncols) )
+        else:
+          graph = [[]] * nrows
+          for f in func:
+            IJ = function.Tuple( f.shape )
+            for elem in self:
+              I, J = IJ( elem, None )
+              for i in I:
+                graph[i] = util.addsorted( graph[i], J, inplace=True )
+            integrands.append( function.Tuple([ ifunc, IJ, f, iweights ]) )
+          A = matrix.SparseMatrix( graph, ncols )
       else:
         raise NotImplementedError, 'ndim=%d' % func.ndim
       retvals.append( A )
@@ -204,8 +206,11 @@ class StructuredTopology( Topology ):
     return topo
 
   @util.cachefunc
-  def splinefunc( self, degree, neumann=() ):
+  def splinefunc( self, degree, neumann=(), periodic=None ):
     'spline from nodes'
+
+    if periodic is None:
+      periodic = self.periodic
 
     if isinstance( degree, int ):
       degree = ( degree, ) * self.ndims
@@ -215,17 +220,17 @@ class StructuredTopology( Topology ):
     slices = []
 
     for idim in range( self.ndims ):
-      periodic = idim in self.periodic
+      periodic_i = idim in periodic
       n = self.structure.shape[idim]
       p = degree[idim]
 
       neumann_i = (idim*2 in neumann and 1) | (idim*2+1 in neumann and 2)
-      stdelems_i = element.PolyLine.spline( degree=p, nelems=n, periodic=periodic, neumann=neumann_i )
+      stdelems_i = element.PolyLine.spline( degree=p, nelems=n, periodic=periodic_i, neumann=neumann_i )
       stdelems = stdelems[...,_] * stdelems_i if idim else stdelems_i
 
       nd = n + p - 1
       numbers = numpy.arange( nd )
-      if periodic:
+      if periodic_i:
         overlap = p - 1
         numbers[ -overlap: ] = numbers[ :overlap ]
         nd -= overlap
