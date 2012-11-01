@@ -205,7 +205,7 @@ def writevtu( name, topology, coords, pointdata={}, celldata={} ):
     assert func.ndim == 0
     array = vtk.vtkFloatArray()
     array.SetName( key )
-    celldata_arrays.append( function.Tuple([ array, func, coords.iweights(self.ndims) ]) )
+    celldata_arrays.append( function.Tuple([ array, func, coords.iweights(topology.ndims) ]) )
     vtkMesh.GetCellData().AddArray( array )
   celldatafun = function.Tuple( celldata_arrays )
   for elem in util.progressbar( topology, title='saving %s' % name ):
