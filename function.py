@@ -4,8 +4,9 @@ def obj2str( obj ):
   'convert object to string'
 
   if isinstance( obj, numpy.ndarray ):
-    name = str(obj) if obj.ndim <= 1 and obj.size <= 3 else 'array'
-    return '%s<%s>' % ( name, 'x'.join( map( str, obj.shape ) ) )
+    if obj.size < 4:
+      return str(obj.tolist()).replace(' ','')
+    return 'array<%s>' % 'x'.join( map( str, obj.shape ) )
   if isinstance( obj, list ):
     return '[#%d]' % len(obj)
   if isinstance( obj, tuple ):
@@ -197,6 +198,7 @@ class Evaluable( object ):
       values = self.data + [ '<elem>', '<points>' ]
 
     N = len(self.data) + 2
+    dofaxes = {} # labels for dofaxes
 
     fid, dotname = tempfile.mkstemp()
     fileobj = os.fdopen( fid, 'w' )
@@ -205,7 +207,7 @@ class Evaluable( object ):
     for i, (op,indices) in enumerate( self.operations ):
 
       if op.__evalf is numpy.ndarray.__getitem__ and len(indices) == 2 and indices[1] < 0:
-        print >> fileobj, ' ', i, '[label="%s",shape="box"];' % ','.join( obj2str(s) for s in values[N+indices[1]] )
+        print >> fileobj, ' ', i, '[label="%d. %s",shape="box"];' % ( i, ','.join( obj2str(s) for s in values[N+indices[1]] ) )
         print >> fileobj, ' ', i, '->', indices[0]
         continue
 
@@ -224,7 +226,11 @@ class Evaluable( object ):
         else:
           args.append( '%s=%s' % ( argname, obj2str(values[N+idx]) ) )
 
-      print >> fileobj, ' ', i, '[label="%s"];' % r'\n'.join( [ op.__evalf.__name__ ] + args )
+      label = '%d. %s' % ( i, op.__evalf.__name__.upper() )
+      if hasattr( op, 'shape' ):
+        label += ' [%s]' % ','.join( dofaxes.setdefault(ax,'$%d'%len(dofaxes)) if isinstance(ax,DofAxis) else str(ax) for ax in op.shape )
+
+      print >> fileobj, ' ', i, '[label="%s"];' % r'\n'.join( [ label ] + args )
       for argname, idx in pointers:
         print >> fileobj, ' ', i, '->', idx, '[label="%s"];' % argname;
 
@@ -1504,7 +1510,11 @@ class Multiply( ArrayFunc ):
     'product'
 
     func1, func2 = self.funcs
-    return func1.prod(axis) * func2.prod(axis)
+    n = self.shape[axis]
+    s = [ slice(None) ] * self.ndim
+    s[axis] = 0
+    return ( func1[tuple(s)]**n if func1.shape[axis] == 1 else func1.prod(axis) ) \
+         * ( func2[tuple(s)]**n if func2.shape[axis] == 1 else func2.prod(axis) )
 
   def localgradient( self, ndims ):
     'gradient'
