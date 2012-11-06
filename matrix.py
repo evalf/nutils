@@ -8,7 +8,9 @@ def cg( matvec, b, x0=None, tol=1e-5, maxiter=None, precon=None, title='solving 
   n = len(b)
 
   if title:
-    progress = util.progressbar( n=numpy.log(tol), title='%s [CG:%d]' % (title,n) )
+    progress = util.ProgressBar()
+    progress.add( title )
+    progress.add( '[CG:%d]' % n )
     clock = util.Clock( .1 )
   else:
     clock = False
@@ -40,7 +42,7 @@ def cg( matvec, b, x0=None, tol=1e-5, maxiter=None, precon=None, title='solving 
   while True:
     x, iter_, resid, info, ndx1, ndx2, sclr1, sclr2, ijob = revcom( b, x, work, iter_, resid, info, ndx1, ndx2, ijob )
     if clock:
-      progress.update( numpy.log( numpy.linalg.norm( b - matvec(x) ) / res0 ) )
+      progress.update( numpy.log( numpy.linalg.norm( b - matvec(x) ) / res0 ), numpy.log( tol ) )
     vec1 = work[ndx1-1:ndx1-1+n]
     vec2 = work[ndx2-1:ndx2-1+n]
     if ijob == 1:
@@ -65,9 +67,6 @@ def cg( matvec, b, x0=None, tol=1e-5, maxiter=None, precon=None, title='solving 
     #info isn't set appropriately otherwise
     info = iter_
 
-  if title:
-    progress.finish()
-
   assert info == 0
   return x
 
@@ -77,7 +76,9 @@ def gmres( matvec, b, x0=None, tol=1e-5, restrt=None, maxiter=None, precon=None,
   n = len(b)
 
   if title:
-    progress = util.progressbar( n=numpy.log(tol), title='%s [GMRES:%d]' % (title,n) )
+    progress = util.ProgressBar()
+    progress.add( title )
+    progress.add( '[GMRES:%d]' % n )
     clock = util.Clock( .1 )
   else:
     clock = False
@@ -128,7 +129,7 @@ def gmres( matvec, b, x0=None, tol=1e-5, restrt=None, maxiter=None, precon=None,
       work[slice2] *= sclr2
       work[slice2] += sclr1*matvec(work[slice1])
       if resid_ready and clock:
-        progress.update( numpy.log(resid) )
+        progress.update( numpy.log(resid), numpy.log(tol) )
         resid_ready = False
     elif (ijob == 4):
       if ftflag:
@@ -144,9 +145,6 @@ def gmres( matvec, b, x0=None, tol=1e-5, restrt=None, maxiter=None, precon=None,
   if info >= 0 and resid > tol:
     #info isn't set appropriately otherwise
     info = maxiter
-
-  if title:
-    progress.finish()
 
   assert info == 0
   return x

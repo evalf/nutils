@@ -20,10 +20,10 @@ class Topology( set ):
   def integrate( self, funcs, ischeme=None, coords=None, title=True ):
     'integrate'
 
-    if title is True:
-      title = 'integrating %d elements sparse' % len(self)
-
-    topo = self if not title else util.progressbar( self, title=title )
+    if title:
+      pbar = util.ProgressBar()
+      pbar.add( 'integrating' if title is True else title )
+      pbar.add( '[#%d]' % len(self) )
 
     single_arg = not isinstance(funcs,list)
     if single_arg:
@@ -43,10 +43,14 @@ class Topology( set ):
           integrands.append( function.Tuple([ ifunc, (), f, iweights ]) )
         A = numpy.array( 0, dtype=float )
       elif ndim == 1:
-        length = max( f.shape[0].stop for f in func )
-        for f in func:
-          sh, = f.shape
-          integrands.append( function.Tuple([ ifunc, sh, f, iweights ]) )
+        if len( func ) == 1 and isinstance( func[0].shape[0], int ): # special case dense vector
+          length = func[0].shape[0]
+          integrands.append( function.Tuple([ ifunc, slice(None), func[0], iweights ]) )
+        else:
+          length = max( f.shape[0].stop for f in func )
+          for f in func:
+            sh, = f.shape
+            integrands.append( function.Tuple([ ifunc, sh, f, iweights ]) )
         A = numpy.zeros( length, dtype=float )
       elif ndim == 2:
         nrows = max( f.shape[0].stop for f in func )
@@ -71,6 +75,14 @@ class Topology( set ):
       retvals.append( A )
 
     idata = function.Tuple( integrands )
+    if title:
+      name = idata.graphviz()
+      if name:
+        pbar.add( name )
+      topo = pbar.bar( self )
+    else:
+      topo = self
+
     for elem in topo:
       for ifunc, index, data, w in idata( elem, ischeme ):
         retvals[ifunc][index] += util.contract( data.T, w ).T

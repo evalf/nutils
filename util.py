@@ -3,56 +3,21 @@ from numpyextra import *
 
 LINEWIDTH = 50
 BASEPATH = os.path.expanduser( '~/public_html/' )
-DUMPDIR = BASEPATH + time.strftime( '%Y-%m-%d/%H-%M-%S/' )
+DUMPDIR = BASEPATH + time.strftime( '%Y/%m/%d/%H-%M-%S/' )
 
-class Cache( object ):
-  'data cacher'
+def getpath( pattern ):
+  'create file in DUMPDIR'
 
-  fmt = 'cache/%s.npz'
-
-  def __init__( self, *args ):
-    'constructor'
-
-    m = hashlib.md5()
-    for arg in args:
-      m.update( '%s\0' % arg )
-    self.myhash = m.hexdigest()
-    self.path = self.fmt % self.myhash
-
-  def load( self ):
-    'load or create snapshot'
-
-    print 'loading data:',
-    try:
-      npzobj = numpy.load( self.path, mmap_mode='c' )
-      arrays = [ val for (key,val) in sorted( npzobj.items() ) ]
-      print self.format_arrays( arrays )
-    except IOError, e:
-      print 'failed: not in cache.'
-      raise
-    except Exception, e:
-      print 'failed:', e
-      raise
-
-    return arrays if len( arrays ) > 1 else arrays[0]
-
-  @staticmethod
-  def format_arrays( arrays ):
-    'format as string'
-
-    return ', '.join( '%s(%s)' % ( arr.dtype, 'x'.join( str(n) for n in arr.shape ) ) for arr in arrays )
-
-  def chain( self, *args ):
-
-    return Cache( self.myhash, *args )
-
-  def save( self, *arrays ):
-
-    print 'saving data:', self.format_arrays( arrays )
-    dirname = os.path.dirname( self.path )
-    if not os.path.isdir( dirname ):
-      os.makedirs( dirname )
-    numpy.savez( self.path, *arrays )
+  if pattern == pattern.format( 0 ):
+    return DUMPDIR + pattern
+  prefix = pattern.split( '{' )[0]
+  names = [ name for name in os.listdir( DUMPDIR ) if name.startswith(prefix) ]
+  n = len(names)
+  while True:
+    n += 1
+    newname = DUMPDIR + pattern.format( n )
+    if not os.path.isfile( newname ):
+      return newname
 
 _sum = sum
 def sum( seq ):
@@ -314,47 +279,66 @@ def ipdb():
   
   Debugger.Pdb( def_colors ).set_trace( frame )
 
-class progressbar( object ):
+class ProgressBar( object ):
   'progress bar class'
 
-  def __init__( self, iterable=None, n=0, title='iterating' ):
+  def __init__( self ):
     'constructor'
 
-    self.iterable = iterable
-    self.n = n or len( iterable )
     self.x = 0
     self.t0 = time.time()
-    sys.stdout.write( title + ' ' )
-    sys.stdout.flush()
-    self.length = LINEWIDTH - len(title)
+    self.length = LINEWIDTH
+    self.endtext = ''
 
-  def __iter__( self ):
+  def add( self, text ):
+    'add text'
+
+    self.length -= len(text) + 1
+    sys.stdout.write( text + ' ' )
+    sys.stdout.flush()
+
+  def add_to_end( self, text ):
+    'add to after progress bar'
+
+    self.length -= len(text) + 1
+    self.endtext += ' ' + text
+
+  def bar( self, iterable, n=None ):
     'iterate'
 
-    for i, item in enumerate( self.iterable ):
-      self.update( i )
+    if n is None:
+      n = len( iterable )
+    for i, item in enumerate( iterable ):
+      self.update( i, n )
       yield item
-    self.finish()
 
-  def update( self, i ):
+  def update( self, i, n ):
     'update'
 
-    x = self.length if self.n == 1 else int( (i+1) * self.length ) // (self.n+1)
+    x = int( (i+1) * self.length ) // (n+1)
     if self.x < x <= self.length:
       sys.stdout.write( '-' * (x-self.x) )
       sys.stdout.flush()
       self.x = x
 
-  def finish( self ):
+  def __del__( self ):
     'destructor'
 
     sys.stdout.write( '-' * (self.length-self.x) )
+    sys.stdout.write( self.endtext )
     dt = '%.2f' % ( time.time() - self.t0 )
     dts = dt[1:] if dt[0] == '0' else \
           dt[:3] if len(dt) <= 6 else \
           '%se%d' % ( dt[0], len(dt)-3 )
     sys.stdout.write( ' %s\n' % dts )
     sys.stdout.flush()
+
+def progressbar( iterable, title='iterating' ):
+  'show progressbar while iterating'
+
+  progress = ProgressBar()
+  progress.add( title )
+  return progress.bar( iterable )
 
 class Locals( object ):
   'local namespace as object'
@@ -379,72 +363,74 @@ class StdOut( object ):
 <html>
 <head>
 <script type='application/javascript'>
-var current_focus = null; // element under pointer
-var current_preview = null; // link nearest to focus
+
+var i_focus = 0; // currently focused anchor element
+var anchors; // list of all anchors (ordered by height)
+var focus; // = anchors[i_focus] after first mouse move
+var preview; // preview div element
+var Y = 0; // current mouse height relative to window
+
+findclosest = function () {
+  y = Y + document.body.scrollTop - anchors[0].offsetHeight / 2;
+  var dy = y - anchors[i_focus].offsetTop;
+  if ( dy > 0 ) {
+    for ( var i = i_focus; i < anchors.length-1; i++ ) {
+      var yd = anchors[i+1].offsetTop - y;
+      if ( yd > 0 ) return i + ( yd < dy );
+      dy = -yd;
+    }
+    return anchors.length - 1;
+  }
+  else {
+    for ( var i = i_focus; i > 0; i-- ) {
+      var yd = anchors[i-1].offsetTop - y;
+      if ( yd < 0 ) return i - ( yd > dy );
+      dy = -yd;
+    }
+    return 0;
+  }
+}
+
+refocus = function () {
+  // update preview image if necessary
+  var newfocus = anchors[ findclosest() ];
+  if ( focus ) {
+    if ( focus == newfocus ) return;
+    focus.classList.remove( 'highlight' );
+    focus.classList.remove( 'loading' );
+  }
+  focus = newfocus;
+  focus.classList.add( 'loading' );
+  newobj = document.createElement( 'img' );
+  newobj.setAttribute( 'src', focus.getAttribute('href') );
+  newobj.setAttribute( 'width', '600px' );
+  newobj.onclick = function () { document.location.href=focus.getAttribute('href'); };
+  newobj.onload = function () {
+    preview.innerHTML='';
+    preview.appendChild(this);
+    focus.classList.add( 'highlight' )
+    focus.classList.remove( 'loading' );
+  };
+}
+
 window.onload = function() {
-  var body = document.body;
-  body.style.paddingTop = window.innerHeight/2;
-  body.style.paddingBottom = window.innerHeight/2;
-  var im = document.createElement( 'img' );
-  im.onmouseover = function () {
-    if (zoom) return;
-    zoom = true;
-    im.removeAttribute( 'width' );
-    im.setAttribute( 'height', body.clientHeight-20 );
-  };
-  im.onmouseout = function () {
-    if (!zoom) return;
-    zoom = false;
-    im.removeAttribute( 'height' );
-    im.setAttribute( 'width', '400px' );
-  };
-  var zoom = true;
-  im.onmouseout();
-  var preview = document.createElement( 'div' );
+  // set up anchor list, preview pane, document events
+  nodelist = document.getElementsByTagName('a');
+  anchors = []
+  for ( i = 0; i < nodelist.length; i++ ) {
+    var url = nodelist[i].getAttribute('href');
+    var ext = url.split('.').pop();
+    var idx = ['png','svg','jpg','jpeg'].indexOf(ext);
+    if ( idx != -1 ) anchors.push( nodelist[i] );
+  }
+  if ( anchors.length == 0 ) return;
+  preview = document.createElement( 'div' );
   preview.setAttribute( 'id', 'preview' );
-  body.appendChild( preview );
-  document.onscroll = function () {
-//  if ( body.scrollTop + body.clientHeight == body.scrollHeight ) {
-//    window.scrollBy( 0, -20 );
-//    console.log( 'reloading' );
-//    if ( !zoom ) window.location.reload();
-//    return;
-//  }
-    var el = document.elementFromPoint( 10, window.innerHeight / 2 );
-    while ( !el.classList.contains('pre') ) {
-      el = el.parentNode;
-    }
-    if ( el == current_focus ) {
-      return;
-    }
-    current_focus = el;
-    console.log( 'updating focus to ' + current_focus );
-    up = current_focus;
-    dn = current_focus;
-    while ( up != null || dn != null ) {
-      var el_a = (up!=null) ? up.getElementsByTagName('a') : [];
-      if ( el_a.length == 0 ) {
-        el_a = (dn!=null) ? dn.getElementsByTagName('a') : [];
-        if ( el_a.length == 0 ) {
-          if ( up != null ) up = up.previousElementSibling;
-          if ( dn != null ) dn = dn.nextElementSibling;
-          continue;
-        }
-      }
-      if ( current_preview != el_a[0] ) {
-        if ( current_preview != null ) current_preview.classList.remove( 'highlight' );
-        current_preview = el_a[0];
-        console.log( 'updating preview to ' + current_preview );
-        current_preview.classList.add( 'highlight' );
-        im.setAttribute( 'src', current_preview.getAttribute( 'href' ) );
-        preview.innerHTML = '';
-        preview.appendChild( im );
-      }
-      break;
-    }
-  };
-  window.scrollBy( 0, body.scrollHeight - body.clientHeight - 20 );
+  document.body.appendChild( preview );
+  document.onmousemove = function (event) { Y=event.clientY; refocus(); };
+  document.onscroll = refocus;
 };
+
 </script>
 <style>
 
@@ -456,6 +442,10 @@ body {
 a {
   text-decoration: none;
   color: blue;
+}
+
+a.loading {
+  color: green;
 }
 
 a.highlight {

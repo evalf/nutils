@@ -3,12 +3,12 @@ from . import topology, util, numpy, function, element, _
 import matplotlib
 matplotlib.use( 'Agg' )
 
-import os, tempfile
+import os
 
 class Pylab( object ):
   'matplotlib figure'
 
-  def __init__( self, title=None, filename=None ):
+  def __init__( self, title=None, name='graph{0:03x}.svg' ):
     'constructor'
 
     if isinstance( title, (list,tuple) ):
@@ -20,7 +20,7 @@ class Pylab( object ):
     else:
       self.title = numpy.array( [[ title ]] )
       self.shape = ()
-    self.filename = filename
+    self.name = name
 
   def __enter__( self ):
     'enter with block'
@@ -40,21 +40,12 @@ class Pylab( object ):
 
     from matplotlib import pyplot
     n = len( os.listdir( util.DUMPDIR ) )
-    if self.filename:
-      name = self.filename
-      if '.' not in name:
-        name += '.png'
-      fmt = name.split('.')[-1]
-      path = os.path.join( util.DUMPDIR, name )
-      fileobj = open( path, 'w' )
-    else:
-      fileobj = tempfile.NamedTemporaryFile( dir=util.DUMPDIR, prefix='f%04d' % n, suffix='.png', delete=False )
-      path = fileobj.name
-      name = os.path.basename( path )
-      fmt = 'png'
-    print 'saving to', name
-    pyplot.savefig( fileobj, format=fmt )
-    os.chmod( path, 0644 )
+    imgpath = util.getpath( self.name )
+    progress = util.ProgressBar()
+    progress.add( 'saving image' )
+    progress.add_to_end( os.path.basename(imgpath) )
+    pyplot.savefig( imgpath, format=imgpath.split('.')[-1] )
+    os.chmod( imgpath, 0644 )
     pyplot.close()
 
 class PylabAxis( object ):
@@ -184,9 +175,10 @@ def project3d( C ):
 def writevtu( name, topology, coords, pointdata={}, celldata={} ):
   'write vtu from coords function'
 
-  if not name.endswith( '.vtu' ):
-    name += '.vtu'
-  path = util.DUMPDIR + name
+  vtupath = util.getpath( name )
+  progress = util.ProgressBar()
+  progress.add( 'saving data' )
+  progress.add_to_end( os.path.basename(vtupath) )
   import vtk
   vtkPoints = vtk.vtkPoints()
   vtkMesh = vtk.vtkUnstructuredGrid()
@@ -208,7 +200,7 @@ def writevtu( name, topology, coords, pointdata={}, celldata={} ):
     celldata_arrays.append( function.Tuple([ array, func, coords.iweights(topology.ndims) ]) )
     vtkMesh.GetCellData().AddArray( array )
   celldatafun = function.Tuple( celldata_arrays )
-  for elem in util.progressbar( topology, title='saving %s' % name ):
+  for elem in progress.bar( topology ):
     if isinstance( elem, element.TriangularElement ):
       vtkelem = vtk.vtkTriangle()
     elif isinstance( elem, element.QuadElement ) and elem.ndims == 2:
@@ -231,10 +223,9 @@ def writevtu( name, topology, coords, pointdata={}, celldata={} ):
   vtkMesh.SetPoints( vtkPoints )
   vtkWriter = vtk.vtkXMLUnstructuredGridWriter()
   vtkWriter.SetInput( vtkMesh )
-  vtkWriter.SetFileName( path )
+  vtkWriter.SetFileName( vtupath )
   vtkWriter.SetDataModeToAscii()
   vtkWriter.Write()
-  print 'saved', name
 
 def preview( coords, topology, cscheme='contour8' ):
   'preview function'

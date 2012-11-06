@@ -120,11 +120,6 @@ def normdim( length, n ):
 
   return sorted( ni + length if ni < 0 else ni for ni in n )
 
-class StackFun( object ):
-  def __init__( self, op, indices ):
-    self.op = op
-    self.indices = indices
-
 class Evaluable( object ):
   'evaluable base classs'
 
@@ -136,34 +131,35 @@ class Evaluable( object ):
     self.__args = tuple(args)
     self.__evalf = evalf
 
-  def recurse_index( self, operations ):
+  def recurse_index( self, data, operations ):
     'compile'
 
     indices = numpy.empty( len(self.__args), dtype=int )
     for iarg, arg in enumerate( self.__args ):
       if isinstance(arg,Evaluable):
-        for idx, op in enumerate( operations ):
-          if isinstance(op,StackFun) and op.op == arg:
+        for idx, (op,idcs) in enumerate( operations ):
+          if op == arg:
             break
         else:
-          idx = arg.recurse_index(operations)
+          idx = arg.recurse_index(data,operations)
+      elif arg is ELEM:
+        idx = -2
+      elif arg is POINTS:
+        idx = -1
       else:
-        try:
-          idx = operations.index(arg)
-          assert operations[idx].__class__ is arg.__class__ # temporary until int/StaticArray conflict is resolved
-        except (ValueError,AssertionError):
-          operations.append(arg)
-          idx = len(operations)-1
+        data.insert( 0, arg )
+        idx = -len(data)-2
       indices[iarg] = idx
-    operations.append( StackFun(self,indices) )
+    operations.append( (self,indices) )
     return len(operations)-1
 
   def compile( self ):
     'compile'
 
     if self.operations is None:
-      self.operations = [ ELEM, POINTS ]
-      self.recurse_index( self.operations ) # compile expressions
+      self.data = []
+      self.operations = []
+      self.recurse_index( self.data, self.operations ) # compile expressions
 
   def __call__( self, elem, points ):
     'evaluate'
@@ -171,41 +167,96 @@ class Evaluable( object ):
     self.compile()
     if isinstance( points, str ):
       points = elem.eval(points)
-    values = numpy.empty( len(self.operations), dtype=object )
-    enumops = enumerate( self.operations )
-    assert enumops.next() == (0,ELEM)
-    values[0] = elem
-    assert enumops.next() == (1,POINTS)
-    values[1] = points
-    try:
-      for iop, op in enumops:
-        values[iop] = op.op.__evalf( *values[op.indices] ) if isinstance( op, StackFun ) else op
-    except:
-      self.printstack( pointer=op, values=values[:iop] )
-      raise
+
+    N = len(self.data) + 2
+
+    values = list( self.data )
+    values.append( elem )
+    values.append( points )
+    for op, indices in self.operations:
+      args = [ values[N+i] for i in indices ]
+      try:
+        retval = op.__evalf( *args )
+      except:
+        self.printstack( values )
+        raise
+      values.append( retval )
     return values[-1]
 
-  def printstack( self, pointer=None, values=[] ):
+  def graphviz( self, values=None ):
+    'create function graph'
+
+    import tempfile, os
+
+    DOT = '/usr/bin/dot'
+    if not os.path.isfile( DOT ) or not os.access( DOT, os.X_OK ):
+      return False
+
+    self.compile()
+    if values is None:
+      values = self.data + [ '<elem>', '<points>' ]
+
+    N = len(self.data) + 2
+
+    fid, dotname = tempfile.mkstemp()
+    fileobj = os.fdopen( fid, 'w' )
+    print >> fileobj, 'digraph {'
+
+    for i, (op,indices) in enumerate( self.operations ):
+
+      if op.__evalf is numpy.ndarray.__getitem__ and len(indices) == 2 and indices[1] < 0:
+        print >> fileobj, ' ', i, '[label="%s",shape="box"];' % ','.join( obj2str(s) for s in values[N+indices[1]] )
+        print >> fileobj, ' ', i, '->', indices[0]
+        continue
+
+      try:
+        code = op.__evalf.func_code
+        argnames = code.co_varnames[ :min(code.co_argcount,len(indices)) ]
+      except:
+        argnames = ()
+      argnames += tuple( '%%%d' % n for n in range( len(indices) - len(argnames) ) )
+
+      args = []
+      pointers = []
+      for argname, idx in zip( argnames, indices ):
+        if idx >= 0:
+          pointers.append(( argname, idx ))
+        else:
+          args.append( '%s=%s' % ( argname, obj2str(values[N+idx]) ) )
+
+      print >> fileobj, ' ', i, '[label="%s"];' % r'\n'.join( [ op.__evalf.__name__ ] + args )
+      for argname, idx in pointers:
+        print >> fileobj, ' ', i, '->', idx, '[label="%s"];' % argname;
+
+    print >> fileobj, '}'
+    fileobj.flush()
+    svgpath = util.getpath( 'dot{0:03x}.svg' )
+    assert os.system( DOT + ' -Tsvg -o%s %s' % ( svgpath, dotname ) ) == 0
+    return os.path.basename( svgpath )
+
+  def printstack( self, values=None ):
     'print stack'
 
     self.compile()
+    if values is None:
+      values = self.data + ( '<elem>', '<points>' )
+
+    N = len(self.data) + 2
+
     print 'call stack:'
-    for i, op in enumerate( self.operations ):
-      if isinstance(op,StackFun):
-        try:
-          code = op.op.__evalf.func_code
-          names = code.co_varnames[ :code.co_argcount ]
-          names += tuple( '%s[%d]' % ( code.co_varnames[ code.co_argcount ], n ) for n in range( len(op.indices) - len(names) ) )
-        except:
-          args = [ '%%%d' % idx for idx in op.indices ]
-        else:
-          args = [ '%s=%%%d' % ( name, idx ) for name, idx in zip( names, op.indices ) ]
-        objstr = '%s( %s )' % ( op.op.__evalf.__name__, ', '.join( args ) )
-        if i < len(values):
-          objstr += ' = ' + obj2str( values[i] )
-      else:
-        objstr = obj2str( values[i] if i < len(values) else op )
-      if op is pointer:
+    for i, (op,indices) in enumerate( self.operations ):
+      args = [ '%%%d' % idx if idx >= 0 else obj2str(values[idx]) for idx in indices ]
+      try:
+        code = op.__evalf.func_code
+        names = code.co_varnames[ :code.co_argcount ]
+        names += tuple( '%s[%d]' % ( code.co_varnames[ code.co_argcount ], n ) for n in range( len(indices) - len(names) ) )
+        args = [ '%s=%s' % item for item in zip( names, args ) ]
+      except:
+        pass
+      objstr = '%s( %s )' % ( op.__evalf.__name__, ', '.join( args ) )
+      if N+i < len(values):
+        objstr += ' = ' + obj2str( values[N+i] )
+      elif N+i == len(values):
         objstr += ' <-----ERROR'
       print '%2d: %s' % ( i, objstr )
 
