@@ -251,7 +251,7 @@ class Evaluable( object ):
 
     print 'call stack:'
     for i, (op,indices) in enumerate( self.operations ):
-      args = [ '%%%d' % idx if idx >= 0 else obj2str(values[idx]) for idx in indices ]
+      args = [ '%%%d' % idx if idx >= 0 else obj2str(values[N+idx]) for idx in indices ]
       try:
         code = op.__evalf.func_code
         names = code.co_varnames[ :code.co_argcount ]
@@ -578,7 +578,8 @@ class ArrayFunc( Evaluable ):
 
     weights = StaticArray( weights )
     if not weights:
-      return ZERO
+      ndim = self.ndim + weights.ndim - 2
+      return ZERO.reshape( [1]*ndim )
 
     # TODO restore:
     #assert int(self.shape[0]) == weights.shape[0]
@@ -1114,10 +1115,36 @@ class Concatenate( ArrayFunc ):
   def __init__( self, funcs, axis=0 ):
     'constructor'
 
-    self.axis = axis
     self.funcs = tuple( funcs )
-    shape = funcs[0].shape[:axis] + ( sum( func.shape[axis] for func in funcs ), ) + funcs[0].shape[axis+1:]
-    ArrayFunc.__init__( self, args=[axis-funcs[0].ndim]+funcs, evalf=self.concatenate, shape=shape )
+    ndim = funcs[0].ndim
+    assert all( func.ndim == ndim for func in funcs[1:] ), 'concatenating functions of unequal dimension'
+    shape = numpy.array( funcs[0].shape )
+    self.axis, = normdim( ndim, [axis] )
+    for func in funcs[1:]:
+      assert numpy.all( shape[:self.axis] == func.shape[:self.axis] ) and numpy.all( shape[self.axis+1:] == func.shape[self.axis+1:] ), '%s != %s' % ( shape, func.shape )
+      shape[self.axis] += func.shape[self.axis]
+    ArrayFunc.__init__( self, args=(self.axis-len(shape),)+self.funcs, evalf=self.concat, shape=shape )
+
+  @staticmethod
+  def concat( axis, *arrays ):
+    'concatenate, allows for (impl/expl) singleton dims'
+
+    ndim = max( arr.ndim for arr in arrays )
+    shape = numpy.zeros( ndim )
+    for arr in arrays:
+      sh = shape[-arr.ndim:]
+      numpy.maximum( sh, arr.shape, out=sh )
+    shape[axis] = sum( arr.shape[axis] for arr in arrays )
+    concatenated = numpy.empty(shape)
+    n0 = 0
+    s = [slice(None)]*ndim
+    for arr in arrays:
+      n1 = n0 + arr.shape[axis]
+      s[axis] = slice(n0,n1)
+      n0 = n1
+      concatenated[tuple(s)] = arr
+    assert n1 == shape[axis]
+    return concatenated
 
   def localgradient( self, ndims ):
     'gradient'

@@ -374,6 +374,14 @@ class SparseMatrix( Matrix ):
       tmpvec[J] = v
       return self.matvec(tmpvec)[I]
     x[J] = solver( matvec, b, tol=tol, maxiter=maxiter, title=title )
+
+    ##ALTERNATIVE
+    #from scipy.sparse import linalg
+    #xJ, info = linalg.gmres( linalg.LinearOperator(b.shape*2,matvec,dtype=float), b, tol=tol, maxiter=maxiter )
+    #assert info == 0
+    #x[J] = xJ
+    ##END
+
     return x
 
 class DenseMatrix( Matrix ):
