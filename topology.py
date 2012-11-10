@@ -84,7 +84,7 @@ class Topology( set ):
       topo = self
 
     for elem in topo:
-      for ifunc, index, data, w in idata( elem, ischeme ):
+      for ifunc, index, data, w in idata( elem, ischeme[elem] if isinstance(ischeme,dict) else ischeme ):
         retvals[ifunc][index] += util.contract( data.T, w ).T
 
     if single_arg:

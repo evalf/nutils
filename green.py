@@ -89,12 +89,12 @@ class Convolution3D( function.Evaluable ):
 
     iterdata = []
     for y, payload in cachefunc.iterdata( elem ):
-      d = x[:,:,_] - y[:,_,:] # FIX count number of axes in x
-      r2 = util.contract( d, d, 0 )
+      d = x[:,_,:] - y[_,:,:] # FIX count number of axes in x
+      r2 = util.contract( d, d, 2 )
       r1 = numpy.sqrt( r2 )
-      d_r = d / r1
+      d_r = d / r1[...,_]
       iterdata.append( (d_r,r1,r2) + payload )
-    return points.coords.shape[1:], iterdata
+    return points.coords.shape[:-1], iterdata
 
 # LAPLACE
 
@@ -352,15 +352,15 @@ class Stokeslet3D( function.ArrayFunc ):
   def stokeslet3d( ndofs, N, func, norm, (shape,iterdata), mu ):
     'evaluate'
 
-    retval = numpy.zeros( (ndofs*3,3) + shape )
-    retval_swap = retval.reshape( 3, ndofs, 3, *shape ).swapaxes(0,1) # follows ordering Vectorize
+    retval = numpy.zeros( shape + (ndofs*3,3) )
+    retval_swap = retval.reshape( shape + (3,ndofs,3) ).swapaxes(-1,-2) # follows ordering Vectorize
     for D_R, R, R2, f, w, n, M in iterdata:
-      kernel = D_R[:,_] * D_R[_,:]
-      kernel[0,0] += 1
-      kernel[1,1] += 1
-      kernel[2,2] += 1
-      kernel /= R
-      retval_swap[M] += numpy.tensordot( w * f, kernel, (-1,-1) )
+      kernel = D_R[...,:,_] * D_R[...,_,:]
+      kernel[...,0,0] += 1
+      kernel[...,1,1] += 1
+      kernel[...,2,2] += 1
+      kernel /= R[...,_,_]
+      retval_swap[...,M] += numpy.tensordot( kernel, f * w[:,_], (1,0) )
 
 #     flux = util.contract( kernel, n[:,_,:], axis=-3 )
 #     shift = util.contract( norm[:,:,_], flux, axis=0 )
@@ -473,18 +473,20 @@ class StokesletTrac3D( function.ArrayFunc ):
   def stokeslettrac3d( ndofs, N, func, norm, (shape,iterdata) ):
     'evaluate'
 
-    retval = numpy.zeros( (ndofs*3,3) + shape )
-    retval_swap = retval.reshape( 3, ndofs, 3, *shape ).swapaxes(0,1) # follows ordering Vectorize
+    retval = numpy.zeros( shape+(ndofs*3,3) )
+    retval_swap = retval.reshape( shape+(3,ndofs,3) ).swapaxes(-3,-2) # follows ordering Vectorize
     for D_R, R, R2, f, w, n, M in iterdata:
-      kernel = D_R[:,_,_] * D_R[_,:,_] * D_R[_,_,:]
-      kernel /= R2
-      trac    =    f[:,_,_,_,:] * util.contract( kernel, norm[:,:,_], -3 )
-      kernsub = func[:,_,_,:,_] * util.contract( kernel,    n[:,_,:], -3 )
+      kernel = D_R[...,:,_,_] * D_R[...,_,:,_] * D_R[...,_,_,:]
+      kernel /= R2[...,_,_,_]
+      #TODO FIX FROM HERE
+      trac    =    f[_,:,:,_,_] * util.contract( kernel, norm[:,_,_,_,:], -1 )
+      kernsub = func[:,_,:,_,_] * util.contract( kernel,    n[_,:,_,_,:], -1 )
       if N is M:
-        retval_swap[M] += numpy.dot( trac + kernsub, w )
+        retval_swap[...,M,:,:] += numpy.tensordot( trac + kernsub, w, (1,0) )
       else:
-        retval_swap[M] += numpy.dot( trac, w )
-        retval_swap[N] += numpy.dot( kernsub, w )
+        print retval_swap[...,M,:,:].shape, trac.shape, w.shape
+        retval_swap[...,M,:,:] += numpy.tensordot( trac, w, (1,0) )
+        retval_swap[...,N,:,:] += numpy.tensordot( kernsub, w, (1,0) )
     retval *= -.75 / numpy.pi
     ## instead of kernsub:
     #retval_swap[N,0,0] += .5 * func

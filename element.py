@@ -293,6 +293,11 @@ class LocalPoints( object ):
 
     return LocalPoints( self.coords[:,item], self.weights )
 
+  def __repr__( self ):
+    'string representation'
+
+    return '<%d points>' % self.npoints
+
 class StdElem( object ):
   'stdelem base class'
 
