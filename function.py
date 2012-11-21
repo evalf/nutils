@@ -499,6 +499,7 @@ class ArrayFunc( Evaluable ):
     except:
       pass
 
+    print type(self)
     raise Exception, 'summation not supported yet!'
 
   def normalized( self, axis=-1 ):
@@ -1184,6 +1185,21 @@ class Vectorize( ArrayFunc ):
     self.funcs = funcs
     shape = ( util.sum( func.shape[0] for func in funcs ), len(funcs) ) + funcs[0].shape[1:]
     ArrayFunc.__init__( self, args=[shape[1:]]+funcs, evalf=self.vectorize, shape=shape )
+
+  def _sum( self, axes ):
+    'sum'
+
+    assert axes == [1]
+    return Concatenate( self.funcs, axis=0 )
+
+  def _mul( self, other ):
+    'multiply'
+
+    assert other.shape[0] == 1
+    funcs = []
+    for i, func in enumerate(self.funcs):
+      funcs.append( func * other[:,i if other.shape[1] > 1 else 0,...] )
+    return Vectorize( funcs )
 
   @staticmethod
   def vectorize( shape, *funcs ):
