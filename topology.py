@@ -17,7 +17,7 @@ class Topology( set ):
     items = ( self.groups[it] for it in item.split( ',' ) )
     return sum( items, items.next() )
 
-  def integrate( self, funcs, ischeme=None, coords=None, title=True ):
+  def integrate( self, funcs, ischeme=None, coords=None, title=True, graphviz=True ):
     'integrate'
 
     if title:
@@ -76,7 +76,7 @@ class Topology( set ):
 
     idata = function.Tuple( integrands )
     if title:
-      name = idata.graphviz()
+      name = graphviz and idata.graphviz()
       if name:
         pbar.add( name )
       topo = pbar.bar( self )

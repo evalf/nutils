@@ -347,7 +347,7 @@ class SparseMatrix( Matrix ):
       supp[irow] = a == b or tol != 0 and numpy.all( numpy.abs( self.data[a:b] ) < tol )
     return supp
 
-  def solve( self, b=0, constrain=None, lconstrain=None, rconstrain=None, tol=0, symmetric=False, maxiter=99999, title='solving system' ):
+  def solve( self, b=0, constrain=None, lconstrain=None, rconstrain=None, tol=0, x0=None, symmetric=False, maxiter=99999, title='solving system' ):
     'solve'
 
     if tol == 0:
@@ -368,12 +368,14 @@ class SparseMatrix( Matrix ):
       return solver( self.matvec, b, tol=tol, maxiter=maxiter, title=title )
 
     x, I, J = parsecons( constrain, lconstrain, rconstrain, self.shape )
+    if x0 is not None:
+      x0 = x0[J]
     b = ( b - self.matvec(x) )[I]
     tmpvec = numpy.zeros( self.shape[1] )
     def matvec( v ):
       tmpvec[J] = v
       return self.matvec(tmpvec)[I]
-    x[J] = solver( matvec, b, tol=tol, maxiter=maxiter, title=title )
+    x[J] = solver( matvec, b, x0=x0, tol=tol, maxiter=maxiter, title=title )
 
     ##ALTERNATIVE
     #from scipy.sparse import linalg
@@ -420,6 +422,12 @@ class DenseMatrix( Matrix ):
     'convert to numpy array'
 
     return self.data
+
+  def matvec( self, other ):
+    'matrix-vector multiplication'
+
+    assert other.shape == self.shape[1:]
+    return numpy.dot( self.data, other )
 
   @property
   def T( self ):
