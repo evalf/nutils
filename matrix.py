@@ -266,32 +266,32 @@ class SparseMatrix( Matrix ):
 
     if isinstance(cols,numpy.ndarray) and cols.dtype == bool:
       assert len(cols) == self.shape[1]
-      select = cols
-      ncols = select.sum()
+      cols, = cols.nonzero()
     elif isinstance(cols,numpy.ndarray) and cols.dtype == int:
-      ncols = cols.size
-      select = numpy.zeros( self.shape[1], dtype=bool )
-      select[cols] = True
+      pass
     else:
       raise Excaption, 'invalid column argument'
+    ncols = len(cols)
 
     if isinstance(rows,numpy.ndarray) and rows.dtype == bool:
+      assert len(rows) == self.shape[0]
       rows, = rows.nonzero()
-      nrows = len(rows)
     elif isinstance(rows,numpy.ndarray) and rows.dtype == int:
-      nrows = len(rows)
+      pass
     else:
       raise Excaption, 'invalid row argument'
+    nrows = len(rows)
 
     indptr = numpy.empty( nrows+1, dtype=int )
     I = numpy.empty( numpy.minimum( self.indptr[rows+1] - self.indptr[rows], ncols ).sum(), dtype=int ) # allocate for worst case
     indptr[0] = 0
     for n, irow in enumerate( rows ):
       a, b = self.indptr[irow:irow+2]
-      where, = select[ self.indices[a:b] ].nonzero()
+      where = a + numpy.searchsorted( self.indices[a:b], cols )
+      assert ( self.indices[where] == cols ).all()
       c = indptr[n]
       d = c + where.size
-      I[c:d] = a + where
+      I[c:d] = where
       indptr[n+1] = d
 
     return DenseSubMatrix( self.data, I.reshape(nrows,ncols) ) if d == nrows * ncols \

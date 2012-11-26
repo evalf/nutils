@@ -1,4 +1,5 @@
 import numpy
+numpy.set_printoptions(precision=3)
 _ = numpy.newaxis
 
 __all__ = [
