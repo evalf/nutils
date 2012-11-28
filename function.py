@@ -958,7 +958,8 @@ class Choose( ArrayFunc ):
   def __init__( self, x, intervals, *funcs ):
     'constructor'
 
-    shapes = [ f.shape for f in funcs if isinstance( f, ArrayFunc ) ]
+    funcs = tuple( func if isinstance(func,ArrayFunc) else StaticArray(func) for func in funcs )
+    shapes = [ f.shape for f in funcs ]
     shape = shapes.pop()
     assert all( sh == shape for sh in shapes )
     assert len(intervals) == len(funcs)-1
