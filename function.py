@@ -237,7 +237,7 @@ class Evaluable( object ):
     print >> fileobj, '}'
     fileobj.flush()
     imgpath = util.getpath( 'dot{0:03x}.jpg' )
-    assert os.system( DOT + ' -Tjpg -o%s %s' % ( imgpath, dotname ) ) == 0
+    assert os.system( DOT + ' -Tjpg -o%s %s > /dev/null' % ( imgpath, dotname ) ) == 0
     return os.path.basename( imgpath )
 
   def printstack( self, values=None ):
@@ -955,7 +955,7 @@ class Function( ArrayFunc ):
 class Choose( ArrayFunc ):
   'piecewise function'
 
-  def __init__( self, x, intervals, *funcs ):
+  def __init__( self, level, intervals, *funcs ):
     'constructor'
 
     funcs = tuple( func if isinstance(func,ArrayFunc) else StaticArray(func) for func in funcs )
@@ -963,7 +963,8 @@ class Choose( ArrayFunc ):
     shape = shapes.pop()
     assert all( sh == shape for sh in shapes )
     assert len(intervals) == len(funcs)-1
-    ArrayFunc.__init__( self, args=(x,intervals)+funcs, evalf=self.choose, shape=x.shape+shape )
+    self.level = level
+    ArrayFunc.__init__( self, args=(level,intervals)+funcs, evalf=self.choose, shape=x.shape+shape )
 
   @staticmethod
   def choose( x, intervals, *choices ):
@@ -973,6 +974,15 @@ class Choose( ArrayFunc ):
     for i in intervals:
       which += ( x > i ).astype( int )
     return numpy.choose( which, choices )
+
+  def localgradient( self, ndims ):
+    'gradient'
+    #self.funcs = self.choose
+    #fun = self.funcs
+    grads = [ func.localgradient( ndims ) for func in self.funcs ]
+    if not any( grads ): # all-zero special case; better would be allow merging of intervals
+      return ZERO
+    return Choose( self.level, self.intervals, *grads )
 
 class Choose2D( ArrayFunc ):
   'piecewise function'

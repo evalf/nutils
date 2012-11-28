@@ -274,7 +274,7 @@ def align_arrays( *funcs ):
       if shape[d+i] == 1:
         shape[d+i] = sh
       else:
-        assert sh == shape[d+i] or sh == 1
+        assert sh == shape[d+i] or sh == 1, 'incompatible shapes: %s' % ' & '.join( str(f.shape) for f in funcs )
   ndim = len(shape)
   return tuple(shape), tuple( f if ndim == f.ndim
                          else f[ (numpy.newaxis,)*(ndim-f.ndim) + (slice(None),) * f.ndim ] for f in funcs )
