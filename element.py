@@ -1,4 +1,5 @@
 from . import util, numpy, _
+import weakref
 
 class AffineTransformation( object ):
   'affine transformation'
@@ -47,6 +48,28 @@ class Element( object ):
       points = transform( points )
       totaltransform = numpy.dot( transform.transform, totaltransform )
     return elem, points, totaltransform
+
+  @property
+  def children( self ):
+    'all 1x refined elements'
+
+    transforms = self.refinedtransform( self.ndims, 2 )
+    refs = self.__dict__.get('children')
+    if refs:
+      for ielem, transform in enumerate( transforms ):
+        elem = refs[ ielem ]()
+        if not elem:
+          elem = QuadElement( self.ndims, parent=(self,transform) )
+          refs[ ielem ] = weakref.ref(elem)
+        yield elem
+    else:
+      refs = []
+      for transform in transforms:
+        elem = QuadElement( self.ndims, parent=(self,transform) )
+        refs.append( weakref.ref(elem) )
+        yield elem
+      self.__dict__['children'] = refs
+      
 
 class CustomElement( Element ):
   'custom element'

@@ -283,13 +283,23 @@ class StructuredTopology( Topology ):
     if n == 1:
       return self
 
-    N = n**self.ndims
     structure = numpy.array( [ elem.refined(n) for elem in self.structure.flat ] )
     structure = structure.reshape( self.structure.shape + (n,)*self.ndims )
     structure = structure.transpose( sum( [ ( i, self.ndims+i ) for i in range(self.ndims) ], () ) )
     structure = structure.reshape( [ self.structure.shape[i] * n for i in range(self.ndims) ] )
 
-    return StructuredTopology( structure)
+    return StructuredTopology( structure )
+
+  @util.weakcacheprop
+  def refined( self ):
+    'refined (=refine(2))'
+
+    structure = numpy.array( [ list(elem.children) for elem in self.structure.flat ] )
+    structure = structure.reshape( self.structure.shape + (2,)*self.ndims )
+    structure = structure.transpose( sum( [ ( i, self.ndims+i ) for i in range(self.ndims) ], () ) )
+    structure = structure.reshape( [ self.structure.shape[i] * 2 for i in range(self.ndims) ] )
+
+    return StructuredTopology( structure )
 
   def __str__( self ):
     'string representation'

@@ -1,4 +1,4 @@
-import sys, os, time, numpy, cPickle, hashlib
+import sys, os, time, numpy, cPickle, hashlib, weakref
 from numpyextra import *
 
 LINEWIDTH = 50
@@ -44,6 +44,20 @@ def iterate( nmax=-1, verbose=True ):
     yield i
     if i == nmax:
       break
+
+def weakcacheprop( func ):
+  'weakly cached property'
+
+  key = func.func_name
+  def wrapped( self ):
+    value = self.__dict__.get( key )
+    value = value and value()
+    if value is None:
+      value = func( self )
+      self.__dict__[ key ] = weakref.ref(value)
+    return value
+
+  return property( wrapped )
 
 def cacheprop( func ):
   'cached property'
@@ -402,7 +416,6 @@ refocus = function () {
   focus = newfocus;
   focus.classList.add( 'loading' );
   newobj = document.createElement( 'img' );
-  newobj.setAttribute( 'src', focus.getAttribute('href') );
   newobj.setAttribute( 'width', '600px' );
   newobj.onclick = function () { document.location.href=focus.getAttribute('href'); };
   newobj.onload = function () {
@@ -411,6 +424,7 @@ refocus = function () {
     focus.classList.add( 'highlight' )
     focus.classList.remove( 'loading' );
   };
+  newobj.setAttribute( 'src', focus.getAttribute('href') );
 }
 
 window.onload = function() {

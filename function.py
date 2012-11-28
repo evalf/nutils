@@ -9,7 +9,7 @@ def obj2str( obj ):
     return 'array<%s>' % 'x'.join( map( str, obj.shape ) )
   if isinstance( obj, list ):
     return '[#%d]' % len(obj)
-  if isinstance( obj, tuple ):
+  if isinstance( obj, (tuple,set) ):
     if len(obj) < 10:
       return '(%s)' % ','.join( obj2str(o) for o in obj )
     return '(#%d)' % len(obj)
@@ -236,9 +236,9 @@ class Evaluable( object ):
 
     print >> fileobj, '}'
     fileobj.flush()
-    svgpath = util.getpath( 'dot{0:03x}.svg' )
-    assert os.system( DOT + ' -Tsvg -o%s %s' % ( svgpath, dotname ) ) == 0
-    return os.path.basename( svgpath )
+    imgpath = util.getpath( 'dot{0:03x}.jpg' )
+    assert os.system( DOT + ' -Tjpg -o%s %s' % ( imgpath, dotname ) ) == 0
+    return os.path.basename( imgpath )
 
   def printstack( self, values=None ):
     'print stack'

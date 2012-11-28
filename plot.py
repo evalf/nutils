@@ -8,7 +8,7 @@ import os
 class Pylab( object ):
   'matplotlib figure'
 
-  def __init__( self, title=None, name='graph{0:03x}.svg' ):
+  def __init__( self, title=None, name='graph{0:03x}.jpg' ):
     'constructor'
 
     if isinstance( title, (list,tuple) ):
