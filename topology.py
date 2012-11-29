@@ -405,4 +405,45 @@ class UnstructuredTopology( Topology ):
       elements.extend( elem.refined(n) )
     return UnstructuredTopology( elements, ndims=self.ndims )
 
+  @util.weakcacheprop
+  def refined( self ):
+    'refined (=refine(2))'
+
+    linearfunc = self.linearfunc()
+    dofaxis, = linearfunc.shape
+    ndofs = int(dofaxis)
+
+    edges = {}
+    nmap = {}
+
+    elements = []
+    for elem in self:
+      nodedofs = dofaxis(elem,None)
+      edgedofs = []
+      for i in range(3):
+        j = (i+1)%3
+        try:
+          edgedof = edges.pop(( nodedofs[i], nodedofs[j] ))
+        except KeyError:
+          edgedof = edges[( nodedofs[j], nodedofs[i] )] = ndofs
+          ndofs += 1
+        edgedofs.append( edgedof )
+      children = list( elem.children )
+      elements.extend( children )
+
+      nmap[ children[0] ] = numpy.array([ edgedofs[2], edgedofs[1], nodedofs[2] ])
+      nmap[ children[1] ] = numpy.array([ edgedofs[0], nodedofs[1], edgedofs[1] ])
+      nmap[ children[2] ] = numpy.array([ nodedofs[0], edgedofs[0], edgedofs[2] ])
+      nmap[ children[3] ] = numpy.array([ edgedofs[1], edgedofs[2], edgedofs[0] ])
+
+    #print 'boundary:', edges
+
+    shape = function.DofAxis(ndofs,nmap),
+    fmap = dict.fromkeys( elements, element.PolyTriangle(1) )
+    linearfunc = function.Function( shape=shape, mapping=fmap )
+    namedfuncs = { 'spline2': linearfunc }
+
+    return UnstructuredTopology( elements, ndims=2, namedfuncs=namedfuncs )
+
+
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

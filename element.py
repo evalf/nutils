@@ -49,28 +49,6 @@ class Element( object ):
       totaltransform = numpy.dot( transform.transform, totaltransform )
     return elem, points, totaltransform
 
-  @property
-  def children( self ):
-    'all 1x refined elements'
-
-    transforms = self.refinedtransform( self.ndims, 2 )
-    refs = self.__dict__.get('children')
-    if refs:
-      for ielem, transform in enumerate( transforms ):
-        elem = refs[ ielem ]()
-        if not elem:
-          elem = QuadElement( self.ndims, parent=(self,transform) )
-          refs[ ielem ] = weakref.ref(elem)
-        yield elem
-    else:
-      refs = []
-      for transform in transforms:
-        elem = QuadElement( self.ndims, parent=(self,transform) )
-        refs.append( weakref.ref(elem) )
-        yield elem
-      self.__dict__['children'] = refs
-      
-
 class CustomElement( Element ):
   'custom element'
 
@@ -95,6 +73,27 @@ class QuadElement( Element ):
     self.parent = parent
     Element.__init__( self )
 
+  @property
+  def children( self ):
+    'all 1x refined elements'
+
+    transforms = self.refinedtransform( self.ndims, 2 )
+    refs = self.__dict__.get('children')
+    if refs:
+      for ielem, transform in enumerate( transforms ):
+        elem = refs[ ielem ]()
+        if not elem:
+          elem = QuadElement( self.ndims, parent=(self,transform) )
+          refs[ ielem ] = weakref.ref(elem)
+        yield elem
+    else:
+      refs = []
+      for transform in transforms:
+        elem = QuadElement( self.ndims, parent=(self,transform) )
+        refs.append( weakref.ref(elem) )
+        yield elem
+      self.__dict__['children'] = refs
+      
   @util.classcache
   def edgetransform( cls, ndims ):
     'edge transforms'
@@ -209,6 +208,27 @@ class TriangularElement( Element ):
     self.parent = parent
     Element.__init__( self )
 
+  @property
+  def children( self ):
+    'all 1x refined elements'
+
+    transforms = self.refinedtransform( 2 )
+    refs = self.__dict__.get('children')
+    if refs:
+      for ielem, transform in enumerate( transforms ):
+        elem = refs[ ielem ]()
+        if not elem:
+          elem = TriangularElement( parent=(self,transform) )
+          refs[ ielem ] = weakref.ref(elem)
+        yield elem
+    else:
+      refs = []
+      for transform in transforms:
+        elem = TriangularElement( parent=(self,transform) )
+        refs.append( weakref.ref(elem) )
+        yield elem
+      self.__dict__['children'] = refs
+      
   def edge( self, iedge ):
     'edge'
 

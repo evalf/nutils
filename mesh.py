@@ -168,7 +168,6 @@ def gmesh( path, btags=[] ):
 
   boundary = []
   elements = []
-  linearinfo = {}
   connected = [ set() for i in range( nNodes ) ]
 
   nmap = {}
@@ -218,7 +217,6 @@ def gmesh( path, btags=[] ):
       raise Exception, 'cannot match edge, perhaps order is reversed in gmesh'
     belem = elem.edge( iedge )
     belements.append( belem )
-    linearinfo[ belem ] = element.PolyQuad( (2,) ), nodes
     for tag in tags:
       bgroups.setdefault( tag, [] ).append( belem )
 
