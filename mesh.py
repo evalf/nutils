@@ -20,6 +20,11 @@ class Transform( function.ArrayFunc ):
       trans = numpy.dot( trans, transform.transform )
     return numpy.asarray( trans.T )
 
+  def localgradient( self, ndims ):
+    'local gradient'
+
+    return function.ZERO( self.shape + (ndims,) )
+
 class ElemMap( function.ArrayFunc ):
   'element-constant array'
 

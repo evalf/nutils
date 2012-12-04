@@ -961,6 +961,21 @@ class Align( ArrayFunc ):
     n = self.axes.index( i )
     return self.func.get( n, item ).align( axes, self.ndim-1 )
 
+  def sum( self, axes=-1 ):
+    'sum'
+
+    axes = normdim( self.ndim, axes if isiterable(axes) else [axes] )
+    sumaxes = []
+    for ax in axes:
+      idx = self.axes.index( ax )
+      sumaxes.append( idx )
+
+    trans = [ ax - sum(i<ax for i in axes) for ax in self.axes if ax not in axes ]
+    print self.shape, 'SUM', axes
+    print self.axes, '->', trans, 'sum', sumaxes
+
+    return self.func.sum( sumaxes ).align( trans, self.ndim-len(axes) )
+
   @staticmethod
   def doalign( arr, trans, item ):
     'align'
@@ -979,6 +994,8 @@ class Align( ArrayFunc ):
   def prepare_binary( self, other ):
     'align binary operand'
 
+    if not isinstance( other, ArrayFunc ):
+      other = StaticArray( other )
     shape, (func1,func2) = util.align_arrays( self, other )
     assert isinstance( func1, Align )
 
@@ -1748,7 +1765,7 @@ class Expand( ArrayFunc ):
     assert func.ndim == len(shape)
     for sh1, sh2 in zip( func.shape, shape ):
       assert sh1 in (sh2,1)
-    self.__class__.__base__.__init__( self, args=[func,shape], evalf=self.doexpand, shape=shape )
+    self.__class__.__base__.__init__( self, args=(func,)+shape, evalf=self.doexpand, shape=shape )
 
   def __nonzero__( self ):
     'nonzero'
@@ -1767,10 +1784,10 @@ class Expand( ArrayFunc ):
     return self.func.get( i, item ).expand( shape )
 
   @staticmethod
-  def doexpand( arr, shape ):
+  def doexpand( arr, *shape ):
     'expand'
 
-    expanded = numpy.empty( arr.shape[:arr.ndim-len(shape)] + shape )
+    expanded = numpy.empty( arr.shape[:arr.ndim-len(shape)] + tuple( sh if isinstance(sh,int) else len(sh) for sh in shape ) )
     expanded[:] = arr
     return expanded
 
@@ -1802,6 +1819,13 @@ class Expand( ArrayFunc ):
     'reciprocal'
 
     return self.func.reciprocal().expand( self.shape )
+
+  def __add__( self, other ):
+    'multiply'
+
+    add = self.func + other
+    shape = add.shape[:-self.ndim] + tuple( sh2 if sh1 == 1 else sh1 for sh1, sh2 in zip( add.shape[-self.ndim:], self.shape ) )
+    return add.expand( shape )
 
   def __mul__( self, other ):
     'multiply'
