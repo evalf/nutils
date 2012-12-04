@@ -2440,10 +2440,25 @@ class Kronecker( ArrayFunc ):
       axis += 1
     return Kronecker( self.func.insert([i]), axis, self.length, self.pos )
 
+  def align( self, axes, ndim ):
+    'align'
+
+    raise NotImplementedError
+    assert len(axes) == self.ndim
+    axis = axes[self.axis]
+    trans = [ ax - (ax>self.axis) for ax in axes if ax != self.axis ]
+    print 'ALIGN', axes, self.axis, '->', trans
+    print trans, self.ndim-1
+    print 'ndim', self.ndim
+    return Kronecker( self.func.align(trans,self.ndim-1), axis, self.length, self.pos )
+
   def __mul__( self, other ):
     'multiply'
 
-    return Kronecker( self.func * other.get(self.axis,self.pos), self.axis, self.length, self.pos )
+    raise NotImplementedError
+    shape, (func1,func2) = util.align_arrays( self, other )
+    assert isinstance( func1, Kronecker )
+    return Kronecker( func1.func * func2.get(self.axis,self.pos), self.axis, self.length, self.pos )
 
   def sum( self, axes=-1 ):
     'sum'
