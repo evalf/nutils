@@ -150,6 +150,88 @@ class Topology( set ):
       newelems.extend( elempool )
     return UnstructuredTopology( newelems, ndims=self.ndims )
 
+  def refinedfunc( self, dofaxis, degree, refine ):
+  
+    refine = set(refine) # make unique and equip with set operations
+  
+    # initialize
+    topoelems = [] # non-overlapping 'top-level' elements, will make up the new domain
+    parentelems = [] # all parents, grandparents etc of topoelems
+    nrefine = 0 # number of nested topologies after refinement
+  
+    topo = self # elements to examine in next level refinement
+    while topo:
+      nexttopo = []
+      refined = set() # refined dofs in current refinement level
+      for elem in topo: # loop over remaining elements in refinement level 'nrefine'
+        dofs = dofaxis.mapping.get(elem) # dof numbers for current funcsp object
+        if dofs is None: # elem is not a top-level element
+          parentelems.append( elem ) # elem is a parent
+          nexttopo.extend( elem.children ) # examine children in next iteration
+        else: # elem is a top-level element
+          supp = refine.intersection(dofs) # supported dofs that are tagged for refinement
+          if supp: # elem supports dofs for refinement
+            parentelems.append( elem ) # elem will become a parent
+            topoelems.extend( elem.children ) # children will become top-level elements
+            refined.update( supp ) # dofs will not be considered in following refinement levels
+          else: # elem does not support dofs for refinement
+            topoelems.append( elem ) # elem remains a top-level elemnt
+      refine -= refined # discard dofs to prevent further consideration
+      topo = nexttopo # prepare for next iteration
+      nrefine += 1 # update refinement level
+    assert not refine, 'unrefined leftover: %s' % refine
+    if refined: # last considered level contained refinements
+      nrefine += 1 # this raises the total level to nrefine + 1
+  
+    # initialize
+    dofmap = {} # IEN mapping of new function object
+    stdmap = {} # shape function mapping of new function object, plus boolean vector indicating which shapes to retain
+    ndofs = 0 # total number of dofs of new function object
+  
+    topo = self # topology to examine in next level refinement
+    for irefine in range( nrefine ):
+  
+      funcsp = topo.splinefunc( degree ) # shape functions for level irefine
+      dofaxis = funcsp.shape[0] # IEN mapping local to level irefine
+  
+      supported = numpy.ones( int(dofaxis), dtype=bool ) # True if dof is contained in topoelems or parentelems
+      touchtopo = numpy.zeros( int(dofaxis), dtype=bool ) # True if dof touches at least one topoelem
+      myelems = [] # all top-level or parent elements in level irefine
+      for elem, idofs in dofaxis.mapping.iteritems():
+        if elem in topoelems:
+          touchtopo[idofs] = True
+          myelems.append( elem )
+        elif elem in parentelems:
+          myelems.append( elem )
+        else:
+          supported[idofs] = False
+  
+      keep = numpy.logical_and( supported, touchtopo ) # THE refinement law
+  
+      for elem in myelems: # loop over all top-level or parent elements in level irefine
+        idofs = dofaxis.mapping[elem] # local dof numbers
+        mykeep = keep[idofs]
+        std = funcsp.stdmap[elem]
+        assert isinstance(std,element.StdElem)
+        stdmap[elem] = std if mykeep.all() else (std,mykeep) if mykeep.any() else None # use all/some/no shapes from this level
+        newdofs = [ ndofs + keep[:idof].sum() for idof in idofs if keep[idof] ] # new dof numbers
+        if elem.parent:
+          pelem, transform = elem.parent
+          newdofs.extend( dofmap[pelem] ) # add dofs of all underlying 'broader' shapes
+        dofmap[elem] = numpy.array(newdofs) # add result to IEN mapping of new function object
+  
+      ndofs += keep.sum() # update total number of dofs
+      topo = topo.refined # proceed to next level
+  
+    for elem in parentelems:
+      del dofmap[elem] # remove auxiliary elements
+  
+    dofaxis = function.DofAxis( ndofs, dofmap )
+    funcsp = function.Function( dofaxis, stdmap )
+    domain = UnstructuredTopology( topoelems, ndims=self.ndims )
+  
+    return domain, funcsp
+
 class StructuredTopology( Topology ):
   'structured topology'
 
@@ -256,10 +338,10 @@ class StructuredTopology( Topology ):
       S = item[1:]
       indexmap[ elem ] = nodes_structure[S].ravel()
 
-    shape = function.DofAxis( dofcount, indexmap ),
+    dofaxis = function.DofAxis( dofcount, indexmap )
     funcmap = dict( numpy.broadcast( self.structure, stdelems ) )
 
-    return function.Function( shape=shape, mapping=funcmap )
+    return function.Function( dofaxis=dofaxis, stdmap=funcmap )
 
   def linearfunc( self ):
     'linears'
@@ -438,9 +520,9 @@ class UnstructuredTopology( Topology ):
 
     #print 'boundary:', edges
 
-    shape = function.DofAxis(ndofs,nmap),
+    dofaxis = function.DofAxis(ndofs,nmap)
     fmap = dict.fromkeys( elements, element.PolyTriangle(1) )
-    linearfunc = function.Function( shape=shape, mapping=fmap )
+    linearfunc = function.Function( dofaxis=dofaxis, stdmap=fmap )
     namedfuncs = { 'spline2': linearfunc }
 
     return UnstructuredTopology( elements, ndims=2, namedfuncs=namedfuncs )

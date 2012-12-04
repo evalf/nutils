@@ -63,14 +63,17 @@ class UniformFunc( function.ArrayFunc ):
   def localgradient( self, ndims ):
     'local gradient'
 
-    A = function.Diagonalize( self.scale, axis=0, toaxes=(0,1) )
+    scale = function.StaticArray(self.scale)
+    if not scale - scale[0]:
+      scale = function.Expand( scale[:1], scale.shape )
+    A = function.Diagonalize( scale, toaxes=(0,1) )
     T = Transform( ndims, self.offsetmap, self.ndims )
-    return A * T if not T.shape  \
+    return A * T if not T.shape \
       else ( A[:,_,:] * T ).sum( -1 )
 
 # MESH GENERATORS
 
-def rectilinear_beta( *nodes ):
+def rectilinear( nodes, periodic=() ):
   uniform = all( len(n) == 3 and isinstance(n,tuple) for n in nodes )
   ndims = len(nodes)
   indices = numpy.ogrid[ tuple( slice( n[2] if uniform else len(n)-1 ) for n in nodes ) ]
@@ -96,16 +99,6 @@ def rectilinear_beta( *nodes ):
   if not uniform:
     scale = ElemMap( scalemap, shape=(ndims,) )
   coords = UniformFunc( ndims, offsetmap, scale )
-  return topo, coords
-
-def rectilinear( gridnodes, periodic=() ):
-  'rectilinear mesh'
-
-  ndims = len( gridnodes )
-  indices = numpy.ogrid[ tuple( slice( len(n)-1 ) for n in gridnodes ) ]
-  structure = numpy.frompyfunc( lambda *s: element.QuadElement( ndims ), ndims, 1 )( *indices )
-  topo = topology.StructuredTopology( structure )
-  coords = topo.rectilinearfunc( gridnodes )
   if periodic:
     topo = topo.make_periodic( periodic )
   return topo, coords

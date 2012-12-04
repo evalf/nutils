@@ -5,6 +5,23 @@ LINEWIDTH = 50
 BASEPATH = os.path.expanduser( '~/public_html/' )
 DUMPDIR = BASEPATH + time.strftime( '%Y/%m/%d/%H-%M-%S/' )
 
+def takediag( A, ax1, ax2 ):
+  shape = list(A.shape)
+  if ax1 < 0:
+    ax1 += A.ndim
+  if ax2 < 0:
+    ax2 += A.ndim
+  ax1, ax2 = sorted( [ax1,ax2] )
+  assert 0 <= ax1 < ax2 < A.ndim
+  n = shape.pop(ax2)
+  assert n == shape.pop(ax1)
+  shape.append( n )
+  strides = list(A.strides)
+  s = strides.pop(ax2)
+  s += strides.pop(ax1)
+  strides.append( s )
+  return numpy.lib.stride_tricks.as_strided( A, shape, strides )
+
 def getpath( pattern ):
   'create file in DUMPDIR'
 
