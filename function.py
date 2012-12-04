@@ -198,6 +198,8 @@ class StaticArray( numpy.ndarray ):
 
 ZERO = lambda shape: StaticArray(0).reshape([1]*len(shape)).expand(shape)
 
+graphviz_warn = { 'fontcolor': 'white', 'fillcolor': 'black', 'style': 'filled' }
+
 def normdim( length, n ):
   'sort and make positive'
 
@@ -209,6 +211,8 @@ def normdim( length, n ):
     normed.append( ni )
   normed.sort()
   return normed
+
+# EVALUABLE
 
 class Evaluable( object ):
   'evaluable base classs'
@@ -273,10 +277,23 @@ class Evaluable( object ):
       values.append( retval )
     return values[-1]
 
+  def __graphviz__( self ):
+    'graphviz representation'
+
+    try:
+      code = self.__evalf.func_code
+      argnames = code.co_varnames[ :min(code.co_argcount,len(self.__args)) ]
+    except:
+      argnames = ()
+    argnames += tuple( '%%%d' % n for n in range( len(self.__args) - len(argnames) ) )
+    args = [ '%s=%s' % ( argname, obj2str(arg) ) for argname, arg in zip( argnames, self.__args ) if not isinstance(arg,Evaluable) ]
+    label = self.__class__.__name__
+    return { 'label': r'\n'.join( [ label ] + args ) }
+
   def graphviz( self, values=None ):
     'create function graph'
 
-    import tempfile, os
+    import os, subprocess
 
     DOT = '/usr/bin/dot'
     if not os.path.isfile( DOT ) or not os.access( DOT, os.X_OK ):
@@ -289,64 +306,32 @@ class Evaluable( object ):
     N = len(self.data) + 2
     dofaxes = {} # labels for dofaxes
 
-    fid, dotname = tempfile.mkstemp()
-    fileobj = os.fdopen( fid, 'w' )
-    print >> fileobj, 'digraph {'
+    imgpath = util.getpath( 'dot{0:03x}.jpg' )
+    dot = subprocess.Popen( [DOT,'-Tjpg'], stdin=subprocess.PIPE, stdout=open(imgpath,'w') )
+
+    print >> dot.stdin, 'digraph {'
+    print >> dot.stdin, 'graph [ dpi=72 ];'
 
     for i, (op,indices) in enumerate( self.operations ):
 
-      if isinstance( op, Align ):
+      try:
+        code = op.__evalf.func_code
+        argnames = code.co_varnames[ :min(code.co_argcount,len(indices)) ]
+      except:
+        argnames = ()
+      argnames += tuple( '%%%d' % n for n in range( len(indices) - len(argnames) ) )
 
-        newsh = [ '?' ] * op.ndim
-        for src, dst in enumerate( op.axes ):
-          newsh[dst] = str(src)
-        print >> fileobj, ' ', i, '[shape="trapezium" label="%d. %s"];' % ( i, ','.join(newsh) )
-        print >> fileobj, ' ', '%d -> %d;' % ( indices[0], i )
+      node = op.__graphviz__()
+      node['label'] = '%d. %s' % ( i, node.get('label','') )
+      print >> dot.stdin, '%d [%s]' % ( i, ' '.join( '%s="%s"' % item for item in node.iteritems() ) )
 
-      elif isinstance( op, Get ):
+      for n, idx in enumerate( indices ):
+        if idx >= 0:
+          print >> dot.stdin, '%d -> %d [label="%s"];' % ( idx, i, argnames[n] );
 
-        getitem = [ ':' ] * op.func.ndim
-        for src, item in op.items:
-          getitem[src] = str(item)
-        print >> fileobj, ' ', i, '[shape="invtrapezium" label="%d. %s"];' % ( i, ','.join(getitem) )
-        print >> fileobj, ' ', '%d -> %d;' % ( indices[0], i )
+    print >> dot.stdin, '}'
+    dot.stdin.close()
 
-      elif isinstance( op, Tuple ):
-
-        print >> fileobj, ' ', i, '[shape="tab" label="%d."];' % i
-        for n, idx in enumerate( indices ):
-          if idx >= 0:
-            print >> fileobj, ' ', '%d -> %d [label="%%%d"];' % ( idx, i, n );
-
-      else:
-
-        try:
-          code = op.__evalf.func_code
-          argnames = code.co_varnames[ :min(code.co_argcount,len(indices)) ]
-        except:
-          argnames = ()
-        argnames += tuple( '%%%d' % n for n in range( len(indices) - len(argnames) ) )
-
-        args = []
-        pointers = []
-        for argname, idx in zip( argnames, indices ):
-          if idx >= 0:
-            pointers.append(( argname, idx ))
-          else:
-            args.append( '%s=%s' % ( argname, obj2str(values[N+idx]) ) )
-
-        label = '%d. %s' % ( i, op.__class__.__name__ )
-        if hasattr( op, 'shape' ):
-          label += ' [%s]' % ','.join( dofaxes.setdefault(ax,'$%d'%len(dofaxes)) if isinstance(ax,DofAxis) else str(ax) for ax in op.shape )
-
-        print >> fileobj, ' ', i, '[label="%s"];' % r'\n'.join( [ label ] + args )
-        for argname, idx in pointers:
-          print >> fileobj, ' ', '%d -> %d [label="%s"];' % ( idx, i, argname );
-
-    print >> fileobj, '}'
-    fileobj.flush()
-    imgpath = util.getpath( 'dot{0:03x}.jpg' )
-    assert os.system( DOT + ' -Tjpg -o%s %s > /dev/null' % ( imgpath, dotname ) ) == 0
     return os.path.basename( imgpath )
 
   def printstack( self, values=None ):
@@ -901,6 +886,13 @@ class ArrayFunc( Evaluable ):
 
     return Concatenate( [self,other], axis )
 
+  def __graphviz__( self ):
+    'graphviz representation'
+
+    prop = Evaluable.__graphviz__( self )
+    prop['label'] += r'\n[%s]' % ','.join( '$' if isinstance(ax,DofAxis) else str(ax) for ax in self.shape )
+    return prop
+
 class Align( ArrayFunc ):
   'align axes'
 
@@ -925,7 +917,7 @@ class Align( ArrayFunc ):
       shape[ax] = sh
       item[ax] = slice(None)
     item = (Ellipsis,)+tuple(item)
-    self.__class__.__base__.__init__( self, args=[func,trans,item], evalf=self.doalign, shape=shape )
+    ArrayFunc.__init__( self, args=[func,trans,item], evalf=self.doalign, shape=shape )
 
   def align( self, axes, ndim ):
     'align'
@@ -971,9 +963,6 @@ class Align( ArrayFunc ):
       sumaxes.append( idx )
 
     trans = [ ax - sum(i<ax for i in axes) for ax in self.axes if ax not in axes ]
-    print self.shape, 'SUM', axes
-    print self.axes, '->', trans, 'sum', sumaxes
-
     return self.func.sum( sumaxes ).align( trans, self.ndim-len(axes) )
 
   @staticmethod
@@ -1028,21 +1017,30 @@ class Align( ArrayFunc ):
 
     func1, func2, axes = self.prepare_binary( other )
     return ( func1 * func2 ).align( axes, self.ndim ) if axes is not None \
-      else self.__class__.__base__.__mul__( self, other )
+      else ArrayFunc.__mul__( self, other )
 
   def __add__( self, other ):
     'multiply'
 
     func1, func2, axes = self.prepare_binary( other )
     return ( func1 + func2 ).align( axes, self.ndim ) if axes is not None \
-      else self.__class__.__base__.__add__( self, other )
+      else ArrayFunc.__add__( self, other )
 
   def __div__( self, other ):
     'multiply'
 
     func1, func2, axes = self.prepare_binary( other )
     return ( func1 / func2 ).align( axes, self.ndim ) if axes is not None \
-      else self.__class__.__base__.__div__( self, other )
+      else ArrayFunc.__div__( self, other )
+
+  def __graphviz__( self ):
+    'graphviz representation'
+
+    newsh = [ '?' ] * self.ndim
+    for src, dst in enumerate( self.axes ):
+      newsh[dst] = str(src)
+    return { 'shape': 'trapezium',
+             'label': ','.join(newsh) }
 
 class Get( ArrayFunc ):
   'get'
@@ -1083,6 +1081,15 @@ class Get( ArrayFunc ):
     items = zip( where, what )
     return Get( self.func, *items )
 
+  def __graphviz__( self ):
+    'graphviz representation'
+
+    getitem = [ ':' ] * self.func.ndim
+    for src, item in self.items:
+      getitem[src] = str(item)
+    return { 'shape': 'invtrapezium',
+             'label': ','.join(getitem) }
+
 class Reciprocal( ArrayFunc ):
   'reciprocal'
 
@@ -1092,7 +1099,7 @@ class Reciprocal( ArrayFunc ):
     'constructor'
 
     self.func = func
-    self.__class__.__base__.__init__( self, args=[func], evalf=numpy.reciprocal, shape=func.shape )
+    ArrayFunc.__init__( self, args=[func], evalf=numpy.reciprocal, shape=func.shape )
 
   def get( self, i, item ):
     'get item'
@@ -1186,7 +1193,7 @@ class Function( ArrayFunc ):
     self.dofaxis = dofaxis
     self.stdmap = stdmap
     topoelems = set(dofaxis.mapping)
-    self.__class__.__base__.__init__( self, args=[ELEM,POINTS,stdmap,topoelems], evalf=self.hierarchicfunction, shape=[dofaxis] )
+    ArrayFunc.__init__( self, args=[ELEM,POINTS,stdmap,topoelems], evalf=self.hierarchicfunction, shape=[dofaxis] )
 
   @staticmethod
   def hierarchicfunction( elem, points, stdmap, topoelems ):
@@ -1252,7 +1259,7 @@ class LocalGradient( ArrayFunc ):
     self.stdmap = stdmap
     self.level = level
     topoelems = set(dofaxis.mapping)
-    self.__class__.__base__.__init__( self, args=(ELEM,POINTS,stdmap,topoelems,ndims,level), evalf=self.lgrad, shape=(dofaxis,)+(ndims,)*level )
+    ArrayFunc.__init__( self, args=(ELEM,POINTS,stdmap,topoelems,ndims,level), evalf=self.lgrad, shape=(dofaxis,)+(ndims,)*level )
 
   def localgradient( self, ndims ):
     'local gradient'
@@ -1296,80 +1303,6 @@ class LocalGradient( ArrayFunc ):
       T = numpy.dot( T, transform.transform )
 
     return numpy.concatenate( allgrads, axis=1 )
-
-class OldFunction( ArrayFunc ):
-  'function'
-
-  def __init__( self, shape, mapping ):
-    'constructor'
-
-    self.mapping = mapping
-    self.__class__.__base__.__init__( self, args=[ELEM,POINTS,mapping], evalf=self.function, shape=shape )
-
-  @staticmethod
-  def function( elem, points, fmap ):
-    'evaluate'
-
-    func = fmap.get( elem )
-    while func is None:
-      elem, transform = elem.parent
-      points = transform.eval( points )
-      func = fmap.get( elem )
-    return func.eval( points )
-
-  def vector( self, ndims ):
-    'vectorize'
-
-    return Vectorize( [self]*ndims )
-
-  @check_localgradient
-  def localgradient( self, ndims ):
-    'local derivative'
-
-    return LocalGradient( self, ndims, level=1 )
-
-class OldLocalGradient( ArrayFunc ):
-  'local gradient'
-
-  def __init__( self, func, ndims, level ):
-    'constructor'
-
-    self.ndims = ndims
-    self.func = func
-    self.level = level
-    ArrayFunc.__init__( self, args=(ELEM,POINTS,func.mapping,ndims,level), evalf=self.lgrad, shape=func.shape+(ndims,)*level )
-
-  @check_localgradient
-  def localgradient( self, ndims ):
-    'local gradient'
-
-    assert ndims == self.ndims
-    return LocalGradient( self.func, ndims, self.level+1 )
-
-  @staticmethod
-  def lgrad( elem, points, fmap, ndims, level ):
-    'evaluate'
-
-    assert elem.ndims <= ndims
-    while elem.ndims != ndims:
-      elem, transform = elem.parent
-      points = transform.eval( points )
-    func = fmap.get( elem )
-    if func is not None:
-      return func.eval( points, grad=level )
-    elem, transform = elem.parent
-    points = transform.eval( points )
-    T = transform.transform
-    func = fmap.get( elem )
-    while func is None:
-      elem, transform = elem.parent
-      points = transform.eval( points )
-      T = numpy.dot( T, transform.transform )
-      func = fmap.get( elem )
-    F = func.eval( points, grad=level )
-    for axis in range( -level, 0 ):
-      F = util.transform( F, T, axis=axis )
-    return F
 
 class Choose( ArrayFunc ):
   'piecewise function'
@@ -1604,28 +1537,28 @@ class Concatenate( ArrayFunc ):
     'multiply'
 
     if not isinstance( other, Concatenate ) or self.ndim != other.ndim or self.axis != other.axis or [ f.shape[self.axis] for f in self.funcs ] != [ g.shape[other.axis] for g in other.funcs ]:
-      return self.__class__.__base__.__mul__( self, other )
+      return ArrayFunc.__mul__( self, other )
 
     return Concatenate( [ f * g for f, g in zip(self.funcs,other.funcs) ], self.axis )
 
   def __add__( self, other ):
     'addition'
 
-    if not isinstance( other, self.__class__ ) or self.axis != other.axis:
-      return self.__class__.__base__.__add__( self, other )
+    if not isinstance( other, Concatenate ) or self.axis != other.axis:
+      return ArrayFunc.__add__( self, other )
 
     fg = zip( self.funcs, other.funcs )
     if any( f.shape != g.shape for (f,g) in fg ):
-      return self.__class__.__base__.__add__( self, other )
+      return ArrayFunc.__add__( self, other )
 
-    return self.__class__( [ f+g for (f,g) in fg ], axis=self.axis )
+    return Concatenate( [ f+g for (f,g) in fg ], axis=self.axis )
 
   def sum( self, axes=-1 ):
     'sum'
 
     axes = normdim( self.ndim, axes if isiterable(axes) else [axes] )
     if self.axis not in axes:
-      return self.__class__.__base__.sum( self, axes )
+      return ArrayFunc.sum( self, axes )
 
     axes = [ ax if ax < self.axis else ax-1 for ax in axes if ax != self.axis ]
     return util.sum( f.sum(self.axis) for f in self.funcs ).sum( axes )
@@ -1634,7 +1567,7 @@ class Concatenate( ArrayFunc ):
     'concatenate'
 
     if self.ndim != other.ndim or axis != self.axis:
-      self.__class__.__base__.concatenate( other, axis )
+      ArrayFunc.concatenate( other, axis )
 
     return Concatenate( self.funcs + (other,), axis )
 
@@ -1676,7 +1609,7 @@ class Vectorize( ArrayFunc ):
       axes = [ ax-1 for ax in axes ]
       return Vectorize( [ func.sum(axes) for func in self.funcs ] )
 
-    return self.__class__.__base__.sum( self, axes )
+    return ArrayFunc.sum( self, axes )
 
   def __mul__( self, other ):
     'multiply'
@@ -1690,7 +1623,7 @@ class Vectorize( ArrayFunc ):
       return ZERO( shape )
 
     if func1 is not self or func2.shape[0] != 1:
-      return self.__class__.__base__.__mul__( self, other )
+      return ArrayFunc.__mul__( self, other )
 
     funcs = [ func * func2[:,i if func2.shape[1] > 1 else 0,...] for i, func in enumerate(self.funcs) ]
     return Vectorize( funcs )
@@ -1699,7 +1632,7 @@ class Vectorize( ArrayFunc ):
     'align'
 
     if axes[0] != 0 or axes[1] != 1:
-      return self.__class__.__base__.align( self, axes, ndim )
+      return ArrayFunc.align( self, axes, ndim )
 
     axes = [ 0 ] + [ ax-1 for ax in axes[2:] ]
     return Vectorize( [ func.align(axes,ndim-1) for func in self.funcs ] )
@@ -1731,7 +1664,7 @@ class Vectorize( ArrayFunc ):
 
     n1, n2 = normdim( len(self.shape), (n1,n2) )
     if n1 != 1:
-      return self.__class__.__base__.trace( self, n1, n2 )
+      return ArrayFunc.trace( self, n1, n2 )
 
     assert self.shape[n2] == len(self.funcs)
     return Concatenate([ func.get(n2-1,idim) for idim, func in enumerate( self.funcs ) ])
@@ -1752,96 +1685,6 @@ class Vectorize( ArrayFunc ):
       f = func.dot( weights[n0:n1,_] )
       conc = f if conc is None else conc.concatenate( f, axis=0 )
     return conc
-
-class Expand( ArrayFunc ):
-  'singleton expand'
-
-  def __init__( self, func, shape ):
-    'constructor'
-
-    assert shape
-    shape = tuple(shape)
-    self.func = func
-    assert func.ndim == len(shape)
-    for sh1, sh2 in zip( func.shape, shape ):
-      assert sh1 in (sh2,1)
-    self.__class__.__base__.__init__( self, args=(func,)+shape, evalf=self.doexpand, shape=shape )
-
-  def __nonzero__( self ):
-    'nonzero'
-
-    return self.func.__nonzero__()
-
-  def get( self, i, item ):
-    'get'
-
-    i, = normdim( self.ndim, [i] )
-    shape = list(self.shape)
-    sh = shape.pop(i)
-    if sh == 1:
-      assert isinstance( sh, int ) and 0 <= item < sh, 'item out of range'
-      item = 0
-    return self.func.get( i, item ).expand( shape )
-
-  @staticmethod
-  def doexpand( arr, *shape ):
-    'expand'
-
-    expanded = numpy.empty( arr.shape[:arr.ndim-len(shape)] + tuple( sh if isinstance(sh,int) else len(sh) for sh in shape ) )
-    expanded[:] = arr
-    return expanded
-
-  def sum( self, axes=-1 ):
-    'sum'
-
-    axes = normdim( self.ndim, axes if isiterable(axes) else [axes] )
-    func = self.func
-    if not func:
-      return func.sum( axes )
-    factor = 1
-    for ax in reversed(axes):
-      if func.shape[ax] == 1:
-        func = func.get( ax, 0 )
-        factor *= self.shape[ax]
-      else:
-        func = func.sum( [ax] )
-    return func * factor
-
-  def prod( self ):
-    'prod'
-
-    if self.func.shape[-1] != 1:
-      return self.func.prod().expand( self.shape[:-1] )
-
-    return self.func.get( -1, 0 )**self.shape[-1]
-
-  def reciprocal( self ):
-    'reciprocal'
-
-    return self.func.reciprocal().expand( self.shape )
-
-  def __add__( self, other ):
-    'multiply'
-
-    add = self.func + other
-    shape = add.shape[:-self.ndim] + tuple( sh2 if sh1 == 1 else sh1 for sh1, sh2 in zip( add.shape[-self.ndim:], self.shape ) )
-    return add.expand( shape )
-
-  def __mul__( self, other ):
-    'multiply'
-
-    mul = self.func * other
-    shape = mul.shape[:-self.ndim] + tuple( sh2 if sh1 == 1 else sh1 for sh1, sh2 in zip( mul.shape[-self.ndim:], self.shape ) )
-    return mul.expand( shape )
-
-  def align( self, axes, ndim ):
-    'align'
-
-    shape = [ 1 ] * ndim
-    assert all( 0 <= ax < ndim for ax in axes )
-    for src, dst in enumerate(axes):
-      shape[dst] = self.shape[src]
-    return Expand( self.func.align(axes,ndim), shape )
 
 class Heaviside( ArrayFunc ):
   'heaviside function'
@@ -1932,24 +1775,24 @@ class DofIndex( ArrayFunc ):
   def __add__( self, other ):
     'add'
 
-    if not isinstance( other, self.__class__ ) or self.dofaxis != other.dofaxis:
-      return self.__class__.__base__.__add__( self, other )
+    if not isinstance( other, DofIndex ) or self.dofaxis != other.dofaxis:
+      return ArrayFunc.__add__( self, other )
 
-    return self.__class__( self.array + other.array, self.dofaxis )
+    return DofIndex( self.array + other.array, self.dofaxis )
 
   def __sub__( self, other ):
     'add'
 
-    if not isinstance( other, self.__class__ ) or self.dofaxis != other.dofaxis:
-      return self.__class__.__base__.__sub__( self, other )
+    if not isinstance( other, DofIndex ) or self.dofaxis != other.dofaxis:
+      return ArrayFunc.__sub__( self, other )
 
-    return self.__class__( self.array - other.array, self.dofaxis )
+    return DofIndex( self.array - other.array, self.dofaxis )
 
   def concatenate( self, other, axis ):
     'concatenate'
 
-    if axis == 0 or not isinstance( other, self.__class__ ) or self.dofaxis != other.dofaxis:
-      return self.__class__.__base__.concatenate( other, axis )
+    if axis == 0 or not isinstance( other, DofIndex ) or self.dofaxis != other.dofaxis:
+      return ArrayFunc.concatenate( other, axis )
 
     array = self.array.concatenate( other.array, axis )
     return DofIndex( array, self.dofaxis )
@@ -2004,7 +1847,7 @@ class Multiply( ArrayFunc ):
     if self.funcs[1].shape == ():
       return self.funcs[0].det( ax1, ax2 ) * self.funcs[1]
 
-    return self.__class__.__base__.det( self, ax1, ax2 )
+    return ArrayFunc.det( self, ax1, ax2 )
 
   def prod( self ):
     'product'
@@ -2184,8 +2027,8 @@ class Dot( ArrayFunc ):
   def concatenate( self, other, axis ):
     'concatenate'
 
-    if not isinstance( other, self.__class__ ):
-      return self.__class__.__base__.concatenate( self, other, axis )
+    if not isinstance( other, Dot ):
+      return ArrayFunc.concatenate( self, other, axis )
 
     offset = sum( ax <= axis for ax in self.axes )
     if self.func1 == other.func1 and self.func1.shape[axis] == 1:
@@ -2197,7 +2040,7 @@ class Dot( ArrayFunc ):
     if self.func2 == other.func2 and self.func2.shape[axis] == 1:
       return ( self.func2 * self.func1.concatenate( other.func1, axis+offset ) ).sum( self.axes )
 
-    return self.__class__.__base__.concatenate( self, other, axis )
+    return ArrayFunc.concatenate( self, other, axis )
 
   @check_localgradient
   def localgradient( self, ndims ):
@@ -2241,7 +2084,7 @@ class Sum( ArrayFunc ):
     shape = list(func.shape)
     for ax in reversed(self.axes):
       shape.pop(ax)
-    self.__class__.__base__.__init__( self, args=[func,negaxes], evalf=self.dosum, shape=shape )
+    ArrayFunc.__init__( self, args=[func,negaxes], evalf=self.dosum, shape=shape )
 
   @staticmethod
   def dosum( arr, axes ):
@@ -2277,7 +2120,7 @@ class Debug( ArrayFunc ):
 
     self.func = func
     self.show = show
-    self.__class__.__base__.__init__( self, args=[func,show], evalf=self.debug, shape=func.shape )
+    ArrayFunc.__init__( self, args=[func,show], evalf=self.debug, shape=func.shape )
 
   @staticmethod
   def debug( arr, show ):
@@ -2416,73 +2259,21 @@ class TakeDiag( ArrayFunc ):
     shape.append( n )
     ArrayFunc.__init__( self, args=[func,ax1-func.ndim,ax2-func.ndim], evalf=util.takediag, shape=shape )
 
-class Kronecker( ArrayFunc ):
-  'kronecker'
+#class Tanh( ArrayFunc ):
+#  'hyperbolic tangent'
+#
+#  eval = staticmethod( numpy.tanh )
+#
+#  def localgradient( self, ndims ):
+#    'gradient'
+#
+#    return (-Tanh( self.args[0] )**2 + 1.) * self.args[0].localgradient(ndims)
 
-  def __init__( self, func, axis, length, pos ):
-    'constructor'
+def Tanh( x ):
 
-    assert 0 <= pos < length
-    self.func = func
-    self.axis, = normdim( func.ndim+1, [axis] )
-    self.length = length
-    self.pos = pos
-    shape = list(func.shape)
-    shape.insert(axis,length)
-    ArrayFunc.__init__( self, args=[func,self.axis-func.ndim,length,pos], evalf=self.kronecker, shape=shape )
+  return 1 - 2 / ( Exp( 2 * x ) + 1 )
 
-  def insert( self, axes ):
-    'insert'
-
-    i, = normdim( self.ndim, axes ) # TODO fix for multiple axes
-    axis = self.axis
-    if i <= self.axis:
-      axis += 1
-    return Kronecker( self.func.insert([i]), axis, self.length, self.pos )
-
-  def align( self, axes, ndim ):
-    'align'
-
-    raise NotImplementedError
-    assert len(axes) == self.ndim
-    axis = axes[self.axis]
-    trans = [ ax - (ax>self.axis) for ax in axes if ax != self.axis ]
-    print 'ALIGN', axes, self.axis, '->', trans
-    print trans, self.ndim-1
-    print 'ndim', self.ndim
-    return Kronecker( self.func.align(trans,self.ndim-1), axis, self.length, self.pos )
-
-  def __mul__( self, other ):
-    'multiply'
-
-    raise NotImplementedError
-    shape, (func1,func2) = util.align_arrays( self, other )
-    assert isinstance( func1, Kronecker )
-    return Kronecker( func1.func * func2.get(self.axis,self.pos), self.axis, self.length, self.pos )
-
-  def sum( self, axes=-1 ):
-    'sum'
-
-    axes = normdim( self.ndim, axes if isiterable(axes) else [axes] )
-
-    if self.axis not in axes:
-      return self.__class__.__base__.sum( self, axes )
-
-    axes = [ ax if ax <= axes else ax-1 for ax in axes if ax != self.axis ]
-    return self.func.sum( axes )
-
-  @staticmethod
-  def kronecker( func, axis, length, pos ):
-    'kronecker'
-
-    shape = list(func.shape)
-    axis += len(shape)
-    shape.insert(axis,length)
-    array = numpy.zeros( shape, dtype=float )
-    s = [slice(None)]*array.ndim
-    s[axis] = pos
-    array[tuple(s)] = func
-    return array
+# AUXILIARY OBJECTS
 
 class Diagonalize( ArrayFunc ):
   'diagonal matrix'
@@ -2498,7 +2289,7 @@ class Diagonalize( ArrayFunc ):
     n = shape.pop()
     shape = shape[:ax1] + [n] + shape[ax1:ax2-1] + [n] + shape[ax2-1:] # shape[ax1] = shape[ax2] = func.shape[-1]
     self.func = func
-    self.__class__.__base__.__init__( self, args=[func,ax1-(func.ndim+1),ax2-(func.ndim+1)], evalf=self.diagonalize, shape=shape )
+    ArrayFunc.__init__( self, args=[func,ax1-(func.ndim+1),ax2-(func.ndim+1)], evalf=self.diagonalize, shape=shape )
 
   @staticmethod
   def diagonalize( data, ax1, ax2 ):
@@ -2539,7 +2330,7 @@ class Diagonalize( ArrayFunc ):
     if normdim( self.ndim, axes ) == self.toaxes:
       return Diagonalize( self.func.reciprocal(), self.toaxes )
 
-    return self.__class__.__base__.inv( self, *axes )
+    return ArrayFunc.inv( self, *axes )
 
   def det( self, *axes ):
     'determinant'
@@ -2548,7 +2339,7 @@ class Diagonalize( ArrayFunc ):
     if axes == self.toaxes:
       return self.func.prod()
 
-    return self.__class__.__base__.det( self, *axes )
+    return ArrayFunc.det( self, *axes )
 
   def __mul__( self, other ):
     'multiply'
@@ -2576,7 +2367,7 @@ class Diagonalize( ArrayFunc ):
       sumax = self.toaxes[1]
       otherax = self.toaxes[0]
     else:
-      return self.__class__.__base__.sum( self, axes )
+      return ArrayFunc.sum( self, axes )
 
     trans = range(otherax) + range(otherax+1,self.ndim-1) + [otherax]
     remaining = [ ax if ax < sumax else ax-1 for ax in axes if ax != sumax ]
@@ -2592,19 +2383,193 @@ class Diagonalize( ArrayFunc ):
     axes = [ ax - (ax>toaxes[0]) - (ax>toaxes[1]) for ax in axes if ax not in toaxes ] + [ ndim-2 ]
     return Diagonalize( self.func.align( axes, ndim-1 ), toaxes )
 
-#class Tanh( ArrayFunc ):
-#  'hyperbolic tangent'
-#
-#  eval = staticmethod( numpy.tanh )
-#
-#  def localgradient( self, ndims ):
-#    'gradient'
-#
-#    return (-Tanh( self.args[0] )**2 + 1.) * self.args[0].localgradient(ndims)
+  def __graphviz__( self ):
+    'graphviz representation'
 
-def Tanh( x ):
+    prop = ArrayFunc.__graphviz__( self )
+    prop.update( graphviz_warn )
+    return prop
 
-  return 1 - 2 / ( Exp( 2 * x ) + 1 )
+class Kronecker( ArrayFunc ):
+  'kronecker'
+
+  mul_priority = 9
+
+  def __init__( self, func, axis, length, pos ):
+    'constructor'
+
+    assert 0 <= pos < length
+    self.func = func
+    self.axis, = normdim( func.ndim+1, [axis] )
+    self.length = length
+    self.pos = pos
+    shape = list(func.shape)
+    shape.insert(axis,length)
+    ArrayFunc.__init__( self, args=[func,self.axis-func.ndim,length,pos], evalf=self.kronecker, shape=shape )
+
+  def insert( self, axes ):
+    'insert'
+
+    i, = normdim( self.ndim, axes ) # TODO fix for multiple axes
+    axis = self.axis
+    if i <= self.axis:
+      axis += 1
+    return Kronecker( self.func.insert([i]), axis, self.length, self.pos )
+
+  def __mul__( self, other ):
+    'multiply'
+
+    return Kronecker( self.func * other.get(self.axis,self.pos), self.axis, self.length, self.pos )
+
+  def sum( self, axes=-1 ):
+    'sum'
+
+    axes = normdim( self.ndim, axes if isiterable(axes) else [axes] )
+
+    if self.axis not in axes:
+      return ArrayFunc.sum( self, axes )
+
+    axes = [ ax if ax <= axes else ax-1 for ax in axes if ax != self.axis ]
+    return self.func.sum( axes )
+
+# def align( self, axes, ndim ):
+#   'align'
+
+#   assert len(axes) == self.ndim
+#   axis = axes[self.axis]
+#   trans = [ ax - (ax>self.axis) for ax in axes if ax != self.axis ]
+#   print 'ALIGN', axes, self.axis, '->', trans
+#   print trans, self.ndim-1
+#   print 'ndim', self.ndim
+#   return Kronecker( self.func.align(trans,self.ndim-1), axis, self.length, self.pos )
+
+# def __mul__( self, other ):
+#   'multiply'
+
+#   shape, (func1,func2) = util.align_arrays( self, other )
+#   assert isinstance( func1, Kronecker )
+#   return Kronecker( func1.func * func2.get(self.axis,self.pos), self.axis, self.length, self.pos )
+
+  @staticmethod
+  def kronecker( func, axis, length, pos ):
+    'kronecker'
+
+    shape = list(func.shape)
+    axis += len(shape)
+    shape.insert(axis,length)
+    array = numpy.zeros( shape, dtype=float )
+    s = [slice(None)]*array.ndim
+    s[axis] = pos
+    array[tuple(s)] = func
+    return array
+
+  def __graphviz__( self ):
+    'graphviz representation'
+
+    prop = ArrayFunc.__graphviz__( self )
+    prop.update( graphviz_warn )
+    return prop
+
+class Expand( ArrayFunc ):
+  'singleton expand'
+
+  mul_priority = 9
+
+  def __init__( self, func, shape ):
+    'constructor'
+
+    assert shape
+    shape = tuple(shape)
+    self.func = func
+    assert func.ndim == len(shape)
+    for sh1, sh2 in zip( func.shape, shape ):
+      assert sh1 in (sh2,1)
+    ArrayFunc.__init__( self, args=(func,)+shape, evalf=self.doexpand, shape=shape )
+
+  def __nonzero__( self ):
+    'nonzero'
+
+    return self.func.__nonzero__()
+
+  def get( self, i, item ):
+    'get'
+
+    i, = normdim( self.ndim, [i] )
+    shape = list(self.shape)
+    sh = shape.pop(i)
+    if sh == 1:
+      assert isinstance( sh, int ) and 0 <= item < sh, 'item out of range'
+      item = 0
+    return self.func.get( i, item ).expand( shape )
+
+  @staticmethod
+  def doexpand( arr, *shape ):
+    'expand'
+
+    expanded = numpy.empty( arr.shape[:arr.ndim-len(shape)] + tuple( sh if isinstance(sh,int) else len(sh) for sh in shape ) )
+    expanded[:] = arr
+    return expanded
+
+  def sum( self, axes=-1 ):
+    'sum'
+
+    axes = normdim( self.ndim, axes if isiterable(axes) else [axes] )
+    func = self.func
+    if not func:
+      return func.sum( axes )
+    factor = 1
+    for ax in reversed(axes):
+      if func.shape[ax] == 1:
+        func = func.get( ax, 0 )
+        factor *= self.shape[ax]
+      else:
+        func = func.sum( [ax] )
+    return func * factor
+
+  def prod( self ):
+    'prod'
+
+    if self.func.shape[-1] != 1:
+      return self.func.prod().expand( self.shape[:-1] )
+
+    return self.func.get( -1, 0 )**self.shape[-1]
+
+  def reciprocal( self ):
+    'reciprocal'
+
+    return self.func.reciprocal().expand( self.shape )
+
+  def __add__( self, other ):
+    'multiply'
+
+    add = self.func + other
+    shape = add.shape[:-self.ndim] + tuple( sh2 if sh1 == 1 else sh1 for sh1, sh2 in zip( add.shape[-self.ndim:], self.shape ) )
+    return add.expand( shape )
+
+  def __mul__( self, other ):
+    'multiply'
+
+    mul = self.func * other
+    shape = mul.shape[:-self.ndim] + tuple( sh2 if sh1 == 1 else sh1 for sh1, sh2 in zip( mul.shape[-self.ndim:], self.shape ) )
+    return mul.expand( shape )
+
+  def align( self, axes, ndim ):
+    'align'
+
+    shape = [ 1 ] * ndim
+    assert all( 0 <= ax < ndim for ax in axes )
+    for src, dst in enumerate(axes):
+      shape[dst] = self.shape[src]
+    return Expand( self.func.align(axes,ndim), shape )
+
+  def __graphviz__( self ):
+    'graphviz representation'
+
+    prop = ArrayFunc.__graphviz__( self )
+    prop.update( graphviz_warn )
+    return prop
+
+
 
 # def find( self, x, title=False ):
 #   'find physical coordinates in all elements'

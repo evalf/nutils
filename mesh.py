@@ -218,8 +218,8 @@ def gmesh( path, btags=[] ):
     for tag in tags:
       bgroups.setdefault( tag, [] ).append( belem )
 
-  shape = function.DofAxis(nNodes,nmap),
-  linearfunc = function.Function( shape=shape, mapping=fmap )
+  dofaxis = function.DofAxis(nNodes,nmap)
+  linearfunc = function.Function( dofaxis=dofaxis, stdmap=fmap )
   namedfuncs = { 'spline2': linearfunc }
   topo = topology.UnstructuredTopology( elements, ndims=2, namedfuncs=namedfuncs )
   topo.boundary = topology.UnstructuredTopology( belements, ndims=1 )
@@ -242,9 +242,9 @@ def triangulation( nodes, nnodes ):
       except KeyError:
         bedges[ (n1,n2) ] = elem, iedge
 
-  shape = function.DofAxis( nnodes, nmap ),
+  dofaxis = function.DofAxis( nnodes, nmap )
   stdelem = element.PolyTriangle( 1 )
-  linearfunc = function.Function( shape=shape, mapping=dict.fromkeys(nmap,stdelem) )
+  linearfunc = function.Function( dofaxis=dofaxis, stdmap=dict.fromkeys(nmap,stdelem) )
   namedfuncs = { 'spline2': linearfunc }
 
   connectivity = dict( bedges.iterkeys() )
