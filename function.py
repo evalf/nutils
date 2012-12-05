@@ -277,9 +277,9 @@ class Evaluable( object ):
       values.append( retval )
     return values[-1]
 
-  def __graphviz__( self ):
-    'graphviz representation'
-
+  def argnames( self ):
+    'function argument names'
+  
     import inspect
     try:
       argnames, varargs, keywords, defaults = inspect.getargspec( self.__evalf )
@@ -287,8 +287,13 @@ class Evaluable( object ):
       argnames = [ '%%%d' % n for n in range(len(self.__args)) ]
     else:
       for n in range( len(self.__args) - len(argnames) ):
-        argnames.append( '%s[%d]' % ( varargs or '*', n ) )
-    args = [ '%s=%s' % ( argname, obj2str(arg) ) for argname, arg in zip( argnames, self.__args ) if not isinstance(arg,Evaluable) ]
+        argnames.append( '%s[%d]' % (varargs,n) )
+    return argnames
+
+  def __graphviz__( self ):
+    'graphviz representation'
+
+    args = [ '%s=%s' % ( argname, obj2str(arg) ) for argname, arg in zip( self.argnames(), self.__args ) if not isinstance(arg,Evaluable) ]
     label = self.__class__.__name__
     return { 'label': r'\n'.join( [ label ] + args ) }
 
@@ -316,17 +321,10 @@ class Evaluable( object ):
 
     for i, (op,indices) in enumerate( self.operations ):
 
-      try:
-        code = op.__evalf.func_code
-        argnames = code.co_varnames[ :min(code.co_argcount,len(indices)) ]
-      except:
-        argnames = ()
-      argnames += tuple( '%%%d' % n for n in range( len(indices) - len(argnames) ) )
-
       node = op.__graphviz__()
       node['label'] = '%d. %s' % ( i, node.get('label','') )
       print >> dot.stdin, '%d [%s]' % ( i, ' '.join( '%s="%s"' % item for item in node.iteritems() ) )
-
+      argnames = op.argnames()
       for n, idx in enumerate( indices ):
         if idx >= 0:
           print >> dot.stdin, '%d -> %d [label="%s"];' % ( idx, i, argnames[n] );
