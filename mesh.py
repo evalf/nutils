@@ -68,9 +68,12 @@ class UniformFunc( function.ArrayFunc ):
   def localgradient( self, ndims ):
     'local gradient'
 
-    scale = function.StaticArray(self.scale)
-    if not scale - scale[0]:
-      scale = function.Expand( scale[:1], scale.shape )
+    if isinstance( self.scale, function.ArrayFunc ):
+      scale = self.scale
+    else:
+      scale = function.StaticArray(self.scale)
+      if not scale - scale[0]:
+        scale = function.Expand( scale[:1], scale.shape )
     A = function.Diagonalize( scale, toaxes=(0,1) )
     T = Transform( ndims, self.offsetmap, self.ndims )
     return A * T if not T.shape \
@@ -95,7 +98,7 @@ def rectilinear( nodes, periodic=() ):
     elem = elem_index[0]
     index = elem_index[1:]
     if uniform:
-      offset0 = scale * index
+      offset0 = scale * index + [ a for (a,b,n) in nodes ]
     else:
       offset0 = numpy.array([ n[i  ] for n, i in zip( nodes, index ) ])
       offset1 = numpy.array([ n[i+1] for n, i in zip( nodes, index ) ])

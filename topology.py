@@ -144,7 +144,7 @@ class Topology( set ):
           if inside.all():
             newelems.append( elem )
           elif inside.any():
-            nextelempool.extend( elem.refined(2) )
+            nextelempool.extend( elem.children )
         elempool = nextelempool
       # TODO select >50% overlapping elements from elempool
       newelems.extend( elempool )

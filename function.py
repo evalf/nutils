@@ -280,12 +280,14 @@ class Evaluable( object ):
   def __graphviz__( self ):
     'graphviz representation'
 
+    import inspect
     try:
-      code = self.__evalf.func_code
-      argnames = code.co_varnames[ :min(code.co_argcount,len(self.__args)) ]
+      argnames, varargs, keywords, defaults = inspect.getargspec( self.__evalf )
     except:
-      argnames = ()
-    argnames += tuple( '%%%d' % n for n in range( len(self.__args) - len(argnames) ) )
+      argnames = [ '%%%d' % n for n in range(len(self.__args)) ]
+    else:
+      for n in range( len(self.__args) - len(argnames) ):
+        argnames.append( '%s[%d]' % ( varargs or '*', n ) )
     args = [ '%s=%s' % ( argname, obj2str(arg) ) for argname, arg in zip( argnames, self.__args ) if not isinstance(arg,Evaluable) ]
     label = self.__class__.__name__
     return { 'label': r'\n'.join( [ label ] + args ) }
