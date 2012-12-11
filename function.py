@@ -1,13 +1,11 @@
 from . import util, element, numpy, _
 
-# CHECKS
-
 def check_localgradient( localgradient ):
   def localgradient_wrapper( func, ndims ):
     lgrad = localgradient( func, ndims )
     assert lgrad.ndim == func.ndim + 1 \
        and all( sh2 in (sh1,1) for sh1, sh2 in zip( func.shape + (ndims,), lgrad.shape ) ), \
-        'bug found in localgradient: %s -> %s' % ( func.shape, lgrad.shape )
+        'bug found in localgradient(%d): %s -> %s' % ( ndims, func.shape, lgrad.shape )
     return lgrad
   return localgradient_wrapper
 
@@ -24,8 +22,6 @@ def combined_shape( *shapes ):
       else:
         assert sh in ( combshape[i], 1 )
   return tuple(combshape)
-
-# END CHECKS
 
 def isiterable( obj ):
   try:
@@ -47,10 +43,8 @@ def obj2str( obj ):
     if len(obj) < 4:
       return '(%s)' % ','.join( obj2str(o) for o in obj )
     return '(#%d)' % len(obj)
-  if isinstance( obj, dict ):
+  if obj.__class__ == dict:
     return '{#%d}@%x' % ( len(obj), id(obj) )
-  if isinstance( obj, DofAxis ):
-    return '$'
   if isinstance( obj, slice ):
     I = ''
     if obj.start is not None:
@@ -579,12 +573,10 @@ class ArrayFunc( Evaluable ):
 
     #return Sum( self, axes )
 
-  def normalized( self, axis=-1 ):
-    'normalize dimension'
+  def normalized( self ):
+    'normalize last axis'
 
-    reshape = [ slice(None) ] * len(self.shape)
-    reshape[axis] = _
-    return self / self.norm2( axis )[ tuple(reshape) ]
+    return self / self.norm2( -1 )
 
   def normal( self, ndims=-1 ):
     'normal'
@@ -609,7 +601,7 @@ class ArrayFunc( Evaluable ):
       return StaticArray( 1 ) # TODO fix direction!!!!
     else:
       raise NotImplementedError, 'cannot compute normal for %dx%d jacobian' % ( self.shape[0], ndims )
-    return normal.normalized(0)
+    return normal.normalized()
 
   def iweights( self, ndims ):
     'integration weights for [ndims] topology'
@@ -629,10 +621,10 @@ class ArrayFunc( Evaluable ):
       raise NotImplementedError, 'cannot compute determinant for %dx%d jacobian' % J.shape[:2]
     return detJ * IWeights()
 
-  def indices( self ):
-    'get indices for numpy array'
+# def indices( self ):
+#   'get indices for numpy array'
 
-    return Tuple( sh if isinstance(sh,DofAxis) else slice(None) for sh in self.shape )
+#   return Tuple( sh if isinstance(sh,DofAxis) else slice(None) for sh in self.shape )
 
   def curvature( self, ndims=-1 ):
     'curvature'
@@ -689,7 +681,7 @@ class ArrayFunc( Evaluable ):
   def grad( self, coords, ndims=0 ):
     'gradient'
 
-    assert len(coords.shape) == 1
+    assert coords.ndim == 1
     if ndims <= 0:
       ndims += coords.shape[0]
     J = coords.localgradient( ndims )
@@ -890,7 +882,7 @@ class ArrayFunc( Evaluable ):
     'graphviz representation'
 
     prop = Evaluable.__graphviz__( self )
-    prop['label'] += r'\n[%s]' % ','.join( '$' if isinstance(ax,DofAxis) else str(ax) for ax in self.shape )
+    prop['label'] += r'\n[%s]' % ','.join( map(str,map(int,self.shape)) )
     return prop
 
 class Align( ArrayFunc ):
@@ -1133,7 +1125,7 @@ class OffsetWrapper( ArrayFunc ):
     self.__dict__.update( func.__dict__ )
     self.func = func
     self.offset = offset
-    self.shape = (func.shape[0].transform(ndofs=ndofs,shift=offset),) + func.shape[1:]
+    self.shape = ( ShiftDof(func.shape[0],offset), ) + func.shape[1:]
 
   @check_localgradient
   def localgradient( self, ndims ):
@@ -1171,138 +1163,95 @@ class Orientation( ArrayFunc ):
     elem, transform = elem.parent
     return ( transform.offset > .5 ) * 2 - 1
 
-class Const( float ): # for select
-  def eval( self, points ):
-    return numpy.array(self)[...,_]
+class Transform( ArrayFunc ):
+  'transform'
 
-def const( *args ):
-  'select by topology'
+  def __init__( self, fromdims, todims ):
+    'constructor'
 
-  assert len(args)%2 == 0
-  mapping = {}
-  for topo, val in zip( args[::2], args[1::2] ):
-    mapping.update( dict.fromkeys( topo, Const(val) ) )
-  return Function( shape=(), mapping=mapping )
+    assert fromdims > todims
+    ArrayFunc.__init__( self, args=[ELEM,fromdims,todims], evalf=self.transforms, shape=(fromdims,todims) )
+
+  @staticmethod
+  def transforms( elem, fromdims, todims ):
+    'transforms'
+
+    assert elem.ndims <= todims
+    while elem.ndims < todims:
+      elem, transform = elem.context
+
+    elem, transform = elem.context
+    T = transform.transform
+    while elem.ndims < fromdims:
+      elem, transform = elem.context
+      T = numpy.dot( T, transform.transform )
+
+    return T
 
 class Function( ArrayFunc ):
-  'function'
+  'local gradient'
 
-  def __init__( self, dofaxis, stdmap ):
+  def __init__( self, dofaxis, stdmap, ngrad ):
     'constructor'
 
     self.dofaxis = dofaxis
     self.stdmap = stdmap
-    topoelems = set(dofaxis.mapping)
-    ArrayFunc.__init__( self, args=[ELEM,POINTS,stdmap,topoelems], evalf=self.hierarchicfunction, shape=[dofaxis] )
+    self.ngrad = ngrad
+    ArrayFunc.__init__( self, args=(ELEM,POINTS,stdmap,ngrad), evalf=self.function, shape=(dofaxis,)+(stdmap.ndims,)*ngrad )
+
+  def localgradient( self, ndims ):
+    'local gradient'
+
+    assert ndims <= self.stdmap.ndims
+    grad = Function( self.dofaxis, self.stdmap, self.ngrad+1 )
+    return grad if ndims == self.stdmap.ndims \
+      else ( grad[...,_] * Transform( ndims, self.stdmap.ndims ) ).sum( -2 )
 
   @staticmethod
-  def hierarchicfunction( elem, points, stdmap, topoelems ):
+  def function( elem, points, stdmap, ngrad ):
     'evaluate'
 
-    ##############################################
-    # Cascade until the element is in topoelems  #
-    ##############################################
-
-    while elem not in topoelems:
-      elem, transform = elem.parent
+    while elem.ndims < stdmap.ndims:
+      elem, transform = elem.context
       points = transform.eval( points )
 
-    ##############################################
-    # Assemble all evaluation points             #
-    ##############################################
-
     allfvals = []
+    T = 1
 
     while True:
-      
-      std = stdmap[elem]
+      std = stdmap.get(elem)
       if std:
         if isinstance( std, tuple ):
           std, keep = std
+          F = std.eval(points,grad=ngrad)[(Ellipsis,keep)+(slice(None),)*ngrad]
         else:
-          keep = slice(None)
-        allfvals.append( std.eval(points)[...,keep] )
-
+          F = std.eval(points,grad=ngrad)
+        if ngrad > 0 and T is not 1:
+          if T.ndim == 0:
+            scale = T**ngrad
+          else:
+            assert T.ndim == 1
+            scale = T
+            for i in range(ngrad-1):
+              scale = scale[:,_] * T
+          F = F * scale
+        if not stdmap.overlap:
+          return F
+        allfvals.append( F )
       if not elem.parent:
         break
-
-      ############################################
-      # Cascade until all levels are covered     #
-      ############################################
-
       elem, transform = elem.parent
-      if elem not in stdmap:
-        break
-
       points = transform.eval( points )
+      T *= transform.transform
 
-    return numpy.concatenate( allfvals, axis=1 )
+    assert allfvals
+    return allfvals[0] if len(allfvals) == 1 \
+      else numpy.concatenate( allfvals, axis=1 )
 
   def vector( self, ndims ):
     'vectorize'
 
     return Vectorize( [self]*ndims )
-
-  def localgradient( self, ndims ):
-    'local derivative'
-
-    return LocalGradient( self.dofaxis, self.stdmap, ndims, level=1 )
-
-class LocalGradient( ArrayFunc ):
-  'local gradient'
-
-  def __init__( self, dofaxis, stdmap, ndims, level ):
-    'constructor'
-
-    self.ndims = ndims
-    self.dofaxis = dofaxis
-    self.stdmap = stdmap
-    self.level = level
-    topoelems = set(dofaxis.mapping)
-    ArrayFunc.__init__( self, args=(ELEM,POINTS,stdmap,topoelems,ndims,level), evalf=self.lgrad, shape=(dofaxis,)+(ndims,)*level )
-
-  def localgradient( self, ndims ):
-    'local gradient'
-
-    assert ndims == self.ndims
-    return LocalGradient( self.dofaxis, self.stdmap, ndims, self.level+1 )
-
-  @staticmethod
-  def lgrad( elem, points, stdmap, topoelems, ndims, level ):
-    'evaluate'
-
-    assert elem.ndims <= ndims
-    while elem.ndims != ndims:
-      elem, transform = elem.parent
-      points = transform.eval( points )
-
-    T = 1
-    while elem not in topoelems:
-      elem, transform = elem.parent
-      points = transform.eval( points )
-      T = numpy.dot( T, transform.transform )
-
-    allgrads = []
-    while True:
-      std = stdmap[elem]
-      if std:
-        if isinstance( std, tuple ):
-          std, keep = std
-        else:
-          keep = slice(None)
-        F = std.eval(points,grad=level)[(Ellipsis,keep)+(slice(None),)*level]
-        for axis in range( -level, 0 ):
-          F = util.transform( F, T, axis=axis )
-        allgrads.append( F )
-      if not elem.parent:
-        break
-      elem, transform = elem.parent
-      if elem not in stdmap:
-        break
-      points = transform.eval( points )
-      T = numpy.dot( T, transform.transform )
-
-    return numpy.concatenate( allgrads, axis=1 )
 
 class Choose( ArrayFunc ):
   'piecewise function'
@@ -1378,101 +1327,91 @@ class Inverse( ArrayFunc ):
     I = ( self[...,_,_].swapaxes(ax2,-1) * H[...,_].swapaxes(ax1,-1) ).sum()
     return -I
 
-class TrivialAxis( object ):
-  'trivial axis'
-
-  def __init__( self, end, beg=0 ):
-    'new'
-
-    self.beg = beg
-    self.end = end
-
-  def transform( self, ndofs, shift ):
-    'shift numbering and widen axis'
-
-    return TrivialAxis( ndofs, mapping )
-
-  @staticmethod
-  def eval( xi, idxmap ):
-    'evaluate'
-
-    index = idxmap.get( xi.elem )
-    while index is None:
-      xi = xi.next
-      index = idxmap.get( xi.elem )
-    return index
-
 class DofAxis( Evaluable ):
-  'dof axis'
+  'dofaxis'
 
-  def __init__( self, stop, mapping, start=0 ):
-    'new'
+  def __init__( self, args, evalf, dofrange ):
+    'constructor'
 
-    self.start = start
-    self.stop = stop
-    self.mapping = mapping
-    Evaluable.__init__( self, args=(ELEM,mapping), evalf=self.dofaxis )
-
-  def transform( self, ndofs, shift ):
-    'shift numbering and widen axis'
-
-    mapping = dict( (elem,idx+shift) for elem, idx in self.mapping.iteritems() )
-    return DofAxis( ndofs, mapping )
-
-  @staticmethod
-  def dofaxis( elem, idxmap ):
-    'evaluate'
-
-    index = idxmap.get( elem )
-    while index is None:
-      elem, transform = elem.parent
-      index = idxmap.get( elem )
-    return index
+    self.start, self.stop = dofrange
+    Evaluable.__init__( self, args=args, evalf=evalf )
 
   def __int__( self ):
     'integer'
 
-    return int(self.stop)
-
-  def __eq__( self, other ):
-    'equals'
-
-    if self is other:
-      return True
-
-    if not isinstance( other, DofAxis ):
-      return False
-      
-    if set(self.mapping) != set(other.mapping):
-      return False
-
-    for elem in self.mapping:
-      if list(self.mapping[elem]) != list(other.mapping[elem]):
-        return False
-
-    return True
-
-  def __add__( self, other ):
-    'add'
-
-    if other == 0:
-      return self
-
-    assert isinstance( other, DofAxis )
-
-    assert other.start == 0
-    mapping = self.mapping.copy()
-    ndofs = self.stop - self.start
-    for elem, idx2 in other.mapping.iteritems():
-      idx1 = mapping.get( elem )
-      mapping[ elem ] = idx2 + ndofs if idx1 is None \
-                   else numpy.hstack([ idx1, idx2 + ndofs ])
-    return DofAxis( start=self.start, stop=self.stop+other.stop, mapping=mapping )
+    return int(self.stop - self.start)
 
   def __repr__( self ):
     'string representation'
 
-    return 'DofAxis(%d-%d)' % ( self.start, self.stop )
+    return '%s(%d-%d)' % ( self.__class__.__name__, self.start, self.stop )
+
+class ShiftDof( DofAxis ):
+  'shift dofs'
+
+  def __init__( self, dofaxis, shift ):
+    'constructor'
+
+    self.dofaxis = dofaxis
+    DofAxis.__init__( self, args=[dofaxis,shift], evalf=numpy.add, dofrange=(dofaxis.start+shift,dofaxis.stop+shift) )
+
+  def __eq__( self, other ):
+    'equals'
+
+    return isinstance(other,ShiftDof) and self.dofaxis == other.dofaxis
+
+class ConcatDof( DofAxis ):
+  'concatenate dofs'
+
+  def __init__( self, dofaxes ):
+    'constructor'
+
+    self.dofaxes = []
+    ndofs = 0
+    for dofaxis in dofaxes:
+      assert isinstance(dofaxis,DofAxis), 'invalid axis: %r' % dofaxis
+      assert dofaxis.start == 0 # for now
+      self.dofaxes.append( dofaxis if ndofs == 0 else ShiftDof( dofaxis, ndofs ) )
+      ndofs += dofaxis.stop
+    DofAxis.__init__( self, args=self.dofaxes, evalf=self.concatdof, dofrange=(0,ndofs) )
+
+  @staticmethod
+  def concatdof( *dofs ):
+    'concatenate'
+
+    return numpy.concatenate( dofs )
+
+  def __eq__( self, other ):
+    'equals'
+
+    return isinstance(other,ConcatDof) and self.dofaxes == other.dofaxes
+
+class DofMap( DofAxis ):
+  'dof axis'
+
+  def __init__( self, ndofs, dofmap ):
+    'new'
+
+    self.dofmap = dofmap
+    DofAxis.__init__( self, args=(ELEM,dofmap), evalf=self.evalmap, dofrange=(0,ndofs) )
+
+  @staticmethod
+  def evalmap( elem, dofmap ):
+    'evaluate'
+
+    while elem.ndims < dofmap.ndims:
+      elem, dummy = elem.context
+
+    dofs = dofmap.get( elem )
+    while dofs is None:
+      elem, transform = elem.parent
+      dofs = dofmap.get( elem )
+    return dofs
+
+  def __eq__( self, other ):
+    'equals'
+
+    return isinstance(other,DofMap) and self.dofmap is other.dofmap
 
 class Concatenate( ArrayFunc ):
   'concatenate'
@@ -1489,7 +1428,13 @@ class Concatenate( ArrayFunc ):
     self.axis, = normdim( ndim, [axis] )
     for func in funcs[1:]:
       assert numpy.all( shape[:self.axis] == func.shape[:self.axis] ) and numpy.all( shape[self.axis+1:] == func.shape[self.axis+1:] ), '%s != %s' % ( shape, func.shape )
-      shape[self.axis] += func.shape[self.axis]
+    concataxes = [ func.shape[self.axis] for func in funcs ]
+    if all( isinstance(axis,DofAxis) for axis in concataxes ):
+      shape[self.axis] = ConcatDof(concataxes)
+    elif all( isinstance(axis,int) for axis in concataxes ):
+      shape[self.axis] = sum(concataxes)
+    else:
+      raise Exception, 'cannot concatenate axes: %s' % concataxes
     ArrayFunc.__init__( self, args=(self.axis-len(shape),)+self.funcs, evalf=self.concat, shape=shape )
 
   @staticmethod
@@ -1561,7 +1506,7 @@ class Concatenate( ArrayFunc ):
       return ArrayFunc.sum( self, axes )
 
     axes = [ ax if ax < self.axis else ax-1 for ax in axes if ax != self.axis ]
-    return util.sum( f.sum(self.axis) for f in self.funcs ).sum( axes )
+    return util.sum( f.sum(self.axis) if f.shape[self.axis] != 1 else f.get(self.axis,0) for f in self.funcs ).sum( axes )
 
   def concatenate( self, other, axis ):
     'concatenate'
@@ -1591,7 +1536,7 @@ class Vectorize( ArrayFunc ):
     assert all( f.ndim == funcs[0].ndim for f in funcs[1:] )
     shape = (len(funcs),) + funcs[0].shape[1:] # TODO max over all funcs
     self.funcs = funcs
-    shape = ( util.sum( func.shape[0] for func in funcs ), len(funcs) ) + funcs[0].shape[1:]
+    shape = ( ConcatDof([ func.shape[0] for func in funcs ]), len(funcs) ) + funcs[0].shape[1:]
     ArrayFunc.__init__( self, args=[shape[1:]]+funcs, evalf=self.vectorize, shape=shape )
 
   def sum( self, axes=-1 ):

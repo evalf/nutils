@@ -1,5 +1,20 @@
 from . import element, function, util, numpy, parallel, matrix, _
 
+class ElemMap( dict ):
+  'dictionary-like element mapping'
+
+  def __init__( self, mapping, ndims, overlap ):
+    'constructor'
+
+    self.update( mapping )
+    self.ndims = ndims
+    self.overlap = overlap
+
+  def __str__( self ):
+    'string representation'
+
+    return 'ElemMap(#%d,%dD,%s)' % ( len(self), self.ndims, 'ML' if self.overlap else 'SL' )
+
 class Topology( set ):
   'topology base class'
 
@@ -164,7 +179,7 @@ class Topology( set ):
       nexttopo = []
       refined = set() # refined dofs in current refinement level
       for elem in topo: # loop over remaining elements in refinement level 'nrefine'
-        dofs = dofaxis.mapping.get(elem) # dof numbers for current funcsp object
+        dofs = dofaxis.dofmap.get(elem) # dof numbers for current funcsp object
         if dofs is None: # elem is not a top-level element
           parentelems.append( elem ) # elem is a parent
           nexttopo.extend( elem.children ) # examine children in next iteration
@@ -197,7 +212,7 @@ class Topology( set ):
       supported = numpy.ones( int(dofaxis), dtype=bool ) # True if dof is contained in topoelems or parentelems
       touchtopo = numpy.zeros( int(dofaxis), dtype=bool ) # True if dof touches at least one topoelem
       myelems = [] # all top-level or parent elements in level irefine
-      for elem, idofs in dofaxis.mapping.iteritems():
+      for elem, idofs in dofaxis.dofmap.iteritems():
         if elem in topoelems:
           touchtopo[idofs] = True
           myelems.append( elem )
@@ -207,13 +222,18 @@ class Topology( set ):
           supported[idofs] = False
   
       keep = numpy.logical_and( supported, touchtopo ) # THE refinement law
+      if keep.all() and irefine == nrefine - 1:
+        return topo, funcsp
   
       for elem in myelems: # loop over all top-level or parent elements in level irefine
-        idofs = dofaxis.mapping[elem] # local dof numbers
+        idofs = dofaxis.dofmap[elem] # local dof numbers
         mykeep = keep[idofs]
         std = funcsp.stdmap[elem]
         assert isinstance(std,element.StdElem)
-        stdmap[elem] = std if mykeep.all() else (std,mykeep) if mykeep.any() else None # use all/some/no shapes from this level
+        if mykeep.all():
+          stdmap[elem] = std # use all shapes from this level
+        elif mykeep.any():
+          stdmap[elem] = std, mykeep # use some shapes from this level
         newdofs = [ ndofs + keep[:idof].sum() for idof in idofs if keep[idof] ] # new dof numbers
         if elem.parent:
           pelem, transform = elem.parent
@@ -226,8 +246,8 @@ class Topology( set ):
     for elem in parentelems:
       del dofmap[elem] # remove auxiliary elements
   
-    dofaxis = function.DofAxis( ndofs, dofmap )
-    funcsp = function.Function( dofaxis, stdmap )
+    dofaxis = function.DofMap( ndofs, ElemMap(dofmap,self.ndims,overlap=False) )
+    funcsp = function.Function( dofaxis=dofaxis, stdmap=ElemMap(stdmap,self.ndims,overlap=True), ngrad=0 )
     domain = UnstructuredTopology( topoelems, ndims=self.ndims )
   
     return domain, funcsp
@@ -332,16 +352,16 @@ class StructuredTopology( Topology ):
       dofcount *= nd
       slices.append( [ slice(i,i+p) for i in range(n) ] )
 
-    indexmap = {}
+    dofmap = {}
     for item in numpy.broadcast( self.structure, *numpy.ix_(*slices) ):
       elem = item[0]
       S = item[1:]
-      indexmap[ elem ] = nodes_structure[S].ravel()
+      dofmap[ elem ] = nodes_structure[S].ravel()
 
-    dofaxis = function.DofAxis( dofcount, indexmap )
+    dofaxis = function.DofMap( dofcount, ElemMap(dofmap,self.ndims,overlap=False) )
     funcmap = dict( numpy.broadcast( self.structure, stdelems ) )
 
-    return function.Function( dofaxis=dofaxis, stdmap=funcmap )
+    return function.Function( dofaxis=dofaxis, stdmap=ElemMap(funcmap,self.ndims,overlap=False), ngrad=0 )
 
   def linearfunc( self ):
     'linears'
@@ -500,32 +520,33 @@ class UnstructuredTopology( Topology ):
 
     elements = []
     for elem in self:
-      nodedofs = dofaxis(elem,None)
-      edgedofs = []
-      for i in range(3):
-        j = (i+1)%3
-        try:
-          edgedof = edges.pop(( nodedofs[i], nodedofs[j] ))
-        except KeyError:
-          edgedof = edges[( nodedofs[j], nodedofs[i] )] = ndofs
-          ndofs += 1
-        edgedofs.append( edgedof )
       children = list( elem.children )
       elements.extend( children )
-
-      nmap[ children[0] ] = numpy.array([ edgedofs[2], edgedofs[1], nodedofs[2] ])
-      nmap[ children[1] ] = numpy.array([ edgedofs[0], nodedofs[1], edgedofs[1] ])
-      nmap[ children[2] ] = numpy.array([ nodedofs[0], edgedofs[0], edgedofs[2] ])
-      nmap[ children[3] ] = numpy.array([ edgedofs[1], edgedofs[2], edgedofs[0] ])
+      nodedofs = dofaxis(elem,None)
+      edgedofs = []
+      if isinstance( elem, element.TriangularElement ):
+        for i in range(3):
+          j = (i+1)%3
+          try:
+            edgedof = edges.pop(( nodedofs[i], nodedofs[j] ))
+          except KeyError:
+            edgedof = edges[( nodedofs[j], nodedofs[i] )] = ndofs
+            ndofs += 1
+          edgedofs.append( edgedof )
+        nmap[ children[0] ] = numpy.array([ edgedofs[2], edgedofs[1], nodedofs[2] ])
+        nmap[ children[1] ] = numpy.array([ edgedofs[0], nodedofs[1], edgedofs[1] ])
+        nmap[ children[2] ] = numpy.array([ nodedofs[0], edgedofs[0], edgedofs[2] ])
+        nmap[ children[3] ] = numpy.array([ edgedofs[1], edgedofs[2], edgedofs[0] ])
+      else:
+        raise NotImplementedError
 
     #print 'boundary:', edges
 
-    dofaxis = function.DofAxis(ndofs,nmap)
+    dofaxis = function.DofMap( ndofs, ElemMap(nmap,self.ndims,overlap=False) )
     fmap = dict.fromkeys( elements, element.PolyTriangle(1) )
-    linearfunc = function.Function( dofaxis=dofaxis, stdmap=fmap )
+    linearfunc = function.Function( dofaxis=dofaxis, stdmap=ElemMap(fmap,self.ndims,overlap=False), ngrad=0 )
     namedfuncs = { 'spline2': linearfunc }
 
     return UnstructuredTopology( elements, ndims=2, namedfuncs=namedfuncs )
-
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

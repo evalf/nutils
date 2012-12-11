@@ -13,8 +13,14 @@ def takediag( A, ax1, ax2 ):
     ax2 += A.ndim
   ax1, ax2 = sorted( [ax1,ax2] )
   assert 0 <= ax1 < ax2 < A.ndim
-  n = shape.pop(ax2)
-  assert n == shape.pop(ax1)
+  n1 = shape.pop(ax2)
+  n2 = shape.pop(ax1)
+  if n1 == 1:
+    n = n2
+  else:
+    n = n1
+    if n2 != 1:
+      assert n1 == n2
   shape.append( n )
   strides = list(A.strides)
   s = strides.pop(ax2)

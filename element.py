@@ -66,11 +66,12 @@ class CustomElement( Element ):
 class QuadElement( Element ):
   'quadrilateral element'
 
-  def __init__( self, ndims, parent=None ):
+  def __init__( self, ndims, parent=None, context=None ):
     'constructor'
 
     self.ndims = ndims
     self.parent = parent
+    self.context = context
     Element.__init__( self )
 
   @property
@@ -114,7 +115,7 @@ class QuadElement( Element ):
     'edge'
 
     transform = self.edgetransform( self.ndims )[ iedge ]
-    return QuadElement( self.ndims-1, parent=(self,transform) )
+    return QuadElement( self.ndims-1, context=(self,transform) )
 
   @util.classcache
   def refinedtransform( cls, ndims, n ):
