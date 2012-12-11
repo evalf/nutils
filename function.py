@@ -554,9 +554,8 @@ class ArrayFunc( Evaluable ):
   def chain( self, func ):
     'chain function spaces together'
     
-    n1 = int(func.shape[0])
-    n2 = n1 + int(self.shape[0])
-    return OffsetWrapper( self, offset=n1, ndofs=n2 )
+    assert self.shape[0].start == 0
+    return OffsetWrapper( self, offset=func.shape[0].stop, ndofs=int(self.shape[0]) )
 
   def sum( self, axes=-1 ):
     'sum'
@@ -1341,7 +1340,7 @@ class DofAxis( Evaluable ):
 
     return int(self.stop - self.start)
 
-  def __repr__( self ):
+  def __str__( self ):
     'string representation'
 
     return '%s(%d-%d)' % ( self.__class__.__name__, self.start, self.stop )
@@ -1353,12 +1352,13 @@ class ShiftDof( DofAxis ):
     'constructor'
 
     self.dofaxis = dofaxis
+    self.shift = shift
     DofAxis.__init__( self, args=[dofaxis,shift], evalf=numpy.add, dofrange=(dofaxis.start+shift,dofaxis.stop+shift) )
 
   def __eq__( self, other ):
     'equals'
 
-    return isinstance(other,ShiftDof) and self.dofaxis == other.dofaxis
+    return isinstance(other,ShiftDof) and self.shift == other.shift and self.dofaxis == other.dofaxis
 
 class ConcatDof( DofAxis ):
   'concatenate dofs'
@@ -1711,7 +1711,7 @@ class DofIndex( ArrayFunc ):
   def __init__( self, array, dofaxis ):
     'constructor'
 
-    array = array[:int(dofaxis)] # TODO make strict
+    #array = array[dofaxis.start:dofaxis.stop] # TODO make strict
     shape = (dofaxis,) + array.shape[1:]
     self.array = array
     self.dofaxis = dofaxis

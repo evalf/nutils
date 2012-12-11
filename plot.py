@@ -85,7 +85,7 @@ class PylabAxis( object ):
       poly.append( C )
       if color:
         c, w = color( elem, ischeme )
-        values.append( util.mean( c, weights=w, axis=0 ) )
+        values.append( util.mean( c, weights=w, axis=0 ) if c.ndim > 0 else c )
   
     if values:
       elements = collections.PolyCollection( poly, edgecolors=edgecolors, linewidth=linewidth )
