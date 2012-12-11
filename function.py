@@ -488,9 +488,11 @@ class ArrayFunc( Evaluable ):
         skip = arr.ndim - n - remaining_items
         assert skip >= 0
         n += skip
-      elif isinstance(it,slice) and it.step in (1,None) and it.stop == it.start + 1:
-        arr = arr.get(n,it.start).insert([n])
-        n += 1
+#     elif isinstance(it,slice) and it.step in (1,None) and it.stop == it.start + 1:
+#       arr = arr.get(n,it.start).insert([n])
+#       n += 1
+      elif isinstance(it,(slice,numpy.ndarray,list,tuple)):
+	arr = arr.getitem(n,it)
       else:
         raise NotImplementedError
       assert n <= arr.ndim
@@ -510,6 +512,12 @@ class ArrayFunc( Evaluable ):
       return self
 
     return Expand( self, shape )
+
+  def getitem( self, i, item ):
+    'get item'
+
+    #TODO check for integers
+    return GetItem( self, i, item )
 
   def get( self, i, item ):
     'get item'
@@ -688,6 +696,7 @@ class ArrayFunc( Evaluable ):
       Jinv = J.inv(0,1)
     elif J.shape[0] == J.shape[1] + 1: # gamma gradient
       Jinv = Concatenate( [ J, coords.normal()[:,_] ], axis=1 ).inv(0,1)[:-1,:]
+      tmp = Concatenate( [ J, coords.normal()[:,_] ], axis=1 ).inv(0,1)
     else:
       raise Exception, 'cannot invert jacobian'
     return ( self.localgradient( ndims )[...,_] * Jinv ).sum( -2 )
@@ -1032,6 +1041,27 @@ class Align( ArrayFunc ):
       newsh[dst] = str(src)
     return { 'shape': 'trapezium',
              'label': ','.join(newsh) }
+
+class GetItem( ArrayFunc ):
+  'get'
+
+  def __init__( self, func, axis, item ):
+    'constructor'
+
+    self.func = func
+    self.axis = axis
+    self.item = item
+    s = [slice(None)] * func.ndim
+    s[axis] = item
+    shape = list(func.shape)
+    shape[axis] = len( numpy.arange( shape[axis] )[item] )
+    ArrayFunc.__init__( self, args=(func,(Ellipsis,)+tuple(s)), evalf=numpy.ndarray.__getitem__, shape=shape )
+
+  @check_localgradient
+  def localgradient( self, ndims ):
+    'local gradient'
+
+    return self.func.localgradient(ndims).getitem( self.axis, self.item )
 
 class Get( ArrayFunc ):
   'get'
@@ -1524,6 +1554,18 @@ class Concatenate( ArrayFunc ):
     funcs = [ func.align( axes, ndim ) for func in self.funcs ]
     axis = axes[ self.axis ]
     return Concatenate( funcs, axis )
+
+  def takediag( self, ax1, ax2 ):
+    'takediag'
+
+    ax1, ax2 = normdim( self.ndim, (ax1,ax2) )
+    assert ax1 != self.axis and ax2 != self.axis # FOR NOW! TODO FIX!!
+    assert ax1 > self.axis and ax2 > self.axis # FOR NOW! TODO FIX!!
+
+    arr = self.funcs[0].takediag( ax1, ax2 )
+    for other in self.funcs[1:]:
+      arr = arr.concatenate( other.takediag( ax1, ax2 ), self.axis )
+    return arr
 
 class Vectorize( ArrayFunc ):
   'vectorize'
