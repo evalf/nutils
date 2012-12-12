@@ -217,7 +217,7 @@ def gmesh( path, btags=[] ):
       bgroups.setdefault( tag, [] ).append( belem )
 
   dofaxis = function.DofMap( nNodes, topology.ElemMap(nmap,ndims,overlap=False) )
-  linearfunc = function.Function( dofaxis=dofaxis, stdmap=topology.ElemMap(fmap,ndims,overlap=False), ngrad=0 )
+  linearfunc = function.Function( dofaxis=dofaxis, stdmap=topology.ElemMap(fmap,ndims,overlap=False), igrad=0 )
   namedfuncs = { 'spline2': linearfunc }
   topo = topology.UnstructuredTopology( elements, ndims=2, namedfuncs=namedfuncs )
   topo.boundary = topology.UnstructuredTopology( belements, ndims=1 )

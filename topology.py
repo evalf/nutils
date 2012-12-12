@@ -247,7 +247,7 @@ class Topology( set ):
       del dofmap[elem] # remove auxiliary elements
   
     dofaxis = function.DofMap( ndofs, ElemMap(dofmap,self.ndims,overlap=False) )
-    funcsp = function.Function( dofaxis=dofaxis, stdmap=ElemMap(stdmap,self.ndims,overlap=True), ngrad=0 )
+    funcsp = function.Function( dofaxis=dofaxis, stdmap=ElemMap(stdmap,self.ndims,overlap=True), igrad=0 )
     domain = UnstructuredTopology( topoelems, ndims=self.ndims )
   
     return domain, funcsp
@@ -361,7 +361,7 @@ class StructuredTopology( Topology ):
     dofaxis = function.DofMap( dofcount, ElemMap(dofmap,self.ndims,overlap=False) )
     funcmap = dict( numpy.broadcast( self.structure, stdelems ) )
 
-    return function.Function( dofaxis=dofaxis, stdmap=ElemMap(funcmap,self.ndims,overlap=False), ngrad=0 )
+    return function.Function( dofaxis=dofaxis, stdmap=ElemMap(funcmap,self.ndims,overlap=False), igrad=0 )
 
   def linearfunc( self ):
     'linears'
@@ -544,7 +544,7 @@ class UnstructuredTopology( Topology ):
 
     dofaxis = function.DofMap( ndofs, ElemMap(nmap,self.ndims,overlap=False) )
     fmap = dict.fromkeys( elements, element.PolyTriangle(1) )
-    linearfunc = function.Function( dofaxis=dofaxis, stdmap=ElemMap(fmap,self.ndims,overlap=False), ngrad=0 )
+    linearfunc = function.Function( dofaxis=dofaxis, stdmap=ElemMap(fmap,self.ndims,overlap=False), igrad=0 )
     namedfuncs = { 'spline2': linearfunc }
 
     return UnstructuredTopology( elements, ndims=2, namedfuncs=namedfuncs )

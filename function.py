@@ -470,7 +470,7 @@ class ArrayFunc( Evaluable ):
   def __getitem__( self, item ):
     'get item'
   
-    tmp = item
+    origitem = item
     item = list( item if isinstance( item, tuple ) else [item] )
     n = 0
     arr = self
@@ -492,10 +492,10 @@ class ArrayFunc( Evaluable ):
 #       arr = arr.get(n,it.start).insert([n])
 #       n += 1
       elif isinstance(it,(slice,numpy.ndarray,list,tuple)):
-	arr = arr.getitem(n,it)
+        arr = arr.getitem(n,it)
       else:
         raise NotImplementedError
-      assert n <= arr.ndim
+      assert n <= arr.ndim, 'cannot take [%s] of shape %s' % ( ','.join(map(obj2str,origitem)), self.shape )
     return arr
 
   def reciprocal( self ):
@@ -1220,24 +1220,24 @@ class Transform( ArrayFunc ):
 class Function( ArrayFunc ):
   'local gradient'
 
-  def __init__( self, dofaxis, stdmap, ngrad ):
+  def __init__( self, dofaxis, stdmap, igrad ):
     'constructor'
 
     self.dofaxis = dofaxis
     self.stdmap = stdmap
-    self.ngrad = ngrad
-    ArrayFunc.__init__( self, args=(ELEM,POINTS,stdmap,ngrad), evalf=self.function, shape=(dofaxis,)+(stdmap.ndims,)*ngrad )
+    self.igrad = igrad
+    ArrayFunc.__init__( self, args=(ELEM,POINTS,stdmap,igrad), evalf=self.function, shape=(dofaxis,)+(stdmap.ndims,)*igrad )
 
   def localgradient( self, ndims ):
     'local gradient'
 
     assert ndims <= self.stdmap.ndims
-    grad = Function( self.dofaxis, self.stdmap, self.ngrad+1 )
+    grad = Function( self.dofaxis, self.stdmap, self.igrad+1 )
     return grad if ndims == self.stdmap.ndims \
       else ( grad[...,_] * Transform( ndims, self.stdmap.ndims ) ).sum( -2 )
 
   @staticmethod
-  def function( elem, points, stdmap, ngrad ):
+  def function( elem, points, stdmap, igrad ):
     'evaluate'
 
     while elem.ndims < stdmap.ndims:
@@ -1252,16 +1252,16 @@ class Function( ArrayFunc ):
       if std:
         if isinstance( std, tuple ):
           std, keep = std
-          F = std.eval(points,grad=ngrad)[(Ellipsis,keep)+(slice(None),)*ngrad]
+          F = std.eval(points,grad=igrad)[(Ellipsis,keep)+(slice(None),)*igrad]
         else:
-          F = std.eval(points,grad=ngrad)
-        if ngrad > 0 and T is not 1:
+          F = std.eval(points,grad=igrad)
+        if igrad > 0 and T is not 1:
           if T.ndim == 0:
-            scale = T**ngrad
+            scale = T**igrad
           else:
             assert T.ndim == 1
             scale = T
-            for i in range(ngrad-1):
+            for i in range(igrad-1):
               scale = scale[:,_] * T
           F = F * scale
         if not stdmap.overlap:
@@ -1288,13 +1288,14 @@ class Choose( ArrayFunc ):
   def __init__( self, level, intervals, *funcs ):
     'constructor'
 
-    funcs = tuple( func if isinstance(func,ArrayFunc) else StaticArray(func) for func in funcs )
-    shapes = [ f.shape for f in funcs ]
+    self.funcs = tuple( func if isinstance(func,ArrayFunc) else StaticArray(func) for func in funcs )
+    self.intervals = intervals
+    self.level = level
+    shapes = [ f.shape for f in self.funcs ]
     shape = shapes.pop()
     assert all( sh == shape for sh in shapes )
-    assert len(intervals) == len(funcs)-1
-    self.level = level
-    ArrayFunc.__init__( self, args=(level,intervals)+funcs, evalf=self.choose, shape=level.shape+shape )
+    assert len(intervals) == len(self.funcs)-1
+    ArrayFunc.__init__( self, args=(level,intervals)+self.funcs, evalf=self.choose, shape=level.shape+shape )
 
   @staticmethod
   def choose( x, intervals, *choices ):
@@ -1370,10 +1371,15 @@ class DofAxis( Evaluable ):
 
     return int(self.stop - self.start)
 
+  def __repr__( self ):
+    'string representation'
+
+    return str(self)
+
   def __str__( self ):
     'string representation'
 
-    return '%s(%d-%d)' % ( self.__class__.__name__, self.start, self.stop )
+    return '%s<%d:%d>' % ( self.__class__.__name__, self.start, self.stop )
 
 class ShiftDof( DofAxis ):
   'shift dofs'
@@ -2394,6 +2400,11 @@ class Kronecker( ArrayFunc ):
     shape.insert(axis,length)
     ArrayFunc.__init__( self, args=[func,self.axis-func.ndim,length,pos], evalf=self.kronecker, shape=shape )
 
+  def localgradient( self, ndims ):
+    'local gradient'
+
+    return Kronecker( self.func.localgradient(ndims), self.axis, self.length, self.pos )
+
   def insert( self, axes ):
     'insert'
 
@@ -2406,7 +2417,20 @@ class Kronecker( ArrayFunc ):
   def __mul__( self, other ):
     'multiply'
 
+    if other.ndim < self.ndim:
+      other = other[(_,)*(self.ndim-other.ndim)]
+    elif other.ndim > self.ndim:
+      raise NotImplementedError
     return Kronecker( self.func * other.get(self.axis,self.pos), self.axis, self.length, self.pos )
+
+  def __div__( self, other ):
+    'multiply'
+
+    if other.ndim < self.ndim:
+      other = other[(_,)*(self.ndim-other.ndim)]
+    elif other.ndim > self.ndim:
+      raise NotImplementedError
+    return Kronecker( self.func / other.get(self.axis,self.pos), self.axis, self.length, self.pos )
 
   def sum( self, axes=-1 ):
     'sum'
@@ -2488,6 +2512,11 @@ class Expand( ArrayFunc ):
       assert isinstance( sh, int ) and 0 <= item < sh, 'item out of range'
       item = 0
     return self.func.get( i, item ).expand( shape )
+
+  def localgradient( self, ndims ):
+    'local gradient'
+
+    return self.func.localgradient( ndims ).expand( self.shape+(ndims,) )
 
   @staticmethod
   def doexpand( arr, *shape ):
