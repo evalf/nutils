@@ -219,6 +219,11 @@ class Evaluable( object ):
     self.__args = tuple(args)
     self.__evalf = evalf
 
+  def verify( self, value ):
+    'check result'
+
+    return '= %s %s' % ( obj2str(value), type(value) )
+
   def recurse_index( self, data, operations ):
     'compile'
 
@@ -339,6 +344,7 @@ class Evaluable( object ):
 
     print 'call stack:'
     for i, (op,indices) in enumerate( self.operations ):
+      print '%2d:' % i,
       args = [ '%%%d' % idx if idx >= 0 else obj2str(values[N+idx]) for idx in indices ]
       try:
         code = op.__evalf.func_code
@@ -347,12 +353,12 @@ class Evaluable( object ):
         args = [ '%s=%s' % item for item in zip( names, args ) ]
       except:
         pass
-      objstr = '%s( %s )' % ( op.__evalf.__name__, ', '.join( args ) )
+      print '%s( %s )' % ( op.__evalf.__name__, ', '.join( args ) ),
       if N+i < len(values):
-        objstr += ' = %s %s' % ( obj2str(values[N+i]), type(values[N+i]) )
+        print op.verify( values[N+i] ),
       elif N+i == len(values):
-        objstr += ' <-----ERROR'
-      print '%2d: %s' % ( i, objstr )
+        print '<-----ERROR',
+      print
 
   def __eq__( self, other ):
     'compare'
@@ -467,10 +473,19 @@ class ArrayFunc( Evaluable ):
     self.ndim = len(self.shape)
     Evaluable.__init__( self, evalf=evalf, args=args )
 
+  def verify( self, value ):
+    'check result'
+
+    s = obj2str(value)
+    if not isinstance(value,numpy.ndarray):
+      s += ' WRONG TYPE: %s' % type(value)
+    s += ' SHAPE: %s' % ( self.shape, )
+    return s
+
   def __getitem__( self, item ):
     'get item'
   
-    origitem = item
+    tmp = item
     item = list( item if isinstance( item, tuple ) else [item] )
     n = 0
     arr = self
@@ -488,14 +503,12 @@ class ArrayFunc( Evaluable ):
         skip = arr.ndim - n - remaining_items
         assert skip >= 0
         n += skip
-#     elif isinstance(it,slice) and it.step in (1,None) and it.stop == it.start + 1:
-#       arr = arr.get(n,it.start).insert([n])
-#       n += 1
-      elif isinstance(it,(slice,numpy.ndarray,list,tuple)):
-        arr = arr.getitem(n,it)
+      elif isinstance(it,slice) and it.step in (1,None) and it.stop == it.start + 1:
+        arr = arr.get(n,it.start).insert([n])
+        n += 1
       else:
         raise NotImplementedError
-      assert n <= arr.ndim, 'cannot take [%s] of shape %s' % ( ','.join(map(obj2str,origitem)), self.shape )
+      assert n <= arr.ndim
     return arr
 
   def reciprocal( self ):
@@ -512,12 +525,6 @@ class ArrayFunc( Evaluable ):
       return self
 
     return Expand( self, shape )
-
-  def getitem( self, i, item ):
-    'get item'
-
-    #TODO check for integers
-    return GetItem( self, i, item )
 
   def get( self, i, item ):
     'get item'
@@ -696,7 +703,6 @@ class ArrayFunc( Evaluable ):
       Jinv = J.inv(0,1)
     elif J.shape[0] == J.shape[1] + 1: # gamma gradient
       Jinv = Concatenate( [ J, coords.normal()[:,_] ], axis=1 ).inv(0,1)[:-1,:]
-      tmp = Concatenate( [ J, coords.normal()[:,_] ], axis=1 ).inv(0,1)
     else:
       raise Exception, 'cannot invert jacobian'
     return ( self.localgradient( ndims )[...,_] * Jinv ).sum( -2 )
@@ -1042,27 +1048,6 @@ class Align( ArrayFunc ):
     return { 'shape': 'trapezium',
              'label': ','.join(newsh) }
 
-class GetItem( ArrayFunc ):
-  'get'
-
-  def __init__( self, func, axis, item ):
-    'constructor'
-
-    self.func = func
-    self.axis = axis
-    self.item = item
-    s = [slice(None)] * func.ndim
-    s[axis] = item
-    shape = list(func.shape)
-    shape[axis] = len( numpy.arange( shape[axis] )[item] )
-    ArrayFunc.__init__( self, args=(func,(Ellipsis,)+tuple(s)), evalf=numpy.ndarray.__getitem__, shape=shape )
-
-  @check_localgradient
-  def localgradient( self, ndims ):
-    'local gradient'
-
-    return self.func.localgradient(ndims).getitem( self.axis, self.item )
-
 class Get( ArrayFunc ):
   'get'
 
@@ -1288,6 +1273,7 @@ class Choose( ArrayFunc ):
   def __init__( self, level, intervals, *funcs ):
     'constructor'
 
+    assert level.ndim == 0
     self.funcs = tuple( func if isinstance(func,ArrayFunc) else StaticArray(func) for func in funcs )
     self.intervals = intervals
     self.level = level
@@ -1295,7 +1281,7 @@ class Choose( ArrayFunc ):
     shape = shapes.pop()
     assert all( sh == shape for sh in shapes )
     assert len(intervals) == len(self.funcs)-1
-    ArrayFunc.__init__( self, args=(level,intervals)+self.funcs, evalf=self.choose, shape=level.shape+shape )
+    ArrayFunc.__init__( self, args=(level[(_,)*len(shape)],intervals)+self.funcs, evalf=self.choose, shape=shape )
 
   @staticmethod
   def choose( x, intervals, *choices ):
@@ -1371,15 +1357,10 @@ class DofAxis( Evaluable ):
 
     return int(self.stop - self.start)
 
-  def __repr__( self ):
-    'string representation'
-
-    return str(self)
-
   def __str__( self ):
     'string representation'
 
-    return '%s<%d:%d>' % ( self.__class__.__name__, self.start, self.stop )
+    return '%s(%d-%d)' % ( self.__class__.__name__, self.start, self.stop )
 
 class ShiftDof( DofAxis ):
   'shift dofs'
@@ -1560,18 +1541,6 @@ class Concatenate( ArrayFunc ):
     funcs = [ func.align( axes, ndim ) for func in self.funcs ]
     axis = axes[ self.axis ]
     return Concatenate( funcs, axis )
-
-  def takediag( self, ax1, ax2 ):
-    'takediag'
-
-    ax1, ax2 = normdim( self.ndim, (ax1,ax2) )
-    assert ax1 != self.axis and ax2 != self.axis # FOR NOW! TODO FIX!!
-    assert ax1 > self.axis and ax2 > self.axis # FOR NOW! TODO FIX!!
-
-    arr = self.funcs[0].takediag( ax1, ax2 )
-    for other in self.funcs[1:]:
-      arr = arr.concatenate( other.takediag( ax1, ax2 ), self.axis )
-    return arr
 
 class Vectorize( ArrayFunc ):
   'vectorize'
@@ -2423,15 +2392,6 @@ class Kronecker( ArrayFunc ):
       raise NotImplementedError
     return Kronecker( self.func * other.get(self.axis,self.pos), self.axis, self.length, self.pos )
 
-  def __div__( self, other ):
-    'multiply'
-
-    if other.ndim < self.ndim:
-      other = other[(_,)*(self.ndim-other.ndim)]
-    elif other.ndim > self.ndim:
-      raise NotImplementedError
-    return Kronecker( self.func / other.get(self.axis,self.pos), self.axis, self.length, self.pos )
-
   def sum( self, axes=-1 ):
     'sum'
 
@@ -2512,11 +2472,6 @@ class Expand( ArrayFunc ):
       assert isinstance( sh, int ) and 0 <= item < sh, 'item out of range'
       item = 0
     return self.func.get( i, item ).expand( shape )
-
-  def localgradient( self, ndims ):
-    'local gradient'
-
-    return self.func.localgradient( ndims ).expand( self.shape+(ndims,) )
 
   @staticmethod
   def doexpand( arr, *shape ):
