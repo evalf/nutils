@@ -1,4 +1,4 @@
-from . import topology, function, util, element, numpy, _
+from . import topology, function, util, element, numpy, numeric, _
 
 class ElemScale( function.ArrayFunc ):
   'element-constant array'
@@ -131,7 +131,7 @@ def revolve( topo, coords, nelems, degree=4, axis=0 ):
   weights[...,axis] = numpy.cos(phi)[:,_] * coords.array[:,axis]
   weights[...,axis+1] = numpy.sin(phi)[:,_] * coords.array[:,axis]
   weights[...,axis+2:] = coords.array[:,axis+1:]
-  weights = util.reshape( weights, 2, 1 )
+  weights = numeric.reshape( weights, 2, 1 )
 
   return revolved_topo, revolved_func.dot( weights )
 

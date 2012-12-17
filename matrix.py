@@ -1,4 +1,4 @@
-from . import util, numpy, _
+from . import util, numpy, log, numeric, _
 from scipy.sparse.sparsetools.csr import _csr
 from scipy.sparse.linalg.isolve import _iterative
 
@@ -8,7 +8,7 @@ def cg( matvec, b, x0=None, tol=1e-5, maxiter=None, precon=None, title='solving 
   n = len(b)
 
   if title:
-    progress = util.ProgressBar()
+    progress = log.ProgressBar()
     progress.add( title )
     progress.add( '[CG:%d]' % n )
     clock = util.Clock( .1 )
@@ -76,7 +76,7 @@ def gmres( matvec, b, x0=None, tol=1e-5, restrt=None, maxiter=None, precon=None,
   n = len(b)
 
   if title:
-    progress = util.ProgressBar()
+    progress = log.ProgressBar()
     progress.add( title )
     progress.add( '[GMRES:%d]' % n )
     clock = util.Clock( .1 )
@@ -229,7 +229,7 @@ class SparseMatrix( Matrix ):
     assert nrows >= self.shape[0] and ncols >= self.shape[1]
     indptr = self.indptr
     if nrows > self.shape[1]:
-      indptr = numpy.concatenate([ indptr, util.fastrepeat( indptr[-1:], nrows-self.shape[1] ) ])
+      indptr = numpy.concatenate([ indptr, numeric.fastrepeat( indptr[-1:], nrows-self.shape[1] ) ])
     return self.__class__( (self.data,self.indices,indptr), ncols )
 
   def clone( self ):
@@ -355,7 +355,7 @@ class SparseMatrix( Matrix ):
   
     b = numpy.asarray( b, dtype=float )
     if b.ndim == 0:
-      b = util.fastrepeat( b[_], self.shape[0] )
+      b = numeric.fastrepeat( b[_], self.shape[0] )
     else:
       if b.shape[0] < self.shape[0]: # quick resize hack, temporary!
         b = b.copy()
@@ -450,7 +450,7 @@ class DenseMatrix( Matrix ):
 
     b = numpy.asarray( b, dtype=float )
     if b.ndim == 0:
-      b = util.fastrepeat( b[_], self.shape[0] )
+      b = numeric.fastrepeat( b[_], self.shape[0] )
     else:
       if b.shape[0] < self.shape[0]: # quick resize hack, temporary!
         b = b.copy()

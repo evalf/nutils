@@ -1,4 +1,4 @@
-from . import util, element, numpy, _
+from . import util, element, numpy, numeric, log, core, _
 
 def check_localgradient( localgradient ):
   def localgradient_wrapper( func, ndims ):
@@ -162,22 +162,22 @@ class StaticArray( numpy.ndarray ):
   def det( self, *axes ):
     'determinant'
 
-    return util.det( self, *axes )
+    return numeric.det( self, *axes )
 
   def inv( self, *axes ):
     'determinant'
 
-    return util.inv( self, axes )
+    return numeric.inv( self, axes )
 
   def norm2( self, axis=-1 ):
     'norm2'
 
-    return util.norm2( self, axis )
+    return numeric.norm2( self, axis )
 
   def takediag( self, ax1, ax2 ):
     'takediag'
 
-    return util.takediag( self, ax1, ax2 )
+    return numeric.takediag( self, ax1, ax2 )
 
   @check_localgradient
   def localgradient( self, ndims ):
@@ -312,7 +312,8 @@ class Evaluable( object ):
     N = len(self.data) + 2
     dofaxes = {} # labels for dofaxes
 
-    imgpath = util.getpath( 'dot{0:03x}.jpg' )
+    imgtype = core.getprop( 'imagetype', 'png' )
+    imgpath = util.getpath( 'dot{0:03x}.' + imgtype )
     dot = subprocess.Popen( [DOT,'-Tjpg'], stdin=subprocess.PIPE, stdout=open(imgpath,'w') )
 
     print >> dot.stdin, 'digraph {'
@@ -342,9 +343,9 @@ class Evaluable( object ):
 
     N = len(self.data) + 2
 
-    print 'call stack:'
+    log.error( 'call stack:' )
     for i, (op,indices) in enumerate( self.operations ):
-      print '%2d:' % i,
+      log.error( '%2d:' % i, end=' ' )
       args = [ '%%%d' % idx if idx >= 0 else obj2str(values[N+idx]) for idx in indices ]
       try:
         code = op.__evalf.func_code
@@ -353,12 +354,12 @@ class Evaluable( object ):
         args = [ '%s=%s' % item for item in zip( names, args ) ]
       except:
         pass
-      print '%s( %s )' % ( op.__evalf.__name__, ', '.join( args ) ),
+      log.error( '%s( %s )' % ( op.__evalf.__name__, ', '.join( args ) ), end=' ' )
       if N+i < len(values):
-        print op.verify( values[N+i] ),
+        log.error( op.verify( values[N+i] ), end=' ' )
       elif N+i == len(values):
-        print '<-----ERROR',
-      print
+        objstr += ' <-----ERROR'
+      log.error( '%2d: %s' % ( i, objstr ) )
 
   def __eq__( self, other ):
     'compare'
@@ -558,11 +559,11 @@ class ArrayFunc( Evaluable ):
     Jinv = self.localgradient( elem.ndims ).inv(0,1)
     r = target - self( elem, points )
     niter = 0
-    while numpy.any( util.contract( r, r, axis=-1 ) > tol ):
+    while numpy.any( numeric.contract( r, r, axis=-1 ) > tol ):
       niter += 1
       if niter >= maxiter:
         raise Exception, 'failed to converge in %d iterations' % maxiter
-      points = points.offset( util.contract( Jinv( elem, points ), r[:,_,:], axis=-1 ) )
+      points = points.offset( numeric.contract( Jinv( elem, points ), r[:,_,:], axis=-1 ) )
       r = target - self( elem, points )
     return points
 
@@ -757,7 +758,7 @@ class ArrayFunc( Evaluable ):
     elif other.mul_priority > self.mul_priority:
       return other * self # prefer specific over general
 
-    shape, (func1,func2) = util.align_arrays( self, other )
+    shape, (func1,func2) = numeric.align_arrays( self, other )
 
     if not func2:
       return ZERO(shape)
@@ -786,7 +787,7 @@ class ArrayFunc( Evaluable ):
     if not isinstance( other, ArrayFunc ):
       other = StaticArray( other )
 
-    shape, (func1,func2) = util.align_arrays( self, other )
+    shape, (func1,func2) = numeric.align_arrays( self, other )
 
     if not func2:
       return ZERO(shape)
@@ -801,7 +802,7 @@ class ArrayFunc( Evaluable ):
     elif other.add_priority > self.add_priority:
       return other + self # prefer specific over general
 
-    shape, (func1,func2) = util.align_arrays( self, other )
+    shape, (func1,func2) = numeric.align_arrays( self, other )
 
     if not other:
       return self
@@ -991,7 +992,7 @@ class Align( ArrayFunc ):
 
     if not isinstance( other, ArrayFunc ):
       other = StaticArray( other )
-    shape, (func1,func2) = util.align_arrays( self, other )
+    shape, (func1,func2) = numeric.align_arrays( self, other )
     assert isinstance( func1, Align )
 
     ax1 = func1.axes
@@ -1307,7 +1308,7 @@ class Choose2D( ArrayFunc ):
   def __init__( self, coords, contour, fin, fout ):
     'constructor'
 
-    shape, (fin,fout) = util.align_arrays( fin, fout )
+    shape, (fin,fout) = numeric.align_arrays( fin, fout )
     ArrayFunc.__init__( self, args=(coords,contour,fin,fout), evalf=self.choose2d, shape=shape )
 
   @staticmethod
@@ -1331,7 +1332,7 @@ class Inverse( ArrayFunc ):
     assert func.shape[ax1] == func.shape[ax2]
     self.func = func
     self.axes = ax1, ax2
-    ArrayFunc.__init__( self, args=(func,(ax1-func.ndim,ax2-func.ndim)), evalf=util.inv, shape=func.shape )
+    ArrayFunc.__init__( self, args=(func,(ax1-func.ndim,ax2-func.ndim)), evalf=numeric.inv, shape=func.shape )
 
   @check_localgradient
   def localgradient( self, ndims ):
@@ -1402,6 +1403,11 @@ class ConcatDof( DofAxis ):
     'equals'
 
     return isinstance(other,ConcatDof) and self.dofaxes == other.dofaxes
+
+  def __str__( self ):
+    'string representation'
+
+    return '%s<%s>' % ( self.__class__.__name__, ';'.join( '%d:%d' % (dof.start,dof.stop) for dof in self.dofaxes ) )
 
 class DofMap( DofAxis ):
   'dof axis'
@@ -1579,7 +1585,7 @@ class Vectorize( ArrayFunc ):
     if not isinstance( other, ArrayFunc ):
       other = StaticArray( other )
 
-    shape, (func1,func2) = util.align_arrays( self, other )
+    shape, (func1,func2) = numeric.align_arrays( self, other )
 
     if not other:
       return ZERO( shape )
@@ -1713,7 +1719,7 @@ class Determinant( ArrayFunc ):
 
     self.axes = ax1, ax2
     self.func = func
-    ArrayFunc.__init__( self, args=(func,ax1-func.ndim,ax2-func.ndim), evalf=util.det, shape=shape )
+    ArrayFunc.__init__( self, args=(func,ax1-func.ndim,ax2-func.ndim), evalf=numeric.det, shape=shape )
 
   @check_localgradient
   def localgradient( self, ndims ):
@@ -1838,7 +1844,7 @@ class Divide( ArrayFunc ):
     if not isinstance( func2, ArrayFunc ):
       func2 = StaticArray( func2 )
 
-    shape, self.funcs = util.align_arrays( func1, func2 )
+    shape, self.funcs = numeric.align_arrays( func1, func2 )
     ArrayFunc.__init__( self, args=self.funcs, evalf=numpy.divide, shape=shape )
 
   def get( self, i, item ):
@@ -1919,7 +1925,7 @@ class Add( ArrayFunc ):
   def __init__( self, func1, func2 ):
     'constructor'
 
-    shape, self.funcs = util.align_arrays( func1, func2 )
+    shape, self.funcs = numeric.align_arrays( func1, func2 )
     ArrayFunc.__init__( self, args=self.funcs, evalf=numpy.add, shape=shape )
 
   @check_localgradient
@@ -1941,7 +1947,7 @@ class Subtract( ArrayFunc ):
   def __init__( self, func1, func2 ):
     'constructor'
 
-    shape, self.funcs = util.align_arrays( func1, func2 )
+    shape, self.funcs = numeric.align_arrays( func1, func2 )
     ArrayFunc.__init__( self, args=self.funcs, evalf=numpy.subtract, shape=shape )
 
   def __neg__( self ):
@@ -1963,7 +1969,7 @@ class Dot( ArrayFunc ):
   def __init__( self, func1, func2, axes ):
     'constructor'
 
-    shape, (func1,func2) = util.align_arrays( func1, func2 )
+    shape, (func1,func2) = numeric.align_arrays( func1, func2 )
     axes = normdim( len(shape), axes )[::-1]
     shape = list(shape)
     for axis in axes:
@@ -1972,7 +1978,7 @@ class Dot( ArrayFunc ):
     self.func1 = func1
     self.func2 = func2
     self.axes = axes
-    ArrayFunc.__init__( self, args=(func1,func2,tuple( ax-func1.ndim for ax in axes )), evalf=util.contract, shape=shape )
+    ArrayFunc.__init__( self, args=(func1,func2,tuple( ax-func1.ndim for ax in axes )), evalf=numeric.contract, shape=shape )
 
   def get( self, i, item ):
     'get'
@@ -2156,7 +2162,7 @@ class Arctan2( ArrayFunc ):
   def __init__( self, numer, denom ):
     'constructor'
 
-    shape, args = util.align_arrays( numer, denom )
+    shape, args = numeric.align_arrays( numer, denom )
     self.args = numer, denom
     ArrayFunc.__init__( self, args=args, evalf=numpy.arctan2, shape=shape )
 
@@ -2196,7 +2202,7 @@ class Min( ArrayFunc ):
   def __init__( self, func1, func2 ):
     'constructor'
 
-    shape, args = util.align_arrays( func1, func2 )
+    shape, args = numeric.align_arrays( func1, func2 )
     ArrayFunc.__init__( self, args=args, evalf=numpy.minimum, shape=shape )
 
 class Max( ArrayFunc ):
@@ -2205,7 +2211,7 @@ class Max( ArrayFunc ):
   def __init__( self, func1, func2 ):
     'constructor'
 
-    shape, args = util.align_arrays( func1, func2 )
+    shape, args = numeric.align_arrays( func1, func2 )
     ArrayFunc.__init__( self, args=args, evalf=numpy.maximum, shape=shape )
 
 class TakeDiag( ArrayFunc ):
@@ -2219,7 +2225,7 @@ class TakeDiag( ArrayFunc ):
     n = shape.pop(ax2)
     assert n == shape.pop(ax1)
     shape.append( n )
-    ArrayFunc.__init__( self, args=[func,ax1-func.ndim,ax2-func.ndim], evalf=util.takediag, shape=shape )
+    ArrayFunc.__init__( self, args=[func,ax1-func.ndim,ax2-func.ndim], evalf=numeric.takediag, shape=shape )
 
 #class Tanh( ArrayFunc ):
 #  'hyperbolic tangent'
@@ -2263,7 +2269,7 @@ class Diagonalize( ArrayFunc ):
     shape.insert( ax1+len(shape)+1, n )
     assert shape[ax1] == shape[ax2] == n
     diagonalized = numpy.zeros( shape )
-    util.takediag( diagonalized, ax1, ax2 )[:] = data
+    numeric.takediag( diagonalized, ax1, ax2 )[:] = data
     return diagonalized
 
   def get( self, i, item ):
@@ -2417,7 +2423,7 @@ class Kronecker( ArrayFunc ):
 # def __mul__( self, other ):
 #   'multiply'
 
-#   shape, (func1,func2) = util.align_arrays( self, other )
+#   shape, (func1,func2) = numeric.align_arrays( self, other )
 #   assert isinstance( func1, Kronecker )
 #   return Kronecker( func1.func * func2.get(self.axis,self.pos), self.axis, self.length, self.pos )
 

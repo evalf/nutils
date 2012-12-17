@@ -1,4 +1,4 @@
-from . import util, numpy, _
+from . import util, numpy, core, numeric, _
 import weakref
 
 class AffineTransformation( object ):
@@ -10,7 +10,7 @@ class AffineTransformation( object ):
     self.offset = numpy.asarray( offset )
     self.transform = numpy.asarray( transform )
 
-  @util.cachefunc
+  @core.cachefunc
   def eval( self, points ):
     'apply transformation'
 
@@ -95,7 +95,7 @@ class QuadElement( Element ):
         yield elem
       self.__dict__['children'] = refs
       
-  @util.classcache
+  @core.classcache
   def edgetransform( cls, ndims ):
     'edge transforms'
 
@@ -117,7 +117,7 @@ class QuadElement( Element ):
     transform = self.edgetransform( self.ndims )[ iedge ]
     return QuadElement( self.ndims-1, context=(self,transform) )
 
-  @util.classcache
+  @core.classcache
   def refinedtransform( cls, ndims, n ):
     'refined transform'
 
@@ -131,13 +131,13 @@ class QuadElement( Element ):
       transforms.append( AffineTransformation( offset=offset, transform=transform ) )
     return transforms
 
-  @util.cachefunc
+  @core.cachefunc
   def refined( self, n ):
     'refine'
 
     return [ QuadElement( self.ndims, parent=(self,transform) ) for transform in self.refinedtransform( self.ndims, n ) ]
 
-  @util.classcache
+  @core.classcache
   def getischeme( cls, ndims, where ):
     'get integration scheme'
 
@@ -155,11 +155,11 @@ class QuadElement( Element ):
     elif where.startswith( 'uniform' ):
       N = int( where[7:] )
       x = numpy.arange( .5, N ) / N
-      w = util.appendaxes( 1./N, N )
+      w = numeric.appendaxes( 1./N, N )
     elif where.startswith( 'bezier' ):
       N = int( where[6:] )
       x = numpy.linspace( 0, 1, N )
-      w = util.appendaxes( 1./N, N )
+      w = numeric.appendaxes( 1./N, N )
     elif where.startswith( 'subdivision' ):
       N = int( where[11:] ) + 1
       x = numpy.linspace( 0, 1, N )
@@ -236,7 +236,7 @@ class TriangularElement( Element ):
     transform = self.edgetransform[ iedge ]
     return QuadElement( ndims=1, parent=(self,transform) )
 
-  @util.classcache
+  @core.classcache
   def refinedtransform( cls, n ):
     'refined transform'
 
@@ -254,7 +254,7 @@ class TriangularElement( Element ):
       return self
     return [ TriangularElement( parent=(self,transform) ) for transform in self.refinedtransform( n ) ]
 
-  @util.classcache
+  @core.classcache
   def getischeme( cls, ndims, where ):
     '''get integration scheme
     gaussian quadrature: http://www.cs.rpi.edu/~flaherje/pdf/fea6.pdf
@@ -307,7 +307,7 @@ class TriangularElement( Element ):
       coords = C.reshape( 2, NN )
       flip = coords[0] + coords[1] > 1
       coords[:,flip] = 1 - coords[::-1,flip]
-      weights = util.appendaxes( .5/NN, NN )
+      weights = numeric.appendaxes( .5/NN, NN )
     else:
       raise Exception, 'invalid element evaluation: %r' % where
     return LocalPoints( coords.T, weights )
@@ -358,7 +358,7 @@ class StdElem( object ):
 class PolyProduct( StdElem ):
   'multiply standard elements'
 
-  @util.classcache
+  @core.classcache
   def __new__( cls, std1, std2 ):
     'constructor'
 
@@ -369,7 +369,7 @@ class PolyProduct( StdElem ):
     self.nshapes = std1.nshapes * std2.nshapes
     return self
 
-  @util.cachefunc
+  @core.cachefunc
   def eval( self, points, grad=0 ):
     'evaluate'
 
@@ -383,7 +383,7 @@ class PolyProduct( StdElem ):
     S = slice(None),
     N = numpy.newaxis,
 
-    G12 = [ util.reshape( self.std1.eval( p1, grad=i )[S+S+N+S*i+N*j]
+    G12 = [ numeric.reshape( self.std1.eval( p1, grad=i )[S+S+N+S*i+N*j]
                         * self.std2.eval( p2, grad=j )[S+N+S+N*i+S*j], 1, 2 )
             for i,j in zip( range(grad,-1,-1), range(grad+1) ) ]
 
@@ -436,15 +436,15 @@ class PolyLine( StdElem ):
         extractions[i,-j-1:-1,-j-1] = extractions[i-1,-j:,-1]
 
     poly = cls.bernstein_poly( p )
-    return util.contract( extractions[:,_,:,:], poly[_,:,_,:], axis=-1 )
+    return numeric.contract( extractions[:,_,:,:], poly[_,:,_,:], axis=-1 )
 
-  @util.classcache
+  @core.classcache
   def spline_elems( cls, p, n ):
     'spline elements, minimum amount (just for caching)'
 
     return map( cls, cls.spline_poly(p,n) )
 
-  @util.classcache
+  @core.classcache
   def spline_elems_neumann( cls, p, n ):
     'spline elements, neumann endings (just for caching)'
 
@@ -484,12 +484,12 @@ class PolyLine( StdElem ):
     self.poly = numpy.asarray( poly, dtype=float )
     self.degree, self.nshapes = self.poly.shape
 
-  @util.cachefunc
+  @core.cachefunc
   def eval( self, points, grad=0 ):
     'evaluate'
 
     if grad >= self.degree:
-      return util.appendaxes( 0., (points.npoints,self.nshapes)+(1,)*grad )
+      return numeric.appendaxes( 0., (points.npoints,self.nshapes)+(1,)*grad )
 
     poly = self.poly
     for n in range(grad):
@@ -516,7 +516,7 @@ class PolyLine( StdElem ):
 class PolyTriangle( StdElem ):
   'poly triangle'
 
-  @util.classcache
+  @core.classcache
   def __new__( cls, order ):
     'constructor'
 
@@ -524,7 +524,7 @@ class PolyTriangle( StdElem ):
     self = object.__new__( cls )
     return self
 
-  @util.cachefunc
+  @core.cachefunc
   def eval( self, points, grad=0 ):
     'eval'
 
@@ -551,11 +551,11 @@ class ExtractionWrapper( object ):
     self.stdelem = stdelem
     self.extraction = extraction
 
-  @util.cachefunc
+  @core.cachefunc
   def eval( self, points, grad=0 ):
     'call'
 
-    return util.transform( self.stdelem.eval( points, grad ), self.extraction, axis=1 )
+    return numeric.transform( self.stdelem.eval( points, grad ), self.extraction, axis=1 )
 
   def __repr__( self ):
     'string representation'

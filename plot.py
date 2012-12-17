@@ -1,4 +1,4 @@
-from . import topology, util, numpy, function, element, _
+from . import topology, util, numpy, function, element, log, core, numeric, _
 
 import matplotlib
 matplotlib.use( 'Agg' )
@@ -8,8 +8,12 @@ import os
 class Pylab( object ):
   'matplotlib figure'
 
-  def __init__( self, title=None, name='graph{0:03x}.jpg' ):
+  def __init__( self, title, name=None ):
     'constructor'
+
+    if name is None:
+      imgtype = core.getprop( 'imagetype', 'png' )
+      name='graph{0:03x}.' + imgtype
 
     if isinstance( title, (list,tuple) ):
       self.title = numpy.array( title, dtype=object )
@@ -35,13 +39,15 @@ class Pylab( object ):
     'exit with block'
 
     if exc:
-      print 'ERROR: plot failed:', msg or exc
+      log.error( 'ERROR: plot failed: %s' % (msg or exc) )
       return #True
 
     from matplotlib import pyplot
-    n = len( os.listdir( util.DUMPDIR ) )
+    dumpdir = core.getprop( 'dumpdir', False )
+    assert dumpdir
+    n = len( os.listdir( dumpdir ) )
     imgpath = util.getpath( self.name )
-    progress = util.ProgressBar()
+    progress = log.ProgressBar()
     progress.add( 'saving image' )
     progress.add_to_end( os.path.basename(imgpath) )
     pyplot.savefig( imgpath, format=imgpath.split('.')[-1] )
@@ -75,7 +81,7 @@ class PylabAxis( object ):
     if color:
       assert color.ndim == 0
       color = function.Tuple([ color, coords.iweights(ndims=2) ])
-    for elem in util.progressbar( topology, title='plotting mesh' ):
+    for elem in log.progressbar( topology, title='plotting mesh' ):
       C = coords( elem, cscheme )
       if ndims == 3:
         C = project3d( C )
@@ -85,7 +91,7 @@ class PylabAxis( object ):
       poly.append( C )
       if color:
         c, w = color( elem, ischeme )
-        values.append( util.mean( c, weights=w, axis=0 ) if c.ndim > 0 else c )
+        values.append( numeric.mean( c, weights=w, axis=0 ) if c.ndim > 0 else c )
   
     if values:
       elements = collections.PolyCollection( poly, edgecolors=edgecolors, linewidth=linewidth )
@@ -125,7 +131,7 @@ class PylabAxis( object ):
     'quiver builder'
   
     xyuv = function.Concatenate( [ coords, quiver ] )
-    XYUV = [ xyuv(elem,sample) for elem in util.progressbar( topology, title='plotting quiver' ) ]
+    XYUV = [ xyuv(elem,sample) for elem in log.progressbar( topology, title='plotting quiver' ) ]
     self.quiver( *numpy.concatenate( XYUV, 0 ).T, scale=scale )
 
   def add_graph( self, xfun, yfun, topology, sample='contour10', **kwargs ):
@@ -170,13 +176,13 @@ def project3d( C ):
   sqrt3 = numpy.sqrt( 3 )
   sqrt6 = numpy.sqrt( 6 )
   R = numpy.array( [[ sqrt3, 0, -sqrt3 ], [ 1, 2, 1 ], [ sqrt2, -sqrt2, sqrt2 ]] ) / sqrt6
-  return util.transform( C, R[:,::2], axis=0 )
+  return numeric.transform( C, R[:,::2], axis=0 )
 
 def writevtu( name, topology, coords, pointdata={}, celldata={} ):
   'write vtu from coords function'
 
   vtupath = util.getpath( name )
-  progress = util.ProgressBar()
+  progress = log.ProgressBar()
   progress.add( 'saving data' )
   progress.add_to_end( os.path.basename(vtupath) )
   import vtk
@@ -219,7 +225,7 @@ def writevtu( name, topology, coords, pointdata={}, celldata={} ):
       for v in data.flat:
         vtkArray.InsertNextValue( v )
     for vtkArray, data, iweights in celldatafun( elem, 'gauss1' ):
-      vtkArray.InsertNextValue( util.mean( data, weights=iweights, axis=0 ) )
+      vtkArray.InsertNextValue( numeric.mean( data, weights=iweights, axis=0 ) )
   vtkMesh.SetPoints( vtkPoints )
   vtkWriter = vtk.vtkXMLUnstructuredGridWriter()
   vtkWriter.SetInput( vtkMesh )

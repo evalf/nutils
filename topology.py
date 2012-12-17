@@ -1,4 +1,4 @@
-from . import element, function, util, numpy, parallel, matrix, _
+from . import element, function, util, numpy, parallel, matrix, log, core, numeric, _
 
 class ElemMap( dict ):
   'dictionary-like element mapping'
@@ -36,7 +36,7 @@ class Topology( set ):
     'integrate'
 
     if title:
-      pbar = util.ProgressBar()
+      pbar = log.ProgressBar()
       pbar.add( 'integrating' if title is True else title )
       pbar.add( '[#%d]' % len(self) )
 
@@ -82,7 +82,7 @@ class Topology( set ):
             for elem in self:
               I, J = IJ( elem, None )
               for i in I:
-                graph[i] = util.addsorted( graph[i], J, inplace=True )
+                graph[i] = numeric.addsorted( graph[i], J, inplace=True )
             integrands.append( function.Tuple([ ifunc, IJ, f, iweights ]) )
           A = matrix.SparseMatrix( graph, ncols )
       else:
@@ -100,7 +100,7 @@ class Topology( set ):
 
     for elem in topo:
       for ifunc, index, data, w in idata( elem, ischeme[elem] if isinstance(ischeme,dict) else ischeme ):
-        retvals[ifunc][index] += util.contract( data.T, w ).T
+        retvals[ifunc][index] += numeric.contract( data.T, w ).T
 
     if single_arg:
       retvals, = retvals
@@ -288,7 +288,7 @@ class StructuredTopology( Topology ):
       return Topology.__getitem__( self, item )
     return StructuredTopology( self.structure[item] )
 
-  @util.cacheprop
+  @core.cacheprop
   def boundary( self ):
     'boundary'
 
@@ -319,7 +319,7 @@ class StructuredTopology( Topology ):
     topo.groups = dict( zip( ( 'left', 'right', 'bottom', 'top', 'front', 'back' ), boundaries ) )
     return topo
 
-  @util.cachefunc
+  @core.cachefunc
   def splinefunc( self, degree, neumann=(), periodic=None ):
     'spline from nodes'
 
@@ -392,7 +392,7 @@ class StructuredTopology( Topology ):
 
     return StructuredTopology( structure )
 
-  @util.weakcacheprop
+  @core.weakcacheprop
   def refined( self ):
     'refined (=refine(2))'
 
@@ -507,7 +507,7 @@ class UnstructuredTopology( Topology ):
       elements.extend( elem.refined(n) )
     return UnstructuredTopology( elements, ndims=self.ndims )
 
-  @util.weakcacheprop
+  @core.weakcacheprop
   def refined( self ):
     'refined (=refine(2))'
 

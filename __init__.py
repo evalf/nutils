@@ -5,6 +5,8 @@ _ = numpy.newaxis
 __all__ = [
   '_',
   'numpy',
+  'core',
+  'numeric',
   'element',
   'function',
   'mesh',
@@ -14,4 +16,5 @@ __all__ = [
   'green',
   'matrix',
   'parallel',
+  'log',
 ]
