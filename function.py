@@ -2220,19 +2220,21 @@ class TakeDiag( ArrayFunc ):
     shape.append( n )
     ArrayFunc.__init__( self, args=[func,ax1-func.ndim,ax2-func.ndim], evalf=numeric.takediag, shape=shape )
 
-#class Tanh( ArrayFunc ):
-#  'hyperbolic tangent'
-#
-#  eval = staticmethod( numpy.tanh )
-#
-#  def localgradient( self, ndims ):
-#    'gradient'
-#
-#    return (-Tanh( self.args[0] )**2 + 1.) * self.args[0].localgradient(ndims)
+def Sinh( x ):
+
+  return ( Exp( x ) - Exp( -x ) )/2.
+
+def Cosh( x ):
+
+  return ( Exp( x ) + Exp( -x ) )/2.
 
 def Tanh( x ):
 
   return 1 - 2 / ( Exp( 2 * x ) + 1 )
+
+def Arctanh( x ):
+
+  return 0.5 * ( Log( 1+x ) - Log( 1-x ) )
 
 # AUXILIARY OBJECTS
 
