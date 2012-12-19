@@ -10,79 +10,91 @@ debug    = lambda msg, end='\n': log( 4, msg, end )
 def log( level, msg, end ):
   'log text'
 
-  verbosity = core.getprop( 'verbose', 0 )
-  if verbosity < level:
-    return
+  if level > core.getprop( 'verbose', level ):
+    return False
 
-  sys.stdout.write( msg + end )
-  sys.stdout.flush()
+  out = core.getprop( 'html', sys.stdout )
+  out.write( msg + end )
+  out.flush()
 
-  html = core.getprop( 'html', False )
-  if html:
-    html.write( msg + end )
+  return True
 
 class ProgressBar( object ):
   'progress bar class'
 
-  def __init__( self ):
+  def __init__( self, iterable, title ):
     'constructor'
+
+    try:
+      self.iterable = iter(iterable)
+    except TypeError:
+      self.iterable = None
+      self.n = iterable
+    else:
+      self.n = len(iterable)
 
     self.x = 0
     self.t0 = time.time()
     self.length = core.getprop( 'linewidth', 50 )
-    self.endtext = ''
+    self.out = core.getprop( 'verbose', 3 ) > 2 and core.getprop( 'html', sys.stdout )
+    self.add( title )
 
   def add( self, text ):
     'add text'
 
-    self.length -= len(text) + 1
-    progress( text + ' ', end='' )
-
-  def add_to_end( self, text ):
-    'add to after progress bar'
+    if not self.out:
+      return
 
     self.length -= len(text) + 1
-    self.endtext += ' ' + text
+    self.out.write( text + ' ' )
+    self.out.flush()
 
-  def bar( self, iterable, n=None ):
+  def __iter__( self ):
     'iterate'
 
-    if n is None:
-      n = len( iterable )
-    for i, item in enumerate( iterable ):
-      self.update( i, n )
+    return self.iterator() if self.out else self.iterable
+
+  def iterator( self ):
+    'iterate'
+
+    for i, item in enumerate( self.iterable ):
+      self.update( i )
       yield item
 
-  def update( self, i, n ):
+    self.close()
+
+  def update( self, i ):
     'update'
 
-    x = int( (i+1) * self.length ) // (n+1)
-    if self.x < x <= self.length:
-      progress( '-' * (x-self.x), end='' )
-      self.x = x
+    if not self.out:
+      return
 
-  def __del__( self ):
+    x = int( (i+1) * self.length ) // (self.n+1)
+    if not self.x < x <= self.length:
+      return
+
+    self.out.write( '-' * (x-self.x) )
+    self.out.flush()
+    self.x = x
+
+  def close( self ):
     'destructor'
+
+    if not self.out:
+      return
 
     dt = '%.2f' % ( time.time() - self.t0 )
     dts = dt[1:] if dt[0] == '0' else \
           dt[:3] if len(dt) <= 6 else \
           '%se%d' % ( dt[0], len(dt)-3 )
-    progress( '-' * (self.length-self.x) + self.endtext + ' ' + dts )
-
-def progressbar( iterable, title='iterating' ):
-  'show progressbar while iterating'
-
-  progress = ProgressBar()
-  progress.add( title )
-  return progress.bar( iterable )
+    self.out.write( '-' * (self.length-self.x) + ' ' + dts + '\n' )
 
 class HtmlWriter( object ):
   'html writer'
 
   html = None
 
-  def __init__( self, htmlfile ):
+  def __init__( self, htmlfile, stdout=sys.stdout ):
     'constructor'
 
     self.basedir = os.path.dirname( htmlfile )
@@ -96,6 +108,7 @@ class HtmlWriter( object ):
       permanent = 'file://%s' % htmlfile
     self.html.write( '<a href="%s">[permalink]</a>\n\n' % permanent )
     self.html.flush()
+    self.stdout = stdout
 
     import re
     self.pattern = re.compile( r'\b(\w+[.]\w+)\b' )
@@ -112,7 +125,13 @@ class HtmlWriter( object ):
   def write( self, s ):
     'write string'
 
+    self.stdout.write( s )
     self.html.write( self.pattern.sub( self.filerep, s ) )
+
+  def flush( self ):
+    'flush'
+
+    self.stdout.flush()
     self.html.flush()
 
   def __del__( self ):
@@ -164,7 +183,7 @@ refocus = function () {
   focus = newfocus;
   focus.classList.add( 'loading' );
   newobj = document.createElement( 'img' );
-  newobj.setAttribute( 'width', '600px' );
+  newobj.setAttribute( 'width', '520px' );
   newobj.onclick = function () { document.location.href=focus.getAttribute('href'); };
   newobj.onload = function () {
     preview.innerHTML='';

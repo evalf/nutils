@@ -7,6 +7,13 @@ def setprop( name, value ):
   frame = sys._getframe(1)
   frame.f_locals[key] = value
 
+def delprop( name, value ):
+  'set stack-global property'
+
+  key = '__property__' + name
+  frame = sys._getframe(1)
+  frame.f_locals.pop( key, None )
+
 getprop_nodefault = object()
 def getprop( name, default=getprop_nodefault ):
   'get stack-global property'

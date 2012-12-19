@@ -42,17 +42,16 @@ class Pylab( object ):
       log.error( 'ERROR: plot failed: %s' % (msg or exc) )
       return #True
 
+    log.info( 'saving image...', end='' )
     from matplotlib import pyplot
     dumpdir = core.getprop( 'dumpdir', False )
     assert dumpdir
     n = len( os.listdir( dumpdir ) )
     imgpath = util.getpath( self.name )
-    progress = log.ProgressBar()
-    progress.add( 'saving image' )
-    progress.add_to_end( os.path.basename(imgpath) )
     pyplot.savefig( imgpath, format=imgpath.split('.')[-1] )
     os.chmod( imgpath, 0644 )
     pyplot.close()
+    log.info( os.path.basename(imgpath) )
 
 class PylabAxis( object ):
   'matplotlib axis augmented with finity-specific functions'
@@ -72,6 +71,7 @@ class PylabAxis( object ):
   def add_mesh( self, coords, topology, color=None, edgecolors='none', linewidth=1, xmargin=0, ymargin=0, aspect='equal', cbar='vertical', title=None, ischeme='gauss2', cscheme='contour3', clim=None, frame=True, usecolor=True ):
     'plot mesh'
   
+    pbar = log.ProgressBar( topology, title='plotting mesh' )
     assert topology.ndims == 2
     from matplotlib import pyplot, collections
     poly = []
@@ -81,7 +81,7 @@ class PylabAxis( object ):
     if color:
       assert color.ndim == 0
       color = function.Tuple([ color, coords.iweights(ndims=2) ])
-    for elem in log.progressbar( topology, title='plotting mesh' ):
+    for elem in pbar:
       C = coords( elem, cscheme )
       if ndims == 3:
         C = project3d( C )
@@ -102,36 +102,44 @@ class PylabAxis( object ):
         pyplot.colorbar( elements, ax=self._ax, orientation=cbar )
     else:
       elements = collections.PolyCollection( poly, edgecolors='black', facecolors='none', linewidth=linewidth )
+
     if clim:
       elements.set_clim( *clim )
+
     if ndims == 3:
       self.get_xaxis().set_visible( False )
       self.get_yaxis().set_visible( False )
       self.box( 'off' )
+
     self.add_collection( elements )
     vertices = numpy.concatenate( poly )
     xmin, ymin = vertices.min(0)
     xmax, ymax = vertices.max(0)
+
     if xmargin is not None:
       if not isinstance( xmargin, tuple ):
         xmargin = xmargin, xmargin
       self.set_xlim( xmin - xmargin[0], xmax + xmargin[1] )
+
     if ymargin is not None:
       if not isinstance( ymargin, tuple ):
         ymargin = ymargin, ymargin
       self.set_ylim( ymin - ymargin[0], ymax + ymargin[1] )
+
     if aspect:
       self.set_aspect( aspect )
       self.set_autoscale_on( False )
+
     if title:
       self.title( title )
+
     self.set_frame_on( frame )
   
   def add_quiver( self, coords, topology, quiver, sample='uniform3', scale=None ):
     'quiver builder'
   
     xyuv = function.Concatenate( [ coords, quiver ] )
-    XYUV = [ xyuv(elem,sample) for elem in log.progressbar( topology, title='plotting quiver' ) ]
+    XYUV = [ xyuv(elem,sample) for elem in log.ProgressBar( topology, title='plotting quiver' ) ]
     self.quiver( *numpy.concatenate( XYUV, 0 ).T, scale=scale )
 
   def add_graph( self, xfun, yfun, topology, sample='contour10', **kwargs ):
@@ -182,9 +190,7 @@ def writevtu( name, topology, coords, pointdata={}, celldata={} ):
   'write vtu from coords function'
 
   vtupath = util.getpath( name )
-  progress = log.ProgressBar()
-  progress.add( 'saving data' )
-  progress.add_to_end( os.path.basename(vtupath) )
+  pbar = log.ProgressBar( topology, title='preparing vtk data' )
   import vtk
   vtkPoints = vtk.vtkPoints()
   vtkMesh = vtk.vtkUnstructuredGrid()
@@ -206,7 +212,7 @@ def writevtu( name, topology, coords, pointdata={}, celldata={} ):
     celldata_arrays.append( function.Tuple([ array, func, coords.iweights(topology.ndims) ]) )
     vtkMesh.GetCellData().AddArray( array )
   celldatafun = function.Tuple( celldata_arrays )
-  for elem in progress.bar( topology ):
+  for elem in pbar:
     if isinstance( elem, element.TriangularElement ):
       vtkelem = vtk.vtkTriangle()
     elif isinstance( elem, element.QuadElement ) and elem.ndims == 2:
@@ -227,11 +233,14 @@ def writevtu( name, topology, coords, pointdata={}, celldata={} ):
     for vtkArray, data, iweights in celldatafun( elem, 'gauss1' ):
       vtkArray.InsertNextValue( numeric.mean( data, weights=iweights, axis=0 ) )
   vtkMesh.SetPoints( vtkPoints )
+
+  log.info( 'saving vtu data...', end='' )
   vtkWriter = vtk.vtkXMLUnstructuredGridWriter()
   vtkWriter.SetInput( vtkMesh )
   vtkWriter.SetFileName( vtupath )
   vtkWriter.SetDataModeToAscii()
   vtkWriter.Write()
+  log.info( os.path.basename(vtupath) )
 
 def preview( coords, topology, cscheme='contour8' ):
   'preview function'

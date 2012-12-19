@@ -296,29 +296,22 @@ class Evaluable( object ):
     label = self.__class__.__name__
     return { 'label': r'\n'.join( [ label ] + args ) }
 
-  def graphviz( self, values=None ):
+  def graphviz( self ):
     'create function graph'
 
     import os, subprocess
 
-    DOT = '/usr/bin/dot'
-    if not os.path.isfile( DOT ) or not os.access( DOT, os.X_OK ):
-      return False
-
-    self.compile()
-    if values is None:
-      values = self.data + [ '<elem>', '<points>' ]
-
-    N = len(self.data) + 2
-    dofaxes = {} # labels for dofaxes
-
     imgtype = core.getprop( 'imagetype', 'png' )
     imgpath = util.getpath( 'dot{0:03x}.' + imgtype )
-    dot = subprocess.Popen( [DOT,'-Tjpg'], stdin=subprocess.PIPE, stdout=open(imgpath,'w') )
+    try:
+      dot = subprocess.Popen( ['dot','-Tjpg'], stdin=subprocess.PIPE, stdout=open(imgpath,'w') )
+    except OSError:
+      return False
 
     print >> dot.stdin, 'digraph {'
     print >> dot.stdin, 'graph [ dpi=72 ];'
 
+    self.compile()
     for i, (op,indices) in enumerate( self.operations ):
 
       node = op.__graphviz__()

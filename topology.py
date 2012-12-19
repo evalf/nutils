@@ -32,13 +32,11 @@ class Topology( set ):
     items = ( self.groups[it] for it in item.split( ',' ) )
     return sum( items, items.next() )
 
-  def integrate( self, funcs, ischeme=None, coords=None, title=True, graphviz=True ):
+  def integrate( self, funcs, ischeme=None, coords=None, title='integrating', graphviz=True ):
     'integrate'
 
-    if title:
-      pbar = log.ProgressBar()
-      pbar.add( 'integrating' if title is True else title )
-      pbar.add( '[#%d]' % len(self) )
+    pbar = log.ProgressBar( self, title=title )
+    pbar.add( '[#%d]' % len(self) )
 
     single_arg = not isinstance(funcs,list)
     if single_arg:
@@ -88,17 +86,14 @@ class Topology( set ):
       else:
         raise NotImplementedError, 'ndim=%d' % func.ndim
       retvals.append( A )
-
     idata = function.Tuple( integrands )
-    if title:
+
+    if pbar.out:
       name = graphviz and idata.graphviz()
       if name:
         pbar.add( name )
-      topo = pbar.bar( self )
-    else:
-      topo = self
 
-    for elem in topo:
+    for elem in pbar:
       for ifunc, index, data, w in idata( elem, ischeme[elem] if isinstance(ischeme,dict) else ischeme ):
         retvals[ifunc][index] += numeric.contract( data.T, w ).T
 
@@ -112,12 +107,12 @@ class Topology( set ):
     weights = self.project( fun, onto, coords, **kwargs )
     return onto.dot( weights )
 
-  def project( self, fun, onto, coords, tol=0, ischeme='gauss8', title=True, droptol=1e-8, exact_boundaries=False, constrain=None, verify=None ):
+  def project( self, fun, onto, coords, tol=0, ischeme='gauss8', title='projecting', droptol=1e-8, exact_boundaries=False, constrain=None, verify=None ):
     'L2 projection of function onto function space'
 
     if exact_boundaries:
       assert constrain is None
-      constrain = self.boundary.project( fun, onto, coords, ischeme=ischeme, title=None, tol=tol, droptol=droptol )
+      constrain = self.boundary.project( fun, onto, coords, title=title+' boundaries', ischeme=ischeme, tol=tol, droptol=droptol )
     elif constrain is None:
       constrain = util.NanVec( onto.shape[0] )
     else:
@@ -150,7 +145,7 @@ class Topology( set ):
     'create new domain based on levelset'
 
     newelems = []
-    for elem in util.progressbar( self, title='selecting/refining elements' ):
+    for elem in log.ProgressBar( self, title='selecting/refining elements' ):
       elempool = [ elem ]
       for level in range( maxrefine ):
         nextelempool = []

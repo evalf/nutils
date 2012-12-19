@@ -38,7 +38,7 @@ def iterate( nmax=-1, verbose=True ):
   while True:
     i += 1
     if verbose:
-      log.info( 'iteration %d' % i )
+      log.progress( 'iteration %d' % i )
     yield i
     if i == nmax:
       break
@@ -131,13 +131,20 @@ def run( *functions ):
 
   core.setprop( 'nprocs', 1 )
   core.setprop( 'outdir', '~/public_html' )
-  core.setprop( 'verbose', 2 )
-  core.setprop( 'linewidth', 50 )
+  core.setprop( 'verbose', 3 )
+  core.setprop( 'linewidth', 60 )
   core.setprop( 'imagetype', 'png' )
-  d = {}
-  execfile( os.path.expanduser( '~/.finityrc' ), {}, d )
-  for key, val in d.iteritems():
-    core.setprop( key, val )
+  finityrc = os.path.expanduser( '~/.finityrc' )
+  if os.path.isfile( finityrc ):
+    d = {}
+    try:
+      execfile( finityrc, {}, d )
+    except:
+      log.error( 'Error in %s (skipping)' % finityrc )
+      log.error( traceback.format_exc() )
+    else:
+      for key, val in d.iteritems():
+        core.setprop( key, val )
 
   if '-h' in sys.argv[1:] or '--help' in sys.argv[1:]:
     print 'Usage: %s [FUNC] [ARGS]' % sys.argv[0]
@@ -214,32 +221,39 @@ def run( *functions ):
       pass
     kwargs[ kwarg ] = val
 
-  title = '%s.%s' % ( sys.argv[0].split('/')[-1].lower(), funcname.lower() )
-
-  outdir = os.path.expanduser( core.getprop( 'outdir', None ) ).rstrip( os.sep )
-  basedir = '%s/%s/' % ( outdir, title.split('.')[0] )
+  scriptname = os.path.basename(sys.argv[0])
+  outdir = os.path.expanduser( core.getprop( 'outdir', None ) ).rstrip( os.sep ) + os.sep
+  basedir = outdir + scriptname + os.sep
   dumpdir = basedir + time.strftime( '%Y/%m/%d/%H-%M-%S/' )
   os.makedirs( dumpdir )
 
   core.setprop( 'dumpdir', dumpdir )
   core.setprop( 'html', log.HtmlWriter( dumpdir + 'index.html' ) )
 
-  link = basedir + 'latest'
-  if os.path.islink( link ):
-    os.remove( link )
-  os.symlink( dumpdir, link )
+  for directory in outdir, basedir:
+    link = directory + 'latest'
+    if os.path.islink( link ):
+      os.remove( link )
+    os.symlink( dumpdir, link )
 
-  linewidth = core.getprop( 'linewidth', None )
-  log.info( title + ' ' + ( ' ' + time.ctime() ).rjust( linewidth-len(title), '=' ) + ' |>|' )
-  for arg, val in kwargs.items():
-    log.info( '.'.rjust( len(title) ) + ' %s = %s' % ( arg.lower(), val ) )
+  commandline = [ ' '.join([ scriptname, funcname ]) ] \
+              + [ '  --%s=%s' % ( arg.lower(), val ) for arg, val in kwargs.items() ]
 
+  log.info( ' \\\n'.join( commandline ), end='\n\n' )
+  log.info( 'start %s\n' % time.ctime() )
+
+  t0 = time.time()
   try:
     func( **kwargs )
   except:
-    log.error( traceback.format_exc() )
-    os._exit(1)
+    log.error( traceback.format_exc(), end='' )
 
-  log.info( ( ' ' + time.ctime() ).rjust( linewidth+1, '=' ) + ' |<|' )
+  dt = time.time() - t0
+  hours = dt // 3600
+  minutes = dt // 60 - 60 * hours
+  seconds = dt // 1 - 60 * minutes - 3600 * hours
+
+  log.info( '\nfinish %s' % time.ctime() )
+  log.info( 'elapsed %.0f:%.0f:%.0f' % ( hours, minutes, seconds ) )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
