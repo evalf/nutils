@@ -6,9 +6,9 @@ class ElemMap( dict ):
   def __init__( self, mapping, ndims, overlap ):
     'constructor'
 
-    self.update( mapping )
     self.ndims = ndims
     self.overlap = overlap
+    dict.__init__( self, mapping )
 
   def __str__( self ):
     'string representation'
@@ -32,7 +32,7 @@ class Topology( set ):
     items = ( self.groups[it] for it in item.split( ',' ) )
     return sum( items, items.next() )
 
-  def integrate( self, funcs, ischeme=None, coords=None, title='integrating', graphviz=True ):
+  def integrate( self, funcs, ischeme=None, coords=None, title='integrating' ):
     'integrate'
 
     pbar = log.ProgressBar( self, title=title )
@@ -89,7 +89,7 @@ class Topology( set ):
     idata = function.Tuple( integrands )
 
     if pbar.out:
-      name = graphviz and idata.graphviz()
+      name = idata.graphviz()
       if name:
         pbar.add( name )
 
@@ -114,7 +114,7 @@ class Topology( set ):
       assert constrain is None
       constrain = self.boundary.project( fun, onto, coords, title=title+' boundaries', ischeme=ischeme, tol=tol, droptol=droptol )
     elif constrain is None:
-      constrain = util.NanVec( onto.shape[0] )
+      constrain = util.NanVec( onto.shape[0] if isinstance(onto.shape[0],int) else onto.shape[0].stop )
     else:
       assert isinstance( constrain, util.NanVec )
       assert constrain.shape == onto.shape[:1]

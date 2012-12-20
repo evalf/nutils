@@ -155,6 +155,7 @@ def run( *functions ):
     print '  -v V  --verbose=V    Set verbosity level [%d]' % core.getprop( 'verbose' )
     print '  -l L  --linewidth=L  Set line width [%d]' % core.getprop( 'linewidth' )
     print '  -i I  --imagetype=I  Set image type [%s]' % core.getprop( 'imagetype' )
+    print '  -g G  --graphviz=G   Set graphviz executable location'
     for i, func in enumerate( functions ):
       print
       print 'Arguments for %s%s' % ( func.func_name, '' if i else ' (default)' )
@@ -206,6 +207,8 @@ def run( *functions ):
     core.setprop( 'linewidth', int( args.pop('linewidth') ) )
   if 'imagetype' in args:
     core.setprop( 'imagetype', args.pop('imagetype') )
+  if 'graphviz' in args:
+    core.setprop( 'graphviz', args.pop('graphviz') )
 
   kwargs = dict( getkwargdefaults( func ) )
   for arg, val in args.iteritems():

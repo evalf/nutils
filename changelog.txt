@@ -1,5 +1,7 @@
 Finity 12.12.19 --- major enhancements
 
+Fixed sparse matrix in place addition: gave erroneous results.
+
 Fine grained modules. Contents of util are distributed over util,
 core, numeric. Core contains components that do not depend on any
 other finity modules. Numeric hosts numpy operations and acts as an
@@ -43,8 +45,8 @@ occurrence. Example:
 
   def main():
     core.setprop('test',1)
-    f() # prints '1'
-    g() # prints '2'
+    f() # prints '2'
+    g() # prints '1'
   
   def f():
     core.setprop('test',2)
@@ -86,11 +88,13 @@ Configurable image filetype via 'imagetype' property (.finityrc or
 --imagetype, util.run default 'png'). Applies to plot methods and
 graphviz.
 
-Graphviz location determined by path. Forks for parallel execution.
-Evaluables define their own representation, defaulting to their name
-and static arguments. Currently Get and Align define alternative
-representations, while Diagonalize, Kronecker and Expand flip b/w to
-warn for potential sub-optimality.
+Graphviz switched off by default, switched on by setting dot
+executable path via 'graphviz' property (.finityrc or --graphviz).
+Forks for parallel execution. Evaluables define their own
+representation, defaulting to their name and static arguments.
+Currently Get and Align define alternative representations, while
+Diagonalize, Kronecker and Expand flip b/w to warn for potential
+sub-optimality.
 
 ***
 

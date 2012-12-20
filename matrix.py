@@ -231,22 +231,6 @@ class SparseMatrix( Matrix ):
 
     return self.__class__( (self.data.copy(),self.indices,self.indptr), self.shape[1] )
 
-  def __add__( self, other ):
-    'addition'
-
-    raise NotImplementedError
-    assert isinstance( other, SparseMatrix )
-    import scipy.sparse
-
-    if other.shape != self.shape: # quick resize hack, temporary!
-      indptr = numpy.concatenate([ other.matrix.indptr, [other.matrix.indptr[-1]] * (self.shape[0]-other.shape[0]) ])
-      dii = other.matrix.data, other.matrix.indices, indptr
-      othermat = scipy.sparse.csr_matrix( dii, shape=self.shape )
-    else:
-      othermat = other.matrix
-
-    return SparseMatrix( self.matrix + othermat )
-
   def matvec( self, other ):
     'matrix-vector multiplication'
 
@@ -301,11 +285,15 @@ class SparseMatrix( Matrix ):
 
     assert isinstance( other, self.__class__ ) and self.shape == other.shape
     if numpy.all( self.indptr == other.indptr ) and numpy.all( self.indices == other.indices ):
-      self.data += other.data
+      I = slice(None)
     else:
-      _csr.csr_plus_csr( self.shape[0], self.shape[1], self.indptr,  self.indices,  self.data,
-                                                      other.indptr, other.indices, other.data,
-                                                       self.indptr,  self.indices,  self.data )
+      I = numpy.empty( other.data.shape, dtype=int )
+      for irow in range( self.shape[0] ):
+        s = slice( other.indptr[irow], other.indptr[irow+1] )
+        I[s] = self.indptr[irow] \
+             + numpy.searchsorted( self.indices[self.indptr[irow]:self.indptr[irow+1]], other.indices[s] )
+      assert all( self.indices[I] == other.indices )
+    self.data[I] += other.data
     return self
 
   @property

@@ -301,11 +301,17 @@ class Evaluable( object ):
 
     import os, subprocess
 
+    dotpath = core.getprop( 'graphviz', False )
+    if not dotpath:
+      return False
+
     imgtype = core.getprop( 'imagetype', 'png' )
     imgpath = util.getpath( 'dot{0:03x}.' + imgtype )
+
     try:
-      dot = subprocess.Popen( ['dot','-Tjpg'], stdin=subprocess.PIPE, stdout=open(imgpath,'w') )
+      dot = subprocess.Popen( [dotpath,'-Tjpg'], stdin=subprocess.PIPE, stdout=open(imgpath,'w') )
     except OSError:
+      log.error( 'error: failed to execute %s' % dotpath )
       return False
 
     print >> dot.stdin, 'digraph {'
@@ -349,10 +355,11 @@ class Evaluable( object ):
         pass
       log.error( '%s( %s )' % ( op.__evalf.__name__, ', '.join( args ) ), end=' ' )
       if N+i < len(values):
-        log.error( op.verify( values[N+i] ), end=' ' )
+        log.error( op.verify( values[N+i] ) )
       elif N+i == len(values):
-        objstr += ' <-----ERROR'
-      log.error( '%2d: %s' % ( i, objstr ) )
+        log.error( '<-----ERROR' )
+      else:
+        log.error( '' )
 
   def __eq__( self, other ):
     'compare'
@@ -1344,6 +1351,7 @@ class DofAxis( Evaluable ):
     'constructor'
 
     self.start, self.stop = dofrange
+    assert isinstance(self.start,int) and isinstance(self.stop,int) and 0 <= self.start <= self.stop
     Evaluable.__init__( self, args=args, evalf=evalf )
 
   def __int__( self ):
@@ -1409,7 +1417,7 @@ class DofMap( DofAxis ):
     'new'
 
     self.dofmap = dofmap
-    DofAxis.__init__( self, args=(ELEM,dofmap), evalf=self.evalmap, dofrange=(0,ndofs) )
+    DofAxis.__init__( self, args=(ELEM,dofmap), evalf=self.evalmap, dofrange=(0,int(ndofs)) )
 
   @staticmethod
   def evalmap( elem, dofmap ):
