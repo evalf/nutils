@@ -156,6 +156,10 @@ class PylabAxis( object ):
 
     for elem in topology:
       for x, y, xyd in xypairs( elem, sample ):
+
+        if y.ndim == 1 and y.shape[0] == 1:
+          y = y[0]
+
         xyd[0].extend( x if x.ndim else [x] * y.size )
         xyd[0].append( numpy.nan )
         xyd[1].extend( y if y.ndim else [y] * x.size )
