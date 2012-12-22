@@ -4,10 +4,10 @@ import sys, os, time, numpy, cPickle, hashlib, weakref, traceback
 def getpath( pattern ):
   'create file in dumpdir'
 
+  dumpdir = core.getprop( 'dumpdir', False )
   if pattern == pattern.format( 0 ):
     return dumpdir + pattern
   prefix = pattern.split( '{' )[0]
-  dumpdir = core.getprop( 'dumpdir', False )
   assert dumpdir
   names = [ name for name in os.listdir( dumpdir ) if name.startswith(prefix) ]
   n = len(names)

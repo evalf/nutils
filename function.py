@@ -130,17 +130,6 @@ class StaticArray( numpy.ndarray ):
     s[i] = item if self.shape[i] > 1 else 0
     return StaticArray( self[tuple(s)] )
 
-  def insert( self, axes ):
-    'insert newaxis'
-
-    axes = normdim( self.ndim+len(axes), axes )
-    if not axes:
-      return self
-    s = [slice(None)] * self.ndim
-    for ax in axes:
-      s.insert( ax, _ )
-    return self[ tuple(s) ]
-
   def indices( self ):
     'get indices for numpy array'
 
@@ -495,7 +484,7 @@ class ArrayFunc( Evaluable ):
       if isinstance(it,int):
         arr = arr.get(n,it)
       elif it == _:
-        arr = arr.align( [ i+(i>=n) for i in range(arr.ndim) ], arr.ndim+1 )
+        arr = arr.insert(n)
         n += 1
       elif it == slice(None):
         n += 1
@@ -505,12 +494,18 @@ class ArrayFunc( Evaluable ):
         assert skip >= 0
         n += skip
       elif isinstance(it,slice) and it.step in (1,None) and it.stop == it.start + 1:
-        arr = arr.get(n,it.start).insert([n])
+        arr = arr.get(n,it.start).insert(n)
         n += 1
       else:
         raise NotImplementedError
       assert n <= arr.ndim
     return arr
+
+  def insert( self, n ):
+    'insert axis'
+
+    n, = normdim( self.ndim+1, [n] )
+    return self.align( [ i+(i>=n) for i in range(self.ndim) ], self.ndim+1 )
 
   def reciprocal( self ):
     'reciprocal'
@@ -1549,6 +1544,16 @@ class Concatenate( ArrayFunc ):
     axis = axes[ self.axis ]
     return Concatenate( funcs, axis )
 
+  def takediag( self, ax1, ax2 ):
+    'take diagonal'
+
+    ax1, ax2 = normdim( self.ndim, [ax1,ax2] )
+    if ax1 != self.axis and ax2 != self.axis:
+      axis = self.axis - (self.axis>ax1) - (self.axis>ax2)
+      return Concatenate( [ f.takediag(ax1,ax2) for f in self.funcs ], axis=axis )
+
+    raise NotImplementedError
+
 class Vectorize( ArrayFunc ):
   'vectorize'
 
@@ -2383,15 +2388,6 @@ class Kronecker( ArrayFunc ):
 
     return Kronecker( self.func.localgradient(ndims), self.axis, self.length, self.pos )
 
-  def insert( self, axes ):
-    'insert'
-
-    i, = normdim( self.ndim, axes ) # TODO fix for multiple axes
-    axis = self.axis
-    if i <= self.axis:
-      axis += 1
-    return Kronecker( self.func.insert([i]), axis, self.length, self.pos )
-
   def __mul__( self, other ):
     'multiply'
 
@@ -2549,6 +2545,10 @@ class Expand( ArrayFunc ):
     prop.update( graphviz_warn )
     return prop
 
+def Stack( funcs, axis=0 ):
+  'stack functions in new axis'
+
+  return Concatenate( [ f.insert(axis) for f in funcs ], axis )
 
 
 # def find( self, x, title=False ):
