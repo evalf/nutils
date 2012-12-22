@@ -235,7 +235,7 @@ def writevtu( name, topology, coords, pointdata={}, celldata={} ):
       for v in data.flat:
         vtkArray.InsertNextValue( v )
     for vtkArray, data, iweights in celldatafun( elem, 'gauss1' ):
-      vtkArray.InsertNextValue( numeric.mean( data, weights=iweights, axis=0 ) )
+      vtkArray.InsertNextValue( numeric.mean( data, weights=iweights, axis=0 ) if data.ndim == 1 else data )
   vtkMesh.SetPoints( vtkPoints )
 
   log.info( 'saving vtu data...', end='' )
