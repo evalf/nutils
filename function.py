@@ -1,4 +1,4 @@
-from . import util, element, numpy, numeric, log, core, _
+from . import util, element, numpy, numeric, log, prop, _
 
 def check_localgradient( localgradient ):
   def localgradient_wrapper( func, ndims ):
@@ -290,17 +290,18 @@ class Evaluable( object ):
 
     import os, subprocess
 
-    dotpath = core.getprop( 'graphviz', False )
-    if not dotpath:
+    try:
+      dotpath = prop.dot
+    except AttributeError:
       return False
 
-    imgtype = core.getprop( 'imagetype', 'png' )
+    imgtype = getattr( prop, 'imagetype', 'png' )
     imgpath = util.getpath( 'dot{0:03x}.' + imgtype )
 
     try:
       dot = subprocess.Popen( [dotpath,'-Tjpg'], stdin=subprocess.PIPE, stdout=open(imgpath,'w') )
     except OSError:
-      log.error( 'error: failed to execute %s' % dotpath )
+      log.error( 'error: failed to execute', dotpath )
       return False
 
     print >> dot.stdin, 'digraph {'
@@ -348,7 +349,7 @@ class Evaluable( object ):
       elif N+i == len(values):
         log.error( '<-----ERROR' )
       else:
-        log.error( '' )
+        log.error()
 
   def __eq__( self, other ):
     'compare'
@@ -891,9 +892,9 @@ class ArrayFunc( Evaluable ):
   def __graphviz__( self ):
     'graphviz representation'
 
-    prop = Evaluable.__graphviz__( self )
-    prop['label'] += r'\n[%s]' % ','.join( map(str,map(int,self.shape)) )
-    return prop
+    args = Evaluable.__graphviz__( self )
+    args['label'] += r'\n[%s]' % ','.join( map(str,map(int,self.shape)) )
+    return args
 
 class Align( ArrayFunc ):
   'align axes'
@@ -2362,9 +2363,9 @@ class Diagonalize( ArrayFunc ):
   def __graphviz__( self ):
     'graphviz representation'
 
-    prop = ArrayFunc.__graphviz__( self )
-    prop.update( graphviz_warn )
-    return prop
+    args = ArrayFunc.__graphviz__( self )
+    args.update( graphviz_warn )
+    return args
 
 class Kronecker( ArrayFunc ):
   'kronecker'
@@ -2442,9 +2443,9 @@ class Kronecker( ArrayFunc ):
   def __graphviz__( self ):
     'graphviz representation'
 
-    prop = ArrayFunc.__graphviz__( self )
-    prop.update( graphviz_warn )
-    return prop
+    args = ArrayFunc.__graphviz__( self )
+    args.update( graphviz_warn )
+    return args
 
 class Expand( ArrayFunc ):
   'singleton expand'
@@ -2541,9 +2542,9 @@ class Expand( ArrayFunc ):
   def __graphviz__( self ):
     'graphviz representation'
 
-    prop = ArrayFunc.__graphviz__( self )
-    prop.update( graphviz_warn )
-    return prop
+    args = ArrayFunc.__graphviz__( self )
+    args.update( graphviz_warn )
+    return args
 
 def Stack( funcs, axis=0 ):
   'stack functions in new axis'

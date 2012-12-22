@@ -1,4 +1,4 @@
-from . import topology, util, numpy, function, element, log, core, numeric, _
+from . import topology, util, numpy, function, element, log, prop, numeric, _
 
 import matplotlib
 matplotlib.use( 'Agg' )
@@ -12,7 +12,7 @@ class Pylab( object ):
     'constructor'
 
     if name is None:
-      imgtype = core.getprop( 'imagetype', 'png' )
+      imgtype = getattr( prop, 'imagetype', 'png' )
       name='graph{0:03x}.' + imgtype
 
     if isinstance( title, (list,tuple) ):
@@ -39,13 +39,12 @@ class Pylab( object ):
     'exit with block'
 
     if exc:
-      log.error( 'ERROR: plot failed: %s' % (msg or exc) )
+      log.error( 'ERROR: plot failed:', msg or exc )
       return #True
 
     log.info( 'saving image...', end='' )
     from matplotlib import pyplot
-    dumpdir = core.getprop( 'dumpdir', False )
-    assert dumpdir
+    dumpdir = prop.dumpdir
     n = len( os.listdir( dumpdir ) )
     imgpath = util.getpath( self.name )
     pyplot.savefig( imgpath, format=imgpath.split('.')[-1] )

@@ -1,3 +1,4 @@
+from . import prop
 from multiprocessing import Lock, cpu_count
 
 def shzeros( shape, dtype=float ):
@@ -20,7 +21,7 @@ def shzeros( shape, dtype=float ):
 def oldpariter( iterable, verbose=False ):
   'fork and iterate, handing equal-sized chunks to all processors'
 
-  nprocs = core.getprop( 'nprocs', 1 )
+  nprocs = getattr( prop, 'nprocs', 1 )
   if nprocs == 1:
     log.debug( 'pariter: iterating in sequential mode (nprocs=1)' )
     for i in iterable:
@@ -56,7 +57,7 @@ def oldpariter( iterable, verbose=False ):
 def pariter( iterable ):
   'fork and iterate, handing equal-sized chunks to all processors'
 
-  nprocs = core.getprop( 'nprocs', 1 )
+  nprocs = getattr( prop, 'nprocs', 1 )
   if nprocs == 1:
     log.debug( 'pariter: iterating in sequential mode (nprocs=1)' )
     for item in iterable:

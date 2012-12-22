@@ -1,20 +1,23 @@
-from . import core
+from . import prop
 import sys, time, os
 
-error    = lambda msg, end='\n': log( 0, msg, end )
-warning  = lambda msg, end='\n': log( 1, msg, end )
-info     = lambda msg, end='\n': log( 2, msg, end )
-progress = lambda msg, end='\n': log( 3, msg, end )
-debug    = lambda msg, end='\n': log( 4, msg, end )
+error    = lambda *args, **kwargs: log( 4, *args, **kwargs )
+warning  = lambda *args, **kwargs: log( 3, *args, **kwargs )
+info     = lambda *args, **kwargs: log( 2, *args, **kwargs )
+progress = lambda *args, **kwargs: log( 1, *args, **kwargs )
+debug    = lambda *args, **kwargs: log( 0, *args, **kwargs )
 
-def log( level, msg, end ):
-  'log text'
+def log( level, *args, **kwargs ):
+  'log text (modeled after python3 print)'
 
-  if level > core.getprop( 'verbose', level ):
+  if level < getattr( prop, 'verbose', None ):
     return False
 
-  out = core.getprop( 'html', sys.stdout )
-  out.write( msg + end )
+  sep = kwargs.pop( 'sep', ' ' )
+  end = kwargs.pop( 'end', '\n' )
+  out = kwargs.pop( 'file', getattr( prop, 'html', sys.stdout ) )
+  assert not kwargs, 'invalid log argument: %s=%s' % kwargs.popitem()
+  out.write( sep.join( map( str, args ) ) + end )
   out.flush()
 
   return True
@@ -35,8 +38,8 @@ class ProgressBar( object ):
 
     self.x = 0
     self.t0 = time.time()
-    self.length = core.getprop( 'linewidth', 50 )
-    self.out = core.getprop( 'verbose', 3 ) > 2 and core.getprop( 'html', sys.stdout )
+    self.length = getattr( prop, 'linewidth', 50 )
+    self.out = getattr( prop, 'verbose', None ) <= 1 and getattr( prop, 'html', sys.stdout )
     self.add( title )
 
   def add( self, text ):

@@ -39,21 +39,24 @@ New rectilinear mesh. New geometry evaluates by direct scaling &
 translation of element-local coordinates. Function definition remains
 unchanged.
 
-Properties. Read-only parameters local to a call stack. Properties are
-local variables in a function frame and traced down to first
-occurrence. Example:
+Properties. A non-global mechanism to make parameters available to
+funtions without passing them as arguments. Properties are local
+variables in a function frame and traced down to first occurrence.
+Example:
+
+  from finity import prop
 
   def main():
-    core.setprop('test',1)
-    f() # prints '2'
-    g() # prints '1'
+    prop.test = 1
+    f() #-> prints 2
+    g() #-> prints 1
   
   def f():
-    core.setprop('test',2)
+    prop.test = 2
     g()
   
   def g()
-    print core.getprop('test')
+    print prop.test
 
 Default settings. If a file ~/.finityrc exists, util.run will execute
 it as a script and copy all resulting globals as properties. Some
@@ -67,11 +70,13 @@ values:
   outdir = '~/public_html'
   verbose = 3
   imagetype = 'png'
+  dot = 'dot'
 
-Logging. Prioritized output via the new log module. Use of 'print' is
-discouraged. Priority levels are error (0), warning (1), info (2),
-progress(3) and debug (4). Levels higher than the 'verbose' property
-(.finityrc or --verbose, util.run default 2) are suppressed.
+Logging. Prioritized output via methods of the new log module, which
+behave identical to python3's print function. Use of 'print' is
+discouraged. Priority levels are error (4), warning (3), info (2),
+progress(1) and debug (0). Levels lower than the 'verbose' property
+(.finityrc or --verbose, util.run default 1) are suppressed.
 
 Clean text output. Copy-pasteable script header and command line
 arguments. Cleaner html code. Error tracebacks in html output.
