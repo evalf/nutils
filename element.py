@@ -1,6 +1,63 @@
 from . import util, numpy, core, numeric, _
 import weakref
 
+class TrimmedIScheme( object ):
+  'integration scheme for truncated elements'
+
+  def __init__( self, levelset, ischeme, maxrefine ):
+    'constructor'
+
+    self.levelset = levelset
+    self.ischeme = ischeme
+    self.maxrefine = maxrefine
+
+  def __getitem__( self, myelem ):
+    'get ischeme for elem'
+
+    inside = self.levelset( myelem, 'bezier3' ) > 0
+    if inside.all():
+      return myelem.eval( self.ischeme )
+
+    elempool = list( myelem.children )
+    coords = []
+    weights = []
+
+    for level in range( 1, self.maxrefine ):
+      nextelempool = []
+      for elem in elempool:
+        inside = self.levelset( elem, 'bezier3' ) > 0
+        if inside.all():
+          points = elem.eval( self.ischeme )
+          for i in range(level):
+            elem, transform = elem.parent
+            points = transform.eval( points )
+          assert elem is myelem
+          coords.append( points.coords )
+          weights.append( points.weights )
+        elif inside.any():
+          nextelempool.extend( elem.children )
+      elempool = nextelempool
+
+    for elem in elempool:
+      points = elem.eval( 'uniform10' )
+      inside = self.levelset( elem, points ) > 0
+      if inside.all():
+        points = elem.eval( self.ischeme )
+        inside = slice(None)
+      for i in range(self.maxrefine):
+        elem, transform = elem.parent
+        points = transform.eval( points )
+      assert elem is myelem
+      coords.append( points.coords[inside] )
+      weights.append( points.weights[inside] )
+
+    if not weights:
+      return None
+
+    coords = numpy.concatenate( coords, axis=0 )
+    weights = numpy.concatenate( weights, axis=0 )
+    return LocalPoints( coords, weights )
+
 class AffineTransformation( object ):
   'affine transformation'
 
@@ -14,14 +71,17 @@ class AffineTransformation( object ):
   def eval( self, points ):
     'apply transformation'
 
+    weights = None
     if self.transform.ndim == 0:
       coords = self.offset + self.transform * points.coords
+      if points.weights is not None:
+        weights = points.weights * (self.transform**points.ndims)
     elif self.transform.shape[1] == 0:
       assert points.coords.shape == (0,1)
       coords = self.offset[_,:]
     else:
       coords = self.offset + numpy.dot( points.coords, self.transform.T )
-    return LocalPoints( coords, points.weights )
+    return LocalPoints( coords, weights )
 
 class Element( object ):
   '''Element base class.

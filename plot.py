@@ -87,10 +87,16 @@ class PylabAxis( object ):
         cx, cy = numpy.hstack( [ C, C[:,:1] ] )
         if ( (cx[1:]-cx[:-1]) * (cy[1:]+cy[:-1]) ).sum() > 0:
           continue
-      poly.append( C )
       if color:
-        c, w = color( elem, ischeme )
+        if isinstance(ischeme,str):
+          points = elem.eval( ischeme )
+        else:
+          points = ischeme[elem]
+          if points is None:
+            continue
+        c, w = color( elem, points )
         values.append( numeric.mean( c, weights=w, axis=0 ) if c.ndim > 0 else c )
+      poly.append( C )
   
     if values:
       elements = collections.PolyCollection( poly, edgecolors=edgecolors, linewidth=linewidth )

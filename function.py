@@ -292,7 +292,8 @@ class Evaluable( object ):
 
     try:
       dotpath = prop.dot
-    except AttributeError:
+      assert dotpath
+    except (AttributeError,AssertionError):
       return False
 
     imgtype = getattr( prop, 'imagetype', 'png' )
@@ -1255,7 +1256,7 @@ class Function( ArrayFunc ):
       points = transform.eval( points )
       T *= transform.transform
 
-    assert allfvals
+    assert allfvals, 'no function values encountered'
     return allfvals[0] if len(allfvals) == 1 \
       else numpy.concatenate( allfvals, axis=1 )
 
@@ -2202,6 +2203,14 @@ class Power( ArrayFunc ):
     'get'
 
     return self.func.get( i, item )**self.power
+
+  def sum( self, axes=-1 ):
+    'sum'
+
+    if self.power == 2:
+      return ( self.func * self.func ).sum( axes )
+
+    return ArrayFunc.sum( self, axes )
 
 class Min( ArrayFunc ):
   'minimum'

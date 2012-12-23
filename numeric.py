@@ -125,6 +125,7 @@ def align_arrays( *funcs ):
   'align shapes'
 
   shape = []
+  funcs = [ f if hasattr(f,'shape') else numpy.array(f) for f in funcs ]
   for f in funcs:
     d = len(shape) - len(f.shape)
     if d < 0:

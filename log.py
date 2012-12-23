@@ -106,7 +106,7 @@ class HtmlWriter( object ):
     if 'public_html/' in htmlfile:
       import pwd
       username = pwd.getpwuid( os.getuid() ).pw_name
-      permanent = 'http://~%s/%s' % ( username, htmlfile.split('public_html/',1)[1] )
+      permanent = '/~%s/%s' % ( username, htmlfile.split('public_html/',1)[1] )
     else:
       permanent = 'file://%s' % htmlfile
     self.html.write( '<a href="%s">[permalink]</a>\n\n' % permanent )

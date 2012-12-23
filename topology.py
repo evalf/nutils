@@ -94,7 +94,13 @@ class Topology( set ):
         pbar.add( name )
 
     for elem in pbar:
-      for ifunc, index, data, w in idata( elem, ischeme[elem] if isinstance(ischeme,dict) else ischeme ):
+      if isinstance(ischeme,str):
+        points = elem.eval(ischeme)
+      else:
+        points = ischeme[elem]
+        if points is None:
+          continue
+      for ifunc, index, data, w in idata( elem, points ):
         retvals[ifunc][index] += numeric.contract( data.T, w ).T
 
     if single_arg:
@@ -161,6 +167,7 @@ class Topology( set ):
     return UnstructuredTopology( newelems, ndims=self.ndims )
 
   def refinedfunc( self, dofaxis, degree, refine ):
+    'create refined space by refining dofs in existing one'
   
     refine = set(refine) # make unique and equip with set operations
   
@@ -441,17 +448,22 @@ class UnstructuredTopology( Topology ):
   def refined( self ):
     'refined (=refine(2))'
 
-    linearfunc = self.linearfunc()
-    dofaxis, = linearfunc.shape
-    ndofs = int(dofaxis)
-
-    edges = {}
-    nmap = {}
+    try:
+      linearfunc = self.linearfunc()
+      dofaxis, = linearfunc.shape
+      ndofs = int(dofaxis)
+      edges = {}
+      nmap = {}
+    except:
+      dofaxis = None
 
     elements = []
     for elem in self:
       children = list( elem.children )
       elements.extend( children )
+      if not dofaxis:
+        continue
+
       nodedofs = dofaxis(elem,None)
       edgedofs = []
       if isinstance( elem, element.TriangularElement ):
@@ -472,10 +484,13 @@ class UnstructuredTopology( Topology ):
 
     #print 'boundary:', edges
 
-    dofaxis = function.DofMap( ndofs, ElemMap(nmap,self.ndims,overlap=False) )
-    fmap = dict.fromkeys( elements, element.PolyTriangle(1) )
-    linearfunc = function.Function( dofaxis=dofaxis, stdmap=ElemMap(fmap,self.ndims,overlap=False), igrad=0 )
-    namedfuncs = { 'spline2': linearfunc }
+    if dofaxis:
+      dofaxis = function.DofMap( ndofs, ElemMap(nmap,self.ndims,overlap=False) )
+      fmap = dict.fromkeys( elements, element.PolyTriangle(1) )
+      linearfunc = function.Function( dofaxis=dofaxis, stdmap=ElemMap(fmap,self.ndims,overlap=False), igrad=0 )
+      namedfuncs = { 'spline2': linearfunc }
+    else:
+      namedfuncs = {}
 
     return UnstructuredTopology( elements, ndims=2, namedfuncs=namedfuncs )
 
