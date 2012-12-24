@@ -205,6 +205,7 @@ def writevtu( name, topology, coords, pointdata={}, celldata={} ):
   import vtk
   vtkPoints = vtk.vtkPoints()
   vtkMesh = vtk.vtkUnstructuredGrid()
+
   pointdata_arrays = []
   for key, func in pointdata.iteritems():
     array = vtk.vtkFloatArray()
@@ -232,9 +233,18 @@ def writevtu( name, topology, coords, pointdata={}, celldata={} ):
       vtkelem = vtk.vtkVoxel() # TODO hexahedron for not rectilinear NOTE ordering changes!
     else:
       raise Exception, 'not sure what to do with element %r' % elem
-    x, pdata = coords_pointdata( elem, 'contour0' )
+
+    if elem.ndims == 3:  
+      x, pdata = coords_pointdata( elem, 'contour0' )
+    else:
+      x, pdata = coords_pointdata( elem, 'contour2' )
+
     cellpoints = vtkelem.GetPointIds()
     for i, c in enumerate( x ):
+
+      if elem.ndims == 2:
+        c = numpy.append( c, 0 )
+
       pointid = vtkPoints.InsertNextPoint( *c )
       cellpoints.SetId( i, pointid )
     vtkMesh.InsertNextCell( vtkelem.GetCellType(), cellpoints )
