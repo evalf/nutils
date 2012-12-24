@@ -322,7 +322,7 @@ class StructuredTopology( Topology ):
     return topo
 
   @core.cachefunc
-  def splinefunc( self, degree, neumann=(), periodic=None ):
+  def splinefunc( self, degree, neumann=(), periodic=None, closed=False ):
     'spline from nodes'
 
     if periodic is None:
@@ -340,8 +340,14 @@ class StructuredTopology( Topology ):
       n = self.structure.shape[idim]
       p = degree[idim]
 
-      neumann_i = (idim*2 in neumann and 1) | (idim*2+1 in neumann and 2)
-      stdelems_i = element.PolyLine.spline( degree=p, nelems=n, periodic=periodic_i, neumann=neumann_i )
+      if closed == False:
+        neumann_i = (idim*2 in neumann and 1) | (idim*2+1 in neumann and 2)
+        stdelems_i = element.PolyLine.spline( degree=p, nelems=n, periodic=periodic_i, neumann=neumann_i )
+      elif closed == True:
+        assert periodic==(), 'Periodic option not allowed for closed spline'
+        assert neumann ==(), 'Neumann option not allowed for closed spline'
+        stdelems_i = element.PolyLine.spline( degree=p, nelems=n, periodic=True )
+
       stdelems = stdelems[...,_] * stdelems_i if idim else stdelems_i
 
       nd = n + p - 1

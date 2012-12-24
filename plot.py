@@ -67,7 +67,7 @@ class PylabAxis( object ):
 
     return getattr( self._ax, attr )
 
-  def add_mesh( self, coords, topology, color=None, edgecolors='none', linewidth=1, xmargin=0, ymargin=0, aspect='equal', cbar='vertical', title=None, ischeme='gauss2', cscheme='contour3', clim=None, frame=True, usecolor=True ):
+  def add_mesh( self, coords, topology, color=None, edgecolors='none', linewidth=1, xmargin=0, ymargin=0, aspect='equal', cbar='vertical', title=None, ischeme='gauss2', cscheme='contour3', clim=None, frame=True, usecolor=True, colormap=None ):
     'plot mesh'
   
     pbar = log.ProgressBar( topology, title='plotting mesh' )
@@ -103,6 +103,8 @@ class PylabAxis( object ):
       elements.set_array( numpy.asarray(values) )
       if not usecolor:
         elements.set_cmap( pyplot.cm.gray )
+      if colormap:
+        elements.set_cmap( colormap )
       if cbar:
         pyplot.colorbar( elements, ax=self._ax, orientation=cbar )
     else:
