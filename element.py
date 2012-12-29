@@ -44,6 +44,8 @@ class TrimmedIScheme( object ):
       if inside.all():
         points = elem.eval( self.ischeme )
         inside = slice(None)
+      elif not inside.any():
+        continue
       for i in range(self.maxrefine):
         elem, transform = elem.parent
         points = transform.eval( points )
@@ -88,6 +90,13 @@ class Element( object ):
 
   Represents the topological shape.'''
 
+  def __init__( self, ndims, parent=None, context=None ):
+    'constructor'
+
+    self.ndims = ndims
+    self.parent = parent
+    self.context = context
+
   def eval( self, where ):
     'get points'
 
@@ -109,30 +118,8 @@ class Element( object ):
       totaltransform = numpy.dot( transform.transform, totaltransform )
     return elem, points, totaltransform
 
-class CustomElement( Element ):
-  'custom element'
-
-  def __init__( self, **ischemes ):
-    'constructor'
-
-    self.ischemes = ischemes
-
-  def getischeme( self, ndims, where ):
-    'get integration scheme'
-
-    assert ndims == self.ndims
-    return self.ischemes[ where ]
-
 class QuadElement( Element ):
   'quadrilateral element'
-
-  def __init__( self, ndims, parent=None, context=None ):
-    'constructor'
-
-    self.ndims = ndims
-    self.parent = parent
-    self.context = context
-    Element.__init__( self )
 
   @property
   def children( self ):
@@ -263,11 +250,10 @@ class TriangularElement( Element ):
     AffineTransformation( offset=[1,0], transform=[[-1],[ 1]] ),
     AffineTransformation( offset=[0,1], transform=[[ 0],[-1]] ) )
 
-  def __init__( self, parent=None ):
+  def __init__( self, parent=None, context=None ):
     'constructor'
 
-    self.parent = parent
-    Element.__init__( self )
+    Element.__init__( self, ndims=2, parent=parent, context=context )
 
   @property
   def children( self ):
@@ -484,7 +470,12 @@ class PolyLine( StdElem ):
   def spline_poly( cls, p, n ):
     'spline polynomial coefficients'
 
-    assert n < 2*(p-1)
+    assert p >= 1, 'invalid polynomial degree %d' % p
+    if p == 1:
+      assert n == -1
+      return numpy.array( [[[1.]]] )
+
+    assert 1 <= n < 2*(p-1)
     extractions = numpy.empty(( n, p, p ))
     extractions[0] = numpy.eye( p )
     for i in range( 1, n ):

@@ -1,6 +1,11 @@
 Finity 12.12.19 --- major enhancements
 
-Fixed sparse matrix in place addition: gave erroneous results.
+Fixed:
+
+* Sparse matrix in place addition: gave erroneous results.
+* Function spaces now support polynomial degree=1.
+
+New:
 
 Fine grained modules. Contents of util are distributed over util,
 core, numeric. Core contains components that do not depend on any
@@ -11,6 +16,11 @@ interace for NumpyExtra. Current modules are:
   element   matrix    plot
   function  mesh      topology
   green     numeric   util
+
+Deprecated NumpyExtra. Numeric module now takes c-methods from
+_numeric.so in the same directory. Methods in _numeric are stripped
+down to the minimum with pre and post processing possibly required in
+numeric.py.
 
 Get, GetItem, Align. New ArrayFunc objects replace former GetItem for
 indexing one item (a[i]), indexing a slice (a[i:j]), and introducing

@@ -427,7 +427,7 @@ class DenseMatrix( Matrix ):
 
     return self.data[ rows[:,_], cols[:,_] ]
 
-  def solve( self, b=0, constrain=None, lconstrain=None, rconstrain=None, **dummy ):
+  def solve( self, b=0, constrain=None, lconstrain=None, rconstrain=None, title='solving system', **dummy ):
     'solve'
 
     b = numpy.asarray( b, dtype=float )
@@ -444,7 +444,12 @@ class DenseMatrix( Matrix ):
 
     x, I, J = parsecons( constrain, lconstrain, rconstrain, self.shape )
     data = self.data[I]
+
+    pbar = log.ProgressBar( None, title=title )
+    pbar.add( '[direct:%d]' % data.shape[0] )
     x[J] = numpy.linalg.solve( data[:,J], b[I] - numpy.dot( data[:,~J], x[~J] ) )
+    pbar.close()
+
     return x
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

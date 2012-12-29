@@ -184,12 +184,12 @@ def run( *functions ):
       val = eval( val )
     except ValueError: # split failed
       val = True
-    except NameError: # eval failed
+    except (SyntaxError,NameError): # eval failed
       pass
     if arg in kwargs:
       kwargs[ arg ] = val
     else:
-      assert arg in properties
+      assert arg in properties, 'invalid argument %r' % arg
       properties[arg] = val
 
   for name, value in properties.iteritems():

@@ -32,6 +32,48 @@ class Topology( set ):
     items = ( self.groups[it] for it in item.split( ',' ) )
     return sum( items, items.next() )
 
+  def elemintegrate( self, funcs, ischeme, coords, title='integrating element-wise' ):
+    'element-wise integration'
+
+    pbar = log.ProgressBar( self, title=title )
+    pbar.add( '[#%d]' % len(self) )
+
+    single_arg = not isinstance(funcs,list)
+    if single_arg:
+      funcs = funcs,
+
+    retvals = []
+    iweights = coords.iweights( self.ndims )
+    idata = []
+    for ifunc, func in enumerate( funcs ):
+      if not isinstance( func, function.ArrayFunc ):
+        func = function.StaticArray( func )
+      arr = numpy.empty( (len(self),)+func.shape )
+      idata.append( function.Tuple([ function.StaticArray(arr), func, iweights ]) )
+      retvals.append( arr )
+    idata = function.Tuple( idata )
+
+    if pbar.out:
+      name = idata.graphviz()
+      if name:
+        pbar.add( name )
+
+    for i, elem in enumerate( pbar ):
+      if isinstance(ischeme,str):
+        points = elem.eval(ischeme)
+      else:
+        points = ischeme[elem]
+        if points is None:
+          for arr in retvals:
+            arr[i] = numpy.nan
+          continue
+      for arr, data, w in idata( elem, points ):
+        arr[i] = numeric.contract( data.T, w ).T
+
+    if single_arg:
+      retvals, = retvals
+    return retvals
+
   def integrate( self, funcs, ischeme=None, coords=None, title='integrating' ):
     'integrate'
 

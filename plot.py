@@ -5,15 +5,25 @@ matplotlib.use( 'Agg' )
 
 import os
 
+def polycoll( topology, coords, cscheme='contour3' ):
+  'plot mesh'
+
+  assert topology.ndims == 2
+  from matplotlib import pyplot, collections
+  ndims, = coords.shape
+  assert ndims == 2
+  poly = [ coords( elem, cscheme ) for elem in topology ]
+  return collections.PolyCollection( poly, edgecolors='black', facecolors='none', linewidth=linewidth, rasterized=True )
+
 class Pylab( object ):
   'matplotlib figure'
 
-  def __init__( self, title, name=None ):
+  def __init__( self, title, name='graph{0:03x}' ):
     'constructor'
 
-    if name is None:
+    if '.' not in name.format(0):
       imgtype = getattr( prop, 'imagetype', 'png' )
-      name='graph{0:03x}.' + imgtype
+      name += '.' + imgtype
 
     if isinstance( title, (list,tuple) ):
       self.title = numpy.array( title, dtype=object )
@@ -67,7 +77,7 @@ class PylabAxis( object ):
 
     return getattr( self._ax, attr )
 
-  def add_mesh( self, coords, topology, color=None, edgecolors='none', linewidth=1, xmargin=0, ymargin=0, aspect='equal', cbar='vertical', title=None, ischeme='gauss2', cscheme='contour3', clim=None, frame=True, usecolor=True, colormap=None ):
+  def add_mesh( self, coords, topology, deform=0, color=None, edgecolors='none', linewidth=1, xmargin=0, ymargin=0, aspect='equal', cbar='vertical', title=None, ischeme='gauss2', cscheme='contour3', clim=None, frame=True, colormap=None ):
     'plot mesh'
   
     pbar = log.ProgressBar( topology, title='plotting mesh' )
@@ -80,8 +90,9 @@ class PylabAxis( object ):
     if color:
       assert color.ndim == 0
       color = function.Tuple([ color, coords.iweights(ndims=2) ])
+    plotcoords = coords + deform
     for elem in pbar:
-      C = coords( elem, cscheme )
+      C = plotcoords( elem, cscheme )
       if ndims == 3:
         C = project3d( C )
         cx, cy = numpy.hstack( [ C, C[:,:1] ] )
@@ -99,16 +110,14 @@ class PylabAxis( object ):
       poly.append( C )
   
     if values:
-      elements = collections.PolyCollection( poly, edgecolors=edgecolors, linewidth=linewidth )
+      elements = collections.PolyCollection( poly, edgecolors=edgecolors, linewidth=linewidth, rasterized=True )
       elements.set_array( numpy.asarray(values) )
-      if not usecolor:
-        elements.set_cmap( pyplot.cm.gray )
-      if colormap:
-        elements.set_cmap( colormap )
+      if colormap is not None:
+        elements.set_cmap( pyplot.cm.gray if colormap is False else colormap )
       if cbar:
         pyplot.colorbar( elements, ax=self._ax, orientation=cbar )
     else:
-      elements = collections.PolyCollection( poly, edgecolors='black', facecolors='none', linewidth=linewidth )
+      elements = collections.PolyCollection( poly, edgecolors='black', facecolors='none', linewidth=linewidth, rasterized=True )
 
     if clim:
       elements.set_clim( *clim )
@@ -149,7 +158,7 @@ class PylabAxis( object ):
     XYUV = [ xyuv(elem,sample) for elem in log.ProgressBar( topology, title='plotting quiver' ) ]
     self.quiver( *numpy.concatenate( XYUV, 0 ).T, scale=scale )
 
-  def add_graph( self, xfun, yfun, topology, sample='contour10', **kwargs ):
+  def add_graph( self, xfun, yfun, topology, sample='contour10', logx=False, logy=False, **kwargs ):
     'plot graph of function on 1d topology'
 
     try:
@@ -186,9 +195,13 @@ class PylabAxis( object ):
         xyd[1].extend( y if y.ndim else [y] * x.size )
         xyd[1].append( numpy.nan )
 
+    plotfun = self.loglog if logx and logy \
+         else self.semilogx if logx \
+         else self.semilogy if logy \
+         else self.plot
     for x, y, d in XYD:
       kwargs.update(d)
-      self.plot( x, y, **kwargs )
+      plotfun( x, y, **kwargs )
 
 def project3d( C ):
   sqrt2 = numpy.sqrt( 2 )
@@ -281,7 +294,7 @@ def preview( coords, topology, cscheme='contour8' ):
       polys[2].append( contour[1:].T )
       polys[3].append( contour[::2].T )
     for iplt, poly in enumerate( polys ):
-      elements = collections.PolyCollection( poly, edgecolors='black', facecolors='none', linewidth=1 )
+      elements = collections.PolyCollection( poly, edgecolors='black', facecolors='none', linewidth=1, rasterized=True )
       ax = pyplot.subplot( 2, 2, iplt+1 )
       ax.add_collection( elements )
       xmin, ymin = numpy.min( [ numpy.min(p,axis=0) for p in poly ], axis=0 )

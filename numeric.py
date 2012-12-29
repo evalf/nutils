@@ -1,5 +1,73 @@
-import numpy
-from numpyextra import *
+import numpy, _numeric
+
+addsorted = _numeric.addsorted
+
+def contract( A, B, axis=-1 ):
+  'contract'
+
+  A = numpy.asarray( A, dtype=float )
+  B = numpy.asarray( B, dtype=float )
+
+  n = B.ndim - A.ndim
+  if n > 0:
+    Ashape = list(B.shape[:n]) + list(A.shape)
+    Astrides = [0]*n + list(A.strides)
+    Bshape = list(B.shape)
+    Bstrides = list(B.strides)
+  elif n < 0:
+    n = -n
+    Ashape = list(A.shape)
+    Astrides = list(A.strides)
+    Bshape = list(A.shape[:n]) + list(B.shape)
+    Bstrides = [0]*n + list(B.strides)
+  else:
+    Ashape = list(A.shape)
+    Astrides = list(A.strides)
+    Bshape = list(B.shape)
+    Bstrides = list(B.strides)
+
+  shape = Ashape
+  nd = len(Ashape)
+  for i in range( n, nd ):
+    if Ashape[i] == 1:
+      shape[i] = Bshape[i]
+      Astrides[i] = 0
+    elif Bshape[i] == 1:
+      Bstrides[i] = 0
+    else:
+      assert Ashape[i] == Bshape[i]
+
+  if isinstance( axis, int ):
+    axis = axis,
+  axis = sorted( [ ax+nd if ax < 0 else ax for ax in axis ], reverse=True )
+  for ax in axis:
+    assert 0 <= ax < nd, 'invalid contraction axis'
+    shape.append( shape.pop(ax) )
+    Astrides.append( Astrides.pop(ax) )
+    Bstrides.append( Bstrides.pop(ax) )
+
+  A = numpy.lib.stride_tricks.as_strided( A, shape, Astrides )
+  B = numpy.lib.stride_tricks.as_strided( B, shape, Bstrides )
+
+  return _numeric.contract( A, B, len(axis) )
+
+def fastrepeat( A, nrepeat, axis=-1 ):
+  'repeat axis by 0stride'
+
+  assert A.shape[axis] == 1
+  shape = list( A.shape )
+  shape[axis] = nrepeat
+  strides = list( A.strides )
+  strides[axis] = 0
+  return numpy.lib.stride_tricks.as_strided( A, shape, strides )
+
+def appendaxes( A, shape ):
+  'append axes by 0stride'
+
+  if isinstance(shape,int):
+    shape = shape,
+  A = numpy.asarray( A )
+  return numpy.lib.stride_tricks.as_strided( A, A.shape + shape, A.strides + (0,)*len(shape) )
 
 def takediag( A, ax1, ax2 ):
   shape = list(A.shape)

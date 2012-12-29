@@ -1190,12 +1190,12 @@ class Transform( ArrayFunc ):
 
     assert elem.ndims <= todims
     while elem.ndims < todims:
-      elem, transform = elem.context
+      elem, transform = elem.context or elem.parent
 
-    elem, transform = elem.context
+    elem, transform = elem.context or elem.parent
     T = transform.transform
     while elem.ndims < fromdims:
-      elem, transform = elem.context
+      elem, transform = elem.context or elem.parent
       T = numpy.dot( T, transform.transform )
 
     return T
@@ -1224,7 +1224,7 @@ class Function( ArrayFunc ):
     'evaluate'
 
     while elem.ndims < stdmap.ndims:
-      elem, transform = elem.context
+      elem, transform = elem.context or elem.parent
       points = transform.eval( points )
 
     allfvals = []
@@ -1421,7 +1421,7 @@ class DofMap( DofAxis ):
     'evaluate'
 
     while elem.ndims < dofmap.ndims:
-      elem, dummy = elem.context
+      elem, dummy = elem.context or elem.parent
 
     dofs = dofmap.get( elem )
     while dofs is None:

@@ -15,7 +15,7 @@ class ElemScale( function.ArrayFunc ):
 
     assert elem.ndims <= scalemap.ndims
     while elem.ndims < scalemap.ndims:
-      elem, transform = elem.context
+      elem, transform = elem.context or elem.parent
 
     scale = 1
     elemscale = scalemap.get( elem )
@@ -47,7 +47,7 @@ class ElemCoords( function.ArrayFunc ):
 
     assert elem.ndims <= offsetmap.ndims
     while elem.ndims < offsetmap.ndims:
-      elem, transform = elem.context
+      elem, transform = elem.context or elem.parent
       points = transform.eval( points )
 
     offset = 0
