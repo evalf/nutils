@@ -446,8 +446,6 @@ class StructuredTopology( Topology ):
 
       slices.append( myslice )
 
-    print slices
-
     dofmap = {}
     for item in numpy.broadcast( self.structure, *numpy.ix_(*slices) ):
       elem = item[0]
