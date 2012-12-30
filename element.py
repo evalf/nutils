@@ -506,14 +506,30 @@ class PolyLine( StdElem ):
     poly_e[:,-2] += poly_e[:,-1]
     return cls(poly_0), cls(poly_e)
 
+  @core.classcache
+  def spline_elems_curvature( cls ):
+    'spline elements, curve free endings (just for caching)'
+
+    polys = cls.spline_poly(2,1)
+    poly_0 = polys[0].copy()
+    poly_0[:,0] += 0.5*(polys[0][:,0]+polys[0][:,1])
+    poly_0[:,1] -= 0.5*(polys[0][:,0]+polys[0][:,1])
+
+    poly_e = polys[-1].copy()
+    poly_e[:,-2] -= 0.5*(polys[-1][:,-1]+polys[-1][:,-2])
+    poly_e[:,-1] += 0.5*(polys[-1][:,-1]+polys[-1][:,-2])
+
+    return cls(poly_0), cls(poly_e)
+
   @classmethod
-  def spline( cls, degree, nelems, periodic=False, neumann=0 ):
+  def spline( cls, degree, nelems, periodic=False, neumann=0, curvature=False ):
     'spline elements, any amount'
 
     p = degree
     n = 2*(p-1)-1
     if periodic:
       assert not neumann, 'periodic domains have no boundary'
+      assert not curvature, 'curvature free option not possible for periodic domains'
       elems = cls.spline_elems( p, n )[p-2:p-1] * nelems
     else:
       elems = cls.spline_elems( p, min(nelems,n) )
@@ -525,6 +541,13 @@ class PolyLine( StdElem ):
           elems[0] = elem_0
         if neumann & 2:
           elems[-1] = elem_e
+      if curvature:
+        assert neumann==0, 'Curvature free not allowed in combindation with Neumann'
+        assert degree==3, 'Curvature free only allowed for quadratic splines'  
+        elem_0, elem_e = cls.spline_elems_curvature()
+        elems[0] = elem_0
+        elems[-1] = elem_e
+
         
     return numpy.array( elems )
 

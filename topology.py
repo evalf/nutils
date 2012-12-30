@@ -413,6 +413,52 @@ class StructuredTopology( Topology ):
 
     return function.Function( dofaxis=dofaxis, stdmap=ElemMap(funcmap,self.ndims,overlap=False), igrad=0 )
 
+  @core.cachefunc
+  def curvefreesplinefunc( self ):
+    'spline from nodes'
+
+    p = 3
+    periodic = self.periodic
+
+    nodes_structure = numpy.array( 0 )
+    dofcount = 1
+    slices = []
+
+    for idim in range( self.ndims ):
+      periodic_i = idim in periodic
+      n = self.structure.shape[idim]
+
+      stdelems_i = element.PolyLine.spline( degree=p, nelems=n, curvature=True )
+
+      stdelems = stdelems[...,_] * stdelems_i if idim else stdelems_i
+
+      nd = n + p - 3
+      numbers = numpy.arange( nd )
+
+      nodes_structure = nodes_structure[...,_] * nd + numbers
+
+      dofcount *= nd
+
+      myslice = [ slice(0,2) ]
+      for i in range(n-2):
+        myslice.append( slice(i,i+p) )
+      myslice.append( slice(n-2,n) )
+
+      slices.append( myslice )
+
+    print slices
+
+    dofmap = {}
+    for item in numpy.broadcast( self.structure, *numpy.ix_(*slices) ):
+      elem = item[0]
+      S = item[1:]
+      dofmap[ elem ] = nodes_structure[S].ravel()
+
+    dofaxis = function.DofMap( dofcount, ElemMap(dofmap,self.ndims,overlap=False) )
+    funcmap = dict( numpy.broadcast( self.structure, stdelems ) )
+
+    return function.Function( dofaxis=dofaxis, stdmap=ElemMap(funcmap,self.ndims,overlap=False), igrad=0 )
+
   def linearfunc( self ):
     'linears'
 
