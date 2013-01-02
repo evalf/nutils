@@ -4,12 +4,14 @@ import weakref
 class TrimmedIScheme( object ):
   'integration scheme for truncated elements'
 
-  def __init__( self, levelset, ischeme, maxrefine ):
+  def __init__( self, levelset, ischeme, maxrefine, finestscheme='uniform10', degree=3 ):
     'constructor'
 
     self.levelset = levelset
     self.ischeme = ischeme
     self.maxrefine = maxrefine
+    self.finestscheme = finestscheme
+    self.bezierscheme = 'bezier%d' % degree
     self.cache = {}
 
   def __getitem__( self, elem ):
@@ -17,66 +19,52 @@ class TrimmedIScheme( object ):
 
     ischeme = self.cache.get( elem, False )
     if ischeme is False:
-      ischeme = self.generate_ischeme( elem )
+      ischeme = self.generate_ischeme( elem, self.maxrefine )
+      if ischeme is True:
+        ischeme = elem.eval( self.ischeme )
       self.cache[elem] = ischeme
     return ischeme
 
-  def generate_ischeme( self, myelem ):
+  def generate_ischeme( self, elem, maxrefine ):
     'generate integration scheme'
 
-    inside = self.levelset( myelem, 'bezier3' ) > 0
-    if inside.all():
-      return myelem.eval( self.ischeme )
-
-    if not inside.any():
-      return None
-
-    elempool = list( myelem.children )
-    coords = []
-    weights = []
-    evalok = False
-    
-    for level in range( 1, self.maxrefine ):
-      nextelempool = []
-      for elem in elempool:
-        try:
-          bezierpoints = self.levelset( elem, 'bezier3' )
-        except function.EvaluationError:
-          nextelempool.extend( elem.children )
-          continue
-        evalok = True
-        inside = bezierpoints > 0
-        if inside.all():
-          points = elem.eval( self.ischeme )
-          for i in range(level):
-            elem, transform = elem.parent
-            points = transform.eval( points )
-          assert elem is myelem
-          coords.append( points.coords )
-          weights.append( points.weights )
-        elif inside.any():
-          nextelempool.extend( elem.children )
-      elempool = nextelempool
-
-    assert evalok, 'failed to evaluate levelset within %d refinements' % maxrefine
-
-    for elem in elempool:
-      points = elem.eval( 'uniform10' )
+    if maxrefine <= 0:
+      points = elem.eval( self.finestscheme )
       inside = self.levelset( elem, points ) > 0
       if inside.all():
-        points = elem.eval( self.ischeme )
-        inside = slice(None)
-      elif not inside.any():
-        continue
-      for i in range(self.maxrefine):
-        elem, transform = elem.parent
-        points = transform.eval( points )
-      assert elem is myelem
-      coords.append( points.coords[inside] )
-      weights.append( points.weights[inside] )
+        return True
+      if not inside.any():
+        return None
+      return LocalPoints( points.coords[inside], points.weights[inside] )
 
-    if not weights:
+    try:
+      inside = self.levelset( elem, self.bezierscheme ) > 0
+    except function.EvaluationError:
+      pass
+    else:
+      if inside.all():
+        return True
+      if not inside.any():
+        return None
+
+    allpoints = [ self.generate_ischeme( child, maxrefine-1 ) for child in elem.children ]
+    if all( points is True for points in allpoints ):
+      return True
+    if all( points is None for points in allpoints ):
       return None
+
+    coords = []
+    weights = []
+    for child, points in zip( elem.children, allpoints ):
+      if points is None:
+        continue
+      if points is True:
+        points = child.eval( self.ischeme )
+      pelem, transform = child.parent
+      assert pelem is elem
+      points = transform.eval( points )
+      coords.append( points.coords )
+      weights.append( points.weights )
 
     coords = numpy.concatenate( coords, axis=0 )
     weights = numpy.concatenate( weights, axis=0 )
