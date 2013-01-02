@@ -10,22 +10,42 @@ class TrimmedIScheme( object ):
     self.levelset = levelset
     self.ischeme = ischeme
     self.maxrefine = maxrefine
+    self.cache = {}
 
-  def __getitem__( self, myelem ):
+  def __getitem__( self, elem ):
     'get ischeme for elem'
+
+    ischeme = self.cache.get( elem, False )
+    if ischeme is False:
+      ischeme = self.generate_ischeme( elem )
+      self.cache[elem] = ischeme
+    return ischeme
+
+  def generate_ischeme( self, myelem ):
+    'generate integration scheme'
 
     inside = self.levelset( myelem, 'bezier3' ) > 0
     if inside.all():
       return myelem.eval( self.ischeme )
 
+    if not inside.any():
+      return None
+
     elempool = list( myelem.children )
     coords = []
     weights = []
-
+    evalok = False
+    
     for level in range( 1, self.maxrefine ):
       nextelempool = []
       for elem in elempool:
-        inside = self.levelset( elem, 'bezier3' ) > 0
+        try:
+          bezierpoints = self.levelset( elem, 'bezier3' )
+        except function.EvaluationError:
+          nextelempool.extend( elem.children )
+          continue
+        evalok = True
+        inside = bezierpoints > 0
         if inside.all():
           points = elem.eval( self.ischeme )
           for i in range(level):
@@ -37,6 +57,8 @@ class TrimmedIScheme( object ):
         elif inside.any():
           nextelempool.extend( elem.children )
       elempool = nextelempool
+
+    assert evalok, 'failed to evaluate levelset within %d refinements' % maxrefine
 
     for elem in elempool:
       points = elem.eval( 'uniform10' )

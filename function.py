@@ -197,6 +197,21 @@ def normdim( length, n ):
 
 # EVALUABLE
 
+class EvaluationError( Exception ):
+  'evaluation error'
+
+  def __init__( self, evaluable, values ):
+    'constructor'
+
+    self.evaluable = evaluable
+    self.values = values
+    Exception.__init__( self, 'a' )
+
+  def __str__( self ):
+    'string representation'
+
+    return self.evaluable.stackstr( self.values )
+
 class Evaluable( object ):
   'evaluable base classs'
 
@@ -260,8 +275,7 @@ class Evaluable( object ):
       try:
         retval = op.__evalf( *args )
       except:
-        self.printstack( values )
-        raise
+        raise EvaluationError( self, values )
       values.append( retval )
     return values[-1]
 
@@ -324,7 +338,7 @@ class Evaluable( object ):
 
     return os.path.basename( imgpath )
 
-  def printstack( self, values=None ):
+  def stackstr( self, values=None ):
     'print stack'
 
     self.compile()
@@ -333,9 +347,9 @@ class Evaluable( object ):
 
     N = len(self.data) + 2
 
-    log.error( 'call stack:' )
+    lines = [ '' ]
     for i, (op,indices) in enumerate( self.operations ):
-      log.error( '%2d:' % i, end=' ' )
+      line = '%2d:' % i
       args = [ '%%%d' % idx if idx >= 0 else obj2str(values[N+idx]) for idx in indices ]
       try:
         code = op.__evalf.func_code
@@ -344,13 +358,13 @@ class Evaluable( object ):
         args = [ '%s=%s' % item for item in zip( names, args ) ]
       except:
         pass
-      log.error( '%s( %s )' % ( op.__evalf.__name__, ', '.join( args ) ), end=' ' )
+      line += ' %s( %s )' % ( op.__evalf.__name__, ', '.join( args ) )
       if N+i < len(values):
-        log.error( op.verify( values[N+i] ) )
+        line += ' ' + op.verify( values[N+i] )
       elif N+i == len(values):
-        log.error( '<-----ERROR' )
-      else:
-        log.error()
+        line += ' <-----ERROR'
+      lines.append( line )
+    return '\n'.join( lines )
 
   def __eq__( self, other ):
     'compare'
