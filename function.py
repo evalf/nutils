@@ -200,17 +200,17 @@ def normdim( length, n ):
 class EvaluationError( Exception ):
   'evaluation error'
 
-  def __init__( self, evaluable, values ):
+  def __init__( self, evaluable, exc, values ):
     'constructor'
 
     self.evaluable = evaluable
+    self.exc = exc
     self.values = values
-    Exception.__init__( self, 'a' )
 
   def __str__( self ):
     'string representation'
 
-    return self.evaluable.stackstr( self.values )
+    return str(self.exc) + self.evaluable.stackstr( self.values )
 
 class Evaluable( object ):
   'evaluable base classs'
@@ -274,8 +274,8 @@ class Evaluable( object ):
       args = [ values[N+i] for i in indices ]
       try:
         retval = op.__evalf( *args )
-      except:
-        raise EvaluationError( self, values )
+      except Exception, exc:
+        raise EvaluationError( self, exc, values )
       values.append( retval )
     return values[-1]
 
