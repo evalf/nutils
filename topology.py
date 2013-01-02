@@ -208,7 +208,7 @@ class Topology( set ):
       newelems.extend( elempool )
     return UnstructuredTopology( newelems, ndims=self.ndims )
 
-  def refinedfunc( self, dofaxis, degree, refine ):
+  def refinedfunc( self, dofaxis, degree, refine, domain0=None ):
     'create refined space by refining dofs in existing one'
   
     refine = set(refine) # make unique and equip with set operations
@@ -218,7 +218,7 @@ class Topology( set ):
     parentelems = [] # all parents, grandparents etc of topoelems
     nrefine = 0 # number of nested topologies after refinement
   
-    topo = self # elements to examine in next level refinement
+    topo = self if domain0 is None else domain0 # elements to examine in next level refinement
     while topo:
       nexttopo = []
       refined = set() # refined dofs in current refinement level
