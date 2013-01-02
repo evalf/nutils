@@ -1,4 +1,4 @@
-from . import util, numpy, core, numeric, _
+from . import util, numpy, core, numeric, function, _
 import weakref
 
 class TrimmedIScheme( object ):
