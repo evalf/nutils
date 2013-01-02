@@ -1,4 +1,4 @@
-from . import util, element, numpy, numeric, log, prop, _
+from . import util, numpy, numeric, log, prop, _
 
 def check_localgradient( localgradient ):
   def localgradient_wrapper( func, ndims ):
