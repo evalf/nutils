@@ -1,4 +1,5 @@
 from . import util, numpy, numeric, log, prop, _
+import sys
 
 def check_localgradient( localgradient ):
   def localgradient_wrapper( func, ndims ):
@@ -200,17 +201,18 @@ def normdim( length, n ):
 class EvaluationError( Exception ):
   'evaluation error'
 
-  def __init__( self, evaluable, exc, values ):
+  def __init__( self, etype, evalue, evaluable, values ):
     'constructor'
 
+    self.etype = etype
+    self.evalue = evalue
     self.evaluable = evaluable
-    self.exc = exc
     self.values = values
 
   def __str__( self ):
     'string representation'
 
-    return str(self.exc) + self.evaluable.stackstr( self.values )
+    return '%s: %s\n%s' % ( self.etype.__name__, self.evalue, self.evaluable.stackstr( self.values ) )
 
 class Evaluable( object ):
   'evaluable base classs'
@@ -274,8 +276,9 @@ class Evaluable( object ):
       args = [ values[N+i] for i in indices ]
       try:
         retval = op.__evalf( *args )
-      except Exception, exc:
-        raise EvaluationError( self, exc, values )
+      except:
+        etype, evalue, traceback = sys.exc_info()
+        raise EvaluationError, ( etype, evalue, self, values ), traceback
       values.append( retval )
     return values[-1]
 
@@ -347,7 +350,7 @@ class Evaluable( object ):
 
     N = len(self.data) + 2
 
-    lines = [ '' ]
+    lines = []
     for i, (op,indices) in enumerate( self.operations ):
       line = '%2d:' % i
       args = [ '%%%d' % idx if idx >= 0 else obj2str(values[N+idx]) for idx in indices ]
