@@ -1758,6 +1758,7 @@ class DofIndex( ArrayFunc ):
 
     #array = array[dofaxis.start:dofaxis.stop] # TODO make strict
     shape = (dofaxis,) + array.shape[1:]
+    assert array.shape[0] >= dofaxis.stop
     self.array = array
     self.dofaxis = dofaxis
     ArrayFunc.__init__( self, args=(array,dofaxis), evalf=numpy.ndarray.__getitem__, shape=shape )
@@ -2415,6 +2416,8 @@ class Kronecker( ArrayFunc ):
   def __mul__( self, other ):
     'multiply'
 
+    if not isinstance( other, ArrayFunc ):
+      other = StaticArray( other )
     if other.ndim < self.ndim:
       other = other[(_,)*(self.ndim-other.ndim)]
     elif other.ndim > self.ndim:

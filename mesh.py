@@ -66,6 +66,8 @@ class ElemCoords( function.ArrayFunc ):
     'local gradient'
 
     if ndims == self.offsetmap.ndims:
+      if ndims == 1:
+        return function.StaticArray( [[1]] )
       return function.Diagonalize( function.Expand( function.StaticArray([1]), [ndims] ), [0,1] )
 
     assert ndims < self.offsetmap.ndims
