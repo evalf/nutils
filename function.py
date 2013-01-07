@@ -778,7 +778,7 @@ class ArrayFunc( Evaluable ):
       return ZERO(shape)
 
     if not func2 - 1 and func1.shape == shape: # TODO replace mul with repeat if possible
-      return func1
+      return func1#.expand( shape )
 
     return Multiply( func1, func2 )
 
