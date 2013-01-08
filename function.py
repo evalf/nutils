@@ -1975,6 +1975,11 @@ class Negate( ArrayFunc ):
 
     return -self.func.get( i, item )
 
+  def sum( self, axes=-1 ):
+    'sum'
+
+    return -self.func.sum( axes )
+
   @check_localgradient
   def localgradient( self, ndims ):
     'local gradient'
