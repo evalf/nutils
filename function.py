@@ -1038,40 +1038,40 @@ class Align( ArrayFunc ):
       item = [ 0 if func2.shape[i] == 1 else slice(None) for i in range(func1.ndim) ]
       func2 = StaticArray( func2[ tuple(item) ] )
     else:
-      return func1, func2, None
+      return func1, func2, None, len(shape)
 
     newaxes = set( range(func1.ndim) )
     newaxes.difference_update( ax1 )
     newaxes.difference_update( ax2 )
     if not newaxes:
-      return func1, func2, None
+      return func1, func2, None, len(shape)
 
     newaxes = sorted( newaxes )
     axes = [ ax for ax in range(func1.ndim) if ax not in newaxes ]
     ax1 = tuple( -numpy.searchsorted( newaxes, ax1 ) + ax1 )
     ax2 = tuple( -numpy.searchsorted( newaxes, ax2 ) + ax2 )
     ndim = func1.ndim - len(newaxes)
-    return func1.func.align( ax1, ndim ), func2.align( ax2, ndim ), axes
+    return func1.func.align( ax1, ndim ), func2.align( ax2, ndim ), axes, len(shape)
 
   def __mul__( self, other ):
     'multiply'
 
-    func1, func2, axes = self.prepare_binary( other )
-    return ( func1 * func2 ).align( axes, self.ndim ) if axes is not None \
+    func1, func2, axes, ndim = self.prepare_binary( other )
+    return ( func1 * func2 ).align( axes, ndim ) if axes is not None \
       else ArrayFunc.__mul__( self, other )
 
   def __add__( self, other ):
     'multiply'
 
-    func1, func2, axes = self.prepare_binary( other )
-    return ( func1 + func2 ).align( axes, self.ndim ) if axes is not None \
+    func1, func2, axes, ndim = self.prepare_binary( other )
+    return ( func1 + func2 ).align( axes, ndim ) if axes is not None \
       else ArrayFunc.__add__( self, other )
 
   def __div__( self, other ):
     'multiply'
 
-    func1, func2, axes = self.prepare_binary( other )
-    return ( func1 / func2 ).align( axes, self.ndim ) if axes is not None \
+    func1, func2, axes, ndim = self.prepare_binary( other )
+    return ( func1 / func2 ).align( axes, ndim ) if axes is not None \
       else ArrayFunc.__div__( self, other )
 
   def __graphviz__( self ):
