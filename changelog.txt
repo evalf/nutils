@@ -1,0 +1,118 @@
+Finity 13.01.08 --- major enhancements
+
+Fixed:
+
+* Sparse matrix in place addition: gave erroneous results.
+* Function spaces now support polynomial degree=1.
+* Special case binary operations (zero addition, etc) retain shape.
+
+New:
+
+Fine grained modules. Contents of util are distributed over util,
+core, numeric. Core contains components that do not depend on any
+other finity modules. Numeric hosts numpy operations and acts as an
+interace for NumpyExtra. Current modules are:
+
+  core      log       parallel
+  element   matrix    plot
+  function  mesh      topology
+  green     numeric   util
+
+Deprecated NumpyExtra. Numeric module now takes c-methods from
+_numeric.so in the same directory. Methods in _numeric are stripped
+down to the minimum with pre and post processing possibly required in
+numeric.py.
+
+Get, GetItem, Align. New ArrayFunc objects replace former GetItem for
+indexing one item (a[i]), indexing a slice (a[i:j]), and introducing
+new axes (a[_]) and/or reordering axes (a.T), respectively. The reason
+is twofold. 1. These three operations are fundamentally different and
+interact with matrix operations in different ways. 2. Separating the
+operations allows one to push Get towards the branches of the function
+tree, reducing work, and Align towards the root, increasing likelyhood
+of common subexpressions.
+
+Diagonalize, TakeDiag. New ArrayFunc objects that replace one axis by
+the diagonal of two, or vice versa, respectively. The former is
+suboptimal, though valid, in actual evaluation, because of the
+introduced zeros. Its main purpose is to serve as intermediate
+operation that collapses against for instance Get or Dot.
+
+Kronecker. New ArrayFunc object that introduces one axis with one
+entry equal to the original array. Like Diagonalize its main purpose
+is to serve as intermediary.
+
+Expand. New ArrayFunc object that repeats singleton axes to the actual
+shape. Like before its main purpose is to serve as intermediary as
+singleton expansion usually obviates the need for explicit repetition.
+
+New rectilinear mesh. New geometry evaluates by direct scaling &
+translation of element-local coordinates. Function definition remains
+unchanged.
+
+Properties. A non-global mechanism to make parameters available to
+funtions without passing them as arguments. Properties are local
+variables in a function frame and traced down to first occurrence.
+Example:
+
+  from finity import prop
+
+  def main():
+    prop.test = 1
+    f() #-> prints 2
+    g() #-> prints 1
+  
+  def f():
+    prop.test = 2
+    g()
+  
+  def g()
+    print prop.test
+
+Default settings. If a file ~/.finityrc exists, util.run will execute
+it as a script and copy all resulting globals as properties. Some
+properties can alternatively be set by command line switches, which
+then override the finityrc defaults. For example, the following
+superfluous finityrc sets all recognized properties to their default
+values:
+
+  nprocs = 1
+  linewidth = 60
+  outdir = '~/public_html'
+  verbose = 3
+  imagetype = 'png'
+  dot = 'dot'
+
+Logging. Prioritized output via methods of the new log module, which
+behave identical to python3's print function. Use of 'print' is
+discouraged. Priority levels are error (0), warning (1), info (2),
+progress(3) and debug (9), making way for user defined levels 4-8.
+Levels higher than the 'verbose' property (.finityrc or --verbose,
+util.run default 3) are suppressed.
+
+Clean text output. Copy-pasteable script header and command line
+arguments. Cleaner html code. Error tracebacks in html output.
+Configurable progress bar length via 'linewidth' property (.finityrc
+or --verbose, util.run default 60).
+
+Configurable output directory via 'outdir' property (.finityrc
+or --outdir, util.run default '~/public_html'). Per-script
+subdirectories and 'latest' symlink, plus a global 'latest' symlink in
+the usual location. Html output contains a [permlink] to resolve te
+link for later use.
+
+Configurable image filetype via 'imagetype' property (.finityrc or
+--imagetype, util.run default 'png'). Applies to plot methods and
+graphviz.
+
+Graphviz switched off by default, switched on by setting dot
+executable path via 'graphviz' property (.finityrc or --graphviz).
+Forks for parallel execution. Evaluables define their own
+representation, defaulting to their name and static arguments.
+Currently Get and Align define alternative representations, while
+Diagonalize, Kronecker and Expand flip b/w to warn for potential
+sub-optimality.
+
+***
+
+vim:textwidth=70

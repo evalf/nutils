@@ -1,4 +1,4 @@
-from . import util, numpy, _
+from . import util, numpy, log, numeric, _
 from scipy.sparse.sparsetools.csr import _csr
 from scipy.sparse.linalg.isolve import _iterative
 
@@ -7,13 +7,9 @@ def cg( matvec, b, x0=None, tol=1e-5, maxiter=None, precon=None, title='solving 
 
   n = len(b)
 
-  if title:
-    progress = util.ProgressBar()
-    progress.add( title )
-    progress.add( '[CG:%d]' % n )
-    clock = util.Clock( .1 )
-  else:
-    clock = False
+  pbar = log.ProgressBar( numpy.log(tol), title=title )
+  pbar.add( '[CG:%d]' % n )
+  clock = pbar.out and util.Clock( .1 )
 
   if x0 is None:
     x = numpy.zeros( n )
@@ -42,7 +38,7 @@ def cg( matvec, b, x0=None, tol=1e-5, maxiter=None, precon=None, title='solving 
   while True:
     x, iter_, resid, info, ndx1, ndx2, sclr1, sclr2, ijob = revcom( b, x, work, iter_, resid, info, ndx1, ndx2, ijob )
     if clock:
-      progress.update( numpy.log( numpy.linalg.norm( b - matvec(x) ) / res0 ), numpy.log( tol ) )
+      pbar.update( numpy.log( numpy.linalg.norm( b - matvec(x) ) / res0 ) )
     vec1 = work[ndx1-1:ndx1-1+n]
     vec2 = work[ndx2-1:ndx2-1+n]
     if ijob == 1:
@@ -67,6 +63,7 @@ def cg( matvec, b, x0=None, tol=1e-5, maxiter=None, precon=None, title='solving 
     #info isn't set appropriately otherwise
     info = iter_
 
+  pbar.close()
   assert info == 0
   return x
 
@@ -75,13 +72,9 @@ def gmres( matvec, b, x0=None, tol=1e-5, restrt=None, maxiter=None, precon=None,
 
   n = len(b)
 
-  if title:
-    progress = util.ProgressBar()
-    progress.add( title )
-    progress.add( '[GMRES:%d]' % n )
-    clock = util.Clock( .1 )
-  else:
-    clock = False
+  pbar = log.ProgressBar( numpy.log(tol), title=title )
+  pbar.add( '[GMRES:%d]' % n )
+  clock = pbar.out and util.Clock( .1 )
 
   if x0 is None:
     x = numpy.zeros( n )
@@ -129,7 +122,7 @@ def gmres( matvec, b, x0=None, tol=1e-5, restrt=None, maxiter=None, precon=None,
       work[slice2] *= sclr2
       work[slice2] += sclr1*matvec(work[slice1])
       if resid_ready and clock:
-        progress.update( numpy.log(resid), numpy.log(tol) )
+        pbar.update( numpy.log(resid) )
         resid_ready = False
     elif (ijob == 4):
       if ftflag:
@@ -146,6 +139,7 @@ def gmres( matvec, b, x0=None, tol=1e-5, restrt=None, maxiter=None, precon=None,
     #info isn't set appropriately otherwise
     info = maxiter
 
+  pbar.close()
   assert info == 0
   return x
 
@@ -229,29 +223,13 @@ class SparseMatrix( Matrix ):
     assert nrows >= self.shape[0] and ncols >= self.shape[1]
     indptr = self.indptr
     if nrows > self.shape[1]:
-      indptr = numpy.concatenate([ indptr, util.fastrepeat( indptr[-1:], nrows-self.shape[1] ) ])
+      indptr = numpy.concatenate([ indptr, numeric.fastrepeat( indptr[-1:], nrows-self.shape[1] ) ])
     return self.__class__( (self.data,self.indices,indptr), ncols )
 
   def clone( self ):
     'clone matrix'
 
     return self.__class__( (self.data.copy(),self.indices,self.indptr), self.shape[1] )
-
-  def __add__( self, other ):
-    'addition'
-
-    raise NotImplementedError
-    assert isinstance( other, SparseMatrix )
-    import scipy.sparse
-
-    if other.shape != self.shape: # quick resize hack, temporary!
-      indptr = numpy.concatenate([ other.matrix.indptr, [other.matrix.indptr[-1]] * (self.shape[0]-other.shape[0]) ])
-      dii = other.matrix.data, other.matrix.indices, indptr
-      othermat = scipy.sparse.csr_matrix( dii, shape=self.shape )
-    else:
-      othermat = other.matrix
-
-    return SparseMatrix( self.matrix + othermat )
 
   def matvec( self, other ):
     'matrix-vector multiplication'
@@ -307,11 +285,15 @@ class SparseMatrix( Matrix ):
 
     assert isinstance( other, self.__class__ ) and self.shape == other.shape
     if numpy.all( self.indptr == other.indptr ) and numpy.all( self.indices == other.indices ):
-      self.data += other.data
+      I = slice(None)
     else:
-      _csr.csr_plus_csr( self.shape[0], self.shape[1], self.indptr,  self.indices,  self.data,
-                                                      other.indptr, other.indices, other.data,
-                                                       self.indptr,  self.indices,  self.data )
+      I = numpy.empty( other.data.shape, dtype=int )
+      for irow in range( self.shape[0] ):
+        s = slice( other.indptr[irow], other.indptr[irow+1] )
+        I[s] = self.indptr[irow] \
+             + numpy.searchsorted( self.indices[self.indptr[irow]:self.indptr[irow+1]], other.indices[s] )
+      assert all( self.indices[I] == other.indices )
+    self.data[I] += other.data
     return self
 
   @property
@@ -355,7 +337,7 @@ class SparseMatrix( Matrix ):
   
     b = numpy.asarray( b, dtype=float )
     if b.ndim == 0:
-      b = util.fastrepeat( b[_], self.shape[0] )
+      b = numeric.fastrepeat( b[_], self.shape[0] )
     else:
       if b.shape[0] < self.shape[0]: # quick resize hack, temporary!
         b = b.copy()
@@ -445,12 +427,12 @@ class DenseMatrix( Matrix ):
 
     return self.data[ rows[:,_], cols[:,_] ]
 
-  def solve( self, b=0, constrain=None, lconstrain=None, rconstrain=None, **dummy ):
+  def solve( self, b=0, constrain=None, lconstrain=None, rconstrain=None, title='solving system', **dummy ):
     'solve'
 
     b = numpy.asarray( b, dtype=float )
     if b.ndim == 0:
-      b = util.fastrepeat( b[_], self.shape[0] )
+      b = numeric.fastrepeat( b[_], self.shape[0] )
     else:
       if b.shape[0] < self.shape[0]: # quick resize hack, temporary!
         b = b.copy()
@@ -462,7 +444,12 @@ class DenseMatrix( Matrix ):
 
     x, I, J = parsecons( constrain, lconstrain, rconstrain, self.shape )
     data = self.data[I]
+
+    pbar = log.ProgressBar( None, title=title )
+    pbar.add( '[direct:%d]' % data.shape[0] )
     x[J] = numpy.linalg.solve( data[:,J], b[I] - numpy.dot( data[:,~J], x[~J] ) )
+    pbar.close()
+
     return x
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

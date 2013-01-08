@@ -1,76 +1,83 @@
-from . import topology, function, util, element, numpy, _
+from . import topology, function, util, element, numpy, numeric, _
 
-class Transform( function.ArrayFunc ):
-  'transform'
-
-  def __init__( self, ndims, mapping, todims ):
-    assert ndims <= todims
-    shape = () if ndims == todims else (ndims,todims)
-    self.__class__.__base__.__init__( self, args=[function.ELEM,ndims,mapping], evalf=self.transform, shape=shape )
-
-  @staticmethod
-  def transform( elem, ndims, mapping ):
-    'evaluate'
-
-    while elem.ndims < ndims:
-      elem, transform = elem.parent
-    trans = numpy.array( 1. )
-    while elem not in mapping:
-      elem, transform = elem.parent
-      trans = numpy.dot( trans, transform.transform )
-    return numpy.asarray( trans.T )
-
-class ElemMap( function.ArrayFunc ):
+class ElemScale( function.ArrayFunc ):
   'element-constant array'
 
-  def __init__( self, mapping, shape ):
+  def __init__( self, scalemap ):
     'constructor'
 
-    self.__class__.__base__.__init__( self, args=[mapping,function.ELEM], evalf=self.elemmap, shape=shape )
+    self.scalemap = scalemap
+    self.__class__.__base__.__init__( self, args=[function.ELEM,scalemap], evalf=self.evalscale, shape=[scalemap.ndims] )
 
   @staticmethod
-  def elemmap( mapping, elem ):
+  def evalscale( elem, scalemap ):
     'evaluate'
 
-    f = mapping.get( elem )
-    while f is None:
+    assert elem.ndims <= scalemap.ndims
+    while elem.ndims < scalemap.ndims:
+      elem, transform = elem.context or elem.parent
+
+    scale = 1
+    elemscale = scalemap.get( elem )
+    while elemscale is None:
       elem, transform = elem.parent
-      f = mapping.get( elem )
-    return f
+      scale *= transform.transform
+      elemscale = scalemap.get( elem )
+    scale *= elemscale
 
-class UniformFunc( function.ArrayFunc ):
-  'define function by affine transform of elem-local coords'
-
-  def __init__( self, ndims, offsetmap, scale ):
-    'constructor'
-
-    self.ndims = ndims
-    self.offsetmap = offsetmap
-    self.scale = scale
-    function.ArrayFunc.__init__( self, args=[function.ELEM,function.POINTS,offsetmap,self.scale], evalf=self.uniform, shape=[ndims] )
-
-  @staticmethod
-  def uniform( elem, points, offsetmap, scale ):
-    'evaluate'
-
-    offset = offsetmap.get( elem )
-    while offset is None:
-      elem, transform = elem.parent
-      points = transform.eval( points )
-      offset = offsetmap.get( elem )
-    return offset + points.coords * scale
+    return scale
 
   def localgradient( self, ndims ):
     'local gradient'
 
-    A = function.Diagonalize( self.scale, axis=0, toaxes=(0,1) )
-    T = Transform( ndims, self.offsetmap, self.ndims )
-    return A * T if not T.shape  \
-      else ( A[:,_,:] * T ).sum( -1 )
+    return function.ZERO( self.shape + (ndims,) )
+
+class ElemCoords( function.ArrayFunc ):
+  'define function by affine transform of elem-local coords'
+
+  def __init__( self, offsetmap ):
+    'constructor'
+
+    self.offsetmap = offsetmap
+    function.ArrayFunc.__init__( self, args=[function.ELEM,function.POINTS,offsetmap], evalf=self.evaloffset, shape=[offsetmap.ndims] )
+
+  @staticmethod
+  def evaloffset( elem, points, offsetmap ):
+    'evaluate'
+
+    assert elem.ndims <= offsetmap.ndims
+    while elem.ndims < offsetmap.ndims:
+      elem, transform = elem.context or elem.parent
+      points = transform.eval( points )
+
+    offset = 0
+    scale = 1
+    elemoffset = offsetmap.get( elem )
+    while elemoffset is None:
+      elem, transform = elem.parent
+      scale /= transform.transform
+      offset += transform.offset * scale
+      elemoffset = offsetmap.get( elem )
+    offset += elemoffset * scale
+
+    return points.coords + offset
+
+  def localgradient( self, ndims ):
+    'local gradient'
+
+    if ndims == self.offsetmap.ndims:
+      if ndims == 1:
+        return function.StaticArray( [[1]] )
+      return function.Diagonalize( function.Expand( function.StaticArray([1]), [ndims] ), [0,1] )
+
+    assert ndims < self.offsetmap.ndims
+    return function.Transform( self.offsetmap.ndims, ndims )
 
 # MESH GENERATORS
 
-def rectilinear_beta( *nodes ):
+def rectilinear( nodes, periodic=() ):
+  'rectilinear mesh'
+
   uniform = all( len(n) == 3 and isinstance(n,tuple) for n in nodes )
   ndims = len(nodes)
   indices = numpy.ogrid[ tuple( slice( n[2] if uniform else len(n)-1 ) for n in nodes ) ]
@@ -79,7 +86,7 @@ def rectilinear_beta( *nodes ):
     scale = numpy.array( [ (b-a)/float(n-1) for (a,b,n) in nodes ], dtype=float )
   else:
     indices = numpy.ogrid[ tuple( slice(len(n)-1) for n in nodes ) ]
-    scalemap = {}
+  scalemap = {}
   structure = numpy.frompyfunc( lambda *s: element.QuadElement( ndims ), ndims, 1 )( *indices )
   topo = topology.StructuredTopology( structure )
   offsetmap = {}
@@ -87,25 +94,16 @@ def rectilinear_beta( *nodes ):
     elem = elem_index[0]
     index = elem_index[1:]
     if uniform:
-      offset0 = scale * index
+      scalemap[elem] = scale
+      offsetmap[elem] = index + numpy.array([ a for (a,b,n) in nodes ]) / scale
     else:
       offset0 = numpy.array([ n[i  ] for n, i in zip( nodes, index ) ])
       offset1 = numpy.array([ n[i+1] for n, i in zip( nodes, index ) ])
       scalemap[elem] = offset1 - offset0
-    offsetmap[elem] = offset0
-  if not uniform:
-    scale = ElemMap( scalemap, shape=(ndims,) )
-  coords = UniformFunc( ndims, offsetmap, scale )
-  return topo, coords
+      offsetmap[elem] = offset0 / ( offset1 - offset0 )
+  coords = ElemCoords( topology.ElemMap(offsetmap,ndims,overlap=False) ) \
+         * ElemScale( topology.ElemMap(scalemap,ndims,overlap=False) )
 
-def rectilinear( gridnodes, periodic=() ):
-  'rectilinear mesh'
-
-  ndims = len( gridnodes )
-  indices = numpy.ogrid[ tuple( slice( len(n)-1 ) for n in gridnodes ) ]
-  structure = numpy.frompyfunc( lambda *s: element.QuadElement( ndims ), ndims, 1 )( *indices )
-  topo = topology.StructuredTopology( structure )
-  coords = topo.rectilinearfunc( gridnodes )
   if periodic:
     topo = topo.make_periodic( periodic )
   return topo, coords
@@ -135,7 +133,7 @@ def revolve( topo, coords, nelems, degree=4, axis=0 ):
   weights[...,axis] = numpy.cos(phi)[:,_] * coords.array[:,axis]
   weights[...,axis+1] = numpy.sin(phi)[:,_] * coords.array[:,axis]
   weights[...,axis+2:] = coords.array[:,axis+1:]
-  weights = util.reshape( weights, 2, 1 )
+  weights = numeric.reshape( weights, 2, 1 )
 
   return revolved_topo, revolved_func.dot( weights )
 
@@ -220,8 +218,8 @@ def gmesh( path, btags=[] ):
     for tag in tags:
       bgroups.setdefault( tag, [] ).append( belem )
 
-  shape = function.DofAxis(nNodes,nmap),
-  linearfunc = function.Function( shape=shape, mapping=fmap )
+  dofaxis = function.DofMap( nNodes, topology.ElemMap(nmap,ndims,overlap=False) )
+  linearfunc = function.Function( dofaxis=dofaxis, stdmap=topology.ElemMap(fmap,ndims,overlap=False), igrad=0 )
   namedfuncs = { 'spline2': linearfunc }
   topo = topology.UnstructuredTopology( elements, ndims=2, namedfuncs=namedfuncs )
   topo.boundary = topology.UnstructuredTopology( belements, ndims=1 )
@@ -244,9 +242,9 @@ def triangulation( nodes, nnodes ):
       except KeyError:
         bedges[ (n1,n2) ] = elem, iedge
 
-  shape = function.DofAxis( nnodes, nmap ),
+  dofaxis = function.DofAxis( nnodes, nmap )
   stdelem = element.PolyTriangle( 1 )
-  linearfunc = function.Function( shape=shape, mapping=dict.fromkeys(nmap,stdelem) )
+  linearfunc = function.Function( dofaxis=dofaxis, stdmap=dict.fromkeys(nmap,stdelem) )
   namedfuncs = { 'spline2': linearfunc }
 
   connectivity = dict( bedges.iterkeys() )

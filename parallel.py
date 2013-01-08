@@ -1,6 +1,5 @@
+from . import prop
 from multiprocessing import Lock, cpu_count
-
-nprocs = 1#cpu_count()
 
 def shzeros( shape, dtype=float ):
   'create zero-initialized array in shared memory'
@@ -22,15 +21,14 @@ def shzeros( shape, dtype=float ):
 def oldpariter( iterable, verbose=False ):
   'fork and iterate, handing equal-sized chunks to all processors'
 
+  nprocs = getattr( prop, 'nprocs', 1 )
   if nprocs == 1:
-    if verbose:
-      print 'pariter: iterating in sequential mode (nprocs=1)'
+    log.debug( 'pariter: iterating in sequential mode (nprocs=1)' )
     for i in iterable:
       yield i
     return
 
-  if verbose:
-    print 'pariter: iterating in parallel mode (nprocs=%d)' % nprocs
+  log.debug( 'pariter: iterating in parallel mode (nprocs=%d)' % nprocs )
 
   from os import fork, wait, _exit
 
@@ -45,7 +43,7 @@ def oldpariter( iterable, verbose=False ):
       for i in range( iproc, len(iterable), nprocs ):
         yield iterable[ i ]
     except Exception, e:
-      print 'an error occured:', e
+      log.error( 'an error occured: %s' % e )
       _exit( 1 )
     else:
       _exit( 0 )
@@ -54,21 +52,19 @@ def oldpariter( iterable, verbose=False ):
     pid, status = wait()
     assert status == 0, 'subprocess #%d failed'
     pids.remove( pid )
-    if verbose:
-      print 'pariter: process #%d finished, %d pending' % ( pid, len(pids) )
+    log.debug( 'pariter: process #%d finished, %d pending' % ( pid, len(pids) ) )
 
-def pariter( iterable, verbose=False ):
+def pariter( iterable ):
   'fork and iterate, handing equal-sized chunks to all processors'
 
+  nprocs = getattr( prop, 'nprocs', 1 )
   if nprocs == 1:
-    if verbose:
-      print 'pariter: iterating in sequential mode (nprocs=1)'
+    log.debug( 'pariter: iterating in sequential mode (nprocs=1)' )
     for item in iterable:
       yield item
     return
 
-  if verbose:
-    print 'pariter: iterating in parallel mode (nprocs=%d)' % nprocs
+  log.debug( 'pariter: iterating in parallel mode (nprocs=%d)' % nprocs )
 
   from os import fork, wait, _exit
 
@@ -80,7 +76,7 @@ def pariter( iterable, verbose=False ):
       try:
         yield item
       except Exception, e:
-        print 'an error occured:', e
+        log.error( 'an error occured: %s' % e )
         _exit( 1 )
       _exit( 0 )
 
