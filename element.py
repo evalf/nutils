@@ -4,7 +4,7 @@ import weakref
 class TrimmedIScheme( object ):
   'integration scheme for truncated elements'
 
-  def __init__( self, levelset, ischeme, maxrefine, finestscheme='uniform10', degree=3 ):
+  def __init__( self, levelset, ischeme, maxrefine, finestscheme='uniform10', degree=3, retain=None ):
     'constructor'
 
     self.levelset = levelset
@@ -12,6 +12,7 @@ class TrimmedIScheme( object ):
     self.maxrefine = maxrefine
     self.finestscheme = finestscheme
     self.bezierscheme = 'bezier%d' % degree
+    self.retain = retain
     self.cache = {}
 
   def __getitem__( self, elem ):
@@ -27,6 +28,17 @@ class TrimmedIScheme( object ):
 
   def generate_ischeme( self, elem, maxrefine ):
     'generate integration scheme'
+
+    if self.retain:
+      parents = [elem]
+      for i in range(maxrefine):
+        allchildren = []
+        while parents:
+          allchildren += parents.pop().children
+        parents = allchildren  
+
+      if not any(self.retain[child] for child in parents):
+        return None
 
     if maxrefine <= 0:
       points = elem.eval( self.finestscheme )
