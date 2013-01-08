@@ -131,7 +131,7 @@ def run( *functions ):
   properties = {
     'nprocs': 1,
     'outdir': '~/public_html',
-    'verbose': 1,
+    'verbose': 4,
     'linewidth': 60,
     'imagetype': 'png',
     'dot': 'dot',
@@ -150,7 +150,7 @@ def run( *functions ):
   --help                  Display this help
   --nprocs=%(nprocs)-14s Select number of processors
   --outdir=%(outdir)-14s Define directory for output
-  --verbose=%(verbose)-13s Set verbosity level, 0=all
+  --verbose=%(verbose)-13s Set verbosity level, 9=all
   --linewidth=%(linewidth)-11s Set line width
   --imagetype=%(imagetype)-11s Set image type
   --dot=%(dot)-17s Set graphviz executable''' % properties

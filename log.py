@@ -1,16 +1,16 @@
 from . import prop
 import sys, time, os
 
-error    = lambda *args, **kwargs: log( 4, *args, **kwargs )
-warning  = lambda *args, **kwargs: log( 3, *args, **kwargs )
+error    = lambda *args, **kwargs: log( 0, *args, **kwargs )
+warning  = lambda *args, **kwargs: log( 1, *args, **kwargs )
 info     = lambda *args, **kwargs: log( 2, *args, **kwargs )
-progress = lambda *args, **kwargs: log( 1, *args, **kwargs )
-debug    = lambda *args, **kwargs: log( 0, *args, **kwargs )
+progress = lambda *args, **kwargs: log( 3, *args, **kwargs )
+debug    = lambda *args, **kwargs: log( 9, *args, **kwargs )
 
 def log( level, *args, **kwargs ):
   'log text (modeled after python3 print)'
 
-  if level < getattr( prop, 'verbose', None ):
+  if level > getattr( prop, 'verbose', None ):
     return False
 
   sep = kwargs.pop( 'sep', ' ' )
@@ -39,7 +39,7 @@ class ProgressBar( object ):
     self.x = 0
     self.t0 = time.time()
     self.length = getattr( prop, 'linewidth', 50 )
-    self.out = getattr( prop, 'verbose', None ) <= 1 and getattr( prop, 'html', sys.stdout )
+    self.out = getattr( prop, 'verbose', None ) >= 3 and getattr( prop, 'html', sys.stdout )
     self.add( title )
 
   def add( self, text ):

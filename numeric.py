@@ -150,7 +150,9 @@ def det( A, ax1, ax2 ):
   T.pop(ax1)
   T.extend([ax1,ax2])
   A = A.transpose( T )
-  if A.shape[-1] == 2:
+  if A.shape[-1] == 1:
+    det = A[...,0,0]
+  elif A.shape[-1] == 2:
     det = A[...,0,0] * A[...,1,1] - A[...,0,1] * A[...,1,0]
   else:
     det = numpy.empty( A.shape[:-2] )

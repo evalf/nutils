@@ -155,7 +155,7 @@ class StaticArray( numpy.ndarray ):
     return numeric.det( self, *axes )
 
   def inv( self, *axes ):
-    'determinant'
+    'inverse'
 
     return numeric.inv( self, axes )
 
@@ -221,6 +221,9 @@ class Evaluable( object ):
 
   def __init__( self, args, evalf ):
     'constructor'
+
+    for arg in args:
+      assert not arg.__class__ is numpy.ndarray, 'numpy argument found for %r' % self
 
     self.__args = tuple(args)
     self.__evalf = evalf
@@ -690,6 +693,11 @@ class ArrayFunc( Evaluable ):
   def inv( self, ax1, ax2 ):
     'inverse'
 
+    n = self.shape[ax1]
+    assert self.shape[ax2] == n
+    if n == 1:
+      return self.reciprocal()
+
     return Inverse( self, ax1, ax2 )
 
   def swapaxes( self, n1, n2 ):
@@ -751,8 +759,12 @@ class ArrayFunc( Evaluable ):
   def det( self, ax1, ax2 ):
     'determinant'
 
-    if self.shape == ():
-      return self
+    ax1, ax2 = normdim( self.ndim, [ax1,ax2] )
+
+    n = self.shape[ax1]
+    assert n == self.shape[ax2]
+    if n == 1:
+      return self.get( ax2, 0 ).get( ax1, 0 )
 
     return Determinant( self, ax1, ax2 )
 
@@ -778,7 +790,7 @@ class ArrayFunc( Evaluable ):
       return ZERO(shape)
 
     if not func2 - 1 and func1.shape == shape: # TODO replace mul with repeat if possible
-      return func1#.expand( shape )
+      return func1.expand( shape )
 
     return Multiply( func1, func2 )
 
@@ -790,10 +802,11 @@ class ArrayFunc( Evaluable ):
   def __div__( self, other ):
     'divide'
   
-    if isinstance( other, ArrayFunc ):
-      return Divide( self, other )
+    if not isinstance( other, ArrayFunc ):
+      return self * numpy.reciprocal( other ) # faster
 
-    return self * numpy.reciprocal( other ) # faster
+    shape, (func1,func2) = numeric.align_arrays( self, other )
+    return Divide( func1, func2 )
 
   def __rdiv__( self, other ):
     'right divide'
@@ -819,7 +832,7 @@ class ArrayFunc( Evaluable ):
     shape, (func1,func2) = numeric.align_arrays( self, other )
 
     if not other:
-      return self
+      return func1.expand( shape )
 
     if self == other:
       return self * 2
@@ -837,10 +850,12 @@ class ArrayFunc( Evaluable ):
     if not isinstance( other, ArrayFunc ):
       other = StaticArray( other )
   
-    if not other:
-      return self
+    shape, (func1,func2) = numeric.align_arrays( self, other )
 
-    return Subtract( self, other )
+    if not other:
+      return func1.expand( shape )
+
+    return Subtract( func1, func2 )
 
   def __rsub__( self, other ):
     'right subtract'
@@ -849,10 +864,12 @@ class ArrayFunc( Evaluable ):
       return other - self
 
     other = StaticArray( other )
-    if not other:
-      return -self
+    shape, (func1,func2) = numeric.align_arrays( self, other )
 
-    return Subtract( other, self )
+    if not other:
+      return -func1.expand(shape)
+
+    return Subtract( func2, func1 )
 
   def __neg__( self ):
     'negate'
@@ -927,10 +944,10 @@ class Align( ArrayFunc ):
     self.func = func
     assert all( 0 <= ax < ndim for ax in axes )
     self.axes = tuple(axes)
-    trans = numpy.argsort( axes )
+    trans = tuple(numpy.argsort( axes ))
     sortaxes = numpy.take( axes, trans )
     assert numpy.all( sortaxes[1:] != sortaxes[:-1] ), 'duplicate axes in %s' % axes
-    if numpy.all( trans == numpy.arange(len(axes)) ):
+    if numpy.all( numpy.arange(len(axes)) == trans ):
       trans = None
     shape = [ 1 ] * ndim
     item = [ _ ] * ndim
@@ -980,8 +997,11 @@ class Align( ArrayFunc ):
     axes = normdim( self.ndim, axes if isiterable(axes) else [axes] )
     sumaxes = []
     for ax in axes:
-      idx = self.axes.index( ax )
-      sumaxes.append( idx )
+      try:
+        idx = self.axes.index( ax )
+        sumaxes.append( idx )
+      except:
+        pass # trivial summation over singleton axis
 
     trans = [ ax - sum(i<ax for i in axes) for ax in self.axes if ax not in axes ]
     return self.func.sum( sumaxes ).align( trans, self.ndim-len(axes) )
@@ -1234,7 +1254,7 @@ class Function( ArrayFunc ):
     assert ndims <= self.stdmap.ndims
     grad = Function( self.dofaxis, self.stdmap, self.igrad+1 )
     return grad if ndims == self.stdmap.ndims \
-      else ( grad[...,_] * Transform( ndims, self.stdmap.ndims ) ).sum( -2 )
+      else ( grad[...,_] * Transform( self.stdmap.ndims, ndims ) ).sum( -2 )
 
   @staticmethod
   def function( elem, points, stdmap, igrad ):
@@ -1850,6 +1870,22 @@ class Multiply( ArrayFunc ):
     n = self.shape[-1]
     return ( func1.get(-1,0)**n if func1.shape[-1] == 1 else func1.prod() ) \
          * ( func2.get(-1,0)**n if func2.shape[-1] == 1 else func2.prod() )
+
+  def __mul__( self, other ):
+    'multiply'
+
+    if not isinstance( other, ArrayFunc ) and not isinstance( self.funcs[1], ArrayFunc ):
+      return self.funcs[0] * ( self.funcs[1] * other )
+
+    return ArrayFunc.__mul__( self, other )
+
+  def __div__( self, other ):
+    'multiply'
+
+    if not isinstance( other, ArrayFunc ) and not isinstance( self.funcs[1], ArrayFunc ):
+      return self.funcs[0] * ( self.funcs[1] / other )
+
+    return ArrayFunc.__div__( self, other )
 
   @check_localgradient
   def localgradient( self, ndims ):
@@ -2558,6 +2594,13 @@ class Expand( ArrayFunc ):
     mul = self.func * other
     shape = mul.shape[:-self.ndim] + tuple( sh2 if sh1 == 1 else sh1 for sh1, sh2 in zip( mul.shape[-self.ndim:], self.shape ) )
     return mul.expand( shape )
+
+  def __div__( self, other ):
+    'divide'
+
+    div = self.func / other
+    shape = div.shape[:-self.ndim] + tuple( sh2 if sh1 == 1 else sh1 for sh1, sh2 in zip( div.shape[-self.ndim:], self.shape ) )
+    return div.expand( shape )
 
   def align( self, axes, ndim ):
     'align'
