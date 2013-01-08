@@ -4,6 +4,7 @@ Fixed:
 
 * Sparse matrix in place addition: gave erroneous results.
 * Function spaces now support polynomial degree=1.
+* Special case binary operations (zero addition, etc) retain shape.
 
 New:
 
@@ -84,9 +85,10 @@ values:
 
 Logging. Prioritized output via methods of the new log module, which
 behave identical to python3's print function. Use of 'print' is
-discouraged. Priority levels are error (4), warning (3), info (2),
-progress(1) and debug (0). Levels lower than the 'verbose' property
-(.finityrc or --verbose, util.run default 1) are suppressed.
+discouraged. Priority levels are error (0), warning (1), info (2),
+progress(3) and debug (9), making way for user defined levels 4-8.
+Levels higher than the 'verbose' property (.finityrc or --verbose,
+util.run default 3) are suppressed.
 
 Clean text output. Copy-pasteable script header and command line
 arguments. Cleaner html code. Error tracebacks in html output.
