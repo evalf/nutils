@@ -485,6 +485,11 @@ class ArrayFunc( Evaluable ):
     self.ndim = len(self.shape)
     Evaluable.__init__( self, evalf=evalf, args=args )
 
+  def __nonzero__( self ):
+    'nonzero'
+
+    return True
+
   def verify( self, value ):
     'check result'
 
@@ -2537,6 +2542,11 @@ class Expand( ArrayFunc ):
     'nonzero'
 
     return self.func.__nonzero__()
+
+  def localgradient( self, ndims ):
+    'local gradient'
+
+    return self.func.localgradient( ndims ).expand( self.shape+(ndims,) )
 
   def get( self, i, item ):
     'get'
