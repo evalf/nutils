@@ -203,6 +203,24 @@ class PylabAxis( object ):
       kwargs.update(d)
       plotfun( x, y, **kwargs )
 
+  def add_convplot( self, x, y, drop=0.8, shift=1.1, slope=True, **kwargs ): 
+    """Convergence plot including slope triangle (below graph) for supplied y(x),
+       drop  = distance graph & triangle,
+       shift = distance triangle & text."""
+    self.loglog( x, y, **kwargs )
+    self.grid( True )
+    if slope:
+      if x[-1] < x[0]: # inverted order
+        slx   = numpy.array( [x[-2], x[-2], x[-1], x[-2]] )
+        sly   = numpy.array( [y[-2], y[-1], y[-1], y[-2]] )*drop
+      if x[-1] > x[0]:
+        slx   = numpy.array( [x[-1], x[-1], x[-2], x[-1]] )
+        sly   = numpy.array( [y[-1], y[-2], y[-2], y[-1]] )/drop
+      # slope = r'$%2.1f$' % (y[-2]*x[-1]/(x[-2]*y[-1]))
+      slope = r'$%2.1f$' % (numpy.diff( numpy.log10( y[-2:] ) )/numpy.diff( numpy.log10( x[-2:] ) ))
+      self.loglog( slx, sly, color='k', label='_nolegend_' )
+      self.text( slx[-1]*shift, numpy.mean( sly[:2] )*drop, slope )
+
 def project3d( C ):
   sqrt2 = numpy.sqrt( 2 )
   sqrt3 = numpy.sqrt( 3 )
