@@ -185,7 +185,7 @@ class Topology( set ):
     if numpy.all( b == 0 ):
       u = constrain | 0
     else:
-      u = A.solve( b, constrain, tol=tol, title='projecting', symmetric=True )
+      u = A.solve( b, constrain, tol=tol, title=title, symmetric=True )
     u[supp] = numpy.nan
     return u.view( util.NanVec )
 

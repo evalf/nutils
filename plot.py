@@ -150,6 +150,7 @@ class PylabAxis( object ):
       self.title( title )
 
     self.set_frame_on( frame )
+    return elements
   
   def add_quiver( self, coords, topology, quiver, sample='uniform3', scale=None ):
     'quiver builder'

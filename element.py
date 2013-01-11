@@ -4,7 +4,7 @@ import weakref
 class TrimmedIScheme( object ):
   'integration scheme for truncated elements'
 
-  def __init__( self, levelset, ischeme, maxrefine, finestscheme='uniform10', degree=3, retain=None ):
+  def __init__( self, levelset, ischeme, maxrefine, finestscheme='uniform1', degree=3, retain=None ):
     'constructor'
 
     self.levelset = levelset

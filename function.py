@@ -180,6 +180,7 @@ class StaticArray( numpy.ndarray ):
 
     return StaticArray( numpy.concatenate( [self,other], axis ) )
 
+ASARG = lambda f: f if isinstance( f, ArrayFunc ) else StaticArray( f )
 ZERO = lambda shape: StaticArray(0).reshape([1]*len(shape)).expand(shape)
 
 graphviz_warn = { 'fontcolor': 'white', 'fillcolor': 'black', 'style': 'filled' }
@@ -2228,6 +2229,11 @@ class Log( ArrayFunc ):
 
     return self.func.localgradient(ndims) / self.func
 
+def Log10( f ):
+  '10-lased logarith'
+
+  return Log(f) / numpy.log(10)
+
 class Arctan2( ArrayFunc ):
   'arctan2'
 
@@ -2282,7 +2288,7 @@ class Min( ArrayFunc ):
   def __init__( self, func1, func2 ):
     'constructor'
 
-    shape, args = numeric.align_arrays( func1, func2 )
+    shape, args = numeric.align_arrays( ASARG(func1), ASARG(func2) )
     ArrayFunc.__init__( self, args=args, evalf=numpy.minimum, shape=shape )
 
 class Max( ArrayFunc ):
@@ -2291,7 +2297,7 @@ class Max( ArrayFunc ):
   def __init__( self, func1, func2 ):
     'constructor'
 
-    shape, args = numeric.align_arrays( func1, func2 )
+    shape, args = numeric.align_arrays( ASARG(func1), ASARG(func2) )
     ArrayFunc.__init__( self, args=args, evalf=numpy.maximum, shape=shape )
 
 class TakeDiag( ArrayFunc ):
