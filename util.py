@@ -88,6 +88,11 @@ def arraymap( f, dtype, *args ):
   return numpy.array( map( f, args[0] ) if len( args ) == 1
                  else [ f( *arg ) for arg in numpy.broadcast( *args ) ], dtype=dtype )
 
+def objmap( func, *arrays ):
+  'map numpy arrays'
+
+  return numpy.frompyfunc( func, len(arrays), 1 )( *arrays )
+
 def fail( msg, *args ):
   'generate exception'
 

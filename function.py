@@ -590,12 +590,6 @@ class ArrayFunc( Evaluable ):
       r = target - self( elem, points )
     return points
 
-  def chain( self, func ):
-    'chain function spaces together'
-    
-    assert self.shape[0].start == 0
-    return OffsetWrapper( self, offset=func.shape[0].stop, ndofs=int(self.shape[0]) )
-
   def sum( self, axes=-1 ):
     'sum'
 
@@ -1171,23 +1165,6 @@ class Product( ArrayFunc ):
 
     ArrayFunc.__init__( self, args=[func,-1], evalf=numpy.prod, shape=func.shape[:-1] )
 
-class OffsetWrapper( ArrayFunc ):
-  'chain function spaces'
-
-  def __init__( self, func, offset, ndofs ):
-    'constructor'
-
-    self.__dict__.update( func.__dict__ )
-    self.func = func
-    self.offset = offset
-    self.shape = ( ShiftDof(func.shape[0],offset), ) + func.shape[1:]
-
-  @check_localgradient
-  def localgradient( self, ndims ):
-    'local gradient'
-
-    return OffsetWrapper( self.func.localgradient( ndims ), offset=self.offset, ndofs=int(self.shape[0]) )
-
 class IWeights( ArrayFunc ):
   'integration weights'
 
@@ -1253,6 +1230,16 @@ class Function( ArrayFunc ):
     self.stdmap = stdmap
     self.igrad = igrad
     ArrayFunc.__init__( self, args=(ELEM,POINTS,stdmap,igrad), evalf=self.function, shape=(dofaxis,)+(stdmap.ndims,)*igrad )
+
+  def chain( self, func ):
+    'chain function spaces together'
+    
+    return self.renumber( ShiftDof(self.shape[0],func.shape[0].stop) )
+
+  def renumber( self, dofaxis ):
+    'renumber dofs'
+
+    return Function( dofaxis, self.stdmap, self.igrad )
 
   def localgradient( self, ndims ):
     'local gradient'

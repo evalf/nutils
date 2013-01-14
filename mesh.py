@@ -1,4 +1,5 @@
 from . import topology, function, util, element, numpy, numeric, _
+import os
 
 class ElemScale( function.ArrayFunc ):
   'element-constant array'
@@ -75,7 +76,7 @@ class ElemCoords( function.ArrayFunc ):
 
 # MESH GENERATORS
 
-def rectilinear( nodes, periodic=() ):
+def rectilinear( nodes, periodic=(), name='rect' ):
   'rectilinear mesh'
 
   uniform = all( len(n) == 3 and isinstance(n,tuple) for n in nodes )
@@ -87,7 +88,7 @@ def rectilinear( nodes, periodic=() ):
   else:
     indices = numpy.ogrid[ tuple( slice(len(n)-1) for n in nodes ) ]
   scalemap = {}
-  structure = numpy.frompyfunc( lambda *s: element.QuadElement( ndims ), ndims, 1 )( *indices )
+  structure = numpy.frompyfunc( lambda *index: element.QuadElement( index=index, ndims=ndims, myid='{}.quad({})'.format(name,','.join(str(i) for i in index)) ), ndims, 1 )( *indices )
   topo = topology.StructuredTopology( structure )
   offsetmap = {}
   for elem_index in numpy.broadcast( structure, *indices ):
@@ -137,8 +138,11 @@ def revolve( topo, coords, nelems, degree=4, axis=0 ):
 
   return revolved_topo, revolved_func.dot( weights )
 
-def gmesh( path, btags=[] ):
+def gmesh( path, btags=[], name=None ):
   'gmesh'
+
+  if name is None:
+    name = os.path.basename(path)
 
   if isinstance( btags, str ):
     btags = ( 'all,' + btags ).split( ',' )
@@ -183,7 +187,7 @@ def gmesh( path, btags=[] ):
       boundary.append(( elemnodes, tags ))
     elif elemType in (2,4):
       if elemType == 2:
-        elem = element.TriangularElement()
+        elem = element.TriangularElement( myid='{}.tri({})'.format(name,iElem), index=iElem )
         stdelem = element.PolyTriangle( 1 )
       else:
         elem = element.QuadElement( ndims=2 )

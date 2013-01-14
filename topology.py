@@ -15,7 +15,7 @@ class ElemMap( dict ):
 
     return 'ElemMap(#%d,%dD,%s)' % ( len(self), self.ndims, 'ML' if self.overlap else 'SL' )
 
-class Topology( set ):
+class Topology( object ):
   'topology base class'
 
   def __add__( self, other ):
@@ -120,6 +120,8 @@ class Topology( set ):
           for f in func:
             IJ = function.Tuple( f.shape )
             for elem in self:
+              if not elem:
+                continue
               I, J = IJ( elem, None )
               for i in I:
                 graph[i] = numeric.addsorted( graph[i], J, inplace=True )
@@ -136,6 +138,8 @@ class Topology( set ):
         pbar.add( name )
 
     for elem in pbar:
+      if elem is None:
+        continue
       if isinstance(ischeme,str):
         points = elem.eval(ischeme)
       else:
@@ -189,24 +193,36 @@ class Topology( set ):
     u[supp] = numpy.nan
     return u.view( util.NanVec )
 
-  def trim( self, levelset, maxrefine, lscheme='bezier3' ):
-    'create new domain based on levelset'
+# def trim( self, levelset, maxrefine, lscheme='bezier3' ):
+#   'create new domain based on levelset'
 
-    newelems = []
-    for elem in log.ProgressBar( self, title='selecting/refining elements' ):
-      elempool = [ elem ]
-      for level in range( maxrefine ):
-        nextelempool = []
-        for elem in elempool:
-          inside = levelset( elem, lscheme ) > 0
-          if inside.all():
-            newelems.append( elem )
-          elif inside.any():
-            nextelempool.extend( elem.children )
-        elempool = nextelempool
-      # TODO select >50% overlapping elements from elempool
-      newelems.extend( elempool )
-    return UnstructuredTopology( newelems, ndims=self.ndims )
+#   newelems = []
+#   for elem in log.ProgressBar( self, title='selecting/refining elements' ):
+#     elempool = [ elem ]
+#     for level in range( maxrefine ):
+#       nextelempool = []
+#       for elem in elempool:
+#         inside = levelset( elem, lscheme ) > 0
+#         if inside.all():
+#           newelems.append( elem )
+#         elif inside.any():
+#           nextelempool.extend( elem.children )
+#       elempool = nextelempool
+#     # TODO select >50% overlapping elements from elempool
+#     newelems.extend( elempool )
+#   return UnstructuredTopology( newelems, ndims=self.ndims )
+
+#   def select( elem, level=0 ):
+#     try:
+#       inside = levelset( elem, lscheme ) > 0
+#     except function.EvaluationError:
+#       pass
+#     else:
+#       return inside.any()
+#     assert level < maxrefine, 'failed to evaluate levelset within maxrefine={}'.format( maxrefine )
+#     return any( select(child,level+1) for child in elem.children )
+
+#   return IndexedTopology( self, select=select )
 
   def refinedfunc( self, dofaxis, degree, refine ):
     'create refined space by refining dofs in existing one'
@@ -308,8 +324,6 @@ class StructuredTopology( Topology ):
     self.periodic = tuple(periodic)
     self.groups = {}
 
-    Topology.__init__( self, structure.flat )
-
   def make_periodic( self, periodic ):
     'add periodicity'
 
@@ -348,7 +362,7 @@ class StructuredTopology( Topology ):
           + ( -iside, ) \
           + ( slice(None,None,2*iside-1), ) * (self.ndims-idim-1)
         # TODO: check that this is correct for all dimensions; should match conventions in elem.edge
-        belems = numpy.frompyfunc( lambda elem: elem.edge( iedge ), 1, 1 )( self.structure[s] )
+        belems = numpy.frompyfunc( lambda elem: elem.edge( iedge ) if elem is not None else None, 1, 1 )( self.structure[s] )
       else:
         belems = numpy.array( self.structure[-iside].edge( iedge ) )
       boundaries.append( StructuredTopology( belems ) )
@@ -497,11 +511,68 @@ class StructuredTopology( Topology ):
 
     return StructuredTopology( structure )
 
+  def trim( self, levelset, maxrefine, lscheme='bezier3', finestscheme='uniform10', evalrefine=0, title='trimming' ):
+    'trim element along levelset'
+
+    pbar = log.ProgressBar( self.structure.size, title )
+    def trimelem( elem ):
+      pbar.update()
+      return elem.trim( levelset=levelset, maxrefine=maxrefine, lscheme=lscheme, finestscheme=finestscheme, evalrefine=evalrefine )
+    trimmedstructure = util.objmap( trimelem, self.structure )
+    pbar.close()
+
+    return StructuredTopology( trimmedstructure, periodic=self.periodic )
+
   def __str__( self ):
     'string representation'
 
     return '%s(%s)' % ( self.__class__.__name__, 'x'.join(map(str,self.structure.shape)) )
     
+class IndexedTopology( Topology ):
+  'trimmed topology'
+  
+  def __init__( self, topo, selection=None, select=None ):
+    'constructor'
+
+    self.topo = topo
+    self.ndims = topo.ndims
+    self.select = select
+    self.elements = filter( select, selection if selection is not None else topo )
+
+  def __iter__( self ):
+    'number of elements'
+
+    return iter(self.elements)
+
+  def __len__( self ):
+    'number of elements'
+
+    return len(self.elements)
+
+  def splinefunc( self, degree ):
+    'create spline function space'
+
+    splinefunc = self.topo.splinefunc( degree )
+    dofaxis, = splinefunc.shape
+    touched = numpy.zeros( int(dofaxis), dtype=bool )
+    for elem in self:
+      dofs = dofaxis( elem, None )
+      touched[dofs] = True
+    numbering = numpy.cumsum(touched) - 1
+    mapping = {}
+    for elem in self:
+      dofs = dofaxis( elem, None )
+      mapping[elem] = numbering[dofs]
+    newdofaxis = function.DofMap( ndofs=numbering[-1] + 1, dofmap=mapping )
+    return splinefunc.renumber( newdofaxis )
+
+  @core.weakcacheprop
+  def refined( self ):
+    'refine all elements 2x'
+
+    selection = [ child for elem in self.elements for child in elem.children ]
+    return IndexedTopology( topo=self.topo.refined, selection=selection, select=self.select )
+
 class UnstructuredTopology( Topology ):
   'externally defined topology'
 
@@ -512,8 +583,17 @@ class UnstructuredTopology( Topology ):
 
     self.namedfuncs = namedfuncs
     self.ndims = ndims
+    self.elements = elements
 
-    Topology.__init__( self, elements )
+  def __iter__( self ):
+    'number of elements'
+
+    return iter(self.elements)
+
+  def __len__( self ):
+    'number of elements'
+
+    return len(self.elements)
 
   def splinefunc( self, degree ):
     'spline func'

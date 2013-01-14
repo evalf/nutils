@@ -82,6 +82,17 @@ class TrimmedIScheme( object ):
     weights = numpy.concatenate( weights, axis=0 )
     return LocalPoints( coords, weights )
 
+class IdentityTransformation( object ):
+  'identity transformation'
+
+  transform = numpy.array( 1. )
+  offset = numpy.array( 0. )
+
+  def eval( self, points ):
+    'evaluate'
+
+    return points
+
 class AffineTransformation( object ):
   'affine transformation'
 
@@ -112,10 +123,14 @@ class Element( object ):
 
   Represents the topological shape.'''
 
-  def __init__( self, ndims, parent=None, context=None ):
+  def __init__( self, ndims, myid, index=None, parent=None, context=None ):
     'constructor'
 
     self.ndims = ndims
+    self.myid = myid
+    self.myhash = hash(myid)
+    assert index is None or parent is None
+    self.index = index
     self.parent = parent
     self.context = context
 
@@ -140,6 +155,107 @@ class Element( object ):
       totaltransform = numpy.dot( transform.transform, totaltransform )
     return elem, points, totaltransform
 
+  def __repr__( self ):
+    'string representation'
+
+    return self.myid
+
+  def __str__( self ):
+    'string representation'
+
+    return self.myid
+
+  def __hash__( self ):
+    'hash'
+
+    return self.myhash
+
+  def __eq__( self, other ):
+    'hash'
+
+    return self is other or self.myid == other.myid
+
+  def trim( self, levelset, maxrefine, lscheme='bezier3', finestscheme='uniform1', evalrefine=0 ):
+    'trim element along levelset'
+
+    elems = iter( [self] )
+    for irefine in range(evalrefine):
+      elems = ( child for child in elem.children for elem in elems )
+    inside = levelset( elems.next(), lscheme ) > 0
+    if inside.all():
+      for elem in elems:
+        inside = levelset( elem, lscheme ) > 0
+        if not inside.all():
+          state = 1
+          break
+      else:
+        return self
+    elif not inside.any():
+      for elem in elems:
+        inside = levelset( elem, lscheme ) > 0
+        if inside.any():
+          state = 1
+          break
+      else:
+        return None
+    return TrimmedElement( elem=self, levelset=levelset, maxrefine=maxrefine, lscheme=lscheme, finestscheme=finestscheme, evalrefine=evalrefine )
+
+class TrimmedElement( Element ):
+  'trimmed element'
+
+  def __init__( self, elem, levelset, maxrefine, lscheme, finestscheme, evalrefine ):
+    'constructor'
+
+    self.elem = elem
+    self.levelset = levelset
+    self.maxrefine = maxrefine
+    self.lscheme = lscheme
+    self.finestscheme = finestscheme
+    self.evalrefine = evalrefine
+    self.cache = {}
+
+    Element.__init__( self, ndims=elem.ndims, myid=elem.myid+'.trim', parent=(elem,IdentityTransformation()) )
+
+  def eval( self, ischeme ):
+    'get integration scheme'
+
+    if ischeme[:7] == 'contour':
+      n = max( 20, int(ischeme[7:] or 0) )
+      points = self.elem.eval( 'contour{}'.format(n) )
+      inside = self.levelset( self.elem, points ) > 0
+      return LocalPoints( points.coords[inside], None )
+
+    if self.maxrefine <= 0:
+      points = self.elem.eval( self.finestscheme )
+      inside = self.levelset( self.elem, points ) > 0
+      return LocalPoints( points.coords[inside], points.weights[inside] )
+
+    coords = []
+    weights = []
+    for child in self.children:
+      if child is None:
+        continue
+      points = child.eval( ischeme )
+      pelem, transform = child.parent
+      points = transform.eval( points )
+      while pelem is not self.elem: # child is trimmed
+        pelem, transform = pelem.parent
+        points = transform.eval( points )
+      coords.append( points.coords )
+      weights.append( points.weights )
+
+    coords = numpy.concatenate( coords, axis=0 )
+    weights = numpy.concatenate( weights, axis=0 )
+    return LocalPoints( coords, weights )
+
+  @core.cacheprop
+  def children( self ):
+    'all 1x refined elements'
+
+    return [ child.trim( levelset=self.levelset, maxrefine=self.maxrefine-1,
+                         lscheme=self.lscheme, finestscheme=self.finestscheme,
+                         evalrefine=self.evalrefine-1 ) for child in self.elem.children ]
+
 class QuadElement( Element ):
   'quadrilateral element'
 
@@ -147,22 +263,8 @@ class QuadElement( Element ):
   def children( self ):
     'all 1x refined elements'
 
-    transforms = self.refinedtransform( self.ndims, 2 )
-    refs = self.__dict__.get('children')
-    if refs:
-      for ielem, transform in enumerate( transforms ):
-        elem = refs[ ielem ]()
-        if not elem:
-          elem = QuadElement( self.ndims, parent=(self,transform) )
-          refs[ ielem ] = weakref.ref(elem)
-        yield elem
-    else:
-      refs = []
-      for transform in transforms:
-        elem = QuadElement( self.ndims, parent=(self,transform) )
-        refs.append( weakref.ref(elem) )
-        yield elem
-      self.__dict__['children'] = refs
+    return ( QuadElement( myid=self.myid+'.child({})'.format(ielem), ndims=self.ndims, parent=(self,transform) )
+      for ielem, transform in enumerate( self.refinedtransform( self.ndims, 2 ) ) )
       
   @core.classcache
   def edgetransform( cls, ndims ):
@@ -184,7 +286,7 @@ class QuadElement( Element ):
     'edge'
 
     transform = self.edgetransform( self.ndims )[ iedge ]
-    return QuadElement( self.ndims-1, context=(self,transform) )
+    return QuadElement( myid=self.myid+'.edge({})'.format(iedge), ndims=self.ndims-1, context=(self,transform) )
 
   @core.classcache
   def refinedtransform( cls, ndims, n ):
@@ -258,11 +360,6 @@ class QuadElement( Element ):
       weights = None
     return LocalPoints( coords.T, weights )
 
-  def __repr__( self ):
-    'string representation'
-
-    return '%s#%x<ndims=%d>' % ( self.__class__.__name__, id(self), self.ndims )
-
 class TriangularElement( Element ):
   'triangular element'
 
@@ -272,10 +369,10 @@ class TriangularElement( Element ):
     AffineTransformation( offset=[1,0], transform=[[-1],[ 1]] ),
     AffineTransformation( offset=[0,1], transform=[[ 0],[-1]] ) )
 
-  def __init__( self, parent=None, context=None ):
+  def __init__( self, myid, index=None, parent=None, context=None ):
     'constructor'
 
-    Element.__init__( self, ndims=2, parent=parent, context=context )
+    Element.__init__( self, ndims=2, myid=myid, index=index, parent=parent, context=context )
 
   @property
   def children( self ):
@@ -302,7 +399,7 @@ class TriangularElement( Element ):
     'edge'
 
     transform = self.edgetransform[ iedge ]
-    return QuadElement( ndims=1, parent=(self,transform) )
+    return QuadElement( myid=self.myid+'.edge({})'.format(iedge), ndims=1, parent=(self,transform) )
 
   @core.classcache
   def refinedtransform( cls, n ):
@@ -318,9 +415,10 @@ class TriangularElement( Element ):
   def refined( self, n ):
     'refine'
 
+    assert n == 2
     if n == 1:
       return self
-    return [ TriangularElement( parent=(self,transform) ) for transform in self.refinedtransform( n ) ]
+    return [ TriangularElement( myid=self.myid+'.child({})'.format(ichild), parent=(self,transform) ) for ichild, transform in enumerate( self.refinedtransform( n ) ) ]
 
   @core.classcache
   def getischeme( cls, ndims, where ):
@@ -379,11 +477,6 @@ class TriangularElement( Element ):
     else:
       raise Exception, 'invalid element evaluation: %r' % where
     return LocalPoints( coords.T, weights )
-
-  def __repr__( self ):
-    'string representation'
-
-    return '%s#%x' % ( self.__class__.__name__, id(self) )
 
 class LocalPoints( object ):
   'local point coordinates'

@@ -36,6 +36,7 @@ class ProgressBar( object ):
     else:
       self.n = len(iterable)
 
+    self.index = 0
     self.x = 0
     self.t0 = time.time()
     self.length = getattr( prop, 'linewidth', 50 )
@@ -60,19 +61,24 @@ class ProgressBar( object ):
   def iterator( self ):
     'iterate'
 
-    for i, item in enumerate( self.iterable ):
-      self.update( i )
+    for item in self.iterable:
+      self.update()
       yield item
-
     self.close()
 
-  def update( self, i ):
+  def update( self, index=None ):
     'update'
 
     if not self.out:
       return
 
-    x = int( (i+1) * self.length ) // (self.n+1)
+    if index is None:
+      self.index += 1
+      index = self.index
+    else:
+      self.index = index
+
+    x = int( (index+1) * self.length ) // (self.n+1)
     if not self.x < x <= self.length:
       return
 
