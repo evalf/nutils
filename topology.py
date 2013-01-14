@@ -337,7 +337,7 @@ class StructuredTopology( Topology ):
   def __iter__( self ):
     'iterate'
 
-    return self.structure.flat
+    return ( elem for elem in self.structure.flat if elem != None )
 
   def __getitem__( self, item ):
     'subtopology'
@@ -504,14 +504,14 @@ class StructuredTopology( Topology ):
   def refined( self ):
     'refined (=refine(2))'
 
-    structure = numpy.array( [ list(elem.children) for elem in self.structure.flat ] )
+    structure = numpy.array( [ list(elem.children) if elem is not None else [None]*(2**self.ndims) for elem in self.structure.flat ] )
     structure = structure.reshape( self.structure.shape + (2,)*self.ndims )
     structure = structure.transpose( sum( [ ( i, self.ndims+i ) for i in range(self.ndims) ], () ) )
     structure = structure.reshape( [ self.structure.shape[i] * 2 for i in range(self.ndims) ] )
 
     return StructuredTopology( structure )
 
-  def trim( self, levelset, maxrefine, lscheme='bezier3', finestscheme='uniform10', evalrefine=0, title='trimming' ):
+  def trim( self, levelset, maxrefine, lscheme='bezier3', finestscheme='uniform2', evalrefine=0, title='trimming' ):
     'trim element along levelset'
 
     pbar = log.ProgressBar( self.structure.size, title )

@@ -1,6 +1,39 @@
 from . import log, prop
 import sys, os, time, numpy, cPickle, hashlib, weakref, traceback
 
+class Cache( object ):
+  'cache'
+
+  def __init__( self, *args ):
+    'constructor'
+
+    name = sys._getframe(1).f_code.co_name
+    import hashlib
+    strhash = ','.join( str(arg) for arg in args )
+    md5hash = hashlib.md5( strhash ).hexdigest() + '.' + name
+    log.info( 'using cache:', md5hash )
+    cachedir = getattr( prop, 'cachedir', 'cache' )
+    if not os.path.exists( cachedir ):
+      os.makedirs( cachedir )
+    path = os.path.join( cachedir, md5hash )
+    self.data = file( path, 'a+' )
+
+  def __call__( self, func, *args, **kwargs ):
+    'call'
+
+    name = func.__name__ + ''.join( ' %s' % arg for arg in args ) + ''.join( ' %s=%s' % item for item in kwargs.iteritems() )
+    try:
+      pos = self.data.tell()
+      data = cPickle.load( self.data )
+    except EOFError:
+      log.info( 'not in cache:', name )
+      data = func( *args, **kwargs)
+      self.data.seek( pos )
+      cPickle.dump( data, self.data, -1 )
+    else:
+      log.info( 'loaded from cache:', name )
+    return data
+
 def getpath( pattern ):
   'create file in dumpdir'
 
@@ -139,6 +172,7 @@ def run( *functions ):
     'verbose': 4,
     'linewidth': 60,
     'imagetype': 'png',
+    'timepath': time.strftime( '%Y/%m/%d/%H-%M-%S/' ),
     'dot': 'dot',
   }
   try:
@@ -158,6 +192,7 @@ def run( *functions ):
   --verbose=%(verbose)-13s Set verbosity level, 9=all
   --linewidth=%(linewidth)-11s Set line width
   --imagetype=%(imagetype)-11s Set image type
+  --timepath=%(timepath)-11s Define path in dumpdir
   --dot=%(dot)-17s Set graphviz executable''' % properties
     for i, func in enumerate( functions ):
       print
@@ -203,8 +238,8 @@ def run( *functions ):
   scriptname = os.path.basename(sys.argv[0])
   outdir = os.path.expanduser( prop.outdir ).rstrip( os.sep ) + os.sep
   basedir = outdir + scriptname + os.sep
-  dumpdir = basedir + time.strftime( '%Y/%m/%d/%H-%M-%S/' )
-  os.makedirs( dumpdir )
+  dumpdir = basedir + prop.timepath
+  os.makedirs( dumpdir ) # asserts nonexistence
 
   prop.dumpdir = dumpdir
   prop.html = log.HtmlWriter( dumpdir + 'index.html' )
@@ -214,6 +249,7 @@ def run( *functions ):
     if os.path.islink( link ):
       os.remove( link )
     os.symlink( dumpdir, link )
+  prop.cachedir = basedir + 'cache'
 
   commandline = [ ' '.join([ scriptname, funcname ]) ] + [ '  --%s=%s' % item for item in kwargs.items() ]
 

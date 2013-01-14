@@ -257,11 +257,16 @@ def writevtu( name, topology, coords, pointdata={}, celldata={} ):
     vtkMesh.GetCellData().AddArray( array )
   celldatafun = function.Tuple( celldata_arrays )
   for elem in pbar:
-    if isinstance( elem, element.TriangularElement ):
+
+    superelem = elem
+    if isinstance( superelem, element.TrimmedElement ):  
+      superelem = superelem.elem
+
+    if isinstance( superelem, element.TriangularElement ):
       vtkelem = vtk.vtkTriangle()
-    elif isinstance( elem, element.QuadElement ) and elem.ndims == 2:
+    elif isinstance( superelem, element.QuadElement ) and elem.ndims == 2:
       vtkelem = vtk.vtkQuad()
-    elif isinstance( elem, element.QuadElement ) and elem.ndims == 3:
+    elif isinstance( superelem, element.QuadElement ) and elem.ndims == 3:
       vtkelem = vtk.vtkVoxel() # TODO hexahedron for not rectilinear NOTE ordering changes!
     else:
       raise Exception, 'not sure what to do with element %r' % elem

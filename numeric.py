@@ -49,6 +49,9 @@ def contract( A, B, axis=-1 ):
   A = numpy.lib.stride_tricks.as_strided( A, shape, Astrides )
   B = numpy.lib.stride_tricks.as_strided( B, shape, Bstrides )
 
+  if not A.size:
+    return numpy.zeros( A.shape[:-len(axis)] )
+
   return _numeric.contract( A, B, len(axis) )
 
 def fastrepeat( A, nrepeat, axis=-1 ):

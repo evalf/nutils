@@ -399,8 +399,8 @@ class Tuple( Evaluable ):
   def __init__( self, items ):
     'constructor'
 
-    self.items = tuple(items)
-    Evaluable.__init__( self, args=items, evalf=self.vartuple )
+    self.items = tuple( item if not isinstance(item,numpy.ndarray) else StaticArray(item) for item in items )
+    Evaluable.__init__( self, args=self.items, evalf=self.vartuple )
 
   def __iter__( self ):
     'iterate'
@@ -741,15 +741,20 @@ class ArrayFunc( Evaluable ):
 
     return self.grad( coords, ndims ).trace( -1, -2 )
 
+  def dotnorm( self, coords, ndims=0 ):
+    'normal component'
+
+    return ( self * coords.normal( ndims-1 ) ).sum()
+
   def ngrad( self, coords, ndims=0 ):
     'normal gradient'
 
-    return ( self.grad(coords,ndims) * coords.normal(ndims-1) ).sum()
+    return self.grad( coords, ndims ).dotnorm( coords, ndims )
 
   def nsymgrad( self, coords, ndims=0 ):
     'normal gradient'
 
-    return ( self.symgrad(coords,ndims) * coords.normal(ndims-1) ).sum()
+    return self.symgrad( coords, ndims ).dotnorm( coords, ndims )
 
   def norm2( self, axis=-1 ):
     'norm2'
@@ -2091,7 +2096,18 @@ class Trace( ArrayFunc ):
     self.func = func
     self.func = func
     self.axes = n1, n2
-    ArrayFunc.__init__( self, args=(func,0,n1-func.ndim,n2-func.ndim), evalf=numpy.trace, shape=shape )
+    ArrayFunc.__init__( self, args=(func,n1-func.ndim,n2-func.ndim), evalf=self.trace, shape=shape )
+
+  @staticmethod
+  def trace( arr, ax1, ax2 ):
+    'trace'
+
+    if arr.size == 0: # numpy returns shape () if arr contains zero axis
+      shape = list( arr.shape )
+      shape.pop( ax1 )
+      shape.pop( ax2 )
+      return numpy.zeros( shape )
+    return numpy.trace( arr, 0, ax1, ax2 )
 
   @check_localgradient
   def localgradient( self, ndims ):

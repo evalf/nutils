@@ -88,7 +88,7 @@ def rectilinear( nodes, periodic=(), name='rect' ):
   else:
     indices = numpy.ogrid[ tuple( slice(len(n)-1) for n in nodes ) ]
   scalemap = {}
-  structure = numpy.frompyfunc( lambda *index: element.QuadElement( index=index, ndims=ndims, myid='{}.quad({})'.format(name,','.join(str(i) for i in index)) ), ndims, 1 )( *indices )
+  structure = numpy.frompyfunc( lambda *index: element.QuadElement( index=index, ndims=ndims, id='{}.quad({})'.format(name,','.join(str(i) for i in index)) ), ndims, 1 )( *indices )
   topo = topology.StructuredTopology( structure )
   offsetmap = {}
   for elem_index in numpy.broadcast( structure, *indices ):
@@ -187,7 +187,7 @@ def gmesh( path, btags=[], name=None ):
       boundary.append(( elemnodes, tags ))
     elif elemType in (2,4):
       if elemType == 2:
-        elem = element.TriangularElement( myid='{}.tri({})'.format(name,iElem), index=iElem )
+        elem = element.TriangularElement( id='{}.tri({})'.format(name,iElem), index=iElem )
         stdelem = element.PolyTriangle( 1 )
       else:
         elem = element.QuadElement( ndims=2 )
