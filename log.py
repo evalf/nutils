@@ -109,13 +109,7 @@ class HtmlWriter( object ):
     self.basedir = os.path.dirname( htmlfile )
     self.html = open( htmlfile, 'w' )
     self.html.write( HTMLHEAD )
-    if 'public_html/' in htmlfile:
-      import pwd
-      username = pwd.getpwuid( os.getuid() ).pw_name
-      permanent = '/~%s/%s' % ( username, htmlfile.split('public_html/',1)[1] )
-    else:
-      permanent = 'file://%s' % htmlfile
-    self.html.write( '<a href="%s">[permalink]</a>\n\n' % permanent )
+    self.html.write( 'goto latest: <a href="../../../../latest.html">script</a> | <a href="../../../../../latest.html">all</a>\n\n' )
     self.html.flush()
     self.stdout = stdout
 

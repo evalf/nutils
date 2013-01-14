@@ -138,8 +138,6 @@ class Topology( object ):
         pbar.add( name )
 
     for elem in pbar:
-      if elem is None:
-        continue
       if isinstance(ischeme,str):
         points = elem.eval(ischeme)
       else:

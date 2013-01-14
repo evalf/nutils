@@ -244,11 +244,9 @@ def run( *functions ):
   prop.dumpdir = dumpdir
   prop.html = log.HtmlWriter( dumpdir + 'index.html' )
 
-  for directory in outdir, basedir:
-    link = directory + 'latest'
-    if os.path.islink( link ):
-      os.remove( link )
-    os.symlink( dumpdir, link )
+  print >> open( outdir+'latest.html', 'w' ), '<meta http-equiv="refresh" content="0;URL={}/latest.html">'.format( scriptname )
+  print >> open( basedir+'latest.html', 'w' ), '<meta http-equiv="refresh" content="0;URL={}index.html">'.format( prop.timepath )
+
   prop.cachedir = basedir + 'cache'
 
   commandline = [ ' '.join([ scriptname, funcname ]) ] + [ '  --%s=%s' % item for item in kwargs.items() ]

@@ -92,8 +92,6 @@ class PylabAxis( object ):
       color = function.Tuple([ color, coords.iweights(ndims=2) ])
     plotcoords = coords + deform
     for elem in pbar:
-      if elem is None:
-        continue
       C = plotcoords( elem, cscheme )
       if ndims == 3:
         C = project3d( C )
