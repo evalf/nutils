@@ -206,7 +206,7 @@ class PylabAxis( object ):
     """Convergence plot including slope triangle (below graph) for supplied y(x),
        drop  = distance graph & triangle,
        shift = distance triangle & text."""
-    self.loglog( x, y, **kwargs )
+    self.loglog( x, y, 'k.-', **kwargs )
     self.grid( True )
     if slope:
       if x[-1] < x[0]: # inverted order
