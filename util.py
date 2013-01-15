@@ -16,7 +16,7 @@ class Cache( object ):
     if not os.path.exists( cachedir ):
       os.makedirs( cachedir )
     path = os.path.join( cachedir, md5hash )
-    self.data = file( path, 'a+' )
+    self.data = file( path, 'a+' if not getattr( prop, 'recache', False ) else 'w+' )
 
   def __call__( self, func, *args, **kwargs ):
     'call'
@@ -172,7 +172,8 @@ def run( *functions ):
     'verbose': 4,
     'linewidth': 60,
     'imagetype': 'png',
-    'timepath': time.strftime( '%Y/%m/%d/%H-%M-%S/' ),
+    'symlink': 'latest',
+    'recache': False,
     'dot': 'dot',
   }
   try:
@@ -192,7 +193,8 @@ def run( *functions ):
   --verbose=%(verbose)-13s Set verbosity level, 9=all
   --linewidth=%(linewidth)-11s Set line width
   --imagetype=%(imagetype)-11s Set image type
-  --timepath=%(timepath)-11s Define path in dumpdir
+  --symlink=%(symlink)-13s Create symlink to latest results
+  --recache=%(recache)-13s Overwrite existing cache
   --dot=%(dot)-17s Set graphviz executable''' % properties
     for i, func in enumerate( functions ):
       print
@@ -238,14 +240,20 @@ def run( *functions ):
   scriptname = os.path.basename(sys.argv[0])
   outdir = os.path.expanduser( prop.outdir ).rstrip( os.sep ) + os.sep
   basedir = outdir + scriptname + os.sep
-  dumpdir = basedir + prop.timepath
+  timepath = time.strftime( '%Y/%m/%d/%H-%M-%S/' )
+  dumpdir = basedir + timepath
   os.makedirs( dumpdir ) # asserts nonexistence
+  if prop.symlink:
+    symlink = basedir + prop.symlink
+    if os.path.islink( symlink ):
+      os.remove( symlink )
+    os.symlink( timepath, symlink )
 
   prop.dumpdir = dumpdir
-  prop.html = log.HtmlWriter( dumpdir + 'index.html' )
+  prop.html = log.HtmlWriter( dumpdir + 'log.html' )
 
-  print >> open( outdir+'latest.html', 'w' ), '<meta http-equiv="refresh" content="0;URL={}/latest.html">'.format( scriptname )
-  print >> open( basedir+'latest.html', 'w' ), '<meta http-equiv="refresh" content="0;URL={}index.html">'.format( prop.timepath )
+  print >> open( outdir+'log.html', 'w' ), '<meta http-equiv="refresh" content="0;URL={}/log.html">'.format( scriptname )
+  print >> open( basedir+'log.html', 'w' ), '<meta http-equiv="refresh" content="0;URL={}log.html">'.format( timepath )
 
   prop.cachedir = basedir + 'cache'
 

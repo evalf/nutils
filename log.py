@@ -109,7 +109,7 @@ class HtmlWriter( object ):
     self.basedir = os.path.dirname( htmlfile )
     self.html = open( htmlfile, 'w' )
     self.html.write( HTMLHEAD )
-    self.html.write( 'goto: <a href="../../../../latest.html">latest script</a> | <a href="../../../../../latest.html">latest overall</a> | <a href="../../../../../">index</a>\n\n' )
+    self.html.write( 'goto: <a href="../../../../log.html">latest script</a> | <a href="../../../../../log.html">latest overall</a> | <a href="../../../../../">index</a>\n\n' )
     self.html.flush()
     self.stdout = stdout
 
