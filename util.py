@@ -240,17 +240,27 @@ def run( *functions ):
   scriptname = os.path.basename(sys.argv[0])
   outdir = os.path.expanduser( prop.outdir ).rstrip( os.sep ) + os.sep
   basedir = outdir + scriptname + os.sep
-  timepath = time.strftime( '%Y/%m/%d/%H-%M-%S/' )
+  localtime = time.localtime()
+  timepath = time.strftime( '%Y/%m/%d/%H-%M-%S/', localtime )
+
   dumpdir = basedir + timepath
   os.makedirs( dumpdir ) # asserts nonexistence
+
   if prop.symlink:
-    symlink = basedir + prop.symlink
-    if os.path.islink( symlink ):
-      os.remove( symlink )
-    os.symlink( timepath, symlink )
+    for directory in outdir, basedir:
+      symlink = directory + prop.symlink
+      if os.path.islink( symlink ):
+        os.remove( symlink )
+      os.symlink( timepath, symlink )
+
+  logpath = os.path.join( os.path.dirname( log.__file__ ), '_log' ) + os.sep
+  for filename in os.listdir( logpath ):
+    if filename[0] != '.' and ( not os.path.isfile( outdir + filename ) or os.path.getmtime( outdir + filename ) < os.path.getmtime( logpath + filename ) ):
+      print 'updating', filename
+      open( outdir + filename, 'w' ).write( open( logpath + filename, 'r' ).read() )
 
   prop.dumpdir = dumpdir
-  prop.html = log.HtmlWriter( dumpdir + 'log.html' )
+  prop.html = log.HtmlWriter( scriptname + time.strftime( ' %Y/%m/%d %H:%M:%S', localtime ), dumpdir + 'log.html' )
 
   print >> open( outdir+'log.html', 'w' ), '<meta http-equiv="refresh" content="0;URL={}/log.html">'.format( scriptname )
   print >> open( basedir+'log.html', 'w' ), '<meta http-equiv="refresh" content="0;URL={}log.html">'.format( timepath )

@@ -103,13 +103,18 @@ class HtmlWriter( object ):
 
   html = None
 
-  def __init__( self, htmlfile, stdout=sys.stdout ):
+  def __init__( self, title, htmlfile, stdout=sys.stdout ):
     'constructor'
 
     self.basedir = os.path.dirname( htmlfile )
     self.html = open( htmlfile, 'w' )
-    self.html.write( HTMLHEAD )
-    self.html.write( 'goto: <a href="../../../../log.html">latest script</a> | <a href="../../../../../log.html">latest overall</a> | <a href="../../../../../">index</a>\n\n' )
+    self.html.write( '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "DTD/xhtml1-strict.dtd">\n' )
+    self.html.write( '<html><head>\n' )
+    self.html.write( '<title>{}</title>\n'.format(title) )
+    self.html.write( '<script type="text/javascript" src="../../../../../viewer.js" ></script>\n' )
+    self.html.write( '<link rel="stylesheet" type="text/css" href="../../../../../style.css">\n' )
+    self.html.write( '</head><body><pre>\n' )
+    self.html.write( 'goto: <a href="../../../../log.html">latest</a> | <a href="../../../../../log.html">latest overall</a> | <a href="../../../../../">index</a>\n\n' )
     self.html.flush()
     self.stdout = stdout
 
@@ -123,7 +128,7 @@ class HtmlWriter( object ):
     path = os.path.join( self.basedir, name )
     if not os.path.isfile( path ):
       return name
-    return r'<a href="%s">%s</a>' % (name,name)
+    return r'<a href="%s" class="plot">%s</a>' % (name,name)
 
   def write( self, s ):
     'write string'
@@ -141,104 +146,7 @@ class HtmlWriter( object ):
     'destructor'
 
     if self.html is not None:
-      self.html.write( HTMLFOOT )
-
-HTMLHEAD = '''\
-<html>
-<head>
-<script type='application/javascript'>
-
-var i_focus = 0; // currently focused anchor element
-var anchors; // list of all anchors (ordered by height)
-var focus; // = anchors[i_focus] after first mouse move
-var preview; // preview div element
-var Y = 0; // current mouse height relative to window
-
-findclosest = function () {
-  y = Y + document.body.scrollTop - anchors[0].offsetHeight / 2;
-  var dy = y - anchors[i_focus].offsetTop;
-  if ( dy > 0 ) {
-    for ( var i = i_focus; i < anchors.length-1; i++ ) {
-      var yd = anchors[i+1].offsetTop - y;
-      if ( yd > 0 ) return i + ( yd < dy );
-      dy = -yd;
-    }
-    return anchors.length - 1;
-  }
-  else {
-    for ( var i = i_focus; i > 0; i-- ) {
-      var yd = anchors[i-1].offsetTop - y;
-      if ( yd < 0 ) return i - ( yd > dy );
-      dy = -yd;
-    }
-    return 0;
-  }
-}
-
-refocus = function () {
-  // update preview image if necessary
-  var newfocus = anchors[ findclosest() ];
-  if ( focus ) {
-    if ( focus == newfocus ) return;
-    focus.classList.remove( 'highlight' );
-    focus.classList.remove( 'loading' );
-  }
-  focus = newfocus;
-  focus.classList.add( 'loading' );
-  newobj = document.createElement( 'img' );
-  newobj.setAttribute( 'width', '520px' );
-  newobj.onclick = function () { document.location.href=focus.getAttribute('href'); };
-  newobj.onload = function () {
-    preview.innerHTML='';
-    preview.appendChild(this);
-    focus.classList.add( 'highlight' )
-    focus.classList.remove( 'loading' );
-  };
-  newobj.setAttribute( 'src', focus.getAttribute('href') );
-}
-
-window.onload = function() {
-  // set up anchor list, preview pane, document events
-  nodelist = document.getElementsByTagName('a');
-  anchors = []
-  for ( i = 0; i < nodelist.length; i++ ) {
-    var url = nodelist[i].getAttribute('href');
-    var ext = url.split('.').pop();
-    var idx = ['png','svg','jpg','jpeg'].indexOf(ext);
-    if ( idx != -1 ) anchors.push( nodelist[i] );
-  }
-  if ( anchors.length == 0 ) return;
-  preview = document.createElement( 'div' );
-  preview.setAttribute( 'id', 'preview' );
-  document.body.appendChild( preview );
-  document.onmousemove = function (event) { Y=event.clientY; refocus(); };
-  document.onscroll = refocus;
-};
-
-</script>
-<style>
-
-a { text-decoration: none; color: blue; }
-a.loading { color: green; }
-a.highlight { color: red; }
-
-#preview {
-  position: fixed;
-  top: 10px;
-  right: 10px;
-  border: 1px solid gray;
-  padding: 0px;
-}
-
-</style>
-</head>
-<body>
-<pre>'''
-
-HTMLFOOT = '''\
-</pre>
-</body>
-</html>
-'''
+      self.html.write( '</pre></body></html>\n' )
+      self.html.flush()
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
