@@ -1,2 +1,22 @@
+html,body{
+  margin: 0;
+  padding: 0;
+  border: 0;
+  width: 100%;
+  height: 100%;
+}
+
 a { color: #004D79; }
 a.active { color: #9B3030; }
+
+.column{
+  position: fixed;
+  top: 0;
+  width: 50%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+#code{ left: 0; overflow: auto; }
+#media{ right: 0; overflow: hidden; }
