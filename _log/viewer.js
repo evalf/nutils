@@ -27,13 +27,15 @@ function Finity() {
     this.init = function (){
       var self = this;
       
-      this._code = $('pre');
+      this._code = $('pre')
+										.attr('id', 'code')
+										.addClass('column');
       this._links = $('a.plot', this._code);
       this._preview = $('<img src="" alt="" />')
                       .appendTo('body')
                       .css({'position': 'absolute', 'left': '-3000px', 'top': '-3000px'});
       
-      this._media = $('<div id="media">').insertAfter(this._code);
+      this._media = $('<div id="media" class="column">').insertAfter(this._code);
       this._img = $('<img src="" alt="" title="" />').appendTo(this._media);
       this._controls = $('<div id="controls">').insertBefore(this._img);
       this._selGallery = $('<select id="sel-gallery"><option value="*">-- Show all --</option></select>').appendTo(this._controls);
@@ -94,24 +96,6 @@ function Finity() {
       // Show current
       this.show( 'first' );
       
-      // Add style
-      var cssColumn = {
-        'display': 'block',
-        'position': 'fixed',
-        'top': '0px',
-        'width': '50%',
-        'height': '100%'
-      };
-      this._code.css(cssColumn).css({'left': '0px', 'overflow': 'auto'});
-      this._media.css(cssColumn).css({'right': '0px'});
-      $('html,body').css({
-        'margin': 0,
-        'padding': 0,
-        'border': 0,
-        'width': '100%',
-        'height': '100%'
-      });
-      
       // Attach events
       $(window).resize(function (){
           self._resizeImage()
@@ -158,7 +142,6 @@ function Finity() {
                 
           self._current.all = true;
           self._current.dat = $a.index();
-          console.log(self._current);
           self.show(gal, plt);
           return false;
         });
@@ -189,14 +172,19 @@ function Finity() {
     this.enableScrolling = function ( enable ) {
       var self = this;
       if( enable ) {
-        $(this._code)
-          .bind('scroll, mousemove',
-            function( evt) {
-              self.closest(evt);
-            });
-      } else {
-        $(this._code)
-          .unbind('scroll, mousemove');
+        this._code
+          .bind('scroll', function( evt ) {
+						self.closest();
+          });
+				this._code.bind('mousemove', function ( evt ){
+					self._pageX = evt.pageX;
+					self._pageY = evt.pageY;
+					self.closest();
+				});
+	     } else {
+        this._code
+          .unbind('scroll')
+					.unbind('mousemove');
       }
       this._scrolling = enable;
     };
@@ -242,8 +230,6 @@ function Finity() {
                 : { 'width': 'auto', 'height': height + 'px' };
         self._img.css(css);
       }
-        
-
     };
     
     /**
@@ -251,20 +237,20 @@ function Finity() {
      * Function that shows the 
      * plot from the closest link
      * 
-     * @param event evt
      * @return void
      */
-    this.closest = function( evt ) {
+    this.closest = function( ) {
       var self = this;
       var scroll_x = this._code.scrollLeft();
       var scroll_y = this._code.scrollTop();
       
-      var mx = evt.pageX + scroll_x, // mouse x
-          my = evt.pageY + scroll_y; // mouse y
-      
+      var mx = this._pageX + scroll_x, // mouse x
+          my = this._pageY + scroll_y; // mouse y
+
       var idx = this._current.all
               ? '*'
               : this._current.gal;
+
       var pos = this._pltdata[idx];
       
       if(pos.length == 0)
@@ -273,7 +259,8 @@ function Finity() {
       var dis = -1;
       var iclose = 0;
       for( i = 0; i < pos.length; i++ ) {
-        var ds = (my - pos[i].cy)*(my - pos[i].cy);
+        var ds = my - pos[i].cy;
+						ds = ds*ds;
         if( ds < dis || dis < 0 ) {
           iclose = i;
           dis = ds;
