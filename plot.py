@@ -1,19 +1,126 @@
 from . import topology, util, numpy, function, element, log, prop, numeric, _
-
-import matplotlib
+import os, matplotlib
 matplotlib.use( 'Agg' )
 
-import os
+class PyPlot( object ):
+  'matplotlib figure'
 
-def polycoll( topology, coords, cscheme='contour3' ):
-  'plot mesh'
+  def __init__( self, name, imgtype=None, ndigits=3 ):
+    'constructor'
 
-  assert topology.ndims == 2
-  from matplotlib import pyplot, collections
-  ndims, = coords.shape
-  assert ndims == 2
-  poly = [ coords( elem, cscheme ) for elem in topology ]
-  return collections.PolyCollection( poly, edgecolors='black', facecolors='none', linewidth=linewidth, rasterized=True )
+    assert isinstance(ndigits,int) and ndigits >= 0, 'positive integer required'
+    self.name = name
+    self.ndigits = ndigits
+    self.imgtype = getattr( prop, 'imagetype', 'png' ) if imgtype is None else imgtype
+
+  def __enter__( self ):
+    'enter with block'
+
+    log.info( 'plotting .. ', end='' )
+    return PyPlotModule()
+
+  def __exit__( self, exc, msg, tb ):
+    'exit with block'
+
+    if exc:
+      log.error( 'ERROR: plot failed:', msg or exc )
+      return #True
+
+    log.info( 'saving .. ', end='' )
+    dumpdir = prop.dumpdir
+    if self.ndigits == 0:
+      imgname = self.name + '.' + self.imgtype
+    else:
+      fmt = self.name + '%%0%dd' % self.ndigits + '.' + self.imgtype
+      n = 1
+      while True:
+        imgname = fmt % n
+        if not os.path.isfile( dumpdir + imgname ):
+          break
+        n += 1
+    
+    from matplotlib import pyplot
+    dumpdir = prop.dumpdir
+    pyplot.savefig( dumpdir + imgname, format=self.imgtype )
+    os.chmod( dumpdir + imgname, 0644 )
+    pyplot.close()
+    log.info( imgname )
+
+class PyPlotModule( object ):
+  'pyplot wrapper'
+
+  def __init__( self ):
+    'constructor'
+
+    from matplotlib import pyplot
+    self.__dict__.update( pyplot.__dict__ )
+    self.figure()
+
+  def polycol( self, verts, facecolors='none', **kwargs ):
+    'add polycollection'
+  
+    from matplotlib import collections
+    assert verts.dtype == object and verts.ndim == 1
+    if facecolors != 'none':
+      assert isinstance(facecolors,numpy.ndarray) and facecolors.shape == verts.shape
+      array = facecolors
+      facecolors = None
+    polycoll = collections.PolyCollection( verts, facecolors=facecolors, **kwargs )
+    if facecolors is None:
+      polycoll.set_array( array )
+    self.gca().add_collection( polycoll )
+    self.sci( polycoll )
+
+  def slope_triangle( self, x, y, fillcolor='0.9', edgecolor='k', xoffset=0, yoffset=0.1, slopefmt='{0:.1f}' ):
+    '''Draw slope triangle for supplied y(x)
+       - x, y: coordinates
+       - xoffset, yoffset: distance graph & triangle (points)
+       - fillcolor, edgecolor: triangle style
+       - slopefmt: format string for slope number'''
+
+    # TODO check for gca() loglog scale
+
+    i, j = (-2,-1) if x[-1] < x[-2] else (-1,-2) # x[i] > x[j]
+
+    from matplotlib import transforms
+    shifttrans = self.gca().transData \
+               + transforms.ScaledTranslation( xoffset, -yoffset, self.gcf().dpi_scale_trans )
+
+    slope = numpy.log( y[-2]/y[-1] ) / numpy.log( x[-2]/x[-1] )
+
+    self.fill( (x[i],x[j],x[i]), (y[j],y[j],y[i]),
+      color=fillcolor,
+      edgecolor=edgecolor,
+      transform=shifttrans )
+
+    self.text( x[i]**(2/3.) * x[j]**(1/3.), y[i]**(1/3.) * y[j]**(2/3.), slopefmt.format(slope),
+      horizontalalignment='center',
+      verticalalignment='center',
+      transform=shifttrans )
+
+  def slope_trend( self, x, y, lt='k-', xoffset=.1, slopefmt='{0:.1f}' ):
+    '''Draw slope triangle for supplied y(x)
+       - x, y: coordinates
+       - slopefmt: format string for slope number'''
+
+    # TODO check for gca() loglog scale
+
+    slope = numpy.log( y[-2]/y[-1] ) / numpy.log( x[-2]/x[-1] )
+    C = y[-1] / x[-1]**slope
+
+    self.loglog( x, C * x**slope, 'k-' )
+
+    from matplotlib import transforms
+    shifttrans = self.gca().transData \
+               + transforms.ScaledTranslation( -xoffset if x[-1] < x[0] else xoffset, 0, self.gcf().dpi_scale_trans )
+
+    self.text( x[-1], y[-1], slopefmt.format(slope),
+      horizontalalignment='right' if x[-1] < x[0] else 'left',
+      verticalalignment='center',
+      transform=shifttrans )
+
+
+######## OLD PLOTTING INTERFACE ############
 
 class Pylab( object ):
   'matplotlib figure'

@@ -54,6 +54,21 @@ def contract( A, B, axis=-1 ):
 
   return _numeric.contract( A, B, len(axis) )
 
+def dot( A, B ):
+  'contract last axis of first argument with first axis of last argument'
+
+  assert A.shape[-1] == B.shape[0]
+  if B.ndim > 1:
+    shape = A.shape[:-1] + B.shape[1:] + B.shape[:1]
+    Astrides = A.strides[:-1] + (0,) * (B.ndim-1) + A.strides[-1:]
+    A = numpy.lib.stride_tricks.as_strided( A, shape, Astrides )
+  else:
+    shape = A.shape
+  Bstrides = (0,) * (len(shape)-B.ndim) + B.strides[1:] + B.strides[:1]
+  B = numpy.lib.stride_tricks.as_strided( B, shape, Bstrides )
+
+  return _numeric.contract( A, B, 1 )
+
 def fastrepeat( A, nrepeat, axis=-1 ):
   'repeat axis by 0stride'
 

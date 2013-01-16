@@ -32,7 +32,41 @@ class Topology( object ):
     items = ( self.groups[it] for it in item.split( ',' ) )
     return sum( items, items.next() )
 
-  def elemintegrate( self, funcs, ischeme, coords, title='integrating element-wise' ):
+  def elem_eval( self, funcs, ischeme, stack=False, title='evaluating' ):
+    'element-wise evaluation'
+
+    pbar = log.ProgressBar( self, title=title )
+    pbar.add( '[#%d]' % len(self) )
+
+    single_arg = not isinstance(funcs,list)
+    if single_arg:
+      funcs = funcs,
+
+    retvals = []
+    idata = []
+    for func in funcs:
+      assert isinstance( func, function.ArrayFunc )
+      assert all( isinstance(sh,int) for sh in func.shape )
+      idata.append( func )
+      retvals.append( numpy.empty( len(self), dtype=object ) )
+    idata = function.Tuple( idata )
+
+    if pbar.out:
+      name = idata.graphviz()
+      if name:
+        pbar.add( name )
+
+    for ielem, elem in enumerate( pbar ):
+      for retval, data in zip( retvals, idata( elem, ischeme ) ):
+        retval[ielem] = data
+
+    if stack:
+      retvals = [ numpy.vstack(retval) for retval in retvals ]
+    if single_arg:
+      retvals, = retvals
+    return retvals
+
+  def elem_mean( self, funcs, coords, ischeme, title='computing mean values' ):
     'element-wise integration'
 
     pbar = log.ProgressBar( self, title=title )
@@ -44,13 +78,12 @@ class Topology( object ):
 
     retvals = []
     iweights = coords.iweights( self.ndims )
-    idata = []
-    for ifunc, func in enumerate( funcs ):
-      if not isinstance( func, function.ArrayFunc ):
-        func = function.StaticArray( func )
-      arr = numpy.empty( (len(self),)+func.shape )
-      idata.append( function.Tuple([ function.StaticArray(arr), func, iweights ]) )
-      retvals.append( arr )
+    idata = [ iweights ]
+    for func in funcs:
+      assert isinstance( func, function.ArrayFunc )
+      assert all( isinstance(sh,int) for sh in func.shape )
+      idata.append( function.ElemInt(func,iweights) )
+      retvals.append( numpy.empty( (len(self),)+func.shape ) )
     idata = function.Tuple( idata )
 
     if pbar.out:
@@ -58,17 +91,11 @@ class Topology( object ):
       if name:
         pbar.add( name )
 
-    for i, elem in enumerate( pbar ):
-      if isinstance(ischeme,str):
-        points = elem.eval(ischeme)
-      else:
-        points = ischeme[elem]
-        if points is None:
-          for arr in retvals:
-            arr[i] = numpy.nan
-          continue
-      for arr, data, w in idata( elem, points ):
-        arr[i] = numeric.contract( data.T, w ).T
+    for ielem, elem in enumerate( pbar ):
+      area_data = idata( elem, ischeme )
+      area = area_data[0].sum()
+      for retval, data in zip( retvals, area_data[1:] ):
+        retval[ielem] = data / area
 
     if single_arg:
       retvals, = retvals
@@ -95,17 +122,17 @@ class Topology( object ):
       assert all( f.ndim == ndim for f in func[1:] )
       if ndim == 0:
         for f in func:
-          integrands.append( function.Tuple([ ifunc, (), f, iweights ]) )
+          integrands.append( function.Tuple([ ifunc, (), function.ElemInt(f,iweights) ]) )
         A = numpy.array( 0, dtype=float )
       elif ndim == 1:
         if len( func ) == 1 and isinstance( func[0].shape[0], int ): # special case dense vector
           length = func[0].shape[0]
-          integrands.append( function.Tuple([ ifunc, slice(None), func[0], iweights ]) )
+          integrands.append( function.Tuple([ ifunc, slice(None), function.ElemInt(func[0],iweights) ]) )
         else:
           length = max( f.shape[0].stop for f in func )
           for f in func:
             sh, = f.shape
-            integrands.append( function.Tuple([ ifunc, sh, f, iweights ]) )
+            integrands.append( function.Tuple([ ifunc, sh, function.ElemInt(f,iweights) ]) )
         A = numpy.zeros( length, dtype=float )
       elif ndim == 2:
         nrows = max( f.shape[0].stop for f in func )
@@ -113,7 +140,7 @@ class Topology( object ):
         if any( isinstance(sh,slice) for f in func for sh in f.shape ):
           for f in func:
             IJ = function.Tuple( f.shape )
-            integrands.append( function.Tuple([ ifunc, IJ, f, iweights ]) )
+            integrands.append( function.Tuple([ ifunc, IJ, function.ElemInt(f,iweights) ]) )
           A = matrix.DenseMatrix( (nrows,ncols) )
         else:
           graph = [[]] * nrows
@@ -125,7 +152,7 @@ class Topology( object ):
               I, J = IJ( elem, None )
               for i in I:
                 graph[i] = numeric.addsorted( graph[i], J, inplace=True )
-            integrands.append( function.Tuple([ ifunc, IJ, f, iweights ]) )
+            integrands.append( function.Tuple([ ifunc, IJ, function.ElemInt(f,iweights) ]) )
           A = matrix.SparseMatrix( graph, ncols )
       else:
         raise NotImplementedError, 'ndim=%d' % func.ndim
@@ -142,10 +169,8 @@ class Topology( object ):
         points = elem.eval(ischeme)
       else:
         points = ischeme[elem]
-        if points is None:
-          continue
-      for ifunc, index, data, w in idata( elem, points ):
-        retvals[ifunc][index] += numeric.contract( data.T, w ).T
+      for ifunc, index, data in idata( elem, points ):
+        retvals[ifunc][index] += data
 
     if single_arg:
       retvals, = retvals
@@ -330,12 +355,12 @@ class StructuredTopology( Topology ):
   def __len__( self ):
     'number of elements'
 
-    return self.structure.size
+    return sum( elem is not None for elem in self.structure.flat )
 
   def __iter__( self ):
     'iterate'
 
-    return ( elem for elem in self.structure.flat if elem != None )
+    return ( elem for elem in self.structure.flat if elem is not None )
 
   def __getitem__( self, item ):
     'subtopology'

@@ -66,13 +66,21 @@ def obj2str( obj ):
     return '<elem>'
   return str(obj)
 
-class StaticArray( numpy.ndarray ):
-  'array wrapper'
+class UseableArray( numpy.ndarray ):
+  'ndarray that replaces __nonzero__ with something we can work with'
 
   def __new__( cls, array ):
     'new'
 
     return numpy.asarray( array ).view( cls )
+
+  def __nonzero__( self ):
+    'nonzero'
+
+    return numpy.any( self ).__nonzero__()
+
+class StaticArray( UseableArray ):
+  'array wrapper'
 
   def __eq__( self, other ):
     'compare'
@@ -89,11 +97,6 @@ class StaticArray( numpy.ndarray ):
     'not equal'
 
     return not self == other
-
-  def __nonzero__( self ):
-    'nonzero'
-
-    return bool( ( self.view( numpy.ndarray ) != 0 ).any() )
 
   def reciprocal( self ):
     'reciprocal'
@@ -467,6 +470,14 @@ def merge( func0, *funcs ): # temporary
   if isfuncsp:
     shape = ( DofAxis(ndofs,dofmap), ) + shape
   return Function( shape, mapping )
+
+class ElemInt( Evaluable ):
+  'elementwise integration'
+
+  def __init__( self, func, weights ):
+    'constructor'
+
+    Evaluable.__init__( self, args=[weights,func], evalf=numeric.dot )
 
 # ARRAY FUNCTIONS
 
