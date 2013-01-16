@@ -77,7 +77,7 @@ class UseableArray( numpy.ndarray ):
   def __nonzero__( self ):
     'nonzero'
 
-    return numpy.any( self ).__nonzero__()
+    return bool( self.view(numpy.ndarray).any() )
 
 class StaticArray( UseableArray ):
   'array wrapper'
@@ -273,6 +273,8 @@ class Evaluable( object ):
     self.compile()
     if isinstance( points, str ):
       points = elem.eval(points)
+    elif isinstance( points, dict ):
+      points = points[elem]
 
     N = len(self.data) + 2
 

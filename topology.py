@@ -180,11 +180,7 @@ class Topology( object ):
         pbar.add( name )
 
     for elem in pbar:
-      if isinstance(ischeme,str):
-        points = elem.eval(ischeme)
-      else:
-        points = ischeme[elem]
-      for ifunc, index, data in idata( elem, points ):
+      for ifunc, index, data in idata( elem, ischeme ):
         retvals[ifunc][index] += data
 
     if single_arg:
