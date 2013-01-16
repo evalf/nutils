@@ -22,16 +22,17 @@ class Cache( object ):
     'call'
 
     name = func.__name__ + ''.join( ' %s' % arg for arg in args ) + ''.join( ' %s=%s' % item for item in kwargs.iteritems() )
+    pos = self.data.tell()
     try:
-      pos = self.data.tell()
       data = cPickle.load( self.data )
     except EOFError:
-      log.info( 'not in cache:', name )
       data = func( *args, **kwargs)
       self.data.seek( pos )
       cPickle.dump( data, self.data, -1 )
+      msg = 'written to'
     else:
-      log.info( 'loaded from cache:', name )
+      msg = 'loaded from'
+    log.info( msg, 'cache:', name, '[%db]' % (self.data.tell()-pos) )
     return data
 
 def getpath( pattern ):
@@ -174,7 +175,7 @@ def run( *functions ):
     'imagetype': 'png',
     'symlink': 'latest',
     'recache': False,
-    'dot': 'dot',
+    'dot': False,
   }
   try:
     execfile( os.path.expanduser( '~/.finityrc' ), {}, properties )

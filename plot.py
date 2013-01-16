@@ -119,6 +119,12 @@ class PyPlotModule( object ):
       verticalalignment='center',
       transform=shifttrans )
 
+  def clip( self, patch ):
+    'clip current image to patch'
+
+    self.gca().add_patch( patch )
+    self.gci().set_clip_path( patch )
+
 
 ######## OLD PLOTTING INTERFACE ############
 

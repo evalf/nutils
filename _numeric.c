@@ -129,6 +129,10 @@ static PyObject *numeric_contract( PyObject *self, PyObject *args, PyObject *kwa
   int i, n;
   for ( i = 0; i < nd; i++ ) {
     n = PyArray_DIM(A,i);
+    if ( n == 0 ) {
+      PyErr_Format( PyExc_TypeError, "contraction over zero-axis" );
+      return NULL;
+    }
     if ( n != PyArray_DIM(B,i) ) {
       PyErr_Format( PyExc_TypeError, "shapes do not match" );
       return NULL;
@@ -140,6 +144,9 @@ static PyObject *numeric_contract( PyObject *self, PyObject *args, PyObject *kwa
   PyObject *C = PyArray_EMPTY( nd-ncontract, PyArray_DIMS(A), NPY_DOUBLE, 0 );
   if ( C == NULL ) {
     return NULL;
+  }
+  if ( PyArray_SIZE( C ) == 0 ) {
+    return C;
   }
   double *ptrA = PyArray_DATA( A );
   double *ptrB = PyArray_DATA( B );

@@ -61,7 +61,22 @@ class Topology( object ):
         retval[ielem] = data
 
     if stack:
-      retvals = [ numpy.vstack(retval) for retval in retvals ]
+      stacked = []
+      nansep = ( stack == 'nan' )
+      for retval in retvals:
+        npoints = sum( val.shape[0] for val in retval )
+        nelems = len( retval )
+        newretval = numpy.empty( (npoints+nansep*(nelems-1),)+retval[0].shape[1:] )
+        ptr = 0
+        for val in retval:
+          if ptr and nansep:
+            newretval[ptr:ptr+1] = numpy.nan
+            ptr += 1
+          newretval[ptr:ptr+val.shape[0]] = val
+          ptr += val.shape[0]
+        assert ptr == newretval.shape[0]
+        stacked.append( newretval )
+      retvals = stacked
     if single_arg:
       retvals, = retvals
     return retvals

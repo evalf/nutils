@@ -314,11 +314,11 @@ class Evaluable( object ):
 
     import os, subprocess
 
-    try:
-      dotpath = prop.dot
-      assert dotpath
-    except (AttributeError,AssertionError):
+    dotpath = getattr( prop, 'dot', False )
+    if not dotpath:
       return False
+    if dotpath is True:
+      dotpath = 'dot'
 
     imgtype = getattr( prop, 'imagetype', 'png' )
     imgpath = util.getpath( 'dot{0:03x}.' + imgtype )
@@ -477,7 +477,13 @@ class ElemInt( Evaluable ):
   def __init__( self, func, weights ):
     'constructor'
 
-    Evaluable.__init__( self, args=[weights,func], evalf=numeric.dot )
+    Evaluable.__init__( self, args=[weights,func], evalf=self.elemint )
+
+  @staticmethod
+  def elemint( w, f ):
+    'elemint'
+
+    return numeric.dot( w, f ) if w.size else numpy.zeros( f.shape[1:] )
 
 # ARRAY FUNCTIONS
 
