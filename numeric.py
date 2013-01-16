@@ -54,18 +54,27 @@ def contract( A, B, axis=-1 ):
 
   return _numeric.contract( A, B, len(axis) )
 
-def dot( A, B ):
-  'contract last axis of first argument with first axis of last argument'
+def dot( A, B, axis=-1 ):
+  '''Transform axis of A by contraction with first axis of B and inserting
+     remaining axes. Note: with default axis=1 this leads to multiplication of
+     vectors and matrices following linear algebra conventions.'''
 
-  assert A.shape[-1] == B.shape[0]
-  if B.ndim > 1:
-    shape = A.shape[:-1] + B.shape[1:] + B.shape[:1]
-    Astrides = A.strides[:-1] + (0,) * (B.ndim-1) + A.strides[-1:]
+  A = numpy.asarray( A, dtype=float )
+  B = numpy.asarray( B, dtype=float )
+
+  if axis < 0:
+    axis += A.ndim
+  assert 0 <= axis < A.ndim
+  assert A.shape[axis] == B.shape[0]
+
+  if B.ndim != 1 or axis != A.ndim-1:
+    shape = A.shape[:axis] + B.shape[1:] + A.shape[axis+1:] + A.shape[axis:axis+1]
+    Astrides = A.strides[:axis] + (0,) * (B.ndim-1) + A.strides[axis+1:] + A.strides[axis:axis+1]
     A = numpy.lib.stride_tricks.as_strided( A, shape, Astrides )
-  else:
-    shape = A.shape
-  Bstrides = (0,) * (len(shape)-B.ndim) + B.strides[1:] + B.strides[:1]
-  B = numpy.lib.stride_tricks.as_strided( B, shape, Bstrides )
+
+  if A.ndim > 1:
+    Bstrides = (0,) * axis + B.strides[1:] + (0,) * (A.ndim-B.ndim-axis) + B.strides[:1]
+    B = numpy.lib.stride_tricks.as_strided( B, A.shape, Bstrides )
 
   return _numeric.contract( A, B, 1 )
 
@@ -128,34 +137,6 @@ def inv( arr, axes ):
     invarr[index] = numpy.linalg.inv( arr[index] )
 
   return invarr
-
-def transform( arr, trans, axis ):
-  'transform one axis by matrix multiplication'
-
-  if trans is 1:
-    return arr
-
-  trans = numpy.asarray( trans )
-  if trans.ndim == 0:
-    return arr * trans
-
-  if axis < 0:
-    axis += arr.ndim
-
-  if arr.shape[axis] == 1:
-    trans = trans.sum(0)[numpy.newaxis]
-
-  assert arr.shape[axis] == trans.shape[0]
-
-  s1 = [ slice(None) ] * arr.ndim
-  s1[axis+1:axis+1] = [ numpy.newaxis ] * (trans.ndim-1)
-  s1 = tuple(s1)
-
-  s2 = [ numpy.newaxis ] * (arr.ndim-1)
-  s2[axis:axis] = [ slice(None) ] * trans.ndim
-  s2 = tuple(s2)
-
-  return contract( arr[s1], trans[s2], axis )
 
 def det( A, ax1, ax2 ):
   'determinant'

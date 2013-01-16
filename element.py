@@ -745,7 +745,7 @@ class ExtractionWrapper( object ):
   def eval( self, points, grad=0 ):
     'call'
 
-    return numeric.transform( self.stdelem.eval( points, grad ), self.extraction, axis=1 )
+    return numeric.dot( self.stdelem.eval( points, grad ), self.extraction, axis=1 )
 
   def __repr__( self ):
     'string representation'
