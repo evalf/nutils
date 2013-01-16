@@ -183,7 +183,7 @@ def reshape( A, *shape ):
 def mean( A, weights=None, axis=-1 ):
   'generalized mean'
 
-  return A.mean( axis ) if weights is None else transform( A, weights / weights.sum(), axis )
+  return A.mean( axis ) if weights is None else dot( A, weights / weights.sum(), axis )
 
 def norm2( A, axis=-1 ):
   'L2 norm over specified axis'
