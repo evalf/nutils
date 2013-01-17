@@ -166,7 +166,7 @@ class Topology( object ):
           A = matrix.SparseMatrix( graph, ncols )
         else:
           for f in func:
-            IJ = function.Tuple( f.shape )
+            IJ = function.Tuple([ sh if isinstance(sh,function.DofAxis) else slice(:sh) for sh in f.shape ])
             integrands.append( function.Tuple([ ifunc, IJ, function.ElemInt(f,iweights) ]) )
           A = matrix.DenseMatrix( (nrows,ncols) )
       else:
