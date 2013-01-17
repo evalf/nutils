@@ -422,11 +422,6 @@ class DenseMatrix( Matrix ):
 
     return numpy.dot( self.data, other )
 
-  def __getitem__( self, rows, cols ):
-    'get submatrix'
-
-    return self.data[ rows[:,_], cols[:,_] ]
-
   def solve( self, b=0, constrain=None, lconstrain=None, rconstrain=None, title='solving system', **dummy ):
     'solve'
 
