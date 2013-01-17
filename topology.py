@@ -150,14 +150,9 @@ class Topology( object ):
             integrands.append( function.Tuple([ ifunc, sh, function.ElemInt(f,iweights) ]) )
         A = numpy.zeros( length, dtype=float )
       elif ndim == 2:
-        nrows = max( f.shape[0].stop for f in func )
-        ncols = max( f.shape[1].stop for f in func )
-        if any( isinstance(sh,slice) for f in func for sh in f.shape ):
-          for f in func:
-            IJ = function.Tuple( f.shape )
-            integrands.append( function.Tuple([ ifunc, IJ, function.ElemInt(f,iweights) ]) )
-          A = matrix.DenseMatrix( (nrows,ncols) )
-        else:
+        nrows = max( f.shape[0].stop if isinstance(f.shape[0],function.DofAxis) else f.shape[0] for f in func )
+        ncols = max( f.shape[1].stop if isinstance(f.shape[1],function.DofAxis) else f.shape[1] for f in func )
+        if all( isinstance(sh,function.DofAxis) for f in func for sh in f.shape ):
           graph = [[]] * nrows
           for f in func:
             IJ = function.Tuple( f.shape )
@@ -169,6 +164,11 @@ class Topology( object ):
                 graph[i] = numeric.addsorted( graph[i], J, inplace=True )
             integrands.append( function.Tuple([ ifunc, IJ, function.ElemInt(f,iweights) ]) )
           A = matrix.SparseMatrix( graph, ncols )
+        else:
+          for f in func:
+            IJ = function.Tuple( f.shape )
+            integrands.append( function.Tuple([ ifunc, IJ, function.ElemInt(f,iweights) ]) )
+          A = matrix.DenseMatrix( (nrows,ncols) )
       else:
         raise NotImplementedError, 'ndim=%d' % func.ndim
       retvals.append( A )
