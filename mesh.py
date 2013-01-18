@@ -70,8 +70,16 @@ class ElemCoords( function.ArrayFunc ):
     'find coordinates'
 
     assert C.ndim == 2 and C.shape[1] == self.offsetmap.ndims
-    offset = self.offsetmap[elem]
-    scale = self.scalemap[elem]
+    assert elem.ndims == self.offsetmap.ndims # for now
+    offset = 0
+    scale = 1
+    while elem not in self.offsetmap:
+      elem, transform = elem.parent
+      offset = transform.offset + offset * transform.transform
+      scale *= transform.transform
+    transform = self.scalemap[elem]
+    offset = self.offsetmap[elem] + offset * transform
+    scale *= transform
     selection = numpy.ones( C.shape[0], dtype=bool )
     for idim in range( self.offsetmap.ndims ):
       for side in range(2):

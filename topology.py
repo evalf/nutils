@@ -116,23 +116,36 @@ class Topology( object ):
       retvals, = retvals
     return retvals
 
-  def grid_eval( self, func, coords, C, title='grid-evaluating' ):
+  def grid_eval( self, funcs, coords, C, title='grid-evaluating' ):
     'evaluate grid points'
 
     pbar = log.ProgressBar( self, title=title )
     pbar.add( '[#%d]' % len(self) )
 
+    single_arg = not isinstance(funcs,list)
+    if single_arg:
+      funcs = funcs,
+
     C = numpy.asarray( C )
     assert C.shape[0] == self.ndims
     shape = C.shape
     C = C.reshape( self.ndims, -1 )
-    grid = numpy.empty( C.shape[1:] + func.shape )
+
+    retvals = [ numpy.empty( C.shape[1:] + func.shape ) for func in funcs ]
+    for retval in retvals:
+      retval[:] = numpy.nan
+
     for elem in pbar:
       points, selection = coords.find( elem, C.T )
       if selection is not None:
-        grid[selection] = func( elem, points )
+        for func, retval in zip( funcs, retvals ):
+          retval[selection] = func( elem, points )
 
-    return grid.reshape( shape[1:] + func.shape )
+    retvals = [ retval.reshape( shape[1:] + func.shape ) for func, retval in zip( funcs, retvals ) ]
+    if single_arg:
+      retvals, = retvals
+    return retvals
+
 
   def integrate( self, funcs, ischeme=None, coords=None, title='integrating' ):
     'integrate'
@@ -276,7 +289,7 @@ class Topology( object ):
 
 #   return IndexedTopology( self, select=select )
 
-  def refinedfunc( self, current, refine, degree, title='refining' ):
+  def refinedfunc( self, dofaxis, refine, degree, title='refining' ):
     'create refined space by refining dofs in existing one'
 
     pbar = log.ProgressBar( None, title )
@@ -287,23 +300,14 @@ class Topology( object ):
     parentelems = [] # all parents, grandparents etc of topoelems
     nrefine = 0 # number of nested topologies after refinement
 
-    if isinstance( current, function.DofMap ): # function based
-      assert all( isinstance(n,int) for n in refine )
-      dofmap = oldtopo = current.dofmap
-    elif isinstance( current, Topology ): # element based
-      assert all( isinstance(n,element.Element) for n in refine )
-      dofmap = False
-      oldtopo = set(current)
-    else:
-      raise Exception, 'invalid current argument %r' % current
-
+    dofmap = dofaxis.dofmap
     topo = self
     while topo: # elements to examine in next level refinement
       nexttopo = []
       refined = set() # refined dofs in current refinement level
       for elem in topo: # loop over remaining elements in refinement level 'nrefine'
-        if elem in oldtopo: # elem is a top-level element
-          dofs = dofmap[elem] if dofmap else [elem] # dof numbers for current funcsp object
+        dofs = dofmap.get( elem ) # dof numbers for current funcsp object
+        if dofs is not None: # elem is a top-level element
           supp = refine.intersection(dofs) # supported dofs that are tagged for refinement
           if supp: # elem supports dofs for refinement
             parentelems.append( elem ) # elem will become a parent

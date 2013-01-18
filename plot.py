@@ -125,6 +125,12 @@ class PyPlotModule( object ):
     self.gca().add_patch( patch )
     self.gci().set_clip_path( patch )
 
+  def griddata( self, xlim, ylim, data ):
+    'plot griddata'
+
+    assert data.ndim == 2
+    self.imshow( data.T, extent=(xlim[0],xlim[-1],ylim[0],ylim[-1]), origin='lower' )
+
 
 ######## OLD PLOTTING INTERFACE ############
 

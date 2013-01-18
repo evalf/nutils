@@ -2,6 +2,18 @@ import numpy, _numeric
 
 addsorted = _numeric.addsorted
 
+def linspace2d( start, stop, steps ):
+  'linspace & meshgrid combined'
+
+  start = start if isinstance(start,tuple) else (start,start)
+  stop  = stop  if isinstance(stop, tuple) else (stop, stop )
+  steps = steps if isinstance(steps,tuple) else (steps,steps)
+  assert len(start) == len(stop) == len(steps) == 2
+  values = numpy.empty( (2,)+steps )
+  values[0] = numpy.linspace( start[0], stop[0], steps[0] )[:,numpy.newaxis]
+  values[1] = numpy.linspace( start[1], stop[1], steps[1] )[numpy.newaxis,:]
+  return values
+
 def contract( A, B, axis=-1 ):
   'contract'
 
