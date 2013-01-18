@@ -32,9 +32,9 @@ class ProgressBar( object ):
       self.iterable = iter(iterable)
     except TypeError:
       self.iterable = None
-      self.n = iterable
+      self.setmax( iterable )
     else:
-      self.n = len(iterable)
+      self.setmax( len(iterable) )
 
     self.index = 0
     self.x = 0
@@ -42,6 +42,11 @@ class ProgressBar( object ):
     self.length = getattr( prop, 'linewidth', 50 )
     self.out = getattr( prop, 'verbose', None ) >= 3 and getattr( prop, 'html', sys.stdout )
     self.add( title )
+
+  def setmax( self, n ):
+    'set maximum pbar value'
+
+    self.n = n
 
   def add( self, text ):
     'add text'
@@ -66,6 +71,17 @@ class ProgressBar( object ):
       yield item
     self.close()
 
+  def write( self, s ):
+    'write string'
+
+    s = str(s)
+    if not s:
+      return
+
+    self.out.write( s )
+    self.out.flush()
+    self.x += len(s)
+
   def update( self, index=None ):
     'update'
 
@@ -79,12 +95,7 @@ class ProgressBar( object ):
       self.index = index
 
     x = int( (index+1) * self.length ) // (self.n+1)
-    if not self.x < x <= self.length:
-      return
-
-    self.out.write( '-' * (x-self.x) )
-    self.out.flush()
-    self.x = x
+    self.write( '-' * (x-self.x) )
 
   def close( self ):
     'destructor'
@@ -113,8 +124,9 @@ class HtmlWriter( object ):
     self.html.write( '<title>{}</title>\n'.format(title) )
     self.html.write( '<script type="text/javascript" src="../../../../../viewer.js" ></script>\n' )
     self.html.write( '<link rel="stylesheet" type="text/css" href="../../../../../style.css">\n' )
+    self.html.write( '<link rel="stylesheet" type="text/css" href="../../../../../custum.css">\n' )
     self.html.write( '</head><body><pre>\n' )
-    self.html.write( 'goto: <a href="../../../../log.html">latest</a> | <a href="../../../../../log.html">latest overall</a> | <a href="../../../../../">index</a>\n\n' )
+    self.html.write( '<span id="navbar">goto: <a class="nav_latest" href="../../../../log.html">latest %s</a> | <a class="nav_latestall" href="../../../../../log.html">latest overall</a> | <a class="nav_index" href="../../../../../">index</a></span>\n\n' % title.split()[0] )
     self.html.flush()
     self.stdout = stdout
 

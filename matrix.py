@@ -195,7 +195,7 @@ class DenseSubMatrix( Matrix ):
     return self
 
 class SparseMatrix( Matrix ):
-  'matrix wrapper class'
+  'sparse matrix'
 
   def __init__( self, graph, ncols=None ):
     'constructor'
@@ -339,6 +339,7 @@ class SparseMatrix( Matrix ):
     if b.ndim == 0:
       b = numeric.fastrepeat( b[_], self.shape[0] )
     else:
+      assert b.ndim == 1, 'right-hand-side has shape %s, expected a vector' % (b.shape,)
       if b.shape[0] < self.shape[0]: # quick resize hack, temporary!
         b = b.copy()
         b.resize( self.shape[0] )

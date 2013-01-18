@@ -116,6 +116,24 @@ class Topology( object ):
       retvals, = retvals
     return retvals
 
+  def grid_eval( self, func, coords, C, title='grid-evaluating' ):
+    'evaluate grid points'
+
+    pbar = log.ProgressBar( self, title=title )
+    pbar.add( '[#%d]' % len(self) )
+
+    C = numpy.asarray( C )
+    assert C.shape[0] == self.ndims
+    shape = C.shape
+    C = C.reshape( self.ndims, -1 )
+    grid = numpy.empty( C.shape[1:] + func.shape )
+    for elem in pbar:
+      points, selection = coords.find( elem, C.T )
+      if selection is not None:
+        grid[selection] = func( elem, points )
+
+    return grid.reshape( shape[1:] + func.shape )
+
   def integrate( self, funcs, ischeme=None, coords=None, title='integrating' ):
     'integrate'
 
@@ -258,26 +276,34 @@ class Topology( object ):
 
 #   return IndexedTopology( self, select=select )
 
-  def refinedfunc( self, dofaxis, degree, refine ):
+  def refinedfunc( self, current, refine, degree, title='refining' ):
     'create refined space by refining dofs in existing one'
-  
+
+    pbar = log.ProgressBar( None, title )
     refine = set(refine) # make unique and equip with set operations
   
     # initialize
     topoelems = [] # non-overlapping 'top-level' elements, will make up the new domain
     parentelems = [] # all parents, grandparents etc of topoelems
     nrefine = 0 # number of nested topologies after refinement
-  
+
+    if isinstance( current, function.DofMap ): # function based
+      assert all( isinstance(n,int) for n in refine )
+      dofmap = oldtopo = current.dofmap
+    elif isinstance( current, Topology ): # element based
+      assert all( isinstance(n,element.Element) for n in refine )
+      dofmap = False
+      oldtopo = set(current)
+    else:
+      raise Exception, 'invalid current argument %r' % current
+
     topo = self
     while topo: # elements to examine in next level refinement
       nexttopo = []
       refined = set() # refined dofs in current refinement level
       for elem in topo: # loop over remaining elements in refinement level 'nrefine'
-        dofs = dofaxis.dofmap.get(elem) # dof numbers for current funcsp object
-        if dofs is None: # elem is not a top-level element
-          parentelems.append( elem ) # elem is a parent
-          nexttopo.extend( elem.children ) # examine children in next iteration
-        else: # elem is a top-level element
+        if elem in oldtopo: # elem is a top-level element
+          dofs = dofmap[elem] if dofmap else [elem] # dof numbers for current funcsp object
           supp = refine.intersection(dofs) # supported dofs that are tagged for refinement
           if supp: # elem supports dofs for refinement
             parentelems.append( elem ) # elem will become a parent
@@ -285,12 +311,17 @@ class Topology( object ):
             refined.update( supp ) # dofs will not be considered in following refinement levels
           else: # elem does not support dofs for refinement
             topoelems.append( elem ) # elem remains a top-level elemnt
+        else: # elem is not a top-level element
+          parentelems.append( elem ) # elem is a parent
+          nexttopo.extend( elem.children ) # examine children in next iteration
       refine -= refined # discard dofs to prevent further consideration
       topo = nexttopo # prepare for next iteration
       nrefine += 1 # update refinement level
     assert not refine, 'unrefined leftover: %s' % refine
     if refined: # last considered level contained refinements
       nrefine += 1 # this raises the total level to nrefine + 1
+
+    pbar.setmax( len(topoelems) + len(parentelems) )
   
     # initialize
     dofmap = {} # IEN mapping of new function object
@@ -299,6 +330,7 @@ class Topology( object ):
   
     topo = self # topology to examine in next level refinement
     for irefine in range( nrefine ):
+      pbar.write( irefine )
   
       funcsp = topo.splinefunc( degree ) # shape functions for level irefine
       dofaxis = funcsp.shape[0] # IEN mapping local to level irefine
@@ -308,15 +340,18 @@ class Topology( object ):
       myelems = [] # all top-level or parent elements in level irefine
       for elem, idofs in dofaxis.dofmap.iteritems():
         if elem in topoelems:
+          pbar.update()
           touchtopo[idofs] = True
           myelems.append( elem )
         elif elem in parentelems:
+          pbar.update()
           myelems.append( elem )
         else:
           supported[idofs] = False
   
       keep = numpy.logical_and( supported, touchtopo ) # THE refinement law
       if keep.all() and irefine == nrefine - 1:
+        pbar.close()
         return topo, funcsp
   
       for elem in myelems: # loop over all top-level or parent elements in level irefine
@@ -339,12 +374,18 @@ class Topology( object ):
   
     for elem in parentelems:
       del dofmap[elem] # remove auxiliary elements
-  
+
     dofaxis = function.DofMap( ndofs, ElemMap(dofmap,self.ndims,overlap=False) )
     funcsp = function.Function( dofaxis=dofaxis, stdmap=ElemMap(stdmap,self.ndims,overlap=True), igrad=0 )
     domain = UnstructuredTopology( topoelems, ndims=self.ndims )
   
+    pbar.close()
     return domain, funcsp
+
+  def refine( self, n ):
+    'refine entire topology n times'
+
+    return self if n <= 0 else self.refined.refine( n-1 )
 
 class StructuredTopology( Topology ):
   'structured topology'
@@ -521,22 +562,9 @@ class StructuredTopology( Topology ):
       nodes_structure[...,idim] = numpy.asarray( inodes ).reshape( shape )
     return self.linearfunc().dot( nodes_structure.reshape( -1, self.ndims ) )
 
-  def refine( self, n ):
-    'refine entire topology'
-
-    if n == 1:
-      return self
-
-    structure = numpy.array( [ elem.refined(n) for elem in self.structure.flat ] )
-    structure = structure.reshape( self.structure.shape + (n,)*self.ndims )
-    structure = structure.transpose( sum( [ ( i, self.ndims+i ) for i in range(self.ndims) ], () ) )
-    structure = structure.reshape( [ self.structure.shape[i] * n for i in range(self.ndims) ] )
-
-    return StructuredTopology( structure )
-
   @core.weakcacheprop
   def refined( self ):
-    'refined (=refine(2))'
+    'refine entire topology'
 
     structure = numpy.array( [ list(elem.children) if elem is not None else [None]*(2**self.ndims) for elem in self.structure.flat ] )
     structure = structure.reshape( self.structure.shape + (2,)*self.ndims )
@@ -638,17 +666,6 @@ class UnstructuredTopology( Topology ):
     'linear func'
 
     return self.splinefunc( degree=2 )
-
-  def refine( self, n ):
-    'refine entire topology'
-
-    if n == 1:
-      return self
-
-    elements = []
-    for elem in self:
-      elements.extend( elem.refined(n) )
-    return UnstructuredTopology( elements, ndims=self.ndims )
 
   @core.weakcacheprop
   def refined( self ):

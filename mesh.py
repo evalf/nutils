@@ -25,7 +25,6 @@ class ElemScale( function.ArrayFunc ):
       scale *= transform.transform
       elemscale = scalemap.get( elem )
     scale *= elemscale
-
     return scale
 
   def localgradient( self, ndims ):
@@ -36,43 +35,54 @@ class ElemScale( function.ArrayFunc ):
 class ElemCoords( function.ArrayFunc ):
   'define function by affine transform of elem-local coords'
 
-  def __init__( self, offsetmap ):
+  def __init__( self, offsetmap, scalemap ):
     'constructor'
 
     self.offsetmap = offsetmap
-    function.ArrayFunc.__init__( self, args=[function.ELEM,function.POINTS,offsetmap], evalf=self.evaloffset, shape=[offsetmap.ndims] )
+    self.scalemap = scalemap
+    function.ArrayFunc.__init__( self, args=[function.ELEM,function.POINTS,offsetmap,scalemap], evalf=self.evalcoords, shape=[offsetmap.ndims] )
 
   @staticmethod
-  def evaloffset( elem, points, offsetmap ):
+  def evalcoords( elem, points, offsetmap, scalemap ):
     'evaluate'
 
     assert elem.ndims <= offsetmap.ndims
     while elem.ndims < offsetmap.ndims:
       elem, transform = elem.context or elem.parent
       points = transform.eval( points )
-
-    offset = 0
-    scale = 1
-    elemoffset = offsetmap.get( elem )
-    while elemoffset is None:
+    while elem not in offsetmap:
       elem, transform = elem.parent
-      scale /= transform.transform
-      offset += transform.offset * scale
-      elemoffset = offsetmap.get( elem )
-    offset += elemoffset * scale
-
-    return points.coords + offset
+      points = transform.eval( points )
+    return offsetmap[elem] + points.coords * scalemap[elem]
 
   def localgradient( self, ndims ):
     'local gradient'
 
+    scale = ElemScale( self.scalemap )
     if ndims == self.offsetmap.ndims:
       if ndims == 1:
-        return function.StaticArray( [[1]] )
-      return function.Diagonalize( function.Expand( function.StaticArray([1]), [ndims] ), [0,1] )
-
+        return scale[_]
+      return function.Diagonalize( scale, [0,1] )
     assert ndims < self.offsetmap.ndims
-    return function.Transform( self.offsetmap.ndims, ndims )
+    return function.Transform( self.offsetmap.ndims, ndims ) * scale[:,_]
+
+  def find( self, elem, C ):
+    'find coordinates'
+
+    assert C.ndim == 2 and C.shape[1] == self.offsetmap.ndims
+    offset = self.offsetmap[elem]
+    scale = self.scalemap[elem]
+    selection = numpy.ones( C.shape[0], dtype=bool )
+    for idim in range( self.offsetmap.ndims ):
+      for side in range(2):
+        newsel = C[:,idim] >= offset[idim] if side == 0 else C[:,idim] <= offset[idim] + scale[idim]
+        selection[selection] &= newsel
+        C = C[newsel]
+        if not C.size:
+          return None, None
+    C -= offset
+    C /= scale
+    return element.LocalPoints( C ), selection
 
 # MESH GENERATORS
 
@@ -96,14 +106,14 @@ def rectilinear( nodes, periodic=(), name='rect' ):
     index = elem_index[1:]
     if uniform:
       scalemap[elem] = scale
-      offsetmap[elem] = index + numpy.array([ a for (a,b,n) in nodes ]) / scale
+      offsetmap[elem] = index * scale
     else:
       offset0 = numpy.array([ n[i  ] for n, i in zip( nodes, index ) ])
       offset1 = numpy.array([ n[i+1] for n, i in zip( nodes, index ) ])
       scalemap[elem] = offset1 - offset0
-      offsetmap[elem] = offset0 / ( offset1 - offset0 )
-  coords = ElemCoords( topology.ElemMap(offsetmap,ndims,overlap=False) ) \
-         * ElemScale( topology.ElemMap(scalemap,ndims,overlap=False) )
+      offsetmap[elem] = offset0
+  coords = ElemCoords( topology.ElemMap(offsetmap,ndims,overlap=False),
+                       topology.ElemMap(scalemap, ndims,overlap=False) )
 
   if periodic:
     topo = topo.make_periodic( periodic )
