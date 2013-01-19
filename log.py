@@ -124,7 +124,7 @@ class HtmlWriter( object ):
     self.html.write( '<title>{}</title>\n'.format(title) )
     self.html.write( '<script type="text/javascript" src="../../../../../viewer.js" ></script>\n' )
     self.html.write( '<link rel="stylesheet" type="text/css" href="../../../../../style.css">\n' )
-    self.html.write( '<link rel="stylesheet" type="text/css" href="../../../../../custum.css">\n' )
+    self.html.write( '<link rel="stylesheet" type="text/css" href="../../../../../custom.css">\n' )
     self.html.write( '</head><body><pre>\n' )
     self.html.write( '<span id="navbar">goto: <a class="nav_latest" href="../../../../log.html">latest %s</a> | <a class="nav_latestall" href="../../../../../log.html">latest overall</a> | <a class="nav_index" href="../../../../../">index</a></span>\n\n' % title.split()[0] )
     self.html.flush()
