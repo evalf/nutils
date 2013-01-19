@@ -479,6 +479,8 @@ class ElemInt( Evaluable ):
   def __init__( self, func, weights ):
     'constructor'
 
+    if not isinstance( func, ArrayFunc ):
+      func = StaticArray( func )
     Evaluable.__init__( self, args=[weights,func], evalf=self.elemint )
 
   @staticmethod
