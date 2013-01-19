@@ -473,14 +473,34 @@ def merge( func0, *funcs ): # temporary
     shape = ( DofAxis(ndofs,dofmap), ) + shape
   return Function( shape, mapping )
 
+def elemint( func, weights ):
+  'elementwise integration'
+
+  return ElemInt( func, weights ) if isinstance( func, ArrayFunc ) else func * ElemArea( weights )
+
+class ElemArea( Evaluable ):
+  'element area'
+
+  def __init__( self, weights ):
+    'constructor'
+
+    assert weights.ndim == 0
+    Evaluable.__init__( self, args=[weights], evalf=self.elemarea )
+
+  @staticmethod
+  def elemarea( weights ):
+    'evaluate'
+
+    return weights.sum()
+
 class ElemInt( Evaluable ):
   'elementwise integration'
 
   def __init__( self, func, weights ):
     'constructor'
 
-    if not isinstance( func, ArrayFunc ):
-      func = StaticArray( func )
+    assert isinstance( func, ArrayFunc )
+    assert weights.ndim == 0
     Evaluable.__init__( self, args=[weights,func], evalf=self.elemint )
 
   @staticmethod
