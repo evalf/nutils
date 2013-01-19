@@ -478,37 +478,6 @@ def elemint( func, weights ):
 
   return ElemInt( func, weights ) if isinstance( func, ArrayFunc ) else func * ElemArea( weights )
 
-class ElemArea( Evaluable ):
-  'element area'
-
-  def __init__( self, weights ):
-    'constructor'
-
-    assert weights.ndim == 0
-    Evaluable.__init__( self, args=[weights], evalf=self.elemarea )
-
-  @staticmethod
-  def elemarea( weights ):
-    'evaluate'
-
-    return weights.sum()
-
-class ElemInt( Evaluable ):
-  'elementwise integration'
-
-  def __init__( self, func, weights ):
-    'constructor'
-
-    assert isinstance( func, ArrayFunc )
-    assert weights.ndim == 0
-    Evaluable.__init__( self, args=[weights,func], evalf=self.elemint )
-
-  @staticmethod
-  def elemint( w, f ):
-    'elemint'
-
-    return numeric.dot( w, f ) if w.size else numpy.zeros( f.shape[1:] )
-
 # ARRAY FUNCTIONS
 
 class ArrayFunc( Evaluable ):
@@ -976,6 +945,37 @@ class ArrayFunc( Evaluable ):
     args = Evaluable.__graphviz__( self )
     args['label'] += r'\n[%s]' % ','.join( map(str,map(int,self.shape)) )
     return args
+
+class ElemArea( ArrayFunc ):
+  'element area'
+
+  def __init__( self, weights ):
+    'constructor'
+
+    assert weights.ndim == 0
+    ArrayFunc.__init__( self, args=[weights], evalf=self.elemarea, shape=weights.shape )
+
+  @staticmethod
+  def elemarea( weights ):
+    'evaluate'
+
+    return weights.sum()
+
+class ElemInt( ArrayFunc ):
+  'elementwise integration'
+
+  def __init__( self, func, weights ):
+    'constructor'
+
+    assert isinstance( func, ArrayFunc )
+    assert weights.ndim == 0
+    ArrayFunc.__init__( self, args=[weights,func], evalf=self.elemint, shape=func.shape )
+
+  @staticmethod
+  def elemint( w, f ):
+    'elemint'
+
+    return numeric.dot( w, f ) if w.size else numpy.zeros( f.shape[1:] )
 
 class Align( ArrayFunc ):
   'align axes'
