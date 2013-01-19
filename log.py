@@ -106,7 +106,7 @@ class ProgressBar( object ):
     dt = '%.2f' % ( time.time() - self.t0 )
     dts = dt[1:] if dt[0] == '0' else \
           dt[:3] if len(dt) <= 6 else \
-          '%se%d' % ( dt[0], len(dt)-3 )
+          '%se%d' % ( dt[0], len(dt)-4 )
     self.out.write( '-' * (self.length-self.x) + ' ' + dts + '\n' )
 
 class HtmlWriter( object ):

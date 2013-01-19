@@ -1266,6 +1266,11 @@ class Transform( ArrayFunc ):
 
     return T
 
+  def localgradient( self, ndims ):
+    'local gradient'
+
+    return ZERO( self.shape + (ndims,) )
+
 class Function( ArrayFunc ):
   'local gradient'
 
