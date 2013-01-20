@@ -102,6 +102,7 @@ def rectilinear( nodes, periodic=(), name='rect' ):
   indices = numpy.ogrid[ tuple( slice( n[2] if uniform else len(n)-1 ) for n in nodes ) ]
   if uniform:
     indices = numpy.ogrid[ tuple( slice(n-1) for (a,b,n) in nodes ) ]
+    offset = numpy.array( [ a for (a,b,n) in nodes ], dtype=float )
     scale = numpy.array( [ (b-a)/float(n-1) for (a,b,n) in nodes ], dtype=float )
   else:
     indices = numpy.ogrid[ tuple( slice(len(n)-1) for n in nodes ) ]
@@ -114,7 +115,7 @@ def rectilinear( nodes, periodic=(), name='rect' ):
     index = elem_index[1:]
     if uniform:
       scalemap[elem] = scale
-      offsetmap[elem] = index * scale
+      offsetmap[elem] = offset + index * scale
     else:
       offset0 = numpy.array([ n[i  ] for n, i in zip( nodes, index ) ])
       offset1 = numpy.array([ n[i+1] for n, i in zip( nodes, index ) ])
