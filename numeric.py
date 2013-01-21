@@ -5,9 +5,9 @@ addsorted = _numeric.addsorted
 def linspace2d( start, stop, steps ):
   'linspace & meshgrid combined'
 
-  start = start if isinstance(start,tuple) else (start,start)
-  stop  = stop  if isinstance(stop, tuple) else (stop, stop )
-  steps = steps if isinstance(steps,tuple) else (steps,steps)
+  start = tuple(start) if isinstance(start,(list,tuple)) else (start,start)
+  stop  = tuple(stop ) if isinstance(stop, (list,tuple)) else (stop, stop )
+  steps = tuple(steps) if isinstance(steps,(list,tuple)) else (steps,steps)
   assert len(start) == len(stop) == len(steps) == 2
   values = numpy.empty( (2,)+steps )
   values[0] = numpy.linspace( start[0], stop[0], steps[0] )[:,numpy.newaxis]

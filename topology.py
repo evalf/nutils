@@ -146,8 +146,7 @@ class Topology( object ):
       retvals, = retvals
     return retvals
 
-
-  def integrate( self, funcs, ischeme=None, coords=None, title='integrating' ):
+  def integrate( self, funcs, ischeme, coords=None, iweights=None, title='integrating' ):
     'integrate'
 
     pbar = log.ProgressBar( self, title=title )
@@ -157,7 +156,13 @@ class Topology( object ):
     if single_arg:
       funcs = funcs,
 
-    iweights = coords.iweights( self.ndims )
+    if iweights is None:
+      assert coords is not None, 'conflicting arguments coords and iweights'
+      iweights = coords.iweights( self.ndims )
+    else:
+      assert coords is None, 'conflicting arguments coords and iweights'
+    assert iweights.ndim == 0
+
     integrands = []
     retvals = []
     for ifunc, func in enumerate( funcs ):
@@ -249,7 +254,8 @@ class Topology( object ):
     A, b = self.integrate( [Afun,bfun], coords=coords, ischeme=ischeme, title=title )
     supp = A.rowsupp( droptol )
     if verify is not None:
-      assert (~supp).sum() == verify, 'number of constraints does not meet expectation'
+      numcons = (~supp).sum()
+      assert numcons == verify, 'number of constraints does not meet expectation: %d != %d' % ( numcons, verify )
     constrain[supp] = 0
     if numpy.all( b == 0 ):
       u = constrain | 0

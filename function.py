@@ -183,6 +183,11 @@ class StaticArray( UseableArray ):
 
     return StaticArray( numpy.concatenate( [self,other], axis ) )
 
+  def dotnorm( self, coords, ndims=0 ):
+    'normal component'
+
+    return ( self * coords.normal( ndims-1 ) ).sum()
+
 ASARG = lambda f: f if isinstance( f, ArrayFunc ) else StaticArray( f )
 ZERO = lambda shape: StaticArray(0).reshape([1]*len(shape)).expand(shape)
 
