@@ -211,10 +211,10 @@ class TrimmedElement( Element ):
     self.lscheme = lscheme
     self.finestscheme = finestscheme
     self.evalrefine = evalrefine
-    self.cache = {}
 
     Element.__init__( self, ndims=elem.ndims, id=elem.id+'.trim', parent=(elem,IdentityTransformation()) )
 
+  @core.cachefunc
   def eval( self, ischeme ):
     'get integration scheme'
 

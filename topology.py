@@ -317,13 +317,13 @@ class Topology( object ):
           supp = refine.intersection(dofs) # supported dofs that are tagged for refinement
           if supp: # elem supports dofs for refinement
             parentelems.append( elem ) # elem will become a parent
-            topoelems.extend( elem.children ) # children will become top-level elements
+            topoelems.extend( filter(None,elem.children) ) # children will become top-level elements
             refined.update( supp ) # dofs will not be considered in following refinement levels
           else: # elem does not support dofs for refinement
             topoelems.append( elem ) # elem remains a top-level elemnt
         else: # elem is not a top-level element
           parentelems.append( elem ) # elem is a parent
-          nexttopo.extend( elem.children ) # examine children in next iteration
+          nexttopo.extend( filter(None,elem.children) ) # examine children in next iteration
       refine -= refined # discard dofs to prevent further consideration
       topo = nexttopo # prepare for next iteration
       nrefine += 1 # update refinement level
