@@ -294,8 +294,12 @@ function Finity() {
       });
       
       // Show current
-      this.render();
-      
+			if( this._plots.length ) {
+				this._plots[0].onload = function (){
+					self.render();
+				}
+			}
+
       // Attach events
       $(window).resize(function (){
           self.render();
@@ -611,7 +615,13 @@ function Finity() {
 
 			// If image was loaded, show it
 			// otherwise show when loaded
-			this.render();
+			if( img.width > 0 ) {
+					this.render();
+			} else {
+				img.onload = function (){
+					self.render();
+				}
+			}
     }
     
     /**
