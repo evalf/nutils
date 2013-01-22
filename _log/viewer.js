@@ -7,9 +7,9 @@
  * put in the menu and the links with  the following classes will 
  * have shortcuts:
  * 
- * a.nav_latest     -> Ctrl + R
- * a.nav_latestall  -> Ctrl + A
- * a.nav_index      -> Ctrl + I
+ * a.nav_latest     -> r
+ * a.nav_latestall  -> Shift + r
+ * a.nav_index      -> i
  */
 function Finity() {
     /**
@@ -200,7 +200,7 @@ function Finity() {
      * Scrolling enabled by default
      * @var Bool
      */
-    this._scrolling = true;
+    this._scrolling = false;
     
     /**
      * Finity.init()
@@ -217,26 +217,26 @@ function Finity() {
       this._links = $('a.plot', this._code);
       
       this._media 			= $('<div id="media" class="column">').insertAfter(this._code);
-      this._imglink			= $('<a id="media-link" "href="" title="Click to view the image or press Ctrl + V" />').appendTo(this._media);
+      this._imglink			= $('<a id="media-link" "href="" title="Click to view the image or press V" />').appendTo(this._media);
       this._img 				= $('<img id="media-img" src="" alt="" title="" />').appendTo(this._imglink);
       this._controls 		= $('<div id="controls">').appendTo('body');
       this._selGallery 	= $('<select id="sel-gallery"><option value="*">-- Show all --</option></select>').appendTo(this._controls);
-      this._btnFirst 		= $('<button title="Ctrl + Home" "id="btn-first">&laquo;</button>').appendTo(this._controls);
+      this._btnFirst 		= $('<button title="Home" "id="btn-first">&laquo;</button>').appendTo(this._controls);
       this._btnPrev 		= $('<button title="&#8592; (left arrow)" id="btn-prev">&lt;</button>').appendTo(this._controls);
       this._btnNext 		= $('<button title="&#8594; (right arrow)" id="btn-next">&gt;</button>').appendTo(this._controls);
-      this._btnLast 		= $('<button title="Ctrl + End" id="btn-last">&raquo;</button>').appendTo(this._controls);
-      this._inpScroll 	= $('<input title="Ctrl + S" type="checkbox" name="scrolling" id="scrolling" />')
+      this._btnLast 		= $('<button title="End" id="btn-last">&raquo;</button>').appendTo(this._controls);
+      this._inpScroll 	= $('<input title="S" type="checkbox" name="scrolling" id="scrolling" />')
                      				.appendTo(this._controls)
 					                  .before('<label for="scrolling">Scrolling</label>');
                         
  			this._navbar = this._code.find('#navbar')
 												.prependTo(this._controls);
 			this._aLatest = this._navbar.find('.nav_latest')
-												.attr('title', 'Ctrl + R');
+												.attr('title', 'R');
 			this._aLatestAll = this._navbar.find('.nav_latestall')
-												.attr('title', 'Ctrl + A');
+												.attr('title', 'Shift + R');
 			this._aIndex = this._navbar.find('.nav_index')
-												.attr('title', 'Ctrl + I');
+												.attr('title', 'I');
  
       if( this._scrolling )
         this._inpScroll.attr('checked', true);
@@ -350,34 +350,38 @@ function Finity() {
             case evt.keyCode == 39: // right-arrow
               self.next();
               break;
-						case evt.ctrlKey && evt.keyCode == 36: // Ctrl + Home
+						case evt.keyCode == 36: // Home
 							self.first();
 							break;
-						case evt.ctrlKey && evt.keyCode == 35: // Ctrl + End
+						case evt.keyCode == 35: // End
 							self.last();
 							break;
-						case evt.ctrlKey && evt.keyCode == 82: // Ctrl + R
-							if( self._aLatest.length )
-								document.location.href = self._aLatest.attr('href');
-							else
-								alert('Link to the simulation is not found, navigate manually to the simulation');
-							break;
-						case evt.ctrlKey && evt.keyCode == 65: // Ctrl + A
+						case evt.shiftKey && evt.keyCode == 82: // Shift + r
 							if( self._aLatestAll.length )
 								document.location.href = self._aLatestAll.attr('href');
 							else
 								alert('Link to the latest simulation is not found, navigate manually to the last simulation');
 							break;
-						case evt.ctrlKey && evt.keyCode == 73: // Ctrl + I
+					case evt.keyCode == 82: // r
+							if( self._aLatest.length )
+								document.location.href = self._aLatest.attr('href');
+							else
+								alert('Link to the simulation is not found, navigate manually to the simulation');
+							break;
+					case evt.keyCode == 73: // I
 							if( self._aIndex.length )
 								document.location.href = self._aIndex.attr('href');
 							else
-								alert('Link to the latest simulation is not found, navigate manually to the last simulation');
+								alert('Link to the index is not found, navigate manually to the last simulation');
 							break;
-						case evt.ctrlKey && evt.keyCode == 86: // Ctrl + V
-							document.location.href = self._imglink.attr('href');
+						case evt.keyCode == 86: // V
+							var url= self._imglink.attr('href');
+							if( evt.shiftKey )
+								window.open(url, '_blank');
+							else
+								document.location.href = url;
 							break;
-						case evt.ctrlKey && evt.keyCode == 83: // Ctrl + S
+						case evt.keyCode == 83: // S
 							var enable = ! self._inpScroll.is(':checked');
 							self.enableScrolling(enable);
 							self._inpScroll.attr('checked', enable);
@@ -437,7 +441,7 @@ function Finity() {
      * Function that shows the 
      * plot from the closest link
      * 
-     * @param evemt evt
+     * @param event evt
 		 * @return void
      */
     this.closest = function( evt ) {
@@ -485,7 +489,6 @@ function Finity() {
           gallery = gallery.replace(/[^a-zA-Z0-9]/ig, '');
       return gallery;
     }
-   
 
 		/**
 		 * Finity.next()
@@ -608,12 +611,7 @@ function Finity() {
 
 			// If image was loaded, show it
 			// otherwise show when loaded
-			if( img.complete )
-				this.render();
-			else
-				img.onload = function () {
-					self.render();
-				};     
+			this.render();
     }
     
     /**
@@ -658,11 +656,7 @@ function Finity() {
 			this._img.css(css);
 			
 			if( this._img.attr('src') != img.src ) {
-				this._img.attr({
-      		'src': img.src,
-	        'alt': img.alt,
-  	      'title': img.alt
-    	  });
+				this._img.attr('src', img.src);
 				this._imglink
 					.attr('href', img.src);
 			}
