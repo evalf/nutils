@@ -1829,11 +1829,11 @@ class DofIndex( ArrayFunc ):
     'constructor'
 
     #array = array[dofaxis.start:dofaxis.stop] # TODO make strict
-    shape = (dofaxis,) + array.shape[1:]
-    assert array.shape[0] >= dofaxis.stop
-    self.array = array
+    self.array = UseableArray(array)
+    shape = (dofaxis,) + self.array.shape[1:]
+    assert self.array.shape[0] >= dofaxis.stop
     self.dofaxis = dofaxis
-    ArrayFunc.__init__( self, args=(array,dofaxis), evalf=numpy.ndarray.__getitem__, shape=shape )
+    ArrayFunc.__init__( self, args=(self.array,dofaxis), evalf=numpy.ndarray.__getitem__, shape=shape )
 
   def __add__( self, other ):
     'add'
