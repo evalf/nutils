@@ -107,10 +107,10 @@ class AffineTransformation( object ):
     'apply transformation'
 
     weights = None
-    if self.transform.ndim == 0:
+    if self.transform.ndim <= 1:
       coords = self.offset + self.transform * points.coords
       if points.weights is not None:
-        weights = points.weights * (self.transform**points.ndims)
+        weights = points.weights * ( self.transform**points.ndims if self.transform.ndim == 0 else self.transform.prod() )
     elif self.transform.shape[1] == 0:
       assert points.coords.shape == (0,1)
       coords = self.offset[_,:]

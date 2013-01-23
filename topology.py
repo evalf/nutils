@@ -374,7 +374,7 @@ class Topology( object ):
         elif mykeep.any():
           stdmap[elem] = std, mykeep # use some shapes from this level
         newdofs = [ ndofs + keep[:idof].sum() for idof in idofs if keep[idof] ] # new dof numbers
-        if elem.parent:
+        if elem not in self: # at lowest level
           pelem, transform = elem.parent
           newdofs.extend( dofmap[pelem] ) # add dofs of all underlying 'broader' shapes
         dofmap[elem] = numpy.array(newdofs) # add result to IEN mapping of new function object

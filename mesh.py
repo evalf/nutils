@@ -1,87 +1,78 @@
 from . import topology, function, util, element, numpy, numeric, _
 import os
 
-class ElemScale( function.ArrayFunc ):
-  'element-constant array'
+# MESH GENERATORS
 
-  def __init__( self, scalemap ):
+class ElemScale( function.ArrayFunc ):
+  'trivial scale'
+
+  def __init__( self, rectelem ):
     'constructor'
 
-    self.scalemap = scalemap
-    self.__class__.__base__.__init__( self, args=[function.ELEM,scalemap], evalf=self.evalscale, shape=[scalemap.ndims] )
+    self.rectelem = rectelem
+    function.ArrayFunc.__init__( self, args=[function.ELEM,rectelem], evalf=self.elemscale, shape=[rectelem.ndims] )
 
   @staticmethod
-  def evalscale( elem, scalemap ):
+  def elemscale( elem, rectelem ):
     'evaluate'
 
-    assert elem.ndims <= scalemap.ndims
-    while elem.ndims < scalemap.ndims:
+    assert elem.ndims <= rectelem.ndims
+    while elem.ndims < rectelem.ndims:
       elem, transform = elem.context or elem.parent
-
-    scale = 1
-    elemscale = scalemap.get( elem )
-    while elemscale is None:
+    elem, transform = elem.parent
+    scale = transform.transform
+    while elem is not rectelem:
       elem, transform = elem.parent
-      scale *= transform.transform
-      elemscale = scalemap.get( elem )
-    scale *= elemscale
+      scale = scale * transform.transform
     return scale
 
-  def localgradient( self, ndims ):
-    'local gradient'
+class ElemFunc( function.ArrayFunc ):
+  'trivial func'
 
-    return function.ZERO( self.shape + (ndims,) )
-
-class ElemCoords( function.ArrayFunc ):
-  'define function by affine transform of elem-local coords'
-
-  def __init__( self, offsetmap, scalemap ):
+  def __init__( self, rectelem ):
     'constructor'
 
-    self.offsetmap = offsetmap
-    self.scalemap = scalemap
-    function.ArrayFunc.__init__( self, args=[function.ELEM,function.POINTS,offsetmap,scalemap], evalf=self.evalcoords, shape=[offsetmap.ndims] )
+    self.rectelem = rectelem
+    function.ArrayFunc.__init__( self, args=[function.ELEM,function.POINTS,rectelem], evalf=self.elemfunc, shape=[rectelem.ndims] )
 
   @staticmethod
-  def evalcoords( elem, points, offsetmap, scalemap ):
+  def elemfunc( elem, points, rectelem ):
     'evaluate'
 
-    assert elem.ndims <= offsetmap.ndims
-    while elem.ndims < offsetmap.ndims:
+    assert elem.ndims <= rectelem.ndims
+    while elem.ndims < rectelem.ndims:
       elem, transform = elem.context or elem.parent
       points = transform.eval( points )
-    while elem not in offsetmap:
+    while elem is not rectelem:
       elem, transform = elem.parent
       points = transform.eval( points )
-    return offsetmap[elem] + points.coords * scalemap[elem]
+    return points.coords
 
   def localgradient( self, ndims ):
     'local gradient'
 
-    scale = ElemScale( self.scalemap )
-    if ndims == self.offsetmap.ndims:
+    scale = ElemScale( self.rectelem )
+    if ndims == self.rectelem.ndims:
       if ndims == 1:
         return scale[_]
       return function.Diagonalize( scale, [0,1] )
-    assert ndims < self.offsetmap.ndims
-    return function.Transform( self.offsetmap.ndims, ndims ) * scale[:,_]
+    assert ndims < self.rectelem.ndims
+    return function.Transform( self.rectelem.ndims, ndims ) * scale[:,_]
 
   def find( self, elem, C ):
     'find coordinates'
 
-    assert C.ndim == 2 and C.shape[1] == self.offsetmap.ndims
-    assert elem.ndims == self.offsetmap.ndims # for now
-    offset = 0
-    scale = 1
-    while elem not in self.offsetmap:
+    assert C.ndim == 2 and C.shape[1] == self.rectelem.ndims
+    assert elem.ndims == self.rectelem.ndims # for now
+    elem, transform = elem.parent
+    offset = transform.offset
+    scale = transform.transform
+    while elem is not self.rectelem:
       elem, transform = elem.parent
       offset = transform.offset + offset * transform.transform
-      scale *= transform.transform
-    transform = self.scalemap[elem]
-    offset = self.offsetmap[elem] + offset * transform
-    scale *= transform
+      scale = scale * transform.transform
     selection = numpy.ones( C.shape[0], dtype=bool )
-    for idim in range( self.offsetmap.ndims ):
+    for idim in range( self.rectelem.ndims ):
       for side in range(2):
         newsel = C[:,idim] >= offset[idim] if side == 0 else C[:,idim] <= offset[idim] + scale[idim]
         selection[selection] &= newsel
@@ -92,38 +83,21 @@ class ElemCoords( function.ArrayFunc ):
     C /= scale
     return element.LocalPoints( C ), selection
 
-# MESH GENERATORS
-
 def rectilinear( nodes, periodic=(), name='rect' ):
   'rectilinear mesh'
 
-  uniform = all( len(n) == 3 and isinstance(n,tuple) for n in nodes )
+  nodes = [ numpy.linspace(*n) if len(n) == 3 and isinstance(n,tuple) else numpy.asarray(n) for n  in nodes ]
   ndims = len(nodes)
-  indices = numpy.ogrid[ tuple( slice( n[2] if uniform else len(n)-1 ) for n in nodes ) ]
-  if uniform:
-    indices = numpy.ogrid[ tuple( slice(n-1) for (a,b,n) in nodes ) ]
-    offset = numpy.array( [ a for (a,b,n) in nodes ], dtype=float )
-    scale = numpy.array( [ (b-a)/float(n-1) for (a,b,n) in nodes ], dtype=float )
-  else:
-    indices = numpy.ogrid[ tuple( slice(len(n)-1) for n in nodes ) ]
-  scalemap = {}
-  structure = numpy.frompyfunc( lambda *index: element.QuadElement( index=index, ndims=ndims, id='{}.quad({})'.format(name,','.join(str(i) for i in index)) ), ndims, 1 )( *indices )
+  indices = numpy.ogrid[ tuple( slice(len(n)-1) for n in nodes ) ]
+  rectelem = element.Element( ndims=ndims, id=name )
+  structure = util.objmap( lambda *index: element.QuadElement(
+    ndims=ndims,
+    parent=( rectelem, element.AffineTransformation(
+      offset=[ n[i] for n,i in zip(nodes,index) ],
+      transform=[ n[i+1]-n[i] for n,i in zip(nodes,index) ] ) ),
+    id='{}.quad({})'.format(name,','.join(str(i) for i in index)) ), *indices )
   topo = topology.StructuredTopology( structure )
-  offsetmap = {}
-  for elem_index in numpy.broadcast( structure, *indices ):
-    elem = elem_index[0]
-    index = elem_index[1:]
-    if uniform:
-      scalemap[elem] = scale
-      offsetmap[elem] = offset + index * scale
-    else:
-      offset0 = numpy.array([ n[i  ] for n, i in zip( nodes, index ) ])
-      offset1 = numpy.array([ n[i+1] for n, i in zip( nodes, index ) ])
-      scalemap[elem] = offset1 - offset0
-      offsetmap[elem] = offset0
-  coords = ElemCoords( topology.ElemMap(offsetmap,ndims,overlap=False),
-                       topology.ElemMap(scalemap, ndims,overlap=False) )
-
+  coords = ElemFunc( rectelem )
   if periodic:
     topo = topo.make_periodic( periodic )
   return topo, coords
