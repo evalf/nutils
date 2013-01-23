@@ -79,9 +79,6 @@ class UseableArray( numpy.ndarray ):
 
     return bool( self.view(numpy.ndarray).any() )
 
-class StaticArray( UseableArray ):
-  'array wrapper'
-
   def __eq__( self, other ):
     'compare'
 
@@ -97,6 +94,9 @@ class StaticArray( UseableArray ):
     'not equal'
 
     return not self == other
+
+class StaticArray( UseableArray ):
+  'array wrapper'
 
   def reciprocal( self ):
     'reciprocal'
@@ -1829,7 +1829,7 @@ class DofIndex( ArrayFunc ):
     'constructor'
 
     #array = array[dofaxis.start:dofaxis.stop] # TODO make strict
-    self.array = UseableArray(array)
+    self.array = StaticArray(array)
     shape = (dofaxis,) + self.array.shape[1:]
     assert self.array.shape[0] >= dofaxis.stop
     self.dofaxis = dofaxis
@@ -2115,13 +2115,13 @@ class Dot( ArrayFunc ):
       return ArrayFunc.concatenate( self, other, axis )
 
     offset = sum( ax <= axis for ax in self.axes )
-    if self.func1 == other.func1 and self.func1.shape[axis] == 1:
+    if self.func1 == other.func1 and self.func1.shape[axis+offset] == 1:
       return ( self.func1 * self.func2.concatenate( other.func2, axis+offset ) ).sum( self.axes )
-    if self.func1 == other.func2 and self.func1.shape[axis] == 1:
+    if self.func1 == other.func2 and self.func1.shape[axis+offset] == 1:
       return ( self.func1 * self.func2.concatenate( other.func1, axis+offset ) ).sum( self.axes )
-    if self.func2 == other.func1 and self.func2.shape[axis] == 1:
+    if self.func2 == other.func1 and self.func2.shape[axis+offset] == 1:
       return ( self.func2 * self.func1.concatenate( other.func2, axis+offset ) ).sum( self.axes )
-    if self.func2 == other.func2 and self.func2.shape[axis] == 1:
+    if self.func2 == other.func2 and self.func2.shape[axis+offset] == 1:
       return ( self.func2 * self.func1.concatenate( other.func1, axis+offset ) ).sum( self.axes )
 
     return ArrayFunc.concatenate( self, other, axis )
