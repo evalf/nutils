@@ -45,6 +45,8 @@ class Topology( object ):
     retvals = []
     idata = []
     for func in funcs:
+      if isinstance( func, function.StaticArray ):
+        func = function.AddPointAxis( func )
       assert isinstance( func, function.ArrayFunc )
       assert all( isinstance(sh,int) for sh in func.shape )
       idata.append( func )
@@ -139,7 +141,7 @@ class Topology( object ):
       points, selection = coords.find( elem, C.T )
       if selection is not None:
         for func, retval in zip( funcs, retvals ):
-          retval[selection] = func( elem, points )
+          retval[selection] = func( elem, points ) if isinstance(func,function.ArrayFunc) else func
 
     retvals = [ retval.reshape( shape[1:] + func.shape ) for func, retval in zip( funcs, retvals ) ]
     if single_arg:

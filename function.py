@@ -951,6 +951,20 @@ class ArrayFunc( Evaluable ):
     args['label'] += r'\n[%s]' % ','.join( map(str,map(int,self.shape)) )
     return args
 
+class AddPointAxis( ArrayFunc ):
+  'add point axis'
+
+  def __init__( self, staticarr ):
+    'constructor'
+
+    ArrayFunc.__init__( self, args=[POINTS,staticarr], evalf=self.addpointaxis, shape=staticarr.shape )
+
+  @staticmethod
+  def addpointaxis( points, arr ):
+    'evaluate'
+
+    return numeric.fastrepeat( arr[_], nrepeat=points.npoints, axis=0 )
+
 class ElemArea( ArrayFunc ):
   'element area'
 
