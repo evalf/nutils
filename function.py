@@ -522,7 +522,7 @@ class ArrayFunc( Evaluable ):
     return s
 
   def __getitem__( self, item ):
-    'get item'
+    'get item, general function which can eliminate, add or modify axes.'
   
     tmp = item
     item = list( item if isinstance( item, tuple ) else [item] )
@@ -530,20 +530,23 @@ class ArrayFunc( Evaluable ):
     arr = self
     while item:
       it = item.pop(0)
-      if isinstance(it,int):
+      if isinstance(it,int): # retrieve one item from axis
         arr = arr.get(n,it)
-      elif it == _:
+      elif it == _: # insert a singleton axis
         arr = arr.insert(n)
         n += 1
-      elif it == slice(None):
+      elif it == slice(None): # select entire axis
         n += 1
-      elif it == Ellipsis:
+      elif it == Ellipsis: # skip to end
         remaining_items = len(item) - item.count(_)
         skip = arr.ndim - n - remaining_items
         assert skip >= 0
         n += skip
-      elif isinstance(it,slice) and it.step in (1,None) and it.stop == it.start + 1:
+      elif isinstance(it,slice) and it.step in (1,None) and it.stop == ( it.start or 0 ) + 1: # special case: unit length slice
         arr = arr.get(n,it.start).insert(n)
+        n += 1
+      elif isinstance(it,(slice,list,tuple,numpy.ndarray)): # modify axis (shorten, extend or renumber one axis)
+        arr = arr.take( it, n )
         n += 1
       else:
         raise NotImplementedError
@@ -555,6 +558,12 @@ class ArrayFunc( Evaluable ):
 
     n, = normdim( self.ndim+1, [n] )
     return self.align( [ i+(i>=n) for i in range(self.ndim) ], self.ndim+1 )
+
+  def take( self, item, axis ):
+    'take axis'
+
+    axis, = normdim( self.ndim, [axis] )
+    return Take( self, axis, item )
 
   def reciprocal( self ):
     'reciprocal'
@@ -1201,6 +1210,28 @@ class Get( ArrayFunc ):
       getitem[src] = str(item)
     return { 'shape': 'invtrapezium',
              'label': ','.join(getitem) }
+
+class Take( ArrayFunc ):
+  'generalization of numpy.take(), to accept lists, slices, arrays'
+
+  def __init__( self, func, axis, item ):
+    'constructor'
+
+    self.func = func
+    self.axis = axis
+    self.item = item
+    s = [ slice(None) ] * func.ndim
+    s[axis] = item
+    newlen, = numpy.empty( func.shape[axis] )[ item ].shape
+    assert newlen > 0
+    shape = func.shape[:axis] + (newlen,) + func.shape[axis+1:]
+    ArrayFunc.__init__( self, args=(func,(Ellipsis,)+tuple(s)), evalf=numpy.ndarray.__getitem__, shape=shape )
+
+  @check_localgradient
+  def localgradient( self, ndims ):
+    'local gradient'
+
+    return self.func.localgradient( ndims ).take( self.item, self.axis )
 
 class Reciprocal( ArrayFunc ):
   'reciprocal'
