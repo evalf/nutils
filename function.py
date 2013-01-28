@@ -181,6 +181,12 @@ class StaticArray( UseableArray ):
   def concatenate( self, other, axis ):
     'concatenate'
 
+    if not isinstance( other, ArrayFunc ):
+      other = StaticArray( other )
+    assert self.ndim == other.ndim
+    assert self.shape[:axis] == other.shape[:axis] and self.shape[axis+1:] == other.shape[axis+1:]
+    if isinstance( other, ArrayFunc ):
+      return Concatenate( [ self, other ], axis )
     return StaticArray( numpy.concatenate( [self,other], axis ) )
 
   def dotnorm( self, coords, ndims=0 ):
