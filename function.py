@@ -1848,8 +1848,8 @@ class Cross( ArrayFunc ):
   def __init__( self, f1, f2, axis ):
     'contructor'
 
-    assert f1.shape == f2.shape
-    ArrayFunc.__init__( self, args=(f1,f2,-1,-1,-1,axis-f1.ndim), evalf=numpy.cross, shape=f1.shape )
+    crossshape = combined_shape( f1.shape, f2.shape )
+    ArrayFunc.__init__( self, args=(f1,f2,-1,-1,-1,axis-len(crossshape)), evalf=numpy.cross, shape=crossshape )
 
 class Determinant( ArrayFunc ):
   'normal'
