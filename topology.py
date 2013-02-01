@@ -241,7 +241,7 @@ class Topology( object ):
       constrain = util.NanVec( onto.shape[0] if isinstance(onto.shape[0],int) else onto.shape[0].stop )
     else:
       assert isinstance( constrain, util.NanVec )
-      assert constrain.shape == onto.shape[:1]
+#      assert constrain.shape == onto.shape[:1]
 
     if len( onto.shape ) == 1:
       Afun = onto[:,_] * onto[_,:]
@@ -254,16 +254,17 @@ class Topology( object ):
     else:
       raise Exception
     A, b = self.integrate( [Afun,bfun], coords=coords, ischeme=ischeme, title=title )
-    supp = A.rowsupp( droptol )
+    zerorow = A.rowsupp( droptol ) & numpy.isnan(constrain)
+
     if verify is not None:
-      numcons = (~supp).sum()
+      numcons = (~zerorow).sum()
       assert numcons == verify, 'number of constraints does not meet expectation: %d != %d' % ( numcons, verify )
-    constrain[supp] = 0
+    constrain[zerorow] = 0
     if numpy.all( b == 0 ):
       u = constrain | 0
     else:
       u = A.solve( b, constrain, tol=tol, title=title, symmetric=True )
-    u[supp] = numpy.nan
+    u[zerorow] = numpy.nan
     return u.view( util.NanVec )
 
 # def trim( self, levelset, maxrefine, lscheme='bezier3' ):
