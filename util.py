@@ -1,6 +1,61 @@
 from . import log, prop
 import sys, os, time, numpy, cPickle, hashlib, weakref, traceback
 
+def deprecated( old, new=None ):
+  msg = 'WARNING: %s is deprecated and will be removed.' % old
+  if new:
+    msg += '\n         Please use %s instead.' % new
+  firsttime = numpy.array( True )
+  def decorator( func ):
+    def wrapfunc( *args, **kwargs ):
+      if firsttime:
+        log.warning( msg )
+        firsttime[...] = False
+      return func( *args, **kwargs )
+    return wrapfunc
+  return decorator
+
+class _SuppressedOutput( object ):
+  'suppress all output by redirection to /dev/null'
+
+  def __enter__( self ):
+    sys.stdout.flush()
+    sys.stderr.flush()
+    self.stdout = os.dup( sys.stdout.fileno() )
+    self.stderr = os.dup( sys.stderr.fileno() )
+    devnull = os.open( os.devnull, os.O_WRONLY )
+    os.dup2( devnull, sys.stdout.fileno() )
+    os.dup2( devnull, sys.stderr.fileno() )
+    os.close( devnull )
+
+  def __exit__( self, exc_type, exc_value, traceback ):
+    os.dup2( self.stdout, sys.stdout.fileno() )
+    os.dup2( self.stderr, sys.stderr.fileno() )
+    os.close( self.stdout )
+    os.close( self.stderr )
+
+suppressed_output = _SuppressedOutput()
+
+def delaunay( points ):
+  'delaunay triangulation'
+
+  from scipy import spatial
+  with suppressed_output:
+    return spatial.Delaunay( points )
+
+def profile( func ):
+  import cProfile, pstats
+  frame = sys._getframe(1)
+  frame.f_locals['__profile_func__'] = func
+  prof = cProfile.Profile()
+  stats = prof.runctx( '__profile_retval__ = __profile_func__()', frame.f_globals, frame.f_locals )
+  pstats.Stats( prof, stream=log.stream() ).strip_dirs().sort_stats( 'time' ).print_stats()
+  retval = frame.f_locals['__profile_retval__']
+  del frame.f_locals['__profile_func__']
+  del frame.f_locals['__profile_retval__']
+  raw_input( 'press enter to continue' )
+  return retval
+
 class Cache( object ):
   'cache'
 
@@ -57,6 +112,15 @@ def sum( seq ):
   seq = iter(seq)
   return _sum( seq, seq.next() )
 
+def product( seq ):
+  'multiply items in sequence'
+
+  seq = iter(seq)
+  prod = seq.next()
+  for item in seq:
+    prod = prod * item
+  return prod
+
 def clone( obj ):
   'clone object'
 
@@ -86,10 +150,32 @@ class NanVec( numpy.ndarray ):
     vec[:] = numpy.nan
     return vec
 
+  @property
+  def mask( self ):
+    'find non-nan items'
+
+    return numpy.isnan( self.view(numpy.ndarray) )
+
+  def __iand__( self, other ):
+    'combine'
+
+    where = ~self.mask
+    if numpy.isscalar( other ):
+      self[ where ] = other
+    else:
+      where &= ~other.mask
+      self[ where ] = other[ where ]
+    return self
+
+  def __and__( self, other ):
+    'combine'
+
+    return self.copy().__iand__( other )
+
   def __ior__( self, other ):
     'combine'
 
-    where = numpy.isnan( self )
+    where = self.mask
     self[ where ] = other if numpy.isscalar( other ) else other[ where ]
     return self
 

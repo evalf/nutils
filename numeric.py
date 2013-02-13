@@ -77,6 +77,11 @@ def dot( A, B, axis=-1 ):
   if axis < 0:
     axis += A.ndim
   assert 0 <= axis < A.ndim
+
+  if A.shape[axis] == 1 or B.shape[0] == 1:
+    return A.sum(axis)[(slice(None),)*axis+(numpy.newaxis,)*(B.ndim-1)] \
+         * B.sum(0)[(Ellipsis,)+(numpy.newaxis,)*(A.ndim-1-axis)]
+
   assert A.shape[axis] == B.shape[0]
 
   if B.ndim != 1 or axis != A.ndim-1:
@@ -87,6 +92,9 @@ def dot( A, B, axis=-1 ):
   if A.ndim > 1:
     Bstrides = (0,) * axis + B.strides[1:] + (0,) * (A.ndim-B.ndim-axis) + B.strides[:1]
     B = numpy.lib.stride_tricks.as_strided( B, A.shape, Bstrides )
+
+  if not A.size:
+    return numpy.zeros( A.shape[:-1] )
 
   return _numeric.contract( A, B, 1 )
 
@@ -103,8 +111,7 @@ def fastrepeat( A, nrepeat, axis=-1 ):
 def appendaxes( A, shape ):
   'append axes by 0stride'
 
-  if isinstance(shape,int):
-    shape = shape,
+  shape = (shape,) if isinstance(shape,int) else tuple(shape)
   A = numpy.asarray( A )
   return numpy.lib.stride_tricks.as_strided( A, A.shape + shape, A.strides + (0,)*len(shape) )
 
@@ -202,23 +209,9 @@ def norm2( A, axis=-1 ):
 
   return numpy.asarray( numpy.sqrt( contract( A, A, axis ) ) )
 
-def align_arrays( *funcs ):
-  'align shapes'
+def cross( v1, v2, axis ):
+  'cross product'
 
-  shape = []
-  funcs = [ f if hasattr(f,'shape') else numpy.array(f) for f in funcs ]
-  for f in funcs:
-    d = len(shape) - len(f.shape)
-    if d < 0:
-      shape = list(f.shape[:-d]) + shape
-      d = 0
-    for i, sh in enumerate( f.shape ):
-      if shape[d+i] == 1:
-        shape[d+i] = sh
-      else:
-        assert sh == shape[d+i] or sh == 1, 'incompatible shapes: %s' % ' & '.join( str(f.shape) for f in funcs )
-  ndim = len(shape)
-  return tuple(shape), tuple( f if ndim == f.ndim
-                         else f[ (numpy.newaxis,)*(ndim-f.ndim) + (slice(None),) * f.ndim ] for f in funcs )
+  return numpy.cross( v1, v2, axis=axis )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

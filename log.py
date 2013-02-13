@@ -7,6 +7,11 @@ info     = lambda *args, **kwargs: log( 2, *args, **kwargs )
 progress = lambda *args, **kwargs: log( 3, *args, **kwargs )
 debug    = lambda *args, **kwargs: log( 9, *args, **kwargs )
 
+def stream():
+  'stream object'
+
+  return getattr( prop, 'html', sys.stdout )
+
 def log( level, *args, **kwargs ):
   'log text (modeled after python3 print)'
 
@@ -15,7 +20,7 @@ def log( level, *args, **kwargs ):
 
   sep = kwargs.pop( 'sep', ' ' )
   end = kwargs.pop( 'end', '\n' )
-  out = kwargs.pop( 'file', getattr( prop, 'html', sys.stdout ) )
+  out = kwargs.pop( 'file', stream() )
   assert not kwargs, 'invalid log argument: %s=%s' % kwargs.popitem()
   out.write( sep.join( map( str, args ) ) + end )
   out.flush()

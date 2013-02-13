@@ -300,7 +300,7 @@ class PylabAxis( object ):
 
     special_args = zip( *[ zip( [key]*nfun, val ) for (key,val) in kwargs.iteritems() if isinstance(val,list) and len(val) == nfun ] )
     XYD = [ ([],[],dict(d)) for d in special_args or [[]] * nfun ]
-    xypairs = function.Zip( xfun, yfun, XYD )
+    xypairs = Tuple( [ Tuple(v) for v in zip( xfun, yfun, XYD ) ] )
 
     for elem in topology:
       for x, y, xyd in xypairs( elem, sample ):
@@ -350,10 +350,14 @@ def writevtu( name, topology, coords, pointdata={}, celldata={} ):
   'write vtu from coords function'
 
   vtupath = util.getpath( name )
-  pbar = log.ProgressBar( topology, title='preparing vtk data' )
+  pbar = log.ProgressBar(topology.get_simplices(), title='preparing vtk data' )
   import vtk
   vtkPoints = vtk.vtkPoints()
   vtkMesh = vtk.vtkUnstructuredGrid()
+
+  if coords.shape == (2,):
+    coords = function.concatenate( coords, [0] )
+  assert coords.shape == (3,)
 
   pointdata_arrays = []
   for key, func in pointdata.iteritems():
@@ -391,14 +395,10 @@ def writevtu( name, topology, coords, pointdata={}, celldata={} ):
     if elem.ndims == 3:  
       x, pdata = coords_pointdata( elem, 'contour0' )
     else:
-      x, pdata = coords_pointdata( elem, 'contour2' )
+      x, pdata = coords_pointdata( elem, 'vtk' )
 
     cellpoints = vtkelem.GetPointIds()
     for i, c in enumerate( x ):
-
-      if elem.ndims == 2:
-        c = numpy.append( c, 0 )
-
       pointid = vtkPoints.InsertNextPoint( *c )
       cellpoints.SetId( i, pointid )
     vtkMesh.InsertNextCell( vtkelem.GetCellType(), cellpoints )
