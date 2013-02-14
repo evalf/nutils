@@ -2128,133 +2128,112 @@ class Inflate( ArrayFunc ):
     blocks = [ (localgradient( func, ndims ),ind+(slice(None),)) for func, ind in self.blocks ]
     return Inflate( self.shape+(ndims,), blocks )
 
+  def match_blocks( self, other ):
+    'match blocks for multiplication/division'
+
+    func1, func2 = _matchndim( self, other )
+    shape = _jointshape( func1.shape, func2.shape )
+    assert isinstance( func1, Inflate )
+    if isinstance( func2, Inflate ):
+      func2_blocks = func2.blocks
+    else:
+      func2_blocks = ( func2, (slice(None),) * len(shape) ),
+
+    for f1, ind1 in func1.blocks:
+      for f2, ind2 in func2_blocks:
+        assert len(ind1) == len(ind2) == len(shape)
+        ind = []
+        for i in range( len(shape) ):
+          if func1.shape[i] == 1 and ind1[i] == slice(None):
+            ind.append( ind2[i] )
+          elif func2.shape[i] == 1 and ind2[i] == slice(None):
+            ind.append( ind1[i] )
+          elif ind1[i] == ind2[i]:
+            assert func1.shape[i] == func2.shape[i]
+            ind.append( ind1[i] )
+          elif ind1[i] == slice(None): # ind2[i] != slice(None):
+            assert func1.shape[i] == func2.shape[i]
+            f1 = takeindex( f1, i, ind2[i] )
+            ind.append( ind2[i] )
+          elif ind2[i] == slice(None): # ind1[i] != slice(None):
+            assert func1.shape[i] == func2.shape[i]
+            f2 = takeindex( f2, i, ind1[i] )
+            ind.append( ind1[i] )
+          else: # ind1[i] != slice(None) and ind2[i] != slice(None)
+            break
+        else:
+          yield f1, f2, tuple(ind)
+
   def __mul__( self, other ):
     'multiply'
 
-    other = _asarray(other)
-    ndim = _max( self.ndim, other.ndim )
-    shape = []
-    for i in range( -ndim, 0 ):
-      if i < -self.ndim:
-        shape.append( other.shape[i] )
-      elif i < -other.ndim:
-        shape.append( self.shape[i] )
-      elif self.shape[i] == 1:
-        shape.append( other.shape[i] )
-      elif other.shape[i] == 1:
-        shape.append( self.shape[i] )
-      else:
-        assert self.shape[i] == other.shape[i], 'non-matching shapes'
-        shape.append( self.shape[i] )
-
-    if isinstance( other, Inflate ):
-      other_blocks = other.blocks
-    else:
-      assert all( sh > 0 for sh in other.shape ) # cannot determine length of all axes
-      other_blocks = ( other, [ slice(None) ] * other.ndim ),
-
+    func1, func2 = _matchndim( self, other )
+    assert isinstance( func1, Inflate )
+    shape = _jointshape( func1.shape, func2.shape )
     blocks = []
-    for func1, ind1 in self.blocks:
-      for func2, ind2 in other_blocks:
-        ndim = _max( self.ndim, other.ndim )
-        index = []
-        for i in range( -ndim, 0 ):
-          if i < -self.ndim:
-            index.append( ind2[i] )
-          elif i < -other.ndim:
-            index.append( ind1[i] )
-          elif self.shape[i] == 1:
-            index.append( ind2[i] )
-          elif other.shape[i] == 1:
-            index.append( ind1[i] )
-          elif ind1[i] == ind2[i]:
-            index.append( ind1[i] )
-          else:
-            if _isfunc( ind1[i] ) and ind2[i] == slice(None):
-              func2 = takeindex( func2, i, ind1[i] )
-              index.append( ind1[i] )
-            else:
-              raise Exception, 'non-matching axes'
-        func12 = func1 * func2
-        if not _iszero(func12):
-          blocks.append( (func12,tuple(index)) )
-
+    for f1, f2, ind in func1.match_blocks( func2 ):
+      f12 = f1 * f2
+      if not _iszero(f12):
+        blocks.append( (f12,ind) )
     if not blocks:
       return _const( 0., shape )
-
     return Inflate( shape, blocks )
 
   def __div__( self, other ):
     'divide'
 
-    other = _asarray( other )
-    ndim = _max( self.ndim, other.ndim )
-    shape = []
-    for i in range( -ndim, 0 ):
-      if i < -self.ndim:
-        shape.append( other.shape[i] )
-      elif i < -other.ndim:
-        shape.append( self.shape[i] )
-      elif self.shape[i] == 1:
-        shape.append( other.shape[i] )
-      elif other.shape[i] == 1:
-        shape.append( self.shape[i] )
-      else:
-        assert self.shape[i] == other.shape[i], 'non-matching shapes'
-        shape.append( self.shape[i] )
-
-    if isinstance( other, Inflate ):
-      other_blocks = other.blocks
-    else:
-      assert all( sh > 0 for sh in other.shape ) # cannot determine length of all axes
-      other_blocks = ( other, [ slice(None) ] * other.ndim ),
-
+    func1, func2 = _matchndim( self, other )
+    assert isinstance( func1, Inflate )
+    shape = _jointshape( func1.shape, func2.shape )
     blocks = []
-    for func1, ind1 in self.blocks:
-      for func2, ind2 in other_blocks:
-        ndim = _max( self.ndim, other.ndim )
-        index = []
-        for i in range( -ndim, 0 ):
-          if i < -self.ndim:
-            index.append( ind2[i] )
-          elif i < -other.ndim:
-            index.append( ind1[i] )
-          elif self.shape[i] == 1:
-            index.append( ind2[i] )
-          elif other.shape[i] == 1:
-            index.append( ind1[i] )
-          elif ind1[i] == ind2[i]:
-            index.append( ind1[i] )
-          else:
-            if _isfunc( ind1[i] ) and ind2[i] == slice(None):
-              func2 = takeindex( func2, i, ind1[i] )
-              index.append( ind1[i] )
-            else:
-              raise Exception, 'non-matching axes'
-        func12 = func1 / func2
-        blocks.append( (func12,tuple(index)) )
-
+    for f1, f2, ind in func1.match_blocks( func2 ):
+      f12 = f1 / f2
+      blocks.append( (f12,ind) )
     return Inflate( shape, blocks )
 
-# def __cross__( self, other, axis ):
-#   'cross product'
+  def __cross__( self, other, axis ):
+    'cross product'
 
-#   # TODO fix this
+    func1, func2 = _matchndim( self, other )
+    assert isinstance( func1, Inflate )
+    shape = _jointshape( func1.shape, func2.shape )
+    blocks = []
+    for f1, f2, ind in func1.match_blocks( func2 ):
+      f12 = cross( f1, f2, axis )
+      if not _iszero(f12):
+        blocks.append( (f12,ind) )
+    if not blocks:
+      return _const( 0., shape )
+    return Inflate( shape, blocks )
 
-#   assert len(self.blocks) == 1
-#   (func1, ind1), = self.blocks
-#   if isinstance( other, Inflate ):
-#     assert len(other.blocks) == 1
-#     (func2, ind2), = other.blocks
-#   else:
-#     func2 = other
-#     ind2 = (slice(None),) * func.ndim
+  def __add__( self, other ):
+    'add'
 
-#   assert ind1 == ind2
-#   func = cross( func1, func2, axis )
+    other = _asarray( other )
+    shape = _jointshape( self.shape, other.shape ) # check matching shapes
+    if _iszero( other ):
+      return expand( self, shape )
 
-#   blocks = [ (func,ind1) ]
-#   return Inflate( self.shape, blocks )
+    assert isinstance( other, Inflate )
+    blocks = []
+    other_blocks = other.blocks
+    for func1, ind1 in self.blocks:
+      for i, (func2,ind2) in enumerate( other_blocks ):
+        if ind1 == ind2:
+          func12 = func1 + func2
+          if func12:
+            blocks.append(( func12, ind1 ))
+          other_blocks = other_blocks[:i] + other_blocks[i+1:]
+          break
+      else:
+        blocks.append(( func1, ind1 ))
+    blocks.extend( other_blocks )
+    return Inflate( self.shape, blocks )
+
+  def __sub__( self, other ):
+    'subtract'
+
+    return self + (-other)
 
   def outer( self, axis=0 ):
     'outer product'
@@ -2308,35 +2287,6 @@ class Inflate( ArrayFunc ):
       blocks.append(( dense, indall ))
 
     return Inflate( shape, blocks )
-
-  def __add__( self, other ):
-    'add'
-
-    other = _asarray( other )
-    shape = _jointshape( self.shape, other.shape ) # check matching shapes
-    if _iszero( other ):
-      return expand( self, shape )
-
-    assert isinstance( other, Inflate )
-    blocks = []
-    other_blocks = other.blocks
-    for func1, ind1 in self.blocks:
-      for i, (func2,ind2) in enumerate( other_blocks ):
-        if ind1 == ind2:
-          func12 = func1 + func2
-          if func12:
-            blocks.append(( func12, ind1 ))
-          other_blocks = other_blocks[:i] + other_blocks[i+1:]
-          break
-      else:
-        blocks.append(( func1, ind1 ))
-    blocks.extend( other_blocks )
-    return Inflate( self.shape, blocks )
-
-  def __sub__( self, other ):
-    'subtract'
-
-    return self + (-other)
 
   def __neg__( self ):
     'negate'
