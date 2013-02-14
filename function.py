@@ -473,7 +473,7 @@ class ArrayFunc( Evaluable ):
     return ElemInt( self, weights )
 
   def __getitem__( self, item ):
-    'get item'
+    'get item, general function which can eliminate, add or modify axes.'
   
     tmp = item
     item = list( item if isinstance( item, tuple ) else [item] )
@@ -481,20 +481,23 @@ class ArrayFunc( Evaluable ):
     arr = self
     while item:
       it = item.pop(0)
-      if isinstance(it,int):
+      if isinstance(it,int): # retrieve one item from axis
         arr = get( arr, n, it )
-      elif it == _:
+      elif it == _: # insert a singleton axis
         arr = insert( arr, n )
         n += 1
-      elif it == slice(None):
+      elif it == slice(None): # select entire axis
         n += 1
-      elif it == Ellipsis:
+      elif it == Ellipsis: # skip to end
         remaining_items = len(item) - item.count(_)
         skip = arr.ndim - n - remaining_items
         assert skip >= 0
         n += skip
-      elif isinstance(it,slice) and it.step in (1,None) and it.stop == it.start + 1:
+      elif isinstance(it,slice) and it.step in (1,None) and it.stop == ( it.start or 0 ) + 1: # special case: unit length slice
         arr = insert( get( arr, n, it.start ), n )
+        n += 1
+      elif isinstance(it,(slice,list,tuple,numpy.ndarray)): # modify axis (shorten, extend or renumber one axis)
+        arr = take( arr, it, n )
         n += 1
       else:
         raise NotImplementedError
@@ -1971,6 +1974,27 @@ class TakeDiag( ArrayFunc ):
     assert func.shape[-1] == func.shape[-2]
     ArrayFunc.__init__( self, args=[func,-2,-1], evalf=numeric.takediag, shape=func.shape[:-1] )
 
+class Take( ArrayFunc ):
+  'generalization of numpy.take(), to accept lists, slices, arrays'
+
+  def __init__( self, func, indices, axis ):
+    'constructor'
+
+    self.func = func
+    self.axis = axis
+    self.indices = indices
+    s = [ slice(None) ] * func.ndim
+    s[axis] = indices
+    newlen, = numpy.empty( func.shape[axis] )[ indices ].shape
+    assert newlen > 0
+    shape = func.shape[:axis] + (newlen,) + func.shape[axis+1:]
+    ArrayFunc.__init__( self, args=(func,(Ellipsis,)+tuple(s)), evalf=numpy.ndarray.__getitem__, shape=shape )
+
+  def __localgradient__( self, ndims ):
+    'local gradient'
+
+    return take( localgradient( self.func, ndims ), self.indices, self.axis )
+
 # PRIORITY OBJECTS
 #
 # Prority objects get priority in situations like A + B, which can be evaluated
@@ -2508,6 +2532,7 @@ class Kronecker( ArrayFunc ):
     func1, func2 = _matchndim( self, other )
     assert isinstance( func1, Kronecker )
     funcs = [ func and func * get( func2, func1.axis, ifun ) for ifun, func in enumerate(func1.funcs) ]
+    funcs = [ None if _iszero(func) else func for func in funcs ]
     if not any( funcs ):
       return _const( 0., func1.shape, func2.shape )
     return Kronecker( funcs, self.axis )
@@ -3031,6 +3056,11 @@ tanh = lambda arg: 1 - 2. / ( exp(2*arg) + 1 )
 arctanh = lambda arg: .5 * ( log(1+arg) - log(1-arg) )
 cross = lambda arg1, arg2, axis: _call( Cross, numeric.cross, arg1, arg2, axis )
 piecewise = lambda level, intervals, *funcs: choose( which_interval( level, intervals ), funcs )
+
+def take( arg, indices, axis ):
+  if _isfunc( arg ):
+    return Take( arg, indices, axis )
+  return numpy.take( arg, indices, axis )
 
 @util.deprecated( old='Chain', new='chain' )
 def Chain( funcs ):
