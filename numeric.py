@@ -226,6 +226,7 @@ def norm2( A, axis=-1 ):
 def cross( v1, v2, axis ):
   'cross product'
 
+  assert v1.ndim == v2.ndim
   return numpy.cross( v1, v2, axis=axis )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

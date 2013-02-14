@@ -421,6 +421,13 @@ class ArrayFunc( Evaluable ):
 
     return self.symgrad( coords, ndims ).dotnorm( coords, ndims )
 
+  def __cross__( self, other, axis ):
+    'cross product'
+
+    arg1, arg2 = _matchndim( self, other )
+    axis = _normdim( arg1.ndim, axis )
+    return Cross( arg1, arg2, axis )
+
   @property
   def T( self ):
     'transpose'
@@ -1339,13 +1346,14 @@ class Interp1D( ArrayFunc ):
     ArrayFunc.__init__( self, args=(x,xp,yp,left,right), evalf=numpy.interp, shape=() )
 
 class Cross( ArrayFunc ):
-  'normal'
+  'cross product'
 
   def __init__( self, f1, f2, axis ):
     'contructor'
 
-    assert f1.shape == f2.shape
-    ArrayFunc.__init__( self, args=(f1,f2,axis-f1.ndim), evalf=numeric.cross, shape=f1.shape )
+    shape = _jointshape( f1.shape, f2.shape )
+    assert 0 <= axis < len(shape), 'axis out of bounds: axis={0}, len(shape)={1}'.format( axis, len(shape) )
+    ArrayFunc.__init__( self, args=(f1,f2,axis-len(shape)), evalf=numeric.cross, shape=shape )
 
 class Determinant( ArrayFunc ):
   'normal'
@@ -2074,12 +2082,14 @@ class Inflate( ArrayFunc ):
   def __getitem__( self, item ):
     'get item'
 
+    if item == ():
+      return self
     origitem = item # for debug msg
     nnew = _sum( it == numpy.newaxis for it in item )
     if Ellipsis in item:
       n = item.index( Ellipsis )
       item = item[:n] + (slice(None),) * (self.ndim-(len(item)-1-nnew)) + item[n+1:]
-    assert len(item) - nnew == self.ndim, 'invalid item: shape=%s, item=[%s]' % ( self.shape, ','.join(map(_obj2str,origitem)) )
+    assert len(item) - nnew == self.ndim, 'invalid item: shape=%s, item=(%s)' % ( self.shape, ','.join(map(_obj2str,origitem)) )
     shape = self.shape
     blocks = self.blocks
     i = 0
@@ -2091,6 +2101,10 @@ class Inflate( ArrayFunc ):
       elif isinstance(it,int):
         blocks = [ ( get( func, i, it ), ind[:i]+ind[i+1:] ) for func, ind in blocks if get( func, i, it ) ]
         shape = shape[:i] + shape[i+1:]
+      elif isinstance(it,list):
+        blocks = [ ( take( func, it, i ), ind[:i]+(slice(None),)+ind[i+1:] ) for func, ind in blocks ]
+        shape = shape[:i] + (len(it),) + shape[i+1:]
+        i += 1
       else:
         assert it == slice(None), 'invalid item in getitem: %r' % it
         i += 1
@@ -2221,6 +2235,26 @@ class Inflate( ArrayFunc ):
         blocks.append( (func12,tuple(index)) )
 
     return Inflate( shape, blocks )
+
+# def __cross__( self, other, axis ):
+#   'cross product'
+
+#   # TODO fix this
+
+#   assert len(self.blocks) == 1
+#   (func1, ind1), = self.blocks
+#   if isinstance( other, Inflate ):
+#     assert len(other.blocks) == 1
+#     (func2, ind2), = other.blocks
+#   else:
+#     func2 = other
+#     ind2 = (slice(None),) * func.ndim
+
+#   assert ind1 == ind2
+#   func = cross( func1, func2, axis )
+
+#   blocks = [ (func,ind1) ]
+#   return Inflate( self.shape, blocks )
 
   def outer( self, axis=0 ):
     'outer product'
@@ -3038,6 +3072,15 @@ def choose( level, choices ):
     return Choose( level, choices )
   return numpy.choose( level, choices )
 
+def cross( arg1, arg2, axis ):
+  'cross product'
+
+  if _isfunc(arg1) and not _haspriority(arg2):
+    return arg1.__cross__(arg2,axis)
+  if _isfunc(arg2):
+    return -arg2.__cross__(arg1,axis)
+  return numeric.cross(arg1,arg2,axis)
+
 exp = lambda arg: _call( Exp, numpy.exp, arg )
 sin = lambda arg: _call( Sin, numpy.sin, arg )
 cos = lambda arg: _call( Cos, numpy.cos, arg )
@@ -3054,7 +3097,6 @@ sinh = lambda arg: .5 * ( exp(arg) - exp(-arg) )
 cosh = lambda arg: .5 * ( exp(arg) + exp(-arg) )
 tanh = lambda arg: 1 - 2. / ( exp(2*arg) + 1 )
 arctanh = lambda arg: .5 * ( log(1+arg) - log(1-arg) )
-cross = lambda arg1, arg2, axis: _call( Cross, numeric.cross, arg1, arg2, axis )
 piecewise = lambda level, intervals, *funcs: choose( which_interval( level, intervals ), funcs )
 
 def take( arg, indices, axis ):
