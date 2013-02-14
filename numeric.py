@@ -2,6 +2,20 @@ import numpy, _numeric
 
 addsorted = _numeric.addsorted
 
+def expand( arr, *shape ):
+  'expand'
+
+  shape = list( arr.shape )
+  for i, sh in enumerate( shape ):
+    if sh != None:
+      if shape[i-len(shape)] == 1:
+        shape[i-len(shape)] = sh
+      else:
+        assert shape[i-len(shape)] == sh
+  expanded = numpy.empty( shape )
+  expanded[:] = arr
+  return expanded
+
 def linspace2d( start, stop, steps ):
   'linspace & meshgrid combined'
 

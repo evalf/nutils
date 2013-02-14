@@ -318,15 +318,49 @@ class TrimmedElement( Element ):
     transform = self.elem.edgetransform( self.ndims )[ iedge ]
     return QuadElement( id=self.id+'.edge({})'.format(iedge), ndims=self.ndims-1, context=(self,transform) )
 
-  def get_simplices ( self, maxrefine=4, density=6, **kwargs ):
+  def get_simplices ( self, maxrefine=3, **kwargs ):
     'divide in simple elements'
 
     if maxrefine > 0 or self.evalrefine > 0:
-      return [ simplex for child in filter(None,self.children) for simplex in child.get_simplices( maxrefine=maxrefine-1, density=density ) ]
+      return [ simplex for child in filter(None,self.children) for simplex in child.get_simplices( maxrefine=maxrefine-1 ) ]
 
-    ischeme = self.elem.getischeme( self.elem.ndims, 'bezier%d' % density )
+    ischeme = self.elem.getischeme( self.elem.ndims, 'bezier2' )
     where   = self.levelset( self.elem, ischeme ) > 0
     points  = ischeme.coords[where]
+
+    if not where.any():
+      return []
+    elif where.all():
+      return [ self.elem ]
+
+    if self.ndims == 2:
+      lines = [ self.elem.edge( i ) for i in range( 4 ) ]
+    else:
+      faces = [ self.elem.edge( i ) for i in range( 6 ) ]
+      lines = [ face.edge(i) for i in range(4) for face in faces ]
+
+    #lines = self.elem.ribbons  
+
+    for line in lines:
+      
+      ischeme = line.getischeme( line.ndims, 'bezier2' )
+      vals    = self.levelset( line, ischeme )
+      where   = vals > 0
+
+      if  where[0] != where[1]:
+
+        xi = vals[0] / ( vals[0] - vals[1] )
+
+        assert xi > 0 and xi < 1, 'Illegal local coordinate'
+ 
+        elem = line
+        while ischeme.coords.shape[1] < self.ndims:
+          elem, transform = elem.context
+          ischeme = transform.eval( ischeme )
+
+        newpoint = ischeme.coords[0] + xi * ( ischeme.coords[1] - ischeme.coords[0] )
+
+        points   = numpy.append( points, newpoint[_], axis=0 ) 
 
     try:
       submesh = util.delaunay( points )
@@ -334,15 +368,16 @@ class TrimmedElement( Element ):
       return []
 
     simplices = []
+    Element   = TriangularElement if self.ndims == 2 else TetrahedronElement
+
     for i, tri in enumerate(submesh.vertices):
+
       offset = points[ tri[0] ]
-      affine = numpy.array( [ points[ tri[1] ] - offset, points[ tri[2] ] - offset ] ).T
+      affine = numpy.array( [ points[ tri[i+1] ] - offset for i in range(self.ndims) ] ).T
 
       transform = AffineTransformation( offset, affine )
 
-      simplex = TriangularElement( self.id + '.simplex(%d)' % i, parent=(self,transform) )
-      
-      simplices.append( simplex )
+      simplices.append( Element( self.id + '.simplex(%d)' % i, parent=(self,transform) ) )
 
     return simplices
   
@@ -374,7 +409,6 @@ class QuadElement( Element ):
 
   def edge( self, iedge ):
     'edge'
-
     transform = self.edgetransform( self.ndims )[ iedge ]
     return QuadElement( id=self.id+'.edge({})'.format(iedge), ndims=self.ndims-1, context=(self,transform) )
 
@@ -649,6 +683,10 @@ class TetrahedronElement( Element ):
     if where.startswith( 'vtk' ):
       coords = numpy.array([[0,0,0],[1,0,0],[0,1,0],[0,0,1]]).T
       weights = None
+    elif where == 'gauss1':
+      #TODO This is just the c.o.g.
+      coords = numpy.array( [[1],[1],[1]] ) / 4.
+      weights = numpy.array( [1] ) / 6.
     else:
       raise Exception, 'invalid element evaluation: %r' % where
     return LocalPoints( coords.T, weights )

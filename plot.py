@@ -346,17 +346,17 @@ def project3d( C ):
   R = numpy.array( [[ sqrt3, 0, -sqrt3 ], [ 1, 2, 1 ], [ sqrt2, -sqrt2, sqrt2 ]] ) / sqrt6
   return numeric.transform( C, R[:,::2], axis=0 )
 
-def writevtu( name, topology, coords, pointdata={}, celldata={} ):
+def writevtu( name, topology, coords, pointdata={}, celldata={}, superelements=False, **kwargs ):
   'write vtu from coords function'
 
   vtupath = util.getpath( name )
-  pbar = log.ProgressBar(topology.get_simplices(), title='preparing vtk data' )
+  pbar = log.ProgressBar(topology.get_simplices( **kwargs ), title='preparing vtk data' )
   import vtk
   vtkPoints = vtk.vtkPoints()
   vtkMesh = vtk.vtkUnstructuredGrid()
 
   if coords.shape == (2,):
-    coords = function.concatenate( coords, [0] )
+    coords = function.concatenate( [ coords, [0]] )
   assert coords.shape == (3,)
 
   pointdata_arrays = []
@@ -380,7 +380,7 @@ def writevtu( name, topology, coords, pointdata={}, celldata={} ):
   for elem in pbar:
 
     superelem = elem
-    if isinstance( superelem, element.TrimmedElement ):  
+    if superelements and isinstance( superelem, element.TrimmedElement ):  
       superelem = superelem.elem
 
     if isinstance( superelem, element.TriangularElement ):
@@ -389,13 +389,12 @@ def writevtu( name, topology, coords, pointdata={}, celldata={} ):
       vtkelem = vtk.vtkQuad()
     elif isinstance( superelem, element.QuadElement ) and elem.ndims == 3:
       vtkelem = vtk.vtkVoxel() # TODO hexahedron for not rectilinear NOTE ordering changes!
+    elif isinstance( superelem, element.TetrahedronElement ):
+      vtkelem = vtk.vtkTetra()
     else:
       raise Exception, 'not sure what to do with element %r' % elem
 
-    if elem.ndims == 3:  
-      x, pdata = coords_pointdata( elem, 'contour0' )
-    else:
-      x, pdata = coords_pointdata( elem, 'vtk' )
+    x, pdata = coords_pointdata( elem, 'vtk' )
 
     cellpoints = vtkelem.GetPointIds()
     for i, c in enumerate( x ):

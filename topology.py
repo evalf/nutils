@@ -382,8 +382,10 @@ class Topology( object ):
 
     return self if n <= 0 else self.refined.refine( n-1 )
 
-  def get_simplices( self, **kwargs ):
-    return [simplex for elem in self for simplex in elem.get_simplices( **kwargs )]
+  def get_simplices( self, title='Getting simplices', **kwargs ):
+    'Getting simplices'
+
+    return [simplex for elem in log.ProgressBar( self, title=title ) for simplex in elem.get_simplices( **kwargs )]
 
 class StructuredTopology( Topology ):
   'structured topology'

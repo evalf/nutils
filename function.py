@@ -1225,7 +1225,17 @@ class Concatenate( ArrayFunc ):
   def concatenate( iax, *arrays ):
     'evaluate'
 
-    return numpy.concatenate( arrays, iax )
+    ndim = numpy.max([ array.ndim for array in arrays ])
+    axlen = util.sum( array.shape[iax] for array in arrays )
+    shape = _jointshape( *[ (1,)*(ndim-array.ndim) + array.shape[:iax] + (axlen,) + ( array.shape[iax+1:] if iax != -1 else () ) for array in arrays ] )
+    retval = numpy.empty( shape, dtype=_jointdtype(*arrays) )
+    n0 = 0
+    for array in arrays:
+      n1 = n0 + array.shape[iax]
+      retval[(slice(None),)*( iax if iax >= 0 else iax + ndim )+(slice(n0,n1),)] = array
+      n0 = n1
+    assert n0 == axlen
+    return retval
 
   def __get__( self, i, item ):
     'get'
@@ -2571,22 +2581,7 @@ class Expand( ArrayFunc ):
     self.func = func
     for sh1, sh2 in zip( func.shape, shape ):
       assert sh1 in (sh2,1)
-    ArrayFunc.__init__( self, args=(func,)+shape, evalf=self.expand, shape=shape )
-
-  @staticmethod
-  def expand( arr, *shape ):
-    'expand'
-
-    shape = list( arr.shape )
-    for i, sh in enumerate( shape ):
-      if sh != None:
-        if shape[i-len(shape)] == 1:
-          shape[i-len(shape)] = sh
-        else:
-          assert shape[i-len(shape)] == sh
-    expanded = numpy.empty( shape )
-    expanded[:] = arr
-    return expanded
+    ArrayFunc.__init__( self, args=(func,)+shape, evalf=numeric.expand, shape=shape )
 
   def __neg__( self ):
     'negate'
@@ -2762,6 +2757,13 @@ _haspriority = lambda arg: _isfunc(arg) and arg.__priority__
 _subsnonesh = lambda shape: tuple( 1 if sh is None else sh for sh in shape )
 _const = lambda val, *shapes: numeric.appendaxes( val, _subsnonesh( _jointshape(*shapes) ) )
 _norm_and_sort = lambda ndim, args: tuple( sorted( _normdim( ndim, arg ) for arg in args ) )
+
+def _jointdtype( *args ):
+  'determine joint dtype'
+
+  if any( _asarray(arg).dtype == float for arg in args ):
+    return float
+  return int
 
 def _equal( arg1, arg2 ):
   'compare two objects'
@@ -2987,7 +2989,7 @@ def concatenate( args, axis=0 ):
   'concatenate'
 
   concat = Concatenate if any( _isfunc(arg) for arg in args ) else numpy.concatenate
-  return concat( args, axis )
+  return concat( _matchndim( *args ), axis )
 
 def transpose( arg, trans ):
   'transpose'
