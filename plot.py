@@ -350,7 +350,12 @@ def writevtu( name, topology, coords, pointdata={}, celldata={}, superelements=F
   'write vtu from coords function'
 
   vtupath = util.getpath( name )
-  pbar = log.ProgressBar(topology.get_simplices( **kwargs ), title='preparing vtk data' )
+
+  if not superelements:
+    pbar = log.ProgressBar(topology.get_simplices( **kwargs ), title='preparing vtk data' )
+  else:
+    pbar = log.ProgressBar(filter(None,[elem if not isinstance(elem,element.TrimmedElement) else elem.elem for elem in topology]), title='preparing vtk data' )
+
   import vtk
   vtkPoints = vtk.vtkPoints()
   vtkMesh = vtk.vtkUnstructuredGrid()
@@ -379,17 +384,13 @@ def writevtu( name, topology, coords, pointdata={}, celldata={}, superelements=F
   celldatafun = function.Tuple( celldata_arrays )
   for elem in pbar:
 
-    superelem = elem
-    if superelements and isinstance( superelem, element.TrimmedElement ):  
-      superelem = superelem.elem
-
-    if isinstance( superelem, element.TriangularElement ):
+    if isinstance( elem, element.TriangularElement ):
       vtkelem = vtk.vtkTriangle()
-    elif isinstance( superelem, element.QuadElement ) and elem.ndims == 2:
+    elif isinstance( elem, element.QuadElement ) and elem.ndims == 2:
       vtkelem = vtk.vtkQuad()
-    elif isinstance( superelem, element.QuadElement ) and elem.ndims == 3:
+    elif isinstance( elem, element.QuadElement ) and elem.ndims == 3:
       vtkelem = vtk.vtkVoxel() # TODO hexahedron for not rectilinear NOTE ordering changes!
-    elif isinstance( superelem, element.TetrahedronElement ):
+    elif isinstance( elem, element.TetrahedronElement ):
       vtkelem = vtk.vtkTetra()
     else:
       raise Exception, 'not sure what to do with element %r' % elem

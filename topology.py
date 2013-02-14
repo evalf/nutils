@@ -372,7 +372,24 @@ class Topology( object ):
     ind = function.DofMap( ElemMap(dofmap,self.ndims) ),
     func = function.Function( stdmap=ElemMap(stdmap,self.ndims), igrad=0 )
     funcsp = function.Inflate( (ndofs,), [(func,ind)] )
+
+    allbelems = []
+    bgroups = {}
+    topo = self # topology to examine in next level refinement
+    for irefine in range( nrefine ):
+      belemset = set()
+      for belem in topo.boundary:
+        celem, transform = belem.context
+        if celem in topoelems:
+          belemset.add( belem )
+      allbelems.extend( belemset )
+      for btag, belems in topo.boundary.groups.iteritems():
+        bgroups.setdefault( btag, [] ).extend( belemset.intersection(belems) )
+      topo = topo.refined # proceed to next level
+
     domain = UnstructuredTopology( topoelems, ndims=self.ndims )
+    domain.boundary = UnstructuredTopology( allbelems, ndims=self.ndims-1 )
+    domain.boundary.groups = dict( ( tag, UnstructuredTopology( group, ndims=self.ndims-1 ) ) for tag, group in bgroups.items() )
   
     pbar.close()
     return domain, funcsp
