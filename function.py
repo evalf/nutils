@@ -2089,7 +2089,9 @@ class Inflate( ArrayFunc ):
     if Ellipsis in item:
       n = item.index( Ellipsis )
       item = item[:n] + (slice(None),) * (self.ndim-(len(item)-1-nnew)) + item[n+1:]
-    assert len(item) - nnew == self.ndim, 'invalid item: shape=%s, item=(%s)' % ( self.shape, ','.join(map(_obj2str,origitem)) )
+    # assert len(item) - nnew == self.ndim, 'invalid item: shape=%s, item=(%s)' % ( self.shape, ','.join(map(_obj2str,origitem)) )
+    assert len(item) <= self.ndim + nnew, 'invalid item: shape=%s, item=(%s)' % ( self.shape, ','.join(map(_obj2str,origitem)) )
+    item += (slice(None),) * ( self.ndim + nnew - len(item) )
     shape = self.shape
     blocks = self.blocks
     i = 0

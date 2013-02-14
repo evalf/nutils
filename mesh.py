@@ -246,7 +246,7 @@ def igatool( path, name=None ):
   FieldData = mesh.GetFieldData()
   CellData = mesh.GetCellData()
 
-  NumberOfPoints = mesh.GetNumberOfPoints()
+  NumberOfPoints = int( mesh.GetNumberOfPoints() )
   NumberOfElements = mesh.GetNumberOfCells()
   NumberOfArrays = FieldData.GetNumberOfArrays()
 

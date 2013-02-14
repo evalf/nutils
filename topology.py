@@ -221,7 +221,7 @@ class Topology( object ):
       assert constrain is None
       constrain = self.boundary.project( fun, onto, coords, title=title+' boundaries', ischeme=ischeme, tol=tol, droptol=droptol )
     elif constrain is None:
-      constrain = util.NanVec( onto.shape[0] if isinstance(onto.shape[0],int) else onto.shape[0].stop )
+      constrain = util.NanVec( onto.shape[0] )
     else:
       assert isinstance( constrain, util.NanVec )
       assert constrain.shape == onto.shape[:1]
