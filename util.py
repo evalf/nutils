@@ -1,6 +1,17 @@
 from . import log, prop
 import sys, os, time, numpy, cPickle, hashlib, weakref, traceback
 
+def fork( func ):
+  'fork and run (return value is lost)'
+
+  def wrapped( *args, **kwargs ):
+    pid = os.fork()
+    if pid:
+      return pid
+    func( *args, **kwargs )
+    os._exit( 0 )
+  return wrapped
+
 def deprecated( old, new=None ):
   msg = 'WARNING: %s is deprecated and will be removed.' % old
   if new:
