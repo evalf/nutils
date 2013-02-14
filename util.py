@@ -8,8 +8,10 @@ def fork( func ):
     pid = os.fork()
     if pid:
       return pid
-    func( *args, **kwargs )
-    os._exit( 0 )
+    try:
+      func( *args, **kwargs )
+    finally:
+      os._exit( 0 )
   return wrapped
 
 def deprecated( old, new=None ):
@@ -375,6 +377,12 @@ def run( *functions ):
     func( **kwargs )
   except:
     log.error( traceback.format_exc(), end='' )
+
+  try: # wait for child processes to die
+    while True:
+      pid, status = os.wait()
+  except OSError: # no more children
+    pass
 
   dt = time.time() - t0
   hours = dt // 3600

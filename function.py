@@ -2028,12 +2028,11 @@ class Inflate( ArrayFunc ):
       assert func.ndim == len(shape)
       assert len(indices) == len(shape)
       for n, ind in enumerate( indices ):
-        if _isfunc(ind):
+        if ind == slice(None):
+          assert shape[n] == func.shape[n]
+        else:
           assert shape[n] > 1 # we need this to idenify singleton dimensions with static axes
           assert ind.ndim == 1 # TODO check dtype
-        else:
-          assert ind == slice(None)
-          assert shape[n] == func.shape[n]
       arrays_indices.append( Tuple([ func, Tuple(indices) ]) )
     ArrayFunc.__init__( self, args=[tuple(shape)]+arrays_indices, evalf=self.inflate, shape=shape )
 
@@ -2112,17 +2111,6 @@ class Inflate( ArrayFunc ):
         i += 1
     assert i == len(shape)
     return Inflate( shape, blocks )
-
-# def grad( self, coords, ndims=0 ):
-#   'local gradient'
-
-#   raise Exception, 'check why this needs to be here'
-#   assert coords.ndim == 1
-#   if ndims <= 0:
-#     ndims += coords.shape[0]
-#   assert ndims > 0
-#   blocks = [ (func.grad(coords,ndims),ind+(slice(None),)) for func, ind in self.blocks ]
-#   return Inflate( self.shape+(ndims,), blocks )
 
   def __localgradient__( self, ndims ):
     'local gradient'
@@ -2826,9 +2814,20 @@ def chain( funcs ):
 
   ndofs = 0
   allblocks = []
+  funcs = map( _asarray, funcs )
   for func in funcs:
-    assert isinstance( func, Inflate )
-    allblocks.append( [ ( blockfunc, (blockind[0]+ndofs,)+blockind[1:] ) for blockfunc, blockind in func.blocks ] )
+    if isinstance( func, Inflate ):
+      func_blocks = func.blocks
+    else:
+      ind = (slice(None),)*func.ndim
+      func_blocks = (func,ind),
+    blocks = []
+    for blockfunc, blockind in func_blocks:
+      ind0 = blockind[0]
+      if ind0 == slice(None):
+        ind0 = numpy.arange( func.shape[0] )
+      blocks.append(( blockfunc, (ndofs+ind0,)+blockind[1:] ))
+    allblocks.append( blocks )
     ndofs += func.shape[0]
   return [ Inflate( (ndofs,)+func.shape[1:], blocks ) for func, blocks in zip( funcs, allblocks ) ]
 
