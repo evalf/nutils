@@ -301,7 +301,7 @@ class ArrayFunc( Evaluable ):
 
     func = self
     for ax in reversed( axes ):
-      assert self.shape[ax] == 1
+      assert self.shape[ax] == 1, 'cannot sum over axis %d of %s' % ( ax, typee(self) )
       func = get( func, ax, 0 )
     return func
     #return Sum( self, axes )
@@ -1980,7 +1980,20 @@ class TakeDiag( ArrayFunc ):
     'constructor'
 
     assert func.shape[-1] == func.shape[-2]
+    self.func = func
     ArrayFunc.__init__( self, args=[func,-2,-1], evalf=numeric.takediag, shape=func.shape[:-1] )
+
+  def sum( self, axes=-1 ):
+    'sum'
+
+    axes = _norm_and_sort( self.ndim, axes if _isiterable(axes) else [axes] )
+    summed = self
+    for ax in reversed( axes ):
+      if ax == self.ndim-1:
+        summed = trace( self.func )
+      else:
+        summed = takediag( sum( self.func, ax ) )
+    return summed
 
 class Take( ArrayFunc ):
   'generalization of numpy.take(), to accept lists, slices, arrays'
@@ -2946,7 +2959,7 @@ def norm2( arg, axis=-1 ):
     return arg.__norm2__( axis )
   return numeric.norm2( arg, axis )
 
-def takediag( arg, ax1, ax2 ):
+def takediag( arg, ax1=-2, ax2=-1 ):
   'takediag'
 
   if _isfunc( arg ):
