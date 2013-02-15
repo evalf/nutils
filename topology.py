@@ -463,7 +463,7 @@ class StructuredTopology( Topology ):
       structure = numpy.concatenate([ boundaries[i].structure for i in [0,2,1,3] ])
       topo = StructuredTopology( structure, periodic=[0] )
     else:
-      allbelems = [ belem for boundary in boundaries for belem in boundary.structure.flat ]
+      allbelems = [ belem for boundary in boundaries for belem in boundary.structure.flat if belem is not None ]
       topo = UnstructuredTopology( allbelems, ndims=self.ndims-1 )
 
     topo.groups = dict( zip( ( 'left', 'right', 'bottom', 'top', 'front', 'back' ), boundaries ) )
