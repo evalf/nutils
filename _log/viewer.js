@@ -354,19 +354,19 @@ function Finity() {
           if( evt.ctrlKey || evt.metaKey || evt.altKey ) {
             return true;
           }
-
+          
           // Check for function keys
           switch( true ) {
-            case evt.keyCode == 74: // J (vim-left)
+            case evt.keyCode == 72 || evt.keyCode == 37: // H (vim left)
               self.prev();
               break;
-            case evt.keyCode == 75: // K (vim-right)
+            case evt.keyCode == 76 || evt.keyCode == 39: // L (vim right)
               self.next();
               break;
-						case evt.keyCode == 72: // H (vim move-left)
+						case evt.keyCode == 75 || evt.keyCode == 38: // K (vim up)
 							self.first();
 							break
-						case evt.keyCode == 76: // L (vim move-right)
+						case evt.keyCode == 74 || evt.keyCode == 40: // J (vim down)
 							self.last();
 							break;
             case evt.shiftKey && evt.keyCode == 82: // Shift + r
