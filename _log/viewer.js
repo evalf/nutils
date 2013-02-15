@@ -95,6 +95,13 @@ function Finity() {
      * @var jQuery
      */
     this._inpScroll;
+    
+    /**
+     * Finity._inpFinity
+     * Checkbox to enable finity <input>
+     * @var jQuery
+     */
+    this._inpFinity
 		
     /**
      * Finity._navbar
@@ -203,12 +210,12 @@ function Finity() {
     this._scrolling = false;
     
     /**
-     * Finity.init()
+     * Finity.__init__()
      * Construct finity class
      * 
      * @return void
      */
-    this.init = function (){
+    this.__init__ = function (){
       var self = this;
       
       this._code = $('pre')
@@ -294,11 +301,7 @@ function Finity() {
       });
       
       // Show current
-			if( this._plots.length ) {
-				this._plots[0].onload = function (){
-					self.render();
-				}
-			}
+			this.show('*', 0);
 
       // Attach events
       $(window).resize(function (){
@@ -310,7 +313,7 @@ function Finity() {
           var checked = $(this).is(':checked');
           self.enableScrolling( checked );
         });
-        
+
       this._btnFirst.click(function() { self.first(); });
       this._btnNext.click(function() { self.next(); });
       this._btnPrev.click(function() { self.prev(); });
@@ -347,58 +350,87 @@ function Finity() {
       
       // Shortcuts
       $('body', document).keydown(function (evt){
+          // Don't respond when modifiers are pressed
+          if( evt.ctrlKey || evt.metaKey || evt.altKey ) {
+            return true;
+          }
+
+          // Check for function keys
           switch( true ) {
-            case evt.keyCode == 37: // left-arrow
+            case evt.keyCode == 74: // J (vim-left)
               self.prev();
               break;
-            case evt.keyCode == 39: // right-arrow
+            case evt.keyCode == 75: // K (vim-right)
               self.next();
               break;
-						case evt.keyCode == 36: // Home
+						case evt.keyCode == 72: // H (vim move-left)
 							self.first();
-							break;
-						case evt.keyCode == 35: // End
+							break
+						case evt.keyCode == 76: // L (vim move-right)
 							self.last();
 							break;
-						case evt.shiftKey && evt.keyCode == 82: // Shift + r
+            case evt.shiftKey && evt.keyCode == 82: // Shift + r
 							if( self._aLatestAll.length )
 								document.location.href = self._aLatestAll.attr('href');
 							else
 								alert('Link to the latest simulation is not found, navigate manually to the last simulation');
 							break;
-					case evt.keyCode == 82: // r
+            case evt.keyCode == 82: // r
 							if( self._aLatest.length )
 								document.location.href = self._aLatest.attr('href');
 							else
 								alert('Link to the simulation is not found, navigate manually to the simulation');
 							break;
-					case evt.keyCode == 73: // I
+            case evt.keyCode == 73: // I
 							if( self._aIndex.length )
 								document.location.href = self._aIndex.attr('href');
 							else
 								alert('Link to the index is not found, navigate manually to the last simulation');
 							break;
-						case evt.keyCode == 86: // V
+            case evt.keyCode == 86: // V
 							var url= self._imglink.attr('href');
 							if( evt.shiftKey )
 								window.open(url, '_blank');
 							else
 								document.location.href = url;
 							break;
-						case evt.keyCode == 83: // S
+            case evt.keyCode == 83: // S
 							var enable = ! self._inpScroll.is(':checked');
 							self.enableScrolling(enable);
 							self._inpScroll.attr('checked', enable);
 							break;
-						default:
+            default:
 							return true;
 							break;
           }
+
+          // Shortcut was pressed
 					evt.preventDefault();
 					return false;
       });
     }
     
+    /**
+     * Finity.__destruct__()
+     * Destruct the Finity interface
+     * 
+     * @return void
+     */
+    this.__destruct__ = function() {
+      // No scrolling
+      this.enableScrolling( false );
+
+      // Put links back
+      this._aLatest.prependTo(this._code);
+      this._aLatestAll.prependTo(this._code).after(' | ');
+      this._aIndex.prependTo(this._code).after(' | ');
+
+      // Remove additional HTML
+      this._controls.remove();
+      this._media.remove();
+      this._code.off('click');
+    };
+       
     /**
      * Finity.enableScrolling( enable )
      * Enable scrolling functionality
@@ -671,9 +703,6 @@ function Finity() {
 					.attr('href', img.src);
 			}
 		}
-
-    // Start
-    this.init();
 }
 
 /*! jQuery v1.8.3 jquery.com | jquery.org/license */
@@ -681,8 +710,8 @@ function Finity() {
 
 var finity = new Finity();
 $(function (){
-	// Enable finity for screens larger than 500px
-  if( $(window).width() >= 500) {
-		finity.init();
+	// Enable finity for screens larger than 640px
+  if( $(window).width() >= 640) {
+		finity.__init__();
 	}
 });
