@@ -333,13 +333,13 @@ class TrimmedElement( Element ):
     elif where.all():
       return [ self.elem ]
 
-    if self.ndims == 2:
-      lines = [ self.elem.edge( i ) for i in range( 4 ) ]
-    else:
-      faces = [ self.elem.edge( i ) for i in range( 6 ) ]
-      lines = [ face.edge(i) for i in range(4) for face in faces ]
+    #if self.ndims == 2:
+    #  lines = [ self.elem.edge( i ) for i in range( 4 ) ]
+    #else:
+    #  faces = [ self.elem.edge( i ) for i in range( 6 ) ]
+    #  lines = [ face.edge(i) for i in range(4) for face in faces ]
 
-    #lines = self.elem.ribbons  
+    lines = self.elem.ribbons  
 
     for line in lines:
       
@@ -353,10 +353,8 @@ class TrimmedElement( Element ):
 
         assert xi > 0 and xi < 1, 'Illegal local coordinate'
  
-        elem = line
-        while ischeme.coords.shape[1] < self.ndims:
-          elem, transform = elem.context
-          ischeme = transform.eval( ischeme )
+        elem, transform = line.context
+        ischeme = transform.eval( ischeme )
 
         newpoint = ischeme.coords[0] + xi * ( ischeme.coords[1] - ischeme.coords[0] )
 
@@ -406,6 +404,31 @@ class QuadElement( Element ):
         transform.flat[ndims*(idim+1)-1::ndims] = 2 * iside - 1
         transforms.append( AffineTransformation( offset=offset, transform=transform ) )
     return transforms
+
+  @property
+  def ribbons( self ):
+    'ribbons'
+
+    if self.ndims == 2:
+      transforms = self.edgetransform( self.ndims )
+    elif self.ndims == 3:
+      transforms = (
+        AffineTransformation( offset=[0,0,0], transform=[[1],[0],[0]] ),
+        AffineTransformation( offset=[0,0,0], transform=[[0],[1],[0]] ),
+        AffineTransformation( offset=[0,0,0], transform=[[0],[0],[1]] ),
+        AffineTransformation( offset=[1,1,1], transform=[[-1],[0],[0]] ),
+        AffineTransformation( offset=[1,1,1], transform=[[0],[-1],[0]] ),
+        AffineTransformation( offset=[1,1,1], transform=[[0],[0],[-1]] ),
+        AffineTransformation( offset=[1,0,0], transform=[[0],[1],[0]] ),
+        AffineTransformation( offset=[1,0,0], transform=[[0],[0],[1]] ),
+        AffineTransformation( offset=[0,1,0], transform=[[1],[0],[0]] ),
+        AffineTransformation( offset=[0,1,0], transform=[[0],[0],[1]] ),
+        AffineTransformation( offset=[0,0,1], transform=[[1],[0],[0]] ),
+        AffineTransformation( offset=[0,0,1], transform=[[0],[1],[0]] ) )
+    else:
+      raise NotImplementedError('Ribbons not implemented for ndims=%d'%self.ndims)
+
+    return [ QuadElement( id=self.id+'.ribbon({})'.format(i), ndims=1, context=(self,transform) ) for i, transform in enumerate( transforms )]
 
   def edge( self, iedge ):
     'edge'

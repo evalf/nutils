@@ -346,7 +346,7 @@ def project3d( C ):
   R = numpy.array( [[ sqrt3, 0, -sqrt3 ], [ 1, 2, 1 ], [ sqrt2, -sqrt2, sqrt2 ]] ) / sqrt6
   return numeric.transform( C, R[:,::2], axis=0 )
 
-def writevtu( name, topology, coords, pointdata={}, celldata={}, superelements=False, **kwargs ):
+def writevtu( name, topology, coords, pointdata={}, celldata={}, ascii=False, superelements=False, **kwargs ):
   'write vtu from coords function'
 
   vtupath = util.getpath( name )
@@ -413,7 +413,8 @@ def writevtu( name, topology, coords, pointdata={}, celldata={}, superelements=F
   vtkWriter = vtk.vtkXMLUnstructuredGridWriter()
   vtkWriter.SetInput( vtkMesh )
   vtkWriter.SetFileName( vtupath )
-  vtkWriter.SetDataModeToAscii()
+  if ascii:  
+    vtkWriter.SetDataModeToAscii()
   vtkWriter.Write()
   log.info( os.path.basename(vtupath) )
 
