@@ -330,16 +330,13 @@ class TrimmedElement( Element ):
 
     if not where.any():
       return []
-    elif where.all():
-      return [ self.elem ]
+    #elif where.all():
+    #  return [ self.elem ]
 
-    #if self.ndims == 2:
-    #  lines = [ self.elem.edge( i ) for i in range( 4 ) ]
-    #else:
-    #  faces = [ self.elem.edge( i ) for i in range( 6 ) ]
-    #  lines = [ face.edge(i) for i in range(4) for face in faces ]
-
-    lines = self.elem.ribbons  
+    if where.all():
+	lines = []
+    else:		
+    	lines = self.elem.ribbons  
 
     for line in lines:
       
