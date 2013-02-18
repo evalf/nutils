@@ -197,7 +197,7 @@ class SparseMatrix( Matrix ):
     elif isinstance(cols,numpy.ndarray) and cols.dtype == int:
       pass
     else:
-      raise Excaption, 'invalid column argument'
+      raise Exception, 'invalid column argument'
     ncols = len(cols)
 
     if isinstance(rows,numpy.ndarray) and rows.dtype == bool:
@@ -206,7 +206,7 @@ class SparseMatrix( Matrix ):
     elif isinstance(rows,numpy.ndarray) and rows.dtype == int:
       pass
     else:
-      raise Excaption, 'invalid row argument'
+      raise Exception, 'invalid row argument'
     nrows = len(rows)
 
     indptr = numpy.empty( nrows+1, dtype=int )
