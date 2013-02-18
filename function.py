@@ -2758,8 +2758,8 @@ _isfunc = lambda arg: isinstance( arg, ArrayFunc )
 _isscalar = lambda arg: _asarray(arg).ndim == 0
 _isint = lambda arg: numpy.asarray( arg ).dtype == int
 _issorted = lambda arg: ( numpy.diff(arg) > 0 ).all()
-_iszero = lambda arg: not _isfunc(arg) and numpy.all( numpy.asarray(arg) == 0 )
-_isunit = lambda arg: not _isfunc(arg) and numpy.all( numpy.asarray(arg) == 1 )
+_iszero = lambda arg: not _isfunc(arg) and numeric.allequal( arg, 0 )
+_isunit = lambda arg: not _isfunc(arg) and numeric.allequal( arg, 1 )
 _haspriority = lambda arg: _isfunc(arg) and arg.__priority__
 _subsnonesh = lambda shape: tuple( 1 if sh is None else sh for sh in shape )
 _const = lambda val, *shapes: numeric.appendaxes( val, _subsnonesh( _jointshape(*shapes) ) )
