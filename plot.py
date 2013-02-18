@@ -144,6 +144,9 @@ class Pylab( object ):
   def __init__( self, title, name='graph{0:03x}' ):
     'constructor'
 
+    import matplotlib
+    matplotlib.use( 'Agg', warn=False )
+
     if '.' not in name.format(0):
       imgtype = getattr( prop, 'imagetype', 'png' )
       name += '.' + imgtype
