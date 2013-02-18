@@ -1,4 +1,4 @@
-from . import util, numpy, numeric, log, prop, _
+from . import util, numpy, numeric, log, prop, core, _
 import sys
 
 ELEM   = object()
@@ -117,8 +117,10 @@ class Evaluable( object ):
     label = self.__class__.__name__
     return { 'label': r'\n'.join( [ label ] + args ) }
 
-  def graphviz( self ):
+  def graphviz( self, log=log ):
     'create function graph'
+
+    out = log.debug( 'creating graphviz' )
 
     import os, subprocess
 
@@ -134,7 +136,7 @@ class Evaluable( object ):
     try:
       dot = subprocess.Popen( [dotpath,'-Tjpg'], stdin=subprocess.PIPE, stdout=open(imgpath,'w') )
     except OSError:
-      log.error( 'error: failed to execute', dotpath )
+      out.error( 'error: failed to execute', dotpath )
       return False
 
     print >> dot.stdin, 'digraph {'
@@ -154,7 +156,7 @@ class Evaluable( object ):
     print >> dot.stdin, '}'
     dot.stdin.close()
 
-    return os.path.basename( imgpath )
+    out.info( os.path.basename(imgpath) )
 
   def stackstr( self, values=None ):
     'print stack'
@@ -203,7 +205,7 @@ class Evaluable( object ):
   def __str__( self ):
     'string representation'
 
-    key = str(self.__class__.__name__)
+    key = self.__evalf.__name__
     lines = []
     indent = '\n' + ' ' + ' ' * len(key)
     for it in reversed( self.__args ):
@@ -295,16 +297,12 @@ class ArrayFunc( Evaluable ):
   def sum( self, axes=-1 ):
     'sum'
 
-    axes = _norm_and_sort( self.ndim, axes if _isiterable(axes) else [axes] )
+    axes = list( _norm_and_sort( self.ndim, axes if _isiterable(axes) else [axes] ) )
     if not axes:
       return self
 
-    func = self
-    for ax in reversed( axes ):
-      assert self.shape[ax] == 1, 'cannot sum over axis %d of %s' % ( ax, typee(self) )
-      func = get( func, ax, 0 )
-    return func
-    #return Sum( self, axes )
+    ax = axes.pop()
+    return sum( get( self, ax, 0 ) if self.shape[ax] == 1 else Sum( self, [ax] ), axes )
 
   def normalized( self ):
     'normalize last axis'
@@ -434,11 +432,24 @@ class ArrayFunc( Evaluable ):
 
     return transpose( self, range(self.ndim)[::-1] )
 
-  def __trace__( self, n1=-2, n2=-1 ):
-    'symmetric'
+  def __take__( self, indices, axis ):
+    'take'
 
-    n1, n2 = _norm_and_sort( self.ndim, [n1,n2] )
-    return Trace( self, n1, n2 )
+    axis = _normdim( self.ndim, axis )
+    if self.shape[ axis ] == 1:
+      if isinstance( indices, slice ):
+        assert indices.start == None or indices.start >= 0
+        assert indices.stop != None and indices.stop > 0
+        n = numpy.arange( indices.stop )[indices]
+      else:
+        n = numpy.array( indices, dtype=int )
+        assert numpy.all( n >= 0 )
+      return expand( self, self.shape[:axis] + (len(n),) + self.shape[axis+1:] )
+    n = numpy.arange( self.shape[axis] )[indices]
+    assert len(n) > 0
+    if len(n) == 1:
+      return insert( get( self, axis, n[0] ), axis )
+    return Take( self, indices, axis )
 
   def __takediag__( self, ax1, ax2 ):
     'takediag'
@@ -447,9 +458,6 @@ class ArrayFunc( Evaluable ):
 
     axes = range(ax1) + range(ax1+1,ax2) + range(ax2+1,self.ndim) + [ax1,ax2]
     func = align( self, axes, self.ndim )
-
-    if func.shape[-1] == func.shape[-2] == 1:
-      return get( get( func, -1, 0 ), -1, 0 )
 
     if func.shape[-1] == 1:
       return get( func, -1, 0 )
@@ -707,15 +715,13 @@ class ArrayFunc( Evaluable ):
   def __pow__( self, n ):
     'power'
 
-    n = _asarray( n )
-    assert n.ndim == 0
-
-    if _iszero(n):
-      return _const( 1., self.shape )
-
-    if _isunit(n):
+    assert _isscalar( n )
+    if n == 1:
       return self
-
+    if n == 0:
+      return numpy.ones( self.shape )
+    if n < 0:
+      return reciprocal( self**-n )
     return Power( self, n )
 
   def __graphviz__( self ):
@@ -729,9 +735,17 @@ class ArrayFunc( Evaluable ):
       args['style'] = 'filled'
     return args
 
-  @util.deprecated( old='f.norm2(...)', new='function.norm2(f,...)' )
+  @core.deprecated( old='f.norm2(...)', new='function.norm2(f,...)' )
   def norm2( self, axis=-1 ):
     return norm2( self, axis )
+
+  @core.deprecated( old='f.localgradient(...)', new='function.localgradient(f,...)' )
+  def localgradient( self, ndims ):
+    return localgradient( self, ndims )
+
+  @core.deprecated( old='f.trace(...)', new='function.trace(f,...)' )
+  def trace( self, n1=-2, n2=-1 ):
+    return trace( self, n1=-2, n2=-1 )
 
 class ElemArea( ArrayFunc ):
   'element area'
@@ -1128,8 +1142,10 @@ class Function( ArrayFunc ):
 class Choose( ArrayFunc ):
   'piecewise function'
 
-  def __init__( self, level, choices ):
+  def __init__( self, level, choices, *warnargs ):
     'constructor'
+
+    assert not warnargs, 'ERROR: the Choose object has changed. Please use piecewise instead.'
 
     self.level = level
     self.choices = tuple(choices)
@@ -1220,16 +1236,20 @@ class Concatenate( ArrayFunc ):
   def __init__( self, funcs, axis=0 ):
     'constructor'
 
-    shape = funcs[0].shape
-    axis = _normdim( len(shape), axis )
-    if shape[axis] == None:
-      assert all( f.shape == shape for f in funcs[1:] )
+    funcs = [ _asarray(func) for func in funcs ]
+    ndim = funcs[0].ndim
+    assert all( func.ndim == ndim for func in funcs )
+    axis = _normdim( ndim, axis )
+    lengths = [ func.shape[axis] for func in funcs ]
+    if any( n == None for n in lengths ):
+      assert all( n == None for n in lengths )
+      sh = None
     else:
-      assert all( f.shape[:axis] == shape[:axis] and f.shape[axis+1:] == shape[axis+1:] for f in funcs[1:] )
-      shape = shape[:axis] + ( _sum( f.shape[axis] for f in funcs ), ) + shape[axis+1:]
+      sh = sum( lengths )
+    shape = _jointshape( *[ func.shape[:axis] + (sh,) + func.shape[axis+1:] for func in funcs ] )
     self.funcs = tuple(funcs)
     self.axis = axis
-    ArrayFunc.__init__( self, args=(axis-len(shape),)+self.funcs, evalf=self.concatenate, shape=shape )
+    ArrayFunc.__init__( self, args=(axis-ndim,)+self.funcs, evalf=self.concatenate, shape=shape )
 
   @staticmethod
   def concatenate( iax, *arrays ):
@@ -1310,11 +1330,22 @@ class Concatenate( ArrayFunc ):
     'take diagonal'
 
     ax1, ax2 = _norm_and_sort( self.ndim, [ax1,ax2] )
-    if ax1 != self.axis and ax2 != self.axis:
+    if ax1 == self.axis:
+      axis = ax2
+    elif ax2 == self.axis:
+      axis = ax1
+    else:
       axis = self.axis - (self.axis>ax1) - (self.axis>ax2)
       return concatenate( [ takediag( f, ax1, ax2 ) for f in self.funcs ], axis=axis )
 
-    raise NotImplementedError
+    n0 = 0
+    funcs = []
+    for func in self.funcs:
+      n1 = n0 + func.shape[self.axis]
+      funcs.append( takediag( take( func, slice(n0,n1), axis ), axis, self.axis ) )
+      n0 = n1
+    assert n0 == self.shape[self.axis]
+    return concatenate( funcs, axis=-1 )
 
 class Heaviside( ArrayFunc ):
   'heaviside function'
@@ -1539,6 +1570,12 @@ class Multiply( ArrayFunc ):
     return func1[...,_] * localgradient( func2, ndims ) \
          + func2[...,_] * localgradient( func1, ndims )
 
+  def __takediag__( self, n1=-2, n2=-1 ):
+    'take diagonal'
+
+    func1, func2 = self.funcs
+    return takediag( func1, n1, n2 ) * takediag( func2, n1, n2 )
+
 class Divide( ArrayFunc ):
   'divide'
 
@@ -1562,6 +1599,12 @@ class Divide( ArrayFunc ):
     grad1 = localgradient( func1, ndims )
     grad2 = localgradient( func2, ndims )
     return ( grad1 - func1[...,_] * grad2 / func2[...,_] ) / func2[...,_]
+
+  def __takediag__( self, n1=-2, n2=-1 ):
+    'take diagonal'
+
+    func1, func2 = self.funcs
+    return takediag( func1, n1, n2 ) / takediag( func2, n1, n2 )
 
 class Negate( ArrayFunc ):
   'negate'
@@ -1628,6 +1671,11 @@ class Negate( ArrayFunc ):
 
     return -localgradient( self.func, ndims )
 
+  def __takediag__( self, n1=-2, n2=-1 ):
+    'take diagonal'
+
+    return -takediag( self.func, n1, n2 )
+
 class Add( ArrayFunc ):
   'add'
 
@@ -1681,6 +1729,12 @@ class Add( ArrayFunc ):
     func1, func2 = self.funcs
     return get( func1, i, item ) + get( func2, i, item )
 
+  def __takediag__( self, n1=-2, n2=-1 ):
+    'take diagonal'
+
+    func1, func2 = self.funcs
+    return takediag( func1, n1, n2 ) + takediag( func2, n1, n2 )
+
 class Subtract( ArrayFunc ):
   'subtract'
 
@@ -1690,6 +1744,15 @@ class Subtract( ArrayFunc ):
     shape = _jointshape( func1.shape, func2.shape )
     self.funcs = func1, func2
     ArrayFunc.__init__( self, args=self.funcs, evalf=numpy.subtract, shape=shape )
+
+  def sum( self, axes=-1 ):
+    'sum'
+
+    axes = _norm_and_sort( self.ndim, axes if _isiterable(axes) else [axes] )
+    if not axes:
+      return self
+
+    return sum( self.funcs[0], axes ) - sum( self.funcs[1], axes )
 
   def __neg__( self ):
     'negate'
@@ -1703,6 +1766,12 @@ class Subtract( ArrayFunc ):
     func1, func2 = self.funcs
     return localgradient( func1, ndims ) - localgradient( func2, ndims )
 
+  def __takediag__( self, n1=-2, n2=-1 ):
+    'take diagonal'
+
+    func1, func2 = self.funcs
+    return takediag( func1, n1, n2 ) - takediag( func2, n1, n2 )
+
 class Dot( ArrayFunc ):
   'dot'
 
@@ -1710,9 +1779,10 @@ class Dot( ArrayFunc ):
     'constructor'
 
     shape = _jointshape( func1.shape, func2.shape )
-    axes = _norm_and_sort( len(shape), axes )[::-1]
+    axes = _norm_and_sort( len(shape), axes )
+    assert _issorted( axes ) # strict
     shape = list(shape)
-    for axis in axes:
+    for axis in reversed(axes):
       shape.pop( axis )
 
     self.func1 = func1
@@ -1741,7 +1811,7 @@ class Dot( ArrayFunc ):
 
     i = _normdim( self.ndim, i )
     axes = []
-    for ax in self.axes:
+    for ax in reversed(self.axes): # TODO check if we want reversed here
       if ax <= i:
         i += 1
         axes.append( ax )
@@ -1772,35 +1842,27 @@ class Dot( ArrayFunc ):
 
     return ArrayFunc.__add__( self, other )
 
-class Trace( ArrayFunc ):
-  'trace'
+  def __takediag__( self, n1=-2, n2=-1 ):
+    'take diagonal'
 
-  def __init__( self, func, n1, n2 ):
-    'constructor'
+    n1, n2 = _norm_and_sort( len(self.shape), (n1,n2) )
+    assert n1 < n2 # strict
+    for ax in self.axes: # shift n1 & n2 to original axes
+      if ax <= n1:
+        n1 += 1
+      if ax <= n2:
+        n2 += 1
+    axes = [ ax-(n1<ax)-(n2<ax) for ax in self.axes ]
+    return sum( takediag( self.func1, n1, n2 ) * takediag( self.func2, n1, n2 ), axes )
 
-    assert 0 <= n1 < n2 < func.ndim
-    assert func.shape[n1] == func.shape[n2]
-    shape = func.shape[:n1] + func.shape[n1+1:n2] + func.shape[n2+1:]
-    self.func = func
-    self.axes = n1, n2
-    ArrayFunc.__init__( self, args=(func,n1-func.ndim,n2-func.ndim), evalf=self.trace, shape=shape )
+  def sum( self, axes=-1 ):
+    'sum'
 
-  @staticmethod
-  def trace( arr, ax1, ax2 ):
-    'trace'
-
-    if arr.size == 0: # numpy returns shape () if arr contains zero axis
-      shape = list( arr.shape )
-      shape.pop( ax1 )
-      shape.pop( ax2 )
-      return numpy.zeros( shape )
-    return numpy.trace( arr, 0, ax1, ax2 )
-
-  def __localgradient__( self, ndims ):
-    'local gradient'
-
-    grad = localgradient( self.func, ndims )
-    return Trace( grad, *self.axes )
+    axes = _norm_and_sort( self.ndim, axes if _isiterable(axes) else [axes] )
+    for ax1 in self.axes:
+      axes = [ ax2+(ax2>=ax1) for ax2 in axes ]
+    axes.extend( self.axes )
+    return sum( self.func1 * self.func2, axes )
 
 class Sum( ArrayFunc ):
   'sum'
@@ -1823,21 +1885,6 @@ class Sum( ArrayFunc ):
     for ax in axes:
       arr = sum( arr, ax )
     return arr
-
-class Exp( ArrayFunc ):
-  'exponent'
-
-  def __init__( self, func ):
-    'constructor'
-
-    assert _isfunc( func )
-    self.func = func
-    ArrayFunc.__init__( self, args=[func], evalf=numpy.exp, shape=func.shape )
-
-  def __localgradient__( self, ndims ):
-    'gradient'
-
-    return self * localgradient( self.func, ndims )
 
 class Debug( ArrayFunc ):
   'debug'
@@ -1867,81 +1914,48 @@ class Debug( ArrayFunc ):
 
     return '{DEBUG}'
 
-class Sin( ArrayFunc ):
-  'sine'
+class TakeDiag( ArrayFunc ):
+  'extract diagonal'
 
   def __init__( self, func ):
     'constructor'
 
-    assert _isfunc( func )
-    self.arg = func
-    ArrayFunc.__init__( self, args=[func], evalf=numpy.sin, shape=func.shape )
-
-  def __localgradient__( self, ndims ):
-    'gradient'
-
-    return Cos(self.arg) * localgradient( self.arg, ndims )
-    
-class Cos( ArrayFunc ):
-  'cosine'
-
-  def __init__( self, func ):
-    'constructor'
-
-    assert _isfunc( func )
-    self.arg = func
-    ArrayFunc.__init__( self, args=[func], evalf=numpy.cos, shape=func.shape )
-
-  def __localgradient__( self, ndims ):
-    'gradient'
-
-    return -Sin(self.arg) * localgradient( self.arg, ndims )
-
-class Log( ArrayFunc ):
-  'cosine'
-
-  def __init__( self, func ):
-    'constructor'
-
-    assert _isfunc( func )
+    assert func.shape[-1] == func.shape[-2]
     self.func = func
-    ArrayFunc.__init__( self, args=[func], evalf=numpy.log, shape=func.shape )
+    ArrayFunc.__init__( self, args=[func,-2,-1], evalf=numeric.takediag, shape=func.shape[:-1] )
+
+  def sum( self, axes=-1 ):
+    'sum'
+
+    axes = _norm_and_sort( self.ndim, axes if _isiterable(axes) else [axes] )
+    if not axes:
+      return self
+
+    if axes[-1] == self.ndim-1:
+      return ArrayFunc.sum( takediag( sum( self.func, axes[:-1] ) ) )
+
+    return takediag( sum( self.func, axes ) )
+
+class Take( ArrayFunc ):
+  'generalization of numpy.take(), to accept lists, slices, arrays'
+
+  def __init__( self, func, indices, axis ):
+    'constructor'
+
+    self.func = func
+    self.axis = axis
+    self.indices = indices
+    s = [ slice(None) ] * func.ndim
+    s[axis] = indices
+    newlen, = numpy.empty( func.shape[axis] )[ indices ].shape
+    assert newlen > 0
+    shape = func.shape[:axis] + (newlen,) + func.shape[axis+1:]
+    ArrayFunc.__init__( self, args=(func,(Ellipsis,)+tuple(s)), evalf=numpy.ndarray.__getitem__, shape=shape )
 
   def __localgradient__( self, ndims ):
     'local gradient'
 
-    return localgradient( self.func, ndims ) / self.func
-
-class Arctan2( ArrayFunc ):
-  'arctan2'
-
-  def __init__( self, numer, denom ):
-    'constructor'
-
-    shape = _jointshape( numer.shape, denom.shape )
-    self.numer = numer
-    self.denom = denom
-    ArrayFunc.__init__( self, args=[numer,denom], evalf=numpy.arctan2, shape=shape )
-
-  def __localgradient__( self, ndims ):
-    'local gradient'
-
-    return ( self.denom * localgradient( self.numer, ndims ) - self.numer * localgradient( self.denom, ndims ) ) / ( self.denom**2 + self.numer**2 )
-
-class Greater( ArrayFunc ):
-  'greater'
-
-  def __init__( self, func1, func2 ):
-    'constructor'
-
-    shape = _jointshape( func1.shape, func2.shape )
-    ArrayFunc.__init__( self, args=[func1,func2], evalf=self.greater, shape=shape )
-
-  @staticmethod
-  def greater( A, B ):
-    'greater'
-
-    return numpy.greater( A, B ).astype( int )
+    return take( localgradient( self.func, ndims ), self.indices, self.axis )
 
 class Power( ArrayFunc ):
   'power'
@@ -1950,7 +1964,7 @@ class Power( ArrayFunc ):
     'constructor'
 
     assert _isfunc( func )
-    assert isinstance( power, (int,float,numpy.ndarray) )
+    assert _isscalar( power )
     self.func = func
     self.power = power
     ArrayFunc.__init__( self, args=[func,power], evalf=numpy.power, shape=func.shape )
@@ -1973,48 +1987,27 @@ class Power( ArrayFunc ):
 
     return ArrayFunc.sum( self, axes )
 
-class TakeDiag( ArrayFunc ):
-  'extract diagonal'
+  def __takediag__( self, n1=-2, n2=-1 ):
+    'take diagonal'
 
-  def __init__( self, func ):
+    return takediag( self.func, n1, n2 )**self.power
+
+class Pointwise( ArrayFunc ):
+  'pointwise transformation'
+
+  def __init__( self, args, evalf, deriv ):
     'constructor'
 
-    assert func.shape[-1] == func.shape[-2]
-    self.func = func
-    ArrayFunc.__init__( self, args=[func,-2,-1], evalf=numeric.takediag, shape=func.shape[:-1] )
-
-  def sum( self, axes=-1 ):
-    'sum'
-
-    axes = _norm_and_sort( self.ndim, axes if _isiterable(axes) else [axes] )
-    summed = self
-    for ax in reversed( axes ):
-      if ax == self.ndim-1:
-        summed = trace( self.func )
-      else:
-        summed = takediag( sum( self.func, ax ) )
-    return summed
-
-class Take( ArrayFunc ):
-  'generalization of numpy.take(), to accept lists, slices, arrays'
-
-  def __init__( self, func, indices, axis ):
-    'constructor'
-
-    self.func = func
-    self.axis = axis
-    self.indices = indices
-    s = [ slice(None) ] * func.ndim
-    s[axis] = indices
-    newlen, = numpy.empty( func.shape[axis] )[ indices ].shape
-    assert newlen > 0
-    shape = func.shape[:axis] + (newlen,) + func.shape[axis+1:]
-    ArrayFunc.__init__( self, args=(func,(Ellipsis,)+tuple(s)), evalf=numpy.ndarray.__getitem__, shape=shape )
+    assert _isfunc( args )
+    shape = args.shape[1:]
+    self.args = args
+    self.deriv = deriv
+    ArrayFunc.__init__( self, args=tuple(args), evalf=evalf, shape=shape )
 
   def __localgradient__( self, ndims ):
     'local gradient'
 
-    return take( localgradient( self.func, ndims ), self.indices, self.axis )
+    return ( self.deriv( self.args )[...,_] * localgradient( self.args, ndims ) ).sum( 0 )
 
 # PRIORITY OBJECTS
 #
@@ -2087,7 +2080,7 @@ class Inflate( ArrayFunc ):
     'norm2'
 
     axis = _normdim( self.ndim, axis )
-    blocks = [ ( func.norm2(axis), ind[:axis]+ind[axis+1:] ) for func, ind in self.blocks ]
+    blocks = [ ( norm2( func, axis ), ind[:axis]+ind[axis+1:] ) for func, ind in self.blocks ]
     shape = self.shape[:axis] + self.shape[axis+1:]
     return Inflate( shape, blocks )
 
@@ -2324,17 +2317,18 @@ class Inflate( ArrayFunc ):
       blocks.append(( align( func, axes, ndim ), tuple(transind) ))
     return Inflate( shape, blocks )
 
-  def __trace__( self, n1=-2, n2=-1 ):
+  def __takediag__( self, n1=-2, n2=-1 ):
     'trace'
 
     n1, n2 = _norm_and_sort( len(self.shape), (n1,n2) )
     assert n1 < n2 # strict
-    assert self.shape[n1] == self.shape[n2]
-    shape = self.shape[:n1] + self.shape[n1+1:n2] + self.shape[n2+1:]
+    sh = self.shape[n1]
+    assert self.shape[n2] == sh
+    shape = self.shape[:n1] + self.shape[n1+1:n2] + self.shape[n2+1:] + (sh,)
     blocks = []
     for func, ind in self.blocks:
-      traceind = ind[:n1] + ind[n1+1:n2] + ind[n2+1:]
-      blocks.append(( trace( func, n1, n2 ), tuple(traceind) ))
+      traceind = ind[:n1] + ind[n1+1:n2] + ind[n2+1:] + (slice(None),)
+      blocks.append(( takediag( func, n1, n2 ), tuple(traceind) ))
     return Inflate( shape, blocks )
 
 class Diagonalize( ArrayFunc ):
@@ -2450,11 +2444,11 @@ class Kronecker( ArrayFunc ):
   def __init__( self, funcs, axis ):
     'constructor'
 
+    shape = _jointshape( *[ func.shape for func in funcs if func is not None ] )
+    axis = _normdim( len(shape)+1, axis )
+    shape = shape[:axis] + (len(funcs),) + shape[axis:]
     self.funcs = tuple(funcs)
     self.axis = axis
-    shape, = set( func.shape for func in funcs if func is not None )
-    shape = shape[:axis] + (len(funcs),) + shape[axis:]
-    assert 0 <= axis < len(shape)
     ArrayFunc.__init__( self, args=[self.axis-len(shape)]+list(funcs), evalf=self.kronecker, shape=shape )
 
   @staticmethod
@@ -2472,7 +2466,7 @@ class Kronecker( ArrayFunc ):
         array[tuple(s)] = func
     return array
 
-  def __trace__( self, n1=-2, n2=-1 ):
+  def __takediag__( self, n1=-2, n2=-1 ):
     'trace'
 
     n1, n2 = _norm_and_sort( len(self.shape), (n1,n2) )
@@ -2482,13 +2476,9 @@ class Kronecker( ArrayFunc ):
     elif n2 == self.axis:
       n = n1
     else:
-      return ArrayFunc.__trace__( self, n1, n2 )
+      return ArrayFunc.__takediag__( self, n1, n2 )
 
-    retval = 0
-    for ifun, func in enumerate( self.funcs ):
-      if func:
-        retval += get( func, n2-1, ifun )
-    return retval
+    return Kronecker( [ func and get(func,n,ifun) for ifun, func in enumerate(self.funcs) ], axis=-1 )
 
   def __localgradient__( self, ndims ):
     'local gradient'
@@ -2679,11 +2669,6 @@ class Expand( ArrayFunc ):
 
 # AUXILIARY FUNCTIONS
 
-def _call( finityfunc, numpyfunc, *args ):
-  'call finity or numpy function'
-
-  return finityfunc( *_matchndim( *args ) ) if any( _isfunc(arg) for arg in args ) else numpyfunc( *args )
-
 def _normdim( ndim, n ):
   'check bounds and make positive'
 
@@ -2763,8 +2748,8 @@ _isfunc = lambda arg: isinstance( arg, ArrayFunc )
 _isscalar = lambda arg: _asarray(arg).ndim == 0
 _isint = lambda arg: numpy.asarray( arg ).dtype == int
 _issorted = lambda arg: ( numpy.diff(arg) > 0 ).all()
-_iszero = lambda arg: not _isfunc(arg) and ( numpy.asarray(arg) == 0 ).all()
-_isunit = lambda arg: not _isfunc(arg) and ( numpy.asarray(arg) == 1 ).all()
+_iszero = lambda arg: not _isfunc(arg) and numpy.all( numpy.asarray(arg) == 0 )
+_isunit = lambda arg: not _isfunc(arg) and numpy.all( numpy.asarray(arg) == 1 )
 _haspriority = lambda arg: _isfunc(arg) and arg.__priority__
 _subsnonesh = lambda shape: tuple( 1 if sh is None else sh for sh in shape )
 _const = lambda val, *shapes: numeric.appendaxes( val, _subsnonesh( _jointshape(*shapes) ) )
@@ -2792,24 +2777,18 @@ def _asarray( arg ):
   
   if _isfunc(arg):
     return arg
+  if isinstance( arg, (list,tuple) ) and any( _isfunc(f) for f in arg ):
+    return stack( arg, axis=0 )
   arg = numpy.asarray( arg )
   assert arg.dtype != object
   return arg
 
 # FUNCTIONS
 
-def log( arg, base=numpy.e ):
-  'log'
-
-  assert _isscalar( base )
-  val = _call( Log, numpy.log, arg )
-  if base is not numpy.e:
-    val /= _call( Log, numpy.log, base )
-  return val
-
 def insert( arg, n ):
   'insert axis'
 
+  arg = _asarray( arg )
   n = _normdim( arg.ndim+1, n )
   I = numpy.arange( arg.ndim )
   return align( arg, I + (I>=n), arg.ndim+1 )
@@ -2889,6 +2868,7 @@ def align( arg, axes, ndim ):
 def reciprocal( arg ):
   'reciprocal'
 
+  arg = _asarray( arg )
   if _isfunc( arg ):
     return arg.__reciprocal__()
   return numpy.reciprocal( arg )
@@ -2972,6 +2952,7 @@ def localgradient( arg, ndims ):
   if _isfunc( arg ):
     lgrad = arg.__localgradient__( ndims )
   else:
+    arg = _asarray( arg )
     lgrad = _const( 0., arg.shape + (ndims,) )
   assert lgrad.ndim == arg.ndim + 1 and lgrad.shape[-1] == ndims \
      and all( sh2 == sh1 or sh1 is None and sh2 == 1 for sh1, sh2 in zip( arg.shape, lgrad.shape[:-1] ) ), \
@@ -2981,7 +2962,7 @@ def localgradient( arg, ndims ):
 def dotnorm( arg, coords, ndims=0 ):
   'normal component'
 
-  return ( arg * coords.normal( ndims-1 ) ).sum()
+  return sum( arg * coords.normal( ndims-1 ) )
 
 def kronecker( arg, axis, length, pos ):
   'kronecker'
@@ -2993,13 +2974,6 @@ def kronecker( arg, axis, length, pos ):
   s = (slice(None),)*axis + (pos,)
   newarr[s] = arg
   return newarr
-
-def trace( arg, n1=-2, n2=-1 ):
-  'trace'
-
-  if _isfunc( arg ):
-    return arg.__trace__( n1, n2 )
-  return numpy.trace( arg, axis1=n1, axis2=n2 )
 
 def diagonalize( arg, n1, n2 ):
   'diagonalize'
@@ -3045,55 +3019,104 @@ def cross( arg1, arg2, axis ):
     return -arg2.__cross__(arg1,axis)
   return numeric.cross(arg1,arg2,axis)
 
-exp = lambda arg: _call( Exp, numpy.exp, arg )
-sin = lambda arg: _call( Sin, numpy.sin, arg )
-cos = lambda arg: _call( Cos, numpy.cos, arg )
+def pointwise( args, evalf, deriv ):
+  'general pointwise operation'
+
+  if any( _isfunc(arg) for arg in args ):
+    return Pointwise( _asarray(args), evalf, deriv )
+  return evalf( *args )
+
+def log( arg, base=numpy.e ):
+  'log'
+
+  assert _isscalar( base )
+  val = pointwise( [arg], numpy.log, reciprocal )
+  if base is not numpy.e:
+    val /= pointwise( [base], numpy.log, reciprocal )
+  return val
+
+sin = lambda arg: pointwise( [arg], numpy.sin, cos )
+cos = lambda arg: pointwise( [arg], numpy.cos, lambda x: -sin(x) )
+exp = lambda arg: pointwise( [arg], numpy.exp, exp )
 log2 = lambda arg: log( arg, base=2 )
 log10 = lambda arg: log( arg, base=10 )
-arctan2 = lambda numer, denom: _call( Arctan2, numpy.arctan2, numer, denom )
-power = lambda arg, pow: _call( Power, numpy.power, arg, pow )
-which_interval = lambda arg, intervals: util.sum( greater( arg, n ) for n in intervals )
-greater = lambda arg1, arg2: _call( Greater, numpy.greater, arg1, arg2 )
+power = lambda arg, power: _asarray( arg )**power
+arctan2 = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.arctan2, lambda x: stack([x[1],-x[0]]) / sum(power(x,2),0) )
+greater = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.greater, lambda x: numpy.zeros_like(x) )
+less = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.less, lambda x: numpy.zeros_like(x) )
 min = lambda arg1, arg2: choose( greater( arg1, arg2 ), [ arg1, arg2 ] )
 max = lambda arg1, arg2: choose( greater( arg1, arg2 ), [ arg2, arg1 ] )
-abs = lambda arg: Choose( greater( arg, 0 ), -arg, arg )
+abs = lambda arg: choose( greater( arg, 0 ), -arg, arg )
 sinh = lambda arg: .5 * ( exp(arg) - exp(-arg) )
 cosh = lambda arg: .5 * ( exp(arg) + exp(-arg) )
 tanh = lambda arg: 1 - 2. / ( exp(2*arg) + 1 )
 arctanh = lambda arg: .5 * ( log(1+arg) - log(1-arg) )
-piecewise = lambda level, intervals, *funcs: choose( which_interval( level, intervals ), funcs )
+piecewise = lambda level, intervals, *funcs: choose( sum( greater( insert(level,-1), intervals ) ), funcs )
+trace = lambda arg, n1=-2, n2=-1: sum( takediag( arg, n1, n2 ) )
 
 def take( arg, indices, axis ):
   if _isfunc( arg ):
-    return Take( arg, indices, axis )
+    return arg.__take__( indices, axis )
   return numpy.take( arg, indices, axis )
 
-@util.deprecated( old='Chain', new='chain' )
+@core.deprecated( old='Chain', new='chain' )
 def Chain( funcs ):
   return chain( funcs )
 
-@util.deprecated( old='Vectorize', new='vectorize' )
+@core.deprecated( old='Vectorize', new='vectorize' )
 def Vectorize( funcs ):
   return vectorize( funcs )
 
-@util.deprecated( old='Tan', new='tan' )
+@core.deprecated( old='Tan', new='tan' )
 def Tan( func ):
   return tan( func )
 
-@util.deprecated( old='Sinh', new='sinh' )
+@core.deprecated( old='Sinh', new='sinh' )
 def Sinh( func ):
   return sinh( func )
 
-@util.deprecated( old='Cosh', new='cosh' )
+@core.deprecated( old='Cosh', new='cosh' )
 def Cosh( func ):
   return cosh( func )
 
-@util.deprecated( old='Tanh', new='tanh' )
+@core.deprecated( old='Tanh', new='tanh' )
 def Tanh( func ):
   return tanh( func )
 
-@util.deprecated( old='Arctanh', new='arctanh' )
+@core.deprecated( old='Arctanh', new='arctanh' )
 def Arctanh( func ):
   return arctanh( func )
+
+@core.deprecated( old='StaticArray(arg)', new='arg' )
+def StaticArray( arg ):
+  return arg
+
+@core.deprecated( old='Stack', new='stack' )
+def Stack( arg ):
+  return stack( arg )
+
+@core.deprecated( old='Log', new='log' )
+def Log( arg ):
+  return log( arg )
+
+@core.deprecated( old='Arctan2', new='arctan2' )
+def Arctan2( arg1, arg2 ):
+  return arctan2( arg1, arg2 )
+
+@core.deprecated( old='Min', new='min' )
+def Min( arg1, arg2 ):
+  return min( arg1, arg2 )
+
+@core.deprecated( old='Max', new='max' )
+def Max( arg1, arg2 ):
+  return max( arg1, arg2 )
+
+@core.deprecated( old='Log10', new='log10' )
+def Log10( arg ):
+  return log10( arg )
+
+@core.deprecated( old='Log2', new='log2' )
+def Log2( arg ):
+  return log2( arg )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

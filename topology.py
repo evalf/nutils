@@ -36,11 +36,10 @@ class Topology( object ):
     items = ( self.groups[it] for it in item.split( ',' ) )
     return sum( items, items.next() )
 
-  def elem_eval( self, funcs, ischeme, stack=False, title='evaluating' ):
+  def elem_eval( self, funcs, ischeme, stack=False, title='evaluating', log=log ):
     'element-wise evaluation'
 
-    pbar = log.ProgressBar( self, title=title )
-    pbar.add( '[#%d]' % len(self) )
+    out = log.debug( title )
 
     single_arg = not isinstance(funcs,list)
     if single_arg:
@@ -54,13 +53,9 @@ class Topology( object ):
       idata.append( func )
       retvals.append( numpy.empty( len(self), dtype=object ) )
     idata = function.Tuple( idata )
+    idata.graphviz( log=out )
 
-    if pbar.out:
-      name = idata.graphviz()
-      if name:
-        pbar.add( name )
-
-    for ielem, elem in enumerate( pbar ):
+    for ielem, elem in out.enumerate( 'element', self ):
       for retval, data in zip( retvals, idata( elem, ischeme ) ):
         retval[ielem] = data
 
@@ -81,15 +76,16 @@ class Topology( object ):
         assert ptr == newretval.shape[0]
         stacked.append( newretval )
       retvals = stacked
+    out.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
     if single_arg:
       retvals, = retvals
+
     return retvals
 
-  def elem_mean( self, funcs, coords, ischeme, title='computing mean values' ):
+  def elem_mean( self, funcs, coords, ischeme, title='computing mean values', log=log ):
     'element-wise integration'
 
-    pbar = log.ProgressBar( self, title=title )
-    pbar.add( '[#%d]' % len(self) )
+    out = log.debug( title )
 
     single_arg = not isinstance(funcs,list)
     if single_arg:
@@ -104,27 +100,24 @@ class Topology( object ):
       idata.append( function.elemint( func, iweights ) )
       retvals.append( numpy.empty( (len(self),)+func.shape ) )
     idata = function.Tuple( idata )
+    idata.graphviz( log=out )
 
-    if pbar.out:
-      name = idata.graphviz()
-      if name:
-        pbar.add( name )
-
-    for ielem, elem in enumerate( pbar ):
+    for ielem, elem in out.enumerate( 'element', self ):
       area_data = idata( elem, ischeme )
       area = area_data[0].sum()
       for retval, data in zip( retvals, area_data[1:] ):
         retval[ielem] = data / area
 
+    out.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
     if single_arg:
       retvals, = retvals
+
     return retvals
 
-  def grid_eval( self, funcs, coords, C, title='grid-evaluating' ):
+  def grid_eval( self, funcs, coords, C, title='grid-evaluating', log=log ):
     'evaluate grid points'
 
-    pbar = log.ProgressBar( self, title=title )
-    pbar.add( '[#%d]' % len(self) )
+    out = log.debug( title )
 
     single_arg = not isinstance(funcs,list)
     if single_arg:
@@ -142,22 +135,23 @@ class Topology( object ):
 
     data = function.Tuple([ function.Tuple([ func, retval ]) for func, retval in zip( funcs, retvals ) ])
 
-    for elem in pbar:
+    for elem in out.iter( 'element', self ):
       points, selection = coords.find( elem, C.T )
       if selection is not None:
         for func, retval in data( elem, points ):
           retval[selection] = func
 
     retvals = [ retval.reshape( shape[1:] + func.shape ) for func, retval in zip( funcs, retvals ) ]
+    out.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
     if single_arg:
       retvals, = retvals
+
     return retvals
 
-  def integrate( self, funcs, ischeme, coords=None, iweights=None, title='integrating' ):
+  def integrate( self, funcs, ischeme, coords=None, iweights=None, title='integrating', log=log ):
     'integrate'
 
-    pbar = log.ProgressBar( self, title=title )
-    pbar.add( '[#%d]' % len(self) )
+    out = log.debug( title )
 
     single_arg = not isinstance(funcs,list)
     if single_arg:
@@ -194,18 +188,16 @@ class Topology( object ):
           integrands.append( function.Tuple([ ifunc, (), function.elemint( func, iweights ) ]) )
       retvals.append( A )
     idata = function.Tuple( integrands )
+    idata.graphviz( log=out )
 
-    if pbar.out:
-      name = idata.graphviz()
-      if name:
-        pbar.add( name )
-
-    for elem in pbar:
+    for elem in out.iter( 'element', self ):
       for ifunc, index, data in idata( elem, ischeme ):
         retvals[ifunc][index] += data
 
+    out.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
     if single_arg:
       retvals, = retvals
+
     return retvals
 
   def projection( self, fun, onto, coords, **kwargs ):
@@ -214,12 +206,14 @@ class Topology( object ):
     weights = self.project( fun, onto, coords, **kwargs )
     return onto.dot( weights )
 
-  def project( self, fun, onto, coords, tol=0, ischeme='gauss8', title='projecting', droptol=1e-8, exact_boundaries=False, constrain=None, verify=None, maxiter=9999999999 ):
+  def project( self, fun, onto, coords, tol=0, ischeme='gauss8', title='projecting', droptol=1e-8, exact_boundaries=False, constrain=None, verify=None, maxiter=0, log=log ):
     'L2 projection of function onto function space'
+
+    out = log.debug( title )
 
     if exact_boundaries:
       assert constrain is None
-      constrain = self.boundary.project( fun, onto, coords, title=title+' boundaries', ischeme=ischeme, tol=tol, droptol=droptol )
+      constrain = self.boundary.project( fun, onto, coords, title='boundaries', ischeme=ischeme, tol=tol, droptol=droptol, log=out )
     elif constrain is None:
       constrain = util.NanVec( onto.shape[0] )
     else:
@@ -234,17 +228,19 @@ class Topology( object ):
       bfun = function.sum( onto * fun )
     else:
       raise Exception
-    A, b = self.integrate( [Afun,bfun], coords=coords, ischeme=ischeme, title=title )
+    A, b = self.integrate( [Afun,bfun], coords=coords, ischeme=ischeme, title='building system', log=out )
     supp = A.rowsupp( droptol ) & numpy.isnan( constrain )
+    numcons = (~supp).sum()
     if verify is not None:
-      numcons = (~supp).sum()
       assert numcons == verify, 'number of constraints does not meet expectation: %d != %d' % ( numcons, verify )
     constrain[supp] = 0
     if numpy.all( b == 0 ):
       u = constrain | 0
     else:
-      u = A.solve( b, constrain, tol=tol, title=title, symmetric=True, maxiter=maxiter )
+      u = A.solve( b, constrain, tol=tol, symmetric=True, maxiter=maxiter, log=out )
     u[supp] = numpy.nan
+
+    out.info( 'contrained %d/%d dofs' % ( numcons, b.size ) )
     return u.view( util.NanVec )
 
 # def trim( self, levelset, maxrefine, lscheme='bezier3' ):
@@ -278,10 +274,11 @@ class Topology( object ):
 
 #   return IndexedTopology( self, select=select )
 
-  def refinedfunc( self, dofaxis, refine, degree, title='refining' ):
+  def refinedfunc( self, dofaxis, refine, degree, title='refining', log=log ):
     'create refined space by refining dofs in existing one'
 
-    pbar = log.ProgressBar( None, title )
+    out = log.debug( title )
+
     refine = set(refine) # make unique and equip with set operations
   
     # initialize
@@ -314,16 +311,14 @@ class Topology( object ):
     if refined: # last considered level contained refinements
       nrefine += 1 # this raises the total level to nrefine + 1
 
-    pbar.setmax( len(topoelems) + len(parentelems) )
-  
     # initialize
     dofmap = {} # IEN mapping of new function object
     stdmap = {} # shape function mapping of new function object, plus boolean vector indicating which shapes to retain
     ndofs = 0 # total number of dofs of new function object
   
     topo = self # topology to examine in next level refinement
-    for irefine in range( nrefine ):
-      pbar.write( irefine )
+    out2 = out.iter( 'level', range( nrefine ) )
+    for irefine in out2:
   
       funcsp = topo.splinefunc( degree ) # shape functions for level irefine
       func, (dofaxis,) = funcsp.get_func_ind() # separate elem-local funcs and global placement index
@@ -331,20 +326,17 @@ class Topology( object ):
       supported = numpy.ones( funcsp.shape[0], dtype=bool ) # True if dof is contained in topoelems or parentelems
       touchtopo = numpy.zeros( funcsp.shape[0], dtype=bool ) # True if dof touches at least one topoelem
       myelems = [] # all top-level or parent elements in level irefine
-      for elem, idofs in dofaxis.dofmap.iteritems():
+      for elem, idofs in out2.iter( 'element', dofaxis.dofmap.items() ):
         if elem in topoelems:
-          pbar.update()
           touchtopo[idofs] = True
           myelems.append( elem )
         elif elem in parentelems:
-          pbar.update()
           myelems.append( elem )
         else:
           supported[idofs] = False
   
       keep = numpy.logical_and( supported, touchtopo ) # THE refinement law
       if keep.all() and irefine == nrefine - 1:
-        pbar.close()
         return topo, funcsp
   
       for elem in myelems: # loop over all top-level or parent elements in level irefine
@@ -391,7 +383,6 @@ class Topology( object ):
     domain.boundary = UnstructuredTopology( allbelems, ndims=self.ndims-1 )
     domain.boundary.groups = dict( ( tag, UnstructuredTopology( group, ndims=self.ndims-1 ) ) for tag, group in bgroups.items() )
   
-    pbar.close()
     return domain, funcsp
 
   def refine( self, n ):
@@ -399,10 +390,10 @@ class Topology( object ):
 
     return self if n <= 0 else self.refined.refine( n-1 )
 
-  def get_simplices( self, title='Getting simplices', **kwargs ):
+  def get_simplices( self, title='getting simplices', log=log, **kwargs ):
     'Getting simplices'
 
-    return [simplex for elem in log.ProgressBar( self, title=title ) for simplex in elem.get_simplices( **kwargs )]
+    return [ simplex for elem in log.iter( title, self ) for simplex in elem.get_simplices( **kwargs ) ]
 
 class StructuredTopology( Topology ):
   'structured topology'
@@ -648,19 +639,12 @@ class StructuredTopology( Topology ):
 
     return StructuredTopology( structure )
 
-  def trim( self, levelset, maxrefine, lscheme='bezier3', finestscheme='uniform2', evalrefine=0, title='trimming' ):
+  def trim( self, levelset, maxrefine, lscheme='bezier3', finestscheme='uniform2', evalrefine=0, title='trimming', log=log ):
     'trim element along levelset'
 
-    pbar = log.ProgressBar( self.structure.size, title )
-    def trimelem( elem ):
-      pbar.update()
-      return elem.trim( levelset=levelset, maxrefine=maxrefine, lscheme=lscheme, finestscheme=finestscheme, evalrefine=evalrefine )
-    trimmedstructure = util.objmap( trimelem, self.structure )
-    pbar.close()
+    trimmedelems = [ elem.trim( levelset=levelset, maxrefine=maxrefine, lscheme=lscheme, finestscheme=finestscheme, evalrefine=evalrefine ) for elem in log.iter( title, self.structure.ravel() ) ]
+    trimmedstructure = numpy.array( trimmedelems ).reshape( self.structure.shape )
     return StructuredTopology( trimmedstructure, periodic=self.periodic )
-
-#   elems = filter( None, [ elem.trim( levelset=levelset, maxrefine=maxrefine, lscheme=lscheme, finestscheme=finestscheme, evalrefine=evalrefine ) for elem in log.ProgressBar( self, title ) ] )
-#   return IndexedTopology( self, elems )
 
   def __str__( self ):
     'string representation'

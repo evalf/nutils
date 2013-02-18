@@ -1,6 +1,5 @@
 from . import topology, util, numpy, function, element, log, prop, numeric, _
-import os, matplotlib
-matplotlib.use( 'Agg' )
+import os
 
 class PyPlot( object ):
   'matplotlib figure'
@@ -8,43 +7,48 @@ class PyPlot( object ):
   def __init__( self, name, imgtype=None, ndigits=3 ):
     'constructor'
 
+    import matplotlib
+    matplotlib.use( 'Agg', warn=False )
+
+    self.out = log.debug( 'plotting' )
+
     assert isinstance(ndigits,int) and ndigits >= 0, 'positive integer required'
-    self.name = name
-    self.ndigits = ndigits
     self.imgtype = getattr( prop, 'imagetype', 'png' ) if imgtype is None else imgtype
 
-  def __enter__( self ):
-    'enter with block'
-
-    log.info( 'plotting .. ', end='' )
-    return PyPlotModule()
-
-  def __exit__( self, exc, msg, tb ):
-    'exit with block'
-
-    if exc:
-      log.error( 'ERROR: plot failed:', msg or exc )
-      return #True
-
-    log.info( 'saving .. ', end='' )
     dumpdir = prop.dumpdir
-    if self.ndigits == 0:
-      imgname = self.name + '.' + self.imgtype
+    if ndigits == 0:
+      imgname = name + '.' + self.imgtype
     else:
-      fmt = self.name + '%%0%dd' % self.ndigits + '.' + self.imgtype
+      fmt = name + '%%0%dd' % ndigits + '.' + self.imgtype
       n = 1
       while True:
         imgname = fmt % n
         if not os.path.isfile( dumpdir + imgname ):
           break
         n += 1
-    
+
+    self.imgfile = open( dumpdir + imgname, 'w' ) # claim filename
+
+  def __enter__( self ):
+    'enter with block'
+
+    self.out.debug( 'drawing' )
+    return PyPlotModule()
+
+  def __exit__( self, exc, msg, tb ):
+    'exit with block'
+
+    if exc:
+      self.out.error( 'ERROR: plot failed:', msg or exc )
+      return #True
+
+    self.out.debug( 'saving' )
     from matplotlib import pyplot
     dumpdir = prop.dumpdir
-    pyplot.savefig( dumpdir + imgname, format=self.imgtype )
-    os.chmod( dumpdir + imgname, 0644 )
+    pyplot.savefig( self.imgfile, format=self.imgtype )
+    #os.chmod( dumpdir + imgname, 0644 )
     pyplot.close()
-    log.info( imgname )
+    self.out.info( '%s [%dkb]' % ( os.path.basename(self.imgfile.name), self.imgfile.tell()//1024 ) )
 
 class PyPlotModule( object ):
   'pyplot wrapper'
@@ -171,7 +175,7 @@ class Pylab( object ):
       log.error( 'ERROR: plot failed:', msg or exc )
       return #True
 
-    log.info( 'saving image...', end='' )
+    out = log.debug( 'saving image' )
     from matplotlib import pyplot
     dumpdir = prop.dumpdir
     n = len( os.listdir( dumpdir ) )
@@ -179,7 +183,7 @@ class Pylab( object ):
     pyplot.savefig( imgpath, format=imgpath.split('.')[-1] )
     os.chmod( imgpath, 0644 )
     pyplot.close()
-    log.info( os.path.basename(imgpath) )
+    out.info( os.path.basename(imgpath) )
 
 class PylabAxis( object ):
   'matplotlib axis augmented with finity-specific functions'
@@ -199,7 +203,8 @@ class PylabAxis( object ):
   def add_mesh( self, coords, topology, deform=0, color=None, edgecolors='none', linewidth=1, xmargin=0, ymargin=0, aspect='equal', cbar='vertical', title=None, ischeme='gauss2', cscheme='contour3', clim=None, frame=True, colormap=None ):
     'plot mesh'
   
-    pbar = log.ProgressBar( topology, title='plotting mesh' )
+    out = log.debug( 'plotting mesh' )
+
     assert topology.ndims == 2
     from matplotlib import pyplot, collections
     poly = []
@@ -210,7 +215,7 @@ class PylabAxis( object ):
       assert color.ndim == 0
       color = function.Tuple([ color, coords.iweights(ndims=2) ])
     plotcoords = coords + deform
-    for elem in pbar:
+    for elem in out.iter( 'element', topology ):
       C = plotcoords( elem, cscheme )
       if ndims == 3:
         C = project3d( C )
@@ -300,7 +305,7 @@ class PylabAxis( object ):
 
     special_args = zip( *[ zip( [key]*nfun, val ) for (key,val) in kwargs.iteritems() if isinstance(val,list) and len(val) == nfun ] )
     XYD = [ ([],[],dict(d)) for d in special_args or [[]] * nfun ]
-    xypairs = Tuple( [ Tuple(v) for v in zip( xfun, yfun, XYD ) ] )
+    xypairs = function.Tuple( [ function.Tuple(v) for v in zip( xfun, yfun, XYD ) ] )
 
     for elem in topology:
       for x, y, xyd in xypairs( elem, sample ):
@@ -351,10 +356,12 @@ def writevtu( name, topology, coords, pointdata={}, celldata={}, ascii=False, su
 
   vtupath = util.getpath( name )
 
+  out = log.debug( 'generating vtu' )
+
   if not superelements:
-    pbar = log.ProgressBar(topology.get_simplices( **kwargs ), title='preparing vtk data' )
+    elements = topology.get_simplices( log=out, **kwargs )
   else:
-    pbar = log.ProgressBar(filter(None,[elem if not isinstance(elem,element.TrimmedElement) else elem.elem for elem in topology]), title='preparing vtk data' )
+    elements = filter(None,[elem if not isinstance(elem,element.TrimmedElement) else elem.elem for elem in topology])
 
   import vtk
   vtkPoints = vtk.vtkPoints()
@@ -382,8 +389,7 @@ def writevtu( name, topology, coords, pointdata={}, celldata={}, ascii=False, su
     celldata_arrays.append( function.Tuple([ array, func, coords.iweights(topology.ndims) ]) )
     vtkMesh.GetCellData().AddArray( array )
   celldatafun = function.Tuple( celldata_arrays )
-  for elem in pbar:
-
+  for elem in out.iter( 'element', elements ):
     if isinstance( elem, element.TriangularElement ):
       vtkelem = vtk.vtkTriangle()
     elif isinstance( elem, element.QuadElement ) and elem.ndims == 2:

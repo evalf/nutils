@@ -130,25 +130,29 @@ def appendaxes( A, shape ):
   return numpy.lib.stride_tricks.as_strided( A, A.shape + shape, A.strides + (0,)*len(shape) )
 
 def takediag( A, ax1, ax2 ):
-  shape = list(A.shape)
   if ax1 < 0:
     ax1 += A.ndim
   if ax2 < 0:
     ax2 += A.ndim
   ax1, ax2 = sorted( [ax1,ax2] )
   assert 0 <= ax1 < ax2 < A.ndim
-  n1 = shape.pop(ax2)
-  n2 = shape.pop(ax1)
+  shape = list(A.shape)
+  n2 = shape.pop(ax2)
+  n1 = shape.pop(ax1)
+  strides = list(A.strides)
+  s2 = strides.pop(ax2)
+  s1 = strides.pop(ax1)
   if n1 == 1:
     n = n2
-  else:
+    s = s2
+  elif n2 == 1:
     n = n1
-    if n2 != 1:
-      assert n1 == n2
+    s = s1
+  else:
+    assert n1 == n2
+    n = n1
+    s = s1 + s2
   shape.append( n )
-  strides = list(A.strides)
-  s = strides.pop(ax2)
-  s += strides.pop(ax1)
   strides.append( s )
   return numpy.lib.stride_tricks.as_strided( A, shape, strides )
 

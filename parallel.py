@@ -1,5 +1,20 @@
 from . import prop
 from multiprocessing import Lock, cpu_count
+import os
+
+def fork( func, nice=19 ):
+  'fork and run (return value is lost)'
+
+  def wrapped( *args, **kwargs ):
+    pid = os.fork()
+    if pid:
+      return pid
+    try:
+      os.nice( nice )
+      func( *args, **kwargs )
+    finally:
+      os._exit( 0 )
+  return wrapped
 
 def shzeros( shape, dtype=float ):
   'create zero-initialized array in shared memory'

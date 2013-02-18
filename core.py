@@ -1,5 +1,24 @@
 import sys, weakref
 
+def deprecated( old, new=None ):
+  'deprecation warning decorator'
+
+  msg = 'WARNING: %s is deprecated and will be removed.' % old
+  if new:
+    msg += '\n         Please use %s instead.' % new
+  msg += '\n         In: '
+  seen = []
+  def decorator( func ):
+    def wrapfunc( *args, **kwargs ):
+      frame = sys._getframe(1)
+      where = '%s:%d' % ( frame.f_code.co_filename, frame.f_lineno )
+      if where not in seen:
+        print msg + where
+        seen.append( where )
+      return func( *args, **kwargs )
+    return wrapfunc
+  return decorator
+
 def weakcacheprop( func ):
   'weakly cached property'
 

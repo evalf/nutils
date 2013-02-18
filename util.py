@@ -1,33 +1,6 @@
 from . import log, prop
 import sys, os, time, numpy, cPickle, hashlib, weakref, traceback
 
-def fork( func ):
-  'fork and run (return value is lost)'
-
-  def wrapped( *args, **kwargs ):
-    pid = os.fork()
-    if pid:
-      return pid
-    try:
-      func( *args, **kwargs )
-    finally:
-      os._exit( 0 )
-  return wrapped
-
-def deprecated( old, new=None ):
-  msg = 'WARNING: %s is deprecated and will be removed.' % old
-  if new:
-    msg += '\n         Please use %s instead.' % new
-  firsttime = numpy.array( True )
-  def decorator( func ):
-    def wrapfunc( *args, **kwargs ):
-      if firsttime:
-        log.warning( msg )
-        firsttime[...] = False
-      return func( *args, **kwargs )
-    return wrapfunc
-  return decorator
-
 class _SuppressedOutput( object ):
   'suppress all output by redirection to /dev/null'
 
@@ -148,7 +121,7 @@ def iterate( nmax=-1, verbose=True ):
   while True:
     i += 1
     if verbose:
-      log.progress( 'iteration %d' % i )
+      log.info( 'iteration %d' % i )
     yield i
     if i == nmax:
       break
@@ -360,7 +333,7 @@ def run( *functions ):
       open( outdir + filename, 'w' ).write( open( logpath + filename, 'r' ).read() )
 
   prop.dumpdir = dumpdir
-  prop.html = log.HtmlWriter( scriptname + time.strftime( ' %Y/%m/%d %H:%M:%S', localtime ), dumpdir + 'log.html' )
+  html = prop.html = log.HtmlWriter( scriptname + time.strftime( ' %Y/%m/%d %H:%M:%S', localtime ), dumpdir + 'log.html' )
 
   print >> open( outdir+'log.html', 'w' ), '<meta http-equiv="refresh" content="0;URL={}/log.html">'.format( scriptname )
   print >> open( basedir+'log.html', 'w' ), '<meta http-equiv="refresh" content="0;URL={}log.html">'.format( timepath )
@@ -369,14 +342,14 @@ def run( *functions ):
 
   commandline = [ ' '.join([ scriptname, funcname ]) ] + [ '  --%s=%s' % item for item in kwargs.items() ]
 
-  log.info( ' \\\n'.join( commandline ), end='\n\n' )
-  log.info( 'start %s\n' % time.ctime() )
+  html.write( ' \\\n'.join( commandline ) + '\n\n' )
+  html.write( 'start %s\n\n' % time.ctime() )
 
   t0 = time.time()
   try:
     func( **kwargs )
-  except:
-    log.error( traceback.format_exc(), end='' )
+  except AssertionError:
+    log.error( traceback.format_exc() )
 
   try: # wait for child processes to die
     while True:
@@ -389,7 +362,7 @@ def run( *functions ):
   minutes = dt // 60 - 60 * hours
   seconds = dt // 1 - 60 * minutes - 3600 * hours
 
-  log.info( '\nfinish %s' % time.ctime() )
-  log.info( 'elapsed %.0f:%.0f:%.0f' % ( hours, minutes, seconds ) )
+  html.write( '\nfinish %s\n' % time.ctime() )
+  html.write( 'elapsed %.0f:%.0f:%.0f\n' % ( hours, minutes, seconds ) )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

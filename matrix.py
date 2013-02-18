@@ -2,22 +2,20 @@ from . import util, numpy, log, numeric, _
 from scipy.sparse.sparsetools.csr import _csr
 from scipy.sparse.linalg.isolve import _iterative
 
-def krylov( matvec, b, x0=None, tol=1e-5, restart=None, maxiter=0, precon=None, title='solving system' ):
+def krylov( matvec, b, x0=None, tol=1e-5, restart=None, maxiter=0, precon=None, log=log ):
   '''solve linear system iteratively
 
   restart=None: CG
   restart=integer: GMRES'''
 
-  pbar = log.ProgressBar( numpy.log(tol), title=title )
   assert isinstance( b, numpy.ndarray ) and b.dtype == numpy.float64 and b.ndim == 1
   n = b.size
   if x0 is None:
     x0 = numpy.zeros( n, dtype=numpy.float64 )
   else:
     assert isinstance( x0, numpy.ndarray ) and x0.dtype == numpy.float64 and x0.ndim == 1 and x0.size == n
-  clock = pbar.out and util.Clock( .1 )
   assert isinstance( tol, float ) and tol > 0
-  resid = tol
+  res = tol
   ndx1 = 1
   ndx2 = -1
   ijob = 1
@@ -28,27 +26,28 @@ def krylov( matvec, b, x0=None, tol=1e-5, restart=None, maxiter=0, precon=None, 
   iiter = maxiter
 
   if restart is None:
-    pbar.add( '[CG:%d]' % n )
+    out = log.debug( 'CG' )
     work = numpy.zeros( 4*n, dtype=numpy.float64 )
     ijob_matvecx = 3
-    revcom = lambda x, iiter, resid, info, ndx1, ndx2, ijob: \
-      _iterative.dcgrevcom( b, x, work, iiter, resid, info, ndx1, ndx2, ijob )
+    revcom = lambda x, iiter, res, info, ndx1, ndx2, ijob: \
+      _iterative.dcgrevcom( b, x, work, iiter, res, info, ndx1, ndx2, ijob )
   else:
     if restart > n:
       restart = n
-    pbar.add( '[GMRES%d:%d]' % (restart,n) )
+    out = log.debug( 'GMRES%d' % restart )
     work = numpy.zeros( (6+restart)*n, dtype=numpy.float64 )
     work2 = numpy.zeros( (restart+1)*(2*restart+2), dtype=numpy.float64 )
     ijob_matvecx = 1
-    revcom = lambda x, iiter, resid, info, ndx1, ndx2, ijob: \
-      _iterative.dgmresrevcom( b, x, restart, work, work2, iiter, resid, info, ndx1, ndx2, ijob )
+    revcom = lambda x, iiter, res, info, ndx1, ndx2, ijob: \
+      _iterative.dgmresrevcom( b, x, restart, work, work2, iiter, res, info, ndx1, ndx2, ijob )
   stoptest = lambda vec1, bnrm2, info: \
     _iterative.dstoptest2( vec1, b, bnrm2, tol, info )
 
   x = x0
+  it = out.iter( 'residual', target=numpy.log(tol) )
   while True:
-    x, iiter, resid, info, ndx1, ndx2, sclr1, sclr2, ijob = \
-      revcom( x, iiter, resid, info, ndx1, ndx2, ijob )
+    x, iiter, res, info, ndx1, ndx2, sclr1, sclr2, ijob = \
+      revcom( x, iiter, res, info, ndx1, ndx2, ijob )
     vec1 = work[ndx1-1:ndx1-1+n]
     vec2 = work[ndx2-1:ndx2-1+n]
     if ijob == 1 or ijob == 3:
@@ -60,17 +59,15 @@ def krylov( matvec, b, x0=None, tol=1e-5, restart=None, maxiter=0, precon=None, 
       if firsttime:
         info = -1
         firsttime = False
-      bnrm2, resid, info = stoptest( vec1, bnrm2, info )
-      # resid == numpy.linalg.norm( b - matvec(x) ) / numpy.linalg.norm( b - matvec(x0) )
-      if clock:
-        pbar.update( numpy.log( resid ) )
+      bnrm2, res, info = stoptest( vec1, bnrm2, info )
+      it.update( numpy.log(res) )
     else:
       assert ijob == -1
       break
     ijob = 2
 
-  pbar.close()
   assert info == 0
+  out.info( 'converged in %d iterations' % iiter )
   return x
 
 def parsecons( constrain, lconstrain, rconstrain, shape ):
@@ -284,11 +281,13 @@ class SparseMatrix( Matrix ):
       supp[irow] = a == b or tol != 0 and numpy.all( numpy.abs( self.data[a:b] ) < tol )
     return supp
 
-  def solve( self, b=0, constrain=None, lconstrain=None, rconstrain=None, tol=0, x0=None, symmetric=False, maxiter=0, restart=999, title='solving system' ):
+  def solve( self, b=0, constrain=None, lconstrain=None, rconstrain=None, tol=0, x0=None, symmetric=False, maxiter=0, restart=999, title='solving system', log=log ):
     'solve'
 
     if tol == 0:
-      return self.todense().solve( b=b, constrain=constrain, lconstrain=lconstrain, rconstrain=rconstrain, title=title )
+      return self.todense().solve( b=b, constrain=constrain, lconstrain=lconstrain, rconstrain=rconstrain, title=title, log=log )
+
+    out = log.debug( title )
   
     b = numpy.asarray( b, dtype=float )
     if b.ndim == 0:
@@ -301,7 +300,7 @@ class SparseMatrix( Matrix ):
       restart = None
 
     if constrain is lconstrain is rconstrain is None:
-      return krylov( self.matvec, b, tol=tol, maxiter=maxiter, restart=restart, title=title )
+      return krylov( self.matvec, b, tol=tol, maxiter=maxiter, restart=restart, log=out )
 
     x, I, J = parsecons( constrain, lconstrain, rconstrain, self.shape )
     if x0 is not None:
@@ -311,7 +310,7 @@ class SparseMatrix( Matrix ):
     def matvec( v ):
       tmpvec[J] = v
       return self.matvec(tmpvec)[I]
-    x[J] = krylov( matvec, b, x0=x0, tol=tol, maxiter=maxiter, restart=restart, title=title )
+    x[J] = krylov( matvec, b, x0=x0, tol=tol, maxiter=maxiter, restart=restart, log=out )
 
     ##ALTERNATIVE
     #from scipy.sparse import linalg
@@ -371,8 +370,10 @@ class DenseMatrix( Matrix ):
 
     return DenseMatrix( self.data.T )
 
-  def solve( self, b=0, constrain=None, lconstrain=None, rconstrain=None, title='solving system', **dummy ):
+  def solve( self, b=0, constrain=None, lconstrain=None, rconstrain=None, title='solving system', log=log, **dummy ):
     'solve'
+
+    out = log.debug( title )
 
     b = numpy.asarray( b, dtype=float )
     if b.ndim == 0:
@@ -387,10 +388,9 @@ class DenseMatrix( Matrix ):
     x, I, J = parsecons( constrain, lconstrain, rconstrain, self.shape )
     data = self.data[I]
 
-    pbar = log.ProgressBar( None, title=title )
-    pbar.add( '[direct:%d]' % data.shape[0] )
+    out = out.debug( 'direct' )
     x[J] = numpy.linalg.solve( data[:,J], b[I] - numpy.dot( data[:,~J], x[~J] ) )
-    pbar.close()
+    out.info( 'done' )
 
     return x
 

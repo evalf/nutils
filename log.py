@@ -1,118 +1,136 @@
-from . import prop
+from . import core, prop
 import sys, time, os
 
-error    = lambda *args, **kwargs: log( 0, *args, **kwargs )
-warning  = lambda *args, **kwargs: log( 1, *args, **kwargs )
-info     = lambda *args, **kwargs: log( 2, *args, **kwargs )
-progress = lambda *args, **kwargs: log( 3, *args, **kwargs )
-debug    = lambda *args, **kwargs: log( 9, *args, **kwargs )
+error     = lambda *args: TextLog( 0, None, *args )
+warning   = lambda *args: TextLog( 1, None, *args )
+info      = lambda *args: TextLog( 2, None, *args )
+debug     = lambda *args: TextLog( 9, None, *args )
+iter      = lambda *args, **kwargs: IterLog( 3, None, *args, **kwargs )
+enumerate = lambda *args, **kwargs: IterLog( 3, None, *args, enum=True, **kwargs )
 
-def stream():
-  'stream object'
+class Log( object ):
+  'log object'
 
-  return getattr( prop, 'html', sys.stdout )
+  error     = lambda self, *args: TextLog( 0, self, *args )
+  warning   = lambda self, *args: TextLog( 1, self, *args )
+  info      = lambda self, *args: TextLog( 2, self, *args )
+  debug     = lambda self, *args: TextLog( 9, self, *args )
+  iter      = lambda self, *args, **kwargs: IterLog( 3, self, *args, **kwargs )
+  enumerate = lambda self, *args, **kwargs: IterLog( 3, self, *args, enum=True, **kwargs )
 
-def log( level, *args, **kwargs ):
-  'log text (modeled after python3 print)'
-
-  if level > getattr( prop, 'verbose', None ):
-    return False
-
-  sep = kwargs.pop( 'sep', ' ' )
-  end = kwargs.pop( 'end', '\n' )
-  out = kwargs.pop( 'file', stream() )
-  assert not kwargs, 'invalid log argument: %s=%s' % kwargs.popitem()
-  out.write( sep.join( map( str, args ) ) + end )
-  out.flush()
-
-  return True
-
-class ProgressBar( object ):
-  'progress bar class'
-
-  def __init__( self, iterable, title ):
+  def __init__( self, level, parent=None ):
     'constructor'
 
-    try:
-      self.iterable = iter(iterable)
-    except TypeError:
-      self.iterable = None
-      self.setmax( iterable )
-    else:
-      self.setmax( len(iterable) )
+    self.parent = parent
+    self.out = None if level >= getattr( prop, 'verbose', None ) \
+          else getattr( prop, 'html', sys.stdout )
 
-    self.index = 0
-    self.x = 0
+  def getparenttext( self ):
+    'get parent text'
+
+    text = '%d' % os.getpid() if self.parent is None \
+      else self.parent.gettext()
+    return text + ' > '
+
+  def display( self ):
+    'display text'
+
+    if self.out:
+      self.out.write( self.gettext() + '\n' )
+      self.out.flush()
+
+class TextLog( Log ):
+  'simple text logger'
+
+  def __init__( self, level, parent, *args ):
+    'constructor'
+
+    self.text = ' '.join( map( str, args ) )
+    Log.__init__( self, level, parent )
+    self.display()
+
+  def gettext( self ):
+    'get text'
+
+    return self.getparenttext() + self.text
+
+class IterLog( Log ):
+  'progress bar'
+
+  def __init__( self, level, parent, text, iterable=None, target=None, nchar=20, tint=1, texp=2, enum=False ):
+    'constructor'
+
+    self.text = text
+    self.iterable = iterable
+    self.tint = tint
+    self.texp = texp
     self.t0 = time.time()
-    self.length = getattr( prop, 'linewidth', 50 )
-    self.out = getattr( prop, 'verbose', None ) >= 3 and getattr( prop, 'html', sys.stdout )
-    self.add( title )
-
-  def setmax( self, n ):
-    'set maximum pbar value'
-
-    self.n = n
-
-  def add( self, text ):
-    'add text'
-
-    if not self.out:
-      return
-
-    self.length -= len(text) + 1
-    self.out.write( text + ' ' )
-    self.out.flush()
+    self.tnext = self.t0 + self.tint
+    self.target = target if target is not None else len(iterable)
+    self.current = 0
+    self.nchar = nchar
+    self.enum = enum
+    Log.__init__( self, level, parent )
 
   def __iter__( self ):
     'iterate'
-
-    return self.iterator() if self.out else self.iterable
-
-  def iterator( self ):
-    'iterate'
-
+  
+    current = 0
     for item in self.iterable:
-      self.update()
-      yield item
-    self.close()
+      yield item if not self.enum else (current,item)
+      current += 1
+      self.update( current )
 
-  def write( self, s ):
-    'write string'
+  def update( self, current ):
+    'update progress'
 
-    s = str(s)
-    if not s:
-      return
+    self.current = current
+    if time.time() > self.tnext:
+      self.display()
 
-    self.out.write( s )
-    self.out.flush()
-    self.x += len(s)
+  def gettext( self ):
+    'show'
 
-  def update( self, index=None ):
-    'update'
+    self.tint *= self.texp
+    self.tnext = time.time() + self.tint
+    text = self.getparenttext()
+    text += self.text
+    text += ' %.0f/%.0f' % ( self.current, self.target )
+    pct = self.current / float(self.target)
+    nblk = int( pct * self.nchar )
+    bar = ( '%.0f%%' % (100*pct) ).center( self.nchar, '.' )
+    text += ' [%s]' % ( bar[:nblk].replace('.','#') + bar[nblk:] )
+    return text
 
-    if not self.out:
-      return
+# DEPRECATED
 
-    if index is None:
-      self.index += 1
-      index = self.index
+progress = info
+
+class ProgressBar( IterLog ):
+  'temporary construct for backwards compatibility'
+
+  @core.deprecated( old='ProgressBar(n,title)', new='progressbar(title,n)' )
+  def __init__( self, n, title ):
+    'constructor'
+
+    if isinstance( n, int ):
+      iterable = None
+      target = n
     else:
-      self.index = index
+      iterable = n
+      target = len(n)
+    IterLog.__init__( self, 3, None, title, iterable=iterable, target=target )
 
-    x = int( (index+1) * self.length ) // (self.n+1)
-    self.write( '-' * (x-self.x) )
+  def add( self, text ):
+    'add to text'
+
+    self.text += ' %s' % text
 
   def close( self ):
-    'destructor'
+    'does nothing'
 
-    if not self.out:
-      return
+    pass
 
-    dt = '%.2f' % ( time.time() - self.t0 )
-    dts = dt[1:] if dt[0] == '0' else \
-          dt[:3] if len(dt) <= 6 else \
-          '%se%d' % ( dt[0], len(dt)-4 )
-    self.out.write( '-' * (self.length-self.x) + ' ' + dts + '\n' )
 
 class HtmlWriter( object ):
   'html writer'
