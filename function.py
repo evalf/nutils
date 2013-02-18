@@ -1837,10 +1837,20 @@ class Dot( ArrayFunc ):
   def __add__( self, other ):
     'add'
 
+    #TODO check for other combinations
     if isinstance( other, Dot ) and self.func1 == other.func1 and self.axes == other.axes and self.shape == other.shape:
       return sum( self.func1 * ( self.func2 + other.func2 ), self.axes )
 
     return ArrayFunc.__add__( self, other )
+
+  def __sub__( self, other ):
+    'add'
+
+    #TODO check for other combinations
+    if isinstance( other, Dot ) and self.func1 == other.func1 and self.axes == other.axes and self.shape == other.shape:
+      return sum( self.func1 * ( self.func2 - other.func2 ), self.axes )
+
+    return ArrayFunc.__sub__( self, other )
 
   def __takediag__( self, n1=-2, n2=-1 ):
     'take diagonal'
@@ -2231,7 +2241,7 @@ class Inflate( ArrayFunc ):
 
     return self + (-other)
 
-  def outer( self, axis=0 ):
+  def __defunct_outer__( self, axis=0 ):
     'outer product'
 
     #return self.insert(axis) * self.insert(axis+1)
@@ -3018,6 +3028,13 @@ def cross( arg1, arg2, axis ):
   if _isfunc(arg2):
     return -arg2.__cross__(arg1,axis)
   return numeric.cross(arg1,arg2,axis)
+
+def outer( arg1, arg2=None, axis=0 ):
+  'outer product'
+
+  arg1, arg2 = _matchndim( arg1, arg2 if arg2 is not None else arg1 )
+  axis = _normdim( arg1.ndim, axis )
+  return insert(arg1,axis+1) * insert(arg1,axis)
 
 def pointwise( args, evalf, deriv ):
   'general pointwise operation'

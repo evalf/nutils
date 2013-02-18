@@ -221,10 +221,10 @@ class Topology( object ):
       assert constrain.shape == onto.shape[:1]
 
     if len( onto.shape ) == 1:
-      Afun = onto.outer()
+      Afun = function.outer( onto )
       bfun = onto * fun
     elif len( onto.shape ) == 2:
-      Afun = onto.outer().sum( 2 )
+      Afun = function.outer( onto ).sum( 2 )
       bfun = function.sum( onto * fun )
     else:
       raise Exception

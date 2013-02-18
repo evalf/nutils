@@ -370,7 +370,7 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
 
   fmap = dict.fromkeys( elements, element.PolyTriangle(1) )
   nmap = dict( zip( elements, vertices ) )
-  belems = [ elem.edge(0) for elem in elements[:12] ]
+  belems = [ elem.edge(1) for elem in elements[:12] ]
   bgroups = { 'top': belems[0:3], 'left': belems[3:6], 'bottom': belems[6:9], 'right': belems[9:12] }
 
   ind = function.DofMap( topology.ElemMap(nmap,2) ),
