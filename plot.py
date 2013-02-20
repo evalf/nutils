@@ -10,8 +10,6 @@ class PyPlot( object ):
     import matplotlib
     matplotlib.use( 'Agg', warn=False )
 
-    self.out = log.debug( 'plotting' )
-
     assert isinstance(ndigits,int) and ndigits >= 0, 'positive integer required'
     self.imgtype = getattr( prop, 'imagetype', 'png' ) if imgtype is None else imgtype
 
@@ -32,23 +30,22 @@ class PyPlot( object ):
   def __enter__( self ):
     'enter with block'
 
-    self.out.debug( 'drawing' )
+    log.context( 'plotting', level=1 )
     return PyPlotModule()
 
   def __exit__( self, exc, msg, tb ):
     'exit with block'
 
     if exc:
-      self.out.error( 'ERROR: plot failed:', msg or exc )
-      return #True
-
-    self.out.debug( 'saving' )
-    from matplotlib import pyplot
-    dumpdir = prop.dumpdir
-    pyplot.savefig( self.imgfile, format=self.imgtype )
-    #os.chmod( dumpdir + imgname, 0644 )
-    pyplot.close()
-    self.out.info( '%s [%dkb]' % ( os.path.basename(self.imgfile.name), self.imgfile.tell()//1024 ) )
+      log.error( 'ERROR: plot failed:', msg or exc )
+    else:
+      from matplotlib import pyplot
+      dumpdir = prop.dumpdir
+      pyplot.savefig( self.imgfile, format=self.imgtype )
+      #os.chmod( dumpdir + imgname, 0644 )
+      pyplot.close()
+      log.path( os.path.basename(self.imgfile.name) )
+    log.popcontext( level=1 )
 
 class PyPlotModule( object ):
   'pyplot wrapper'

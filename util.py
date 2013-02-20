@@ -332,8 +332,11 @@ def run( *functions ):
       print 'updating', filename
       open( outdir + filename, 'w' ).write( open( logpath + filename, 'r' ).read() )
 
+  log.setup_html( maxlevel=prop.verbose, path=dumpdir+'log.html', title=scriptname + time.strftime( ' %Y/%m/%d %H:%M:%S', localtime ) )
+
   prop.dumpdir = dumpdir
-  html = prop.html = log.HtmlWriter( scriptname + time.strftime( ' %Y/%m/%d %H:%M:%S', localtime ), dumpdir + 'log.html' )
+
+  #prop.logger = log.TextLog( 0, None, )
 
   print >> open( outdir+'log.html', 'w' ), '<meta http-equiv="refresh" content="0;URL={}/log.html">'.format( scriptname )
   print >> open( basedir+'log.html', 'w' ), '<meta http-equiv="refresh" content="0;URL={}log.html">'.format( timepath )
@@ -342,14 +345,18 @@ def run( *functions ):
 
   commandline = [ ' '.join([ scriptname, funcname ]) ] + [ '  --%s=%s' % item for item in kwargs.items() ]
 
-  html.write( ' \\\n'.join( commandline ) + '\n\n' )
-  html.write( 'start %s\n\n' % time.ctime() )
+  log.info( ' \\\n'.join( commandline ) + '\n' )
+  log.info( 'start %s\n' % time.ctime() )
 
   t0 = time.time()
   try:
-    func( **kwargs )
-  except AssertionError:
-    log.error( traceback.format_exc() )
+    log.context( os.getpid() )
+    try:
+      func( **kwargs )
+    except AssertionError:
+      log.error( traceback.format_exc() )
+  finally:
+    log.popcontext()
 
   try: # wait for child processes to die
     while True:
@@ -362,7 +369,7 @@ def run( *functions ):
   minutes = dt // 60 - 60 * hours
   seconds = dt // 1 - 60 * minutes - 3600 * hours
 
-  html.write( '\nfinish %s\n' % time.ctime() )
-  html.write( 'elapsed %.0f:%.0f:%.0f\n' % ( hours, minutes, seconds ) )
+  log.info( '\nfinish %s\n' % time.ctime() )
+  log.info( 'elapsed %.0f:%.0f:%.0f' % ( hours, minutes, seconds ) )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

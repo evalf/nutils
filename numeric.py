@@ -2,6 +2,19 @@ import numpy, _numeric
 
 addsorted = _numeric.addsorted
 
+def align( arr, trans, ndim ):
+  '''create new array of ndim from arr with axes moved accordin
+  to trans'''
+
+  # as_strided will check validity of trans
+  arr = numpy.asarray( arr )
+  assert len(trans) == arr.ndim
+  strides = numpy.zeros( ndim, dtype=int )
+  strides[trans] = arr.strides
+  shape = numpy.ones( ndim, dtype=int )
+  shape[trans] = arr.shape
+  return numpy.lib.stride_tricks.as_strided( arr, shape, strides )
+
 def allequal( arr, val ):
   'check all equal'
 

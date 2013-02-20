@@ -117,10 +117,10 @@ class Evaluable( object ):
     label = self.__class__.__name__
     return { 'label': r'\n'.join( [ label ] + args ) }
 
-  def graphviz( self, log=log ):
+  def graphviz( self ):
     'create function graph'
 
-    out = log.debug( 'creating graphviz' )
+    log.context( 'creating graphviz' )
 
     import os, subprocess
 
@@ -136,7 +136,7 @@ class Evaluable( object ):
     try:
       dot = subprocess.Popen( [dotpath,'-Tjpg'], stdin=subprocess.PIPE, stdout=open(imgpath,'w') )
     except OSError:
-      out.error( 'error: failed to execute', dotpath )
+      log.error( 'error: failed to execute', dotpath )
       return False
 
     print >> dot.stdin, 'digraph {'
@@ -156,7 +156,7 @@ class Evaluable( object ):
     print >> dot.stdin, '}'
     dot.stdin.close()
 
-    out.info( os.path.basename(imgpath) )
+    log.path( os.path.basename(imgpath) )
 
   def stackstr( self, values=None ):
     'print stack'
@@ -372,11 +372,10 @@ class ArrayFunc( Evaluable ):
     trans[n2] = _normdim( self.ndim, n1 )
     return align( self, trans, self.ndim )
 
-  def transpose( self, trans ):
+  def transpose( self, trans=None ):
     'transpose'
 
-    assert len(trans) == self.ndim
-    return align( self, trans, self.ndim )
+    return transpose( self, trans )
 
   def grad( self, coords, ndims=0 ):
     'gradient'
@@ -430,7 +429,7 @@ class ArrayFunc( Evaluable ):
   def T( self ):
     'transpose'
 
-    return transpose( self, range(self.ndim)[::-1] )
+    return transpose( self )
 
   def __take__( self, indices, axis ):
     'take'
@@ -456,7 +455,7 @@ class ArrayFunc( Evaluable ):
 
     ax1, ax2 = _norm_and_sort( self.ndim, (ax1,ax2) )
 
-    axes = range(ax1) + range(ax1+1,ax2) + range(ax2+1,self.ndim) + [ax1,ax2]
+    axes = range(ax1) + [-2], range(ax1,ax2-1) + [-1] + range(ax2-1,self.ndim-2)
     func = align( self, axes, self.ndim )
 
     if func.shape[-1] == 1:
@@ -594,8 +593,7 @@ class ArrayFunc( Evaluable ):
     if self.shape[axis] == 1:
       return get( self, axis, 0 )
 
-    trans = range( axis ) + range( axis+1, self.ndim ) + [axis] # TODO check
-    func = transpose( self, trans )
+    func = align( self, range(axis) + [-1] + range(axis,self.ndim-1), self.ndim )
     return Product( func )
 
   def __mul__( self, other ):
@@ -800,28 +798,18 @@ class Align( ArrayFunc ):
     self.func = func
     assert all( 0 <= ax < ndim for ax in axes )
     self.axes = tuple(axes)
-    trans = tuple(numpy.argsort( axes ))
-    sortaxes = numpy.take( axes, trans )
-    assert numpy.all( sortaxes[1:] != sortaxes[:-1] ), 'duplicate axes in %s' % axes
-    if numpy.all( numpy.arange(len(axes)) == trans ):
-      trans = None
     shape = [ 1 ] * ndim
-    item = [ _ ] * ndim
-    for ax, sh in zip( axes, func.shape ):
+    for ax, sh in zip( self.axes, func.shape ):
       shape[ax] = sh
-      item[ax] = slice(None)
-    item = (Ellipsis,)+tuple(item)
-    ArrayFunc.__init__( self, args=[func,trans,item], evalf=self.align, shape=shape )
+    negaxes = [ ax-ndim for ax in self.axes ]
+    ArrayFunc.__init__( self, args=[func,negaxes,ndim], evalf=self.align, shape=shape )
 
   @staticmethod
-  def align( arr, trans, item ):
+  def align( arr, trans, ndim ):
     'align'
 
-    if trans is not None:
-      shift = arr.ndim - len(trans)
-      trans = range(shift) + [ shift+ax for ax in trans ]
-      arr = transpose( arr, trans )
-    return arr[ item ]
+    extra = arr.ndim - len(trans)
+    return numeric.align( arr, range(extra)+trans, ndim+extra )
 
   def __elemint__( self, weights ):
     'elementwise integration'
@@ -844,12 +832,12 @@ class Align( ArrayFunc ):
     if ax1 not in self.axes and ax2 not in self.axes:
       axes = [ ax - (ax>ax1) - (ax>ax2) for ax in self.axes ]
     elif ax2 not in self.axes:
-      axes = [ ax - (ax>ax1) - (ax>ax2) if ax != ax1 else self.ndim-2 for ax in self.axes ]
+      axes = [ ax - (ax>ax1) - (ax>ax2) if ax != ax1 else -1 for ax in self.axes ]
     elif ax1 not in self.axes:
-      axes = [ ax - (ax>ax1) - (ax>ax2) if ax != ax2 else self.ndim-2 for ax in self.axes ]
+      axes = [ ax - (ax>ax1) - (ax>ax2) if ax != ax2 else -1 for ax in self.axes ]
     else:
       func = takediag( func, self.axes[ax1], self.axes[ax2] )
-      axes = [ ax - (ax>ax1) - (ax>ax2) for ax in self.axes if ax not in (ax1,ax2) ] + [ self.ndim-2 ]
+      axes = [ ax - (ax>ax1) - (ax>ax2) for ax in self.axes if ax not in (ax1,ax2) ] + [ -1 ]
     return align( func, axes, self.ndim-1 )
 
   def __get__( self, i, item ):
@@ -889,12 +877,12 @@ class Align( ArrayFunc ):
     func1, func2 = _matchndim( self, other )
     assert isinstance( func1, Align )
 
+    #TODO make less restrictive:
     if isinstance( func2, Align ) and func1.axes == func2.axes:
       return Align( func1.func * func2.func, func1.axes, func1.ndim )
 
     if not _isfunc(func2) and len(func1.axes) == func1.ndim:
-      invaxes = [ func1.axes.index(i) for i in range(func1.ndim) ]
-      return align( func1.func * align( func2, invaxes, func1.ndim ), func1.axes, func1.ndim )
+      return align( func1.func * transform( func2, func1.axes ), func1.axes, func1.ndim )
 
     return ArrayFunc.__mul__( func1, func2 )
 
@@ -904,12 +892,12 @@ class Align( ArrayFunc ):
     func1, func2 = _matchndim( self, other )
     assert isinstance( func1, Align )
 
+    #TODO make less restrictive:
     if isinstance( func2, Align ) and func1.axes == func2.axes:
       return Align( func1.func + func2.func, func1.axes, func1.ndim )
 
     if not _isfunc(func2) and len(func1.axes) == func1.ndim:
-      invaxes = [ func1.axes.index(i) for i in range(func1.ndim) ]
-      return align( func1.func + align( func2, invaxes, func1.ndim ), func1.axes, func1.ndim )
+      return align( func1.func + transform( func2, func1.axes ), func1.axes, func1.ndim )
 
     return ArrayFunc.__add__( func1, func2 )
 
@@ -919,12 +907,12 @@ class Align( ArrayFunc ):
     func1, func2 = _matchndim( self, other )
     assert isinstance( func1, Align )
 
+    #TODO make less restrictive:
     if isinstance( func2, Align ) and func1.axes == func2.axes:
       return Align( func1.func / func2.func, func1.axes, func1.ndim )
 
     if not _isfunc(func2) and len(func1.axes) == func1.ndim:
-      invaxes = [ func1.axes.index(i) for i in range(func1.ndim) ]
-      return align( func1.func / align( func2, invaxes, func1.ndim ), func1.axes, func1.ndim )
+      return align( func1.func / transform( func2, func1.axes ), func1.axes, func1.ndim )
 
     return ArrayFunc.__div__( self, other )
 
@@ -1780,7 +1768,6 @@ class Dot( ArrayFunc ):
 
     shape = _jointshape( func1.shape, func2.shape )
     axes = _norm_and_sort( len(shape), axes )
-    assert _issorted( axes ) # strict
     shape = list(shape)
     for axis in reversed(axes):
       shape.pop( axis )
@@ -2041,7 +2028,7 @@ class Inflate( ArrayFunc ):
     for func, indices in blocks:
       assert func
       assert isinstance(indices,tuple) # required for comparison later
-      assert func.ndim == len(shape)
+      assert func.ndim == len(shape), 'wrongly shaped block: func.shape=%s, shape=%s' % ( func.shape, shape )
       assert len(indices) == len(shape)
       for n, ind in enumerate( indices ):
         if ind == slice(None):
@@ -2266,12 +2253,8 @@ class Inflate( ArrayFunc ):
     'sum'
 
     keep = numpy.ones( self.ndim, dtype=bool )
-    if not _isiterable(axes):
-      keep[axes] = False
-    elif axes:
-      for ax in axes:
-        keep[ax] = False
-    else:
+    keep[axes] = False
+    if numpy.all( keep ):
       return self
 
     shape = tuple( sh for n,sh in enumerate(self.shape) if keep[n] )
@@ -2411,13 +2394,10 @@ class Diagonalize( ArrayFunc ):
     'multiply'
  
     func1, func2 = _matchndim( self, other )
+    assert isinstance( func1, Diagonalize )
     if _iszero( func2 ):
       return _const( 0., func1.shape, func2.shape )
-
-    toaxes = numpy.array(self.toaxes) - self.ndim
-    if other.ndim < self.ndim:
-      other = align( other, range(self.ndim-other.ndim,self.ndim), self.ndim )
-    return diagonalize( self.func * takediag( other, *toaxes ), *toaxes )
+    return diagonalize( func1.func * takediag( func2, *func1.toaxes ), *func1.toaxes )
 
   def sum( self, axes=-1 ):
     'sum'
@@ -2432,18 +2412,17 @@ class Diagonalize( ArrayFunc ):
     else:
       return ArrayFunc.sum( self, axes )
 
-    trans = range(otherax) + range(otherax+1,self.ndim-1) + [otherax]
+    trans = range(otherax) + [-1] + range(otherax,self.ndim-2)
     remaining = [ ax if ax < sumax else ax-1 for ax in axes if ax != sumax ]
-    return sum( transpose( self.func, trans ), remaining )
+    return sum( align( self.func, trans, self.ndim-len(axes) ), remaining )
 
   def __align__( self, axes, ndim ):
     'align'
 
     assert all( 0 <= ax < ndim for ax in axes )
     assert len(axes) == self.ndim
-    ax1, ax2 = self.toaxes
-    toaxes = axes[ax1], axes[ax2]
-    axes = [ ax - (ax>toaxes[0]) - (ax>toaxes[1]) for ax in axes if ax not in toaxes ] + [ ndim-2 ]
+    toaxes = [ axes[ax] for ax in self.toaxes ]
+    axes = [ ax - (ax>toaxes[0]) - (ax>toaxes[1]) for ax in axes if ax not in toaxes ] + [ -1 ]
     return diagonalize( align( self.func, axes, ndim-1 ), *toaxes )
 
 class Kronecker( ArrayFunc ):
@@ -2533,7 +2512,7 @@ class Kronecker( ArrayFunc ):
     return Kronecker( funcs, self.axis )
 
   def __align__( self, trans, ndim ):
-    'transpose'
+    'align'
 
     newaxis = trans[ self.axis ]
     trans = [ tr if tr < newaxis else tr-1 for tr in trans if tr != newaxis ]
@@ -2671,11 +2650,12 @@ class Expand( ArrayFunc ):
   def __align__( self, axes, ndim ):
     'align'
 
-    shape = [ 1 ] * ndim
+    assert len(axes) == self.ndim
     assert all( 0 <= ax < ndim for ax in axes )
-    for src, dst in enumerate(axes):
-      shape[dst] = self.shape[src]
-    return Expand( align( self.func, axes, ndim ), shape )
+    shape = [ 1 ] * ndim
+    for ax, sh in zip( axes, self.shape ):
+      shape[ax] = sh
+    return expand( align( self.func, axes, ndim ), shape )
 
 # AUXILIARY FUNCTIONS
 
@@ -2757,13 +2737,19 @@ _sum = sum
 _isfunc = lambda arg: isinstance( arg, ArrayFunc )
 _isscalar = lambda arg: _asarray(arg).ndim == 0
 _isint = lambda arg: numpy.asarray( arg ).dtype == int
-_issorted = lambda arg: ( numpy.diff(arg) > 0 ).all()
+_ascending = lambda arg: ( numpy.diff(arg) > 0 ).all()
 _iszero = lambda arg: not _isfunc(arg) and numeric.allequal( arg, 0 )
 _isunit = lambda arg: not _isfunc(arg) and numeric.allequal( arg, 1 )
 _haspriority = lambda arg: _isfunc(arg) and arg.__priority__
 _subsnonesh = lambda shape: tuple( 1 if sh is None else sh for sh in shape )
 _const = lambda val, *shapes: numeric.appendaxes( val, _subsnonesh( _jointshape(*shapes) ) )
-_norm_and_sort = lambda ndim, args: tuple( sorted( _normdim( ndim, arg ) for arg in args ) )
+
+def _norm_and_sort( ndim, args ):
+  'norm axes, sort, and assert unique'
+
+  normargs = tuple( sorted( _normdim( ndim, arg ) for arg in args ) )
+  assert _ascending( normargs ) # strict
+  return normargs
 
 def _jointdtype( *args ):
   'determine joint dtype'
@@ -2863,17 +2849,10 @@ def align( arg, axes, ndim ):
   'align'
 
   assert arg.ndim == len(axes)
-  assert all( 0 <= ax < ndim for ax in axes )
+  axes = [ _normdim(ndim,ax) for ax in axes ]
   if _isfunc( arg ):
     return arg.__align__( axes, ndim )
-  arg = numpy.asarray( arg )
-  trans = numpy.argsort( axes )
-  sortaxes = numpy.take( axes, trans )
-  assert numpy.all( sortaxes[1:] != sortaxes[:-1] ), 'duplicate axes in %s' % axes
-  item = [ _ ] * ndim
-  for ax, sh in zip( axes, arg.shape ):
-    item[ax] = slice(None)
-  return numpy.transpose( arg, trans )[ tuple(item) ]
+  return numeric.align( arg, axes, ndim )
 
 def reciprocal( arg ):
   'reciprocal'
@@ -2998,12 +2977,17 @@ def concatenate( args, axis=0 ):
   concat = Concatenate if any( _isfunc(arg) for arg in args ) else numpy.concatenate
   return concat( _matchndim( *args ), axis )
 
-def transpose( arg, trans ):
+def transpose( arg, trans=None ):
   'transpose'
   
   arg = _asarray( arg )
-  assert len(trans) == arg.ndim
-  return align( arg, trans, arg.ndim )
+  if trans is None:
+    invtrans = range( arg.ndim-1, -1, -1 )
+  else:
+    assert sorted(trans) == range(arg.ndim)
+    invtrans = numpy.empty( arg.ndim, dtype=int )
+    invtrans[ trans ] = numpy.arange( arg.ndim )
+  return align( arg, invtrans, arg.ndim )
 
 def prod( arg, axis ):
   'product'
@@ -3043,20 +3027,12 @@ def pointwise( args, evalf, deriv ):
     return Pointwise( _asarray(args), evalf, deriv )
   return evalf( *args )
 
-def log( arg, base=numpy.e ):
-  'log'
-
-  assert _isscalar( base )
-  val = pointwise( [arg], numpy.log, reciprocal )
-  if base is not numpy.e:
-    val /= pointwise( [base], numpy.log, reciprocal )
-  return val
-
 sin = lambda arg: pointwise( [arg], numpy.sin, cos )
 cos = lambda arg: pointwise( [arg], numpy.cos, lambda x: -sin(x) )
 exp = lambda arg: pointwise( [arg], numpy.exp, exp )
-log2 = lambda arg: log( arg, base=2 )
-log10 = lambda arg: log( arg, base=10 )
+ln = lambda arg: pointwise( [arg], numpy.log, reciprocal )
+log2 = lambda arg: ln(arg) / ln(2)
+log10 = lambda arg: ln(arg) / ln(10)
 power = lambda arg, power: _asarray( arg )**power
 arctan2 = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.arctan2, lambda x: stack([x[1],-x[0]]) / sum(power(x,2),0) )
 greater = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.greater, lambda x: numpy.zeros_like(x) )
@@ -3112,9 +3088,9 @@ def StaticArray( arg ):
 def Stack( arg ):
   return stack( arg )
 
-@core.deprecated( old='Log', new='log' )
+@core.deprecated( old='Log', new='ln' )
 def Log( arg ):
-  return log( arg )
+  return ln( arg )
 
 @core.deprecated( old='Arctan2', new='arctan2' )
 def Arctan2( arg1, arg2 ):

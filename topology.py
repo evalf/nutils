@@ -36,10 +36,10 @@ class Topology( object ):
     items = ( self.groups[it] for it in item.split( ',' ) )
     return sum( items, items.next() )
 
-  def elem_eval( self, funcs, ischeme, stack=False, title='evaluating', log=log ):
+  def elem_eval( self, funcs, ischeme, stack=False, title='evaluating' ):
     'element-wise evaluation'
 
-    out = log.debug( title )
+    log.context( title )
 
     single_arg = not isinstance(funcs,list)
     if single_arg:
@@ -53,9 +53,9 @@ class Topology( object ):
       idata.append( func )
       retvals.append( numpy.empty( len(self), dtype=object ) )
     idata = function.Tuple( idata )
-    idata.graphviz( log=out )
+    idata.graphviz()
 
-    for ielem, elem in out.enumerate( 'element', self ):
+    for ielem, elem in enumerate( self ):
       for retval, data in zip( retvals, idata( elem, ischeme ) ):
         retval[ielem] = data
 
@@ -76,16 +76,16 @@ class Topology( object ):
         assert ptr == newretval.shape[0]
         stacked.append( newretval )
       retvals = stacked
-    out.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
+    log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
     if single_arg:
       retvals, = retvals
 
     return retvals
 
-  def elem_mean( self, funcs, coords, ischeme, title='computing mean values', log=log ):
+  def elem_mean( self, funcs, coords, ischeme, title='computing mean values' ):
     'element-wise integration'
 
-    out = log.debug( title )
+    log.context( title )
 
     single_arg = not isinstance(funcs,list)
     if single_arg:
@@ -100,24 +100,24 @@ class Topology( object ):
       idata.append( function.elemint( func, iweights ) )
       retvals.append( numpy.empty( (len(self),)+func.shape ) )
     idata = function.Tuple( idata )
-    idata.graphviz( log=out )
+    idata.graphviz()
 
-    for ielem, elem in out.enumerate( 'element', self ):
+    for ielem, elem in enumerate( self ):
       area_data = idata( elem, ischeme )
       area = area_data[0].sum()
       for retval, data in zip( retvals, area_data[1:] ):
         retval[ielem] = data / area
 
-    out.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
+    log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
     if single_arg:
       retvals, = retvals
 
     return retvals
 
-  def grid_eval( self, funcs, coords, C, title='grid-evaluating', log=log ):
+  def grid_eval( self, funcs, coords, C, title='grid-evaluating' ):
     'evaluate grid points'
 
-    out = log.debug( title )
+    log.context( title )
 
     single_arg = not isinstance(funcs,list)
     if single_arg:
@@ -135,23 +135,23 @@ class Topology( object ):
 
     data = function.Tuple([ function.Tuple([ func, retval ]) for func, retval in zip( funcs, retvals ) ])
 
-    for elem in out.iter( 'element', self ):
+    for elem in self:
       points, selection = coords.find( elem, C.T )
       if selection is not None:
         for func, retval in data( elem, points ):
           retval[selection] = func
 
     retvals = [ retval.reshape( shape[1:] + func.shape ) for func, retval in zip( funcs, retvals ) ]
-    out.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
+    log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
     if single_arg:
       retvals, = retvals
 
     return retvals
 
-  def integrate( self, funcs, ischeme, coords=None, iweights=None, title='integrating', log=log ):
+  def integrate( self, funcs, ischeme, coords=None, iweights=None, title='integrating' ):
     'integrate'
 
-    out = log.debug( title )
+    log.context( title )
 
     single_arg = not isinstance(funcs,list)
     if single_arg:
@@ -188,13 +188,13 @@ class Topology( object ):
           integrands.append( function.Tuple([ ifunc, (), function.elemint( func, iweights ) ]) )
       retvals.append( A )
     idata = function.Tuple( integrands )
-    idata.graphviz( log=out )
+    idata.graphviz()
 
-    for elem in out.iter( 'element', self ):
+    for elem in self:
       for ifunc, index, data in idata( elem, ischeme ):
         retvals[ifunc][index] += data
 
-    out.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
+    log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
     if single_arg:
       retvals, = retvals
 
@@ -206,14 +206,14 @@ class Topology( object ):
     weights = self.project( fun, onto, coords, **kwargs )
     return onto.dot( weights )
 
-  def project( self, fun, onto, coords, tol=0, ischeme='gauss8', title='projecting', droptol=1e-8, exact_boundaries=False, constrain=None, verify=None, maxiter=0, log=log ):
+  def project( self, fun, onto, coords, tol=0, ischeme='gauss8', title='projecting', droptol=1e-8, exact_boundaries=False, constrain=None, verify=None, maxiter=0 ):
     'L2 projection of function onto function space'
 
-    out = log.debug( title )
+    log.context( title )
 
     if exact_boundaries:
       assert constrain is None
-      constrain = self.boundary.project( fun, onto, coords, title='boundaries', ischeme=ischeme, tol=tol, droptol=droptol, log=out )
+      constrain = self.boundary.project( fun, onto, coords, title='boundaries', ischeme=ischeme, tol=tol, droptol=droptol )
     elif constrain is None:
       constrain = util.NanVec( onto.shape[0] )
     else:
@@ -228,7 +228,7 @@ class Topology( object ):
       bfun = function.sum( onto * fun )
     else:
       raise Exception
-    A, b = self.integrate( [Afun,bfun], coords=coords, ischeme=ischeme, title='building system', log=out )
+    A, b = self.integrate( [Afun,bfun], coords=coords, ischeme=ischeme, title='building system' )
     supp = A.rowsupp( droptol ) & numpy.isnan( constrain )
     numcons = (~supp).sum()
     if verify is not None:
@@ -237,10 +237,10 @@ class Topology( object ):
     if numpy.all( b == 0 ):
       u = constrain | 0
     else:
-      u = A.solve( b, constrain, tol=tol, symmetric=True, maxiter=maxiter, log=out )
+      u = A.solve( b, constrain, tol=tol, symmetric=True, maxiter=maxiter )
     u[supp] = numpy.nan
 
-    out.info( 'contrained %d/%d dofs' % ( numcons, b.size ) )
+    log.info( 'contrained %d/%d dofs' % ( numcons, b.size ) )
     return u.view( util.NanVec )
 
 # def trim( self, levelset, maxrefine, lscheme='bezier3' ):
@@ -274,10 +274,10 @@ class Topology( object ):
 
 #   return IndexedTopology( self, select=select )
 
-  def refinedfunc( self, dofaxis, refine, degree, title='refining', log=log ):
+  def refinedfunc( self, dofaxis, refine, degree, title='refining' ):
     'create refined space by refining dofs in existing one'
 
-    out = log.debug( title )
+    log.context( title )
 
     refine = set(refine) # make unique and equip with set operations
   
@@ -317,8 +317,7 @@ class Topology( object ):
     ndofs = 0 # total number of dofs of new function object
   
     topo = self # topology to examine in next level refinement
-    out2 = out.iter( 'level', range( nrefine ) )
-    for irefine in out2:
+    for irefine in log.iterate( 'level', range( nrefine ) ):
   
       funcsp = topo.splinefunc( degree ) # shape functions for level irefine
       func, (dofaxis,) = funcsp.get_func_ind() # separate elem-local funcs and global placement index
@@ -326,7 +325,7 @@ class Topology( object ):
       supported = numpy.ones( funcsp.shape[0], dtype=bool ) # True if dof is contained in topoelems or parentelems
       touchtopo = numpy.zeros( funcsp.shape[0], dtype=bool ) # True if dof touches at least one topoelem
       myelems = [] # all top-level or parent elements in level irefine
-      for elem, idofs in out2.iter( 'element', dofaxis.dofmap.items() ):
+      for elem, idofs in log.iterate( 'element', dofaxis.dofmap.items() ):
         if elem in topoelems:
           touchtopo[idofs] = True
           myelems.append( elem )
@@ -390,10 +389,12 @@ class Topology( object ):
 
     return self if n <= 0 else self.refined.refine( n-1 )
 
-  def get_simplices( self, title='getting simplices', log=log, **kwargs ):
+  def get_simplices( self, title='getting simplices', **kwargs ):
     'Getting simplices'
 
-    return [ simplex for elem in log.iter( title, self ) for simplex in elem.get_simplices( **kwargs ) ]
+    log.context( title )
+
+    return [ simplex for elem in self for simplex in elem.get_simplices( **kwargs ) ]
 
 class StructuredTopology( Topology ):
   'structured topology'
@@ -420,7 +421,7 @@ class StructuredTopology( Topology ):
   def __iter__( self ):
     'iterate'
 
-    return ( elem for elem in self.structure.flat if elem is not None )
+    return iter( log.iterate( 'element', [ elem for elem in self.structure.flat if elem is not None ] ) )
 
   def __getitem__( self, item ):
     'subtopology'
@@ -664,7 +665,7 @@ class IndexedTopology( Topology ):
   def __iter__( self ):
     'number of elements'
 
-    return iter(self.elements)
+    return iter( log.iterate( 'element', self.elements ) )
 
   def __len__( self ):
     'number of elements'

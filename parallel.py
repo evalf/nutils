@@ -1,4 +1,4 @@
-from . import prop
+from . import prop, log
 from multiprocessing import Lock, cpu_count
 import os
 
@@ -9,6 +9,7 @@ def fork( func, nice=19 ):
     pid = os.fork()
     if pid:
       return pid
+    log.context( os.getpid() )
     try:
       os.nice( nice )
       func( *args, **kwargs )
