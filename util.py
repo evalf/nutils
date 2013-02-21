@@ -353,8 +353,10 @@ def run( *functions ):
     log.context( os.getpid() )
     try:
       func( **kwargs )
-    except AssertionError:
-      log.error( traceback.format_exc() )
+    except KeyboardInterrupt:
+      log.error( 'killed by user' )
+    except:
+      log.exception()
   finally:
     log.popcontext()
 

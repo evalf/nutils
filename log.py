@@ -1,15 +1,16 @@
 from . import core, prop
-import sys, time, os
+import sys, time, os, traceback
 
 _KEY = '__logger__'
 _ERROR, _WARNING, _PATH, _INFO, _PROGRESS, _DEBUG = range(6)
 
 _makestr = lambda args: ' '.join( str(arg) for arg in args )
 
-def _findlogger():
+def _findlogger( frame=None ):
   'find logger in call stack'
 
-  frame = sys._getframe(1)
+  if frame is None:
+    frame = sys._getframe(1)
   while frame:
     if _KEY in frame.f_locals:
       return frame.f_locals[_KEY]
@@ -45,6 +46,16 @@ def iterate( text, iterable, target=None, **kwargs ):
       logger.update( level=_PROGRESS, current=i )
   finally:
     frame = sys._getframe(1).f_locals[_KEY] = logger.parent
+
+def exception( exc_info=None ):
+  'print traceback'
+
+  exc_type, exc_value, exc_traceback = exc_info or sys.exc_info()
+  while exc_traceback.tb_next:
+    exc_traceback = exc_traceback.tb_next
+  frame = exc_traceback.tb_frame
+  parts = traceback.format_exception_only( exc_type, exc_value ) + traceback.format_stack( frame )
+  _findlogger( frame ).write( _ERROR, ''.join( parts ) )
 
 class SimpleLog( object ):
   'simple log'

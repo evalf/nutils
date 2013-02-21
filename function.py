@@ -91,6 +91,8 @@ class Evaluable( object ):
       args = [ values[N+i] for i in indices ]
       try:
         retval = op.__evalf( *args )
+      except KeyboardInterrupt:
+        raise
       except:
         etype, evalue, traceback = sys.exc_info()
         raise EvaluationError, ( etype, evalue, self, values ), traceback

@@ -1,6 +1,6 @@
 from . import prop, log
 from multiprocessing import Lock, cpu_count
-import os
+import os, traceback
 
 def fork( func, nice=19 ):
   'fork and run (return value is lost)'
@@ -10,11 +10,14 @@ def fork( func, nice=19 ):
     if pid:
       return pid
     log.context( os.getpid() )
+    os.nice( nice )
     try:
-      os.nice( nice )
       func( *args, **kwargs )
-    finally:
-      os._exit( 0 )
+    except KeyboardInterrupt:
+      pass
+    except:
+      log.exception()
+    os._exit( 0 )
   return wrapped
 
 def shzeros( shape, dtype=float ):

@@ -33,11 +33,15 @@ class PyPlot( object ):
     log.context( 'plotting', level=1 )
     return PyPlotModule()
 
-  def __exit__( self, exc, msg, tb ):
+  def __exit__( self, *exc_info ):
     'exit with block'
 
-    if exc:
-      log.error( 'ERROR: plot failed:', msg or exc )
+    exc_type = exc_info[0]
+    if exc_type == KeyboardInterrupt:
+      log.popcontext( level=1 )
+      return False
+    elif exc_type:
+      log.exception( exc_info )
     else:
       from matplotlib import pyplot
       dumpdir = prop.dumpdir
@@ -46,6 +50,7 @@ class PyPlot( object ):
       pyplot.close()
       log.path( os.path.basename(self.imgfile.name) )
     log.popcontext( level=1 )
+    return True
 
 class PyPlotModule( object ):
   'pyplot wrapper'
