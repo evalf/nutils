@@ -120,9 +120,11 @@ def iterate( nmax=-1, verbose=True ):
   i = 0
   while True:
     i += 1
-    if verbose:
-      log.info( 'iteration %d' % i )
-    yield i
+    old = log.context( 'iter %d' % i, depth=1 )
+    try:
+      yield i
+    finally:
+      log.restore( old, depth=1 )
     if i == nmax:
       break
 
@@ -350,15 +352,11 @@ def run( *functions ):
 
   t0 = time.time()
   try:
-    log.context( os.getpid() )
-    try:
-      func( **kwargs )
-    except KeyboardInterrupt:
-      log.error( 'killed by user' )
-    except:
-      log.exception()
-  finally:
-    log.popcontext()
+    func( **kwargs )
+  except KeyboardInterrupt:
+    log.error( 'killed by user' )
+  except:
+    log.exception()
 
   try: # wait for child processes to die
     while True:

@@ -317,7 +317,7 @@ class Topology( object ):
     ndofs = 0 # total number of dofs of new function object
   
     topo = self # topology to examine in next level refinement
-    for irefine in log.iterate( 'level', range( nrefine ) ):
+    for irefine in log.iterate( 'level', range(nrefine), showpct=False ):
   
       funcsp = topo.splinefunc( degree ) # shape functions for level irefine
       func, (dofaxis,) = funcsp.get_func_ind() # separate elem-local funcs and global placement index
@@ -643,7 +643,7 @@ class StructuredTopology( Topology ):
   def trim( self, levelset, maxrefine, lscheme='bezier3', finestscheme='uniform2', evalrefine=0, title='trimming', log=log ):
     'trim element along levelset'
 
-    trimmedelems = [ elem.trim( levelset=levelset, maxrefine=maxrefine, lscheme=lscheme, finestscheme=finestscheme, evalrefine=evalrefine ) for elem in log.iter( title, self.structure.ravel() ) ]
+    trimmedelems = [ elem.trim( levelset=levelset, maxrefine=maxrefine, lscheme=lscheme, finestscheme=finestscheme, evalrefine=evalrefine ) for elem in log.iterate( title, self.structure.ravel() ) ]
     trimmedstructure = numpy.array( trimmedelems ).reshape( self.structure.shape )
     return StructuredTopology( trimmedstructure, periodic=self.periodic )
 

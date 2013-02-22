@@ -9,7 +9,6 @@ def fork( func, nice=19 ):
     pid = os.fork()
     if pid:
       return pid
-    log.context( os.getpid() )
     os.nice( nice )
     try:
       func( *args, **kwargs )

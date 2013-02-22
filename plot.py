@@ -30,7 +30,7 @@ class PyPlot( object ):
   def __enter__( self ):
     'enter with block'
 
-    log.context( 'plotting', level=1 )
+    self.oldlog = log.context( 'plotting', depth=1 )
     return PyPlotModule()
 
   def __exit__( self, *exc_info ):
@@ -38,7 +38,8 @@ class PyPlot( object ):
 
     exc_type = exc_info[0]
     if exc_type == KeyboardInterrupt:
-      log.popcontext( level=1 )
+      #log.popcontext( level=1 )
+      log.restore( self.oldlog, depth=1 )
       return False
     elif exc_type:
       log.exception( exc_info )
@@ -49,7 +50,7 @@ class PyPlot( object ):
       #os.chmod( dumpdir + imgname, 0644 )
       pyplot.close()
       log.path( os.path.basename(self.imgfile.name) )
-    log.popcontext( level=1 )
+    log.restore( self.oldlog, depth=1 )
     return True
 
 class PyPlotModule( object ):

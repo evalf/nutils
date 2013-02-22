@@ -2,8 +2,6 @@ from . import core, prop
 import sys, time, os, traceback
 
 _KEY = '__logger__'
-_ERROR, _WARNING, _PATH, _INFO, _PROGRESS, _DEBUG = range(6)
-
 _makestr = lambda args: ' '.join( str(arg) for arg in args )
 
 def _findlogger( frame=None ):
@@ -17,35 +15,42 @@ def _findlogger( frame=None ):
     frame = frame.f_back
   return SimpleLog()
 
-info    = lambda *args: _findlogger().write( _INFO,    _makestr(args) )
-path    = lambda *args: _findlogger().write( _PATH,    _makestr(args) )
-error   = lambda *args: _findlogger().write( _ERROR,   _makestr(args) )
-warning = lambda *args: _findlogger().write( _WARNING, _makestr(args) )
+info    = lambda *args: _findlogger().write( 'info',    _makestr(args) )
+path    = lambda *args: _findlogger().write( 'path',    _makestr(args) )
+error   = lambda *args: _findlogger().write( 'error',   _makestr(args) )
+warning = lambda *args: _findlogger().write( 'warning', _makestr(args) )
 
 def context( *args, **kwargs ):
   'context'
 
-  level = kwargs.pop( 'level', 0 )
+  depth = kwargs.pop( 'depth', 0 )
   assert not kwargs
-  sys._getframe(level+1).f_locals[_KEY] = ContextLog( _makestr(args) )
+  f_locals = sys._getframe(depth+1).f_locals
+  old = f_locals.get(_KEY)
+  f_locals[_KEY] = ContextLog( _makestr(args) )
+  return old
 
-def popcontext( level=0 ):
+def restore( logger, depth=0 ):
   'pop context'
 
-  frame = sys._getframe(level+1)
-  frame.f_locals[_KEY] = frame.f_locals[_KEY].parent
+  f_locals = sys._getframe(depth+1).f_locals
+  if logger:
+    f_locals[_KEY] = logger
+  else:
+    f_locals.pop(_KEY,None)
 
 def iterate( text, iterable, target=None, **kwargs ):
   'iterate'
   
   logger = ProgressLog( text, target if target is not None else len(iterable), **kwargs )
+  f_locals = sys._getframe(1).f_locals
   try:
-    frame = sys._getframe(1).f_locals[_KEY] = logger
+    frame = f_locals[_KEY] = logger
     for i, item in enumerate( iterable ):
       yield item
-      logger.update( level=_PROGRESS, current=i )
+      logger.update( level='progress', current=i )
   finally:
-    frame = sys._getframe(1).f_locals[_KEY] = logger.parent
+    frame = f_locals[_KEY] = logger.parent
 
 def exception( exc_info=None ):
   'print traceback'
@@ -55,7 +60,7 @@ def exception( exc_info=None ):
     exc_traceback = exc_traceback.tb_next
   frame = exc_traceback.tb_frame
   parts = traceback.format_exception_only( exc_type, exc_value ) + traceback.format_stack( frame )
-  _findlogger( frame ).write( _ERROR, ''.join( parts ) )
+  _findlogger( frame ).write( 'error', ''.join( parts ) )
 
 class SimpleLog( object ):
   'simple log'
@@ -99,14 +104,19 @@ class HtmlLog( object ):
     self.html.write( '</pre></body></html>\n' )
     self.html.flush()
 
-  def write( self, level, *text ):
+  def write( self, level, *chunks ):
     'write'
 
-    if level <= self.maxlevel:
-      print ' > '.join( text )
-    if level == _PATH:
-      text = text[:-1] + ( '<a href="%s" class="plot">%s</a>' % (text[-1],text[-1]), )
-    self.html.write( ' > '.join(text) + '\n' )
+    if not chunks:
+      return
+    ilevel = { 'error':0, 'warning':1, 'path':2, 'info':3, 'progress':4, 'debug':5 }.get( level, -1 )
+    if ilevel <= self.maxlevel:
+      print ' > '.join( chunks )
+    if level == 'path':
+      chunks = chunks[:-1] + ( '<a href="%s" class="plot">%s</a>' % (chunks[-1],chunks[-1]), )
+    else:
+      chunks = chunks[:-1] + ( '<span class="%s">%s</span>' % (level,chunks[-1]), )
+    self.html.write( ' &middot; '.join( chunks ) + '\n' )
     self.html.flush()
 
 class ContextLog( object ):
@@ -126,17 +136,17 @@ class ContextLog( object ):
 class ProgressLog( object ):
   'progress bar'
 
-  def __init__( self, text, target, nchar=20, tint=1, texp=2 ):
+  def __init__( self, text, target, showpct=True, tint=1, texp=2 ):
     'constructor'
 
     self.text = text
+    self.showpct = showpct
     self.tint = tint
     self.texp = texp
     self.t0 = time.time()
     self.tnext = self.t0 + self.tint
     self.target = target
     self.current = 0
-    self.nchar = nchar
     self.parent = _findlogger()
 
   def update( self, level, current ):
@@ -152,30 +162,34 @@ class ProgressLog( object ):
     self.tint *= self.texp
     self.tnext = time.time() + self.tint
     pbar = self.text + ' %.0f/%.0f' % ( self.current, self.target )
-    pct = self.current / float(self.target)
-    nblk = int( pct * self.nchar )
-    bar = ( '%.0f%%' % (100*pct) ).center( self.nchar, '.' )
-    pbar += ' [%s]' % ( bar[:nblk].replace('.','#') + bar[nblk:] )
+    if self.showpct:
+      pct = 100 * self.current / float(self.target)
+      pbar += ' (%.0f%%)' % pct
     self.parent.write( level, pbar, *text )
 
 # DEPRECATED
 
 progress = info
 
-class ProgressBar( ProgressLog ):
+class ProgressBar( object ):
   'temporary construct for backwards compatibility'
 
   @core.deprecated( old='ProgressBar(n,text)', new='iterate(text,n)' )
   def __init__( self, n, title ):
     'constructor'
 
+    self.text = title
     if isinstance( n, int ):
-      iterable = None
-      target = n
+      self.iterable = None
+      self.target = n
     else:
-      iterable = n
-      target = len(n)
-    ProgressLog.__init__( self, 3, None, title, iterable=iterable, target=target )
+      self.iterable = n
+      self.target = len(n)
+
+  def __iter__( self ):
+    'iterate'
+
+    return iter( iterate( self.text, self.iterable, self.target ) )
 
   def add( self, text ):
     'add to text'

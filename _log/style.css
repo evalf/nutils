@@ -42,3 +42,10 @@ a.active { color: #9B3030; }
 	text-decoration: none;
 }
 #controls a:hover{ color: #9B3030; }
+
+pre { color: gray; }
+a.plot { color: green; }
+span.info { color: black; }
+span.error { color: red; }
+span.warning { color: orange; }
+span.debug { color: cyan; }
