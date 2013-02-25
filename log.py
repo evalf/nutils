@@ -59,8 +59,8 @@ def exception( exc_info=None ):
   while exc_traceback.tb_next:
     exc_traceback = exc_traceback.tb_next
   frame = exc_traceback.tb_frame
-  parts = traceback.format_exception_only( exc_type, exc_value ) + traceback.format_stack( frame )
-  _findlogger( frame ).write( 'error', ''.join( parts ) )
+  parts = traceback.format_stack( frame ) + traceback.format_exception_only( exc_type, exc_value )
+  _findlogger( frame ).write( 'error', ''.join( reversed(parts) ) )
 
 class SimpleLog( object ):
   'simple log'

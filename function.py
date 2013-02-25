@@ -838,7 +838,7 @@ class Align( ArrayFunc ):
     elif ax1 not in self.axes:
       axes = [ ax - (ax>ax1) - (ax>ax2) if ax != ax2 else -1 for ax in self.axes ]
     else:
-      func = takediag( func, self.axes[ax1], self.axes[ax2] )
+      func = takediag( func, self.axes.index(ax1), self.axes.index(ax2) )
       axes = [ ax - (ax>ax1) - (ax>ax2) for ax in self.axes if ax not in (ax1,ax2) ] + [ -1 ]
     return align( func, axes, self.ndim-1 )
 
@@ -3031,6 +3031,7 @@ def pointwise( args, evalf, deriv ):
 
 sin = lambda arg: pointwise( [arg], numpy.sin, cos )
 cos = lambda arg: pointwise( [arg], numpy.cos, lambda x: -sin(x) )
+tan = lambda arg: pointwise( [arg], numpy.tan, lambda x: cos(x)**-2 )
 exp = lambda arg: pointwise( [arg], numpy.exp, exp )
 ln = lambda arg: pointwise( [arg], numpy.log, reciprocal )
 log2 = lambda arg: ln(arg) / ln(2)
@@ -3052,6 +3053,10 @@ trace = lambda arg, n1=-2, n2=-1: sum( takediag( arg, n1, n2 ) )
 def take( arg, indices, axis ):
   if _isfunc( arg ):
     return arg.__take__( indices, axis )
+  if isinstance( indices, slice ):
+    s = [ slice(None) ] * arg.ndim
+    s[axis] = indices
+    return arg[ tuple(s) ]
   return numpy.take( arg, indices, axis )
 
 @core.deprecated( old='Chain', new='chain' )
