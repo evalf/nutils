@@ -114,13 +114,13 @@ def clone( obj ):
   clone.__dict__.update( obj.__dict__ )
   return clone
 
-def iterate( nmax=-1, verbose=True ):
+def iterate( context='iter', nmax=-1 ):
   'iterate forever'
 
   i = 0
   while True:
     i += 1
-    old = log.context( 'iter %d' % i, depth=1 )
+    old = log.context( '%s %d' % (context,i), depth=1 )
     try:
       yield i
     finally:

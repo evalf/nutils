@@ -715,7 +715,7 @@ class UnstructuredTopology( Topology ):
   def __iter__( self ):
     'number of elements'
 
-    return iter(self.elements)
+    return iter( log.iterate( 'element', self.elements ) )
 
   def __len__( self ):
     'number of elements'

@@ -1140,14 +1140,14 @@ class Choose( ArrayFunc ):
     self.level = level
     self.choices = tuple(choices)
     shape = _jointshape( *[ choice.shape for choice in choices ] )
-    assert level.ndim == len(shape), 'level.ndim=%s, shape=%s' % ( level.ndim, shape )
+    assert level.ndim == 0
     ArrayFunc.__init__( self, args=(level,)+self.choices, evalf=self.choose, shape=shape )
 
   @staticmethod
   def choose( level, *choices ):
     'choose'
 
-    return numpy.choose( level, choices )
+    return numpy.choose( level, [ c.T for c in choices ] ).T
 
   def __localgradient__( self, ndims ):
     'gradient'
