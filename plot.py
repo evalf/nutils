@@ -25,7 +25,7 @@ class PyPlot( object ):
           break
         n += 1
 
-    self.imgfile = open( dumpdir + imgname, 'w' ) # claim filename
+    self.imgfile = open( dumpdir + imgname, 'wb' ) # claim filename
 
   def __enter__( self ):
     'enter with block'
@@ -47,6 +47,7 @@ class PyPlot( object ):
       from matplotlib import pyplot
       dumpdir = prop.dumpdir
       pyplot.savefig( self.imgfile, format=self.imgtype )
+      self.imgfile.close()
       #os.chmod( dumpdir + imgname, 0644 )
       pyplot.close()
       log.path( os.path.basename(self.imgfile.name) )

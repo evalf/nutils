@@ -57,7 +57,7 @@ class Cache( object ):
     if not os.path.exists( cachedir ):
       os.makedirs( cachedir )
     path = os.path.join( cachedir, md5hash )
-    self.data = file( path, 'a+' if not getattr( prop, 'recache', False ) else 'w+' )
+    self.data = file( path, 'ab+' if not getattr( prop, 'recache', False ) else 'wb+' )
 
   def __call__( self, func, *args, **kwargs ):
     'call'
@@ -245,9 +245,8 @@ def run( *functions ):
     'nprocs': 1,
     'outdir': '~/public_html',
     'verbose': 4,
-    'linewidth': 60,
     'imagetype': 'png',
-    'symlink': 'latest',
+    'symlink': False,
     'recache': False,
     'dot': False,
   }
@@ -266,7 +265,6 @@ def run( *functions ):
   --nprocs=%(nprocs)-14s Select number of processors
   --outdir=%(outdir)-14s Define directory for output
   --verbose=%(verbose)-13s Set verbosity level, 9=all
-  --linewidth=%(linewidth)-11s Set line width
   --imagetype=%(imagetype)-11s Set image type
   --symlink=%(symlink)-13s Create symlink to latest results
   --recache=%(recache)-13s Overwrite existing cache
@@ -314,6 +312,7 @@ def run( *functions ):
 
   scriptname = os.path.basename(sys.argv[0])
   outdir = os.path.expanduser( prop.outdir ).rstrip( os.sep ) + os.sep
+  print outdir
   basedir = outdir + scriptname + os.sep
   localtime = time.localtime()
   timepath = time.strftime( '%Y/%m/%d/%H-%M-%S/', localtime )
@@ -358,11 +357,12 @@ def run( *functions ):
   except:
     log.exception()
 
-  try: # wait for child processes to die
-    while True:
-      pid, status = os.wait()
-  except OSError: # no more children
-    pass
+  if hasattr( os, 'wait' ):
+    try: # wait for child processes to die
+      while True:
+        pid, status = os.wait()
+    except OSError: # no more children
+      pass
 
   dt = time.time() - t0
   hours = dt // 3600

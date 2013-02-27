@@ -7,7 +7,7 @@
 
 typedef struct { int countdown, resetcounter, stride0, stride1; } DataStepper;
 
-static inline PyObject *new_dims_and_strides( PyObject *array, int nd, npy_intp *dims, npy_intp *strides, int flags ) {
+static PyObject *new_dims_and_strides( PyObject *array, int nd, npy_intp *dims, npy_intp *strides, int flags ) {
   // Creates a new view of existing data, with specified number of axes, shape,
   // and strides. The original array becomes the base of the old array without
   // (!) increasing its reference count. On failure decreases the original
@@ -32,8 +32,15 @@ static PyObject *numeric_addsorted( PyObject *self, PyObject *args, PyObject *kw
   // length to minimize reallocations.
 
   PyObject *array=NULL, *entries=NULL;
+  npy_intp size;
+  npy_intp N;
   int inplace = 0;
+  int i;
+  PyObject *base;
+  npy_int *data;
   char *keywords[] = { "array", "entries", "inplace", NULL };
+  PyObject *iter;
+  npy_intp stride = sizeof(npy_int);
   if ( ! PyArg_ParseTupleAndKeywords( args, kwargs, "O&O&|i", keywords, PyArray_Converter, &array, PyArray_Converter, &entries, &inplace ) ) {
     Py_XDECREF( array );
     Py_XDECREF( entries );
@@ -45,13 +52,12 @@ static PyObject *numeric_addsorted( PyObject *self, PyObject *args, PyObject *kw
     Py_DECREF( entries );
     return NULL;
   }
-  npy_intp size = PyArray_SIZE(array);
-  npy_intp N = 1;
+  size = PyArray_SIZE(array);
+  N = 1;
   while ( N <= size + PyArray_SIZE(entries) ) {
     N <<= 1;
   }
-  int i;
-  PyObject *base = PyArray_BASE(array);
+  base = PyArray_BASE(array);
   if ( !inplace || base == NULL
                 || !PyArray_Check(base)
                 || !PyArray_ISCONTIGUOUS(base)
@@ -73,8 +79,8 @@ static PyObject *numeric_addsorted( PyObject *self, PyObject *args, PyObject *kw
     Py_INCREF( base );
   }
   Py_DECREF( array );
-  npy_int *data = PyArray_DATA( base ); // contigous length N
-  PyObject *iter = PyArray_IterNew( entries );
+  data = PyArray_DATA( base ); // contigous length N
+  iter = PyArray_IterNew( entries );
   ASSERT( iter );
   while ( PyArray_ITER_NOTDONE(iter) ) {
     npy_int value = *(npy_int *)PyArray_ITER_DATA(iter);
@@ -97,7 +103,6 @@ static PyObject *numeric_addsorted( PyObject *self, PyObject *args, PyObject *kw
   }
   Py_DECREF( iter );
   Py_DECREF( entries );
-  npy_intp stride = sizeof(npy_int);
   return new_dims_and_strides( base, 1, &size, &stride, NPY_WRITEABLE|NPY_CONTIGUOUS );
 }
 
@@ -109,6 +114,11 @@ static PyObject *numeric_contract( PyObject *self, PyObject *args, PyObject *kwa
   PyObject *A = NULL, *B = NULL;
   int ncontract = -1;
   char *keywords[] = { "a", "b", "ncontract", NULL };
+  int nd;
+  DataStepper axes[NPY_MAXDIMS];
+  int i, n;
+  PyObject *C;
+  double *ptrA, *ptrB, *ptrC;
   if ( ! PyArg_ParseTupleAndKeywords( args, kwargs, "OOi", keywords, &A, &B, &ncontract ) ) {
     return NULL;
   }
@@ -116,7 +126,7 @@ static PyObject *numeric_contract( PyObject *self, PyObject *args, PyObject *kwa
     PyErr_Format( PyExc_TypeError, "expected numpy arrays" );
     return NULL;
   }
-  int nd = PyArray_NDIM(A);
+  nd = PyArray_NDIM(A);
   if ( nd != PyArray_NDIM(B) ) {
     PyErr_Format( PyExc_TypeError, "dimensions do not match" );
     return NULL;
@@ -125,8 +135,6 @@ static PyObject *numeric_contract( PyObject *self, PyObject *args, PyObject *kwa
     PyErr_Format( PyExc_TypeError, "invalid ncontract" );
     return NULL;
   }
-  DataStepper axes[NPY_MAXDIMS];
-  int i, n;
   for ( i = 0; i < nd; i++ ) {
     n = PyArray_DIM(A,i);
     if ( n == 0 ) {
@@ -141,16 +149,16 @@ static PyObject *numeric_contract( PyObject *self, PyObject *args, PyObject *kwa
     axes[i].stride0 = PyArray_STRIDE(A,i) / sizeof(double);
     axes[i].stride1 = PyArray_STRIDE(B,i) / sizeof(double);
   }
-  PyObject *C = PyArray_EMPTY( nd-ncontract, PyArray_DIMS(A), NPY_DOUBLE, 0 );
+  C = PyArray_EMPTY( nd-ncontract, PyArray_DIMS(A), NPY_DOUBLE, 0 );
   if ( C == NULL ) {
     return NULL;
   }
   if ( PyArray_SIZE( C ) == 0 ) {
     return C;
   }
-  double *ptrA = PyArray_DATA( A );
-  double *ptrB = PyArray_DATA( B );
-  double *ptrC = PyArray_DATA( C );
+  ptrA = PyArray_DATA( A );
+  ptrB = PyArray_DATA( B );
+  ptrC = PyArray_DATA( C );
   (*ptrC) = (*ptrA) * (*ptrB);
   for ( i = nd-1; i >= 0; i-- ) {
     if ( axes[i].countdown == 0 ) {
@@ -186,6 +194,7 @@ static PyObject *numeric_module;
 PyMODINIT_FUNC init_numeric( void ) {
   // Initializes module and numpy components.
 
+  printf( "loading _numeric module\n" );
   numeric_module = Py_InitModule( "_numeric", module_methods );
   import_array();
 }
