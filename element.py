@@ -47,7 +47,7 @@ class TrimmedIScheme( object ):
         return True
       if not inside.any():
         return None
-      return LocalPoints( points.coords[inside], points.weights[inside] )
+      return points.coords[inside], points.weights[inside]
 
     try:
       inside = self.levelset( elem, self.bezierscheme ) > 0
@@ -80,7 +80,7 @@ class TrimmedIScheme( object ):
 
     coords = numpy.concatenate( coords, axis=0 )
     weights = numpy.concatenate( weights, axis=0 )
-    return LocalPoints( coords, weights )
+    return coords, weights
 
 class AffineTransformation( object ):
   'affine transformation'
@@ -131,11 +131,6 @@ class AffineTransformation( object ):
 
     return numeric.dot( A, self.transform.T, axis )
 
-  def apply( self, coords ):
-    'apply forward transformation'
-
-    return self.offset + numeric.dot( coords, self.transform.T )
-
   def invapply( self, coords ):
     'apply inverse transformation'
 
@@ -145,7 +140,7 @@ class AffineTransformation( object ):
   def eval( self, points ):
     'apply transformation'
 
-    return LocalPoints( self.apply(points.coords), points.weights )
+    return util.ImmutableArray( self.offset + numeric.dot( points, self.transform.T ) )
 
 class Element( object ):
   '''Element base class.
@@ -166,11 +161,11 @@ class Element( object ):
     'get points'
 
     if isinstance( where, str ):
-      points = self.getischeme( self.ndims, where )
+      points, weights = self.getischeme( self.ndims, where )
     else:
-      where = numpy.asarray( where )
-      points = LocalPoints( where )
-    return points
+      points = util.ImmutableArray( where )
+      weights = None
+    return points, weights
 
   def zoom( self, elemset, points ):
     'zoom points'
@@ -270,12 +265,12 @@ class TrimmedElement( Element ):
       n = int(ischeme[7:] or 0)
       points = self.elem.eval( 'contour{}'.format(n) )
       inside = self.levelset( self.elem, points ) >= 0
-      return LocalPoints( points.coords[inside], None )
+      return points.coords[inside], None
 
     if self.maxrefine <= 0:
       points = self.elem.eval( self.finestscheme )
       inside = self.levelset( self.elem, points ) > 0
-      return LocalPoints( points.coords[inside], points.weights[inside] )
+      return points.coords[inside], points.weights[inside]
 
     coords = []
     weights = []
@@ -291,7 +286,7 @@ class TrimmedElement( Element ):
 
     coords = numpy.concatenate( coords, axis=0 )
     weights = numpy.concatenate( weights, axis=0 )
-    return LocalPoints( coords, weights )
+    return coords, weights
 
   @core.cacheprop
   def children( self ):
@@ -457,7 +452,7 @@ class QuadElement( Element ):
     'get integration scheme'
 
     if ndims == 0:
-      return LocalPoints( numpy.zeros([1,0]), numpy.array([1.]) )
+      return numpy.zeros([1,0]), numpy.array([1.])
 
     x = w = None
     if where.startswith( 'gauss' ):
@@ -511,7 +506,7 @@ class QuadElement( Element ):
       weights = reduce( lambda weights, i: ( weights * w[:,_] ).ravel(), range( 1, ndims ), w )
     else:
       weights = None
-    return LocalPoints( coords.T, weights )
+    return util.ImmutableArray( coords.T ), util.ImmutableArray( weights )
 
   def select_contained( self, points, eps=0 ):
     'select points contained in element'
@@ -523,7 +518,7 @@ class QuadElement( Element ):
       points = points[newsel]
       if not points.size:
         return None, None
-    return LocalPoints( points ), selection
+    return points, selection
 
 class TriangularElement( Element ):
   'triangular element'
@@ -644,7 +639,7 @@ class TriangularElement( Element ):
       weights = numeric.appendaxes( .5/NN, NN )
     else:
       raise Exception, 'invalid element evaluation: %r' % where
-    return LocalPoints( coords.T, weights )
+    return util.ImmutableArray( coords.T ), util.ImmutableArray( weights )
 
   def select_contained( self, points, eps=0 ):
     'select points contained in element'
@@ -658,7 +653,7 @@ class TriangularElement( Element ):
       if not points.size:
         return None, None
 
-    return LocalPoints( points ), selection
+    return util.points, selection
 
 class TetrahedronElement( Element ):
   'triangular element'
@@ -709,36 +704,11 @@ class TetrahedronElement( Element ):
       weights = numpy.array( [1] ) / 6.
     else:
       raise Exception, 'invalid element evaluation: %r' % where
-    return LocalPoints( coords.T, weights )
+    return util.ImmutableArray( coords.T ), util.ImmutableArray( weights )
 
   def select_contained( self, points, eps=0 ):
     'select points contained in element'
     raise NotImplementedError( 'Determine whether a point resides in the tetrahedron' )  
-
-class LocalPoints( object ):
-  'local point coordinates'
-
-  def __init__( self, coords, weights=None ):
-    'constructor'
-
-    self.coords = coords
-    self.weights = weights
-    self.npoints, self.ndims = coords.shape
-
-  def offset( self, offset ):
-    'offset coords by constant vector'
-
-    return LocalPoints( self.coords+offset, weights=self.weights )
-
-  def __getitem__( self, item ):
-    'get item'
-
-    return LocalPoints( self.coords[:,item], self.weights )
-
-  def __repr__( self ):
-    'string representation'
-
-    return '<%d points>' % self.npoints
 
 class StdElem( object ):
   'stdelem base class'
@@ -779,10 +749,13 @@ class PolyProduct( StdElem ):
 
     assert isinstance( grad, int ) and grad >= 0
 
+    npoints, ndims = points.shape
+    assert ndims == self.ndims
+
     s1 = slice(0,self.std1.ndims)
-    p1 = points[s1]
+    p1 = points[:,s1]
     s2 = slice(self.std1.ndims,None)
-    p2 = points[s2]
+    p2 = points[:,s2]
 
     S = slice(None),
     N = numpy.newaxis,
@@ -791,7 +764,7 @@ class PolyProduct( StdElem ):
                         * self.std2.eval( p2, grad=j )[S+N+S+N*i+S*j], 1, 2 )
             for i,j in zip( range(grad,-1,-1), range(grad+1) ) ]
 
-    data = numpy.empty( [ points.npoints, self.std1.nshapes * self.std2.nshapes ] + [ self.ndims ] * grad )
+    data = numpy.empty( [ npoints, self.std1.nshapes * self.std2.nshapes ] + [ ndims ] * grad )
 
     s12 = numpy.array([s1,s2])
     R = numpy.arange(grad)
@@ -927,7 +900,7 @@ class PolyLine( StdElem ):
     for n in range(grad):
       poly = poly[:-1] * numpy.arange( poly.shape[0]-1, 0, -1 )[:,_]
 
-    x, = points.coords.T
+    x, = points.T
     polyval = poly[0,_,:].repeat( x.size, axis=0 )
     for p in poly[1:]:
       polyval *= x[:,_]
@@ -960,13 +933,14 @@ class PolyTriangle( StdElem ):
   def eval( self, points, grad=0 ):
     'eval'
 
+    npoints, ndim = points.shape
     if grad == 0:
-      x, y = points.coords.T
+      x, y = points.T
       data = numpy.array( [ x, y, 1-x-y ] ).T
     elif grad == 1:
       data = numpy.array( [[[1,0],[0,1],[-1,-1]]], dtype=float )
     else:
-      data = numpy.array( 0 ).reshape( (1,) * (grad+1+points.ndim) )
+      data = numpy.array( 0 ).reshape( (1,) * (grad+1+ndim) )
     return data
 
   def __repr__( self ):

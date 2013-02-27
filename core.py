@@ -50,21 +50,32 @@ def cachefunc( func ):
   'cached property'
 
   def wrapped( self, *args, **kwargs ):
-    funcache = self.__dict__.setdefault( '_funcache', {} )
-
-    unspecified = object()
-    argcount = func.func_code.co_argcount - 1 # minus self
-    args = list(args) + [unspecified] * ( argcount - len(args) ) if func.func_defaults is None \
-      else list(args) + list(func.func_defaults[ len(args) + len(func.func_defaults) - argcount: ]) if len(args) + len(func.func_defaults) > argcount \
-      else list(args) + [unspecified] * ( argcount - len(func.func_defaults) - len(args) ) + list(func.func_defaults)
     try:
+      hash( args + tuple(kwargs.values()) )
+    except TypeError: # unhashable arguments; skip cache
+      return func( self, *args, **kwargs )
+    funcache = self.__dict__.setdefault( '_funcache', {} )
+    argcount = func.func_code.co_argcount - (len(args)+1) # remaining after args
+    if not argcount:
+      assert not kwargs
+    else:
+      unspecified = object()
+      extra = [unspecified] * argcount
       for kwarg, val in kwargs.items():
-        args[ func.func_code.co_varnames.index(kwarg)-1 ] = val
-    except ValueError:
-      raise TypeError, '%s() got an unexpected keyword argument %r' % ( func.func_name, kwarg )
-    args = tuple( args )
-    if unspecified in args:
-      raise TypeError, '%s() not all arguments were specified' % func.func_name
+        try:
+          i = func.func_code.co_varnames.index(kwarg) - (len(args)+1)
+        except ValueError:
+          raise TypeError, '%s() got an unexpected keyword argument %r' % ( func.func_name, kwarg )
+        assert i >= 0 and extra[i] is unspecified, 'repeated argument %d in %s' % ( kwarg, func.func_name )
+        extra[i] = val
+      defaults = func.func_defaults or ()
+      assert len(defaults) <= argcount
+      for i in range( argcount ):
+        if argcount-i > len(defaults):
+          assert extra[i] is not unspecified
+        elif extra[i] is unspecified:
+          extra[i] = defaults[len(defaults)-(argcount-i)]
+      args += tuple(extra)
     key = (func.func_name,) + args
     value = funcache.get( key )
     if value is None:

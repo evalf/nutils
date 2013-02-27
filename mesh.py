@@ -23,7 +23,7 @@ class ElemFunc( function.ArrayFunc ):
     while elem is not domainelem:
       elem, transform = elem.parent
       points = transform.eval( points )
-    return points.coords
+    return points
 
   def __localgradient__( self, ndims ):
     'local gradient'

@@ -1,8 +1,9 @@
 from . import util, numpy, numeric, log, prop, core, _
 import sys
 
-ELEM   = object()
-POINTS = object()
+ELEM    = object()
+POINTS  = object()
+WEIGHTS = object()
 
 # EVALUABLE
 #
@@ -55,12 +56,14 @@ class Evaluable( object ):
         else:
           idx = arg.recurse_index(data,operations)
       elif arg is ELEM:
-        idx = -2
+        idx = -3
       elif arg is POINTS:
+        idx = -2
+      elif arg is WEIGHTS:
         idx = -1
       else:
         data.insert( 0, arg )
-        idx = -len(data)-2
+        idx = -len(data)-3
       indices[iarg] = idx
     operations.append( (self,indices) )
     return len(operations)-1
@@ -73,20 +76,12 @@ class Evaluable( object ):
       self.operations = []
       self.recurse_index( self.data, self.operations ) # compile expressions
 
-  def __call__( self, elem, points ):
+  def __call__( self, elem, points=None, weights=None ):
     'evaluate'
 
     self.compile()
-    if isinstance( points, str ):
-      points = elem.eval(points)
-    elif isinstance( points, dict ):
-      points = points[elem]
-
-    N = len(self.data) + 2
-
-    values = list( self.data )
-    values.append( elem )
-    values.append( points )
+    N = len(self.data) + 3
+    values = list( self.data ) + [ elem, points, weights ]
     for op, indices in self.operations:
       args = [ values[N+i] for i in indices ]
       try:
@@ -165,13 +160,13 @@ class Evaluable( object ):
 
     self.compile()
     if values is None:
-      values = self.data + ( '<elem>', '<points>' )
+      values = self.data + ( '<elem>', '<points>', '<weights>' )
 
-    N = len(self.data) + 2
+    N = len(self.data) + 3
 
     lines = []
     for i, (op,indices) in enumerate( self.operations ):
-      line = '%2d:' % i
+      line = '  %%%d =' % i
       args = [ '%%%d' % idx if idx >= 0 else _obj2str(values[N+idx]) for idx in indices ]
       try:
         code = op.__evalf.func_code
@@ -183,9 +178,9 @@ class Evaluable( object ):
       line += ' %s( %s )' % ( op.__evalf.__name__, ', '.join( args ) )
       if N+i < len(values):
         line += ' ' + op.verify( values[N+i] )
-      elif N+i == len(values):
-        line += ' <-----ERROR'
       lines.append( line )
+      if N+i == len(values):
+        break
     return '\n'.join( lines )
 
   def __eq__( self, other ):
@@ -275,10 +270,8 @@ class ArrayFunc( Evaluable ):
   def verify( self, value ):
     'check result'
 
-    s = _obj2str(value)
-    if not isinstance( value, numpy.ndarray ):
-      s += ' WRONG TYPE: %s' % type(value)
-    s += ' SHAPE: %s' % ( self.shape, )
+    s = '=> ' + _obj2str(value)
+    s += ' \ (%s)' % ','.join(map(str,self.shape))
     return s
 
   def find( self, elem, target, start, tol=1e-10, maxiter=999 ):
@@ -1018,17 +1011,17 @@ class IWeights( ArrayFunc ):
   def __init__( self ):
     'constructor'
 
-    ArrayFunc.__init__( self, args=[ELEM,POINTS], evalf=self.iweights, shape=() )
+    ArrayFunc.__init__( self, args=[ELEM,WEIGHTS], evalf=self.iweights, shape=() )
 
   @staticmethod
-  def iweights( elem, points ):
+  def iweights( elem, weights ):
     'evaluate'
 
     det = 1
     while elem.parent:
       elem, transform = elem.parent
       det *= transform.det
-    return points.weights * det
+    return weights * det
 
 class Orientation( ArrayFunc ):
   'point orientation'
@@ -2709,9 +2702,11 @@ def _obj2str( obj ):
 
   if isinstance( obj, numpy.ndarray ):
     if obj.size < 6:
-      return str(obj.tolist()).replace(' ','')
+      return _obj2str(obj.tolist())
     return 'array<%s>' % 'x'.join( map( str, obj.shape ) )
   if isinstance( obj, list ):
+    if len(obj) < 6:
+      return '[%s]' % ','.join( _obj2str(o) for o in obj )
     return '[#%d]' % len(obj)
   if isinstance( obj, (tuple,set) ):
     if len(obj) < 6:
@@ -2733,6 +2728,8 @@ def _obj2str( obj ):
     return '...'
   if obj is POINTS:
     return '<points>'
+  if obj is WEIGHTS:
+    return '<weights>'
   if obj is ELEM:
     return '<elem>'
   return str(obj)

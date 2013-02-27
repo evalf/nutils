@@ -22,6 +22,31 @@ class _SuppressedOutput( object ):
 
 suppressed_output = _SuppressedOutput()
 
+class ImmutableArray( numpy.ndarray ):
+  'immutable array'
+
+  flags = None
+
+  def __new__( self, arr ):
+    'constructor'
+
+    arr = numpy.asarray( arr )
+    arr.flags.writeable = False
+    arr = arr.view( ImmutableArray )
+    return arr
+
+  def __eq__( self, other ):
+    'equals'
+
+    return self is other
+
+  def __hash__( self ):
+    'hash'
+
+    return hash( id(self) )
+
+
+
 def delaunay( points ):
   'delaunay triangulation'
 
