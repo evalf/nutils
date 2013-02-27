@@ -943,9 +943,12 @@ class Get( ArrayFunc ):
     s = [ slice(None) ] * func.ndim
     shape = list( func.shape )
     for i, item in reversed( self.items ):
-      s[i] = item
       sh = shape.pop( i )
-      assert 0 <= item < sh
+      if sh == 1:
+        s[i] = 0
+      else:
+        assert 0 <= item < sh
+        s[i] = item
     ArrayFunc.__init__( self, args=(func,(Ellipsis,)+tuple(s)), evalf=numpy.ndarray.__getitem__, shape=shape )
 
   def __localgradient__( self, ndims ):
