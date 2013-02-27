@@ -188,13 +188,13 @@ static PyMethodDef module_methods[] = {
 
   { "addsorted",  (PyCFunction)numeric_addsorted,  METH_KEYWORDS, "add to sorted array" },
   { "contract",   (PyCFunction)numeric_contract,   METH_KEYWORDS, "contract"            },
+  NULL,
 };
 
 static PyObject *numeric_module;
 PyMODINIT_FUNC init_numeric( void ) {
   // Initializes module and numpy components.
 
-  printf( "loading _numeric module\n" );
   numeric_module = Py_InitModule( "_numeric", module_methods );
   import_array();
 }
