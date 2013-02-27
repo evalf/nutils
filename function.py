@@ -933,12 +933,16 @@ class Get( ArrayFunc ):
   def __init__( self, func, *items ):
     'constructor'
 
-    assert all( 0 <= iax < func.ndim for (iax,item) in items )
     self.func = func
-    self.items = sorted( items, reverse=True )
+    self.items = sorted( items )
+    last_ax = -1
+    for iax, item in self.items:
+      assert iax > last_ax, 'axis %d is repeated or out of bounds' % iax
+      last_ax = iax
+    assert last_ax < func.ndim
     s = [ slice(None) ] * func.ndim
     shape = list( func.shape )
-    for i, item in self.items:
+    for i, item in reversed( self.items ):
       s[i] = item
       sh = shape.pop( i )
       assert 0 <= item < sh
@@ -948,7 +952,7 @@ class Get( ArrayFunc ):
     'local gradient'
 
     f = localgradient( self.func, ndims )
-    for i, item in self.items:
+    for i, item in reversed( self.items ):
       f = get( f, i, item )
     return f
 
@@ -956,15 +960,12 @@ class Get( ArrayFunc ):
     'get item'
 
     i = _normdim( self.ndim, i )
-    where, what = zip( *self.items )
-    for n, ax in enumerate(where):
-      if ax <= i:
+    for n, (iax,item) in enumerate( self.items ):
+      if iax <= i:
         i += 1
       else:
         break
-    where = where[:n] + (i,) + where[n:]
-    what = what[:n] + (item,) + what[n:]
-    items = zip( where, what )
+    items = self.items[:n] + [(i,item)] + self.items[n:]
     return Get( self.func, *items )
 
   def __graphviz__( self ):
