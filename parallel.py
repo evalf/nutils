@@ -5,6 +5,10 @@ import os, traceback
 def fork( func, nice=19 ):
   'fork and run (return value is lost)'
 
+  if not hasattr( os, 'fork' ):
+    log.warning( 'fork does not exist on this platform; running %s in serial' % func.__name__ )
+    return func
+
   def wrapped( *args, **kwargs ):
     pid = os.fork()
     if pid:
