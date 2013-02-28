@@ -450,7 +450,7 @@ class ArrayFunc( Evaluable ):
 
     ax1, ax2 = _norm_and_sort( self.ndim, (ax1,ax2) )
 
-    axes = range(ax1) + [-2], range(ax1,ax2-1) + [-1] + range(ax2-1,self.ndim-2)
+    axes = range(ax1) + [-2] + range(ax1,ax2-1) + [-1] + range(ax2-1,self.ndim-2)
     func = align( self, axes, self.ndim )
 
     if func.shape[-1] == 1:
@@ -876,8 +876,8 @@ class Align( ArrayFunc ):
     if isinstance( func2, Align ) and func1.axes == func2.axes:
       return Align( func1.func * func2.func, func1.axes, func1.ndim )
 
-    if not _isfunc(func2) and len(func1.axes) == func1.ndim:
-      return align( func1.func * transform( func2, func1.axes ), func1.axes, func1.ndim )
+    if not _isfunc(func2) and len(func1.axes) == func2.ndim:
+      return align( func1.func * transpose( func2, func1.axes ), func1.axes, func1.ndim )
 
     return ArrayFunc.__mul__( func1, func2 )
 
@@ -2987,6 +2987,7 @@ def transpose( arg, trans=None ):
   if trans is None:
     invtrans = range( arg.ndim-1, -1, -1 )
   else:
+    trans = numpy.asarray(trans)
     assert sorted(trans) == range(arg.ndim)
     invtrans = numpy.empty( arg.ndim, dtype=int )
     invtrans[ trans ] = numpy.arange( arg.ndim )
