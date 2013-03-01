@@ -354,21 +354,21 @@ function Finity() {
           if( evt.ctrlKey || evt.metaKey || evt.altKey ) {
             return true;
           }
-          
+         	
           // Check for function keys
           switch( true ) {
-            case evt.keyCode == 72 || evt.keyCode == 37: // H (vim left)
-              self.prev();
-              break;
-            case evt.keyCode == 76 || evt.keyCode == 39: // L (vim right)
-              self.next();
-              break;
-						case evt.keyCode == 75 || evt.keyCode == 38: // K (vim up)
+            case (evt.keyCode == 75 && evt.shiftKey) || evt.keyCode == 38: // Shift+K (vim super up)
 							self.first();
 							break
-						case evt.keyCode == 74 || evt.keyCode == 40: // J (vim down)
+						case (evt.keyCode == 74 && evt.shiftKey) || evt.keyCode == 40: // Shift+J (vim super down)
 							self.last();
 							break;
+						case evt.keyCode == 75 || evt.keyCode == 37: // k (vim up)
+              self.prev();
+              break;
+            case evt.keyCode == 74 || evt.keyCode == 39: // j (vim down)
+              self.next();
+              break;
             case evt.shiftKey && evt.keyCode == 82: // Shift + r
 							if( self._aLatestAll.length )
 								document.location.href = self._aLatestAll.attr('href');
