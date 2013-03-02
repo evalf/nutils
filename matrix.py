@@ -153,6 +153,7 @@ class SparseMatrix( Matrix ):
       self.data, self.indices, self.indptr = graph
       assert self.indices.dtype == numpy.intc
       assert self.indptr.dtype == numpy.intc
+      assert len(self.indices) == len(self.data) == self.indptr[-1]
       nrows = len(self.indptr) - 1
     else:
       nrows = len(graph)
@@ -228,6 +229,19 @@ class SparseMatrix( Matrix ):
     'set submatrix'
 
     assert self.data is value.data # apparently we are assigning ourselves
+
+  def __add__( self, other ):
+    'add'
+
+    assert isinstance( other, SparseMatrix )
+    assert self.shape == other.shape
+    maxcount = len(self.data) + len(other.data)
+    indptr = numpy.empty( self.shape[0]+1, dtype=numpy.intc )
+    indices = numpy.empty( maxcount, dtype=numpy.intc )
+    data = numpy.empty( maxcount, dtype=float )
+    _csr.csr_plus_csr( self.shape[0], self.shape[1], self.indptr, self.indices, self.data, other.indptr, other.indices, other.data, indptr, indices, data )
+    nz = indptr[-1]
+    return SparseMatrix( (data[:nz],indices[:nz],indptr) )
 
   def __iadd__( self, other ):
     'in place addition'

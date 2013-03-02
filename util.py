@@ -144,14 +144,14 @@ def iterate( context='iter', nmax=-1 ):
 
   i = 0
   while True:
+    if i == nmax:
+      break
     i += 1
     old = log.context( '%s %d' % (context,i), depth=1 )
     try:
       yield i
     finally:
       log.restore( old, depth=1 )
-    if i == nmax:
-      break
 
 class NanVec( numpy.ndarray ):
   'nan-initialized vector'

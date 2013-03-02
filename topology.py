@@ -41,7 +41,7 @@ class Topology( object ):
 
     log.context( title )
 
-    single_arg = not isinstance(funcs,list)
+    single_arg = not isinstance(funcs,(tuple,list))
     if single_arg:
       funcs = funcs,
 
@@ -88,7 +88,7 @@ class Topology( object ):
 
     log.context( title )
 
-    single_arg = not isinstance(funcs,list)
+    single_arg = not isinstance(funcs,(tuple,list))
     if single_arg:
       funcs = funcs,
 
@@ -121,7 +121,7 @@ class Topology( object ):
 
     log.context( title )
 
-    single_arg = not isinstance(funcs,list)
+    single_arg = not isinstance(funcs,(tuple,list))
     if single_arg:
       funcs = funcs,
 

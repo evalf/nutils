@@ -638,7 +638,7 @@ class ArrayFunc( Evaluable ):
     func1, func2 = _matchndim( self, other )
 
     if _iszero( func2 ):
-      return _const( 0., func1.shape, func2.shape )
+      return _const( 0., _jointshape(func1.shape,func2.shape) )
     
     return Divide( func2, func1 )
 
@@ -956,12 +956,8 @@ class Get( ArrayFunc ):
     'get item'
 
     i = _normdim( self.ndim, i )
-    for n, (iax,item) in enumerate( self.items ):
-      if iax <= i:
-        i += 1
-      else:
-        break
-    items = self.items[:n] + [(i,item)] + self.items[n:]
+    n = _sum( iax <= i for iax, it in self.items )
+    items = self.items[:n] + [(i+n,item)] + self.items[n:]
     return Get( self.func, *items )
 
   def __graphviz__( self ):
@@ -2395,7 +2391,7 @@ class Diagonalize( ArrayFunc ):
     func1, func2 = _matchndim( self, other )
     assert isinstance( func1, Diagonalize )
     if _iszero( func2 ):
-      return _const( 0., func1.shape, func2.shape )
+      return _const( 0., _jointshape(func1.shape,func2.shape) )
     return diagonalize( func1.func * takediag( func2, *func1.toaxes ), *func1.toaxes )
 
   def sum( self, axes=-1 ):
@@ -2499,7 +2495,7 @@ class Kronecker( ArrayFunc ):
     funcs = [ func and func * get( func2, func1.axis, ifun ) for ifun, func in enumerate(func1.funcs) ]
     funcs = [ None if _iszero(func) else func for func in funcs ]
     if not any( funcs ):
-      return _const( 0., func1.shape, func2.shape )
+      return _const( 0., _jointshape(func1.shape,func2.shape) )
     return Kronecker( funcs, self.axis )
 
   def __div__( self, other ):
@@ -2745,7 +2741,8 @@ _iszero = lambda arg: not _isfunc(arg) and numeric.allequal( arg, 0 )
 _isunit = lambda arg: not _isfunc(arg) and numeric.allequal( arg, 1 )
 _haspriority = lambda arg: _isfunc(arg) and arg.__priority__
 _subsnonesh = lambda shape: tuple( 1 if sh is None else sh for sh in shape )
-_const = lambda val, *shapes: numeric.appendaxes( val, _subsnonesh( _jointshape(*shapes) ) )
+_const = lambda val, shape: numeric.appendaxes( val, _subsnonesh( shape ) )
+#_const = lambda val, shape: expand( numpy.asarray(val).reshape( [1]*len(shape) ), shape )
 
 def _norm_and_sort( ndim, args ):
   'norm axes, sort, and assert unique'
@@ -2927,6 +2924,7 @@ def inv( arg, ax1, ax2 ):
 def norm2( arg, axis=-1 ):
   'norm2'
 
+  arg = _asarray( arg )
   if _isfunc( arg ):
     return arg.__norm2__( axis )
   return numeric.norm2( arg, axis )
