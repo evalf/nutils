@@ -45,8 +45,6 @@ class ImmutableArray( numpy.ndarray ):
 
     return hash( id(self) )
 
-
-
 def delaunay( points ):
   'delaunay triangulation'
 
@@ -394,7 +392,8 @@ def run( *functions ):
   minutes = dt // 60 - 60 * hours
   seconds = dt // 1 - 60 * minutes - 3600 * hours
 
-  log.info( '\nfinish %s\n' % time.ctime() )
+  log.info()
+  log.info( 'finish %s\n' % time.ctime() )
   log.info( 'elapsed %.0f:%.0f:%.0f' % ( hours, minutes, seconds ) )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

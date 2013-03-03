@@ -56,8 +56,7 @@ class Topology( object ):
     idata.graphviz()
 
     for ielem, elem in enumerate( self ):
-      points, weights = elem.eval( ischeme )
-      for retval, data in zip( retvals, idata( elem, points, weights ) ):
+      for retval, data in zip( retvals, idata( elem, ischeme ) ):
         retval[ielem] = data
 
     if stack:
@@ -104,8 +103,7 @@ class Topology( object ):
     idata.graphviz()
 
     for ielem, elem in enumerate( self ):
-      points, weights = elem.eval( ischeme )
-      area_data = idata( elem, points, weights )
+      area_data = idata( elem, ischeme )
       area = area_data[0].sum()
       for retval, data in zip( retvals, area_data[1:] ):
         retval[ielem] = data / area
@@ -193,8 +191,7 @@ class Topology( object ):
     idata.graphviz()
 
     for elem in self:
-      points, weights = elem.eval( ischeme )
-      for ifunc, index, data in idata( elem, points, weights ):
+      for ifunc, index, data in idata( elem, ischeme ):
         retvals[ifunc][index] += data
 
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )

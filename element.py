@@ -41,13 +41,13 @@ class TrimmedIScheme( object ):
         return None
 
     if maxrefine <= 0:
-      points = elem.eval( self.finestscheme )
-      inside = self.levelset( elem, points ) > 0
+      ipoints, iweights = elem.eval( self.finestscheme )
+      inside = self.levelset( elem, ipoints ) > 0
       if inside.all():
         return True
       if not inside.any():
         return None
-      return points.coords[inside], points.weights[inside]
+      return ipoints[inside], iweights[inside]
 
     try:
       inside = self.levelset( elem, self.bezierscheme ) > 0
@@ -59,24 +59,25 @@ class TrimmedIScheme( object ):
       if not inside.any():
         return None
 
-    allpoints = [ self.generate_ischeme( child, maxrefine-1 ) for child in elem.children ]
-    if all( points is True for points in allpoints ):
+    ischemes = [ self.generate_ischeme( child, maxrefine-1 ) for child in elem.children ]
+    if all( ischeme is True for ischeme in ischemes ):
       return True
-    if all( points is None for points in allpoints ):
+    if all( ischeme is None for ischeme in ischemes ):
       return None
 
-    coords = []
+    points = []
     weights = []
-    for child, points in zip( elem.children, allpoints ):
-      if points is None:
+    for child, ischeme in zip( elem.children, ischemes ):
+      if ischeme is None:
         continue
-      if points is True:
-        points = child.eval( self.ischeme )
+      if ischeme is True:
+        ischeme = child.eval( self.ischeme )
       pelem, transform = child.parent
       assert pelem is elem
-      points = transform.eval( points )
-      coords.append( points.coords )
-      weights.append( points.weights )
+      ipoints, iweights = ischeme
+      points.append( transform.eval(ipoints) )
+      print 'DET', transform.det
+      weights.append( iweights * transform.det )
 
     coords = numpy.concatenate( coords, axis=0 )
     weights = numpy.concatenate( weights, axis=0 )
@@ -261,31 +262,32 @@ class TrimmedElement( Element ):
   def eval( self, ischeme ):
     'get integration scheme'
 
+    assert isinstance( ischeme, str )
+
     if ischeme[:7] == 'contour':
       n = int(ischeme[7:] or 0)
-      points = self.elem.eval( 'contour{}'.format(n) )
+      points, weights = self.elem.eval( 'contour{}'.format(n) )
       inside = self.levelset( self.elem, points ) >= 0
-      return points.coords[inside], None
+      return points[inside], None
 
     if self.maxrefine <= 0:
-      points = self.elem.eval( self.finestscheme )
+      points, weights = self.elem.eval( self.finestscheme )
       inside = self.levelset( self.elem, points ) > 0
-      return points.coords[inside], points.weights[inside]
+      return points[inside], weights[inside] if weights is not None else None
 
-    coords = []
-    weights = []
+    allcoords = []
+    allweights = []
     for child in self.children:
       if child is None:
         continue
-      points = child.eval( ischeme )
+      points, weights = child.eval( ischeme )
       pelem, transform = child.parent
       assert pelem == self
-      points = transform.eval( points )
-      coords.append( points.coords )
-      weights.append( points.weights * transform.det )
+      allcoords.append( transform.eval(points) )
+      allweights.append( weights * transform.det )
 
-    coords = numpy.concatenate( coords, axis=0 )
-    weights = numpy.concatenate( weights, axis=0 )
+    coords = util.ImmutableArray( numpy.concatenate( allcoords, axis=0 ) )
+    weights = util.ImmutableArray( numpy.concatenate( allweights, axis=0 ) )
     return coords, weights
 
   @core.cacheprop

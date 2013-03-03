@@ -76,8 +76,26 @@ class Evaluable( object ):
       self.operations = []
       self.recurse_index( self.data, self.operations ) # compile expressions
 
-  def __call__( self, elem, points=None, weights=None ):
+  def __call__( self, elem, ischeme ):
     'evaluate'
+
+    if isinstance( ischeme, dict ):
+      ischeme = ischeme[elem]
+
+    if isinstance( ischeme, str ):
+      points, weights = elem.eval( ischeme )
+    elif isinstance( ischeme, tuple ):
+      points, weights = ischeme
+      assert points.shape[-1] == elem.ndims
+      assert points.shape[:-1] == weights.shape, 'non matching shapes: points.shape=%s, weights.shape=%s' % ( points.shape, weights.shape )
+    elif isinstance( ischeme, numpy.ndarray ):
+      points = ischeme
+      weights = None
+      assert points.shape[-1] == elem.ndims
+    elif ischeme is None:
+      points = weights = None
+    else:
+      raise Exception, 'invalid integration scheme of type %r' % type(ischeme)
 
     self.compile()
     N = len(self.data) + 3

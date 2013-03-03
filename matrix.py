@@ -60,7 +60,7 @@ def krylov( matvec, b, x0=None, tol=1e-5, restart=None, maxiter=0, precon=None )
         info = -1
         firsttime = False
       bnrm2, res, info = stoptest( vec1, bnrm2, info )
-      progress.update( 'progress', numpy.log(res) )
+      progress.update( numpy.log(res) )
     else:
       assert ijob == -1
       break

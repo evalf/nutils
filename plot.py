@@ -4,28 +4,27 @@ import os
 class PyPlot( object ):
   'matplotlib figure'
 
-  def __init__( self, name, imgtype=None, ndigits=3 ):
+  def __init__( self, name, imgtype=None, ndigits=3, index=None ):
     'constructor'
 
     import matplotlib
     matplotlib.use( 'Agg', warn=False )
 
     assert isinstance(ndigits,int) and ndigits >= 0, 'positive integer required'
-    self.imgtype = getattr( prop, 'imagetype', 'png' ) if imgtype is None else imgtype
-
+    imgtype = getattr( prop, 'imagetype', 'png' ) if imgtype is None else imgtype
     dumpdir = prop.dumpdir
-    if ndigits == 0:
-      imgname = name + '.' + self.imgtype
-    else:
-      fmt = name + '%%0%dd' % ndigits + '.' + self.imgtype
-      n = 1
-      while True:
-        imgname = fmt % n
-        if not os.path.isfile( dumpdir + imgname ):
-          break
-        n += 1
+    if ndigits:
+      if index is None:
+        index = 1
+        for filename in os.listdir( dumpdir ):
+          if filename.startswith( name ):
+            num = filename[len(name):].split('.')[0]
+            if num.isdigit():
+              index = max( index, int(num)+1 )
+      name += str(index).rjust(ndigits,'0')
 
-    self.imgfile = open( dumpdir + imgname, 'wb' ) # claim filename
+    self.path = dumpdir
+    self.names = [ name + '.' + ext for ext in imgtype.split(',') ]
 
   def __enter__( self ):
     'enter with block'
@@ -46,11 +45,11 @@ class PyPlot( object ):
     else:
       from matplotlib import pyplot
       dumpdir = prop.dumpdir
-      pyplot.savefig( self.imgfile, format=self.imgtype )
-      self.imgfile.close()
-      #os.chmod( dumpdir + imgname, 0644 )
+      for name in self.names:
+        pyplot.savefig( self.path + name )
+        #os.chmod( self.path + name, 0644 )
       pyplot.close()
-      log.path( os.path.basename(self.imgfile.name) )
+      log.path( *self.names )
     log.restore( self.oldlog, depth=1 )
     return True
 
@@ -69,6 +68,7 @@ class PyPlotModule( object ):
   
     from matplotlib import collections
     assert verts.dtype == object and verts.ndim == 1
+    assert all( vert.ndim == 2 and vert.shape[1] == 2 for vert in verts )
     if facecolors != 'none':
       assert isinstance(facecolors,numpy.ndarray) and facecolors.shape == verts.shape
       array = facecolors
@@ -182,7 +182,6 @@ class Pylab( object ):
       log.error( 'ERROR: plot failed:', msg or exc )
       return #True
 
-    out = log.debug( 'saving image' )
     from matplotlib import pyplot
     dumpdir = prop.dumpdir
     n = len( os.listdir( dumpdir ) )
@@ -190,7 +189,7 @@ class Pylab( object ):
     pyplot.savefig( imgpath, format=imgpath.split('.')[-1] )
     os.chmod( imgpath, 0644 )
     pyplot.close()
-    out.info( os.path.basename(imgpath) )
+    log.path( os.path.basename(imgpath) )
 
 class PylabAxis( object ):
   'matplotlib axis augmented with finity-specific functions'
@@ -210,7 +209,7 @@ class PylabAxis( object ):
   def add_mesh( self, coords, topology, deform=0, color=None, edgecolors='none', linewidth=1, xmargin=0, ymargin=0, aspect='equal', cbar='vertical', title=None, ischeme='gauss2', cscheme='contour3', clim=None, frame=True, colormap=None ):
     'plot mesh'
   
-    out = log.debug( 'plotting mesh' )
+    log.context( 'plotting mesh' )
 
     assert topology.ndims == 2
     from matplotlib import pyplot, collections
@@ -222,7 +221,7 @@ class PylabAxis( object ):
       assert color.ndim == 0
       color = function.Tuple([ color, coords.iweights(ndims=2) ])
     plotcoords = coords + deform
-    for elem in out.iter( 'element', topology ):
+    for elem in topology:
       C = plotcoords( elem, cscheme )
       if ndims == 3:
         C = project3d( C )
@@ -230,11 +229,7 @@ class PylabAxis( object ):
         if ( (cx[1:]-cx[:-1]) * (cy[1:]+cy[:-1]) ).sum() > 0:
           continue
       if color:
-        if isinstance(ischeme,str):
-          points = elem.eval( ischeme )
-        else:
-          points = ischeme[elem]
-        c, w = color( elem, points )
+        c, w = color( elem, ischeme )
         values.append( numeric.mean( c, weights=w, axis=0 ) if c.ndim > 0 else c )
       poly.append( C )
   
@@ -363,10 +358,10 @@ def writevtu( name, topology, coords, pointdata={}, celldata={}, ascii=False, su
 
   vtupath = util.getpath( name )
 
-  out = log.debug( 'generating vtu' )
+  log.context( 'vtu' )
 
   if not superelements:
-    elements = topology.get_simplices( log=out, **kwargs )
+    elements = topology.get_simplices( **kwargs )
   else:
     elements = filter(None,[elem if not isinstance(elem,element.TrimmedElement) else elem.elem for elem in topology])
 
@@ -396,7 +391,7 @@ def writevtu( name, topology, coords, pointdata={}, celldata={}, ascii=False, su
     celldata_arrays.append( function.Tuple([ array, func, coords.iweights(topology.ndims) ]) )
     vtkMesh.GetCellData().AddArray( array )
   celldatafun = function.Tuple( celldata_arrays )
-  for elem in out.iter( 'element', elements ):
+  for elem in log.iterate( 'element', elements ):
     if isinstance( elem, element.TriangularElement ):
       vtkelem = vtk.vtkTriangle()
     elif isinstance( elem, element.QuadElement ) and elem.ndims == 2:
@@ -443,7 +438,7 @@ def preview( coords, topology, cscheme='contour8' ):
   elif coords.shape[0] == 3:
     polys = [ [] for i in range(4) ]
     for elem in topology:
-      contour = coords( elem.eval(cscheme) )
+      contour = coords( elem, cscheme )
       polys[0].append( project3d( contour ).T )
       polys[1].append( contour[:2].T )
       polys[2].append( contour[1:].T )

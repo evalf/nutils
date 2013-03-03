@@ -15,10 +15,11 @@ def _findlogger( frame=None ):
     frame = frame.f_back
   return SimpleLog()
 
-info    = lambda *args: _findlogger().write( 'info',    _makestr(args) )
-path    = lambda *args: _findlogger().write( 'path',    _makestr(args) )
-error   = lambda *args: _findlogger().write( 'error',   _makestr(args) )
-warning = lambda *args: _findlogger().write( 'warning', _makestr(args) )
+debug   = lambda *args: _findlogger().write( ( 'debug',   args ) )
+info    = lambda *args: _findlogger().write( ( 'info',    args ) )
+error   = lambda *args: _findlogger().write( ( 'error',   args ) )
+warning = lambda *args: _findlogger().write( ( 'warning', args ) )
+path    = lambda *args: _findlogger().write( ( 'path',    args ) )
 
 def context( *args, **kwargs ):
   'context'
@@ -48,7 +49,7 @@ def iterate( text, iterable, target=None, **kwargs ):
     frame = f_locals[_KEY] = logger
     for i, item in enumerate( iterable ):
       yield item
-      logger.update( level='progress', current=i )
+      logger.update( i )
   finally:
     frame = f_locals[_KEY] = logger.parent
 
@@ -60,7 +61,7 @@ def exception( exc_info=None ):
     exc_traceback = exc_traceback.tb_next
   frame = exc_traceback.tb_frame
   parts = traceback.format_stack( frame ) + traceback.format_exception_only( exc_type, exc_value )
-  _findlogger( frame ).write( 'error', ''.join( reversed(parts) ) )
+  _findlogger( frame ).write( ('error',(''.join( reversed(parts) ).rstrip(),)) )
 
 class SimpleLog( object ):
   'simple log'
@@ -70,10 +71,12 @@ class SimpleLog( object ):
 
     self.out = getattr( prop, 'html', sys.stdout )
 
-  def write( self, level, *text ):
+  def write( self, *chunks ):
     'write'
 
-    print ' > '.join( text )
+    mtype, args = chunks[-1]
+    s = (_makestr(args),) if args else ()
+    print ' > '.join( chunks[:-1] + s )
 
 def setup_html( maxlevel, path, title, depth=0 ):
   'setup html logging'
@@ -104,19 +107,31 @@ class HtmlLog( object ):
     self.html.write( '</pre></body></html>\n' )
     self.html.flush()
 
-  def write( self, level, *chunks ):
+  def write( self, *chunks ):
     'write'
 
-    if not chunks:
-      return
-    ilevel = { 'error':0, 'warning':1, 'path':2, 'info':3, 'progress':4, 'debug':5 }.get( level, -1 )
+    mtype, args = chunks[-1]
+    levels = 'error', 'warning', 'path', 'info', 'progress', 'debug'
+    try:
+      ilevel = levels.index(mtype)
+    except:
+      ilevel = -1
     if ilevel <= self.maxlevel:
-      print ' > '.join( chunks )
-    if level == 'path':
-      chunks = chunks[:-1] + ( '<a href="%s" class="plot">%s</a>' % (chunks[-1],chunks[-1]), )
+      s = (_makestr(args),) if args else ()
+      print ' > '.join( chunks[:-1] + s )
+
+    if args:
+      if mtype == 'path':
+        args = [ '<a href="%s" class="plot">%s</a>' % (args[0],args[0]) ] \
+             + [ '<a href="%s">%s</a>' % (arg,arg) for arg in args[1:] ]
+      last = _makestr( args )
+      if '\n' in last:
+        parts = last.split( '\n' )
+        last = '\n'.join( [ '<b>%s</b>' % parts[0] ] + parts[1:] )
+      s = '<span class="%s">%s</span>' % (mtype,last),
     else:
-      chunks = chunks[:-1] + ( '<span class="%s">%s</span>' % (level,chunks[-1]), )
-    self.html.write( ' &middot; '.join( chunks ) + '\n' )
+      s = ()
+    self.html.write( ' &middot; '.join( chunks[:-1] + s ) + '\n' )
     self.html.flush()
 
 class ContextLog( object ):
@@ -128,10 +143,10 @@ class ContextLog( object ):
     self.text = text
     self.parent = _findlogger()
 
-  def write( self, level, *text ):
+  def write( self, *text ):
     'write'
 
-    self.parent.write( level, self.text, *text )
+    self.parent.write( self.text, *text )
 
 class ProgressLog( object ):
   'progress bar'
@@ -149,14 +164,14 @@ class ProgressLog( object ):
     self.current = 0
     self.parent = _findlogger()
 
-  def update( self, level, current ):
+  def update( self, current ):
     'update progress'
 
     self.current = current
     if time.time() > self.tnext:
-      self.write( level )
+      self.write( ('progress',None) )
 
-  def write( self, level, *text ):
+  def write( self, *text ):
     'write'
 
     self.tint *= self.texp
@@ -165,7 +180,7 @@ class ProgressLog( object ):
     if self.showpct:
       pct = 100 * self.current / float(self.target)
       pbar += ' (%.0f%%)' % pct
-    self.parent.write( level, pbar, *text )
+    self.parent.write( pbar, *text )
 
 # DEPRECATED
 
