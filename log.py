@@ -116,13 +116,15 @@ class HtmlLog( object ):
       ilevel = levels.index(mtype)
     except:
       ilevel = -1
-    if ilevel <= self.maxlevel:
-      s = (_makestr(args),) if args else ()
-      print ' > '.join( chunks[:-1] + s )
+    if ilevel > self.maxlevel:
+      return
+
+    s = (_makestr(args),) if args else ()
+    print ' > '.join( chunks[:-1] + s )
 
     if args:
       if mtype == 'path':
-        args = [ '<a href="%s" class="plot">%s</a>' % (args[0],args[0]) ] \
+        args = [ '<a href="%s" name="%s" class="plot">%s</a>' % (args[0],args[0],args[0]) ] \
              + [ '<a href="%s">%s</a>' % (arg,arg) for arg in args[1:] ]
       last = _makestr( args )
       if '\n' in last:
@@ -131,7 +133,8 @@ class HtmlLog( object ):
       s = '<span class="%s">%s</span>' % (mtype,last),
     else:
       s = ()
-    self.html.write( ' &middot; '.join( chunks[:-1] + s ) + '\n' )
+
+    self.html.write( '<span class="line">%s</span>' % ' &middot; '.join( chunks[:-1] + s ) + '\n' )
     self.html.flush()
 
 class ContextLog( object ):
