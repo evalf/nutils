@@ -444,6 +444,11 @@ class ArrayFunc( Evaluable ):
 
     return transpose( self )
 
+  def __nonzero__( self ):
+    'nonzero'
+
+    return True
+
   def __take__( self, indices, axis ):
     'take'
 
@@ -540,8 +545,7 @@ class ArrayFunc( Evaluable ):
     'expand'
 
     shape = tuple(shape)
-    assert len(shape) == self.ndim and all( sh1 in (sh1,1) for sh1, sh2 in zip( self.shape, shape ) ), 'cannot expand shape %s to %s' % ( self.shape, shape )
-    if all( sh2 in (sh1,None) for sh1, sh2 in zip( self.shape, shape ) ):
+    if shape == self.shape:
       return self
 
     return Expand( self, shape )
@@ -2580,12 +2584,17 @@ class Expand( ArrayFunc ):
     assert shape
     assert func.ndim == len(shape), 'non matching dimensions %d -> %d' % ( func.ndim, len(shape) )
     shape = tuple(shape)
-    assert any( sh1 != sh2 and sh2 != None for sh1, sh2 in zip( func.shape, shape ) ), 'expanded shape matches original shape (=useless)'
+    assert shape != func.shape, 'expanded shape matches original shape (=useless)'
     assert all( sh1 in (1,sh2) for sh1, sh2 in zip( func.shape, shape ) ), 'conflicting shapes %s->%s' % ( func.shape, shape )
     self.func = func
     for sh1, sh2 in zip( func.shape, shape ):
       assert sh1 in (sh2,1)
     ArrayFunc.__init__( self, args=(func,)+shape, evalf=numeric.expand, shape=shape )
+
+  def __nonzero__( self ):
+    'nonzero'
+
+    return not _iszero( self.func )
 
   def __neg__( self ):
     'negate'
@@ -2755,12 +2764,11 @@ _isfunc = lambda arg: isinstance( arg, ArrayFunc )
 _isscalar = lambda arg: _asarray(arg).ndim == 0
 _isint = lambda arg: numpy.asarray( arg ).dtype == int
 _ascending = lambda arg: ( numpy.diff(arg) > 0 ).all()
-_iszero = lambda arg: not _isfunc(arg) and numeric.allequal( arg, 0 )
-_isunit = lambda arg: not _isfunc(arg) and numeric.allequal( arg, 1 )
+_iszero = lambda arg: not arg if _isfunc(arg) else ( numpy.asarray(arg) == 0 ).all()
+_isunit = lambda arg: not _isfunc(arg) and ( numpy.asarray(arg) == 1 ).all()
 _haspriority = lambda arg: _isfunc(arg) and arg.__priority__
 _subsnonesh = lambda shape: tuple( 1 if sh is None else sh for sh in shape )
-_const = lambda val, shape: numeric.appendaxes( val, _subsnonesh( shape ) )
-#_const = lambda val, shape: expand( numpy.asarray(val).reshape( [1]*len(shape) ), shape )
+_const = lambda val, shape: expand( numpy.array(val).reshape((1,)*len(shape)), shape )
 
 def _norm_and_sort( ndim, args ):
   'norm axes, sort, and assert unique'
@@ -2845,13 +2853,18 @@ def vectorize( funcs ):
 def expand( arg, shape ):
   'expand'
 
+  arg = _asarray( arg )
   shape = tuple(shape)
+  if shape == arg.shape:
+    return arg
   if _isfunc( arg ):
     return arg.__expand__( shape )
-  assert len(shape) == arg.ndim
-  if all( sh1 == sh2 or sh2 == None for sh1, sh2 in zip( arg.shape, shape ) ):
-    return arg
   return Expand( arg, shape )
+
+  #assert len(shape) == arg.ndim
+  #if all( sh1 == sh2 or sh2 == None for sh1, sh2 in zip( arg.shape, shape ) ):
+  #  return arg
+  #return Expand( arg, shape )
 
 def get( arg, i, item ):
   'get item'

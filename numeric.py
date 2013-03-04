@@ -15,15 +15,6 @@ def align( arr, trans, ndim ):
   shape[trans] = arr.shape
   return numpy.lib.stride_tricks.as_strided( arr, shape, strides )
 
-def allequal( arr, val ):
-  'check all equal'
-
-  val = numpy.asarray(val)
-  assert val.ndim == 0, 'val needs to be scalar'
-  arr = numpy.asarray(arr)
-  s = tuple( stride and slice(None) for stride in arr.strides )
-  return numpy.all( arr[s] == 0 )
-
 def expand( arr, *shape ):
   'expand'
 
