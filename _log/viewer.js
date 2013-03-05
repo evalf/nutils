@@ -388,8 +388,6 @@ function Finity() {
             return true;
           }
           
-          console.log(evt.keyCode);
-          
           // Check for function keys
           switch( true ) {
             case evt.keyCode == 27: // Escape
@@ -679,7 +677,6 @@ function Finity() {
 		 * @return void
 		 */
 		this.view = function ( vw ){
-      console.log( vw );
 			var vw = vw || 'both';
           vw = vw.replace(/^\s+|\s+$/g, '').toLowerCase();
       switch( vw ) {
