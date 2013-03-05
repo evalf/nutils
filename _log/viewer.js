@@ -392,6 +392,14 @@ function Finity() {
           
           // Check for function keys
           switch( true ) {
+            case evt.keyCode == 27: // Escape
+              self._selGallery
+                .find('option:selected').attr('selected', false)
+                .end()
+                .find('option[value="*"]').attr('selected', true)
+                .end()
+                .trigger('change');
+                break;
             case evt.keyCode == 70:  // F(ull) image
               self._selView
                 .find('option:selected').attr('selected', false)
@@ -445,6 +453,7 @@ function Finity() {
               var hash = self._data[dat].hash;
               var loc = document.location.href.substr(0, document.location.href.indexOf('#'));
               document.location.href = loc + '#' + hash;
+              window.location.reload(true);
               break;
             case evt.keyCode == 73: // I
 							if( self._aIndex.length )
