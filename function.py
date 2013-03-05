@@ -2655,11 +2655,18 @@ class Expand( ArrayFunc ):
     return expand( reciprocal( self.func ), self.shape )
 
   def __add__( self, other ):
-    'multiply'
+    'add'
 
     add = self.func + other
     shape = add.shape[:-self.ndim] + tuple( sh2 if sh1 == 1 else sh1 for sh1, sh2 in zip( add.shape[-self.ndim:], self.shape ) )
     return expand( add, shape )
+
+  def __sub__( self, other ):
+    'multiply'
+
+    sub = self.func - other
+    shape = sub.shape[:-self.ndim] + tuple( sh2 if sh1 == 1 else sh1 for sh1, sh2 in zip( sub.shape[-self.ndim:], self.shape ) )
+    return expand( sub, shape )
 
   def __mul__( self, other ):
     'multiply'
