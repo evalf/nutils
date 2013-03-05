@@ -62,6 +62,13 @@ function Finity() {
     this._selGallery;
     
     /**
+     * Finity._selView
+     * Select field for views <select>
+     * @var jQuery
+     */
+    this._selView;
+    
+    /**
      * Finity._btnFirst
      * Button to show first image in gallery field <button>
      * @var jQuery
@@ -92,9 +99,8 @@ function Finity() {
     /**
      * Finity._inpScroll
      * Checkbox to enable scrolling <input>
-     * @var jQuery
-     */
-    this._inpScroll;
+     * @v/
+    this._inpScroll;*/
     
     /**
      * Finity._inpFinity
@@ -150,14 +156,14 @@ function Finity() {
      * Last known number of pixels scrolled in horizontal direction
      * @var int
      */
-    this._lastScrollLeft = 0;
+    //this._lastScrollLeft = 0;
     
     /**
      * Finity._lastScrollTop
      * Last known number of pixels scrolled in vertical direction
      * @var int
      */
-		this._lastScrollTop = 0;
+		//this._lastScrollTop = 0;
 
     /**
      * Finity._npreload
@@ -206,8 +212,8 @@ function Finity() {
      * Finity._scrolling
      * Scrolling enabled by default
      * @var Bool
-     */
-    this._scrolling = false;
+     *
+    this._scrolling = false; */
     
     /**
      * Finity.__init__()
@@ -215,7 +221,7 @@ function Finity() {
      * 
      * @return void
      */
-    this.__init__ = function (){
+    this.__init__ = function ( $sel ){
       var self = this;
       
       this._code = $('pre')
@@ -228,33 +234,35 @@ function Finity() {
       this._img 				= $('<img id="media-img" src="" alt="" title="" />').appendTo(this._imglink);
       this._controls 		= $('<div id="controls">').appendTo('body');
       this._selGallery 	= $('<select id="sel-gallery"><option value="*">-- Show all --</option></select>').appendTo(this._controls);
-      this._btnFirst 		= $('<button title="Home" "id="btn-first">&laquo;</button>').appendTo(this._controls);
-      this._btnPrev 		= $('<button title="&#8592; (left arrow)" id="btn-prev">&lt;</button>').appendTo(this._controls);
-      this._btnNext 		= $('<button title="&#8594; (right arrow)" id="btn-next">&gt;</button>').appendTo(this._controls);
-      this._btnLast 		= $('<button title="End" id="btn-last">&raquo;</button>').appendTo(this._controls);
-      this._inpScroll 	= $('<input title="S" type="checkbox" name="scrolling" id="scrolling" />')
+      this._btnFirst 		= $('<button title="&#8593; (up arrow) or Shift + K" "id="btn-first">&laquo;</button>').appendTo(this._controls);
+      this._btnPrev 		= $('<button title="&#8592; (left arrow) or K" id="btn-prev">&lt;</button>').appendTo(this._controls);
+      this._btnNext 		= $('<button title="&#8594; (right arrow) or J" id="btn-next">&gt;</button>').appendTo(this._controls);
+      this._btnLast 		= $('<button title="&#8595; (down arrow) or Shift + J" id="btn-last">&raquo;</button>').appendTo(this._controls);
+      /* this._inpScroll 	= $('<input title="S" type="checkbox" name="scrolling" id="scrolling" />')
                      				.appendTo(this._controls)
-					                  .before('<label for="scrolling">Scrolling</label>');
+					                  .before('<label for="scrolling">Scrolling</label>');  */
+      this._selView 	= $('<select id="sel-view"><option value="both" selected>term / img (G)</option><option value="term">term (H)</option><option value="img">img (F)</option></select>').appendTo(this._controls);
                         
  			this._navbar = this._code.find('#navbar')
 												.prependTo(this._controls);
 			this._aLatest = this._navbar.find('.nav_latest')
-												.attr('title', 'R');
+												.attr('title', 'L');
 			this._aLatestAll = this._navbar.find('.nav_latestall')
-												.attr('title', 'Shift + R');
+												.attr('title', 'Shift + L');
 			this._aIndex = this._navbar.find('.nav_index')
 												.attr('title', 'I');
  
-      if( this._scrolling )
+      /*if( this._scrolling )
         this._inpScroll.attr('checked', true);
         
-      this.enableScrolling( this._scrolling );
+      this.enableScrolling( this._scrolling );*/
         
       // Build gallery
      	this._galleries['*'] = new Array();
 			this._links.each(function () {
         var $a = $(this);
         var url = $a.attr('href');
+        var hash = $a.attr('name');
         
 				// Add gallery
         var gal = self.getGalleryName(url);
@@ -273,6 +281,7 @@ function Finity() {
 					'name': url,
 					'title': url,
 					'alt': url,
+          'hash': hash,
 					'width': -1,
 					'height': -1,
           'cx': Math.round($a.offset().left + ( $a.width()  / 2 )),
@@ -299,36 +308,60 @@ function Finity() {
 					'gal': gal
 			 	});
       });
-      
+
       // Show current
-			this.show('*', 0);
+      if( typeof $sel != 'undefined' ) {
+        this._current.gallery = $sel.attr('gal') || '*';
+        this._current.index = $sel.attr('idx') || 0;
+      }
+			this.show(this._current.gallery, this._current.index );
 
       // Attach events
       $(window).resize(function (){
           self.render();
         });
       
-      this._inpScroll
+      /*this._inpScroll
         .click(function () {
           var checked = $(this).is(':checked');
           self.enableScrolling( checked );
-        });
+        });*/
 
       this._btnFirst.click(function() { self.first(); });
       this._btnNext.click(function() { self.next(); });
       this._btnPrev.click(function() { self.prev(); });
       this._btnLast.click(function() { self.last(); });
+      this._selView
+        .change(function() {
+          var vw = $(':selected', this).val();
+          self.view( vw );
+          this.blur();
+        });
+        
       this._selGallery
         .change(function() {
           var gal = $(':selected', this).val();
-          self.show(gal, 0);
+          var galdat = self._galleries[gal];  // Array with all data indexes in gallery
+          var dat = self._galleries[self._current.gallery][self._current.index];
+
+          // Look for a matching data index
+          var idx = 0;
+          for( var i = 0; i < galdat.length; ++i ) {
+            if( galdat[i] == dat ) {
+              idx = i;
+              break;
+            }
+          }
+          
+          self.show(gal, idx);
+          this.blur();
         });
         
       this._code
         .on('click', 'a.plot', null, function ( evt ){
           var $a = $(this);
           var gal = $a.attr('gal');
-          var idx = $a.attr('idx');
+          var idx = parseInt($a.attr('idx'));
           
           self._selGallery
               .find('option:selected')
@@ -354,9 +387,35 @@ function Finity() {
           if( evt.ctrlKey || evt.metaKey || evt.altKey ) {
             return true;
           }
-         	
+          
+          console.log(evt.keyCode);
+          
           // Check for function keys
           switch( true ) {
+            case evt.keyCode == 70:  // F(ull) image
+              self._selView
+                .find('option:selected').attr('selected', false)
+                .end()
+                .find('option[value=img]').attr('selected', true)
+                .end()
+                .trigger('change');
+              break;
+            case evt.keyCode == 71:  // G  image / term
+              self._selView
+                .find('option:selected').attr('selected', false)
+                .end()
+                .find('option[value=both]').attr('selected', true)
+                .end()
+                .trigger('change');
+              break;
+            case evt.keyCode == 72:  // H(ide) image
+              self._selView
+                .find('option:selected').attr('selected', false)
+                .end()
+                .find('option[value=term]').attr('selected', true)
+                .end()
+                .trigger('change');
+              break;
             case (evt.keyCode == 75 && evt.shiftKey) || evt.keyCode == 38: // Shift+K (vim super up)
 							self.first();
 							break
@@ -369,18 +428,24 @@ function Finity() {
             case evt.keyCode == 74 || evt.keyCode == 39: // j (vim down)
               self.next();
               break;
-            case evt.shiftKey && evt.keyCode == 82: // Shift + r
+            case evt.shiftKey && evt.keyCode == 76: // Shift + L
 							if( self._aLatestAll.length )
 								document.location.href = self._aLatestAll.attr('href');
 							else
 								alert('Link to the latest simulation is not found, navigate manually to the last simulation');
 							break;
-            case evt.keyCode == 82: // r
+            case evt.keyCode == 76: // l
 							if( self._aLatest.length )
 								document.location.href = self._aLatest.attr('href');
 							else
 								alert('Link to the simulation is not found, navigate manually to the simulation');
 							break;
+            case evt.keyCode == 82: // r
+              var dat = self._galleries[self._current.gallery][self._current.index];
+              var hash = self._data[dat].hash;
+              var loc = document.location.href.substr(0, document.location.href.indexOf('#'));
+              document.location.href = loc + '#' + hash;
+              break;
             case evt.keyCode == 73: // I
 							if( self._aIndex.length )
 								document.location.href = self._aIndex.attr('href');
@@ -394,11 +459,11 @@ function Finity() {
 							else
 								document.location.href = url;
 							break;
-            case evt.keyCode == 83: // S
+            /*case evt.keyCode == 83: // S
 							var enable = ! self._inpScroll.is(':checked');
 							self.enableScrolling(enable);
 							self._inpScroll.attr('checked', enable);
-							break;
+							break;*/
             default:
 							return true;
 							break;
@@ -418,7 +483,7 @@ function Finity() {
      */
     this.__destruct__ = function() {
       // No scrolling
-      this.enableScrolling( false );
+      //this.enableScrolling( false );
 
       // Put links back
       this._aLatest.prependTo(this._code);
@@ -430,14 +495,14 @@ function Finity() {
       this._media.remove();
       this._code.off('click');
     };
-       
+    
     /**
      * Finity.enableScrolling( enable )
      * Enable scrolling functionality
      * 
      * @param bool enable
      * @return void
-     */
+     *
     this.enableScrolling = function ( enable ) {
       var self = this;
       if( enable ) {
@@ -470,7 +535,7 @@ function Finity() {
         this._code.unbind('.scrolling');
         $(document).unbind('.scrolling');
       }
-    };
+    }; */
     
     /**
      * Finity.closest( evt )
@@ -479,7 +544,7 @@ function Finity() {
      * 
      * @param event evt
 		 * @return void
-     */
+     *
     this.closest = function( evt ) {
       var self = this;
       
@@ -507,7 +572,7 @@ function Finity() {
       }
       
       this.show(gal, closest);
-    }
+    }*/
     
     /**
      * Finity.getGalleryName( url )
@@ -521,8 +586,7 @@ function Finity() {
      * @return string gallery
      */
     this.getGalleryName = function ( url ) {
-      var gallery = url.replace(/^.*[\\\/]|\d+[a-zA-Z\d]*|\..*$/g, '');
-          gallery = gallery.replace(/[^a-zA-Z0-9]/ig, '');
+      var gallery = url.replace(/\d+\.\w{3,}$/g, '');
       return gallery;
     }
 
@@ -533,12 +597,12 @@ function Finity() {
 		 * @return void
 		 */ 
 		this.next = function (){
-			var gal = this._current.gallery;
+      var gal = this._current.gallery;
       var idx = this._current.index;
       var cnt = this._galleries[gal].length;
 
-			this._inpScroll.attr('checked', false);
-			this.enableScrolling( false );
+			//this._inpScroll.attr('checked', false);
+			//this.enableScrolling( false );
 	
 			if( (idx + 1) < cnt ) {
       	++idx;
@@ -556,8 +620,8 @@ function Finity() {
 			var gal = this._current.gallery;
       var idx = this._current.index;
 			
-			this._inpScroll.attr('checked', false);
-			this.enableScrolling( false );
+			//this._inpScroll.attr('checked', false);
+			//this.enableScrolling( false );
 			
 			if( (idx - 1) >= 0 ) {
       	--idx;
@@ -575,8 +639,8 @@ function Finity() {
 			var gal = this._current.gallery;
 			var idx = this._current.index;
 			
-			this._inpScroll.attr('checked', false);
-			this.enableScrolling( false );
+			//this._inpScroll.attr('checked', false);
+			//this.enableScrolling( false );
 
 			this.show( gal, 0 );
 		};
@@ -592,10 +656,55 @@ function Finity() {
 			var idx = this._current.index;
       var cnt = this._galleries[gal].length;
 	
-			this._inpScroll.attr('checked', false);
-			this.enableScrolling( false );
+			//this._inpScroll.attr('checked', false);
+			//this.enableScrolling( false );
 	
 			this.show( gal, (cnt-1) );
+		};
+
+		/**
+		 * Finity.view( vw )
+		 * Change the view
+		 *
+     * @param string vw
+		 * @return void
+		 */
+		this.view = function ( vw ){
+      console.log( vw );
+			var vw = vw || 'both';
+          vw = vw.replace(/^\s+|\s+$/g, '').toLowerCase();
+      switch( vw ) {
+        case 'term':
+          this._code.css({
+            'display': 'block',
+            'width': '98%',
+            'left': 0
+          });
+          this._media.css('display', 'none');
+          break;
+        case 'img':
+          this._code.css('display', 'none');
+          this._media.css({
+            'display': 'block',
+            'width': '98%',
+            'left': 0
+          });
+          this.render();
+          break;
+        default:
+          this._code.css({
+            'display': 'block',
+            'width': '48%',
+            'left': 0
+          });
+          this._media.css({
+            'display': 'block',
+            'width': '48%',
+            'left': '50%'
+          });
+          this.render();
+          break;
+      }
 		};
 
     /**
@@ -615,7 +724,7 @@ function Finity() {
      */
     this.show = function ( gal, idx ) {
 			var self = this;
-
+      
       if( typeof this._galleries[gal] == 'undefined' )
         return false;
         
@@ -635,12 +744,6 @@ function Finity() {
 				if( this._plots[ky].src != this._data[ky].src )
 					this._plots[ky].src = this._data[ky].src;
 			}
-
-      // Focus on selected link
-      this._links.removeClass('active');
-      $('#finity-viewer-' + key)
-        .addClass('active')
-        .focus();
         
       this._current.gallery = gal;
       this._current.index = idx;
@@ -648,7 +751,7 @@ function Finity() {
 			// If image was loaded, show it
 			// otherwise show when loaded
 			if( img.width > 0 ) {
-					this.render();
+        this.render();
 			} else {
 				img.onload = function (){
 					self.render();
@@ -684,6 +787,15 @@ function Finity() {
       var img  = this._plots[key];
       var data = this._data[key];
 
+      // Focus on selected link
+      this._links.removeClass('active');
+      this._code.find('.line-active').removeClass('line-active');
+      $('#finity-viewer-' + key)
+        .addClass('active')
+        .focus()
+        .parents('.line')
+        .addClass('line-active');
+
       var frameWidth = Math.max(this._media.width() - 20, 1);
       var frameHeight = Math.max(this._media.height() - 30, 1);
       var fx = Math.max(img.width / frameWidth, 1);
@@ -710,8 +822,16 @@ function Finity() {
 
 var finity = new Finity();
 $(function (){
-	// Enable finity for screens larger than 640px
-  if( $(window).width() >= 640) {
-		finity.__init__();
+  var ua = navigator.userAgent;
+  var mobile = ua.match(/Android|iPhone|iPod|iPad|BlackBerry/);
+  if( ! mobile ) {
+    // Focus on the hash element
+    var hash = window.location.hash.substring(1);
+    if( hash.length ) {
+      var $sel = $('a[name="' + hash + '"]');
+      finity.__init__( $sel );
+    } else {
+      finity.__init__();
+    }
 	}
 });
