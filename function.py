@@ -2300,6 +2300,12 @@ class Inflate( ArrayFunc ):
     blocks = [ (-func,ind) for func, ind in self.blocks ]
     return Inflate( self.shape, blocks )
 
+  @core.deprecated( old='array%w', new='array.dot(w)' )
+  def __mod__( self, weights ):
+    'dot shorthand'
+
+    return self.dot( weights )
+
   def dot( self, weights ):
     'array contraction'
 

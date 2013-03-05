@@ -240,6 +240,13 @@ def norm2( A, axis=-1 ):
 
   return numpy.asarray( numpy.sqrt( contract( A, A, axis ) ) )
 
+def normalize( A, axis=-1 ):
+  'devide by normal'
+
+  s = [ slice(None) ] * A.ndim
+  s[axis] = numpy.newaxis
+  return A / norm2( A, axis )[ tuple(s) ]
+
 def cross( v1, v2, axis ):
   'cross product'
 

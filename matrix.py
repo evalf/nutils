@@ -164,7 +164,21 @@ class SparseMatrix( Matrix ):
       self.indices = numpy.empty( count, dtype=numpy.intc )
       for irow, icols in enumerate( graph ):
         a, b = self.indptr[irow:irow+2]
-        self.indices[a:b] = icols
+        try:
+          self.indices[a:b] = icols
+        except ValueError:
+          print 'nrows=', nrows
+          print 'max(nzrow)=', nzrow
+          print 'count=', count
+          print 'self.data.shape=', self.data.shape
+          print 'self.indptr.shape=', self.indptr.shape
+          print 'self.indices.shape=', self.indices.shape
+          print 'irow=', irow
+          print 'a=', a
+          print 'b=', b
+          print 'len(icols)=', len(icols)
+          print 'indices[a:b].shape=', indices[a:b].shape
+          raise
     Matrix.__init__( self, (nrows, ncols or nrows) )
 
   def reshape( self, (nrows,ncols) ):
