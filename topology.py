@@ -48,7 +48,8 @@ class Topology( object ):
     retvals = []
     idata = []
     for func in funcs:
-      assert isinstance( func, function.ArrayFunc )
+      if not isinstance( func, function.ArrayFunc ):
+        func = function.Const( func )
       assert all( isinstance(sh,int) for sh in func.shape )
       idata.append( func )
       retvals.append( numpy.empty( len(self), dtype=object ) )

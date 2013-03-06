@@ -572,7 +572,8 @@ class ArrayFunc( Evaluable ):
   def __align__( self, axes, ndim ):
     'insert singleton dimension'
 
-    assert all( 0 <= ax < ndim for ax in axes )
+    assert len(axes) == self.ndim
+    axes = _normdims( ndim, axes )
     if list(axes) == range(ndim):
       return self
     return Align( self, axes, ndim )
@@ -846,7 +847,7 @@ class Align( ArrayFunc ):
     'align'
 
     assert len(axes) == self.ndim
-    assert all( 0 <= ax < ndim for ax in axes )
+    axes = _normdims( ndim, axes )
     newaxes = [ axes[i] for i in self.axes ]
     return align( self.func, newaxes, ndim )
 
@@ -910,7 +911,7 @@ class Align( ArrayFunc ):
     if not _isfunc(func2) and len(func1.axes) == func2.ndim:
       return align( func1.func * transpose( func2, func1.axes ), func1.axes, func1.ndim )
 
-    return ArrayFunc.__mul__( func1, func2 )
+    return ArrayFunc.__mul__( self, other )
 
   def __add__( self, other ):
     'multiply'
@@ -925,7 +926,7 @@ class Align( ArrayFunc ):
     if not _isfunc(func2) and len(func1.axes) == func1.ndim:
       return align( func1.func + transform( func2, func1.axes ), func1.axes, func1.ndim )
 
-    return ArrayFunc.__add__( func1, func2 )
+    return ArrayFunc.__add__( self, other )
 
   def __div__( self, other ):
     'multiply'
@@ -1334,8 +1335,8 @@ class Concatenate( ArrayFunc ):
   def __align__( self, axes, ndim ):
     'align'
 
-    assert all( 0 <= ax < ndim for ax in axes )
     assert len(axes) == self.ndim
+    axes = _normdims( ndim, axes )
     funcs = [ align( func, axes, ndim ) for func in self.funcs ]
     axis = axes[ self.axis ]
     return concatenate( funcs, axis )
@@ -2369,6 +2370,7 @@ class Inflate( ArrayFunc ):
     'align'
 
     assert len(axes) == self.ndim
+    axes = _normdims( ndim, axes )
     shape = [1] * ndim
     for n, sh in zip( axes, self.shape ):
       shape[n] = sh
@@ -2489,8 +2491,8 @@ class Diagonalize( ArrayFunc ):
   def __align__( self, axes, ndim ):
     'align'
 
-    assert all( 0 <= ax < ndim for ax in axes )
     assert len(axes) == self.ndim
+    axes = _normdims( ndim, axes )
     toaxes = [ axes[ax] for ax in self.toaxes ]
     axes = [ ax - (ax>toaxes[0]) - (ax>toaxes[1]) for ax in axes if ax not in toaxes ] + [ -1 ]
     return diagonalize( align( self.func, axes, ndim-1 ), *toaxes )
@@ -2581,12 +2583,14 @@ class Kronecker( ArrayFunc ):
     funcs = [ func / get( other, self.axis, ifun ) for ifun, func in enumerate(self.funcs) ]
     return Kronecker( funcs, self.axis )
 
-  def __align__( self, trans, ndim ):
+  def __align__( self, axes, ndim ):
     'align'
 
-    newaxis = trans[ self.axis ]
-    trans = [ tr if tr < newaxis else tr-1 for tr in trans if tr != newaxis ]
-    funcs = [ func and align( func, trans, ndim-1 ) for func in self.funcs ]
+    assert len(axes) == self.ndim
+    axes = _normdims( ndim, axes )
+    newaxis = axes[ self.axis ]
+    axes = [ tr if tr < newaxis else tr-1 for tr in axes if tr != newaxis ]
+    funcs = [ func and align( func, axes, ndim-1 ) for func in self.funcs ]
     return Kronecker( funcs, newaxis )
 
   def __get__( self, i, item ):
@@ -2733,11 +2737,34 @@ class Expand( ArrayFunc ):
     'align'
 
     assert len(axes) == self.ndim
-    assert all( 0 <= ax < ndim for ax in axes )
+    axes = _normdims( ndim, axes )
     shape = [ 1 ] * ndim
     for ax, sh in zip( axes, self.shape ):
       shape[ax] = sh
     return expand( align( self.func, axes, ndim ), shape )
+
+class Const( ArrayFunc ):
+  'pointwise transformation'
+
+  __priority__ = True
+
+  def __init__( self, func ):
+    'constructor'
+
+    ArrayFunc.__init__( self, args=(POINTS,func), evalf=self.const, shape=shape )
+
+  @staticmethod
+  def const( points, arr ):
+    'prepend point axes'
+
+    shape = points.shape[:-1] + arr.shape
+    strides = (0,) * (points.ndim-1) + arr.strides
+    return numpy.lib.stride_tricks.as_strided( arr, shape, strides )
+
+  def __localgradient__( self, ndims ):
+    'local gradient'
+
+    return _const( 0., self.shape+(ndims,) )
 
 # AUXILIARY FUNCTIONS
 
@@ -2829,6 +2856,7 @@ _isunit = lambda arg: not _isfunc(arg) and ( numpy.asarray(arg) == 1 ).all()
 _haspriority = lambda arg: _isfunc(arg) and arg.__priority__
 _subsnonesh = lambda shape: tuple( 1 if sh is None else sh for sh in shape )
 _const = lambda val, shape: expand( numpy.array(val).reshape((1,)*len(shape)), shape )
+_normdims = lambda ndim, shapes: [ _normdim(ndim,sh) for sh in shapes ]
 
 def _norm_and_sort( ndim, args ):
   'norm axes, sort, and assert unique'
@@ -2849,10 +2877,13 @@ def _equal( arg1, arg2 ):
 
   if arg1 is arg2:
     return True
-  equals = arg1 == arg2
-  if isinstance( equals, numpy.ndarray ):
-    equals = equals.all()
-  return equals
+  if not isinstance( arg1, numpy.ndarray ) and not isinstance( arg2, numpy.ndarray ):
+    return arg1 == arg2
+  arg1 = numpy.asarray( arg1 )
+  arg2 = numpy.asarray( arg2 )
+  if arg1.shape != arg2.shape:
+    return False
+  return numpy.all( arg1 == arg2 )
 
 def _asarray( arg ):
   'convert to ArrayFunc or numpy.ndarray'
