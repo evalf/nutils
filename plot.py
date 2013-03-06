@@ -61,7 +61,8 @@ class PyPlotModule( object ):
 
     from matplotlib import pyplot
     self.__dict__.update( pyplot.__dict__ )
-    self.figure()
+    fig = self.figure()
+    fig.patch.set_alpha( 0 )
 
   def polycol( self, verts, facecolors='none', **kwargs ):
     'add polycollection'

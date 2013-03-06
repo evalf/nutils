@@ -292,9 +292,10 @@ class ArrayFunc( Evaluable ):
     s += ' \ (%s)' % ','.join(map(str,self.shape))
     return s
 
-  def find( self, elem, target, start, tol=1e-10, maxiter=999 ):
+  def find( self, elem, C ):#target, start, tol=1e-10, maxiter=999 ):
     'iteratively find x for f(x) = target, starting at x=start'
 
+    raise NotImplementedError
     points = start
     Jinv = inv( localgradient( self, elem.ndims ), 0, 1 )
     r = target - self( elem, points )
@@ -368,14 +369,16 @@ class ArrayFunc( Evaluable ):
   def curvature( self, ndims=-1 ):
     'curvature'
 
-    if ndims <= 0:
-      ndims += self.shape[0]
-    assert ndims == 1 and self.shape == (2,)
-    J = localgradient( self, ndims )
-    H = localgradient( J, ndims )
-    dx, dy = J[:,0]
-    ddx, ddy = H[:,0,0]
-    return ( dy * ddx - dx * ddy ) / norm2( J[:,0], axis=0 )**3
+    return .5 * self.div( self.normal(), ndims=ndims )
+
+    #if ndims <= 0:
+    #  ndims += self.shape[0]
+    #assert ndims == 1 and self.shape == (2,)
+    #J = localgradient( self, ndims )
+    #H = localgradient( J, ndims )
+    #dx, dy = J[:,0]
+    #ddx, ddy = H[:,0,0]
+    #return ( dy * ddx - dx * ddy ) / norm2( J[:,0], axis=0 )**3
 
   def swapaxes( self, n1, n2 ):
     'swap axes'
@@ -400,7 +403,10 @@ class ArrayFunc( Evaluable ):
     if J.shape[0] == J.shape[1]:
       Jinv = inv( J, 0, 1 )
     elif J.shape[0] == J.shape[1] + 1: # gamma gradient
-      Jinv = inv( concatenate( [ J, coords.normal()[:,_] ], axis=1 ), 0, 1 )[:-1,:]
+      #Jinv = inv( concatenate( [ J, coords.normal()[:,_] ], axis=1 ), 0, 1 )[:-1,:]
+      G = ( J[:,:,_] * J[:,_,:] ).sum( 0 )
+      Ginv = inv( G, 0, 1 )
+      Jinv = ( J[_,:,:] * Ginv[:,_,:] ).sum()
     else:
       raise Exception, 'cannot invert jacobian'
     return sum( localgradient( self, ndims )[...,_] * Jinv, axes=-2 )
@@ -462,8 +468,11 @@ class ArrayFunc( Evaluable ):
         n = numpy.array( indices, dtype=int )
         assert numpy.all( n >= 0 )
       return expand( self, self.shape[:axis] + (len(n),) + self.shape[axis+1:] )
-    n = numpy.arange( self.shape[axis] )[indices]
+    allindices = numpy.arange( self.shape[axis] )
+    n = allindices[indices]
     assert len(n) > 0
+    if numpy.all( n == allindices ):
+      return self
     if len(n) == 1:
       return insert( get( self, axis, n[0] ), axis )
     return Take( self, indices, axis )
@@ -1352,6 +1361,35 @@ class Concatenate( ArrayFunc ):
     assert n0 == self.shape[self.axis]
     return concatenate( funcs, axis=-1 )
 
+  def __take__( self, indices, axis ):
+    'take'
+
+    axis = _normdim( self.ndim, axis )
+    if axis != self.axis:
+      return ArrayFunc.__take__( self, indices, axis )
+
+    n0 = 0
+    funcs = []
+    for func in self.funcs:
+      n1 = n0 + func.shape[self.axis]
+      if isinstance( indices, slice ):
+        start = max( n0, 0 if indices.start is None else indices.start if indices.start >= 0 else self.ndim + indices.start )
+        stop = min( n1, self.ndim if indices.stop is None else indices.stop if indices.stop >= 0 else self.ndim + indices.start )
+        assert indices.step is None
+        ind = slice( start-n0, stop-n0 )
+        nitems = start - stop
+      else:
+        ind = indices[n0:n1]-n0
+        nitems = len(ind)
+      if nitems:
+        funcs.append( take( func, ind, axis ) )
+      n0 = n1
+    assert n0 == self.shape[self.axis]
+    assert funcs, 'empty slice'
+    if len( funcs ) == 1:
+      return funcs[0]
+    return concatenate( funcs, axis=self.axis )
+
 class Heaviside( ArrayFunc ):
   'heaviside function'
 
@@ -1384,12 +1422,21 @@ class Interp1D( ArrayFunc ):
 class Cross( ArrayFunc ):
   'cross product'
 
-  def __init__( self, f1, f2, axis ):
+  def __init__( self, func1, func2, axis ):
     'contructor'
 
-    shape = _jointshape( f1.shape, f2.shape )
+    self.func1 = func1
+    self.func2 = func2
+    self.axis = axis
+    shape = _jointshape( func1.shape, func2.shape )
     assert 0 <= axis < len(shape), 'axis out of bounds: axis={0}, len(shape)={1}'.format( axis, len(shape) )
-    ArrayFunc.__init__( self, args=(f1,f2,axis-len(shape)), evalf=numeric.cross, shape=shape )
+    ArrayFunc.__init__( self, args=(func1,func2,axis-len(shape)), evalf=numeric.cross, shape=shape )
+
+  def __localgradient__( self, ndims ):
+    'local gradient'
+
+    return cross( self.func1[...,_], localgradient(self.func2,ndims), axis=self.axis ) \
+         - cross( self.func2[...,_], localgradient(self.func1,ndims), axis=self.axis )
 
 class Determinant( ArrayFunc ):
   'normal'
@@ -3080,6 +3127,7 @@ exp = lambda arg: pointwise( [arg], numpy.exp, exp )
 ln = lambda arg: pointwise( [arg], numpy.log, reciprocal )
 log2 = lambda arg: ln(arg) / ln(2)
 log10 = lambda arg: ln(arg) / ln(10)
+sqrt = lambda arg: arg**.5
 power = lambda arg, power: _asarray( arg )**power
 arctan2 = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.arctan2, lambda x: stack([x[1],-x[0]]) / sum(power(x,2),0) )
 greater = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.greater, lambda x: numpy.zeros_like(x) )
@@ -3095,12 +3143,25 @@ piecewise = lambda level, intervals, *funcs: choose( sum( greater( insert(level,
 trace = lambda arg, n1=-2, n2=-1: sum( takediag( arg, n1, n2 ) )
 
 def take( arg, indices, axis ):
+  arg = _asarray( arg )
   if _isfunc( arg ):
     return arg.__take__( indices, axis )
+
+  if arg.shape[axis] == 1:
+    shape = list( arg.shape )
+    if isinstance( indices, slice ):
+      assert indices.start == None or indices.start >= 0
+      assert indices.stop != None and indices.stop > 0
+      shape[axis] = indices.stop - ( indices.start or 0 )
+    else:
+      shape[axis] = len( indices )
+    return expand( arg, shape )
+
   if isinstance( indices, slice ):
     s = [ slice(None) ] * arg.ndim
     s[axis] = indices
     return arg[ tuple(s) ]
+
   return numpy.take( arg, indices, axis )
 
 @core.deprecated( old='Chain', new='chain' )

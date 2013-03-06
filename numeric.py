@@ -250,7 +250,10 @@ def normalize( A, axis=-1 ):
 def cross( v1, v2, axis ):
   'cross product'
 
-  assert v1.ndim == v2.ndim
+  if v1.ndim < v2.ndim:
+    v1 = v1[ (numpy.newaxis,)*(v2.ndim-v1.ndim) ]
+  elif v2.ndim < v1.ndim:
+    v2 = v2[ (numpy.newaxis,)*(v1.ndim-v2.ndim) ]
   return numpy.cross( v1, v2, axis=axis )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
