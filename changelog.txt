@@ -1,10 +1,147 @@
+Finity 13.03.12 --- major enhancements
+
+Changed:
+
+Replaced DofAxis by Inflate. In the former setup, fnuction objects
+featured shapes of type f.shape=(1,DofAxis,3), representing the fact
+that evaluate of this object leads to an array of shape (1,ndofs,3),
+where ndofs depends on the element. The DofAxis evaluated to the
+indices to which the 2nd axis in this example should be scattered. In
+the new setup shapes are either f.shape=(1,1000,3) or
+g.shape=(1,None,3), the latter denoting that a shape is unknown at
+compile-time. The <g> object is typically wrapped in an Inflate object
+<f> which holds a reference to the former DofAxis and performs the
+scattering upon evaluation.
+
+Chain. The f.chain function object member is replaced by
+function.chain, which takes in any variable argument list and returns
+a list of functions of which the first axis results from
+concatenation. For example, if f.shape=(10,) and g.shape=(20,2), then
+F, G = function.chain( f, g ) results in F.shape=(30,) and
+G.shape=(30,2). Internal data structures are updated such that
+evaluation of F will generate non-zeros in the top 10 entries,
+evaluation of G in the bottom 20. Chain can handle evaluables as well
+as static objects, which can be used to implement lagrange mutipliers.
+
+Mixed integrands by addition. Function objects that result from chain
+can be added and subtracted. Mixed integrands can thus be combined
+into a single evaluable object to hand to integrate. The old
+convention of grouping incompatible functions in a tuple has been
+deprecated.
+
+Context logging. The log module has received a major overhaul, which
+resulted in some log levels shifting. The new priority ordering
+related to the verbose property is:
+  0. error
+  1. warning
+  2. path
+  3. info
+  4. progress
+  5. debug
+Notable addition is log.context, which does not generate output but
+sets a context in which subsequent output is logged. A context is lost
+upon return of the function in which it is set. Another function that
+sets a context is log.iterate, that updates a progress context during
+the course of the iterations. Depending on the configured verbosity
+level standalone progress output is printed after 1, 2, 4, 8, etc
+seconds after iterations commence.
+
+Viewer. The html viewer has been rewritten from scratch by Rody van
+Tuijl. Javascript and css are placed in separate files viewer.js and
+style.css, and copied to the output root when a newer version is
+discovered. Note that this way updates take effect on previously run
+simulations. User customizations can be added to custom.css in the
+same directory, which shall not be touched. The new javascript
+functionality handles keyboard shortcuts to provide easy access to the
+many features. Current shortcuts are:
+  r    update current log
+  f    show image full screen
+  g    show log and image split screen
+  h    show only the log
+  j/J  focus next/last image
+  k/K  focus previous/first image
+  l/L  load latest simulation of same type/overall.
+
+PyPlot. The maplotlib interface has been revised and renamed to
+coexist with the former Pylab, which will be deprecated. The new
+interface provides a thin wrapper of the pyplot module, adding a few
+application specific convenience functions. Currently these are:
+  - polycol: draw a collection of (filled) polygons
+  - slope_triangle: draw a slope triangle under a curve
+  - slope_trend: draw a slope trend through a curve
+  - griddata: draw an array as a rectangle of gridded data
+Unlike the Pylab module, methods in PyPlot have no knowledge of
+function objects. Data is to be prepared externally and provided in
+the form of arrays. For this purpose the topology is equipped with new
+methods elem_eval, elem_mean, and grid_eval. See the test cases for
+example of their use.
+
+Standalone function methods. Many function methods such as f.sum and
+f**2 are found as standalone functions function.sum() and
+function.pow(f,2). These functions are more flexible in that they can
+handle objects of non-Evaluable type. Some methods have disappeared as
+instance methods and ought now be accessed via functions, such as
+localgradient. Direct consequence of this change is the removal of the
+UseableArray and StaticArray classes.
+
+Numeric. The numeric module now interfaces its own _numeric c
+extension, deprecating the formarly independent project NumpyExtra.
+C code has been slimmed down, with much work being done in python
+via numpy.lib.stride_tricks.
+
+Further changed are
+  - matrix.solve defaults to maxiter=infinity for iterative solvers.
+  - function.Choose changed to function.piecewise.
+  - removed LocalPoints in favour of separate points and weights
+    arrays.
+
+New:
+
+Hierarchical refinement. StructuredTopology.refinedfunc creates a
+function basis by selecting a linearly independent subset from a
+series of globally refined topologies, based on an indicator function.
+See the new adaptivity test case for example use.
+
+Trimming. Topology.trim cuts elements by a levelset to form a new
+topology consisting of trimmed elements. Trimmed elements have the
+capacity to generate integration schemes based on internal
+subdivision, and can be viewed via the usual contour scheme or via
+Topology.get_simplices. The new cutplate testcase showcases this
+functionality.
+
+Caching. A simple caching mechanism is introduces by the util.Cache
+object. It is to be used as a decorator of embedded functions, which
+will be evaluated or skipped over depending on whether an earlier
+result is found in cache:
+  cache = Cache( param1, param2 )
+  @cache
+  def result():
+    res = expensive_function()
+    return res
+In this example, 'result' contains the data that results from
+evaluation of the decorated function. The mechanism hinges on the
+parameters in the Cache constructor, which must be chosen such that
+identical parameters lead to identical evaluations. Cached data is
+placed in $outdir/$scriptname/cache.
+
+Further new are
+  - new testcase: cylinderflow
+  - added the TetrahedronElement
+  - added util.suppress_output for silencing 3rd party tools
+  - parallel.fork rudimentary parallelisation mechanism
+
+This release features contributions from Rody van Tuijl, Clemens
+Verhoosel, Timo van Opstal, and Xunxun Wu.
+
+* * *
+
 Finity 13.01.08 --- major enhancements
 
 Fixed:
 
-* Sparse matrix in place addition: gave erroneous results.
-* Function spaces now support polynomial degree=1.
-* Special case binary operations (zero addition, etc) retain shape.
+  - Sparse matrix in place addition: gave erroneous results.
+  - Function spaces now support polynomial degree=1.
+  - Special case binary operations (zero addition, etc) retain shape.
 
 New:
 
@@ -113,6 +250,6 @@ Currently Get and Align define alternative representations, while
 Diagonalize, Kronecker and Expand flip b/w to warn for potential
 sub-optimality.
 
-***
+* * *
 
 vim:textwidth=70
