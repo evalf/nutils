@@ -159,26 +159,13 @@ class SparseMatrix( Matrix ):
       nrows = len(graph)
       nzrow = map(len,graph)
       count = sum( nzrow )
+      assert numpy.sum( nzrow ) <= numpy.iinfo( numpy.intc ).max, 'matrix overflow: length %d > max intc %d' % ( numpy.sum( nzrow ), numpy.iinfo( numpy.intc ).max )
       self.data = numpy.zeros( count, dtype=float )
       self.indptr = numpy.cumsum( [0] + nzrow, dtype=numpy.intc )
       self.indices = numpy.empty( count, dtype=numpy.intc )
       for irow, icols in enumerate( graph ):
         a, b = self.indptr[irow:irow+2]
-        try:
-          self.indices[a:b] = icols
-        except ValueError:
-          print 'nrows=', nrows
-          print 'max(nzrow)=', nzrow
-          print 'count=', count
-          print 'self.data.shape=', self.data.shape
-          print 'self.indptr.shape=', self.indptr.shape
-          print 'self.indices.shape=', self.indices.shape
-          print 'irow=', irow
-          print 'a=', a
-          print 'b=', b
-          print 'len(icols)=', len(icols)
-          print 'indices[a:b].shape=', indices[a:b].shape
-          raise
+        self.indices[a:b] = icols
     Matrix.__init__( self, (nrows, ncols or nrows) )
 
   def reshape( self, (nrows,ncols) ):

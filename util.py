@@ -140,6 +140,7 @@ def clone( obj ):
 def iterate( context='iter', nmax=-1 ):
   'iterate forever'
 
+  assert isinstance( nmax, int ), 'invalid value for nmax %r' % nmax
   i = 0
   while True:
     if i == nmax:
