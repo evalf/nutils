@@ -2337,8 +2337,18 @@ class Inflate( ArrayFunc ):
     if not blocks:
       return dense
 
-    if not _iszero( dense ):
-      blocks.append(( dense, indall ))
+    try:
+      if not _iszero( dense ):
+        blocks.append(( dense, indall ))
+    except:
+      print 'dense.shape =', dense.shape
+      print 'keep =', keep
+      print 'self.shape =', self.shape
+      tmp = dense == 0
+      print 'tmp = dense == 0 -> type = ', type(tmp)
+      print 'tmp = dense == 0 -> shape = ', tmp.shape
+
+      raise
 
     return Inflate( shape, blocks )
 
@@ -2484,9 +2494,10 @@ class Diagonalize( ArrayFunc ):
     else:
       return ArrayFunc.sum( self, axes )
 
-    trans = range(otherax) + [-1] + range(otherax,self.ndim-2)
+    trans = range(otherax) + range(otherax+1,self.ndim-1) + [otherax]
     remaining = [ ax if ax < sumax else ax-1 for ax in axes if ax != sumax ]
-    return sum( align( self.func, trans, self.ndim-len(axes) ), remaining )
+    
+    return sum( align( self.func, trans, self.ndim-1 ), remaining )
 
   def __align__( self, axes, ndim ):
     'align'
@@ -2971,6 +2982,8 @@ def align( arg, axes, ndim ):
   'align'
 
   assert arg.ndim == len(axes)
+  assert ndim >= len(axes)
+
   axes = [ _normdim(ndim,ax) for ax in axes ]
   if _isfunc( arg ):
     return arg.__align__( axes, ndim )

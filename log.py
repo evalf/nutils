@@ -197,6 +197,7 @@ class ProgressBar( object ):
     'constructor'
 
     self.text = title
+    self.out = None
     if isinstance( n, int ):
       self.iterable = None
       self.target = n
