@@ -97,12 +97,6 @@ function Finity() {
     this._btnLast;
     
     /**
-     * Finity._inpScroll
-     * Checkbox to enable scrolling <input>
-     * @v/
-    this._inpScroll;*/
-    
-    /**
      * Finity._inpFinity
      * Checkbox to enable finity <input>
      * @var jQuery
@@ -136,34 +130,6 @@ function Finity() {
      * @var jQuery
      */
 		this._aIndex;
-		
-    /**
-     * Finity._mouseX
-     * Last known x-coordinate of the mouse
-     * @var int
-     */
-    this._mouseX = 0;
-		
-    /**
-     * Finity._mouseY
-     * Last known y-coordinate of the mouse
-     * @var int
-     */
-		this._mouseY = 0;
-		
-    /**
-     * Finity._lastScrollLeft
-     * Last known number of pixels scrolled in horizontal direction
-     * @var int
-     */
-    //this._lastScrollLeft = 0;
-    
-    /**
-     * Finity._lastScrollTop
-     * Last known number of pixels scrolled in vertical direction
-     * @var int
-     */
-		//this._lastScrollTop = 0;
 
     /**
      * Finity._npreload
@@ -171,13 +137,27 @@ function Finity() {
      * @var int
      */
 		this._npreload = 2;
-    
+
     /**
-     * Finity._plots
-     * Array of images for every plot
+     * Finity._npreload
+     * Images preloaded before and after current image
      * @var Array
      */
-		this._plots = new Array();
+		this._ipreload = new Array();
+    
+    /**
+     * Finity._imgCurrent
+     * Image object to hold current image
+     * @var Image
+     */
+		this._imgCurrent = new Image();
+
+    /**
+     * Finity._imgPreload
+     * Image object to preload previous and next images
+     * @var Image
+     */
+		this._imgPreload = new Image();
     
     /**
      * Finity._plots
@@ -209,13 +189,6 @@ function Finity() {
 				 };
     
     /**
-     * Finity._scrolling
-     * Scrolling enabled by default
-     * @var Bool
-     *
-    this._scrolling = false; */
-    
-    /**
      * Finity.__init__()
      * Construct finity class
      * 
@@ -238,9 +211,6 @@ function Finity() {
       this._btnPrev 		= $('<button title="&#8592; (left arrow) or K" id="btn-prev">&lt;</button>').appendTo(this._controls);
       this._btnNext 		= $('<button title="&#8594; (right arrow) or J" id="btn-next">&gt;</button>').appendTo(this._controls);
       this._btnLast 		= $('<button title="&#8595; (down arrow) or Shift + J" id="btn-last">&raquo;</button>').appendTo(this._controls);
-      /* this._inpScroll 	= $('<input title="S" type="checkbox" name="scrolling" id="scrolling" />')
-                     				.appendTo(this._controls)
-					                  .before('<label for="scrolling">Scrolling</label>');  */
       this._selView 	= $('<select id="sel-view"><option value="both" selected>term / img (G)</option><option value="term">term (H)</option><option value="img">img (F)</option></select>').appendTo(this._controls);
                         
  			this._navbar = this._code.find('#navbar')
@@ -251,11 +221,6 @@ function Finity() {
 												.attr('title', 'Shift + L');
 			this._aIndex = this._navbar.find('.nav_index')
 												.attr('title', 'I');
- 
-      /*if( this._scrolling )
-        this._inpScroll.attr('checked', true);
-        
-      this.enableScrolling( this._scrolling );*/
         
       // Build gallery
      	this._galleries['*'] = new Array();
@@ -273,30 +238,20 @@ function Finity() {
         }
         
 				// Key for this image
-        var key = self._plots.length;
+        var key = self._data.length;
 			
 				// Store additional image data
 				var data = {
 					'src': url,
 					'name': url,
-					'title': url,
-					'alt': url,
-          'hash': hash,
-					'width': -1,
-					'height': -1,
-          'cx': Math.round($a.offset().left + ( $a.width()  / 2 )),
-          'cy': Math.round($a.offset().top  + ( $a.height() / 2 ))
+          'hash': hash
 				};
 				self._data.push(data);
 				
-				// Preload image
-				var img = new Image();
-						img.complete = false;
-				if( key < (self._npreload + 1) ) {
-					img.src = url;
-				}
-				self._plots.push(img);
-
+				// Preload images
+				if( key < (self._npreload + 1) )
+          self._imgPreload.src = url
+			
 				// Add to galleries
         self._galleries['*'].push(key);
         var idx = self._galleries[gal].push(key);
@@ -466,11 +421,6 @@ function Finity() {
 							else
 								document.location.href = url;
 							break;
-            /*case evt.keyCode == 83: // S
-							var enable = ! self._inpScroll.is(':checked');
-							self.enableScrolling(enable);
-							self._inpScroll.attr('checked', enable);
-							break;*/
             default:
 							return true;
 							break;
@@ -489,9 +439,6 @@ function Finity() {
      * @return void
      */
     this.__destruct__ = function() {
-      // No scrolling
-      //this.enableScrolling( false );
-
       // Put links back
       this._aLatest.prependTo(this._code);
       this._aLatestAll.prependTo(this._code).after(' | ');
@@ -502,84 +449,6 @@ function Finity() {
       this._media.remove();
       this._code.off('click');
     };
-    
-    /**
-     * Finity.enableScrolling( enable )
-     * Enable scrolling functionality
-     * 
-     * @param bool enable
-     * @return void
-     *
-    this.enableScrolling = function ( enable ) {
-      var self = this;
-      if( enable ) {
-        var scrollHandle = function( evt ) {
-						if( evt.type == 'scroll' ) {
-							if( self._lastScrollLeft != $(document).scrollLeft() ) {
-								self._pageX -= self._lastScrollLeft;
-								self._lastScrollLeft = $(document).scrollLeft();
-								self._pageX += self._lastScrollLeft;
-							}
-							if( self._lastScrollTop != $(document).scrollTop() ) {
-								self._pageY -= self._lastScrollTop;
-								self._lastScrollTop = $(document).scrollTop();
-								self._pageY += self._lastScrollTop;
-							}
-
-							evt.pageX = self._pageX;
-							evt.pageY = self._pageY;
-						} else {
-							self._pageX = evt.pageX;
-							self._pageY = evt.pageY;
-						}
-						self.closest( evt );
-				};
-				this._code.bind('mousemove.scrolling', scrollHandle );
-				$(document).bind('scroll.scrolling', scrollHandle );
-				this._scrolling = true;
-	    } else {
-				this._scrolling = false;
-        this._code.unbind('.scrolling');
-        $(document).unbind('.scrolling');
-      }
-    }; */
-    
-    /**
-     * Finity.closest( evt )
-     * Function that shows the 
-     * plot from the closest link
-     * 
-     * @param event evt
-		 * @return void
-     *
-    this.closest = function( evt ) {
-      var self = this;
-      
-      var mx = evt.pageX, // mouse x
-          my = evt.pageY; // mouse y
-
-      var gal = this._current.gallery;
-			var gallery = this._galleries[gal];
-      
-      if( typeof gallery == 'undefined' )
-        return false;
-        
-      var distance = -1;
-      var closest = 0;
-      for( var idx = 0; idx < this._galleries[gal].length; ++idx ) {
-				var key = gallery[idx];
-				var data = this._data[key];
-        var ds = my - data.cy;
-						ds = ds*ds;
-
-        if( ds < distance || distance < 0 ) {
-          closest = idx;
-          distance = ds;
-        }
-      }
-      
-      this.show(gal, closest);
-    }*/
     
     /**
      * Finity.getGalleryName( url )
@@ -607,9 +476,6 @@ function Finity() {
       var gal = this._current.gallery;
       var idx = this._current.index;
       var cnt = this._galleries[gal].length;
-
-			//this._inpScroll.attr('checked', false);
-			//this.enableScrolling( false );
 	
 			if( (idx + 1) < cnt ) {
       	++idx;
@@ -627,9 +493,6 @@ function Finity() {
 			var gal = this._current.gallery;
       var idx = this._current.index;
 			
-			//this._inpScroll.attr('checked', false);
-			//this.enableScrolling( false );
-			
 			if( (idx - 1) >= 0 ) {
       	--idx;
 				this.show( gal, idx );
@@ -645,9 +508,6 @@ function Finity() {
 		this.first = function (){
 			var gal = this._current.gallery;
 			var idx = this._current.index;
-			
-			//this._inpScroll.attr('checked', false);
-			//this.enableScrolling( false );
 
 			this.show( gal, 0 );
 		};
@@ -662,9 +522,6 @@ function Finity() {
 			var gal = this._current.gallery;
 			var idx = this._current.index;
       var cnt = this._galleries[gal].length;
-	
-			//this._inpScroll.attr('checked', false);
-			//this.enableScrolling( false );
 	
 			this.show( gal, (cnt-1) );
 		};
@@ -739,16 +596,17 @@ function Finity() {
       
 			var gallery = this._galleries[gal];
 			var key 		= gallery[idx];
-      var img 		= this._plots[key];
       var data 		= this._data[key];
+
+      // Set the current image
+      this._imgCurrent.src = data.src;
 
 			// Preloading
 			var istart = Math.max(idx-this._npreload,0);
 			var iend = Math.min(idx+this._npreload, gallery.length);
 			for( var i = istart; i < iend; ++i ) {
 				var ky = gallery[i];
-				if( this._plots[ky].src != this._data[ky].src )
-					this._plots[ky].src = this._data[ky].src;
+        this._imgPreload.src = this._data[ky].src;
 			}
         
       this._current.gallery = gal;
@@ -756,10 +614,10 @@ function Finity() {
 
 			// If image was loaded, show it
 			// otherwise show when loaded
-			if( img.width > 0 ) {
+			if( this._imgCurrent.width > 0 ) {
         this.render();
 			} else {
-				img.onload = function (){
+				this._imgCurrent.onload = function (){
 					self.render();
 				}
 			}
@@ -776,7 +634,6 @@ function Finity() {
 			var gal = this._current.gallery;
 			var idx = this._current.index;
 			var key = this._galleries[gal][idx];
-			var img = this._plots[key];
 
 			// Check if the gallery exists
       if( typeof this._galleries[gal] == 'undefined' )
@@ -790,7 +647,6 @@ function Finity() {
 			var key = this._galleries[gal][idx];
 
 			// Get the image and the data
-      var img  = this._plots[key];
       var data = this._data[key];
 
       // Focus on selected link
@@ -804,10 +660,10 @@ function Finity() {
 
       var frameWidth = Math.max(this._media.width() - 20, 1);
       var frameHeight = Math.max(this._media.height() - 30, 1);
-      var fx = Math.max(img.width / frameWidth, 1);
-      var fy = Math.max(img.height / frameHeight, 1);
-      var width = img.width / fx;
-      var height = img.height / fy;
+      var fx = Math.max(this._imgCurrent.width / frameWidth, 1);
+      var fy = Math.max(this._imgCurrent.height / frameHeight, 1);
+      var width = this._imgCurrent.width / fx;
+      var height = this._imgCurrent.height / fy;
       
 			// Make image the right size and show it
       var css = ( fx > fy )
@@ -815,10 +671,10 @@ function Finity() {
               : { 'width': 'auto', 'height': height + 'px' };
 			this._img.css(css);
 			
-			if( this._img.attr('src') != img.src ) {
-				this._img.attr('src', img.src);
+			if( this._img.attr('src') != this._imgCurrent.src ) {
+				this._img.attr('src', this._imgCurrent.src);
 				this._imglink
-					.attr('href', img.src);
+					.attr('href', this._imgCurrent.src);
 			}
 		}
 }
