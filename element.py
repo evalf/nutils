@@ -271,9 +271,13 @@ class TrimmedElement( Element ):
       return points[inside], None
 
     if self.maxrefine <= 0:
-      points, weights = self.elem.eval( self.finestscheme )
-      inside = self.levelset( self.elem, points ) > 0
-      return points[inside], weights[inside] if weights is not None else None
+      if self.finestscheme is None:
+        print [elem.eval( ischeme ) for elem in self.get_simplices( 0 )]
+      else:
+        points, weights = self.elem.eval( self.finestscheme )
+        inside = self.levelset( self.elem, points ) > 0
+        return points[inside], weights[inside] if weights is not None else None
+        
 
     allcoords = []
     allweights = []
@@ -323,7 +327,7 @@ class TrimmedElement( Element ):
 
     ischeme = self.elem.getischeme( self.elem.ndims, 'bezier2' )
     where   = self.levelset( self.elem, ischeme ) > 0
-    points  = ischeme.coords[where]
+    points  = ischeme[0][where]
 
     if not where.any():
       return []
@@ -343,6 +347,8 @@ class TrimmedElement( Element ):
 
       if  where[0] != where[1]:
 
+        print 'ischeme =', ischeme
+
         xi = vals[0] / ( vals[0] - vals[1] )
 
         assert xi > 0 and xi < 1, 'Illegal local coordinate'
@@ -350,7 +356,12 @@ class TrimmedElement( Element ):
         elem, transform = line.context
         ischeme = transform.eval( ischeme )
 
-        newpoint = ischeme.coords[0] + xi * ( ischeme.coords[1] - ischeme.coords[0] )
+        print ischeme
+
+        newpoint = ischeme[0][0] + xi * ( ischeme[0][1] - ischeme[0][0] )
+
+        print newpoint
+
 
         points   = numpy.append( points, newpoint[_], axis=0 ) 
 
@@ -694,16 +705,59 @@ class TetrahedronElement( Element ):
 
   @core.classcache
   def getischeme( cls, ndims, where ):
-    '''get integration scheme'''
+    '''get integration scheme
+       http://people.sc.fsu.edu/~jburkardt/datasets/quadrature_rules_tet/quadrature_rules_tet.html'''
 
     assert ndims == 3
     if where.startswith( 'vtk' ):
       coords = numpy.array([[0,0,0],[1,0,0],[0,1,0],[0,0,1]]).T
       weights = None
     elif where == 'gauss1':
-      #TODO This is just the c.o.g.
+      #Precision = 0 (constant)
       coords = numpy.array( [[1],[1],[1]] ) / 4.
       weights = numpy.array( [1] ) / 6.
+    elif where == 'gauss2':
+      #Precision = 1 (linears)
+      coords = numpy.array([[0.5854101966249685,0.1381966011250105,0.1381966011250105],
+                            [0.1381966011250105,0.1381966011250105,0.1381966011250105],
+                            [0.1381966011250105,0.1381966011250105,0.5854101966249685],
+                            [0.1381966011250105,0.5854101966249685,0.1381966011250105]]).T
+      weights = numpy.array([1,1,1,1]) / 24.
+    elif where == 'gauss3':
+      #Precision = 2 (quadratics)
+      coords = numpy.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
+                            [0.5000000000000000,0.1666666666666667,0.1666666666666667],
+                            [0.1666666666666667,0.1666666666666667,0.1666666666666667],
+                            [0.1666666666666667,0.1666666666666667,0.5000000000000000],
+                            [0.1666666666666667,0.5000000000000000,0.1666666666666667]]).T
+      weights = numpy.array([-0.8000000000000000,0.4500000000000000,0.4500000000000000,0.4500000000000000,0.4500000000000000]) / 6.
+    elif where == 'gauss4':
+      #Precision = 3 (cubics)
+      coords = numpy.array([[0.5684305841968444,0.1438564719343852,0.1438564719343852],
+                            [0.1438564719343852,0.1438564719343852,0.1438564719343852],
+                            [0.1438564719343852,0.1438564719343852,0.5684305841968444],
+                            [0.1438564719343852,0.5684305841968444,0.1438564719343852],
+                            [0.0000000000000000,0.5000000000000000,0.5000000000000000],
+                            [0.5000000000000000,0.0000000000000000,0.5000000000000000],
+                            [0.5000000000000000,0.5000000000000000,0.0000000000000000],
+                            [0.5000000000000000,0.0000000000000000,0.0000000000000000],
+                            [0.0000000000000000,0.5000000000000000,0.0000000000000000],
+                            [0.0000000000000000,0.0000000000000000,0.5000000000000000]]).T
+      weights = numpy.array([0.2177650698804054,0.2177650698804054,0.2177650698804054,0.2177650698804054,0.0214899534130631,0.0214899534130631,0.0214899534130631,0.0214899534130631,0.0214899534130631,0.0214899534130631]) / 6.
+    elif where == 'gauss5':
+      #Precision = 4
+      coords = numpy.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
+                            [0.7857142857142857,0.0714285714285714,0.0714285714285714],
+                            [0.0714285714285714,0.0714285714285714,0.0714285714285714],
+                            [0.0714285714285714,0.0714285714285714,0.7857142857142857],
+                            [0.0714285714285714,0.7857142857142857,0.0714285714285714],
+                            [0.1005964238332008,0.3994035761667992,0.3994035761667992],
+                            [0.3994035761667992,0.1005964238332008,0.3994035761667992],
+                            [0.3994035761667992,0.3994035761667992,0.1005964238332008],
+                            [0.3994035761667992,0.1005964238332008,0.1005964238332008],
+                            [0.1005964238332008,0.3994035761667992,0.1005964238332008],
+                            [0.1005964238332008,0.1005964238332008,0.3994035761667992]]).T
+      weights = numpy.array([-0.0789333333333333,0.0457333333333333,0.0457333333333333,0.0457333333333333,0.0457333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333]) / 6.
     else:
       raise Exception, 'invalid element evaluation: %r' % where
     return util.ImmutableArray( coords.T ), util.ImmutableArray( weights )

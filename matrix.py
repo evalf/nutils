@@ -1,8 +1,9 @@
 from . import util, numpy, log, numeric, _
+import scipy.sparse
 from scipy.sparse.sparsetools.csr import _csr
 from scipy.sparse.linalg.isolve import _iterative
 
-def krylov( matvec, b, x0=None, tol=1e-5, restart=None, maxiter=0, precon=None ):
+def krylov( matvec, b, x0=None, tol=1e-5, restart=None, maxiter=0, precon=None, callback=None ):
   '''solve linear system iteratively
 
   restart=None: CG
@@ -60,6 +61,8 @@ def krylov( matvec, b, x0=None, tol=1e-5, restart=None, maxiter=0, precon=None )
         info = -1
         firsttime = False
       bnrm2, res, info = stoptest( vec1, bnrm2, info )
+      if callback:
+        callback( (iiter,res) )
       progress.update( numpy.log(res) )
     else:
       assert ijob == -1
@@ -296,7 +299,7 @@ class SparseMatrix( Matrix ):
       supp[irow] = a == b or tol != 0 and numpy.all( numpy.abs( self.data[a:b] ) < tol )
     return supp
 
-  def solve( self, b=0, constrain=None, lconstrain=None, rconstrain=None, tol=0, x0=None, symmetric=False, maxiter=0, restart=999, title='solving system' ):
+  def solve( self, b=0, constrain=None, lconstrain=None, rconstrain=None, tol=0, x0=None, symmetric=False, maxiter=0, restart=999, title='solving system', callback=None, precon=None ):
     'solve'
 
     if tol == 0:
@@ -314,25 +317,31 @@ class SparseMatrix( Matrix ):
     if symmetric:
       restart = None
 
-    if constrain is lconstrain is rconstrain is None:
-      return krylov( self.matvec, b, tol=tol, maxiter=maxiter, restart=restart )
-
     x, I, J = parsecons( constrain, lconstrain, rconstrain, self.shape )
     if x0 is not None:
       x0 = x0[J]
-    b = ( b - self.matvec(x) )[I]
-    tmpvec = numpy.zeros( self.shape[1] )
-    def matvec( v ):
-      tmpvec[J] = v
-      return self.matvec(tmpvec)[I]
-    x[J] = krylov( matvec, b, x0=x0, tol=tol, maxiter=maxiter, restart=restart )
 
-    ##ALTERNATIVE
-    #from scipy.sparse import linalg
-    #xJ, info = linalg.gmres( linalg.LinearOperator(b.shape*2,matvec,dtype=float), b, tol=tol, maxiter=maxiter )
-    #assert info == 0
-    #x[J] = xJ
-    ##END
+    b = ( b - self.matvec(x) )[I]
+
+    if not precon:
+
+      tmpvec = numpy.zeros( self.shape[1] )
+      def matvec( v ):
+        tmpvec[J] = v
+        return self.matvec(tmpvec)[I]
+
+    else:
+
+      A = scipy.sparse.csr_matrix( (self.data,self.indices,self.indptr), shape=self.shape )[numpy.where(I)[0],:][:,numpy.where(J)[0]].tocsc()
+      matvec = A.__mul__
+
+      if isinstance( precon, str ):
+        if precon == 'spilu':
+          precon = scipy.sparse.linalg.spilu( A, drop_tol=1e-5, fill_factor=None, drop_rule=None, permc_spec=None, diag_pivot_thresh=None, relax=None, panel_size=None, options=None).solve
+        else:
+          raise Exception( 'Unknown preconditioner %s' % precon )
+
+    x[J] = krylov( matvec, b, x0=x0, tol=tol, maxiter=maxiter, restart=restart, callback=callback, precon=precon )
 
     return x
 
