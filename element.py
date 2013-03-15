@@ -273,7 +273,20 @@ class TrimmedElement( Element ):
 
     if self.maxrefine <= 0:
       if self.finestscheme is None:
-        print [elem.eval( ischeme ) for elem in self.get_simplices( 0 )]
+
+        points  = []
+        weights = []
+
+        for simplex in self.get_simplices( 0 ):
+          spoints, sweights = simplex.eval( ischeme )
+          pelem, transform = simplex.parent
+          
+          points.append( transform.eval( spoints ) )
+          weights.append( sweights * transform.det )
+          
+        points  = util.ImmutableArray(numpy.concatenate(points  ))
+        weights = util.ImmutableArray(numpy.concatenate(weights ))
+        return points, weights
       else:
         points, weights = self.elem.eval( self.finestscheme )
         inside = self.levelset( self.elem, points ) > 0
@@ -332,11 +345,9 @@ class TrimmedElement( Element ):
 
     if not where.any():
       return []
-    #elif where.all():
-    #  return [ self.elem ]
 
     if where.all():
-	lines = []
+	    lines = []
     else:		
     	lines = self.elem.ribbons  
 
@@ -344,25 +355,20 @@ class TrimmedElement( Element ):
       
       ischeme = line.getischeme( line.ndims, 'bezier2' )
       vals    = self.levelset( line, ischeme )
+      pts     = ischeme[0]
       where   = vals > 0
 
       if  where[0] != where[1]:
-
-        print 'ischeme =', ischeme
 
         xi = vals[0] / ( vals[0] - vals[1] )
 
         assert xi > 0 and xi < 1, 'Illegal local coordinate'
  
         elem, transform = line.context
-        ischeme = transform.eval( ischeme )
 
-        print ischeme
+        pts = transform.eval( pts )
 
-        newpoint = ischeme[0][0] + xi * ( ischeme[0][1] - ischeme[0][0] )
-
-        print newpoint
-
+        newpoint = pts[0] + xi * ( pts[1] - pts[0] )
 
         points   = numpy.append( points, newpoint[_], axis=0 ) 
 
