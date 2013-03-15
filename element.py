@@ -141,6 +141,7 @@ class AffineTransformation( object ):
   def eval( self, points ):
     'apply transformation'
 
+    assert isinstance( points, numpy.ndarray )
     return util.ImmutableArray( self.offset + numeric.dot( points, self.transform.T ) )
 
 class Element( object ):
