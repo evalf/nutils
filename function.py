@@ -988,9 +988,12 @@ class Get( ArrayFunc ):
     'get item'
 
     i = _normdim( self.ndim, i )
-    n = _sum( iax <= i for iax, it in self.items )
-    items = self.items[:n] + [(i+n,item)] + self.items[n:]
-    return Get( self.func, *items )
+    selected = numpy.zeros( self.func.ndim, dtype=bool )
+    for iax, it in self.items:
+      selected[iax] = True
+    renumber, = numpy.where( ~selected )
+    assert len(renumber) == self.ndim
+    return Get( self.func, (renumber[i],item), *self.items )
 
   def __graphviz__( self ):
     'graphviz representation'
@@ -1165,14 +1168,15 @@ class Choose( ArrayFunc ):
     self.level = level
     self.choices = tuple(choices)
     shape = _jointshape( *[ choice.shape for choice in choices ] )
-    assert level.ndim == 0
+    level = level[ (_,)*(len(shape)-level.ndim) ]
+    assert level.ndim == len( shape )
     ArrayFunc.__init__( self, args=(level,)+self.choices, evalf=self.choose, shape=shape )
 
   @staticmethod
   def choose( level, *choices ):
     'choose'
 
-    return numpy.choose( level, [ c.T for c in choices ] ).T
+    return numpy.choose( level, choices )
 
   def __localgradient__( self, ndims ):
     'gradient'

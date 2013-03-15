@@ -430,7 +430,7 @@ def writevtu( name, topology, coords, pointdata={}, celldata={}, ascii=False, su
       vtkArray.InsertNextValue( numeric.mean( data, weights=iweights, axis=0 ) if data.ndim == 1 else data )
   vtkMesh.SetPoints( vtkPoints )
 
-  log.info( 'saving vtu data' )
+  log.info( 'saving vtu data...' )
   vtkWriter = vtk.vtkXMLUnstructuredGridWriter()
   vtkWriter.SetInput( vtkMesh )
   vtkWriter.SetFileName( vtupath )
