@@ -280,12 +280,11 @@ class TrimmedElement( Element ):
         for simplex in self.get_simplices( 0 ):
           spoints, sweights = simplex.eval( ischeme )
           pelem, transform = simplex.parent
-          
           points.append( transform.eval( spoints ) )
           weights.append( sweights * transform.det )
           
-        points  = util.ImmutableArray(numpy.concatenate(points  ))
-        weights = util.ImmutableArray(numpy.concatenate(weights ))
+        points  = util.ImmutableArray(numpy.concatenate(points ))
+        weights = util.ImmutableArray(numpy.concatenate(weights))
         return points, weights
       else:
         points, weights = self.elem.eval( self.finestscheme )
