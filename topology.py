@@ -207,42 +207,61 @@ class Topology( object ):
     weights = self.project( fun, onto, coords, **kwargs )
     return onto.dot( weights )
 
-  def project( self, fun, onto, coords, tol=0, ischeme='gauss8', title='projecting', droptol=1e-8, exact_boundaries=False, constrain=None, verify=None, maxiter=0 ):
+  def project( self, fun, onto, coords, tol=0, ischeme='gauss8', title='projecting', droptol=1e-8, exact_boundaries=False, constrain=None, verify=None, maxiter=0, ptype='lsqr' ):
     'L2 projection of function onto function space'
 
-    log.context( title )
+    log.context( title + ' [%s]' % ptype )
 
     if exact_boundaries:
       assert constrain is None
-      constrain = self.boundary.project( fun, onto, coords, title='boundaries', ischeme=ischeme, tol=tol, droptol=droptol )
+      constrain = self.boundary.project( fun, onto, coords, title='boundaries', ischeme=ischeme, tol=tol, droptol=droptol, ptype=ptype )
     elif constrain is None:
       constrain = util.NanVec( onto.shape[0] )
     else:
       assert isinstance( constrain, util.NanVec )
       assert constrain.shape == onto.shape[:1]
 
-    if len( onto.shape ) == 1:
-      Afun = function.outer( onto )
-      bfun = onto * fun
-    elif len( onto.shape ) == 2:
-      Afun = function.outer( onto ).sum( 2 )
-      bfun = function.sum( onto * fun )
+    if ptype == 'lsqr':
+      if len( onto.shape ) == 1:
+        Afun = function.outer( onto )
+        bfun = onto * fun
+      elif len( onto.shape ) == 2:
+        Afun = function.outer( onto ).sum( 2 )
+        bfun = function.sum( onto * fun )
+      else:
+        raise Exception
+      A, b = self.integrate( [Afun,bfun], coords=coords, ischeme=ischeme, title='building system' )
+      N = A.rowsupp(droptol)
+      if numpy.all( b == 0 ):
+        constrain[~constrain.where&N] = 0
+      else:
+        solvecons = constrain.copy()
+        solvecons[~(constrain.where|N)] = 0
+        u = A.solve( b, solvecons, tol=tol, symmetric=True, maxiter=maxiter )
+        constrain[N] = u[N]
+
+    elif ptype == 'convolute':
+      if len( onto.shape ) == 1:
+        ufun = onto * fun
+        afun = onto
+      elif len( onto.shape ) == 2:
+        ufun = function.sum( onto * fun )
+        afun = function.norm2( onto )
+      else:
+        raise Exception
+      u, scale = self.integrate( [ ufun, afun ], coords=coords, ischeme=ischeme )
+      N = ~constrain.where & ( scale > droptol )
+      constrain[N] = u[N] / scale[N]
+
     else:
-      raise Exception
-    A, b = self.integrate( [Afun,bfun], coords=coords, ischeme=ischeme, title='building system' )
-    supp = A.rowsupp( droptol ) & numpy.isnan( constrain )
-    numcons = (~supp).sum()
+      raise Exception, 'invalid projection %r' % ptype
+
+    numcons = constrain.where.sum()
     if verify is not None:
       assert numcons == verify, 'number of constraints does not meet expectation: %d != %d' % ( numcons, verify )
-    constrain[supp] = 0
-    if numpy.all( b == 0 ):
-      u = constrain | 0
-    else:
-      u = A.solve( b, constrain, tol=tol, symmetric=True, maxiter=maxiter )
-    u[supp] = numpy.nan
+    log.info( 'contrained %d/%d dofs' % ( numcons, constrain.size ) )
 
-    log.info( 'contrained %d/%d dofs' % ( numcons, b.size ) )
-    return u.view( util.NanVec )
+    return constrain
 
 # def trim( self, levelset, maxrefine, lscheme='bezier3' ):
 #   'create new domain based on levelset'
@@ -769,7 +788,7 @@ class UnstructuredTopology( Topology ):
         nmap[ children[2] ] = numpy.array([ nodedofs[0], edgedofs[0], edgedofs[2] ])
         nmap[ children[3] ] = numpy.array([ edgedofs[1], edgedofs[2], edgedofs[0] ])
       else:
-        raise NotImplementedError
+        dofaxis = None
 
     #print 'boundary:', edges
 

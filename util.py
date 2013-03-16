@@ -1,5 +1,5 @@
 from . import log, prop
-import sys, os, time, numpy, cPickle, hashlib, weakref, traceback
+import sys, os, time, numpy, cPickle, hashlib, weakref, traceback, core
 
 class _SuppressedOutput( object ):
   'suppress all output by redirection to /dev/null'
@@ -163,19 +163,26 @@ class NanVec( numpy.ndarray ):
     return vec
 
   @property
+  def where( self ):
+    'find non-nan items'
+
+    return ~numpy.isnan( self.view(numpy.ndarray) )
+
+  @property
+  @core.deprecated( old='NanVec.mask', new='NanVec.~where' )
   def mask( self ):
     'find non-nan items'
 
-    return numpy.isnan( self.view(numpy.ndarray) )
+    return ~self.where
 
   def __iand__( self, other ):
     'combine'
 
-    where = ~self.mask
+    where = self.where
     if numpy.isscalar( other ):
       self[ where ] = other
     else:
-      where &= ~other.mask
+      where &= other.where
       self[ where ] = other[ where ]
     return self
 
@@ -187,8 +194,8 @@ class NanVec( numpy.ndarray ):
   def __ior__( self, other ):
     'combine'
 
-    where = self.mask
-    self[ where ] = other if numpy.isscalar( other ) else other[ where ]
+    wherenot = ~self.where
+    self[ wherenot ] = other if numpy.isscalar( other ) else other[ wherenot ]
     return self
 
   def __or__( self, other ):
@@ -336,7 +343,6 @@ def run( *functions ):
 
   scriptname = os.path.basename(sys.argv[0])
   outdir = os.path.expanduser( prop.outdir ).rstrip( os.sep ) + os.sep
-  print outdir
   basedir = outdir + scriptname + os.sep
   localtime = time.localtime()
   timepath = time.strftime( '%Y/%m/%d/%H-%M-%S/', localtime )

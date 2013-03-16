@@ -296,7 +296,7 @@ class SparseMatrix( Matrix ):
     supp = numpy.empty( self.shape[0], dtype=bool )
     for irow in range( self.shape[0] ):
       a, b = self.indptr[irow:irow+2]
-      supp[irow] = a == b or tol != 0 and numpy.all( numpy.abs( self.data[a:b] ) < tol )
+      supp[irow] = a != b and ( tol == 0 or numpy.any( numpy.abs( self.data[a:b] ) > tol ) )
     return supp
 
   def solve( self, b=0, constrain=None, lconstrain=None, rconstrain=None, tol=0, x0=None, symmetric=False, maxiter=0, restart=999, title='solving system', callback=None, precon=None ):
