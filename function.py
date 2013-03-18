@@ -2215,11 +2215,11 @@ class Inflate( ArrayFunc ):
             ind.append( ind1[i] )
           elif ind1[i] == slice(None): # ind2[i] != slice(None):
             assert func1.shape[i] == func2.shape[i]
-            f1 = takeindex( f1, i, ind2[i] )
+            f1 = take( f1, ind2[i], i )
             ind.append( ind2[i] )
           elif ind2[i] == slice(None): # ind1[i] != slice(None):
             assert func1.shape[i] == func2.shape[i]
-            f2 = takeindex( f2, i, ind1[i] )
+            f2 = take( f2, ind1[i], i )
             ind.append( ind1[i] )
           else: # ind1[i] != slice(None) and ind2[i] != slice(None)
             break
@@ -3008,12 +3008,6 @@ def elemint( arg, weights ):
     return arg.__elemint__( weights )
   return arg * ElemArea( weights )
 
-def takeindex( arg, iax, index ):
-  'take index'
-
-  iax = _normdim( arg.ndim, iax )
-  return DofIndex( arg, iax, index )
-
 def grad( arg, coords, ndims=0 ):
   'local derivative'
 
@@ -3190,27 +3184,34 @@ arctanh = lambda arg: .5 * ( log(1+arg) - log(1-arg) )
 piecewise = lambda level, intervals, *funcs: choose( sum( greater( insert(level,-1), intervals ) ), funcs )
 trace = lambda arg, n1=-2, n2=-1: sum( takediag( arg, n1, n2 ) )
 
-def take( arg, indices, axis ):
+def take( arg, index, axis ):
+  'take index'
+
   arg = _asarray( arg )
+  axis = _normdim( arg.ndim, axis )
+
   if _isfunc( arg ):
-    return arg.__take__( indices, axis )
+    return arg.__take__( index, axis )
+
+  if _isfunc( index ):
+    return DofIndex( arg, axis, index )
 
   if arg.shape[axis] == 1:
     shape = list( arg.shape )
-    if isinstance( indices, slice ):
-      assert indices.start == None or indices.start >= 0
-      assert indices.stop != None and indices.stop > 0
-      shape[axis] = indices.stop - ( indices.start or 0 )
+    if isinstance( index, slice ):
+      assert index.start == None or index.start >= 0
+      assert index.stop != None and index.stop > 0
+      shape[axis] = index.stop - ( index.start or 0 )
     else:
-      shape[axis] = len( indices )
+      shape[axis] = len( index )
     return expand( arg, shape )
 
-  if isinstance( indices, slice ):
+  if isinstance( index, slice ):
     s = [ slice(None) ] * arg.ndim
-    s[axis] = indices
+    s[axis] = index
     return arg[ tuple(s) ]
 
-  return numpy.take( arg, indices, axis )
+  return numpy.take( arg, index, axis )
 
 @core.deprecated( old='Chain', new='chain' )
 def Chain( funcs ):
