@@ -92,7 +92,7 @@ class HtmlLog( object ):
     self.html = open( path, 'w' )
     self.html.write( '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "DTD/xhtml1-strict.dtd">\n' )
     self.html.write( '<html><head>\n' )
-    self.html.write( '<title>{}</title>\n'.format(title) )
+    self.html.write( '<title>%s</title>\n' % title )
     self.html.write( '<script type="text/javascript" src="../../../../../viewer.js" ></script>\n' )
     self.html.write( '<link rel="stylesheet" type="text/css" href="../../../../../style.css">\n' )
     self.html.write( '<link rel="stylesheet" type="text/css" href="../../../../../custom.css">\n' )

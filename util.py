@@ -368,10 +368,10 @@ def run( *functions ):
   prop.dumpdir = dumpdir
 
   redirect = '<meta http-equiv="cache-control" content="no-cache">\n' \
-           + '<meta http-equiv="refresh" content="0;URL={}log.html">\n'
+           + '<meta http-equiv="refresh" content="0;URL=%slog.html">\n'
 
-  print >> open( outdir+'log.html', 'w' ), redirect.format( scriptname + '/' + timepath )
-  print >> open( basedir+'log.html', 'w' ), redirect.format( timepath )
+  print >> open( outdir+'log.html', 'w' ), redirect % ( scriptname + '/' + timepath )
+  print >> open( basedir+'log.html', 'w' ), redirect % ( timepath )
 
   prop.cachedir = basedir + 'cache'
 
