@@ -28,12 +28,7 @@ class ElemFunc( function.ArrayFunc ):
   def __localgradient__( self, ndims ):
     'local gradient'
 
-    if ndims == self.domainelem.ndims:
-      if ndims == 1:
-        return numpy.array( [[1.]] )
-      return function.diagonalize( numpy.array( [1.]*ndims ), 0, 1 )
-    assert ndims < self.domainelem.ndims
-    return function.Transform( self.domainelem.ndims, ndims )
+    return function.transform( self.domainelem.ndims, ndims )
 
   def find( self, elem, C ):
     'find coordinates'

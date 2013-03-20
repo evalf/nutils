@@ -132,10 +132,10 @@ class Evaluable( object ):
     label = self.__class__.__name__
     return { 'label': r'\n'.join( [ label ] + args ) }
 
-  def graphviz( self ):
+  def graphviz( self, title='graphviz' ):
     'create function graph'
 
-    log.context( 'creating graphviz' )
+    log.context( title )
 
     import os, subprocess
 
@@ -633,7 +633,7 @@ class ArrayFunc( Evaluable ):
     shape = _jointshape( func1.shape, func2.shape )
 
     if _iszero( func2 ):
-      return _const( 0., shape )
+      return _zero( shape )
 
     if _isunit( func2 ):
       return expand( func1, shape )
@@ -670,7 +670,7 @@ class ArrayFunc( Evaluable ):
     func1, func2 = _matchndim( self, other )
 
     if _iszero( func2 ):
-      return _const( 0., _jointshape(func1.shape,func2.shape) )
+      return _zero( _jointshape(func1.shape,func2.shape) )
     
     return Divide( func2, func1 )
 
@@ -1108,7 +1108,7 @@ class Transform( ArrayFunc ):
   def __localgradient__( self, ndims ):
     'local gradient'
 
-    return _const( 0., self.shape + (ndims,) )
+    return _zero( self.shape + (ndims,) )
 
 class Function( ArrayFunc ):
   'local gradient'
@@ -1155,7 +1155,7 @@ class Function( ArrayFunc ):
     assert ndims <= self.stdmap.ndims
     grad = Function( self.stdmap, self.igrad+1 )
     return grad if ndims == self.stdmap.ndims \
-      else sum( grad[...,_] * Transform( self.stdmap.ndims, ndims ), axes=-2 )
+      else sum( grad[...,_] * transform( self.stdmap.ndims, ndims ), axes=-2 )
 
 class Choose( ArrayFunc ):
   'piecewise function'
@@ -1183,7 +1183,7 @@ class Choose( ArrayFunc ):
 
     grads = [ localgradient( choice, ndims ) for choice in self.choices ]
     if not any( grads ): # all-zero special case; better would be allow merging of intervals
-      return _const( 0., self.shape + (ndims,) )
+      return _zero( self.shape + (ndims,) )
     return Choose( self.level[...,_], grads )
 
 class Choose2D( ArrayFunc ):
@@ -1373,27 +1373,37 @@ class Concatenate( ArrayFunc ):
     if axis != self.axis:
       return ArrayFunc.__take__( self, indices, axis )
 
+    if isinstance( indices, slice ):
+      assert indices.step in (1,None)
+      start = 0 if indices.start is None \
+         else _normdim( self.shape[axis], indices.start ) if indices.start < 0 \
+         else indices.start
+      stop = self.shape[axis] if indices.stop is None \
+        else _normdim( self.shape[axis], indices.stop ) if indices.stop < 0 \
+        else indices.stop
+      assert 0 <= start <= stop
+      indices = slice( start, stop )
+
     n0 = 0
     funcs = []
     for func in self.funcs:
-      n1 = n0 + func.shape[self.axis]
+      n1 = n0 + func.shape[axis]
       if isinstance( indices, slice ):
-        start = max( n0, 0 if indices.start is None else indices.start if indices.start >= 0 else self.ndim + indices.start )
-        stop = min( n1, self.ndim if indices.stop is None else indices.stop if indices.stop >= 0 else self.ndim + indices.start )
-        assert indices.step is None
+        start = max(n0,indices.start)
+        stop = min(n1,indices.stop)
+        nitems = stop - start
         ind = slice( start-n0, stop-n0 )
-        nitems = start - stop
       else:
         ind = indices[n0:n1]-n0
         nitems = len(ind)
-      if nitems:
+      if nitems > 0:
         funcs.append( take( func, ind, axis ) )
       n0 = n1
-    assert n0 == self.shape[self.axis]
+    assert n0 == self.shape[axis]
     assert funcs, 'empty slice'
     if len( funcs ) == 1:
       return funcs[0]
-    return concatenate( funcs, axis=self.axis )
+    return concatenate( funcs, axis=axis )
 
 class Heaviside( ArrayFunc ):
   'heaviside function'
@@ -1536,7 +1546,7 @@ class DofIndex( ArrayFunc ):
   def __localgradient__( self, ndims ):
     'local gradient'
 
-    return _const( 0., self.shape + (ndims,) )
+    return _zero( self.shape + (ndims,) )
 
 class Multiply( ArrayFunc ):
   'multiply'
@@ -1772,7 +1782,9 @@ class Add( ArrayFunc ):
   def __eq__( self, other ):
     'compare'
 
-    return self is other or ( isinstance(other,Add) and ( self.funcs == other.funcs or self.funcs == other.funcs[::-1] ) )
+    return self is other or isinstance(other,Add) and (
+        _equal( self.funcs[0], other.funcs[0] ) and _equal( self.funcs[1], other.funcs[1] )
+     or _equal( self.funcs[0], other.funcs[1] ) and _equal( self.funcs[1], other.funcs[0] ) )
 
   def __localgradient__( self, ndims ):
     'gradient'
@@ -2108,6 +2120,11 @@ class Inflate( ArrayFunc ):
       arrays_indices.append( Tuple([ func, Tuple(indices) ]) )
     ArrayFunc.__init__( self, args=[tuple(shape)]+arrays_indices, evalf=self.inflate, shape=shape )
 
+  def __nonzero__( self ):
+    'nonzero'
+
+    return bool( self.blocks )
+
   @staticmethod
   def inflate( shape, *arrays_indices ):
     'evaluate'
@@ -2238,7 +2255,7 @@ class Inflate( ArrayFunc ):
       if not _iszero(f12):
         blocks.append( (f12,ind) )
     if not blocks:
-      return _const( 0., shape )
+      return _zero( shape )
     return Inflate( shape, blocks )
 
   def __div__( self, other ):
@@ -2265,7 +2282,7 @@ class Inflate( ArrayFunc ):
       if not _iszero(f12):
         blocks.append( (f12,ind) )
     if not blocks:
-      return _const( 0., shape )
+      return _zero( shape )
     return Inflate( shape, blocks )
 
   def __add__( self, other ):
@@ -2273,8 +2290,12 @@ class Inflate( ArrayFunc ):
 
     other = _asarray( other )
     shape = _jointshape( self.shape, other.shape ) # check matching shapes
+
     if _iszero( other ):
       return expand( self, shape )
+
+    if _iszero( self ):
+      return expand( other, shape )
 
     assert isinstance( other, Inflate )
     blocks = []
@@ -2328,7 +2349,7 @@ class Inflate( ArrayFunc ):
 
     shape = tuple( sh for n,sh in enumerate(self.shape) if keep[n] )
     blocks = []
-    dense = _const( 0., shape )
+    dense = _zero( shape )
     indall = ( slice(None), ) * len(shape)
     for func, ind in self.blocks:
       ind = tuple( i for n,i in enumerate(ind) if keep[n] )
@@ -2482,7 +2503,7 @@ class Diagonalize( ArrayFunc ):
     func1, func2 = _matchndim( self, other )
     assert isinstance( func1, Diagonalize )
     if _iszero( func2 ):
-      return _const( 0., _jointshape(func1.shape,func2.shape) )
+      return _zero( _jointshape(func1.shape,func2.shape) )
     return diagonalize( func1.func * takediag( func2, *func1.toaxes ), *func1.toaxes )
 
   def sum( self, axes=-1 ):
@@ -2562,6 +2583,12 @@ class Kronecker( ArrayFunc ):
     funcs = [ func and localgradient( func, ndims ) for func in self.funcs ]
     return Kronecker( funcs, self.axis )
 
+  def __neg__( self ):
+    'negate'
+
+    funcs = [ func and -func for func in self.funcs ]
+    return Kronecker( funcs, self.axis )
+
   def __add__( self, other ):
     'add'
 
@@ -2587,7 +2614,7 @@ class Kronecker( ArrayFunc ):
     funcs = [ func and func * get( func2, func1.axis, ifun ) for ifun, func in enumerate(func1.funcs) ]
     funcs = [ None if _iszero(func) else func for func in funcs ]
     if not any( funcs ):
-      return _const( 0., _jointshape(func1.shape,func2.shape) )
+      return _zero( _jointshape(func1.shape,func2.shape) )
     return Kronecker( funcs, self.axis )
 
   def __div__( self, other ):
@@ -2615,7 +2642,7 @@ class Kronecker( ArrayFunc ):
     if i == self.axis:
       func = self.funcs[ item ]
       if not func:
-        return _const( 0., self.shape[:i] + self.shape[i+1:] )
+        return _zero( self.shape[:i] + self.shape[i+1:] )
       return func
 
     if i > self.axis:
@@ -2682,11 +2709,7 @@ class Expand( ArrayFunc ):
     'get'
 
     i = _normdim( self.ndim, i )
-    shape = list(self.shape)
-    sh = shape.pop(i)
-    if sh == 1:
-      assert isinstance( sh, int ) and 0 <= item < sh, 'item out of range'
-      item = 0
+    shape = self.shape[:i] + self.shape[i+1:]
     return expand( get( self.func, i, item ), shape )
 
   def sum( self, axes=-1 ):
@@ -2694,16 +2717,16 @@ class Expand( ArrayFunc ):
 
     axes = _norm_and_sort( self.ndim, axes if _isiterable(axes) else [axes] )
     func = self.func
-    if not func:
-      return sum( func, axes )
     factor = 1
+    shape = list( self.shape )
     for ax in reversed(axes):
+      sh = shape.pop( ax )
       if func.shape[ax] == 1:
         func = get( func, ax, 0 )
-        factor *= self.shape[ax]
+        factor *= sh
       else:
         func = sum( func, ax )
-    return func * factor
+    return expand( func * factor, shape )
 
   def __prod__( self, axis ):
     'prod'
@@ -2779,7 +2802,7 @@ class Const( ArrayFunc ):
   def __localgradient__( self, ndims ):
     'local gradient'
 
-    return _const( 0., self.shape+(ndims,) )
+    return _zero( self.shape+(ndims,) )
 
 # AUXILIARY FUNCTIONS
 
@@ -2870,8 +2893,8 @@ _iszero = lambda arg: not arg if _isfunc(arg) else ( numpy.asarray(arg) == 0 ).a
 _isunit = lambda arg: not _isfunc(arg) and ( numpy.asarray(arg) == 1 ).all()
 _haspriority = lambda arg: _isfunc(arg) and arg.__priority__
 _subsnonesh = lambda shape: tuple( 1 if sh is None else sh for sh in shape )
-_const = lambda val, shape: expand( numpy.array(val).reshape((1,)*len(shape)), shape )
 _normdims = lambda ndim, shapes: [ _normdim(ndim,sh) for sh in shapes ]
+_zero = lambda shape: Inflate( shape, [] )
 
 def _norm_and_sort( ndim, args ):
   'norm axes, sort, and assert unique'
@@ -3013,14 +3036,14 @@ def grad( arg, coords, ndims=0 ):
 
   if _isfunc( arg ):
     return arg.grad( coords, ndims )
-  return _const( 0., arg.shape + coords.shape )
+  return _zero( arg.shape + coords.shape )
 
 def symgrad( arg, coords, ndims=0 ):
   'gradient'
 
   if _isfunc( arg ):
     return arg.symgrad( coords, ndims )
-  return _const( 0., arg.shape + coords.shape )
+  return _zero( arg.shape + coords.shape )
 
 def div( arg, coords, ndims=0 ):
   'gradient'
@@ -3028,7 +3051,7 @@ def div( arg, coords, ndims=0 ):
   if _isfunc( arg ):
     return arg.div( coords, ndims )
   assert arg.shape[-1:] == coords.shape
-  return _const( 0., arg.shape[:-1] )
+  return _zero( arg.shape[:-1] )
 
 def sum( arg, axes=-1 ):
   'sum over multiply axes'
@@ -3076,7 +3099,7 @@ def localgradient( arg, ndims ):
     lgrad = arg.__localgradient__( ndims )
   else:
     arg = _asarray( arg )
-    lgrad = _const( 0., arg.shape + (ndims,) )
+    lgrad = _zero( arg.shape + (ndims,) )
   assert lgrad.ndim == arg.ndim + 1 and lgrad.shape[-1] == ndims \
      and all( sh2 == sh1 or sh1 is None and sh2 == 1 for sh1, sh2 in zip( arg.shape, lgrad.shape[:-1] ) ), \
       'bug found in localgradient(%d): %s -> %s' % ( ndims, arg.shape, lgrad.shape )
@@ -3103,6 +3126,8 @@ def diagonalize( arg, n1, n2 ):
 
   arg = _asarray( arg )
   n1, n2 = _norm_and_sort( arg.ndim+1, [n1,n2] )
+  if arg.shape[-1] == 1:
+    return insert( insert( arg[...,-1], n2 ), n1 )
   return Diagonalize( arg, n1, n2 )
 
 def concatenate( args, axis=0 ):
@@ -3183,6 +3208,15 @@ tanh = lambda arg: 1 - 2. / ( exp(2*arg) + 1 )
 arctanh = lambda arg: .5 * ( log(1+arg) - log(1-arg) )
 piecewise = lambda level, intervals, *funcs: choose( sum( greater( insert(level,-1), intervals ) ), funcs )
 trace = lambda arg, n1=-2, n2=-1: sum( takediag( arg, n1, n2 ) )
+eye = lambda n: diagonalize( expand( [1.], (n,) ), 0, 1 )
+
+def transform( fromdims, todims ):
+  'transform to lower-dimensional space'
+
+  if fromdims == todims:
+    return eye( fromdims )
+  assert fromdims > todims
+  return Transform( fromdims, todims )
 
 def take( arg, index, axis ):
   'take index'

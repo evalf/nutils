@@ -76,20 +76,24 @@ def krylov( matvec, b, x0=None, tol=1e-5, restart=None, maxiter=0, precon=None, 
 def parsecons( constrain, lconstrain, rconstrain, shape ):
   'parse constraints'
 
-  J = numpy.ones( shape[0], dtype=bool )
+  I = numpy.ones( shape[0], dtype=bool )
   x = numpy.empty( shape[1] )
   x[:] = numpy.nan
   if constrain is not None:
-    J[:constrain.size] = numpy.isnan( constrain )
-    x[:constrain.size] = constrain
+    assert lconstrain is None
+    assert rconstrain is None
+    assert isinstance( constrain, numpy.ndarray )
+    I[:] = numpy.isnan( constrain )
+    x[:] = constrain
   if lconstrain is not None:
-    x[:lconstrain.size] = lconstrain
+    assert isinstance( lconstrain, numpy.ndarray )
+    x[:] = lconstrain
   if rconstrain is not None:
-    assert isinstance( rconstrain, numpy.ndarray ) and rconstrain.dtype == bool
-    J[:rconstrain.size] = rconstrain
-  I = numpy.isnan(x)
-  assert numpy.sum(I) == numpy.sum(J)
-  x[I] = 0
+    assert isinstance( rconstrain, numpy.ndarray )
+    I[:] = rconstrain
+  J = numpy.isnan(x)
+  assert numpy.sum(I) == numpy.sum(J), 'constrained matrix is not square: %dx%d' % ( numpy.sum(I), numpy.sum(J) )
+  x[J] = 0
   return x, I, J
 
 class Matrix( object ):
@@ -245,7 +249,7 @@ class SparseMatrix( Matrix ):
     data = numpy.empty( maxcount, dtype=float )
     _csr.csr_plus_csr( self.shape[0], self.shape[1], self.indptr, self.indices, self.data, other.indptr, other.indices, other.data, indptr, indices, data )
     nz = indptr[-1]
-    return SparseMatrix( (data[:nz],indices[:nz],indptr) )
+    return SparseMatrix( (data[:nz],indices[:nz],indptr), ncols=self.shape[1] )
 
   def __iadd__( self, other ):
     'in place addition'
