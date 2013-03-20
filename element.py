@@ -280,13 +280,19 @@ class TrimmedElement( Element ):
         for simplex in self.get_simplices( 0 ):
           spoints, sweights = simplex.eval( ischeme )
           pelem, transform = simplex.parent
+
+          assert pelem is self 
+
           points.append( transform.eval( spoints ) )
           weights.append( sweights * transform.det )
-          
-        points  = util.ImmutableArray(numpy.concatenate(points ))
+
+        points  = util.ImmutableArray(numpy.concatenate(points,axis=0))
         weights = util.ImmutableArray(numpy.concatenate(weights))
+
         return points, weights
+
       else:
+        
         points, weights = self.elem.eval( self.finestscheme )
         inside = self.levelset( self.elem, points ) > 0
         return points[inside], weights[inside] if weights is not None else None
@@ -381,10 +387,18 @@ class TrimmedElement( Element ):
 
     for i, tri in enumerate(submesh.vertices):
 
-      offset = points[ tri[0] ]
-      affine = numpy.array( [ points[ tri[i+1] ] - offset for i in range(self.ndims) ] ).T
+      for i in range(2): #Flip two points in case of negative determinant
+        offset = points[ tri[0] ]
+        affine = numpy.array( [ points[ tri[i+1] ] - offset for i in range(self.ndims) ] ).T
 
-      transform = AffineTransformation( offset, affine )
+        transform = AffineTransformation( offset, affine )
+
+        if transform.det > 0.:
+          break
+
+        tri[-2:] = tri[:-3:-1]
+      else:
+        raise Exception('Negative determinant could not be resolved')
 
       simplices.append( Element( self.id + '.simplex(%d)' % i, parent=(self,transform) ) )
 
@@ -475,7 +489,7 @@ class QuadElement( Element ):
 
     x = w = None
     if where.startswith( 'gauss' ):
-      N = int( where[5:] )
+      N = int( where[5:] )//2+1
       k = numpy.arange( 1, N )
       d = k / numpy.sqrt( 4*k**2-1 )
       x, w = numpy.linalg.eigh( numpy.diagflat(d,-1) ) # eigh operates (by default) on lower triangle
