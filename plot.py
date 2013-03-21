@@ -117,6 +117,8 @@ class PyPlotModule( object ):
       verticalalignment='center',
       transform=shifttrans )
 
+    return slope
+
   def slope_trend( self, x, y, lt='k-', xoffset=.1, slopefmt='{0:.1f}' ):
     '''Draw slope triangle for supplied y(x)
        - x, y: coordinates
@@ -138,6 +140,8 @@ class PyPlotModule( object ):
       verticalalignment='center',
       transform=shifttrans )
 
+    return slope
+
   def rectangle( self, x0, w, h, fc='none', ec='none', **kwargs ):
     'rectangle'
 
@@ -152,6 +156,15 @@ class PyPlotModule( object ):
     assert data.ndim == 2
     self.imshow( data.T, extent=(xlim[0],xlim[-1],ylim[0],ylim[-1]), origin='lower' )
 
+  def cspy( self, A, **kwargs ): 
+    'Like pyplot.spy, but coloring acc to 10^log of absolute values, where [0, inf, nan] show up in blue.'
+    A = numpy.log10( numpy.abs( A ) )
+    B = numpy.isinf( A ) | numpy.isnan( A ) # what needs replacement
+    A[B] = ~B if numpy.all( B ) else numpy.amin( A[~B] ) - 1.
+    self.pcolor( A, **kwargs )
+    self.colorbar()
+    self.ylim( self.ylim()[-1::-1] ) # invert y axis: equiv to MATLAB axis ij
+    self.axis( 'tight' )
 
 ######## OLD PLOTTING INTERFACE ############
 
