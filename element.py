@@ -970,7 +970,7 @@ class PolyLine( StdElem ):
     'evaluate'
 
     if grad >= self.degree:
-      return numeric.appendaxes( 0., (points.npoints,self.nshapes)+(1,)*grad )
+      return numeric.appendaxes( 0., (points.shape[0],self.nshapes)+(1,)*grad )
 
     poly = self.poly
     for n in range(grad):

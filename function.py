@@ -2789,7 +2789,8 @@ class Const( ArrayFunc ):
   def __init__( self, func ):
     'constructor'
 
-    ArrayFunc.__init__( self, args=(POINTS,func), evalf=self.const, shape=shape )
+    func = numpy.asarray( func )
+    ArrayFunc.__init__( self, args=(POINTS,func), evalf=self.const, shape=func.shape )
 
   @staticmethod
   def const( points, arr ):
