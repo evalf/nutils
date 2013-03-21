@@ -3128,7 +3128,7 @@ def diagonalize( arg, n1, n2 ):
   arg = _asarray( arg )
   n1, n2 = _norm_and_sort( arg.ndim+1, [n1,n2] )
   if arg.shape[-1] == 1:
-    return insert( insert( arg[...,-1], n2 ), n1 )
+    return insert( insert( arg[...,-1], n1 ), n2 )
   return Diagonalize( arg, n1, n2 )
 
 def concatenate( args, axis=0 ):
