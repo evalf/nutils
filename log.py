@@ -1,5 +1,5 @@
 from . import core, prop
-import sys, time, os, traceback
+import sys, time, os, traceback, warnings
 
 _KEY = '__logger__'
 _makestr = lambda args: ' '.join( str(arg) for arg in args )
@@ -20,6 +20,8 @@ info    = lambda *args: _findlogger().write( ( 'info',    args ) )
 error   = lambda *args: _findlogger().write( ( 'error',   args ) )
 warning = lambda *args: _findlogger().write( ( 'warning', args ) )
 path    = lambda *args: _findlogger().write( ( 'path',    args ) )
+
+warnings.showwarning = lambda message, category, filename, lineno, *args: warning( '%s: %s\n  In %s:%d' % ( category.__name__, message, filename, lineno ) )
 
 def context( *args, **kwargs ):
   'context'
@@ -192,9 +194,11 @@ progress = info
 class ProgressBar( object ):
   'temporary construct for backwards compatibility'
 
-  @core.deprecated( old='ProgressBar(n,text)', new='iterate(text,n)' )
   def __init__( self, n, title ):
     'constructor'
+
+    warnings.warn( '''ProgressBar(n,text) will be removed in future
+  Please use iterate(text,n) instead.''', DeprecationWarning )
 
     self.text = title
     self.out = None

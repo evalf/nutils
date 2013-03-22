@@ -256,4 +256,21 @@ def cross( v1, v2, axis ):
     v2 = v2[ (numpy.newaxis,)*(v1.ndim-v2.ndim) ]
   return numpy.cross( v1, v2, axis=axis )
 
+def stack( *arrays ):
+  'powerful array stacker with singleton expansion'
+
+  arrays = [ numpy.asarray(array,dtype=float) for array in arrays ]
+  shape = [1] * max( array.ndim for array in arrays )
+  for array in arrays:
+    for i in range(-array.ndim,0):
+      if shape[i] == 1:
+        shape[i] = array.shape[i]
+      else:
+        assert array.shape[i] in ( shape[i], 1 )
+  n = len(arrays)
+  stacked = numpy.empty( [n] + shape, dtype=float )
+  for i in range(n):
+    stacked[i] = arrays[i]
+  return stacked
+
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

@@ -1,5 +1,5 @@
 from . import log, prop
-import sys, os, time, numpy, cPickle, hashlib, weakref, traceback, core
+import sys, os, time, numpy, cPickle, hashlib, weakref, traceback, core, warnings
 
 class _SuppressedOutput( object ):
   'suppress all output by redirection to /dev/null'
@@ -169,10 +169,11 @@ class NanVec( numpy.ndarray ):
     return ~numpy.isnan( self.view(numpy.ndarray) )
 
   @property
-  @core.deprecated( old='NanVec.mask', new='NanVec.~where' )
   def mask( self ):
     'find non-nan items'
 
+    warnings.warn( '''Nanvec.mask will be removed in future
+  Please use NanVec.~where instead.''', DeprecationWarning )
     return ~self.where
 
   def __iand__( self, other ):
@@ -351,11 +352,18 @@ def run( *functions ):
   os.makedirs( dumpdir ) # asserts nonexistence
 
   if prop.symlink:
-    for directory in outdir, basedir:
-      symlink = directory + prop.symlink
-      if os.path.islink( symlink ):
-        os.remove( symlink )
-      os.symlink( timepath, symlink )
+    for i in range(2): # make two links
+      target = outdir
+      dest = ''
+      if i: # global link
+        target += scriptname + os.sep
+      else: # script-local link
+        dest += scriptname + os.sep
+      target += prop.symlink
+      dest += timepath
+      if os.path.islink( target ):
+        os.remove( target )
+      os.symlink( dest, target )
 
   logpath = os.path.join( os.path.dirname( log.__file__ ), '_log' ) + os.sep
   for filename in os.listdir( logpath ):
@@ -379,6 +387,8 @@ def run( *functions ):
 
   log.info( ' \\\n'.join( commandline ) + '\n' )
   log.info( 'start %s\n' % time.ctime() )
+
+  warnings.resetwarnings()
 
   t0 = time.time()
   try:
