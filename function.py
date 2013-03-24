@@ -1959,6 +1959,11 @@ class Sum( ArrayFunc ):
       shape.pop(ax)
     ArrayFunc.__init__( self, args=[func,negaxes], evalf=self.dosum, shape=shape )
 
+  def __localgradient__( self, ndims ):
+    'local gradient'
+
+    return localgradient( self.func, ndims ).sum( self.axes )
+
   @staticmethod
   def dosum( arr, axes ):
     'sum'

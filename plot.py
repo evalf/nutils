@@ -68,19 +68,9 @@ class PyPlotModule( object ):
     'add polycollection'
   
     from matplotlib import collections
-    assert verts.dtype == object and verts.ndim == 1
     assert all( vert.ndim == 2 and vert.shape[1] == 2 for vert in verts )
     if facecolors != 'none':
-      assert isinstance(facecolors,numpy.ndarray) and facecolors.shape == verts.shape
-      # start white border suppression hack
-      # newverts = []
-      # D = max( numpy.max( [ numpy.max(v,axis=0) for v in verts ], axis=0 )
-      #        - numpy.min( [ numpy.min(v,axis=0) for v in verts ], axis=0 ) ) # total plot dimension
-      # for vert in verts:
-      #   d = numeric.normalize( vert - vert.mean(axis=0), axis=1 ) # outward direction from center
-      #   newverts.append( vert + d * (.001*D) ) # grow by 0.1% of plot dimension
-      # verts = newverts
-      # end white border suppression hack
+      assert isinstance(facecolors,numpy.ndarray) and facecolors.shape == (len(verts),)
       array = facecolors
       facecolors = None
     polycol = collections.PolyCollection( verts, facecolors=facecolors, **kwargs )
