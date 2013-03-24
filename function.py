@@ -279,6 +279,14 @@ class ArrayFunc( Evaluable ):
   __array_priority__ = 1. # fix numpy's idiotic default behaviour
   __priority__ = False
 
+  def __init__( self, evalf, args, shape ):
+    'constructor'
+
+    self.evalf = evalf
+    self.shape = tuple(shape)
+    self.ndim = len(self.shape)
+    Evaluable.__init__( self, evalf=evalf, args=args )
+
   @classmethod
   def stack( cls, funcs, axis ):
     'stack'
@@ -492,14 +500,6 @@ class ArrayFunc( Evaluable ):
       return get( func, -2, 0 )
 
     return TakeDiag( func )
-
-  def __init__( self, evalf, args, shape ):
-    'constructor'
-
-    self.evalf = evalf
-    self.shape = tuple(shape)
-    self.ndim = len(self.shape)
-    Evaluable.__init__( self, evalf=evalf, args=args )
 
   def __kronecker__( self, axis, length, pos ):
     'kronecker'
@@ -2009,6 +2009,11 @@ class TakeDiag( ArrayFunc ):
     assert func.shape[-1] == func.shape[-2]
     self.func = func
     ArrayFunc.__init__( self, args=[func,-2,-1], evalf=numeric.takediag, shape=func.shape[:-1] )
+
+  def __localgradient__( self, ndims ):
+    'local gradient'
+
+    return takediag( localgradient( self.func, ndims ), -3, -2 ).swapaxes( -2, -1 )
 
   def sum( self, axes=-1 ):
     'sum'
