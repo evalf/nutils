@@ -2329,7 +2329,7 @@ class Inflate( ArrayFunc ):
   def __sub__( self, other ):
     'subtract'
 
-    return self + (-other)
+    return self + neg(other)
 
   def __defunct_outer__( self, axis=0 ):
     'outer product'
@@ -3213,6 +3213,7 @@ def pointwise( args, evalf, deriv ):
     return Pointwise( args, evalf, deriv )
   return evalf( *args )
 
+neg = lambda arg: -_asarray(arg)
 sin = lambda arg: pointwise( [arg], numpy.sin, cos )
 cos = lambda arg: pointwise( [arg], numpy.cos, lambda x: -sin(x) )
 tan = lambda arg: pointwise( [arg], numpy.tan, lambda x: cos(x)**-2 )
