@@ -686,7 +686,7 @@ class TriangularElement( Element ):
       if not points.size:
         return None, None
 
-    return util.points, selection
+    return points, selection
 
 class TetrahedronElement( Element ):
   'triangular element'
