@@ -18,14 +18,14 @@ def align( arr, trans, ndim ):
 def expand( arr, *shape ):
   'expand'
 
-  shape = list( arr.shape )
+  newshape = list( arr.shape )
   for i, sh in enumerate( shape ):
     if sh != None:
-      if shape[i-len(shape)] == 1:
-        shape[i-len(shape)] = sh
+      if newshape[i-len(shape)] == 1:
+        newshape[i-len(shape)] = sh
       else:
-        assert shape[i-len(shape)] == sh
-  expanded = numpy.empty( shape )
+        assert newshape[i-len(shape)] == sh
+  expanded = numpy.empty( newshape )
   expanded[:] = arr
   return expanded
 

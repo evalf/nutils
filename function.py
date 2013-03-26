@@ -416,7 +416,7 @@ class ArrayFunc( Evaluable ):
       Ginv = inv( G, 0, 1 )
       Jinv = ( J[_,:,:] * Ginv[:,_,:] ).sum()
     else:
-      raise Exception, 'cannot invert jacobian'
+      raise Exception, 'cannot invert %sx%s jacobian' % J.shape
     return sum( localgradient( self, ndims )[...,_] * Jinv, axes=-2 )
 
   def symgrad( self, coords, ndims=0 ):
@@ -889,9 +889,10 @@ class Align( ArrayFunc ):
     for ax in axes:
       try:
         idx = self.axes.index( ax )
-        sumaxes.append( idx )
-      except:
+      except ValueError:
         pass # trivial summation over singleton axis
+      else:
+        sumaxes.append( idx )
 
     trans = [ ax - _sum(i<ax for i in axes) for ax in self.axes if ax not in axes ]
     return align( sum( self.func, sumaxes ), trans, self.ndim-len(axes) )
@@ -1584,8 +1585,8 @@ class Multiply( ArrayFunc ):
     for ax in axes:
       myax = ax - shift
       if func1.shape[myax] == 1 or func2.shape[myax] == 1:
-        func1 = sum( func1, ax )
-        func2 = sum( func2, ax )
+        func1 = sum( func1, myax )
+        func2 = sum( func2, myax )
         shift += 1
       else:
         dotaxes.append( myax )
@@ -2436,8 +2437,11 @@ class Inflate( ArrayFunc ):
 
     n1, n2 = _norm_and_sort( len(self.shape), (n1,n2) )
     assert n1 < n2 # strict
-    sh = self.shape[n1]
-    assert self.shape[n2] == sh
+    if self.shape[n1] == 1:
+      sh = self.shape[n2]
+    else:
+      sh = self.shape[n1]
+      assert self.shape[n2] in (sh,1), 'unequal dimensions in takediag: %d, %d' % ( sh, self.shape[n2] )
     shape = self.shape[:n1] + self.shape[n1+1:n2] + self.shape[n2+1:] + (sh,)
     blocks = []
     for func, ind in self.blocks:
@@ -2456,6 +2460,7 @@ class Diagonalize( ArrayFunc ):
     assert 0 <= ax1 < ax2 < func.ndim+1
     self.toaxes = ax1, ax2
     n = func.shape[-1],
+    assert n != 1
     shape = func.shape[:ax1] + n + func.shape[ax1:ax2-1] + n + func.shape[ax2-1:-1]
     self.func = func
     ArrayFunc.__init__( self, args=[func,ax1-(func.ndim+1),ax2-(func.ndim+1)], evalf=self.diagonalize, shape=shape )
@@ -3052,6 +3057,9 @@ def reciprocal( arg ):
 def elemint( arg, weights ):
   'elementwise integration'
 
+  arg = _asarray( arg )
+  if _iszero( arg ):
+    return _zeros_like( arg )
   if _isfunc( arg ):
     return arg.__elemint__( weights )
   return arg * ElemArea( weights )
@@ -3064,7 +3072,7 @@ def grad( arg, coords, ndims=0 ):
   return _zeros( arg.shape + coords.shape )
 
 def symgrad( arg, coords, ndims=0 ):
-  'gradient'
+  'symmetric gradient'
 
   if _isfunc( arg ):
     return arg.symgrad( coords, ndims )
@@ -3213,6 +3221,8 @@ def pointwise( args, evalf, deriv ):
     return Pointwise( args, evalf, deriv )
   return evalf( *args )
 
+nsymgrad = lambda arg, coords: ( symgrad(arg,coords) * coords.normal() ).sum()
+ngrad = lambda arg, coords: ( grad(arg,coords) * coords.normal() ).sum()
 neg = lambda arg: -_asarray(arg)
 sin = lambda arg: pointwise( [arg], numpy.sin, cos )
 cos = lambda arg: pointwise( [arg], numpy.cos, lambda x: -sin(x) )

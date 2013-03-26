@@ -96,7 +96,7 @@ class Topology( object ):
     iweights = coords.iweights( self.ndims )
     idata = [ iweights ]
     for func in funcs:
-      assert isinstance( func, function.ArrayFunc )
+      func = function._asarray( func )
       assert all( isinstance(sh,int) for sh in func.shape )
       idata.append( function.elemint( func, iweights ) )
       retvals.append( numpy.empty( (len(self),)+func.shape ) )
@@ -259,7 +259,7 @@ class Topology( object ):
     numcons = constrain.where.sum()
     if verify is not None:
       assert numcons == verify, 'number of constraints does not meet expectation: %d != %d' % ( numcons, verify )
-    log.info( 'contrained %d/%d dofs' % ( numcons, constrain.size ) )
+    log.info( 'constrained %d/%d dofs' % ( numcons, constrain.size ) )
 
     return constrain
 
