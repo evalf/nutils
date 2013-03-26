@@ -55,9 +55,11 @@ class PyPlot( BasePlot ):
 
     BasePlot.__init__( self, name, ndigits=ndigits, index=index )
 
-    from matplotlib import use, pyplot
+    import matplotlib
 
-    use( 'Agg', warn=False )
+    matplotlib.use( 'Agg', warn=False )
+
+    from matplotlib import pyplot
 
     imgtype = getattr( prop, 'imagetype', 'png' ) if imgtype is None else imgtype
     self.names = [ self.name + '.' + ext for ext in imgtype.split(',') ]
