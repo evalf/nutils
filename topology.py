@@ -54,7 +54,6 @@ class Topology( object ):
       idata.append( func )
       retvals.append( numpy.empty( len(self), dtype=object ) )
     idata = function.Tuple( idata )
-    idata.graphviz()
 
     for ielem, elem in enumerate( self ):
       for retval, data in zip( retvals, idata( elem, ischeme ) ):
@@ -101,7 +100,6 @@ class Topology( object ):
       idata.append( function.elemint( func, iweights ) )
       retvals.append( numpy.empty( (len(self),)+func.shape ) )
     idata = function.Tuple( idata )
-    idata.graphviz()
 
     for ielem, elem in enumerate( self ):
       area_data = idata( elem, ischeme )
@@ -189,7 +187,6 @@ class Topology( object ):
           integrands.append( function.Tuple([ ifunc, (), function.elemint( func, iweights ) ]) )
       retvals.append( A )
     idata = function.Tuple( integrands )
-    idata.graphviz()
 
     for elem in self:
       for ifunc, index, data in idata( elem, ischeme ):

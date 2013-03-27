@@ -31,6 +31,7 @@ class EvaluationError( Exception ):
 class Evaluable( object ):
   'evaluable base classs'
 
+  __priority__ = False
   operations = None
 
   def __init__( self, args, evalf ):
@@ -71,10 +72,18 @@ class Evaluable( object ):
   def compile( self ):
     'compile'
 
+    log.context( 'compiling' )
+
     if self.operations is None:
       self.data = []
       self.operations = []
       self.recurse_index( self.data, self.operations ) # compile expressions
+
+      priority = set( op.__class__.__name__ for op, args in self.operations if op.__priority__ )
+      if priority:
+        log.warning( 'possible suboptimality:', ', '.join( priority ) )
+        self.graphviz()
+
 
   def __call__( self, elem, ischeme ):
     'evaluate'
@@ -277,7 +286,6 @@ class ArrayFunc( Evaluable ):
   'array function'
 
   __array_priority__ = 1. # fix numpy's idiotic default behaviour
-  __priority__ = False
 
   def __init__( self, evalf, args, shape ):
     'constructor'
@@ -377,7 +385,7 @@ class ArrayFunc( Evaluable ):
   def curvature( self, ndims=-1 ):
     'curvature'
 
-    return .5 * self.div( self.normal(), ndims=ndims )
+    return self.normal().div( self, ndims=ndims )
 
     #if ndims <= 0:
     #  ndims += self.shape[0]
@@ -386,7 +394,7 @@ class ArrayFunc( Evaluable ):
     #H = localgradient( J, ndims )
     #dx, dy = J[:,0]
     #ddx, ddy = H[:,0,0]
-    #return ( dy * ddx - dx * ddy ) / norm2( J[:,0], axis=0 )**3
+    #return ( dx * ddy - dy * ddx ) / norm2( J[:,0], axis=0 )**3
 
   def swapaxes( self, n1, n2 ):
     'swap axes'
@@ -762,17 +770,17 @@ class ArrayFunc( Evaluable ):
 
   def norm2( self, axis=-1 ):
     warnings.warn( '''f.norm2(...) will be removed in future
-  Please use function.norm2(f,...) instead.''', DeprecationWarning )
+  Please use function.norm2(f,...) instead.''', DeprecationWarning, stacklevel=2 )
     return norm2( self, axis )
 
   def localgradient( self, ndims ):
     warnings.warn( '''f.localgradient(...) will be removed in future
-  Please use function.localgradient(f,...) instead.''', DeprecationWarning )
+  Please use function.localgradient(f,...) instead.''', DeprecationWarning, stacklevel=2 )
     return localgradient( self, ndims )
 
   def trace( self, n1=-2, n2=-1 ):
     warnings.warn( '''f.trace(...) will be removed in future
-  Please use function.trace(f,...) instead.''', DeprecationWarning )
+  Please use function.trace(f,...) instead.''', DeprecationWarning, stacklevel=2 )
     return trace( self, n1=-2, n2=-1 )
 
 class ElemArea( ArrayFunc ):
@@ -1016,6 +1024,11 @@ class Reciprocal( ArrayFunc ):
 
     self.func = func
     ArrayFunc.__init__( self, args=[func], evalf=numpy.reciprocal, shape=func.shape )
+
+  def __localgradient__( self, ndims ):
+    'local gradient'
+
+    return -localgradient( self.func, ndims ) / self.func**2
 
   def __get__( self, i, item ):
     'get item'
@@ -1976,19 +1989,17 @@ class Sum( ArrayFunc ):
 class Debug( ArrayFunc ):
   'debug'
 
-  def __init__( self, func, show=False ):
+  def __init__( self, func ):
     'constructor'
 
     self.func = func
-    self.show = show
-    ArrayFunc.__init__( self, args=[func,show], evalf=self.debug, shape=func.shape )
+    ArrayFunc.__init__( self, args=[func], evalf=self.debug, shape=func.shape )
 
   @staticmethod
-  def debug( arr, show ):
+  def debug( arr ):
     'debug'
 
-    if show:
-      print arr
+    print arr
     return arr
 
   def __localgradient__( self, ndims ):
@@ -2110,6 +2121,107 @@ class Pointwise( ArrayFunc ):
 # by the act of subsequent operations. For this annihilation to work well
 # priority objects will keep themselves at the surface where magic happens.
 
+class Zeros( ArrayFunc ):
+  'zero'
+
+  __priority__ = True
+
+  def __init__( self, shape ):
+    'constructor'
+
+    arrayshape = tuple( sh if sh is not None else 1 for sh in shape )
+    ArrayFunc.__init__( self, args=[POINTS,arrayshape], evalf=self.zeros, shape=shape )
+
+  @staticmethod
+  def zeros( points, shape ):
+    'prepend point axes'
+
+    shape = points.shape[:-1] + shape
+    strides = [0] * len(shape)
+    return numpy.lib.stride_tricks.as_strided( numpy.array(0.), shape, strides )
+
+  def __nonzero__( self ):
+    'nonzero'
+
+    return False
+
+  def __localgradient__( self, ndims ):
+    'local gradient'
+
+    return _zeros( self.shape+(ndims,) )
+
+  def __add__( self, other ):
+    'add'
+
+    func1, func2 = _matchndim( self, other )
+    shape = _jointshape( func1.shape, func2.shape )
+    return expand( other, shape )
+
+  def __sub__( self, other ):
+    'subtract'
+
+    func1, func2 = _matchndim( self, other )
+    shape = _jointshape( func1.shape, func2.shape )
+    return -expand( func2, shape )
+
+  def __mul__( self, other ):
+    'multiply'
+
+    func1, func2 = _matchndim( self, other )
+    shape = _jointshape( func1.shape, func2.shape )
+    return _zeros( shape )
+
+  def __div__( self, other ):
+    'multiply'
+
+    func1, func2 = _matchndim( self, other )
+    shape = _jointshape( func1.shape, func2.shape )
+    return _zeros( shape )
+
+  def __neg__( self ):
+    'negate'
+
+    return self
+
+  def sum( self, axes=-1 ):
+    'sum'
+
+    axes = _norm_and_sort( self.ndim, axes if _isiterable(axes) else [axes] )
+    shape = list( self.shape )
+    for i in reversed( axes ):
+      shape.pop( i )
+    return _zeros( shape )
+
+  def __align__( self, axes, ndim ):
+    'align'
+
+    assert len(axes) == self.ndim
+    shape = [1] * ndim
+    for ax, sh in zip( axes, self.shape ):
+      shape[ax] = sh
+    return _zeros( shape )
+
+  def __get__( self, i, item ):
+    'get'
+
+    i = _normdim( self.ndim, i )
+    sh = self.shape[i]
+    assert sh == 1 or -sh <= item < sh
+    return _zeros( self.shape[:i] + self.shape[i+1:] )
+
+  def __takediag__( self, n1=-2, n2=-1 ):
+    'trace'
+
+    n1, n2 = _norm_and_sort( len(self.shape), (n1,n2) )
+    assert n1 < n2 # strict
+    if self.shape[n1] == 1:
+      sh = self.shape[n2]
+    else:
+      sh = self.shape[n1]
+      assert self.shape[n2] in (sh,1), 'unequal dimensions in takediag: %d, %d' % ( sh, self.shape[n2] )
+    return _zeros( self.shape[:n1] + self.shape[n1+1:n2] + self.shape[n2+1:] + (sh,) )
+
+
 class Inflate( ArrayFunc ):
   'expand locally supported functions'
 
@@ -2118,6 +2230,7 @@ class Inflate( ArrayFunc ):
   def __init__( self, shape, blocks ):
     'constructor'
 
+    assert blocks
     self.blocks = blocks
     arrays_indices = []
     for func, indices in blocks:
@@ -2133,11 +2246,6 @@ class Inflate( ArrayFunc ):
           assert ind.ndim == 1 # TODO check dtype
       arrays_indices.append( Tuple([ func, Tuple(indices) ]) )
     ArrayFunc.__init__( self, args=[tuple(shape)]+arrays_indices, evalf=self.inflate, shape=shape )
-
-  def __nonzero__( self ):
-    'nonzero'
-
-    return bool( self.blocks )
 
   @staticmethod
   def inflate( shape, *arrays_indices ):
@@ -2401,7 +2509,7 @@ class Inflate( ArrayFunc ):
     'dot shorthand'
 
     warnings.warn( '''array%w will be removed in future
-  Please use array.dot(w) instead.''', DeprecationWarning )
+  Please use array.dot(w) instead.''', DeprecationWarning, stacklevel=2 )
     return self.dot( weights )
 
   def dot( self, weights ):
@@ -2525,6 +2633,11 @@ class Diagonalize( ArrayFunc ):
       return _zeros( _jointshape(func1.shape,func2.shape) )
     return diagonalize( func1.func * takediag( func2, *func1.toaxes ), *func1.toaxes )
 
+  def __neg__( self ):
+    'negate'
+
+    return diagonalize( -self.func, *self.toaxes )
+
   def sum( self, axes=-1 ):
     'sum'
 
@@ -2615,7 +2728,7 @@ class Kronecker( ArrayFunc ):
     assert isinstance( func1, Kronecker )
 
     if _iszero( func2 ):
-      return func1
+      return expand( func1, _jointshape( func1.shape, func2.shape ) )
 
     if isinstance( func2, Kronecker ) and func1.axis == func2.axis:
       funcs = [ f1 if not f2 else f2 if not f1 else f1 + f2 for f1, f2 in zip( func1.funcs, func2.funcs ) ]
@@ -2914,7 +3027,7 @@ _isunit = lambda arg: not _isfunc(arg) and ( numpy.asarray(arg) == 1 ).all()
 _haspriority = lambda arg: _isfunc(arg) and arg.__priority__
 _subsnonesh = lambda shape: tuple( 1 if sh is None else sh for sh in shape )
 _normdims = lambda ndim, shapes: [ _normdim(ndim,sh) for sh in shapes ]
-_zeros = lambda shape: Inflate( shape, [] )
+_zeros = lambda shape: Zeros( shape )
 _zeros_like = lambda arr: _zeros( arr.shape )
 
 def _norm_and_sort( ndim, args ):
@@ -3067,6 +3180,7 @@ def elemint( arg, weights ):
 def grad( arg, coords, ndims=0 ):
   'local derivative'
 
+  arg = _asarray( arg )
   if _isfunc( arg ):
     return arg.grad( coords, ndims )
   return _zeros( arg.shape + coords.shape )
@@ -3166,8 +3280,25 @@ def diagonalize( arg, n1, n2 ):
 def concatenate( args, axis=0 ):
   'concatenate'
 
-  concat = Concatenate if any( _isfunc(arg) for arg in args ) else numpy.concatenate
-  return concat( _matchndim( *args ), axis )
+  args = _matchndim( *args )
+
+  if all( _iszero(arg) for arg in args ):
+    shape = list( args[0].shape )
+    axis = _normdim( len(shape), axis )
+    for arg in args[1:]:
+      for i in range( len(shape) ):
+        if i == axis:
+          shape[i] += arg.shape[i]
+        elif shape[i] == 1:
+          shape[i] = arg.shape[i]
+        else:
+          assert arg.shape[i] in (shape[i],1)
+    return _zeros( shape )
+
+  if any( _isfunc(arg) for arg in args ):
+    return Concatenate( args, axis )
+
+  return numpy.concatenate( args, axis )
 
 def transpose( arg, trans=None ):
   'transpose'
@@ -3289,87 +3420,87 @@ def take( arg, index, axis ):
 
 def Chain( funcs ):
   warnings.warn( '''Chain will be removed in future
-  Please use chain instead.''', DeprecationWarning )
+  Please use chain instead.''', DeprecationWarning, stacklevel=2 )
   return chain( funcs )
 
 def Vectorize( funcs ):
   warnings.warn( '''Vectorize will be removed in future
-  Please use vectorize instead.''', DeprecationWarning )
+  Please use vectorize instead.''', DeprecationWarning, stacklevel=2 )
   return vectorize( funcs )
 
 def Tan( func ):
   warnings.warn( '''Tan will be removed in future
-  Please use tan instead.''', DeprecationWarning )
+  Please use tan instead.''', DeprecationWarning, stacklevel=2 )
   return tan( func )
 
 def Sin( func ):
   warnings.warn( '''Sin will be removed in future
-  Please use sin instead.''', DeprecationWarning )
+  Please use sin instead.''', DeprecationWarning, stacklevel=2 )
   return sin( func )
 
 def Cos( func ):
   warnings.warn( '''Cos will be removed in future
-  Please use cos instead.''', DeprecationWarning )
+  Please use cos instead.''', DeprecationWarning, stacklevel=2 )
   return cos( func )
 
 def Sinh( func ):
   warnings.warn( '''Sinh will be removed in future
-  Please use sinh instead.''', DeprecationWarning )
+  Please use sinh instead.''', DeprecationWarning, stacklevel=2 )
   return sinh( func )
 
 def Cosh( func ):
   warnings.warn( '''Cosh will be removed in future
-  Please use cosh instead.''', DeprecationWarning )
+  Please use cosh instead.''', DeprecationWarning, stacklevel=2 )
   return cosh( func )
 
 def Tanh( func ):
   warnings.warn( '''Tanh will be removed in future
-  Please use tanh instead.''', DeprecationWarning )
+  Please use tanh instead.''', DeprecationWarning, stacklevel=2 )
   return tanh( func )
 
 def Arctanh( func ):
   warnings.warn( '''Arctanh will be removed in future
-  Please use arctanh instead.''', DeprecationWarning )
+  Please use arctanh instead.''', DeprecationWarning, stacklevel=2 )
   return arctanh( func )
 
 def StaticArray( arg ):
   warnings.warn( '''StaticArray will be removed in future
-  Things should just work without it now.''', DeprecationWarning )
+  Things should just work without it now.''', DeprecationWarning, stacklevel=2 )
   return arg
 
 def Stack( arg ):
   warnings.warn( '''Stack will be removed in future
-  Please use stack instead.''', DeprecationWarning )
+  Please use stack instead.''', DeprecationWarning, stacklevel=2 )
   return stack( arg )
 
 def Log( arg ):
   warnings.warn( '''Log will be removed in future
-  Please use ln instead.''', DeprecationWarning )
+  Please use ln instead.''', DeprecationWarning, stacklevel=2 )
   return ln( arg )
 
 def Arctan2( arg1, arg2 ):
   warnings.warn( '''Arctan2 will be removed in future
-  Please use arctan2 instead.''', DeprecationWarning )
+  Please use arctan2 instead.''', DeprecationWarning, stacklevel=2 )
   return arctan2( arg1, arg2 )
 
 def Min( arg1, arg2 ):
   warnings.warn( '''Min will be removed in future
-  Please use min instead.''', DeprecationWarning )
+  Please use min instead.''', DeprecationWarning, stacklevel=2 )
   return min( arg1, arg2 )
 
 def Max( arg1, arg2 ):
   warnings.warn( '''Max will be removed in future
-  Please use max instead.''', DeprecationWarning )
+  Please use max instead.''', DeprecationWarning, stacklevel=2 )
   return max( arg1, arg2 )
 
 def Log10( arg ):
   warnings.warn( '''Log10 will be removed in future
-  Please use log10 instead.''', DeprecationWarning )
+  Please use log10 instead.''', DeprecationWarning, stacklevel=2 )
   return log10( arg )
 
 def Log2( arg ):
   warnings.warn( '''Log2 will be removed in future
-  Please use log2 instead.''', DeprecationWarning )
+  Please use log2 instead.''', DeprecationWarning, stacklevel=2 )
   return log2( arg )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
