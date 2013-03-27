@@ -2,6 +2,7 @@ from . import topology, util, numpy, function, element, log, prop, numeric, _
 import os
 
 class BasePlot( object ):
+  'base class for plotting objects'
 
   def __init__ ( self, name, ndigits=0, index=None ):
 
@@ -71,7 +72,7 @@ class PyPlot( BasePlot ):
   def save( self, name ):
     'save images'
 
-    self.savefig( self.path + name )
+    self.savefig( os.path.join( self.path, name ) )
     self.close()
 
   def polycol( self, verts, facecolors='none', **kwargs ):
@@ -166,231 +167,154 @@ class PyPlot( BasePlot ):
     self.ylim( self.ylim()[-1::-1] ) # invert y axis: equiv to MATLAB axis ij
     self.axis( 'tight' )
 
+class VTKFile( BasePlot ):
+  'vtk file'
 
-#class PyPlotModule( object ):
-#  'pyplot wrapper'
-#
-#  def __init__( self ):
-#    'constructor'
-#
-#    from matplotlib import pyplot
-#    self.__dict__.update( pyplot.__dict__ )
-#    fig = self.figure()
-#    fig.patch.set_alpha( 0 )
-#
-#  def polycol( self, verts, facecolors='none', **kwargs ):
-#    'add polycollection'
-#  
-#    from matplotlib import collections
-#    assert all( vert.ndim == 2 and vert.shape[1] == 2 for vert in verts )
-#    if facecolors != 'none':
-#      assert isinstance(facecolors,numpy.ndarray) and facecolors.shape == (len(verts),)
-#      array = facecolors
-#      facecolors = None
-#    polycol = collections.PolyCollection( verts, facecolors=facecolors, **kwargs )
-#    if facecolors is None:
-#      polycol.set_array( array )
-#    self.gca().add_collection( polycol )
-#    self.sci( polycol )
-#    return polycol
-#
-#  def slope_triangle( self, x, y, fillcolor='0.9', edgecolor='k', xoffset=0, yoffset=0.1, slopefmt='{0:.1f}' ):
-#    '''Draw slope triangle for supplied y(x)
-#       - x, y: coordinates
-#       - xoffset, yoffset: distance graph & triangle (points)
-#       - fillcolor, edgecolor: triangle style
-#       - slopefmt: format string for slope number'''
-#
-#    # TODO check for gca() loglog scale
-#
-#    i, j = (-2,-1) if x[-1] < x[-2] else (-1,-2) # x[i] > x[j]
-#
-#    from matplotlib import transforms
-#    shifttrans = self.gca().transData \
-#               + transforms.ScaledTranslation( xoffset, -yoffset, self.gcf().dpi_scale_trans )
-#
-#    slope = numpy.log( y[-2]/y[-1] ) / numpy.log( x[-2]/x[-1] )
-#
-#    self.fill( (x[i],x[j],x[i]), (y[j],y[j],y[i]),
-#      color=fillcolor,
-#      edgecolor=edgecolor,
-#      transform=shifttrans )
-#
-#    self.text( x[i]**(2/3.) * x[j]**(1/3.), y[i]**(1/3.) * y[j]**(2/3.), slopefmt.format(slope),
-#      horizontalalignment='center',
-#      verticalalignment='center',
-#      transform=shifttrans )
-#
-#    return slope
-#
-#  def slope_trend( self, x, y, lt='k-', xoffset=.1, slopefmt='{0:.1f}' ):
-#    '''Draw slope triangle for supplied y(x)
-#       - x, y: coordinates
-#       - slopefmt: format string for slope number'''
-#
-#    # TODO check for gca() loglog scale
-#
-#    slope = numpy.log( y[-2]/y[-1] ) / numpy.log( x[-2]/x[-1] )
-#    C = y[-1] / x[-1]**slope
-#
-#    self.loglog( x, C * x**slope, 'k-' )
-#
-#    from matplotlib import transforms
-#    shifttrans = self.gca().transData \
-#               + transforms.ScaledTranslation( -xoffset if x[-1] < x[0] else xoffset, 0, self.gcf().dpi_scale_trans )
-#
-#    self.text( x[-1], y[-1], slopefmt.format(slope),
-#      horizontalalignment='right' if x[-1] < x[0] else 'left',
-#      verticalalignment='center',
-#      transform=shifttrans )
-#
-#    return slope
-#
-#  def rectangle( self, x0, w, h, fc='none', ec='none', **kwargs ):
-#    'rectangle'
-#
-#    from matplotlib import patches
-#    patch = patches.Rectangle( x0, w, h, fc=fc, ec=ec, **kwargs )
-#    self.gca().add_patch( patch )
-#    return patch
-#
-#  def griddata( self, xlim, ylim, data ):
-#    'plot griddata'
-#
-#    assert data.ndim == 2
-#    self.imshow( data.T, extent=(xlim[0],xlim[-1],ylim[0],ylim[-1]), origin='lower' )
-#
-#  def cspy( self, A, **kwargs ): 
-#    'Like pyplot.spy, but coloring acc to 10^log of absolute values, where [0, inf, nan] show up in blue.'
-#    A = numpy.log10( numpy.abs( A ) )
-#    B = numpy.isinf( A ) | numpy.isnan( A ) # what needs replacement
-#    A[B] = ~B if numpy.all( B ) else numpy.amin( A[~B] ) - 1.
-#    self.pcolor( A, **kwargs )
-#    self.colorbar()
-#    self.ylim( self.ylim()[-1::-1] ) # invert y axis: equiv to MATLAB axis ij
-#    self.axis( 'tight' )
+  def __init__( self, name, index=None, ndigits=0, ascii=False ):
+    'constructor'
 
-#class VTKFile( object ):
-#  'vtk file'
-#
-#  def __init__( self, name, index=None, ndigits=ndigits, ascii=False, legacy=False ):
-#    'constructor'
-#
-#    import vtk 
-#
-#    self.ascii  = ascii
-#    self.legacy = legacy
-#
-#    dumpdir = prop.dumpdir
-#    if ndigits:
-#      if index is None:
-#        index = 1
-#        for filename in os.listdir( dumpdir ):
-#          if filename.startswith( name ):
-#            num = filename[len(name):].split('.')[0]
-#            if num.isdigit():
-#              index = max( index, int(num)+1 )
-#      name += str(index).rjust(ndigits,'0')
-#
-#    self.path    = dumpdir
-#    self.name    = name + '.vtu'
-#    self.vtkMesh = vtk.vtkUnstructuredGrid()
-#
-#  def __enter__( self ):
-#    'enter with block'
-#
-#    self.oldlog = log.context( 'writing', depth=1 )
-#    return self
-#
-#  def __exit__( self, *exc_info ):
-#    'exit with block'
-#
-#    exc_type = exc_info[0]
-#    if exc_type == KeyboardInterrupt:
-#      log.restore( self.oldlog, depth=1 )
-#      return False
-#    elif exc_type:
-#      log.exception( exc_info )
-#    else:
-#      vtkWriter = vtk.vtkXMLUnstructuredGridWriter()
-#      vtkWriter.SetInput   ( self.vtkMesh )
-#      vtkWriter.SetFileName( os.path.join( self.path, self.name ) )
-#      if self.ascii:
-#        vtkWriter.SetDataModeToAscii()
-#      vtkWriter.Write()
-#    log.restore( self.oldlog, depth=1 )
-#    return True
-#
-#  def unstructuredgrid( self, points, cells, ndims ):
-#    'add unstructured grid'
-#
-#    if ndims == 3:
-#      assert points.shape[1] == ndims, 'Points have %d components, should be %d' % ( points.shape[1], ndims )
-#    elif 0 < ndims < 3:
-#      points = numpy.concatenate( [ points, numpy.zeros( shape=(points.shape[0],ndims-points.shape[1]) ) ], axis=1 )
-#    else:
-#      raise Exception('VTK grid can only by constructed for 1, 2 and 3 dimensional pointsets')
-#
-#    import vtk
-#    vtkPoints = vtk.vtkPoints()
-#    vtkPoints.SetNumberOfpoints( points.shape[0] )
-#
-#    for i,point in enumerate(points):
-#      vtkPoints.SetPoint( i, point )
-#
-#    self.vtkMesh.SetPoints( vtkPoints )
-#
-#    for cell in cells:
-#
-#      np      = len(cell)
-#      vtkelem = None
-#
-#      if ndims == 2:
-#        if np == 3:
-#          vtkelem = vtk.vtkTriangle()
-#        elif np == 4:
-#          vtkelem = vtk.vtkQuad()
-#      elif ndims == 3:
-#        if np == 4:
-#          vtkelem = vtk.vtkTetra()
-#        elif np == 8:
-#          vtkelem = vtk.vtkVoxel() # TODO hexahedron for not rectilinear NOTE ordering changes!
-#
-#      if not vtkelem:
-#        raise Exception, 'not sure what to do with cells with ndims=%d and npoints=%d' % (ndims,np)
-#
-#      cellpoints = vtkelem.GetPointIds()
-#      for i, c in enumerate(cell):
-#        cellpoints.SetId( i, c )
-#    
-#      self.vtkMesh.InsertNextCell( vtkelem.GetCellType(), cellpoints )
-#
-#  def addcellarray( self, name, data ):
-#    'add cell array'
-#
-#    ncells = self.vtkMesh.GetNumberOfCells()
-#
-#    assert ncells == data.shape[0], 'Cell data array should have %d entries' % ncells
-#
-#    self.vtkMesh.GetCellData().AddArray( self.__vtkarray(name,data) )
-#
-#  def addpointarray( self, name, data ):
-#    'add cell array'
-#
-#    npoints = self.vtkMesh.GetNumberOfPoints()
-#
-#    assert npoints == data.shape[0], 'Point data array should have %d entries' % npoints
-#
-#    self.vtkMesh.GetPointData().AddArray( self.__vtkarray(name,data) )
-#
-#  def __vtkarray( name, data ):
-#    array = vtk.vtkFloatArray()
-#    array.SetName( name )
-#    array.SetNumberOfTuples( data.shape[0] )
-#    array.SetNumberOfComponents( data.shape[1] )
-#    for i,d in enumerate(data):
-#      array.SetTuple( i, d )
-#    return array
+    BasePlot.__init__( self, name, ndigits=ndigits, index=index )
+
+    import vtk 
+
+    if self.name.lower().endswith('.vtu'):
+      self.names = [self.name]
+    else:  
+      self.names = [self.name+'.vtu']
+
+    self.ascii   = ascii
+    self.vtkMesh = vtk.vtkUnstructuredGrid()
+
+  def save( self, name ):
+    import vtk
+    vtkWriter = vtk.vtkXMLUnstructuredGridWriter()
+    vtkWriter.SetInput   ( self.vtkMesh )
+    vtkWriter.SetFileName( os.path.join( self.path, name ) )
+    if self.ascii:
+      vtkWriter.SetDataModeToAscii()
+    vtkWriter.Write()
+
+  def vertices( self, points ):
+
+    assert isinstance( points, (list,tuple,numpy.ndarray) ), 'Expected list of point arrays'
+
+    import vtk
+
+    vtkPoints = vtk.vtkPoints()
+    vtkPoints.SetNumberOfPoints( sum(pts.shape[0] for pts in points) )
+
+    cnt = 0
+    for pts in points:
+      if pts.shape[1] < 3:
+        pts = numpy.concatenate([pts,numpy.zeros(shape=(pts.shape[0],3-pts.shape[1]))],axis=1)
+
+      for point in pts:
+        vtkPoints .SetPoint( cnt, point )
+        cellpoints = vtk.vtkVertex().GetPointIds()
+        cellpoints.SetId( 0, cnt )
+        self.vtkMesh.InsertNextCell( vtk.vtkVertex().GetCellType(), cellpoints )
+        cnt +=1
+
+    self.vtkMesh.SetPoints( vtkPoints )
+
+  def unstructuredgrid( self, points ):
+    'add unstructured grid'
+
+    assert isinstance( points, (list,tuple,numpy.ndarray) ), 'Expected list of point arrays'
+
+    import vtk
+
+    vtkPoints = vtk.vtkPoints()
+    vtkPoints.SetNumberOfPoints( sum(pts.shape[0] for pts in points) )
+
+    cnt = 0
+    for pts in points:
+
+      np      = pts.shape[0]
+      ndims   = pts.shape[1]
+      vtkelem = None
+
+      if ndims == 2:
+        if np == 1:
+          vtkelem =vtk.vtkVertex()
+        elif np == 3:
+          vtkelem = vtk.vtkTriangle()
+        elif np == 4:
+          vtkelem = vtk.vtkQuad()
+      elif ndims == 3:
+        if np == 1:
+          vtkelem =vtk.vtkVertex()
+        elif np == 4:
+          vtkelem = vtk.vtkTetra()
+        elif np == 8:
+          vtkelem = vtk.vtkVoxel() # TODO hexahedron for not rectilinear NOTE ordering changes!
+
+      if not vtkelem:
+        raise Exception('not sure what to do with cells with ndims=%d and npoints=%d' % (ndims,np))
+
+      cellpoints = vtkelem.GetPointIds()
+
+      if ndims < 3:
+        pts = numpy.concatenate([pts,numpy.zeros(shape=(pts.shape[0],3-ndims))],axis=1)
+
+      for i,point in enumerate(pts):
+        vtkPoints .SetPoint( cnt, point )
+        cellpoints.SetId( i, cnt )
+        cnt +=1
+    
+      self.vtkMesh.InsertNextCell( vtkelem.GetCellType(), cellpoints )
+
+    self.vtkMesh.SetPoints( vtkPoints )
+
+  def celldataarray( self, name, data ):
+    'add cell array'
+    ncells = self.vtkMesh.GetNumberOfCells()
+    assert ncells == data.shape[0], 'Cell data array should have %d entries' % ncells
+    self.vtkMesh.GetCellData().AddArray( self.__vtkarray(name,data) )
+
+  def pointdataarray( self, name, data ):
+    'add cell array'
+    npoints = self.vtkMesh.GetNumberOfPoints()
+    data = numpy.concatenate( list(data), axis=0 )
+    assert npoints == data.shape[0], 'Point data array should have %d entries' % npoints
+    self.vtkMesh.GetPointData().AddArray( self.__vtkarray(name,data) )
+
+  def __vtkarray( self, name, data ):
+    import vtk
+    if data.ndim == 1:
+      data = data[:,_]
+    array = vtk.vtkFloatArray()
+    array.SetName( name )
+    array.SetNumberOfComponents( data.shape[1] )
+    array.SetNumberOfTuples( data.shape[0] )
+    for i,d in enumerate(data):
+      array.SetTuple( i, d )
+    return array
+
+def writevtu( name, topo, coords, pointdata={}, celldata={}, ascii=False, superelements=False, **kwargs ):
+  'write vtu from coords function'
+
+  with VTKFile( name, ascii=ascii ) as vtkfile:
+
+    if not superelements:
+      topo = topology.UnstructuredTopology( topo.get_simplices( **kwargs ), topo.ndims )
+    else:
+      topo = topology.UnstructuredTopology( filter(None,[elem if not isinstance(elem,element.TrimmedElement) else elem.elem for elem in topo]), topo.ndims )
+
+    funcs = pointdata.values()
+    funcs.append( coords )
+
+    res = topo.elem_eval( funcs, ischeme='vtk' )
+
+    vtkfile.unstructuredgrid( res.pop() )
+
+    for name, data in zip( pointdata.keys(), res ):
+      vtkfile.pointdataarray( name, data )
+
+    res = topo.elem_mean( celldata.values(), coords, 'gauss1' )
+
+    for name, data in zip( celldata.keys(), res ):
+      vtkfile.celldataarray( name, data )
 
 ######## OLD PLOTTING INTERFACE ############
 
@@ -605,78 +529,79 @@ def project3d( C ):
   R = numpy.array( [[ sqrt3, 0, -sqrt3 ], [ 1, 2, 1 ], [ sqrt2, -sqrt2, sqrt2 ]] ) / sqrt6
   return numeric.transform( C, R[:,::2], axis=0 )
 
-def writevtu( name, topology, coords, pointdata={}, celldata={}, ascii=False, superelements=False, **kwargs ):
-  'write vtu from coords function'
 
-  vtupath = util.getpath( name )
-
-  log.context( 'vtu' )
-
-  if not superelements:
-    elements = topology.get_simplices( **kwargs )
-  else:
-    elements = filter(None,[elem if not isinstance(elem,element.TrimmedElement) else elem.elem for elem in topology])
-
-  import vtk
-  vtkPoints = vtk.vtkPoints()
-  vtkMesh = vtk.vtkUnstructuredGrid()
-
-  if coords.shape == (2,):
-    coords = function.concatenate( [ coords, [0]] )
-  assert coords.shape == (3,)
-
-  pointdata_arrays = []
-  for key, func in pointdata.iteritems():
-    array = vtk.vtkFloatArray()
-    array.SetName( key )
-    if func.shape:
-      assert len(func.shape) == 1
-      array.SetNumberOfComponents( func.shape[0] )
-    pointdata_arrays.append( function.Tuple([ array, func ]) )
-    vtkMesh.GetPointData().AddArray( array )
-  coords_pointdata = function.Tuple([ coords, function.Tuple( pointdata_arrays ) ])
-  celldata_arrays = []
-  for key, func in celldata.iteritems():
-    assert func.ndim == 0
-    array = vtk.vtkFloatArray()
-    array.SetName( key )
-    celldata_arrays.append( function.Tuple([ array, func, coords.iweights(topology.ndims) ]) )
-    vtkMesh.GetCellData().AddArray( array )
-  celldatafun = function.Tuple( celldata_arrays )
-  for elem in log.iterate( 'element', elements ):
-    if isinstance( elem, element.TriangularElement ):
-      vtkelem = vtk.vtkTriangle()
-    elif isinstance( elem, element.QuadElement ) and elem.ndims == 2:
-      vtkelem = vtk.vtkQuad()
-    elif isinstance( elem, element.QuadElement ) and elem.ndims == 3:
-      vtkelem = vtk.vtkVoxel() # TODO hexahedron for not rectilinear NOTE ordering changes!
-    elif isinstance( elem, element.TetrahedronElement ):
-      vtkelem = vtk.vtkTetra()
-    else:
-      raise Exception, 'not sure what to do with element %r' % elem
-
-    x, pdata = coords_pointdata( elem, 'vtk' )
-
-    cellpoints = vtkelem.GetPointIds()
-    for i, c in enumerate( x ):
-      pointid = vtkPoints.InsertNextPoint( *c )
-      cellpoints.SetId( i, pointid )
-    vtkMesh.InsertNextCell( vtkelem.GetCellType(), cellpoints )
-    for vtkArray, data in pdata:
-      for v in data.flat:
-        vtkArray.InsertNextValue( v )
-    for vtkArray, data, iweights in celldatafun( elem, 'gauss1' ):
-      vtkArray.InsertNextValue( numeric.mean( data, weights=iweights, axis=0 ) if data.ndim == 1 else data )
-  vtkMesh.SetPoints( vtkPoints )
-
-  log.info( 'saving vtu data...' )
-  vtkWriter = vtk.vtkXMLUnstructuredGridWriter()
-  vtkWriter.SetInput( vtkMesh )
-  vtkWriter.SetFileName( vtupath )
-  if ascii:  
-    vtkWriter.SetDataModeToAscii()
-  vtkWriter.Write()
-  log.info( os.path.basename(vtupath) )
+#def writevtu( name, topology, coords, pointdata={}, celldata={}, ascii=False, superelements=False, **kwargs ):
+#  'write vtu from coords function'
+#
+#  vtupath = util.getpath( name )
+#
+#  log.context( 'vtu' )
+#
+#  if not superelements:
+#    elements = topology.get_simplices( **kwargs )
+#  else:
+#    elements = filter(None,[elem if not isinstance(elem,element.TrimmedElement) else elem.elem for elem in topology])
+#
+#  import vtk
+#  vtkPoints = vtk.vtkPoints()
+#  vtkMesh = vtk.vtkUnstructuredGrid()
+#
+#  if coords.shape == (2,):
+#    coords = function.concatenate( [ coords, [0]] )
+#  assert coords.shape == (3,)
+#
+#  pointdata_arrays = []
+#  for key, func in pointdata.iteritems():
+#    array = vtk.vtkFloatArray()
+#    array.SetName( key )
+#    if func.shape:
+#      assert len(func.shape) == 1
+#      array.SetNumberOfComponents( func.shape[0] )
+#    pointdata_arrays.append( function.Tuple([ array, func ]) )
+#    vtkMesh.GetPointData().AddArray( array )
+#  coords_pointdata = function.Tuple([ coords, function.Tuple( pointdata_arrays ) ])
+#  celldata_arrays = []
+#  for key, func in celldata.iteritems():
+#    assert func.ndim == 0
+#    array = vtk.vtkFloatArray()
+#    array.SetName( key )
+#    celldata_arrays.append( function.Tuple([ array, func, coords.iweights(topology.ndims) ]) )
+#    vtkMesh.GetCellData().AddArray( array )
+#  celldatafun = function.Tuple( celldata_arrays )
+#  for elem in log.iterate( 'element', elements ):
+#    if isinstance( elem, element.TriangularElement ):
+#      vtkelem = vtk.vtkTriangle()
+#    elif isinstance( elem, element.QuadElement ) and elem.ndims == 2:
+#      vtkelem = vtk.vtkQuad()
+#    elif isinstance( elem, element.QuadElement ) and elem.ndims == 3:
+#      vtkelem = vtk.vtkVoxel() # TODO hexahedron for not rectilinear NOTE ordering changes!
+#    elif isinstance( elem, element.TetrahedronElement ):
+#      vtkelem = vtk.vtkTetra()
+#    else:
+#      raise Exception, 'not sure what to do with element %r' % elem
+#
+#    x, pdata = coords_pointdata( elem, 'vtk' )
+#
+#    cellpoints = vtkelem.GetPointIds()
+#    for i, c in enumerate( x ):
+#      pointid = vtkPoints.InsertNextPoint( *c )
+#      cellpoints.SetId( i, pointid )
+#    vtkMesh.InsertNextCell( vtkelem.GetCellType(), cellpoints )
+#    for vtkArray, data in pdata:
+#      for v in data.flat:
+#        vtkArray.InsertNextValue( v )
+#    for vtkArray, data, iweights in celldatafun( elem, 'gauss1' ):
+#      vtkArray.InsertNextValue( numeric.mean( data, weights=iweights, axis=0 ) if data.ndim == 1 else data )
+#  vtkMesh.SetPoints( vtkPoints )
+#
+#  log.info( 'saving vtu data...' )
+#  vtkWriter = vtk.vtkXMLUnstructuredGridWriter()
+#  vtkWriter.SetInput( vtkMesh )
+#  vtkWriter.SetFileName( vtupath )
+#  if ascii:  
+#    vtkWriter.SetDataModeToAscii()
+#  vtkWriter.Write()
+#  log.info( os.path.basename(vtupath) )
 
 def preview( coords, topology, cscheme='contour8' ):
   'preview function'
