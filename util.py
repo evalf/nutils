@@ -58,7 +58,7 @@ def profile( func ):
   frame.f_locals['__profile_func__'] = func
   prof = cProfile.Profile()
   stats = prof.runctx( '__profile_retval__ = __profile_func__()', frame.f_globals, frame.f_locals )
-  pstats.Stats( prof, stream=log.stream() ).strip_dirs().sort_stats( 'time' ).print_stats()
+  pstats.Stats( prof, stream=sys.stdout ).strip_dirs().sort_stats( 'time' ).print_stats()
   retval = frame.f_locals['__profile_retval__']
   del frame.f_locals['__profile_func__']
   del frame.f_locals['__profile_retval__']

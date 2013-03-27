@@ -2230,6 +2230,7 @@ class Inflate( ArrayFunc ):
   def __init__( self, shape, blocks ):
     'constructor'
 
+    assert all( isinstance( sh, int ) for sh in shape ), 'Invalid shape: %s'%(shape,)
     assert blocks
     self.blocks = blocks
     arrays_indices = []
@@ -3027,6 +3028,7 @@ _isunit = lambda arg: not _isfunc(arg) and ( numpy.asarray(arg) == 1 ).all()
 _haspriority = lambda arg: _isfunc(arg) and arg.__priority__
 _subsnonesh = lambda shape: tuple( 1 if sh is None else sh for sh in shape )
 _normdims = lambda ndim, shapes: [ _normdim(ndim,sh) for sh in shapes ]
+# _zeros = lambda shape: Inflate( _subsnonesh(shape), [] )
 _zeros = lambda shape: Zeros( shape )
 _zeros_like = lambda arr: _zeros( arr.shape )
 
