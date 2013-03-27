@@ -489,7 +489,7 @@ class QuadElement( Element ):
 
     x = w = None
     if where.startswith( 'gauss' ):
-      N = int( where[5:] )//2+1
+      N = int( where[5:] ) # //2+1 <= FUTURE!
       k = numpy.arange( 1, N )
       d = k / numpy.sqrt( 4*k**2-1 )
       x, w = numpy.linalg.eigh( numpy.diagflat(d,-1) ) # eigh operates (by default) on lower triangle
