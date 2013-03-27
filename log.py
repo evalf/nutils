@@ -1,5 +1,5 @@
 from . import core, prop
-import sys, time, os, traceback, warnings
+import sys, time, os, traceback, warnings, numpy
 
 _KEY = '__logger__'
 _makestr = lambda args: ' '.join( str(arg) for arg in args )
@@ -156,15 +156,16 @@ class ContextLog( object ):
 class ProgressLog( object ):
   'progress bar'
 
-  def __init__( self, text, target, showpct=True, tint=1, texp=2 ):
+  def __init__( self, text, target, showpct=True ):
     'constructor'
 
     self.text = text
     self.showpct = showpct
-    self.tint = tint
-    self.texp = texp
+    self.tint = getattr(prop,'progress_interval',1.)
+    self.tmax = getattr(prop,'progress_interval_max',numpy.inf)
+    self.texp = getattr(prop,'progress_interval_scale',2.)
     self.t0 = time.time()
-    self.tnext = self.t0 + self.tint
+    self.tnext = self.t0 + min( self.tint, self.tmax )
     self.target = target
     self.current = 0
     self.parent = _findlogger()
@@ -179,7 +180,7 @@ class ProgressLog( object ):
   def write( self, *text ):
     'write'
 
-    self.tint *= self.texp
+    self.tint = min( self.tint*self.texp, self.tmax )
     self.tnext = time.time() + self.tint
     pbar = self.text + ' %.0f/%.0f' % ( self.current, self.target )
     if self.showpct:

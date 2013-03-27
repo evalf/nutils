@@ -230,21 +230,16 @@ class VTKFile( BasePlot ):
     cnt = 0
     for pts in points:
 
-      np      = pts.shape[0]
-      ndims   = pts.shape[1]
-      vtkelem = None
+      np, ndims = pts.shape
+      vtkelem   = None
 
       if ndims == 2:
-        if np == 1:
-          vtkelem =vtk.vtkVertex()
-        elif np == 3:
+        if np == 3:
           vtkelem = vtk.vtkTriangle()
         elif np == 4:
           vtkelem = vtk.vtkQuad()
       elif ndims == 3:
-        if np == 1:
-          vtkelem =vtk.vtkVertex()
-        elif np == 4:
+        if np == 4:
           vtkelem = vtk.vtkTetra()
         elif np == 8:
           vtkelem = vtk.vtkVoxel() # TODO hexahedron for not rectilinear NOTE ordering changes!
@@ -528,80 +523,6 @@ def project3d( C ):
   sqrt6 = numpy.sqrt( 6 )
   R = numpy.array( [[ sqrt3, 0, -sqrt3 ], [ 1, 2, 1 ], [ sqrt2, -sqrt2, sqrt2 ]] ) / sqrt6
   return numeric.transform( C, R[:,::2], axis=0 )
-
-
-#def writevtu( name, topology, coords, pointdata={}, celldata={}, ascii=False, superelements=False, **kwargs ):
-#  'write vtu from coords function'
-#
-#  vtupath = util.getpath( name )
-#
-#  log.context( 'vtu' )
-#
-#  if not superelements:
-#    elements = topology.get_simplices( **kwargs )
-#  else:
-#    elements = filter(None,[elem if not isinstance(elem,element.TrimmedElement) else elem.elem for elem in topology])
-#
-#  import vtk
-#  vtkPoints = vtk.vtkPoints()
-#  vtkMesh = vtk.vtkUnstructuredGrid()
-#
-#  if coords.shape == (2,):
-#    coords = function.concatenate( [ coords, [0]] )
-#  assert coords.shape == (3,)
-#
-#  pointdata_arrays = []
-#  for key, func in pointdata.iteritems():
-#    array = vtk.vtkFloatArray()
-#    array.SetName( key )
-#    if func.shape:
-#      assert len(func.shape) == 1
-#      array.SetNumberOfComponents( func.shape[0] )
-#    pointdata_arrays.append( function.Tuple([ array, func ]) )
-#    vtkMesh.GetPointData().AddArray( array )
-#  coords_pointdata = function.Tuple([ coords, function.Tuple( pointdata_arrays ) ])
-#  celldata_arrays = []
-#  for key, func in celldata.iteritems():
-#    assert func.ndim == 0
-#    array = vtk.vtkFloatArray()
-#    array.SetName( key )
-#    celldata_arrays.append( function.Tuple([ array, func, coords.iweights(topology.ndims) ]) )
-#    vtkMesh.GetCellData().AddArray( array )
-#  celldatafun = function.Tuple( celldata_arrays )
-#  for elem in log.iterate( 'element', elements ):
-#    if isinstance( elem, element.TriangularElement ):
-#      vtkelem = vtk.vtkTriangle()
-#    elif isinstance( elem, element.QuadElement ) and elem.ndims == 2:
-#      vtkelem = vtk.vtkQuad()
-#    elif isinstance( elem, element.QuadElement ) and elem.ndims == 3:
-#      vtkelem = vtk.vtkVoxel() # TODO hexahedron for not rectilinear NOTE ordering changes!
-#    elif isinstance( elem, element.TetrahedronElement ):
-#      vtkelem = vtk.vtkTetra()
-#    else:
-#      raise Exception, 'not sure what to do with element %r' % elem
-#
-#    x, pdata = coords_pointdata( elem, 'vtk' )
-#
-#    cellpoints = vtkelem.GetPointIds()
-#    for i, c in enumerate( x ):
-#      pointid = vtkPoints.InsertNextPoint( *c )
-#      cellpoints.SetId( i, pointid )
-#    vtkMesh.InsertNextCell( vtkelem.GetCellType(), cellpoints )
-#    for vtkArray, data in pdata:
-#      for v in data.flat:
-#        vtkArray.InsertNextValue( v )
-#    for vtkArray, data, iweights in celldatafun( elem, 'gauss1' ):
-#      vtkArray.InsertNextValue( numeric.mean( data, weights=iweights, axis=0 ) if data.ndim == 1 else data )
-#  vtkMesh.SetPoints( vtkPoints )
-#
-#  log.info( 'saving vtu data...' )
-#  vtkWriter = vtk.vtkXMLUnstructuredGridWriter()
-#  vtkWriter.SetInput( vtkMesh )
-#  vtkWriter.SetFileName( vtupath )
-#  if ascii:  
-#    vtkWriter.SetDataModeToAscii()
-#  vtkWriter.Write()
-#  log.info( os.path.basename(vtupath) )
 
 def preview( coords, topology, cscheme='contour8' ):
   'preview function'

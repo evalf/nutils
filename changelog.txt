@@ -124,6 +124,13 @@ parameters in the Cache constructor, which must be chosen such that
 identical parameters lead to identical evaluations. Cached data is
 placed in $outdir/$scriptname/cache.
 
+New ProgressLog object with the following properties to be used in the finityrc:
+  - progress_interval : Initial interval in seconds of the progress
+    log
+  - progress_interval_max : Maximum interval in seconds of the
+    progress log
+  - progress_interval_scale : Scaling factor for the progress log interval
+
 Further new are
   - new testcase: cylinderflow
   - added the TetrahedronElement
