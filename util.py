@@ -397,6 +397,12 @@ def run( *functions ):
     log.error( 'killed by user' )
   except:
     log.exception()
+    #exctype, excval, tb = sys.exc_info()
+    #import pdb
+    #p = pdb.Pdb()
+    #p.reset()
+    #p.setup( tb.tb_frame, tb )
+    #p.cmdloop()
 
   if hasattr( os, 'wait' ):
     try: # wait for child processes to die

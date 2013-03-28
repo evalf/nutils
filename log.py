@@ -63,6 +63,7 @@ def exception( exc_info=None ):
     exc_traceback = exc_traceback.tb_next
   frame = exc_traceback.tb_frame
   parts = traceback.format_stack( frame ) + traceback.format_exception_only( exc_type, exc_value )
+  #parts = traceback.format_exception_only( exc_type, exc_value )
   _findlogger( frame ).write( ('error',(''.join( reversed(parts) ).rstrip(),)) )
 
 class SimpleLog( object ):

@@ -524,12 +524,11 @@ class ArrayFunc( Evaluable ):
   def __getitem__( self, item ):
     'get item, general function which can eliminate, add or modify axes.'
   
-    tmp = item
-    item = list( item if isinstance( item, tuple ) else [item] )
+    myitem = list( item if isinstance( item, tuple ) else [item] )
     n = 0
     arr = self
-    while item:
-      it = item.pop(0)
+    while myitem:
+      it = myitem.pop(0)
       if isinstance(it,int): # retrieve one item from axis
         arr = get( arr, n, it )
       elif it == _: # insert a singleton axis
@@ -538,7 +537,7 @@ class ArrayFunc( Evaluable ):
       elif it == slice(None): # select entire axis
         n += 1
       elif it == Ellipsis: # skip to end
-        remaining_items = len(item) - item.count(_)
+        remaining_items = len(myitem) - myitem.count(_)
         skip = arr.ndim - n - remaining_items
         assert skip >= 0
         n += skip
@@ -1492,7 +1491,7 @@ class Determinant( ArrayFunc ):
     'local gradient; jacobi formula'
 
     ax1, ax2 = self.axes
-    return self[:,_] * sum( inv( self.func, ax1, ax2 ).swapaxes(ax1,ax2)[...,_] * localgradient( self.func, ndims ), axes=[ax1,ax2] )
+    return self[...,_] * sum( inv( self.func, ax1, ax2 ).swapaxes(ax1,ax2)[...,_] * localgradient( self.func, ndims ), axes=[ax1,ax2] )
 
 class DofIndex( ArrayFunc ):
   'element-based indexing'
@@ -2490,18 +2489,8 @@ class Inflate( ArrayFunc ):
     if not blocks:
       return dense
 
-    try:
-      if not _iszero( dense ):
-        blocks.append(( dense, indall ))
-    except:
-      print 'dense.shape =', dense.shape
-      print 'keep =', keep
-      print 'self.shape =', self.shape
-      tmp = dense == 0
-      print 'tmp = dense == 0 -> type = ', type(tmp)
-      print 'tmp = dense == 0 -> shape = ', tmp.shape
-
-      raise
+    if not _iszero( dense ):
+      blocks.append(( dense, indall ))
 
     return Inflate( shape, blocks )
 
