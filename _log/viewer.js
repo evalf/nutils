@@ -318,20 +318,6 @@ function Finity() {
           var gal = $a.attr('gal');
           var idx = parseInt($a.attr('idx'));
           
-          self._selGallery
-              .find('option:selected')
-              .attr('selected', false)
-              .end()
-							.find('option')
-							.each(function (){
-								var $opt = $(this);
-								if( $opt.attr('value') != gal )
-									return true; // continue;
-
-								$opt.attr('selected', true);
-								return false; // break;
-							});
-
 				  self.show(gal, idx);
           return false;
         });
@@ -402,10 +388,14 @@ function Finity() {
 								alert('Link to the simulation is not found, navigate manually to the simulation');
 							break;
             case evt.keyCode == 82: // r
-              var dat = self._galleries[self._current.gallery][self._current.index];
-              var hash = self._data[dat].hash;
+              if( self._data.length ) {
+                var dat = self._galleries[self._current.gallery][self._current.index];
+                var hash = '#' + self._data[dat].hash;
+              } else {
+                var hash = ''
+              }
               var loc = document.location.href.substr(0, document.location.href.indexOf('#'));
-              document.location.href = loc + '#' + hash;
+              document.location.href = loc + hash;
               window.location.reload(true);
               break;
             case evt.keyCode == 73: // I
@@ -476,8 +466,9 @@ function Finity() {
       var gal = this._current.gallery;
       var idx = this._current.index;
       var cnt = this._galleries[gal].length;
-	
-			if( (idx + 1) < cnt ) {
+      
+      // There is a next image
+			if( (idx+1) < cnt ) {
       	++idx;
 				this.show( gal, idx );
       }
@@ -598,7 +589,16 @@ function Finity() {
 			var key 		= gallery[idx];
       var data 		= this._data[key];
 
+      // Set the current gallery
+      self._selGallery
+          .find('option:selected')
+          .attr('selected', false)
+          .end()
+          .find('option[value="' + gal + '"]')
+          .attr('selected', true);
+
       // Set the current image
+      if( data.src )
       this._imgCurrent.src = data.src;
 
 			// Preloading
@@ -617,9 +617,8 @@ function Finity() {
 			if( this._imgCurrent.width > 0 ) {
         this.render();
 			} else {
-				this._imgCurrent.onload = function (){
-					self.render();
-				}
+				this._imgCurrent.onload = function (){ self.render(); };
+				this._imgCurrent.onerror = function (){ self.render( false ); };
 			}
     }
     
@@ -629,11 +628,12 @@ function Finity() {
      * 
      * @return Bool success
      */
-		this.render = function () {
+		this.render = function ( display ) {
 	    // Show the current image
 			var gal = this._current.gallery;
 			var idx = this._current.index;
 			var key = this._galleries[gal][idx];
+			var display = ( typeof display != 'undefined' ) ? display : true;
 
 			// Check if the gallery exists
       if( typeof this._galleries[gal] == 'undefined' )
@@ -658,24 +658,27 @@ function Finity() {
         .parents('.line')
         .addClass('line-active');
 
-      var frameWidth = Math.max(this._media.width() - 20, 1);
-      var frameHeight = Math.max(this._media.height() - 30, 1);
-      var fx = Math.max(this._imgCurrent.width / frameWidth, 1);
-      var fy = Math.max(this._imgCurrent.height / frameHeight, 1);
-      var width = this._imgCurrent.width / fx;
-      var height = this._imgCurrent.height / fy;
-      
-			// Make image the right size and show it
-      var css = ( fx > fy )
-              ? { 'width': width + 'px', 'height': 'auto' }
-              : { 'width': 'auto', 'height': height + 'px' };
-			this._img.css(css);
-			
-			if( this._img.attr('src') != this._imgCurrent.src ) {
-				this._img.attr('src', this._imgCurrent.src);
-				this._imglink
-					.attr('href', this._imgCurrent.src);
-			}
+      // Image can be displayed
+      if( display ) {
+        var frameWidth = Math.max(this._media.width() - 20, 1);
+        var frameHeight = Math.max(this._media.height() - 30, 1);
+        var fx = Math.max(this._imgCurrent.width / frameWidth, 1);
+        var fy = Math.max(this._imgCurrent.height / frameHeight, 1);
+        var width = this._imgCurrent.width / fx;
+        var height = this._imgCurrent.height / fy;
+        
+        // Make image the right size and show it
+        var css = ( fx > fy )
+                ? { 'width': width + 'px', 'height': 'auto' }
+                : { 'width': 'auto', 'height': height + 'px' };
+        this._img.css(css);
+
+        if( this._img.attr('src') != this._imgCurrent.src ) {
+          this._img.attr('src', this._imgCurrent.src);
+          this._imglink
+            .attr('href', this._imgCurrent.src);
+        }
+      }
 		}
 }
 
