@@ -1028,7 +1028,7 @@ class Reciprocal( ArrayFunc ):
   def __localgradient__( self, ndims ):
     'local gradient'
 
-    return -localgradient( self.func, ndims ) / self.func**2
+    return -localgradient( self.func, ndims ) / self.func[...,_]**2
 
   def __get__( self, i, item ):
     'get item'
@@ -1051,7 +1051,13 @@ class Product( ArrayFunc ):
   def __init__( self, func ):
     'constructor'
 
+    self.func = func
     ArrayFunc.__init__( self, args=[func,-1], evalf=numpy.prod, shape=func.shape[:-1] )
+
+  def __localgradient__( self, ndims ):
+    'local gradient'
+
+    return self[...,_] * ( localgradient(self.func,ndims) / self.func[...,_] ).sum( -2 )
 
 class IWeights( ArrayFunc ):
   'integration weights'
@@ -1486,7 +1492,7 @@ class Determinant( ArrayFunc ):
     'local gradient; jacobi formula'
 
     ax1, ax2 = self.axes
-    return self * sum( inv( self.func, ax1, ax2 ).swapaxes(ax1,ax2)[...,_] * localgradient( self.func, ndims ), axes=[ax1,ax2] )
+    return self[:,_] * sum( inv( self.func, ax1, ax2 ).swapaxes(ax1,ax2)[...,_] * localgradient( self.func, ndims ), axes=[ax1,ax2] )
 
 class DofIndex( ArrayFunc ):
   'element-based indexing'
@@ -2221,7 +2227,6 @@ class Zeros( ArrayFunc ):
       assert self.shape[n2] in (sh,1), 'unequal dimensions in takediag: %d, %d' % ( sh, self.shape[n2] )
     return _zeros( self.shape[:n1] + self.shape[n1+1:n2] + self.shape[n2+1:] + (sh,) )
 
-
 class Inflate( ArrayFunc ):
   'expand locally supported functions'
 
@@ -2516,6 +2521,7 @@ class Inflate( ArrayFunc ):
   def dot( self, weights ):
     'array contraction'
 
+    weights = numpy.asarray( weights, dtype=float )
     assert weights.ndim == 1
     s = (slice(None),)+(numpy.newaxis,)*(self.ndim-1)
     return sum( self * weights[s], axes=0 )
@@ -3378,7 +3384,7 @@ abs = lambda arg: arg * sign(arg)
 sinh = lambda arg: .5 * ( exp(arg) - exp(-arg) )
 cosh = lambda arg: .5 * ( exp(arg) + exp(-arg) )
 tanh = lambda arg: 1 - 2. / ( exp(2*arg) + 1 )
-arctanh = lambda arg: .5 * ( log(1+arg) - log(1-arg) )
+arctanh = lambda arg: .5 * ( ln(1+arg) - ln(1-arg) )
 piecewise = lambda level, intervals, *funcs: choose( sum( greater( insert(level,-1), intervals ) ), funcs )
 trace = lambda arg, n1=-2, n2=-1: sum( takediag( arg, n1, n2 ) )
 eye = lambda n: diagonalize( expand( [1.], (n,) ), 0, 1 )

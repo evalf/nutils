@@ -73,7 +73,7 @@ class PyPlot( BasePlot ):
     'save images'
 
     self.savefig( os.path.join( self.path, name ) )
-    self.close()
+    #self.close()
 
   def polycol( self, verts, facecolors='none', **kwargs ):
     'add polycollection'
