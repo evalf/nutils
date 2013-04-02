@@ -2328,7 +2328,8 @@ class Kronecker( ArrayFunc ):
     shape = shape[:axis] + (len(funcs),) + shape[axis:]
     self.funcs = tuple(funcs)
     self.axis = axis
-    ArrayFunc.__init__( self, args=[self.axis-len(shape)]+list(funcs), evalf=self.kronecker, shape=shape )
+    evalfuncs = [ func if not _iszero(func) else None for func in funcs ]
+    ArrayFunc.__init__( self, args=[self.axis-len(shape)]+evalfuncs, evalf=self.kronecker, shape=shape )
 
   @staticmethod
   def kronecker( axis, *funcs ):
