@@ -233,24 +233,23 @@ class VTKFile( BasePlot ):
       np, ndims = pts.shape
       vtkelem   = None
 
-      if ndims == 2:
-        if np == 3:
-          vtkelem = vtk.vtkTriangle()
-        elif np == 4:
+      if np == 3:
+        vtkelem = vtk.vtkTriangle()
+      elif np == 4:  
+        if ndims == 2:
           vtkelem = vtk.vtkQuad()
-      elif ndims == 3:
-        if np == 4:
+        elif ndims == 3:
           vtkelem = vtk.vtkTetra()
-        elif np == 8:
-          vtkelem = vtk.vtkVoxel() # TODO hexahedron for not rectilinear NOTE ordering changes!
+      elif np == 8:
+        vtkelem = vtk.vtkVoxel() # TODO hexahedron for not rectilinear NOTE ordering changes!
 
       if not vtkelem:
         raise Exception('not sure what to do with cells with ndims=%d and npoints=%d' % (ndims,np))
 
-      cellpoints = vtkelem.GetPointIds()
-
       if ndims < 3:
         pts = numpy.concatenate([pts,numpy.zeros(shape=(pts.shape[0],3-ndims))],axis=1)
+
+      cellpoints = vtkelem.GetPointIds()
 
       for i,point in enumerate(pts):
         vtkPoints .SetPoint( cnt, point )
