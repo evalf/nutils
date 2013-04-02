@@ -70,9 +70,12 @@ class ExcInfo( object ):
       iline = code.co_firstlineno-1
       indent = len(lines[iline]) - len(lines[iline].lstrip())
       source = lines[iline][indent:].rstrip()
-      while not lines[iline+1][:indent+1].strip():
+      while iline < lineno or not lines[iline+1][:indent+1].strip():
         iline += 1
-        source += '\n' + ' >'[lineno<=iline<lineno+counterr] + lines[iline][indent+1:].rstrip()
+        if lineno<=iline<lineno+counterr:
+          source += '\n>' + lines[iline][indent+1:].rstrip()
+        else:
+          source += '\n' + lines[iline][indent:].rstrip()
       source = source.rstrip()
   
       self.tb.append( FrameInfo(context,source,frame) )
@@ -216,7 +219,7 @@ class TracebackExplorer( cmd.Cmd ):
     '''Print local of global variable, or function evaluation.'''
 
     frame = self.excinfo[self.index].frame
-    print eval(arg,frame.f_locals,frame.f_globals)
+    print eval(arg,frame.f_globals,frame.f_locals)
 
   def onecmd( self, text ):
     'wrap command handling to avoid a second death'
@@ -231,7 +234,7 @@ class TracebackExplorer( cmd.Cmd ):
 
     import pprint
     frame = self.excinfo[self.index].frame
-    pprint.pprint( eval(arg,frame.f_locals,frame.f_globals) )
+    pprint.pprint( eval(arg,frame.f_globals,frame.f_locals) )
 
   def completedefault( self, text, line, begidx, endidx ):
     'complete object names'
@@ -239,8 +242,8 @@ class TracebackExplorer( cmd.Cmd ):
     frame = self.excinfo[self.index].frame
 
     objs = {}
-    objs.update( frame.f_locals )
     objs.update( frame.f_globals )
+    objs.update( frame.f_locals )
 
     base = ''
     while '.' in text:
@@ -249,7 +252,12 @@ class TracebackExplorer( cmd.Cmd ):
         obj = objs[ objname ]
       except KeyError:
         return []
-      objs = dict( (a,getattr(obj,a)) for a in dir(obj) )
+      objs = {}
+      for attrname in dir(obj):
+        try:
+          objs[attrname] = getattr(obj,attrname)
+        except:
+          pass
       base += objname + '.'
       text = attr
 

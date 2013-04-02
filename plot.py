@@ -37,6 +37,7 @@ class BasePlot( object ):
       return False
     elif exc_type:
       log.traceback( exc_info )
+      return False
     else:
       if self.names:
         for name in self.names:
