@@ -1861,13 +1861,14 @@ class Zeros( ArrayFunc ):
   def __init__( self, shape ):
     'constructor'
 
-    arrayshape = tuple( sh if sh is not None else 1 for sh in shape )
+    arrayshape = tuple( shape )
     ArrayFunc.__init__( self, args=[POINTS,arrayshape], evalf=self.zeros, shape=shape )
 
   @staticmethod
   def zeros( points, shape ):
     'prepend point axes'
 
+    assert not any( sh is None for sh in shape ), 'cannot evaluate zeros for shape %s' % shape
     shape = points.shape[:-1] + shape
     strides = [0] * len(shape)
     return numpy.lib.stride_tricks.as_strided( numpy.array(0.), shape, strides )
