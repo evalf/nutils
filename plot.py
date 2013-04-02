@@ -305,10 +305,11 @@ def writevtu( name, topo, coords, pointdata={}, celldata={}, ascii=False, supere
     for name, data in zip( pointdata.keys(), res ):
       vtkfile.pointdataarray( name, data )
 
-    res = topo.elem_mean( celldata.values(), coords, 'gauss1' )
+    if celldata:  
+      res = topo.elem_mean( celldata.values(), coords, 'gauss1' )
 
-    for name, data in zip( celldata.keys(), res ):
-      vtkfile.celldataarray( name, data )
+      for name, data in zip( celldata.keys(), res ):
+        vtkfile.celldataarray( name, data )
 
 ######## OLD PLOTTING INTERFACE ############
 
