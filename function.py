@@ -3138,8 +3138,8 @@ def subtract( arg1, arg2 ):
 #     if arg1.shape[iax] == arg2.shape[iax] == 1:
 #       return insert( get(arg1,iax,0) + get(arg2,iax,0), iax )
 
-  if _isfunc( arg2 ) and _haspriority(arg2) and not _haspriority(arg1):
-    return (-arg2)._add( arg1 )
+# if _isfunc( arg2 ) and _haspriority(arg2) and not _haspriority(arg1):
+#   return (-arg2)._add( arg1 )
 
   if _isfunc( arg2 ) and not _isfunc( arg1 ):
     return Subtract( arg1, arg2 )
