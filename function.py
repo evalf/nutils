@@ -232,7 +232,8 @@ class Evaluable( object ):
     lines = []
     indent = '\n' + ' ' + ' ' * len(key)
     for it in reversed( self.__args ):
-      lines.append( indent.join( _obj2str(it).splitlines() ) )
+      s = it.asciitree() if isinstance(it,Evaluable) else _obj2str(it)
+      lines.append( indent.join( s.splitlines() ) )
       indent = '\n' + '|' + ' ' * len(key)
     indent = '\n' + '+' + '-' * (len(key)-1) + ' '
     return key + ' ' + indent.join( reversed( lines ) )
@@ -450,7 +451,7 @@ class ArrayFunc( Evaluable ):
     cndims, = self.shape
     assert J.shape == (cndims,ndims), 'wrong jacobian shape: got %s, expected %s' % ( J.shape, (cndims, ndims) )
     if cndims == ndims:
-      detJ = determinant( J, 0, 1 )
+      detJ = determinant( J )
     elif ndims == 1:
       detJ = norm2( J[:,0], axis=0 )
     elif cndims == 3 and ndims == 2:
@@ -1016,7 +1017,7 @@ class Inverse( ArrayFunc ):
 
     assert func.shape[-1] == func.shape[-2]
     self.func = func
-    ArrayFunc.__init__( self, args=[func,(-2,-1)], evalf=numeric.inv, shape=func.shape )
+    ArrayFunc.__init__( self, args=[func], evalf=numeric.inverse, shape=func.shape )
 
   def _localgradient( self, ndims ):
     'local gradient'
@@ -1230,7 +1231,7 @@ class Determinant( ArrayFunc ):
     'contructor'
 
     self.func = func
-    ArrayFunc.__init__( self, args=(func,-2,-1), evalf=numeric.det, shape=func.shape[:-2] )
+    ArrayFunc.__init__( self, args=[func], evalf=numeric.determinant, shape=func.shape[:-2] )
 
   def _localgradient( self, ndims ):
     'local gradient; jacobi formula'
@@ -1954,7 +1955,6 @@ class Zeros( ArrayFunc ):
   
     return numpy.zeros( [1]*self.ndim )
 
-
 class Inflate( ArrayFunc ):
   'expand locally supported functions'
 
@@ -2015,38 +2015,32 @@ class Inflate( ArrayFunc ):
                  ind[:axis] + (slice(None),) + ind[axis:] ) for func, ind in self.blocks ]
     return Inflate( self.shape[:axis] + (length,) + self.shape[axis:], blocks )
 
-  def __getitem__( self, item ):
+  def _get( self, axis, item ):
     'get item'
 
-    if item == ():
-      return self
-    origitem = item # for debug msg
-    nnew = _sum( it == numpy.newaxis for it in item )
-    if Ellipsis in item:
-      n = item.index( Ellipsis )
-      item = item[:n] + (slice(None),) * (self.ndim-(len(item)-1-nnew)) + item[n+1:]
-    # assert len(item) - nnew == self.ndim, 'invalid item: shape=%s, item=(%s)' % ( self.shape, ','.join(map(_obj2str,origitem)) )
-    assert len(item) <= self.ndim + nnew, 'invalid item: shape=%s, item=(%s)' % ( self.shape, ','.join(map(_obj2str,origitem)) )
-    item += (slice(None),) * ( self.ndim + nnew - len(item) )
-    shape = self.shape
-    blocks = self.blocks
-    i = 0
-    for it in item:
-      if it == numpy.newaxis:
-        shape = shape[:i] + (1,) + shape[i:]
-        blocks = [ ( insert( func, i ), ind[:i]+(slice(None),)+ind[i:] ) for func, ind in blocks ]
-        i += 1
-      elif isinstance(it,int):
-        blocks = [ ( get( func, i, it ), ind[:i]+ind[i+1:] ) for func, ind in blocks if get( func, i, it ) ]
-        shape = shape[:i] + shape[i+1:]
-      elif isinstance(it,list):
-        blocks = [ ( take( func, it, i ), ind[:i]+(slice(None),)+ind[i+1:] ) for func, ind in blocks ]
-        shape = shape[:i] + (len(it),) + shape[i+1:]
-        i += 1
-      else:
-        assert it == slice(None), 'invalid item in getitem: %r' % it
-        i += 1
-    assert i == len(shape)
+    blocks = []
+    for func, ind in self.blocks:
+      assert ind[axis] == slice(None)
+      f = get( func, axis, item )
+      if not _iszero( f ):
+        blocks.append(( f, ind[:axis]+ind[axis+1:] ))
+
+    shape = self.shape[:axis] + self.shape[axis+1:]
+    if not blocks:
+      return _zeros( shape )
+
+    return Inflate( shape, blocks )
+
+  def _take( self, index, axis ):
+    'take item'
+
+    blocks = []
+    for func, ind in self.blocks:
+      assert ind[axis] == slice(None)
+      f = take( func, index, axis )
+      blocks.append(( f, ind ))
+
+    shape = self.shape[:axis] + (len(index),) + self.shape[axis+1:]
     return Inflate( shape, blocks )
 
   def _localgradient( self, ndims ):
@@ -2729,11 +2723,6 @@ def repeat( arg, shape ):
 
   return Repeat( arg, shape )
 
-  #assert len(shape) == arg.ndim
-  #if all( sh1 == sh2 or sh2 == None for sh1, sh2 in zip( arg.shape, shape ) ):
-  #  return arg
-  #return Repeat( arg, shape )
-
 def get( arg, iax, item ):
   'get item'
 
@@ -2849,12 +2838,11 @@ def sum( arg, axes=-1 ):
 
   return arg
 
-def determinant( arg, ax1, ax2 ):
+def determinant( arg, axes=(-2,-1) ):
   'determinant'
 
   arg = _asarray( arg )
-
-  ax1, ax2 = _norm_and_sort( arg.ndim, [ax1,ax2] )
+  ax1, ax2 = _norm_and_sort( arg.ndim, axes )
   assert ax2 > ax1 # strict
 
   n = arg.shape[ax1]
@@ -2862,28 +2850,38 @@ def determinant( arg, ax1, ax2 ):
   if n == 1:
     return get( get( arg, ax2, 0 ), ax1, 0 )
 
-  if _isfunc( arg ):
-    trans = range(ax1) + [-2] + range(ax1,ax2-1) + [-1] + range(ax2-1,arg.ndim-2)
-    return align( arg, trans, arg.ndim )._determinant()
+  trans = range(ax1) + [-2] + range(ax1,ax2-1) + [-1] + range(ax2-1,arg.ndim-2)
+  arg = align( arg, trans, arg.ndim )
 
-  return numeric.det( arg, ax1, ax2 )
+  if _isfunc( arg ):
+    return arg._determinant()
+
+  return numeric.determinant( arg )
+
+def det( arg, ax1, ax2 ):
+  warnings.warn( '''det(array,i,j) will be removed in future
+  Please use determinant(array,(i,j)) instead.''', DeprecationWarning, stacklevel=2 )
+  return determinant( arg, (ax1,ax2) )
 
 def inverse( arg, axes=(-2,-1) ):
   'inverse'
 
   arg = _asarray( arg )
   ax1, ax2 = _norm_and_sort( arg.ndim, axes )
+  assert ax2 > ax1 # strict
 
   n = arg.shape[ax1]
   assert arg.shape[ax2] == n
   if n == 1:
     return reciprocal( arg )
 
-  if _isfunc( arg ):
-    trans = range(ax1) + [-2] + range(ax1,ax2-1) + [-1] + range(ax2-1,arg.ndim-2)
-    return transpose( align( arg, trans, arg.ndim )._inverse(), trans )
+  trans = range(ax1) + [-2] + range(ax1,ax2-1) + [-1] + range(ax2-1,arg.ndim-2)
+  arg = align( arg, trans, arg.ndim )
 
-  return numeric.inv( arg, (ax1,ax2) )
+  if _isfunc( arg ):
+    return transpose( arg._inverse(), trans )
+
+  return numeric.inverse( arg ).transpose( trans )
 
 def inv( arg, ax1=-2, ax2=-1 ):
   warnings.warn( '''inv(array,i,j) will be removed in future
@@ -2936,6 +2934,11 @@ def dotnorm( arg, coords, ndims=0 ):
 
 def kronecker( arg, axis, length, pos ):
   'kronecker'
+
+# axis = numeric.normdim( arg.ndim+1, axis )
+# shape = arg.shape[:
+# args = [ _zeros(arg.shape) ] * length
+# args[axis]
 
   arg = _asarray( arg )
   if _isfunc( arg ):

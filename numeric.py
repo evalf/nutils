@@ -165,45 +165,40 @@ def takediag( A ):
     strides = A.strides[:-2] + (A.strides[-2]+A.strides[-1],)
   return numpy.lib.stride_tricks.as_strided( A, shape, strides )
 
-def inv( arr, axes ):
+def inverse( A ):
   'linearized inverse'
 
-  L = map( numpy.arange, arr.shape )
+  assert isinstance( A, numpy.ndarray )
+  assert A.shape[-2] == A.shape[-1]
+  if A.shape[-1] == 1:
+    Ainv = numpy.reciprocal( A )
+  elif A.shape[-1] == 2:
+    det = A[...,0,0] * A[...,1,1] - A[...,0,1] * A[...,1,0]
+    Ainv = numpy.empty( A.shape )
+    numpy.divide( A[...,1,1],  det, Ainv[...,0,0] )
+    numpy.divide( A[...,0,0],  det, Ainv[...,1,1] )
+    numpy.divide( A[...,1,0], -det, Ainv[...,1,0] )
+    numpy.divide( A[...,0,1], -det, Ainv[...,0,1] )
+  else:
+    Ainv = numpy.empty( A.shape )
+    for I in numpy.lib.index_tricks.ndindex( A.shape[:-2] ):
+      Ainv[I] = numpy.linalg.inv( A[I] )
+  return Ainv
 
-  ax1, ax2 = sorted( ax + arr.ndim if ax < 0 else ax for ax in axes ) # ax2 > ax1
-  L.pop( ax2 )
-  L.pop( ax1 )
-
-  indices = list( numpy.ix_( *L ) )
-  indices.insert( ax1, slice(None) )
-  indices.insert( ax2, slice(None) )
-
-  invarr = numpy.empty_like( arr )
-  for index in numpy.broadcast( *indices ):
-    invarr[index] = numpy.linalg.inv( arr[index] )
-
-  return invarr
-
-def det( A, ax1, ax2 ):
+def determinant( A ):
   'determinant'
 
   assert isinstance( A, numpy.ndarray )
-  ax1, ax2 = sorted( ax + A.ndim if ax < 0 else ax for ax in (ax1,ax2) ) # ax2 > ax1
-  assert A.shape[ax1] == A.shape[ax2]
-  T = range(A.ndim)
-  T.pop(ax2)
-  T.pop(ax1)
-  T.extend([ax1,ax2])
-  A = A.transpose( T )
+  assert A.shape[-2] == A.shape[-1]
   if A.shape[-1] == 1:
     det = A[...,0,0]
   elif A.shape[-1] == 2:
     det = A[...,0,0] * A[...,1,1] - A[...,0,1] * A[...,1,0]
   else:
     det = numpy.empty( A.shape[:-2] )
-    for I in numpy.broadcast( *numpy.ix_( *[ range(n) for n in A.shape[:-2] ] ) ) if A.ndim > 3 else range( A.shape[0] ):
+    for I in numpy.lib.index_tricks.ndindex( A.shape[:-2] ):
       det[I] = numpy.linalg.det( A[I] )
-  return numpy.asarray( det ).view( A.__class__ )
+  return det
 
 def reshape( A, *shape ):
   'more useful reshape'
