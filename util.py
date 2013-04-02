@@ -1,5 +1,5 @@
 from . import log, prop
-import sys, os, time, numpy, cPickle, hashlib, weakref, traceback, core, warnings
+import sys, os, time, numpy, cPickle, hashlib, weakref, traceback, core, warnings, exception
 
 class _SuppressedOutput( object ):
   'suppress all output by redirection to /dev/null'
@@ -238,20 +238,6 @@ def fail( msg, *args ):
 
   raise Exception, msg % args
 
-def ipdb():
-  'invoke debugger'
-
-  from IPython import Debugger, Shell, ipapi
-  
-  Shell.IPShell( argv=[''] )
-  ip = ipapi.get()
-  def_colors = ip.options.colors
-  frame = sys._getframe().f_back
-  Debugger.BdbQuit_excepthook.excepthook_ori = sys.excepthook
-  sys.excepthook = Debugger.BdbQuit_excepthook
-  
-  Debugger.Pdb( def_colors ).set_trace( frame )
-
 class Locals( object ):
   'local namespace as object'
 
@@ -371,7 +357,8 @@ def run( *functions ):
       print 'updating', filename
       open( outdir + filename, 'w' ).write( open( logpath + filename, 'r' ).read() )
 
-  log.setup_html( maxlevel=prop.verbose, path=dumpdir+'log.html', title=scriptname + time.strftime( ' %Y/%m/%d %H:%M:%S', localtime ) )
+  htmlfile = open( dumpdir+'log.html', 'w' )
+  log.setup_html( maxlevel=prop.verbose, fileobj=htmlfile, title=scriptname + time.strftime( ' %Y/%m/%d %H:%M:%S', localtime ) )
 
   prop.dumpdir = dumpdir
 
@@ -395,14 +382,11 @@ def run( *functions ):
     func( **kwargs )
   except KeyboardInterrupt:
     log.error( 'killed by user' )
+    excinfo = False
   except:
-    log.exception()
-    #exctype, excval, tb = sys.exc_info()
-    #import pdb
-    #p = pdb.Pdb()
-    #p.reset()
-    #p.setup( tb.tb_frame, tb )
-    #p.cmdloop()
+    excinfo = log.traceback()
+  else:
+    excinfo = False
 
   if hasattr( os, 'wait' ):
     try: # wait for child processes to die
@@ -419,5 +403,12 @@ def run( *functions ):
   log.info()
   log.info( 'finish %s\n' % time.ctime() )
   log.info( 'elapsed %.0f:%.0f:%.0f' % ( hours, minutes, seconds ) )
+
+  if not excinfo:
+    sys.exit( 0 )
+
+  excinfo[1:].write_html( htmlfile )
+  excinfo[1:].explore()
+  sys.exit( 1 )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

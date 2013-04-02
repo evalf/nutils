@@ -36,7 +36,7 @@ class BasePlot( object ):
       log.restore( self.oldlog, depth=1 )
       return False
     elif exc_type:
-      log.exception( exc_info )
+      log.traceback( exc_info )
     else:
       if self.names:
         for name in self.names:

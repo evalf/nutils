@@ -19,7 +19,7 @@ def fork( func, nice=19 ):
     except KeyboardInterrupt:
       pass
     except:
-      log.exception()
+      log.traceback()
     os._exit( 0 )
   return wrapped
 

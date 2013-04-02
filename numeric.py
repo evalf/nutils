@@ -2,12 +2,22 @@ import numpy, _numeric
 
 addsorted = _numeric.addsorted
 
+def normdim( ndim, n ):
+  'check bounds and make positive'
+
+  assert isinstance(ndim,int) and ndim >= 0, 'ndim must be positive integer, got %s' % ndim
+  if n < 0:
+    n += ndim
+  assert 0 <= n < ndim, 'argument out of bounds: %s not in [0,%s)' % (n,ndim)
+  return n
+
 def align( arr, trans, ndim ):
   '''create new array of ndim from arr with axes moved accordin
   to trans'''
 
   # as_strided will check validity of trans
   arr = numpy.asarray( arr )
+  trans = numpy.asarray( trans, dtype=int )
   assert len(trans) == arr.ndim
   strides = numpy.zeros( ndim, dtype=int )
   strides[trans] = arr.strides
@@ -142,31 +152,17 @@ def appendaxes( A, shape ):
   A = numpy.asarray( A )
   return numpy.lib.stride_tricks.as_strided( A, A.shape + shape, A.strides + (0,)*len(shape) )
 
-def takediag( A, ax1, ax2 ):
-  if ax1 < 0:
-    ax1 += A.ndim
-  if ax2 < 0:
-    ax2 += A.ndim
-  ax1, ax2 = sorted( [ax1,ax2] )
-  assert 0 <= ax1 < ax2 < A.ndim
-  shape = list(A.shape)
-  n2 = shape.pop(ax2)
-  n1 = shape.pop(ax1)
-  strides = list(A.strides)
-  s2 = strides.pop(ax2)
-  s1 = strides.pop(ax1)
-  if n1 == 1:
-    n = n2
-    s = s2
-  elif n2 == 1:
-    n = n1
-    s = s1
+def takediag( A ):
+  if A.shape[-1] == 1:
+    shape = A.shape[:-1]
+    strides = A.strides[:-1]
+  elif A.shape[-2] == 1:
+    shape = A.shape[:-2] + A.shape[-1:]
+    strides = A.strides[:-2] + A.strides[-1:]
   else:
-    assert n1 == n2
-    n = n1
-    s = s1 + s2
-  shape.append( n )
-  strides.append( s )
+    assert A.shape[-1] == A.shape[-2]
+    shape = A.shape[:-1]
+    strides = A.strides[:-2] + (A.strides[-2]+A.strides[-1],)
   return numpy.lib.stride_tricks.as_strided( A, shape, strides )
 
 def inv( arr, axes ):
@@ -256,21 +252,21 @@ def cross( v1, v2, axis ):
     v2 = v2[ (numpy.newaxis,)*(v1.ndim-v2.ndim) ]
   return numpy.cross( v1, v2, axis=axis )
 
-def stack( *arrays ):
+def stack( arrays, axis=0 ):
   'powerful array stacker with singleton expansion'
 
   arrays = [ numpy.asarray(array,dtype=float) for array in arrays ]
   shape = [1] * max( array.ndim for array in arrays )
+  axis = normdim( len(shape)+1, axis )
   for array in arrays:
     for i in range(-array.ndim,0):
       if shape[i] == 1:
         shape[i] = array.shape[i]
       else:
         assert array.shape[i] in ( shape[i], 1 )
-  n = len(arrays)
-  stacked = numpy.empty( [n] + shape, dtype=float )
-  for i in range(n):
-    stacked[i] = arrays[i]
+  stacked = numpy.empty( shape[:axis]+[len(arrays)]+shape[axis:], dtype=float )
+  for i, arr in enumerate( arrays ):
+    stacked[(slice(None),)*axis+(i,)] = arr
   return stacked
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

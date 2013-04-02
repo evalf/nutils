@@ -25,7 +25,7 @@ class ElemFunc( function.ArrayFunc ):
       points = transform.eval( points )
     return points
 
-  def __localgradient__( self, ndims ):
+  def _localgradient( self, ndims ):
     'local gradient'
 
     return function.transform( self.domainelem.ndims, ndims )

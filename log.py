@@ -1,4 +1,4 @@
-from . import core, prop
+from . import core, prop, exception
 import sys, time, os, traceback, warnings, numpy
 
 _KEY = '__logger__'
@@ -55,16 +55,13 @@ def iterate( text, iterable, target=None, **kwargs ):
   finally:
     frame = f_locals[_KEY] = logger.parent
 
-def exception( exc_info=None ):
+def traceback( excinfo=None ):
   'print traceback'
 
-  exc_type, exc_value, exc_traceback = exc_info or sys.exc_info()
-  while exc_traceback.tb_next:
-    exc_traceback = exc_traceback.tb_next
-  frame = exc_traceback.tb_frame
-  parts = traceback.format_stack( frame ) + traceback.format_exception_only( exc_type, exc_value )
-  #parts = traceback.format_exception_only( exc_type, exc_value )
-  _findlogger( frame ).write( ('error',(''.join( reversed(parts) ).rstrip(),)) )
+  excinfo = exception.ExcInfo( excinfo )
+  summary = ''.join( reversed(excinfo.summary()) ).rstrip(),
+  _findlogger( excinfo[-1].frame ).write( ('error',summary) )
+  return excinfo
 
 class SimpleLog( object ):
   'simple log'
@@ -81,18 +78,18 @@ class SimpleLog( object ):
     s = (_makestr(args),) if args else ()
     print ' > '.join( chunks[:-1] + s )
 
-def setup_html( maxlevel, path, title, depth=0 ):
+def setup_html( maxlevel, fileobj, title, depth=0 ):
   'setup html logging'
 
-  sys._getframe(depth+1).f_locals[_KEY] = HtmlLog( maxlevel, path, title )
+  sys._getframe(depth+1).f_locals[_KEY] = HtmlLog( maxlevel, fileobj, title )
 
 class HtmlLog( object ):
   'html log'
 
-  def __init__( self, maxlevel, path, title ):
+  def __init__( self, maxlevel, fileobj, title ):
     'constructor'
 
-    self.html = open( path, 'w' )
+    self.html = fileobj
     self.html.write( '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "DTD/xhtml1-strict.dtd">\n' )
     self.html.write( '<html><head>\n' )
     self.html.write( '<title>%s</title>\n' % title )
@@ -129,7 +126,9 @@ class HtmlLog( object ):
       if mtype == 'path':
         args = [ '<a href="%s" name="%s" class="plot">%s</a>' % (args[0],args[0],args[0]) ] \
              + [ '<a href="%s">%s</a>' % (arg,arg) for arg in args[1:] ]
-      last = _makestr( args )
+        last = _makestr( args )
+      else:
+        last = _makestr( args ).replace( '<', '&lt;' ).replace( '>', '&gt;' )
       if '\n' in last:
         parts = last.split( '\n' )
         last = '\n'.join( [ '<b>%s</b>' % parts[0] ] + parts[1:] )
