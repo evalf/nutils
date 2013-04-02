@@ -218,7 +218,7 @@ class VTKFile( BasePlot ):
     self.vtkMesh.SetPoints( vtkPoints )
 
   def unstructuredgrid( self, points ):
-    'add unstructured grid'
+    """add unstructured grid"""
 
     assert isinstance( points, (list,tuple,numpy.ndarray) ), 'Expected list of point arrays'
 
