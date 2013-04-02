@@ -2883,6 +2883,11 @@ def inverse( arg, axes=(-2,-1) ):
 
   return numeric.inv( arg, (ax1,ax2) )
 
+def inv( arg, ax1=-2, ax2=-1 ):
+  warnings.warn( '''inv(array,i,j) will be removed in future
+  Please use inverse(array,(i,j)) instead.''', DeprecationWarning, stacklevel=2 )
+  return inverse( arg, (ax1,ax2) )
+
 def takediag( arg, ax1=-2, ax2=-1 ):
   'takediag'
 
