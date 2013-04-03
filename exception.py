@@ -72,6 +72,8 @@ class ExcInfo( object ):
       source = lines[iline][indent:].rstrip()
       while iline < lineno or not lines[iline+1][:indent+1].strip():
         iline += 1
+        if iline >= len(lines): # TODO why does this happen??
+          break
         if lineno<=iline<lineno+counterr:
           source += '\n>' + lines[iline][indent+1:].rstrip()
         else:
