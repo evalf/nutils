@@ -398,7 +398,9 @@ class TrimmedElement( Element ):
 
         tri[-2:] = tri[:-3:-1]
       else:
-        raise Exception('Negative determinant could not be resolved')
+        if abs(transform.det) < numpy.spacing(1):
+          continue
+        raise Exception('Negative determinant with value %12.10e could not be resolved' % transform.det )
 
       simplices.append( Element( self.id + '.simplex(%d)' % i, parent=(self,transform) ) )
 
