@@ -407,12 +407,12 @@ class Topology( object ):
 
     return self if n <= 0 else self.refined.refine( n-1 )
 
-  def get_simplices( self, title='getting simplices', **kwargs ):
+  def get_simplices( self, maxrefine, title='getting simplices' ):
     'Getting simplices'
 
     log.context( title )
 
-    return [ simplex for elem in self for simplex in elem.get_simplices( **kwargs ) ]
+    return [ simplex for elem in self for simplex in elem.get_simplices( maxrefine ) ]
 
 class StructuredTopology( Topology ):
   'structured topology'

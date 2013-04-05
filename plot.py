@@ -286,13 +286,13 @@ class VTKFile( BasePlot ):
       array.SetTuple( i, d )
     return array
 
-def writevtu( name, topo, coords, pointdata={}, celldata={}, ascii=False, superelements=False, **kwargs ):
+def writevtu( name, topo, coords, pointdata={}, celldata={}, ascii=False, superelements=False, maxrefine=3, **kwargs ):
   'write vtu from coords function'
 
   with VTKFile( name, ascii=ascii ) as vtkfile:
 
     if not superelements:
-      topo = topology.UnstructuredTopology( topo.get_simplices( **kwargs ), topo.ndims )
+      topo = topology.UnstructuredTopology( topo.get_simplices( maxrefine=maxrefine ), topo.ndims )
     else:
       topo = topology.UnstructuredTopology( filter(None,[elem if not isinstance(elem,element.TrimmedElement) else elem.elem for elem in topo]), topo.ndims )
 

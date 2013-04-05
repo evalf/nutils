@@ -238,7 +238,7 @@ class Element( object ):
     parent = self, AffineTransformation( numpy.zeros(self.ndims), numpy.eye(self.ndims) )
     return TrimmedElement( elem=self, levelset=levelset, maxrefine=maxrefine, lscheme=lscheme, finestscheme=finestscheme, evalrefine=evalrefine, parent=parent, id=self.id+'.trim' )
 
-  def get_simplices ( self, **kwargs ):
+  def get_simplices ( self, maxrefine ):
     'divide in simple elements'
 
     return self,
@@ -338,7 +338,7 @@ class TrimmedElement( Element ):
     transform = self.elem.edgetransform( self.ndims )[ iedge ]
     return QuadElement( id=self.id+'.edge({})'.format(iedge), ndims=self.ndims-1, context=(self,transform) )
 
-  def get_simplices ( self, maxrefine=3, **kwargs ):
+  def get_simplices ( self, maxrefine ):
     'divide in simple elements'
 
     if maxrefine > 0 or self.evalrefine > 0:
