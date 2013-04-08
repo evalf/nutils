@@ -1028,6 +1028,20 @@ class Concatenate( ArrayFunc ):
     assert n0 == self.shape[ self.axis ]
     return concatenate( funcs, self.axis )
 
+  def _cross( self, other, axis ):
+    if axis == self.axis:
+      n = 1, 2, 0
+      m = 2, 0, 1
+      return take(self,n,axis) * take(other,m,axis) - take(self,m,axis) * take(other,n,axis)
+    funcs = []
+    n0 = 0
+    for func in self.funcs:
+      n1 = n0 + func.shape[ self.axis ]
+      funcs.append( cross( func, take( other, slice(n0,n1), self.axis ), axis ) )
+      n0 = n1
+    assert n0 == self.shape[ self.axis ]
+    return concatenate( funcs, self.axis )
+
   def _add( self, other ):
     if isinstance( other, Concatenate ) and self.axis == other.axis:
       fg = zip( self.funcs, other.funcs )
@@ -1122,13 +1136,6 @@ class Concatenate( ArrayFunc ):
 
   def _negative( self ):
     return concatenate( [ -func for func in self.funcs ], self.axis )
-
-  def _cross( self, other, axis ):
-    if axis != self.axis:
-      return concatenate( [ cross( func, other, axis ) for func in self.funcs ], self.axis )
-    n = 1, 2, 0
-    m = 2, 0, 1
-    return take(self,n,axis) * take(other,m,axis) - take(self,m,axis) * take(other,n,axis)
 
 class Interp1D( ArrayFunc ):
   'interpolate data'
@@ -1732,7 +1739,8 @@ class Zeros( PriorityFunc ):
     return _zeros( shape )
 
   def _cross( self, other, axis ):
-    return self
+    shape = _jointshape( self.shape, other.shape )
+    return _zeros( shape )
 
   def _negative( self ):
     return self
@@ -2128,6 +2136,10 @@ def _equal( arg1, arg2 ):
 
   if arg1 is arg2:
     return True
+  if isinstance( arg1, (list,tuple) ):
+    if not isinstance( arg2, (list,tuple) ) or len(arg1) != len(arg2):
+      return False
+    return all( _equal(v1,v2) for v1, v2 in zip( arg1, arg2 ) )
   if not isinstance( arg1, numpy.ndarray ) and not isinstance( arg2, numpy.ndarray ):
     return arg1 == arg2
   arg1 = numpy.asarray( arg1 )
@@ -2207,6 +2219,8 @@ def repeat( arg, length, axis ):
 
   retval = _call( arg, '_repeat', length, axis )
   if retval is not None:
+    shape = arg.shape[:axis] + (length,) + arg.shape[axis+1:]
+    assert retval.shape == shape, 'bug in %s._repeat' % arg
     return retval
 
   return Repeat( arg, length, axis )
@@ -2229,6 +2243,7 @@ def get( arg, iax, item ):
 
   retval = _call( arg, '_get', iax, item )
   if retval is not None:
+    assert retval.shape == arg.shape[:iax] + arg.shape[iax+1:], 'bug in %s._get' % arg
     return retval
 
   return Get( arg, iax, item )
@@ -2251,6 +2266,10 @@ def align( arg, axes, ndim ):
 
   retval = _call( arg, '_align', axes, ndim )
   if retval is not None:
+    shape = [1] * ndim
+    for i, axis in enumerate( axes ):
+      shape[axis] = arg.shape[i]
+    assert retval.shape == tuple(shape), 'bug in %s._align' % arg
     return retval
 
   return Align( arg, axes, ndim )
@@ -2338,7 +2357,7 @@ def sum( arg, axes=-1 ):
 
   retval = _call( arg, '_sum', axis )
   if retval is not None:
-    assert retval.shape == arg.shape[:axis] + arg.shape[axis+1:]
+    assert retval.shape == arg.shape[:axis] + arg.shape[axis+1:], 'bug in %s._sum' % arg
     return retval
 
   return Sum( arg, axis )
@@ -2408,7 +2427,7 @@ def determinant( arg, axes=(-2,-1) ):
 
   retval = _call( arg, '_determinant' )
   if retval is not None:
-    assert retval.shape == shape
+    assert retval.shape == shape, 'bug in %s._determinant' % arg
     return retval
 
   return Determinant( arg )
@@ -2438,7 +2457,7 @@ def inverse( arg, axes=(-2,-1) ):
 
   retval = _call( arg, '_inverse' )
   if retval is not None:
-    assert retval.shape == arg.shape
+    assert retval.shape == arg.shape, 'bug in %s._inverse' % arg
     return transpose( retval, trans )
 
   return transpose( Inverse(arg), trans )
@@ -2472,7 +2491,7 @@ def takediag( arg, ax1=-2, ax2=-1 ):
 
   retval = _call( arg, '_takediag' )
   if retval is not None:
-    assert retval.shape == shape
+    assert retval.shape == shape, 'bug in %s._takediag' % arg
     return retval
 
   return TakeDiag( arg )
@@ -2487,7 +2506,7 @@ def localgradient( arg, ndims ):
     return _zeros( shape )
 
   lgrad = arg._localgradient( ndims )
-  assert lgrad.shape == shape
+  assert lgrad.shape == shape, 'bug in %s._localgradient' % arg
 
   return lgrad
 
@@ -2516,7 +2535,7 @@ def diagonalize( arg ):
 
   retval = _call( arg, '_diagonalize' )
   if retval is not None:
-    assert retval.shape == shape
+    assert retval.shape == shape, 'bug in %s._diagonalize' % arg
     return retval
 
   return Diagonalize( arg )
@@ -2585,7 +2604,7 @@ def product( arg, axis ):
 
   retval = _call( arg, '_product', axis )
   if retval is not None:
-    assert retval.shape == shape
+    assert retval.shape == shape, 'bug in %s._product' % arg
     return retval
 
   return Product( arg, axis )
@@ -2610,12 +2629,12 @@ def cross( arg1, arg2, axis ):
 
   retval = _call( arg1, '_cross', arg2, axis )
   if retval is not None:
-    assert retval.shape == shape
+    assert retval.shape == shape, 'bug in %s._cross' % arg1
     return retval
 
   retval = _call( arg2, '_cross', arg1, axis )
   if retval is not None:
-    assert retval.shape == shape
+    assert retval.shape == shape, 'bug in %s._cross' % arg2
     return -retval
 
   return Cross( arg1, arg2, axis )
@@ -2655,12 +2674,12 @@ def multiply( arg1, arg2 ):
 
   retval = _call( arg1, '_multiply', arg2 )
   if retval is not None:
-    assert retval.shape == shape
+    assert retval.shape == shape, 'bug in %s._multiply' % arg1
     return retval
 
   retval = _call( arg2, '_multiply', arg1 )
   if retval is not None:
-    assert retval.shape == shape
+    assert retval.shape == shape, 'bug in %s._multiply' % arg2
     return retval
 
   return Multiply( arg1, arg2 )
@@ -2685,7 +2704,7 @@ def divide( arg1, arg2 ):
 
   retval = _call( arg1, '_divide', arg2 )
   if retval is not None:
-    assert retval.shape == shape
+    assert retval.shape == shape, 'bug in %s._divide' % arg1
     return retval
 
   return Divide( arg1, arg2 )
@@ -2743,7 +2762,7 @@ def subtract( arg1, arg2 ):
 
   retval = _call( arg1, '_subtract', arg2 )
   if retval is not None:
-    assert retval.shape == shape
+    assert retval.shape == shape, 'bug in %s._subtract' % arg1
     return retval
 
   return Subtract( arg1, arg2 )
@@ -2758,7 +2777,7 @@ def negative( arg ):
 
   retval = _call( arg, '_negative' )
   if retval is not None:
-    assert retval.shape == arg.shape
+    assert retval.shape == arg.shape, 'bug in %s._negative' % arg
     return retval
 
   return Negative( arg )
@@ -2780,7 +2799,7 @@ def power( arg, n ):
 
   retval = _call( arg, '_power', n )
   if retval is not None:
-    assert retval.shape == arg.shape
+    assert retval.shape == arg.shape, 'bug in %s._power' % arg
     return retval
 
   return Power( arg, n )
