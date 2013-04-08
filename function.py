@@ -207,13 +207,11 @@ class Evaluable( object ):
   def __eq__( self, other ):
     'compare'
 
-    if self is other:
-      return True
-      
-    if self.__class__ != other.__class__ or self.__evalf != other.__evalf or len( self.__args ) != len( other.__args ):
-      return False
-
-    return all( _equal(arg1,arg2) for arg1, arg2 in zip( self.__args, other.__args ) )
+    return self is other or (
+          self.__class__ == other.__class__
+      and self.__evalf == other.__evalf
+      and len( self.__args ) == len( other.__args )
+      and all( _equal(arg1,arg2) for arg1, arg2 in zip( self.__args, other.__args ) ) )
 
   def __ne__( self, other ):
     'not equal'
@@ -308,7 +306,7 @@ class ArrayFunc( Evaluable ):
 
   @property
   def blocks( self ):
-    s = tuple( None if n is None else numpy.arange(n) for n in self.shape )
+    s = tuple( numpy.arange(n) if isinstance(n,int) else None for n in self.shape )
     yield self, s
 
   def vector( self, ndims ):
@@ -375,12 +373,6 @@ class ArrayFunc( Evaluable ):
       raise TypeError, 'scalar function is not iterable'
 
     return ( self[i,...] for i in range(self.shape[0]) )
-
-  @classmethod
-  def stack( cls, funcs, axis ):
-    'stack'
-
-    return stack( funcs, axis )
 
   def verify( self, value ):
     'check result'
@@ -596,18 +588,6 @@ class ElemInt( ArrayFunc ):
 
 class Align( ArrayFunc ):
   'align axes'
-
-  @classmethod
-  def stack( cls, funcs, axis ):
-    'stack funcs along new axis'
-
-    axes = funcs[0].axes
-    ndim = funcs[0].ndim
-    if not all( isinstance(func,cls) and func.axes == axes and func.ndim == ndim for func in funcs ):
-      return ArrayFunc.stack( funcs, axis )
-
-    newaxes = [ ax if ax < axis else ax+1 for ax in axes ] + [ axis ]
-    return Align( funcs[0].stack( funcs, len(axes) ), newaxes )
 
   def __init__( self, func, axes, ndim ):
     'constructor'
@@ -850,12 +830,12 @@ class Transform( ArrayFunc ):
 class Function( ArrayFunc ):
   'local gradient'
 
-  def __init__( self, stdmap, igrad ):
+  def __init__( self, stdmap, igrad, axis='?' ):
     'constructor'
 
     self.stdmap = stdmap
     self.igrad = igrad
-    ArrayFunc.__init__( self, args=(ELEM,POINTS,stdmap,igrad), evalf=self.function, shape=(None,)+(stdmap.ndims,)*igrad )
+    ArrayFunc.__init__( self, args=(ELEM,POINTS,stdmap,igrad), evalf=self.function, shape=(axis,)+(stdmap.ndims,)*igrad )
 
   @staticmethod
   def function( elem, points, stdmap, igrad ):
@@ -888,7 +868,7 @@ class Function( ArrayFunc ):
 
   def _localgradient( self, ndims ):
     assert ndims <= self.stdmap.ndims
-    grad = Function( self.stdmap, self.igrad+1 )
+    grad = Function( self.stdmap, self.igrad+1, self.shape[0] )
     return grad if ndims == self.stdmap.ndims \
       else dot( grad[...,_], transform( self.stdmap.ndims, ndims ), axes=-2 )
 
@@ -960,11 +940,11 @@ class Inverse( ArrayFunc ):
 class DofMap( ArrayFunc ):
   'dof axis'
 
-  def __init__( self, dofmap ):
+  def __init__( self, dofmap, axis ):
     'new'
 
     self.dofmap = dofmap
-    ArrayFunc.__init__( self, args=(ELEM,dofmap), evalf=self.evalmap, shape=[None] )
+    ArrayFunc.__init__( self, args=(ELEM,dofmap), evalf=self.evalmap, shape=[axis] )
 
   @staticmethod
   def evalmap( elem, dofmap ):
@@ -1104,7 +1084,7 @@ class Concatenate( ArrayFunc ):
     return concatenate( funcs, axis=-1 )
 
   def _inflate( self, dofmap, length, axis ):
-    assert self.shape[axis] == None
+    assert not isinstance( self.shape[axis], int )
     return concatenate( [ inflate(func,dofmap,length,axis) for func in self.funcs ], self.axis )
 
   def _take( self, indices, axis ):
@@ -1202,18 +1182,6 @@ class Determinant( ArrayFunc ):
 class DofIndex( ArrayFunc ):
   'element-based indexing'
 
-  @classmethod
-  def stack( cls, funcs, axis ):
-    'stack'
-
-    array = funcs[0].array
-    iax = funcs[0].iax
-    if not all( isinstance(func,cls) and ( func.array == array ).all() and func.iax == iax for func in funcs ):
-      return ArrayFunc.stack( funcs, axis )
-
-    index = funcs[0].index.stack( [ func.index for func in funcs ], axis )
-    return DofIndex( array, iax, index )
-
   def __init__( self, array, iax, index ):
     'constructor'
 
@@ -1257,6 +1225,11 @@ class DofIndex( ArrayFunc ):
   def _localgradient( self, ndims ):
     return _zeros( self.shape + (ndims,) )
 
+  def _concatenate( self, other, axis ):
+    if isinstance( other, DofIndex ) and self.iax == other.iax and self.index == other.index:
+      array = numpy.concatenate( [ self.array, other.array ], axis )
+      return DofIndex( array, self.iax, self.index )
+
 class Multiply( ArrayFunc ):
   'multiply'
 
@@ -1270,14 +1243,9 @@ class Multiply( ArrayFunc ):
   def __eq__( self, other ):
     'compare'
 
-    if self is other:
-      return True
-      
-    if not isinstance(other,Multiply):
-      return False
-
-    return _equal( self.funcs[0], other.funcs[0] ) and _equal( self.funcs[1], other.funcs[1] ) \
-        or _equal( self.funcs[0], other.funcs[1] ) and _equal( self.funcs[1], other.funcs[0] )
+    return self is other or (
+          isinstance( other, Multiply )
+      and _matchpairs( self.funcs, other.funcs ) )
 
   def _sum( self, axis ):
     func1, func2 = self.funcs
@@ -1433,9 +1401,9 @@ class Add( ArrayFunc ):
   def __eq__( self, other ):
     'compare'
 
-    return self is other or isinstance(other,Add) and (
-        _equal( self.funcs[0], other.funcs[0] ) and _equal( self.funcs[1], other.funcs[1] )
-     or _equal( self.funcs[0], other.funcs[1] ) and _equal( self.funcs[1], other.funcs[0] ) )
+    return self is other or (
+          isinstance( other, Add )
+      and _matchpairs( self.funcs, other.funcs ) )
 
   def _sum( self, axis ):
     return sum( self.funcs[0], axis ) + sum( self.funcs[1], axis )
@@ -1505,22 +1473,6 @@ class Dot( ArrayFunc ):
     self.orig = orig # new -> original axis
     ArrayFunc.__init__( self, args=(func1,func2,tuple( ax-func1.ndim for ax in axes )), evalf=numeric.contract, shape=shape )
 
-  @classmethod
-  def stack( cls, funcs, axis ):
-    'stack funcs along new axis'
-
-    axes = funcs[0].axes
-    if not all( isinstance(func,cls) and func.axes == axes for func in funcs ):
-      return ArrayFunc.stack( funcs, axis )
-
-    func1 = funcs[0].func1
-    if all( func.func1 == func1 for func in funcs ):
-      func2 = funcs[0].func2
-      newaxes = [ ax if ax < axis else ax + 1 for ax in axes ]
-      return Dot( insert( func1, axis ), func2.stack( [ func.func2 for func in funcs ], axis ), newaxes )
-
-    return ArrayFunc.stack( funcs, axis )
-
   def _get( self, i, item ):
     getax = self.orig[i]
     axes = [ ax - (ax>getax) for ax in self.axes ]
@@ -1535,14 +1487,18 @@ class Dot( ArrayFunc ):
       return dot( self.func1, self.func2 * other, self.axes )
 
   def _add( self, other ):
-    #TODO check for other combinations
-    if isinstance( other, Dot ) and self.func1 == other.func1 and self.axes == other.axes and self.shape == other.shape:
-      return dot( self.func1, self.func2 + other.func2, self.axes )
+    if isinstance( other, Dot ) and self.axes == other.axes:
+      common = _findcommon( (self.func1,self.func2), (other.func1,other.func2) )
+      if common:
+        f, (g1,g2) = common
+        return dot( f, g1 + g2, self.axes )
 
   def _subtract( self, other ):
-    #TODO check for other combinations
-    if isinstance( other, Dot ) and self.func1 == other.func1 and self.axes == other.axes and self.shape == other.shape:
-      return dot( self.func1, self.func2 - other.func2, self.axes )
+    if isinstance( other, Dot ) and self.axes == other.axes:
+      common = _findcommon( (self.func1,self.func2), (other.func1,other.func2) )
+      if common:
+        f, (g1,g2) = common
+        return dot( f, g1 - g2, self.axes )
 
   def _takediag( self ):
     n1, n2 = self.orig[-2:]
@@ -1557,19 +1513,15 @@ class Dot( ArrayFunc ):
     axis = self.orig[axis]
     return dot( take(self.func1,index,axis), take(self.func2,index,axis), self.axes )
 
-# def _concatenate( self, other, axis ):
-#   if isinstance( other, Dot ) and other.axes == self.axes:
-#     for ax in self.axes:
-#       if ax <= axis:
-#         axis += 1
-#     if self.func1 == other.func1:
-#       return dot( self.func1, concatenate( [ self.func2, other.func2 ], axis ), self.axes )
-#     if self.func1 == other.func2:
-#       return dot( self.func1, concatenate( [ self.func2, other.func1 ], axis ), self.axes )
-#     if self.func2 == other.func1:
-#       return dot( self.func2, concatenate( [ self.func1, other.func2 ], axis ), self.axes )
-#     if self.func2 == other.func2:
-#       return dot( self.func2, concatenate( [ self.func1, other.func1 ], axis ), self.axes )
+  def _concatenate( self, other, axis ):
+    if isinstance( other, Dot ) and other.axes == self.axes:
+      axis = self.orig[axis]
+      common = _findcommon( (self.func1,self.func2), (other.func1,other.func2) )
+      if common:
+        f, g12 = common
+        tryconcat = concatenate( g12, axis )
+        if not isinstance( tryconcat, Concatenate ): # avoid inf recursion
+          return dot( f, tryconcat, self.axes )
 
 class Sum( ArrayFunc ):
   'sum'
@@ -1742,8 +1694,8 @@ class Zeros( PriorityFunc ):
   def __init__( self, shape ):
     'constructor'
 
-    arrayshape = tuple( shape )
-    PriorityFunc.__init__( self, args=[POINTS,arrayshape], evalf=self.zeros, shape=shape )
+    shape = tuple( shape )
+    PriorityFunc.__init__( self, args=[POINTS,shape], evalf=self.zeros, shape=shape )
 
   @property
   def blocks( self ):
@@ -1814,7 +1766,7 @@ class Zeros( PriorityFunc ):
     return _zeros( self.shape[:axis] + index.shape + self.shape[axis+1:] )
 
   def _inflate( self, dofmap, length, axis ):
-    assert self.shape[axis] == None
+    assert not isinstance( self.shape[axis], int )
     return _zeros( self.shape[:axis] + (length,) + self.shape[axis+1:] )
 
   def _elemint( self, weights ):
@@ -2130,6 +2082,19 @@ def _obj2str( obj ):
     return '<elem>'
   return str(obj)
 
+def _findcommon( (a1,a2), (b1,b2) ):
+  'find common item in 2x2 data'
+
+  if _equal( a1, b1 ):
+    return a1, (a2,b2)
+  if _equal( a1, b2 ):
+    return a1, (a2,b1)
+  if _equal( a2, b1 ):
+    return a2, (a1,b2)
+  if _equal( a2, b2 ):
+    return a2, (a1,b1)
+
+_matchpairs = lambda (a1,a2), (b1,b2): _equal(a1,b1) and _equal(a2,b2) or _equal(a1,b2) and _equal(a2,b1)
 _max = max
 _min = min
 _sum = sum
@@ -2213,9 +2178,9 @@ def chain( funcs ):
 
   funcs = map( _asarray, funcs )
   shapes = [ func.shape[0] for func in funcs ]
-  return [
-    concatenate( [ func if i==j else _zeros( (sh,) + func.shape[1:] ) for j, sh in enumerate(shapes) ], axis=0 )
-      for i, func in enumerate(funcs) ]
+  return [ concatenate( [ func if i==j else _zeros( (sh,) + func.shape[1:] )
+             for j, sh in enumerate(shapes) ], axis=0 )
+               for i, func in enumerate(funcs) ]
 
 def vectorize( args ):
   'vectorize'
@@ -2843,11 +2808,13 @@ class ElemMap( dict ):
   def __repr__( self ):
     return 'ElemMap'
 
-def function( stdmap, dofmap, ndofs, ndims ):
+def function( fmap, nmap, ndofs, ndims ):
   'create function on ndims-element'
 
-  func = Function( ElemMap(stdmap,ndims), igrad=0 )
-  return Inflate( func, DofMap(ElemMap(dofmap,ndims)), length=ndofs, axis=0 )
+  axis = '~%d' % ndofs
+  func = Function( ElemMap(fmap,ndims), igrad=0, axis=axis )
+  dofmap = DofMap( ElemMap(nmap,ndims), axis=axis )
+  return Inflate( func, dofmap, length=ndofs, axis=0 )
 
 def transform( fromdims, todims ):
   'transform to lower-dimensional space'
@@ -2903,7 +2870,7 @@ def inflate( arg, dofmap, length, axis ):
 
   arg = _asarray( arg )
   axis = numeric.normdim( arg.ndim, axis )
-  assert arg.shape[axis] == None
+  assert not isinstance( arg.shape[axis], int )
 
   retval = _call( arg, '_inflate', dofmap, length, axis )
   if retval is not None:
