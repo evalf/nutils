@@ -1542,6 +1542,10 @@ class Dot( ArrayFunc ):
     axes = self.axes + (self.orig[axis],)
     return dot( self.func1, self.func2, axes )
 
+  def _take( self, index, axis ):
+    axis = self.orig[axis]
+    return dot( take(self.func1,index,axis), take(self.func2,index,axis), self.axes )
+
 # def _concatenate( self, other, axis ):
 #   if isinstance( other, Dot ) and other.axes == self.axes:
 #     for ax in self.axes:
