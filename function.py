@@ -694,6 +694,10 @@ class Align( ArrayFunc ):
     if not _isfunc(other) and len(self.axes) == self.ndim:
       return align( self.func / transform( other, self.axes ), self.axes, self.ndim )
 
+  def _take( self, indices, axis ):
+    n = self.axes.index( axis )
+    return align( take( self.func, indices, n ), self.axes, self.ndim )
+
 class Get( ArrayFunc ):
   'get'
 
@@ -725,6 +729,9 @@ class Get( ArrayFunc ):
     tryget = get( self.func, i+(i>=self.axis), item )
     if not isinstance( tryget, Get ): # avoid inf recursion
       return get( tryget, self.axis, self.item )
+
+  def _take( self, indices, axis ):
+    return get( take( self.func, indices, axis+(axis>=self.axis) ), self.axis, self.item )
 
 class Reciprocal( ArrayFunc ):
   'reciprocal'
@@ -1398,6 +1405,9 @@ class Negative( ArrayFunc ):
 
   def _takediag( self ):
     return -takediag( self.func )
+
+  def _take( self, index, axis ):
+    return -take( self.func, index, axis )
 
 class Add( ArrayFunc ):
   'add'
