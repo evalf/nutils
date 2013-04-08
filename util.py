@@ -52,6 +52,22 @@ def delaunay( points ):
   with suppressed_output:
     return spatial.Delaunay( points )
 
+def classfunc( f ):
+  'add string representation to generated function'
+
+  code = f.func_code
+  argnames = code.co_varnames[:code.co_argcount]
+  class function_wrapper( object ):
+    def __init__( self, *args, **kwargs ):
+      self.fun = f( *args, **kwargs )
+      items = zip( argnames, args ) + [ (name,kwargs[name]) for name in argnames[len(args):] ]
+      self.args = ','.join( '%s=%s' % item for item in items )
+    def __call__( self, *args, **kwargs ):
+      return self.fun( *args, **kwargs )
+    def __str__( self ):
+      return '%s(%s)' % ( f.__name__, self.args )
+  return function_wrapper
+
 def profile( func ):
   import cProfile, pstats
   frame = sys._getframe(1)
@@ -222,6 +238,15 @@ class Clock( object ):
       return True
     return False
 
+def tensorial( args ):
+  'create n-dimensional array containing tensorial combinations of n args'
+
+  shape = map( len, args )
+  array = numpy.empty( shape, dtype=object )
+  for index in numpy.lib.index_tricks.ndindex( *shape ):
+    array[index] = tuple([ arg[i] for arg, i in zip(args,index) ])
+  return array
+
 def arraymap( f, dtype, *args ):
   'call f for sequence of arguments and cast to dtype'
 
@@ -231,6 +256,7 @@ def arraymap( f, dtype, *args ):
 def objmap( func, *arrays ):
   'map numpy arrays'
 
+  arrays = map( numpy.asarray, arrays )
   return numpy.frompyfunc( func, len(arrays), 1 )( *arrays )
 
 def fail( msg, *args ):
@@ -314,7 +340,7 @@ def run( *functions ):
     arg = arg[2:]
     try:
       arg, val = arg.split( '=', 1 )
-      val = eval( val )
+      val = eval( val, sys._getframe(1).f_globals )
     except ValueError: # split failed
       val = True
     except (SyntaxError,NameError): # eval failed

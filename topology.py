@@ -167,7 +167,7 @@ class Topology( object ):
     retvals = []
     for ifunc, func in enumerate( funcs ):
       func = function._asarray( func )
-      if isinstance( func, function.Inflate ):
+      if function._isfunc( func ):
         if func.ndim == 2:
           nrows, ncols = func.shape
           graph = [[]] * nrows
@@ -337,7 +337,7 @@ class Topology( object ):
     for irefine in log.iterate( 'level', range(nrefine), showpct=False ):
   
       funcsp = topo.splinefunc( degree ) # shape functions for level irefine
-      func, (dofaxis,) = funcsp.get_func_ind() # separate elem-local funcs and global placement index
+      (func,(dofaxis,)), = funcsp.blocks # separate elem-local funcs and global placement index
   
       supported = numpy.ones( funcsp.shape[0], dtype=bool ) # True if dof is contained in topoelems or parentelems
       touchtopo = numpy.zeros( funcsp.shape[0], dtype=bool ) # True if dof touches at least one topoelem
@@ -376,11 +376,7 @@ class Topology( object ):
     for elem in parentelems:
       del dofmap[elem] # remove auxiliary elements
 
-    ndofs = int(ndofs) # make sure we have a python int
-    ind = function.DofMap( ElemMap(dofmap,self.ndims) ),
-    func = function.Function( stdmap=ElemMap(stdmap,self.ndims), igrad=0 )
-    funcsp = function.Inflate( (ndofs,), [(func,ind)] )
-
+    funcsp = function.function( stdmap, dofmap, ndofs, self.ndims )
     domain = UnstructuredTopology( topoelems, ndims=self.ndims )
 
     if hasattr( topo, 'boundary' ):
@@ -536,10 +532,8 @@ class StructuredTopology( Topology ):
       dofcount = int(renumber[-1])
       dofmap = dict( ( elem, renumber[dofs]-1 ) for elem, dofs in dofmap.iteritems() )
 
-    ind = function.DofMap( ElemMap(dofmap,self.ndims) ),
     funcmap = dict( numpy.broadcast( self.structure, stdelems ) )
-    funcsp = function.Function( stdmap=ElemMap(funcmap,self.ndims), igrad=0 )
-    return function.Inflate( [dofcount], [(funcsp,ind)] )
+    return function.function( funcmap, dofmap, dofcount, self.ndims )
 
   @core.cachefunc
   def curvefreesplinefunc( self ):
@@ -631,10 +625,8 @@ class StructuredTopology( Topology ):
       dofcount = int(renumber[-1])
       dofmap = dict( ( elem, renumber[dofs]-1 ) for elem, dofs in dofmap.iteritems() )
 
-    ind = function.DofMap( ElemMap(dofmap,self.ndims) ),
     funcmap = dict( numpy.broadcast( self.structure, stdelem ) )
-    funcsp = function.Function( stdmap=ElemMap(funcmap,self.ndims), igrad=0 )
-    return function.Inflate( [dofcount], [(funcsp,ind)] )
+    return function.function( funcmap, dofmap, dofcount, self.ndims )
 
   def rectilinearfunc( self, gridnodes ):
     'rectilinear func'
@@ -693,6 +685,7 @@ class IndexedTopology( Topology ):
   def splinefunc( self, degree ):
     'create spline function space'
 
+    raise NotImplementedError
     funcsp = self.topo.splinefunc( degree )
     func, (dofaxis,) = funcsp.get_func_ind()
     touched = numpy.zeros( funcsp.shape[0], dtype=bool )
@@ -756,7 +749,7 @@ class UnstructuredTopology( Topology ):
 
     try:
       linearfunc = self.linearfunc()
-      func, (dofaxis,) = linearfunc.get_func_ind()
+      (func,(dofaxis,)), = linearfunc.blocks
       ndofs = linearfunc.shape[0]
       edges = {}
       nmap = {}
@@ -791,10 +784,8 @@ class UnstructuredTopology( Topology ):
     #print 'boundary:', edges
 
     if dofaxis:
-      ind = function.DofMap( ElemMap(nmap,self.ndims) ),
       fmap = dict.fromkeys( elements, element.PolyTriangle(1) )
-      func = function.Function( stdmap=ElemMap(fmap,self.ndims), igrad=0 )
-      linearfunc = function.Inflate( (ndofs,), [(func,ind)] )
+      linearfunc = function.function( fmap, nmap, ndofs, self.ndim )
       namedfuncs = { 'spline2': linearfunc }
     else:
       namedfuncs = {}

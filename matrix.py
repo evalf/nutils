@@ -102,9 +102,7 @@ class Matrix( object ):
   def __init__( self, (nrows,ncols) ):
     'constructor'
 
-    assert type(nrows) is int # need exact type because of _csr funcs
-    assert type(ncols) is int
-    self.shape = nrows, ncols
+    self.shape = int(nrows), int(ncols) # need exact type because of _csr funcs
     self.size = nrows * ncols
 
   def __add__( self, other ):

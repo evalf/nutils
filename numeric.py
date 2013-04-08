@@ -25,6 +25,13 @@ def align( arr, trans, ndim ):
   shape[trans] = arr.shape
   return numpy.lib.stride_tricks.as_strided( arr, shape, strides )
 
+def get( arr, axis, item ):
+  'take single item from array axis'
+
+  arr = numpy.asarray( arr )
+  axis = normdim( arr.ndim, axis )
+  return arr[ (slice(None),) * axis + (item,) ]
+
 def expand( arr, *shape ):
   'expand'
 
@@ -263,5 +270,14 @@ def stack( arrays, axis=0 ):
   for i, arr in enumerate( arrays ):
     stacked[(slice(None),)*axis+(i,)] = arr
   return stacked
+
+def bringforward( arg, axis ):
+  'bring axis forward'
+
+  arg = numpy.asarray(arg)
+  axis = normdim(arg.ndim,axis)
+  if axis == 0:
+    return arg
+  return arg.transpose( [axis] + range(axis) + range(axis+1,arg.ndim) )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
