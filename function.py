@@ -1174,6 +1174,10 @@ class Cross( ArrayFunc ):
     return cross( self.func1[...,_], localgradient(self.func2,ndims), axis=self.axis ) \
          - cross( self.func2[...,_], localgradient(self.func1,ndims), axis=self.axis )
 
+  def _take( self, index, axis ):
+    if axis != self.axis:
+      return cross( take(self.func1,index,axis), take(self.func2,index,axis), self.axis )
+
 class Determinant( ArrayFunc ):
   'normal'
 
