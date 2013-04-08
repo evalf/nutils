@@ -179,9 +179,7 @@ def gmesh( path, btags=[], name=None ):
     for tag in tags:
       bgroups.setdefault( tag, [] ).append( belem )
 
-  ind = function.DofMap( topology.ElemMap(nmap,ndims) ),
-  func = function.Function( stdmap=topology.ElemMap(fmap,ndims), igrad=0 )
-  linearfunc = function.Inflate( (nnodes,), [(func,ind)] )
+  linearfunc = function.function( fmap, nmap, nnodes, ndims )
   namedfuncs = { 'spline2': linearfunc }
   topo = topology.UnstructuredTopology( elements, ndims=2, namedfuncs=namedfuncs )
   topo.boundary = topology.UnstructuredTopology( belements, ndims=1 )
@@ -280,9 +278,7 @@ def igatool( path, name=None ):
     fmap[ elem ] = element.ExtractionWrapper( poly, Ce.T )
     nmap[ elem ] = nids
 
-  ind = function.DofMap( topology.ElemMap(nmap,ndims) ),
-  func = function.Function( stdmap=topology.ElemMap(fmap,ndims), igrad=0 )
-  linearfunc = function.Inflate( (NumberOfPoints,), [(func,ind)] )
+  linearfunc = function.function( fmap, nmap, NumberOfPoints, ndims )
   namedfuncs = { 'spline%d' % degree: linearfunc }
 
   boundaries = {}
@@ -368,9 +364,7 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   belems = [ elem.edge(1) for elem in elements[:12] ]
   bgroups = { 'top': belems[0:3], 'left': belems[3:6], 'bottom': belems[6:9], 'right': belems[9:12] }
 
-  ind = function.DofMap( topology.ElemMap(nmap,2) ),
-  func = function.Function( stdmap=topology.ElemMap(fmap,2), igrad=0 )
-  linearfunc = function.Inflate( (21,), [(func,ind)] )
+  linearfunc = function.function( fmap, nmap, ndofs=21, ndims=2 )
   namedfuncs = { 'spline2': linearfunc }
   topo = topology.UnstructuredTopology( elements, ndims=2, namedfuncs=namedfuncs )
   topo.boundary = topology.UnstructuredTopology( belems, ndims=1 )
