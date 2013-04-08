@@ -1316,6 +1316,10 @@ class Multiply( ArrayFunc ):
     func1, func2 = self.funcs
     return takediag( func1 ) * takediag( func2 )
 
+  def _take( self, index, axis ):
+    func1, func2 = self.funcs
+    return take( func1, index, axis ) * take( func2, index, axis )
+
 class Divide( ArrayFunc ):
   'divide'
 
@@ -1339,6 +1343,10 @@ class Divide( ArrayFunc ):
   def _takediag( self ):
     func1, func2 = self.funcs
     return takediag( func1 ) / takediag( func2 )
+
+  def _take( self, index, axis ):
+    func1, func2 = self.funcs
+    return take( func1, index, axis ) / take( func2, index, axis )
 
 class Negative( ArrayFunc ):
   'negate'
@@ -1423,6 +1431,10 @@ class Add( ArrayFunc ):
     func1, func2 = self.funcs
     return takediag( func1 ) + takediag( func2 )
 
+  def _take( self, index, axis ):
+    func1, func2 = self.funcs
+    return take( func1, index, axis ) + take( func2, index, axis )
+
 class Subtract( ArrayFunc ):
   'subtract'
 
@@ -1447,6 +1459,10 @@ class Subtract( ArrayFunc ):
   def _takediag( self ):
     func1, func2 = self.funcs
     return takediag( func1 ) - takediag( func2 )
+
+  def _take( self, index, axis ):
+    func1, func2 = self.funcs
+    return take( func1, index, axis ) - take( func2, index, axis )
 
 class Dot( ArrayFunc ):
   'dot'
