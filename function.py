@@ -1873,6 +1873,7 @@ class Inflate( PriorityFunc ):
     if axis == self.axis:
       assert index == self.dofmap
       return self.func
+    return inflate( take( self.func, index, axis ), self.dofmap, self.length, self.axis )
 
   def _diagonalize( self ):
     assert self.axis < self.ndim-1
