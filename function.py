@@ -1143,6 +1143,13 @@ class Concatenate( ArrayFunc ):
   def _negative( self ):
     return concatenate( [ -func for func in self.funcs ], self.axis )
 
+  def _cross( self, other, axis ):
+    if axis != self.axis:
+      return concatenate( [ cross( func, other, axis ) for func in self.funcs ], self.axis )
+    n = 1, 2, 0
+    m = 2, 0, 1
+    return take(self,n,axis) * take(other,m,axis) - take(self,m,axis) * take(other,n,axis)
+
 class Interp1D( ArrayFunc ):
   'interpolate data'
 
