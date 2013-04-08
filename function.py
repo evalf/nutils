@@ -1905,7 +1905,7 @@ class Inflate( PriorityFunc ):
       other = other.func
     elif other.shape[self.axis] != 1:
       other = take( other, self.dofmap, self.axis )
-    return inflate( cross(self.func,other), self.dofmap, self.length, self.axis )
+    return inflate( cross(self.func,other,axis), self.dofmap, self.length, self.axis )
 
   def _neg( self ):
     return inflate( neg(self.func), self.dofmap, self.length, self.axis )
