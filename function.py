@@ -2030,6 +2030,10 @@ class Repeat( PriorityFunc ):
       return repeat( self.func, index.shape[0], self.axis )
     return repeat( take(self.func,index,axis), self.length, self.axis )
 
+  def _cross( self, other, axis ):
+    if axis != self.axis:
+      return repeat( cross( self.func, other, axis ), self.length, self.axis )
+
 class Const( PriorityFunc ):
   'pointwise transformation'
 
