@@ -1009,7 +1009,8 @@ class Concatenate( ArrayFunc ):
     if i == self.axis:
       for f in self.funcs:
         if item < f.shape[i]:
-          return get( f, i, item )
+          fexp = expand( f, self.shape[:self.axis] + (f.shape[self.axis],) + self.shape[self.axis+1:] )
+          return get( fexp, i, item )
         item -= f.shape[i]
     axis = self.axis - (self.axis > i)
     return concatenate( [ get( f, i, item ) for f in self.funcs ], axis=axis )
