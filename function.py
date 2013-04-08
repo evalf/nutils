@@ -2631,7 +2631,7 @@ def cross( arg1, arg2, axis ):
 
   retval = _call( arg1, '_cross', arg2, axis )
   if retval is not None:
-    return retvall
+    return retval
 
   retval = _call( arg2, '_cross', arg1, axis )
   if retval is not None:
