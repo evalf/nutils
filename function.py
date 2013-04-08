@@ -1103,20 +1103,20 @@ class Concatenate( ArrayFunc ):
   def _take( self, indices, axis ):
     if axis != self.axis:
       return concatenate( [ take(func,indices,axis) for func in self.funcs ], self.axis )
-    n0 = 0
     funcs = []
-    touched = 0
-    for func in self.funcs:
-      n1 = n0 + func.shape[axis]
-      where = (n0 <= indices) & (indices < n1)
-      assert not numpy.any( where[:touched] ), 'take shuffles concatenation order'
-      while numpy.any( where[touched:] ):
-        touched += 1
-      ind = indices[where]-n0
-      if len(ind) > 0:
-        funcs.append( take( func, ind, axis ) )
-      n0 = n1
-    assert n0 == self.shape[axis]
+    while len(indices):
+      n = 0
+      for func in self.funcs:
+        if n <= indices[0] < n + func.shape[axis]:
+          break
+        n += func.shape[axis]
+      else:
+        raise Exception, 'index out of bounds'
+      length = 1
+      while length < len(indices) and n <= indices[length] < n + func.shape[axis]:
+        length += 1
+      funcs.append( take( func, indices[:length]-n, axis ) )
+      indices = indices[length:]
     assert funcs, 'empty slice'
     if len( funcs ) == 1:
       return funcs[0]
