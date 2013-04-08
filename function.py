@@ -1210,13 +1210,11 @@ class DofIndex( ArrayFunc ):
 
   def _add( self, other ):
     if isinstance( other, DofIndex ) and self.iax == other.iax and self.index == other.index:
-      n = _min( self.array.shape[0], other.array.shape[0] )
-      return DofIndex( self.array[:n] + other.array[:n], self.iax, self.index )
+      return DofIndex( self.array + other.array, self.iax, self.index )
 
   def _subtract( self, other ):
     if isinstance( other, DofIndex ) and self.iax == other.iax and self.index == other.index:
-      n = _min( self.array.shape[0], other.array.shape[0] )
-      return DofIndex( self.array[:n] - other.array[:n], self.iax, self.index )
+      return DofIndex( self.array - other.array, self.iax, self.index )
 
   def _multiply( self, other ):
     if not _isfunc(other) and other.ndim == 0:
@@ -1262,15 +1260,10 @@ class Multiply( ArrayFunc ):
     if other == func2:
       return func2 * (func1+1)
     if isinstance( other, Multiply ):
-      f1, f2 = other.funcs
-      if f1 == func1:
-        return f1 * ( f2 + func2 )
-      if f1 == func2:
-        return f1 * ( f2 + func1 )
-      if f2 == func1:
-        return f2 * ( f1 + func2 )
-      if f2 == func2:
-        return f2 * ( f1 + func1 )
+      common = _findcommon( self.funcs, other.funcs )
+      if common:
+        f, (g1,g2) = common
+        return f * add( g1, g2 )
 
   def _determinant( self ):
     if self.funcs[0].shape[-2:] == (1,1):
@@ -1730,7 +1723,8 @@ class Zeros( PriorityFunc ):
     return _zeros( shape )
 
   def _dot( self, other, axes ):
-    shape = [ sh for i, sh in enumerate(self.shape) if i not in axes ]
+    shape = _jointshape( self.shape, other.shape )
+    shape = [ sh for i, sh in enumerate(shape) if i not in axes ]
     return _zeros( shape )
 
   def _divide( self, other ):
@@ -2344,6 +2338,7 @@ def sum( arg, axes=-1 ):
 
   retval = _call( arg, '_sum', axis )
   if retval is not None:
+    assert retval.shape == arg.shape[:axis] + arg.shape[axis+1:]
     return retval
 
   return Sum( arg, axis )
@@ -2378,12 +2373,16 @@ def dot( arg1, arg2, axes ):
   if not _isfunc(arg1) and not _isfunc(arg2):
     return numeric.contract( arg1, arg2, axes )
 
+  shape = tuple( sh for i, sh in enumerate(shape) if i not in axes )
+
   retval = _call( arg1, '_dot', arg2, axes )
   if retval is not None:
+    assert retval.shape == shape, 'bug in %s._dot' % arg1
     return retval
 
   retval = _call( arg2, '_dot', arg1, axes )
   if retval is not None:
+    assert retval.shape == shape, 'bug in %s._dot' % arg2
     return retval
 
   return Dot( arg1, arg2, axes )
@@ -2402,12 +2401,14 @@ def determinant( arg, axes=(-2,-1) ):
 
   trans = range(ax1) + [-2] + range(ax1,ax2-1) + [-1] + range(ax2-1,arg.ndim-2)
   arg = align( arg, trans, arg.ndim )
+  shape = arg.shape[:-2]
 
   if not _isfunc( arg ):
     return numeric.determinant( arg )
 
   retval = _call( arg, '_determinant' )
   if retval is not None:
+    assert retval.shape == shape
     return retval
 
   return Determinant( arg )
@@ -2437,6 +2438,7 @@ def inverse( arg, axes=(-2,-1) ):
 
   retval = _call( arg, '_inverse' )
   if retval is not None:
+    assert retval.shape == arg.shape
     return transpose( retval, trans )
 
   return transpose( Inverse(arg), trans )
@@ -2463,12 +2465,14 @@ def takediag( arg, ax1=-2, ax2=-1 ):
     return get( arg, -2, 0 )
 
   assert arg.shape[-1] == arg.shape[-2]
+  shape = arg.shape[:-1]
 
   if not _isfunc( arg ):
     return numeric.takediag( arg )
 
   retval = _call( arg, '_takediag' )
   if retval is not None:
+    assert retval.shape == shape
     return retval
 
   return TakeDiag( arg )
@@ -2477,14 +2481,13 @@ def localgradient( arg, ndims ):
   'local derivative'
 
   arg = _asarray( arg )
+  shape = arg.shape + (ndims,)
 
   if not _isfunc( arg ):
-    return _zeros( arg.shape + (ndims,) )
+    return _zeros( shape )
 
   lgrad = arg._localgradient( ndims )
-  assert lgrad.ndim == arg.ndim + 1 and lgrad.shape[-1] == ndims \
-     and all( sh2 == sh1 or sh1 is None and sh2 == 1 for sh1, sh2 in zip( arg.shape, lgrad.shape[:-1] ) ), \
-      'bug found in localgradient(%d): %s -> %s' % ( ndims, arg.shape, lgrad.shape )
+  assert lgrad.shape == shape
 
   return lgrad
 
@@ -2506,12 +2509,14 @@ def diagonalize( arg ):
   'diagonalize'
 
   arg = _asarray( arg )
+  shape = arg.shape + (arg.shape[-1],)
 
   if arg.shape[-1] == 1:
     return arg[...,_]
 
   retval = _call( arg, '_diagonalize' )
   if retval is not None:
+    assert retval.shape == shape
     return retval
 
   return Diagonalize( arg )
@@ -2570,6 +2575,7 @@ def product( arg, axis ):
 
   arg = _asarray( arg )
   axis = numeric.normdim( arg.ndim, axis )
+  shape = arg.shape[:axis] + arg.shape[axis+1:]
 
   if arg.shape[axis] == 1:
     return get( arg, axis, 0 )
@@ -2579,6 +2585,7 @@ def product( arg, axis ):
 
   retval = _call( arg, '_product', axis )
   if retval is not None:
+    assert retval.shape == shape
     return retval
 
   return Product( arg, axis )
@@ -2603,10 +2610,12 @@ def cross( arg1, arg2, axis ):
 
   retval = _call( arg1, '_cross', arg2, axis )
   if retval is not None:
+    assert retval.shape == shape
     return retval
 
   retval = _call( arg2, '_cross', arg1, axis )
   if retval is not None:
+    assert retval.shape == shape
     return -retval
 
   return Cross( arg1, arg2, axis )
@@ -2646,10 +2655,12 @@ def multiply( arg1, arg2 ):
 
   retval = _call( arg1, '_multiply', arg2 )
   if retval is not None:
+    assert retval.shape == shape
     return retval
 
   retval = _call( arg2, '_multiply', arg1 )
   if retval is not None:
+    assert retval.shape == shape
     return retval
 
   return Multiply( arg1, arg2 )
@@ -2674,6 +2685,7 @@ def divide( arg1, arg2 ):
 
   retval = _call( arg1, '_divide', arg2 )
   if retval is not None:
+    assert retval.shape == shape
     return retval
 
   return Divide( arg1, arg2 )
@@ -2698,10 +2710,12 @@ def add( arg1, arg2 ):
 
   retval = _call( arg1, '_add', arg2 )
   if retval is not None:
+    assert retval.shape == shape, 'bug in %s._add' % arg1
     return retval
 
   retval = _call( arg2, '_add', arg1 )
   if retval is not None:
+    assert retval.shape == shape, 'bug in %s._add' % arg2
     return retval
 
   return Add( arg1, arg2 )
@@ -2729,6 +2743,7 @@ def subtract( arg1, arg2 ):
 
   retval = _call( arg1, '_subtract', arg2 )
   if retval is not None:
+    assert retval.shape == shape
     return retval
 
   return Subtract( arg1, arg2 )
@@ -2743,6 +2758,7 @@ def negative( arg ):
 
   retval = _call( arg, '_negative' )
   if retval is not None:
+    assert retval.shape == arg.shape
     return retval
 
   return Negative( arg )
@@ -2764,6 +2780,7 @@ def power( arg, n ):
 
   retval = _call( arg, '_power', n )
   if retval is not None:
+    assert retval.shape == arg.shape
     return retval
 
   return Power( arg, n )
