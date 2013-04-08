@@ -1648,6 +1648,9 @@ class Take( ArrayFunc ):
   def _take( self, index, axis ):
     if axis == self.axis:
       return take( self.func, self.indices[index], axis )
+    trytake = take( self.func, index, axis )
+    if not isinstance( trytake, Take ): # avoid inf recursion
+      return take( trytake, self.index, self.axis )
 
 class Power( ArrayFunc ):
   'power'
