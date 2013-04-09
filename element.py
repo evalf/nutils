@@ -76,7 +76,6 @@ class TrimmedIScheme( object ):
       assert pelem is elem
       ipoints, iweights = ischeme
       points.append( transform.eval(ipoints) )
-      print 'DET', transform.det
       weights.append( iweights * transform.det )
 
     coords = numpy.concatenate( coords, axis=0 )
@@ -122,16 +121,6 @@ class AffineTransformation( object ):
 
     return self.transform.copy()
 
-  def transform_to( self, A, axis=-1 ):
-    'contract with axis 0'
-
-    return numeric.dot( A, self.transform, axis )
-
-  def transform_from( self, A, axis=-1 ):
-    'contract with axis 1'
-
-    return numeric.dot( A, self.transform.T, axis )
-
   def invapply( self, coords ):
     'apply inverse transformation'
 
@@ -158,6 +147,15 @@ class Element( object ):
     self.index = index
     self.parent = parent
     self.context = context
+
+    if parent:
+      pelem, trans = parent
+      self.root_transform = numpy.dot( pelem.root_transform, trans.transform )
+      self.inv_root_transform = numpy.dot( trans.invtrans, pelem.inv_root_transform )
+      self.root_det = pelem.root_det * trans.det
+    else:
+      self.inv_root_transform = self.root_transform = numpy.eye( self.ndims )
+      self.root_det = 1.
 
   def eval( self, where ):
     'get points'
