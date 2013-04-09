@@ -603,6 +603,9 @@ class StructuredTopology( Topology ):
 
       nd = n * (p-1) + 1
       numbers = numpy.arange( nd )
+      if idim in self.periodic:
+        numbers[-1] = numbers[0]
+        nd -= 1
       nodes_structure = nodes_structure[...,_] * nd + numbers
       dofcount *= nd
       slices.append( [ slice((p-1)*i,(p-1)*i+p) for i in range(n) ] )
