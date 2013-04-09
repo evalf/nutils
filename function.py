@@ -667,13 +667,6 @@ class Align( ArrayFunc ):
     if not _isfunc(other) and len(self.axes) == self.ndim:
       return align( self.func + transform( other, self.axes ), self.axes, self.ndim )
 
-  def _divide( self, other ):
-    #TODO make less restrictive:
-    if isinstance( other, Align ) and self.axes == other.axes:
-      return align( self.func / other.func, self.axes, self.ndim )
-    if not _isfunc(other) and len(self.axes) == self.ndim:
-      return align( self.func / transform( other, self.axes ), self.axes, self.ndim )
-
   def _take( self, indices, axis ):
     n = self.axes.index( axis )
     return align( take( self.func, indices, n ), self.axes, self.ndim )
@@ -712,29 +705,6 @@ class Get( ArrayFunc ):
 
   def _take( self, indices, axis ):
     return get( take( self.func, indices, axis+(axis>=self.axis) ), self.axis, self.item )
-
-class Reciprocal( ArrayFunc ):
-  'reciprocal'
-
-  def __init__( self, func ):
-    'constructor'
-
-    self.func = func
-    ArrayFunc.__init__( self, args=[func], evalf=numpy.reciprocal, shape=func.shape )
-
-  def _localgradient( self, ndims ):
-    'local gradient'
-
-    return -localgradient( self.func, ndims ) / self.func[...,_]**2
-
-  def _get( self, i, item ):
-    return reciprocal( get( self.func, i, item ) )
-
-  def _align( self, axes, ndim ):
-    return reciprocal( align( self.func, axes, ndim ) )
-
-  def _multiply( self, other ):
-    return other / self.func
 
 class Product( ArrayFunc ):
   'product'
@@ -1058,21 +1028,6 @@ class Concatenate( ArrayFunc ):
     assert n0 == self.shape[ self.axis ]
     return concatenate( funcs, self.axis )
 
-  def _subtract( self, other ):
-    if isinstance( other, Concatenate ) and self.axis == other.axis:
-      fg = zip( self.funcs, other.funcs )
-      if all( f.shape == g.shape for (f,g) in fg ):
-        return concatenate( [ f-g for (f,g) in fg ], axis=self.axis )
-      raise NotImplementedError # TODO: create matching partition
-    funcs = []
-    n0 = 0
-    for func in self.funcs:
-      n1 = n0 + func.shape[ self.axis ]
-      funcs.append( func - take( other, slice(n0,n1), self.axis ) )
-      n0 = n1
-    assert n0 == self.shape[ self.axis ]
-    return concatenate( funcs, self.axis )
-
   def _sum( self, axis ):
     if axis == self.axis:
       return util.sum( sum( func, axis ) for func in self.funcs )
@@ -1220,10 +1175,6 @@ class DofIndex( ArrayFunc ):
     if isinstance( other, DofIndex ) and self.iax == other.iax and self.index == other.index:
       return DofIndex( self.array + other.array, self.iax, self.index )
 
-  def _subtract( self, other ):
-    if isinstance( other, DofIndex ) and self.iax == other.iax and self.index == other.index:
-      return DofIndex( self.array - other.array, self.iax, self.index )
-
   def _multiply( self, other ):
     if not _isfunc(other) and other.ndim == 0:
       return DofIndex( self.array * other, self.iax, self.index )
@@ -1290,10 +1241,6 @@ class Multiply( ArrayFunc ):
       if not _isfunc( self.funcs[0] ):
         return self.funcs[1] * ( self.funcs[0] * other )
 
-  def _divide( self, other ):
-    if not _isfunc( other ) and not _isfunc( self.funcs[1] ):
-      return self.funcs[0] * ( self.funcs[1] / other )
-
   def _localgradient( self, ndims ):
     func1, func2 = self.funcs
     return func1[...,_] * localgradient( func2, ndims ) \
@@ -1306,34 +1253,6 @@ class Multiply( ArrayFunc ):
   def _take( self, index, axis ):
     func1, func2 = self.funcs
     return take( func1, index, axis ) * take( func2, index, axis )
-
-class Divide( ArrayFunc ):
-  'divide'
-
-  def __init__( self, func1, func2 ):
-    'constructor'
-
-    shape = _jointshape( func1.shape, func2.shape )
-    self.funcs = func1, func2
-    ArrayFunc.__init__( self, args=self.funcs, evalf=numpy.divide, shape=shape )
-
-  def _get( self, i, item ):
-    func1, func2 = self.funcs
-    return get( func1, i, item ) / get( func2, i, item )
-
-  def _localgradient( self, ndims ):
-    func1, func2 = self.funcs
-    grad1 = localgradient( func1, ndims )
-    grad2 = localgradient( func2, ndims )
-    return ( grad1 - func1[...,_] * grad2 / func2[...,_] ) / func2[...,_]
-
-  def _takediag( self ):
-    func1, func2 = self.funcs
-    return takediag( func1 ) / takediag( func2 )
-
-  def _take( self, index, axis ):
-    func1, func2 = self.funcs
-    return take( func1, index, axis ) / take( func2, index, axis )
 
 class Negative( ArrayFunc ):
   'negate'
@@ -1350,20 +1269,13 @@ class Negative( ArrayFunc ):
       yield negative(f), ind
 
   def _add( self, other ):
-    return other - self.func
-
-  def _subtract( self, other ):
-    return -( other + self.func )
+    if isinstance( other, Negative ):
+      return negative( self.func + other.func )
 
   def _multiply( self, other ):
     if isinstance( other, Negative ):
       return self.func * other.func
-    return -( self.func * other )
-
-  def _divide( self, other ):
-    if isinstance( other, Negative ):
-      return self.func / other.func
-    return -( self.func / other )
+    return negative( self.func * other )
 
   def _negative( self ):
     return self.func
@@ -1425,35 +1337,6 @@ class Add( ArrayFunc ):
     func1, func2 = self.funcs
     return take( func1, index, axis ) + take( func2, index, axis )
 
-class Subtract( ArrayFunc ):
-  'subtract'
-
-  def __init__( self, func1, func2 ):
-    'constructor'
-
-    shape = _jointshape( func1.shape, func2.shape )
-    self.funcs = func1, func2
-    ArrayFunc.__init__( self, args=self.funcs, evalf=numpy.subtract, shape=shape )
-
-  def _sum( self, axis ):
-    return sum( self.funcs[0], axis ) - sum( self.funcs[1], axis )
-
-  def _negative( self ):
-    func1, func2 = self.funcs
-    return func2 - func1
-
-  def _localgradient( self, ndims ):
-    func1, func2 = self.funcs
-    return localgradient( func1, ndims ) - localgradient( func2, ndims )
-
-  def _takediag( self ):
-    func1, func2 = self.funcs
-    return takediag( func1 ) - takediag( func2 )
-
-  def _take( self, index, axis ):
-    func1, func2 = self.funcs
-    return take( func1, index, axis ) - take( func2, index, axis )
-
 class Dot( ArrayFunc ):
   'dot'
 
@@ -1483,9 +1366,9 @@ class Dot( ArrayFunc ):
     return dot( localgradient( self.func1, ndims ), self.func2[...,_], self.axes ) \
          + dot( self.func1[...,_], localgradient( self.func2, ndims ), self.axes )
 
-  def _multiply( self, other ):
-    if not _isfunc(other) and isinstance( self.func2, DofIndex ):
-      return dot( self.func1, self.func2 * other, self.axes )
+# def _multiply( self, other ):
+#   if not _isfunc(other) and isinstance( self.func2, DofIndex ):
+#     return dot( self.func1, self.func2 * other, self.axes )
 
   def _add( self, other ):
     if isinstance( other, Dot ) and self.axes == other.axes:
@@ -1493,13 +1376,6 @@ class Dot( ArrayFunc ):
       if common:
         f, (g1,g2) = common
         return dot( f, g1 + g2, self.axes )
-
-  def _subtract( self, other ):
-    if isinstance( other, Dot ) and self.axes == other.axes:
-      common = _findcommon( (self.func1,self.func2), (other.func1,other.func2) )
-      if common:
-        f, (g1,g2) = common
-        return dot( f, g1 - g2, self.axes )
 
   def _takediag( self ):
     n1, n2 = self.orig[-2:]
@@ -1639,6 +1515,9 @@ class Power( ArrayFunc ):
   def _localgradient( self, ndims ):
     return self.power * ( self.func**(self.power-1) )[...,_] * localgradient( self.func, ndims )
 
+  def _power( self, n ):
+    return power( self.func, n * self.power )
+
   def _get( self, i, item ):
     return get( self.func, i, item )**self.power
 
@@ -1722,10 +1601,6 @@ class Zeros( PriorityFunc ):
     shape = _jointshape( self.shape, other.shape )
     return expand( other, shape )
 
-  def _subtract( self, other ):
-    shape = _jointshape( self.shape, other.shape )
-    return -expand( other, shape )
-
   def _multiply( self, other ):
     shape = _jointshape( self.shape, other.shape )
     return _zeros( shape )
@@ -1733,10 +1608,6 @@ class Zeros( PriorityFunc ):
   def _dot( self, other, axes ):
     shape = _jointshape( self.shape, other.shape )
     shape = [ sh for i, sh in enumerate(shape) if i not in axes ]
-    return _zeros( shape )
-
-  def _divide( self, other ):
-    shape = _jointshape( self.shape, other.shape )
     return _zeros( shape )
 
   def _cross( self, other, axis ):
@@ -1834,26 +1705,12 @@ class Inflate( PriorityFunc ):
       other = take( other, self.dofmap, self.axis )
     return inflate( multiply(self.func,other), self.dofmap, self.length, self.axis )
 
-  def _divide( self, other ):
-    if isinstance( other, Inflate ) and self.axis == other.axis:
-      other = other.func
-    elif other.shape[self.axis] != 1:
-      other = take( other, self.dofmap, self.axis )
-    return inflate( divide(self.func,other), self.dofmap, self.length, self.axis )
-
   def _add( self, other ):
     if isinstance( other, Inflate ) and self.axis == other.axis:
       other = other.func
     elif other.shape[self.axis] != 1:
       other = take( other, self.dofmap, self.axis )
     return inflate( add(self.func,other), self.dofmap, self.length, self.axis )
-
-  def _subtract( self, other ):
-    if isinstance( other, Inflate ) and self.axis == other.axis:
-      other = other.func
-    elif other.shape[self.axis] != 1:
-      other = take( other, self.dofmap, self.axis )
-    return inflate( subtract(self.func,other), self.dofmap, self.length, self.axis )
 
   def _cross( self, other, axis ):
     if isinstance( other, Inflate ) and self.axis == other.axis:
@@ -1865,8 +1722,8 @@ class Inflate( PriorityFunc ):
   def _neg( self ):
     return inflate( neg(self.func), self.dofmap, self.length, self.axis )
 
-  def _reciprocal( self ):
-    return inflate( reciprocal(self.func), self.dofmap, self.length, self.axis )
+  def _power( self ):
+    return inflate( power(self.func,n), self.dofmap, self.length, self.axis )
 
   def _takediag( self ):
     assert self.axis < self.ndim-2
@@ -1945,7 +1802,7 @@ class Repeat( PriorityFunc ):
     self.axis = axis
     self.length = length
     shape = func.shape[:axis] + (length,) + func.shape[axis+1:]
-    PriorityFunc.__init__( self, args=[func,length,axis-func.ndim], evalf=numpy.repeat, shape=shape )
+    PriorityFunc.__init__( self, args=[func,length,axis-func.ndim], evalf=numeric.fastrepeat, shape=shape )
 
   def _negative( self ):
     return repeat( -self.func, self.length, self.axis )
@@ -1969,20 +1826,14 @@ class Repeat( PriorityFunc ):
       return get( self.func, axis, 0 )**self.length
     return repeat( product( self.func, axis ), self.length, self.axis-(axis<self.axis) )
 
-  def _reciprocal( self ):
-    return repeat( reciprocal( self.func ), self.length, self.axis )
+  def _power( self, n ):
+    return repeat( power( self.func, n ), self.length, self.axis )
 
   def _add( self, other ):
     return repeat( self.func + other, self.length, self.axis )
 
-  def _subtract( self, other ):
-    return repeat( self.func - other, self.length, self.axis )
-
   def _multiply( self, other ):
     return repeat( self.func * other, self.length, self.axis )
-
-  def _divide( self, other ):
-    return repeat( self.func / other, self.length, self.axis )
 
   def _align( self, shuffle, ndim ):
     return repeat( align(self.func,shuffle,ndim), self.length, shuffle[self.axis] )
@@ -1992,9 +1843,22 @@ class Repeat( PriorityFunc ):
       return repeat( self.func, index.shape[0], self.axis )
     return repeat( take(self.func,index,axis), self.length, self.axis )
 
+  def _takediag( self ):
+    assert self.axis < self.ndim-2
+    return repeat( takediag( self.func ), self.length, self.axis )
+
   def _cross( self, other, axis ):
     if axis != self.axis:
       return repeat( cross( self.func, other, axis ), self.length, self.axis )
+
+  def _dot( self, other, axes ):
+    func = dot( self.func, other, axes )
+    if other.shape[self.axis] != 1:
+      assert other.shape[self.axis] == self.length
+      return func
+    if self.axis in axes:
+      return func * self.length
+    return repeat( func, self.length, self.axis - util.sum(ax < self.axis for ax in axes) )
 
 class Const( PriorityFunc ):
   'pointwise transformation'
@@ -2283,20 +2147,6 @@ def bringforward( arg, axis ):
   if axis == 0:
     return arg
   return transpose( args, [axis] + range(axis) + range(axis+1,args.ndim) )
-
-def reciprocal( arg ):
-  'reciprocal'
-
-  arg = _asarray( arg )
-
-  if not _isfunc( arg ):
-    return numpy.reciprocal( arg )
-
-  retval = _call( arg, '_reciprocal' )
-  if retval is not None:
-    return retval
-
-  return Reciprocal( arg )
 
 def elemint( arg, weights ):
   'elementwise integration'
@@ -2685,31 +2535,6 @@ def multiply( arg1, arg2 ):
 
   return Multiply( arg1, arg2 )
 
-def divide( arg1, arg2 ):
-  'divide'
-
-  arg1, arg2 = _matchndim( arg1, arg2 )
-  shape = _jointshape( arg1.shape, arg2.shape )
-
-  if _isunit( arg1 ):
-    return expand( reciprocal(arg2), shape )
-
-  if _isunit( arg2 ):
-    return expand( arg1, shape )
-
-  if not _isfunc(arg1) and not _isfunc(arg2):
-    return numpy.divide( arg1, arg2 )
-
-  if not _isfunc(arg2):
-    return arg1 * numpy.reciprocal(arg2)
-
-  retval = _call( arg1, '_divide', arg2 )
-  if retval is not None:
-    assert retval.shape == shape, 'bug in %s._divide' % arg1
-    return retval
-
-  return Divide( arg1, arg2 )
-
 def add( arg1, arg2 ):
   'add'
 
@@ -2740,34 +2565,6 @@ def add( arg1, arg2 ):
 
   return Add( arg1, arg2 )
 
-def subtract( arg1, arg2 ):
-  'subtract'
-
-  arg1, arg2 = _matchndim( arg1, arg2 )
-  shape = _jointshape( arg1.shape, arg2.shape )
-
-  if _iszero( arg1 ):
-    return expand( -arg2, shape )
-
-  if _iszero( arg2 ):
-    return expand( arg1, shape )
-
-  if _equal( arg1, arg2 ):
-    return _zeros( shape )
-
-  if not _isfunc(arg1) and not _isfunc(arg2):
-    return numpy.subtract( arg1, arg2 )
-
-  if not _isfunc(arg2):
-    return arg1 + numpy.negative(arg2)
-
-  retval = _call( arg1, '_subtract', arg2 )
-  if retval is not None:
-    assert retval.shape == shape, 'bug in %s._subtract' % arg1
-    return retval
-
-  return Subtract( arg1, arg2 )
-
 def negative( arg ):
   'make negative'
 
@@ -2795,8 +2592,8 @@ def power( arg, n ):
   if n == 0:
     return numpy.ones( arg.shape )
 
-  if n < 0:
-    return reciprocal( power( arg, -n ) )
+  if isinstance( arg, numpy.ndarray ):
+    return numpy.power( arg, n )
 
   retval = _call( arg, '_power', n )
   if retval is not None:
@@ -2814,7 +2611,8 @@ exp = lambda arg: pointwise( [arg], numpy.exp, exp )
 ln = lambda arg: pointwise( [arg], numpy.log, reciprocal )
 log2 = lambda arg: ln(arg) / ln(2)
 log10 = lambda arg: ln(arg) / ln(10)
-sqrt = lambda arg: arg**.5
+sqrt = lambda arg: power( arg, .5 )
+reciprocal = lambda arg: power( arg, -1 )
 argmin = lambda arg, axis: pointwise( bringforward(arg,axis), lambda *x: numpy.argmin(numeric.stack(x),axis=0), _zeros_like )
 argmax = lambda arg, axis: pointwise( bringforward(arg,axis), lambda *x: numpy.argmax(numeric.stack(x),axis=0), _zeros_like )
 arctan2 = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.arctan2, lambda x: stack([x[1],-x[0]]) / sum(power(x,2),0) )
@@ -2833,6 +2631,8 @@ trace = lambda arg, n1=-2, n2=-1: sum( takediag( arg, n1, n2 ) )
 eye = lambda n: diagonalize( expand( [1.], (n,) ) )
 norm2 = lambda arg, axis=-1: sqrt( sum( arg * arg, axis ) )
 heaviside = lambda arg: greater( arg, 0 )
+divide = lambda arg1, arg2: multiply( arg1, reciprocal(arg2) )
+subtract = lambda arg1, arg2: add( arg1, negative(arg2) )
 
 class ElemMap( dict ):
   def __init__( self, d, ndims ):
