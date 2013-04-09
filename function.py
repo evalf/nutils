@@ -1528,6 +1528,9 @@ class Power( ArrayFunc ):
   def _takediag( self ):
     return takediag( self.func )**self.power
 
+  def _take( self, index, axis ):
+    return power( take( self.func, index, axis ), self.power )
+
 class Pointwise( ArrayFunc ):
   'pointwise transformation'
 
@@ -1546,6 +1549,12 @@ class Pointwise( ArrayFunc ):
 
   def _takediag( self ):
     return pointwise( takediag(self.args), self.evalf, self.deriv )
+
+  def _get( self, axis, item ):
+    return pointwise( get( self.args, axis+1, item ), self.evalf, self.deriv )
+
+  def _take( self, index, axis ):
+    return pointwise( take( self.args, index, axis+1 ), self.evalf, self.deriv )
 
 # PRIORITY OBJECTS
 #
