@@ -1760,6 +1760,9 @@ class Diagonalize( PriorityFunc ):
     numeric.takediag( diagonalized )[:] = data
     return diagonalized
 
+  def _localgradient( self, ndims ):
+    return diagonalize( localgradient( self.func, ndims ).swapaxes(-2,-1) ).swapaxes(-3,-1)
+
   def _get( self, i, item ):
     if i >= self.ndim-2:
       return kronecker( get( self.func, -1, item ), axis=-1, pos=item, length=self.func.shape[-1] )
