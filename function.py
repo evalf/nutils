@@ -675,7 +675,7 @@ class Align( ArrayFunc ):
       func = sum( self.func, idx )
     else:
       func = self.func
-    trans = [ ax - (i<axis) for ax in self.axes if ax != axis ]
+    trans = [ ax - (ax>axis) for ax in self.axes if ax != axis ]
     return align( func, trans, self.ndim-1 )
 
   def _localgradient( self, ndims ):
