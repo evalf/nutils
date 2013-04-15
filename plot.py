@@ -168,6 +168,23 @@ class PyPlot( BasePlot ):
     self.ylim( self.ylim()[-1::-1] ) # invert y axis: equiv to MATLAB axis ij
     self.axis( 'tight' )
 
+class DataFile( BasePlot ):
+  """data file"""
+
+  def __init__( self, name, index=None, ndigits=0 ):
+    'constructor'
+
+    BasePlot.__init__( self, name, ndigits=ndigits, index=index )
+
+    self.names = [name]
+    self.fout  = open( os.path.join(self.path,name), 'w' )
+
+  def save( self, name ):
+    self.fout.close()
+
+  def printline( self, line ):
+    print >> self.fout, line 
+
 class VTKFile( BasePlot ):
   'vtk file'
 

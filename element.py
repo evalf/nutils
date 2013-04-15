@@ -291,9 +291,16 @@ class TrimmedElement( Element ):
 
       else:
         
-        points, weights = self.elem.eval( self.finestscheme )
-        inside = self.levelset( self.elem, points ) > 0
-        return points[inside], weights[inside] if weights is not None else None
+        if self.finestscheme.endswith( '.all' ):
+          points, weights = self.elem.eval( self.finestscheme[:-4] )
+          return points, weights if weights is not None else None
+        elif self.finestscheme.endswith( '.none' ):
+          points, weights = self.elem.eval( self.finestscheme[:-5] )
+          return points[numpy.zeros_like(weights,dtype=bool)], weights[numpy.zeros_like(weights,dtype=bool)] if weights is not None else None
+        else:  
+          points, weights = self.elem.eval( self.finestscheme )
+          inside = self.levelset( self.elem, points ) > 0
+          return points[inside], weights[inside] if weights is not None else None
         
 
     allcoords = []
