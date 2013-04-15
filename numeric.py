@@ -1,4 +1,19 @@
-import numpy, _numeric
+import numpy, warnings
+
+try:
+  import _numeric
+except:
+  warnings.warn( 'Reverting to python implementation of _numeric' )
+  class _numeric:
+    @staticmethod
+    def contract( A, B, axes ):
+      C = A*B
+      for axis in range(axes):
+        C = C.sum(-1)
+      return C
+    @staticmethod
+    def addsorted( *args, **kwargs ):
+      raise NotImplementedError
 
 addsorted = _numeric.addsorted
 

@@ -42,4 +42,5 @@ __all__ = [
   'matrix',
   'parallel',
   'log',
+  'exception',
 ]
