@@ -3,19 +3,15 @@ import numpy, warnings
 try:
   import _numeric
 except:
-  warnings.warn( 'Reverting to python implementation of _numeric' )
+  warnings.warn( '''Failed to load _numeric module.
+  Falling back on equivalent python implementation. THIS
+  MAY SEVERELY IMPACT PERFORMANCE! Pleace compile the C
+  extensions by running 'make' in the finity directory.''', stacklevel=2 )
   class _numeric:
     @staticmethod
     def contract( A, B, axes ):
-      C = A*B
-      for axis in range(axes):
-        C = C.sum(-1)
-      return C
-    @staticmethod
-    def addsorted( *args, **kwargs ):
-      raise NotImplementedError
-
-addsorted = _numeric.addsorted
+      assert A.shape == B.shape and axes > 0
+      return ((A*B).reshape(A.shape[:-axes]+(-1,))).sum(-1)
 
 def normdim( ndim, n ):
   'check bounds and make positive'
@@ -294,5 +290,12 @@ def bringforward( arg, axis ):
   if axis == 0:
     return arg
   return arg.transpose( [axis] + range(axis) + range(axis+1,arg.ndim) )
+
+def diagonalize( arg ):
+  'append axis, place last axis on diagonal of self and new'
+
+  diagonalized = numpy.zeros( arg.shape + (arg.shape[-1],) )
+  takediag( diagonalized )[:] = arg
+  return diagonalized
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

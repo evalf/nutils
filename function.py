@@ -818,7 +818,7 @@ class Function( ArrayFunc ):
         F = std.eval(points,grad=igrad)[(Ellipsis,keep)+(slice(None),)*igrad]
       else:
         F = std.eval(points,grad=igrad)
-      for axis in range(2,2+igrad):
+      for axis in range(-igrad,0):
         F = numeric.dot( F, elem.inv_root_transform, axis )
       fvals.append( F )
     assert fvals, 'no function values encountered'
@@ -1717,7 +1717,7 @@ class Inflate( PriorityFunc ):
   def _neg( self ):
     return inflate( neg(self.func), self.dofmap, self.length, self.axis )
 
-  def _power( self ):
+  def _power( self, n ):
     return inflate( power(self.func,n), self.dofmap, self.length, self.axis )
 
   def _takediag( self ):
@@ -1750,15 +1750,7 @@ class Diagonalize( PriorityFunc ):
     assert n != 1
     shape = func.shape + (n,)
     self.func = func
-    PriorityFunc.__init__( self, args=[func], evalf=self.diagonalize, shape=shape )
-
-  @staticmethod
-  def diagonalize( data ):
-    'evaluate'
-
-    diagonalized = numpy.zeros( data.shape + (data.shape[-1],) )
-    numeric.takediag( diagonalized )[:] = data
-    return diagonalized
+    PriorityFunc.__init__( self, args=[func], evalf=numeric.diagonalize, shape=shape )
 
   def _localgradient( self, ndims ):
     return diagonalize( localgradient( self.func, ndims ).swapaxes(-2,-1) ).swapaxes(-3,-1)

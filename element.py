@@ -938,28 +938,30 @@ class PolyProduct( StdElem ):
 
     assert isinstance( grad, int ) and grad >= 0
 
-    npoints, ndims = points.shape
-    assert ndims == self.ndims
+    assert points.shape[-1] == self.ndims
 
     s1 = slice(0,self.std1.ndims)
-    p1 = points[:,s1]
+    p1 = points[...,s1]
     s2 = slice(self.std1.ndims,None)
-    p2 = points[:,s2]
+    p2 = points[...,s2]
 
+    E = Ellipsis,
     S = slice(None),
     N = numpy.newaxis,
 
-    G12 = [ numeric.reshape( self.std1.eval( p1, grad=i )[S+S+N+S*i+N*j]
-                        * self.std2.eval( p2, grad=j )[S+N+S+N*i+S*j], 1, 2 )
+    shape = points.shape[:-1] + (self.std1.nshapes * self.std2.nshapes,)
+    G12 = [ ( self.std1.eval( p1, grad=i )[E+S+N+S*i+N*j]
+            * self.std2.eval( p2, grad=j )[E+N+S+N*i+S*j] ).reshape( shape + (self.std1.ndims,) * i + (self.std2.ndims,) * j )
             for i,j in zip( range(grad,-1,-1), range(grad+1) ) ]
 
-    data = numpy.empty( [ npoints, self.std1.nshapes * self.std2.nshapes ] + [ ndims ] * grad )
+    data = numpy.empty( shape + (self.ndims,) * grad )
 
     s12 = numpy.array([s1,s2])
     R = numpy.arange(grad)
     for n in range(2**grad):
       index = n>>R&1
-      data[S*2+tuple(s12[index])] = G12[index.sum()].transpose(0,1,*2+index.argsort())
+      shuffle = range(points.ndim) + list( points.ndim + index.argsort() )
+      data[E+tuple(s12[index])] = G12[index.sum()].transpose(shuffle)
 
     return data
 
@@ -1082,18 +1084,21 @@ class PolyLine( StdElem ):
   def eval( self, points, grad=0 ):
     'evaluate'
 
+    assert points.shape[-1] == 1
+    x = points[...,0]
+
     if grad >= self.degree:
-      return numeric.appendaxes( 0., (points.shape[0],self.nshapes)+(1,)*grad )
+      return numeric.appendaxes( 0., x.shape+(self.nshapes,)+(1,)*grad )
 
     poly = self.poly
     for n in range(grad):
       poly = poly[:-1] * numpy.arange( poly.shape[0]-1, 0, -1 )[:,_]
 
-    x, = points.T
-    polyval = poly[0,_,:].repeat( x.size, axis=0 )
+    polyval = numpy.empty( x.shape+(self.nshapes,) )
+    polyval[:] = poly[0]
     for p in poly[1:]:
-      polyval *= x[:,_]
-      polyval += p[_,:]
+      polyval *= x[...,_]
+      polyval += p
 
     return polyval[(Ellipsis,)+(_,)*grad]
 

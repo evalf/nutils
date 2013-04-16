@@ -147,6 +147,26 @@ class Topology( object ):
 
     return retvals
 
+  def build_graph( self, func ):
+    'get matrix sparsity'
+
+    log.context( 'graph' )
+
+    nrows, ncols = func.shape
+    graph = [ [] for irow in range(nrows) ]
+    IJ = function.Tuple([ function.Tuple(ind) for f, ind in func.blocks ])
+
+    for elem in self:
+      for I, J in IJ( elem, None ):
+        for i in I:
+          graph[i].append(J)
+
+    for irow, g in log.iterate( 'dof', enumerate(graph), nrows ):
+      # release memory as we go
+      if g: graph[irow] = numpy.unique( numpy.concatenate( g ) )
+
+    return graph
+
   def integrate( self, funcs, ischeme, coords=None, iweights=None, title='integrating' ):
     'integrate'
 
@@ -168,24 +188,15 @@ class Topology( object ):
     for ifunc, func in enumerate( funcs ):
       func = function._asarray( func )
       if function._isfunc( func ):
-        if func.ndim == 2:
-          nrows, ncols = func.shape
-          graph = [[]] * nrows
-          IJ = function.Tuple([ function.Tuple(ind) for f, ind in func.blocks ])
-          for elem in self:
-            for I, J in IJ( elem, None ):
-              for i in I:
-                graph[i] = numeric.addsorted( graph[i], J, inplace=True )
-          A = matrix.SparseMatrix( graph, ncols )
-        else:
-          A = numpy.zeros( func.shape, dtype=float )
+        array = matrix.SparseMatrix( self.build_graph(func), func.shape[1] ) if func.ndim == 2 \
+           else numpy.zeros( func.shape, dtype=float )
         for f, ind in func.blocks:
           integrands.append( function.Tuple([ ifunc, function.Tuple(ind), function.elemint( f, iweights ) ]) )
       else:
-        A = numpy.zeros( func.shape, dtype=float )
+        array = numpy.zeros( func.shape, dtype=float )
         if not function._iszero( func ):
           integrands.append( function.Tuple([ ifunc, (), function.elemint( func, iweights ) ]) )
-      retvals.append( A )
+      retvals.append( array )
     idata = function.Tuple( integrands )
 
     for elem in self:
@@ -253,10 +264,17 @@ class Topology( object ):
     else:
       raise Exception, 'invalid projection %r' % ptype
 
+    errfun2 = ( onto.dot( constrain | 0 ) - fun )**2
+    if errfun2.ndim == 1:
+      errfun2 = errfun2.sum()
+    error2, area = self.integrate( [ errfun2, 1 ], coords=coords, ischeme=ischeme )
+    avg_error = numpy.sqrt(error2) / area
+
     numcons = constrain.where.sum()
     if verify is not None:
       assert numcons == verify, 'number of constraints does not meet expectation: %d != %d' % ( numcons, verify )
-    log.info( 'constrained %d/%d dofs' % ( numcons, constrain.size ) )
+
+    log.info( 'constrained %d/%d dofs, error %.2e/area' % ( numcons, constrain.size, avg_error ) )
 
     return constrain
 

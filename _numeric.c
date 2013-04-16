@@ -7,105 +7,6 @@
 
 typedef struct { int countdown, resetcounter, stride0, stride1; } DataStepper;
 
-static PyObject *new_dims_and_strides( PyObject *array, int nd, npy_intp *dims, npy_intp *strides, int flags ) {
-  // Creates a new view of existing data, with specified number of axes, shape,
-  // and strides. The original array becomes the base of the old array without
-  // (!) increasing its reference count. On failure decreases the original
-  // matrix' reference count and returns NULL.
-
-  PyArray_Descr *descr = PyArray_DESCR(array);
-  PyObject *newarray = PyArray_NewFromDescr( &PyArray_Type, descr, nd, dims, strides, PyArray_DATA(array), flags, NULL );
-  if ( newarray == NULL ) {
-    Py_DECREF( array );
-  }
-  else {
-    Py_INCREF( descr );
-    ((PyArrayObject *)newarray)->base = array;
-  }
-  return newarray;
-}
-
-static PyObject *numeric_addsorted( PyObject *self, PyObject *args, PyObject *kwargs ) {
-  // Adds numbers into sorted array of non-negative integers. Sorting is not
-  // checked. Both arguments must be castable to int arrays. First argument
-  // data (not size) may be modified. Maintains a base array of power of two
-  // length to minimize reallocations.
-
-  PyObject *array=NULL, *entries=NULL;
-  npy_intp size;
-  npy_intp N;
-  int inplace = 0;
-  int i;
-  PyObject *base;
-  npy_int *data;
-  char *keywords[] = { "array", "entries", "inplace", NULL };
-  PyObject *iter;
-  npy_intp stride = sizeof(npy_int);
-  if ( ! PyArg_ParseTupleAndKeywords( args, kwargs, "O&O&|i", keywords, PyArray_Converter, &array, PyArray_Converter, &entries, &inplace ) ) {
-    Py_XDECREF( array );
-    Py_XDECREF( entries );
-    return NULL;
-  }
-  if ( PyArray_NDIM(array) != 1 ) {
-    PyErr_Format( PyExc_TypeError, "arguments should by 1-dimensional int-arrays" );
-    Py_DECREF( array );
-    Py_DECREF( entries );
-    return NULL;
-  }
-  size = PyArray_SIZE(array);
-  N = 1;
-  while ( N <= size + PyArray_SIZE(entries) ) {
-    N <<= 1;
-  }
-  base = PyArray_BASE(array);
-  if ( !inplace || base == NULL
-                || !PyArray_Check(base)
-                || !PyArray_ISCONTIGUOUS(base)
-                || PyArray_NDIM(base) != 1
-                || PyArray_SIZE(base) != N
-                || PyArray_DATA(array) != PyArray_DATA(base) ) {
-    base = PyArray_SimpleNew( 1, &N, NPY_INT );
-    if PyArray_ISCONTIGUOUS( array ) {
-      memcpy( PyArray_DATA(base), PyArray_DATA(array), size * sizeof(npy_int) );
-    }
-    else {
-      npy_int* dst = PyArray_DATA(base);
-      for ( i = 0; i < size; i++ ) {
-        dst[i] = *(npy_int*)PyArray_GETPTR1(array,i);
-      }
-    }
-  }
-  else {
-    Py_INCREF( base );
-  }
-  Py_DECREF( array );
-  data = PyArray_DATA( base ); // contigous length N
-  iter = PyArray_IterNew( entries );
-  ASSERT( iter );
-  while ( PyArray_ITER_NOTDONE(iter) ) {
-    npy_int value = *(npy_int *)PyArray_ITER_DATA(iter);
-    int index = N-1;
-    int n = N;
-    while ( n >>= 1 ) {
-      int tryind = index^n;
-      if ( tryind >= size || data[tryind] >= value ) {
-        index = tryind;
-      }
-    }
-    if ( index == size || data[index] != value ) {
-      for ( i = size; i > index; i-- ) {
-        data[i] = data[i-1];
-      }
-      data[index] = value;
-      size++;
-    }
-    PyArray_ITER_NEXT( iter );
-  }
-  Py_DECREF( iter );
-  Py_DECREF( entries );
-  return new_dims_and_strides( base, 1, &size, &stride, NPY_WRITEABLE|NPY_CONTIGUOUS );
-}
-
 static PyObject *numeric_contract( PyObject *self, PyObject *args, PyObject *kwargs ) {
   // Contracts two array-like objects over specified axis int/axes tuple. Fully
   // equivalent with pointwise multiplication followed by summation:
@@ -186,9 +87,8 @@ static PyObject *numeric_contract( PyObject *self, PyObject *args, PyObject *kwa
 static PyMethodDef module_methods[] = {
   // List of python-exposed methods.
 
-  { "addsorted",  (PyCFunction)numeric_addsorted,  METH_KEYWORDS, "add to sorted array" },
-  { "contract",   (PyCFunction)numeric_contract,   METH_KEYWORDS, "contract"            },
-  NULL,
+  { "contract", (PyCFunction)numeric_contract, METH_KEYWORDS, "contract" },
+  { NULL },
 };
 
 static PyObject *numeric_module;
