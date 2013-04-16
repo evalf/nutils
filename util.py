@@ -398,6 +398,8 @@ def run( *functions ):
 
   commandline = [ ' '.join([ scriptname, funcname ]) ] + [ '  --%s=%s' % item for item in kwargs.items() ]
 
+  log.info( 'finity v2.xx "Stark"' )
+  log.info()
   log.info( ' \\\n'.join( commandline ) + '\n' )
   log.info( 'start %s\n' % time.ctime() )
 
