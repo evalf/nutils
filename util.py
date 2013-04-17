@@ -388,8 +388,12 @@ def run( *functions ):
 
   prop.dumpdir = dumpdir
 
-  redirect = '<meta http-equiv="cache-control" content="no-cache">\n' \
-           + '<meta http-equiv="refresh" content="0;URL=%slog.html">\n'
+  redirect = '<html>\n<head>\n<meta http-equiv="cache-control" content="max-age=0" />\n' \
+           + '<meta http-equiv="cache-control" content="no-cache" />\n' \
+           + '<meta http-equiv="expires" content="0" />\n' \
+           + '<meta http-equiv="expires" content="Tue, 01 Jan 1980 1:00:00 GMT" />\n' \
+           + '<meta http-equiv="pragma" content="no-cache" />\n' \
+           + '<meta http-equiv="refresh" content="0;URL=%slog.html" />\n</head>\n</html>\n'
 
   print >> open( outdir+'log.html', 'w' ), redirect % ( scriptname + '/' + timepath )
   print >> open( basedir+'log.html', 'w' ), redirect % ( timepath )
