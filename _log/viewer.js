@@ -529,24 +529,33 @@ function Finity() {
           vw = vw.replace(/^\s+|\s+$/g, '').toLowerCase();
       switch( vw ) {
         case 'term':
-          this._code.css({
+          /*this._code.css({
             'display': 'block',
             'width': '98%',
             'left': 0
           });
-          this._media.css('display', 'none');
+          this._media.css('display', 'none');*/
+          this._code.add(this._media)
+              .removeClass('imgview splitview')
+              .addClass('termview')
           break;
         case 'img':
-          this._code.css('display', 'none');
+          this._code.add(this._media)
+              .removeClass('termview splitview')
+              .addClass('imgview')
+          /*this._code.css('display', 'none');
           this._media.css({
             'display': 'block',
             'width': '98%',
             'left': 0
-          });
+          });*/
           this.render();
           break;
         default:
-          this._code.css({
+          this._code.add(this._media)
+              .removeClass('termview imgview')
+              .addClass('splitview')
+          /* this._code.css({
             'display': 'block',
             'width': '48%',
             'left': 0
@@ -555,7 +564,7 @@ function Finity() {
             'display': 'block',
             'width': '48%',
             'left': '50%'
-          });
+          }); */
           this.render();
           break;
       }
