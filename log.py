@@ -188,41 +188,4 @@ class ProgressLog( object ):
       pbar += ' (%.0f%%)' % pct
     self.parent.write( pbar, *text )
 
-# DEPRECATED
-
-progress = info
-
-class ProgressBar( object ):
-  'temporary construct for backwards compatibility'
-
-  def __init__( self, n, title ):
-    'constructor'
-
-    warnings.warn( '''ProgressBar(n,text) will be removed in future
-  Please use iterate(text,n) instead.''', DeprecationWarning )
-
-    self.text = title
-    self.out = None
-    if isinstance( n, int ):
-      self.iterable = None
-      self.target = n
-    else:
-      self.iterable = n
-      self.target = len(n)
-
-  def __iter__( self ):
-    'iterate'
-
-    return iter( iterate( self.text, self.iterable, self.target ) )
-
-  def add( self, text ):
-    'add to text'
-
-    self.text += ' %s' % text
-
-  def close( self ):
-    'does nothing'
-
-    pass
-
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

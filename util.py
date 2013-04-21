@@ -184,14 +184,6 @@ class NanVec( numpy.ndarray ):
 
     return ~numpy.isnan( self.view(numpy.ndarray) )
 
-  @property
-  def mask( self ):
-    'find non-nan items'
-
-    warnings.warn( '''Nanvec.mask will be removed in future
-  Please use NanVec.~where instead.''', DeprecationWarning )
-    return ~self.where
-
   def __iand__( self, other ):
     'combine'
 
@@ -402,7 +394,7 @@ def run( *functions ):
 
   commandline = [ ' '.join([ scriptname, funcname ]) ] + [ '  --%s=%s' % item for item in kwargs.items() ]
 
-  log.info( 'finity v2.xx "Stark"' )
+  log.info( 'finity v2.00+dev "Stark"' )
   log.info()
   log.info( ' \\\n'.join( commandline ) + '\n' )
   log.info( 'start %s\n' % time.ctime() )

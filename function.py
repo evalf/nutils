@@ -341,11 +341,6 @@ class ArrayFunc( Evaluable ):
 
     return vectorize( [self] * ndims )
 
-  def get_func_ind( self, n=0 ):
-    warnings.warn( '''f.get_func_ind(n=0) will be removed in future
-  Please use list(f.blocks)[n] instead.''', DeprecationWarning, stacklevel=2 )
-    return list(self.blocks)[n]
-
   def dot( self, weights ):
     'array contraction'
 
@@ -566,21 +561,6 @@ class ArrayFunc( Evaluable ):
     return '%s<%s>' % ( self.__class__.__name__, ','.join(map(str,self.shape)) )
 
   __repr__ = __str__
-
-  def norm2( self, axis=-1 ):
-    warnings.warn( '''f.norm2(...) will be removed in future
-  Please use function.norm2(f,...) instead.''', DeprecationWarning, stacklevel=2 )
-    return norm2( self, axis )
-
-  def localgradient( self, ndims ):
-    warnings.warn( '''f.localgradient(...) will be removed in future
-  Please use function.localgradient(f,...) instead.''', DeprecationWarning, stacklevel=2 )
-    return localgradient( self, ndims )
-
-  def trace( self, n1=-2, n2=-1 ):
-    warnings.warn( '''f.trace(...) will be removed in future
-  Please use function.trace(f,...) instead.''', DeprecationWarning, stacklevel=2 )
-    return trace( self, n1=-2, n2=-1 )
 
 class ElemArea( ArrayFunc ):
   'element area'
@@ -2275,11 +2255,6 @@ def determinant( arg, axes=(-2,-1) ):
 
   return Determinant( arg )
 
-def det( arg, ax1, ax2 ):
-  warnings.warn( '''det(array,i,j) will be removed in future
-  Please use determinant(array,(i,j)) instead.''', DeprecationWarning, stacklevel=2 )
-  return determinant( arg, (ax1,ax2) )
-
 def inverse( arg, axes=(-2,-1) ):
   'inverse'
 
@@ -2304,11 +2279,6 @@ def inverse( arg, axes=(-2,-1) ):
     return transpose( retval, trans )
 
   return transpose( Inverse(arg), trans )
-
-def inv( arg, ax1=-2, ax2=-1 ):
-  warnings.warn( '''inv(array,i,j) will be removed in future
-  Please use inverse(array,(i,j)) instead.''', DeprecationWarning, stacklevel=2 )
-  return inverse( arg, (ax1,ax2) )
 
 def takediag( arg, ax1=-2, ax2=-1 ):
   'takediag'
@@ -2696,95 +2666,5 @@ def inflate( arg, dofmap, length, axis ):
     return retval
 
   return Inflate( arg, dofmap, length, axis )
-
-def Heaviside( arg ):
-  warnings.warn( '''Heaviside will be removed in future
-  Please use heaviside instead.''', DeprecationWarning, stacklevel=2 )
-  return heaviside( arg )
-
-def Chain( funcs ):
-  warnings.warn( '''Chain will be removed in future
-  Please use chain instead.''', DeprecationWarning, stacklevel=2 )
-  return chain( funcs )
-
-def Vectorize( funcs ):
-  warnings.warn( '''Vectorize will be removed in future
-  Please use vectorize instead.''', DeprecationWarning, stacklevel=2 )
-  return vectorize( funcs )
-
-def Tan( func ):
-  warnings.warn( '''Tan will be removed in future
-  Please use tan instead.''', DeprecationWarning, stacklevel=2 )
-  return tan( func )
-
-def Sin( func ):
-  warnings.warn( '''Sin will be removed in future
-  Please use sin instead.''', DeprecationWarning, stacklevel=2 )
-  return sin( func )
-
-def Cos( func ):
-  warnings.warn( '''Cos will be removed in future
-  Please use cos instead.''', DeprecationWarning, stacklevel=2 )
-  return cos( func )
-
-def Sinh( func ):
-  warnings.warn( '''Sinh will be removed in future
-  Please use sinh instead.''', DeprecationWarning, stacklevel=2 )
-  return sinh( func )
-
-def Cosh( func ):
-  warnings.warn( '''Cosh will be removed in future
-  Please use cosh instead.''', DeprecationWarning, stacklevel=2 )
-  return cosh( func )
-
-def Tanh( func ):
-  warnings.warn( '''Tanh will be removed in future
-  Please use tanh instead.''', DeprecationWarning, stacklevel=2 )
-  return tanh( func )
-
-def Arctanh( func ):
-  warnings.warn( '''Arctanh will be removed in future
-  Please use arctanh instead.''', DeprecationWarning, stacklevel=2 )
-  return arctanh( func )
-
-def StaticArray( arg ):
-  warnings.warn( '''StaticArray will be removed in future
-  Things should just work without it now.''', DeprecationWarning, stacklevel=2 )
-  return arg
-
-def Stack( arg ):
-  warnings.warn( '''Stack will be removed in future
-  Please use stack instead.''', DeprecationWarning, stacklevel=2 )
-  return stack( arg )
-
-def Log( arg ):
-  warnings.warn( '''Log will be removed in future
-  Please use ln instead.''', DeprecationWarning, stacklevel=2 )
-  return ln( arg )
-
-def Arctan2( arg1, arg2 ):
-  warnings.warn( '''Arctan2 will be removed in future
-  Please use arctan2 instead.''', DeprecationWarning, stacklevel=2 )
-  return arctan2( arg1, arg2 )
-
-def Min( arg1, arg2 ):
-  warnings.warn( '''Min will be removed in future
-  Please use min instead.''', DeprecationWarning, stacklevel=2 )
-  return min( arg1, arg2 )
-
-def Max( arg1, arg2 ):
-  warnings.warn( '''Max will be removed in future
-  Please use max instead.''', DeprecationWarning, stacklevel=2 )
-  return max( arg1, arg2 )
-
-def Log10( arg ):
-  warnings.warn( '''Log10 will be removed in future
-  Please use log10 instead.''', DeprecationWarning, stacklevel=2 )
-  return log10( arg )
-
-def Log2( arg ):
-  warnings.warn( '''Log2 will be removed in future
-  Please use log2 instead.''', DeprecationWarning, stacklevel=2 )
-  return log2( arg )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
