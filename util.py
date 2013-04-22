@@ -52,7 +52,7 @@ def delaunay( points ):
   with suppressed_output:
     return spatial.Delaunay( points )
 
-def classfunc( f ):
+def withrepr( f ):
   'add string representation to generated function'
 
   code = f.func_code
