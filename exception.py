@@ -54,30 +54,37 @@ class ExcInfo( object ):
       if path in filecache:
         lines = filecache[path]
       else:
-        lines = open(path).readlines()
-        filecache[path] = lines
+        try:
+          fileobj = open(path)
+        except IOError:
+          lines = None
+        else:
+          lines = fileobj.readlines()
+          filecache[path] = lines
   
       lineno = tb.tb_lineno - 1
       context = 'File "%s", line %d, in %s' % ( path, lineno+1, name )
-      indent = len(lines[lineno]) - len(lines[lineno].lstrip())
-      counterr = 0
-      while True:
-        context += '\n    ' + lines[lineno+counterr][indent:].rstrip()
-        counterr += 1
-        if not context.endswith( '\\' ):
-          break
-  
-      iline = code.co_firstlineno-1
-      indent = len(lines[iline]) - len(lines[iline].lstrip())
-      source = lines[iline][indent:].rstrip()
-      while iline+1 < len(lines) and ( iline < lineno or not lines[iline+1][:indent+1].strip() ):
-        iline += 1
-        if lineno<=iline<lineno+counterr:
-          source += '\n>' + lines[iline][indent+1:].rstrip()
-        else:
-          source += '\n' + lines[iline][indent:].rstrip()
-      source = source.rstrip()
-  
+      if lines:
+        indent = len(lines[lineno]) - len(lines[lineno].lstrip())
+        counterr = 0
+        while True:
+          context += '\n    ' + lines[lineno+counterr][indent:].rstrip()
+          counterr += 1
+          if not context.endswith( '\\' ):
+            break
+        iline = code.co_firstlineno-1
+        indent = len(lines[iline]) - len(lines[iline].lstrip())
+        source = lines[iline][indent:].rstrip()
+        while iline+1 < len(lines) and ( iline < lineno or not lines[iline+1][:indent+1].strip() ):
+          iline += 1
+          if lineno<=iline<lineno+counterr:
+            source += '\n>' + lines[iline][indent+1:].rstrip()
+          else:
+            source += '\n' + lines[iline][indent:].rstrip()
+        source = source.rstrip()
+      else:
+        source = '<not avaliable>'
+        
       self.tb.append( FrameInfo(context,source,frame) )
       tb = tb.tb_next
 

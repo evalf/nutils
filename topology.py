@@ -806,7 +806,7 @@ class UnstructuredTopology( Topology ):
 
     if dofaxis:
       fmap = dict.fromkeys( elements, element.PolyTriangle(1) )
-      linearfunc = function.function( fmap, nmap, ndofs, self.ndim )
+      linearfunc = function.function( fmap, nmap, ndofs, self.ndims )
       namedfuncs = { 'spline2': linearfunc }
     else:
       namedfuncs = {}

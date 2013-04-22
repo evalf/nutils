@@ -76,6 +76,94 @@ class PyPlot( BasePlot ):
     self.savefig( os.path.join( self.path, name ) )
     #self.close()
 
+  @staticmethod
+  def _trimesh_class():
+    'backport of TriMesh (function prevents unneccecary loading)'
+
+    from matplotlib.collections import Collection
+    from matplotlib.artist import allow_rasterization
+    
+    class TriMesh( Collection ):
+
+      def __init__(self, xy, tri, **kwargs):
+        Collection.__init__(self, **kwargs)
+        self.xy = xy
+        self.tri = tri
+    
+      @allow_rasterization
+      def draw(self, renderer):
+        if not self.get_visible():
+          return
+        renderer.open_group(self.__class__.__name__)
+        transform = self.get_transform()
+        verts = self.xy.T[self.tri]
+        self.update_scalarmappable()
+        colors = self._facecolors[self.tri]
+        gc = renderer.new_gc()
+        self._set_gc_clip(gc)
+        gc.set_linewidth(self.get_linewidth()[0])
+        renderer.draw_gouraud_triangles(gc, verts, colors, transform.frozen())
+        gc.restore()
+        renderer.close_group(self.__class__.__name__)
+
+    return TriMesh
+
+  def mesh( self, points, colors, edgecolors='k' ):
+    'plot elemtwise mesh'
+
+    P = []
+    N = []
+    C = []
+    E = []
+    npoints = 0
+
+    from scipy import spatial
+    from matplotlib.collections import LineCollection
+
+    assert len(points) == len(colors)
+    for epoints, ecolors in zip( points, colors ):
+      np, nd = epoints.shape
+      assert nd == 2
+      assert ecolors.shape == (np,)
+      tri = spatial.Delaunay( epoints )
+      P.append( epoints.T )
+      N.append( tri.vertices + npoints )
+      C.append( ecolors )
+      npoints += np
+      if edgecolors != 'none':
+        e0 = [ edge[0] for edge in tri.convex_hull ]
+        e1 = [ edge[1] for edge in tri.convex_hull ]
+        last = e1.pop()
+        hull = [ e0.pop(), last ]
+        while e0:
+          try:
+            index = e0.index( last )
+            last = e1[index]
+          except ValueError:
+            index = e1.index( last )
+            last = e0[index]
+          e0.pop( index )
+          e1.pop( index )
+          hull.append( last )
+        assert hull[0] == hull[-1]
+        E.append( epoints[hull] )
+
+    xy = numpy.concatenate( P, axis=1 )
+    triangles = numpy.concatenate( N, axis=0 )
+
+    TriMesh = self._trimesh_class()
+    polycol = TriMesh( xy, triangles, rasterized=True )
+    polycol.set_array( numpy.concatenate(C) )
+
+    if E:
+      linecol = LineCollection( E )
+      linecol.set_color( edgecolors )
+      self.gca().add_collection( linecol )
+
+    self.gca().add_collection( polycol )
+    self.sci( polycol )
+    return polycol
+
   def polycol( self, verts, facecolors='none', **kwargs ):
     'add polycollection'
   
