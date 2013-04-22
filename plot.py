@@ -108,7 +108,7 @@ class PyPlot( BasePlot ):
 
     return TriMesh
 
-  def mesh( self, points, colors, edgecolors='k' ):
+  def mesh( self, points, colors, edgecolors='k', triangulate='delaunay' ):
     'plot elemtwise mesh'
 
     P = []
@@ -125,12 +125,9 @@ class PyPlot( BasePlot ):
       np, nd = epoints.shape
       assert nd == 2
       assert ecolors.shape == (np,)
-      tri = spatial.Delaunay( epoints )
-      P.append( epoints.T )
-      N.append( tri.vertices + npoints )
-      C.append( ecolors )
-      npoints += np
-      if edgecolors != 'none':
+      if triangulate == 'delaunay':
+        tri = spatial.Delaunay( epoints )
+        vertices = tri.vertices
         e0 = [ edge[0] for edge in tri.convex_hull ]
         e1 = [ edge[1] for edge in tri.convex_hull ]
         last = e1.pop()
@@ -146,7 +143,21 @@ class PyPlot( BasePlot ):
           e1.pop( index )
           hull.append( last )
         assert hull[0] == hull[-1]
-        E.append( epoints[hull] )
+      elif triangulate == 'bezier':
+        n = int( numpy.sqrt(np) + .5 )
+        assert n**2 == np # only quads for now
+        ind = numpy.arange(np).reshape(n,n)
+        vert1 = numpy.array([ ind[:-1,:-1].ravel(), ind[1:,:-1].ravel(), ind[:-1,1:].ravel() ]).T
+        vert2 = numpy.array([ ind[1:,1:].ravel(), ind[1:,:-1].ravel(), ind[:-1,1:].ravel() ]).T
+        vertices = numpy.concatenate( [vert1,vert2], axis=0 )
+        hull = numpy.concatenate([ ind[:,0], ind[-1,1:], ind[-2::-1,-1], ind[0,-2::-1] ])
+      else:
+        raise Exception, 'unknown triangulation method %r' % triangulate
+      P.append( epoints.T )
+      N.append( vertices + npoints )
+      C.append( ecolors )
+      E.append( epoints[hull] )
+      npoints += np
 
     xy = numpy.concatenate( P, axis=1 )
     triangles = numpy.concatenate( N, axis=0 )
@@ -155,13 +166,17 @@ class PyPlot( BasePlot ):
     polycol = TriMesh( xy, triangles, rasterized=True )
     polycol.set_array( numpy.concatenate(C) )
 
-    if E:
+    if edgecolors != 'none':
       linecol = LineCollection( E )
       linecol.set_color( edgecolors )
       self.gca().add_collection( linecol )
 
     self.gca().add_collection( polycol )
     self.sci( polycol )
+
+    if edgecolors != 'none':
+      return polycol, linecol
+
     return polycol
 
   def polycol( self, verts, facecolors='none', **kwargs ):
