@@ -682,6 +682,23 @@ class StructuredTopology( Topology ):
     'string representation'
 
     return '%s(%s)' % ( self.__class__.__name__, 'x'.join(map(str,self.structure.shape)) )
+
+  @core.cacheprop
+  def multiindex( self ):
+    'Inverse map of self.structure: given an element find its location in the structure.'
+    return dict( (self.structure[alpha], alpha) for alpha in numpy.ndindex( self.structure.shape ) )
+
+  def neighbor( self, elem0, elem1 ):
+    'Neighbor detection, returns codimension of interface, -1 for non-neighboring elements.'
+    alpha0 = self.multiindex[elem0]
+    alpha1 = self.multiindex[elem1]
+    diff = numpy.array(alpha0) - numpy.array(alpha1)
+    for i, shi in enumerate( self.structure.shape ):
+      if diff[i] in (shi-1, 1-shi) and i in self.periodic:
+        diff[i] = -numpy.sign( shi )
+    if set(diff).issubset( (-1,0,1) ):
+      return numpy.sum(numpy.abs(diff))
+    return -1
     
 class IndexedTopology( Topology ):
   'trimmed topology'
