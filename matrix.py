@@ -63,11 +63,11 @@ def krylov( matvec, b, x0=None, tol=1e-5, restart=None, maxiter=0, precon=None, 
       bnrm2, res, info = stoptest( vec1, bnrm2, info )
       if callback:
         callback( (iiter,res) )
-      progress.update( numpy.log(res) )
     else:
       assert ijob == -1
       break
     ijob = 2
+    progress.update( numpy.log(res) )
 
   assert info == 0
   log.info( 'converged in %d iterations' % iiter )

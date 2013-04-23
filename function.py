@@ -341,13 +341,14 @@ class ArrayFunc( Evaluable ):
 
     return vectorize( [self] * ndims )
 
-  def dot( self, weights ):
+  def dot( self, weights, axis=0 ):
     'array contraction'
 
     weights = numpy.asarray( weights, dtype=float )
     assert weights.ndim == 1
-    s = (slice(None),)+(numpy.newaxis,)*(self.ndim-1)
-    return dot( self, weights[s], axes=0 )
+    s = [ numpy.newaxis ] * self.ndim
+    s[axis] = slice(None)
+    return dot( self, weights[tuple(s)], axes=axis )
 
   def __kronecker__( self, axis, length, pos ):
     'kronecker'

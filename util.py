@@ -394,7 +394,7 @@ def run( *functions ):
 
   commandline = [ ' '.join([ scriptname, funcname ]) ] + [ '  --%s=%s' % item for item in kwargs.items() ]
 
-  log.info( 'finity v2.00+dev "Stark"' )
+  log.info( 'finity v2.00+dev' )
   log.info()
   log.info( ' \\\n'.join( commandline ) + '\n' )
   log.info( 'start %s\n' % time.ctime() )
