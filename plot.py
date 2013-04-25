@@ -108,7 +108,7 @@ class PyPlot( BasePlot ):
 
     return TriMesh
 
-  def mesh( self, points, colors, edgecolors='k', triangulate='delaunay' ):
+  def mesh( self, points, colors, edgecolors='k', triangulate='delaunay', **kwargs ):
     'plot elemtwise mesh'
 
     P = []
@@ -163,7 +163,7 @@ class PyPlot( BasePlot ):
     triangles = numpy.concatenate( N, axis=0 )
 
     TriMesh = self._trimesh_class()
-    polycol = TriMesh( xy, triangles, rasterized=True )
+    polycol = TriMesh( xy, triangles, rasterized=True, **kwargs )
     polycol.set_array( numpy.concatenate(C) )
 
     if edgecolors != 'none':
