@@ -1523,6 +1523,27 @@ class Pointwise( ArrayFunc ):
   def _take( self, index, axis ):
     return pointwise( take( self.args, index, axis+1 ), self.evalf, self.deriv )
 
+class Pointdata( ArrayFunc ):
+
+  def __init__ ( self, data, shape ):
+    'constructor'
+
+    assert isinstance(data,dict)
+    self.data = data
+    ArrayFunc.__init__( self, args=[ELEM,POINTS,self.data], evalf=self.pointdata, shape=shape )
+    
+  @staticmethod  
+  def pointdata( elem, points, data ):
+    myvals,mypoint = data[elem]
+    assert mypoint is points, 'Illegal point set'
+    return myvals
+
+  def update_max( self, func ):
+    func = _asarray(func)
+    assert func.shape == self.shape
+    data = dict( (elem,(numpy.maximum(func(elem,points),values),points)) for elem,(values,points) in self.data.iteritems() )
+    return Pointdata( data, self.shape )
+
 # PRIORITY OBJECTS
 #
 # Prority objects get priority in situations like A + B, which can be evaluated
@@ -2667,5 +2688,21 @@ def inflate( arg, dofmap, length, axis ):
     return retval
 
   return Inflate( arg, dofmap, length, axis )
+
+def pointdata ( topo, ischeme, func=None, shape=None, value=0. ):
+
+    from finity import topology
+    assert isinstance(topo,topology.Topology)
+
+    if func == None:
+      assert shape != None, 'Shape must be specified if func is omitted'
+      data = dict( (elem,(value*numpy.ones(shape),elem.eval(ischeme)[0])) for elem in topo )
+    else:  
+      assert shape == None, 'No shape argument required'
+      shape = func.shape
+      data = dict( (elem,(func(elem,ischeme),elem.eval(ischeme)[0])) for elem in topo )
+
+    return Pointdata ( data, shape )
+
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
