@@ -576,7 +576,7 @@ class ElemArea( ArrayFunc ):
   def elemarea( weights ):
     'evaluate'
 
-    return sum( weights )
+    return numpy.sum( weights )
 
 class ElemInt( ArrayFunc ):
   'elementwise integration'
