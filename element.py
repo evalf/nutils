@@ -207,6 +207,7 @@ class Element( object ):
     elems = iter( [self] )
     for irefine in range(evalrefine):
       elems = ( child for elem in elems for child in elem.children )
+
     inside = levelset( elems.next(), lscheme ) > 0
     if inside.all():
       for elem in elems:
@@ -270,12 +271,18 @@ class TrimmedElement( Element ):
       return points[inside], None
 
     if self.maxrefine <= 0:
-      if self.finestscheme is None:
+      if self.finestscheme is None or \
+         self.finestscheme.startswith('simplex'):
+
+        if not self.finestscheme:
+          order = 1
+        else:
+          order = int(self.finestscheme[7:])
 
         points  = []
         weights = []
 
-        for simplex in self.get_simplices( 0 ):
+        for simplex in self.get_simplices( 0, order=order ):
           spoints, sweights = simplex.eval( ischeme )
           pelem, transform = simplex.parent
 
@@ -300,6 +307,12 @@ class TrimmedElement( Element ):
         else:  
           points, weights = self.elem.eval( self.finestscheme )
           inside = self.levelset( self.elem, points ) > 0
+
+          print points.shape
+          print inside
+          print points[inside].shape
+          print weights[inside].shape
+
           return points[inside], weights[inside] if weights is not None else None
         
 
@@ -343,7 +356,7 @@ class TrimmedElement( Element ):
     transform = self.elem.edgetransform( self.ndims )[ iedge ]
     return QuadElement( id=self.id+'.edge({})'.format(iedge), ndims=self.ndims-1, context=(self,transform) )
 
-  def get_simplices ( self, maxrefine ):
+  def get_simplices ( self, maxrefine, order=2 ):
     'divide in simple elements'
 
     if maxrefine > 0 or self.evalrefine > 0:
@@ -359,28 +372,63 @@ class TrimmedElement( Element ):
     if where.all():
 	    lines = []
     else:		
-    	lines = self.elem.ribbons  
+    	lines = self.elem.ribbons
 
     for line in lines:
       
-      ischeme = line.getischeme( line.ndims, 'bezier2' )
+      ischeme = line.getischeme( line.ndims, 'bezier'+str(order+1) )
       vals    = self.levelset( line, ischeme )
       pts     = ischeme[0]
       where   = vals > 0
 
-      if  where[0] != where[1]:
+      if order == 1:
 
-        xi = vals[0] / ( vals[0] - vals[1] )
+        if where[0] == where[1]:
+          continue
 
-        assert xi > 0 and xi < 1, 'Illegal local coordinate'
+        xi = vals[0]/(vals[0]-vals[1])
+
+      elif order == 2:
+
+        disc = vals[0]**2+(-4*vals[1]+vals[2])**2-2*vals[0]*(4*vals[1]+vals[2])
+
+        if disc < 0.:
+          continue
+
+        num2 = numpy.sqrt( disc )
+        num1 = 3*vals[0]-4*vals[1]+vals[2]
+        den  = 4*(vals[0]-2*vals[1]+vals[2])
+
+        if abs(den) < numpy.spacing(1):
+          continue
+
+        denr = 1./den
+
+        xis = [(num1-num2)*denr,\
+               (num1+num2)*denr ]
+
+        intersects = [(xi >= 0 and xi <= 1) for xi in xis]
+
+        if sum(intersects) == 0:
+          continue
+        elif sum(intersects) == 1:
+          xi = xis[intersects[0] == False]
+        else:
+          raise Exception('Found multiple ribbon intersections. MAXREFINE should be increased.')
+
+      else:
+        #TODO General order scheme based on bisection
+        raise NotImplementedError('Simplex generation only implemented for order 1 and 2')
+
+      assert (xi >= 0 and xi <= 1), 'Illegal local coordinate'
  
-        elem, transform = line.context
+      elem, transform = line.context
 
-        pts = transform.eval( pts )
+      pts = transform.eval( pts )
 
-        newpoint = pts[0] + xi * ( pts[1] - pts[0] )
+      newpoint = pts[0] + xi * ( pts[-1] - pts[0] )
 
-        points   = numpy.append( points, newpoint[_], axis=0 ) 
+      points   = numpy.append( points, newpoint[_], axis=0 ) 
 
     try:
       submesh = util.delaunay( points )

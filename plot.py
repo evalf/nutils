@@ -288,6 +288,9 @@ class DataFile( BasePlot ):
   def printline( self, line ):
     print >> self.fout, line 
 
+  def printlist( self, lst, delim=' ', start='', stop='' ):
+    print >> self.fout, start + delim.join(str(s) for s in lst)  + stop
+
 class VTKFile( BasePlot ):
   'vtk file'
 
