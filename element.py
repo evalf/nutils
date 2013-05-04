@@ -242,6 +242,26 @@ class Element( object ):
 
     return self,
 
+class ElemProduct( Element ):
+  'tensor product of two elements'
+
+  def __init__( self, elem1, elem2 ):
+    'construxtor'
+
+    raise NotImplementedError # work in progress
+
+    self.elem1 = elem1
+    self.elem2 = elem2
+    Element.__init__( self, elem1.ndims + elem2.ndims, '%s*%s' % ( elem1.id, elem2.id ), parent=None, context=None )
+
+  def edges( self ):
+    'edge'
+
+    for edge in self.elem1.edges:
+      yield edge * self.elem2
+    for edge in self.elem2.edges:
+      yield edge * self.elem1
+
 class TrimmedElement( Element ):
   'trimmed element'
 
@@ -530,6 +550,16 @@ class QuadElement( Element ):
     return [ QuadElement( self.ndims, parent=(self,transform) ) for transform in self.refinedtransform( self.ndims, n ) ]
 
   @core.classcache
+  def getgauss( cls, n ):
+    'compute gauss points and weights'
+
+    assert isinstance( n, int ) and n >= 1
+    k = numpy.arange( 1, n )
+    d = k / numpy.sqrt( 4*k**2-1 )
+    x, w = numpy.linalg.eigh( numpy.diagflat(d,-1) ) # eigh operates (by default) on lower triangle
+    return (x+1) * .5, w[0]**2
+
+  @core.classcache
   def getischeme( cls, ndims, where ):
     'get integration scheme'
 
@@ -538,57 +568,58 @@ class QuadElement( Element ):
 
     x = w = None
     if where.startswith( 'gauss' ):
-      N = int( where[5:] ) # //2+1 <= FUTURE!
-      k = numpy.arange( 1, N )
-      d = k / numpy.sqrt( 4*k**2-1 )
-      x, w = numpy.linalg.eigh( numpy.diagflat(d,-1) ) # eigh operates (by default) on lower triangle
-      w = w[0]**2
-      x = ( x + 1 ) * .5
+      N = eval( where[5:] ) # //2+1 <= FUTURE!
+      if isinstance( N, tuple ):
+        assert len(N) == ndims
+      else:
+        N = [N]*ndims
+      x, w = zip( *map( cls.getgauss, N ) )
     elif where.startswith( 'uniform' ):
       N = int( where[7:] )
-      x = numpy.arange( .5, N ) / N
-      w = numeric.appendaxes( 1./N, N )
+      x = [ numpy.arange( .5, N ) / N ] * ndims
+      w = [ numeric.appendaxes( 1./N, N ) ] * ndims
     elif where.startswith( 'bezier' ):
       N = int( where[6:] )
-      x = numpy.linspace( 0, 1, N )
-      w = numeric.appendaxes( 1./N, N )
+      x = [ numpy.linspace( 0, 1, N ) ] * ndims
+      w = [ numeric.appendaxes( 1./N, N ) ] * ndims
     elif where.startswith( 'subdivision' ):
       N = int( where[11:] ) + 1
-      x = numpy.linspace( 0, 1, N )
+      x = [ numpy.linspace( 0, 1, N ) ] * ndims
       w = None
     elif where.startswith( 'vtk' ):
       if ndims == 1:
-        coords = numpy.array([[0,0]])
+        coords = numpy.array([[0,0]]).T
       elif ndims == 2:
-        coords = numpy.array([[0,0],[1,0],[1,1],[0,1]]).T
+        coords = numpy.array([[0,0],[1,0],[1,1],[0,1]])
       elif ndims == 3:
-        coords = numpy.array([ [0,0,0], [1,0,0], [0,1,0], [1,1,0], [0,0,1], [1,0,1], [0,1,1], [1,1,1] ]).T
+        coords = numpy.array([ [0,0,0], [1,0,0], [0,1,0], [1,1,0], [0,0,1], [1,0,1], [0,1,1], [1,1,1] ])
       else:
         raise Exception, 'contour not supported for ndims=%d' % ndims
     elif where.startswith( 'contour' ):
       N = int( where[7:] )
       p = numpy.linspace( 0, 1, N )
       if ndims == 1:
-        coords = p[_]
+        coords = p[_].T
       elif ndims == 2:
         coords = numpy.array([ p[ range(N) + [N-1]*(N-2) + range(N)[::-1] + [0]*(N-2) ],
-                               p[ [0]*(N-1) + range(N) + [N-1]*(N-2) + range(1,N)[::-1] ] ])
+                               p[ [0]*(N-1) + range(N) + [N-1]*(N-2) + range(1,N)[::-1] ] ]).T
       elif ndims == 3:
         assert N == 0
-        coords = numpy.array([ [0,0,0], [1,0,0], [0,1,0], [1,1,0], [0,0,1], [1,0,1], [0,1,1], [1,1,1] ]).T
+        coords = numpy.array([ [0,0,0], [1,0,0], [0,1,0], [1,1,0], [0,0,1], [1,0,1], [0,1,1], [1,1,1] ])
       else:
         raise Exception, 'contour not supported for ndims=%d' % ndims
     else:
       raise Exception, 'invalid element evaluation %r' % where
     if x is not None:
-      coords = reduce( lambda coords, i:
-        numpy.concatenate(( x[:,_].repeat( N**i, 1 ).reshape( 1, -1 ),
-                       coords[:,_].repeat( N,    1 ).reshape( i, -1 ) )), range( 1, ndims ), x[_] )
+      coords = numpy.empty( map( len, x ) + [ ndims ] )
+      for i, xi in enumerate( x ):
+        coords[...,i] = xi[ (slice(None),) + (_,)*(ndims-i-1) ]
+      coords = coords.reshape( -1, ndims )
     if w is not None:
-      weights = reduce( lambda weights, i: ( weights * w[:,_] ).ravel(), range( 1, ndims ), w )
+      weights = reduce( lambda weights, wi: ( weights * wi[:,_] ).ravel(), w )
     else:
       weights = None
-    return util.ImmutableArray( coords.T ), util.ImmutableArray( weights )
+    return util.ImmutableArray( coords ), util.ImmutableArray( weights )
 
   def select_contained( self, points, eps=0 ):
     'select points contained in element'
@@ -1095,7 +1126,10 @@ class PolyLine( StdElem ):
     if periodic:
       assert not neumann, 'periodic domains have no boundary'
       assert not curvature, 'curvature free option not possible for periodic domains'
-      elems = cls.spline_elems( p, n )[p-2:p-1] * nelems
+      if nelems == 1: # periodicity on one element can only mean a constant
+        elems = cls.spline_elems( 1, n )
+      else:
+        elems = cls.spline_elems( p, n )[p-2:p-1] * nelems
     else:
       elems = cls.spline_elems( p, min(nelems,n) )
       if len(elems) < nelems:

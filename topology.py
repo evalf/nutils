@@ -22,6 +22,11 @@ class ElemMap( dict ):
 class Topology( object ):
   'topology base class'
 
+  def __init__( self, ndims ):
+    'constructor'
+
+    self.ndims = ndims
+
   def __add__( self, other ):
     'add topologies'
 
@@ -428,6 +433,25 @@ class Topology( object ):
 
     return [ simplex for elem in self for simplex in elem.get_simplices( maxrefine ) ]
 
+class TopoProduct( Topology ):
+  'product of two topologies'
+
+  def __init__( self, topo1, topo2 ):
+    'constructor'
+
+    raise NotImplementedError # work in progress
+
+    self.topo1 = topo1
+    self.topo2 = topo2
+    Topology.__init__( self, topo1.ndims + topo2.ndims )
+
+  def __iter__( self ):
+    'iterate'
+
+    for elem1 in self.topo1:
+      for elem2 in self.topo2:
+        return elem1 * elem2
+
 class StructuredTopology( Topology ):
   'structured topology'
 
@@ -435,10 +459,10 @@ class StructuredTopology( Topology ):
     'constructor'
 
     structure = numpy.asarray(structure)
-    self.ndims = structure.ndim
     self.structure = structure
     self.periodic = tuple(periodic)
     self.groups = {}
+    Topology.__init__( self, structure.ndim )
 
   def make_periodic( self, periodic ):
     'add periodicity'
@@ -524,7 +548,7 @@ class StructuredTopology( Topology ):
 
       nd = n + p - 1
       numbers = numpy.arange( nd )
-      if periodic_i:
+      if periodic_i and p > 1:
         overlap = p - 1
         numbers[ -overlap: ] = numbers[ :overlap ]
         nd -= overlap
@@ -707,8 +731,8 @@ class IndexedTopology( Topology ):
     'constructor'
 
     self.topo = topo
-    self.ndims = topo.ndims
     self.elements = elements
+    Topology.__init__( self, topo.ndims )
 
   def __iter__( self ):
     'number of elements'
@@ -758,8 +782,8 @@ class UnstructuredTopology( Topology ):
     'constructor'
 
     self.namedfuncs = namedfuncs
-    self.ndims = ndims
     self.elements = elements
+    Topology.__init__( self, ndims )
 
   def __iter__( self ):
     'number of elements'

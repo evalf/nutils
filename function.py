@@ -982,10 +982,21 @@ class Concatenate( ArrayFunc ):
 
   def _add( self, other ):
     if isinstance( other, Concatenate ) and self.axis == other.axis:
-      fg = zip( self.funcs, other.funcs )
-      if all( f.shape == g.shape for (f,g) in fg ):
-        return concatenate( [ f+g for (f,g) in fg ], axis=self.axis )
-      raise NotImplementedError # TODO: create matching partition
+      i = 0
+      N1 = numpy.cumsum( [0] + [f1.shape[self.axis] for f1 in self.funcs] )
+      N2 = numpy.cumsum( [0] + [f2.shape[self.axis] for f2 in other.funcs] )
+      ifun1 = ifun2 = 0
+      funcs = []
+      while i < self.shape[self.axis]:
+        j = min( N1[ifun1+1], N2[ifun2+1] )
+        funcs.append( take( self.funcs[ifun1], slice(i-N1[ifun1],j-N1[ifun1]), self.axis )
+                    + take( other.funcs[ifun2], slice(i-N2[ifun2],j-N2[ifun2]), self.axis ))
+        i = j
+        ifun1 += i >= N1[ifun1+1]
+        ifun2 += i >= N2[ifun2+1]
+      assert ifun1 == len(self.funcs)
+      assert ifun2 == len(other.funcs)
+      return concatenate( funcs, axis=self.axis )
     funcs = []
     n0 = 0
     for func in self.funcs:
