@@ -117,15 +117,16 @@ class PyPlot( BasePlot ):
     E = []
     npoints = 0
 
-    from scipy import spatial
-    from matplotlib.collections import LineCollection
-
     assert len(points) == len(colors)
     for epoints, ecolors in zip( points, colors ):
       np, nd = epoints.shape
       assert nd == 2
-      assert ecolors.shape == (np,)
+      if ecolors.ndim == 0:
+        ecolors = numeric.appendaxes( ecolors, np )
+      else:
+        assert ecolors.shape == (np,)
       if triangulate == 'delaunay':
+        from scipy import spatial
         tri = spatial.Delaunay( epoints )
         vertices = tri.vertices
         e0 = [ edge[0] for edge in tri.convex_hull ]
@@ -144,13 +145,21 @@ class PyPlot( BasePlot ):
           hull.append( last )
         assert hull[0] == hull[-1]
       elif triangulate == 'bezier':
-        n = int( numpy.sqrt(np) + .5 )
-        assert n**2 == np # only quads for now
-        ind = numpy.arange(np).reshape(n,n)
-        vert1 = numpy.array([ ind[:-1,:-1].ravel(), ind[1:,:-1].ravel(), ind[:-1,1:].ravel() ]).T
-        vert2 = numpy.array([ ind[1:,1:].ravel(), ind[1:,:-1].ravel(), ind[:-1,1:].ravel() ]).T
-        vertices = numpy.concatenate( [vert1,vert2], axis=0 )
-        hull = numpy.concatenate([ ind[:,0], ind[-1,1:], ind[-2::-1,-1], ind[0,-2::-1] ])
+        nquad = int( numpy.sqrt(np) + .5 )
+        ntri = int( numpy.sqrt((2*np)+.25) )
+        if nquad**2 == np:
+          ind = numpy.arange(np).reshape(nquad,nquad)
+          vert1 = numpy.array([ ind[:-1,:-1].ravel(), ind[1:,:-1].ravel(), ind[:-1,1:].ravel() ]).T
+          vert2 = numpy.array([ ind[1:,1:].ravel(), ind[1:,:-1].ravel(), ind[:-1,1:].ravel() ]).T
+          vertices = numpy.concatenate( [vert1,vert2], axis=0 )
+          hull = numpy.concatenate([ ind[:,0], ind[-1,1:], ind[-2::-1,-1], ind[0,-2::-1] ])
+        elif ntri * (ntri+1) == 2 * np:
+          vert1 = [ ((2*ntri-i+1)*i)//2+numpy.array([j,j+1,j+ntri-i]) for i in range(ntri-1) for j in range(ntri-i-1) ]
+          vert2 = [ ((2*ntri-i+1)*i)//2+numpy.array([j+1,j+ntri-i+1,j+ntri-i]) for i in range(ntri-1) for j in range(ntri-i-2) ]
+          vertices = numpy.concatenate( [vert1,vert2], axis=0 )
+          hull = numpy.concatenate([ numpy.arange(ntri), numpy.arange(ntri-1,0,-1).cumsum()+ntri-1, numpy.arange(ntri+1,2,-1).cumsum()[::-1]-ntri-1 ])
+        else:
+          raise Exception, 'cannot match points to a bezier scheme'
       else:
         raise Exception, 'unknown triangulation method %r' % triangulate
       P.append( epoints.T )
@@ -167,6 +176,7 @@ class PyPlot( BasePlot ):
     polycol.set_array( numpy.concatenate(C) )
 
     if edgecolors != 'none':
+      from matplotlib.collections import LineCollection
       linecol = LineCollection( E )
       linecol.set_color( edgecolors )
       self.gca().add_collection( linecol )

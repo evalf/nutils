@@ -433,25 +433,6 @@ class Topology( object ):
 
     return [ simplex for elem in self for simplex in elem.get_simplices( maxrefine ) ]
 
-class TopoProduct( Topology ):
-  'product of two topologies'
-
-  def __init__( self, topo1, topo2 ):
-    'constructor'
-
-    raise NotImplementedError # work in progress
-
-    self.topo1 = topo1
-    self.topo2 = topo2
-    Topology.__init__( self, topo1.ndims + topo2.ndims )
-
-  def __iter__( self ):
-    'iterate'
-
-    for elem1 in self.topo1:
-      for elem2 in self.topo2:
-        return elem1 * elem2
-
 class StructuredTopology( Topology ):
   'structured topology'
 
@@ -518,7 +499,7 @@ class StructuredTopology( Topology ):
     return topo
 
   @core.cachefunc
-  def splinefunc( self, degree, neumann=(), periodic=None, closed=False ):
+  def splinefunc( self, degree, neumann=(), periodic=None, closed=False, removedofs=None ):
     'spline from nodes'
 
     if periodic is None:
@@ -526,6 +507,11 @@ class StructuredTopology( Topology ):
 
     if isinstance( degree, int ):
       degree = ( degree, ) * self.ndims
+
+    if removedofs == None:
+      removedofs = [None] * self.ndims
+    else:
+      assert len(removedofs) == self.ndims
 
     nodes_structure = numpy.array( 0 )
     dofcount = 1

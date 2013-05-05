@@ -242,26 +242,6 @@ class Element( object ):
 
     return self,
 
-class ElemProduct( Element ):
-  'tensor product of two elements'
-
-  def __init__( self, elem1, elem2 ):
-    'construxtor'
-
-    raise NotImplementedError # work in progress
-
-    self.elem1 = elem1
-    self.elem2 = elem2
-    Element.__init__( self, elem1.ndims + elem2.ndims, '%s*%s' % ( elem1.id, elem2.id ), parent=None, context=None )
-
-  def edges( self ):
-    'edge'
-
-    for edge in self.elem1.edges:
-      yield edge * self.elem2
-    for edge in self.elem2.edges:
-      yield edge * self.elem1
-
 class TrimmedElement( Element ):
   'trimmed element'
 
@@ -1209,9 +1189,9 @@ class PolyTriangle( StdElem ):
       x, y = points.T
       data = numpy.array( [ x, y, 1-x-y ] ).T
     elif grad == 1:
-      data = numpy.array( [[[1,0],[0,1],[-1,-1]]], dtype=float )
+      data = numpy.array( [[1,0],[0,1],[-1,-1]], dtype=float )
     else:
-      data = numpy.array( 0 ).reshape( (1,) * (grad+1+ndim) )
+      data = numpy.array( 0 ).reshape( (1,) * (grad+ndim) )
     return data
 
   def __repr__( self ):

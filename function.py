@@ -803,7 +803,7 @@ class Function( ArrayFunc ):
         F = numeric.dot( F, elem.inv_root_transform, axis )
       fvals.append( F )
     assert fvals, 'no function values encountered'
-    return fvals[0] if len(fvals) == 1 else numpy.concatenate( fvals, axis=1 )
+    return fvals[0] if len(fvals) == 1 else numpy.concatenate( fvals, axis=-1-igrad )
 
   def _localgradient( self, ndims ):
     assert ndims <= self.cascade.ndims

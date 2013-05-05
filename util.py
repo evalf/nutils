@@ -45,6 +45,12 @@ class ImmutableArray( numpy.ndarray ):
 
     return hash( id(self) )
 
+class _Unit( object ):
+  def __mul__( self, other ): return other
+  def __rmul__( self, other ): return other
+
+unit = _Unit()
+
 def delaunay( points ):
   'delaunay triangulation'
 
