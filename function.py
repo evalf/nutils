@@ -379,7 +379,7 @@ class ArrayFunc( Evaluable ):
         assert skip >= 0, 'shape=%s, item=%s' % ( self.shape, _obj2str(item) )
         n += skip
       elif isinstance(it,slice) and it.step in (1,None) and it.stop == ( it.start or 0 ) + 1: # special case: unit length slice
-        arr = insert( get( arr, n, it.start ), n )
+        arr = insert( get( arr, n, it.start or 0 ), n )
         n += 1
       elif isinstance(it,(slice,list,tuple,numpy.ndarray)): # modify axis (shorten, extend or renumber one axis)
         arr = take( arr, it, n )

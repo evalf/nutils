@@ -538,19 +538,37 @@ class StructuredTopology( Topology ):
         overlap = p - 1
         numbers[ -overlap: ] = numbers[ :overlap ]
         nd -= overlap
-      nodes_structure = nodes_structure[...,_] * nd + numbers
+      remove = removedofs[idim]
+      if remove is None:
+        nodes_structure = nodes_structure[...,_] * nd + numbers
+      else:
+        mask = numpy.zeros( nd, dtype=bool )
+        mask[remove] = True
+        nd -= mask.sum()
+        numbers -= mask.cumsum()
+        nodes_structure = nodes_structure[...,_] * nd + numbers
+        nodes_structure[...,mask] = -1
       dofcount *= nd
       slices.append( [ slice(i,i+p) for i in range(n) ] )
 
     dofmap = {}
+    funcmap = {}
     hasnone = False
-    for item in numpy.broadcast( self.structure, *numpy.ix_(*slices) ):
+    for item in numpy.broadcast( self.structure, stdelems, *numpy.ix_(*slices) ):
       elem = item[0]
+      std = item[1]
       if elem is None:
         hasnone = True
       else:
-        S = item[1:]
-        dofmap[ elem ] = nodes_structure[S].ravel()
+        S = item[2:]
+        dofs = nodes_structure[S].ravel()
+        mask = dofs >= 0
+        if mask.all():
+          dofmap[ elem ] = dofs
+          funcmap[elem] = std
+        elif mask.any():
+          dofmap[ elem ] = dofs[mask]
+          funcmap[elem] = std, mask
 
     if hasnone:
       touched = numpy.zeros( dofcount, dtype=bool )
@@ -560,7 +578,6 @@ class StructuredTopology( Topology ):
       dofcount = int(renumber[-1])
       dofmap = dict( ( elem, renumber[dofs]-1 ) for elem, dofs in dofmap.iteritems() )
 
-    funcmap = dict( numpy.broadcast( self.structure, stdelems ) )
     return function.function( funcmap, dofmap, dofcount, self.ndims )
 
   @core.cachefunc
