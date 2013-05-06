@@ -513,6 +513,11 @@ class ArrayFunc( Evaluable ):
       raise Exception, 'cannot invert %sx%s jacobian' % J.shape
     return sum( localgradient( self, ndims )[...,_] * Jinv, axes=-2 )
 
+  def laplace( self, coords, ndims=0 ):
+    'laplacian'
+
+    return self.grad(coords,ndims).div(coords,ndims)
+
   def symgrad( self, coords, ndims=0 ):
     'gradient'
 
