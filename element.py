@@ -130,6 +130,9 @@ class AffineTransformation( object ):
   def eval( self, points ):
     'apply transformation'
 
+    if points is None:
+      return None
+
     assert isinstance( points, numpy.ndarray )
     return util.ImmutableArray( self.offset + numeric.dot( points, self.transform.T ) )
 
@@ -138,7 +141,7 @@ class Element( object ):
 
   Represents the topological shape.'''
 
-  def __init__( self, ndims, id, index=None, parent=None, context=None ):
+  def __init__( self, ndims, id, index=None, parent=None, context=None, interface=None ):
     'constructor'
 
     self.ndims = ndims
@@ -147,6 +150,7 @@ class Element( object ):
     self.index = index
     self.parent = parent
     self.context = context
+    self.interface = interface
 
     if parent:
       pelem, trans = parent

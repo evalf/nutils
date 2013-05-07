@@ -498,6 +498,27 @@ class StructuredTopology( Topology ):
     topo.groups = dict( zip( ( 'left', 'right', 'bottom', 'top', 'front', 'back' ), boundaries ) )
     return topo
 
+  @core.cacheprop
+  def interfaces( self ):
+    'interfaces'
+
+    interfaces = []
+    for idim in range(self.ndims):
+      s1 = (slice(-1),) + (slice(None),)*(self.ndims-idim-1)
+      s2 = (slice(1,None),) + (slice(None),)*(self.ndims-idim-1)
+      for elem1, elem2 in numpy.broadcast( self.structure[s1], self.structure[s2] ):
+        A = numpy.zeros((self.ndims,self.ndims-1))
+        A[range(idim)+range(idim+1,self.ndims)] = numpy.eye(self.ndims-1)
+        b1 = numpy.zeros(self.ndims)
+        b1[idim] = 1.
+        b2 = numpy.zeros(self.ndims)
+        context1 = elem1, element.AffineTransformation( b1, A )
+        context2 = elem2, element.AffineTransformation( b2, A )
+        id = 'iface(%s,%s)' % ( elem1.id, elem2.id )
+        ielem = element.QuadElement( ndims=self.ndims-1, id=id, interface=(context1,context2) )
+        interfaces.append( ielem )
+    return interfaces
+
   @core.cachefunc
   def splinefunc( self, degree, neumann=(), periodic=None, closed=False, removedofs=None ):
     'spline from nodes'

@@ -285,15 +285,17 @@ class Cascade( Evaluable ):
     'evaluate'
 
     while elem.ndims < ndims:
+      if elem.interface:
+        (elem1,trans1), (elem2,trans2) = elem.interface
+        return Cascade.cascade( elem1, trans1.eval(points), ndims ) \
+             + Cascade.cascade( elem2, trans2.eval(points), ndims )
       elem, transform = elem.context or elem.parent
-      if points is not None:
-        points = transform.eval( points )
+      points = transform.eval( points )
 
     cascade = [ (elem,points) ]
     while elem.parent:
       elem, transform = elem.parent
-      if points is not None:
-        points = transform.eval( points )
+      points = transform.eval( points )
       cascade.append( (elem,points) )
 
     return cascade
@@ -895,11 +897,13 @@ class DofMap( ArrayFunc ):
   def evalmap( cascade, dofmap ):
     'evaluate'
 
+    alldofs = []
     for elem, points in cascade:
       dofs = dofmap.get( elem )
       if dofs is not None:
-        return dofs
-    raise Exception, 'no dofs encountered'
+        alldofs.append( dofs )
+    assert alldofs, 'no dofs encountered'
+    return alldofs[0] if len(alldofs) == 1 else numpy.concatenate( alldofs )
 
 class Concatenate( ArrayFunc ):
   'concatenate'
