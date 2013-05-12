@@ -274,22 +274,20 @@ class Tuple( Evaluable ):
 class Cascade( Evaluable ):
   'point cascade: list of (elem,points) tuples'
 
-  def __init__( self, ndims ):
+  def __init__( self, ndims, side=0 ):
     'constructor'
 
     self.ndims = ndims
-    Evaluable.__init__( self, args=[ELEM,POINTS,ndims], evalf=self.cascade )
+    self.side = side
+    Evaluable.__init__( self, args=[ELEM,POINTS,ndims,side], evalf=self.cascade )
 
   @staticmethod
-  def cascade( elem, points, ndims ):
+  def cascade( elem, points, ndims, side ):
     'evaluate'
 
     while elem.ndims < ndims:
-      if elem.interface:
-        (elem1,trans1), (elem2,trans2) = elem.interface
-        return Cascade.cascade( elem1, trans1.eval(points), ndims ) \
-             + Cascade.cascade( elem2, trans2.eval(points), ndims )
-      elem, transform = elem.context or elem.parent
+      elem, transform = elem.interface[side] if elem.interface \
+                   else elem.context or elem.parent
       points = transform.eval( points )
 
     cascade = [ (elem,points) ]
@@ -299,6 +297,10 @@ class Cascade( Evaluable ):
       cascade.append( (elem,points) )
 
     return cascade
+
+  @property
+  def inv( self ):
+    return Cascade( self.ndims, 1-self.side )
 
 # ARRAYFUNC
 #
@@ -435,23 +437,18 @@ class ArrayFunc( Evaluable ):
     if ndims <= 0:
       ndims += self.shape[0]
 
-    if self.shape[0] == 2 and ndims == 1:
-      grad = localgradient( self, ndims=1 )
-      normal = concatenate([ grad[1,:], -grad[0,:] ])
-    elif self.shape[0] == 3 and ndims == 2:
-      grad = localgradient( self, ndims=2 )
-      normal = cross( grad[:,0], grad[:,1], axis=0 )
-    elif self.shape[0] == 2 and ndims == 0:
-      grad = localgradient( self, ndims=1 )
-      raise NotImplementedError
-    elif self.shape[0] == 3 and ndims == 1:
-      grad = localgradient( self, ndims=1 )
-      normal = cross( grad[:,0], self.normal(), axis=0 )
-    elif self.shape[0] == 1 and ndims == 0:
-      return numpy.array( 1 ) # TODO fix direction!!!!
+    grad = localgradient( self, ndims )
+    if grad.shape == (2,1):
+      normal = concatenate([ grad[1,:], -grad[0,:] ]).normalized()
+    elif grad.shape == (3,2):
+      normal = cross( grad[:,0], grad[:,1], axis=0 ).normalized()
+    elif grad.shape == (3,1):
+      normal = cross( grad[:,0], self.normal(), axis=0 ).normalized()
+    elif grad.shape == (1,0):
+      normal = OrientationHack()[_]
     else:
       raise NotImplementedError, 'cannot compute normal for %dx%d jacobian' % ( self.shape[0], ndims )
-    return normal.normalized()
+    return normal
 
   def iweights( self, ndims ):
     'integration weights for [ndims] topology'
@@ -685,6 +682,9 @@ class Align( ArrayFunc ):
     n = self.axes.index( axis )
     return align( take( self.func, indices, n ), self.axes, self.ndim )
 
+  def _opposite( self ):
+    return align( opposite(self.func), self.axes, self.ndim )
+
 class Get( ArrayFunc ):
   'get'
 
@@ -720,6 +720,9 @@ class Get( ArrayFunc ):
   def _take( self, indices, axis ):
     return get( take( self.func, indices, axis+(axis>=self.axis) ), self.axis, self.item )
 
+  def _opposite( self ):
+    return get( opposite(self.func), self.axis, self.item )
+
 class Product( ArrayFunc ):
   'product'
 
@@ -739,6 +742,9 @@ class Product( ArrayFunc ):
     func = get( self.func, i+(i>=self.axis), item )
     return product( func, self.axis-(i<self.axis) )
 
+  def _opposite( self ):
+    return product( opposite(self.func), self.axis )
+
 class IWeights( ArrayFunc ):
   'integration weights'
 
@@ -752,6 +758,26 @@ class IWeights( ArrayFunc ):
     'evaluate'
 
     return elem.root_det * weights
+
+class OrientationHack( ArrayFunc ):
+  'orientation hack for 1d elements; VERY dirty'
+
+  def __init__( self, side=0 ):
+    'constructor'
+
+    self.side = side
+    ArrayFunc.__init__( self, args=[ELEM,side], evalf=self.orientation, shape=[] )
+
+  @staticmethod
+  def orientation( elem, side ):
+    'evaluate'
+
+    pelem, trans = elem.interface[side] if elem.interface else elem.context
+    offset, = trans.offset
+    return numpy.sign( offset - .5 )
+
+  def _opposite( self ):
+    return OrientationHack( 1-self.side )
 
 class Transform( ArrayFunc ):
   'transform'
@@ -811,6 +837,9 @@ class Function( ArrayFunc ):
       fvals.append( F )
     assert fvals, 'no function values encountered'
     return fvals[0] if len(fvals) == 1 else numpy.concatenate( fvals, axis=-1-igrad )
+
+  def _opposite( self ):
+    return Function( self.cascade.inv, self.stdmap, self.igrad, self.shape[0] )
 
   def _localgradient( self, ndims ):
     assert ndims <= self.cascade.ndims
@@ -904,6 +933,9 @@ class DofMap( ArrayFunc ):
         alldofs.append( dofs )
     assert alldofs, 'no dofs encountered'
     return alldofs[0] if len(alldofs) == 1 else numpy.concatenate( alldofs )
+
+  def _opposite( self ):
+    return DofMap( self.cascade.inv, self.dofmap, self.shape[0] )
 
 class Concatenate( ArrayFunc ):
   'concatenate'
@@ -1080,6 +1112,9 @@ class Concatenate( ArrayFunc ):
   def _negative( self ):
     return concatenate( [ -func for func in self.funcs ], self.axis )
 
+  def _opposite( self ):
+    return concatenate( [ opposite(func) for func in self.funcs ], self.axis )
+
 class Interp1D( ArrayFunc ):
   'interpolate data'
 
@@ -1174,6 +1209,9 @@ class DofIndex( ArrayFunc ):
       array = numpy.concatenate( [ self.array, other.array ], axis )
       return DofIndex( array, self.iax, self.index )
 
+  def _opposite( self ):
+    return self
+
 class Multiply( ArrayFunc ):
   'multiply'
 
@@ -1241,6 +1279,10 @@ class Multiply( ArrayFunc ):
     func1, func2 = self.funcs
     return take( func1, index, axis ) * take( func2, index, axis )
 
+  def _opposite( self ):
+    func1, func2 = self.funcs
+    return opposite(func1) * opposite(func2)
+
 class Negative( ArrayFunc ):
   'negate'
 
@@ -1288,6 +1330,9 @@ class Negative( ArrayFunc ):
   def _take( self, index, axis ):
     return -take( self.func, index, axis )
 
+  def _opposite( self ):
+    return -opposite(self.func)
+
 class Add( ArrayFunc ):
   'add'
 
@@ -1323,6 +1368,24 @@ class Add( ArrayFunc ):
   def _take( self, index, axis ):
     func1, func2 = self.funcs
     return take( func1, index, axis ) + take( func2, index, axis )
+
+  def _opposite( self ):
+    func1, func2 = self.funcs
+    return opposite(func1) + opposite(func2)
+
+class BlockAdd( Add ):
+  'block addition (used for DG)'
+
+  def _multiply( self, other ):
+    func1, func2 = self.funcs
+    return func1 * other + func2 * other
+
+  def blocks( self ):
+    func1, func2 = self.funcs
+    for f, ind in func1.blocks:
+      yield f, ind
+    for f, ind in func2.blocks:
+      yield f, ind
 
 class Dot( ArrayFunc ):
   'dot'
@@ -1386,6 +1449,9 @@ class Dot( ArrayFunc ):
         tryconcat = concatenate( g12, axis )
         if not isinstance( tryconcat, Concatenate ): # avoid inf recursion
           return dot( f, tryconcat, self.axes )
+
+  def _opposite( self ):
+    return dot( opposite(self.func1), opposite(self.func2), self.axes )
 
 class Sum( ArrayFunc ):
   'sum'
@@ -1518,6 +1584,47 @@ class Power( ArrayFunc ):
   def _take( self, index, axis ):
     return power( take( self.func, index, axis ), self.power )
 
+  def _opposite( self ):
+    return power( opposite(self.func), self.power )
+
+class ElemFunc( ArrayFunc ):
+  'trivial func'
+
+  def __init__( self, domainelem ):
+    'constructor'
+
+    self.domainelem = domainelem
+    cascade = Cascade( domainelem.ndims )
+    ArrayFunc.__init__( self, args=[cascade,domainelem], evalf=self.elemfunc, shape=[domainelem.ndims] )
+
+  @staticmethod
+  def elemfunc( cascade, domainelem ):
+    'evaluate'
+
+    for elem, points in cascade:
+      if elem is domainelem:
+        return points
+    raise Exception, '%r not found' % domainelem
+
+  def _localgradient( self, ndims ):
+    return transform( self.domainelem.ndims, ndims )
+
+  def _opposite( self ):
+    return self
+
+  def find( self, elem, C ):
+    'find coordinates'
+
+    assert C.ndim == 2 and C.shape[1] == self.domainelem.ndims
+    assert elem.ndims == self.domainelem.ndims # for now
+    pelem, transform = elem.parent
+    offset = transform.offset
+    Tinv = transform.invtrans
+    while pelem is not self.domainelem:
+      pelem, newtransform = pelem.parent
+      transform = transform.nest( newtransform )
+    return elem.select_contained( transform.invapply( C ), eps=1e-10 )
+
 class Pointwise( ArrayFunc ):
   'pointwise transformation'
 
@@ -1542,6 +1649,10 @@ class Pointwise( ArrayFunc ):
 
   def _take( self, index, axis ):
     return pointwise( take( self.args, index, axis+1 ), self.evalf, self.deriv )
+
+  def _opposite( self ):
+    args = [ opposite(arg,side) for arg in self.args ]
+    return pointwise( args, self.evalf, self.deriv )
 
 class Pointdata( ArrayFunc ):
 
@@ -1666,6 +1777,9 @@ class Zeros( PriorityFunc ):
   def _power( self, n ):
     return self
 
+  def _opposite( self ):
+    return self
+
 class Inflate( PriorityFunc ):
   'inflate'
 
@@ -1707,6 +1821,7 @@ class Inflate( PriorityFunc ):
 
   def _dot( self, other, axes ):
     if isinstance( other, Inflate ) and other.axis == self.axis:
+      assert self.dofmap == other.dofmap
       other = other.func
     elif other.shape[self.axis] != 1:
       other = take( other, self.dofmap, self.axis )
@@ -1717,6 +1832,7 @@ class Inflate( PriorityFunc ):
 
   def _multiply( self, other ):
     if isinstance( other, Inflate ) and self.axis == other.axis:
+      assert self.dofmap == other.dofmap
       other = other.func
     elif other.shape[self.axis] != 1:
       other = take( other, self.dofmap, self.axis )
@@ -1724,6 +1840,8 @@ class Inflate( PriorityFunc ):
 
   def _add( self, other ):
     if isinstance( other, Inflate ) and self.axis == other.axis:
+      if self.dofmap != other.dofmap:
+        return BlockAdd( self, other )
       other = other.func
     elif other.shape[self.axis] != 1:
       other = take( other, self.dofmap, self.axis )
@@ -1731,13 +1849,14 @@ class Inflate( PriorityFunc ):
 
   def _cross( self, other, axis ):
     if isinstance( other, Inflate ) and self.axis == other.axis:
+      assert self.dofmap == other.dofmap
       other = other.func
     elif other.shape[self.axis] != 1:
       other = take( other, self.dofmap, self.axis )
     return inflate( cross(self.func,other,axis), self.dofmap, self.length, self.axis )
 
-  def _neg( self ):
-    return inflate( neg(self.func), self.dofmap, self.length, self.axis )
+  def _negative( self ):
+    return inflate( negative(self.func), self.dofmap, self.length, self.axis )
 
   def _power( self, n ):
     return inflate( power(self.func,n), self.dofmap, self.length, self.axis )
@@ -1761,6 +1880,9 @@ class Inflate( PriorityFunc ):
     if axis == self.axis:
       return arr
     return inflate( arr, self.dofmap, self.length, self.axis-(axis<self.axis) )
+
+  def _opposite( self ):
+    return inflate( opposite(self.func), opposite(self.dofmap), self.length, self.axis )
 
 class Diagonalize( PriorityFunc ):
   'diagonal matrix'
@@ -2637,6 +2759,18 @@ norm2 = lambda arg, axis=-1: sqrt( sum( arg * arg, axis ) )
 heaviside = lambda arg: greater( arg, 0 )
 divide = lambda arg1, arg2: multiply( arg1, reciprocal(arg2) )
 subtract = lambda arg1, arg2: add( arg1, negative(arg2) )
+mean = lambda arg: .5 * ( arg + opposite(arg) )
+jump = lambda arg: opposite(arg) - arg
+
+def opposite( arg ):
+  'evaluate jump over interface'
+
+  arg = _asarray( arg )
+
+  if not _isfunc( arg ):
+    return arg
+    
+  return arg._opposite()
 
 def function( fmap, nmap, ndofs, ndims ):
   'create function on ndims-element'

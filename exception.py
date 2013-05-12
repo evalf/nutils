@@ -109,7 +109,10 @@ class ExcInfo( object ):
   def __str__( self ):
     'string representation'
 
-    return '%s: %s' % ( self.exctype.__name__, str(self.excvalue) or '<empty>' )
+    s = self.exctype.__name__
+    if self.excvalue:
+      s += ': %s' % self.excvalue
+    return s
 
   __repr__ = __str__
   

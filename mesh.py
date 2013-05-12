@@ -3,46 +3,6 @@ import os
 
 # MESH GENERATORS
 
-class ElemFunc( function.ArrayFunc ):
-  'trivial func'
-
-  def __init__( self, domainelem ):
-    'constructor'
-
-    self.domainelem = domainelem
-    function.ArrayFunc.__init__( self, args=[function.ELEM,function.POINTS,domainelem], evalf=self.elemfunc, shape=[domainelem.ndims] )
-
-  @staticmethod
-  def elemfunc( elem, points, domainelem ):
-    'evaluate'
-
-    assert elem.ndims <= domainelem.ndims
-    while elem.ndims < domainelem.ndims:
-      elem, transform = elem.context or elem.parent
-      points = transform.eval( points )
-    while elem is not domainelem:
-      elem, transform = elem.parent
-      points = transform.eval( points )
-    return points
-
-  def _localgradient( self, ndims ):
-    'local gradient'
-
-    return function.transform( self.domainelem.ndims, ndims )
-
-  def find( self, elem, C ):
-    'find coordinates'
-
-    assert C.ndim == 2 and C.shape[1] == self.domainelem.ndims
-    assert elem.ndims == self.domainelem.ndims # for now
-    pelem, transform = elem.parent
-    offset = transform.offset
-    Tinv = transform.invtrans
-    while pelem is not self.domainelem:
-      pelem, newtransform = pelem.parent
-      transform = transform.nest( newtransform )
-    return elem.select_contained( transform.invapply( C ), eps=1e-10 )
-
 def rectilinear( nodes, periodic=(), name='rect' ):
   'rectilinear mesh'
 
@@ -57,7 +17,7 @@ def rectilinear( nodes, periodic=(), name='rect' ):
       transform=numpy.diag([ n[i+1]-n[i] for n,i in zip(nodes,index) ]) ) ),
     id='{}.quad({})'.format(name,','.join(str(i) for i in index)) ), *indices )
   topo = topology.StructuredTopology( structure )
-  coords = ElemFunc( domainelem )
+  coords = function.ElemFunc( domainelem )
   if periodic:
     topo = topo.make_periodic( periodic )
   return topo, coords
@@ -185,7 +145,7 @@ def gmesh( path, btags=[], name=None ):
   topo.boundary = topology.UnstructuredTopology( belements, ndims=1 )
   topo.boundary.groups = dict( ( btags[tag], topology.UnstructuredTopology( group, ndims=1 ) ) for tag, group in bgroups.items() )
 
-  return topo, ElemFunc( domainelem )
+  return topo, function.ElemFunc( domainelem )
 
 def triangulation( nodes, nnodes ):
   'triangulation'
@@ -370,6 +330,6 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   topo.boundary = topology.UnstructuredTopology( belems, ndims=1 )
   topo.boundary.groups = dict( ( tag, topology.UnstructuredTopology( group, ndims=1 ) ) for tag, group in bgroups.items() )
 
-  return topo, ElemFunc( domainelem )
+  return topo, function.ElemFunc( domainelem )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=1

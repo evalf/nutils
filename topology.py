@@ -602,6 +602,21 @@ class StructuredTopology( Topology ):
     return function.function( funcmap, dofmap, dofcount, self.ndims )
 
   @core.cachefunc
+  def discontfunc( self, degree ):
+    'discontinuous shape functions'
+
+    if isinstance( degree, int ):
+      degree = ( degree, ) * self.ndims
+
+    dofs = numpy.arange( numpy.product(degree) * len(self) ).reshape( len(self), -1 )
+    dofmap = dict( zip( self, dofs ) )
+
+    stdelem = util.product( element.PolyLine( element.PolyLine.bernstein_poly( d ) ) for d in degree )
+    funcmap = dict( numpy.broadcast( self.structure, stdelem ) )
+
+    return function.function( funcmap, dofmap, dofs.size, self.ndims )
+
+  @core.cachefunc
   def curvefreesplinefunc( self ):
     'spline from nodes'
 
