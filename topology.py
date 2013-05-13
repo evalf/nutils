@@ -517,7 +517,7 @@ class StructuredTopology( Topology ):
         id = 'iface(%s,%s)' % ( elem1.id, elem2.id )
         ielem = element.QuadElement( ndims=self.ndims-1, id=id, interface=(context1,context2) )
         interfaces.append( ielem )
-    return interfaces
+    return UnstructuredTopology( interfaces, ndims=self.ndims-1 )
 
   @core.cachefunc
   def splinefunc( self, degree, neumann=(), periodic=None, closed=False, removedofs=None ):
