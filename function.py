@@ -2756,7 +2756,7 @@ piecewise = lambda level, intervals, *funcs: choose( sum( greater( insert(level,
 trace = lambda arg, n1=-2, n2=-1: sum( takediag( arg, n1, n2 ) )
 eye = lambda n: diagonalize( expand( [1.], (n,) ) )
 norm2 = lambda arg, axis=-1: sqrt( sum( arg * arg, axis ) )
-heaviside = lambda arg: greater( arg, 0 )
+heaviside = lambda arg: choose( greater( arg, 0 ), [0.,1.] )
 divide = lambda arg1, arg2: multiply( arg1, reciprocal(arg2) )
 subtract = lambda arg1, arg2: add( arg1, negative(arg2) )
 mean = lambda arg: .5 * ( arg + opposite(arg) )

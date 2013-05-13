@@ -413,6 +413,9 @@ def run( *functions ):
   except KeyboardInterrupt:
     log.error( 'killed by user' )
     excinfo = False
+  except Terminate, e:
+    log.error( 'Terminated:', e )
+    excinfo = False
   except:
     excinfo = log.traceback()
   else:
@@ -440,5 +443,8 @@ def run( *functions ):
   excinfo[1:].write_html( htmlfile )
   excinfo[1:].explore()
   sys.exit( 1 )
+
+class Terminate( Exception ):
+  pass
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

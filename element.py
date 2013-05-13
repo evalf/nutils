@@ -257,7 +257,7 @@ class TrimmedElement( Element ):
     self.levelset = levelset
     self.maxrefine = maxrefine
     self.lscheme = lscheme
-    self.finestscheme = finestscheme
+    self.finestscheme = finestscheme if finestscheme != None else 'simplex1'
     self.evalrefine = evalrefine
 
     Element.__init__( self, ndims=elem.ndims, id=id, parent=parent )
@@ -275,18 +275,13 @@ class TrimmedElement( Element ):
       return points[inside], None
 
     if self.maxrefine <= 0:
-      if self.finestscheme is None or \
-         self.finestscheme.startswith('simplex'):
-
-        if not self.finestscheme:
-          order = 1
-        else:
-          order = int(self.finestscheme[7:])
+      if self.finestscheme.startswith('simplex'):
 
         points  = []
         weights = []
 
-        for simplex in self.get_simplices( 0, order=order ):
+        for simplex in self.get_simplices( 0 ):
+
           spoints, sweights = simplex.eval( ischeme )
           pelem, transform = simplex.parent
 
@@ -294,6 +289,9 @@ class TrimmedElement( Element ):
 
           points.append( transform.eval( spoints ) )
           weights.append( sweights * transform.det )
+
+        if len(points) == 0:
+          return numpy.zeros((0,self.ndims)), numpy.zeros((0,))
 
         points  = util.ImmutableArray(numpy.concatenate(points,axis=0))
         weights = util.ImmutableArray(numpy.concatenate(weights))
@@ -304,7 +302,6 @@ class TrimmedElement( Element ):
         
         if self.finestscheme.endswith( '.all' ):
           points, weights = self.elem.eval( self.finestscheme[:-4] )
-          return points, weights if weights is not None else None
         elif self.finestscheme.endswith( '.none' ):
           points, weights = self.elem.eval( self.finestscheme[:-5] )
           return points[numpy.zeros_like(weights,dtype=bool)], weights[numpy.zeros_like(weights,dtype=bool)] if weights is not None else None
@@ -354,11 +351,14 @@ class TrimmedElement( Element ):
     transform = self.elem.edgetransform( self.ndims )[ iedge ]
     return QuadElement( id=self.id+'.edge({})'.format(iedge), ndims=self.ndims-1, context=(self,transform) )
 
-  def get_simplices ( self, maxrefine, order=2 ):
+  def get_simplices ( self, maxrefine ):
     'divide in simple elements'
 
     if maxrefine > 0 or self.evalrefine > 0:
       return [ simplex for child in filter(None,self.children) for simplex in child.get_simplices( maxrefine=maxrefine-1 ) ]
+
+    assert self.finestscheme.startswith('simplex'), 'Expected simplex scheme'
+    order = int(self.finestscheme[7:])
 
     ischeme = self.elem.getischeme( self.elem.ndims, 'bezier2' )
     where   = self.levelset( self.elem, ischeme ) > 0
