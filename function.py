@@ -1212,6 +1212,9 @@ class DofIndex( ArrayFunc ):
   def _opposite( self ):
     return self
 
+  def _negative( self ):
+    return DofIndex( -self.array, self.iax, self.index )
+
 class Multiply( ArrayFunc ):
   'multiply'
 
@@ -1282,6 +1285,15 @@ class Multiply( ArrayFunc ):
   def _opposite( self ):
     func1, func2 = self.funcs
     return opposite(func1) * opposite(func2)
+
+  def _negative( self ):
+    func1, func2 = self.funcs
+    negfunc1 = -func1
+    if not isinstance( negfunc1, Negative ):
+      return multiply( negfunc1, func2 )
+    negfunc2 = -func2
+    if not isinstance( negfunc2, Negative ):
+      return multiply( func1, negfunc2 )
 
 class Negative( ArrayFunc ):
   'negate'
