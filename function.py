@@ -1391,6 +1391,15 @@ class Add( ArrayFunc ):
     func1, func2 = self.funcs
     return opposite(func1) + opposite(func2)
 
+  def _add( self, other ):
+    func1, func2 = self.funcs
+    func1_other = add( func1, other )
+    if func1_other != Add( func1, other ):
+      return add( func1_other, func2 )
+    func2_other = add( func2, other )
+    if func2_other != Add( func2, other ):
+      return add( func1, func2_other )
+
 class BlockAdd( Add ):
   'block addition (used for DG)'
 
@@ -1619,6 +1628,12 @@ class Power( ArrayFunc ):
 
   def _opposite( self ):
     return power( opposite(self.func), self.power )
+
+  def _multiply( self, other ):
+    if isinstance( other, Power ) and self.func == other.func:
+      return power( self.func, self.power + other.power )
+    if other == self.func:
+      return power( self.func, self.power + 1 )
 
 class ElemFunc( ArrayFunc ):
   'trivial func'
@@ -2682,6 +2697,10 @@ def multiply( arg1, arg2 ):
   if _equal( arg1, arg2 ):
     return power( arg1, 2 )
 
+  for idim, sh in enumerate( shape ):
+    if sh == 1:
+      return insert( multiply( get(arg1,idim,0), get(arg2,idim,0) ), idim )
+
   retval = _call( arg1, '_multiply', arg2 )
   if retval is not None:
     assert retval.shape == shape, 'bug in %s._multiply' % arg1
@@ -2711,6 +2730,10 @@ def add( arg1, arg2 ):
 
   if _equal( arg1, arg2 ):
     return arg1 * 2
+
+  for idim, sh in enumerate( shape ):
+    if sh == 1:
+      return insert( add( get(arg1,idim,0), get(arg2,idim,0) ), idim )
 
   retval = _call( arg1, '_add', arg2 )
   if retval is not None:
