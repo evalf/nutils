@@ -1347,6 +1347,10 @@ class Negative( ArrayFunc ):
   def _opposite( self ):
     return -opposite(self.func)
 
+  def _power( self, n ):
+    if n%2 == 0:
+      return power( self.func, n )
+
 class Add( ArrayFunc ):
   'add'
 
