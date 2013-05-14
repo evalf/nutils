@@ -1430,9 +1430,16 @@ class Dot( ArrayFunc ):
     return dot( localgradient( self.func1, ndims ), self.func2[...,_], self.axes ) \
          + dot( self.func1[...,_], localgradient( self.func2, ndims ), self.axes )
 
-# def _multiply( self, other ):
-#   if not _isfunc(other) and isinstance( self.func2, DofIndex ):
-#     return dot( self.func1, self.func2 * other, self.axes )
+  def _multiply( self, other ):
+    for ax in self.axes:
+      other = insert( other, ax )
+    assert other.ndim == self.func1.ndim == self.func2.ndim
+    func1_other = multiply( self.func1, other )
+    if func1_other != Multiply( self.func1, other ):
+      return dot( func1_other, self.func2, self.axes )
+    func2_other = multiply( self.func2, other )
+    if func2_other != Multiply( self.func2, other ):
+      return dot( self.func1, func2_other, self.axes )
 
   def _add( self, other ):
     if isinstance( other, Dot ) and self.axes == other.axes:
