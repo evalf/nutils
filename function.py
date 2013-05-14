@@ -1453,6 +1453,14 @@ class Dot( ArrayFunc ):
   def _opposite( self ):
     return dot( opposite(self.func1), opposite(self.func2), self.axes )
 
+  def _negative( self ):
+    negfunc1 = -self.func1
+    if not isinstance( negfunc1, Negative ):
+      return dot( negfunc1, self.func2, self.axes )
+    negfunc2 = -self.func2
+    if not isinstance( negfunc2, Negative ):
+      return dot( self.func1, negfunc2, self.axes )
+
 class Sum( ArrayFunc ):
   'sum'
 
