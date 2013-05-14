@@ -1263,11 +1263,13 @@ class Multiply( ArrayFunc ):
     return product( func1, axis ) * product( func2, axis )
 
   def _multiply( self, other ):
-    if not _isfunc( other ):
-      if not _isfunc( self.funcs[1] ):
-        return self.funcs[0] * ( self.funcs[1] * other )
-      if not _isfunc( self.funcs[0] ):
-        return self.funcs[1] * ( self.funcs[0] * other )
+    func1, func2 = self.funcs
+    func1_other = multiply( func1, other )
+    if func1_other != Multiply( func1, other ):
+      return multiply( func1_other, func2 )
+    func2_other = multiply( func2, other )
+    if func2_other != Multiply( func2, other ):
+      return multiply( func1, func2_other )
 
   def _localgradient( self, ndims ):
     func1, func2 = self.funcs
