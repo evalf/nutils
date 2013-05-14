@@ -1014,12 +1014,14 @@ class PolyProduct( StdElem ):
 
     data = numpy.empty( shape + (self.ndims,) * grad )
 
-    s12 = numpy.array([s1,s2])
+    s = (s1,)*grad + (s2,)*grad
     R = numpy.arange(grad)
     for n in range(2**grad):
       index = n>>R&1
-      shuffle = range(points.ndim) + list( points.ndim + index.argsort() )
-      data[E+tuple(s12[index])] = G12[index.sum()].transpose(shuffle)
+      n = index.argsort() # index[s] = [0,...,1]
+      shuffle = range(points.ndim) + list( points.ndim + n )
+      iprod = index.sum()
+      data.transpose(shuffle)[E+s[iprod:iprod+grad]] = G12[iprod]
 
     return data
 

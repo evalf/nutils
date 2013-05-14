@@ -414,7 +414,7 @@ def run( *functions ):
     log.error( 'killed by user' )
     excinfo = False
   except Terminate, e:
-    log.error( 'Terminated:', e )
+    log.error( 'terminated:', e )
     excinfo = False
   except:
     excinfo = log.traceback()
