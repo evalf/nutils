@@ -35,6 +35,12 @@ class Topology( object ):
     assert self.ndims == other.ndims
     return UnstructuredTopology( set(self) | set(other), ndims=self.ndims )
 
+  def __mul__( self, other ):
+    'element products'
+
+    elems = [ elem1 * elem2 for elem1 in self for elem2 in other ]
+    return UnstructuredTopology( elems, ndims=self.ndims+other.ndims )
+
   def __getitem__( self, item ):
     'subtopology'
 

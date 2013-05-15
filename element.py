@@ -35,7 +35,7 @@ class TrimmedIScheme( object ):
         allchildren = []
         while parents:
           allchildren += parents.pop().children
-        parents = allchildren  
+        parents = allchildren
 
       if not any(self.retain[child] for child in parents):
         return None
@@ -82,7 +82,41 @@ class TrimmedIScheme( object ):
     weights = numpy.concatenate( weights, axis=0 )
     return coords, weights
 
-class AffineTransformation( object ):
+class Transformation( object ):
+  'transform points'
+
+  def __init__( self, fromdim, todim ):
+    'constructor'
+
+    assert isinstance( fromdim, int ) and fromdim > 0
+    assert isinstance( todim, int ) and todim > 0
+    self.fromdim = fromdim
+    self.todim = todim
+
+  def __str__( self ):
+    'string representation'
+
+    return '%s(%d->%d)' % ( self.__class__.__name__, self.fromdim, self.todim )
+
+class SliceTransformation( Transformation ):
+  'take slice'
+
+  def __init__( self, fromdim, start=None, stop=None, step=None ):
+    'constructor'
+
+    self.slice = slice( start, stop, step )
+    Transformation.__init__( self, fromdim, todim=len(range(fromdim)[self.slice]) )
+  
+  def eval( self, points ):
+    'apply transformation'
+
+    if points is None:
+      return None
+
+    assert points.shape[1] == self.fromdim
+    return util.ImmutableArray( points[:,self.slice] )
+
+class AffineTransformation( Transformation ):
   'affine transformation'
 
   def __init__( self, offset, transform ):
@@ -92,8 +126,8 @@ class AffineTransformation( object ):
     assert self.offset.ndim == 1
     self.transform = numpy.asarray( transform )
     assert self.transform.ndim == 2
-    self.todim, self.fromdim = self.transform.shape
-    assert self.offset.shape[0] == self.todim
+    assert self.transform.shape[0] == self.offset.shape[0]
+    Transformation.__init__( self, fromdim=self.transform.shape[1], todim=self.transform.shape[0] )
 
   @core.cacheprop
   def invtrans( self ):
@@ -160,6 +194,11 @@ class Element( object ):
     else:
       self.inv_root_transform = self.root_transform = numpy.eye( self.ndims )
       self.root_det = 1.
+
+  def __mul__( self, other ):
+    'multiply elements'
+
+    return ProductElement( self, other )
 
   def eval( self, where ):
     'get points'
@@ -245,6 +284,35 @@ class Element( object ):
     'divide in simple elements'
 
     return self,
+
+class ProductElement( Element ):
+  'element product'
+
+  def __init__( self, elem1, elem2 ):
+    'constructor'
+
+    self.elem1 = elem1
+    self.elem2 = elem2
+    ndims = elem1.ndims+elem2.ndims
+    iface1 = elem1, SliceTransformation( fromdim=ndims, stop=elem1.ndims )
+    iface2 = elem2, SliceTransformation( fromdim=ndims, start=elem1.ndims )
+    Element.__init__( self, ndims=ndims, id='(%s*%s)'%(elem1.id,elem2.id), interface=(iface1,iface2) )
+
+  def eval( self, ischeme ):
+    'get integration scheme'
+
+    coords1, weights1 = self.elem1.eval( ischeme )
+    coords2, weights2 = self.elem2.eval( ischeme )
+    coords = numpy.empty( coords1.shape[0], coords2.shape[0], self.ndims )
+    coords[:,:,:self.elem1.ndims] = coords1[:,_,:]
+    coords[:,:,self.elem1.ndims:] = coords2[_,:,:]
+    if weights1 is not None:
+      assert weights2 is not None
+      weights = ( weights1[:,_] * weights[_,:] ).ravel()
+    else:
+      assert weights2 is None
+      weights = None
+    return coords.reshape(-1,self.ndims), weights
 
 class TrimmedElement( Element ):
   'trimmed element'
