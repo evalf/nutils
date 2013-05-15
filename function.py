@@ -285,7 +285,7 @@ class Cascade( Evaluable ):
   def cascade( elem, points, ndims, side ):
     'evaluate'
 
-    while elem.ndims < ndims:
+    while elem.ndims != ndims:
       elem, transform = elem.interface[side] if elem.interface \
                    else elem.context or elem.parent
       points = transform.eval( points )
@@ -449,24 +449,6 @@ class ArrayFunc( Evaluable ):
     else:
       raise NotImplementedError, 'cannot compute normal for %dx%d jacobian' % ( self.shape[0], ndims )
     return normal
-
-  def iweights( self, ndims ):
-    'integration weights for [ndims] topology'
-
-    J = localgradient( self, ndims )
-    cndims, = self.shape
-    assert J.shape == (cndims,ndims), 'wrong jacobian shape: got %s, expected %s' % ( J.shape, (cndims, ndims) )
-    if cndims == ndims:
-      detJ = determinant( J )
-    elif ndims == 1:
-      detJ = norm2( J[:,0], axis=0 )
-    elif cndims == 3 and ndims == 2:
-      detJ = norm2( cross( J[:,0], J[:,1], axis=0 ), axis=0 )
-    elif ndims == 0:
-      detJ = 1
-    else:
-      raise NotImplementedError, 'cannot compute determinant for %dx%d jacobian' % J.shape[:2]
-    return detJ * IWeights()
 
   def curvature( self, ndims=-1 ):
     'curvature'
@@ -1638,11 +1620,12 @@ class Power( ArrayFunc ):
 class ElemFunc( ArrayFunc ):
   'trivial func'
 
-  def __init__( self, domainelem ):
+  def __init__( self, domainelem, side=0 ):
     'constructor'
 
     self.domainelem = domainelem
-    cascade = Cascade( domainelem.ndims )
+    self.side = side
+    cascade = Cascade( domainelem.ndims, side )
     ArrayFunc.__init__( self, args=[cascade,domainelem], evalf=self.elemfunc, shape=[domainelem.ndims] )
 
   @staticmethod
@@ -1658,7 +1641,7 @@ class ElemFunc( ArrayFunc ):
     return transform( self.domainelem.ndims, ndims )
 
   def _opposite( self ):
-    return self
+    return ElemFunc( self.domainelem, 1-self.side )
 
   def find( self, elem, C ):
     'find coordinates'
@@ -2933,5 +2916,24 @@ def fdapprox( func, w, dofs, delta=1.e-5 ):
     x1 = tuple( wi.dot( pert ) for wi in w )
     dfunc_fd.append( (func( *x1 ) - func( *x0 ))/step )
   return dfunc_fd
+
+def iwscale( coords, ndims ):
+  'integration weights scale'
+
+  assert coords.ndim == 1
+  J = localgradient( coords, ndims )
+  cndims, = coords.shape
+  assert J.shape == (cndims,ndims), 'wrong jacobian shape: got %s, expected %s' % ( J.shape, (cndims, ndims) )
+  if cndims == ndims:
+    detJ = determinant( J )
+  elif ndims == 1:
+    detJ = norm2( J[:,0], axis=0 )
+  elif cndims == 3 and ndims == 2:
+    detJ = norm2( cross( J[:,0], J[:,1], axis=0 ), axis=0 )
+  elif ndims == 0:
+    detJ = 1.
+  else:
+    raise NotImplementedError, 'cannot compute determinant for %dx%d jacobian' % J.shape[:2]
+  return detJ
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

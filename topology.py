@@ -189,7 +189,7 @@ class Topology( object ):
 
     if iweights is None:
       assert coords is not None, 'conflicting arguments coords and iweights'
-      iweights = coords.iweights( self.ndims )
+      iweights = function.iwscale( coords, self.ndims ) * function.IWeights()
     else:
       assert coords is None, 'conflicting arguments coords and iweights'
     assert iweights.ndim == 0
