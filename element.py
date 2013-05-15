@@ -298,17 +298,19 @@ class ProductElement( Element ):
     iface2 = elem2, SliceTransformation( fromdim=ndims, start=elem1.ndims )
     Element.__init__( self, ndims=ndims, id='(%s*%s)'%(elem1.id,elem2.id), interface=(iface1,iface2) )
 
+    self.root_det = elem1.root_det * elem2.root_det # HACK. TODO via constructor
+
   def eval( self, ischeme ):
     'get integration scheme'
 
     coords1, weights1 = self.elem1.eval( ischeme )
     coords2, weights2 = self.elem2.eval( ischeme )
-    coords = numpy.empty( coords1.shape[0], coords2.shape[0], self.ndims )
+    coords = numpy.empty( [ coords1.shape[0], coords2.shape[0], self.ndims ] )
     coords[:,:,:self.elem1.ndims] = coords1[:,_,:]
     coords[:,:,self.elem1.ndims:] = coords2[_,:,:]
     if weights1 is not None:
       assert weights2 is not None
-      weights = ( weights1[:,_] * weights[_,:] ).ravel()
+      weights = ( weights1[:,_] * weights2[_,:] ).ravel()
     else:
       assert weights2 is None
       weights = None
