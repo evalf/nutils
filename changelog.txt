@@ -1,8 +1,18 @@
+PyPlot. 
+  - cspy: extends matplotlib.pyplot.spy() by color coding elements
+
+Finite difference approximation. function.fdapprox computes a finite
+difference approximation of the Fréchet derivative of an evaluable.
+For instance, if you want to verify a tangent matrix for a Newton
+solve, the finite difference approximation should converge (in the
+Hilbert-Schmidt norm with rate 1 w.r.t. the perturbation, to be
+precise).
+
 Finity 2.00 "Rickon" --- major enhancements
 
 Changed:
 
-Replaced DofAxis by Inflate. In the former setup, fnuction objects
+Replaced DofAxis by Inflate. In the former setup, function objects
 featured shapes of type f.shape=(1,DofAxis,3), representing the fact
 that evaluate of this object leads to an array of shape (1,ndofs,3),
 where ndofs depends on the element. The DofAxis evaluated to the

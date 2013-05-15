@@ -2914,5 +2914,24 @@ def pointdata ( topo, ischeme, func=None, shape=None, value=0. ):
 
     return Pointdata ( data, shape )
 
+def fdapprox( func, w, dofs, delta=1.e-5 ):
+  '''Finite difference approximation of the variation of func in directions w around dofs
+  I: func,  the functional to differentiate
+     dofs,  DOF vector of linearization point
+     w,     the function space or a tuple of chained spaces
+     delta, finite difference step scaling of ||dofs||_inf
+  O: dfunc, approximate variation of func'''
+  log.context( 'FD approx' )
+  if not isinstance( w, tuple ): w = w,
+  x0 = tuple( wi.dot( dofs ) for wi in w )
+  step = numpy.linalg.norm( dofs, numpy.inf )*delta
+  ndofs = len( dofs )
+  dfunc_fd = []
+  for i in log.iterate( 'dof', range(ndofs) ):
+    pert = dofs.copy()
+    pert[i] += step
+    x1 = tuple( wi.dot( pert ) for wi in w )
+    dfunc_fd.append( (func( *x1 ) - func( *x0 ))/step )
+  return dfunc_fd
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
