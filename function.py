@@ -5,6 +5,61 @@ ELEM    = object()
 POINTS  = object()
 WEIGHTS = object()
 
+class CBuilder( object ):
+
+  def __init__( self, cachedir='/tmp/finity' ):
+    from cffi import FFI
+    self.ffi = FFI()
+    self.codebase = {}
+    self.cachedir = cachedir
+
+  def compile( self ):
+    log.context( 'c-builder' )
+    if not self.codebase:
+      return
+    import os, hashlib
+    code = '\n'.join( head + body for body, (head,func) in self.codebase.iteritems() )
+    fname = os.path.join( self.cachedir, hashlib.md5( code ).hexdigest() )
+    if os.path.isfile( fname+'.so' ):
+      log.info( 'in cache' )
+    else:
+      log.info( 'compiling %d c-functions' % len(self.codebase) )
+      if not os.path.isdir( self.cachedir ):
+        os.mkdir( self.cachedir )
+      open( fname+'.c', 'w' ).write( code )
+      assert os.system( 'gcc -fpic -g -c -o %s.o -O3 -march=native -mtune=native %s.c' % ((fname,)*2) ) == 0
+      assert os.system( 'gcc -shared -Wl,-soname,%s.so -o %s.so %s.o -lc' % ((fname,)*3) ) == 0
+      os.unlink( fname+'.c' )
+      os.unlink( fname+'.o' )
+    self.so = self.ffi.dlopen( fname+'.so' )
+
+  def __getitem__( self, (code,init) ):
+    head_evalf = self.codebase.get(code)
+    if head_evalf is not None:
+      head, evalf = head_evalf
+      return evalf
+    handle = 'func%d' % len(self.codebase)
+    head = 'void ' + handle
+    self.ffi.cdef( head + code.split( '\n' )[0] + ';' )
+    def evalf( *args ):
+      cfunc = getattr( self.so, handle )
+      retval, iterargs = self.init( args )
+      for args in iterargs:
+        # blindly assume that all arrays are contiguous arrays of doubles
+        args = [ self.ffi.cast('double*',arg.ctypes.data) if isinstance(arg,numpy.ndarray) else arg for arg in args ]
+        cfunc( *args )
+      return retval
+    self.codebase[code] = head, evalf
+    return evalf
+
+def init_args_for( shape ):
+  def init( *args ):
+    args = [ numpy.ascontiguousarray( arg, dtype=float ) for arg in args ]
+    shape = map( max, zip([ arg.shape for arg in args ]) )
+    retval = numpy.empty( shape )
+    return retval, [ [ retval[index] ] + [ arg[index[retval.ndim-arg.ndim:]] for arg in args ] for index in numpy.ndindex( retval.shape[:-ndim] ) ]
+  return init
+
 # EVALUABLE
 #
 # Base class for everything that is evaluable. Evaluables hold an argument list
@@ -33,28 +88,29 @@ class Evaluable( object ):
 
   operations = None
 
-  def __init__( self, args, evalf ):
+  def __init__( self, args, evalf, cdef=None ):
     'constructor'
 
     self.__args = tuple(args)
     self.__evalf = evalf
+    self.__cdef = cdef
 
   def verify( self, value ):
     'check result'
 
     return '= %s %s' % ( _obj2str(value), type(value) )
 
-  def recurse_index( self, data, operations ):
+  def recurse_index( self, data, operations, cbuild ):
     'compile'
 
     indices = numpy.empty( len(self.__args), dtype=int )
     for iarg, arg in enumerate( self.__args ):
       if isinstance(arg,Evaluable):
-        for idx, (op,idcs) in enumerate( operations ):
+        for idx, (op,evalf,idcs) in enumerate( operations ):
           if op == arg:
             break
         else:
-          idx = arg.recurse_index(data,operations)
+          idx = arg.recurse_index(data,operations,cbuild)
       elif arg is ELEM:
         idx = -3
       elif arg is POINTS:
@@ -65,7 +121,8 @@ class Evaluable( object ):
         data.insert( 0, arg )
         idx = -len(data)-3
       indices[iarg] = idx
-    operations.append( (self,indices) )
+    evalf = cbuild[ self.__cdef() ] if cbuild and self.__cdef else self.__evalf
+    operations.append( (self,self.__evalf,indices) )
     return len(operations)-1
 
   def compile( self ):
@@ -74,10 +131,13 @@ class Evaluable( object ):
     log.context( 'compiling' )
 
     if self.operations is None:
+      cbuild = getattr( prop, 'use_c_funcs', False ) and CBuilder()
       self.data = []
       self.operations = []
-      self.recurse_index( self.data, self.operations ) # compile expressions
+      self.recurse_index( self.data, self.operations, cbuild ) # compile expressions
       self.graphviz()
+      if cbuild:
+        cbuild.compile()
 
   def __call__( self, elem, ischeme ):
     'evaluate'
@@ -103,10 +163,10 @@ class Evaluable( object ):
     self.compile()
     N = len(self.data) + 3
     values = list( self.data ) + [ elem, points, weights ]
-    for op, indices in self.operations:
+    for op, evalf, indices in self.operations:
       args = [ values[N+i] for i in indices ]
       try:
-        retval = op.__evalf( *args )
+        retval = evalf( *args )
       except KeyboardInterrupt:
         raise
       except:
@@ -161,7 +221,7 @@ class Evaluable( object ):
     print >> dot.stdin, 'graph [ dpi=72 ];'
 
     self.compile()
-    for i, (op,indices) in enumerate( self.operations ):
+    for i, (op,evalf,indices) in enumerate( self.operations ):
 
       node = op.__graphviz__()
       node['label'] = '%d. %s' % ( i, node.get('label','') )
@@ -186,7 +246,7 @@ class Evaluable( object ):
     N = len(self.data) + 3
 
     lines = []
-    for i, (op,indices) in enumerate( self.operations ):
+    for i, (op,evalf,indices) in enumerate( self.operations ):
       line = '  %%%d =' % i
       args = [ '%%%d' % idx if idx >= 0 else _obj2str(values[N+idx]) for idx in indices ]
       try:
@@ -311,13 +371,13 @@ class ArrayFunc( Evaluable ):
 
   __array_priority__ = 1. # http://stackoverflow.com/questions/7042496/numpy-coercion-problem-for-left-sided-binary-operator/7057530#7057530
 
-  def __init__( self, evalf, args, shape ):
+  def __init__( self, evalf, args, shape, cdef=None ):
     'constructor'
 
     self.evalf = evalf
     self.shape = tuple(shape)
     self.ndim = len(self.shape)
-    Evaluable.__init__( self, evalf=evalf, args=args )
+    Evaluable.__init__( self, evalf=evalf, args=args, cdef=cdef )
 
   # mathematical operators
 
@@ -1339,26 +1399,12 @@ class Add( ArrayFunc ):
   def __init__( self, func1, func2 ):
     'constructor'
 
-    evalf    = self.cadd if getattr( prop, 'use_c_funcs', False ) else numpy.add
-    self.cop = None 
-
     self.funcs = func1, func2
     shape = _jointshape( func1.shape, func2.shape )
-    ArrayFunc.__init__( self, args=self.funcs, evalf=evalf, shape=shape )
+    ArrayFunc.__init__( self, args=self.funcs, evalf=numpy.add, cdef=self.cdef, shape=shape )
 
-  def cadd ( self, arg1, arg2 ):
-
-    #Compile the c-function
-    self.__compilecop()
-
-    return self.cop( arg1, arg2 )
-
-  def __compilecop ( self ):
+  def cdef( self ):
     
-    #Check if compiled c-function already exists for this instance
-    if self.cop:
-      return
-
     #Loop over shape to extract the variable sizes
     sizes    = []
     strides1 = ['1']
@@ -1372,74 +1418,16 @@ class Add( ArrayFunc ):
       strides1.append( '%s*%s' % ( strides1[-1], self.funcs[0].shape[i] if isinstance(self.funcs[0].shape[i],int) else size ) )
       strides2.append( '%s*%s' % ( strides2[-1], self.funcs[1].shape[i] if isinstance(self.funcs[1].shape[i],int) else size ) )
 
-    ccode = 'retval[0] = arg1[%s] + arg2[%s];\nretval++;' % ( '+'.join('(%s)*i%d' % (strides1[i],i) for i in range(self.ndim) if self.funcs[0].shape[i] == self.shape[i] ) or '0',
-                                                              '+'.join('(%s)*i%d' % (strides2[i],i) for i in range(self.ndim) if self.funcs[1].shape[i] == self.shape[i] ) or '0' )
+    body = 'retval[0] = arg1[%s] + arg2[%s];\nretval++;' % ( '+'.join('(%s)*i%d' % (strides1[i],i) for i in range(self.ndim) if self.funcs[0].shape[i] == self.shape[i] ) or '0',
+                                                             '+'.join('(%s)*i%d' % (strides2[i],i) for i in range(self.ndim) if self.funcs[1].shape[i] == self.shape[i] ) or '0' )
     for i in range( self.ndim ):
-      ccode = 'for (i%(idim)d=0; i%(idim)d<%(size)s; i%(idim)d++) {\n%(code)s}' % { 'idim':i, 'size':sizes[i], 'code':ccode }
-    ccode = 'int %s;\n%s' % ( ', '.join( 'i%d' % idim for idim in range(self.ndim) ), ccode )
-    signature = 'void add( double *retval, double *arg1, double *arg2, %s )' % ', '.join( 'int %s' % s for s in sizes if isinstance(s,str) )
-    ccode = '%s {\n%s}' % ( signature, ccode )
+      body = 'for (i%(idim)d=0; i%(idim)d<%(size)s; i%(idim)d++) {\n%(code)s}' % { 'idim':i, 'size':sizes[i], 'code':body }
+    if self.ndim:
+      body = 'int %s;\n%s' % ( ', '.join( 'i%d' % idim for idim in range(self.ndim) ), body )
+    args = ','.join( [ 'double *retval', 'double *arg1', 'double *arg2' ] + [ 'int %s' % s for s in sizes if isinstance(s,str) ] )
+    code = '( %s )\n{ %s }' % ( args, body )
 
-    ######################
-    # Compile the c-code #
-    ######################
-
-    import os, sys
-
-    #Write code in temporary file
-    fname = os.tempnam(None,'fty')
-
-    open(fname+'.c','w').write( ccode )
-
-    #Compiling command
-    os.system( 'gcc -fpic -g -c -o %s.o -O3 -march=native -mtune=native %s.c' % ((fname,)*2) )
-
-    #Linking command
-    os.system( 'gcc -shared -Wl,-soname,%s.so -o %s.so %s.o -lc' % ((fname,)*3) )
-
-    #CFFI wrapper
-    from cffi import FFI
-
-    ffi = FFI()
-    ffi.cdef( '''%s;''' % signature )
-
-    TEST = ffi.dlopen( fname+'.so' )
-
-    def do_add( arg1, arg2 ):
-      arg1 = numpy.ascontiguousarray( arg1, dtype=float )
-      arg2 = numpy.ascontiguousarray( arg2, dtype=float )
-      haspntax1 = arg1.ndim - self.ndim
-      haspntax2 = arg2.ndim - self.ndim
-      assert haspntax1 in (0,1)
-      assert haspntax2 in (0,1)
-      dims  = []
-      sizes = []
-      for i in range(self.ndim):
-        size = self.shape[i-self.ndim]
-        if not isinstance( size, int ):
-          size = arg1.shape[i-self.ndim] if arg1.shape[i-self.ndim]!=1 else arg2.shape[i-self.ndim]
-          dims .append( size )
-        sizes.append( size )
-      if haspntax1 or haspntax2:
-        npoints = arg1.shape[0] if haspntax1 else arg2.shape[0]
-        retval = numpy.empty( [npoints]+sizes )
-        retvals = retval
-        args1 = arg1 if haspntax1 else [arg1] * npoints
-        args2 = arg2 if haspntax2 else [arg2] * npoints
-      else:
-        retval = numpy.empty( sizes )
-        retvals = [ retval ]
-        args1 = [ arg1 ]
-        args2 = [ arg2 ]
-      assert len(retvals) == len(args1) == len(args2)
-      for ret, a1, a2 in zip( retvals, args1, args2 ):
-        retptr = ffi.cast('double*',ret.ctypes.data)
-        ptr1 = ffi.cast('double*',a1.ctypes.data)
-        ptr2 = ffi.cast('double*',a2.ctypes.data)
-        TEST.add( retptr, ptr1, ptr2, *dims )
-      return retval
-
-    self.cop = do_add
+    return code, init_args_for( self.shape )
 
   def __eq__( self, other ):
     'compare'

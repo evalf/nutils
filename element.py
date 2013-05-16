@@ -202,6 +202,20 @@ class HalfNode( Node ):
   def __repr__( self ):
     return '(%s-%s-%s)' % self.nodes
 
+class ProductNode( Node ):
+  'combined nodes'
+
+  def __init__( self, node1, node2 ):
+    assert isinstance( node1, Node )
+    assert isinstance( node2, Node )
+    self.nodes = node1, node2
+
+  def __eq__( self, other ):
+    return other.__class__ == self.__class__ and self.nodes == other.nodes
+
+  def __repr__( self ):
+    return '%s*%s' % self.nodes
+
 class Element( object ):
   '''Element base class.
 
@@ -335,7 +349,8 @@ class ProductElement( Element ):
     ndims = elem1.ndims+elem2.ndims
     iface1 = elem1, SliceTransformation( fromdim=ndims, stop=elem1.ndims )
     iface2 = elem2, SliceTransformation( fromdim=ndims, start=elem1.ndims )
-    Element.__init__( self, ndims=ndims, id='(%s*%s)'%(elem1.id,elem2.id), interface=(iface1,iface2) )
+    nodes = [ ProductNode(node1,node2) for node1 in elem1.nodes for node2 in elem2.nodes ]
+    Element.__init__( self, ndims=ndims, nodes=nodes, interface=(iface1,iface2) )
 
     self.root_det = elem1.root_det * elem2.root_det # HACK. TODO via constructor
 
