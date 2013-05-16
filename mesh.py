@@ -9,13 +9,20 @@ def rectilinear( nodes, periodic=(), name='rect' ):
   nodes = [ numpy.linspace(*n) if len(n) == 3 and isinstance(n,tuple) else numpy.asarray(n) for n  in nodes ]
   ndims = len(nodes)
   indices = numpy.ogrid[ tuple( slice(len(n)-1) for n in nodes ) ]
-  domainelem = element.Element( ndims=ndims, id=name )
+  domainelem = element.Element( ndims=ndims, nodes=[] )
+
+  nodefmt = name + '(' + ','.join( '%%%dd' % len(str(len(n)-1)) for n in nodes ) + ')'
+  nodeobjs = util.objmap( lambda *index: element.PrimaryNode(nodefmt%index), *numpy.ogrid[ tuple( slice(len(n)) for n in nodes ) ] )
+  for idim in periodic:
+    tmp = numeric.bringforward( nodeobjs, idim )
+    tmp[-1] = tmp[0]
+
   structure = util.objmap( lambda *index: element.QuadElement(
     ndims=ndims,
     parent=( domainelem, element.AffineTransformation(
       offset=[ n[i] for n,i in zip(nodes,index) ],
       transform=numpy.diag([ n[i+1]-n[i] for n,i in zip(nodes,index) ]) ) ),
-    id='{}.quad({})'.format(name,','.join(str(i) for i in index)) ), *indices )
+    nodes=nodeobjs[tuple(slice(i,i+2) for i in index)].ravel() ), *indices )
   topo = topology.StructuredTopology( structure )
   coords = function.ElemFunc( domainelem )
   if periodic:
@@ -311,12 +318,13 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   + [ ( 12+(i+1)%8, 12+i, i+1+(i//2) ) for i in range( 8) ]
   + [ ( 12+i, 12+(i+1)%8, 20 )         for i in range( 8) ] )
   
-  domainelem = element.Element( ndims=2, id='demo' )
+  domainelem = element.Element( ndims=2, nodes=[] )
   elements = []
+  nodes = numpy.array([ element.PrimaryNode( 'demo.%d' % inode ) for inode in range(len(vertices)) ])
   for ielem, elemnodes in enumerate( vertices ):
     elemcoords = coords[ numpy.array(elemnodes) ]
     parent = domainelem, element.AffineTransformation( offset=elemcoords[2], transform=(elemcoords[:2]-elemcoords[2]).T )
-    elem = element.TriangularElement( id='{}.tri({})'.format(domainelem.id,ielem), parent=parent )
+    elem = element.TriangularElement( nodes=nodes[elemnodes], parent=parent )
     elements.append( elem )
 
   fmap = dict.fromkeys( elements, element.PolyTriangle(1) )

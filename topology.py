@@ -759,6 +759,10 @@ class StructuredTopology( Topology ):
 
   def neighbor( self, elem0, elem1 ):
     'Neighbor detection, returns codimension of interface, -1 for non-neighboring elements.'
+
+    return elem0.neighbor( elem1 )
+
+    # REPLACES:
     alpha0 = self.multiindex[elem0]
     alpha1 = self.multiindex[elem1]
     diff = numpy.array(alpha0) - numpy.array(alpha1)

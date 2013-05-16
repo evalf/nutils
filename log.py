@@ -17,6 +17,7 @@ def _findlogger( frame=None ):
 
 debug   = lambda *args: _findlogger().write( ( 'debug',   args ) )
 info    = lambda *args: _findlogger().write( ( 'info',    args ) )
+user    = lambda *args: _findlogger().write( ( 'user',    args ) )
 error   = lambda *args: _findlogger().write( ( 'error',   args ) )
 warning = lambda *args: _findlogger().write( ( 'warning', args ) )
 path    = lambda *args: _findlogger().write( ( 'path',    args ) )
@@ -111,7 +112,7 @@ class HtmlLog( object ):
     'write'
 
     mtype, args = chunks[-1]
-    levels = 'error', 'warning', 'path', 'info', 'progress', 'debug'
+    levels = 'error', 'warning', 'user', 'path', 'info', 'progress', 'debug'
     try:
       ilevel = levels.index(mtype)
     except:
