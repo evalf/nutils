@@ -2,128 +2,134 @@
  * Finity
  * Finity viewer, transforms a HTML document with a <pre> tag
  * and links with class "plot" into a viewer.
- * 
- * If the <pre> contains a span with the id navbar this will be 
- * put in the menu and the links with  the following classes will 
+ *
+ * If the <pre> contains a span with the id navbar this will be
+ * put in the menu and the links with  the following classes will
  * have shortcuts:
- * 
+ *
  * a.nav_latest     -> r
  * a.nav_latestall  -> Shift + r
  * a.nav_index      -> i
  */
 function Finity() {
     /**
+     * Finity._iframes
+     * Enable iframes to view other datatypes
+     */
+    this._iframe = true;
+
+    /**
      * Finity._media
      * Media container <div id="media">
      * @var jQuery
      */
     this._media;
-    
+
     /**
      * Finity._controls
      * Controlbar <div id="controls">
      * @var jQuery
      */
     this._controls;
-    
+
     /**
      * Finity._code
      * Code <pre id="code">
      * @var jQuery
      */
     this._code;
-    
+
     /**
      * Finity._links
      * All plotable links <a class="plot">
      * @var jQuery
      */
     this._links;
-    
+
     /**
      * Finity._imglink
      * Link around image <a id="media-link">
      * @var jQuery
      */
     this._imglink;
-    
+
     /**
      * Finity._img
      * Image <img id="media-img">
      * @var jQuery
      */
     this._img;
-    
+
     /**
      * Finity._selGallery
      * Select field for galleries <select>
      * @var jQuery
      */
     this._selGallery;
-    
+
     /**
      * Finity._selView
      * Select field for views <select>
      * @var jQuery
      */
     this._selView;
-    
+
     /**
      * Finity._btnFirst
      * Button to show first image in gallery field <button>
      * @var jQuery
      */
     this._btnFirst;
-    
+
     /**
      * Finity._btnPrev
      * Button to show previous image in gallery field <button>
      * @var jQuery
      */
     this._btnPrev;
-    
+
     /**
      * Finity._btnNext
      * Button to show next image in gallery field <button>
      * @var jQuery
      */
     this._btnNext;
-    
+
     /**
      * Finity._btnLast
      * Button to show last image in gallery field <button>
      * @var jQuery
      */
     this._btnLast;
-    
+
     /**
      * Finity._inpFinity
      * Checkbox to enable finity <input>
      * @var jQuery
      */
     this._inpFinity
-		
+
     /**
      * Finity._navbar
      * Navigation bar with permalinks <span>
      * @var jQuery
      */
 		this._navbar;
-		
+
     /**
      * Finity._aLatest
      * Permalink to latest simulation <a class="nav_latest">
      * @var jQuery
      */
 		this._aLatest;
-		
+
     /**
      * Finity._aLatestAll
      * Permalink to overall latest simulation <a class="nav_latestall">
      * @var jQuery
      */
 		this._aLatestAll;
-		
+
     /**
      * Finity._aIndex
      * Permalink to index <a class="nav_index">
@@ -144,7 +150,7 @@ function Finity() {
      * @var Array
      */
 		this._ipreload = new Array();
-    
+
     /**
      * Finity._imgCurrent
      * Image object to hold current image
@@ -158,61 +164,62 @@ function Finity() {
      * @var Image
      */
 		this._imgPreload = new Image();
-    
+
     /**
      * Finity._plots
      * Object with galleries
-     * 
+     *
      * _plots['*'] = [0,1,2,3]
      * _plots['first'] = [0,1]
      * _plots['second'] = [2,3]
-     * 
+     *
      * @var Object
      */
 		this._galleries = {};
-    
+
     /**
      * Finity._data
      * Array with plotdata
      * @var Array
      */
     this._data = new Array();
-    
+
     /**
      * Finity._current
      * Current with current plot gallery and index
      * @var Array
      */
     this._current = {
-					'gallery': '*', 
+					'gallery': '*',
 					'index': 0
 				 };
-    
+
     /**
      * Finity.__init__()
      * Construct finity class
-     * 
+     *
      * @return void
      */
     this.__init__ = function ( $sel ){
       var self = this;
-      
+
       this._code = $('pre')
 										.attr('id', 'code')
 										.addClass('column');
       this._links = $('a.plot', this._code);
-      
+
       this._media 			= $('<div id="media" class="column">').insertAfter(this._code);
       this._imglink			= $('<a id="media-link" "href="" title="Click to view the image or press V" />').appendTo(this._media);
-      this._img 				= $('<img id="media-img" src="" alt="" title="" />').appendTo(this._imglink);
       this._controls 		= $('<div id="controls">').appendTo('body');
+      this._img 				= $('<img id="media-img" src="" alt="" title="" />').appendTo(this._imglink);
+      this._frame 				= $('<iframe id="media-frame" href=""></iframe>').appendTo(this._media);
       this._selGallery 	= $('<select id="sel-gallery"><option value="*">-- Show all --</option></select>').appendTo(this._controls);
       this._btnFirst 		= $('<button title="&#8593; (up arrow) or Shift + K" "id="btn-first">&laquo;</button>').appendTo(this._controls);
       this._btnPrev 		= $('<button title="&#8592; (left arrow) or K" id="btn-prev">&lt;</button>').appendTo(this._controls);
       this._btnNext 		= $('<button title="&#8594; (right arrow) or J" id="btn-next">&gt;</button>').appendTo(this._controls);
       this._btnLast 		= $('<button title="&#8595; (down arrow) or Shift + J" id="btn-last">&raquo;</button>').appendTo(this._controls);
       this._selView 	= $('<select id="sel-view"><option value="both" selected>term / img (G)</option><option value="term">term (H)</option><option value="img">img (F)</option></select>').appendTo(this._controls);
-                        
+
  			this._navbar = this._code.find('#navbar')
 												.prependTo(this._controls);
 			this._aLatest = this._navbar.find('.nav_latest')
@@ -221,14 +228,20 @@ function Finity() {
 												.attr('title', 'Shift + L');
 			this._aIndex = this._navbar.find('.nav_index')
 												.attr('title', 'I');
-        
+
+
+      // Include the settings file
+      // var html = $('body').html();
+      // $('body').html(html + '<script type="text/javascript" src="../../../../../settings.js"></script>');
+      // $('body').append('<script type="text/javascript" src="../../../../../finityrc.js"></script>');
+
       // Build gallery
      	this._galleries['*'] = new Array();
 			this._links.each(function () {
         var $a = $(this);
         var url = $a.attr('href');
         var hash = $a.attr('name');
-        
+
 				// Add gallery
         var gal = self.getGalleryName(url);
         if( typeof self._galleries[gal] == 'undefined' ) {
@@ -236,27 +249,28 @@ function Finity() {
           self._selGallery
             .append('<option value="' + gal + '">' + gal + '</option>');
         }
-        
+
 				// Key for this image
         var key = self._data.length;
-			
+
 				// Store additional image data
 				var data = {
 					'src': url,
+					'img': url.match(/\.(png|jpe?g|gif)$/ig),
 					'name': url,
           'hash': hash
 				};
 				self._data.push(data);
-				
+
 				// Preload images
 				if( key < (self._npreload + 1) )
           self._imgPreload.src = url
-			
+
 				// Add to galleries
         self._galleries['*'].push(key);
         var idx = self._galleries[gal].push(key);
 				--idx;
-       
+
         $a.attr({
 					'id': 'finity-viewer-' + key,
 					'idx': idx,
@@ -275,12 +289,6 @@ function Finity() {
       $(window).resize(function (){
           self.render();
         });
-      
-      /*this._inpScroll
-        .click(function () {
-          var checked = $(this).is(':checked');
-          self.enableScrolling( checked );
-        });*/
 
       this._btnFirst.click(function() { self.first(); });
       this._btnNext.click(function() { self.next(); });
@@ -292,7 +300,7 @@ function Finity() {
           self.view( vw );
           this.blur();
         });
-        
+
       this._selGallery
         .change(function() {
           var gal = $(':selected', this).val();
@@ -307,28 +315,28 @@ function Finity() {
               break;
             }
           }
-          
+
           self.show(gal, idx);
           this.blur();
         });
-        
+
       this._code
         .on('click', 'a.plot', null, function ( evt ){
           var $a = $(this);
           var gal = $a.attr('gal');
           var idx = parseInt($a.attr('idx'));
-          
+
 				  self.show(gal, idx);
           return false;
         });
-      
+
       // Shortcuts
       $('body', document).keydown(function (evt){
           // Don't respond when modifiers are pressed
           if( evt.ctrlKey || evt.metaKey || evt.altKey ) {
             return true;
           }
-          
+
           // Check for function keys
           switch( true ) {
             case evt.keyCode == 27: // Escape
@@ -421,11 +429,11 @@ function Finity() {
 					return false;
       });
     }
-    
+
     /**
      * Finity.__destruct__()
      * Destruct the Finity interface
-     * 
+     *
      * @return void
      */
     this.__destruct__ = function() {
@@ -439,7 +447,7 @@ function Finity() {
       this._media.remove();
       this._code.off('click');
     };
-    
+
     /**
      * Finity.getGalleryName( url )
      * Create a gallery name from the filename
@@ -461,12 +469,12 @@ function Finity() {
 		 * Show the next image
 		 *
 		 * @return void
-		 */ 
+		 */
 		this.next = function (){
       var gal = this._current.gallery;
       var idx = this._current.index;
       var cnt = this._galleries[gal].length;
-      
+
       // There is a next image
 			if( (idx+1) < cnt ) {
       	++idx;
@@ -483,7 +491,7 @@ function Finity() {
 		this.prev = function (){
 			var gal = this._current.gallery;
       var idx = this._current.index;
-			
+
 			if( (idx - 1) >= 0 ) {
       	--idx;
 				this.show( gal, idx );
@@ -513,7 +521,7 @@ function Finity() {
 			var gal = this._current.gallery;
 			var idx = this._current.index;
       var cnt = this._galleries[gal].length;
-	
+
 			this.show( gal, (cnt-1) );
 		};
 
@@ -529,12 +537,6 @@ function Finity() {
           vw = vw.replace(/^\s+|\s+$/g, '').toLowerCase();
       switch( vw ) {
         case 'term':
-          /*this._code.css({
-            'display': 'block',
-            'width': '98%',
-            'left': 0
-          });
-          this._media.css('display', 'none');*/
           this._code.add(this._media)
               .removeClass('imgview splitview')
               .addClass('termview')
@@ -543,28 +545,12 @@ function Finity() {
           this._code.add(this._media)
               .removeClass('termview splitview')
               .addClass('imgview')
-          /*this._code.css('display', 'none');
-          this._media.css({
-            'display': 'block',
-            'width': '98%',
-            'left': 0
-          });*/
           this.render();
           break;
         default:
           this._code.add(this._media)
               .removeClass('termview imgview')
               .addClass('splitview')
-          /* this._code.css({
-            'display': 'block',
-            'width': '48%',
-            'left': 0
-          });
-          this._media.css({
-            'display': 'block',
-            'width': '48%',
-            'left': '50%'
-          }); */
           this.render();
           break;
       }
@@ -574,26 +560,26 @@ function Finity() {
      * Finity.show( gal, idx )
      * Show a plot by gallery name and plot idx
      * The following extra options are also available
-     * 
+     *
      *   Finity.plot('current');
      *   Finity.plot('first');
      *   Finity.plot('last');
      *   Finity.plot('next');
      *   Finity.plot('prev');
-     * 
+     *
      * @param string gal
      * @param int idx
      * @return void
      */
     this.show = function ( gal, idx ) {
 			var self = this;
-      
+
       if( typeof this._galleries[gal] == 'undefined' )
         return false;
-        
+
       if( typeof this._galleries[gal][idx] == 'undefined' )
         return false;
-      
+
 			var gallery = this._galleries[gal];
 			var key 		= gallery[idx];
       var data 		= this._data[key];
@@ -608,33 +594,54 @@ function Finity() {
 
       // Set the current image
       if( data.src )
-      this._imgCurrent.src = data.src;
+        this._imgCurrent.src = data.src;
 
-			// Preloading
-			var istart = Math.max(idx-this._npreload,0);
-			var iend = Math.min(idx+this._npreload, gallery.length);
-			for( var i = istart; i < iend; ++i ) {
-				var ky = gallery[i];
-        this._imgPreload.src = this._data[ky].src;
-			}
-        
+      // If it is not an image
+      if( self._iframe && ! data.img ) {
+        // Popup the image container
+        this._img.css('display', 'none');
+        this._frame.css('display', 'block').attr('src', data.src );
+      } else if( data.img ) {
+        // Popup the image container
+        this._img.css('display', 'block');
+        this._frame.css('display', 'none');
+
+        // Preloading
+        var istart = Math.max(idx-this._npreload,0);
+        var iend = Math.min(idx+this._npreload, gallery.length);
+        for( var i = istart; i < iend; ++i ) {
+          var ky = gallery[i];
+          this._imgPreload.src = this._data[ky].src;
+        }
+
+        // If image was loaded, show it
+        // otherwise show when loaded
+        if( this._imgCurrent.width > 0 ) {
+          this.render();
+        } else {
+          this._imgCurrent.onload = function (){ self.render(); };
+          this._imgCurrent.onerror = function (){ self.render( false ); };
+        }
+      }
+
+      // Focus on selected link
+      this._links.removeClass('active');
+      this._code.find('.line-active').removeClass('line-active');
+      $('#finity-viewer-' + key)
+        .addClass('active')
+        .focus()
+        .parents('.line')
+        .addClass('line-active');
+
+      // Set to current gallery
       this._current.gallery = gal;
       this._current.index = idx;
-
-			// If image was loaded, show it
-			// otherwise show when loaded
-			if( this._imgCurrent.width > 0 ) {
-        this.render();
-			} else {
-				this._imgCurrent.onload = function (){ self.render(); };
-				this._imgCurrent.onerror = function (){ self.render( false ); };
-			}
     }
-    
+
     /**
      * Finity.render()
      * Show the plot and resize it to the media container
-     * 
+     *
      * @return Bool success
      */
 		this.render = function ( display ) {
@@ -647,25 +654,16 @@ function Finity() {
 			// Check if the gallery exists
       if( typeof this._galleries[gal] == 'undefined' )
         return false;
-      
-			// Check if the plot exists  
+
+			// Check if the plot exists
       if( typeof this._galleries[gal][idx] == 'undefined' )
         return false;
-      
+
 			// Get the index from the gallery
 			var key = this._galleries[gal][idx];
 
 			// Get the image and the data
       var data = this._data[key];
-
-      // Focus on selected link
-      this._links.removeClass('active');
-      this._code.find('.line-active').removeClass('line-active');
-      $('#finity-viewer-' + key)
-        .addClass('active')
-        .focus()
-        .parents('.line')
-        .addClass('line-active');
 
       // Image can be displayed
       if( display ) {
@@ -675,7 +673,7 @@ function Finity() {
         var fy = Math.max(this._imgCurrent.height / frameHeight, 1);
         var width = this._imgCurrent.width / fx;
         var height = this._imgCurrent.height / fy;
-        
+
         // Make image the right size and show it
         var css = ( fx > fy )
                 ? { 'width': width + 'px', 'height': 'auto' }
