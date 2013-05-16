@@ -1339,9 +1339,107 @@ class Add( ArrayFunc ):
   def __init__( self, func1, func2 ):
     'constructor'
 
+    evalf    = self.cadd if getattr( prop, 'use_c_funcs', False ) else numpy.add
+    self.cop = None 
+
     self.funcs = func1, func2
     shape = _jointshape( func1.shape, func2.shape )
-    ArrayFunc.__init__( self, args=self.funcs, evalf=numpy.add, shape=shape )
+    ArrayFunc.__init__( self, args=self.funcs, evalf=evalf, shape=shape )
+
+  def cadd ( self, arg1, arg2 ):
+
+    #Compile the c-function
+    self.__compilecop()
+
+    return self.cop( arg1, arg2 )
+
+  def __compilecop ( self ):
+    
+    #Check if compiled c-function already exists for this instance
+    if self.cop:
+      return
+
+    #Loop over shape to extract the variable sizes
+    sizes    = []
+    strides1 = ['1']
+    strides2 = ['1']
+    for i in reversed(range(self.ndim)):
+      if isinstance( self.shape[i], int ):
+        size = self.shape[i]
+      else:
+        size = 'n%d' % len(sizes)
+      sizes.append( size )
+      strides1.append( '%s*%s' % ( strides1[-1], self.funcs[0].shape[i] if isinstance(self.funcs[0].shape[i],int) else size ) )
+      strides2.append( '%s*%s' % ( strides2[-1], self.funcs[1].shape[i] if isinstance(self.funcs[1].shape[i],int) else size ) )
+
+    ccode = 'retval[0] = arg1[%s] + arg2[%s];\nretval++;' % ( '+'.join('(%s)*i%d' % (strides1[i],i) for i in range(self.ndim) if self.funcs[0].shape[i] == self.shape[i] ) or '0',
+                                                              '+'.join('(%s)*i%d' % (strides2[i],i) for i in range(self.ndim) if self.funcs[1].shape[i] == self.shape[i] ) or '0' )
+    for i in range( self.ndim ):
+      ccode = 'for (i%(idim)d=0; i%(idim)d<%(size)s; i%(idim)d++) {\n%(code)s}' % { 'idim':i, 'size':sizes[i], 'code':ccode }
+    ccode = 'int %s;\n%s' % ( ', '.join( 'i%d' % idim for idim in range(self.ndim) ), ccode )
+    signature = 'void add( double *retval, double *arg1, double *arg2, %s )' % ', '.join( 'int %s' % s for s in sizes if isinstance(s,str) )
+    ccode = '%s {\n%s}' % ( signature, ccode )
+
+    ######################
+    # Compile the c-code #
+    ######################
+
+    import os, sys
+
+    #Write code in temporary file
+    fname = os.tempnam(None,'fty')
+
+    open(fname+'.c','w').write( ccode )
+
+    #Compiling command
+    os.system( 'gcc -fpic -g -c -o %s.o -O3 -march=native -mtune=native %s.c' % ((fname,)*2) )
+
+    #Linking command
+    os.system( 'gcc -shared -Wl,-soname,%s.so -o %s.so %s.o -lc' % ((fname,)*3) )
+
+    #CFFI wrapper
+    from cffi import FFI
+
+    ffi = FFI()
+    ffi.cdef( '''%s;''' % signature )
+
+    TEST = ffi.dlopen( fname+'.so' )
+
+    def do_add( arg1, arg2 ):
+      arg1 = numpy.ascontiguousarray( arg1, dtype=float )
+      arg2 = numpy.ascontiguousarray( arg2, dtype=float )
+      haspntax1 = arg1.ndim - self.ndim
+      haspntax2 = arg2.ndim - self.ndim
+      assert haspntax1 in (0,1)
+      assert haspntax2 in (0,1)
+      dims  = []
+      sizes = []
+      for i in range(self.ndim):
+        size = self.shape[i-self.ndim]
+        if not isinstance( size, int ):
+          size = arg1.shape[i-self.ndim] if arg1.shape[i-self.ndim]!=1 else arg2.shape[i-self.ndim]
+          dims .append( size )
+        sizes.append( size )
+      if haspntax1 or haspntax2:
+        npoints = arg1.shape[0] if haspntax1 else arg2.shape[0]
+        retval = numpy.empty( [npoints]+sizes )
+        retvals = retval
+        args1 = arg1 if haspntax1 else [arg1] * npoints
+        args2 = arg2 if haspntax2 else [arg2] * npoints
+      else:
+        retval = numpy.empty( sizes )
+        retvals = [ retval ]
+        args1 = [ arg1 ]
+        args2 = [ arg2 ]
+      assert len(retvals) == len(args1) == len(args2)
+      for ret, a1, a2 in zip( retvals, args1, args2 ):
+        retptr = ffi.cast('double*',ret.ctypes.data)
+        ptr1 = ffi.cast('double*',a1.ctypes.data)
+        ptr2 = ffi.cast('double*',a2.ctypes.data)
+        TEST.add( retptr, ptr1, ptr2, *dims )
+      return retval
+
+    self.cop = do_add
 
   def __eq__( self, other ):
     'compare'
