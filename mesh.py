@@ -96,7 +96,8 @@ def gmesh( path, btags=[], name=None ):
   fmap = {}
 
   assert lines.next() == '$Elements\n'
-  domainelem = element.Element( ndims=2, id=name )
+  domainelem = element.Element( ndims=2, nodes=[] )
+  nodeobjs = numpy.array( [ element.PrimaryNode( '%s(%d)' % (name,inode) ) for inode in range(nnodes) ], dtype=object )
   for ielem in range( int( lines.next() ) ):
     items = lines.next().split()
     assert int( items[0] ) == ielem + 1
@@ -104,13 +105,14 @@ def gmesh( path, btags=[], name=None ):
     ntags = int( items[2] )
     tags = [ int(tag) for tag in set( items[3:3+ntags] ) ]
     elemnodes = numpy.asarray( items[3+ntags:], dtype=int ) - 1
+    elemnodeobjs = nodeobjs[ elemnodes ]
     elemcoords = coords[ elemnodes ]
     if elemtype == 1:
       boundary.append(( elemnodes, tags ))
     elif elemtype in (2,4):
       if elemtype == 2:
         parent = domainelem, element.AffineTransformation( offset=elemcoords[2], transform=(elemcoords[:2]-elemcoords[2]).T )
-        elem = element.TriangularElement( id='{}.tri({})'.format(domainelem.id,ielem), parent=parent )
+        elem = element.TriangularElement( nodes=elemnodeobjs, parent=parent )
         stdelem = element.PolyTriangle( 1 )
       else:
         raise NotImplementedError
@@ -239,7 +241,8 @@ def igatool( path, name=None ):
     Ce = numpy.zeros(( nb, nb ))
     Ce[I,J] = util.arraymap( Cv.GetComponent, float, n, 0 )
 
-    elem = element.QuadElement( id='%s.quad(%d)' % ( name, ielem ), ndims=ndims )
+    nodes = [ element.PrimaryNode( '%s(%d:%d)' % (name,ielem,inode) ) for inode in range(2**ndims) ]
+    elem = element.QuadElement( nodes=nodes, ndims=ndims )
     elements.append( elem )
 
     fmap[ elem ] = element.ExtractionWrapper( poly, Ce.T )
