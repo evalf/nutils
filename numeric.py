@@ -121,6 +121,48 @@ def contract( A, B, axis=-1 ):
 
   return _numeric.contract( A, B, len(axis) )
 
+def contract_fast( A, B, naxes ):
+  'contract last n axes'
+
+  A = numpy.asarray( A, dtype=float )
+  B = numpy.asarray( B, dtype=float )
+
+  n = B.ndim - A.ndim
+  if n > 0:
+    Ashape = list(B.shape[:n]) + list(A.shape)
+    Astrides = [0]*n + list(A.strides)
+    Bshape = list(B.shape)
+    Bstrides = list(B.strides)
+  elif n < 0:
+    n = -n
+    Ashape = list(A.shape)
+    Astrides = list(A.strides)
+    Bshape = list(A.shape[:n]) + list(B.shape)
+    Bstrides = [0]*n + list(B.strides)
+  else:
+    Ashape = list(A.shape)
+    Astrides = list(A.strides)
+    Bshape = list(B.shape)
+    Bstrides = list(B.strides)
+
+  shape = list(Ashape)
+  for i in range( len(Ashape) ):
+    if Ashape[i] == 1:
+      shape[i] = Bshape[i]
+      Astrides[i] = 0
+    elif Bshape[i] == 1:
+      Bstrides[i] = 0
+    else:
+      assert Ashape[i] == Bshape[i]
+
+  A = numpy.lib.stride_tricks.as_strided( A, shape, Astrides )
+  B = numpy.lib.stride_tricks.as_strided( B, shape, Bstrides )
+
+  if not A.size:
+    return numpy.zeros( shape[:-naxes] )
+
+  return _numeric.contract( A, B, naxes )
+
 def dot( A, B, axis=-1 ):
   '''Transform axis of A by contraction with first axis of B and inserting
      remaining axes. Note: with default axis=1 this leads to multiplication of
@@ -297,5 +339,13 @@ def diagonalize( arg ):
   diagonalized = numpy.zeros( arg.shape + (arg.shape[-1],) )
   takediag( diagonalized )[:] = arg
   return diagonalized
+
+def check_equal_wrapper( f1, f2 ):
+  def f12( *args ):
+    v1 = f1( *args )
+    v2 = f2( *args )
+    numpy.testing.assert_array_almost_equal( v1, v2 )
+    return v1
+  return f12
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

@@ -5,61 +5,6 @@ ELEM    = object()
 POINTS  = object()
 WEIGHTS = object()
 
-class CBuilder( object ):
-
-  def __init__( self, cachedir='/tmp/finity' ):
-    from cffi import FFI
-    self.ffi = FFI()
-    self.codebase = {}
-    self.cachedir = cachedir
-
-  def compile( self ):
-    log.context( 'c-builder' )
-    if not self.codebase:
-      return
-    import os, hashlib
-    code = '\n'.join( head + body for body, (head,func) in self.codebase.iteritems() )
-    fname = os.path.join( self.cachedir, hashlib.md5( code ).hexdigest() )
-    if os.path.isfile( fname+'.so' ):
-      log.info( 'in cache' )
-    else:
-      log.info( 'compiling %d c-functions' % len(self.codebase) )
-      if not os.path.isdir( self.cachedir ):
-        os.mkdir( self.cachedir )
-      open( fname+'.c', 'w' ).write( code )
-      assert os.system( 'gcc -fpic -g -c -o %s.o -O3 -march=native -mtune=native %s.c' % ((fname,)*2) ) == 0
-      assert os.system( 'gcc -shared -Wl,-soname,%s.so -o %s.so %s.o -lc' % ((fname,)*3) ) == 0
-      os.unlink( fname+'.c' )
-      os.unlink( fname+'.o' )
-    self.so = self.ffi.dlopen( fname+'.so' )
-
-  def __getitem__( self, (code,init) ):
-    head_evalf = self.codebase.get(code)
-    if head_evalf is not None:
-      head, evalf = head_evalf
-      return evalf
-    handle = 'func%d' % len(self.codebase)
-    head = 'void ' + handle
-    self.ffi.cdef( head + code.split( '\n' )[0] + ';' )
-    def evalf( *args ):
-      cfunc = getattr( self.so, handle )
-      retval, iterargs = self.init( args )
-      for args in iterargs:
-        # blindly assume that all arrays are contiguous arrays of doubles
-        args = [ self.ffi.cast('double*',arg.ctypes.data) if isinstance(arg,numpy.ndarray) else arg for arg in args ]
-        cfunc( *args )
-      return retval
-    self.codebase[code] = head, evalf
-    return evalf
-
-def init_args_for( shape ):
-  def init( *args ):
-    args = [ numpy.ascontiguousarray( arg, dtype=float ) for arg in args ]
-    shape = map( max, zip([ arg.shape for arg in args ]) )
-    retval = numpy.empty( shape )
-    return retval, [ [ retval[index] ] + [ arg[index[retval.ndim-arg.ndim:]] for arg in args ] for index in numpy.ndindex( retval.shape[:-ndim] ) ]
-  return init
-
 # EVALUABLE
 #
 # Base class for everything that is evaluable. Evaluables hold an argument list
@@ -121,8 +66,13 @@ class Evaluable( object ):
         data.insert( 0, arg )
         idx = -len(data)-3
       indices[iarg] = idx
-    evalf = cbuild[ self.__cdef() ] if cbuild and self.__cdef else self.__evalf
-    operations.append( (self,self.__evalf,indices) )
+    if cbuild and self.__cdef:
+      evalf = cbuild[ self.__cdef() ]
+      if prop.use_c_funcs == 'debug':
+        evalf = numeric.check_equal_wrapper( evalf, self.__evalf )
+    else:
+      evalf = self.__evalf
+    operations.append( (self,evalf,indices) )
     return len(operations)-1
 
   def compile( self ):
@@ -371,12 +321,13 @@ class ArrayFunc( Evaluable ):
 
   __array_priority__ = 1. # http://stackoverflow.com/questions/7042496/numpy-coercion-problem-for-left-sided-binary-operator/7057530#7057530
 
-  def __init__( self, evalf, args, shape, cdef=None ):
+  def __init__( self, evalf, args, shape, dtype=float, cdef=None ):
     'constructor'
 
     self.evalf = evalf
     self.shape = tuple(shape)
     self.ndim = len(self.shape)
+    self.dtype = dtype
     Evaluable.__init__( self, evalf=evalf, args=args, cdef=cdef )
 
   # mathematical operators
@@ -962,7 +913,7 @@ class DofMap( ArrayFunc ):
 
     self.cascade = cascade
     self.dofmap = dofmap
-    ArrayFunc.__init__( self, args=(cascade,dofmap), evalf=self.evalmap, shape=[axis] )
+    ArrayFunc.__init__( self, args=(cascade,dofmap), evalf=self.evalmap, shape=[axis], dtype=int )
 
   @staticmethod
   def evalmap( cascade, dofmap ):
@@ -1140,16 +1091,17 @@ class Concatenate( ArrayFunc ):
       return funcs[0]
     return concatenate( funcs, axis=axis )
 
-  def _dot( self, other, axes ):
+  def _dot( self, other, naxes ):
+    axes = range( self.ndim-naxes, self.ndim )
     n0 = 0
     funcs = []
     for f in self.funcs:
       n1 = n0 + f.shape[self.axis]
       funcs.append( dot( f, take( other, slice(n0,n1), self.axis ), axes ) )
       n0 = n1
-    if self.axis in axes:
+    if self.axis >= self.ndim - naxes:
       return util.sum( funcs )
-    return concatenate( funcs, self.axis - util.sum( ax<self.axis for ax in axes ) )
+    return concatenate( funcs, self.axis )
 
   def _negative( self ):
     return concatenate( [ -func for func in self.funcs ], self.axis )
@@ -1265,7 +1217,24 @@ class Multiply( ArrayFunc ):
 
     shape = _jointshape( func1.shape, func2.shape )
     self.funcs = func1, func2
-    ArrayFunc.__init__( self, args=self.funcs, evalf=numpy.multiply, shape=shape )
+    ArrayFunc.__init__( self, args=self.funcs, evalf=numpy.multiply, cdef=self.cdef, shape=shape )
+
+  def cdef( self ):
+    'generate C code'
+
+    arg1 = 'arg1[%s]' % _cindex( self.funcs[0].shape, self.shape )
+    arg2 = 'arg2[%s]' % _cindex( self.funcs[1].shape, self.shape )
+    body = 'retval[0] = %s * %s;\nretval++;' % ( arg1, arg2 )
+    shape = _cshape( self.shape )
+    for i in reversed( range(self.ndim) ):
+      body = _cfor( varname='i%d'%i, count=shape[i], do=body )
+    if self.ndim:
+      body = 'int %s;\n' % ', '.join( 'i%d' % idim for idim in range(self.ndim) ) + body
+    args = [ '%s* retval' % _dtypestr(self),
+             '%s* arg1' % _dtypestr(self.funcs[0]),
+             '%s* arg2' % _dtypestr(self.funcs[1]) ] \
+         + [ 'int %s' % s for s in shape if isinstance(s,str) ]
+    return _cfunc( args, body ), init_args_for( self, *self.funcs )
 
   def __eq__( self, other ):
     'compare'
@@ -1401,33 +1370,25 @@ class Add( ArrayFunc ):
 
     self.funcs = func1, func2
     shape = _jointshape( func1.shape, func2.shape )
-    ArrayFunc.__init__( self, args=self.funcs, evalf=numpy.add, cdef=self.cdef, shape=shape )
+    dtype = _jointdtype(func1,func2)
+    ArrayFunc.__init__( self, args=self.funcs, evalf=numpy.add, cdef=self.cdef, shape=shape, dtype=dtype )
 
   def cdef( self ):
-    
-    #Loop over shape to extract the variable sizes
-    sizes    = []
-    strides1 = ['1']
-    strides2 = ['1']
-    for i in reversed(range(self.ndim)):
-      if isinstance( self.shape[i], int ):
-        size = self.shape[i]
-      else:
-        size = 'n%d' % len(sizes)
-      sizes.append( size )
-      strides1.append( '%s*%s' % ( strides1[-1], self.funcs[0].shape[i] if isinstance(self.funcs[0].shape[i],int) else size ) )
-      strides2.append( '%s*%s' % ( strides2[-1], self.funcs[1].shape[i] if isinstance(self.funcs[1].shape[i],int) else size ) )
+    'generate C code'
 
-    body = 'retval[0] = arg1[%s] + arg2[%s];\nretval++;' % ( '+'.join('(%s)*i%d' % (strides1[i],i) for i in range(self.ndim) if self.funcs[0].shape[i] == self.shape[i] ) or '0',
-                                                             '+'.join('(%s)*i%d' % (strides2[i],i) for i in range(self.ndim) if self.funcs[1].shape[i] == self.shape[i] ) or '0' )
-    for i in range( self.ndim ):
-      body = 'for (i%(idim)d=0; i%(idim)d<%(size)s; i%(idim)d++) {\n%(code)s}' % { 'idim':i, 'size':sizes[i], 'code':body }
+    arg1 = 'arg1[%s]' % _cindex( self.funcs[0].shape, self.shape )
+    arg2 = 'arg2[%s]' % _cindex( self.funcs[1].shape, self.shape )
+    body = 'retval[0] = %s + %s;\nretval++;' % ( arg1, arg2 )
+    shape = _cshape( self.shape )
+    for i in reversed( range(self.ndim) ):
+      body = _cfor( varname='i%d'%i, count=shape[i], do=body )
     if self.ndim:
-      body = 'int %s;\n%s' % ( ', '.join( 'i%d' % idim for idim in range(self.ndim) ), body )
-    args = ','.join( [ 'double *retval', 'double *arg1', 'double *arg2' ] + [ 'int %s' % s for s in sizes if isinstance(s,str) ] )
-    code = '( %s )\n{ %s }' % ( args, body )
-
-    return code, init_args_for( self.shape )
+      body = 'int %s;\n' % ', '.join( 'i%d' % idim for idim in range(self.ndim) ) + body
+    args = [ '%s* retval' % _dtypestr(self),
+             '%s* arg1' % _dtypestr(self.funcs[0]),
+             '%s* arg2' % _dtypestr(self.funcs[1]) ] \
+         + [ 'int %s' % s for s in shape if isinstance(s,str) ]
+    return _cfunc( args, body ), init_args_for( self, *self.funcs )
 
   def __eq__( self, other ):
     'compare'
@@ -1485,27 +1446,42 @@ class BlockAdd( Add ):
 class Dot( ArrayFunc ):
   'dot'
 
-  def __init__( self, func1, func2, axes ):
+  def __init__( self, func1, func2, naxes ):
     'constructor'
 
-    shape = _jointshape( func1.shape, func2.shape )
-    axes = _norm_and_sort( len(shape), axes )
-    shape = list(shape)
-    orig = range( len(shape) )
-    for axis in reversed(axes):
-      shape.pop( axis )
-      assert orig.pop( axis ) == axis
-
+    assert naxes > 0
     self.func1 = func1
     self.func2 = func2
-    self.axes = axes
-    self.orig = orig # new -> original axis
-    ArrayFunc.__init__( self, args=(func1,func2,tuple( ax-func1.ndim for ax in axes )), evalf=numeric.contract, shape=shape )
+    self.naxes = naxes
+    shape = _jointshape( func1.shape, func2.shape )[:-naxes]
+    ArrayFunc.__init__( self, args=(func1,func2,naxes), evalf=numeric.contract_fast, cdef=self.cdef, shape=shape )
+
+  def cdef( self ):
+    'generate C code'
+
+    shape = _jointshape( self.func1.shape, self.func2.shape )
+    arg1 = 'arg1[%s]' % _cindex( self.func1.shape, shape )
+    arg2 = 'arg2[%s]' % _cindex( self.func2.shape, shape )
+    body = 'sum += %s * %s;\n' % ( arg1, arg2 )
+    cshape = _cshape( shape )
+    for i in reversed( range(self.ndim+self.naxes) ):
+      body = _cfor( varname='i%d'%i, count=cshape[i], do=body )
+      if i == self.ndim:
+        body = 'sum = 0;\n%s\nretval[0] = sum;\nretval++;\n' % body
+    body = '%s sum;\n' % _dtypestr(self) + body
+    body = 'int %s;\n' % ', '.join( 'i%d' % idim for idim in range(self.ndim+self.naxes) ) + body
+    args = [ '%s* retval' % _dtypestr(self),
+             '%s* arg1' % _dtypestr(self.func1),
+             '%s* arg2' % _dtypestr(self.func2) ] \
+         + [ 'int %s' % s for s in cshape if isinstance(s,str) ]
+    return _cfunc( args, body ), init_args_for( self, self.func1, self.func2, None )
+
+  @property
+  def axes( self ):
+    return range( self.ndim, self.ndim + self.naxes )
 
   def _get( self, i, item ):
-    getax = self.orig[i]
-    axes = [ ax - (ax>getax) for ax in self.axes ]
-    return dot( get( self.func1, getax, item ), get( self.func2, getax, item ), axes )
+    return dot( get( self.func1, i, item ), get( self.func2, i, item ), [ ax-1 for ax in self.axes ] )
 
   def _localgradient( self, ndims ):
     return dot( localgradient( self.func1, ndims ), self.func2[...,_], self.axes ) \
@@ -1530,21 +1506,17 @@ class Dot( ArrayFunc ):
         return dot( f, g1 + g2, self.axes )
 
   def _takediag( self ):
-    n1, n2 = self.orig[-2:]
-    axes = [ ax-(n1<ax)-(n2<ax) for ax in self.axes ]
-    return dot( takediag( self.func1, n1, n2 ), takediag( self.func2, n1, n2 ), axes )
+    n1, n2 = self.ndim-2, self.ndim-1
+    return dot( takediag( self.func1, n1, n2 ), takediag( self.func2, n1, n2 ), [ ax-2 for ax in self.axes ] )
 
   def _sum( self, axis ):
-    axes = self.axes + (self.orig[axis],)
-    return dot( self.func1, self.func2, axes )
+    return dot( self.func1, self.func2, self.axes + [axis] )
 
   def _take( self, index, axis ):
-    axis = self.orig[axis]
     return dot( take(self.func1,index,axis), take(self.func2,index,axis), self.axes )
 
   def _concatenate( self, other, axis ):
     if isinstance( other, Dot ) and other.axes == self.axes:
-      axis = self.orig[axis]
       common = _findcommon( (self.func1,self.func2), (other.func1,other.func2) )
       if common:
         f, g12 = common
@@ -1850,10 +1822,9 @@ class Zeros( PriorityFunc ):
     shape = _jointshape( self.shape, other.shape )
     return _zeros( shape )
 
-  def _dot( self, other, axes ):
+  def _dot( self, other, naxes ):
     shape = _jointshape( self.shape, other.shape )
-    shape = [ sh for i, sh in enumerate(shape) if i not in axes ]
-    return _zeros( shape )
+    return _zeros( shape[:-naxes] )
 
   def _cross( self, other, axis ):
     shape = _jointshape( self.shape, other.shape )
@@ -1936,16 +1907,17 @@ class Inflate( PriorityFunc ):
     assert axis != self.axis
     return inflate( get(self.func,axis,item), self.dofmap, self.length, self.axis-(axis<self.axis) )
 
-  def _dot( self, other, axes ):
+  def _dot( self, other, naxes ):
+    axes = range( self.ndim-naxes, self.ndim )
     if isinstance( other, Inflate ) and other.axis == self.axis:
       assert self.dofmap == other.dofmap
       other = other.func
     elif other.shape[self.axis] != 1:
       other = take( other, self.dofmap, self.axis )
     arr = dot( self.func, other, axes )
-    if self.axis in axes:
+    if self.axis >= self.ndim - naxes:
       return arr
-    return inflate( arr, self.dofmap, self.length, self.axis-util.sum(ax<self.axis for ax in axes) )
+    return inflate( arr, self.dofmap, self.length, self.axis )
 
   def _multiply( self, other ):
     if isinstance( other, Inflate ) and self.axis == other.axis:
@@ -2102,14 +2074,15 @@ class Repeat( PriorityFunc ):
     if axis != self.axis:
       return repeat( cross( self.func, other, axis ), self.length, self.axis )
 
-  def _dot( self, other, axes ):
+  def _dot( self, other, naxes ):
+    axes = range( self.ndim-naxes, self.ndim )
     func = dot( self.func, other, axes )
     if other.shape[self.axis] != 1:
       assert other.shape[self.axis] == self.length
       return func
-    if self.axis in axes:
+    if self.axis >= self.ndim - naxes:
       return func * self.length
-    return repeat( func, self.length, self.axis - util.sum(ax < self.axis for ax in axes) )
+    return repeat( func, self.length, self.axis )
 
 class Const( PriorityFunc ):
   'pointwise transformation'
@@ -2246,6 +2219,13 @@ def _jointdtype( *args ):
   if any( _asarray(arg).dtype == float for arg in args ):
     return float
   return int
+
+def _dtypestr( arg ):
+  if arg.dtype == int:
+    return 'int'
+  if arg.dtype == float:
+    return 'double'
+  raise Exception, 'unknown dtype %s' % arg.dtype
 
 def _equal( arg1, arg2 ):
   'compare two objects'
@@ -2496,19 +2476,27 @@ def dot( arg1, arg2, axes ):
   if not _isfunc(arg1) and not _isfunc(arg2):
     return numeric.contract( arg1, arg2, axes )
 
-  shape = tuple( sh for i, sh in enumerate(shape) if i not in axes )
+  shuffle = range( len(shape) )
+  for ax in reversed( axes ):
+    shuffle.append( shuffle.pop(ax) )
 
-  retval = _call( arg1, '_dot', arg2, axes )
+  arg1 = transpose( arg1, shuffle )
+  arg2 = transpose( arg2, shuffle )
+
+  naxes = len( axes )
+  shape = tuple( shape[i] for i in shuffle[:-naxes] )
+
+  retval = _call( arg1, '_dot', arg2, naxes )
   if retval is not None:
     assert retval.shape == shape, 'bug in %s._dot' % arg1
     return retval
 
-  retval = _call( arg2, '_dot', arg1, axes )
+  retval = _call( arg2, '_dot', arg1, naxes )
   if retval is not None:
     assert retval.shape == shape, 'bug in %s._dot' % arg2
     return retval
 
-  return Dot( arg1, arg2, axes )
+  return Dot( arg1, arg2, naxes )
 
 def determinant( arg, axes=(-2,-1) ):
   'determinant'
@@ -2969,19 +2957,20 @@ def inflate( arg, dofmap, length, axis ):
   return Inflate( arg, dofmap, length, axis )
 
 def pointdata ( topo, ischeme, func=None, shape=None, value=0. ):
+  'point data'
 
-    from finity import topology
-    assert isinstance(topo,topology.Topology)
+  from finity import topology
+  assert isinstance(topo,topology.Topology)
 
-    if func == None:
-      assert shape != None, 'Shape must be specified if func is omitted'
-      data = dict( (elem,(value*numpy.ones(shape),elem.eval(ischeme)[0])) for elem in topo )
-    else:  
-      assert shape == None, 'No shape argument required'
-      shape = func.shape
-      data = dict( (elem,(func(elem,ischeme),elem.eval(ischeme)[0])) for elem in topo )
+  if func == None:
+    assert shape != None, 'Shape must be specified if func is omitted'
+    data = dict( (elem,(value*numpy.ones(shape),elem.eval(ischeme)[0])) for elem in topo )
+  else:  
+    assert shape == None, 'No shape argument required'
+    shape = func.shape
+    data = dict( (elem,(func(elem,ischeme),elem.eval(ischeme)[0])) for elem in topo )
 
-    return Pointdata ( data, shape )
+  return Pointdata ( data, shape )
 
 def fdapprox( func, w, dofs, delta=1.e-5 ):
   '''Finite difference approximation of the variation of func in directions w around dofs
@@ -3021,5 +3010,130 @@ def iwscale( coords, ndims ):
   else:
     raise NotImplementedError, 'cannot compute determinant for %dx%d jacobian' % J.shape[:2]
   return detJ
+
+# CBUILDER
+#
+# Set of tools for just-in-time compilation of evaluables. Prototyping stage.
+
+def _cshape( shape ):
+  return [ sh if isinstance(sh,int) else 'n%d' % i for i, sh in enumerate(shape) ]
+
+def _cstrides( shape ):
+  if not shape:
+    return []
+  strides = [1]
+  for sh in _cshape(shape)[:0:-1]:
+    strides.append( '%s*%s' % ( strides[-1], sh ) )
+  return strides[::-1]
+
+def _cindex( myshape, shape ):
+  assert len(shape) == len(myshape)
+  index = []
+  for i, stride in enumerate( _cstrides(myshape) ):
+    if myshape[i] == shape[i]:
+      index.append( '%s*i%d' % (stride,i) )
+    else:
+      assert myshape[i] == 1
+  return '+'.join( index ) or '0'
+
+def _cfor( varname, count, do ):
+  return 'for ( %s=0; %s<%s; %s++ ) { %s }' % ( varname, varname, count, varname, do )
+
+def _cfunc( args, body ):
+  return '( %s )\n{ %s }\n' % ( ', '.join( args ), body )
+
+class CBuilder( object ):
+  'cbuilder'
+
+  def __init__( self, cachedir='/tmp/finity' ):
+    from cffi import FFI
+    self.ffi = FFI()
+    self.codebase = {}
+    self.allcode = []
+    self.cachedir = cachedir
+
+  def compile( self ):
+    log.context( 'c-builder' )
+    if not self.codebase:
+      return
+    import os, hashlib
+    code = '\n'.join( self.allcode )
+    fname = os.path.join( self.cachedir, hashlib.md5( code ).hexdigest() )
+    if os.path.isfile( fname+'.so' ):
+      log.info( 'in cache' )
+    else:
+      log.info( 'compiling %d c-functions' % len(self.codebase) )
+      if not os.path.isdir( self.cachedir ):
+        os.mkdir( self.cachedir )
+      open( fname+'.c', 'w' ).write( code )
+      assert os.system( 'gcc -fpic -g -c -o %s.o -O3 -march=native -mtune=native %s.c' % ((fname,)*2) ) == 0
+      assert os.system( 'gcc -shared -Wl,-soname,%s.so -o %s.so %s.o -lc' % ((fname,)*3) ) == 0
+      os.unlink( fname+'.c' )
+      os.unlink( fname+'.o' )
+    self.so = self.ffi.dlopen( fname+'.so' )
+
+  def cast( self, args, ctypes ):
+    assert len(args) == len(ctypes)
+    for arg, ctype in zip( args, ctypes ):
+      if ctype[-1] == '*':
+        assert isinstance( arg, numpy.ndarray )
+        # assert arg.flags.c_contiguous
+        # TODO check dtype
+        arg = arg.ctypes.data
+      yield self.ffi.cast( ctype, arg )
+
+  def __getitem__( self, (code,init) ):
+    evalf = self.codebase.get(code)
+    if evalf:
+      return evalf
+    arglist, body = code.split( '\n', 1 )
+    assert arglist[0] == '(' and arglist[-1] == ')'
+    ctypes = [ item.strip().rsplit(' ',1)[0] for item in arglist[1:-1].split( ',' ) ]
+    handle = 'func%d' % len(self.codebase)
+    head = 'void ' + handle
+    self.ffi.cdef( head + arglist + ';' )
+    def evalf( *args ):
+      cfunc = getattr( self.so, handle )
+      retval, iterargs = init( args )
+      for args in iterargs:
+        cfunc( *self.cast( args, ctypes ) )
+      return retval
+    self.codebase[code] = evalf
+    self.allcode.append( head + code )
+    return evalf
+
+def init_args_for( RETVAL, *ARGS ):
+  shape = RETVAL.shape
+  ndim = _max( ARG.ndim for ARG in ARGS if ARG is not None )
+  jointshape = _jointshape( *[ ARG.shape for ARG in ARGS if ARG is not None ] )
+  def init( args ):
+    assert len(args) == len(ARGS)
+    # 'None' ARGS are filtered out; values are built into the c code
+    args = [ numpy.ascontiguousarray( arg, dtype=ARG.dtype ) if arg.ndim else arg for arg, ARG in zip( args, ARGS ) if ARG is not None ]
+    haspoints = _max( [ arg.ndim for arg in args ] ) - ndim
+    assert haspoints in (0,1)
+    if haspoints:
+      neval = _max( [ arg.shape[0] for arg in args if arg.ndim > ndim ] )
+      retshape = [ neval ]
+    else:
+      neval = 1
+      retshape = []
+    assert all( arg.shape[0] == neval for arg in args if arg.ndim > ndim )
+    varsizes = []
+    for idim, sh in enumerate( jointshape ):
+      if not isinstance(sh,int):
+        for arg in args:
+          sh = arg.shape[idim-len(jointshape)]
+          if sh != 1:
+            break
+        varsizes.append( sh )
+      if idim < len(shape):
+        retshape.append( sh )
+    retval = numpy.empty( retshape, dtype=RETVAL.dtype )
+    args = [ retval[...,_] if haspoints else [retval[...,_]] * neval ] \
+         + [ [arg[...,_]] * neval if arg.ndim == ndim else arg[...,_] for arg in args ]
+    args = [ arg + tuple(varsizes) for arg in zip( *args ) ]
+    return retval, args
+  return init
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

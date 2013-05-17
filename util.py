@@ -286,7 +286,7 @@ def run( *functions ):
   properties = {
     'nprocs': 1,
     'outdir': '~/public_html',
-    'verbose': 4,
+    'verbose': 5,
     'imagetype': 'png',
     'symlink': False,
     'recache': False,
