@@ -336,6 +336,129 @@ class Element( object ):
 
     return self,
 
+def concat( x0, x1 ):
+  assert isinstance( x0, list ) and isinstance( x1, list )
+  return numpy.concatenate( [numpy.concatenate( x0 )[:,_], 
+                             numpy.concatenate( x1 )[:,_]], axis=1 )
+@core.cachefunc
+def tri_identical( eta1, eta2, eta3, xi ):
+  temp = xi*eta1*eta2*eta3
+  pts0 = xi*eta1*(1 - eta2)
+  pts1 = xi - pts0
+  pts2 = xi - temp
+  pts3 = xi*(1 - eta1)
+  pts4 = pts0 + temp
+  pts5 = xi*(1 - eta1*eta2)
+  pts6 = xi*eta1 - temp
+  xpts = concat( [xi,   pts2, xi,   pts5, pts2, xi  ],
+                 [pts1, pts3, pts4, pts0, pts6, pts0] )
+  ypts = concat( [pts2, xi,   pts5, xi,   xi,   pts2],
+                 [pts3, pts1, pts0, pts4, pts0, pts6] )
+  scale = numpy.concatenate( 6*[xi**3*eta1**2*eta2] )
+  return xpts, ypts, scale
+@core.cachefunc
+def tri_edge( eta1, eta2, eta3, xi ):
+  A = xi*eta1
+  B = A*eta2
+  C = A*eta3
+  D = B*eta3
+  E = xi - B
+  F = A - B
+  G = xi - D
+  H = B - D
+  I = A - D
+  xpts = concat( [xi, xi, E,  G,  G ],
+                 [C,  G,  F,  H,  I ] )
+  ypts = concat( [E,  G,  xi, xi, xi],
+                 [F,  H,  D,  A,  B ] )
+  temp = xi*A
+  scale = numpy.concatenate( [A*temp] + 4*[B*temp] )
+  return xpts, ypts, scale
+@core.cachefunc
+def tri_vertex( eta1, eta2, eta3, xi ):
+  A = xi*eta2
+  B = A*eta3
+  C = xi*eta1
+  xpts = concat( [xi, A ],
+                 [C,  B ] )
+  ypts = concat( [A,  xi],
+                 [B,  C ] )
+  scale = numpy.concatenate( 2*[xi**2*A] )
+  return xpts, ypts, scale
+@core.cachefunc
+def tri_default( eta1, eta2, eta3, xi ):
+  xpts = concat( [eta1*eta2],
+                 [eta2] )
+  ypts = concat( [eta3*xi],
+                 [xi] )
+  scale = eta2*xi
+  return xpts, ypts, scale
+@core.cachefunc
+def quad_identical( eta1, eta2, eta3, xi ):
+  xe = xi*eta1
+  A = (1 - xi)*eta3
+  B = (1 - xe)*eta2
+  C = xi + A
+  D = xe + B
+  xpts = concat( [A, B, A, D, B, C, C, D],
+                 [B, A, D, A, C, B, D, C] )
+  ypts = concat( [C, D, C, B, D, A, A, B],
+                 [D, C, B, C, A, D, B, A] )
+  scale = numpy.concatenate( 8*[xi*(1-xi)*(1-xe)] )
+  return xpts, ypts, scale
+@core.cachefunc
+def quad_edge( eta1, eta2, eta3, xi ):
+  # return quad_default( eta1, eta2, eta3, xi ) # TODO rm
+  ox = 1 - xi
+  A = xi*eta1
+  B = xi*eta2
+  C = ox*eta3
+  D = C + xi
+  E = 1 - A
+  F = E*eta3
+  G = A + F
+  xpts = concat( [D,  C,  G,  G,  F,  F ],
+                 [B,  B,  B,  xi, B,  xi] )
+  ypts = concat( [C,  D,  F,  F,  G,  G ],
+                 [A,  A,  xi, B,  xi, B ] )
+  scale = numpy.concatenate( 2*[xi**2*ox] + 4*[xi**2*E] )
+  return xpts, ypts, scale
+@core.cachefunc
+def quad_vertex( eta1, eta2, eta3, xi ):
+  # return quad_default( eta1, eta2, eta3, xi ) # TODO rm
+  A = xi*eta1
+  B = xi*eta2
+  C = xi*eta3
+  xpts = concat( [xi, A,  A,  A ], 
+                 [A,  xi, B,  B ] )
+  ypts = concat( [B,  B,  xi, C ], 
+                 [C,  C,  C,  xi] )
+  scale = numpy.concatenate( 4*[xi**3] )
+  return xpts, ypts, scale
+@core.cachefunc
+def quad_default( eta1, eta2, eta3, xi ):
+  xpts = concat( [eta1],
+                 [eta2] )
+  ypts = concat( [eta3],
+                 [xi  ] )
+  scale = numpy.ones( xi.shape )
+  return xpts, ypts, scale
+get_points = (tri_identical,
+              tri_edge,
+              tri_vertex,
+              tri_default,
+              quad_identical,
+              quad_edge,
+              quad_vertex,
+              quad_default)
+# @core.cachefunc #TODO: put back
+def bemscheme( ischeme ):
+  'Some cached quantities for the singularity quadrature scheme.'
+  nodes = [i for i in numpy.ndindex( *(4*(2,)) )]
+  points, weights = QuadElement( ndims=4, nodes=nodes ).eval( ischeme )
+  localcoords = tuple( [p for p in points.T] )
+  return localcoords, weights
+
 class ProductElement( Element ):
   'element product'
 
@@ -355,25 +478,30 @@ class ProductElement( Element ):
   def eval( self, ischeme ):
     'get integration scheme'
 
-    if ischeme == 'singular':
-      # using self.elem1, self.elem2:
-      coords1 = magic
-      coords2 = magic
-      weights1 = magic
-      weights2 = magic
+    if ischeme[:8] == 'singular': # TODO: shaky
+      assert type(self.elem1) == type(self.elem2), 'mixed element-types case not implemented, found {0} and {1}.'.format( type(elemx), type(elemy) )
+      assert type(self.elem1) in (TriangularElement, QuadElement), 'wrong element type, found {0}'.format( type(elemx) )
+      transformtype = (0 if isinstance(self.elem1, TriangularElement) else 4) + numpy.mod( self.elem1.neighbor( self.elem2 ), 4 )
+      gausscoords, gaussweights = bemscheme( 'gauss'+ischeme[8:] )
+      coords1, coords2, scale = get_points[transformtype]( *gausscoords )
+      coords = numpy.concatenate( [coords1, coords2], axis=1 )
+      # weights is of non tensor-product type!
+      weights = numpy.concatenate( len(scale)//len(gaussweights)*[gaussweights] )*scale
     else:
       coords1, weights1 = self.elem1.eval( ischeme )
       coords2, weights2 = self.elem2.eval( ischeme )
-    coords = numpy.empty( [ coords1.shape[0], coords2.shape[0], self.ndims ] )
-    coords[:,:,:self.elem1.ndims] = coords1[:,_,:]
-    coords[:,:,self.elem1.ndims:] = coords2[_,:,:]
-    if weights1 is not None:
-      assert weights2 is not None
-      weights = ( weights1[:,_] * weights2[_,:] ).ravel()
-    else:
-      assert weights2 is None
-      weights = None
-    return coords.reshape(-1,self.ndims), weights
+      if weights1 is not None:
+        assert weights2 is not None
+        weights = ( weights1[:,_] * weights2[_,:] ).ravel()
+      else:
+        assert weights2 is None
+        weights = None
+      coords = numpy.empty( [ coords1.shape[0], coords2.shape[0], self.ndims ] )
+      coords[:,:,:self.elem1.ndims] = coords1[:,_,:]
+      coords[:,:,self.elem1.ndims:] = coords2[_,:,:]
+      coords = coords.reshape(-1,self.ndims)
+      # print 'gauss:\n', coords, '\n', weights
+    return coords, weights
 
 class TrimmedElement( Element ):
   'trimmed element'

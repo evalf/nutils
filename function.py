@@ -1740,6 +1740,7 @@ class Pointwise( ArrayFunc ):
     return pointwise( take( self.args, index, axis+1 ), self.evalf, self.deriv )
 
   def _opposite( self ):
+    # args = [ opposite(arg,side) for arg in self.args ] # @TO
     args = [ opposite(arg) for arg in self.args ]
     return pointwise( args, self.evalf, self.deriv )
 
