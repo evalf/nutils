@@ -87,8 +87,6 @@ class Transformation( object ):
   def __init__( self, fromdim, todim ):
     'constructor'
 
-    assert isinstance( fromdim, int ) and fromdim > 0
-    assert isinstance( todim, int ) and todim > 0
     self.fromdim = fromdim
     self.todim = todim
 
@@ -676,7 +674,7 @@ class QuadElement( Element ):
     iside = iedge % 2
     s = (slice(None,None, 1 if iside else -1),) * idim + (iside,) \
       + (slice(None,None,-1 if iside else  1),) * (self.ndims-idim-1)
-    nodes = numpy.reshape( self.nodes, (2,)*self.ndims )[s].ravel() # TODO check
+    nodes = numpy.asarray( numpy.reshape( self.nodes, (2,)*self.ndims )[s] ).ravel() # TODO check
     return QuadElement( nodes=nodes, ndims=self.ndims-1, context=(self,transform) )
 
   @core.classcache
