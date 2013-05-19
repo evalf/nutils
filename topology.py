@@ -178,7 +178,7 @@ class Topology( object ):
 
     return graph
 
-  def integrate( self, funcs, ischeme, coords=None, iweights=None, title='integrating' ):
+  def integrate( self, funcs, ischeme, coords=None, iweights=None, force_dense=False, title='integrating' ):
     'integrate'
 
     log.context( title )
@@ -199,8 +199,9 @@ class Topology( object ):
     for ifunc, func in enumerate( funcs ):
       func = function._asarray( func )
       if function._isfunc( func ):
-        array = matrix.SparseMatrix( self.build_graph(func), func.shape[1] ) if func.ndim == 2 \
-           else numpy.zeros( func.shape, dtype=float )
+        array = numpy.zeros( func.shape, dtype=float ) if func.ndim != 2 \
+           else matrix.DenseMatrix( func.shape ) if force_dense \
+           else matrix.SparseMatrix( self.build_graph(func), func.shape[1] )
         for f, ind in func.blocks:
           integrands.append( function.Tuple([ ifunc, function.Tuple(ind), function.elemint( f, iweights ) ]) )
       else:
