@@ -111,32 +111,28 @@ class PyPlot( BasePlot ):
   def mesh( self, points, colors, edgecolors='k', triangulate='delaunay', **kwargs ):
     'plot elemtwise mesh'
 
+    assert isinstance( points, numpy.ndarray ) and points.dtype == float
+    assert isinstance( colors, numpy.ndarray ) and colors.dtype == float
+    assert points.ndim == 2
+    assert colors.ndim == 1
+    assert points.shape == ( colors.shape[0], 2 )
+
+    nans = numpy.isnan( points ).all( axis=1 )
+    split, = numpy.where( nans )
+    assert numpy.isnan( colors[split] ).all()
+
     P = []
     N = []
     C = []
     E = []
     npoints = 0
 
-    if isinstance( points, numpy.ndarray ) and points.dtype == float:
-      assert isinstance( colors, numpy.ndarray ) and colors.dtype == float
-      assert points.ndim == 2
-      assert colors.ndim == 1
-      assert points.shape == ( colors.shape[0], 2 )
-      nans = numpy.isnan( points ).all( axis=1 )
-      split, = numpy.where( nans )
-      assert numpy.isnan( colors[split] ).all()
-      slices = [ slice(a,b) for a, b in zip( numpy.concatenate([[0],split+1]), numpy.concatenate([split,[nans.size]]) ) ]
-      points = [ points[s] for s in slices ]
-      colors = [ colors[s] for s in slices ]
-
-    assert len(points) == len(colors)
-    for epoints, ecolors in zip( points, colors ):
-      np, nd = epoints.shape
-      assert nd == 2
-      if ecolors.ndim == 0:
-        ecolors = numeric.appendaxes( ecolors, np )
-      else:
-        assert ecolors.shape == (np,)
+    for a, b in zip( numpy.concatenate([[0],split+1]), numpy.concatenate([split,[nans.size]]) ):
+      np = b - a
+      if np == 0:
+        continue
+      epoints = points[a:b]
+      ecolors = colors[a:b]
       if triangulate == 'delaunay':
         from scipy import spatial
         tri = spatial.Delaunay( epoints )
