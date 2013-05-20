@@ -1,6 +1,8 @@
-from . import prop, log
-from multiprocessing import Lock, cpu_count
-import os, traceback
+from . import prop, log, numpy
+import os, sys, multiprocessing
+
+Lock = multiprocessing.Lock
+cpu_count = multiprocessing.cpu_count
 
 def fork( func, nice=19 ):
   'fork and run (return value is lost)'
@@ -26,107 +28,60 @@ def fork( func, nice=19 ):
 def shzeros( shape, dtype=float ):
   'create zero-initialized array in shared memory'
 
-  from multiprocessing import RawArray
-  from numpy import frombuffer, product, array
-
-  try:
-    shape = map(int,shape)
-  except TypeError:
-    shape = [int(shape)]
-  size = product( shape ) if shape else 1
-  typecode = {
-    int: 'i',
-    float: 'd' }
-  buf = RawArray( typecode[dtype], size )
-  return frombuffer( buf, dtype ).reshape( shape )
-
-def oldpariter( iterable, verbose=False ):
-  'fork and iterate, handing equal-sized chunks to all processors'
-
-  nprocs = getattr( prop, 'nprocs', 1 )
-  if nprocs == 1:
-    log.debug( 'pariter: iterating in sequential mode (nprocs=1)' )
-    for i in iterable:
-      yield i
-    return
-
-  log.debug( 'pariter: iterating in parallel mode (nprocs=%d)' % nprocs )
-
-  from os import fork, wait, _exit
-
-  iterable = tuple( iterable )
-  pids = set()
-  for iproc in range( nprocs ):
-    pid = fork()
-    if pid:
-      pids.add( pid )
-      continue
-    try:
-      for i in range( iproc, len(iterable), nprocs ):
-        yield iterable[ i ]
-    except Exception, e:
-      log.error( 'an error occured: %s' % e )
-      _exit( 1 )
-    else:
-      _exit( 0 )
-
-  while pids:
-    pid, status = wait()
-    assert status == 0, 'subprocess #%d failed'
-    pids.remove( pid )
-    log.debug( 'pariter: process #%d finished, %d pending' % ( pid, len(pids) ) )
+  if isinstance( shape, int ):
+    shape = shape,
+  else:
+    assert all( isinstance(sh,int) for sh in shape )
+  size = numpy.product( shape ) if shape else 1
+  typecode = { int: 'i', float: 'd' }[ dtype ]
+  buf = multiprocessing.RawArray( typecode, size )
+  return numpy.frombuffer( buf, dtype ).reshape( shape )
 
 def pariter( iterable ):
-  'fork and iterate, handing equal-sized chunks to all processors'
+  'iterate parallel'
 
   nprocs = getattr( prop, 'nprocs', 1 )
-  if nprocs == 1:
-    log.debug( 'pariter: iterating in sequential mode (nprocs=1)' )
-    for item in iterable:
-      yield item
+  if nprocs <= 1:
+    for it in iterable:
+      yield it
     return
 
-  log.debug( 'pariter: iterating in parallel mode (nprocs=%d)' % nprocs )
-
-  from os import fork, wait, _exit
-
-  pids = set()
-
-  for item in iterable:
-    pid = fork()
-    if not pid: # child
-      try:
-        yield item
-      except Exception, e:
-        log.error( 'an error occured: %s' % e )
-        _exit( 1 )
-      _exit( 0 )
-
-    pids.add( pid )
-    if len(pids) >= nprocs:
-      pid, status = wait()
-      assert status == 0, 'subprocess #%d failed'
-      pids.remove( pid )
-
-  while pids:
-    pid, status = wait()
-    assert status == 0, 'subprocess #%d failed'
-    pids.remove( pid )
-
-def example():
-  'simple example demonstrating a parallel loop'
-
-  print 'parallel example'
+  shared_iter = multiprocessing.RawValue( 'i' )
+  iterable = iter( iterable )
   lock = Lock()
-  A = shzeros( 4 )
-  n = 0
-  for i in pariter( [1,2,3,4], verbose=True ):
-    with lock:
-      A[n] += i
-    n += 1
-  print A
 
-if __name__ == '__main__':
-  example()
+  iproc = 0
+  while iproc < nprocs-1 and os.fork() == 0:
+    iproc += 1
+
+  oldcontext = log.context( 'proc %d' % ( iproc+1 ), depth=1 )
+
+  status = 1
+  try:
+    with lock:
+      iiter = shared_iter.value
+      shared_iter.value = iiter + 1
+    for n, it in enumerate( iterable ):
+      if n < iiter:
+        continue
+      assert n == iiter
+      yield it
+      with lock:
+        iiter = shared_iter.value
+        shared_iter.value = iiter + 1
+    status = 0
+  finally:
+    if status:
+      log.error( 'an exception occurred' )
+    if iproc < nprocs-1:
+      child_pid, child_status = os.wait()
+      if child_status:
+        status = 1
+    if iproc:
+      os._exit( status )
+    log.restore( oldcontext, depth=1 )
+
+  if status:
+    raise Exception, 'one or more processes failed'
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=1

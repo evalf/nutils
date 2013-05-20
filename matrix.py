@@ -1,4 +1,4 @@
-from . import util, numpy, log, numeric, _
+from . import util, numpy, log, numeric, parallel, _
 import scipy.sparse
 from scipy.sparse.sparsetools.csr import _csr
 from scipy.sparse.linalg.isolve import _iterative
@@ -165,7 +165,7 @@ class SparseMatrix( Matrix ):
       nzrow = map(len,graph)
       count = sum( nzrow )
       assert numpy.sum( nzrow ) <= numpy.iinfo( numpy.intc ).max, 'matrix overflow: length %d > max intc %d' % ( numpy.sum( nzrow ), numpy.iinfo( numpy.intc ).max )
-      self.data = numpy.zeros( count, dtype=float )
+      self.data = parallel.shzeros( count, dtype=float )
       self.indptr = numpy.cumsum( [0] + nzrow, dtype=numpy.intc )
       self.indices = numpy.empty( count, dtype=numpy.intc )
       for irow, icols in enumerate( graph ):
@@ -358,7 +358,7 @@ class DenseMatrix( Matrix ):
     else:
       if isinstance( shape, int ):
         shape = shape, shape
-      self.data = numpy.zeros( shape )
+      self.data = parallel.shzeros( shape )
     Matrix.__init__( self, self.data.shape )
 
   def __getitem__( self, (rows,cols) ):

@@ -51,8 +51,8 @@ def iterate( text, iterable, target=None, **kwargs ):
   try:
     frame = f_locals[_KEY] = logger
     for i, item in enumerate( iterable ):
-      yield item
       logger.update( i )
+      yield item
   finally:
     frame = f_locals[_KEY] = logger.parent
 

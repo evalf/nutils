@@ -199,21 +199,22 @@ class Topology( object ):
     for ifunc, func in enumerate( funcs ):
       func = function._asarray( func )
       if function._isfunc( func ):
-        array = numpy.zeros( func.shape, dtype=float ) if func.ndim != 2 \
+        array = parallel.shzeros( func.shape, dtype=float ) if func.ndim != 2 \
            else matrix.DenseMatrix( func.shape ) if force_dense \
            else matrix.SparseMatrix( self.build_graph(func), func.shape[1] )
         for f, ind in func.blocks:
-          integrands.append( function.Tuple([ ifunc, function.Tuple(ind), function.elemint( f, iweights ) ]) )
+          integrands.append( function.Tuple([ ifunc, parallel.Lock(), function.Tuple(ind), function.elemint( f, iweights ) ]) )
       else:
-        array = numpy.zeros( func.shape, dtype=float )
+        array = parallel.shzeros( func.shape, dtype=float )
         if not function._iszero( func ):
-          integrands.append( function.Tuple([ ifunc, (), function.elemint( func, iweights ) ]) )
+          integrands.append( function.Tuple([ ifunc, parallel.Lock(), (), function.elemint( func, iweights ) ]) )
       retvals.append( array )
     idata = function.Tuple( integrands )
 
-    for elem in self:
-      for ifunc, index, data in idata( elem, ischeme ):
-        retvals[ifunc][index] += data
+    for elem in parallel.pariter( self ):
+      for ifunc, lock, index, data in idata( elem, ischeme ):
+        with lock:
+          retvals[ifunc][index] += data
 
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
     if single_arg:
