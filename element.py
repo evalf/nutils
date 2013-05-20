@@ -222,6 +222,7 @@ class Element( object ):
   def __init__( self, ndims, nodes, index=None, parent=None, context=None, interface=None ):
     'constructor'
 
+    assert all( isinstance(node,Node) for node in nodes )
     self.nodes = tuple(nodes)
     self.ndims = ndims
     assert index is None or parent is None
@@ -739,9 +740,9 @@ class QuadElement( Element ):
     nodes = numpy.empty( [3]*self.ndims, dtype=object )
     nodes[ (slice(None,None,2),)*self.ndims ] = numpy.reshape( self.nodes, [2]*self.ndims )
     for idim in range(self.ndims):
-      left, mid, right = numeric.bringforward( nodes, idim )[(slice(None),)+(slice(None,None,2),)*(self.ndims-1)]
-      mid[:] = util.objmap( HalfNode, left, right )
-    nodes[ (1,)*self.ndims ] = HalfNode( nodes.flat[0], nodes.flat[-1] ) # arbitrary
+      s1 = (slice(None),)*idim
+      s2 = (slice(None,None,2),)*(self.ndims-idim-1)
+      nodes[s1+(1,)+s2] = util.objmap( HalfNode, nodes[s1+(0,)+s2], nodes[s1+(2,)+s2] )
 
     elemnodes = [ nodes[ tuple( slice(i,i+2) for i in index ) ].ravel()
       for index in numpy.ndindex( (2,)*self.ndims ) ]
