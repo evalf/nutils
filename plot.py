@@ -1,6 +1,11 @@
 from . import topology, util, numpy, function, element, log, prop, numeric, _
 import os
 
+def _nansplit( data ):
+  n, = numpy.where( numpy.isnan( data.reshape( data.shape[0], -1 ) ).any( axis=1 ) )
+  N = numpy.concatenate( [ [-1], n, [data.shape[0]] ] )
+  return [ data[a:b] for a, b in zip( N[:-1]+1, N[1:] ) ]
+
 class BasePlot( object ):
   'base class for plotting objects'
 
@@ -366,7 +371,8 @@ class VTKFile( BasePlot ):
   def unstructuredgrid( self, points ):
     """add unstructured grid"""
 
-    assert isinstance( points, (list,tuple,numpy.ndarray) ), 'Expected list of point arrays'
+    points = _nansplit( points )
+    #assert isinstance( points, (list,tuple,numpy.ndarray) ), 'Expected list of point arrays'
 
     import vtk
 
@@ -415,7 +421,6 @@ class VTKFile( BasePlot ):
   def pointdataarray( self, name, data ):
     'add cell array'
     npoints = self.vtkMesh.GetNumberOfPoints()
-    data = numpy.concatenate( list(data), axis=0 )
     assert npoints == data.shape[0], 'Point data array should have %d entries' % npoints
     self.vtkMesh.GetPointData().AddArray( self.__vtkarray(name,data) )
 
@@ -441,21 +446,20 @@ def writevtu( name, topo, coords, pointdata={}, celldata={}, ascii=False, supere
     else:
       topo = topology.UnstructuredTopology( filter(None,[elem if not isinstance(elem,element.TrimmedElement) else elem.elem for elem in topo]), topo.ndims )
 
-    funcs = pointdata.values()
-    funcs.append( coords )
+    points = topo.elem_eval( coords, ischeme='vtk', separate=True )
+    vtkfile.unstructuredgrid( points )
 
-    res = topo.elem_eval( funcs, ischeme='vtk' )
-
-    vtkfile.unstructuredgrid( res.pop() )
-
-    for name, data in zip( pointdata.keys(), res ):
-      vtkfile.pointdataarray( name, data )
+    if pointdata:  
+      keys, values = zip( *pointdata.items() )
+      arrays = topo.elem_eval( values, ischeme='vtk', separate=False )
+      for key, array in zip( keys, arrays ):
+        vtkfile.pointdataarray( key, array )
 
     if celldata:  
-      res = topo.elem_mean( celldata.values(), coords, 'gauss1' )
-
-      for name, data in zip( celldata.keys(), res ):
-        vtkfile.celldataarray( name, data )
+      keys, values = zip( *celldata.items() )
+      arrays = topo.elem_eval( values, ischeme='gauss1', separate=False )
+      for key, array in zip( keys, arrays ):
+        vtkfile.celldataarray( key, array )
 
 ######## OLD PLOTTING INTERFACE ############
 
