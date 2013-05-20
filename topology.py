@@ -1,4 +1,5 @@
 from . import element, function, util, numpy, parallel, matrix, log, core, numeric, _
+import warnings
 
 class ElemMap( dict ):
   'dictionary-like element mapping'
@@ -47,46 +48,56 @@ class Topology( object ):
     items = ( self.groups[it] for it in item.split( ',' ) )
     return sum( items, items.next() )
 
-  def elem_eval( self, funcs, ischeme, stack=False, title='evaluating' ):
+  def elem_eval( self, funcs, ischeme, stack=False, separate=None, title='evaluating' ):
     'element-wise evaluation'
 
     log.context( title )
+
+    if separate is None:
+      warnings.warn( '''in elem_eval: stack is deprecated and will be removed.
+  List-of-arrays (was stack=False) is no longer supported, replaced by nan-separation.
+  In plot.PyPlot use separate=True for mesh, separate=False for e.g. quiver.''' )
+      separate = stack is not True
 
     single_arg = not isinstance(funcs,(tuple,list))
     if single_arg:
       funcs = funcs,
 
+    slices = []
+    pointshape = function.PointShape()
+    npoints = 0
+    separators = []
+    for elem in self:
+      np, = pointshape( elem, ischeme )
+      slices.append( slice(npoints,npoints+np) )
+      npoints += np
+      if separate:
+        separators.append( npoints )
+        npoints += 1
+    if separate:
+      separators = numpy.array( separators[:-1], dtype=int )
+      npoints -= 1
+
     retvals = []
     idata = []
-    for func in funcs:
-      if not isinstance( func, function.ArrayFunc ):
-        func = function.Const( func )
-      assert all( isinstance(sh,int) for sh in func.shape )
-      idata.append( func )
-      retvals.append( numpy.empty( len(self), dtype=object ) )
+    for ifunc, func in enumerate( funcs ):
+      func = function._asarray( func )
+      retval = parallel.shzeros( (npoints,)+func.shape, dtype=func.dtype )
+      if separate:
+        retval[separators] = numpy.nan
+      if function._isfunc( func ):
+        for f, ind in func.blocks:
+          idata.append( function.Tuple( [ ifunc, function.Tuple(ind), f ] ) )
+      else:
+        idata.append( function.Tuple( [ ifunc, (), func ] ) )
+      retvals.append( retval )
     idata = function.Tuple( idata )
 
-    for ielem, elem in enumerate( self ):
-      for retval, data in zip( retvals, idata( elem, ischeme ) ):
-        retval[ielem] = data
+    for ielem, elem in parallel.pariter( enumerate( self ) ):
+      s = slices[ielem],
+      for ifunc, index, data in idata( elem, ischeme ):
+        retvals[ifunc][s+index] = data
 
-    if stack:
-      stacked = []
-      nansep = ( stack == 'nan' )
-      for retval in retvals:
-        npoints = sum( val.shape[0] for val in retval )
-        nelems = len( retval )
-        newretval = numpy.empty( (npoints+nansep*(nelems-1),)+retval[0].shape[1:] )
-        ptr = 0
-        for val in retval:
-          if ptr and nansep:
-            newretval[ptr:ptr+1] = numpy.nan
-            ptr += 1
-          newretval[ptr:ptr+val.shape[0]] = val
-          ptr += val.shape[0]
-        assert ptr == newretval.shape[0]
-        stacked.append( newretval )
-      retvals = stacked
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
     if single_arg:
       retvals, = retvals

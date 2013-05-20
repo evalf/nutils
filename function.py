@@ -281,6 +281,20 @@ class Tuple( Evaluable ):
 
     return f
 
+class PointShape( Evaluable ):
+  'shape of integration points'
+
+  def __init__( self ):
+    'constructor'
+
+    return Evaluable.__init__( self, args=[POINTS], evalf=self.pointshape )
+
+  @staticmethod
+  def pointshape( points ):
+    'evaluate'
+
+    return points.shape[:-1]
+
 class Cascade( Evaluable ):
   'point cascade: list of (elem,points) tuples'
 
