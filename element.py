@@ -455,7 +455,7 @@ get_points = (tri_identical,
 # @core.cachefunc #TODO: put back
 def bemscheme( ischeme ):
   'Some cached quantities for the singularity quadrature scheme.'
-  nodes = [i for i in numpy.ndindex( *(4*(2,)) )]
+  nodes = [PrimaryNode( '%s(%d:%d)' % ('bemref',0,inode) ) for inode in range(16) ]
   points, weights = QuadElement( ndims=4, nodes=nodes ).eval( ischeme )
   localcoords = tuple( [p for p in points.T] )
   return localcoords, weights

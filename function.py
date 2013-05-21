@@ -881,6 +881,9 @@ class Choose( ArrayFunc ):
       return _zeros( self.shape + (ndims,) )
     return Choose( self.level[...,_], grads )
 
+  def _opposite( self ):
+    return choose( opposite(self.level), tuple(opposite(c) for c in self.choices) )
+
 class Choose2D( ArrayFunc ):
   'piecewise function'
 
@@ -1157,6 +1160,9 @@ class Cross( ArrayFunc ):
   def _take( self, index, axis ):
     if axis != self.axis:
       return cross( take(self.func1,index,axis), take(self.func2,index,axis), self.axis )
+
+  def _opposite( self ):
+    return cross( opposite(self.func1), opposite(self.func2), self.axis )
 
 class Determinant( ArrayFunc ):
   'normal'
@@ -1568,6 +1574,9 @@ class Sum( ArrayFunc ):
 
   def _localgradient( self, ndims ):
     return sum( localgradient( self.func, ndims ), self.axis )
+
+  def _opposite( self ):
+    return sum( opposite(self.func), axes=self.axis )
 
 class Debug( ArrayFunc ):
   'debug'
@@ -2098,6 +2107,9 @@ class Repeat( PriorityFunc ):
     if self.axis >= self.ndim - naxes:
       return func * self.length
     return repeat( func, self.length, self.axis )
+
+  def _opposite( self ):
+    return repeat( opposite(self.func), self.length, self.axis )
 
 class Const( PriorityFunc ):
   'pointwise transformation'

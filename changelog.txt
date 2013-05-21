@@ -8,6 +8,11 @@ solve, the finite difference approximation should converge (in the
 Hilbert-Schmidt norm with rate 1 w.r.t. the perturbation, to be
 precise).
 
+3D BEM integration schemes. If the domain is a surface, then on its
+product domain the integration schemes 'singular%i' are available, an
+implementation of Sauter's schemes for strongly singular integrals
+arising in the BEM.
+
 Finity 2.00 "Rickon" --- major enhancements
 
 Changed:
