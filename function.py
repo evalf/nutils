@@ -922,6 +922,9 @@ class Inverse( ArrayFunc ):
               * H[...,_,:,:,:], -3 )
     return -I
 
+  def _opposite( self ):
+    return Inverse( opposite(self.func) )
+
 class DofMap( ArrayFunc ):
   'dof axis'
 
@@ -1177,6 +1180,9 @@ class Determinant( ArrayFunc ):
     Finv = inverse( self.func ).swapaxes(-2,-1)
     G = localgradient( self.func, ndims )
     return self[...,_] * sum( Finv[...,_] * G, axes=[-3,-2] )
+
+  def _opposite( self ):
+    return determinant( opposite(self.func) )
 
 class DofIndex( ArrayFunc ):
   'element-based indexing'
@@ -1619,6 +1625,9 @@ class TakeDiag( ArrayFunc ):
     if axis != self.ndim-1:
       return takediag( sum( self.func, axis ) )
 
+  def _opposite( self ):
+    return takediag( opposite(self.func) )
+
 class Take( ArrayFunc ):
   'generalization of numpy.take(), to accept lists, slices, arrays'
 
@@ -2037,6 +2046,9 @@ class Diagonalize( PriorityFunc ):
   def _align( self, axes, ndim ):
     if axes[-2:] in [ (ndim-2,ndim-1), (ndim-1,ndim-2) ]:
       return diagonalize( align( self.func, axes[:-2] + (ndim-2,), ndim-1 ) )
+
+  def _opposite( self ):
+    return diagonalize( opposite(self.func) )
 
 class Repeat( PriorityFunc ):
   'repeat singleton axis'
