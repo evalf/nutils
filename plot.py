@@ -436,10 +436,10 @@ class VTKFile( BasePlot ):
       array.SetTuple( i, d )
     return array
 
-def writevtu( name, topo, coords, pointdata={}, celldata={}, ascii=False, superelements=False, maxrefine=3, **kwargs ):
+def writevtu( name, topo, coords, pointdata={}, celldata={}, ascii=False, superelements=False, maxrefine=3, ndigits=0, ischeme='gauss1', **kwargs ):
   'write vtu from coords function'
 
-  with VTKFile( name, ascii=ascii ) as vtkfile:
+  with VTKFile( name, ascii=ascii, ndigits=ndigits ) as vtkfile:
 
     if not superelements:
       topo = topology.UnstructuredTopology( topo.get_simplices( maxrefine=maxrefine ), topo.ndims )
@@ -457,7 +457,7 @@ def writevtu( name, topo, coords, pointdata={}, celldata={}, ascii=False, supere
 
     if celldata:  
       keys, values = zip( *celldata.items() )
-      arrays = topo.elem_eval( values, ischeme='gauss1', separate=False )
+      arrays = topo.elem_mean( values, coords=coords, ischeme=ischeme )
       for key, array in zip( keys, arrays ):
         vtkfile.celldataarray( key, array )
 

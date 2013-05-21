@@ -1795,6 +1795,7 @@ class Pointdata( ArrayFunc ):
     func = _asarray(func)
     assert func.shape == self.shape
     data = dict( (elem,(numpy.maximum(func(elem,points),values),points)) for elem,(values,points) in self.data.iteritems() )
+
     return Pointdata( data, self.shape )
 
 # PRIORITY OBJECTS
@@ -3001,13 +3002,21 @@ def pointdata ( topo, ischeme, func=None, shape=None, value=0. ):
   from finity import topology
   assert isinstance(topo,topology.Topology)
 
-  if func == None:
-    assert shape != None, 'Shape must be specified if func is omitted'
-    data = dict( (elem,(value*numpy.ones(shape),elem.eval(ischeme)[0])) for elem in topo )
-  else:  
-    assert shape == None, 'No shape argument required'
-    shape = func.shape
-    data = dict( (elem,(func(elem,ischeme),elem.eval(ischeme)[0])) for elem in topo )
+# if func == None:
+#   assert shape != None, 'Shape must be specified if func is omitted'
+#   data = dict( (elem,(value*numpy.ones(shape),elem.eval(ischeme)[0])) for elem in topo )
+# else:  
+#   assert shape == None, 'No shape argument required'
+#   shape = func.shape
+#   data = dict( (elem,(func(elem,ischeme),elem.eval(ischeme)[0])) for elem in topo )
+
+  assert ( func is None ) != ( shape is None )
+  data = {}
+  for elem in topo:
+    ipoints, iweights = elem.eval( ischeme )
+    values = numpy.empty( ipoints.shape[:-1]+tuple(shape), dtype=float )
+    values[:] = func(elem,ischeme) if func is not None else value
+    data[ elem ] = values, ipoints
 
   return Pointdata ( data, shape )
 

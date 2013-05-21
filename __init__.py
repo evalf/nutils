@@ -36,6 +36,7 @@ __all__ = [
   'function',
   'mesh',
   'plot',
+  'library',
   'topology',
   'util',
   'green',

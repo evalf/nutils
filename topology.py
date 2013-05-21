@@ -114,10 +114,13 @@ class Topology( object ):
       funcs = funcs,
 
     retvals = []
-    iweights = coords.iweights( self.ndims )
+    #iweights = coords.iweights( self.ndims )
+    iweights = function.iwscale( coords, self.ndims ) * function.IWeights()
     idata = [ iweights ]
     for func in funcs:
       func = function._asarray( func )
+      if not function._isfunc( func ):
+        func = function.Const( func )
       assert all( isinstance(sh,int) for sh in func.shape )
       idata.append( function.elemint( func, iweights ) )
       retvals.append( numpy.empty( (len(self),)+func.shape ) )
