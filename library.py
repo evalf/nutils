@@ -18,4 +18,3 @@ def Hooke( **kwargs ):
   return lambda disp, coords: \
     lmbda * disp.div(coords)[...,_,_] * function.eye( coords.shape[0] ) \
       + (2*mu) * disp.symgrad(coords)
-
