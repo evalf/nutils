@@ -1230,7 +1230,7 @@ class DofIndex( ArrayFunc ):
       return DofIndex( array, self.iax, self.index )
 
   def _opposite( self ):
-    return self
+    return DofIndex( self.array, self.iax, opposite(self.index) )
 
   def _negative( self ):
     return DofIndex( -self.array, self.iax, self.index )
