@@ -287,9 +287,12 @@ class PyPlot( BasePlot ):
   def cspy( self, A, **kwargs ): 
     'Like pyplot.spy, but coloring acc to 10^log of absolute values, where [0, inf, nan] show up in blue.'
     if not isinstance( A, numpy.ndarray ): A.toarray()
-    A = numpy.log10( numpy.abs( A ) )
-    B = numpy.isinf( A ) | numpy.isnan( A ) # what needs replacement
-    A[B] = ~B if numpy.all( B ) else numpy.amin( A[~B] ) - 1.
+    if A.size < 2: # trivial case of 1x1 matrix
+      A = A.reshape( 1, 1 )
+    else:
+      A = numpy.log10( numpy.abs( A ) )
+      B = numpy.isinf( A ) | numpy.isnan( A ) # what needs replacement
+      A[B] = ~B if numpy.all( B ) else numpy.amin( A[~B] ) - 1.
     self.pcolormesh( A, **kwargs )
     self.colorbar()
     self.ylim( self.ylim()[-1::-1] ) # invert y axis: equiv to MATLAB axis ij
