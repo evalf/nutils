@@ -341,6 +341,7 @@ class ArrayFunc( Evaluable ):
     self.evalf = evalf
     self.shape = tuple(shape)
     self.ndim = len(self.shape)
+    assert dtype is int or dtype is float
     self.dtype = dtype
     Evaluable.__init__( self, evalf=evalf, args=args, cdef=cdef )
 
