@@ -1303,10 +1303,10 @@ class Multiply( ArrayFunc ):
   def _multiply( self, other ):
     func1, func2 = self.funcs
     func1_other = multiply( func1, other )
-    if func1_other != Multiply( func1, other ):
+    if Multiply( func1, other ) != func1_other:
       return multiply( func1_other, func2 )
     func2_other = multiply( func2, other )
-    if func2_other != Multiply( func2, other ):
+    if Multiply( func2, other ) != func2_other:
       return multiply( func1, func2_other )
 
   def _localgradient( self, ndims ):
@@ -1450,10 +1450,10 @@ class Add( ArrayFunc ):
   def _add( self, other ):
     func1, func2 = self.funcs
     func1_other = add( func1, other )
-    if func1_other != Add( func1, other ):
+    if Add( func1, other ) != func1_other:
       return add( func1_other, func2 )
     func2_other = add( func2, other )
-    if func2_other != Add( func2, other ):
+    if Add( func2, other ) != func2_other:
       return add( func1, func2_other )
 
 class BlockAdd( Add ):
@@ -1519,10 +1519,10 @@ class Dot( ArrayFunc ):
       other = insert( other, ax )
     assert other.ndim == self.func1.ndim == self.func2.ndim
     func1_other = multiply( self.func1, other )
-    if func1_other != Multiply( self.func1, other ):
+    if Multiply( self.func1, other ) != func1_other:
       return dot( func1_other, self.func2, self.axes )
     func2_other = multiply( self.func2, other )
-    if func2_other != Multiply( self.func2, other ):
+    if Multiply( self.func2, other ) != func2_other:
       return dot( self.func1, func2_other, self.axes )
 
   def _add( self, other ):

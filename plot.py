@@ -118,79 +118,97 @@ class PyPlot( BasePlot ):
 
     assert isinstance( points, numpy.ndarray ) and points.dtype == float
     assert isinstance( colors, numpy.ndarray ) and colors.dtype == float
-    assert points.ndim == 2
-    assert colors.ndim == 1
-    assert points.shape == ( colors.shape[0], 2 )
 
-    nans = numpy.isnan( points ).all( axis=1 )
-    split, = numpy.where( nans )
-    assert numpy.isnan( colors[split] ).all()
+    assert points.shape[:-1] == colors.shape
+    assert points.shape[-1] == 2
 
-    P = []
-    N = []
-    C = []
-    E = []
-    npoints = 0
+    if points.ndim == 3:
 
-    for a, b in zip( numpy.concatenate([[0],split+1]), numpy.concatenate([split,[nans.size]]) ):
-      np = b - a
-      if np == 0:
-        continue
-      epoints = points[a:b]
-      ecolors = colors[a:b]
-      if triangulate == 'delaunay':
-        from scipy import spatial
-        tri = spatial.Delaunay( epoints )
-        vertices = tri.vertices
-        e0 = [ edge[0] for edge in tri.convex_hull ]
-        e1 = [ edge[1] for edge in tri.convex_hull ]
-        last = e1.pop()
-        hull = [ e0.pop(), last ]
-        while e0:
-          try:
-            index = e0.index( last )
-            last = e1[index]
-          except ValueError:
-            index = e1.index( last )
-            last = e0[index]
-          e0.pop( index )
-          e1.pop( index )
-          hull.append( last )
-        assert hull[0] == hull[-1]
-      elif triangulate == 'bezier':
-        nquad = int( numpy.sqrt(np) + .5 )
-        ntri = int( numpy.sqrt((2*np)+.25) )
-        if nquad**2 == np:
-          ind = numpy.arange(np).reshape(nquad,nquad)
-          vert1 = numpy.array([ ind[:-1,:-1].ravel(), ind[1:,:-1].ravel(), ind[:-1,1:].ravel() ]).T
-          vert2 = numpy.array([ ind[1:,1:].ravel(), ind[1:,:-1].ravel(), ind[:-1,1:].ravel() ]).T
-          vertices = numpy.concatenate( [vert1,vert2], axis=0 )
-          hull = numpy.concatenate([ ind[:,0], ind[-1,1:], ind[-2::-1,-1], ind[0,-2::-1] ])
-        elif ntri * (ntri+1) == 2 * np:
-          vert1 = [ ((2*ntri-i+1)*i)//2+numpy.array([j,j+1,j+ntri-i]) for i in range(ntri-1) for j in range(ntri-i-1) ]
-          vert2 = [ ((2*ntri-i+1)*i)//2+numpy.array([j+1,j+ntri-i+1,j+ntri-i]) for i in range(ntri-1) for j in range(ntri-i-2) ]
-          vertices = numpy.concatenate( [vert1,vert2], axis=0 )
-          hull = numpy.concatenate([ numpy.arange(ntri), numpy.arange(ntri-1,0,-1).cumsum()+ntri-1, numpy.arange(ntri+1,2,-1).cumsum()[::-1]-ntri-1 ])
+      data = colors.ravel()
+      xy = points.reshape( -1, 2 ).T
+      ind = numpy.arange( xy.shape[1] ).reshape( points.shape[:-1] )
+      vert1 = numpy.array([ ind[:-1,:-1].ravel(), ind[1:,:-1].ravel(), ind[:-1,1:].ravel() ]).T
+      vert2 = numpy.array([ ind[1:,1:].ravel(), ind[1:,:-1].ravel(), ind[:-1,1:].ravel() ]).T
+      triangles = numpy.concatenate( [vert1,vert2], axis=0 )
+      edges = None
+
+    elif points.ndim == 2:
+
+      nans = numpy.isnan( points ).all( axis=1 )
+      split, = numpy.where( nans )
+      assert numpy.isnan( colors[split] ).all()
+  
+      P = []
+      N = []
+      C = []
+      E = []
+      npoints = 0
+  
+      for a, b in zip( numpy.concatenate([[0],split+1]), numpy.concatenate([split,[nans.size]]) ):
+        np = b - a
+        if np == 0:
+          continue
+        epoints = points[a:b]
+        ecolors = colors[a:b]
+        if triangulate == 'delaunay':
+          from scipy import spatial
+          tri = spatial.Delaunay( epoints )
+          vertices = tri.vertices
+          e0 = [ edge[0] for edge in tri.convex_hull ]
+          e1 = [ edge[1] for edge in tri.convex_hull ]
+          last = e1.pop()
+          hull = [ e0.pop(), last ]
+          while e0:
+            try:
+              index = e0.index( last )
+              last = e1[index]
+            except ValueError:
+              index = e1.index( last )
+              last = e0[index]
+            e0.pop( index )
+            e1.pop( index )
+            hull.append( last )
+          assert hull[0] == hull[-1]
+        elif triangulate == 'bezier':
+          nquad = int( numpy.sqrt(np) + .5 )
+          ntri = int( numpy.sqrt((2*np)+.25) )
+          if nquad**2 == np:
+            ind = numpy.arange(np).reshape(nquad,nquad)
+            vert1 = numpy.array([ ind[:-1,:-1].ravel(), ind[1:,:-1].ravel(), ind[:-1,1:].ravel() ]).T
+            vert2 = numpy.array([ ind[1:,1:].ravel(), ind[1:,:-1].ravel(), ind[:-1,1:].ravel() ]).T
+            vertices = numpy.concatenate( [vert1,vert2], axis=0 )
+            hull = numpy.concatenate([ ind[:,0], ind[-1,1:], ind[-2::-1,-1], ind[0,-2::-1] ])
+          elif ntri * (ntri+1) == 2 * np:
+            vert1 = [ ((2*ntri-i+1)*i)//2+numpy.array([j,j+1,j+ntri-i]) for i in range(ntri-1) for j in range(ntri-i-1) ]
+            vert2 = [ ((2*ntri-i+1)*i)//2+numpy.array([j+1,j+ntri-i+1,j+ntri-i]) for i in range(ntri-1) for j in range(ntri-i-2) ]
+            vertices = numpy.concatenate( [vert1,vert2], axis=0 )
+            hull = numpy.concatenate([ numpy.arange(ntri), numpy.arange(ntri-1,0,-1).cumsum()+ntri-1, numpy.arange(ntri+1,2,-1).cumsum()[::-1]-ntri-1 ])
+          else:
+            raise Exception, 'cannot match points to a bezier scheme'
         else:
-          raise Exception, 'cannot match points to a bezier scheme'
-      else:
-        raise Exception, 'unknown triangulation method %r' % triangulate
-      P.append( epoints.T )
-      N.append( vertices + npoints )
-      C.append( ecolors )
-      E.append( epoints[hull] )
-      npoints += np
+          raise Exception, 'unknown triangulation method %r' % triangulate
+        P.append( epoints.T )
+        N.append( vertices + npoints )
+        C.append( ecolors )
+        E.append( epoints[hull] )
+        npoints += np
+  
+      xy = numpy.concatenate( P, axis=1 )
+      triangles = numpy.concatenate( N, axis=0 )
+      data = numpy.concatenate( C )
+      edges = E
 
-    xy = numpy.concatenate( P, axis=1 )
-    triangles = numpy.concatenate( N, axis=0 )
+    else:
 
+      raise Exception, 'invalid points shape %r' % ( points.shape, )
+  
     TriMesh = self._trimesh_class()
     polycol = TriMesh( xy, triangles, rasterized=True, **kwargs )
-    polycol.set_array( numpy.concatenate(C) )
+    polycol.set_array( data )
 
-    if edgecolors != 'none':
+    if edges and edgecolors != 'none':
       from matplotlib.collections import LineCollection
-      linecol = LineCollection( E )
+      linecol = LineCollection( edges )
       linecol.set_color( edgecolors )
       self.gca().add_collection( linecol )
 
@@ -206,7 +224,8 @@ class PyPlot( BasePlot ):
     'add polycollection'
   
     from matplotlib import collections
-    assert all( vert.ndim == 2 and vert.shape[1] == 2 for vert in verts )
+    assert verts.ndim == 2 and verts.shape[1] == 2
+    verts = _nansplit( verts )
     if facecolors != 'none':
       assert isinstance(facecolors,numpy.ndarray) and facecolors.shape == (len(verts),)
       array = facecolors
