@@ -112,6 +112,15 @@ class Matrix( object ):
     A += other
     return A
 
+  def __mul__( self, other ):
+    'multiply'
+
+    A = self.clone()
+    A *= other
+    return A
+
+  __rmul__ = __mul__
+
   def cond( self, constrain=None, lconstrain=None, rconstrain=None ):
     'condition number'
 
@@ -266,6 +275,13 @@ class SparseMatrix( Matrix ):
              + numpy.searchsorted( self.indices[self.indptr[irow]:self.indptr[irow+1]], other.indices[s] )
       assert all( self.indices[I] == other.indices )
     self.data[I] += other.data
+    return self
+
+  def __imul__( self, other ):
+    'scalar multiplication'
+
+    assert isinstance( other, (int,float) )
+    self.data *= other
     return self
 
   @property
