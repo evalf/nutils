@@ -85,7 +85,8 @@ class Evaluable( object ):
       self.data = []
       self.operations = []
       self.recurse_index( self.data, self.operations, cbuild ) # compile expressions
-      self.graphviz()
+      if getattr( prop, 'dot', False ):
+        self.graphviz()
       if cbuild:
         cbuild.compile()
 
@@ -152,10 +153,8 @@ class Evaluable( object ):
 
     import os, subprocess
 
-    dotpath = getattr( prop, 'dot', False )
-    if not dotpath:
-      return False
-    if dotpath is True:
+    dotpath = getattr( prop, 'dot', True )
+    if not isinstance( dotpath, str ):
       dotpath = 'dot'
 
     imgtype = getattr( prop, 'imagetype', 'png' )
@@ -790,14 +789,16 @@ class OrientationHack( ArrayFunc ):
 class Transform( ArrayFunc ):
   'transform'
 
-  def __init__( self, fromcascade, tocascade ):
+  def __init__( self, fromcascade, tocascade, side=0 ):
     'constructor'
 
     assert fromcascade.ndims > tocascade.ndims
-    ArrayFunc.__init__( self, args=[fromcascade,tocascade], evalf=self.transform, shape=(fromcascade.ndims,tocascade.ndims) )
+    self.fromcascade = fromcascade
+    self.tocascade = tocascade
+    ArrayFunc.__init__( self, args=[fromcascade,tocascade,side], evalf=self.transform, shape=(fromcascade.ndims,tocascade.ndims) )
 
   @staticmethod
-  def transform( fromcascade, tocascade ):
+  def transform( fromcascade, tocascade, side ):
     'transform'
 
     fromelem = fromcascade[0][0]
@@ -806,7 +807,8 @@ class Transform( ArrayFunc ):
     elem = toelem
     T = elem.inv_root_transform
     while elem is not fromelem:
-      elem, transform = elem.context or elem.parent
+      elem, transform = elem.interface[side] if elem.interface \
+                   else elem.context or elem.parent
       T = numpy.dot( transform.transform, T )
     T = numpy.dot( elem.root_transform, T )
 
@@ -814,6 +816,9 @@ class Transform( ArrayFunc ):
 
   def _localgradient( self, ndims ):
     return _zeros( self.shape + (ndims,) )
+
+  def _opposite( self ):
+    return Transform( self.fromcascade, self.tocascade, 1-self.side )
 
 class Function( ArrayFunc ):
   'function'
@@ -1461,8 +1466,32 @@ class BlockAdd( Add ):
 
   def _multiply( self, other ):
     func1, func2 = self.funcs
-    return func1 * other + func2 * other
+    return BlockAdd( func1 * other, func2 * other )
 
+  def _inflate( self, dofmap, length, axis ):
+    func1, func2 = self.funcs
+    return BlockAdd( inflate( func1, dofmap, length, axis ),
+                     inflate( func2, dofmap, length, axis ) )
+
+  def _align( self, axes, ndim ):
+    func1, func2 = self.funcs
+    return BlockAdd( align(func1,axes,ndim), align(func2,axes,ndim) )
+
+  def _negative( self ):
+    func1, func2 = self.funcs
+    return BlockAdd( negative(func1), negative(func2) )
+
+  def _add( self, other ):
+    func1, func2 = self.funcs
+    try1 = func1 + other
+    if try1 != BlockAdd( func1, other ):
+      return try1 + func2
+    try2 = func2 + other
+    if try2 != BlockAdd( func2, other ):
+      return try2 + func1
+    return BlockAdd( self, other )
+
+  @property
   def blocks( self ):
     func1, func2 = self.funcs
     for f, ind in func1.blocks:
@@ -1932,6 +1961,12 @@ class Inflate( PriorityFunc ):
     inflated[(Ellipsis,indices)+(slice(None),)*(-axis-1)] = array
     return inflated
 
+  def _inflate( self, dofmap, length, axis ):
+    assert axis != self.axis
+    if axis > self.axis:
+      return
+    return inflate( inflate( self.func, dofmap, length, axis ), self.dofmap, self.length, self.axis )
+
   def _localgradient( self, ndims ):
     return inflate( localgradient(self.func,ndims), self.dofmap, self.length, self.axis )
 
@@ -1967,8 +2002,10 @@ class Inflate( PriorityFunc ):
       if self.dofmap != other.dofmap:
         return BlockAdd( self, other )
       other = other.func
-    elif other.shape[self.axis] != 1:
-      other = take( other, self.dofmap, self.axis )
+    else:
+      return
+    #elif other.shape[self.axis] != 1:
+    #  other = take( other, self.dofmap, self.axis )
     return inflate( add(self.func,other), self.dofmap, self.length, self.axis )
 
   def _cross( self, other, axis ):
@@ -2997,29 +3034,33 @@ def inflate( arg, dofmap, length, axis ):
 
   return Inflate( arg, dofmap, length, axis )
 
-def pointdata ( topo, ischeme, func=None, shape=None, value=0. ):
+def pointdata ( topo, ischeme, func=None, shape=None, value=None ):
   'point data'
 
   from finity import topology
   assert isinstance(topo,topology.Topology)
 
-# if func == None:
-#   assert shape != None, 'Shape must be specified if func is omitted'
-#   data = dict( (elem,(value*numpy.ones(shape),elem.eval(ischeme)[0])) for elem in topo )
-# else:  
-#   assert shape == None, 'No shape argument required'
-#   shape = func.shape
-#   data = dict( (elem,(func(elem,ischeme),elem.eval(ischeme)[0])) for elem in topo )
+  if func is not None:
+    assert value is None
+    assert shape is None
+    shape = func.shape
+  else: # func is None
+    if value is not None:
+      assert shape is None
+      value = numpy.asarray( value )
+    else: # value is None
+      assert shape is not None
+      value = numpy.zeros( shape )
+    shape = value.shape
 
-  assert ( func is None ) != ( shape is None )
   data = {}
   for elem in topo:
     ipoints, iweights = elem.eval( ischeme )
-    values = numpy.empty( ipoints.shape[:-1]+tuple(shape), dtype=float )
+    values = numpy.empty( ipoints.shape[:-1]+shape, dtype=float )
     values[:] = func(elem,ischeme) if func is not None else value
     data[ elem ] = values, ipoints
 
-  return Pointdata ( data, shape )
+  return Pointdata( data, shape )
 
 def fdapprox( func, w, dofs, delta=1.e-5 ):
   '''Finite difference approximation of the variation of func in directions w around dofs

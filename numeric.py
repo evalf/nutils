@@ -205,6 +205,11 @@ def fastrepeat( A, nrepeat, axis=-1 ):
   strides[axis] = 0
   return numpy.lib.stride_tricks.as_strided( A, shape, strides )
 
+def fastmeshgrid( X, Y ):
+  'mesh grid based on fastrepeat'
+
+  return fastrepeat(X[numpy.newaxis,:],len(Y),axis=0), fastrepeat(Y[:,numpy.newaxis],len(X),axis=1)
+
 def appendaxes( A, shape ):
   'append axes by 0stride'
 

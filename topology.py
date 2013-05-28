@@ -526,8 +526,8 @@ class StructuredTopology( Topology ):
 
     interfaces = []
     for idim in range(self.ndims):
-      s1 = (slice(-1),) + (slice(None),)*(self.ndims-idim-1)
-      s2 = (slice(1,None),) + (slice(None),)*(self.ndims-idim-1)
+      s1 = (slice(None),)*idim + (slice(-1),)
+      s2 = (slice(None),)*idim + (slice(1,None),)
       for elem1, elem2 in numpy.broadcast( self.structure[s1], self.structure[s2] ):
         A = numpy.zeros((self.ndims,self.ndims-1))
         A[range(idim)+range(idim+1,self.ndims)] = numpy.eye(self.ndims-1)
@@ -536,8 +536,9 @@ class StructuredTopology( Topology ):
         b2 = numpy.zeros(self.ndims)
         context1 = elem1, element.AffineTransformation( b1, A )
         context2 = elem2, element.AffineTransformation( b2, A )
-        id = 'iface(%s,%s)' % ( elem1.id, elem2.id )
-        ielem = element.QuadElement( ndims=self.ndims-1, id=id, interface=(context1,context2) )
+        nodes = numpy.reshape( elem1.nodes, [2]*elem1.ndims )[s2].ravel()
+        assert numpy.all( nodes == numpy.reshape( elem2.nodes, [2]*elem1.ndims )[s1].ravel() )
+        ielem = element.QuadElement( ndims=self.ndims-1, nodes=nodes, interface=(context1,context2) )
         interfaces.append( ielem )
     return UnstructuredTopology( interfaces, ndims=self.ndims-1 )
 
