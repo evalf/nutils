@@ -1,4 +1,4 @@
-from . import element, function, util, numpy, parallel, matrix, log, core, numeric, _
+from . import element, function, util, numpy, parallel, matrix, log, core, numeric, prop, _
 import warnings
 
 class ElemMap( dict ):
@@ -197,7 +197,7 @@ class Topology( object ):
 
     log.context( title )
 
-    single_arg = not isinstance(funcs,list)
+    single_arg = not isinstance(funcs,(list,tuple))
     if single_arg:
       funcs = funcs,
 

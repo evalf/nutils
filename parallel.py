@@ -50,9 +50,13 @@ def pariter( iterable ):
   iterable = iter( iterable )
   lock = Lock()
 
-  iproc = 0
-  while iproc < nprocs-1 and os.fork() == 0:
-    iproc += 1
+  for iproc in range( nprocs-1 ):
+    child_pid = os.fork()
+    if child_pid:
+      break
+  else:
+    iproc = nprocs-1
+    child_pid = None
 
   oldcontext = log.context( 'proc %d' % ( iproc+1 ), depth=1 )
 
@@ -73,9 +77,12 @@ def pariter( iterable ):
   finally:
     if status:
       log.error( 'an exception occurred' )
-    if iproc < nprocs-1:
-      child_pid, child_status = os.wait()
-      if child_status:
+    if child_pid is not None:
+      check_child_pid, child_status = os.waitpid( child_pid, 0 )
+      if check_child_pid != child_pid:
+        log.error( 'pid failure! got %s, was waiting for %s' % (check_child_pid,child_pid) )
+        status = 1
+      elif child_status:
         status = 1
     if iproc:
       os._exit( status )
