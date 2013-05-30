@@ -22,8 +22,8 @@ class Hooke:
       numpy.testing.assert_almost_equal( value, getattr(self,key) )
 
   def _set_from_lame( self, lmbda, mu ):
-    self.lmbda = lmbda
-    self.mu = mu
+    self.lmbda = float(lmbda)
+    self.mu = float(mu)
 
   def _set_from_poisson_young( self, nu, E ):
     self.lmbda = (nu*E)/((1.+nu)*(1.-2.*nu))
@@ -34,7 +34,7 @@ class Hooke:
       + (2*self.mu) * disp.symgrad(coords)
     
   def __str__( self ):
-    return 'Hooke(%s,%s)' % ( self.mu, self.lmbda )
+    return 'Hooke(mu=%s,lmbda=%s)' % ( self.mu, self.lmbda )
 
   @property
   def E( self ):
