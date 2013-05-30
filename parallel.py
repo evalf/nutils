@@ -49,18 +49,7 @@ def pariter( iterable ):
   shared_iter = multiprocessing.RawValue( 'i', nprocs )
   lock = Lock()
 
-  for iproc in range( nprocs-1 ):
-    child_pid = os.fork()
-    if child_pid:
-      break
-  else:
-    iproc = nprocs-1
-    child_pid = None
-
-  oldcontext = log.context( 'proc %d' % ( iproc+1 ), depth=1 )
-
-  status = 1
-  try:
+  with Fork( nprocs ) as iproc:
     iiter = iproc
     for n, it in enumerate( iterable ):
       if n < iiter:
@@ -70,25 +59,40 @@ def pariter( iterable ):
       with lock:
         iiter = shared_iter.value
         shared_iter.value = iiter + 1
+
+class Fork( object ):
+
+  def __init__( self, nprocs ):
+    self.nprocs = nprocs
+
+  def __enter__( self ):
+    for self.iproc in range( self.nprocs-1 ):
+      self.child_pid = os.fork()
+      if self.child_pid:
+        break
+    else:
+      self.child_pid = None
+      self.iproc = self.nprocs-1
+    self.oldcontext = log.context( 'proc %d' % ( self.iproc+1 ), depth=1 )
+    return self.iproc
+
+  def __exit__( self, exctype, excvalue, tb ):
     status = 0
-  finally:
     try:
-      if status:
+      if exctype:
         log.error( 'an exception occurred' )
-      if child_pid is not None:
-        check_child_pid, child_status = os.waitpid( child_pid, 0 )
-        if check_child_pid != child_pid:
-          log.error( 'pid failure! got %s, was waiting for %s' % (check_child_pid,child_pid) )
+        status = 1
+      if self.child_pid:
+        child_pid, child_status = os.waitpid( self.child_pid, 0 )
+        if child_pid != self.child_pid:
+          log.error( 'pid failure! got %s, was waiting for %s' % (child_pid,self.child_pid) )
           status = 1
         elif child_status:
           status = 1
-      log.restore( oldcontext, depth=1 )
+      log.restore( self.oldcontext, depth=1 )
     except:
       status = 1
-    if iproc:
+    if self.iproc:
       os._exit( status )
-
-  if status:
-    raise Exception, 'one or more processes failed'
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=1
