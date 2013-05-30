@@ -46,8 +46,7 @@ def pariter( iterable ):
       yield it
     return
 
-  shared_iter = multiprocessing.RawValue( 'i' )
-  iterable = iter( iterable )
+  shared_iter = multiprocessing.RawValue( 'i', nprocs )
   lock = Lock()
 
   for iproc in range( nprocs-1 ):
@@ -62,9 +61,7 @@ def pariter( iterable ):
 
   status = 1
   try:
-    with lock:
-      iiter = shared_iter.value
-      shared_iter.value = iiter + 1
+    iiter = iproc
     for n, it in enumerate( iterable ):
       if n < iiter:
         continue
@@ -75,18 +72,21 @@ def pariter( iterable ):
         shared_iter.value = iiter + 1
     status = 0
   finally:
-    if status:
-      log.error( 'an exception occurred' )
-    if child_pid is not None:
-      check_child_pid, child_status = os.waitpid( child_pid, 0 )
-      if check_child_pid != child_pid:
-        log.error( 'pid failure! got %s, was waiting for %s' % (check_child_pid,child_pid) )
-        status = 1
-      elif child_status:
-        status = 1
+    try:
+      if status:
+        log.error( 'an exception occurred' )
+      if child_pid is not None:
+        check_child_pid, child_status = os.waitpid( child_pid, 0 )
+        if check_child_pid != child_pid:
+          log.error( 'pid failure! got %s, was waiting for %s' % (check_child_pid,child_pid) )
+          status = 1
+        elif child_status:
+          status = 1
+      log.restore( oldcontext, depth=1 )
+    except:
+      status = 1
     if iproc:
       os._exit( status )
-    log.restore( oldcontext, depth=1 )
 
   if status:
     raise Exception, 'one or more processes failed'

@@ -1135,19 +1135,21 @@ class Concatenate( ArrayFunc ):
   def _opposite( self ):
     return concatenate( [ opposite(func) for func in self.funcs ], self.axis )
 
-class Interp1D( ArrayFunc ):
-  'interpolate data'
+class Interpolate( ArrayFunc ):
+  'interpolate uniformly spaced data; stepwise for now'
 
-  def __init__( self, x, xp, yp, left=None, right=None ):
+  def __init__( self, array, index ):
     'constructor'
 
-    assert _isfunc( x )
-    xp = UseableArray( xp )
-    yp = UseableArray( yp )
-    assert ( numpy.diff(xp) > 0 ).all()
-    assert xp.ndim == yp.ndim == 1
-    assert xp.shape == yp.shape
-    ArrayFunc.__init__( self, args=(x,xp,yp,left,right), evalf=numpy.interp, shape=() )
+    array = numpy.asarray( array, dtype=float )
+    assert index.ndim == 1
+    assert index.shape[0] <= array.ndim
+    ArrayFunc.__init__( self, args=[array,index], evalf=self.interpolate, shape=array.shape[index.shape[0]:] )
+
+  @staticmethod
+  def interpolate( array, index ):
+    I = tuple( index.astype(int).T )
+    return array[I]
 
 class Cross( ArrayFunc ):
   'cross product'
