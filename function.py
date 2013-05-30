@@ -1285,9 +1285,9 @@ class Multiply( ArrayFunc ):
 
   def _add( self, other ):
     func1, func2 = self.funcs
-    if other == func1:
+    if _equal( other, func1 ):
       return func1 * (func2+1)
-    if other == func2:
+    if _equal( other, func2 ):
       return func2 * (func1+1)
     if isinstance( other, Multiply ):
       common = _findcommon( self.funcs, other.funcs )
@@ -2318,11 +2318,10 @@ def _equal( arg1, arg2 ):
     return all( _equal(v1,v2) for v1, v2 in zip( arg1, arg2 ) )
   if not isinstance( arg1, numpy.ndarray ) and not isinstance( arg2, numpy.ndarray ):
     return arg1 == arg2
-  arg1 = numpy.asarray( arg1 )
-  arg2 = numpy.asarray( arg2 )
-  if arg1.shape != arg2.shape:
+  elif isinstance( arg1, numpy.ndarray ) and isinstance( arg2, numpy.ndarray ):
+    return arg1.shape == arg2.shape and numpy.all( arg1 == arg2 )
+  else:
     return False
-  return numpy.all( arg1 == arg2 )
 
 def _asarray( arg ):
   'convert to ArrayFunc or numpy.ndarray'
