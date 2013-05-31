@@ -46,7 +46,7 @@ class ImmutableArray( numpy.ndarray ):
     return hash( id(self) )
 
 class Product( object ):
-  def __init__( iter1, iter2 ):
+  def __init__( self, iter1, iter2 ):
     self.iter1 = iter1
     self.iter2 = iter2
   def __len__( self ):
