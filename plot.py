@@ -323,13 +323,13 @@ class PyPlot( BasePlot ):
 class DataFile( BasePlot ):
   """data file"""
 
-  def __init__( self, name, index=None, ndigits=0 ):
+  def __init__( self, name, index=None, ndigits=0, mode='w' ):
     'constructor'
 
     BasePlot.__init__( self, name, ndigits=ndigits, index=index )
 
     self.names = [name]
-    self.fout  = open( os.path.join(self.path,name), 'w' )
+    self.fout  = open( os.path.join(self.path,name), mode )
 
   def save( self, name ):
     self.fout.close()
