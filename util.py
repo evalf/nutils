@@ -50,7 +50,7 @@ class Product( object ):
     self.iter1 = iter1
     self.iter2 = iter2
   def __len__( self ):
-    return len( iter1 ) * len( iter2 )
+    return len( self.iter1 ) * len( self.iter2 )
   def __iter__( self ):
     return itertools.product( self.iter1, self.iter2 )
 
