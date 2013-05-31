@@ -236,6 +236,56 @@ class Topology( object ):
 
     return retvals
 
+  def integrate_symm( self, funcs, ischeme, coords=None, iweights=None, force_dense=False, title='integrating' ):
+    'integrate a symmetric integrand on a product domain' # TODO: find a proper home for this
+
+    log.context( title )
+
+    single_arg = not isinstance(funcs,list)
+    if single_arg:
+      funcs = funcs,
+
+    if iweights is None:
+      assert coords is not None, 'conflicting arguments coords and iweights'
+      iweights = function.iwscale( coords, self.ndims ) * function.IWeights()
+    else:
+      assert coords is None, 'conflicting arguments coords and iweights'
+    assert iweights.ndim == 0
+
+    integrands = []
+    retvals = []
+    for ifunc, func in enumerate( funcs ):
+      func = function._asarray( func )
+      if function._isfunc( func ):
+        array = parallel.shzeros( func.shape, dtype=float ) if func.ndim != 2 \
+           else matrix.DenseMatrix( func.shape ) if force_dense \
+           else matrix.SparseMatrix( self.build_graph(func), func.shape[1] )
+        for f, ind in func.blocks:
+          integrands.append( function.Tuple([ ifunc, parallel.Lock(), function.Tuple(ind), function.elemint( f, iweights ) ]) )
+      else:
+        array = parallel.shzeros( func.shape, dtype=float )
+        if not function._iszero( func ):
+          integrands.append( function.Tuple([ ifunc, parallel.Lock(), (), function.elemint( func, iweights ) ]) )
+      retvals.append( array )
+    idata = function.Tuple( integrands )
+
+    for elem in parallel.pariter( log.iterate('elem',self) ):
+      assert isinstance( elem, element.ProductElement )
+      compare_elem = cmp( elem.elem1, elem.elem2 )
+      if compare_elem < 0:
+        continue
+      for ifunc, lock, index, data in idata( elem, ischeme ):
+        with lock:
+          retvals[ifunc][index] += data
+          if compare_elem > 0:
+            retvals[ifunc][index[::-1]] += data.T
+
+    log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
+    if single_arg:
+      retvals, = retvals
+
+    return retvals
+
   def projection( self, fun, onto, coords, **kwargs ):
     'project and return as function'
 
