@@ -52,7 +52,7 @@ class Product( object ):
   def __len__( self ):
     return len( self.iter1 ) * len( self.iter2 )
   def __iter__( self ):
-    return itertools.product( self.iter1, self.iter2 )
+    return iter( item1 * item2 for item1 in self.iter1 for item2 in self.iter2 )
 
 class _Unit( object ):
   def __mul__( self, other ): return other
