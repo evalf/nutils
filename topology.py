@@ -1,5 +1,5 @@
 from . import element, function, util, numpy, parallel, matrix, log, core, numeric, prop, _
-import warnings
+import warnings, itertools
 
 class ElemMap( dict ):
   'dictionary-like element mapping'
@@ -39,7 +39,7 @@ class Topology( object ):
   def __mul__( self, other ):
     'element products'
 
-    elems = [ elem1 * elem2 for elem1 in self for elem2 in other ]
+    elems = util.Product( self, other )
     return UnstructuredTopology( elems, ndims=self.ndims+other.ndims )
 
   def __getitem__( self, item ):
@@ -67,7 +67,7 @@ class Topology( object ):
     pointshape = function.PointShape()
     npoints = 0
     separators = []
-    for elem in self:
+    for elem in log.iterate('elem',self):
       np, = pointshape( elem, ischeme )
       slices.append( slice(npoints,npoints+np) )
       npoints += np
@@ -159,7 +159,7 @@ class Topology( object ):
 
     data = function.Tuple([ function.Tuple([ func, retval ]) for func, retval in zip( funcs, retvals ) ])
 
-    for elem in self:
+    for elem in log.iterate('elem',self):
       points, selection = coords.find( elem, C.T )
       if selection is not None:
         for func, retval in data( elem, points ):
@@ -181,7 +181,7 @@ class Topology( object ):
     graph = [ [] for irow in range(nrows) ]
     IJ = function.Tuple([ function.Tuple(ind) for f, ind in func.blocks ])
 
-    for elem in self:
+    for elem in log.iterate('elem',self):
       for I, J in IJ( elem, None ):
         for i in I:
           graph[i].append(J)
@@ -225,7 +225,7 @@ class Topology( object ):
       retvals.append( array )
     idata = function.Tuple( integrands )
 
-    for elem in parallel.pariter( self ):
+    for elem in parallel.pariter( log.iterate('elem',self) ):
       for ifunc, lock, index, data in idata( elem, ischeme ):
         with lock:
           retvals[ifunc][index] += data
@@ -353,7 +353,7 @@ class Topology( object ):
     while topo: # elements to examine in next level refinement
       nexttopo = []
       refined = set() # refined dofs in current refinement level
-      for elem in topo: # loop over remaining elements in refinement level 'nrefine'
+      for elem in log.iterate('elem',topo): # loop over remaining elements in refinement level 'nrefine'
         dofs = dofmap.get( elem ) # dof numbers for current funcsp object
         if dofs is not None: # elem is a top-level element
           supp = refine.intersection(dofs) # supported dofs that are tagged for refinement
@@ -480,7 +480,7 @@ class StructuredTopology( Topology ):
   def __iter__( self ):
     'iterate'
 
-    return iter( log.iterate( 'element', [ elem for elem in self.structure.flat if elem is not None ] ) )
+    return itertools.ifilter( None, self.structure.flat )
 
   def __getitem__( self, item ):
     'subtopology'
@@ -803,7 +803,7 @@ class IndexedTopology( Topology ):
   def __iter__( self ):
     'number of elements'
 
-    return iter( log.iterate( 'element', self.elements ) )
+    return iter( self.elements )
 
   def __len__( self ):
     'number of elements'
@@ -854,7 +854,7 @@ class UnstructuredTopology( Topology ):
   def __iter__( self ):
     'number of elements'
 
-    return iter( log.iterate( 'element', self.elements ) )
+    return iter( self.elements )
 
   def __len__( self ):
     'number of elements'

@@ -1,5 +1,5 @@
 from . import log, prop
-import sys, os, time, numpy, cPickle, hashlib, weakref, traceback, core, warnings, exception
+import sys, os, time, numpy, cPickle, hashlib, weakref, traceback, core, warnings, exception, itertools
 
 class _SuppressedOutput( object ):
   'suppress all output by redirection to /dev/null'
@@ -44,6 +44,15 @@ class ImmutableArray( numpy.ndarray ):
     'hash'
 
     return hash( id(self) )
+
+class Product( object ):
+  def __init__( iter1, iter2 ):
+    self.iter1 = iter1
+    self.iter2 = iter2
+  def __len__( self ):
+    return len( iter1 ) * len( iter2 )
+  def __iter__( self ):
+    return itertools.product( self.iter1, self.iter2 )
 
 class _Unit( object ):
   def __mul__( self, other ): return other
