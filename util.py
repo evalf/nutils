@@ -1,6 +1,34 @@
 from . import log, prop
 import sys, os, time, numpy, cPickle, hashlib, weakref, traceback, core, warnings, exception, itertools
 
+def scan_unreachable():
+  # see http://stackoverflow.com/questions/16911559/trouble-understanding-pythons-gc-garbage-for-tracing-memory-leaks
+  # first time setup
+  import gc
+  gc.set_threshold( 0 ) # only manual sweeps
+  gc.set_debug( gc.DEBUG_SAVEALL ) # keep unreachable items as garbage
+  gc.enable() # start gc if not yet running (is this necessary?)
+  # operation
+  if gc.collect() == 0:
+    log.info( 'no unreachable items' )
+  else:
+    fmt = '[%%0%dd] %%s' % len(str(len(gc.garbage)-1))
+    log.info( 'unreachable items:\n '
+            + '\n '.join( fmt % item for item in enumerate( gc.garbage ) ) )
+    _deep_purge_list( gc.garbage ) # remove unreachable items
+
+def _deep_purge_list( garbage ):
+  for item in garbage:
+    if isinstance( item, dict ):
+      item.clear()
+    if isinstance( item, list ):
+      del item[:]
+    try:
+      item.__dict__.clear()
+    except:
+      pass
+  del garbage[:]
+
 class _SuppressedOutput( object ):
   'suppress all output by redirection to /dev/null'
 

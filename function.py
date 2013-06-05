@@ -33,17 +33,11 @@ class Evaluable( object ):
 
   operations = None
 
-  def __init__( self, args, evalf, cdef=None ):
+  def __init__( self, args, evalf ):
     'constructor'
 
     self.__args = tuple(args)
     self.__evalf = evalf
-    self.__cdef = cdef
-
-  def verify( self, value ):
-    'check result'
-
-    return '= %s %s' % ( _obj2str(value), type(value) )
 
   def recurse_index( self, data, operations, cbuild ):
     'compile'
@@ -83,8 +77,9 @@ class Evaluable( object ):
     if self.operations is None:
       cbuild = getattr( prop, 'use_c_funcs', False ) and CBuilder()
       self.data = []
-      self.operations = []
-      self.recurse_index( self.data, self.operations, cbuild ) # compile expressions
+      operations = []
+      self.recurse_index( self.data, operations, cbuild ) # compile expressions
+      self.operations = [ (evalf,idcs) for (op,evalf,idcs) in operations ] # break cycles!
       if getattr( prop, 'dot', False ):
         self.graphviz()
       if cbuild:
@@ -113,8 +108,8 @@ class Evaluable( object ):
 
     self.compile()
     N = len(self.data) + 3
-    values = list( self.data ) + [ elem, points, weights ]
-    for op, evalf, indices in self.operations:
+    values = self.data + [ elem, points, weights ]
+    for evalf, indices in self.operations:
       args = [ values[N+i] for i in indices ]
       try:
         retval = evalf( *args )
@@ -126,30 +121,11 @@ class Evaluable( object ):
       values.append( retval )
     return values[-1]
 
-  def argnames( self ):
-    'function argument names'
-  
-    import inspect
-    try:
-      argnames, varargs, keywords, defaults = inspect.getargspec( self.__evalf )
-    except:
-      argnames = [ '%%%d' % n for n in range(len(self.__args)) ]
-    else:
-      for n in range( len(self.__args) - len(argnames) ):
-        argnames.append( '%s[%d]' % (varargs,n) )
-    return argnames
-
-  def __graphviz__( self ):
-    'graphviz representation'
-
-    args = [ '%s=%s' % ( argname, _obj2str(arg) ) for argname, arg in zip( self.argnames(), self.__args ) if not isinstance(arg,Evaluable) ]
-    label = self.__class__.__name__
-    return { 'label': r'\n'.join( [ label ] + args ) }
-
   def graphviz( self, title='graphviz' ):
     'create function graph'
 
     log.context( title )
+    self.compile()
 
     import os, subprocess
 
@@ -169,16 +145,14 @@ class Evaluable( object ):
     print >> dot.stdin, 'digraph {'
     print >> dot.stdin, 'graph [ dpi=72 ];'
 
-    self.compile()
-    for i, (op,evalf,indices) in enumerate( self.operations ):
-
-      node = op.__graphviz__()
-      node['label'] = '%d. %s' % ( i, node.get('label','') )
-      print >> dot.stdin, '%d [%s]' % ( i, ' '.join( '%s="%s"' % item for item in node.iteritems() ) )
-      argnames = op.argnames()
-      for n, idx in enumerate( indices ):
+    data = self.data + [ '<elem>', '<points>', '<weights>' ]
+    for i, (evalf,indices) in enumerate( self.operations ):
+      args = [ '%%%d=%s' % ( iarg, _obj2str( data[idx] ) ) for iarg, idx in enumerate( indices ) if idx < 0 ]
+      node = 'label="%s"' % r'\n'.join( [ '%d. %s' % ( i, evalf.__name__ ) ] + args )
+      print >> dot.stdin, '%d [%s]' % ( i, node )
+      for iarg, idx in enumerate( indices ):
         if idx >= 0:
-          print >> dot.stdin, '%d -> %d [label="%s"];' % ( idx, i, argnames[n] );
+          print >> dot.stdin, '%d -> %d [label="%%%d"];' % ( idx, i, iarg );
 
     print >> dot.stdin, '}'
     dot.stdin.close()
@@ -190,24 +164,22 @@ class Evaluable( object ):
 
     self.compile()
     if values is None:
-      values = self.data + ( '<elem>', '<points>', '<weights>' )
+      values = self.data + [ '<elem>', '<points>', '<weights>' ]
 
     N = len(self.data) + 3
 
     lines = []
-    for i, (op,evalf,indices) in enumerate( self.operations ):
+    for i, (evalf,indices) in enumerate( self.operations ):
       line = '  %%%d =' % i
       args = [ '%%%d' % idx if idx >= 0 else _obj2str(values[N+idx]) for idx in indices ]
       try:
-        code = op.__evalf.func_code
+        code = evalf.func_code
         names = code.co_varnames[ :code.co_argcount ]
         names += tuple( '%s[%d]' % ( code.co_varnames[ code.co_argcount ], n ) for n in range( len(indices) - len(names) ) )
         args = [ '%s=%s' % item for item in zip( names, args ) ]
       except:
         pass
-      line += ' %s( %s )' % ( op.__evalf.__name__, ', '.join( args ) )
-      if N+i < len(values):
-        line += ' ' + op.verify( values[N+i] )
+      line += ' %s( %s )' % ( evalf.__name__, ', '.join( args ) )
       lines.append( line )
       if N+i == len(values):
         break
@@ -334,7 +306,7 @@ class ArrayFunc( Evaluable ):
 
   __array_priority__ = 1. # http://stackoverflow.com/questions/7042496/numpy-coercion-problem-for-left-sided-binary-operator/7057530#7057530
 
-  def __init__( self, evalf, args, shape, dtype=float, cdef=None ):
+  def __init__( self, evalf, args, shape, dtype=float ):
     'constructor'
 
     self.evalf = evalf
@@ -342,7 +314,7 @@ class ArrayFunc( Evaluable ):
     self.ndim = len(self.shape)
     assert dtype is int or dtype is float
     self.dtype = dtype
-    Evaluable.__init__( self, evalf=evalf, args=args, cdef=cdef )
+    Evaluable.__init__( self, evalf=evalf, args=args )
 
   # mathematical operators
 
@@ -425,13 +397,6 @@ class ArrayFunc( Evaluable ):
       raise TypeError, 'scalar function is not iterable'
 
     return ( self[i,...] for i in range(self.shape[0]) )
-
-  def verify( self, value ):
-    'check result'
-
-    s = '=> ' + _obj2str(value)
-    s += ' \ (%s)' % ','.join(map(str,self.shape))
-    return s
 
   def find( self, elem, C ):#target, start, tol=1e-10, maxiter=999 ):
     'iteratively find x for f(x) = target, starting at x=start'
@@ -556,17 +521,6 @@ class ArrayFunc( Evaluable ):
 
     return transpose( self )
 
-  def __graphviz__( self ):
-    'graphviz representation'
-
-    args = Evaluable.__graphviz__( self )
-    args['label'] += r'\n[%s]' % ','.join( map(str,self.shape) )
-#   if self.__priority__:
-#     args['fontcolor'] = 'white'
-#     args['fillcolor'] = 'black'
-#     args['style'] = 'filled'
-    return args
-
   def __str__( self ):
     'string representation'
 
@@ -620,15 +574,6 @@ class Align( ArrayFunc ):
       shape[ax] = sh
     negaxes = [ ax-ndim for ax in self.axes ]
     ArrayFunc.__init__( self, args=[func,negaxes,ndim], evalf=self.align, shape=shape )
-
-  def __graphviz__( self ):
-    'graphviz representation'
-
-    newsh = [ '?' ] * self.ndim
-    for src, dst in enumerate( self.axes ):
-      newsh[dst] = str(src)
-    return { 'shape': 'trapezium',
-             'label': ','.join(newsh) }
 
   @staticmethod
   def align( arr, trans, ndim ):
@@ -706,14 +651,6 @@ class Get( ArrayFunc ):
     s = (Ellipsis,item) + (slice(None),)*(func.ndim-axis-1)
     shape = func.shape[:axis] + func.shape[axis+1:]
     ArrayFunc.__init__( self, args=(func,s), evalf=numpy.ndarray.__getitem__, shape=shape )
-
-  def __graphviz__( self ):
-    'graphviz representation'
-
-    getitem = [ ':' ] * self.func.ndim
-    getitem[self.axis] = str(self.item)
-    return { 'shape': 'invtrapezium',
-             'label': ','.join(getitem) }
 
   def _localgradient( self, ndims ):
     f = localgradient( self.func, ndims )
@@ -1251,7 +1188,7 @@ class Multiply( ArrayFunc ):
 
     shape = _jointshape( func1.shape, func2.shape )
     self.funcs = func1, func2
-    ArrayFunc.__init__( self, args=self.funcs, evalf=numpy.multiply, cdef=self.cdef, shape=shape )
+    ArrayFunc.__init__( self, args=self.funcs, evalf=numpy.multiply, shape=shape )
 
   def cdef( self ):
     'generate C code'
@@ -1405,7 +1342,7 @@ class Add( ArrayFunc ):
     self.funcs = func1, func2
     shape = _jointshape( func1.shape, func2.shape )
     dtype = _jointdtype(func1,func2)
-    ArrayFunc.__init__( self, args=self.funcs, evalf=numpy.add, cdef=self.cdef, shape=shape, dtype=dtype )
+    ArrayFunc.__init__( self, args=self.funcs, evalf=numpy.add, shape=shape, dtype=dtype )
 
   def cdef( self ):
     'generate C code'
@@ -1512,7 +1449,7 @@ class Dot( ArrayFunc ):
     self.func2 = func2
     self.naxes = naxes
     shape = _jointshape( func1.shape, func2.shape )[:-naxes]
-    ArrayFunc.__init__( self, args=(func1,func2,naxes), evalf=numeric.contract_fast, cdef=self.cdef, shape=shape )
+    ArrayFunc.__init__( self, args=(func1,func2,naxes), evalf=numeric.contract_fast, shape=shape )
 
   def cdef( self ):
     'generate C code'
@@ -1839,26 +1776,14 @@ class Pointdata( ArrayFunc ):
 # by the act of subsequent operations. For this annihilation to work well
 # priority objects keep themselves at the surface where magic happens.
 
-class PriorityFunc( ArrayFunc ):
-  'just for graphviz'
-
-  def __graphviz__( self ):
-    'graphviz representation'
-
-    args = ArrayFunc.__graphviz__( self )
-    args['fontcolor'] = 'white'
-    args['fillcolor'] = 'black'
-    args['style'] = 'filled'
-    return args
-
-class Zeros( PriorityFunc ):
+class Zeros( ArrayFunc ):
   'zero'
 
   def __init__( self, shape ):
     'constructor'
 
     shape = tuple( shape )
-    PriorityFunc.__init__( self, args=[POINTS,shape], evalf=self.zeros, shape=shape )
+    ArrayFunc.__init__( self, args=[POINTS,shape], evalf=self.zeros, shape=shape )
 
   @property
   def blocks( self ):
@@ -1934,7 +1859,7 @@ class Zeros( PriorityFunc ):
   def _opposite( self ):
     return self
 
-class Inflate( PriorityFunc ):
+class Inflate( ArrayFunc ):
   'inflate'
 
   def __init__( self, func, dofmap, length, axis ):
@@ -1945,7 +1870,7 @@ class Inflate( PriorityFunc ):
     self.length = length
     self.axis = axis
     shape = func.shape[:axis] + (length,) + func.shape[axis+1:]
-    PriorityFunc.__init__( self, args=[func,dofmap,length,axis-func.ndim], evalf=self.inflate, shape=shape )
+    ArrayFunc.__init__( self, args=[func,dofmap,length,axis-func.ndim], evalf=self.inflate, shape=shape )
 
   @property
   def blocks( self ):
@@ -2047,7 +1972,7 @@ class Inflate( PriorityFunc ):
   def _opposite( self ):
     return inflate( opposite(self.func), opposite(self.dofmap), self.length, self.axis )
 
-class Diagonalize( PriorityFunc ):
+class Diagonalize( ArrayFunc ):
   'diagonal matrix'
 
   def __init__( self, func ):
@@ -2057,7 +1982,7 @@ class Diagonalize( PriorityFunc ):
     assert n != 1
     shape = func.shape + (n,)
     self.func = func
-    PriorityFunc.__init__( self, args=[func], evalf=numeric.diagonalize, shape=shape )
+    ArrayFunc.__init__( self, args=[func], evalf=numeric.diagonalize, shape=shape )
 
   def _localgradient( self, ndims ):
     return diagonalize( localgradient( self.func, ndims ).swapaxes(-2,-1) ).swapaxes(-3,-1)
@@ -2091,7 +2016,7 @@ class Diagonalize( PriorityFunc ):
   def _opposite( self ):
     return diagonalize( opposite(self.func) )
 
-class Repeat( PriorityFunc ):
+class Repeat( ArrayFunc ):
   'repeat singleton axis'
 
   def __init__( self, func, length, axis ):
@@ -2102,7 +2027,7 @@ class Repeat( PriorityFunc ):
     self.axis = axis
     self.length = length
     shape = func.shape[:axis] + (length,) + func.shape[axis+1:]
-    PriorityFunc.__init__( self, args=[func,length,axis-func.ndim], evalf=numeric.fastrepeat, shape=shape )
+    ArrayFunc.__init__( self, args=[func,length,axis-func.ndim], evalf=numeric.fastrepeat, shape=shape )
 
   def _negative( self ):
     return repeat( -self.func, self.length, self.axis )
@@ -2164,14 +2089,14 @@ class Repeat( PriorityFunc ):
   def _opposite( self ):
     return repeat( opposite(self.func), self.length, self.axis )
 
-class Const( PriorityFunc ):
+class Const( ArrayFunc ):
   'pointwise transformation'
 
   def __init__( self, func ):
     'constructor'
 
     func = numpy.asarray( func )
-    PriorityFunc.__init__( self, args=(POINTS,func), evalf=self.const, shape=func.shape )
+    ArrayFunc.__init__( self, args=(POINTS,func), evalf=self.const, shape=func.shape )
 
   @staticmethod
   def const( points, arr ):
