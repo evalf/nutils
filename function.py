@@ -31,13 +31,14 @@ class EvaluationError( Exception ):
 class Evaluable( object ):
   'evaluable base classs'
 
-  operations = None
+  __slots__ = 'operations', 'data', '__args', '__evalf'
 
   def __init__( self, args, evalf ):
     'constructor'
 
     self.__args = tuple(args)
     self.__evalf = evalf
+    self.operations = None
 
   def recurse_index( self, data, operations, cbuild ):
     'compile'
@@ -215,6 +216,8 @@ class Evaluable( object ):
 class Tuple( Evaluable ):
   'combine'
 
+  __slots__ = 'items',
+
   def __init__( self, items ):
     'constructor'
 
@@ -255,6 +258,8 @@ class Tuple( Evaluable ):
 class PointShape( Evaluable ):
   'shape of integration points'
 
+  __slots__ = ()
+
   def __init__( self ):
     'constructor'
 
@@ -268,6 +273,8 @@ class PointShape( Evaluable ):
 
 class Cascade( Evaluable ):
   'point cascade: list of (elem,points) tuples'
+
+  __slots__ = 'ndims', 'side'
 
   def __init__( self, ndims, side=0 ):
     'constructor'
@@ -305,11 +312,11 @@ class ArrayFunc( Evaluable ):
   'array function'
 
   __array_priority__ = 1. # http://stackoverflow.com/questions/7042496/numpy-coercion-problem-for-left-sided-binary-operator/7057530#7057530
+  __slots__ = 'shape', 'ndim', 'dtype'
 
   def __init__( self, evalf, args, shape, dtype=float ):
     'constructor'
 
-    self.evalf = evalf
     self.shape = tuple(shape)
     self.ndim = len(self.shape)
     assert dtype is int or dtype is float
@@ -531,6 +538,8 @@ class ArrayFunc( Evaluable ):
 class ElemArea( ArrayFunc ):
   'element area'
 
+  __slots__ = ()
+
   def __init__( self, weights ):
     'constructor'
 
@@ -545,6 +554,8 @@ class ElemArea( ArrayFunc ):
 
 class ElemInt( ArrayFunc ):
   'elementwise integration'
+
+  __slots__ = ()
 
   def __init__( self, func, weights ):
     'constructor'
@@ -561,6 +572,8 @@ class ElemInt( ArrayFunc ):
 
 class Align( ArrayFunc ):
   'align axes'
+
+  __slots__ = 'func', 'axes'
 
   def __init__( self, func, axes, ndim ):
     'constructor'
@@ -640,6 +653,8 @@ class Align( ArrayFunc ):
 class Get( ArrayFunc ):
   'get'
 
+  __slots__ = 'func', 'axis', 'item'
+
   def __init__( self, func, axis, item ):
     'constructor'
 
@@ -670,6 +685,8 @@ class Get( ArrayFunc ):
 class Product( ArrayFunc ):
   'product'
 
+  __slots__ = 'func', 'axis'
+
   def __init__( self, func, axis ):
     'constructor'
 
@@ -692,6 +709,8 @@ class Product( ArrayFunc ):
 class IWeights( ArrayFunc ):
   'integration weights'
 
+  __slots__ = ()
+
   def __init__( self ):
     'constructor'
 
@@ -705,6 +724,8 @@ class IWeights( ArrayFunc ):
 
 class OrientationHack( ArrayFunc ):
   'orientation hack for 1d elements; VERY dirty'
+
+  __slots__ = 'side',
 
   def __init__( self, side=0 ):
     'constructor'
@@ -725,6 +746,8 @@ class OrientationHack( ArrayFunc ):
 
 class Transform( ArrayFunc ):
   'transform'
+
+  __slots__ = 'fromcascade', 'tocascade'
 
   def __init__( self, fromcascade, tocascade, side=0 ):
     'constructor'
@@ -759,6 +782,8 @@ class Transform( ArrayFunc ):
 
 class Function( ArrayFunc ):
   'function'
+
+  __slots__ = 'cascade', 'stdmap', 'igrad'
 
   def __init__( self, cascade, stdmap, igrad, axis ):
     'constructor'
@@ -800,10 +825,10 @@ class Function( ArrayFunc ):
 class Choose( ArrayFunc ):
   'piecewise function'
 
-  def __init__( self, level, choices, *warnargs ):
-    'constructor'
+  __slots__ = 'level', 'choices'
 
-    assert not warnargs, 'ERROR: the Choose object has changed. Please use piecewise instead.'
+  def __init__( self, level, choices ):
+    'constructor'
 
     self.level = level
     self.choices = tuple(choices)
@@ -830,6 +855,8 @@ class Choose( ArrayFunc ):
 class Choose2D( ArrayFunc ):
   'piecewise function'
 
+  __slots__ = ()
+
   def __init__( self, coords, contour, fin, fout ):
     'constructor'
 
@@ -849,6 +876,8 @@ class Choose2D( ArrayFunc ):
 
 class Inverse( ArrayFunc ):
   'inverse'
+
+  __slots__ = 'func',
 
   def __init__( self, func ):
     'constructor'
@@ -870,6 +899,8 @@ class Inverse( ArrayFunc ):
 
 class DofMap( ArrayFunc ):
   'dof axis'
+
+  __slots__ = 'cascade', 'dofmap'
 
   def __init__( self, cascade, dofmap, axis ):
     'new'
@@ -895,6 +926,8 @@ class DofMap( ArrayFunc ):
 
 class Concatenate( ArrayFunc ):
   'concatenate'
+
+  __slots__ = 'funcs', 'axis'
 
   def __init__( self, funcs, axis=0 ):
     'constructor'
@@ -1075,6 +1108,8 @@ class Concatenate( ArrayFunc ):
 class Interpolate( ArrayFunc ):
   'interpolate uniformly spaced data; stepwise for now'
 
+  __slots__ = ()
+
   def __init__( self, array, index ):
     'constructor'
 
@@ -1090,6 +1125,8 @@ class Interpolate( ArrayFunc ):
 
 class Cross( ArrayFunc ):
   'cross product'
+
+  __slots__ = 'func1', 'func2', 'axis'
 
   def __init__( self, func1, func2, axis ):
     'contructor'
@@ -1115,6 +1152,8 @@ class Cross( ArrayFunc ):
 class Determinant( ArrayFunc ):
   'normal'
 
+  __slots__ = 'func',
+
   def __init__( self, func ):
     'contructor'
 
@@ -1131,6 +1170,8 @@ class Determinant( ArrayFunc ):
 
 class DofIndex( ArrayFunc ):
   'element-based indexing'
+
+  __slots__ = 'array', 'iax', 'index'
 
   def __init__( self, array, iax, index ):
     'constructor'
@@ -1182,6 +1223,8 @@ class DofIndex( ArrayFunc ):
 
 class Multiply( ArrayFunc ):
   'multiply'
+
+  __slots__ = 'funcs',
 
   def __init__( self, func1, func2 ):
     'constructor'
@@ -1282,6 +1325,8 @@ class Multiply( ArrayFunc ):
 class Negative( ArrayFunc ):
   'negate'
 
+  __slots__ = 'func',
+
   def __init__( self, func ):
     'constructor'
 
@@ -1335,6 +1380,8 @@ class Negative( ArrayFunc ):
 
 class Add( ArrayFunc ):
   'add'
+
+  __slots__ = 'funcs',
 
   def __init__( self, func1, func2 ):
     'constructor'
@@ -1403,6 +1450,8 @@ class Add( ArrayFunc ):
 class BlockAdd( Add ):
   'block addition (used for DG)'
 
+  __slots__ = ()
+
   def _multiply( self, other ):
     func1, func2 = self.funcs
     return BlockAdd( func1 * other, func2 * other )
@@ -1440,6 +1489,8 @@ class BlockAdd( Add ):
 
 class Dot( ArrayFunc ):
   'dot'
+
+  __slots__ = 'func1', 'func2', 'naxes'
 
   def __init__( self, func1, func2, naxes ):
     'constructor'
@@ -1533,6 +1584,8 @@ class Dot( ArrayFunc ):
 class Sum( ArrayFunc ):
   'sum'
 
+  __slots__ = 'axis', 'func'
+
   def __init__( self, func, axis ):
     'constructor'
 
@@ -1555,6 +1608,8 @@ class Sum( ArrayFunc ):
 
 class Debug( ArrayFunc ):
   'debug'
+
+  __slots__ = 'func',
 
   def __init__( self, func ):
     'constructor'
@@ -1580,6 +1635,8 @@ class Debug( ArrayFunc ):
 class TakeDiag( ArrayFunc ):
   'extract diagonal'
 
+  __slots__ = 'func',
+
   def __init__( self, func ):
     'constructor'
 
@@ -1599,6 +1656,8 @@ class TakeDiag( ArrayFunc ):
 
 class Take( ArrayFunc ):
   'generalization of numpy.take(), to accept lists, slices, arrays'
+
+  __slots__ = 'func', 'axis', 'indices'
 
   def __init__( self, func, indices, axis ):
     'constructor'
@@ -1638,6 +1697,8 @@ class Take( ArrayFunc ):
 
 class Power( ArrayFunc ):
   'power'
+
+  __slots__ = 'func', 'power'
 
   def __init__( self, func, power ):
     'constructor'
@@ -1679,6 +1740,8 @@ class Power( ArrayFunc ):
 class ElemFunc( ArrayFunc ):
   'trivial func'
 
+  __slots__ = 'domainelem', 'side'
+
   def __init__( self, domainelem, side=0 ):
     'constructor'
 
@@ -1718,6 +1781,8 @@ class ElemFunc( ArrayFunc ):
 class Pointwise( ArrayFunc ):
   'pointwise transformation'
 
+  __slots__ = 'args', 'evalf', 'deriv'
+
   def __init__( self, args, evalf, deriv ):
     'constructor'
 
@@ -1747,6 +1812,8 @@ class Pointwise( ArrayFunc ):
 
 class Pointdata( ArrayFunc ):
 
+  __slots__ = 'data',
+
   def __init__ ( self, data, shape ):
     'constructor'
 
@@ -1775,9 +1842,14 @@ class Pointdata( ArrayFunc ):
 # generally introducing a lot of zeros, and we would like to see them disappear
 # by the act of subsequent operations. For this annihilation to work well
 # priority objects keep themselves at the surface where magic happens.
+#
+# Update: "priority objects" as such do not exist anymore, might be
+# reintroduced later on.
 
 class Zeros( ArrayFunc ):
   'zero'
+
+  __slots__ = ()
 
   def __init__( self, shape ):
     'constructor'
@@ -1861,6 +1933,8 @@ class Zeros( ArrayFunc ):
 
 class Inflate( ArrayFunc ):
   'inflate'
+
+  __slots__ = 'func', 'dofmap', 'length', 'axis'
 
   def __init__( self, func, dofmap, length, axis ):
     'constructor'
@@ -1975,6 +2049,8 @@ class Inflate( ArrayFunc ):
 class Diagonalize( ArrayFunc ):
   'diagonal matrix'
 
+  __slots__ = 'func',
+
   def __init__( self, func ):
     'constructor'
 
@@ -2018,6 +2094,8 @@ class Diagonalize( ArrayFunc ):
 
 class Repeat( ArrayFunc ):
   'repeat singleton axis'
+
+  __slots__ = 'func', 'axis', 'length'
 
   def __init__( self, func, length, axis ):
     'constructor'
@@ -2091,6 +2169,8 @@ class Repeat( ArrayFunc ):
 
 class Const( ArrayFunc ):
   'pointwise transformation'
+
+  __slots__ = ()
 
   def __init__( self, func ):
     'constructor'

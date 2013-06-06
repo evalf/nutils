@@ -1,7 +1,7 @@
 from . import log, prop
 import sys, os, time, numpy, cPickle, hashlib, weakref, traceback, core, warnings, exception, itertools
 
-def scan_unreachable():
+def unreachable_items():
   # see http://stackoverflow.com/questions/16911559/trouble-understanding-pythons-gc-garbage-for-tracing-memory-leaks
   # first time setup
   import gc

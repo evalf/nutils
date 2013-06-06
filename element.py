@@ -3,6 +3,8 @@ from . import util, numpy, core, numeric, function, _
 class TrimmedIScheme( object ):
   'integration scheme for truncated elements'
 
+  __slots__ = 'levelset', 'ischeme', 'maxrefine', 'finestscheme', 'bezierscheme', 'retain'
+
   def __init__( self, levelset, ischeme, maxrefine, finestscheme='uniform1', degree=3, retain=None ):
     'constructor'
 
@@ -12,17 +14,14 @@ class TrimmedIScheme( object ):
     self.finestscheme = finestscheme
     self.bezierscheme = 'bezier%d' % degree
     self.retain = retain
-    self.cache = {}
 
+  @core.cache
   def __getitem__( self, elem ):
     'get ischeme for elem'
 
-    ischeme = self.cache.get( elem, False )
-    if ischeme is False:
-      ischeme = self.generate_ischeme( elem, self.maxrefine )
-      if ischeme is True:
-        ischeme = elem.eval( self.ischeme )
-      self.cache[elem] = ischeme
+    ischeme = self.generate_ischeme( elem, self.maxrefine )
+    if ischeme is True:
+      ischeme = elem.eval( self.ischeme )
     return ischeme
 
   def generate_ischeme( self, elem, maxrefine ):
@@ -84,6 +83,8 @@ class TrimmedIScheme( object ):
 class Transformation( object ):
   'transform points'
 
+  __slots__ = 'fromdim', 'todim'
+
   def __init__( self, fromdim, todim ):
     'constructor'
 
@@ -97,6 +98,8 @@ class Transformation( object ):
 
 class SliceTransformation( Transformation ):
   'take slice'
+
+  __slots__ = 'slice',
 
   def __init__( self, fromdim, start=None, stop=None, step=None ):
     'constructor'
@@ -116,6 +119,8 @@ class SliceTransformation( Transformation ):
 class AffineTransformation( Transformation ):
   'affine transformation'
 
+  __slots__ = 'offset', 'transform'
+
   def __init__( self, offset, transform ):
     'constructor'
 
@@ -126,14 +131,16 @@ class AffineTransformation( Transformation ):
     assert self.transform.shape[0] == self.offset.shape[0]
     Transformation.__init__( self, fromdim=self.transform.shape[1], todim=self.transform.shape[0] )
 
-  @core.cacheprop
+  @property
+  @core.cache
   def invtrans( self ):
     'inverse transformation'
 
     assert self.todim == self.fromdim
     return numpy.linalg.inv( self.transform )
 
-  @core.cacheprop
+  @property
+  @core.cache
   def det( self ):
     'determinant'
 
@@ -157,7 +164,7 @@ class AffineTransformation( Transformation ):
 
     return numeric.dot( coords - self.offset, self.invtrans.T )
 
-  @core.cachefunc
+  @core.cache
   def eval( self, points ):
     'apply transformation'
 
@@ -170,11 +177,15 @@ class AffineTransformation( Transformation ):
 class Node( object ):
   'base class'
 
+  __slots__ = ()
+
   def __cmp__( self, other ):
     return cmp( str(self), str(other) )
 
 class PrimaryNode( Node ):
   'primary'
+
+  __slots__ = 'id',
 
   def __init__( self, id ):
     assert isinstance( id, str )
@@ -189,6 +200,8 @@ class PrimaryNode( Node ):
 class HalfNode( Node ):
   'in between two nodes; order arbitrary'
 
+  __slots__ = 'nodes',
+
   def __init__( self, node1, node2, xi=.5 ):
     assert isinstance( node1, Node )
     assert isinstance( node2, Node )
@@ -202,6 +215,8 @@ class HalfNode( Node ):
 
 class ProductNode( Node ):
   'combined nodes'
+
+  __slots__ = 'nodes',
 
   def __init__( self, node1, node2 ):
     assert isinstance( node1, Node )
@@ -218,6 +233,8 @@ class Element( object ):
   '''Element base class.
 
   Represents the topological shape.'''
+
+  __slots__ = 'nodes', 'ndims', 'index', 'parent', 'context', 'interface', 'root_transform', 'inv_root_transform', 'root_det'
 
   def __init__( self, ndims, nodes, index=None, parent=None, context=None, interface=None ):
     'constructor'
@@ -341,7 +358,7 @@ def concat( x0, x1 ):
   assert isinstance( x0, list ) and isinstance( x1, list )
   return numpy.concatenate( [numpy.concatenate( x0 )[:,_], 
                              numpy.concatenate( x1 )[:,_]], axis=1 )
-@core.cachefunc
+@core.cache
 def tri_identical( eta1, eta2, eta3, xi ):
   temp = xi*eta1*eta2*eta3
   pts0 = xi*eta1*(1 - eta2)
@@ -357,7 +374,7 @@ def tri_identical( eta1, eta2, eta3, xi ):
                  [pts3, pts1, pts0, pts4, pts0, pts6] )
   scale = numpy.concatenate( 6*[xi**3*eta1**2*eta2] )
   return xpts, ypts, scale
-@core.cachefunc
+@core.cache
 def tri_edge( eta1, eta2, eta3, xi ):
   A = xi*eta1
   B = A*eta2
@@ -375,7 +392,7 @@ def tri_edge( eta1, eta2, eta3, xi ):
   temp = xi*A
   scale = numpy.concatenate( [A*temp] + 4*[B*temp] )
   return xpts, ypts, scale
-@core.cachefunc
+@core.cache
 def tri_vertex( eta1, eta2, eta3, xi ):
   A = xi*eta2
   B = A*eta3
@@ -386,7 +403,7 @@ def tri_vertex( eta1, eta2, eta3, xi ):
                  [B,  C ] )
   scale = numpy.concatenate( 2*[xi**2*A] )
   return xpts, ypts, scale
-@core.cachefunc
+@core.cache
 def tri_default( eta1, eta2, eta3, xi ):
   xpts = concat( [eta1*eta2],
                  [eta2] )
@@ -394,7 +411,7 @@ def tri_default( eta1, eta2, eta3, xi ):
                  [xi] )
   scale = eta2*xi
   return xpts, ypts, scale
-@core.cachefunc
+@core.cache
 def quad_identical( eta1, eta2, eta3, xi ):
   xe = xi*eta1
   A = (1 - xi)*eta3
@@ -407,7 +424,7 @@ def quad_identical( eta1, eta2, eta3, xi ):
                  [D, C, B, C, A, D, B, A] )
   scale = numpy.concatenate( 8*[xi*(1-xi)*(1-xe)] )
   return xpts, ypts, scale
-@core.cachefunc
+@core.cache
 def quad_edge( eta1, eta2, eta3, xi ):
   # return quad_default( eta1, eta2, eta3, xi ) # TODO rm
   ox = 1 - xi
@@ -424,7 +441,7 @@ def quad_edge( eta1, eta2, eta3, xi ):
                  [A,  A,  xi, B,  xi, B ] )
   scale = numpy.concatenate( 2*[xi**2*ox] + 4*[xi**2*E] )
   return xpts, ypts, scale
-@core.cachefunc
+@core.cache
 def quad_vertex( eta1, eta2, eta3, xi ):
   # return quad_default( eta1, eta2, eta3, xi ) # TODO rm
   A = xi*eta1
@@ -436,7 +453,7 @@ def quad_vertex( eta1, eta2, eta3, xi ):
                  [C,  C,  C,  xi] )
   scale = numpy.concatenate( 4*[xi**3] )
   return xpts, ypts, scale
-@core.cachefunc
+@core.cache
 def quad_default( eta1, eta2, eta3, xi ):
   xpts = concat( [eta1],
                  [eta2] )
@@ -452,7 +469,7 @@ get_points = (tri_identical,
               quad_edge,
               quad_vertex,
               quad_default)
-# @core.cachefunc #TODO: put back
+# @core.cache #TODO: put back
 def bemscheme( ischeme ):
   'Some cached quantities for the singularity quadrature scheme.'
   nodes = [PrimaryNode( '%s(%d:%d)' % ('bemref',0,inode) ) for inode in range(16) ]
@@ -462,6 +479,8 @@ def bemscheme( ischeme ):
 
 class ProductElement( Element ):
   'element product'
+
+  __slots__ = 'elem1', 'elem2', 'root_det'
 
   def __init__( self, elem1, elem2 ):
     'constructor'
@@ -507,6 +526,8 @@ class ProductElement( Element ):
 class TrimmedElement( Element ):
   'trimmed element'
 
+  __slots__ = 'elem', 'levelset', 'maxrefine', 'lscheme', 'finestscheme', 'evalrefine'
+
   def __init__( self, elem, levelset, maxrefine, lscheme, finestscheme, evalrefine, parent, nodes ):
     'constructor'
 
@@ -520,7 +541,7 @@ class TrimmedElement( Element ):
 
     Element.__init__( self, ndims=elem.ndims, nodes=nodes, parent=parent )
 
-  @core.cachefunc
+  @core.cache
   def eval( self, ischeme ):
     'get integration scheme'
 
@@ -584,7 +605,8 @@ class TrimmedElement( Element ):
     weights = util.ImmutableArray( numpy.concatenate( allweights, axis=0 ) )
     return coords, weights
 
-  @core.cacheprop
+  @property
+  @core.cache
   def children( self ):
     'all 1x refined elements'
 
@@ -723,13 +745,16 @@ class TrimmedElement( Element ):
 class QuadElement( Element ):
   'quadrilateral element'
 
+  __slots__ = ()
+
   def __init__( self, ndims, nodes, index=None, parent=None, context=None, interface=None ):
     'constructor'
 
     assert len(nodes) == 2**ndims
     Element.__init__( self, ndims, nodes, index=index, parent=parent, context=context, interface=interface )
 
-  @core.cacheprop
+  @property
+  @core.cache
   def neighbormap( self ):
     return dict( [ (0,-1) ] + [ (2**(self.ndims-i),i) for i in range(self.ndims+1) ] )
 
@@ -750,8 +775,9 @@ class QuadElement( Element ):
     return ( QuadElement( nodes=elemnodes[ielem], ndims=self.ndims, parent=(self,transform) )
       for ielem, transform in enumerate( self.refinedtransform( self.ndims, 2 ) ) )
 
-  @core.classcache
-  def edgetransform( cls, ndims ):
+  @staticmethod
+  @core.cache
+  def edgetransform( ndims ):
     'edge transforms'
 
     transforms = []
@@ -806,8 +832,9 @@ class QuadElement( Element ):
     nodes = numpy.asarray( numpy.reshape( self.nodes, (2,)*self.ndims )[s] ).ravel() # TODO check
     return QuadElement( nodes=nodes, ndims=self.ndims-1, context=(self,transform) )
 
-  @core.classcache
-  def refinedtransform( cls, ndims, n ):
+  @staticmethod
+  @core.cache
+  def refinedtransform( ndims, n ):
     'refined transform'
 
     transforms = []
@@ -820,14 +847,15 @@ class QuadElement( Element ):
       transforms.append( AffineTransformation( offset=offset, transform=numpy.diag([transform]*ndims) ) )
     return transforms
 
-  @core.cachefunc
+  @core.cache
   def refined( self, n ):
     'refine'
 
     return [ QuadElement( self.ndims, parent=(self,transform) ) for transform in self.refinedtransform( self.ndims, n ) ]
 
-  @core.classcache
-  def getgauss( cls, n ):
+  @staticmethod
+  @core.cache
+  def getgauss( n ):
     'compute gauss points and weights'
 
     assert isinstance( n, int ) and n >= 1
@@ -836,7 +864,8 @@ class QuadElement( Element ):
     x, w = numpy.linalg.eigh( numpy.diagflat(d,-1) ) # eigh operates (by default) on lower triangle
     return (x+1) * .5, w[0]**2
 
-  @core.classcache
+  @classmethod
+  @core.cache
   def getischeme( cls, ndims, where ):
     'get integration scheme'
 
@@ -913,6 +942,8 @@ class QuadElement( Element ):
 class TriangularElement( Element ):
   'triangular element'
 
+  __slots__ = ()
+
   ndims = 2
   neighbormap = -1, 2, 1, 0
   edgetransform = (
@@ -947,8 +978,9 @@ class TriangularElement( Element ):
     nodes = [ self.nodes[:2], self.nodes[1:], self.nodes[::-2] ][iedge]
     return QuadElement( nodes=nodes, ndims=1, context=(self,transform) )
 
-  @core.classcache
-  def refinedtransform( cls, n ):
+  @staticmethod
+  @core.cache
+  def refinedtransform( n ):
     'refined transform'
 
     transforms = []
@@ -966,8 +998,9 @@ class TriangularElement( Element ):
       return self
     return [ TriangularElement( id=self.id+'.child({})'.format(ichild), parent=(self,transform) ) for ichild, transform in enumerate( self.refinedtransform( n ) ) ]
 
-  @core.classcache
-  def getischeme( cls, ndims, where ):
+  @staticmethod
+  @core.cache
+  def getischeme( ndims, where ):
     '''get integration scheme
     gaussian quadrature: http://www.cs.rpi.edu/~flaherje/pdf/fea6.pdf
     '''
@@ -1045,6 +1078,8 @@ class TriangularElement( Element ):
 class TetrahedronElement( Element ):
   'tetrahedron element'
 
+  __slots__ = ()
+
   ndims = 3
   neighbormap = -1, 3, 2, 1, 0
   edgetransform = (
@@ -1075,8 +1110,9 @@ class TetrahedronElement( Element ):
       [ self.nodes[1], self.nodes[2], self.nodes[3] ] ][ iedge ] # TODO check!
     return TriangularElement( nodes=nods, ndims=2, context=(self,transform) )
 
-  @core.classcache
-  def refinedtransform( cls, n ):
+  @staticmethod
+  @core.cache
+  def refinedtransform( n ):
     'refined transform'
     raise NotImplementedError( 'Transformations for refined tetrahedrons' )  
 
@@ -1084,8 +1120,9 @@ class TetrahedronElement( Element ):
     'refine'
     raise NotImplementedError( 'Refinement tetrahedrons' )  
 
-  @core.classcache
-  def getischeme( cls, ndims, where ):
+  @staticmethod
+  @core.cache
+  def getischeme( ndims, where ):
     '''get integration scheme
        http://people.sc.fsu.edu/~jburkardt/datasets/quadrature_rules_tet/quadrature_rules_tet.html'''
 
@@ -1256,6 +1293,8 @@ class TetrahedronElement( Element ):
 class StdElem( object ):
   'stdelem base class'
 
+  __slots__ = 'ndims', 'nshapes'
+
   def __mul__( self, other ):
     'multiply elements'
 
@@ -1275,7 +1314,9 @@ class StdElem( object ):
 class PolyProduct( StdElem ):
   'multiply standard elements'
 
-  @core.classcache
+  __slots__ = 'std1', 'std2'
+
+  @core.cache
   def __new__( cls, std1, std2 ):
     'constructor'
 
@@ -1286,7 +1327,7 @@ class PolyProduct( StdElem ):
     self.nshapes = std1.nshapes * std2.nshapes
     return self
 
-  @core.cachefunc
+  @core.cache
   def eval( self, points, grad=0 ):
     'evaluate'
 
@@ -1329,6 +1370,8 @@ class PolyProduct( StdElem ):
 class PolyLine( StdElem ):
   'polynomial on a line'
 
+  __slots__ = 'degree', 'poly'
+
   @classmethod
   def bernstein_poly( cls, degree ):
     'bernstein polynomial coefficients'
@@ -1367,13 +1410,15 @@ class PolyLine( StdElem ):
     poly = cls.bernstein_poly( p )
     return numeric.contract( extractions[:,_,:,:], poly[_,:,_,:], axis=-1 )
 
-  @core.classcache
+  @classmethod
+  @core.cache
   def spline_elems( cls, p, n ):
     'spline elements, minimum amount (just for caching)'
 
     return map( cls, cls.spline_poly(p,n) )
 
-  @core.classcache
+  @classmethod
+  @core.cache
   def spline_elems_neumann( cls, p, n ):
     'spline elements, neumann endings (just for caching)'
 
@@ -1384,7 +1429,8 @@ class PolyLine( StdElem ):
     poly_e[:,-2] += poly_e[:,-1]
     return cls(poly_0), cls(poly_e)
 
-  @core.classcache
+  @classmethod
+  @core.cache
   def spline_elems_curvature( cls ):
     'spline elements, curve free endings (just for caching)'
 
@@ -1439,7 +1485,7 @@ class PolyLine( StdElem ):
     self.poly = numpy.asarray( poly, dtype=float )
     self.degree, self.nshapes = self.poly.shape
 
-  @core.cachefunc
+  @core.cache
   def eval( self, points, grad=0 ):
     'evaluate'
 
@@ -1474,7 +1520,9 @@ class PolyLine( StdElem ):
 class PolyTriangle( StdElem ):
   'poly triangle'
 
-  @core.classcache
+  __slots__ = ()
+
+  @core.cache
   def __new__( cls, order ):
     'constructor'
 
@@ -1482,7 +1530,7 @@ class PolyTriangle( StdElem ):
     self = object.__new__( cls )
     return self
 
-  @core.cachefunc
+  @core.cache
   def eval( self, points, grad=0 ):
     'eval'
 
@@ -1504,13 +1552,15 @@ class PolyTriangle( StdElem ):
 class ExtractionWrapper( object ):
   'extraction wrapper'
 
+  __slots__ = 'stdelem', 'extraction'
+
   def __init__( self, stdelem, extraction ):
     'constructor'
 
     self.stdelem = stdelem
     self.extraction = extraction
 
-  @core.cachefunc
+  @core.cache
   def eval( self, points, grad=0 ):
     'call'
 

@@ -539,7 +539,8 @@ class StructuredTopology( Topology ):
       return Topology.__getitem__( self, item )
     return StructuredTopology( self.structure[item] )
 
-  @core.cacheprop
+  @property
+  @core.cache
   def boundary( self ):
     'boundary'
 
@@ -570,7 +571,8 @@ class StructuredTopology( Topology ):
     topo.groups = dict( zip( ( 'left', 'right', 'bottom', 'top', 'front', 'back' ), boundaries ) )
     return topo
 
-  @core.cacheprop
+  @property
+  @core.cache
   def interfaces( self ):
     'interfaces'
 
@@ -592,7 +594,7 @@ class StructuredTopology( Topology ):
         interfaces.append( ielem )
     return UnstructuredTopology( interfaces, ndims=self.ndims-1 )
 
-  @core.cachefunc
+  @core.cache
   def splinefunc( self, degree, neumann=(), periodic=None, closed=False, removedofs=None ):
     'spline from nodes'
 
@@ -674,7 +676,7 @@ class StructuredTopology( Topology ):
 
     return function.function( funcmap, dofmap, dofcount, self.ndims )
 
-  @core.cachefunc
+  @core.cache
   def discontfunc( self, degree ):
     'discontinuous shape functions'
 
@@ -689,7 +691,7 @@ class StructuredTopology( Topology ):
 
     return function.function( funcmap, dofmap, dofs.size, self.ndims )
 
-  @core.cachefunc
+  @core.cache
   def curvefreesplinefunc( self ):
     'spline from nodes'
 
@@ -738,7 +740,7 @@ class StructuredTopology( Topology ):
 
     return self.splinefunc( degree=2 )
 
-  @core.cachefunc
+  @core.cache
   def stdfunc( self, degree ):
     'spline from nodes'
 
@@ -796,7 +798,8 @@ class StructuredTopology( Topology ):
       nodes_structure[...,idim] = numpy.asarray( inodes ).reshape( shape )
     return self.linearfunc().dot( nodes_structure.reshape( -1, self.ndims ) )
 
-  @core.weakcacheprop
+  @property
+  @core.weakcache
   def refined( self ):
     'refine entire topology'
 
@@ -819,7 +822,8 @@ class StructuredTopology( Topology ):
 
     return '%s(%s)' % ( self.__class__.__name__, 'x'.join(map(str,self.structure.shape)) )
 
-  @core.cacheprop
+  @property
+  @core.cache
   def multiindex( self ):
     'Inverse map of self.structure: given an element find its location in the structure.'
     return dict( (self.structure[alpha], alpha) for alpha in numpy.ndindex( self.structure.shape ) )
@@ -876,14 +880,16 @@ class IndexedTopology( Topology ):
     ind = function.DofMap( ElemMap(dofmap,self.ndims) ),
     return function.Inflate( (ndofs,), [(func,ind)] )
 
-  @core.weakcacheprop
+  @property
+  @core.weakcache
   def refined( self ):
     'refine all elements 2x'
 
     elements = [ child for elem in self.elements for child in elem.children if child is not None ]
     return IndexedTopology( self.topo.refined, elements )
 
-  @core.cacheprop
+  @property
+  @core.cache
   def boundary( self ):
     'boundary'
 
@@ -921,7 +927,8 @@ class UnstructuredTopology( Topology ):
 
     return self.splinefunc( degree=2 )
 
-  @core.weakcacheprop
+  @property
+  @core.weakcache
   def refined( self ):
     'refined (=refine(2))'
 
