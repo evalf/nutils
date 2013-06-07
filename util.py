@@ -315,6 +315,36 @@ def getkwargdefaults( func ):
   N = func.func_code.co_argcount - len( defaults )
   return zip( func.func_code.co_varnames[N:], defaults )
 
+class Statm( object ):
+  'memory statistics on systems that support it'
+
+  __slots__ = 'size', 'resident', 'share', 'data'
+
+  def __init__( self, rusage=None ):
+    'constructor'
+
+    if rusage is None:
+      pid = os.getpid()
+      self.size, self.resident, self.share, text, lib, self.data, dt = map( int, open( '/proc/%d/statm' % pid ).read().split() )
+    else:
+      self.size, self.resident, self.share, self.data = rusage
+
+  def __sub__( self, other ):
+    'subtract'
+
+    diff = [ getattr(self,attr) - getattr(other,attr) for attr in self.__slots__ ]
+    return Statm( diff )
+
+  def __str__( self ):
+    'string representation'
+
+    return '\n  '.join( [ 'memory usage:' ] + [
+      'size: %d bytes' % self.size,
+      'residuent: %d bytes' % self.resident,
+      'share: %d bytes' % self.share,
+      'data: %d bytes' % self.data,
+    ])
+
 def run( *functions ):
   'call function specified on command line'
 
@@ -472,7 +502,7 @@ def run( *functions ):
 
   log.info()
   log.info( 'finish %s\n' % time.ctime() )
-  log.info( 'elapsed %.0f:%.0f:%.0f' % ( hours, minutes, seconds ) )
+  log.info( 'elapsed %02.0f:%02.0f:%02.0f' % ( hours, minutes, seconds ) )
 
   if not excinfo:
     sys.exit( 0 )

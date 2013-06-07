@@ -96,6 +96,14 @@ class Transformation( object ):
 
     return '%s(%d->%d)' % ( self.__class__.__name__, self.fromdim, self.todim )
 
+  def eval( self, points ):
+    'evaluate'
+
+    if points is None:
+      return None
+
+    return self._eval( points )
+
 class SliceTransformation( Transformation ):
   'take slice'
 
@@ -107,11 +115,9 @@ class SliceTransformation( Transformation ):
     self.slice = slice( start, stop, step )
     Transformation.__init__( self, fromdim, todim=len(range(fromdim)[self.slice]) )
   
-  def eval( self, points ):
+  @core.weakcache
+  def _eval( self, points ):
     'apply transformation'
-
-    if points is None:
-      return None
 
     assert points.shape[1] == self.fromdim
     return util.ImmutableArray( points[:,self.slice] )
@@ -132,7 +138,6 @@ class AffineTransformation( Transformation ):
     Transformation.__init__( self, fromdim=self.transform.shape[1], todim=self.transform.shape[0] )
 
   @property
-  @core.cache
   def invtrans( self ):
     'inverse transformation'
 
@@ -140,7 +145,6 @@ class AffineTransformation( Transformation ):
     return numpy.linalg.inv( self.transform )
 
   @property
-  @core.cache
   def det( self ):
     'determinant'
 
@@ -164,12 +168,9 @@ class AffineTransformation( Transformation ):
 
     return numeric.dot( coords - self.offset, self.invtrans.T )
 
-  @core.cache
-  def eval( self, points ):
+  @core.weakcache
+  def _eval( self, points ):
     'apply transformation'
-
-    if points is None:
-      return None
 
     assert isinstance( points, numpy.ndarray )
     return util.ImmutableArray( self.offset + numeric.dot( points, self.transform.T ) )
