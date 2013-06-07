@@ -318,16 +318,16 @@ def getkwargdefaults( func ):
 class Statm( object ):
   'memory statistics on systems that support it'
 
-  __slots__ = 'size', 'resident', 'share', 'data'
+  __slots__ = 'size', 'resident', 'share', 'text', 'data'
 
   def __init__( self, rusage=None ):
     'constructor'
 
     if rusage is None:
       pid = os.getpid()
-      self.size, self.resident, self.share, text, lib, self.data, dt = map( int, open( '/proc/%d/statm' % pid ).read().split() )
+      self.size, self.resident, self.share, self.text, lib, self.data, dt = map( int, open( '/proc/%d/statm' % pid ).read().split() )
     else:
-      self.size, self.resident, self.share, self.data = rusage
+      self.size, self.resident, self.share, self.text, self.data = rusage
 
   def __sub__( self, other ):
     'subtract'
@@ -338,12 +338,8 @@ class Statm( object ):
   def __str__( self ):
     'string representation'
 
-    return '\n  '.join( [ 'memory usage:' ] + [
-      'size: %d bytes' % self.size,
-      'residuent: %d bytes' % self.resident,
-      'share: %d bytes' % self.share,
-      'data: %d bytes' % self.data,
-    ])
+    return '\n'.join( [ 'STATM:     G  M  k  b' ]
+      + [ attr + ' ' + (' %s'%getattr(self,attr)).rjust(20-len(attr),'-') for attr in self.__slots__ ] )
 
 def run( *functions ):
   'call function specified on command line'
