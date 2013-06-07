@@ -360,16 +360,24 @@ class ProductElement( Element ):
 
   __slots__ = 'elem1', 'elem2', 'root_det'
 
+  @staticmethod
+  @core.cache
+  def getslicetransforms( ndims1, ndims2 ):
+    ndims = ndims1 + ndims2
+    slice1 = SliceTransformation( fromdim=ndims, stop=ndims1 )
+    slice2 = SliceTransformation( fromdim=ndims, start=ndims1 )
+    return slice1, slice2
+
   def __init__( self, elem1, elem2 ):
     'constructor'
 
     self.elem1 = elem1
     self.elem2 = elem2
-    ndims = elem1.ndims+elem2.ndims
-    iface1 = elem1, SliceTransformation( fromdim=ndims, stop=elem1.ndims )
-    iface2 = elem2, SliceTransformation( fromdim=ndims, start=elem1.ndims )
+    slice1, slice2 = self.getslicetransforms( elem1.ndims, elem2.ndims )
+    iface1 = elem1, slice1
+    iface2 = elem2, slice2
     nodes = [] # TODO [ ProductNode(node1,node2) for node1 in elem1.nodes for node2 in elem2.nodes ]
-    Element.__init__( self, ndims=ndims, nodes=nodes, interface=(iface1,iface2) )
+    Element.__init__( self, ndims=elem1.ndims+elem2.ndims, nodes=nodes, interface=(iface1,iface2) )
 
     self.root_det = elem1.root_det * elem2.root_det # HACK. TODO via constructor
 
@@ -473,6 +481,23 @@ class ProductElement( Element ):
     else:
       assert neighborhood == -1, 'invalid neighborhood %r' % neighborhood
     return points, weights
+
+  @staticmethod
+  @core.cache
+  def concat( ischeme1, ischeme2 ):
+    coords1, weights1 = ischeme1
+    coords2, weights2 = ischeme2
+    if weights1 is not None:
+      assert weights2 is not None
+      weights = util.ImmutableArray( ( weights1[:,_] * weights2[_,:] ).ravel() )
+    else:
+      assert weights2 is None
+      weights = None
+    coords = numpy.empty( [ coords1.shape[0], coords2.shape[0], self.ndims ] )
+    coords[:,:,:self.elem1.ndims] = coords1[:,_,:]
+    coords[:,:,self.elem1.ndims:] = coords2[_,:,:]
+    coords = util.ImmutableArray( coords.reshape(-1,self.ndims) )
+    return coords, weights
   
   def eval( self, ischeme ):
     'get integration scheme'
@@ -482,26 +507,14 @@ class ProductElement( Element ):
       gauss = 'gauss'+ischeme[8:]
       neighborhood = self.elem1.neighbor( self.elem2 )
       if isinstance( self.elem1, QuadElement ):
-        coords, weights = self.get_quad_bem_ischeme( gauss, neighborhood )
+        xw = self.get_quad_bem_ischeme( gauss, neighborhood )
       elif isinstance( self.elem1, TriangularElement ):
-        coords, weights = self.get_tri_bem_ischeme( gauss, neighborhood )
+        xw = self.get_tri_bem_ischeme( gauss, neighborhood )
       else:
         raise Exception, 'invalid element type %r' % type(self.elem1)
     else:
-      coords1, weights1 = self.elem1.eval( ischeme )
-      coords2, weights2 = self.elem2.eval( ischeme )
-      if weights1 is not None:
-        assert weights2 is not None
-        weights = ( weights1[:,_] * weights2[_,:] ).ravel()
-      else:
-        assert weights2 is None
-        weights = None
-      coords = numpy.empty( [ coords1.shape[0], coords2.shape[0], self.ndims ] )
-      coords[:,:,:self.elem1.ndims] = coords1[:,_,:]
-      coords[:,:,self.elem1.ndims:] = coords2[_,:,:]
-      coords = coords.reshape(-1,self.ndims)
-      # print 'gauss:\n', coords, '\n', weights
-    return util.ImmutableArray(coords), util.ImmutableArray(weights)
+      xw = self.concat( self.elem1.eval(ischeme), self.elem2.eval(ischeme) )
+    return xw
 
 class TrimmedElement( Element ):
   'trimmed element'
