@@ -1,6 +1,6 @@
 import inspect, weakref
 
-def _cache( func, cache ):
+def _cache( func, cache, debug=False ):
   argnames, varargsname, keywordsname, defaults = inspect.getargspec( func )
   def wrapped( *args, **kwargs ):
     if kwargs:
@@ -15,7 +15,9 @@ def _cache( func, cache ):
       args += defaults[ len(args)-len(argnames): ]
     try:
       value = cache[ args ]
+      if debug: print '_cache( %s ): value in cache'%func.__name__
     except KeyError:
+      if debug: print '_cache( %s ): computing new value'%func.__name__
       value = func( *args )
       cache[ args ] = value
     return value
@@ -23,6 +25,9 @@ def _cache( func, cache ):
 
 def cache( func ):
   return _cache( func, {} )
+
+def debug_cache( func ):
+  return _cache( func, {}, debug=True )
 
 def weakcache( func ):
   return _cache( func, weakref.WeakValueDictionary() )

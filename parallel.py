@@ -74,6 +74,7 @@ def fork( func, nice=19 ):
 def shzeros( shape, dtype=float ):
   'create zero-initialized array in shared memory'
 
+  # return numpy.zeros( shape, dtype=dtype ) # TODO: toggle to numpy for debugging
   if isinstance( shape, int ):
     shape = shape,
   else:

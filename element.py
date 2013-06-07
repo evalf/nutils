@@ -360,7 +360,8 @@ def concat( x0, x1 ):
   return numpy.concatenate( [numpy.concatenate( x0 )[:,_], 
                              numpy.concatenate( x1 )[:,_]], axis=1 )
 @core.cache
-def tri_identical( eta1, eta2, eta3, xi ):
+def tri_identical( arg ):
+  eta1, eta2, eta3, xi = arg.T
   temp = xi*eta1*eta2*eta3
   pts0 = xi*eta1*(1 - eta2)
   pts1 = xi - pts0
@@ -376,7 +377,8 @@ def tri_identical( eta1, eta2, eta3, xi ):
   scale = numpy.concatenate( 6*[xi**3*eta1**2*eta2] )
   return xpts, ypts, scale
 @core.cache
-def tri_edge( eta1, eta2, eta3, xi ):
+def tri_edge( arg ):
+  eta1, eta2, eta3, xi = arg.T
   A = xi*eta1
   B = A*eta2
   C = A*eta3
@@ -394,7 +396,8 @@ def tri_edge( eta1, eta2, eta3, xi ):
   scale = numpy.concatenate( [A*temp] + 4*[B*temp] )
   return xpts, ypts, scale
 @core.cache
-def tri_vertex( eta1, eta2, eta3, xi ):
+def tri_vertex( arg ):
+  eta1, eta2, eta3, xi = arg.T
   A = xi*eta2
   B = A*eta3
   C = xi*eta1
@@ -405,7 +408,8 @@ def tri_vertex( eta1, eta2, eta3, xi ):
   scale = numpy.concatenate( 2*[xi**2*A] )
   return xpts, ypts, scale
 @core.cache
-def tri_default( eta1, eta2, eta3, xi ):
+def tri_default( arg ):
+  eta1, eta2, eta3, xi = arg.T
   xpts = concat( [eta1*eta2],
                  [eta2] )
   ypts = concat( [eta3*xi],
@@ -413,7 +417,8 @@ def tri_default( eta1, eta2, eta3, xi ):
   scale = eta2*xi
   return xpts, ypts, scale
 @core.cache
-def quad_identical( eta1, eta2, eta3, xi ):
+def quad_identical( arg ):
+  eta1, eta2, eta3, xi = arg.T
   xe = xi*eta1
   A = (1 - xi)*eta3
   B = (1 - xe)*eta2
@@ -426,8 +431,8 @@ def quad_identical( eta1, eta2, eta3, xi ):
   scale = numpy.concatenate( 8*[xi*(1-xi)*(1-xe)] )
   return xpts, ypts, scale
 @core.cache
-def quad_edge( eta1, eta2, eta3, xi ):
-  # return quad_default( eta1, eta2, eta3, xi ) # TODO rm
+def quad_edge( arg ):
+  eta1, eta2, eta3, xi = arg.T
   ox = 1 - xi
   A = xi*eta1
   B = xi*eta2
@@ -443,8 +448,8 @@ def quad_edge( eta1, eta2, eta3, xi ):
   scale = numpy.concatenate( 2*[xi**2*ox] + 4*[xi**2*E] )
   return xpts, ypts, scale
 @core.cache
-def quad_vertex( eta1, eta2, eta3, xi ):
-  # return quad_default( eta1, eta2, eta3, xi ) # TODO rm
+def quad_vertex( arg ):
+  eta1, eta2, eta3, xi = arg.T
   A = xi*eta1
   B = xi*eta2
   C = xi*eta3
@@ -455,7 +460,8 @@ def quad_vertex( eta1, eta2, eta3, xi ):
   scale = numpy.concatenate( 4*[xi**3] )
   return xpts, ypts, scale
 @core.cache
-def quad_default( eta1, eta2, eta3, xi ):
+def quad_default( arg ):
+  eta1, eta2, eta3, xi = arg.T
   xpts = concat( [eta1],
                  [eta2] )
   ypts = concat( [eta3],
@@ -474,9 +480,7 @@ get_points = (tri_identical,
 def bemscheme( ischeme ):
   'Some cached quantities for the singularity quadrature scheme.'
   nodes = [PrimaryNode( '%s(%d:%d)' % ('bemref',0,inode) ) for inode in range(16) ]
-  points, weights = QuadElement( ndims=4, nodes=nodes ).eval( ischeme )
-  localcoords = tuple( [p for p in points.T] )
-  return localcoords, weights
+  return QuadElement( ndims=4, nodes=nodes ).eval( ischeme )
 
 class ProductElement( Element ):
   'element product'
@@ -491,7 +495,7 @@ class ProductElement( Element ):
     ndims = elem1.ndims+elem2.ndims
     iface1 = elem1, SliceTransformation( fromdim=ndims, stop=elem1.ndims )
     iface2 = elem2, SliceTransformation( fromdim=ndims, start=elem1.ndims )
-    nodes = [ ProductNode(node1,node2) for node1 in elem1.nodes for node2 in elem2.nodes ]
+    nodes = [] # TODO [ ProductNode(node1,node2) for node1 in elem1.nodes for node2 in elem2.nodes ]
     Element.__init__( self, ndims=ndims, nodes=nodes, interface=(iface1,iface2) )
 
     self.root_det = elem1.root_det * elem2.root_det # HACK. TODO via constructor
@@ -503,8 +507,8 @@ class ProductElement( Element ):
       assert type(self.elem1) == type(self.elem2), 'mixed element-types case not implemented, found {0} and {1}.'.format( type(elemx), type(elemy) )
       assert type(self.elem1) in (TriangularElement, QuadElement), 'wrong element type, found {0}'.format( type(elemx) )
       transformtype = (0 if isinstance(self.elem1, TriangularElement) else 4) + numpy.mod( self.elem1.neighbor( self.elem2 ), 4 )
-      gausscoords, gaussweights = bemscheme( 'gauss'+ischeme[8:] )
-      coords1, coords2, scale = get_points[transformtype]( *gausscoords )
+      gausspoints, gaussweights = bemscheme( 'gauss'+ischeme[8:] )
+      coords1, coords2, scale = get_points[transformtype]( gausspoints )
       coords = numpy.concatenate( [coords1, coords2], axis=1 )
       # weights is of non tensor-product type!
       weights = numpy.concatenate( len(scale)//len(gaussweights)*[gaussweights] )*scale
