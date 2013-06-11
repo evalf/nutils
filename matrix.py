@@ -252,8 +252,8 @@ class SparseMatrix( Matrix ):
 
     assert self.data is value.data # apparently we are assigning ourselves
 
-  def __add__( self, other ):
-    'add'
+  def _binary( self, other, op ):
+    'binary operation'
 
     assert isinstance( other, SparseMatrix )
     assert self.shape == other.shape
@@ -261,9 +261,19 @@ class SparseMatrix( Matrix ):
     indptr = numpy.empty( self.shape[0]+1, dtype=numpy.intc )
     indices = numpy.empty( maxcount, dtype=numpy.intc )
     data = numpy.empty( maxcount, dtype=float )
-    _csr.csr_plus_csr( self.shape[0], self.shape[1], self.indptr, self.indices, self.data, other.indptr, other.indices, other.data, indptr, indices, data )
+    op( self.shape[0], self.shape[1], self.indptr, self.indices, self.data, other.indptr, other.indices, other.data, indptr, indices, data )
     nz = indptr[-1]
     return SparseMatrix( (data[:nz],indices[:nz],indptr), ncols=self.shape[1] )
+
+  def __add__( self, other ):
+    'add'
+
+    return self._binary( other, _csr.csr_plus_csr )
+
+  def __sub__( self, other ):
+    'subtract'
+
+    return self._binary( other, _csr.csr_minus_csr )
 
   def _indices_into( self, other ):
     'locate indices of other into self'
