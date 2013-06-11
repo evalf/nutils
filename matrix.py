@@ -390,6 +390,13 @@ class DenseMatrix( Matrix ):
 
     assert self.data is value.data # apparently we are assigning ourselves
 
+  def __iadd__( self, other ):
+    'in place addition'
+
+    assert isinstance( other, DenseMatrix )
+    self.data += other.data
+    return self
+
   def addblock( self, rows, cols, vals ):
     'add matrix data'
 
