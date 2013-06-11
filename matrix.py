@@ -394,6 +394,7 @@ class DenseMatrix( Matrix ):
     'in place addition'
 
     assert isinstance( other, DenseMatrix )
+    assert self.shape == other.shape
     self.data += other.data
     return self
 
