@@ -105,6 +105,13 @@ class Matrix( object ):
     self.shape = int(nrows), int(ncols) # need exact type because of _csr funcs
     self.size = nrows * ncols
 
+  def __sub__( self, other ):
+    'add'
+
+    A = self.clone()
+    A -= other
+    return A
+
   def __add__( self, other ):
     'add'
 
@@ -258,23 +265,32 @@ class SparseMatrix( Matrix ):
     nz = indptr[-1]
     return SparseMatrix( (data[:nz],indices[:nz],indptr), ncols=self.shape[1] )
 
-  def __iadd__( self, other ):
-    'in place addition'
-
-    if not other:
-      return self
+  def _indices_into( self, other ):
+    'locate indices of other into self'
 
     assert isinstance( other, self.__class__ ) and self.shape == other.shape
     if numpy.all( self.indptr == other.indptr ) and numpy.all( self.indices == other.indices ):
-      I = slice(None)
-    else:
-      I = numpy.empty( other.data.shape, dtype=int )
-      for irow in range( self.shape[0] ):
-        s = slice( other.indptr[irow], other.indptr[irow+1] )
-        I[s] = self.indptr[irow] \
-             + numpy.searchsorted( self.indices[self.indptr[irow]:self.indptr[irow+1]], other.indices[s] )
-      assert all( self.indices[I] == other.indices )
-    self.data[I] += other.data
+      return slice(None)
+    I = numpy.empty( other.data.shape, dtype=int )
+    for irow in range( self.shape[0] ):
+      s = slice( other.indptr[irow], other.indptr[irow+1] )
+      I[s] = self.indptr[irow] \
+           + numpy.searchsorted( self.indices[self.indptr[irow]:self.indptr[irow+1]], other.indices[s] )
+    assert all( self.indices[I] == other.indices )
+    return I
+
+  def __iadd__( self, other ):
+    'in place addition'
+
+    if other:
+      self.data[self._indices_into(other)] += other.data
+    return self
+
+  def __isub__( self, other ):
+    'in place addition'
+
+    if other:
+      self.data[self._indices_into(other)] -= other.data
     return self
 
   def __imul__( self, other ):
@@ -282,6 +298,13 @@ class SparseMatrix( Matrix ):
 
     assert isinstance( other, (int,float) )
     self.data *= other
+    return self
+
+  def __idiv__( self, other ):
+    'scalar multiplication'
+
+    assert isinstance( other, (int,float) )
+    self.data /= other
     return self
 
   @property
@@ -396,6 +419,14 @@ class DenseMatrix( Matrix ):
     assert isinstance( other, DenseMatrix )
     assert self.shape == other.shape
     self.data += other.data
+    return self
+
+  def __isub__( self, other ):
+    'in place addition'
+
+    assert isinstance( other, DenseMatrix )
+    assert self.shape == other.shape
+    self.data -= other.data
     return self
 
   def addblock( self, rows, cols, vals ):
