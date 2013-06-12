@@ -210,6 +210,22 @@ def fastmeshgrid( X, Y ):
 
   return fastrepeat(X[numpy.newaxis,:],len(Y),axis=0), fastrepeat(Y[:,numpy.newaxis],len(X),axis=1)
 
+def meshgrid( *args ):
+  'multi-dimensional meshgrid generalisation'
+
+  args = map( numpy.asarray, args )
+  shape = [ len(args) ] + [ arg.size for arg in args if arg.ndim ]
+  grid = numpy.empty( shape )
+  n = len(shape)-1
+  for i, arg in enumerate( args ):
+    if arg.ndim:
+      n -= 1
+      grid[i] = arg[(slice(None),)+(numpy.newaxis,)*n]
+    else:
+      grid[i] = arg
+  assert n == 0
+  return grid
+
 def appendaxes( A, shape ):
   'append axes by 0stride'
 
