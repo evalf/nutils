@@ -863,7 +863,7 @@ class QuadElement( Element ):
     'get integration scheme'
 
     if ndims == 0:
-      return numpy.zeros([1,0]), numpy.array([1.])
+      return util.ImmutableArray( numpy.zeros([1,0]) ), util.ImmutableArray( numpy.array([1.]) )
 
     x = w = None
     if where.startswith( 'gauss' ):
