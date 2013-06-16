@@ -125,7 +125,8 @@ class HtmlLog( object ):
 
     if args:
       if mtype == 'path':
-        args = [ '<a href="%s" name="%s" class="plot">%s</a>' % (args[0],args[0],args[0]) ] \
+        whitelist = ['.jpg','.png','.svg','.txt'] + getattr( prop, 'plot_extensions', [] )
+        args = [ '<a href="%s" name="%s" %s>%s</a>' % (args[0],args[0],'class="plot"' if any(args[0].endswith(ext) for ext in whitelist) else '',args[0]) ] \
              + [ '<a href="%s">%s</a>' % (arg,arg) for arg in args[1:] ]
         last = _makestr( args )
       else:
