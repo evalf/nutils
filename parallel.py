@@ -106,4 +106,11 @@ def _pariter( iterable, nprocs ):
         iiter = shared_iter.value
         shared_iter.value = iiter + 1
 
+def parmap( func, iterable, shape=(), dtype=float ):
+  n = len(iterable)
+  out = shzeros( (n,)+shape, dtype=dtype )
+  for i, item in pariter( enumerate(iterable) ):
+    out[i] = func( item )
+  return out
+
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=1
