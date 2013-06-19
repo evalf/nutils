@@ -639,7 +639,7 @@ class StructuredTopology( Topology ):
         nodes_structure = nodes_structure[...,_] * nd + numbers
       else:
         mask = numpy.zeros( nd, dtype=bool )
-        mask[remove] = True
+        mask[numpy.array(remove)] = True
         nd -= mask.sum()
         numbers -= mask.cumsum()
         nodes_structure = nodes_structure[...,_] * nd + numbers

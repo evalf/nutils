@@ -15,9 +15,12 @@ def _cache( func, cache, debug=False ):
       args += defaults[ len(args)-len(argnames): ]
     try:
       value = cache[ args ]
-      if debug: print '_cache( %s ): value in cache'%func.__name__
+      if debug: print '_cache( %s ): value in cache' % func.__name__
+    except TypeError:
+      if debug: print '_cache( %s ): unhashable; skipping cache' % func.__name__
+      value = func( *args )
     except KeyError:
-      if debug: print '_cache( %s ): computing new value'%func.__name__
+      if debug: print '_cache( %s ): computing new value' % func.__name__
       value = func( *args )
       cache[ args ] = value
     return value

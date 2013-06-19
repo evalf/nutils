@@ -3,6 +3,27 @@ import os
 
 # MESH GENERATORS
 
+class GridFunc( function.ElemFunc ):
+  __slots__ = 'structure', 'grid'
+  def __init__( self, domainelem, structure, grid ):
+    self.structure = structure
+    self.grid = grid
+    function.ElemFunc.__init__( self, domainelem )
+  def finditer( self, x ):
+    assert x.shape[1] == len(self.grid)
+    N = numpy.array([ numpy.searchsorted(gi,xi)-1 for gi, xi in zip(self.grid,x.T) ]).T
+    I = numpy.arange( x.shape[0] )
+    while N.size:
+      n = N[0]
+      GN = zip(self.grid,n)
+      assert all( 0 <= ni < len(gi)-1 for gi, ni in GN )
+      w = numpy.all( N == n, axis=1 )
+      x0 = numpy.array([ gi[ni] for gi, ni in GN ])
+      dx = numpy.array([ gi[ni+1]-gi[ni] for gi, ni in GN ])
+      yield self.structure[tuple(n)], (x[w]-x0)/dx, I[w]
+      N = N[~w]
+      I = I[~w]
+
 def rectilinear( nodes, periodic=(), name='rect' ):
   'rectilinear mesh'
 
@@ -24,7 +45,7 @@ def rectilinear( nodes, periodic=(), name='rect' ):
       transform=numpy.diag([ n[i+1]-n[i] for n,i in zip(nodes,index) ]) ) ),
     nodes=nodeobjs[tuple(slice(i,i+2) for i in index)].ravel() ), *indices )
   topo = topology.StructuredTopology( structure )
-  coords = function.ElemFunc( domainelem )
+  coords = GridFunc( domainelem, structure, nodes )
   if periodic:
     topo = topo.make_periodic( periodic )
   return topo, coords

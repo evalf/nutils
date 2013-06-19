@@ -747,7 +747,7 @@ class OrientationHack( ArrayFunc ):
 class Transform( ArrayFunc ):
   'transform'
 
-  __slots__ = 'fromcascade', 'tocascade'
+  __slots__ = 'fromcascade', 'tocascade', 'side'
 
   def __init__( self, fromcascade, tocascade, side=0 ):
     'constructor'
@@ -755,6 +755,7 @@ class Transform( ArrayFunc ):
     assert fromcascade.ndims > tocascade.ndims
     self.fromcascade = fromcascade
     self.tocascade = tocascade
+    self.side = side
     ArrayFunc.__init__( self, args=[fromcascade,tocascade,side], evalf=self.transform, shape=(fromcascade.ndims,tocascade.ndims) )
 
   @staticmethod
