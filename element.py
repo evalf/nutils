@@ -175,6 +175,9 @@ class AffineTransformation( Transformation ):
     assert isinstance( points, numpy.ndarray )
     return util.ImmutableArray( self.offset + numeric.dot( points, self.transform.T ) )
 
+def IdentityTransformation( ndims ):
+  return AffineTransformation( numpy.zeros(ndims), numpy.eye(ndims) )
+
 class Node( object ):
   'base class'
 
@@ -937,7 +940,6 @@ class TriangularElement( Element ):
 
   __slots__ = ()
 
-  ndims = 2
   neighbormap = -1, 2, 1, 0
   edgetransform = (
     AffineTransformation( offset=[0,0], transform=[[ 1],[ 0]] ),
@@ -1073,7 +1075,6 @@ class TetrahedronElement( Element ):
 
   __slots__ = ()
 
-  ndims = 3
   neighbormap = -1, 3, 2, 1, 0
   edgetransform = (
     AffineTransformation( offset=[0,0,0], transform=[[ 1, 0],[0,1],[0,0]] ),
