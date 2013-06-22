@@ -23,6 +23,7 @@ class GridFunc( function.ElemFunc ):
       yield self.structure[tuple(n)], (x[w]-x0)/dx, I[w]
       N = N[~w]
       I = I[~w]
+      x = x[~w]
 
 def rectilinear( nodes, periodic=(), name='rect' ):
   'rectilinear mesh'
