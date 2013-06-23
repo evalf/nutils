@@ -35,16 +35,16 @@ class _SuppressedOutput( object ):
   def __enter__( self ):
     sys.stdout.flush()
     sys.stderr.flush()
-    self.stdout = os.dup( sys.stdout.fileno() )
-    self.stderr = os.dup( sys.stderr.fileno() )
+    self.stdout = os.dup( 1 )#sys.stdout.fileno() )
+    self.stderr = os.dup( 2 )#sys.stderr.fileno() )
     devnull = os.open( os.devnull, os.O_WRONLY )
-    os.dup2( devnull, sys.stdout.fileno() )
-    os.dup2( devnull, sys.stderr.fileno() )
+    os.dup2( devnull, 1 )#sys.stdout.fileno() )
+    os.dup2( devnull, 2 )#sys.stderr.fileno() )
     os.close( devnull )
 
   def __exit__( self, exc_type, exc_value, traceback ):
-    os.dup2( self.stdout, sys.stdout.fileno() )
-    os.dup2( self.stderr, sys.stderr.fileno() )
+    os.dup2( self.stdout, 1 )#sys.stdout.fileno() )
+    os.dup2( self.stderr, 2 )#sys.stderr.fileno() )
     os.close( self.stdout )
     os.close( self.stderr )
 
