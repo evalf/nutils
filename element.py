@@ -813,7 +813,7 @@ class QuadElement( Element ):
                                [[0,0,1],[1,0,1]],
                                [[0,0,1],[0,1,1]]] ):
       transform = AffineTransformation( offset=i1, transform=(i2-i1)[:,_] )
-      nodes = ndnodes[i1], ndnodes[i2]
+      nodes = ndnodes[tuple(i1)], ndnodes[tuple(i2)]
       ribbons.append( QuadElement( nodes=nodes, ndims=1, context=(self,transform) ) )
 
     return ribbons
