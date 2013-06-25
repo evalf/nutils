@@ -358,6 +358,9 @@ class Element( object ):
 
     return self,
 
+  def get_trimmededges ( self, maxrefine ):
+    return []
+
 class ProductElement( Element ):
   'element product'
 
@@ -636,13 +639,29 @@ class TrimmedElement( Element ):
     if maxrefine > 0 or self.evalrefine > 0:
       return [ simplex for child in filter(None,self.children) for simplex in child.get_simplices( maxrefine=maxrefine-1 ) ]
 
+    simplices, trimmededges = self.triangulate()
+
+    return simplices
+
+  def get_trimmededges ( self, maxrefine ):
+
+    if maxrefine > 0 or self.evalrefine > 0:
+      return [ trimmededge for child in filter(None,self.children) for trimmededge in child.get_trimmededges( maxrefine=maxrefine-1 ) ]
+
+    simplices, trimmededges = self.triangulate()
+
+    return trimmededges
+
+  def triangulate ( self ):
+
     assert self.finestscheme.startswith('simplex'), 'Expected simplex scheme'
     order = int(self.finestscheme[7:])
 
     ischeme = self.elem.getischeme( self.elem.ndims, 'bezier2' )
     where   = self.levelset( self.elem, ischeme ) > 0
     points  = ischeme[0][where]
-    nodes = numpy.array(self.nodes)[where].tolist()
+    nodes   = numpy.array(self.nodes)[where].tolist()
+    norig   = sum(where)
 
     if not where.any():
       return []
@@ -698,7 +717,7 @@ class TrimmedElement( Element ):
         #TODO General order scheme based on bisection
         raise NotImplementedError('Simplex generation only implemented for order 1 and 2')
 
-      assert (xi >= 0 and xi <= 1), 'Illegal local coordinate'
+      assert ( xi > numpy.spacing(100) and xi < 1.-numpy.spacing(100) ), 'Illegal local coordinate'
  
       elem, transform = line.context
 
@@ -714,7 +733,12 @@ class TrimmedElement( Element ):
     except RuntimeError:
       return []
 
-    simplices = []
+    ##########################################
+    # Extract the simplices from the submesh #
+    ##########################################
+
+    simplices    = []
+    trimmededges = []
     Element = TriangularElement if self.ndims == 2 else TetrahedronElement
 
     for i, tri in enumerate(submesh.vertices):
@@ -734,9 +758,22 @@ class TrimmedElement( Element ):
           continue
         raise Exception('Negative determinant with value %12.10e could not be resolved' % transform.det )
 
-      simplices.append( Element( nodes=[ nodes[i] for i in tri ], parent=(self,transform) ) )
+      simplex  = Element( nodes=[ nodes[i] for i in tri ], parent=(self,transform) )
 
-    return simplices
+      simplices.append( simplex )
+
+      #############################################################
+      # Loop over the edges of the simplex and check whether they #
+      # reside in the part of the convex hull on the levelset     #
+      #############################################################
+      
+      lvlsetnodes = nodes[norig:]
+      for iedge in range(self.ndims+1):
+        sedge = simplex.edge( iedge )
+        if all( [sedgenode in lvlsetnodes for sedgenode in sedge.nodes] ):
+          trimmededges.append( sedge )
+
+    return simplices, trimmededges
   
 class QuadElement( Element ):
   'quadrilateral element'
@@ -1076,10 +1113,11 @@ class TetrahedronElement( Element ):
   __slots__ = ()
 
   neighbormap = -1, 3, 2, 1, 0
+  #Defined to create outward pointing normal vectors for all edges (i.c. triangular faces)
   edgetransform = (
-    AffineTransformation( offset=[0,0,0], transform=[[ 1, 0],[0,1],[0,0]] ),
-    AffineTransformation( offset=[0,0,0], transform=[[ 0, 1],[0,0],[1,0]] ),
-    AffineTransformation( offset=[0,0,0], transform=[[ 0, 0],[1,0],[0,1]] ),
+    AffineTransformation( offset=[0,0,0], transform=[[ 0, 1],[1,0],[0,0]] ),
+    AffineTransformation( offset=[0,0,0], transform=[[ 1, 0],[0,0],[0,1]] ),
+    AffineTransformation( offset=[0,0,0], transform=[[ 0, 0],[0,1],[1,0]] ),
     AffineTransformation( offset=[1,0,0], transform=[[-1,-1],[1,0],[0,1]] ) )
 
   def __init__( self, nodes, index=None, parent=None, context=None ):
@@ -1097,12 +1135,13 @@ class TetrahedronElement( Element ):
     'edge'
 
     transform = self.edgetransform[ iedge ]
+
     nodes = [
       [ self.nodes[0], self.nodes[1], self.nodes[2] ],
       [ self.nodes[0], self.nodes[1], self.nodes[3] ],
-      [ self.nodes[0], self.nodes[2], self.nodes[2] ],
+      [ self.nodes[0], self.nodes[2], self.nodes[3] ],
       [ self.nodes[1], self.nodes[2], self.nodes[3] ] ][ iedge ] # TODO check!
-    return TriangularElement( nodes=nods, ndims=2, context=(self,transform) )
+    return TriangularElement( nodes=nodes, context=(self,transform) )
 
   @staticmethod
   @core.cache

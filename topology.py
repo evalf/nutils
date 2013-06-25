@@ -505,6 +505,13 @@ class Topology( object ):
 
     return [ simplex for elem in self for simplex in elem.get_simplices( maxrefine ) ]
 
+  def get_trimmededges( self, maxrefine, title='getting trimmededges' ):
+    'Getting trimmed edges'
+
+    log.context( title )
+
+    return [ trimmededge for elem in self for trimmededge in elem.get_trimmededges( maxrefine ) ]
+
 class StructuredTopology( Topology ):
   'structured topology'
 
