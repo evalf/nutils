@@ -515,12 +515,12 @@ class ArrayFunc( Evaluable ):
   def ngrad( self, coords, ndims=0 ):
     'normal gradient'
 
-    return function.dotnorm( self.grad( coords, ndims ), coords, ndims )
+    return dotnorm( self.grad( coords, ndims ), coords, ndims )
 
   def nsymgrad( self, coords, ndims=0 ):
     'normal gradient'
 
-    return function.dotnorm( self.symgrad( coords, ndims ), coords, ndims )
+    return dotnorm( self.symgrad( coords, ndims ), coords, ndims )
 
   @property
   def T( self ):
