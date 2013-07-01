@@ -2958,7 +2958,7 @@ heaviside = lambda arg: choose( greater( arg, 0 ), [0.,1.] )
 divide = lambda arg1, arg2: multiply( arg1, reciprocal(arg2) )
 subtract = lambda arg1, arg2: add( arg1, negative(arg2) )
 mean = lambda arg: .5 * ( arg + opposite(arg) )
-jump = lambda arg: opposite(arg) - arg
+jump = lambda arg: arg - opposite(arg)
 
 def opposite( arg ):
   'evaluate jump over interface'
