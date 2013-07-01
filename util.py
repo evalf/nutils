@@ -92,8 +92,8 @@ def delaunay( points ):
   'delaunay triangulation'
 
   from scipy import spatial
-  with suppressed_output:
-    return spatial.Delaunay( points )
+  #with suppressed_output:
+  return spatial.Delaunay( points )
 
 def withrepr( f ):
   'add string representation to generated function'

@@ -652,6 +652,7 @@ class TrimmedElement( Element ):
 
     return trimmededges
 
+  @core.cache
   def triangulate ( self ):
 
     assert self.finestscheme.startswith('simplex'), 'Expected simplex scheme'
@@ -733,45 +734,91 @@ class TrimmedElement( Element ):
     except RuntimeError:
       return []
 
+    Simplex = TriangularElement if self.ndims == 2 else TetrahedronElement
+
+    convex_hull = [[nodes[iv] for iv in tri] for tri in submesh.convex_hull if all(tri>=norig)]
+
     ##########################################
     # Extract the simplices from the submesh #
     ##########################################
 
-    simplices    = []
-    trimmededges = []
-    Element = TriangularElement if self.ndims == 2 else TetrahedronElement
+    simplices = []
+    degensim  = []
+    for tri in submesh.vertices:
 
-    for i, tri in enumerate(submesh.vertices):
-
-      for i in range(2): #Flip two points in case of negative determinant
+      for j in range(2): #Flip two points in case of negative determinant
         offset = points[ tri[0] ]
-        affine = numpy.array( [ points[ tri[i+1] ] - offset for i in range(self.ndims) ] ).T
+        affine = numpy.array( [ points[ tri[ii+1] ] - offset for ii in range(self.ndims) ] ).T
 
         transform = AffineTransformation( offset, affine )
 
-        if transform.det > 0.:
+        if transform.det > numpy.spacing(100):
           break
 
         tri[-2:] = tri[:-3:-1]
+
       else:
-        if abs(transform.det) < numpy.spacing(1):
+        if abs(transform.det) < numpy.spacing(100):
+          degensim.append( [ nodes[ii] for ii in tri ] )
           continue
-        raise Exception('Negative determinant with value %12.10e could not be resolved' % transform.det )
 
-      simplex  = Element( nodes=[ nodes[i] for i in tri ], parent=(self,transform) )
+        raise Exception('Negative determinant with value %12.10e could not be resolved by flipping two vertices' % transform.det )
 
-      simplices.append( simplex )
+      simplices.append( Simplex( nodes=[ nodes[ii] for ii in tri ], parent=(self,transform) ) )
 
-      #############################################################
-      # Loop over the edges of the simplex and check whether they #
-      # reside in the part of the convex hull on the levelset     #
-      #############################################################
+    assert len(simplices)+len(degensim)==submesh.vertices.shape[0], 'Simplices should be stored in either of the two containers'
+
+    #############################################################
+    # Loop over the edges of the simplex and check whether they #
+    # reside in the part of the convex hull on the levelset     #
+    #############################################################
       
-      lvlsetnodes = nodes[norig:]
+    trimmededges = []  
+    #for simplex in simplices:  
+    #  for iedge in range(self.ndims+1):
+    #    sedge = simplex.edge(iedge)
+    #    for hull_edge in convex_hull:
+    #      if all(sedgenode in hull_edge for sedgenode in sedge.nodes):
+    #        trimmededges.append( sedge )
+    #        break
+              
+    import itertools          
+    for simplex in simplices:
       for iedge in range(self.ndims+1):
-        sedge = simplex.edge( iedge )
-        if all( [sedgenode in lvlsetnodes for sedgenode in sedge.nodes] ):
-          trimmededges.append( sedge )
+        sedge = simplex.edge(iedge) 
+        checkedges   = [ sedge.nodes ]
+        visitedges = []
+
+        while checkedges:
+          checkedge = checkedges.pop(0)
+          visitedges.append( checkedge )
+
+          #Check whether this edge is in the convex hull
+          for hull_edge in convex_hull:
+            #The checkedge is found in the convex hull. Append trimmededge and
+            #terminate loop
+            if all(checknode in hull_edge for checknode in checkedge):
+              trimmededges.append( sedge )
+              checkedges = []
+              break
+          else:
+            #Check whether the checkedge is in a degenerate simplex
+            for sim in degensim:
+              if all(checknode in sim for checknode in checkedge):
+                #Append all the edges to the checkedges pool
+                for jedge in itertools.combinations(sim,self.ndims):
+                  dedge = list(jedge)
+                  for cedge in visitedges:
+                    if all(dnode in cedge for dnode in dedge):
+                      break
+                  else:
+                    checkedges.append( dedge )
+                    
+
+                
+
+
+
 
     return simplices, trimmededges
   
@@ -1137,9 +1184,9 @@ class TetrahedronElement( Element ):
     transform = self.edgetransform[ iedge ]
 
     nodes = [
-      [ self.nodes[0], self.nodes[1], self.nodes[2] ],
+      [ self.nodes[0], self.nodes[2], self.nodes[1] ],
       [ self.nodes[0], self.nodes[1], self.nodes[3] ],
-      [ self.nodes[0], self.nodes[2], self.nodes[3] ],
+      [ self.nodes[0], self.nodes[3], self.nodes[2] ],
       [ self.nodes[1], self.nodes[2], self.nodes[3] ] ][ iedge ] # TODO check!
     return TriangularElement( nodes=nodes, context=(self,transform) )
 
