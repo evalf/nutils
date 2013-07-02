@@ -774,22 +774,21 @@ class TrimmedElement( Element ):
     #############################################################
       
     trimmededges = []  
-    #for simplex in simplices:  
-    #  for iedge in range(self.ndims+1):
-    #    sedge = simplex.edge(iedge)
-    #    for hull_edge in convex_hull:
-    #      if all(sedgenode in hull_edge for sedgenode in sedge.nodes):
-    #        trimmededges.append( sedge )
-    #        break
               
     import itertools          
     for simplex in simplices:
       for iedge in range(self.ndims+1):
+
+        #The edge potentially to be added to the trimmededges
         sedge = simplex.edge(iedge) 
-        checkedges   = [ sedge.nodes ]
+
+        #Create lists to store edges which are to be checked on residence in the
+        #convex hull, or which have been checked
+        checkedges = [ sedge.nodes ]
         visitedges = []
 
         while checkedges:
+          #Edge to be check on residence in the convex hull
           checkedge = checkedges.pop(0)
           visitedges.append( checkedge )
 
@@ -809,15 +808,12 @@ class TrimmedElement( Element ):
                 for jedge in itertools.combinations(sim,self.ndims):
                   dedge = list(jedge)
                   for cedge in visitedges:
+                    #The dedge is already in visitedges
                     if all(dnode in cedge for dnode in dedge):
                       break
                   else:
+                    #The dedge is appended to to pool
                     checkedges.append( dedge )
-                    
-
-                
-
-
 
 
     return simplices, trimmededges

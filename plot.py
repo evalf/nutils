@@ -407,7 +407,9 @@ class VTKFile( BasePlot ):
       np, ndims = pts.shape
       vtkelem   = None
 
-      if np == 3:
+      if np == 2:
+        vtkelem = vtk.vtkLine()
+      elif np == 3:
         vtkelem = vtk.vtkTriangle()
       elif np == 4:  
         if ndims == 2:
