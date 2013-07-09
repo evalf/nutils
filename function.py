@@ -1957,6 +1957,7 @@ class Inflate( ArrayFunc ):
   def inflate( array, indices, length, axis ):
     'inflate'
 
+    warnings.warn( 'using explicit inflation; this is usually a bug.' )
     shape = list( array.shape )
     shape[axis] = length
     inflated = numpy.zeros( shape )
@@ -2009,6 +2010,11 @@ class Inflate( ArrayFunc ):
     #elif other.shape[self.axis] != 1:
     #  other = take( other, self.dofmap, self.axis )
     return inflate( add(self.func,other), self.dofmap, self.length, self.axis )
+
+    ## ALTERNATIVE
+    #if isinstance( other, Inflate ) and self.axis == other.axis and self.dofmap == other.dofmap:
+    #  return inflate( add(self.func,other.func), self.dofmap, self.length, self.axis )
+    #return BlockAdd( self, other )
 
   def _cross( self, other, axis ):
     if isinstance( other, Inflate ) and self.axis == other.axis:
