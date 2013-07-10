@@ -499,10 +499,12 @@ class ProductElement( Element ):
     else:
       assert weights2 is None
       weights = None
-    coords = numpy.empty( [ coords1.shape[0], coords2.shape[0], self.ndims ] )
-    coords[:,:,:self.elem1.ndims] = coords1[:,_,:]
-    coords[:,:,self.elem1.ndims:] = coords2[_,:,:]
-    coords = util.ImmutableArray( coords.reshape(-1,self.ndims) )
+    npoints1,ndims1 = coords1.shape  
+    npoints2,ndims2 = coords2.shape 
+    coords = numpy.empty( [ coords1.shape[0], coords2.shape[0], ndims1+ndims2 ] )
+    coords[:,:,:ndims1] = coords1[:,_,:]
+    coords[:,:,ndims1:] = coords2[_,:,:]
+    coords = util.ImmutableArray( coords.reshape(-1,ndims1+ndims2) )
     return coords, weights
   
   def eval( self, ischeme ):
