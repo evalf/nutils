@@ -10,6 +10,7 @@ class GridFunc( function.ElemFunc ):
     self.grid = grid
     function.ElemFunc.__init__( self, domainelem )
   def finditer( self, x ):
+    assert x.ndim == 2
     assert x.shape[1] == len(self.grid)
     N = numpy.array([ numpy.searchsorted(gi,xi)-1 for gi, xi in zip(self.grid,x.T) ]).T
     I = numpy.arange( x.shape[0] )
