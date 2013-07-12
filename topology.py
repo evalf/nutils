@@ -225,6 +225,7 @@ class Topology( object ):
       retvals.append( array )
     idata = function.Tuple( integrands )
 
+    idata.compile()
     for elem in parallel.pariter( log.iterate('elem',self) ):
       for ifunc, lock, index, data in idata( elem, ischeme ):
         with lock:
@@ -602,7 +603,7 @@ class StructuredTopology( Topology ):
     return UnstructuredTopology( interfaces, ndims=self.ndims-1 )
 
   @core.cache
-  def splinefunc( self, degree, neumann=(), periodic=None, closed=False, removedofs=None ):
+  def splinefunc( self, degree, neumann=(), knots=None, periodic=None, closed=False, removedofs=None ):
     'spline from nodes'
 
     if periodic is None:
@@ -624,6 +625,7 @@ class StructuredTopology( Topology ):
       periodic_i = idim in periodic
       n = self.structure.shape[idim]
       p = degree[idim]
+      #k = knots[idim]
 
       if closed == False:
         neumann_i = (idim*2 in neumann and 1) | (idim*2+1 in neumann and 2)

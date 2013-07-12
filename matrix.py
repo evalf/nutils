@@ -2,6 +2,7 @@ from . import util, numpy, log, numeric, parallel, _
 import scipy.sparse
 from scipy.sparse.sparsetools.csr import _csr
 from scipy.sparse.linalg.isolve import _iterative
+import time
 
 def krylov( matvec, b, x0=None, tol=1e-5, restart=None, maxiter=0, precon=None, callback=None ):
   '''solve linear system iteratively
@@ -46,6 +47,7 @@ def krylov( matvec, b, x0=None, tol=1e-5, restart=None, maxiter=0, precon=None, 
 
   x = x0
   progress = log.ProgressLog( 'residual', target=numpy.log(tol) )
+  t0 = time.clock()
   while True:
     x, iiter, res, info, ndx1, ndx2, sclr1, sclr2, ijob = \
       revcom( x, iiter, res, info, ndx1, ndx2, ijob )
@@ -68,9 +70,10 @@ def krylov( matvec, b, x0=None, tol=1e-5, restart=None, maxiter=0, precon=None, 
       break
     ijob = 2
     progress.update( numpy.log(res) )
+  dt = time.clock() - t0
 
   assert info == 0
-  log.info( 'converged in %d iterations' % iiter )
+  log.info( 'converged in %.1f seconds, %d iterations' % ( dt, iiter ) )
   return x
 
 def parsecons( constrain, lconstrain, rconstrain, shape ):
@@ -188,6 +191,7 @@ class SparseMatrix( Matrix ):
         a, b = self.indptr[irow:irow+2]
         self.indices[a:b] = icols
     self.spilu_cache = {}
+    self.splu_cache = {}
     Matrix.__init__( self, (nrows, ncols or nrows) )
 
   def reshape( self, (nrows,ncols) ):
@@ -357,10 +361,29 @@ class SparseMatrix( Matrix ):
     cij = tuple(numpy.where(~I)[0]), tuple(numpy.where(~J)[0])
     precon = self.spilu_cache.get( cij )
     if precon is None:
+      log.info( 'building SPILU preconditioner' )
       A = scipy.sparse.csr_matrix( (self.data,self.indices,self.indptr), shape=self.shape )[numpy.where(I)[0],:][:,numpy.where(J)[0]].tocsc()
       precon = scipy.sparse.linalg.spilu( A, drop_tol=1e-5, fill_factor=None, drop_rule=None, permc_spec=None, diag_pivot_thresh=None, relax=None, panel_size=None, options=None).solve
       self.spilu_cache[ cij ] = precon
     return precon
+
+  def get_splu( self, I, J ):
+    'register LU preconditioner'
+
+    cij = tuple(numpy.where(~I)[0]), tuple(numpy.where(~J)[0])
+    precon = self.splu_cache.get( cij )
+    if precon is None:
+      log.info( 'building SPLU preconditioner' )
+      A = scipy.sparse.csr_matrix( (self.data,self.indices,self.indptr), shape=self.shape )[numpy.where(I)[0],:][:,numpy.where(J)[0]].tocsc()
+      precon = scipy.sparse.linalg.splu( A )
+      self.splu_cache[ cij ] = precon
+    return precon
+
+  def factor( self, constrain=None, lconstrain=None, rconstrain=None, complete=False ):
+    'prepare preconditioner'
+
+    x, I, J = parsecons( constrain, lconstrain, rconstrain, self.shape )
+    return self.get_splu( I, J ) if complete else self.get_spilu( I, J )
 
   def solve( self, b=0, constrain=None, lconstrain=None, rconstrain=None, tol=0, x0=None, symmetric=False, maxiter=0, restart=999, title='solving system', callback=None, precon=None ):
     'solve'
@@ -386,17 +409,24 @@ class SparseMatrix( Matrix ):
 
     b = ( b - self.matvec(x) )[I]
 
-    tmpvec = numpy.zeros( self.shape[1] )
-    def matvec( v ):
-      tmpvec[J] = v
-      return self.matvec(tmpvec)[I]
+    if precon == 'splu':
 
-    if precon == 'spilu': # backwards compatibility
-      precon = self.get_spilu( I, J )
-    elif precon:
-      raise Exception( 'Unknown preconditioner %s' % precon )
+      precon = self.get_splu( I, J )
+      x[J] = precon.solve( b )
 
-    x[J] = krylov( matvec, b, x0=x0, tol=tol, maxiter=maxiter, restart=restart, callback=callback, precon=precon )
+    else:
+
+      tmpvec = numpy.zeros( self.shape[1] )
+      def matvec( v ):
+        tmpvec[J] = v
+        return self.matvec(tmpvec)[I]
+
+      if precon == 'spilu':
+        precon = self.get_spilu( I, J )
+      elif precon:
+        raise Exception( 'Unknown preconditioner %s' % precon )
+
+      x[J] = krylov( matvec, b, x0=x0, tol=tol, maxiter=maxiter, restart=restart, callback=callback, precon=precon )
 
     return x
 

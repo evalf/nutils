@@ -959,9 +959,13 @@ class QuadElement( Element ):
         N = [N]*ndims
       x, w = zip( *map( cls.getgauss, N ) )
     elif where.startswith( 'uniform' ):
-      N = int( where[7:] )
-      x = [ numpy.arange( .5, N ) / N ] * ndims
-      w = [ numeric.appendaxes( 1./N, N ) ] * ndims
+      N = eval( where[7:] ) # //2+1 <= FUTURE!
+      if isinstance( N, tuple ):
+        assert len(N) == ndims
+      else:
+        N = [N]*ndims
+      x = [ numpy.arange( .5, n ) / n for n in N ]
+      w = [ numeric.appendaxes( 1./n, n ) for n in N ]
     elif where.startswith( 'bezier' ):
       N = int( where[6:] )
       x = [ numpy.linspace( 0, 1, N ) ] * ndims
