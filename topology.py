@@ -212,16 +212,17 @@ class Topology( object ):
     retvals = []
     for ifunc, func in enumerate( funcs ):
       func = function._asarray( func )
+      lock = parallel.Lock()
       if function._isfunc( func ):
         array = parallel.shzeros( func.shape, dtype=float ) if func.ndim != 2 \
            else matrix.DenseMatrix( func.shape ) if force_dense \
            else matrix.SparseMatrix( self.build_graph(func), func.shape[1] )
         for f, ind in func.blocks:
-          integrands.append( function.Tuple([ ifunc, parallel.Lock(), function.Tuple(ind), function.elemint( f, iweights ) ]) )
+          integrands.append( function.Tuple([ ifunc, lock, function.Tuple(ind), function.elemint( f, iweights ) ]) )
       else:
         array = parallel.shzeros( func.shape, dtype=float )
         if not function._iszero( func ):
-          integrands.append( function.Tuple([ ifunc, parallel.Lock(), (), function.elemint( func, iweights ) ]) )
+          integrands.append( function.Tuple([ ifunc, lock, (), function.elemint( func, iweights ) ]) )
       retvals.append( array )
     idata = function.Tuple( integrands )
 
@@ -257,16 +258,17 @@ class Topology( object ):
     retvals = []
     for ifunc, func in enumerate( funcs ):
       func = function._asarray( func )
+      lock = parallel.Lock()
       if function._isfunc( func ):
         array = parallel.shzeros( func.shape, dtype=float ) if func.ndim != 2 \
            else matrix.DenseMatrix( func.shape ) if force_dense \
            else matrix.SparseMatrix( self.build_graph(func), func.shape[1] )
         for f, ind in func.blocks:
-          integrands.append( function.Tuple([ ifunc, parallel.Lock(), function.Tuple(ind), function.elemint( f, iweights ) ]) )
+          integrands.append( function.Tuple([ ifunc, lock, function.Tuple(ind), function.elemint( f, iweights ) ]) )
       else:
         array = parallel.shzeros( func.shape, dtype=float )
         if not function._iszero( func ):
-          integrands.append( function.Tuple([ ifunc, parallel.Lock(), (), function.elemint( func, iweights ) ]) )
+          integrands.append( function.Tuple([ ifunc, lock, (), function.elemint( func, iweights ) ]) )
       retvals.append( array )
     idata = function.Tuple( integrands )
 

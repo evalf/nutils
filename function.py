@@ -2001,20 +2001,9 @@ class Inflate( ArrayFunc ):
     return inflate( multiply(self.func,other), self.dofmap, self.length, self.axis )
 
   def _add( self, other ):
-    if isinstance( other, Inflate ) and self.axis == other.axis:
-      if self.dofmap != other.dofmap:
-        return BlockAdd( self, other )
-      other = other.func
-    else:
-      return
-    #elif other.shape[self.axis] != 1:
-    #  other = take( other, self.dofmap, self.axis )
-    return inflate( add(self.func,other), self.dofmap, self.length, self.axis )
-
-    ## ALTERNATIVE
-    #if isinstance( other, Inflate ) and self.axis == other.axis and self.dofmap == other.dofmap:
-    #  return inflate( add(self.func,other.func), self.dofmap, self.length, self.axis )
-    #return BlockAdd( self, other )
+    if isinstance( other, Inflate ) and self.axis == other.axis and self.dofmap == other.dofmap:
+      return inflate( add(self.func,other.func), self.dofmap, self.length, self.axis )
+    return BlockAdd( self, other )
 
   def _cross( self, other, axis ):
     if isinstance( other, Inflate ) and self.axis == other.axis:
