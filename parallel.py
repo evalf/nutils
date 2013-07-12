@@ -1,5 +1,5 @@
 from . import prop, log, numpy
-import os, sys, multiprocessing
+import os, sys, multiprocessing, thread
 
 Lock = multiprocessing.Lock
 cpu_count = multiprocessing.cpu_count
@@ -31,7 +31,7 @@ class Fork( object ):
     status = 0
     try:
       if exctype:
-        log.error( 'an exception occurred' )
+        log.traceback(( exctype, excvalue, tb ))
         status = 1
       if self.child_pid:
         child_pid, child_status = os.waitpid( self.child_pid, 0 )
@@ -41,7 +41,7 @@ class Fork( object ):
         elif child_status:
           status = 1
       log.restore( self.oldcontext, depth=1 )
-    except:
+    except: # should not happen.. but just to be sure
       status = 1
     if self.iproc:
       os._exit( status )
@@ -58,6 +58,7 @@ def fork( func, nice=19 ):
   def wrapped( *args, **kwargs ):
     pid = os.fork()
     if pid:
+      thread.start_new_thread( os.waitpid, (pid,0) )
       return pid
     try:
       os.nice( nice )
