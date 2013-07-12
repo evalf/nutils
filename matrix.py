@@ -190,7 +190,6 @@ class SparseMatrix( Matrix ):
       for irow, icols in enumerate( graph ):
         a, b = self.indptr[irow:irow+2]
         self.indices[a:b] = icols
-    self.spilu_cache = {}
     self.splu_cache = {}
     Matrix.__init__( self, (nrows, ncols or nrows) )
 
@@ -355,27 +354,16 @@ class SparseMatrix( Matrix ):
       supp[irow] = a != b and ( tol == 0 or numpy.any( numpy.abs( self.data[a:b] ) > tol ) )
     return supp
 
-  def get_spilu( self, I, J ):
-    'register sparse ILU preconditioner'
-
-    cij = tuple(numpy.where(~I)[0]), tuple(numpy.where(~J)[0])
-    precon = self.spilu_cache.get( cij )
-    if precon is None:
-      log.info( 'building SPILU preconditioner' )
-      A = scipy.sparse.csr_matrix( (self.data,self.indices,self.indptr), shape=self.shape )[numpy.where(I)[0],:][:,numpy.where(J)[0]].tocsc()
-      precon = scipy.sparse.linalg.spilu( A, drop_tol=1e-5, fill_factor=None, drop_rule=None, permc_spec=None, diag_pivot_thresh=None, relax=None, panel_size=None, options=None).solve
-      self.spilu_cache[ cij ] = precon
-    return precon
-
-  def get_splu( self, I, J ):
+  def get_splu( self, I, J, complete ):
     'register LU preconditioner'
 
-    cij = tuple(numpy.where(~I)[0]), tuple(numpy.where(~J)[0])
+    cij = tuple(numpy.where(~I)[0]), tuple(numpy.where(~J)[0]), complete
     precon = self.splu_cache.get( cij )
     if precon is None:
-      log.info( 'building SPLU preconditioner' )
+      log.info( 'building %s preconditioner' % ( 'SPLU' if complete else 'SPILU' ) )
       A = scipy.sparse.csr_matrix( (self.data,self.indices,self.indptr), shape=self.shape )[numpy.where(I)[0],:][:,numpy.where(J)[0]].tocsc()
-      precon = scipy.sparse.linalg.splu( A )
+      precon = scipy.sparse.linalg.splu( A ) if complete \
+          else scipy.sparse.linalg.spilu( A, drop_tol=1e-5, fill_factor=None, drop_rule=None, permc_spec=None, diag_pivot_thresh=None, relax=None, panel_size=None, options=None )
       self.splu_cache[ cij ] = precon
     return precon
 
@@ -383,7 +371,7 @@ class SparseMatrix( Matrix ):
     'prepare preconditioner'
 
     x, I, J = parsecons( constrain, lconstrain, rconstrain, self.shape )
-    return self.get_splu( I, J ) if complete else self.get_spilu( I, J )
+    return self.get_splu( I, J, complete )
 
   def solve( self, b=0, constrain=None, lconstrain=None, rconstrain=None, tol=0, x0=None, symmetric=False, maxiter=0, restart=999, title='solving system', callback=None, precon=None ):
     'solve'
@@ -411,7 +399,7 @@ class SparseMatrix( Matrix ):
 
     if precon == 'splu':
 
-      precon = self.get_splu( I, J )
+      precon = self.get_splu( I, J, complete=True )
       x[J] = precon.solve( b )
 
     else:
@@ -422,7 +410,7 @@ class SparseMatrix( Matrix ):
         return self.matvec(tmpvec)[I]
 
       if precon == 'spilu':
-        precon = self.get_spilu( I, J )
+        precon = self.get_splu( I, J, complete=False ).solve
       elif precon:
         raise Exception( 'Unknown preconditioner %s' % precon )
 
