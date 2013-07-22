@@ -86,7 +86,7 @@ class Topology( object ):
       if separate:
         retval[separators] = numpy.nan
       if function._isfunc( func ):
-        for f, ind in func.blocks:
+        for f, ind in function.blocks( func ):
           idata.append( function.Tuple( [ ifunc, function.Tuple(ind), f ] ) )
       else:
         idata.append( function.Tuple( [ ifunc, (), func ] ) )
@@ -179,7 +179,7 @@ class Topology( object ):
 
     nrows, ncols = func.shape
     graph = [ [] for irow in range(nrows) ]
-    IJ = function.Tuple([ function.Tuple(ind) for f, ind in func.blocks ])
+    IJ = function.Tuple([ function.Tuple(ind) for f, ind in function.blocks( func ) ])
 
     for elem in log.iterate('elem',self):
       for I, J in IJ( elem, None ):
@@ -217,7 +217,7 @@ class Topology( object ):
         array = parallel.shzeros( func.shape, dtype=float ) if func.ndim != 2 \
            else matrix.DenseMatrix( func.shape ) if force_dense \
            else matrix.SparseMatrix( self.build_graph(func), func.shape[1] )
-        for f, ind in func.blocks:
+        for f, ind in function.blocks( func ):
           integrands.append( function.Tuple([ ifunc, lock, function.Tuple(ind), function.elemint( f, iweights ) ]) )
       else:
         array = parallel.shzeros( func.shape, dtype=float )
@@ -263,7 +263,7 @@ class Topology( object ):
         array = parallel.shzeros( func.shape, dtype=float ) if func.ndim != 2 \
            else matrix.DenseMatrix( func.shape ) if force_dense \
            else matrix.SparseMatrix( self.build_graph(func), func.shape[1] )
-        for f, ind in func.blocks:
+        for f, ind in function.blocks( func ):
           integrands.append( function.Tuple([ ifunc, lock, function.Tuple(ind), function.elemint( f, iweights ) ]) )
       else:
         array = parallel.shzeros( func.shape, dtype=float )
@@ -435,7 +435,7 @@ class Topology( object ):
     for irefine in log.iterate( 'level', range(nrefine), showpct=False ):
   
       funcsp = topo.splinefunc( degree ) # shape functions for level irefine
-      (func,(dofaxis,)), = funcsp.blocks # separate elem-local funcs and global placement index
+      (func,(dofaxis,)), = function.blocks( funcsp ) # separate elem-local funcs and global placement index
   
       supported = numpy.ones( funcsp.shape[0], dtype=bool ) # True if dof is contained in topoelems or parentelems
       touchtopo = numpy.zeros( funcsp.shape[0], dtype=bool ) # True if dof touches at least one topoelem
@@ -945,7 +945,7 @@ class UnstructuredTopology( Topology ):
 
     try:
       linearfunc = self.linearfunc()
-      (func,(dofaxis,)), = linearfunc.blocks
+      (func,(dofaxis,)), = function.blocks( linearfunc )
       ndofs = linearfunc.shape[0]
       edges = {}
       nmap = {}

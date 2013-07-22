@@ -339,11 +339,6 @@ class ArrayFunc( Evaluable ):
 
   # standalone methods
 
-  @property
-  def blocks( self ):
-    s = tuple( numpy.arange(n) if isinstance(n,int) else None for n in self.shape )
-    yield self, s
-
   def vector( self, ndims ):
     'vectorize'
 
@@ -969,7 +964,7 @@ class Concatenate( ArrayFunc ):
   def blocks( self ):
     n = 0
     for func in self.funcs:
-      for f, ind in func.blocks:
+      for f, ind in blocks( func ):
         yield f, ind[:self.axis] + (ind[self.axis]+n,) + ind[self.axis+1:]
       n += func.shape[self.axis]
 
@@ -1336,7 +1331,7 @@ class Negative( ArrayFunc ):
 
   @property
   def blocks( self ):
-    for f, ind in self.func.blocks:
+    for f, ind in blocks( self.func ):
       yield negative(f), ind
 
   def _add( self, other ):
@@ -1483,9 +1478,9 @@ class BlockAdd( Add ):
   @property
   def blocks( self ):
     func1, func2 = self.funcs
-    for f, ind in func1.blocks:
+    for f, ind in blocks( func1 ):
       yield f, ind
-    for f, ind in func2.blocks:
+    for f, ind in blocks( func2 ):
       yield f, ind
 
 class Dot( ArrayFunc ):
@@ -1949,7 +1944,7 @@ class Inflate( ArrayFunc ):
 
   @property
   def blocks( self ):
-    for f, ind in self.func.blocks:
+    for f, ind in blocks( self.func ):
       assert ind[self.axis] == None
       yield f, ind[:self.axis] + (self.dofmap,) + ind[self.axis+1:]
 
@@ -2927,6 +2922,7 @@ sin = lambda arg: pointwise( [arg], numpy.sin, cos )
 cos = lambda arg: pointwise( [arg], numpy.cos, lambda x: -sin(x) )
 tan = lambda arg: pointwise( [arg], numpy.tan, lambda x: cos(x)**-2 )
 arcsin = lambda arg: pointwise( [arg], numpy.arcsin, lambda x: reciprocal(sqrt(1-x**2)) )
+arccos = lambda arg: pointwise( [arg], numpy.arccos, lambda x: -reciprocal(sqrt(1-x**2)) )
 exp = lambda arg: pointwise( [arg], numpy.exp, exp )
 ln = lambda arg: pointwise( [arg], numpy.log, reciprocal )
 log2 = lambda arg: ln(arg) / ln(2)
@@ -3036,6 +3032,14 @@ def inflate( arg, dofmap, length, axis ):
     return retval
 
   return Inflate( arg, dofmap, length, axis )
+  
+def blocks( arg ):
+  arg = _asarray( arg )
+  try:
+    blocks = arg.blocks
+  except AttributeError:
+    blocks = [( arg, tuple( numpy.arange(n) if isinstance(n,int) else None for n in arg.shape ) )]
+  return blocks
 
 def pointdata ( topo, ischeme, func=None, shape=None, value=None ):
   'point data'
