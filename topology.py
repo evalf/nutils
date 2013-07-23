@@ -587,12 +587,15 @@ class StructuredTopology( Topology ):
     'interfaces'
 
     interfaces = []
+    eye = numpy.eye(self.ndims-1)
     for idim in range(self.ndims):
       s1 = (slice(None),)*idim + (slice(-1),)
       s2 = (slice(None),)*idim + (slice(1,None),)
       for elem1, elem2 in numpy.broadcast( self.structure[s1], self.structure[s2] ):
         A = numpy.zeros((self.ndims,self.ndims-1))
-        A[range(idim)+range(idim+1,self.ndims)] = numpy.eye(self.ndims-1)
+        #A[range(idim)+range(idim+1,self.ndims)] = numpy.eye(self.ndims-1)
+        A[:idim] = eye[:idim]
+        A[idim+1:] = -eye[idim:]
         b1 = numpy.zeros(self.ndims)
         b1[idim] = 1.
         b2 = numpy.zeros(self.ndims)
