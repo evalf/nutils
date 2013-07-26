@@ -2801,7 +2801,7 @@ def outer( arg1, arg2=None, axis=0 ):
 
   arg1, arg2 = _matchndim( arg1, arg2 if arg2 is not None else arg1 )
   axis = numeric.normdim( arg1.ndim, axis )
-  return insert(arg1,axis+1) * insert(arg1,axis)
+  return insert(arg1,axis+1) * insert(arg2,axis)
 
 def pointwise( args, evalf, deriv ):
   'general pointwise operation'
