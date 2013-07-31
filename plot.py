@@ -245,8 +245,6 @@ class PyPlot( BasePlot ):
        - slopefmt: format string for slope number'''
 
     # TODO check for gca() loglog scale
-    print self.gca().get_xscale()
-    print self.gca().get_yscale()
 
     i, j = (-2,-1) if x[-1] < x[-2] else (-1,-2) # x[i] > x[j]
 
@@ -254,15 +252,22 @@ class PyPlot( BasePlot ):
     shifttrans = self.gca().transData \
                + transforms.ScaledTranslation( xoffset, -yoffset, self.gcf().dpi_scale_trans )
 
-    delta = lambda a, b, scale: numpy.log(float(a)/b) if scale=='log' else float(a-b) if scale=='linear' else None
+    # delta() checks if either axis is log or lin scaled
+    delta = lambda a, b, scale: numpy.log10(float(a)/b) if scale=='log' else float(a-b) if scale=='linear' else None
     slope = delta( y[-2], y[-1], self.gca().get_yscale() ) / delta( x[-2], x[-1], self.gca().get_xscale() )
 
-    self.fill( (x[i],x[j],x[i]), (y[j],y[j],y[i]),
+    # handle positive and negative slopes correctly
+    xtup, ytup = ((x[i],x[j],x[i]), (y[j],y[j],y[i])) if slope > 0 else ((x[j],x[j],x[i]), (y[i],y[j],y[i]))
+    xval, yval = (x[i]**(2/3.) * x[j]**(1/3.), y[i]**(1/3.) * y[j]**(2/3.)) if slope > 0 else \
+                 (x[i]**(1/3.) * x[j]**(2/3.), y[i]**(2/3.) * y[j]**(1/3.))
+
+    self.fill( xtup, ytup,
       color=fillcolor,
       edgecolor=edgecolor,
       transform=shifttrans )
 
-    self.text( x[i]**(2/3.) * x[j]**(1/3.), y[i]**(1/3.) * y[j]**(2/3.), slopefmt.format(slope),
+    self.text( xval, yval,
+      slopefmt.format(slope),
       horizontalalignment='center',
       verticalalignment='center',
       transform=shifttrans )
