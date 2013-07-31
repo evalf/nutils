@@ -245,6 +245,8 @@ class PyPlot( BasePlot ):
        - slopefmt: format string for slope number'''
 
     # TODO check for gca() loglog scale
+    print self.gca().get_xscale()
+    print self.gca().get_yscale()
 
     i, j = (-2,-1) if x[-1] < x[-2] else (-1,-2) # x[i] > x[j]
 
@@ -252,7 +254,8 @@ class PyPlot( BasePlot ):
     shifttrans = self.gca().transData \
                + transforms.ScaledTranslation( xoffset, -yoffset, self.gcf().dpi_scale_trans )
 
-    slope = numpy.log( y[-2]/y[-1] ) / numpy.log( x[-2]/x[-1] )
+    delta = lambda a, b, scale: numpy.log(float(a)/b) if scale=='log' else float(a-b) if scale=='linear' else None
+    slope = delta( y[-2], y[-1], self.gca().get_yscale() ) / delta( x[-2], x[-1], self.gca().get_xscale() )
 
     self.fill( (x[i],x[j],x[i]), (y[j],y[j],y[i]),
       color=fillcolor,
