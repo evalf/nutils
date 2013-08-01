@@ -244,8 +244,6 @@ class PyPlot( BasePlot ):
        - fillcolor, edgecolor: triangle style
        - slopefmt: format string for slope number'''
 
-    # TODO check for gca() loglog scale
-
     i, j = (-2,-1) if x[-1] < x[-2] else (-1,-2) # x[i] > x[j]
 
     from matplotlib import transforms
