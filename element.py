@@ -507,21 +507,76 @@ class ProductElement( Element ):
     coords = util.ImmutableArray( coords.reshape(-1,ndims1+ndims2) )
     return coords, weights
   
-  def eval( self, ischeme ):
-    'get integration scheme'
+  @property
+  @core.cache
+  def orientation( self ):
+    '''Neighborhood of elem1 and elem2 and transformations to get mutual overlap in right location
+    O: neighborhood,  as given by Element.neighbor(),
+       transf1,       required rotation of elem1 map: {0:0, 1:pi/2, 2:pi, 3:3*pi/2},
+       transf2,       required rotation of elem2 map.'''
+    neighborhood = self.elem1.neighbor( self.elem2 )
+    common_nodes = list( set(self.elem1.nodes) & set(self.elem2.nodes) )
+    nodes1 = [self.elem1.nodes.index( ni ) for ni in common_nodes]
+    nodes2 = [self.elem2.nodes.index( ni ) for ni in common_nodes]
+    nodes1.sort()
+    nodes2.sort()
+    if isinstance( self.elem1, QuadElement ):
+      # test for strange topological features
+      if not neighborhood: assert self.elem1==self.elem2, 'Topological feature not supported: try refining here, possibly periodicity causes elems to touch on both sides.'
+      # define local map rotations
+      if neighborhood in (0, -1):
+        transf1 = transf2 = 0
+      elif neighborhood==1:
+        transf1 = [[0,2], [0,1], [1,3], [2,3]].index( nodes1 )
+        transf2 = [[0,2], [0,1], [1,3], [2,3]].index( nodes2 )
+      elif neighborhood==2:
+        transf1 = [[0], [1], [3], [2]].index( nodes1 )
+        transf2 = [[0], [1], [3], [2]].index( nodes2 )
+      else:
+        raise ValueError( 'Unknown neighbor type %i' % neighborhood )
+    else:
+      raise NotImplementedError( 'Reorientation not implemented for element of class %s' % type(self.elem1) )
+    return neighborhood, transf1, transf2
 
-    if ischeme[:8] == 'singular': # TODO: shaky
-      assert type(self.elem1) == type(self.elem2), 'mixed element-types case not implemented, found {0} and {1}.'.format( type(elemx), type(elemy) )
-      gauss = 'gauss'+ischeme[8:]
-      neighborhood = self.elem1.neighbor( self.elem2 )
+  @core.cache
+  def singular_ischeme_quad( self, ischeme ):
+    neighborhood, transf1, transf2 = self.orientation
+    points, weights = self.get_quad_bem_ischeme( ischeme, neighborhood )
+    transfpoints = numpy.empty( points.shape )
+    transfpoints[:,0] = points[:,0] if transf1 == 0 else \
+                      1-points[:,1] if transf1 == 1 else \
+                      1-points[:,0] if transf1 == 2 else \
+                        points[:,1]
+    transfpoints[:,1] = points[:,1] if transf1 == 0 else \
+                        points[:,0] if transf1 == 1 else \
+                      1-points[:,1] if transf1 == 2 else \
+                      1-points[:,0]
+    transfpoints[:,2] = points[:,2] if transf2 == 0 else \
+                      1-points[:,3] if transf2 == 1 else \
+                      1-points[:,2] if transf2 == 2 else \
+                        points[:,3]
+    transfpoints[:,3] = points[:,3] if transf2 == 0 else \
+                        points[:,2] if transf2 == 1 else \
+                      1-points[:,3] if transf2 == 2 else \
+                      1-points[:,2]
+    return transfpoints, weights
+    
+  def eval( self, where ):
+    'get integration scheme'
+    
+    if where.startswith( 'singular' ):
+      assert type(self.elem1) == type(self.elem2), 'mixed element-types case not implemented'
+      assert self.elem1.ndims == 2 and self.elem2.ndims == 2, 'singular quadrature only for bivariate surfaces'
+      gauss = 'gauss'+where[8:]
       if isinstance( self.elem1, QuadElement ):
-        xw = self.get_quad_bem_ischeme( gauss, neighborhood )
+        xw = self.singular_ischeme_quad( gauss )
       elif isinstance( self.elem1, TriangularElement ):
+        raise NotImplementedError( 'Reorientation not yet implemented, cf QuadElement case' )
         xw = self.get_tri_bem_ischeme( gauss, neighborhood )
       else:
         raise Exception, 'invalid element type %r' % type(self.elem1)
     else:
-      xw = self.concat( self.elem1.eval(ischeme), self.elem2.eval(ischeme) )
+      xw = self.concat( self.elem1.eval(where), self.elem2.eval(where) )
     return xw
 
 class TrimmedElement( Element ):
@@ -834,6 +889,8 @@ class QuadElement( Element ):
   @property
   @core.cache
   def neighbormap( self ):
+    '''maps # matching nodes --> codim of interface: {0: -1, 1: 2, 2: 1, 4: 0}
+       warning: assumes StructuredTopology'''
     return dict( [ (0,-1) ] + [ (2**(self.ndims-i),i) for i in range(self.ndims+1) ] )
 
   @property
