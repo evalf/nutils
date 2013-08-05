@@ -1106,18 +1106,17 @@ class Interpolate( ArrayFunc ):
 
   __slots__ = ()
 
-  def __init__( self, array, index ):
+  def __init__( self, x, xp, fp, left=None, right=None ):
     'constructor'
 
-    array = numpy.asarray( array, dtype=float )
-    assert index.ndim == 1
-    assert index.shape[0] <= array.ndim
-    ArrayFunc.__init__( self, args=[array,index], evalf=self.interpolate, shape=array.shape[index.shape[0]:] )
+    xp = numpy.array( xp )
+    fp = numpy.array( fp )
+    assert xp.ndim == fp.ndim == 1
+    if not numpy.all( numpy.diff(xp) > 0 ):
+      warnings.warn( 'supplied x-values are non-increasing' )
 
-  @staticmethod
-  def interpolate( array, index ):
-    I = tuple( index.astype(int).T )
-    return array[I]
+    assert x.ndim == 0
+    ArrayFunc.__init__( self, args=[x,xp,fp,left,right], evalf=numpy.interp, shape=() )
 
 class Cross( ArrayFunc ):
   'cross product'
