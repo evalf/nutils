@@ -468,11 +468,18 @@ class ProductElement( Element ):
       E = 1 - A
       F = E*eta3
       G = A + F
+      # The commented transformation below from Sauter & Schwab '10 seems to
+      # have an error, corrected scheme follows uncommented
+      # points = util.ImmutableArray(
+      #   [[D,  C,  G,  G,  F,  F ],
+      #    [B,  B,  B,  xi, B,  xi],
+      #    [C,  D,  F,  F,  G,  G ],
+      #    [A,  A,  xi, B,  xi, B ]]).reshape( 4, -1 ).T
       points = util.ImmutableArray(
-        [[D,  C,  G,  G,  F,  F ],
-         [B,  B,  B,  xi, B,  xi],
-         [C,  D,  F,  F,  G,  G ],
-         [A,  A,  xi, B,  xi, B ]]).reshape( 4, -1 ).T
+        [[D,   C,   G,   G,   F,   F  ],
+         [B,   B,   B,   xi,  B,   xi ],
+         [1-C, 1-D, 1-F, 1-F, 1-G, 1-G],
+         [A,   A,   xi,  B,   xi,  B  ]]).reshape( 4, -1 ).T
       weights = numpy.concatenate( 2*[xi**2*ox*weights] + 4*[xi**2*E*weights] )
     elif neighborhood == 2:
       A = xi*eta1
@@ -513,7 +520,7 @@ class ProductElement( Element ):
     '''Neighborhood of elem1 and elem2 and transformations to get mutual overlap in right location
     O: neighborhood,  as given by Element.neighbor(),
        transf1,       required rotation of elem1 map: {0:0, 1:pi/2, 2:pi, 3:3*pi/2},
-       transf2,       required rotation of elem2 map.'''
+       transf2,       required rotation of elem2 map (is indep of transf1 in UnstructuredTopology.'''
     neighborhood = self.elem1.neighbor( self.elem2 )
     common_nodes = list( set(self.elem1.nodes) & set(self.elem2.nodes) )
     nodes1 = [self.elem1.nodes.index( ni ) for ni in common_nodes]
@@ -544,21 +551,21 @@ class ProductElement( Element ):
     points, weights = self.get_quad_bem_ischeme( ischeme, neighborhood )
     transfpoints = numpy.empty( points.shape )
     transfpoints[:,0] = points[:,0] if transf1 == 0 else \
-                      1-points[:,1] if transf1 == 1 else \
+                        points[:,1] if transf1 == 1 else \
                       1-points[:,0] if transf1 == 2 else \
-                        points[:,1]
+                      1-points[:,1]
     transfpoints[:,1] = points[:,1] if transf1 == 0 else \
-                        points[:,0] if transf1 == 1 else \
+                      1-points[:,0] if transf1 == 1 else \
                       1-points[:,1] if transf1 == 2 else \
-                      1-points[:,0]
+                        points[:,0]
     transfpoints[:,2] = points[:,2] if transf2 == 0 else \
-                      1-points[:,3] if transf2 == 1 else \
+                        points[:,3] if transf2 == 1 else \
                       1-points[:,2] if transf2 == 2 else \
-                        points[:,3]
+                      1-points[:,3]
     transfpoints[:,3] = points[:,3] if transf2 == 0 else \
-                        points[:,2] if transf2 == 1 else \
+                      1-points[:,2] if transf2 == 1 else \
                       1-points[:,3] if transf2 == 2 else \
-                      1-points[:,2]
+                        points[:,2]
     return transfpoints, weights
     
   def eval( self, where ):
