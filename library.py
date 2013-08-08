@@ -14,12 +14,16 @@ class Hooke:
 
   def __init__( self, **kwargs ):
     
+    verify = kwargs.pop( 'verify', True )
+
     if len(kwargs)!=2:
       raise ValueError( 'exactly two arguments expected, found %d' % len(kwargs) )
 
     _tryall( self, '_set_from_', kwargs )
-    for key, value in kwargs.items():
-      numpy.testing.assert_almost_equal( value, getattr(self,key) )
+
+    if verify:
+      for key, value in kwargs.items():
+        numpy.testing.assert_almost_equal( value, getattr(self,key) )
 
   def _set_from_lame( self, lmbda, mu ):
     self.lmbda = float(lmbda)

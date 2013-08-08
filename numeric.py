@@ -198,6 +198,7 @@ def dot( A, B, axis=-1 ):
 def fastrepeat( A, nrepeat, axis=-1 ):
   'repeat axis by 0stride'
 
+  A = numpy.asarray( A )
   assert A.shape[axis] == 1
   shape = list( A.shape )
   shape[axis] = nrepeat
