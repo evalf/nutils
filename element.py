@@ -1,4 +1,5 @@
 from . import util, numpy, core, numeric, function, _
+import warnings
 
 class TrimmedIScheme( object ):
   'integration scheme for truncated elements'
@@ -989,10 +990,19 @@ class QuadElement( Element ):
       transforms.append( AffineTransformation( offset=offset, transform=numpy.diag([transform]*ndims) ) )
     return transforms
 
+  def refine( self, n ):
+    'refine n times'
+
+    elems = [ self ]
+    for i in range(n):
+      elems = sum([ elem.children for elem in elems ])
+    return elems
+
   @core.cache
   def refined( self, n ):
     'refine'
 
+    warnings.warn( 'refined is deprecated, use refine or children instead' )
     return [ QuadElement( self.ndims, parent=(self,transform) ) for transform in self.refinedtransform( self.ndims, n ) ]
 
   @staticmethod
