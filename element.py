@@ -995,7 +995,7 @@ class QuadElement( Element ):
 
     elems = [ self ]
     for i in range(n):
-      elems = sum([ elem.children for elem in elems ])
+      elems = [ child for elem in elems for child in elem.children ]
     return elems
 
   @core.cache
