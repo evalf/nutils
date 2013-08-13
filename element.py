@@ -1050,7 +1050,7 @@ class QuadElement( Element ):
       w = None
     elif where.startswith( 'vtk' ):
       if ndims == 1:
-        coords = numpy.array([[0,0]]).T
+        coords = numpy.array([[0,1]]).T
       elif ndims == 2:
         coords = numpy.array([[0,0],[1,0],[1,1],[0,1]])
       elif ndims == 3:
