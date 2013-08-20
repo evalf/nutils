@@ -48,6 +48,51 @@ class Fork( object ):
     if not exctype:
       assert status == 0, 'one or more subprocesses failed'
 
+class AlternativeFork( object ):
+  'single master, multiple slave fork context, unwinds at exit'
+
+  def __init__( self, nprocs ):
+    'constructor'
+
+    self.nprocs = nprocs
+    self.children = None
+
+  def __enter__( self ):
+    'fork and return iproc'
+
+    children = []
+    for self.iproc in range( 1, self.nprocs ):
+      child_pid = os.fork()
+      if not child_pid:
+        break
+      children.append( child_pid )
+    else:
+      self.children = children
+      self.iproc = 0
+    self.oldcontext = log.context( 'proc %d' % ( self.iproc+1 ), depth=1 )
+    return self.iproc
+
+  def __exit__( self, exctype, excvalue, tb ):
+    'kill all processes but first one'
+
+    status = 0
+    try:
+      if exctype:
+        log.traceback(( exctype, excvalue, tb ))
+        status = 1
+      while self.children:
+        child_pid, child_status = os.wait()
+        self.children.remove( child_pid )
+        if child_status:
+          status = 1
+      log.restore( self.oldcontext, depth=1 )
+    except: # should not happen.. but just to be sure
+      status = 1
+    if self.iproc:
+      os._exit( status )
+    if not exctype:
+      assert status == 0, 'one or more subprocesses failed'
+
 def fork( func, nice=19 ):
   'fork and run (return value is lost)'
 
