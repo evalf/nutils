@@ -1644,7 +1644,6 @@ class PolyLine( StdElem ):
   @core.cache
   def eval( self, points, grad=0 ):
     'evaluate'
-    print '@ PolyLine.eval: ', self, points.sum()
 
     assert points.shape[-1] == 1
     x = points[...,0]
