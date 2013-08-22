@@ -256,7 +256,7 @@ class NanVec( numpy.ndarray ):
     return self.copy().__ior__( other )
 
 class Clock( object ):
-  'simpel interval timer'
+  'simple interval timer'
 
   def __init__( self, interval ):
     'constructor'

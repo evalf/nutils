@@ -516,7 +516,6 @@ class ProductElement( Element ):
     return coords, weights
   
   @property
-  @core.cache
   def orientation( self ):
     '''Neighborhood of elem1 and elem2 and transformations to get mutual overlap in right location
     O: neighborhood,  as given by Element.neighbor(),
@@ -546,10 +545,11 @@ class ProductElement( Element ):
       raise NotImplementedError( 'Reorientation not implemented for element of class %s' % type(self.elem1) )
     return neighborhood, transf1, transf2
 
+  @staticmethod
   @core.cache
-  def singular_ischeme_quad( self, ischeme ):
-    neighborhood, transf1, transf2 = self.orientation
-    points, weights = self.get_quad_bem_ischeme( ischeme, neighborhood )
+  def singular_ischeme_quad( orientation, ischeme ):
+    neighborhood, transf1, transf2 = orientation
+    points, weights = ProductElement.get_quad_bem_ischeme( ischeme, neighborhood )
     transfpoints = numpy.empty( points.shape )
     transfpoints[:,0] = points[:,0] if transf1 == 0 else \
                         points[:,1] if transf1 == 1 else \
@@ -567,7 +567,7 @@ class ProductElement( Element ):
                       1-points[:,2] if transf2 == 1 else \
                       1-points[:,3] if transf2 == 2 else \
                         points[:,2]
-    return transfpoints, weights
+    return util.ImmutableArray( transfpoints ), util.ImmutableArray( weights )
     
   def eval( self, where ):
     'get integration scheme'
@@ -577,7 +577,7 @@ class ProductElement( Element ):
       assert self.elem1.ndims == 2 and self.elem2.ndims == 2, 'singular quadrature only for bivariate surfaces'
       gauss = 'gauss'+where[8:]
       if isinstance( self.elem1, QuadElement ):
-        xw = self.singular_ischeme_quad( gauss )
+        xw = ProductElement.singular_ischeme_quad( self.orientation, gauss )
       elif isinstance( self.elem1, TriangularElement ):
         raise NotImplementedError( 'Reorientation not yet implemented, cf QuadElement case' )
         xw = self.get_tri_bem_ischeme( gauss, neighborhood )
@@ -895,7 +895,7 @@ class QuadElement( Element ):
     Element.__init__( self, ndims, nodes, index=index, parent=parent, context=context, interface=interface )
 
   @property
-  @core.cache
+  # @core.cache
   def neighbormap( self ):
     '''maps # matching nodes --> codim of interface: {0: -1, 1: 2, 2: 1, 4: 0}
        warning: assumes StructuredTopology'''
@@ -1644,6 +1644,7 @@ class PolyLine( StdElem ):
   @core.cache
   def eval( self, points, grad=0 ):
     'evaluate'
+    print '@ PolyLine.eval: ', self, points.sum()
 
     assert points.shape[-1] == 1
     x = points[...,0]
