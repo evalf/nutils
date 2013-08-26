@@ -593,14 +593,11 @@ class StructuredTopology( Topology ):
       s2 = (slice(None),)*idim + (slice(1,None),)
       for elem1, elem2 in numpy.broadcast( self.structure[s1], self.structure[s2] ):
         A = numpy.zeros((self.ndims,self.ndims-1))
-        #A[range(idim)+range(idim+1,self.ndims)] = numpy.eye(self.ndims-1)
         A[:idim] = eye[:idim]
         A[idim+1:] = -eye[idim:]
-        b1 = numpy.zeros(self.ndims)
-        b1[idim] = 1.
-        b2 = numpy.zeros(self.ndims)
-        context1 = elem1, element.AffineTransformation( b1, A )
-        context2 = elem2, element.AffineTransformation( b2, A )
+        b = numpy.hstack( [ numpy.zeros(idim+1), numpy.ones(self.ndims-idim) ] )
+        context1 = elem1, element.AffineTransformation( b[1:], A )
+        context2 = elem2, element.AffineTransformation( b[:-1], A )
         nodes = numpy.reshape( elem1.nodes, [2]*elem1.ndims )[s2].ravel()
         assert numpy.all( nodes == numpy.reshape( elem2.nodes, [2]*elem1.ndims )[s1].ravel() )
         ielem = element.QuadElement( ndims=self.ndims-1, nodes=nodes, interface=(context1,context2) )

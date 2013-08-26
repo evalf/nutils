@@ -459,10 +459,7 @@ class ArrayFunc( Evaluable ):
   def swapaxes( self, n1, n2 ):
     'swap axes'
 
-    trans = numpy.arange( self.ndim )
-    trans[n1] = numeric.normdim( self.ndim, n2 )
-    trans[n2] = numeric.normdim( self.ndim, n1 )
-    return align( self, trans, self.ndim )
+    return swapaxes( self, (n1,n2) )
 
   def transpose( self, trans=None ):
     'transpose'
@@ -491,11 +488,15 @@ class ArrayFunc( Evaluable ):
 
     return self.grad(coords,ndims).div(coords,ndims)
 
+  def add_T( self, axes=(-2,-1) ):
+    'add transposed'
+
+    return add_T( self, axes )
+
   def symgrad( self, coords, ndims=0 ):
     'gradient'
 
-    g = self.grad( coords, ndims )
-    return .5 * ( g + g.swapaxes(-2,-1) )
+    return .5 * add_T( self.grad( coords, ndims ) )
 
   def div( self, coords, ndims=0 ):
     'gradient'
@@ -1156,7 +1157,7 @@ class Determinant( ArrayFunc ):
     ArrayFunc.__init__( self, args=[func], evalf=numeric.determinant, shape=func.shape[:-2] )
 
   def _localgradient( self, ndims ):
-    Finv = inverse( self.func ).swapaxes(-2,-1)
+    Finv = swapaxes( inverse( self.func ) )
     G = localgradient( self.func, ndims )
     return self[...,_] * sum( Finv[...,_] * G, axes=[-3,-2] )
 
@@ -1640,7 +1641,7 @@ class TakeDiag( ArrayFunc ):
     ArrayFunc.__init__( self, args=[func], evalf=numeric.takediag, shape=func.shape[:-1] )
 
   def _localgradient( self, ndims ):
-    return takediag( localgradient( self.func, ndims ), -3, -2 ).swapaxes( -2, -1 )
+    return swapaxes( takediag( localgradient( self.func, ndims ), -3, -2 ) )
 
   def _sum( self, axis ):
     if axis != self.ndim-1:
@@ -2051,7 +2052,7 @@ class Diagonalize( ArrayFunc ):
     ArrayFunc.__init__( self, args=[func], evalf=numeric.diagonalize, shape=shape )
 
   def _localgradient( self, ndims ):
-    return diagonalize( localgradient( self.func, ndims ).swapaxes(-2,-1) ).swapaxes(-3,-1)
+    return swapaxes( diagonalize( swapaxes( localgradient( self.func, ndims ), (-2,-1) ) ), (-3,-1) )
 
   def _get( self, i, item ):
     if i >= self.ndim-2:
@@ -2950,6 +2951,17 @@ divide = lambda arg1, arg2: multiply( arg1, reciprocal(arg2) )
 subtract = lambda arg1, arg2: add( arg1, negative(arg2) )
 mean = lambda arg: .5 * ( arg + opposite(arg) )
 jump = lambda arg: arg - opposite(arg)
+add_T = lambda arg, axes=(-2,-1): swapaxes( arg, axes ) + arg
+
+def swapaxes( arg, axes=(-2,-1) ):
+  'swap axes'
+  
+  arg = _asarray( arg )
+  n1, n2 = axes
+  trans = numpy.arange( arg.ndim )
+  trans[n1] = numeric.normdim( arg.ndim, n2 )
+  trans[n2] = numeric.normdim( arg.ndim, n1 )
+  return align( arg, trans, arg.ndim )
 
 def opposite( arg ):
   'evaluate jump over interface'
