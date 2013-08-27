@@ -809,17 +809,25 @@ class StructuredTopology( Topology ):
       nodes_structure[...,idim] = numpy.asarray( inodes ).reshape( shape )
     return self.linearfunc().dot( nodes_structure.reshape( -1, self.ndims ) )
 
-  @property
   @core.weakcache
+  def refine_nu( self, N ):
+    'refine non-uniformly'
+
+    N = tuple(N)
+    assert len(N) == self.ndims
+    structure = numpy.array( [ elem.children_by(N) if elem is not None else [None]*numpy.product(N) for elem in self.structure.flat ] )
+    structure = structure.reshape( self.structure.shape + tuple(N) )
+    structure = structure.transpose( sum( [ ( i, self.ndims+i ) for i in range(self.ndims) ], () ) )
+    structure = structure.reshape( self.structure.shape * numpy.asarray(N) )
+    refined = StructuredTopology( structure )
+    refined.groups = { key: group.refine_nu( N ) for key, group in self.groups.items() }
+    return refined
+
+  @property
   def refined( self ):
     'refine entire topology'
 
-    structure = numpy.array( [ list(elem.children) if elem is not None else [None]*(2**self.ndims) for elem in self.structure.flat ] )
-    structure = structure.reshape( self.structure.shape + (2,)*self.ndims )
-    structure = structure.transpose( sum( [ ( i, self.ndims+i ) for i in range(self.ndims) ], () ) )
-    structure = structure.reshape( [ self.structure.shape[i] * 2 for i in range(self.ndims) ] )
-
-    return StructuredTopology( structure )
+    return self.refine_nu( [2]*self.ndims )
 
   def trim( self, levelset, maxrefine, lscheme='bezier3', finestscheme='uniform2', evalrefine=0, title='trimming', log=log ):
     'trim element along levelset'

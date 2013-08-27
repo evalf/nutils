@@ -670,7 +670,6 @@ class TrimmedElement( Element ):
     return coords, weights
 
   @property
-  @core.cache
   def children( self ):
     'all 1x refined elements'
 
@@ -686,7 +685,7 @@ class TrimmedElement( Element ):
       else:
         child = TrimmedElement( nodes=child.nodes, elem=child, levelset=self.levelset, maxrefine=self.maxrefine-1, lscheme=self.lscheme, finestscheme=self.finestscheme, evalrefine=self.evalrefine-1, parent=parent )
       children.append( child )
-    return children
+    return tuple( children )
 
   def edge( self, iedge ):
     'edge'
@@ -901,22 +900,27 @@ class QuadElement( Element ):
        warning: assumes StructuredTopology'''
     return dict( [ (0,-1) ] + [ (2**(self.ndims-i),i) for i in range(self.ndims+1) ] )
 
+  def children_by( self, N ):
+    'divide element by n'
+
+    assert len(N) == self.ndims
+    nodes = numpy.empty( [ ni+1 for ni in N ], dtype=object )
+    nodes[ tuple( slice(None,None,ni) for ni in N ) ] = numpy.reshape( self.nodes, [2]*self.ndims )
+    for idim in range(self.ndims):
+      s1 = tuple( slice(None) for ni in N[:idim] )
+      s2 = tuple( slice(None,None,ni) for ni in N[idim+1:] )
+      for i in range( 1, N[idim] ):
+        nodes[s1+(i,)+s2] = util.objmap( HalfNode, nodes[s1+(0,)+s2], nodes[s1+(2,)+s2], float(i)/N[idim] )
+
+    elemnodes = [ nodes[ tuple( slice(i,i+2) for i in index ) ].ravel() for index in numpy.ndindex(*N) ]
+    return tuple( QuadElement( nodes=elemnodes[ielem], ndims=self.ndims, parent=(self,transform) )
+      for ielem, transform in enumerate( self.refinedtransform(N) ) )
+
   @property
   def children( self ):
     'all 1x refined elements'
 
-    nodes = numpy.empty( [3]*self.ndims, dtype=object )
-    nodes[ (slice(None,None,2),)*self.ndims ] = numpy.reshape( self.nodes, [2]*self.ndims )
-    for idim in range(self.ndims):
-      s1 = (slice(None),)*idim
-      s2 = (slice(None,None,2),)*(self.ndims-idim-1)
-      nodes[s1+(1,)+s2] = util.objmap( HalfNode, nodes[s1+(0,)+s2], nodes[s1+(2,)+s2] )
-
-    elemnodes = [ nodes[ tuple( slice(i,i+2) for i in index ) ].ravel()
-      for index in numpy.ndindex( (2,)*self.ndims ) ]
-
-    return ( QuadElement( nodes=elemnodes[ielem], ndims=self.ndims, parent=(self,transform) )
-      for ielem, transform in enumerate( self.refinedtransform( self.ndims, 2 ) ) )
+    return self.children_by( (2,)*self.ndims )
 
   @staticmethod
   @core.cache
@@ -977,18 +981,12 @@ class QuadElement( Element ):
 
   @staticmethod
   @core.cache
-  def refinedtransform( ndims, n ):
+  def refinedtransform( N ):
     'refined transform'
 
-    transforms = []
-    transform = 1. / n
-    for i in range( n**ndims ):
-      offset = numpy.zeros( ndims )
-      for idim in range( ndims ):
-        offset[ ndims-1-idim ] = transform * ( i % n )
-        i //= n
-      transforms.append( AffineTransformation( offset=offset, transform=numpy.diag([transform]*ndims) ) )
-    return transforms
+    Nf = numpy.asarray( N, dtype=float )
+    assert Nf.ndim == 1
+    return [ AffineTransformation( offset=I/Nf, transform=numpy.diag(1/Nf) ) for I in numpy.ndindex(*N) ]
 
   def refine( self, n ):
     'refine n times'
@@ -997,13 +995,6 @@ class QuadElement( Element ):
     for i in range(n):
       elems = [ child for elem in elems for child in elem.children ]
     return elems
-
-  @core.cache
-  def refined( self, n ):
-    'refine'
-
-    warnings.warn( 'refined is deprecated, use refine or children instead' )
-    return [ QuadElement( self.ndims, parent=(self,transform) ) for transform in self.refinedtransform( self.ndims, n ) ]
 
   @staticmethod
   @core.cache
@@ -1120,11 +1111,11 @@ class TriangularElement( Element ):
     assert len(transforms) == 4
     nodes = self.nodes
     halfs = HalfNode(nodes[0],nodes[1]), HalfNode(nodes[1],nodes[2]), HalfNode(nodes[2],nodes[0])
-    return [ # TODO check!
+    return tuple([ # TODO check!
       TriangularElement( nodes=[nodes[0],halfs[0],halfs[2]], parent=(self,transforms[0]) ),
       TriangularElement( nodes=[halfs[0],nodes[1],halfs[1]], parent=(self,transforms[1]) ),
       TriangularElement( nodes=[halfs[2],halfs[1],nodes[2]], parent=(self,transforms[2]) ),
-      TriangularElement( nodes=[halfs[1],halfs[2],halfs[0]], parent=(self,transforms[3]) ) ]
+      TriangularElement( nodes=[halfs[1],halfs[2],halfs[0]], parent=(self,transforms[3]) ) ])
       
   def edge( self, iedge ):
     'edge'
