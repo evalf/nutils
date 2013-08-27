@@ -130,10 +130,9 @@ class Cache( object ):
   def __init__( self, *args ):
     'constructor'
 
-    name = sys._getframe(1).f_code.co_name
     import hashlib
     strhash = ','.join( str(arg) for arg in args )
-    md5hash = hashlib.md5( strhash ).hexdigest() + '.' + name
+    md5hash = hashlib.md5( strhash ).hexdigest()
     log.info( 'using cache:', md5hash )
     cachedir = getattr( prop, 'cachedir', 'cache' )
     if not os.path.exists( cachedir ):
