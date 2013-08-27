@@ -1,4 +1,5 @@
 from . import topology, util, numpy, function, element, log, prop, numeric, _
+from scipy import spatial # for def mesh; import cannot be postponed apparently
 import os
 
 def _nansplit( data ):
@@ -151,7 +152,6 @@ class PyPlot( BasePlot ):
         epoints = points[a:b]
         ecolors = colors[a:b]
         if triangulate == 'delaunay':
-          from scipy import spatial
           tri = spatial.Delaunay( epoints )
           vertices = tri.vertices
           e0 = [ edge[0] for edge in tri.convex_hull ]
