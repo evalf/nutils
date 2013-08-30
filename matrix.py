@@ -111,12 +111,18 @@ class Matrix( object ):
   def __sub__( self, other ):
     'add'
 
+    if other == 0:
+      return self
+
     A = self.clone()
     A -= other
     return A
 
   def __add__( self, other ):
     'add'
+
+    if other == 0:
+      return self
 
     A = self.clone()
     A += other
@@ -272,10 +278,16 @@ class SparseMatrix( Matrix ):
   def __add__( self, other ):
     'add'
 
+    if other == 0:
+      return self
+
     return self._binary( other, _csr.csr_plus_csr )
 
   def __sub__( self, other ):
     'subtract'
+
+    if other == 0:
+      return self
 
     return self._binary( other, _csr.csr_minus_csr )
 
