@@ -30,7 +30,9 @@ class Fork( object ):
 
     status = 0
     try:
-      if exctype:
+      if exctype == KeyboardInterrupt:
+        status = 1
+      elif exctype:
         log.traceback(( exctype, excvalue, tb ))
         status = 1
       if self.child_pid:
@@ -126,7 +128,12 @@ def shzeros( shape, dtype=float ):
   else:
     assert all( isinstance(sh,int) for sh in shape )
   size = numpy.product( shape ) if shape else 1
-  typecode = { int: 'i', float: 'd' }[ dtype ]
+  if dtype == float:
+    typecode = 'd'
+  elif dtype == int:
+    typecode = 'i'
+  else:
+    raise Exception, 'invalid dtype: %r' % dtype
   buf = multiprocessing.RawArray( typecode, size )
   return numpy.frombuffer( buf, dtype ).reshape( shape )
 
