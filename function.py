@@ -287,7 +287,8 @@ class Cascade( Evaluable ):
   def cascade( elem, points, ndims, side ):
     'evaluate'
 
-    while elem.ndims != ndims:
+    while elem.ndims != ndims \
+        or elem.interface and elem.interface[side][0].ndims < elem.ndims: # TODO fix hack
       elem, transform = elem.interface[side] if elem.interface \
                    else elem.context or elem.parent
       points = transform.eval( points )
