@@ -584,7 +584,8 @@ class ProductElement( Element ):
       else:
         raise Exception, 'invalid element type %r' % type(self.elem1)
     else:
-      xw = self.concat( self.elem1.eval(where), self.elem2.eval(where) )
+      where1, where2 = where.split( '*' ) if '*' in where else ( where, where )
+      xw = self.concat( self.elem1.eval(where1), self.elem2.eval(where2) )
     return xw
 
 class TrimmedElement( Element ):
