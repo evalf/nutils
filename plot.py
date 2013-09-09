@@ -397,7 +397,7 @@ class VTKFile( BasePlot ):
 
     self.vtkMesh.SetPoints( vtkPoints )
 
-  def unstructuredgrid( self, points ):
+  def unstructuredgrid( self, points, npars=None ):
     """add unstructured grid"""
 
     points = _nansplit( points )
@@ -412,6 +412,9 @@ class VTKFile( BasePlot ):
     for pts in points:
 
       np, ndims = pts.shape
+      if not npars:
+        npars = ndims
+
       vtkelem   = None
 
       if np == 2:
@@ -419,9 +422,9 @@ class VTKFile( BasePlot ):
       elif np == 3:
         vtkelem = vtk.vtkTriangle()
       elif np == 4:  
-        if ndims == 2:
+        if npars == 2:
           vtkelem = vtk.vtkQuad()
-        elif ndims == 3:
+        elif npars == 3:
           vtkelem = vtk.vtkTetra()
       elif np == 8:
         vtkelem = vtk.vtkVoxel() # TODO hexahedron for not rectilinear NOTE ordering changes!
@@ -478,7 +481,7 @@ def writevtu( name, topo, coords, pointdata={}, celldata={}, ascii=False, supere
       topo = topology.UnstructuredTopology( filter(None,[elem if not isinstance(elem,element.TrimmedElement) else elem.elem for elem in topo]), topo.ndims )
 
     points = topo.elem_eval( coords, ischeme='vtk', separate=True )
-    vtkfile.unstructuredgrid( points )
+    vtkfile.unstructuredgrid( points, npars=topo.ndims )
 
     if pointdata:  
       keys, values = zip( *pointdata.items() )
