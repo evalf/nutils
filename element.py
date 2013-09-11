@@ -723,8 +723,10 @@ class TrimmedElement( Element ):
     assert self.finestscheme.startswith('simplex'), 'Expected simplex scheme'
     order = int(self.finestscheme[7:])
 
+    lvltol  = numpy.spacing(100)
+    xistol  = numpy.spacing(100)
     ischeme = self.elem.getischeme( self.elem.ndims, 'bezier2' )
-    where   = self.levelset( self.elem, ischeme ) > 0
+    where   = self.levelset( self.elem, ischeme ) > -lvltol
     points  = ischeme[0][where]
     nodes   = numpy.array(self.nodes)[where].tolist()
     norig   = sum(where)
@@ -742,48 +744,54 @@ class TrimmedElement( Element ):
       ischeme = line.getischeme( line.ndims, 'bezier'+str(order+1) )
       vals    = self.levelset( line, ischeme )
       pts     = ischeme[0]
-      where   = vals > 0
+      where   = vals > -lvltol
+      zeros   = (vals < lvltol) & where
 
       if order == 1:
 
-        if where[0] == where[1]:
+        if where[0] == where[1] or any(zeros):
           continue
-
         xi = vals[0]/(vals[0]-vals[1])
 
       elif order == 2:
 
-        disc = vals[0]**2+(-4*vals[1]+vals[2])**2-2*vals[0]*(4*vals[1]+vals[2])
+        #Check whether the levelset is linear
+        if abs(2*vals[1]-vals[0]-vals[2]) < lvltol:
 
-        if disc < 0.:
-          continue
-
-        num2 = numpy.sqrt( disc )
-        num1 = 3*vals[0]-4*vals[1]+vals[2]
-        den  = 4*(vals[0]-2*vals[1]+vals[2])
-
-        if abs(den) < numpy.spacing(1):
-          continue
-
-        denr = 1./den
-
-        xis = [(num1-num2)*denr,\
-               (num1+num2)*denr ]
-
-        intersects = [(xi >= 0 and xi <= 1) for xi in xis]
-
-        if sum(intersects) == 0:
-          continue
-        elif sum(intersects) == 1:
-          xi = xis[intersects[0] == False]
+          if where[0] == where[2] or zeros[0] or zeros[2]:
+            continue
+          xi = vals[0]/(vals[0]-vals[2])
+          
         else:
-          raise Exception('Found multiple ribbon intersections. MAXREFINE should be increased.')
+
+          disc = vals[0]**2+(-4*vals[1]+vals[2])**2-2*vals[0]*(4*vals[1]+vals[2])
+
+          if disc < -lvltol or abs(disc) < lvltol:
+            #No intersections or minimum at zero
+            continue
+          else:
+            #Two intersections
+            num2 = numpy.sqrt( disc )
+            num1 = 3*vals[0]-4*vals[1]+vals[2]
+            denr = 1./(4*(vals[0]-2*vals[1]+vals[2]))
+
+            xis = [(num1-num2)*denr,\
+                   (num1+num2)*denr ]
+
+            intersects = [(xi > xistol and xi < 1-xistol) for xi in xis]
+
+            if sum(intersects) == 0:
+              continue
+            elif sum(intersects) == 1:
+              xi = xis[intersects[0] == False]
+            else:
+              raise Exception('Found multiple ribbon intersections. MAXREFINE should be increased.')
 
       else:
         #TODO General order scheme based on bisection
         raise NotImplementedError('Simplex generation only implemented for order 1 and 2')
 
-      assert ( xi > numpy.spacing(100) and xi < 1.-numpy.spacing(100) ), 'Illegal local coordinate'
+      assert ( xi > xistol and xi < 1.-xistol ), 'Illegal local coordinate'
  
       elem, transform = line.context
 
