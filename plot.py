@@ -95,6 +95,7 @@ class PyPlot( BasePlot ):
         Collection.__init__(self, **kwargs)
         self.xy = xy
         self.tri = tri
+        self._facecolors = numpy.zeros([numpy.max(tri)+1,4]) # fully transparent
     
       @allow_rasterization
       def draw(self, renderer):
@@ -114,17 +115,18 @@ class PyPlot( BasePlot ):
 
     return TriMesh
 
-  def mesh( self, points, colors, edgecolors='k', triangulate='delaunay', **kwargs ):
+  def mesh( self, points, colors=None, edgecolors='k', triangulate='delaunay', setxylim=True, **kwargs ):
     'plot elemtwise mesh'
 
     assert isinstance( points, numpy.ndarray ) and points.dtype == float
-    assert isinstance( colors, numpy.ndarray ) and colors.dtype == float
-
-    assert points.shape[:-1] == colors.shape
     assert points.shape[-1] == 2
+    if colors is not  None:
+      assert isinstance( colors, numpy.ndarray ) and colors.dtype == float
+      assert points.shape[:-1] == colors.shape
 
-    if points.ndim == 3:
+    if points.ndim == 3: # gridded data: nxpoints x nypoints x ndims
 
+      assert colors is not None
       data = colors.ravel()
       xy = points.reshape( -1, 2 ).T
       ind = numpy.arange( xy.shape[1] ).reshape( points.shape[:-1] )
@@ -133,11 +135,12 @@ class PyPlot( BasePlot ):
       triangles = numpy.concatenate( [vert1,vert2], axis=0 )
       edges = None
 
-    elif points.ndim == 2:
+    elif points.ndim == 2: # mesh: npoints x ndims
 
       nans = numpy.isnan( points ).all( axis=1 )
       split, = numpy.where( nans )
-      assert numpy.isnan( colors[split] ).all()
+      if colors is not None:
+        assert numpy.isnan( colors[split] ).all()
   
       P = []
       N = []
@@ -150,7 +153,8 @@ class PyPlot( BasePlot ):
         if np == 0:
           continue
         epoints = points[a:b]
-        ecolors = colors[a:b]
+        if colors is not None:
+          ecolors = colors[a:b]
         if triangulate == 'delaunay':
           tri = spatial.Delaunay( epoints )
           vertices = tri.vertices
@@ -189,13 +193,15 @@ class PyPlot( BasePlot ):
           raise Exception, 'unknown triangulation method %r' % triangulate
         P.append( epoints.T )
         N.append( vertices + npoints )
-        C.append( ecolors )
+        if colors is not None:
+          C.append( ecolors )
         E.append( epoints[hull] )
         npoints += np
   
       xy = numpy.concatenate( P, axis=1 )
       triangles = numpy.concatenate( N, axis=0 )
-      data = numpy.concatenate( C )
+      if colors is not None:
+        data = numpy.concatenate( C )
       edges = E
 
     else:
@@ -204,7 +210,8 @@ class PyPlot( BasePlot ):
   
     TriMesh = self._trimesh_class()
     polycol = TriMesh( xy, triangles, rasterized=True, **kwargs )
-    polycol.set_array( data )
+    if colors is not None:
+      polycol.set_array( data )
 
     if edges and edgecolors != 'none':
       from matplotlib.collections import LineCollection
@@ -214,6 +221,12 @@ class PyPlot( BasePlot ):
 
     self.gca().add_collection( polycol )
     self.sci( polycol )
+    
+    if setxylim:
+      xmin, ymin = numpy.min( xy, axis=1 )
+      xmax, ymax = numpy.max( xy, axis=1 )
+      self.xlim( xmin, xmax )
+      self.ylim( ymin, ymax )
 
     if edgecolors != 'none':
       return polycol, linecol
