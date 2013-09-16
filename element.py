@@ -717,7 +717,7 @@ class TrimmedElement( Element ):
 
     return trimmededges
 
-  @core.cache
+  #@core.cache
   def triangulate ( self ):
 
     assert self.finestscheme.startswith('simplex'), 'Expected simplex scheme'
@@ -805,7 +805,7 @@ class TrimmedElement( Element ):
     try:
       submesh = util.delaunay( points )
     except RuntimeError:
-      return []
+      return [], []
 
     Simplex = TriangularElement if self.ndims == 2 else TetrahedronElement
 
