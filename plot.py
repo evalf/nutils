@@ -258,19 +258,24 @@ class PyPlot( BasePlot ):
        - slopefmt: format string for slope number'''
 
     i, j = (-2,-1) if x[-1] < x[-2] else (-1,-2) # x[i] > x[j]
+    if not all(numpy.isfinite(x[-2:])) or not all(numpy.isfinite(y[-2:])):
+      log.warning( 'Not plotting slope triangle for +/-inf or nan values' )
+      return
 
     from matplotlib import transforms
     shifttrans = self.gca().transData \
                + transforms.ScaledTranslation( xoffset, -yoffset, self.gcf().dpi_scale_trans )
+    xscale, yscale = self.gca().get_xscale(), self.gca().get_yscale()
 
     # delta() checks if either axis is log or lin scaled
     delta = lambda a, b, scale: numpy.log10(float(a)/b) if scale=='log' else float(a-b) if scale=='linear' else None
-    slope = delta( y[-2], y[-1], self.gca().get_yscale() ) / delta( x[-2], x[-1], self.gca().get_xscale() )
+    slope = delta( y[-2], y[-1], yscale ) / delta( x[-2], x[-1], xscale )
 
     # handle positive and negative slopes correctly
     xtup, ytup = ((x[i],x[j],x[i]), (y[j],y[j],y[i])) if slope > 0 else ((x[j],x[j],x[i]), (y[i],y[j],y[i]))
-    xval, yval = (x[i]**(2/3.) * x[j]**(1/3.), y[i]**(1/3.) * y[j]**(2/3.)) if slope > 0 else \
-                 (x[i]**(1/3.) * x[j]**(2/3.), y[i]**(2/3.) * y[j]**(1/3.))
+    a, b = (2/3., 1/3.) if slope > 0 else (1/3., 2/3.)
+    xval = a*x[i]+b*x[j] if xscale=='linear' else x[i]**a * x[j]**b
+    yval = b*y[i]+a*y[j] if yscale=='linear' else y[i]**b * y[j]**a
 
     self.fill( xtup, ytup,
       color=fillcolor,

@@ -1,4 +1,4 @@
-from . import util, numpy, core, numeric, function, _
+from . import log, util, numpy, core, numeric, function, _
 import warnings
 
 class TrimmedIScheme( object ):
@@ -903,7 +903,7 @@ class QuadElement( Element ):
     Element.__init__( self, ndims, nodes, index=index, parent=parent, context=context, interface=interface )
 
   @property
-  # @core.cache
+  @core.cache
   def neighbormap( self ):
     '''maps # matching nodes --> codim of interface: {0: -1, 1: 2, 2: 1, 4: 0}
        warning: assumes StructuredTopology'''
@@ -1486,6 +1486,7 @@ class PolyProduct( StdElem ):
   @core.cache
   def eval( self, points, grad=0 ):
     'evaluate'
+    # log.debug( '@ PolyProduct.eval: ', id(self), id(points), id(grad) )
 
     assert isinstance( grad, int ) and grad >= 0
 
