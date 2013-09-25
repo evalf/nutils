@@ -58,7 +58,7 @@ class BasePlot( object ):
 class PyPlot( BasePlot ):
   'matplotlib figure'
 
-  def __init__( self, name, imgtype=None, ndigits=3, index=None ):
+  def __init__( self, name, imgtype=None, ndigits=3, index=None, **kwargs ):
     'constructor'
 
     BasePlot.__init__( self, name, ndigits=ndigits, index=index )
@@ -73,7 +73,7 @@ class PyPlot( BasePlot ):
     self.names = [ self.name + '.' + ext for ext in imgtype.split(',') ]
 
     self.__dict__.update( pyplot.__dict__ )
-    fig = self.figure()
+    fig = self.figure( **kwargs )
     fig.patch.set_alpha( 0 )
 
   def save( self, name ):
