@@ -112,7 +112,6 @@ class Evaluable( object ):
     values = self.data + [ elem, points, weights ]
     for evalf, indices in self.operations:
       args = [ values[N+i] for i in indices ]
-      warnings.simplefilter( 'ignore', RuntimeWarning )
       try:
         retval = evalf( *args )
       except KeyboardInterrupt:
