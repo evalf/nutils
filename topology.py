@@ -493,6 +493,31 @@ class Topology( object ):
         topo = topo.refined # proceed to next level
       domain.boundary = UnstructuredTopology( allbelems, ndims=self.ndims-1 )
       domain.boundary.groups = dict( ( tag, UnstructuredTopology( group, ndims=self.ndims-1 ) ) for tag, group in bgroups.items() )
+
+    if hasattr( topo, 'interfaces' ):
+      allinterfaces = []
+      topo = self # topology to examine in next level refinement
+      for irefine in range( nrefine ):
+        for ielem in topo.interfaces:
+          (celem1,transform1), (celem2,transform2) = ielem.interface
+          if celem1 in topoelems:
+            while True:
+              if celem2 in topoelems:
+                allinterfaces.append( ielem )
+                break
+              if not celem2.parent:
+                break
+              celem2, transform2 = celem2.parent
+          elif celem2 in topoelems:
+            while True:
+              if celem1 in topoelems:
+                allinterfaces.append( ielem )
+                break
+              if not celem1.parent:
+                break
+              celem1, transform1 = celem1.parent
+        topo = topo.refined # proceed to next level
+      domain.interfaces = UnstructuredTopology( allinterfaces, ndims=self.ndims-1 )
   
     return domain, funcsp
 
