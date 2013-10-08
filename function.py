@@ -1196,16 +1196,16 @@ class DofIndex( ArrayFunc ):
   def _get( self, i, item ):
     if self.iax <= i < self.iax + self.index.ndim:
       index = get( self.index, i - self.iax, item )
-      return DofIndex( self.array, self.iax, index )
-    return DofIndex( get( self.array, i, item ), self.iax if i > self.iax else self.iax-1, self.index )
+      return take( self.array, index, self.iax )
+    return take( get( self.array, i, item ), self.index, self.iax if i > self.iax else self.iax-1 )
 
   def _add( self, other ):
     if isinstance( other, DofIndex ) and self.iax == other.iax and self.index == other.index:
-      return DofIndex( self.array + other.array, self.iax, self.index )
+      return take( self.array + other.array, self.index, self.iax )
 
   def _multiply( self, other ):
     if not _isfunc(other) and other.ndim == 0:
-      return DofIndex( self.array * other, self.iax, self.index )
+      return take( self.array * other, self.index, self.iax )
 
   def _localgradient( self, ndims ):
     return _zeros( self.shape + (ndims,) )
@@ -1213,13 +1213,13 @@ class DofIndex( ArrayFunc ):
   def _concatenate( self, other, axis ):
     if isinstance( other, DofIndex ) and self.iax == other.iax and self.index == other.index:
       array = numpy.concatenate( [ self.array, other.array ], axis )
-      return DofIndex( array, self.iax, self.index )
+      return take( array, self.index, self.iax )
 
   def _opposite( self ):
-    return DofIndex( self.array, self.iax, opposite(self.index) )
+    return take( self.array, opposite(self.index), self.iax )
 
   def _negative( self ):
-    return DofIndex( -self.array, self.iax, self.index )
+    return take( -self.array, self.index, self.iax )
 
 class Multiply( ArrayFunc ):
   'multiply'
