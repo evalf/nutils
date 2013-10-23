@@ -404,9 +404,9 @@ class ProductElement( Element ):
       pts5 = xi*(1 - eta1*eta2)
       pts6 = xi*eta1 - temp
       points = util.ImmutableArray(
-        [[xi,   pts2, xi,   pts5, pts2, xi  ],
+        [[1-xi,   1-pts2, 1-xi,   1-pts5, 1-pts2, 1-xi  ],
          [pts1, pts3, pts4, pts0, pts6, pts0],
-         [pts2, xi,   pts5, xi,   xi,   pts2],
+         [1-pts2, 1-xi,   1-pts5, 1-xi,   1-xi,   1-pts2],
          [pts3, pts1, pts0, pts4, pts0, pts6]]).reshape( 4, -1 ).T
       points = util.ImmutableArray( points * [-1,1,-1,1] + [1,0,1,0] ) # flipping in x -GJ
       weights = numpy.concatenate( 6*[xi**3*eta1**2*eta2*weights] )
@@ -421,9 +421,9 @@ class ProductElement( Element ):
       H = B - D
       I = A - D
       points = util.ImmutableArray(
-        [[xi, xi, E,  G,  G ],
+        [[1-xi, 1-xi, 1-E,  1-G,  1-G ],
          [C,  G,  F,  H,  I ],
-         [E,  G,  xi, xi, xi],
+         [1-E,  1-G,  1-xi, 1-xi, 1-xi],
          [F,  H,  D,  A,  B ]] ).reshape( 4, -1 ).T
       temp = xi*A
       weights = numpy.concatenate( [A*temp*weights] + 4*[B*temp*weights] )
@@ -432,14 +432,14 @@ class ProductElement( Element ):
       B = A*eta3
       C = xi*eta1
       points = util.ImmutableArray(
-        [[xi, A ],
+        [[1-xi, 1-A ],
          [C,  B ],
-         [A,  xi],
+         [1-A,  1-xi],
          [B,  C ]] ).reshape( 4, -1 ).T
       weights = numpy.concatenate( 2*[xi**2*A*weights] )
     else:
       assert neighborhood == -1, 'invalid neighborhood %r' % neighborhood
-      points = util.ImmutableArray([ eta1*eta2, eta2, eta3*xi, xi ]).T
+      points = util.ImmutableArray([ eta1*eta2, 1-eta2, eta3*xi, 1-xi ]).T
       weights = eta2*xi*weights
     return points, weights
   
@@ -524,17 +524,17 @@ class ProductElement( Element ):
        transf2,       required rotation of elem2 map (is indep of transf1 in UnstructuredTopology.'''
     neighborhood = self.elem1.neighbor( self.elem2 )
     common_nodes = list( set(self.elem1.nodes) & set(self.elem2.nodes) )
-    nodes1 = [self.elem1.nodes.index( ni ) for ni in common_nodes]
-    nodes2 = [self.elem2.nodes.index( ni ) for ni in common_nodes]
-    nodes1.sort()
-    nodes2.sort()
-    if isinstance( self.elem1, QuadElement ):
+    nodes1 = sorted( self.elem1.nodes.index( ni ) for ni in common_nodes )
+    nodes2 = sorted( self.elem2.nodes.index( ni ) for ni in common_nodes )
+    if neighborhood == 0:
       # test for strange topological features
-      if not neighborhood: assert self.elem1==self.elem2, 'Topological feature not supported: try refining here, possibly periodicity causes elems to touch on both sides.'
+      assert self.elem1 == self.elem2, 'Topological feature not supported: try refining here, possibly periodicity causes elems to touch on both sides.'
+      transf1 = transf2 = 0
+    elif neighborhood == -1:
+      transf1 = transf2 = 0
+    elif isinstance( self.elem1, QuadElement ):
       # define local map rotations
-      if neighborhood in (0, -1):
-        transf1 = transf2 = 0
-      elif neighborhood==1:
+      if neighborhood==1:
         transf1 = [[0,2], [0,1], [1,3], [2,3]].index( nodes1 )
         transf2 = [[0,2], [0,1], [1,3], [2,3]].index( nodes2 )
       elif neighborhood==2:
@@ -542,10 +542,44 @@ class ProductElement( Element ):
         transf2 = [[0], [1], [3], [2]].index( nodes2 )
       else:
         raise ValueError( 'Unknown neighbor type %i' % neighborhood )
+    elif isinstance( self.elem1, TriangularElement ):
+      # define local map rotations
+      if neighborhood==1:
+        transf1 = [[0,1], [1,2], [0,2]].index( nodes1 )
+        transf2 = [[0,1], [1,2], [0,2]].index( nodes2 )
+      elif neighborhood==2:
+        transf1 = [[0], [1], [2]].index( nodes1 )
+        transf2 = [[0], [1], [2]].index( nodes2 )
+      else:
+        raise ValueError( 'Unknown neighbor type %i' % neighborhood )
     else:
       raise NotImplementedError( 'Reorientation not implemented for element of class %s' % type(self.elem1) )
     return neighborhood, transf1, transf2
 
+  @staticmethod
+  @core.cache
+  def singular_ischeme_tri( orientation, ischeme ):
+    neighborhood, transf1, transf2 = orientation
+    points, weights = ProductElement.get_tri_bem_ischeme( ischeme, neighborhood )
+    transfpoints = points#numpy.empty( points.shape )
+#   transfpoints[:,0] = points[:,0] if transf1 == 0 else \
+#                       points[:,1] if transf1 == 1 else \
+#                     1-points[:,0] if transf1 == 2 else \
+#                     1-points[:,1]
+#   transfpoints[:,1] = points[:,1] if transf1 == 0 else \
+#                     1-points[:,0] if transf1 == 1 else \
+#                     1-points[:,1] if transf1 == 2 else \
+#                       points[:,0]
+#   transfpoints[:,2] = points[:,2] if transf2 == 0 else \
+#                       points[:,3] if transf2 == 1 else \
+#                     1-points[:,2] if transf2 == 2 else \
+#                     1-points[:,3]
+#   transfpoints[:,3] = points[:,3] if transf2 == 0 else \
+#                     1-points[:,2] if transf2 == 1 else \
+#                     1-points[:,3] if transf2 == 2 else \
+#                       points[:,2]
+    return util.ImmutableArray( transfpoints ), util.ImmutableArray( weights )
+    
   @staticmethod
   @core.cache
   def singular_ischeme_quad( orientation, ischeme ):
@@ -996,6 +1030,10 @@ class QuadElement( Element ):
 
     return ribbons
 
+  @property
+  def edges( self ):
+    return [ self.edge(iedge) for iedge in range(2**self.ndims) ]
+
   def edge( self, iedge ):
     'edge'
     transform = self.edgetransform( self.ndims )[ iedge ]
@@ -1144,6 +1182,10 @@ class TriangularElement( Element ):
       TriangularElement( nodes=[halfs[2],halfs[1],nodes[2]], parent=(self,transforms[2]) ),
       TriangularElement( nodes=[halfs[1],halfs[2],halfs[0]], parent=(self,transforms[3]) ) ])
       
+  @property
+  def edges( self ):
+    return [ self.edge(iedge) for iedge in range(3) ]
+
   def edge( self, iedge ):
     'edge'
 
@@ -1272,6 +1314,10 @@ class TetrahedronElement( Element ):
     'all 1x refined elements'
     raise NotImplementedError( 'Children of tetrahedron' )  
       
+  @property
+  def edges( self ):
+    return [ self.edge(iedge) for iedge in range(4) ]
+
   def edge( self, iedge ):
     'edge'
 
