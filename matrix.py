@@ -460,9 +460,8 @@ class DenseMatrix( Matrix ):
   def __iadd__( self, other ):
     'in place addition'
 
-    assert isinstance( other, DenseMatrix )
     assert self.shape == other.shape
-    self.data += other.data
+    self.data += other.toarray()
     return self
 
   def __isub__( self, other ):
@@ -472,6 +471,11 @@ class DenseMatrix( Matrix ):
     assert self.shape == other.shape
     self.data -= other.data
     return self
+
+  def clone( self ):
+    'clone matrix'
+
+    return DenseMatrix( self.data.copy() )
 
   def addblock( self, rows, cols, vals ):
     'add matrix data'
