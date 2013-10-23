@@ -95,6 +95,12 @@ class AlternativeFork( object ):
     if not exctype:
       assert status == 0, 'one or more subprocesses failed'
 
+def waitpid_noerr( pid ):
+  try:
+    os.waitpid( pid, 0 )
+  except:
+    pass
+
 def fork( func, nice=19 ):
   'fork and run (return value is lost)'
 
@@ -105,7 +111,9 @@ def fork( func, nice=19 ):
   def wrapped( *args, **kwargs ):
     pid = os.fork()
     if pid:
-      thread.start_new_thread( os.waitpid, (pid,0) )
+      thread.start_new_thread( waitpid_noerr, (pid,) ) # kill the zombies
+      # see: http://stackoverflow.com/a/13331632/445031
+      # this didn't work: http://stackoverflow.com/a/6718735/445031
       return pid
     try:
       os.nice( nice )
