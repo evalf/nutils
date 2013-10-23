@@ -165,7 +165,7 @@ def contract_fast( A, B, naxes ):
 
 def dot( A, B, axis=-1 ):
   '''Transform axis of A by contraction with first axis of B and inserting
-     remaining axes. Note: with default axis=1 this leads to multiplication of
+     remaining axes. Note: with default axis=-1 this leads to multiplication of
      vectors and matrices following linear algebra conventions.'''
 
   A = numpy.asarray( A, dtype=float )
