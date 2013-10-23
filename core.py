@@ -35,6 +35,15 @@ def debug_cache( func ):
 def weakcache( func ):
   return _cache( func, weakref.WeakValueDictionary() )
 
+def savelast( func ):
+  saved = [ None, None ]
+  def wrapped( *args ):
+    if args != saved[0]:
+      saved[:] = args, func( *args )
+    return saved[1]
+  return wrapped
+
+
 #def weakcacheprop( func ):
 #  'weakly cached property'
 #
