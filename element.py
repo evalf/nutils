@@ -244,7 +244,7 @@ class Element( object ):
   def __init__( self, ndims, nodes, index=None, parent=None, context=None, interface=None ):
     'constructor'
 
-    assert all( isinstance(node,Node) for node in nodes )
+    #assert all( isinstance(node,Node) for node in nodes )
     self.nodes = tuple(nodes)
     self.ndims = ndims
     assert index is None or parent is None
@@ -393,7 +393,7 @@ class ProductElement( Element ):
   def get_tri_bem_ischeme( ischeme, neighborhood ):
     'Some cached quantities for the singularity quadrature scheme.'
     points, weights = QuadElement.getischeme( ndims=4, where=ischeme )
-    eta1, eta2, eta3, xi = arg.T
+    eta1, eta2, eta3, xi = points.T
     if neighborhood == 0:
       temp = xi*eta1*eta2*eta3
       pts0 = xi*eta1*(1 - eta2)
@@ -408,6 +408,7 @@ class ProductElement( Element ):
          [pts1, pts3, pts4, pts0, pts6, pts0],
          [pts2, xi,   pts5, xi,   xi,   pts2],
          [pts3, pts1, pts0, pts4, pts0, pts6]]).reshape( 4, -1 ).T
+      points = util.ImmutableArray( points * [-1,1,-1,1] + [1,0,1,0] ) # flipping in x -GJ
       weights = numpy.concatenate( 6*[xi**3*eta1**2*eta2*weights] )
     elif neighborhood == 1:
       A = xi*eta1
@@ -579,8 +580,10 @@ class ProductElement( Element ):
       if isinstance( self.elem1, QuadElement ):
         xw = ProductElement.singular_ischeme_quad( self.orientation, gauss )
       elif isinstance( self.elem1, TriangularElement ):
-        raise NotImplementedError( 'Reorientation not yet implemented, cf QuadElement case' )
-        xw = self.get_tri_bem_ischeme( gauss, neighborhood )
+        if self.elem1 == self.elem2:
+          xw = self.get_tri_bem_ischeme( gauss, neighborhood=0 )
+        else:
+          xw = self.concat( self.elem1.eval(gauss), self.elem2.eval(gauss) )
       else:
         raise Exception, 'invalid element type %r' % type(self.elem1)
     else:
@@ -938,14 +941,29 @@ class QuadElement( Element ):
 
     transforms = []
     for idim in range( ndims ):
-      for iside in range( 2 ):
-        offset = numpy.zeros( ndims )
-        offset[idim:] = 1-iside
-        offset[:idim+1] = iside
-        transform = numpy.zeros(( ndims, ndims-1 ))
-        transform.flat[ :(ndims-1)*idim :ndims] = 1 - 2 * iside
-        transform.flat[ndims*(idim+1)-1::ndims] = 2 * iside - 1
-        transforms.append( AffineTransformation( offset=offset, transform=transform ) )
+#     for iside in range( 2 ):
+#       offset = numpy.zeros( ndims )
+#       offset[idim:] = 1-iside
+#       offset[:idim+1] = iside
+#       transform = numpy.zeros(( ndims, ndims-1 ))
+#       transform.flat[ :(ndims-1)*idim :ndims] = 1 - 2 * iside
+#       transform.flat[ndims*(idim+1)-1::ndims] = 2 * iside - 1
+#       transforms.append( AffineTransformation( offset=offset, transform=transform ) )
+      offset = numpy.zeros( ndims )
+      offset[:idim] = 1
+      transform = numpy.zeros(( ndims, ndims-1 ))
+      transform.flat[ :(ndims-1)*idim :ndims] = -1
+      transform.flat[ndims*(idim+1)-1::ndims] = 1
+      # flip normal:
+      offset[idim-1] = 1 - offset[idim-1]
+      transform[idim-1] *= -1
+      transforms.append( AffineTransformation( offset=offset.copy(), transform=transform.copy() ) )
+      # other side:
+      offset[idim] = 1
+      # flip normal back:
+      offset[idim-1] = 1 - offset[idim-1]
+      transform[idim-1] *= -1
+      transforms.append( AffineTransformation( offset=offset, transform=transform ) )
     return transforms
 
   @property
@@ -1063,8 +1081,8 @@ class QuadElement( Element ):
       if ndims == 1:
         coords = p[_].T
       elif ndims == 2:
-        coords = numpy.array([ p[ range(N) + [N-1]*(N-2) + range(N)[::-1] + [0]*(N-2) ],
-                               p[ [0]*(N-1) + range(N) + [N-1]*(N-2) + range(1,N)[::-1] ] ]).T
+        coords = numpy.array([ p[ range(N) + [N-1]*(N-2) + range(N)[::-1] + [0]*(N-1) ],
+                               p[ [0]*(N-1) + range(N) + [N-1]*(N-2) + range(0,N)[::-1] ] ]).T
       elif ndims == 3:
         assert N == 0
         coords = numpy.array([ [0,0,0], [1,0,0], [0,1,0], [1,1,0], [0,0,1], [1,0,1], [0,1,1], [1,1,1] ])
