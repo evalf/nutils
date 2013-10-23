@@ -150,6 +150,8 @@ class Evaluable( object ):
     for i, (evalf,indices) in enumerate( self.operations ):
       args = [ '%%%d=%s' % ( iarg, _obj2str( data[idx] ) ) for iarg, idx in enumerate( indices ) if idx < 0 ]
       node = 'label="%s"' % r'\n'.join( [ '%d. %s' % ( i, evalf.__name__ ) ] + args )
+      #if evalf == Inflate.inflate:
+      #  node += ', style=filled, fillcolor=black, fontcolor=white'
       print >> dot.stdin, '%d [%s]' % ( i, node )
       for iarg, idx in enumerate( indices ):
         if idx >= 0:
@@ -283,12 +285,18 @@ class Cascade( Evaluable ):
     self.side = side
     Evaluable.__init__( self, args=[ELEM,POINTS,ndims,side], evalf=self.cascade )
 
+  def transform( self, ndims ):
+    if ndims == self.ndims:
+      return eye( ndims )
+    assert self.ndims > ndims
+    return Transform( self, Cascade(ndims,self.side) )
+
   @staticmethod
   def cascade( elem, points, ndims, side ):
     'evaluate'
 
     while elem.ndims != ndims \
-        or elem.interface and elem.interface[side][0].ndims < elem.ndims: # TODO fix hack
+        or elem.interface and elem.interface[side][0].ndims < elem.ndims: # TODO make less dirty
       elem, transform = elem.interface[side] if elem.interface \
                    else elem.context or elem.parent
       points = transform.eval( points )
@@ -559,12 +567,14 @@ class ElemInt( ArrayFunc ):
 
     assert _isfunc( func ) and _isfunc( weights )
     assert weights.ndim == 0
-    ArrayFunc.__init__( self, args=[weights,func], evalf=self.elemint, shape=func.shape )
+    ArrayFunc.__init__( self, args=[weights,func,func.ndim], evalf=self.elemint, shape=func.shape )
 
   @staticmethod
-  def elemint( w, f ):
+  def elemint( w, f, ndim ):
     'evaluate'
 
+    if f.ndim == ndim: # the missing point axis problem
+      return f * w.sum()
     return numeric.dot( w, f ) if w.size else numpy.zeros( f.shape[1:] )
 
 class Align( ArrayFunc ):
@@ -818,7 +828,7 @@ class Function( ArrayFunc ):
     assert ndims <= self.cascade.ndims
     grad = Function( self.cascade, self.stdmap, self.igrad+1, self.shape[0] )
     return grad if ndims == self.cascade.ndims \
-      else dot( grad[...,_], transform( self.cascade.ndims, ndims ), axes=-2 )
+      else dot( grad[...,_], self.cascade.transform( ndims ), axes=-2 )
 
 class Choose( ArrayFunc ):
   'piecewise function'
@@ -1740,15 +1750,15 @@ class Power( ArrayFunc ):
 class ElemFunc( ArrayFunc ):
   'trivial func'
 
-  __slots__ = 'domainelem', 'side'
+  __slots__ = 'domainelem', 'side', 'cascade'
 
   def __init__( self, domainelem, side=0 ):
     'constructor'
 
     self.domainelem = domainelem
     self.side = side
-    cascade = Cascade( domainelem.ndims, side )
-    ArrayFunc.__init__( self, args=[cascade,domainelem], evalf=self.elemfunc, shape=[domainelem.ndims] )
+    self.cascade = Cascade( domainelem.ndims, side )
+    ArrayFunc.__init__( self, args=[self.cascade,domainelem], evalf=self.elemfunc, shape=[domainelem.ndims] )
 
   @staticmethod
   def elemfunc( cascade, domainelem ):
@@ -1760,7 +1770,7 @@ class ElemFunc( ArrayFunc ):
     raise Exception, '%r not found' % domainelem
 
   def _localgradient( self, ndims ):
-    return transform( self.domainelem.ndims, ndims )
+    return self.cascade.transform( ndims )
 
   def _opposite( self ):
     return ElemFunc( self.domainelem, 1-self.side )
@@ -2071,6 +2081,10 @@ class Diagonalize( ArrayFunc ):
 
   def _multiply( self, other ):
     return diagonalize( self.func * takediag( other ) )
+
+  def _add( self, other ):
+    if isinstance( other, Diagonalize ):
+      return diagonalize( self.func + other.func )
 
   def _negative( self ):
     return diagonalize( -self.func )
@@ -2986,14 +3000,6 @@ def function( fmap, nmap, ndofs, ndims ):
   dofmap = DofMap( cascade, nmap, axis=axis )
   return Inflate( func, dofmap, length=ndofs, axis=0 )
 
-def transform( fromdims, todims ):
-  'transform to lower-dimensional space'
-
-  if fromdims == todims:
-    return eye( fromdims )
-  assert fromdims > todims
-  return Transform( Cascade(fromdims), Cascade(todims) )
-
 def take( arg, index, axis ):
   'take index'
 
@@ -3122,6 +3128,29 @@ def iwscale( coords, ndims ):
   else:
     raise NotImplementedError, 'cannot compute determinant for %dx%d jacobian' % J.shape[:2]
   return detJ
+
+def supp( funcsp, indices ):
+  'find support of selection of basis functions'
+
+  # FRAGILE! makes lots of assumptions on the nature of funcsp
+  supp = []
+  for func, axes in funcsp.blocks:
+    dofmap = axes[0].dofmap
+    stdmap = func.stdmap
+    for elem, dofs in dofmap.items():
+      while True:
+        std = stdmap.get( elem )
+        nshapes = 0 if not std \
+           else std[1].sum() if isinstance( std, tuple ) \
+           else std.nshapes
+        if numpy.intersect1d( dofs[:nshapes], indices, assume_unique=True ).size:
+          supp.append( elem )
+        dofs = dofs[nshapes:]
+        if not elem.parent:
+          break
+        elem, trans = elem.parent
+      assert not dofs.size
+  return supp
 
 # CBUILDER
 #
