@@ -28,6 +28,40 @@ class Topology( object ):
 
     self.ndims = ndims
 
+  def refined_by( self, refine ):
+    'create refined space by refining dofs in existing one'
+
+    refine = list( refine )
+    refined = []
+    for elem in self:
+      if elem in refine:
+        refine.remove( elem )
+        refined.extend( elem.children )
+      else:
+        refined.append( elem )
+        pelem = elem # only for argument checking:
+        while pelem.parent:
+          pelem, trans = pelem.parent
+          if pelem in refine:
+            refine.remove( pelem )
+
+    assert not refine, 'not all refinement elements were found: %s' % '\n '.join( str(e) for e in refine )
+    return HierarchicalTopology( self, refined )
+
+  @core.cache
+  def stdfunc( self, degree ):
+    'spline from nodes'
+
+    if isinstance( degree, int ):
+      degree = ( degree, ) * self.ndims
+
+    assert all( n == 2 for n in degree ) # for now!
+
+    dofmap = { n: i for i, n in enumerate( sorted( set( n for elem in self for n in elem.nodes ) ) ) }
+    fmap = dict.fromkeys( self, element.PolyTriangle(1) )
+    nmap = { elem: numpy.array([ dofmap[n] for n in elem.nodes ]) for elem in self }
+    return function.function( fmap=fmap, nmap=nmap, ndofs=len(dofmap), ndims=2 )
+
   def __add__( self, other ):
     'add topologies'
 
@@ -295,7 +329,7 @@ class Topology( object ):
     weights = self.project( fun, onto, coords, **kwargs )
     return onto.dot( weights )
 
-  def project( self, fun, onto, coords, tol=0, ischeme='gauss8', title='projecting', droptol=1e-8, exact_boundaries=False, constrain=None, verify=None, maxiter=0, ptype='lsqr' ):
+  def project( self, fun, onto, coords, tol=0, ischeme=None, title='projecting', droptol=1e-8, exact_boundaries=False, constrain=None, verify=None, maxiter=0, ptype='lsqr' ):
     'L2 projection of function onto function space'
 
     log.context( title + ' [%s]' % ptype )
@@ -310,6 +344,10 @@ class Topology( object ):
       assert constrain.shape == onto.shape[:1]
 
     if ptype == 'lsqr':
+      if ischeme is None:
+        ischeme = 'gauss8'
+        warnings.warn( 'please specify an integration scheme for project; the current default ischeme=%r will be removed in future' % ischeme, DeprecationWarning )
+      #assert ischeme is not None, 'ptype %r requires an ischeme' % ptype
       if len( onto.shape ) == 1:
         Afun = function.outer( onto )
         bfun = onto * fun
@@ -329,6 +367,10 @@ class Topology( object ):
         constrain[N] = u[N]
 
     elif ptype == 'convolute':
+      if ischeme is None:
+        ischeme = 'gauss8'
+        warnings.warn( 'please specify an integration scheme for project; the current default ischeme=%r will be removed in future' % ischeme, DeprecationWarning )
+      #assert ischeme is not None, 'ptype %r requires an ischeme' % ptype
       if len( onto.shape ) == 1:
         ufun = onto * fun
         afun = onto
@@ -341,13 +383,39 @@ class Topology( object ):
       N = ~constrain.where & ( scale > droptol )
       constrain[N] = u[N] / scale[N]
 
+    elif ptype == 'nodal':
+
+      ## data = function.Tuple([ fun, onto ])
+      ## F = W = 0
+      ## for elem in self:
+      ##   f, w = data( elem, 'bezier2' )
+      ##   W += w.sum( axis=-1 ).sum( axis=0 )
+      ##   F += numeric.contract( f[:,_,:], w, axis=[0,2] )
+      ## I = (W!=0)
+
+      F = numpy.zeros( onto.shape[0] )
+      W = numpy.zeros( onto.shape[0] )
+      I = numpy.zeros( onto.shape[0], dtype=bool )
+      fun = function._asarray( fun )
+      data = function.Tuple( function.Tuple([ fun, f, function.Tuple(ind) ]) for f, ind in function.blocks( onto ) )
+      for elem in self:
+        for f, w, ind in data( elem, 'bezier2' ):
+          w = w.swapaxes(0,1) # -> dof axis, point axis, ...
+          wf = w * f[ (slice(None),)+numpy.ix_(*ind[1:]) ]
+          W[ind[0]] += w.reshape(w.shape[0],-1).sum(1)
+          F[ind[0]] += wf.reshape(w.shape[0],-1).sum(1)
+          I[ind[0]] = True
+
+      I[constrain.where] = False
+      constrain[I] = F[I] / W[I]
+
     else:
       raise Exception, 'invalid projection %r' % ptype
 
     errfun2 = ( onto.dot( constrain | 0 ) - fun )**2
     if errfun2.ndim == 1:
       errfun2 = errfun2.sum()
-    error2, area = self.integrate( [ errfun2, 1 ], coords=coords, ischeme=ischeme )
+    error2, area = self.integrate( [ errfun2, 1 ], coords=coords, ischeme=ischeme or 'gauss2' )
     avg_error = numpy.sqrt(error2) / area
 
     numcons = constrain.where.sum()
@@ -563,7 +631,7 @@ class StructuredTopology( Topology ):
     return sum( elem is not None for elem in self.structure.flat )
 
   def __iter__( self ):
-    'iterate'
+    'iterate over elements'
 
     return itertools.ifilter( None, self.structure.flat )
 
@@ -587,10 +655,12 @@ class StructuredTopology( Topology ):
       idim = iedge // 2
       iside = iedge % 2
       if self.ndims > 1:
-        s = ( slice(None,None,1-2*iside), ) * idim \
-          + ( -iside, ) \
-          + ( slice(None,None,2*iside-1), ) * (self.ndims-idim-1)
-        # TODO: check that this is correct for all dimensions; should match conventions in elem.edge
+        s = [ slice(None,None,-1) ] * idim \
+          + [ -iside, ] \
+          + [ slice(None,None,1) ] * (self.ndims-idim-1)
+        if not iside: # TODO: check that this is correct for all dimensions; should match conventions in elem.edge
+          s[idim-1] = slice(None,None,1 if idim else -1)
+        s = tuple(s)
         belems = numpy.frompyfunc( lambda elem: elem.edge( iedge ) if elem is not None else None, 1, 1 )( self.structure[s] )
       else:
         belems = numpy.array( self.structure[-iside].edge( iedge ) )
@@ -899,7 +969,7 @@ class IndexedTopology( Topology ):
     Topology.__init__( self, topo.ndims )
 
   def __iter__( self ):
-    'number of elements'
+    'iterate over elements'
 
     return iter( self.elements )
 
@@ -952,7 +1022,7 @@ class UnstructuredTopology( Topology ):
     Topology.__init__( self, ndims )
 
   def __iter__( self ):
-    'number of elements'
+    'iterate over elements'
 
     return iter( self.elements )
 
@@ -1020,5 +1090,159 @@ class UnstructuredTopology( Topology ):
       namedfuncs = {}
 
     return UnstructuredTopology( elements, ndims=2, namedfuncs=namedfuncs )
+
+class HierarchicalTopology( Topology ):
+  'collection of nested topology elments'
+
+  def __init__( self, basetopo, elements ):
+    'constructor'
+
+    if isinstance( basetopo, HierarchicalTopology ):
+      basetopo = basetopo.basetopo
+    self.basetopo = basetopo
+    self.elements = tuple(elements)
+    Topology.__init__( self, basetopo.ndims )
+
+  def __iter__( self ):
+    'iterate over elements'
+
+    return iter(self.elements)
+
+  def __len__( self ):
+    'number of elements'
+
+    return len(self.elements)
+
+  @property
+  @core.cache
+  def boundary( self ):
+    'boundary elements & groups'
+
+    assert hasattr( self.basetopo, 'boundary' )
+    allbelems = []
+    bgroups = {}
+    topo = self.basetopo # topology to examine in next level refinement
+    for irefine in range( nrefine ):
+      belemset = set()
+      for belem in topo.boundary:
+        celem, transform = belem.context
+        if celem in topoelems:
+          belemset.add( belem )
+      allbelems.extend( belemset )
+      for btag, belems in topo.boundary.groups.iteritems():
+        bgroups.setdefault( btag, [] ).extend( belemset.intersection(belems) )
+      topo = topo.refined # proceed to next level
+    boundary = UnstructuredTopology( allbelems, ndims=self.ndims-1 )
+    boundary.groups = dict( ( tag, UnstructuredTopology( group, ndims=self.ndims-1 ) ) for tag, group in bgroups.items() )
+    return boundary
+
+  @property
+  @core.cache
+  def interfaces( self ):
+    'interface elements & groups'
+
+    assert hasattr( self.basetopo, 'interfaces' )
+    allinterfaces = []
+    topo = self.basetopo # topology to examine in next level refinement
+    for irefine in range( nrefine ):
+      for ielem in topo.interfaces:
+        (celem1,transform1), (celem2,transform2) = ielem.interface
+        if celem1 in topoelems:
+          while True:
+            if celem2 in topoelems:
+              allinterfaces.append( ielem )
+              break
+            if not celem2.parent:
+              break
+            celem2, transform2 = celem2.parent
+        elif celem2 in topoelems:
+          while True:
+            if celem1 in topoelems:
+              allinterfaces.append( ielem )
+              break
+            if not celem1.parent:
+              break
+            celem1, transform1 = celem1.parent
+      topo = topo.refined # proceed to next level
+    return UnstructuredTopology( allinterfaces, ndims=self.ndims-1 )
+
+  def _funcspace( self, mkspace ):
+
+    log.context( 'generating refined space' )
+
+    dofmap = {} # IEN mapping of new function object
+    stdmap = {} # shape function mapping of new function object, plus boolean vector indicating which shapes to retain
+    ndofs = 0 # total number of dofs of new function object
+    remaining = len(self) # element count down (know when to stop)
+  
+    topo = self.basetopo # topology to examine in next level refinement
+    newdiscard = []
+    parentelems = []
+    maxrefine = 9
+    for irefine in range( maxrefine ):
+  
+      funcsp = mkspace( topo ) # shape functions for level irefine
+      (func,(dofaxis,)), = function.blocks( funcsp ) # separate elem-local funcs and global placement index
+  
+      discard = set(newdiscard)
+      newdiscard = []
+      supported = numpy.ones( funcsp.shape[0], dtype=bool ) # True if dof is contained in topoelems or parentelems
+      touchtopo = numpy.zeros( funcsp.shape[0], dtype=bool ) # True if dof touches at least one topoelem
+      myelems = [] # all top-level or parent elements in level irefine
+      for elem, idofs in dofaxis.dofmap.items():
+        if elem in self.elements:
+          remaining -= 1
+          touchtopo[idofs] = True
+          myelems.append( elem )
+          newdiscard.append( elem )
+        else:
+          pelem, trans = elem.parent
+          if pelem in discard:
+            newdiscard.append( elem )
+            supported[idofs] = False
+          else:
+            parentelems.append( elem )
+            myelems.append( elem )
+  
+      keep = numpy.logical_and( supported, touchtopo ) # THE refinement law
+
+      for elem in myelems: # loop over all top-level or parent elements in level irefine
+        idofs = dofaxis.dofmap[elem] # local dof numbers
+        mykeep = keep[idofs]
+        std = func.stdmap[elem]
+        assert isinstance(std,element.StdElem)
+        if mykeep.all():
+          stdmap[elem] = std # use all shapes from this level
+        elif mykeep.any():
+          stdmap[elem] = std, mykeep # use some shapes from this level
+        newdofs = [ ndofs + keep[:idof].sum() for idof in idofs if keep[idof] ] # new dof numbers
+        if irefine: # not at lowest level
+          pelem, transform = elem.parent
+          newdofs.extend( dofmap[pelem] ) # add dofs of all underlying 'broader' shapes
+        dofmap[elem] = numpy.array(newdofs) # add result to IEN mapping of new function object
+  
+      ndofs += keep.sum() # update total number of dofs
+      if not remaining:
+        break
+      topo = topo.refined # proceed to next level
+  
+    else:
+
+      raise Exception, 'elements remaining after %d iterations' % maxrefine
+
+    for elem in parentelems:
+      del dofmap[elem] # remove auxiliary elements
+
+    return function.function( stdmap, dofmap, ndofs, self.ndims )
+
+  def stdfunc( self, *args, **kwargs ):
+    return self._funcspace( lambda topo: topo.stdfunc( *args, **kwargs ) )
+
+  def linearfunc( self, *args, **kwargs ):
+    return self._funcspace( lambda topo: topo.linearfunc( *args, **kwargs ) )
+
+  def splinefunc( self, *args, **kwargs ):
+    return self._funcspace( lambda topo: topo.splinefunc( *args, **kwargs ) )
+
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
