@@ -81,14 +81,14 @@ def revolve( topo, coords, nelems, degree=4, axis=0 ):
 
   return revolved_topo, revolved_func.dot( weights )
 
-def gmesh( path, btags=[], name=None ):
+def gmesh( path, btags={}, name=None ):
   'gmesh'
 
   if name is None:
     name = os.path.basename(path)
 
   if isinstance( btags, str ):
-    btags = ( 'all,' + btags ).split( ',' )
+    btags = { i+1: btag for i, btag in enumerate( btags.split(',') ) }
 
   lines = iter( open( path, 'r' ) )
 
@@ -158,11 +158,14 @@ def gmesh( path, btags=[], name=None ):
     n1, n2 = nodes
     elem, = connected[n1] & connected[n2]
     e1, e2, e3 = nmap[ elem ]
-    if e1==n1 and e2==n2:
+    if   e1==n1 and e2==n2 \
+      or e1==n2 and e2==n1:
       iedge = 1
-    elif e2==n1 and e3==n2:
+    elif e2==n1 and e3==n2 \
+      or e2==n2 and e3==n1:
       iedge = 2
-    elif e3==n1 and e1==n2:
+    elif e3==n1 and e1==n2 \
+      or e3==n2 and e1==n1:
       iedge = 0
     else:
       raise Exception, 'cannot match edge, perhaps order is reversed in gmesh'
@@ -175,7 +178,13 @@ def gmesh( path, btags=[], name=None ):
   namedfuncs = { 'spline2': linearfunc }
   topo = topology.UnstructuredTopology( elements, ndims=2, namedfuncs=namedfuncs )
   topo.boundary = topology.UnstructuredTopology( belements, ndims=1 )
-  topo.boundary.groups = dict( ( btags[tag], topology.UnstructuredTopology( group, ndims=1 ) ) for tag, group in bgroups.items() )
+  topo.boundary.groups = {}
+  for tag, group in bgroups.items():
+    try:
+      tag = btags[tag]
+    except:
+      pass
+    topo.boundary.groups[tag] = topology.UnstructuredTopology( group, ndims=1 )
 
   return topo, function.ElemFunc( domainelem )
 
