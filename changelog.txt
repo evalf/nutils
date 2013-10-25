@@ -1,5 +1,57 @@
-PyPlot. 
-  - cspy: extends matplotlib.pyplot.spy() by color coding elements
+Finity 2.01 "Bran" 2013-10-25 --- major enhancements
+
+Finite Cell Method. Via topology.trim a structured topology can be
+trimmed over a levelset. The result is again a structured topology
+with cut elements of type TrimmedElement, and removed elements
+replaced by None. 
+
+Discontinuous functions. Added Topology.discontfunc for discontinuous
+function spaces. Additionally, Topology.interfaces for the skeleton of
+the domain consisting of interface elements, pointing at both
+neighbours in the element tree. Cascade by default follows the first,
+but can be directed towards the second using function.opposite. Does
+not generalize yet to multiple levels (interfaces of interfaces).
+Built on top of opposite are mean and jump, useful in DG formulations
+o.a.
+
+Double integration. By integrating over the product domain
+(domain**2), consisting of ProductElements pointing at two original
+domain elements in the element tree, a double integration can be
+performed where the 'inner' and 'outer' coords are distinguished via
+'opposite'. Elements will be of the new type ProductElement. If the
+domain is a surface, then on its product domain the integration
+schemes 'singular%i' are available, an implementation of Sauter's
+schemes for strongly singular integrals arising in the BEM.
+
+Nodes. Elements have a 'node' attribute, listing objects that
+connected elements have in common. More common nodes signify a higher
+neighborhood order, with identity in the extreme case that all nodes
+are common.
+
+Mesh vizualisation. Added PyPlot.mesh which triangulates batches of
+sample points separated by nan-values (as introduced by
+Topology.elem_eval with separate=True) and colours them using linear
+interpolation. This replaces the former polygon-based approach and
+obviates separate sampling of element boundaries.
+
+A priori dof removal. StructuredTopology.splinefunc takes a removedofs
+argument (default None) which lists, in order of spatial dimension,
+the degrees of freedom that are to be removed from the function basis,
+with the convention that negative numbers count from the end. For
+example, removedofs=[(0,1),(-1,)] removes the first two basis
+functions in the first mesh direction, and the last basis function in
+the second mesh direction.
+
+Library. A new module for small utilities, that are problem specific
+but nonetheless generic enough to be reused among projects. Currently
+contains the Hookean stress tensor, used by the elasticity test case.
+
+Hierarchic refinement. The new Topology.refined_by creates a
+HierarchicalTopology that contains all indicated elements refined, and
+all others elements copied. Can be repeated for further refinements.
+Relies on base topology and uniform refinements for function
+generation by selecting the largest linearly independent set of
+supported functions. Boundary and interface groups are preserved.
 
 Finite difference approximation. function.fdapprox computes a finite
 difference approximation of the Fréchet derivative of an evaluable.
@@ -8,10 +60,38 @@ solve, the finite difference approximation should converge (in the
 Hilbert-Schmidt norm with rate 1 w.r.t. the perturbation, to be
 precise).
 
-3D BEM integration schemes. If the domain is a surface, then on its
-product domain the integration schemes 'singular%i' are available, an
-implementation of Sauter's schemes for strongly singular integrals
-arising in the BEM.
+Further changed:
+
+  - disabled attribute storage (__slots__) for many objects such as
+    Element, Evaluable, Node, etc.
+  - function: added swapaxes
+  - function: added add_T, returns arg + arg.T
+  - function: added supp, returns supporting elements for
+    given function space and dofs
+  - function: added arcsin
+  - function: added Interpolate, performs linear interpolation for
+    evaluable index in ordered lookup data
+  - function: added PointData class for history parameters
+  - function: added ArrayFunc.laplace for convenience
+  - topology: parallellized elem_eval
+  - topology: force_dense flag in integrate, forces dense output
+  - parallel: added parmap
+  - log: introduced 'user' log level
+  - plot: added PyPlot.cspy, extends matplotlib.pyplot.spy() by color
+    coding elements
+  - plot: slope_triangle supports lin-lin, semilogx, semilogy plots
+    and negative slopes
+  - matrix: Matrix supports scalar multiplication
+  - matrix: DenseMatrix supports in-place addition
+  - viewer: fixed caching in redirects
+  - viewer: non-images now viewable as iframe
+  - util: added Terminate exception that suppresses the traceback
+
+This release features contributions from Rody van Tuijl, Clemens
+Verhoosel, Timo van Opstal, and Xunxun Wu.
+
+* * *
+
 
 Finity 2.00 "Rickon" --- major enhancements
 
