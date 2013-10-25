@@ -80,11 +80,11 @@ class PyPlot( BasePlot ):
   def __exit__( self, *exc_info ):
     'exit with block'
 
+    BasePlot.__exit__( self, *exc_info )
     try:
       self.close( self._fig )
     except:
       log.warning( 'failed to close figure' )
-    BasePlot.__exit__( self, *exc_info )
 
   def save( self, name ):
     'save images'
