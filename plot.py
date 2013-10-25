@@ -73,8 +73,18 @@ class PyPlot( BasePlot ):
     self.names = [ self.name + '.' + ext for ext in imgtype.split(',') ]
 
     self.__dict__.update( pyplot.__dict__ )
-    fig = self.figure( **kwargs )
-    fig.patch.set_alpha( 0 )
+
+    self._fig = self.figure( **kwargs )
+    self._fig.patch.set_alpha( 0 )
+
+  def __exit__( self, *exc_info ):
+    'exit with block'
+
+    try:
+      self.close( self._fig )
+    except:
+      log.warning( 'failed to close figure' )
+    BasePlot.__exit__( self, *exc_info )
 
   def save( self, name ):
     'save images'
