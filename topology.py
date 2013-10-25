@@ -70,6 +70,14 @@ class Topology( object ):
     assert self.ndims == other.ndims
     return UnstructuredTopology( set(self) | set(other), ndims=self.ndims )
 
+  def __sub__( self, other ):
+    'add topologies'
+
+    if self is other:
+      return self
+    assert self.ndims == other.ndims
+    return UnstructuredTopology( set(self) - set(other), ndims=self.ndims )
+
   def __mul__( self, other ):
     'element products'
 
