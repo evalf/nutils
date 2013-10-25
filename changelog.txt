@@ -1,4 +1,4 @@
-Finity 2.01 "Bran" 2013-10-25 --- major enhancements
+Finity 2.01 "Ned" 2013-10-25 --- major enhancements
 
 Finite Cell Method. Via topology.trim a structured topology can be
 trimmed over a levelset. The result is again a structured topology
