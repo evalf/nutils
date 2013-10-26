@@ -1,0 +1,70 @@
+#! /usr/bin/env python
+
+from finity import *
+
+
+@parallel.fork
+def makeplots( domain, coords, c, psi, index ):
+
+  log.context( 'plots' )
+
+  force = c * psi.grad(coords)
+  if domain.ndims == 3:
+    domain = domain.boundary['front']
+    coords = coords[:2]
+    force = force[:2]
+
+  xpnt, cpnt = domain.elem_eval( [ coords, c ], ischeme='bezier5', title='mesh', separate=True )
+  xy, uv = domain.elem_eval( [ coords, force ], ischeme='uniform1', title='quiver', separate=False )
+
+  with plot.PyPlot( 'concentration', ndigits=4, index=index ) as plt:
+    plt.mesh( xpnt, cpnt )
+    plt.colorbar()
+    plt.quiver( xy[:,0], xy[:,1], uv[:,0], uv[:,1], pivot='middle' )
+    plt.xlim( 0, 1 )
+    plt.ylim( 0, 1 )
+
+
+def main( nelems=40, epsilon=.04, timestep=.01, sym3d=False, seed=0 ):
+
+  xnodes = ynodes = numpy.linspace(0,1,nelems+1)
+  if sym3d:
+    phinodes = [ 0, 2*numpy.pi ]
+    domain, (x,r,phi) = mesh.rectilinear( [ xnodes, ynodes, phinodes ], periodic=[0,2] )
+    funcsp = domain.splinefunc( degree=(4,4,1), neumann=[2,3], removedofs=[None,[0,-1],None] )
+    coords = function.stack( [ x, r*function.cos(phi), r*function.sin(phi) ] )
+    gauss = 'gauss4,4,1'
+  else:
+    domain, coords = mesh.rectilinear( [ xnodes, ynodes ], periodic=[0] )
+    funcsp = domain.splinefunc( degree=4, neumann=[2,3], removedofs=[None,[0,-1]] )
+    gauss = 'gauss4'
+
+  psi_c = lambda c_: (1./epsilon) * (2*c_)
+  psi_m = lambda c_: -epsilon * c_.laplace(coords)
+  psi_e = lambda c_: (1./epsilon) * (c_**3-3*c_)
+
+  psi = lambda c_: psi_c(c_) + psi_m(c_) + psi_e(c_)
+
+  A = function.outer( funcsp ) \
+    + timestep * function.outer( funcsp.grad(coords), psi_c(funcsp).grad(coords) ).sum() \
+    - timestep * function.outer( funcsp.laplace(coords), psi_m(funcsp) )
+  matrix = domain.integrate( A, coords=coords, ischeme=gauss )
+
+  numpy.random.seed( seed )
+  c = funcsp.dot( numpy.random.normal( -.3, .01, funcsp.shape ) )
+
+  for iiter in util.iterate( 'timestep' ):
+
+    makeplots( domain, coords, c, psi(c), iiter )
+
+    b = funcsp * c \
+      - timestep * ( funcsp.grad(coords) * psi_e(c).grad(coords) ).sum()
+    rhs, total = domain.integrate( [ b, c ], coords=coords, ischeme=gauss )
+
+    log.info( 'total concentration:', total )
+
+    lhs = matrix.solve( rhs, tol=1e-10 )
+    c = funcsp.dot( lhs )
+
+
+util.run( main )

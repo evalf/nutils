@@ -1,0 +1,63 @@
+#! /usr/bin/env python
+
+from finity import *
+
+
+@parallel.fork
+def makeplots( domain, coords, sol, index ):
+
+  log.context( 'plots' )
+
+  points, colors = domain.elem_eval( [ coords, sol ], ischeme='bezier4', separate=True )
+  with plot.PyPlot( 'solution', index=index ) as plt:
+    plt.mesh( points, colors, triangulate='bezier' )
+    plt.colorbar()
+    plt.xlim( 0, .5*numpy.pi )
+    plt.ylim( 0, .5*numpy.pi )
+
+
+def main( nelems=8, degree=3, beltrami=False ):
+
+  domain, coords = mesh.rectilinear( [(0,.5*numpy.pi,nelems+1)]*2 )
+  #domain, coords = mesh.demo( xmax=.5*numpy.pi, ymax=.5*numpy.pi )
+  x, y = coords
+  exact = function.sin(x) * function.exp(y)
+  funcsp = domain.splinefunc( degree=degree )
+  if beltrami:
+    coords = function.concatenate([ coords, (x**2-y**2)[_] ])
+
+  laplace = function.outer( funcsp.grad(coords,ndims=2) ).sum()
+  matrix = domain.integrate( laplace, coords=coords, ischeme='gauss4', title='matrix' )
+  tmp = funcsp * numpy.exp(.5*numpy.pi) * function.sin(x)
+  rhs = domain.boundary['top'].integrate( tmp, coords=coords, ischeme='gauss6', title='rhs' )
+  cons = domain.boundary['left,bottom'].project( function.sin(x), ischeme='gauss6', coords=coords, onto=funcsp, title='left,bottom edge' )
+  lhs = matrix.solve( rhs, constrain=cons, tol=1e-8, symmetric=True )
+  sol = funcsp.dot(lhs)
+
+  makeplots( domain, coords[:2], sol, nelems )
+  error = sol - exact
+  err = numpy.sqrt( domain.integrate( [ error**2, ( error.grad(coords,ndims=2)**2 ).sum() ], coords=coords, ischeme='gauss6', title='computing error' ) )
+  log.info( 'errors: l2=%f, h1=%f' % tuple(err) )
+
+  return err
+
+
+def conv( degree=3, niter=4 ):
+
+  l2err, h1err = zip( *[ main( nelems=2**i, degree=degree ) for i in util.iterate( 'refine', niter ) ] )
+  h = (.25*numpy.pi) * .5**numpy.arange(niter)
+
+  with plot.PyPlot( 'convergence' ) as plt:
+    plt.subplot( 211 )
+    plt.loglog( h, l2err, 'k*--' )
+    plt.slope_triangle( h, l2err )
+    plt.ylabel( 'L2 error' )
+    plt.grid( True )
+    plt.subplot( 212 )
+    plt.loglog( h, h1err, 'k*--' )
+    plt.slope_triangle( h, h1err )
+    plt.ylabel( 'H1 error' )
+    plt.grid( True )
+
+
+util.run( main, conv )

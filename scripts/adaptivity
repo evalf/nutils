@@ -1,0 +1,60 @@
+#! /usr/bin/env python
+
+from finity import *
+
+
+#@parallel.fork
+def makeplots( domain, coords, greysmooth, index, indicator, supp ):
+
+  xp, yp = topology.UnstructuredTopology( supp, domain.ndims ).elem_eval( coords, ischeme='contour2', separate=True ).T
+  points, fval, xgrad, indic = domain.elem_eval( [ coords, greysmooth, greysmooth.grad(coords)[0], indicator ], ischeme='bezier4', separate=True )
+
+  with plot.PyPlot( 'fval', index=index ) as plt:
+    plt.mesh( points, fval, triangulate='bezier' )
+    plt.plot( xp, yp, 'w' )
+    plt.clim( -1, 1 )
+    plt.colorbar()
+
+  with plot.PyPlot( 'xgrad', index=index ) as plt:
+    plt.mesh( points, xgrad, triangulate='bezier' )
+    plt.plot( xp, yp, 'w' )
+    plt.clim( 0, 18 )
+    plt.colorbar()
+
+  with plot.PyPlot( 'indicator', index=index ) as plt:
+    plt.mesh( points, indic, triangulate='bezier' )
+    plt.plot( xp, yp, 'w' )
+    plt.colorbar()
+
+
+def main( degree=3, niter=30, triangular=False ):
+
+  if triangular:
+    if degree != 2:
+      log.warning( 'warning: setting degree to 2 for triangles' )
+      degree = 2
+    domain, coords = mesh.demo()
+  else:
+    domain, coords = mesh.rectilinear( [ (0,1,2) ] * 2 )
+
+  greydata = function.tanh( ( function.norm2(coords) - .5 ) * 20 )
+
+  for iiter in util.iterate():
+
+    funcsp = domain.splinefunc( degree=degree )
+    greysmooth = domain.projection( greydata, coords=coords, onto=funcsp, ischeme='gauss3', droptol=0, verify=int(funcsp.shape[0]) )
+    indicator = ( greysmooth - greydata )**2
+    if iiter >= niter:
+      break
+
+    weighted_residual = domain.integrate( funcsp * indicator, coords=coords, ischeme='gauss3' )
+    #refine = weighted_residual.argsort()[-len(weighted_residual)//8:-1]
+    refine = weighted_residual.argsort()[-1:]
+    supp = function.supp( funcsp, indices=refine )
+
+    makeplots( domain, coords, greysmooth, iiter, indicator, supp )
+
+    domain = domain.refined_by( supp )
+
+
+util.run( main )
