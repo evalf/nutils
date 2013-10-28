@@ -39,7 +39,6 @@ __all__ = [
   'library',
   'topology',
   'util',
-  'green',
   'matrix',
   'parallel',
   'log',
