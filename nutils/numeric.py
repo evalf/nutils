@@ -6,7 +6,7 @@ except:
   warnings.warn( '''Failed to load _numeric module.
   Falling back on equivalent python implementation. THIS
   MAY SEVERELY IMPACT PERFORMANCE! Pleace compile the C
-  extensions by running 'make' in the finity directory.''', stacklevel=2 )
+  extensions by running 'make' in the nutils directory.''', stacklevel=2 )
   class _numeric:
     @staticmethod
     def contract( A, B, axes ):

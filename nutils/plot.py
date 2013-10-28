@@ -575,7 +575,7 @@ class Pylab( object ):
     log.path( os.path.basename(imgpath) )
 
 class PylabAxis( object ):
-  'matplotlib axis augmented with finity-specific functions'
+  'matplotlib axis augmented with nutils-specific functions'
 
   def __init__( self, ax, title ):
     'constructor'

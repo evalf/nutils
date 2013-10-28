@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from finity import *
+from nutils import *
 import numpy
 
 class FiniteCellTestBase( object ):

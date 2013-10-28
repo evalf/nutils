@@ -1,4 +1,4 @@
-from finity import *
+from nutils import *
 
 
 class FuncTest( object ):

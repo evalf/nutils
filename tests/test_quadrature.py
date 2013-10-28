@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from finity import *
+from nutils import *
 import numpy, re
 from math import gamma
 
@@ -155,7 +155,7 @@ class TestSingularQuadrature( object ):
       points_ref = numpy.empty( points.shape )
       points_ref[:,:2] = transform( points[:,:2], t1 )
       points_ref[:,2:] = transform( points[:,2:], t2 )
-      points_test = elem.singular_ischeme_quad( ischeme )[0]
+      points_test = elem.singular_ischeme_quad( orientation=elem.orientation, ischeme=ischeme )[0]
       assert numpy.linalg.norm( points_ref-points_test ) < 1.e-14
 
       # See if inverse transformation brings back to points[0]

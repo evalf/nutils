@@ -355,11 +355,11 @@ def run( *functions ):
     'dot': False,
   }
   try:
-    execfile( os.path.expanduser( '~/.finityrc' ), {}, properties )
+    execfile( os.path.expanduser( '~/.nutilsrc' ), {}, properties )
   except IOError:
     pass # file does not exist
   except:
-    print 'Error in .finityrc (skipping)'
+    print 'Error in .nutilsrc (skipping)'
     print traceback.format_exc()
 
   if '-h' in sys.argv[1:] or '--help' in sys.argv[1:]:
@@ -462,7 +462,7 @@ def run( *functions ):
 
   commandline = [ ' '.join([ scriptname, funcname ]) ] + [ '  --%s=%s' % item for item in kwargs.items() ]
 
-  log.info( 'finity v2.00+dev' )
+  log.info( 'nutils v0.1+dev' )
   log.info()
   log.info( ' \\\n'.join( commandline ) + '\n' )
   log.info( 'start %s\n' % time.ctime() )

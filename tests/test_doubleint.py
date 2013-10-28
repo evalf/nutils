@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from finity import *
+from nutils import *
 import numpy, warnings
 almostEquals = lambda val, places=7: numpy.abs( val ) < 10.**(-places)
 infnorm = lambda f: numpy.linalg.norm( f, numpy.inf )

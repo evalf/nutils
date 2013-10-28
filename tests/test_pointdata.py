@@ -1,4 +1,4 @@
-from finity import *
+from nutils import *
 import numpy
 
 grid = numpy.linspace( 0., 1., 5 )

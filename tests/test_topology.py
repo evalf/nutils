@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from finity import *
+from nutils import *
 import numpy
 
 grid = numpy.linspace( 0., 1., 4 )

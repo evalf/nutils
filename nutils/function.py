@@ -3065,7 +3065,7 @@ def blocks( arg ):
 def pointdata ( topo, ischeme, func=None, shape=None, value=None ):
   'point data'
 
-  from finity import topology
+  from . import topology
   assert isinstance(topo,topology.Topology)
 
   if func is not None:
@@ -3186,7 +3186,7 @@ def _cfunc( args, body ):
 class CBuilder( object ):
   'cbuilder'
 
-  def __init__( self, cachedir='/tmp/finity' ):
+  def __init__( self, cachedir='/tmp/nutils' ):
     from cffi import FFI
     self.ffi = FFI()
     self.codebase = {}
