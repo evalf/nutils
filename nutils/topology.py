@@ -671,7 +671,7 @@ class StructuredTopology( Topology ):
         s = tuple(s)
         belems = numpy.frompyfunc( lambda elem: elem.edge( iedge ) if elem is not None else None, 1, 1 )( self.structure[s] )
       else:
-        belems = numpy.array( self.structure[-iside].edge( iedge ) )
+        belems = numpy.array( self.structure[-iside].edge( 1-iedge ) )
       boundaries.append( StructuredTopology( belems ) )
 
     if self.ndims == 2:
