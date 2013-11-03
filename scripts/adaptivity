@@ -27,12 +27,12 @@ def makeplots( domain, coords, greysmooth, index, indicator, supp ):
     plt.colorbar()
 
 
-def main( degree=3, niter=30, triangular=False ):
+def main( degree=2, niter=30, triangular=False ):
 
   if triangular:
-    if degree != 2:
-      log.warning( 'warning: setting degree to 2 for triangles' )
-      degree = 2
+    if degree != 1:
+      log.warning( 'warning: setting degree to 1 for triangles' )
+      degree = 1
     domain, coords = mesh.demo()
   else:
     domain, coords = mesh.rectilinear( [ (0,1,2) ] * 2 )

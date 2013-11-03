@@ -16,7 +16,7 @@ def makeplots( domain, coords, sol, index ):
     plt.ylim( 0, .5*numpy.pi )
 
 
-def main( nelems=8, degree=3, beltrami=False ):
+def main( nelems=8, degree=1, beltrami=False ):
 
   domain, coords = mesh.rectilinear( [(0,.5*numpy.pi,nelems+1)]*2 )
   #domain, coords = mesh.demo( xmax=.5*numpy.pi, ymax=.5*numpy.pi )
@@ -42,7 +42,7 @@ def main( nelems=8, degree=3, beltrami=False ):
   return err
 
 
-def conv( degree=3, niter=4 ):
+def conv( degree=1, niter=4 ):
 
   l2err, h1err = zip( *[ main( nelems=2**i, degree=degree ) for i in util.iterate( 'refine', niter ) ] )
   h = (.25*numpy.pi) * .5**numpy.arange(niter)

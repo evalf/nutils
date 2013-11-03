@@ -8,7 +8,7 @@ def makeplots( domain, coords, velo, pres, index ):
 
   log.context( 'figures' )
 
-  funcsp = domain.splinefunc( degree=3 )
+  funcsp = domain.splinefunc( degree=2 )
   grad = funcsp.grad( coords )
   laplace = function.outer( grad ).sum()
   vortfunc = velo.grad(coords)[1,0] - velo.grad(coords)[0,1]
@@ -66,8 +66,8 @@ def main( nelems=24, reynolds=100., strong=False, tol=1e-8, rotation=0., timeste
   cylinder = domain.boundary['left']
   farfield = domain.boundary['right']
 
-  vspace = function.vectorize([ domain.splinefunc( degree=(3,2) ), domain.splinefunc( degree=(2,3) ) ])
-  pspace = domain.splinefunc( degree=2 )
+  vspace = function.vectorize([ domain.splinefunc( degree=(2,1) ), domain.splinefunc( degree=(1,2) ) ])
+  pspace = domain.splinefunc( degree=1 )
   vspace, pspace, lspace = function.chain([ vspace, pspace, [1.] ])
 
   # piola

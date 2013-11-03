@@ -66,7 +66,7 @@ class TestNormalInKernelOfV( object ):
 
   def template( self, degree, geometry, dump=False ):
     'Template for Vn = 0 tests on different geometries.'
-    trac = self.domain.splinefunc( degree=2*(3,) ).vector(3)
+    trac = self.domain.splinefunc( degree=2*(2,) ).vector(3)
     if dump:
       geo = domain.projection( geometry, onto=trac, coords=self.coords )
       refine = 3 if geometry is sphere else 0
@@ -110,7 +110,7 @@ class TestKroneckerKernelGivesSurface( object ):
     cos, sin, pi = function.cos, function.sin, numpy.pi
     phi, theta = .5*pi*coords # |phi| < pi, |theta| < pi/2
     sphere = function.stack( [cos(phi)*cos(theta), sin(phi)*cos(theta), sin(theta)] )
-    velo = domain.splinefunc( degree=2*(3,) ).vector(3)
+    velo = domain.splinefunc( degree=2*(2,) ).vector(3)
     vinf = function.stack( (0.,0.,1.) )
     val = domain.integrate( (velo*vinf).sum(-1), coords=sphere, ischeme='gauss5' ).sum()
 
@@ -125,7 +125,7 @@ class TestOneInKernelOfK( object ):
     self.coords, self.domain, self.ddomain = coords, domain, domain * domain
 
   def template( self, geometry, degree ):
-    trac = self.domain.splinefunc( degree=2*(3,) ).vector(3)
+    trac = self.domain.splinefunc( degree=2*(2,) ).vector(3)
     vinf = function.stack( (0.,0.,1.) )
 
     iw = function.iwscale( geometry, self.domain.ndims )
@@ -159,7 +159,7 @@ class TestShearFlow( object ):
     # domain, coords = mesh.rectilinear( 2*(grid(4),), periodic=(0,1) )
     domain, coords = mesh.rectilinear( 2*(grid(N),), periodic=(0,1) )
     ddomain = domain*domain
-    funcsp = domain.splinefunc( degree=2*(5,) ).vector(3)
+    funcsp = domain.splinefunc( degree=2*(4,) ).vector(3)
     
     # geometry
     R, r = 3, 1

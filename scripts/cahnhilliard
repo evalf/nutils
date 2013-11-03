@@ -31,12 +31,12 @@ def main( nelems=40, epsilon=.04, timestep=.01, sym3d=False, seed=0 ):
   if sym3d:
     phinodes = [ 0, 2*numpy.pi ]
     domain, (x,r,phi) = mesh.rectilinear( [ xnodes, ynodes, phinodes ], periodic=[0,2] )
-    funcsp = domain.splinefunc( degree=(4,4,1), neumann=[2,3], removedofs=[None,[0,-1],None] )
+    funcsp = domain.splinefunc( degree=(3,3,0), neumann=[2,3], removedofs=[None,[0,-1],None] )
     coords = function.stack( [ x, r*function.cos(phi), r*function.sin(phi) ] )
     gauss = 'gauss4,4,1'
   else:
     domain, coords = mesh.rectilinear( [ xnodes, ynodes ], periodic=[0] )
-    funcsp = domain.splinefunc( degree=4, neumann=[2,3], removedofs=[None,[0,-1]] )
+    funcsp = domain.splinefunc( degree=3, neumann=[2,3], removedofs=[None,[0,-1]] )
     gauss = 'gauss4'
 
   psi_c = lambda c_: (1./epsilon) * (2*c_)

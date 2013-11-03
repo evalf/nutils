@@ -510,7 +510,7 @@ class Topology( object ):
     topo = self # topology to examine in next level refinement
     for irefine in log.iterate( 'level', range(nrefine), showpct=False ):
   
-      funcsp = topo.splinefunc( degree ) # shape functions for level irefine
+      funcsp = topo.splinefunc( degree-1 ) # shape functions for level irefine
       (func,(dofaxis,)), = function.blocks( funcsp ) # separate elem-local funcs and global placement index
   
       supported = numpy.ones( funcsp.shape[0], dtype=bool ) # True if dof is contained in topoelems or parentelems
@@ -729,7 +729,7 @@ class StructuredTopology( Topology ):
     for idim in range( self.ndims ):
       periodic_i = idim in periodic
       n = self.structure.shape[idim]
-      p = degree[idim]
+      p = degree[idim]+1
       #k = knots[idim]
 
       if closed == False:
@@ -852,7 +852,7 @@ class StructuredTopology( Topology ):
   def linearfunc( self ):
     'linears'
 
-    return self.splinefunc( degree=2 )
+    return self.splinefunc( degree=1 )
 
   @core.cache
   def stdfunc( self, degree ):
@@ -1047,7 +1047,7 @@ class UnstructuredTopology( Topology ):
   def linearfunc( self ):
     'linear func'
 
-    return self.splinefunc( degree=2 )
+    return self.splinefunc( degree=1 )
 
   @property
   @core.weakcache

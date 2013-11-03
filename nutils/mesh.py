@@ -65,7 +65,7 @@ def revolve( topo, coords, nelems, degree=4, axis=0 ):
     revolved_topo.groups[ 'bottom' ] = revolved_topo[nelems//2:]
 
   print 'topo:', revolved_topo.structure.shape
-  revolved_func = revolved_topo.splinefunc( degree=(degree,)+DEGREE )
+  revolved_func = revolved_topo.splinefunc( degree=(degree-1,)+DEGREE )
 
   assert isinstance( coords, function.StaticDot )
   assert coords.array.ndim == 2
@@ -320,7 +320,7 @@ def igatool( path, name=None ):
     group.boundary = topology.UnstructuredTopology( elements=[], ndims=ndims-1 )
     group.boundary.groups = myboundaries
 
-  funcsp = topo.splinefunc( degree=degree )
+  funcsp = topo.splinefunc( degree=degree-1 )
   coords = ( funcsp[:,_] * points ).sum( 0 )
   return topo, coords #, nodegroups
 
@@ -331,7 +331,7 @@ def fromfunc( func, nelems, ndims, degree=2 ):
     nelems = [ nelems ]
   assert len( nelems ) == func.func_code.co_argcount
   topo, ref = rectilinear( [ numpy.linspace(0,1,n+1) for n in nelems ] )
-  funcsp = topo.splinefunc( degree=degree ).vector( ndims )
+  funcsp = topo.splinefunc( degree=degree-1 ).vector( ndims )
   coords = topo.projection( func, onto=funcsp, coords=ref, exact_boundaries=True )
   return topo, coords
 
