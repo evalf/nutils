@@ -1723,7 +1723,11 @@ class Power( ArrayFunc ):
     return self.power * ( self.func**(self.power-1) )[...,_] * localgradient( self.func, ndims )
 
   def _power( self, n ):
-    return power( self.func, n * self.power )
+    func = self.func
+    newpower = n * self.power
+    if self.power % 2 == 0 and newpower % 2 != 0:
+      func = abs( func )
+    return power( func, newpower )
 
   def _get( self, i, item ):
     return get( self.func, i, item )**self.power
@@ -1746,6 +1750,10 @@ class Power( ArrayFunc ):
       return power( self.func, self.power + other.power )
     if other == self.func:
       return power( self.func, self.power + 1 )
+
+  def _sign( self ):
+    if self.power % 2 == 0:
+      return expand( 1., self.shape )
 
 class ElemFunc( ArrayFunc ):
   'trivial func'
@@ -1819,6 +1827,40 @@ class Pointwise( ArrayFunc ):
     # args = [ opposite(arg,side) for arg in self.args ] # @TO
     args = [ opposite(arg) for arg in self.args ]
     return pointwise( args, self.evalf, self.deriv )
+
+class Sign( ArrayFunc ):
+  'sign'
+
+  __slots__ = 'func',
+
+  def __init__( self, func ):
+    'constructor'
+
+    assert _isfunc( func )
+    self.func = func
+    ArrayFunc.__init__( self, args=[func], evalf=numpy.sign, shape=func.shape )
+
+  def _localgradient( self, ndims ):
+    return _zeros( self.shape + (ndims,) )
+
+  def _takediag( self ):
+    return sign( takediag(self.func) )
+
+  def _get( self, axis, item ):
+    return sign( get( self.func, axis, item ) )
+
+  def _take( self, index, axis ):
+    return sign( take( self.func, index, axis ) )
+
+  def _opposite( self ):
+    return sign( opposite( self.func ) )
+
+  def _sign( self ):
+    return self
+
+  def _power( self, n ):
+    if n % 2 == 0:
+      return expand( 1., self.shape )
 
 class Pointdata( ArrayFunc ):
 
@@ -2934,6 +2976,21 @@ def power( arg, n ):
 
   return Power( arg, n )
 
+def sign( arg ):
+  'sign'
+
+  arg = _asarray( arg )
+
+  if isinstance( arg, numpy.ndarray ):
+    return numpy.sign( arg )
+
+  retval = _call( arg, '_sign' )
+  if retval is not None:
+    assert retval.shape == arg.shape, 'bug in %s._sign' % arg
+    return retval
+
+  return Sign( arg )
+
 nsymgrad = lambda arg, coords: ( symgrad(arg,coords) * coords.normal() ).sum()
 ngrad = lambda arg, coords: ( grad(arg,coords) * coords.normal() ).sum()
 sin = lambda arg: pointwise( [arg], numpy.sin, cos )
@@ -2954,7 +3011,6 @@ greater = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg
 less = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.less, _zeros_like )
 min = lambda arg1, *args: choose( argmin( arg1 if not args else (arg1,)+args, axis=0 ), arg1 if not args else (arg1,)+args )
 max = lambda arg1, *args: choose( argmax( arg1 if not args else (arg1,)+args, axis=0 ), arg1 if not args else (arg1,)+args )
-sign = lambda arg: pointwise( [arg], numpy.sign, _zeros_like )
 abs = lambda arg: arg * sign(arg)
 sinh = lambda arg: .5 * ( exp(arg) - exp(-arg) )
 cosh = lambda arg: .5 * ( exp(arg) + exp(-arg) )
