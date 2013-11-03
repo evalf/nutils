@@ -55,7 +55,7 @@ class Topology( object ):
     if isinstance( degree, int ):
       degree = ( degree, ) * self.ndims
 
-    assert all( n == 2 for n in degree ) # for now!
+    assert all( n == 1 for n in degree ) # for now!
 
     dofmap = { n: i for i, n in enumerate( sorted( set( n for elem in self for n in elem.nodes ) ) ) }
     fmap = dict.fromkeys( self, element.PolyTriangle(1) )
@@ -865,11 +865,11 @@ class StructuredTopology( Topology ):
     dofcount = 1
     slices = []
 
-    stdelem = util.product( element.PolyLine( element.PolyLine.bernstein_poly( d ) ) for d in degree )
+    stdelem = util.product( element.PolyLine( element.PolyLine.bernstein_poly( d+1 ) ) for d in degree )
 
     for idim in range( self.ndims ):
       n = self.structure.shape[idim]
-      p = degree[idim]
+      p = degree[idim] + 1
 
       nd = n * (p-1) + 1
       numbers = numpy.arange( nd )
