@@ -837,7 +837,8 @@ class TrimmedElement( Element ):
       newpoint = pts[0] + xi * ( pts[-1] - pts[0] )
 
       points   = numpy.append( points, newpoint[_], axis=0 ) 
-      vertices.append( HalfVertex( *line.vertices, xi=xi ) )
+      v1, v2 = line.vertices
+      vertices.append( HalfVertex( v1, v2, xi=xi ) )
 
     try:
       submesh = util.delaunay( points )
@@ -1172,15 +1173,14 @@ class TriangularElement( Element ):
   def children( self ):
     'all 1x refined elements'
 
-    transforms = self.refinedtransform( 2 )
-    assert len(transforms) == 4
-    vertices = self.vertices
-    halfs = HalfVertex(vertices[0],vertices[1]), HalfVertex(vertices[1],vertices[2]), HalfVertex(vertices[2],vertices[0])
+    t1, t2, t3, t4 = self.refinedtransform( 2 )
+    v1, v2, v3 = self.vertices
+    h1, h2, h3 = HalfVertex(v1,v2), HalfVertex(v2,v3), HalfVertex(v3,v1)
     return tuple([ # TODO check!
-      TriangularElement( vertices=[vertices[0],halfs[0],halfs[2]], parent=(self,transforms[0]) ),
-      TriangularElement( vertices=[halfs[0],vertices[1],halfs[1]], parent=(self,transforms[1]) ),
-      TriangularElement( vertices=[halfs[2],halfs[1],vertices[2]], parent=(self,transforms[2]) ),
-      TriangularElement( vertices=[halfs[1],halfs[2],halfs[0]], parent=(self,transforms[3]) ) ])
+      TriangularElement( vertices=[v1,h1,h3], parent=(self,t1) ),
+      TriangularElement( vertices=[h1,v2,h2], parent=(self,t2) ),
+      TriangularElement( vertices=[h3,h2,v3], parent=(self,t3) ),
+      TriangularElement( vertices=[h2,h3,h1], parent=(self,t4) ) ])
       
   @property
   def edges( self ):
@@ -1322,12 +1322,8 @@ class TetrahedronElement( Element ):
     'edge'
 
     transform = self.edgetransform[ iedge ]
-
-    vertices = [
-      [ self.vertices[0], self.vertices[2], self.vertices[1] ],
-      [ self.vertices[0], self.vertices[1], self.vertices[3] ],
-      [ self.vertices[0], self.vertices[3], self.vertices[2] ],
-      [ self.vertices[1], self.vertices[2], self.vertices[3] ] ][ iedge ] # TODO check!
+    v1, v2, v3, v4 = self.vertices
+    vertices = [ [v1,v3,v2], [v1,v2,v4], [v1,v4,v3], [v2,v3,v4] ][ iedge ] # TODO check!
     return TriangularElement( vertices=vertices, context=(self,transform) )
 
   @staticmethod
