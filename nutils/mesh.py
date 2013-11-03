@@ -52,7 +52,7 @@ def rectilinear( nodes, periodic=(), name='rect' ):
     topo = topo.make_periodic( periodic )
   return topo, coords
 
-def revolve( topo, coords, nelems, degree=4, axis=0 ):
+def revolve( topo, coords, nelems, degree=3, axis=0 ):
   'revolve coordinates'
 
   # This is a hack. We need to be able to properly multiply topologies.
@@ -65,13 +65,13 @@ def revolve( topo, coords, nelems, degree=4, axis=0 ):
     revolved_topo.groups[ 'bottom' ] = revolved_topo[nelems//2:]
 
   print 'topo:', revolved_topo.structure.shape
-  revolved_func = revolved_topo.splinefunc( degree=(degree-1,)+DEGREE )
+  revolved_func = revolved_topo.splinefunc( degree=(degree,)+DEGREE )
 
   assert isinstance( coords, function.StaticDot )
   assert coords.array.ndim == 2
   nnodes, ndims = coords.array.shape
 
-  phi = ( 1 + numpy.arange(nelems) - .5*degree ) * ( 2 * numpy.pi / nelems )
+  phi = ( .5 + numpy.arange(nelems) - .5*degree ) * ( 2 * numpy.pi / nelems )
   weights = numpy.empty(( nelems, nnodes, ndims+1 ))
   weights[...,:axis] = coords.array[:,:axis]
   weights[...,axis] = numpy.cos(phi)[:,_] * coords.array[:,axis]
@@ -324,14 +324,14 @@ def igatool( path, name=None ):
   coords = ( funcsp[:,_] * points ).sum( 0 )
   return topo, coords #, nodegroups
 
-def fromfunc( func, nelems, ndims, degree=2 ):
+def fromfunc( func, nelems, ndims, degree=1 ):
   'piecewise'
 
   if isinstance( nelems, int ):
     nelems = [ nelems ]
   assert len( nelems ) == func.func_code.co_argcount
   topo, ref = rectilinear( [ numpy.linspace(0,1,n+1) for n in nelems ] )
-  funcsp = topo.splinefunc( degree=degree-1 ).vector( ndims )
+  funcsp = topo.splinefunc( degree=degree ).vector( ndims )
   coords = topo.projection( func, onto=funcsp, coords=ref, exact_boundaries=True )
   return topo, coords
 
