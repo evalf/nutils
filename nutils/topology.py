@@ -468,6 +468,7 @@ class Topology( object ):
   def refinedfunc( self, dofaxis, refine, degree, title='refining' ):
     'create refined space by refining dofs in existing one'
 
+    warnings.warn( 'refinedfunc is replaced by refined_by + splinefunc; this function will be removed in future' % ischeme, DeprecationWarning )
     log.context( title )
 
     refine = set(refine) # make unique and equip with set operations
@@ -510,7 +511,7 @@ class Topology( object ):
     topo = self # topology to examine in next level refinement
     for irefine in log.iterate( 'level', range(nrefine), showpct=False ):
   
-      funcsp = topo.splinefunc( degree-1 ) # shape functions for level irefine
+      funcsp = topo.splinefunc( degree ) # shape functions for level irefine
       (func,(dofaxis,)), = function.blocks( funcsp ) # separate elem-local funcs and global placement index
   
       supported = numpy.ones( funcsp.shape[0], dtype=bool ) # True if dof is contained in topoelems or parentelems
