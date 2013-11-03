@@ -149,10 +149,10 @@ class Evaluable( object ):
     data = self.data + [ '<elem>', '<points>', '<weights>' ]
     for i, (evalf,indices) in enumerate( self.operations ):
       args = [ '%%%d=%s' % ( iarg, _obj2str( data[idx] ) ) for iarg, idx in enumerate( indices ) if idx < 0 ]
-      node = 'label="%s"' % r'\n'.join( [ '%d. %s' % ( i, evalf.__name__ ) ] + args )
+      vertex = 'label="%s"' % r'\n'.join( [ '%d. %s' % ( i, evalf.__name__ ) ] + args )
       #if evalf == Inflate.inflate:
-      #  node += ', style=filled, fillcolor=black, fontcolor=white'
-      print >> dot.stdin, '%d [%s]' % ( i, node )
+      #  vertex += ', style=filled, fillcolor=black, fontcolor=white'
+      print >> dot.stdin, '%d [%s]' % ( i, vertex )
       for iarg, idx in enumerate( indices ):
         if idx >= 0:
           print >> dot.stdin, '%d -> %d [label="%%%d"];' % ( idx, i, iarg );

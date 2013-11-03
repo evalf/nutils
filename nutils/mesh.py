@@ -26,28 +26,28 @@ class GridFunc( function.ElemFunc ):
       I = I[~w]
       x = x[~w]
 
-def rectilinear( nodes, periodic=(), name='rect' ):
+def rectilinear( vertices, periodic=(), name='rect' ):
   'rectilinear mesh'
 
-  nodes = [ numpy.linspace(*n) if len(n) == 3 and isinstance(n,tuple) else numpy.asarray(n) for n  in nodes ]
-  ndims = len(nodes)
-  indices = numpy.ogrid[ tuple( slice(len(n)-1) for n in nodes ) ]
-  domainelem = element.Element( ndims=ndims, nodes=[] )
+  vertices = [ numpy.linspace(*n) if len(n) == 3 and isinstance(n,tuple) else numpy.asarray(n) for n  in vertices ]
+  ndims = len(vertices)
+  indices = numpy.ogrid[ tuple( slice(len(n)-1) for n in vertices ) ]
+  domainelem = element.Element( ndims=ndims, vertices=[] )
 
-  nodefmt = name + '(' + ','.join( '%%%dd' % len(str(len(n)-1)) for n in nodes ) + ')'
-  nodeobjs = util.objmap( lambda *index: element.PrimaryVertex(nodefmt%index), *numpy.ogrid[ tuple( slice(len(n)) for n in nodes ) ] )
+  vertexfmt = name + '(' + ','.join( '%%%dd' % len(str(len(n)-1)) for n in vertices ) + ')'
+  vertexobjs = util.objmap( lambda *index: element.PrimaryVertex(vertexfmt%index), *numpy.ogrid[ tuple( slice(len(n)) for n in vertices ) ] )
   for idim in periodic:
-    tmp = numeric.bringforward( nodeobjs, idim )
+    tmp = numeric.bringforward( vertexobjs, idim )
     tmp[-1] = tmp[0]
 
   structure = util.objmap( lambda *index: element.QuadElement(
     ndims=ndims,
     parent=( domainelem, element.AffineTransformation(
-      offset=[ n[i] for n,i in zip(nodes,index) ],
-      transform=numpy.diag([ n[i+1]-n[i] for n,i in zip(nodes,index) ]) ) ),
-    nodes=nodeobjs[tuple(slice(i,i+2) for i in index)].ravel() ), *indices )
+      offset=[ n[i] for n,i in zip(vertices,index) ],
+      transform=numpy.diag([ n[i+1]-n[i] for n,i in zip(vertices,index) ]) ) ),
+    vertices=vertexobjs[tuple(slice(i,i+2) for i in index)].ravel() ), *indices )
   topo = topology.StructuredTopology( structure )
-  coords = GridFunc( domainelem, structure, nodes )
+  coords = GridFunc( domainelem, structure, vertices )
   if periodic:
     topo = topo.make_periodic( periodic )
   return topo, coords
@@ -69,10 +69,10 @@ def revolve( topo, coords, nelems, degree=3, axis=0 ):
 
   assert isinstance( coords, function.StaticDot )
   assert coords.array.ndim == 2
-  nnodes, ndims = coords.array.shape
+  nvertices, ndims = coords.array.shape
 
   phi = ( .5 + numpy.arange(nelems) - .5*degree ) * ( 2 * numpy.pi / nelems )
-  weights = numpy.empty(( nelems, nnodes, ndims+1 ))
+  weights = numpy.empty(( nelems, nvertices, ndims+1 ))
   weights[...,:axis] = coords.array[:,:axis]
   weights[...,axis] = numpy.cos(phi)[:,_] * coords.array[:,axis]
   weights[...,axis+1] = numpy.sin(phi)[:,_] * coords.array[:,axis]
@@ -97,9 +97,9 @@ def gmesh( path, btags={}, name=None ):
   assert lines.next() == '$EndMeshFormat\n'
 
   assert lines.next() == '$Nodes\n'
-  nnodes = int( lines.next() )
-  coords = numpy.empty(( nnodes, 3 ))
-  for iNode in range( nnodes ):
+  nvertices = int( lines.next() )
+  coords = numpy.empty(( nvertices, 3 ))
+  for iNode in range( nvertices ):
     items = lines.next().split()
     assert int( items[0] ) == iNode + 1
     coords[ iNode ] = map( float, items[1:] )
@@ -113,29 +113,29 @@ def gmesh( path, btags={}, name=None ):
 
   boundary = []
   elements = []
-  connected = [ set() for i in range( nnodes ) ]
+  connected = [ set() for i in range( nvertices ) ]
 
   nmap = {}
   fmap = {}
 
   assert lines.next() == '$Elements\n'
-  domainelem = element.Element( ndims=2, nodes=[] )
-  nodeobjs = numpy.array( [ element.PrimaryVertex( '%s(%d)' % (name,inode) ) for inode in range(nnodes) ], dtype=object )
+  domainelem = element.Element( ndims=2, vertices=[] )
+  vertexobjs = numpy.array( [ element.PrimaryVertex( '%s(%d)' % (name,ivertex) ) for ivertex in range(nvertices) ], dtype=object )
   for ielem in range( int( lines.next() ) ):
     items = lines.next().split()
     assert int( items[0] ) == ielem + 1
     elemtype = int( items[1] )
     ntags = int( items[2] )
     tags = [ int(tag) for tag in set( items[3:3+ntags] ) ]
-    elemnodes = numpy.asarray( items[3+ntags:], dtype=int ) - 1
-    elemnodeobjs = nodeobjs[ elemnodes ]
-    elemcoords = coords[ elemnodes ]
+    elemvertices = numpy.asarray( items[3+ntags:], dtype=int ) - 1
+    elemvertexobjs = vertexobjs[ elemvertices ]
+    elemcoords = coords[ elemvertices ]
     if elemtype == 1:
-      boundary.append(( elemnodes, tags ))
+      boundary.append(( elemvertices, tags ))
     elif elemtype in (2,4):
       if elemtype == 2:
         parent = domainelem, element.AffineTransformation( offset=elemcoords[2], transform=(elemcoords[:2]-elemcoords[2]).T )
-        elem = element.TriangularElement( nodes=elemnodeobjs, parent=parent )
+        elem = element.TriangularElement( vertices=elemvertexobjs, parent=parent )
         stdelem = element.PolyTriangle( 1 )
       else:
         raise NotImplementedError
@@ -143,8 +143,8 @@ def gmesh( path, btags={}, name=None ):
         stdelem = element.PolyQuad( (2,2) )
       elements.append( elem )
       fmap[ elem ] = stdelem
-      nmap[ elem ] = elemnodes
-      for n in elemnodes:
+      nmap[ elem ] = elemvertices
+      for n in elemvertices:
         connected[ n ].add( elem )
     elif elemtype == 15: # vertex?
       pass
@@ -154,8 +154,8 @@ def gmesh( path, btags={}, name=None ):
 
   belements = []
   bgroups = {}
-  for nodes, tags in boundary:
-    n1, n2 = nodes
+  for vertices, tags in boundary:
+    n1, n2 = vertices
     elem, = connected[n1] & connected[n2]
     e1, e2, e3 = nmap[ elem ]
     if   e1==n1 and e2==n2 \
@@ -174,7 +174,7 @@ def gmesh( path, btags={}, name=None ):
     for tag in tags:
       bgroups.setdefault( tag, [] ).append( belem )
 
-  linearfunc = function.function( fmap, nmap, nnodes, ndims )
+  linearfunc = function.function( fmap, nmap, nvertices, ndims )
   namedfuncs = { 'spline2': linearfunc }
   topo = topology.UnstructuredTopology( elements, ndims=2, namedfuncs=namedfuncs )
   topo.boundary = topology.UnstructuredTopology( belements, ndims=1 )
@@ -188,13 +188,13 @@ def gmesh( path, btags={}, name=None ):
 
   return topo, function.ElemFunc( domainelem )
 
-def triangulation( nodes, nnodes ):
+def triangulation( vertices, nvertices ):
   'triangulation'
 
   bedges = {}
   nmap = {}
   I = numpy.array( [[2,0],[0,1],[1,2]] )
-  for n123 in nodes:
+  for n123 in vertices:
     elem = element.TriangularElement()
     nmap[ elem ] = n123
     for iedge, (n1,n2) in enumerate( n123[I] ):
@@ -203,7 +203,7 @@ def triangulation( nodes, nnodes ):
       except KeyError:
         bedges[ (n1,n2) ] = elem, iedge
 
-  dofaxis = function.DofAxis( nnodes, nmap )
+  dofaxis = function.DofAxis( nvertices, nmap )
   stdelem = element.PolyTriangle( 1 )
   linearfunc = function.Function( dofaxis=dofaxis, stdmap=dict.fromkeys(nmap,stdelem) )
   namedfuncs = { 'spline2': linearfunc }
@@ -273,8 +273,8 @@ def igatool( path, name=None ):
     Ce = numpy.zeros(( nb, nb ))
     Ce[I,J] = util.arraymap( Cv.GetComponent, float, n, 0 )
 
-    nodes = [ element.PrimaryVertex( '%s(%d:%d)' % (name,ielem,inode) ) for inode in range(2**ndims) ]
-    elem = element.QuadElement( nodes=nodes, ndims=ndims )
+    vertices = [ element.PrimaryVertex( '%s(%d:%d)' % (name,ielem,ivertex) ) for ivertex in range(2**ndims) ]
+    elem = element.QuadElement( vertices=vertices, ndims=ndims )
     elements.append( elem )
 
     fmap[ elem ] = element.ExtractionWrapper( poly, Ce.T )
@@ -285,7 +285,7 @@ def igatool( path, name=None ):
 
   boundaries = {}
   elemgroups = {}
-  nodegroups = {}
+  vertexgroups = {}
   renumber   = (0,3,1,2)
   for iarray in range( NumberOfArrays ):
     name = FieldData.GetArrayName( iarray )
@@ -299,8 +299,8 @@ def igatool( path, name=None ):
     if grouptype == 'edge':
       belements = [ elements[i//4].edge( renumber[i%4] ) for i in I ]
       boundaries[ groupname ] = topology.UnstructuredTopology( belements, ndims=ndims-1 )
-    elif grouptype == 'node':
-      nodegroups[ groupname ] = I
+    elif grouptype == 'vertex':
+      vertexgroups[ groupname ] = I
     elif grouptype == 'element':
       elemgroups[ groupname ] = topology.UnstructuredTopology( [ elements[i] for i in I ], namedfuncs=namedfuncs, ndims=2 )
     else:
@@ -322,7 +322,7 @@ def igatool( path, name=None ):
 
   funcsp = topo.splinefunc( degree=degree )
   coords = ( funcsp[:,_] * points ).sum( 0 )
-  return topo, coords #, nodegroups
+  return topo, coords #, vertexgroups
 
 def fromfunc( func, nelems, ndims, degree=1 ):
   'piecewise'
@@ -353,13 +353,13 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   + [ ( 12+(i+1)%8, 12+i, i+1+(i//2) ) for i in range( 8) ]
   + [ ( 12+i, 12+(i+1)%8, 20 )         for i in range( 8) ] )
   
-  domainelem = element.Element( ndims=2, nodes=[] )
+  domainelem = element.Element( ndims=2, vertices=[] )
   elements = []
-  nodes = numpy.array([ element.PrimaryVertex( 'demo.%d' % inode ) for inode in range(len(vertices)) ])
-  for ielem, elemnodes in enumerate( vertices ):
-    elemcoords = coords[ numpy.array(elemnodes) ]
+  vertices = numpy.array([ element.PrimaryVertex( 'demo.%d' % ivertex ) for ivertex in range(len(vertices)) ])
+  for ielem, elemvertices in enumerate( vertices ):
+    elemcoords = coords[ numpy.array(elemvertices) ]
     parent = domainelem, element.AffineTransformation( offset=elemcoords[2], transform=(elemcoords[:2]-elemcoords[2]).T )
-    elem = element.TriangularElement( nodes=nodes[elemnodes], parent=parent )
+    elem = element.TriangularElement( vertices=vertices[elemvertices], parent=parent )
     elements.append( elem )
 
   fmap = dict.fromkeys( elements, element.PolyTriangle(1) )

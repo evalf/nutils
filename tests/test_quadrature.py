@@ -34,35 +34,35 @@ class TestGaussQuadrature( object ):
 
   def test_lineelement( self ):
     MAXORDER = 7
-    elem     = element.QuadElement( 1, nodes=[element.PrimaryVertex('test(%d)'%i) for i in range(2)] )
+    elem     = element.QuadElement( 1, vertices=[element.PrimaryVertex('test(%d)'%i) for i in range(2)] )
     F        = lambda a : 1./float(1+a)
   
     self._test ( MAXORDER, elem, F )
 
   def test_quadelement( self ):
     MAXORDER = 7
-    elem     = element.QuadElement( 2, nodes=[element.PrimaryVertex('test(%d)'%i) for i in range(4)] )
+    elem     = element.QuadElement( 2, vertices=[element.PrimaryVertex('test(%d)'%i) for i in range(4)] )
     F        = lambda *args: numpy.prod(numpy.array(args)+1)**-1.
 
     self._test ( MAXORDER, elem, F )
 
   def test_hexelement( self ):
     MAXORDER = 7
-    elem     = element.QuadElement( 3, nodes=[element.PrimaryVertex('test(%d)'%i) for i in range(8)] )
+    elem     = element.QuadElement( 3, vertices=[element.PrimaryVertex('test(%d)'%i) for i in range(8)] )
     F        = lambda *args: numpy.prod(numpy.array(args)+1)**-1.
 
     self._test ( MAXORDER, elem, F )
 
   def test_triangularelement( self ):
     MAXORDER = 7
-    elem     = element.TriangularElement( nodes=[element.PrimaryVertex('test(%d)'%i) for i in range(3)] )
+    elem     = element.TriangularElement( vertices=[element.PrimaryVertex('test(%d)'%i) for i in range(3)] )
     F        = lambda a,b : gamma(1+a)*gamma(1+b)/gamma(3+a+b)
 
     self._test ( MAXORDER, elem, F )
 
   def test_tetrahedralelement( self ):
     MAXORDER = 8
-    elem     = element.TetrahedronElement( nodes=[element.PrimaryVertex('test(%d)'%i) for i in range(4)] )
+    elem     = element.TetrahedronElement( vertices=[element.PrimaryVertex('test(%d)'%i) for i in range(4)] )
     F        = lambda a,b,c : gamma(1+a)*gamma(1+b)*gamma(1+c)/gamma(4+a+b+c)
 
     self._test ( MAXORDER, elem, F )
@@ -227,10 +227,10 @@ class TestSingularQuadrature( object ):
             z = key[0]%2
             pts[:,z] *= -1
             pts[:,z] += 1
-            affine = [int(n) for n in re.findall( r'\d+', elem.elem1.nodes[0].id )]
+            affine = [int(n) for n in re.findall( r'\d+', elem.elem1.vertices[0].id )]
             fig.plot( pts[:,0] + affine[0] - 1.5,
                       pts[:,1] + affine[1] - 1.5, 'rx' )
-            affine = [int(n) for n in re.findall( r'\d+', elem.elem2.nodes[0].id )]
+            affine = [int(n) for n in re.findall( r'\d+', elem.elem2.vertices[0].id )]
             fig.plot( pts[:,2] + affine[0] - 1.5,
                       pts[:,3] + affine[1] - 1.5, 'g+' )
             for x in range( 4 ): fig.plot( [x-1.5, x-1.5], [-1.5, 2.5], 'b-' )

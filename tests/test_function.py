@@ -4,21 +4,21 @@ from nutils import *
 class FuncTest( object ):
 
   def __init__( self ):
-    domainelem = element.Element( ndims=2, nodes=[] )
+    domainelem = element.Element( ndims=2, vertices=[] )
     r, theta = function.ElemFunc( domainelem ) # corners at (0,0), (0,1), (1,1), (1,0)
     coords = r * function.stack([ function.cos(theta), function.sin(theta) ])
     trans = element.AffineTransformation( offset=[1,0], transform=[[2,1],[-1,3]] )
-    anodes = [element.PrimaryVertex('A(%d)'%i) for i in range(4)]
-    interelem = element.QuadElement( ndims=2, nodes=anodes, parent=(domainelem,trans) ) # corners at (1,0), (3,-1), (4,2), (2,3)
+    avertices = [element.PrimaryVertex('A(%d)'%i) for i in range(4)]
+    interelem = element.QuadElement( ndims=2, vertices=avertices, parent=(domainelem,trans) ) # corners at (1,0), (3,-1), (4,2), (2,3)
     trans = element.AffineTransformation( offset=[1,0], transform=[[0,1],[-1,0]] )
-    bnodes = [element.PrimaryVertex('B(%d)'%i) for i in range(4)]
-    elem = element.QuadElement( ndims=2, nodes=bnodes, parent=(interelem,trans) ) # corners at (3,-1), (2,-4), (4,-5), (5,-2)
+    bvertices = [element.PrimaryVertex('B(%d)'%i) for i in range(4)]
+    elem = element.QuadElement( ndims=2, vertices=bvertices, parent=(interelem,trans) ) # corners at (3,-1), (2,-4), (4,-5), (5,-2)
 
     #trans1 = element.AffineTransformation( offset=[1,0], transform=[[1,0]] )
     #trans2 = element.AffineTransformation( offset=[0,0], transform=[[1,0]] )
     #iface = element.QuadElement( ndims=1, id='test.quad.quad.iface', interface=((elem,trans1),(elem,trans2)) )
-    cnodes = [element.PrimaryVertex('C(%d)'%i) for i in range(2)]
-    iface = element.QuadElement( ndims=1, nodes=cnodes, interface=(elem.edge(1).context,elem.edge(0).context) )
+    cvertices = [element.PrimaryVertex('C(%d)'%i) for i in range(2)]
+    iface = element.QuadElement( ndims=1, vertices=cvertices, interface=(elem.edge(1).context,elem.edge(0).context) )
     ifpoints, ifweights = iface.eval('uniform2')
 
     fmap = { elem: element.PolyLine( element.PolyLine.bernstein_poly(1) )

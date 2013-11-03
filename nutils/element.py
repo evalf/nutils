@@ -203,49 +203,49 @@ class PrimaryVertex( Vertex ):
     return self.id
 
 class HalfVertex( Vertex ):
-  'in between two nodes; order arbitrary'
+  'in between two vertices; order arbitrary'
 
-  __slots__ = 'nodes',
+  __slots__ = 'vertices',
 
-  def __init__( self, node1, node2, xi=.5 ):
-    assert isinstance( node1, Vertex )
-    assert isinstance( node2, Vertex )
-    self.nodes = (node1,xi,node2) if node1 < node2 else (node2,1-xi,node1)
+  def __init__( self, vertex1, vertex2, xi=.5 ):
+    assert isinstance( vertex1, Vertex )
+    assert isinstance( vertex2, Vertex )
+    self.vertices = (vertex1,xi,vertex2) if vertex1 < vertex2 else (vertex2,1-xi,vertex1)
 
   def __eq__( self, other ):
-    return other.__class__ == self.__class__ and self.nodes == other.nodes
+    return other.__class__ == self.__class__ and self.vertices == other.vertices
 
   def __repr__( self ):
-    return '(%s-%s-%s)' % self.nodes
+    return '(%s-%s-%s)' % self.vertices
 
 class ProductVertex( Vertex ):
-  'combined nodes'
+  'combined vertices'
 
-  __slots__ = 'nodes',
+  __slots__ = 'vertices',
 
-  def __init__( self, node1, node2 ):
-    assert isinstance( node1, Vertex )
-    assert isinstance( node2, Vertex )
-    self.nodes = node1, node2
+  def __init__( self, vertex1, vertex2 ):
+    assert isinstance( vertex1, Vertex )
+    assert isinstance( vertex2, Vertex )
+    self.vertices = vertex1, vertex2
 
   def __eq__( self, other ):
-    return other.__class__ == self.__class__ and self.nodes == other.nodes
+    return other.__class__ == self.__class__ and self.vertices == other.vertices
 
   def __repr__( self ):
-    return '%s*%s' % self.nodes
+    return '%s*%s' % self.vertices
 
 class Element( object ):
   '''Element base class.
 
   Represents the topological shape.'''
 
-  __slots__ = 'nodes', 'ndims', 'index', 'parent', 'context', 'interface', 'root_transform', 'inv_root_transform', 'root_det'
+  __slots__ = 'vertices', 'ndims', 'index', 'parent', 'context', 'interface', 'root_transform', 'inv_root_transform', 'root_det'
 
-  def __init__( self, ndims, nodes, index=None, parent=None, context=None, interface=None ):
+  def __init__( self, ndims, vertices, index=None, parent=None, context=None, interface=None ):
     'constructor'
 
-    #assert all( isinstance(node,Vertex) for node in nodes )
-    self.nodes = tuple(nodes)
+    #assert all( isinstance(vertex,Vertex) for vertex in vertices )
+    self.vertices = tuple(vertices)
     self.ndims = ndims
     assert index is None or parent is None
     self.index = index
@@ -272,7 +272,7 @@ class Element( object ):
 
     if self == other:
       return 0
-    ncommon = len( set(self.nodes) & set(other.nodes) )
+    ncommon = len( set(self.vertices) & set(other.vertices) )
     return self.neighbormap[ ncommon ]
 
   def eval( self, where ):
@@ -299,7 +299,7 @@ class Element( object ):
   def __str__( self ):
     'string representation'
 
-    return '%s(%s)' % ( self.__class__.__name__, self.nodes )
+    return '%s(%s)' % ( self.__class__.__name__, self.vertices )
 
   def __hash__( self ):
     'hash'
@@ -310,7 +310,7 @@ class Element( object ):
     'hash'
 
     return self is other or ( self.__class__ == other.__class__
-                          and self.nodes == other.nodes
+                          and self.vertices == other.vertices
                           and self.parent == other.parent
                           and self.context == other.context
                           and self.interface == other.interface )
@@ -352,7 +352,7 @@ class Element( object ):
       return None
 
     parent = self, AffineTransformation( numpy.zeros(self.ndims), numpy.eye(self.ndims) )
-    return TrimmedElement( elem=self, nodes=self.nodes, levelset=levelset, maxrefine=maxrefine, lscheme=lscheme, finestscheme=finestscheme, evalrefine=evalrefine, parent=parent )
+    return TrimmedElement( elem=self, vertices=self.vertices, levelset=levelset, maxrefine=maxrefine, lscheme=lscheme, finestscheme=finestscheme, evalrefine=evalrefine, parent=parent )
 
   def get_simplices ( self, maxrefine ):
     'divide in simple elements'
@@ -383,8 +383,8 @@ class ProductElement( Element ):
     slice1, slice2 = self.getslicetransforms( elem1.ndims, elem2.ndims )
     iface1 = elem1, slice1
     iface2 = elem2, slice2
-    nodes = [] # TODO [ ProductVertex(node1,node2) for node1 in elem1.nodes for node2 in elem2.nodes ]
-    Element.__init__( self, ndims=elem1.ndims+elem2.ndims, nodes=nodes, interface=(iface1,iface2) )
+    vertices = [] # TODO [ ProductVertex(vertex1,vertex2) for vertex1 in elem1.vertices for vertex2 in elem2.vertices ]
+    Element.__init__( self, ndims=elem1.ndims+elem2.ndims, vertices=vertices, interface=(iface1,iface2) )
 
     self.root_det = elem1.root_det * elem2.root_det # HACK. TODO via constructor
 
@@ -523,9 +523,9 @@ class ProductElement( Element ):
        transf1,       required rotation of elem1 map: {0:0, 1:pi/2, 2:pi, 3:3*pi/2},
        transf2,       required rotation of elem2 map (is indep of transf1 in UnstructuredTopology.'''
     neighborhood = self.elem1.neighbor( self.elem2 )
-    common_nodes = list( set(self.elem1.nodes) & set(self.elem2.nodes) )
-    nodes1 = sorted( self.elem1.nodes.index( ni ) for ni in common_nodes )
-    nodes2 = sorted( self.elem2.nodes.index( ni ) for ni in common_nodes )
+    common_vertices = list( set(self.elem1.vertices) & set(self.elem2.vertices) )
+    vertices1 = sorted( self.elem1.vertices.index( ni ) for ni in common_vertices )
+    vertices2 = sorted( self.elem2.vertices.index( ni ) for ni in common_vertices )
     if neighborhood == 0:
       # test for strange topological features
       assert self.elem1 == self.elem2, 'Topological feature not supported: try refining here, possibly periodicity causes elems to touch on both sides.'
@@ -535,21 +535,21 @@ class ProductElement( Element ):
     elif isinstance( self.elem1, QuadElement ):
       # define local map rotations
       if neighborhood==1:
-        transf1 = [[0,2], [0,1], [1,3], [2,3]].index( nodes1 )
-        transf2 = [[0,2], [0,1], [1,3], [2,3]].index( nodes2 )
+        transf1 = [[0,2], [0,1], [1,3], [2,3]].index( vertices1 )
+        transf2 = [[0,2], [0,1], [1,3], [2,3]].index( vertices2 )
       elif neighborhood==2:
-        transf1 = [[0], [1], [3], [2]].index( nodes1 )
-        transf2 = [[0], [1], [3], [2]].index( nodes2 )
+        transf1 = [[0], [1], [3], [2]].index( vertices1 )
+        transf2 = [[0], [1], [3], [2]].index( vertices2 )
       else:
         raise ValueError( 'Unknown neighbor type %i' % neighborhood )
     elif isinstance( self.elem1, TriangularElement ):
       # define local map rotations
       if neighborhood==1:
-        transf1 = [[0,1], [1,2], [0,2]].index( nodes1 )
-        transf2 = [[0,1], [1,2], [0,2]].index( nodes2 )
+        transf1 = [[0,1], [1,2], [0,2]].index( vertices1 )
+        transf2 = [[0,1], [1,2], [0,2]].index( vertices2 )
       elif neighborhood==2:
-        transf1 = [[0], [1], [2]].index( nodes1 )
-        transf2 = [[0], [1], [2]].index( nodes2 )
+        transf1 = [[0], [1], [2]].index( vertices1 )
+        transf2 = [[0], [1], [2]].index( vertices2 )
       else:
         raise ValueError( 'Unknown neighbor type %i' % neighborhood )
     else:
@@ -630,7 +630,7 @@ class TrimmedElement( Element ):
 
   __slots__ = 'elem', 'levelset', 'maxrefine', 'lscheme', 'finestscheme', 'evalrefine'
 
-  def __init__( self, elem, levelset, maxrefine, lscheme, finestscheme, evalrefine, parent, nodes ):
+  def __init__( self, elem, levelset, maxrefine, lscheme, finestscheme, evalrefine, parent, vertices ):
     'constructor'
 
     assert not isinstance( elem, TrimmedElement )
@@ -641,7 +641,7 @@ class TrimmedElement( Element ):
     self.finestscheme = finestscheme if finestscheme != None else 'simplex1'
     self.evalrefine = evalrefine
 
-    Element.__init__( self, ndims=elem.ndims, nodes=nodes, parent=parent )
+    Element.__init__( self, ndims=elem.ndims, vertices=vertices, parent=parent )
 
   @core.cache
   def eval( self, ischeme ):
@@ -719,9 +719,9 @@ class TrimmedElement( Element ):
       if isect < 0:
         child = None
       elif isect > 0:
-        child = QuadElement( nodes=child.nodes, ndims=self.ndims, parent=parent )
+        child = QuadElement( vertices=child.vertices, ndims=self.ndims, parent=parent )
       else:
-        child = TrimmedElement( nodes=child.nodes, elem=child, levelset=self.levelset, maxrefine=self.maxrefine-1, lscheme=self.lscheme, finestscheme=self.finestscheme, evalrefine=self.evalrefine-1, parent=parent )
+        child = TrimmedElement( vertices=child.vertices, elem=child, levelset=self.levelset, maxrefine=self.maxrefine-1, lscheme=self.lscheme, finestscheme=self.finestscheme, evalrefine=self.evalrefine-1, parent=parent )
       children.append( child )
     return tuple( children )
 
@@ -733,7 +733,7 @@ class TrimmedElement( Element ):
     pelem, transform = edge.context
 
     # transform = self.elem.edgetransform( self.ndims )[ iedge ]
-    return QuadElement( nodes=edge.nodes, ndims=self.ndims-1, context=(self,transform) )
+    return QuadElement( vertices=edge.vertices, ndims=self.ndims-1, context=(self,transform) )
 
   def get_simplices ( self, maxrefine ):
     'divide in simple elements'
@@ -765,7 +765,7 @@ class TrimmedElement( Element ):
     ischeme = self.elem.getischeme( self.elem.ndims, 'bezier2' )
     where   = self.levelset( self.elem, ischeme ) > -lvltol
     points  = ischeme[0][where]
-    nodes   = numpy.array(self.nodes)[where].tolist()
+    vertices   = numpy.array(self.vertices)[where].tolist()
     norig   = sum(where)
 
     if not where.any():
@@ -837,7 +837,7 @@ class TrimmedElement( Element ):
       newpoint = pts[0] + xi * ( pts[-1] - pts[0] )
 
       points   = numpy.append( points, newpoint[_], axis=0 ) 
-      nodes.append( HalfVertex( *line.nodes, xi=xi ) )
+      vertices.append( HalfVertex( *line.vertices, xi=xi ) )
 
     try:
       submesh = util.delaunay( points )
@@ -846,7 +846,7 @@ class TrimmedElement( Element ):
 
     Simplex = TriangularElement if self.ndims == 2 else TetrahedronElement
 
-    convex_hull = [[nodes[iv] for iv in tri] for tri in submesh.convex_hull if all(tri>=norig)]
+    convex_hull = [[vertices[iv] for iv in tri] for tri in submesh.convex_hull if all(tri>=norig)]
 
     ##########################################
     # Extract the simplices from the submesh #
@@ -869,12 +869,12 @@ class TrimmedElement( Element ):
 
       else:
         if abs(transform.det) < numpy.spacing(100):
-          degensim.append( [ nodes[ii] for ii in tri ] )
+          degensim.append( [ vertices[ii] for ii in tri ] )
           continue
 
         raise Exception('Negative determinant with value %12.10e could not be resolved by flipping two vertices' % transform.det )
 
-      simplices.append( Simplex( nodes=[ nodes[ii] for ii in tri ], parent=(self,transform) ) )
+      simplices.append( Simplex( vertices=[ vertices[ii] for ii in tri ], parent=(self,transform) ) )
 
     assert len(simplices)+len(degensim)==submesh.vertices.shape[0], 'Simplices should be stored in either of the two containers'
 
@@ -894,7 +894,7 @@ class TrimmedElement( Element ):
 
         #Create lists to store edges which are to be checked on residence in the
         #convex hull, or which have been checked
-        checkedges = [ sedge.nodes ]
+        checkedges = [ sedge.vertices ]
         visitedges = []
 
         while checkedges:
@@ -906,20 +906,20 @@ class TrimmedElement( Element ):
           for hull_edge in convex_hull:
             #The checkedge is found in the convex hull. Append trimmededge and
             #terminate loop
-            if all(checknode in hull_edge for checknode in checkedge):
+            if all(checkvertex in hull_edge for checkvertex in checkedge):
               trimmededges.append( sedge )
               checkedges = []
               break
           else:
             #Check whether the checkedge is in a degenerate simplex
             for sim in degensim:
-              if all(checknode in sim for checknode in checkedge):
+              if all(checkvertex in sim for checkvertex in checkedge):
                 #Append all the edges to the checkedges pool
                 for jedge in itertools.combinations(sim,self.ndims):
                   dedge = list(jedge)
                   for cedge in visitedges:
                     #The dedge is already in visitedges
-                    if all(dnode in cedge for dnode in dedge):
+                    if all(dvertex in cedge for dvertex in dedge):
                       break
                   else:
                     #The dedge is appended to to pool
@@ -933,16 +933,16 @@ class QuadElement( Element ):
 
   __slots__ = ()
 
-  def __init__( self, ndims, nodes, index=None, parent=None, context=None, interface=None ):
+  def __init__( self, ndims, vertices, index=None, parent=None, context=None, interface=None ):
     'constructor'
 
-    assert len(nodes) == 2**ndims
-    Element.__init__( self, ndims, nodes, index=index, parent=parent, context=context, interface=interface )
+    assert len(vertices) == 2**ndims
+    Element.__init__( self, ndims, vertices, index=index, parent=parent, context=context, interface=interface )
 
   @property
   @core.cache
   def neighbormap( self ):
-    '''maps # matching nodes --> codim of interface: {0: -1, 1: 2, 2: 1, 4: 0}
+    '''maps # matching vertices --> codim of interface: {0: -1, 1: 2, 2: 1, 4: 0}
        warning: assumes StructuredTopology'''
     return dict( [ (0,-1) ] + [ (2**(self.ndims-i),i) for i in range(self.ndims+1) ] )
 
@@ -950,16 +950,16 @@ class QuadElement( Element ):
     'divide element by n'
 
     assert len(N) == self.ndims
-    nodes = numpy.empty( [ ni+1 for ni in N ], dtype=object )
-    nodes[ tuple( slice(None,None,ni) for ni in N ) ] = numpy.reshape( self.nodes, [2]*self.ndims )
+    vertices = numpy.empty( [ ni+1 for ni in N ], dtype=object )
+    vertices[ tuple( slice(None,None,ni) for ni in N ) ] = numpy.reshape( self.vertices, [2]*self.ndims )
     for idim in range(self.ndims):
       s1 = tuple( slice(None) for ni in N[:idim] )
       s2 = tuple( slice(None,None,ni) for ni in N[idim+1:] )
       for i in range( 1, N[idim] ):
-        nodes[s1+(i,)+s2] = util.objmap( HalfVertex, nodes[s1+(0,)+s2], nodes[s1+(2,)+s2], float(i)/N[idim] )
+        vertices[s1+(i,)+s2] = util.objmap( HalfVertex, vertices[s1+(0,)+s2], vertices[s1+(2,)+s2], float(i)/N[idim] )
 
-    elemnodes = [ nodes[ tuple( slice(i,i+2) for i in index ) ].ravel() for index in numpy.ndindex(*N) ]
-    return tuple( QuadElement( nodes=elemnodes[ielem], ndims=self.ndims, parent=(self,transform) )
+    elemvertices = [ vertices[ tuple( slice(i,i+2) for i in index ) ].ravel() for index in numpy.ndindex(*N) ]
+    return tuple( QuadElement( vertices=elemvertices[ielem], ndims=self.ndims, parent=(self,transform) )
       for ielem, transform in enumerate( self.refinedtransform(N) ) )
 
   @property
@@ -1010,7 +1010,7 @@ class QuadElement( Element ):
     if self.ndims != 3:
       raise NotImplementedError('Ribbons not implemented for ndims=%d'%self.ndims)
 
-    ndnodes = numpy.reshape( self.nodes, [2]*self.ndims )
+    ndvertices = numpy.reshape( self.vertices, [2]*self.ndims )
     ribbons = []
     for i1, i2 in numpy.array([[[0,0,0],[1,0,0]],
                                [[0,0,0],[0,1,0]],
@@ -1025,8 +1025,8 @@ class QuadElement( Element ):
                                [[0,0,1],[1,0,1]],
                                [[0,0,1],[0,1,1]]] ):
       transform = AffineTransformation( offset=i1, transform=(i2-i1)[:,_] )
-      nodes = ndnodes[tuple(i1)], ndnodes[tuple(i2)]
-      ribbons.append( QuadElement( nodes=nodes, ndims=1, context=(self,transform) ) )
+      vertices = ndvertices[tuple(i1)], ndvertices[tuple(i2)]
+      ribbons.append( QuadElement( vertices=vertices, ndims=1, context=(self,transform) ) )
 
     return ribbons
 
@@ -1041,8 +1041,8 @@ class QuadElement( Element ):
     iside = iedge % 2
     s = (slice(None,None, 1 if iside else -1),) * idim + (iside,) \
       + (slice(None,None,-1 if iside else  1),) * (self.ndims-idim-1)
-    nodes = numpy.asarray( numpy.reshape( self.nodes, (2,)*self.ndims )[s] ).ravel() # TODO check
-    return QuadElement( nodes=nodes, ndims=self.ndims-1, context=(self,transform) )
+    vertices = numpy.asarray( numpy.reshape( self.vertices, (2,)*self.ndims )[s] ).ravel() # TODO check
+    return QuadElement( vertices=vertices, ndims=self.ndims-1, context=(self,transform) )
 
   @staticmethod
   @core.cache
@@ -1162,11 +1162,11 @@ class TriangularElement( Element ):
     AffineTransformation( offset=[1,0], transform=[[-1],[ 1]] ),
     AffineTransformation( offset=[0,1], transform=[[ 0],[-1]] ) )
 
-  def __init__( self, nodes, index=None, parent=None, context=None ):
+  def __init__( self, vertices, index=None, parent=None, context=None ):
     'constructor'
 
-    assert len(nodes) == 3
-    Element.__init__( self, ndims=2, nodes=nodes, index=index, parent=parent, context=context )
+    assert len(vertices) == 3
+    Element.__init__( self, ndims=2, vertices=vertices, index=index, parent=parent, context=context )
 
   @property
   def children( self ):
@@ -1174,13 +1174,13 @@ class TriangularElement( Element ):
 
     transforms = self.refinedtransform( 2 )
     assert len(transforms) == 4
-    nodes = self.nodes
-    halfs = HalfVertex(nodes[0],nodes[1]), HalfVertex(nodes[1],nodes[2]), HalfVertex(nodes[2],nodes[0])
+    vertices = self.vertices
+    halfs = HalfVertex(vertices[0],vertices[1]), HalfVertex(vertices[1],vertices[2]), HalfVertex(vertices[2],vertices[0])
     return tuple([ # TODO check!
-      TriangularElement( nodes=[nodes[0],halfs[0],halfs[2]], parent=(self,transforms[0]) ),
-      TriangularElement( nodes=[halfs[0],nodes[1],halfs[1]], parent=(self,transforms[1]) ),
-      TriangularElement( nodes=[halfs[2],halfs[1],nodes[2]], parent=(self,transforms[2]) ),
-      TriangularElement( nodes=[halfs[1],halfs[2],halfs[0]], parent=(self,transforms[3]) ) ])
+      TriangularElement( vertices=[vertices[0],halfs[0],halfs[2]], parent=(self,transforms[0]) ),
+      TriangularElement( vertices=[halfs[0],vertices[1],halfs[1]], parent=(self,transforms[1]) ),
+      TriangularElement( vertices=[halfs[2],halfs[1],vertices[2]], parent=(self,transforms[2]) ),
+      TriangularElement( vertices=[halfs[1],halfs[2],halfs[0]], parent=(self,transforms[3]) ) ])
       
   @property
   def edges( self ):
@@ -1190,8 +1190,8 @@ class TriangularElement( Element ):
     'edge'
 
     transform = self.edgetransform[ iedge ]
-    nodes = [ self.nodes[:2], self.nodes[1:], self.nodes[::-2] ][iedge]
-    return QuadElement( nodes=nodes, ndims=1, context=(self,transform) )
+    vertices = [ self.vertices[:2], self.vertices[1:], self.vertices[::-2] ][iedge]
+    return QuadElement( vertices=vertices, ndims=1, context=(self,transform) )
 
   @staticmethod
   @core.cache
@@ -1303,11 +1303,11 @@ class TetrahedronElement( Element ):
     AffineTransformation( offset=[0,0,0], transform=[[ 0, 0],[0,1],[1,0]] ),
     AffineTransformation( offset=[1,0,0], transform=[[-1,-1],[1,0],[0,1]] ) )
 
-  def __init__( self, nodes, index=None, parent=None, context=None ):
+  def __init__( self, vertices, index=None, parent=None, context=None ):
     'constructor'
 
-    assert len(nodes) == 4
-    Element.__init__( self, ndims=3, nodes=nodes, index=index, parent=parent, context=context )
+    assert len(vertices) == 4
+    Element.__init__( self, ndims=3, vertices=vertices, index=index, parent=parent, context=context )
 
   @property
   def children( self ):
@@ -1323,12 +1323,12 @@ class TetrahedronElement( Element ):
 
     transform = self.edgetransform[ iedge ]
 
-    nodes = [
-      [ self.nodes[0], self.nodes[2], self.nodes[1] ],
-      [ self.nodes[0], self.nodes[1], self.nodes[3] ],
-      [ self.nodes[0], self.nodes[3], self.nodes[2] ],
-      [ self.nodes[1], self.nodes[2], self.nodes[3] ] ][ iedge ] # TODO check!
-    return TriangularElement( nodes=nodes, context=(self,transform) )
+    vertices = [
+      [ self.vertices[0], self.vertices[2], self.vertices[1] ],
+      [ self.vertices[0], self.vertices[1], self.vertices[3] ],
+      [ self.vertices[0], self.vertices[3], self.vertices[2] ],
+      [ self.vertices[1], self.vertices[2], self.vertices[3] ] ][ iedge ] # TODO check!
+    return TriangularElement( vertices=vertices, context=(self,transform) )
 
   @staticmethod
   @core.cache
