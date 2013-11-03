@@ -250,7 +250,7 @@ def igatool( path, name=None ):
   Cindi = CellData.GetArray( 'Elem_extr_indi')
 
   elements = []
-  degree = 4
+  degree = 3
   ndims = 2
   nmap = {}
   fmap = {}
@@ -264,7 +264,7 @@ def igatool( path, name=None ):
     nids = util.arraymap( cellpoints.GetId, int, range(cellpoints.GetNumberOfIds()) )
 
     assert mesh.GetCellType(ielem) == vtk.VTK_HIGHER_ORDER_QUAD
-    nb = degree**2
+    nb = (degree+1)**2
     assert len(nids) == nb
 
     n = range( *util.arraymap( Cindi.GetComponent, int, ielem, [0,1] ) )
@@ -280,8 +280,8 @@ def igatool( path, name=None ):
     fmap[ elem ] = element.ExtractionWrapper( poly, Ce.T )
     nmap[ elem ] = nids
 
-  linearfunc = function.function( fmap, nmap, NumberOfPoints, ndims )
-  namedfuncs = { 'spline%d' % degree: linearfunc }
+  splinefunc = function.function( fmap, nmap, NumberOfPoints, ndims )
+  namedfuncs = { 'spline%d' % degree: splinefunc }
 
   boundaries = {}
   elemgroups = {}
@@ -320,7 +320,7 @@ def igatool( path, name=None ):
     group.boundary = topology.UnstructuredTopology( elements=[], ndims=ndims-1 )
     group.boundary.groups = myboundaries
 
-  funcsp = topo.splinefunc( degree=degree-1 )
+  funcsp = topo.splinefunc( degree=degree )
   coords = ( funcsp[:,_] * points ).sum( 0 )
   return topo, coords #, nodegroups
 

@@ -80,4 +80,5 @@ def three_D ():
   test_obj.test_volume()
   test_obj.test_surfacearea()
 
-util.run( two_D, three_D )
+if __name__ == '__main__':
+  util.run( two_D, three_D )

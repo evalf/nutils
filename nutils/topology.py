@@ -730,7 +730,7 @@ class StructuredTopology( Topology ):
     for idim in range( self.ndims ):
       periodic_i = idim in periodic
       n = self.structure.shape[idim]
-      p = degree[idim]+1
+      p = degree[idim]
       #k = knots[idim]
 
       if closed == False:
@@ -743,10 +743,10 @@ class StructuredTopology( Topology ):
 
       stdelems = stdelems[...,_] * stdelems_i if idim else stdelems_i
 
-      nd = n + p - 1
+      nd = n + p
       numbers = numpy.arange( nd )
-      if periodic_i and p > 1:
-        overlap = p - 1
+      if periodic_i and p > 0:
+        overlap = p
         numbers[ -overlap: ] = numbers[ :overlap ]
         nd -= overlap
       remove = removedofs[idim]
@@ -760,7 +760,7 @@ class StructuredTopology( Topology ):
         nodes_structure = nodes_structure[...,_] * nd + numbers
         nodes_structure[...,mask] = -1
       dofcount *= nd
-      slices.append( [ slice(i,i+p) for i in range(n) ] )
+      slices.append( [ slice(i,i+p+1) for i in range(n) ] )
 
     dofmap = {}
     funcmap = {}
@@ -798,7 +798,7 @@ class StructuredTopology( Topology ):
     if isinstance( degree, int ):
       degree = ( degree, ) * self.ndims
 
-    dofs = numpy.arange( numpy.product(degree) * len(self) ).reshape( len(self), -1 )
+    dofs = numpy.arange( numpy.product(degree+1) * len(self) ).reshape( len(self), -1 )
     dofmap = dict( zip( self, dofs ) )
 
     stdelem = util.product( element.PolyLine( element.PolyLine.bernstein_poly( d ) ) for d in degree )
@@ -810,7 +810,7 @@ class StructuredTopology( Topology ):
   def curvefreesplinefunc( self ):
     'spline from nodes'
 
-    p = 3
+    p = 2
     periodic = self.periodic
 
     nodes_structure = numpy.array( 0 )
@@ -825,7 +825,7 @@ class StructuredTopology( Topology ):
 
       stdelems = stdelems[...,_] * stdelems_i if idim else stdelems_i
 
-      nd = n + p - 3
+      nd = n + p - 2
       numbers = numpy.arange( nd )
 
       nodes_structure = nodes_structure[...,_] * nd + numbers
@@ -834,7 +834,7 @@ class StructuredTopology( Topology ):
 
       myslice = [ slice(0,2) ]
       for i in range(n-2):
-        myslice.append( slice(i,i+p) )
+        myslice.append( slice(i,i+p+1) )
       myslice.append( slice(n-2,n) )
 
       slices.append( myslice )
@@ -866,20 +866,20 @@ class StructuredTopology( Topology ):
     dofcount = 1
     slices = []
 
-    stdelem = util.product( element.PolyLine( element.PolyLine.bernstein_poly( d+1 ) ) for d in degree )
+    stdelem = util.product( element.PolyLine( element.PolyLine.bernstein_poly( d ) ) for d in degree )
 
     for idim in range( self.ndims ):
       n = self.structure.shape[idim]
-      p = degree[idim] + 1
+      p = degree[idim]
 
-      nd = n * (p-1) + 1
+      nd = n * p + 1
       numbers = numpy.arange( nd )
       if idim in self.periodic:
         numbers[-1] = numbers[0]
         nd -= 1
       nodes_structure = nodes_structure[...,_] * nd + numbers
       dofcount *= nd
-      slices.append( [ slice((p-1)*i,(p-1)*i+p) for i in range(n) ] )
+      slices.append( [ slice(p*i,p*i+p+1) for i in range(n) ] )
 
     dofmap = {}
     hasnone = False

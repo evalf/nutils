@@ -329,4 +329,5 @@ def visualinspect():
 
 if __name__ == '__main__':
   util.run( visualinspect )
+
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

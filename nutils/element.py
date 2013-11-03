@@ -1598,7 +1598,7 @@ class PolyLine( StdElem ):
     'bernstein polynomial coefficients'
 
     # magic bernstein triangle
-    n = degree - 1
+    n = degree
     poly = numpy.zeros( [n+1,n+1], dtype=int )
     root = (-1)**n
     for k in range(n//2+1):
@@ -1612,18 +1612,18 @@ class PolyLine( StdElem ):
   def spline_poly( cls, p, n ):
     'spline polynomial coefficients'
 
-    assert p >= 1, 'invalid polynomial degree %d' % p
-    if p == 1:
+    assert p >= 0, 'invalid polynomial degree %d' % p
+    if p == 0:
       assert n == -1
       return numpy.array( [[[1.]]] )
 
-    assert 1 <= n < 2*(p-1)
-    extractions = numpy.empty(( n, p, p ))
-    extractions[0] = numpy.eye( p )
+    assert 1 <= n < 2*p
+    extractions = numpy.empty(( n, p+1, p+1 ))
+    extractions[0] = numpy.eye( p+1 )
     for i in range( 1, n ):
-      extractions[i] = numpy.eye( p )
-      for j in range( 2, p ):
-        for k in reversed( range( j, p ) ):
+      extractions[i] = numpy.eye( p+1 )
+      for j in range( 2, p+1 ):
+        for k in reversed( range( j, p+1 ) ):
           alpha = 1. / min( 2+k-j, n-i+1 )
           extractions[i-1,:,k] = alpha * extractions[i-1,:,k] + (1-alpha) * extractions[i-1,:,k-1]
         extractions[i,-j-1:-1,-j-1] = extractions[i-1,-j:,-1]
@@ -1655,7 +1655,7 @@ class PolyLine( StdElem ):
   def spline_elems_curvature( cls ):
     'spline elements, curve free endings (just for caching)'
 
-    polys = cls.spline_poly(2,1)
+    polys = cls.spline_poly(1,1)
     poly_0 = polys[0].copy()
     poly_0[:,0] += 0.5*(polys[0][:,0]+polys[0][:,1])
     poly_0[:,1] -= 0.5*(polys[0][:,0]+polys[0][:,1])
@@ -1671,18 +1671,18 @@ class PolyLine( StdElem ):
     'spline elements, any amount'
 
     p = degree
-    n = 2*(p-1)-1
+    n = 2*p-1
     if periodic:
       assert not neumann, 'periodic domains have no boundary'
       assert not curvature, 'curvature free option not possible for periodic domains'
       if nelems == 1: # periodicity on one element can only mean a constant
-        elems = cls.spline_elems( 1, n )
+        elems = cls.spline_elems( 0, n )
       else:
-        elems = cls.spline_elems( p, n )[p-2:p-1] * nelems
+        elems = cls.spline_elems( p, n )[p-1:p] * nelems
     else:
       elems = cls.spline_elems( p, min(nelems,n) )
       if len(elems) < nelems:
-        elems = elems[:p-2] + elems[p-2:p-1] * (nelems-2*(p-2)) + elems[p-1:]
+        elems = elems[:p-1] + elems[p-1:p] * (nelems-2*(p-1)) + elems[p:]
       if neumann:
         elem_0, elem_e = cls.spline_elems_neumann( p, min(nelems,n) )
         if neumann & 1:
@@ -1691,12 +1691,11 @@ class PolyLine( StdElem ):
           elems[-1] = elem_e
       if curvature:
         assert neumann==0, 'Curvature free not allowed in combindation with Neumann'
-        assert degree==3, 'Curvature free only allowed for quadratic splines'  
+        assert degree==2, 'Curvature free only allowed for quadratic splines'  
         elem_0, elem_e = cls.spline_elems_curvature()
         elems[0] = elem_0
         elems[-1] = elem_e
 
-        
     return numpy.array( elems )
 
   def __init__( self, poly ):
@@ -1704,7 +1703,8 @@ class PolyLine( StdElem ):
 
     self.ndims = 1
     self.poly = numpy.asarray( poly, dtype=float )
-    self.degree, self.nshapes = self.poly.shape
+    order, self.nshapes = self.poly.shape
+    self.degree = order - 1
 
   @core.cache
   def eval( self, points, grad=0 ):
@@ -1713,7 +1713,7 @@ class PolyLine( StdElem ):
     assert points.shape[-1] == 1
     x = points[...,0]
 
-    if grad >= self.degree:
+    if grad > self.degree:
       return numeric.appendaxes( 0., x.shape+(self.nshapes,)+(1,)*grad )
 
     poly = self.poly

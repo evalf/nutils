@@ -197,5 +197,7 @@ def main( N=8 ):
   a.test_InteriorProblem( N=N )
   raw_input( 'hit any key to exit' )
 
-util.run( main )
+if __name__ == '__main__':
+  util.run( main )
+
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

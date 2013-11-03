@@ -21,8 +21,8 @@ class FuncTest( object ):
     iface = element.QuadElement( ndims=1, nodes=cnodes, interface=(elem.edge(1).context,elem.edge(0).context) )
     ifpoints, ifweights = iface.eval('uniform2')
 
-    fmap = { elem: element.PolyLine( element.PolyLine.bernstein_poly(2) )
-                 * element.PolyLine( element.PolyLine.bernstein_poly(3) ) }
+    fmap = { elem: element.PolyLine( element.PolyLine.bernstein_poly(1) )
+                 * element.PolyLine( element.PolyLine.bernstein_poly(2) ) }
     nmap = { elem: numpy.arange(6) }
     funcsp = function.function( fmap, nmap, ndofs=6, ndims=2 )
     numpy.random.seed(0)
