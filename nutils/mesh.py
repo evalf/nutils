@@ -35,7 +35,7 @@ def rectilinear( nodes, periodic=(), name='rect' ):
   domainelem = element.Element( ndims=ndims, nodes=[] )
 
   nodefmt = name + '(' + ','.join( '%%%dd' % len(str(len(n)-1)) for n in nodes ) + ')'
-  nodeobjs = util.objmap( lambda *index: element.PrimaryNode(nodefmt%index), *numpy.ogrid[ tuple( slice(len(n)) for n in nodes ) ] )
+  nodeobjs = util.objmap( lambda *index: element.PrimaryVertex(nodefmt%index), *numpy.ogrid[ tuple( slice(len(n)) for n in nodes ) ] )
   for idim in periodic:
     tmp = numeric.bringforward( nodeobjs, idim )
     tmp[-1] = tmp[0]
@@ -120,7 +120,7 @@ def gmesh( path, btags={}, name=None ):
 
   assert lines.next() == '$Elements\n'
   domainelem = element.Element( ndims=2, nodes=[] )
-  nodeobjs = numpy.array( [ element.PrimaryNode( '%s(%d)' % (name,inode) ) for inode in range(nnodes) ], dtype=object )
+  nodeobjs = numpy.array( [ element.PrimaryVertex( '%s(%d)' % (name,inode) ) for inode in range(nnodes) ], dtype=object )
   for ielem in range( int( lines.next() ) ):
     items = lines.next().split()
     assert int( items[0] ) == ielem + 1
@@ -273,7 +273,7 @@ def igatool( path, name=None ):
     Ce = numpy.zeros(( nb, nb ))
     Ce[I,J] = util.arraymap( Cv.GetComponent, float, n, 0 )
 
-    nodes = [ element.PrimaryNode( '%s(%d:%d)' % (name,ielem,inode) ) for inode in range(2**ndims) ]
+    nodes = [ element.PrimaryVertex( '%s(%d:%d)' % (name,ielem,inode) ) for inode in range(2**ndims) ]
     elem = element.QuadElement( nodes=nodes, ndims=ndims )
     elements.append( elem )
 
@@ -355,7 +355,7 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   
   domainelem = element.Element( ndims=2, nodes=[] )
   elements = []
-  nodes = numpy.array([ element.PrimaryNode( 'demo.%d' % inode ) for inode in range(len(vertices)) ])
+  nodes = numpy.array([ element.PrimaryVertex( 'demo.%d' % inode ) for inode in range(len(vertices)) ])
   for ielem, elemnodes in enumerate( vertices ):
     elemcoords = coords[ numpy.array(elemnodes) ]
     parent = domainelem, element.AffineTransformation( offset=elemcoords[2], transform=(elemcoords[:2]-elemcoords[2]).T )

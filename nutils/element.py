@@ -179,7 +179,7 @@ class AffineTransformation( Transformation ):
 def IdentityTransformation( ndims ):
   return AffineTransformation( numpy.zeros(ndims), numpy.eye(ndims) )
 
-class Node( object ):
+class Vertex( object ):
   'base class'
 
   __slots__ = ()
@@ -187,7 +187,7 @@ class Node( object ):
   def __cmp__( self, other ):
     return cmp( str(self), str(other) )
 
-class PrimaryNode( Node ):
+class PrimaryVertex( Vertex ):
   'primary'
 
   __slots__ = 'id',
@@ -202,14 +202,14 @@ class PrimaryNode( Node ):
   def __repr__( self ):
     return self.id
 
-class HalfNode( Node ):
+class HalfVertex( Vertex ):
   'in between two nodes; order arbitrary'
 
   __slots__ = 'nodes',
 
   def __init__( self, node1, node2, xi=.5 ):
-    assert isinstance( node1, Node )
-    assert isinstance( node2, Node )
+    assert isinstance( node1, Vertex )
+    assert isinstance( node2, Vertex )
     self.nodes = (node1,xi,node2) if node1 < node2 else (node2,1-xi,node1)
 
   def __eq__( self, other ):
@@ -218,14 +218,14 @@ class HalfNode( Node ):
   def __repr__( self ):
     return '(%s-%s-%s)' % self.nodes
 
-class ProductNode( Node ):
+class ProductVertex( Vertex ):
   'combined nodes'
 
   __slots__ = 'nodes',
 
   def __init__( self, node1, node2 ):
-    assert isinstance( node1, Node )
-    assert isinstance( node2, Node )
+    assert isinstance( node1, Vertex )
+    assert isinstance( node2, Vertex )
     self.nodes = node1, node2
 
   def __eq__( self, other ):
@@ -244,7 +244,7 @@ class Element( object ):
   def __init__( self, ndims, nodes, index=None, parent=None, context=None, interface=None ):
     'constructor'
 
-    #assert all( isinstance(node,Node) for node in nodes )
+    #assert all( isinstance(node,Vertex) for node in nodes )
     self.nodes = tuple(nodes)
     self.ndims = ndims
     assert index is None or parent is None
@@ -383,7 +383,7 @@ class ProductElement( Element ):
     slice1, slice2 = self.getslicetransforms( elem1.ndims, elem2.ndims )
     iface1 = elem1, slice1
     iface2 = elem2, slice2
-    nodes = [] # TODO [ ProductNode(node1,node2) for node1 in elem1.nodes for node2 in elem2.nodes ]
+    nodes = [] # TODO [ ProductVertex(node1,node2) for node1 in elem1.nodes for node2 in elem2.nodes ]
     Element.__init__( self, ndims=elem1.ndims+elem2.ndims, nodes=nodes, interface=(iface1,iface2) )
 
     self.root_det = elem1.root_det * elem2.root_det # HACK. TODO via constructor
@@ -837,7 +837,7 @@ class TrimmedElement( Element ):
       newpoint = pts[0] + xi * ( pts[-1] - pts[0] )
 
       points   = numpy.append( points, newpoint[_], axis=0 ) 
-      nodes.append( HalfNode( *line.nodes, xi=xi ) )
+      nodes.append( HalfVertex( *line.nodes, xi=xi ) )
 
     try:
       submesh = util.delaunay( points )
@@ -956,7 +956,7 @@ class QuadElement( Element ):
       s1 = tuple( slice(None) for ni in N[:idim] )
       s2 = tuple( slice(None,None,ni) for ni in N[idim+1:] )
       for i in range( 1, N[idim] ):
-        nodes[s1+(i,)+s2] = util.objmap( HalfNode, nodes[s1+(0,)+s2], nodes[s1+(2,)+s2], float(i)/N[idim] )
+        nodes[s1+(i,)+s2] = util.objmap( HalfVertex, nodes[s1+(0,)+s2], nodes[s1+(2,)+s2], float(i)/N[idim] )
 
     elemnodes = [ nodes[ tuple( slice(i,i+2) for i in index ) ].ravel() for index in numpy.ndindex(*N) ]
     return tuple( QuadElement( nodes=elemnodes[ielem], ndims=self.ndims, parent=(self,transform) )
@@ -1175,7 +1175,7 @@ class TriangularElement( Element ):
     transforms = self.refinedtransform( 2 )
     assert len(transforms) == 4
     nodes = self.nodes
-    halfs = HalfNode(nodes[0],nodes[1]), HalfNode(nodes[1],nodes[2]), HalfNode(nodes[2],nodes[0])
+    halfs = HalfVertex(nodes[0],nodes[1]), HalfVertex(nodes[1],nodes[2]), HalfVertex(nodes[2],nodes[0])
     return tuple([ # TODO check!
       TriangularElement( nodes=[nodes[0],halfs[0],halfs[2]], parent=(self,transforms[0]) ),
       TriangularElement( nodes=[halfs[0],nodes[1],halfs[1]], parent=(self,transforms[1]) ),
