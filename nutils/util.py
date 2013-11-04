@@ -208,7 +208,7 @@ def iterate( context='iter', nmax=-1 ):
     try:
       yield i
     finally:
-      log.restore( old, depth=1 )
+      log.restore( old )
 
 class NanVec( numpy.ndarray ):
   'nan-initialized vector'

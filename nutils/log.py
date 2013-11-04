@@ -29,19 +29,20 @@ def context( *args, **kwargs ):
 
   depth = kwargs.pop( 'depth', 0 )
   assert not kwargs
-  f_locals = sys._getframe(depth+1).f_locals
-  old = f_locals.get(_KEY)
-  f_locals[_KEY] = ContextLog( _makestr(args) )
-  return old
+  frame = sys._getframe(depth+1)
+  old = frame.f_locals.get(_KEY)
+  frame.f_locals[_KEY] = ContextLog( _makestr(args) )
+  return frame, old
 
-def restore( logger, depth=0 ):
+def restore( (frame,logger), depth=None ):
   'pop context'
 
-  f_locals = sys._getframe(depth+1).f_locals
+  if depth is not None:
+    warnings.warn( 'restore depth argument is deprecated and should be removed', DeprecationWarning )
   if logger:
-    f_locals[_KEY] = logger
+    frame.f_locals[_KEY] = logger
   else:
-    f_locals.pop(_KEY,None)
+    frame.f_locals.pop(_KEY,None)
 
 def iterate( text, iterable, target=None, **kwargs ):
   'iterate'
@@ -154,6 +155,15 @@ class ContextLog( object ):
     'write'
 
     self.parent.write( self.text, *text )
+
+  def __repr__( self ):
+    'string representation'
+
+    return 'ContextLog(%s)' % self
+
+  def __str__( self ):
+
+    return '%s > %s' % ( self.parent, self.text )
 
 class ProgressLog( object ):
   'progress bar'

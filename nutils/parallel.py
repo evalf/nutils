@@ -42,7 +42,7 @@ class Fork( object ):
           status = 1
         elif child_status:
           status = 1
-      log.restore( self.oldcontext, depth=1 )
+      log.restore( self.oldcontext )
     except: # should not happen.. but just to be sure
       status = 1
     if self.iproc:
@@ -87,7 +87,7 @@ class AlternativeFork( object ):
         self.children.remove( child_pid )
         if child_status:
           status = 1
-      log.restore( self.oldcontext, depth=1 )
+      log.restore( self.oldcontext )
     except: # should not happen.. but just to be sure
       status = 1
     if self.iproc:

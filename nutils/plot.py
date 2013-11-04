@@ -39,7 +39,7 @@ class BasePlot( object ):
 
     exc_type = exc_info[0]
     if exc_type == KeyboardInterrupt:
-      log.restore( self.oldlog, depth=1 )
+      log.restore( self.oldlog )
       return False
     elif exc_type:
       log.traceback( exc_info )
@@ -49,7 +49,7 @@ class BasePlot( object ):
         for name in self.names:
           self.save( name )
         log.path( *self.names )
-    log.restore( self.oldlog, depth=1 )
+    log.restore( self.oldlog )
     return True
 
   def save ( self, name ):
