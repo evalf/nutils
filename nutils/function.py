@@ -2421,6 +2421,38 @@ def chain( funcs ):
              for j, sh in enumerate(shapes) ], axis=0 )
                for i, func in enumerate(funcs) ]
 
+def merge( funcs ):
+  'Combines unchained funcs into one function object.'
+
+  cascade = fmap = nmap = None
+  offset = 0 # ndofs = _sum( f.shape[0] for f in funcs )
+
+  for inflated_func in funcs:
+    (func, (dofmap,)), = inflated_func.blocks # Returns one scalar function.
+
+    if fmap is None:
+      fmap = func.stdmap
+    else:
+      targetlen = len( fmap ) + len( func.stdmap )
+      fmap.update( func.stdmap )
+      assert len( fmap ) == targetlen, 'Don`t allow overlap.'
+
+    if nmap is None:
+      nmap = dofmap.dofmap
+    else:
+      targetlen = len( nmap ) + len( dofmap.dofmap )
+      nmap.update( dict( (key, val+offset) for key, val in dofmap.dofmap.iteritems() ) )
+      assert len( nmap ) == targetlen, 'Don`t allow overlap.'
+
+    if cascade is None:
+      cascade = func.cascade
+    else:
+      assert func.cascade == cascade, 'Functions have to be defined on domains of same dimension.'
+
+    offset += inflated_func.shape[0]
+
+  return function( fmap, nmap, offset, cascade.ndims )
+
 def vectorize( args ):
   'vectorize'
 
