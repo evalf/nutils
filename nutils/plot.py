@@ -1,6 +1,6 @@
 from . import topology, util, numpy, function, element, log, prop, numeric, _
 from scipy import spatial # for def mesh; import cannot be postponed apparently
-import os
+import os, warnings
 
 def _nansplit( data ):
   n, = numpy.where( numpy.isnan( data.reshape( data.shape[0], -1 ) ).any( axis=1 ) )
@@ -280,6 +280,9 @@ class PyPlot( BasePlot ):
     # delta() checks if either axis is log or lin scaled
     delta = lambda a, b, scale: numpy.log10(float(a)/b) if scale=='log' else float(a-b) if scale=='linear' else None
     slope = delta( y[-2], y[-1], yscale ) / delta( x[-2], x[-1], xscale )
+    if slope in (numpy.nan, numpy.inf, -numpy.inf):
+      warnings.warn( 'Cannot draw slope triangle with slope: %s, drawing nothing' % str( slope ) )
+      return slope
 
     # handle positive and negative slopes correctly
     xtup, ytup = ((x[i],x[j],x[i]), (y[j],y[j],y[i])) if slope > 0 else ((x[j],x[j],x[i]), (y[i],y[j],y[i]))
