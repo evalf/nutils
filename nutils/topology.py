@@ -434,37 +434,6 @@ class Topology( object ):
 
     return constrain
 
-# def trim( self, levelset, maxrefine, lscheme='bezier3' ):
-#   'create new domain based on levelset'
-
-#   newelems = []
-#   for elem in log.ProgressBar( self, title='selecting/refining elements' ):
-#     elempool = [ elem ]
-#     for level in range( maxrefine ):
-#       nextelempool = []
-#       for elem in elempool:
-#         inside = levelset( elem, lscheme ) > 0
-#         if inside.all():
-#           newelems.append( elem )
-#         elif inside.any():
-#           nextelempool.extend( elem.children )
-#       elempool = nextelempool
-#     # TODO select >50% overlapping elements from elempool
-#     newelems.extend( elempool )
-#   return UnstructuredTopology( newelems, ndims=self.ndims )
-
-#   def select( elem, level=0 ):
-#     try:
-#       inside = levelset( elem, lscheme ) > 0
-#     except function.EvaluationError:
-#       pass
-#     else:
-#       return inside.any()
-#     assert level < maxrefine, 'failed to evaluate levelset within maxrefine={}'.format( maxrefine )
-#     return any( select(child,level+1) for child in elem.children )
-
-#   return IndexedTopology( self, select=select )
-
   def refinedfunc( self, dofaxis, refine, degree, title='refining' ):
     'create refined space by refining dofs in existing one'
 
