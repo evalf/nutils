@@ -990,7 +990,7 @@ class IndexedTopology( Topology ):
 class UnstructuredTopology( Topology ):
   'externally defined topology'
 
-  groups = ()
+  groups = {}
 
   def __init__( self, elements, ndims, namedfuncs={} ):
     'constructor'
