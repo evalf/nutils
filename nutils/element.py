@@ -470,18 +470,11 @@ class ProductElement( Element ):
       E = 1 - A
       F = E*eta3
       G = A + F
-      # The commented transformation below from Sauter & Schwab '10 seems to
-      # have an error, corrected scheme follows uncommented
-      # points = util.ImmutableArray(
-      #   [[D,  C,  G,  G,  F,  F ],
-      #    [B,  B,  B,  xi, B,  xi],
-      #    [C,  D,  F,  F,  G,  G ],
-      #    [A,  A,  xi, B,  xi, B ]]).reshape( 4, -1 ).T
       points = util.ImmutableArray(
-        [[D,   C,   G,   G,   F,   F  ],
-         [B,   B,   B,   xi,  B,   xi ],
-         [1-C, 1-D, 1-F, 1-F, 1-G, 1-G],
-         [A,   A,   xi,  B,   xi,  B  ]]).reshape( 4, -1 ).T
+        [[D,  C,  G,  G,  F,  F ],
+         [B,  B,  B,  xi, B,  xi],
+         [C,  D,  F,  F,  G,  G ],
+         [A,  A,  xi, B,  xi, B ]]).reshape( 4, -1 ).T
       weights = numpy.concatenate( 2*[xi**2*ox*weights] + 4*[xi**2*E*weights] )
     elif neighborhood == 2:
       A = xi*eta1
@@ -524,8 +517,8 @@ class ProductElement( Element ):
        transf2,       required rotation of elem2 map (is indep of transf1 in UnstructuredTopology.'''
     neighborhood = self.elem1.neighbor( self.elem2 )
     common_vertices = list( set(self.elem1.vertices) & set(self.elem2.vertices) )
-    vertices1 = sorted( self.elem1.vertices.index( ni ) for ni in common_vertices )
-    vertices2 = sorted( self.elem2.vertices.index( ni ) for ni in common_vertices )
+    vertices1 = [self.elem1.vertices.index( ni ) for ni in common_vertices]
+    vertices2 = [self.elem2.vertices.index( ni ) for ni in common_vertices]
     if neighborhood == 0:
       # test for strange topological features
       assert self.elem1 == self.elem2, 'Topological feature not supported: try refining here, possibly periodicity causes elems to touch on both sides.'
@@ -535,14 +528,15 @@ class ProductElement( Element ):
     elif isinstance( self.elem1, QuadElement ):
       # define local map rotations
       if neighborhood==1:
-        transf1 = [[0,2], [0,1], [1,3], [2,3]].index( vertices1 )
-        transf2 = [[0,2], [0,1], [1,3], [2,3]].index( vertices2 )
+        transform = lambda vertices: [[0,2], [2,3], [3,1], [1,0], [2,0], [3,2], [1,3], [0,1]].index( vertices )
+        transf1, transf2 = transform( vertices1 ), transform( vertices2 )
       elif neighborhood==2:
-        transf1 = [[0], [1], [3], [2]].index( vertices1 )
-        transf2 = [[0], [1], [3], [2]].index( vertices2 )
+        transform = lambda vertex: [[0], [2], [3], [1]].index( vertex )
+        transf1, transf2 = transform( vertices1 ), transform( vertices2 )
       else:
         raise ValueError( 'Unknown neighbor type %i' % neighborhood )
     elif isinstance( self.elem1, TriangularElement ):
+      raise NotImplementedError( 'Pending completed implementation and verification.' )
       # define local map rotations
       if neighborhood==1:
         transf1 = [[0,1], [1,2], [0,2]].index( vertices1 )
@@ -562,22 +556,22 @@ class ProductElement( Element ):
     neighborhood, transf1, transf2 = orientation
     points, weights = ProductElement.get_tri_bem_ischeme( ischeme, neighborhood )
     transfpoints = points#numpy.empty( points.shape )
-#   transfpoints[:,0] = points[:,0] if transf1 == 0 else \
-#                       points[:,1] if transf1 == 1 else \
-#                     1-points[:,0] if transf1 == 2 else \
-#                     1-points[:,1]
-#   transfpoints[:,1] = points[:,1] if transf1 == 0 else \
-#                     1-points[:,0] if transf1 == 1 else \
-#                     1-points[:,1] if transf1 == 2 else \
-#                       points[:,0]
-#   transfpoints[:,2] = points[:,2] if transf2 == 0 else \
-#                       points[:,3] if transf2 == 1 else \
-#                     1-points[:,2] if transf2 == 2 else \
-#                     1-points[:,3]
-#   transfpoints[:,3] = points[:,3] if transf2 == 0 else \
-#                     1-points[:,2] if transf2 == 1 else \
-#                     1-points[:,3] if transf2 == 2 else \
-#                       points[:,2]
+    #   transfpoints[:,0] = points[:,0] if transf1 == 0 else \
+    #                       points[:,1] if transf1 == 1 else \
+    #                     1-points[:,0] if transf1 == 2 else \
+    #                     1-points[:,1]
+    #   transfpoints[:,1] = points[:,1] if transf1 == 0 else \
+    #                     1-points[:,0] if transf1 == 1 else \
+    #                     1-points[:,1] if transf1 == 2 else \
+    #                       points[:,0]
+    #   transfpoints[:,2] = points[:,2] if transf2 == 0 else \
+    #                       points[:,3] if transf2 == 1 else \
+    #                     1-points[:,2] if transf2 == 2 else \
+    #                     1-points[:,3]
+    #   transfpoints[:,3] = points[:,3] if transf2 == 0 else \
+    #                     1-points[:,2] if transf2 == 1 else \
+    #                     1-points[:,3] if transf2 == 2 else \
+    #                       points[:,2]
     return util.ImmutableArray( transfpoints ), util.ImmutableArray( weights )
     
   @staticmethod
@@ -586,22 +580,13 @@ class ProductElement( Element ):
     neighborhood, transf1, transf2 = orientation
     points, weights = ProductElement.get_quad_bem_ischeme( ischeme, neighborhood )
     transfpoints = numpy.empty( points.shape )
-    transfpoints[:,0] = points[:,0] if transf1 == 0 else \
-                        points[:,1] if transf1 == 1 else \
-                      1-points[:,0] if transf1 == 2 else \
-                      1-points[:,1]
-    transfpoints[:,1] = points[:,1] if transf1 == 0 else \
-                      1-points[:,0] if transf1 == 1 else \
-                      1-points[:,1] if transf1 == 2 else \
-                        points[:,0]
-    transfpoints[:,2] = points[:,2] if transf2 == 0 else \
-                        points[:,3] if transf2 == 1 else \
-                      1-points[:,2] if transf2 == 2 else \
-                      1-points[:,3]
-    transfpoints[:,3] = points[:,3] if transf2 == 0 else \
-                      1-points[:,2] if transf2 == 1 else \
-                      1-points[:,3] if transf2 == 2 else \
-                        points[:,2]
+    def transform( points, orientation ):
+      x, y = points[:,0], points[:,1]
+      tx = x if orientation in (0,1,6,7) else 1-x
+      ty = y if orientation in (0,3,4,7) else 1-y
+      return function.stack( (ty, tx) if orientation%2 else (tx, ty), axis=1 )
+    transfpoints[:,:2] = transform( points[:,:2], transf1 )
+    transfpoints[:,2:] = transform( points[:,2:], transf2 )
     return util.ImmutableArray( transfpoints ), util.ImmutableArray( weights )
     
   def eval( self, where ):
@@ -943,8 +928,7 @@ class QuadElement( Element ):
   @property
   @core.cache
   def neighbormap( self ):
-    '''maps # matching vertices --> codim of interface: {0: -1, 1: 2, 2: 1, 4: 0}
-       warning: assumes StructuredTopology'''
+    'maps # matching vertices --> codim of interface: {0: -1, 1: 2, 2: 1, 4: 0}'
     return dict( [ (0,-1) ] + [ (2**(self.ndims-i),i) for i in range(self.ndims+1) ] )
 
   def children_by( self, N ):
@@ -1109,7 +1093,8 @@ class QuadElement( Element ):
       if ndims == 1:
         coords = numpy.array([[0,1]]).T
       elif ndims == 2:
-        coords = numpy.array([[0,0],[1,0],[1,1],[0,1]])
+        eps = 0 if not len(where[3:]) else float(where[3:]) # subdivision fix (avoid extraordinary point)
+        coords = numpy.array([[eps,eps],[1-eps,eps],[1-eps,1-eps],[eps,1-eps]])
       elif ndims == 3:
         coords = numpy.array([ [0,0,0], [1,0,0], [0,1,0], [1,1,0], [0,0,1], [1,0,1], [0,1,1], [1,1,1] ])
       else:

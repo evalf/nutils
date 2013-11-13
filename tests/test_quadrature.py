@@ -72,12 +72,27 @@ class TestSingularQuadrature( object ):
 
   def __init__( self ):
     'Construct an arbitrary bivariate periodic structured mesh, only: shape > (2,2) for Element.neighbor() not to fail!'
+    # Topologies
     grid = lambda n: numpy.linspace( -numpy.pi, numpy.pi, n+1 )
     self.dims = 3, 4
     self.domain, self.coords = mesh.rectilinear( tuple(grid(n) for n in self.dims) )
     self.ddomain = self.domain * self.domain
     self.domainp, self.coordsp = mesh.rectilinear( tuple(grid(n) for n in self.dims), periodic=(0, 1) )
     self.ddomainp = self.domainp * self.domainp
+
+    # Geometries
+    R, r = 3, 1
+    assert R > r, 'No self-intersection admitted'
+    phi, theta = self.coordsp
+    self.torus = function.stack( [
+        function.cos(phi) * (r*function.cos(theta) + R),
+        function.sin(phi) * (r*function.cos(theta) + R),
+        function.sin(theta) * r] )
+
+    x, y = .5*(self.coords/numpy.pi + 1)*self.dims - 1.5 # ensure elem@(1,1) centered
+    self.hull = function.stack( [x, y, x**2*y**2] )
+
+    self.plane = .5*(self.coords/numpy.pi + 1)*self.dims # rescale: elem.vol=1, shift: coords>0
 
   def test_connectivity( self ):
     'Test implementation of Element.neighbor()'
@@ -100,15 +115,26 @@ class TestSingularQuadrature( object ):
     # 6 0 2
     # |  \|
     # 7-8 1
-    transf = {(0,0):(0,0),                                                  # 0
-             (1,-1):(3,1), (1-m,-1):(3,1), (1-m,n-1):(3,1),  (1,n-1):(3,1), # 1
-              (1,0):(3,1),  (1-m,0):(3,1),                                  # 2
-              (1,1):(2,0),  (1-m,1):(2,0), (1-m,1-n):(2,0),  (1,1-n):(2,0), # 3
-              (0,1):(2,0),  (0,1-n):(2,0),                                  # 4
-             (-1,1):(1,3),  (m-1,1):(1,3), (m-1,1-n):(1,3), (-1,1-n):(1,3), # 5
-             (-1,0):(1,3),  (m-1,0):(1,3),                                  # 6
-            (-1,-1):(0,2), (m-1,-1):(0,2), (m-1,n-1):(0,2), (-1,n-1):(0,2), # 7
-             (0,-1):(0,2),  (0,n-1):(0,2)}                                  # 8
+    relative_positions = { # for (dx, dy) gives neighbor type from schematic above
+          (0,0):0,
+         (1,-1):1,  (1-m,-1):1,  (1-m,n-1):1,  (1,n-1):1,
+          (1,0):2,   (1-m,0):2,
+          (1,1):3,   (1-m,1):3,  (1-m,1-n):3,  (1,1-n):3,
+          (0,1):4,   (0,1-n):4,
+         (-1,1):5,   (m-1,1):5,  (m-1,1-n):5, (-1,1-n):5,
+         (-1,0):6,   (m-1,0):6,
+        (-1,-1):7,  (m-1,-1):7,  (m-1,n-1):7, (-1,n-1):7,
+         (0,-1):-1,  (0,n-1):-1}
+    valid_transformations = [ # only valid for structured mesh!
+        [(0,0), (1,1), (2,2), (3,3), (4,4), (5,5), (6,6), (7,7)], # 0
+        [(1,3), (1,6), (4,3), (4,6)],                             # 1
+        [(1,7), (5,3)],                                           # 2
+        [(2,0), (2,7), (5,0), (5,7)],                             # 3
+        [(2,4), (6,0)],                                           # 4
+        [(3,1), (3,4), (6,1), (6,4)],                             # 5
+        [(3,5), (7,1)],                                           # 6
+        [(0,2), (0,5), (7,2), (7,5)],                             # 7
+        [(4,2), (0,6)]]                                           # 8
         
     for i, elem in enumerate( self.ddomainp ):
       # coords of elem1 and elem2
@@ -116,41 +142,47 @@ class TestSingularQuadrature( object ):
       ix, jx = divide( ijx, n )
       iy, jy = divide( ijy, n )
       # transforms for periodic, structured grid
-      transform1, transform2 = transf.get( (iy-ix, jy-jx), (0, 0) )
-      assert elem.orientation[1:] == (transform1, transform2), 'Error with reorientation'
+      relative_position = relative_positions.get( (iy-ix, jy-jx), -1 )
+      if relative_position == -1: continue # any transformation will do
+      assert elem.orientation[1:] in valid_transformations[relative_position], 'Error with reorientation'
 
   def test_transformations( self ):
-    'Test transformations performed on gauss schemes'
+    'Test transformations performed on gauss schemes for codim 1 neighbors'
     ischeme = 'gauss3'
     neighbor = 1
     # Get all types
     elems = {}
-    tlist = set(range(4))
+    tlist = set(range(8))
     for i, elem in enumerate( self.ddomainp ):
       n, t1, t2 = elem.orientation
       if n==neighbor:
         try:
           tlist.remove(t1)
-          elems[t1] = elem
+          elems[t1,t2] = elem
           if not len(tlist): break
-        except IndexError:
+        except KeyError:
           pass
 
     # Alternative coordinate computation
     points, weights = elem.get_quad_bem_ischeme( ischeme, neighbor )
-    rotate = [numpy.array( [ [1, 0],  [0, 1]] ), 
-              numpy.array( [ [0, 1], [-1, 0]] ), 
-              numpy.array( [[-1, 0], [0, -1]] ), 
-              numpy.array( [[0, -1],  [1, 0]] )]
-    shift = [numpy.array( [0, 0] ),
-             numpy.array( [0, 1] ),
-             numpy.array( [1, 1] ),
-             numpy.array( [1, 0] )]
-    transform = lambda points, transf: (
-        points[:,:,_] * rotate[transf].T[_,:,:]).sum(1) + shift[transf][_,:]
+    rotation_matrix = [
+        numpy.array( [ [1, 0],  [0, 1]] ), # 0/4*pi rotation
+        numpy.array( [ [0, -1], [1, 0]] ), # 1/4*pi rotation
+        numpy.array( [[-1, 0], [0, -1]] ), # 2/4*pi rotation
+        numpy.array( [[0, 1],  [-1, 0]] )] # 3/4*pi rotation
+    shift_vector = [
+        numpy.array( [[0, 0]] ),
+        numpy.array( [[1, 0]] ),
+        numpy.array( [[1, 1]] ),
+        numpy.array( [[0, 1]] )]
+    flip_vector = numpy.array( [[-1, 1]] )
+    rotate = lambda points, case: (
+        points[:,:,_] * rotation_matrix[case%4].T[_,:,:]).sum(-2) + shift_vector[case%4]
+    flip = lambda points, case: (
+        points if not case//4 else points*flip_vector + shift_vector[1])
+    transform = lambda points, case: rotate( flip( points, case ), case )
 
-    for t1, elem in elems.iteritems():
-      t2 = numpy.mod( t1+2, 4 ) # only for StructuredTopology
+    for (t1, t2), elem in elems.iteritems():
       # See if ProductElement.singular_ischeme_quad() gives same result
       points_ref = numpy.empty( points.shape )
       points_ref[:,:2] = transform( points[:,:2], t1 )
@@ -160,13 +192,28 @@ class TestSingularQuadrature( object ):
 
       # See if inverse transformation brings back to points[0]
       points_inv = numpy.empty( points.shape )
-      t1inv = [0, 3, 2, 1][t1]
-      t2inv = [0, 3, 2, 1][t2]
+      t1inv = [0, 3, 2, 1, 4, 5, 6, 7][t1]
+      t2inv = [0, 3, 2, 1, 4, 5, 6, 7][t2]
       points_inv[:,:2] = transform( points_test[:,:2], t1inv )
       points_inv[:,2:] = transform( points_test[:,2:], t2inv )
       assert numpy.linalg.norm( points-points_inv ) < 1.e-14
 
-  def _integrate( self, func, geom='torus', qset=range(1,9), qmax=16, slopes=None ):
+  def plot_gauss_on_3x4( self, elem, ischeme='singular3' ):
+    'Given a product element on our 3x4 domain (see __init__), plot gauss points'
+    with plot.PyPlot( 'quad' ) as fig:
+      pts, wts = elem.eval( ischeme )
+      affine = [int(n) for n in re.findall( r'\d+', elem.elem1.vertices[0].id )] # find elem1 position
+      fig.plot( pts[:,0] + affine[0] - 1.5,
+                pts[:,1] + affine[1] - 1.5, 'rx' )
+      affine = [int(n) for n in re.findall( r'\d+', elem.elem2.vertices[0].id )] # find elem2 position
+      fig.plot( pts[:,2] + affine[0] - 1.5,
+                pts[:,3] + affine[1] - 1.5, 'g+' )
+      for x in range( 4 ): fig.plot( [x-1.5, x-1.5], [-1.5, 2.5], 'b-' ) # grid
+      for y in range( 5 ): fig.plot( [-1.5, 1.5], [y-1.5, y-1.5], 'b-' )
+      fig.title( 'n:%i, t:%i, %i'%elem.orientation )
+      fig.axes().set_aspect('equal', 'datalim')
+
+  def _integrate( self, func, geom, qset=range(1,9), qmax=16, slopes=None, plot_quad_points=False ):
     '''Test convergence of approximation on all product element types.
     I: func,   integrand,
        geom,   domain of integration,
@@ -174,30 +221,12 @@ class TestSingularQuadrature( object ):
        qmax,   reference quadrature level,
        slopes, expected rate of convergence.'''
     m, n = self.dims
-    plot_quad_points = False
     compare_to_gauss = False
+    devel = len(qset) > 2
 
     # geometry and topology need same periodicity for singular scheme to work!
-    if geom is 'torus':
-      domain, ddomain = self.domainp, self.ddomainp
-      R, r = 3, 1
-      assert R > r, 'No self-intersection admitted'
-      phi, theta = self.coordsp
-      geom = function.stack( [
-          function.cos(phi) * (r*function.cos(theta) + R),
-          function.sin(phi) * (r*function.cos(theta) + R),
-          function.sin(theta) * r] )
-
-    if geom is 'hull':
-      domain, ddomain = self.domain, self.ddomain
-      x, y = .5*(self.coords/numpy.pi + 1)*self.dims - 1.5 # ensure elem@(1,1) centered
-      geom = function.stack( [x, y, x**2*y**2] )
-
-    else:
-      domain, ddomain = self.domain, self.ddomain
-      geom = .5*(self.coords/numpy.pi + 1)*self.dims # rescale: elem.vol.=1, shift: coords>0
-
-    # stuff I think could be handled underwater by Topology.integrate?
+    domain, geom = geom
+    ddomain = domain * domain
     iw = function.iwscale( geom, domain.ndims )
     iweights = iw * function.opposite( iw ) * function.IWeights()
 
@@ -210,7 +239,6 @@ class TestSingularQuadrature( object ):
       ecoll[elem.orientation[0]][elem.orientation[1:]] = elem
 
     # integrands and primitives
-    devel = len(qset) > 2
     for neighbor, elems in enumerate( ecoll ):
       if devel: errs, Fset = {}, {}
       if compare_to_gauss: errsg = {}
@@ -221,22 +249,7 @@ class TestSingularQuadrature( object ):
           A = {0:8, 1:6, 2:4, 3:1}[neighbor]
           qg = int(qmax*(A**.25))
           Fg = topo.integrate( func(geom), iweights=iweights, ischeme='gauss%i'%qg )
-        if plot_quad_points: # Plot integration points
-          with plot.PyPlot( 'quad' ) as fig:
-            pts, wts = elem.eval( 'singular%i'%3 )
-            z = key[0]%2
-            pts[:,z] *= -1
-            pts[:,z] += 1
-            affine = [int(n) for n in re.findall( r'\d+', elem.elem1.vertices[0].id )]
-            fig.plot( pts[:,0] + affine[0] - 1.5,
-                      pts[:,1] + affine[1] - 1.5, 'rx' )
-            affine = [int(n) for n in re.findall( r'\d+', elem.elem2.vertices[0].id )]
-            fig.plot( pts[:,2] + affine[0] - 1.5,
-                      pts[:,3] + affine[1] - 1.5, 'g+' )
-            for x in range( 4 ): fig.plot( [x-1.5, x-1.5], [-1.5, 2.5], 'b-' )
-            for y in range( 5 ): fig.plot( [-1.5, 1.5], [y-1.5, y-1.5], 'b-' )
-            fig.title( 'n:%i, t:%i, %i'%elem.orientation )
-            fig.axes().set_aspect('equal', 'datalim')
+        if plot_quad_points: self.plot_gauss_on_3x4( elem )
 
         if devel:
           # Devel mode (default), visual check of convergence
@@ -265,7 +278,6 @@ class TestSingularQuadrature( object ):
           err0 = numpy.abs(F/F0-1)
           err1 = numpy.abs(F/F1-1)
           slope = numpy.log10(err1/err0)/(q1-q0)
-          print slopes, slope, ' | ', neighbor, key
           assert slope <= (-2. if slopes is None else slopes[neighbor]) or err1 < 1.e-12, \
               'Insufficient quadrature convergence (is func analytic?), slope = %.2f' % slope
 
@@ -274,7 +286,7 @@ class TestSingularQuadrature( object ):
 
       if devel:
         with plot.PyPlot( 'conv' ) as fig:
-          style = 'x-', '+-', '*-', '.-'
+          style = 'x-', '+-', '*-', '.-', 'o-', '^-', 's-', 'h-'
           styleg = 'x:', '+:', '*:', '.:'
           for key, val in errs.iteritems():
             label = 't:%i,%i'%key+' F=%.3e'%Fset[key]
@@ -289,43 +301,45 @@ class TestSingularQuadrature( object ):
     'Exact integration of a constant integrand, acc to theory'
     # Theory predicts exact integration of f in P^p if q >= 2+(p+1)//2, for singular scheme on quad elements
     # In this formula f = sum_{i<4} c_i x_i^{p_i} and p := \max p_i
-    self._integrate( lambda x: 1, geom='coords', qset=(2,), qmax=16 )
+    self._integrate( lambda x: 1, (self.domain, self.plane), qset=(2,), qmax=16 )
 
   def test_linearfunc( self ):
     'Exact integration of a linear integrand, acc to theory'
     y = function.opposite
-    self._integrate( lambda x: (x+y(x)).sum(), geom='coords', qset=(3,), qmax=16 )
+    self._integrate( lambda x: (x+y(x)).sum(), (self.domain, self.plane), qset=(3,), qmax=16 )
 
   def test_quadraticfunc( self ):
     'Exact integration of a quadratic integrand, acc to theory'
     y = function.opposite
-    self._integrate( lambda x: ((x+y(x))**2).sum(), geom='coords', qset=(3,), qmax=16 )
+    self._integrate( lambda x: ((x+y(x))**2).sum(), (self.domain, self.plane), qset=(3,), qmax=16 )
 
   def test_nonexactfunc( self ):
     'Quadrature convergence for non-polynomial analytic func (det grad torus), acc to theory'
-    self._integrate( lambda x: 1, geom='torus', qset=(5,6), qmax=16 )
+    self._integrate( lambda x: 1, (self.domainp, self.torus), qset=(5,6), qmax=16 )
 
   def test_cosinefunc( self ):
     'Quadrature convergence for non-polynomial analytic func (cosine), acc to theory'
     y = function.opposite
     cos = function.cos
     prod = lambda f: function.product( f, -1 )
-    self._integrate( lambda x: prod(cos(x))*prod(cos(y(x))), geom='coords', qset=(5,6), qmax=16 )
+    self._integrate( lambda x: prod(cos(x))*prod(cos(y(x))), (self.domain, self.plane), qset=(5,6), qmax=16 )
 
   def test_weaklysingularfunc( self ):
     'Quadrature convergence for a singular singular func'
     func = lambda x: function.norm2( x-function.opposite(x) )**-1
-    self._integrate( func, geom='hull', qset=(6,10), qmax=16, slopes=(-1., -.4, -.8, -.2) )
+    self._integrate( func, (self.domain, self.hull), qset=(6,10), qmax=16, slopes=(-1., -.4, -.8, -.2) )
 
-  def test_stronglysingularfunc( self ):
+  def test_stronglysingularfunc( self, visual=False ):
     'Cauchy Principal Value of a strongly singular func'
     func = lambda x: function.norm2( x-function.opposite(x) )**-2
-    self._integrate( func, geom='hull', qset=(6,10), qmax=16, slopes=(-.1, -.4, -.6, -.2) )
+    kwargs = {'qset':(6,10), 'qmax':16, 'slopes':(-.1, -.4, -.6, -.2)}
+    if visual: kwargs.update( {'qset':range(1,10), 'plot_quad_points':True} )
+    self._integrate( func, (self.domain, self.hull), **kwargs )
 
 def visualinspect():
   'Visual inspection of singular quadrature convergence: for tests calling _integrate(), remove the qset argument'
   visual = TestSingularQuadrature()
-  visual.test_stronglysingularfunc()
+  visual.test_stronglysingularfunc( visual=True )
 
 if __name__ == '__main__':
   util.run( visualinspect )
