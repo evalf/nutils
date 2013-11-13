@@ -187,6 +187,9 @@ class Vertex( object ):
   def __cmp__( self, other ):
     return cmp( str(self), str(other) )
 
+  def __hash__( self ):
+    return hash(str(self))
+
 class PrimaryVertex( Vertex ):
   'primary'
 
@@ -195,9 +198,6 @@ class PrimaryVertex( Vertex ):
   def __init__( self, id ):
     assert isinstance( id, str )
     self.id = id
-
-  def __eq__( self, other ):
-    return self is other
 
   def __repr__( self ):
     return self.id
