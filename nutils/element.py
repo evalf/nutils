@@ -477,24 +477,24 @@ class ProductElement( Element ):
     elif isinstance( self.elem1, QuadElement ):
       # define local map rotations
       if neighborhood==1:
-        transform = lambda vertices: [[0,2], [2,3], [3,1], [1,0], [2,0], [3,2], [1,3], [0,1]].index( vertices )
-        transf1, transf2 = transform( vertices1 ), transform( vertices2 )
+        transform = [0,2], [2,3], [3,1], [1,0], [2,0], [3,2], [1,3], [0,1]
       elif neighborhood==2:
-        transform = lambda vertex: [[0], [2], [3], [1]].index( vertex )
-        transf1, transf2 = transform( vertices1 ), transform( vertices2 )
+        transform = [0], [2], [3], [1]
       else:
         raise ValueError( 'Unknown neighbor type %i' % neighborhood )
+      transf1 = transform.index( vertices1 )
+      transf2 = transform.index( vertices2 )
     elif isinstance( self.elem1, TriangularElement ):
       raise NotImplementedError( 'Pending completed implementation and verification.' )
       # define local map rotations
       if neighborhood==1:
-        transf1 = [[0,1], [1,2], [0,2]].index( vertices1 )
-        transf2 = [[0,1], [1,2], [0,2]].index( vertices2 )
+        transform = [0,1], [1,2], [0,2]
       elif neighborhood==2:
-        transf1 = [[0], [1], [2]].index( vertices1 )
-        transf2 = [[0], [1], [2]].index( vertices2 )
+        transform = [0], [1], [2]
       else:
         raise ValueError( 'Unknown neighbor type %i' % neighborhood )
+      transf1 = transform.index( vertices1 )
+      transf2 = transform.index( vertices2 )
     else:
       raise NotImplementedError( 'Reorientation not implemented for element of class %s' % type(self.elem1) )
     return neighborhood, transf1, transf2
