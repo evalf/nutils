@@ -179,60 +179,9 @@ class AffineTransformation( Transformation ):
 def IdentityTransformation( ndims ):
   return AffineTransformation( numpy.zeros(ndims), numpy.eye(ndims) )
 
-class Vertex( object ):
-  'base class'
-
-  __slots__ = ()
-
-  def __cmp__( self, other ):
-    return cmp( str(self), str(other) )
-
-  def __hash__( self ):
-    return hash(str(self))
-
-class PrimaryVertex( Vertex ):
-  'primary'
-
-  __slots__ = 'id',
-
-  def __init__( self, id ):
-    assert isinstance( id, str )
-    self.id = id
-
-  def __repr__( self ):
-    return self.id
-
-class HalfVertex( Vertex ):
-  'in between two vertices; order arbitrary'
-
-  __slots__ = 'vertices',
-
-  def __init__( self, vertex1, vertex2, xi=.5 ):
-    assert isinstance( vertex1, Vertex )
-    assert isinstance( vertex2, Vertex )
-    self.vertices = (vertex1,xi,vertex2) if vertex1 < vertex2 else (vertex2,1-xi,vertex1)
-
-  def __eq__( self, other ):
-    return other.__class__ == self.__class__ and self.vertices == other.vertices
-
-  def __repr__( self ):
-    return '(%s-%s-%s)' % self.vertices
-
-class ProductVertex( Vertex ):
-  'combined vertices'
-
-  __slots__ = 'vertices',
-
-  def __init__( self, vertex1, vertex2 ):
-    assert isinstance( vertex1, Vertex )
-    assert isinstance( vertex2, Vertex )
-    self.vertices = vertex1, vertex2
-
-  def __eq__( self, other ):
-    return other.__class__ == self.__class__ and self.vertices == other.vertices
-
-  def __repr__( self ):
-    return '%s*%s' % self.vertices
+PrimaryVertex = str
+HalfVertex = lambda vertex1, vertex2, xi=.5: '%s<%.3f>%s' % ( (vertex1,xi,vertex2) if vertex1 < vertex2 else (vertex2,1-xi,vertex1) )
+ProductVertex = lambda *vertices: ','.join( vertices )
 
 class Element( object ):
   '''Element base class.
