@@ -1,5 +1,5 @@
 from . import element, function, util, numpy, parallel, matrix, log, core, numeric, prop, _
-import warnings, itertools
+import warnings, itertools, copy
 
 class ElemMap( dict ):
   'dictionary-like element mapping'
@@ -585,6 +585,108 @@ class Topology( object ):
     log.context( title )
 
     return [ trimmededge for elem in self for trimmededge in elem.get_trimmededges( maxrefine ) ]
+
+  def glue( self, other, coords, tol=1.e-10 ):
+    'Glue topologies along boundary group __glue__.'
+
+    # Checks on input
+    assert self.boundary.groups.has_key( '__glue__' ) and \
+          other.boundary.groups.has_key( '__glue__' ), 'Must identify glue boundary first.'
+    assert len(self.boundary.groups['__glue__']) == \
+          len(other.boundary.groups['__glue__']), 'Minimum requirement is that cardinality is equal.'
+    assert self.ndims == 2 and other.ndims == 2, '1D boundaries for now.' # see dists computation and update_vertices
+    new = copy.deepcopy( other )
+
+    # Handy local function definitions
+    def replace_elem( index, elem ):
+      'Put elem in new at index with other as parent.'
+      assert isinstance( elem, element.QuadElement ), 'glue() is very restrictive: only QuadElement meshes for now.'
+      new_elem = lambda parent: element.QuadElement( elem.ndims, elem.vertices, parent=parent ) 
+      if isinstance( new, StructuredTopology ): # other is of the same type as new
+        index = numpy.unravel_index( index, new.structure.shape )
+        new.structure[index] = new_elem( (other.structure[index], element.IdentityTransformation(elem.ndims)) )
+      else:
+        new.elements[index] = new_elem( (other.elements[index], element.IdentityTransformation(elem.ndims)) )
+
+    def update_vertices( edge, vertices ):
+      'Update the new element. Tedious construction to avoid updating only a copy.'
+      # Find copy of parent
+      for index, elem in enumerate( new ):
+        elem = copy.deepcopy( elem )
+        n0, n1, o0, o1 = vertices+edge.vertices # new and old vertex labels
+        included = lambda vertex: set( elem.vertices ).issuperset( (vertex,) )
+        if (included(n0) or included(o0)) and \
+           (included(n1) or included(o1)): break # elem contains edge
+      else:
+        raise ValueError( 'edge not in elem' )
+
+      # Create copy of vertices
+      elem.vertices = list(elem.vertices) # elem.vertices = list(elem.vertices)
+      for new_vertex, old_vertex in zip( vertices, edge.vertices ):
+        try:
+          j = elem.vertices.index( old_vertex )
+          elem.vertices[j] = new_vertex
+        except:
+          pass # vertex has been updated via a previous edge
+      elem.vertices = tuple(elem.vertices)
+
+      # Place new element in copy
+      replace_elem( index, elem )
+
+    def elem_list( topo ):
+      if isinstance( topo, StructuredTopology ): return list( topo.structure.flat )
+      return topo.elements
+
+    # 0. Create copy of other, so that other is not altered
+    for index, elem in enumerate( new ):
+      replace_elem( index, elem )
+
+    # 1. Determine vertex locations
+    self_vertex_locations = {}
+    self_coords, other_coords = coords if isinstance( coords, tuple ) else 2*(coords,)
+    for elem in self.boundary.groups['__glue__']:
+      self_vertex_locations[elem] = self_coords( elem, 'bezier2' )
+    other_vertex_locations = {}
+    for elem in other.boundary.groups['__glue__']:
+      other_vertex_locations[elem] = other_coords( elem, 'bezier2' )
+
+    # 2. Update vertices of elements in new topology
+    for self_elem, self_locs in self_vertex_locations.iteritems():
+      meshwidth = numpy.linalg.norm( numpy.diff( self_locs, axis=0 ) )
+      assert meshwidth > tol, 'tol. (%.2e) > element size (%.2e)' % (tol, meshwidth)
+      for other_elem, other_locs in other_vertex_locations.iteritems():
+        dists = (numpy.linalg.norm( self_locs-other_locs ),
+                 numpy.linalg.norm( self_locs-other_locs[::-1] ))
+        if min(*dists) < tol:
+          other_vertex_locations.pop( other_elem )
+          new_vertices = self_elem.vertices if dists[0] < tol else self_elem.vertices[::-1]
+          update_vertices( other_elem, new_vertices )
+          break # don't check if a second element can be paired.
+      else:
+        raise AssertionError( 'Could not pair master element: %s (maybe tol is set too low?)' % self_elem )
+    assert not len( other_vertex_locations ), 'Could not pair slave elements: ' + ', '.join(
+      [elem.__repr__() for elem in other_vertex_locations.iterkeys()] )
+
+    # 3. Generate union topo
+    union = UnstructuredTopology( elem_list(self) + elem_list(new), self.ndims )
+    # Update interior groups
+    union.groups.update( dict(
+        [(key+'.m',val) for key, val in self.groups.iteritems()] +
+        [(key+'.s',val) for key, val in new.groups.iteritems()] ) )
+    # Update boundary groups
+    # 1st level boundaries, not e.g. boundary['top'].boundary, groups structure needs reorganization anyways
+    # as union is an UnstructuredTopology, no boundary is defined, so 'boundary.groups' is copied to 'groups'.
+    if isinstance( self, StructuredTopology ):
+      union.groups.update( dict( [(key+'.mb',val) for key, val in self.boundary.groups.iteritems()] ) )
+    if isinstance( new, StructuredTopology ):
+      union.groups.update( dict( [(key+'.sb',val) for key, val in new.boundary.groups.iteritems()] ) )
+    # Glue-related groups added last (overwrites other groups in case warning is given above)
+    union.groups.update( {'__master__':elem_list(self),
+                           '__slave__':elem_list(new),
+                      '__master_bnd__':self.boundary,
+                       '__slave_bnd__':new.boundary} )
+    union.groups['__glued__'] = union.groups.pop('__glue__.mb')
+    return union
 
 class StructuredTopology( Topology ):
   'structured topology'

@@ -151,51 +151,62 @@ class TestOneInKernelOfK( object ):
 
 class TestShearFlow( object ):
   'Torus cut of shear flow.'
-  def test_InteriorProblem( self, N=4 ):
-    'Interior Dirichlet on torus, shear flow.'
+  def _bemtest( self, domain, coords, ischeme, visual=False ):
+    'Interior Stokes-Dirichlet BEM test case: shear flow.'
     # domain, space
-    cos, sin = function.cos, function.sin
-    grid = lambda n: numpy.linspace( -2., 2., n+1 )
-    # domain, coords = mesh.rectilinear( 2*(grid(4),), periodic=(0,1) )
-    domain, coords = mesh.rectilinear( 2*(grid(N),), periodic=(0,1) )
-    ddomain = domain*domain
-    funcsp = domain.splinefunc( degree=2*(4,) ).vector(3)
+    funcsp = domain.splinefunc( degree=3 ).vector(3)
+    l2norm = lambda func: numpy.sqrt( sum( domain.integrate( func**2., 'gauss6', coords ) ) )
     
-    # geometry
+    # boundary data
+    velo = function.stack( [coords[2], 0., 0.] )
+    trac = function.stack( [coords.normal()[2], 0., coords.normal()[0]] )
+    # boundary data compatibility
+    influx = (velo*coords.normal()).sum(-1)
+    assert numpy.abs( domain.integrate( influx, coords=coords, ischeme='gauss5' ) ) < 1.e-12, 'int v.n = 0 condition violated.'
+  
+    # Matric/vector assembly
+    ddomain = domain*domain
+    iw = function.iwscale( coords, 2 )
+    iweights = iw * function.opposite( iw ) * function.IWeights()
+    x, y = coords, function.opposite( coords )
+    kwargs = {'iweights':iweights, 'force_dense':True}
+    rhs = 0.5*domain.integrate( (funcsp*velo).sum(-1), coords=x, ischeme=ischeme['F'] ) \
+        + ddomain.integrate( (funcsp*(K(x,y)*function.opposite(velo)).sum()).sum(),
+          ischeme=ischeme['K'], title='bem[K]', **kwargs )
+    mat = ddomain.integrate_symm( (funcsp*(V(x,y)*function.opposite(funcsp)[:,_,_,:]).sum()).sum(),
+          ischeme=ischeme['V'], title='bem[V]', **kwargs )
+
+    # Solve
+    lhs = mat.solve( rhs, tol=1.e-8 )
+    trach = funcsp.dot(lhs)
+    err = l2norm(trach-trac)/l2norm(numpy.ones(1))
+    if visual:
+      plot.writevtu( visual, domain.refine(2), coords, sdv=1.e-4,
+          pointdata={'trac0':trac, 'trach':trach} )
+      log.info( 'L2 err per unit surface area: %.2e' % err )
+    assert err < 2.e-2, 'Traction computed in BEM example exceeds tolerance.'
+
+  def test_InteriorProblem( self, visual=False ):
+    'Interior Dirichlet on torus with b-splines.'
+    # Topology and torus geometry
+    domain, coords = mesh.rectilinear( 2*(range(-2,3),), periodic=(0,1) )
+    cos, sin = function.cos, function.sin
     R, r = 3, 1
     phi, theta = .5*pi*coords
-    torus = function.stack( [
-        (r*cos(theta) + R)*cos(phi),
-        (r*cos(theta) + R)*sin(phi),
-         r*sin(theta)] )
-  
-    # boundary data
-    velo_shear = function.stack( [torus[2], 0., 0.] )
-    trac_shear = function.stack( [torus.normal()[2], 0., torus.normal()[0]] )
-    assert numpy.abs( domain.integrate( (velo_shear*torus.normal()).sum(-1), coords=torus, ischeme='gauss2' ) ) < 1.e-12, 'int v.n = 0 condition violated.'
-  
-    l2norm = lambda self, func: numpy.sqrt( self.domain.integrate( func**2, coords=self.torus, ischeme='gauss4' ).sum() )
-  
-    iw = function.iwscale( torus, domain.ndims )
-    iweights = iw * function.opposite( iw ) * function.IWeights()
-    x = torus
-    y = function.opposite( x )
-    
-    rhs = 0.5*domain.integrate( (funcsp*velo_shear).sum(-1), coords=x, ischeme='gauss3' ) \
-        + ddomain.integrate( (funcsp*(K(x,y)*function.opposite(velo_shear)).sum()).sum(),
-          iweights=iweights, ischeme='singular5', title='bem[K]' )
-    mat = ddomain.integrate_symm( (funcsp*(V(x,y)*function.opposite(funcsp)[:,_,_,:]).sum()).sum(),
-          iweights=iweights, ischeme='singular3', force_dense=True, title='bem[V]' )
-    lhs = mat.solve( rhs, tol=1.e-8 )
-    trac = funcsp.dot(lhs)
-    trac_err, surf = domain.integrate( ((trac-trac_shear)**2, 1), coords=x, ischeme='gauss4' )
-    err = numpy.sqrt( trac_err.sum() )/surf
-    assert almostEquals( err, places=2 ), 'err = %.3e'%err
+    torus = function.stack( [(r*cos(theta) + R)*cos(phi), (r*cos(theta) + R)*sin(phi), r*sin(theta)] )
 
-def main( N=8 ):
+    self._bemtest( domain, torus, {'F':'gauss3', 'K':'singular5', 'V':'singular3'}, visual='./torus.vtu' if visual else False )
+
+  def test_SubdivisionGeometry( self, visual=False ):
+    'Interior Dirichlet on approximate sphere with subdivision surfaces.'
+    # domain, space
+    domain, coords = mesh.blender( 'simplesphere.sdv' )
+    self._bemtest( domain, coords, {'F':'gauss3', 'K':'singular6', 'V':'singular6'}, visual='./sphere.vtu' if visual else False )
+
+def main():
   a = TestShearFlow()
-  a.test_InteriorProblem( N=N )
-  raw_input( 'hit any key to exit' )
+  # a.test_InteriorProblem( visual=True )
+  a.test_SubdivisionGeometry( visual=True )
 
 if __name__ == '__main__':
   util.run( main )
