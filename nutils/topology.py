@@ -1222,5 +1222,124 @@ class HierarchicalTopology( Topology ):
   def splinefunc( self, *args, **kwargs ):
     return self._funcspace( lambda topo: topo.splinefunc( *args, **kwargs ) )
 
+def glue( master, slave, coords, tol=1.e-10, verbose=False ):
+  'Glue topologies along boundary group __glue__.'
+  log.context('glue')
+
+  # Checks on input
+  assert master.boundary.groups.has_key( '__glue__' ) and \
+          slave.boundary.groups.has_key( '__glue__' ), 'Must identify glue boundary first.'
+  assert len(master.boundary.groups['__glue__']) == \
+          len(slave.boundary.groups['__glue__']), 'Minimum requirement is that cardinality is equal.'
+  assert master.ndims == 2 and slave.ndims == 2, '1D boundaries for now.' # see dists computation and update_vertices
+
+  # Handy local function definitions
+  def replace_elem( index, elem ):
+    'Put elem in new at index with slave as parent.'
+    assert isinstance( elem, element.QuadElement ), 'glue() is very restrictive: only QuadElement meshes for now.'
+    new_elem = lambda parent: element.QuadElement( elem.ndims, elem.vertices, parent=parent ) 
+    if isinstance( slave, StructuredTopology ): # slave is of the same type as new
+      ndindex = numpy.unravel_index( index, slave.structure.shape )
+      new.elements[index] = new_elem( (slave.structure[ndindex], element.IdentityTransformation(elem.ndims)) )
+    else:
+      new.elements[index] = new_elem( (slave.elements[index], element.IdentityTransformation(elem.ndims)) )
+
+  def update_vertices( edge, vertices ):
+    'Update the new element. Tedious construction to avoid updating only a copy.'
+    # Find copy of parent
+    for index, elem in enumerate( new ):
+      n0, n1, o0, o1 = vertices+edge.vertices # new and old vertex labels
+      included = lambda vertex: set( elem.vertices ).issuperset( (vertex,) )
+      if (included(n0) or included(o0)) and \
+         (included(n1) or included(o1)): break # elem contains edge
+    else:
+      raise ValueError( 'edge not in elem' )
+
+    # Create copy of vertices
+    elem.vertices = list(elem.vertices) # elem.vertices = list(elem.vertices)
+    for new_vertex, old_vertex in zip( vertices, edge.vertices ):
+      try:
+        j = elem.vertices.index( old_vertex )
+        elem.vertices[j] = new_vertex
+      except:
+        pass # vertex has been updated via a previous edge
+    elem.vertices = tuple(elem.vertices)
+
+    # Place new element in copy
+    replace_elem( index, elem )
+
+  def elem_list( topo ):
+    if isinstance( topo, StructuredTopology ): return list( topo.structure.flat )
+    return topo.elements
+
+  # 0. Create copy of slave, so that slave is not altered
+  new = UnstructuredTopology( elem_list( slave ), slave.ndims )
+  for index, elem in enumerate( slave ):
+    replace_elem( index, elem )
+
+  # 1. Determine vertex locations
+  master_vertex_locations = {}
+  master_coords, slave_coords = coords if isinstance( coords, tuple ) else 2*(coords,)
+  for elem in master.boundary.groups['__glue__']:
+    master_vertex_locations[elem] = master_coords( elem, 'bezier2' )
+  slave_vertex_locations = {}
+  for elem in slave.boundary.groups['__glue__']:
+    slave_vertex_locations[elem] = slave_coords( elem, 'bezier2' )
+
+  # 2. Update vertices of elements in new topology
+  log.info( 'pairing elements [%i]' % len(master.boundary.groups['__glue__']) )
+  for master_elem, master_locs in master_vertex_locations.iteritems():
+    meshwidth = numpy.linalg.norm( numpy.diff( master_locs, axis=0 ) )
+    assert meshwidth > tol, 'tol. (%.2e) > element size (%.2e)' % (tol, meshwidth)
+    if verbose: pos = {}
+    for slave_elem, slave_locs in slave_vertex_locations.iteritems():
+      dists = (numpy.linalg.norm( master_locs-slave_locs ),
+               numpy.linalg.norm( master_locs-slave_locs[::-1] ))
+      if verbose:
+        key = tuple(slave_locs[:,:2].T.flatten())
+        pos[key] = min(*dists)
+      if min(*dists) < tol:
+        slave_vertex_locations.pop( slave_elem )
+        new_vertices = master_elem.vertices if dists[0] < tol else master_elem.vertices[::-1]
+        update_vertices( slave_elem, new_vertices )
+        break # don't check if a second element can be paired.
+    else:
+      if verbose:
+        from matplotlib import pyplot
+        pyplot.clf()
+        pyplot.plot( master_locs[:,0], master_locs[:,1], '.-', label='master' )
+        for verts, dist in pos.iteritems():
+          pyplot.plot( verts[:2], verts[2:], label='%.3f'%dist )
+          title = min( locals().get('title',dist), dist )
+        pyplot.legend()
+        pyplot.axis('equal')
+        pyplot.title('min dist: %.3e'%title)
+        it = locals().get('it',-1) + 1
+        name = 'glue%i.jpg'%it
+        pyplot.savefig(prop.dumpdir+name)
+        log.path(name)
+      raise AssertionError( 'Could not pair master element: %s (maybe tol is set too low?)' % master_elem )
+  assert not len( slave_vertex_locations ), 'Could not pair slave elements: ' + ', '.join(
+    [elem.__repr__() for elem in slave_vertex_locations.iterkeys()] )
+
+  # 3. Generate union topo
+  union = UnstructuredTopology( elem_list(master) + elem_list(new), master.ndims )
+  log.info( 'created union topo [%i]' % len(union) )
+  # Update interior groups
+  union.groups.update( dict(
+      [(key+'.m',val) for key, val in master.groups.iteritems()] +
+      [(key+'.s',val) for key, val in slave.groups.iteritems()] ) )
+  # Update boundary groups
+  # 1st level boundaries, not e.g. boundary['top'].boundary, groups structure needs reorganization anyways
+  union.groups.update( dict( [(key+'.mb',val) for key, val in master.boundary.groups.iteritems()] ) )
+  union.groups.update( dict( [(key+'.sb',val) for key, val in slave.boundary.groups.iteritems()] ) )
+  # Glue-related groups added last (overwrites slave groups in case warning is given above)
+  union.groups.update( {'__master__':elem_list(master),
+                         '__slave__':elem_list(new),
+                    '__master_bnd__':master.boundary,
+                     '__slave_bnd__':slave.boundary} )
+  union.groups['__glued__'] = union.groups.pop('__glue__.mb')
+  union.groups.pop('__glue__.sb')
+  return union
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
