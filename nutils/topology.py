@@ -1222,8 +1222,9 @@ class HierarchicalTopology( Topology ):
   def splinefunc( self, *args, **kwargs ):
     return self._funcspace( lambda topo: topo.splinefunc( *args, **kwargs ) )
 
-def glue( master, slave, coords, tol=1.e-10 ):
+def glue( master, slave, coords, tol=1.e-10, verbose=False ):
   'Glue topologies along boundary group __glue__.'
+  log.context('glue')
 
   # Checks on input
   assert master.boundary.groups.has_key( '__glue__' ) and \
@@ -1286,24 +1287,44 @@ def glue( master, slave, coords, tol=1.e-10 ):
     slave_vertex_locations[elem] = slave_coords( elem, 'bezier2' )
 
   # 2. Update vertices of elements in new topology
+  log.info( 'pairing elements [%i]' % len(master.boundary.groups['__glue__']) )
   for master_elem, master_locs in master_vertex_locations.iteritems():
     meshwidth = numpy.linalg.norm( numpy.diff( master_locs, axis=0 ) )
     assert meshwidth > tol, 'tol. (%.2e) > element size (%.2e)' % (tol, meshwidth)
+    if verbose: pos = {}
     for slave_elem, slave_locs in slave_vertex_locations.iteritems():
       dists = (numpy.linalg.norm( master_locs-slave_locs ),
                numpy.linalg.norm( master_locs-slave_locs[::-1] ))
+      if verbose:
+        key = tuple(slave_locs[:,:2].T.flatten())
+        pos[key] = min(*dists)
       if min(*dists) < tol:
         slave_vertex_locations.pop( slave_elem )
         new_vertices = master_elem.vertices if dists[0] < tol else master_elem.vertices[::-1]
         update_vertices( slave_elem, new_vertices )
         break # don't check if a second element can be paired.
     else:
+      if verbose:
+        from matplotlib import pyplot
+        pyplot.clf()
+        pyplot.plot( master_locs[:,0], master_locs[:,1], '.-', label='master' )
+        for verts, dist in pos.iteritems():
+          pyplot.plot( verts[:2], verts[2:], label='%.3f'%dist )
+          title = min( locals().get('title',dist), dist )
+        pyplot.legend()
+        pyplot.axis('equal')
+        pyplot.title('min dist: %.3e'%title)
+        it = locals().get('it',-1) + 1
+        name = 'glue%i.jpg'%it
+        pyplot.savefig(prop.dumpdir+name)
+        log.path(name)
       raise AssertionError( 'Could not pair master element: %s (maybe tol is set too low?)' % master_elem )
   assert not len( slave_vertex_locations ), 'Could not pair slave elements: ' + ', '.join(
     [elem.__repr__() for elem in slave_vertex_locations.iterkeys()] )
 
   # 3. Generate union topo
   union = UnstructuredTopology( elem_list(master) + elem_list(new), master.ndims )
+  log.info( 'created union topo [%i]' % len(union) )
   # Update interior groups
   union.groups.update( dict(
       [(key+'.m',val) for key, val in master.groups.iteritems()] +
