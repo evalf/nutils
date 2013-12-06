@@ -1529,14 +1529,14 @@ class PolyLine( StdElem ):
 
     # magic bernstein triangle
     n = degree
-    poly = numpy.zeros( [n+1,n+1], dtype=int )
+    revpoly = numpy.zeros( [n+1,n+1], dtype=int )
     root = (-1)**n
     for k in range(n//2+1):
-      poly[k,k] = root
+      revpoly[k,k] = root
       for i in range(k+1,n+1-k):
-        root = poly[i,k] = poly[k,i] = ( root * (k+i-n-1) ) / i
-      root = ( poly[k,k+1] * (k*2-n+1) ) / (k+1)
-    return poly
+        root = revpoly[i,k] = revpoly[k,i] = ( root * (k+i-n-1) ) / i
+      root = ( revpoly[k,k+1] * (k*2-n+1) ) / (k+1)
+    return revpoly[::-1]
 
   @classmethod
   def spline_poly( cls, p, n ):
@@ -1629,7 +1629,8 @@ class PolyLine( StdElem ):
     return numpy.array( elems )
 
   def __init__( self, poly ):
-    'constructor'
+    '''Create polynomial from order x nfuncs array of coefficients 'poly'.
+       Evaluates to sum_i poly[i,:] x**i.'''
 
     self.ndims = 1
     self.poly = numpy.asarray( poly, dtype=float )
@@ -1648,11 +1649,11 @@ class PolyLine( StdElem ):
 
     poly = self.poly
     for n in range(grad):
-      poly = poly[:-1] * numpy.arange( poly.shape[0]-1, 0, -1 )[:,_]
+      poly = poly[1:] * numpy.arange( 1, poly.shape[0] )[:,_]
 
     polyval = numpy.empty( x.shape+(self.nshapes,) )
-    polyval[:] = poly[0]
-    for p in poly[1:]:
+    polyval[:] = poly[-1]
+    for p in poly[-2::-1]:
       polyval *= x[...,_]
       polyval += p
 
