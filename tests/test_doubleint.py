@@ -112,7 +112,7 @@ class TestKroneckerKernelGivesSurface( object ):
     sphere = function.stack( [cos(phi)*cos(theta), sin(phi)*cos(theta), sin(theta)] )
     velo = domain.splinefunc( degree=2*(2,) ).vector(3)
     vinf = function.stack( (0.,0.,1.) )
-    val = domain.integrate( (velo*vinf).sum(-1), coords=sphere, ischeme='gauss5' ).sum()
+    val = domain.integrate( (velo*vinf).sum(-1), coords=sphere, ischeme='gauss8' ).sum()
 
     surf = 4.*pi
     assert almostEquals( val-surf )
@@ -136,7 +136,7 @@ class TestOneInKernelOfK( object ):
 
     Kvinf = (K(x, y)[:,:]*vinf[_,:]).sum(-1)
     doublelayer = self.ddomain.integrate( (trac[:,:]*Kvinf[_,:]).sum(), iweights=iweights, ischeme='singular{0}'.format(degree) )
-    identity = self.domain.integrate( (trac*vinf).sum(), coords=geometry, ischeme='gauss3' )
+    identity = self.domain.integrate( (trac*vinf).sum(), coords=geometry, ischeme='gauss4' )
 
     return .5*identity + doublelayer
 
@@ -174,21 +174,21 @@ class TestShearFlow( object ):
     trac_shear = function.stack( [torus.normal()[2], 0., torus.normal()[0]] )
     assert numpy.abs( domain.integrate( (velo_shear*torus.normal()).sum(-1), coords=torus, ischeme='gauss2' ) ) < 1.e-12, 'int v.n = 0 condition violated.'
   
-    l2norm = lambda self, func: numpy.sqrt( self.domain.integrate( func**2, coords=self.torus, ischeme='gauss4' ).sum() )
+    l2norm = lambda self, func: numpy.sqrt( self.domain.integrate( func**2, coords=self.torus, ischeme='gauss6' ).sum() )
   
     iw = function.iwscale( torus, domain.ndims )
     iweights = iw * function.opposite( iw ) * function.IWeights()
     x = torus
     y = function.opposite( x )
     
-    rhs = 0.5*domain.integrate( (funcsp*velo_shear).sum(-1), coords=x, ischeme='gauss3' ) \
+    rhs = 0.5*domain.integrate( (funcsp*velo_shear).sum(-1), coords=x, ischeme='gauss4' ) \
         + ddomain.integrate( (funcsp*(K(x,y)*function.opposite(velo_shear)).sum()).sum(),
           iweights=iweights, ischeme='singular5', title='bem[K]' )
     mat = ddomain.integrate_symm( (funcsp*(V(x,y)*function.opposite(funcsp)[:,_,_,:]).sum()).sum(),
           iweights=iweights, ischeme='singular3', force_dense=True, title='bem[V]' )
     lhs = mat.solve( rhs, tol=1.e-8 )
     trac = funcsp.dot(lhs)
-    trac_err, surf = domain.integrate( ((trac-trac_shear)**2, 1), coords=x, ischeme='gauss4' )
+    trac_err, surf = domain.integrate( ((trac-trac_shear)**2, 1), coords=x, ischeme='gauss6' )
     err = numpy.sqrt( trac_err.sum() )/surf
     assert almostEquals( err, places=2 ), 'err = %.3e'%err
 
