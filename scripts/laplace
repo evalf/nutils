@@ -1,9 +1,11 @@
 #! /usr/bin/env python
 
 from nutils import *
+import libmatrix
+numpy.set_printoptions( linewidth=113 )
 
 
-@parallel.fork
+#@parallel.fork
 def makeplots( domain, coords, sol, index ):
 
   log.context( 'plots' )
@@ -16,10 +18,10 @@ def makeplots( domain, coords, sol, index ):
     plt.ylim( 0, .5*numpy.pi )
 
 
-def main( nelems=8, degree=1, beltrami=False ):
+def main( nelems=2, degree=1, beltrami=False ):
 
-  domain, coords = mesh.rectilinear( [(0,.5*numpy.pi,nelems+1)]*2 )
-  #domain, coords = mesh.demo( xmax=.5*numpy.pi, ymax=.5*numpy.pi )
+  domain, coords = mesh.rectilinear( [(0,.5*numpy.pi,nelems+1)]*2, nsubdomains=2 )
+  domain.comm.set_verbosity( 2 )
   x, y = coords
   exact = function.sin(x) * function.exp(y)
   funcsp = domain.splinefunc( degree=degree )
@@ -31,7 +33,8 @@ def main( nelems=8, degree=1, beltrami=False ):
   tmp = funcsp * numpy.exp(.5*numpy.pi) * function.sin(x)
   rhs = domain.boundary['top'].integrate( tmp, coords=coords, ischeme='gauss6', title='rhs' )
   cons = domain.boundary['left,bottom'].project( function.sin(x), ischeme='gauss6', coords=coords, onto=funcsp, title='left,bottom edge' )
-  lhs = matrix.solve( rhs, constrain=cons, tol=1e-8, symmetric=True )
+  P = libmatrix.Precon( matrix, 'ILUT' )
+  lhs = matrix.solve( rhs, precon=P, constrain=cons, symmetric=True )
   sol = funcsp.dot(lhs)
 
   makeplots( domain, coords[:2], sol, nelems )

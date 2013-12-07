@@ -188,7 +188,7 @@ class Element( object ):
 
   Represents the topological shape.'''
 
-  __slots__ = 'vertices', 'ndims', 'index', 'parent', 'context', 'interface', 'root_transform', 'inv_root_transform', 'root_det'
+  __slots__ = 'vertices', 'ndims', 'index', 'parent', 'context', 'interface', 'root_transform', 'inv_root_transform', 'root_det', 'subdom'
 
   def __init__( self, ndims, vertices, index=None, parent=None, context=None, interface=None ):
     'constructor'

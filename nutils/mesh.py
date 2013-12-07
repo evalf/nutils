@@ -26,7 +26,7 @@ class GridFunc( function.ElemFunc ):
       I = I[~w]
       x = x[~w]
 
-def rectilinear( vertices, periodic=(), name='rect' ):
+def rectilinear( vertices, periodic=(), name='rect', nsubdomains=1 ):
   'rectilinear mesh'
 
   vertices = [ numpy.linspace(*n) if len(n) == 3 and isinstance(n,tuple) else numpy.asarray(n) for n  in vertices ]
@@ -46,7 +46,7 @@ def rectilinear( vertices, periodic=(), name='rect' ):
       offset=[ n[i] for n,i in zip(vertices,index) ],
       transform=numpy.diag([ n[i+1]-n[i] for n,i in zip(vertices,index) ]) ) ),
     vertices=vertexobjs[tuple(slice(i,i+2) for i in index)].ravel() ), *indices )
-  topo = topology.StructuredTopology( structure )
+  topo = topology.StructuredTopology( structure, decompose=nsubdomains )
   coords = GridFunc( domainelem, structure, vertices )
   if periodic:
     topo = topo.make_periodic( periodic )

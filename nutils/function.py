@@ -356,7 +356,7 @@ class ArrayFunc( Evaluable ):
   def dot( self, weights, axis=0 ):
     'array contraction'
 
-    weights = numpy.asarray( weights, dtype=float )
+    weights = weights.toarray()
     assert weights.ndim == 1
     s = [ numpy.newaxis ] * self.ndim
     s[axis] = slice(None)
@@ -3079,10 +3079,9 @@ def opposite( arg ):
     
   return arg._opposite()
 
-def function( fmap, nmap, ndofs, ndims ):
+def function( fmap, nmap, ndofs, ndims, axis ):
   'create function on ndims-element'
 
-  axis = '~%d' % ndofs
   cascade = Cascade(ndims)
   func = Function( cascade, fmap, igrad=0, axis=axis )
   dofmap = DofMap( cascade, nmap, axis=axis )

@@ -1,5 +1,6 @@
 from . import element, function, util, numpy, parallel, matrix, log, core, numeric, prop, _
-import warnings, itertools
+import warnings, itertools, libmatrix
+
 
 class ElemMap( dict ):
   'dictionary-like element mapping'
@@ -214,28 +215,10 @@ class Topology( object ):
 
     return retvals
 
-  def build_graph( self, func ):
-    'get matrix sparsity'
-
-    log.context( 'graph' )
-
-    nrows, ncols = func.shape
-    graph = [ [] for irow in range(nrows) ]
-    IJ = function.Tuple([ function.Tuple(ind) for f, ind in function.blocks( func ) ])
-
-    for elem in log.iterate('elem',self):
-      for I, J in IJ( elem, None ):
-        for i in I:
-          graph[i].append(J)
-
-    for irow, g in log.iterate( 'dof', enumerate(graph), nrows ):
-      # release memory as we go
-      if g: graph[irow] = numpy.unique( numpy.concatenate( g ) )
-
-    return graph
-
   def integrate( self, funcs, ischeme, coords=None, iweights=None, force_dense=False, title='integrating' ):
     'integrate'
+
+    if force_dense: raise NotImplementedError
 
     log.context( title )
 
@@ -254,25 +237,26 @@ class Topology( object ):
     retvals = []
     for ifunc, func in enumerate( funcs ):
       func = function._asarray( func )
-      lock = parallel.Lock()
       if function._isfunc( func ):
-        array = parallel.shzeros( func.shape, dtype=float ) if func.ndim != 2 \
-           else matrix.DenseMatrix( func.shape ) if force_dense \
-           else matrix.SparseMatrix( self.build_graph(func), func.shape[1] )
+        maps, = [ f.shape for f, ind in function.blocks( func ) ]
+        array = libmatrix.Array( maps )
         for f, ind in function.blocks( func ):
-          integrands.append( function.Tuple([ ifunc, lock, function.Tuple(ind), function.elemint( f, iweights ) ]) )
+          integrands.append( function.Tuple([ ifunc, function.Tuple(ind), function.elemint( f, iweights ) ]) )
       else:
+        raise NotImplementedError
         array = parallel.shzeros( func.shape, dtype=float )
         if not function._iszero( func ):
-          integrands.append( function.Tuple([ ifunc, lock, (), function.elemint( func, iweights ) ]) )
+          integrands.append( function.Tuple([ ifunc, (), function.elemint( func, iweights ) ]) )
       retvals.append( array )
     idata = function.Tuple( integrands )
 
     idata.compile()
     for elem in parallel.pariter( log.iterate('elem',self) ):
-      for ifunc, lock, index, data in idata( elem, ischeme ):
-        with lock:
-          retvals[ifunc][index] += data
+      for ifunc, index, data in idata( elem, ischeme ):
+        retvals[ifunc].add_global( index, data )
+
+    for retval in retvals:
+      retval.complete()
 
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
     if single_arg:
@@ -365,14 +349,16 @@ class Topology( object ):
       else:
         raise Exception
       A, b = self.integrate( [Afun,bfun], coords=coords, ischeme=ischeme, title='building system' )
-      N = A.rowsupp(droptol)
-      if numpy.all( b == 0 ):
-        constrain[~constrain.where&N] = 0
-      else:
-        solvecons = constrain.copy()
-        solvecons[~(constrain.where|N)] = 0
-        u = A.solve( b, solvecons, tol=tol, symmetric=True, maxiter=maxiter )
-        constrain[N] = u[N]
+      constrain = A.solve( b )
+      constrain.nan_from_supp( A )
+      #N = A.rowsupp(droptol)
+      #if numpy.all( b == 0 ):
+      #  constrain[~constrain.where&N] = 0
+      #else:
+      #  solvecons = constrain.copy()
+      #  solvecons[~(constrain.where|N)] = 0
+      #  u = A.solve( b, solvecons, tol=tol, symmetric=True, maxiter=maxiter )
+      #  constrain[N] = u[N]
 
     elif ptype == 'convolute':
       if ischeme is None:
@@ -420,17 +406,17 @@ class Topology( object ):
     else:
       raise Exception, 'invalid projection %r' % ptype
 
-    errfun2 = ( onto.dot( constrain | 0 ) - fun )**2
-    if errfun2.ndim == 1:
-      errfun2 = errfun2.sum()
-    error2, area = self.integrate( [ errfun2, 1 ], coords=coords, ischeme=ischeme or 'gauss2' )
-    avg_error = numpy.sqrt(error2) / area
+#   errfun2 = ( onto.dot( constrain | 0 ) - fun )**2
+#   if errfun2.ndim == 1:
+#     errfun2 = errfun2.sum()
+#   error2, area = self.integrate( [ errfun2, 1 ], coords=coords, ischeme=ischeme or 'gauss2' )
+#   avg_error = numpy.sqrt(error2) / area
 
-    numcons = constrain.where.sum()
-    if verify is not None:
-      assert numcons == verify, 'number of constraints does not meet expectation: %d != %d' % ( numcons, verify )
+#   numcons = constrain.where.sum()
+#   if verify is not None:
+#     assert numcons == verify, 'number of constraints does not meet expectation: %d != %d' % ( numcons, verify )
 
-    log.info( 'constrained %d/%d dofs, error %.2e/area' % ( numcons, constrain.size, avg_error ) )
+#   log.info( 'constrained %d/%d dofs, error %.2e/area' % ( numcons, constrain.size, avg_error ) )
 
     return constrain
 
@@ -589,7 +575,7 @@ class Topology( object ):
 class StructuredTopology( Topology ):
   'structured topology'
 
-  def __init__( self, structure, periodic=() ):
+  def __init__( self, structure, decompose, periodic=() ):
     'constructor'
 
     structure = numpy.asarray(structure)
@@ -597,6 +583,20 @@ class StructuredTopology( Topology ):
     self.periodic = tuple(periodic)
     self.groups = {}
     Topology.__init__( self, structure.ndim )
+
+    # domain decomposition
+    if isinstance( decompose, libmatrix.LibMatrix ):
+      self.comm = decompose
+    else:
+      log.info( 'starting libmatrix' )
+      self.comm = libmatrix.LibMatrix( nprocs=decompose )
+      log.info( 'libmatrix running' )
+      iax = numpy.argmax( self.structure.shape )
+      bounds = ( numpy.arange( decompose+1 ) * self.structure.shape[iax] ) / decompose
+      for ipart in range(decompose):
+        elemrange = slice( *bounds[ipart:ipart+2] )
+        for elem in self.structure[(slice(None),)*iax+(elemrange,)].flat:
+          elem.subdom = ipart
 
   def make_periodic( self, periodic ):
     'add periodicity'
@@ -642,11 +642,11 @@ class StructuredTopology( Topology ):
         belems = numpy.frompyfunc( lambda elem: elem.edge( iedge ) if elem is not None else None, 1, 1 )( self.structure[s] )
       else:
         belems = numpy.array( self.structure[-iside].edge( 1-iedge ) )
-      boundaries.append( StructuredTopology( belems ) )
+      boundaries.append( StructuredTopology( belems, decompose=self.comm ) )
 
     if self.ndims == 2:
       structure = numpy.concatenate([ boundaries[i].structure for i in [0,2,1,3] ])
-      topo = StructuredTopology( structure, periodic=[0] )
+      topo = StructuredTopology( structure, periodic=[0], decompose=self.comm )
     else:
       allbelems = [ belem for boundary in boundaries for belem in boundary.structure.flat if belem is not None ]
       topo = UnstructuredTopology( allbelems, ndims=self.ndims-1 )
@@ -734,6 +734,7 @@ class StructuredTopology( Topology ):
     dofmap = {}
     funcmap = {}
     hasnone = False
+    masks = numpy.zeros( [ self.comm.nprocs, dofcount ], dtype=bool )
     for item in numpy.broadcast( self.structure, stdelems, *numpy.ix_(*slices) ):
       elem = item[0]
       std = item[1]
@@ -744,13 +745,17 @@ class StructuredTopology( Topology ):
         dofs = vertex_structure[S].ravel()
         mask = dofs >= 0
         if mask.all():
-          dofmap[ elem ] = dofs
+          dofmap[ elem ] = mydofs = dofs
           funcmap[elem] = std
         elif mask.any():
-          dofmap[ elem ] = dofs[mask]
+          dofmap[ elem ] = mydofs = dofs[mask]
           funcmap[elem] = std, mask
+        masks[ elem.subdom, mydofs ] = True
+
+    domainmap = libmatrix.Map( self.comm, masks )
 
     if hasnone:
+      raise NotImplementedError
       touched = numpy.zeros( dofcount, dtype=bool )
       for dofs in dofmap.itervalues():
         touched[ dofs ] = True
@@ -758,7 +763,7 @@ class StructuredTopology( Topology ):
       dofcount = int(renumber[-1])
       dofmap = dict( ( elem, renumber[dofs]-1 ) for elem, dofs in dofmap.iteritems() )
 
-    return function.function( funcmap, dofmap, dofcount, self.ndims )
+    return function.function( funcmap, dofmap, dofcount, self.ndims, domainmap )
 
   @core.cache
   def discontfunc( self, degree ):

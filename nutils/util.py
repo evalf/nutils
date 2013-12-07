@@ -483,7 +483,7 @@ def run( *functions ):
   else:
     excinfo = False
 
-  if hasattr( os, 'wait' ):
+  if False: # disabled until situation with mpi is resolved; was: hasattr( os, 'wait' ):
     try: # wait for child processes to die
       while True:
         pid, status = os.wait()
