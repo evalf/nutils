@@ -190,11 +190,12 @@ class Element( object ):
 
   __slots__ = 'vertices', 'ndims', 'index', 'parent', 'context', 'interface', 'root_transform', 'inv_root_transform', 'root_det', 'subdom'
 
-  def __init__( self, ndims, vertices, index=None, parent=None, context=None, interface=None ):
+  def __init__( self, ndims, vertices, subdom, index=None, parent=None, context=None, interface=None ):
     'constructor'
 
     #assert all( isinstance(vertex,Vertex) for vertex in vertices )
     self.vertices = tuple(vertices)
+    self.subdom = subdom
     self.ndims = ndims
     assert index is None or parent is None
     self.index = index
@@ -653,7 +654,7 @@ class TrimmedElement( Element ):
       if isect < 0:
         child = None
       elif isect > 0:
-        child = QuadElement( vertices=child.vertices, ndims=self.ndims, parent=parent )
+        child = QuadElement( vertices=child.vertices, ndims=self.ndims, parent=parent, subdom=self.subdom )
       else:
         child = TrimmedElement( vertices=child.vertices, elem=child, levelset=self.levelset, maxrefine=self.maxrefine-1, lscheme=self.lscheme, finestscheme=self.finestscheme, evalrefine=self.evalrefine-1, parent=parent )
       children.append( child )
@@ -667,7 +668,7 @@ class TrimmedElement( Element ):
     pelem, transform = edge.context
 
     # transform = self.elem.edgetransform( self.ndims )[ iedge ]
-    return QuadElement( vertices=edge.vertices, ndims=self.ndims-1, context=(self,transform) )
+    return QuadElement( vertices=edge.vertices, ndims=self.ndims-1, context=(self,transform), subdom=self.subdom )
 
   def get_simplices ( self, maxrefine ):
     'divide in simple elements'
@@ -868,11 +869,11 @@ class QuadElement( Element ):
 
   __slots__ = ()
 
-  def __init__( self, ndims, vertices, index=None, parent=None, context=None, interface=None ):
+  def __init__( self, ndims, vertices, subdom, index=None, parent=None, context=None, interface=None ):
     'constructor'
 
     assert len(vertices) == 2**ndims
-    Element.__init__( self, ndims, vertices, index=index, parent=parent, context=context, interface=interface )
+    Element.__init__( self, ndims, vertices, subdom, index=index, parent=parent, context=context, interface=interface )
 
   @property
   @core.cache
@@ -893,7 +894,7 @@ class QuadElement( Element ):
         vertices[s1+(i,)+s2] = util.objmap( HalfVertex, vertices[s1+(0,)+s2], vertices[s1+(2,)+s2], float(i)/N[idim] )
 
     elemvertices = [ vertices[ tuple( slice(i,i+2) for i in index ) ].ravel() for index in numpy.ndindex(*N) ]
-    return tuple( QuadElement( vertices=elemvertices[ielem], ndims=self.ndims, parent=(self,transform) )
+    return tuple( QuadElement( vertices=elemvertices[ielem], ndims=self.ndims, parent=(self,transform), subdom=self.subdom )
       for ielem, transform in enumerate( self.refinedtransform(N) ) )
 
   @property
@@ -960,7 +961,7 @@ class QuadElement( Element ):
                                [[0,0,1],[0,1,1]]] ):
       transform = AffineTransformation( offset=i1, transform=(i2-i1)[:,_] )
       vertices = ndvertices[tuple(i1)], ndvertices[tuple(i2)]
-      ribbons.append( QuadElement( vertices=vertices, ndims=1, context=(self,transform) ) )
+      ribbons.append( QuadElement( vertices=vertices, ndims=1, context=(self,transform), subdom=self.subdom ) )
 
     return ribbons
 
@@ -976,7 +977,7 @@ class QuadElement( Element ):
     s = (slice(None,None, 1 if iside else -1),) * idim + (iside,) \
       + (slice(None,None,-1 if iside else  1),) * (self.ndims-idim-1)
     vertices = numpy.asarray( numpy.reshape( self.vertices, (2,)*self.ndims )[s] ).ravel() # TODO check
-    return QuadElement( vertices=vertices, ndims=self.ndims-1, context=(self,transform) )
+    return QuadElement( vertices=vertices, ndims=self.ndims-1, context=(self,transform), subdom=self.subdom )
 
   @staticmethod
   @core.cache
@@ -1125,7 +1126,7 @@ class TriangularElement( Element ):
 
     transform = self.edgetransform[ iedge ]
     vertices = [ self.vertices[:2], self.vertices[1:], self.vertices[::-2] ][iedge]
-    return QuadElement( vertices=vertices, ndims=1, context=(self,transform) )
+    return QuadElement( vertices=vertices, ndims=1, context=(self,transform), subdom=self.subdom )
 
   @staticmethod
   @core.cache

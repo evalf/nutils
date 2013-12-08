@@ -575,7 +575,7 @@ class Topology( object ):
 class StructuredTopology( Topology ):
   'structured topology'
 
-  def __init__( self, structure, decompose, periodic=() ):
+  def __init__( self, structure, comm, periodic=() ):
     'constructor'
 
     structure = numpy.asarray(structure)
@@ -584,24 +584,13 @@ class StructuredTopology( Topology ):
     self.groups = {}
     Topology.__init__( self, structure.ndim )
 
-    # domain decomposition
-    if isinstance( decompose, libmatrix.LibMatrix ):
-      self.comm = decompose
-    else:
-      log.info( 'starting libmatrix' )
-      self.comm = libmatrix.LibMatrix( nprocs=decompose )
-      log.info( 'libmatrix running' )
-      iax = numpy.argmax( self.structure.shape )
-      bounds = ( numpy.arange( decompose+1 ) * self.structure.shape[iax] ) / decompose
-      for ipart in range(decompose):
-        elemrange = slice( *bounds[ipart:ipart+2] )
-        for elem in self.structure[(slice(None),)*iax+(elemrange,)].flat:
-          elem.subdom = ipart
+    assert isinstance( comm, libmatrix.LibMatrix )
+    self.comm = comm
 
   def make_periodic( self, periodic ):
     'add periodicity'
 
-    return StructuredTopology( self.structure, periodic=periodic )
+    return StructuredTopology( self.structure, self.comm, periodic=periodic )
 
   def __len__( self ):
     'number of elements'
@@ -618,7 +607,7 @@ class StructuredTopology( Topology ):
 
     if isinstance( item, str ):
       return Topology.__getitem__( self, item )
-    return StructuredTopology( self.structure[item] )
+    return StructuredTopology( self.structure[item], self.comm )
 
   @property
   @core.cache
@@ -642,11 +631,11 @@ class StructuredTopology( Topology ):
         belems = numpy.frompyfunc( lambda elem: elem.edge( iedge ) if elem is not None else None, 1, 1 )( self.structure[s] )
       else:
         belems = numpy.array( self.structure[-iside].edge( 1-iedge ) )
-      boundaries.append( StructuredTopology( belems, decompose=self.comm ) )
+      boundaries.append( StructuredTopology( belems, self.comm ) )
 
     if self.ndims == 2:
       structure = numpy.concatenate([ boundaries[i].structure for i in [0,2,1,3] ])
-      topo = StructuredTopology( structure, periodic=[0], decompose=self.comm )
+      topo = StructuredTopology( structure, self.comm, periodic=[0] )
     else:
       allbelems = [ belem for boundary in boundaries for belem in boundary.structure.flat if belem is not None ]
       topo = UnstructuredTopology( allbelems, ndims=self.ndims-1 )
@@ -897,7 +886,7 @@ class StructuredTopology( Topology ):
     structure = structure.reshape( self.structure.shape + tuple(N) )
     structure = structure.transpose( sum( [ ( i, self.ndims+i ) for i in range(self.ndims) ], () ) )
     structure = structure.reshape( self.structure.shape * numpy.asarray(N) )
-    refined = StructuredTopology( structure )
+    refined = StructuredTopology( structure, self.comm )
     refined.groups = { key: group.refine_nu( N ) for key, group in self.groups.items() }
     return refined
 
@@ -912,7 +901,7 @@ class StructuredTopology( Topology ):
 
     trimmedelems = [ elem.trim( levelset=levelset, maxrefine=maxrefine, lscheme=lscheme, finestscheme=finestscheme, evalrefine=evalrefine ) for elem in log.iterate( title, self.structure.ravel() ) ]
     trimmedstructure = numpy.array( trimmedelems ).reshape( self.structure.shape )
-    return StructuredTopology( trimmedstructure, periodic=self.periodic )
+    return StructuredTopology( trimmedstructure, self.comm, periodic=self.periodic )
 
   def __str__( self ):
     'string representation'

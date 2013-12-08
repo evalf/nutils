@@ -1,5 +1,5 @@
-from . import topology, function, util, element, numpy, numeric, _
-import os
+from . import topology, function, util, element, numpy, numeric, log, _
+import os, libmatrix
 
 # MESH GENERATORS
 
@@ -32,7 +32,7 @@ def rectilinear( vertices, periodic=(), name='rect', nsubdomains=1 ):
   vertices = [ numpy.linspace(*n) if len(n) == 3 and isinstance(n,tuple) else numpy.asarray(n) for n  in vertices ]
   ndims = len(vertices)
   indices = numpy.ogrid[ tuple( slice(len(n)-1) for n in vertices ) ]
-  domainelem = element.Element( ndims=ndims, vertices=[] )
+  domainelem = element.Element( ndims=ndims, vertices=[], subdom=-1 )
 
   vertexfmt = name + '(' + ','.join( '%%%dd' % len(str(len(n)-1)) for n in vertices ) + ')'
   vertexobjs = util.objmap( lambda *index: element.PrimaryVertex(vertexfmt%index), *numpy.ogrid[ tuple( slice(len(n)) for n in vertices ) ] )
@@ -40,13 +40,24 @@ def rectilinear( vertices, periodic=(), name='rect', nsubdomains=1 ):
     tmp = numeric.bringforward( vertexobjs, idim )
     tmp[-1] = tmp[0]
 
+  subdom = numpy.empty( [ len(v)-1 for v in vertices ], dtype=int )
+  for i in range( nsubdomains ):
+    subdom.flat[ (i * subdom.size) / nsubdomains: ] = i
+
   structure = util.objmap( lambda *index: element.QuadElement(
     ndims=ndims,
+    subdom=subdom[index],
     parent=( domainelem, element.AffineTransformation(
       offset=[ n[i] for n,i in zip(vertices,index) ],
       transform=numpy.diag([ n[i+1]-n[i] for n,i in zip(vertices,index) ]) ) ),
     vertices=vertexobjs[tuple(slice(i,i+2) for i in index)].ravel() ), *indices )
-  topo = topology.StructuredTopology( structure, decompose=nsubdomains )
+
+  # domain decomposition
+  log.info( 'starting libmatrix' )
+  comm = libmatrix.LibMatrix( nprocs=nsubdomains )
+  log.info( 'libmatrix running' )
+
+  topo = topology.StructuredTopology( structure, comm )
   coords = GridFunc( domainelem, structure, vertices )
   if periodic:
     topo = topo.make_periodic( periodic )
