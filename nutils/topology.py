@@ -90,7 +90,7 @@ class Topology( object ):
     items = ( self.groups[it] for it in item.split( ',' ) )
     return sum( items, items.next() )
 
-  def elem_eval( self, funcs, ischeme, separate=True, title='evaluating' ):
+  def elem_eval( self, funcs, ischeme, separate=False, title='evaluating' ):
     'element-wise evaluation'
 
     log.context( title )
