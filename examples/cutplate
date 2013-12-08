@@ -12,7 +12,8 @@ def Hook( lmbda, mu ):
 
 def main( nelems=10, stress=Hook(1,1) ):
 
-  wholedomain, coords = mesh.rectilinear( [(0,1,nelems+1)] * 2 )
+  verts = numpy.linspace( 0, 1, nelems+1 )
+  wholedomain, coords = mesh.rectilinear( [verts,verts] )
   dspace = wholedomain.splinefunc( degree=3 ).vector( 2 )
   levelset = function.norm2( coords ) - .5
   domain = wholedomain.trim( levelset, maxrefine=3 )

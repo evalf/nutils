@@ -58,7 +58,7 @@ def main( nelems=24, reynolds=100., strong=False, tol=1e-8, rotation=0., timeste
 
   xmax = numpy.ceil( numpy.log(maxradius) / (2*numpy.pi/nelems) ).astype( int )
   log.info( 'creating %dx%d mesh, outer radius %.0f' % ( xmax, nelems, numpy.exp( (2*numpy.pi/nelems) * xmax ) ) )
-  domain, coords = mesh.rectilinear( [range(xmax+1),(0,2*numpy.pi,nelems+1)], periodic=(1,) )
+  domain, coords = mesh.rectilinear( [range(xmax+1),numpy.linspace(0,2*numpy.pi,nelems+1)], periodic=(1,) )
   x, phi = coords
   r = function.exp( (2*numpy.pi/nelems) * x )
   coords = r * [ function.cos(phi), function.sin(phi) ]

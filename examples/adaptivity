@@ -35,7 +35,7 @@ def main( degree=2, niter=30, triangular=False ):
       degree = 1
     domain, coords = mesh.demo()
   else:
-    domain, coords = mesh.rectilinear( [ (0,1,2) ] * 2 )
+    domain, coords = mesh.rectilinear( [ (0,.5,1) ] * 2 )
 
   greydata = function.tanh( ( function.norm2(coords) - .5 ) * 20 )
 

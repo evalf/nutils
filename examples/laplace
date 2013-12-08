@@ -18,7 +18,8 @@ def makeplots( domain, coords, sol, index ):
 
 def main( nelems=8, degree=1, beltrami=False ):
 
-  domain, coords = mesh.rectilinear( [(0,.5*numpy.pi,nelems+1)]*2 )
+  verts = numpy.linspace( 0, .5*numpy.pi, nelems+1 )
+  domain, coords = mesh.rectilinear( [verts,verts] )
   #domain, coords = mesh.demo( xmax=.5*numpy.pi, ymax=.5*numpy.pi )
   x, y = coords
   exact = function.sin(x) * function.exp(y)

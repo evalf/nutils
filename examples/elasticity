@@ -5,7 +5,8 @@ from nutils import *
 
 def main( nelems=20, stress=library.Hooke(lmbda=1,mu=1), degree=1 ):
 
-  domain, coords = mesh.rectilinear( [(0,1,nelems+1)]*2 )
+  verts = numpy.linspace( 0, 1, nelems+1 )
+  domain, coords = mesh.rectilinear( [verts,verts] )
   dspace = domain.splinefunc( degree=degree ).vector( 2 )
   elasticity = function.outer( dspace.grad(coords), stress(dspace,coords) ).sum([2,3])
   matrix = domain.integrate( elasticity, coords=coords, ischeme='gauss2' )

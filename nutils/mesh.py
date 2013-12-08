@@ -29,7 +29,6 @@ class GridFunc( function.ElemFunc ):
 def rectilinear( vertices, periodic=(), name='rect' ):
   'rectilinear mesh'
 
-  vertices = [ numpy.linspace(*n) if len(n) == 3 and isinstance(n,tuple) else numpy.asarray(n) for n  in vertices ]
   ndims = len(vertices)
   indices = numpy.ogrid[ tuple( slice(len(n)-1) for n in vertices ) ]
   domainelem = element.Element( ndims=ndims, vertices=[] )

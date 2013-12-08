@@ -57,7 +57,8 @@ def Gauss( center, width, height ):
 
 def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e-8, timestep=0 ):
 
-  domain, coords = mesh.rectilinear( [(0,1,nelems+1)]*2 )
+  verts = numpy.linspace( 0, 1, nelems+1 )
+  domain, coords = mesh.rectilinear( [verts,verts] )
   #vspace = function.vectorize([ domain.splinefunc( degree=(2,1) ), domain.splinefunc( degree=(1,2) ) ])
   vx, vy = function.chain([
     domain.splinefunc( degree=(2,1), removedofs=[[0,-1],None] ),
