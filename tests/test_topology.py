@@ -53,43 +53,43 @@ class TestConnectivityStructuredPeriodic( ConnectivityStructuredBase ):
 class TestStructure2D( object ):
   'Test coordinate evaluation for StructuredTopology.'
 
-  def verify_connectivity( self, structure, coords ):
+  def verify_connectivity( self, structure, geom ):
     (e00,e01), (e10,e11) = structure
 
-    a0 = coords( e00, numpy.array([0,1]) )
-    a1 = coords( e01, numpy.array([0,0]) )
+    a0 = geom( e00, numpy.array([0,1]) )
+    a1 = geom( e01, numpy.array([0,0]) )
     numpy.testing.assert_array_almost_equal( a0, a1 )
 
-    b0 = coords( e10, numpy.array([1,1]) )
-    b1 = coords( e11, numpy.array([1,0]) )
+    b0 = geom( e10, numpy.array([1,1]) )
+    b1 = geom( e11, numpy.array([1,0]) )
     numpy.testing.assert_array_almost_equal( b0, b1 )
 
-    c0 = coords( e00, numpy.array([1,0]) )
-    c1 = coords( e10, numpy.array([0,0]) )
+    c0 = geom( e00, numpy.array([1,0]) )
+    c1 = geom( e10, numpy.array([0,0]) )
     numpy.testing.assert_array_almost_equal( c0, c1 )
 
-    d0 = coords( e01, numpy.array([1,1]) )
-    d1 = coords( e11, numpy.array([0,1]) )
+    d0 = geom( e01, numpy.array([1,1]) )
+    d1 = geom( e11, numpy.array([0,1]) )
     numpy.testing.assert_array_almost_equal( d0, d1 )
 
-    x00 = coords( e00, numpy.array([1,1]) )
-    x01 = coords( e01, numpy.array([1,0]) )
-    x10 = coords( e10, numpy.array([0,1]) )
-    x11 = coords( e11, numpy.array([0,0]) )
+    x00 = geom( e00, numpy.array([1,1]) )
+    x01 = geom( e01, numpy.array([1,0]) )
+    x10 = geom( e10, numpy.array([0,1]) )
+    x11 = geom( e11, numpy.array([0,0]) )
     numpy.testing.assert_array_almost_equal( x00, x01 )
     numpy.testing.assert_array_almost_equal( x10, x11 )
     numpy.testing.assert_array_almost_equal( x00, x11 )
 
   def testMesh( self ):
-    domain, coords = mesh.rectilinear( [[-1,0,1]]*2 )
-    self.verify_connectivity( domain.structure, coords )
+    domain, geom = mesh.rectilinear( [[-1,0,1]]*2 )
+    self.verify_connectivity( domain.structure, geom )
 
   def testBoundaries( self ):
-    domain, coords = mesh.rectilinear( [[-1,0,1]]*3 )
+    domain, geom = mesh.rectilinear( [[-1,0,1]]*3 )
     for grp in 'left', 'right', 'top', 'bottom', 'front', 'back':
       bnd = domain.boundary[grp]
-      self.verify_connectivity( bnd.structure, coords )
-      xn = bnd.elem_eval( coords.dotnorm(coords), ischeme='gauss1', separate=False )
+      self.verify_connectivity( bnd.structure, geom )
+      xn = bnd.elem_eval( geom.dotnorm(geom), ischeme='gauss1', separate=False )
       numpy.testing.assert_array_less( 0, xn, 'inward pointing normals' )
 
 class TestTopologyGlueing( object ):
@@ -104,28 +104,28 @@ class TestTopologyGlueing( object ):
     # Half dome
     self.topo0, (xi, eta) = mesh.rectilinear( 2*(grid,) )
     x, y = sqrt(2)*sin(xi)*cos(eta), sqrt(2)*sin(eta)*cos(xi)
-    self.coords0 = function.stack( [x, y, abs(1-x**2-y**2)] ) # Don't take sqrt, upsets BEM conv.
+    self.geom0 = function.stack( [x, y, abs(1-x**2-y**2)] ) # Don't take sqrt, upsets BEM conv.
 
     # Plane, rotated to ensure singular-integration-compatible connectivity
     self.topo1, (xi, eta) = mesh.rectilinear( 2*(grid,) )
     for elem in self.topo1: # relabel vertices
       elem.vertices = tuple( vertex+"/" for vertex in elem.vertices )
     x, y = sin(xi)*cos(eta)-sin(eta)*cos(xi), sin(xi)*cos(eta)+sin(eta)*cos(xi)
-    self.coords1 = function.stack( [x, -y, 0] ) # minus to get normal downwards
+    self.geom1 = function.stack( [x, -y, 0] ) # minus to get normal downwards
 
     # Merged function object and coordinate function
     # For one single merged coordinate system we need the cascades to match up, so we project, this
     # turns out to preserve the matching of element edges up to errors of 10^-4 at the vertices.
     splines_on = lambda topo: topo.splinefunc(degree=4)
     self.funcsp = function.merge( [splines_on(self.topo0), splines_on(self.topo1)] ).vector(3)
-    dofs = self.topo0.project( self.coords0, self.funcsp, self.coords0, exact_boundaries=True, ischeme='gauss8' ) \
-         | self.topo1.project( self.coords1, self.funcsp, self.coords1, exact_boundaries=True, ischeme='gauss8' )
-    self.coords = self.funcsp.dot( dofs )
+    dofs = self.topo0.project( self.geom0, self.funcsp, self.geom0, exact_boundaries=True, ischeme='gauss8' ) \
+         | self.topo1.project( self.geom1, self.funcsp, self.geom1, exact_boundaries=True, ischeme='gauss8' )
+    self.geom = self.funcsp.dot( dofs )
 
     # Glue boundary definition
     self.topo0.boundary.groups['__glue__'] = self.topo0.boundary
     self.topo1.boundary.groups['__glue__'] = self.topo1.boundary
-    self.topo = topology.glue( self.topo0, self.topo1, self.coords, tol=1e-4 )
+    self.topo = topology.glue( self.topo0, self.topo1, self.geom, tol=1e-4 )
 
   def plot_gauss_on_circle( self, elem, ischeme='singular2', title='' ):
     'Given a product element on our 4x4 circular domain (see __init__), plot gauss points'
@@ -136,12 +136,12 @@ class TestTopologyGlueing( object ):
       # Glued grids
       for partition, style in (('__master__', 'r-'), ('__slave__', 'g-')):
         for cell in self.topo.groups[partition]:
-          pts = self.coords( cell, circumf )
+          pts = self.geom( cell, circumf )
           fig.plot( pts[:,0], pts[:,1], style )
       # Quad points on elem pair
       for element, points in zip( (elem.elem1, elem.elem2), (quadpoints[:,:2], quadpoints[:,2:]) ):
         style = 'rx' if element in self.topo.groups['__master__'] else 'g+'
-        pts = self.coords( element, points )
+        pts = self.geom( element, points )
         fig.plot( pts[:,0], pts[:,1], style )
 
       fig.title( title + ' | n:%i, t:%i, %i'%elem.orientation )
@@ -157,8 +157,8 @@ class TestTopologyGlueing( object ):
        slopes,  expected rate of convergence.'''
     devel = len(qset) > 2
 
-    # This could be handled underwater by Topology.integrate only if coords can be glued.
-    iw = function.iwscale( self.coords, 2 )
+    # This could be handled underwater by Topology.integrate only if geom can be glued.
+    iw = function.iwscale( self.geom, 2 )
     iweights = iw * function.opposite( iw ) * function.IWeights()
 
     # integrands and primitives
@@ -243,7 +243,7 @@ class TestTopologyGlueing( object ):
     kwargs = {'qset':(2,4), 'qmax':8, 'slopes':(-0.0, -1.0, -1.0, -1.0)}
     ddom = topology.UnstructuredTopology( elem[:16], ndims=2 ) * \
            topology.UnstructuredTopology( elem[16:], ndims=2 )
-    func = function.norm2( self.coords-function.opposite(self.coords) )**-2
+    func = function.norm2( self.geom-function.opposite(self.geom) )**-2
     if visual:
       kwargs.update( {'qset':range(1,10), 'qmax':16, 'plot_quad_points':True} )
       # Fill inspection set ecoll and count number of product elements for each neighbor type
@@ -256,14 +256,14 @@ class TestTopologyGlueing( object ):
     'This should raise an AssertionError, as there are too many master elements.'
     topo0 = copy.deepcopy( self.topo0 ) # Don't modify the original object
     topo0.boundary.groups['__glue__'] = topo0.boundary + topo0[:1,:1].boundary['right'] # For some strange reason deepcopy skips boundary['__glue__']
-    args = topo0, self.topo1, self.coords
+    args = topo0, self.topo1, self.geom
     numpy.testing.assert_raises( AssertionError, topology.glue, *args )
 
   def test_2DNodeRelabelingBigSlave( self ):
     'This should raise an AssertionError, as there are too many slave elements.'
     topo1 = copy.deepcopy( self.topo1 )
     topo1.boundary.groups['__glue__'] = topo1.boundary + topo1[:1,:1].boundary['right']
-    args = self.topo0, topo1, self.coords
+    args = self.topo0, topo1, self.geom
     numpy.testing.assert_raises( AssertionError, topology.glue, *args )
 
   def StokesBEM( self, visual=False ):
@@ -276,29 +276,29 @@ class TestTopologyGlueing( object ):
     def K( x, y ):
       rInv = function.norm2( x-y )**-1.
       return 0.75*pi**-1. * (x-y)[:,_]*(x-y)[_,:] * ((x-y)*y.normal()).sum() * rInv**5
-    l2norm = lambda func: sqrt( sum( self.topo.integrate( func**2., 'gauss6', self.coords ) ) )
+    l2norm = lambda func: sqrt( sum( self.topo.integrate( func**2., 'gauss6', self.geom ) ) )
 
     # Boundary data
-    velo = function.stack( [self.coords[2], 0., 0.] )
-    trac = function.stack( [self.coords.normal()[2], 0., self.coords.normal()[0]] )
+    velo = function.stack( [self.geom[2], 0., 0.] )
+    trac = function.stack( [self.geom.normal()[2], 0., self.geom.normal()[0]] )
 
     # Matrix/vector assembly (integration schemes optimized)
     prod_topo = self.topo*self.topo
-    iw = function.iwscale(self.coords,2)
+    iw = function.iwscale(self.geom,2)
     iweights = iw * function.opposite(iw) * function.IWeights()
-    x, y = self.coords, function.opposite(self.coords)
+    x, y = self.geom, function.opposite(self.geom)
     kwargs = {'iweights':iweights, 'ischeme':'singular6', 'force_dense':True}
     integrand = (self.funcsp*(V(x,y)*function.opposite(self.funcsp)[:,_,_,:]).sum()).sum()
     mat = prod_topo.integrate_symm( integrand, title='int[mat]', **kwargs )
     integrand = (self.funcsp*(K(x,y)*function.opposite(velo)).sum()).sum()
-    vec = 0.5 * self.topo.integrate( (self.funcsp*velo).sum(), coords=x, ischeme='gauss4' ) \
+    vec = 0.5 * self.topo.integrate( (self.funcsp*velo).sum(), geometry=x, ischeme='gauss4' ) \
         + prod_topo.integrate( integrand, title='int[vec]', **kwargs )
 
     # Solve
     sol = mat.solve( vec, tol=0, symmetric=True )
     trach = self.funcsp.dot( sol )
     if visual:
-      plot.writevtu( './dome.vtu', self.topo.refine(2), self.coords, sdv=1.e-3,
+      plot.writevtu( './dome.vtu', self.topo.refine(2), self.geom, sdv=1.e-3,
           pointdata={'trac0':trac, 'trach':trach} )
     relerr = l2norm(trach-trac)/l2norm(trac)
     log.info( 'rel. L2 err: %.2e' % relerr )

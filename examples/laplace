@@ -6,11 +6,11 @@ numpy.set_printoptions( linewidth=113 )
 
 
 #@parallel.fork
-def makeplots( domain, coords, sol, index ):
+def makeplots( domain, geom, sol, index ):
 
   log.context( 'plots' )
 
-  points, colors = domain.elem_eval( [ coords, sol ], ischeme='bezier4', separate=True )
+  points, colors = domain.elem_eval( [ geom, sol ], ischeme='bezier4', separate=True )
   with plot.PyPlot( 'solution', index=index ) as plt:
     plt.mesh( points, colors, triangulate='bezier' )
     plt.colorbar()
@@ -20,26 +20,27 @@ def makeplots( domain, coords, sol, index ):
 
 def main( nelems=2, degree=1, beltrami=False ):
 
-  domain, coords = mesh.rectilinear( [(0,.5*numpy.pi,nelems+1)]*2, nsubdomains=2 )
-  domain.comm.set_verbosity( 2 )
-  x, y = coords
+  verts = numpy.linspace( 0, .5*numpy.pi, nelems+1 )
+  domain, geom = mesh.rectilinear( [verts,verts], nsubdomains=2 )
+  #domain, geom = mesh.demo( xmax=.5*numpy.pi, ymax=.5*numpy.pi )
+  x, y = geom
   exact = function.sin(x) * function.exp(y)
   funcsp = domain.splinefunc( degree=degree )
   if beltrami:
-    coords = function.concatenate([ coords, (x**2-y**2)[_] ])
+    geom = function.concatenate([ geom, (x**2-y**2)[_] ])
 
-  laplace = function.outer( funcsp.grad(coords,ndims=2) ).sum()
-  matrix = domain.integrate( laplace, coords=coords, ischeme='gauss4', title='matrix' )
+  laplace = function.outer( funcsp.grad(geom,ndims=2) ).sum()
+  matrix = domain.integrate( laplace, geometry=geom, ischeme='gauss4', title='matrix' )
   tmp = funcsp * numpy.exp(.5*numpy.pi) * function.sin(x)
-  rhs = domain.boundary['top'].integrate( tmp, coords=coords, ischeme='gauss6', title='rhs' )
-  cons = domain.boundary['left,bottom'].project( function.sin(x), ischeme='gauss6', coords=coords, onto=funcsp, title='left,bottom edge' )
+  rhs = domain.boundary['top'].integrate( tmp, geometry=geom, ischeme='gauss6', title='rhs' )
+  cons = domain.boundary['left,bottom'].project( function.sin(x), ischeme='gauss6', geometry=geom, onto=funcsp, title='left,bottom edge' )
   P = libmatrix.Precon( matrix, 'ILUT' )
   lhs = matrix.solve( rhs, precon=P, constrain=cons, symmetric=True )
   sol = funcsp.dot(lhs)
 
-  makeplots( domain, coords[:2], sol, nelems )
+  makeplots( domain, geom[:2], sol, nelems )
   error = sol - exact
-  err = numpy.sqrt( domain.integrate( [ error**2, ( error.grad(coords,ndims=2)**2 ).sum() ], coords=coords, ischeme='gauss6', title='computing error' ) )
+  err = numpy.sqrt( domain.integrate( [ error**2, ( error.grad(geom,ndims=2)**2 ).sum() ], geometry=geom, ischeme='gauss6', title='computing error' ) )
   log.info( 'errors: l2=%f, h1=%f' % tuple(err) )
 
   return err

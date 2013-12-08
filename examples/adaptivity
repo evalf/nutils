@@ -4,10 +4,10 @@ from nutils import *
 
 
 #@parallel.fork
-def makeplots( domain, coords, greysmooth, index, indicator, supp ):
+def makeplots( domain, geom, greysmooth, index, indicator, supp ):
 
-  xp, yp = topology.UnstructuredTopology( supp, domain.ndims ).elem_eval( coords, ischeme='contour2', separate=True ).T
-  points, fval, xgrad, indic = domain.elem_eval( [ coords, greysmooth, greysmooth.grad(coords)[0], indicator ], ischeme='bezier4', separate=True )
+  xp, yp = topology.UnstructuredTopology( supp, domain.ndims ).elem_eval( geom, ischeme='contour2', separate=True ).T
+  points, fval, xgrad, indic = domain.elem_eval( [ geom, greysmooth, greysmooth.grad(geom)[0], indicator ], ischeme='bezier4', separate=True )
 
   with plot.PyPlot( 'fval', index=index ) as plt:
     plt.mesh( points, fval, triangulate='bezier' )
@@ -33,26 +33,26 @@ def main( degree=2, niter=30, triangular=False ):
     if degree != 1:
       log.warning( 'warning: setting degree to 1 for triangles' )
       degree = 1
-    domain, coords = mesh.demo()
+    domain, geom = mesh.demo()
   else:
-    domain, coords = mesh.rectilinear( [ (0,1,2) ] * 2 )
+    domain, geom = mesh.rectilinear( [ (0,.5,1) ] * 2 )
 
-  greydata = function.tanh( ( function.norm2(coords) - .5 ) * 20 )
+  greydata = function.tanh( ( function.norm2(geom) - .5 ) * 20 )
 
   for iiter in util.iterate():
 
     funcsp = domain.splinefunc( degree=degree )
-    greysmooth = domain.projection( greydata, coords=coords, onto=funcsp, ischeme='gauss3', droptol=0, verify=int(funcsp.shape[0]) )
+    greysmooth = domain.projection( greydata, geometry=geom, onto=funcsp, ischeme='gauss3', droptol=0, verify=int(funcsp.shape[0]) )
     indicator = ( greysmooth - greydata )**2
     if iiter >= niter:
       break
 
-    weighted_residual = domain.integrate( funcsp * indicator, coords=coords, ischeme='gauss3' )
+    weighted_residual = domain.integrate( funcsp * indicator, geometry=geom, ischeme='gauss3' )
     #refine = weighted_residual.argsort()[-len(weighted_residual)//8:-1]
     refine = weighted_residual.argsort()[-1:]
     supp = function.supp( funcsp, indices=refine )
 
-    makeplots( domain, coords, greysmooth, iiter, indicator, supp )
+    makeplots( domain, geom, greysmooth, iiter, indicator, supp )
 
     domain = domain.refined_by( supp )
 

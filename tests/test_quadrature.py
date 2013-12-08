@@ -79,24 +79,24 @@ class TestSingularQuadrature( object ):
     # Topologies
     grid = lambda n: numpy.linspace( -numpy.pi, numpy.pi, n+1 )
     self.dims = 3, 4
-    self.domain, self.coords = mesh.rectilinear( tuple(grid(n) for n in self.dims) )
+    self.domain, self.geom = mesh.rectilinear( tuple(grid(n) for n in self.dims) )
     self.ddomain = self.domain * self.domain
-    self.domainp, self.coordsp = mesh.rectilinear( tuple(grid(n) for n in self.dims), periodic=(0, 1) )
+    self.domainp, self.geomp = mesh.rectilinear( tuple(grid(n) for n in self.dims), periodic=(0, 1) )
     self.ddomainp = self.domainp * self.domainp
 
     # Geometries
     R, r = 3, 1
     assert R > r, 'No self-intersection admitted'
-    phi, theta = self.coordsp
+    phi, theta = self.geomp
     self.torus = function.stack( [
         function.cos(phi) * (r*function.cos(theta) + R),
         function.sin(phi) * (r*function.cos(theta) + R),
         function.sin(theta) * r] )
 
-    x, y = .5*(self.coords/numpy.pi + 1)*self.dims - 1.5 # ensure elem@(1,1) centered
+    x, y = .5*(self.geom/numpy.pi + 1)*self.dims - 1.5 # ensure elem@(1,1) centered
     self.hull = function.stack( [x, y, x**2*y**2] )
 
-    self.plane = .5*(self.coords/numpy.pi + 1)*self.dims # rescale: elem.vol=1, shift: coords>0
+    self.plane = .5*(self.geom/numpy.pi + 1)*self.dims # rescale: elem.vol=1, shift: geom>0
 
   def test_connectivity( self ):
     'Test implementation of Element.neighbor()'
@@ -141,7 +141,7 @@ class TestSingularQuadrature( object ):
         [(4,2), (0,6)]]                                           # 8
         
     for i, elem in enumerate( self.ddomainp ):
-      # coords of elem1 and elem2
+      # geom of elem1 and elem2
       ijx, ijy = divide( i, m*n )
       ix, jx = divide( ijx, n )
       iy, jy = divide( ijy, n )
