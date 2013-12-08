@@ -90,16 +90,10 @@ class Topology( object ):
     items = ( self.groups[it] for it in item.split( ',' ) )
     return sum( items, items.next() )
 
-  def elem_eval( self, funcs, ischeme, stack=False, separate=None, title='evaluating' ):
+  def elem_eval( self, funcs, ischeme, separate=True, title='evaluating' ):
     'element-wise evaluation'
 
     log.context( title )
-
-    if separate is None:
-      warnings.warn( '''in elem_eval: stack is deprecated and will be removed.
-  List-of-arrays (was stack=False) is no longer supported, replaced by nan-separation.
-  In plot.PyPlot use separate=True for mesh, separate=False for e.g. quiver.''' )
-      separate = stack is not True
 
     single_arg = not isinstance(funcs,(tuple,list))
     if single_arg:
