@@ -6,7 +6,7 @@ class FuncTest( object ):
   def __init__( self ):
     domainelem = element.Element( ndims=2, vertices=[] )
     r, theta = function.ElemFunc( domainelem ) # corners at (0,0), (0,1), (1,1), (1,0)
-    coords = r * function.stack([ function.cos(theta), function.sin(theta) ])
+    geom = r * function.stack([ function.cos(theta), function.sin(theta) ])
     trans = element.AffineTransformation( offset=[1,0], transform=[[2,1],[-1,3]] )
     avertices = [element.PrimaryVertex('A(%d)'%i) for i in range(4)]
     interelem = element.QuadElement( ndims=2, vertices=avertices, parent=(domainelem,trans) ) # corners at (1,0), (3,-1), (4,2), (2,3)
@@ -32,19 +32,19 @@ class FuncTest( object ):
     self.args = function.Tuple( args )
     self.elem = elem
     self.points = points
-    self.coords = coords
+    self.geom = geom
     self.iface = iface
     self.ifpoints = ifpoints
 
   def find( self, target, xi0 ):
-    ndim, = self.coords.shape
-    J = function.localgradient( self.coords, ndim )
+    ndim, = self.geom.shape
+    J = function.localgradient( self.geom, ndim )
     Jinv = function.inverse( J )
     countdown = 5
     iiter = 0
     xi = xi0
     while countdown:
-      err = target - self.coords(self.elem,xi)
+      err = target - self.geom(self.elem,xi)
       if numpy.all( numpy.abs(err) < 1e-12 ):
         countdown -= 1
       dxi_root = ( Jinv(self.elem,xi) * err[...,_,:] ).sum(-1)
@@ -90,20 +90,20 @@ class FuncTest( object ):
   def test_gradient( self ):
     eps = 1e-6
     D = numpy.array([-.5*eps,.5*eps])[:,_,_] * numpy.eye(2)
-    fdpoints = self.find( self.coords(self.elem,self.points)[_,_,:,:] + D[:,:,_,:], self.points[_,_,:,:] )
+    fdpoints = self.find( self.geom(self.elem,self.points)[_,_,:,:] + D[:,:,_,:], self.points[_,_,:,:] )
     F = self.n_op( *self.args(self.elem,fdpoints) )
     fdgrad = ((F[1]-F[0])/eps).transpose( numpy.roll(numpy.arange(F.ndim-1),-1) )
-    G = self.op( *self.args ).grad(self.coords)
+    G = self.op( *self.args ).grad(self.geom)
     numpy.testing.assert_array_almost_equal( fdgrad, G(self.elem,self.points), decimal=5 )
 
   def test_doublegradient( self ):
     eps = 1e-5
     D = numpy.array([-.5*eps,.5*eps])[:,_,_] * numpy.eye(2)
     DD = D[:,_,:,_,:] + D[_,:,_,:,:]
-    fdpoints = self.find( self.coords(self.elem,self.points)[_,_,_,_,:,:] + DD[:,:,:,:,_,:], self.points[_,_,_,_,:,:] )
+    fdpoints = self.find( self.geom(self.elem,self.points)[_,_,_,_,:,:] + DD[:,:,:,:,_,:], self.points[_,_,_,_,:,:] )
     F = self.n_op( *self.args(self.elem,fdpoints) )
     fddgrad = (((F[1,1]-F[1,0])-(F[0,1]-F[0,0]))/(eps**2)).transpose( numpy.roll(numpy.arange(F.ndim-2),-2) )
-    G = self.op( *self.args ).grad(self.coords).grad(self.coords)
+    G = self.op( *self.args ).grad(self.geom).grad(self.geom)
     numpy.testing.assert_array_almost_equal( fddgrad, G(self.elem,self.points), decimal=2 )
 
   def test_opposite( self ):

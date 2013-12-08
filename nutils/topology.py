@@ -140,7 +140,7 @@ class Topology( object ):
 
     return retvals
 
-  def elem_mean( self, funcs, coords, ischeme, title='computing mean values' ):
+  def elem_mean( self, funcs, geometry, ischeme, title='computing mean values' ):
     'element-wise integration'
 
     log.context( title )
@@ -150,8 +150,8 @@ class Topology( object ):
       funcs = funcs,
 
     retvals = []
-    #iweights = coords.iweights( self.ndims )
-    iweights = function.iwscale( coords, self.ndims ) * function.IWeights()
+    #iweights = geometry.iweights( self.ndims )
+    iweights = function.iwscale( geometry, self.ndims ) * function.IWeights()
     idata = [ iweights ]
     for func in funcs:
       func = function._asarray( func )
@@ -174,7 +174,7 @@ class Topology( object ):
 
     return retvals
 
-  def grid_eval( self, funcs, coords, C, title='grid-evaluating' ):
+  def grid_eval( self, funcs, geometry, C, title='grid-evaluating' ):
     'evaluate grid points'
 
     log.context( title )
@@ -196,7 +196,7 @@ class Topology( object ):
     data = function.Tuple([ function.Tuple([ func, retval ]) for func, retval in zip( funcs, retvals ) ])
 
     for elem in log.iterate('elem',self):
-      points, selection = coords.find( elem, C.T )
+      points, selection = geometry.find( elem, C.T )
       if selection is not None:
         for func, retval in data( elem, points ):
           retval[selection] = func
@@ -228,7 +228,7 @@ class Topology( object ):
 
     return graph
 
-  def integrate( self, funcs, ischeme, coords=None, iweights=None, force_dense=False, title='integrating' ):
+  def integrate( self, funcs, ischeme, geometry=None, iweights=None, force_dense=False, title='integrating' ):
     'integrate'
 
     log.context( title )
@@ -238,10 +238,10 @@ class Topology( object ):
       funcs = funcs,
 
     if iweights is None:
-      assert coords is not None, 'conflicting arguments coords and iweights'
-      iweights = function.iwscale( coords, self.ndims ) * function.IWeights()
+      assert geometry is not None, 'conflicting arguments geometry and iweights'
+      iweights = function.iwscale( geometry, self.ndims ) * function.IWeights()
     else:
-      assert coords is None, 'conflicting arguments coords and iweights'
+      assert geometry is None, 'conflicting arguments geometry and iweights'
     assert iweights.ndim == 0
 
     integrands = []
@@ -274,7 +274,7 @@ class Topology( object ):
 
     return retvals
 
-  def integrate_symm( self, funcs, ischeme, coords=None, iweights=None, force_dense=False, title='integrating' ):
+  def integrate_symm( self, funcs, ischeme, geometry=None, iweights=None, force_dense=False, title='integrating' ):
     'integrate a symmetric integrand on a product domain' # TODO: find a proper home for this
 
     log.context( title )
@@ -284,10 +284,10 @@ class Topology( object ):
       funcs = funcs,
 
     if iweights is None:
-      assert coords is not None, 'conflicting arguments coords and iweights'
-      iweights = function.iwscale( coords, self.ndims ) * function.IWeights()
+      assert geometry is not None, 'conflicting arguments geometry and iweights'
+      iweights = function.iwscale( geometry, self.ndims ) * function.IWeights()
     else:
-      assert coords is None, 'conflicting arguments coords and iweights'
+      assert geometry is None, 'conflicting arguments geometry and iweights'
     assert iweights.ndim == 0
 
     integrands = []
@@ -325,20 +325,20 @@ class Topology( object ):
 
     return retvals
 
-  def projection( self, fun, onto, coords, **kwargs ):
+  def projection( self, fun, onto, geometry, **kwargs ):
     'project and return as function'
 
-    weights = self.project( fun, onto, coords, **kwargs )
+    weights = self.project( fun, onto, geometry, **kwargs )
     return onto.dot( weights )
 
-  def project( self, fun, onto, coords, tol=0, ischeme=None, title='projecting', droptol=1e-8, exact_boundaries=False, constrain=None, verify=None, maxiter=0, ptype='lsqr' ):
+  def project( self, fun, onto, geometry, tol=0, ischeme=None, title='projecting', droptol=1e-8, exact_boundaries=False, constrain=None, verify=None, maxiter=0, ptype='lsqr' ):
     'L2 projection of function onto function space'
 
     log.context( title + ' [%s]' % ptype )
 
     if exact_boundaries:
       assert constrain is None
-      constrain = self.boundary.project( fun, onto, coords, title='boundaries', ischeme=ischeme, tol=tol, droptol=droptol, ptype=ptype )
+      constrain = self.boundary.project( fun, onto, geometry, title='boundaries', ischeme=ischeme, tol=tol, droptol=droptol, ptype=ptype )
     elif constrain is None:
       constrain = util.NanVec( onto.shape[0] )
     else:
@@ -355,7 +355,7 @@ class Topology( object ):
         bfun = function.sum( onto * fun )
       else:
         raise Exception
-      A, b = self.integrate( [Afun,bfun], coords=coords, ischeme=ischeme, title='building system' )
+      A, b = self.integrate( [Afun,bfun], geometry=geometry, ischeme=ischeme, title='building system' )
       N = A.rowsupp(droptol)
       if numpy.all( b == 0 ):
         constrain[~constrain.where&N] = 0
@@ -375,7 +375,7 @@ class Topology( object ):
         afun = function.norm2( onto )
       else:
         raise Exception
-      u, scale = self.integrate( [ ufun, afun ], coords=coords, ischeme=ischeme )
+      u, scale = self.integrate( [ ufun, afun ], geometry=geometry, ischeme=ischeme )
       N = ~constrain.where & ( scale > droptol )
       constrain[N] = u[N] / scale[N]
 
@@ -411,7 +411,7 @@ class Topology( object ):
     errfun2 = ( onto.dot( constrain | 0 ) - fun )**2
     if errfun2.ndim == 1:
       errfun2 = errfun2.sum()
-    error2, area = self.integrate( [ errfun2, 1 ], coords=coords, ischeme=ischeme or 'gauss2' )
+    error2, area = self.integrate( [ errfun2, 1 ], geometry=geometry, ischeme=ischeme or 'gauss2' )
     avg_error = numpy.sqrt(error2) / area
 
     numcons = constrain.where.sum()
@@ -1210,7 +1210,7 @@ class HierarchicalTopology( Topology ):
   def splinefunc( self, *args, **kwargs ):
     return self._funcspace( lambda topo: topo.splinefunc( *args, **kwargs ) )
 
-def glue( master, slave, coords, tol=1.e-10, verbose=False ):
+def glue( master, slave, geometry, tol=1.e-10, verbose=False ):
   'Glue topologies along boundary group __glue__.'
   log.context('glue')
 
@@ -1267,12 +1267,12 @@ def glue( master, slave, coords, tol=1.e-10, verbose=False ):
 
   # 1. Determine vertex locations
   master_vertex_locations = {}
-  master_coords, slave_coords = coords if isinstance( coords, tuple ) else 2*(coords,)
+  master_geom, slave_geom = geometry if isinstance( geometry, tuple ) else 2*(geometry,)
   for elem in master.boundary.groups['__glue__']:
-    master_vertex_locations[elem] = master_coords( elem, 'bezier2' )
+    master_vertex_locations[elem] = master_geom( elem, 'bezier2' )
   slave_vertex_locations = {}
   for elem in slave.boundary.groups['__glue__']:
-    slave_vertex_locations[elem] = slave_coords( elem, 'bezier2' )
+    slave_vertex_locations[elem] = slave_geom( elem, 'bezier2' )
 
   # 2. Update vertices of elements in new topology
   log.info( 'pairing elements [%i]' % len(master.boundary.groups['__glue__']) )

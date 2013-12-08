@@ -4,23 +4,23 @@ from nutils import *
 
 
 @parallel.fork
-def makeplots( domain, coords, velo, pres, index ):
+def makeplots( domain, geom, velo, pres, index ):
 
   log.context( 'figures' )
 
   funcsp = domain.splinefunc( degree=2 )
-  grad = funcsp.grad( coords )
+  grad = funcsp.grad( geom )
   laplace = function.outer( grad ).sum()
-  vortfunc = velo.grad(coords)[1,0] - velo.grad(coords)[0,1]
-  matrix, rhs = domain.integrate( [ laplace, vortfunc * funcsp ], coords=coords, ischeme='gauss9' )
-  rhs += domain.boundary['right'].integrate( ( coords.normal() * [-velo[1],velo[0]] ).sum() * funcsp, coords=coords, ischeme='gauss9' )
-  cons = domain.boundary['left'].project( 0, onto=funcsp, coords=coords, ischeme='gauss9' )
+  vortfunc = velo.grad(geom)[1,0] - velo.grad(geom)[0,1]
+  matrix, rhs = domain.integrate( [ laplace, vortfunc * funcsp ], geometry=geom, ischeme='gauss9' )
+  rhs += domain.boundary['right'].integrate( ( geom.normal() * [-velo[1],velo[0]] ).sum() * funcsp, geometry=geom, ischeme='gauss9' )
+  cons = domain.boundary['left'].project( 0, onto=funcsp, geometry=geom, ischeme='gauss9' )
   lhs = matrix.solve( rhs, constrain=cons )
   streamfunc = funcsp.dot( lhs )
 
   bbox = -2.5, 10, -5, 5
-  xy, uv = domain.elem_eval( [ coords, velo ], ischeme='uniform1', title='flow field', separate=False )
-  points, stream, flow, pres, vort = domain.elem_eval( [ coords, streamfunc, function.norm2(velo), pres, vortfunc ], ischeme='bezier9', separate=True )
+  xy, uv = domain.elem_eval( [ geom, velo ], ischeme='uniform1', title='flow field', separate=False )
+  points, stream, flow, pres, vort = domain.elem_eval( [ geom, streamfunc, function.norm2(velo), pres, vortfunc ], ischeme='bezier9', separate=True )
 
   period = 1.
   with plot.PyPlot( 'stream', index=index ) as plt:
@@ -58,10 +58,10 @@ def main( nelems=24, reynolds=100., strong=False, tol=1e-8, rotation=0., timeste
 
   xmax = numpy.ceil( numpy.log(maxradius) / (2*numpy.pi/nelems) ).astype( int )
   log.info( 'creating %dx%d mesh, outer radius %.0f' % ( xmax, nelems, numpy.exp( (2*numpy.pi/nelems) * xmax ) ) )
-  domain, coords = mesh.rectilinear( [range(xmax+1),numpy.linspace(0,2*numpy.pi,nelems+1)], periodic=(1,) )
-  x, phi = coords
+  domain, geom = mesh.rectilinear( [range(xmax+1),numpy.linspace(0,2*numpy.pi,nelems+1)], periodic=(1,) )
+  x, phi = geom
   r = function.exp( (2*numpy.pi/nelems) * x )
-  coords = r * [ function.cos(phi), function.sin(phi) ]
+  geom = r * [ function.cos(phi), function.sin(phi) ]
   cyl_velo = rotation * function.stack([ function.sin(phi), -function.cos(phi) ])
   cylinder = domain.boundary['left']
   farfield = domain.boundary['right']
@@ -71,43 +71,43 @@ def main( nelems=24, reynolds=100., strong=False, tol=1e-8, rotation=0., timeste
   vspace, pspace, lspace = function.chain([ vspace, pspace, [1.] ])
 
   # piola
-  J = function.localgradient( coords, domain.ndims )
+  J = function.localgradient( geom, domain.ndims )
   detJ = function.determinant( J )
   vspace = ( vspace[...,_,:] * J ).sum() / detJ
   pspace = pspace / detJ
 
-  stress = 2 * vspace.symgrad(coords) - pspace[:,_,_] * function.eye( domain.ndims )
+  stress = 2 * vspace.symgrad(geom) - pspace[:,_,_] * function.eye( domain.ndims )
 
-  A = function.outer( vspace.grad(coords), stress ).sum([2,3])
-  A += function.outer( pspace, vspace.div(coords) )
+  A = function.outer( vspace.grad(geom), stress ).sum([2,3])
+  A += function.outer( pspace, vspace.div(geom) )
   A += function.outer( lspace, pspace )
   A += function.outer( pspace, lspace )
 
-  stokesmat = domain.integrate( A, coords=coords, ischeme='gauss9', title='stokes matrix' )
+  stokesmat = domain.integrate( A, geometry=geom, ischeme='gauss9', title='stokes matrix' )
 
-  cons = farfield.project( [1,0], coords=coords, onto=vspace, title='farfield bc', ischeme='gauss9', tol=1e-12 )
+  cons = farfield.project( [1,0], geometry=geom, onto=vspace, title='farfield bc', ischeme='gauss9', tol=1e-12 )
   if strong:
     stokesrhs = 0
-    cons |= cylinder.project( cyl_velo, coords=coords, onto=vspace, ischeme='gauss9', title='cylinder bc', tol=1e-12 )
+    cons |= cylinder.project( cyl_velo, geometry=geom, onto=vspace, ischeme='gauss9', title='cylinder bc', tol=1e-12 )
   else:
     ALPHA = .01 * nelems * reynolds
-    weakterm = ALPHA * vspace - 2 * vspace.nsymgrad(coords)
-    stokesmat += cylinder.integrate( function.outer( weakterm, vspace ).sum(), coords=coords, ischeme='gauss9', title='weak bc stokes matrix' )
-    stokesrhs = cylinder.integrate( ( weakterm * cyl_velo ).sum(), coords=coords, ischeme='gauss9', title='weak bc rhs' )
-    cons |= cylinder.project( 0, coords=coords, onto=vspace.dotnorm(coords), ischeme='gauss9', title='cylinder bc', tol=1e-12 )
+    weakterm = ALPHA * vspace - 2 * vspace.nsymgrad(geom)
+    stokesmat += cylinder.integrate( function.outer( weakterm, vspace ).sum(), geometry=geom, ischeme='gauss9', title='weak bc stokes matrix' )
+    stokesrhs = cylinder.integrate( ( weakterm * cyl_velo ).sum(), geometry=geom, ischeme='gauss9', title='weak bc rhs' )
+    cons |= cylinder.project( 0, geometry=geom, onto=vspace.dotnorm(geom), ischeme='gauss9', title='cylinder bc', tol=1e-12 )
 
   lhs = stokesmat.solve( stokesrhs, constrain=cons )#, tol=1e-10, restart=9999, precon='spilu' )
 
   if timestep:
     inertia = (1./timestep) * function.outer( vspace ).sum()
-    inertmat = domain.integrate( inertia, ischeme='gauss9', coords=coords, title='adding inertia' )
+    inertmat = domain.integrate( inertia, ischeme='gauss9', geometry=geom, title='adding inertia' )
     stokesmat += inertmat
 
   for iiter in util.iterate():
-    makeplots( domain, coords, vspace.dot(lhs), pspace.dot(lhs), iiter )
-    ugradu = ( vspace.grad(coords) * vspace.dot(lhs) ).sum()
+    makeplots( domain, geom, vspace.dot(lhs), pspace.dot(lhs), iiter )
+    ugradu = ( vspace.grad(geom) * vspace.dot(lhs) ).sum()
     convection = reynolds * function.outer( vspace, ugradu ).sum()
-    matrix = stokesmat + domain.integrate( convection, ischeme='gauss9', coords=coords, title='navstokes matrix' )
+    matrix = stokesmat + domain.integrate( convection, ischeme='gauss9', geometry=geom, title='navstokes matrix' )
     if timestep:
       rhs = stokesrhs + inertmat.matvec( lhs )
     else:

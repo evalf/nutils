@@ -6,16 +6,16 @@ import numpy
 class FiniteCellTestBase( object ):
 
   def __init__ ( self ):
-    domain, self.coords = mesh.rectilinear( (numpy.linspace(-1.,1.,self.nelems+1),)*self.ndims )
+    domain, self.geom = mesh.rectilinear( (numpy.linspace(-1.,1.,self.nelems+1),)*self.ndims )
     self.fdomain = domain.trim( levelset=self.levelset, maxrefine=self.maxrefine, finestscheme=self.finestscheme )
 
   def test_volume ( self ):
-    vol = self.fdomain.integrate( 1., coords=self.coords, ischeme='gauss1' )
+    vol = self.fdomain.integrate( 1., geometry=self.geom, ischeme='gauss1' )
     log.info( 'Volume =', vol, '(%5.4f)' % self.vol_exact )
 
     topo = topology.UnstructuredTopology( self.fdomain.get_trimmededges( self.maxrefine ), ndims=self.ndims-1 )
 
-    vol_gauss = (1./float(self.ndims))*topo.integrate( sum(self.coords*self.coords.normal()), coords=self.coords, ischeme='gauss1' )
+    vol_gauss = (1./float(self.ndims))*topo.integrate( sum(self.geom*self.geom.normal()), geometry=self.geom, ischeme='gauss1' )
     log.info( 'Volume (Gauss)=', vol_gauss, '(%5.4f)' % vol )
 
     numpy.testing.assert_almost_equal( vol, self.vol_exact, decimal=self.vol_decimal )
@@ -23,11 +23,11 @@ class FiniteCellTestBase( object ):
 
   def test_surfacearea ( self ):
     topo = topology.UnstructuredTopology( self.fdomain.get_trimmededges( self.maxrefine ), ndims=self.ndims-1 )
-    surf = topo.integrate( 1., coords=self.coords, ischeme='gauss1' )
+    surf = topo.integrate( 1., geometry=self.geom, ischeme='gauss1' )
     log.info( 'Surface area =', surf, '(%5.4f)' % self.surf_exact )
 
     if __name__ == '__main__':
-      plot.writevtu( 'surface.vtu', topo, self.coords )
+      plot.writevtu( 'surface.vtu', topo, self.geom )
 
     numpy.testing.assert_almost_equal( surf, self.surf_exact, decimal=self.surf_decimal )
 
@@ -38,7 +38,7 @@ class TestCircle( FiniteCellTestBase ):
   
   @property
   def levelset ( self ):
-    return -sum(self.coords*self.coords)+1./numpy.pi
+    return -sum(self.geom*self.geom)+1./numpy.pi
 
   maxrefine    = 4
   finestscheme = 'simplex1'
@@ -58,7 +58,7 @@ class TestSphere( FiniteCellTestBase ):
 
   @property
   def levelset ( self ):
-    return -sum(self.coords*self.coords)+self.r2
+    return -sum(self.geom*self.geom)+self.r2
 
   maxrefine    = 2
   finestscheme = 'simplex1'
