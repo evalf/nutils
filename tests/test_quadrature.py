@@ -25,8 +25,12 @@ class TestGaussQuadrature( object ):
   
         log.info( '%s: n = %02d, F = %8.6e, rel.err. = %8.6e, %s' % (name,len(weights),Fq,err,'Exact' if err < EPS else 'Not exact') )
   
-        criterion = p >= (1+numpy.amax(ab)//2 if isinstance( elem, element.QuadElement ) else order)
-        if criterion:
+        if isinstance( elem, element.QuadElement ):
+          expect_exact = p // 2 >= numpy.amax(ab) // 2
+        else:
+          expect_exact = p >= order
+
+        if expect_exact:
           assert err < EPS, 'Integration should be exact'
         else:
           # Counterexamples can be constructed, but in the case of monomials with MAXORDER<8 this assert is verified
@@ -148,7 +152,7 @@ class TestSingularQuadrature( object ):
 
   def test_transformations( self ):
     'Test transformations performed on gauss schemes for codim 1 neighbors'
-    ischeme = 'gauss3'
+    ischeme = 'gauss4'
     neighbor = 1
     # Get all types
     elems = {}
@@ -248,7 +252,7 @@ class TestSingularQuadrature( object ):
         if compare_to_gauss:
           A = {0:8, 1:6, 2:4, 3:1}[neighbor]
           qg = int(qmax*(A**.25))
-          Fg = topo.integrate( func(geom), iweights=iweights, ischeme='gauss%i'%qg )
+          Fg = topo.integrate( func(geom), iweights=iweights, ischeme='gauss%i'%(2*qg-2) )
         if plot_quad_points: self.plot_gauss_on_3x4( elem )
 
         if devel:
@@ -261,7 +265,7 @@ class TestSingularQuadrature( object ):
             errs[key].append( numpy.abs(F/Fq-1) )
             if compare_to_gauss:
               qg = int(q*(A**.25))
-              Fgq = topo.integrate( func(geom), iweights=iweights, ischeme='gauss%i'%qg )
+              Fgq = topo.integrate( func(geom), iweights=iweights, ischeme='gauss%i'%(2*qg-2) )
               errsg[key].append( numpy.abs(Fg/Fgq-1) )
 
         elif len(qset) == 1:

@@ -2431,14 +2431,14 @@ def merge( funcs ):
     (func, (dofmap,)), = inflated_func.blocks # Returns one scalar function.
 
     if fmap is None:
-      fmap = func.stdmap
+      fmap = func.stdmap.copy()
     else:
       targetlen = len( fmap ) + len( func.stdmap )
       fmap.update( func.stdmap )
       assert len( fmap ) == targetlen, 'Don`t allow overlap.'
 
     if nmap is None:
-      nmap = dofmap.dofmap
+      nmap = dofmap.dofmap.copy()
     else:
       targetlen = len( nmap ) + len( dofmap.dofmap )
       nmap.update( dict( (key, val+offset) for key, val in dofmap.dofmap.iteritems() ) )

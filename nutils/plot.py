@@ -75,7 +75,7 @@ class PyPlot( BasePlot ):
     self.__dict__.update( pyplot.__dict__ )
 
     self._fig = self.figure( **kwargs )
-    self._fig.patch.set_alpha( 0 )
+    #self._fig.patch.set_alpha( 0 )
 
   def __exit__( self, *exc_info ):
     'exit with block'

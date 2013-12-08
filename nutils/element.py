@@ -544,7 +544,7 @@ class ProductElement( Element ):
     if where.startswith( 'singular' ):
       assert type(self.elem1) == type(self.elem2), 'mixed element-types case not implemented'
       assert self.elem1.ndims == 2 and self.elem2.ndims == 2, 'singular quadrature only for bivariate surfaces'
-      gauss = 'gauss'+where[8:]
+      gauss = 'gauss%d'% (int(where[8:])*2-2)
       if isinstance( self.elem1, QuadElement ):
         xw = ProductElement.singular_ischeme_quad( self.orientation, gauss )
       elif isinstance( self.elem1, TriangularElement ):
@@ -997,11 +997,11 @@ class QuadElement( Element ):
 
   @staticmethod
   @core.cache
-  def getgauss( n ):
+  def getgauss( degree ):
     'compute gauss points and weights'
 
-    assert isinstance( n, int ) and n >= 1
-    k = numpy.arange( 1, n )
+    assert isinstance( degree, int ) and degree >= 0
+    k = numpy.arange( 1, degree // 2 + 1 )
     d = k / numpy.sqrt( 4*k**2-1 )
     x, w = numpy.linalg.eigh( numpy.diagflat(d,-1) ) # eigh operates (by default) on lower triangle
     return (x+1) * .5, w[0]**2
@@ -1016,14 +1016,14 @@ class QuadElement( Element ):
 
     x = w = None
     if where.startswith( 'gauss' ):
-      N = eval( where[5:] ) # //2+1 <= FUTURE!
+      N = eval( where[5:] )
       if isinstance( N, tuple ):
         assert len(N) == ndims
       else:
         N = [N]*ndims
       x, w = zip( *map( cls.getgauss, N ) )
     elif where.startswith( 'uniform' ):
-      N = eval( where[7:] ) # //2+1 <= FUTURE!
+      N = eval( where[7:] )
       if isinstance( N, tuple ):
         assert len(N) == ndims
       else:
@@ -1529,14 +1529,14 @@ class PolyLine( StdElem ):
 
     # magic bernstein triangle
     n = degree
-    poly = numpy.zeros( [n+1,n+1], dtype=int )
+    revpoly = numpy.zeros( [n+1,n+1], dtype=int )
     root = (-1)**n
     for k in range(n//2+1):
-      poly[k,k] = root
+      revpoly[k,k] = root
       for i in range(k+1,n+1-k):
-        root = poly[i,k] = poly[k,i] = ( root * (k+i-n-1) ) / i
-      root = ( poly[k,k+1] * (k*2-n+1) ) / (k+1)
-    return poly
+        root = revpoly[i,k] = revpoly[k,i] = ( root * (k+i-n-1) ) / i
+      root = ( revpoly[k,k+1] * (k*2-n+1) ) / (k+1)
+    return revpoly[::-1]
 
   @classmethod
   def spline_poly( cls, p, n ):
@@ -1629,7 +1629,8 @@ class PolyLine( StdElem ):
     return numpy.array( elems )
 
   def __init__( self, poly ):
-    'constructor'
+    '''Create polynomial from order x nfuncs array of coefficients 'poly'.
+       Evaluates to sum_i poly[i,:] x**i.'''
 
     self.ndims = 1
     self.poly = numpy.asarray( poly, dtype=float )
@@ -1648,11 +1649,11 @@ class PolyLine( StdElem ):
 
     poly = self.poly
     for n in range(grad):
-      poly = poly[:-1] * numpy.arange( poly.shape[0]-1, 0, -1 )[:,_]
+      poly = poly[1:] * numpy.arange( 1, poly.shape[0] )[:,_]
 
     polyval = numpy.empty( x.shape+(self.nshapes,) )
-    polyval[:] = poly[0]
-    for p in poly[1:]:
+    polyval[:] = poly[-1]
+    for p in poly[-2::-1]:
       polyval *= x[...,_]
       polyval += p
 
