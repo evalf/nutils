@@ -346,10 +346,7 @@ class Topology( object ):
       assert constrain.shape == onto.shape[:1]
 
     if ptype == 'lsqr':
-      if ischeme is None:
-        ischeme = 'gauss8'
-        warnings.warn( 'please specify an integration scheme for project; the current default ischeme=%r will be removed in future' % ischeme, DeprecationWarning )
-      #assert ischeme is not None, 'ptype %r requires an ischeme' % ptype
+      assert ischeme is not None, 'please specify an integration scheme for lsqr-projection'
       if len( onto.shape ) == 1:
         Afun = function.outer( onto )
         bfun = onto * fun
@@ -369,10 +366,7 @@ class Topology( object ):
         constrain[N] = u[N]
 
     elif ptype == 'convolute':
-      if ischeme is None:
-        ischeme = 'gauss8'
-        warnings.warn( 'please specify an integration scheme for project; the current default ischeme=%r will be removed in future' % ischeme, DeprecationWarning )
-      #assert ischeme is not None, 'ptype %r requires an ischeme' % ptype
+      assert ischeme is not None, 'please specify an integration scheme for convolute-projection'
       if len( onto.shape ) == 1:
         ufun = onto * fun
         afun = onto

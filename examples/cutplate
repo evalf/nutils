@@ -21,8 +21,8 @@ def main( nelems=10, stress=Hook(1,1) ):
   support = domain.integrate( function.norm2( dspace ), coords=coords, ischeme='gauss3' )
   cons = util.NanVec( len(support) )
   cons[ support==0 ] = 0
-  cons |= wholedomain.boundary['left,right'].project( coords*[.5,0], coords=coords, onto=dspace )
-  cons |= wholedomain.boundary['right'].project( [.5,0], coords=coords, onto=dspace )
+  cons |= wholedomain.boundary['left,right'].project( coords*[.5,0], coords=coords, ischeme='gauss3', onto=dspace )
+  cons |= wholedomain.boundary['right'].project( [.5,0], coords=coords, ischeme='gauss3', onto=dspace )
 
   elasticity = function.outer( dspace.grad(coords), stress(dspace,coords) ).sum([2,3])
   matrix = domain.integrate( elasticity, coords=coords, ischeme='gauss3' )

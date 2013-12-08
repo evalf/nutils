@@ -90,8 +90,8 @@ def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e
 
   if strong:
     stokesrhs = 0
-    cons = domain.boundary['top'].project( 1, coords=coords, onto=vspace[:,0], title='top boundary' ) \
-         | domain.boundary.project( 0, coords=coords, onto=vspace, title='other boundary' )
+    cons = domain.boundary['top'].project( 1, coords=coords, onto=vspace[:,0], ischeme='gauss3', title='top boundary' ) \
+         | domain.boundary.project( 0, coords=coords, onto=vspace, ischeme='gauss3', title='other boundary' )
   else:
     ALPHA = .01 * nelems * reynolds
     Utop = [1,0]
