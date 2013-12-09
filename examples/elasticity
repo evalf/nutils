@@ -6,7 +6,7 @@ from nutils import *
 def main( nelems=20, stress=library.Hooke(lmbda=1,mu=1), degree=1 ):
 
   verts = numpy.linspace( 0, 1, nelems+1 )
-  domain, geom = mesh.rectilinear( [verts,verts] )
+  domain, geom = mesh.rectilinear( [verts,verts], nsubdomains=2 )
   dspace = domain.splinefunc( degree=degree ).vector( 2 )
   elasticity = function.outer( dspace.grad(geom), stress(dspace,geom) ).sum([2,3])
   matrix = domain.integrate( elasticity, geometry=geom, ischeme='gauss2' )

@@ -3083,9 +3083,9 @@ def function( fmap, nmap, ndofs, ndims, axis ):
   'create function on ndims-element'
 
   cascade = Cascade(ndims)
-  func = Function( cascade, fmap, igrad=0, axis=axis )
-  dofmap = DofMap( cascade, nmap, axis=axis )
-  return Inflate( func, dofmap, length=ndofs, axis=0 )
+  func = Function( cascade, fmap, igrad=0, axis='~%d'%ndofs )
+  dofmap = DofMap( cascade, nmap, axis='~%d'%ndofs )
+  return Inflate( func, dofmap, length=axis, axis=0 )
 
 def take( arg, index, axis ):
   'take index'

@@ -1,6 +1,10 @@
 from . import element, function, util, numpy, parallel, matrix, log, core, numeric, prop, _
 import warnings, itertools, libmatrix
 
+class Axis( libmatrix.Map ):
+  # TEMPORARY: allow maps to be used in a shape
+  def __eq__( self, other ):
+    return self is other or self.size == other
 
 class ElemMap( dict ):
   'dictionary-like element mapping'
@@ -232,8 +236,7 @@ class Topology( object ):
     for ifunc, func in enumerate( funcs ):
       func = function._asarray( func )
       if function._isfunc( func ):
-        maps, = [ f.shape for f, ind in function.blocks( func ) ]
-        array = libmatrix.Array( maps )
+        array = libmatrix.Array( func.shape )
         for f, ind in function.blocks( func ):
           integrands.append( function.Tuple([ ifunc, function.Tuple(ind), function.elemint( f, iweights ) ]) )
       else:
@@ -320,14 +323,15 @@ class Topology( object ):
 
     log.context( title + ' [%s]' % ptype )
 
-    if exact_boundaries:
-      assert constrain is None
-      constrain = self.boundary.project( fun, onto, geometry, title='boundaries', ischeme=ischeme, tol=tol, droptol=droptol, ptype=ptype )
-    elif constrain is None:
-      constrain = util.NanVec( onto.shape[0] )
-    else:
-      assert isinstance( constrain, util.NanVec )
-      assert constrain.shape == onto.shape[:1]
+    assert constrain is None and exact_boundaries is False
+    #if exact_boundaries:
+    #  assert constrain is None
+    #  constrain = self.boundary.project( fun, onto, geometry, title='boundaries', ischeme=ischeme, tol=tol, droptol=droptol, ptype=ptype )
+    #elif constrain is None:
+    #  constrain = util.NanVec( onto.shape[0] )
+    #else:
+    #  assert isinstance( constrain, util.NanVec )
+    #  assert constrain.shape == onto.shape[:1]
 
     if ptype == 'lsqr':
       assert ischeme is not None, 'please specify an integration scheme for lsqr-projection'
@@ -729,7 +733,7 @@ class StructuredTopology( Topology ):
           funcmap[elem] = std, mask
         masks[ elem.subdom, mydofs ] = True
 
-    domainmap = libmatrix.Map( self.comm, masks )
+    domainmap = Axis( self.comm, masks )
 
     if hasnone:
       raise NotImplementedError
