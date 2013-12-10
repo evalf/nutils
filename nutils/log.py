@@ -1,4 +1,4 @@
-from . import core, prop, exception
+from . import core, prop
 import sys, time, os, traceback, warnings, numpy
 
 _KEY = '__logger__'

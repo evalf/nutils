@@ -1,5 +1,5 @@
 from . import log, prop
-import sys, os, time, numpy, cPickle, hashlib, weakref, traceback, core, warnings, exception, itertools
+import sys, os, time, numpy, cPickle, hashlib, weakref, traceback, core, warnings, traceback, itertools
 
 def unreachable_items():
   # see http://stackoverflow.com/questions/16911559/trouble-understanding-pythons-gc-garbage-for-tracing-memory-leaks
@@ -478,7 +478,7 @@ def run( *functions ):
   except Terminate, exc:
     log.error( 'terminated:', exc )
   except Exception, exc:
-    tb = exception.traceback()
+    tb = traceback.traceback()
     log.traceback( exc, tb )
 
   if hasattr( os, 'wait' ):
@@ -500,9 +500,9 @@ def run( *functions ):
   if not tb:
     sys.exit( 0 )
 
-  exception.write_html( htmlfile, exc, tb )
+  traceback.write_html( htmlfile, exc, tb )
 
-  exception.TracebackExplorer( repr(exc), tb, intro='''\
+  traceback.TracebackExplorer( repr(exc), tb, intro='''\
     Your program has died. The traceback exporer allows you to examine its
     post-mortem state to figure out why this happened. Type 'help' for an
     overview of commands to get going.''' ).cmdloop()
@@ -513,8 +513,8 @@ class Terminate( Exception ):
   pass
 
 def keyboard():
-  tb = exception.callstack( 2 )
-  exception.TracebackExplorer( 'Suspended.', tb, intro='''\
+  tb = traceback.callstack( 2 )
+  traceback.TracebackExplorer( 'Suspended.', tb, intro='''\
     Your program is suspended. The traceback explorer allows you to examine
     its current state and even alter it. Closing the explorer will resume
     program execution.''' ).cmdloop()
