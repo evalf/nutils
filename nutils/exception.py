@@ -1,4 +1,4 @@
-import sys, cmd, re, os
+import sys, cmd, re, os, linecache
 
 class FrameInfo( object ):
   'frame info'
@@ -32,7 +32,6 @@ class ExcInfo( object ):
 
     self.exctype, self.excvalue, tb = excinfo
   
-    filecache = {}
     self.tb = []
 
     while tb:
@@ -51,36 +50,31 @@ class ExcInfo( object ):
           break
   
       path = os.path.relpath( code.co_filename )
-      if path in filecache:
-        lines = filecache[path]
-      else:
-        try:
-          fileobj = open(path)
-        except IOError:
-          lines = None
-        else:
-          lines = fileobj.readlines()
-          filecache[path] = lines
-  
-      lineno = tb.tb_lineno - 1
-      context = 'File "%s", line %d, in %s' % ( path, lineno+1, name )
-      if lines:
-        indent = len(lines[lineno]) - len(lines[lineno].lstrip())
+      lineno = tb.tb_lineno
+      context = 'File "%s", line %d, in %s' % ( path, lineno, name )
+      line = linecache.getline( path, lineno )
+      if line:
+        indent = len(line) - len(line.lstrip())
         counterr = 0
         while True:
-          context += '\n    ' + lines[lineno+counterr][indent:].rstrip()
+          line = linecache.getline( path, lineno+counterr )
+          context += '\n    ' + line[indent:].rstrip()
           counterr += 1
           if not context.endswith( '\\' ):
             break
-        iline = code.co_firstlineno-1
-        indent = len(lines[iline]) - len(lines[iline].lstrip())
-        source = lines[iline][indent:].rstrip()
-        while iline+1 < len(lines) and ( iline < lineno or not lines[iline+1][:indent+1].strip() ):
+        iline = code.co_firstlineno
+        line = linecache.getline( path, iline )
+        indent = len(line) - len(line.lstrip())
+        source = line[indent:].rstrip()
+        while True:
           iline += 1
-          if lineno<=iline<lineno+counterr:
-            source += '\n>' + lines[iline][indent+1:].rstrip()
+          line = linecache.getline( path, iline )
+          if not line or line[:indent+1].strip():
+            break
+          if lineno <= iline < lineno + counterr:
+            source += '\n>' + line[indent+1:].rstrip()
           else:
-            source += '\n' + lines[iline][indent:].rstrip()
+            source += '\n' + line[indent:].rstrip()
         source = source.rstrip()
       else:
         source = '<not avaliable>'
@@ -152,28 +146,31 @@ class ExcInfo( object ):
 
     return [ '  %s\n' % f for f in self ] + [ '%s\n' % self ]
 
-  def explore( self ):
+  def explore( self, intro ):
     'start traceback explorer'
 
-    TracebackExplorer( self ).cmdloop()
+    TracebackExplorer( self, intro ).cmdloop()
 
 class TracebackExplorer( cmd.Cmd ):
   'traceback explorer'
 
-  intro = '''
-  +----------------------------------------------+
-  | WELCOME TO TRACEBACK EXPLORER.               |
-  |                                              |
-  | Your program has died. The traceback exporer |
-  | allows you to examine its post-mortem state  |
-  | to figure out why this happened. Type 'help' |
-  | for an overview of commands to get going.    |
-  +----------------------------------------------+'''
-
-  def __init__( self, excinfo ):
+  def __init__( self, excinfo, intro ):
     'constructor'
 
     cmd.Cmd.__init__( self, completekey='tab' )
+
+    lines = [ 'WELCOME TO TRACEBACK EXPLORER.' ]
+    maxlen = 44
+    nextline = ''
+    for word in intro.split():
+      if not nextline or len(nextline) + 1 + len(word) > maxlen:
+        lines.append( nextline )
+        nextline = word
+      else:
+        nextline += ' ' + word
+    lines.append( nextline )
+    rule = '+-' + '-' * maxlen + '-+'
+    self.intro = '\n'.join( [ rule ] + [ '| %s |' % line.ljust(maxlen) for line in lines ] + [ rule ] )
 
     self.excinfo = excinfo
     self.index = len(excinfo) - 1

@@ -503,10 +503,24 @@ def run( *functions ):
     sys.exit( 0 )
 
   excinfo[1:].write_html( htmlfile )
-  excinfo[1:].explore()
+  excinfo[1:].explore( '''\
+    Your program has died. The traceback exporer allows you to examine its
+    post-mortem state to figure out why this happened. Type 'help' for an
+    overview of commands to get going.''' )
+
   sys.exit( 1 )
 
 class Terminate( Exception ):
   pass
+
+def keyboard():
+  try:
+    raise Exception
+  except:
+    excinfo = exception.ExcInfo()
+  excinfo.explore( '''\
+    Your program is suspended. The traceback explorer allows you to examine
+    its current state and even alter it. Closing the explorer will resume
+    program execcution.''' )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
