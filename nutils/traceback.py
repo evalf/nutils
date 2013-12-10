@@ -198,6 +198,9 @@ def traceback():
     tb = tb.tb_next
   return frames
 
+def format_exc():
+  return '\n'.join( [ repr(sys.exc_value) ] + [ str(f) for f in traceback() ] )
+
 def callstack( depth=1 ):
   frame = sys._getframe( depth )
   frames = []

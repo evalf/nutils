@@ -1,5 +1,5 @@
-from . import log, prop
-import sys, os, time, numpy, cPickle, hashlib, weakref, traceback, core, warnings, traceback, itertools
+from . import log, prop, traceback
+import sys, os, time, numpy, cPickle, hashlib, weakref, warnings, itertools
 
 def unreachable_items():
   # see http://stackoverflow.com/questions/16911559/trouble-understanding-pythons-gc-garbage-for-tracing-memory-leaks
@@ -359,8 +359,7 @@ def run( *functions ):
   except IOError:
     pass # file does not exist
   except:
-    print 'Error in .nutilsrc (skipping)'
-    print traceback.format_exc()
+    print 'Skipping .nutilsrc: ' + traceback.format_exc()
 
   if '-h' in sys.argv[1:] or '--help' in sys.argv[1:]:
     print 'Usage: %s [FUNC] [ARGS]' % sys.argv[0]
