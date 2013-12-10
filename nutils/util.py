@@ -478,7 +478,7 @@ def run( *functions ):
     log.error( 'terminated:', exc )
   except Exception, exc:
     tb = traceback.exception()
-    log.traceback( exc, tb )
+    log.stack( repr(exc), tb )
 
   if hasattr( os, 'wait' ):
     try: # wait for child processes to die

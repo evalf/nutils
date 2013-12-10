@@ -1,5 +1,5 @@
-from . import core, prop
-import sys, time, os, traceback, warnings, numpy
+from . import core, prop, traceback
+import sys, time, os, warnings, numpy
 
 _KEY = '__logger__'
 _makestr = lambda args: ' '.join( str(arg) for arg in args )
@@ -57,10 +57,12 @@ def iterate( text, iterable, target=None, **kwargs ):
   finally:
     frame = f_locals[_KEY] = logger.parent
 
-def traceback( exc, frames ):
-  'print traceback'
+def stack( msg, frames=None ):
+  'print stack trace'
 
-  summary = '\n'.join( [ repr(exc) ] + [ str(f) for f in reversed(frames) ] )
+  if frames is None:
+    frames = traceback.callstack( depth=2 )
+  summary = '\n'.join( [ msg ] + [ str(f) for f in reversed(frames) ] )
   _findlogger( frames[-1].frame ).write( ('error',[summary ]) )
 
 class SimpleLog( object ):
