@@ -12,6 +12,7 @@ class Frame( object ):
 
   @staticmethod
   def _name( frame ):
+    # If frame is a class method try to add the class name
     # http://stackoverflow.com/questions/2203424/python-how-to-retrieve-class-information-from-a-frame-object/15704609#15704609
     name = frame.f_code.co_name
     for classname, obj in frame.f_globals.iteritems():
@@ -98,7 +99,7 @@ class TracebackExplorer( cmd.Cmd ):
 
     for i, f in enumerate(self.frames):
       print ' *'[i == self.index] + f.context[1:]
-    print ' ', repr(self.exc)
+    print ' ', self.exc
 
   def do_s( self, arg ):
     '''Show source code of the currently focussed frame.'''
@@ -196,6 +197,14 @@ def traceback():
     frames.append( Frame( tb.tb_frame, tb.tb_lineno ) )
     tb = tb.tb_next
   return frames
+
+def callstack( depth=1 ):
+  frame = sys._getframe( depth )
+  frames = []
+  while frame:
+    frames.append( Frame( frame ) )
+    frame = frame.f_back
+  return frames[::-1]
 
 def write_html( out, exc, frames ):
   'write exception info to html file'

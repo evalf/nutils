@@ -502,7 +502,7 @@ def run( *functions ):
 
   exception.write_html( htmlfile, exc, tb )
 
-  exception.TracebackExplorer( exc, tb, intro='''\
+  exception.TracebackExplorer( repr(exc), tb, intro='''\
     Your program has died. The traceback exporer allows you to examine its
     post-mortem state to figure out why this happened. Type 'help' for an
     overview of commands to get going.''' ).cmdloop()
@@ -511,5 +511,12 @@ def run( *functions ):
 
 class Terminate( Exception ):
   pass
+
+def keyboard():
+  tb = exception.callstack( 2 )
+  exception.TracebackExplorer( 'Suspended.', tb, intro='''\
+    Your program is suspended. The traceback explorer allows you to examine
+    its current state and even alter it. Closing the explorer will resume
+    program execution.''' ).cmdloop()
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
