@@ -50,17 +50,18 @@ class Frame( object ):
       return '<not avaliable>'
     indent = len(line) - len(line.lstrip())
     source = line[indent:]
-    pointing = False
+    while line[indent] == '@':
+      lineno += 1
+      line = linecache.getline( path, lineno )
+      source += line[indent:]
+    linebreak = False
     while True:
       lineno += 1
       line = linecache.getline( path, lineno )
-      if not line or ( line.strip() and line[:indent+1].strip() ):
+      if not line or not linebreak and line[:indent+1].strip():
         break
-      if pointing or lineno == self.lineno:
-        source += '>' + line[indent+1:]
-        pointing = line.rstrip().endswith( '\\' )
-      else:
-        source += line[indent:]
+      source += '>' + line[indent+1:] if lineno == self.lineno + linebreak else line[indent:]
+      linebreak = linebreak + 1 if line.rstrip().endswith( '\\' ) else 0
     return source.rstrip() # strip trailing empty lines
 
   def __str__( self ):
