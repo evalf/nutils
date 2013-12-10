@@ -470,18 +470,16 @@ def run( *functions ):
   warnings.resetwarnings()
 
   t0 = time.time()
+  tb = False
   try:
     func( **kwargs )
   except KeyboardInterrupt:
     log.error( 'killed by user' )
-    excinfo = False
-  except Terminate, e:
-    log.error( 'terminated:', e )
-    excinfo = False
-  except:
-    excinfo = log.traceback()
-  else:
-    excinfo = False
+  except Terminate, exc:
+    log.error( 'terminated:', exc )
+  except Exception, exc:
+    tb = exception.traceback()
+    log.traceback( exc, tb )
 
   if hasattr( os, 'wait' ):
     try: # wait for child processes to die
@@ -499,28 +497,19 @@ def run( *functions ):
   log.info( 'finish %s\n' % time.ctime() )
   log.info( 'elapsed %02.0f:%02.0f:%02.0f' % ( hours, minutes, seconds ) )
 
-  if not excinfo:
+  if not tb:
     sys.exit( 0 )
 
-  excinfo[1:].write_html( htmlfile )
-  excinfo[1:].explore( '''\
+  exception.write_html( htmlfile, exc, tb )
+
+  exception.TracebackExplorer( exc, tb, intro='''\
     Your program has died. The traceback exporer allows you to examine its
     post-mortem state to figure out why this happened. Type 'help' for an
-    overview of commands to get going.''' )
+    overview of commands to get going.''' ).cmdloop()
 
   sys.exit( 1 )
 
 class Terminate( Exception ):
   pass
-
-def keyboard():
-  try:
-    raise Exception
-  except:
-    excinfo = exception.ExcInfo()
-  excinfo.explore( '''\
-    Your program is suspended. The traceback explorer allows you to examine
-    its current state and even alter it. Closing the explorer will resume
-    program execcution.''' )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

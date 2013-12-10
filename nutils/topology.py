@@ -244,9 +244,6 @@ class Topology( object ):
       assert geometry is None, 'conflicting arguments geometry and iweights'
     assert iweights.ndim == 0
 
-    assert False
-    #util.keyboard()
-
     integrands = []
     retvals = []
     for ifunc, func in enumerate( funcs ):

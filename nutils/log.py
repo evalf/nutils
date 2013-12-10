@@ -57,13 +57,11 @@ def iterate( text, iterable, target=None, **kwargs ):
   finally:
     frame = f_locals[_KEY] = logger.parent
 
-def traceback( excinfo=None ):
+def traceback( exc, frames ):
   'print traceback'
 
-  excinfo = exception.ExcInfo( excinfo )
-  summary = ''.join( reversed(excinfo.summary()) ).rstrip(),
-  _findlogger( excinfo[-1].frame ).write( ('error',summary) )
-  return excinfo
+  summary = '\n'.join( [ repr(exc) ] + [ str(f) for f in reversed(frames) ] )
+  _findlogger( frames[-1].frame ).write( ('error',[summary ]) )
 
 class SimpleLog( object ):
   'simple log'
