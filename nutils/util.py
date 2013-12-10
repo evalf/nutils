@@ -1,5 +1,5 @@
-from . import log, prop
-import sys, os, time, numpy, cPickle, hashlib, weakref, traceback, core, warnings, exception, itertools
+from . import log, prop, traceback
+import sys, os, time, numpy, cPickle, hashlib, weakref, warnings, itertools
 
 def unreachable_items():
   # see http://stackoverflow.com/questions/16911559/trouble-understanding-pythons-gc-garbage-for-tracing-memory-leaks
@@ -359,8 +359,7 @@ def run( *functions ):
   except IOError:
     pass # file does not exist
   except:
-    print 'Error in .nutilsrc (skipping)'
-    print traceback.format_exc()
+    print 'Skipping .nutilsrc: ' + traceback.format_exc()
 
   if '-h' in sys.argv[1:] or '--help' in sys.argv[1:]:
     print 'Usage: %s [FUNC] [ARGS]' % sys.argv[0]
@@ -470,18 +469,16 @@ def run( *functions ):
   warnings.resetwarnings()
 
   t0 = time.time()
+  tb = False
   try:
     func( **kwargs )
   except KeyboardInterrupt:
     log.error( 'killed by user' )
-    excinfo = False
-  except Terminate, e:
-    log.error( 'terminated:', e )
-    excinfo = False
-  except:
-    excinfo = log.traceback()
-  else:
-    excinfo = False
+  except Terminate, exc:
+    log.error( 'terminated:', exc )
+  except Exception, exc:
+    tb = traceback.exception()
+    log.stack( repr(exc), tb )
 
   if False: # disabled until situation with mpi is resolved; was: hasattr( os, 'wait' ):
     try: # wait for child processes to die
@@ -499,11 +496,16 @@ def run( *functions ):
   log.info( 'finish %s\n' % time.ctime() )
   log.info( 'elapsed %02.0f:%02.0f:%02.0f' % ( hours, minutes, seconds ) )
 
-  if not excinfo:
+  if not tb:
     sys.exit( 0 )
 
-  excinfo[1:].write_html( htmlfile )
-  excinfo[1:].explore()
+  traceback.write_html( htmlfile, exc, tb )
+
+  traceback.Explorer( repr(exc), tb, intro='''\
+    Your program has died. The traceback exporer allows you to examine its
+    post-mortem state to figure out why this happened. Type 'help' for an
+    overview of commands to get going.''' ).cmdloop()
+
   sys.exit( 1 )
 
 class Terminate( Exception ):
