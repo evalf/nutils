@@ -1,17 +1,6 @@
 from . import core
 import sys, cmd, re, os, linecache
 
-def _find_classname( funcname, f_globals ):
-  # http://stackoverflow.com/questions/2203424/python-how-to-retrieve-class-information-from-a-frame-object/15704609#15704609
-  for classname, obj in f_globals.iteritems():
-    try:
-      assert obj.__dict__[name].func_code is code
-    except:
-      pass
-    else:
-      return '%s.%s' % ( classname, funcname )
-  return funcname
-
 class Frame( object ):
   'frame info'
 
@@ -21,28 +10,41 @@ class Frame( object ):
     self.frame = frame
     self.lineno = lineno or self.frame.f_lineno
 
+  @staticmethod
+  def _name( frame ):
+    # http://stackoverflow.com/questions/2203424/python-how-to-retrieve-class-information-from-a-frame-object/15704609#15704609
+    name = frame.f_code.co_name
+    for classname, obj in frame.f_globals.iteritems():
+      try:
+        assert obj.__dict__[name].func_code is frame.f_code
+      except:
+        pass
+      else:
+        return '%s.%s' % ( classname, name )
+    return name
+
   @property
   @core.cache
   def context( self ):
-    code = self.frame.f_code
-    name = _find_classname( code.co_name, self.frame.f_globals )
-    context = '  File "%s", line %d, in %s' % ( os.path.relpath( code.co_filename ), self.lineno, name )
+    path = self.frame.f_code.co_filename
+    name = self._name( self.frame )
+    context = '  File "%s", line %d, in %s' % ( os.path.relpath(path), self.lineno, name )
     lineno = self.lineno
-    line = linecache.getline( code.co_filename, lineno )
+    line = linecache.getline( path, lineno )
     indent = len(line) - len(line.lstrip())
     context += '\n    ' + line[indent:].rstrip()
     while context.endswith( '\\' ):
       lineno += 1
-      line = linecache.getline( code.co_filename, lineno )
+      line = linecache.getline( path, lineno )
       context += '\n    ' + line[indent:].rstrip()
     return context
 
   @property
   @core.cache
   def source( self ):
-    code = self.frame.f_code
-    lineno = code.co_firstlineno
-    line = linecache.getline( code.co_filename, lineno )
+    path = self.frame.f_code.co_filename
+    lineno = self.frame.f_code.co_firstlineno
+    line = linecache.getline( path, lineno )
     if not line:
       return '<not avaliable>'
     indent = len(line) - len(line.lstrip())
@@ -50,7 +52,7 @@ class Frame( object ):
     pointing = False
     while True:
       lineno += 1
-      line = linecache.getline( code.co_filename, lineno )
+      line = linecache.getline( path, lineno )
       if not line or ( line.strip() and line[:indent+1].strip() ):
         break
       if pointing or lineno == self.lineno:
@@ -64,47 +66,6 @@ class Frame( object ):
     'string representation'
 
     return self.context
-
-def traceback():
-  'constructor'
-
-  tb = sys.exc_traceback
-  frames = []
-  while tb:
-    frames.append( Frame( tb.tb_frame, tb.tb_lineno ) )
-    tb = tb.tb_next
-  return frames
-
-def write_html( out, exc, frames ):
-  'write exception info to html file'
-
-  out.write( '<span class="info">' )
-  out.write( '\n<hr/>' )
-  out.write( '<b>EXHAUSTIVE POST-MORTEM DUMP FOLLOWS</b>\n' )
-  out.write( '\n'.join( [ repr(exc) ] + [ str(f) for f in frames ] ) )
-  out.write( '<hr/>\n' )
-  for f in reversed(frames):
-    out.write( f.context.splitlines()[0] + '\n' )
-    for line in f.source.splitlines():
-      if line.startswith( '>' ):
-        fmt = '<span class="error"> %s</span>\n'
-        line = line[1:]
-      else:
-        fmt = '%s\n'
-      line = re.sub( r'\b(def|if|elif|else|for|while|with|in|return)\b', r'<b>\1</b>', line.replace('<','&lt;').replace('>','&gt;') )
-      out.write( fmt % line )
-    out.write( '\n\n' )
-    out.write( '<table border="1" style="border:none; margin:0px; padding:0px;">\n' )
-    for key, val in f.frame.f_locals.iteritems():
-      try:
-        val = str(val).replace('<','&lt;').replace('>','&gt;')
-      except:
-        val = 'ERROR'
-      out.write( '<tr><td>%s</td><td>%s</td></tr>\n' % ( key, val ) )
-    out.write( '</table>\n' )
-    out.write( '<hr/>\n' )
-  out.write( '</span>' )
-  out.flush()
 
 class TracebackExplorer( cmd.Cmd ):
   'traceback explorer'
@@ -225,5 +186,46 @@ class TracebackExplorer( cmd.Cmd ):
       text = attr
 
     return [ base+name for name in objs if name.startswith(text) ]
+
+def traceback():
+  'constructor'
+
+  tb = sys.exc_traceback
+  frames = []
+  while tb:
+    frames.append( Frame( tb.tb_frame, tb.tb_lineno ) )
+    tb = tb.tb_next
+  return frames
+
+def write_html( out, exc, frames ):
+  'write exception info to html file'
+
+  out.write( '<span class="info">' )
+  out.write( '\n<hr/>' )
+  out.write( '<b>EXHAUSTIVE POST-MORTEM DUMP FOLLOWS</b>\n' )
+  out.write( '\n'.join( [ repr(exc) ] + [ str(f) for f in frames ] ) )
+  out.write( '<hr/>\n' )
+  for f in reversed(frames):
+    out.write( f.context.splitlines()[0] + '\n' )
+    for line in f.source.splitlines():
+      if line.startswith( '>' ):
+        fmt = '<span class="error"> %s</span>\n'
+        line = line[1:]
+      else:
+        fmt = '%s\n'
+      line = re.sub( r'\b(def|if|elif|else|for|while|with|in|return)\b', r'<b>\1</b>', line.replace('<','&lt;').replace('>','&gt;') )
+      out.write( fmt % line )
+    out.write( '\n\n' )
+    out.write( '<table border="1" style="border:none; margin:0px; padding:0px;">\n' )
+    for key, val in f.frame.f_locals.iteritems():
+      try:
+        val = str(val).replace('<','&lt;').replace('>','&gt;')
+      except:
+        val = 'ERROR'
+      out.write( '<tr><td>%s</td><td>%s</td></tr>\n' % ( key, val ) )
+    out.write( '</table>\n' )
+    out.write( '<hr/>\n' )
+  out.write( '</span>' )
+  out.flush()
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
