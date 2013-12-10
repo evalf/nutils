@@ -3,8 +3,52 @@ import sys, cmd, re, os, linecache
 class FrameInfo( object ):
   'frame info'
 
-  def __init__( self, context, source, frame ):
+  def __init__( self, frame, lineno=None ):
     'constructor'
+
+    code = frame.f_code
+    name = code.co_name
+
+    # http://stackoverflow.com/questions/2203424/python-how-to-retrieve-class-information-from-a-frame-object/15704609#15704609
+    for classname, obj in frame.f_globals.iteritems():
+      try:
+        assert obj.__dict__[name].func_code is code
+      except:
+        pass
+      else:
+        name = '%s.%s' % ( classname, name )
+        break
+
+    path = os.path.relpath( code.co_filename )
+    if lineno is None:
+      lineno = frame.f_lineno
+    context = 'File "%s", line %d, in %s' % ( path, lineno, name )
+    line = linecache.getline( path, lineno )
+    if line:
+      indent = len(line) - len(line.lstrip())
+      counterr = 0
+      while True:
+        line = linecache.getline( path, lineno+counterr )
+        context += '\n    ' + line[indent:].rstrip()
+        counterr += 1
+        if not context.endswith( '\\' ):
+          break
+      iline = code.co_firstlineno
+      line = linecache.getline( path, iline )
+      indent = len(line) - len(line.lstrip())
+      source = line[indent:].rstrip()
+      while True:
+        iline += 1
+        line = linecache.getline( path, iline )
+        if not line or line[:indent+1].strip():
+          break
+        if lineno <= iline < lineno + counterr:
+          source += '\n>' + line[indent+1:].rstrip()
+        else:
+          source += '\n' + line[indent:].rstrip()
+      source = source.rstrip()
+    else:
+      source = '<not avaliable>'
 
     self.context = context
     self.source = source
@@ -33,53 +77,8 @@ class ExcInfo( object ):
     self.exctype, self.excvalue, tb = excinfo
   
     self.tb = []
-
     while tb:
-      frame = tb.tb_frame
-      code = frame.f_code
-      name = code.co_name
-  
-      # http://stackoverflow.com/questions/2203424/python-how-to-retrieve-class-information-from-a-frame-object/15704609#15704609
-      for classname, obj in frame.f_globals.iteritems():
-        try:
-          assert obj.__dict__[name].func_code is code
-        except:
-          pass
-        else:
-          name = '%s.%s' % ( classname, name )
-          break
-  
-      path = os.path.relpath( code.co_filename )
-      lineno = tb.tb_lineno
-      context = 'File "%s", line %d, in %s' % ( path, lineno, name )
-      line = linecache.getline( path, lineno )
-      if line:
-        indent = len(line) - len(line.lstrip())
-        counterr = 0
-        while True:
-          line = linecache.getline( path, lineno+counterr )
-          context += '\n    ' + line[indent:].rstrip()
-          counterr += 1
-          if not context.endswith( '\\' ):
-            break
-        iline = code.co_firstlineno
-        line = linecache.getline( path, iline )
-        indent = len(line) - len(line.lstrip())
-        source = line[indent:].rstrip()
-        while True:
-          iline += 1
-          line = linecache.getline( path, iline )
-          if not line or line[:indent+1].strip():
-            break
-          if lineno <= iline < lineno + counterr:
-            source += '\n>' + line[indent+1:].rstrip()
-          else:
-            source += '\n' + line[indent:].rstrip()
-        source = source.rstrip()
-      else:
-        source = '<not avaliable>'
-        
-      self.tb.append( FrameInfo(context,source,frame) )
+      self.tb.append( FrameInfo( tb.tb_frame, tb.tb_lineno ) )
       tb = tb.tb_next
 
   def __len__( self ):
