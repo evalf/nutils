@@ -1,3 +1,4 @@
+from . import core
 import sys, cmd, re, os, linecache
 
 def _find_classname( funcname, f_globals ):
@@ -17,42 +18,47 @@ class Frame( object ):
   def __init__( self, frame, lineno=None ):
     'constructor'
 
-    code = frame.f_code
-    name = _find_classname( code.co_name, frame.f_globals )
-    path = os.path.relpath( code.co_filename )
-    if lineno is None:
-      lineno = frame.f_lineno
-    context = '  File "%s", line %d, in %s' % ( path, lineno, name )
-    line = linecache.getline( path, lineno )
-    if not line:
-      source = '<not avaliable>'
-    else:
-      indent = len(line) - len(line.lstrip())
-      counterr = 0
-      while True:
-        line = linecache.getline( path, lineno+counterr )
-        context += '\n    ' + line[indent:].rstrip()
-        counterr += 1
-        if not context.endswith( '\\' ):
-          break
-      iline = code.co_firstlineno
-      line = linecache.getline( path, iline )
-      indent = len(line) - len(line.lstrip())
-      source = line[indent:].rstrip()
-      while True:
-        iline += 1
-        line = linecache.getline( path, iline )
-        if not line or line[:indent+1].strip():
-          break
-        if lineno <= iline < lineno + counterr:
-          source += '\n>' + line[indent+1:].rstrip()
-        else:
-          source += '\n' + line[indent:].rstrip()
-      source = source.rstrip()
-
-    self.context = context
-    self.source = source
     self.frame = frame
+    self.lineno = lineno or self.frame.f_lineno
+
+  @property
+  @core.cache
+  def context( self ):
+    code = self.frame.f_code
+    name = _find_classname( code.co_name, self.frame.f_globals )
+    context = '  File "%s", line %d, in %s' % ( os.path.relpath( code.co_filename ), self.lineno, name )
+    lineno = self.lineno
+    line = linecache.getline( code.co_filename, lineno )
+    indent = len(line) - len(line.lstrip())
+    context += '\n    ' + line[indent:].rstrip()
+    while context.endswith( '\\' ):
+      lineno += 1
+      line = linecache.getline( code.co_filename, lineno )
+      context += '\n    ' + line[indent:].rstrip()
+    return context
+
+  @property
+  @core.cache
+  def source( self ):
+    code = self.frame.f_code
+    lineno = code.co_firstlineno
+    line = linecache.getline( code.co_filename, lineno )
+    if not line:
+      return '<not avaliable>'
+    indent = len(line) - len(line.lstrip())
+    source = line[indent:]
+    pointing = False
+    while True:
+      lineno += 1
+      line = linecache.getline( code.co_filename, lineno )
+      if not line or ( line.strip() and line[:indent+1].strip() ):
+        break
+      if pointing or lineno == self.lineno:
+        source += '>' + line[indent+1:]
+        pointing = line.rstrip().endswith( '\\' )
+      else:
+        source += line[indent:]
+    return source.rstrip() # strip trailing empty lines
 
   def __str__( self ):
     'string representation'
