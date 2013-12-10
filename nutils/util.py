@@ -477,7 +477,7 @@ def run( *functions ):
   except Terminate, exc:
     log.error( 'terminated:', exc )
   except Exception, exc:
-    tb = traceback.traceback()
+    tb = traceback.exception()
     log.traceback( exc, tb )
 
   if hasattr( os, 'wait' ):
@@ -501,7 +501,7 @@ def run( *functions ):
 
   traceback.write_html( htmlfile, exc, tb )
 
-  traceback.TracebackExplorer( repr(exc), tb, intro='''\
+  traceback.Explorer( repr(exc), tb, intro='''\
     Your program has died. The traceback exporer allows you to examine its
     post-mortem state to figure out why this happened. Type 'help' for an
     overview of commands to get going.''' ).cmdloop()
@@ -513,7 +513,7 @@ class Terminate( Exception ):
 
 def keyboard():
   tb = traceback.callstack( 2 )
-  traceback.TracebackExplorer( 'Suspended.', tb, intro='''\
+  traceback.Explorer( 'Suspended.', tb, intro='''\
     Your program is suspended. The traceback explorer allows you to examine
     its current state and even alter it. Closing the explorer will resume
     program execution.''' ).cmdloop()

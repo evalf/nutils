@@ -68,7 +68,7 @@ class Frame( object ):
 
     return self.context
 
-class TracebackExplorer( cmd.Cmd ):
+class Explorer( cmd.Cmd ):
   'traceback explorer'
 
   def __init__( self, exc, frames, intro ):
@@ -188,7 +188,7 @@ class TracebackExplorer( cmd.Cmd ):
 
     return [ base+name for name in objs if name.startswith(text) ]
 
-def traceback():
+def exception():
   'constructor'
 
   tb = sys.exc_traceback
@@ -199,7 +199,7 @@ def traceback():
   return frames
 
 def format_exc():
-  return '\n'.join( [ repr(sys.exc_value) ] + [ str(f) for f in traceback() ] )
+  return '\n'.join( [ repr(sys.exc_value) ] + [ str(f) for f in exception() ] )
 
 def callstack( depth=1 ):
   frame = sys._getframe( depth )
