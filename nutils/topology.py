@@ -1,10 +1,22 @@
 from . import element, function, util, numpy, parallel, matrix, log, core, numeric, prop, _
 import warnings, itertools, libmatrix
 
-class Axis( libmatrix.Map ):
+class Axis( int ):
   # TEMPORARY: allow maps to be used in a shape
-  def __eq__( self, other ):
-    return self is other or self.size == other
+  def __new__( self, used ):
+    nprocs, ndofs = used.shape
+    self = int.__new__( Axis, ndofs )
+    self.used = used
+    self.map = None
+    return self
+  def __add__( self, other ):
+    assert isinstance( other, Axis )
+    return Axis( numpy.concatenate( [self.used,other.used], axis=1 ) )
+  def getmap( self, comm ):
+    if not self.map:
+      self.map = libmatrix.Map( comm, self.used )
+    assert self.map.comm == comm
+    return self.map
 
 class ElemMap( dict ):
   'dictionary-like element mapping'
@@ -28,9 +40,10 @@ class ElemMap( dict ):
 class Topology( object ):
   'topology base class'
 
-  def __init__( self, ndims ):
+  def __init__( self, ndims, comm ):
     'constructor'
 
+    self.comm = comm
     self.ndims = ndims
 
   def refined_by( self, refine ):
@@ -73,7 +86,7 @@ class Topology( object ):
     if self is other:
       return self
     assert self.ndims == other.ndims
-    return UnstructuredTopology( set(self) | set(other), ndims=self.ndims )
+    return UnstructuredTopology( set(self) | set(other), ndims=self.ndims, comm=self.comm )
 
   def __sub__( self, other ):
     'add topologies'
@@ -81,13 +94,13 @@ class Topology( object ):
     if self is other:
       return self
     assert self.ndims == other.ndims
-    return UnstructuredTopology( set(self) - set(other), ndims=self.ndims )
+    return UnstructuredTopology( set(self) - set(other), ndims=self.ndims, comm=self.comm )
 
   def __mul__( self, other ):
     'element products'
 
     elems = util.Product( self, other )
-    return UnstructuredTopology( elems, ndims=self.ndims+other.ndims )
+    return UnstructuredTopology( elems, ndims=self.ndims+other.ndims, comm=self.comm )
 
   def __getitem__( self, item ):
     'subtopology'
@@ -236,7 +249,8 @@ class Topology( object ):
     for ifunc, func in enumerate( funcs ):
       func = function._asarray( func )
       if function._isfunc( func ):
-        array = libmatrix.Array( func.shape )
+        shape = [ sh.getmap( self.comm ) for sh in func.shape ]
+        array = libmatrix.Array( shape )
         for f, ind in function.blocks( func ):
           integrands.append( function.Tuple([ ifunc, function.Tuple(ind), function.elemint( f, iweights ) ]) )
       else:
@@ -499,7 +513,7 @@ class Topology( object ):
       del dofmap[elem] # remove auxiliary elements
 
     funcsp = function.function( stdmap, dofmap, ndofs, self.ndims )
-    domain = UnstructuredTopology( topoelems, ndims=self.ndims )
+    domain = UnstructuredTopology( topoelems, ndims=self.ndims, comm=self.comm )
 
     if hasattr( topo, 'boundary' ):
       allbelems = []
@@ -515,8 +529,8 @@ class Topology( object ):
         for btag, belems in topo.boundary.groups.iteritems():
           bgroups.setdefault( btag, [] ).extend( belemset.intersection(belems) )
         topo = topo.refined # proceed to next level
-      domain.boundary = UnstructuredTopology( allbelems, ndims=self.ndims-1 )
-      domain.boundary.groups = dict( ( tag, UnstructuredTopology( group, ndims=self.ndims-1 ) ) for tag, group in bgroups.items() )
+      domain.boundary = UnstructuredTopology( allbelems, ndims=self.ndims-1, comm=self.comm )
+      domain.boundary.groups = dict( ( tag, UnstructuredTopology( group, ndims=self.ndims-1, comm=self.comm ) ) for tag, group in bgroups.items() )
 
     if hasattr( topo, 'interfaces' ):
       allinterfaces = []
@@ -541,7 +555,7 @@ class Topology( object ):
                 break
               celem1, transform1 = celem1.parent
         topo = topo.refined # proceed to next level
-      domain.interfaces = UnstructuredTopology( allinterfaces, ndims=self.ndims-1 )
+      domain.interfaces = UnstructuredTopology( allinterfaces, ndims=self.ndims-1, comm=self.comm )
   
     return domain, funcsp
 
@@ -574,10 +588,9 @@ class StructuredTopology( Topology ):
     self.structure = structure
     self.periodic = tuple(periodic)
     self.groups = {}
-    Topology.__init__( self, structure.ndim )
+    Topology.__init__( self, ndims=structure.ndim, comm=comm )
 
     assert isinstance( comm, libmatrix.LibMatrix )
-    self.comm = comm
 
   def make_periodic( self, periodic ):
     'add periodicity'
@@ -630,7 +643,7 @@ class StructuredTopology( Topology ):
       topo = StructuredTopology( structure, self.comm, periodic=[0] )
     else:
       allbelems = [ belem for boundary in boundaries for belem in boundary.structure.flat if belem is not None ]
-      topo = UnstructuredTopology( allbelems, ndims=self.ndims-1 )
+      topo = UnstructuredTopology( allbelems, ndims=self.ndims-1, comm=self.comm )
 
     topo.groups = dict( zip( ( 'left', 'right', 'bottom', 'top', 'front', 'back' ), boundaries ) )
     return topo
@@ -656,7 +669,7 @@ class StructuredTopology( Topology ):
         assert numpy.all( vertices == numpy.reshape( elem2.vertices, [2]*elem1.ndims )[s1].ravel() )
         ielem = element.QuadElement( ndims=self.ndims-1, vertices=vertices, interface=(context1,context2) )
         interfaces.append( ielem )
-    return UnstructuredTopology( interfaces, ndims=self.ndims-1 )
+    return UnstructuredTopology( interfaces, ndims=self.ndims-1, comm=self.comm )
 
   @core.cache
   def splinefunc( self, degree, neumann=(), knots=None, periodic=None, closed=False, removedofs=None ):
@@ -733,7 +746,7 @@ class StructuredTopology( Topology ):
           funcmap[elem] = std, mask
         masks[ elem.subdom, mydofs ] = True
 
-    domainmap = Axis( self.comm, masks )
+    domainmap = Axis( masks )
 
     if hasnone:
       raise NotImplementedError
@@ -925,12 +938,12 @@ class StructuredTopology( Topology ):
 class IndexedTopology( Topology ):
   'trimmed topology'
   
-  def __init__( self, topo, elements ):
+  def __init__( self, topo, elements, comm ):
     'constructor'
 
     self.topo = topo
     self.elements = elements
-    Topology.__init__( self, topo.ndims )
+    Topology.__init__( self, ndims=topo.ndims, comm=comm )
 
   def __iter__( self ):
     'iterate over elements'
@@ -978,12 +991,12 @@ class UnstructuredTopology( Topology ):
 
   groups = {}
 
-  def __init__( self, elements, ndims, namedfuncs={} ):
+  def __init__( self, elements, ndims, comm, namedfuncs={} ):
     'constructor'
 
     self.namedfuncs = namedfuncs
     self.elements = elements
-    Topology.__init__( self, ndims )
+    Topology.__init__( self, ndims=ndims, comm=comm )
 
   def __iter__( self ):
     'iterate over elements'
@@ -1053,19 +1066,19 @@ class UnstructuredTopology( Topology ):
     else:
       namedfuncs = {}
 
-    return UnstructuredTopology( elements, ndims=2, namedfuncs=namedfuncs )
+    return UnstructuredTopology( elements, ndims=2, namedfuncs=namedfuncs, comm=self.comm )
 
 class HierarchicalTopology( Topology ):
   'collection of nested topology elments'
 
-  def __init__( self, basetopo, elements ):
+  def __init__( self, basetopo, elements, comm ):
     'constructor'
 
     if isinstance( basetopo, HierarchicalTopology ):
       basetopo = basetopo.basetopo
     self.basetopo = basetopo
     self.elements = tuple(elements)
-    Topology.__init__( self, basetopo.ndims )
+    Topology.__init__( self, ndims=basetopo.ndims, comm=comm )
 
   def __iter__( self ):
     'iterate over elements'
@@ -1096,8 +1109,8 @@ class HierarchicalTopology( Topology ):
       for btag, belems in topo.boundary.groups.iteritems():
         bgroups.setdefault( btag, [] ).extend( belemset.intersection(belems) )
       topo = topo.refined # proceed to next level
-    boundary = UnstructuredTopology( allbelems, ndims=self.ndims-1 )
-    boundary.groups = dict( ( tag, UnstructuredTopology( group, ndims=self.ndims-1 ) ) for tag, group in bgroups.items() )
+    boundary = UnstructuredTopology( allbelems, ndims=self.ndims-1, comm=self.comm )
+    boundary.groups = dict( ( tag, UnstructuredTopology( group, ndims=self.ndims-1, comm=self.comm ) ) for tag, group in bgroups.items() )
     return boundary
 
   @property
@@ -1128,7 +1141,7 @@ class HierarchicalTopology( Topology ):
               break
             celem1, transform1 = celem1.parent
       topo = topo.refined # proceed to next level
-    return UnstructuredTopology( allinterfaces, ndims=self.ndims-1 )
+    return UnstructuredTopology( allinterfaces, ndims=self.ndims-1, comm=self.comm )
 
   def _funcspace( self, mkspace ):
 
@@ -1259,7 +1272,7 @@ def glue( master, slave, geometry, tol=1.e-10, verbose=False ):
     return topo.elements
 
   # 0. Create copy of slave, so that slave is not altered
-  new = UnstructuredTopology( elem_list( slave ), slave.ndims )
+  new = UnstructuredTopology( elem_list( slave ), ndims=slave.ndims, comm=self.comm )
   for index, elem in enumerate( slave ):
     replace_elem( index, elem )
 
@@ -1309,7 +1322,7 @@ def glue( master, slave, geometry, tol=1.e-10, verbose=False ):
     [elem.__repr__() for elem in slave_vertex_locations.iterkeys()] )
 
   # 3. Generate union topo
-  union = UnstructuredTopology( elem_list(master) + elem_list(new), master.ndims )
+  union = UnstructuredTopology( elem_list(master) + elem_list(new), ndims=master.ndims, comm=comm )
   log.info( 'created union topo [%i]' % len(union) )
   # Update interior groups
   union.groups.update( dict(

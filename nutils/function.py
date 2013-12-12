@@ -440,7 +440,7 @@ class ArrayFunc( Evaluable ):
 
     grad = localgradient( self, ndims )
     if grad.shape == (2,1):
-      normal = concatenate([ grad[1,:], -grad[0,:] ]).normalized()
+      normal = concatenate( [ grad[1,:], -grad[0,:] ], axis=0 ).normalized()
     elif grad.shape == (3,2):
       normal = cross( grad[:,0], grad[:,1], axis=0 ).normalized()
     elif grad.shape == (3,1):
@@ -937,20 +937,14 @@ class Concatenate( ArrayFunc ):
 
   __slots__ = 'funcs', 'axis'
 
-  def __init__( self, funcs, axis=0 ):
+  def __init__( self, funcs, axis, length ):
     'constructor'
 
     funcs = [ _asarray(func) for func in funcs ]
     ndim = funcs[0].ndim
     assert all( func.ndim == ndim for func in funcs )
     axis = numeric.normdim( ndim, axis )
-    lengths = [ func.shape[axis] for func in funcs ]
-    if any( n == None for n in lengths ):
-      assert all( n == None for n in lengths )
-      sh = None
-    else:
-      sh = sum( lengths )
-    shape = _jointshape( *[ func.shape[:axis] + (sh,) + func.shape[axis+1:] for func in funcs ] )
+    shape = _jointshape( *[ func.shape[:axis] + (length,) + func.shape[axis+1:] for func in funcs ] )
     self.funcs = tuple(funcs)
     self.axis = axis
     ArrayFunc.__init__( self, args=(axis-ndim,)+self.funcs, evalf=self.concatenate, shape=shape )
@@ -988,11 +982,11 @@ class Concatenate( ArrayFunc ):
           return get( fexp, i, item )
         item -= f.shape[i]
     axis = self.axis - (self.axis > i)
-    return concatenate( [ get( f, i, item ) for f in self.funcs ], axis=axis )
+    return concatenate( [ get( f, i, item ) for f in self.funcs ], axis=axis, length=self.shape[self.axis] )
 
   def _localgradient( self, ndims ):
     funcs = [ localgradient( func, ndims ) for func in self.funcs ]
-    return concatenate( funcs, axis=self.axis )
+    return concatenate( funcs, axis=self.axis, length=self.shape[self.axis] )
 
   def _multiply( self, other ):
     funcs = []
@@ -1002,7 +996,7 @@ class Concatenate( ArrayFunc ):
       funcs.append( func * take( other, slice(n0,n1), self.axis ) )
       n0 = n1
     assert n0 == self.shape[ self.axis ]
-    return concatenate( funcs, self.axis )
+    return concatenate( funcs, self.axis, length=self.shape[self.axis] )
 
   def _cross( self, other, axis ):
     if axis == self.axis:
@@ -1016,7 +1010,7 @@ class Concatenate( ArrayFunc ):
       funcs.append( cross( func, take( other, slice(n0,n1), self.axis ), axis ) )
       n0 = n1
     assert n0 == self.shape[ self.axis ]
-    return concatenate( funcs, self.axis )
+    return concatenate( funcs, self.axis, length=self.shape[self.axis] )
 
   def _add( self, other ):
     if isinstance( other, Concatenate ) and self.axis == other.axis:
@@ -1034,7 +1028,7 @@ class Concatenate( ArrayFunc ):
         ifun2 += i >= N2[ifun2+1]
       assert ifun1 == len(self.funcs)
       assert ifun2 == len(other.funcs)
-      return concatenate( funcs, axis=self.axis )
+      return concatenate( funcs, axis=self.axis, length=self.shape[self.axis] )
     funcs = []
     n0 = 0
     for func in self.funcs:
@@ -1042,23 +1036,23 @@ class Concatenate( ArrayFunc ):
       funcs.append( func + take( other, slice(n0,n1), self.axis ) )
       n0 = n1
     assert n0 == self.shape[ self.axis ]
-    return concatenate( funcs, self.axis )
+    return concatenate( funcs, self.axis, length=self.shape[self.axis] )
 
   def _sum( self, axis ):
     if axis == self.axis:
       return util.sum( sum( func, axis ) for func in self.funcs )
     funcs = [ sum( func, axis ) for func in self.funcs ]
     axis = self.axis - (axis<self.axis)
-    return concatenate( funcs, axis )
+    return concatenate( funcs, axis, length=self.shape[self.axis] )
 
   def _align( self, axes, ndim ):
     funcs = [ align( func, axes, ndim ) for func in self.funcs ]
     axis = axes[ self.axis ]
-    return concatenate( funcs, axis )
+    return concatenate( funcs, axis, length=self.shape[self.axis] )
 
   def _takediag( self ):
     if self.axis < self.ndim-2:
-      return concatenate( [ takediag(f) for f in self.funcs ], axis=self.axis )
+      return concatenate( [ takediag(f) for f in self.funcs ], axis=self.axis, length=self.shape[self.axis] )
     axis = self.ndim-self.axis-3 # -1=>-2, -2=>-1
     n0 = 0
     funcs = []
@@ -1067,15 +1061,15 @@ class Concatenate( ArrayFunc ):
       funcs.append( takediag( take( func, slice(n0,n1), axis ) ) )
       n0 = n1
     assert n0 == self.shape[self.axis]
-    return concatenate( funcs, axis=-1 )
+    return concatenate( funcs, axis=-1, length=self.shape[self.axis] )
 
   def _inflate( self, dofmap, length, axis ):
     assert not isinstance( self.shape[axis], int )
-    return concatenate( [ inflate(func,dofmap,length,axis) for func in self.funcs ], self.axis )
+    return concatenate( [ inflate(func,dofmap,length,axis) for func in self.funcs ], self.axis, length=self.shape[self.axis] )
 
   def _take( self, indices, axis ):
     if axis != self.axis:
-      return concatenate( [ take(func,indices,axis) for func in self.funcs ], self.axis )
+      return concatenate( [ take(func,indices,axis) for func in self.funcs ], self.axis, length=self.shape[self.axis] )
     funcs = []
     while len(indices):
       n = 0
@@ -1093,7 +1087,7 @@ class Concatenate( ArrayFunc ):
     assert funcs, 'empty slice'
     if len( funcs ) == 1:
       return funcs[0]
-    return concatenate( funcs, axis=axis )
+    return concatenate( funcs, axis=axis, length=self.shape[self.axis] )
 
   def _dot( self, other, naxes ):
     axes = range( self.ndim-naxes, self.ndim )
@@ -1105,16 +1099,16 @@ class Concatenate( ArrayFunc ):
       n0 = n1
     if self.axis >= self.ndim - naxes:
       return util.sum( funcs )
-    return concatenate( funcs, self.axis )
+    return concatenate( funcs, self.axis, length=self.shape[self.axis] )
 
   def _negative( self ):
-    return concatenate( [ -func for func in self.funcs ], self.axis )
+    return concatenate( [ -func for func in self.funcs ], self.axis, length=self.shape[self.axis] )
 
   def _opposite( self ):
-    return concatenate( [ opposite(func) for func in self.funcs ], self.axis )
+    return concatenate( [ opposite(func) for func in self.funcs ], self.axis, length=self.shape[self.axis] )
 
   def _power( self, n ):
-    return concatenate( [ power( func, n ) for func in self.funcs ], self.axis )
+    return concatenate( [ power( func, n ) for func in self.funcs ], self.axis, length=self.shape[self.axis] )
 
 class Interpolate( ArrayFunc ):
   'interpolate uniformly spaced data; stepwise for now'
@@ -1220,7 +1214,7 @@ class DofIndex( ArrayFunc ):
   def _localgradient( self, ndims ):
     return _zeros( self.shape + (ndims,) )
 
-  def _concatenate( self, other, axis ):
+  def _concatenate( self, other, axis, length ):
     if isinstance( other, DofIndex ) and self.iax == other.iax and self.index == other.index:
       array = numpy.concatenate( [ self.array, other.array ], axis )
       return take( array, self.index, self.iax )
@@ -1571,12 +1565,12 @@ class Dot( ArrayFunc ):
   def _take( self, index, axis ):
     return dot( take(self.func1,index,axis), take(self.func2,index,axis), self.axes )
 
-  def _concatenate( self, other, axis ):
+  def _concatenate( self, other, axis, length ):
     if isinstance( other, Dot ) and other.axes == self.axes:
       common = _findcommon( (self.func1,self.func2), (other.func1,other.func2) )
       if common:
         f, g12 = common
-        tryconcat = concatenate( g12, axis )
+        tryconcat = concatenate( g12, axis, length )
         if not isinstance( tryconcat, Concatenate ): # avoid inf recursion
           return dot( f, tryconcat, self.axes )
 
@@ -2417,8 +2411,9 @@ def chain( funcs ):
 
   funcs = map( _asarray, funcs )
   shapes = [ func.shape[0] for func in funcs ]
+  length = util.sum( shapes )
   return [ concatenate( [ func if i==j else _zeros( (sh,) + func.shape[1:] )
-             for j, sh in enumerate(shapes) ], axis=0 )
+             for j, sh in enumerate(shapes) ], axis=0, length=length )
                for i, func in enumerate(funcs) ]
 
 def merge( funcs ):
@@ -2789,32 +2784,29 @@ def diagonalize( arg ):
 
   return Diagonalize( arg )
 
-def concatenate( args, axis=0 ):
+def concatenate( args, axis, length=None ):
   'concatenate'
 
   args = _matchndim( *args )
   axis = numeric.normdim( args[0].ndim, axis )
-  i = 0
 
+  _length = util.sum( arg.shape[axis] for arg in args )
+  if length is None:
+    length = _length
+  else:
+    assert length == _length
+
+  shape = _jointshape( *[ arg.shape[:axis] + (length,) + arg.shape[axis+1:] for arg in args ] )
   if all( _iszero(arg) for arg in args ):
-    shape = list( args[0].shape )
-    axis = numeric.normdim( len(shape), axis )
-    for arg in args[1:]:
-      for i in range( len(shape) ):
-        if i == axis:
-          shape[i] += arg.shape[i]
-        elif shape[i] == 1:
-          shape[i] = arg.shape[i]
-        else:
-          assert arg.shape[i] in (shape[i],1)
     return _zeros( shape )
 
+  i = 0
   while i+1 < len(args):
     arg1, arg2 = args[i:i+2]
     if not _isfunc(arg1) and not _isfunc(arg2):
       arg12 = numpy.concatenate( [ arg1, arg2 ], axis )
     else:
-      arg12 = _call( arg1, '_concatenate', arg2, axis )
+      arg12 = _call( arg1, '_concatenate', arg2, axis, length )
       if arg12 is None:
         i += 1
         continue
@@ -2823,7 +2815,7 @@ def concatenate( args, axis=0 ):
   if len(args) == 1:
     return args[0]
 
-  return Concatenate( args, axis )
+  return Concatenate( args, axis, length )
 
 def transpose( arg, trans=None ):
   'transpose'
