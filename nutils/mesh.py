@@ -29,6 +29,8 @@ class GridFunc( function.ElemFunc ):
 def rectilinear( vertices, periodic=(), name='rect', nsubdomains=1 ):
   'rectilinear mesh'
 
+  log.context( 'rectilinear' )
+
   ndims = len(vertices)
   indices = numpy.ogrid[ tuple( slice(len(n)-1) for n in vertices ) ]
   domainelem = element.Element( ndims=ndims, vertices=[], subdom=-1 )
@@ -52,9 +54,8 @@ def rectilinear( vertices, periodic=(), name='rect', nsubdomains=1 ):
     vertices=vertexobjs[tuple(slice(i,i+2) for i in index)].ravel() ), *indices )
 
   # domain decomposition
-  log.info( 'starting libmatrix' )
   comm = libmatrix.LibMatrix( nprocs=nsubdomains )
-  log.info( 'libmatrix running' )
+  log.info( 'spawned', nsubdomains, 'libmatrix workers' )
 
   topo = topology.StructuredTopology( structure, comm )
   coords = GridFunc( domainelem, structure, vertices )
