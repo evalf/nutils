@@ -1,9 +1,10 @@
 #! /usr/bin/env python
 
 from nutils import *
+import libmatrix
 
 
-@parallel.fork
+#@parallel.fork
 def makeplots( domain, geom, velo, pres, index ):
 
   log.context( 'figures' )
@@ -58,7 +59,9 @@ def Gauss( center, width, height ):
 def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e-8, timestep=0 ):
 
   verts = numpy.linspace( 0, 1, nelems+1 )
-  domain, geom = mesh.rectilinear( [verts,verts] )
+  domain, geom = mesh.rectilinear( [verts,verts], nsubdomains=2 )
+  #domain.comm.set_verbosity(9)
+
   #vspace = function.vectorize([ domain.splinefunc( degree=(2,1) ), domain.splinefunc( degree=(1,2) ) ])
   vx, vy = function.chain([
     domain.splinefunc( degree=(2,1), removedofs=[[0,-1],None] ),
@@ -105,7 +108,8 @@ def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e
     inertmat = domain.integrate( inertia, ischeme='gauss9', geometry=geom, title='adding inertia' )
     stokesmat += inertmat
 
-  lhs = stokesmat.solve( stokesrhs, constrain=cons, tol=1e-10, precon='spilu' )
+  stokesmat_precon = libmatrix.Precon( stokesmat, 'ILUT' )
+  lhs = stokesmat.solve( stokesrhs, constrain=cons, precon=stokesmat_precon )
 
   for iiter in util.iterate():
     makeplots( domain, geom, vspace.dot(lhs), pspace.dot(lhs), iiter )
@@ -113,14 +117,15 @@ def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e
     convection = reynolds * function.outer( vspace, ugradu ).sum()
     matrix = stokesmat + domain.integrate( convection, ischeme='gauss9', geometry=geom, title='navstokes matrix' )
     if timestep:
-      rhs = stokesrhs + inertmat.matvec( lhs )
+      linprob = matrix.linearproblem( rhs=stokesrhs + inertmat.apply( lhs ), lhs=lhs, constrain=cons )
     else:
-      rhs = stokesrhs
-      res = matrix.res( lhs, rhs, constrain=cons )
+      linprob = matrix.linearproblem( rhs=stokesrhs, lhs=lhs, constrain=cons )
+      res = linprob.res()
       log.info( 'residual:', res )
       if res < tol:
         break
-    lhs = matrix.solve( rhs, constrain=cons, tol=1e-10 )#, precon='spilu' )
+    linprob.set_precon( stokesmat_precon )
+    linprob.solve( 'GMRES' )
 
 
 #   lhs = stokesmat.solve( rhs, constrain=cons, tol=1e-10 )

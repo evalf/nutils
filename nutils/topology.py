@@ -10,8 +10,12 @@ class Axis( int ):
     self.map = None
     return self
   def __add__( self, other ):
-    assert isinstance( other, Axis )
-    return Axis( numpy.concatenate( [self.used,other.used], axis=1 ) )
+    if isinstance( other, Axis ):
+      used = other.used
+    else:
+      assert isinstance( other, int )
+      used = numpy.ones( (self.used.shape[0],other), dtype=bool )
+    return Axis( numpy.concatenate( [self.used,used], axis=1 ) )
   def getmap( self, comm ):
     if not self.map:
       self.map = libmatrix.Map( comm, self.used )
@@ -250,7 +254,7 @@ class Topology( object ):
       func = function._asarray( func )
       if function._isfunc( func ):
         shape = [ sh.getmap( self.comm ) for sh in func.shape ]
-        array = libmatrix.Array( shape )
+        array = libmatrix.ArrayBuilder( shape )
         for f, ind in function.blocks( func ):
           integrands.append( function.Tuple([ ifunc, function.Tuple(ind), function.elemint( f, iweights ) ]) )
       else:
@@ -266,8 +270,7 @@ class Topology( object ):
       for ifunc, index, data in idata( elem, ischeme ):
         retvals[ifunc].add_global( index, data )
 
-    for retval in retvals:
-      retval.complete()
+    retvals = [ retval.complete() for retval in retvals ]
 
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
     if single_arg:
