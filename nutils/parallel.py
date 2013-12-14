@@ -149,7 +149,7 @@ def pariter( iterable ):
   'iterate parallel'
 
   nprocs = getattr( prop, 'nprocs', 1 )
-  return iterable if nprocs <= 1 else _pariter( iterable, nprocs )
+  return iterable #if nprocs <= 1 else _pariter( iterable, nprocs )
 
 def _pariter( iterable, nprocs ):
   'iterate parallel, helper generator'
