@@ -241,10 +241,4 @@ def write_html( out, exc, frames ):
   out.write( '</span>' )
   out.flush()
 
-def breakpoint():
-  Explorer( 'Suspended.', callstack(2), intro='''\
-    Your program is suspended. The traceback explorer allows you to examine
-    its current state and even alter it. Closing the explorer will resume
-    program execution.''' ).cmdloop()
-
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
