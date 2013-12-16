@@ -4,7 +4,7 @@ from nutils import *
 import libmatrix
 
 
-#@parallel.fork
+@parallel.fork
 def makeplots( domain, geom, velo, pres, index ):
 
   log.context( 'figures' )
@@ -59,7 +59,7 @@ def Gauss( center, width, height ):
 def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e-8, timestep=0 ):
 
   verts = numpy.linspace( 0, 1, nelems+1 )
-  domain, geom = mesh.rectilinear( [verts,verts], nsubdomains=2 )
+  domain, geom = mesh.rectilinear( [verts,verts] )
   #domain.comm.set_verbosity(9)
 
   #vspace = function.vectorize([ domain.splinefunc( degree=(2,1) ), domain.splinefunc( degree=(1,2) ) ])

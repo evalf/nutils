@@ -266,7 +266,8 @@ class Topology( object ):
     idata = function.Tuple( integrands )
 
     idata.compile()
-    for elem in parallel.pariter( log.iterate('elem',self) ):
+    #for elem in parallel.pariter( log.iterate('elem',self) ):
+    for elem in log.iterate('elem',self):
       for ifunc, index, data in idata( elem, ischeme ):
         retvals[ifunc].add_global( index, data )
 
@@ -280,6 +281,8 @@ class Topology( object ):
 
   def integrate_symm( self, funcs, ischeme, geometry=None, iweights=None, force_dense=False, title='integrating' ):
     'integrate a symmetric integrand on a product domain' # TODO: find a proper home for this
+
+    raise NotImplementedError
 
     log.context( title )
 

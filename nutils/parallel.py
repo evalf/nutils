@@ -104,6 +104,8 @@ def waitpid_noerr( pid ):
 def fork( func, nice=19 ):
   'fork and run (return value is lost)'
 
+  return func # disable fork
+
   if not hasattr( os, 'fork' ):
     log.warning( 'fork does not exist on this platform; running %s in serial' % func.__name__ )
     return func
@@ -149,7 +151,7 @@ def pariter( iterable ):
   'iterate parallel'
 
   nprocs = getattr( prop, 'nprocs', 1 )
-  return iterable #if nprocs <= 1 else _pariter( iterable, nprocs )
+  return iterable if nprocs <= 1 else _pariter( iterable, nprocs )
 
 def _pariter( iterable, nprocs ):
   'iterate parallel, helper generator'

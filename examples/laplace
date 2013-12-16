@@ -5,7 +5,7 @@ import libmatrix
 numpy.set_printoptions( linewidth=113 )
 
 
-#@parallel.fork
+@parallel.fork
 def makeplots( domain, geom, sol, index ):
 
   log.context( 'plots' )
