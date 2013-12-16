@@ -1,4 +1,4 @@
-from . import topology, function, util, element, numpy, numeric, log, _
+from . import topology, function, util, element, numpy, numeric, log, prop, _
 import os, libmatrix
 
 # MESH GENERATORS
@@ -26,7 +26,7 @@ class GridFunc( function.ElemFunc ):
       I = I[~w]
       x = x[~w]
 
-def rectilinear( vertices, periodic=(), name='rect', nsubdomains=1 ):
+def rectilinear( vertices, periodic=(), name='rect', nsubdomains=None ):
   'rectilinear mesh'
 
   log.context( 'rectilinear' )
@@ -40,6 +40,9 @@ def rectilinear( vertices, periodic=(), name='rect', nsubdomains=1 ):
   for idim in periodic:
     tmp = numeric.bringforward( vertexobjs, idim )
     tmp[-1] = tmp[0]
+
+  if nsubdomains is None:
+    nsubdomains = getattr( prop, 'nprocs', 1 )
 
   subdom = numpy.empty( [ len(v)-1 for v in vertices ], dtype=int )
   for i in range( nsubdomains ):
