@@ -24,44 +24,43 @@ class Frame( object ):
         return '%s.%s' % ( classname, name )
     return name
 
+  def getline( self, lineno ):
+    return linecache.getline( self.frame.f_code.co_filename, lineno )
+
+  @property
+  @core.cache
+  def where( self ):
+    relpath = os.path.relpath( self.frame.f_code.co_filename )
+    name = self._name( self.frame )
+    return 'File "%s", line %d, in %s' % ( relpath, self.lineno, name )
+
   @property
   @core.cache
   def context( self ):
-    path = self.frame.f_code.co_filename
-    name = self._name( self.frame )
-    context = '  File "%s", line %d, in %s' % ( os.path.relpath(path), self.lineno, name )
-    lineno = self.lineno
-    line = linecache.getline( path, lineno )
-    indent = len(line) - len(line.lstrip())
-    context += '\n    ' + line[indent:].rstrip()
-    while context.endswith( '\\' ):
-      lineno += 1
-      line = linecache.getline( path, lineno )
-      context += '\n    ' + line[indent:].rstrip()
-    return context
+    return '  %s\n    %s' % ( self.where,self.getline( self.lineno ).strip() )
 
   @property
   @core.cache
   def source( self ):
     path = self.frame.f_code.co_filename
     lineno = self.frame.f_code.co_firstlineno
-    line = linecache.getline( path, lineno )
+    line = self.getline( lineno )
     if not line:
       return '<not avaliable>'
     indent = len(line) - len(line.lstrip())
     source = line[indent:]
     while line[indent] == '@':
       lineno += 1
-      line = linecache.getline( path, lineno )
+      line = self.getline( lineno )
       source += line[indent:]
     linebreak = False
     while True:
       lineno += 1
       line = linecache.getline( path, lineno )
-      if not line or not linebreak and line[:indent+1].strip():
+      if not line or line[:indent+1].strip() and not linebreak:
         break
-      source += '>' + line[indent+1:] if lineno == self.lineno + linebreak else line[indent:]
-      linebreak = linebreak + 1 if line.rstrip().endswith( '\\' ) else 0
+      source += '>' + line[indent+1:] if lineno == self.lineno else line[indent:]
+      linebreak = line.rstrip().endswith( '\\' )
     return source.rstrip() # strip trailing empty lines
 
   def __str__( self ):
@@ -105,7 +104,9 @@ class Explorer( cmd.Cmd ):
   def do_s( self, arg ):
     '''Show source code of the currently focussed frame.'''
 
-    print self.frames[self.index].source
+    for f in self.frames[:self.index+1]:
+      print f.where
+    print f.source
 
   def do_l( self, arg ):
     '''List the stack and exception type'''
