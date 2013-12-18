@@ -499,9 +499,9 @@ def run( *functions ):
   if not tb:
     sys.exit( 0 )
 
-  debug.write_html( htmlfile, exc, tb )
+  debug.write_html( htmlfile, sys.exc_value, tb )
 
-  debug.Explorer( repr(exc), tb, intro='''\
+  debug.Explorer( repr(sys.exc_value), tb, intro='''\
     Your program has died. The traceback exporer allows you to examine its
     post-mortem state to figure out why this happened. Type 'help' for an
     overview of commands to get going.''' ).cmdloop()
