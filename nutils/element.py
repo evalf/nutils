@@ -1528,14 +1528,11 @@ class PolyLine( StdElem ):
     'bernstein polynomial coefficients'
 
     # magic bernstein triangle
-    n = degree
-    revpoly = numpy.zeros( [n+1,n+1], dtype=int )
-    root = (-1)**n
-    for k in range(n//2+1):
-      revpoly[k,k] = root
-      for i in range(k+1,n+1-k):
-        root = revpoly[i,k] = revpoly[k,i] = ( root * (k+i-n-1) ) / i
-      root = ( revpoly[k,k+1] * (k*2-n+1) ) / (k+1)
+    revpoly = numpy.zeros( [degree+1,degree+1], dtype=int )
+    for k in range(degree//2+1):
+      revpoly[k,k] = root = (-1)**degree if k == 0 else ( revpoly[k-1,k] * (k*2-1-degree) ) / k
+      for i in range(k+1,degree+1-k):
+        revpoly[i,k] = revpoly[k,i] = root = ( root * (k+i-degree-1) ) / i
     return revpoly[::-1]
 
   @classmethod
