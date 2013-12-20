@@ -1,5 +1,5 @@
 from . import util, numpy, numeric, log, prop, core, _
-import sys, warnings
+import sys, warnings, libmatrix
 
 ELEM    = object()
 POINTS  = object()
@@ -356,7 +356,11 @@ class ArrayFunc( Evaluable ):
   def dot( self, weights, axis=0 ):
     'array contraction'
 
-    weights = weights.toarray()
+    if isinstance( weights, libmatrix.Vector ):
+      weights = weights.toarray()
+
+    assert isinstance( weights, numpy.ndarray )
+
     assert weights.ndim == 1
     s = [ numpy.newaxis ] * self.ndim
     s[axis] = slice(None)
