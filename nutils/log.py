@@ -4,15 +4,18 @@ import sys, time, os, warnings, numpy
 _KEY = '__logger__'
 _makestr = lambda args: ' '.join( str(arg) for arg in args )
 
+def _backtrace( frame ):
+  while frame:
+    yield frame
+    frame = frame.f_back
+
 def _findlogger( frame=None ):
   'find logger in call stack'
 
-  if frame is None:
-    frame = sys._getframe(1)
-  while frame:
-    if _KEY in frame.f_locals:
-      return frame.f_locals[_KEY]
-    frame = frame.f_back
+  for frame in _backtrace( frame or sys._getframe(1) ):
+    logger = frame.f_locals.get(_KEY)
+    if logger:
+      return logger
   return SimpleLog()
 
 debug   = lambda *args: _findlogger().write( ( 'debug',   args ) )
@@ -31,18 +34,26 @@ def context( *args, **kwargs ):
   assert not kwargs
   frame = sys._getframe(depth+1)
   old = frame.f_locals.get(_KEY)
-  frame.f_locals[_KEY] = ContextLog( _makestr(args) )
-  return frame, old
+  new = ContextLog( _makestr(args) )
+  frame.f_locals[_KEY] = new
+  return new, old
 
-def restore( (frame,logger), depth=None ):
+def restore( (new,old) ):
   'pop context'
 
-  if depth is not None:
-    warnings.warn( 'restore depth argument is deprecated and should be removed', DeprecationWarning )
-  if logger:
-    frame.f_locals[_KEY] = logger
+  for frame in _backtrace( sys._getframe(1) ):
+    logger = frame.f_locals.get(_KEY)
+    if logger:
+      break
   else:
-    frame.f_locals.pop(_KEY,None)
+    warnings.warn( 'failed to restore log context: no log instance found' )
+    return
+
+  if logger != new:
+    warnings.warn( 'failed to restore log context: unexpected log instance found' )
+    return
+
+  frame.f_locals[_KEY] = old
 
 def iterate( text, iterable, target=None, **kwargs ):
   'iterate'

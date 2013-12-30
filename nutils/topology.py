@@ -771,7 +771,7 @@ class StructuredTopology( Topology ):
     if isinstance( degree, int ):
       degree = ( degree, ) * self.ndims
 
-    dofs = numpy.arange( numpy.product(degree+1) * len(self) ).reshape( len(self), -1 )
+    dofs = numpy.arange( numpy.product(numpy.array(degree)+1) * len(self) ).reshape( len(self), -1 )
     dofmap = dict( zip( self, dofs ) )
 
     stdelem = util.product( element.PolyLine( element.PolyLine.bernstein_poly( d ) ) for d in degree )
