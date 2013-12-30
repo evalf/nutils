@@ -1,4 +1,4 @@
-from . import topology, util, numpy, function, element, log, prop, numeric, _
+from . import topology, util, numpy, function, element, log, prop, numeric, debug, _
 from scipy import spatial # for def mesh; import cannot be postponed apparently
 import os, warnings
 
