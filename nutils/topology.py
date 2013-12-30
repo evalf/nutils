@@ -258,8 +258,7 @@ class Topology( object ):
         for f, ind in function.blocks( func ):
           integrands.append( function.Tuple([ ifunc, function.Tuple(ind), function.elemint( f, iweights ) ]) )
       else:
-        raise NotImplementedError
-        array = parallel.shzeros( func.shape, dtype=float )
+        array = libmatrix.ArrayBuilder( func.shape )
         if not function._iszero( func ):
           integrands.append( function.Tuple([ ifunc, (), function.elemint( func, iweights ) ]) )
       retvals.append( array )
