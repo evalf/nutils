@@ -302,7 +302,7 @@ class Element( object ):
       return None
 
     parent = self, AffineTransformation( numpy.zeros(self.ndims), numpy.eye(self.ndims) )
-    return TrimmedElement( elem=self, vertices=self.vertices, levelset=levelset, maxrefine=maxrefine, lscheme=lscheme, finestscheme=finestscheme, evalrefine=evalrefine, parent=parent )
+    return TrimmedElement( elem=self, vertices=self.vertices, levelset=levelset, maxrefine=maxrefine, lscheme=lscheme, finestscheme=finestscheme, evalrefine=evalrefine, parent=parent, subdom=self.subdom )
 
   def get_simplices ( self, maxrefine ):
     'divide in simple elements'
@@ -565,7 +565,7 @@ class TrimmedElement( Element ):
 
   __slots__ = 'elem', 'levelset', 'maxrefine', 'lscheme', 'finestscheme', 'evalrefine'
 
-  def __init__( self, elem, levelset, maxrefine, lscheme, finestscheme, evalrefine, parent, vertices ):
+  def __init__( self, elem, levelset, maxrefine, lscheme, finestscheme, evalrefine, parent, vertices, subdom ):
     'constructor'
 
     assert not isinstance( elem, TrimmedElement )
@@ -576,7 +576,7 @@ class TrimmedElement( Element ):
     self.finestscheme = finestscheme if finestscheme != None else 'simplex1'
     self.evalrefine = evalrefine
 
-    Element.__init__( self, ndims=elem.ndims, vertices=vertices, parent=parent )
+    Element.__init__( self, ndims=elem.ndims, vertices=vertices, parent=parent, subdom=subdom )
 
   @core.cache
   def eval( self, ischeme ):
@@ -656,7 +656,7 @@ class TrimmedElement( Element ):
       elif isect > 0:
         child = QuadElement( vertices=child.vertices, ndims=self.ndims, parent=parent, subdom=self.subdom )
       else:
-        child = TrimmedElement( vertices=child.vertices, elem=child, levelset=self.levelset, maxrefine=self.maxrefine-1, lscheme=self.lscheme, finestscheme=self.finestscheme, evalrefine=self.evalrefine-1, parent=parent )
+        child = TrimmedElement( vertices=child.vertices, elem=child, levelset=self.levelset, maxrefine=self.maxrefine-1, lscheme=self.lscheme, finestscheme=self.finestscheme, evalrefine=self.evalrefine-1, parent=parent, subdom=self.subdom )
       children.append( child )
     return tuple( children )
 
@@ -810,7 +810,7 @@ class TrimmedElement( Element ):
 
         raise Exception('Negative determinant with value %12.10e could not be resolved by flipping two vertices' % transform.det )
 
-      simplices.append( Simplex( vertices=[ vertices[ii] for ii in tri ], parent=(self,transform) ) )
+      simplices.append( Simplex( vertices=[ vertices[ii] for ii in tri ], parent=(self,transform), subdom=self.subdom ) )
 
     assert len(simplices)+len(degensim)==submesh.vertices.shape[0], 'Simplices should be stored in either of the two containers'
 
@@ -1098,11 +1098,11 @@ class TriangularElement( Element ):
     AffineTransformation( offset=[1,0], transform=[[-1],[ 1]] ),
     AffineTransformation( offset=[0,1], transform=[[ 0],[-1]] ) )
 
-  def __init__( self, vertices, index=None, parent=None, context=None ):
+  def __init__( self, subdom, vertices, index=None, parent=None, context=None ):
     'constructor'
 
     assert len(vertices) == 3
-    Element.__init__( self, ndims=2, vertices=vertices, index=index, parent=parent, context=context )
+    Element.__init__( self, ndims=2, vertices=vertices, index=index, parent=parent, context=context, subdom=subdom )
 
   @property
   def children( self ):
@@ -1238,11 +1238,11 @@ class TetrahedronElement( Element ):
     AffineTransformation( offset=[0,0,0], transform=[[ 0, 0],[0,1],[1,0]] ),
     AffineTransformation( offset=[1,0,0], transform=[[-1,-1],[1,0],[0,1]] ) )
 
-  def __init__( self, vertices, index=None, parent=None, context=None ):
+  def __init__( self, vertices, subdom, index=None, parent=None, context=None ):
     'constructor'
 
     assert len(vertices) == 4
-    Element.__init__( self, ndims=3, vertices=vertices, index=index, parent=parent, context=context )
+    Element.__init__( self, ndims=3, vertices=vertices, index=index, parent=parent, context=context, subdom=subdom )
 
   @property
   def children( self ):
@@ -1259,7 +1259,7 @@ class TetrahedronElement( Element ):
     transform = self.edgetransform[ iedge ]
     v1, v2, v3, v4 = self.vertices
     vertices = [ [v1,v3,v2], [v1,v2,v4], [v1,v4,v3], [v2,v3,v4] ][ iedge ] # TODO check!
-    return TriangularElement( vertices=vertices, context=(self,transform) )
+    return TriangularElement( vertices=vertices, context=(self,transform), subdom=self.subdom )
 
   @staticmethod
   @core.cache
