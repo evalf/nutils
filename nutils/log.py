@@ -1,4 +1,4 @@
-from . import core, prop, traceback
+from . import core, prop, debug
 import sys, time, os, warnings, numpy
 
 _KEY = '__logger__'
@@ -61,7 +61,7 @@ def stack( msg, frames=None ):
   'print stack trace'
 
   if frames is None:
-    frames = traceback.callstack( depth=2 )
+    frames = debug.callstack( depth=2 )
   summary = '\n'.join( [ msg ] + [ str(f) for f in reversed(frames) ] )
   _findlogger( frames[-1].frame ).write( ('error',[summary ]) )
 

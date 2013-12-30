@@ -1,4 +1,4 @@
-from . import prop, log, numpy
+from . import prop, log, numpy, debug
 import os, sys, multiprocessing, thread
 
 Lock = multiprocessing.Lock
@@ -33,7 +33,7 @@ class Fork( object ):
       if exctype == KeyboardInterrupt:
         status = 1
       elif exctype:
-        log.traceback(( exctype, excvalue, tb ))
+        log.stack( repr(excvalue), debug.exception() )
         status = 1
       if self.child_pid:
         child_pid, child_status = os.waitpid( self.child_pid, 0 )
@@ -80,7 +80,7 @@ class AlternativeFork( object ):
     status = 0
     try:
       if exctype:
-        log.traceback(( exctype, excvalue, tb ))
+        log.stack( repr(excvalue), debug.exception() )
         status = 1
       while self.children:
         child_pid, child_status = os.wait()
@@ -121,7 +121,7 @@ def fork( func, nice=19 ):
     except KeyboardInterrupt:
       pass
     except:
-      log.traceback()
+      log.stack( repr(sys.exc_value), debug.exception() )
     finally:
       os._exit( 0 )
 

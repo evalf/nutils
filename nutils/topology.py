@@ -1106,7 +1106,7 @@ class HierarchicalTopology( Topology ):
       belemset = set()
       for belem in topo.boundary:
         celem, transform = belem.context
-        if celem in topoelems:
+        if celem in self.elems:
           belemset.add( belem )
       allbelems.extend( belemset )
       for btag, belems in topo.boundary.groups.iteritems():
@@ -1127,17 +1127,17 @@ class HierarchicalTopology( Topology ):
     for irefine in range( nrefine ):
       for ielem in topo.interfaces:
         (celem1,transform1), (celem2,transform2) = ielem.interface
-        if celem1 in topoelems:
+        if celem1 in self.elems:
           while True:
-            if celem2 in topoelems:
+            if celem2 in self.elems:
               allinterfaces.append( ielem )
               break
             if not celem2.parent:
               break
             celem2, transform2 = celem2.parent
-        elif celem2 in topoelems:
+        elif celem2 in self.elems:
           while True:
-            if celem1 in topoelems:
+            if celem1 in self.elems:
               allinterfaces.append( ielem )
               break
             if not celem1.parent:
