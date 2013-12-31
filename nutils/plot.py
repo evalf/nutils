@@ -507,9 +507,9 @@ def writevtu( name, topo, coords, pointdata={}, celldata={}, ascii=False, supere
   with VTKFile( name, ascii=ascii, ndigits=ndigits ) as vtkfile:
 
     if not superelements:
-      topo = topology.UnstructuredTopology( topo.get_simplices( maxrefine=maxrefine ), topo.ndims )
+      topo = topology.UnstructuredTopology( topo.get_simplices( maxrefine=maxrefine ), topo.ndims, topo.comm )
     else:
-      topo = topology.UnstructuredTopology( filter(None,[elem if not isinstance(elem,element.TrimmedElement) else elem.elem for elem in topo]), topo.ndims )
+      topo = topology.UnstructuredTopology( filter(None,[elem if not isinstance(elem,element.TrimmedElement) else elem.elem for elem in topo]), topo.ndims, topo.comm )
 
     points = topo.elem_eval( coords, ischeme='vtk', separate=True )
     vtkfile.unstructuredgrid( points, npars=topo.ndims )
