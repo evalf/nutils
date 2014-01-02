@@ -940,7 +940,7 @@ class Concatenate( ArrayFunc ):
   def __init__( self, funcs, axis=0 ):
     'constructor'
 
-    funcs = [ _asarray(func) for func in funcs ]
+    funcs = [ asarray(func) for func in funcs ]
     ndim = funcs[0].ndim
     assert all( func.ndim == ndim for func in funcs )
     axis = numeric.normdim( ndim, axis )
@@ -1880,7 +1880,7 @@ class Pointdata( ArrayFunc ):
     return myvals
 
   def update_max( self, func ):
-    func = _asarray(func)
+    func = asarray(func)
     assert func.shape == self.shape
     data = dict( (elem,(numpy.maximum(func(elem,points),values),points)) for elem,(values,points) in self.data.iteritems() )
 
@@ -2259,7 +2259,7 @@ def _jointshape( *shapes ):
 def _matchndim( *arrays ):
   'introduce singleton dimensions to match ndims'
 
-  arrays = [ _asarray(array) for array in arrays ]
+  arrays = [ asarray(array) for array in arrays ]
   ndim = _max( array.ndim for array in arrays )
   return [ array[(_,)*(ndim-array.ndim)] for array in arrays ]
 
@@ -2326,7 +2326,7 @@ _max = max
 _min = min
 _sum = sum
 _isfunc = lambda arg: isinstance( arg, ArrayFunc )
-_isscalar = lambda arg: _asarray(arg).ndim == 0
+_isscalar = lambda arg: asarray(arg).ndim == 0
 _isint = lambda arg: numpy.asarray( arg ).dtype == int
 _ascending = lambda arg: ( numpy.diff(arg) > 0 ).all()
 _iszero = lambda arg: isinstance( arg, Zeros ) or isinstance( arg, numpy.ndarray ) and numpy.all( arg == 0 )
@@ -2352,7 +2352,7 @@ def _norm_and_sort( ndim, args ):
 def _jointdtype( *args ):
   'determine joint dtype'
 
-  if any( _asarray(arg).dtype == float for arg in args ):
+  if any( asarray(arg).dtype == float for arg in args ):
     return float
   return int
 
@@ -2381,25 +2381,29 @@ def _equal( arg1, arg2 ):
   else:
     return False
 
-def _asarray( arg ):
+def asarray( arg ):
   'convert to ArrayFunc or numpy.ndarray'
   
   if _isfunc(arg):
     return arg
-  if isinstance( arg, (list,tuple) ) and any( _isfunc(f) for f in arg ):
-    return stack( arg, axis=0 )
   arg = numpy.asarray( arg )
-  if numpy.all( arg == 0 ):
+  if arg.dtype == object:
+    return stack( arg, axis=0 )
+  elif numpy.all( arg == 0 ):
     return _zeros( arg.shape )
-  assert arg.dtype != object
-  return arg
+  else:
+    return arg
+
+def _asarray( arg ):
+  warnings.warn( '_asarray is deprecated, use asarray instead', DeprecationWarning )
+  return asarray( arg )
 
 # FUNCTIONS
 
 def insert( arg, n ):
   'insert axis'
 
-  arg = _asarray( arg )
+  arg = asarray( arg )
   n = numeric.normdim( arg.ndim+1, n )
   I = numpy.arange( arg.ndim )
   return align( arg, I + (I>=n), arg.ndim+1 )
@@ -2415,7 +2419,7 @@ def stack( args, axis=0 ):
 def chain( funcs ):
   'chain'
 
-  funcs = map( _asarray, funcs )
+  funcs = map( asarray, funcs )
   shapes = [ func.shape[0] for func in funcs ]
   return [ concatenate( [ func if i==j else _zeros( (sh,) + func.shape[1:] )
              for j, sh in enumerate(shapes) ], axis=0 )
@@ -2461,7 +2465,7 @@ def vectorize( args ):
 def expand( arg, shape ):
   'expand'
 
-  arg = _asarray( arg )
+  arg = asarray( arg )
   shape = tuple(shape)
   assert len(shape) == arg.ndim
 
@@ -2474,7 +2478,7 @@ def expand( arg, shape ):
 def repeat( arg, length, axis ):
   'repeat'
 
-  arg = _asarray( arg )
+  arg = asarray( arg )
   axis = numeric.normdim( arg.ndim, axis )
 
   if arg.shape[axis] == length:
@@ -2495,7 +2499,7 @@ def get( arg, iax, item ):
 
   assert _isint( item ) and _isscalar( item )
 
-  arg = _asarray( arg )
+  arg = asarray( arg )
   iax = numeric.normdim( arg.ndim, iax )
   sh = arg.shape[iax]
   assert isinstance(sh,int), 'cannot get item %r from axis %r' % ( item, sh )
@@ -2516,7 +2520,7 @@ def get( arg, iax, item ):
 def align( arg, axes, ndim ):
   'align'
 
-  arg = _asarray( arg )
+  arg = asarray( arg )
 
   assert ndim >= len(axes)
   assert len(axes) == arg.ndim
@@ -2542,7 +2546,7 @@ def align( arg, axes, ndim ):
 def bringforward( arg, axis ):
   'bring axis forward'
 
-  arg = _asarray(arg)
+  arg = asarray(arg)
   axis = numeric.normdim(arg.ndim,axis)
   if axis == 0:
     return arg
@@ -2551,7 +2555,7 @@ def bringforward( arg, axis ):
 def elemint( arg, weights ):
   'elementwise integration'
 
-  arg = _asarray( arg )
+  arg = asarray( arg )
 
   if not _isfunc( arg ):
     return arg * ElemArea( weights )
@@ -2565,7 +2569,7 @@ def elemint( arg, weights ):
 def grad( arg, coords, ndims=0 ):
   'local derivative'
 
-  arg = _asarray( arg )
+  arg = asarray( arg )
   if _isfunc( arg ):
     return arg.grad( coords, ndims )
   return _zeros( arg.shape + coords.shape )
@@ -2588,7 +2592,7 @@ def div( arg, coords, ndims=0 ):
 def sum( arg, axes=-1 ):
   'sum over multiply axes'
 
-  arg = _asarray( arg )
+  arg = asarray( arg )
 
   if _isiterable(axes):
     if len(axes) == 0:
@@ -2668,7 +2672,7 @@ def dot( arg1, arg2, axes ):
 def determinant( arg, axes=(-2,-1) ):
   'determinant'
 
-  arg = _asarray( arg )
+  arg = asarray( arg )
   ax1, ax2 = _norm_and_sort( arg.ndim, axes )
   assert ax2 > ax1 # strict
 
@@ -2694,7 +2698,7 @@ def determinant( arg, axes=(-2,-1) ):
 def inverse( arg, axes=(-2,-1) ):
   'inverse'
 
-  arg = _asarray( arg )
+  arg = asarray( arg )
   ax1, ax2 = _norm_and_sort( arg.ndim, axes )
   assert ax2 > ax1 # strict
 
@@ -2719,7 +2723,7 @@ def inverse( arg, axes=(-2,-1) ):
 def takediag( arg, ax1=-2, ax2=-1 ):
   'takediag'
 
-  arg = _asarray( arg )
+  arg = asarray( arg )
   ax1, ax2 = _norm_and_sort( arg.ndim, (ax1,ax2) )
   assert ax2 > ax1 # strict
 
@@ -2748,7 +2752,7 @@ def takediag( arg, ax1=-2, ax2=-1 ):
 def localgradient( arg, ndims ):
   'local derivative'
 
-  arg = _asarray( arg )
+  arg = asarray( arg )
   shape = arg.shape + (ndims,)
 
   if not _isfunc( arg ):
@@ -2776,7 +2780,7 @@ def kronecker( arg, axis, length, pos ):
 def diagonalize( arg ):
   'diagonalize'
 
-  arg = _asarray( arg )
+  arg = asarray( arg )
   shape = arg.shape + (arg.shape[-1],)
 
   if arg.shape[-1] == 1:
@@ -2828,7 +2832,7 @@ def concatenate( args, axis=0 ):
 def transpose( arg, trans=None ):
   'transpose'
   
-  arg = _asarray( arg )
+  arg = asarray( arg )
   if trans is None:
     invtrans = range( arg.ndim-1, -1, -1 )
   else:
@@ -2841,7 +2845,7 @@ def transpose( arg, trans=None ):
 def product( arg, axis ):
   'product'
 
-  arg = _asarray( arg )
+  arg = asarray( arg )
   axis = numeric.normdim( arg.ndim, axis )
   shape = arg.shape[:axis] + arg.shape[axis+1:]
 
@@ -2898,7 +2902,7 @@ def outer( arg1, arg2=None, axis=0 ):
 def pointwise( args, evalf, deriv ):
   'general pointwise operation'
 
-  args = _asarray( args )
+  args = asarray( args )
   if _isfunc(args):
     return Pointwise( args, evalf, deriv )
   return evalf( *args )
@@ -2974,7 +2978,7 @@ def add( arg1, arg2 ):
 def negative( arg ):
   'make negative'
 
-  arg = _asarray(arg)
+  arg = asarray(arg)
 
   if not _isfunc( arg ):
     return numpy.negative( arg )
@@ -2989,7 +2993,7 @@ def negative( arg ):
 def power( arg, n ):
   'power'
 
-  arg = _asarray( arg )
+  arg = asarray( arg )
   assert _isscalar( n )
 
   if n == 1:
@@ -3011,7 +3015,7 @@ def power( arg, n ):
 def sign( arg ):
   'sign'
 
-  arg = _asarray( arg )
+  arg = asarray( arg )
 
   if isinstance( arg, numpy.ndarray ):
     return numpy.sign( arg )
@@ -3062,7 +3066,7 @@ add_T = lambda arg, axes=(-2,-1): swapaxes( arg, axes ) + arg
 def swapaxes( arg, axes=(-2,-1) ):
   'swap axes'
   
-  arg = _asarray( arg )
+  arg = asarray( arg )
   n1, n2 = axes
   trans = numpy.arange( arg.ndim )
   trans[n1] = numeric.normdim( arg.ndim, n2 )
@@ -3072,7 +3076,7 @@ def swapaxes( arg, axes=(-2,-1) ):
 def opposite( arg ):
   'evaluate jump over interface'
 
-  arg = _asarray( arg )
+  arg = asarray( arg )
 
   if not _isfunc( arg ):
     return arg
@@ -3091,7 +3095,7 @@ def function( fmap, nmap, ndofs, ndims ):
 def take( arg, index, axis ):
   'take index'
 
-  arg = _asarray( arg )
+  arg = asarray( arg )
   axis = numeric.normdim( arg.ndim, axis )
 
   if isinstance( index, slice ):
@@ -3132,7 +3136,7 @@ def take( arg, index, axis ):
 def inflate( arg, dofmap, length, axis ):
   'inflate'
 
-  arg = _asarray( arg )
+  arg = asarray( arg )
   axis = numeric.normdim( arg.ndim, axis )
   assert not isinstance( arg.shape[axis], int )
 
@@ -3143,7 +3147,7 @@ def inflate( arg, dofmap, length, axis ):
   return Inflate( arg, dofmap, length, axis )
   
 def blocks( arg ):
-  arg = _asarray( arg )
+  arg = asarray( arg )
   try:
     blocks = arg.blocks
   except AttributeError:
