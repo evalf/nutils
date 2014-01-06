@@ -290,7 +290,8 @@ def arraymap( f, dtype, *args ):
 def objmap( func, *arrays ):
   'map numpy arrays'
 
-  arrays = map( numpy.asarray, arrays )
+  #arrays = map( numpy.asarray, arrays )
+  arrays = [ numpy.asarray( array, dtype=object ) for array in arrays ]
   return numpy.frompyfunc( func, len(arrays), 1 )( *arrays )
 
 def fail( msg, *args ):
