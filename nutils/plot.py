@@ -31,26 +31,27 @@ class BasePlot( object ):
   def __enter__( self ):
     'enter with block'
 
-    self.oldlog = log.context( 'plotting', depth=1 )
+    self.logger = log.context( 'plotting', depth=2 )
     return self
 
   def __exit__( self, *exc_info ):
     'exit with block'
 
     exc_type, exc_value, exc_tb = exc_info
-    if exc_type == KeyboardInterrupt:
-      log.restore( self.oldlog )
-      return False
-    elif exc_type:
-      log.stack( repr(exc_value), debug.exception() )
-      return False
-    else:
-      if self.names:
-        for name in self.names:
-          self.save( name )
-        log.path( *self.names )
-    log.restore( self.oldlog )
-    return True
+    try:
+      if exc_type == KeyboardInterrupt:
+        pass
+      elif exc_type:
+        log.stack( repr(exc_value), debug.exception() )
+      else:
+        if self.names:
+          for name in self.names:
+            self.save( name )
+          log.path( *self.names )
+        return True
+    finally:
+      self.logger.disable()
+    return False
 
   def save ( self, name ):
     return
