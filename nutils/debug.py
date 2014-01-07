@@ -204,8 +204,11 @@ def format_exc():
   return '\n'.join( [ repr(sys.exc_value) ] + [ str(f) for f in exception() ] )
 
 def callstack( depth=1 ):
-  frame = sys._getframe( depth )
   frames = []
+  try:
+    frame = sys._getframe( depth )
+  except ValueError:
+    frame = None
   while frame:
     frames.append( Frame( frame ) )
     frame = frame.f_back
