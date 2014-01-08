@@ -2384,6 +2384,8 @@ def _equal( arg1, arg2 ):
 def asarray( arg ):
   'convert to ArrayFunc or numpy.ndarray'
   
+  if isinstance( arg, numpy.ndarray ) and arg.ndim == 0:
+    arg = arg[...]
   if _isfunc(arg):
     return arg
   arg = numpy.asarray( arg )
