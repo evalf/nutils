@@ -113,7 +113,6 @@ def gmesh( path, btags={}, name=None ):
   boundary = []
   elements = []
   connected = [ set() for i in range( nvertices ) ]
-
   nmap = {}
   fmap = {}
 
@@ -129,14 +128,14 @@ def gmesh( path, btags={}, name=None ):
     elemvertices = numpy.asarray( items[3+ntags:], dtype=int ) - 1
     elemvertexobjs = vertexobjs[ elemvertices ]
     elemcoords = coords[ elemvertices ]
-    if elemtype == 1:
+    if elemtype == 1: # boundary edge
       boundary.append(( elemvertices, tags ))
     elif elemtype in (2,4):
-      if elemtype == 2:
+      if elemtype == 2: # interior element, triangle
         parent = domainelem, element.AffineTransformation( offset=elemcoords[2], transform=(elemcoords[:2]-elemcoords[2]).T )
         elem = element.TriangularElement( vertices=elemvertexobjs, parent=parent )
         stdelem = element.PolyTriangle( 1 )
-      else:
+      else: # interior element, quadrilateral
         raise NotImplementedError
         elem = element.QuadElement( ndims=2 )
         stdelem = element.PolyQuad( (2,2) )
@@ -145,7 +144,7 @@ def gmesh( path, btags={}, name=None ):
       nmap[ elem ] = elemvertices
       for n in elemvertices:
         connected[ n ].add( elem )
-    elif elemtype == 15: # vertex?
+    elif elemtype == 15: # boundary vertex
       pass
     else:
       raise Exception, 'element type #%d not supported' % elemtype
@@ -174,7 +173,14 @@ def gmesh( path, btags={}, name=None ):
       bgroups.setdefault( tag, [] ).append( belem )
 
   linearfunc = function.function( fmap, nmap, nvertices, ndims )
-  namedfuncs = { 'spline2': linearfunc }
+  # Extend linearfunc by bubble functions for the P^1+bubble basis
+  fmap_b, nmap_b = {}, {}
+  for i, (key,val) in enumerate( nmap.iteritems() ): # enumerate bubble functions
+    fmap_b[key] = element.BubbleTriangle( 1 )
+    nmap_b[key] = numpy.concatenate( [val, [nvertices+i]] )
+  bubblefunc = function.function( fmap_b, nmap_b, nvertices+len(nmap), ndims )
+
+  namedfuncs = { 'spline1': linearfunc, 'bubble1': bubblefunc }
   topo = topology.UnstructuredTopology( elements, ndims=2, namedfuncs=namedfuncs )
   topo.boundary = topology.UnstructuredTopology( belements, ndims=1 )
   topo.boundary.groups = {}

@@ -1698,6 +1698,51 @@ class PolyTriangle( StdElem ):
 
     return '%s#%x' % ( self.__class__.__name__, id(self) )
 
+class BubbleTriangle( StdElem ):
+  'linear triangle + bubble function'
+
+  __slots__ = ()
+
+  @core.cache
+  def __new__( cls, order ):
+    'constructor'
+
+    assert order == 1
+    self = object.__new__( cls )
+    return self
+
+  @core.cache
+  def eval( self, points, grad=0 ):
+    'eval'
+
+    npoints, ndim = points.shape
+    if grad == 0:
+      x, y = points.T
+      data = numpy.array( [ x, y, 1-x-y, 27*x*y*(1-x-y) ] ).T
+    elif grad == 1:
+      x, y = points.T
+      const_block = numpy.array( [1,0,0,1,-1,-1]*npoints ).reshape( 2,3,npoints )
+      grad1_bubble = 27*numpy.array( [y*(1-2*x-y),x*(1-x-2*y)] ).reshape( 2,1,npoints )
+      data = numpy.concatenate( [const_block, grad1_bubble], axis=-2 ).T
+    elif grad == 2:
+      x, y = points.T
+      zero_block = numpy.zeros( (2,2,3,npoints) )
+      grad2_bubble = 27*numpy.array( [-2*y,1-2*x-2*y, 1-2*x-2*y,-2*x] ).reshape( 2,2,1,npoints )
+      data = numpy.concatenate( [zero_block, grad2_bubble], axis=-2 ).T
+    elif grad == 3:
+      zero_block = numpy.zeros( (2,2,2,3,1) )
+      grad3_bubble = 27*numpy.array( [0,-2,-2,-2,-2,-2,-2,0], dtype=float ).reshape( 2,2,2,1,1 )
+      data = numpy.concatenate( [zero_block, grad3_bubble], axis=-2 ).T
+    else:
+      assert ndim==2, 'Triangle takes 2D coordinates' # otherwise tested by unpacking points.T
+      data = numpy.array( 0 ).reshape( (1,) * (grad+2) )
+    return data
+
+  def __repr__( self ):
+    'string representation'
+
+    return '%s#%x' % ( self.__class__.__name__, id(self) )
+
 class ExtractionWrapper( object ):
   'extraction wrapper'
 
