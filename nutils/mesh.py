@@ -211,7 +211,7 @@ def triangulation( vertices, nvertices ):
   dofaxis = function.DofAxis( nvertices, nmap )
   stdelem = element.PolyTriangle( 1 )
   linearfunc = function.Function( dofaxis=dofaxis, stdmap=dict.fromkeys(nmap,stdelem) )
-  namedfuncs = { 'spline2': linearfunc }
+  namedfuncs = { 'spline1': linearfunc }
 
   connectivity = dict( bedges.iterkeys() )
   N = list( connectivity.popitem() )

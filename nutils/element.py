@@ -1721,18 +1721,18 @@ class BubbleTriangle( StdElem ):
       data = numpy.array( [ x, y, 1-x-y, 27*x*y*(1-x-y) ] ).T
     elif grad == 1:
       x, y = points.T
-      const_block = numpy.array( [1,0,0,1,-1,-1]*npoints ).reshape( 2,3,npoints )
-      grad1_bubble = 27*numpy.array( [y*(1-2*x-y),x*(1-x-2*y)] ).reshape( 2,1,npoints )
-      data = numpy.concatenate( [const_block, grad1_bubble], axis=-2 ).T
+      const_block = numpy.array( [1,0,0,1,-1,-1]*npoints, dtype=float ).reshape( npoints,3,2 )
+      grad1_bubble = 27*numpy.array( [y*(1-2*x-y),x*(1-x-2*y)] ).T.reshape( npoints,1,2 )
+      data = numpy.concatenate( [const_block, grad1_bubble], axis=1 )
     elif grad == 2:
       x, y = points.T
-      zero_block = numpy.zeros( (2,2,3,npoints) )
-      grad2_bubble = 27*numpy.array( [-2*y,1-2*x-2*y, 1-2*x-2*y,-2*x] ).reshape( 2,2,1,npoints )
-      data = numpy.concatenate( [zero_block, grad2_bubble], axis=-2 ).T
+      zero_block = numpy.zeros( (npoints,3,2,2) )
+      grad2_bubble = 27*numpy.array( [-2*y,1-2*x-2*y, 1-2*x-2*y,-2*x] ).T.reshape( npoints,1,2,2 )
+      data = numpy.concatenate( [zero_block, grad2_bubble], axis=1 )
     elif grad == 3:
-      zero_block = numpy.zeros( (2,2,2,3,1) )
-      grad3_bubble = 27*numpy.array( [0,-2,-2,-2,-2,-2,-2,0], dtype=float ).reshape( 2,2,2,1,1 )
-      data = numpy.concatenate( [zero_block, grad3_bubble], axis=-2 ).T
+      zero_block = numpy.zeros( (3,2,2,2) )
+      grad3_bubble = 27*numpy.array( [0,-2,-2,-2,-2,-2,-2,0], dtype=float ).reshape( 1,2,2,2 )
+      data = numpy.concatenate( [zero_block, grad3_bubble], axis=0 )
     else:
       assert ndim==2, 'Triangle takes 2D coordinates' # otherwise tested by unpacking points.T
       data = numpy.array( 0 ).reshape( (1,) * (grad+2) )
