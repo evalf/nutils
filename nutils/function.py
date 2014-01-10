@@ -362,14 +362,6 @@ class ArrayFunc( Evaluable ):
     s[axis] = slice(None)
     return dot( self, weights[tuple(s)], axes=axis )
 
-  def __kronecker__( self, axis, length, pos ):
-    'kronecker'
-
-    assert self.shape[axis] == 1
-    funcs = [ _zeros_like(self) ] * length
-    funcs[pos] = self
-    return Concatenate( funcs, axis=axis )
-
   def __getitem__( self, item ):
     'get item, general function which can eliminate, add or modify axes.'
   
