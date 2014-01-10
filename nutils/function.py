@@ -1091,7 +1091,7 @@ class Concatenate( ArrayFunc ):
     assert funcs, 'empty slice'
     if len( funcs ) == 1:
       return funcs[0]
-    return concatenate( funcs, axis=axis, length=self.shape[self.axis] )
+    return concatenate( funcs, axis=axis )
 
   def _dot( self, other, naxes ):
     axes = range( self.ndim-naxes, self.ndim )
