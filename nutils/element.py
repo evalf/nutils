@@ -1087,7 +1087,11 @@ class QuadElement( Element ):
     return points, selection
 
 class TriangularElement( Element ):
-  'triangular element'
+  '''triangular element
+     conventions: reference elem:   unit simplex {(x,y) | x>0, y>0, x+y<1}
+                  vertex numbering: {(1,0):0, (0,1):1, (0,0):2}
+                  edge numbering:   {bottom:0, slanted:1, left:2}
+                  edge local coords run counter-clockwise.'''
 
   __slots__ = ()
 
@@ -1124,7 +1128,7 @@ class TriangularElement( Element ):
     'edge'
 
     transform = self.edgetransform[ iedge ]
-    vertices = [ self.vertices[:2], self.vertices[1:], self.vertices[::-2] ][iedge]
+    vertices = [ self.vertices[::-2], self.vertices[:2], self.vertices[1:] ][iedge]
     return QuadElement( vertices=vertices, ndims=1, context=(self,transform) )
 
   @staticmethod
@@ -1667,7 +1671,8 @@ class PolyLine( StdElem ):
     return 'PolyLine#%x' % id(self)
 
 class PolyTriangle( StdElem ):
-  'poly triangle'
+  '''poly triangle (linear for now)
+     conventions: dof numbering as vertices, see TriangularElement docstring.'''
 
   __slots__ = ()
 
@@ -1699,7 +1704,8 @@ class PolyTriangle( StdElem ):
     return '%s#%x' % ( self.__class__.__name__, id(self) )
 
 class BubbleTriangle( StdElem ):
-  'linear triangle + bubble function'
+  '''linear triangle + bubble function
+     conventions: dof numbering as vertices (see TriangularElement docstring), then barycenter.'''
 
   __slots__ = ()
 
