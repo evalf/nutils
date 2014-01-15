@@ -104,16 +104,12 @@ def gmesh( path, btags={}, name=None ):
     coords[ iNode ] = map( float, items[1:] )
   assert lines.next() == '$EndNodes\n'
 
-  if numpy.all( abs( coords[:,2] ) < 1e-5 ):
-    ndims = 2
-    coords = coords[:,:2]
-  else:
-    ndims = 3
+  assert numpy.all( abs( coords[:,2] ) < 1e-5 ), 'ndims=3 case not yet implemented.'
+  coords = coords[:,:2]
 
   boundary = []
   elements = []
   connected = [ set() for i in range( nvertices ) ]
-
   nmap = {}
   fmap = {}
 
@@ -129,14 +125,14 @@ def gmesh( path, btags={}, name=None ):
     elemvertices = numpy.asarray( items[3+ntags:], dtype=int ) - 1
     elemvertexobjs = vertexobjs[ elemvertices ]
     elemcoords = coords[ elemvertices ]
-    if elemtype == 1:
+    if elemtype == 1: # boundary edge
       boundary.append(( elemvertices, tags ))
     elif elemtype in (2,4):
-      if elemtype == 2:
+      if elemtype == 2: # interior element, triangle
         parent = domainelem, element.AffineTransformation( offset=elemcoords[2], transform=(elemcoords[:2]-elemcoords[2]).T )
         elem = element.TriangularElement( vertices=elemvertexobjs, parent=parent )
         stdelem = element.PolyTriangle( 1 )
-      else:
+      else: # interior element, quadrilateral
         raise NotImplementedError
         elem = element.QuadElement( ndims=2 )
         stdelem = element.PolyQuad( (2,2) )
@@ -145,7 +141,7 @@ def gmesh( path, btags={}, name=None ):
       nmap[ elem ] = elemvertices
       for n in elemvertices:
         connected[ n ].add( elem )
-    elif elemtype == 15: # vertex?
+    elif elemtype == 15: # boundary vertex
       pass
     else:
       raise Exception, 'element type #%d not supported' % elemtype
@@ -156,27 +152,33 @@ def gmesh( path, btags={}, name=None ):
   for vertices, tags in boundary:
     n1, n2 = vertices
     elem, = connected[n1] & connected[n2]
-    e1, e2, e3 = nmap[ elem ]
-    if   e1==n1 and e2==n2 \
-      or e1==n2 and e2==n1:
-      iedge = 1
-    elif e2==n1 and e3==n2 \
-      or e2==n2 and e3==n1:
-      iedge = 2
-    elif e3==n1 and e1==n2 \
-      or e3==n2 and e1==n1:
-      iedge = 0
-    else:
-      raise Exception, 'cannot match edge, perhaps order is reversed in gmesh'
+    loc_vert_indices = [elem.vertices.index(vertexobjs[v]) for v in vertices] # in [0,1,2]
+    match = numpy.array( loc_vert_indices ).sum()-1
+    iedge = [1, 0, 2][match]
     belem = elem.edge( iedge )
     belements.append( belem )
     for tag in tags:
       bgroups.setdefault( tag, [] ).append( belem )
 
-  linearfunc = function.function( fmap, nmap, nvertices, ndims )
-  namedfuncs = { 'spline2': linearfunc }
+  structured = True
+  for i, el in enumerate( belements ):
+    if not set(belements[i-1].vertices) & set(el.vertices):
+      structured = False
+      numpy.warnings.warn( 'Boundary elements are not sorted: boundary group will be an UnstructuredTopology.' )
+      break
+
+  linearfunc = function.function( fmap, nmap, nvertices, 2 )
+  # Extend linearfunc by bubble functions for the P^1+bubble basis
+  fmap_b, nmap_b = {}, {}
+  for i, (key,val) in enumerate( nmap.iteritems() ): # enumerate bubble functions
+    fmap_b[key] = element.BubbleTriangle( 1 )
+    nmap_b[key] = numpy.concatenate( [val, [nvertices+i]] )
+  bubblefunc = function.function( fmap_b, nmap_b, nvertices+len(nmap), 2 )
+
+  namedfuncs = { 'spline1': linearfunc, 'bubble1': bubblefunc }
   topo = topology.UnstructuredTopology( elements, ndims=2, namedfuncs=namedfuncs )
-  topo.boundary = topology.UnstructuredTopology( belements, ndims=1 )
+  topo.boundary = topology.StructuredTopology( belements, periodic=(0,) ) if structured else \
+                  topology.UnstructuredTopology( belements, ndims=1 )
   topo.boundary.groups = {}
   for tag, group in bgroups.items():
     try:
@@ -205,7 +207,7 @@ def triangulation( vertices, nvertices ):
   dofaxis = function.DofAxis( nvertices, nmap )
   stdelem = element.PolyTriangle( 1 )
   linearfunc = function.Function( dofaxis=dofaxis, stdmap=dict.fromkeys(nmap,stdelem) )
-  namedfuncs = { 'spline2': linearfunc }
+  namedfuncs = { 'spline1': linearfunc }
 
   connectivity = dict( bedges.iterkeys() )
   N = list( connectivity.popitem() )

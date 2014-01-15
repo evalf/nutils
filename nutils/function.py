@@ -23,6 +23,9 @@ class EvaluationError( Exception ):
     self.evaluable = evaluable
     self.values = values
 
+  def __repr__( self ):
+    return 'EvaluationError%s' % self
+
   def __str__( self ):
     'string representation'
 

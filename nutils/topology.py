@@ -1007,6 +1007,11 @@ class UnstructuredTopology( Topology ):
 
     return self.splinefunc( degree=1 )
 
+  def bubblefunc( self ):
+    'linear func + bubble'
+
+    return self.namedfuncs[ 'bubble1' ]
+
   @property
   @core.weakcache
   def refined( self ):
