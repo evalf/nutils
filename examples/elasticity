@@ -14,7 +14,7 @@ def main( nelems=20, stress=library.Hooke(lmbda=1,mu=1), degree=1 ):
 
   cons = domain.boundary['left'].project( 0, geometry=geom, onto=dspace, ischeme='gauss2' ) \
        | domain.boundary['right'].project( .5, geometry=geom, onto=nfval, ischeme='gauss2' )
-  lhs = matrix.solve( constrain=cons, symmetric=True )
+  lhs = matrix.solve( precon='ILUT', constrain=cons, symmetric=True )
   disp = dspace.dot( lhs )
 
   points, colors = domain.elem_eval( [ geom + disp, stress(disp,geom)[0,1] ], ischeme='bezier4', separate=True )

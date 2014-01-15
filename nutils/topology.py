@@ -363,7 +363,7 @@ class Topology( object ):
       else:
         raise Exception
       A, b = self.integrate( [Afun,bfun], geometry=geometry, ischeme=ischeme, title='building system' )
-      constrain = A.solve( b )
+      constrain = A.solve( b, tol=tol, symmetric=True )
       constrain.nan_from_supp( A )
       #N = A.rowsupp(droptol)
       #if numpy.all( b == 0 ):
