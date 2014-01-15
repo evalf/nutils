@@ -57,7 +57,9 @@ class Frame( object ):
     while True:
       lineno += 1
       line = linecache.getline( path, lineno )
-      if not line or line[:indent+1].strip() and not linebreak:
+      if line[:indent+1].lstrip().startswith('#'):
+        line = ' ' * indent + line.lstrip()
+      elif not line or line[:indent+1].strip() and not linebreak:
         break
       source += '>' + line[indent+1:] if lineno == self.lineno else line[indent:]
       linebreak = line.rstrip().endswith( '\\' )
