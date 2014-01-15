@@ -1,7 +1,16 @@
-import inspect, weakref
+import inspect, weakref, os, numpy, warnings
 
-def _cache( func, cache, debug=False ):
+ALLCACHE = []
+
+def _cache( func, cache ):
   argnames, varargsname, keywordsname, defaults = inspect.getargspec( func )
+  allargnames = list(argnames)
+  if varargsname:
+    allargnames.append( '*' + varargsname )
+  if keywordsname:
+    allargnames.append( '**' + keywordsname )
+  fname = '%s(%s) in %s:%d' % ( func.__name__, ','.join(allargnames), os.path.relpath(func.func_code.co_filename), func.func_code.co_firstlineno )
+  ALLCACHE.append(( fname, cache ))
   def wrapped( *args, **kwargs ):
     if kwargs:
       for iarg in range( len(args), len(argnames) ):
@@ -15,22 +24,36 @@ def _cache( func, cache, debug=False ):
       args += defaults[ len(args)-len(argnames): ]
     try:
       value = cache[ args ]
-      if debug: print '_cache( %s ): value in cache' % func.__name__
     except TypeError:
-      if debug: print '_cache( %s ): unhashable; skipping cache' % func.__name__
+      warnings.warn( 'unhashable item; skipping cache for %s' % fname )
       value = func( *args )
     except KeyError:
-      if debug: print '_cache( %s ): computing new value' % func.__name__
       value = func( *args )
       cache[ args ] = value
     return value
   return wrapped
 
+def cache_info():
+  from . import log
+  items = []
+  for fname, d in ALLCACHE:
+    if not d:
+      continue
+    types = {}
+    for v in d.values():
+      types.setdefault( type(v), [] ).append( isinstance(v,numpy.ndarray) and v.nbytes )
+    count = ', '.join( '%dx %s%s' % ( len(N), T.__name__, '' if N[0] is False else ' (%db)' % sum(N) ) for T, N in types.items() )
+    cachename = 'weakly cached' if isinstance( d, weakref.WeakValueDictionary ) else 'cached'
+    items.append(( len(d), '%s %s %s' % ( fname, cachename, count ) ))
+  items.sort( reverse=True )
+  log.info( 'cache usage:\n' +  '\n'.join( '  ' + s for i, s in items ) )
+
+def cache_flush():
+  for fname, d in ALLCACHE:
+    d.clear()
+
 def cache( func ):
   return _cache( func, {} )
-
-def debug_cache( func ):
-  return _cache( func, {}, debug=True )
 
 def weakcache( func ):
   return _cache( func, weakref.WeakValueDictionary() )
