@@ -19,6 +19,7 @@ class Axis( int ):
   def getmap( self, comm ):
     if not self.map:
       self.map = libmatrix.Map( comm, self.used )
+    assert int(self) == self.map.size
     assert self.map.comm == comm
     return self.map
 

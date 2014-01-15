@@ -2811,7 +2811,7 @@ def concatenate( args, axis, length=None ):
     if not _isfunc(arg1) and not _isfunc(arg2):
       arg12 = numpy.concatenate( [ arg1, arg2 ], axis )
     else:
-      arg12 = _call( arg1, '_concatenate', arg2, axis, length )
+      arg12 = _call( arg1, '_concatenate', arg2, axis, None )
       if arg12 is None:
         i += 1
         continue
