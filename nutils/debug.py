@@ -57,7 +57,9 @@ class Frame( object ):
     while True:
       lineno += 1
       line = linecache.getline( path, lineno )
-      if not line or line[:indent+1].strip() and not linebreak:
+      if line[:indent+1].lstrip().startswith('#'):
+        line = ' ' * indent + line.lstrip()
+      elif not line or line[:indent+1].strip() and not linebreak:
         break
       source += '>' + line[indent+1:] if lineno == self.lineno else line[indent:]
       linebreak = line.rstrip().endswith( '\\' )
@@ -204,8 +206,11 @@ def format_exc():
   return '\n'.join( [ repr(sys.exc_value) ] + [ str(f) for f in exception() ] )
 
 def callstack( depth=1 ):
-  frame = sys._getframe( depth )
   frames = []
+  try:
+    frame = sys._getframe( depth )
+  except ValueError:
+    frame = None
   while frame:
     frames.append( Frame( frame ) )
     frame = frame.f_back

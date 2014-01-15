@@ -139,7 +139,7 @@ class Topology( object ):
     retvals = []
     idata = []
     for ifunc, func in enumerate( funcs ):
-      func = function._asarray( func )
+      func = function.asarray( func )
       retval = parallel.shzeros( (npoints,)+func.shape, dtype=func.dtype )
       if separate:
         retval[separators] = numpy.nan
@@ -176,7 +176,7 @@ class Topology( object ):
     iweights = function.iwscale( geometry, self.ndims ) * function.IWeights()
     idata = [ iweights ]
     for func in funcs:
-      func = function._asarray( func )
+      func = function.asarray( func )
       if not function._isfunc( func ):
         func = function.Const( func )
       assert all( isinstance(sh,int) for sh in func.shape )
@@ -210,7 +210,7 @@ class Topology( object ):
     shape = C.shape
     C = C.reshape( self.ndims, -1 )
 
-    funcs = [ function._asarray(func) for func in funcs ]
+    funcs = [ function.asarray(func) for func in funcs ]
     retvals = [ numpy.empty( C.shape[1:] + func.shape ) for func in funcs ]
     for retval in retvals:
       retval[:] = numpy.nan
@@ -251,7 +251,7 @@ class Topology( object ):
     integrands = []
     retvals = []
     for ifunc, func in enumerate( funcs ):
-      func = function._asarray( func )
+      func = function.asarray( func )
       if function._isfunc( func ):
         shape = [ sh.getmap( self.comm ) for sh in func.shape ]
         array = libmatrix.ArrayBuilder( shape )
@@ -299,7 +299,7 @@ class Topology( object ):
     integrands = []
     retvals = []
     for ifunc, func in enumerate( funcs ):
-      func = function._asarray( func )
+      func = function.asarray( func )
       lock = parallel.Lock()
       if function._isfunc( func ):
         array = parallel.shzeros( func.shape, dtype=float ) if func.ndim != 2 \
@@ -401,7 +401,7 @@ class Topology( object ):
       F = numpy.zeros( onto.shape[0] )
       W = numpy.zeros( onto.shape[0] )
       I = numpy.zeros( onto.shape[0], dtype=bool )
-      fun = function._asarray( fun )
+      fun = function.asarray( fun )
       data = function.Tuple( function.Tuple([ fun, f, function.Tuple(ind) ]) for f, ind in function.blocks( onto ) )
       for elem in self:
         for f, w, ind in data( elem, 'bezier2' ):
@@ -1022,6 +1022,11 @@ class UnstructuredTopology( Topology ):
     'linear func'
 
     return self.splinefunc( degree=1 )
+
+  def bubblefunc( self ):
+    'linear func + bubble'
+
+    return self.namedfuncs[ 'bubble1' ]
 
   @property
   @core.weakcache

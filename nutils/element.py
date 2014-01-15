@@ -1088,7 +1088,11 @@ class QuadElement( Element ):
     return points, selection
 
 class TriangularElement( Element ):
-  'triangular element'
+  '''triangular element
+     conventions: reference elem:   unit simplex {(x,y) | x>0, y>0, x+y<1}
+                  vertex numbering: {(1,0):0, (0,1):1, (0,0):2}
+                  edge numbering:   {bottom:0, slanted:1, left:2}
+                  edge local coords run counter-clockwise.'''
 
   __slots__ = ()
 
@@ -1125,7 +1129,7 @@ class TriangularElement( Element ):
     'edge'
 
     transform = self.edgetransform[ iedge ]
-    vertices = [ self.vertices[:2], self.vertices[1:], self.vertices[::-2] ][iedge]
+    vertices = [ self.vertices[::-2], self.vertices[:2], self.vertices[1:] ][iedge]
     return QuadElement( vertices=vertices, ndims=1, context=(self,transform), subdom=self.subdom )
 
   @staticmethod
@@ -1668,7 +1672,8 @@ class PolyLine( StdElem ):
     return 'PolyLine#%x' % id(self)
 
 class PolyTriangle( StdElem ):
-  'poly triangle'
+  '''poly triangle (linear for now)
+     conventions: dof numbering as vertices, see TriangularElement docstring.'''
 
   __slots__ = ()
 
@@ -1692,6 +1697,52 @@ class PolyTriangle( StdElem ):
       data = numpy.array( [[1,0],[0,1],[-1,-1]], dtype=float )
     else:
       data = numpy.array( 0 ).reshape( (1,) * (grad+ndim) )
+    return data
+
+  def __repr__( self ):
+    'string representation'
+
+    return '%s#%x' % ( self.__class__.__name__, id(self) )
+
+class BubbleTriangle( StdElem ):
+  '''linear triangle + bubble function
+     conventions: dof numbering as vertices (see TriangularElement docstring), then barycenter.'''
+
+  __slots__ = ()
+
+  @core.cache
+  def __new__( cls, order ):
+    'constructor'
+
+    assert order == 1
+    self = object.__new__( cls )
+    return self
+
+  @core.cache
+  def eval( self, points, grad=0 ):
+    'eval'
+
+    npoints, ndim = points.shape
+    if grad == 0:
+      x, y = points.T
+      data = numpy.array( [ x, y, 1-x-y, 27*x*y*(1-x-y) ] ).T
+    elif grad == 1:
+      x, y = points.T
+      const_block = numpy.array( [1,0,0,1,-1,-1]*npoints, dtype=float ).reshape( npoints,3,2 )
+      grad1_bubble = 27*numpy.array( [y*(1-2*x-y),x*(1-x-2*y)] ).T.reshape( npoints,1,2 )
+      data = numpy.concatenate( [const_block, grad1_bubble], axis=1 )
+    elif grad == 2:
+      x, y = points.T
+      zero_block = numpy.zeros( (npoints,3,2,2) )
+      grad2_bubble = 27*numpy.array( [-2*y,1-2*x-2*y, 1-2*x-2*y,-2*x] ).T.reshape( npoints,1,2,2 )
+      data = numpy.concatenate( [zero_block, grad2_bubble], axis=1 )
+    elif grad == 3:
+      zero_block = numpy.zeros( (3,2,2,2) )
+      grad3_bubble = 27*numpy.array( [0,-2,-2,-2,-2,-2,-2,0], dtype=float ).reshape( 1,2,2,2 )
+      data = numpy.concatenate( [zero_block, grad3_bubble], axis=0 )
+    else:
+      assert ndim==2, 'Triangle takes 2D coordinates' # otherwise tested by unpacking points.T
+      data = numpy.array( 0 ).reshape( (1,) * (grad+2) )
     return data
 
   def __repr__( self ):

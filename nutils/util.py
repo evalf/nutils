@@ -204,11 +204,11 @@ def iterate( context='iter', nmax=-1 ):
     if i == nmax:
       break
     i += 1
-    old = log.context( '%s %d' % (context,i), depth=1 )
+    logger = log.context( '%s %d' % (context,i), depth=2 )
     try:
       yield i
     finally:
-      log.restore( old )
+      logger.disable()
 
 class NanVec( numpy.ndarray ):
   'nan-initialized vector'

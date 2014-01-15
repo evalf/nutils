@@ -22,7 +22,7 @@ class Fork( object ):
     else:
       self.child_pid = None
       self.iproc = self.nprocs-1
-    self.oldcontext = log.context( 'proc %d' % ( self.iproc+1 ), depth=1 )
+    self.logger = log.context( 'proc %d' % ( self.iproc+1 ), depth=2 )
     return self.iproc
 
   def __exit__( self, exctype, excvalue, tb ):
@@ -32,8 +32,13 @@ class Fork( object ):
     try:
       if exctype == KeyboardInterrupt:
         status = 1
+      elif exctype == GeneratorExit:
+        if self.iproc:
+          log.stack( 'generator failed with unknown exception', debug.callstack( depth=2 ) )
+        status = 1
       elif exctype:
-        log.stack( repr(excvalue), debug.exception() )
+        if self.iproc:
+          log.stack( repr(excvalue), debug.exception() )
         status = 1
       if self.child_pid:
         child_pid, child_status = os.waitpid( self.child_pid, 0 )
@@ -42,7 +47,7 @@ class Fork( object ):
           status = 1
         elif child_status:
           status = 1
-      log.restore( self.oldcontext )
+      self.logger.disable()
     except: # should not happen.. but just to be sure
       status = 1
     if self.iproc:
@@ -71,7 +76,7 @@ class AlternativeFork( object ):
     else:
       self.children = children
       self.iproc = 0
-    self.oldcontext = log.context( 'proc %d' % ( self.iproc+1 ), depth=1 )
+    self.logger = log.context( 'proc %d' % ( self.iproc+1 ), depth=2 )
     return self.iproc
 
   def __exit__( self, exctype, excvalue, tb ):
@@ -87,7 +92,7 @@ class AlternativeFork( object ):
         self.children.remove( child_pid )
         if child_status:
           status = 1
-      log.restore( self.oldcontext )
+      self.logger.disable()
     except: # should not happen.. but just to be sure
       status = 1
     if self.iproc:
