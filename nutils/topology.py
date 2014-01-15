@@ -19,6 +19,7 @@ class Axis( int ):
   def getmap( self, comm ):
     if not self.map:
       self.map = libmatrix.Map( comm, self.used )
+    assert int(self) == self.map.size
     assert self.map.comm == comm
     return self.map
 
@@ -363,7 +364,7 @@ class Topology( object ):
       else:
         raise Exception
       A, b = self.integrate( [Afun,bfun], geometry=geometry, ischeme=ischeme, title='building system' )
-      constrain = A.solve( b )
+      constrain = A.solve( b, tol=tol, symmetric=True )
       constrain.nan_from_supp( A )
       #N = A.rowsupp(droptol)
       #if numpy.all( b == 0 ):
@@ -1022,6 +1023,11 @@ class UnstructuredTopology( Topology ):
     'linear func'
 
     return self.splinefunc( degree=1 )
+
+  def bubblefunc( self ):
+    'linear func + bubble'
+
+    return self.namedfuncs[ 'bubble1' ]
 
   @property
   @core.weakcache

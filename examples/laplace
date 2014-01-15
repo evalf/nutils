@@ -1,7 +1,6 @@
 #! /usr/bin/env python
 
 from nutils import *
-import libmatrix
 numpy.set_printoptions( linewidth=113 )
 
 
@@ -33,9 +32,8 @@ def main( nelems=2, degree=1, beltrami=False ):
   matrix = domain.integrate( laplace, geometry=geom, ischeme='gauss4', title='matrix' )
   tmp = funcsp * numpy.exp(.5*numpy.pi) * function.sin(x)
   rhs = domain.boundary['top'].integrate( tmp, geometry=geom, ischeme='gauss6', title='rhs' )
-  cons = domain.boundary['left,bottom'].project( function.sin(x), ischeme='gauss6', geometry=geom, onto=funcsp, title='left,bottom edge' )
-  precon = libmatrix.Precon( matrix, 'ILUT' )
-  lhs = matrix.solve( rhs, precon=precon, constrain=cons, symmetric=True )
+  cons = domain.boundary['left,bottom'].project( function.sin(x), ischeme='gauss6', geometry=geom, onto=funcsp, title='left,bottom edge', tol=1e-10 )
+  lhs = matrix.solve( rhs, precon='ILUT', constrain=cons, symmetric=True, tol=1e-10 )
   sol = funcsp.dot(lhs)
 
   makeplots( domain, geom[:2], sol, nelems )

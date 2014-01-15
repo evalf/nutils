@@ -26,7 +26,7 @@ def main( nelems=10, stress=Hook(1,1) ):
 
   elasticity = function.outer( dspace.grad(geom), stress(dspace,geom) ).sum([2,3])
   matrix = domain.integrate( elasticity, geometry=geom, ischeme='gauss3' )
-  lhs = matrix.solve( constrain=cons, tol=1e-5, symmetric=True )
+  lhs = matrix.solve( precon='ILUT', constrain=cons, tol=1e-5, symmetric=True )
   disp = dspace.dot( lhs )
 
   points, colors = domain.elem_eval( [ geom + disp, stress(disp,geom)[0,1] ], ischeme='bezier3', separate=True )

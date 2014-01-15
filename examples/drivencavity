@@ -1,10 +1,9 @@
 #! /usr/bin/env python
 
 from nutils import *
-import libmatrix
 
 
-@parallel.fork
+#@parallel.fork
 def makeplots( domain, geom, velo, pres, index ):
 
   log.context( 'figures' )
@@ -14,8 +13,8 @@ def makeplots( domain, geom, velo, pres, index ):
   laplace = function.outer( grad ).sum()
   vort = velo.grad(geom)[1,0] - velo.grad(geom)[0,1]
   matrix, rhs = domain.integrate( [ laplace, vort * funcsp ], geometry=geom, ischeme='gauss9' )
-  cons = domain.boundary.project( 0, onto=funcsp, geometry=geom, ischeme='gauss9' )
-  lhs = matrix.solve( rhs, constrain=cons )
+  cons = domain.boundary.project( 0, onto=funcsp, geometry=geom, ischeme='gauss9', tol=1e-10 )
+  lhs = matrix.solve( rhs, constrain=cons, precon='ILUT', tol=1e-10 )
   streamfunc = funcsp.dot( lhs )
 
   xy, uv = domain.elem_eval( [ geom, velo ], ischeme='uniform1', title='flow field', separate=False )
@@ -73,7 +72,7 @@ def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e
   if bump:
     x, y = geom
     geom = domain.projection( [ x, bump(x) * (1-y) + y ],
-                onto=domain.splinefunc( degree=2 ).vector( 2 ), geometry=geom, ischeme='gauss9' )
+                onto=domain.splinefunc( degree=2 ).vector( 2 ), geometry=geom, ischeme='gauss9', tol=1e-10 )
     # piola
     J = function.localgradient( geom, domain.ndims )
     detJ = function.determinant( J )
@@ -93,8 +92,8 @@ def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e
 
   if strong:
     stokesrhs = 0
-    cons = domain.boundary['top'].project( 1, geometry=geom, onto=vspace[:,0], ischeme='gauss3', title='top boundary' ) \
-         | domain.boundary.project( 0, geometry=geom, onto=vspace, ischeme='gauss3', title='other boundary' )
+    cons = domain.boundary['top'].project( 1, geometry=geom, onto=vspace[:,0], ischeme='gauss3', title='top boundary', tol=1e-10 ) \
+         | domain.boundary.project( 0, geometry=geom, onto=vspace, ischeme='gauss3', title='other boundary', tol=1e-10 )
   else:
     ALPHA = .01 * nelems * reynolds
     Utop = [1,0]
@@ -108,8 +107,8 @@ def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e
     inertmat = domain.integrate( inertia, ischeme='gauss9', geometry=geom, title='adding inertia' )
     stokesmat += inertmat
 
-  stokesmat_precon = libmatrix.Precon( stokesmat, 'ILUT' )
-  lhs = stokesmat.solve( stokesrhs, constrain=cons, precon=stokesmat_precon )
+  stokesmat_precon = stokesmat.build_precon( 'ILUT' )
+  lhs = stokesmat.solve( stokesrhs, constrain=cons, precon=stokesmat_precon, tol=1e-10 )
 
   for iiter in util.iterate():
     makeplots( domain, geom, vspace.dot(lhs), pspace.dot(lhs), iiter )
@@ -125,7 +124,7 @@ def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e
       if res < tol:
         break
     linprob.set_precon( stokesmat_precon )
-    linprob.solve( 'GMRES' )
+    linprob.solve( 'GMRES', tol=1e-10 )
 
 
 #   lhs = stokesmat.solve( rhs, constrain=cons, tol=1e-10 )

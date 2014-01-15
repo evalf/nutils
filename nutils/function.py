@@ -23,6 +23,9 @@ class EvaluationError( Exception ):
     self.evaluable = evaluable
     self.values = values
 
+  def __repr__( self ):
+    return 'EvaluationError%s' % self
+
   def __str__( self ):
     'string representation'
 
@@ -365,14 +368,6 @@ class ArrayFunc( Evaluable ):
     s = [ numpy.newaxis ] * self.ndim
     s[axis] = slice(None)
     return dot( self, weights[tuple(s)], axes=axis )
-
-  def __kronecker__( self, axis, length, pos ):
-    'kronecker'
-
-    assert self.shape[axis] == 1
-    funcs = [ _zeros_like(self) ] * length
-    funcs[pos] = self
-    return Concatenate( funcs, axis=axis )
 
   def __getitem__( self, item ):
     'get item, general function which can eliminate, add or modify axes.'
@@ -2382,6 +2377,8 @@ def _equal( arg1, arg2 ):
 def asarray( arg ):
   'convert to ArrayFunc or numpy.ndarray'
   
+  if isinstance( arg, numpy.ndarray ) and arg.ndim == 0:
+    arg = arg[...]
   if _isfunc(arg):
     return arg
   arg = numpy.asarray( arg )
@@ -2814,7 +2811,7 @@ def concatenate( args, axis, length=None ):
     if not _isfunc(arg1) and not _isfunc(arg2):
       arg12 = numpy.concatenate( [ arg1, arg2 ], axis )
     else:
-      arg12 = _call( arg1, '_concatenate', arg2, axis, length )
+      arg12 = _call( arg1, '_concatenate', arg2, axis, None )
       if arg12 is None:
         i += 1
         continue
