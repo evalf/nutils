@@ -1890,8 +1890,8 @@ class Pointdata( ArrayFunc ):
     return Pointdata( data, self.shape )
 
 
-class Eig( Evaluables ):
-   'Eig'
+class Eig( Evaluable ):
+  'Eig'
 
   __slots__ = 'func', 'shape'
 
@@ -1899,14 +1899,14 @@ class Eig( Evaluables ):
     'contructor'
 
     if symmetric:
-      Evaluable.__init__( self, args=[func], evalf=numpy.linalg.eig )
-    else:
       Evaluable.__init__( self, args=[func], evalf=numpy.linalg.eigh )
+    else:
+      Evaluable.__init__( self, args=[func], evalf=numpy.linalg.eig )
 
     self.shape = func.shape
 
   def _opposite( self ):
-    return eig( opposite(self.func) )
+    return eig( opposite(self.func), symmetric )
 
 class EigenValue( ArrayFunc ):
   'EigenVector'
@@ -1921,8 +1921,6 @@ class EigenValue( ArrayFunc ):
     assert isinstance( eig, Eig )
 
     ArrayFunc.__init__( self, args=[eig], evalf=self.__eigval__, shape=eig.shape[:-1] )
-
-# ----------------------------------------
 
 class EigenVector( ArrayFunc ):
   'EigenVector'
@@ -3081,7 +3079,7 @@ def sign( arg ):
 
   return Sign( arg )
 
-def eig( arg, axes=(-2,-1) ):
+def eig( arg, axes=(-2,-1), symmetric=False ):
   ''' eig( arg, axes [ symmetric ] )
   Compute the eigenvalues and vectors of a matrix
   The eigenvalues and vectors are positioned on the last axes
@@ -3122,7 +3120,7 @@ def eig( arg, axes=(-2,-1) ):
     return (retval, retvec)
 
   # Return the evaluable function objects in a tuple like numpy
-  eig = Eig( arg )
+  eig = Eig( arg, symmetric )
   eigval = EigenValue( eig )
   eigvec = EigenVector( eig )
   return (eigval, eigvec)
