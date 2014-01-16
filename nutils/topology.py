@@ -888,7 +888,7 @@ class StructuredTopology( Topology ):
   def refined( self ):
     'refine entire topology'
 
-    return self.refine_nu( [2]*self.ndims )
+    return self.refine_nu( (2,)*self.ndims )
 
   def trim( self, levelset, maxrefine, lscheme='bezier3', finestscheme='uniform2', evalrefine=0, title='trimming', log=log ):
     'trim element along levelset'

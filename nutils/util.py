@@ -1,4 +1,4 @@
-from . import log, prop, debug
+from . import log, prop, debug, core
 import sys, os, time, numpy, cPickle, hashlib, weakref, warnings, itertools
 
 def unreachable_items():
@@ -496,10 +496,16 @@ def run( *functions ):
   log.info( 'finish %s\n' % time.ctime() )
   log.info( 'elapsed %02.0f:%02.0f:%02.0f' % ( hours, minutes, seconds ) )
 
+  cacheinfo = core.cache_info( brief=True )
+  if cacheinfo:
+    log.warning( '\n  '.join( ['some caches were saturated:'] + cacheinfo ) )
+
   if not tb:
     sys.exit( 0 )
 
   debug.write_html( htmlfile, sys.exc_value, tb )
+  htmlfile.write( '<span class="info">Cache usage:<ul>%s</ul></span>' % '\n'.join( '<li>%s</li>' % line for line in core.cache_info( brief=False ) ) )
+  htmlfile.flush()
 
   debug.Explorer( repr(sys.exc_value), tb, intro='''\
     Your program has died. The traceback exporer allows you to examine its
