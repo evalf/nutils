@@ -1899,9 +1899,10 @@ class Eig( Evaluable ):
     'contructor'
 
     if symmetric:
-      Evaluable.__init__( self, args=[func], evalf=numpy.linalg.eigh )
+      print "Using symmetric eig"
+      Evaluable.__init__( self, args=[func], evalf=numeric.eigh )
     else:
-      Evaluable.__init__( self, args=[func], evalf=numpy.linalg.eig )
+      Evaluable.__init__( self, args=[func], evalf=numeric.eig )
 
     self.shape = func.shape
 
@@ -3091,7 +3092,6 @@ def eig( arg, axes=(-2,-1), symmetric=False ):
   # Sort axis
   arg = asarray( arg )
   ax1, ax2 = _norm_and_sort( arg.ndim, axes )
-  print ax1, ax2
   assert ax2 > ax1 # strict
 
   # Check if the matrix is square
@@ -3107,7 +3107,10 @@ def eig( arg, axes=(-2,-1), symmetric=False ):
 
   # When it's an array calculate directly
   if not _isfunc(arg):
-    return numpy.linalg.eig( arg )
+    if symmetric:
+      return numpy.linalg.eigh( arg )
+    else:
+      return numpy.linalg.eig( arg )
 
   # Use _call to see if the object has its own _eig function
   ret = _call( arg, '_eig' )
