@@ -1934,7 +1934,7 @@ class EigenVector( ArrayFunc ):
 
     assert isinstance( eig, Eig )
 
-    ArrayFunc.__init__( self, args=[eig], evalf=self.__eigvec__, shape=eig.shape[:-1] )
+    ArrayFunc.__init__( self, args=[eig], evalf=self.__eigvec__, shape=eig.shape )
 
 # PRIORITY OBJECTS
 #
