@@ -47,7 +47,7 @@ class BasePlot( object ):
         if self.names:
           for name in self.names:
             self.save( name )
-          log.path( *self.names )
+          log.path( ', '.join( self.names ) )
         return True
     finally:
       self.logger.disable()
