@@ -40,6 +40,7 @@ class Evaluable( object ):
     'constructor'
 
     self.__args = tuple(args)
+    assert not any( type(arg) == numpy.ndarray for arg in self.__args )
     self.__evalf = evalf
     self.operations = None
 
@@ -194,11 +195,7 @@ class Evaluable( object ):
   def __eq__( self, other ):
     'compare'
 
-    return self is other or (
-          self.__class__ == other.__class__
-      and self.__evalf == other.__evalf
-      and len( self.__args ) == len( other.__args )
-      and all( _equal(arg1,arg2) for arg1, arg2 in zip( self.__args, other.__args ) ) )
+    return self is other or self.__class__ == other.__class__ and self.__evalf == other.__evalf and self.__args == other.__args
 
   def __ne__( self, other ):
     'not equal'
@@ -226,7 +223,7 @@ class Tuple( Evaluable ):
   def __init__( self, items ):
     'constructor'
 
-    self.items = tuple( items )
+    self.items = tuple( numeric.SaneArray(it) if isinstance(it,numpy.ndarray) else it for it in items )
     Evaluable.__init__( self, args=self.items, evalf=self.vartuple )
 
   def __iter__( self ):
@@ -330,6 +327,7 @@ class ArrayFunc( Evaluable ):
     'constructor'
 
     self.shape = tuple(shape)
+    assert all( isinstance(sh,(int,str)) for sh in self.shape ) # TODO: remove str (future)
     self.ndim = len(self.shape)
     assert dtype is int or dtype is float
     self.dtype = dtype
@@ -909,6 +907,7 @@ class DofMap( ArrayFunc ):
     'new'
 
     self.cascade = cascade
+    assert all( type(val) != numpy.ndarray for val in dofmap.values() )
     self.dofmap = dofmap
     ArrayFunc.__init__( self, args=(cascade,dofmap), evalf=self.evalmap, shape=[axis], dtype=int )
 
@@ -944,7 +943,7 @@ class Concatenate( ArrayFunc ):
       assert all( n == None for n in lengths )
       sh = None
     else:
-      sh = sum( lengths )
+      sh = _sum(lengths )
     shape = _jointshape( *[ func.shape[:axis] + (sh,) + func.shape[axis+1:] for func in funcs ] )
     self.funcs = tuple(funcs)
     self.axis = axis
@@ -1272,9 +1271,9 @@ class Multiply( ArrayFunc ):
 
   def _add( self, other ):
     func1, func2 = self.funcs
-    if _equal( other, func1 ):
+    if other == func1:
       return func1 * (func2+1)
-    if _equal( other, func2 ):
+    if other == func2:
       return func2 * (func1+1)
     if isinstance( other, Multiply ):
       common = _findcommon( self.funcs, other.funcs )
@@ -2256,6 +2255,8 @@ def _matchndim( *arrays ):
 
   arrays = [ asarray(array) for array in arrays ]
   ndim = _max( array.ndim for array in arrays )
+  if not ndim: # keep sanearray scalars sane
+    return arrays
   return [ array[(_,)*(ndim-array.ndim)] for array in arrays ]
 
 def _isiterable( obj ):
@@ -2307,16 +2308,16 @@ def _obj2str( obj ):
 def _findcommon( (a1,a2), (b1,b2) ):
   'find common item in 2x2 data'
 
-  if _equal( a1, b1 ):
+  if a1 == b1:
     return a1, (a2,b2)
-  if _equal( a1, b2 ):
+  if a1 == b2:
     return a1, (a2,b1)
-  if _equal( a2, b1 ):
+  if a2 == b1:
     return a2, (a1,b2)
-  if _equal( a2, b2 ):
+  if a2 == b2:
     return a2, (a1,b1)
 
-_matchpairs = lambda (a1,a2), (b1,b2): _equal(a1,b1) and _equal(a2,b2) or _equal(a1,b2) and _equal(a2,b1)
+_matchpairs = lambda (a1,a2), (b1,b2): a1 == b1 and a2 == b2 or a1 == b2 and a2 == b1
 _max = max
 _min = min
 _sum = sum
@@ -2358,38 +2359,19 @@ def _dtypestr( arg ):
     return 'double'
   raise Exception, 'unknown dtype %s' % arg.dtype
 
-def _equal( arg1, arg2 ):
-  'compare two objects'
-
-  if arg1 is arg2:
-    return True
-  if isinstance( arg1, dict ) or isinstance( arg2, dict ):
-    return False
-  if isinstance( arg1, (list,tuple) ):
-    if not isinstance( arg2, (list,tuple) ) or len(arg1) != len(arg2):
-      return False
-    return all( _equal(v1,v2) for v1, v2 in zip( arg1, arg2 ) )
-  if not isinstance( arg1, numpy.ndarray ) and not isinstance( arg2, numpy.ndarray ):
-    return arg1 == arg2
-  elif isinstance( arg1, numpy.ndarray ) and isinstance( arg2, numpy.ndarray ):
-    return arg1.shape == arg2.shape and numpy.all( arg1 == arg2 )
-  else:
-    return False
-
 def asarray( arg ):
   'convert to ArrayFunc or numpy.ndarray'
   
-  if isinstance( arg, numpy.ndarray ) and arg.ndim == 0:
-    arg = arg[...]
-  if _isfunc(arg):
-    return arg
-  arg = numpy.asarray( arg )
-  if arg.dtype == object:
-    return stack( arg, axis=0 )
-  elif numpy.all( arg == 0 ):
-    return _zeros( arg.shape )
-  else:
-    return arg
+  arr = numeric.SaneArray( arg )
+  if arr.dtype == object:
+    if arr.ndim == 0:
+      arr = arr[()]
+      assert _isfunc( arr )
+    else:
+      arr = stack( arr, axis=0 )
+  elif numpy.all( arr == 0 ):
+    arr = _zeros( arr.shape )
+  return arr
 
 def _asarray( arg ):
   warnings.warn( '_asarray is deprecated, use asarray instead', DeprecationWarning )
@@ -2919,7 +2901,7 @@ def multiply( arg1, arg2 ):
   if not _isfunc(arg1) and not _isfunc(arg2):
     return numpy.multiply( arg1, arg2 )
 
-  if _equal( arg1, arg2 ):
+  if arg1 == arg2:
     return power( arg1, 2 )
 
   for idim, sh in enumerate( shape ):
@@ -2953,7 +2935,7 @@ def add( arg1, arg2 ):
   if not _isfunc(arg1) and not _isfunc(arg2):
     return numpy.add( arg1, arg2 )
 
-  if _equal( arg1, arg2 ):
+  if arg1 == arg2:
     return arg1 * 2
 
   for idim, sh in enumerate( shape ):

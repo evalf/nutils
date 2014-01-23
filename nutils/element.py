@@ -121,7 +121,7 @@ class SliceTransformation( Transformation ):
     'apply transformation'
 
     assert points.shape[1] == self.fromdim
-    return util.ImmutableArray( points[:,self.slice] )
+    return numeric.ImmutableArray( points[:,self.slice] )
 
 class AffineTransformation( Transformation ):
   'affine transformation'
@@ -174,7 +174,7 @@ class AffineTransformation( Transformation ):
     'apply transformation'
 
     assert isinstance( points, numpy.ndarray )
-    return util.ImmutableArray( self.offset + numeric.dot( points, self.transform.T ) )
+    return numeric.ImmutableArray( self.offset + numeric.dot( points, self.transform.T ) )
 
 def IdentityTransformation( ndims ):
   return AffineTransformation( numpy.zeros(ndims), numpy.eye(ndims) )
@@ -230,7 +230,7 @@ class Element( object ):
     if isinstance( where, str ):
       points, weights = self.getischeme( self.ndims, where )
     else:
-      points = util.ImmutableArray( where )
+      points = numeric.ImmutableArray( where )
       weights = None
     return points, weights
 
@@ -352,12 +352,12 @@ class ProductElement( Element ):
       pts4 = pts0 + temp
       pts5 = xi*(1 - eta1*eta2)
       pts6 = xi*eta1 - temp
-      points = util.ImmutableArray(
+      points = numeric.ImmutableArray(
         [[1-xi,   1-pts2, 1-xi,   1-pts5, 1-pts2, 1-xi  ],
          [pts1, pts3, pts4, pts0, pts6, pts0],
          [1-pts2, 1-xi,   1-pts5, 1-xi,   1-xi,   1-pts2],
          [pts3, pts1, pts0, pts4, pts0, pts6]]).reshape( 4, -1 ).T
-      points = util.ImmutableArray( points * [-1,1,-1,1] + [1,0,1,0] ) # flipping in x -GJ
+      points = numeric.ImmutableArray( points * [-1,1,-1,1] + [1,0,1,0] ) # flipping in x -GJ
       weights = numpy.concatenate( 6*[xi**3*eta1**2*eta2*weights] )
     elif neighborhood == 1:
       A = xi*eta1
@@ -369,7 +369,7 @@ class ProductElement( Element ):
       G = xi - D
       H = B - D
       I = A - D
-      points = util.ImmutableArray(
+      points = numeric.ImmutableArray(
         [[1-xi, 1-xi, 1-E,  1-G,  1-G ],
          [C,  G,  F,  H,  I ],
          [1-E,  1-G,  1-xi, 1-xi, 1-xi],
@@ -380,7 +380,7 @@ class ProductElement( Element ):
       A = xi*eta2
       B = A*eta3
       C = xi*eta1
-      points = util.ImmutableArray(
+      points = numeric.ImmutableArray(
         [[1-xi, 1-A ],
          [C,  B ],
          [1-A,  1-xi],
@@ -388,7 +388,7 @@ class ProductElement( Element ):
       weights = numpy.concatenate( 2*[xi**2*A*weights] )
     else:
       assert neighborhood == -1, 'invalid neighborhood %r' % neighborhood
-      points = util.ImmutableArray([ eta1*eta2, 1-eta2, eta3*xi, 1-xi ]).T
+      points = numeric.ImmutableArray([ eta1*eta2, 1-eta2, eta3*xi, 1-xi ]).T
       weights = eta2*xi*weights
     return points, weights
   
@@ -404,7 +404,7 @@ class ProductElement( Element ):
       B = (1 - xe)*eta2
       C = xi + A
       D = xe + B
-      points = util.ImmutableArray(
+      points = numeric.ImmutableArray(
         [[A, B, A, D, B, C, C, D],
          [B, A, D, A, C, B, D, C],
          [C, D, C, B, D, A, A, B],
@@ -419,7 +419,7 @@ class ProductElement( Element ):
       E = 1 - A
       F = E*eta3
       G = A + F
-      points = util.ImmutableArray(
+      points = numeric.ImmutableArray(
         [[D,  C,  G,  G,  F,  F ],
          [B,  B,  B,  xi, B,  xi],
          [C,  D,  F,  F,  G,  G ],
@@ -429,7 +429,7 @@ class ProductElement( Element ):
       A = xi*eta1
       B = xi*eta2
       C = xi*eta3
-      points = util.ImmutableArray(
+      points = numeric.ImmutableArray(
         [[xi, A,  A,  A ], 
          [A,  xi, B,  B ],
          [B,  B,  xi, C ], 
@@ -446,7 +446,7 @@ class ProductElement( Element ):
     coords2, weights2 = ischeme2
     if weights1 is not None:
       assert weights2 is not None
-      weights = util.ImmutableArray( ( weights1[:,_] * weights2[_,:] ).ravel() )
+      weights = numeric.ImmutableArray( ( weights1[:,_] * weights2[_,:] ).ravel() )
     else:
       assert weights2 is None
       weights = None
@@ -455,7 +455,7 @@ class ProductElement( Element ):
     coords = numpy.empty( [ coords1.shape[0], coords2.shape[0], ndims1+ndims2 ] )
     coords[:,:,:ndims1] = coords1[:,_,:]
     coords[:,:,ndims1:] = coords2[_,:,:]
-    coords = util.ImmutableArray( coords.reshape(-1,ndims1+ndims2) )
+    coords = numeric.ImmutableArray( coords.reshape(-1,ndims1+ndims2) )
     return coords, weights
   
   @property
@@ -521,7 +521,7 @@ class ProductElement( Element ):
     #                     1-points[:,2] if transf2 == 1 else \
     #                     1-points[:,3] if transf2 == 2 else \
     #                       points[:,2]
-    return util.ImmutableArray( transfpoints ), util.ImmutableArray( weights )
+    return numeric.ImmutableArray( transfpoints ), numeric.ImmutableArray( weights )
     
   @staticmethod
   @core.cache
@@ -536,7 +536,7 @@ class ProductElement( Element ):
       return function.stack( (ty, tx) if orientation%2 else (tx, ty), axis=1 )
     transfpoints[:,:2] = transform( points[:,:2], transf1 )
     transfpoints[:,2:] = transform( points[:,2:], transf2 )
-    return util.ImmutableArray( transfpoints ), util.ImmutableArray( weights )
+    return numeric.ImmutableArray( transfpoints ), numeric.ImmutableArray( weights )
     
   def eval( self, where ):
     'get integration scheme'
@@ -608,8 +608,8 @@ class TrimmedElement( Element ):
         if len(points) == 0:
           return numpy.zeros((0,self.ndims)), numpy.zeros((0,))
 
-        points  = util.ImmutableArray(numpy.concatenate(points,axis=0))
-        weights = util.ImmutableArray(numpy.concatenate(weights))
+        points  = numeric.ImmutableArray(numpy.concatenate(points,axis=0))
+        weights = numeric.ImmutableArray(numpy.concatenate(weights))
 
         return points, weights
 
@@ -637,8 +637,8 @@ class TrimmedElement( Element ):
       allcoords.append( transform.eval(points) )
       allweights.append( weights * transform.det )
 
-    coords = util.ImmutableArray( numpy.concatenate( allcoords, axis=0 ) )
-    weights = util.ImmutableArray( numpy.concatenate( allweights, axis=0 ) )
+    coords = numeric.ImmutableArray( numpy.concatenate( allcoords, axis=0 ) )
+    weights = numeric.ImmutableArray( numpy.concatenate( allweights, axis=0 ) )
     return coords, weights
 
   @property
@@ -1012,7 +1012,7 @@ class QuadElement( Element ):
     'get integration scheme'
 
     if ndims == 0:
-      return util.ImmutableArray( numpy.zeros([1,0]) ), util.ImmutableArray( numpy.array([1.]) )
+      return numeric.ImmutableArray( numpy.zeros([1,0]) ), numeric.ImmutableArray( numpy.array([1.]) )
 
     x = w = None
     if where.startswith( 'gauss' ):
@@ -1072,7 +1072,7 @@ class QuadElement( Element ):
       weights = reduce( lambda weights, wi: ( weights * wi[:,_] ).ravel(), w )
     else:
       weights = None
-    return util.ImmutableArray( coords ), util.ImmutableArray( weights )
+    return numeric.ImmutableArray( coords ), numeric.ImmutableArray( weights )
 
   def select_contained( self, points, eps=0 ):
     'select points contained in element'
@@ -1212,7 +1212,7 @@ class TriangularElement( Element ):
       weights = None
     else:
       raise Exception, 'invalid element evaluation: %r' % where
-    return util.ImmutableArray( coords.T ), util.ImmutableArray( weights )
+    return numeric.ImmutableArray( coords.T ), numeric.ImmutableArray( weights )
 
   def select_contained( self, points, eps=0 ):
     'select points contained in element'
@@ -1438,7 +1438,7 @@ class TetrahedronElement( Element ):
       weights = numpy.array([-0.2359620398477557,0.0244878963560562,0.0244878963560562,0.0244878963560562,0.0244878963560562,0.0039485206398261,0.0039485206398261,0.0039485206398261,0.0039485206398261,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852]) / 6.
     else:
       raise Exception, 'invalid element evaluation: %r' % where
-    return util.ImmutableArray( coords.T ), util.ImmutableArray( weights )
+    return numeric.ImmutableArray( coords.T ), numeric.ImmutableArray( weights )
 
   def select_contained( self, points, eps=0 ):
     'select points contained in element'

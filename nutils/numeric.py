@@ -13,6 +13,36 @@ except:
       assert A.shape == B.shape and axes > 0
       return ((A*B).reshape(A.shape[:-axes]+(-1,))).sum(-1)
 
+class SaneArray( numpy.ndarray ):
+  __slots__ = ()
+  def __new__( cls, arr ):
+    return numpy.asarray( arr ).view( cls )
+  def __eq__( self, other ):
+    return self is other or ( isinstance( other, numpy.ndarray )
+      and self.shape == other.shape
+      and self.dtype == other.dtype
+      and ( self.__array_interface__['data'] == other.__array_interface__['data']
+            and self.strides == other.strides
+            or numpy.equal( self, other ).all() ) )
+
+class ImmutableArray( SaneArray ):
+  __slots__ = ()
+  def __new__( cls, arr ):
+    if not isinstance( arr, cls ):
+      if not isinstance( arr, numpy.ndarray ) or arr.flags.writeable:
+        arr = numpy.array( arr )
+        arr.flags.writeable = False
+      arr = arr.view( cls )
+    return arr
+  def __hash__( self ):
+    return hash( self.shape + tuple( self.flat[::self.size//4+1] ) )
+
+def findsorted( array, items ):
+  indices = numpy.searchsorted( array, items )
+  assert numpy.less( indices, array.size ).all()
+  assert numpy.equal( array[indices], items ).all()
+  return indices
+
 def normdim( ndim, n ):
   'check bounds and make positive'
 
@@ -27,19 +57,20 @@ def align( arr, trans, ndim ):
   to trans'''
 
   # as_strided will check validity of trans
-  arr = numpy.asarray( arr )
-  trans = numpy.asarray( trans, dtype=int )
+  arr = numpy.asanyarray( arr )
+  trans = numpy.asanyarray( trans, dtype=int )
   assert len(trans) == arr.ndim
   strides = numpy.zeros( ndim, dtype=int )
   strides[trans] = arr.strides
   shape = numpy.ones( ndim, dtype=int )
   shape[trans] = arr.shape
-  return numpy.lib.stride_tricks.as_strided( arr, shape, strides )
+  tmp = numpy.lib.stride_tricks.as_strided( arr, shape, strides ).view( arr.__class__ )
+  return tmp
 
 def get( arr, axis, item ):
   'take single item from array axis'
 
-  arr = numpy.asarray( arr )
+  arr = numpy.asanyarray( arr )
   axis = normdim( arr.ndim, axis )
   return arr[ (slice(None),) * axis + (item,) ]
 
@@ -72,8 +103,8 @@ def linspace2d( start, stop, steps ):
 def contract( A, B, axis=-1 ):
   'contract'
 
-  A = numpy.asarray( A, dtype=float )
-  B = numpy.asarray( B, dtype=float )
+  A = numpy.asanyarray( A, dtype=float )
+  B = numpy.asanyarray( B, dtype=float )
 
   n = B.ndim - A.ndim
   if n > 0:
@@ -124,8 +155,8 @@ def contract( A, B, axis=-1 ):
 def contract_fast( A, B, naxes ):
   'contract last n axes'
 
-  A = numpy.asarray( A, dtype=float )
-  B = numpy.asarray( B, dtype=float )
+  A = numpy.asanyarray( A, dtype=float )
+  B = numpy.asanyarray( B, dtype=float )
 
   n = B.ndim - A.ndim
   if n > 0:
@@ -168,8 +199,8 @@ def dot( A, B, axis=-1 ):
      remaining axes. Note: with default axis=-1 this leads to multiplication of
      vectors and matrices following linear algebra conventions.'''
 
-  A = numpy.asarray( A, dtype=float )
-  B = numpy.asarray( B, dtype=float )
+  A = numpy.asanyarray( A, dtype=float )
+  B = numpy.asanyarray( B, dtype=float )
 
   if axis < 0:
     axis += A.ndim
@@ -198,7 +229,7 @@ def dot( A, B, axis=-1 ):
 def fastrepeat( A, nrepeat, axis=-1 ):
   'repeat axis by 0stride'
 
-  A = numpy.asarray( A )
+  A = numpy.asanyarray( A )
   assert A.shape[axis] == 1
   shape = list( A.shape )
   shape[axis] = nrepeat
@@ -214,7 +245,7 @@ def fastmeshgrid( X, Y ):
 def meshgrid( *args ):
   'multi-dimensional meshgrid generalisation'
 
-  args = map( numpy.asarray, args )
+  args = map( numpy.asanyarray, args )
   shape = [ len(args) ] + [ arg.size for arg in args if arg.ndim ]
   grid = numpy.empty( shape )
   n = len(shape)-1
@@ -231,7 +262,7 @@ def appendaxes( A, shape ):
   'append axes by 0stride'
 
   shape = (shape,) if isinstance(shape,int) else tuple(shape)
-  A = numpy.asarray( A )
+  A = numpy.asanyarray( A )
   return numpy.lib.stride_tricks.as_strided( A, A.shape + shape, A.strides + (0,)*len(shape) )
 
 def takediag( A ):
@@ -311,7 +342,7 @@ def mean( A, weights=None, axis=-1 ):
 def norm2( A, axis=-1 ):
   'L2 norm over specified axis'
 
-  return numpy.asarray( numpy.sqrt( contract( A, A, axis ) ) )
+  return numpy.asanyarray( numpy.sqrt( contract( A, A, axis ) ) )
 
 def normalize( A, axis=-1 ):
   'devide by normal'
@@ -332,7 +363,7 @@ def cross( v1, v2, axis ):
 def stack( arrays, axis=0 ):
   'powerful array stacker with singleton expansion'
 
-  arrays = [ numpy.asarray(array,dtype=float) for array in arrays ]
+  arrays = [ numpy.asanyarray(array,dtype=float) for array in arrays ]
   shape = [1] * max( array.ndim for array in arrays )
   axis = normdim( len(shape)+1, axis )
   for array in arrays:
@@ -349,7 +380,7 @@ def stack( arrays, axis=0 ):
 def bringforward( arg, axis ):
   'bring axis forward'
 
-  arg = numpy.asarray(arg)
+  arg = numpy.asanyarray(arg)
   axis = normdim(arg.ndim,axis)
   if axis == 0:
     return arg

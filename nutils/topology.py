@@ -265,8 +265,9 @@ class Topology( object ):
     idata.compile()
     for elem in parallel.pariter( log.iterate('elem',self) ):
       for ifunc, lock, index, data in idata( elem, ischeme ):
+        retval = retvals[ifunc]
         with lock:
-          retvals[ifunc][index] += data
+          retval[index] += data
 
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
     if single_arg:
@@ -729,7 +730,7 @@ class StructuredTopology( Topology ):
         hasnone = True
       else:
         S = item[2:]
-        dofs = vertex_structure[S].ravel()
+        dofs = numeric.ImmutableArray( vertex_structure[S].ravel() )
         mask = dofs >= 0
         if mask.all():
           dofmap[ elem ] = dofs
@@ -744,7 +745,7 @@ class StructuredTopology( Topology ):
         touched[ dofs ] = True
       renumber = touched.cumsum()
       dofcount = int(renumber[-1])
-      dofmap = dict( ( elem, renumber[dofs]-1 ) for elem, dofs in dofmap.iteritems() )
+      dofmap = dict( ( elem, numeric.ImmutableArray(renumber[dofs]-1) ) for elem, dofs in dofmap.iteritems() )
 
     return function.function( funcmap, dofmap, dofcount, self.ndims )
 

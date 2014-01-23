@@ -50,29 +50,6 @@ class _SuppressedOutput( object ):
 
 suppressed_output = _SuppressedOutput()
 
-class ImmutableArray( numpy.ndarray ):
-  'immutable array'
-
-  flags = None
-
-  def __new__( self, arr ):
-    'constructor'
-
-    arr = numpy.asarray( arr )
-    arr.flags.writeable = False
-    arr = arr.view( ImmutableArray )
-    return arr
-
-  def __eq__( self, other ):
-    'equals'
-
-    return self is other
-
-  def __hash__( self ):
-    'hash'
-
-    return hash( id(self) )
-
 class Product( object ):
   def __init__( self, iter1, iter2 ):
     self.iter1 = iter1
@@ -469,7 +446,7 @@ def run( *functions ):
   warnings.resetwarnings()
 
   t0 = time.time()
-  tb = False
+  exc_tb = False
   try:
     func( **kwargs )
   except KeyboardInterrupt:
@@ -477,8 +454,9 @@ def run( *functions ):
   except Terminate, exc:
     log.error( 'terminated:', exc )
   except:
-    tb = debug.exception()
-    log.stack( repr(sys.exc_value), tb )
+    exc_value = sys.exc_value
+    exc_tb = debug.exception()
+    log.stack( repr(exc_value), exc_tb )
 
   if hasattr( os, 'wait' ):
     try: # wait for child processes to die
@@ -500,14 +478,14 @@ def run( *functions ):
   if cacheinfo:
     log.warning( '\n  '.join( ['some caches were saturated:'] + cacheinfo ) )
 
-  if not tb:
+  if not exc_tb:
     sys.exit( 0 )
 
-  debug.write_html( htmlfile, sys.exc_value, tb )
+  debug.write_html( htmlfile, exc_value, exc_tb )
   htmlfile.write( '<span class="info">Cache usage:<ul>%s</ul></span>' % '\n'.join( '<li>%s</li>' % line for line in core.cache_info( brief=False ) ) )
   htmlfile.flush()
 
-  debug.Explorer( repr(sys.exc_value), tb, intro='''\
+  debug.Explorer( repr(exc_value), exc_tb, intro='''\
     Your program has died. The traceback exporer allows you to examine its
     post-mortem state to figure out why this happened. Type 'help' for an
     overview of commands to get going.''' ).cmdloop()

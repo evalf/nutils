@@ -248,8 +248,7 @@ class SparseMatrix( Matrix ):
     indptr[0] = 0
     for n, irow in enumerate( rows ):
       a, b = self.indptr[irow:irow+2]
-      where = a + numpy.searchsorted( self.indices[a:b], cols )
-      assert ( self.indices[where] == cols ).all()
+      where = a + numeric.findsorted( self.indices[a:b], cols )
       c = indptr[n]
       d = c + where.size
       I[c:d] = where
