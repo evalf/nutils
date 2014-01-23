@@ -1,7 +1,10 @@
+#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
+
 #include "Python.h"
 #include "numpy/arrayobject.h"
 #include "structmember.h"
 #include "float.h"
+
 
 #define ASSERT( cond ) if ( ! ( cond ) ) { printf( "assertion failed in %s (" __FILE__ ":%d), " #cond, __FUNCTION__, __LINE__ ); Py_Exit( 1 ); }
 
@@ -12,13 +15,13 @@ static PyObject *numeric_contract( PyObject *self, PyObject *args, PyObject *kwa
   // equivalent with pointwise multiplication followed by summation:
   // (A*B).sum(n) == contract(A,B,n).
 
-  PyObject *A = NULL, *B = NULL;
+  PyArrayObject *A = NULL, *B = NULL;
   int ncontract = -1;
   char *keywords[] = { "a", "b", "ncontract", NULL };
   int nd;
   DataStepper axes[NPY_MAXDIMS];
   int i, n;
-  PyObject *C;
+  PyArrayObject *C;
   double *ptrA, *ptrB, *ptrC;
   if ( ! PyArg_ParseTupleAndKeywords( args, kwargs, "OOi", keywords, &A, &B, &ncontract ) ) {
     return NULL;
@@ -50,12 +53,12 @@ static PyObject *numeric_contract( PyObject *self, PyObject *args, PyObject *kwa
     axes[i].stride0 = PyArray_STRIDE(A,i) / sizeof(double);
     axes[i].stride1 = PyArray_STRIDE(B,i) / sizeof(double);
   }
-  C = PyArray_EMPTY( nd-ncontract, PyArray_DIMS(A), NPY_DOUBLE, 0 );
+  C = (PyArrayObject *)PyArray_EMPTY( nd-ncontract, PyArray_DIMS(A), NPY_DOUBLE, 0 );
   if ( C == NULL ) {
     return NULL;
   }
   if ( PyArray_SIZE( C ) == 0 ) {
-    return C;
+    return (PyObject *)C;
   }
   ptrA = PyArray_DATA( A );
   ptrB = PyArray_DATA( B );
@@ -81,7 +84,7 @@ static PyObject *numeric_contract( PyObject *self, PyObject *args, PyObject *kwa
       i = nd;
     }
   }
-  return C;
+  return (PyObject *)C;
 }
 
 static PyMethodDef module_methods[] = {
