@@ -1,3 +1,4 @@
+from __future__ import print_function
 from . import prop, debug
 import sys, time, os, warnings, numpy
 
@@ -33,6 +34,12 @@ def stack( msg, frames=None ):
   _findlogger( frames[-1].frame ).write( ('error',[summary ]) )
 
 
+class BlackHoleStream( object ):
+  @staticmethod
+  def write( *args ):
+    pass
+
+
 class SimpleLog( object ):
   'simple log'
 
@@ -41,18 +48,58 @@ class SimpleLog( object ):
 
     sys._getframe(depth).f_locals[_KEY] = self
 
-  def write( self, *chunks ):
-    'write'
+  @staticmethod
+  def getstream( *chunks ):
+    
+    _levels = 'path', 'error', 'warning', 'user', 'info', 'debug'
+    level = _levels.index( chunks[-1] )
+    if level >= getattr( prop, 'verbose', 9 ):
+      return BlackHoleStream
+    sys.stdout.write( ' > '.join( chunks[:-1] + ('',) ) )
+    return sys.stdout
 
-    mtype, args = chunks[-1]
-    s = (_makestr(args),) if args else ()
-    print ' > '.join( chunks[:-1] + s )
+
+class HtmlStream( object ):
+  'html line stream'
+
+  def __init__( self, chunks, html ):
+    'constructor'
+
+    self.out = SimpleLog.getstream( *chunks )
+    self.mtype = chunks[-1]
+    self.head = ' &middot; '.join( chunks[:-1] + ('',) )
+    self.body = ''
+    self.html = html
+
+  def write( self, text ):
+    'write to out and buffer for html'
+
+    self.out.write( text )
+    self.body += text.replace( '<', '&lt;' ).replace( '>', '&gt;' )
+
+  def __del__( self ):
+    'postprocess buffer and write to html'
+
+    body = self.body
+    if self.mtype == 'path':
+      whitelist = ['.jpg','.png','.svg','.txt'] + getattr( prop, 'plot_extensions', [] )
+      hrefs = []
+      for filename in body.split( ', ' ):
+        root, ext = os.path.splitext( filename )
+        href = '<a href="%s">%s</a>' % (filename,filename) if ext not in whitelist \
+          else '<a href="%s" name="%s" class="plot">%s</a>' % (filename,filename,filename)
+        hrefs.append( href )
+      body = ', '.join( hrefs )
+    line = '<span class="line">%s<span class="%s">%s</span></span>' % ( self.head, self.mtype, body )
+
+    self.html.write( line )
+    self.html.flush()
 
 
 class HtmlLog( object ):
   'html log'
 
-  def __init__( self, maxlevel, fileobj, title, depth=1 ):
+  def __init__( self, fileobj, title, depth=1 ):
     'constructor'
 
     self.html = fileobj
@@ -65,49 +112,18 @@ class HtmlLog( object ):
     self.html.write( '</head><body><pre>\n' )
     self.html.write( '<span id="navbar">goto: <a class="nav_latest" href="../../../../log.html">latest %s</a> | <a class="nav_latestall" href="../../../../../log.html">latest overall</a> | <a class="nav_index" href="../../../../../">index</a></span>\n\n' % title.split()[0] )
     self.html.flush()
-    self.maxlevel = maxlevel
 
     sys._getframe(depth).f_locals[_KEY] = self
+
+  def getstream( self, *chunks ):
+    return HtmlStream( chunks, self.html )
 
   def __del__( self ):
     'destructor'
 
     self.html.write( '</pre></body></html>\n' )
-    self.html.flush()
-
-  def write( self, *chunks ):
-    'write'
-
-    mtype, args = chunks[-1]
-    levels = 'error', 'warning', 'user', 'path', 'info', 'progress', 'debug'
-    try:
-      ilevel = levels.index(mtype)
-    except:
-      ilevel = -1
-    if ilevel > self.maxlevel:
-      return
-
-    s = (_makestr(args),) if args else ()
-    print ' > '.join( chunks[:-1] + s )
-
-    if args:
-      if mtype == 'path':
-        whitelist = ['.jpg','.png','.svg','.txt'] + getattr( prop, 'plot_extensions', [] )
-        args = [ '<a href="%s" name="%s" %s>%s</a>' % (args[0],args[0],'class="plot"' if any(args[0].endswith(ext) for ext in whitelist) else '',args[0]) ] \
-             + [ '<a href="%s">%s</a>' % (arg,arg) for arg in args[1:] ]
-        last = _makestr( args )
-      else:
-        last = _makestr( args ).replace( '<', '&lt;' ).replace( '>', '&gt;' )
-      if '\n' in last:
-        parts = last.split( '\n' )
-        last = '\n'.join( [ '<b>%s</b>' % parts[0] ] + parts[1:] )
-      s = '<span class="%s">%s</span>' % (mtype,last),
-    else:
-      s = ()
-
-    self.html.write( '<span class="line">%s</span>' % ' &middot; '.join( chunks[:-1] + s ) + '\n' )
-    self.html.flush()
-
+    self.html.close()
+    
 
 class ContextLog( object ):
   'base class'
@@ -126,18 +142,14 @@ class ContextLog( object ):
 
     frame.f_locals[_KEY] = self
 
+  def getstream( self, *chunks ):
+    return self.parent.getstream( self.text, *chunks ) if self.__enabled \
+      else self.parent.getstream( *chunks )
+
   def disable( self ):
     'disable this logger'
 
     self.__enabled = False
-
-  def write( self, *text ):
-    'write'
-
-    if self.__enabled:
-      self.parent.write( self.text, *text )
-    else:
-      self.parent.write( *text )
 
   def __repr__( self ):
     return '%s(%s)' % ( self.__class__.__name__, self )
@@ -207,12 +219,18 @@ context = StaticContextLog
 progress = iterate = ProgressContextLog
 setup_html = HtmlLog
 
-debug   = lambda *args: _findlogger().write( ( 'debug',   args ) )
-info    = lambda *args: _findlogger().write( ( 'info',    args ) )
-user    = lambda *args: _findlogger().write( ( 'user',    args ) )
-error   = lambda *args: _findlogger().write( ( 'error',   args ) )
-warning = lambda *args: _findlogger().write( ( 'warning', args ) )
-path    = lambda *args: _findlogger().write( ( 'path',    args ) )
 
+def getstream( level ):
+  return _findlogger().getstream( level )
+
+def _mklog( level ):
+  return lambda *args: print( *args, file=getstream(level) )
+
+path    = _mklog( 'path'    )
+error   = _mklog( 'error'   )
+warning = _mklog( 'warning' )
+user    = _mklog( 'user'    )
+info    = _mklog( 'info'    )
+debug   = _mklog( 'debug'   )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
