@@ -1,25 +1,21 @@
 from __future__ import print_function
 from . import prop, debug
-import sys, time, os, warnings, numpy
+import sys, time, os, warnings, numpy, re
 
 _KEY = '__logger__'
-_makestr = lambda args: ' '.join( str(arg) for arg in args )
-
-
-def _backtrace( frame ):
-  while frame:
-    yield frame
-    frame = frame.f_back
 
 
 def _findlogger( frame=None ):
   'find logger in call stack'
 
-  for frame in _backtrace( frame or sys._getframe(1) ):
+  if frame is None:
+    frame = sys._getframe(1)
+  while frame:
     logger = frame.f_locals.get(_KEY)
     if logger:
       return logger
-  return SimpleLog()
+    frame = frame.f_back
+  return SimpleLog
 
 
 warnings.showwarning = lambda message, category, filename, lineno, *args: warning( '%s: %s\n  In %s:%d' % ( category.__name__, message, filename, lineno ) )
@@ -30,44 +26,34 @@ def stack( msg, frames=None ):
 
   if frames is None:
     frames = debug.callstack( depth=2 )
-  summary = '\n'.join( [ msg ] + [ str(f) for f in reversed(frames) ] )
-  _findlogger( frames[-1].frame ).write( ('error',[summary ]) )
+  stream = getstream( attr='error', frame=frames[-1].frame )
+  print( msg, *reversed(frames), sep='\n', file=stream )
 
 
-class BlackHoleStream( object ):
-  @staticmethod
-  def write( *args ):
-    pass
+def SimpleLog( chunks=('',), attr=None ):
+  'just write to stdout'
+  
+  sys.stdout.write( ' > '.join( chunks ) )
+  return sys.stdout
 
 
-class SimpleLog( object ):
-  'simple log'
-
-  def __init__( self, depth=1 ):
-    'constructor'
-
-    sys._getframe(depth).f_locals[_KEY] = self
-
-  @staticmethod
-  def getstream( *chunks ):
-    
-    _levels = 'path', 'error', 'warning', 'user', 'info', 'debug'
-    level = _levels.index( chunks[-1] )
-    if level >= getattr( prop, 'verbose', 9 ):
-      return BlackHoleStream
-    sys.stdout.write( ' > '.join( chunks[:-1] + ('',) ) )
-    return sys.stdout
+def _path2href( match ):
+  whitelist = ['.jpg','.png','.svg','.txt'] + getattr( prop, 'plot_extensions', [] )
+  filename = match.group(0)
+  ext = match.group(1)
+  return '<a href="%s">%s</a>' % (filename,filename) if ext not in whitelist \
+    else '<a href="%s" name="%s" class="plot">%s</a>' % (filename,filename,filename)
 
 
 class HtmlStream( object ):
   'html line stream'
 
-  def __init__( self, chunks, html ):
+  def __init__( self, chunks, attr, html ):
     'constructor'
 
-    self.out = SimpleLog.getstream( *chunks )
-    self.mtype = chunks[-1]
-    self.head = ' &middot; '.join( chunks[:-1] + ('',) )
+    self.out = SimpleLog( chunks, attr=attr )
+    self.attr = attr
+    self.head = ' &middot; '.join( chunks )
     self.body = ''
     self.html = html
 
@@ -81,16 +67,11 @@ class HtmlStream( object ):
     'postprocess buffer and write to html'
 
     body = self.body
-    if self.mtype == 'path':
-      whitelist = ['.jpg','.png','.svg','.txt'] + getattr( prop, 'plot_extensions', [] )
-      hrefs = []
-      for filename in body.split( ', ' ):
-        root, ext = os.path.splitext( filename )
-        href = '<a href="%s">%s</a>' % (filename,filename) if ext not in whitelist \
-          else '<a href="%s" name="%s" class="plot">%s</a>' % (filename,filename,filename)
-        hrefs.append( href )
-      body = ', '.join( hrefs )
-    line = '<span class="line">%s<span class="%s">%s</span></span>' % ( self.head, self.mtype, body )
+    if self.attr == 'path':
+      body = re.sub( r'\b\w+([.]\w+)\b', _path2href, body )
+    if self.attr:
+      body = '<span class="%s">%s</span>' % ( self.attr, body )
+    line = '<span class="line">%s</span>' % ( self.head + body )
 
     self.html.write( line )
     self.html.flush()
@@ -115,8 +96,8 @@ class HtmlLog( object ):
 
     sys._getframe(depth).f_locals[_KEY] = self
 
-  def getstream( self, *chunks ):
-    return HtmlStream( chunks, self.html )
+  def __call__( self, chunks=('',), attr=None ):
+    return HtmlStream( chunks, attr, self.html )
 
   def __del__( self ):
     'destructor'
@@ -134,7 +115,7 @@ class ContextLog( object ):
     frame = sys._getframe(depth)
 
     parent = _findlogger( frame )
-    if isinstance( parent, ContextLog ) and not parent.__enabled:
+    while isinstance( parent, ContextLog ) and not parent.__enabled:
       parent = parent.parent
 
     self.parent = parent
@@ -142,9 +123,10 @@ class ContextLog( object ):
 
     frame.f_locals[_KEY] = self
 
-  def getstream( self, *chunks ):
-    return self.parent.getstream( self.text, *chunks ) if self.__enabled \
-      else self.parent.getstream( *chunks )
+  def __call__( self, chunks=('',), attr=None ):
+    if self.__enabled:
+      chunks = (self.text,) + chunks
+    return self.parent( chunks, attr=attr )
 
   def disable( self ):
     'disable this logger'
@@ -199,7 +181,7 @@ class ProgressContextLog( ContextLog ):
 
     self.current = current
     if time.time() > self.tnext:
-      self.write( ('progress',None) )
+      print( file=self(()) )
 
   @property
   def text( self ):
@@ -220,11 +202,12 @@ progress = iterate = ProgressContextLog
 setup_html = HtmlLog
 
 
-def getstream( level ):
-  return _findlogger().getstream( level )
+def getstream( attr=None, frame=None ):
+  logger = _findlogger(frame)
+  return logger( attr=attr )
 
-def _mklog( level ):
-  return lambda *args: print( *args, file=getstream(level) )
+def _mklog( attr, frame=None ):
+  return lambda *args: print( *args, file=getstream(attr,frame) )
 
 path    = _mklog( 'path'    )
 error   = _mklog( 'error'   )
