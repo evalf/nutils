@@ -330,6 +330,7 @@ def run( *functions ):
     'symlink': False,
     'recache': False,
     'dot': False,
+    'profile': False,
   }
   try:
     execfile( os.path.expanduser( '~/.nutilsrc' ), {}, properties )
@@ -348,7 +349,8 @@ def run( *functions ):
   --imagetype=%(imagetype)-11s Set image type
   --symlink=%(symlink)-13s Create symlink to latest results
   --recache=%(recache)-13s Overwrite existing cache
-  --dot=%(dot)-17s Set graphviz executable''' % properties
+  --dot=%(dot)-17s Set graphviz executable
+  --profile=%(profile)-13s Show profile summary at exit''' % properties
     for i, func in enumerate( functions ):
       print
       print 'Arguments for %s%s' % ( func.func_name, '' if i else ' (default)' )
@@ -420,7 +422,7 @@ def run( *functions ):
       open( outdir + filename, 'w' ).write( open( logpath + filename, 'r' ).read() )
 
   htmlfile = open( dumpdir+'log.html', 'w' )
-  log.setup_html( maxlevel=prop.verbose, fileobj=htmlfile, title=scriptname + time.strftime( ' %Y/%m/%d %H:%M:%S', localtime ) )
+  log.setup_html( fileobj=htmlfile, title=scriptname + time.strftime( ' %Y/%m/%d %H:%M:%S', localtime ) )
 
   prop.dumpdir = dumpdir
 
@@ -447,6 +449,12 @@ def run( *functions ):
 
   t0 = time.time()
   exc_tb = False
+
+  if prop.profile:
+    import cProfile
+    prof = cProfile.Profile()
+    prof.enable()
+
   try:
     func( **kwargs )
   except KeyboardInterrupt:
@@ -457,6 +465,9 @@ def run( *functions ):
     exc_value = sys.exc_value
     exc_tb = debug.exception()
     log.stack( repr(exc_value), exc_tb )
+
+  if prop.profile:
+    prof.disable()
 
   if hasattr( os, 'wait' ):
     try: # wait for child processes to die
@@ -477,6 +488,12 @@ def run( *functions ):
   cacheinfo = core.cache_info( brief=True )
   if cacheinfo:
     log.warning( '\n  '.join( ['some caches were saturated:'] + cacheinfo ) )
+
+  if prop.profile:
+    import pstats
+    stream = log.getstream( 'warning' )
+    stream.write( 'profile results:\n' )
+    pstats.Stats( prof, stream=stream ).strip_dirs().sort_stats( 'time' ).print_stats()
 
   if not exc_tb:
     sys.exit( 0 )

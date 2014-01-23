@@ -1,24 +1,21 @@
+from __future__ import print_function
 from . import prop
-import sys, time, os, warnings, numpy
+import sys, time, os, warnings, numpy, re
 
 _KEY = '__logger__'
-_makestr = lambda args: ' '.join( str(arg) for arg in args )
-
-
-def _backtrace( frame ):
-  while frame:
-    yield frame
-    frame = frame.f_back
 
 
 def _findlogger( frame=None ):
   'find logger in call stack'
 
-  for frame in _backtrace( frame or sys._getframe(1) ):
+  if frame is None:
+    frame = sys._getframe(1)
+  while frame:
     logger = frame.f_locals.get(_KEY)
     if logger:
       return logger
-  return SimpleLog()
+    frame = frame.f_back
+  return SimpleLog
 
 
 warnings.showwarning = lambda message, category, filename, lineno, *args: warning( '%s: %s\n  In %s:%d' % ( category.__name__, message, filename, lineno ) )
@@ -30,30 +27,61 @@ def stack( msg, frames=None ):
   if frames is None:
     from . import debug
     frames = debug.callstack( depth=2 )
-  summary = '\n'.join( [ msg ] + [ str(f) for f in reversed(frames) ] )
-  _findlogger( frames[-1].frame ).write( ('error',[summary ]) )
+  stream = getstream( attr='error', frame=frames[-1].frame )
+  print( msg, *reversed(frames), sep='\n', file=stream )
 
 
-class SimpleLog( object ):
-  'simple log'
+def SimpleLog( chunks=('',), attr=None ):
+  'just write to stdout'
+  
+  sys.stdout.write( ' > '.join( chunks ) )
+  return sys.stdout
 
-  def __init__( self, depth=1 ):
+
+def _path2href( match ):
+  whitelist = ['.jpg','.png','.svg','.txt'] + getattr( prop, 'plot_extensions', [] )
+  filename = match.group(0)
+  ext = match.group(1)
+  return '<a href="%s">%s</a>' % (filename,filename) if ext not in whitelist \
+    else '<a href="%s" name="%s" class="plot">%s</a>' % (filename,filename,filename)
+
+
+class HtmlStream( object ):
+  'html line stream'
+
+  def __init__( self, chunks, attr, html ):
     'constructor'
 
-    sys._getframe(depth).f_locals[_KEY] = self
+    self.out = SimpleLog( chunks, attr=attr )
+    self.attr = attr
+    self.head = ' &middot; '.join( chunks )
+    self.body = ''
+    self.html = html
 
-  def write( self, *chunks ):
-    'write'
+  def write( self, text ):
+    'write to out and buffer for html'
 
-    mtype, args = chunks[-1]
-    s = (_makestr(args),) if args else ()
-    print ' > '.join( chunks[:-1] + s )
+    self.out.write( text )
+    self.body += text.replace( '<', '&lt;' ).replace( '>', '&gt;' )
+
+  def __del__( self ):
+    'postprocess buffer and write to html'
+
+    body = self.body
+    if self.attr == 'path':
+      body = re.sub( r'\b\w+([.]\w+)\b', _path2href, body )
+    if self.attr:
+      body = '<span class="%s">%s</span>' % ( self.attr, body )
+    line = '<span class="line">%s</span>' % ( self.head + body )
+
+    self.html.write( line )
+    self.html.flush()
 
 
 class HtmlLog( object ):
   'html log'
 
-  def __init__( self, maxlevel, fileobj, title, depth=1 ):
+  def __init__( self, fileobj, title, depth=1 ):
     'constructor'
 
     self.html = fileobj
@@ -66,49 +94,18 @@ class HtmlLog( object ):
     self.html.write( '</head><body><pre>\n' )
     self.html.write( '<span id="navbar">goto: <a class="nav_latest" href="../../../../log.html">latest %s</a> | <a class="nav_latestall" href="../../../../../log.html">latest overall</a> | <a class="nav_index" href="../../../../../">index</a></span>\n\n' % title.split()[0] )
     self.html.flush()
-    self.maxlevel = maxlevel
 
     sys._getframe(depth).f_locals[_KEY] = self
+
+  def __call__( self, chunks=('',), attr=None ):
+    return HtmlStream( chunks, attr, self.html )
 
   def __del__( self ):
     'destructor'
 
     self.html.write( '</pre></body></html>\n' )
-    self.html.flush()
-
-  def write( self, *chunks ):
-    'write'
-
-    mtype, args = chunks[-1]
-    levels = 'error', 'warning', 'user', 'path', 'info', 'progress', 'debug'
-    try:
-      ilevel = levels.index(mtype)
-    except:
-      ilevel = -1
-    if ilevel > self.maxlevel:
-      return
-
-    s = (_makestr(args),) if args else ()
-    print ' > '.join( chunks[:-1] + s )
-
-    if args:
-      if mtype == 'path':
-        whitelist = ['.jpg','.png','.svg','.txt'] + getattr( prop, 'plot_extensions', [] )
-        args = [ '<a href="%s" name="%s" %s>%s</a>' % (args[0],args[0],'class="plot"' if any(args[0].endswith(ext) for ext in whitelist) else '',args[0]) ] \
-             + [ '<a href="%s">%s</a>' % (arg,arg) for arg in args[1:] ]
-        last = _makestr( args )
-      else:
-        last = _makestr( args ).replace( '<', '&lt;' ).replace( '>', '&gt;' )
-      if '\n' in last:
-        parts = last.split( '\n' )
-        last = '\n'.join( [ '<b>%s</b>' % parts[0] ] + parts[1:] )
-      s = '<span class="%s">%s</span>' % (mtype,last),
-    else:
-      s = ()
-
-    self.html.write( '<span class="line">%s</span>' % ' &middot; '.join( chunks[:-1] + s ) + '\n' )
-    self.html.flush()
-
+    self.html.close()
+    
 
 class ContextLog( object ):
   'base class'
@@ -119,7 +116,7 @@ class ContextLog( object ):
     frame = sys._getframe(depth)
 
     parent = _findlogger( frame )
-    if isinstance( parent, ContextLog ) and not parent.__enabled:
+    while isinstance( parent, ContextLog ) and not parent.__enabled:
       parent = parent.parent
 
     self.parent = parent
@@ -127,18 +124,15 @@ class ContextLog( object ):
 
     frame.f_locals[_KEY] = self
 
+  def __call__( self, chunks=('',), attr=None ):
+    if self.__enabled:
+      chunks = (self.text,) + chunks
+    return self.parent( chunks, attr=attr )
+
   def disable( self ):
     'disable this logger'
 
     self.__enabled = False
-
-  def write( self, *text ):
-    'write'
-
-    if self.__enabled:
-      self.parent.write( self.text, *text )
-    else:
-      self.parent.write( *text )
 
   def __repr__( self ):
     return '%s(%s)' % ( self.__class__.__name__, self )
@@ -188,7 +182,7 @@ class ProgressContextLog( ContextLog ):
 
     self.current = current
     if time.time() > self.tnext:
-      self.write( ('progress',None) )
+      print( file=self(()) )
 
   @property
   def text( self ):
@@ -208,12 +202,19 @@ context = StaticContextLog
 progress = iterate = ProgressContextLog
 setup_html = HtmlLog
 
-debug   = lambda *args: _findlogger().write( ( 'debug',   args ) )
-info    = lambda *args: _findlogger().write( ( 'info',    args ) )
-user    = lambda *args: _findlogger().write( ( 'user',    args ) )
-error   = lambda *args: _findlogger().write( ( 'error',   args ) )
-warning = lambda *args: _findlogger().write( ( 'warning', args ) )
-path    = lambda *args: _findlogger().write( ( 'path',    args ) )
 
+def getstream( attr=None, frame=None ):
+  logger = _findlogger(frame)
+  return logger( attr=attr )
+
+def _mklog( attr, frame=None ):
+  return lambda *args: print( *args, file=getstream(attr,frame) )
+
+path    = _mklog( 'path'    )
+error   = _mklog( 'error'   )
+warning = _mklog( 'warning' )
+user    = _mklog( 'user'    )
+info    = _mklog( 'info'    )
+debug   = _mklog( 'debug'   )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
