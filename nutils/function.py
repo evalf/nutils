@@ -1891,7 +1891,6 @@ class Eig( Evaluable ):
     'contructor'
 
     if symmetric:
-      print "Using symmetric eig"
       Evaluable.__init__( self, args=[func], evalf=numeric.eigh )
     else:
       Evaluable.__init__( self, args=[func], evalf=numeric.eig )
@@ -1905,8 +1904,8 @@ class EigenValue( ArrayFunc ):
   'EigenVector'
 
   @staticmethod
-  def __eigval__( A ):
-    return A[0]
+  def __eigval__( (val, vec) ):
+    return val
 
   def __init__( self, eig ):
     'contructor'
@@ -1919,8 +1918,8 @@ class EigenVector( ArrayFunc ):
   'EigenVector'
 
   @staticmethod
-  def __eigvec__( A ):
-    return A[0]
+  def __eigvec__( (val, vec) ):
+    return vec
 
   def __init__( self, eig ):
     'contructor'
@@ -3087,8 +3086,7 @@ def eig( arg, axes=(-2,-1), symmetric=False ):
   assert ax2 > ax1 # strict
 
   # Check if the matrix is square
-  n = arg.shape[ax1]
-  assert n == arg.shape[ax2]
+  assert arg.shape[ax1] == arg.shape[ax2]
 
   # Move the axis with matrices
   trans = range(ax1) + [-2] + range(ax1,ax2-1) + [-1] + range(ax2-1,arg.ndim-2)
