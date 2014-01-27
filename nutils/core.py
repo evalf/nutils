@@ -1,7 +1,45 @@
-import inspect, weakref
+import inspect, weakref, os, numpy, warnings, collections
 
-def _cache( func, cache, debug=False ):
+
+ALLCACHE = []
+
+
+class TruncDict( dict ):
+
+  def __init__( self, maxlen ):
+    self.__touched = collections.deque( maxlen=maxlen )
+      # items in order that they were touched, most recent first
+
+  @property
+  def saturated( self ):
+    return len( self.__touched ) == self.__touched.maxlen
+
+  def __getitem__( self, item ):
+    value = dict.__getitem__( self, item )
+    # success, so we know touched has at least 1 item
+    if self.__touched[0] != item:
+      self.__touched.remove( item )
+      self.__touched.appendleft( item )
+    return value
+
+  def __setitem__( self, item, value ):
+    dict.__setitem__( self, item, value )
+    if self.saturated:
+      warnings.warn( 'truncdict reached maxlen, dropping oldest item.', stacklevel=3 )
+      del self[ self.__touched[-1] ]
+    self.__touched.appendleft( item )
+    assert len(self.__touched) == len(self)
+
+
+def _cache( func, cache ):
   argnames, varargsname, keywordsname, defaults = inspect.getargspec( func )
+  allargnames = list(argnames)
+  if varargsname:
+    allargnames.append( '*' + varargsname )
+  if keywordsname:
+    allargnames.append( '**' + keywordsname )
+  fname = 'In %s:%d %s(%s)' % ( os.path.relpath(func.func_code.co_filename), func.func_code.co_firstlineno, func.__name__, ','.join(allargnames) )
+  ALLCACHE.append(( fname, cache ))
   def wrapped( *args, **kwargs ):
     if kwargs:
       for iarg in range( len(args), len(argnames) ):
@@ -15,25 +53,43 @@ def _cache( func, cache, debug=False ):
       args += defaults[ len(args)-len(argnames): ]
     try:
       value = cache[ args ]
-      if debug: print '_cache( %s ): value in cache' % func.__name__
     except TypeError:
-      if debug: print '_cache( %s ): unhashable; skipping cache' % func.__name__
+      warnings.warn( 'unhashable item; skipping cache\n  %s' % fname, stacklevel=2 )
       value = func( *args )
     except KeyError:
-      if debug: print '_cache( %s ): computing new value' % func.__name__
       value = func( *args )
       cache[ args ] = value
     return value
   return wrapped
 
-def cache( func ):
-  return _cache( func, {} )
 
-def debug_cache( func ):
-  return _cache( func, {}, debug=True )
+def cache_info( brief=True ):
+  items = []
+  for fname, d in ALLCACHE:
+    if not d or brief and ( not isinstance(d,TruncDict) or not d.saturated ):
+      continue
+    types = {}
+    for v in d.values():
+      types.setdefault( type(v), [] ).append( isinstance(v,numpy.ndarray) and v.nbytes )
+    count = ', '.join( '%dx %s%s' % ( len(N), T.__name__, '' if N[0] is False else ' (%db)' % sum(N) ) for T, N in types.items() )
+    cachename = 'weakly cached' if isinstance( d, weakref.WeakValueDictionary ) else 'cached'
+    items.append(( len(d), '%s %s %s' % ( fname, cachename, count ) ))
+  items.sort( reverse=True )
+  return [ s for i, s in items ]
+
+
+def cache_flush():
+  for fname, d in ALLCACHE:
+    d.clear()
+
+
+def cache( func ):
+  return _cache( func, TruncDict(1000) )
+
 
 def weakcache( func ):
   return _cache( func, weakref.WeakValueDictionary() )
+
 
 def savelast( func ):
   saved = [ None, None ]
@@ -43,84 +99,5 @@ def savelast( func ):
     return saved[1]
   return wrapped
 
-
-#def weakcacheprop( func ):
-#  'weakly cached property'
-#
-#  key = func.func_name
-#  def wrapped( self ):
-#    value = self.__dict__.get( key )
-#    value = value and value()
-#    if value is None:
-#      value = func( self )
-#      self.__dict__[ key ] = weakref.ref(value)
-#    return value
-#
-#  return property( wrapped )
-#
-#def cacheprop( func ):
-#  'cached property'
-#
-#  key = func.func_name
-#  def wrapped( self ):
-#    value = self.__dict__.get( key )
-#    if value is None:
-#      value = func( self )
-#      self.__dict__[ key ] = value
-#    return value
-#
-#  return property( wrapped )
-#
-#def cachefunc( func ):
-#  'cached property'
-#
-#  def wrapped( self, *args, **kwargs ):
-#    try:
-#      hash( args + tuple(kwargs.values()) )
-#    except TypeError: # unhashable arguments; skip cache
-#      return func( self, *args, **kwargs )
-#    funcache = self.__dict__.setdefault( '_funcache', {} )
-#    argcount = func.func_code.co_argcount - (len(args)+1) # remaining after args
-#    if not argcount:
-#      assert not kwargs
-#    else:
-#      unspecified = object()
-#      extra = [unspecified] * argcount
-#      for kwarg, val in kwargs.items():
-#        try:
-#          i = func.func_code.co_varnames.index(kwarg) - (len(args)+1)
-#        except ValueError:
-#          raise TypeError, '%s() got an unexpected keyword argument %r' % ( func.func_name, kwarg )
-#        assert i >= 0 and extra[i] is unspecified, 'repeated argument %d in %s' % ( kwarg, func.func_name )
-#        extra[i] = val
-#      defaults = func.func_defaults or ()
-#      assert len(defaults) <= argcount
-#      for i in range( argcount ):
-#        if argcount-i > len(defaults):
-#          assert extra[i] is not unspecified
-#        elif extra[i] is unspecified:
-#          extra[i] = defaults[len(defaults)-(argcount-i)]
-#      args += tuple(extra)
-#    key = (func.func_name,) + args
-#    value = funcache.get( key )
-#    if value is None:
-#      value = func( self, *args )
-#      funcache[ key ] = value
-#    return value
-#
-#  return wrapped
-#
-#def classcache( fun ):
-#  'wrapper to cache return values'
-#
-#  cache = {}
-#  def wrapped_fun( cls, *args ):
-#    data = cache.get( args )
-#    if data is None:
-#      data = fun( cls, *args )
-#      cache[ args ] = data
-#    return data
-#  return wrapped_fun if fun.func_name == '__new__' \
-#    else classmethod( wrapped_fun )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
