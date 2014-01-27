@@ -792,8 +792,13 @@ class TrimmedElement( Element ):
     for tri in submesh.vertices:
 
       for j in range(2): #Flip two points in case of negative determinant
-        offset = points[ tri[0] ]
-        affine = numpy.array( [ points[ tri[ii+1] ] - offset for ii in range(self.ndims) ] ).T
+        if self.ndims == 3:
+          # TODO renumber tetrahedron vertices to match triangle, removes the following:
+          offset = points[ tri[0] ]
+          affine = numpy.array( [ points[ tri[ii+1] ] - offset for ii in range(self.ndims) ] ).T
+        else:
+          offset = points[ tri[-1] ]
+          affine = numpy.array( [ points[ tri[ii] ] - offset for ii in range(self.ndims) ] ).T
 
         transform = AffineTransformation( offset, affine )
 
