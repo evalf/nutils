@@ -1080,7 +1080,8 @@ class QuadElement( Element ):
     else:
       weights = None
     coords.flags.writeable = False
-    weights.flags.writeable = False
+    if weights is not None:
+      weights.flags.writeable = False
     return coords, weights
 
   def select_contained( self, points, eps=0 ):
