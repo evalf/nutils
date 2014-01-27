@@ -8,7 +8,7 @@
 
 #define ASSERT( cond ) if ( ! ( cond ) ) { printf( "assertion failed in %s (" __FILE__ ":%d), " #cond, __FUNCTION__, __LINE__ ); Py_Exit( 1 ); }
 #define SET_EXCEPTION( format, ... ) PyErr_Format( PyExc_TypeError, "in %s: " format, __FUNCTION__, ##__VA_ARGS__ )
-#define DBGPRINT( ... ) printf( "(debug) " __VA_ARGS__ )
+#define DBGPRINT( ... ) // printf( "(debug) " __VA_ARGS__ )
 
 typedef struct { int countdown, resetcounter, stride0, stride1; } DataStepper;
 
@@ -252,7 +252,10 @@ NPY_NO_EXPORT PyTypeObject SaneArray_Type = {
   0,                        // tp_getattro
   0,                        // tp_setattro
   0,                        // tp_as_buffer
-  Py_TPFLAGS_DEFAULT,       // tp_flags
+  Py_TPFLAGS_DEFAULT        // tp_flags
+| Py_TPFLAGS_CHECKTYPES
+| Py_TPFLAGS_HAVE_NEWBUFFER
+| Py_TPFLAGS_BASETYPE,      // tp_flags
   "Sane array",             // tp_doc
   0,                        // tp_traverse
   0,                        // tp_clear

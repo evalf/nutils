@@ -10,30 +10,146 @@ except:
   def _contract( A, B, axes ):
     assert A.shape == B.shape and axes > 0
     return ((A*B).reshape(A.shape[:-axes]+(-1,))).sum(-1)
+  class SaneArray( numpy.ndarray ):
+    __slots__ = ()
+    def __new__( cls, arr ):
+      return numpy.asarray( arr ).view( cls )
+    def __eq__( self, other ):
+      return self is other or ( isinstance( other, numpy.ndarray )
+        and self.shape == other.shape
+        and self.dtype == other.dtype
+        and ( self.__array_interface__['data'] == other.__array_interface__['data']
+              and self.strides == other.strides
+              or numpy.equal( self, other ).all() ) )
+    def __hash__( self ):
+      assert not self.flage.writeable
+      return hash( self.shape + tuple( self.flat[::self.size//4+1] ) ) # incompatible with c hash!
 
-class SaneArray( numpy.ndarray ):
-  __slots__ = ()
-  def __new__( cls, arr ):
-    return numpy.asarray( arr ).view( cls )
-  def __eq__( self, other ):
-    return self is other or ( isinstance( other, numpy.ndarray )
-      and self.shape == other.shape
-      and self.dtype == other.dtype
-      and ( self.__array_interface__['data'] == other.__array_interface__['data']
-            and self.strides == other.strides
-            or numpy.equal( self, other ).all() ) )
+def _wrap( f ):
+  return lambda *args, **kwargs: f( *args, **kwargs ).view( SaneArray )
 
-class ImmutableArray( SaneArray ):
-  __slots__ = ()
-  def __new__( cls, arr ):
-    if not isinstance( arr, cls ):
-      if not isinstance( arr, numpy.ndarray ) or arr.flags.writeable:
-        arr = numpy.array( arr )
-        arr.flags.writeable = False
-      arr = arr.view( cls )
-    return arr
-  def __hash__( self ):
-    return hash( self.shape + tuple( self.flat[::self.size//4+1] ) )
+array         = _wrap( numpy.array         )
+asarray       = _wrap( numpy.asarray       )
+zeros         = _wrap( numpy.zeros         )
+zeros_like    = _wrap( numpy.zeros_like    )
+ones          = _wrap( numpy.ones          )
+ones_like     = _wrap( numpy.ones_like     )
+empty         = _wrap( numpy.empty         )
+empty_like    = _wrap( numpy.empty_like    )
+eye           = _wrap( numpy.eye           )
+linspace      = _wrap( numpy.linspace      )
+hstack        = _wrap( numpy.hstack        )
+vstack        = _wrap( numpy.vstack        )
+concatenate   = _wrap( numpy.concatenate   )
+arange        = _wrap( numpy.arange        )
+reciprocal    = _wrap( numpy.reciprocal    )
+sqrt          = _wrap( numpy.sqrt          )
+diag          = _wrap( numpy.diag          )
+diagflat      = _wrap( numpy.diagflat      )
+diag          = _wrap( numpy.diag          )
+equal         = _wrap( numpy.equal         )
+not_equal     = _wrap( numpy.not_equal     )
+greater       = _wrap( numpy.greater       )
+greater_equal = _wrap( numpy.greater_equal )
+less          = _wrap( numpy.less          )
+less_equal    = _wrap( numpy.less_equal    )
+logical_and   = _wrap( numpy.logical_and   )
+logical_or    = _wrap( numpy.logical_or    )
+logical_not   = _wrap( numpy.logical_not   )
+logical_xor   = _wrap( numpy.logical_xor   )
+product       = _wrap( numpy.product       )
+prod          = _wrap( numpy.prod          )
+sign          = _wrap( numpy.sign          )
+sum           = _wrap( numpy.sum           )
+abs           = _wrap( numpy.abs           )
+diff          = _wrap( numpy.diff          )
+choose        = _wrap( numpy.choose        )
+max           = _wrap( numpy.max           )
+cumsum        = _wrap( numpy.cumsum        )
+interp        = _wrap( numpy.interp        )
+multiply      = _wrap( numpy.multiply      )
+negative      = _wrap( numpy.negative      )
+add           = _wrap( numpy.add           )
+power         = _wrap( numpy.power         )
+sign          = _wrap( numpy.sign          )
+maximum       = _wrap( numpy.maximum       )
+sin           = _wrap( numpy.sin           )
+cos           = _wrap( numpy.cos           )
+tan           = _wrap( numpy.tan           )
+arcsin        = _wrap( numpy.arcsin        )
+arccos        = _wrap( numpy.arccos        )
+arctan2       = _wrap( numpy.arctan2       )
+exp           = _wrap( numpy.exp           )
+log           = _wrap( numpy.log           )
+argmin        = _wrap( numpy.argmin        )
+argmax        = _wrap( numpy.argmax        )
+take          = _wrap( numpy.take          )
+intersect1d   = _wrap( numpy.intersect1d   )
+isnan         = _wrap( numpy.isnan         )
+roll          = _wrap( numpy.roll          )
+log2          = _wrap( numpy.log2          )
+log10         = _wrap( numpy.log10         )
+arctanh       = _wrap( numpy.arctanh       )
+tanh          = _wrap( numpy.tanh          )
+cosh          = _wrap( numpy.cosh          )
+sinh          = _wrap( numpy.sinh          )
+divide        = _wrap( numpy.divide        )
+subtract      = _wrap( numpy.subtract      )
+minimum       = _wrap( numpy.minimum       )
+repeat        = _wrap( numpy.repeat        )
+
+spacing = numpy.spacing
+nan = numpy.nan
+inf = numpy.inf
+pi = numpy.pi
+
+def unique( ar, *args, **kwargs ):
+  return numpy.unique( numpy.asarray( ar ), *args, **kwargs ).view( SaneArray )
+
+def eigh( *args, **kwargs ):
+  w, v = numpy.linalg.eigh( *args, **kwargs )
+  return w.view( SaneArray ), v.view( SaneArray )
+
+def inv( A ):
+  'linearized inverse'
+
+  A = asarray( A )
+  assert A.shape[-2] == A.shape[-1]
+  if A.shape[-1] == 1:
+    return reciprocal( A )
+  if A.ndim == 2:
+    return numpy.linalg.inv( A ).view( SaneArray )
+  if A.shape[-1] == 2:
+    det = A[...,0,0] * A[...,1,1] - A[...,0,1] * A[...,1,0]
+    Ainv = empty( A.shape )
+    numpy.divide( A[...,1,1],  det, Ainv[...,0,0] )
+    numpy.divide( A[...,0,0],  det, Ainv[...,1,1] )
+    numpy.divide( A[...,1,0], -det, Ainv[...,1,0] )
+    numpy.divide( A[...,0,1], -det, Ainv[...,0,1] )
+    return Ainv
+  Ainv = empty( A.shape )
+  for I in numpy.lib.index_tricks.ndindex( A.shape[:-2] ):
+    Ainv[I] = numpy.linalg.inv( A[I] )
+  return Ainv
+
+def det( A ):
+  'determinant'
+
+  A = asarray( A )
+  assert A.shape[-2] == A.shape[-1]
+  if A.shape[-1] == 1:
+    return A[...,0,0]
+  if A.ndim == 2:
+    return numpy.linalg.det( A ).view( SaneArray )
+  if A.shape[-1] == 2:
+    return A[...,0,0] * A[...,1,1] - A[...,0,1] * A[...,1,0]
+  det = empty( A.shape[:-2] )
+  for I in numpy.lib.index_tricks.ndindex( A.shape[:-2] ):
+    det[I] = numpy.linalg.det( A[I] )
+  return det
+
+
+#####
 
 def findsorted( array, items ):
   indices = numpy.searchsorted( array, items )
@@ -55,8 +171,8 @@ def align( arr, trans, ndim ):
   to trans'''
 
   # as_strided will check validity of trans
-  arr = numpy.asanyarray( arr )
-  trans = numpy.asanyarray( trans, dtype=int )
+  arr = asarray( arr )
+  trans = asarray( trans, dtype=int )
   assert len(trans) == arr.ndim
   strides = numpy.zeros( ndim, dtype=int )
   strides[trans] = arr.strides
@@ -68,7 +184,7 @@ def align( arr, trans, ndim ):
 def get( arr, axis, item ):
   'take single item from array axis'
 
-  arr = numpy.asanyarray( arr )
+  arr = asarray( arr )
   axis = normdim( arr.ndim, axis )
   return arr[ (slice(None),) * axis + (item,) ]
 
@@ -101,8 +217,8 @@ def linspace2d( start, stop, steps ):
 def contract( A, B, axis=-1 ):
   'contract'
 
-  A = numpy.asanyarray( A, dtype=float )
-  B = numpy.asanyarray( B, dtype=float )
+  A = asarray( A, dtype=float )
+  B = asarray( B, dtype=float )
 
   n = B.ndim - A.ndim
   if n > 0:
@@ -153,8 +269,8 @@ def contract( A, B, axis=-1 ):
 def contract_fast( A, B, naxes ):
   'contract last n axes'
 
-  A = numpy.asanyarray( A, dtype=float )
-  B = numpy.asanyarray( B, dtype=float )
+  A = asarray( A, dtype=float )
+  B = asarray( B, dtype=float )
 
   n = B.ndim - A.ndim
   if n > 0:
@@ -197,8 +313,8 @@ def dot( A, B, axis=-1 ):
      remaining axes. Note: with default axis=-1 this leads to multiplication of
      vectors and matrices following linear algebra conventions.'''
 
-  A = numpy.asanyarray( A, dtype=float )
-  B = numpy.asanyarray( B, dtype=float )
+  A = asarray( A, dtype=float )
+  B = asarray( B, dtype=float )
 
   if axis < 0:
     axis += A.ndim
@@ -227,7 +343,7 @@ def dot( A, B, axis=-1 ):
 def fastrepeat( A, nrepeat, axis=-1 ):
   'repeat axis by 0stride'
 
-  A = numpy.asanyarray( A )
+  A = asarray( A )
   assert A.shape[axis] == 1
   shape = list( A.shape )
   shape[axis] = nrepeat
@@ -243,7 +359,7 @@ def fastmeshgrid( X, Y ):
 def meshgrid( *args ):
   'multi-dimensional meshgrid generalisation'
 
-  args = map( numpy.asanyarray, args )
+  args = map( asarray, args )
   shape = [ len(args) ] + [ arg.size for arg in args if arg.ndim ]
   grid = numpy.empty( shape )
   n = len(shape)-1
@@ -260,7 +376,7 @@ def appendaxes( A, shape ):
   'append axes by 0stride'
 
   shape = (shape,) if isinstance(shape,int) else tuple(shape)
-  A = numpy.asanyarray( A )
+  A = asarray( A )
   return numpy.lib.stride_tricks.as_strided( A, A.shape + shape, A.strides + (0,)*len(shape) )
 
 def takediag( A ):
@@ -277,39 +393,12 @@ def takediag( A ):
   return numpy.lib.stride_tricks.as_strided( A, shape, strides )
 
 def inverse( A ):
-  'linearized inverse'
-
-  assert isinstance( A, numpy.ndarray )
-  assert A.shape[-2] == A.shape[-1]
-  if A.shape[-1] == 1:
-    Ainv = numpy.reciprocal( A )
-  elif A.shape[-1] == 2:
-    det = A[...,0,0] * A[...,1,1] - A[...,0,1] * A[...,1,0]
-    Ainv = numpy.empty( A.shape )
-    numpy.divide( A[...,1,1],  det, Ainv[...,0,0] )
-    numpy.divide( A[...,0,0],  det, Ainv[...,1,1] )
-    numpy.divide( A[...,1,0], -det, Ainv[...,1,0] )
-    numpy.divide( A[...,0,1], -det, Ainv[...,0,1] )
-  else:
-    Ainv = numpy.empty( A.shape )
-    for I in numpy.lib.index_tricks.ndindex( A.shape[:-2] ):
-      Ainv[I] = numpy.linalg.inv( A[I] )
-  return Ainv
+  warnings.warn( 'numeric.inverse is deprecated, use numeric.inv instead' )
+  return inv( A )
 
 def determinant( A ):
-  'determinant'
-
-  assert isinstance( A, numpy.ndarray )
-  assert A.shape[-2] == A.shape[-1]
-  if A.shape[-1] == 1:
-    det = A[...,0,0]
-  elif A.shape[-1] == 2:
-    det = A[...,0,0] * A[...,1,1] - A[...,0,1] * A[...,1,0]
-  else:
-    det = numpy.empty( A.shape[:-2] )
-    for I in numpy.lib.index_tricks.ndindex( A.shape[:-2] ):
-      det[I] = numpy.linalg.det( A[I] )
-  return det
+  warnings.warn( 'numeric.determinant is deprecated, use numeric.det instead' )
+  return det( A )
 
 def reshape( A, *shape ):
   'more useful reshape'
@@ -340,7 +429,7 @@ def mean( A, weights=None, axis=-1 ):
 def norm2( A, axis=-1 ):
   'L2 norm over specified axis'
 
-  return numpy.asanyarray( numpy.sqrt( contract( A, A, axis ) ) )
+  return asarray( numpy.sqrt( contract( A, A, axis ) ) )
 
 def normalize( A, axis=-1 ):
   'devide by normal'
@@ -361,8 +450,8 @@ def cross( v1, v2, axis ):
 def stack( arrays, axis=0 ):
   'powerful array stacker with singleton expansion'
 
-  arrays = [ numpy.asanyarray(array,dtype=float) for array in arrays ]
-  shape = [1] * max( array.ndim for array in arrays )
+  arrays = [ asarray(array,dtype=float) for array in arrays ]
+  shape = [1] * max([ array.ndim for array in arrays ])
   axis = normdim( len(shape)+1, axis )
   for array in arrays:
     for i in range(-array.ndim,0):
@@ -378,7 +467,7 @@ def stack( arrays, axis=0 ):
 def bringforward( arg, axis ):
   'bring axis forward'
 
-  arg = numpy.asanyarray(arg)
+  arg = asarray(arg)
   axis = normdim(arg.ndim,axis)
   if axis == 0:
     return arg
