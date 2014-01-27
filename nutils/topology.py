@@ -1193,7 +1193,7 @@ class HierarchicalTopology( Topology ):
           newdofs.extend( dofmap[pelem] ) # add dofs of all underlying 'broader' shapes
         dofmap[elem] = numeric.array(newdofs) # add result to IEN mapping of new function object
   
-      ndofs += keep.sum() # update total number of dofs
+      ndofs += int( keep.sum() ) # update total number of dofs
       if not remaining:
         break
       topo = topo.refined # proceed to next level
