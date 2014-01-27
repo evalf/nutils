@@ -1,17 +1,15 @@
 import numpy, warnings
 
 try:
-  import _numeric
+  from _numeric import _contract, SaneArray
 except:
   warnings.warn( '''Failed to load _numeric module.
   Falling back on equivalent python implementation. THIS
   MAY SEVERELY IMPACT PERFORMANCE! Pleace compile the C
   extensions by running 'make' in the nutils directory.''', stacklevel=2 )
-  class _numeric:
-    @staticmethod
-    def contract( A, B, axes ):
-      assert A.shape == B.shape and axes > 0
-      return ((A*B).reshape(A.shape[:-axes]+(-1,))).sum(-1)
+  def _contract( A, B, axes ):
+    assert A.shape == B.shape and axes > 0
+    return ((A*B).reshape(A.shape[:-axes]+(-1,))).sum(-1)
 
 class SaneArray( numpy.ndarray ):
   __slots__ = ()
@@ -150,7 +148,7 @@ def contract( A, B, axis=-1 ):
   if not A.size:
     return numpy.zeros( A.shape[:-len(axis)] )
 
-  return _numeric.contract( A, B, len(axis) )
+  return _contract( A, B, len(axis) )
 
 def contract_fast( A, B, naxes ):
   'contract last n axes'
@@ -192,7 +190,7 @@ def contract_fast( A, B, naxes ):
   if not A.size:
     return numpy.zeros( shape[:-naxes] )
 
-  return _numeric.contract( A, B, naxes )
+  return _contract( A, B, naxes )
 
 def dot( A, B, axis=-1 ):
   '''Transform axis of A by contraction with first axis of B and inserting
@@ -224,7 +222,7 @@ def dot( A, B, axis=-1 ):
   if not A.size:
     return numpy.zeros( A.shape[:-1] )
 
-  return _numeric.contract( A, B, 1 )
+  return _contract( A, B, 1 )
 
 def fastrepeat( A, nrepeat, axis=-1 ):
   'repeat axis by 0stride'
