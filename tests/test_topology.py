@@ -3,7 +3,7 @@
 from nutils import *
 import numpy, copy
 
-grid = numpy.linspace( 0., 1., 4 )
+grid = numeric.linspace( 0., 1., 4 )
 
 class ConnectivityStructuredBase( object ):
   'Tests StructuredTopology.neighbor(), also handles periodicity.'
@@ -56,26 +56,26 @@ class TestStructure2D( object ):
   def verify_connectivity( self, structure, geom ):
     (e00,e01), (e10,e11) = structure
 
-    a0 = geom( e00, numpy.array([0,1]) )
-    a1 = geom( e01, numpy.array([0,0]) )
+    a0 = geom( e00, numeric.array([0,1]) )
+    a1 = geom( e01, numeric.array([0,0]) )
     numpy.testing.assert_array_almost_equal( a0, a1 )
 
-    b0 = geom( e10, numpy.array([1,1]) )
-    b1 = geom( e11, numpy.array([1,0]) )
+    b0 = geom( e10, numeric.array([1,1]) )
+    b1 = geom( e11, numeric.array([1,0]) )
     numpy.testing.assert_array_almost_equal( b0, b1 )
 
-    c0 = geom( e00, numpy.array([1,0]) )
-    c1 = geom( e10, numpy.array([0,0]) )
+    c0 = geom( e00, numeric.array([1,0]) )
+    c1 = geom( e10, numeric.array([0,0]) )
     numpy.testing.assert_array_almost_equal( c0, c1 )
 
-    d0 = geom( e01, numpy.array([1,1]) )
-    d1 = geom( e11, numpy.array([0,1]) )
+    d0 = geom( e01, numeric.array([1,1]) )
+    d1 = geom( e11, numeric.array([0,1]) )
     numpy.testing.assert_array_almost_equal( d0, d1 )
 
-    x00 = geom( e00, numpy.array([1,1]) )
-    x01 = geom( e01, numpy.array([1,0]) )
-    x10 = geom( e10, numpy.array([0,1]) )
-    x11 = geom( e11, numpy.array([0,0]) )
+    x00 = geom( e00, numeric.array([1,1]) )
+    x01 = geom( e01, numeric.array([1,0]) )
+    x10 = geom( e10, numeric.array([0,1]) )
+    x11 = geom( e11, numeric.array([0,0]) )
     numpy.testing.assert_array_almost_equal( x00, x01 )
     numpy.testing.assert_array_almost_equal( x10, x11 )
     numpy.testing.assert_array_almost_equal( x00, x11 )
@@ -98,8 +98,8 @@ class TestTopologyGlueing( object ):
   def __init__( self ):
     'Create half dome geometry for glueing.'
     # Aliases
-    pi, sqrt, sin, cos, abs = numpy.pi, function.sqrt, function.sin, function.cos, function.abs
-    grid = numpy.linspace( -.25*pi, .25*pi, 5 )
+    pi, sqrt, sin, cos, abs = numeric.pi, function.sqrt, function.sin, function.cos, function.abs
+    grid = numeric.linspace( -.25*pi, .25*pi, 5 )
 
     # Half dome
     self.topo0, (xi, eta) = mesh.rectilinear( 2*(grid,) )
@@ -174,12 +174,12 @@ class TestTopologyGlueing( object ):
           errs[key] = []
           for q in qset:
             Fq = integrate( q )
-            errs[key].append( numpy.abs(F/Fq-1) )
+            errs[key].append( numeric.abs(F/Fq-1) )
 
         elif len(qset) == 1:
           # Test assertions on exact quadrature
           Fq = integrate( qset[0] )
-          err = numpy.abs(F/Fq-1)
+          err = numeric.abs(F/Fq-1)
           assert err < 1.e-12, 'Nonexact quadrature, err = %.1e' % err
 
         elif len(qset) == 2:
@@ -187,9 +187,9 @@ class TestTopologyGlueing( object ):
           q0, q1 = tuple( qset )
           F0 = integrate( q0 )
           F1 = integrate( q1 )
-          err0 = numpy.abs(F/F0-1)
-          err1 = numpy.abs(F/F1-1)
-          slope = numpy.log10(err1/err0)/(q1-q0)
+          err0 = numeric.abs(F/F0-1)
+          err1 = numeric.abs(F/F1-1)
+          slope = numeric.log10(err1/err0)/(q1-q0)
           assert slope <= (-2. if slopes is None else slopes[neighbor]) or err1 < 1.e-12, \
               'Insufficient quadrature convergence (is func analytic?), slope = %.2f' % slope
 
@@ -269,7 +269,7 @@ class TestTopologyGlueing( object ):
   def StokesBEM( self, visual=False ):
     'The singular integration scheme depends on the correct functioning of Topology.glue().'
     # Aliases and definitions
-    pi, sqrt, sin, cos, abs = numpy.pi, function.sqrt, function.sin, function.cos, function.abs
+    pi, sqrt, sin, cos, abs = numeric.pi, function.sqrt, function.sin, function.cos, function.abs
     def V( x, y ):
       rInv = function.norm2( x-y )**-1.
       return 0.125*pi**-1. * (function.eye(3)*rInv + (x-y)[:,_]*(x-y)[_,:]*rInv**3)

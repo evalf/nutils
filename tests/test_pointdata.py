@@ -1,7 +1,7 @@
 from nutils import *
 import numpy
 
-grid = numpy.linspace( 0., 1., 5 )
+grid = numeric.linspace( 0., 1., 5 )
 
 class TestPointdata ( object ):
 

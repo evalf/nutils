@@ -363,7 +363,7 @@ class SparseMatrix( Matrix ):
     supp = numpy.empty( self.shape[0], dtype=bool )
     for irow in range( self.shape[0] ):
       a, b = self.indptr[irow:irow+2]
-      supp[irow] = a != b and ( tol == 0 or numpy.any( numpy.abs( self.data[a:b] ) > tol ) )
+      supp[irow] = a != b and ( tol == 0 or numeric.greater( numeric.abs( self.data[a:b] ), tol ).any() )
     return supp
 
   def get_splu( self, I, J, complete ):

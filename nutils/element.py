@@ -41,7 +41,7 @@ class TrimmedIScheme( object ):
 
     if maxrefine <= 0:
       ipoints, iweights = elem.eval( self.finestscheme )
-      inside = self.levelset( elem, ipoints ) > 0
+      inside = numeric.greater( self.levelset( elem, ipoints ), 0 )
       if inside.all():
         return True
       if not inside.any():
@@ -49,7 +49,7 @@ class TrimmedIScheme( object ):
       return ipoints[inside], iweights[inside]
 
     try:
-      inside = self.levelset( elem, self.bezierscheme ) > 0
+      inside = numeric.greater( self.levelset( elem, self.bezierscheme ), 0 )
     except function.EvaluationError:
       pass
     else:
@@ -77,8 +77,8 @@ class TrimmedIScheme( object ):
       points.append( transform.eval(ipoints) )
       weights.append( iweights * transform.det )
 
-    coords = numpy.concatenate( coords, axis=0 )
-    weights = numpy.concatenate( weights, axis=0 )
+    coords = numeric.concatenate( coords, axis=0 )
+    weights = numeric.concatenate( weights, axis=0 )
     return coords, weights
 
 class Transformation( object ):
@@ -121,7 +121,7 @@ class SliceTransformation( Transformation ):
     'apply transformation'
 
     assert points.shape[1] == self.fromdim
-    return numeric.ImmutableArray( points[:,self.slice] )
+    return points[:,self.slice]
 
 class AffineTransformation( Transformation ):
   'affine transformation'
@@ -131,9 +131,9 @@ class AffineTransformation( Transformation ):
   def __init__( self, offset, transform ):
     'constructor'
 
-    self.offset = numpy.asarray( offset )
+    self.offset = numeric.asarray( offset )
     assert self.offset.ndim == 1
-    self.transform = numpy.asarray( transform )
+    self.transform = numeric.asarray( transform )
     assert self.transform.ndim == 2
     assert self.transform.shape[0] == self.offset.shape[0]
     Transformation.__init__( self, fromdim=self.transform.shape[1], todim=self.transform.shape[0] )
@@ -143,14 +143,14 @@ class AffineTransformation( Transformation ):
     'inverse transformation'
 
     assert self.todim == self.fromdim
-    return numpy.linalg.inv( self.transform )
+    return numeric.inv( self.transform )
 
   @property
   def det( self ):
     'determinant'
 
     assert self.todim == self.fromdim
-    return numpy.linalg.det( self.transform )
+    return numeric.det( self.transform )
 
   def nest( self, other ):
     'merge transformations'
@@ -173,11 +173,13 @@ class AffineTransformation( Transformation ):
   def _eval( self, points ):
     'apply transformation'
 
-    assert isinstance( points, numpy.ndarray )
-    return numeric.ImmutableArray( self.offset + numeric.dot( points, self.transform.T ) )
+    transpoints = numeric.dot( points, self.transform.T )
+    transpoints += self.offset
+    transpoints.flags.writeable = False
+    return transpoints
 
 def IdentityTransformation( ndims ):
-  return AffineTransformation( numpy.zeros(ndims), numpy.eye(ndims) )
+  return AffineTransformation( numeric.zeros(ndims), numeric.eye(ndims) )
 
 PrimaryVertex = str
 HalfVertex = lambda vertex1, vertex2, xi=.5: '%s<%.3f>%s' % ( (vertex1,xi,vertex2) if vertex1 < vertex2 else (vertex2,1-xi,vertex1) )
@@ -204,11 +206,11 @@ class Element( object ):
 
     if parent:
       pelem, trans = parent
-      self.root_transform = numpy.dot( pelem.root_transform, trans.transform )
-      self.inv_root_transform = numpy.dot( trans.invtrans, pelem.inv_root_transform )
+      self.root_transform = numeric.dot( pelem.root_transform, trans.transform )
+      self.inv_root_transform = numeric.dot( trans.invtrans, pelem.inv_root_transform )
       self.root_det = pelem.root_det * trans.det
     else:
-      self.inv_root_transform = self.root_transform = numpy.eye( self.ndims )
+      self.inv_root_transform = self.root_transform = numeric.eye( self.ndims )
       self.root_det = 1.
 
   def __mul__( self, other ):
@@ -230,7 +232,7 @@ class Element( object ):
     if isinstance( where, str ):
       points, weights = self.getischeme( self.ndims, where )
     else:
-      points = numeric.ImmutableArray( where )
+      points = where
       weights = None
     return points, weights
 
@@ -242,7 +244,7 @@ class Element( object ):
     while elem not in elemset:
       elem, transform = self.parent
       points = transform( points )
-      totaltransform = numpy.dot( transform.transform, totaltransform )
+      totaltransform = numeric.dot( transform.transform, totaltransform )
     return elem, points, totaltransform
 
   def __str__( self ):
@@ -274,16 +276,16 @@ class Element( object ):
     for irefine in range(evalrefine):
       elems = ( child for elem in elems for child in elem.children )
 
-    inside = levelset( elems.next(), lscheme ) > 0
+    inside = numeric.greater( levelset( elems.next(), lscheme ), 0 )
     if inside.all():
       for elem in elems:
-        inside = levelset( elem, lscheme ) > 0
+        inside = numeric.greater( levelset( elem, lscheme ), 0 )
         if not inside.all():
           return 0
       return 1
     elif not inside.any():
       for elem in elems:
-        inside = levelset( elem, lscheme ) > 0
+        inside = numeric.greater( levelset( elem, lscheme ), 0 )
         if inside.any():
           return 0
       return -1
@@ -300,7 +302,7 @@ class Element( object ):
     if intersected < 0:
       return None
 
-    parent = self, AffineTransformation( numpy.zeros(self.ndims), numpy.eye(self.ndims) )
+    parent = self, AffineTransformation( numeric.zeros(self.ndims), numeric.eye(self.ndims) )
     return TrimmedElement( elem=self, vertices=self.vertices, levelset=levelset, maxrefine=maxrefine, lscheme=lscheme, finestscheme=finestscheme, evalrefine=evalrefine, parent=parent )
 
   def get_simplices ( self, maxrefine ):
@@ -352,13 +354,13 @@ class ProductElement( Element ):
       pts4 = pts0 + temp
       pts5 = xi*(1 - eta1*eta2)
       pts6 = xi*eta1 - temp
-      points = numeric.ImmutableArray(
+      points = numeric.asarray(
         [[1-xi,   1-pts2, 1-xi,   1-pts5, 1-pts2, 1-xi  ],
          [pts1, pts3, pts4, pts0, pts6, pts0],
          [1-pts2, 1-xi,   1-pts5, 1-xi,   1-xi,   1-pts2],
          [pts3, pts1, pts0, pts4, pts0, pts6]]).reshape( 4, -1 ).T
-      points = numeric.ImmutableArray( points * [-1,1,-1,1] + [1,0,1,0] ) # flipping in x -GJ
-      weights = numpy.concatenate( 6*[xi**3*eta1**2*eta2*weights] )
+      points = numeric.asarray( points * [-1,1,-1,1] + [1,0,1,0] ) # flipping in x -GJ
+      weights = numeric.concatenate( 6*[xi**3*eta1**2*eta2*weights] )
     elif neighborhood == 1:
       A = xi*eta1
       B = A*eta2
@@ -369,26 +371,26 @@ class ProductElement( Element ):
       G = xi - D
       H = B - D
       I = A - D
-      points = numeric.ImmutableArray(
+      points = numeric.asarray(
         [[1-xi, 1-xi, 1-E,  1-G,  1-G ],
          [C,  G,  F,  H,  I ],
          [1-E,  1-G,  1-xi, 1-xi, 1-xi],
          [F,  H,  D,  A,  B ]] ).reshape( 4, -1 ).T
       temp = xi*A
-      weights = numpy.concatenate( [A*temp*weights] + 4*[B*temp*weights] )
+      weights = numeric.concatenate( [A*temp*weights] + 4*[B*temp*weights] )
     elif neighborhood == 2:
       A = xi*eta2
       B = A*eta3
       C = xi*eta1
-      points = numeric.ImmutableArray(
+      points = numeric.asarray(
         [[1-xi, 1-A ],
          [C,  B ],
          [1-A,  1-xi],
          [B,  C ]] ).reshape( 4, -1 ).T
-      weights = numpy.concatenate( 2*[xi**2*A*weights] )
+      weights = numeric.concatenate( 2*[xi**2*A*weights] )
     else:
       assert neighborhood == -1, 'invalid neighborhood %r' % neighborhood
-      points = numeric.ImmutableArray([ eta1*eta2, 1-eta2, eta3*xi, 1-xi ]).T
+      points = numeric.asarray([ eta1*eta2, 1-eta2, eta3*xi, 1-xi ]).T
       weights = eta2*xi*weights
     return points, weights
   
@@ -404,12 +406,12 @@ class ProductElement( Element ):
       B = (1 - xe)*eta2
       C = xi + A
       D = xe + B
-      points = numeric.ImmutableArray(
+      points = numeric.asarray(
         [[A, B, A, D, B, C, C, D],
          [B, A, D, A, C, B, D, C],
          [C, D, C, B, D, A, A, B],
          [D, C, B, C, A, D, B, A]]).reshape( 4, -1 ).T
-      weights = numpy.concatenate( 8*[xi*(1-xi)*(1-xe)*weights] )
+      weights = numeric.concatenate( 8*[xi*(1-xi)*(1-xe)*weights] )
     elif neighborhood == 1:
       ox = 1 - xi
       A = xi*eta1
@@ -419,22 +421,22 @@ class ProductElement( Element ):
       E = 1 - A
       F = E*eta3
       G = A + F
-      points = numeric.ImmutableArray(
+      points = numeric.asarray(
         [[D,  C,  G,  G,  F,  F ],
          [B,  B,  B,  xi, B,  xi],
          [C,  D,  F,  F,  G,  G ],
          [A,  A,  xi, B,  xi, B ]]).reshape( 4, -1 ).T
-      weights = numpy.concatenate( 2*[xi**2*ox*weights] + 4*[xi**2*E*weights] )
+      weights = numeric.concatenate( 2*[xi**2*ox*weights] + 4*[xi**2*E*weights] )
     elif neighborhood == 2:
       A = xi*eta1
       B = xi*eta2
       C = xi*eta3
-      points = numeric.ImmutableArray(
+      points = numeric.asarray(
         [[xi, A,  A,  A ], 
          [A,  xi, B,  B ],
          [B,  B,  xi, C ], 
          [C,  C,  C,  xi]]).reshape( 4, -1 ).T
-      weights = numpy.concatenate( 4*[xi**3*weights] )
+      weights = numeric.concatenate( 4*[xi**3*weights] )
     else:
       assert neighborhood == -1, 'invalid neighborhood %r' % neighborhood
     return points, weights
@@ -446,16 +448,16 @@ class ProductElement( Element ):
     coords2, weights2 = ischeme2
     if weights1 is not None:
       assert weights2 is not None
-      weights = numeric.ImmutableArray( ( weights1[:,_] * weights2[_,:] ).ravel() )
+      weights = numeric.asarray( ( weights1[:,_] * weights2[_,:] ).ravel() )
     else:
       assert weights2 is None
       weights = None
     npoints1,ndims1 = coords1.shape  
     npoints2,ndims2 = coords2.shape 
-    coords = numpy.empty( [ coords1.shape[0], coords2.shape[0], ndims1+ndims2 ] )
+    coords = numeric.empty( [ coords1.shape[0], coords2.shape[0], ndims1+ndims2 ] )
     coords[:,:,:ndims1] = coords1[:,_,:]
     coords[:,:,ndims1:] = coords2[_,:,:]
-    coords = numeric.ImmutableArray( coords.reshape(-1,ndims1+ndims2) )
+    coords = numeric.asarray( coords.reshape(-1,ndims1+ndims2) )
     return coords, weights
   
   @property
@@ -504,7 +506,7 @@ class ProductElement( Element ):
   def singular_ischeme_tri( orientation, ischeme ):
     neighborhood, transf1, transf2 = orientation
     points, weights = ProductElement.get_tri_bem_ischeme( ischeme, neighborhood )
-    transfpoints = points#numpy.empty( points.shape )
+    transfpoints = points#numeric.empty( points.shape )
     #   transfpoints[:,0] = points[:,0] if transf1 == 0 else \
     #                       points[:,1] if transf1 == 1 else \
     #                     1-points[:,0] if transf1 == 2 else \
@@ -521,14 +523,14 @@ class ProductElement( Element ):
     #                     1-points[:,2] if transf2 == 1 else \
     #                     1-points[:,3] if transf2 == 2 else \
     #                       points[:,2]
-    return numeric.ImmutableArray( transfpoints ), numeric.ImmutableArray( weights )
+    return numeric.asarray( transfpoints ), numeric.asarray( weights )
     
   @staticmethod
   @core.cache
   def singular_ischeme_quad( orientation, ischeme ):
     neighborhood, transf1, transf2 = orientation
     points, weights = ProductElement.get_quad_bem_ischeme( ischeme, neighborhood )
-    transfpoints = numpy.empty( points.shape )
+    transfpoints = numeric.empty( points.shape )
     def transform( points, orientation ):
       x, y = points[:,0], points[:,1]
       tx = x if orientation in (0,1,6,7) else 1-x
@@ -536,7 +538,7 @@ class ProductElement( Element ):
       return function.stack( (ty, tx) if orientation%2 else (tx, ty), axis=1 )
     transfpoints[:,:2] = transform( points[:,:2], transf1 )
     transfpoints[:,2:] = transform( points[:,2:], transf2 )
-    return numeric.ImmutableArray( transfpoints ), numeric.ImmutableArray( weights )
+    return numeric.asarray( transfpoints ), numeric.asarray( weights )
     
   def eval( self, where ):
     'get integration scheme'
@@ -586,7 +588,7 @@ class TrimmedElement( Element ):
     if ischeme[:7] == 'contour':
       n = int(ischeme[7:] or 0)
       points, weights = self.elem.eval( 'contour{}'.format(n) )
-      inside = self.levelset( self.elem, points ) >= 0
+      inside = numeric.greater_equal( self.levelset( self.elem, points ), 0 )
       return points[inside], None
 
     if self.maxrefine <= 0:
@@ -606,10 +608,10 @@ class TrimmedElement( Element ):
           weights.append( sweights * transform.det )
 
         if len(points) == 0:
-          return numpy.zeros((0,self.ndims)), numpy.zeros((0,))
+          return numeric.zeros((0,self.ndims)), numeric.zeros((0,))
 
-        points  = numeric.ImmutableArray(numpy.concatenate(points,axis=0))
-        weights = numeric.ImmutableArray(numpy.concatenate(weights))
+        points  = numeric.concatenate( points, axis=0 )
+        weights = numeric.concatenate( weights )
 
         return points, weights
 
@@ -619,10 +621,10 @@ class TrimmedElement( Element ):
           points, weights = self.elem.eval( self.finestscheme[:-4] )
         elif self.finestscheme.endswith( '.none' ):
           points, weights = self.elem.eval( self.finestscheme[:-5] )
-          return points[numpy.zeros_like(weights,dtype=bool)], weights[numpy.zeros_like(weights,dtype=bool)] if weights is not None else None
+          return points[numeric.zeros_like(weights,dtype=bool)], weights[numeric.zeros_like(weights,dtype=bool)] if weights is not None else None
         else:  
           points, weights = self.elem.eval( self.finestscheme )
-          inside = self.levelset( self.elem, points ) > 0
+          inside = numeric.greater( self.levelset( self.elem, points ), 0 )
           return points[inside], weights[inside] if weights is not None else None
         
 
@@ -637,8 +639,8 @@ class TrimmedElement( Element ):
       allcoords.append( transform.eval(points) )
       allweights.append( weights * transform.det )
 
-    coords = numeric.ImmutableArray( numpy.concatenate( allcoords, axis=0 ) )
-    weights = numeric.ImmutableArray( numpy.concatenate( allweights, axis=0 ) )
+    coords = numeric.concatenate( allcoords, axis=0 )
+    weights = numeric.concatenate( allweights, axis=0 )
     return coords, weights
 
   @property
@@ -694,12 +696,12 @@ class TrimmedElement( Element ):
     assert self.finestscheme.startswith('simplex'), 'Expected simplex scheme'
     order = int(self.finestscheme[7:])
 
-    lvltol  = numpy.spacing(100)
-    xistol  = numpy.spacing(100)
+    lvltol  = numeric.spacing(100)
+    xistol  = numeric.spacing(100)
     ischeme = self.elem.getischeme( self.elem.ndims, 'bezier2' )
-    where   = self.levelset( self.elem, ischeme ) > -lvltol
+    where   = numeric.greater( self.levelset( self.elem, ischeme ), -lvltol )
     points  = ischeme[0][where]
-    vertices   = numpy.array(self.vertices)[where].tolist()
+    vertices   = numeric.array(self.vertices)[where].tolist()
     norig   = sum(where)
 
     if not where.any():
@@ -715,12 +717,12 @@ class TrimmedElement( Element ):
       ischeme = line.getischeme( line.ndims, 'bezier'+str(order+1) )
       vals    = self.levelset( line, ischeme )
       pts     = ischeme[0]
-      where   = vals > -lvltol
-      zeros   = (vals < lvltol) & where
+      where   = numeric.greater( vals, -lvltol )
+      zeros   = numeric.less(vals, lvltol) & where
 
       if order == 1:
 
-        if where[0] == where[1] or any(zeros):
+        if where[0] == where[1] or zeros.any():
           continue
         xi = vals[0]/(vals[0]-vals[1])
 
@@ -742,7 +744,7 @@ class TrimmedElement( Element ):
             continue
           else:
             #Two intersections
-            num2 = numpy.sqrt( disc )
+            num2 = numeric.sqrt( disc )
             num1 = 3*vals[0]-4*vals[1]+vals[2]
             denr = 1./(4*(vals[0]-2*vals[1]+vals[2]))
 
@@ -781,7 +783,7 @@ class TrimmedElement( Element ):
 
     Simplex = TriangularElement if self.ndims == 2 else TetrahedronElement
 
-    convex_hull = [[vertices[iv] for iv in tri] for tri in submesh.convex_hull if all(tri>=norig)]
+    convex_hull = [ [vertices[iv] for iv in tri] for tri in submesh.convex_hull if numeric.greater_equal(tri,norig).all() ]
 
     ##########################################
     # Extract the simplices from the submesh #
@@ -793,17 +795,17 @@ class TrimmedElement( Element ):
 
       for j in range(2): #Flip two points in case of negative determinant
         offset = points[ tri[0] ]
-        affine = numpy.array( [ points[ tri[ii+1] ] - offset for ii in range(self.ndims) ] ).T
+        affine = numeric.array( [ points[ tri[ii+1] ] - offset for ii in range(self.ndims) ] ).T
 
         transform = AffineTransformation( offset, affine )
 
-        if transform.det > numpy.spacing(100):
+        if transform.det > numeric.spacing(100):
           break
 
         tri[-2:] = tri[:-3:-1]
 
       else:
-        if abs(transform.det) < numpy.spacing(100):
+        if abs(transform.det) < numeric.spacing(100):
           degensim.append( [ vertices[ii] for ii in tri ] )
           continue
 
@@ -884,7 +886,7 @@ class QuadElement( Element ):
     'divide element by n'
 
     assert len(N) == self.ndims
-    vertices = numpy.empty( [ ni+1 for ni in N ], dtype=object )
+    vertices = numeric.empty( [ ni+1 for ni in N ], dtype=object )
     vertices[ tuple( slice(None,None,ni) for ni in N ) ] = numpy.reshape( self.vertices, [2]*self.ndims )
     for idim in range(self.ndims):
       s1 = tuple( slice(None) for ni in N[:idim] )
@@ -910,16 +912,16 @@ class QuadElement( Element ):
     transforms = []
     for idim in range( ndims ):
 #     for iside in range( 2 ):
-#       offset = numpy.zeros( ndims )
+#       offset = numeric.zeros( ndims )
 #       offset[idim:] = 1-iside
 #       offset[:idim+1] = iside
-#       transform = numpy.zeros(( ndims, ndims-1 ))
+#       transform = numeric.zeros(( ndims, ndims-1 ))
 #       transform.flat[ :(ndims-1)*idim :ndims] = 1 - 2 * iside
 #       transform.flat[ndims*(idim+1)-1::ndims] = 2 * iside - 1
 #       transforms.append( AffineTransformation( offset=offset, transform=transform ) )
-      offset = numpy.zeros( ndims )
+      offset = numeric.zeros( ndims )
       offset[:idim] = 1
-      transform = numpy.zeros(( ndims, ndims-1 ))
+      transform = numeric.zeros(( ndims, ndims-1 ))
       transform.flat[ :(ndims-1)*idim :ndims] = -1
       transform.flat[ndims*(idim+1)-1::ndims] = 1
       # flip normal:
@@ -946,18 +948,18 @@ class QuadElement( Element ):
 
     ndvertices = numpy.reshape( self.vertices, [2]*self.ndims )
     ribbons = []
-    for i1, i2 in numpy.array([[[0,0,0],[1,0,0]],
-                               [[0,0,0],[0,1,0]],
-                               [[0,0,0],[0,0,1]],
-                               [[1,1,1],[0,1,1]],
-                               [[1,1,1],[1,0,1]],
-                               [[1,1,1],[1,1,0]],
-                               [[1,0,0],[1,1,0]],
-                               [[1,0,0],[1,0,1]],
-                               [[0,1,0],[1,1,0]],
-                               [[0,1,0],[0,1,1]],
-                               [[0,0,1],[1,0,1]],
-                               [[0,0,1],[0,1,1]]] ):
+    for i1, i2 in numeric.array([[[0,0,0],[1,0,0]],
+                                 [[0,0,0],[0,1,0]],
+                                 [[0,0,0],[0,0,1]],
+                                 [[1,1,1],[0,1,1]],
+                                 [[1,1,1],[1,0,1]],
+                                 [[1,1,1],[1,1,0]],
+                                 [[1,0,0],[1,1,0]],
+                                 [[1,0,0],[1,0,1]],
+                                 [[0,1,0],[1,1,0]],
+                                 [[0,1,0],[0,1,1]],
+                                 [[0,0,1],[1,0,1]],
+                                 [[0,0,1],[0,1,1]]] ):
       transform = AffineTransformation( offset=i1, transform=(i2-i1)[:,_] )
       vertices = ndvertices[tuple(i1)], ndvertices[tuple(i2)]
       ribbons.append( QuadElement( vertices=vertices, ndims=1, context=(self,transform) ) )
@@ -975,7 +977,7 @@ class QuadElement( Element ):
     iside = iedge % 2
     s = (slice(None,None, 1 if iside else -1),) * idim + (iside,) \
       + (slice(None,None,-1 if iside else  1),) * (self.ndims-idim-1)
-    vertices = numpy.asarray( numpy.reshape( self.vertices, (2,)*self.ndims )[s] ).ravel() # TODO check
+    vertices = numeric.asarray( numpy.reshape( self.vertices, (2,)*self.ndims )[s] ).ravel() # TODO check
     return QuadElement( vertices=vertices, ndims=self.ndims-1, context=(self,transform) )
 
   @staticmethod
@@ -983,9 +985,9 @@ class QuadElement( Element ):
   def refinedtransform( N ):
     'refined transform'
 
-    Nf = numpy.asarray( N, dtype=float )
+    Nf = numeric.asarray( N, dtype=float )
     assert Nf.ndim == 1
-    return [ AffineTransformation( offset=I/Nf, transform=numpy.diag(1/Nf) ) for I in numpy.ndindex(*N) ]
+    return [ AffineTransformation( offset=I/Nf, transform=numeric.diag(1/Nf) ) for I in numpy.ndindex(*N) ]
 
   def refine( self, n ):
     'refine n times'
@@ -1001,9 +1003,9 @@ class QuadElement( Element ):
     'compute gauss points and weights'
 
     assert isinstance( degree, int ) and degree >= 0
-    k = numpy.arange( 1, degree // 2 + 1 )
-    d = k / numpy.sqrt( 4*k**2-1 )
-    x, w = numpy.linalg.eigh( numpy.diagflat(d,-1) ) # eigh operates (by default) on lower triangle
+    k = numeric.arange( 1, degree // 2 + 1 )
+    d = k / numeric.sqrt( 4*k**2-1 )
+    x, w = numeric.eigh( numeric.diagflat(d,-1) ) # eigh operates (by default) on lower triangle
     return (x+1) * .5, w[0]**2
 
   @classmethod
@@ -1011,11 +1013,11 @@ class QuadElement( Element ):
   def getischeme( cls, ndims, where ):
     'get integration scheme'
 
-    if ndims == 0:
-      return numeric.ImmutableArray( numpy.zeros([1,0]) ), numeric.ImmutableArray( numpy.array([1.]) )
-
     x = w = None
-    if where.startswith( 'gauss' ):
+    if ndims == 0:
+      coords = numeric.zeros([1,0])
+      weights = numeric.array([1.])
+    elif where.startswith( 'gauss' ):
       N = eval( where[5:] )
       if isinstance( N, tuple ):
         assert len(N) == ndims
@@ -1028,43 +1030,43 @@ class QuadElement( Element ):
         assert len(N) == ndims
       else:
         N = [N]*ndims
-      x = [ numpy.arange( .5, n ) / n for n in N ]
+      x = [ numeric.arange( .5, n ) / n for n in N ]
       w = [ numeric.appendaxes( 1./n, n ) for n in N ]
     elif where.startswith( 'bezier' ):
       N = int( where[6:] )
-      x = [ numpy.linspace( 0, 1, N ) ] * ndims
+      x = [ numeric.linspace( 0, 1, N ) ] * ndims
       w = [ numeric.appendaxes( 1./N, N ) ] * ndims
     elif where.startswith( 'subdivision' ):
       N = int( where[11:] ) + 1
-      x = [ numpy.linspace( 0, 1, N ) ] * ndims
+      x = [ numeric.linspace( 0, 1, N ) ] * ndims
       w = None
     elif where.startswith( 'vtk' ):
       if ndims == 1:
-        coords = numpy.array([[0,1]]).T
+        coords = numeric.array([[0,1]]).T
       elif ndims == 2:
         eps = 0 if not len(where[3:]) else float(where[3:]) # subdivision fix (avoid extraordinary point)
-        coords = numpy.array([[eps,eps],[1-eps,eps],[1-eps,1-eps],[eps,1-eps]])
+        coords = numeric.array([[eps,eps],[1-eps,eps],[1-eps,1-eps],[eps,1-eps]])
       elif ndims == 3:
-        coords = numpy.array([ [0,0,0], [1,0,0], [0,1,0], [1,1,0], [0,0,1], [1,0,1], [0,1,1], [1,1,1] ])
+        coords = numeric.array([ [0,0,0], [1,0,0], [0,1,0], [1,1,0], [0,0,1], [1,0,1], [0,1,1], [1,1,1] ])
       else:
         raise Exception, 'contour not supported for ndims=%d' % ndims
     elif where.startswith( 'contour' ):
       N = int( where[7:] )
-      p = numpy.linspace( 0, 1, N )
+      p = numeric.linspace( 0, 1, N )
       if ndims == 1:
         coords = p[_].T
       elif ndims == 2:
-        coords = numpy.array([ p[ range(N) + [N-1]*(N-2) + range(N)[::-1] + [0]*(N-1) ],
-                               p[ [0]*(N-1) + range(N) + [N-1]*(N-2) + range(0,N)[::-1] ] ]).T
+        coords = numeric.array([ p[ range(N) + [N-1]*(N-2) + range(N)[::-1] + [0]*(N-1) ],
+                                 p[ [0]*(N-1) + range(N) + [N-1]*(N-2) + range(0,N)[::-1] ] ]).T
       elif ndims == 3:
         assert N == 0
-        coords = numpy.array([ [0,0,0], [1,0,0], [0,1,0], [1,1,0], [0,0,1], [1,0,1], [0,1,1], [1,1,1] ])
+        coords = numeric.array([ [0,0,0], [1,0,0], [0,1,0], [1,1,0], [0,0,1], [1,0,1], [0,1,1], [1,1,1] ])
       else:
         raise Exception, 'contour not supported for ndims=%d' % ndims
     else:
       raise Exception, 'invalid element evaluation %r' % where
     if x is not None:
-      coords = numpy.empty( map( len, x ) + [ ndims ] )
+      coords = numeric.empty( map( len, x ) + [ ndims ] )
       for i, xi in enumerate( x ):
         coords[...,i] = xi[ (slice(None),) + (_,)*(ndims-i-1) ]
       coords = coords.reshape( -1, ndims )
@@ -1072,14 +1074,16 @@ class QuadElement( Element ):
       weights = reduce( lambda weights, wi: ( weights * wi[:,_] ).ravel(), w )
     else:
       weights = None
-    return numeric.ImmutableArray( coords ), numeric.ImmutableArray( weights )
+    coords.flags.writeable = False
+    weights.flags.writeable = False
+    return coords, weights
 
   def select_contained( self, points, eps=0 ):
     'select points contained in element'
 
-    selection = numpy.ones( points.shape[0], dtype=bool )
+    selection = numeric.ones( points.shape[0], dtype=bool )
     for idim in range( self.ndims ):
-      newsel = ( points[:,idim] >= -eps ) & ( points[:,idim] <= 1+eps )
+      newsel = numeric.greater_equal( points[:,idim], -eps ) & numeric.less_equal( points[:,idim], 1+eps )
       selection[selection] &= newsel
       points = points[newsel]
       if not points.size:
@@ -1137,10 +1141,10 @@ class TriangularElement( Element ):
     'refined transform'
 
     transforms = []
-    trans = numpy.diag( [1./n]*2 )
+    trans = numeric.diag( [1./n]*2 )
     for i in range( n ):
-      transforms.extend( AffineTransformation( offset=numpy.array( [i,j], dtype=float ) / n, transform=trans ) for j in range(0,n-i) )
-      transforms.extend( AffineTransformation( offset=numpy.array( [n-j,n-i], dtype=float ) / n, transform=-trans ) for j in range(n-i,n) )
+      transforms.extend( AffineTransformation( offset=numeric.array( [i,j], dtype=float ) / n, transform=trans ) for j in range(0,n-i) )
+      transforms.extend( AffineTransformation( offset=numeric.array( [n-j,n-i], dtype=float ) / n, transform=-trans ) for j in range(n-i,n) )
     return transforms
 
   def refined( self, n ):
@@ -1161,66 +1165,66 @@ class TriangularElement( Element ):
     assert ndims == 2
     if where.startswith( 'contour' ):
       n = int( where[7:] or 0 )
-      p = numpy.arange( n+1, dtype=float ) / (n+1)
-      z = numpy.zeros_like( p )
-      coords = numpy.hstack(( [1-p,p], [z,1-p], [p,z] ))
+      p = numeric.arange( n+1, dtype=float ) / (n+1)
+      z = numeric.zeros_like( p )
+      coords = numeric.hstack(( [1-p,p], [z,1-p], [p,z] ))
       weights = None
     elif where.startswith( 'vtk' ):
-      coords = numpy.array([[0,0],[1,0],[0,1]]).T
+      coords = numeric.array([[0,0],[1,0],[0,1]]).T
       weights = None
     elif where == 'gauss1':
-      coords = numpy.array( [[1],[1]] ) / 3.
-      weights = numpy.array( [1] ) / 2.
+      coords = numeric.array( [[1],[1]] ) / 3.
+      weights = numeric.array( [1] ) / 2.
     elif where in 'gauss2':
-      coords = numpy.array( [[4,1,1],[1,4,1]] ) / 6.
-      weights = numpy.array( [1,1,1] ) / 6.
+      coords = numeric.array( [[4,1,1],[1,4,1]] ) / 6.
+      weights = numeric.array( [1,1,1] ) / 6.
     elif where == 'gauss3':
-      coords = numpy.array( [[5,9,3,3],[5,3,9,3]] ) / 15.
-      weights = numpy.array( [-27,25,25,25] ) / 96.
+      coords = numeric.array( [[5,9,3,3],[5,3,9,3]] ) / 15.
+      weights = numeric.array( [-27,25,25,25] ) / 96.
     elif where == 'gauss4':
       A = 0.091576213509771; B = 0.445948490915965; W = 0.109951743655322
-      coords = numpy.array( [[1-2*A,A,A,1-2*B,B,B],[A,1-2*A,A,B,1-2*B,B]] )
-      weights = numpy.array( [W,W,W,1/3.-W,1/3.-W,1/3.-W] ) / 2.
+      coords = numeric.array( [[1-2*A,A,A,1-2*B,B,B],[A,1-2*A,A,B,1-2*B,B]] )
+      weights = numeric.array( [W,W,W,1/3.-W,1/3.-W,1/3.-W] ) / 2.
     elif where == 'gauss5':
       A = 0.101286507323456; B = 0.470142064105115; V = 0.125939180544827; W = 0.132394152788506
-      coords = numpy.array( [[1./3,1-2*A,A,A,1-2*B,B,B],[1./3,A,1-2*A,A,B,1-2*B,B]] )
-      weights = numpy.array( [1-3*V-3*W,V,V,V,W,W,W] ) / 2.
+      coords = numeric.array( [[1./3,1-2*A,A,A,1-2*B,B,B],[1./3,A,1-2*A,A,B,1-2*B,B]] )
+      weights = numeric.array( [1-3*V-3*W,V,V,V,W,W,W] ) / 2.
     elif where == 'gauss6':
       A = 0.063089014491502; B = 0.249286745170910; C = 0.310352451033785; D = 0.053145049844816; V = 0.050844906370207; W = 0.116786275726379
       VW = 1/6. - (V+W) / 2.
-      coords = numpy.array( [[1-2*A,A,A,1-2*B,B,B,1-C-D,1-C-D,C,C,D,D],[A,1-2*A,A,B,1-2*B,B,C,D,1-C-D,D,1-C-D,C]] )
-      weights = numpy.array( [V,V,V,W,W,W,VW,VW,VW,VW,VW,VW] ) / 2.
+      coords = numeric.array( [[1-2*A,A,A,1-2*B,B,B,1-C-D,1-C-D,C,C,D,D],[A,1-2*A,A,B,1-2*B,B,C,D,1-C-D,D,1-C-D,C]] )
+      weights = numeric.array( [V,V,V,W,W,W,VW,VW,VW,VW,VW,VW] ) / 2.
     elif where == 'gauss7':
       A = 0.260345966079038; B = 0.065130102902216; C = 0.312865496004875; D = 0.048690315425316; U = 0.175615257433204; V = 0.053347235608839; W = 0.077113760890257
-      coords = numpy.array( [[1./3,1-2*A,A,A,1-2*B,B,B,1-C-D,1-C-D,C,C,D,D],[1./3,A,1-2*A,A,B,1-2*B,B,C,D,1-C-D,D,1-C-D,C]] )
-      weights = numpy.array( [1-3*U-3*V-6*W,U,U,U,V,V,V,W,W,W,W,W,W] ) / 2.
+      coords = numeric.array( [[1./3,1-2*A,A,A,1-2*B,B,B,1-C-D,1-C-D,C,C,D,D],[1./3,A,1-2*A,A,B,1-2*B,B,C,D,1-C-D,D,1-C-D,C]] )
+      weights = numeric.array( [1-3*U-3*V-6*W,U,U,U,V,V,V,W,W,W,W,W,W] ) / 2.
     elif where[:7] == 'uniform':
       N = int( where[7:] )
-      points = ( numpy.arange( N ) + 1./3 ) / N
+      points = ( numeric.arange( N ) + 1./3 ) / N
       NN = N**2
-      C = numpy.empty( [2,N,N] )
+      C = numeric.empty( [2,N,N] )
       C[0] = points[:,_]
       C[1] = points[_,:]
       coords = C.reshape( 2, NN )
-      flip = coords[0] + coords[1] > 1
+      flip = coords[0] + numeric.greater( coords[1], 1 )
       coords[:,flip] = 1 - coords[::-1,flip]
       weights = numeric.appendaxes( .5/NN, NN )
     elif where[:6] == 'bezier':
       N = int( where[6:] )
-      points = numpy.linspace( 0, 1, N )
-      coords = numpy.array([ [x,y] for i, y in enumerate(points) for x in points[:N-i] ]).T
+      points = numeric.linspace( 0, 1, N )
+      coords = numeric.array([ [x,y] for i, y in enumerate(points) for x in points[:N-i] ]).T
       weights = None
     else:
       raise Exception, 'invalid element evaluation: %r' % where
-    return numeric.ImmutableArray( coords.T ), numeric.ImmutableArray( weights )
+    return coords.T, weights
 
   def select_contained( self, points, eps=0 ):
     'select points contained in element'
 
-    selection = numpy.ones( points.shape[0], dtype=bool )
+    selection = numeric.ones( points.shape[0], dtype=bool )
     for idim in 0, 1, 2:
       points_i = points[:,idim] if idim < 2 else 1-points.sum(1)
-      newsel = ( points_i >= -eps )
+      newsel = numeric.greater_equal( points_i, -eps )
       selection[selection] &= newsel
       points = points[newsel]
       if not points.size:
@@ -1282,39 +1286,39 @@ class TetrahedronElement( Element ):
 
     assert ndims == 3
     if where.startswith( 'vtk' ):
-      coords = numpy.array([[0,0,0],[1,0,0],[0,1,0],[0,0,1]]).T
+      coords = numeric.array([[0,0,0],[1,0,0],[0,1,0],[0,0,1]]).T
       weights = None
     elif where == 'gauss1':
-      coords = numpy.array( [[1],[1],[1]] ) / 4.
-      weights = numpy.array( [1] ) / 6.
+      coords = numeric.array( [[1],[1],[1]] ) / 4.
+      weights = numeric.array( [1] ) / 6.
     elif where == 'gauss2':
-      coords = numpy.array([[0.5854101966249685,0.1381966011250105,0.1381966011250105],
-                            [0.1381966011250105,0.1381966011250105,0.1381966011250105],
-                            [0.1381966011250105,0.1381966011250105,0.5854101966249685],
-                            [0.1381966011250105,0.5854101966249685,0.1381966011250105]]).T
-      weights = numpy.array([1,1,1,1]) / 24.
+      coords = numeric.array([[0.5854101966249685,0.1381966011250105,0.1381966011250105],
+                              [0.1381966011250105,0.1381966011250105,0.1381966011250105],
+                              [0.1381966011250105,0.1381966011250105,0.5854101966249685],
+                              [0.1381966011250105,0.5854101966249685,0.1381966011250105]]).T
+      weights = numeric.array([1,1,1,1]) / 24.
     elif where == 'gauss3':
-      coords = numpy.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
-                            [0.5000000000000000,0.1666666666666667,0.1666666666666667],
-                            [0.1666666666666667,0.1666666666666667,0.1666666666666667],
-                            [0.1666666666666667,0.1666666666666667,0.5000000000000000],
-                            [0.1666666666666667,0.5000000000000000,0.1666666666666667]]).T
-      weights = numpy.array([-0.8000000000000000,0.4500000000000000,0.4500000000000000,0.4500000000000000,0.4500000000000000]) / 6.
+      coords = numeric.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
+                              [0.5000000000000000,0.1666666666666667,0.1666666666666667],
+                              [0.1666666666666667,0.1666666666666667,0.1666666666666667],
+                              [0.1666666666666667,0.1666666666666667,0.5000000000000000],
+                              [0.1666666666666667,0.5000000000000000,0.1666666666666667]]).T
+      weights = numeric.array([-0.8000000000000000,0.4500000000000000,0.4500000000000000,0.4500000000000000,0.4500000000000000]) / 6.
     elif where == 'gauss4':
-      coords = numpy.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
-                            [0.7857142857142857,0.0714285714285714,0.0714285714285714],
-                            [0.0714285714285714,0.0714285714285714,0.0714285714285714],
-                            [0.0714285714285714,0.0714285714285714,0.7857142857142857],
-                            [0.0714285714285714,0.7857142857142857,0.0714285714285714],
-                            [0.1005964238332008,0.3994035761667992,0.3994035761667992],
-                            [0.3994035761667992,0.1005964238332008,0.3994035761667992],
-                            [0.3994035761667992,0.3994035761667992,0.1005964238332008],
-                            [0.3994035761667992,0.1005964238332008,0.1005964238332008],
-                            [0.1005964238332008,0.3994035761667992,0.1005964238332008],
-                            [0.1005964238332008,0.1005964238332008,0.3994035761667992]]).T
-      weights = numpy.array([-0.0789333333333333,0.0457333333333333,0.0457333333333333,0.0457333333333333,0.0457333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333]) / 6.
+      coords = numeric.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
+                              [0.7857142857142857,0.0714285714285714,0.0714285714285714],
+                              [0.0714285714285714,0.0714285714285714,0.0714285714285714],
+                              [0.0714285714285714,0.0714285714285714,0.7857142857142857],
+                              [0.0714285714285714,0.7857142857142857,0.0714285714285714],
+                              [0.1005964238332008,0.3994035761667992,0.3994035761667992],
+                              [0.3994035761667992,0.1005964238332008,0.3994035761667992],
+                              [0.3994035761667992,0.3994035761667992,0.1005964238332008],
+                              [0.3994035761667992,0.1005964238332008,0.1005964238332008],
+                              [0.1005964238332008,0.3994035761667992,0.1005964238332008],
+                              [0.1005964238332008,0.1005964238332008,0.3994035761667992]]).T
+      weights = numeric.array([-0.0789333333333333,0.0457333333333333,0.0457333333333333,0.0457333333333333,0.0457333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333]) / 6.
     elif where == 'gauss5':
-      coords = numpy.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
+      coords = numeric.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
                             [0.0000000000000000,0.3333333333333333,0.3333333333333333],
                             [0.3333333333333333,0.3333333333333333,0.3333333333333333],
                             [0.3333333333333333,0.3333333333333333,0.0000000000000000],
@@ -1329,9 +1333,9 @@ class TetrahedronElement( Element ):
                             [0.0665501535736643,0.4334498464263357,0.4334498464263357],
                             [0.4334498464263357,0.0665501535736643,0.4334498464263357],
                             [0.4334498464263357,0.4334498464263357,0.0665501535736643]]).T
-      weights = numpy.array([0.1817020685825351,0.0361607142857143,0.0361607142857143,0.0361607142857143,0.0361607142857143,0.0698714945161738,0.0698714945161738,0.0698714945161738,0.0698714945161738,0.0656948493683187,0.0656948493683187,0.0656948493683187,0.0656948493683187,0.0656948493683187,0.0656948493683187]) / 6.
+      weights = numeric.array([0.1817020685825351,0.0361607142857143,0.0361607142857143,0.0361607142857143,0.0361607142857143,0.0698714945161738,0.0698714945161738,0.0698714945161738,0.0698714945161738,0.0656948493683187,0.0656948493683187,0.0656948493683187,0.0656948493683187,0.0656948493683187,0.0656948493683187]) / 6.
     elif where == 'gauss6':
-      coords = numpy.array([[0.3561913862225449,0.2146028712591517,0.2146028712591517],
+      coords = numeric.array([[0.3561913862225449,0.2146028712591517,0.2146028712591517],
                             [0.2146028712591517,0.2146028712591517,0.2146028712591517],
                             [0.2146028712591517,0.2146028712591517,0.3561913862225449],
                             [0.2146028712591517,0.3561913862225449,0.2146028712591517],
@@ -1355,9 +1359,9 @@ class TetrahedronElement( Element ):
                             [0.0636610018750175,0.6030056647916491,0.2696723314583159],
                             [0.2696723314583159,0.0636610018750175,0.6030056647916491],
                             [0.6030056647916491,0.2696723314583159,0.0636610018750175]]).T
-      weights = numpy.array([0.0399227502581679,0.0399227502581679,0.0399227502581679,0.0399227502581679,0.0100772110553207,0.0100772110553207,0.0100772110553207,0.0100772110553207,0.0553571815436544,0.0553571815436544,0.0553571815436544,0.0553571815436544,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857]) / 6.
+      weights = numeric.array([0.0399227502581679,0.0399227502581679,0.0399227502581679,0.0399227502581679,0.0100772110553207,0.0100772110553207,0.0100772110553207,0.0100772110553207,0.0553571815436544,0.0553571815436544,0.0553571815436544,0.0553571815436544,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857]) / 6.
     elif where == 'gauss7':
-      coords = numpy.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
+      coords = numeric.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
                             [0.7653604230090441,0.0782131923303186,0.0782131923303186],
                             [0.0782131923303186,0.0782131923303186,0.0782131923303186],
                             [0.0782131923303186,0.0782131923303186,0.7653604230090441],
@@ -1388,9 +1392,9 @@ class TetrahedronElement( Element ):
                             [0.1000000000000000,0.6000000000000000,0.2000000000000000],
                             [0.2000000000000000,0.1000000000000000,0.6000000000000000],
                             [0.6000000000000000,0.2000000000000000,0.1000000000000000]]).T
-      weights = numpy.array([0.1095853407966528,0.0635996491464850,0.0635996491464850,0.0635996491464850,0.0635996491464850,-0.3751064406859797,-0.3751064406859797,-0.3751064406859797,-0.3751064406859797,0.0293485515784412,0.0293485515784412,0.0293485515784412,0.0293485515784412,0.0058201058201058,0.0058201058201058,0.0058201058201058,0.0058201058201058,0.0058201058201058,0.0058201058201058,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105]) / 6.
+      weights = numeric.array([0.1095853407966528,0.0635996491464850,0.0635996491464850,0.0635996491464850,0.0635996491464850,-0.3751064406859797,-0.3751064406859797,-0.3751064406859797,-0.3751064406859797,0.0293485515784412,0.0293485515784412,0.0293485515784412,0.0293485515784412,0.0058201058201058,0.0058201058201058,0.0058201058201058,0.0058201058201058,0.0058201058201058,0.0058201058201058,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105]) / 6.
     elif where == 'gauss8':
-      coords = numpy.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
+      coords = numeric.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
                             [0.6175871903000830,0.1274709365666390,0.1274709365666390],
                             [0.1274709365666390,0.1274709365666390,0.1274709365666390],
                             [0.1274709365666390,0.1274709365666390,0.6175871903000830],
@@ -1435,10 +1439,10 @@ class TetrahedronElement( Element ):
                             [0.0379700484718286,0.1937464752488044,0.7303134278075384],
                             [0.7303134278075384,0.0379700484718286,0.1937464752488044],
                             [0.1937464752488044,0.7303134278075384,0.0379700484718286]]).T
-      weights = numpy.array([-0.2359620398477557,0.0244878963560562,0.0244878963560562,0.0244878963560562,0.0244878963560562,0.0039485206398261,0.0039485206398261,0.0039485206398261,0.0039485206398261,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852]) / 6.
+      weights = numeric.array([-0.2359620398477557,0.0244878963560562,0.0244878963560562,0.0244878963560562,0.0244878963560562,0.0039485206398261,0.0039485206398261,0.0039485206398261,0.0039485206398261,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852]) / 6.
     else:
       raise Exception, 'invalid element evaluation: %r' % where
-    return numeric.ImmutableArray( coords.T ), numeric.ImmutableArray( weights )
+    return coords.T, weights
 
   def select_contained( self, points, eps=0 ):
     'select points contained in element'
@@ -1497,17 +1501,17 @@ class PolyProduct( StdElem ):
 
     E = Ellipsis,
     S = slice(None),
-    N = numpy.newaxis,
+    N = _,
 
     shape = points.shape[:-1] + (self.std1.nshapes * self.std2.nshapes,)
     G12 = [ ( self.std1.eval( p1, grad=i )[E+S+N+S*i+N*j]
             * self.std2.eval( p2, grad=j )[E+N+S+N*i+S*j] ).reshape( shape + (self.std1.ndims,) * i + (self.std2.ndims,) * j )
             for i,j in zip( range(grad,-1,-1), range(grad+1) ) ]
 
-    data = numpy.empty( shape + (self.ndims,) * grad )
+    data = numeric.empty( shape + (self.ndims,) * grad )
 
     s = (s1,)*grad + (s2,)*grad
-    R = numpy.arange(grad)
+    R = numeric.arange(grad)
     for n in range(2**grad):
       index = n>>R&1
       n = index.argsort() # index[s] = [0,...,1]
@@ -1532,7 +1536,7 @@ class PolyLine( StdElem ):
     'bernstein polynomial coefficients'
 
     # magic bernstein triangle
-    revpoly = numpy.zeros( [degree+1,degree+1], dtype=int )
+    revpoly = numeric.zeros( [degree+1,degree+1], dtype=int )
     for k in range(degree//2+1):
       revpoly[k,k] = root = (-1)**degree if k == 0 else ( revpoly[k-1,k] * (k*2-1-degree) ) / k
       for i in range(k+1,degree+1-k):
@@ -1546,13 +1550,13 @@ class PolyLine( StdElem ):
     assert p >= 0, 'invalid polynomial degree %d' % p
     if p == 0:
       assert n == -1
-      return numpy.array( [[[1.]]] )
+      return numeric.array( [[[1.]]] )
 
     assert 1 <= n < 2*p
-    extractions = numpy.empty(( n, p+1, p+1 ))
-    extractions[0] = numpy.eye( p+1 )
+    extractions = numeric.empty(( n, p+1, p+1 ))
+    extractions[0] = numeric.eye( p+1 )
     for i in range( 1, n ):
-      extractions[i] = numpy.eye( p+1 )
+      extractions[i] = numeric.eye( p+1 )
       for j in range( 2, p+1 ):
         for k in reversed( range( j, p+1 ) ):
           alpha = 1. / min( 2+k-j, n-i+1 )
@@ -1627,14 +1631,14 @@ class PolyLine( StdElem ):
         elems[0] = elem_0
         elems[-1] = elem_e
 
-    return numpy.array( elems )
+    return numeric.array( elems )
 
   def __init__( self, poly ):
     '''Create polynomial from order x nfuncs array of coefficients 'poly'.
        Evaluates to sum_i poly[i,:] x**i.'''
 
     self.ndims = 1
-    self.poly = numpy.asarray( poly, dtype=float )
+    self.poly = numeric.asarray( poly, dtype=float )
     order, self.nshapes = self.poly.shape
     self.degree = order - 1
 
@@ -1650,9 +1654,9 @@ class PolyLine( StdElem ):
 
     poly = self.poly
     for n in range(grad):
-      poly = poly[1:] * numpy.arange( 1, poly.shape[0] )[:,_]
+      poly = poly[1:] * numeric.arange( 1, poly.shape[0] )[:,_]
 
-    polyval = numpy.empty( x.shape+(self.nshapes,) )
+    polyval = numeric.empty( x.shape+(self.nshapes,) )
     polyval[:] = poly[-1]
     for p in poly[-2::-1]:
       polyval *= x[...,_]
@@ -1663,7 +1667,7 @@ class PolyLine( StdElem ):
   def extract( self, extraction ):
     'apply extraction'
 
-    return PolyLine( numpy.dot( self.poly, extraction ) )
+    return PolyLine( numeric.dot( self.poly, extraction ) )
 
   def __repr__( self ):
     'string representation'
@@ -1691,11 +1695,11 @@ class PolyTriangle( StdElem ):
     npoints, ndim = points.shape
     if grad == 0:
       x, y = points.T
-      data = numpy.array( [ x, y, 1-x-y ] ).T
+      data = numeric.array( [ x, y, 1-x-y ] ).T
     elif grad == 1:
-      data = numpy.array( [[1,0],[0,1],[-1,-1]], dtype=float )
+      data = numeric.array( [[1,0],[0,1],[-1,-1]], dtype=float )
     else:
-      data = numpy.array( 0 ).reshape( (1,) * (grad+ndim) )
+      data = numeric.array( 0 ).reshape( (1,) * (grad+ndim) )
     return data
 
   def __repr__( self ):
@@ -1724,24 +1728,24 @@ class BubbleTriangle( StdElem ):
     npoints, ndim = points.shape
     if grad == 0:
       x, y = points.T
-      data = numpy.array( [ x, y, 1-x-y, 27*x*y*(1-x-y) ] ).T
+      data = numeric.array( [ x, y, 1-x-y, 27*x*y*(1-x-y) ] ).T
     elif grad == 1:
       x, y = points.T
-      const_block = numpy.array( [1,0,0,1,-1,-1]*npoints, dtype=float ).reshape( npoints,3,2 )
-      grad1_bubble = 27*numpy.array( [y*(1-2*x-y),x*(1-x-2*y)] ).T.reshape( npoints,1,2 )
-      data = numpy.concatenate( [const_block, grad1_bubble], axis=1 )
+      const_block = numeric.array( [1,0,0,1,-1,-1]*npoints, dtype=float ).reshape( npoints,3,2 )
+      grad1_bubble = 27*numeric.array( [y*(1-2*x-y),x*(1-x-2*y)] ).T.reshape( npoints,1,2 )
+      data = numeric.concatenate( [const_block, grad1_bubble], axis=1 )
     elif grad == 2:
       x, y = points.T
-      zero_block = numpy.zeros( (npoints,3,2,2) )
-      grad2_bubble = 27*numpy.array( [-2*y,1-2*x-2*y, 1-2*x-2*y,-2*x] ).T.reshape( npoints,1,2,2 )
-      data = numpy.concatenate( [zero_block, grad2_bubble], axis=1 )
+      zero_block = numeric.zeros( (npoints,3,2,2) )
+      grad2_bubble = 27*numeric.array( [-2*y,1-2*x-2*y, 1-2*x-2*y,-2*x] ).T.reshape( npoints,1,2,2 )
+      data = numeric.concatenate( [zero_block, grad2_bubble], axis=1 )
     elif grad == 3:
-      zero_block = numpy.zeros( (3,2,2,2) )
-      grad3_bubble = 27*numpy.array( [0,-2,-2,-2,-2,-2,-2,0], dtype=float ).reshape( 1,2,2,2 )
-      data = numpy.concatenate( [zero_block, grad3_bubble], axis=0 )
+      zero_block = numeric.zeros( (3,2,2,2) )
+      grad3_bubble = 27*numeric.array( [0,-2,-2,-2,-2,-2,-2,0], dtype=float ).reshape( 1,2,2,2 )
+      data = numeric.concatenate( [zero_block, grad3_bubble], axis=0 )
     else:
       assert ndim==2, 'Triangle takes 2D coordinates' # otherwise tested by unpacking points.T
-      data = numpy.array( 0 ).reshape( (1,) * (grad+2) )
+      data = numeric.array( 0 ).reshape( (1,) * (grad+2) )
     return data
 
   def __repr__( self ):

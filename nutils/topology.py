@@ -59,7 +59,7 @@ class Topology( object ):
 
     dofmap = { n: i for i, n in enumerate( sorted( set( n for elem in self for n in elem.vertices ) ) ) }
     fmap = dict.fromkeys( self, element.PolyTriangle(1) )
-    nmap = { elem: numpy.array([ dofmap[n] for n in elem.vertices ]) for elem in self }
+    nmap = { elem: numeric.array([ dofmap[n] for n in elem.vertices ]) for elem in self }
     return function.function( fmap=fmap, nmap=nmap, ndofs=len(dofmap), ndims=2 )
 
   def __add__( self, other ):
@@ -111,7 +111,7 @@ class Topology( object ):
         separators.append( npoints )
         npoints += 1
     if separate:
-      separators = numpy.array( separators[:-1], dtype=int )
+      separators = numeric.array( separators[:-1], dtype=int )
       npoints -= 1
 
     retvals = []
@@ -120,7 +120,7 @@ class Topology( object ):
       func = function.asarray( func )
       retval = parallel.shzeros( (npoints,)+func.shape, dtype=func.dtype )
       if separate:
-        retval[separators] = numpy.nan
+        retval[separators] = numeric.nan
       if function._isfunc( func ):
         for f, ind in function.blocks( func ):
           idata.append( function.Tuple( [ ifunc, function.Tuple(ind), f ] ) )
@@ -159,7 +159,7 @@ class Topology( object ):
         func = function.Const( func )
       assert all( isinstance(sh,int) for sh in func.shape )
       idata.append( function.elemint( func, iweights ) )
-      retvals.append( numpy.empty( (len(self),)+func.shape ) )
+      retvals.append( numeric.empty( (len(self),)+func.shape ) )
     idata = function.Tuple( idata )
 
     for ielem, elem in enumerate( self ):
@@ -183,15 +183,15 @@ class Topology( object ):
     if single_arg:
       funcs = funcs,
 
-    C = numpy.asarray( C )
+    C = numeric.asarray( C )
     assert C.shape[0] == self.ndims
     shape = C.shape
     C = C.reshape( self.ndims, -1 )
 
     funcs = [ function.asarray(func) for func in funcs ]
-    retvals = [ numpy.empty( C.shape[1:] + func.shape ) for func in funcs ]
+    retvals = [ numeric.empty( C.shape[1:] + func.shape ) for func in funcs ]
     for retval in retvals:
-      retval[:] = numpy.nan
+      retval[:] = numeric.nan
 
     data = function.Tuple([ function.Tuple([ func, retval ]) for func, retval in zip( funcs, retvals ) ])
 
@@ -224,7 +224,7 @@ class Topology( object ):
 
     for irow, g in log.iterate( 'dof', enumerate(graph), nrows ):
       # release memory as we go
-      if g: graph[irow] = numpy.unique( numpy.concatenate( g ) )
+      if g: graph[irow] = numeric.unique( numeric.concatenate( g ) )
 
     return graph
 
@@ -358,7 +358,7 @@ class Topology( object ):
         raise Exception
       A, b = self.integrate( [Afun,bfun], geometry=geometry, ischeme=ischeme, title='building system' )
       N = A.rowsupp(droptol)
-      if numpy.all( b == 0 ):
+      if numeric.equal( b, 0 ).all():
         constrain[~constrain.where&N] = 0
       else:
         solvecons = constrain.copy()
@@ -390,9 +390,9 @@ class Topology( object ):
       ##   F += numeric.contract( f[:,_,:], w, axis=[0,2] )
       ## I = (W!=0)
 
-      F = numpy.zeros( onto.shape[0] )
-      W = numpy.zeros( onto.shape[0] )
-      I = numpy.zeros( onto.shape[0], dtype=bool )
+      F = numeric.zeros( onto.shape[0] )
+      W = numeric.zeros( onto.shape[0] )
+      I = numeric.zeros( onto.shape[0], dtype=bool )
       fun = function.asarray( fun )
       data = function.Tuple( function.Tuple([ fun, f, function.Tuple(ind) ]) for f, ind in function.blocks( onto ) )
       for elem in self:
@@ -413,7 +413,7 @@ class Topology( object ):
     if errfun2.ndim == 1:
       errfun2 = errfun2.sum()
     error2, area = self.integrate( [ errfun2, 1 ], geometry=geometry, ischeme=ischeme or 'gauss2' )
-    avg_error = numpy.sqrt(error2) / area
+    avg_error = numeric.sqrt(error2) / area
 
     numcons = constrain.where.sum()
     if verify is not None:
@@ -472,8 +472,8 @@ class Topology( object ):
       funcsp = topo.splinefunc( degree ) # shape functions for level irefine
       (func,(dofaxis,)), = function.blocks( funcsp ) # separate elem-local funcs and global placement index
   
-      supported = numpy.ones( funcsp.shape[0], dtype=bool ) # True if dof is contained in topoelems or parentelems
-      touchtopo = numpy.zeros( funcsp.shape[0], dtype=bool ) # True if dof touches at least one topoelem
+      supported = numeric.ones( funcsp.shape[0], dtype=bool ) # True if dof is contained in topoelems or parentelems
+      touchtopo = numeric.zeros( funcsp.shape[0], dtype=bool ) # True if dof touches at least one topoelem
       myelems = [] # all top-level or parent elements in level irefine
       for elem, idofs in log.iterate( 'element', dofaxis.dofmap.items() ):
         if elem in topoelems:
@@ -484,7 +484,7 @@ class Topology( object ):
         else:
           supported[idofs] = False
   
-      keep = numpy.logical_and( supported, touchtopo ) # THE refinement law
+      keep = numeric.logical_and( supported, touchtopo ) # THE refinement law
       if keep.all() and irefine == nrefine - 1:
         return topo, funcsp
   
@@ -501,7 +501,7 @@ class Topology( object ):
         if elem not in self: # at lowest level
           pelem, transform = elem.parent
           newdofs.extend( dofmap[pelem] ) # add dofs of all underlying 'broader' shapes
-        dofmap[elem] = numpy.array(newdofs) # add result to IEN mapping of new function object
+        dofmap[elem] = numeric.array(newdofs) # add result to IEN mapping of new function object
   
       ndofs += keep.sum() # update total number of dofs
       topo = topo.refined # proceed to next level
@@ -581,7 +581,7 @@ class StructuredTopology( Topology ):
   def __init__( self, structure, periodic=() ):
     'constructor'
 
-    structure = numpy.asarray(structure)
+    structure = numeric.asarray(structure)
     self.structure = structure
     self.periodic = tuple(periodic)
     self.groups = {}
@@ -614,8 +614,8 @@ class StructuredTopology( Topology ):
   def boundary( self ):
     'boundary'
 
-    shape = numpy.asarray( self.structure.shape ) + 1
-    vertices = numpy.arange( numpy.product(shape) ).reshape( shape )
+    shape = numeric.asarray( self.structure.shape ) + 1
+    vertices = numeric.arange( numeric.product(shape) ).reshape( shape )
 
     boundaries = []
     for iedge in range( 2 * self.ndims ):
@@ -630,11 +630,11 @@ class StructuredTopology( Topology ):
         s = tuple(s)
         belems = numpy.frompyfunc( lambda elem: elem.edge( iedge ) if elem is not None else None, 1, 1 )( self.structure[s] )
       else:
-        belems = numpy.array( self.structure[-iside].edge( 1-iedge ) )
+        belems = numeric.array( self.structure[-iside].edge( 1-iedge ) )
       boundaries.append( StructuredTopology( belems ) )
 
     if self.ndims == 2:
-      structure = numpy.concatenate([ boundaries[i].structure for i in [0,2,1,3] ])
+      structure = numeric.concatenate([ boundaries[i].structure for i in [0,2,1,3] ])
       topo = StructuredTopology( structure, periodic=[0] )
     else:
       allbelems = [ belem for boundary in boundaries for belem in boundary.structure.flat if belem is not None ]
@@ -649,19 +649,19 @@ class StructuredTopology( Topology ):
     'interfaces'
 
     interfaces = []
-    eye = numpy.eye(self.ndims-1)
+    eye = numeric.eye(self.ndims-1)
     for idim in range(self.ndims):
       s1 = (slice(None),)*idim + (slice(-1),)
       s2 = (slice(None),)*idim + (slice(1,None),)
       for elem1, elem2 in numpy.broadcast( self.structure[s1], self.structure[s2] ):
-        A = numpy.zeros((self.ndims,self.ndims-1))
+        A = numeric.zeros((self.ndims,self.ndims-1))
         A[:idim] = eye[:idim]
         A[idim+1:] = -eye[idim:]
-        b = numpy.hstack( [ numpy.zeros(idim+1), numpy.ones(self.ndims-idim) ] )
+        b = numeric.hstack( [ numeric.zeros(idim+1), numeric.ones(self.ndims-idim) ] )
         context1 = elem1, element.AffineTransformation( b[1:], A )
         context2 = elem2, element.AffineTransformation( b[:-1], A )
         vertices = numpy.reshape( elem1.vertices, [2]*elem1.ndims )[s2].ravel()
-        assert numpy.all( vertices == numpy.reshape( elem2.vertices, [2]*elem1.ndims )[s1].ravel() )
+        assert numeric.equal( vertices == numpy.reshape( elem2.vertices, [2]*elem1.ndims )[s1].ravel() ).all()
         ielem = element.QuadElement( ndims=self.ndims-1, vertices=vertices, interface=(context1,context2) )
         interfaces.append( ielem )
     return UnstructuredTopology( interfaces, ndims=self.ndims-1 )
@@ -681,7 +681,7 @@ class StructuredTopology( Topology ):
     else:
       assert len(removedofs) == self.ndims
 
-    vertex_structure = numpy.array( 0 )
+    vertex_structure = numeric.array( 0 )
     dofcount = 1
     slices = []
 
@@ -702,7 +702,7 @@ class StructuredTopology( Topology ):
       stdelems = stdelems[...,_] * stdelems_i if idim else stdelems_i
 
       nd = n + p
-      numbers = numpy.arange( nd )
+      numbers = numeric.arange( nd )
       if periodic_i and p > 0:
         overlap = p
         numbers[ -overlap: ] = numbers[ :overlap ]
@@ -711,8 +711,8 @@ class StructuredTopology( Topology ):
       if remove is None:
         vertex_structure = vertex_structure[...,_] * nd + numbers
       else:
-        mask = numpy.zeros( nd, dtype=bool )
-        mask[numpy.array(remove)] = True
+        mask = numeric.zeros( nd, dtype=bool )
+        mask[numeric.array(remove)] = True
         nd -= mask.sum()
         numbers -= mask.cumsum()
         vertex_structure = vertex_structure[...,_] * nd + numbers
@@ -730,8 +730,8 @@ class StructuredTopology( Topology ):
         hasnone = True
       else:
         S = item[2:]
-        dofs = numeric.ImmutableArray( vertex_structure[S].ravel() )
-        mask = dofs >= 0
+        dofs = vertex_structure[S].ravel()
+        mask = numeric.greater_equal( dofs, 0 )
         if mask.all():
           dofmap[ elem ] = dofs
           funcmap[elem] = std
@@ -740,12 +740,12 @@ class StructuredTopology( Topology ):
           funcmap[elem] = std, mask
 
     if hasnone:
-      touched = numpy.zeros( dofcount, dtype=bool )
+      touched = numeric.zeros( dofcount, dtype=bool )
       for dofs in dofmap.itervalues():
         touched[ dofs ] = True
       renumber = touched.cumsum()
       dofcount = int(renumber[-1])
-      dofmap = dict( ( elem, numeric.ImmutableArray(renumber[dofs]-1) ) for elem, dofs in dofmap.iteritems() )
+      dofmap = dict( ( elem, renumber[dofs]-1 ) for elem, dofs in dofmap.iteritems() )
 
     return function.function( funcmap, dofmap, dofcount, self.ndims )
 
@@ -756,7 +756,7 @@ class StructuredTopology( Topology ):
     if isinstance( degree, int ):
       degree = ( degree, ) * self.ndims
 
-    dofs = numpy.arange( numpy.product(numpy.array(degree)+1) * len(self) ).reshape( len(self), -1 )
+    dofs = numeric.arange( numeric.product(numeric.array(degree)+1) * len(self) ).reshape( len(self), -1 )
     dofmap = dict( zip( self, dofs ) )
 
     stdelem = util.product( element.PolyLine( element.PolyLine.bernstein_poly( d ) ) for d in degree )
@@ -771,7 +771,7 @@ class StructuredTopology( Topology ):
     p = 2
     periodic = self.periodic
 
-    vertex_structure = numpy.array( 0 )
+    vertex_structure = numeric.array( 0 )
     dofcount = 1
     slices = []
 
@@ -784,7 +784,7 @@ class StructuredTopology( Topology ):
       stdelems = stdelems[...,_] * stdelems_i if idim else stdelems_i
 
       nd = n + p - 2
-      numbers = numpy.arange( nd )
+      numbers = numeric.arange( nd )
 
       vertex_structure = vertex_structure[...,_] * nd + numbers
 
@@ -820,7 +820,7 @@ class StructuredTopology( Topology ):
     if isinstance( degree, int ):
       degree = ( degree, ) * self.ndims
 
-    vertex_structure = numpy.array( 0 )
+    vertex_structure = numeric.array( 0 )
     dofcount = 1
     slices = []
 
@@ -831,7 +831,7 @@ class StructuredTopology( Topology ):
       p = degree[idim]
 
       nd = n * p + 1
-      numbers = numpy.arange( nd )
+      numbers = numeric.arange( nd )
       if idim in self.periodic:
         numbers[-1] = numbers[0]
         nd -= 1
@@ -850,7 +850,7 @@ class StructuredTopology( Topology ):
         dofmap[ elem ] = vertex_structure[S].ravel()
 
     if hasnone:
-      touched = numpy.zeros( dofcount, dtype=bool )
+      touched = numeric.zeros( dofcount, dtype=bool )
       for dofs in dofmap.itervalues():
         touched[ dofs ] = True
       renumber = touched.cumsum()
@@ -864,11 +864,11 @@ class StructuredTopology( Topology ):
     'rectilinear func'
 
     assert len( gridvertices ) == self.ndims
-    vertex_structure = numpy.empty( map( len, gridvertices ) + [self.ndims] )
+    vertex_structure = numeric.empty( map( len, gridvertices ) + [self.ndims] )
     for idim, ivertices in enumerate( gridvertices ):
       shape = [1,] * self.ndims
       shape[idim] = -1
-      vertex_structure[...,idim] = numpy.asarray( ivertices ).reshape( shape )
+      vertex_structure[...,idim] = numeric.asarray( ivertices ).reshape( shape )
     return self.linearfunc().dot( vertex_structure.reshape( -1, self.ndims ) )
 
   @core.weakcache
@@ -877,10 +877,10 @@ class StructuredTopology( Topology ):
 
     N = tuple(N)
     assert len(N) == self.ndims
-    structure = numpy.array( [ elem.children_by(N) if elem is not None else [None]*numpy.product(N) for elem in self.structure.flat ] )
+    structure = numeric.array( [ elem.children_by(N) if elem is not None else [None]*numeric.product(N) for elem in self.structure.flat ] )
     structure = structure.reshape( self.structure.shape + tuple(N) )
     structure = structure.transpose( sum( [ ( i, self.ndims+i ) for i in range(self.ndims) ], () ) )
-    structure = structure.reshape( self.structure.shape * numpy.asarray(N) )
+    structure = structure.reshape( self.structure.shape * numeric.asarray(N) )
     refined = StructuredTopology( structure )
     refined.groups = { key: group.refine_nu( N ) for key, group in self.groups.items() }
     return refined
@@ -895,7 +895,7 @@ class StructuredTopology( Topology ):
     'trim element along levelset'
 
     trimmedelems = [ elem.trim( levelset=levelset, maxrefine=maxrefine, lscheme=lscheme, finestscheme=finestscheme, evalrefine=evalrefine ) for elem in log.iterate( title, self.structure.ravel() ) ]
-    trimmedstructure = numpy.array( trimmedelems ).reshape( self.structure.shape )
+    trimmedstructure = numeric.array( trimmedelems ).reshape( self.structure.shape )
     return StructuredTopology( trimmedstructure, periodic=self.periodic )
 
   def __str__( self ):
@@ -917,12 +917,12 @@ class StructuredTopology( Topology ):
     # REPLACES:
     alpha0 = self.multiindex[elem0]
     alpha1 = self.multiindex[elem1]
-    diff = numpy.array(alpha0) - numpy.array(alpha1)
+    diff = numeric.array(alpha0) - numeric.array(alpha1)
     for i, shi in enumerate( self.structure.shape ):
       if diff[i] in (shi-1, 1-shi) and i in self.periodic:
-        diff[i] = -numpy.sign( shi )
+        diff[i] = -numeric.sign( shi )
     if set(diff).issubset( (-1,0,1) ):
-      return numpy.sum(numpy.abs(diff))
+      return numeric.sum(numeric.abs(diff))
     return -1
     
 class IndexedTopology( Topology ):
@@ -951,7 +951,7 @@ class IndexedTopology( Topology ):
     raise NotImplementedError
     funcsp = self.topo.splinefunc( degree )
     func, (dofaxis,) = funcsp.get_func_ind()
-    touched = numpy.zeros( funcsp.shape[0], dtype=bool )
+    touched = numeric.zeros( funcsp.shape[0], dtype=bool )
     for elem in self:
       dofs = dofaxis(elem,None)
       touched[ dofs ] = True
@@ -1045,10 +1045,10 @@ class UnstructuredTopology( Topology ):
             edgedof = edges[( vertexdofs[j], vertexdofs[i] )] = ndofs
             ndofs += 1
           edgedofs.append( edgedof )
-        nmap[ children[0] ] = numpy.array([ edgedofs[2], edgedofs[1], vertexdofs[2] ])
-        nmap[ children[1] ] = numpy.array([ edgedofs[0], vertexdofs[1], edgedofs[1] ])
-        nmap[ children[2] ] = numpy.array([ vertexdofs[0], edgedofs[0], edgedofs[2] ])
-        nmap[ children[3] ] = numpy.array([ edgedofs[1], edgedofs[2], edgedofs[0] ])
+        nmap[ children[0] ] = numeric.array([ edgedofs[2], edgedofs[1], vertexdofs[2] ])
+        nmap[ children[1] ] = numeric.array([ edgedofs[0], vertexdofs[1], edgedofs[1] ])
+        nmap[ children[2] ] = numeric.array([ vertexdofs[0], edgedofs[0], edgedofs[2] ])
+        nmap[ children[3] ] = numeric.array([ edgedofs[1], edgedofs[2], edgedofs[0] ])
       else:
         dofaxis = None
 
@@ -1158,8 +1158,8 @@ class HierarchicalTopology( Topology ):
   
       discard = set(newdiscard)
       newdiscard = []
-      supported = numpy.ones( funcsp.shape[0], dtype=bool ) # True if dof is contained in topoelems or parentelems
-      touchtopo = numpy.zeros( funcsp.shape[0], dtype=bool ) # True if dof touches at least one topoelem
+      supported = numeric.ones( funcsp.shape[0], dtype=bool ) # True if dof is contained in topoelems or parentelems
+      touchtopo = numeric.zeros( funcsp.shape[0], dtype=bool ) # True if dof touches at least one topoelem
       myelems = [] # all top-level or parent elements in level irefine
       for elem, idofs in dofaxis.dofmap.items():
         if elem in self.elements:
@@ -1176,7 +1176,7 @@ class HierarchicalTopology( Topology ):
             parentelems.append( elem )
             myelems.append( elem )
   
-      keep = numpy.logical_and( supported, touchtopo ) # THE refinement law
+      keep = numeric.logical_and( supported, touchtopo ) # THE refinement law
 
       for elem in myelems: # loop over all top-level or parent elements in level irefine
         idofs = dofaxis.dofmap[elem] # local dof numbers
@@ -1191,7 +1191,7 @@ class HierarchicalTopology( Topology ):
         if irefine: # not at lowest level
           pelem, transform = elem.parent
           newdofs.extend( dofmap[pelem] ) # add dofs of all underlying 'broader' shapes
-        dofmap[elem] = numpy.array(newdofs) # add result to IEN mapping of new function object
+        dofmap[elem] = numeric.array(newdofs) # add result to IEN mapping of new function object
   
       ndofs += keep.sum() # update total number of dofs
       if not remaining:
@@ -1283,7 +1283,7 @@ def glue( master, slave, geometry, tol=1.e-10, verbose=False ):
   # 2. Update vertices of elements in new topology
   log.info( 'pairing elements [%i]' % len(master.boundary.groups['__glue__']) )
   for master_elem, master_locs in master_vertex_locations.iteritems():
-    meshwidth = numpy.linalg.norm( numpy.diff( master_locs, axis=0 ) )
+    meshwidth = numpy.linalg.norm( numeric.diff( master_locs, axis=0 ) )
     assert meshwidth > tol, 'tol. (%.2e) > element size (%.2e)' % (tol, meshwidth)
     if verbose: pos = {}
     for slave_elem, slave_locs in slave_vertex_locations.iteritems():

@@ -6,7 +6,7 @@ import numpy
 class FiniteCellTestBase( object ):
 
   def __init__ ( self ):
-    domain, self.geom = mesh.rectilinear( (numpy.linspace(-1.,1.,self.nelems+1),)*self.ndims )
+    domain, self.geom = mesh.rectilinear( (numeric.linspace(-1.,1.,self.nelems+1),)*self.ndims )
     self.fdomain = domain.trim( levelset=self.levelset, maxrefine=self.maxrefine, finestscheme=self.finestscheme )
 
   def test_volume ( self ):
@@ -38,7 +38,7 @@ class TestCircle( FiniteCellTestBase ):
   
   @property
   def levelset ( self ):
-    return -sum(self.geom*self.geom)+1./numpy.pi
+    return -sum(self.geom*self.geom)+1./numeric.pi
 
   maxrefine    = 4
   finestscheme = 'simplex1'
@@ -46,7 +46,7 @@ class TestCircle( FiniteCellTestBase ):
   vol_decimal = 3
   vol_exact   = 1.
 
-  surf_exact   = 2.*numpy.sqrt(numpy.pi)
+  surf_exact   = 2.*numeric.sqrt(numeric.pi)
   surf_decimal = 3
 
 class TestSphere( FiniteCellTestBase ):
@@ -54,7 +54,7 @@ class TestSphere( FiniteCellTestBase ):
   ndims  = 3
   nelems = 7
   
-  r2 = numpy.power(3./(4.*numpy.pi),2./3.)
+  r2 = numeric.power(3./(4.*numeric.pi),2./3.)
 
   @property
   def levelset ( self ):
@@ -66,7 +66,7 @@ class TestSphere( FiniteCellTestBase ):
   vol_decimal = 2
   vol_exact   = 1.
 
-  surf_exact   = 4.8091571139 #4.*numpy.pi*r2
+  surf_exact   = 4.8091571139 #4.*numeric.pi*r2
   surf_decimal = 10
   
 

@@ -19,14 +19,14 @@ class TestGaussQuadrature( object ):
         name = 'gauss%d' % p
         points, weights = elem.eval( name )
   
-        Fq = (weights*numpy.prod(points**numpy.array(ab)[_,:],axis=1)).sum()
+        Fq = (weights*numeric.prod(points**numeric.array(ab)[_,:],axis=1)).sum()
   
         err = abs(Fq-exact)/exact
   
         log.info( '%s: n = %02d, F = %8.6e, rel.err. = %8.6e, %s' % (name,len(weights),Fq,err,'Exact' if err < EPS else 'Not exact') )
   
         if isinstance( elem, element.QuadElement ):
-          expect_exact = p // 2 >= numpy.amax(ab) // 2
+          expect_exact = p // 2 >= numeric.max(ab) // 2
         else:
           expect_exact = p >= order
 
@@ -46,14 +46,14 @@ class TestGaussQuadrature( object ):
   def test_quadelement( self ):
     MAXORDER = 7
     elem     = element.QuadElement( 2, vertices=[element.PrimaryVertex('test(%d)'%i) for i in range(4)] )
-    F        = lambda *args: numpy.prod(numpy.array(args)+1)**-1.
+    F        = lambda *args: numeric.prod(numeric.array(args)+1)**-1.
 
     self._test ( MAXORDER, elem, F )
 
   def test_hexelement( self ):
     MAXORDER = 7
     elem     = element.QuadElement( 3, vertices=[element.PrimaryVertex('test(%d)'%i) for i in range(8)] )
-    F        = lambda *args: numpy.prod(numpy.array(args)+1)**-1.
+    F        = lambda *args: numeric.prod(numeric.array(args)+1)**-1.
 
     self._test ( MAXORDER, elem, F )
 
@@ -77,7 +77,7 @@ class TestSingularQuadrature( object ):
   def __init__( self ):
     'Construct an arbitrary bivariate periodic structured mesh, only: shape > (2,2) for Element.neighbor() not to fail!'
     # Topologies
-    grid = lambda n: numpy.linspace( -numpy.pi, numpy.pi, n+1 )
+    grid = lambda n: numeric.linspace( -numeric.pi, numeric.pi, n+1 )
     self.dims = 3, 4
     self.domain, self.geom = mesh.rectilinear( tuple(grid(n) for n in self.dims) )
     self.ddomain = self.domain * self.domain
@@ -93,10 +93,10 @@ class TestSingularQuadrature( object ):
         function.sin(phi) * (r*function.cos(theta) + R),
         function.sin(theta) * r] )
 
-    x, y = .5*(self.geom/numpy.pi + 1)*self.dims - 1.5 # ensure elem@(1,1) centered
+    x, y = .5*(self.geom/numeric.pi + 1)*self.dims - 1.5 # ensure elem@(1,1) centered
     self.hull = function.stack( [x, y, x**2*y**2] )
 
-    self.plane = .5*(self.geom/numpy.pi + 1)*self.dims # rescale: elem.vol=1, shift: geom>0
+    self.plane = .5*(self.geom/numeric.pi + 1)*self.dims # rescale: elem.vol=1, shift: geom>0
 
   def test_connectivity( self ):
     'Test implementation of Element.neighbor()'
@@ -170,16 +170,16 @@ class TestSingularQuadrature( object ):
     # Alternative coordinate computation
     points, weights = elem.get_quad_bem_ischeme( ischeme, neighbor )
     rotation_matrix = [
-        numpy.array( [ [1, 0],  [0, 1]] ), # 0/4*pi rotation
-        numpy.array( [ [0, -1], [1, 0]] ), # 1/4*pi rotation
-        numpy.array( [[-1, 0], [0, -1]] ), # 2/4*pi rotation
-        numpy.array( [[0, 1],  [-1, 0]] )] # 3/4*pi rotation
+        numeric.array( [ [1, 0],  [0, 1]] ), # 0/4*pi rotation
+        numeric.array( [ [0, -1], [1, 0]] ), # 1/4*pi rotation
+        numeric.array( [[-1, 0], [0, -1]] ), # 2/4*pi rotation
+        numeric.array( [[0, 1],  [-1, 0]] )] # 3/4*pi rotation
     shift_vector = [
-        numpy.array( [[0, 0]] ),
-        numpy.array( [[1, 0]] ),
-        numpy.array( [[1, 1]] ),
-        numpy.array( [[0, 1]] )]
-    flip_vector = numpy.array( [[-1, 1]] )
+        numeric.array( [[0, 0]] ),
+        numeric.array( [[1, 0]] ),
+        numeric.array( [[1, 1]] ),
+        numeric.array( [[0, 1]] )]
+    flip_vector = numeric.array( [[-1, 1]] )
     rotate = lambda points, case: (
         points[:,:,_] * rotation_matrix[case%4].T[_,:,:]).sum(-2) + shift_vector[case%4]
     flip = lambda points, case: (
@@ -188,14 +188,14 @@ class TestSingularQuadrature( object ):
 
     for (t1, t2), elem in elems.iteritems():
       # See if ProductElement.singular_ischeme_quad() gives same result
-      points_ref = numpy.empty( points.shape )
+      points_ref = numeric.empty( points.shape )
       points_ref[:,:2] = transform( points[:,:2], t1 )
       points_ref[:,2:] = transform( points[:,2:], t2 )
       points_test = elem.singular_ischeme_quad( orientation=elem.orientation, ischeme=ischeme )[0]
       assert numpy.linalg.norm( points_ref-points_test ) < 1.e-14
 
       # See if inverse transformation brings back to points[0]
-      points_inv = numpy.empty( points.shape )
+      points_inv = numeric.empty( points.shape )
       t1inv = [0, 3, 2, 1, 4, 5, 6, 7][t1]
       t2inv = [0, 3, 2, 1, 4, 5, 6, 7][t2]
       points_inv[:,:2] = transform( points_test[:,:2], t1inv )
@@ -236,7 +236,7 @@ class TestSingularQuadrature( object ):
 
     # all possible different schemes and transformations
     assert m>2 and n>3, 'Insufficient mesh size for all element types to be present.'
-    index = (m*n+1)*(n+1) + numpy.array( [0, -n, -1, 1, n, -n-1, -n+1, n-1, n+1, 2] )
+    index = (m*n+1)*(n+1) + numeric.array( [0, -n, -1, 1, n, -n-1, -n+1, n-1, n+1, 2] )
     ecoll = [{}, {}, {}, {}]
     for i, elem in enumerate( ddomain ):
       if not i in index: continue
@@ -262,16 +262,16 @@ class TestSingularQuadrature( object ):
           if compare_to_gauss: errsg[key] = []
           for q in qset:
             Fq = topo.integrate( func(geom), iweights=iweights, ischeme='singular%i'%q )
-            errs[key].append( numpy.abs(F/Fq-1) )
+            errs[key].append( numeric.abs(F/Fq-1) )
             if compare_to_gauss:
               qg = int(q*(A**.25))
               Fgq = topo.integrate( func(geom), iweights=iweights, ischeme='gauss%i'%(2*qg-2) )
-              errsg[key].append( numpy.abs(Fg/Fgq-1) )
+              errsg[key].append( numeric.abs(Fg/Fgq-1) )
 
         elif len(qset) == 1:
           # Test assertions on exact quadrature
           Fq = topo.integrate( func(geom), iweights=iweights, ischeme='singular%i'%qset[0] )
-          err = numpy.abs(F/Fq-1)
+          err = numeric.abs(F/Fq-1)
           assert err < 1.e-12, 'Nonexact quadrature, err = %.1e' % err
 
         elif len(qset) == 2:
@@ -279,9 +279,9 @@ class TestSingularQuadrature( object ):
           q0, q1 = tuple( qset )
           F0 = topo.integrate( func(geom), iweights=iweights, ischeme='singular%i'%q0 )
           F1 = topo.integrate( func(geom), iweights=iweights, ischeme='singular%i'%q1 )
-          err0 = numpy.abs(F/F0-1)
-          err1 = numpy.abs(F/F1-1)
-          slope = numpy.log10(err1/err0)/(q1-q0)
+          err0 = numeric.abs(F/F0-1)
+          err1 = numeric.abs(F/F1-1)
+          slope = numeric.log10(err1/err0)/(q1-q0)
           assert slope <= (-2. if slopes is None else slopes[neighbor]) or err1 < 1.e-12, \
               'Insufficient quadrature convergence (is func analytic?), slope = %.2f' % slope
 

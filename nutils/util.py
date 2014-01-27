@@ -1,4 +1,4 @@
-from . import log, prop, debug, core
+from . import log, prop, debug, core, numeric
 import sys, os, time, numpy, cPickle, hashlib, weakref, warnings, itertools
 
 def unreachable_items():
@@ -187,21 +187,21 @@ def iterate( context='iter', nmax=-1 ):
     finally:
       logger.disable()
 
-class NanVec( numpy.ndarray ):
+class NanVec( numeric.SaneArray ):
   'nan-initialized vector'
 
   def __new__( cls, length ):
     'new'
 
-    vec = numpy.empty( length ).view( cls )
-    vec[:] = numpy.nan
+    vec = numeric.empty( length ).view( cls )
+    vec[:] = numeric.nan
     return vec
 
   @property
   def where( self ):
     'find non-nan items'
 
-    return ~numpy.isnan( self.view(numpy.ndarray) )
+    return ~numeric.isnan( self )
 
   def __iand__( self, other ):
     'combine'
@@ -253,7 +253,7 @@ def tensorial( args ):
   'create n-dimensional array containing tensorial combinations of n args'
 
   shape = map( len, args )
-  array = numpy.empty( shape, dtype=object )
+  array = numeric.empty( shape, dtype=object )
   for index in numpy.lib.index_tricks.ndindex( *shape ):
     array[index] = tuple([ arg[i] for arg, i in zip(args,index) ])
   return array
@@ -261,13 +261,13 @@ def tensorial( args ):
 def arraymap( f, dtype, *args ):
   'call f for sequence of arguments and cast to dtype'
 
-  return numpy.array( map( f, args[0] ) if len( args ) == 1
+  return numeric.array( map( f, args[0] ) if len( args ) == 1
                  else [ f( *arg ) for arg in numpy.broadcast( *args ) ], dtype=dtype )
 
 def objmap( func, *arrays ):
   'map numpy arrays'
 
-  arrays = map( numpy.asarray, arrays )
+  arrays = map( numeric.asarray, arrays )
   return numpy.frompyfunc( func, len(arrays), 1 )( *arrays )
 
 def fail( msg, *args ):
