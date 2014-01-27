@@ -103,6 +103,12 @@ nan = numpy.nan
 inf = numpy.inf
 pi = numpy.pi
 
+def isarray( A ):
+  return isinstance( A, numpy.ndarray )
+
+def isscalar( A ):
+  return isinstance( A, (int,float) ) or isarray( A ) and A.ndim == 0
+
 def unique( ar, *args, **kwargs ):
   return numpy.unique( numpy.asarray( ar ), *args, **kwargs ).view( SaneArray )
 
