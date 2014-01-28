@@ -655,9 +655,8 @@ class Get( ArrayFunc ):
     self.item = item
     assert 0 <= axis < func.ndim, 'axis is out of bounds'
     assert 0 <= item < func.shape[axis], 'item is out of bounds'
-    s = (Ellipsis,item) + (slice(None),)*(func.ndim-axis-1)
     shape = func.shape[:axis] + func.shape[axis+1:]
-    ArrayFunc.__init__( self, args=(func,s), evalf=numpy.ndarray.__getitem__, shape=shape )
+    ArrayFunc.__init__( self, args=(func,axis-func.ndim,item), evalf=numeric.getitem, shape=shape )
 
   def _localgradient( self, ndims ):
     f = localgradient( self.func, ndims )
@@ -1667,15 +1666,12 @@ class Take( ArrayFunc ):
     start = indices[0]
     step = indices[1] - start
     stop = start + step * len(indices)
-
-    s = [ slice(None) ] * func.ndim
-    s[axis] = slice( start, stop, step ) if numeric.equal( numeric.diff(indices), step ).all() \
-         else indices
+    item = slice( start, stop, step ) if numeric.equal( numeric.diff(indices), step ).all() else indices
 
     newlen, = numeric.empty( func.shape[axis] )[ indices ].shape
     assert newlen > 0
     shape = func.shape[:axis] + (newlen,) + func.shape[axis+1:]
-    ArrayFunc.__init__( self, args=(func,(Ellipsis,)+tuple(s)), evalf=numpy.ndarray.__getitem__, shape=shape )
+    ArrayFunc.__init__( self, args=(func,axis-func.ndim,item), evalf=numeric.getitem, shape=shape )
 
   def _localgradient( self, ndims ):
     return take( localgradient( self.func, ndims ), self.indices, self.axis )
@@ -2479,7 +2475,7 @@ def get( arg, iax, item ):
     else numeric.normdim( sh, item )
 
   if not _isfunc( arg ):
-    return numeric.get( arg, iax, item )
+    return numeric.getitem( arg, iax, item )
 
   retval = _call( arg, '_get', iax, item )
   if retval is not None:
@@ -3100,7 +3096,7 @@ def take( arg, index, axis ):
     return DofIndex( arg, axis, index )
 
   if not _isfunc( arg ):
-    return numeric.take( arg, index, axis )
+    return numeric.getitem( arg, axis, index )
 
   return Take( arg, index, axis )
 

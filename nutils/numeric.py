@@ -83,7 +83,6 @@ exp           = _wrap( numpy.exp           )
 log           = _wrap( numpy.log           )
 argmin        = _wrap( numpy.argmin        )
 argmax        = _wrap( numpy.argmax        )
-take          = _wrap( numpy.take          )
 intersect1d   = _wrap( numpy.intersect1d   )
 isnan         = _wrap( numpy.isnan         )
 roll          = _wrap( numpy.roll          )
@@ -154,6 +153,11 @@ def det( A ):
     det[I] = numpy.linalg.det( A[I] )
   return det
 
+def getitem( A, axis, indices ):
+  indices = (slice(None),) * axis + (indices,) if axis >= 0 \
+       else (Ellipsis,indices) + (slice(None),) * (-axis-1)
+  return asarray( A )[ indices ]
+
 
 #####
 
@@ -186,13 +190,6 @@ def align( arr, trans, ndim ):
   shape[trans] = arr.shape
   tmp = numpy.lib.stride_tricks.as_strided( arr, shape, strides ).view( arr.__class__ )
   return tmp
-
-def get( arr, axis, item ):
-  'take single item from array axis'
-
-  arr = asarray( arr )
-  axis = normdim( arr.ndim, axis )
-  return arr[ (slice(None),) * axis + (item,) ]
 
 def expand( arr, *shape ):
   'expand'
