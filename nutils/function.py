@@ -40,7 +40,6 @@ class Evaluable( object ):
     'constructor'
 
     self.__args = tuple(args)
-    assert not any( type(arg) == numpy.ndarray for arg in self.__args )
     self.__evalf = evalf
     self.operations = None
 
@@ -94,7 +93,7 @@ class Evaluable( object ):
       points, weights = ischeme
       assert points.shape[-1] == elem.ndims
       assert points.shape[:-1] == weights.shape, 'non matching shapes: points.shape=%s, weights.shape=%s' % ( points.shape, weights.shape )
-    elif isinstance( ischeme, numpy.ndarray ):
+    elif numeric.isarray( ischeme ):
       points = ischeme
       weights = None
       assert points.shape[-1] == elem.ndims
@@ -215,7 +214,7 @@ class Tuple( Evaluable ):
   def __init__( self, items ):
     'constructor'
 
-    self.items = tuple( numeric.asarray(it) if isinstance(it,numpy.ndarray) else it for it in items )
+    self.items = tuple( numeric.asarray(it) if numeric.isarray(it) else it for it in items )
     Evaluable.__init__( self, args=self.items, evalf=self.vartuple )
 
   def __iter__( self ):
@@ -378,7 +377,7 @@ class ArrayFunc( Evaluable ):
       elif isinstance(it,slice) and it.step in (1,None) and it.stop == ( it.start or 0 ) + 1: # special case: unit length slice
         arr = insert( get( arr, n, it.start or 0 ), n )
         n += 1
-      elif isinstance(it,(slice,list,tuple,numpy.ndarray)): # modify axis (shorten, extend or renumber one axis)
+      elif isinstance(it,(slice,list,tuple,numeric.ndarray)): # modify axis (shorten, extend or renumber one axis)
         arr = take( arr, it, n )
         n += 1
       else:
@@ -898,7 +897,7 @@ class DofMap( ArrayFunc ):
     'new'
 
     self.cascade = cascade
-    assert all( type(val) != numpy.ndarray for val in dofmap.values() )
+    assert all( type(val) != numeric.ndarray for val in dofmap.values() )
     self.dofmap = dofmap
     ArrayFunc.__init__( self, args=(cascade,dofmap), evalf=self.evalmap, shape=[axis], dtype=int )
 
@@ -1172,7 +1171,7 @@ class DofIndex( ArrayFunc ):
     'constructor'
 
     assert index.ndim >= 1
-    assert isinstance( array, numpy.ndarray )
+    assert numeric.isarray( array )
     self.array = array
     assert 0 <= iax < self.array.ndim
     self.iax = iax
@@ -2259,7 +2258,7 @@ def _isiterable( obj ):
 def _obj2str( obj ):
   'convert object to string'
 
-  if isinstance( obj, numpy.ndarray ):
+  if numeric.isarray( obj ):
     if obj.size < 6:
       return _obj2str(obj.tolist())
     return 'array<%s>' % 'x'.join( map( str, obj.shape ) )
@@ -2313,7 +2312,7 @@ _isfunc = lambda arg: isinstance( arg, ArrayFunc )
 _isscalar = lambda arg: asarray(arg).ndim == 0
 _isint = lambda arg: numeric.asarray( arg ).dtype == int
 _ascending = lambda arg: numeric.greater( numeric.diff(arg), 0 ).all()
-_iszero = lambda arg: isinstance( arg, Zeros ) or isinstance( arg, numpy.ndarray ) and numeric.equal( arg, 0 ).all()
+_iszero = lambda arg: isinstance( arg, Zeros ) or numeric.isarray( arg ) and numeric.equal( arg, 0 ).all()
 _isunit = lambda arg: not _isfunc(arg) and numeric.equal( arg, 1 ).all()
 _subsnonesh = lambda shape: tuple( 1 if sh is None else sh for sh in shape )
 _normdims = lambda ndim, shapes: tuple( numeric.normdim(ndim,sh) for sh in shapes )
@@ -2969,7 +2968,7 @@ def power( arg, n ):
   if n == 0:
     return numeric.ones( arg.shape )
 
-  if isinstance( arg, numpy.ndarray ):
+  if numeric.isarray( arg ):
     return numeric.power( arg, n )
 
   retval = _call( arg, '_power', n )
@@ -2984,7 +2983,7 @@ def sign( arg ):
 
   arg = asarray( arg )
 
-  if isinstance( arg, numpy.ndarray ):
+  if numeric.isarray( arg ):
     return numeric.sign( arg )
 
   retval = _call( arg, '_sign' )

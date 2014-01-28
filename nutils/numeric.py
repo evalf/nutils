@@ -97,6 +97,7 @@ subtract      = _wrap( numpy.subtract      )
 minimum       = _wrap( numpy.minimum       )
 repeat        = _wrap( numpy.repeat        )
 
+ndarray = numpy.ndarray
 spacing = numpy.spacing
 nan = numpy.nan
 inf = numpy.inf
