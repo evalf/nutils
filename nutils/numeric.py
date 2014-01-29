@@ -99,6 +99,7 @@ minimum       = _wrap( numpy.minimum       )
 repeat        = _wrap( numpy.repeat        )
 searchsorted  = _wrap( numpy.searchsorted  )
 solve         = _wrap( numpy.linalg.solve  )
+frombuffer    = _wrap( numpy.frombuffer    )
 
 float64 = numpy.float64
 intc = numpy.intc
@@ -115,6 +116,13 @@ ndindex = numpy.ndindex
 unravel_index = numpy.unravel_index
 testing = numpy.testing
 isfinite = numpy.isfinite
+
+def insane( obj ):
+  return obj.view( ndarray ) if isarray( obj ) \
+    else list( insane(item) for item in obj ) if isinstance( obj, list ) \
+    else tuple( insane(item) for item in obj ) if isinstance( obj, tuple ) \
+    else dict( ( insane(key), insane(value) ) for key, value in obj.items() ) if isinstance( obj, dict ) \
+    else obj
 
 def grid( shape ):
   return map( asarray, numpy.ogrid[ tuple( slice(n) for n in shape ) ] )

@@ -1,4 +1,4 @@
-from . import log, util, numpy, core, numeric, function, _
+from . import log, util, core, numeric, function, _
 import warnings
 
 class TrimmedIScheme( object ):
@@ -772,7 +772,7 @@ class TrimmedElement( Element ):
 
       newpoint = pts[0] + xi * ( pts[-1] - pts[0] )
 
-      points   = numpy.append( points, newpoint[_], axis=0 ) 
+      points = numeric.concatenate( [ points, newpoint[_] ], axis=0 ) 
       v1, v2 = line.vertices
       vertices.append( HalfVertex( v1, v2, xi=xi ) )
 
@@ -892,14 +892,14 @@ class QuadElement( Element ):
 
     assert len(N) == self.ndims
     vertices = numeric.empty( [ ni+1 for ni in N ], dtype=object )
-    vertices[ tuple( slice(None,None,ni) for ni in N ) ] = numpy.reshape( self.vertices, [2]*self.ndims )
+    vertices[ tuple( slice(None,None,ni) for ni in N ) ] = numeric.asarray( self.vertices ).reshape( [2]*self.ndims )
     for idim in range(self.ndims):
       s1 = tuple( slice(None) for ni in N[:idim] )
       s2 = tuple( slice(None,None,ni) for ni in N[idim+1:] )
       for i in range( 1, N[idim] ):
         vertices[s1+(i,)+s2] = numeric.objmap( HalfVertex, vertices[s1+(0,)+s2], vertices[s1+(2,)+s2], float(i)/N[idim] )
 
-    elemvertices = [ vertices[ tuple( slice(i,i+2) for i in index ) ].ravel() for index in numpy.ndindex(*N) ]
+    elemvertices = [ vertices[ tuple( slice(i,i+2) for i in index ) ].ravel() for index in numeric.ndindex(*N) ]
     return tuple( QuadElement( vertices=elemvertices[ielem], ndims=self.ndims, parent=(self,transform) )
       for ielem, transform in enumerate( self.refinedtransform(N) ) )
 
@@ -951,7 +951,7 @@ class QuadElement( Element ):
     if self.ndims != 3:
       raise NotImplementedError('Ribbons not implemented for ndims=%d'%self.ndims)
 
-    ndvertices = numpy.reshape( self.vertices, [2]*self.ndims )
+    ndvertices = numeric.asarray( self.vertices ).reshape( [2]*self.ndims )
     ribbons = []
     for i1, i2 in numeric.array([[[0,0,0],[1,0,0]],
                                  [[0,0,0],[0,1,0]],
@@ -982,7 +982,7 @@ class QuadElement( Element ):
     iside = iedge % 2
     s = (slice(None,None, 1 if iside else -1),) * idim + (iside,) \
       + (slice(None,None,-1 if iside else  1),) * (self.ndims-idim-1)
-    vertices = numeric.asarray( numpy.reshape( self.vertices, (2,)*self.ndims )[s] ).ravel() # TODO check
+    vertices = numeric.asarray( numeric.asarray( self.vertices ).reshape( (2,)*self.ndims )[s] ).ravel() # TODO check
     return QuadElement( vertices=vertices, ndims=self.ndims-1, context=(self,transform) )
 
   @staticmethod
@@ -992,7 +992,7 @@ class QuadElement( Element ):
 
     Nf = numeric.asarray( N, dtype=float )
     assert Nf.ndim == 1
-    return [ AffineTransformation( offset=I/Nf, transform=numeric.diag(1/Nf) ) for I in numpy.ndindex(*N) ]
+    return [ AffineTransformation( offset=I/Nf, transform=numeric.diag(1/Nf) ) for I in numeric.ndindex(*N) ]
 
   def refine( self, n ):
     'refine n times'

@@ -343,7 +343,7 @@ class SparseMatrix( Matrix ):
     return SparseMatrix( (data,indices,indptr), self.shape[0] )
 
   def toarray( self ):
-    'convert to numpy array'
+    'convert to array'
 
     array = numeric.zeros( self.shape )
     for irow in range( self.shape[0] ):
@@ -482,7 +482,7 @@ class DenseMatrix( Matrix ):
     self.data[ rows[:,_], cols[:,_] ] += vals
 
   def toarray( self ):
-    'convert to numpy array'
+    'convert to array'
 
     return self.data
 

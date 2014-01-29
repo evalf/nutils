@@ -1,6 +1,6 @@
 from __future__ import print_function
 from . import prop
-import sys, time, os, warnings, numpy, re
+import sys, time, os, warnings, numeric, re
 
 _KEY = '__logger__'
 
@@ -160,7 +160,7 @@ class ProgressContextLog( ContextLog ):
     self.msg = text
     self.showpct = showpct
     self.tint = getattr(prop,'progress_interval',1.)
-    self.tmax = getattr(prop,'progress_interval_max',numpy.inf)
+    self.tmax = getattr(prop,'progress_interval_max',numeric.inf)
     self.texp = getattr(prop,'progress_interval_scale',2.)
     self.t0 = time.time()
     self.tnext = self.t0 + min( self.tint, self.tmax )

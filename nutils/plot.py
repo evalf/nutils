@@ -65,18 +65,12 @@ class PyPlot( BasePlot ):
     BasePlot.__init__( self, name, ndigits=ndigits, index=index )
 
     import matplotlib
-
     matplotlib.use( 'Agg', warn=False )
-
-    from matplotlib import pyplot
 
     imgtype = getattr( prop, 'imagetype', 'png' ) if imgtype is None else imgtype
     self.names = [ self.name + '.' + ext for ext in imgtype.split(',') ]
 
-    self.__dict__.update( pyplot.__dict__ )
-
     self._fig = self.figure( **kwargs )
-    #self._fig.patch.set_alpha( 0 )
 
   def __exit__( self, *exc_info ):
     'exit with block'
@@ -86,6 +80,12 @@ class PyPlot( BasePlot ):
       self.close( self._fig )
     except:
       log.warning( 'failed to close figure' )
+
+  def __getattr__( self, attr ):
+    from matplotlib import pyplot
+    attrfun = getattr( pyplot, attr )
+    # matplotlib doesn't like sane arrays much
+    return lambda *args, **kwargs: attrfun( *numeric.insane(args), **numeric.insane(kwargs) )
 
   def save( self, name ):
     'save images'
