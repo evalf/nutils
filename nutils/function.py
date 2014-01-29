@@ -1,4 +1,4 @@
-from . import util, numpy, numeric, log, prop, core, _
+from . import util, numeric, log, prop, core, _
 import sys, warnings
 
 ELEM    = object()
@@ -875,7 +875,7 @@ class Inverse( ArrayFunc ):
 
     assert func.shape[-1] == func.shape[-2]
     self.func = func
-    ArrayFunc.__init__( self, args=[func], evalf=numeric.inverse, shape=func.shape )
+    ArrayFunc.__init__( self, args=[func], evalf=numeric.inv, shape=func.shape )
 
   def _localgradient( self, ndims ):
     G = localgradient( self.func, ndims )
@@ -1152,7 +1152,7 @@ class Determinant( ArrayFunc ):
     'contructor'
 
     self.func = func
-    ArrayFunc.__init__( self, args=[func], evalf=numeric.determinant, shape=func.shape[:-2] )
+    ArrayFunc.__init__( self, args=[func], evalf=numeric.det, shape=func.shape[:-2] )
 
   def _localgradient( self, ndims ):
     Finv = swapaxes( inverse( self.func ) )
@@ -2347,7 +2347,7 @@ def _dtypestr( arg ):
   raise Exception, 'unknown dtype %s' % arg.dtype
 
 def asarray( arg ):
-  'convert to ArrayFunc or numpy.ndarray'
+  'convert to ArrayFunc or numeric.SaneArray'
   
   arr = numeric.asarray( arg )
   if arr.dtype == object:
@@ -2652,7 +2652,7 @@ def determinant( arg, axes=(-2,-1) ):
   shape = arg.shape[:-2]
 
   if not _isfunc( arg ):
-    return numeric.determinant( arg )
+    return numeric.det( arg )
 
   retval = _call( arg, '_determinant' )
   if retval is not None:
@@ -2677,7 +2677,7 @@ def inverse( arg, axes=(-2,-1) ):
   arg = align( arg, trans, arg.ndim )
 
   if not _isfunc( arg ):
-    return numeric.inverse( arg ).transpose( trans )
+    return numeric.inv( arg ).transpose( trans )
 
   retval = _call( arg, '_inverse' )
   if retval is not None:

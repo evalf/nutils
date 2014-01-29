@@ -1,4 +1,4 @@
-from . import util, numpy, log, numeric, parallel, _
+from . import util, log, numeric, parallel, _
 import scipy.sparse
 from scipy.sparse.sparsetools.csr import _csr
 from scipy.sparse.linalg.isolve import _iterative
@@ -10,12 +10,12 @@ def krylov( matvec, b, x0=None, tol=1e-5, restart=None, maxiter=0, precon=None, 
   restart=None: CG
   restart=integer: GMRES'''
 
-  assert isinstance( b, numpy.ndarray ) and b.dtype == numpy.float64 and b.ndim == 1
+  assert numeric.isarray( b ) and b.dtype == numeric.float64 and b.ndim == 1
   n = b.size
   if x0 is None:
-    x0 = numpy.zeros( n, dtype=numpy.float64 )
+    x0 = numeric.zeros( n, dtype=numeric.float64 )
   else:
-    assert isinstance( x0, numpy.ndarray ) and x0.dtype == numpy.float64 and x0.ndim == 1 and x0.size == n
+    assert numeric.isarray( x0 ) and x0.dtype == numeric.float64 and x0.ndim == 1 and x0.size == n
   assert isinstance( tol, float ) and tol > 0
   res = tol
   ndx1 = 1
@@ -29,7 +29,7 @@ def krylov( matvec, b, x0=None, tol=1e-5, restart=None, maxiter=0, precon=None, 
 
   if restart is None:
     log.context( 'CG' )
-    work = numpy.zeros( 4*n, dtype=numpy.float64 )
+    work = numeric.zeros( 4*n, dtype=numeric.float64 )
     ijob_matvecx = 3
     revcom = lambda x, iiter, res, info, ndx1, ndx2, ijob: \
       _iterative.dcgrevcom( b, x, work, iiter, res, info, ndx1, ndx2, ijob )
@@ -37,8 +37,8 @@ def krylov( matvec, b, x0=None, tol=1e-5, restart=None, maxiter=0, precon=None, 
     if restart > n:
       restart = n
     log.context( 'GMRES%d' % restart )
-    work = numpy.zeros( (6+restart)*n, dtype=numpy.float64 )
-    work2 = numpy.zeros( (restart+1)*(2*restart+2), dtype=numpy.float64 )
+    work = numeric.zeros( (6+restart)*n, dtype=numeric.float64 )
+    work2 = numeric.zeros( (restart+1)*(2*restart+2), dtype=numeric.float64 )
     ijob_matvecx = 1
     revcom = lambda x, iiter, res, info, ndx1, ndx2, ijob: \
       _iterative.dgmresrevcom( b, x, restart, work, work2, iiter, res, info, ndx1, ndx2, ijob )
@@ -46,7 +46,7 @@ def krylov( matvec, b, x0=None, tol=1e-5, restart=None, maxiter=0, precon=None, 
     _iterative.dstoptest2( vec1, b, bnrm2, tol, info )
 
   x = x0
-  progress = log.progress( 'residual', target=numpy.log(tol) )
+  progress = log.progress( 'residual', target=numeric.log(tol) )
   t0 = time.clock()
   while True:
     x, iiter, res, info, ndx1, ndx2, sclr1, sclr2, ijob = \
@@ -69,7 +69,7 @@ def krylov( matvec, b, x0=None, tol=1e-5, restart=None, maxiter=0, precon=None, 
       assert ijob == -1
       break
     ijob = 2
-    progress.update( numpy.log(res) )
+    progress.update( numeric.log(res) )
   dt = time.clock() - t0
   progress.disable()
 
@@ -80,23 +80,23 @@ def krylov( matvec, b, x0=None, tol=1e-5, restart=None, maxiter=0, precon=None, 
 def parsecons( constrain, lconstrain, rconstrain, shape ):
   'parse constraints'
 
-  I = numpy.ones( shape[0], dtype=bool )
-  x = numpy.empty( shape[1] )
-  x[:] = numpy.nan
+  I = numeric.ones( shape[0], dtype=bool )
+  x = numeric.empty( shape[1] )
+  x[:] = numeric.nan
   if constrain is not None:
     assert lconstrain is None
     assert rconstrain is None
-    assert isinstance( constrain, numpy.ndarray )
-    I[:] = numpy.isnan( constrain )
+    assert numeric.isarray( constrain )
+    I[:] = numeric.isnan( constrain )
     x[:] = constrain
   if lconstrain is not None:
-    assert isinstance( lconstrain, numpy.ndarray )
+    assert numeric.isarray( lconstrain )
     x[:] = lconstrain
   if rconstrain is not None:
-    assert isinstance( rconstrain, numpy.ndarray )
+    assert numeric.isarray( rconstrain )
     I[:] = rconstrain
-  J = numpy.isnan(x)
-  assert numpy.sum(I) == numpy.sum(J), 'constrained matrix is not square: %dx%d' % ( numpy.sum(I), numpy.sum(J) )
+  J = numeric.isnan(x)
+  assert numeric.sum(I) == numeric.sum(J), 'constrained matrix is not square: %dx%d' % ( numeric.sum(I), numeric.sum(J) )
   x[J] = 0
   return x, I, J
 
@@ -142,8 +142,8 @@ class Matrix( object ):
     'condition number'
 
     x, I, J = parsecons( constrain, lconstrain, rconstrain, self.shape )
-    matrix = self.toarray()[numpy.ix_(I,J)]
-    return numpy.linalg.cond( matrix )
+    matrix = self.toarray()[I][:,J]
+    return numeric.cond( matrix )
 
   def res( self, x, b=0, constrain=None, lconstrain=None, rconstrain=None ):
     'residual'
@@ -159,7 +159,7 @@ class DenseSubMatrix( Matrix ):
 
     self.data = data
     self.indices = indices
-    if isinstance( indices, numpy.ndarray ):
+    if numeric.isarray( indices ):
       nrows, ncols = indices.shape
     else:
       I, J = indices
@@ -182,18 +182,18 @@ class SparseMatrix( Matrix ):
 
     if isinstance( graph, tuple ):
       self.data, self.indices, self.indptr = graph
-      assert self.indices.dtype == numpy.intc
-      assert self.indptr.dtype == numpy.intc
+      assert self.indices.dtype == numeric.intc
+      assert self.indptr.dtype == numeric.intc
       assert len(self.indices) == len(self.data) == self.indptr[-1]
       nrows = len(self.indptr) - 1
     else:
       nrows = len(graph)
       nzrow = map(len,graph)
       count = sum( nzrow )
-      assert numpy.sum( nzrow ) <= numpy.iinfo( numpy.intc ).max, 'matrix overflow: length %d > max intc %d' % ( numpy.sum( nzrow ), numpy.iinfo( numpy.intc ).max )
+      assert numeric.sum( nzrow ) <= numeric.iinfo( numeric.intc ).max, 'matrix overflow: length %d > max intc %d' % ( numeric.sum( nzrow ), numeric.iinfo( numeric.intc ).max )
       self.data = parallel.shzeros( count, dtype=float )
-      self.indptr = numpy.cumsum( [0] + nzrow, dtype=numpy.intc )
-      self.indices = numpy.empty( count, dtype=numpy.intc )
+      self.indptr = numeric.cumsum( [0] + nzrow, dtype=numeric.intc )
+      self.indices = numeric.empty( count, dtype=numeric.intc )
       for irow, icols in enumerate( graph ):
         a, b = self.indptr[irow:irow+2]
         self.indices[a:b] = icols
@@ -206,7 +206,7 @@ class SparseMatrix( Matrix ):
     assert nrows >= self.shape[0] and ncols >= self.shape[1]
     indptr = self.indptr
     if nrows > self.shape[1]:
-      indptr = numpy.concatenate([ indptr, numeric.fastrepeat( indptr[-1:], nrows-self.shape[1] ) ])
+      indptr = numeric.concatenate([ indptr, numeric.fastrepeat( indptr[-1:], nrows-self.shape[1] ) ])
     return self.__class__( (self.data,self.indices,indptr), ncols )
 
   def clone( self ):
@@ -218,33 +218,33 @@ class SparseMatrix( Matrix ):
     'matrix-vector multiplication'
 
     assert other.shape == self.shape[1:]
-    result = numpy.zeros( self.shape[0] )
+    result = numeric.zeros( self.shape[0] )
     _csr.csr_matvec( self.shape[0], self.shape[1], self.indptr, self.indices, self.data, other, result )
     return result
 
   def __getitem__( self, (rows,cols) ):
     'get submatrix'
 
-    if isinstance(cols,numpy.ndarray) and cols.dtype == bool:
+    if isinstance(cols,numeric.ndarray) and cols.dtype == bool:
       assert len(cols) == self.shape[1]
       cols, = cols.nonzero()
-    elif isinstance(cols,numpy.ndarray) and cols.dtype == int:
+    elif isinstance(cols,numeric.ndarray) and cols.dtype == int:
       pass
     else:
       raise Exception, 'invalid column argument'
     ncols = len(cols)
 
-    if isinstance(rows,numpy.ndarray) and rows.dtype == bool:
+    if isinstance(rows,numeric.ndarray) and rows.dtype == bool:
       assert len(rows) == self.shape[0]
       rows, = rows.nonzero()
-    elif isinstance(rows,numpy.ndarray) and rows.dtype == int:
+    elif isinstance(rows,numeric.ndarray) and rows.dtype == int:
       pass
     else:
       raise Exception, 'invalid row argument'
     nrows = len(rows)
 
-    indptr = numpy.empty( nrows+1, dtype=int )
-    I = numpy.empty( numpy.minimum( self.indptr[rows+1] - self.indptr[rows], ncols ).sum(), dtype=int ) # allocate for worst case
+    indptr = numeric.empty( nrows+1, dtype=int )
+    I = numeric.empty( numeric.minimum( self.indptr[rows+1] - self.indptr[rows], ncols ).sum(), dtype=int ) # allocate for worst case
     indptr[0] = 0
     for n, irow in enumerate( rows ):
       a, b = self.indptr[irow:irow+2]
@@ -268,9 +268,9 @@ class SparseMatrix( Matrix ):
     assert isinstance( other, SparseMatrix )
     assert self.shape == other.shape
     maxcount = len(self.data) + len(other.data)
-    indptr = numpy.empty( self.shape[0]+1, dtype=numpy.intc )
-    indices = numpy.empty( maxcount, dtype=numpy.intc )
-    data = numpy.empty( maxcount, dtype=float )
+    indptr = numeric.empty( self.shape[0]+1, dtype=numeric.intc )
+    indices = numeric.empty( maxcount, dtype=numeric.intc )
+    data = numeric.empty( maxcount, dtype=float )
     op( self.shape[0], self.shape[1], self.indptr, self.indices, self.data, other.indptr, other.indices, other.data, indptr, indices, data )
     nz = indptr[-1]
     return SparseMatrix( (data[:nz],indices[:nz],indptr), ncols=self.shape[1] )
@@ -295,13 +295,13 @@ class SparseMatrix( Matrix ):
     'locate indices of other into self'
 
     assert isinstance( other, self.__class__ ) and self.shape == other.shape
-    if numpy.all( self.indptr == other.indptr ) and numpy.all( self.indices == other.indices ):
+    if self.indptr == other.indptr and self.indices == other.indices:
       return slice(None)
-    I = numpy.empty( other.data.shape, dtype=int )
+    I = numeric.empty( other.data.shape, dtype=int )
     for irow in range( self.shape[0] ):
       s = slice( other.indptr[irow], other.indptr[irow+1] )
       I[s] = self.indptr[irow] \
-           + numpy.searchsorted( self.indices[self.indptr[irow]:self.indptr[irow+1]], other.indices[s] )
+           + numeric.searchsorted( self.indices[self.indptr[irow]:self.indptr[irow+1]], other.indices[s] )
     assert all( self.indices[I] == other.indices )
     return I
 
@@ -337,16 +337,16 @@ class SparseMatrix( Matrix ):
   def T( self ):
     'transpose'
 
-    data = numpy.empty_like( self.data )
-    indices = numpy.empty_like( self.indices )
-    indptr = numpy.empty_like( self.indptr )
+    data = numeric.empty_like( self.data )
+    indices = numeric.empty_like( self.indices )
+    indptr = numeric.empty_like( self.indptr )
     _csr.csr_tocsc( self.shape[0], self.shape[1], self.indptr, self.indices, self.data, indptr, indices, data )
     return SparseMatrix( (data,indices,indptr), self.shape[0] )
 
   def toarray( self ):
     'convert to numpy array'
 
-    array = numpy.zeros( self.shape )
+    array = numeric.zeros( self.shape )
     for irow in range( self.shape[0] ):
       a, b = self.indptr[irow:irow+2]
       array[irow,self.indices[a:b]] = self.data[a:b]
@@ -360,7 +360,7 @@ class SparseMatrix( Matrix ):
   def rowsupp( self, tol=0 ):
     'return row indices with nonzero/non-small entries'
 
-    supp = numpy.empty( self.shape[0], dtype=bool )
+    supp = numeric.empty( self.shape[0], dtype=bool )
     for irow in range( self.shape[0] ):
       a, b = self.indptr[irow:irow+2]
       supp[irow] = a != b and ( tol == 0 or numeric.greater( numeric.abs( self.data[a:b] ), tol ).any() )
@@ -369,11 +369,11 @@ class SparseMatrix( Matrix ):
   def get_splu( self, I, J, complete ):
     'register LU preconditioner'
 
-    cij = tuple(numpy.where(~I)[0]), tuple(numpy.where(~J)[0]), complete
+    cij = tuple(numeric.find(~I)), tuple(numeric.find(~J)), complete
     precon = self.splu_cache.get( cij )
     if precon is None:
       log.info( 'building %s preconditioner' % ( 'SPLU' if complete else 'SPILU' ) )
-      A = scipy.sparse.csr_matrix( (self.data,self.indices,self.indptr), shape=self.shape )[numpy.where(I)[0],:][:,numpy.where(J)[0]].tocsc()
+      A = scipy.sparse.csr_matrix( (self.data,self.indices,self.indptr), shape=self.shape )[numeric.find(I),:][:,numeric.find(J)].tocsc()
       precon = scipy.sparse.linalg.splu( A ) if complete \
           else scipy.sparse.linalg.spilu( A, drop_tol=1e-5, fill_factor=None, drop_rule=None, permc_spec=None, diag_pivot_thresh=None, relax=None, panel_size=None, options=None )
       self.splu_cache[ cij ] = precon
@@ -393,7 +393,7 @@ class SparseMatrix( Matrix ):
 
     log.context( title )
   
-    b = numpy.asarray( b, dtype=float )
+    b = numeric.asarray( b, dtype=float )
     if b.ndim == 0:
       b = numeric.fastrepeat( b[_], self.shape[0] )
     else:
@@ -416,7 +416,7 @@ class SparseMatrix( Matrix ):
 
     else:
 
-      tmpvec = numpy.zeros( self.shape[1] )
+      tmpvec = numeric.zeros( self.shape[1] )
       def matvec( v ):
         tmpvec[J] = v
         return self.matvec(tmpvec)[I]
@@ -436,7 +436,7 @@ class DenseMatrix( Matrix ):
   def __init__( self, shape ):
     'constructor'
 
-    if isinstance( shape, numpy.ndarray ):
+    if numeric.isarray( shape ):
       self.data = shape
     else:
       if isinstance( shape, int ):
@@ -447,7 +447,7 @@ class DenseMatrix( Matrix ):
   def __getitem__( self, (rows,cols) ):
     'get submatrix'
 
-    if isinstance(rows,numpy.ndarray) and isinstance(cols,numpy.ndarray):
+    if numeric.isarray( rows ) and numeric.isarray( cols ):
       rows = rows[:,_]
       cols = cols[_,:]
     return DenseSubMatrix( self.data, (rows,cols) )
@@ -491,7 +491,7 @@ class DenseMatrix( Matrix ):
     'matrix-vector multiplication'
 
     assert other.shape == self.shape[1:]
-    return numpy.dot( self.data, other )
+    return numeric.dot( self.data, other )
 
   @property
   def T( self ):
@@ -504,7 +504,7 @@ class DenseMatrix( Matrix ):
 
     log.context( title + ' [direct]' )
 
-    b = numpy.asarray( b, dtype=float )
+    b = numeric.asarray( b, dtype=float )
     if b.ndim == 0:
       b = numeric.fastrepeat( b[_], self.shape[0] )
     else:
@@ -512,12 +512,12 @@ class DenseMatrix( Matrix ):
       assert b.shape == self.shape[:1]
   
     if constrain is lconstrain is rconstrain is None:
-      return numpy.linalg.solve( self.data, b )
+      return numeric.solve( self.data, b )
 
     x, I, J = parsecons( constrain, lconstrain, rconstrain, self.shape )
     data = self.data[I]
 
-    x[J] = numpy.linalg.solve( data[:,J], b[I] - numpy.dot( data[:,~J], x[~J] ) )
+    x[J] = numeric.solve( data[:,J], b[I] - numeric.dot( data[:,~J], x[~J] ) )
     log.info( 'done' )
 
     return x

@@ -96,12 +96,18 @@ divide        = _wrap( numpy.divide        )
 subtract      = _wrap( numpy.subtract      )
 minimum       = _wrap( numpy.minimum       )
 repeat        = _wrap( numpy.repeat        )
+searchsorted  = _wrap( numpy.searchsorted  )
+solve         = _wrap( numpy.linalg.solve  )
 
+float64 = numpy.float64
+intc = numpy.intc
 ndarray = numpy.ndarray
 spacing = numpy.spacing
 nan = numpy.nan
 inf = numpy.inf
 pi = numpy.pi
+cond = numpy.linalg.cond
+iinfo = numpy.iinfo
 
 def isarray( A ):
   return isinstance( A, numpy.ndarray )
@@ -167,14 +173,17 @@ def norm( A, axis=-1 ):
 
   return sqrt( contract( A, A, axis ) )
 
-
-#####
-
 def findsorted( array, items ):
-  indices = numpy.searchsorted( array, items )
+  indices = searchsorted( array, items )
   assert numpy.less( indices, array.size ).all()
   assert numpy.equal( array[indices], items ).all()
   return indices
+
+def find( arr ):
+  nz, = arr.ravel().nonzero()
+  return nz.view( SaneArray )
+
+#####
 
 def normdim( ndim, n ):
   'check bounds and make positive'
