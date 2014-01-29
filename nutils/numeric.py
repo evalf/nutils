@@ -113,6 +113,9 @@ broadcast = numpy.broadcast
 ndindex = numpy.ndindex
 unravel_index = numpy.unravel_index
 
+def grid( shape ):
+  return map( asarray, numpy.ogrid[ tuple( slice(n) for n in shape ) ] )
+
 def isarray( A ):
   return isinstance( A, numpy.ndarray )
 
