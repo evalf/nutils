@@ -3056,7 +3056,7 @@ def function( fmap, nmap, ndofs, ndims ):
   cascade = Cascade(ndims)
   func = Function( cascade, fmap, igrad=0, axis=axis )
   dofmap = DofMap( cascade, nmap, axis=axis )
-  return Inflate( func, dofmap, length=ndofs, axis=0 )
+  return Inflate( func, dofmap, length=int(ndofs), axis=0 )
 
 def take( arg, index, axis ):
   'take index'
@@ -3158,7 +3158,7 @@ def fdapprox( func, w, dofs, delta=1.e-5 ):
   log.context( 'FD approx' )
   if not isinstance( w, tuple ): w = w,
   x0 = tuple( wi.dot( dofs ) for wi in w )
-  step = numpy.linalg.norm( dofs, numeric.inf )*delta
+  step = numeric.norm( dofs, numeric.inf )*delta
   ndofs = len( dofs )
   dfunc_fd = []
   for i in log.iterate( 'dof', range(ndofs) ):

@@ -162,6 +162,11 @@ def getitem( A, axis, indices ):
 def as_strided( A, shape, strides ):
   return numpy.lib.stride_tricks.as_strided( A, shape, strides ).view( SaneArray )
 
+def norm( A, axis=-1 ):
+  'L2 norm over specified axis'
+
+  return sqrt( contract( A, A, axis ) )
+
 
 #####
 
@@ -432,11 +437,6 @@ def mean( A, weights=None, axis=-1 ):
   'generalized mean'
 
   return A.mean( axis ) if weights is None else dot( A, weights / weights.sum(), axis )
-
-def norm2( A, axis=-1 ):
-  'L2 norm over specified axis'
-
-  return asarray( numpy.sqrt( contract( A, A, axis ) ) )
 
 def normalize( A, axis=-1 ):
   'devide by normal'
