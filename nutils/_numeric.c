@@ -99,10 +99,10 @@ static PyMethodDef module_methods[] = {
 
 PyObject *sane_richcompare( PyObject *a, PyObject *b, int op ) {
   ASSERT( PyArray_Check( (PyArrayObject *)a) );
-  DBGPRINT( "1. in richcompare\n" );
+  DBGPRINT( "in richcompare, op=%d\n", op );
   int ndim = PyArray_NDIM( (PyArrayObject *)a );
   if ( a == b ) {
-    DBGPRINT( "2. objects are equal\n" );
+    DBGPRINT( "objects are identical\n" );
     switch ( op ) {
       case Py_EQ: case Py_LE: case Py_GE: Py_RETURN_TRUE;
       case Py_NE: case Py_LT: case Py_GT: Py_RETURN_FALSE;
@@ -110,31 +110,41 @@ PyObject *sane_richcompare( PyObject *a, PyObject *b, int op ) {
     return NULL;
   }
   if ( ndim == 0 && PyArray_IsAnyScalar( b ) ) { // fall back on scalar comparison
-    DBGPRINT( "2. scalar comparison\n" );
+    DBGPRINT( "forwarding to scalar comparison\n" );
     PyObject *a_obj = PyArray_ToScalar( PyArray_DATA( (PyArrayObject *)a ), (PyArrayObject *)a );
     PyObject *result = PyObject_RichCompare( a_obj, b, op );
     Py_DECREF( a_obj );
     return result;
   }
-  DBGPRINT( "2. array-array comparison\n" );
-  int cmp = -1;
+  int cmp;
   npy_intp *dims = PyArray_DIMS( (PyArrayObject *)a );
-  if ( PyArray_Check( (PyArrayObject *)b) // otherwise cmp = -1
-    && ( cmp = PyArray_TYPE( (PyArrayObject *)b ) - PyArray_TYPE( (PyArrayObject *)a ) ) == 0
-    && ( cmp = PyArray_NDIM( (PyArrayObject *)b ) - ndim ) == 0
-    && ( cmp = memcmp( dims, PyArray_DIMS( (PyArrayObject *)b ), sizeof(dims[0]) * ndim ) ) == 0 )
-  { // check the data
+  if ( ! PyArray_Check( (PyArrayObject *)b) ) {
+    DBGPRINT( "other object is not an array\n" );
+    cmp = -1;
+  }
+  else if (( cmp = PyArray_TYPE( (PyArrayObject *)b ) - PyArray_TYPE( (PyArrayObject *)a ) )) {
+    // for meaning of array type see numpy/ndarraytypes.h: NPY_TYPES
+    DBGPRINT( "arrays have different dtypes: %d != %d\n", PyArray_TYPE( (PyArrayObject *)a ), PyArray_TYPE( (PyArrayObject *)b ) );
+  }
+  else if (( cmp = PyArray_NDIM( (PyArrayObject *)b ) - ndim )) {
+    DBGPRINT( "arrays have different dimensions: %d != %d\n", ndim, PyArray_NDIM( (PyArrayObject *)b ) );
+  }
+  else if (( cmp = memcmp( dims, PyArray_DIMS( (PyArrayObject *)b ), sizeof(dims[0]) * ndim ) )) {
+    DBGPRINT( "arrays have different shapes\n" );
+  }
+  else {
+    // check the data
     npy_intp *strides1 = PyArray_STRIDES( (PyArrayObject *)a );
     npy_intp *strides2 = PyArray_STRIDES( (PyArrayObject *)b );
     npy_intp idx[NPY_MAXDIMS] = { 0 };
     void *data1 = PyArray_DATA( (PyArrayObject *)a );
     void *data2 = PyArray_DATA( (PyArrayObject *)b );
     if ( data1 == data2 && memcmp( strides1, strides2, sizeof(strides1[0]) * ndim ) == 0 ) {
-      DBGPRINT( "3. coinciding memory\n" );
+      DBGPRINT( "arrays have coinciding memory\n" );
       cmp = 0;
     }
     else {
-      DBGPRINT( "3. number-by-number comparison ndim=%d\n", ndim );
+      DBGPRINT( "number-by-number comparison ndim=%d\n", ndim );
       int itemsize = PyArray_ITEMSIZE( (PyArrayObject *)a );
       while ( ndim > 0 ) {
         if ( strides1[ndim-1] == itemsize && strides2[ndim-1] == itemsize ) {
@@ -144,7 +154,7 @@ PyObject *sane_richcompare( PyObject *a, PyObject *b, int op ) {
           break;
         }
         ndim--;
-        DBGPRINT( "4. reducing contiguous dimension ndim=%d\n", ndim );
+        DBGPRINT( "reducing contiguous dimension ndim=%d\n", ndim );
       }
       cmp = memcmp( data1, data2, itemsize );
       npy_intp i = ndim - 1;
@@ -168,7 +178,7 @@ PyObject *sane_richcompare( PyObject *a, PyObject *b, int op ) {
       }
     }
   }
-  DBGPRINT( "@. result: cmp=%d\n", cmp );
+  DBGPRINT( "result: cmp=%d\n", cmp );
   PyObject *result;
   switch ( op ) {
     case Py_LT: result = cmp <  0 ? Py_True : Py_False; break;
