@@ -897,7 +897,7 @@ class QuadElement( Element ):
       s1 = tuple( slice(None) for ni in N[:idim] )
       s2 = tuple( slice(None,None,ni) for ni in N[idim+1:] )
       for i in range( 1, N[idim] ):
-        vertices[s1+(i,)+s2] = util.objmap( HalfVertex, vertices[s1+(0,)+s2], vertices[s1+(2,)+s2], float(i)/N[idim] )
+        vertices[s1+(i,)+s2] = numeric.objmap( HalfVertex, vertices[s1+(0,)+s2], vertices[s1+(2,)+s2], float(i)/N[idim] )
 
     elemvertices = [ vertices[ tuple( slice(i,i+2) for i in index ) ].ravel() for index in numpy.ndindex(*N) ]
     return tuple( QuadElement( vertices=elemvertices[ielem], ndims=self.ndims, parent=(self,transform) )

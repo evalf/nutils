@@ -628,7 +628,7 @@ class StructuredTopology( Topology ):
         if not iside: # TODO: check that this is correct for all dimensions; should match conventions in elem.edge
           s[idim-1] = slice(None,None,1 if idim else -1)
         s = tuple(s)
-        belems = util.objmap( lambda elem: elem.edge( iedge ) if elem is not None else None, self.structure[s] )
+        belems = numeric.objmap( lambda elem: elem.edge( iedge ) if elem is not None else None, self.structure[s] )
       else:
         belems = numeric.array( self.structure[-iside].edge( 1-iedge ) )
       boundaries.append( StructuredTopology( belems ) )

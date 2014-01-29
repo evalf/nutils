@@ -1,5 +1,5 @@
 from . import log, prop, debug, core, numeric
-import sys, os, time, numpy, cPickle, hashlib, weakref, warnings, itertools
+import sys, os, time, cPickle, hashlib, weakref, warnings, itertools
 
 def unreachable_items():
   # see http://stackoverflow.com/questions/16911559/trouble-understanding-pythons-gc-garbage-for-tracing-memory-leaks
@@ -207,7 +207,7 @@ class NanVec( numeric.SaneArray ):
     'combine'
 
     where = self.where
-    if numpy.isscalar( other ):
+    if numeric.isscalar( other ):
       self[ where ] = other
     else:
       where &= other.where
@@ -223,7 +223,7 @@ class NanVec( numeric.SaneArray ):
     'combine'
 
     wherenot = ~self.where
-    self[ wherenot ] = other if numpy.isscalar( other ) else other[ wherenot ]
+    self[ wherenot ] = other if numeric.isscalar( other ) else other[ wherenot ]
     return self
 
   def __or__( self, other ):
@@ -254,7 +254,7 @@ def tensorial( args ):
 
   shape = map( len, args )
   array = numeric.empty( shape, dtype=object )
-  for index in numpy.lib.index_tricks.ndindex( *shape ):
+  for index in numeric.ndindex( *shape ):
     array[index] = tuple([ arg[i] for arg, i in zip(args,index) ])
   return array
 
@@ -262,13 +262,7 @@ def arraymap( f, dtype, *args ):
   'call f for sequence of arguments and cast to dtype'
 
   return numeric.array( map( f, args[0] ) if len( args ) == 1
-                 else [ f( *arg ) for arg in numpy.broadcast( *args ) ], dtype=dtype )
-
-def objmap( func, *arrays ):
-  'map numpy arrays'
-
-  arrays = [ numeric.asarray( array, dtype=object ) for array in arrays ]
-  return numpy.frompyfunc( func, len(arrays), 1 )( *arrays )
+                 else [ f( *arg ) for arg in numeric.broadcast( *args ) ], dtype=dtype )
 
 def fail( msg, *args ):
   'generate exception'

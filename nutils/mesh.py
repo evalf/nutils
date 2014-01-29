@@ -34,12 +34,12 @@ def rectilinear( vertices, periodic=(), name='rect' ):
   domainelem = element.Element( ndims=ndims, vertices=[] )
 
   vertexfmt = name + '(' + ','.join( '%%%dd' % len(str(len(n)-1)) for n in vertices ) + ')'
-  vertexobjs = util.objmap( lambda *index: element.PrimaryVertex(vertexfmt%index), *numpy.ogrid[ tuple( slice(len(n)) for n in vertices ) ] )
+  vertexobjs = numeric.objmap( lambda *index: element.PrimaryVertex(vertexfmt%index), *numpy.ogrid[ tuple( slice(len(n)) for n in vertices ) ] )
   for idim in periodic:
     tmp = numeric.bringforward( vertexobjs, idim )
     tmp[-1] = tmp[0]
 
-  structure = util.objmap( lambda *index: element.QuadElement(
+  structure = numeric.objmap( lambda *index: element.QuadElement(
     ndims=ndims,
     parent=( domainelem, element.AffineTransformation(
       offset=[ n[i] for n,i in zip(vertices,index) ],

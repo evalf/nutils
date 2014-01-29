@@ -187,6 +187,13 @@ def find( arr ):
   nz, = arr.ravel().nonzero()
   return nz.view( SaneArray )
 
+def objmap( func, *arrays ):
+  'map numpy arrays'
+
+  arrays = [ asarray( array, dtype=object ) for array in arrays ]
+  return numpy.frompyfunc( func, len(arrays), 1 )( *arrays )
+
+
 #####
 
 def normdim( ndim, n ):
