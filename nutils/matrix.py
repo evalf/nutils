@@ -301,8 +301,7 @@ class SparseMatrix( Matrix ):
     for irow in range( self.shape[0] ):
       s = slice( other.indptr[irow], other.indptr[irow+1] )
       I[s] = self.indptr[irow] \
-           + numeric.searchsorted( self.indices[self.indptr[irow]:self.indptr[irow+1]], other.indices[s] )
-    assert all( self.indices[I] == other.indices )
+           + numeric.findsorted( self.indices[self.indptr[irow]:self.indptr[irow+1]], other.indices[s] )
     return I
 
   def __iadd__( self, other ):

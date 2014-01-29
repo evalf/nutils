@@ -1,4 +1,4 @@
-from . import element, function, util, numpy, parallel, matrix, log, core, numeric, prop, _
+from . import element, function, util, parallel, matrix, log, core, numeric, prop, _
 import warnings, itertools
 
 class ElemMap( dict ):
@@ -398,7 +398,7 @@ class Topology( object ):
       for elem in self:
         for f, w, ind in data( elem, 'bezier2' ):
           w = w.swapaxes(0,1) # -> dof axis, point axis, ...
-          wf = w * f[ (slice(None),)+numpy.ix_(*ind[1:]) ]
+          wf = w * f[ (slice(None),)+numeric.ix_(*ind[1:]) ]
           W[ind[0]] += w.reshape(w.shape[0],-1).sum(1)
           F[ind[0]] += wf.reshape(w.shape[0],-1).sum(1)
           I[ind[0]] = True
@@ -628,7 +628,7 @@ class StructuredTopology( Topology ):
         if not iside: # TODO: check that this is correct for all dimensions; should match conventions in elem.edge
           s[idim-1] = slice(None,None,1 if idim else -1)
         s = tuple(s)
-        belems = numpy.frompyfunc( lambda elem: elem.edge( iedge ) if elem is not None else None, 1, 1 )( self.structure[s] )
+        belems = util.objmap( lambda elem: elem.edge( iedge ) if elem is not None else None, self.structure[s] )
       else:
         belems = numeric.array( self.structure[-iside].edge( 1-iedge ) )
       boundaries.append( StructuredTopology( belems ) )
@@ -653,15 +653,15 @@ class StructuredTopology( Topology ):
     for idim in range(self.ndims):
       s1 = (slice(None),)*idim + (slice(-1),)
       s2 = (slice(None),)*idim + (slice(1,None),)
-      for elem1, elem2 in numpy.broadcast( self.structure[s1], self.structure[s2] ):
+      for elem1, elem2 in numeric.broadcast( self.structure[s1], self.structure[s2] ):
         A = numeric.zeros((self.ndims,self.ndims-1))
         A[:idim] = eye[:idim]
         A[idim+1:] = -eye[idim:]
         b = numeric.hstack( [ numeric.zeros(idim+1), numeric.ones(self.ndims-idim) ] )
         context1 = elem1, element.AffineTransformation( b[1:], A )
         context2 = elem2, element.AffineTransformation( b[:-1], A )
-        vertices = numpy.reshape( elem1.vertices, [2]*elem1.ndims )[s2].ravel()
-        assert numeric.equal( vertices == numpy.reshape( elem2.vertices, [2]*elem1.ndims )[s1].ravel() ).all()
+        vertices = numeric.asarray( elem1.vertices ).reshape( [2]*elem1.ndims )[s2].ravel()
+        assert numeric.equal( vertices == numeric.asarray( elem2.vertices ).reshape( [2]*elem1.ndims )[s1].ravel() ).all()
         ielem = element.QuadElement( ndims=self.ndims-1, vertices=vertices, interface=(context1,context2) )
         interfaces.append( ielem )
     return UnstructuredTopology( interfaces, ndims=self.ndims-1 )
@@ -723,7 +723,7 @@ class StructuredTopology( Topology ):
     dofmap = {}
     funcmap = {}
     hasnone = False
-    for item in numpy.broadcast( self.structure, stdelems, *numpy.ix_(*slices) ):
+    for item in numeric.broadcast( self.structure, stdelems, *numeric.ix_(*slices) ):
       elem = item[0]
       std = item[1]
       if elem is None:
@@ -760,7 +760,7 @@ class StructuredTopology( Topology ):
     dofmap = dict( zip( self, dofs ) )
 
     stdelem = util.product( element.PolyLine( element.PolyLine.bernstein_poly( d ) ) for d in degree )
-    funcmap = dict( numpy.broadcast( self.structure, stdelem ) )
+    funcmap = dict( numeric.broadcast( self.structure, stdelem ) )
 
     return function.function( funcmap, dofmap, dofs.size, self.ndims )
 
@@ -798,13 +798,13 @@ class StructuredTopology( Topology ):
       slices.append( myslice )
 
     dofmap = {}
-    for item in numpy.broadcast( self.structure, *numpy.ix_(*slices) ):
+    for item in numeric.broadcast( self.structure, *numeric.ix_(*slices) ):
       elem = item[0]
       S = item[1:]
       dofmap[ elem ] = vertex_structure[S].ravel()
 
     dofaxis = function.DofMap( ElemMap(dofmap,self.ndims) )
-    funcmap = dict( numpy.broadcast( self.structure, stdelems ) )
+    funcmap = dict( numeric.broadcast( self.structure, stdelems ) )
 
     return function.Function( dofaxis=dofaxis, stdmap=ElemMap(funcmap,self.ndims), igrad=0 )
 
@@ -841,7 +841,7 @@ class StructuredTopology( Topology ):
 
     dofmap = {}
     hasnone = False
-    for item in numpy.broadcast( self.structure, *numpy.ix_(*slices) ):
+    for item in numeric.broadcast( self.structure, *numeric.ix_(*slices) ):
       elem = item[0]
       if elem is None:
         hasnone = True
@@ -857,7 +857,7 @@ class StructuredTopology( Topology ):
       dofcount = int(renumber[-1])
       dofmap = dict( ( elem, renumber[dofs]-1 ) for elem, dofs in dofmap.iteritems() )
 
-    funcmap = dict( numpy.broadcast( self.structure, stdelem ) )
+    funcmap = dict( numeric.broadcast( self.structure, stdelem ) )
     return function.function( funcmap, dofmap, dofcount, self.ndims )
 
   def rectilinearfunc( self, gridvertices ):
@@ -907,7 +907,7 @@ class StructuredTopology( Topology ):
   @core.cache
   def multiindex( self ):
     'Inverse map of self.structure: given an element find its location in the structure.'
-    return dict( (self.structure[alpha], alpha) for alpha in numpy.ndindex( self.structure.shape ) )
+    return dict( (self.structure[alpha], alpha) for alpha in numeric.ndindex( self.structure.shape ) )
 
   def neighbor( self, elem0, elem1 ):
     'Neighbor detection, returns codimension of interface, -1 for non-neighboring elements.'
@@ -1233,7 +1233,7 @@ def glue( master, slave, geometry, tol=1.e-10, verbose=False ):
     assert isinstance( elem, element.QuadElement ), 'glue() is very restrictive: only QuadElement meshes for now.'
     new_elem = lambda parent: element.QuadElement( elem.ndims, elem.vertices, parent=parent ) 
     if isinstance( slave, StructuredTopology ): # slave is of the same type as new
-      ndindex = numpy.unravel_index( index, slave.structure.shape )
+      ndindex = numeric.unravel_index( index, slave.structure.shape )
       new.elements[index] = new_elem( (slave.structure[ndindex], element.IdentityTransformation(elem.ndims)) )
     else:
       new.elements[index] = new_elem( (slave.elements[index], element.IdentityTransformation(elem.ndims)) )

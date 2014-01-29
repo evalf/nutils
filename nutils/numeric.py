@@ -108,6 +108,10 @@ inf = numpy.inf
 pi = numpy.pi
 cond = numpy.linalg.cond
 iinfo = numpy.iinfo
+ix_ = numpy.ix_
+broadcast = numpy.broadcast
+ndindex = numpy.ndindex
+unravel_index = numpy.unravel_index
 
 def isarray( A ):
   return isinstance( A, numpy.ndarray )
@@ -140,7 +144,7 @@ def inv( A ):
     numpy.divide( A[...,0,1], -det, Ainv[...,0,1] )
     return Ainv
   Ainv = empty( A.shape )
-  for I in numpy.lib.index_tricks.ndindex( A.shape[:-2] ):
+  for I in ndindex( A.shape[:-2] ):
     Ainv[I] = numpy.linalg.inv( A[I] )
   return Ainv
 
@@ -156,7 +160,7 @@ def det( A ):
   if A.shape[-1] == 2:
     return A[...,0,0] * A[...,1,1] - A[...,0,1] * A[...,1,0]
   det = empty( A.shape[:-2] )
-  for I in numpy.lib.index_tricks.ndindex( A.shape[:-2] ):
+  for I in ndindex( A.shape[:-2] ):
     det[I] = numpy.linalg.det( A[I] )
   return det
 
