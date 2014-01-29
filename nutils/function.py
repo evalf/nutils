@@ -3158,7 +3158,7 @@ def fdapprox( func, w, dofs, delta=1.e-5 ):
   log.context( 'FD approx' )
   if not isinstance( w, tuple ): w = w,
   x0 = tuple( wi.dot( dofs ) for wi in w )
-  step = numeric.norm( dofs, numeric.inf )*delta
+  step = numeric.norm2( dofs, numeric.inf )*delta
   ndofs = len( dofs )
   dfunc_fd = []
   for i in log.iterate( 'dof', range(ndofs) ):

@@ -149,7 +149,7 @@ class Matrix( object ):
     'residual'
 
     x0, I, J = parsecons( constrain, lconstrain, rconstrain, self.shape )
-    return numeric.norm( (self.matvec(x)-b)[I] ) / numeric.norm( (self.matvec(x0)-b)[I] )
+    return numeric.norm2( (self.matvec(x)-b)[I] ) / numeric.norm2( (self.matvec(x0)-b)[I] )
 
 class DenseSubMatrix( Matrix ):
   'dense but non-contiguous data'

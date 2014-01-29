@@ -1283,12 +1283,12 @@ def glue( master, slave, geometry, tol=1.e-10, verbose=False ):
   # 2. Update vertices of elements in new topology
   log.info( 'pairing elements [%i]' % len(master.boundary.groups['__glue__']) )
   for master_elem, master_locs in master_vertex_locations.iteritems():
-    meshwidth = numeric.norm( numeric.diff( master_locs, axis=0 ) )
+    meshwidth = numeric.norm2( numeric.diff( master_locs, axis=0 ) )
     assert meshwidth > tol, 'tol. (%.2e) > element size (%.2e)' % (tol, meshwidth)
     if verbose: pos = {}
     for slave_elem, slave_locs in slave_vertex_locations.iteritems():
-      dists = (numeric.norm( master_locs-slave_locs ),
-               numeric.norm( master_locs-slave_locs[::-1] ))
+      dists = (numeric.norm2( master_locs-slave_locs ),
+               numeric.norm2( master_locs-slave_locs[::-1] ))
       if verbose:
         key = tuple(slave_locs[:,:2].T.flatten())
         pos[key] = min(*dists)
