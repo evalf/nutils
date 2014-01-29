@@ -589,7 +589,9 @@ class TrimmedElement( Element ):
       n = int(ischeme[7:] or 0)
       points, weights = self.elem.eval( 'contour{}'.format(n) )
       inside = numeric.greater_equal( self.levelset( self.elem, points ), 0 )
-      return points[inside], None
+      points = points[inside]
+      points.flags.writeable = False
+      return points, None
 
     if self.maxrefine <= 0:
       if self.finestscheme.startswith('simplex'):
@@ -608,11 +610,14 @@ class TrimmedElement( Element ):
           weights.append( sweights * transform.det )
 
         if len(points) == 0:
-          return numeric.zeros((0,self.ndims)), numeric.zeros((0,))
+          points = numeric.zeros((0,self.ndims))
+          weights = numeric.zeros((0,))
+        else:
+          points = numeric.concatenate( points, axis=0 )
+          weights = numeric.concatenate( weights )
 
-        points  = numeric.concatenate( points, axis=0 )
-        weights = numeric.concatenate( weights )
-
+        points.flags.writeable = False
+        weights.flags.writeable = False
         return points, weights
 
       else:
@@ -621,12 +626,16 @@ class TrimmedElement( Element ):
           points, weights = self.elem.eval( self.finestscheme[:-4] )
         elif self.finestscheme.endswith( '.none' ):
           points, weights = self.elem.eval( self.finestscheme[:-5] )
-          return points[numeric.zeros_like(weights,dtype=bool)], weights[numeric.zeros_like(weights,dtype=bool)] if weights is not None else None
+          inside = numeric.zeros_like(weights,dtype=bool) # what is .none supposed to do? -GJ
         else:  
           points, weights = self.elem.eval( self.finestscheme )
           inside = numeric.greater( self.levelset( self.elem, points ), 0 )
-          return points[inside], weights[inside] if weights is not None else None
-        
+        points = points[inside]
+        points.flags.writeable = False
+        if weights is not None:
+          weights = weights[inside]
+          weights.flags.writeable = False
+        return points, weights
 
     allcoords = []
     allweights = []
@@ -641,6 +650,8 @@ class TrimmedElement( Element ):
 
     coords = numeric.concatenate( allcoords, axis=0 )
     weights = numeric.concatenate( allweights, axis=0 )
+    coords.flags.writeable = False
+    weights.flags.writeable = False
     return coords, weights
 
   @property

@@ -385,9 +385,9 @@ def dot( A, B, axis=-1 ):
     B = as_strided( B, A.shape, Bstrides )
 
   if not A.size:
-    return numpy.zeros( A.shape[:-1] )
+    return zeros( A.shape[:-1] )
 
-  return _contract( A, B, 1 )
+  return _contract( A, B, 1 ).view( SaneArray )
 
 def fastrepeat( A, nrepeat, axis=-1 ):
   'repeat axis by 0stride'
