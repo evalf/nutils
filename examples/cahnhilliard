@@ -27,9 +27,9 @@ def makeplots( domain, geom, c, psi, index ):
 
 def main( nelems=40, epsilon=.04, timestep=.01, sym3d=False, seed=0 ):
 
-  xnodes = ynodes = numpy.linspace(0,1,nelems+1)
+  xnodes = ynodes = numeric.linspace(0,1,nelems+1)
   if sym3d:
-    phinodes = [ 0, 2*numpy.pi ]
+    phinodes = [ 0, 2*numeric.pi ]
     domain, (x,r,phi) = mesh.rectilinear( [ xnodes, ynodes, phinodes ], periodic=[0,2] )
     funcsp = domain.splinefunc( degree=(3,3,0), neumann=[2,3], removedofs=[None,[0,-1],None] )
     geom = function.stack( [ x, r*function.cos(phi), r*function.sin(phi) ] )
@@ -50,8 +50,8 @@ def main( nelems=40, epsilon=.04, timestep=.01, sym3d=False, seed=0 ):
     - timestep * function.outer( funcsp.laplace(geom), psi_m(funcsp) )
   matrix = domain.integrate( A, geometry=geom, ischeme=gauss )
 
-  numpy.random.seed( seed )
-  c = funcsp.dot( numpy.random.normal( -.3, .01, funcsp.shape ) )
+  numeric.random_seed( seed )
+  c = funcsp.dot( numeric.normal( -.3, .01, funcsp.shape ) )
 
   for iiter in util.iterate( 'timestep' ):
 

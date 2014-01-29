@@ -56,11 +56,11 @@ def main( nelems=24, reynolds=100., strong=False, tol=1e-8, rotation=0., timeste
   #r` = 2pi r / nelems => r = exp( 2pi x / nelems )
   #r(x0) = exp( 2pi x0 / nelems ) = Rin => x0 = log(Rin) * nelems / 2pi
 
-  xmax = numpy.ceil( numpy.log(maxradius) / (2*numpy.pi/nelems) ).astype( int )
-  log.info( 'creating %dx%d mesh, outer radius %.0f' % ( xmax, nelems, numpy.exp( (2*numpy.pi/nelems) * xmax ) ) )
-  domain, geom = mesh.rectilinear( [range(xmax+1),numpy.linspace(0,2*numpy.pi,nelems+1)], periodic=(1,) )
+  xmax = numeric.ceil( numeric.log(maxradius) / (2*numeric.pi/nelems) ).astype( int )
+  log.info( 'creating %dx%d mesh, outer radius %.0f' % ( xmax, nelems, numeric.exp( (2*numeric.pi/nelems) * xmax ) ) )
+  domain, geom = mesh.rectilinear( [range(xmax+1),numeric.linspace(0,2*numeric.pi,nelems+1)], periodic=(1,) )
   x, phi = geom
-  r = function.exp( (2*numpy.pi/nelems) * x )
+  r = function.exp( (2*numeric.pi/nelems) * x )
   geom = r * [ function.cos(phi), function.sin(phi) ]
   cyl_velo = rotation * function.stack([ function.sin(phi), -function.cos(phi) ])
   cylinder = domain.boundary['left']

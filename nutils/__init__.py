@@ -1,4 +1,4 @@
-import numpy, sys
+import sys
 
 class _Prop( object ):
   prefix = '__property__'
@@ -24,12 +24,11 @@ class _Prop( object ):
     return '\n . '.join( [ 'properties:' ] + [ '%s: %s' % item for item in props.iteritems() ] )
 
 prop = _Prop()
-_ = numpy.newaxis
+from numpy import newaxis as _
 
 __all__ = [
   '_',
   'prop',
-  'numpy',
   'core',
   'numeric',
   'element',

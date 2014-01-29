@@ -12,7 +12,7 @@ def Hook( lmbda, mu ):
 
 def main( nelems=10, stress=Hook(1,1) ):
 
-  verts = numpy.linspace( 0, 1, nelems+1 )
+  verts = numeric.linspace( 0, 1, nelems+1 )
   wholedomain, geom = mesh.rectilinear( [verts,verts] )
   dspace = wholedomain.splinefunc( degree=3 ).vector( 2 )
   levelset = function.norm2( geom ) - .5

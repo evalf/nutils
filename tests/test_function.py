@@ -1,4 +1,5 @@
 from nutils import *
+import numpy
 
 
 class FuncTest( object ):

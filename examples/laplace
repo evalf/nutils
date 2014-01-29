@@ -12,15 +12,15 @@ def makeplots( domain, geom, sol, index ):
   with plot.PyPlot( 'solution', index=index ) as plt:
     plt.mesh( points, colors, triangulate='bezier' )
     plt.colorbar()
-    plt.xlim( 0, .5*numpy.pi )
-    plt.ylim( 0, .5*numpy.pi )
+    plt.xlim( 0, .5*numeric.pi )
+    plt.ylim( 0, .5*numeric.pi )
 
 
 def main( nelems=8, degree=1, beltrami=False ):
 
-  verts = numpy.linspace( 0, .5*numpy.pi, nelems+1 )
+  verts = numeric.linspace( 0, .5*numeric.pi, nelems+1 )
   domain, geom = mesh.rectilinear( [verts,verts] )
-  #domain, geom = mesh.demo( xmax=.5*numpy.pi, ymax=.5*numpy.pi )
+  #domain, geom = mesh.demo( xmax=.5*numeric.pi, ymax=.5*numeric.pi )
   x, y = geom
   exact = function.sin(x) * function.exp(y)
   funcsp = domain.splinefunc( degree=degree )
@@ -29,7 +29,7 @@ def main( nelems=8, degree=1, beltrami=False ):
 
   laplace = function.outer( funcsp.grad(geom,ndims=2) ).sum()
   matrix = domain.integrate( laplace, geometry=geom, ischeme='gauss4', title='matrix' )
-  tmp = funcsp * numpy.exp(.5*numpy.pi) * function.sin(x)
+  tmp = funcsp * numeric.exp(.5*numeric.pi) * function.sin(x)
   rhs = domain.boundary['top'].integrate( tmp, geometry=geom, ischeme='gauss6', title='rhs' )
   cons = domain.boundary['left,bottom'].project( function.sin(x), ischeme='gauss6', geometry=geom, onto=funcsp, title='left,bottom edge' )
   lhs = matrix.solve( rhs, constrain=cons, tol=1e-8, symmetric=True )
@@ -37,7 +37,7 @@ def main( nelems=8, degree=1, beltrami=False ):
 
   makeplots( domain, geom[:2], sol, nelems )
   error = sol - exact
-  err = numpy.sqrt( domain.integrate( [ error**2, ( error.grad(geom,ndims=2)**2 ).sum() ], geometry=geom, ischeme='gauss6', title='computing error' ) )
+  err = numeric.sqrt( domain.integrate( [ error**2, ( error.grad(geom,ndims=2)**2 ).sum() ], geometry=geom, ischeme='gauss6', title='computing error' ) )
   log.info( 'errors: l2=%f, h1=%f' % tuple(err) )
 
   return err
@@ -46,7 +46,7 @@ def main( nelems=8, degree=1, beltrami=False ):
 def conv( degree=1, niter=4 ):
 
   l2err, h1err = zip( *[ main( nelems=2**i, degree=degree ) for i in util.iterate( 'refine', niter ) ] )
-  h = (.25*numpy.pi) * .5**numpy.arange(niter)
+  h = (.25*numeric.pi) * .5**numeric.arange(niter)
 
   with plot.PyPlot( 'convergence' ) as plt:
     plt.subplot( 211 )
