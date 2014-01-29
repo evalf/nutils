@@ -1901,7 +1901,7 @@ class Zeros( ArrayFunc ):
     assert not any( sh is None for sh in shape ), 'cannot evaluate zeros for shape %s' % (shape,)
     shape = points.shape[:-1] + shape
     strides = [0] * len(shape)
-    return numpy.lib.stride_tricks.as_strided( numeric.array(0.), shape, strides )
+    return numeric.as_strided( numeric.array(0.), shape, strides )
 
   def _repeat( self, length, axis ):
     assert self.shape[axis] == 1
@@ -2216,7 +2216,7 @@ class Const( ArrayFunc ):
 
     shape = points.shape[:-1] + arr.shape
     strides = (0,) * (points.ndim-1) + arr.strides
-    return numpy.lib.stride_tricks.as_strided( arr, shape, strides )
+    return numeric.as_strided( arr, shape, strides )
 
   def _localgradient( self, ndims ):
     return _zeros( self.shape+(ndims,) )

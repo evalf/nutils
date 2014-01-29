@@ -159,6 +159,9 @@ def getitem( A, axis, indices ):
        else (Ellipsis,indices) + (slice(None),) * (-axis-1)
   return asarray( A )[ indices ]
 
+def as_strided( A, shape, strides ):
+  return numpy.lib.stride_tricks.as_strided( A, shape, strides ).view( SaneArray )
+
 
 #####
 
@@ -189,7 +192,7 @@ def align( arr, trans, ndim ):
   strides[trans] = arr.strides
   shape = numpy.ones( ndim, dtype=int )
   shape[trans] = arr.shape
-  tmp = numpy.lib.stride_tricks.as_strided( arr, shape, strides ).view( arr.__class__ )
+  tmp = as_strided( arr, shape, strides )
   return tmp
 
 def expand( arr, *shape ):
@@ -262,8 +265,8 @@ def contract( A, B, axis=-1 ):
     Astrides.append( Astrides.pop(ax) )
     Bstrides.append( Bstrides.pop(ax) )
 
-  A = numpy.lib.stride_tricks.as_strided( A, shape, Astrides )
-  B = numpy.lib.stride_tricks.as_strided( B, shape, Bstrides )
+  A = as_strided( A, shape, Astrides )
+  B = as_strided( B, shape, Bstrides )
 
   if not A.size:
     return numpy.zeros( A.shape[:-len(axis)] )
@@ -304,8 +307,8 @@ def contract_fast( A, B, naxes ):
     else:
       assert Ashape[i] == Bshape[i]
 
-  A = numpy.lib.stride_tricks.as_strided( A, shape, Astrides )
-  B = numpy.lib.stride_tricks.as_strided( B, shape, Bstrides )
+  A = as_strided( A, shape, Astrides )
+  B = as_strided( B, shape, Bstrides )
 
   if not A.size:
     return numpy.zeros( shape[:-naxes] )
@@ -333,11 +336,11 @@ def dot( A, B, axis=-1 ):
   if B.ndim != 1 or axis != A.ndim-1:
     shape = A.shape[:axis] + B.shape[1:] + A.shape[axis+1:] + A.shape[axis:axis+1]
     Astrides = A.strides[:axis] + (0,) * (B.ndim-1) + A.strides[axis+1:] + A.strides[axis:axis+1]
-    A = numpy.lib.stride_tricks.as_strided( A, shape, Astrides )
+    A = as_strided( A, shape, Astrides )
 
   if A.ndim > 1:
     Bstrides = (0,) * axis + B.strides[1:] + (0,) * (A.ndim-B.ndim-axis) + B.strides[:1]
-    B = numpy.lib.stride_tricks.as_strided( B, A.shape, Bstrides )
+    B = as_strided( B, A.shape, Bstrides )
 
   if not A.size:
     return numpy.zeros( A.shape[:-1] )
@@ -353,7 +356,7 @@ def fastrepeat( A, nrepeat, axis=-1 ):
   shape[axis] = nrepeat
   strides = list( A.strides )
   strides[axis] = 0
-  return numpy.lib.stride_tricks.as_strided( A, shape, strides )
+  return as_strided( A, shape, strides )
 
 def fastmeshgrid( X, Y ):
   'mesh grid based on fastrepeat'
@@ -381,7 +384,7 @@ def appendaxes( A, shape ):
 
   shape = (shape,) if isinstance(shape,int) else tuple(shape)
   A = asarray( A )
-  return numpy.lib.stride_tricks.as_strided( A, A.shape + shape, A.strides + (0,)*len(shape) )
+  return as_strided( A, A.shape + shape, A.strides + (0,)*len(shape) )
 
 def takediag( A ):
   if A.shape[-1] == 1:
@@ -394,7 +397,7 @@ def takediag( A ):
     assert A.shape[-1] == A.shape[-2]
     shape = A.shape[:-1]
     strides = A.strides[:-2] + (A.strides[-2]+A.strides[-1],)
-  return numpy.lib.stride_tricks.as_strided( A, shape, strides )
+  return as_strided( A, shape, strides )
 
 def inverse( A ):
   warnings.warn( 'numeric.inverse is deprecated, use numeric.inv instead' )
