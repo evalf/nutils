@@ -1,5 +1,4 @@
-from . import function, _
-import numpy
+from . import function, numeric, _
 
 def _tryall( obj, prefix, kwargs ):
   for name in dir( obj ):
@@ -23,7 +22,7 @@ class Hooke:
 
     if verify:
       for key, value in kwargs.items():
-        numpy.testing.assert_almost_equal( value, getattr(self,key) )
+        numeric.testing.assert_almost_equal( value, getattr(self,key) )
 
   def _set_from_lame( self, lmbda, mu ):
     self.lmbda = float(lmbda)

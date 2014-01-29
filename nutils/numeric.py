@@ -65,6 +65,7 @@ abs           = _wrap( numpy.abs           )
 diff          = _wrap( numpy.diff          )
 choose        = _wrap( numpy.choose        )
 max           = _wrap( numpy.max           )
+min           = _wrap( numpy.min           )
 cumsum        = _wrap( numpy.cumsum        )
 interp        = _wrap( numpy.interp        )
 multiply      = _wrap( numpy.multiply      )
@@ -112,6 +113,8 @@ ix_ = numpy.ix_
 broadcast = numpy.broadcast
 ndindex = numpy.ndindex
 unravel_index = numpy.unravel_index
+testing = numpy.testing
+isfinite = numpy.isfinite
 
 def grid( shape ):
   return map( asarray, numpy.ogrid[ tuple( slice(n) for n in shape ) ] )

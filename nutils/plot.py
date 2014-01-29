@@ -1,10 +1,10 @@
-from . import topology, util, numpy, function, element, log, prop, numeric, debug, _
+from . import topology, util, function, element, log, prop, numeric, debug, _
 from scipy import spatial # for def mesh; import cannot be postponed apparently
 import os, warnings
 
 def _nansplit( data ):
-  n, = numpy.where( numpy.isnan( data.reshape( data.shape[0], -1 ) ).any( axis=1 ) )
-  N = numpy.concatenate( [ [-1], n, [data.shape[0]] ] )
+  n = numeric.find( numeric.isnan( data.reshape( data.shape[0], -1 ) ).any( axis=1 ) )
+  N = numeric.concatenate( [ [-1], n, [data.shape[0]] ] )
   return [ data[a:b] for a, b in zip( N[:-1]+1, N[1:] ) ]
 
 class BasePlot( object ):
@@ -106,7 +106,7 @@ class PyPlot( BasePlot ):
         Collection.__init__(self, **kwargs)
         self.xy = xy
         self.tri = tri
-        self._facecolors = numpy.zeros([numpy.max(tri)+1,4]) # fully transparent
+        self._facecolors = numeric.zeros([numeric.max(tri)+1,4]) # fully transparent
     
       @allow_rasterization
       def draw(self, renderer):
@@ -129,10 +129,10 @@ class PyPlot( BasePlot ):
   def mesh( self, points, colors=None, edgecolors='k', triangulate='delaunay', setxylim=True, **kwargs ):
     'plot elemtwise mesh'
 
-    assert isinstance( points, numpy.ndarray ) and points.dtype == float
+    assert numeric.isarray( points ) and points.dtype == float
     assert points.shape[-1] == 2
     if colors is not  None:
-      assert isinstance( colors, numpy.ndarray ) and colors.dtype == float
+      assert numeric.isarray( colors ) and colors.dtype == float
       assert points.shape[:-1] == colors.shape
 
     if points.ndim == 3: # gridded data: nxpoints x nypoints x ndims
@@ -140,18 +140,18 @@ class PyPlot( BasePlot ):
       assert colors is not None
       data = colors.ravel()
       xy = points.reshape( -1, 2 ).T
-      ind = numpy.arange( xy.shape[1] ).reshape( points.shape[:-1] )
-      vert1 = numpy.array([ ind[:-1,:-1].ravel(), ind[1:,:-1].ravel(), ind[:-1,1:].ravel() ]).T
-      vert2 = numpy.array([ ind[1:,1:].ravel(), ind[1:,:-1].ravel(), ind[:-1,1:].ravel() ]).T
-      triangles = numpy.concatenate( [vert1,vert2], axis=0 )
+      ind = numeric.arange( xy.shape[1] ).reshape( points.shape[:-1] )
+      vert1 = numeric.array([ ind[:-1,:-1].ravel(), ind[1:,:-1].ravel(), ind[:-1,1:].ravel() ]).T
+      vert2 = numeric.array([ ind[1:,1:].ravel(), ind[1:,:-1].ravel(), ind[:-1,1:].ravel() ]).T
+      triangles = numeric.concatenate( [vert1,vert2], axis=0 )
       edges = None
 
     elif points.ndim == 2: # mesh: npoints x ndims
 
-      nans = numpy.isnan( points ).all( axis=1 )
-      split, = numpy.where( nans )
+      nans = numeric.isnan( points ).all( axis=1 )
+      split = numeric.find( nans )
       if colors is not None:
-        assert numpy.isnan( colors[split] ).all()
+        assert numeric.isnan( colors[split] ).all()
   
       P = []
       N = []
@@ -159,7 +159,7 @@ class PyPlot( BasePlot ):
       E = []
       npoints = 0
   
-      for a, b in zip( numpy.concatenate([[0],split+1]), numpy.concatenate([split,[nans.size]]) ):
+      for a, b in zip( numeric.concatenate([[0],split+1]), numeric.concatenate([split,[nans.size]]) ):
         np = b - a
         if np == 0:
           continue
@@ -185,19 +185,19 @@ class PyPlot( BasePlot ):
             hull.append( last )
           assert hull[0] == hull[-1]
         elif triangulate == 'bezier':
-          nquad = int( numpy.sqrt(np) + .5 )
-          ntri = int( numpy.sqrt((2*np)+.25) )
+          nquad = int( numeric.sqrt(np) + .5 )
+          ntri = int( numeric.sqrt((2*np)+.25) )
           if nquad**2 == np:
-            ind = numpy.arange(np).reshape(nquad,nquad)
-            vert1 = numpy.array([ ind[:-1,:-1].ravel(), ind[1:,:-1].ravel(), ind[:-1,1:].ravel() ]).T
-            vert2 = numpy.array([ ind[1:,1:].ravel(), ind[1:,:-1].ravel(), ind[:-1,1:].ravel() ]).T
-            vertices = numpy.concatenate( [vert1,vert2], axis=0 )
-            hull = numpy.concatenate([ ind[:,0], ind[-1,1:], ind[-2::-1,-1], ind[0,-2::-1] ])
+            ind = numeric.arange(np).reshape(nquad,nquad)
+            vert1 = numeric.array([ ind[:-1,:-1].ravel(), ind[1:,:-1].ravel(), ind[:-1,1:].ravel() ]).T
+            vert2 = numeric.array([ ind[1:,1:].ravel(), ind[1:,:-1].ravel(), ind[:-1,1:].ravel() ]).T
+            vertices = numeric.concatenate( [vert1,vert2], axis=0 )
+            hull = numeric.concatenate([ ind[:,0], ind[-1,1:], ind[-2::-1,-1], ind[0,-2::-1] ])
           elif ntri * (ntri+1) == 2 * np:
-            vert1 = [ ((2*ntri-i+1)*i)//2+numpy.array([j,j+1,j+ntri-i]) for i in range(ntri-1) for j in range(ntri-i-1) ]
-            vert2 = [ ((2*ntri-i+1)*i)//2+numpy.array([j+1,j+ntri-i+1,j+ntri-i]) for i in range(ntri-1) for j in range(ntri-i-2) ]
-            vertices = numpy.concatenate( [vert1,vert2], axis=0 )
-            hull = numpy.concatenate([ numpy.arange(ntri), numpy.arange(ntri-1,0,-1).cumsum()+ntri-1, numpy.arange(ntri+1,2,-1).cumsum()[::-1]-ntri-1 ])
+            vert1 = [ ((2*ntri-i+1)*i)//2+numeric.array([j,j+1,j+ntri-i]) for i in range(ntri-1) for j in range(ntri-i-1) ]
+            vert2 = [ ((2*ntri-i+1)*i)//2+numeric.array([j+1,j+ntri-i+1,j+ntri-i]) for i in range(ntri-1) for j in range(ntri-i-2) ]
+            vertices = numeric.concatenate( [vert1,vert2], axis=0 )
+            hull = numeric.concatenate([ numeric.arange(ntri), numeric.arange(ntri-1,0,-1).cumsum()+ntri-1, numeric.arange(ntri+1,2,-1).cumsum()[::-1]-ntri-1 ])
           else:
             raise Exception, 'cannot match points to a bezier scheme'
         else:
@@ -209,10 +209,10 @@ class PyPlot( BasePlot ):
         E.append( epoints[hull] )
         npoints += np
   
-      xy = numpy.concatenate( P, axis=1 )
-      triangles = numpy.concatenate( N, axis=0 )
+      xy = numeric.concatenate( P, axis=1 )
+      triangles = numeric.concatenate( N, axis=0 )
       if colors is not None:
-        data = numpy.concatenate( C )
+        data = numeric.concatenate( C )
       edges = E
 
     else:
@@ -222,7 +222,7 @@ class PyPlot( BasePlot ):
     TriMesh = self._trimesh_class()
     polycol = TriMesh( xy, triangles, rasterized=True, **kwargs )
     if colors is not None:
-      polycol.set_array( data )
+      polycol.set_array( data.view(numeric.ndarray) )
 
     if edges and edgecolors != 'none':
       from matplotlib.collections import LineCollection
@@ -234,8 +234,8 @@ class PyPlot( BasePlot ):
     self.sci( polycol )
     
     if setxylim:
-      xmin, ymin = numpy.min( xy, axis=1 )
-      xmax, ymax = numpy.max( xy, axis=1 )
+      xmin, ymin = numeric.min( xy, axis=1 )
+      xmax, ymax = numeric.max( xy, axis=1 )
       self.xlim( xmin, xmax )
       self.ylim( ymin, ymax )
 
@@ -251,7 +251,7 @@ class PyPlot( BasePlot ):
     assert verts.ndim == 2 and verts.shape[1] == 2
     verts = _nansplit( verts )
     if facecolors != 'none':
-      assert isinstance(facecolors,numpy.ndarray) and facecolors.shape == (len(verts),)
+      assert isinstance(facecolors,numeric.ndarray) and facecolors.shape == (len(verts),)
       array = facecolors
       facecolors = None
     polycol = collections.PolyCollection( verts, facecolors=facecolors, **kwargs )
@@ -269,7 +269,7 @@ class PyPlot( BasePlot ):
        - slopefmt: format string for slope number'''
 
     i, j = (-2,-1) if x[-1] < x[-2] else (-1,-2) # x[i] > x[j]
-    if not all(numpy.isfinite(x[-2:])) or not all(numpy.isfinite(y[-2:])):
+    if not all(numeric.isfinite(x[-2:])) or not all(numeric.isfinite(y[-2:])):
       log.warning( 'Not plotting slope triangle for +/-inf or nan values' )
       return
 
@@ -279,9 +279,9 @@ class PyPlot( BasePlot ):
     xscale, yscale = self.gca().get_xscale(), self.gca().get_yscale()
 
     # delta() checks if either axis is log or lin scaled
-    delta = lambda a, b, scale: numpy.log10(float(a)/b) if scale=='log' else float(a-b) if scale=='linear' else None
+    delta = lambda a, b, scale: numeric.log10(float(a)/b) if scale=='log' else float(a-b) if scale=='linear' else None
     slope = delta( y[-2], y[-1], yscale ) / delta( x[-2], x[-1], xscale )
-    if slope in (numpy.nan, numpy.inf, -numpy.inf):
+    if slope in (numeric.nan, numeric.inf, -numeric.inf):
       warnings.warn( 'Cannot draw slope triangle with slope: %s, drawing nothing' % str( slope ) )
       return slope
 
@@ -311,7 +311,7 @@ class PyPlot( BasePlot ):
 
     # TODO check for gca() loglog scale
 
-    slope = numpy.log( y[-2]/y[-1] ) / numpy.log( x[-2]/x[-1] )
+    slope = numeric.log( y[-2]/y[-1] ) / numeric.log( x[-2]/x[-1] )
     C = y[-1] / x[-1]**slope
 
     self.loglog( x, C * x**slope, 'k-' )
@@ -343,14 +343,14 @@ class PyPlot( BasePlot ):
 
   def cspy( self, A, **kwargs ): 
     'Like pyplot.spy, but coloring acc to 10^log of absolute values, where [0, inf, nan] show up in blue.'
-    if not isinstance( A, numpy.ndarray ):
+    if not isinstance( A, numeric.ndarray ):
       A = A.toarray()
     if A.size < 2: # trivial case of 1x1 matrix
       A = A.reshape( 1, 1 )
     else:
-      A = numpy.log10( numpy.abs( A ) )
-      B = numpy.isinf( A ) | numpy.isnan( A ) # what needs replacement
-      A[B] = ~B if numpy.all( B ) else numpy.amin( A[~B] ) - 1.
+      A = numeric.log10( numeric.abs( A ) )
+      B = numeric.isinf( A ) | numeric.isnan( A ) # what needs replacement
+      A[B] = ~B if numeric.all( B ) else numeric.amin( A[~B] ) - 1.
     self.pcolormesh( A, **kwargs )
     self.colorbar()
     self.ylim( self.ylim()[-1::-1] ) # invert y axis: equiv to MATLAB axis ij
@@ -408,7 +408,7 @@ class VTKFile( BasePlot ):
 
   def vertices( self, points ):
 
-    assert isinstance( points, (list,tuple,numpy.ndarray) ), 'Expected list of point arrays'
+    assert isinstance( points, (list,tuple,numeric.ndarray) ), 'Expected list of point arrays'
 
     import vtk
 
@@ -418,7 +418,7 @@ class VTKFile( BasePlot ):
     cnt = 0
     for pts in points:
       if pts.shape[1] < 3:
-        pts = numpy.concatenate([pts,numpy.zeros(shape=(pts.shape[0],3-pts.shape[1]))],axis=1)
+        pts = numeric.concatenate([pts,numeric.zeros(shape=(pts.shape[0],3-pts.shape[1]))],axis=1)
 
       for point in pts:
         vtkPoints .SetPoint( cnt, point )
@@ -433,7 +433,7 @@ class VTKFile( BasePlot ):
     """add unstructured grid"""
 
     points = _nansplit( points )
-    #assert isinstance( points, (list,tuple,numpy.ndarray) ), 'Expected list of point arrays'
+    #assert isinstance( points, (list,tuple,numeric.ndarray) ), 'Expected list of point arrays'
 
     import vtk
 
@@ -465,7 +465,7 @@ class VTKFile( BasePlot ):
         raise Exception('not sure what to do with cells with ndims=%d and npoints=%d' % (ndims,np))
 
       if ndims < 3:
-        pts = numpy.concatenate([pts,numpy.zeros(shape=(pts.shape[0],3-ndims))],axis=1)
+        pts = numeric.concatenate([pts,numeric.zeros(shape=(pts.shape[0],3-ndims))],axis=1)
 
       cellpoints = vtkelem.GetPointIds()
 
@@ -543,13 +543,13 @@ class Pylab( object ):
       name += '.' + imgtype
 
     if isinstance( title, (list,tuple) ):
-      self.title = numpy.array( title, dtype=object )
+      self.title = numeric.array( title, dtype=object )
       self.shape = self.title.shape
       if self.title.ndim == 1:
         self.title = self.title[:,_]
       assert self.title.ndim == 2
     else:
-      self.title = numpy.array( [[ title ]] )
+      self.title = numeric.array( [[ title ]] )
       self.shape = ()
     self.name = name
 
@@ -560,7 +560,7 @@ class Pylab( object ):
     pyplot.figure()
     n, m = self.title.shape
     axes = [ PylabAxis( pyplot.subplot(n,m,iax+1), title ) for iax, title in enumerate( self.title.ravel() ) ]
-    return numpy.array( axes, dtype=object ).reshape( self.shape ) if self.shape else axes[0]
+    return numeric.array( axes, dtype=object ).reshape( self.shape ) if self.shape else axes[0]
 
   def __exit__( self, exc, msg, tb ):
     'exit with block'
@@ -612,7 +612,7 @@ class PylabAxis( object ):
       C = plotcoords( elem, cscheme )
       if ndims == 3:
         C = project3d( C )
-        cx, cy = numpy.hstack( [ C, C[:,:1] ] )
+        cx, cy = numeric.hstack( [ C, C[:,:1] ] )
         if ( (cx[1:]-cx[:-1]) * (cy[1:]+cy[:-1]) ).sum() > 0:
           continue
       if color:
@@ -622,7 +622,7 @@ class PylabAxis( object ):
   
     if values:
       elements = collections.PolyCollection( poly, edgecolors=edgecolors, linewidth=linewidth, rasterized=True )
-      elements.set_array( numpy.asarray(values) )
+      elements.set_array( numeric.asarray(values) )
       if colormap is not None:
         elements.set_cmap( pyplot.cm.gray if colormap is False else colormap )
       if cbar:
@@ -639,7 +639,7 @@ class PylabAxis( object ):
       self.box( 'off' )
 
     self.add_collection( elements )
-    vertices = numpy.concatenate( poly )
+    vertices = numeric.concatenate( poly )
     xmin, ymin = vertices.min(0)
     xmax, ymax = vertices.max(0)
 
@@ -668,7 +668,7 @@ class PylabAxis( object ):
   
     xyuv = function.Concatenate( [ coords, quiver ] )
     XYUV = [ xyuv(elem,sample) for elem in log.ProgressBar( topology, title='plotting quiver' ) ]
-    self.quiver( *numpy.concatenate( XYUV, 0 ).T, scale=scale )
+    self.quiver( *numeric.concatenate( XYUV, 0 ).T, scale=scale )
 
   def add_graph( self, xfun, yfun, topology, sample='contour10', logx=False, logy=False, **kwargs ):
     'plot graph of function on 1d topology'
@@ -703,9 +703,9 @@ class PylabAxis( object ):
           y = y[0]
 
         xyd[0].extend( x if x.ndim else [x] * y.size )
-        xyd[0].append( numpy.nan )
+        xyd[0].append( numeric.nan )
         xyd[1].extend( y if y.ndim else [y] * x.size )
-        xyd[1].append( numpy.nan )
+        xyd[1].append( numeric.nan )
 
     plotfun = self.loglog if logx and logy \
          else self.semilogx if logx \
@@ -723,21 +723,21 @@ class PylabAxis( object ):
     self.grid( True )
     if slope:
       if x[-1] < x[0]: # inverted order
-        slx   = numpy.array( [x[-2], x[-2], x[-1], x[-2]] )
-        sly   = numpy.array( [y[-2], y[-1], y[-1], y[-2]] )*drop
+        slx   = numeric.array( [x[-2], x[-2], x[-1], x[-2]] )
+        sly   = numeric.array( [y[-2], y[-1], y[-1], y[-2]] )*drop
       if x[-1] > x[0]:
-        slx   = numpy.array( [x[-1], x[-1], x[-2], x[-1]] )
-        sly   = numpy.array( [y[-1], y[-2], y[-2], y[-1]] )/drop
+        slx   = numeric.array( [x[-1], x[-1], x[-2], x[-1]] )
+        sly   = numeric.array( [y[-1], y[-2], y[-2], y[-1]] )/drop
       # slope = r'$%2.1f$' % (y[-2]*x[-1]/(x[-2]*y[-1]))
-      slope = r'$%2.1f$' % (numpy.diff( numpy.log10( y[-2:] ) )/numpy.diff( numpy.log10( x[-2:] ) ))
+      slope = r'$%2.1f$' % (numeric.diff( numeric.log10( y[-2:] ) )/numeric.diff( numeric.log10( x[-2:] ) ))
       self.loglog( slx, sly, color='k', label='_nolegend_' )
-      self.text( slx[-1]*shift, numpy.mean( sly[:2] )*drop, slope )
+      self.text( slx[-1]*shift, numeric.mean( sly[:2] )*drop, slope )
 
 def project3d( C ):
-  sqrt2 = numpy.sqrt( 2 )
-  sqrt3 = numpy.sqrt( 3 )
-  sqrt6 = numpy.sqrt( 6 )
-  R = numpy.array( [[ sqrt3, 0, -sqrt3 ], [ 1, 2, 1 ], [ sqrt2, -sqrt2, sqrt2 ]] ) / sqrt6
+  sqrt2 = numeric.sqrt( 2 )
+  sqrt3 = numeric.sqrt( 3 )
+  sqrt6 = numeric.sqrt( 6 )
+  R = numeric.array( [[ sqrt3, 0, -sqrt3 ], [ 1, 2, 1 ], [ sqrt2, -sqrt2, sqrt2 ]] ) / sqrt6
   return numeric.transform( C, R[:,::2], axis=0 )
 
 def preview( coords, topology, cscheme='contour8' ):
@@ -761,8 +761,8 @@ def preview( coords, topology, cscheme='contour8' ):
       elements = collections.PolyCollection( poly, edgecolors='black', facecolors='none', linewidth=1, rasterized=True )
       ax = pyplot.subplot( 2, 2, iplt+1 )
       ax.add_collection( elements )
-      xmin, ymin = numpy.min( [ numpy.min(p,axis=0) for p in poly ], axis=0 )
-      xmax, ymax = numpy.max( [ numpy.max(p,axis=0) for p in poly ], axis=0 )
+      xmin, ymin = numeric.min( [ numeric.min(p,axis=0) for p in poly ], axis=0 )
+      xmax, ymax = numeric.max( [ numeric.max(p,axis=0) for p in poly ], axis=0 )
       d = .02 * (xmax-xmin+ymax-ymin)
       pyplot.axis([ xmin-d, xmax+d, ymin-d, ymax+d ])
       if iplt == 0:
