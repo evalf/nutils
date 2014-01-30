@@ -195,21 +195,21 @@ PyObject *sane_richcompare( PyObject *a, PyObject *b, int op ) {
 
 long sane_hash( PyObject *a ) {
   ASSERT( PyArray_Check( (PyArrayObject *)a) );
-  DBGPRINT( "1. in hash\n" );
+  DBGPRINT( "in hash\n" );
   int ndim = PyArray_NDIM( (PyArrayObject *)a );
   if ( ndim == 0 ) {
-    DBGPRINT( "2. scalar hash\n" );
+    DBGPRINT( "scalar hash\n" );
     PyObject *a_obj = PyArray_ToScalar( PyArray_DATA( (PyArrayObject *)a ), (PyArrayObject *)a );
     long hash = PyObject_Hash( a_obj );
     Py_DECREF( a_obj );
     return hash;
   }
   if ( PyArray_FLAGS( (PyArrayObject *)a) & NPY_ARRAY_WRITEABLE ) {
-    DBGPRINT( "2. writable array\n" );
+    DBGPRINT( "writeable array\n" );
     SET_EXCEPTION( "refusing to compute hash of mutable array; please set flags.writeable=False" );
     return -1;
   }
-  DBGPRINT( "2. array hash ndim=%d\n", ndim );
+  DBGPRINT( "array hash ndim=%d\n", ndim );
   npy_intp *dims = PyArray_DIMS( (PyArrayObject *)a );
   npy_intp *strides = PyArray_STRIDES( (PyArrayObject *)a );
   void *cntrdata = PyArray_DATA( (PyArrayObject* )a );
