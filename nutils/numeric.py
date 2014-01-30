@@ -25,100 +25,28 @@ except:
       assert not self.flage.writeable
       return hash( self.shape + tuple( self.flat[::self.size//4+1] ) ) # incompatible with c hash!
 
-def _wrap( f ):
-  return lambda *args, **kwargs: f( *args, **kwargs ).view( SaneArray )
-
-abs           = _wrap( numpy.abs           )
-add           = _wrap( numpy.add           )
-arange        = _wrap( numpy.arange        )
-arccos        = _wrap( numpy.arccos        )
-arcsin        = _wrap( numpy.arcsin        )
-arctan2       = _wrap( numpy.arctan2       )
-arctanh       = _wrap( numpy.arctanh       )
-argmax        = _wrap( numpy.argmax        )
-argmin        = _wrap( numpy.argmin        )
-array         = _wrap( numpy.array         )
-asarray       = _wrap( numpy.asarray       )
-ceil          = _wrap( numpy.ceil          )
-choose        = _wrap( numpy.choose        )
-concatenate   = _wrap( numpy.concatenate   )
-cos           = _wrap( numpy.cos           )
-cosh          = _wrap( numpy.cosh          )
-cumsum        = _wrap( numpy.cumsum        )
-diag          = _wrap( numpy.diag          )
-diag          = _wrap( numpy.diag          )
-diagflat      = _wrap( numpy.diagflat      )
-diff          = _wrap( numpy.diff          )
-divide        = _wrap( numpy.divide        )
-empty         = _wrap( numpy.empty         )
-empty_like    = _wrap( numpy.empty_like    )
-equal         = _wrap( numpy.equal         )
-exp           = _wrap( numpy.exp           )
-eye           = _wrap( numpy.eye           )
-frombuffer    = _wrap( numpy.frombuffer    )
-greater       = _wrap( numpy.greater       )
-greater_equal = _wrap( numpy.greater_equal )
-hstack        = _wrap( numpy.hstack        )
-interp        = _wrap( numpy.interp        )
-intersect1d   = _wrap( numpy.intersect1d   )
-isnan         = _wrap( numpy.isnan         )
-less          = _wrap( numpy.less          )
-less_equal    = _wrap( numpy.less_equal    )
-linspace      = _wrap( numpy.linspace      )
-log           = _wrap( numpy.log           )
-log10         = _wrap( numpy.log10         )
-log2          = _wrap( numpy.log2          )
-logical_and   = _wrap( numpy.logical_and   )
-logical_not   = _wrap( numpy.logical_not   )
-logical_or    = _wrap( numpy.logical_or    )
-logical_xor   = _wrap( numpy.logical_xor   )
-max           = _wrap( numpy.max           )
-maximum       = _wrap( numpy.maximum       )
-min           = _wrap( numpy.min           )
-minimum       = _wrap( numpy.minimum       )
-multiply      = _wrap( numpy.multiply      )
-negative      = _wrap( numpy.negative      )
-normal        = _wrap( numpy.random.normal )
-not_equal     = _wrap( numpy.not_equal     )
-ones          = _wrap( numpy.ones          )
-ones_like     = _wrap( numpy.ones_like     )
-power         = _wrap( numpy.power         )
-prod          = _wrap( numpy.prod          )
-product       = _wrap( numpy.product       )
-reciprocal    = _wrap( numpy.reciprocal    )
-repeat        = _wrap( numpy.repeat        )
-roll          = _wrap( numpy.roll          )
-searchsorted  = _wrap( numpy.searchsorted  )
-sign          = _wrap( numpy.sign          )
-sign          = _wrap( numpy.sign          )
-sin           = _wrap( numpy.sin           )
-sinh          = _wrap( numpy.sinh          )
-solve         = _wrap( numpy.linalg.solve  )
-sqrt          = _wrap( numpy.sqrt          )
-subtract      = _wrap( numpy.subtract      )
-sum           = _wrap( numpy.sum           )
-tan           = _wrap( numpy.tan           )
-tanh          = _wrap( numpy.tanh          )
-vstack        = _wrap( numpy.vstack        )
-zeros         = _wrap( numpy.zeros         )
-zeros_like    = _wrap( numpy.zeros_like    )
-
-broadcast = numpy.broadcast
-cond = numpy.linalg.cond
-float64 = numpy.float64
-iinfo = numpy.iinfo
-inf = numpy.inf
-intc = numpy.intc
-isfinite = numpy.isfinite
-ix_ = numpy.ix_
-nan = numpy.nan
-ndarray = numpy.ndarray
-ndindex = numpy.ndindex
-pi = numpy.pi
-random_seed = numpy.random.seed
-spacing = numpy.spacing
-testing = numpy.testing
-unravel_index = numpy.unravel_index
+_sanitize = lambda f: lambda *args, **kwargs: f( *args, **kwargs ).view( SaneArray )
+for name in ( 'abs', 'add', 'arange', 'arccos', 'arcsin', 'arctan2', 'arctanh',
+  'argmax', 'argmin', 'array', 'asarray', 'ceil', 'choose', 'concatenate',
+  'cos', 'cosh', 'cumsum', 'diag', 'diag', 'diagflat', 'diff', 'divide',
+  'empty', 'empty_like', 'equal', 'exp', 'eye', 'frombuffer', 'greater',
+  'greater_equal', 'hstack', 'interp', 'intersect1d', 'isnan', 'less',
+  'less_equal', 'linspace', 'log', 'log10', 'log2', 'logical_and',
+  'logical_not', 'logical_or', 'logical_xor', 'max', 'maximum', 'min',
+  'minimum', 'multiply', 'negative', 'random.normal', 'not_equal', 'ones',
+  'ones_like', 'power', 'prod', 'product', 'reciprocal', 'repeat', 'roll',
+  'searchsorted', 'sign', 'sign', 'sin', 'sinh', 'linalg.solve', 'sqrt',
+  'subtract', 'sum', 'tan', 'tanh', 'vstack', 'zeros', 'zeros_like' ):
+  obj = numpy
+  for name in name.split( '.' ): obj = getattr( obj, name )
+  locals()[ name ] = _sanitize( obj )
+  
+for name in ( 'broadcast', 'linalg.cond', 'float64', 'iinfo', 'inf', 'intc',
+  'isfinite', 'ix_', 'nan', 'ndarray', 'ndindex', 'pi', 'random.seed',
+  'spacing', 'testing', 'unravel_index' ):
+  obj = numpy
+  for name in name.split( '.' ): obj = getattr( obj, name )
+  locals()[ name ] = obj
 
 def insane( obj ):
   return obj.view( ndarray ) if isarray( obj ) \

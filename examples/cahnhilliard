@@ -50,7 +50,7 @@ def main( nelems=40, epsilon=.04, timestep=.01, sym3d=False, seed=0 ):
     - timestep * function.outer( funcsp.laplace(geom), psi_m(funcsp) )
   matrix = domain.integrate( A, geometry=geom, ischeme=gauss )
 
-  numeric.random_seed( seed )
+  numeric.seed( seed )
   c = funcsp.dot( numeric.normal( -.3, .01, funcsp.shape ) )
 
   for iiter in util.iterate( 'timestep' ):
