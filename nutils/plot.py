@@ -126,7 +126,7 @@ class PyPlot( BasePlot ):
 
     return TriMesh
 
-  def mesh( self, points, colors=None, edgecolors='k', triangulate='delaunay', setxylim=True, **kwargs ):
+  def mesh( self, points, colors=None, edgecolors='k', edgewidth=None, triangulate='delaunay', setxylim=True, **kwargs ):
     'plot elemtwise mesh'
 
     assert numeric.isarray( points ) and points.dtype == float
@@ -226,7 +226,7 @@ class PyPlot( BasePlot ):
 
     if edges and edgecolors != 'none':
       from matplotlib.collections import LineCollection
-      linecol = LineCollection( edges )
+      linecol = LineCollection( edges, linewidths=(edgewidth,) if edgewidth is not None else None )
       linecol.set_color( edgecolors )
       self.gca().add_collection( linecol )
 
