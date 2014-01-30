@@ -14,16 +14,35 @@ except:
     __slots__ = ()
     def __new__( cls, arr ):
       return numpy.asarray( arr ).view( cls )
-    def __eq__( self, other ):
-      return self is other or ( isinstance( other, numpy.ndarray )
-        and self.shape == other.shape
-        and self.dtype == other.dtype
-        and ( self.__array_interface__['data'] == other.__array_interface__['data']
-              and self.strides == other.strides
-              or numpy.equal( self, other ).all() ) )
+    # rich comparisons
+    def __eq__( self, other ): return self.__cmp__( other ) == 0
+    def __gt__( self, other ): return self.__cmp__( other ) >  0
+    def __ge__( self, other ): return self.__cmp__( other ) >= 0
+    def __lt__( self, other ): return self.__cmp__( other ) <  0
+    def __le__( self, other ): return self.__cmp__( other ) <= 0
+    def __ne__( self, other ): return self.__cmp__( other ) != 0
+    # classical comparisons
+    def __cmp__( self, other ):
+      if self is other:
+        return 0
+      elif self.ndim == 0 and ( not isarray(other) or other.ndim == 0 ):
+        return cmp( self[()], other )
+      elif not isarray( other ):
+        return -1
+      elif self.dtype != other.dtype:
+        return cmp( self.dtype, other.dtype )
+      elif self.shape != other.shape:
+        return cmp( self.shape, other.shape )
+      elif self.__array_interface__['data'] == other.__array_interface__['data'] and self.strides == other.strides:
+        return 0
+      else:
+        ne, = numpy.not_equal( self.flat, other.flat ).nonzero()
+        return ne.size and cmp( self.flat[ne[0]], other.flat[ne[0]] )
     def __hash__( self ):
-      assert not self.flage.writeable
-      return hash( self.shape + tuple( self.flat[::self.size//4+1] ) ) # incompatible with c hash!
+      if self.flags.writeable:
+        raise TypeError, 'refusing to compute hash of mutable array; please set flags.writeable=False'
+      return hash( self[()] if self.ndim == 0
+        else (self.dtype,) + self.shape + tuple( self.flat[::self.size//4+1] ) ) # incompatible with c hash!
 
 _sanitize = lambda f: lambda *args, **kwargs: f( *args, **kwargs ).view( SaneArray )
 for name in ( 'abs', 'add', 'arange', 'arccos', 'arcsin', 'arctan2', 'arctanh',
