@@ -1,5 +1,5 @@
-from . import prop, log, debug, numeric
-import os, sys, multiprocessing, thread
+from . import prop, log, debug
+import os, sys, multiprocessing, thread, numpy
 
 Lock = multiprocessing.Lock
 cpu_count = multiprocessing.cpu_count
@@ -135,12 +135,11 @@ def fork( func, nice=19 ):
 def shzeros( shape, dtype=float ):
   'create zero-initialized array in shared memory'
 
-  # return numeric.zeros( shape, dtype=dtype ) # TODO: toggle to numeric for debugging
   if isinstance( shape, int ):
     shape = shape,
   else:
     assert all( isinstance(sh,int) for sh in shape )
-  size = numeric.product( shape ) if shape else 1
+  size = numpy.product( shape ) if shape else 1
   if dtype == float:
     typecode = 'd'
   elif dtype == int:
@@ -148,7 +147,7 @@ def shzeros( shape, dtype=float ):
   else:
     raise Exception, 'invalid dtype: %r' % dtype
   buf = multiprocessing.RawArray( typecode, size )
-  return numeric.frombuffer( buf, dtype ).reshape( shape )
+  return numpy.frombuffer( buf, dtype ).reshape( shape )
 
 def pariter( iterable ):
   'iterate parallel'
