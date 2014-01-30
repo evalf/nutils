@@ -606,7 +606,10 @@ class StructuredTopology( Topology ):
 
     if isinstance( item, str ):
       return Topology.__getitem__( self, item )
-    return StructuredTopology( self.structure[item] )
+    if not isinstance( item, tuple ):
+      item = item,
+    periodic = [ idim for idim in self.periodic if idim < len(item) and item[idim] == slice(None) ]
+    return StructuredTopology( self.structure[item], periodic=periodic )
 
   @property
   @core.cache
@@ -630,7 +633,8 @@ class StructuredTopology( Topology ):
         belems = numpy.frompyfunc( lambda elem: elem.edge( iedge ) if elem is not None else None, 1, 1 )( self.structure[s] )
       else:
         belems = numpy.array( self.structure[-iside].edge( 1-iedge ) )
-      boundaries.append( StructuredTopology( belems ) )
+      periodic = [ d - (d>idim) for d in self.periodic if d != idim ] # TODO check that dimensions are correct for ndim > 2
+      boundaries.append( StructuredTopology( belems, periodic=periodic ) )
 
     if self.ndims == 2:
       structure = numpy.concatenate([ boundaries[i].structure for i in [0,2,1,3] ])
