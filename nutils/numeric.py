@@ -189,7 +189,7 @@ def getitem( A, axis, indices ):
 def as_strided( A, shape, strides ):
   return numpy.lib.stride_tricks.as_strided( A, shape, strides ).view( SaneArray )
 
-def norm( A, axis=-1 ):
+def norm2( A, axis=-1 ):
   'L2 norm over specified axis'
 
   return sqrt( contract( A, A, axis ) )
