@@ -208,13 +208,14 @@ class TestTopologyGlueing( object ):
     'Topology glueing should not raise any errors.'
     # 0. Test if glue passes without errors: done in __init__(), is the resulting glued topology up to specs?
     assert len(self.topo) == 32
-    keys_provided = set( key for key in self.topo.groups.iterkeys() )
-    keys_required = set( ['bottom.mb', 'left.mb', 'right.mb', 'top.mb',
-                          'bottom.sb', 'left.sb', 'right.sb', 'top.sb',
-                          '__glued__', '__master__', '__master_bnd__',
-                          '__slave__', '__slave_bnd__'] )
-    assert len(keys_provided) == len(keys_required) and not (keys_provided-keys_required), \
-        'Something went awry with copying groups into union topology.'
+    keys_provided = set( self.topo.groups )
+    keys_required = set(['master', 'slave'])
+    assert keys_provided == keys_required, 'Something went awry with copying groups into union topology.'
+
+    bkeys_provided = set( self.topo.boundary.groups )
+    bkeys_required = set(['master', 'master_bottom', 'master_left', 'master_right', 'master_top',
+                          'slave', 'slave_bottom', 'slave_left', 'slave_right', 'slave_top' ])
+    assert bkeys_provided == bkeys_required, 'Something went awry with copying boundary groups into union topology.'
 
     # 1. The connectivity should still be correct, cf. test_quadrature.TestSingularQuadrature.test_connectivity
     elem = self.topo.elements

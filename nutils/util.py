@@ -80,12 +80,17 @@ def withrepr( f ):
   class function_wrapper( object ):
     def __init__( self, *args, **kwargs ):
       self.fun = f( *args, **kwargs )
-      items = zip( argnames, args ) + [ (name,kwargs[name]) for name in argnames[len(args):] ]
-      self.args = ','.join( '%s=%s' % item for item in items )
+      self.items = zip( argnames, args ) + [ (name,kwargs[name]) for name in argnames[len(args):] ]
+    def __getattr__( self, attr ):
+      for key, value in self.items:
+        if key == attr:
+          return value
+      raise AttributeError, attr
     def __call__( self, *args, **kwargs ):
       return self.fun( *args, **kwargs )
     def __str__( self ):
-      return '%s(%s)' % ( f.__name__, self.args )
+      args = ','.join( '%s=%s' % item for item in self.items )
+      return '%s(%s)' % ( f.__name__, args )
   return function_wrapper
 
 def profile( func ):
