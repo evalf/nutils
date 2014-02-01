@@ -119,11 +119,6 @@ long numeric_hash( PyArrayObject *self ) {
     Py_DECREF( a_obj );
     return hash;
   }
-  if ( PyArray_FLAGS(self) & NPY_ARRAY_WRITEABLE ) {
-    DBGPRINT( "writeable array\n" );
-    SET_EXCEPTION( "refusing to compute hash of mutable array; please set flags.writeable=False" );
-    return -1;
-  }
   DBGPRINT( "array hash ndim=%d\n", ndim );
   npy_intp *dims = PyArray_DIMS(self);
   npy_intp *strides = PyArray_STRIDES(self);

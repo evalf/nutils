@@ -2,7 +2,7 @@ import numpy
 
 print '''\
 WARNING: You are using the _numeric.py fallback module. This
-may severely impact performance! Pleace compile the extension
+may severely impact performance! Please compile the extension
 module by running 'make' in the nutils/numeric directory.
 '''
 
@@ -39,7 +39,5 @@ class NumericArray( numpy.ndarray ):
       ne, = numpy.not_equal( self.flat, other.flat ).nonzero()
       return ne.size and cmp( self.flat[ne[0]], other.flat[ne[0]] )
   def __hash__( self ):
-    if self.flags.writeable:
-      raise TypeError, 'refusing to compute hash of mutable array; please set flags.writeable=False'
     return hash( self[()] if self.ndim == 0
       else (self.dtype,) + self.shape + tuple( self.flat[::self.size//4+1] ) ) # incompatible with c hash!
