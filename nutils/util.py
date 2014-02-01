@@ -192,7 +192,7 @@ def iterate( context='iter', nmax=-1 ):
     finally:
       logger.disable()
 
-class NanVec( numeric.SaneArray ):
+class NanVec( numeric.NumericArray ):
   'nan-initialized vector'
 
   def __new__( cls, length ):

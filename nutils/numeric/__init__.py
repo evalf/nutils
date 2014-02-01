@@ -1,7 +1,7 @@
 import numpy, warnings
-from _numeric import _contract, SaneArray
+from _numeric import _contract, NumericArray
 
-_sanitize = lambda f: lambda *args, **kwargs: f( *args, **kwargs ).view( SaneArray )
+_wrap = lambda f: lambda *args, **kwargs: f( *args, **kwargs ).view( NumericArray )
 for name in ( 'abs', 'add', 'arange', 'arccos', 'arcsin', 'arctan2', 'arctanh',
   'argmax', 'argmin', 'array', 'asarray', 'ceil', 'choose', 'concatenate',
   'cos', 'cosh', 'cumsum', 'diag', 'diag', 'diagflat', 'diff', 'divide',
@@ -14,8 +14,9 @@ for name in ( 'abs', 'add', 'arange', 'arccos', 'arcsin', 'arctan2', 'arctanh',
   'searchsorted', 'sign', 'sign', 'sin', 'sinh', 'linalg.solve', 'sqrt',
   'subtract', 'sum', 'tan', 'tanh', 'vstack', 'zeros', 'zeros_like' ):
   obj = numpy
-  for name in name.split( '.' ): obj = getattr( obj, name )
-  locals()[ name ] = _sanitize( obj )
+  for name in name.split( '.' ):
+    obj = getattr( obj, name )
+  locals()[ name ] = _wrap( obj )
   
 for name in ( 'broadcast', 'linalg.cond', 'float64', 'iinfo', 'inf', 'intc',
   'isfinite', 'ix_', 'nan', 'ndarray', 'ndindex', 'pi', 'random.seed',
@@ -23,13 +24,6 @@ for name in ( 'broadcast', 'linalg.cond', 'float64', 'iinfo', 'inf', 'intc',
   obj = numpy
   for name in name.split( '.' ): obj = getattr( obj, name )
   locals()[ name ] = obj
-
-def insane( obj ):
-  return obj.view( ndarray ) if isarray( obj ) \
-    else list( insane(item) for item in obj ) if isinstance( obj, list ) \
-    else tuple( insane(item) for item in obj ) if isinstance( obj, tuple ) \
-    else dict( ( insane(key), insane(value) ) for key, value in obj.items() ) if isinstance( obj, dict ) \
-    else obj
 
 def grid( shape ):
   return map( asarray, numpy.ogrid[ tuple( slice(n) for n in shape ) ] )
@@ -41,11 +35,11 @@ def isscalar( A ):
   return isinstance( A, (int,float) ) or isarray( A ) and A.ndim == 0
 
 def unique( ar, *args, **kwargs ):
-  return numpy.unique( numpy.asarray( ar ), *args, **kwargs ).view( SaneArray )
+  return numpy.unique( numpy.asarray( ar ), *args, **kwargs ).view( NumericArray )
 
 def eigh( *args, **kwargs ):
   w, v = numpy.linalg.eigh( *args, **kwargs )
-  return w.view( SaneArray ), v.view( SaneArray )
+  return w.view( NumericArray ), v.view( NumericArray )
 
 def inv( A ):
   'linearized inverse'
@@ -55,7 +49,7 @@ def inv( A ):
   if A.shape[-1] == 1:
     return reciprocal( A )
   if A.ndim == 2:
-    return numpy.linalg.inv( A ).view( SaneArray )
+    return numpy.linalg.inv( A ).view( NumericArray )
   if A.shape[-1] == 2:
     det = A[...,0,0] * A[...,1,1] - A[...,0,1] * A[...,1,0]
     Ainv = empty( A.shape )
@@ -77,7 +71,7 @@ def det( A ):
   if A.shape[-1] == 1:
     return A[...,0,0]
   if A.ndim == 2:
-    return numpy.linalg.det( A ).view( SaneArray )
+    return numpy.linalg.det( A ).view( NumericArray )
   if A.shape[-1] == 2:
     return A[...,0,0] * A[...,1,1] - A[...,0,1] * A[...,1,0]
   det = empty( A.shape[:-2] )
@@ -91,7 +85,7 @@ def getitem( A, axis, indices ):
   return asarray( A )[ indices ]
 
 def as_strided( A, shape, strides ):
-  return numpy.lib.stride_tricks.as_strided( A, shape, strides ).view( SaneArray )
+  return numpy.lib.stride_tricks.as_strided( A, shape, strides ).view( NumericArray )
 
 def norm2( A, axis=-1 ):
   'L2 norm over specified axis'
@@ -106,7 +100,7 @@ def findsorted( array, items ):
 
 def find( arr ):
   nz, = arr.ravel().nonzero()
-  return nz.view( SaneArray )
+  return nz.view( NumericArray )
 
 def objmap( func, *arrays ):
   'map numpy arrays'
@@ -291,7 +285,7 @@ def dot( A, B, axis=-1 ):
   if not A.size:
     return zeros( A.shape[:-1] )
 
-  return _contract( A, B, 1 ).view( SaneArray )
+  return _contract( A, B, 1 ).view( NumericArray )
 
 def fastrepeat( A, nrepeat, axis=-1 ):
   'repeat axis by 0stride'

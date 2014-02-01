@@ -10,7 +10,7 @@ def _contract( A, B, axes ):
   assert A.shape == B.shape and axes > 0
   return ((A*B).reshape(A.shape[:-axes]+(-1,))).sum(-1)
 
-class SaneArray( numpy.ndarray ):
+class NumericArray( numpy.ndarray ):
   __slots__ = ()
   def __new__( cls, arr ):
     return numpy.asarray( arr ).view( cls )

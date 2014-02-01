@@ -2347,7 +2347,7 @@ def _dtypestr( arg ):
   raise Exception, 'unknown dtype %s' % arg.dtype
 
 def asarray( arg ):
-  'convert to ArrayFunc or numeric.SaneArray'
+  'convert to ArrayFunc or NumericArray'
   
   arr = numeric.asarray( arg )
   if arr.dtype == object:
