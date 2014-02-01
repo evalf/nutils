@@ -8,9 +8,6 @@ _numeric_d.so: _numeric.c
 	cp build/lib*/$@ .
 	rm -r -f build
 
-clean:
-	rm -r -f build _numeric.so _numeric_d.so
-
 test: test_py test_c
 
 test_c: _numeric.so
@@ -18,6 +15,9 @@ test_c: _numeric.so
 
 test_py: clean
 	python test.py
+
+clean:
+	rm -r -f build _numeric.so _numeric_d.so
 
 .PHONY: clean test test_c test_py
 
