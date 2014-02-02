@@ -280,7 +280,7 @@ class Cascade( Evaluable ):
 
     self.ndims = ndims
     self.side = side
-    Evaluable.__init__( self, args=[ELEM,POINTS,ndims,side], evalf=self.cascade )
+    Evaluable.__init__( self, args=[CACHE,ELEM,POINTS,ndims,side], evalf=self.cascade )
 
   def transform( self, ndims ):
     if ndims == self.ndims:
@@ -289,19 +289,19 @@ class Cascade( Evaluable ):
     return Transform( self, Cascade(ndims,self.side) )
 
   @staticmethod
-  def cascade( elem, points, ndims, side ):
+  def cascade( cache, elem, points, ndims, side ):
     'evaluate'
 
     while elem.ndims != ndims \
         or elem.interface and elem.interface[side][0].ndims < elem.ndims: # TODO make less dirty
       elem, transform = elem.interface[side] if elem.interface \
                    else elem.context or elem.parent
-      points = transform.eval( points )
+      points = cache( transform.eval, points )
 
     cascade = [ (elem,points) ]
     while elem.parent:
       elem, transform = elem.parent
-      points = transform.eval( points )
+      points = cache( transform.eval, points )
       cascade.append( (elem,points) )
 
     return cascade
@@ -799,10 +799,11 @@ class Function( ArrayFunc ):
       std = stdmap.get(elem)
       if not std:
         continue
-      F = cache( std.eval, points, igrad )
       if isinstance( std, tuple ):
         std, keep = std
-        F = F[(Ellipsis,keep)+(slice(None),)*igrad]
+        F = cache( std.eval, points, igrad )[(Ellipsis,keep)+(slice(None),)*igrad]
+      else:
+        F = cache( std.eval, points, igrad )
       for axis in range(-igrad,0):
         F = numeric.dot( F, elem.inv_root_transform, axis )
       fvals.append( F )

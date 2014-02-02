@@ -187,16 +187,14 @@ class Element( object ):
 
   Represents the topological shape.'''
 
-  __slots__ = 'vertices', 'ndims', 'index', 'parent', 'context', 'interface', 'root_transform', 'inv_root_transform', 'root_det'
+  __slots__ = 'vertices', 'ndims', 'parent', 'context', 'interface', 'root_transform', 'inv_root_transform', 'root_det'
 
-  def __init__( self, ndims, vertices, index=None, parent=None, context=None, interface=None ):
+  def __init__( self, ndims, vertices, parent=None, context=None, interface=None ):
     'constructor'
 
     #assert all( isinstance(vertex,Vertex) for vertex in vertices )
     self.vertices = tuple(vertices)
     self.ndims = ndims
-    assert index is None or parent is None
-    self.index = index
     self.parent = parent
     self.context = context
     self.interface = interface
@@ -878,11 +876,11 @@ class QuadElement( Element ):
 
   __slots__ = ()
 
-  def __init__( self, ndims, vertices, index=None, parent=None, context=None, interface=None ):
+  def __init__( self, ndims, vertices, parent=None, context=None, interface=None ):
     'constructor'
 
     assert len(vertices) == 2**ndims
-    Element.__init__( self, ndims, vertices, index=index, parent=parent, context=context, interface=interface )
+    Element.__init__( self, ndims, vertices, parent=parent, context=context, interface=interface )
 
   @property
   def neighbormap( self ):
@@ -1109,11 +1107,11 @@ class TriangularElement( Element ):
     AffineTransformation( offset=[1,0], transform=[[-1],[ 1]] ),
     AffineTransformation( offset=[0,1], transform=[[ 0],[-1]] ) )
 
-  def __init__( self, vertices, index=None, parent=None, context=None ):
+  def __init__( self, vertices, parent=None, context=None ):
     'constructor'
 
     assert len(vertices) == 3
-    Element.__init__( self, ndims=2, vertices=vertices, index=index, parent=parent, context=context )
+    Element.__init__( self, ndims=2, vertices=vertices, parent=parent, context=context )
 
   @property
   def children( self ):
@@ -1247,11 +1245,11 @@ class TetrahedronElement( Element ):
     AffineTransformation( offset=[0,0,0], transform=[[ 0, 0],[0,1],[1,0]] ),
     AffineTransformation( offset=[1,0,0], transform=[[-1,-1],[1,0],[0,1]] ) )
 
-  def __init__( self, vertices, index=None, parent=None, context=None ):
+  def __init__( self, vertices, parent=None, context=None ):
     'constructor'
 
     assert len(vertices) == 4
-    Element.__init__( self, ndims=3, vertices=vertices, index=index, parent=parent, context=context )
+    Element.__init__( self, ndims=3, vertices=vertices, parent=parent, context=context )
 
   @property
   def children( self ):
@@ -1482,7 +1480,9 @@ class PolyProduct( StdElem ):
     self.nshapes = std1.nshapes * std2.nshapes
 
   def __eq__( self, other ):
-    return self is other or self.std == other.std
+    return self is other or (
+          isinstance( other, PolyProduct )
+      and self.std == other.std )
 
   def __hash__( self ):
     return hash( self.std )
