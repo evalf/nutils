@@ -8,10 +8,10 @@ class FuncTest( object ):
     domainelem = element.Element( ndims=2, vertices=[] )
     r, theta = function.ElemFunc( domainelem ) # corners at (0,0), (0,1), (1,1), (1,0)
     geom = r * function.stack([ function.cos(theta), function.sin(theta) ])
-    trans = element.AffineTransformation( offset=[1,0], transform=[[2,1],[-1,3]] )
+    trans = element.AffineTransformation( offset=numeric.asarray([1,0]), transform=numeric.asarray([[2,1],[-1,3]]) )
     avertices = [element.PrimaryVertex('A(%d)'%i) for i in range(4)]
     interelem = element.QuadElement( ndims=2, vertices=avertices, parent=(domainelem,trans) ) # corners at (1,0), (3,-1), (4,2), (2,3)
-    trans = element.AffineTransformation( offset=[1,0], transform=[[0,1],[-1,0]] )
+    trans = element.AffineTransformation( offset=numeric.asarray([1,0]), transform=numeric.asarray([[0,1],[-1,0]]) )
     bvertices = [element.PrimaryVertex('B(%d)'%i) for i in range(4)]
     elem = element.QuadElement( ndims=2, vertices=bvertices, parent=(interelem,trans) ) # corners at (3,-1), (2,-4), (4,-5), (5,-2)
 

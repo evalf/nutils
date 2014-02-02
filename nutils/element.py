@@ -80,7 +80,7 @@ class TrimmedIScheme( object ):
     weights = numeric.concatenate( weights, axis=0 )
     return coords, weights
 
-class Transformation( object ):
+class Transformation( util.WeakCacheObject ):
   'transform points'
 
   __slots__ = 'fromdim', 'todim'
@@ -114,7 +114,7 @@ class SliceTransformation( Transformation ):
 
     self.slice = slice( start, stop, step )
     Transformation.__init__( self, fromdim, todim=len(range(fromdim)[self.slice]) )
-  
+
   def _eval( self, points ):
     'apply transformation'
 
@@ -246,6 +246,8 @@ class Element( object ):
     'string representation'
 
     return '%s(%s)' % ( self.__class__.__name__, self.vertices )
+
+  __repr__ = __str__
 
   def __hash__( self ):
     'hash'
@@ -1103,9 +1105,9 @@ class TriangularElement( Element ):
 
   neighbormap = -1, 2, 1, 0
   edgetransform = (
-    AffineTransformation( offset=[0,0], transform=[[ 1],[ 0]] ),
-    AffineTransformation( offset=[1,0], transform=[[-1],[ 1]] ),
-    AffineTransformation( offset=[0,1], transform=[[ 0],[-1]] ) )
+    AffineTransformation( offset=numeric.asarray([0,0]), transform=numeric.asarray([[ 1],[ 0]]) ),
+    AffineTransformation( offset=numeric.asarray([1,0]), transform=numeric.asarray([[-1],[ 1]]) ),
+    AffineTransformation( offset=numeric.asarray([0,1]), transform=numeric.asarray([[ 0],[-1]]) ) )
 
   def __init__( self, vertices, parent=None, context=None ):
     'constructor'
@@ -1240,10 +1242,10 @@ class TetrahedronElement( Element ):
   neighbormap = -1, 3, 2, 1, 0
   #Defined to create outward pointing normal vectors for all edges (i.c. triangular faces)
   edgetransform = (
-    AffineTransformation( offset=[0,0,0], transform=[[ 0, 1],[1,0],[0,0]] ),
-    AffineTransformation( offset=[0,0,0], transform=[[ 1, 0],[0,0],[0,1]] ),
-    AffineTransformation( offset=[0,0,0], transform=[[ 0, 0],[0,1],[1,0]] ),
-    AffineTransformation( offset=[1,0,0], transform=[[-1,-1],[1,0],[0,1]] ) )
+    AffineTransformation( offset=numeric.asarray([0,0,0]), transform=numeric.asarray([[ 0, 1],[1,0],[0,0]]) ),
+    AffineTransformation( offset=numeric.asarray([0,0,0]), transform=numeric.asarray([[ 1, 0],[0,0],[0,1]]) ),
+    AffineTransformation( offset=numeric.asarray([0,0,0]), transform=numeric.asarray([[ 0, 0],[0,1],[1,0]]) ),
+    AffineTransformation( offset=numeric.asarray([1,0,0]), transform=numeric.asarray([[-1,-1],[1,0],[0,1]]) ) )
 
   def __init__( self, vertices, parent=None, context=None ):
     'constructor'

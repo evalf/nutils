@@ -1,5 +1,5 @@
 from . import log, prop, numeric
-import sys, os, time, warnings, itertools
+import sys, os, time, warnings, itertools, weakref
 
 def cacheprop( f ):
   def cacheprop_wrapper( self, f=f ):
@@ -22,6 +22,33 @@ class CacheDict( dict ):
       value = key[0]( *key[1:] )
       self[ key ] = value
     return value
+
+class WeakCacheObject( object ):
+  'weakly cache object instances based on init args'
+
+  __slots__ = '__weakref__',
+
+  def __new__( cls, *args, **kwargs ):
+    init = cls.__init__.im_func
+    names = init.func_code.co_varnames[len(args)+1:init.func_code.co_argcount]
+    for name in names:
+      try:
+        val = kwargs.pop(name)
+      except KeyError:
+        val = init.func_defaults[ names.index(name)-len(names) ]
+      args += val,
+    assert not kwargs
+    try:
+      cache = cls.__cache
+    except AttributeError:
+      cache = weakref.WeakValueDictionary()
+      cls.__cache = cache
+    try:
+      self = cache[args]
+    except KeyError:
+      self = object.__new__( cls )
+      cache[args] = self
+    return self
 
 def unreachable_items():
   # see http://stackoverflow.com/questions/16911559/trouble-understanding-pythons-gc-garbage-for-tracing-memory-leaks

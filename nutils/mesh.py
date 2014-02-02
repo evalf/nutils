@@ -42,7 +42,7 @@ def rectilinear( vertices, periodic=(), name='rect' ):
   structure = numeric.objmap( lambda *index: element.QuadElement(
     ndims=ndims,
     parent=( domainelem, element.AffineTransformation(
-      offset=[ n[i] for n,i in zip(vertices,index) ],
+      offset=numeric.asarray([ n[i] for n,i in zip(vertices,index) ]),
       transform=numeric.diag([ n[i+1]-n[i] for n,i in zip(vertices,index) ]) ) ),
     vertices=vertexobjs[tuple(slice(i,i+2) for i in index)].ravel() ), *indices )
   topo = topology.StructuredTopology( structure )

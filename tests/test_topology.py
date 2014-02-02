@@ -257,17 +257,13 @@ class TestTopologyGlueing( object ):
 
   def test_2DNodeRelabelingBigMaster( self ):
     'This should raise an AssertionError, as there are too many master elements.'
-    topo0 = copy.deepcopy( self.topo0 ) # Don't modify the original object
-    topo0.boundary.groups['__glue__'] = topo0.boundary + topo0[:1,:1].boundary['right'] # For some strange reason deepcopy skips boundary['__glue__']
-    args = topo0, self.topo1, self.geom
-    numpy.testing.assert_raises( AssertionError, topology.glue, *args )
+    self.topo0.boundary.groups['__glue__'] = self.topo0.boundary + self.topo0[:1,:1].boundary['right'] # For some strange reason deepcopy skips boundary['__glue__']
+    numpy.testing.assert_raises( AssertionError, topology.glue, self.topo0, self.topo1, self.geom )
 
   def test_2DNodeRelabelingBigSlave( self ):
     'This should raise an AssertionError, as there are too many slave elements.'
-    topo1 = copy.deepcopy( self.topo1 )
-    topo1.boundary.groups['__glue__'] = topo1.boundary + topo1[:1,:1].boundary['right']
-    args = self.topo0, topo1, self.geom
-    numpy.testing.assert_raises( AssertionError, topology.glue, *args )
+    self.topo1.boundary.groups['__glue__'] = self.topo1.boundary + self.topo1[:1,:1].boundary['right']
+    numpy.testing.assert_raises( AssertionError, topology.glue, self.topo0, self.topo1, self.geom )
 
   def StokesBEM( self, visual=False ):
     'The singular integration scheme depends on the correct functioning of Topology.glue().'

@@ -32,14 +32,15 @@ class Topology( object ):
     'create refined space by refining dofs in existing one'
 
     refine = list( refine )
-    refined = []
+    refined = [] # all elements of refined topology, max 1 level finer than current
     for elem in self:
       if elem in refine:
         refine.remove( elem )
         refined.extend( elem.children )
       else:
         refined.append( elem )
-        pelem = elem # only for argument checking:
+        # only for argument checking: remove parents from refine
+        pelem = elem
         while pelem.parent:
           pelem, trans = pelem.parent
           if pelem in refine:
@@ -1141,7 +1142,7 @@ class HierarchicalTopology( Topology ):
     parentelems = []
     maxrefine = 9
     for irefine in range( maxrefine ):
-  
+
       funcsp = mkspace( topo ) # shape functions for level irefine
       (func,(dofaxis,)), = function.blocks( funcsp ) # separate elem-local funcs and global placement index
   
