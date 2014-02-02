@@ -1,4 +1,4 @@
-from . import util, numeric, log, prop, core, _
+from . import util, numeric, log, prop, _
 import sys, warnings
 
 ELEM    = object()
@@ -1857,7 +1857,7 @@ class Pointdata( ArrayFunc ):
   @staticmethod  
   def pointdata( elem, points, data ):
     myvals,mypoint = data[elem]
-    assert mypoint is points, 'Illegal point set'
+    assert mypoint == points, 'Illegal point set'
     return myvals
 
   def update_max( self, func ):

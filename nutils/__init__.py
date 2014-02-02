@@ -29,7 +29,6 @@ from numpy import newaxis as _
 __all__ = [
   '_',
   'prop',
-  'core',
   'numeric',
   'element',
   'function',

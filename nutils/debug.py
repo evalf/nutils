@@ -1,5 +1,5 @@
-from . import core
 import sys, cmd, re, os, linecache
+from . import util
 
 class Frame( object ):
   'frame info'
@@ -27,20 +27,17 @@ class Frame( object ):
   def getline( self, lineno ):
     return linecache.getline( self.frame.f_code.co_filename, lineno )
 
-  @property
-  @core.cache
+  @util.cacheprop
   def where( self ):
     relpath = os.path.relpath( self.frame.f_code.co_filename )
     name = self._name( self.frame )
     return 'File "%s", line %d, in %s' % ( relpath, self.lineno, name )
 
-  @property
-  @core.cache
+  @util.cacheprop
   def context( self ):
     return '  %s\n    %s' % ( self.where,self.getline( self.lineno ).strip() )
 
-  @property
-  @core.cache
+  @util.cacheprop
   def source( self ):
     path = self.frame.f_code.co_filename
     lineno = self.frame.f_code.co_firstlineno

@@ -1,5 +1,16 @@
-from . import log, prop, debug, core, numeric
+from . import log, prop, numeric
 import sys, os, time, cPickle, hashlib, weakref, warnings, itertools
+
+def cacheprop( f ):
+  def cacheprop_wrapper( self, f=f ):
+    try:
+      value = self.__dict__[f.func_name]
+    except KeyError:
+      value = f( self )
+      self.__dict__[f.func_name] = value
+    return value
+  assert not cacheprop_wrapper.__closure__
+  return property(cacheprop_wrapper)
 
 def unreachable_items():
   # see http://stackoverflow.com/questions/16911559/trouble-understanding-pythons-gc-garbage-for-tracing-memory-leaks
@@ -319,6 +330,7 @@ class Statm( object ):
 def run( *functions ):
   'call function specified on command line'
 
+  from . import debug
   assert functions
 
   properties = {
@@ -484,10 +496,6 @@ def run( *functions ):
   log.info( 'finish %s\n' % time.ctime() )
   log.info( 'elapsed %02.0f:%02.0f:%02.0f' % ( hours, minutes, seconds ) )
 
-  cacheinfo = core.cache_info( brief=True )
-  if cacheinfo:
-    log.warning( '\n  '.join( ['some caches were saturated:'] + cacheinfo ) )
-
   if prop.profile:
     import pstats
     stream = log.getstream( 'warning' )
@@ -498,7 +506,6 @@ def run( *functions ):
     sys.exit( 0 )
 
   debug.write_html( htmlfile, exc_value, exc_tb )
-  htmlfile.write( '<span class="info">Cache usage:<ul>%s</ul></span>' % '\n'.join( '<li>%s</li>' % line for line in core.cache_info( brief=False ) ) )
   htmlfile.flush()
 
   debug.Explorer( repr(exc_value), exc_tb, intro='''\

@@ -1,4 +1,4 @@
-from . import element, function, util, parallel, matrix, log, core, numeric, prop, _
+from . import element, function, util, parallel, matrix, log, numeric, prop, _
 import warnings, itertools
 
 class ElemMap( dict ):
@@ -48,7 +48,6 @@ class Topology( object ):
     assert not refine, 'not all refinement elements were found: %s' % '\n '.join( str(e) for e in refine )
     return HierarchicalTopology( self, refined )
 
-  @core.cache
   def stdfunc( self, degree ):
     'spline from vertices'
 
@@ -612,8 +611,7 @@ class StructuredTopology( Topology ):
     periodic = [ idim for idim in self.periodic if idim < len(item) and item[idim] == slice(None) ]
     return StructuredTopology( self.structure[item], periodic=periodic )
 
-  @property
-  @core.cache
+  @util.cacheprop
   def boundary( self ):
     'boundary'
 
@@ -647,8 +645,7 @@ class StructuredTopology( Topology ):
     topo.groups = dict( zip( ( 'left', 'right', 'bottom', 'top', 'front', 'back' ), boundaries ) )
     return topo
 
-  @property
-  @core.cache
+  @util.cacheprop
   def interfaces( self ):
     'interfaces'
 
@@ -670,7 +667,6 @@ class StructuredTopology( Topology ):
         interfaces.append( ielem )
     return UnstructuredTopology( interfaces, ndims=self.ndims-1 )
 
-  @core.cache
   def splinefunc( self, degree, neumann=(), knots=None, periodic=None, closed=False, removedofs=None ):
     'spline from vertices'
 
@@ -753,7 +749,6 @@ class StructuredTopology( Topology ):
 
     return function.function( funcmap, dofmap, dofcount, self.ndims )
 
-  @core.cache
   def discontfunc( self, degree ):
     'discontinuous shape functions'
 
@@ -768,7 +763,6 @@ class StructuredTopology( Topology ):
 
     return function.function( funcmap, dofmap, dofs.size, self.ndims )
 
-  @core.cache
   def curvefreesplinefunc( self ):
     'spline from vertices'
 
@@ -817,7 +811,6 @@ class StructuredTopology( Topology ):
 
     return self.splinefunc( degree=1 )
 
-  @core.cache
   def stdfunc( self, degree ):
     'spline from vertices'
 
@@ -875,7 +868,6 @@ class StructuredTopology( Topology ):
       vertex_structure[...,idim] = numeric.asarray( ivertices ).reshape( shape )
     return self.linearfunc().dot( vertex_structure.reshape( -1, self.ndims ) )
 
-  @core.weakcache
   def refine_nu( self, N ):
     'refine non-uniformly'
 
@@ -889,7 +881,7 @@ class StructuredTopology( Topology ):
     refined.groups = { key: group.refine_nu( N ) for key, group in self.groups.items() }
     return refined
 
-  @property
+  @util.cacheprop
   def refined( self ):
     'refine entire topology'
 
@@ -907,8 +899,7 @@ class StructuredTopology( Topology ):
 
     return '%s(%s)' % ( self.__class__.__name__, 'x'.join(map(str,self.structure.shape)) )
 
-  @property
-  @core.cache
+  @util.cacheprop
   def multiindex( self ):
     'Inverse map of self.structure: given an element find its location in the structure.'
     return dict( (self.structure[alpha], alpha) for alpha in numeric.ndindex( self.structure.shape ) )
@@ -965,16 +956,14 @@ class IndexedTopology( Topology ):
     ind = function.DofMap( ElemMap(dofmap,self.ndims) ),
     return function.Inflate( (ndofs,), [(func,ind)] )
 
-  @property
-  @core.weakcache
+  @util.cacheprop
   def refined( self ):
     'refine all elements 2x'
 
     elements = [ child for elem in self.elements for child in elem.children if child is not None ]
     return IndexedTopology( self.topo.refined, elements )
 
-  @property
-  @core.cache
+  @util.cacheprop
   def boundary( self ):
     'boundary'
 
@@ -1016,8 +1005,7 @@ class UnstructuredTopology( Topology ):
 
     return self.namedfuncs[ 'bubble1' ]
 
-  @property
-  @core.weakcache
+  @util.cacheprop
   def refined( self ):
     'refined (=refine(2))'
 
@@ -1088,8 +1076,7 @@ class HierarchicalTopology( Topology ):
 
     return len(self.elements)
 
-  @property
-  @core.cache
+  @util.cacheprop
   def boundary( self ):
     'boundary elements & groups'
 
@@ -1111,8 +1098,7 @@ class HierarchicalTopology( Topology ):
     boundary.groups = dict( ( tag, UnstructuredTopology( group, ndims=self.ndims-1 ) ) for tag, group in bgroups.items() )
     return boundary
 
-  @property
-  @core.cache
+  @util.cacheprop
   def interfaces( self ):
     'interface elements & groups'
 
@@ -1237,50 +1223,28 @@ def glue( master, slave, geometry, tol=1.e-10, verbose=False ):
   else:
     master_geom = slave_geom = geometry
 
-  vtxmap = {} # THE old vertex -> nex vertex mapping
+  nglue = len(master.boundary[gluekey])
+  assert len(slave.boundary[gluekey]) == nglue
 
-  log.info( 'pairing elements [%i]' % len(master.boundary[gluekey]) )
-  slave_vertex_locations = { slave_elem:
-    slave_geom( slave_elem, 'bezier2' ) for slave_elem in slave.boundary[gluekey] }
-  for master_elem in master.boundary[gluekey]:
-    master_locs = master_geom( master_elem, 'bezier2' )
-    meshwidth = numeric.norm2( numeric.diff( master_locs, axis=0 ).ravel() )
-    assert meshwidth > tol, 'tol. (%.2e) > element size (%.2e)' % (tol, meshwidth)
-    for slave_elem, slave_locs in slave_vertex_locations.iteritems():
-      dists = ( numeric.norm2( (master_locs-slave_locs).ravel() ),
-                numeric.norm2( (master_locs-slave_locs[::-1]).ravel() ) )
-      if min(*dists) < tol:
-        break # don't check if a second element can be paired.
-    else:
-      if verbose:
-        from matplotlib import pyplot
-        pyplot.clf()
-        pyplot.plot( master_locs[:,0], master_locs[:,1], '.-', label='master' )
-        mindist = numeric.inf
-        for slave_elem, slave_locs in slave_vertex_locations.iteritems():
-          verts = slave_locs[:,:2].T.flatten()
-          pyplot.plot( verts[:2], verts[2:], label='%.3f'%dist )
-          mindist = min( mindist,
-            numeric.norm( (master_locs-slave_locs).ravel() ),
-            numeric.norm( (master_locs-slave_locs[::-1]).ravel() ) )
-        pyplot.legend()
-        pyplot.axis('equal')
-        pyplot.title('min dist: %.3e'%mindist)
-        it = locals().get('it',-1) + 1
-        name = 'glue%i.jpg'%it
-        pyplot.savefig(prop.dumpdir+name)
-        log.path(name)
-      raise AssertionError( 'Could not pair master element: %s (maybe tol is set too low?)' % master_elem )
-    slave_vertex_locations.pop( slave_elem )
-    new_vertices = master_elem.vertices if dists[0] < tol \
-              else reversed( master_elem.vertices )
+  log.info( 'pairing elements [%i]' % nglue )
+  masterelems = [ ( masterelem, master_geom( masterelem, 'gauss1' )[0] ) for masterelem in master.boundary[gluekey] ]
+  elempairs = []
+  maxdist = 0
+  for slaveelem in slave.boundary[gluekey]:
+    slavepoint = slave_geom( slaveelem, 'gauss1' )[0]
+    distances = [ numeric.norm2( masterpoint - slavepoint ) for masterelem, masterpoint in masterelems ]
+    i = numeric.numpy.argmin( distances )
+    maxdist = max( maxdist, distances[i] )
+    elempairs.append(( masterelems.pop(i)[0], slaveelem ))
+  assert not masterelems
+  assert maxdist < tol, 'maxdist exceeds tolerance: %.2e >= %.2e' % ( maxdist, tol )
+  log.info( 'all elements matched within %.2e radius' % maxdist )
 
-    for oldvtx, newvtx in zip( slave_elem.vertices, new_vertices ):
+  # convert element pairs to vertex map
+  vtxmap = {}
+  for masterelem, slave_elem in elempairs:
+    for oldvtx, newvtx in zip( slave_elem.vertices, reversed(masterelem.vertices) ):
       assert vtxmap.setdefault( oldvtx, newvtx ) == newvtx, 'conflicting vertex info'
-
-  assert not slave_vertex_locations, 'Could not pair slave elements: %s' % slave_vertex_locations.keys()
-
-  # we can forget everything now and continue with the vtxmap
 
   emap = {} # elem->newelem map
   for belem in slave.boundary:

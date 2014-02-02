@@ -1,4 +1,4 @@
-from . import log, util, core, numeric, function, _
+from . import log, util, numeric, function, _
 import warnings
 
 class TrimmedIScheme( object ):
@@ -16,7 +16,6 @@ class TrimmedIScheme( object ):
     self.bezierscheme = 'bezier%d' % degree
     self.retain = retain
 
-  @core.cache
   def __getitem__( self, elem ):
     'get ischeme for elem'
 
@@ -116,7 +115,6 @@ class SliceTransformation( Transformation ):
     self.slice = slice( start, stop, step )
     Transformation.__init__( self, fromdim, todim=len(range(fromdim)[self.slice]) )
   
-  @core.weakcache
   def _eval( self, points ):
     'apply transformation'
 
@@ -169,7 +167,6 @@ class AffineTransformation( Transformation ):
 
     return numeric.dot( coords - self.offset, self.invtrans.T )
 
-  @core.weakcache
   def _eval( self, points ):
     'apply transformation'
 
@@ -319,7 +316,6 @@ class ProductElement( Element ):
   __slots__ = 'elem1', 'elem2', 'root_det'
 
   @staticmethod
-  @core.cache
   def getslicetransforms( ndims1, ndims2 ):
     ndims = ndims1 + ndims2
     slice1 = SliceTransformation( fromdim=ndims, stop=ndims1 )
@@ -340,7 +336,6 @@ class ProductElement( Element ):
     self.root_det = elem1.root_det * elem2.root_det # HACK. TODO via constructor
 
   @staticmethod
-  @core.cache
   def get_tri_bem_ischeme( ischeme, neighborhood ):
     'Some cached quantities for the singularity quadrature scheme.'
     points, weights = QuadElement.getischeme( ndims=4, where=ischeme )
@@ -395,7 +390,6 @@ class ProductElement( Element ):
     return points, weights
   
   @staticmethod
-  @core.cache
   def get_quad_bem_ischeme( ischeme, neighborhood ):
     'Some cached quantities for the singularity quadrature scheme.'
     points, weights = QuadElement.getischeme( ndims=4, where=ischeme )
@@ -442,7 +436,6 @@ class ProductElement( Element ):
     return points, weights
 
   @staticmethod
-  @core.cache
   def concat( ischeme1, ischeme2 ):
     coords1, weights1 = ischeme1
     coords2, weights2 = ischeme2
@@ -502,7 +495,6 @@ class ProductElement( Element ):
     return neighborhood, transf1, transf2
 
   @staticmethod
-  @core.cache
   def singular_ischeme_tri( orientation, ischeme ):
     neighborhood, transf1, transf2 = orientation
     points, weights = ProductElement.get_tri_bem_ischeme( ischeme, neighborhood )
@@ -526,7 +518,6 @@ class ProductElement( Element ):
     return numeric.asarray( transfpoints ), numeric.asarray( weights )
     
   @staticmethod
-  @core.cache
   def singular_ischeme_quad( orientation, ischeme ):
     neighborhood, transf1, transf2 = orientation
     points, weights = ProductElement.get_quad_bem_ischeme( ischeme, neighborhood )
@@ -579,7 +570,6 @@ class TrimmedElement( Element ):
 
     Element.__init__( self, ndims=elem.ndims, vertices=vertices, parent=parent )
 
-  @core.cache
   def eval( self, ischeme ):
     'get integration scheme'
 
@@ -701,7 +691,6 @@ class TrimmedElement( Element ):
 
     return trimmededges
 
-  #@core.cache
   def triangulate ( self ):
 
     assert self.finestscheme.startswith('simplex'), 'Expected simplex scheme'
@@ -893,7 +882,6 @@ class QuadElement( Element ):
     Element.__init__( self, ndims, vertices, index=index, parent=parent, context=context, interface=interface )
 
   @property
-  @core.cache
   def neighbormap( self ):
     'maps # matching vertices --> codim of interface: {0: -1, 1: 2, 2: 1, 4: 0}'
     return dict( [ (0,-1) ] + [ (2**(self.ndims-i),i) for i in range(self.ndims+1) ] )
@@ -921,7 +909,6 @@ class QuadElement( Element ):
     return self.children_by( (2,)*self.ndims )
 
   @staticmethod
-  @core.cache
   def edgetransform( ndims ):
     'edge transforms'
 
@@ -997,7 +984,6 @@ class QuadElement( Element ):
     return QuadElement( vertices=vertices, ndims=self.ndims-1, context=(self,transform) )
 
   @staticmethod
-  @core.cache
   def refinedtransform( N ):
     'refined transform'
 
@@ -1014,7 +1000,6 @@ class QuadElement( Element ):
     return elems
 
   @staticmethod
-  @core.cache
   def getgauss( degree ):
     'compute gauss points and weights'
 
@@ -1025,7 +1010,6 @@ class QuadElement( Element ):
     return (x+1) * .5, w[0]**2
 
   @classmethod
-  @core.cache
   def getischeme( cls, ndims, where ):
     'get integration scheme'
 
@@ -1153,7 +1137,6 @@ class TriangularElement( Element ):
     return QuadElement( vertices=vertices, ndims=1, context=(self,transform) )
 
   @staticmethod
-  @core.cache
   def refinedtransform( n ):
     'refined transform'
 
@@ -1173,7 +1156,6 @@ class TriangularElement( Element ):
     return [ TriangularElement( id=self.id+'.child({})'.format(ichild), parent=(self,transform) ) for ichild, transform in enumerate( self.refinedtransform( n ) ) ]
 
   @staticmethod
-  @core.cache
   def getischeme( ndims, where ):
     '''get integration scheme
     gaussian quadrature: http://www.cs.rpi.edu/~flaherje/pdf/fea6.pdf
@@ -1286,7 +1268,6 @@ class TetrahedronElement( Element ):
     return TriangularElement( vertices=vertices, context=(self,transform) )
 
   @staticmethod
-  @core.cache
   def refinedtransform( n ):
     'refined transform'
     raise NotImplementedError( 'Transformations for refined tetrahedrons' )  
@@ -1296,7 +1277,6 @@ class TetrahedronElement( Element ):
     raise NotImplementedError( 'Refinement tetrahedrons' )  
 
   @staticmethod
-  @core.cache
   def getischeme( ndims, where ):
     '''get integration scheme
        http://people.sc.fsu.edu/~jburkardt/datasets/quadrature_rules_tet/quadrature_rules_tet.html'''
@@ -1491,18 +1471,14 @@ class PolyProduct( StdElem ):
 
   __slots__ = 'std1', 'std2'
 
-  @core.cache
-  def __new__( cls, std1, std2 ):
+  def __init__( self, std1, std2 ):
     'constructor'
 
-    self = object.__new__( cls )
     self.std1 = std1
     self.std2 = std2
     self.ndims = std1.ndims + std2.ndims
     self.nshapes = std1.nshapes * std2.nshapes
-    return self
 
-  @core.cache
   def eval( self, points, grad=0 ):
     'evaluate'
     # log.debug( '@ PolyProduct.eval: ', id(self), id(points), id(grad) )
@@ -1584,14 +1560,12 @@ class PolyLine( StdElem ):
     return numeric.contract( extractions[:,_,:,:], poly[_,:,_,:], axis=-1 )
 
   @classmethod
-  @core.cache
   def spline_elems( cls, p, n ):
     'spline elements, minimum amount (just for caching)'
 
     return map( cls, cls.spline_poly(p,n) )
 
   @classmethod
-  @core.cache
   def spline_elems_neumann( cls, p, n ):
     'spline elements, neumann endings (just for caching)'
 
@@ -1603,7 +1577,6 @@ class PolyLine( StdElem ):
     return cls(poly_0), cls(poly_e)
 
   @classmethod
-  @core.cache
   def spline_elems_curvature( cls ):
     'spline elements, curve free endings (just for caching)'
 
@@ -1659,7 +1632,6 @@ class PolyLine( StdElem ):
     order, self.nshapes = self.poly.shape
     self.degree = order - 1
 
-  @core.cache
   def eval( self, points, grad=0 ):
     'evaluate'
 
@@ -1697,15 +1669,11 @@ class PolyTriangle( StdElem ):
 
   __slots__ = ()
 
-  @core.cache
-  def __new__( cls, order ):
+  def __init__( self, order ):
     'constructor'
 
     assert order == 1
-    self = object.__new__( cls )
-    return self
 
-  @core.cache
   def eval( self, points, grad=0 ):
     'eval'
 
@@ -1730,15 +1698,11 @@ class BubbleTriangle( StdElem ):
 
   __slots__ = ()
 
-  @core.cache
-  def __new__( cls, order ):
+  def __init__( self, order ):
     'constructor'
 
     assert order == 1
-    self = object.__new__( cls )
-    return self
 
-  @core.cache
   def eval( self, points, grad=0 ):
     'eval'
 
@@ -1781,7 +1745,6 @@ class ExtractionWrapper( object ):
     self.stdelem = stdelem
     self.extraction = extraction
 
-  @core.cache
   def eval( self, points, grad=0 ):
     'call'
 
