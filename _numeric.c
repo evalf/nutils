@@ -212,7 +212,7 @@ static PyObject *numeric_contract( PyObject *self, PyObject *args, PyObject *kwa
     axes[i].stride0 = PyArray_STRIDE(A,i) / sizeof(double);
     axes[i].stride1 = PyArray_STRIDE(B,i) / sizeof(double);
   }
-  C = (PyArrayObject *)PyArray_EMPTY( nd-ncontract, PyArray_DIMS(A), NPY_DOUBLE, 0 );
+  C = (PyArrayObject *)PyArray_New( &NumericArray_Type, nd-ncontract, PyArray_DIMS(A), NPY_DOUBLE, NULL, NULL, 0, 0, NULL );
   if ( C == NULL ) {
     return NULL;
   }
