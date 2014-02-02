@@ -15,13 +15,12 @@ WEIGHTS = object()
 class EvaluationError( Exception ):
   'evaluation error'
 
-  def __init__( self, etype, evalue, evaluable, values ):
+  def __init__( self, etype, evalue, stackstr ):
     'constructor'
 
     self.etype = etype
     self.evalue = evalue
-    self.evaluable = evaluable
-    self.values = values
+    self.stackstr = stackstr
 
   def __repr__( self ):
     return 'EvaluationError%s' % self
@@ -29,59 +28,23 @@ class EvaluationError( Exception ):
   def __str__( self ):
     'string representation'
 
-    return '\n%s --> %s: %s' % ( self.evaluable.stackstr( self.values ), self.etype.__name__, self.evalue )
+    return '\n%s --> %s: %s' % ( self.stackstr, self.etype.__name__, self.evalue )
 
-class Evaluable( object ):
-  'evaluable base classs'
+class CompiledEvaluable( object ):
+  'serialized version of evaluable object for actual evaluation'
 
-  __slots__ = 'operations', 'data', '__args', '__evalf'
-
-  def __init__( self, args, evalf ):
-    'constructor'
-
-    self.__args = tuple(args)
-    self.__evalf = evalf
-    self.operations = None
-
-  def recurse_index( self, data, operations ):
-    'compile'
-
-    indices = numeric.empty( len(self.__args), dtype=int )
-    for iarg, arg in enumerate( self.__args ):
-      if isinstance(arg,Evaluable):
-        for idx, (op,evalf,idcs) in enumerate( operations ):
-          if op == arg:
-            break
-        else:
-          idx = arg.recurse_index(data,operations)
-      elif arg is ELEM:
-        idx = -3
-      elif arg is POINTS:
-        idx = -2
-      elif arg is WEIGHTS:
-        idx = -1
-      else:
-        data.insert( 0, arg )
-        idx = -len(data)-3
-      indices[iarg] = idx
-    evalf = self.__evalf
-    operations.append( (self,evalf,indices) )
-    return len(operations)-1
-
-  def compile( self ):
+  def __init__( self, evaluable ):
     'compile'
 
     log.context( 'compiling' )
+    self.data = []
+    operations = []
+    evaluable.recurse_index( self.data, operations ) # compile expressions
+    self.operations = [ (evalf,idcs) for (op,evalf,idcs) in operations ] # break cycles!
+    if getattr( prop, 'dot', False ):
+      self.graphviz()
 
-    if self.operations is None:
-      self.data = []
-      operations = []
-      self.recurse_index( self.data, operations ) # compile expressions
-      self.operations = [ (evalf,idcs) for (op,evalf,idcs) in operations ] # break cycles!
-      if getattr( prop, 'dot', False ):
-        self.graphviz()
-
-  def __call__( self, elem, ischeme ):
+  def eval( self, elem, ischeme ):
     'evaluate'
 
     if isinstance( ischeme, dict ):
@@ -102,7 +65,6 @@ class Evaluable( object ):
     else:
       raise Exception, 'invalid integration scheme of type %r' % type(ischeme)
 
-    self.compile()
     N = len(self.data) + 3
     values = self.data + [ elem, points, weights ]
     for evalf, indices in self.operations:
@@ -113,7 +75,7 @@ class Evaluable( object ):
         raise
       except:
         etype, evalue, traceback = sys.exc_info()
-        raise EvaluationError, ( etype, evalue, self, values ), traceback
+        raise EvaluationError, ( etype, evalue, self.stackstr(values) ), traceback
       values.append( retval )
     return values[-1]
 
@@ -121,7 +83,6 @@ class Evaluable( object ):
     'create function graph'
 
     log.context( title )
-    self.compile()
 
     import os, subprocess
 
@@ -160,7 +121,6 @@ class Evaluable( object ):
   def stackstr( self, values=None ):
     'print stack'
 
-    self.compile()
     if values is None:
       values = self.data + [ '<elem>', '<points>', '<weights>' ]
 
@@ -182,6 +142,45 @@ class Evaluable( object ):
       if N+i == len(values):
         break
     return '\n'.join( lines )
+
+class Evaluable( object ):
+  'evaluable base classs'
+
+  __slots__ = '__args', '__evalf'
+
+  def __init__( self, args, evalf ):
+    'constructor'
+
+    self.__args = tuple(args)
+    self.__evalf = evalf
+
+  def recurse_index( self, data, operations ):
+    'compile'
+
+    indices = numeric.empty( len(self.__args), dtype=int )
+    for iarg, arg in enumerate( self.__args ):
+      if isinstance(arg,Evaluable):
+        for idx, (op,evalf,idcs) in enumerate( operations ):
+          if op == arg:
+            break
+        else:
+          idx = arg.recurse_index(data,operations)
+      elif arg is ELEM:
+        idx = -3
+      elif arg is POINTS:
+        idx = -2
+      elif arg is WEIGHTS:
+        idx = -1
+      else:
+        data.insert( 0, arg )
+        idx = -len(data)-3
+      indices[iarg] = idx
+    evalf = self.__evalf
+    operations.append( (self,evalf,indices) )
+    return len(operations)-1
+
+  def compiled( self ):
+    return CompiledEvaluable( self )
 
   def __eq__( self, other ):
     'compare'
@@ -1863,7 +1862,8 @@ class Pointdata( ArrayFunc ):
   def update_max( self, func ):
     func = asarray(func)
     assert func.shape == self.shape
-    data = dict( (elem,(numeric.maximum(func(elem,points),values),points)) for elem,(values,points) in self.data.iteritems() )
+    func = func.compiled()
+    data = dict( (elem,(numeric.maximum(func.eval(elem,points),values),points)) for elem,(values,points) in self.data.iteritems() )
 
     return Pointdata( data, self.shape )
 
@@ -2345,24 +2345,6 @@ def _dtypestr( arg ):
   if arg.dtype == float:
     return 'double'
   raise Exception, 'unknown dtype %s' % arg.dtype
-
-def asarray( arg ):
-  'convert to ArrayFunc or NumericArray'
-  
-  arr = numeric.asarray( arg )
-  if arr.dtype == object:
-    if arr.ndim == 0:
-      arr = arr[()]
-      assert _isfunc( arr )
-    else:
-      arr = stack( arr, axis=0 )
-  elif numeric.equal( arr, 0 ).all():
-    arr = _zeros( arr.shape )
-  return arr
-
-def _asarray( arg ):
-  warnings.warn( '_asarray is deprecated, use asarray instead', DeprecationWarning )
-  return asarray( arg )
 
 # FUNCTIONS
 
@@ -3130,6 +3112,7 @@ def pointdata ( topo, ischeme, func=None, shape=None, value=None ):
     assert value is None
     assert shape is None
     shape = func.shape
+    func = func.compiled()
   else: # func is None
     if value is not None:
       assert shape is None
@@ -3143,7 +3126,7 @@ def pointdata ( topo, ischeme, func=None, shape=None, value=None ):
   for elem in topo:
     ipoints, iweights = elem.eval( ischeme )
     values = numeric.empty( ipoints.shape[:-1]+shape, dtype=float )
-    values[:] = func(elem,ischeme) if func is not None else value
+    values[:] = func.eval(elem,ischeme) if func is not None else value
     data[ elem ] = values, ipoints
 
   return Pointdata( data, shape )
@@ -3209,5 +3192,33 @@ def supp( funcsp, indices ):
         elem, trans = elem.parent
       assert not dofs.size
   return supp
+
+def _asarray( arg ):
+  warnings.warn( '_asarray is deprecated, use asarray instead', DeprecationWarning )
+  return asarray( arg )
+
+def asarray( arg ):
+  'convert to ArrayFunc or NumericArray'
+  
+  arr = numeric.asarray( arg )
+  if arr.dtype == object:
+    if arr.ndim == 0:
+      arr = arr[()]
+      assert _isfunc( arr )
+    else:
+      arr = stack( arr, axis=0 )
+  elif numeric.equal( arr, 0 ).all():
+    arr = _zeros( arr.shape )
+  return arr
+
+def asfunc( obj ):
+  'convert to Evaluable'
+  return obj if isinstance( obj, Evaluable ) \
+    else asarray( obj ) # TODO make asarray return ArrayFunc always
+
+def ascompiled( obj ):
+  'convert to CompiledEvaluable'
+  return obj if isinstance( obj, CompiledEvaluable ) \
+    else asfunc( obj ).compiled()
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

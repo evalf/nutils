@@ -9,7 +9,7 @@ class TrimmedIScheme( object ):
   def __init__( self, levelset, ischeme, maxrefine, finestscheme='uniform1', degree=3, retain=None ):
     'constructor'
 
-    self.levelset = levelset
+    self.levelset = function.ascompiled( levelset )
     self.ischeme = ischeme
     self.maxrefine = maxrefine
     self.finestscheme = finestscheme
@@ -40,7 +40,7 @@ class TrimmedIScheme( object ):
 
     if maxrefine <= 0:
       ipoints, iweights = elem.eval( self.finestscheme )
-      inside = numeric.greater( self.levelset( elem, ipoints ), 0 )
+      inside = numeric.greater( self.levelset.eval( elem, ipoints ), 0 )
       if inside.all():
         return True
       if not inside.any():
@@ -48,7 +48,7 @@ class TrimmedIScheme( object ):
       return ipoints[inside], iweights[inside]
 
     try:
-      inside = numeric.greater( self.levelset( elem, self.bezierscheme ), 0 )
+      inside = numeric.greater( self.levelset.eval( elem, self.bezierscheme ), 0 )
     except function.EvaluationError:
       pass
     else:
@@ -269,20 +269,21 @@ class Element( object ):
       -1 for levelset < 0 everywhere
        0 for intersected element'''
 
+    levelset = function.ascompiled( levelset )
     elems = iter( [self] )
     for irefine in range(evalrefine):
       elems = ( child for elem in elems for child in elem.children )
 
-    inside = numeric.greater( levelset( elems.next(), lscheme ), 0 )
+    inside = numeric.greater( levelset.eval( elems.next(), lscheme ), 0 )
     if inside.all():
       for elem in elems:
-        inside = numeric.greater( levelset( elem, lscheme ), 0 )
+        inside = numeric.greater( levelset.eval( elem, lscheme ), 0 )
         if not inside.all():
           return 0
       return 1
     elif not inside.any():
       for elem in elems:
-        inside = numeric.greater( levelset( elem, lscheme ), 0 )
+        inside = numeric.greater( levelset.eval( elem, lscheme ), 0 )
         if inside.any():
           return 0
       return -1
@@ -291,6 +292,7 @@ class Element( object ):
   def trim( self, levelset, maxrefine, lscheme, finestscheme, evalrefine ):
     'trim element along levelset'
 
+    levelset = function.ascompiled( levelset )
     intersected = self.intersected( levelset, lscheme, evalrefine )
 
     if intersected > 0:
@@ -562,7 +564,7 @@ class TrimmedElement( Element ):
 
     assert not isinstance( elem, TrimmedElement )
     self.elem = elem
-    self.levelset = levelset
+    self.levelset = function.ascompiled( levelset )
     self.maxrefine = maxrefine
     self.lscheme = lscheme
     self.finestscheme = finestscheme if finestscheme != None else 'simplex1'
@@ -578,7 +580,7 @@ class TrimmedElement( Element ):
     if ischeme[:7] == 'contour':
       n = int(ischeme[7:] or 0)
       points, weights = self.elem.eval( 'contour{}'.format(n) )
-      inside = numeric.greater_equal( self.levelset( self.elem, points ), 0 )
+      inside = numeric.greater_equal( self.levelset.eval( self.elem, points ), 0 )
       points = points[inside]
       points.flags.writeable = False
       return points, None
@@ -619,7 +621,7 @@ class TrimmedElement( Element ):
           inside = numeric.zeros_like(weights,dtype=bool) # what is .none supposed to do? -GJ
         else:  
           points, weights = self.elem.eval( self.finestscheme )
-          inside = numeric.greater( self.levelset( self.elem, points ), 0 )
+          inside = numeric.greater( self.levelset.eval( self.elem, points ), 0 )
         points = points[inside]
         points.flags.writeable = False
         if weights is not None:
@@ -699,7 +701,7 @@ class TrimmedElement( Element ):
     lvltol  = numeric.spacing(100)
     xistol  = numeric.spacing(100)
     ischeme = self.elem.getischeme( self.elem.ndims, 'bezier2' )
-    where   = numeric.greater( self.levelset( self.elem, ischeme ), -lvltol )
+    where   = numeric.greater( self.levelset.eval( self.elem, ischeme ), -lvltol )
     points  = ischeme[0][where]
     vertices   = numeric.array(self.vertices)[where].tolist()
     norig   = sum(where)
@@ -715,7 +717,7 @@ class TrimmedElement( Element ):
     for line in lines:
       
       ischeme = line.getischeme( line.ndims, 'bezier'+str(order+1) )
-      vals    = self.levelset( line, ischeme )
+      vals    = self.levelset.eval( line, ischeme )
       pts     = ischeme[0]
       where   = numeric.greater( vals, -lvltol )
       zeros   = numeric.less(vals, lvltol) & where

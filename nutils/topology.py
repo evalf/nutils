@@ -99,11 +99,11 @@ class Topology( object ):
       funcs = funcs,
 
     slices = []
-    pointshape = function.PointShape()
+    pointshape = function.PointShape().compiled()
     npoints = 0
     separators = []
     for elem in log.iterate('elem',self):
-      np, = pointshape( elem, ischeme )
+      np, = pointshape.eval( elem, ischeme )
       slices.append( slice(npoints,npoints+np) )
       npoints += np
       if separate:
@@ -126,11 +126,11 @@ class Topology( object ):
       else:
         idata.append( function.Tuple( [ ifunc, (), func ] ) )
       retvals.append( retval )
-    idata = function.Tuple( idata )
+    idata = function.Tuple( idata ).compiled()
 
     for ielem, elem in parallel.pariter( enumerate( self ) ):
       s = slices[ielem],
-      for ifunc, index, data in idata( elem, ischeme ):
+      for ifunc, index, data in idata.eval( elem, ischeme ):
         retvals[ifunc][s+index] = data
 
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
@@ -214,10 +214,10 @@ class Topology( object ):
 
     nrows, ncols = func.shape
     graph = [ [] for irow in range(nrows) ]
-    IJ = function.Tuple([ function.Tuple(ind) for f, ind in function.blocks( func ) ])
+    IJ = function.Tuple([ function.Tuple(ind) for f, ind in function.blocks( func ) ]).compiled()
 
     for elem in log.iterate('elem',self):
-      for I, J in IJ( elem, None ):
+      for I, J in IJ.eval( elem, None ):
         for i in I:
           graph[i].append(J)
 
@@ -259,11 +259,10 @@ class Topology( object ):
         if not function._iszero( func ):
           integrands.append( function.Tuple([ ifunc, lock, (), function.elemint( func, iweights ) ]) )
       retvals.append( array )
-    idata = function.Tuple( integrands )
+    idata = function.Tuple( integrands ).compiled()
 
-    idata.compile()
     for elem in parallel.pariter( log.iterate('elem',self) ):
-      for ifunc, lock, index, data in idata( elem, ischeme ):
+      for ifunc, lock, index, data in idata.eval( elem, ischeme ):
         retval = retvals[ifunc]
         with lock:
           retval[index] += data
@@ -306,14 +305,14 @@ class Topology( object ):
         if not function._iszero( func ):
           integrands.append( function.Tuple([ ifunc, lock, (), function.elemint( func, iweights ) ]) )
       retvals.append( array )
-    idata = function.Tuple( integrands )
+    idata = function.Tuple( integrands ).compiled()
 
     for elem in parallel.pariter( log.iterate('elem',self) ):
       assert isinstance( elem, element.ProductElement )
       compare_elem = cmp( elem.elem1, elem.elem2 )
       if compare_elem < 0:
         continue
-      for ifunc, lock, index, data in idata( elem, ischeme ):
+      for ifunc, lock, index, data in idata.eval( elem, ischeme ):
         with lock:
           retvals[ifunc][index] += data
           if compare_elem > 0:
@@ -890,6 +889,7 @@ class StructuredTopology( Topology ):
   def trim( self, levelset, maxrefine, lscheme='bezier3', finestscheme='uniform2', evalrefine=0, title='trimming', log=log ):
     'trim element along levelset'
 
+    levelset = function.ascompiled( levelset )
     trimmedelems = [ elem.trim( levelset=levelset, maxrefine=maxrefine, lscheme=lscheme, finestscheme=finestscheme, evalrefine=evalrefine ) for elem in log.iterate( title, self.structure.ravel() ) ]
     trimmedstructure = numeric.array( trimmedelems ).reshape( self.structure.shape )
     return StructuredTopology( trimmedstructure, periodic=self.periodic )
@@ -1218,20 +1218,19 @@ def glue( master, slave, geometry, tol=1.e-10, verbose=False ):
           len(slave.boundary[gluekey]), 'Minimum requirement is that cardinality is equal.'
   assert master.ndims == 2 and slave.ndims == 2, '1D boundaries for now.' # see dists computation and update_vertices
 
-  if isinstance( geometry, tuple ):
-    master_geom, slave_geom = geometry
-  else:
-    master_geom = slave_geom = geometry
+  _mg, _sg = geometry if isinstance( geometry, tuple ) else (geometry,) * 2
+  master_geom = _mg.compiled()
+  slave_geom = master_geom if _mg == _sg else _sg.compiled()
 
   nglue = len(master.boundary[gluekey])
   assert len(slave.boundary[gluekey]) == nglue
 
   log.info( 'pairing elements [%i]' % nglue )
-  masterelems = [ ( masterelem, master_geom( masterelem, 'gauss1' )[0] ) for masterelem in master.boundary[gluekey] ]
+  masterelems = [ ( masterelem, master_geom.eval( masterelem, 'gauss1' )[0] ) for masterelem in master.boundary[gluekey] ]
   elempairs = []
   maxdist = 0
   for slaveelem in slave.boundary[gluekey]:
-    slavepoint = slave_geom( slaveelem, 'gauss1' )[0]
+    slavepoint = slave_geom.eval( slaveelem, 'gauss1' )[0]
     distances = [ numeric.norm2( masterpoint - slavepoint ) for masterelem, masterpoint in masterelems ]
     i = numeric.numpy.argmin( distances )
     maxdist = max( maxdist, distances[i] )
