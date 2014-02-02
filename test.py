@@ -79,6 +79,15 @@ def scalar_equal_int_float():
   assert B == A, 'B==A'
 
 @unittest
+def scalar_less():
+  A = numeric.asarray(1)
+  B = numeric.asarray(2.)
+  assert A <  B, 'A<B'
+  assert A <= B, 'A<=B'
+  assert not A >= B, '!A>=B'
+  assert not A >  B, '!A>B'
+
+@unittest
 def scalar_notequal_int_other_float():
   A = numeric.asarray(1)
   B = 2.
