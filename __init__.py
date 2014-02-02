@@ -20,7 +20,7 @@ for name in ( 'abs', 'add', 'arange', 'arccos', 'arcsin', 'arctan2', 'arctanh',
   
 for name in ( 'broadcast', 'linalg.cond', 'float64', 'iinfo', 'inf', 'intc',
   'isfinite', 'ix_', 'nan', 'ndarray', 'ndindex', 'pi', 'random.seed',
-  'spacing', 'testing', 'unravel_index' ):
+  'spacing', 'testing', 'unravel_index', 'newaxis' ):
   obj = numpy
   for name in name.split( '.' ): obj = getattr( obj, name )
   locals()[ name ] = obj
@@ -128,9 +128,9 @@ def align( arr, trans, ndim ):
   arr = asarray( arr )
   trans = asarray( trans, dtype=int )
   assert len(trans) == arr.ndim
-  strides = numpy.zeros( ndim, dtype=int )
+  strides = zeros( ndim, dtype=int )
   strides[trans] = arr.strides
-  shape = numpy.ones( ndim, dtype=int )
+  shape = ones( ndim, dtype=int )
   shape[trans] = arr.shape
   tmp = as_strided( arr, shape, strides )
   return tmp
@@ -145,7 +145,7 @@ def expand( arr, *shape ):
         newshape[i-len(shape)] = sh
       else:
         assert newshape[i-len(shape)] == sh
-  expanded = numpy.empty( newshape )
+  expanded = empty( newshape )
   expanded[:] = arr
   return expanded
 
@@ -156,9 +156,9 @@ def linspace2d( start, stop, steps ):
   stop  = tuple(stop ) if isinstance(stop, (list,tuple)) else (stop, stop )
   steps = tuple(steps) if isinstance(steps,(list,tuple)) else (steps,steps)
   assert len(start) == len(stop) == len(steps) == 2
-  values = numpy.empty( (2,)+steps )
-  values[0] = numpy.linspace( start[0], stop[0], steps[0] )[:,numpy.newaxis]
-  values[1] = numpy.linspace( start[1], stop[1], steps[1] )[numpy.newaxis,:]
+  values = empty( (2,)+steps )
+  values[0] = linspace( start[0], stop[0], steps[0] )[:,newaxis]
+  values[1] = linspace( start[1], stop[1], steps[1] )[newaxis,:]
   return values
 
 def contract( A, B, axis=-1 ):
@@ -209,7 +209,7 @@ def contract( A, B, axis=-1 ):
   B = as_strided( B, shape, Bstrides )
 
   if not A.size:
-    return numpy.zeros( A.shape[:-len(axis)] )
+    return zeros( A.shape[:-len(axis)] )
 
   return _contract( A, B, len(axis) )
 
@@ -251,7 +251,7 @@ def contract_fast( A, B, naxes ):
   B = as_strided( B, shape, Bstrides )
 
   if not A.size:
-    return numpy.zeros( shape[:-naxes] )
+    return zeros( shape[:-naxes] )
 
   return _contract( A, B, naxes )
 
@@ -268,8 +268,8 @@ def dot( A, B, axis=-1 ):
   assert 0 <= axis < A.ndim
 
   if A.shape[axis] == 1 or B.shape[0] == 1:
-    return A.sum(axis)[(slice(None),)*axis+(numpy.newaxis,)*(B.ndim-1)] \
-         * B.sum(0)[(Ellipsis,)+(numpy.newaxis,)*(A.ndim-1-axis)]
+    return A.sum(axis)[(slice(None),)*axis+(newaxis,)*(B.ndim-1)] \
+         * B.sum(0)[(Ellipsis,)+(newaxis,)*(A.ndim-1-axis)]
 
   assert A.shape[axis] == B.shape[0]
 
@@ -301,19 +301,19 @@ def fastrepeat( A, nrepeat, axis=-1 ):
 def fastmeshgrid( X, Y ):
   'mesh grid based on fastrepeat'
 
-  return fastrepeat(X[numpy.newaxis,:],len(Y),axis=0), fastrepeat(Y[:,numpy.newaxis],len(X),axis=1)
+  return fastrepeat(X[newaxis,:],len(Y),axis=0), fastrepeat(Y[:,newaxis],len(X),axis=1)
 
 def meshgrid( *args ):
   'multi-dimensional meshgrid generalisation'
 
   args = map( asarray, args )
   shape = [ len(args) ] + [ arg.size for arg in args if arg.ndim ]
-  grid = numpy.empty( shape )
+  grid = empty( shape )
   n = len(shape)-1
   for i, arg in enumerate( args ):
     if arg.ndim:
       n -= 1
-      grid[i] = arg[(slice(None),)+(numpy.newaxis,)*n]
+      grid[i] = arg[(slice(None),)+(newaxis,)*n]
     else:
       grid[i] = arg
   assert n == 0
@@ -354,7 +354,7 @@ def reshape( A, *shape ):
   i = 0
   for s in shape:
     if isinstance( s, (tuple,list) ):
-      assert numpy.product( s ) == A.shape[i]
+      assert product( s ) == A.shape[i]
       newshape.extend( s )
       i += 1
     elif s == 1:
@@ -362,7 +362,7 @@ def reshape( A, *shape ):
       i += 1
     else:
       assert s > 1
-      newshape.append( numpy.product( A.shape[i:i+s] ) )
+      newshape.append( product( A.shape[i:i+s] ) )
       i += s
   assert i <= A.ndim
   newshape.extend( A.shape[i:] )
@@ -377,17 +377,17 @@ def normalize( A, axis=-1 ):
   'devide by normal'
 
   s = [ slice(None) ] * A.ndim
-  s[axis] = numpy.newaxis
+  s[axis] = newaxis
   return A / norm2( A, axis )[ tuple(s) ]
 
 def cross( v1, v2, axis ):
   'cross product'
 
   if v1.ndim < v2.ndim:
-    v1 = v1[ (numpy.newaxis,)*(v2.ndim-v1.ndim) ]
+    v1 = v1[ (newaxis,)*(v2.ndim-v1.ndim) ]
   elif v2.ndim < v1.ndim:
-    v2 = v2[ (numpy.newaxis,)*(v1.ndim-v2.ndim) ]
-  return numpy.cross( v1, v2, axis=axis )
+    v2 = v2[ (newaxis,)*(v1.ndim-v2.ndim) ]
+  return numpy.cross( v1, v2, axis=axis ).view( NumericArray )
 
 def stack( arrays, axis=0 ):
   'powerful array stacker with singleton expansion'
@@ -401,7 +401,7 @@ def stack( arrays, axis=0 ):
         shape[i] = array.shape[i]
       else:
         assert array.shape[i] in ( shape[i], 1 )
-  stacked = numpy.empty( shape[:axis]+[len(arrays)]+shape[axis:], dtype=float )
+  stacked = empty( shape[:axis]+[len(arrays)]+shape[axis:], dtype=float )
   for i, arr in enumerate( arrays ):
     stacked[(slice(None),)*axis+(i,)] = arr
   return stacked
@@ -418,7 +418,7 @@ def bringforward( arg, axis ):
 def diagonalize( arg ):
   'append axis, place last axis on diagonal of self and new'
 
-  diagonalized = numpy.zeros( arg.shape + (arg.shape[-1],) )
+  diagonalized = zeros( arg.shape + (arg.shape[-1],) )
   takediag( diagonalized )[:] = arg
   return diagonalized
 
