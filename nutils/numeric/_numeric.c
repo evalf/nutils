@@ -16,7 +16,6 @@ NPY_NO_EXPORT PyTypeObject NumericArray_Type;
 
 PyObject *numeric_richcompare( PyArrayObject *self, PyObject *other, int op ) {
   DBGPRINT( "in richcompare, op=%d\n", op );
-  int ndim = PyArray_NDIM(self);
   if ( self == (PyArrayObject *)other ) {
     DBGPRINT( "objects are identical\n" );
     switch ( op ) {
@@ -25,9 +24,10 @@ PyObject *numeric_richcompare( PyArrayObject *self, PyObject *other, int op ) {
     }
     return NULL;
   }
-  if ( ndim == 0 && PyArray_IsAnyScalar( other ) ) { // fall back on scalar comparison
+  int ndim = PyArray_NDIM(self);
+  if ( ndim == 0 ) { // fall back on scalar comparison
     DBGPRINT( "forwarding to scalar comparison\n" );
-    PyObject *a_obj = PyArray_ToScalar( PyArray_DATA(self), self );
+    PyObject *a_obj = PyArray_DESCR(self)->f->getitem( PyArray_DATA(self), self );
     PyObject *result = PyObject_RichCompare( a_obj, other, op );
     Py_DECREF( a_obj );
     return result;
@@ -114,7 +114,7 @@ long numeric_hash( PyArrayObject *self ) {
   int ndim = PyArray_NDIM(self);
   if ( ndim == 0 ) {
     DBGPRINT( "scalar hash\n" );
-    PyObject *a_obj = PyArray_ToScalar( PyArray_DATA(self), self );
+    PyObject *a_obj = PyArray_DESCR(self)->f->getitem( PyArray_DATA(self), self );
     long hash = PyObject_Hash( a_obj );
     Py_DECREF( a_obj );
     return hash;
@@ -212,7 +212,7 @@ static PyObject *numeric_contract( PyObject *self, PyObject *args, PyObject *kwa
     axes[i].stride0 = PyArray_STRIDE(A,i) / sizeof(double);
     axes[i].stride1 = PyArray_STRIDE(B,i) / sizeof(double);
   }
-  C = (PyArrayObject *)PyArray_EMPTY( nd-ncontract, PyArray_DIMS(A), NPY_DOUBLE, 0 );
+  C = (PyArrayObject *)PyArray_New( &NumericArray_Type, nd-ncontract, PyArray_DIMS(A), NPY_DOUBLE, NULL, NULL, 0, 0, NULL );
   if ( C == NULL ) {
     return NULL;
   }

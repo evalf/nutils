@@ -1,30 +1,31 @@
+class UnitTest( object ):
+  ok = error = 0
+  def __init__( self, width=60 ):
+    self.width = width
+    print '-' * self.width
+  def __call__( self, func ):
+    s = '%s ... ' % func.func_name
+    try:
+      func()
+    except Exception, e:
+      s += repr(e)
+      print s + 'ERROR'.rjust(self.width-len(s))
+      self.error += 1
+    else:
+      print s + 'OK'.rjust(self.width-len(s))
+      self.ok += 1
+    return func
+  def exit( self ):
+    print '-' * self.width
+    print '%d tests successful, %d tests failed' % ( self.ok, self.error )
+    raise SystemExit( self.error )
+
+unittest = UnitTest()
+
+## BEGIN UNIT TESTS ##
+
 import __init__ as numeric
 import numpy
-
-class unittest:
-  TESTS = []
-  WIDTH = 60
-  def __init__( self, func ):
-    self.func = func
-    self.TESTS.append( self )
-  def __call__( self ):
-    s = '%s ... ' % self.func.func_name
-    try:
-      self.func()
-    except Exception, e:
-      s += repr( e )
-      print s + 'ERROR'.rjust(self.WIDTH-len(s))
-      return 1
-    else:
-      print s + 'OK'.rjust(self.WIDTH-len(s))
-      return 0
-  @classmethod
-  def runall( cls ):
-    print '-' * cls.WIDTH
-    errcount = sum( test() for test in cls.TESTS )
-    print '-' * cls.WIDTH
-    print '%d tests successful, %d tests failed' % (len(cls.TESTS)-errcount,errcount)
-    return errcount
 
 @unittest
 def equal_self():
@@ -77,6 +78,15 @@ def scalar_equal_int_float():
   B = 1.
   assert A == B, 'A==B'
   assert B == A, 'B==A'
+
+@unittest
+def scalar_less():
+  A = numeric.asarray(1)
+  B = numeric.asarray(2.)
+  assert A <  B, 'A<B'
+  assert A <= B, 'A<=B'
+  assert not A >= B, '!A>=B'
+  assert not A >  B, '!A>B'
 
 @unittest
 def scalar_notequal_int_other_float():
@@ -180,6 +190,6 @@ def contract_matrix_tensor():
   assert AB2.dtype == float, 'axis==2 dtype'
   assert numpy.equal( AB2, [[29,81],[105,173]] ).all(), 'axis=2 data'
 
-if __name__ == '__main__':
-  status = unittest.runall()
-  raise SystemExit( status )
+## END UNIT TESTS ##
+
+unittest.exit()
