@@ -1448,7 +1448,7 @@ class TetrahedronElement( Element ):
     'select points contained in element'
     raise NotImplementedError( 'Determine whether a point resides in the tetrahedron' )  
 
-class StdElem( object ):
+class StdElem( cache.WeakCacheObject ):
   'stdelem base class'
 
   __slots__ = 'ndims', 'nshapes'
@@ -1480,14 +1480,6 @@ class PolyProduct( StdElem ):
     std1, std2 = self.std = std
     self.ndims = std1.ndims + std2.ndims
     self.nshapes = std1.nshapes * std2.nshapes
-
-  def __eq__( self, other ):
-    return self is other or (
-          isinstance( other, PolyProduct )
-      and self.std == other.std )
-
-  def __hash__( self ):
-    return hash( self.std )
 
   def eval( self, points, grad=0 ):
     'evaluate'
