@@ -1,4 +1,4 @@
-from . import util, numeric, log, prop, _
+from . import util, cache, numeric, log, prop, _
 import sys, warnings
 
 ELEM    = object()
@@ -40,7 +40,7 @@ class CompiledEvaluable( object ):
     log.context( 'compiling' )
     self.data = []
     operations = []
-    self.cache = util.CacheDict()
+    self.cache = cache.CallDict()
     evaluable.recurse_index( self.data, operations ) # compile expressions
     self.operations = [ (evalf,idcs) for (op,evalf,idcs) in operations ] # break cycles!
     if getattr( prop, 'dot', False ):

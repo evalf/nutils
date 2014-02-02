@@ -1,4 +1,4 @@
-from . import element, function, util, parallel, matrix, log, numeric, prop, _
+from . import element, function, util, cache, parallel, matrix, log, numeric, prop, _
 import warnings, itertools
 
 class ElemMap( dict ):
@@ -611,7 +611,7 @@ class StructuredTopology( Topology ):
     periodic = [ idim for idim in self.periodic if idim < len(item) and item[idim] == slice(None) ]
     return StructuredTopology( self.structure[item], periodic=periodic )
 
-  @util.cacheprop
+  @cache.property
   def boundary( self ):
     'boundary'
 
@@ -645,7 +645,7 @@ class StructuredTopology( Topology ):
     topo.groups = dict( zip( ( 'left', 'right', 'bottom', 'top', 'front', 'back' ), boundaries ) )
     return topo
 
-  @util.cacheprop
+  @cache.property
   def interfaces( self ):
     'interfaces'
 
@@ -881,7 +881,7 @@ class StructuredTopology( Topology ):
     refined.groups = { key: group.refine_nu( N ) for key, group in self.groups.items() }
     return refined
 
-  @util.cacheprop
+  @cache.property
   def refined( self ):
     'refine entire topology'
 
@@ -900,7 +900,7 @@ class StructuredTopology( Topology ):
 
     return '%s(%s)' % ( self.__class__.__name__, 'x'.join(map(str,self.structure.shape)) )
 
-  @util.cacheprop
+  @cache.property
   def multiindex( self ):
     'Inverse map of self.structure: given an element find its location in the structure.'
     return dict( (self.structure[alpha], alpha) for alpha in numeric.ndindex( self.structure.shape ) )
@@ -957,14 +957,14 @@ class IndexedTopology( Topology ):
     ind = function.DofMap( ElemMap(dofmap,self.ndims) ),
     return function.Inflate( (ndofs,), [(func,ind)] )
 
-  @util.cacheprop
+  @cache.property
   def refined( self ):
     'refine all elements 2x'
 
     elements = [ child for elem in self.elements for child in elem.children if child is not None ]
     return IndexedTopology( self.topo.refined, elements )
 
-  @util.cacheprop
+  @cache.property
   def boundary( self ):
     'boundary'
 
@@ -1006,7 +1006,7 @@ class UnstructuredTopology( Topology ):
 
     return self.namedfuncs[ 'bubble1' ]
 
-  @util.cacheprop
+  @cache.property
   def refined( self ):
     'refined (=refine(2))'
 
@@ -1077,7 +1077,7 @@ class HierarchicalTopology( Topology ):
 
     return len(self.elements)
 
-  @util.cacheprop
+  @cache.property
   def boundary( self ):
     'boundary elements & groups'
 
@@ -1099,7 +1099,7 @@ class HierarchicalTopology( Topology ):
     boundary.groups = dict( ( tag, UnstructuredTopology( group, ndims=self.ndims-1 ) ) for tag, group in bgroups.items() )
     return boundary
 
-  @util.cacheprop
+  @cache.property
   def interfaces( self ):
     'interface elements & groups'
 

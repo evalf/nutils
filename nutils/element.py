@@ -1,4 +1,4 @@
-from . import log, util, numeric, function, _
+from . import log, util, cache, numeric, function, _
 import warnings
 
 class TrimmedIScheme( object ):
@@ -80,7 +80,7 @@ class TrimmedIScheme( object ):
     weights = numeric.concatenate( weights, axis=0 )
     return coords, weights
 
-class Transformation( util.WeakCacheObject ):
+class Transformation( cache.WeakCacheObject ):
   'transform points'
 
   __slots__ = 'fromdim', 'todim'
