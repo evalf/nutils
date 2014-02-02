@@ -1,5 +1,5 @@
 from . import log, prop, numeric
-import sys, os, time, cPickle, hashlib, weakref, warnings, itertools
+import sys, os, time, warnings, itertools
 
 def cacheprop( f ):
   def cacheprop_wrapper( self, f=f ):
@@ -11,6 +11,17 @@ def cacheprop( f ):
     return value
   assert not cacheprop_wrapper.__closure__
   return property(cacheprop_wrapper)
+
+class CacheDict( dict ):
+  'very simple cache object'
+
+  def __call__( self, *key ):
+    'cache(func,*args): execute func(args) and cache result'
+    value = self.get( key )
+    if value is None:
+      value = key[0]( *key[1:] )
+      self[ key ] = value
+    return value
 
 def unreachable_items():
   # see http://stackoverflow.com/questions/16911559/trouble-understanding-pythons-gc-garbage-for-tracing-memory-leaks
@@ -136,6 +147,7 @@ class Cache( object ):
   def __call__( self, func, *args, **kwargs ):
     'call'
 
+    import cPickle
     name = func.__name__ + ''.join( ' %s' % arg for arg in args ) + ''.join( ' %s=%s' % item for item in kwargs.iteritems() )
     pos = self.data.tell()
     try:

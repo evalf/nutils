@@ -255,13 +255,14 @@ class Element( object ):
     return hash(str(self))
 
   def __eq__( self, other ):
-    'hash'
+    'equal'
 
-    return self is other or ( self.__class__ == other.__class__
-                          and self.vertices == other.vertices
-                          and self.parent == other.parent
-                          and self.context == other.context
-                          and self.interface == other.interface )
+    return self is other or (
+          self.__class__ == other.__class__
+      and self.vertices == other.vertices
+      and self.parent == other.parent
+      and self.context == other.context
+      and self.interface == other.interface )
 
   def intersected( self, levelset, lscheme, evalrefine=0 ):
     '''check levelset intersection:
@@ -1471,15 +1472,20 @@ class StdElem( object ):
 class PolyProduct( StdElem ):
   'multiply standard elements'
 
-  __slots__ = 'std1', 'std2'
+  __slots__ = 'std',
 
-  def __init__( self, std1, std2 ):
+  def __init__( self, *std ):
     'constructor'
 
-    self.std1 = std1
-    self.std2 = std2
+    std1, std2 = self.std = std
     self.ndims = std1.ndims + std2.ndims
     self.nshapes = std1.nshapes * std2.nshapes
+
+  def __eq__( self, other ):
+    return self is other or self.std == other.std
+
+  def __hash__( self ):
+    return hash( self.std )
 
   def eval( self, points, grad=0 ):
     'evaluate'
@@ -1488,19 +1494,20 @@ class PolyProduct( StdElem ):
     assert isinstance( grad, int ) and grad >= 0
 
     assert points.shape[-1] == self.ndims
+    std1, std2 = self.std
 
-    s1 = slice(0,self.std1.ndims)
+    s1 = slice(0,std1.ndims)
     p1 = points[...,s1]
-    s2 = slice(self.std1.ndims,None)
+    s2 = slice(std1.ndims,None)
     p2 = points[...,s2]
 
     E = Ellipsis,
     S = slice(None),
     N = _,
 
-    shape = points.shape[:-1] + (self.std1.nshapes * self.std2.nshapes,)
-    G12 = [ ( self.std1.eval( p1, grad=i )[E+S+N+S*i+N*j]
-            * self.std2.eval( p2, grad=j )[E+N+S+N*i+S*j] ).reshape( shape + (self.std1.ndims,) * i + (self.std2.ndims,) * j )
+    shape = points.shape[:-1] + (std1.nshapes * std2.nshapes,)
+    G12 = [ ( std1.eval( p1, grad=i )[E+S+N+S*i+N*j]
+            * std2.eval( p2, grad=j )[E+N+S+N*i+S*j] ).reshape( shape + (std1.ndims,) * i + (std2.ndims,) * j )
             for i,j in zip( range(grad,-1,-1), range(grad+1) ) ]
 
     data = numeric.empty( shape + (self.ndims,) * grad )
@@ -1519,7 +1526,7 @@ class PolyProduct( StdElem ):
   def __str__( self ):
     'string representation'
 
-    return '%s*%s' % ( self.std1, self.std2 )
+    return '%s*%s' % self.std
 
 class PolyLine( StdElem ):
   'polynomial on a line'

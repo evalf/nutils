@@ -4,6 +4,7 @@ import sys, warnings
 ELEM    = object()
 POINTS  = object()
 WEIGHTS = object()
+CACHE   = object()
 
 # EVALUABLE
 #
@@ -39,6 +40,7 @@ class CompiledEvaluable( object ):
     log.context( 'compiling' )
     self.data = []
     operations = []
+    self.cache = util.CacheDict()
     evaluable.recurse_index( self.data, operations ) # compile expressions
     self.operations = [ (evalf,idcs) for (op,evalf,idcs) in operations ] # break cycles!
     if getattr( prop, 'dot', False ):
@@ -65,8 +67,8 @@ class CompiledEvaluable( object ):
     else:
       raise Exception, 'invalid integration scheme of type %r' % type(ischeme)
 
-    N = len(self.data) + 3
-    values = self.data + [ elem, points, weights ]
+    N = len(self.data) + 4
+    values = self.data + [ self.cache, elem, points, weights ]
     for evalf, indices in self.operations:
       args = [ values[N+i] for i in indices ]
       try:
@@ -165,6 +167,8 @@ class Evaluable( object ):
             break
         else:
           idx = arg.recurse_index(data,operations)
+      elif arg is CACHE:
+        idx = -4
       elif arg is ELEM:
         idx = -3
       elif arg is POINTS:
@@ -173,7 +177,7 @@ class Evaluable( object ):
         idx = -1
       else:
         data.insert( 0, arg )
-        idx = -len(data)-3
+        idx = -len(data)-4
       indices[iarg] = idx
     evalf = self.__evalf
     operations.append( (self,evalf,indices) )
@@ -185,7 +189,10 @@ class Evaluable( object ):
   def __eq__( self, other ):
     'compare'
 
-    return self is other or self.__class__ == other.__class__ and self.__evalf == other.__evalf and self.__args == other.__args
+    return self is other or (
+          self.__class__ == other.__class__
+      and self.__evalf == other.__evalf
+      and self.__args == other.__args )
 
   def __ne__( self, other ):
     'not equal'
@@ -781,10 +788,10 @@ class Function( ArrayFunc ):
     self.cascade = cascade
     self.stdmap = stdmap
     self.igrad = igrad
-    ArrayFunc.__init__( self, args=(cascade,stdmap,igrad), evalf=self.function, shape=(axis,)+(cascade.ndims,)*igrad )
+    ArrayFunc.__init__( self, args=(CACHE,cascade,stdmap,igrad), evalf=self.function, shape=(axis,)+(cascade.ndims,)*igrad )
 
   @staticmethod
-  def function( cascade, stdmap, igrad ):
+  def function( cache, cascade, stdmap, igrad ):
     'evaluate'
 
     fvals = []
@@ -792,11 +799,10 @@ class Function( ArrayFunc ):
       std = stdmap.get(elem)
       if not std:
         continue
+      F = cache( std.eval, points, igrad )
       if isinstance( std, tuple ):
         std, keep = std
-        F = std.eval(points,grad=igrad)[(Ellipsis,keep)+(slice(None),)*igrad]
-      else:
-        F = std.eval(points,grad=igrad)
+        F = F[(Ellipsis,keep)+(slice(None),)*igrad]
       for axis in range(-igrad,0):
         F = numeric.dot( F, elem.inv_root_transform, axis )
       fvals.append( F )
@@ -1226,23 +1232,6 @@ class Multiply( ArrayFunc ):
     self.funcs = func1, func2
     ArrayFunc.__init__( self, args=self.funcs, evalf=numeric.multiply, shape=shape )
 
-  def cdef( self ):
-    'generate C code'
-
-    arg1 = 'arg1[%s]' % _cindex( self.funcs[0].shape, self.shape )
-    arg2 = 'arg2[%s]' % _cindex( self.funcs[1].shape, self.shape )
-    body = 'retval[0] = %s * %s;\nretval++;' % ( arg1, arg2 )
-    shape = _cshape( self.shape )
-    for i in reversed( range(self.ndim) ):
-      body = _cfor( varname='i%d'%i, count=shape[i], do=body )
-    if self.ndim:
-      body = 'int %s;\n' % ', '.join( 'i%d' % idim for idim in range(self.ndim) ) + body
-    args = [ '%s* retval' % _dtypestr(self),
-             '%s* arg1' % _dtypestr(self.funcs[0]),
-             '%s* arg2' % _dtypestr(self.funcs[1]) ] \
-         + [ 'int %s' % s for s in shape if isinstance(s,str) ]
-    return _cfunc( args, body ), init_args_for( self, *self.funcs )
-
   def __eq__( self, other ):
     'compare'
 
@@ -1384,23 +1373,6 @@ class Add( ArrayFunc ):
     dtype = _jointdtype(func1,func2)
     ArrayFunc.__init__( self, args=self.funcs, evalf=numeric.add, shape=shape, dtype=dtype )
 
-  def cdef( self ):
-    'generate C code'
-
-    arg1 = 'arg1[%s]' % _cindex( self.funcs[0].shape, self.shape )
-    arg2 = 'arg2[%s]' % _cindex( self.funcs[1].shape, self.shape )
-    body = 'retval[0] = %s + %s;\nretval++;' % ( arg1, arg2 )
-    shape = _cshape( self.shape )
-    for i in reversed( range(self.ndim) ):
-      body = _cfor( varname='i%d'%i, count=shape[i], do=body )
-    if self.ndim:
-      body = 'int %s;\n' % ', '.join( 'i%d' % idim for idim in range(self.ndim) ) + body
-    args = [ '%s* retval' % _dtypestr(self),
-             '%s* arg1' % _dtypestr(self.funcs[0]),
-             '%s* arg2' % _dtypestr(self.funcs[1]) ] \
-         + [ 'int %s' % s for s in shape if isinstance(s,str) ]
-    return _cfunc( args, body ), init_args_for( self, *self.funcs )
-
   def __eq__( self, other ):
     'compare'
 
@@ -1494,26 +1466,6 @@ class Dot( ArrayFunc ):
     self.naxes = naxes
     shape = _jointshape( func1.shape, func2.shape )[:-naxes]
     ArrayFunc.__init__( self, args=(func1,func2,naxes), evalf=numeric.contract_fast, shape=shape )
-
-  def cdef( self ):
-    'generate C code'
-
-    shape = _jointshape( self.func1.shape, self.func2.shape )
-    arg1 = 'arg1[%s]' % _cindex( self.func1.shape, shape )
-    arg2 = 'arg2[%s]' % _cindex( self.func2.shape, shape )
-    body = 'sum += %s * %s;\n' % ( arg1, arg2 )
-    cshape = _cshape( shape )
-    for i in reversed( range(self.ndim+self.naxes) ):
-      body = _cfor( varname='i%d'%i, count=cshape[i], do=body )
-      if i == self.ndim:
-        body = 'sum = 0;\n%s\nretval[0] = sum;\nretval++;\n' % body
-    body = '%s sum;\n' % _dtypestr(self) + body
-    body = 'int %s;\n' % ', '.join( 'i%d' % idim for idim in range(self.ndim+self.naxes) ) + body
-    args = [ '%s* retval' % _dtypestr(self),
-             '%s* arg1' % _dtypestr(self.func1),
-             '%s* arg2' % _dtypestr(self.func2) ] \
-         + [ 'int %s' % s for s in cshape if isinstance(s,str) ]
-    return _cfunc( args, body ), init_args_for( self, self.func1, self.func2, None )
 
   @property
   def axes( self ):
