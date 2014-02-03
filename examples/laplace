@@ -17,10 +17,10 @@ def makeplots( domain, geom, sol, index ):
     plt.ylim( 0, .5*numpy.pi )
 
 
-def main( nelems=2, degree=1, beltrami=False, nprocs=2 ):
+def main( nelems=2, degree=1, beltrami=False ):
 
   verts = numpy.linspace( 0, .5*numpy.pi, nelems+1 )
-  domain, geom = mesh.rectilinear( [verts,verts], nsubdomains=nprocs )
+  domain, geom = mesh.rectilinear( [verts,verts] )
   #domain, geom = mesh.demo( xmax=.5*numpy.pi, ymax=.5*numpy.pi )
   x, y = geom
   exact = function.sin(x) * function.exp(y)
