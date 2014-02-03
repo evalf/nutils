@@ -752,16 +752,17 @@ class StructuredTopology( Topology ):
           funcmap[elem] = std, mask
         masks[ elem.subdom, mydofs ] = True
 
-    domainmap = Axis( masks )
-
     if hasnone:
-      raise NotImplementedError
       touched = numpy.zeros( dofcount, dtype=bool )
       for dofs in dofmap.itervalues():
         touched[ dofs ] = True
+      masks = masks[:,touched]  
       renumber = touched.cumsum()
       dofcount = int(renumber[-1])
       dofmap = dict( ( elem, renumber[dofs]-1 ) for elem, dofs in dofmap.iteritems() )
+
+    assert masks.shape[1]==dofcount
+    domainmap = Axis( masks )
 
     return function.function( funcmap, dofmap, dofcount, self.ndims, domainmap )
 
