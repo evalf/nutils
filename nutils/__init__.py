@@ -30,6 +30,7 @@ __all__ = [
   '_',
   'prop',
   'cache',
+  'transform',
   'numeric',
   'element',
   'function',

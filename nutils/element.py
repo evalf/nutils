@@ -1,4 +1,4 @@
-from . import log, util, cache, numeric, function, _
+from . import log, util, cache, numeric, transform, function, _
 import warnings
 
 class TrimmedIScheme( object ):
@@ -80,104 +80,6 @@ class TrimmedIScheme( object ):
     weights = numeric.concatenate( weights, axis=0 )
     return coords, weights
 
-class Transformation( cache.WeakCacheObject ):
-  'transform points'
-
-  __slots__ = 'fromdim', 'todim'
-
-  def __init__( self, fromdim, todim ):
-    'constructor'
-
-    self.fromdim = fromdim
-    self.todim = todim
-
-  def __str__( self ):
-    'string representation'
-
-    return '%s(%d->%d)' % ( self.__class__.__name__, self.fromdim, self.todim )
-
-  def eval( self, points ):
-    'evaluate'
-
-    if points is None:
-      return None
-
-    return self._eval( points )
-
-class SliceTransformation( Transformation ):
-  'take slice'
-
-  __slots__ = 'slice',
-
-  def __init__( self, fromdim, start=None, stop=None, step=None ):
-    'constructor'
-
-    self.slice = slice( start, stop, step )
-    Transformation.__init__( self, fromdim, todim=len(range(fromdim)[self.slice]) )
-
-  def _eval( self, points ):
-    'apply transformation'
-
-    assert points.shape[1] == self.fromdim
-    return points[:,self.slice]
-
-class AffineTransformation( Transformation ):
-  'affine transformation'
-
-  __slots__ = 'offset', 'transform'
-
-  def __init__( self, offset, transform ):
-    'constructor'
-
-    self.offset = numeric.asarray( offset )
-    assert self.offset.ndim == 1
-    self.transform = numeric.asarray( transform )
-    assert self.transform.ndim == 2
-    assert self.transform.shape[0] == self.offset.shape[0]
-    Transformation.__init__( self, fromdim=self.transform.shape[1], todim=self.transform.shape[0] )
-
-  @property
-  def invtrans( self ):
-    'inverse transformation'
-
-    assert self.todim == self.fromdim
-    return numeric.inv( self.transform )
-
-  @property
-  def det( self ):
-    'determinant'
-
-    assert self.todim == self.fromdim
-    return numeric.det( self.transform )
-
-  def nest( self, other ):
-    'merge transformations'
-
-    offset = other.offset + numeric.dot( other.transform, self.offset )
-    transform = numeric.dot( other.transform, self.transform )
-    return AffineTransformation( offset, transform )
-
-  def get_transform( self ):
-    'get transformation copy'
-
-    return self.transform.copy()
-
-  def invapply( self, coords ):
-    'apply inverse transformation'
-
-    return numeric.dot( coords - self.offset, self.invtrans.T )
-
-  def _eval( self, points ):
-    'apply transformation'
-
-    transpoints = numeric.dot( points, self.transform.T )
-    transpoints += self.offset
-    transpoints.flags.writeable = False
-    return transpoints
-
-def IdentityTransformation( ndims ):
-  return AffineTransformation( numeric.zeros(ndims), numeric.eye(ndims) )
-
 PrimaryVertex = str
 HalfVertex = lambda vertex1, vertex2, xi=.5: '%s<%.3f>%s' % ( (vertex1,xi,vertex2) if vertex1 < vertex2 else (vertex2,1-xi,vertex1) )
 ProductVertex = lambda *vertices: ','.join( vertices )
@@ -187,7 +89,7 @@ class Element( object ):
 
   Represents the topological shape.'''
 
-  __slots__ = 'vertices', 'ndims', 'parent', 'context', 'interface', 'root_transform', 'inv_root_transform', 'root_det'
+  __slots__ = 'vertices', 'ndims', 'parent', 'context', 'interface', 'root_transform'
 
   def __init__( self, ndims, vertices, parent=None, context=None, interface=None ):
     'constructor'
@@ -201,12 +103,9 @@ class Element( object ):
 
     if parent:
       pelem, trans = parent
-      self.root_transform = numeric.dot( pelem.root_transform, trans.transform )
-      self.inv_root_transform = numeric.dot( trans.invtrans, pelem.inv_root_transform )
-      self.root_det = pelem.root_det * trans.det
+      self.root_transform = pelem.root_transform * trans
     else:
-      self.inv_root_transform = self.root_transform = numeric.eye( self.ndims )
-      self.root_det = 1.
+      self.root_transform = transform.Identity( self.ndims )
 
   def __mul__( self, other ):
     'multiply elements'
@@ -302,7 +201,7 @@ class Element( object ):
     if intersected < 0:
       return None
 
-    parent = self, AffineTransformation( numeric.zeros(self.ndims), numeric.eye(self.ndims) )
+    parent = self, transform.Identity(self.ndims)
     return TrimmedElement( elem=self, vertices=self.vertices, levelset=levelset, maxrefine=maxrefine, lscheme=lscheme, finestscheme=finestscheme, evalrefine=evalrefine, parent=parent )
 
   def get_simplices ( self, maxrefine ):
@@ -316,13 +215,13 @@ class Element( object ):
 class ProductElement( Element ):
   'element product'
 
-  __slots__ = 'elem1', 'elem2', 'root_det'
+  __slots__ = 'elem1', 'elem2'
 
   @staticmethod
   def getslicetransforms( ndims1, ndims2 ):
     ndims = ndims1 + ndims2
-    slice1 = SliceTransformation( fromdim=ndims, stop=ndims1 )
-    slice2 = SliceTransformation( fromdim=ndims, start=ndims1 )
+    slice1 = transform.Slice( ndims, 0, ndims1 )
+    slice2 = transform.Slice( ndims, ndims1, ndims )
     return slice1, slice2
 
   def __init__( self, elem1, elem2 ):
@@ -335,8 +234,7 @@ class ProductElement( Element ):
     iface2 = elem2, slice2
     vertices = [] # TODO [ ProductVertex(vertex1,vertex2) for vertex1 in elem1.vertices for vertex2 in elem2.vertices ]
     Element.__init__( self, ndims=elem1.ndims+elem2.ndims, vertices=vertices, interface=(iface1,iface2) )
-
-    self.root_det = elem1.root_det * elem2.root_det # HACK. TODO via constructor
+    self.root_transform = transform.Scale( 1, elem1.root_transform.det * elem2.root_transform.det ) # HACK
 
   @staticmethod
   def get_tri_bem_ischeme( ischeme, neighborhood ):
@@ -583,7 +481,6 @@ class TrimmedElement( Element ):
       points, weights = self.elem.eval( 'contour{}'.format(n) )
       inside = numeric.greater_equal( self.levelset.eval( self.elem, points ), 0 )
       points = points[inside]
-      points.flags.writeable = False
       return points, None
 
     if self.maxrefine <= 0:
@@ -595,12 +492,12 @@ class TrimmedElement( Element ):
         for simplex in self.get_simplices( 0 ):
 
           spoints, sweights = simplex.eval( ischeme )
-          pelem, transform = simplex.parent
+          pelem, trans = simplex.parent
 
           assert pelem is self 
 
-          points.append( transform.eval( spoints ) )
-          weights.append( sweights * transform.det )
+          points.append( trans.apply( spoints ) )
+          weights.append( sweights * trans.det )
 
         if len(points) == 0:
           points = numeric.zeros((0,self.ndims))
@@ -609,8 +506,6 @@ class TrimmedElement( Element ):
           points = numeric.concatenate( points, axis=0 )
           weights = numeric.concatenate( weights )
 
-        points.flags.writeable = False
-        weights.flags.writeable = False
         return points, weights
 
       else:
@@ -624,10 +519,8 @@ class TrimmedElement( Element ):
           points, weights = self.elem.eval( self.finestscheme )
           inside = numeric.greater( self.levelset.eval( self.elem, points ), 0 )
         points = points[inside]
-        points.flags.writeable = False
         if weights is not None:
           weights = weights[inside]
-          weights.flags.writeable = False
         return points, weights
 
     allcoords = []
@@ -636,15 +529,13 @@ class TrimmedElement( Element ):
       if child is None:
         continue
       points, weights = child.eval( ischeme )
-      pelem, transform = child.parent
+      pelem, trans = child.parent
       assert pelem == self
-      allcoords.append( transform.eval(points) )
-      allweights.append( weights * transform.det )
+      allcoords.append( trans.apply(points) )
+      allweights.append( weights * trans.det )
 
     coords = numeric.concatenate( allcoords, axis=0 )
     weights = numeric.concatenate( allweights, axis=0 )
-    coords.flags.writeable = False
-    weights.flags.writeable = False
     return coords, weights
 
   @property
@@ -769,9 +660,9 @@ class TrimmedElement( Element ):
 
       assert ( xi > xistol and xi < 1.-xistol ), 'Illegal local coordinate'
  
-      elem, transform = line.context
+      elem, trans = line.context
 
-      pts = transform.eval( pts )
+      pts = trans.apply( pts )
 
       newpoint = pts[0] + xi * ( pts[-1] - pts[0] )
 
@@ -805,21 +696,21 @@ class TrimmedElement( Element ):
           offset = points[ tri[-1] ]
           affine = numeric.array( [ points[ tri[ii] ] - offset for ii in range(self.ndims) ] ).T
 
-        transform = AffineTransformation( offset, affine )
+        trans = transform.affine( offset, affine )
 
-        if transform.det > numeric.spacing(100):
+        if trans.det > numeric.spacing(100):
           break
 
         tri[-2:] = tri[:-3:-1]
 
       else:
-        if abs(transform.det) < numeric.spacing(100):
+        if abs(trans.det) < numeric.spacing(100):
           degensim.append( [ vertices[ii] for ii in tri ] )
           continue
 
-        raise Exception('Negative determinant with value %12.10e could not be resolved by flipping two vertices' % transform.det )
+        raise Exception('Negative determinant with value %12.10e could not be resolved by flipping two vertices' % trans.det )
 
-      simplices.append( Simplex( vertices=[ vertices[ii] for ii in tri ], parent=(self,transform) ) )
+      simplices.append( Simplex( vertices=[ vertices[ii] for ii in tri ], parent=(self,trans) ) )
 
     assert len(simplices)+len(degensim)==submesh.vertices.shape[0], 'Simplices should be stored in either of the two containers'
 
@@ -917,29 +808,21 @@ class QuadElement( Element ):
 
     transforms = []
     for idim in range( ndims ):
-#     for iside in range( 2 ):
-#       offset = numeric.zeros( ndims )
-#       offset[idim:] = 1-iside
-#       offset[:idim+1] = iside
-#       transform = numeric.zeros(( ndims, ndims-1 ))
-#       transform.flat[ :(ndims-1)*idim :ndims] = 1 - 2 * iside
-#       transform.flat[ndims*(idim+1)-1::ndims] = 2 * iside - 1
-#       transforms.append( AffineTransformation( offset=offset, transform=transform ) )
       offset = numeric.zeros( ndims )
       offset[:idim] = 1
-      transform = numeric.zeros(( ndims, ndims-1 ))
-      transform.flat[ :(ndims-1)*idim :ndims] = -1
-      transform.flat[ndims*(idim+1)-1::ndims] = 1
+      matrix = numeric.zeros(( ndims, ndims-1 ))
+      matrix.flat[ :(ndims-1)*idim :ndims] = -1
+      matrix.flat[ndims*(idim+1)-1::ndims] = 1
       # flip normal:
       offset[idim-1] = 1 - offset[idim-1]
-      transform[idim-1] *= -1
-      transforms.append( AffineTransformation( offset=offset.copy(), transform=transform.copy() ) )
+      matrix[idim-1] *= -1
+      transforms.append( transform.affine( offset.copy(), matrix.copy() ) )
       # other side:
       offset[idim] = 1
       # flip normal back:
       offset[idim-1] = 1 - offset[idim-1]
-      transform[idim-1] *= -1
-      transforms.append( AffineTransformation( offset=offset, transform=transform ) )
+      matrix[idim-1] *= -1
+      transforms.append( transform.affine( offset, matrix ) )
     return transforms
 
   @property
@@ -966,9 +849,9 @@ class QuadElement( Element ):
                                  [[0,1,0],[0,1,1]],
                                  [[0,0,1],[1,0,1]],
                                  [[0,0,1],[0,1,1]]] ):
-      transform = AffineTransformation( offset=i1, transform=(i2-i1)[:,_] )
+      trans = transform.affine( offset=i1, transform=(i2-i1)[:,_] )
       vertices = ndvertices[tuple(i1)], ndvertices[tuple(i2)]
-      ribbons.append( QuadElement( vertices=vertices, ndims=1, context=(self,transform) ) )
+      ribbons.append( QuadElement( vertices=vertices, ndims=1, context=(self,trans) ) )
 
     return ribbons
 
@@ -992,7 +875,7 @@ class QuadElement( Element ):
 
     Nf = numeric.asarray( N, dtype=float )
     assert Nf.ndim == 1
-    return [ AffineTransformation( offset=I/Nf, transform=numeric.diag(1/Nf) ) for I in numeric.ndindex(*N) ]
+    return [ transform.affine( offset=I/Nf, transform=numeric.diag(1/Nf) ) for I in numeric.ndindex(*N) ]
 
   def refine( self, n ):
     'refine n times'
@@ -1077,9 +960,6 @@ class QuadElement( Element ):
       weights = reduce( lambda weights, wi: ( weights * wi[:,_] ).ravel(), w )
     else:
       weights = None
-    coords.flags.writeable = False
-    if weights is not None:
-      weights.flags.writeable = False
     return coords, weights
 
   def select_contained( self, points, eps=0 ):
@@ -1105,9 +985,9 @@ class TriangularElement( Element ):
 
   neighbormap = -1, 2, 1, 0
   edgetransform = (
-    AffineTransformation( offset=numeric.asarray([0,0]), transform=numeric.asarray([[ 1],[ 0]]) ),
-    AffineTransformation( offset=numeric.asarray([1,0]), transform=numeric.asarray([[-1],[ 1]]) ),
-    AffineTransformation( offset=numeric.asarray([0,1]), transform=numeric.asarray([[ 0],[-1]]) ) )
+    transform.affine( [0,0], [[ 1],[ 0]] ),
+    transform.affine( [1,0], [[-1],[ 1]] ),
+    transform.affine( [0,1], [[ 0],[-1]] ) )
 
   def __init__( self, vertices, parent=None, context=None ):
     'constructor'
@@ -1146,8 +1026,8 @@ class TriangularElement( Element ):
     transforms = []
     trans = numeric.diag( [1./n]*2 )
     for i in range( n ):
-      transforms.extend( AffineTransformation( offset=numeric.array( [i,j], dtype=float ) / n, transform=trans ) for j in range(0,n-i) )
-      transforms.extend( AffineTransformation( offset=numeric.array( [n-j,n-i], dtype=float ) / n, transform=-trans ) for j in range(n-i,n) )
+      transforms.extend( transform.affine( numeric.array( [i,j], dtype=float ) / n, trans ) for j in range(0,n-i) )
+      transforms.extend( transform.affine( numeric.array( [n-j,n-i], dtype=float ) / n, -trans ) for j in range(n-i,n) )
     return transforms
 
   def refined( self, n ):
@@ -1242,10 +1122,10 @@ class TetrahedronElement( Element ):
   neighbormap = -1, 3, 2, 1, 0
   #Defined to create outward pointing normal vectors for all edges (i.c. triangular faces)
   edgetransform = (
-    AffineTransformation( offset=numeric.asarray([0,0,0]), transform=numeric.asarray([[ 0, 1],[1,0],[0,0]]) ),
-    AffineTransformation( offset=numeric.asarray([0,0,0]), transform=numeric.asarray([[ 1, 0],[0,0],[0,1]]) ),
-    AffineTransformation( offset=numeric.asarray([0,0,0]), transform=numeric.asarray([[ 0, 0],[0,1],[1,0]]) ),
-    AffineTransformation( offset=numeric.asarray([1,0,0]), transform=numeric.asarray([[-1,-1],[1,0],[0,1]]) ) )
+    transform.affine( [0,0,0], [[ 0, 1],[1,0],[0,0]] ),
+    transform.affine( [0,0,0], [[ 1, 0],[0,0],[0,1]] ),
+    transform.affine( [0,0,0], [[ 0, 0],[0,1],[1,0]] ),
+    transform.affine( [1,0,0], [[-1,-1],[1,0],[0,1]] ) )
 
   def __init__( self, vertices, parent=None, context=None ):
     'constructor'

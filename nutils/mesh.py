@@ -1,4 +1,4 @@
-from . import topology, function, util, element, numeric, _
+from . import topology, function, util, element, transform, numeric, _
 import os, warnings
 
 # MESH GENERATORS
@@ -41,9 +41,9 @@ def rectilinear( vertices, periodic=(), name='rect' ):
 
   structure = numeric.objmap( lambda *index: element.QuadElement(
     ndims=ndims,
-    parent=( domainelem, element.AffineTransformation(
-      offset=numeric.asarray([ n[i] for n,i in zip(vertices,index) ]),
-      transform=numeric.diag([ n[i+1]-n[i] for n,i in zip(vertices,index) ]) ) ),
+    parent=( domainelem, transform.affine(
+      [ n[i] for n,i in zip(vertices,index) ],
+      numeric.diag([ n[i+1]-n[i] for n,i in zip(vertices,index) ]) ) ),
     vertices=vertexobjs[tuple(slice(i,i+2) for i in index)].ravel() ), *indices )
   topo = topology.StructuredTopology( structure )
   coords = GridFunc( domainelem, structure, vertices )
@@ -129,7 +129,7 @@ def gmesh( path, btags={}, name=None ):
       boundary.append(( elemvertices, tags ))
     elif elemtype in (2,4):
       if elemtype == 2: # interior element, triangle
-        parent = domainelem, element.AffineTransformation( offset=elemcoords[2], transform=(elemcoords[:2]-elemcoords[2]).T )
+        parent = domainelem, transform.affine( elemcoords[2], (elemcoords[:2]-elemcoords[2]).T )
         elem = element.TriangularElement( vertices=elemvertexobjs, parent=parent )
         stdelem = element.PolyTriangle( 1 )
       else: # interior element, quadrilateral
@@ -359,7 +359,7 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   vertices = numeric.array([ element.PrimaryVertex( 'demo.%d' % ivertex ) for ivertex in range(len(vertices)) ])
   for ielem, elemvertices in enumerate( vertices ):
     elemcoords = coords[ numeric.array(elemvertices) ]
-    parent = domainelem, element.AffineTransformation( offset=elemcoords[2], transform=(elemcoords[:2]-elemcoords[2]).T )
+    parent = domainelem, transform.affine( elemcoords[2], (elemcoords[:2]-elemcoords[2]).T )
     elem = element.TriangularElement( vertices=vertices[elemvertices], parent=parent )
     elements.append( elem )
 

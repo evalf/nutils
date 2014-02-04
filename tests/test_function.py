@@ -8,10 +8,12 @@ class FuncTest( object ):
     domainelem = element.Element( ndims=2, vertices=[] )
     r, theta = function.ElemFunc( domainelem ) # corners at (0,0), (0,1), (1,1), (1,0)
     geom = r * function.stack([ function.cos(theta), function.sin(theta) ])
-    trans = element.AffineTransformation( offset=numeric.asarray([1,0]), transform=numeric.asarray([[2,1],[-1,3]]) )
+    ##trans = element.AffineTransformation( offset=numeric.asarray([1,0]), transform=numeric.asarray([[2,1],[-1,3]]) )
+    trans = transform.affine( [1,0], [[2,1],[-1,3]] )
     avertices = [element.PrimaryVertex('A(%d)'%i) for i in range(4)]
     interelem = element.QuadElement( ndims=2, vertices=avertices, parent=(domainelem,trans) ) # corners at (1,0), (3,-1), (4,2), (2,3)
-    trans = element.AffineTransformation( offset=numeric.asarray([1,0]), transform=numeric.asarray([[0,1],[-1,0]]) )
+    ##trans = element.AffineTransformation( offset=numeric.asarray([1,0]), transform=numeric.asarray([[0,1],[-1,0]]) )
+    trans = transform.affine( [1,0], [[0,1],[-1,0]] )
     bvertices = [element.PrimaryVertex('B(%d)'%i) for i in range(4)]
     elem = element.QuadElement( ndims=2, vertices=bvertices, parent=(interelem,trans) ) # corners at (3,-1), (2,-4), (4,-5), (5,-2)
 
@@ -51,7 +53,7 @@ class FuncTest( object ):
       if numeric.less( numpy.abs(err), 1e-12 ).all():
         countdown -= 1
       dxi_root = ( Jinv.eval(self.elem,xi) * err[...,_,:] ).sum(-1)
-      xi = xi + numeric.dot( dxi_root, self.elem.inv_root_transform.T )
+      xi = xi + numeric.dot( dxi_root, self.elem.root_transform.inv.matrix.T )
       iiter += 1
       assert iiter < 100, 'failed to converge in 100 iterations'
     return xi
@@ -84,7 +86,7 @@ class FuncTest( object ):
 
   def test_localgradient( self ):
     eps = 1e-6
-    D = numeric.array([-.5*eps,.5*eps])[:,_,_] * self.elem.inv_root_transform.T[_,:,:]
+    D = numeric.array([-.5*eps,.5*eps])[:,_,_] * self.elem.root_transform.inv.matrix.T[_,:,:]
     fdpoints = self.points[_,_,:,:] + D[:,:,_,:]
     F = self.n_op( *self.argsfunc.eval(self.elem,fdpoints) )
     fdgrad = ((F[1]-F[0])/eps).transpose( numeric.roll(numeric.arange(F.ndim-1),-1) )

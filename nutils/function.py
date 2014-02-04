@@ -296,12 +296,14 @@ class Cascade( Evaluable ):
         or elem.interface and elem.interface[side][0].ndims < elem.ndims: # TODO make less dirty
       elem, transform = elem.interface[side] if elem.interface \
                    else elem.context or elem.parent
-      points = cache( transform.eval, points )
+      if points is not None:
+        points = cache( transform.apply, points )
 
     cascade = [ (elem,points) ]
     while elem.parent:
       elem, transform = elem.parent
-      points = cache( transform.eval, points )
+      if points is not None:
+        points = cache( transform.apply, points )
       cascade.append( (elem,points) )
 
     return cascade
@@ -716,7 +718,7 @@ class IWeights( ArrayFunc ):
   def iweights( elem, weights ):
     'evaluate'
 
-    return elem.root_det * weights
+    return elem.root_transform.det * weights
 
 class OrientationHack( ArrayFunc ):
   'orientation hack for 1d elements; VERY dirty'
@@ -762,14 +764,13 @@ class Transform( ArrayFunc ):
     toelem = tocascade[0][0]
 
     elem = toelem
-    T = elem.inv_root_transform
+    T = elem.root_transform.inv
     while elem is not fromelem:
       elem, transform = elem.interface[side] if elem.interface \
                    else elem.context or elem.parent
-      T = numeric.dot( transform.transform, T )
-    T = numeric.dot( elem.root_transform, T )
-
-    return T
+      T = transform * T
+    T = elem.root_transform * T
+    return T.matrix
 
   def _localgradient( self, ndims ):
     return _zeros( self.shape + (ndims,) )
@@ -805,7 +806,7 @@ class Function( ArrayFunc ):
       else:
         F = cache( std.eval, points, igrad )
       for axis in range(-igrad,0):
-        F = numeric.dot( F, elem.inv_root_transform, axis )
+        F = numeric.dot( F, elem.root_transform.inv.matrix, axis )
       fvals.append( F )
     assert fvals, 'no function values encountered'
     return fvals[0] if len(fvals) == 1 else numeric.concatenate( fvals, axis=-1-igrad )

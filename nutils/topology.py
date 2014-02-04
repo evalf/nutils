@@ -1,4 +1,4 @@
-from . import element, function, util, cache, parallel, matrix, log, numeric, prop, _
+from . import element, function, util, cache, parallel, matrix, log, numeric, prop, transform, _
 import warnings, itertools
 
 class ElemMap( dict ):
@@ -1252,11 +1252,11 @@ def glue( master, slave, geometry, tol=1.e-10, verbose=False ):
       continue
     emap[belem] = element.QuadElement( belem.ndims,
       vertices=[ vtxmap.get(vtx,vtx) for vtx in belem.vertices ],
-      parent=(belem,element.IdentityTransformation(belem.ndims)) )
+      parent=(belem,transform.Identity(belem.ndims)) )
     elem, trans = belem.context
     emap[elem] = element.QuadElement( elem.ndims,
       vertices=[ vtxmap.get(vtx,vtx) for vtx in elem.vertices ],
-      parent=(elem,element.IdentityTransformation(elem.ndims)) )
+      parent=(elem,transform.Identity(elem.ndims)) )
 
   _wrapelem = lambda elem: emap.get(elem,elem)
   def _wraptopo( topo ):
