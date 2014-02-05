@@ -70,11 +70,11 @@ class TrimmedIScheme( object ):
         continue
       if ischeme is True:
         ischeme = child.eval( self.ischeme )
-      pelem, transform = child.parent
+      pelem, trans = child.parent
       assert pelem is elem
       ipoints, iweights = ischeme
-      points.append( transform.eval(ipoints) )
-      weights.append( iweights * transform.det )
+      points.append( trans.eval(ipoints) )
+      weights.append( iweights * trans.det )
 
     coords = numeric.concatenate( coords, axis=0 )
     weights = numeric.concatenate( weights, axis=0 )
@@ -129,17 +129,6 @@ class Element( object ):
       points = where
       weights = None
     return points, weights
-
-  def zoom( self, elemset, points ):
-    'zoom points'
-
-    elem = self
-    totaltransform = 1
-    while elem not in elemset:
-      elem, transform = self.parent
-      points = transform( points )
-      totaltransform = numeric.dot( transform.transform, totaltransform )
-    return elem, points, totaltransform
 
   def __str__( self ):
     'string representation'
@@ -373,24 +362,24 @@ class ProductElement( Element ):
     elif isinstance( self.elem1, QuadElement ):
       # define local map rotations
       if neighborhood==1:
-        transform = [0,2], [2,3], [3,1], [1,0], [2,0], [3,2], [1,3], [0,1]
+        trans = [0,2], [2,3], [3,1], [1,0], [2,0], [3,2], [1,3], [0,1]
       elif neighborhood==2:
-        transform = [0], [2], [3], [1]
+        trans = [0], [2], [3], [1]
       else:
         raise ValueError( 'Unknown neighbor type %i' % neighborhood )
-      transf1 = transform.index( vertices1 )
-      transf2 = transform.index( vertices2 )
+      transf1 = trans.index( vertices1 )
+      transf2 = trans.index( vertices2 )
     elif isinstance( self.elem1, TriangularElement ):
       raise NotImplementedError( 'Pending completed implementation and verification.' )
       # define local map rotations
       if neighborhood==1:
-        transform = [0,1], [1,2], [0,2]
+        trans = [0,1], [1,2], [0,2]
       elif neighborhood==2:
-        transform = [0], [1], [2]
+        trans = [0], [1], [2]
       else:
         raise ValueError( 'Unknown neighbor type %i' % neighborhood )
-      transf1 = transform.index( vertices1 )
-      transf2 = transform.index( vertices2 )
+      transf1 = trans.index( vertices1 )
+      transf2 = trans.index( vertices2 )
     else:
       raise NotImplementedError( 'Reorientation not implemented for element of class %s' % type(self.elem1) )
     return neighborhood, transf1, transf2
@@ -423,13 +412,13 @@ class ProductElement( Element ):
     neighborhood, transf1, transf2 = orientation
     points, weights = ProductElement.get_quad_bem_ischeme( ischeme, neighborhood )
     transfpoints = numeric.empty( points.shape )
-    def transform( points, orientation ):
+    def flipxy( points, orientation ):
       x, y = points[:,0], points[:,1]
       tx = x if orientation in (0,1,6,7) else 1-x
       ty = y if orientation in (0,3,4,7) else 1-y
       return function.stack( (ty, tx) if orientation%2 else (tx, ty), axis=1 )
-    transfpoints[:,:2] = transform( points[:,:2], transf1 )
-    transfpoints[:,2:] = transform( points[:,2:], transf2 )
+    transfpoints[:,:2] = flipxy( points[:,:2], transf1 )
+    transfpoints[:,2:] = flipxy( points[:,2:], transf2 )
     return numeric.asarray( transfpoints ), numeric.asarray( weights )
     
   def eval( self, where ):
@@ -545,8 +534,8 @@ class TrimmedElement( Element ):
     children = []
     for ielem, child in enumerate( self.elem.children ):
       isect = child.intersected( self.levelset, self.lscheme, self.evalrefine-1 )
-      pelem, transform = child.parent
-      parent = self, transform
+      pelem, trans = child.parent
+      parent = self, trans
       if isect < 0:
         child = None
       elif isect > 0:
@@ -561,10 +550,10 @@ class TrimmedElement( Element ):
 
     # TODO fix trimming of edges once refine/edge operations commute
     edge = self.elem.edge( iedge )
-    pelem, transform = edge.context
+    pelem, trans = edge.context
 
     # transform = self.elem.edgetransform( self.ndims )[ iedge ]
-    return QuadElement( vertices=edge.vertices, ndims=self.ndims-1, context=(self,transform) )
+    return QuadElement( vertices=edge.vertices, ndims=self.ndims-1, context=(self,trans) )
 
   def get_simplices ( self, maxrefine ):
     'divide in simple elements'
@@ -793,8 +782,8 @@ class QuadElement( Element ):
         vertices[s1+(i,)+s2] = numeric.objmap( HalfVertex, vertices[s1+(0,)+s2], vertices[s1+(2,)+s2], float(i)/N[idim] )
 
     elemvertices = [ vertices[ tuple( slice(i,i+2) for i in index ) ].ravel() for index in numeric.ndindex(*N) ]
-    return tuple( QuadElement( vertices=elemvertices[ielem], ndims=self.ndims, parent=(self,transform) )
-      for ielem, transform in enumerate( self.refinedtransform(N) ) )
+    return tuple( QuadElement( vertices=elemvertices[ielem], ndims=self.ndims, parent=(self,trans) )
+      for ielem, trans in enumerate( self.refinedtransform(N) ) )
 
   @property
   def children( self ):
@@ -861,13 +850,13 @@ class QuadElement( Element ):
 
   def edge( self, iedge ):
     'edge'
-    transform = self.edgetransform( self.ndims )[ iedge ]
+    trans = self.edgetransform( self.ndims )[ iedge ]
     idim = iedge // 2
     iside = iedge % 2
     s = (slice(None,None, 1 if iside else -1),) * idim + (iside,) \
       + (slice(None,None,-1 if iside else  1),) * (self.ndims-idim-1)
     vertices = numeric.asarray( numeric.asarray( self.vertices ).reshape( (2,)*self.ndims )[s] ).ravel() # TODO check
-    return QuadElement( vertices=vertices, ndims=self.ndims-1, context=(self,transform) )
+    return QuadElement( vertices=vertices, ndims=self.ndims-1, context=(self,trans) )
 
   @staticmethod
   def refinedtransform( N ):
@@ -1015,9 +1004,9 @@ class TriangularElement( Element ):
   def edge( self, iedge ):
     'edge'
 
-    transform = self.edgetransform[ iedge ]
+    trans = self.edgetransform[ iedge ]
     vertices = [ self.vertices[::-2], self.vertices[:2], self.vertices[1:] ][iedge]
-    return QuadElement( vertices=vertices, ndims=1, context=(self,transform) )
+    return QuadElement( vertices=vertices, ndims=1, context=(self,trans) )
 
   @staticmethod
   def refinedtransform( n ):
@@ -1036,7 +1025,7 @@ class TriangularElement( Element ):
     assert n == 2
     if n == 1:
       return self
-    return [ TriangularElement( id=self.id+'.child({})'.format(ichild), parent=(self,transform) ) for ichild, transform in enumerate( self.refinedtransform( n ) ) ]
+    return [ TriangularElement( id=self.id+'.child({})'.format(ichild), parent=(self,trans) ) for ichild, trans in enumerate( self.refinedtransform( n ) ) ]
 
   @staticmethod
   def getischeme( ndims, where ):
@@ -1145,10 +1134,10 @@ class TetrahedronElement( Element ):
   def edge( self, iedge ):
     'edge'
 
-    transform = self.edgetransform[ iedge ]
+    trans = self.edgetransform[ iedge ]
     v1, v2, v3, v4 = self.vertices
     vertices = [ [v1,v3,v2], [v1,v2,v4], [v1,v4,v3], [v2,v3,v4] ][ iedge ] # TODO check!
-    return TriangularElement( vertices=vertices, context=(self,transform) )
+    return TriangularElement( vertices=vertices, context=(self,trans) )
 
   @staticmethod
   def refinedtransform( n ):
