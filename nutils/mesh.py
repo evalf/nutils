@@ -41,9 +41,7 @@ def rectilinear( vertices, periodic=(), name='rect' ):
 
   structure = numeric.objmap( lambda *index: element.QuadElement(
     ndims=ndims,
-    parent=( domainelem, transform.affine(
-      [ n[i] for n,i in zip(vertices,index) ],
-      numeric.diag([ n[i+1]-n[i] for n,i in zip(vertices,index) ]) ) ),
+    parent=( domainelem, transform.Scale( numeric.array([ n[i+1]-n[i] for n,i in zip(vertices,index) ]) ) + [ n[i] for n,i in zip(vertices,index) ] ),
     vertices=vertexobjs[tuple(slice(i,i+2) for i in index)].ravel() ), *indices )
   topo = topology.StructuredTopology( structure )
   coords = GridFunc( domainelem, structure, vertices )
@@ -129,7 +127,7 @@ def gmesh( path, btags={}, name=None ):
       boundary.append(( elemvertices, tags ))
     elif elemtype in (2,4):
       if elemtype == 2: # interior element, triangle
-        parent = domainelem, transform.affine( elemcoords[2], (elemcoords[:2]-elemcoords[2]).T )
+        parent = domainelem, transform.Linear( (elemcoords[:2]-elemcoords[2]).T ) + elemcoords[2]
         elem = element.TriangularElement( vertices=elemvertexobjs, parent=parent )
         stdelem = element.PolyTriangle( 1 )
       else: # interior element, quadrilateral
@@ -356,11 +354,11 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   
   domainelem = element.Element( ndims=2, vertices=[] )
   elements = []
-  vertices = numeric.array([ element.PrimaryVertex( 'demo.%d' % ivertex ) for ivertex in range(len(vertices)) ])
+  vertexobjs = numeric.array([ element.PrimaryVertex( 'demo.%d' % ivertex ) for ivertex in range(len(vertices)) ])
   for ielem, elemvertices in enumerate( vertices ):
     elemcoords = coords[ numeric.array(elemvertices) ]
-    parent = domainelem, transform.affine( elemcoords[2], (elemcoords[:2]-elemcoords[2]).T )
-    elem = element.TriangularElement( vertices=vertices[elemvertices], parent=parent )
+    parent = domainelem, transform.Linear( (elemcoords[:2]-elemcoords[2]).T ) + elemcoords[2]
+    elem = element.TriangularElement( vertices=vertexobjs[elemvertices], parent=parent )
     elements.append( elem )
 
   fmap = dict.fromkeys( elements, element.PolyTriangle(1) )
@@ -369,7 +367,7 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   bgroups = { 'top': belems[0:3], 'left': belems[3:6], 'bottom': belems[6:9], 'right': belems[9:12] }
 
   linearfunc = function.function( fmap, nmap, ndofs=21, ndims=2 )
-  namedfuncs = { 'spline2': linearfunc }
+  namedfuncs = { 'spline1': linearfunc }
   topo = topology.UnstructuredTopology( elements, ndims=2, namedfuncs=namedfuncs )
   topo.boundary = topology.UnstructuredTopology( belems, ndims=1 )
   topo.boundary.groups = dict( ( tag, topology.UnstructuredTopology( group, ndims=1 ) ) for tag, group in bgroups.items() )

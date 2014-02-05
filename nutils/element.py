@@ -223,7 +223,7 @@ class ProductElement( Element ):
     iface2 = elem2, slice2
     vertices = [] # TODO [ ProductVertex(vertex1,vertex2) for vertex1 in elem1.vertices for vertex2 in elem2.vertices ]
     Element.__init__( self, ndims=elem1.ndims+elem2.ndims, vertices=vertices, interface=(iface1,iface2) )
-    self.root_transform = transform.Scale( 1, elem1.root_transform.det * elem2.root_transform.det ) # HACK
+    self.root_transform = transform.Scale( numeric.array([elem1.root_transform.det * elem2.root_transform.det]) ) # HACK
 
   @staticmethod
   def get_tri_bem_ischeme( ischeme, neighborhood ):
@@ -685,7 +685,7 @@ class TrimmedElement( Element ):
           offset = points[ tri[-1] ]
           affine = numeric.array( [ points[ tri[ii] ] - offset for ii in range(self.ndims) ] ).T
 
-        trans = transform.affine( offset, affine )
+        trans = transform.Linear( affine ) + offset
 
         if trans.det > numeric.spacing(100):
           break
@@ -805,13 +805,13 @@ class QuadElement( Element ):
       # flip normal:
       offset[idim-1] = 1 - offset[idim-1]
       matrix[idim-1] *= -1
-      transforms.append( transform.affine( offset.copy(), matrix.copy() ) )
+      transforms.append( transform.Linear(matrix.copy()) + offset )
       # other side:
       offset[idim] = 1
       # flip normal back:
       offset[idim-1] = 1 - offset[idim-1]
       matrix[idim-1] *= -1
-      transforms.append( transform.affine( offset, matrix ) )
+      transforms.append( transform.Linear(matrix) + offset )
     return transforms
 
   @property
@@ -838,7 +838,7 @@ class QuadElement( Element ):
                                  [[0,1,0],[0,1,1]],
                                  [[0,0,1],[1,0,1]],
                                  [[0,0,1],[0,1,1]]] ):
-      trans = transform.affine( offset=i1, transform=(i2-i1)[:,_] )
+      trans = transform.Linear((i2-i1)[:,_]) + i1
       vertices = ndvertices[tuple(i1)], ndvertices[tuple(i2)]
       ribbons.append( QuadElement( vertices=vertices, ndims=1, context=(self,trans) ) )
 
@@ -862,9 +862,9 @@ class QuadElement( Element ):
   def refinedtransform( N ):
     'refined transform'
 
-    Nf = numeric.asarray( N, dtype=float )
-    assert Nf.ndim == 1
-    return [ transform.affine( offset=I/Nf, transform=numeric.diag(1/Nf) ) for I in numeric.ndindex(*N) ]
+    Nrcp = numeric.reciprocal( N, dtype=float )
+    scale = transform.Scale(Nrcp)
+    return [ scale + i*Nrcp for i in numeric.ndindex(*N) ]
 
   def refine( self, n ):
     'refine n times'
@@ -974,9 +974,9 @@ class TriangularElement( Element ):
 
   neighbormap = -1, 2, 1, 0
   edgetransform = (
-    transform.affine( [0,0], [[ 1],[ 0]] ),
-    transform.affine( [1,0], [[-1],[ 1]] ),
-    transform.affine( [0,1], [[ 0],[-1]] ) )
+    transform.Linear( numeric.array([[ 1],[ 0]]) ),
+    transform.Linear( numeric.array([[-1],[ 1]]) ) + [1,0],
+    transform.Linear( numeric.array([[ 0],[-1]]) ) + [0,1] )
 
   def __init__( self, vertices, parent=None, context=None ):
     'constructor'
@@ -1013,10 +1013,11 @@ class TriangularElement( Element ):
     'refined transform'
 
     transforms = []
-    trans = numeric.diag( [1./n]*2 )
+    scale = transform.Scale( numeric.asarray([1./n,1./n]) )
+    negscale = transform.Scale( numeric.asarray([-1./n,-1./n]) )
     for i in range( n ):
-      transforms.extend( transform.affine( numeric.array( [i,j], dtype=float ) / n, trans ) for j in range(0,n-i) )
-      transforms.extend( transform.affine( numeric.array( [n-j,n-i], dtype=float ) / n, -trans ) for j in range(n-i,n) )
+      transforms.extend( scale + numeric.array( [i,j], dtype=float ) / n for j in range(0,n-i) )
+      transforms.extend( negscale + numeric.array( [n-j,n-i], dtype=float ) / n for j in range(n-i,n) )
     return transforms
 
   def refined( self, n ):
@@ -1111,10 +1112,10 @@ class TetrahedronElement( Element ):
   neighbormap = -1, 3, 2, 1, 0
   #Defined to create outward pointing normal vectors for all edges (i.c. triangular faces)
   edgetransform = (
-    transform.affine( [0,0,0], [[ 0, 1],[1,0],[0,0]] ),
-    transform.affine( [0,0,0], [[ 1, 0],[0,0],[0,1]] ),
-    transform.affine( [0,0,0], [[ 0, 0],[0,1],[1,0]] ),
-    transform.affine( [1,0,0], [[-1,-1],[1,0],[0,1]] ) )
+    transform.Linear( numeric.array([[ 0, 1],[1,0],[0,0]]) ),
+    transform.Linear( numeric.array([[ 1, 0],[0,0],[0,1]]) ),
+    transform.Linear( numeric.array([[ 0, 0],[0,1],[1,0]]) ),
+    transform.Linear( numeric.array([[-1,-1],[1,0],[0,1]]) ) + [1,0,0] )
 
   def __init__( self, vertices, parent=None, context=None ):
     'constructor'
@@ -1545,6 +1546,7 @@ class PolyTriangle( StdElem ):
     'constructor'
 
     assert order == 1
+    self.nshapes = 3
 
   def eval( self, points, grad=0 ):
     'eval'

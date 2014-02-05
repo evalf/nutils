@@ -1013,6 +1013,7 @@ class UnstructuredTopology( Topology ):
     try:
       linearfunc = self.linearfunc()
       (func,(dofaxis,)), = function.blocks( linearfunc )
+      dofaxis = dofaxis.compiled()
       ndofs = linearfunc.shape[0]
       edges = {}
       nmap = {}
@@ -1026,7 +1027,7 @@ class UnstructuredTopology( Topology ):
       if not dofaxis:
         continue
 
-      vertexdofs = dofaxis(elem,None)
+      vertexdofs = dofaxis.eval(elem,None)
       edgedofs = []
       if isinstance( elem, element.TriangularElement ):
         for i in range(3):
@@ -1049,7 +1050,7 @@ class UnstructuredTopology( Topology ):
     if dofaxis:
       fmap = dict.fromkeys( elements, element.PolyTriangle(1) )
       linearfunc = function.function( fmap, nmap, ndofs, self.ndims )
-      namedfuncs = { 'spline2': linearfunc }
+      namedfuncs = { 'spline1': linearfunc }
     else:
       namedfuncs = {}
 
