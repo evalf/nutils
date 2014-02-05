@@ -27,8 +27,9 @@ class CallDict( dict ):
       self.hit += 1
     return value
 
-  def effectivity( self ):
-    return '%d%% (%d hits, %d misses)' % ( (100*self.hit)/(self.hit+len(self)), self.hit, len(self) )
+  def summary( self ):
+    return 'not used' if not self \
+      else 'effectivity %d%% (%d hits, %d misses)' % ( (100*self.hit)/(self.hit+len(self)), self.hit, len(self) )
 
 class WeakCacheObject( object ):
   'weakly cache object instances based on init args'

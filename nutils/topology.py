@@ -134,6 +134,7 @@ class Topology( object ):
       for ifunc, index, data in idata.eval( elem, ischeme ):
         retvals[ifunc][s+index] = data
 
+    log.info( 'cache', idata.cache.summary() )
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
     if single_arg:
       retvals, = retvals
@@ -268,7 +269,7 @@ class Topology( object ):
         with lock:
           retval[index] += data
 
-    log.info( 'cache effectivity', idata.cache.effectivity() )
+    log.info( 'cache', idata.cache.summary() )
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
     if single_arg:
       retvals, = retvals
@@ -320,6 +321,7 @@ class Topology( object ):
           if compare_elem > 0:
             retvals[ifunc][index[::-1]] += data.T
 
+    log.info( 'cache', idata.cache.summary() )
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
     if single_arg:
       retvals, = retvals
