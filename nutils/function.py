@@ -759,17 +759,9 @@ class Transform( ArrayFunc ):
   def transform( fromcascade, tocascade, side ):
     'transform'
 
-    fromelem = fromcascade[0][0]
-    toelem = tocascade[0][0]
-
-    elem = toelem
-    T = elem.root_transform.inv
-    while elem is not fromelem:
-      elem, transform = elem.interface[side] if elem.interface \
-                   else elem.context or elem.parent
-      T = transform * T
-    T = elem.root_transform * T
-    return T.matrix
+    fromelem, fromtrans = fromcascade[-1]
+    toelem, totrans = tocascade[-1]
+    return ( fromtrans * totrans.inv ).matrix
 
   def _localgradient( self, ndims ):
     return _zeros( self.shape + (ndims,) )
