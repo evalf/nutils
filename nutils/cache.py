@@ -15,13 +15,20 @@ def property( f ):
 class CallDict( dict ):
   'very simple cache object'
 
+  hit = 0
+
   def __call__( self, *key ):
     'cache(func,*args): execute func(args) and cache result'
     value = self.get( key )
     if value is None:
       value = key[0]( *key[1:] )
       self[ key ] = value
+    else:
+      self.hit += 1
     return value
+
+  def effectivity( self ):
+    return '%d%% (%d hits, %d misses)' % ( (100*self.hit)/(self.hit+len(self)), self.hit, len(self) )
 
 class WeakCacheObject( object ):
   'weakly cache object instances based on init args'

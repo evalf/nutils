@@ -791,7 +791,7 @@ class Function( ArrayFunc ):
       std = stdmap.get(elem)
       if not std:
         continue
-      elempoints = trans.apply( points )
+      elempoints = cache( trans.apply, points )
       if isinstance( std, tuple ):
         std, keep = std
         F = cache( std.eval, elempoints, igrad )[(Ellipsis,keep)+(slice(None),)*igrad]

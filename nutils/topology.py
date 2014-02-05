@@ -268,6 +268,7 @@ class Topology( object ):
         with lock:
           retval[index] += data
 
+    log.info( 'cache effectivity', idata.cache.effectivity() )
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
     if single_arg:
       retvals, = retvals
