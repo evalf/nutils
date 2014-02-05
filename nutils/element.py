@@ -1318,10 +1318,18 @@ class TetrahedronElement( Element ):
     'select points contained in element'
     raise NotImplementedError( 'Determine whether a point resides in the tetrahedron' )  
 
+
+## STDELEMS
+
+
 class StdElem( cache.WeakCacheObject ):
   'stdelem base class'
 
   __slots__ = 'ndims', 'nshapes'
+
+  def __init__( self, ndims, nshapes ):
+    self.ndims = ndims
+    self.nshapes = nshapes
 
   def __mul__( self, other ):
     'multiply elements'
@@ -1348,8 +1356,7 @@ class PolyProduct( StdElem ):
     'constructor'
 
     std1, std2 = self.std = std
-    self.ndims = std1.ndims + std2.ndims
-    self.nshapes = std1.nshapes * std2.nshapes
+    StdElem.__init__( self, ndims=std1.ndims+std2.ndims, nshapes=std1.nshapes*std2.nshapes )
 
   def eval( self, points, grad=0 ):
     'evaluate'
@@ -1500,10 +1507,10 @@ class PolyLine( StdElem ):
     '''Create polynomial from order x nfuncs array of coefficients 'poly'.
        Evaluates to sum_i poly[i,:] x**i.'''
 
-    self.ndims = 1
     self.poly = numeric.asarray( poly, dtype=float )
-    order, self.nshapes = self.poly.shape
+    order, nshapes = self.poly.shape
     self.degree = order - 1
+    StdElem.__init__( self, ndims=1, nshapes=nshapes )
 
   def eval( self, points, grad=0 ):
     'evaluate'
@@ -1546,7 +1553,7 @@ class PolyTriangle( StdElem ):
     'constructor'
 
     assert order == 1
-    self.nshapes = 3
+    StdElem.__init__( self, ndims=2, nshapes=3 )
 
   def eval( self, points, grad=0 ):
     'eval'
@@ -1576,6 +1583,7 @@ class BubbleTriangle( StdElem ):
     'constructor'
 
     assert order == 1
+    StdElem.__init__( self, ndims=2, nshapes=4 )
 
   def eval( self, points, grad=0 ):
     'eval'
@@ -1608,7 +1616,7 @@ class BubbleTriangle( StdElem ):
 
     return '%s#%x' % ( self.__class__.__name__, id(self) )
 
-class ExtractionWrapper( object ):
+class ExtractionWrapper( StdElem ):
   'extraction wrapper'
 
   __slots__ = 'stdelem', 'extraction'
@@ -1617,7 +1625,9 @@ class ExtractionWrapper( object ):
     'constructor'
 
     self.stdelem = stdelem
+    assert extraction.shape[0] == stdelem.nshapes
     self.extraction = extraction
+    StdElem.__init__( self, ndims=stdelem.ndims, nshapes=extraction.shape[1] )
 
   def eval( self, points, grad=0 ):
     'call'
@@ -1628,5 +1638,6 @@ class ExtractionWrapper( object ):
     'string representation'
 
     return '%s#%x:%s' % ( self.__class__.__name__, id(self), self.stdelem )
+
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
