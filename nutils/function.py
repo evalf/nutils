@@ -1,4 +1,4 @@
-from . import util, cache, numeric, log, prop, _
+from . import util, cache, numeric, transform, log, prop, _
 import sys, warnings
 
 ELEM    = object()
@@ -280,7 +280,7 @@ class Cascade( Evaluable ):
 
     self.ndims = ndims
     self.side = side
-    Evaluable.__init__( self, args=[CACHE,ELEM,POINTS,ndims,side], evalf=self.cascade )
+    Evaluable.__init__( self, args=[ELEM,ndims,side], evalf=self.cascade )
 
   def transform( self, ndims ):
     if ndims == self.ndims:
@@ -289,22 +289,21 @@ class Cascade( Evaluable ):
     return Transform( self, Cascade(ndims,self.side) )
 
   @staticmethod
-  def cascade( cache, elem, points, ndims, side ):
+  def cascade( elem, ndims, side ):
     'evaluate'
 
+    trans = transform.Identity( elem.ndims )
     while elem.ndims != ndims \
         or elem.interface and elem.interface[side][0].ndims < elem.ndims: # TODO make less dirty
-      elem, transform = elem.interface[side] if elem.interface \
+      elem, nexttrans = elem.interface[side] if elem.interface \
                    else elem.context or elem.parent
-      if points is not None:
-        points = cache( transform.apply, points )
+      trans = nexttrans * trans
 
-    cascade = [ (elem,points) ]
+    cascade = [ (elem,trans) ]
     while elem.parent:
-      elem, transform = elem.parent
-      if points is not None:
-        points = cache( transform.apply, points )
-      cascade.append( (elem,points) )
+      elem, nexttrans = elem.parent
+      trans = nexttrans * trans
+      cascade.append( (elem,trans) )
 
     return cascade
 
@@ -789,22 +788,23 @@ class Function( ArrayFunc ):
     self.cascade = cascade
     self.stdmap = stdmap
     self.igrad = igrad
-    ArrayFunc.__init__( self, args=(CACHE,cascade,stdmap,igrad), evalf=self.function, shape=(axis,)+(cascade.ndims,)*igrad )
+    ArrayFunc.__init__( self, args=(CACHE,POINTS,cascade,stdmap,igrad), evalf=self.function, shape=(axis,)+(cascade.ndims,)*igrad )
 
   @staticmethod
-  def function( cache, cascade, stdmap, igrad ):
+  def function( cache, points, cascade, stdmap, igrad ):
     'evaluate'
 
     fvals = []
-    for elem, points in cascade:
+    for elem, trans in cascade:
       std = stdmap.get(elem)
       if not std:
         continue
+      elempoints = trans.apply( points )
       if isinstance( std, tuple ):
         std, keep = std
-        F = cache( std.eval, points, igrad )[(Ellipsis,keep)+(slice(None),)*igrad]
+        F = cache( std.eval, elempoints, igrad )[(Ellipsis,keep)+(slice(None),)*igrad]
       else:
-        F = cache( std.eval, points, igrad )
+        F = cache( std.eval, elempoints, igrad )
       for axis in range(-igrad,0):
         F = numeric.dot( F, elem.root_transform.inv.matrix, axis )
       fvals.append( F )
@@ -913,7 +913,7 @@ class DofMap( ArrayFunc ):
     'evaluate'
 
     alldofs = []
-    for elem, points in cascade:
+    for elem, trans in cascade:
       dofs = dofmap.get( elem )
       if dofs is not None:
         alldofs.append( dofs )
@@ -1700,15 +1700,15 @@ class ElemFunc( ArrayFunc ):
     self.domainelem = domainelem
     self.side = side
     self.cascade = Cascade( domainelem.ndims, side )
-    ArrayFunc.__init__( self, args=[self.cascade,domainelem], evalf=self.elemfunc, shape=[domainelem.ndims] )
+    ArrayFunc.__init__( self, args=[POINTS,self.cascade,domainelem], evalf=self.elemfunc, shape=[domainelem.ndims] )
 
   @staticmethod
-  def elemfunc( cascade, domainelem ):
+  def elemfunc( points, cascade, domainelem ):
     'evaluate'
 
-    for elem, points in cascade:
+    for elem, trans in cascade:
       if elem is domainelem:
-        return points
+        return trans.apply(points)
     raise Exception, '%r not found' % domainelem
 
   def _localgradient( self, ndims ):
