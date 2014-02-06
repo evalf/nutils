@@ -52,11 +52,7 @@ class Topology( object ):
   def stdfunc( self, degree ):
     'spline from vertices'
 
-    if isinstance( degree, int ):
-      degree = ( degree, ) * self.ndims
-
-    assert all( n == 1 for n in degree ) # for now!
-
+    assert degree == 1 # for now!
     dofmap = { n: i for i, n in enumerate( sorted( set( n for elem in self for n in elem.vertices ) ) ) }
     fmap = { elem: elem.simplex.stdfunc(degree) for elem in self }
     nmap = { elem: numeric.array([ dofmap[n] for n in elem.vertices ]) for elem in self }

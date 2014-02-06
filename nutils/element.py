@@ -133,8 +133,6 @@ class Simplex( cache.WeakCacheObject ):
 class Quad( Simplex ):
   'quadrilateral element'
 
-  __slots__ = ()
-
   def __init__( self, ndims ):
     'constructor'
 
@@ -336,30 +334,26 @@ class Triangle( Simplex ):
                   edge numbering:   {bottom:0, slanted:1, left:2}
                   edge local coords run counter-clockwise.'''
 
-  __slots__ = ()
-
   neighbormap = -1, 2, 1, 0
-  edges = (
-    ( Quad(ndims=1), transform.Linear( numeric.array([[ 1],[ 0]]) ),         (2,0) ),
-    ( Quad(ndims=1), transform.Linear( numeric.array([[-1],[ 1]]) ) + [1,0], (0,1) ),
-    ( Quad(ndims=1), transform.Linear( numeric.array([[ 0],[-1]]) ) + [0,1], (1,2) ),
-  )
-  #  1
-  # 1-2  0-1
-  #  2   0-2   0
-  @property
-  def children( self ):
-    return (
-    ( self, transform.Scale(  numeric.asarray([.5,.5]) ),           ((0,2),(1,2),2) ),
-    ( self, transform.Scale(  numeric.asarray([.5,.5]) ) + [.5, 0], (0,(0,1),(0,2)) ),
-    ( self, transform.Scale(  numeric.asarray([.5,.5]) ) + [ 0,.5], ((0,1),1,(1,2)) ),
-    ( self, transform.Scale( -numeric.asarray([.5,.5]) ) + [.5,.5], ((1,2),(0,2),(0,1)) ),
-  )
 
   def __init__( self ):
     'constructor'
 
     Simplex.__init__( self, ndims=2 )
+    line = Quad(ndims=1)
+    self.edges = (
+      ( line, transform.Linear( numeric.array([[ 1],[ 0]]) ), (2,0) ),
+      ( line, transform.Linear( numeric.array([[-1],[ 1]]) ) + [1,0], (0,1) ),
+      ( line, transform.Linear( numeric.array([[ 0],[-1]]) ) + [0,1], (1,2) ),
+    )
+    scale = transform.Scale( numeric.asarray([.5,.5]) )
+    negscale = transform.Scale( -numeric.asarray([.5,.5]) )
+    self.children = (
+      ( self, scale, ((0,2),(1,2),2) ),
+      ( self, scale + [.5, 0], (0,(0,1),(0,2)) ),
+      ( self, scale + [ 0,.5], ((0,1),1,(1,2)) ),
+      ( self, negscale + [.5,.5], ((1,2),(0,2),(0,1)) ),
+    )
 
   def stdfunc( self, degree ):
     return PolyTriangle( degree )
@@ -424,7 +418,6 @@ class Triangle( Simplex ):
       raise Exception, 'invalid element evaluation: %r' % where
     return numeric.concatenate([coords.T,weights[...,_]],axis=-1) if weights is not None else coords.T
 
-
 # @property
 # def children( self ):
 #   'all 1x refined elements'
@@ -474,8 +467,6 @@ class Triangle( Simplex ):
 
 class Tetrahedron( Simplex ):
   'tetrahedron element'
-
-  __slots__ = ()
 
   neighbormap = -1, 3, 2, 1, 0
   #Defined to create outward pointing normal vectors for all edges (i.c. triangular faces)
@@ -688,8 +679,6 @@ class Tetrahedron( Simplex ):
 
 class Product( Simplex ):
   'element product'
-
-  __slots__ = 'elem1', 'elem2'
 
   @staticmethod
   def getslicetransforms( ndims1, ndims2 ):
