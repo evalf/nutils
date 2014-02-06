@@ -35,10 +35,11 @@ class WeakCacheObject( object ):
   'weakly cache object instances based on init args'
 
   __slots__ = '__weakref__',
+  __cache = weakref.WeakValueDictionary()
 
-  def __new__( cls, *args, **kwargs ):
-    init = cls.__init__.im_func
-    names = init.func_code.co_varnames[len(args)+1:init.func_code.co_argcount]
+  def __new__( *args, **kwargs ):
+    init = args[0].__init__.im_func
+    names = init.func_code.co_varnames[len(args):init.func_code.co_argcount]
     for name in names:
       try:
         val = kwargs.pop(name)
@@ -47,15 +48,10 @@ class WeakCacheObject( object ):
       args += val,
     assert not kwargs
     try:
-      cache = cls.__cache
-    except AttributeError:
-      cache = weakref.WeakValueDictionary()
-      cls.__cache = cache
-    try:
-      self = cache[args]
+      self = WeakCacheObject.__cache[args]
     except KeyError:
-      self = object.__new__( cls )
-      cache[args] = self
+      self = object.__new__( args[0] )
+      WeakCacheObject.__cache[args] = self
     return self
 
 class FileCache( object ):

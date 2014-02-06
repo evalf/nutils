@@ -632,7 +632,7 @@ class StructuredTopology( Topology ):
         if not iside: # TODO: check that this is correct for all dimensions; should match conventions in elem.edge
           s[idim-1] = slice(None,None,1 if idim else -1)
         s = tuple(s)
-        belems = numeric.objmap( lambda elem: elem.edge( iedge ) if elem is not None else None, self.structure[s] )
+        belems = numeric.objmap( lambda elem: elem.edge(iedge) if elem is not None else None, self.structure[s] )
       else:
         belems = numeric.array( self.structure[-iside].edge( 1-iedge ) )
       periodic = [ d - (d>idim) for d in self.periodic if d != idim ] # TODO check that dimensions are correct for ndim > 2
@@ -890,13 +890,21 @@ class StructuredTopology( Topology ):
 
     return self.refine_nu( (2,)*self.ndims )
 
-  def trim( self, levelset, maxrefine, lscheme='bezier3', finestscheme='uniform2', evalrefine=0, title='trimming', log=log ):
+  def trim( self, levelset, maxrefine=0, minrefine=0, title='trimming' ):
     'trim element along levelset'
 
     levelset = function.ascompiled( levelset )
-    trimmedelems = [ elem.trim( levelset=levelset, maxrefine=maxrefine, lscheme=lscheme, finestscheme=finestscheme, evalrefine=evalrefine ) for elem in log.iterate( title, self.structure.ravel() ) ]
-    trimmedstructure = numeric.array( trimmedelems ).reshape( self.structure.shape )
-    return StructuredTopology( trimmedstructure, periodic=self.periodic )
+    trimmedelems = [ elem.trim( levelset=levelset, maxrefine=maxrefine ) for elem in log.iterate( title, self.structure.ravel() ) ]
+    trimmedstructure = numeric.array( trimmedelems ).reshape( self.structure.shape + (2,) )
+    return StructuredTopology( trimmedstructure[...,0], periodic=self.periodic ), \
+           StructuredTopology( trimmedstructure[...,1], periodic=self.periodic )
+
+  @cache.property
+  def simplex( self ):
+    elems = []
+    for elem in self:
+      elems.extend( elem.simplices )
+    return UnstructuredTopology( elems, ndims=self.ndims )
 
   def __str__( self ):
     'string representation'

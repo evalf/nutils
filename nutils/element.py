@@ -1,128 +1,761 @@
 from . import log, util, cache, numeric, transform, function, _
 import warnings
 
-PrimaryVertex = str
-HalfVertex = lambda vertex1, vertex2, xi=.5: '%s<%.3f>%s' % ( (vertex1,xi,vertex2) if vertex1 < vertex2 else (vertex2,1-xi,vertex1) )
-ProductVertex = lambda *vertices: ','.join( vertices )
 
-class Element( object ):
+class Element( cache.WeakCacheObject ):
   '''Element base class.
 
   Represents the topological shape.'''
 
-  __slots__ = 'vertices', 'ndims', 'parent', 'context', 'interface', 'root_transform'
+  __slots__ = 'vertices', 'simplex', 'parent', 'context', 'interface', 'root_transform'
 
-  def __init__( self, ndims, vertices, parent=None, context=None, interface=None ):
+  def __init__( self, simplex, vertices=None, parent=None, context=None, interface=None ):
     'constructor'
 
-    #assert all( isinstance(vertex,Vertex) for vertex in vertices )
-    self.vertices = tuple(vertices)
-    self.ndims = ndims
+    self.vertices = vertices
+    self.simplex = simplex
     self.parent = parent
     self.context = context
     self.interface = interface
-
     if parent:
       pelem, trans = parent
       self.root_transform = pelem.root_transform * trans
     else:
-      self.root_transform = transform.Identity( self.ndims )
+      self.root_transform = transform.Identity( simplex.ndims )
 
-  def __mul__( self, other ):
-    'multiply elements'
+  @property
+  def simplices( self ):
+    if isinstance( self.simplex, Simplex ):
+      return self,
+    simplices = []
+    for child in self.children:
+      simplices.extend( child.simplices )
+    return simplices
 
-    return ProductElement( self, other )
+  @property
+  def ndims( self ):
+    return self.simplex.ndims
 
-  def neighbor( self, other ):
-    'level of neighborhood; 0=self'
+  @property
+  def edges( self ):
+    return [ Element( simplex=simplex, context=(self,trans), vertices=mknewvertices(self.vertices,iverts) )
+      for simplex, trans, iverts in self.simplex.edges ]
 
-    if self == other:
-      return 0
-    ncommon = len( set(self.vertices) & set(other.vertices) )
-    return self.neighbormap[ ncommon ]
+  def edge( self, iedge ):
+    simplex, trans, iverts = self.simplex.edges[iedge]
+    return Element( simplex=simplex, context=(self,trans), vertices=mknewvertices(self.vertices,iverts) )
 
-  def eval( self, where ):
-    'get points'
+  @property
+  def children( self ):
+    return [ Element( simplex=simplex, parent=(self,trans), vertices=mknewvertices(self.vertices,iverts) )
+      for simplex, trans, iverts in self.simplex.children ]
 
-    if isinstance( where, str ):
-      points, weights = self.getischeme( self.ndims, where )
+  def children_by( self, N ):
+    return [ Element( simplex=simplex, parent=(self,trans), vertices=mknewvertices(self.vertices,iverts) )
+      for simplex, trans, iverts in self.simplex.children_by(N) ]
+    
+  def trim( self, levelset, maxrefine=0, minrefine=0 ):
+    assert maxrefine >= minrefine >= 0
+    if minrefine == 0:
+      values = levelset.eval( self, 'bezier%d' % (2**maxrefine+1) )
+      mosaics = self.simplex.mosaic( values )
     else:
-      points = where
+      # refine to evaluate levelset, then assemble the pieces
+      allpieces = [], []
+      for child in self.children:
+        self_, ptrans = child.parent
+        for pieces, elem in zip( allpieces, child.trim( levelset, maxrefine-1, minrefine-1 ) ):
+          if elem:
+            if isinstance( elem.simplex, Mosaic ):
+              pieces.extend( (simplex,ptrans*trans,iverts) for simplex, trans, iverts in elem.simplex.children )
+            else:
+              pieces.append( (elem.simplex,ptrans,()) )
+      mosaics = [ Mosaic(pieces) if pieces else None for pieces in allpieces ]
+    if not mosaics[1]:
+      return self, None
+    if not mosaics[0]:
+      return None, self
+    identity = transform.Identity(self.ndims)
+    return [ Element( simplex=mosaic, parent=(self,identity), vertices=self.vertices ) for mosaic in mosaics ]
+
+# def __mul__( self, other ):
+#   'multiply elements'
+
+#   return ProductElement( self, other )
+
+# def neighbor( self, other ):
+#   'level of neighborhood; 0=self'
+
+#   if self == other:
+#     return 0
+#   ncommon = len( set(self.vertices) & set(other.vertices) )
+#   return self.neighbormap[ ncommon ]
+
+# def intersected( self, levelset, lscheme, evalrefine=0 ):
+#   '''check levelset intersection:
+#     +1 for levelset > 0 everywhere
+#     -1 for levelset < 0 everywhere
+#      0 for intersected element'''
+
+#   levelset = function.ascompiled( levelset )
+#   elems = iter( [self] )
+#   for irefine in range(evalrefine):
+#     elems = ( child for elem in elems for child in elem.children )
+
+#   inside = numeric.greater( levelset.eval( elems.next(), lscheme ), 0 )
+#   if inside.all():
+#     for elem in elems:
+#       inside = numeric.greater( levelset.eval( elem, lscheme ), 0 )
+#       if not inside.all():
+#         return 0
+#     return 1
+#   elif not inside.any():
+#     for elem in elems:
+#       inside = numeric.greater( levelset.eval( elem, lscheme ), 0 )
+#       if inside.any():
+#         return 0
+#     return -1
+#   return 0
+
+# def get_trimmededges ( self, maxrefine ):
+#   return []
+
+
+## SIMPLICES
+
+
+class Simplex( cache.WeakCacheObject ):
+
+  def __init__( self, ndims ):
+    self.ndims = ndims
+
+class Quad( Simplex ):
+  'quadrilateral element'
+
+  __slots__ = ()
+
+  def __init__( self, ndims ):
+    'constructor'
+
+    Simplex.__init__( self, ndims=ndims )
+
+  def getischeme( self, where ):
+    'get integration scheme'
+
+    x = w = None
+    if self.ndims == 0:
+      coords = numeric.zeros([1,0])
+      weights = numeric.array([1.])
+    elif where.startswith( 'gauss' ):
+      N = eval( where[5:] )
+      if isinstance( N, tuple ):
+        assert len(N) == self.ndims
+      else:
+        N = [N]*self.ndims
+      x, w = zip( *map( getgauss, N ) )
+    elif where.startswith( 'uniform' ):
+      N = eval( where[7:] )
+      if isinstance( N, tuple ):
+        assert len(N) == self.ndims
+      else:
+        N = [N]*self.ndims
+      x = [ numeric.arange( .5, n ) / n for n in N ]
+      w = [ numeric.appendaxes( 1./n, n ) for n in N ]
+    elif where.startswith( 'bezier' ):
+      N = int( where[6:] )
+      x = [ numeric.linspace( 0, 1, N ) ] * self.ndims
+      w = [ numeric.appendaxes( 1./N, N ) ] * self.ndims
+    elif where.startswith( 'subdivision' ):
+      N = int( where[11:] ) + 1
+      x = [ numeric.linspace( 0, 1, N ) ] * self.ndims
+      w = None
+    elif where.startswith( 'vtk' ):
+      if self.ndims == 1:
+        coords = numeric.array([[0,1]]).T
+      elif self.ndims == 2:
+        eps = 0 if not len(where[3:]) else float(where[3:]) # subdivision fix (avoid extraordinary point)
+        coords = numeric.array([[eps,eps],[1-eps,eps],[1-eps,1-eps],[eps,1-eps]])
+      elif self.ndims == 3:
+        coords = numeric.array([ [0,0,0], [1,0,0], [0,1,0], [1,1,0], [0,0,1], [1,0,1], [0,1,1], [1,1,1] ])
+      else:
+        raise Exception, 'contour not supported for ndims=%d' % self.ndims
+    elif where.startswith( 'contour' ):
+      N = int( where[7:] )
+      p = numeric.linspace( 0, 1, N )
+      if self.ndims == 1:
+        coords = p[_].T
+      elif self.ndims == 2:
+        coords = numeric.array([ p[ range(N) + [N-1]*(N-2) + range(N)[::-1] + [0]*(N-1) ],
+                                 p[ [0]*(N-1) + range(N) + [N-1]*(N-2) + range(0,N)[::-1] ] ]).T
+      elif self.ndims == 3:
+        assert N == 0
+        coords = numeric.array([ [0,0,0], [1,0,0], [0,1,0], [1,1,0], [0,0,1], [1,0,1], [0,1,1], [1,1,1] ])
+      else:
+        raise Exception, 'contour not supported for ndims=%d' % self.ndims
+    else:
+      raise Exception, 'invalid element evaluation %r' % where
+    if x is not None:
+      coords = numeric.empty( map( len, x ) + [ self.ndims ] )
+      for i, xi in enumerate( x ):
+        coords[...,i] = xi[ (slice(None),) + (_,)*(self.ndims-i-1) ]
+      coords = coords.reshape( -1, self.ndims )
+    if w is not None:
+      weights = reduce( lambda weights, wi: ( weights * wi[:,_] ).ravel(), w )
+    else:
       weights = None
-    return points, weights
+    return numeric.concatenate( [coords,weights[:,_]], axis=-1 ) if weights is not None else coords
 
-  def __str__( self ):
-    'string representation'
+  @cache.property
+  def edges( self ):
+    transforms = []
+    simplex = Quad( self.ndims-1 )
+    iverts = numeric.arange( 2**self.ndims ).reshape( (2,)*self.ndims )
+    for idim in range( self.ndims ):
+      offset = numeric.zeros( self.ndims )
+      offset[:idim] = 1
+      matrix = numeric.zeros(( self.ndims, self.ndims-1 ))
+      matrix.flat[ :(self.ndims-1)*idim :self.ndims] = -1
+      matrix.flat[self.ndims*(idim+1)-1::self.ndims] = 1
+      for side in 0, 1:
+        offset[idim] = side
+        # flip normal:
+        offset[idim-1] = 1 - offset[idim-1]
+        matrix[idim-1] *= -1
+        iedgeverts = numeric.getitem(iverts,idim,side) # TODO fix!
+        transforms.append(( simplex, transform.Linear(matrix.copy()) + offset, iedgeverts ))
+    return transforms
 
-    return '%s(%s)' % ( self.__class__.__name__, self.vertices )
+  def children_by( self, N ):
+    'divide element by n'
 
-  __repr__ = __str__
+    Nrcp = numeric.reciprocal( N, dtype=float )
+    scale = transform.Scale(Nrcp)
+    refinedtransform = [ scale + i*Nrcp for i in numeric.ndindex(*N) ]
 
-  def __hash__( self ):
-    'hash'
+    assert len(N) == self.ndims
+    vertices = numeric.empty( [ ni+1 for ni in N ], dtype=object )
+    vertices[ tuple( slice(None,None,ni) for ni in N ) ] = numeric.arange( 2*self.ndims ).reshape( [2]*self.ndims )
+    for idim in range(self.ndims):
+      s1 = tuple( slice(None) for ni in N[:idim] )
+      s2 = tuple( slice(None,None,ni) for ni in N[idim+1:] )
+      for i in range( 1, N[idim] ):
+        vertices[s1+(i,)+s2] = zip( vertices[s1+(0,)+s2], vertices[s1+(2,)+s2] ) # TODO fix fraction
 
-    return hash(str(self))
+    elemvertices = [ vertices[ tuple( slice(i,i+2) for i in index ) ].ravel() for index in numeric.ndindex(*N) ]
+    return [ ( self, trans, elemvertices[ielem] ) for ielem, trans in enumerate( refinedtransform ) ]
 
-  def __eq__( self, other ):
-    'equal'
+  @cache.property
+  def children( self ):
+    'all 1x refined elements'
 
-    return self is other or (
-          self.__class__ == other.__class__
-      and self.vertices == other.vertices
-      and self.parent == other.parent
-      and self.context == other.context
-      and self.interface == other.interface )
+    return self.children_by( (2,)*self.ndims )
 
-  def intersected( self, levelset, lscheme, evalrefine=0 ):
-    '''check levelset intersection:
-      +1 for levelset > 0 everywhere
-      -1 for levelset < 0 everywhere
-       0 for intersected element'''
+  def _triangulate( self, values ):
+    assert values.shape == (2,)*self.ndims
+    pos = []
+    neg = []
+    coords = numeric.zeros( (2,)*self.ndims + (self.ndims,) )
+    for i in range(self.ndims):
+      numeric.getitem(coords,i,1)[...,i] = 1
+    for coord, value in zip( coords.reshape(-1,self.ndims), values.ravel() ):
+      ( pos if value > 0 else neg ).append( coord )
+    for idim in range( self.ndims ):
+      v0 = numeric.getitem( values, idim, 0 ).ravel()
+      dv = numeric.getitem( values, idim, 1 ).ravel() - v0
+      c0 = numeric.getitem( coords, idim, 0 ).reshape(-1,self.ndims)
+      dc = numeric.getitem( coords, idim, 1 ).reshape(-1,self.ndims) - c0
+      x = -v0 / dv # v0 + x dv = 0
+      for i in numeric.find( numeric.greater_equal(x,0) & numeric.less_equal(x,1) ):
+        coord = c0[i] + x[i] * dc[i]
+        pos.append( coord )
+        neg.append( coord )
+    triangle = Triangle()
+    return [ (triangle,trans,()) for trans in transform.delaunay(pos) ], \
+           [ (triangle,trans,()) for trans in transform.delaunay(neg) ]
 
-    levelset = function.ascompiled( levelset )
-    elems = iter( [self] )
-    for irefine in range(evalrefine):
-      elems = ( child for elem in elems for child in elem.children )
+  def _mosaic( self, values, eps ):
+    if numeric.greater( values, -eps ).all():
+      return [(self,transform.Identity(self.ndims),())], []
+    if numeric.less( values, +eps ).all():
+      return [], [(self,transform.Identity(self.ndims),())]
+    n = values.shape[0]
+    assert values.shape == (n,)*self.ndims
+    if n == 2:
+      return self._triangulate( values )
+    slices = slice(0,n//2+1), slice(n//2,n+1)
+    allpos = []
+    allneg = []
+    for i, (dummy,trans,dummy) in enumerate( self.children ):
+      s = tuple( slices[n] for n in ( i >> numeric.arange(self.ndims-1,-1,-1) ) & 1 )
+      pos, neg = self._mosaic( values[s], eps )
+      for simplex, trans2, iverts in pos:
+        allpos.append(( simplex, trans * trans2, iverts ))
+      for simplex, trans2, iverts in neg:
+        allneg.append(( simplex, trans * trans2, iverts ))
+    return allpos, allneg
 
-    inside = numeric.greater( levelset.eval( elems.next(), lscheme ), 0 )
-    if inside.all():
-      for elem in elems:
-        inside = numeric.greater( levelset.eval( elem, lscheme ), 0 )
-        if not inside.all():
-          return 0
-      return 1
-    elif not inside.any():
-      for elem in elems:
-        inside = numeric.greater( levelset.eval( elem, lscheme ), 0 )
-        if inside.any():
-          return 0
-      return -1
-    return 0
+  def mosaic( self, values, eps=1e-10 ):
+    assert values.ndim == 1
+    n = 2
+    while n**self.ndims < values.size:
+      n = n*2 - 1
+    assert n**self.ndims == values.size, 'cannot reshape values to appropriate shape'
+    values = values.reshape( (n,)*self.ndims )
+    pos, neg = self._mosaic( values, eps )
+    if not neg:
+      return self, None
+    if not pos:
+      return None, self
+    return Mosaic(pos), Mosaic(neg)
 
-  def trim( self, levelset, maxrefine, lscheme, finestscheme, evalrefine ):
-    'trim element along levelset'
 
-    levelset = function.ascompiled( levelset )
-    intersected = self.intersected( levelset, lscheme, evalrefine )
+  ###
 
-    if intersected > 0:
-      return self
+# @cache.property
+# def neighbormap( self ):
+#   'maps # matching vertices --> codim of interface: {0: -1, 1: 2, 2: 1, 4: 0}'
+#   return dict( [ (0,-1) ] + [ (2**(self.ndims-i),i) for i in range(self.ndims+1) ] )
 
-    if intersected < 0:
-      return None
+# @staticmethod
+# def edgetransform( ndims ):
+#   'edge transforms'
 
-    parent = self, transform.Identity(self.ndims)
-    return TrimmedElement( elem=self, vertices=self.vertices, levelset=levelset, maxrefine=maxrefine, lscheme=lscheme, finestscheme=finestscheme, evalrefine=evalrefine, parent=parent )
+#   transforms = []
+#   for idim in range( ndims ):
+#     offset = numeric.zeros( ndims )
+#     offset[:idim] = 1
+#     matrix = numeric.zeros(( ndims, ndims-1 ))
+#     matrix.flat[ :(ndims-1)*idim :ndims] = -1
+#     matrix.flat[ndims*(idim+1)-1::ndims] = 1
+#     # flip normal:
+#     offset[idim-1] = 1 - offset[idim-1]
+#     matrix[idim-1] *= -1
+#     transforms.append( transform.Linear(matrix.copy()) + offset )
+#     # other side:
+#     offset[idim] = 1
+#     # flip normal back:
+#     offset[idim-1] = 1 - offset[idim-1]
+#     matrix[idim-1] *= -1
+#     transforms.append( transform.Linear(matrix) + offset )
+#   return transforms
 
-  def get_simplices ( self, maxrefine ):
-    'divide in simple elements'
+# @property
+# def ribbons( self ):
+#   'ribbons'
 
-    return self,
+#   if self.ndims == 2:
+#     return [ self.edge(iedge) for iedge in range(4) ]
 
-  def get_trimmededges ( self, maxrefine ):
-    return []
+#   if self.ndims != 3:
+#     raise NotImplementedError('Ribbons not implemented for ndims=%d'%self.ndims)
 
-class ProductElement( Element ):
+#   ndvertices = numeric.asarray( self.vertices ).reshape( [2]*self.ndims )
+#   ribbons = []
+#   for i1, i2 in numeric.array([[[0,0,0],[1,0,0]],
+#                                [[0,0,0],[0,1,0]],
+#                                [[0,0,0],[0,0,1]],
+#                                [[1,1,1],[0,1,1]],
+#                                [[1,1,1],[1,0,1]],
+#                                [[1,1,1],[1,1,0]],
+#                                [[1,0,0],[1,1,0]],
+#                                [[1,0,0],[1,0,1]],
+#                                [[0,1,0],[1,1,0]],
+#                                [[0,1,0],[0,1,1]],
+#                                [[0,0,1],[1,0,1]],
+#                                [[0,0,1],[0,1,1]]] ):
+#     trans = transform.Linear((i2-i1)[:,_]) + i1
+#     vertices = ndvertices[tuple(i1)], ndvertices[tuple(i2)]
+#     ribbons.append( QuadElement( vertices=vertices, ndims=1, context=(self,trans) ) )
+
+#   return ribbons
+
+# @property
+# def edges( self ):
+#   return [ self.edge(iedge) for iedge in range(2**self.ndims) ]
+
+# def edge( self, iedge ):
+#   'edge'
+#   trans = self.edgetransform( self.ndims )[ iedge ]
+#   idim = iedge // 2
+#   iside = iedge % 2
+#   s = (slice(None,None, 1 if iside else -1),) * idim + (iside,) \
+#     + (slice(None,None,-1 if iside else  1),) * (self.ndims-idim-1)
+#   vertices = numeric.asarray( numeric.asarray( self.vertices ).reshape( (2,)*self.ndims )[s] ).ravel() # TODO check
+#   return QuadElement( vertices=vertices, ndims=self.ndims-1, context=(self,trans) )
+
+# def refine( self, n ):
+#   'refine n times'
+
+#   elems = [ self ]
+#   for i in range(n):
+#     elems = [ child for elem in elems for child in elem.children ]
+#   return elems
+
+# def select_contained( self, points, eps=0 ):
+#   'select points contained in element'
+
+#   selection = numeric.ones( points.shape[0], dtype=bool )
+#   for idim in range( self.ndims ):
+#     newsel = numeric.greater_equal( points[:,idim], -eps ) & numeric.less_equal( points[:,idim], 1+eps )
+#     selection[selection] &= newsel
+#     points = points[newsel]
+#     if not points.size:
+#       return None, None
+#   return points, selection
+
+class Triangle( Simplex ):
+  '''triangular element
+     conventions: reference elem:   unit simplex {(x,y) | x>0, y>0, x+y<1}
+                  vertex numbering: {(1,0):0, (0,1):1, (0,0):2}
+                  edge numbering:   {bottom:0, slanted:1, left:2}
+                  edge local coords run counter-clockwise.'''
+
+  __slots__ = ()
+
+  neighbormap = -1, 2, 1, 0
+  edgetransform = (
+    transform.Linear( numeric.array([[ 1],[ 0]]) ),
+    transform.Linear( numeric.array([[-1],[ 1]]) ) + [1,0],
+    transform.Linear( numeric.array([[ 0],[-1]]) ) + [0,1] )
+
+  def __init__( self ):
+    'constructor'
+
+    Simplex.__init__( self, ndims=2 )
+
+  def getischeme( self, where ):
+    '''get integration scheme
+    gaussian quadrature: http://www.cs.rpi.edu/~flaherje/pdf/fea6.pdf
+    '''
+
+    if where.startswith( 'contour' ):
+      n = int( where[7:] or 0 )
+      p = numeric.arange( n+1, dtype=float ) / (n+1)
+      z = numeric.zeros_like( p )
+      coords = numeric.hstack(( [1-p,p], [z,1-p], [p,z] ))
+      weights = None
+    elif where.startswith( 'vtk' ):
+      coords = numeric.array([[0,0],[1,0],[0,1]]).T
+      weights = None
+    elif where == 'gauss1':
+      coords = numeric.array( [[1],[1]] ) / 3.
+      weights = numeric.array( [1] ) / 2.
+    elif where in 'gauss2':
+      coords = numeric.array( [[4,1,1],[1,4,1]] ) / 6.
+      weights = numeric.array( [1,1,1] ) / 6.
+    elif where == 'gauss3':
+      coords = numeric.array( [[5,9,3,3],[5,3,9,3]] ) / 15.
+      weights = numeric.array( [-27,25,25,25] ) / 96.
+    elif where == 'gauss4':
+      A = 0.091576213509771; B = 0.445948490915965; W = 0.109951743655322
+      coords = numeric.array( [[1-2*A,A,A,1-2*B,B,B],[A,1-2*A,A,B,1-2*B,B]] )
+      weights = numeric.array( [W,W,W,1/3.-W,1/3.-W,1/3.-W] ) / 2.
+    elif where == 'gauss5':
+      A = 0.101286507323456; B = 0.470142064105115; V = 0.125939180544827; W = 0.132394152788506
+      coords = numeric.array( [[1./3,1-2*A,A,A,1-2*B,B,B],[1./3,A,1-2*A,A,B,1-2*B,B]] )
+      weights = numeric.array( [1-3*V-3*W,V,V,V,W,W,W] ) / 2.
+    elif where == 'gauss6':
+      A = 0.063089014491502; B = 0.249286745170910; C = 0.310352451033785; D = 0.053145049844816; V = 0.050844906370207; W = 0.116786275726379
+      VW = 1/6. - (V+W) / 2.
+      coords = numeric.array( [[1-2*A,A,A,1-2*B,B,B,1-C-D,1-C-D,C,C,D,D],[A,1-2*A,A,B,1-2*B,B,C,D,1-C-D,D,1-C-D,C]] )
+      weights = numeric.array( [V,V,V,W,W,W,VW,VW,VW,VW,VW,VW] ) / 2.
+    elif where == 'gauss7':
+      A = 0.260345966079038; B = 0.065130102902216; C = 0.312865496004875; D = 0.048690315425316; U = 0.175615257433204; V = 0.053347235608839; W = 0.077113760890257
+      coords = numeric.array( [[1./3,1-2*A,A,A,1-2*B,B,B,1-C-D,1-C-D,C,C,D,D],[1./3,A,1-2*A,A,B,1-2*B,B,C,D,1-C-D,D,1-C-D,C]] )
+      weights = numeric.array( [1-3*U-3*V-6*W,U,U,U,V,V,V,W,W,W,W,W,W] ) / 2.
+    elif where[:7] == 'uniform':
+      N = int( where[7:] )
+      points = ( numeric.arange( N ) + 1./3 ) / N
+      NN = N**2
+      C = numeric.empty( [2,N,N] )
+      C[0] = points[:,_]
+      C[1] = points[_,:]
+      coords = C.reshape( 2, NN )
+      flip = coords[0] + numeric.greater( coords[1], 1 )
+      coords[:,flip] = 1 - coords[::-1,flip]
+      weights = numeric.appendaxes( .5/NN, NN )
+    elif where[:6] == 'bezier':
+      N = int( where[6:] )
+      points = numeric.linspace( 0, 1, N )
+      coords = numeric.array([ [x,y] for i, y in enumerate(points) for x in points[:N-i] ]).T
+      weights = None
+    else:
+      raise Exception, 'invalid element evaluation: %r' % where
+    return numeric.concatenate([coords.T,weights[...,_]],axis=-1) if weights is not None else coords.T
+
+# @property
+# def children( self ):
+#   'all 1x refined elements'
+
+#   t1, t2, t3, t4 = self.refinedtransform( 2 )
+#   v1, v2, v3 = self.vertices
+#   h1, h2, h3 = HalfVertex(v1,v2), HalfVertex(v2,v3), HalfVertex(v3,v1)
+#   return tuple([ # TODO check!
+#     TriangularElement( vertices=[v1,h1,h3], parent=(self,t1) ),
+#     TriangularElement( vertices=[h1,v2,h2], parent=(self,t2) ),
+#     TriangularElement( vertices=[h3,h2,v3], parent=(self,t3) ),
+#     TriangularElement( vertices=[h2,h3,h1], parent=(self,t4) ) ])
+#     
+# @property
+# def edges( self ):
+#   return [ self.edge(iedge) for iedge in range(3) ]
+
+# def edge( self, iedge ):
+#   'edge'
+
+#   trans = self.edgetransform[ iedge ]
+#   vertices = [ self.vertices[::-2], self.vertices[:2], self.vertices[1:] ][iedge]
+#   return QuadElement( vertices=vertices, ndims=1, context=(self,trans) )
+
+# @staticmethod
+# def refinedtransform( n ):
+#   'refined transform'
+
+#   transforms = []
+#   scale = transform.Scale( numeric.asarray([1./n,1./n]) )
+#   negscale = transform.Scale( numeric.asarray([-1./n,-1./n]) )
+#   for i in range( n ):
+#     transforms.extend( scale + numeric.array( [i,j], dtype=float ) / n for j in range(0,n-i) )
+#     transforms.extend( negscale + numeric.array( [n-j,n-i], dtype=float ) / n for j in range(n-i,n) )
+#   return transforms
+
+# def refined( self, n ):
+#   'refine'
+
+#   assert n == 2
+#   if n == 1:
+#     return self
+#   return [ TriangularElement( id=self.id+'.child({})'.format(ichild), parent=(self,trans) ) for ichild, trans in enumerate( self.refinedtransform( n ) ) ]
+
+# def select_contained( self, points, eps=0 ):
+#   'select points contained in element'
+
+#   selection = numeric.ones( points.shape[0], dtype=bool )
+#   for idim in 0, 1, 2:
+#     points_i = points[:,idim] if idim < 2 else 1-points.sum(1)
+#     newsel = numeric.greater_equal( points_i, -eps )
+#     selection[selection] &= newsel
+#     points = points[newsel]
+#     if not points.size:
+#       return None, None
+
+#   return points, selection
+
+class Tetrahedron( Simplex ):
+  'tetrahedron element'
+
+  __slots__ = ()
+
+  neighbormap = -1, 3, 2, 1, 0
+  #Defined to create outward pointing normal vectors for all edges (i.c. triangular faces)
+  edgetransform = (
+    transform.Linear( numeric.array([[ 0, 1],[1,0],[0,0]]) ),
+    transform.Linear( numeric.array([[ 1, 0],[0,0],[0,1]]) ),
+    transform.Linear( numeric.array([[ 0, 0],[0,1],[1,0]]) ),
+    transform.Linear( numeric.array([[-1,-1],[1,0],[0,1]]) ) + [1,0,0] )
+
+  def __init__( self, vertices, parent=None, context=None ):
+    'constructor'
+
+    assert len(vertices) == 4
+    Element.__init__( self, ndims=3, vertices=vertices, parent=parent, context=context )
+
+  @property
+  def children( self ):
+    'all 1x refined elements'
+    raise NotImplementedError( 'Children of tetrahedron' )  
+      
+  @property
+  def edges( self ):
+    return [ self.edge(iedge) for iedge in range(4) ]
+
+  def edge( self, iedge ):
+    'edge'
+
+    trans = self.edgetransform[ iedge ]
+    v1, v2, v3, v4 = self.vertices
+    vertices = [ [v1,v3,v2], [v1,v2,v4], [v1,v4,v3], [v2,v3,v4] ][ iedge ] # TODO check!
+    return TriangularElement( vertices=vertices, context=(self,trans) )
+
+  @staticmethod
+  def refinedtransform( n ):
+    'refined transform'
+    raise NotImplementedError( 'Transformations for refined tetrahedrons' )  
+
+  def refined( self, n ):
+    'refine'
+    raise NotImplementedError( 'Refinement tetrahedrons' )  
+
+  @staticmethod
+  def getischeme( ndims, where ):
+    '''get integration scheme
+       http://people.sc.fsu.edu/~jburkardt/datasets/quadrature_rules_tet/quadrature_rules_tet.html'''
+
+    assert ndims == 3
+    if where.startswith( 'vtk' ):
+      coords = numeric.array([[0,0,0],[1,0,0],[0,1,0],[0,0,1]]).T
+      weights = None
+    elif where == 'gauss1':
+      coords = numeric.array( [[1],[1],[1]] ) / 4.
+      weights = numeric.array( [1] ) / 6.
+    elif where == 'gauss2':
+      coords = numeric.array([[0.5854101966249685,0.1381966011250105,0.1381966011250105],
+                              [0.1381966011250105,0.1381966011250105,0.1381966011250105],
+                              [0.1381966011250105,0.1381966011250105,0.5854101966249685],
+                              [0.1381966011250105,0.5854101966249685,0.1381966011250105]]).T
+      weights = numeric.array([1,1,1,1]) / 24.
+    elif where == 'gauss3':
+      coords = numeric.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
+                              [0.5000000000000000,0.1666666666666667,0.1666666666666667],
+                              [0.1666666666666667,0.1666666666666667,0.1666666666666667],
+                              [0.1666666666666667,0.1666666666666667,0.5000000000000000],
+                              [0.1666666666666667,0.5000000000000000,0.1666666666666667]]).T
+      weights = numeric.array([-0.8000000000000000,0.4500000000000000,0.4500000000000000,0.4500000000000000,0.4500000000000000]) / 6.
+    elif where == 'gauss4':
+      coords = numeric.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
+                              [0.7857142857142857,0.0714285714285714,0.0714285714285714],
+                              [0.0714285714285714,0.0714285714285714,0.0714285714285714],
+                              [0.0714285714285714,0.0714285714285714,0.7857142857142857],
+                              [0.0714285714285714,0.7857142857142857,0.0714285714285714],
+                              [0.1005964238332008,0.3994035761667992,0.3994035761667992],
+                              [0.3994035761667992,0.1005964238332008,0.3994035761667992],
+                              [0.3994035761667992,0.3994035761667992,0.1005964238332008],
+                              [0.3994035761667992,0.1005964238332008,0.1005964238332008],
+                              [0.1005964238332008,0.3994035761667992,0.1005964238332008],
+                              [0.1005964238332008,0.1005964238332008,0.3994035761667992]]).T
+      weights = numeric.array([-0.0789333333333333,0.0457333333333333,0.0457333333333333,0.0457333333333333,0.0457333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333]) / 6.
+    elif where == 'gauss5':
+      coords = numeric.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
+                            [0.0000000000000000,0.3333333333333333,0.3333333333333333],
+                            [0.3333333333333333,0.3333333333333333,0.3333333333333333],
+                            [0.3333333333333333,0.3333333333333333,0.0000000000000000],
+                            [0.3333333333333333,0.0000000000000000,0.3333333333333333],
+                            [0.7272727272727273,0.0909090909090909,0.0909090909090909],
+                            [0.0909090909090909,0.0909090909090909,0.0909090909090909],
+                            [0.0909090909090909,0.0909090909090909,0.7272727272727273],
+                            [0.0909090909090909,0.7272727272727273,0.0909090909090909],
+                            [0.4334498464263357,0.0665501535736643,0.0665501535736643],
+                            [0.0665501535736643,0.4334498464263357,0.0665501535736643],
+                            [0.0665501535736643,0.0665501535736643,0.4334498464263357],
+                            [0.0665501535736643,0.4334498464263357,0.4334498464263357],
+                            [0.4334498464263357,0.0665501535736643,0.4334498464263357],
+                            [0.4334498464263357,0.4334498464263357,0.0665501535736643]]).T
+      weights = numeric.array([0.1817020685825351,0.0361607142857143,0.0361607142857143,0.0361607142857143,0.0361607142857143,0.0698714945161738,0.0698714945161738,0.0698714945161738,0.0698714945161738,0.0656948493683187,0.0656948493683187,0.0656948493683187,0.0656948493683187,0.0656948493683187,0.0656948493683187]) / 6.
+    elif where == 'gauss6':
+      coords = numeric.array([[0.3561913862225449,0.2146028712591517,0.2146028712591517],
+                            [0.2146028712591517,0.2146028712591517,0.2146028712591517],
+                            [0.2146028712591517,0.2146028712591517,0.3561913862225449],
+                            [0.2146028712591517,0.3561913862225449,0.2146028712591517],
+                            [0.8779781243961660,0.0406739585346113,0.0406739585346113],
+                            [0.0406739585346113,0.0406739585346113,0.0406739585346113],
+                            [0.0406739585346113,0.0406739585346113,0.8779781243961660],
+                            [0.0406739585346113,0.8779781243961660,0.0406739585346113],
+                            [0.0329863295731731,0.3223378901422757,0.3223378901422757],
+                            [0.3223378901422757,0.3223378901422757,0.3223378901422757],
+                            [0.3223378901422757,0.3223378901422757,0.0329863295731731],
+                            [0.3223378901422757,0.0329863295731731,0.3223378901422757],
+                            [0.2696723314583159,0.0636610018750175,0.0636610018750175],
+                            [0.0636610018750175,0.2696723314583159,0.0636610018750175],
+                            [0.0636610018750175,0.0636610018750175,0.2696723314583159],
+                            [0.6030056647916491,0.0636610018750175,0.0636610018750175],
+                            [0.0636610018750175,0.6030056647916491,0.0636610018750175],
+                            [0.0636610018750175,0.0636610018750175,0.6030056647916491],
+                            [0.0636610018750175,0.2696723314583159,0.6030056647916491],
+                            [0.2696723314583159,0.6030056647916491,0.0636610018750175],
+                            [0.6030056647916491,0.0636610018750175,0.2696723314583159],
+                            [0.0636610018750175,0.6030056647916491,0.2696723314583159],
+                            [0.2696723314583159,0.0636610018750175,0.6030056647916491],
+                            [0.6030056647916491,0.2696723314583159,0.0636610018750175]]).T
+      weights = numeric.array([0.0399227502581679,0.0399227502581679,0.0399227502581679,0.0399227502581679,0.0100772110553207,0.0100772110553207,0.0100772110553207,0.0100772110553207,0.0553571815436544,0.0553571815436544,0.0553571815436544,0.0553571815436544,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857]) / 6.
+    elif where == 'gauss7':
+      coords = numeric.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
+                            [0.7653604230090441,0.0782131923303186,0.0782131923303186],
+                            [0.0782131923303186,0.0782131923303186,0.0782131923303186],
+                            [0.0782131923303186,0.0782131923303186,0.7653604230090441],
+                            [0.0782131923303186,0.7653604230090441,0.0782131923303186],
+                            [0.6344703500082868,0.1218432166639044,0.1218432166639044],
+                            [0.1218432166639044,0.1218432166639044,0.1218432166639044],
+                            [0.1218432166639044,0.1218432166639044,0.6344703500082868],
+                            [0.1218432166639044,0.6344703500082868,0.1218432166639044],
+                            [0.0023825066607383,0.3325391644464206,0.3325391644464206],
+                            [0.3325391644464206,0.3325391644464206,0.3325391644464206],
+                            [0.3325391644464206,0.3325391644464206,0.0023825066607383],
+                            [0.3325391644464206,0.0023825066607383,0.3325391644464206],
+                            [0.0000000000000000,0.5000000000000000,0.5000000000000000],
+                            [0.5000000000000000,0.0000000000000000,0.5000000000000000],
+                            [0.5000000000000000,0.5000000000000000,0.0000000000000000],
+                            [0.5000000000000000,0.0000000000000000,0.0000000000000000],
+                            [0.0000000000000000,0.5000000000000000,0.0000000000000000],
+                            [0.0000000000000000,0.0000000000000000,0.5000000000000000],
+                            [0.2000000000000000,0.1000000000000000,0.1000000000000000],
+                            [0.1000000000000000,0.2000000000000000,0.1000000000000000],
+                            [0.1000000000000000,0.1000000000000000,0.2000000000000000],
+                            [0.6000000000000000,0.1000000000000000,0.1000000000000000],
+                            [0.1000000000000000,0.6000000000000000,0.1000000000000000],
+                            [0.1000000000000000,0.1000000000000000,0.6000000000000000],
+                            [0.1000000000000000,0.2000000000000000,0.6000000000000000],
+                            [0.2000000000000000,0.6000000000000000,0.1000000000000000],
+                            [0.6000000000000000,0.1000000000000000,0.2000000000000000],
+                            [0.1000000000000000,0.6000000000000000,0.2000000000000000],
+                            [0.2000000000000000,0.1000000000000000,0.6000000000000000],
+                            [0.6000000000000000,0.2000000000000000,0.1000000000000000]]).T
+      weights = numeric.array([0.1095853407966528,0.0635996491464850,0.0635996491464850,0.0635996491464850,0.0635996491464850,-0.3751064406859797,-0.3751064406859797,-0.3751064406859797,-0.3751064406859797,0.0293485515784412,0.0293485515784412,0.0293485515784412,0.0293485515784412,0.0058201058201058,0.0058201058201058,0.0058201058201058,0.0058201058201058,0.0058201058201058,0.0058201058201058,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105]) / 6.
+    elif where == 'gauss8':
+      coords = numeric.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
+                            [0.6175871903000830,0.1274709365666390,0.1274709365666390],
+                            [0.1274709365666390,0.1274709365666390,0.1274709365666390],
+                            [0.1274709365666390,0.1274709365666390,0.6175871903000830],
+                            [0.1274709365666390,0.6175871903000830,0.1274709365666390],
+                            [0.9037635088221031,0.0320788303926323,0.0320788303926323],
+                            [0.0320788303926323,0.0320788303926323,0.0320788303926323],
+                            [0.0320788303926323,0.0320788303926323,0.9037635088221031],
+                            [0.0320788303926323,0.9037635088221031,0.0320788303926323],
+                            [0.4502229043567190,0.0497770956432810,0.0497770956432810],
+                            [0.0497770956432810,0.4502229043567190,0.0497770956432810],
+                            [0.0497770956432810,0.0497770956432810,0.4502229043567190],
+                            [0.0497770956432810,0.4502229043567190,0.4502229043567190],
+                            [0.4502229043567190,0.0497770956432810,0.4502229043567190],
+                            [0.4502229043567190,0.4502229043567190,0.0497770956432810],
+                            [0.3162695526014501,0.1837304473985499,0.1837304473985499],
+                            [0.1837304473985499,0.3162695526014501,0.1837304473985499],
+                            [0.1837304473985499,0.1837304473985499,0.3162695526014501],
+                            [0.1837304473985499,0.3162695526014501,0.3162695526014501],
+                            [0.3162695526014501,0.1837304473985499,0.3162695526014501],
+                            [0.3162695526014501,0.3162695526014501,0.1837304473985499],
+                            [0.0229177878448171,0.2319010893971509,0.2319010893971509],
+                            [0.2319010893971509,0.0229177878448171,0.2319010893971509],
+                            [0.2319010893971509,0.2319010893971509,0.0229177878448171],
+                            [0.5132800333608811,0.2319010893971509,0.2319010893971509],
+                            [0.2319010893971509,0.5132800333608811,0.2319010893971509],
+                            [0.2319010893971509,0.2319010893971509,0.5132800333608811],
+                            [0.2319010893971509,0.0229177878448171,0.5132800333608811],
+                            [0.0229177878448171,0.5132800333608811,0.2319010893971509],
+                            [0.5132800333608811,0.2319010893971509,0.0229177878448171],
+                            [0.2319010893971509,0.5132800333608811,0.0229177878448171],
+                            [0.0229177878448171,0.2319010893971509,0.5132800333608811],
+                            [0.5132800333608811,0.0229177878448171,0.2319010893971509],
+                            [0.7303134278075384,0.0379700484718286,0.0379700484718286],
+                            [0.0379700484718286,0.7303134278075384,0.0379700484718286],
+                            [0.0379700484718286,0.0379700484718286,0.7303134278075384],
+                            [0.1937464752488044,0.0379700484718286,0.0379700484718286],
+                            [0.0379700484718286,0.1937464752488044,0.0379700484718286],
+                            [0.0379700484718286,0.0379700484718286,0.1937464752488044],
+                            [0.0379700484718286,0.7303134278075384,0.1937464752488044],
+                            [0.7303134278075384,0.1937464752488044,0.0379700484718286],
+                            [0.1937464752488044,0.0379700484718286,0.7303134278075384],
+                            [0.0379700484718286,0.1937464752488044,0.7303134278075384],
+                            [0.7303134278075384,0.0379700484718286,0.1937464752488044],
+                            [0.1937464752488044,0.7303134278075384,0.0379700484718286]]).T
+      weights = numeric.array([-0.2359620398477557,0.0244878963560562,0.0244878963560562,0.0244878963560562,0.0244878963560562,0.0039485206398261,0.0039485206398261,0.0039485206398261,0.0039485206398261,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852]) / 6.
+    else:
+      raise Exception, 'invalid element evaluation: %r' % where
+    return coords.T, weights
+
+  def select_contained( self, points, eps=0 ):
+    'select points contained in element'
+    raise NotImplementedError( 'Determine whether a point resides in the tetrahedron' )  
+
+class Product( Simplex ):
   'element product'
 
   __slots__ = 'elem1', 'elem2'
@@ -363,881 +996,25 @@ class ProductElement( Element ):
       xw = self.concat( self.elem1.eval(where1), self.elem2.eval(where2) )
     return xw
 
-class TrimmedElement( Element ):
-  'trimmed element'
 
-  __slots__ = 'elem', 'levelset', 'maxrefine', 'lscheme', 'finestscheme', 'evalrefine'
+## MOSAIC
 
-  def __init__( self, elem, levelset, maxrefine, lscheme, finestscheme, evalrefine, parent, vertices ):
-    'constructor'
 
-    assert not isinstance( elem, TrimmedElement )
-    self.elem = elem
-    self.levelset = function.ascompiled( levelset )
-    self.maxrefine = maxrefine
-    self.lscheme = lscheme
-    self.finestscheme = finestscheme if finestscheme != None else 'simplex1'
-    self.evalrefine = evalrefine
+class Mosaic( object ):
+  'trimmed simplex'
 
-    Element.__init__( self, ndims=elem.ndims, vertices=vertices, parent=parent )
+  def __init__( self, children ):
+    self.children = children
+    self.ndims, = util.filterrepeat( simplex.ndims for simplex, trans, iverts in children )
 
-  def eval( self, ischeme ):
-    'get integration scheme'
-
-    assert isinstance( ischeme, str )
-
-    if ischeme[:7] == 'contour':
-      n = int(ischeme[7:] or 0)
-      points, weights = self.elem.eval( 'contour{}'.format(n) )
-      inside = numeric.greater_equal( self.levelset.eval( self.elem, points ), 0 )
-      points = points[inside]
-      return points, None
-
-    if self.maxrefine <= 0:
-      if self.finestscheme.startswith('simplex'):
-
-        points  = []
-        weights = []
-
-        for simplex in self.get_simplices( 0 ):
-
-          spoints, sweights = simplex.eval( ischeme )
-          pelem, trans = simplex.parent
-
-          assert pelem is self 
-
-          points.append( trans.apply( spoints ) )
-          weights.append( sweights * trans.det )
-
-        if len(points) == 0:
-          points = numeric.zeros((0,self.ndims))
-          weights = numeric.zeros((0,))
-        else:
-          points = numeric.concatenate( points, axis=0 )
-          weights = numeric.concatenate( weights )
-
-        return points, weights
-
-      else:
-        
-        if self.finestscheme.endswith( '.all' ):
-          points, weights = self.elem.eval( self.finestscheme[:-4] )
-        elif self.finestscheme.endswith( '.none' ):
-          points, weights = self.elem.eval( self.finestscheme[:-5] )
-          inside = numeric.zeros_like(weights,dtype=bool) # what is .none supposed to do? -GJ
-        else:  
-          points, weights = self.elem.eval( self.finestscheme )
-          inside = numeric.greater( self.levelset.eval( self.elem, points ), 0 )
-        points = points[inside]
-        if weights is not None:
-          weights = weights[inside]
-        return points, weights
-
-    allcoords = []
-    allweights = []
-    for child in self.children:
-      if child is None:
-        continue
-      points, weights = child.eval( ischeme )
-      pelem, trans = child.parent
-      assert pelem == self
-      allcoords.append( trans.apply(points) )
-      allweights.append( weights * trans.det )
-
-    coords = numeric.concatenate( allcoords, axis=0 )
-    weights = numeric.concatenate( allweights, axis=0 )
-    return coords, weights
-
-  @property
-  def children( self ):
-    'all 1x refined elements'
-
-    children = []
-    for ielem, child in enumerate( self.elem.children ):
-      isect = child.intersected( self.levelset, self.lscheme, self.evalrefine-1 )
-      pelem, trans = child.parent
-      parent = self, trans
-      if isect < 0:
-        child = None
-      elif isect > 0:
-        child = QuadElement( vertices=child.vertices, ndims=self.ndims, parent=parent )
-      else:
-        child = TrimmedElement( vertices=child.vertices, elem=child, levelset=self.levelset, maxrefine=self.maxrefine-1, lscheme=self.lscheme, finestscheme=self.finestscheme, evalrefine=self.evalrefine-1, parent=parent )
-      children.append( child )
-    return tuple( children )
-
-  def edge( self, iedge ):
-    'edge'
-
-    # TODO fix trimming of edges once refine/edge operations commute
-    edge = self.elem.edge( iedge )
-    pelem, trans = edge.context
-
-    # transform = self.elem.edgetransform( self.ndims )[ iedge ]
-    return QuadElement( vertices=edge.vertices, ndims=self.ndims-1, context=(self,trans) )
-
-  def get_simplices ( self, maxrefine ):
-    'divide in simple elements'
-
-    if maxrefine > 0 or self.evalrefine > 0:
-      return [ simplex for child in filter(None,self.children) for simplex in child.get_simplices( maxrefine=maxrefine-1 ) ]
-
-    simplices, trimmededges = self.triangulate()
-
-    return simplices
-
-  def get_trimmededges ( self, maxrefine ):
-
-    if maxrefine > 0 or self.evalrefine > 0:
-      return [ trimmededge for child in filter(None,self.children) for trimmededge in child.get_trimmededges( maxrefine=maxrefine-1 ) ]
-
-    simplices, trimmededges = self.triangulate()
-
-    return trimmededges
-
-  def triangulate ( self ):
-
-    assert self.finestscheme.startswith('simplex'), 'Expected simplex scheme'
-    order = int(self.finestscheme[7:])
-
-    lvltol  = numeric.spacing(100)
-    xistol  = numeric.spacing(100)
-    ischeme = self.elem.getischeme( self.elem.ndims, 'bezier2' )
-    where   = numeric.greater( self.levelset.eval( self.elem, ischeme ), -lvltol )
-    points  = ischeme[0][where]
-    vertices   = numeric.array(self.vertices)[where].tolist()
-    norig   = sum(where)
-
-    if not where.any():
-      return []
-
-    if where.all():
-	    lines = []
-    else:		
-    	lines = self.elem.ribbons
-
-    for line in lines:
-      
-      ischeme = line.getischeme( line.ndims, 'bezier'+str(order+1) )
-      vals    = self.levelset.eval( line, ischeme )
-      pts     = ischeme[0]
-      where   = numeric.greater( vals, -lvltol )
-      zeros   = numeric.less(vals, lvltol) & where
-
-      if order == 1:
-
-        if where[0] == where[1] or zeros.any():
-          continue
-        xi = vals[0]/(vals[0]-vals[1])
-
-      elif order == 2:
-
-        #Check whether the levelset is linear
-        if abs(2*vals[1]-vals[0]-vals[2]) < lvltol:
-
-          if where[0] == where[2] or zeros[0] or zeros[2]:
-            continue
-          xi = vals[0]/(vals[0]-vals[2])
-          
-        else:
-
-          disc = vals[0]**2+(-4*vals[1]+vals[2])**2-2*vals[0]*(4*vals[1]+vals[2])
-
-          if disc < -lvltol or abs(disc) < lvltol:
-            #No intersections or minimum at zero
-            continue
-          else:
-            #Two intersections
-            num2 = numeric.sqrt( disc )
-            num1 = 3*vals[0]-4*vals[1]+vals[2]
-            denr = 1./(4*(vals[0]-2*vals[1]+vals[2]))
-
-            xis = [(num1-num2)*denr,\
-                   (num1+num2)*denr ]
-
-            intersects = [(xi > xistol and xi < 1-xistol) for xi in xis]
-
-            if sum(intersects) == 0:
-              continue
-            elif sum(intersects) == 1:
-              xi = xis[intersects[0] == False]
-            else:
-              raise Exception('Found multiple ribbon intersections. MAXREFINE should be increased.')
-
-      else:
-        #TODO General order scheme based on bisection
-        raise NotImplementedError('Simplex generation only implemented for order 1 and 2')
-
-      assert ( xi > xistol and xi < 1.-xistol ), 'Illegal local coordinate'
- 
-      elem, trans = line.context
-
-      pts = trans.apply( pts )
-
-      newpoint = pts[0] + xi * ( pts[-1] - pts[0] )
-
-      points = numeric.concatenate( [ points, newpoint[_] ], axis=0 ) 
-      v1, v2 = line.vertices
-      vertices.append( HalfVertex( v1, v2, xi=xi ) )
-
-    try:
-      submesh = util.delaunay( points )
-    except RuntimeError:
-      return [], []
-
-    Simplex = TriangularElement if self.ndims == 2 else TetrahedronElement
-
-    convex_hull = [ [vertices[iv] for iv in tri] for tri in submesh.convex_hull if numeric.greater_equal(tri,norig).all() ]
-
-    ##########################################
-    # Extract the simplices from the submesh #
-    ##########################################
-
-    simplices = []
-    degensim  = []
-    for tri in submesh.vertices:
-
-      for j in range(2): #Flip two points in case of negative determinant
-        if self.ndims == 3:
-          # TODO renumber tetrahedron vertices to match triangle, removes the following:
-          offset = points[ tri[0] ]
-          affine = numeric.array( [ points[ tri[ii+1] ] - offset for ii in range(self.ndims) ] ).T
-        else:
-          offset = points[ tri[-1] ]
-          affine = numeric.array( [ points[ tri[ii] ] - offset for ii in range(self.ndims) ] ).T
-
-        trans = transform.Linear( affine ) + offset
-
-        if trans.det > numeric.spacing(100):
-          break
-
-        tri[-2:] = tri[:-3:-1]
-
-      else:
-        if abs(trans.det) < numeric.spacing(100):
-          degensim.append( [ vertices[ii] for ii in tri ] )
-          continue
-
-        raise Exception('Negative determinant with value %12.10e could not be resolved by flipping two vertices' % trans.det )
-
-      simplices.append( Simplex( vertices=[ vertices[ii] for ii in tri ], parent=(self,trans) ) )
-
-    assert len(simplices)+len(degensim)==submesh.vertices.shape[0], 'Simplices should be stored in either of the two containers'
-
-    #############################################################
-    # Loop over the edges of the simplex and check whether they #
-    # reside in the part of the convex hull on the levelset     #
-    #############################################################
-      
-    trimmededges = []  
-              
-    import itertools          
-    for simplex in simplices:
-      for iedge in range(self.ndims+1):
-
-        #The edge potentially to be added to the trimmededges
-        sedge = simplex.edge(iedge) 
-
-        #Create lists to store edges which are to be checked on residence in the
-        #convex hull, or which have been checked
-        checkedges = [ sedge.vertices ]
-        visitedges = []
-
-        while checkedges:
-          #Edge to be check on residence in the convex hull
-          checkedge = checkedges.pop(0)
-          visitedges.append( checkedge )
-
-          #Check whether this edge is in the convex hull
-          for hull_edge in convex_hull:
-            #The checkedge is found in the convex hull. Append trimmededge and
-            #terminate loop
-            if all(checkvertex in hull_edge for checkvertex in checkedge):
-              trimmededges.append( sedge )
-              checkedges = []
-              break
-          else:
-            #Check whether the checkedge is in a degenerate simplex
-            for sim in degensim:
-              if all(checkvertex in sim for checkvertex in checkedge):
-                #Append all the edges to the checkedges pool
-                for jedge in itertools.combinations(sim,self.ndims):
-                  dedge = list(jedge)
-                  for cedge in visitedges:
-                    #The dedge is already in visitedges
-                    if all(dvertex in cedge for dvertex in dedge):
-                      break
-                  else:
-                    #The dedge is appended to to pool
-                    checkedges.append( dedge )
-
-
-    return simplices, trimmededges
-  
-class QuadElement( Element ):
-  'quadrilateral element'
-
-  __slots__ = ()
-
-  def __init__( self, ndims, vertices, parent=None, context=None, interface=None ):
-    'constructor'
-
-    assert len(vertices) == 2**ndims
-    Element.__init__( self, ndims, vertices, parent=parent, context=context, interface=interface )
-
-  @property
-  def neighbormap( self ):
-    'maps # matching vertices --> codim of interface: {0: -1, 1: 2, 2: 1, 4: 0}'
-    return dict( [ (0,-1) ] + [ (2**(self.ndims-i),i) for i in range(self.ndims+1) ] )
-
-  def children_by( self, N ):
-    'divide element by n'
-
-    assert len(N) == self.ndims
-    vertices = numeric.empty( [ ni+1 for ni in N ], dtype=object )
-    vertices[ tuple( slice(None,None,ni) for ni in N ) ] = numeric.asarray( self.vertices ).reshape( [2]*self.ndims )
-    for idim in range(self.ndims):
-      s1 = tuple( slice(None) for ni in N[:idim] )
-      s2 = tuple( slice(None,None,ni) for ni in N[idim+1:] )
-      for i in range( 1, N[idim] ):
-        vertices[s1+(i,)+s2] = numeric.objmap( HalfVertex, vertices[s1+(0,)+s2], vertices[s1+(2,)+s2], float(i)/N[idim] )
-
-    elemvertices = [ vertices[ tuple( slice(i,i+2) for i in index ) ].ravel() for index in numeric.ndindex(*N) ]
-    return tuple( QuadElement( vertices=elemvertices[ielem], ndims=self.ndims, parent=(self,trans) )
-      for ielem, trans in enumerate( self.refinedtransform(N) ) )
-
-  @property
-  def children( self ):
-    'all 1x refined elements'
-
-    return self.children_by( (2,)*self.ndims )
-
-  @staticmethod
-  def edgetransform( ndims ):
-    'edge transforms'
-
-    transforms = []
-    for idim in range( ndims ):
-      offset = numeric.zeros( ndims )
-      offset[:idim] = 1
-      matrix = numeric.zeros(( ndims, ndims-1 ))
-      matrix.flat[ :(ndims-1)*idim :ndims] = -1
-      matrix.flat[ndims*(idim+1)-1::ndims] = 1
-      # flip normal:
-      offset[idim-1] = 1 - offset[idim-1]
-      matrix[idim-1] *= -1
-      transforms.append( transform.Linear(matrix.copy()) + offset )
-      # other side:
-      offset[idim] = 1
-      # flip normal back:
-      offset[idim-1] = 1 - offset[idim-1]
-      matrix[idim-1] *= -1
-      transforms.append( transform.Linear(matrix) + offset )
-    return transforms
-
-  @property
-  def ribbons( self ):
-    'ribbons'
-
-    if self.ndims == 2:
-      return [ self.edge(iedge) for iedge in range(4) ]
-
-    if self.ndims != 3:
-      raise NotImplementedError('Ribbons not implemented for ndims=%d'%self.ndims)
-
-    ndvertices = numeric.asarray( self.vertices ).reshape( [2]*self.ndims )
-    ribbons = []
-    for i1, i2 in numeric.array([[[0,0,0],[1,0,0]],
-                                 [[0,0,0],[0,1,0]],
-                                 [[0,0,0],[0,0,1]],
-                                 [[1,1,1],[0,1,1]],
-                                 [[1,1,1],[1,0,1]],
-                                 [[1,1,1],[1,1,0]],
-                                 [[1,0,0],[1,1,0]],
-                                 [[1,0,0],[1,0,1]],
-                                 [[0,1,0],[1,1,0]],
-                                 [[0,1,0],[0,1,1]],
-                                 [[0,0,1],[1,0,1]],
-                                 [[0,0,1],[0,1,1]]] ):
-      trans = transform.Linear((i2-i1)[:,_]) + i1
-      vertices = ndvertices[tuple(i1)], ndvertices[tuple(i2)]
-      ribbons.append( QuadElement( vertices=vertices, ndims=1, context=(self,trans) ) )
-
-    return ribbons
-
-  @property
-  def edges( self ):
-    return [ self.edge(iedge) for iedge in range(2**self.ndims) ]
-
-  def edge( self, iedge ):
-    'edge'
-    trans = self.edgetransform( self.ndims )[ iedge ]
-    idim = iedge // 2
-    iside = iedge % 2
-    s = (slice(None,None, 1 if iside else -1),) * idim + (iside,) \
-      + (slice(None,None,-1 if iside else  1),) * (self.ndims-idim-1)
-    vertices = numeric.asarray( numeric.asarray( self.vertices ).reshape( (2,)*self.ndims )[s] ).ravel() # TODO check
-    return QuadElement( vertices=vertices, ndims=self.ndims-1, context=(self,trans) )
-
-  @staticmethod
-  def refinedtransform( N ):
-    'refined transform'
-
-    Nrcp = numeric.reciprocal( N, dtype=float )
-    scale = transform.Scale(Nrcp)
-    return [ scale + i*Nrcp for i in numeric.ndindex(*N) ]
-
-  def refine( self, n ):
-    'refine n times'
-
-    elems = [ self ]
-    for i in range(n):
-      elems = [ child for elem in elems for child in elem.children ]
-    return elems
-
-  @staticmethod
-  def getgauss( degree ):
-    'compute gauss points and weights'
-
-    assert isinstance( degree, int ) and degree >= 0
-    k = numeric.arange( 1, degree // 2 + 1 )
-    d = k / numeric.sqrt( 4*k**2-1 )
-    x, w = numeric.eigh( numeric.diagflat(d,-1) ) # eigh operates (by default) on lower triangle
-    return (x+1) * .5, w[0]**2
-
-  @classmethod
-  def getischeme( cls, ndims, where ):
-    'get integration scheme'
-
-    x = w = None
-    if ndims == 0:
-      coords = numeric.zeros([1,0])
-      weights = numeric.array([1.])
-    elif where.startswith( 'gauss' ):
-      N = eval( where[5:] )
-      if isinstance( N, tuple ):
-        assert len(N) == ndims
-      else:
-        N = [N]*ndims
-      x, w = zip( *map( cls.getgauss, N ) )
-    elif where.startswith( 'uniform' ):
-      N = eval( where[7:] )
-      if isinstance( N, tuple ):
-        assert len(N) == ndims
-      else:
-        N = [N]*ndims
-      x = [ numeric.arange( .5, n ) / n for n in N ]
-      w = [ numeric.appendaxes( 1./n, n ) for n in N ]
-    elif where.startswith( 'bezier' ):
-      N = int( where[6:] )
-      x = [ numeric.linspace( 0, 1, N ) ] * ndims
-      w = [ numeric.appendaxes( 1./N, N ) ] * ndims
-    elif where.startswith( 'subdivision' ):
-      N = int( where[11:] ) + 1
-      x = [ numeric.linspace( 0, 1, N ) ] * ndims
-      w = None
-    elif where.startswith( 'vtk' ):
-      if ndims == 1:
-        coords = numeric.array([[0,1]]).T
-      elif ndims == 2:
-        eps = 0 if not len(where[3:]) else float(where[3:]) # subdivision fix (avoid extraordinary point)
-        coords = numeric.array([[eps,eps],[1-eps,eps],[1-eps,1-eps],[eps,1-eps]])
-      elif ndims == 3:
-        coords = numeric.array([ [0,0,0], [1,0,0], [0,1,0], [1,1,0], [0,0,1], [1,0,1], [0,1,1], [1,1,1] ])
-      else:
-        raise Exception, 'contour not supported for ndims=%d' % ndims
-    elif where.startswith( 'contour' ):
-      N = int( where[7:] )
-      p = numeric.linspace( 0, 1, N )
-      if ndims == 1:
-        coords = p[_].T
-      elif ndims == 2:
-        coords = numeric.array([ p[ range(N) + [N-1]*(N-2) + range(N)[::-1] + [0]*(N-1) ],
-                                 p[ [0]*(N-1) + range(N) + [N-1]*(N-2) + range(0,N)[::-1] ] ]).T
-      elif ndims == 3:
-        assert N == 0
-        coords = numeric.array([ [0,0,0], [1,0,0], [0,1,0], [1,1,0], [0,0,1], [1,0,1], [0,1,1], [1,1,1] ])
-      else:
-        raise Exception, 'contour not supported for ndims=%d' % ndims
-    else:
-      raise Exception, 'invalid element evaluation %r' % where
-    if x is not None:
-      coords = numeric.empty( map( len, x ) + [ ndims ] )
-      for i, xi in enumerate( x ):
-        coords[...,i] = xi[ (slice(None),) + (_,)*(ndims-i-1) ]
-      coords = coords.reshape( -1, ndims )
-    if w is not None:
-      weights = reduce( lambda weights, wi: ( weights * wi[:,_] ).ravel(), w )
-    else:
-      weights = None
-    return coords, weights
-
-  def select_contained( self, points, eps=0 ):
-    'select points contained in element'
-
-    selection = numeric.ones( points.shape[0], dtype=bool )
-    for idim in range( self.ndims ):
-      newsel = numeric.greater_equal( points[:,idim], -eps ) & numeric.less_equal( points[:,idim], 1+eps )
-      selection[selection] &= newsel
-      points = points[newsel]
-      if not points.size:
-        return None, None
-    return points, selection
-
-class TriangularElement( Element ):
-  '''triangular element
-     conventions: reference elem:   unit simplex {(x,y) | x>0, y>0, x+y<1}
-                  vertex numbering: {(1,0):0, (0,1):1, (0,0):2}
-                  edge numbering:   {bottom:0, slanted:1, left:2}
-                  edge local coords run counter-clockwise.'''
-
-  __slots__ = ()
-
-  neighbormap = -1, 2, 1, 0
-  edgetransform = (
-    transform.Linear( numeric.array([[ 1],[ 0]]) ),
-    transform.Linear( numeric.array([[-1],[ 1]]) ) + [1,0],
-    transform.Linear( numeric.array([[ 0],[-1]]) ) + [0,1] )
-
-  def __init__( self, vertices, parent=None, context=None ):
-    'constructor'
-
-    assert len(vertices) == 3
-    Element.__init__( self, ndims=2, vertices=vertices, parent=parent, context=context )
-
-  @property
-  def children( self ):
-    'all 1x refined elements'
-
-    t1, t2, t3, t4 = self.refinedtransform( 2 )
-    v1, v2, v3 = self.vertices
-    h1, h2, h3 = HalfVertex(v1,v2), HalfVertex(v2,v3), HalfVertex(v3,v1)
-    return tuple([ # TODO check!
-      TriangularElement( vertices=[v1,h1,h3], parent=(self,t1) ),
-      TriangularElement( vertices=[h1,v2,h2], parent=(self,t2) ),
-      TriangularElement( vertices=[h3,h2,v3], parent=(self,t3) ),
-      TriangularElement( vertices=[h2,h3,h1], parent=(self,t4) ) ])
-      
-  @property
-  def edges( self ):
-    return [ self.edge(iedge) for iedge in range(3) ]
-
-  def edge( self, iedge ):
-    'edge'
-
-    trans = self.edgetransform[ iedge ]
-    vertices = [ self.vertices[::-2], self.vertices[:2], self.vertices[1:] ][iedge]
-    return QuadElement( vertices=vertices, ndims=1, context=(self,trans) )
-
-  @staticmethod
-  def refinedtransform( n ):
-    'refined transform'
-
-    transforms = []
-    scale = transform.Scale( numeric.asarray([1./n,1./n]) )
-    negscale = transform.Scale( numeric.asarray([-1./n,-1./n]) )
-    for i in range( n ):
-      transforms.extend( scale + numeric.array( [i,j], dtype=float ) / n for j in range(0,n-i) )
-      transforms.extend( negscale + numeric.array( [n-j,n-i], dtype=float ) / n for j in range(n-i,n) )
-    return transforms
-
-  def refined( self, n ):
-    'refine'
-
-    assert n == 2
-    if n == 1:
-      return self
-    return [ TriangularElement( id=self.id+'.child({})'.format(ichild), parent=(self,trans) ) for ichild, trans in enumerate( self.refinedtransform( n ) ) ]
-
-  @staticmethod
-  def getischeme( ndims, where ):
-    '''get integration scheme
-    gaussian quadrature: http://www.cs.rpi.edu/~flaherje/pdf/fea6.pdf
-    '''
-
-    assert ndims == 2
-    if where.startswith( 'contour' ):
-      n = int( where[7:] or 0 )
-      p = numeric.arange( n+1, dtype=float ) / (n+1)
-      z = numeric.zeros_like( p )
-      coords = numeric.hstack(( [1-p,p], [z,1-p], [p,z] ))
-      weights = None
-    elif where.startswith( 'vtk' ):
-      coords = numeric.array([[0,0],[1,0],[0,1]]).T
-      weights = None
-    elif where == 'gauss1':
-      coords = numeric.array( [[1],[1]] ) / 3.
-      weights = numeric.array( [1] ) / 2.
-    elif where in 'gauss2':
-      coords = numeric.array( [[4,1,1],[1,4,1]] ) / 6.
-      weights = numeric.array( [1,1,1] ) / 6.
-    elif where == 'gauss3':
-      coords = numeric.array( [[5,9,3,3],[5,3,9,3]] ) / 15.
-      weights = numeric.array( [-27,25,25,25] ) / 96.
-    elif where == 'gauss4':
-      A = 0.091576213509771; B = 0.445948490915965; W = 0.109951743655322
-      coords = numeric.array( [[1-2*A,A,A,1-2*B,B,B],[A,1-2*A,A,B,1-2*B,B]] )
-      weights = numeric.array( [W,W,W,1/3.-W,1/3.-W,1/3.-W] ) / 2.
-    elif where == 'gauss5':
-      A = 0.101286507323456; B = 0.470142064105115; V = 0.125939180544827; W = 0.132394152788506
-      coords = numeric.array( [[1./3,1-2*A,A,A,1-2*B,B,B],[1./3,A,1-2*A,A,B,1-2*B,B]] )
-      weights = numeric.array( [1-3*V-3*W,V,V,V,W,W,W] ) / 2.
-    elif where == 'gauss6':
-      A = 0.063089014491502; B = 0.249286745170910; C = 0.310352451033785; D = 0.053145049844816; V = 0.050844906370207; W = 0.116786275726379
-      VW = 1/6. - (V+W) / 2.
-      coords = numeric.array( [[1-2*A,A,A,1-2*B,B,B,1-C-D,1-C-D,C,C,D,D],[A,1-2*A,A,B,1-2*B,B,C,D,1-C-D,D,1-C-D,C]] )
-      weights = numeric.array( [V,V,V,W,W,W,VW,VW,VW,VW,VW,VW] ) / 2.
-    elif where == 'gauss7':
-      A = 0.260345966079038; B = 0.065130102902216; C = 0.312865496004875; D = 0.048690315425316; U = 0.175615257433204; V = 0.053347235608839; W = 0.077113760890257
-      coords = numeric.array( [[1./3,1-2*A,A,A,1-2*B,B,B,1-C-D,1-C-D,C,C,D,D],[1./3,A,1-2*A,A,B,1-2*B,B,C,D,1-C-D,D,1-C-D,C]] )
-      weights = numeric.array( [1-3*U-3*V-6*W,U,U,U,V,V,V,W,W,W,W,W,W] ) / 2.
-    elif where[:7] == 'uniform':
-      N = int( where[7:] )
-      points = ( numeric.arange( N ) + 1./3 ) / N
-      NN = N**2
-      C = numeric.empty( [2,N,N] )
-      C[0] = points[:,_]
-      C[1] = points[_,:]
-      coords = C.reshape( 2, NN )
-      flip = coords[0] + numeric.greater( coords[1], 1 )
-      coords[:,flip] = 1 - coords[::-1,flip]
-      weights = numeric.appendaxes( .5/NN, NN )
-    elif where[:6] == 'bezier':
-      N = int( where[6:] )
-      points = numeric.linspace( 0, 1, N )
-      coords = numeric.array([ [x,y] for i, y in enumerate(points) for x in points[:N-i] ]).T
-      weights = None
-    else:
-      raise Exception, 'invalid element evaluation: %r' % where
-    return coords.T, weights
-
-  def select_contained( self, points, eps=0 ):
-    'select points contained in element'
-
-    selection = numeric.ones( points.shape[0], dtype=bool )
-    for idim in 0, 1, 2:
-      points_i = points[:,idim] if idim < 2 else 1-points.sum(1)
-      newsel = numeric.greater_equal( points_i, -eps )
-      selection[selection] &= newsel
-      points = points[newsel]
-      if not points.size:
-        return None, None
-
-    return points, selection
-
-class TetrahedronElement( Element ):
-  'tetrahedron element'
-
-  __slots__ = ()
-
-  neighbormap = -1, 3, 2, 1, 0
-  #Defined to create outward pointing normal vectors for all edges (i.c. triangular faces)
-  edgetransform = (
-    transform.Linear( numeric.array([[ 0, 1],[1,0],[0,0]]) ),
-    transform.Linear( numeric.array([[ 1, 0],[0,0],[0,1]]) ),
-    transform.Linear( numeric.array([[ 0, 0],[0,1],[1,0]]) ),
-    transform.Linear( numeric.array([[-1,-1],[1,0],[0,1]]) ) + [1,0,0] )
-
-  def __init__( self, vertices, parent=None, context=None ):
-    'constructor'
-
-    assert len(vertices) == 4
-    Element.__init__( self, ndims=3, vertices=vertices, parent=parent, context=context )
-
-  @property
-  def children( self ):
-    'all 1x refined elements'
-    raise NotImplementedError( 'Children of tetrahedron' )  
-      
-  @property
-  def edges( self ):
-    return [ self.edge(iedge) for iedge in range(4) ]
-
-  def edge( self, iedge ):
-    'edge'
-
-    trans = self.edgetransform[ iedge ]
-    v1, v2, v3, v4 = self.vertices
-    vertices = [ [v1,v3,v2], [v1,v2,v4], [v1,v4,v3], [v2,v3,v4] ][ iedge ] # TODO check!
-    return TriangularElement( vertices=vertices, context=(self,trans) )
-
-  @staticmethod
-  def refinedtransform( n ):
-    'refined transform'
-    raise NotImplementedError( 'Transformations for refined tetrahedrons' )  
-
-  def refined( self, n ):
-    'refine'
-    raise NotImplementedError( 'Refinement tetrahedrons' )  
-
-  @staticmethod
-  def getischeme( ndims, where ):
-    '''get integration scheme
-       http://people.sc.fsu.edu/~jburkardt/datasets/quadrature_rules_tet/quadrature_rules_tet.html'''
-
-    assert ndims == 3
-    if where.startswith( 'vtk' ):
-      coords = numeric.array([[0,0,0],[1,0,0],[0,1,0],[0,0,1]]).T
-      weights = None
-    elif where == 'gauss1':
-      coords = numeric.array( [[1],[1],[1]] ) / 4.
-      weights = numeric.array( [1] ) / 6.
-    elif where == 'gauss2':
-      coords = numeric.array([[0.5854101966249685,0.1381966011250105,0.1381966011250105],
-                              [0.1381966011250105,0.1381966011250105,0.1381966011250105],
-                              [0.1381966011250105,0.1381966011250105,0.5854101966249685],
-                              [0.1381966011250105,0.5854101966249685,0.1381966011250105]]).T
-      weights = numeric.array([1,1,1,1]) / 24.
-    elif where == 'gauss3':
-      coords = numeric.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
-                              [0.5000000000000000,0.1666666666666667,0.1666666666666667],
-                              [0.1666666666666667,0.1666666666666667,0.1666666666666667],
-                              [0.1666666666666667,0.1666666666666667,0.5000000000000000],
-                              [0.1666666666666667,0.5000000000000000,0.1666666666666667]]).T
-      weights = numeric.array([-0.8000000000000000,0.4500000000000000,0.4500000000000000,0.4500000000000000,0.4500000000000000]) / 6.
-    elif where == 'gauss4':
-      coords = numeric.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
-                              [0.7857142857142857,0.0714285714285714,0.0714285714285714],
-                              [0.0714285714285714,0.0714285714285714,0.0714285714285714],
-                              [0.0714285714285714,0.0714285714285714,0.7857142857142857],
-                              [0.0714285714285714,0.7857142857142857,0.0714285714285714],
-                              [0.1005964238332008,0.3994035761667992,0.3994035761667992],
-                              [0.3994035761667992,0.1005964238332008,0.3994035761667992],
-                              [0.3994035761667992,0.3994035761667992,0.1005964238332008],
-                              [0.3994035761667992,0.1005964238332008,0.1005964238332008],
-                              [0.1005964238332008,0.3994035761667992,0.1005964238332008],
-                              [0.1005964238332008,0.1005964238332008,0.3994035761667992]]).T
-      weights = numeric.array([-0.0789333333333333,0.0457333333333333,0.0457333333333333,0.0457333333333333,0.0457333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333]) / 6.
-    elif where == 'gauss5':
-      coords = numeric.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
-                            [0.0000000000000000,0.3333333333333333,0.3333333333333333],
-                            [0.3333333333333333,0.3333333333333333,0.3333333333333333],
-                            [0.3333333333333333,0.3333333333333333,0.0000000000000000],
-                            [0.3333333333333333,0.0000000000000000,0.3333333333333333],
-                            [0.7272727272727273,0.0909090909090909,0.0909090909090909],
-                            [0.0909090909090909,0.0909090909090909,0.0909090909090909],
-                            [0.0909090909090909,0.0909090909090909,0.7272727272727273],
-                            [0.0909090909090909,0.7272727272727273,0.0909090909090909],
-                            [0.4334498464263357,0.0665501535736643,0.0665501535736643],
-                            [0.0665501535736643,0.4334498464263357,0.0665501535736643],
-                            [0.0665501535736643,0.0665501535736643,0.4334498464263357],
-                            [0.0665501535736643,0.4334498464263357,0.4334498464263357],
-                            [0.4334498464263357,0.0665501535736643,0.4334498464263357],
-                            [0.4334498464263357,0.4334498464263357,0.0665501535736643]]).T
-      weights = numeric.array([0.1817020685825351,0.0361607142857143,0.0361607142857143,0.0361607142857143,0.0361607142857143,0.0698714945161738,0.0698714945161738,0.0698714945161738,0.0698714945161738,0.0656948493683187,0.0656948493683187,0.0656948493683187,0.0656948493683187,0.0656948493683187,0.0656948493683187]) / 6.
-    elif where == 'gauss6':
-      coords = numeric.array([[0.3561913862225449,0.2146028712591517,0.2146028712591517],
-                            [0.2146028712591517,0.2146028712591517,0.2146028712591517],
-                            [0.2146028712591517,0.2146028712591517,0.3561913862225449],
-                            [0.2146028712591517,0.3561913862225449,0.2146028712591517],
-                            [0.8779781243961660,0.0406739585346113,0.0406739585346113],
-                            [0.0406739585346113,0.0406739585346113,0.0406739585346113],
-                            [0.0406739585346113,0.0406739585346113,0.8779781243961660],
-                            [0.0406739585346113,0.8779781243961660,0.0406739585346113],
-                            [0.0329863295731731,0.3223378901422757,0.3223378901422757],
-                            [0.3223378901422757,0.3223378901422757,0.3223378901422757],
-                            [0.3223378901422757,0.3223378901422757,0.0329863295731731],
-                            [0.3223378901422757,0.0329863295731731,0.3223378901422757],
-                            [0.2696723314583159,0.0636610018750175,0.0636610018750175],
-                            [0.0636610018750175,0.2696723314583159,0.0636610018750175],
-                            [0.0636610018750175,0.0636610018750175,0.2696723314583159],
-                            [0.6030056647916491,0.0636610018750175,0.0636610018750175],
-                            [0.0636610018750175,0.6030056647916491,0.0636610018750175],
-                            [0.0636610018750175,0.0636610018750175,0.6030056647916491],
-                            [0.0636610018750175,0.2696723314583159,0.6030056647916491],
-                            [0.2696723314583159,0.6030056647916491,0.0636610018750175],
-                            [0.6030056647916491,0.0636610018750175,0.2696723314583159],
-                            [0.0636610018750175,0.6030056647916491,0.2696723314583159],
-                            [0.2696723314583159,0.0636610018750175,0.6030056647916491],
-                            [0.6030056647916491,0.2696723314583159,0.0636610018750175]]).T
-      weights = numeric.array([0.0399227502581679,0.0399227502581679,0.0399227502581679,0.0399227502581679,0.0100772110553207,0.0100772110553207,0.0100772110553207,0.0100772110553207,0.0553571815436544,0.0553571815436544,0.0553571815436544,0.0553571815436544,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857]) / 6.
-    elif where == 'gauss7':
-      coords = numeric.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
-                            [0.7653604230090441,0.0782131923303186,0.0782131923303186],
-                            [0.0782131923303186,0.0782131923303186,0.0782131923303186],
-                            [0.0782131923303186,0.0782131923303186,0.7653604230090441],
-                            [0.0782131923303186,0.7653604230090441,0.0782131923303186],
-                            [0.6344703500082868,0.1218432166639044,0.1218432166639044],
-                            [0.1218432166639044,0.1218432166639044,0.1218432166639044],
-                            [0.1218432166639044,0.1218432166639044,0.6344703500082868],
-                            [0.1218432166639044,0.6344703500082868,0.1218432166639044],
-                            [0.0023825066607383,0.3325391644464206,0.3325391644464206],
-                            [0.3325391644464206,0.3325391644464206,0.3325391644464206],
-                            [0.3325391644464206,0.3325391644464206,0.0023825066607383],
-                            [0.3325391644464206,0.0023825066607383,0.3325391644464206],
-                            [0.0000000000000000,0.5000000000000000,0.5000000000000000],
-                            [0.5000000000000000,0.0000000000000000,0.5000000000000000],
-                            [0.5000000000000000,0.5000000000000000,0.0000000000000000],
-                            [0.5000000000000000,0.0000000000000000,0.0000000000000000],
-                            [0.0000000000000000,0.5000000000000000,0.0000000000000000],
-                            [0.0000000000000000,0.0000000000000000,0.5000000000000000],
-                            [0.2000000000000000,0.1000000000000000,0.1000000000000000],
-                            [0.1000000000000000,0.2000000000000000,0.1000000000000000],
-                            [0.1000000000000000,0.1000000000000000,0.2000000000000000],
-                            [0.6000000000000000,0.1000000000000000,0.1000000000000000],
-                            [0.1000000000000000,0.6000000000000000,0.1000000000000000],
-                            [0.1000000000000000,0.1000000000000000,0.6000000000000000],
-                            [0.1000000000000000,0.2000000000000000,0.6000000000000000],
-                            [0.2000000000000000,0.6000000000000000,0.1000000000000000],
-                            [0.6000000000000000,0.1000000000000000,0.2000000000000000],
-                            [0.1000000000000000,0.6000000000000000,0.2000000000000000],
-                            [0.2000000000000000,0.1000000000000000,0.6000000000000000],
-                            [0.6000000000000000,0.2000000000000000,0.1000000000000000]]).T
-      weights = numeric.array([0.1095853407966528,0.0635996491464850,0.0635996491464850,0.0635996491464850,0.0635996491464850,-0.3751064406859797,-0.3751064406859797,-0.3751064406859797,-0.3751064406859797,0.0293485515784412,0.0293485515784412,0.0293485515784412,0.0293485515784412,0.0058201058201058,0.0058201058201058,0.0058201058201058,0.0058201058201058,0.0058201058201058,0.0058201058201058,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105]) / 6.
-    elif where == 'gauss8':
-      coords = numeric.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
-                            [0.6175871903000830,0.1274709365666390,0.1274709365666390],
-                            [0.1274709365666390,0.1274709365666390,0.1274709365666390],
-                            [0.1274709365666390,0.1274709365666390,0.6175871903000830],
-                            [0.1274709365666390,0.6175871903000830,0.1274709365666390],
-                            [0.9037635088221031,0.0320788303926323,0.0320788303926323],
-                            [0.0320788303926323,0.0320788303926323,0.0320788303926323],
-                            [0.0320788303926323,0.0320788303926323,0.9037635088221031],
-                            [0.0320788303926323,0.9037635088221031,0.0320788303926323],
-                            [0.4502229043567190,0.0497770956432810,0.0497770956432810],
-                            [0.0497770956432810,0.4502229043567190,0.0497770956432810],
-                            [0.0497770956432810,0.0497770956432810,0.4502229043567190],
-                            [0.0497770956432810,0.4502229043567190,0.4502229043567190],
-                            [0.4502229043567190,0.0497770956432810,0.4502229043567190],
-                            [0.4502229043567190,0.4502229043567190,0.0497770956432810],
-                            [0.3162695526014501,0.1837304473985499,0.1837304473985499],
-                            [0.1837304473985499,0.3162695526014501,0.1837304473985499],
-                            [0.1837304473985499,0.1837304473985499,0.3162695526014501],
-                            [0.1837304473985499,0.3162695526014501,0.3162695526014501],
-                            [0.3162695526014501,0.1837304473985499,0.3162695526014501],
-                            [0.3162695526014501,0.3162695526014501,0.1837304473985499],
-                            [0.0229177878448171,0.2319010893971509,0.2319010893971509],
-                            [0.2319010893971509,0.0229177878448171,0.2319010893971509],
-                            [0.2319010893971509,0.2319010893971509,0.0229177878448171],
-                            [0.5132800333608811,0.2319010893971509,0.2319010893971509],
-                            [0.2319010893971509,0.5132800333608811,0.2319010893971509],
-                            [0.2319010893971509,0.2319010893971509,0.5132800333608811],
-                            [0.2319010893971509,0.0229177878448171,0.5132800333608811],
-                            [0.0229177878448171,0.5132800333608811,0.2319010893971509],
-                            [0.5132800333608811,0.2319010893971509,0.0229177878448171],
-                            [0.2319010893971509,0.5132800333608811,0.0229177878448171],
-                            [0.0229177878448171,0.2319010893971509,0.5132800333608811],
-                            [0.5132800333608811,0.0229177878448171,0.2319010893971509],
-                            [0.7303134278075384,0.0379700484718286,0.0379700484718286],
-                            [0.0379700484718286,0.7303134278075384,0.0379700484718286],
-                            [0.0379700484718286,0.0379700484718286,0.7303134278075384],
-                            [0.1937464752488044,0.0379700484718286,0.0379700484718286],
-                            [0.0379700484718286,0.1937464752488044,0.0379700484718286],
-                            [0.0379700484718286,0.0379700484718286,0.1937464752488044],
-                            [0.0379700484718286,0.7303134278075384,0.1937464752488044],
-                            [0.7303134278075384,0.1937464752488044,0.0379700484718286],
-                            [0.1937464752488044,0.0379700484718286,0.7303134278075384],
-                            [0.0379700484718286,0.1937464752488044,0.7303134278075384],
-                            [0.7303134278075384,0.0379700484718286,0.1937464752488044],
-                            [0.1937464752488044,0.7303134278075384,0.0379700484718286]]).T
-      weights = numeric.array([-0.2359620398477557,0.0244878963560562,0.0244878963560562,0.0244878963560562,0.0244878963560562,0.0039485206398261,0.0039485206398261,0.0039485206398261,0.0039485206398261,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852]) / 6.
-    else:
-      raise Exception, 'invalid element evaluation: %r' % where
-    return coords.T, weights
-
-  def select_contained( self, points, eps=0 ):
-    'select points contained in element'
-    raise NotImplementedError( 'Determine whether a point resides in the tetrahedron' )  
+  def getischeme( self, ischeme ):
+    pw_all = []
+    for simplex, trans, iverts in self.children:
+      pw = simplex.getischeme( ischeme )
+      pw_trans = trans.apply( pw[...,:self.ndims] ), trans.det * pw[...,self.ndims:]
+      pw_concat = numeric.concatenate( pw_trans, axis=-1 )
+      pw_all.append( pw_concat )
+    return numeric.concatenate( pw_all, axis=0 )
 
 
 ## STDELEMS
@@ -1559,6 +1336,28 @@ class ExtractionWrapper( StdElem ):
     'string representation'
 
     return '%s#%x:%s' % ( self.__class__.__name__, id(self), self.stdelem )
+
+
+PrimaryVertex = str
+HalfVertex = lambda vertex1, vertex2, xi=.5: '%s<%.3f>%s' % ( (vertex1,xi,vertex2) if vertex1 < vertex2 else (vertex2,1-xi,vertex1) )
+ProductVertex = lambda *vertices: ','.join( vertices )
+
+
+## UTILITY FUNCTIONS
+
+
+def mknewvertices( verts, iverts ):
+  return verts[iverts] if isinstance( iverts, int ) \
+    else '(%s)' % ','.join( mknewvertices( verts, ivert ) for ivert in iverts )
+
+def getgauss( degree ):
+  'compute gauss points and weights'
+
+  assert isinstance( degree, int ) and degree >= 0
+  k = numeric.arange( 1, degree // 2 + 1 )
+  d = k / numeric.sqrt( 4*k**2-1 )
+  x, w = numeric.eigh( numeric.diagflat(d,-1) ) # eigh operates (by default) on lower triangle
+  return (x+1) * .5, w[0]**2
 
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

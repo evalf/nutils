@@ -31,7 +31,7 @@ def rectilinear( vertices, periodic=(), name='rect' ):
 
   ndims = len(vertices)
   indices = numeric.grid( len(n)-1 for n in vertices )
-  domainelem = element.Element( ndims=ndims, vertices=[] )
+  domainelem = element.Element( simplex=element.Simplex(ndims) )
 
   vertexfmt = name + '(' + ','.join( '%%%dd' % len(str(len(n)-1)) for n in vertices ) + ')'
   vertexobjs = numeric.objmap( lambda *index: element.PrimaryVertex(vertexfmt%index), *numeric.grid( len(n) for n in vertices ) )
@@ -39,10 +39,11 @@ def rectilinear( vertices, periodic=(), name='rect' ):
     tmp = numeric.bringforward( vertexobjs, idim )
     tmp[-1] = tmp[0]
 
-  structure = numeric.objmap( lambda *index: element.QuadElement(
-    ndims=ndims,
+  simplex = element.Quad( ndims=ndims )
+  structure = numeric.objmap( lambda *index: element.Element(
+    simplex=simplex,
     parent=( domainelem, transform.Scale( numeric.array([ n[i+1]-n[i] for n,i in zip(vertices,index) ]) ) + [ n[i] for n,i in zip(vertices,index) ] ),
-    vertices=vertexobjs[tuple(slice(i,i+2) for i in index)].ravel() ), *indices )
+    vertices=tuple(vertexobjs[tuple(slice(i,i+2) for i in index)].ravel()) ), *indices )
   topo = topology.StructuredTopology( structure )
   coords = GridFunc( domainelem, structure, vertices )
   if periodic:

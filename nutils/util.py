@@ -481,4 +481,30 @@ def breakpoint():
     its current state and even alter it. Closing the explorer will resume
     program execution.''' ).cmdloop()
 
+def getitem( iterable, index ):
+  getitem = getattr( iterable, '__getitem__', None )
+  if isinstance(index,int):
+    if getitem:
+      return getitem( index )
+    for iiter, item in enumerate( iterable ):
+      if iiter == index:
+        return item
+  if getitem:
+    return tuple( map( getitem, index ) )
+  order = numeric.argsort( index )
+  items = [ None ] * len(order)
+  for iiter, item in enumerate( iterable ):
+    while iiter == order[0]:
+      items[ index[order[0]] ] = item
+      order = order[1:]
+      if not order.size:
+        return tuple( items )
+
+def filterrepeat( iterable ):
+  current = object()
+  for item in iterable:
+    if item != current:
+      yield item
+      current = item
+
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

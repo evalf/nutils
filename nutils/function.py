@@ -49,23 +49,21 @@ class CompiledEvaluable( object ):
   def eval( self, elem, ischeme ):
     'evaluate'
 
-    if isinstance( ischeme, dict ):
-      ischeme = ischeme[elem]
-
-    if isinstance( ischeme, str ):
-      points, weights = elem.eval( ischeme )
-    elif isinstance( ischeme, tuple ):
-      points, weights = ischeme
-      assert points.shape[-1] == elem.ndims
-      assert points.shape[:-1] == weights.shape, 'non matching shapes: points.shape=%s, weights.shape=%s' % ( points.shape, weights.shape )
-    elif numeric.isarray( ischeme ):
-      points = ischeme
-      weights = None
-      assert points.shape[-1] == elem.ndims
-    elif ischeme is None:
+    if ischeme is None:
       points = weights = None
     else:
-      raise Exception, 'invalid integration scheme of type %r' % type(ischeme)
+      if isinstance( ischeme, dict ):
+        ischeme = ischeme[elem]
+      if isinstance( ischeme, str ):
+        ischeme = self.cache( elem.simplex.getischeme, ischeme )
+      assert numeric.isarray( ischeme )
+      if ischeme.shape[-1] == elem.ndims+1:
+        points = ischeme[...,:-1]
+        weights = ischeme[...,-1]
+      else:
+        assert ischeme.shape[-1] == elem.ndims
+        points = ischeme
+        weights = None
 
     N = len(self.data) + 4
     values = self.data + [ self.cache, elem, points, weights ]
