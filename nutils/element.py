@@ -9,9 +9,10 @@ class Element( cache.WeakCacheObject ):
 
   __slots__ = 'vertices', 'simplex', 'parent', 'context', 'interface', 'root_transform'
 
-  def __init__( self, simplex, vertices=None, parent=None, context=None, interface=None ):
+  def __init__( self, simplex, vertices=(), parent=None, context=None, interface=None ):
     'constructor'
 
+    assert isinstance( vertices, tuple )
     self.vertices = vertices
     self.simplex = simplex
     self.parent = parent
@@ -205,6 +206,9 @@ class Quad( Simplex ):
       weights = None
     return numeric.concatenate( [coords,weights[:,_]], axis=-1 ) if weights is not None else coords
 
+  def stdfunc( self, degree ):
+    return PolyLine.bernstein_poly( degree )**self.ndims
+
   @cache.property
   def edges( self ):
     transforms = []
@@ -308,88 +312,10 @@ class Quad( Simplex ):
       return None, self
     return Mosaic(pos), Mosaic(neg)
 
-
-  ###
-
 # @cache.property
 # def neighbormap( self ):
 #   'maps # matching vertices --> codim of interface: {0: -1, 1: 2, 2: 1, 4: 0}'
 #   return dict( [ (0,-1) ] + [ (2**(self.ndims-i),i) for i in range(self.ndims+1) ] )
-
-# @staticmethod
-# def edgetransform( ndims ):
-#   'edge transforms'
-
-#   transforms = []
-#   for idim in range( ndims ):
-#     offset = numeric.zeros( ndims )
-#     offset[:idim] = 1
-#     matrix = numeric.zeros(( ndims, ndims-1 ))
-#     matrix.flat[ :(ndims-1)*idim :ndims] = -1
-#     matrix.flat[ndims*(idim+1)-1::ndims] = 1
-#     # flip normal:
-#     offset[idim-1] = 1 - offset[idim-1]
-#     matrix[idim-1] *= -1
-#     transforms.append( transform.Linear(matrix.copy()) + offset )
-#     # other side:
-#     offset[idim] = 1
-#     # flip normal back:
-#     offset[idim-1] = 1 - offset[idim-1]
-#     matrix[idim-1] *= -1
-#     transforms.append( transform.Linear(matrix) + offset )
-#   return transforms
-
-# @property
-# def ribbons( self ):
-#   'ribbons'
-
-#   if self.ndims == 2:
-#     return [ self.edge(iedge) for iedge in range(4) ]
-
-#   if self.ndims != 3:
-#     raise NotImplementedError('Ribbons not implemented for ndims=%d'%self.ndims)
-
-#   ndvertices = numeric.asarray( self.vertices ).reshape( [2]*self.ndims )
-#   ribbons = []
-#   for i1, i2 in numeric.array([[[0,0,0],[1,0,0]],
-#                                [[0,0,0],[0,1,0]],
-#                                [[0,0,0],[0,0,1]],
-#                                [[1,1,1],[0,1,1]],
-#                                [[1,1,1],[1,0,1]],
-#                                [[1,1,1],[1,1,0]],
-#                                [[1,0,0],[1,1,0]],
-#                                [[1,0,0],[1,0,1]],
-#                                [[0,1,0],[1,1,0]],
-#                                [[0,1,0],[0,1,1]],
-#                                [[0,0,1],[1,0,1]],
-#                                [[0,0,1],[0,1,1]]] ):
-#     trans = transform.Linear((i2-i1)[:,_]) + i1
-#     vertices = ndvertices[tuple(i1)], ndvertices[tuple(i2)]
-#     ribbons.append( QuadElement( vertices=vertices, ndims=1, context=(self,trans) ) )
-
-#   return ribbons
-
-# @property
-# def edges( self ):
-#   return [ self.edge(iedge) for iedge in range(2**self.ndims) ]
-
-# def edge( self, iedge ):
-#   'edge'
-#   trans = self.edgetransform( self.ndims )[ iedge ]
-#   idim = iedge // 2
-#   iside = iedge % 2
-#   s = (slice(None,None, 1 if iside else -1),) * idim + (iside,) \
-#     + (slice(None,None,-1 if iside else  1),) * (self.ndims-idim-1)
-#   vertices = numeric.asarray( numeric.asarray( self.vertices ).reshape( (2,)*self.ndims )[s] ).ravel() # TODO check
-#   return QuadElement( vertices=vertices, ndims=self.ndims-1, context=(self,trans) )
-
-# def refine( self, n ):
-#   'refine n times'
-
-#   elems = [ self ]
-#   for i in range(n):
-#     elems = [ child for elem in elems for child in elem.children ]
-#   return elems
 
 # def select_contained( self, points, eps=0 ):
 #   'select points contained in element'
@@ -413,15 +339,30 @@ class Triangle( Simplex ):
   __slots__ = ()
 
   neighbormap = -1, 2, 1, 0
-  edgetransform = (
-    transform.Linear( numeric.array([[ 1],[ 0]]) ),
-    transform.Linear( numeric.array([[-1],[ 1]]) ) + [1,0],
-    transform.Linear( numeric.array([[ 0],[-1]]) ) + [0,1] )
+  edges = (
+    ( Quad(ndims=1), transform.Linear( numeric.array([[ 1],[ 0]]) ),         (2,0) ),
+    ( Quad(ndims=1), transform.Linear( numeric.array([[-1],[ 1]]) ) + [1,0], (0,1) ),
+    ( Quad(ndims=1), transform.Linear( numeric.array([[ 0],[-1]]) ) + [0,1], (1,2) ),
+  )
+  #  1
+  # 1-2  0-1
+  #  2   0-2   0
+  @property
+  def children( self ):
+    return (
+    ( self, transform.Scale(  numeric.asarray([.5,.5]) ),           ((0,2),(1,2),2) ),
+    ( self, transform.Scale(  numeric.asarray([.5,.5]) ) + [.5, 0], (0,(0,1),(0,2)) ),
+    ( self, transform.Scale(  numeric.asarray([.5,.5]) ) + [ 0,.5], ((0,1),1,(1,2)) ),
+    ( self, transform.Scale( -numeric.asarray([.5,.5]) ) + [.5,.5], ((1,2),(0,2),(0,1)) ),
+  )
 
   def __init__( self ):
     'constructor'
 
     Simplex.__init__( self, ndims=2 )
+
+  def stdfunc( self, degree ):
+    return PolyTriangle( degree )
 
   def getischeme( self, where ):
     '''get integration scheme
@@ -483,6 +424,7 @@ class Triangle( Simplex ):
       raise Exception, 'invalid element evaluation: %r' % where
     return numeric.concatenate([coords.T,weights[...,_]],axis=-1) if weights is not None else coords.T
 
+
 # @property
 # def children( self ):
 #   'all 1x refined elements'
@@ -496,17 +438,6 @@ class Triangle( Simplex ):
 #     TriangularElement( vertices=[h3,h2,v3], parent=(self,t3) ),
 #     TriangularElement( vertices=[h2,h3,h1], parent=(self,t4) ) ])
 #     
-# @property
-# def edges( self ):
-#   return [ self.edge(iedge) for iedge in range(3) ]
-
-# def edge( self, iedge ):
-#   'edge'
-
-#   trans = self.edgetransform[ iedge ]
-#   vertices = [ self.vertices[::-2], self.vertices[:2], self.vertices[1:] ][iedge]
-#   return QuadElement( vertices=vertices, ndims=1, context=(self,trans) )
-
 # @staticmethod
 # def refinedtransform( n ):
 #   'refined transform'
@@ -1247,10 +1178,10 @@ class PolyTriangle( StdElem ):
 
   __slots__ = ()
 
-  def __init__( self, order ):
+  def __init__( self, degree ):
     'constructor'
 
-    assert order == 1
+    assert degree == 1, 'only linear implemented on triangles for now'
     StdElem.__init__( self, ndims=2, nshapes=3 )
 
   def eval( self, points, grad=0 ):
@@ -1347,8 +1278,9 @@ ProductVertex = lambda *vertices: ','.join( vertices )
 
 
 def mknewvertices( verts, iverts ):
-  return verts[iverts] if isinstance( iverts, int ) \
-    else '(%s)' % ','.join( mknewvertices( verts, ivert ) for ivert in iverts )
+  return tuple( verts[ivert] if isinstance( ivert, int ) \
+    else '(%s)' % ','.join( sorted( mknewvertices( verts, ivert ) ) )
+      for ivert in iverts )
 
 def getgauss( degree ):
   'compute gauss points and weights'

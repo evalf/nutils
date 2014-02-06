@@ -353,13 +353,14 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   + [ ( 12+(i+1)%8, 12+i, i+1+(i//2) ) for i in range( 8) ]
   + [ ( 12+i, 12+(i+1)%8, 20 )         for i in range( 8) ] )
   
-  domainelem = element.Element( ndims=2, vertices=[] )
+  domainelem = element.Element( simplex=element.Simplex(2) )
   elements = []
   vertexobjs = numeric.array([ element.PrimaryVertex( 'demo.%d' % ivertex ) for ivertex in range(len(vertices)) ])
+  triangle = element.Triangle()
   for ielem, elemvertices in enumerate( vertices ):
     elemcoords = coords[ numeric.array(elemvertices) ]
     parent = domainelem, transform.Linear( (elemcoords[:2]-elemcoords[2]).T ) + elemcoords[2]
-    elem = element.TriangularElement( vertices=vertexobjs[elemvertices], parent=parent )
+    elem = element.Element( simplex=triangle, parent=parent, vertices=tuple(vertexobjs[elemvertices]) )
     elements.append( elem )
 
   fmap = dict.fromkeys( elements, element.PolyTriangle(1) )
