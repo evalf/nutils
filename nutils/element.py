@@ -58,7 +58,7 @@ class Element( cache.WeakCacheObject ):
     assert maxrefine >= minrefine >= 0
     if minrefine == 0:
       values = levelset.eval( self, 'bezier%d' % (2**maxrefine+1) )
-      allpieces = self.simplex._mosaic( values )
+      allpieces = self.simplex.triangulate( values )
     else:
       # refine to evaluate levelset, then assemble the pieces
       allpieces = [], []
@@ -140,6 +140,44 @@ class Simplex( cache.WeakCacheObject ):
     assert isinstance( n, int ) and n >= 1
     return self if n == 1 else self * self**(n-1)
 
+  def triangulate( self, values, eps=1e-10 ):
+
+    if numeric.greater( values, -eps ).all():
+      return [(self,transform.Identity(self.ndims))], []
+
+    if numeric.less( values, +eps ).all():
+      return [], [(self,transform.Identity(self.ndims))]
+
+    pos = []
+    neg = []
+
+    if len(values) <= self.nverts: # actual triangulation
+      assert values.shape == (self.nverts,)
+
+      for coord, value in zip( self.vertices, values ):
+        ( pos if value > 0 else neg ).append( coord )
+      for w in self._get_intersections( values ):
+        v = numeric.dot( w, self.vertices )
+        pos.append( v )
+        neg.append( v )
+      assert self.ndims == 2
+      simplex = Triangle()
+      return [ (simplex,trans) for trans in transform.delaunay(pos) ], \
+             [ (simplex,trans) for trans in transform.delaunay(neg) ]
+
+    for (child,ptrans,iverts), childvals in zip( self.children, self._split_by_child(values) ):
+      childpos, childneg = child.triangulate( childvals )
+      pos.extend( (simplex,ptrans*trans) for simplex, trans in childpos )
+      neg.extend( (simplex,ptrans*trans) for simplex, trans in childneg )
+
+    if not neg:
+      return [(self,transform.Identity(self.ndims))], []
+
+    if not pos:
+      return [], [(self,transform.Identity(self.ndims))]
+
+    return pos, neg
+
 class Dummy( Simplex ):
 
   def __init__( self, ndims ):
@@ -161,10 +199,14 @@ class Line( Simplex ):
     scale = transform.Scale( numeric.array([.5]) )
     self.children = (self,scale,(0,(0,1))), (self,scale+[.5],((0,1),1))
 
-  def _isect( self, (v0,v1) ):
+  def _get_intersections( self, (v0,v1) ):
     x = -v0 / float(v1-v0) # v0 + x (v1-v0) = 0
     if 0 <= x <= 1:
       yield numeric.array([ 1-x, x ])
+
+  def _split_by_child( self, values ):
+    n = len(values)
+    return values[:n//2+1], values[n//2:]
 
   def stdfunc( self, degree ):
     return PolyLine( PolyLine.bernstein_poly( degree ) )
@@ -233,61 +275,27 @@ class Product( Simplex ):
         children.append(( child1*child2, transform.tensor(trans1,trans2), vertices2 ))
     return children
 
-  def _triangulate( self, values ):
-    assert values.shape == (self.simplex1.nverts,self.simplex2.nverts)
-    pos = []
-    neg = []
-    for coord, value in zip( self.vertices, values.ravel() ):
-      ( pos if value > 0 else neg ).append( coord )
-    vertices = self.vertices.reshape( self.simplex1.nverts, self.simplex2.nverts, self.ndims )
-    for i1 in range( self.simplex1.nverts ):
-      for w in self.simplex2._isect( values[i1,:] ):
-        v = numeric.dot( w, vertices[i1,:] )
-        pos.append( v )
-        neg.append( v )
-    for i2 in range( self.simplex2.nverts ):
-      for w in self.simplex1._isect( values[:,i2] ):
-        v = numeric.dot( w, vertices[:,i2] )
-        pos.append( v )
-        neg.append( v )
-    assert self.ndims == 2
-    triangle = Triangle()
-    return [ (triangle,trans) for trans in transform.delaunay(pos) ], \
-           [ (triangle,trans) for trans in transform.delaunay(neg) ]
+  def _get_intersections( self, values ):
+    values = values.reshape( self.simplex1.nverts, self.simplex2.nverts )
+    for i1, w1 in enumerate( numeric.eye(self.simplex1.nverts) ):
+      for w2 in self.simplex2._get_intersections( values[i1,:] ):
+        yield ( w1[:,_] * w2[_,:] ).ravel()
+    for i2, w2 in enumerate( numeric.eye(self.simplex2.nverts) ):
+      for w1 in self.simplex1._get_intersections( values[:,i2] ):
+        yield ( w1[:,_] * w2[_,:] ).ravel()
 
-  def _mosaic( self, values, eps=1e-10 ):
-    identity = transform.Identity( self.ndims )
-    if numeric.greater( values, -eps ).all():
-      return [(self,identity)], []
-    if numeric.less( values, +eps ).all():
-      return [], [(self,identity)]
-    if values.ndim == 1:
-      n1 = self.simplex1.nverts
-      n2 = self.simplex2.nverts
-      while len(values) > n1 * n2:
-        n1 = n1*2 - 1
-        n2 = n2*2 - 1
-      assert n1 * n2 == len(values), 'cannot reshape values to appropriate shape'
-      values = values.reshape( n1, n2 )
-    else:
-      n1, n2 = values.shape
-    if n1 * n2 <= self.nverts:
-      return self._triangulate( values )
-    children = self.children
-    allpos = []
-    allneg = []
-    for i, s1 in enumerate([ slice(n1//2+1), slice(n1//2,None) ]):
-      for j, s2 in enumerate([ slice(n2//2+1), slice(n2//2,None) ]):
-        child, ptrans, iverts = children[i*2+j]
-        pos, neg = child._mosaic( values[s1,s2] )
-        allpos.extend( (simplex,ptrans*trans) for simplex, trans in pos )
-        allneg.extend( (simplex,ptrans*trans) for simplex, trans in neg )
-    if not allneg:
-      return [(self,identity)], []
-    if not allpos:
-      return [], [(self,identity)]
-    return allpos, allneg
-      
+  def _split_by_child( self, values ):
+    n1 = self.simplex1.nverts
+    n2 = self.simplex2.nverts
+    while len(values) > n1 * n2:
+      n1 = n1*2 - 1
+      n2 = n2*2 - 1
+    assert n1 * n2 == len(values), 'cannot reshape values to appropriate shape'
+    values = values.reshape( n1, n2 )
+    for val1 in self.simplex1._split_by_child( values ):
+      for val2 in self.simplex2._split_by_child( val1.T ):
+        yield val2.T.ravel()
+
 class Triangle( Simplex ):
   '''triangular element
      conventions: reference elem:   unit simplex {(x,y) | x>0, y>0, x+y<1}
