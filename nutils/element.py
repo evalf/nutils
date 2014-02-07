@@ -155,7 +155,10 @@ class Simplex( cache.WeakCacheObject ):
       assert values.shape == (self.nverts,)
 
       for coord, value in zip( self.vertices, values ):
-        ( pos if value > 0 else neg ).append( coord )
+        if value >= 0:
+          pos.append( coord )
+        if value <= 0:
+          neg.append( coord )
       for w in self._get_intersections( values ):
         v = numeric.dot( w, self.vertices )
         pos.append( v )
@@ -200,9 +203,10 @@ class Line( Simplex ):
     self.children = (self,scale,(0,(0,1))), (self,scale+[.5],((0,1),1))
 
   def _get_intersections( self, (v0,v1) ):
-    x = -v0 / float(v1-v0) # v0 + x (v1-v0) = 0
-    if 0 <= x <= 1:
-      yield numeric.array([ 1-x, x ])
+    if v0 != v1: 
+      x = -v0 / float(v1-v0) # v0 + x (v1-v0) = 0
+      if 0 < x < 1:
+        yield numeric.array([ 1-x, x ])
 
   def _split_by_child( self, values ):
     n = len(values)
