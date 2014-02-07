@@ -31,7 +31,7 @@ class CallDict( dict ):
     return 'not used' if not self \
       else 'effectivity %d%% (%d hits, %d misses)' % ( (100*self.hit)/(self.hit+len(self)), self.hit, len(self) )
 
-class WeakCacheObject( object ):
+class Immutable( object ):
   'weakly cache object instances based on init args'
 
   __slots__ = '__weakref__',
@@ -52,10 +52,10 @@ class WeakCacheObject( object ):
       args += val,
     assert not kwargs
     try:
-      self = WeakCacheObject.__cache[args]
+      self = Immutable.__cache[args]
     except KeyError:
       self = object.__new__( args[0] )
-      WeakCacheObject.__cache[args] = self
+      Immutable.__cache[args] = self
     return self
 
 class FileCache( object ):

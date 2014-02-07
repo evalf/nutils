@@ -1,7 +1,7 @@
 from . import cache, numeric, util, _
 
 
-class Transformation( cache.WeakCacheObject ):
+class Transformation( cache.Immutable ):
   __slots__ = 'fromdim', 'todim', 'sign'
 
   def __init__( self, todim, fromdim, sign ):

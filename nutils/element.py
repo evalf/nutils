@@ -2,7 +2,7 @@ from . import log, util, cache, numeric, transform, function, _
 import warnings
 
 
-class Element( cache.WeakCacheObject ):
+class Element( cache.Immutable ):
   '''Element base class.
 
   Represents the topological shape.'''
@@ -124,7 +124,7 @@ class Element( cache.WeakCacheObject ):
 ## SIMPLICES
 
 
-class Simplex( cache.WeakCacheObject ):
+class Simplex( cache.Immutable ):
 
   def __init__( self, vertices ):
     self.vertices = numeric.asarray( vertices, dtype=float )
@@ -1046,7 +1046,7 @@ class Mosaic( object ):
 ## STDELEMS
 
 
-class StdElem( cache.WeakCacheObject ):
+class StdElem( cache.Immutable ):
   'stdelem base class'
 
   __slots__ = 'ndims', 'nshapes'
@@ -1362,11 +1362,6 @@ class ExtractionWrapper( StdElem ):
     'string representation'
 
     return '%s#%x:%s' % ( self.__class__.__name__, id(self), self.stdelem )
-
-
-PrimaryVertex = str
-HalfVertex = lambda vertex1, vertex2, xi=.5: '%s<%.3f>%s' % ( (vertex1,xi,vertex2) if vertex1 < vertex2 else (vertex2,1-xi,vertex1) )
-ProductVertex = lambda *vertices: ','.join( vertices )
 
 
 ## UTILITY FUNCTIONS

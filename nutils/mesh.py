@@ -34,7 +34,7 @@ def rectilinear( vertices, periodic=(), name='rect' ):
   domainelem = element.Element( simplex=element.Dummy(ndims) )
 
   vertexfmt = name + '(' + ','.join( '%%%dd' % len(str(len(n)-1)) for n in vertices ) + ')'
-  vertexobjs = numeric.objmap( lambda *index: element.PrimaryVertex(vertexfmt%index), *numeric.grid( len(n) for n in vertices ) )
+  vertexobjs = numeric.objmap( lambda *index: vertexfmt%index, *numeric.grid( len(n) for n in vertices ) )
   for idim in periodic:
     tmp = numeric.bringforward( vertexobjs, idim )
     tmp[-1] = tmp[0]
@@ -114,7 +114,7 @@ def gmesh( path, btags={}, name=None ):
 
   assert lines.next() == '$Elements\n'
   domainelem = element.Element( ndims=2, vertices=[] )
-  vertexobjs = numeric.array( [ element.PrimaryVertex( '%s(%d)' % (name,ivertex) ) for ivertex in range(nvertices) ], dtype=object )
+  vertexobjs = numeric.array( [ '%s(%d)' % (name,ivertex) for ivertex in range(nvertices) ], dtype=object )
   for ielem in range( int( lines.next() ) ):
     items = lines.next().split()
     assert int( items[0] ) == ielem + 1
@@ -273,7 +273,7 @@ def igatool( path, name=None ):
     Ce = numeric.zeros(( nb, nb ))
     Ce[I,J] = util.arraymap( Cv.GetComponent, float, n, 0 )
 
-    vertices = [ element.PrimaryVertex( '%s(%d:%d)' % (name,ielem,ivertex) ) for ivertex in range(2**ndims) ]
+    vertices = [ '%s(%d:%d)' % (name,ielem,ivertex) for ivertex in range(2**ndims) ]
     elem = element.QuadElement( vertices=vertices, ndims=ndims )
     elements.append( elem )
 
@@ -355,7 +355,7 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
 
   domainelem = element.Element( simplex=element.Dummy(2) )
   elements = []
-  vertexobjs = numeric.array([ element.PrimaryVertex( 'demo.%d' % ivertex ) for ivertex in range(len(vertices)) ])
+  vertexobjs = numeric.array([ 'demo.%d' % ivertex for ivertex in range(len(vertices)) ])
   triangle = element.Triangle()
   for ielem, elemvertices in enumerate( vertices ):
     elemcoords = coords[ numeric.array(elemvertices) ]
