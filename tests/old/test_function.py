@@ -5,24 +5,20 @@ import numpy
 class FuncTest( object ):
 
   def __init__( self ):
-    domainelem = element.Element( ndims=2, vertices=[] )
+    domainelem = element.Element( element.Dummy(2) )
     r, theta = function.ElemFunc( domainelem ) # corners at (0,0), (0,1), (1,1), (1,0)
     geom = r * function.stack([ function.cos(theta), function.sin(theta) ])
-    ##trans = element.AffineTransformation( offset=numeric.asarray([1,0]), transform=numeric.asarray([[2,1],[-1,3]]) )
     trans = transform.Linear( numeric.array([[2,1],[-1,3]]) ) + [1,0]
-    avertices = [element.PrimaryVertex('A(%d)'%i) for i in range(4)]
-    interelem = element.QuadElement( ndims=2, vertices=avertices, parent=(domainelem,trans) ) # corners at (1,0), (3,-1), (4,2), (2,3)
-    ##trans = element.AffineTransformation( offset=numeric.asarray([1,0]), transform=numeric.asarray([[0,1],[-1,0]]) )
+    avertices = tuple( 'A(%d)'%i for i in range(4) )
+    line = element.Line()
+    quad = line**2
+    interelem = element.Element( simplex=quad, vertices=avertices, parent=(domainelem,trans) ) # corners at (1,0), (3,-1), (4,2), (2,3)
     trans = transform.Linear( numeric.array([[0,1],[-1,0]]) ) + [1,0]
-    bvertices = [element.PrimaryVertex('B(%d)'%i) for i in range(4)]
-    elem = element.QuadElement( ndims=2, vertices=bvertices, parent=(interelem,trans) ) # corners at (3,-1), (2,-4), (4,-5), (5,-2)
-
-    #trans1 = element.AffineTransformation( offset=[1,0], transform=[[1,0]] )
-    #trans2 = element.AffineTransformation( offset=[0,0], transform=[[1,0]] )
-    #iface = element.QuadElement( ndims=1, id='test.quad.quad.iface', interface=((elem,trans1),(elem,trans2)) )
-    cvertices = [element.PrimaryVertex('C(%d)'%i) for i in range(2)]
-    iface = element.QuadElement( ndims=1, vertices=cvertices, interface=(elem.edge(1).context,elem.edge(0).context) )
-    ifpoints, ifweights = iface.eval('uniform2')
+    bvertices = tuple( 'B(%d)'%i for i in range(4) )
+    elem = element.Element( simplex=quad, vertices=bvertices, parent=(interelem,trans) ) # corners at (3,-1), (2,-4), (4,-5), (5,-2)
+    cvertices = tuple( 'C(%d)'%i for i in range(2) )
+    iface = element.Element( line, vertices=cvertices, interface=(elem.edge(1).context,elem.edge(0).context) )
+    ifpoints = line.getischeme( 'uniform2' )[:,:1]
 
     fmap = { elem: element.PolyLine( element.PolyLine.bernstein_poly(1) )
                  * element.PolyLine( element.PolyLine.bernstein_poly(2) ) }
@@ -30,7 +26,7 @@ class FuncTest( object ):
     funcsp = function.function( fmap, nmap, ndofs=6, ndims=2 )
     numpy.random.seed(0)
     args = [ ( numpy.random.uniform( size=shape+(funcsp.shape[0],) ) * funcsp ).sum() for shape in self.shapes ]
-    points, weights = elem.eval('uniform2')
+    points = quad.getischeme( 'uniform2' )[:,:2]
 
     self.args = args
     self.argsfunc = function.Tuple( args ).compiled()
