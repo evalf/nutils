@@ -31,7 +31,7 @@ def rectilinear( vertices, periodic=(), name='rect' ):
 
   ndims = len(vertices)
   indices = numeric.grid( len(n)-1 for n in vertices )
-  domainelem = element.Element( simplex=element.Simplex(ndims) )
+  domainelem = element.Element( simplex=element.Dummy(ndims) )
 
   vertexfmt = name + '(' + ','.join( '%%%dd' % len(str(len(n)-1)) for n in vertices ) + ')'
   vertexobjs = numeric.objmap( lambda *index: element.PrimaryVertex(vertexfmt%index), *numeric.grid( len(n) for n in vertices ) )
@@ -39,7 +39,7 @@ def rectilinear( vertices, periodic=(), name='rect' ):
     tmp = numeric.bringforward( vertexobjs, idim )
     tmp[-1] = tmp[0]
 
-  simplex = element.Quad( ndims=ndims )
+  simplex = element.Line()**ndims
   structure = numeric.objmap( lambda *index: element.Element(
     simplex=simplex,
     parent=( domainelem, transform.Scale( numeric.array([ n[i+1]-n[i] for n,i in zip(vertices,index) ]) ) + [ n[i] for n,i in zip(vertices,index) ] ),
@@ -353,7 +353,7 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   + [ ( 12+(i+1)%8, 12+i, i+1+(i//2) ) for i in range( 8) ]
   + [ ( 12+i, 12+(i+1)%8, 20 )         for i in range( 8) ] )
   
-  domainelem = element.Element( simplex=element.Simplex(2) )
+  domainelem = element.Element( simplex=element.Dummy(2) )
   elements = []
   vertexobjs = numeric.array([ element.PrimaryVertex( 'demo.%d' % ivertex ) for ivertex in range(len(vertices)) ])
   triangle = element.Triangle()

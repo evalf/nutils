@@ -851,30 +851,23 @@ class StructuredTopology( Topology ):
     funcmap = dict( numeric.broadcast( self.structure, stdelem ) )
     return function.function( funcmap, dofmap, dofcount, self.ndims )
 
-  def refine_nu( self, N ):
-    'refine non-uniformly'
-
-    N = tuple(N)
-    assert len(N) == self.ndims
-    structure = numeric.array( [ elem.children_by(N) if elem is not None else [None]*numeric.product(N) for elem in self.structure.flat ] )
-    structure = structure.reshape( self.structure.shape + tuple(N) )
-    structure = structure.transpose( sum( [ ( i, self.ndims+i ) for i in range(self.ndims) ], () ) )
-    structure = structure.reshape( self.structure.shape * numeric.asarray(N) )
-    refined = StructuredTopology( structure )
-    refined.groups = { key: group.refine_nu( N ) for key, group in self.groups.items() }
-    return refined
-
   @cache.property
   def refined( self ):
     'refine entire topology'
 
-    return self.refine_nu( (2,)*self.ndims )
+    structure = numeric.array( [ elem.children if elem is not None else [None]*(2**self.ndims) for elem in self.structure.flat ] )
+    structure = structure.reshape( self.structure.shape + (2,)*self.ndims )
+    structure = structure.transpose( sum( [ ( i, self.ndims+i ) for i in range(self.ndims) ], () ) )
+    structure = structure.reshape([ sh * 2 for sh in self.structure.shape ])
+    refined = StructuredTopology( structure )
+    refined.groups = { key: group.refined for key, group in self.groups.items() }
+    return refined
 
   def trim( self, levelset, maxrefine=0, minrefine=0, title='trimming' ):
     'trim element along levelset'
 
     levelset = function.ascompiled( levelset )
-    trimmedelems = [ elem.trim( levelset=levelset, maxrefine=maxrefine ) for elem in log.iterate( title, self.structure.ravel() ) ]
+    trimmedelems = [ elem.trim( levelset=levelset, maxrefine=maxrefine, minrefine=minrefine ) for elem in log.iterate( title, self.structure.ravel() ) ]
     trimmedstructure = numeric.array( trimmedelems ).reshape( self.structure.shape + (2,) )
     return StructuredTopology( trimmedstructure[...,0], periodic=self.periodic ), \
            StructuredTopology( trimmedstructure[...,1], periodic=self.periodic )

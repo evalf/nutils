@@ -44,7 +44,11 @@ class WeakCacheObject( object ):
       try:
         val = kwargs.pop(name)
       except KeyError:
-        val = init.func_defaults[ names.index(name)-len(names) ]
+        index = names.index(name)-len(names)
+        try:
+          val = init.func_defaults[ names.index(name)-len(names) ]
+        except Exception as e:
+          raise TypeError, '%s.__init__ missing mandatory argument %r' % ( args[0].__name__, name )
       args += val,
     assert not kwargs
     try:

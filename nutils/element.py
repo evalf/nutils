@@ -13,6 +13,7 @@ class Element( cache.WeakCacheObject ):
     'constructor'
 
     assert isinstance( vertices, tuple )
+    assert len(vertices) == simplex.nverts
     self.vertices = vertices
     self.simplex = simplex
     self.parent = parent
@@ -26,12 +27,14 @@ class Element( cache.WeakCacheObject ):
 
   @property
   def simplices( self ):
-    if isinstance( self.simplex, Simplex ):
-      return self,
-    simplices = []
-    for child in self.children:
-      simplices.extend( child.simplices )
-    return simplices
+    if not isinstance( self.simplex, Mosaic ):
+      yield self
+    else:
+      nverts = 0
+      for simplex, trans in self.simplex.pieces:
+        vertices = tuple(range(nverts,nverts+simplex.nverts))
+        nverts += simplex.nverts
+        yield Element( simplex=simplex, parent=(self,trans), vertices=vertices )
 
   @property
   def ndims( self ):
@@ -51,15 +54,11 @@ class Element( cache.WeakCacheObject ):
     return [ Element( simplex=simplex, parent=(self,trans), vertices=mknewvertices(self.vertices,iverts) )
       for simplex, trans, iverts in self.simplex.children ]
 
-  def children_by( self, N ):
-    return [ Element( simplex=simplex, parent=(self,trans), vertices=mknewvertices(self.vertices,iverts) )
-      for simplex, trans, iverts in self.simplex.children_by(N) ]
-    
   def trim( self, levelset, maxrefine=0, minrefine=0 ):
     assert maxrefine >= minrefine >= 0
     if minrefine == 0:
       values = levelset.eval( self, 'bezier%d' % (2**maxrefine+1) )
-      mosaics = self.simplex.mosaic( values )
+      allpieces = self.simplex._mosaic( values )
     else:
       # refine to evaluate levelset, then assemble the pieces
       allpieces = [], []
@@ -68,14 +67,14 @@ class Element( cache.WeakCacheObject ):
         for pieces, elem in zip( allpieces, child.trim( levelset, maxrefine-1, minrefine-1 ) ):
           if elem:
             if isinstance( elem.simplex, Mosaic ):
-              pieces.extend( (simplex,ptrans*trans,iverts) for simplex, trans, iverts in elem.simplex.children )
+              pieces.extend( (simplex,ptrans*trans) for simplex, trans in elem.simplex.pieces )
             else:
-              pieces.append( (elem.simplex,ptrans,()) )
-      mosaics = [ Mosaic(pieces) if pieces else None for pieces in allpieces ]
-    if not mosaics[1]:
+              pieces.append( (elem.simplex,ptrans) )
+    if not allpieces[1]:
       return self, None
-    if not mosaics[0]:
+    if not allpieces[0]:
       return None, self
+    mosaics = [ Mosaic(len(self.vertices),pieces) for pieces in allpieces ]
     identity = transform.Identity(self.ndims)
     return [ Element( simplex=mosaic, parent=(self,identity), vertices=self.vertices ) for mosaic in mosaics ]
 
@@ -127,85 +126,176 @@ class Element( cache.WeakCacheObject ):
 
 class Simplex( cache.WeakCacheObject ):
 
-  def __init__( self, ndims ):
-    self.ndims = ndims
+  def __init__( self, vertices ):
+    self.vertices = numeric.asarray( vertices, dtype=float )
+    self.ndims, self.nverts = self.vertices.shape
 
-class Quad( Simplex ):
+  def __mul__( self, other ):
+    assert isinstance( other, Simplex )
+    return other if self.ndims == 0 \
+      else self if other.ndims == 0 \
+      else Product( self, other )
+
+  def __pow__( self, n ):
+    assert isinstance( n, int ) and n >= 1
+    return self if n == 1 else self * self**(n-1)
+
+class Dummy( Simplex ):
+
+  def __init__( self, ndims ):
+    Simplex.__init__( self, numeric.zeros((ndims,0)) )
+
+class Point( Simplex ):
+
+  def __init__( self ):
+    Simplex.__init__( self, numeric.zeros((0,1)) )
+
+class Line( Simplex ):
+
+  def __init__( self ):
+    Simplex.__init__( self, [[0,1]] )
+    point = Point()
+    trans0 = transform.Point( -1 )
+    trans1 = transform.Point( +1 ) + [1]
+    self.edges = (point,trans0,(0,)), (point,trans1,(1,))
+    scale = transform.Scale( numeric.array([.5]) )
+    self.children = (self,scale,(0,(0,1))), (self,scale+[.5],((0,1),1))
+
+  def _isect( self, (v0,v1) ):
+    x = -v0 / float(v1-v0) # v0 + x (v1-v0) = 0
+    if 0 <= x <= 1:
+      yield numeric.array([ 1-x, x ])
+
+  def stdfunc( self, degree ):
+    return PolyLine( PolyLine.bernstein_poly( degree ) )
+
+  def getischeme( self, where ):
+    'get integration scheme'
+
+    if where.startswith( 'gauss' ):
+      n = eval( where[5:] )
+      return getgauss( n )
+    if where.startswith( 'uniform' ):
+      n = eval( where[7:] )
+      return numeric.array([ numeric.arange( .5, n ) / n, numeric.appendaxes( 1./n, n ) ])
+    if where.startswith( 'bezier' ):
+      n = int( where[6:] )
+      return numeric.linspace( 0, 1, n )[:,_]
+    raise Exception, 'invalid element evaluation %r' % where
+
+class Product( Simplex ):
+
+  def __init__( self, simplex1, simplex2 ):
+    self.simplex1 = simplex1
+    self.simplex2 = simplex2
+    ndims = simplex1.ndims + simplex2.ndims
+    vertices = numeric.empty(( ndims, simplex1.nverts, simplex2.nverts ))
+    vertices[:simplex1.ndims] = simplex1.vertices[:,:,_]
+    vertices[simplex1.ndims:] = simplex2.vertices[:,_,:]
+    Simplex.__init__( self, vertices.reshape(ndims,-1) )
+
+  def stdfunc( self, degree ):
+    return self.simplex1.stdfunc(degree) * self.simplex2.stdfunc(degree)
+
+  def getischeme( self, where ):
+    ischeme1 = self.simplex1.getischeme( where )
+    ischeme2 = self.simplex2.getischeme( where )
+    ischeme = numeric.empty( (ischeme1.shape[0],ischeme2.shape[0],self.ndims) )
+    ischeme[:,:,:self.simplex1.ndims] = ischeme1[:,_,:self.simplex1.ndims]
+    ischeme[:,:,self.simplex1.ndims:] = ischeme2[_,:,:self.simplex2.ndims]
+    if ischeme1.shape[-1] == self.simplex1.ndims+1 and ischeme2.shape[-1] == self.simplex2.ndims+1:
+      ischeme = numeric.concatenate( [ ischeme, ischeme1[:,_,-1:] * ischeme2[_,:,-1:] ], axis=-1 )
+    return ischeme.reshape( ischeme.shape[0] * ischeme.shape[1], ischeme.shape[2] )
+
+  @cache.property
+  def edges( self ):
+    edges = []
+    for edge1, trans1, iverts1 in self.simplex1.edges:
+      edge = edge1 * self.simplex2
+      trans = transform.tensor( trans1, transform.Identity(self.simplex2.ndims) )
+      iverts = tuple( i1*self.simplex2.nverts+i2 for i1 in iverts1 for i2 in range(self.simplex2.nverts) )
+      edges.append(( edge, trans, iverts ))
+    for edge2, trans2, iverts2 in self.simplex2.edges:
+      edge = self.simplex1 * edge2
+      trans = transform.tensor( transform.Identity(self.simplex1.ndims), trans2 )
+      iverts = tuple( i1*self.simplex2.nverts+i2 for i1 in range(self.simplex1.nverts) for i2 in iverts2 )
+      edges.append(( edge, trans, iverts ))
+    return edges
+
+  @cache.property
+  def children( self ):
+    children = []
+    vertices = numeric.arange( self.nverts ).reshape( self.simplex1.nverts, self.simplex2.nverts )
+    for child1, trans1, iverts1 in self.simplex1.children:
+      vertices1 = zip( *[ util.getitem( v, iverts1 ) for v in vertices.T ] )
+      for child2, trans2, iverts2 in self.simplex2.children:
+        vertices2 = sum( [ util.getitem( v, iverts2 ) for v in vertices1 ], () )
+        children.append(( child1*child2, transform.tensor(trans1,trans2), vertices2 ))
+    return children
+
+  def _triangulate( self, values ):
+    assert values.shape == (self.simplex1.nverts,self.simplex2.nverts)
+    pos = []
+    neg = []
+    for coord, value in zip( self.vertices.T, values.ravel() ):
+      ( pos if value > 0 else neg ).append( coord )
+    vertices = self.vertices.reshape( self.ndims, self.simplex1.nverts, self.simplex2.nverts )
+    for i1 in range( self.simplex1.nverts ):
+      for w in self.simplex2._isect( values[i1,:] ):
+        v = numeric.dot( vertices[:,i1,:], w )
+        pos.append( v )
+        neg.append( v )
+    for i2 in range( self.simplex2.nverts ):
+      for w in self.simplex1._isect( values[:,i2] ):
+        v = numeric.dot( vertices[:,:,i2], w )
+        pos.append( v )
+        neg.append( v )
+    assert self.ndims == 2
+    triangle = Triangle()
+    return [ (triangle,trans) for trans in transform.delaunay(pos) ], \
+           [ (triangle,trans) for trans in transform.delaunay(neg) ]
+
+  def _mosaic( self, values, eps=1e-10 ):
+    identity = transform.Identity( self.ndims )
+    if numeric.greater( values, -eps ).all():
+      return [(self,identity)], []
+    if numeric.less( values, +eps ).all():
+      return [], [(self,identity)]
+    if values.ndim == 1:
+      n1 = self.simplex1.nverts
+      n2 = self.simplex2.nverts
+      while len(values) > n1 * n2:
+        n1 = n1*2 - 1
+        n2 = n2*2 - 1
+      assert n1 * n2 == len(values), 'cannot reshape values to appropriate shape'
+      values = values.reshape( n1, n2 )
+    else:
+      n1, n2 = values.shape
+    if n1 * n2 <= self.nverts:
+      return self._triangulate( values )
+    children = self.children
+    allpos = []
+    allneg = []
+    for i, s1 in enumerate([ slice(n1//2+1), slice(n1//2,None) ]):
+      for j, s2 in enumerate([ slice(n2//2+1), slice(n2//2,None) ]):
+        child, ptrans, iverts = children[i*2+j]
+        pos, neg = child._mosaic( values[s1,s2] )
+        allpos.extend( (simplex,ptrans*trans) for simplex, trans in pos )
+        allneg.extend( (simplex,ptrans*trans) for simplex, trans in neg )
+    if not allneg:
+      return [(self,identity)], []
+    if not allpos:
+      return [], [(self,identity)]
+    return allpos, allneg
+      
+
+class OldQuad( Simplex ):
   'quadrilateral element'
 
   def __init__( self, ndims ):
     'constructor'
 
     Simplex.__init__( self, ndims=ndims )
-
-  def getischeme( self, where ):
-    'get integration scheme'
-
-    x = w = None
-    if self.ndims == 0:
-      coords = numeric.zeros([1,0])
-      weights = numeric.array([1.])
-    elif where.startswith( 'gauss' ):
-      N = eval( where[5:] )
-      if isinstance( N, tuple ):
-        assert len(N) == self.ndims
-      else:
-        N = [N]*self.ndims
-      x, w = zip( *map( getgauss, N ) )
-    elif where.startswith( 'uniform' ):
-      N = eval( where[7:] )
-      if isinstance( N, tuple ):
-        assert len(N) == self.ndims
-      else:
-        N = [N]*self.ndims
-      x = [ numeric.arange( .5, n ) / n for n in N ]
-      w = [ numeric.appendaxes( 1./n, n ) for n in N ]
-    elif where.startswith( 'bezier' ):
-      N = int( where[6:] )
-      x = [ numeric.linspace( 0, 1, N ) ] * self.ndims
-      w = [ numeric.appendaxes( 1./N, N ) ] * self.ndims
-    elif where.startswith( 'subdivision' ):
-      N = int( where[11:] ) + 1
-      x = [ numeric.linspace( 0, 1, N ) ] * self.ndims
-      w = None
-    elif where.startswith( 'vtk' ):
-      if self.ndims == 1:
-        coords = numeric.array([[0,1]]).T
-      elif self.ndims == 2:
-        eps = 0 if not len(where[3:]) else float(where[3:]) # subdivision fix (avoid extraordinary point)
-        coords = numeric.array([[eps,eps],[1-eps,eps],[1-eps,1-eps],[eps,1-eps]])
-      elif self.ndims == 3:
-        coords = numeric.array([ [0,0,0], [1,0,0], [0,1,0], [1,1,0], [0,0,1], [1,0,1], [0,1,1], [1,1,1] ])
-      else:
-        raise Exception, 'contour not supported for ndims=%d' % self.ndims
-    elif where.startswith( 'contour' ):
-      N = int( where[7:] )
-      p = numeric.linspace( 0, 1, N )
-      if self.ndims == 1:
-        coords = p[_].T
-      elif self.ndims == 2:
-        coords = numeric.array([ p[ range(N) + [N-1]*(N-2) + range(N)[::-1] + [0]*(N-1) ],
-                                 p[ [0]*(N-1) + range(N) + [N-1]*(N-2) + range(0,N)[::-1] ] ]).T
-      elif self.ndims == 3:
-        assert N == 0
-        coords = numeric.array([ [0,0,0], [1,0,0], [0,1,0], [1,1,0], [0,0,1], [1,0,1], [0,1,1], [1,1,1] ])
-      else:
-        raise Exception, 'contour not supported for ndims=%d' % self.ndims
-    else:
-      raise Exception, 'invalid element evaluation %r' % where
-    if x is not None:
-      coords = numeric.empty( map( len, x ) + [ self.ndims ] )
-      for i, xi in enumerate( x ):
-        coords[...,i] = xi[ (slice(None),) + (_,)*(self.ndims-i-1) ]
-      coords = coords.reshape( -1, self.ndims )
-    if w is not None:
-      weights = reduce( lambda weights, wi: ( weights * wi[:,_] ).ravel(), w )
-    else:
-      weights = None
-    return numeric.concatenate( [coords,weights[:,_]], axis=-1 ) if weights is not None else coords
-
-  def stdfunc( self, degree ):
-    return PolyLine.bernstein_poly( degree )**self.ndims
 
   @cache.property
   def edges( self ):
@@ -339,8 +429,8 @@ class Triangle( Simplex ):
   def __init__( self ):
     'constructor'
 
-    Simplex.__init__( self, ndims=2 )
-    line = Quad(ndims=1)
+    Simplex.__init__( self, [[1,0,0],[0,1,0]] )
+    line = Line()
     self.edges = (
       ( line, transform.Linear( numeric.array([[ 1],[ 0]]) ), (2,0) ),
       ( line, transform.Linear( numeric.array([[-1],[ 1]]) ) + [1,0], (0,1) ),
@@ -677,7 +767,7 @@ class Tetrahedron( Simplex ):
     'select points contained in element'
     raise NotImplementedError( 'Determine whether a point resides in the tetrahedron' )  
 
-class Product( Simplex ):
+class OldProduct( Simplex ):
   'element product'
 
   @staticmethod
@@ -923,13 +1013,14 @@ class Product( Simplex ):
 class Mosaic( object ):
   'trimmed simplex'
 
-  def __init__( self, children ):
-    self.children = children
-    self.ndims, = util.filterrepeat( simplex.ndims for simplex, trans, iverts in children )
+  def __init__( self, nverts, pieces ):
+    self.pieces = pieces
+    self.nverts = nverts
+    self.ndims, = util.filterrepeat( simplex.ndims for simplex, trans in pieces )
 
   def getischeme( self, ischeme ):
     pw_all = []
-    for simplex, trans, iverts in self.children:
+    for simplex, trans in self.pieces:
       pw = simplex.getischeme( ischeme )
       pw_trans = trans.apply( pw[...,:self.ndims] ), trans.det * pw[...,self.ndims:]
       pw_concat = numeric.concatenate( pw_trans, axis=-1 )
@@ -1278,7 +1369,7 @@ def getgauss( degree ):
   k = numeric.arange( 1, degree // 2 + 1 )
   d = k / numeric.sqrt( 4*k**2-1 )
   x, w = numeric.eigh( numeric.diagflat(d,-1) ) # eigh operates (by default) on lower triangle
-  return (x+1) * .5, w[0]**2
+  return numeric.array([ (x+1) * .5, w[0]**2 ]).T
 
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

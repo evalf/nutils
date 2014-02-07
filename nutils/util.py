@@ -482,23 +482,8 @@ def breakpoint():
     program execution.''' ).cmdloop()
 
 def getitem( iterable, index ):
-  getitem = getattr( iterable, '__getitem__', None )
-  if isinstance(index,int):
-    if getitem:
-      return getitem( index )
-    for iiter, item in enumerate( iterable ):
-      if iiter == index:
-        return item
-  if getitem:
-    return tuple( map( getitem, index ) )
-  order = numeric.argsort( index )
-  items = [ None ] * len(order)
-  for iiter, item in enumerate( iterable ):
-    while iiter == order[0]:
-      items[ index[order[0]] ] = item
-      order = order[1:]
-      if not order.size:
-        return tuple( items )
+  return iterable[index] if isinstance(index,int) \
+    else tuple( getitem( iterable, i ) for i in index )
 
 def filterrepeat( iterable ):
   current = object()

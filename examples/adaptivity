@@ -8,25 +8,25 @@ def makeplots( domain, geom, greysmooth, index, indicator, supp ):
 
   log.context( 'figures' )
 
-  xp, yp = topology.UnstructuredTopology( supp, domain.ndims ).elem_eval( geom, ischeme='contour2', separate=True ).T
+  frame = topology.UnstructuredTopology( supp, domain.ndims ).elem_eval( geom, ischeme='bezier3', separate=True )
   points, fval, xgrad, indic = domain.elem_eval( [ geom, greysmooth, greysmooth.grad(geom)[0], indicator ], ischeme='bezier9', separate=True )
 
   with plot.PyPlot( 'fval', index=index ) as plt:
     plt.mesh( points, fval, triangulate='bezier' )
-    plt.plot( xp, yp, 'w' )
     plt.clim( -1, 1 )
     plt.colorbar()
+    plt.mesh( frame, triangulate='bezier', edgecolors='white', setxylim=False )
 
   with plot.PyPlot( 'xgrad', index=index ) as plt:
     plt.mesh( points, xgrad, triangulate='bezier' )
-    plt.plot( xp, yp, 'w' )
     plt.clim( 0, 18 )
     plt.colorbar()
+    plt.mesh( frame, triangulate='bezier', edgecolors='white', setxylim=False )
 
   with plot.PyPlot( 'indicator', index=index ) as plt:
     plt.mesh( points, indic, triangulate='bezier' )
-    plt.plot( xp, yp, 'w' )
     plt.colorbar()
+    plt.mesh( frame, triangulate='bezier', edgecolors='white', setxylim=False )
 
 
 def main( degree=1, niter=30, triangular=False ):
