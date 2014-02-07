@@ -291,7 +291,7 @@ class Product( Simplex ):
 class Triangle( Simplex ):
   '''triangular element
      conventions: reference elem:   unit simplex {(x,y) | x>0, y>0, x+y<1}
-                  vertex numbering: {(1,0):0, (0,1):1, (0,0):2}
+                  vertex numbering: {(0,0):0, (1,0):1, (0,1):2}
                   edge numbering:   {bottom:0, slanted:1, left:2}
                   edge local coords run counter-clockwise.'''
 
@@ -300,19 +300,19 @@ class Triangle( Simplex ):
   def __init__( self ):
     'constructor'
 
-    Simplex.__init__( self, [[1,0],[0,1],[0,0]] )
+    Simplex.__init__( self, [[0,0],[1,0],[0,1]] )
     line = Line()
     self.edges = (
-      ( line, transform.Linear( numeric.array([[ 1],[ 0]]) ), (2,0) ),
-      ( line, transform.Linear( numeric.array([[-1],[ 1]]) ) + [1,0], (0,1) ),
-      ( line, transform.Linear( numeric.array([[ 0],[-1]]) ) + [0,1], (1,2) ),
+      ( line, transform.Linear( numeric.array([[ 1],[ 0]]) ), (0,1) ),
+      ( line, transform.Linear( numeric.array([[-1],[ 1]]) ) + [1,0], (1,2) ),
+      ( line, transform.Linear( numeric.array([[ 0],[-1]]) ) + [0,1], (2,0) ),
     )
     scale = transform.Scale( numeric.asarray([.5,.5]) )
     negscale = transform.Scale( -numeric.asarray([.5,.5]) )
     self.children = (
-      ( self, scale, ((0,2),(1,2),2) ),
-      ( self, scale + [.5, 0], (0,(0,1),(0,2)) ),
-      ( self, scale + [ 0,.5], ((0,1),1,(1,2)) ),
+      ( self, scale, (0,(0,1),(0,2)) ),
+      ( self, scale + [.5, 0], ((0,1),1,(1,2)) ),
+      ( self, scale + [ 0,.5], ((0,2),(1,2),2) ),
       ( self, negscale + [.5,.5], ((1,2),(0,2),(0,1)) ),
     )
 
@@ -1273,9 +1273,9 @@ class PolyTriangle( StdElem ):
     npoints, ndim = points.shape
     if grad == 0:
       x, y = points.T
-      data = numeric.array( [ x, y, 1-x-y ] ).T
+      data = numeric.array( [ 1-x-y, x, y ] ).T
     elif grad == 1:
-      data = numeric.array( [[1,0],[0,1],[-1,-1]], dtype=float )
+      data = numeric.array( [[-1,-1],[1,0],[0,1]], dtype=float )
     else:
       data = numeric.array( 0 ).reshape( (1,) * (grad+ndim) )
     return data
