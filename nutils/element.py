@@ -128,7 +128,7 @@ class Simplex( cache.WeakCacheObject ):
 
   def __init__( self, vertices ):
     self.vertices = numeric.asarray( vertices, dtype=float )
-    self.ndims, self.nverts = self.vertices.shape
+    self.nverts, self.ndims = self.vertices.shape
 
   def __mul__( self, other ):
     assert isinstance( other, Simplex )
@@ -143,17 +143,17 @@ class Simplex( cache.WeakCacheObject ):
 class Dummy( Simplex ):
 
   def __init__( self, ndims ):
-    Simplex.__init__( self, numeric.zeros((ndims,0)) )
+    Simplex.__init__( self, numeric.zeros((0,ndims)) )
 
 class Point( Simplex ):
 
   def __init__( self ):
-    Simplex.__init__( self, numeric.zeros((0,1)) )
+    Simplex.__init__( self, numeric.zeros((1,0)) )
 
 class Line( Simplex ):
 
   def __init__( self ):
-    Simplex.__init__( self, [[0,1]] )
+    Simplex.__init__( self, [[0],[1]] )
     point = Point()
     trans0 = transform.Point( -1 )
     trans1 = transform.Point( +1 ) + [1]
@@ -189,10 +189,10 @@ class Product( Simplex ):
     self.simplex1 = simplex1
     self.simplex2 = simplex2
     ndims = simplex1.ndims + simplex2.ndims
-    vertices = numeric.empty(( ndims, simplex1.nverts, simplex2.nverts ))
-    vertices[:simplex1.ndims] = simplex1.vertices[:,:,_]
-    vertices[simplex1.ndims:] = simplex2.vertices[:,_,:]
-    Simplex.__init__( self, vertices.reshape(ndims,-1) )
+    vertices = numeric.empty(( simplex1.nverts, simplex2.nverts, ndims ))
+    vertices[:,:,:simplex1.ndims] = simplex1.vertices[:,_]
+    vertices[:,:,simplex1.ndims:] = simplex2.vertices[_,:]
+    Simplex.__init__( self, vertices.reshape(-1,ndims) )
 
   def stdfunc( self, degree ):
     return self.simplex1.stdfunc(degree) * self.simplex2.stdfunc(degree)
@@ -237,17 +237,17 @@ class Product( Simplex ):
     assert values.shape == (self.simplex1.nverts,self.simplex2.nverts)
     pos = []
     neg = []
-    for coord, value in zip( self.vertices.T, values.ravel() ):
+    for coord, value in zip( self.vertices, values.ravel() ):
       ( pos if value > 0 else neg ).append( coord )
-    vertices = self.vertices.reshape( self.ndims, self.simplex1.nverts, self.simplex2.nverts )
+    vertices = self.vertices.reshape( self.simplex1.nverts, self.simplex2.nverts, self.ndims )
     for i1 in range( self.simplex1.nverts ):
       for w in self.simplex2._isect( values[i1,:] ):
-        v = numeric.dot( vertices[:,i1,:], w )
+        v = numeric.dot( w, vertices[i1,:] )
         pos.append( v )
         neg.append( v )
     for i2 in range( self.simplex2.nverts ):
       for w in self.simplex1._isect( values[:,i2] ):
-        v = numeric.dot( vertices[:,:,i2], w )
+        v = numeric.dot( w, vertices[:,i2] )
         pos.append( v )
         neg.append( v )
     assert self.ndims == 2
@@ -288,135 +288,6 @@ class Product( Simplex ):
       return [], [(self,identity)]
     return allpos, allneg
       
-
-class OldQuad( Simplex ):
-  'quadrilateral element'
-
-  def __init__( self, ndims ):
-    'constructor'
-
-    Simplex.__init__( self, ndims=ndims )
-
-  @cache.property
-  def edges( self ):
-    transforms = []
-    simplex = Quad( self.ndims-1 )
-    iverts = numeric.arange( 2**self.ndims ).reshape( (2,)*self.ndims )
-    for idim in range( self.ndims ):
-      offset = numeric.zeros( self.ndims )
-      offset[:idim] = 1
-      matrix = numeric.zeros(( self.ndims, self.ndims-1 ))
-      matrix.flat[ :(self.ndims-1)*idim :self.ndims] = -1
-      matrix.flat[self.ndims*(idim+1)-1::self.ndims] = 1
-      for side in 0, 1:
-        offset[idim] = side
-        # flip normal:
-        offset[idim-1] = 1 - offset[idim-1]
-        matrix[idim-1] *= -1
-        iedgeverts = numeric.getitem(iverts,idim,side) # TODO fix!
-        transforms.append(( simplex, transform.Linear(matrix.copy()) + offset, iedgeverts ))
-    return transforms
-
-  def children_by( self, N ):
-    'divide element by n'
-
-    Nrcp = numeric.reciprocal( N, dtype=float )
-    scale = transform.Scale(Nrcp)
-    refinedtransform = [ scale + i*Nrcp for i in numeric.ndindex(*N) ]
-
-    assert len(N) == self.ndims
-    vertices = numeric.empty( [ ni+1 for ni in N ], dtype=object )
-    vertices[ tuple( slice(None,None,ni) for ni in N ) ] = numeric.arange( 2*self.ndims ).reshape( [2]*self.ndims )
-    for idim in range(self.ndims):
-      s1 = tuple( slice(None) for ni in N[:idim] )
-      s2 = tuple( slice(None,None,ni) for ni in N[idim+1:] )
-      for i in range( 1, N[idim] ):
-        vertices[s1+(i,)+s2] = zip( vertices[s1+(0,)+s2], vertices[s1+(2,)+s2] ) # TODO fix fraction
-
-    elemvertices = [ vertices[ tuple( slice(i,i+2) for i in index ) ].ravel() for index in numeric.ndindex(*N) ]
-    return [ ( self, trans, elemvertices[ielem] ) for ielem, trans in enumerate( refinedtransform ) ]
-
-  @cache.property
-  def children( self ):
-    'all 1x refined elements'
-
-    return self.children_by( (2,)*self.ndims )
-
-  def _triangulate( self, values ):
-    assert values.shape == (2,)*self.ndims
-    pos = []
-    neg = []
-    coords = numeric.zeros( (2,)*self.ndims + (self.ndims,) )
-    for i in range(self.ndims):
-      numeric.getitem(coords,i,1)[...,i] = 1
-    for coord, value in zip( coords.reshape(-1,self.ndims), values.ravel() ):
-      ( pos if value > 0 else neg ).append( coord )
-    for idim in range( self.ndims ):
-      v0 = numeric.getitem( values, idim, 0 ).ravel()
-      dv = numeric.getitem( values, idim, 1 ).ravel() - v0
-      c0 = numeric.getitem( coords, idim, 0 ).reshape(-1,self.ndims)
-      dc = numeric.getitem( coords, idim, 1 ).reshape(-1,self.ndims) - c0
-      x = -v0 / dv # v0 + x dv = 0
-      for i in numeric.find( numeric.greater_equal(x,0) & numeric.less_equal(x,1) ):
-        coord = c0[i] + x[i] * dc[i]
-        pos.append( coord )
-        neg.append( coord )
-    triangle = Triangle()
-    return [ (triangle,trans,()) for trans in transform.delaunay(pos) ], \
-           [ (triangle,trans,()) for trans in transform.delaunay(neg) ]
-
-  def _mosaic( self, values, eps ):
-    if numeric.greater( values, -eps ).all():
-      return [(self,transform.Identity(self.ndims),())], []
-    if numeric.less( values, +eps ).all():
-      return [], [(self,transform.Identity(self.ndims),())]
-    n = values.shape[0]
-    assert values.shape == (n,)*self.ndims
-    if n == 2:
-      return self._triangulate( values )
-    slices = slice(0,n//2+1), slice(n//2,n+1)
-    allpos = []
-    allneg = []
-    for i, (dummy,trans,dummy) in enumerate( self.children ):
-      s = tuple( slices[n] for n in ( i >> numeric.arange(self.ndims-1,-1,-1) ) & 1 )
-      pos, neg = self._mosaic( values[s], eps )
-      for simplex, trans2, iverts in pos:
-        allpos.append(( simplex, trans * trans2, iverts ))
-      for simplex, trans2, iverts in neg:
-        allneg.append(( simplex, trans * trans2, iverts ))
-    return allpos, allneg
-
-  def mosaic( self, values, eps=1e-10 ):
-    assert values.ndim == 1
-    n = 2
-    while n**self.ndims < values.size:
-      n = n*2 - 1
-    assert n**self.ndims == values.size, 'cannot reshape values to appropriate shape'
-    values = values.reshape( (n,)*self.ndims )
-    pos, neg = self._mosaic( values, eps )
-    if not neg:
-      return self, None
-    if not pos:
-      return None, self
-    return Mosaic(pos), Mosaic(neg)
-
-# @cache.property
-# def neighbormap( self ):
-#   'maps # matching vertices --> codim of interface: {0: -1, 1: 2, 2: 1, 4: 0}'
-#   return dict( [ (0,-1) ] + [ (2**(self.ndims-i),i) for i in range(self.ndims+1) ] )
-
-# def select_contained( self, points, eps=0 ):
-#   'select points contained in element'
-
-#   selection = numeric.ones( points.shape[0], dtype=bool )
-#   for idim in range( self.ndims ):
-#     newsel = numeric.greater_equal( points[:,idim], -eps ) & numeric.less_equal( points[:,idim], 1+eps )
-#     selection[selection] &= newsel
-#     points = points[newsel]
-#     if not points.size:
-#       return None, None
-#   return points, selection
-
 class Triangle( Simplex ):
   '''triangular element
      conventions: reference elem:   unit simplex {(x,y) | x>0, y>0, x+y<1}
@@ -429,7 +300,7 @@ class Triangle( Simplex ):
   def __init__( self ):
     'constructor'
 
-    Simplex.__init__( self, [[1,0,0],[0,1,0]] )
+    Simplex.__init__( self, [[1,0],[0,1],[0,0]] )
     line = Line()
     self.edges = (
       ( line, transform.Linear( numeric.array([[ 1],[ 0]]) ), (2,0) ),
@@ -508,53 +379,6 @@ class Triangle( Simplex ):
       raise Exception, 'invalid element evaluation: %r' % where
     return numeric.concatenate([coords.T,weights[...,_]],axis=-1) if weights is not None else coords.T
 
-# @property
-# def children( self ):
-#   'all 1x refined elements'
-
-#   t1, t2, t3, t4 = self.refinedtransform( 2 )
-#   v1, v2, v3 = self.vertices
-#   h1, h2, h3 = HalfVertex(v1,v2), HalfVertex(v2,v3), HalfVertex(v3,v1)
-#   return tuple([ # TODO check!
-#     TriangularElement( vertices=[v1,h1,h3], parent=(self,t1) ),
-#     TriangularElement( vertices=[h1,v2,h2], parent=(self,t2) ),
-#     TriangularElement( vertices=[h3,h2,v3], parent=(self,t3) ),
-#     TriangularElement( vertices=[h2,h3,h1], parent=(self,t4) ) ])
-#     
-# @staticmethod
-# def refinedtransform( n ):
-#   'refined transform'
-
-#   transforms = []
-#   scale = transform.Scale( numeric.asarray([1./n,1./n]) )
-#   negscale = transform.Scale( numeric.asarray([-1./n,-1./n]) )
-#   for i in range( n ):
-#     transforms.extend( scale + numeric.array( [i,j], dtype=float ) / n for j in range(0,n-i) )
-#     transforms.extend( negscale + numeric.array( [n-j,n-i], dtype=float ) / n for j in range(n-i,n) )
-#   return transforms
-
-# def refined( self, n ):
-#   'refine'
-
-#   assert n == 2
-#   if n == 1:
-#     return self
-#   return [ TriangularElement( id=self.id+'.child({})'.format(ichild), parent=(self,trans) ) for ichild, trans in enumerate( self.refinedtransform( n ) ) ]
-
-# def select_contained( self, points, eps=0 ):
-#   'select points contained in element'
-
-#   selection = numeric.ones( points.shape[0], dtype=bool )
-#   for idim in 0, 1, 2:
-#     points_i = points[:,idim] if idim < 2 else 1-points.sum(1)
-#     newsel = numeric.greater_equal( points_i, -eps )
-#     selection[selection] &= newsel
-#     points = points[newsel]
-#     if not points.size:
-#       return None, None
-
-#   return points, selection
-
 class Tetrahedron( Simplex ):
   'tetrahedron element'
 
@@ -566,8 +390,8 @@ class Tetrahedron( Simplex ):
     transform.Linear( numeric.array([[ 0, 0],[0,1],[1,0]]) ),
     transform.Linear( numeric.array([[-1,-1],[1,0],[0,1]]) ) + [1,0,0] )
 
-  def __init__( self, vertices, parent=None, context=None ):
-    'constructor'
+  def __init__( self ):
+    Simplex.__init__( self, vertices )
 
     assert len(vertices) == 4
     Element.__init__( self, ndims=3, vertices=vertices, parent=parent, context=context )
@@ -766,6 +590,185 @@ class Tetrahedron( Simplex ):
   def select_contained( self, points, eps=0 ):
     'select points contained in element'
     raise NotImplementedError( 'Determine whether a point resides in the tetrahedron' )  
+
+
+## OLD
+
+class OldQuad( Simplex ):
+  'quadrilateral element'
+
+  def __init__( self, ndims ):
+    'constructor'
+
+    Simplex.__init__( self, ndims=ndims )
+
+  @cache.property
+  def edges( self ):
+    transforms = []
+    simplex = Quad( self.ndims-1 )
+    iverts = numeric.arange( 2**self.ndims ).reshape( (2,)*self.ndims )
+    for idim in range( self.ndims ):
+      offset = numeric.zeros( self.ndims )
+      offset[:idim] = 1
+      matrix = numeric.zeros(( self.ndims, self.ndims-1 ))
+      matrix.flat[ :(self.ndims-1)*idim :self.ndims] = -1
+      matrix.flat[self.ndims*(idim+1)-1::self.ndims] = 1
+      for side in 0, 1:
+        offset[idim] = side
+        # flip normal:
+        offset[idim-1] = 1 - offset[idim-1]
+        matrix[idim-1] *= -1
+        iedgeverts = numeric.getitem(iverts,idim,side) # TODO fix!
+        transforms.append(( simplex, transform.Linear(matrix.copy()) + offset, iedgeverts ))
+    return transforms
+
+  def children_by( self, N ):
+    'divide element by n'
+
+    Nrcp = numeric.reciprocal( N, dtype=float )
+    scale = transform.Scale(Nrcp)
+    refinedtransform = [ scale + i*Nrcp for i in numeric.ndindex(*N) ]
+
+    assert len(N) == self.ndims
+    vertices = numeric.empty( [ ni+1 for ni in N ], dtype=object )
+    vertices[ tuple( slice(None,None,ni) for ni in N ) ] = numeric.arange( 2*self.ndims ).reshape( [2]*self.ndims )
+    for idim in range(self.ndims):
+      s1 = tuple( slice(None) for ni in N[:idim] )
+      s2 = tuple( slice(None,None,ni) for ni in N[idim+1:] )
+      for i in range( 1, N[idim] ):
+        vertices[s1+(i,)+s2] = zip( vertices[s1+(0,)+s2], vertices[s1+(2,)+s2] ) # TODO fix fraction
+
+    elemvertices = [ vertices[ tuple( slice(i,i+2) for i in index ) ].ravel() for index in numeric.ndindex(*N) ]
+    return [ ( self, trans, elemvertices[ielem] ) for ielem, trans in enumerate( refinedtransform ) ]
+
+  @cache.property
+  def children( self ):
+    'all 1x refined elements'
+
+    return self.children_by( (2,)*self.ndims )
+
+  def _triangulate( self, values ):
+    assert values.shape == (2,)*self.ndims
+    pos = []
+    neg = []
+    coords = numeric.zeros( (2,)*self.ndims + (self.ndims,) )
+    for i in range(self.ndims):
+      numeric.getitem(coords,i,1)[...,i] = 1
+    for coord, value in zip( coords.reshape(-1,self.ndims), values.ravel() ):
+      ( pos if value > 0 else neg ).append( coord )
+    for idim in range( self.ndims ):
+      v0 = numeric.getitem( values, idim, 0 ).ravel()
+      dv = numeric.getitem( values, idim, 1 ).ravel() - v0
+      c0 = numeric.getitem( coords, idim, 0 ).reshape(-1,self.ndims)
+      dc = numeric.getitem( coords, idim, 1 ).reshape(-1,self.ndims) - c0
+      x = -v0 / dv # v0 + x dv = 0
+      for i in numeric.find( numeric.greater_equal(x,0) & numeric.less_equal(x,1) ):
+        coord = c0[i] + x[i] * dc[i]
+        pos.append( coord )
+        neg.append( coord )
+    triangle = Triangle()
+    return [ (triangle,trans,()) for trans in transform.delaunay(pos) ], \
+           [ (triangle,trans,()) for trans in transform.delaunay(neg) ]
+
+  def _mosaic( self, values, eps ):
+    if numeric.greater( values, -eps ).all():
+      return [(self,transform.Identity(self.ndims),())], []
+    if numeric.less( values, +eps ).all():
+      return [], [(self,transform.Identity(self.ndims),())]
+    n = values.shape[0]
+    assert values.shape == (n,)*self.ndims
+    if n == 2:
+      return self._triangulate( values )
+    slices = slice(0,n//2+1), slice(n//2,n+1)
+    allpos = []
+    allneg = []
+    for i, (dummy,trans,dummy) in enumerate( self.children ):
+      s = tuple( slices[n] for n in ( i >> numeric.arange(self.ndims-1,-1,-1) ) & 1 )
+      pos, neg = self._mosaic( values[s], eps )
+      for simplex, trans2, iverts in pos:
+        allpos.append(( simplex, trans * trans2, iverts ))
+      for simplex, trans2, iverts in neg:
+        allneg.append(( simplex, trans * trans2, iverts ))
+    return allpos, allneg
+
+  def mosaic( self, values, eps=1e-10 ):
+    assert values.ndim == 1
+    n = 2
+    while n**self.ndims < values.size:
+      n = n*2 - 1
+    assert n**self.ndims == values.size, 'cannot reshape values to appropriate shape'
+    values = values.reshape( (n,)*self.ndims )
+    pos, neg = self._mosaic( values, eps )
+    if not neg:
+      return self, None
+    if not pos:
+      return None, self
+    return Mosaic(pos), Mosaic(neg)
+
+# @cache.property
+# def neighbormap( self ):
+#   'maps # matching vertices --> codim of interface: {0: -1, 1: 2, 2: 1, 4: 0}'
+#   return dict( [ (0,-1) ] + [ (2**(self.ndims-i),i) for i in range(self.ndims+1) ] )
+
+# def select_contained( self, points, eps=0 ):
+#   'select points contained in element'
+
+#   selection = numeric.ones( points.shape[0], dtype=bool )
+#   for idim in range( self.ndims ):
+#     newsel = numeric.greater_equal( points[:,idim], -eps ) & numeric.less_equal( points[:,idim], 1+eps )
+#     selection[selection] &= newsel
+#     points = points[newsel]
+#     if not points.size:
+#       return None, None
+#   return points, selection
+
+
+# @property
+# def children( self ):
+#   'all 1x refined elements'
+
+#   t1, t2, t3, t4 = self.refinedtransform( 2 )
+#   v1, v2, v3 = self.vertices
+#   h1, h2, h3 = HalfVertex(v1,v2), HalfVertex(v2,v3), HalfVertex(v3,v1)
+#   return tuple([ # TODO check!
+#     TriangularElement( vertices=[v1,h1,h3], parent=(self,t1) ),
+#     TriangularElement( vertices=[h1,v2,h2], parent=(self,t2) ),
+#     TriangularElement( vertices=[h3,h2,v3], parent=(self,t3) ),
+#     TriangularElement( vertices=[h2,h3,h1], parent=(self,t4) ) ])
+#     
+# @staticmethod
+# def refinedtransform( n ):
+#   'refined transform'
+
+#   transforms = []
+#   scale = transform.Scale( numeric.asarray([1./n,1./n]) )
+#   negscale = transform.Scale( numeric.asarray([-1./n,-1./n]) )
+#   for i in range( n ):
+#     transforms.extend( scale + numeric.array( [i,j], dtype=float ) / n for j in range(0,n-i) )
+#     transforms.extend( negscale + numeric.array( [n-j,n-i], dtype=float ) / n for j in range(n-i,n) )
+#   return transforms
+
+# def refined( self, n ):
+#   'refine'
+
+#   assert n == 2
+#   if n == 1:
+#     return self
+#   return [ TriangularElement( id=self.id+'.child({})'.format(ichild), parent=(self,trans) ) for ichild, trans in enumerate( self.refinedtransform( n ) ) ]
+
+# def select_contained( self, points, eps=0 ):
+#   'select points contained in element'
+
+#   selection = numeric.ones( points.shape[0], dtype=bool )
+#   for idim in 0, 1, 2:
+#     points_i = points[:,idim] if idim < 2 else 1-points.sum(1)
+#     newsel = numeric.greater_equal( points_i, -eps )
+#     selection[selection] &= newsel
+#     points = points[newsel]
+#     if not points.size:
+#       return None, None
+
+#   return points, selection
 
 class OldProduct( Simplex ):
   'element product'
