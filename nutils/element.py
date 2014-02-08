@@ -168,8 +168,12 @@ class Simplex( cache.Immutable ):
       return [ (simplex,trans) for trans in transform.delaunay(pos) ], \
              [ (simplex,trans) for trans in transform.delaunay(neg) ]
 
-    for (child,ptrans,iverts), childvals in zip( self.children, self._split_by_child(values) ):
-      childpos, childneg = child.triangulate( childvals )
+    for nvertices, subsets in self._child_subsets:
+      if nvertices >= len(values):
+        break
+    assert len(values) == nvertices
+    for (child,ptrans,iverts), subset in zip( self.children, subsets ):
+      childpos, childneg = child.triangulate( values[subset] )
       pos.extend( (simplex,ptrans*trans) for simplex, trans in childpos )
       neg.extend( (simplex,ptrans*trans) for simplex, trans in childneg )
 
@@ -202,15 +206,20 @@ class Line( Simplex ):
     scale = transform.Scale( numeric.array([.5]) )
     self.children = (self,scale,(0,(0,1))), (self,scale+[.5],((0,1),1))
 
+  def __str__( self ):
+    return 'Line'
+
   def _get_intersections( self, (v0,v1) ):
     if v0 != v1: 
       x = -v0 / float(v1-v0) # v0 + x (v1-v0) = 0
       if 0 < x < 1:
         yield numeric.array([ 1-x, x ])
 
-  def _split_by_child( self, values ):
-    n = len(values)
-    return values[:n//2+1], values[n//2:]
+  @cache.propertylist
+  def _child_subsets( self, level ):
+    n = 2**(level+1) + 1
+    indices = numeric.arange(n)
+    return n, ( indices[:n//2+1], indices[n//2:] )
 
   def stdfunc( self, degree ):
     return PolyLine( PolyLine.bernstein_poly( degree ) )
@@ -239,6 +248,9 @@ class Product( Simplex ):
     vertices[:,:,:simplex1.ndims] = simplex1.vertices[:,_]
     vertices[:,:,simplex1.ndims:] = simplex2.vertices[_,:]
     Simplex.__init__( self, vertices.reshape(-1,ndims) )
+
+  def __str__( self ):
+    return '%s*%s' % ( self.simplex1, self.simplex2 )
 
   def stdfunc( self, degree ):
     return self.simplex1.stdfunc(degree) * self.simplex2.stdfunc(degree)
@@ -279,6 +291,15 @@ class Product( Simplex ):
         children.append(( child1*child2, transform.tensor(trans1,trans2), vertices2 ))
     return children
 
+  def _nvertices( self, level ):
+    return self.simplex1._nvertices(level) * self.simplex2._nvertices(level)
+
+  @cache.propertylist
+  def _child_subsets( self, level ):
+    nverts1, subsets1 = self.simplex1._child_subsets[level]
+    nverts2, subsets2 = self.simplex2._child_subsets[level]
+    return nverts1 * nverts2, [ ( i1[:,_] * nverts2 + i2[_,:] ).ravel() for i1 in subsets1 for i2 in subsets2 ]
+
   def _get_intersections( self, values ):
     values = values.reshape( self.simplex1.nverts, self.simplex2.nverts )
     for i1, w1 in enumerate( numeric.eye(self.simplex1.nverts) ):
@@ -288,17 +309,6 @@ class Product( Simplex ):
       for w1 in self.simplex1._get_intersections( values[:,i2] ):
         yield ( w1[:,_] * w2[_,:] ).ravel()
 
-  def _split_by_child( self, values ):
-    n1 = self.simplex1.nverts
-    n2 = self.simplex2.nverts
-    while len(values) > n1 * n2:
-      n1 = n1*2 - 1
-      n2 = n2*2 - 1
-    assert n1 * n2 == len(values), 'cannot reshape values to appropriate shape'
-    values = values.reshape( n1, n2 )
-    for val1 in self.simplex1._split_by_child( values ):
-      for val2 in self.simplex2._split_by_child( val1.T ):
-        yield val2.T.ravel()
 
 class Triangle( Simplex ):
   '''triangular element

@@ -1,5 +1,4 @@
 from test import unittest
-
 from nutils import *
 import numpy
 

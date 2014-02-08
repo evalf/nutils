@@ -12,6 +12,34 @@ def property( f ):
   assert not cache_property_wrapper.__closure__
   return _property(cache_property_wrapper)
 
+class PropertyList(object):
+  __slots__ = 'items', 'func', 'obj'
+  def __init__( self, items, func, obj ):
+    self.items = items
+    self.func = func
+    self.obj = obj
+  def append( self ):
+    value = self.func(self.obj,len(self.items))
+    self.items.append( value )
+    return value
+  def __iter__( self ):
+    for item in self.items:
+      yield item
+    while True:
+      yield self.append()
+  def __getitem__( self, item ):
+    assert isinstance(item,int) and item >= 0
+    while item >= len(self.items):
+      self.append()
+    return self.items[item]
+
+def propertylist( f ):
+  def cache_propertylist_wrapper( self, f=f ):
+    items = self.__dict__.setdefault( f.func_name, [] )
+    return PropertyList( items, f, self )
+  assert not cache_propertylist_wrapper.__closure__
+  return _property(cache_propertylist_wrapper)
+
 class CallDict( dict ):
   'very simple cache object'
 
