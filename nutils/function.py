@@ -55,7 +55,7 @@ class CompiledEvaluable( object ):
       if isinstance( ischeme, dict ):
         ischeme = ischeme[elem]
       if isinstance( ischeme, str ):
-        ischeme = self.cache( elem.simplex.getischeme, ischeme )
+        ischeme = self.cache( elem.reference.getischeme, ischeme )
       assert numeric.isarray( ischeme )
       if ischeme.shape[-1] == elem.ndims+1:
         points = ischeme[...,:-1]

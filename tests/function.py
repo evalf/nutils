@@ -12,11 +12,11 @@ line_points = line.getischeme( 'uniform2' )[:,:1]
 quad = line**2
 quad_points = quad.getischeme( 'uniform2' )[:,:2]
 
-interelem = element.Element( simplex=quad, # corners at (1,0), (3,-1), (4,2), (2,3)
+interelem = element.Element( reference=quad, # corners at (1,0), (3,-1), (4,2), (2,3)
   vertices=tuple( 'A(%d)'%i for i in range(4) ),
   parent=( domainelem, transform.Linear( numeric.array([[2,1],[-1,3]]) ) + [1,0]),
 )
-elem = element.Element( simplex=quad, # corners at (3,-1), (2,-4), (4,-5), (5,-2)
+elem = element.Element( reference=quad, # corners at (3,-1), (2,-4), (4,-5), (5,-2)
   vertices=tuple( 'B(%d)'%i for i in range(4) ),
   parent=( interelem, transform.Linear( numeric.array([[0,1],[-1,0]]) ) + [1,0] ),
 )

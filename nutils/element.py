@@ -7,15 +7,15 @@ class Element( cache.Immutable ):
 
   Represents the topological shape.'''
 
-  __slots__ = 'vertices', 'simplex', 'parent', 'context', 'interface', 'root_transform'
+  __slots__ = 'vertices', 'reference', 'parent', 'context', 'interface', 'root_transform'
 
-  def __init__( self, simplex, vertices=(), parent=None, context=None, interface=None ):
+  def __init__( self, reference, vertices=(), parent=None, context=None, interface=None ):
     'constructor'
 
     assert isinstance( vertices, tuple )
-    assert len(vertices) == simplex.nverts
+    assert len(vertices) == reference.nverts
     self.vertices = vertices
-    self.simplex = simplex
+    self.reference = reference
     self.parent = parent
     self.context = context
     self.interface = interface
@@ -23,42 +23,42 @@ class Element( cache.Immutable ):
       pelem, trans = parent
       self.root_transform = pelem.root_transform * trans
     else:
-      self.root_transform = transform.Identity( simplex.ndims )
+      self.root_transform = transform.Identity( reference.ndims )
 
   @property
   def simplices( self ):
-    if not isinstance( self.simplex, Mosaic ):
+    if not isinstance( self.reference, Mosaic ):
       yield self
     else:
       nverts = 0
-      for simplex, trans in self.simplex.pieces:
-        vertices = tuple(range(nverts,nverts+simplex.nverts))
-        nverts += simplex.nverts
-        yield Element( simplex=simplex, parent=(self,trans), vertices=vertices )
+      for reference, trans in self.reference.pieces:
+        vertices = tuple(range(nverts,nverts+reference.nverts))
+        nverts += reference.nverts
+        yield Element( reference=reference, parent=(self,trans), vertices=vertices )
 
   @property
   def ndims( self ):
-    return self.simplex.ndims
+    return self.reference.ndims
 
   @property
   def edges( self ):
-    return [ Element( simplex=simplex, context=(self,trans), vertices=mknewvertices(self.vertices,iverts) )
-      for simplex, trans, iverts in self.simplex.edges ]
+    return [ Element( reference=reference, context=(self,trans), vertices=mknewvertices(self.vertices,iverts) )
+      for reference, trans, iverts in self.reference.edges ]
 
   def edge( self, iedge ):
-    simplex, trans, iverts = self.simplex.edges[iedge]
-    return Element( simplex=simplex, context=(self,trans), vertices=mknewvertices(self.vertices,iverts) )
+    reference, trans, iverts = self.reference.edges[iedge]
+    return Element( reference=reference, context=(self,trans), vertices=mknewvertices(self.vertices,iverts) )
 
   @property
   def children( self ):
-    return [ Element( simplex=simplex, parent=(self,trans), vertices=mknewvertices(self.vertices,iverts) )
-      for simplex, trans, iverts in self.simplex.children ]
+    return [ Element( reference=reference, parent=(self,trans), vertices=mknewvertices(self.vertices,iverts) )
+      for reference, trans, iverts in self.reference.children ]
 
   def trim( self, levelset, maxrefine=0, minrefine=0 ):
     assert maxrefine >= minrefine >= 0
     if minrefine == 0:
       values = levelset.eval( self, 'bezier%d' % (2**maxrefine+1) )
-      allpieces = self.simplex.triangulate( values )
+      allpieces = self.reference.triangulate( values )
     else:
       # refine to evaluate levelset, then assemble the pieces
       allpieces = [], []
@@ -66,17 +66,17 @@ class Element( cache.Immutable ):
         self_, ptrans = child.parent
         for pieces, elem in zip( allpieces, child.trim( levelset, maxrefine-1, minrefine-1 ) ):
           if elem:
-            if isinstance( elem.simplex, Mosaic ):
-              pieces.extend( (simplex,ptrans*trans) for simplex, trans in elem.simplex.pieces )
+            if isinstance( elem.reference, Mosaic ):
+              pieces.extend( (reference,ptrans*trans) for reference, trans in elem.reference.pieces )
             else:
-              pieces.append( (elem.simplex,ptrans) )
+              pieces.append( (elem.reference,ptrans) )
     if not allpieces[1]:
       return self, None
     if not allpieces[0]:
       return None, self
     mosaics = [ Mosaic(len(self.vertices),pieces) for pieces in allpieces ]
     identity = transform.Identity(self.ndims)
-    return [ Element( simplex=mosaic, parent=(self,identity), vertices=self.vertices ) for mosaic in mosaics ]
+    return [ Element( reference=mosaic, parent=(self,identity), vertices=self.vertices ) for mosaic in mosaics ]
 
 # def __mul__( self, other ):
 #   'multiply elements'
@@ -124,14 +124,14 @@ class Element( cache.Immutable ):
 ## SIMPLICES
 
 
-class Simplex( cache.Immutable ):
+class Reference( cache.Immutable ):
 
   def __init__( self, vertices ):
     self.vertices = numeric.asarray( vertices, dtype=float )
     self.nverts, self.ndims = self.vertices.shape
 
   def __mul__( self, other ):
-    assert isinstance( other, Simplex )
+    assert isinstance( other, Reference )
     return other if self.ndims == 0 \
       else self if other.ndims == 0 \
       else Product( self, other )
@@ -164,9 +164,9 @@ class Simplex( cache.Immutable ):
         pos.append( v )
         neg.append( v )
       assert self.ndims == 2
-      simplex = Triangle()
-      return [ (simplex,trans) for trans in transform.delaunay(pos) ], \
-             [ (simplex,trans) for trans in transform.delaunay(neg) ]
+      reference = Triangle()
+      return [ (reference,trans) for trans in transform.delaunay(pos) ], \
+             [ (reference,trans) for trans in transform.delaunay(neg) ]
 
     for nvertices, subsets in self._child_subsets:
       if nvertices >= len(values):
@@ -174,8 +174,8 @@ class Simplex( cache.Immutable ):
     assert len(values) == nvertices
     for (child,ptrans,iverts), subset in zip( self.children, subsets ):
       childpos, childneg = child.triangulate( values[subset] )
-      pos.extend( (simplex,ptrans*trans) for simplex, trans in childpos )
-      neg.extend( (simplex,ptrans*trans) for simplex, trans in childneg )
+      pos.extend( (reference,ptrans*trans) for reference, trans in childpos )
+      neg.extend( (reference,ptrans*trans) for reference, trans in childneg )
 
     if not neg:
       return [(self,transform.Identity(self.ndims))], []
@@ -185,20 +185,20 @@ class Simplex( cache.Immutable ):
 
     return pos, neg
 
-class Dummy( Simplex ):
+class Dummy( Reference ):
 
   def __init__( self, ndims ):
-    Simplex.__init__( self, numeric.zeros((0,ndims)) )
+    Reference.__init__( self, numeric.zeros((0,ndims)) )
 
-class Point( Simplex ):
-
-  def __init__( self ):
-    Simplex.__init__( self, numeric.zeros((1,0)) )
-
-class Line( Simplex ):
+class Point( Reference ):
 
   def __init__( self ):
-    Simplex.__init__( self, [[0],[1]] )
+    Reference.__init__( self, numeric.zeros((1,0)) )
+
+class Line( Reference ):
+
+  def __init__( self ):
+    Reference.__init__( self, [[0],[1]] )
     point = Point()
     trans0 = transform.Point( -1 )
     trans1 = transform.Point( +1 ) + [1]
@@ -238,7 +238,7 @@ class Line( Simplex ):
       return numeric.linspace( 0, 1, n )[:,_]
     raise Exception, 'invalid element evaluation %r' % where
 
-class Product( Simplex ):
+class Product( Reference ):
 
   def __init__( self, simplex1, simplex2 ):
     self.simplex1 = simplex1
@@ -247,7 +247,7 @@ class Product( Simplex ):
     vertices = numeric.empty(( simplex1.nverts, simplex2.nverts, ndims ))
     vertices[:,:,:simplex1.ndims] = simplex1.vertices[:,_]
     vertices[:,:,simplex1.ndims:] = simplex2.vertices[_,:]
-    Simplex.__init__( self, vertices.reshape(-1,ndims) )
+    Reference.__init__( self, vertices.reshape(-1,ndims) )
 
   def __str__( self ):
     return '%s*%s' % ( self.simplex1, self.simplex2 )
@@ -310,7 +310,7 @@ class Product( Simplex ):
         yield ( w1[:,_] * w2[_,:] ).ravel()
 
 
-class Triangle( Simplex ):
+class Triangle( Reference ):
   '''triangular element
      conventions: reference elem:   unit simplex {(x,y) | x>0, y>0, x+y<1}
                   vertex numbering: {(0,0):0, (1,0):1, (0,1):2}
@@ -322,7 +322,7 @@ class Triangle( Simplex ):
   def __init__( self ):
     'constructor'
 
-    Simplex.__init__( self, [[0,0],[1,0],[0,1]] )
+    Reference.__init__( self, [[0,0],[1,0],[0,1]] )
     line = Line()
     self.edges = (
       ( line, transform.Linear( numeric.array([[ 1],[ 0]]) ), (0,1) ),
@@ -401,7 +401,7 @@ class Triangle( Simplex ):
       raise Exception, 'invalid element evaluation: %r' % where
     return numeric.concatenate([coords.T,weights[...,_]],axis=-1) if weights is not None else coords.T
 
-class Tetrahedron( Simplex ):
+class Tetrahedron( Reference ):
   'tetrahedron element'
 
   neighbormap = -1, 3, 2, 1, 0
@@ -413,7 +413,7 @@ class Tetrahedron( Simplex ):
     transform.Linear( numeric.array([[-1,-1],[1,0],[0,1]]) ) + [1,0,0] )
 
   def __init__( self ):
-    Simplex.__init__( self, vertices )
+    Reference.__init__( self, vertices )
 
     assert len(vertices) == 4
     Element.__init__( self, ndims=3, vertices=vertices, parent=parent, context=context )
@@ -616,18 +616,18 @@ class Tetrahedron( Simplex ):
 
 ## OLD
 
-class OldQuad( Simplex ):
+class OldQuad( Reference ):
   'quadrilateral element'
 
   def __init__( self, ndims ):
     'constructor'
 
-    Simplex.__init__( self, ndims=ndims )
+    Reference.__init__( self, ndims=ndims )
 
   @cache.property
   def edges( self ):
     transforms = []
-    simplex = Quad( self.ndims-1 )
+    reference = Quad( self.ndims-1 )
     iverts = numeric.arange( 2**self.ndims ).reshape( (2,)*self.ndims )
     for idim in range( self.ndims ):
       offset = numeric.zeros( self.ndims )
@@ -641,7 +641,7 @@ class OldQuad( Simplex ):
         offset[idim-1] = 1 - offset[idim-1]
         matrix[idim-1] *= -1
         iedgeverts = numeric.getitem(iverts,idim,side) # TODO fix!
-        transforms.append(( simplex, transform.Linear(matrix.copy()) + offset, iedgeverts ))
+        transforms.append(( reference, transform.Linear(matrix.copy()) + offset, iedgeverts ))
     return transforms
 
   def children_by( self, N ):
@@ -707,10 +707,10 @@ class OldQuad( Simplex ):
     for i, (dummy,trans,dummy) in enumerate( self.children ):
       s = tuple( slices[n] for n in ( i >> numeric.arange(self.ndims-1,-1,-1) ) & 1 )
       pos, neg = self._mosaic( values[s], eps )
-      for simplex, trans2, iverts in pos:
-        allpos.append(( simplex, trans * trans2, iverts ))
-      for simplex, trans2, iverts in neg:
-        allneg.append(( simplex, trans * trans2, iverts ))
+      for reference, trans2, iverts in pos:
+        allpos.append(( reference, trans * trans2, iverts ))
+      for reference, trans2, iverts in neg:
+        allneg.append(( reference, trans * trans2, iverts ))
     return allpos, allneg
 
   def mosaic( self, values, eps=1e-10 ):
@@ -792,7 +792,7 @@ class OldQuad( Simplex ):
 
 #   return points, selection
 
-class OldProduct( Simplex ):
+class OldProduct( Reference ):
   'element product'
 
   @staticmethod
@@ -1036,17 +1036,17 @@ class OldProduct( Simplex ):
 
 
 class Mosaic( object ):
-  'trimmed simplex'
+  'trimmed reference'
 
   def __init__( self, nverts, pieces ):
     self.pieces = pieces
     self.nverts = nverts
-    self.ndims, = util.filterrepeat( simplex.ndims for simplex, trans in pieces )
+    self.ndims, = util.filterrepeat( reference.ndims for reference, trans in pieces )
 
   def getischeme( self, ischeme ):
     pw_all = []
-    for simplex, trans in self.pieces:
-      pw = simplex.getischeme( ischeme )
+    for reference, trans in self.pieces:
+      pw = reference.getischeme( ischeme )
       pw_trans = trans.apply( pw[...,:self.ndims] ), trans.det * pw[...,self.ndims:]
       pw_concat = numeric.concatenate( pw_trans, axis=-1 )
       pw_all.append( pw_concat )
