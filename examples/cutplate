@@ -29,7 +29,7 @@ def main( nelems=10, stress=Hook(1,1) ):
   lhs = matrix.solve( constrain=cons, tol=1e-5, symmetric=True )
   disp = dspace.dot( lhs )
 
-  points, colors = domain.simplex.elem_eval( [ geom + disp, stress(disp,geom)[0,1] ], ischeme='bezier3', separate=True )
+  points, colors = domain.simplex.elem_eval( [ geom + disp, stress(disp,geom)[0,1] ], ischeme='vertex1', separate=True )
   with plot.PyPlot( 'dspace' ) as plt:
     plt.mesh( points, colors )
     plt.colorbar()

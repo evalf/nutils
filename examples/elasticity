@@ -17,7 +17,7 @@ def main( nelems=20, stress=library.Hooke(lmbda=1,mu=1), degree=1 ):
   lhs = matrix.solve( constrain=cons, tol=1e-10, symmetric=True )
   disp = dspace.dot( lhs )
 
-  points, colors = domain.elem_eval( [ geom + disp, stress(disp,geom)[0,1] ], ischeme='bezier4', separate=True )
+  points, colors = domain.elem_eval( [ geom + disp, stress(disp,geom)[0,1] ], ischeme='vertex2', separate=True )
   with plot.PyPlot( 'solution' ) as plt:
     plt.mesh( points, colors, triangulate='bezier' )
     plt.xlim(0,1.5)

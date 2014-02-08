@@ -8,7 +8,7 @@ def makeplots( domain, geom, sol, index ):
 
   log.context( 'plots' )
 
-  points, colors = domain.elem_eval( [ geom, sol ], ischeme='bezier4', separate=True )
+  points, colors = domain.elem_eval( [ geom, sol ], ischeme='vertex2', separate=True )
   with plot.PyPlot( 'solution', index=index ) as plt:
     plt.mesh( points, colors, triangulate='bezier' )
     plt.colorbar()

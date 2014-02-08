@@ -57,7 +57,7 @@ class Element( cache.Immutable ):
   def trim( self, levelset, maxrefine=0, minrefine=0 ):
     assert maxrefine >= minrefine >= 0
     if minrefine == 0:
-      values = levelset.eval( self, 'bezier%d' % (2**maxrefine+1) )
+      values = levelset.eval( self, 'vertex%d' % maxrefine )
       allpieces = self.reference.triangulate( values )
     else:
       # refine to evaluate levelset, then assemble the pieces
@@ -92,7 +92,7 @@ class Reference( cache.Immutable ):
     assert isinstance( other, Reference )
     return other if self.ndims == 0 \
       else self if other.ndims == 0 \
-      else Product( self, other )
+      else Tensor( self, other )
 
   def __pow__( self, n ):
     assert isinstance( n, int ) and n >= 1
@@ -185,8 +185,6 @@ class Simplex( Reference ):
         ( self, scale + [ 0,.5], ((0,2),(1,2),2) ),
         ( self, negscale + [.5,.5], ((1,2),(0,2),(0,1)) ),
       )
-    else:
-      raise NotImplementedError
 
   def __str__( self ):
     return 'simplex%d' % self.ndims
@@ -415,26 +413,26 @@ class Simplex( Reference ):
     if self.ndims == 1:
       return numeric.array([ numeric.arange( .5, n ) / n, numeric.appendaxes( 1./n, n ) ])
     elif self.ndims == 2:
-      N = int( where[7:] )
-      points = ( numeric.arange( N ) + 1./3 ) / N
-      NN = N**2
-      C = numeric.empty( [2,N,N] )
+      points = numeric.arange( 1./3, n ) / n
+      nn = n**2
+      C = numeric.empty( [2,n,n] )
       C[0] = points[:,_]
       C[1] = points[_,:]
-      coords = C.reshape( 2, NN )
+      coords = C.reshape( 2, nn )
       flip = coords[0] + numeric.greater( coords[1], 1 )
       coords[:,flip] = 1 - coords[::-1,flip]
-      weights = numeric.appendaxes( .5/NN, NN )
+      weights = numeric.appendaxes( .5/nn, nn )
     else:
       raise NotImplementedError
     return numeric.concatenate([coords.T,weights[...,_]],axis=-1)
 
-  def _ischeme_bezier( self, n ):
+  def _ischeme_vertex( self, n=0 ):
+    np = 2**n+1
+    points = numeric.linspace( 0, 1, np )
     if self.ndims == 1:
-      return numeric.linspace( 0, 1, n )[:,_]
+      return points[:,_]
     if self.ndims == 2:
-      points = numeric.linspace( 0, 1, n )
-      return numeric.array([ [x,y] for i, y in enumerate(points) for x in points[:n-i] ])
+      return numeric.array([ [x,y] for i, y in enumerate(points) for x in points[:np-i] ])
     raise NotImplementedError
 
   def _ischeme_vtk( self ):
@@ -448,7 +446,7 @@ class Simplex( Reference ):
     name, arg = self._split_name_arg.match( where ).groups()
     return getattr( self, '_ischeme_%s' % name )( *eval( '[%s]' % arg ) )
 
-class Product( Reference ):
+class Tensor( Reference ):
 
   def __init__( self, simplex1, simplex2 ):
     self.simplex1 = simplex1
