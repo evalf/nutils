@@ -39,7 +39,7 @@ def rectilinear( vertices, periodic=(), name='rect' ):
     tmp = numeric.bringforward( vertexobjs, idim )
     tmp[-1] = tmp[0]
 
-  reference = element.Line()**ndims
+  reference = element.Simplex(1)**ndims
   structure = numeric.objmap( lambda *index: element.Element(
     reference=reference,
     parent=( domainelem, transform.Scale( numeric.array([ n[i+1]-n[i] for n,i in zip(vertices,index) ]) ) + [ n[i] for n,i in zip(vertices,index) ] ),

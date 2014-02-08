@@ -6,7 +6,7 @@ domainelem = element.Element( element.Dummy(2) )
 r, theta = function.ElemFunc( domainelem )
 geom = r * function.stack([ function.cos(theta), function.sin(theta) ])
 
-line = element.Line()
+line = element.Simplex(1)
 line_points = line.getischeme( 'uniform2' )[:,:1]
 
 quad = line**2
