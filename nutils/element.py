@@ -1,21 +1,13 @@
 from . import log, util, cache, numeric, transform, function, _
-import warnings, re
+import warnings, weakref
 
 
-class Element( cache.Immutable ):
-  '''Element base class.
+class Element( object ):
+  __slots__ = 'ndims', 'parent', 'context', 'interface', 'root_transform'
 
-  Represents the topological shape.'''
+  def __init__( self, ndims, parent=None, context=None, interface=None ):
 
-  __slots__ = 'vertices', 'reference', 'parent', 'context', 'interface', 'root_transform'
-
-  def __init__( self, reference, vertices=(), parent=None, context=None, interface=None ):
-    'constructor'
-
-    assert isinstance( vertices, tuple )
-    assert len(vertices) == reference.nverts
-    self.vertices = vertices
-    self.reference = reference
+    self.ndims = ndims
     self.parent = parent
     self.context = context
     self.interface = interface
@@ -23,60 +15,101 @@ class Element( cache.Immutable ):
       pelem, trans = parent
       self.root_transform = pelem.root_transform * trans
     else:
-      self.root_transform = transform.Identity( reference.ndims )
+      self.root_transform = transform.Identity( ndims )
+
+class ReferenceElement( Element ):
+  __slots__ = '__weakref__', 'vertices', 'reference', 'childrefs', 'edgerefs'
+
+  def __init__( self, reference, vertices, parent=None, context=None, interface=None ):
+    'constructor'
+
+    Element.__init__( self, ndims=reference.ndims, parent=parent, context=context, interface=interface )
+    self.reference = reference
+    self.vertices = vertices
+    self.edgerefs = [ dummyref ] * len(reference.edges)
+    self.childrefs = [ dummyref ] * len(reference.children)
 
   @property
   def simplices( self ):
-    if not isinstance( self.reference, Mosaic ):
-      yield self
-    else:
-      nverts = 0
-      for reference, trans in self.reference.pieces:
-        vertices = tuple(range(nverts,nverts+reference.nverts))
-        nverts += reference.nverts
-        yield Element( reference=reference, parent=(self,trans), vertices=vertices )
+    return self,
 
-  @property
-  def ndims( self ):
-    return self.reference.ndims
+  def pointset( self, ptype, arg ):
+    return self.reference.pointset( ptype, arg )
 
   @property
   def edges( self ):
-    return [ Element( reference=reference, context=(self,trans), vertices=mknewvertices(self.vertices,iverts) )
-      for reference, trans, iverts in self.reference.edges ]
+    return [ self.edge(i) for i in range(len(self.reference.edges)) ]
 
-  def edge( self, iedge ):
-    reference, trans, iverts = self.reference.edges[iedge]
-    return Element( reference=reference, context=(self,trans), vertices=mknewvertices(self.vertices,iverts) )
+  def edge( self, i ):
+    edge = self.edgerefs[i]()
+    if edge is None:
+      reference, trans, iverts = self.reference.edges[i]
+      edge = ReferenceElement( reference=reference, context=(self,trans), vertices=mknewvertices(self.vertices,iverts) )
+      self.edgerefs[i] = weakref.ref( edge )
+    return edge
 
   @property
   def children( self ):
-    return [ Element( reference=reference, parent=(self,trans), vertices=mknewvertices(self.vertices,iverts) )
-      for reference, trans, iverts in self.reference.children ]
+    return [ self.child(i) for i in range(len(self.reference.children)) ]
 
-  def trim( self, levelset, maxrefine=0, minrefine=0 ):
+  def child( self, i ):
+    child = self.childrefs[i]()
+    if child is None:
+      reference, trans, iverts = self.reference.children[i]
+      child = ReferenceElement( reference=reference, parent=(self,trans), vertices=mknewvertices(self.vertices,iverts) )
+      self.childrefs[i] = weakref.ref( child )
+    return child
+
+  def trim( self, levelset, maxrefine=0, minrefine=0, eps=1e-10 ):
     assert maxrefine >= minrefine >= 0
-    if minrefine == 0:
-      values = levelset.eval( self, 'vertex%d' % maxrefine )
-      allpieces = self.reference.triangulate( values )
-    else:
-      # refine to evaluate levelset, then assemble the pieces
-      allpieces = [], []
+    if minrefine == 0 and not numeric.isarray( levelset ):
+      from pointset import Vertex
+      levelset = levelset.eval( self, Vertex(maxrefine-minrefine) )
+    if maxrefine == 0: # check values
+      if numeric.greater( levelset, -eps ).all(): return self, None
+      if numeric.less(    levelset, +eps ).all(): return None, self
+      pos, neg = [ [ ( ReferenceElement( reference=ref, vertices=None, parent=(self,trans) ), trans ) for ref, trans in pn ]
+        for pn in self.reference.triangulate( levelset ) ]
+    else: # recurse
+      pos, neg = [], []
+      if minrefine == 0:
+        nverts, subs = self.reference._child_subsets[maxrefine-1]
+        assert levelset.shape == (nverts,)
+        sub = iter(subs)
       for child in self.children:
-        self_, ptrans = child.parent
-        for pieces, elem in zip( allpieces, child.trim( levelset, maxrefine-1, minrefine-1 ) ):
-          if elem:
-            if isinstance( elem.reference, Mosaic ):
-              pieces.extend( (reference,ptrans*trans) for reference, trans in elem.reference.pieces )
-            else:
-              pieces.append( (elem.reference,ptrans) )
-    if not allpieces[1]:
-      return self, None
-    if not allpieces[0]:
-      return None, self
-    mosaics = [ Mosaic(len(self.vertices),pieces) for pieces in allpieces ]
-    identity = transform.Identity(self.ndims)
-    return [ Element( reference=mosaic, parent=(self,identity), vertices=self.vertices ) for mosaic in mosaics ]
+        p, n = child.trim( levelset, maxrefine-1, minrefine-1 ) if minrefine \
+          else child.trim( levelset[sub.next()], maxrefine-1, 0 )
+        self_, trans = child.parent
+        if p: pos.append( (p,trans) )
+        if n: neg.append( (n,trans) )
+      if not neg: return self, None
+      if not pos: return None, self
+    return TrimmedElement( children_trans=pos, orig=self ), \
+           TrimmedElement( children_trans=neg, orig=self )
+
+class TrimmedElement( Element ):
+  __slots__ = 'children_trans',
+
+  def __init__( self, children_trans, orig ):
+    Element.__init__( self, ndims=orig.ndims, parent=(orig,transform.Identity(orig.ndims)) )
+    self.children_trans = children_trans
+
+  @property
+  def children( self ):
+    return [ child for child, trans in self.children_trans ]
+
+  @property
+  def simplices( self ):
+    return [ simplex for child, trans in self.children_trans for simplex in child.simplices ]
+
+  def pointset( self, ptype, arg ):
+    allpoints = []
+    for child, trans in self.children_trans:
+      points = child.pointset( ptype, arg )
+      transpoints = trans.apply( points ) if points.shape[1] == child.ndims \
+               else numeric.concatenate( [ trans.apply( points[:,:-1] ), trans.det * points[:,-1:] ], axis=1 )
+      allpoints.append( transpoints )
+    return numeric.concatenate( allpoints, axis=0 )
 
 
 ## REFERENCE ELEMENTS
@@ -98,54 +131,20 @@ class Reference( cache.Immutable ):
     assert isinstance( n, int ) and n >= 1
     return self if n == 1 else self * self**(n-1)
 
-  def triangulate( self, values, eps=1e-10 ):
-
-    if numeric.greater( values, -eps ).all():
-      return [(self,transform.Identity(self.ndims))], []
-
-    if numeric.less( values, +eps ).all():
-      return [], [(self,transform.Identity(self.ndims))]
-
+  def triangulate( self, values ):
+    assert values.shape == (self.nverts,)
     pos = []
     neg = []
-
-    if len(values) <= self.nverts: # actual triangulation
-      assert values.shape == (self.nverts,)
-
-      for coord, value in zip( self.vertices, values ):
-        if value >= 0:
-          pos.append( coord )
-        if value <= 0:
-          neg.append( coord )
-      for w in self._get_intersections( values ):
-        v = numeric.dot( w, self.vertices )
-        pos.append( v )
-        neg.append( v )
-      reference = Simplex( self.ndims )
-      return [ (reference,trans) for trans in transform.delaunay(pos) ], \
-             [ (reference,trans) for trans in transform.delaunay(neg) ]
-
-    for nvertices, subsets in self._child_subsets:
-      if nvertices >= len(values):
-        break
-    assert len(values) == nvertices
-    for (child,ptrans,iverts), subset in zip( self.children, subsets ):
-      childpos, childneg = child.triangulate( values[subset] )
-      pos.extend( (reference,ptrans*trans) for reference, trans in childpos )
-      neg.extend( (reference,ptrans*trans) for reference, trans in childneg )
-
-    if not neg:
-      return [(self,transform.Identity(self.ndims))], []
-
-    if not pos:
-      return [], [(self,transform.Identity(self.ndims))]
-
-    return pos, neg
-
-class Dummy( Reference ):
-
-  def __init__( self, ndims ):
-    Reference.__init__( self, numeric.zeros((0,ndims)) )
+    for coord, value in zip( self.vertices, values ):
+      if value >= 0: pos.append( coord )
+      if value <= 0: neg.append( coord )
+    for w in self._get_intersections( values ):
+      v = numeric.dot( w, self.vertices )
+      pos.append( v )
+      neg.append( v )
+    simplex = Simplex( self.ndims )
+    return [ (simplex,trans) for trans in transform.delaunay(pos) ], \
+           [ (simplex,trans) for trans in transform.delaunay(neg) ]
 
 class Simplex( Reference ):
   '''conventions: reference elem:   unit simplex {(x,y) | x>0, y>0, x+y<1}
@@ -411,7 +410,7 @@ class Simplex( Reference ):
 
   def _ischeme_uniform( self, n ):
     if self.ndims == 1:
-      return numeric.array([ numeric.arange( .5, n ) / n, numeric.appendaxes( 1./n, n ) ])
+      return numeric.array([ numeric.arange( .5, n ) / n, numeric.appendaxes( 1./n, n ) ]).T
     elif self.ndims == 2:
       points = numeric.arange( 1./3, n ) / n
       nn = n**2
@@ -424,7 +423,7 @@ class Simplex( Reference ):
       weights = numeric.appendaxes( .5/nn, nn )
     else:
       raise NotImplementedError
-    return numeric.concatenate([coords.T,weights[...,_]],axis=-1)
+    return numeric.concatenate([coords.T,weights[...,_]],axis=-1).T
 
   def _ischeme_vertex( self, n=0 ):
     np = 2**n+1
@@ -435,16 +434,9 @@ class Simplex( Reference ):
       return numeric.array([ [x,y] for i, y in enumerate(points) for x in points[:np-i] ])
     raise NotImplementedError
 
-  def _ischeme_vtk( self ):
-    if self.ndims in (2,3):
-      return self.vertices.T
-    raise NotImplementedError
-
-  _split_name_arg = re.compile( '^([a-z]*)(.*)$' )
-  def getischeme( self, where ):
+  def pointset( self, itype, arg ):
     'get integration scheme'
-    name, arg = self._split_name_arg.match( where ).groups()
-    return getattr( self, '_ischeme_%s' % name )( *eval( '[%s]' % arg ) )
+    return getattr( self, '_ischeme_%s' % itype )( arg )
 
 class Tensor( Reference ):
 
@@ -463,15 +455,16 @@ class Tensor( Reference ):
   def stdfunc( self, degree ):
     return self.simplex1.stdfunc(degree) * self.simplex2.stdfunc(degree)
 
-  def getischeme( self, where ):
-    ischeme1 = self.simplex1.getischeme( where )
-    ischeme2 = self.simplex2.getischeme( where )
-    ischeme = numeric.empty( (ischeme1.shape[0],ischeme2.shape[0],self.ndims) )
-    ischeme[:,:,:self.simplex1.ndims] = ischeme1[:,_,:self.simplex1.ndims]
-    ischeme[:,:,self.simplex1.ndims:] = ischeme2[_,:,:self.simplex2.ndims]
-    if ischeme1.shape[-1] == self.simplex1.ndims+1 and ischeme2.shape[-1] == self.simplex2.ndims+1:
-      ischeme = numeric.concatenate( [ ischeme, ischeme1[:,_,-1:] * ischeme2[_,:,-1:] ], axis=-1 )
-    return ischeme.reshape( ischeme.shape[0] * ischeme.shape[1], ischeme.shape[2] )
+  def pointset( self, itype, arg ):
+    ischeme1 = self.simplex1.pointset( itype, arg )
+    ischeme2 = self.simplex2.pointset( itype, arg )
+    hasweights = ischeme1.shape[1] == self.simplex1.ndims+1 and ischeme2.shape[1] == self.simplex2.ndims+1
+    ischeme = numeric.empty( (ischeme1.shape[0],ischeme2.shape[0],self.ndims+hasweights) )
+    ischeme[:,:,0:self.simplex1.ndims] = ischeme1[:,_,:self.simplex1.ndims]
+    ischeme[:,:,self.simplex1.ndims:self.ndims] = ischeme2[_,:,:self.simplex2.ndims]
+    if hasweights:
+      ischeme[:,:,-1] = ischeme1[:,_,-1] * ischeme2[_,:,-1]
+    return ischeme.reshape( -1, self.ndims + hasweights )
 
   @cache.property
   def edges( self ):
@@ -517,22 +510,30 @@ class Tensor( Reference ):
       for w1 in self.simplex1._get_intersections( values[:,i2] ):
         yield ( w1[:,_] * w2[_,:] ).ravel()
 
-class Mosaic( object ):
+class Mosaic( Reference ):
   'mosaiced reference'
 
-  def __init__( self, nverts, pieces ):
-    self.pieces = pieces
-    self.nverts = nverts
-    self.ndims, = util.filterrepeat( reference.ndims for reference, trans in pieces )
+  def __init__( self, vertices, children ):
+    Reference.__init__( self, vertices )
+    self.children = children
 
-  def getischeme( self, ischeme ):
-    pw_all = []
-    for reference, trans in self.pieces:
-      pw = reference.getischeme( ischeme )
-      pw_trans = trans.apply( pw[...,:self.ndims] ), trans.det * pw[...,self.ndims:]
-      pw_concat = numeric.concatenate( pw_trans, axis=-1 )
-      pw_all.append( pw_concat )
-    return numeric.concatenate( pw_all, axis=0 )
+  def pointset( self, itype, arg ):
+    allpoints = []
+    for child, trans, iverts in self.children:
+      points = child.pointset( itype, arg )
+      transpoints = trans.apply( points ) if points.shape[1] == child.ndims \
+               else numeric.concatenate( [ trans.apply( points[:,:-1] ), trans.det * points[:,-1:] ], axis=1 )
+      allpoints.append( transpoints )
+    return numeric.concatenate( allpoints, axis=0 )
+
+# def old_pointset( self, itype, arg ):
+#   pw_all = []
+#   for reference, trans in self.pieces:
+#     pw = reference.pointset( itype, arg )
+#     pw_trans = trans.apply( pw[...,:self.ndims] ), trans.det * pw[...,self.ndims:]
+#     pw_concat = numeric.concatenate( pw_trans, axis=-1 )
+#     pw_all.append( pw_concat )
+#   return numeric.concatenate( pw_all, axis=0 )
 
 
 ## OLD
@@ -738,7 +739,7 @@ class Mosaic( object ):
 #  @staticmethod
 #  def get_tri_bem_ischeme( ischeme, neighborhood ):
 #    'Some cached quantities for the singularity quadrature scheme.'
-#    points, weights = QuadElement.getischeme( ndims=4, where=ischeme )
+#    points, weights = QuadElement.pointset( ndims=4, where=ischeme )
 #    eta1, eta2, eta3, xi = points.T
 #    if neighborhood == 0:
 #      temp = xi*eta1*eta2*eta3
@@ -792,7 +793,7 @@ class Mosaic( object ):
 #  @staticmethod
 #  def get_quad_bem_ischeme( ischeme, neighborhood ):
 #    'Some cached quantities for the singularity quadrature scheme.'
-#    points, weights = QuadElement.getischeme( ndims=4, where=ischeme )
+#    points, weights = QuadElement.pointset( ndims=4, where=ischeme )
 #    eta1, eta2, eta3, xi = points.T
 #    if neighborhood == 0:
 #      xe = xi*eta1
@@ -1290,6 +1291,8 @@ def getgauss( degree ):
   d = k / numeric.sqrt( 4*k**2-1 )
   x, w = numeric.eigh( numeric.diagflat(d,-1) ) # eigh operates (by default) on lower triangle
   return numeric.array([ (x+1) * .5, w[0]**2 ]).T
+
+dummyref = lambda: None
 
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

@@ -573,6 +573,26 @@ class Topology( object ):
 
     return [ trimmededge for elem in self for trimmededge in elem.get_trimmededges( maxrefine ) ]
 
+  def trim( self, levelset, maxrefine=0, minrefine=0, title='trimming' ):
+    'trim element along levelset'
+
+    levelset = function.ascompiled( levelset )
+    pos, neg = [], []
+    for elem in log.iterate( title, self ):
+      p, n = elem.trim( levelset=levelset, maxrefine=maxrefine, minrefine=minrefine )
+      if p: pos.append( p )
+      if n: neg.append( n )
+    return UnstructuredTopology( pos, ndims=self.ndims ), \
+           UnstructuredTopology( neg, ndims=self.ndims )
+
+  @cache.property
+  def simplex( self ):
+    elems = []
+    for elem in self:
+      elems.extend( elem.simplices )
+    return UnstructuredTopology( elems, ndims=self.ndims )
+
+
 class StructuredTopology( Topology ):
   'structured topology'
 
@@ -863,22 +883,6 @@ class StructuredTopology( Topology ):
     refined.groups = { key: group.refined for key, group in self.groups.items() }
     return refined
 
-  def trim( self, levelset, maxrefine=0, minrefine=0, title='trimming' ):
-    'trim element along levelset'
-
-    levelset = function.ascompiled( levelset )
-    trimmedelems = [ elem.trim( levelset=levelset, maxrefine=maxrefine, minrefine=minrefine ) for elem in log.iterate( title, self.structure.ravel() ) ]
-    trimmedstructure = numeric.array( trimmedelems ).reshape( self.structure.shape + (2,) )
-    return StructuredTopology( trimmedstructure[...,0], periodic=self.periodic ), \
-           StructuredTopology( trimmedstructure[...,1], periodic=self.periodic )
-
-  @cache.property
-  def simplex( self ):
-    elems = []
-    for elem in self:
-      elems.extend( elem.simplices )
-    return UnstructuredTopology( elems, ndims=self.ndims )
-
   def __str__( self ):
     'string representation'
 
@@ -943,7 +947,7 @@ class UnstructuredTopology( Topology ):
     elements = []
     for elem in self:
       elements.extend( elem.children )
-    return UnstructuredTopology( elements, ndims=2 )
+    return UnstructuredTopology( elements, ndims=self.ndims )
 
 class HierarchicalTopology( Topology ):
   'collection of nested topology elments'

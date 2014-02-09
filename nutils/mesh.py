@@ -31,7 +31,7 @@ def rectilinear( vertices, periodic=(), name='rect' ):
 
   ndims = len(vertices)
   indices = numeric.grid( len(n)-1 for n in vertices )
-  domainelem = element.Element( reference=element.Dummy(ndims) )
+  domainelem = element.Element( ndims=ndims )
 
   vertexfmt = name + '(' + ','.join( '%%%dd' % len(str(len(n)-1)) for n in vertices ) + ')'
   vertexobjs = numeric.objmap( lambda *index: vertexfmt%index, *numeric.grid( len(n) for n in vertices ) )
@@ -40,7 +40,7 @@ def rectilinear( vertices, periodic=(), name='rect' ):
     tmp[-1] = tmp[0]
 
   reference = element.Simplex(1)**ndims
-  structure = numeric.objmap( lambda *index: element.Element(
+  structure = numeric.objmap( lambda *index: element.ReferenceElement(
     reference=reference,
     parent=( domainelem, transform.Scale( numeric.array([ n[i+1]-n[i] for n,i in zip(vertices,index) ]) ) + [ n[i] for n,i in zip(vertices,index) ] ),
     vertices=tuple(vertexobjs[tuple(slice(i,i+2) for i in index)].ravel()) ), *indices )
@@ -113,7 +113,7 @@ def gmesh( path, btags={}, name=None ):
   fmap = {}
 
   assert lines.next() == '$Elements\n'
-  domainelem = element.Element( ndims=2, vertices=[] )
+  domainelem = element.Element( ndims=2 )
   vertexobjs = numeric.array( [ '%s(%d)' % (name,ivertex) for ivertex in range(nvertices) ], dtype=object )
   for ielem in range( int( lines.next() ) ):
     items = lines.next().split()
@@ -353,14 +353,14 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   + [ ( 12+(i+1)%8, 12+i, i+1+(i//2) ) for i in range( 8) ]
   + [ ( 12+i, 12+(i+1)%8, 20 )         for i in range( 8) ] )
 
-  domainelem = element.Element( reference=element.Dummy(2) )
+  domainelem = element.Element( ndims=2 )
   elements = []
   vertexobjs = numeric.array([ 'demo.%d' % ivertex for ivertex in range(len(vertices)) ])
   triangle = element.Triangle()
   for ielem, elemvertices in enumerate( vertices ):
     elemcoords = coords[ numeric.array(elemvertices) ]
     parent = domainelem, transform.Linear( (elemcoords[1:]-elemcoords[0]).T ) + elemcoords[0]
-    elem = element.Element( reference=triangle, parent=parent, vertices=tuple(vertexobjs[elemvertices]) )
+    elem = element.ReferenceElement( reference=triangle, parent=parent, vertices=tuple(vertexobjs[elemvertices]) )
     elements.append( elem )
 
   fmap = dict.fromkeys( elements, element.PolyTriangle(1) )

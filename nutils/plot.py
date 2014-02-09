@@ -383,20 +383,27 @@ class VTKFile( BasePlot ):
 
     BasePlot.__init__( self, name, ndigits=ndigits, index=index )
 
+    self.names = self.name if self.name.lower().endswith('.vtu') else self.name + '.vtu',
+    self.ascii = ascii
+
     import vtk 
 
-    if self.name.lower().endswith('.vtu'):
-      self.names = [self.name]
-    else:  
-      self.names = [self.name+'.vtu']
-
-    self.ascii   = ascii
-    self.vtkMesh = vtk.vtkUnstructuredGrid()
+    self.vtkmesh = vtk.vtkUnstructuredGrid()
+    self.vtkmap = {
+      (2,1): vtk.vtkLine(),
+      (3,2): vtk.vtkTriangle(),
+      (4,2): vtk.vtkQuad(),
+      (4,3): vtk.vtkTetra(),
+      (8,3): vtk.vtkVoxel(),
+    }
+    self.vtkXMLUnstructuredGridWriter = vtk.vtkXMLUnstructuredGridWriter
+    self.vtkPoints = vtk.vtkPoints
+    self.vtkVertex = vtk.vtkVertex
+    self.vtkFloatArray = vtk.vtkFloatArray
 
   def save( self, name ):
-    import vtk
-    vtkWriter = vtk.vtkXMLUnstructuredGridWriter()
-    vtkWriter.SetInput   ( self.vtkMesh )
+    vtkWriter = self.vtkXMLUnstructuredGridWriter()
+    vtkWriter.SetInput( self.vtkmesh )
     vtkWriter.SetFileName( os.path.join( self.path, name ) )
     if self.ascii:
       vtkWriter.SetDataModeToAscii()
@@ -404,11 +411,9 @@ class VTKFile( BasePlot ):
 
   def vertices( self, points ):
 
-    assert isinstance( points, (list,tuple,numeric.ndarray) ), 'Expected list of point arrays'
+    assert isinstance( points, numeric.ndarray ), 'Expected list of point arrays'
 
-    import vtk
-
-    vtkPoints = vtk.vtkPoints()
+    vtkPoints = self.vtkPoints()
     vtkPoints.SetNumberOfPoints( sum(pts.shape[0] for pts in points) )
 
     cnt = 0
@@ -418,79 +423,53 @@ class VTKFile( BasePlot ):
 
       for point in pts:
         vtkPoints .SetPoint( cnt, point )
-        cellpoints = vtk.vtkVertex().GetPointIds()
+        cellpoints = self.vtkVertex().GetPointIds()
         cellpoints.SetId( 0, cnt )
-        self.vtkMesh.InsertNextCell( vtk.vtkVertex().GetCellType(), cellpoints )
+        self.vtkmesh.InsertNextCell( self.vtkVertex().GetCellType(), cellpoints )
         cnt +=1
 
-    self.vtkMesh.SetPoints( vtkPoints )
+    self.vtkmesh.SetPoints( vtkPoints )
 
-  def unstructuredgrid( self, points, npars=None ):
+  def unstructuredgrid( self, points ):
     """add unstructured grid"""
 
-    points = _nansplit( points )
-    #assert isinstance( points, (list,tuple,numeric.ndarray) ), 'Expected list of point arrays'
-
-    import vtk
-
-    vtkPoints = vtk.vtkPoints()
-    vtkPoints.SetNumberOfPoints( sum(pts.shape[0] for pts in points) )
-
-    cnt = 0
-    for pts in points:
-
-      np, ndims = pts.shape
-      if not npars:
-        npars = ndims
-
-      vtkelem   = None
-
-      if np == 2:
-        vtkelem = vtk.vtkLine()
-      elif np == 3:
-        vtkelem = vtk.vtkTriangle()
-      elif np == 4:  
-        if npars == 2:
-          vtkelem = vtk.vtkQuad()
-        elif npars == 3:
-          vtkelem = vtk.vtkTetra()
-      elif np == 8:
-        vtkelem = vtk.vtkVoxel() # TODO hexahedron for not rectilinear NOTE ordering changes!
-
-      if not vtkelem:
-        raise Exception('not sure what to do with cells with ndims=%d and npoints=%d' % (ndims,np))
-
+    pointcoords = []
+    for pts in _nansplit( points ):
+      npoints, ndims = pts.shape
+      vtkelem = self.vtkmap[ pts.shape ]
       if ndims < 3:
-        pts = numeric.concatenate([pts,numeric.zeros(shape=(pts.shape[0],3-ndims))],axis=1)
+        pts = numeric.concatenate([pts,numeric.zeros(shape=(npoints,3-ndims))],axis=1)
 
       cellpoints = vtkelem.GetPointIds()
+      for i, coord in enumerate( pts ):
+        cellpoints.SetId( i, len(pointcoords) )
+        pointcoords.append( coord )
+      self.vtkmesh.InsertNextCell( vtkelem.GetCellType(), cellpoints )
 
-      for i,point in enumerate(pts):
-        vtkPoints .SetPoint( cnt, point )
-        cellpoints.SetId( i, cnt )
-        cnt +=1
-    
-      self.vtkMesh.InsertNextCell( vtkelem.GetCellType(), cellpoints )
-
-    self.vtkMesh.SetPoints( vtkPoints )
+    vtkpoints = self.vtkPoints()
+    vtkpoints.SetNumberOfPoints( len(pointcoords) )
+    for i, coord in enumerate( pointcoords ):
+      vtkpoints.SetPoint( i, coord )
+    self.vtkmesh.SetPoints( vtkpoints )
 
   def celldataarray( self, name, data ):
     'add cell array'
-    ncells = self.vtkMesh.GetNumberOfCells()
+    ncells = self.vtkmesh.GetNumberOfCells()
     assert ncells == data.shape[0], 'Cell data array should have %d entries' % ncells
-    self.vtkMesh.GetCellData().AddArray( self.__vtkarray(name,data) )
+    self.vtkmesh.GetCellData().AddArray( self.__vtkarray(name,data) )
 
   def pointdataarray( self, name, data ):
     'add cell array'
-    npoints = self.vtkMesh.GetNumberOfPoints()
-    assert npoints == data.shape[0], 'Point data array should have %d entries' % npoints
-    self.vtkMesh.GetPointData().AddArray( self.__vtkarray(name,data) )
+    npoints = self.vtkmesh.GetNumberOfPoints()
+    isnan = numeric.isnan( data ).reshape( len(data), 1 ).any( axis=1 )
+    contigdata = data[~isnan]
+    assert npoints == contigdata.shape[0], 'Point data array should have %d entries' % npoints
+    self.vtkmesh.GetPointData().AddArray( self.__vtkarray(name,contigdata) )
 
   def __vtkarray( self, name, data ):
-    import vtk
     if data.ndim == 1:
       data = data[:,_]
-    array = vtk.vtkFloatArray()
+    array = self.vtkFloatArray()
     array.SetName( name )
     array.SetNumberOfComponents( data.shape[1] )
     array.SetNumberOfTuples( data.shape[0] )
@@ -509,7 +488,7 @@ def writevtu( name, topo, coords, pointdata={}, celldata={}, ascii=False, supere
       topo = topology.UnstructuredTopology( filter(None,[elem if not isinstance(elem,element.TrimmedElement) else elem.elem for elem in topo]), topo.ndims )
 
     points = topo.elem_eval( coords, ischeme='vtk', separate=True )
-    vtkfile.unstructuredgrid( points, npars=topo.ndims )
+    vtkfile.unstructuredgrid( points )
 
     if pointdata:  
       keys, values = zip( *pointdata.items() )

@@ -31,6 +31,7 @@ __all__ = [
   'prop',
   'cache',
   'transform',
+  'pointset',
   'numeric',
   'element',
   'function',

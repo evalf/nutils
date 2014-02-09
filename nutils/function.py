@@ -46,16 +46,13 @@ class CompiledEvaluable( object ):
     if getattr( prop, 'dot', False ):
       self.graphviz()
 
-  def eval( self, elem, ischeme ):
+  def eval( self, elem, pointset ):
     'evaluate'
 
-    if ischeme is None:
+    if pointset is None:
       points = weights = None
     else:
-      if isinstance( ischeme, dict ):
-        ischeme = ischeme[elem]
-      if isinstance( ischeme, str ):
-        ischeme = self.cache( elem.reference.getischeme, ischeme )
+      ischeme = pointset[elem]
       assert numeric.isarray( ischeme )
       if ischeme.shape[-1] == elem.ndims+1:
         points = ischeme[...,:-1]

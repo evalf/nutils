@@ -10,31 +10,54 @@ def Hook( lmbda, mu ):
   + (2*mu) * disp.symgrad(geom)
 
 
-def main( nelems=10, stress=Hook(1,1) ):
+def surface_volume( ndims ):
+  volume = 1.
+  surf0 = 2.
+  for idim in range( ndims ):
+    surface = surf0
+    surf0 = volume * (2*numeric.pi)
+    volume = surface / (idim+1)
+  return surface, volume
 
-  verts = numeric.linspace( 0, 1, nelems+1 )
-  wholedomain, geom = mesh.rectilinear( [verts,verts] )
-  dspace = wholedomain.splinefunc( degree=3 ).vector( 2 )
-  levelset = function.norm2( geom ) - .5
-  domain, complement = wholedomain.trim( levelset, maxrefine=2 )
 
-  support = domain.integrate( function.norm2( dspace ), geometry=geom, ischeme='gauss3' )
+def main( ndims=2, nelems=4, maxrefine=2, stress=Hook(1,1) ):
+
+  verts = numeric.linspace( 0, 2**(1./ndims), nelems+1 )
+  wholedomain, geom = mesh.rectilinear( [verts]*ndims )
+  dspace = wholedomain.splinefunc( degree=2 ).vector( ndims )
+  levelset = ( geom**2 ).sum() - 1.
+  domain, complement = wholedomain.trim( levelset, maxrefine=maxrefine )
+
+  volume = domain.integrate( 1., geometry=geom, ischeme=pointset.Gauss(1) )
+  ball_surface, ball_volume = surface_volume( ndims )
+  exact_volume = 2 - .5**ndims * ball_volume
+  log.info( 'volume: %f (exact: %f, error %.1f%%)' % ( volume, exact_volume, abs(100*(volume-exact_volume)/exact_volume) ) )
+
+  support = domain.integrate( function.norm2( dspace ), geometry=geom, ischeme=pointset.Gauss(3) )
   cons = util.NanVec( len(support) )
   cons[ support==0 ] = 0
-  cons |= wholedomain.boundary['left,right'].project( geom*[.5,0], geometry=geom, ischeme='gauss3', onto=dspace )
-  cons |= wholedomain.boundary['right'].project( [.5,0], geometry=geom, ischeme='gauss3', onto=dspace )
+  offset = numeric.zeros( ndims )
+  offset[0] = .5
+  cons |= wholedomain.boundary['right'].project( offset, geometry=geom, ischeme=pointset.Gauss(3), onto=dspace )
+  cons |= wholedomain.boundary['left'].project( 0, geometry=geom, ischeme=pointset.Gauss(3), onto=dspace )
 
   elasticity = function.outer( dspace.grad(geom), stress(dspace,geom) ).sum([2,3])
-  matrix = domain.integrate( elasticity, geometry=geom, ischeme='gauss3' )
+  matrix = domain.integrate( elasticity, geometry=geom, ischeme=pointset.Gauss(3) )
   lhs = matrix.solve( constrain=cons, tol=1e-5, symmetric=True )
   disp = dspace.dot( lhs )
 
-  points, colors = domain.simplex.elem_eval( [ geom + disp, stress(disp,geom)[0,1] ], ischeme='vertex1', separate=True )
-  with plot.PyPlot( 'dspace' ) as plt:
-    plt.mesh( points, colors )
-    plt.colorbar()
-    plt.axis( 'equal' )
-    plt.xlim( 0, 1.5 )
+  plotdomain = domain.simplex
 
+  if ndims == 2:
+    points, colors = plotdomain.elem_eval( [ geom + disp, stress(disp,geom)[0,1] ], ischeme=pointset.Vertex(2), separate=True )
+    with plot.PyPlot( 'deformation' ) as plt:
+      plt.mesh( points, colors, triangulate='bezier' )
+      plt.colorbar()
+
+  if ndims == 3:
+    points, colors = plotdomain.elem_eval( [ geom + disp, stress(disp,geom)[0,1] ], ischeme=pointset.vtk, separate=True )
+    with plot.VTKFile( 'deformation', ascii=False ) as vtkfile:
+      vtkfile.unstructuredgrid( points )
+      vtkfile.pointdataarray( 'stress', colors )
 
 util.run( main )
