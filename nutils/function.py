@@ -359,7 +359,7 @@ class ArrayFunc( Evaluable ):
   def dot( self, weights, axis=0 ):
     'array contraction'
 
-    weights = numpy.asarray( weights, dtype=float )
+    weights = asarray( weights )
     assert weights.ndim == 1
     s = [ numpy.newaxis ] * self.ndim
     s[axis] = slice(None)
@@ -367,7 +367,7 @@ class ArrayFunc( Evaluable ):
 
   def __getitem__( self, item ):
     'get item, general function which can eliminate, add or modify axes.'
-  
+
     myitem = list( item if isinstance( item, tuple ) else [item] )
     n = 0
     arr = self
@@ -1182,7 +1182,7 @@ class DofIndex( ArrayFunc ):
     'constructor'
 
     assert index.ndim >= 1
-    assert isinstance( array, numpy.ndarray )
+    #assert isinstance( array, numpy.ndarray )
     self.array = array
     assert 0 <= iax < self.array.ndim
     self.iax = iax
@@ -1213,7 +1213,7 @@ class DofIndex( ArrayFunc ):
       return take( self.array * other, self.index, self.iax )
 
   def _localgradient( self, ndims ):
-    return _zeros( self.shape + (ndims,) )
+    return take( localgradient( self.array, ndims ), self.index, self.iax )
 
   def _concatenate( self, other, axis ):
     if isinstance( other, DofIndex ) and self.iax == other.iax and self.index == other.index:
@@ -1857,7 +1857,26 @@ class Sign( ArrayFunc ):
     if n % 2 == 0:
       return expand( 1., self.shape )
 
+class DummyArray( ArrayFunc ):
+  'dummyarray'
+
+  def __init__( self, shape ):
+    self.__array = numpy.empty( shape )
+    ArrayFunc.__init__( self, args=[self.__array], evalf=self.dummyarray, shape=shape )
+
+  def update( self, array ):
+    assert array.shape == self.shape
+    self.__array[:] = array
+
+  @staticmethod
+  def dummyarray( array ):
+    return array
+
+  def _localgradient( self, ndims ):
+    return _zeros( self.shape + (ndims,) )
+
 class Pointdata( ArrayFunc ):
+  'pointdata'
 
   __slots__ = 'data',
 
@@ -1867,8 +1886,8 @@ class Pointdata( ArrayFunc ):
     assert isinstance(data,dict)
     self.data = data
     ArrayFunc.__init__( self, args=[ELEM,POINTS,self.data], evalf=self.pointdata, shape=shape )
-    
-  @staticmethod  
+
+  @staticmethod
   def pointdata( elem, points, data ):
     myvals,mypoint = data[elem]
     assert mypoint is points, 'Illegal point set'
@@ -2378,7 +2397,7 @@ def _equal( arg1, arg2 ):
 
 def asarray( arg ):
   'convert to ArrayFunc or numpy.ndarray'
-  
+
   if isinstance( arg, numpy.ndarray ) and arg.ndim == 0:
     arg = arg[...]
   if _isfunc(arg):
@@ -2828,7 +2847,7 @@ def concatenate( args, axis=0 ):
 
 def transpose( arg, trans=None ):
   'transpose'
-  
+
   arg = asarray( arg )
   if trans is None:
     invtrans = range( arg.ndim-1, -1, -1 )
@@ -2861,7 +2880,7 @@ def product( arg, axis ):
 
 def choose( level, choices ):
   'choose'
-  
+
   choices = _matchndim( *choices )
   if _isfunc(level) or any( _isfunc(choice) for choice in choices ):
     return Choose( level, choices )
@@ -3062,7 +3081,7 @@ add_T = lambda arg, axes=(-2,-1): swapaxes( arg, axes ) + arg
 
 def swapaxes( arg, axes=(-2,-1) ):
   'swap axes'
-  
+
   arg = asarray( arg )
   n1, n2 = axes
   trans = numpy.arange( arg.ndim )
@@ -3077,7 +3096,7 @@ def opposite( arg ):
 
   if not _isfunc( arg ):
     return arg
-    
+
   return arg._opposite()
 
 def function( fmap, nmap, ndofs, ndims ):
@@ -3142,7 +3161,7 @@ def inflate( arg, dofmap, length, axis ):
     return retval
 
   return Inflate( arg, dofmap, length, axis )
-  
+
 def blocks( arg ):
   arg = asarray( arg )
   try:
