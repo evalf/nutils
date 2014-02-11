@@ -12,7 +12,8 @@ for name in ( 'abs', 'add', 'arange', 'arccos', 'arcsin', 'arctan2', 'arctanh',
   'minimum', 'multiply', 'negative', 'random.normal', 'not_equal', 'ones',
   'ones_like', 'power', 'prod', 'product', 'reciprocal', 'repeat', 'roll',
   'searchsorted', 'sign', 'sign', 'sin', 'sinh', 'linalg.solve', 'sqrt',
-  'subtract', 'sum', 'tan', 'tanh', 'vstack', 'zeros', 'zeros_like' ):
+  'subtract', 'sum', 'tan', 'tanh', 'vstack', 'zeros', 'zeros_like',
+  'union1d', 'intersect1d', 'setxor1d', 'setdiff1d', 'sort' ):
   obj = numpy
   for name in name.split( '.' ):
     obj = getattr( obj, name )
