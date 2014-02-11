@@ -20,7 +20,402 @@ class ElemMap( dict ):
 
     return 'ElemMap(#%d,%dD)' % ( len(self), self.ndims )
 
+
 class Topology( object ):
+
+  def __init__( self, ndims, elements, groups=None ):
+    self.ndims = ndims
+    self.elements = numeric.empty( len(elements), dtype=object )
+    self.elements[:] = elements
+    self.elements.sort()
+    self.groups = groups or {}
+
+  def __getitem__( self, item ):
+    if isinstance( item, str ):
+      return eval( item.replace(',','|'), self.groups )
+    return self.elements[ item ]
+
+  def _set( self, other, op ):
+    assert self.ndims == other.ndims
+    return Topology( self.ndims, op( self.elements, other.elements ) )
+    
+  def __and__( self, other ): return self._set( other, numeric.intersect1d )
+  def __or__ ( self, other ): return self._set( other, numeric.union1d     )
+  def __xor__( self, other ): return self._set( other, numeric.setxor1d    )
+  def __sub__( self, other ): return self._set( other, numeric.setdiff1d   )
+
+  def __iter__( self ):
+    return iter( self.elements )
+
+  def __len__( self ):
+    return len( self.elements )
+
+  def build_graph( self, func ):
+    'get matrix sparsity'
+
+    log.context( 'graph' )
+
+    nrows, ncols = func.shape
+    graph = [ [] for irow in range(nrows) ]
+    IJ = function.Tuple([ function.Tuple(ind) for f, ind in function.blocks( func ) ]).compiled()
+
+    for elem in log.iterate('elem',self):
+      for I, J in IJ.eval( elem, None ):
+        for i in I:
+          graph[i].append(J)
+
+    for irow, g in log.iterate( 'dof', enumerate(graph), nrows ):
+      # release memory as we go
+      if g: graph[irow] = numeric.unique( numeric.concatenate( g ) )
+
+    return graph
+
+  def integrate( self, funcs, ischeme, geometry=None, iweights=None, force_dense=False, title='integrating' ):
+    'integrate'
+
+    log.context( title )
+
+    single_arg = not isinstance(funcs,(list,tuple))
+    if single_arg:
+      funcs = funcs,
+
+    if iweights is None:
+      assert geometry is not None, 'conflicting arguments geometry and iweights'
+      iweights = function.iwscale( geometry, self.ndims ) * function.IWeights( self.ndims )
+    else:
+      assert geometry is None, 'conflicting arguments geometry and iweights'
+    assert iweights.ndim == 0
+
+    integrands = []
+    retvals = []
+    for ifunc, func in enumerate( funcs ):
+      func = function.asarray( func )
+      lock = parallel.Lock()
+      if function._isfunc( func ):
+        array = parallel.shzeros( func.shape, dtype=float ) if func.ndim != 2 \
+           else matrix.DenseMatrix( func.shape ) if force_dense \
+           else matrix.SparseMatrix( self.build_graph(func), func.shape[1] )
+        for f, ind in function.blocks( func ):
+          integrands.append( function.Tuple([ ifunc, lock, function.Tuple(ind), function.elemint( f, iweights ) ]) )
+      else:
+        array = parallel.shzeros( func.shape, dtype=float )
+        if not function._iszero( func ):
+          integrands.append( function.Tuple([ ifunc, lock, (), function.elemint( func, iweights ) ]) )
+      retvals.append( array )
+    idata = function.Tuple( integrands ).compiled()
+
+    for elem in parallel.pariter( log.iterate('elem',self) ):
+      for ifunc, lock, index, data in idata.eval( elem, ischeme ):
+        retval = retvals[ifunc]
+        with lock:
+          retval[index] += data
+
+    log.info( 'cache', idata.cache.summary() )
+    log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
+    if single_arg:
+      retvals, = retvals
+
+    return retvals
+
+  def projection( self, fun, onto, geometry, **kwargs ):
+    'project and return as function'
+
+    weights = self.project( fun, onto, geometry, **kwargs )
+    return onto.dot( weights )
+
+  def project( self, fun, onto, geometry, tol=0, ischeme=None, title='projecting', droptol=1e-8, exact_boundaries=False, constrain=None, verify=None, maxiter=0, ptype='lsqr' ):
+    'L2 projection of function onto function space'
+
+    log.context( title + ' [%s]' % ptype )
+
+    if exact_boundaries:
+      assert constrain is None
+      constrain = self.boundary.project( fun, onto, geometry, title='boundaries', ischeme=ischeme, tol=tol, droptol=droptol, ptype=ptype )
+    elif constrain is None:
+      constrain = util.NanVec( onto.shape[0] )
+    else:
+      assert isinstance( constrain, util.NanVec )
+      assert constrain.shape == onto.shape[:1]
+
+    if ptype == 'lsqr':
+      assert ischeme is not None, 'please specify an integration scheme for lsqr-projection'
+      if len( onto.shape ) == 1:
+        Afun = function.outer( onto )
+        bfun = onto * fun
+      elif len( onto.shape ) == 2:
+        Afun = function.outer( onto ).sum( 2 )
+        bfun = function.sum( onto * fun )
+      else:
+        raise Exception
+      A, b = self.integrate( [Afun,bfun], geometry=geometry, ischeme=ischeme, title='building system' )
+      N = A.rowsupp(droptol)
+      if numeric.equal( b, 0 ).all():
+        constrain[~constrain.where&N] = 0
+      else:
+        solvecons = constrain.copy()
+        solvecons[~(constrain.where|N)] = 0
+        u = A.solve( b, solvecons, tol=tol, symmetric=True, maxiter=maxiter )
+        constrain[N] = u[N]
+
+    elif ptype == 'convolute':
+      assert ischeme is not None, 'please specify an integration scheme for convolute-projection'
+      if len( onto.shape ) == 1:
+        ufun = onto * fun
+        afun = onto
+      elif len( onto.shape ) == 2:
+        ufun = function.sum( onto * fun )
+        afun = function.norm2( onto )
+      else:
+        raise Exception
+      u, scale = self.integrate( [ ufun, afun ], geometry=geometry, ischeme=ischeme )
+      N = ~constrain.where & ( scale > droptol )
+      constrain[N] = u[N] / scale[N]
+
+    elif ptype == 'nodal':
+
+      ## data = function.Tuple([ fun, onto ])
+      ## F = W = 0
+      ## for elem in self:
+      ##   f, w = data( elem, 'bezier2' )
+      ##   W += w.sum( axis=-1 ).sum( axis=0 )
+      ##   F += numeric.contract( f[:,_,:], w, axis=[0,2] )
+      ## I = (W!=0)
+
+      F = numeric.zeros( onto.shape[0] )
+      W = numeric.zeros( onto.shape[0] )
+      I = numeric.zeros( onto.shape[0], dtype=bool )
+      fun = function.asarray( fun )
+      data = function.Tuple( function.Tuple([ fun, f, function.Tuple(ind) ]) for f, ind in function.blocks( onto ) )
+      for elem in self:
+        for f, w, ind in data( elem, 'bezier2' ):
+          w = w.swapaxes(0,1) # -> dof axis, point axis, ...
+          wf = w * f[ (slice(None),)+numeric.ix_(*ind[1:]) ]
+          W[ind[0]] += w.reshape(w.shape[0],-1).sum(1)
+          F[ind[0]] += wf.reshape(w.shape[0],-1).sum(1)
+          I[ind[0]] = True
+
+      I[constrain.where] = False
+      constrain[I] = F[I] / W[I]
+
+    else:
+      raise Exception, 'invalid projection %r' % ptype
+
+    errfun2 = ( onto.dot( constrain | 0 ) - fun )**2
+    if errfun2.ndim == 1:
+      errfun2 = errfun2.sum()
+    error2, area = self.integrate( [ errfun2, 1 ], geometry=geometry, ischeme=ischeme or 'gauss2' )
+    avg_error = numeric.sqrt(error2) / area
+
+    numcons = constrain.where.sum()
+    if verify is not None:
+      assert numcons == verify, 'number of constraints does not meet expectation: %d != %d' % ( numcons, verify )
+
+    log.info( 'constrained %d/%d dofs, error %.2e/area' % ( numcons, constrain.size, avg_error ) )
+
+    return constrain
+
+  def elem_eval( self, funcs, ischeme, separate=False, title='evaluating' ):
+    'element-wise evaluation'
+
+    log.context( title )
+
+    single_arg = not isinstance(funcs,(tuple,list))
+    if single_arg:
+      funcs = funcs,
+
+    slices = []
+    pointshape = function.PointShape().compiled()
+    npoints = 0
+    separators = []
+    for elem in log.iterate('elem',self):
+      np, = pointshape.eval( elem, ischeme )
+      slices.append( slice(npoints,npoints+np) )
+      npoints += np
+      if separate:
+        separators.append( npoints )
+        npoints += 1
+    if separate:
+      separators = numeric.array( separators[:-1], dtype=int )
+      npoints -= 1
+
+    retvals = []
+    idata = []
+    for ifunc, func in enumerate( funcs ):
+      func = function.asarray( func )
+      retval = parallel.shzeros( (npoints,)+func.shape, dtype=func.dtype )
+      if separate:
+        retval[separators] = numeric.nan
+      if function._isfunc( func ):
+        for f, ind in function.blocks( func ):
+          idata.append( function.Tuple( [ ifunc, function.Tuple(ind), f ] ) )
+      else:
+        idata.append( function.Tuple( [ ifunc, (), func ] ) )
+      retvals.append( retval )
+    idata = function.Tuple( idata ).compiled()
+
+    for ielem, elem in parallel.pariter( enumerate( self ) ):
+      s = slices[ielem],
+      for ifunc, index, data in idata.eval( elem, ischeme ):
+        retvals[ifunc][s+index] = data
+
+    log.info( 'cache', idata.cache.summary() )
+    log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
+    if single_arg:
+      retvals, = retvals
+
+    return retvals
+
+  def trim( self, levelset, maxrefine=0, minrefine=0, title='trimming' ):
+    'trim element along levelset'
+
+    levelset = function.ascompiled( levelset )
+    pos, neg = [], []
+    for elem in log.iterate( title, self ):
+      p, n = elem[-1].trim( levelset=(elem[:-1]+(levelset,)), maxrefine=maxrefine, minrefine=minrefine )
+      if p: pos.append( elem[:-1]+(p,) )
+      if n: neg.append( elem[:-1]+(n,) )
+    return Topology( ndims=self.ndims, elements=pos ), Topology( ndims=self.ndims, elements=neg )
+
+  @cache.property
+  def simplex( self ):
+    simplices = [ elem[:-1] + simplex for elem in self for simplex in elem[-1].simplices ]
+    return Topology( ndims=self.ndims, elements=simplices )
+
+  @cache.property
+  def refined( self ):
+    children = [ elem[:-1] + child for elem in self for child in elem[-1].children ]
+    groups = { key: topo.refined for key, topo in self.groups.items() }
+    return Topology( ndims=self.ndims, elements=children, groups=groups )
+
+class StructuredTopology( Topology ):
+
+  def __init__( self, structure, periodic=(), groups=None ):
+    self.structure = numeric.asarray(structure)
+    self.periodic = tuple(periodic)
+    Topology.__init__( self, ndims=self.structure.ndim, elements=self.structure.ravel(), groups=groups )
+
+  @cache.property
+  def boundary( self ):
+    'boundary'
+
+    shape = numeric.asarray( self.structure.shape ) + 1
+    vertices = numeric.arange( numeric.product(shape) ).reshape( shape )
+
+    boundaries = []
+    for iedge in range( 2 * self.ndims ):
+      idim = iedge // 2
+      iside = iedge % 2
+      if self.ndims > 1:
+        s = [ slice(None,None,-1) ] * idim \
+          + [ -iside, ] \
+          + [ slice(None,None,1) ] * (self.ndims-idim-1)
+        if not iside: # TODO: check that this is correct for all dimensions; should match conventions in elem.edge
+          s[idim-1] = slice(None,None,1 if idim else -1)
+        elems = self.structure[tuple(s)]
+        belems = numeric.empty( elems.shape, dtype=object )
+        for index, elem in numeric.enumerate_nd( elems ):
+          belems[ index ] = elem[:-1] + elem[-1].edges[iedge]
+      else:
+        belems = numeric.array( self.structure[-iside].edge( 1-iedge ) )
+      periodic = [ d - (d>idim) for d in self.periodic if d != idim ] # TODO check that dimensions are correct for ndim > 2
+      boundaries.append( StructuredTopology( belems, periodic=periodic ) )
+    groups = dict( zip( ( 'left', 'right', 'bottom', 'top', 'front', 'back' ), boundaries ) )
+
+    if self.ndims == 2:
+      structure = numeric.concatenate([ boundaries[i].structure for i in [0,2,1,3] ])
+      topo = StructuredTopology( structure, periodic=[0], groups=groups )
+    else:
+      allbelems = [ belem for boundary in boundaries for belem in boundary.structure.flat if belem is not None ]
+      topo = UnstructuredTopology( allbelems, ndims=self.ndims-1, groups=groups )
+
+    return topo
+
+  def splinefunc( self, degree, neumann=(), periodic=None, closed=False, removedofs=None ):
+    'spline from vertices'
+
+    if periodic is None:
+      periodic = self.periodic
+
+    if isinstance( degree, int ):
+      degree = ( degree, ) * self.ndims
+
+    if removedofs == None:
+      removedofs = [None] * self.ndims
+    else:
+      assert len(removedofs) == self.ndims
+
+    vertex_structure = numeric.array( 0 )
+    dofcount = 1
+    slices = []
+
+    for idim in range( self.ndims ):
+      periodic_i = idim in periodic
+      n = self.structure.shape[idim]
+      p = degree[idim]
+
+      if closed == False:
+        neumann_i = (idim*2 in neumann and 1) | (idim*2+1 in neumann and 2)
+        stdelems_i = element.PolyLine.spline( degree=p, nelems=n, periodic=periodic_i, neumann=neumann_i )
+      elif closed == True:
+        assert periodic==(), 'Periodic option not allowed for closed spline'
+        assert neumann ==(), 'Neumann option not allowed for closed spline'
+        stdelems_i = element.PolyLine.spline( degree=p, nelems=n, periodic=True )
+
+      stdelems = stdelems[...,_] * stdelems_i if idim else stdelems_i
+
+      nd = n + p
+      numbers = numeric.arange( nd )
+      if periodic_i and p > 0:
+        overlap = p
+        numbers[ -overlap: ] = numbers[ :overlap ]
+        nd -= overlap
+      remove = removedofs[idim]
+      if remove is None:
+        vertex_structure = vertex_structure[...,_] * nd + numbers
+      else:
+        mask = numeric.zeros( nd, dtype=bool )
+        mask[numeric.array(remove)] = True
+        nd -= mask.sum()
+        numbers -= mask.cumsum()
+        vertex_structure = vertex_structure[...,_] * nd + numbers
+        vertex_structure[...,mask] = -1
+      dofcount *= nd
+      slices.append( [ slice(i,i+p+1) for i in range(n) ] )
+
+    dofmap = {}
+    funcmap = {}
+    hasnone = False
+    for item in numeric.broadcast( self.structure, stdelems, *numeric.ix_(*slices) ):
+      elem = item[0][:-1]
+      std = item[1]
+      if elem is None:
+        hasnone = True
+      else:
+        S = item[2:]
+        dofs = vertex_structure[S].ravel()
+        mask = numeric.greater_equal( dofs, 0 )
+        if mask.all():
+          dofmap[ elem ] = dofs
+          funcmap[elem] = std
+        elif mask.any():
+          dofmap[ elem ] = dofs[mask]
+          funcmap[elem] = std, mask
+
+    if hasnone:
+      touched = numeric.zeros( dofcount, dtype=bool )
+      for dofs in dofmap.itervalues():
+        touched[ dofs ] = True
+      renumber = touched.cumsum()
+      dofcount = int(renumber[-1])
+      dofmap = dict( ( elem, renumber[dofs]-1 ) for elem, dofs in dofmap.iteritems() )
+
+    return function.function( funcmap, dofmap, dofcount, self.ndims )
+
+
+
+## OLD
+
+class _Topology( object ):
   'topology base class'
 
   def __init__( self, ndims ):
@@ -205,73 +600,6 @@ class Topology( object ):
 
     return retvals
 
-  def build_graph( self, func ):
-    'get matrix sparsity'
-
-    log.context( 'graph' )
-
-    nrows, ncols = func.shape
-    graph = [ [] for irow in range(nrows) ]
-    IJ = function.Tuple([ function.Tuple(ind) for f, ind in function.blocks( func ) ]).compiled()
-
-    for elem in log.iterate('elem',self):
-      for I, J in IJ.eval( elem, None ):
-        for i in I:
-          graph[i].append(J)
-
-    for irow, g in log.iterate( 'dof', enumerate(graph), nrows ):
-      # release memory as we go
-      if g: graph[irow] = numeric.unique( numeric.concatenate( g ) )
-
-    return graph
-
-  def integrate( self, funcs, ischeme, geometry=None, iweights=None, force_dense=False, title='integrating' ):
-    'integrate'
-
-    log.context( title )
-
-    single_arg = not isinstance(funcs,(list,tuple))
-    if single_arg:
-      funcs = funcs,
-
-    if iweights is None:
-      assert geometry is not None, 'conflicting arguments geometry and iweights'
-      iweights = function.iwscale( geometry, self.ndims ) * function.IWeights( self.ndims )
-    else:
-      assert geometry is None, 'conflicting arguments geometry and iweights'
-    assert iweights.ndim == 0
-
-    integrands = []
-    retvals = []
-    for ifunc, func in enumerate( funcs ):
-      func = function.asarray( func )
-      lock = parallel.Lock()
-      if function._isfunc( func ):
-        array = parallel.shzeros( func.shape, dtype=float ) if func.ndim != 2 \
-           else matrix.DenseMatrix( func.shape ) if force_dense \
-           else matrix.SparseMatrix( self.build_graph(func), func.shape[1] )
-        for f, ind in function.blocks( func ):
-          integrands.append( function.Tuple([ ifunc, lock, function.Tuple(ind), function.elemint( f, iweights ) ]) )
-      else:
-        array = parallel.shzeros( func.shape, dtype=float )
-        if not function._iszero( func ):
-          integrands.append( function.Tuple([ ifunc, lock, (), function.elemint( func, iweights ) ]) )
-      retvals.append( array )
-    idata = function.Tuple( integrands ).compiled()
-
-    for elem in parallel.pariter( log.iterate('elem',self) ):
-      for ifunc, lock, index, data in idata.eval( elem, ischeme ):
-        retval = retvals[ifunc]
-        with lock:
-          retval[index] += data
-
-    log.info( 'cache', idata.cache.summary() )
-    log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
-    if single_arg:
-      retvals, = retvals
-
-    return retvals
-
   def integrate_symm( self, funcs, ischeme, geometry=None, iweights=None, force_dense=False, title='integrating' ):
     'integrate a symmetric integrand on a product domain' # TODO: find a proper home for this
 
@@ -323,103 +651,6 @@ class Topology( object ):
       retvals, = retvals
 
     return retvals
-
-  def projection( self, fun, onto, geometry, **kwargs ):
-    'project and return as function'
-
-    weights = self.project( fun, onto, geometry, **kwargs )
-    return onto.dot( weights )
-
-  def project( self, fun, onto, geometry, tol=0, ischeme=None, title='projecting', droptol=1e-8, exact_boundaries=False, constrain=None, verify=None, maxiter=0, ptype='lsqr' ):
-    'L2 projection of function onto function space'
-
-    log.context( title + ' [%s]' % ptype )
-
-    if exact_boundaries:
-      assert constrain is None
-      constrain = self.boundary.project( fun, onto, geometry, title='boundaries', ischeme=ischeme, tol=tol, droptol=droptol, ptype=ptype )
-    elif constrain is None:
-      constrain = util.NanVec( onto.shape[0] )
-    else:
-      assert isinstance( constrain, util.NanVec )
-      assert constrain.shape == onto.shape[:1]
-
-    if ptype == 'lsqr':
-      assert ischeme is not None, 'please specify an integration scheme for lsqr-projection'
-      if len( onto.shape ) == 1:
-        Afun = function.outer( onto )
-        bfun = onto * fun
-      elif len( onto.shape ) == 2:
-        Afun = function.outer( onto ).sum( 2 )
-        bfun = function.sum( onto * fun )
-      else:
-        raise Exception
-      A, b = self.integrate( [Afun,bfun], geometry=geometry, ischeme=ischeme, title='building system' )
-      N = A.rowsupp(droptol)
-      if numeric.equal( b, 0 ).all():
-        constrain[~constrain.where&N] = 0
-      else:
-        solvecons = constrain.copy()
-        solvecons[~(constrain.where|N)] = 0
-        u = A.solve( b, solvecons, tol=tol, symmetric=True, maxiter=maxiter )
-        constrain[N] = u[N]
-
-    elif ptype == 'convolute':
-      assert ischeme is not None, 'please specify an integration scheme for convolute-projection'
-      if len( onto.shape ) == 1:
-        ufun = onto * fun
-        afun = onto
-      elif len( onto.shape ) == 2:
-        ufun = function.sum( onto * fun )
-        afun = function.norm2( onto )
-      else:
-        raise Exception
-      u, scale = self.integrate( [ ufun, afun ], geometry=geometry, ischeme=ischeme )
-      N = ~constrain.where & ( scale > droptol )
-      constrain[N] = u[N] / scale[N]
-
-    elif ptype == 'nodal':
-
-      ## data = function.Tuple([ fun, onto ])
-      ## F = W = 0
-      ## for elem in self:
-      ##   f, w = data( elem, 'bezier2' )
-      ##   W += w.sum( axis=-1 ).sum( axis=0 )
-      ##   F += numeric.contract( f[:,_,:], w, axis=[0,2] )
-      ## I = (W!=0)
-
-      F = numeric.zeros( onto.shape[0] )
-      W = numeric.zeros( onto.shape[0] )
-      I = numeric.zeros( onto.shape[0], dtype=bool )
-      fun = function.asarray( fun )
-      data = function.Tuple( function.Tuple([ fun, f, function.Tuple(ind) ]) for f, ind in function.blocks( onto ) )
-      for elem in self:
-        for f, w, ind in data( elem, 'bezier2' ):
-          w = w.swapaxes(0,1) # -> dof axis, point axis, ...
-          wf = w * f[ (slice(None),)+numeric.ix_(*ind[1:]) ]
-          W[ind[0]] += w.reshape(w.shape[0],-1).sum(1)
-          F[ind[0]] += wf.reshape(w.shape[0],-1).sum(1)
-          I[ind[0]] = True
-
-      I[constrain.where] = False
-      constrain[I] = F[I] / W[I]
-
-    else:
-      raise Exception, 'invalid projection %r' % ptype
-
-    errfun2 = ( onto.dot( constrain | 0 ) - fun )**2
-    if errfun2.ndim == 1:
-      errfun2 = errfun2.sum()
-    error2, area = self.integrate( [ errfun2, 1 ], geometry=geometry, ischeme=ischeme or 'gauss2' )
-    avg_error = numeric.sqrt(error2) / area
-
-    numcons = constrain.where.sum()
-    if verify is not None:
-      assert numcons == verify, 'number of constraints does not meet expectation: %d != %d' % ( numcons, verify )
-
-    log.info( 'constrained %d/%d dofs, error %.2e/area' % ( numcons, constrain.size, avg_error ) )
-
-    return constrain
 
   def refinedfunc( self, dofaxis, refine, degree, title='refining' ):
     'create refined space by refining dofs in existing one'
@@ -573,25 +804,7 @@ class Topology( object ):
 
     return [ trimmededge for elem in self for trimmededge in elem.get_trimmededges( maxrefine ) ]
 
-  def trim( self, levelset, maxrefine=0, minrefine=0, title='trimming' ):
-    'trim element along levelset'
-
-    levelset = function.ascompiled( levelset )
-    pos, neg = [], []
-    for elem in log.iterate( title, self ):
-      p, n = elem[-1].trim( levelset=(elem[:-1]+(levelset,)), maxrefine=maxrefine, minrefine=minrefine )
-      if p: pos.append( elem[:-1]+(p,) )
-      if n: neg.append( elem[:-1]+(n,) )
-    return UnstructuredTopology( pos, ndims=self.ndims ), \
-           UnstructuredTopology( neg, ndims=self.ndims )
-
-  @cache.property
-  def simplex( self ):
-    elems = [ elem[:-1] + simplex for elem in self for simplex in elem[-1].simplices ]
-    return UnstructuredTopology( elems, ndims=self.ndims )
-
-
-class StructuredTopology( Topology ):
+class _StructuredTopology( Topology ):
   'structured topology'
 
   def __init__( self, structure, periodic=() ):
@@ -629,42 +842,6 @@ class StructuredTopology( Topology ):
     return StructuredTopology( self.structure[item], periodic=periodic )
 
   @cache.property
-  def boundary( self ):
-    'boundary'
-
-    shape = numeric.asarray( self.structure.shape ) + 1
-    vertices = numeric.arange( numeric.product(shape) ).reshape( shape )
-
-    boundaries = []
-    for iedge in range( 2 * self.ndims ):
-      idim = iedge // 2
-      iside = iedge % 2
-      if self.ndims > 1:
-        s = [ slice(None,None,-1) ] * idim \
-          + [ -iside, ] \
-          + [ slice(None,None,1) ] * (self.ndims-idim-1)
-        if not iside: # TODO: check that this is correct for all dimensions; should match conventions in elem.edge
-          s[idim-1] = slice(None,None,1 if idim else -1)
-        elems = self.structure[tuple(s)]
-        belems = numeric.empty( elems.shape, dtype=object )
-        for index, elem in numeric.enumerate_nd( elems ):
-          belems[ index ] = elem[:-1] + elem[-1].edges[iedge]
-      else:
-        belems = numeric.array( self.structure[-iside].edge( 1-iedge ) )
-      periodic = [ d - (d>idim) for d in self.periodic if d != idim ] # TODO check that dimensions are correct for ndim > 2
-      boundaries.append( StructuredTopology( belems, periodic=periodic ) )
-
-    if self.ndims == 2:
-      structure = numeric.concatenate([ boundaries[i].structure for i in [0,2,1,3] ])
-      topo = StructuredTopology( structure, periodic=[0] )
-    else:
-      allbelems = [ belem for boundary in boundaries for belem in boundary.structure.flat if belem is not None ]
-      topo = UnstructuredTopology( allbelems, ndims=self.ndims-1 )
-
-    topo.groups = dict( zip( ( 'left', 'right', 'bottom', 'top', 'front', 'back' ), boundaries ) )
-    return topo
-
-  @cache.property
   def interfaces( self ):
     'interfaces'
 
@@ -685,88 +862,6 @@ class StructuredTopology( Topology ):
         ielem = element.QuadElement( ndims=self.ndims-1, vertices=vertices, interface=(context1,context2) )
         interfaces.append( ielem )
     return UnstructuredTopology( interfaces, ndims=self.ndims-1 )
-
-  def splinefunc( self, degree, neumann=(), knots=None, periodic=None, closed=False, removedofs=None ):
-    'spline from vertices'
-
-    if periodic is None:
-      periodic = self.periodic
-
-    if isinstance( degree, int ):
-      degree = ( degree, ) * self.ndims
-
-    if removedofs == None:
-      removedofs = [None] * self.ndims
-    else:
-      assert len(removedofs) == self.ndims
-
-    vertex_structure = numeric.array( 0 )
-    dofcount = 1
-    slices = []
-
-    for idim in range( self.ndims ):
-      periodic_i = idim in periodic
-      n = self.structure.shape[idim]
-      p = degree[idim]
-      #k = knots[idim]
-
-      if closed == False:
-        neumann_i = (idim*2 in neumann and 1) | (idim*2+1 in neumann and 2)
-        stdelems_i = element.PolyLine.spline( degree=p, nelems=n, periodic=periodic_i, neumann=neumann_i )
-      elif closed == True:
-        assert periodic==(), 'Periodic option not allowed for closed spline'
-        assert neumann ==(), 'Neumann option not allowed for closed spline'
-        stdelems_i = element.PolyLine.spline( degree=p, nelems=n, periodic=True )
-
-      stdelems = stdelems[...,_] * stdelems_i if idim else stdelems_i
-
-      nd = n + p
-      numbers = numeric.arange( nd )
-      if periodic_i and p > 0:
-        overlap = p
-        numbers[ -overlap: ] = numbers[ :overlap ]
-        nd -= overlap
-      remove = removedofs[idim]
-      if remove is None:
-        vertex_structure = vertex_structure[...,_] * nd + numbers
-      else:
-        mask = numeric.zeros( nd, dtype=bool )
-        mask[numeric.array(remove)] = True
-        nd -= mask.sum()
-        numbers -= mask.cumsum()
-        vertex_structure = vertex_structure[...,_] * nd + numbers
-        vertex_structure[...,mask] = -1
-      dofcount *= nd
-      slices.append( [ slice(i,i+p+1) for i in range(n) ] )
-
-    dofmap = {}
-    funcmap = {}
-    hasnone = False
-    for item in numeric.broadcast( self.structure, stdelems, *numeric.ix_(*slices) ):
-      elem = item[0][:-1]
-      std = item[1]
-      if elem is None:
-        hasnone = True
-      else:
-        S = item[2:]
-        dofs = vertex_structure[S].ravel()
-        mask = numeric.greater_equal( dofs, 0 )
-        if mask.all():
-          dofmap[ elem ] = dofs
-          funcmap[elem] = std
-        elif mask.any():
-          dofmap[ elem ] = dofs[mask]
-          funcmap[elem] = std, mask
-
-    if hasnone:
-      touched = numeric.zeros( dofcount, dtype=bool )
-      for dofs in dofmap.itervalues():
-        touched[ dofs ] = True
-      renumber = touched.cumsum()
-      dofcount = int(renumber[-1])
-      dofmap = dict( ( elem, renumber[dofs]-1 ) for elem, dofs in dofmap.iteritems() )
-
-    return function.function( funcmap, dofmap, dofcount, self.ndims )
 
   def discontfunc( self, degree ):
     'discontinuous shape functions'
@@ -909,7 +1004,7 @@ class StructuredTopology( Topology ):
       return numeric.sum(numeric.abs(diff))
     return -1
     
-class UnstructuredTopology( Topology ):
+class _UnstructuredTopology( Topology ):
   'externally defined topology'
 
   def __init__( self, elements, ndims, namedfuncs={} ):
@@ -940,14 +1035,7 @@ class UnstructuredTopology( Topology ):
 
     return self.namedfuncs[ 'bubble1' ]
 
-  @cache.property
-  def refined( self ):
-    'refined (=refine(2))'
-
-    elements = [ elem[:-1] + child for elem in self for child in elem[-1].children ]
-    return UnstructuredTopology( elements, ndims=self.ndims )
-
-class HierarchicalTopology( Topology ):
+class _HierarchicalTopology( Topology ):
   'collection of nested topology elments'
 
   def __init__( self, basetopo, elements ):
