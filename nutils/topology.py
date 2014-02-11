@@ -253,7 +253,7 @@ class Topology( object ):
       retvals.append( retval )
     idata = function.Tuple( idata ).compiled()
 
-    for ielem, elem in parallel.pariter( enumerate( self ) ):
+    for ielem, elem in parallel.pariter( enumerate( log.iterate('elem',self) ) ):
       s = slices[ielem],
       for ifunc, index, data in idata.eval( elem, ischeme ):
         retvals[ifunc][s+index] = data
@@ -326,7 +326,7 @@ class StructuredTopology( Topology ):
       topo = StructuredTopology( structure, periodic=[0], groups=groups )
     else:
       allbelems = [ belem for boundary in boundaries for belem in boundary.structure.flat if belem is not None ]
-      topo = UnstructuredTopology( allbelems, ndims=self.ndims-1, groups=groups )
+      topo = Topology( elements=allbelems, ndims=self.ndims-1, groups=groups )
 
     return topo
 
