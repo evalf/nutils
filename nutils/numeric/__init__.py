@@ -1,4 +1,4 @@
-import numpy, warnings
+import numpy, warnings, itertools
 from _numeric import _contract, NumericArray
 
 _wrap = lambda f: lambda *args, **kwargs: f( *args, **kwargs ).view( NumericArray )
@@ -26,7 +26,15 @@ for name in ( 'broadcast', 'linalg.cond', 'float64', 'iinfo', 'inf', 'intc',
   locals()[ name ] = obj
 
 def grid( shape ):
-  return map( asarray, numpy.ogrid[ tuple( slice(n) for n in shape ) ] )
+  shape = tuple(shape)
+  grid = empty( (len(shape),)+shape, dtype=int )
+  for i, sh in enumerate( shape ):
+    grid[i] = arange(sh)[(slice(None),)+(newaxis,)*(len(shape)-i-1)]
+  return grid
+
+def enumerate_nd( array ):
+  indices = itertools.product( *[ range(sh) for sh in array.shape ] )
+  return itertools.izip( indices, array.flat )
 
 def isarray( A ):
   return isinstance( A, numpy.ndarray )
