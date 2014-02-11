@@ -49,16 +49,18 @@ class CompiledEvaluable( object ):
   def eval( self, elem, pointset ):
     'evaluate'
 
+    head = elem[-1]
+    elem = elem[:-1]
     if pointset is None:
       points = weights = None
     else:
-      ischeme = pointset[elem]
+      ischeme = pointset[head]
       assert numeric.isarray( ischeme )
-      if ischeme.shape[-1] == elem.ndims+1:
+      if ischeme.shape[-1] == head.ndims+1:
         points = ischeme[...,:-1]
         weights = ischeme[...,-1]
       else:
-        assert ischeme.shape[-1] == elem.ndims
+        assert ischeme.shape[-1] == head.ndims
         points = ischeme
         weights = None
 
@@ -287,20 +289,15 @@ class Cascade( Evaluable ):
   def cascade( elem, ndims, side ):
     'evaluate'
 
-    trans = transform.Identity( elem.ndims )
-    while elem.ndims != ndims \
-        or elem.interface and elem.interface[side][0].ndims < elem.ndims: # TODO make less dirty
-      elem, nexttrans = elem.interface[side] if elem.interface \
-                   else elem.context or elem.parent
-      trans = nexttrans * trans
-
-    cascade = [ (elem,trans) ]
-    while elem.parent:
-      elem, nexttrans = elem.parent
-      trans = nexttrans * trans
-      cascade.append( (elem,trans) )
-
-    return cascade
+    trans = transform.Identity( elem[-1].fromdim )
+    cascade = []
+    while True:
+      if trans.todim == ndims:
+        cascade.append( (elem,trans) )
+      if len(elem) == 1:
+        return cascade
+      trans = elem[-1] * trans
+      elem = elem[:-1]
 
   @property
   def inv( self ):
@@ -703,16 +700,17 @@ class IWeights( ArrayFunc ):
 
   __slots__ = ()
 
-  def __init__( self ):
+  def __init__( self, ndims ):
     'constructor'
 
-    ArrayFunc.__init__( self, args=[ELEM,WEIGHTS], evalf=self.iweights, shape=() )
+    ArrayFunc.__init__( self, args=[Cascade(ndims),WEIGHTS], evalf=self.iweights, shape=() )
 
   @staticmethod
-  def iweights( elem, weights ):
+  def iweights( cascade, weights ):
     'evaluate'
 
-    return elem.root_transform.det * weights
+    root, trans = cascade[-1]
+    return trans.det * weights
 
 class OrientationHack( ArrayFunc ):
   'orientation hack for 1d elements; VERY dirty'
@@ -793,7 +791,10 @@ class Function( ArrayFunc ):
       else:
         F = cache( std.eval, elempoints, igrad )
       for axis in range(-igrad,0):
-        F = numeric.dot( F, elem.root_transform.inv.matrix, axis )
+        root_transform = elem[1]
+        for trans in elem[2:]:
+          root_transform *= trans
+        F = numeric.dot( F, root_transform.inv.matrix, axis )
       fvals.append( F )
     assert fvals, 'no function values encountered'
     return fvals[0] if len(fvals) == 1 else numeric.concatenate( fvals, axis=-1-igrad )
@@ -1679,30 +1680,26 @@ class Power( ArrayFunc ):
 class ElemFunc( ArrayFunc ):
   'trivial func'
 
-  __slots__ = 'domainelem', 'side', 'cascade'
+  __slots__ = 'cascade',
 
-  def __init__( self, domainelem, side=0 ):
+  def __init__( self, ndims, side=0 ):
     'constructor'
 
-    self.domainelem = domainelem
-    self.side = side
-    self.cascade = Cascade( domainelem.ndims, side )
-    ArrayFunc.__init__( self, args=[POINTS,self.cascade,domainelem], evalf=self.elemfunc, shape=[domainelem.ndims] )
+    self.cascade = Cascade( ndims, side )
+    ArrayFunc.__init__( self, args=[POINTS,self.cascade], evalf=self.elemfunc, shape=[ndims] )
 
   @staticmethod
-  def elemfunc( points, cascade, domainelem ):
+  def elemfunc( points, cascade ):
     'evaluate'
 
-    for elem, trans in cascade:
-      if elem is domainelem:
-        return trans.apply(points)
-    raise Exception, '%r not found' % domainelem
+    root, trans = cascade[-1]
+    return trans.apply( points )
 
   def _localgradient( self, ndims ):
     return self.cascade.transform( ndims )
 
   def _opposite( self ):
-    return ElemFunc( self.domainelem, 1-self.side )
+    return ElemFunc( self.cascade.ndims, 1-self.cascade.side )
 
   def find( self, elem, C ):
     'find coordinates'

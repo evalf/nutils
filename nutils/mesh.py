@@ -3,49 +3,19 @@ import os, warnings
 
 # MESH GENERATORS
 
-class GridFunc( function.ElemFunc ):
-  __slots__ = 'structure', 'grid'
-  def __init__( self, domainelem, structure, grid ):
-    self.structure = structure
-    self.grid = grid
-    function.ElemFunc.__init__( self, domainelem )
-  def finditer( self, x ):
-    assert x.ndim == 2
-    assert x.shape[1] == len(self.grid)
-    N = numeric.array([ numeric.searchsorted(gi,xi)-1 for gi, xi in zip(self.grid,x.T) ]).T
-    I = numeric.arange( x.shape[0] )
-    while N.size:
-      n = N[0]
-      GN = zip(self.grid,n)
-      assert all( 0 <= ni < len(gi)-1 for gi, ni in GN )
-      w = numeric.equal( N, n ).all( axis=1 )
-      x0 = numeric.array([ gi[ni] for gi, ni in GN ])
-      dx = numeric.array([ gi[ni+1]-gi[ni] for gi, ni in GN ])
-      yield self.structure[tuple(n)], (x[w]-x0)/dx, I[w]
-      N = N[~w]
-      I = I[~w]
-      x = x[~w]
-
 def rectilinear( vertices, periodic=(), name='rect' ):
   'rectilinear mesh'
 
   ndims = len(vertices)
   indices = numeric.grid( len(n)-1 for n in vertices )
-  domainelem = element.Element( ndims=ndims )
-
-  vertexfmt = name + '(' + ','.join( '%%%dd' % len(str(len(n)-1)) for n in vertices ) + ')'
-  vertexobjs = numeric.objmap( lambda *index: vertexfmt%index, *numeric.grid( len(n) for n in vertices ) )
-  for idim in periodic:
-    tmp = numeric.bringforward( vertexobjs, idim )
-    tmp[-1] = tmp[0]
-
+  root = object()
   reference = element.Simplex(1)**ndims
-  structure = numeric.objmap( lambda *index: element.ReferenceElement(
-    reference=reference,
-    parent=( domainelem, transform.Scale( numeric.array([ n[i+1]-n[i] for n,i in zip(vertices,index) ]) ) + [ n[i] for n,i in zip(vertices,index) ] ),
-    vertices=tuple(vertexobjs[tuple(slice(i,i+2) for i in index)].ravel()) ), *indices )
+  structure = numeric.empty( indices.shape[1:], dtype=object )
+  for index in indices.reshape( ndims, -1 ).T:
+    x0, x1 = numeric.array([ v[i:i+2] for v, i in zip( vertices, index ) ]).T
+    structure[tuple(index)] = root, transform.Scale(x1-x0) + x0, reference
   topo = topology.StructuredTopology( structure )
-  coords = GridFunc( domainelem, structure, vertices )
+  coords = function.ElemFunc( ndims )
   if periodic:
     topo = topo.make_periodic( periodic )
   return topo, coords

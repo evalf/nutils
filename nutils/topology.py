@@ -148,7 +148,7 @@ class Topology( object ):
 
     retvals = []
     #iweights = geometry.iweights( self.ndims )
-    iweights = function.iwscale( geometry, self.ndims ) * function.IWeights()
+    iweights = function.iwscale( geometry, self.ndims ) * function.IWeights( self.ndims )
     idata = [ iweights ]
     for func in funcs:
       func = function.asarray( func )
@@ -236,7 +236,7 @@ class Topology( object ):
 
     if iweights is None:
       assert geometry is not None, 'conflicting arguments geometry and iweights'
-      iweights = function.iwscale( geometry, self.ndims ) * function.IWeights()
+      iweights = function.iwscale( geometry, self.ndims ) * function.IWeights( self.ndims )
     else:
       assert geometry is None, 'conflicting arguments geometry and iweights'
     assert iweights.ndim == 0
@@ -283,7 +283,7 @@ class Topology( object ):
 
     if iweights is None:
       assert geometry is not None, 'conflicting arguments geometry and iweights'
-      iweights = function.iwscale( geometry, self.ndims ) * function.IWeights()
+      iweights = function.iwscale( geometry, self.ndims ) * function.IWeights( self.ndims )
     else:
       assert geometry is None, 'conflicting arguments geometry and iweights'
     assert iweights.ndim == 0
@@ -579,17 +579,15 @@ class Topology( object ):
     levelset = function.ascompiled( levelset )
     pos, neg = [], []
     for elem in log.iterate( title, self ):
-      p, n = elem.trim( levelset=levelset, maxrefine=maxrefine, minrefine=minrefine )
-      if p: pos.append( p )
-      if n: neg.append( n )
+      p, n = elem[-1].trim( levelset=(elem[:-1]+(levelset,)), maxrefine=maxrefine, minrefine=minrefine )
+      if p: pos.append( elem[:-1]+(p,) )
+      if n: neg.append( elem[:-1]+(n,) )
     return UnstructuredTopology( pos, ndims=self.ndims ), \
            UnstructuredTopology( neg, ndims=self.ndims )
 
   @cache.property
   def simplex( self ):
-    elems = []
-    for elem in self:
-      elems.extend( elem.simplices )
+    elems = [ elem[:-1] + simplex for elem in self for simplex in elem[-1].simplices ]
     return UnstructuredTopology( elems, ndims=self.ndims )
 
 
@@ -647,8 +645,10 @@ class StructuredTopology( Topology ):
           + [ slice(None,None,1) ] * (self.ndims-idim-1)
         if not iside: # TODO: check that this is correct for all dimensions; should match conventions in elem.edge
           s[idim-1] = slice(None,None,1 if idim else -1)
-        s = tuple(s)
-        belems = numeric.objmap( lambda elem: elem.edge(iedge) if elem is not None else None, self.structure[s] )
+        elems = self.structure[tuple(s)]
+        belems = numeric.empty( elems.shape, dtype=object )
+        for index, elem in numeric.enumerate_nd( elems ):
+          belems[ index ] = elem[:-1] + elem[-1].edges[iedge]
       else:
         belems = numeric.array( self.structure[-iside].edge( 1-iedge ) )
       periodic = [ d - (d>idim) for d in self.periodic if d != idim ] # TODO check that dimensions are correct for ndim > 2
@@ -743,7 +743,7 @@ class StructuredTopology( Topology ):
     funcmap = {}
     hasnone = False
     for item in numeric.broadcast( self.structure, stdelems, *numeric.ix_(*slices) ):
-      elem = item[0]
+      elem = item[0][:-1]
       std = item[1]
       if elem is None:
         hasnone = True
@@ -944,9 +944,7 @@ class UnstructuredTopology( Topology ):
   def refined( self ):
     'refined (=refine(2))'
 
-    elements = []
-    for elem in self:
-      elements.extend( elem.children )
+    elements = [ elem[:-1] + child for elem in self for child in elem[-1].children ]
     return UnstructuredTopology( elements, ndims=self.ndims )
 
 class HierarchicalTopology( Topology ):

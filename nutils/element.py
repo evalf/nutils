@@ -2,124 +2,40 @@ from . import log, util, cache, numeric, transform, function, _
 import warnings, weakref
 
 
-class Element( object ):
-  __slots__ = 'ndims', 'parent', 'context', 'interface', 'root_transform'
+class Element( cache.Immutable ):
 
-  def __init__( self, ndims, parent=None, context=None, interface=None ):
-
+  def __init__( self, ndims ):
     self.ndims = ndims
-    self.parent = parent
-    self.context = context
-    self.interface = interface
-    if parent:
-      pelem, trans = parent
-      self.root_transform = pelem.root_transform * trans
-    else:
-      self.root_transform = transform.Identity( ndims )
 
-class ReferenceElement( Element ):
-  __slots__ = '__weakref__', 'vertices', 'reference', 'childrefs', 'edgerefs'
+class Mosaic( Element ):
 
-  def __init__( self, reference, vertices, parent=None, context=None, interface=None ):
-    'constructor'
+  def __init__( self, ndims, children ):
+    self.children = children
+    Element.__init__( self, ndims )
 
-    Element.__init__( self, ndims=reference.ndims, parent=parent, context=context, interface=interface )
-    self.reference = reference
-    self.vertices = vertices
-    self.edgerefs = [ dummyref ] * len(reference.edges)
-    self.childrefs = [ dummyref ] * len(reference.children)
-
-  @property
-  def simplices( self ):
-    return self,
-
-  def pointset( self, ptype, arg ):
-    return self.reference.pointset( ptype, arg )
-
-  @property
-  def edges( self ):
-    return [ self.edge(i) for i in range(len(self.reference.edges)) ]
-
-  def edge( self, i ):
-    edge = self.edgerefs[i]()
-    if edge is None:
-      reference, trans, iverts = self.reference.edges[i]
-      edge = ReferenceElement( reference=reference, context=(self,trans), vertices=mknewvertices(self.vertices,iverts) )
-      self.edgerefs[i] = weakref.ref( edge )
-    return edge
-
-  @property
-  def children( self ):
-    return [ self.child(i) for i in range(len(self.reference.children)) ]
-
-  def child( self, i ):
-    child = self.childrefs[i]()
-    if child is None:
-      reference, trans, iverts = self.reference.children[i]
-      child = ReferenceElement( reference=reference, parent=(self,trans), vertices=mknewvertices(self.vertices,iverts) )
-      self.childrefs[i] = weakref.ref( child )
-    return child
-
-  def trim( self, levelset, maxrefine=0, minrefine=0, eps=1e-10 ):
-    assert maxrefine >= minrefine >= 0
-    if minrefine == 0 and not numeric.isarray( levelset ):
-      from pointset import Vertex
-      levelset = levelset.eval( self, Vertex(maxrefine-minrefine) )
-    if maxrefine == 0: # check values
-      if numeric.greater( levelset, -eps ).all(): return self, None
-      if numeric.less(    levelset, +eps ).all(): return None, self
-      pos, neg = [ [ ( ReferenceElement( reference=ref, vertices=None, parent=(self,trans) ), trans ) for ref, trans in pn ]
-        for pn in self.reference.triangulate( levelset ) ]
-    else: # recurse
-      pos, neg = [], []
-      if minrefine == 0:
-        nverts, subs = self.reference._child_subsets[maxrefine-1]
-        assert levelset.shape == (nverts,)
-        sub = iter(subs)
-      for child in self.children:
-        p, n = child.trim( levelset, maxrefine-1, minrefine-1 ) if minrefine \
-          else child.trim( levelset[sub.next()], maxrefine-1, 0 )
-        self_, trans = child.parent
-        if p: pos.append( (p,trans) )
-        if n: neg.append( (n,trans) )
-      if not neg: return self, None
-      if not pos: return None, self
-    return TrimmedElement( children_trans=pos, orig=self ), \
-           TrimmedElement( children_trans=neg, orig=self )
-
-class TrimmedElement( Element ):
-  __slots__ = 'children_trans',
-
-  def __init__( self, children_trans, orig ):
-    Element.__init__( self, ndims=orig.ndims, parent=(orig,transform.Identity(orig.ndims)) )
-    self.children_trans = children_trans
-
-  @property
-  def children( self ):
-    return [ child for child, trans in self.children_trans ]
-
-  @property
-  def simplices( self ):
-    return [ simplex for child, trans in self.children_trans for simplex in child.simplices ]
-
-  def pointset( self, ptype, arg ):
+  def pointset( self, itype, arg ):
     allpoints = []
-    for child, trans in self.children_trans:
-      points = child.pointset( ptype, arg )
+    for trans, child in self.children:
+      points = child.pointset( itype, arg )
       transpoints = trans.apply( points ) if points.shape[1] == child.ndims \
                else numeric.concatenate( [ trans.apply( points[:,:-1] ), trans.det * points[:,-1:] ], axis=1 )
       allpoints.append( transpoints )
     return numeric.concatenate( allpoints, axis=0 )
 
+  @property
+  def simplices( self ):
+    return [ (trans,)+simplex for trans, elem in self.children for simplex in elem.simplices ]
 
-## REFERENCE ELEMENTS
-
-
-class Reference( cache.Immutable ):
+class Reference( Element ):
 
   def __init__( self, vertices ):
     self.vertices = numeric.asarray( vertices, dtype=float )
-    self.nverts, self.ndims = self.vertices.shape
+    self.nverts, ndims = self.vertices.shape
+    Element.__init__( self, ndims )
+
+  @property
+  def simplices( self ):
+    return (self,),
 
   def __mul__( self, other ):
     assert isinstance( other, Reference )
@@ -131,28 +47,49 @@ class Reference( cache.Immutable ):
     assert isinstance( n, int ) and n >= 1
     return self if n == 1 else self * self**(n-1)
 
-  def triangulate( self, values ):
-    assert values.shape == (self.nverts,)
-    pos = []
-    neg = []
-    for coord, value in zip( self.vertices, values ):
-      if value >= 0: pos.append( coord )
-      if value <= 0: neg.append( coord )
-    for w in self._get_intersections( values ):
-      v = numeric.dot( w, self.vertices )
-      pos.append( v )
-      neg.append( v )
-    simplex = Simplex( self.ndims )
-    return [ (simplex,trans) for trans in transform.delaunay(pos) ], \
-           [ (simplex,trans) for trans in transform.delaunay(neg) ]
+  def trim( self, levelset, maxrefine=0, minrefine=0, eps=1e-10 ):
+    assert maxrefine >= minrefine >= 0
+    if minrefine == 0 and not numeric.isarray( levelset ):
+      from pointset import Vertex
+      levelset = levelset[-1].eval( levelset[:-1]+(self,), Vertex(maxrefine-minrefine) )
+    if maxrefine == 0: # check values
+      assert levelset.shape == (self.nverts,)
+      if numeric.greater( levelset, -eps ).all():
+        return self, None
+      if numeric.less( levelset, +eps ).all():
+        return None, self
+      poscoords = []
+      negcoords = []
+      for coord, value in zip( self.vertices, levelset ):
+        if value >= 0: poscoords.append( coord )
+        if value <= 0: negcoords.append( coord )
+      for w in self._get_intersections( levelset ):
+        v = numeric.dot( w, self.vertices )
+        poscoords.append( v )
+        negcoords.append( v )
+      simplex = Simplex( self.ndims )
+      pos = [ (trans,simplex) for trans in transform.delaunay(poscoords) ]
+      neg = [ (trans,simplex) for trans in transform.delaunay(negcoords) ]
+    else: # recurse
+      pos, neg = [], []
+      if minrefine == 0:
+        nverts, subs = self._child_subsets[maxrefine-1]
+        assert levelset.shape == (nverts,)
+        sub = iter(subs)
+      for trans, elem in self.children:
+        p, n = elem.trim( levelset[:-1]+(trans,)+levelset[-1:], maxrefine-1, minrefine-1 ) if minrefine \
+          else elem.trim( levelset[sub.next()], maxrefine-1, 0 )
+        if p:
+          pos.append( (trans,p) )
+        if n:
+          neg.append( (trans,n) )
+      if not neg:
+        return self, None
+      if not pos:
+        return None, self
+    return Mosaic( self.ndims, tuple(pos) ), Mosaic( self.ndims, tuple(neg) )
 
 class Simplex( Reference ):
-  '''conventions: reference elem:   unit simplex {(x,y) | x>0, y>0, x+y<1}
-                  vertex numbering: {(0,0):0, (1,0):1, (0,1):2}
-                  edge numbering:   {bottom:0, slanted:1, left:2}
-                  edge local coords run counter-clockwise.'''
-
-  neighbormap = -1, 2, 1, 0
 
   def __init__( self, ndims ):
     'constructor'
@@ -167,26 +104,28 @@ class Simplex( Reference ):
     if ndims == 1: # line
       trans0 = transform.Point( -1 )
       trans1 = transform.Point( +1 ) + [1]
-      self.edges = (edge,trans0,(0,)), (edge,trans1,(1,))
+      self.edges = (trans0,edge), (trans1,edge)
       scale = transform.Scale( numeric.array([.5]) )
-      self.children = (self,scale,(0,(0,1))), (self,scale+[.5],((0,1),1))
+      self.children = (scale,self), (scale+[.5],self)
     elif ndims == 2: # triangle
       self.edges = (
-        ( edge, transform.Linear( numeric.array([[ 1],[ 0]]) ), (0,1) ),
-        ( edge, transform.Linear( numeric.array([[-1],[ 1]]) ) + [1,0], (1,2) ),
-        ( edge, transform.Linear( numeric.array([[ 0],[-1]]) ) + [0,1], (2,0) ),
+        ( transform.Linear( numeric.array([[ 1],[ 0]]) ), edge ),
+        ( transform.Linear( numeric.array([[-1],[ 1]]) ) + [1,0], edge ),
+        ( transform.Linear( numeric.array([[ 0],[-1]]) ) + [0,1], edge ),
       )
       scale = transform.Scale( numeric.asarray([.5,.5]) )
       negscale = transform.Scale( -numeric.asarray([.5,.5]) )
       self.children = (
-        ( self, scale, (0,(0,1),(0,2)) ),
-        ( self, scale + [.5, 0], ((0,1),1,(1,2)) ),
-        ( self, scale + [ 0,.5], ((0,2),(1,2),2) ),
-        ( self, negscale + [.5,.5], ((1,2),(0,2),(0,1)) ),
+        ( scale, self ),
+        ( scale + [.5, 0], self ),
+        ( scale + [ 0,.5], self ),
+        ( negscale + [.5,.5], self ),
       )
 
   def __str__( self ):
-    return 'simplex%d' % self.ndims
+    return 'Simplex(%d)' % self.ndims
+
+  __repr__ = __str__
 
   def _get_intersections( self, values ):
     assert values.shape == (self.nverts,)
@@ -468,29 +407,14 @@ class Tensor( Reference ):
 
   @cache.property
   def edges( self ):
-    edges = []
-    for edge1, trans1, iverts1 in self.simplex1.edges:
-      edge = edge1 * self.simplex2
-      trans = transform.tensor( trans1, transform.Identity(self.simplex2.ndims) )
-      iverts = tuple( i1*self.simplex2.nverts+i2 for i1 in iverts1 for i2 in range(self.simplex2.nverts) )
-      edges.append(( edge, trans, iverts ))
-    for edge2, trans2, iverts2 in self.simplex2.edges:
-      edge = self.simplex1 * edge2
-      trans = transform.tensor( transform.Identity(self.simplex1.ndims), trans2 )
-      iverts = tuple( i1*self.simplex2.nverts+i2 for i1 in range(self.simplex1.nverts) for i2 in iverts2 )
-      edges.append(( edge, trans, iverts ))
-    return edges
+    return [ ( transform.tensor( trans1, transform.Identity(self.simplex2.ndims) ), edge1 * self.simplex2 ) for trans1, edge1 in self.simplex1.edges ] \
+         + [ ( transform.tensor( transform.Identity(self.simplex1.ndims), trans2 ), self.simplex1 * edge2 ) for trans2, edge2 in self.simplex2.edges ]
 
   @cache.property
   def children( self ):
-    children = []
-    vertices = numeric.arange( self.nverts ).reshape( self.simplex1.nverts, self.simplex2.nverts )
-    for child1, trans1, iverts1 in self.simplex1.children:
-      vertices1 = zip( *[ util.getitem( v, iverts1 ) for v in vertices.T ] )
-      for child2, trans2, iverts2 in self.simplex2.children:
-        vertices2 = sum( [ util.getitem( v, iverts2 ) for v in vertices1 ], () )
-        children.append(( child1*child2, transform.tensor(trans1,trans2), vertices2 ))
-    return children
+    return [ ( transform.tensor(trans1,trans2), child1*child2 )
+      for trans1, child1 in self.simplex1.children
+        for trans2, child2 in self.simplex2.children ]
 
   def _nvertices( self, level ):
     return self.simplex1._nvertices(level) * self.simplex2._nvertices(level)
@@ -509,449 +433,6 @@ class Tensor( Reference ):
     for i2, w2 in enumerate( numeric.eye(self.simplex2.nverts) ):
       for w1 in self.simplex1._get_intersections( values[:,i2] ):
         yield ( w1[:,_] * w2[_,:] ).ravel()
-
-class Mosaic( Reference ):
-  'mosaiced reference'
-
-  def __init__( self, vertices, children ):
-    Reference.__init__( self, vertices )
-    self.children = children
-
-  def pointset( self, itype, arg ):
-    allpoints = []
-    for child, trans, iverts in self.children:
-      points = child.pointset( itype, arg )
-      transpoints = trans.apply( points ) if points.shape[1] == child.ndims \
-               else numeric.concatenate( [ trans.apply( points[:,:-1] ), trans.det * points[:,-1:] ], axis=1 )
-      allpoints.append( transpoints )
-    return numeric.concatenate( allpoints, axis=0 )
-
-# def old_pointset( self, itype, arg ):
-#   pw_all = []
-#   for reference, trans in self.pieces:
-#     pw = reference.pointset( itype, arg )
-#     pw_trans = trans.apply( pw[...,:self.ndims] ), trans.det * pw[...,self.ndims:]
-#     pw_concat = numeric.concatenate( pw_trans, axis=-1 )
-#     pw_all.append( pw_concat )
-#   return numeric.concatenate( pw_all, axis=0 )
-
-
-## OLD
-
-#class OldQuad( Reference ):
-#  'quadrilateral element'
-#
-#  def __init__( self, ndims ):
-#    'constructor'
-#
-#    Reference.__init__( self, ndims=ndims )
-#
-#  @cache.property
-#  def edges( self ):
-#    transforms = []
-#    reference = Quad( self.ndims-1 )
-#    iverts = numeric.arange( 2**self.ndims ).reshape( (2,)*self.ndims )
-#    for idim in range( self.ndims ):
-#      offset = numeric.zeros( self.ndims )
-#      offset[:idim] = 1
-#      matrix = numeric.zeros(( self.ndims, self.ndims-1 ))
-#      matrix.flat[ :(self.ndims-1)*idim :self.ndims] = -1
-#      matrix.flat[self.ndims*(idim+1)-1::self.ndims] = 1
-#      for side in 0, 1:
-#        offset[idim] = side
-#        # flip normal:
-#        offset[idim-1] = 1 - offset[idim-1]
-#        matrix[idim-1] *= -1
-#        iedgeverts = numeric.getitem(iverts,idim,side) # TODO fix!
-#        transforms.append(( reference, transform.Linear(matrix.copy()) + offset, iedgeverts ))
-#    return transforms
-#
-#  def children_by( self, N ):
-#    'divide element by n'
-#
-#    Nrcp = numeric.reciprocal( N, dtype=float )
-#    scale = transform.Scale(Nrcp)
-#    refinedtransform = [ scale + i*Nrcp for i in numeric.ndindex(*N) ]
-#
-#    assert len(N) == self.ndims
-#    vertices = numeric.empty( [ ni+1 for ni in N ], dtype=object )
-#    vertices[ tuple( slice(None,None,ni) for ni in N ) ] = numeric.arange( 2*self.ndims ).reshape( [2]*self.ndims )
-#    for idim in range(self.ndims):
-#      s1 = tuple( slice(None) for ni in N[:idim] )
-#      s2 = tuple( slice(None,None,ni) for ni in N[idim+1:] )
-#      for i in range( 1, N[idim] ):
-#        vertices[s1+(i,)+s2] = zip( vertices[s1+(0,)+s2], vertices[s1+(2,)+s2] ) # TODO fix fraction
-#
-#    elemvertices = [ vertices[ tuple( slice(i,i+2) for i in index ) ].ravel() for index in numeric.ndindex(*N) ]
-#    return [ ( self, trans, elemvertices[ielem] ) for ielem, trans in enumerate( refinedtransform ) ]
-#
-#  @cache.property
-#  def children( self ):
-#    'all 1x refined elements'
-#
-#    return self.children_by( (2,)*self.ndims )
-#
-#  def _triangulate( self, values ):
-#    assert values.shape == (2,)*self.ndims
-#    pos = []
-#    neg = []
-#    coords = numeric.zeros( (2,)*self.ndims + (self.ndims,) )
-#    for i in range(self.ndims):
-#      numeric.getitem(coords,i,1)[...,i] = 1
-#    for coord, value in zip( coords.reshape(-1,self.ndims), values.ravel() ):
-#      ( pos if value > 0 else neg ).append( coord )
-#    for idim in range( self.ndims ):
-#      v0 = numeric.getitem( values, idim, 0 ).ravel()
-#      dv = numeric.getitem( values, idim, 1 ).ravel() - v0
-#      c0 = numeric.getitem( coords, idim, 0 ).reshape(-1,self.ndims)
-#      dc = numeric.getitem( coords, idim, 1 ).reshape(-1,self.ndims) - c0
-#      x = -v0 / dv # v0 + x dv = 0
-#      for i in numeric.find( numeric.greater_equal(x,0) & numeric.less_equal(x,1) ):
-#        coord = c0[i] + x[i] * dc[i]
-#        pos.append( coord )
-#        neg.append( coord )
-#    triangle = Triangle()
-#    return [ (triangle,trans,()) for trans in transform.delaunay(pos) ], \
-#           [ (triangle,trans,()) for trans in transform.delaunay(neg) ]
-#
-#  def _mosaic( self, values, eps ):
-#    if numeric.greater( values, -eps ).all():
-#      return [(self,transform.Identity(self.ndims),())], []
-#    if numeric.less( values, +eps ).all():
-#      return [], [(self,transform.Identity(self.ndims),())]
-#    n = values.shape[0]
-#    assert values.shape == (n,)*self.ndims
-#    if n == 2:
-#      return self._triangulate( values )
-#    slices = slice(0,n//2+1), slice(n//2,n+1)
-#    allpos = []
-#    allneg = []
-#    for i, (dummy,trans,dummy) in enumerate( self.children ):
-#      s = tuple( slices[n] for n in ( i >> numeric.arange(self.ndims-1,-1,-1) ) & 1 )
-#      pos, neg = self._mosaic( values[s], eps )
-#      for reference, trans2, iverts in pos:
-#        allpos.append(( reference, trans * trans2, iverts ))
-#      for reference, trans2, iverts in neg:
-#        allneg.append(( reference, trans * trans2, iverts ))
-#    return allpos, allneg
-#
-#  def mosaic( self, values, eps=1e-10 ):
-#    assert values.ndim == 1
-#    n = 2
-#    while n**self.ndims < values.size:
-#      n = n*2 - 1
-#    assert n**self.ndims == values.size, 'cannot reshape values to appropriate shape'
-#    values = values.reshape( (n,)*self.ndims )
-#    pos, neg = self._mosaic( values, eps )
-#    if not neg:
-#      return self, None
-#    if not pos:
-#      return None, self
-#    return Mosaic(pos), Mosaic(neg)
-
-# @cache.property
-# def neighbormap( self ):
-#   'maps # matching vertices --> codim of interface: {0: -1, 1: 2, 2: 1, 4: 0}'
-#   return dict( [ (0,-1) ] + [ (2**(self.ndims-i),i) for i in range(self.ndims+1) ] )
-
-# def select_contained( self, points, eps=0 ):
-#   'select points contained in element'
-
-#   selection = numeric.ones( points.shape[0], dtype=bool )
-#   for idim in range( self.ndims ):
-#     newsel = numeric.greater_equal( points[:,idim], -eps ) & numeric.less_equal( points[:,idim], 1+eps )
-#     selection[selection] &= newsel
-#     points = points[newsel]
-#     if not points.size:
-#       return None, None
-#   return points, selection
-
-
-# @property
-# def children( self ):
-#   'all 1x refined elements'
-
-#   t1, t2, t3, t4 = self.refinedtransform( 2 )
-#   v1, v2, v3 = self.vertices
-#   h1, h2, h3 = HalfVertex(v1,v2), HalfVertex(v2,v3), HalfVertex(v3,v1)
-#   return tuple([ # TODO check!
-#     TriangularElement( vertices=[v1,h1,h3], parent=(self,t1) ),
-#     TriangularElement( vertices=[h1,v2,h2], parent=(self,t2) ),
-#     TriangularElement( vertices=[h3,h2,v3], parent=(self,t3) ),
-#     TriangularElement( vertices=[h2,h3,h1], parent=(self,t4) ) ])
-#     
-# @staticmethod
-# def refinedtransform( n ):
-#   'refined transform'
-
-#   transforms = []
-#   scale = transform.Scale( numeric.asarray([1./n,1./n]) )
-#   negscale = transform.Scale( numeric.asarray([-1./n,-1./n]) )
-#   for i in range( n ):
-#     transforms.extend( scale + numeric.array( [i,j], dtype=float ) / n for j in range(0,n-i) )
-#     transforms.extend( negscale + numeric.array( [n-j,n-i], dtype=float ) / n for j in range(n-i,n) )
-#   return transforms
-
-# def refined( self, n ):
-#   'refine'
-
-#   assert n == 2
-#   if n == 1:
-#     return self
-#   return [ TriangularElement( id=self.id+'.child({})'.format(ichild), parent=(self,trans) ) for ichild, trans in enumerate( self.refinedtransform( n ) ) ]
-
-# def select_contained( self, points, eps=0 ):
-#   'select points contained in element'
-
-#   selection = numeric.ones( points.shape[0], dtype=bool )
-#   for idim in 0, 1, 2:
-#     points_i = points[:,idim] if idim < 2 else 1-points.sum(1)
-#     newsel = numeric.greater_equal( points_i, -eps )
-#     selection[selection] &= newsel
-#     points = points[newsel]
-#     if not points.size:
-#       return None, None
-
-#   return points, selection
-
-#class OldProduct( Reference ):
-#  'element product'
-#
-#  @staticmethod
-#  def getslicetransforms( ndims1, ndims2 ):
-#    ndims = ndims1 + ndims2
-#    slice1 = transform.Slice( ndims, 0, ndims1 )
-#    slice2 = transform.Slice( ndims, ndims1, ndims )
-#    return slice1, slice2
-#
-#  def __init__( self, elem1, elem2 ):
-#    'constructor'
-#
-#    self.elem1 = elem1
-#    self.elem2 = elem2
-#    slice1, slice2 = self.getslicetransforms( elem1.ndims, elem2.ndims )
-#    iface1 = elem1, slice1
-#    iface2 = elem2, slice2
-#    vertices = [] # TODO [ ProductVertex(vertex1,vertex2) for vertex1 in elem1.vertices for vertex2 in elem2.vertices ]
-#    Element.__init__( self, ndims=elem1.ndims+elem2.ndims, vertices=vertices, interface=(iface1,iface2) )
-#    self.root_transform = transform.Scale( numeric.array([elem1.root_transform.det * elem2.root_transform.det]) ) # HACK
-#
-#  @staticmethod
-#  def get_tri_bem_ischeme( ischeme, neighborhood ):
-#    'Some cached quantities for the singularity quadrature scheme.'
-#    points, weights = QuadElement.pointset( ndims=4, where=ischeme )
-#    eta1, eta2, eta3, xi = points.T
-#    if neighborhood == 0:
-#      temp = xi*eta1*eta2*eta3
-#      pts0 = xi*eta1*(1 - eta2)
-#      pts1 = xi - pts0
-#      pts2 = xi - temp
-#      pts3 = xi*(1 - eta1)
-#      pts4 = pts0 + temp
-#      pts5 = xi*(1 - eta1*eta2)
-#      pts6 = xi*eta1 - temp
-#      points = numeric.asarray(
-#        [[1-xi,   1-pts2, 1-xi,   1-pts5, 1-pts2, 1-xi  ],
-#         [pts1, pts3, pts4, pts0, pts6, pts0],
-#         [1-pts2, 1-xi,   1-pts5, 1-xi,   1-xi,   1-pts2],
-#         [pts3, pts1, pts0, pts4, pts0, pts6]]).reshape( 4, -1 ).T
-#      points = numeric.asarray( points * [-1,1,-1,1] + [1,0,1,0] ) # flipping in x -GJ
-#      weights = numeric.concatenate( 6*[xi**3*eta1**2*eta2*weights] )
-#    elif neighborhood == 1:
-#      A = xi*eta1
-#      B = A*eta2
-#      C = A*eta3
-#      D = B*eta3
-#      E = xi - B
-#      F = A - B
-#      G = xi - D
-#      H = B - D
-#      I = A - D
-#      points = numeric.asarray(
-#        [[1-xi, 1-xi, 1-E,  1-G,  1-G ],
-#         [C,  G,  F,  H,  I ],
-#         [1-E,  1-G,  1-xi, 1-xi, 1-xi],
-#         [F,  H,  D,  A,  B ]] ).reshape( 4, -1 ).T
-#      temp = xi*A
-#      weights = numeric.concatenate( [A*temp*weights] + 4*[B*temp*weights] )
-#    elif neighborhood == 2:
-#      A = xi*eta2
-#      B = A*eta3
-#      C = xi*eta1
-#      points = numeric.asarray(
-#        [[1-xi, 1-A ],
-#         [C,  B ],
-#         [1-A,  1-xi],
-#         [B,  C ]] ).reshape( 4, -1 ).T
-#      weights = numeric.concatenate( 2*[xi**2*A*weights] )
-#    else:
-#      assert neighborhood == -1, 'invalid neighborhood %r' % neighborhood
-#      points = numeric.asarray([ eta1*eta2, 1-eta2, eta3*xi, 1-xi ]).T
-#      weights = eta2*xi*weights
-#    return points, weights
-#  
-#  @staticmethod
-#  def get_quad_bem_ischeme( ischeme, neighborhood ):
-#    'Some cached quantities for the singularity quadrature scheme.'
-#    points, weights = QuadElement.pointset( ndims=4, where=ischeme )
-#    eta1, eta2, eta3, xi = points.T
-#    if neighborhood == 0:
-#      xe = xi*eta1
-#      A = (1 - xi)*eta3
-#      B = (1 - xe)*eta2
-#      C = xi + A
-#      D = xe + B
-#      points = numeric.asarray(
-#        [[A, B, A, D, B, C, C, D],
-#         [B, A, D, A, C, B, D, C],
-#         [C, D, C, B, D, A, A, B],
-#         [D, C, B, C, A, D, B, A]]).reshape( 4, -1 ).T
-#      weights = numeric.concatenate( 8*[xi*(1-xi)*(1-xe)*weights] )
-#    elif neighborhood == 1:
-#      ox = 1 - xi
-#      A = xi*eta1
-#      B = xi*eta2
-#      C = ox*eta3
-#      D = C + xi
-#      E = 1 - A
-#      F = E*eta3
-#      G = A + F
-#      points = numeric.asarray(
-#        [[D,  C,  G,  G,  F,  F ],
-#         [B,  B,  B,  xi, B,  xi],
-#         [C,  D,  F,  F,  G,  G ],
-#         [A,  A,  xi, B,  xi, B ]]).reshape( 4, -1 ).T
-#      weights = numeric.concatenate( 2*[xi**2*ox*weights] + 4*[xi**2*E*weights] )
-#    elif neighborhood == 2:
-#      A = xi*eta1
-#      B = xi*eta2
-#      C = xi*eta3
-#      points = numeric.asarray(
-#        [[xi, A,  A,  A ], 
-#         [A,  xi, B,  B ],
-#         [B,  B,  xi, C ], 
-#         [C,  C,  C,  xi]]).reshape( 4, -1 ).T
-#      weights = numeric.concatenate( 4*[xi**3*weights] )
-#    else:
-#      assert neighborhood == -1, 'invalid neighborhood %r' % neighborhood
-#    return points, weights
-#
-#  @staticmethod
-#  def concat( ischeme1, ischeme2 ):
-#    coords1, weights1 = ischeme1
-#    coords2, weights2 = ischeme2
-#    if weights1 is not None:
-#      assert weights2 is not None
-#      weights = numeric.asarray( ( weights1[:,_] * weights2[_,:] ).ravel() )
-#    else:
-#      assert weights2 is None
-#      weights = None
-#    npoints1,ndims1 = coords1.shape  
-#    npoints2,ndims2 = coords2.shape 
-#    coords = numeric.empty( [ coords1.shape[0], coords2.shape[0], ndims1+ndims2 ] )
-#    coords[:,:,:ndims1] = coords1[:,_,:]
-#    coords[:,:,ndims1:] = coords2[_,:,:]
-#    coords = numeric.asarray( coords.reshape(-1,ndims1+ndims2) )
-#    return coords, weights
-#  
-#  @property
-#  def orientation( self ):
-#    '''Neighborhood of elem1 and elem2 and transformations to get mutual overlap in right location
-#    O: neighborhood,  as given by Element.neighbor(),
-#       transf1,       required rotation of elem1 map: {0:0, 1:pi/2, 2:pi, 3:3*pi/2},
-#       transf2,       required rotation of elem2 map (is indep of transf1 in UnstructuredTopology.'''
-#    neighborhood = self.elem1.neighbor( self.elem2 )
-#    common_vertices = list( set(self.elem1.vertices) & set(self.elem2.vertices) )
-#    vertices1 = [self.elem1.vertices.index( ni ) for ni in common_vertices]
-#    vertices2 = [self.elem2.vertices.index( ni ) for ni in common_vertices]
-#    if neighborhood == 0:
-#      # test for strange topological features
-#      assert self.elem1 == self.elem2, 'Topological feature not supported: try refining here, possibly periodicity causes elems to touch on both sides.'
-#      transf1 = transf2 = 0
-#    elif neighborhood == -1:
-#      transf1 = transf2 = 0
-#    elif isinstance( self.elem1, QuadElement ):
-#      # define local map rotations
-#      if neighborhood==1:
-#        trans = [0,2], [2,3], [3,1], [1,0], [2,0], [3,2], [1,3], [0,1]
-#      elif neighborhood==2:
-#        trans = [0], [2], [3], [1]
-#      else:
-#        raise ValueError( 'Unknown neighbor type %i' % neighborhood )
-#      transf1 = trans.index( vertices1 )
-#      transf2 = trans.index( vertices2 )
-#    elif isinstance( self.elem1, TriangularElement ):
-#      raise NotImplementedError( 'Pending completed implementation and verification.' )
-#      # define local map rotations
-#      if neighborhood==1:
-#        trans = [0,1], [1,2], [0,2]
-#      elif neighborhood==2:
-#        trans = [0], [1], [2]
-#      else:
-#        raise ValueError( 'Unknown neighbor type %i' % neighborhood )
-#      transf1 = trans.index( vertices1 )
-#      transf2 = trans.index( vertices2 )
-#    else:
-#      raise NotImplementedError( 'Reorientation not implemented for element of class %s' % type(self.elem1) )
-#    return neighborhood, transf1, transf2
-#
-#  @staticmethod
-#  def singular_ischeme_tri( orientation, ischeme ):
-#    neighborhood, transf1, transf2 = orientation
-#    points, weights = ProductElement.get_tri_bem_ischeme( ischeme, neighborhood )
-#    transfpoints = points#numeric.empty( points.shape )
-#    #   transfpoints[:,0] = points[:,0] if transf1 == 0 else \
-#    #                       points[:,1] if transf1 == 1 else \
-#    #                     1-points[:,0] if transf1 == 2 else \
-#    #                     1-points[:,1]
-#    #   transfpoints[:,1] = points[:,1] if transf1 == 0 else \
-#    #                     1-points[:,0] if transf1 == 1 else \
-#    #                     1-points[:,1] if transf1 == 2 else \
-#    #                       points[:,0]
-#    #   transfpoints[:,2] = points[:,2] if transf2 == 0 else \
-#    #                       points[:,3] if transf2 == 1 else \
-#    #                     1-points[:,2] if transf2 == 2 else \
-#    #                     1-points[:,3]
-#    #   transfpoints[:,3] = points[:,3] if transf2 == 0 else \
-#    #                     1-points[:,2] if transf2 == 1 else \
-#    #                     1-points[:,3] if transf2 == 2 else \
-#    #                       points[:,2]
-#    return numeric.asarray( transfpoints ), numeric.asarray( weights )
-#    
-#  @staticmethod
-#  def singular_ischeme_quad( orientation, ischeme ):
-#    neighborhood, transf1, transf2 = orientation
-#    points, weights = ProductElement.get_quad_bem_ischeme( ischeme, neighborhood )
-#    transfpoints = numeric.empty( points.shape )
-#    def flipxy( points, orientation ):
-#      x, y = points[:,0], points[:,1]
-#      tx = x if orientation in (0,1,6,7) else 1-x
-#      ty = y if orientation in (0,3,4,7) else 1-y
-#      return function.stack( (ty, tx) if orientation%2 else (tx, ty), axis=1 )
-#    transfpoints[:,:2] = flipxy( points[:,:2], transf1 )
-#    transfpoints[:,2:] = flipxy( points[:,2:], transf2 )
-#    return numeric.asarray( transfpoints ), numeric.asarray( weights )
-#    
-#  def eval( self, where ):
-#    'get integration scheme'
-#    
-#    if where.startswith( 'singular' ):
-#      assert type(self.elem1) == type(self.elem2), 'mixed element-types case not implemented'
-#      assert self.elem1.ndims == 2 and self.elem2.ndims == 2, 'singular quadrature only for bivariate surfaces'
-#      gauss = 'gauss%d'% (int(where[8:])*2-2)
-#      if isinstance( self.elem1, QuadElement ):
-#        xw = ProductElement.singular_ischeme_quad( self.orientation, gauss )
-#      elif isinstance( self.elem1, TriangularElement ):
-#        if self.elem1 == self.elem2:
-#          xw = self.get_tri_bem_ischeme( gauss, neighborhood=0 )
-#        else:
-#          xw = self.concat( self.elem1.eval(gauss), self.elem2.eval(gauss) )
-#      else:
-#        raise Exception, 'invalid element type %r' % type(self.elem1)
-#    else:
-#      where1, where2 = where.split( '*' ) if '*' in where else ( where, where )
-#      xw = self.concat( self.elem1.eval(where1), self.elem2.eval(where2) )
-#    return xw
 
 
 ## STDELEMS
@@ -1273,26 +754,6 @@ class ExtractionWrapper( StdElem ):
     'string representation'
 
     return '%s#%x:%s' % ( self.__class__.__name__, id(self), self.stdelem )
-
-
-## UTILITY FUNCTIONS
-
-
-def mknewvertices( verts, iverts ):
-  return tuple( verts[ivert] if isinstance( ivert, int ) \
-    else '(%s)' % ','.join( sorted( mknewvertices( verts, ivert ) ) )
-      for ivert in iverts )
-
-def getgauss( degree ):
-  'compute gauss points and weights'
-
-  assert isinstance( degree, int ) and degree >= 0
-  k = numeric.arange( 1, degree // 2 + 1 )
-  d = k / numeric.sqrt( 4*k**2-1 )
-  x, w = numeric.eigh( numeric.diagflat(d,-1) ) # eigh operates (by default) on lower triangle
-  return numeric.array([ (x+1) * .5, w[0]**2 ]).T
-
-dummyref = lambda: None
 
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

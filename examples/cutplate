@@ -46,7 +46,7 @@ def main( ndims=2, nelems=4, maxrefine=2, stress=Hook(1,1) ):
   lhs = matrix.solve( constrain=cons, tol=1e-5, symmetric=True )
   disp = dspace.dot( lhs )
 
-  plotdomain = domain.simplex
+  plotdomain = domain.refined.simplex
 
   if ndims == 2:
     points, colors = plotdomain.elem_eval( [ geom + disp, stress(disp,geom)[0,1] ], ischeme=pointset.Vertex(2), separate=True )
