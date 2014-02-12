@@ -280,6 +280,34 @@ def determinant( A ):
       det[I] = numpy.linalg.det( A[I] )
   return det
 
+def eig( A ):
+  'eig'
+
+  assert isinstance( A, numpy.ndarray )
+  assert A.shape[-2] == A.shape[-1]
+
+  eigval = numpy.empty( A.shape[:-1] )
+  eigvec = numpy.empty( A.shape )
+
+  for I in numpy.lib.index_tricks.ndindex( A.shape[:-2] ):
+    eigval[I], eigvec[I] = numpy.linalg.eig( A[I] )
+
+  return (eigval, eigvec)
+
+def eigh( A ):
+  'eigh'
+
+  assert isinstance( A, numpy.ndarray )
+  assert A.shape[-2] == A.shape[-1]
+
+  eigval = numpy.empty( A.shape[:-1] )
+  eigvec = numpy.empty( A.shape )
+
+  for I in numpy.lib.index_tricks.ndindex( A.shape[:-2] ):
+    eigval[I], eigvec[I] = numpy.linalg.eigh( A[I] )
+
+  return (eigval, eigvec)
+
 def reshape( A, *shape ):
   'more useful reshape'
 
