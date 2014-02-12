@@ -51,6 +51,9 @@ class CompiledEvaluable( object ):
 
     if pointset is None:
       points = weights = None
+    elif numeric.isarray( pointset ):
+      points = pointset
+      weights = None
     else:
       points, weights = pointset[elem]
 
