@@ -1885,48 +1885,52 @@ class Pointdata( ArrayFunc ):
 class Eig( Evaluable ):
   'Eig'
 
-  __slots__ = 'func', 'shape'
+  __slots__ = 'func', 'shape', 'symmetric'
 
   def __init__( self, func, symmetric=False ):
     'contructor'
 
-    if symmetric:
-      Evaluable.__init__( self, args=[func], evalf=numeric.eigh )
-    else:
-      Evaluable.__init__( self, args=[func], evalf=numeric.eig )
-
+    Evaluable.__init__( self, args=[func], evalf=numeric.eigh if symmetric else numeric.eig )
+    self.symmetric = symmetric
+    self.func = func
     self.shape = func.shape
 
   def _opposite( self ):
-    return eig( opposite(self.func), symmetric )
+    return Eig( opposite(self.func), self.symmetric )
 
 class EigenValue( ArrayFunc ):
   'EigenVector'
 
-  @staticmethod
-  def __eigval__( (val, vec) ):
-    return val
-
   def __init__( self, eig ):
     'contructor'
 
     assert isinstance( eig, Eig )
+    self.eig = eig
+    ArrayFunc.__init__( self, args=[eig], evalf=self.eigval, shape=eig.shape[:-1] )
 
-    ArrayFunc.__init__( self, args=[eig], evalf=self.__eigval__, shape=eig.shape[:-1] )
+  @staticmethod
+  def eigval( (val, vec) ):
+    return val
+
+  def _opposite( self ):
+    return EigenValue( self.eig._opposite() )
 
 class EigenVector( ArrayFunc ):
   'EigenVector'
 
-  @staticmethod
-  def __eigvec__( (val, vec) ):
-    return vec
-
   def __init__( self, eig ):
     'contructor'
 
     assert isinstance( eig, Eig )
+    self.eig = eig
+    ArrayFunc.__init__( self, args=[eig], evalf=self.eigvec, shape=eig.shape )
 
-    ArrayFunc.__init__( self, args=[eig], evalf=self.__eigvec__, shape=eig.shape )
+  @staticmethod
+  def eigvec( (val, vec) ):
+    return vec
+
+  def _opposite( self ):
+    return EigenVector( self.eig._opposite() )
 
 # PRIORITY OBJECTS
 #
@@ -3107,16 +3111,16 @@ def eig( arg, axes=(-2,-1), symmetric=False ):
 
   if ret is not None:
     # Check the shapes
-    retval, retvec = ret
-    assert retval.shape == shapeval, 'bug in %s._eig' % arg
-    assert retvec.shape == shapevec, 'bug in %s._eig' % arg
-    return (retval, retvec)
+    eigval, eigvec = ret
+    assert eigval.shape == shapeval, 'bug in %s._eig' % arg
+    assert eigvec.shape == shapevec, 'bug in %s._eig' % arg
+  else:
+    eig = Eig( arg, symmetric )
+    eigval = EigenValue( eig )
+    eigvec = EigenVector( eig )
 
   # Return the evaluable function objects in a tuple like numpy
-  eig = Eig( arg, symmetric )
-  eigval = EigenValue( eig )
-  eigvec = EigenVector( eig )
-  return (eigval, eigvec)
+  return eigval, eigvec
 
 nsymgrad = lambda arg, coords: ( symgrad(arg,coords) * coords.normal() ).sum()
 ngrad = lambda arg, coords: ( grad(arg,coords) * coords.normal() ).sum()
