@@ -1,5 +1,5 @@
 from . import element, numeric
-import re
+import re, warnings
 
 class Pointset( object ):
 
@@ -33,6 +33,16 @@ class Vtk( Pointset ):
   pass
 
 vtk = Vtk()
+
+def Bezier( nb ):
+  nv = 0
+  while 2**nv+1 < nb:
+    nv += 1
+  if 2**nv+1 != nb:
+    warnings.warn( 'Bezier has been replaced by vertex, but cannot find a match for Bezier(%d); rounding up to Vertex(%d)' % (nb,nv) )
+  else:
+    warnings.warn( 'Bezier(%d) has been replaced by Vertex(%d)' % (nb,nv), DeprecationWarning )
+  return Vertex( nv )
 
 _pattern = re.compile( '(^[a-zA-Z]+)(.*)$' )
 def aspointset( p ):
