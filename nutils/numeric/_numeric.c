@@ -152,7 +152,13 @@ long numeric_hash( PyArrayObject *self ) {
 }
 
 int numeric_nonzero( PyArrayObject *self ) {
-  return PyArray_SIZE( self ) != 0;
+  if ( PyArray_NDIM( self ) > 0 ) {
+    return PyArray_SIZE( self ) != 0;
+  }
+  PyObject *obj = PyArray_DESCR(self)->f->getitem( PyArray_DATA(self), self );
+  int nz = PyObject_IsTrue( obj );
+  Py_DECREF( obj );
+  return nz;
 }
 
 NPY_NO_EXPORT PyNumberMethods numeric_as_number = {
