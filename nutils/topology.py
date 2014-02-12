@@ -1,4 +1,4 @@
-from . import element, function, util, cache, parallel, matrix, log, numeric, prop, transform, _
+from . import element, function, util, cache, parallel, matrix, log, numeric, prop, transform, pointset, _
 import warnings, itertools
 
 class ElemMap( dict ):
@@ -104,8 +104,9 @@ class Topology( object ):
       retvals.append( array )
     idata = function.Tuple( integrands ).compiled()
 
+    points = pointset.aspointset( ischeme )
     for elem in parallel.pariter( log.iterate('elem',self) ):
-      for ifunc, lock, index, data in idata.eval( elem, ischeme ):
+      for ifunc, lock, index, data in idata.eval( elem, points ):
         retval = retvals[ifunc]
         with lock:
           retval[index] += data
@@ -128,9 +129,10 @@ class Topology( object ):
 
     log.context( title + ' [%s]' % ptype )
 
+    points = pointset.aspointset( ischeme )
     if exact_boundaries:
       assert constrain is None
-      constrain = self.boundary.project( fun, onto, geometry, title='boundaries', ischeme=ischeme, tol=tol, droptol=droptol, ptype=ptype )
+      constrain = self.boundary.project( fun, onto, geometry, title='boundaries', ischeme=points, tol=tol, droptol=droptol, ptype=ptype )
     elif constrain is None:
       constrain = util.NanVec( onto.shape[0] )
     else:
@@ -138,7 +140,7 @@ class Topology( object ):
       assert constrain.shape == onto.shape[:1]
 
     if ptype == 'lsqr':
-      assert ischeme is not None, 'please specify an integration scheme for lsqr-projection'
+      assert points is not None, 'please specify an integration scheme for lsqr-projection'
       if len( onto.shape ) == 1:
         Afun = function.outer( onto )
         bfun = onto * fun
@@ -147,7 +149,7 @@ class Topology( object ):
         bfun = function.sum( onto * fun )
       else:
         raise Exception
-      A, b = self.integrate( [Afun,bfun], geometry=geometry, ischeme=ischeme, title='building system' )
+      A, b = self.integrate( [Afun,bfun], geometry=geometry, ischeme=points, title='building system' )
       N = A.rowsupp(droptol)
       if numeric.equal( b, 0 ).all():
         constrain[~constrain.where&N] = 0
@@ -158,7 +160,7 @@ class Topology( object ):
         constrain[N] = u[N]
 
     elif ptype == 'convolute':
-      assert ischeme is not None, 'please specify an integration scheme for convolute-projection'
+      assert points is not None, 'please specify an integration scheme for convolute-projection'
       if len( onto.shape ) == 1:
         ufun = onto * fun
         afun = onto
@@ -167,7 +169,7 @@ class Topology( object ):
         afun = function.norm2( onto )
       else:
         raise Exception
-      u, scale = self.integrate( [ ufun, afun ], geometry=geometry, ischeme=ischeme )
+      u, scale = self.integrate( [ ufun, afun ], geometry=geometry, ischeme=points )
       N = ~constrain.where & ( scale > droptol )
       constrain[N] = u[N] / scale[N]
 
@@ -203,7 +205,7 @@ class Topology( object ):
     errfun2 = ( onto.dot( constrain | 0 ) - fun )**2
     if errfun2.ndim == 1:
       errfun2 = errfun2.sum()
-    error2, area = self.integrate( [ errfun2, 1 ], geometry=geometry, ischeme=ischeme or 'gauss2' )
+    error2, area = self.integrate( [ errfun2, 1 ], geometry=geometry, ischeme=points or 'gauss2' )
     avg_error = numeric.sqrt(error2) / area
 
     numcons = constrain.where.sum()
@@ -227,8 +229,9 @@ class Topology( object ):
     pointshape = function.PointShape().compiled()
     npoints = 0
     separators = []
+    points = pointset.aspointset( ischeme )
     for elem in log.iterate('elem',self):
-      np, = pointshape.eval( elem, ischeme )
+      np, = pointshape.eval( elem, points )
       slices.append( slice(npoints,npoints+np) )
       npoints += np
       if separate:
@@ -255,7 +258,7 @@ class Topology( object ):
 
     for ielem, elem in parallel.pariter( enumerate( log.iterate('elem',self) ) ):
       s = slices[ielem],
-      for ifunc, index, data in idata.eval( elem, ischeme ):
+      for ifunc, index, data in idata.eval( elem, points ):
         retvals[ifunc][s+index] = data
 
     log.info( 'cache', idata.cache.summary() )
@@ -280,6 +283,10 @@ class Topology( object ):
   def simplex( self ):
     simplices = [ elem[:-1] + simplex for elem in self for simplex in elem[-1].simplices ]
     return Topology( ndims=self.ndims, elements=simplices )
+
+  def get_simplices( self ):
+    warnings.warn( '.getsimplices() is replaced by .simplex', DeprecationWarning )
+    return self.simplex
 
   @cache.property
   def refined( self ):

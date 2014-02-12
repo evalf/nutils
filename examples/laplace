@@ -8,7 +8,7 @@ def makeplots( domain, geom, sol, index ):
 
   log.context( 'plots' )
 
-  points, colors = domain.elem_eval( [ geom, sol ], ischeme=pointset.Vertex(2), separate=True )
+  points, colors = domain.elem_eval( [ geom, sol ], ischeme='vertex2', separate=True )
   with plot.PyPlot( 'solution', index=index ) as plt:
     plt.mesh( points, colors, triangulate='bezier' )
     plt.colorbar()
@@ -28,16 +28,16 @@ def main( nelems=8, degree=1, beltrami=False ):
     geom = function.concatenate([ geom, (x**2-y**2)[_] ])
 
   laplace = function.outer( funcsp.grad(geom,ndims=2) ).sum()
-  matrix = domain.integrate( laplace, geometry=geom, ischeme=pointset.Gauss(4), title='matrix' )
+  matrix = domain.integrate( laplace, geometry=geom, ischeme='gauss4', title='matrix' )
   tmp = funcsp * numeric.exp(.5*numeric.pi) * function.sin(x)
-  rhs = domain.boundary['top'].integrate( tmp, geometry=geom, ischeme=pointset.Gauss(6), title='rhs' )
-  cons = domain.boundary['left,bottom'].project( function.sin(x), ischeme=pointset.Gauss(6), geometry=geom, onto=funcsp, title='left,bottom edge' )
+  rhs = domain.boundary['top'].integrate( tmp, geometry=geom, ischeme='gauss6', title='rhs' )
+  cons = domain.boundary['left,bottom'].project( function.sin(x), ischeme='gauss6', geometry=geom, onto=funcsp, title='left,bottom edge' )
   lhs = matrix.solve( rhs, constrain=cons, tol=1e-8, symmetric=True )
   sol = funcsp.dot(lhs)
 
   makeplots( domain, geom[:2], sol, nelems )
   error = sol - exact
-  err = numeric.sqrt( domain.integrate( [ error**2, ( error.grad(geom,ndims=2)**2 ).sum() ], geometry=geom, ischeme=pointset.Gauss(6), title='computing error' ) )
+  err = numeric.sqrt( domain.integrate( [ error**2, ( error.grad(geom,ndims=2)**2 ).sum() ], geometry=geom, ischeme='gauss6', title='computing error' ) )
   log.info( 'errors: l2=%f, h1=%f' % tuple(err) )
 
   return err

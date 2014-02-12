@@ -1,4 +1,5 @@
 from . import element, numeric
+import re
 
 class Pointset( object ):
 
@@ -28,9 +29,20 @@ class Uniform( Pointset ):
 class Vertex( Pointset ):
   pass
 
-class VTK( Pointset ):
+class Vtk( Pointset ):
   pass
 
-vtk = VTK()
+vtk = Vtk()
+
+_pattern = re.compile( '(^[a-zA-Z]+)(.*)$' )
+def aspointset( p ):
+  if isinstance( p, str ):
+    match = _pattern.match( p )
+    assert match
+    P = eval( match.group(1).title() )
+    args = match.group(2) and eval( match.group(2)+',' ) or ()
+    p = P( *args )
+  assert isinstance( p, Pointset )
+  return p
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

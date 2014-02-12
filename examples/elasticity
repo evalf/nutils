@@ -9,15 +9,15 @@ def main( nelems=20, stress=library.Hooke(lmbda=1,mu=1), degree=1 ):
   domain, geom = mesh.rectilinear( [verts,verts] )
   dspace = domain.splinefunc( degree=degree ).vector( 2 )
   elasticity = function.outer( dspace.grad(geom), stress(dspace,geom) ).sum([2,3])
-  matrix = domain.integrate( elasticity, geometry=geom, ischeme=pointset.Gauss(2) )
+  matrix = domain.integrate( elasticity, geometry=geom, ischeme='gauss2' )
   nfval = ( dspace * geom.normal() ).sum()
 
-  cons = domain.boundary['left'].project( 0, geometry=geom, onto=dspace, ischeme=pointset.Gauss(2) ) \
-       | domain.boundary['right'].project( .5, geometry=geom, onto=nfval, ischeme=pointset.Gauss(2) )
+  cons = domain.boundary['left'].project( 0, geometry=geom, onto=dspace, ischeme='gauss2' ) \
+       | domain.boundary['right'].project( .5, geometry=geom, onto=nfval, ischeme='gauss2' )
   lhs = matrix.solve( constrain=cons, tol=1e-10, symmetric=True )
   disp = dspace.dot( lhs )
 
-  points, colors = domain.elem_eval( [ geom + disp, stress(disp,geom)[0,1] ], ischeme=pointset.Vertex(2), separate=True )
+  points, colors = domain.elem_eval( [ geom + disp, stress(disp,geom)[0,1] ], ischeme='vertex2', separate=True )
   with plot.PyPlot( 'solution' ) as plt:
     plt.mesh( points, colors, triangulate='bezier' )
     plt.xlim(0,1.5)
