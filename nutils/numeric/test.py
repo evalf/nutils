@@ -33,6 +33,13 @@ def equal_self():
   assert A == A, 'A==A'
 
 @unittest
+def nonzero():
+  A = numeric.arange(1,3)
+  assert A, 'A'
+  B = numeric.empty((0,3))
+  assert not B, 'not B'
+
+@unittest
 def notequal_object():
   A = numeric.arange(1,3)
   assert A != (1,2), 'A!=tuple'
