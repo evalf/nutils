@@ -14,6 +14,8 @@ class NumericArray( numpy.ndarray ):
   __slots__ = ()
   def __new__( cls, arr ):
     return numpy.asarray( arr ).view( cls )
+  def __nonzero__( self ):
+    return bool(self.size)
   # rich comparisons
   def __eq__( self, other ): return self.__cmp__( other ) == 0
   def __gt__( self, other ): return self.__cmp__( other ) >  0
@@ -25,8 +27,10 @@ class NumericArray( numpy.ndarray ):
   def __cmp__( self, other ):
     if self is other:
       return 0
-    elif self.ndim == 0 and ( not isinstance( other, numpy.ndarray ) or other.ndim == 0 ):
+    elif self.ndim == 0 and not isinstance( other, numpy.ndarray ):
       return cmp( self[()], other )
+    elif self.ndim == 0 and other.ndim == 0:
+      return cmp( self[()], other[()] )
     elif not isinstance( other, numpy.ndarray ):
       return -1
     elif self.dtype != other.dtype:

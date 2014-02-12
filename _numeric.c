@@ -151,12 +151,23 @@ long numeric_hash( PyArrayObject *self ) {
   return x;
 }
 
+int numeric_nonzero( PyArrayObject *self ) {
+  return PyArray_SIZE( self ) != 0;
+}
+
+NPY_NO_EXPORT PyNumberMethods numeric_as_number = {
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  (inquiry)numeric_nonzero, // nb_nonzero
+};
+
 NPY_NO_EXPORT PyTypeObject NumericArray_Type = {
   PyObject_HEAD_INIT(NULL)
   0, // ob_size
   "NumericArray", // tp_name
   NPY_SIZEOF_PYARRAYOBJECT, // tp_basicsize
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0,
+  &numeric_as_number, // tp_as_number
+  0, 0,
   (hashfunc)numeric_hash, // tp_hash
   0, 0, 0, 0, 0,
   Py_TPFLAGS_DEFAULT | Py_TPFLAGS_CHECKTYPES | Py_TPFLAGS_HAVE_NEWBUFFER | Py_TPFLAGS_BASETYPE, // tp_flags
