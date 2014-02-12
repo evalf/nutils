@@ -119,4 +119,3 @@ class FileCache( object ):
       msg = 'loaded from'
     log.info( msg, 'cache:', name, '[%db]' % (self.data.tell()-pos) )
     return data
-

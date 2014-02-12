@@ -49,23 +49,13 @@ class CompiledEvaluable( object ):
   def eval( self, elem, pointset ):
     'evaluate'
 
-    head = elem[-1]
-    elem = elem[:-1]
     if pointset is None:
       points = weights = None
     else:
-      ischeme = pointset[head]
-      assert numeric.isarray( ischeme )
-      if ischeme.shape[-1] == head.ndims+1:
-        points = ischeme[...,:-1]
-        weights = ischeme[...,-1]
-      else:
-        assert ischeme.shape[-1] == head.ndims
-        points = ischeme
-        weights = None
+      points, weights = pointset[elem]
 
     N = len(self.data) + 4
-    values = self.data + [ self.cache, elem, points, weights ]
+    values = self.data + [ self.cache, elem[:-1], points, weights ]
     for evalf, indices in self.operations:
       args = [ values[N+i] for i in indices ]
       try:

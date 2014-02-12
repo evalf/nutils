@@ -13,14 +13,16 @@ class Mosaic( Element ):
     self.children = children
     Element.__init__( self, ndims )
 
-  def pointset( self, itype, arg ):
+  def pointset( self, pointset ):
     allpoints = []
+    allweights = []
     for trans, child in self.children:
-      points = child.pointset( itype, arg )
-      transpoints = trans.apply( points ) if points.shape[1] == child.ndims \
-               else numeric.concatenate( [ trans.apply( points[:,:-1] ), trans.det * points[:,-1:] ], axis=1 )
-      allpoints.append( transpoints )
-    return numeric.concatenate( allpoints, axis=0 )
+      points, weights = pointset( child )
+      allpoints.append( trans.apply( points ) )
+      if weights:
+        allweights.append( trans.det * weights )
+    return numeric.concatenate( allpoints, axis=0 ), \
+      numeric.concatenate( allweights, axis=0 ) if len(allweights) == len(allpoints) else None
 
   @property
   def simplices( self ):
@@ -152,13 +154,17 @@ class Simplex( Reference ):
       return PolyTriangle( degree )
     raise NotImplementedError
 
-  def _ischeme_gauss( self, degree ):
+  def pointset_vtk( self ):
+    assert self.ndims in (2,3)
+    return self.vertices, None
+
+  def pointset_gauss( self, degree ):
     assert isinstance( degree, int ) and degree >= 0
     if self.ndims == 1: # line
       k = numeric.arange( 1, degree // 2 + 1 )
       d = k / numeric.sqrt( 4*k**2-1 )
       x, w = numeric.eigh( numeric.diagflat(d,-1) ) # eigh operates (by default) on lower triangle
-      return numeric.array([ (x+1) * .5, w[0]**2 ]).T
+      return (x[:,_]+1) * .5, w[0]**2
     if self.ndims == 2: # triangle: http://www.cs.rpi.edu/~flaherje/pdf/fea6.pdf
       if degree == 1:
         coords = numeric.array( [[1],[1]] ) / 3.
@@ -345,11 +351,11 @@ class Simplex( Reference ):
         NotImplementedError
     else:
       raise NotImplementedError
-    return numeric.concatenate([coords.T,weights[...,_]],axis=-1)
+    return coords.T, weights
 
-  def _ischeme_uniform( self, n ):
+  def pointset_uniform( self, n ):
     if self.ndims == 1:
-      return numeric.array([ numeric.arange( .5, n ) / n, numeric.appendaxes( 1./n, n ) ]).T
+      return numeric.arange( .5, n )[:,_] / n, numeric.appendaxes( 1./n, n )
     elif self.ndims == 2:
       points = numeric.arange( 1./3, n ) / n
       nn = n**2
@@ -362,20 +368,16 @@ class Simplex( Reference ):
       weights = numeric.appendaxes( .5/nn, nn )
     else:
       raise NotImplementedError
-    return numeric.concatenate([coords.T,weights[...,_]],axis=-1).T
+    return coords.T, weights
 
-  def _ischeme_vertex( self, n=0 ):
+  def pointset_vertex( self, n=0 ):
     np = 2**n+1
     points = numeric.linspace( 0, 1, np )
     if self.ndims == 1:
-      return points[:,_]
+      return points[:,_], None
     if self.ndims == 2:
-      return numeric.array([ [x,y] for i, y in enumerate(points) for x in points[:np-i] ])
+      return numeric.array([ [x,y] for i, y in enumerate(points) for x in points[:np-i] ]), None
     raise NotImplementedError
-
-  def pointset( self, itype, arg ):
-    'get integration scheme'
-    return getattr( self, '_ischeme_%s' % itype )( arg )
 
 class Tensor( Reference ):
 
@@ -394,16 +396,23 @@ class Tensor( Reference ):
   def stdfunc( self, degree ):
     return self.simplex1.stdfunc(degree) * self.simplex2.stdfunc(degree)
 
-  def pointset( self, itype, arg ):
-    ischeme1 = self.simplex1.pointset( itype, arg )
-    ischeme2 = self.simplex2.pointset( itype, arg )
-    hasweights = ischeme1.shape[1] == self.simplex1.ndims+1 and ischeme2.shape[1] == self.simplex2.ndims+1
-    ischeme = numeric.empty( (ischeme1.shape[0],ischeme2.shape[0],self.ndims+hasweights) )
-    ischeme[:,:,0:self.simplex1.ndims] = ischeme1[:,_,:self.simplex1.ndims]
-    ischeme[:,:,self.simplex1.ndims:self.ndims] = ischeme2[_,:,:self.simplex2.ndims]
-    if hasweights:
-      ischeme[:,:,-1] = ischeme1[:,_,-1] * ischeme2[_,:,-1]
-    return ischeme.reshape( -1, self.ndims + hasweights )
+  def pointset_vtk( self ):
+    if self == Simplex(1)**2:
+      points = [[0,0],[1,0],[1,1],[0,1]]
+    elif self == Simplex(1)**3:
+      points = [[0,0,0],[1,0,0],[0,1,0],[1,1,0],[0,0,1],[1,0,1],[0,1,1],[1,1,1]]
+    else:
+      raise NotImplementedError
+    return numeric.array(points), None
+
+  def pointset( self, pointset ):
+    ipoints1, iweights1 = pointset( self.simplex1 )
+    ipoints2, iweights2 = pointset( self.simplex2 )
+    ipoints = numeric.empty( (ipoints1.shape[0],ipoints2.shape[0],self.ndims) )
+    ipoints[:,:,0:self.simplex1.ndims] = ipoints1[:,_,:self.simplex1.ndims]
+    ipoints[:,:,self.simplex1.ndims:self.ndims] = ipoints2[_,:,:self.simplex2.ndims]
+    return ipoints.reshape( -1, self.ndims ), \
+      iweights1 and iweights2 and ( iweights1[:,_] * iweights2[_,:] ).ravel()
 
   @cache.property
   def edges( self ):
@@ -415,9 +424,6 @@ class Tensor( Reference ):
     return [ ( transform.tensor(trans1,trans2), child1*child2 )
       for trans1, child1 in self.simplex1.children
         for trans2, child2 in self.simplex2.children ]
-
-  def _nvertices( self, level ):
-    return self.simplex1._nvertices(level) * self.simplex2._nvertices(level)
 
   @cache.propertylist
   def _child_subsets( self, level ):
