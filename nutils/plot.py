@@ -430,8 +430,11 @@ class VTKFile( BasePlot ):
 
     self.vtkmesh.SetPoints( vtkPoints )
 
-  def unstructuredgrid( self, points ):
+  def unstructuredgrid( self, points, npars=None ):
     """add unstructured grid"""
+
+    if npars is not None:
+      warnings.warn( 'npars is deprecated and can be safely removed', DeprecationWarning )
 
     pointcoords = []
     for pts in _nansplit( points ):
@@ -461,7 +464,7 @@ class VTKFile( BasePlot ):
   def pointdataarray( self, name, data ):
     'add cell array'
     npoints = self.vtkmesh.GetNumberOfPoints()
-    isnan = numeric.isnan( data ).reshape( len(data), 1 ).any( axis=1 )
+    isnan = numeric.isnan( data ).reshape( len(data), -1 ).any( axis=1 )
     contigdata = data[~isnan]
     assert npoints == contigdata.shape[0], 'Point data array should have %d entries' % npoints
     self.vtkmesh.GetPointData().AddArray( self.__vtkarray(name,contigdata) )
