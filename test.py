@@ -38,6 +38,8 @@ def nonzero():
   assert A, 'A'
   B = numeric.empty((0,3))
   assert not B, 'not B'
+  C = numeric.array( 0. )
+  assert not C
 
 @unittest
 def notequal_object():
