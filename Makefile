@@ -1,4 +1,4 @@
-all: numeric test
+all: numeric
 
 numeric:
 	$(MAKE) -C nutils/numeric test_c
