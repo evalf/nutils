@@ -254,7 +254,7 @@ class Topology( object ):
     for ifunc, func in enumerate( funcs ):
       func = function.asarray( func )
       if function._isfunc( func ):
-        shape = [ sh.getmap( self.comm ) for sh in func.shape ]
+        shape = [ (sh.getmap( self.comm ) if isinstance(sh,Axis) else sh) for sh in func.shape ]
         array = libmatrix.ArrayBuilder( shape )
         for f, ind in function.blocks( func ):
           integrands.append( function.Tuple([ ifunc, function.Tuple(ind), function.elemint( f, iweights ) ]) )
