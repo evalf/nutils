@@ -14,10 +14,8 @@ def rectilinear( vertices, periodic=(), name='rect' ):
   for index in indices.reshape( ndims, -1 ).T:
     x0, x1 = numeric.array([ v[i:i+2] for v, i in zip( vertices, index ) ]).T
     structure[tuple(index)] = root, transform.Scale(x1-x0) + x0, reference
-  topo = topology.StructuredTopology( structure )
+  topo = topology.StructuredTopology( structure, periodic=periodic )
   coords = function.ElemFunc( ndims )
-  if periodic:
-    topo = topo.make_periodic( periodic )
   return topo, coords
 
 def revolve( topo, coords, nelems, degree=3, axis=0 ):
