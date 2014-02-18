@@ -254,7 +254,7 @@ class Topology( object ):
     for ifunc, func in enumerate( funcs ):
       func = function.asarray( func )
       if function._isfunc( func ):
-        shape = [ sh.getmap( self.comm ) for sh in func.shape ]
+        shape = [ (sh.getmap( self.comm ) if isinstance(sh,Axis) else sh) for sh in func.shape ]
         array = libmatrix.ArrayBuilder( shape )
         for f, ind in function.blocks( func ):
           integrands.append( function.Tuple([ ifunc, function.Tuple(ind), function.elemint( f, iweights ) ]) )
@@ -752,16 +752,17 @@ class StructuredTopology( Topology ):
           funcmap[elem] = std, mask
         masks[ elem.subdom, mydofs ] = True
 
-    domainmap = Axis( masks )
-
     if hasnone:
-      raise NotImplementedError
       touched = numpy.zeros( dofcount, dtype=bool )
       for dofs in dofmap.itervalues():
         touched[ dofs ] = True
+      masks = masks[:,touched]  
       renumber = touched.cumsum()
       dofcount = int(renumber[-1])
       dofmap = dict( ( elem, renumber[dofs]-1 ) for elem, dofs in dofmap.iteritems() )
+
+    assert masks.shape[1]==dofcount
+    domainmap = Axis( masks )
 
     return function.function( funcmap, dofmap, dofcount, self.ndims, domainmap )
 
