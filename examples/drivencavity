@@ -12,8 +12,8 @@ def makeplots( domain, geom, velo, pres, index ):
   grad = funcsp.grad( geom )
   laplace = function.outer( grad ).sum()
   vort = velo.grad(geom)[1,0] - velo.grad(geom)[0,1]
-  matrix, rhs = domain.integrate( [ laplace, vort * funcsp ], geometry=geom, ischeme=pointset.Gauss(9) )
-  cons = domain.boundary.project( 0, onto=funcsp, geometry=geom, ischeme=pointset.Gauss(9) )
+  matrix, rhs = domain.integrate( [ laplace, vort * funcsp ], geometry=geom, ischeme='gauss9' )
+  cons = domain.boundary.project( 0, onto=funcsp, geometry=geom, ischeme='gauss9' )
   lhs = matrix.solve( rhs, constrain=cons )
   streamfunc = funcsp.dot( lhs )
 
@@ -70,7 +70,7 @@ def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e
   if bump:
     x, y = geom
     geom = domain.projection( [ x, bump(x) * (1-y) + y ],
-                onto=domain.splinefunc( degree=2 ).vector( 2 ), geometry=geom, ischeme=pointset.Gauss(9) )
+                onto=domain.splinefunc( degree=2 ).vector( 2 ), geometry=geom, ischeme='gauss9' )
     # piola
     J = function.localgradient( geom, domain.ndims )
     detJ = function.determinant( J )
@@ -86,23 +86,23 @@ def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e
   A += function.outer( lspace, pspace )
   A += function.outer( pspace, lspace )
 
-  stokesmat = domain.integrate( A, geometry=geom, ischeme=pointset.Gauss(9), title='stokes matrix' )
+  stokesmat = domain.integrate( A, geometry=geom, ischeme='gauss9', title='stokes matrix' )
 
   if strong:
     stokesrhs = 0
-    cons = domain.boundary['top'].project( 1, geometry=geom, onto=vspace[:,0], ischeme=pointset.Gauss(3), title='top boundary' ) \
-         | domain.boundary.project( 0, geometry=geom, onto=vspace, ischeme=pointset.Gauss(3), title='other boundary' )
+    cons = domain.boundary['top'].project( 1, geometry=geom, onto=vspace[:,0], ischeme='gauss3', title='top boundary' ) \
+         | domain.boundary.project( 0, geometry=geom, onto=vspace, ischeme='gauss3', title='other boundary' )
   else:
     ALPHA = .01 * nelems * reynolds
     Utop = [1,0]
     weakterm = ALPHA * vspace - 2 * vspace.nsymgrad(geom)
-    stokesmat += domain.boundary.integrate( function.outer( weakterm, vspace ).sum(), geometry=geom, ischeme=pointset.Gauss(9), title='weak bc stokes matrix' )
-    stokesrhs = domain.boundary['top'].integrate( ( weakterm * Utop ).sum(), geometry=geom, ischeme=pointset.Gauss(9), title='weak bc rhs' )
+    stokesmat += domain.boundary.integrate( function.outer( weakterm, vspace ).sum(), geometry=geom, ischeme='gauss9', title='weak bc stokes matrix' )
+    stokesrhs = domain.boundary['top'].integrate( ( weakterm * Utop ).sum(), geometry=geom, ischeme='gauss9', title='weak bc rhs' )
     cons = None
 
   if timestep:
     inertia = (1./timestep) * function.outer( vspace ).sum()
-    inertmat = domain.integrate( inertia, ischeme=pointset.Gauss(9), geometry=geom, title='adding inertia' )
+    inertmat = domain.integrate( inertia, ischeme='gauss9', geometry=geom, title='adding inertia' )
     stokesmat += inertmat
 
   lhs = stokesmat.solve( stokesrhs, constrain=cons, tol=1e-10, precon='spilu' )
@@ -111,7 +111,7 @@ def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e
     makeplots( domain, geom, vspace.dot(lhs), pspace.dot(lhs), iiter )
     ugradu = ( vspace.grad(geom) * vspace.dot(lhs) ).sum()
     convection = reynolds * function.outer( vspace, ugradu ).sum()
-    matrix = stokesmat + domain.integrate( convection, ischeme=pointset.Gauss(9), geometry=geom, title='navstokes matrix' )
+    matrix = stokesmat + domain.integrate( convection, ischeme='gauss9', geometry=geom, title='navstokes matrix' )
     if timestep:
       rhs = stokesrhs + inertmat.matvec( lhs )
     else:
