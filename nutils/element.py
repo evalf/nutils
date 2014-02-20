@@ -52,8 +52,9 @@ class Reference( Element ):
   def trim( self, levelset, maxrefine=0, minrefine=0, eps=1e-10 ):
     assert maxrefine >= minrefine >= 0
     if minrefine == 0 and not numeric.isarray( levelset ):
-      from pointset import Vertex
-      levelset = levelset[-1].eval( levelset[:-1]+(self,), Vertex(maxrefine-minrefine) )
+      from pointset import Pointset
+      vertex = Pointset( 'vertex', maxrefine - minrefine )
+      levelset = levelset[-1].eval( levelset[:-1]+(self,), vertex )
     if maxrefine == 0: # check values
       assert levelset.shape == (self.nverts,)
       if numeric.greater( levelset, -eps ).all():
@@ -370,14 +371,16 @@ class Simplex( Reference ):
       raise NotImplementedError
     return coords.T, weights
 
-  def pointset_vertex( self, n=0 ):
-    np = 2**n+1
+  def pointset_bezier( self, np ):
     points = numeric.linspace( 0, 1, np )
     if self.ndims == 1:
       return points[:,_], None
     if self.ndims == 2:
       return numeric.array([ [x,y] for i, y in enumerate(points) for x in points[:np-i] ]), None
     raise NotImplementedError
+
+  def pointset_vertex( self, n=0 ):
+    return self.pointset_bezier( 2**n+1 )
 
 class Tensor( Reference ):
 

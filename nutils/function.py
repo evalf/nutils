@@ -55,7 +55,7 @@ class CompiledEvaluable( object ):
       points = pointset
       weights = None
     else:
-      points, weights = pointset[elem]
+      points, weights = self.cache( pointset, elem[-1] )
 
     N = len(self.data) + 4
     values = self.data + [ self.cache, elem[:-1], points, weights ]
