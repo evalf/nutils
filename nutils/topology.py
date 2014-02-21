@@ -20,7 +20,6 @@ class ElemMap( dict ):
 
     return 'ElemMap(#%d,%dD)' % ( len(self), self.ndims )
 
-
 class Topology( object ):
 
   def __init__( self, ndims, elements, groups=None ):
@@ -294,6 +293,27 @@ class Topology( object ):
     groups = { key: topo.refined for key, topo in self.groups.items() }
     return Topology( ndims=self.ndims, elements=children, groups=groups )
 
+  def refined_by( self, refine ):
+    'create refined space by refining dofs in existing one'
+
+    refine = list( refine )
+    refined = [] # all elements of refined topology, max 1 level finer than current
+    for elem in self:
+      if elem[:-1] in refine:
+        refine.remove( elem[:-1] )
+        refined.extend( elem[:-1] + child for child in elem[-1].children )
+      else:
+        refined.append( elem )
+        # only for argument checking: remove parents from refine
+        pelem = elem
+        while pelem:
+          pelem = pelem[:-1]
+          if pelem in refine:
+            refine.remove( pelem )
+
+    assert not refine, 'not all refinement elements were found: %s' % '\n '.join( str(e) for e in refine )
+    return HierarchicalTopology( self, refined )
+
 class StructuredTopology( Topology ):
 
   def __init__( self, structure, periodic=(), groups=None ):
@@ -418,7 +438,149 @@ class StructuredTopology( Topology ):
 
     return function.function( funcmap, dofmap, dofcount, self.ndims )
 
+  def stdfunc( self, degree ):
+    'spline from vertices'
 
+    if isinstance( degree, int ):
+      degree = ( degree, ) * self.ndims
+
+    vertex_structure = numeric.array( 0 )
+    dofcount = 1
+    slices = []
+
+    for idim in range( self.ndims ):
+      n = self.structure.shape[idim]
+      p = degree[idim]
+
+      nd = n * p + 1
+      numbers = numeric.arange( nd )
+      if idim in self.periodic:
+        numbers[-1] = numbers[0]
+        nd -= 1
+      vertex_structure = vertex_structure[...,_] * nd + numbers
+      dofcount *= nd
+      slices.append( [ slice(p*i,p*i+p+1) for i in range(n) ] )
+
+    dofmap = {}
+    hasnone = False
+    for item in numeric.broadcast( self.structure, *numeric.ix_(*slices) ):
+      elem = item[0]
+      if elem is None:
+        hasnone = True
+      else:
+        S = item[1:]
+        dofmap[ elem[:-1] ] = vertex_structure[S].ravel()
+
+    if hasnone:
+      touched = numeric.zeros( dofcount, dtype=bool )
+      for dofs in dofmap.itervalues():
+        touched[ dofs ] = True
+      renumber = touched.cumsum()
+      dofcount = int(renumber[-1])
+      dofmap = dict( ( elem, renumber[dofs]-1 ) for elem, dofs in dofmap.iteritems() )
+
+    stdelem = util.product( element.PolyLine( element.PolyLine.bernstein_poly( d ) ) for d in degree )
+    funcmap = { elem[:-1]: stdelem for elem in self }
+    return function.function( funcmap, dofmap, dofcount, self.ndims )
+
+  @cache.property
+  def refined( self ):
+    'refine entire topology'
+
+    structure = numeric.empty( self.structure.shape + (2**self.ndims,), dtype=object )
+    for index, elem in numeric.enumerate_nd( self.structure ):
+      structure[index] = [ elem[:-1] + child for child in elem[-1].children ]
+    structure = structure.reshape( self.structure.shape + (2,)*self.ndims )
+    structure = structure.transpose( sum( [ ( i, self.ndims+i ) for i in range(self.ndims) ], () ) )
+    structure = structure.reshape([ sh * 2 for sh in self.structure.shape ])
+    refined = StructuredTopology( structure )
+    refined.groups = { key: group.refined for key, group in self.groups.items() }
+    return refined
+
+class HierarchicalTopology( Topology ):
+  'collection of nested topology elments'
+
+  def __init__( self, basetopo, elements ):
+    'constructor'
+
+    if isinstance( basetopo, HierarchicalTopology ):
+      basetopo = basetopo.basetopo
+    self.basetopo = basetopo
+    self.maxrefine = max( len(elem) for elem in elements ) \
+                   - min( len(elem) for elem in self.basetopo )
+    Topology.__init__( self, basetopo.ndims, elements )
+
+  def _funcspace( self, mkspace ):
+
+    log.context( 'generating refined space' )
+
+    dofmap = {} # IEN mapping of new function object
+    stdmap = {} # shape function mapping of new function object, plus boolean vector indicating which shapes to retain
+    ndofs = 0 # total number of dofs of new function object
+    remaining = len(self) # element count down (know when to stop)
+  
+    topo = self.basetopo # topology to examine in next level refinement
+    newdiscard = []
+    parentelems = []
+    for irefine in range( self.maxrefine+1 ):
+
+      funcsp = mkspace( topo ) # shape functions for level irefine
+      (func,(dofaxis,)), = function.blocks( funcsp ) # separate elem-local funcs and global placement index
+  
+      discard = set(newdiscard)
+      newdiscard = []
+      supported = numeric.ones( funcsp.shape[0], dtype=bool ) # True if dof is contained in topoelems or parentelems
+      touchtopo = numeric.zeros( funcsp.shape[0], dtype=bool ) # True if dof touches at least one topoelem
+      myelems = [] # all top-level or parent elements in level irefine
+      for elem in topo:
+        idofs = dofaxis.dofmap[ elem[:-1] ]
+        if numeric.containssorted( self.elements, elem ):
+          remaining -= 1
+          touchtopo[idofs] = True
+          myelems.append( elem )
+          newdiscard.append( elem[:-1] )
+        elif elem[:-2] in discard:
+          newdiscard.append( elem[:-1] )
+          supported[idofs] = False
+        else:
+          parentelems.append( elem )
+          myelems.append( elem )
+  
+      keep = numeric.logical_and( supported, touchtopo ) # THE refinement law
+
+      for elem in myelems: # loop over all top-level or parent elements in level irefine
+        idofs = dofaxis.dofmap[ elem[:-1] ] # local dof numbers
+        mykeep = keep[idofs]
+        std = func.stdmap[ elem[:-1] ]
+        assert isinstance(std,element.StdElem)
+        if mykeep.all():
+          stdmap[ elem[:-1] ] = std # use all shapes from this level
+        elif mykeep.any():
+          stdmap[ elem[:-1] ] = std, mykeep # use some shapes from this level
+        newdofs = [ ndofs + keep[:idof].sum() for idof in idofs if keep[idof] ] # new dof numbers
+        if irefine: # not at lowest level
+          newdofs.extend( dofmap[ elem[:-2] ] ) # add dofs of all underlying 'broader' shapes
+        dofmap[ elem[:-1] ] = numeric.array(newdofs) # add result to IEN mapping of new function object
+  
+      ndofs += int( keep.sum() ) # update total number of dofs
+      if not remaining:
+        break
+      topo = topo.refined # proceed to next level
+  
+    else:
+
+      raise Exception, 'elements remaining after %d iterations' % self.maxrefine
+
+    for elem in parentelems:
+      del dofmap[ elem[:-1] ] # remove auxiliary elements
+
+    return function.function( stdmap, dofmap, ndofs, self.ndims )
+
+  def stdfunc( self, *args, **kwargs ):
+    return self._funcspace( lambda topo: topo.stdfunc( *args, **kwargs ) )
+
+  def splinefunc( self, *args, **kwargs ):
+    return self._funcspace( lambda topo: topo.splinefunc( *args, **kwargs ) )
 
 ## OLD
 
@@ -429,27 +591,6 @@ class _Topology( object ):
     'constructor'
 
     self.ndims = ndims
-
-  def refined_by( self, refine ):
-    'create refined space by refining dofs in existing one'
-
-    refine = list( refine )
-    refined = [] # all elements of refined topology, max 1 level finer than current
-    for elem in self:
-      if elem in refine:
-        refine.remove( elem )
-        refined.extend( elem.children )
-      else:
-        refined.append( elem )
-        # only for argument checking: remove parents from refine
-        pelem = elem
-        while pelem.parent:
-          pelem, trans = pelem.parent
-          if pelem in refine:
-            refine.remove( pelem )
-
-    assert not refine, 'not all refinement elements were found: %s' % '\n '.join( str(e) for e in refine )
-    return HierarchicalTopology( self, refined )
 
   def stdfunc( self, degree ):
     'spline from vertices'
@@ -926,64 +1067,6 @@ class _StructuredTopology( Topology ):
     funcmap = dict( numeric.broadcast( self.structure, stdelems ) )
 
     return function.Function( dofaxis=dofaxis, stdmap=ElemMap(funcmap,self.ndims), igrad=0 )
-
-  def stdfunc( self, degree ):
-    'spline from vertices'
-
-    if isinstance( degree, int ):
-      degree = ( degree, ) * self.ndims
-
-    vertex_structure = numeric.array( 0 )
-    dofcount = 1
-    slices = []
-
-    stdelem = util.product( element.PolyLine( element.PolyLine.bernstein_poly( d ) ) for d in degree )
-
-    for idim in range( self.ndims ):
-      n = self.structure.shape[idim]
-      p = degree[idim]
-
-      nd = n * p + 1
-      numbers = numeric.arange( nd )
-      if idim in self.periodic:
-        numbers[-1] = numbers[0]
-        nd -= 1
-      vertex_structure = vertex_structure[...,_] * nd + numbers
-      dofcount *= nd
-      slices.append( [ slice(p*i,p*i+p+1) for i in range(n) ] )
-
-    dofmap = {}
-    hasnone = False
-    for item in numeric.broadcast( self.structure, *numeric.ix_(*slices) ):
-      elem = item[0]
-      if elem is None:
-        hasnone = True
-      else:
-        S = item[1:]
-        dofmap[ elem ] = vertex_structure[S].ravel()
-
-    if hasnone:
-      touched = numeric.zeros( dofcount, dtype=bool )
-      for dofs in dofmap.itervalues():
-        touched[ dofs ] = True
-      renumber = touched.cumsum()
-      dofcount = int(renumber[-1])
-      dofmap = dict( ( elem, renumber[dofs]-1 ) for elem, dofs in dofmap.iteritems() )
-
-    funcmap = dict( numeric.broadcast( self.structure, stdelem ) )
-    return function.function( funcmap, dofmap, dofcount, self.ndims )
-
-  @cache.property
-  def refined( self ):
-    'refine entire topology'
-
-    structure = numeric.array( [ elem.children if elem is not None else [None]*(2**self.ndims) for elem in self.structure.flat ] )
-    structure = structure.reshape( self.structure.shape + (2,)*self.ndims )
-    structure = structure.transpose( sum( [ ( i, self.ndims+i ) for i in range(self.ndims) ], () ) )
-    structure = structure.reshape([ sh * 2 for sh in self.structure.shape ])
-    refined = StructuredTopology( structure )
-    refined.groups = { key: group.refined for key, group in self.groups.items() }
-    return refined
 
   def __str__( self ):
     'string representation'

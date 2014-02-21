@@ -8,7 +8,7 @@ def makeplots( domain, geom, greysmooth, index, indicator, supp ):
 
   log.context( 'figures' )
 
-  frame = topology.UnstructuredTopology( supp, domain.ndims ).elem_eval( geom, ischeme='bezier3', separate=True )
+  frame = topology.Topology( domain.ndims, [ elem for elem in domain if elem[:-1] in supp ] ).elem_eval( geom, ischeme='bezier3', separate=True )
   points, fval, xgrad, indic = domain.elem_eval( [ geom, greysmooth, greysmooth.grad(geom)[0], indicator ], ischeme='bezier9', separate=True )
 
   with plot.PyPlot( 'fval', index=index ) as plt:

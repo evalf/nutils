@@ -3110,7 +3110,7 @@ def supp( funcsp, indices ):
     dofmap = axes[0].dofmap
     stdmap = func.stdmap
     for elem, dofs in dofmap.items():
-      while True:
+      while elem:
         std = stdmap.get( elem )
         nshapes = 0 if not std \
            else std[1].sum() if isinstance( std, tuple ) \
@@ -3118,9 +3118,7 @@ def supp( funcsp, indices ):
         if numeric.intersect1d( dofs[:nshapes], indices, assume_unique=True ).size:
           supp.append( elem )
         dofs = dofs[nshapes:]
-        if not elem.parent:
-          break
-        elem, trans = elem.parent
+        elem = elem[:-1]
       assert not dofs.size
   return supp
 
