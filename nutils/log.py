@@ -78,6 +78,28 @@ class HtmlStream( object ):
     self.html.flush()
 
 
+class CaptureLog( object ):
+  'capture logger'
+
+  def __init__( self, depth=1 ):
+    self.buf = []
+    sys._getframe(depth).f_locals[_KEY] = self
+
+  def __call__( self, chunks=('',), attr=None ):
+    self.buf.append( ' > '.join( chunks ) )
+    return CaptureStream( self.buf )
+
+
+class CaptureStream( object ):
+  'capture stream'
+
+  def __init__( self, buf ):
+    self.buf = buf
+
+  def write( self, text ):
+    self.buf.append( text )
+
+
 class HtmlLog( object ):
   'html log'
 
