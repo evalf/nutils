@@ -5,13 +5,13 @@ import numpy
 r, theta = function.ElemFunc( ndims=2 )
 geom = r * function.stack([ function.cos(theta), function.sin(theta) ])
 
-uniform = pointset.Uniform(2)
+points = pointset.Pointset( 'uniform', 2 )
 
 line = element.Simplex(1)
-line_points, dummy = uniform(line)
+line_points, dummy = points(line)
 
 quad = line**2
-quad_points, dummy = uniform(quad)
+quad_points, dummy = points(quad)
 
 elem = ( object(),
   transform.Linear( numeric.array([[2,1],[-1,3]]) ) + [1,0], # corners at (1,0), (3,-1), (4,2), (2,3)

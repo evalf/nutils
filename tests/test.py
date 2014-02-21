@@ -1,8 +1,10 @@
 import os, sys, traceback
+from nutils import log
 
 status = [ 0, 0, 0 ] # ok, failed, error
 
 def unittest( func ):
+  log.CaptureLog()
   try:
     func()
   except KeyboardInterrupt:
