@@ -10,6 +10,7 @@ test:
 
 clean:
 	$(MAKE) -C nutils/numeric clean
+	rm -f nutils/*.pyc tests/*.pyc
 
 .PHONY: all numeric test clean
 
