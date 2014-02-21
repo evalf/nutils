@@ -1,4 +1,0 @@
-numeric
-=======
-
-Numpy wrapper
