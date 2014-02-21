@@ -1,5 +1,5 @@
-from . import element, numeric, cache
-import re, warnings
+from . import cache
+import re
 
 class Pointset( cache.Immutable ):
 
