@@ -1,4 +1,4 @@
-from . import element, function, util, cache, parallel, matrix, log, numeric, prop, transform, pointset, _
+from . import element, function, util, cache, parallel, matrix, log, numeric, transform, pointset, _
 import warnings, itertools
 
 class ElemMap( dict ):
@@ -49,30 +49,31 @@ class Topology( object ):
   def __len__( self ):
     return len( self.elements )
 
+  @log.title
   def build_graph( self, func ):
     'get matrix sparsity'
-
-    log.context( 'graph' )
 
     nrows, ncols = func.shape
     graph = [ [] for irow in range(nrows) ]
     IJ = function.Tuple([ function.Tuple(ind) for f, ind in function.blocks( func ) ]).compiled()
 
-    for elem in log.iterate('elem',self):
+    __logger__ = log.iter( 'elem', self )
+    for elem in __logger__:
       for I, J in IJ.eval( elem, None ):
         for i in I:
           graph[i].append(J)
 
-    for irow, g in log.iterate( 'dof', enumerate(graph), nrows ):
+    __logger__ = log.enumerate( 'dof', graph )
+    for irow, g in __logger__:
       # release memory as we go
-      if g: graph[irow] = numeric.unique( numeric.concatenate( g ) )
+      if g:
+        graph[irow] = numeric.unique( numeric.concatenate( g ) )
 
     return graph
 
-  def integrate( self, funcs, ischeme, geometry=None, iweights=None, force_dense=False, title='integrating' ):
+  @log.title
+  def integrate( self, funcs, ischeme, geometry=None, iweights=None, force_dense=False ):
     'integrate'
-
-    log.context( title )
 
     single_arg = not isinstance(funcs,(list,tuple))
     if single_arg:
@@ -104,7 +105,8 @@ class Topology( object ):
     idata = function.Tuple( integrands ).compiled()
 
     points = pointset.aspointset( ischeme )
-    for elem in parallel.pariter( log.iterate('elem',self) ):
+    __logger__ = log.iter( 'elem', self )
+    for elem in parallel.pariter( __logger__ ):
       for ifunc, lock, index, data in idata.eval( elem, points ):
         retval = retvals[ifunc]
         with lock:
@@ -123,10 +125,11 @@ class Topology( object ):
     weights = self.project( fun, onto, geometry, **kwargs )
     return onto.dot( weights )
 
-  def project( self, fun, onto, geometry, tol=0, ischeme=None, title='projecting', droptol=1e-8, exact_boundaries=False, constrain=None, verify=None, maxiter=0, ptype='lsqr' ):
+  @log.title
+  def project( self, fun, onto, geometry, tol=0, ischeme=None, droptol=1e-8, exact_boundaries=False, constrain=None, verify=None, maxiter=0, ptype='lsqr' ):
     'L2 projection of function onto function space'
 
-    log.context( title + ' [%s]' % ptype )
+    log.debug( 'projection type:', ptype )
 
     points = pointset.aspointset( ischeme )
     if exact_boundaries:
@@ -215,10 +218,9 @@ class Topology( object ):
 
     return constrain
 
-  def elem_eval( self, funcs, ischeme, separate=False, title='evaluating' ):
+  @log.title
+  def elem_eval( self, funcs, ischeme, separate=False ):
     'element-wise evaluation'
-
-    log.context( title )
 
     single_arg = not isinstance(funcs,(tuple,list))
     if single_arg:
@@ -229,7 +231,8 @@ class Topology( object ):
     npoints = 0
     separators = []
     points = pointset.aspointset( ischeme )
-    for elem in log.iterate('elem',self):
+    __logger__ = log.iter( 'elem', self )
+    for elem in __logger__:
       np, = pointshape.eval( elem, points )
       slices.append( slice(npoints,npoints+np) )
       npoints += np
@@ -255,7 +258,8 @@ class Topology( object ):
       retvals.append( retval )
     idata = function.Tuple( idata ).compiled()
 
-    for ielem, elem in parallel.pariter( enumerate( log.iterate('elem',self) ) ):
+    __logger__ = log.enumerate( 'elem', self )
+    for ielem, elem in parallel.pariter( __logger__ ):
       s = slices[ielem],
       for ifunc, index, data in idata.eval( elem, points ):
         retvals[ifunc][s+index] = data
@@ -267,12 +271,14 @@ class Topology( object ):
 
     return retvals
 
-  def trim( self, levelset, maxrefine=0, minrefine=0, title='trimming' ):
+  @log.title
+  def trim( self, levelset, maxrefine=0, minrefine=0 ):
     'trim element along levelset'
 
     levelset = function.ascompiled( levelset )
     pos, neg = [], []
-    for elem in log.iterate( title, self ):
+    __logger__ = log.iter( 'elem', self )
+    for elem in __logger__:
       p, n = elem[-1].trim( levelset=(elem[:-1]+(levelset,)), maxrefine=maxrefine, minrefine=minrefine )
       if p: pos.append( elem[:-1]+(p,) )
       if n: neg.append( elem[:-1]+(n,) )
@@ -510,9 +516,8 @@ class HierarchicalTopology( Topology ):
                    - min( len(elem) for elem in self.basetopo )
     Topology.__init__( self, basetopo.ndims, elements )
 
+  @log.title
   def _funcspace( self, mkspace ):
-
-    log.context( 'generating refined space' )
 
     dofmap = {} # IEN mapping of new function object
     stdmap = {} # shape function mapping of new function object, plus boolean vector indicating which shapes to retain
@@ -629,10 +634,9 @@ class _Topology( object ):
     items = ( self.groups[it] for it in item.split( ',' ) )
     return sum( items, items.next() )
 
-  def elem_eval( self, funcs, ischeme, separate=False, title='evaluating' ):
+  @log.title
+  def elem_eval( self, funcs, ischeme, separate=False ):
     'element-wise evaluation'
-
-    log.context( title )
 
     single_arg = not isinstance(funcs,(tuple,list))
     if single_arg:
@@ -642,7 +646,8 @@ class _Topology( object ):
     pointshape = function.PointShape().compiled()
     npoints = 0
     separators = []
-    for elem in log.iterate('elem',self):
+    __logger__ = log.iter( 'elem', self )
+    for elem in __logger__:
       np, = pointshape.eval( elem, ischeme )
       slices.append( slice(npoints,npoints+np) )
       npoints += np
@@ -680,10 +685,9 @@ class _Topology( object ):
 
     return retvals
 
-  def elem_mean( self, funcs, geometry, ischeme, title='computing mean values' ):
+  @log.title
+  def elem_mean( self, funcs, geometry, ischeme ):
     'element-wise integration'
-
-    log.context( title )
 
     single_arg = not isinstance(funcs,(tuple,list))
     if single_arg:
@@ -714,10 +718,9 @@ class _Topology( object ):
 
     return retvals
 
-  def grid_eval( self, funcs, geometry, C, title='grid-evaluating' ):
+  @log.title
+  def grid_eval( self, funcs, geometry, C ):
     'evaluate grid points'
-
-    log.context( title )
 
     single_arg = not isinstance(funcs,(tuple,list))
     if single_arg:
@@ -735,7 +738,8 @@ class _Topology( object ):
 
     data = function.Tuple([ function.Tuple([ func, retval ]) for func, retval in zip( funcs, retvals ) ])
 
-    for elem in log.iterate('elem',self):
+    __logger__ = log.iter( 'elem', self )
+    for elem in __logger__:
       points, selection = geometry.find( elem, C.T )
       if selection is not None:
         for func, retval in data( elem, points ):
@@ -748,10 +752,9 @@ class _Topology( object ):
 
     return retvals
 
-  def integrate_symm( self, funcs, ischeme, geometry=None, iweights=None, force_dense=False, title='integrating' ):
+  @log.title
+  def integrate_symm( self, funcs, ischeme, geometry=None, iweights=None, force_dense=False ):
     'integrate a symmetric integrand on a product domain' # TODO: find a proper home for this
-
-    log.context( title )
 
     single_arg = not isinstance(funcs,list)
     if single_arg:
@@ -782,7 +785,8 @@ class _Topology( object ):
       retvals.append( array )
     idata = function.Tuple( integrands ).compiled()
 
-    for elem in parallel.pariter( log.iterate('elem',self) ):
+    __logger__ = log.iter( 'elem', self )
+    for elem in parallel.pariter( __logger__ ):
       assert isinstance( elem, element.ProductElement )
       compare_elem = cmp( elem.elem1, elem.elem2 )
       if compare_elem < 0:
@@ -800,11 +804,11 @@ class _Topology( object ):
 
     return retvals
 
-  def refinedfunc( self, dofaxis, refine, degree, title='refining' ):
+  @log.title
+  def refinedfunc( self, dofaxis, refine, degree ):
     'create refined space by refining dofs in existing one'
 
     warnings.warn( 'refinedfunc is replaced by refined_by + splinefunc; this function will be removed in future' % ischeme, DeprecationWarning )
-    log.context( title )
 
     refine = set(refine) # make unique and equip with set operations
   
@@ -818,7 +822,8 @@ class _Topology( object ):
     while topo: # elements to examine in next level refinement
       nexttopo = []
       refined = set() # refined dofs in current refinement level
-      for elem in log.iterate('elem',topo): # loop over remaining elements in refinement level 'nrefine'
+      __logger__ = log.iter( 'elem', topo )
+      for elem in __logger__: # loop over remaining elements in refinement level 'nrefine'
         dofs = dofmap.get( elem ) # dof numbers for current funcsp object
         if dofs is not None: # elem is a top-level element
           supp = refine.intersection(dofs) # supported dofs that are tagged for refinement
@@ -844,7 +849,8 @@ class _Topology( object ):
     ndofs = 0 # total number of dofs of new function object
   
     topo = self # topology to examine in next level refinement
-    for irefine in log.iterate( 'level', range(nrefine), showpct=False ):
+    __logger__ = log.iter( 'level', range(nrefine) )
+    for irefine in __logger__:
   
       funcsp = topo.splinefunc( degree ) # shape functions for level irefine
       (func,(dofaxis,)), = function.blocks( funcsp ) # separate elem-local funcs and global placement index
@@ -852,7 +858,7 @@ class _Topology( object ):
       supported = numeric.ones( funcsp.shape[0], dtype=bool ) # True if dof is contained in topoelems or parentelems
       touchtopo = numeric.zeros( funcsp.shape[0], dtype=bool ) # True if dof touches at least one topoelem
       myelems = [] # all top-level or parent elements in level irefine
-      for elem, idofs in log.iterate( 'element', dofaxis.dofmap.items() ):
+      for elem, idofs in log.iter( 'element', dofaxis.dofmap.items() ):
         if elem in topoelems:
           touchtopo[idofs] = True
           myelems.append( elem )
@@ -882,7 +888,7 @@ class _Topology( object ):
   
       ndofs += keep.sum() # update total number of dofs
       topo = topo.refined # proceed to next level
-  
+
     for elem in parentelems:
       del dofmap[elem] # remove auxiliary elements
 
@@ -938,17 +944,15 @@ class _Topology( object ):
 
     return self if n <= 0 else self.refined.refine( n-1 )
 
-  def get_simplices( self, maxrefine, title='getting simplices' ):
+  @log.title
+  def get_simplices( self, maxrefine ):
     'Getting simplices'
-
-    log.context( title )
 
     return [ simplex for elem in self for simplex in elem.get_simplices( maxrefine ) ]
 
-  def get_trimmededges( self, maxrefine, title='getting trimmededges' ):
+  @log.title
+  def get_trimmededges( self, maxrefine ):
     'Getting trimmed edges'
-
-    log.context( title )
 
     return [ trimmededge for elem in self for trimmededge in elem.get_trimmededges( maxrefine ) ]
 
@@ -1198,9 +1202,8 @@ class _HierarchicalTopology( Topology ):
       topo = topo.refined # proceed to next level
     return UnstructuredTopology( allinterfaces, ndims=self.ndims-1 )
 
+  @log.title
   def _funcspace( self, mkspace ):
-
-    log.context( 'generating refined space' )
 
     dofmap = {} # IEN mapping of new function object
     stdmap = {} # shape function mapping of new function object, plus boolean vector indicating which shapes to retain
@@ -1273,9 +1276,9 @@ class _HierarchicalTopology( Topology ):
   def splinefunc( self, *args, **kwargs ):
     return self._funcspace( lambda topo: topo.splinefunc( *args, **kwargs ) )
 
+@log.title
 def glue( master, slave, geometry, tol=1.e-10, verbose=False ):
   'Glue topologies along boundary group __glue__.'
-  log.context('glue')
 
   gluekey = '__glue__'
 

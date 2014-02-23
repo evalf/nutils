@@ -1,4 +1,4 @@
-from . import topology, util, function, element, log, prop, numeric, debug, _
+from . import topology, util, function, element, log, numeric, debug, _
 from scipy import spatial # for def mesh; import cannot be postponed apparently
 import os, warnings
 
@@ -12,7 +12,7 @@ class BasePlot( object ):
 
   def __init__ ( self, name, ndigits=0, index=None ):
 
-    self.path = prop.dumpdir
+    self.path = util.prop( 'dumpdir' )
 
     assert isinstance(ndigits,int) and ndigits >= 0, 'nonnegative integer required'
     if ndigits:
@@ -31,26 +31,22 @@ class BasePlot( object ):
   def __enter__( self ):
     'enter with block'
 
-    self.logger = log.context( 'plotting', depth=2 )
     return self
 
   def __exit__( self, *exc_info ):
     'exit with block'
 
     exc_type, exc_value, exc_tb = exc_info
-    try:
-      if exc_type == KeyboardInterrupt:
-        pass
-      elif exc_type:
-        log.stack( repr(exc_value), debug.exception() )
-      else:
-        if self.names:
-          for name in self.names:
-            self.save( name )
-          log.path( ', '.join( self.names ) )
-        return True
-    finally:
-      self.logger.disable()
+    if exc_type == KeyboardInterrupt:
+      pass
+    elif exc_type:
+      log.stack( repr(exc_value), debug.exception() )
+    else:
+      if self.names:
+        for name in self.names:
+          self.save( name )
+        log.path( ', '.join( self.names ) )
+      return True
     return False
 
   def save ( self, name ):
@@ -67,7 +63,7 @@ class PyPlot( BasePlot ):
     import matplotlib
     matplotlib.use( 'Agg', warn=False )
 
-    imgtype = getattr( prop, 'imagetype', 'png' ) if imgtype is None else imgtype
+    imgtype = util.prop( 'imagetype', 'png' ) if imgtype is None else imgtype
     self.names = [ self.name + '.' + ext for ext in imgtype.split(',') ]
 
     from matplotlib import pyplot
@@ -517,7 +513,7 @@ class Pylab( object ):
     matplotlib.use( 'Agg', warn=False )
 
     if '.' not in name.format(0):
-      imgtype = getattr( prop, 'imagetype', 'png' )
+      imgtype = util.prop( 'imagetype', 'png' )
       name += '.' + imgtype
 
     if isinstance( title, (list,tuple) ):
@@ -548,7 +544,7 @@ class Pylab( object ):
       return #True
 
     from matplotlib import pyplot
-    dumpdir = prop.dumpdir
+    dumpdir = util.prop( 'dumpdir' )
     n = len( os.listdir( dumpdir ) )
     imgpath = util.getpath( self.name )
     pyplot.savefig( imgpath, format=imgpath.split('.')[-1] )
@@ -571,11 +567,10 @@ class PylabAxis( object ):
 
     return getattr( self._ax, attr )
 
+  @log.title
   def add_mesh( self, coords, topology, deform=0, color=None, edgecolors='none', linewidth=1, xmargin=0, ymargin=0, aspect='equal', cbar='vertical', title=None, ischeme='gauss2', cscheme='contour3', clim=None, frame=True, colormap=None ):
     'plot mesh'
   
-    log.context( 'plotting mesh' )
-
     assert topology.ndims == 2
     from matplotlib import pyplot, collections
     poly = []
@@ -645,7 +640,7 @@ class PylabAxis( object ):
     'quiver builder'
   
     xyuv = function.Concatenate( [ coords, quiver ] )
-    XYUV = [ xyuv(elem,sample) for elem in log.ProgressBar( topology, title='plotting quiver' ) ]
+    XYUV = [ xyuv(elem,sample) for elem in log.iter( 'elem', topology ) ]
     self.quiver( *numeric.concatenate( XYUV, 0 ).T, scale=scale )
 
   def add_graph( self, xfun, yfun, topology, sample='contour10', logx=False, logy=False, **kwargs ):

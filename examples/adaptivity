@@ -4,9 +4,8 @@ from nutils import *
 
 
 #@parallel.fork
+@log.title
 def makeplots( domain, geom, greysmooth, index, indicator, supp ):
-
-  log.context( 'figures' )
 
   frame = topology.Topology( domain.ndims, [ elem for elem in domain if elem[:-1] in supp ] ).elem_eval( geom, ischeme='bezier3', separate=True )
   points, fval, xgrad, indic = domain.elem_eval( [ geom, greysmooth, greysmooth.grad(geom)[0], indicator ], ischeme='bezier9', separate=True )
@@ -35,7 +34,7 @@ def main( degree=1, niter=30, triangular=False ):
   domain, geom = mesh.demo() if triangular else mesh.rectilinear( [ (0,.5,1) ] * 2 )
   greydata = function.tanh( ( function.norm2(geom) - .5 ) * 20 )
 
-  for iiter in util.iterate():
+  for iiter, __logger__ in log.count( 'iter' ):
 
     funcsp = domain.stdfunc( degree=degree )
     greysmooth = domain.projection( greydata, geometry=geom, onto=funcsp, ischeme='gauss5', droptol=0, verify=int(funcsp.shape[0]) )

@@ -1,104 +1,8 @@
-from . import prop, log, debug
+from . import util, log, debug
 import os, sys, multiprocessing, thread, numpy
 
 Lock = multiprocessing.Lock
 cpu_count = multiprocessing.cpu_count
-
-class Fork( object ):
-  'nested fork context, unwinds at exit'
-
-  def __init__( self, nprocs ):
-    'constructor'
-
-    self.nprocs = nprocs
-
-  def __enter__( self ):
-    'fork and return iproc'
-
-    for self.iproc in range( self.nprocs-1 ):
-      self.child_pid = os.fork()
-      if self.child_pid:
-        break
-    else:
-      self.child_pid = None
-      self.iproc = self.nprocs-1
-    self.logger = log.context( 'proc %d' % ( self.iproc+1 ), depth=2 )
-    return self.iproc
-
-  def __exit__( self, exctype, excvalue, tb ):
-    'kill all processes but first one'
-
-    status = 0
-    try:
-      if exctype == KeyboardInterrupt:
-        status = 1
-      elif exctype == GeneratorExit:
-        if self.iproc:
-          log.stack( 'generator failed with unknown exception', debug.callstack( depth=2 ) )
-        status = 1
-      elif exctype:
-        if self.iproc:
-          log.stack( repr(excvalue), debug.exception() )
-        status = 1
-      if self.child_pid:
-        child_pid, child_status = os.waitpid( self.child_pid, 0 )
-        if child_pid != self.child_pid:
-          log.error( 'pid failure! got %s, was waiting for %s' % (child_pid,self.child_pid) )
-          status = 1
-        elif child_status:
-          status = 1
-      self.logger.disable()
-    except: # should not happen.. but just to be sure
-      status = 1
-    if self.iproc:
-      os._exit( status )
-    if not exctype:
-      assert status == 0, 'one or more subprocesses failed'
-
-class AlternativeFork( object ):
-  'single master, multiple slave fork context, unwinds at exit'
-
-  def __init__( self, nprocs ):
-    'constructor'
-
-    self.nprocs = nprocs
-    self.children = None
-
-  def __enter__( self ):
-    'fork and return iproc'
-
-    children = []
-    for self.iproc in range( 1, self.nprocs ):
-      child_pid = os.fork()
-      if not child_pid:
-        break
-      children.append( child_pid )
-    else:
-      self.children = children
-      self.iproc = 0
-    self.logger = log.context( 'proc %d' % ( self.iproc+1 ), depth=2 )
-    return self.iproc
-
-  def __exit__( self, exctype, excvalue, tb ):
-    'kill all processes but first one'
-
-    status = 0
-    try:
-      if exctype:
-        log.stack( repr(excvalue), debug.exception() )
-        status = 1
-      while self.children:
-        child_pid, child_status = os.wait()
-        self.children.remove( child_pid )
-        if child_status:
-          status = 1
-      self.logger.disable()
-    except: # should not happen.. but just to be sure
-      status = 1
-    if self.iproc:
-      os._exit( status )
-    if not exctype:
-      assert status == 0, 'one or more subprocesses failed'
 
 def waitpid_noerr( pid ):
   try:
@@ -122,6 +26,7 @@ def fork( func, nice=19 ):
       return pid
     try:
       os.nice( nice )
+      __nprocs__ = 1
       func( *args, **kwargs )
     except KeyboardInterrupt:
       pass
@@ -152,15 +57,26 @@ def shzeros( shape, dtype=float ):
 def pariter( iterable ):
   'iterate parallel'
 
-  nprocs = getattr( prop, 'nprocs', 1 )
+  nprocs = util.prop( 'nprocs', 1 )
   return iterable if nprocs <= 1 else _pariter( iterable, nprocs )
 
 def _pariter( iterable, nprocs ):
   'iterate parallel, helper generator'
 
+  # shared memory objects
   shared_iter = multiprocessing.RawValue( 'i', nprocs )
   lock = Lock()
-  with Fork( nprocs ) as iproc:
+
+  try:
+
+    for iproc in range( nprocs-1 ):
+      child_pid = os.fork()
+      if child_pid:
+        break
+    else:
+      child_pid = None
+      iproc = nprocs-1
+
     iiter = iproc
     for n, it in enumerate( iterable ):
       if n < iiter:
@@ -170,6 +86,33 @@ def _pariter( iterable, nprocs ):
       with lock:
         iiter = shared_iter.value
         shared_iter.value = iiter + 1
+
+    if child_pid:
+      pid, status = os.waitpid( child_pid, 0 )
+      assert status == 0, 'child exited with nonzero status'
+      assert pid == child_pid, 'pid failure; got %s, was waiting for %s' % (pid,child_pid)
+
+  except:
+    status = 1
+    if iproc:
+      etype, evalue, tb = sys.exc_info()
+      if itype == KeyboardInterrupt:
+        pass
+      elif etype == GeneratorExit:
+        log.stack( 'generator failed with unknown exception', debug.callstack( depth=2 ) )
+      elif etype == AssertionError:
+        log.error( 'error:', evalue )
+      else:
+        log.stack( repr(evalue), debug.exception() )
+    else:
+      raise
+
+  else:
+    status = 0
+
+  finally:
+    if iproc:
+      os._exit( status )
 
 def parmap( func, iterable, shape=(), dtype=float ):
   n = len(iterable)

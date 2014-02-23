@@ -4,9 +4,8 @@ from nutils import *
 
 
 @parallel.fork
+@log.title
 def makeplots( domain, geom, velo, pres, index ):
-
-  log.context( 'figures' )
 
   funcsp = domain.splinefunc( degree=2 )
   grad = funcsp.grad( geom )
@@ -103,7 +102,7 @@ def main( nelems=24, reynolds=100., strong=False, tol=1e-8, rotation=0., timeste
     inertmat = domain.integrate( inertia, ischeme='gauss9', geometry=geom, title='adding inertia' )
     stokesmat += inertmat
 
-  for iiter in util.iterate():
+  for iiter, __logger__ in log.count( 'iter' ):
     makeplots( domain, geom, vspace.dot(lhs), pspace.dot(lhs), iiter )
     ugradu = ( vspace.grad(geom) * vspace.dot(lhs) ).sum()
     convection = reynolds * function.outer( vspace, ugradu ).sum()

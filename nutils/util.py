@@ -1,6 +1,16 @@
-from . import log, prop, numeric
+from . import log, numeric
 import sys, os, time, warnings, itertools
 
+_nodefault = object()
+def prop( name, default=_nodefault ):
+  frame = sys._getframe(1)
+  key = '__%s__' % name
+  while frame:
+    if key in frame.f_locals:
+      return frame.f_locals[key]
+    frame = frame.f_back
+  assert default is not _nodefault, 'property %r is not defined' % name
+  return default
 
 def unreachable_items():
   # see http://stackoverflow.com/questions/16911559/trouble-understanding-pythons-gc-garbage-for-tracing-memory-leaks
@@ -110,7 +120,7 @@ def profile( func ):
 def getpath( pattern ):
   'create file in dumpdir'
 
-  dumpdir = prop.dumpdir
+  dumpdir = prop( 'dumpdir' )
   if pattern == pattern.format( 0 ):
     return dumpdir + pattern
   prefix = pattern.split( '{' )[0]
@@ -144,21 +154,6 @@ def clone( obj ):
   clone = object.__new__( obj.__class__ )
   clone.__dict__.update( obj.__dict__ )
   return clone
-
-def iterate( context='iter', nmax=-1 ):
-  'iterate forever'
-
-  assert isinstance( nmax, int ), 'invalid value for nmax %r' % nmax
-  i = 0
-  while True:
-    if i == nmax:
-      break
-    i += 1
-    logger = log.context( '%s %d' % (context,i), depth=2 )
-    try:
-      yield i
-    finally:
-      logger.disable()
 
 class NanVec( numeric.NumericArray ):
   'nan-initialized vector'
@@ -207,20 +202,26 @@ class NanVec( numeric.NumericArray ):
 class Clock( object ):
   'simple interval timer'
 
-  def __init__( self, interval ):
+  def __init__( self, dt=None, dtexp=None, dtmax=None ):
     'constructor'
 
-    self.t = time.time()
-    self.dt = interval
+    self.dt = prop( 'progress_interval', 1. ) if dt is None else dt
+    self.dtexp = prop( 'progress_interval_scale', 2 ) if dtexp is None else dtexp
+    self.dtmax = prop( 'progress_interval_max', numeric.inf ) if dtmax is None else dtmax
+    self.reset()
 
-  def __nonzero__( self ):
+  def reset( self ):
+    self.tnext = time.time() + self.dt
+
+  def check( self ):
     'check time'
 
-    t = time.time()
-    if t > self.t + self.dt:
-      self.t = t
-      return True
-    return False
+    if time.time() < self.tnext:
+      return False
+    if self.dtexp != 1:
+      self.dt = min( self.dt * self.dtexp, self.dtmax )
+    self.reset()
+    return True
 
 def tensorial( args ):
   'create n-dimensional array containing tensorial combinations of n args'
@@ -357,11 +358,10 @@ def run( *functions ):
       assert arg in properties, 'invalid argument %r' % arg
       properties[arg] = val
 
-  for name, value in properties.iteritems():
-    setattr( prop, name, value )
+  locals().update({ '__%s__' % name: value for name, value in properties.iteritems() })
 
   scriptname = os.path.basename(sys.argv[0])
-  outdir = os.path.expanduser( prop.outdir ).rstrip( os.sep ) + os.sep
+  outdir = os.path.expanduser( prop( 'outdir' ) ).rstrip( os.sep ) + os.sep
   basedir = outdir + scriptname + os.sep
   localtime = time.localtime()
   timepath = time.strftime( '%Y/%m/%d/%H-%M-%S/', localtime )
@@ -369,7 +369,7 @@ def run( *functions ):
   dumpdir = basedir + timepath
   os.makedirs( dumpdir ) # asserts nonexistence
 
-  if prop.symlink:
+  if prop( 'symlink', False ):
     for i in range(2): # make two links
       target = outdir
       dest = ''
@@ -377,7 +377,7 @@ def run( *functions ):
         target += scriptname + os.sep
       else: # script-local link
         dest += scriptname + os.sep
-      target += prop.symlink
+      target += prop( 'symlink' )
       dest += timepath
       if os.path.islink( target ):
         os.remove( target )
@@ -389,11 +389,6 @@ def run( *functions ):
       print 'updating', filename
       open( outdir + filename, 'w' ).write( open( logpath + filename, 'r' ).read() )
 
-  htmlfile = open( dumpdir+'log.html', 'w' )
-  log.setup_html( fileobj=htmlfile, title=scriptname + time.strftime( ' %Y/%m/%d %H:%M:%S', localtime ) )
-
-  prop.dumpdir = dumpdir
-
   redirect = '<html>\n<head>\n<meta http-equiv="cache-control" content="max-age=0" />\n' \
            + '<meta http-equiv="cache-control" content="no-cache" />\n' \
            + '<meta http-equiv="expires" content="0" />\n' \
@@ -404,73 +399,92 @@ def run( *functions ):
   print >> open( outdir+'log.html', 'w' ), redirect % ( scriptname + '/' + timepath )
   print >> open( basedir+'log.html', 'w' ), redirect % ( timepath )
 
-  prop.cachedir = basedir + 'cache'
-
-  commandline = [ ' '.join([ scriptname, funcname ]) ] + [ '  --%s=%s' % item for item in kwargs.items() ]
-
-  log.info( 'nutils v0.1+dev' )
-  log.info()
-  log.info( ' \\\n'.join( commandline ) + '\n' )
-  log.info( 'start %s\n' % time.ctime() )
-
-  warnings.resetwarnings()
-
-  t0 = time.time()
-  exc_tb = False
-
-  if prop.profile:
-    import cProfile
-    prof = cProfile.Profile()
-    prof.enable()
-
-  try:
-    func( **kwargs )
-  except KeyboardInterrupt:
-    log.error( 'killed by user' )
-  except Terminate, exc:
-    log.error( 'terminated:', exc )
-  except:
-    exc_value = sys.exc_value
-    exc_tb = debug.exception()
-    log.stack( repr(exc_value), exc_tb )
-
-  if prop.profile:
-    prof.disable()
-
-  if hasattr( os, 'wait' ):
-    try: # wait for child processes to die
-      while True:
-        pid, status = os.wait()
-    except OSError: # no more children
-      pass
-
-  dt = time.time() - t0
-  hours = dt // 3600
-  minutes = dt // 60 - 60 * hours
-  seconds = dt // 1 - 60 * minutes - 3600 * hours
-
-  log.info()
-  log.info( 'finish %s\n' % time.ctime() )
-  log.info( 'elapsed %02.0f:%02.0f:%02.0f' % ( hours, minutes, seconds ) )
-
-  if prop.profile:
-    import pstats
-    stream = log.getstream( 'warning' )
-    stream.write( 'profile results:\n' )
-    pstats.Stats( prof, stream=stream ).strip_dirs().sort_stats( 'time' ).print_stats()
-
-  if not exc_tb:
-    sys.exit( 0 )
-
-  debug.write_html( htmlfile, exc_value, exc_tb )
+  htmlfile = open( dumpdir+'log.html', 'w' )
+  htmlfile.write( '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "DTD/xhtml1-strict.dtd">\n' )
+  htmlfile.write( '<html><head>\n' )
+  htmlfile.write( '<title>%s %s</title>\n' % ( scriptname, time.strftime( '%Y/%m/%d %H:%M:%S', localtime ) ) )
+  htmlfile.write( '<script type="text/javascript" src="../../../../../viewer.js" ></script>\n' )
+  htmlfile.write( '<link rel="stylesheet" type="text/css" href="../../../../../style.css">\n' )
+  htmlfile.write( '<link rel="stylesheet" type="text/css" href="../../../../../custom.css">\n' )
+  htmlfile.write( '</head><body><pre>\n' )
+  htmlfile.write( '<span id="navbar">goto: <a class="nav_latest" href="../../../../log.html">latest %s</a> | <a class="nav_latestall" href="../../../../../log.html">latest overall</a> | <a class="nav_index" href="../../../../../">index</a></span>\n\n' % scriptname )
   htmlfile.flush()
 
-  debug.Explorer( repr(exc_value), exc_tb, intro='''\
-    Your program has died. The traceback exporer allows you to examine its
-    post-mortem state to figure out why this happened. Type 'help' for an
-    overview of commands to get going.''' ).cmdloop()
+  try:
 
-  sys.exit( 1 )
+    __logger__ = log.HtmlLog( htmlfile )
+    __dumpdir__ = dumpdir
+    __cachedir__ = basedir + 'cache'
+  
+    commandline = [ ' '.join([ scriptname, funcname ]) ] + [ '  --%s=%s' % item for item in kwargs.items() ]
+  
+    log.info( 'nutils v0.1+dev' )
+    log.info()
+    log.info( ' \\\n'.join( commandline ) + '\n' )
+    log.info( 'start %s\n' % time.ctime() )
+  
+    warnings.resetwarnings()
+  
+    t0 = time.time()
+    exc_tb = False
+  
+    if prop( 'profile' ):
+      import cProfile
+      prof = cProfile.Profile()
+      prof.enable()
+  
+    try:
+      func( **kwargs )
+    except KeyboardInterrupt:
+      log.error( 'killed by user' )
+    except Terminate, exc:
+      log.error( 'terminated:', exc )
+    except:
+      exc_value = sys.exc_value
+      exc_tb = debug.exception()
+      log.stack( repr(exc_value), exc_tb )
+  
+    if prop( 'profile' ):
+      prof.disable()
+  
+    if hasattr( os, 'wait' ):
+      try: # wait for child processes to die
+        while True:
+          pid, status = os.wait()
+      except OSError: # no more children
+        pass
+  
+    dt = time.time() - t0
+    hours = dt // 3600
+    minutes = dt // 60 - 60 * hours
+    seconds = dt // 1 - 60 * minutes - 3600 * hours
+  
+    log.info()
+    log.info( 'finish %s\n' % time.ctime() )
+    log.info( 'elapsed %02.0f:%02.0f:%02.0f' % ( hours, minutes, seconds ) )
+  
+    if prop( 'profile' ):
+      import pstats
+      stream = log.getstream( 'warning' )
+      stream.write( 'profile results:\n' )
+      pstats.Stats( prof, stream=stream ).strip_dirs().sort_stats( 'time' ).print_stats()
+  
+    if not exc_tb:
+      sys.exit( 0 )
+  
+    debug.write_html( htmlfile, exc_value, exc_tb )
+  
+    debug.Explorer( repr(exc_value), exc_tb, intro='''\
+      Your program has died. The traceback exporer allows you to examine its
+      post-mortem state to figure out why this happened. Type 'help' for an
+      overview of commands to get going.''' ).cmdloop()
+  
+    sys.exit( 1 )
+
+  finally:
+
+    htmlfile.write( '</pre></body></html>\n' )
+    htmlfile.close()
 
 class Terminate( Exception ):
   pass

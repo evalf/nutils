@@ -4,9 +4,8 @@ from nutils import *
 
 
 @parallel.fork
+@log.title
 def makeplots( domain, geom, sol, index ):
-
-  log.context( 'plots' )
 
   points, colors = domain.elem_eval( [ geom, sol ], ischeme='vertex2', separate=True )
   with plot.PyPlot( 'solution', index=index ) as plt:
@@ -45,7 +44,9 @@ def main( nelems=8, degree=1, beltrami=False ):
 
 def conv( degree=1, niter=4 ):
 
-  l2err, h1err = zip( *[ main( nelems=2**i, degree=degree ) for i in util.iterate( 'refine', niter ) ] )
+  l2err, h1err = zip( *[ main( nelems=2**i, degree=degree )
+    for i, __logger__ in log.count( 'refine', niter ) ] )
+  del __logger__
   h = (.25*numeric.pi) * .5**numeric.arange(niter)
 
   with plot.PyPlot( 'convergence' ) as plt:

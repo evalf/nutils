@@ -4,9 +4,8 @@ from nutils import *
 
 
 @parallel.fork
-def makeplots( domain, geom, velo, pres, index ):
-
-  log.context( 'figures' )
+@log.title
+def figures( domain, geom, velo, pres, index ):
 
   funcsp = domain.splinefunc( degree=2 )
   grad = funcsp.grad( geom )
@@ -17,8 +16,8 @@ def makeplots( domain, geom, velo, pres, index ):
   lhs = matrix.solve( rhs, constrain=cons )
   streamfunc = funcsp.dot( lhs )
 
-  xy, uv = domain.elem_eval( [ geom, velo ], ischeme=pointset.Uniform(1), title='flow field', separate=False )
-  points, stream, velo, pres, div = domain.elem_eval( [ geom, streamfunc, function.norm2(velo), pres, velo.div(geom) ], ischeme=pointset.Vertex(2), separate=True )
+  xy, uv = domain.elem_eval( [ geom, velo ], ischeme='uniform1', title='flow field', separate=False )
+  points, stream, velo, pres, div = domain.elem_eval( [ geom, streamfunc, function.norm2(velo), pres, velo.div(geom) ], ischeme='vertex2', separate=True )
 
   period = .04
   with plot.PyPlot( 'stream', index=index, ndigits=4 ) as plt:
@@ -107,8 +106,10 @@ def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e
 
   lhs = stokesmat.solve( stokesrhs, constrain=cons, tol=1e-10, precon='spilu' )
 
-  for iiter in util.iterate():
-    makeplots( domain, geom, vspace.dot(lhs), pspace.dot(lhs), iiter )
+  __logger__ = log.count( 'iteration' )
+  for iiter in __logger__:
+
+    figures( domain, geom, vspace.dot(lhs), pspace.dot(lhs), iiter )
     ugradu = ( vspace.grad(geom) * vspace.dot(lhs) ).sum()
     convection = reynolds * function.outer( vspace, ugradu ).sum()
     matrix = stokesmat + domain.integrate( convection, ischeme='gauss9', geometry=geom, title='navstokes matrix' )

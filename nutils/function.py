@@ -1,4 +1,4 @@
-from . import util, cache, numeric, transform, log, prop, _
+from . import util, cache, numeric, transform, log, _
 import sys, warnings
 
 ELEM    = object()
@@ -34,16 +34,16 @@ class EvaluationError( Exception ):
 class CompiledEvaluable( object ):
   'serialized version of evaluable object for actual evaluation'
 
+  @log.title
   def __init__( self, evaluable ):
     'compile'
 
-    log.context( 'compiling' )
     self.data = []
     operations = []
     self.cache = cache.CallDict()
     evaluable.recurse_index( self.data, operations ) # compile expressions
     self.operations = [ (evalf,idcs) for (op,evalf,idcs) in operations ] # break cycles!
-    if getattr( prop, 'dot', False ):
+    if util.prop( 'dot', False ):
       self.graphviz()
 
   def eval( self, elem, pointset ):
@@ -71,18 +71,17 @@ class CompiledEvaluable( object ):
       values.append( retval )
     return values[-1]
 
-  def graphviz( self, title='graphviz' ):
+  @log.title
+  def graphviz( self ):
     'create function graph'
-
-    log.context( title )
 
     import os, subprocess
 
-    dotpath = getattr( prop, 'dot', True )
+    dotpath = util.prop( 'dot', True )
     if not isinstance( dotpath, str ):
       dotpath = 'dot'
 
-    imgtype = getattr( prop, 'imagetype', 'png' )
+    imgtype = util.prop( 'imagetype', 'png' )
     imgpath = util.getpath( 'dot{0:03x}.' + imgtype )
 
     try:
@@ -3062,6 +3061,7 @@ def pointdata ( topo, ischeme, func=None, shape=None, value=None ):
 
   return Pointdata( data, shape )
 
+@log.title
 def fdapprox( func, w, dofs, delta=1.e-5 ):
   '''Finite difference approximation of the variation of func in directions w around dofs
   I: func,  the functional to differentiate
@@ -3069,7 +3069,6 @@ def fdapprox( func, w, dofs, delta=1.e-5 ):
      w,     the function space or a tuple of chained spaces
      delta, finite difference step scaling of ||dofs||_inf
   O: dfunc, approximate variation of func'''
-  log.context( 'FD approx' )
   if not isinstance( w, tuple ): w = w,
   x0 = tuple( wi.dot( dofs ) for wi in w )
   step = numeric.norm2( dofs, numeric.inf )*delta
