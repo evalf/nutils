@@ -1,4 +1,4 @@
-from test import unittest
+from test import unittest, testgroup
 from nutils import *
 import numpy
 
@@ -47,9 +47,8 @@ def find( target, xi0 ):
     assert iiter < 100, 'failed to converge in 100 iterations'
   return xi
 
+@testgroup
 def checkfunc( name, op, n_op, *shapes ):
-
-  print name,
 
   numpy.random.seed(0)
   args = [ ( numpy.random.uniform( size=shape+(funcsp.shape[0],) ) * funcsp ).sum() for shape in shapes ]

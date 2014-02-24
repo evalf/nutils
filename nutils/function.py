@@ -1,4 +1,4 @@
-from . import util, cache, numeric, transform, log, _
+from . import util, core, cache, numeric, transform, log, _
 import sys, warnings
 
 ELEM    = object()
@@ -43,7 +43,7 @@ class CompiledEvaluable( object ):
     self.cache = cache.CallDict()
     evaluable.recurse_index( self.data, operations ) # compile expressions
     self.operations = [ (evalf,idcs) for (op,evalf,idcs) in operations ] # break cycles!
-    if util.prop( 'dot', False ):
+    if core.prop( 'dot', False ):
       self.graphviz()
 
   def eval( self, elem, pointset ):
@@ -77,11 +77,11 @@ class CompiledEvaluable( object ):
 
     import os, subprocess
 
-    dotpath = util.prop( 'dot', True )
+    dotpath = core.prop( 'dot', True )
     if not isinstance( dotpath, str ):
       dotpath = 'dot'
 
-    imgtype = util.prop( 'imagetype', 'png' )
+    imgtype = core.prop( 'imagetype', 'png' )
     imgpath = util.getpath( 'dot{0:03x}.' + imgtype )
 
     try:

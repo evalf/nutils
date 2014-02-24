@@ -516,7 +516,6 @@ class DenseMatrix( Matrix ):
     data = self.data[I]
 
     x[J] = numeric.solve( data[:,J], b[I] - numeric.dot( data[:,~J], x[~J] ) )
-    log.info( 'done' )
 
     return x
 

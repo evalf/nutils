@@ -1,4 +1,4 @@
-from . import util, log, debug
+from . import core, log, debug
 import os, sys, multiprocessing, thread, numpy
 
 Lock = multiprocessing.Lock
@@ -57,7 +57,7 @@ def shzeros( shape, dtype=float ):
 def pariter( iterable ):
   'iterate parallel'
 
-  nprocs = util.prop( 'nprocs', 1 )
+  nprocs = core.prop( 'nprocs', 1 )
   return iterable if nprocs <= 1 else _pariter( iterable, nprocs )
 
 def _pariter( iterable, nprocs ):

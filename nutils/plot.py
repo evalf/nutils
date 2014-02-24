@@ -1,4 +1,4 @@
-from . import topology, util, function, element, log, numeric, debug, _
+from . import topology, core, util, function, element, log, numeric, debug, _
 from scipy import spatial # for def mesh; import cannot be postponed apparently
 import os, warnings
 
@@ -12,7 +12,7 @@ class BasePlot( object ):
 
   def __init__ ( self, name, ndigits=0, index=None ):
 
-    self.path = util.prop( 'dumpdir' )
+    self.path = core.prop( 'dumpdir' )
 
     assert isinstance(ndigits,int) and ndigits >= 0, 'nonnegative integer required'
     if ndigits:
@@ -63,7 +63,7 @@ class PyPlot( BasePlot ):
     import matplotlib
     matplotlib.use( 'Agg', warn=False )
 
-    imgtype = util.prop( 'imagetype', 'png' ) if imgtype is None else imgtype
+    imgtype = core.prop( 'imagetype', 'png' ) if imgtype is None else imgtype
     self.names = [ self.name + '.' + ext for ext in imgtype.split(',') ]
 
     from matplotlib import pyplot
@@ -513,7 +513,7 @@ class Pylab( object ):
     matplotlib.use( 'Agg', warn=False )
 
     if '.' not in name.format(0):
-      imgtype = util.prop( 'imagetype', 'png' )
+      imgtype = core.prop( 'imagetype', 'png' )
       name += '.' + imgtype
 
     if isinstance( title, (list,tuple) ):
@@ -544,7 +544,7 @@ class Pylab( object ):
       return #True
 
     from matplotlib import pyplot
-    dumpdir = util.prop( 'dumpdir' )
+    dumpdir = core.prop( 'dumpdir' )
     n = len( os.listdir( dumpdir ) )
     imgpath = util.getpath( self.name )
     pyplot.savefig( imgpath, format=imgpath.split('.')[-1] )

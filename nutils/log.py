@@ -1,14 +1,24 @@
 from __future__ import print_function
-import sys, time, os, warnings, numeric, re, util
+import sys, time, os, warnings, re
+from . import numeric, core
 
 warnings.showwarning = lambda message, category, filename, lineno, *args: \
   warning( '%s: %s\n  In %s:%d' % ( category.__name__, message, filename, lineno ) )
 
+LEVELS = 'path', 'error', 'warning', 'user', 'info', 'progress', 'debug'
+
 
 ## LOGGERS, STREAMS
 
+class devnull( object ):
+  @staticmethod
+  def write( text ):
+    pass
 
-def SimpleLog( level ): # just writes to stdout
+def SimpleLog( level, *contexts ): # just writes to stdout
+  verbosity = core.prop( 'verbosity', 6 )
+  if level in LEVELS[ verbosity: ]:
+    return devnull
   sys.stdout.writelines( '%s > ' % context for context in contexts )
   return sys.stdout
 
@@ -27,7 +37,7 @@ class HtmlStream( object ):
   def __init__( self, level, contexts, html ):
     'constructor'
 
-    sys.stdout.writelines( '%s > ' % context for context in contexts )
+    self.out = SimpleLog( level, *contexts )
     self.level = level
     self.head = ''.join( '%s &middot; ' % context for context in contexts )
     self.body = ''
@@ -36,12 +46,12 @@ class HtmlStream( object ):
   def write( self, text ):
     'write to out and buffer for html'
 
-    sys.stdout.write( text )
+    self.out.write( text )
     self.body += text.replace( '<', '&lt;' ).replace( '>', '&gt;' )
 
   @staticmethod
   def _path2href( match ):
-    whitelist = ['.jpg','.png','.svg','.txt'] + util.prop( 'plot_extensions', [] )
+    whitelist = ['.jpg','.png','.svg','.txt'] + core.prop( 'plot_extensions', [] )
     filename = match.group(0)
     ext = match.group(1)
     return '<a href="%s">%s</a>' % (filename,filename) if ext not in whitelist \
@@ -81,9 +91,9 @@ class IterLog( object ):
     self.index = -1
 
     # clock
-    self.dt = util.prop( 'progress_interval', 1. )
-    self.dtexp = util.prop( 'progress_interval_scale', 2 )
-    self.dtmax = util.prop( 'progress_interval_max', numeric.inf )
+    self.dt = core.prop( 'progress_interval', 1. )
+    self.dtexp = core.prop( 'progress_interval_scale', 2 )
+    self.dtmax = core.prop( 'progress_interval_max', numeric.inf )
     self.tnext = time.time() + self.dt
 
   def mktitle( self ):
@@ -110,6 +120,26 @@ class IterLog( object ):
   def __call__( self, level, *contexts ):
     return self.parent( level, self.mktitle(), *contexts ) if self.index >= 0 \
       else self.parent( level, *contexts )
+
+class CaptureLog( object ):
+  'capture output without printing'
+
+  def __init__( self ):
+    self.buf = ''
+
+  def __nonzero__( self ):
+    return bool( self.buf )
+
+  def __str__( self ):
+    return self.buf
+
+  def __call__( self, level, *contexts ):
+    for context in contexts:
+      self.buf += '%s > ' % context
+    return self
+
+  def write( self, text ):
+    self.buf += text
 
 
 ## UTILITY FUNCTIONS
@@ -146,20 +176,16 @@ def title( f ): # decorator
   return wrapped
 
 def getlogger():
-  return util.prop( 'logger', SimpleLog )
+  return core.prop( 'logger', SimpleLog )
 
 def getstream( level ):
   __logger__ = getlogger()
   return __logger__( level )
 
+def _mklog( level ):
+  return lambda *args: print( *args, file=getstream(level) )
 
-path     = lambda *args: print( *args, file=getstream( 'path'     ) )
-error    = lambda *args: print( *args, file=getstream( 'error'    ) )
-warning  = lambda *args: print( *args, file=getstream( 'warning'  ) )
-user     = lambda *args: print( *args, file=getstream( 'user'     ) )
-info     = lambda *args: print( *args, file=getstream( 'info'     ) )
-progress = lambda *args: print( *args, file=getstream( 'progress' ) )
-debug    = lambda *args: print( *args, file=getstream( 'debug'    ) )
+locals().update({ level: _mklog(level) for level in LEVELS })
 
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

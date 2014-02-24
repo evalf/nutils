@@ -1,16 +1,5 @@
-from . import log, numeric
+from . import log, numeric, core
 import sys, os, time, warnings, itertools
-
-_nodefault = object()
-def prop( name, default=_nodefault ):
-  frame = sys._getframe(1)
-  key = '__%s__' % name
-  while frame:
-    if key in frame.f_locals:
-      return frame.f_locals[key]
-    frame = frame.f_back
-  assert default is not _nodefault, 'property %r is not defined' % name
-  return default
 
 def unreachable_items():
   # see http://stackoverflow.com/questions/16911559/trouble-understanding-pythons-gc-garbage-for-tracing-memory-leaks
@@ -120,7 +109,7 @@ def profile( func ):
 def getpath( pattern ):
   'create file in dumpdir'
 
-  dumpdir = prop( 'dumpdir' )
+  dumpdir = core.prop( 'dumpdir' )
   if pattern == pattern.format( 0 ):
     return dumpdir + pattern
   prefix = pattern.split( '{' )[0]
@@ -205,9 +194,9 @@ class Clock( object ):
   def __init__( self, dt=None, dtexp=None, dtmax=None ):
     'constructor'
 
-    self.dt = prop( 'progress_interval', 1. ) if dt is None else dt
-    self.dtexp = prop( 'progress_interval_scale', 2 ) if dtexp is None else dtexp
-    self.dtmax = prop( 'progress_interval_max', numeric.inf ) if dtmax is None else dtmax
+    self.dt = core.prop( 'progress_interval', 1. ) if dt is None else dt
+    self.dtexp = core.prop( 'progress_interval_scale', 2 ) if dtexp is None else dtexp
+    self.dtmax = core.prop( 'progress_interval_max', numeric.inf ) if dtmax is None else dtmax
     self.reset()
 
   def reset( self ):
@@ -294,7 +283,7 @@ def run( *functions ):
   properties = {
     'nprocs': 1,
     'outdir': '~/public_html',
-    'verbose': 5,
+    'verbosity': 6,
     'imagetype': 'png',
     'symlink': False,
     'recache': False,
@@ -314,7 +303,7 @@ def run( *functions ):
   --help                  Display this help
   --nprocs=%(nprocs)-14s Select number of processors
   --outdir=%(outdir)-14s Define directory for output
-  --verbose=%(verbose)-13s Set verbosity level, 9=all
+  --verbosity=%(verbosity)-13s Set verbosity level, 9=all
   --imagetype=%(imagetype)-11s Set image type
   --symlink=%(symlink)-13s Create symlink to latest results
   --recache=%(recache)-13s Overwrite existing cache
@@ -361,7 +350,7 @@ def run( *functions ):
   locals().update({ '__%s__' % name: value for name, value in properties.iteritems() })
 
   scriptname = os.path.basename(sys.argv[0])
-  outdir = os.path.expanduser( prop( 'outdir' ) ).rstrip( os.sep ) + os.sep
+  outdir = os.path.expanduser( core.prop( 'outdir' ) ).rstrip( os.sep ) + os.sep
   basedir = outdir + scriptname + os.sep
   localtime = time.localtime()
   timepath = time.strftime( '%Y/%m/%d/%H-%M-%S/', localtime )
@@ -369,7 +358,7 @@ def run( *functions ):
   dumpdir = basedir + timepath
   os.makedirs( dumpdir ) # asserts nonexistence
 
-  if prop( 'symlink', False ):
+  if core.prop( 'symlink', False ):
     for i in range(2): # make two links
       target = outdir
       dest = ''
@@ -377,7 +366,7 @@ def run( *functions ):
         target += scriptname + os.sep
       else: # script-local link
         dest += scriptname + os.sep
-      target += prop( 'symlink' )
+      target += core.prop( 'symlink' )
       dest += timepath
       if os.path.islink( target ):
         os.remove( target )
@@ -428,7 +417,7 @@ def run( *functions ):
     t0 = time.time()
     exc_tb = False
   
-    if prop( 'profile' ):
+    if core.prop( 'profile' ):
       import cProfile
       prof = cProfile.Profile()
       prof.enable()
@@ -444,7 +433,7 @@ def run( *functions ):
       exc_tb = debug.exception()
       log.stack( repr(exc_value), exc_tb )
   
-    if prop( 'profile' ):
+    if core.prop( 'profile' ):
       prof.disable()
   
     if hasattr( os, 'wait' ):
@@ -463,7 +452,7 @@ def run( *functions ):
     log.info( 'finish %s\n' % time.ctime() )
     log.info( 'elapsed %02.0f:%02.0f:%02.0f' % ( hours, minutes, seconds ) )
   
-    if prop( 'profile' ):
+    if core.prop( 'profile' ):
       import pstats
       stream = log.getstream( 'warning' )
       stream.write( 'profile results:\n' )
