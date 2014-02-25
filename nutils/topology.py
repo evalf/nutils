@@ -280,9 +280,12 @@ class Topology( object ):
     __logger__ = log.iter( 'elem', self )
     for elem in __logger__:
       p, n = elem[-1].trim( levelset=(elem[:-1]+(levelset,)), maxrefine=maxrefine, minrefine=minrefine )
-      if p: pos.append( elem[:-1]+(p,) )
-      if n: neg.append( elem[:-1]+(n,) )
-    return Topology( ndims=self.ndims, elements=pos ), Topology( ndims=self.ndims, elements=neg )
+      if p:
+        pos.append( elem[:-1]+(p,) )
+      if n:
+        neg.append( elem[:-1]+(n,) )
+    return Topology( ndims=self.ndims, elements=pos ), \
+           Topology( ndims=self.ndims, elements=neg )
 
   @cache.property
   def simplex( self ):

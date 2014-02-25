@@ -272,4 +272,4 @@ def delaunay( points ):
     offset = points[ tri[0] ]
     matrix = numeric.array( [ points[i] - offset for i in tri[1:] ] ).T
     sign = 1 if numeric.det( matrix ) > 0 else -1
-    yield Linear( matrix, sign ) + offset
+    yield tri, Linear( matrix, sign ) + offset

@@ -61,18 +61,18 @@ class Reference( Element ):
         return self, None
       if numeric.less( levelset, +eps ).all():
         return None, self
-      poscoords = []
-      negcoords = []
-      for coord, value in zip( self.vertices, levelset ):
-        if value >= 0: poscoords.append( coord )
-        if value <= 0: negcoords.append( coord )
-      for w in self._get_intersections( levelset ):
-        v = numeric.dot( w, self.vertices )
-        poscoords.append( v )
-        negcoords.append( v )
+      coords = numeric.vstack([ self.vertices,
+        numeric.dot( self._get_intersections(levelset), self.vertices ) ])
+      pos, neg = [], []
       simplex = Simplex( self.ndims )
-      pos = [ (trans,simplex) for trans in transform.delaunay(poscoords) ]
-      neg = [ (trans,simplex) for trans in transform.delaunay(negcoords) ]
+      for tri, trans in transform.delaunay(coords):
+        signs_tri = [ levelset[i] for i in tri if i < self.nverts ]
+        if numeric.greater( signs_tri, -eps ).all():
+          pos.append( (trans,simplex) )
+        elif numeric.less( signs_tri, eps ).all():
+          neg.append( (trans,simplex) )
+        else:
+          raise Exception, 'domains do not separate in two convex parts'
     else: # recurse
       pos, neg = [], []
       if minrefine == 0:
@@ -133,12 +133,13 @@ class Simplex( Reference ):
   def _get_intersections( self, values ):
     assert values.shape == (self.nverts,)
     if self.ndims != 1:
-      raise NotImplementedError
+      raise NotImplementedError, 'only line intersections supported for now'
     v0, v1 = values
     if v0 != v1: 
       x = -v0 / float(v1-v0) # v0 + x (v1-v0) = 0
       if 0 < x < 1:
-        yield numeric.array([ 1-x, x ])
+        return numeric.array([[ 1-x, x ]])
+    return numeric.empty(( 0, self.nverts ))
 
   @cache.propertylist
   def _child_subsets( self, level ):
@@ -436,12 +437,10 @@ class Tensor( Reference ):
 
   def _get_intersections( self, values ):
     values = values.reshape( self.simplex1.nverts, self.simplex2.nverts )
-    for i1, w1 in enumerate( numeric.eye(self.simplex1.nverts) ):
-      for w2 in self.simplex2._get_intersections( values[i1,:] ):
-        yield ( w1[:,_] * w2[_,:] ).ravel()
-    for i2, w2 in enumerate( numeric.eye(self.simplex2.nverts) ):
-      for w1 in self.simplex1._get_intersections( values[:,i2] ):
-        yield ( w1[:,_] * w2[_,:] ).ravel()
+    return numeric.vstack(
+      [ numeric.kronecker( self.simplex2._get_intersections(v), axis=1, index=i1, length=self.simplex1.nverts ) for i1, v in enumerate(values) ]
+    + [ numeric.kronecker( self.simplex1._get_intersections(v), axis=2, index=i2, length=self.simplex2.nverts ) for i2, v in enumerate(values.T) ]
+      ).reshape( -1, self.nverts )
 
 
 ## STDELEMS

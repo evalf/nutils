@@ -3,13 +3,6 @@
 from nutils import *
 
 
-@util.withrepr
-def Hook( lmbda, mu ):
-  return lambda disp, geom: \
-    lmbda * disp.div(geom)[...,_,_] * function.eye( geom.shape[0] ) \
-  + (2*mu) * disp.symgrad(geom)
-
-
 def surface_volume( ndims ):
   volume = 1.
   surf0 = 2.
@@ -20,7 +13,7 @@ def surface_volume( ndims ):
   return surface, volume
 
 
-def main( ndims=2, nelems=4, maxrefine=2, stress=Hook(1,1) ):
+def main( ndims=2, nelems=4, maxrefine=2, stress=library.Hooke(lmbda=1,mu=1) ):
 
   verts = numeric.linspace( 0, 2**(1./ndims), nelems+1 )
   wholedomain, geom = mesh.rectilinear( [verts]*ndims )
