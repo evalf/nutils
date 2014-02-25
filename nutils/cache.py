@@ -63,28 +63,32 @@ class Immutable( object ):
   'weakly cache object instances based on init args'
 
   __slots__ = '__weakref__',
-  __cache = weakref.WeakValueDictionary()
 
-  def __new__( *args, **kwargs ):
-    init = args[0].__init__.im_func
-    names = init.func_code.co_varnames[len(args):init.func_code.co_argcount]
-    for name in names:
-      try:
-        val = kwargs.pop(name)
-      except KeyError:
-        index = names.index(name)-len(names)
+  class __metaclass__( type ):
+    def __init__( cls, *args, **kwargs ):
+      type.__init__( cls, *args, **kwargs )
+      cls.cache = weakref.WeakValueDictionary()
+    def __call__( cls, *args, **kwargs ):
+      code = cls.__init__.func_code
+      names = code.co_varnames[len(args)+1:code.co_argcount]
+      for name in names:
         try:
-          val = init.func_defaults[ names.index(name)-len(names) ]
-        except Exception as e:
-          raise TypeError, '%s.__init__ missing mandatory argument %r' % ( args[0].__name__, name )
-      args += val,
-    assert not kwargs
-    try:
-      self = Immutable.__cache[args]
-    except KeyError:
-      self = object.__new__( args[0] )
-      Immutable.__cache[args] = self
-    return self
+          val = kwargs.pop(name)
+        except KeyError:
+          index = names.index(name)-len(names)
+          try:
+            val = cls.__init__.func_defaults[index]
+          except Exception as e:
+            raise TypeError, '%s.__init__ missing mandatory argument %r' % ( cls.__name__, name )
+        args += val,
+      assert not kwargs, '%s.__init__ got invalid arguments: %s' % ( cls.__name__, ', '.join(kwargs) )
+      try:
+        self = cls.cache[args]
+      except KeyError:
+        self = type.__call__( cls, *args )
+        cls.cache[args] = self
+      return self
+
 
 class FileCache( object ):
   'cache'
