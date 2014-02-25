@@ -98,24 +98,28 @@ class Simplex( Reference ):
     'constructor'
 
     assert ndims >= 0
-    Reference.__init__( self, numeric.concatenate([numeric.zeros(ndims)[_,:],numeric.eye(ndims)],axis=0) )
+    vertices = numeric.concatenate( [numeric.zeros(ndims)[_,:],numeric.eye(ndims)], axis=0 )
+    Reference.__init__( self, vertices )
 
     if ndims == 0: # point
       return
 
     edge = Simplex( ndims-1 )
+
     if ndims == 1: # line
       trans0 = transform.Point( -1 )
       trans1 = transform.Point( +1 ) + [1]
       self.edges = (trans0,edge), (trans1,edge)
       scale = transform.Scale( numeric.array([.5]) )
       self.children = (scale,self), (scale+[.5],self)
-    elif ndims == 2: # triangle
-      self.edges = (
-        ( transform.Linear( numeric.array([[ 1],[ 0]]) ), edge ),
-        ( transform.Linear( numeric.array([[-1],[ 1]]) ) + [1,0], edge ),
-        ( transform.Linear( numeric.array([[ 0],[-1]]) ) + [0,1], edge ),
-      )
+      return
+
+    eye2 = numeric.vstack( [numeric.eye( ndims )]*2 ) # ndims*2 x ndims
+    self.edges = [ ( transform.Linear( (eye2[idim:][1:ndims]).T ), edge ) for idim in range( ndims ) ] \
+      + [( transform.Linear( (vertices[2:]-vertices[1]).T ) + vertices[1], edge )]
+    assert all( trans.fromdim == ndims-1 and trans.todim == ndims for trans, edge_ in self.edges )
+
+    if ndims == 2: # triangle
       scale = transform.Scale( numeric.asarray([.5,.5]) )
       negscale = transform.Scale( -numeric.asarray([.5,.5]) )
       self.children = (
