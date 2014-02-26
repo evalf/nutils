@@ -276,16 +276,26 @@ class Topology( object ):
     'trim element along levelset'
 
     levelset = function.ascompiled( levelset )
-    pos, neg = [], []
+    pos, nul, neg = [], [], []
     __logger__ = log.iter( 'elem', self )
     for elem in __logger__:
-      p, n = elem[-1].trim( levelset=(elem[:-1]+(levelset,)), maxrefine=maxrefine, minrefine=minrefine )
-      if p:
-        pos.append( elem[:-1]+(p,) )
-      if n:
-        neg.append( elem[:-1]+(n,) )
-    return Topology( ndims=self.ndims, elements=pos ), \
-           Topology( ndims=self.ndims, elements=neg )
+      p, i, n = elem[-1].trim( levelset=(elem[:-1]+(levelset,)), maxrefine=maxrefine, minrefine=minrefine )
+      if p: pos.append( elem[:-1]+(p,) )
+      if i: nul.append( elem[:-1]+(i,) )
+      if n: neg.append( elem[:-1]+(n,) )
+    postopo = Topology( ndims=self.ndims, elements=pos )
+    negtopo = Topology( ndims=self.ndims, elements=neg )
+
+    bpos, bneg = [ nul ], [ nul ]
+    __logger__ = log.iter( 'belem', self.boundary )
+    for belem in __logger__:
+      p, i, n = belem[-1].trim( levelset=(belem[:-1]+(levelset,)), maxrefine=maxrefine, minrefine=minrefine )
+      if p: bpos.append( belem[:-1]+(p,) )
+      if n: bneg.append( belem[:-1]+(n,) )
+    postopo.boundary = Topology( ndims=self.ndims-1, elements=bpos )
+    negtopo.boundary = Topology( ndims=self.ndims-1, elements=bneg )
+
+    return postopo, negtopo
 
   @cache.property
   def simplex( self ):
@@ -340,31 +350,17 @@ class StructuredTopology( Topology ):
     boundaries = []
     for iedge in range( 2 * self.ndims ):
       idim = iedge // 2
-      iside = iedge % 2
-      if self.ndims > 1:
-        s = [ slice(None,None,-1) ] * idim \
-          + [ -iside, ] \
-          + [ slice(None,None,1) ] * (self.ndims-idim-1)
-        if not iside: # TODO: check that this is correct for all dimensions; should match conventions in elem.edge
-          s[idim-1] = slice(None,None,1 if idim else -1)
-        elems = self.structure[tuple(s)]
-        belems = numeric.empty( elems.shape, dtype=object )
-        for index, elem in numeric.enumerate_nd( elems ):
-          belems[ index ] = elem[:-1] + elem[-1].edges[iedge]
-      else:
-        belems = numeric.array( self.structure[-iside].edge( 1-iedge ) )
+      iside = -1 if iedge % 2 == 0 else 0
+      elems = numeric.getitem( self.structure[...,_], axis=idim, item=iside ) # add axis to keep an array even if ndims=1
+      belems = numeric.empty( elems.shape[:-1], dtype=object )
+      for index, elem in numeric.enumerate_nd( elems ):
+        belems[ index[:-1] ] = elem[:-1] + elem[-1].edges[iedge]
       periodic = [ d - (d>idim) for d in self.periodic if d != idim ] # TODO check that dimensions are correct for ndim > 2
       boundaries.append( StructuredTopology( belems, periodic=periodic ) )
-    groups = dict( zip( ( 'left', 'right', 'bottom', 'top', 'front', 'back' ), boundaries ) )
+    groups = dict( zip( ( 'right', 'left', 'top', 'bottom', 'back', 'front' ), boundaries ) )
 
-    if self.ndims == 2:
-      structure = numeric.concatenate([ boundaries[i].structure for i in [0,2,1,3] ])
-      topo = StructuredTopology( structure, periodic=[0], groups=groups )
-    else:
-      allbelems = [ belem for boundary in boundaries for belem in boundary.structure.flat if belem is not None ]
-      topo = Topology( elements=allbelems, ndims=self.ndims-1, groups=groups )
-
-    return topo
+    allbelems = [ belem for boundary in boundaries for belem in boundary.structure.flat if belem is not None ]
+    return Topology( elements=allbelems, ndims=self.ndims-1, groups=groups )
 
   def splinefunc( self, degree, neumann=(), periodic=None, closed=False, removedofs=None ):
     'spline from vertices'

@@ -53,44 +53,50 @@ class Reference( Element ):
     assert maxrefine >= minrefine >= 0
     if minrefine == 0 and not numeric.isarray( levelset ):
       from pointset import Pointset
-      vertex = Pointset( 'vertex', maxrefine - minrefine )
+      vertex = Pointset( 'vertex', maxrefine )
       levelset = levelset[-1].eval( levelset[:-1]+(self,), vertex )
     if maxrefine == 0: # check values
       assert levelset.shape == (self.nverts,)
       if numeric.greater( levelset, -eps ).all():
-        return self, None
+        return self, None, None
       if numeric.less( levelset, +eps ).all():
-        return None, self
+        return None, None, self
       coords = numeric.vstack([ self.vertices,
         numeric.dot( self._get_intersections(levelset), self.vertices ) ])
-      pos, neg = [], []
+      pos, nul, neg = [], [], []
       simplex = Simplex( self.ndims )
-      for tri, trans in transform.delaunay(coords):
+      for tri in util.delaunay( coords ):
+        trans = transform.simplex( coords[tri] )
         signs_tri = [ levelset[i] for i in tri if i < self.nverts ]
         if numeric.greater( signs_tri, -eps ).all():
+          extra = numeric.find([ i < self.nverts and levelset[i] > eps for i in tri ])
+          if len(extra) == 1:
+            iedge, = extra # all vertices except for iedge lie on the interface
+            nul.append( (trans,)+simplex.edges[iedge] )
           pos.append( (trans,simplex) )
         elif numeric.less( signs_tri, eps ).all():
           neg.append( (trans,simplex) )
         else:
           raise Exception, 'domains do not separate in two convex parts'
     else: # recurse
-      pos, neg = [], []
+      pos, nul, neg = [], [], []
       if minrefine == 0:
         nverts, subs = self._child_subsets[maxrefine-1]
         assert levelset.shape == (nverts,)
         sub = iter(subs)
       for trans, elem in self.children:
-        p, n = elem.trim( levelset[:-1]+(trans,)+levelset[-1:], maxrefine-1, minrefine-1 ) if minrefine \
-          else elem.trim( levelset[sub.next()], maxrefine-1, 0 )
-        if p:
-          pos.append( (trans,p) )
-        if n:
-          neg.append( (trans,n) )
+        p, i, n = elem.trim( levelset[:-1]+(trans,)+levelset[-1:], maxrefine-1, minrefine-1 ) if minrefine \
+             else elem.trim( levelset[sub.next()], maxrefine-1, 0 )
+        if p: pos.append( (trans,p) )
+        if i: nul.append( (trans,i) )
+        if n: neg.append( (trans,n) )
       if not neg:
-        return self, None
+        assert not nul
+        return self, None, None
       if not pos:
-        return None, self
-    return Mosaic( self.ndims, tuple(pos) ), Mosaic( self.ndims, tuple(neg) )
+        assert not nul
+        return None, None, self
+    return Mosaic( self.ndims, tuple(pos) ), Mosaic( self.ndims-1, tuple(nul) ), Mosaic( self.ndims, tuple(neg) )
 
 class Simplex( Reference ):
 
@@ -107,17 +113,19 @@ class Simplex( Reference ):
     edge = Simplex( ndims-1 )
 
     if ndims == 1: # line
-      trans0 = transform.Point( -1 )
-      trans1 = transform.Point( +1 ) + [1]
+      trans0 = transform.Point( +1 ) + [1]
+      trans1 = transform.Point( -1 )
       self.edges = (trans0,edge), (trans1,edge)
       scale = transform.Scale( numeric.array([.5]) )
       self.children = (scale,self), (scale+[.5],self)
       return
 
     eye2 = numeric.vstack( [numeric.eye( ndims )]*2 ) # ndims*2 x ndims
-    self.edges = [ ( transform.Linear( (eye2[idim:][1:ndims]).T ), edge ) for idim in range( ndims ) ] \
-      + [( transform.Linear( (vertices[2:]-vertices[1]).T ) + vertices[1], edge )]
+    self.edges = [( transform.Linear( (vertices[2:]-vertices[1]).T ) + vertices[1], edge )] \
+      + [ ( transform.Linear( (eye2[idim:][1:ndims]).T ), edge ) for idim in range( ndims ) ]
+
     assert all( trans.fromdim == ndims-1 and trans.todim == ndims for trans, edge_ in self.edges )
+    assert len( self.edges ) == self.ndims + 1
 
     if ndims == 2: # triangle
       scale = transform.Scale( numeric.asarray([.5,.5]) )

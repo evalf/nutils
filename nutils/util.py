@@ -68,9 +68,18 @@ unit = _Unit()
 def delaunay( points ):
   'delaunay triangulation'
 
+  points = numeric.asarray( points )
+  npoints, ndims = points.shape
+  assert ndims >= 1, 'ndims should be at least 1'
+  if npoints < 1 + ndims:
+    return []
+  if ndims == 1:
+    indices = numeric.argsort( points[:,0] )
+    return numeric.overlapping( indices )
   from scipy import spatial
   with suppressed_output:
-    return spatial.Delaunay( points )
+    submesh = spatial.Delaunay( points )
+  return submesh.vertices
 
 def withrepr( f ):
   'add string representation to generated function'

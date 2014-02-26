@@ -260,16 +260,9 @@ def tensor( trans1, trans2 ):
     linear = Linear( matrix, sign )
   return linear + offset
 
-
-def delaunay( points ):
-  points = numeric.asarray( points )
-  npoints, ndims = points.shape
-  assert 2 <= ndims <= 3, 'delaunay supports only 2D and 3D coordinates'
-  if npoints < 1 + ndims:
-    return
-  submesh = util.delaunay( points )
-  for tri in submesh.vertices:
-    offset = points[ tri[0] ]
-    matrix = numeric.array( [ points[i] - offset for i in tri[1:] ] ).T
-    sign = 1 if numeric.det( matrix ) > 0 else -1
-    yield tri, Linear( matrix, sign ) + offset
+def simplex( points ):
+  assert points.shape[0] == points.shape[1] + 1
+  offset = points[0]
+  matrix = ( points[1:] - offset ).T
+  sign = 1 if numeric.det( matrix ) > 0 else -1
+  return Linear( matrix, sign ) + offset

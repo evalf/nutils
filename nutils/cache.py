@@ -89,7 +89,6 @@ class Immutable( object ):
         cls.cache[args] = self
       return self
 
-
 class FileCache( object ):
   'cache'
 
@@ -123,3 +122,6 @@ class FileCache( object ):
       msg = 'loaded from'
     log.info( msg, 'cache:', name, '[%db]' % (self.data.tell()-pos) )
     return data
+
+
+# vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
