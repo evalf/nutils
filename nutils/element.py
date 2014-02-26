@@ -72,7 +72,8 @@ class Reference( Element ):
           extra = numeric.find([ i < self.nverts and levelset[i] > eps for i in tri ])
           if len(extra) == 1:
             iedge, = extra # all vertices except for iedge lie on the interface
-            nul.append( (trans,)+simplex.edges[iedge] )
+            etrans, esimplex = simplex.edges[iedge]
+            nul.append( (trans*etrans,esimplex) )
           pos.append( (trans,simplex) )
         elif numeric.less( signs_tri, eps ).all():
           neg.append( (trans,simplex) )

@@ -22,17 +22,19 @@ class ElemMap( dict ):
 
 class Topology( object ):
 
-  def __init__( self, ndims, elements, groups=None ):
+  def __init__( self, ndims, elements ):
     self.ndims = ndims
     self.elements = numeric.empty( len(elements), dtype=object )
     self.elements[:] = elements
     self.elements.sort()
-    self.groups = groups or {}
 
   def __getitem__( self, item ):
-    if isinstance( item, str ):
-      return eval( item.replace(',','|'), self.groups )
     return self.elements[ item ]
+
+  def index( self, elements ):
+    if isinstance( elements, Topology ):
+      elements = elements.elements
+    return numeric.findsorted( self.elements, elements )
 
   def _set( self, other, op ):
     assert self.ndims == other.ndims
@@ -276,25 +278,29 @@ class Topology( object ):
     'trim element along levelset'
 
     levelset = function.ascompiled( levelset )
-    pos, nul, neg = [], [], []
-    __logger__ = log.iter( 'elem', self )
-    for elem in __logger__:
+    pos = numeric.zeros_like( self.elements )
+    neg = numeric.zeros_like( self.elements )
+    nul = []
+    __logger__ = log.enumerate( 'elem', self )
+    for ielem, elem in __logger__:
       p, i, n = elem[-1].trim( levelset=(elem[:-1]+(levelset,)), maxrefine=maxrefine, minrefine=minrefine )
-      if p: pos.append( elem[:-1]+(p,) )
-      if i: nul.append( elem[:-1]+(i,) )
-      if n: neg.append( elem[:-1]+(n,) )
-    postopo = Topology( ndims=self.ndims, elements=pos )
-    negtopo = Topology( ndims=self.ndims, elements=neg )
-
-    bpos, bneg = [ nul ], [ nul ]
-    __logger__ = log.iter( 'belem', self.boundary )
-    for belem in __logger__:
-      p, i, n = belem[-1].trim( levelset=(belem[:-1]+(levelset,)), maxrefine=maxrefine, minrefine=minrefine )
-      if p: bpos.append( belem[:-1]+(p,) )
-      if n: bneg.append( belem[:-1]+(n,) )
-    postopo.boundary = Topology( ndims=self.ndims-1, elements=bpos )
-    negtopo.boundary = Topology( ndims=self.ndims-1, elements=bneg )
-
+      if p: pos[ielem] = elem[:-1] + (p,)
+      if i: nul.append( elem[:-1] + (i,) )
+      if n: neg[ielem] = elem[:-1] + (n,)
+    posgroups, neggroups = {}, {}
+    for key, groupelems in self.groups.items():
+      ind = self.index( groupelems )
+      posgroups[key] = Topology( ndims=self.ndims, elements=filter(None,pos[ind]) )
+      neggroups[key] = Topology( ndims=self.ndims, elements=filter(None,neg[ind]) )
+    if self.boundary:
+      posboundary, negboundary = self.boundary.trim( levelset, maxrefine, minrefine )
+      trim = UnstructuredTopology( ndims=self.ndims-1, elements=nul )
+      posboundary = posboundary.new_with_group( 'trim', trim )
+      negboundary = negboundary.new_with_group( 'trim', trim )
+    else:
+      posboundary = negboundary = None
+    postopo = UnstructuredTopology( ndims=self.ndims, elements=filter(None,pos), groups=posgroups, boundary=posboundary )
+    negtopo = UnstructuredTopology( ndims=self.ndims, elements=filter(None,neg), groups=neggroups, boundary=negboundary )
     return postopo, negtopo
 
   @cache.property
@@ -308,9 +314,7 @@ class Topology( object ):
 
   @cache.property
   def refined( self ):
-    children = [ elem[:-1] + child for elem in self for child in elem[-1].children ]
-    groups = { key: topo.refined for key, topo in self.groups.items() }
-    return Topology( ndims=self.ndims, elements=children, groups=groups )
+    return RefinedTopology( self )
 
   def refined_by( self, refine ):
     'create refined space by refining dofs in existing one'
@@ -333,12 +337,35 @@ class Topology( object ):
     assert not refine, 'not all refinement elements were found: %s' % '\n '.join( str(e) for e in refine )
     return HierarchicalTopology( self, refined )
 
+class UnstructuredTopology( Topology ):
+
+  def __init__( self, ndims, elements, groups={}, boundary=None ):
+    Topology.__init__( self, ndims, elements )
+    assert all( isinstance( topo, Topology ) and topo.ndims == ndims for topo in groups.values() )
+    self.groups = groups
+    if boundary is not None:
+      assert isinstance( boundary, Topology ) and boundary.ndims == ndims-1
+    self.boundary = boundary
+
+  def new_with_group( self, key, topo ):
+    assert isinstance( topo, Topology ) and topo.ndims == self.ndims
+    elements = numeric.union1d( self.elements, topo.elements )
+    groups = self.groups.copy()
+    groups[key] = topo
+    return UnstructuredTopology( self.ndims, elements, groups=groups )
+
+  def __getitem__( self, item ):
+    if isinstance( item, str ):
+      return eval( item.replace(',','|'), self.groups )
+    return Topology.__getitem__( self, item )
+
 class StructuredTopology( Topology ):
 
-  def __init__( self, structure, periodic=(), groups=None ):
+  def __init__( self, structure, periodic=() ):
     self.structure = numeric.asarray(structure)
     self.periodic = tuple(periodic)
-    Topology.__init__( self, ndims=self.structure.ndim, elements=self.structure.ravel(), groups=groups )
+    self.groups = {}
+    Topology.__init__( self, ndims=self.structure.ndim, elements=self.structure.ravel() )
 
   @cache.property
   def boundary( self ):
@@ -360,7 +387,7 @@ class StructuredTopology( Topology ):
     groups = dict( zip( ( 'right', 'left', 'top', 'bottom', 'back', 'front' ), boundaries ) )
 
     allbelems = [ belem for boundary in boundaries for belem in boundary.structure.flat if belem is not None ]
-    return Topology( elements=allbelems, ndims=self.ndims-1, groups=groups )
+    return UnstructuredTopology( elements=allbelems, ndims=self.ndims-1, groups=groups )
 
   def splinefunc( self, degree, neumann=(), periodic=None, closed=False, removedofs=None ):
     'spline from vertices'
@@ -585,6 +612,24 @@ class HierarchicalTopology( Topology ):
 
   def splinefunc( self, *args, **kwargs ):
     return self._funcspace( lambda topo: topo.splinefunc( *args, **kwargs ) )
+
+class RefinedTopology( Topology ):
+  'refinement'
+
+  def __init__( self, basetopo ):
+    self.basetopo = basetopo
+    elements = [ elem[:-1] + child for elem in basetopo for child in elem[-1].children ]
+    Topology.__init__( self, basetopo.ndims, elements )
+
+  @property
+  def groups( self ):
+    return { key: topo.refined() for key, topo in self.basetopo.groups.items() }
+
+  @property
+  def boundary( self ):
+    return self.basetopo.boundary.refined
+    
+
 
 ## OLD
 
