@@ -44,9 +44,8 @@ def main( nelems=8, degree=1, beltrami=False ):
 
 def conv( degree=1, niter=4 ):
 
-  l2err, h1err = zip( *[ main( nelems=2**i, degree=degree )
-    for i, __logger__ in log.count( 'refine', niter ) ] )
-  del __logger__
+  __logger__ = log.range( 'refine', niter )
+  l2err, h1err = zip( *[ main( nelems=2**i, degree=degree ) for i in __logger__  ] )
   h = (.25*numeric.pi) * .5**numeric.arange(niter)
 
   with plot.PyPlot( 'convergence' ) as plt:
