@@ -99,18 +99,18 @@ class IterLog( object ):
   def mktitle( self ):
     self.tnext = time.time() + self.dt
     return '%s %d' % ( self.title, self.index ) if self.length is None \
-      else '%s %d/%d (%d%%)' % ( self.title, self.index, self.length, self.index * 100. / self.length )
+      else '%s %d/%d (%d%%)' % ( self.title, self.index, self.length, (self.index-.5) * 100. / self.length )
 
   def __iter__( self ):
     self.index = 0
     return self
 
   def next( self ):
+    self.index += 1
     if time.time() > self.tnext:
       if self.dtexp != 1:
         self.dt = min( self.dt * self.dtexp, self.dtmax )
       self.parent( 'progress' ).write( self.mktitle() + '\n' )
-    self.index += 1
     try:
       return self.iterator.next()
     except:
@@ -146,8 +146,9 @@ class CaptureLog( object ):
 
 
 _range = range
-def range( title, length, parent=None ):
-  return IterLog( title, _iter(xrange(length)), length, parent )
+def range( title, *args ):
+  items = _range( *args )
+  return IterLog( title, _iter(items), len(items) )
 
 _iter = iter
 def iter( title, iterable, length=None, parent=None ):
