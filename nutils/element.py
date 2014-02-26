@@ -25,6 +25,12 @@ class Mosaic( Element ):
       numeric.concatenate( allweights, axis=0 ) if len(allweights) == len(allpoints) else None
 
   @property
+  def flipped( self ): # flip transformation as deep as possible to keep cascade intact
+    children = tuple( (trans,elem.flipped) if isinstance(elem,Mosaic)
+                 else (trans.flipped,elem) for trans, elem in self.children )
+    return Mosaic( self.ndims, children )
+
+  @property
   def simplices( self ):
     return [ (trans,)+simplex for trans, elem in self.children for simplex in elem.simplices ]
 

@@ -294,9 +294,10 @@ class Topology( object ):
       neggroups[key] = Topology( ndims=self.ndims, elements=filter(None,neg[ind]) )
     if self.boundary:
       posboundary, negboundary = self.boundary.trim( levelset, maxrefine, minrefine )
-      trim = UnstructuredTopology( ndims=self.ndims-1, elements=nul )
-      posboundary = posboundary.new_with_group( 'trim', trim )
-      negboundary = negboundary.new_with_group( 'trim', trim )
+      posboundary = posboundary.new_with_group( 'trim',
+        UnstructuredTopology( ndims=self.ndims-1, elements=nul ) )
+      negboundary = negboundary.new_with_group( 'trim',
+        UnstructuredTopology( ndims=self.ndims-1, elements=[ elem[:-1]+(elem[-1].flipped,) for elem in nul ] ) )
     else:
       posboundary = negboundary = None
     postopo = UnstructuredTopology( ndims=self.ndims, elements=filter(None,pos), groups=posgroups, boundary=posboundary )

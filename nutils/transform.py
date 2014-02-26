@@ -40,6 +40,10 @@ class Affine( Transformation ):
     self.offset = offset
     self.transform = transform
 
+  @property
+  def flipped( self ):
+    return Affine( self.offset, self.transform.flipped )
+
   def apply( self, points, axis=-1 ):
     return self.offset + self.transform.apply( points, axis )
 
@@ -83,6 +87,10 @@ class Linear( Transformation ):
     Transformation.__init__( self, *matrix.shape, sign=sign )
     self.matrix = matrix
 
+  @property
+  def flipped( self ):
+    return Linear( self.matrix, -self.sign )
+
   def apply( self, points, axis=-1 ):
     assert points.shape[-1] == self.fromdim
     return numeric.dot( points, self.matrix.T, axis=axis )
@@ -116,6 +124,10 @@ class Slice( Linear ):
     matrix = numeric.zeros( [todim,fromdim] )
     numeric.takediag( matrix[:,self.slice] )[:] = 1
     Linear.__init__( self, matrix, sign )
+
+  @property
+  def flipped( self ):
+    return Slice( self, self.fromdim, self.slice.start, self.slice.stop, self.slice.step, -self.sign )
 
   def apply( self, points, axis=-1 ):
     assert points.shape[-1] == self.fromdim
@@ -161,6 +173,10 @@ class Scale( Linear ):
     numeric.takediag(matrix)[:] = factors
     Linear.__init__( self, matrix, sign )
 
+  @property
+  def flipped( self ):
+    return Scale( self, self.factors, -self.sign )
+
   def apply( self, points, axis=-1 ):
     assert points.shape[axis] == self.fromdim
     assert axis == -1
@@ -196,6 +212,10 @@ class Identity( Scale ):
     factors = numeric.ones( ndims )
     Scale.__init__( self, factors, sign )
 
+  @property
+  def flipped( self ):
+    return Identity( self, self.ndims, -self.sign )
+
   def apply( self, points, axis=-1 ):
     return points
 
@@ -224,6 +244,10 @@ class Point( Linear ):
 
   def __init__( self, sign ):
     Linear.__init__( self, numeric.zeros([1,0]), sign )
+
+  @property
+  def flipped( self ):
+    return Point( self, -self.sign )
   
   def apply( self, points, axis=-1 ):
     shape = list( points.shape )
@@ -264,5 +288,5 @@ def simplex( points ):
   assert points.shape[0] == points.shape[1] + 1
   offset = points[0]
   matrix = ( points[1:] - offset ).T
-  sign = 1 if numeric.det( matrix ) > 0 else -1
-  return Linear( matrix, sign ) + offset
+  trans = Linear( matrix ) + offset
+  return trans if trans.det > 0 else trans.flipped
