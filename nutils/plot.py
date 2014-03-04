@@ -126,7 +126,7 @@ class PyPlot( BasePlot ):
 
     return TriMesh
 
-  def mesh( self, points, colors=None, edgecolors='k', triangulate='delaunay', setxylim=True, **kwargs ):
+  def mesh( self, points, colors=None, edgecolors='k', edgewidth=None, triangulate='delaunay', setxylim=True, **kwargs ):
     'plot elemtwise mesh'
 
     assert isinstance( points, numpy.ndarray ) and points.dtype == float
@@ -226,7 +226,7 @@ class PyPlot( BasePlot ):
 
     if edges and edgecolors != 'none':
       from matplotlib.collections import LineCollection
-      linecol = LineCollection( edges )
+      linecol = LineCollection( edges, linewidths=(edgewidth,) if edgewidth is not None else None )
       linecol.set_color( edgecolors )
       self.gca().add_collection( linecol )
 
@@ -238,7 +238,7 @@ class PyPlot( BasePlot ):
       xmax, ymax = numpy.max( xy, axis=1 )
       self.xlim( xmin, xmax )
       self.ylim( ymin, ymax )
-
+    
     if edgecolors != 'none':
       return polycol, linecol
 
@@ -359,6 +359,11 @@ class PyPlot( BasePlot ):
     self.title( r'$^{10}\log a_{ij}$' )
     self.axis( 'tight' )
 
+  def image( self, image, location=[0,0], scale=1, alpha=1.0 ):
+    image = image.resize( [int( scale*size ) for size in image.size ])
+    dpi   = self._fig.get_dpi()
+    self._fig.figimage( numpy.array( image ).astype(float)/255, location[0]*dpi, location[1]*dpi, zorder=10 ).set_alpha(alpha)
+    
 class DataFile( BasePlot ):
   """data file"""
 
