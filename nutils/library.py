@@ -52,15 +52,13 @@ class Orthotropic(object):
   
   def __init__( self, E, G, nu ):
 
-    vbar = numpy.product( nu )
+    vbar = function.product( nu )
     vv = nu[:,_]*nu[_,:]
-    NE = -numpy.sqrt( E[:,_]*E[_,:] ) * ( vbar/vv + vv ) 
-    NEdiag = numeric.takediag( NE ) 
-    NEdiag += E*(2.*nu**2-1.+vbar/nu**2)
+    NE = -function.sqrt( E[:,_]*E[_,:] ) * ( vbar/vv + vv )  + function.diagonalize(E*(2.*nu**2-1.+vbar/nu**2))
     NE /= (nu**2).sum() + 2*vbar - 1
     
     self.NE     = NE
-    self.Gbar   = numpy.product( G )
+    self.Gbar   = function.product( G )
     self.Ginv   = 1./G
 
 
@@ -69,5 +67,5 @@ class Orthotropic(object):
     diag_gradu = function.takediag( gradu )
     GG = self.Ginv[:,_]*self.Ginv[_,:]*self.Gbar
     return function.diagonalize( (self.NE * diag_gradu[...,_,:]).sum() - 2.*self.Gbar*self.Ginv**2*diag_gradu ) \
-        + GG*( gradu+gradu.swapaxes(-2,-1) ) #transpose
+        + GG*( gradu+gradu.swapaxes(-2,-1) )
       
