@@ -707,28 +707,6 @@ class Normal( ArrayFunc ):
     normal /= numeric.norm2( normal, axis=-1 )[...,_]
     return normal
 
-class OrientationHack( ArrayFunc ):
-  'orientation hack for 1d elements; VERY dirty'
-
-  __slots__ = 'side',
-
-  def __init__( self, side=0 ):
-    'constructor'
-
-    self.side = side
-    ArrayFunc.__init__( self, args=[ELEM,side], evalf=self.orientation, shape=[] )
-
-  @staticmethod
-  def orientation( elem, side ):
-    'evaluate'
-
-    pelem, trans = elem.interface[side] if elem.interface else elem.context
-    offset, = trans.offset
-    return numeric.sign( offset - .5 )
-
-  def _opposite( self ):
-    return OrientationHack( 1-self.side )
-
 class Transform( ArrayFunc ):
   'transform'
 
