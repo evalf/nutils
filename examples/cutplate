@@ -39,18 +39,20 @@ def main( ndims=2, nelems=4, maxrefine=2, stress=library.Hooke(lmbda=1,mu=1) ):
   lhs = matrix.solve( constrain=cons, tol=1e-5, symmetric=True )
   disp = dspace.dot( lhs )
 
-  plotdomain = domain.refined.simplex
+  plotdomain = domain.refined
 
   if ndims == 2:
-    points, colors = plotdomain.elem_eval( [ geom + disp, stress(disp,geom)[0,1] ], ischeme='vertex2', separate=True )
-    bpoints = domain.refined.boundary.elem_eval( geom + disp, ischeme='vertex2', separate=True )
+    points, colors = plotdomain.simplex.elem_eval( [ geom + disp, stress(disp,geom)[0,1] ], ischeme='vertex2', separate=True )
+    bpoints = plotdomain.boundary.elem_eval( geom + disp, ischeme='vertex2', separate=True )
+    xy, uv = domain.boundary.elem_eval( [ geom + disp, geom.normal() ], ischeme='uniform1', separate=False )
     with plot.PyPlot( 'deformation' ) as plt:
       plt.mesh( points, colors, triangulate='bezier' )
-      plt.plot( bpoints[:,0], bpoints[:,1], 'b' )
       plt.colorbar()
+      plt.quiver( xy[:,0], xy[:,1], uv[:,0], uv[:,1] )
+      plt.plot( bpoints[:,0], bpoints[:,1], 'b' )
 
   if ndims == 3:
-    points, colors = plotdomain.elem_eval( [ geom + disp, stress(disp,geom)[0,1] ], ischeme='vtk', separate=True )
+    points, colors = plotdomain.boundary.simplex.elem_eval( [ geom + disp, stress(disp,geom)[0,1] ], ischeme='vtk', separate=True )
     with plot.VTKFile( 'deformation', ascii=False ) as vtkfile:
       vtkfile.unstructuredgrid( points )
       vtkfile.pointdataarray( 'stress', colors )

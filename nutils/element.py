@@ -16,11 +16,12 @@ class Mosaic( Element ):
   def pointset( self, pointset ):
     allpoints = []
     allweights = []
-    for trans, child in self.children:
+    for trans, child in self.simplices:
       points, weights = pointset( child )
       allpoints.append( trans.apply( points ) )
       if weights:
-        allweights.append( trans.det * weights )
+        allweights.append( weights * trans.det if trans.fromdim == trans.todim
+                      else weights[...,_] * trans.exterior ) # TODO fix inversion
     return numeric.concatenate( allpoints, axis=0 ), \
       numeric.concatenate( allweights, axis=0 ) if len(allweights) == len(allpoints) else None
 
@@ -30,9 +31,10 @@ class Mosaic( Element ):
                  else (trans.flipped,elem) for trans, elem in self.children )
     return Mosaic( self.ndims, children )
 
-  @property
-  def simplices( self ):
-    return [ (trans,)+simplex for trans, elem in self.children for simplex in elem.simplices ]
+  @cache.property
+  def simplices( self ): # merge transformations recursively
+    return [ (trans,)+simplex if len(simplex)==1
+        else (trans*simplex[0],)+simplex[1:] for trans, elem in self.children for simplex in elem.simplices ]
 
 class Reference( Element ):
 
@@ -72,7 +74,12 @@ class Reference( Element ):
       pos, nul, neg = [], [], []
       simplex = Simplex( self.ndims )
       for tri in util.delaunay( coords ):
-        trans = transform.simplex( coords[tri] )
+        offset = coords[tri[0]]
+        matrix = ( coords[tri[1:]] - offset ).T
+        if numeric.det( matrix ) < 0:
+          tri[-2:] = tri[-1], tri[-2]
+          matrix = ( coords[tri[1:]] - offset ).T
+        trans = transform.Linear( matrix ) + offset
         signs_tri = [ levelset[i] for i in tri if i < self.nverts ]
         if numeric.greater( signs_tri, -eps ).all():
           extra = numeric.find([ i < self.nverts and levelset[i] > eps for i in tri ])
@@ -128,8 +135,9 @@ class Simplex( Reference ):
       return
 
     eye2 = numeric.vstack( [numeric.eye( ndims )]*2 ) # ndims*2 x ndims
-    self.edges = [( transform.Linear( (vertices[2:]-vertices[1]).T ) + vertices[1], edge )] \
-      + [ ( transform.Linear( (eye2[idim:][1:ndims]).T ), edge ) for idim in range( ndims ) ]
+    self.edges = [( transform.Linear( (vertices[2:]-vertices[1]).T, 1 ) + vertices[1], edge )] \
+      + [ ( transform.Linear( (eye2[idim:][1:ndims]).T, -1 if idim else 1 ), edge ) for idim in range( ndims ) ]
+    # TODO check rule for outward pointing normals
 
     assert all( trans.fromdim == ndims-1 and trans.todim == ndims for trans, edge_ in self.edges )
     assert len( self.edges ) == self.ndims + 1

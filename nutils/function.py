@@ -1,10 +1,11 @@
 from . import util, core, cache, numeric, transform, log, _
 import sys, warnings
 
+CACHE   = object()
 ELEM    = object()
 POINTS  = object()
 WEIGHTS = object()
-CACHE   = object()
+NORMALS = object()
 
 # EVALUABLE
 #
@@ -50,15 +51,15 @@ class CompiledEvaluable( object ):
     'evaluate'
 
     if pointset is None:
-      points = weights = None
+      points = weights = normals = None
     elif numeric.isarray( pointset ):
       points = pointset
       weights = None
     else:
       points, weights = self.cache( pointset, elem[-1] )
 
-    N = len(self.data) + 4
-    values = self.data + [ self.cache, elem[:-1], points, weights ]
+    N = len(self.data) + 5
+    values = self.data + [ self.cache, elem[:-1], points, weights, None ]
     for evalf, indices in self.operations:
       args = [ values[N+i] for i in indices ]
       try:
@@ -157,16 +158,18 @@ class Evaluable( object ):
         else:
           idx = arg.recurse_index(data,operations)
       elif arg is CACHE:
-        idx = -4
+        idx = -5
       elif arg is ELEM:
-        idx = -3
+        idx = -4
       elif arg is POINTS:
-        idx = -2
+        idx = -3
       elif arg is WEIGHTS:
+        idx = -2
+      elif arg is NORMALS:
         idx = -1
       else:
         data.insert( 0, arg )
-        idx = -len(data)-4
+        idx = -len(data)-5
       indices[iarg] = idx
     evalf = self.__evalf
     operations.append( (self,evalf,indices) )
@@ -251,7 +254,7 @@ class PointShape( Evaluable ):
   def __init__( self ):
     'constructor'
 
-    return Evaluable.__init__( self, args=[POINTS], evalf=self.pointshape )
+    return Evaluable.__init__( self, args=(POINTS,), evalf=self.pointshape )
 
   @staticmethod
   def pointshape( points ):
@@ -287,7 +290,7 @@ class Cascade( Evaluable ):
       if trans.todim == ndims:
         cascade.append( (elem,trans) )
       if len(elem) == 1:
-        return cascade
+        return cascade or [( None, transform.Identity(ndims) )]
       trans = elem[-1] * trans
       elem = elem[:-1]
 
@@ -406,39 +409,17 @@ class ArrayFunc( Evaluable ):
 
     return self / norm2( self, axis=-1 )
 
-  def normal( self, ndims=-1 ):
+  def normal( self ):
     'normal'
 
-    assert len(self.shape) == 1
-    if ndims <= 0:
-      ndims += self.shape[0]
-
-    grad = localgradient( self, ndims )
-    if grad.shape == (2,1):
-      normal = concatenate([ grad[1,:], -grad[0,:] ]).normalized()
-    elif grad.shape == (3,2):
-      normal = cross( grad[:,0], grad[:,1], axis=0 ).normalized()
-    elif grad.shape == (3,1):
-      normal = cross( grad[:,0], self.normal(), axis=0 ).normalized()
-    elif grad.shape == (1,0):
-      normal = OrientationHack()[_]
-    else:
-      raise NotImplementedError, 'cannot compute normal for %dx%d jacobian' % ( self.shape[0], ndims )
-    return normal
+    ndims = self.shape[-1]
+    X = localgradient( self, ndims )
+    return ( inverse( X.T ) * Normal(ndims) ).sum().normalized()
 
   def curvature( self, ndims=-1 ):
     'curvature'
 
     return self.normal().div( self, ndims=ndims )
-
-    #if ndims <= 0:
-    #  ndims += self.shape[0]
-    #assert ndims == 1 and self.shape == (2,)
-    #J = localgradient( self, ndims )
-    #H = localgradient( J, ndims )
-    #dx, dy = J[:,0]
-    #ddx, ddy = H[:,0,0]
-    #return ( dx * ddy - dy * ddx ) / norm2( J[:,0], axis=0 )**3
 
   def swapaxes( self, n1, n2 ):
     'swap axes'
@@ -704,6 +685,28 @@ class IWeights( ArrayFunc ):
     root, trans = cascade[-1]
     return trans.det * weights
 
+class Normal( ArrayFunc ):
+  __slots__ = ()
+
+  def __init__( self, ndims ):
+    'constructor'
+
+    ArrayFunc.__init__( self, args=[Cascade(ndims),WEIGHTS,ndims], evalf=self.normal, shape=(ndims,) )
+
+  @staticmethod
+  def normal( cascade, weights, ndims ):
+    'evaluate'
+
+    root, trans = cascade[-1]
+    if trans.fromdim == trans.todim:
+      assert weights.ndim == 2
+      normal = numeric.solve( trans.matrix.T, weights.T ).T
+    else:
+      normal = trans.exterior
+    assert normal.shape[-1] == ndims # TODO consider removing
+    normal /= numeric.norm2( normal, axis=-1 )[...,_]
+    return normal
+
 class OrientationHack( ArrayFunc ):
   'orientation hack for 1d elements; VERY dirty'
 
@@ -733,6 +736,8 @@ class Transform( ArrayFunc ):
 
   def __init__( self, fromcascade, tocascade, side=0 ):
     'constructor'
+
+    raise Exception # TEMPORARY?
 
     assert fromcascade.ndims > tocascade.ndims
     self.fromcascade = fromcascade
@@ -3084,21 +3089,14 @@ def fdapprox( func, w, dofs, delta=1.e-5 ):
 def iwscale( coords, ndims ):
   'integration weights scale'
 
-  assert coords.ndim == 1
-  J = localgradient( coords, ndims )
   cndims, = coords.shape
-  assert J.shape == (cndims,ndims), 'wrong jacobian shape: got %s, expected %s' % ( J.shape, (cndims, ndims) )
-  if cndims == ndims:
-    detJ = determinant( J )
-  elif ndims == 1:
-    detJ = norm2( J[:,0], axis=0 )
-  elif cndims == 3 and ndims == 2:
-    detJ = norm2( cross( J[:,0], J[:,1], axis=0 ), axis=0 )
-  elif ndims == 0:
-    detJ = 1.
-  else:
-    raise NotImplementedError, 'cannot compute determinant for %dx%d jacobian' % J.shape[:2]
-  return detJ
+  J = localgradient( coords, cndims )
+  scale = determinant( J )
+  if cndims != ndims:
+    assert cndims == ndims + 1
+    normal = Normal( cndims )
+    scale /= norm2( ( J * normal ).sum() )
+  return scale
 
 def supp( funcsp, indices ):
   'find support of selection of basis functions'

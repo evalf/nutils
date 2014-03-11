@@ -388,6 +388,7 @@ class VTKFile( BasePlot ):
     self.vtkmap = {
       (2,1): vtk.vtkLine(),
       (3,2): vtk.vtkTriangle(),
+      (3,3): vtk.vtkTriangle(),
       (4,2): vtk.vtkQuad(),
       (4,3): vtk.vtkTetra(),
       (8,3): vtk.vtkVoxel(),

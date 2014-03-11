@@ -5,10 +5,14 @@ class Transformation( cache.Immutable ):
   __slots__ = 'fromdim', 'todim', 'sign'
 
   def __init__( self, todim, fromdim, sign ):
-    assert sign in (-1,+1)
+    assert todim == fromdim and sign == 0 or todim == fromdim + 1 and sign in (-1,1)
     self.todim = todim
     self.fromdim = fromdim
     self.sign = sign
+
+  @property
+  def exterior( self ):
+    return numeric.exterior( self.matrix ) * self.sign
 
   def __add__( self, offset ):
     offset = numeric.array( offset, float )
@@ -28,7 +32,7 @@ class Transformation( cache.Immutable ):
     return NotImplemented
 
   def __repr__( self ):
-    return '%s(%s)' % ( self.__class__.__name__, self )
+    return '%s[%d->%d](%s)' % ( self.__class__.__name__, self.fromdim, self.todim, self )
 
 
 class Affine( Transformation ):
@@ -83,13 +87,9 @@ class Affine( Transformation ):
 class Linear( Transformation ):
   __slots__ = 'matrix',
 
-  def __init__( self, matrix, sign=1 ):
-    Transformation.__init__( self, *matrix.shape, sign=sign )
+  def __init__( self, matrix, sign=0 ):
+    Transformation.__init__( self, matrix.shape[0], matrix.shape[1], sign )
     self.matrix = matrix
-
-  @property
-  def flipped( self ):
-    return Linear( self.matrix, -self.sign )
 
   def apply( self, points, axis=-1 ):
     assert points.shape[-1] == self.fromdim
@@ -97,13 +97,17 @@ class Linear( Transformation ):
 
   def __mul__( self, other ):
     assert self.fromdim == other.todim
-    return Linear( numeric.dot( self.matrix, other.matrix ) ) if isinstance( other, Linear ) \
+    return Linear( numeric.dot( self.matrix, other.matrix ), self.sign + other.sign ) if isinstance( other, Linear ) \
       else Transformation.__mul__( self, other )
+
+  @property
+  def flipped( self ):
+    return Linear( self.matrix, -self.sign )
 
   @property
   def det( self ):
     assert self.fromdim == self.todim
-    return numeric.det( self.matrix ) * self.sign
+    return numeric.det( self.matrix )
 
   @property
   def inv( self ):
@@ -118,16 +122,12 @@ class Linear( Transformation ):
 class Slice( Linear ):
   __slots__ = 'slice',
 
-  def __init__( self, fromdim, start, stop, step=1, sign=1 ):
+  def __init__( self, fromdim, start, stop, step=1 ):
     self.slice = slice( start, stop, step )
     todim = len(range(start,stop,step))
     matrix = numeric.zeros( [todim,fromdim] )
     numeric.takediag( matrix[:,self.slice] )[:] = 1
-    Linear.__init__( self, matrix, sign )
-
-  @property
-  def flipped( self ):
-    return Slice( self, self.fromdim, self.slice.start, self.slice.stop, self.slice.step, -self.sign )
+    Linear.__init__( self, matrix )
 
   def apply( self, points, axis=-1 ):
     assert points.shape[-1] == self.fromdim
@@ -152,7 +152,7 @@ class Slice( Linear ):
   @property
   def det( self ):
     assert self.fromdim == self.todim
-    return self.sign
+    return 1.
 
   @property
   def inv( self ):
@@ -166,16 +166,12 @@ class Slice( Linear ):
 class Scale( Linear ):
   __slots__ = 'factors',
 
-  def __init__( self, factors, sign=1 ):
+  def __init__( self, factors ):
     assert factors.ndim == 1
     self.factors = factors
     matrix = numeric.zeros( [factors.size,factors.size] )
     numeric.takediag(matrix)[:] = factors
-    Linear.__init__( self, matrix, sign )
-
-  @property
-  def flipped( self ):
-    return Scale( self, self.factors, -self.sign )
+    Linear.__init__( self, matrix )
 
   def apply( self, points, axis=-1 ):
     assert points.shape[axis] == self.fromdim
@@ -185,17 +181,17 @@ class Scale( Linear ):
   def __mul__( self, other ):
     assert self.fromdim == other.todim
     return Scale( self.factors * other.factors ) if isinstance( other, Scale ) \
-      else Linear( self.factors[:,_] * other.matrix ) if isinstance( other, Linear ) \
+      else Linear( self.factors[:,_] * other.matrix, other.sign ) if isinstance( other, Linear ) \
       else Linear.__mul__( self, other )
 
   def __rmul__( self, other ):
     assert other.fromdim == self.todim
-    return Linear( self.factors * other.matrix ) if isinstance( other, Linear ) \
+    return Linear( self.factors * other.matrix, other.sign ) if isinstance( other, Linear ) \
       else Linear.__rmul__( self, other )
 
   @property
   def det( self ):
-    return numeric.prod( self.factors ) * self.sign
+    return numeric.prod( self.factors )
 
   @property
   def inv( self ):
@@ -208,13 +204,9 @@ class Scale( Linear ):
 class Identity( Scale ):
   __slots__ = ()
 
-  def __init__( self, ndims, sign=1 ):
+  def __init__( self, ndims ):
     factors = numeric.ones( ndims )
-    Scale.__init__( self, factors, sign )
-
-  @property
-  def flipped( self ):
-    return Identity( self, self.ndims, -self.sign )
+    Scale.__init__( self, factors )
 
   def apply( self, points, axis=-1 ):
     return points
@@ -229,7 +221,7 @@ class Identity( Scale ):
 
   @property
   def det( self ):
-    return self.sign
+    return 1.
 
   @property
   def inv( self ):
@@ -245,10 +237,6 @@ class Point( Linear ):
   def __init__( self, sign ):
     Linear.__init__( self, numeric.zeros([1,0]), sign )
 
-  @property
-  def flipped( self ):
-    return Point( self, -self.sign )
-  
   def apply( self, points, axis=-1 ):
     shape = list( points.shape )
     assert shape[axis] == 0
@@ -272,21 +260,13 @@ def tensor( trans1, trans2 ):
   if isinstance( trans2, Affine ):
     offset[trans1.todim:] = trans2.offset
     trans2 = trans2.transform
-  sign = trans1.sign * trans2.sign
   if isinstance( trans1, Identity ) and isinstance( trans2, Identity ):
-    linear = Identidy( todim, sign )
+    linear = Identidy( todim )
   elif isinstance( trans1, Scale ) and isinstance( trans2, Scale ):
-    linear = Scale( numeric.concatenate([ trans1.factors, trans2.factors ]), sign )
+    linear = Scale( numeric.concatenate([ trans1.factors, trans2.factors ]) )
   else:
     matrix = numeric.zeros( [todim,fromdim] )
     matrix[:trans1.todim,:trans1.fromdim] = trans1.matrix
     matrix[trans1.todim:,trans1.fromdim:] = trans2.matrix
-    linear = Linear( matrix, sign )
+    linear = Linear( matrix, trans2.sign - trans1.sign ) # minus to have outward pointing normals
   return linear + offset
-
-def simplex( points ):
-  assert points.shape[0] == points.shape[1] + 1
-  offset = points[0]
-  matrix = ( points[1:] - offset ).T
-  trans = Linear( matrix ) + offset
-  return trans if trans.det > 0 else trans.flipped
