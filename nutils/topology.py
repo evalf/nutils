@@ -31,7 +31,7 @@ class Topology( object ):
   def refined_by( self, refine ):
     'create refined space by refining dofs in existing one'
 
-    refine = list( refine )
+    refine = set( refine )
     refined = []
     for elem in self:
       if elem in refine:
@@ -39,11 +39,9 @@ class Topology( object ):
         refined.extend( elem.children )
       else:
         refined.append( elem )
-        pelem = elem # only for argument checking:
-        while pelem.parent:
-          pelem, trans = pelem.parent
-          if pelem in refine:
-            refine.remove( pelem )
+      while elem.parent: # only for argument checking:
+        elem, trans = elem.parent
+        refine.discard( elem )
 
     assert not refine, 'not all refinement elements were found: %s' % '\n '.join( str(e) for e in refine )
     return HierarchicalTopology( self, refined )
@@ -1096,16 +1094,19 @@ class HierarchicalTopology( Topology ):
     allbelems = []
     bgroups = {}
     topo = self.basetopo # topology to examine in next level refinement
-    for irefine in range( nrefine ):
+    elems = set( self )
+    while elems:
       belemset = set()
+      myelems = elems.intersection( topo )
       for belem in topo.boundary:
         celem, transform = belem.context
-        if celem in self.elems:
+        if celem in myelems:
           belemset.add( belem )
       allbelems.extend( belemset )
       for btag, belems in topo.boundary.groups.iteritems():
         bgroups.setdefault( btag, [] ).extend( belemset.intersection(belems) )
       topo = topo.refined # proceed to next level
+      elems -= myelems
     boundary = UnstructuredTopology( allbelems, ndims=self.ndims-1 )
     boundary.groups = dict( ( tag, UnstructuredTopology( group, ndims=self.ndims-1 ) ) for tag, group in bgroups.items() )
     return boundary
@@ -1118,26 +1119,29 @@ class HierarchicalTopology( Topology ):
     assert hasattr( self.basetopo, 'interfaces' )
     allinterfaces = []
     topo = self.basetopo # topology to examine in next level refinement
-    for irefine in range( nrefine ):
+    elems = set( self )
+    while elems:
+      myelems = elems.intersection( topo )
       for ielem in topo.interfaces:
         (celem1,transform1), (celem2,transform2) = ielem.interface
-        if celem1 in self.elems:
+        if celem1 in myelems:
           while True:
-            if celem2 in self.elems:
+            if celem2 in self.elements:
               allinterfaces.append( ielem )
               break
             if not celem2.parent:
               break
             celem2, transform2 = celem2.parent
-        elif celem2 in self.elems:
+        elif celem2 in myelems:
           while True:
-            if celem1 in self.elems:
+            if celem1 in self.elements:
               allinterfaces.append( ielem )
               break
             if not celem1.parent:
               break
             celem1, transform1 = celem1.parent
       topo = topo.refined # proceed to next level
+      elems -= myelems
     return UnstructuredTopology( allinterfaces, ndims=self.ndims-1 )
 
   def _funcspace( self, mkspace ):
