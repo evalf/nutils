@@ -6,6 +6,8 @@ from nutils import *
 #@parallel.fork
 def makeplots( domain, geom, greysmooth, index, indicator, supp ):
 
+  log.context( 'figures' )
+
   xp, yp = topology.UnstructuredTopology( supp, domain.ndims ).elem_eval( geom, ischeme='contour2', separate=True ).T
   points, fval, xgrad, indic = domain.elem_eval( [ geom, greysmooth, greysmooth.grad(geom)[0], indicator ], ischeme='bezier4', separate=True )
 

@@ -23,6 +23,9 @@ class EvaluationError( Exception ):
     self.evaluable = evaluable
     self.values = values
 
+  def __repr__( self ):
+    return 'EvaluationError%s' % self
+
   def __str__( self ):
     'string representation'
 
@@ -362,17 +365,9 @@ class ArrayFunc( Evaluable ):
     s[axis] = slice(None)
     return dot( self, weights[tuple(s)], axes=axis )
 
-  def __kronecker__( self, axis, length, pos ):
-    'kronecker'
-
-    assert self.shape[axis] == 1
-    funcs = [ _zeros_like(self) ] * length
-    funcs[pos] = self
-    return Concatenate( funcs, axis=axis )
-
   def __getitem__( self, item ):
     'get item, general function which can eliminate, add or modify axes.'
-  
+
     myitem = list( item if isinstance( item, tuple ) else [item] )
     n = 0
     arr = self
@@ -1872,8 +1867,8 @@ class Pointdata( ArrayFunc ):
     assert isinstance(data,dict)
     self.data = data
     ArrayFunc.__init__( self, args=[ELEM,POINTS,self.data], evalf=self.pointdata, shape=shape )
-    
-  @staticmethod  
+
+  @staticmethod
   def pointdata( elem, points, data ):
     myvals,mypoint = data[elem]
     assert mypoint is points, 'Illegal point set'
@@ -1885,6 +1880,57 @@ class Pointdata( ArrayFunc ):
     data = dict( (elem,(numpy.maximum(func(elem,points),values),points)) for elem,(values,points) in self.data.iteritems() )
 
     return Pointdata( data, self.shape )
+
+
+class Eig( Evaluable ):
+  'Eig'
+
+  __slots__ = 'func', 'shape', 'symmetric'
+
+  def __init__( self, func, symmetric=False ):
+    'contructor'
+
+    Evaluable.__init__( self, args=[func], evalf=numeric.eigh if symmetric else numeric.eig )
+    self.symmetric = symmetric
+    self.func = func
+    self.shape = func.shape
+
+  def _opposite( self ):
+    return Eig( opposite(self.func), self.symmetric )
+
+class EigenValue( ArrayFunc ):
+  'EigenVector'
+
+  def __init__( self, eig ):
+    'contructor'
+
+    assert isinstance( eig, Eig )
+    self.eig = eig
+    ArrayFunc.__init__( self, args=[eig], evalf=self.eigval, shape=eig.shape[:-1] )
+
+  @staticmethod
+  def eigval( (val, vec) ):
+    return val
+
+  def _opposite( self ):
+    return EigenValue( self.eig._opposite() )
+
+class EigenVector( ArrayFunc ):
+  'EigenVector'
+
+  def __init__( self, eig ):
+    'contructor'
+
+    assert isinstance( eig, Eig )
+    self.eig = eig
+    ArrayFunc.__init__( self, args=[eig], evalf=self.eigvec, shape=eig.shape )
+
+  @staticmethod
+  def eigvec( (val, vec) ):
+    return vec
+
+  def _opposite( self ):
+    return EigenVector( self.eig._opposite() )
 
 # PRIORITY OBJECTS
 #
@@ -2383,7 +2429,9 @@ def _equal( arg1, arg2 ):
 
 def asarray( arg ):
   'convert to ArrayFunc or numpy.ndarray'
-  
+
+  if isinstance( arg, numpy.ndarray ) and arg.ndim == 0:
+    arg = arg[...]
   if _isfunc(arg):
     return arg
   arg = numpy.asarray( arg )
@@ -2831,7 +2879,7 @@ def concatenate( args, axis=0 ):
 
 def transpose( arg, trans=None ):
   'transpose'
-  
+
   arg = asarray( arg )
   if trans is None:
     invtrans = range( arg.ndim-1, -1, -1 )
@@ -2864,7 +2912,7 @@ def product( arg, axis ):
 
 def choose( level, choices ):
   'choose'
-  
+
   choices = _matchndim( *choices )
   if _isfunc(level) or any( _isfunc(choice) for choice in choices ):
     return Choose( level, choices )
@@ -3027,6 +3075,53 @@ def sign( arg ):
 
   return Sign( arg )
 
+def eig( arg, axes=(-2,-1), symmetric=False ):
+  ''' eig( arg, axes [ symmetric ] )
+  Compute the eigenvalues and vectors of a matrix
+  The eigenvalues and vectors are positioned on the last axes
+
+  tuple axes      The axis on which the eigenvalues and vectors are calculated
+  bool symmetric  Is the matrix symmetric
+  '''
+
+  # Sort axis
+  arg = asarray( arg )
+  ax1, ax2 = _norm_and_sort( arg.ndim, axes )
+  assert ax2 > ax1 # strict
+
+  # Check if the matrix is square
+  assert arg.shape[ax1] == arg.shape[ax2]
+
+  # Move the axis with matrices
+  trans = range(ax1) + [-2] + range(ax1,ax2-1) + [-1] + range(ax2-1,arg.ndim-2)
+  arg = align( arg, trans, arg.ndim )
+
+  shapeval = arg.shape[:-1]
+  shapevec = arg.shape
+
+  # When it's an array calculate directly
+  if not _isfunc(arg):
+    if symmetric:
+      return numpy.linalg.eigh( arg )
+    else:
+      return numpy.linalg.eig( arg )
+
+  # Use _call to see if the object has its own _eig function
+  ret = _call( arg, '_eig' )
+
+  if ret is not None:
+    # Check the shapes
+    eigval, eigvec = ret
+    assert eigval.shape == shapeval, 'bug in %s._eig' % arg
+    assert eigvec.shape == shapevec, 'bug in %s._eig' % arg
+  else:
+    eig = Eig( arg, symmetric )
+    eigval = EigenValue( eig )
+    eigvec = EigenVector( eig )
+
+  # Return the evaluable function objects in a tuple like numpy
+  return eigval, eigvec
+
 nsymgrad = lambda arg, coords: ( symgrad(arg,coords) * coords.normal() ).sum()
 ngrad = lambda arg, coords: ( grad(arg,coords) * coords.normal() ).sum()
 sin = lambda arg: pointwise( [arg], numpy.sin, cos )
@@ -3065,7 +3160,7 @@ add_T = lambda arg, axes=(-2,-1): swapaxes( arg, axes ) + arg
 
 def swapaxes( arg, axes=(-2,-1) ):
   'swap axes'
-  
+
   arg = asarray( arg )
   n1, n2 = axes
   trans = numpy.arange( arg.ndim )
@@ -3080,7 +3175,7 @@ def opposite( arg ):
 
   if not _isfunc( arg ):
     return arg
-    
+
   return arg._opposite()
 
 def function( fmap, nmap, ndofs, ndims ):
@@ -3145,7 +3240,7 @@ def inflate( arg, dofmap, length, axis ):
     return retval
 
   return Inflate( arg, dofmap, length, axis )
-  
+
 def blocks( arg ):
   arg = asarray( arg )
   try:

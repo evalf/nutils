@@ -1,13 +1,15 @@
-from . import core, prop, debug
+from . import prop, debug
 import sys, time, os, warnings, numpy
 
 _KEY = '__logger__'
 _makestr = lambda args: ' '.join( str(arg) for arg in args )
 
+
 def _backtrace( frame ):
   while frame:
     yield frame
     frame = frame.f_back
+
 
 def _findlogger( frame=None ):
   'find logger in call stack'
@@ -18,55 +20,9 @@ def _findlogger( frame=None ):
       return logger
   return SimpleLog()
 
-debug   = lambda *args: _findlogger().write( ( 'debug',   args ) )
-info    = lambda *args: _findlogger().write( ( 'info',    args ) )
-user    = lambda *args: _findlogger().write( ( 'user',    args ) )
-error   = lambda *args: _findlogger().write( ( 'error',   args ) )
-warning = lambda *args: _findlogger().write( ( 'warning', args ) )
-path    = lambda *args: _findlogger().write( ( 'path',    args ) )
 
 warnings.showwarning = lambda message, category, filename, lineno, *args: warning( '%s: %s\n  In %s:%d' % ( category.__name__, message, filename, lineno ) )
 
-def context( *args, **kwargs ):
-  'context'
-
-  depth = kwargs.pop( 'depth', 0 )
-  assert not kwargs
-  frame = sys._getframe(depth+1)
-  old = frame.f_locals.get(_KEY)
-  new = ContextLog( _makestr(args) )
-  frame.f_locals[_KEY] = new
-  return new, old
-
-def restore( (new,old) ):
-  'pop context'
-
-  for frame in _backtrace( sys._getframe(1) ):
-    logger = frame.f_locals.get(_KEY)
-    if logger:
-      break
-  else:
-    warnings.warn( 'failed to restore log context: no log instance found' )
-    return
-
-  if logger != new:
-    warnings.warn( 'failed to restore log context: unexpected log instance found' )
-    return
-
-  frame.f_locals[_KEY] = old
-
-def iterate( text, iterable, target=None, **kwargs ):
-  'iterate'
-  
-  logger = ProgressLog( text, target if target is not None else len(iterable), **kwargs )
-  f_locals = sys._getframe(1).f_locals
-  try:
-    frame = f_locals[_KEY] = logger
-    for i, item in enumerate( iterable ):
-      logger.update( i )
-      yield item
-  finally:
-    frame = f_locals[_KEY] = logger.parent
 
 def stack( msg, frames=None ):
   'print stack trace'
@@ -76,13 +32,14 @@ def stack( msg, frames=None ):
   summary = '\n'.join( [ msg ] + [ str(f) for f in reversed(frames) ] )
   _findlogger( frames[-1].frame ).write( ('error',[summary ]) )
 
+
 class SimpleLog( object ):
   'simple log'
 
-  def __init__( self ):
+  def __init__( self, depth=1 ):
     'constructor'
 
-    self.out = getattr( prop, 'html', sys.stdout )
+    sys._getframe(depth).f_locals[_KEY] = self
 
   def write( self, *chunks ):
     'write'
@@ -91,15 +48,11 @@ class SimpleLog( object ):
     s = (_makestr(args),) if args else ()
     print ' > '.join( chunks[:-1] + s )
 
-def setup_html( maxlevel, fileobj, title, depth=0 ):
-  'setup html logging'
-
-  sys._getframe(depth+1).f_locals[_KEY] = HtmlLog( maxlevel, fileobj, title )
 
 class HtmlLog( object ):
   'html log'
 
-  def __init__( self, maxlevel, fileobj, title ):
+  def __init__( self, maxlevel, fileobj, title, depth=1 ):
     'constructor'
 
     self.html = fileobj
@@ -113,6 +66,8 @@ class HtmlLog( object ):
     self.html.write( '<span id="navbar">goto: <a class="nav_latest" href="../../../../log.html">latest %s</a> | <a class="nav_latestall" href="../../../../../log.html">latest overall</a> | <a class="nav_index" href="../../../../../">index</a></span>\n\n' % title.split()[0] )
     self.html.flush()
     self.maxlevel = maxlevel
+
+    sys._getframe(depth).f_locals[_KEY] = self
 
   def __del__( self ):
     'destructor'
@@ -153,45 +108,79 @@ class HtmlLog( object ):
     self.html.write( '<span class="line">%s</span>' % ' &middot; '.join( chunks[:-1] + s ) + '\n' )
     self.html.flush()
 
-class ContextLog( object ):
-  'simple text logger'
 
-  def __init__( self, text ):
+class ContextLog( object ):
+  'base class'
+
+  def __init__( self, depth=1 ):
     'constructor'
 
-    self.text = text
-    self.parent = _findlogger()
+    frame = sys._getframe(depth)
+
+    parent = _findlogger( frame )
+    if isinstance( parent, ContextLog ) and not parent.__enabled:
+      parent = parent.parent
+
+    self.parent = parent
+    self.__enabled = True
+
+    frame.f_locals[_KEY] = self
+
+  def disable( self ):
+    'disable this logger'
+
+    self.__enabled = False
 
   def write( self, *text ):
     'write'
 
-    self.parent.write( self.text, *text )
+    if self.__enabled:
+      self.parent.write( self.text, *text )
+    else:
+      self.parent.write( *text )
 
   def __repr__( self ):
-    'string representation'
-
-    return 'ContextLog(%s)' % self
+    return '%s(%s)' % ( self.__class__.__name__, self )
 
   def __str__( self ):
+    return '%s > %s' % ( self.parent, self.text ) if self.__enabled else str(self.parent)
 
-    return '%s > %s' % ( self.parent, self.text )
 
-class ProgressLog( object ):
-  'progress bar'
+class StaticContextLog( ContextLog ):
+  'simple text logger'
 
-  def __init__( self, text, target, showpct=True ):
+  def __init__( self, text, depth=1 ):
     'constructor'
 
     self.text = text
+    ContextLog.__init__( self, depth=depth+1 )
+
+
+class ProgressContextLog( ContextLog ):
+  'progress bar'
+
+  def __init__( self, text, iterable=None, target=None, showpct=True, depth=1 ):
+    'constructor'
+
+    self.msg = text
     self.showpct = showpct
     self.tint = getattr(prop,'progress_interval',1.)
     self.tmax = getattr(prop,'progress_interval_max',numpy.inf)
     self.texp = getattr(prop,'progress_interval_scale',2.)
     self.t0 = time.time()
     self.tnext = self.t0 + min( self.tint, self.tmax )
-    self.target = target
+    self.iterable = iterable
+    self.target = len(iterable) if target is None else target
     self.current = 0
-    self.parent = _findlogger()
+    ContextLog.__init__( self, depth=depth+1 )
+
+  def __iter__( self ):
+    try:
+      for i, item in enumerate( self.iterable ):
+        self.update( i )
+        yield item
+    finally:
+      self.disable()
 
   def update( self, current ):
     'update progress'
@@ -200,15 +189,30 @@ class ProgressLog( object ):
     if time.time() > self.tnext:
       self.write( ('progress',None) )
 
-  def write( self, *text ):
-    'write'
+  @property
+  def text( self ):
+    'get text'
 
     self.tint = min( self.tint*self.texp, self.tmax )
     self.tnext = time.time() + self.tint
-    pbar = self.text + ' %.0f/%.0f' % ( self.current, self.target )
+    pbar = self.msg + ' %.0f/%.0f' % ( self.current, self.target )
     if self.showpct:
       pct = 100 * self.current / float(self.target)
       pbar += ' (%.0f%%)' % pct
-    self.parent.write( pbar, *text )
+    return pbar
+
+
+# historically grown
+context = StaticContextLog
+progress = iterate = ProgressContextLog
+setup_html = HtmlLog
+
+debug   = lambda *args: _findlogger().write( ( 'debug',   args ) )
+info    = lambda *args: _findlogger().write( ( 'info',    args ) )
+user    = lambda *args: _findlogger().write( ( 'user',    args ) )
+error   = lambda *args: _findlogger().write( ( 'error',   args ) )
+warning = lambda *args: _findlogger().write( ( 'warning', args ) )
+path    = lambda *args: _findlogger().write( ( 'path',    args ) )
+
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

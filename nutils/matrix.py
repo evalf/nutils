@@ -46,7 +46,7 @@ def krylov( matvec, b, x0=None, tol=1e-5, restart=None, maxiter=0, precon=None, 
     _iterative.dstoptest2( vec1, b, bnrm2, tol, info )
 
   x = x0
-  progress = log.ProgressLog( 'residual', target=numpy.log(tol) )
+  progress = log.progress( 'residual', target=numpy.log(tol) )
   t0 = time.clock()
   while True:
     x, iiter, res, info, ndx1, ndx2, sclr1, sclr2, ijob = \
@@ -71,6 +71,7 @@ def krylov( matvec, b, x0=None, tol=1e-5, restart=None, maxiter=0, precon=None, 
     ijob = 2
     progress.update( numpy.log(res) )
   dt = time.clock() - t0
+  progress.disable()
 
   assert info == 0
   log.info( 'converged in %.1f seconds, %d iterations' % ( dt, iiter ) )
@@ -502,7 +503,7 @@ class DenseMatrix( Matrix ):
   def solve( self, b=0, constrain=None, lconstrain=None, rconstrain=None, title='solving system', **dummy ):
     'solve'
 
-    log.context( title, '[direct]' )
+    log.context( title + ' [direct]' )
 
     b = numpy.asarray( b, dtype=float )
     if b.ndim == 0:

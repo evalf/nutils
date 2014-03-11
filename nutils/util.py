@@ -1,4 +1,4 @@
-from . import log, prop, debug
+from . import log, prop, debug, core
 import sys, os, time, numpy, cPickle, hashlib, weakref, warnings, itertools
 
 def unreachable_items():
@@ -103,12 +103,17 @@ def withrepr( f ):
   class function_wrapper( object ):
     def __init__( self, *args, **kwargs ):
       self.fun = f( *args, **kwargs )
-      items = zip( argnames, args ) + [ (name,kwargs[name]) for name in argnames[len(args):] ]
-      self.args = ','.join( '%s=%s' % item for item in items )
+      self.items = zip( argnames, args ) + [ (name,kwargs[name]) for name in argnames[len(args):] ]
+    def __getattr__( self, attr ):
+      for key, value in self.items:
+        if key == attr:
+          return value
+      raise AttributeError, attr
     def __call__( self, *args, **kwargs ):
       return self.fun( *args, **kwargs )
     def __str__( self ):
-      return '%s(%s)' % ( f.__name__, self.args )
+      args = ','.join( '%s=%s' % item for item in self.items )
+      return '%s(%s)' % ( f.__name__, args )
   return function_wrapper
 
 def profile( func ):
@@ -204,11 +209,11 @@ def iterate( context='iter', nmax=-1 ):
     if i == nmax:
       break
     i += 1
-    old = log.context( '%s %d' % (context,i), depth=1 )
+    logger = log.context( '%s %d' % (context,i), depth=2 )
     try:
       yield i
     finally:
-      log.restore( old )
+      logger.disable()
 
 class NanVec( numpy.ndarray ):
   'nan-initialized vector'
@@ -497,10 +502,16 @@ def run( *functions ):
   log.info( 'finish %s\n' % time.ctime() )
   log.info( 'elapsed %02.0f:%02.0f:%02.0f' % ( hours, minutes, seconds ) )
 
+  cacheinfo = core.cache_info( brief=True )
+  if cacheinfo:
+    log.warning( '\n  '.join( ['some caches were saturated:'] + cacheinfo ) )
+
   if not tb:
     sys.exit( 0 )
 
   debug.write_html( htmlfile, sys.exc_value, tb )
+  htmlfile.write( '<span class="info">Cache usage:<ul>%s</ul></span>' % '\n'.join( '<li>%s</li>' % line for line in core.cache_info( brief=False ) ) )
+  htmlfile.flush()
 
   debug.Explorer( repr(sys.exc_value), tb, intro='''\
     Your program has died. The traceback exporer allows you to examine its

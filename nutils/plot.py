@@ -31,26 +31,27 @@ class BasePlot( object ):
   def __enter__( self ):
     'enter with block'
 
-    self.oldlog = log.context( 'plotting', depth=1 )
+    self.logger = log.context( 'plotting', depth=2 )
     return self
 
   def __exit__( self, *exc_info ):
     'exit with block'
 
     exc_type, exc_value, exc_tb = exc_info
-    if exc_type == KeyboardInterrupt:
-      log.restore( self.oldlog )
-      return False
-    elif exc_type:
-      log.stack( repr(exc_value), debug.exception() )
-      return False
-    else:
-      if self.names:
-        for name in self.names:
-          self.save( name )
-        log.path( *self.names )
-    log.restore( self.oldlog )
-    return True
+    try:
+      if exc_type == KeyboardInterrupt:
+        pass
+      elif exc_type:
+        log.stack( repr(exc_value), debug.exception() )
+      else:
+        if self.names:
+          for name in self.names:
+            self.save( name )
+          log.path( *self.names )
+        return True
+    finally:
+      self.logger.disable()
+    return False
 
   def save ( self, name ):
     return
@@ -125,7 +126,7 @@ class PyPlot( BasePlot ):
 
     return TriMesh
 
-  def mesh( self, points, colors=None, edgecolors='k', triangulate='delaunay', setxylim=True, **kwargs ):
+  def mesh( self, points, colors=None, edgecolors='k', edgewidth=None, triangulate='delaunay', setxylim=True, **kwargs ):
     'plot elemtwise mesh'
 
     assert isinstance( points, numpy.ndarray ) and points.dtype == float
@@ -225,7 +226,7 @@ class PyPlot( BasePlot ):
 
     if edges and edgecolors != 'none':
       from matplotlib.collections import LineCollection
-      linecol = LineCollection( edges )
+      linecol = LineCollection( edges, linewidths=(edgewidth,) if edgewidth is not None else None )
       linecol.set_color( edgecolors )
       self.gca().add_collection( linecol )
 
@@ -237,7 +238,7 @@ class PyPlot( BasePlot ):
       xmax, ymax = numpy.max( xy, axis=1 )
       self.xlim( xmin, xmax )
       self.ylim( ymin, ymax )
-
+    
     if edgecolors != 'none':
       return polycol, linecol
 
@@ -358,6 +359,11 @@ class PyPlot( BasePlot ):
     self.title( r'$^{10}\log a_{ij}$' )
     self.axis( 'tight' )
 
+  def image( self, image, location=[0,0], scale=1, alpha=1.0 ):
+    image = image.resize( [int( scale*size ) for size in image.size ])
+    dpi   = self._fig.get_dpi()
+    self._fig.figimage( numpy.array( image ).astype(float)/255, location[0]*dpi, location[1]*dpi, zorder=10 ).set_alpha(alpha)
+    
 class DataFile( BasePlot ):
   """data file"""
 
