@@ -414,7 +414,7 @@ class ArrayFunc( Evaluable ):
 
     ndims = self.shape[-1]
     X = localgradient( self, ndims )
-    return ( inverse( X.T ) * Normal(ndims) ).sum().normalized()
+    return ( inverse( X.T ) * NWeights(ndims) ).sum().normalized()
 
   def curvature( self, ndims=-1 ):
     'curvature'
@@ -685,27 +685,26 @@ class IWeights( ArrayFunc ):
     root, trans = cascade[-1]
     return trans.det * weights
 
-class Normal( ArrayFunc ):
+class NWeights( ArrayFunc ):
   __slots__ = ()
 
   def __init__( self, ndims ):
     'constructor'
 
-    ArrayFunc.__init__( self, args=[Cascade(ndims),WEIGHTS,ndims], evalf=self.normal, shape=(ndims,) )
+    ArrayFunc.__init__( self, args=[Cascade(ndims),WEIGHTS], evalf=self.nweights, shape=(ndims,) )
 
   @staticmethod
-  def normal( cascade, weights, ndims ):
+  def nweights( cascade, weights ):
     'evaluate'
 
     root, trans = cascade[-1]
     if trans.fromdim == trans.todim:
-      assert weights.ndim == 2
-      normal = numeric.solve( trans.matrix.T, weights.T ).T
+      assert weights.ndim == 2 # points x ndims
+      scale = numeric.solve( trans.matrix.T, weights.T ).T # points x ndims
     else:
-      normal = trans.exterior
-    assert normal.shape[-1] == ndims # TODO consider removing
-    normal /= numeric.norm2( normal, axis=-1 )[...,_]
-    return normal
+      assert weights.ndim == 1 # points
+      scale = weights # points
+    return numeric.times( scale, trans.det )
 
 class Transform( ArrayFunc ):
   'transform'
@@ -3069,12 +3068,13 @@ def iwscale( coords, ndims ):
 
   cndims, = coords.shape
   J = localgradient( coords, cndims )
-  scale = determinant( J )
-  if cndims != ndims:
+  if cndims == ndims:
+    scale = IWeights( ndims )
+  else:
     assert cndims == ndims + 1
-    normal = Normal( cndims )
-    scale /= norm2( ( J * normal ).sum() )
-  return scale
+    normal = NWeights( cndims )
+    scale = norm2( ( J * normal ).sum() )
+  return determinant( J ) * scale
 
 def supp( funcsp, indices ):
   'find support of selection of basis functions'

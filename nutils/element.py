@@ -20,8 +20,7 @@ class Mosaic( Element ):
       points, weights = pointset( child )
       allpoints.append( trans.apply( points ) )
       if weights:
-        allweights.append( weights * trans.det if trans.fromdim == trans.todim
-                      else weights[...,_] * trans.exterior ) # TODO fix inversion
+        allweights.append( numeric.times( weights, trans.det ) )
     return numeric.concatenate( allpoints, axis=0 ), \
       numeric.concatenate( allweights, axis=0 ) if len(allweights) == len(allpoints) else None
 

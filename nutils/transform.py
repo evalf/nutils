@@ -10,10 +10,6 @@ class Transformation( cache.Immutable ):
     self.fromdim = fromdim
     self.sign = sign
 
-  @property
-  def exterior( self ):
-    return numeric.exterior( self.matrix ) * self.sign
-
   def __add__( self, offset ):
     offset = numeric.array( offset, float )
     assert offset.shape == (self.todim,)
@@ -106,8 +102,8 @@ class Linear( Transformation ):
 
   @property
   def det( self ):
-    assert self.fromdim == self.todim
-    return numeric.det( self.matrix )
+    return numeric.det( self.matrix ) if self.fromdim == self.todim \
+      else numeric.exterior( self.matrix ) * self.sign
 
   @property
   def inv( self ):

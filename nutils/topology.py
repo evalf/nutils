@@ -83,7 +83,7 @@ class Topology( object ):
 
     if iweights is None:
       assert geometry is not None, 'conflicting arguments geometry and iweights'
-      iweights = function.iwscale( geometry, self.ndims ) * function.IWeights( self.ndims )
+      iweights = function.iwscale( geometry, self.ndims )
     else:
       assert geometry is None, 'conflicting arguments geometry and iweights'
     assert iweights.ndim == 0
@@ -740,7 +740,7 @@ class _Topology( object ):
 
     retvals = []
     #iweights = geometry.iweights( self.ndims )
-    iweights = function.iwscale( geometry, self.ndims ) * function.IWeights( self.ndims )
+    iweights = function.iwscale( geometry, self.ndims )
     idata = [ iweights ]
     for func in funcs:
       func = function.asarray( func )
@@ -807,7 +807,7 @@ class _Topology( object ):
 
     if iweights is None:
       assert geometry is not None, 'conflicting arguments geometry and iweights'
-      iweights = function.iwscale( geometry, self.ndims ) * function.IWeights( self.ndims )
+      iweights = function.iwscale( geometry, self.ndims )
     else:
       assert geometry is None, 'conflicting arguments geometry and iweights'
     assert iweights.ndim == 0
