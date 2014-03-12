@@ -264,5 +264,16 @@ def tensor( trans1, trans2 ):
     matrix = numeric.zeros( [todim,fromdim] )
     matrix[:trans1.todim,:trans1.fromdim] = trans1.matrix
     matrix[trans1.todim:,trans1.fromdim:] = trans2.matrix
-    linear = Linear( matrix, trans2.sign - trans1.sign ) # minus to have outward pointing normals
+    # TODO generalize
+    if trans1.todim == 1 and trans1.fromdim == 0 and trans2.todim == trans2.fromdim == 1:
+      sign = -trans1.sign
+    elif trans1.todim == trans1.fromdim == 1 and trans2.todim == 1 and trans2.fromdim == 0:
+      sign = trans2.sign
+    elif trans1.todim == 1 and trans1.fromdim == 0 and trans2.todim == trans2.fromdim == 2:
+      sign = trans1.sign
+    elif trans1.todim == trans1.fromdim == 1 and trans2.todim == 2 and trans2.fromdim == 1:
+      sign = trans2.sign
+    else:
+      raise NotImplementedError
+    linear = Linear( matrix, sign )
   return linear + offset

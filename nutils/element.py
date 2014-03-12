@@ -184,7 +184,7 @@ class Simplex( Reference ):
 
   def pointset_vtk( self ):
     assert self.ndims in (2,3)
-    return self.vertices, None
+    return self.vertices, numeric.ones(self.nverts)
 
   def pointset_gauss( self, degree ):
     assert isinstance( degree, int ) and degree >= 0
@@ -433,7 +433,7 @@ class Tensor( Reference ):
       points = [[0,0,0],[1,0,0],[0,1,0],[1,1,0],[0,0,1],[1,0,1],[0,1,1],[1,1,1]]
     else:
       raise NotImplementedError
-    return numeric.array(points), None
+    return numeric.array(points), numeric.ones(self.nverts)
 
   def pointset( self, pointset ):
     ipoints1, iweights1 = pointset( self.simplex1 )

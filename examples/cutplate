@@ -15,16 +15,25 @@ def surface_volume( ndims ):
 
 def main( ndims=2, nelems=4, maxrefine=2, stress=library.Hooke(lmbda=1,mu=1) ):
 
-  verts = numeric.linspace( 0, 2**(1./ndims), nelems+1 )
+  L = 2**(1./ndims)
+  verts = numeric.linspace( 0, L, nelems+1 )
   wholedomain, geom = mesh.rectilinear( [verts]*ndims )
   dspace = wholedomain.splinefunc( degree=2 ).vector( ndims )
   levelset = ( geom**2 ).sum() - 1.
   domain, complement = wholedomain.trim( levelset, maxrefine=maxrefine )
 
-  volume = domain.integrate( 1., geometry=geom, ischeme='gauss1' )
   ball_surface, ball_volume = surface_volume( ndims )
+
+  volume = domain.integrate( 1., geometry=geom, ischeme='gauss1' )
   exact_volume = 2 - .5**ndims * ball_volume
   log.info( 'volume: %f (exact: %f, error %.1f%%)' % ( volume, exact_volume, abs(100*(volume-exact_volume)/exact_volume) ) )
+
+  surface = domain.boundary.integrate( 1., geometry=geom, ischeme='gauss1' )
+  exact_surface = 2 * ndims * L**(ndims-1) - ndims * .5**(ndims-1) * surface_volume(ndims-1)[1] + .5**ndims * ball_surface
+  log.info( 'surface: %f (exact: %f, error %.1f%%)' % ( surface, exact_surface, abs(100*(surface-exact_surface)/exact_surface) ) )
+
+  volumes = domain.boundary.integrate( geom * geom.normal(), geometry=geom, ischeme='gauss1' )
+  log.info( 'partial integration:', volumes / volume )
 
   support = domain.integrate( function.norm2( dspace ), geometry=geom, ischeme='gauss3' )
   cons = util.NanVec( len(support) )
@@ -52,9 +61,10 @@ def main( ndims=2, nelems=4, maxrefine=2, stress=library.Hooke(lmbda=1,mu=1) ):
       plt.plot( bpoints[:,0], bpoints[:,1], 'b' )
 
   if ndims == 3:
-    points, colors = plotdomain.boundary.simplex.elem_eval( [ geom + disp, stress(disp,geom)[0,1] ], ischeme='vtk', separate=True )
+    points, colors, normal = plotdomain.boundary.simplex.elem_eval( [ geom + disp, stress(disp,geom)[0,1], geom.normal() ], ischeme='vtk', separate=True )
     with plot.VTKFile( 'deformation', ascii=False ) as vtkfile:
       vtkfile.unstructuredgrid( points )
       vtkfile.pointdataarray( 'stress', colors )
+      vtkfile.pointdataarray( 'normal', normal )
 
 util.run( main )

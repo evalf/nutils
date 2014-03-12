@@ -468,10 +468,10 @@ class ArrayFunc( Evaluable ):
 
     return trace( self.grad( coords, ndims ), -1, -2 )
 
-  def dotnorm( self, coords, ndims=0 ):
+  def dotnorm( self, coords ):
     'normal component'
 
-    return sum( self * coords.normal( ndims-1 ) )
+    return sum( self * coords.normal() )
 
   def ngrad( self, coords, ndims=0 ):
     'normal gradient'
