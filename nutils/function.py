@@ -733,6 +733,11 @@ class Transform( ArrayFunc ):
   def _opposite( self ):
     return Transform( self.fromcascade, self.tocascade, 1-self.side )
 
+class SearchSorted( Evaluable ):
+
+  def __init__( self, sorted_array ):
+    Evaluable.__init__( args=[sorted_array,ELEM], evalf=numeric.searchsorted )
+
 class Function( ArrayFunc ):
   'function'
 

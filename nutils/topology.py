@@ -24,9 +24,8 @@ class Topology( object ):
 
   def __init__( self, ndims, elements ):
     self.ndims = ndims
-    self.elements = numeric.empty( len(elements), dtype=object )
-    self.elements[:] = elements
-    self.elements.sort()
+    self.elements = numeric.asobjvec( elements )
+    assert numeric.greater( self.elements[1:], self.elements[:-1] ).all() # check sorted
 
   def __getitem__( self, item ):
     return self.elements[ item ]
@@ -306,7 +305,8 @@ class Topology( object ):
 
   @cache.property
   def simplex( self ):
-    simplices = [ elem[:-1] + simplex for elem in self for simplex in elem[-1].simplices ]
+    simplices = numeric.asobjvec( elem[:-1] + simplex for elem in self for simplex in elem[-1].simplices )
+    simplices.sort()
     return Topology( ndims=self.ndims, elements=simplices )
 
   def get_simplices( self ):
@@ -341,6 +341,7 @@ class Topology( object ):
 class UnstructuredTopology( Topology ):
 
   def __init__( self, ndims, elements, groups={}, boundary=None ):
+    elements = numeric.sort( numeric.asobjvec( elements ) )
     Topology.__init__( self, ndims, elements )
     assert all( isinstance( topo, Topology ) and topo.ndims == ndims for topo in groups.values() )
     self.groups = groups
@@ -363,31 +364,34 @@ class UnstructuredTopology( Topology ):
 class StructuredTopology( Topology ):
 
   def __init__( self, structure, periodic=() ):
-    self.structure = numeric.asarray(structure)
+    indices = numeric.argsort( structure, axis=None )
+    self.istructure = numeric.empty( structure.shape, dtype=int )
+    self.istructure.flat[indices] = numeric.arange( len(indices) )
     self.periodic = tuple(periodic)
     self.groups = {}
-    Topology.__init__( self, ndims=self.structure.ndim, elements=self.structure.ravel() )
+    Topology.__init__( self, ndims=structure.ndim, elements=structure.flat[indices] )
 
   @cache.property
   def boundary( self ):
     'boundary'
 
-    shape = numeric.asarray( self.structure.shape ) + 1
+    shape = numeric.asarray( self.istructure.shape ) + 1
     vertices = numeric.arange( numeric.product(shape) ).reshape( shape )
 
     boundaries = []
     for iedge in range( 2 * self.ndims ):
       idim = iedge // 2
       iside = -1 if iedge % 2 == 0 else 0
-      elems = numeric.getitem( self.structure[...,_], axis=idim, item=iside ) # add axis to keep an array even if ndims=1
-      belems = numeric.empty( elems.shape[:-1], dtype=object )
-      for index, elem in numeric.enumerate_nd( elems ):
+      ielems = numeric.getitem( self.istructure[...,_], axis=idim, item=iside ) # add axis to keep an array even if ndims=1
+      belems = numeric.empty( ielems.shape[:-1], dtype=object )
+      for index, ielem in numeric.enumerate_nd( ielems ):
+        elem = self.elements[ielem]
         belems[ index[:-1] ] = elem[:-1] + elem[-1].edges[iedge]
       periodic = [ d - (d>idim) for d in self.periodic if d != idim ] # TODO check that dimensions are correct for ndim > 2
       boundaries.append( StructuredTopology( belems, periodic=periodic ) )
     groups = dict( zip( ( 'right', 'left', 'top', 'bottom', 'back', 'front' ), boundaries ) )
 
-    allbelems = [ belem for boundary in boundaries for belem in boundary.structure.flat if belem is not None ]
+    allbelems = [ boundary.elements[ibelem] for boundary in boundaries for ibelem in boundary.istructure.flat if ibelem >= 0 ]
     return UnstructuredTopology( elements=allbelems, ndims=self.ndims-1, groups=groups )
 
   def splinefunc( self, degree, neumann=(), periodic=None, closed=False, removedofs=None ):
@@ -410,7 +414,7 @@ class StructuredTopology( Topology ):
 
     for idim in range( self.ndims ):
       periodic_i = idim in periodic
-      n = self.structure.shape[idim]
+      n = self.istructure.shape[idim]
       p = degree[idim]
 
       if closed == False:
@@ -445,8 +449,9 @@ class StructuredTopology( Topology ):
     dofmap = {}
     funcmap = {}
     hasnone = False
-    for item in numeric.broadcast( self.structure, stdelems, *numeric.ix_(*slices) ):
-      elem = item[0][:-1]
+    for item in numeric.broadcast( self.istructure, stdelems, *numeric.ix_(*slices) ):
+      ielem = item[0]
+      elem = self.elements[ ielem ][:-1]
       std = item[1]
       if elem is None:
         hasnone = True
@@ -482,7 +487,7 @@ class StructuredTopology( Topology ):
     slices = []
 
     for idim in range( self.ndims ):
-      n = self.structure.shape[idim]
+      n = self.istructure.shape[idim]
       p = degree[idim]
 
       nd = n * p + 1
@@ -496,11 +501,12 @@ class StructuredTopology( Topology ):
 
     dofmap = {}
     hasnone = False
-    for item in numeric.broadcast( self.structure, *numeric.ix_(*slices) ):
-      elem = item[0]
-      if elem is None:
+    for item in numeric.broadcast( self.istructure, *numeric.ix_(*slices) ):
+      ielem = item[0]
+      if ielem < 0:
         hasnone = True
       else:
+        elem = self.elements[ ielem ]
         S = item[1:]
         dofmap[ elem[:-1] ] = vertex_structure[S].ravel()
 
@@ -520,12 +526,13 @@ class StructuredTopology( Topology ):
   def refined( self ):
     'refine entire topology'
 
-    structure = numeric.empty( self.structure.shape + (2**self.ndims,), dtype=object )
-    for index, elem in numeric.enumerate_nd( self.structure ):
+    structure = numeric.empty( self.istructure.shape + (2**self.ndims,), dtype=object )
+    for index, ielem in numeric.enumerate_nd( self.istructure ):
+      elem = self.elements[ielem]
       structure[index] = [ elem[:-1] + child for child in elem[-1].children ]
-    structure = structure.reshape( self.structure.shape + (2,)*self.ndims )
+    structure = structure.reshape( self.istructure.shape + (2,)*self.ndims )
     structure = structure.transpose( sum( [ ( i, self.ndims+i ) for i in range(self.ndims) ], () ) )
-    structure = structure.reshape([ sh * 2 for sh in self.structure.shape ])
+    structure = structure.reshape([ sh * 2 for sh in self.istructure.shape ])
     refined = StructuredTopology( structure )
     refined.groups = { key: group.refined for key, group in self.groups.items() }
     return refined
@@ -621,7 +628,8 @@ class RefinedTopology( Topology ):
 
   def __init__( self, basetopo ):
     self.basetopo = basetopo
-    elements = [ elem[:-1] + child for elem in basetopo for child in elem[-1].children ]
+    elements = numeric.asobjvec( elem[:-1] + child for elem in basetopo for child in elem[-1].children )
+    elements.sort()
     Topology.__init__( self, basetopo.ndims, elements )
 
   @property
