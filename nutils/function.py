@@ -5,7 +5,6 @@ CACHE   = object()
 ELEM    = object()
 POINTS  = object()
 WEIGHTS = object()
-NORMALS = object()
 
 # EVALUABLE
 #
@@ -58,8 +57,8 @@ class CompiledEvaluable( object ):
     else:
       points, weights = self.cache( pointset, elem[-1] )
 
-    N = len(self.data) + 5
-    values = self.data + [ self.cache, elem[:-1], points, weights, None ]
+    N = len(self.data) + 4
+    values = self.data + [ self.cache, elem[:-1], points, weights ]
     for evalf, indices in self.operations:
       args = [ values[N+i] for i in indices ]
       try:
@@ -158,18 +157,16 @@ class Evaluable( object ):
         else:
           idx = arg.recurse_index(data,operations)
       elif arg is CACHE:
-        idx = -5
-      elif arg is ELEM:
         idx = -4
-      elif arg is POINTS:
+      elif arg is ELEM:
         idx = -3
-      elif arg is WEIGHTS:
+      elif arg is POINTS:
         idx = -2
-      elif arg is NORMALS:
+      elif arg is WEIGHTS:
         idx = -1
       else:
         data.insert( 0, arg )
-        idx = -len(data)-5
+        idx = -len(data)-4
       indices[iarg] = idx
     evalf = self.__evalf
     operations.append( (self,evalf,indices) )
