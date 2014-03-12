@@ -34,7 +34,8 @@ def main( degree=1, niter=30, triangular=False ):
   domain, geom = mesh.demo() if triangular else mesh.rectilinear( [ (0,.5,1) ] * 2 )
   greydata = function.tanh( ( function.norm2(geom) - .5 ) * 20 )
 
-  for iiter, __logger__ in log.count( 'iter' ):
+  __logger__ = log.count( 'iter' )
+  for iiter in __logger__:
 
     funcsp = domain.stdfunc( degree=degree )
     greysmooth = domain.projection( greydata, geometry=geom, onto=funcsp, ischeme='gauss5', droptol=0, verify=int(funcsp.shape[0]) )
