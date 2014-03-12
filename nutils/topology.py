@@ -585,14 +585,15 @@ class HierarchicalTopology( Topology ):
         mykeep = keep[idofs]
         std = func.stdmap[ elem[:-1] ]
         assert isinstance(std,element.StdElem)
-        if mykeep.all():
-          stdmap[ elem[:-1] ] = std # use all shapes from this level
-        elif mykeep.any():
-          stdmap[ elem[:-1] ] = std, mykeep # use some shapes from this level
         newdofs = [ ndofs + keep[:idof].sum() for idof in idofs if keep[idof] ] # new dof numbers
+        newstds = [ std if mykeep.all() # use all shapes from this level
+               else (std,mykeep) if mykeep.any() # use some shapes from this level
+               else None ]
         if irefine: # not at lowest level
           newdofs.extend( dofmap[ elem[:-2] ] ) # add dofs of all underlying 'broader' shapes
+          newstds.extend( stdmap[ elem[:-2] ] ) # add stds of all underlying 'broader' shapes
         dofmap[ elem[:-1] ] = numeric.array(newdofs) # add result to IEN mapping of new function object
+        stdmap[ elem[:-1] ] = tuple( newstds )
   
       ndofs += int( keep.sum() ) # update total number of dofs
       if not remaining:
@@ -603,8 +604,9 @@ class HierarchicalTopology( Topology ):
 
       raise Exception, 'elements remaining after %d iterations' % self.maxrefine
 
-    for elem in parentelems:
-      del dofmap[ elem[:-1] ] # remove auxiliary elements
+    for elem in parentelems: # remove auxiliary elements
+      del dofmap[ elem[:-1] ]
+      del stdmap[ elem[:-1] ]
 
     return function.function( stdmap, dofmap, ndofs, self.ndims )
 

@@ -753,21 +753,35 @@ class Function( ArrayFunc ):
     fvals = []
     for elem, trans in cascade:
       std = stdmap.get(elem)
-      if not std:
-        continue
+      if std:
+        break
+    else:
+      raise Exception, 'no function values encountered'
+
+    if not isinstance( std, tuple ):
       elempoints = cache( trans.apply, points )
-      if isinstance( std, tuple ):
-        std, keep = std
-        F = cache( std.eval, elempoints, igrad )[(Ellipsis,keep)+(slice(None),)*igrad]
-      else:
-        F = cache( std.eval, elempoints, igrad )
+      F = cache( std.eval, elempoints, igrad )
+      invmat = util.product( elem[1:] ).inv.matrix
       for axis in range(-igrad,0):
-        root_transform = elem[1]
-        for trans in elem[2:]:
-          root_transform *= trans
-        F = numeric.dot( F, root_transform.inv.matrix, axis )
-      fvals.append( F )
-    assert fvals, 'no function values encountered'
+        F = numeric.dot( F, invmat, axis )
+      return F
+
+    fvals = []
+    for std in std:
+      if std:
+        elempoints = cache( trans.apply, points )
+        if isinstance( std, tuple ):
+          std, keep = std
+          F = cache( std.eval, elempoints, igrad )[(Ellipsis,keep)+(slice(None),)*igrad]
+        else:
+          F = cache( std.eval, elempoints, igrad )
+        invmat = util.product( elem[1:] ).inv.matrix
+        for axis in range(-igrad,0):
+          F = numeric.dot( F, invmat, axis )
+        fvals.append( F )
+      trans = elem[-1] * trans
+      elem = elem[:-1]
+
     return fvals[0] if len(fvals) == 1 else numeric.concatenate( fvals, axis=-1-igrad )
 
   def _opposite( self ):
@@ -3082,8 +3096,10 @@ def supp( funcsp, indices ):
     dofmap = axes[0].dofmap
     stdmap = func.stdmap
     for elem, dofs in dofmap.items():
-      while elem:
-        std = stdmap.get( elem )
+      stds = stdmap[ elem ]
+      if not isinstance( stds, tuple ):
+        stds = stds,
+      for std in stds:
         nshapes = 0 if not std \
            else std[1].sum() if isinstance( std, tuple ) \
            else std.nshapes
