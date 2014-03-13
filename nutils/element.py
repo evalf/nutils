@@ -9,8 +9,9 @@ class Element( cache.Immutable ):
 
 class Mosaic( Element ):
 
-  def __init__( self, ndims, children ):
+  def __init__( self, ndims, children, parent=None ):
     self.children = children
+    self.parent   = parent
     Element.__init__( self, ndims )
 
   def pointset( self, pointset ):
@@ -25,6 +26,10 @@ class Mosaic( Element ):
       numeric.concatenate( allweights, axis=0 ) if len(allweights) == len(allpoints) else None
 
   @property
+  def edges( self ):
+    return self.parent.edges
+
+  @property
   def flipped( self ): # flip transformation as deep as possible to keep cascade intact
     children = tuple( (trans,elem.flipped) if isinstance(elem,Mosaic)
                  else (trans.flipped,elem) for trans, elem in self.children )
@@ -33,7 +38,7 @@ class Mosaic( Element ):
   @cache.property
   def simplices( self ): # merge transformations recursively
     return [ (trans,)+simplex if len(simplex)==1
-        else (trans*simplex[0],)+simplex[1:] for trans, elem in self.children for simplex in elem.simplices ]
+        else (trans*simplex[0],)+simplex[1:] for trans, elem in filter(None,self.children) for simplex in elem.simplices ]
 
 class Reference( Element ):
 
@@ -100,16 +105,16 @@ class Reference( Element ):
       for trans, elem in self.children:
         p, i, n = elem.trim( levelset[:-1]+(trans,)+levelset[-1:], maxrefine-1, minrefine-1 ) if minrefine \
              else elem.trim( levelset[sub.next()], maxrefine-1, 0 )
-        if p: pos.append( (trans,p) )
-        if i: nul.append( (trans,i) )
-        if n: neg.append( (trans,n) )
-      if not neg:
-        assert not nul
+        pos.append( (trans,p) if p else None )
+        nul.append( (trans,i) if i else None )
+        neg.append( (trans,n) if n else None )
+      if all(n is None for n in neg):
+        assert (nu is None for nu in nul)
         return self, None, None
-      if not pos:
-        assert not nul
+      if all(p is None for p in pos):
+        assert (nu is None for nu in nul)
         return None, None, self
-    return Mosaic( self.ndims, tuple(pos) ), Mosaic( self.ndims-1, tuple(nul) ), Mosaic( self.ndims, tuple(neg) )
+    return Mosaic( self.ndims, tuple(pos), self ), Mosaic( self.ndims-1, tuple(nul), self ), Mosaic( self.ndims, tuple(neg), self )
 
 class Simplex( Reference ):
 
