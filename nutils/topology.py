@@ -277,16 +277,18 @@ class Topology( object ):
     return retvals
 
   @log.title
-  def trim( self, levelset, maxrefine=0, minrefine=0 ):
+  def trim( self, levelset, maxrefine=0, minrefine=0, finestscheme=None ):
     'trim element along levelset'
 
+    if finestscheme:
+      finestscheme = pointset.aspointset(finestscheme)
     levelset = function.ascompiled( levelset )
     pos = numeric.empty( self.elements.shape, dtype=object )
     neg = numeric.empty( self.elements.shape, dtype=object )
     nul = []
     __logger__ = log.enumerate( 'elem', self )
     for ielem, elem in __logger__:
-      p, i, n = elem[-1].trim( levelset=(elem[:-1]+(levelset,)), maxrefine=maxrefine, minrefine=minrefine )
+      p, i, n = elem[-1].trim( levelset=(elem[:-1]+(levelset,)), maxrefine=maxrefine, minrefine=minrefine, finestscheme=finestscheme )
       if p: pos[ielem] = elem[:-1] + (p,)
       if i: nul.append( elem[:-1] + (i,) )
       if n: neg[ielem] = elem[:-1] + (n,)
@@ -427,10 +429,25 @@ class StructuredTopology( Topology ):
     if isinstance( degree, int ):
       degree = ( degree, ) * self.ndims
 
+    removedofsnd = []
+    if removedofs != None:
+      removedofs = numeric.array(removedofs)
+      if removedofs.ndim==1:
+        if removedofs.dtype==object:
+          assert removedofs.size==self.ndims
+        elif removedofs.dtype==int:
+          removedofsnd = numeric.unique(removedofs)[::-1]
+          removedofs   = None
+        else:  
+          raise Exception('Invalid dtype for removedofs')
+      elif removedofs.ndim==2:
+        assert removedofs.dtype==int
+        assert removedofs.shape[0]==self.ndims
+      else:
+        raise Exception('Invalid removedofs format')
+
     if removedofs == None:
       removedofs = [None] * self.ndims
-    else:
-      assert len(removedofs) == self.ndims
 
     vertex_structure = numeric.array( 0 )
     dofcount = 1
@@ -469,6 +486,13 @@ class StructuredTopology( Topology ):
         vertex_structure[...,mask] = -1
       dofcount *= nd
       slices.append( [ slice(i,i+p+1) for i in range(n) ] )
+
+    dofcount -= len(removedofsnd)
+    for rdof in removedofsnd:
+      assert 0<=rdof<dofcount
+      vertex_structure[numeric.equal( vertex_structure, rdof )] = -1
+      vertex_structure[numeric.greater( vertex_structure, rdof )] -= 1
+
 
     dofmap = {}
     funcmap = {}

@@ -40,6 +40,23 @@ class Mosaic( Element ):
     return [ (trans,)+simplex if len(simplex)==1
         else (trans*simplex[0],)+simplex[1:] for trans, elem in filter(None,self.children) for simplex in elem.simplices ]
 
+class MaskedElement( Element ):
+
+  def __init__( self, coords, weights ):
+    npoints, ndims = coords.shape
+    assert weights.ndim==1
+    assert weights.shape[0]==npoints
+    self.coords = coords
+    self.weights = weights
+    Element.__init__( self, ndims )
+
+  def pointset( self, pointset ):
+    return self.coords, self.weights
+
+  @property
+  def simplices( self ):
+    return (self,),
+
 class Reference( Element ):
 
   def __init__( self, vertices ):
@@ -61,7 +78,7 @@ class Reference( Element ):
     assert isinstance( n, int ) and n >= 1
     return self if n == 1 else self * self**(n-1)
 
-  def trim( self, levelset, maxrefine=0, minrefine=0, eps=1e-10 ):
+  def trim( self, levelset, maxrefine=0, minrefine=0, eps=1e-10, finestscheme=None ):
     assert maxrefine >= minrefine >= 0
     if minrefine == 0 and not numeric.isarray( levelset ):
       from pointset import Pointset
@@ -73,6 +90,10 @@ class Reference( Element ):
         return self, None, None
       if numeric.less( levelset, +eps ).all():
         return None, None, self
+      if finestscheme:
+        pos = numeric.greater_equal( levelset, 0 )
+        coords, weights = finestscheme( self )
+        return MaskedElement( coords[pos], weights[pos] ), None, MaskedElement( coords[~pos], weights[~pos] )
       coords = numeric.vstack([ self.vertices,
         numeric.dot( self._get_intersections(levelset), self.vertices ) ])
       pos, nul, neg = [], [], []
@@ -103,8 +124,8 @@ class Reference( Element ):
         assert levelset.shape == (nverts,)
         sub = iter(subs)
       for trans, elem in self.children:
-        p, i, n = elem.trim( levelset[:-1]+(trans,)+levelset[-1:], maxrefine-1, minrefine-1 ) if minrefine \
-             else elem.trim( levelset[sub.next()], maxrefine-1, 0 )
+        p, i, n = elem.trim( levelset[:-1]+(trans,)+levelset[-1:], maxrefine-1, minrefine-1, finestscheme=finestscheme ) if minrefine \
+             else elem.trim( levelset[sub.next()], maxrefine-1, 0, finestscheme=finestscheme )
         pos.append( (trans,p) if p else None )
         nul.append( (trans,i) if i else None )
         neg.append( (trans,n) if n else None )
