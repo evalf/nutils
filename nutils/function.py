@@ -1898,39 +1898,19 @@ class Eig( Evaluable ):
   def _opposite( self ):
     return Eig( opposite(self.func), self.symmetric )
 
-class EigenValue( ArrayFunc ):
-  'EigenVector'
+class ArrayFromTuple( ArrayFunc ):
 
-  def __init__( self, eig ):
-    'contructor'
-
-    assert isinstance( eig, Eig )
-    self.eig = eig
-    ArrayFunc.__init__( self, args=[eig], evalf=self.eigval, shape=eig.shape[:-1] )
+  def __init__( self, arrays, index, shape ):
+    self.arrays = arrays
+    self.index = index
+    ArrayFunc.__init__( self, args=[arrays,index], evalf=self.arrayfromtuple, shape=shape )
 
   @staticmethod
-  def eigval( (val, vec) ):
-    return val
+  def arrayfromtuple( arrays, index ):
+    return arrays[ index ]
 
   def _opposite( self ):
-    return EigenValue( self.eig._opposite() )
-
-class EigenVector( ArrayFunc ):
-  'EigenVector'
-
-  def __init__( self, eig ):
-    'contructor'
-
-    assert isinstance( eig, Eig )
-    self.eig = eig
-    ArrayFunc.__init__( self, args=[eig], evalf=self.eigvec, shape=eig.shape )
-
-  @staticmethod
-  def eigvec( (val, vec) ):
-    return vec
-
-  def _opposite( self ):
-    return EigenVector( self.eig._opposite() )
+    return ArrayFromTuple( opposite(self.arrays), self.index, self.shape )
 
 # PRIORITY OBJECTS
 #
@@ -3116,8 +3096,8 @@ def eig( arg, axes=(-2,-1), symmetric=False ):
     assert eigvec.shape == shapevec, 'bug in %s._eig' % arg
   else:
     eig = Eig( arg, symmetric )
-    eigval = EigenValue( eig )
-    eigvec = EigenVector( eig )
+    eigval = ArrayFromTuple( eig, index=0, shape=arg.shape[:-1] )
+    eigvec = ArrayFromTuple( eig, index=1, shape=arg.shape )
 
   # Return the evaluable function objects in a tuple like numpy
   return eigval, eigvec
@@ -3171,9 +3151,7 @@ def swapaxes( arg, axes=(-2,-1) ):
 def opposite( arg ):
   'evaluate jump over interface'
 
-  arg = asarray( arg )
-
-  if not _isfunc( arg ):
+  if not isinstance( arg, Evaluable ):
     return arg
 
   return arg._opposite()
