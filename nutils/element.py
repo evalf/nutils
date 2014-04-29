@@ -20,7 +20,7 @@ class Mosaic( Element ):
     for trans, child in self.simplices:
       points, weights = pointset( child )
       allpoints.append( trans.apply( points ) )
-      if weights:
+      if weights is not None:
         allweights.append( numeric.times( weights, trans.det ) )
     return numeric.concatenate( allpoints, axis=0 ), \
       numeric.concatenate( allweights, axis=0 ) if len(allweights) == len(allpoints) else None
@@ -78,24 +78,29 @@ class Reference( Element ):
     assert isinstance( n, int ) and n >= 1
     return self if n == 1 else self * self**(n-1)
 
-  def trim( self, levelset, maxrefine=0, minrefine=0, eps=1e-10, finestscheme=None ):
+  def trim( self, levelset, maxrefine=0, minrefine=0, eps=1e-10, finestscheme=None, levelset_eval=None ):
     assert maxrefine >= minrefine >= 0
-    if minrefine == 0 and not numeric.isarray( levelset ):
+    if minrefine == 0 and levelset_eval is None:
       from pointset import Pointset
       vertex = Pointset( 'vertex', maxrefine )
-      levelset = levelset[-1].eval( levelset[:-1]+(self,), vertex )
+      levelset_eval = levelset[-1].eval( levelset[:-1]+(self,), vertex )
     if maxrefine == 0: # check values
-      assert levelset.shape == (self.nverts,)
-      if numeric.greater( levelset, -eps ).all():
+      assert levelset_eval.shape == (self.nverts,)
+      if numeric.greater( levelset_eval, -eps ).all():
         return self, None, None
-      if numeric.less( levelset, +eps ).all():
+      if numeric.less( levelset_eval, +eps ).all():
         return None, None, self
       if finestscheme:
-        pos = numeric.greater_equal( levelset, 0 )
         coords, weights = finestscheme( self )
+        levelset_eval_finest = levelset[-1].eval( levelset[:-1]+(self,), finestscheme )
+        pos = numeric.greater_equal( levelset_eval_finest, 0 )
+        if pos.all():
+          return self, None, None
+        if (~pos).all():
+          return None, None, self
         return MaskedElement( coords[pos], weights[pos] ), None, MaskedElement( coords[~pos], weights[~pos] )
       coords = numeric.vstack([ self.vertices,
-        numeric.dot( self._get_intersections(levelset), self.vertices ) ])
+        numeric.dot( self._get_intersections(levelset_eval), self.vertices ) ])
       pos, nul, neg = [], [], []
       simplex = Simplex( self.ndims )
       for tri in util.delaunay( coords ):
@@ -105,9 +110,9 @@ class Reference( Element ):
           tri[-2:] = tri[-1], tri[-2]
           matrix = ( coords[tri[1:]] - offset ).T
         trans = transform.Linear( matrix ) + offset
-        signs_tri = [ levelset[i] for i in tri if i < self.nverts ]
+        signs_tri = [ levelset_eval[i] for i in tri if i < self.nverts ]
         if numeric.greater( signs_tri, -eps ).all():
-          extra = numeric.find([ i < self.nverts and levelset[i] > eps for i in tri ])
+          extra = numeric.find([ i < self.nverts and levelset_eval[i] > eps for i in tri ])
           if len(extra) == 1:
             iedge, = extra # all vertices except for iedge lie on the interface
             etrans, esimplex = simplex.edges[iedge]
@@ -121,11 +126,12 @@ class Reference( Element ):
       pos, nul, neg = [], [], []
       if minrefine == 0:
         nverts, subs = self._child_subsets[maxrefine-1]
-        assert levelset.shape == (nverts,)
+        assert levelset_eval.shape == (nverts,)
         sub = iter(subs)
       for trans, elem in self.children:
-        p, i, n = elem.trim( levelset[:-1]+(trans,)+levelset[-1:], maxrefine-1, minrefine-1, finestscheme=finestscheme ) if minrefine \
-             else elem.trim( levelset[sub.next()], maxrefine-1, 0, finestscheme=finestscheme )
+        p, i, n = elem.trim( levelset[:-1]+(trans,)+levelset[-1:],
+          maxrefine-1, minrefine-1 if minrefine else minrefine, finestscheme=finestscheme,
+          levelset_eval=None if minrefine else levelset_eval[sub.next()] )
         pos.append( (trans,p) if p else None )
         nul.append( (trans,i) if i else None )
         neg.append( (trans,n) if n else None )
