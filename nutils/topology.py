@@ -277,43 +277,62 @@ class Topology( object ):
     return retvals
 
   @log.title
-  def trim( self, levelset, maxrefine=0, minrefine=0, finestscheme=None ):
+  def trim( self, levelset, maxrefine=0, minrefine=0 ):
     'trim element along levelset'
 
-    if finestscheme:
-      finestscheme = pointset.aspointset(finestscheme)
     levelset = function.ascompiled( levelset )
-    pos = numeric.empty( self.elements.shape, dtype=object )
-    neg = numeric.empty( self.elements.shape, dtype=object )
-    nul = []
+    pos = []
+    neg = []
     __logger__ = log.enumerate( 'elem', self )
-    for ielem, elem in __logger__:
-      p, i, n = elem[-1].trim( levelset=(elem[:-1]+(levelset,)), maxrefine=maxrefine, minrefine=minrefine, finestscheme=finestscheme )
-      if p: pos[ielem] = elem[:-1] + (p,)
-      if i: nul.append( elem[:-1] + (i,) )
-      if n: neg[ielem] = elem[:-1] + (n,)
-    posgroups, neggroups = {}, {}
-    for key, groupelems in self.groups.items():
-      ind = self.index( groupelems )
-      posgroups[key] = Topology( ndims=self.ndims, elements=filter(None,pos[ind]) )
-      neggroups[key] = Topology( ndims=self.ndims, elements=filter(None,neg[ind]) )
-    if False: #self.boundary:
-      posboundary, negboundary = self.boundary.trim( levelset, maxrefine, minrefine )
-      posboundary = posboundary.new_with_group( 'trim',
-        UnstructuredTopology( ndims=self.ndims-1, elements=nul ) )
-      negboundary = negboundary.new_with_group( 'trim',
-        UnstructuredTopology( ndims=self.ndims-1, elements=[ elem[:-1]+(elem[-1].flipped,) for elem in nul ] ) )
-    else:
-      posboundary = negboundary = None
-
-    if isinstance(self,StructuredTopology):
-      postopo = StructuredTopology( self.structure_like( pos ) )
-      negtopo = StructuredTopology( self.structure_like( neg ) )
-    else:
-      postopo = UnstructuredTopology( ndims=self.ndims, elements=filter(None,pos), groups=posgroups, boundary=posboundary )
-      negtopo = UnstructuredTopology( ndims=self.ndims, elements=filter(None,neg), groups=neggroups, boundary=negboundary )
+    for ielem, (trans,head) in __logger__:
+      p, n = head.trim( levelset=(trans+(levelset,)), maxrefine=maxrefine, minrefine=minrefine )
+      if p: pos.append(( trans,p ))
+      if n: neg.append(( trans,n ))
+    # pos, nul, neg are sorted
+    postopo = TrimmedTopology( self, elements=pos, iface=nul )
+    negtopo = TrimmedTopology( self, elements=neg, iface=invnul )
 
     return postopo, negtopo
+
+#  @log.title
+#
+#  def trim( self, levelset, maxrefine=0, minrefine=0, finestscheme=None ):
+#    'trim element along levelset'
+#
+#    if finestscheme:
+#      finestscheme = pointset.aspointset(finestscheme)
+#    levelset = function.ascompiled( levelset )
+#    pos = numeric.empty( self.elements.shape, dtype=object )
+#    neg = numeric.empty( self.elements.shape, dtype=object )
+#    nul = []
+#    __logger__ = log.enumerate( 'elem', self )
+#    for ielem, elem in __logger__:
+#      p, i, n = elem[-1].trim( levelset=(elem[:-1]+(levelset,)), maxrefine=maxrefine, minrefine=minrefine, finestscheme=finestscheme )
+#      if p: pos[ielem] = elem[:-1] + (p,)
+#      if i: nul.append( elem[:-1] + (i,) )
+#      if n: neg[ielem] = elem[:-1] + (n,)
+#    posgroups, neggroups = {}, {}
+#    for key, groupelems in self.groups.items():
+#      ind = self.index( groupelems )
+#      posgroups[key] = Topology( ndims=self.ndims, elements=filter(None,pos[ind]) )
+#      neggroups[key] = Topology( ndims=self.ndims, elements=filter(None,neg[ind]) )
+#    if False: #self.boundary:
+#      posboundary, negboundary = self.boundary.trim( levelset, maxrefine, minrefine )
+#      posboundary = posboundary.new_with_group( 'trim',
+#        UnstructuredTopology( ndims=self.ndims-1, elements=nul ) )
+#      negboundary = negboundary.new_with_group( 'trim',
+#        UnstructuredTopology( ndims=self.ndims-1, elements=[ elem[:-1]+(elem[-1].flipped,) for elem in nul ] ) )
+#    else:
+#      posboundary = negboundary = None
+#
+#    if isinstance(self,StructuredTopology):
+#      postopo = StructuredTopology( self.structure_like( pos ) )
+#      negtopo = StructuredTopology( self.structure_like( neg ) )
+#    else:
+#      postopo = UnstructuredTopology( ndims=self.ndims, elements=filter(None,pos), groups=posgroups, boundary=posboundary )
+#      negtopo = UnstructuredTopology( ndims=self.ndims, elements=filter(None,neg), groups=neggroups, boundary=negboundary )
+#
+#    return postopo, negtopo
 
   @cache.property
   def simplex( self ):
@@ -691,8 +710,52 @@ class RefinedTopology( Topology ):
   @property
   def boundary( self ):
     return self.basetopo.boundary.refined
-    
 
+class TrimmedTopology( Topology ):
+  'trimmed'
+
+  def __init__( self, basetopo, elements, iface=None ):
+    self.basetopo = basetopo
+    self.iface = iface
+    Topology.__init__( self, basetopo.ndims, elements )
+
+  @property
+  def boundary( self ):
+    belems = []#list( self.iface )
+    for trans, head in self.basetopo.boundary:
+      index = numeric.bisect( self.elements_nohead, trans[:-1] )
+      if index < 0:
+        continue
+      ptrans, phead = self.elements[ index ]
+      if ptrans != trans[:-1]:
+        continue
+      ehead = phead.edgedict.get( trans[-1] )
+      if ehead is None:
+        continue
+      belems.append( (trans,ehead) )
+    belems.sort()
+    return TrimmedTopology( self.basetopo.boundary, belems )
+
+  def __getitem__( self, key ):
+    if key == 'trim':
+      # all elements in self that are not in basetopo
+      indices = numeric.bisect_sorted( self.elements_nohead, self.basetopo.elements_nohead, matching=True )
+      select = numeric.ones( len(self), dtype=bool )
+      select[indices] = False
+      assert select.any(), 'no trimmed elements found in trim group'
+      return Topology( self.ndims, self.elements[select] )
+    else:
+      # all elements in basetopo[key] that are also in self
+      keytopo = self.basetopo[ key ]
+      indices = numeric.bisect_sorted( self.elements_nohead, keytopo.elements_nohead, matching=True )
+      elements = self.elements[indices]
+      if numeric.equal( elements, keytopo.elements ).all():
+        return keytopo
+      assert elements, 'no trimmed elements found in %s group' % key
+      return TrimmedTopology( keytopo, elements )
+
+  def splinefunc( self, *args, **kwargs ):
+    return self.basetopo.splinefunc( *args, **kwargs )
 
 ## OLD
 
