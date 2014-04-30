@@ -337,7 +337,7 @@ class Topology( object ):
     for elem in self:
       if elem[:-1] in refine:
         refine.remove( elem[:-1] )
-        refined.extend( elem[:-1] + child for child in elem[-1].children )
+        refined.extend( elem[:-1] + child for child in sorted(elem[-1].children) )
       else:
         refined.append( elem )
         # only for argument checking: remove parents from refine
