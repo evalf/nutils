@@ -597,6 +597,7 @@ class HierarchicalTopology( Topology ):
     if isinstance( basetopo, HierarchicalTopology ):
       basetopo = basetopo.basetopo
     self.basetopo = basetopo
+    self.groups = {} #TODO
     self.maxrefine = max( len(elem) for elem in elements ) \
                    - min( len(elem) for elem in self.basetopo )
     Topology.__init__( self, basetopo.ndims, elements )
