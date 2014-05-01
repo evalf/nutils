@@ -132,14 +132,17 @@ class Reference( Element ):
         p, i, n = elem.trim( levelset[:-1]+(trans,)+levelset[-1:],
           maxrefine-1, minrefine-1 if minrefine else minrefine, finestscheme=finestscheme,
           levelset_eval=None if minrefine else levelset_eval[sub.next()] )
-        pos.append( (trans,p) if p else None )
-        nul.append( (trans,i) if i else None )
-        neg.append( (trans,n) if n else None )
-      if all(n is None for n in neg):
-        assert (nu is None for nu in nul)
+        if p:  
+          pos.append( (trans,p) )
+        if i:  
+          nul.append( (trans,i) )
+        if n:
+          neg.append( (trans,n) )
+      if not neg:
+        assert not nul
         return self, None, None
-      if all(p is None for p in pos):
-        assert (nu is None for nu in nul)
+      if not pos:
+        assert not nul
         return None, None, self
     return Mosaic( self.ndims, tuple(pos), self ), Mosaic( self.ndims-1, tuple(nul), self ), Mosaic( self.ndims, tuple(neg), self )
 
