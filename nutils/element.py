@@ -1,4 +1,4 @@
-from . import log, util, cache, numeric, transform, function, _
+from . import log, util, cache, numeric, transform, function, pointset, _
 import warnings, weakref
 
 
@@ -221,7 +221,12 @@ class Simplex( Reference ):
     assert self.ndims in (2,3)
     return self.vertices, numeric.ones(self.nverts)
 
-  def pointset_gauss( self, degree ):
+  def pointset_gauss( self, degree, *degs ):
+    
+    if degs:
+      assert len(degs)==self.ndims-1
+      degree += sum(degs)
+
     assert isinstance( degree, int ) and degree >= 0
     if self.ndims == 1: # line
       k = numeric.arange( 1, degree // 2 + 1 )
@@ -470,9 +475,15 @@ class Tensor( Reference ):
       raise NotImplementedError
     return numeric.array(points), numeric.ones(self.nverts)
 
-  def pointset( self, pointset ):
-    ipoints1, iweights1 = pointset( self.simplex1 )
-    ipoints2, iweights2 = pointset( self.simplex2 )
+  def pointset( self, pset ):
+    if len(pset.args)==1:
+      pset1 = pset2 = pset
+    else:  
+      assert len(pset.args)==self.ndims
+      pset1 = pointset.Pointset( pset.name, *pset.args[:self.simplex1.ndims] )
+      pset2 = pointset.Pointset( pset.name, *pset.args[self.simplex1.ndims:] )
+    ipoints1, iweights1 = pset1( self.simplex1 )
+    ipoints2, iweights2 = pset2( self.simplex2 )
     ipoints = numeric.empty( (ipoints1.shape[0],ipoints2.shape[0],self.ndims) )
     ipoints[:,:,0:self.simplex1.ndims] = ipoints1[:,_,:self.simplex1.ndims]
     ipoints[:,:,self.simplex1.ndims:self.ndims] = ipoints2[_,:,:self.simplex2.ndims]

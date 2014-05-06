@@ -106,11 +106,11 @@ class IterLog( object ):
     return self
 
   def next( self ):
-    self.index += 1
     if time.time() > self.tnext:
       if self.dtexp != 1:
         self.dt = min( self.dt * self.dtexp, self.dtmax )
       self.parent( 'progress' ).write( self.mktitle() + '\n' )
+    self.index += 1
     try:
       return self.iterator.next()
     except:
