@@ -17,7 +17,7 @@ class Mosaic( Element ):
   def pointset( self, pointset ):
     allpoints = []
     allweights = []
-    for trans, child in self.simplices:
+    for trans, child in self.children:
       points, weights = pointset( child )
       allpoints.append( trans.apply( points ) )
       if weights is not None:
