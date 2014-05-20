@@ -2930,7 +2930,7 @@ def outer( arg1, arg2=None, axis=0 ):
 def pointwise( args, evalf, deriv ):
   'general pointwise operation'
 
-  args = asarray( args )
+  args = asarray( _matchndim(*args) )
   if _isfunc(args):
     return Pointwise( args, evalf, deriv )
   return evalf( *args )
