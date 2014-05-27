@@ -280,7 +280,7 @@ def determinant( A ):
       det[I] = numpy.linalg.det( A[I] )
   return det
 
-def eig( A ):
+def eig( A, sort=False ):
   'eig'
 
   assert isinstance( A, numpy.ndarray )
@@ -291,10 +291,14 @@ def eig( A ):
 
   for I in numpy.lib.index_tricks.ndindex( A.shape[:-2] ):
     eigval[I], eigvec[I] = numpy.linalg.eig( A[I] )
+    if sort:
+      idx = eigval.argsort()
+      eigval = eigval[idx]
+      eigvec = eigvec[:,idx]
 
   return (eigval, eigvec)
 
-def eigh( A ):
+def eigh( A, sort=False ):
   'eigh'
 
   assert isinstance( A, numpy.ndarray )
@@ -305,6 +309,10 @@ def eigh( A ):
 
   for I in numpy.lib.index_tricks.ndindex( A.shape[:-2] ):
     eigval[I], eigvec[I] = numpy.linalg.eigh( A[I] )
+    if sort:
+      idx = eigval.argsort()
+      eigval = eigval[idx]
+      eigvec = eigvec[:,idx]
 
   return (eigval, eigvec)
 

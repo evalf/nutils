@@ -1887,16 +1887,17 @@ class Eig( Evaluable ):
 
   __slots__ = 'func', 'shape', 'symmetric'
 
-  def __init__( self, func, symmetric=False ):
+  def __init__( self, func, symmetric=False, sort=False ):
     'contructor'
 
-    Evaluable.__init__( self, args=[func], evalf=numeric.eigh if symmetric else numeric.eig )
+    Evaluable.__init__( self, args=[func, sort], evalf=numeric.eigh if symmetric else numeric.eig )
     self.symmetric = symmetric
+    self.sort = sort
     self.func = func
     self.shape = func.shape
 
   def _opposite( self ):
-    return Eig( opposite(self.func), self.symmetric )
+    return Eig( opposite(self.func), self.symmetric, self.sort )
 
 class ArrayFromTuple( ArrayFunc ):
 
@@ -3055,13 +3056,14 @@ def sign( arg ):
 
   return Sign( arg )
 
-def eig( arg, axes=(-2,-1), symmetric=False ):
+def eig( arg, axes=(-2,-1), symmetric=False, sort=False ):
   ''' eig( arg, axes [ symmetric ] )
   Compute the eigenvalues and vectors of a matrix
   The eigenvalues and vectors are positioned on the last axes
 
   tuple axes      The axis on which the eigenvalues and vectors are calculated
   bool symmetric  Is the matrix symmetric
+  bool sort       Sort the eigenvalues and vectors
   '''
 
   # Sort axis
@@ -3081,10 +3083,8 @@ def eig( arg, axes=(-2,-1), symmetric=False ):
 
   # When it's an array calculate directly
   if not _isfunc(arg):
-    if symmetric:
-      return numpy.linalg.eigh( arg )
-    else:
-      return numpy.linalg.eig( arg )
+    eigval, eigvec = numeric.eigh( arg ) if symmetric else numeric.eig( arg )
+    return eigval, eigvec
 
   # Use _call to see if the object has its own _eig function
   ret = _call( arg, '_eig' )
