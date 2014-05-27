@@ -1,7 +1,10 @@
 from . import util, numpy, log, numeric, parallel, _
 import scipy.sparse
-# from scipy.sparse.sparsetools.csr import _csr
-from scipy.sparse import sparsetools as _csr
+# Import fix
+try:
+  from scipy.sparse.sparsetools.csr import _csr
+except:
+  from scipy.sparse import sparsetools as _csr
 from scipy.sparse.linalg.isolve import _iterative
 import time
 
