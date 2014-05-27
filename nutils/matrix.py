@@ -1,6 +1,7 @@
 from . import util, numpy, log, numeric, parallel, _
 import scipy.sparse
-from scipy.sparse.sparsetools.csr import _csr
+# from scipy.sparse.sparsetools.csr import _csr
+from scipy.sparse import sparsetools as _csr
 from scipy.sparse.linalg.isolve import _iterative
 import time
 
@@ -393,14 +394,14 @@ class SparseMatrix( Matrix ):
       return self.todense().solve( b=b, constrain=constrain, lconstrain=lconstrain, rconstrain=rconstrain, title=title, log=log )
 
     log.context( title )
-  
+
     b = numpy.asarray( b, dtype=float )
     if b.ndim == 0:
       b = numeric.fastrepeat( b[_], self.shape[0] )
     else:
       assert b.ndim == 1, 'right-hand-side has shape %s, expected a vector' % (b.shape,)
       assert b.shape == self.shape[:1]
-  
+
     if symmetric:
       restart = None
 
@@ -511,7 +512,7 @@ class DenseMatrix( Matrix ):
     else:
       assert b.ndim == 1, 'right-hand-side has shape %s, expected a vector' % (b.shape,)
       assert b.shape == self.shape[:1]
-  
+
     if constrain is lconstrain is rconstrain is None:
       return numpy.linalg.solve( self.data, b )
 
