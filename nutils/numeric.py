@@ -280,31 +280,51 @@ def determinant( A ):
       det[I] = numpy.linalg.det( A[I] )
   return det
 
-def eig( A ):
-  'eig'
-
+def eig( A, sort=False ):
+  ''' eig
+  Compute the eigenvalues and vectors of a hermitian matrix
+  sort   -1/0/1 -> descending / unsorted / ascending
+  '''
   assert isinstance( A, numpy.ndarray )
   assert A.shape[-2] == A.shape[-1]
+
+  sort = int(sort)
 
   eigval = numpy.empty( A.shape[:-1] )
   eigvec = numpy.empty( A.shape )
 
   for I in numpy.lib.index_tricks.ndindex( A.shape[:-2] ):
-    eigval[I], eigvec[I] = numpy.linalg.eig( A[I] )
+    val, vec = numpy.linalg.eig( A[I] )
+    if sort != 0:
+      idx = val.argsort()
+      val = val[idx[::sort]]
+      vec = vec[:,idx[::sort]]
+    eigval[I] = val
+    eigvec[I] = vec
 
   return (eigval, eigvec)
 
-def eigh( A ):
-  'eigh'
-
+def eigh( A, sort=False ):
+  ''' eigh
+  Compute the eigenvalues and vectors of a hermitian matrix
+  sort   -1/0/1 -> descending / unsorted / ascending
+  '''
   assert isinstance( A, numpy.ndarray )
   assert A.shape[-2] == A.shape[-1]
+
+  sort = int(sort)
 
   eigval = numpy.empty( A.shape[:-1] )
   eigvec = numpy.empty( A.shape )
 
   for I in numpy.lib.index_tricks.ndindex( A.shape[:-2] ):
-    eigval[I], eigvec[I] = numpy.linalg.eigh( A[I] )
+    val, vec = numpy.linalg.eigh( A[I] )
+    if sort != 0:
+      idx = val.argsort()
+      val = val[idx[::sort]]
+      vec = vec[:,idx[::sort]]
+    eigval[I] = val
+    eigvec[I] = vec
 
   return (eigval, eigvec)
 

@@ -1885,18 +1885,19 @@ class Pointdata( ArrayFunc ):
 class Eig( Evaluable ):
   'Eig'
 
-  __slots__ = 'func', 'shape', 'symmetric'
+  __slots__ = 'func', 'shape', 'symmetric', 'sort'
 
-  def __init__( self, func, symmetric=False ):
+  def __init__( self, func, symmetric=False, sort=False ):
     'contructor'
 
-    Evaluable.__init__( self, args=[func], evalf=numeric.eigh if symmetric else numeric.eig )
+    Evaluable.__init__( self, args=[func, sort], evalf=numeric.eigh if symmetric else numeric.eig )
     self.symmetric = symmetric
+    self.sort = sort
     self.func = func
     self.shape = func.shape
 
   def _opposite( self ):
-    return Eig( opposite(self.func), self.symmetric )
+    return Eig( opposite(self.func), self.symmetric, self.sort )
 
 class ArrayFromTuple( ArrayFunc ):
 
@@ -3055,13 +3056,15 @@ def sign( arg ):
 
   return Sign( arg )
 
-def eig( arg, axes=(-2,-1), symmetric=False ):
+def eig( arg, axes=(-2,-1), symmetric=False, sort=False ):
   ''' eig( arg, axes [ symmetric ] )
   Compute the eigenvalues and vectors of a matrix
   The eigenvalues and vectors are positioned on the last axes
 
-  tuple axes      The axis on which the eigenvalues and vectors are calculated
-  bool symmetric  Is the matrix symmetric
+  tuple axes       The axis on which the eigenvalues and vectors are calculated
+  bool  symmetric  Is the matrix symmetric
+  int   sort       Sort the eigenvalues and vectors
+                   -1/0/1 -> descending / unsorted / ascending
   '''
 
   # Sort axis
@@ -3081,10 +3084,8 @@ def eig( arg, axes=(-2,-1), symmetric=False ):
 
   # When it's an array calculate directly
   if not _isfunc(arg):
-    if symmetric:
-      return numpy.linalg.eigh( arg )
-    else:
-      return numpy.linalg.eig( arg )
+    eigval, eigvec = numeric.eigh( arg, sort ) if symmetric else numeric.eig( arg, sort )
+    return eigval, eigvec
 
   # Use _call to see if the object has its own _eig function
   ret = _call( arg, '_eig' )
@@ -3095,7 +3096,7 @@ def eig( arg, axes=(-2,-1), symmetric=False ):
     assert eigval.shape == shapeval, 'bug in %s._eig' % arg
     assert eigvec.shape == shapevec, 'bug in %s._eig' % arg
   else:
-    eig = Eig( arg, symmetric )
+    eig = Eig( arg, symmetric=symmetric, sort=sort )
     eigval = ArrayFromTuple( eig, index=0, shape=arg.shape[:-1] )
     eigvec = ArrayFromTuple( eig, index=1, shape=arg.shape )
 
