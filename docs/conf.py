@@ -21,6 +21,15 @@ import os
 
 sys.path.insert(0, os.path.abspath('..'))
 
+class Mock(object):
+  @staticmethod
+  def __getattr__(name):
+    return object
+
+for mod_name in ( 'numpy', 'scipy', 'scipy.sparse', 'scipy.sparse.linalg',
+    'scipy.sparse.linalg.isolve', 'matplotlib' ):
+  sys.modules[mod_name] = Mock()
+
 # -- General configuration ------------------------------------------------
 
 # If your documentation needs a minimal Sphinx version, state it here.

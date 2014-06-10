@@ -1098,18 +1098,18 @@ class TriangularElement( Element ):
                   edge numbering:   {bottom:0, slanted:1, left:2}
                   edge local coords run counter-clockwise.'''
 
-  __slots__ = ()
+  __slots__ = 'edgetransform',
 
   neighbormap = -1, 2, 1, 0
-  edgetransform = (
-    AffineTransformation( offset=[0,0], transform=[[ 1],[ 0]] ),
-    AffineTransformation( offset=[1,0], transform=[[-1],[ 1]] ),
-    AffineTransformation( offset=[0,1], transform=[[ 0],[-1]] ) )
 
   def __init__( self, vertices, index=None, parent=None, context=None ):
     'constructor'
 
     assert len(vertices) == 3
+    self.edgetransform = (
+      AffineTransformation( offset=[0,0], transform=[[ 1],[ 0]] ),
+      AffineTransformation( offset=[1,0], transform=[[-1],[ 1]] ),
+      AffineTransformation( offset=[0,1], transform=[[ 0],[-1]] ) )
     Element.__init__( self, ndims=2, vertices=vertices, index=index, parent=parent, context=context )
 
   @property
@@ -1236,20 +1236,20 @@ class TriangularElement( Element ):
 class TetrahedronElement( Element ):
   'tetrahedron element'
 
-  __slots__ = ()
+  __slots__ = 'edgetransform',
 
   neighbormap = -1, 3, 2, 1, 0
   #Defined to create outward pointing normal vectors for all edges (i.c. triangular faces)
-  edgetransform = (
-    AffineTransformation( offset=[0,0,0], transform=[[ 0, 1],[1,0],[0,0]] ),
-    AffineTransformation( offset=[0,0,0], transform=[[ 1, 0],[0,0],[0,1]] ),
-    AffineTransformation( offset=[0,0,0], transform=[[ 0, 0],[0,1],[1,0]] ),
-    AffineTransformation( offset=[1,0,0], transform=[[-1,-1],[1,0],[0,1]] ) )
 
   def __init__( self, vertices, index=None, parent=None, context=None ):
     'constructor'
 
     assert len(vertices) == 4
+    self.edgetransform = (
+      AffineTransformation( offset=[0,0,0], transform=[[ 0, 1],[1,0],[0,0]] ),
+      AffineTransformation( offset=[0,0,0], transform=[[ 1, 0],[0,0],[0,1]] ),
+      AffineTransformation( offset=[0,0,0], transform=[[ 0, 0],[0,1],[1,0]] ),
+      AffineTransformation( offset=[1,0,0], transform=[[-1,-1],[1,0],[0,1]] ) )
     Element.__init__( self, ndims=3, vertices=vertices, index=index, parent=parent, context=context )
 
   @property
