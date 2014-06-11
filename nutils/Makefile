@@ -11,6 +11,7 @@ $(MODULE)_d.so: $(MODULE).c
 	rm -r -f build
 
 clean:
+	rm -f *.pyc
 	rm -r -f build $(MODULE).so $(MODULE)_d.so
 
 .PHONY: clean
