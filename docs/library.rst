@@ -7,7 +7,6 @@ To be written.
 
   library/topology
   library/function
-  library/cache
   library/core
   library/debug
   library/element

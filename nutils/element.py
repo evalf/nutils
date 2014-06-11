@@ -266,9 +266,10 @@ class Element( object ):
 
   def intersected( self, levelset, lscheme, evalrefine=0 ):
     '''check levelset intersection:
-      +1 for levelset > 0 everywhere
-      -1 for levelset < 0 everywhere
-       0 for intersected element'''
+
+    +1 for levelset > 0 everywhere
+    -1 for levelset < 0 everywhere
+    =0 for intersected element'''
 
     elems = iter( [self] )
     for irefine in range(evalrefine):
@@ -460,10 +461,12 @@ class ProductElement( Element ):
   
   @property
   def orientation( self ):
-    '''Neighborhood of elem1 and elem2 and transformations to get mutual overlap in right location
-    O: neighborhood,  as given by Element.neighbor(),
-       transf1,       required rotation of elem1 map: {0:0, 1:pi/2, 2:pi, 3:3*pi/2},
-       transf2,       required rotation of elem2 map (is indep of transf1 in UnstructuredTopology.'''
+    '''Neighborhood of elem1 and elem2 and transformations to get mutual
+    overlap in right location. Returns 3-element tuple:
+    * neighborhood, as given by Element.neighbor(),
+    * transf1, required rotation of elem1 map: {0:0, 1:pi/2, 2:pi, 3:3*pi/2},
+    * transf2, required rotation of elem2 map (is indep of transf1 in UnstructuredTopology.'''
+
     neighborhood = self.elem1.neighbor( self.elem2 )
     common_vertices = list( set(self.elem1.vertices) & set(self.elem2.vertices) )
     vertices1 = [self.elem1.vertices.index( ni ) for ni in common_vertices]
@@ -1092,11 +1095,12 @@ class QuadElement( Element ):
     return points, selection
 
 class TriangularElement( Element ):
-  '''triangular element
-     conventions: reference elem:   unit simplex {(x,y) | x>0, y>0, x+y<1}
-                  vertex numbering: {(1,0):0, (0,1):1, (0,0):2}
-                  edge numbering:   {bottom:0, slanted:1, left:2}
-                  edge local coords run counter-clockwise.'''
+  '''Triangular element.
+  Conventions:
+  * reference elem: unit simplex {(x,y) | x>0, y>0, x+y<1}
+  * vertex numbering: {(1,0):0, (0,1):1, (0,0):2}
+  * edge numbering: {bottom:0, slanted:1, left:2}
+  * edge local coords run counter-clockwise.'''
 
   __slots__ = 'edgetransform',
 

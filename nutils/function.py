@@ -3057,15 +3057,13 @@ def sign( arg ):
   return Sign( arg )
 
 def eig( arg, axes=(-2,-1), symmetric=False, sort=False ):
-  ''' eig( arg, axes [ symmetric ] )
-  Compute the eigenvalues and vectors of a matrix
-  The eigenvalues and vectors are positioned on the last axes
+  '''eig( arg, axes [ symmetric ] )
+  Compute the eigenvalues and vectors of a matrix. The eigenvalues and vectors
+  are positioned on the last axes.
 
-  tuple axes       The axis on which the eigenvalues and vectors are calculated
-  bool  symmetric  Is the matrix symmetric
-  int   sort       Sort the eigenvalues and vectors
-                   -1/0/1 -> descending / unsorted / ascending
-  '''
+  * tuple axes       The axis on which the eigenvalues and vectors are calculated
+  * bool  symmetric  Is the matrix symmetric
+  * int   sort       Sort the eigenvalues and vectors (-1=descending, 0=unsorted, 1=ascending)'''
 
   # Sort axis
   arg = asarray( arg )
@@ -3257,12 +3255,12 @@ def pointdata ( topo, ischeme, func=None, shape=None, value=None ):
   return Pointdata( data, shape )
 
 def fdapprox( func, w, dofs, delta=1.e-5 ):
-  '''Finite difference approximation of the variation of func in directions w around dofs
-  I: func,  the functional to differentiate
-     dofs,  DOF vector of linearization point
-     w,     the function space or a tuple of chained spaces
-     delta, finite difference step scaling of ||dofs||_inf
-  O: dfunc, approximate variation of func'''
+  '''Finite difference approximation of the variation of func in directions w
+  around dofs. Input arguments:
+  * func,  the functional to differentiate
+  * dofs,  DOF vector of linearization point
+  * w,     the function space or a tuple of chained spaces
+  * delta, finite difference step scaling of ||dofs||_inf'''
   log.context( 'FD approx' )
   if not isinstance( w, tuple ): w = w,
   x0 = tuple( wi.dot( dofs ) for wi in w )

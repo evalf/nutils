@@ -1,5 +1,5 @@
 Core
 ====
 
-.. automodule:: nutils.cache
+.. automodule:: nutils.core
    :members:
