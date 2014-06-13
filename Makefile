@@ -4,6 +4,9 @@ nutils:
 docs:
 	${MAKE} -C docs html
 
+test:
+	nosetests tests
+
 all: nutils docs
 
 clean:
