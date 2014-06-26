@@ -414,26 +414,39 @@ class SparseMatrix( Matrix ):
 
     b = ( b - self.matvec(x) )[I]
 
-    if precon == 'splu':
-
-      precon = self.get_splu( I, J, complete=True )
-      x[J] = precon.solve( b )
-
+    if type(precon)==str:
+      if precon == 'splu':
+  
+        precon = self.get_splu( I, J, complete=True )
+        x[J] = precon.solve( b )
+  
+      else:
+  
+        tmpvec = numpy.zeros( self.shape[1] )
+        def matvec( v ):
+          tmpvec[J] = v
+          return self.matvec(tmpvec)[I]
+  
+        if precon == 'spilu':
+          precon = self.get_splu( I, J, complete=False ).solve
+        elif precon:
+          raise Exception( 'Unknown preconditioner %s' % precon )
+  
+        x[J] = krylov( matvec, b, x0=x0, tol=tol, maxiter=maxiter, restart=restart, callback=callback, precon=precon )
     else:
-
       tmpvec = numpy.zeros( self.shape[1] )
       def matvec( v ):
         tmpvec[J] = v
         return self.matvec(tmpvec)[I]
+      x[J] = krylov( matvec, b, x0=x0, tol=tol, maxiter=maxiter, restart=restart, callback=callback, precon=precon.solve )
 
-      if precon == 'spilu':
-        precon = self.get_splu( I, J, complete=False ).solve
-      elif precon:
-        raise Exception( 'Unknown preconditioner %s' % precon )
-
-      x[J] = krylov( matvec, b, x0=x0, tol=tol, maxiter=maxiter, restart=restart, callback=callback, precon=precon )
 
     return x
+
+  def getprecon( self, constrain=None, lconstrain=None, rconstrain=None ):
+    x, I, J = parsecons( constrain, lconstrain, rconstrain, self.shape )
+    return self.get_splu( I, J, complete=True )
+
 
 class DenseMatrix( Matrix ):
   'matrix wrapper class'
