@@ -1,4 +1,4 @@
-from . import function, _
+from . import function, _, numeric
 import numpy
 
 def _tryall( obj, prefix, kwargs ):
@@ -47,3 +47,25 @@ class Hooke:
   @property
   def nu( self ):
     return self.lmbda / (2.*(self.lmbda+self.mu))
+
+class Orthotropic(object):
+  
+  def __init__( self, E, G, nu ):
+
+    vbar = function.product( nu )
+    vv = nu[:,_]*nu[_,:]
+    NE = -function.sqrt( E[:,_]*E[_,:] ) * ( vbar/vv + vv )  + function.diagonalize(E*(2.*nu**2-1.+vbar/nu**2))
+    NE /= (nu**2).sum() + 2*vbar - 1
+    
+    self.NE     = NE
+    self.Gbar   = function.product( G )
+    self.Ginv   = 1./G
+
+
+  def __call__( self, disp, coords ):
+    gradu = disp.grad( coords )
+    diag_gradu = function.takediag( gradu )
+    GG = self.Ginv[:,_]*self.Ginv[_,:]*self.Gbar
+    return function.diagonalize( (self.NE * diag_gradu[...,_,:]).sum() - 2.*self.Gbar*self.Ginv**2*diag_gradu ) \
+        + GG*( gradu+gradu.swapaxes(-2,-1) )
+      
