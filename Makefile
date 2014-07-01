@@ -1,18 +1,23 @@
-nutils:
-	${MAKE} -C nutils
+build:
+	python setup.py build clean
+
+dist:
+	python setup.py sdist
+	rm -rf nutils.egg-info
 
 docs:
 	${MAKE} -C docs html
 
-test:
+dev: build
+	cp build/lib*/nutils/_numeric.so nutils
+
+test: dev
 	nosetests tests
 
-all: nutils docs
-
 clean:
+	rm -fr build dist MANIFEST
 	${MAKE} -C docs clean
-	${MAKE} -C nutils clean
 
-.PHONY: all docs nutils clean
+.PHONY: build dist docs dev clean
 
 # vim:noexpandtab

@@ -61,11 +61,11 @@ def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e
   domain, geom = mesh.rectilinear( [verts,verts] )
   #vspace = function.vectorize([ domain.splinefunc( degree=(2,1) ), domain.splinefunc( degree=(1,2) ) ])
   vx, vy = function.chain([
-    domain.splinefunc( degree=(2,1), removedofs=((0,-1),None) ),
-    domain.splinefunc( degree=(1,2), removedofs=(None,(0,-1)) )
+    domain.splinefunc( degree=(3,2), removedofs=((0,-1),None) ),
+    domain.splinefunc( degree=(2,3), removedofs=(None,(0,-1)) )
   ])
   vspace = function.stack( [ vx, vy ], axis=1 )
-  pspace = domain.splinefunc( degree=1 )
+  pspace = domain.splinefunc( degree=2 )
 
   if bump:
     x, y = geom
