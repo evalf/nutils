@@ -3,31 +3,12 @@
 from nutils import *
 
 
-@parallel.fork
 def makeplots( domain, geom, velo, pres, index ):
 
   log.context( 'figures' )
 
-  funcsp = domain.splinefunc( degree=2 )
-  grad = funcsp.grad( geom )
-  laplace = function.outer( grad ).sum()
-  vort = velo.grad(geom)[1,0] - velo.grad(geom)[0,1]
-  matrix, rhs = domain.integrate( [ laplace, vort * funcsp ], geometry=geom, ischeme='gauss9' )
-  cons = domain.boundary.project( 0, onto=funcsp, geometry=geom, ischeme='gauss9' )
-  lhs = matrix.solve( rhs, constrain=cons )
-  streamfunc = funcsp.dot( lhs )
-
   xy, uv = domain.elem_eval( [ geom, velo ], ischeme='uniform1', title='flow field', separate=False )
-  points, stream, velo, pres, div = domain.elem_eval( [ geom, streamfunc, function.norm2(velo), pres, velo.div(geom) ], ischeme='bezier5', separate=True )
-
-  period = .04
-  with plot.PyPlot( 'stream', index=index, ndigits=4 ) as plt:
-    from matplotlib import cm
-    plt.mesh( points, stream%period, edgecolors='none', triangulate='bezier', cmap=cm.hsv )
-    plt.clim( 0, period )
-    plt.colorbar()
-    plt.xlim( 0, 1 )
-    plt.ylim( 0, 1 )
+  points, velo, pres, div = domain.elem_eval( [ geom, function.norm2(velo), pres, velo.div(geom) ], ischeme='bezier5', separate=True )
 
   with plot.PyPlot( 'velo', index=index, ndigits=4 ) as plt:
     plt.mesh( points, velo, edgecolors='none', triangulate='bezier' )
@@ -59,7 +40,6 @@ def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e
 
   verts = numpy.linspace( 0, 1, nelems+1 )
   domain, geom = mesh.rectilinear( [verts,verts] )
-  #vspace = function.vectorize([ domain.splinefunc( degree=(2,1) ), domain.splinefunc( degree=(1,2) ) ])
   vx, vy = function.chain([
     domain.splinefunc( degree=(3,2), removedofs=((0,-1),None) ),
     domain.splinefunc( degree=(2,3), removedofs=(None,(0,-1)) )
@@ -69,8 +49,8 @@ def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e
 
   if bump:
     x, y = geom
-    geom = domain.projection( [ x, bump(x) * (1-y) + y ],
-                onto=domain.splinefunc( degree=2 ).vector( 2 ), geometry=geom, ischeme='gauss9' )
+    y_bump = domain.projection( bump(x) * (1-y) + y, onto=domain.splinefunc( degree=2 ), geometry=geom, ischeme='gauss9' )
+    geom = function.stack([ x, y_bump ])
     # piola
     J = function.localgradient( geom, domain.ndims )
     detJ = function.determinant( J )
@@ -120,30 +100,7 @@ def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e
       log.info( 'residual:', res )
       if res < tol:
         break
-    lhs = matrix.solve( rhs, constrain=cons, tol=1e-10 )#, precon='spilu' )
-
-
-#   lhs = stokesmat.solve( rhs, constrain=cons, tol=1e-10 )
-#   stokesmat += domain.integrate( (2./timestep) * function.outer( vspace ).sum(), ischeme='gauss9', geometry=geom, title='adding inertia' )
-#   for iiter in util.iterate( 'timestep' ):
-#     velo = vspace.dot( lhs )
-#     pres = pspace.dot( lhs )
-#     makeplots( domain, geom, velo, pres, iiter )
-#     integ = (2./timestep) * ( vspace * velo ).sum()
-#     integ -= convec.dot(lhs,axis=2).dot(lhs,axis=1)
-#     integ -= ( stress.dot(lhs) * vspace.grad(geom) ).sum([-2,-1])
-#     dmatrix, rhs = domain.integrate( [ convec.dot(lhs,axis=2), integ ], ischeme='gauss9', geometry=geom, title='navstokes matrix' )
-#     if not strong:
-#       rhs += domain.boundary['top'].integrate( ( weakterm * ( Utop - velo ) ).sum(), geometry=geom, ischeme='gauss9', title='weak bc rhs' )
-#       rhs += domain.boundary['left,right,bottom'].integrate( ( weakterm * -velo ).sum(), geometry=geom, ischeme='gauss9', title='weak bc rhs' )
-#     matrix = stokesmat + dmatrix
-#     for iiter in util.iterate( 'picard' ):
-#       lhs = matrix.solve( rhs, constrain=cons, tol=1e-10 )
-#       matrix = stokesmat + domain.integrate( convec.dot(lhs,axis=2), ischeme='gauss9', geometry=geom, title='navstokes matrix' )
-#       res = matrix.res( lhs, rhs, constrain=cons )
-#       log.info( 'residual:', res )
-#       if res < tol:
-#         break
+    lhs = matrix.solve( rhs, constrain=cons, tol=1e-10, precon='spilu' )
 
 
 util.run( main )
