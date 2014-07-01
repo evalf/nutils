@@ -85,7 +85,8 @@ def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e
     inertmat = domain.integrate( inertia, ischeme='gauss9', geometry=geom, title='adding inertia' )
     stokesmat += inertmat
 
-  lhs = stokesmat.solve( stokesrhs, constrain=cons, tol=1e-10, precon='spilu' )
+  precon = stokesmat.getprecon( 'splu' )
+  lhs = stokesmat.solve( stokesrhs, constrain=cons, tol=1e-10, precon=precon )
 
   for iiter in util.iterate():
     makeplots( domain, geom, vspace.dot(lhs), pspace.dot(lhs), iiter )
@@ -100,7 +101,7 @@ def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e
       log.info( 'residual:', res )
       if res < tol:
         break
-    lhs = matrix.solve( rhs, constrain=cons, tol=1e-10, precon='spilu' )
+    lhs = matrix.solve( rhs, constrain=cons, tol=1e-10, precon=precon )
 
 
 util.run( main )
