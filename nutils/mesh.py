@@ -123,14 +123,17 @@ def gmesh( path, btags={}, name=None ):
     ntags = int( items[2] )
     tags = [ int(tag) for tag in set( items[3:3+ntags] ) ]
     elemvertices = numpy.asarray( items[3+ntags:], dtype=int ) - 1
-    elemvertexobjs = vertexobjs[ elemvertices ]
     elemcoords = coords[ elemvertices ]
     if elemtype == 1: # boundary edge
       boundary.append(( elemvertices, tags ))
     elif elemtype in (2,4):
       if elemtype == 2: # interior element, triangle
-        parent = domainelem, element.AffineTransformation( offset=elemcoords[2], transform=(elemcoords[:2]-elemcoords[2]).T )
-        elem = element.TriangularElement( vertices=elemvertexobjs, parent=parent )
+        offset = elemcoords[2]
+        if numpy.linalg.det( elemcoords[:2] - offset ) < 0:
+          elemvertices[:2] = elemvertices[1], elemvertices[0]
+          elemcoords = coords[ elemvertices ]
+        parent = domainelem, element.AffineTransformation( offset=offset, transform=(elemcoords[:2]-offset).T )
+        elem = element.TriangularElement( vertices=vertexobjs[ elemvertices ], parent=parent )
         stdelem = element.PolyTriangle( 1 )
       else: # interior element, quadrilateral
         raise NotImplementedError
