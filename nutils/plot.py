@@ -1,6 +1,7 @@
 from . import topology, util, numpy, function, element, log, prop, numeric, debug, _
 from scipy import spatial # for def mesh; import cannot be postponed apparently
 import os, warnings
+import Image
 
 def _nansplit( data ):
   n, = numpy.where( numpy.isnan( data.reshape( data.shape[0], -1 ) ).any( axis=1 ) )
