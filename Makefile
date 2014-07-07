@@ -18,6 +18,6 @@ clean:
 	rm -fr build dist MANIFEST
 	${MAKE} -C docs clean
 
-.PHONY: build dist docs dev clean
+.PHONY: build dist docs dev test clean
 
 # vim:noexpandtab
