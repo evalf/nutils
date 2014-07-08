@@ -22,11 +22,11 @@ the possibility to pull in third party modules. It is our strong belief that on
 the edge of science where Nutils strives to be a great degree of extensibility
 is adamant.
 
-(One of the lesser interesting possibilities this gives is to write a dedicated,
-Nutils powered GUI application using any toolkit of preference.)
+For those so inclined, one of the lesser interesting possibilities this gives
+is to write a dedicated, Nutils powered GUI application.
 
-What Nutils specifically does not offer are problem specific components, like
-one could imagine a "crack growth" module or "solve navier stokes" function. As
+What Nutils specifically does not offer are problem specific components, such
+as, conceivably, a "crack growth" module or "solve navier stokes" function. As
 a primary design principle we aim for a Nutils application to be closely
 readable as a high level mathematical problem description; `i.e.` the weak
 form, domain, boundary conditions, time stepping of Newton iterations, etc. It
