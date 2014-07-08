@@ -20,7 +20,7 @@ goals are:
   * **Speed**. Nutils are self-optimizing and support parallel computation.
     Typical scripting inefficiencies are discouraged by design.
 
-For latest project news and developments visit the project website
+For latest project news and developments visit the project website at
 `<nutils.org>`_.
 
 

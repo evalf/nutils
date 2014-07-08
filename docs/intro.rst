@@ -1,34 +1,37 @@
 Introduction
 ============
 
-For those that came here looking for numerical simulation software, note that
-Nutils is not your classical Finite Element program. It does not have menus, no
-buttons to click, nothing to make a screenshot of. To get it to do *anything*
-some programming is going to be required.
+To get one thing out of the way first, note that Nutils is not your classical
+Finite Element program. It does not have menus, no buttons to click, nothing to
+make a screenshot of. To get it to do *anything* some programming is going to
+be required.
+
+That said, let's see what Nutils can be instead.
 
 
 Design
 ------
 
-The components that Nutils offers are rich enough to handle a wide range of
-problems without adding any further algorithms. This blurs the line between
-classical graphical user interfaces and a programming environment, both of
-which serve to offer flexible configuration of available components. The former
-has a lower entry bar, whereas the latter offers more flexibility in mixing and
-matching, the possibility to extend the toolkit with custom algorithms, and the
-possibility to pull in third party modules. It is our strong belief that on the
-edge of science where Nutils strives to be a great degree of extensibility is
-adamant. Naturally, one of the lesser interesting possibilities this gives is
-to write a dedicated, Nutils powered GUI application using any toolkit of
-preference.
+Nutils is a programming library, providing components that are rich enough to
+handle a wide range of problems by simply linking them together. This blurs the
+line between classical graphical user interfaces and a programming environment,
+both of which serve to offer some degree of mixing and matching of available
+components. The former has a lower entry bar, whereas the latter offers more
+flexibility, the possibility to extend the toolkit with custom algorithms, and
+the possibility to pull in third party modules. It is our strong belief that on
+the edge of science where Nutils strives to be a great degree of extensibility
+is adamant.
 
-One thing that Nutils does not offer is problem specific components, like a
-"crack growth" module or "solve navier stokes" function. As a primary design
-principle we aim for a Nutils application to be closely readable as a high level
-mathematical problem description; `i.e.` the weak form, domain, boundary
-conditions, time stepping of Newton iterations, etc. It is the supporting
-operations like integrating over a domain or taking gradients of compound
-functions that are being kept out of sight as much as possible.
+(One of the lesser interesting possibilities this gives is to write a dedicated,
+Nutils powered GUI application using any toolkit of preference.)
+
+What Nutils specifically does not offer are problem specific components, like
+one could imagine a "crack growth" module or "solve navier stokes" function. As
+a primary design principle we aim for a Nutils application to be closely
+readable as a high level mathematical problem description; `i.e.` the weak
+form, domain, boundary conditions, time stepping of Newton iterations, etc. It
+is the supporting operations like integrating over a domain or taking gradients
+of compound functions that are being kept out of sight as much as possible.
 
 
 Quick demo
