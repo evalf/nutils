@@ -1,3 +1,18 @@
+# -*- coding: utf8 -*-
+#
+# Module UTIL
+#
+# Part of Nutils: open source numerical utilities for Python. Jointly developed
+# by HvZ Computational Engineering, TU/e Multiscale Engineering Fluid Dynamics,
+# and others. More info at http://nutils.org <info@nutils.org>. (c) 2014
+
+"""
+The util module provides a collection of general purpose methods. Most
+importantly it provides the :func:`run` method which is the preferred entry
+point of a nutils application, taking care of command line parsing, output dir
+creation and initiation of a log file.
+"""
+
 from . import log, prop, debug, core
 import sys, os, time, numpy, cPickle, hashlib, weakref, warnings, itertools
 
@@ -539,11 +554,5 @@ def run( *functions ):
 
 class Terminate( Exception ):
   pass
-
-def breakpoint():
-  debug.Explorer( 'Suspended.', debug.callstack(2), intro='''\
-    Your program is suspended. The traceback explorer allows you to examine
-    its current state and even alter it. Closing the explorer will resume
-    program execution.''' ).cmdloop()
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

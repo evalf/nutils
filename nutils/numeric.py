@@ -1,3 +1,18 @@
+# -*- coding: utf8 -*-
+#
+# Module NUMERIC
+#
+# Part of Nutils: open source numerical utilities for Python. Jointly developed
+# by HvZ Computational Engineering, TU/e Multiscale Engineering Fluid Dynamics,
+# and others. More info at http://nutils.org <info@nutils.org>. (c) 2014
+
+"""
+The numeric module provides methods that are lacking from the numpy module. An
+accompanying extension module _numeric.c should be compiled to benefit from
+extra performance, although a Python-only implementation is provided as
+fallback. A warning message is printed if the extension module is not found.
+"""
+
 import numpy, warnings
 
 try:

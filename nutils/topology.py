@@ -1,24 +1,22 @@
+"""
+The topology module defines the topology objects, notably the
+:class:`StructuredTopology` and :class:`UnstructuredTopology`. Maintaining
+strict separation of topological and geometrical information, the topology
+represents a set of elements and their interconnectivity, boundaries,
+refinements, subtopologies etc, but not their positioning in physical space. The
+dimension of the topology represents the dimension of its elements, not that of
+the the space they are embedded in.
+
+The primary role of topologies is to form a domain for :mod:`nutils.function`
+objects, like the geometry function and function bases for analysis, as well as
+provide tools for their construction. It also offers methods for integration and
+sampling, thus providing a high level interface to operations otherwise written
+out in element loops. For lower level operations topologies can be used as
+:mod:`nutils.element` iterators.
+"""
+
 from . import element, function, util, numpy, parallel, matrix, log, core, numeric, prop, _
 import warnings, itertools
-
-class ElemMap( dict ):
-  'dictionary-like element mapping'
-
-  def __init__( self, mapping, ndims ):
-    'constructor'
-
-    self.ndims = ndims
-    dict.__init__( self, mapping )
-
-  def __eq__( self, other ):
-    'test equal'
-
-    return self is other
-
-  def __str__( self ):
-    'string representation'
-
-    return 'ElemMap(#%d,%dD)' % ( len(self), self.ndims )
 
 class Topology( object ):
   'topology base class'
@@ -1221,6 +1219,25 @@ class HierarchicalTopology( Topology ):
 
   def splinefunc( self, *args, **kwargs ):
     return self._funcspace( lambda topo: topo.splinefunc( *args, **kwargs ) )
+
+class ElemMap( dict ):
+  'dictionary-like element mapping'
+
+  def __init__( self, mapping, ndims ):
+    'constructor'
+
+    self.ndims = ndims
+    dict.__init__( self, mapping )
+
+  def __eq__( self, other ):
+    'test equal'
+
+    return self is other
+
+  def __str__( self ):
+    'string representation'
+
+    return 'ElemMap(#%d,%dD)' % ( len(self), self.ndims )
 
 def glue( master, slave, geometry, tol=1.e-10, verbose=False ):
   'Glue topologies along boundary group __glue__.'

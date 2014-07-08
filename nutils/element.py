@@ -1,3 +1,21 @@
+# -*- coding: utf8 -*-
+#
+# Module ELEMENT
+#
+# Part of Nutils: open source numerical utilities for Python. Jointly developed
+# by HvZ Computational Engineering, TU/e Multiscale Engineering Fluid Dynamics,
+# and others. More info at http://nutils.org <info@nutils.org>. (c) 2014
+
+"""
+The element module defines reference elements such as the :class:`QuadElement`
+and :class:`TriangularElement`, but also more exotic objects like the
+:class:`TrimmedElement`. A set of (interconnected) elements together form a
+:mod:`nutils.topology`. Elements have edges and children (for refinement), which
+are in turn elements and map onto self by an affine transformation. They also
+have a well defined reference coordinate system, and provide pointsets for
+purposes of integration and sampling.
+"""
+
 from . import log, util, numpy, core, numeric, function, _
 import warnings
 

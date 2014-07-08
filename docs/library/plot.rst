@@ -1,0 +1,4 @@
+Plot
+====
+
+.. automodule:: nutils.plot

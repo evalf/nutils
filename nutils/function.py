@@ -1,3 +1,35 @@
+# -*- coding: utf8 -*-
+#
+# Module FUNCTION
+#
+# Part of Nutils: open source numerical utilities for Python. Jointly developed
+# by HvZ Computational Engineering, TU/e Multiscale Engineering Fluid Dynamics,
+# and others. More info at http://nutils.org <info@nutils.org>. (c) 2014
+
+"""
+The function module defines the :class:`Evaluable` class and derived objects,
+commonly referred to as nutils functions. They represent mappings from a
+:mod:`nutils.topology` onto Python space. The notabe class of :class:`ArrayFunc`
+objects map onto the space of Numpy arrays of predefined dimension and shape.
+Most functions used in nutils applicatons are of this latter type, including the
+geometry and function bases for analysis.
+
+Nutils functions are essentially postponed python functions, stored in a tree
+structure of input/output dependencies. Many :class:`ArrayFunc` objects have
+directly recognizable numpy equivalents, such as :class:`Sin` or
+:class:`Inverse`. By not evaluating directly but merely stacking operations,
+coplex operations can be defined prior to entering a quadrature loop, allowing
+for a higher lever style programming. It also allows for automatic
+differentiation and code optimization.
+
+It is important to realize that nutils functions do not map for a physical
+xy-domain but from a topology, where a point is characterized by the combination
+of an element and its local coordinate. This is a natural fit for typical finite
+element operations such as quadrature. Evaluation from physical coordinates is
+possible only via inverting of the geometry function, which is a fundamentally
+expensive and currently unsupported operation.
+"""
+
 from . import util, numpy, numeric, log, prop, core, _
 import sys, warnings
 
@@ -5,34 +37,8 @@ ELEM    = object()
 POINTS  = object()
 WEIGHTS = object()
 
-# EVALUABLE
-#
-# Base class for everything that is evaluable. Evaluables hold an argument list
-# and a callable, which will be called by the __call__ method. Function
-# arguments that are themselves Evaluables are traced, and an optimal call
-# ordering is determined such that any unique argument is evaluated only once.
-
-class EvaluationError( Exception ):
-  'evaluation error'
-
-  def __init__( self, etype, evalue, evaluable, values ):
-    'constructor'
-
-    self.etype = etype
-    self.evalue = evalue
-    self.evaluable = evaluable
-    self.values = values
-
-  def __repr__( self ):
-    return 'EvaluationError%s' % self
-
-  def __str__( self ):
-    'string representation'
-
-    return '\n%s --> %s: %s' % ( self.evaluable.stackstr( self.values ), self.etype.__name__, self.evalue )
-
 class Evaluable( object ):
-  'evaluable base classs'
+  'Base class'
 
   __slots__ = 'operations', 'data', '__args', '__evalf'
 
@@ -217,6 +223,25 @@ class Evaluable( object ):
       indent = '\n' + '|' + ' ' * len(key)
     indent = '\n' + '+' + '-' * (len(key)-1) + ' '
     return key + ' ' + indent.join( reversed( lines ) )
+
+class EvaluationError( Exception ):
+  'evaluation error'
+
+  def __init__( self, etype, evalue, evaluable, values ):
+    'constructor'
+
+    self.etype = etype
+    self.evalue = evalue
+    self.evaluable = evaluable
+    self.values = values
+
+  def __repr__( self ):
+    return 'EvaluationError%s' % self
+
+  def __str__( self ):
+    'string representation'
+
+    return '\n%s --> %s: %s' % ( self.evaluable.stackstr( self.values ), self.etype.__name__, self.evalue )
 
 class Tuple( Evaluable ):
   'combine'

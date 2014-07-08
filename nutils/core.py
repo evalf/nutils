@@ -1,3 +1,16 @@
+# -*- coding: utf8 -*-
+#
+# Module CORE
+#
+# Part of Nutils: open source numerical utilities for Python. Jointly developed
+# by HvZ Computational Engineering, TU/e Multiscale Engineering Fluid Dynamics,
+# and others. More info at http://nutils.org <info@nutils.org>. (c) 2014
+
+"""
+The core module provides a collection of low level constructs that have no
+dependencies on other nutils modules. Primarily for internal use.
+"""
+
 import inspect, weakref, os, numpy, warnings, collections
 
 

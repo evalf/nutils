@@ -1,3 +1,17 @@
+# -*- coding: utf8 -*-
+#
+# Module LOG
+#
+# Part of Nutils: open source numerical utilities for Python. Jointly developed
+# by HvZ Computational Engineering, TU/e Multiscale Engineering Fluid Dynamics,
+# and others. More info at http://nutils.org <info@nutils.org>. (c) 2014
+
+"""
+The log module provides print methods ``debug``, ``info``, ``user``,
+``warning``, and ``error``, in increasing order of priority. Output is sent to
+stdout as well as to an html formatted log file if so configured.
+"""
+
 from __future__ import print_function
 from . import prop, debug
 import sys, time, os, warnings, numpy, re

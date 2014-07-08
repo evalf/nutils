@@ -1,3 +1,19 @@
+# -*- coding: utf8 -*-
+#
+# Module MATRIX
+#
+# Part of Nutils: open source numerical utilities for Python. Jointly developed
+# by HvZ Computational Engineering, TU/e Multiscale Engineering Fluid Dynamics,
+# and others. More info at http://nutils.org <info@nutils.org>. (c) 2014
+
+"""
+The matrix module defines a number of 2D matrix objects, notably the
+:func:`SparseMatrix` and :func:`DenseMatrix`. Matrix objects support indexed
+addition, basic addition and subtraction operations, and provide a consistent
+insterface for solving linear systems. Matrices can be converted to numpy arrays
+via ``asarray``.
+"""
+
 from . import util, numpy, log, numeric, parallel, _
 import scipy.sparse
 # Import fix

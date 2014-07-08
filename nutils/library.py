@@ -1,3 +1,17 @@
+# -*- coding: utf8 -*-
+#
+# Module LIBRARY
+#
+# Part of Nutils: open source numerical utilities for Python. Jointly developed
+# by HvZ Computational Engineering, TU/e Multiscale Engineering Fluid Dynamics,
+# and others. More info at http://nutils.org <info@nutils.org>. (c) 2014
+
+"""
+The library module provides a collection of application specific functions, that
+nevertheless have a wide enough range of applicability to be useful as generic
+building blocks.
+"""
+
 from . import function, _, numeric
 import numpy
 

@@ -1,3 +1,20 @@
+# -*- coding: utf8 -*-
+#
+# Module MESH
+#
+# Part of Nutils: open source numerical utilities for Python. Jointly developed
+# by HvZ Computational Engineering, TU/e Multiscale Engineering Fluid Dynamics,
+# and others. More info at http://nutils.org <info@nutils.org>. (c) 2014
+
+"""
+The mesh module provides mesh generators: methods that return a topology and an
+accompanying geometry function. Meshes can either be generated on the fly, e.g.
+:func:`rectilinear`, or read from external an externally prepared file,
+:func:`gmesh`, :func:`igatool`, and converted to nutils format. Note that no
+mesh writers are provided at this point; output is handled by the
+:mod:`nutils.plot` module.
+"""
+
 from . import topology, function, util, element, numpy, numeric, _
 import os
 

@@ -1,3 +1,17 @@
+# -*- coding: utf8 -*-
+#
+# Module DEBUG
+#
+# Part of Nutils: open source numerical utilities for Python. Jointly developed
+# by HvZ Computational Engineering, TU/e Multiscale Engineering Fluid Dynamics,
+# and others. More info at http://nutils.org <info@nutils.org>. (c) 2014
+
+"""
+The debug module provides code inspection tools and the "traceback explorer"
+interactive shell environment. Access to these components is primarily via
+:func:`breakpoint` and an exception handler in :func:`nutils.util.run`.
+"""
+
 from . import core
 import sys, cmd, re, os, linecache
 
@@ -246,5 +260,13 @@ def write_html( out, exc, frames ):
     out.write( '<hr/>\n' )
   out.write( '</span>' )
   out.flush()
+
+def breakpoint():
+  'breakpoint'
+
+  Explorer( 'Suspended.', callstack(2), intro='''\
+    Your program is suspended. The traceback explorer allows you to examine
+    its current state and even alter it. Closing the explorer will resume
+    program execution.''' ).cmdloop()
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

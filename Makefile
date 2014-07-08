@@ -15,7 +15,8 @@ test: dev
 	nosetests tests
 
 clean:
-	rm -fr build dist MANIFEST
+	rm -fr build dist
+	rm -f MANIFEST nutils/*.pyc nutils/_numeric.so
 	${MAKE} -C docs clean
 
 .PHONY: build dist docs dev test clean

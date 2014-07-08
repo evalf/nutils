@@ -1,3 +1,18 @@
+# -*- coding: utf8 -*-
+#
+# Module PARALLEL
+#
+# Part of Nutils: open source numerical utilities for Python. Jointly developed
+# by HvZ Computational Engineering, TU/e Multiscale Engineering Fluid Dynamics,
+# and others. More info at http://nutils.org <info@nutils.org>. (c) 2014
+
+"""
+The parallel module provides tools aimed at parallel computing. At this point
+all parallel solutions use the ``fork`` system call and are supported on limited
+platforms, notably excluding Windows. On unsupported platforms parallel features
+will disable and a warning is printed.
+"""
+
 from . import prop, log, numpy, debug
 import os, sys, multiprocessing, thread
 
