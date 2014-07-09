@@ -187,7 +187,7 @@ class IterLog( Log ):
         self.dt *= self.dtexp
         if self.dt > self.dtmax > 0:
           self.dt = self.dtmax
-      self.parent( 'progress' ).write( self.mktitle() + '\n' )
+      self.parent.getstream( 'progress' ).write( self.mktitle() + '\n' )
     self.index += 1
     try:
       return self.iterator.next()
