@@ -15,7 +15,7 @@ out in element loops. For lower level operations topologies can be used as
 :mod:`nutils.element` iterators.
 """
 
-from . import element, function, util, numpy, parallel, matrix, log, core, numeric, prop, _
+from . import element, function, util, numpy, parallel, matrix, log, core, numeric, _
 import warnings, itertools
 
 class Topology( object ):
@@ -1288,7 +1288,7 @@ def glue( master, slave, geometry, tol=1.e-10, verbose=False ):
         pyplot.title('min dist: %.3e'%mindist)
         it = locals().get('it',-1) + 1
         name = 'glue%i.jpg'%it
-        pyplot.savefig(prop.dumpdir+name)
+        pyplot.savefig( core.getprop( 'dumpdir' )+name )
         log.path(name)
       raise AssertionError( 'Could not pair master element: %s (maybe tol is set too low?)' % master_elem )
     slave_vertex_locations.pop( slave_elem )

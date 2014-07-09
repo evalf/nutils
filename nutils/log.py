@@ -13,7 +13,7 @@ stdout as well as to an html formatted log file if so configured.
 """
 
 from __future__ import print_function
-from . import prop, debug
+from . import core, debug
 import sys, time, os, warnings, numpy, re
 
 _KEY = '__logger__'
@@ -52,7 +52,7 @@ def SimpleLog( chunks=('',), attr=None ):
 
 
 def _path2href( match ):
-  whitelist = ['.jpg','.png','.svg','.txt'] + getattr( prop, 'plot_extensions', [] )
+  whitelist = ['.jpg','.png','.svg','.txt'] + core.getprop( 'plot_extensions', [] )
   filename = match.group(0)
   ext = match.group(1)
   return '<a href="%s">%s</a>' % (filename,filename) if ext not in whitelist \
@@ -172,9 +172,9 @@ class ProgressContextLog( ContextLog ):
 
     self.msg = text
     self.showpct = showpct
-    self.tint = getattr(prop,'progress_interval',1.)
-    self.tmax = getattr(prop,'progress_interval_max',numpy.inf)
-    self.texp = getattr(prop,'progress_interval_scale',2.)
+    self.tint = core.getprop( 'progress_interval', 1. )
+    self.tmax = core.getprop( 'progress_interval_max', numpy.inf )
+    self.texp = core.getprop( 'progress_interval_scale', 2. )
     self.t0 = time.time()
     self.tnext = self.t0 + min( self.tint, self.tmax )
     self.iterable = iterable

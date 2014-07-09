@@ -30,7 +30,7 @@ possible only via inverting of the geometry function, which is a fundamentally
 expensive and currently unsupported operation.
 """
 
-from . import util, numpy, numeric, log, prop, core, _
+from . import util, numpy, numeric, log, core, _
 import sys, warnings
 
 ELEM    = object()
@@ -72,7 +72,7 @@ class Evaluable( object ):
       indices[iarg] = idx
     if cbuild and self.__cdef:
       evalf = cbuild[ self.__cdef() ]
-      if prop.use_c_funcs == 'debug':
+      if core.getprop( 'use_c_funcs' ) == 'debug':
         evalf = numeric.check_equal_wrapper( evalf, self.__evalf )
     else:
       evalf = self.__evalf
@@ -85,12 +85,12 @@ class Evaluable( object ):
     log.context( 'compiling' )
 
     if self.operations is None:
-      cbuild = getattr( prop, 'use_c_funcs', False ) and CBuilder()
+      cbuild = core.getprop( 'use_c_funcs', False ) and CBuilder()
       self.data = []
       operations = []
       self.recurse_index( self.data, operations, cbuild ) # compile expressions
       self.operations = [ (evalf,idcs) for (op,evalf,idcs) in operations ] # break cycles!
-      if getattr( prop, 'dot', False ):
+      if core.getprop( 'dot', False ):
         self.graphviz()
       if cbuild:
         cbuild.compile()
@@ -139,11 +139,11 @@ class Evaluable( object ):
 
     import os, subprocess
 
-    dotpath = getattr( prop, 'dot', True )
+    dotpath = core.getprop( 'dot', True )
     if not isinstance( dotpath, str ):
       dotpath = 'dot'
 
-    imgtype = getattr( prop, 'imagetype', 'png' )
+    imgtype = core.getprop( 'imagetype', 'png' )
     imgpath = util.getpath( 'dot{0:03x}.' + imgtype )
 
     try:

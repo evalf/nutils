@@ -11,7 +11,7 @@ The core module provides a collection of low level constructs that have no
 dependencies on other nutils modules. Primarily for internal use.
 """
 
-import inspect, weakref, os, numpy, warnings, collections
+import inspect, weakref, os, numpy, warnings, collections, sys
 
 
 ALLCACHE = []
@@ -111,6 +111,42 @@ def savelast( func ):
       saved[:] = args, func( *args )
     return saved[1]
   return wrapped
+
+
+_nodefault = object()
+def getprop( name, default=_nodefault ):
+  """Access a semi-global property.
+
+  The use of global variables is discouraged, as changes can go unnoticed and
+  lead to abscure failure. The getprop mechanism makes local variables accesible
+  (read only) from nested scopes, but not from the encompassing scope.
+
+  >>> def f():
+  >>>   print getprop('myval')
+  >>> 
+  >>> def main():
+  >>>   __myval__ = 2
+  >>>   f()
+
+  Args:
+      name (str): Property name, corresponds to __name__ local variable.
+      default: Optional default value.
+
+  Returns:
+      The object corresponding to the first __name__ encountered in a higher
+      scope. If none found, return default. If no default specified, raise
+      NameError.
+  """
+
+  frame = sys._getframe(1)
+  key = '__%s__' % name
+  while frame:
+    if key in frame.f_locals:
+      return frame.f_locals[key]
+    frame = frame.f_back
+  if default is _nodefault:
+    raise NameError, 'property %r is not defined' % name
+  return default
 
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

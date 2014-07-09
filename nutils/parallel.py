@@ -13,7 +13,7 @@ platforms, notably excluding Windows. On unsupported platforms parallel features
 will disable and a warning is printed.
 """
 
-from . import prop, log, numpy, debug
+from . import core, log, numpy, debug
 import os, sys, multiprocessing, thread
 
 Lock = multiprocessing.Lock
@@ -168,7 +168,7 @@ def shzeros( shape, dtype=float ):
 def pariter( iterable ):
   'iterate parallel'
 
-  nprocs = getattr( prop, 'nprocs', 1 )
+  nprocs = core.getprop( 'nprocs', 1 )
   return iterable if nprocs <= 1 else _pariter( iterable, nprocs )
 
 def _pariter( iterable, nprocs ):

@@ -12,7 +12,7 @@ backends. At this point `matplotlib <http://matplotlib.org/>`_ and `vtk
 <http://vtk.org>`_ are supported.
 """
 
-from . import topology, util, numpy, function, element, log, prop, numeric, debug, _
+from . import topology, util, numpy, function, element, log, core, numeric, debug, _
 from scipy import spatial # for def mesh; import cannot be postponed apparently
 import os, warnings
 
@@ -26,7 +26,7 @@ class BasePlot( object ):
 
   def __init__ ( self, name, ndigits=0, index=None ):
 
-    self.path = prop.dumpdir
+    self.path = core.getprop( 'dumpdir' )
 
     assert isinstance(ndigits,int) and ndigits >= 0, 'nonnegative integer required'
     if ndigits:
@@ -84,7 +84,7 @@ class PyPlot( BasePlot ):
 
     from matplotlib import pyplot
 
-    imgtype = getattr( prop, 'imagetype', 'png' ) if imgtype is None else imgtype
+    imgtype = core.getprop( 'imagetype', 'png' ) if imgtype is None else imgtype
     self.names = [ self.name + '.' + ext for ext in imgtype.split(',') ]
 
     self.__dict__.update( pyplot.__dict__ )
@@ -558,7 +558,7 @@ class Pylab( object ):
     matplotlib.use( 'Agg', warn=False )
 
     if '.' not in name.format(0):
-      imgtype = getattr( prop, 'imagetype', 'png' )
+      imgtype = core.getprop( 'imagetype', 'png' )
       name += '.' + imgtype
 
     if isinstance( title, (list,tuple) ):
@@ -589,7 +589,7 @@ class Pylab( object ):
       return #True
 
     from matplotlib import pyplot
-    dumpdir = prop.dumpdir
+    dumpdir = core.getprop( 'dumpdir' )
     n = len( os.listdir( dumpdir ) )
     imgpath = util.getpath( self.name )
     pyplot.savefig( imgpath, format=imgpath.split('.')[-1] )

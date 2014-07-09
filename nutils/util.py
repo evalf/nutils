@@ -13,7 +13,7 @@ point of a nutils application, taking care of command line parsing, output dir
 creation and initiation of a log file.
 """
 
-from . import log, prop, debug, core
+from . import log, debug, core
 import sys, os, time, numpy, cPickle, hashlib, weakref, warnings, itertools
 
 def unreachable_items():
@@ -154,11 +154,11 @@ class Cache( object ):
     strhash = ','.join( str(arg) for arg in args )
     md5hash = hashlib.md5( strhash ).hexdigest()
     log.info( 'using cache:', md5hash )
-    cachedir = getattr( prop, 'cachedir', 'cache' )
+    cachedir = core.getprop( 'cachedir', 'cache' )
     if not os.path.exists( cachedir ):
       os.makedirs( cachedir )
     path = os.path.join( cachedir, md5hash )
-    self.data = file( path, 'ab+' if not getattr( prop, 'recache', False ) else 'wb+' )
+    self.data = file( path, 'ab+' if not core.getprop( 'recache', False ) else 'wb+' )
 
   def __call__( self, func, *args, **kwargs ):
     'call'
@@ -180,7 +180,7 @@ class Cache( object ):
 def getpath( pattern ):
   'create file in dumpdir'
 
-  dumpdir = prop.dumpdir
+  dumpdir = core.getprop( 'dumpdir' )
   if pattern == pattern.format( 0 ):
     return dumpdir + pattern
   prefix = pattern.split( '{' )[0]
@@ -433,11 +433,10 @@ def run( *functions ):
       assert arg in properties, 'invalid argument %r' % arg
       properties[arg] = val
 
-  for name, value in properties.iteritems():
-    setattr( prop, name, value )
+  locals().update({ '__%s__' % name: value for name, value in properties.iteritems() })
 
   scriptname = os.path.basename(sys.argv[0])
-  outdir = os.path.expanduser( prop.outdir ).rstrip( os.sep ) + os.sep
+  outdir = os.path.expanduser( core.getprop( 'outdir' ) ).rstrip( os.sep ) + os.sep
   basedir = outdir + scriptname + os.sep
   localtime = time.localtime()
   timepath = time.strftime( '%Y/%m/%d/%H-%M-%S/', localtime )
@@ -445,7 +444,7 @@ def run( *functions ):
   dumpdir = basedir + timepath
   os.makedirs( dumpdir ) # asserts nonexistence
 
-  if prop.symlink:
+  if core.getprop( 'symlink' ):
     for i in range(2): # make two links
       target = outdir
       dest = ''
@@ -453,7 +452,7 @@ def run( *functions ):
         target += scriptname + os.sep
       else: # script-local link
         dest += scriptname + os.sep
-      target += prop.symlink
+      target += core.getprop( 'symlink' )
       dest += timepath
       if os.path.islink( target ):
         os.remove( target )
@@ -468,8 +467,6 @@ def run( *functions ):
   htmlfile = open( dumpdir+'log.html', 'w' )
   log.setup_html( fileobj=htmlfile, title=scriptname + time.strftime( ' %Y/%m/%d %H:%M:%S', localtime ) )
 
-  prop.dumpdir = dumpdir
-
   redirect = '<html>\n<head>\n<meta http-equiv="cache-control" content="max-age=0" />\n' \
            + '<meta http-equiv="cache-control" content="no-cache" />\n' \
            + '<meta http-equiv="expires" content="0" />\n' \
@@ -480,7 +477,8 @@ def run( *functions ):
   print >> open( outdir+'log.html', 'w' ), redirect % ( scriptname + '/' + timepath )
   print >> open( basedir+'log.html', 'w' ), redirect % ( timepath )
 
-  prop.cachedir = basedir + 'cache'
+  __dumpdir__ = dumpdir
+  __cachedir__ = basedir + 'cache'
 
   commandline = [ ' '.join([ scriptname, funcname ]) ] + [ '  --%s=%s' % item for item in kwargs.items() ]
 
@@ -494,7 +492,7 @@ def run( *functions ):
   t0 = time.time()
   tb = False
 
-  if prop.profile:
+  if core.getprop( 'profile' ):
     import cProfile
     prof = cProfile.Profile()
     prof.enable()
@@ -509,7 +507,7 @@ def run( *functions ):
     tb = debug.exception()
     log.stack( repr(sys.exc_value), tb )
 
-  if prop.profile:
+  if core.getprop( 'profile' ):
     prof.disable()
 
   if hasattr( os, 'wait' ):
@@ -532,7 +530,7 @@ def run( *functions ):
   if cacheinfo:
     log.warning( '\n  '.join( ['some caches were saturated:'] + cacheinfo ) )
 
-  if prop.profile:
+  if core.getprop( 'profile' ):
     import pstats
     stream = log.getstream( 'warning' )
     stream.write( 'profile results:\n' )
