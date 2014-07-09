@@ -102,8 +102,21 @@ class Explorer( cmd.Cmd ):
       else:
         nextline += ' ' + word
     lines.append( nextline )
-    rule = '+-' + '-' * maxlen + '-+'
-    self.intro = '\n'.join( [ rule ] + [ '| %s |' % line.ljust(maxlen) for line in lines ] + [ rule ] )
+    if core.getprop( 'richoutput', False ):
+      ul = '┌'
+      ur = '┐'
+      ll = '└'
+      lr = '┘'
+      hh = '─'
+      vv = '│'
+    else:
+      ul = ul = ll = lr = '+'
+      hh = '-'
+      vv = '|'
+    self.intro = '\n'.join(
+        [ ul + hh * (maxlen+2) + ur ]
+      + [ vv + (' '+line).ljust(maxlen+2) + vv for line in lines ]
+      + [ ll + hh * (maxlen+2) + lr ] )
 
     self.msg = msg
     self.frames = frames
