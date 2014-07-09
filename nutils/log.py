@@ -192,12 +192,16 @@ def count( title, start=0, parent=None ):
   from itertools import count
   return IterLog( title, count(start), None, parent )
     
-def stack( msg, frames=None ):
+def stack( msg ):
   'print stack trace'
 
-  if frames is None:
-    from . import debug
-    frames = debug.callstack( depth=2 )
+  from . import debug
+  if isinstance( msg, tuple ):
+    exc_type, exc_value, tb = msg
+    msg = repr( exc_value )
+    frames = debug.frames_from_traceback( tb )
+  else:
+    frames = debug.frames_from_callstack( depth=2 )
   print( msg, *reversed(frames), sep='\n', file=_getstream( 'error' ) )
 
 def title( f ): # decorator

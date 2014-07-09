@@ -87,7 +87,7 @@ class Frame( object ):
 class Explorer( cmd.Cmd ):
   'traceback explorer'
 
-  def __init__( self, exc, frames, intro ):
+  def __init__( self, msg, frames, intro ):
     'constructor'
 
     cmd.Cmd.__init__( self, completekey='tab' )
@@ -105,7 +105,7 @@ class Explorer( cmd.Cmd ):
     rule = '+-' + '-' * maxlen + '-+'
     self.intro = '\n'.join( [ rule ] + [ '| %s |' % line.ljust(maxlen) for line in lines ] + [ rule ] )
 
-    self.exc = exc
+    self.msg = msg
     self.frames = frames
     self.index = len(frames) - 1
     self.prompt = '\n>>> '
@@ -115,7 +115,7 @@ class Explorer( cmd.Cmd ):
 
     for i, f in enumerate(self.frames):
       print ' *'[i == self.index] + f.context[1:]
-    print ' ', self.exc
+    print ' ', self.msg
 
   def do_s( self, arg ):
     '''Show source code of the currently focussed frame.'''
@@ -206,37 +206,37 @@ class Explorer( cmd.Cmd ):
 
     return [ base+name for name in objs if name.startswith(text) ]
 
-def exception():
-  'constructor'
+def format_exc():
+  exc_type, exc_value, tb = sys.exc_info()
+  return '\n'.join( [ repr(exc_value) ] + [ str(f) for f in frames_from_traceback( tb ) ] )
 
-  tb = sys.exc_traceback
+def frames_from_traceback( tb ):
   frames = []
   while tb:
     frames.append( Frame( tb.tb_frame, tb.tb_lineno ) )
     tb = tb.tb_next
   return frames
 
-def format_exc():
-  return '\n'.join( [ repr(sys.exc_value) ] + [ str(f) for f in exception() ] )
-
-def callstack( depth=1 ):
-  frames = []
+def frames_from_callstack( depth=1 ):
   try:
     frame = sys._getframe( depth )
   except ValueError:
-    frame = None
+    return []
+  frames = []
   while frame:
     frames.append( Frame( frame ) )
     frame = frame.f_back
   return frames[::-1]
 
-def write_html( out, exc, frames ):
+def write_html( out, exc_info ):
   'write exception info to html file'
 
+  exc_type, exc_value, tb = exc_info
+  frames = frames_from_traceback( tb )
   out.write( '<span class="info">' )
   out.write( '\n<hr/>' )
   out.write( '<b>EXHAUSTIVE POST-MORTEM DUMP FOLLOWS</b>\n' )
-  out.write( '\n'.join( [ repr(exc) ] + [ str(f) for f in frames ] ) )
+  out.write( '\n'.join( [ repr(exc_value) ] + [ str(f) for f in frames ] ) )
   out.write( '<hr/>\n' )
   for f in reversed(frames):
     out.write( f.context.splitlines()[0] + '\n' )
@@ -261,10 +261,15 @@ def write_html( out, exc, frames ):
   out.write( '</span>' )
   out.flush()
 
-def breakpoint():
-  'breakpoint'
+def traceback_explorer( exc_info ):
+  exc_type, exc_value, tb = exc_info
+  Explorer( repr(exc_value), frames_from_traceback(tb), '''
+    Your program has died. The traceback exporer allows you to examine its
+    post-mortem state to figure out why this happened. Type 'help' for an
+    overview of commands to get going.''' ).cmdloop()
 
-  Explorer( 'Suspended.', callstack(2), intro='''\
+def breakpoint():
+  Explorer( 'Suspended.', frames_from_callstack(2), '''
     Your program is suspended. The traceback explorer allows you to examine
     its current state and even alter it. Closing the explorer will resume
     program execution.''' ).cmdloop()

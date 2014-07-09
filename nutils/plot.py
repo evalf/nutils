@@ -54,7 +54,7 @@ class BasePlot( object ):
     if exc_type == KeyboardInterrupt:
       pass
     elif exc_type:
-      log.stack( repr(exc_value), debug.exception() )
+      log.stack( exc_info )
     else:
       if self.names:
         for name in self.names:
