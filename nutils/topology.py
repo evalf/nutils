@@ -95,12 +95,12 @@ class Topology( object ):
       funcs = funcs,
 
     slices = []
-    pointshape = function.PointShape()
+    pointshape = function.PointShape().compiled()
     npoints = 0
     separators = []
     __log__ = log.iter( 'elem', self )
     for elem in __log__:
-      np, = pointshape( elem, ischeme )
+      np, = pointshape.eval( elem, ischeme )
       slices.append( slice(npoints,npoints+np) )
       npoints += np
       if separate:
@@ -123,12 +123,12 @@ class Topology( object ):
       else:
         idata.append( function.Tuple( [ ifunc, (), func ] ) )
       retvals.append( retval )
-    idata = function.Tuple( idata )
+    idata = function.Tuple( idata ).compiled()
 
     __log__ = log.enumerate( 'elem', self )
     for ielem, elem in parallel.pariter( __log__ ):
       s = slices[ielem],
-      for ifunc, index, data in idata( elem, ischeme ):
+      for ifunc, index, data in idata.eval( elem, ischeme ):
         retvals[ifunc][s+index] = data
 
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
@@ -210,11 +210,11 @@ class Topology( object ):
 
     nrows, ncols = func.shape
     graph = [ [] for irow in range(nrows) ]
-    IJ = function.Tuple([ function.Tuple(ind) for f, ind in function.blocks( func ) ])
+    IJ = function.Tuple([ function.Tuple(ind) for f, ind in function.blocks( func ) ]).compiled()
 
     __log__ = log.iter( 'elem', self )
     for elem in __log__:
-      for I, J in IJ( elem, None ):
+      for I, J in IJ.eval( elem, None ):
         for i in I:
           graph[i].append(J)
 
@@ -256,12 +256,11 @@ class Topology( object ):
         if not function._iszero( func ):
           integrands.append( function.Tuple([ ifunc, lock, (), function.elemint( func, iweights ) ]) )
       retvals.append( array )
-    idata = function.Tuple( integrands )
+    idata = function.Tuple( integrands ).compiled()
 
-    idata.compile()
     __log__ = log.iter( 'elem', self )
     for elem in parallel.pariter( __log__ ):
-      for ifunc, lock, index, data in idata( elem, ischeme ):
+      for ifunc, lock, index, data in idata.eval( elem, ischeme ):
         with lock:
           retvals[ifunc][index] += data
 
@@ -302,7 +301,7 @@ class Topology( object ):
         if not function._iszero( func ):
           integrands.append( function.Tuple([ ifunc, lock, (), function.elemint( func, iweights ) ]) )
       retvals.append( array )
-    idata = function.Tuple( integrands )
+    idata = function.Tuple( integrands ).compiled()
 
     __log__ = log.iter( 'elem', self )
     for elem in parallel.pariter( __log__ ):
@@ -310,7 +309,7 @@ class Topology( object ):
       compare_elem = cmp( elem.elem1, elem.elem2 )
       if compare_elem < 0:
         continue
-      for ifunc, lock, index, data in idata( elem, ischeme ):
+      for ifunc, lock, index, data in idata.eval( elem, ischeme ):
         with lock:
           retvals[ifunc][index] += data
           if compare_elem > 0:

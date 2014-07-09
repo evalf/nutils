@@ -37,55 +37,18 @@ ELEM    = object()
 POINTS  = object()
 WEIGHTS = object()
 
-class Evaluable( object ):
-  'Base class'
+class CompiledEvaluable( object ):
+  'serialized version of evaluable object for actual evaluation'
 
-  __slots__ = 'operations', 'data', '__args', '__evalf'
-
-  def __init__( self, args, evalf ):
+  def __init__( self, data, operations ):
     'constructor'
 
-    self.__args = tuple(args)
-    self.__evalf = evalf
-    self.operations = None
+    self.data = data
+    self.operations = operations
+    if core.getprop( 'dot', False ):
+      self.graphviz()
 
-  def recurse_index( self, data, operations ):
-    'compile'
-
-    indices = numpy.empty( len(self.__args), dtype=int )
-    for iarg, arg in enumerate( self.__args ):
-      if isinstance(arg,Evaluable):
-        for idx, (op,evalf,idcs) in enumerate( operations ):
-          if op == arg:
-            break
-        else:
-          idx = arg.recurse_index(data,operations)
-      elif arg is ELEM:
-        idx = -3
-      elif arg is POINTS:
-        idx = -2
-      elif arg is WEIGHTS:
-        idx = -1
-      else:
-        data.insert( 0, arg )
-        idx = -len(data)-3
-      indices[iarg] = idx
-    operations.append( (self,self.__evalf,indices) )
-    return len(operations)-1
-
-  @log.title
-  def compile( self ):
-    'compile'
-
-    if self.operations is None:
-      self.data = []
-      operations = []
-      self.recurse_index( self.data, operations ) # compile expressions
-      self.operations = [ (evalf,idcs) for (op,evalf,idcs) in operations ] # break cycles!
-      if core.getprop( 'dot', False ):
-        self.graphviz()
-
-  def __call__( self, elem, ischeme ):
+  def eval( self, elem, ischeme ):
     'evaluate'
 
     if isinstance( ischeme, dict ):
@@ -106,13 +69,12 @@ class Evaluable( object ):
     else:
       raise Exception, 'invalid integration scheme of type %r' % type(ischeme)
 
-    self.compile()
     N = len(self.data) + 3
     values = self.data + [ elem, points, weights ]
-    for evalf, indices in self.operations:
+    for op, indices in self.operations:
       args = [ values[N+i] for i in indices ]
       try:
-        retval = evalf( *args )
+        retval = op.evalf( *args )
       except KeyboardInterrupt:
         raise
       except:
@@ -124,8 +86,6 @@ class Evaluable( object ):
   @log.title
   def graphviz( self ):
     'create function graph'
-
-    self.compile()
 
     import os, subprocess
 
@@ -146,11 +106,9 @@ class Evaluable( object ):
     print >> dot.stdin, 'graph [ dpi=72 ];'
 
     data = self.data + [ '<elem>', '<points>', '<weights>' ]
-    for i, (evalf,indices) in enumerate( self.operations ):
+    for i, (op,indices) in enumerate( self.operations ):
       args = [ '%%%d=%s' % ( iarg, _obj2str( data[idx] ) ) for iarg, idx in enumerate( indices ) if idx < 0 ]
-      vertex = 'label="%s"' % r'\n'.join( [ '%d. %s' % ( i, evalf.__name__ ) ] + args )
-      #if evalf == Inflate.inflate:
-      #  vertex += ', style=filled, fillcolor=black, fontcolor=white'
+      vertex = 'label="%s"' % r'\n'.join( [ '%d. %s' % ( i, op ) ] + args )
       print >> dot.stdin, '%d [%s]' % ( i, vertex )
       for iarg, idx in enumerate( indices ):
         if idx >= 0:
@@ -164,37 +122,80 @@ class Evaluable( object ):
   def stackstr( self, values=None ):
     'print stack'
 
-    self.compile()
     if values is None:
       values = self.data + [ '<elem>', '<points>', '<weights>' ]
 
     N = len(self.data) + 3
 
     lines = []
-    for i, (evalf,indices) in enumerate( self.operations ):
+    for i, (op,indices) in enumerate( self.operations ):
       line = '  %%%d =' % i
       args = [ '%%%d' % idx if idx >= 0 else _obj2str(values[N+idx]) for idx in indices ]
       try:
-        code = evalf.func_code
+        code = op.evalf.func_code
         names = code.co_varnames[ :code.co_argcount ]
         names += tuple( '%s[%d]' % ( code.co_varnames[ code.co_argcount ], n ) for n in range( len(indices) - len(names) ) )
         args = [ '%s=%s' % item for item in zip( names, args ) ]
       except:
         pass
-      line += ' %s( %s )' % ( evalf.__name__, ', '.join( args ) )
+      line += ' %s( %s )' % ( op, ', '.join( args ) )
       lines.append( line )
       if N+i == len(values):
         break
     return '\n'.join( lines )
+
+class Evaluable( object ):
+  'Base class'
+
+  __slots__ = 'evalf', 'args'
+
+  def __init__( self, args, evalf ):
+    'constructor'
+
+    self.evalf = evalf
+    self.args = tuple(args)
+
+  def __compile( self, data, operations ):
+    'compile'
+
+    indices = numpy.empty( len(self.args), dtype=int )
+    for iarg, arg in enumerate( self.args ):
+      if isinstance(arg,Evaluable):
+        for idx, (op,idcs) in enumerate( operations ):
+          if op == arg:
+            break
+        else:
+          idx = arg.__compile(data,operations)
+      elif arg is ELEM:
+        idx = -3
+      elif arg is POINTS:
+        idx = -2
+      elif arg is WEIGHTS:
+        idx = -1
+      else:
+        data.insert( 0, arg )
+        idx = -len(data)-3
+      indices[iarg] = idx
+    operations.append( (self,indices) )
+    return len(operations)-1
+
+  @log.title
+  def compiled( self ):
+    'compiled'
+
+    data = []
+    operations = []
+    self.__compile( data, operations ) # compile expressions
+    return CompiledEvaluable( data, operations )
 
   def __eq__( self, other ):
     'compare'
 
     return self is other or (
           self.__class__ == other.__class__
-      and self.__evalf == other.__evalf
-      and len( self.__args ) == len( other.__args )
-      and all( _equal(arg1,arg2) for arg1, arg2 in zip( self.__args, other.__args ) ) )
+      and self.evalf == other.evalf
+      and len( self.args ) == len( other.args )
+      and all( _equal(arg1,arg2) for arg1, arg2 in zip( self.args, other.args ) ) )
 
   def __ne__( self, other ):
     'not equal'
@@ -204,15 +205,18 @@ class Evaluable( object ):
   def asciitree( self ):
     'string representation'
 
-    key = self.__evalf.__name__
+    key = self.evalf.__name__
     lines = []
     indent = '\n' + ' ' + ' ' * len(key)
-    for it in reversed( self.__args ):
+    for it in reversed( self.args ):
       s = it.asciitree() if isinstance(it,Evaluable) else _obj2str(it)
       lines.append( indent.join( s.splitlines() ) )
       indent = '\n' + '|' + ' ' * len(key)
     indent = '\n' + '+' + '-' * (len(key)-1) + ' '
     return key + ' ' + indent.join( reversed( lines ) )
+
+  def __str__( self ):
+    return self.__class__.__name__
 
 class EvaluationError( Exception ):
   'evaluation error'
@@ -1755,34 +1759,33 @@ class ElemFunc( ArrayFunc ):
 class Pointwise( ArrayFunc ):
   'pointwise transformation'
 
-  __slots__ = 'args', 'evalf', 'deriv'
+  __slots__ = 'arr', 'evalf', 'deriv'
 
-  def __init__( self, args, evalf, deriv ):
+  def __init__( self, arr, evalf, deriv ):
     'constructor'
 
-    assert _isfunc( args )
-    shape = args.shape[1:]
-    self.args = args
+    assert _isfunc( arr )
+    shape = arr.shape[1:]
+    self.arr = arr
     self.evalf = evalf
     self.deriv = deriv
-    ArrayFunc.__init__( self, args=tuple(args), evalf=evalf, shape=shape )
+    ArrayFunc.__init__( self, args=tuple(arr), evalf=evalf, shape=shape )
 
   def _localgradient( self, ndims ):
-    return ( self.deriv( self.args )[...,_] * localgradient( self.args, ndims ) ).sum( 0 )
+    return ( self.deriv( self.arr )[...,_] * localgradient( self.arr, ndims ) ).sum( 0 )
 
   def _takediag( self ):
-    return pointwise( takediag(self.args), self.evalf, self.deriv )
+    return pointwise( takediag(self.arr), self.evalf, self.deriv )
 
   def _get( self, axis, item ):
-    return pointwise( get( self.args, axis+1, item ), self.evalf, self.deriv )
+    return pointwise( get( self.arr, axis+1, item ), self.evalf, self.deriv )
 
   def _take( self, index, axis ):
-    return pointwise( take( self.args, index, axis+1 ), self.evalf, self.deriv )
+    return pointwise( take( self.arr, index, axis+1 ), self.evalf, self.deriv )
 
   def _opposite( self ):
-    # args = [ opposite(arg,side) for arg in self.args ] # @TO
-    args = [ opposite(arg) for arg in self.args ]
-    return pointwise( args, self.evalf, self.deriv )
+    opp_arr = [ opposite(f) for f in self.arr ]
+    return pointwise( opp_arr, self.evalf, self.deriv )
 
 class Sign( ArrayFunc ):
   'sign'
@@ -1838,7 +1841,8 @@ class Pointdata( ArrayFunc ):
   def update_max( self, func ):
     func = asarray(func)
     assert func.shape == self.shape
-    data = dict( (elem,(numpy.maximum(func(elem,points),values),points)) for elem,(values,points) in self.data.iteritems() )
+    func = ascompiled(func)
+    data = dict( (elem,(numpy.maximum(func.eval(elem,points),values),points)) for elem,(values,points) in self.data.iteritems() )
 
     return Pointdata( data, self.shape )
 
@@ -2383,6 +2387,16 @@ def asarray( arg ):
     return _zeros( arg.shape )
   else:
     return arg
+
+def asfunc( obj ):
+  'convert to Evaluable'
+  return obj if isinstance( obj, Evaluable ) \
+    else asarray( obj ) # TODO make asarray return ArrayFunc always
+
+def ascompiled( obj ):
+  'convert to CompiledEvaluable'
+  return obj if isinstance( obj, CompiledEvaluable ) \
+    else asfunc( obj ).compiled()
 
 def _asarray( arg ):
   warnings.warn( '_asarray is deprecated, use asarray instead', DeprecationWarning )
@@ -3197,6 +3211,7 @@ def pointdata ( topo, ischeme, func=None, shape=None, value=None ):
     assert value is None
     assert shape is None
     shape = func.shape
+    func = ascompiled( func )
   else: # func is None
     if value is not None:
       assert shape is None
@@ -3210,7 +3225,7 @@ def pointdata ( topo, ischeme, func=None, shape=None, value=None ):
   for elem in topo:
     ipoints, iweights = elem.eval( ischeme )
     values = numpy.empty( ipoints.shape[:-1]+shape, dtype=float )
-    values[:] = func(elem,ischeme) if func is not None else value
+    values[:] = func.eval(elem,ischeme) if func is not None else value
     data[ elem ] = values, ipoints
 
   return Pointdata( data, shape )

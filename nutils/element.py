@@ -27,7 +27,7 @@ class TrimmedIScheme( object ):
   def __init__( self, levelset, ischeme, maxrefine, finestscheme='uniform1', degree=3, retain=None ):
     'constructor'
 
-    self.levelset = levelset
+    self.levelset = function.ascompiled( levelset )
     self.ischeme = ischeme
     self.maxrefine = maxrefine
     self.finestscheme = finestscheme
@@ -59,7 +59,7 @@ class TrimmedIScheme( object ):
 
     if maxrefine <= 0:
       ipoints, iweights = elem.eval( self.finestscheme )
-      inside = self.levelset( elem, ipoints ) > 0
+      inside = self.levelset.eval( elem, ipoints ) > 0
       if inside.all():
         return True
       if not inside.any():
@@ -67,7 +67,7 @@ class TrimmedIScheme( object ):
       return ipoints[inside], iweights[inside]
 
     try:
-      inside = self.levelset( elem, self.bezierscheme ) > 0
+      inside = self.levelset.eval( elem, self.bezierscheme ) > 0
     except function.EvaluationError:
       pass
     else:
@@ -293,16 +293,17 @@ class Element( object ):
     for irefine in range(evalrefine):
       elems = ( child for elem in elems for child in elem.children )
 
-    inside = levelset( elems.next(), lscheme ) > 0
+    levelset = function.ascompiled( levelset )
+    inside = levelset.eval( elems.next(), lscheme ) > 0
     if inside.all():
       for elem in elems:
-        inside = levelset( elem, lscheme ) > 0
+        inside = levelset.eval( elem, lscheme ) > 0
         if not inside.all():
           return 0
       return 1
     elif not inside.any():
       for elem in elems:
-        inside = levelset( elem, lscheme ) > 0
+        inside = levelset.eval( elem, lscheme ) > 0
         if inside.any():
           return 0
       return -1
@@ -590,7 +591,7 @@ class TrimmedElement( Element ):
 
     assert not isinstance( elem, TrimmedElement )
     self.elem = elem
-    self.levelset = levelset
+    self.levelset = function.ascompiled( levelset )
     self.maxrefine = maxrefine
     self.lscheme = lscheme
     self.finestscheme = finestscheme if finestscheme != None else 'simplex1'
@@ -607,7 +608,7 @@ class TrimmedElement( Element ):
     if ischeme[:7] == 'contour':
       n = int(ischeme[7:] or 0)
       points, weights = self.elem.eval( 'contour{}'.format(n) )
-      inside = self.levelset( self.elem, points ) >= 0
+      inside = self.levelset.eval( self.elem, points ) >= 0
       return points[inside], None
 
     if self.maxrefine <= 0:
@@ -643,7 +644,7 @@ class TrimmedElement( Element ):
           return points[numpy.zeros_like(weights,dtype=bool)], weights[numpy.zeros_like(weights,dtype=bool)] if weights is not None else None
         else:  
           points, weights = self.elem.eval( self.finestscheme )
-          inside = self.levelset( self.elem, points ) > 0
+          inside = self.levelset.eval( self.elem, points ) > 0
           return points[inside], weights[inside] if weights is not None else None
         
 
@@ -718,7 +719,7 @@ class TrimmedElement( Element ):
     lvltol  = numpy.spacing(100)
     xistol  = numpy.spacing(100)
     ischeme = self.elem.getischeme( self.elem.ndims, 'bezier2' )
-    where   = self.levelset( self.elem, ischeme ) > -lvltol
+    where   = self.levelset.eval( self.elem, ischeme ) > -lvltol
     points  = ischeme[0][where]
     vertices   = numpy.array(self.vertices)[where].tolist()
     norig   = sum(where)
@@ -734,7 +735,7 @@ class TrimmedElement( Element ):
     for line in lines:
       
       ischeme = line.getischeme( line.ndims, 'bezier'+str(order+1) )
-      vals    = self.levelset( line, ischeme )
+      vals    = self.levelset.eval( line, ischeme )
       pts     = ischeme[0]
       where   = vals > -lvltol
       zeros   = (vals < lvltol) & where
