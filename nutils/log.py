@@ -13,61 +13,53 @@ stdout as well as to an html formatted log file if so configured.
 """
 
 from __future__ import print_function
-from . import core, debug
-import sys, time, os, warnings, numpy, re
+import sys, time, os, warnings, re
+from . import core
 
-_KEY = '__logger__'
+warnings.showwarning = lambda message, category, filename, lineno, *args: \
+  warning( '%s: %s\n  In %s:%d' % ( category.__name__, message, filename, lineno ) )
 
-
-def _findlogger( frame=None ):
-  'find logger in call stack'
-
-  if frame is None:
-    frame = sys._getframe(1)
-  while frame:
-    logger = frame.f_locals.get(_KEY)
-    if logger:
-      return logger
-    frame = frame.f_back
-  return SimpleLog
+LEVELS = 'path', 'error', 'warning', 'user', 'info', 'progress', 'debug'
 
 
-warnings.showwarning = lambda message, category, filename, lineno, *args: warning( '%s: %s\n  In %s:%d' % ( category.__name__, message, filename, lineno ) )
+# references to objects that are going to be redefined
+_range = range
+_iter = iter
+_enumerate = enumerate
 
 
-def stack( msg, frames=None ):
-  'print stack trace'
+## LOGGERS, STREAMS
 
-  if frames is None:
-    frames = debug.callstack( depth=2 )
-  stream = getstream( attr='error', frame=frames[-1].frame )
-  print( msg, *reversed(frames), sep='\n', file=stream )
+class devnull( object ):
+  @staticmethod
+  def write( text ):
+    pass
 
-
-def SimpleLog( chunks=('',), attr=None ):
-  'just write to stdout'
-  
-  sys.stdout.write( ' > '.join( chunks ) )
+def SimpleLog( level, *contexts ): # just writes to stdout
+  verbosity = core.getprop( 'verbosity', 6 )
+  if level in LEVELS[ verbosity: ]:
+    return devnull
+  sys.stdout.writelines( '%s > ' % context for context in contexts )
   return sys.stdout
 
+class HtmlLog( object ):
+  'html log'
 
-def _path2href( match ):
-  whitelist = ['.jpg','.png','.svg','.txt'] + core.getprop( 'plot_extensions', [] )
-  filename = match.group(0)
-  ext = match.group(1)
-  return '<a href="%s">%s</a>' % (filename,filename) if ext not in whitelist \
-    else '<a href="%s" name="%s" class="plot">%s</a>' % (filename,filename,filename)
+  def __init__( self, html ):
+    self.html = html
 
+  def __call__( self, level, *contexts ):
+    return HtmlStream( level, contexts, self.html )
 
 class HtmlStream( object ):
   'html line stream'
 
-  def __init__( self, chunks, attr, html ):
+  def __init__( self, level, contexts, html ):
     'constructor'
 
-    self.out = SimpleLog( chunks, attr=attr )
-    self.attr = attr
-    self.head = ' &middot; '.join( chunks )
+    self.out = SimpleLog( level, *contexts )
+    self.level = level
+    self.head = ''.join( '%s &middot; ' % context for context in contexts )
     self.body = ''
     self.html = html
 
@@ -77,157 +69,142 @@ class HtmlStream( object ):
     self.out.write( text )
     self.body += text.replace( '<', '&lt;' ).replace( '>', '&gt;' )
 
+  @staticmethod
+  def _path2href( match ):
+    whitelist = ['.jpg','.png','.svg','.txt'] + core.getprop( 'plot_extensions', [] )
+    filename = match.group(0)
+    ext = match.group(1)
+    return '<a href="%s">%s</a>' % (filename,filename) if ext not in whitelist \
+      else '<a href="%s" name="%s" class="plot">%s</a>' % (filename,filename,filename)
+
   def __del__( self ):
     'postprocess buffer and write to html'
 
     body = self.body
-    if self.attr == 'path':
-      body = re.sub( r'\b\w+([.]\w+)\b', _path2href, body )
-    if self.attr:
-      body = '<span class="%s">%s</span>' % ( self.attr, body )
+    if self.level == 'path':
+      body = re.sub( r'\b\w+([.]\w+)\b', self._path2href, body )
+    if self.level:
+      body = '<span class="%s">%s</span>' % ( self.level, body )
     line = '<span class="line">%s</span>' % ( self.head + body )
 
     self.html.write( line )
     self.html.flush()
 
-
-class HtmlLog( object ):
-  'html log'
-
-  def __init__( self, fileobj, title, depth=1 ):
-    'constructor'
-
-    self.html = fileobj
-    self.html.write( '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "DTD/xhtml1-strict.dtd">\n' )
-    self.html.write( '<html><head>\n' )
-    self.html.write( '<title>%s</title>\n' % title )
-    self.html.write( '<script type="text/javascript" src="../../../../../viewer.js" ></script>\n' )
-    self.html.write( '<link rel="stylesheet" type="text/css" href="../../../../../style.css">\n' )
-    self.html.write( '<link rel="stylesheet" type="text/css" href="../../../../../custom.css">\n' )
-    self.html.write( '</head><body><pre>\n' )
-    self.html.write( '<span id="navbar">goto: <a class="nav_latest" href="../../../../log.html">latest %s</a> | <a class="nav_latestall" href="../../../../../log.html">latest overall</a> | <a class="nav_index" href="../../../../../">index</a></span>\n\n' % title.split()[0] )
-    self.html.flush()
-
-    sys._getframe(depth).f_locals[_KEY] = self
-
-  def __call__( self, chunks=('',), attr=None ):
-    return HtmlStream( chunks, attr, self.html )
-
-  def __del__( self ):
-    'destructor'
-
-    self.html.write( '</pre></body></html>\n' )
-    self.html.close()
-    
-
 class ContextLog( object ):
-  'base class'
+  'static text with parent'
 
-  def __init__( self, depth=1 ):
-    'constructor'
+  def __init__( self, title, parent=None ):
+    self.title = title
+    self.parent = parent or _getlog()
 
-    frame = sys._getframe(depth)
+  def __call__( self, level, *contexts ):
+    return self.parent( level, self.title, *contexts )
 
-    parent = _findlogger( frame )
-    while isinstance( parent, ContextLog ) and not parent.__enabled:
-      parent = parent.parent
+class IterLog( object ):
+  'iterable context logger that updates progress info'
 
-    self.parent = parent
-    self.__enabled = True
+  def __init__( self, title, iterator, length=None, parent=None ):
+    self.title = title
+    self.parent = parent or _getlog()
+    self.length = length
+    self.iterator = iterator
+    self.index = -1
 
-    frame.f_locals[_KEY] = self
+    # clock
+    self.dt = core.getprop( 'progress_interval', 1. )
+    self.dtexp = core.getprop( 'progress_interval_scale', 2 )
+    self.dtmax = core.getprop( 'progress_interval_max', 0 )
+    self.tnext = time.time() + self.dt
 
-  def __call__( self, chunks=('',), attr=None ):
-    if self.__enabled:
-      chunks = (self.text,) + chunks
-    return self.parent( chunks, attr=attr )
-
-  def disable( self ):
-    'disable this logger'
-
-    self.__enabled = False
-
-  def __repr__( self ):
-    return '%s(%s)' % ( self.__class__.__name__, self )
-
-  def __str__( self ):
-    return '%s > %s' % ( self.parent, self.text ) if self.__enabled else str(self.parent)
-
-
-class StaticContextLog( ContextLog ):
-  'simple text logger'
-
-  def __init__( self, text, depth=1 ):
-    'constructor'
-
-    self.text = text
-    ContextLog.__init__( self, depth=depth+1 )
-
-
-class ProgressContextLog( ContextLog ):
-  'progress bar'
-
-  def __init__( self, text, iterable=None, target=None, showpct=True, depth=1 ):
-    'constructor'
-
-    self.msg = text
-    self.showpct = showpct
-    self.tint = core.getprop( 'progress_interval', 1. )
-    self.tmax = core.getprop( 'progress_interval_max', numpy.inf )
-    self.texp = core.getprop( 'progress_interval_scale', 2. )
-    self.t0 = time.time()
-    self.tnext = self.t0 + min( self.tint, self.tmax )
-    self.iterable = iterable
-    self.target = len(iterable) if target is None else target
-    self.current = 0
-    ContextLog.__init__( self, depth=depth+1 )
+  def mktitle( self ):
+    self.tnext = time.time() + self.dt
+    return '%s %d' % ( self.title, self.index ) if self.length is None \
+      else '%s %d/%d (%d%%)' % ( self.title, self.index, self.length, (self.index-.5) * 100. / self.length )
 
   def __iter__( self ):
-    try:
-      for i, item in enumerate( self.iterable ):
-        self.update( i )
-        yield item
-    finally:
-      self.disable()
+    self.index = 0
+    return self
 
-  def update( self, current ):
-    'update progress'
-
-    self.current = current
+  def next( self ):
     if time.time() > self.tnext:
-      print( file=self(()) )
+      if self.dtexp != 1:
+        self.dt *= self.dtexp
+        if self.dt > self.dtmax > 0:
+          self.dt = self.dtmax
+      self.parent( 'progress' ).write( self.mktitle() + '\n' )
+    self.index += 1
+    try:
+      return self.iterator.next()
+    except:
+      self.index = -1
+      raise
 
-  @property
-  def text( self ):
-    'get text'
+  def __call__( self, level, *contexts ):
+    return self.parent( level, self.mktitle(), *contexts ) if self.index >= 0 \
+      else self.parent( level, *contexts )
 
-    self.tint = min( self.tint*self.texp, self.tmax )
-    self.tnext = time.time() + self.tint
-    pbar = self.msg + ' %.0f/%.0f' % ( self.current, self.target )
-    if self.showpct:
-      pct = 100 * self.current / float(self.target)
-      pbar += ' (%.0f%%)' % pct
-    return pbar
+class CaptureLog( object ):
+  'capture output without printing'
+
+  def __init__( self ):
+    self.buf = ''
+
+  def __nonzero__( self ):
+    return bool( self.buf )
+
+  def __str__( self ):
+    return self.buf
+
+  def __call__( self, level, *contexts ):
+    for context in contexts:
+      self.buf += '%s > ' % context
+    return self
+
+  def write( self, text ):
+    self.buf += text
+
+def _getlog():
+  return core.getprop( 'log', SimpleLog )
+
+def _getstream( level ):
+  return _getlog()( level )
+
+def _mklog( level ):
+  return lambda *args, **kw: print( *args, file=_getstream(level), **kw )
 
 
-# historically grown
-context = StaticContextLog
-progress = iterate = ProgressContextLog
-setup_html = HtmlLog
+## MODULE METHODS
 
 
-def getstream( attr=None, frame=None ):
-  logger = _findlogger(frame)
-  return logger( attr=attr )
+locals().update({ level: _mklog(level) for level in LEVELS })
 
-def _mklog( attr, frame=None ):
-  return lambda *args: print( *args, file=getstream(attr,frame) )
+def range( title, *args ):
+  items = _range( *args )
+  return IterLog( title, _iter(items), len(items) )
 
-path    = _mklog( 'path'    )
-error   = _mklog( 'error'   )
-warning = _mklog( 'warning' )
-user    = _mklog( 'user'    )
-info    = _mklog( 'info'    )
-debug   = _mklog( 'debug'   )
+def iter( title, iterable, length=None, parent=None ):
+  return IterLog( title, _iter(iterable), len(iterable) if length is None else length, parent )
+
+def enumerate( title, iterable, length=None, parent=None ):
+  return IterLog( title, _enumerate(iterable), len(iterable) if length is None else length, parent )
+
+def count( title, start=0, parent=None ):
+  from itertools import count
+  return IterLog( title, count(start), None, parent )
+    
+def stack( msg, frames=None ):
+  'print stack trace'
+
+  if frames is None:
+    from . import debug
+    frames = debug.callstack( depth=2 )
+  print( msg, *reversed(frames), sep='\n', file=_getstream( 'error' ) )
+
+def title( f ): # decorator
+  def wrapped( *args, **kwargs ):
+    __log__ = ContextLog( kwargs.pop( 'title', f.func_name ) )
+    return f( *args, **kwargs )
+  return wrapped
+
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

@@ -79,10 +79,9 @@ class Evaluable( object ):
     operations.append( (self,evalf,indices) )
     return len(operations)-1
 
+  @log.title
   def compile( self ):
     'compile'
-
-    log.context( 'compiling' )
 
     if self.operations is None:
       cbuild = core.getprop( 'use_c_funcs', False ) and CBuilder()
@@ -131,10 +130,10 @@ class Evaluable( object ):
       values.append( retval )
     return values[-1]
 
-  def graphviz( self, title='graphviz' ):
+  @log.title
+  def graphviz( self ):
     'create function graph'
 
-    log.context( title )
     self.compile()
 
     import os, subprocess
@@ -3279,6 +3278,7 @@ def pointdata ( topo, ischeme, func=None, shape=None, value=None ):
 
   return Pointdata( data, shape )
 
+@log.title
 def fdapprox( func, w, dofs, delta=1.e-5 ):
   '''Finite difference approximation of the variation of func in directions w
   around dofs. Input arguments:
@@ -3286,13 +3286,14 @@ def fdapprox( func, w, dofs, delta=1.e-5 ):
   * dofs,  DOF vector of linearization point
   * w,     the function space or a tuple of chained spaces
   * delta, finite difference step scaling of ||dofs||_inf'''
-  log.context( 'FD approx' )
+
   if not isinstance( w, tuple ): w = w,
   x0 = tuple( wi.dot( dofs ) for wi in w )
   step = numpy.linalg.norm( dofs, numpy.inf )*delta
   ndofs = len( dofs )
   dfunc_fd = []
-  for i in log.iterate( 'dof', range(ndofs) ):
+  __log__ = log.range( 'dof', ndofs )
+  for i in __log__:
     pert = dofs.copy()
     pert[i] += step
     x1 = tuple( wi.dot( pert ) for wi in w )
@@ -3382,8 +3383,9 @@ class CBuilder( object ):
     self.allcode = []
     self.cachedir = cachedir
 
+  @log.title
   def compile( self ):
-    log.context( 'c-builder' )
+
     if not self.codebase:
       return
     import os, hashlib

@@ -3,10 +3,8 @@
 from nutils import *
 
 
-#@parallel.fork
+@log.title
 def makeplots( domain, geom, greysmooth, index, indicator, supp ):
-
-  log.context( 'figures' )
 
   xp, yp = topology.UnstructuredTopology( supp, domain.ndims ).elem_eval( geom, ischeme='contour2', separate=True ).T
   points, fval, xgrad, indic = domain.elem_eval( [ geom, greysmooth, greysmooth.grad(geom)[0], indicator ], ischeme='bezier4', separate=True )
@@ -41,7 +39,8 @@ def main( degree=2, niter=30, triangular=False ):
 
   greydata = function.tanh( ( function.norm2(geom) - .5 ) * 20 )
 
-  for iiter in util.iterate():
+  __log__ = log.count( 'iter' )
+  for iiter in __log__:
 
     funcsp = domain.splinefunc( degree=degree )
     greysmooth = domain.projection( greydata, geometry=geom, onto=funcsp, ischeme='gauss3', droptol=0, verify=int(funcsp.shape[0]) )

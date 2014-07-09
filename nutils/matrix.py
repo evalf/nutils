@@ -24,6 +24,7 @@ except:
 from scipy.sparse.linalg.isolve import _iterative
 import time
 
+@log.title
 def krylov( matvec, b, x0=None, tol=1e-5, restart=None, maxiter=0, precon=None, callback=None ):
   '''solve linear system iteratively
 
@@ -48,7 +49,7 @@ def krylov( matvec, b, x0=None, tol=1e-5, restart=None, maxiter=0, precon=None, 
   iiter = maxiter
 
   if restart is None:
-    log.context( 'CG' )
+    log.debug( 'method: CG' )
     work = numpy.zeros( 4*n, dtype=numpy.float64 )
     ijob_matvecx = 3
     revcom = lambda x, iiter, res, info, ndx1, ndx2, ijob: \
@@ -56,7 +57,7 @@ def krylov( matvec, b, x0=None, tol=1e-5, restart=None, maxiter=0, precon=None, 
   else:
     if restart > n:
       restart = n
-    log.context( 'GMRES%d' % restart )
+    log.debug( 'method: GMRES%d' % restart )
     work = numpy.zeros( (6+restart)*n, dtype=numpy.float64 )
     work2 = numpy.zeros( (restart+1)*(2*restart+2), dtype=numpy.float64 )
     ijob_matvecx = 1
@@ -66,8 +67,8 @@ def krylov( matvec, b, x0=None, tol=1e-5, restart=None, maxiter=0, precon=None, 
     _iterative.dstoptest2( vec1, b, bnrm2, tol, info )
 
   x = x0
-  progress = log.progress( 'residual', target=numpy.log(tol) )
-  t0 = time.clock()
+  clock = util.Clock()
+  t0 = time.time()
   while True:
     x, iiter, res, info, ndx1, ndx2, sclr1, sclr2, ijob = \
       revcom( x, iiter, res, info, ndx1, ndx2, ijob )
@@ -89,9 +90,9 @@ def krylov( matvec, b, x0=None, tol=1e-5, restart=None, maxiter=0, precon=None, 
       assert ijob == -1
       break
     ijob = 2
-    progress.update( numpy.log(res) )
-  dt = time.clock() - t0
-  progress.disable()
+    if clock.check():
+      log.progress( 'residual %.2e (%.0f%%)' % ( res, numeric.log(res) * 100. / numeric.log(tol) ) )
+  dt = time.time() - t0
 
   assert info == 0
   log.info( 'converged in %.1f seconds, %d iterations' % ( dt, iiter ) )
@@ -387,13 +388,12 @@ class SparseMatrix( Matrix ):
       supp[irow] = a != b and ( tol == 0 or numpy.any( numpy.abs( self.data[a:b] ) > tol ) )
     return supp
 
+  @log.title
   def solve( self, b=0, constrain=None, lconstrain=None, rconstrain=None, tol=0, x0=None, symmetric=False, maxiter=0, restart=999, title='solving system', callback=None, precon=None ):
     'solve'
 
     if tol == 0:
       return self.todense().solve( b=b, constrain=constrain, lconstrain=lconstrain, rconstrain=rconstrain, title=title, log=log )
-
-    log.context( title )
 
     b = numpy.asarray( b, dtype=float )
     if b.ndim == 0:
@@ -509,10 +509,9 @@ class DenseMatrix( Matrix ):
 
     return DenseMatrix( self.data.T )
 
+  @log.title
   def solve( self, b=0, constrain=None, lconstrain=None, rconstrain=None, title='solving system', **dummy ):
     'solve'
-
-    log.context( title + ' [direct]' )
 
     b = numpy.asarray( b, dtype=float )
     if b.ndim == 0:

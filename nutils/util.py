@@ -215,21 +215,6 @@ def clone( obj ):
   clone.__dict__.update( obj.__dict__ )
   return clone
 
-def iterate( context='iter', nmax=-1 ):
-  'iterate forever'
-
-  assert isinstance( nmax, int ), 'invalid value for nmax %r' % nmax
-  i = 0
-  while True:
-    if i == nmax:
-      break
-    i += 1
-    logger = log.context( '%s %d' % (context,i), depth=2 )
-    try:
-      yield i
-    finally:
-      logger.disable()
-
 class NanVec( numpy.ndarray ):
   'nan-initialized vector'
 
@@ -277,20 +262,28 @@ class NanVec( numpy.ndarray ):
 class Clock( object ):
   'simple interval timer'
 
-  def __init__( self, interval ):
+  def __init__( self, dt=None, dtexp=None, dtmax=None ):
     'constructor'
 
-    self.t = time.time()
-    self.dt = interval
+    self.dt = core.getprop( 'progress_interval', 1. ) if dt is None else dt
+    self.dtexp = core.getprop( 'progress_interval_scale', 2 ) if dtexp is None else dtexp
+    self.dtmax = core.getprop( 'progress_interval_max', 0 ) if dtmax is None else dtmax
+    self.reset()
 
-  def __nonzero__( self ):
+  def reset( self ):
+    self.tnext = time.time() + self.dt
+
+  def check( self ):
     'check time'
 
-    t = time.time()
-    if t > self.t + self.dt:
-      self.t = t
-      return True
-    return False
+    if time.time() < self.tnext:
+      return False
+    if self.dtexp != 1:
+      self.dt *= self.dtexp
+      if self.dt > self.dtmax > 0:
+        self.dt = self.dtmax
+    self.reset()
+    return True
 
 def tensorial( args ):
   'create n-dimensional array containing tensorial combinations of n args'
@@ -464,9 +457,6 @@ def run( *functions ):
       print 'updating', filename
       open( outdir + filename, 'w' ).write( open( logpath + filename, 'r' ).read() )
 
-  htmlfile = open( dumpdir+'log.html', 'w' )
-  log.setup_html( fileobj=htmlfile, title=scriptname + time.strftime( ' %Y/%m/%d %H:%M:%S', localtime ) )
-
   redirect = '<html>\n<head>\n<meta http-equiv="cache-control" content="max-age=0" />\n' \
            + '<meta http-equiv="cache-control" content="no-cache" />\n' \
            + '<meta http-equiv="expires" content="0" />\n' \
@@ -477,78 +467,99 @@ def run( *functions ):
   print >> open( outdir+'log.html', 'w' ), redirect % ( scriptname + '/' + timepath )
   print >> open( basedir+'log.html', 'w' ), redirect % ( timepath )
 
-  __dumpdir__ = dumpdir
-  __cachedir__ = basedir + 'cache'
-
-  commandline = [ ' '.join([ scriptname, funcname ]) ] + [ '  --%s=%s' % item for item in kwargs.items() ]
-
-  log.info( 'nutils v0.1+dev' )
-  log.info()
-  log.info( ' \\\n'.join( commandline ) + '\n' )
-  log.info( 'start %s\n' % time.ctime() )
-
-  warnings.resetwarnings()
-
-  t0 = time.time()
-  tb = False
-
-  if core.getprop( 'profile' ):
-    import cProfile
-    prof = cProfile.Profile()
-    prof.enable()
-
-  try:
-    func( **kwargs )
-  except KeyboardInterrupt:
-    log.error( 'killed by user' )
-  except Terminate, exc:
-    log.error( 'terminated:', exc )
-  except:
-    tb = debug.exception()
-    log.stack( repr(sys.exc_value), tb )
-
-  if core.getprop( 'profile' ):
-    prof.disable()
-
-  if hasattr( os, 'wait' ):
-    try: # wait for child processes to die
-      while True:
-        pid, status = os.wait()
-    except OSError: # no more children
-      pass
-
-  dt = time.time() - t0
-  hours = dt // 3600
-  minutes = dt // 60 - 60 * hours
-  seconds = dt // 1 - 60 * minutes - 3600 * hours
-
-  log.info()
-  log.info( 'finish %s\n' % time.ctime() )
-  log.info( 'elapsed %02.0f:%02.0f:%02.0f' % ( hours, minutes, seconds ) )
-
-  cacheinfo = core.cache_info( brief=True )
-  if cacheinfo:
-    log.warning( '\n  '.join( ['some caches were saturated:'] + cacheinfo ) )
-
-  if core.getprop( 'profile' ):
-    import pstats
-    stream = log.getstream( 'warning' )
-    stream.write( 'profile results:\n' )
-    pstats.Stats( prof, stream=stream ).strip_dirs().sort_stats( 'time' ).print_stats()
-
-  if not tb:
-    sys.exit( 0 )
-
-  debug.write_html( htmlfile, sys.exc_value, tb )
-  htmlfile.write( '<span class="info">Cache usage:<ul>%s</ul></span>' % '\n'.join( '<li>%s</li>' % line for line in core.cache_info( brief=False ) ) )
+  htmlfile = open( dumpdir+'log.html', 'w' )
+  htmlfile.write( '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "DTD/xhtml1-strict.dtd">\n' )
+  htmlfile.write( '<html><head>\n' )
+  htmlfile.write( '<title>%s %s</title>\n' % ( scriptname, time.strftime( '%Y/%m/%d %H:%M:%S', localtime ) ) )
+  htmlfile.write( '<script type="text/javascript" src="../../../../../viewer.js" ></script>\n' )
+  htmlfile.write( '<link rel="stylesheet" type="text/css" href="../../../../../style.css">\n' )
+  htmlfile.write( '<link rel="stylesheet" type="text/css" href="../../../../../custom.css">\n' )
+  htmlfile.write( '</head><body><pre>\n' )
+  htmlfile.write( '<span id="navbar">goto: <a class="nav_latest" href="../../../../log.html">latest %s</a> | <a class="nav_latestall" href="../../../../../log.html">latest overall</a> | <a class="nav_index" href="../../../../../">index</a></span>\n\n' % scriptname )
   htmlfile.flush()
 
-  debug.Explorer( repr(sys.exc_value), tb, intro='''\
-    Your program has died. The traceback exporer allows you to examine its
-    post-mortem state to figure out why this happened. Type 'help' for an
-    overview of commands to get going.''' ).cmdloop()
+  try:
 
-  sys.exit( 1 )
+    __log__ = log.HtmlLog( htmlfile )
+    __dumpdir__ = dumpdir
+    __cachedir__ = basedir + 'cache'
+
+    commandline = [ ' '.join([ scriptname, funcname ]) ] + [ '  --%s=%s' % item for item in kwargs.items() ]
+
+    log.info( 'nutils v0.1+dev' )
+    log.info()
+    log.info( ' \\\n'.join( commandline ) + '\n' )
+    log.info( 'start %s\n' % time.ctime() )
+
+    warnings.resetwarnings()
+
+    t0 = time.time()
+    tb = False
+
+    if core.getprop( 'profile' ):
+      import cProfile
+      prof = cProfile.Profile()
+      prof.enable()
+
+    try:
+      func( **kwargs )
+    except KeyboardInterrupt:
+      log.error( 'killed by user' )
+    except Terminate, exc:
+      log.error( 'terminated:', exc )
+    except:
+      exc_value = sys.exc_value
+      exc_tb = debug.exception()
+      log.stack( repr(exc_value), exc_tb )
+
+    if core.getprop( 'profile' ):
+      prof.disable()
+
+    if hasattr( os, 'wait' ):
+      try: # wait for child processes to die
+        while True:
+          pid, status = os.wait()
+      except OSError: # no more children
+        pass
+
+    dt = time.time() - t0
+    hours = dt // 3600
+    minutes = dt // 60 - 60 * hours
+    seconds = dt // 1 - 60 * minutes - 3600 * hours
+
+    log.info()
+    log.info( 'finish %s\n' % time.ctime() )
+    log.info( 'elapsed %02.0f:%02.0f:%02.0f' % ( hours, minutes, seconds ) )
+
+    cacheinfo = core.cache_info( brief=True )
+    if cacheinfo:
+      log.warning( '\n  '.join( ['some caches were saturated:'] + cacheinfo ) )
+
+    if core.getprop( 'profile' ):
+      import pstats
+      stream = log.getstream( 'warning' )
+      stream.write( 'profile results:\n' )
+      pstats.Stats( prof, stream=stream ).strip_dirs().sort_stats( 'time' ).print_stats()
+
+    if not tb:
+      sys.exit( 0 )
+
+    debug.write_html( htmlfile, sys.exc_value, tb )
+    htmlfile.write( '<span class="info">Cache usage:<ul>%s</ul></span>' % '\n'.join( '<li>%s</li>' % line for line in core.cache_info( brief=False ) ) )
+    htmlfile.flush()
+
+    debug.Explorer( repr(sys.exc_value), tb, intro='''\
+      Your program has died. The traceback exporer allows you to examine its
+      post-mortem state to figure out why this happened. Type 'help' for an
+      overview of commands to get going.''' ).cmdloop()
+
+    sys.exit( 1 )
+
+  finally:
+
+    htmlfile.write( '</pre></body></html>\n' )
+    htmlfile.close()
+
 
 class Terminate( Exception ):
   pass

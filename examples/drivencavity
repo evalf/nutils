@@ -3,9 +3,8 @@
 from nutils import *
 
 
+@log.title
 def makeplots( domain, geom, velo, pres, index ):
-
-  log.context( 'figures' )
 
   xy, uv = domain.elem_eval( [ geom, velo ], ischeme='uniform1', title='flow field', separate=False )
   points, velo, pres, div = domain.elem_eval( [ geom, function.norm2(velo), pres, velo.div(geom) ], ischeme='bezier5', separate=True )
@@ -88,7 +87,8 @@ def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e
   precon = stokesmat.getprecon( 'splu' )
   lhs = stokesmat.solve( stokesrhs, constrain=cons, tol=1e-10, precon=precon )
 
-  for iiter in util.iterate():
+  __log__ = log.count( 'iter' )
+  for iiter in __log__:
     makeplots( domain, geom, vspace.dot(lhs), pspace.dot(lhs), iiter )
     ugradu = ( vspace.grad(geom) * vspace.dot(lhs) ).sum()
     convection = reynolds * function.outer( vspace, ugradu ).sum()

@@ -45,26 +45,22 @@ class BasePlot( object ):
   def __enter__( self ):
     'enter with block'
 
-    self.logger = log.context( 'plotting', depth=2 )
     return self
 
   def __exit__( self, *exc_info ):
     'exit with block'
 
     exc_type, exc_value, exc_tb = exc_info
-    try:
-      if exc_type == KeyboardInterrupt:
-        pass
-      elif exc_type:
-        log.stack( repr(exc_value), debug.exception() )
-      else:
-        if self.names:
-          for name in self.names:
-            self.save( name )
-          log.path( ', '.join( self.names ) )
-        return True
-    finally:
-      self.logger.disable()
+    if exc_type == KeyboardInterrupt:
+      pass
+    elif exc_type:
+      log.stack( repr(exc_value), debug.exception() )
+    else:
+      if self.names:
+        for name in self.names:
+          self.save( name )
+        log.path( ', '.join( self.names ) )
+      return True
     return False
 
   def save ( self, name ):
@@ -612,11 +608,10 @@ class PylabAxis( object ):
 
     return getattr( self._ax, attr )
 
-  def add_mesh( self, coords, topology, deform=0, color=None, edgecolors='none', linewidth=1, xmargin=0, ymargin=0, aspect='equal', cbar='vertical', title=None, ischeme='gauss2', cscheme='contour3', clim=None, frame=True, colormap=None ):
+  @log.title
+  def add_mesh( self, coords, topology, deform=0, color=None, edgecolors='none', linewidth=1, xmargin=0, ymargin=0, aspect='equal', cbar='vertical', ischeme='gauss2', cscheme='contour3', clim=None, frame=True, colormap=None ):
     'plot mesh'
   
-    log.context( 'plotting mesh' )
-
     assert topology.ndims == 2
     from matplotlib import pyplot, collections
     poly = []
@@ -676,9 +671,6 @@ class PylabAxis( object ):
       self.set_aspect( aspect )
       self.set_autoscale_on( False )
 
-    if title:
-      self.title( title )
-
     self.set_frame_on( frame )
     return elements
   
@@ -686,7 +678,8 @@ class PylabAxis( object ):
     'quiver builder'
   
     xyuv = function.Concatenate( [ coords, quiver ] )
-    XYUV = [ xyuv(elem,sample) for elem in log.ProgressBar( topology, title='plotting quiver' ) ]
+    __log__ = log.iter( 'elem', topology )
+    XYUV = [ xyuv( elem, sample ) for elem in __log__ ]
     self.quiver( *numpy.concatenate( XYUV, 0 ).T, scale=scale )
 
   def add_graph( self, xfun, yfun, topology, sample='contour10', logx=False, logy=False, **kwargs ):

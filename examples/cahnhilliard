@@ -3,10 +3,8 @@
 from nutils import *
 
 
-@parallel.fork
+@log.title
 def makeplots( domain, geom, c, psi, index ):
-
-  log.context( 'plots' )
 
   force = c * psi.grad(geom)
   if domain.ndims == 3:
@@ -53,7 +51,8 @@ def main( nelems=40, epsilon=.04, timestep=.01, sym3d=False, seed=0 ):
   numpy.random.seed( seed )
   c = funcsp.dot( numpy.random.normal( -.3, .01, funcsp.shape ) )
 
-  for iiter in util.iterate( 'timestep' ):
+  __log__ = log.count( 'timestep' )
+  for iiter in __log__:
 
     makeplots( domain, geom, c, psi(c), iiter )
 
