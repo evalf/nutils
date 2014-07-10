@@ -91,7 +91,7 @@ def krylov( matvec, b, x0=None, tol=1e-5, restart=None, maxiter=0, precon=None, 
       break
     ijob = 2
     if clock.check():
-      log.progress( 'residual %.2e (%.0f%%)' % ( res, numeric.log(res) * 100. / numeric.log(tol) ) )
+      log.progress( 'residual %.2e (%.0f%%)' % ( res, numpy.log(res) * 100. / numpy.log(tol) ) )
   dt = time.time() - t0
 
   assert info == 0
