@@ -12,8 +12,8 @@ interactive shell environment. Access to these components is primarily via
 :func:`breakpoint` and an exception handler in :func:`nutils.util.run`.
 """
 
-from . import core, cache
-import sys, cmd, re, os, linecache
+from . import core, cache, numeric, log
+import sys, cmd, re, os, linecache, numpy
 
 class Frame( object ):
   'frame info'
@@ -283,5 +283,74 @@ def breakpoint():
     Your program is suspended. The traceback explorer allows you to examine
     its current state and even alter it. Closing the explorer will resume
     program execution.''' ).cmdloop()
+
+class CmpData( object ):
+
+  def __init__( self, obj ):
+    self.obj = obj
+
+  @classmethod
+  def __serialize( cls, obj, floatfmt ):
+    return floatfmt % obj if isinstance(obj,float) \
+      else repr(obj) if isinstance (obj,str) \
+      else '(%s,)' % ','.join( cls.__serialize(o,floatfmt) for o in obj )
+
+  @staticmethod
+  def __wrap( s, n=80 ):
+    while s:
+      yield s[:n]
+      s = s[n:]
+
+  def hexdata( self, ndigit=4 ):
+    import zlib
+    floatfmt = '%%.%de' % ndigit
+    s = '%d,%s' % ( ndigit, self.__serialize(self.obj,floatfmt) )
+    return '\n'.join( self.__wrap( zlib.compress( s, 9 ).encode('hex') ) )
+
+  def __str__( self ):
+    return self.hexdata()
+
+  @classmethod
+  @log.title
+  def __compare( cls, verify_obj, obj, ndigit ):
+    if isinstance(verify_obj,tuple):
+      if len(verify_obj) == len(obj):
+        return all([ cls.__compare( vo, o, ndigit, title='#%d' % i )
+          for i, (vo,o) in enumerate( zip( verify_obj, obj ) ) ])
+      log.error( 'non matching lenghts: %d != %d' % ( len(verify_obj), len(obj) ) )
+    elif verify_obj == 0:
+      if obj == 0:
+        return True
+      log.error( 'expected zero: %s' % obj )
+    elif numpy.isnan(verify_obj):
+      if numpy.isnan(obj):
+        return True
+      log.error( 'expected nan: %s' % obj )
+    elif numpy.isinf(verify_obj):
+      if numpy.isinf(obj):
+        return True
+      log.error( 'expected inf: %s' % obj )
+    else:
+      exp = numpy.floor( numpy.log10( abs(verify_obj) ) ) - ndigit
+      maxerr = .5 * 10**exp
+      if abs(verify_obj-obj) <= maxerr:
+        return True
+      log.error( 'non equal to %s digits: %s != %s' % ( ndigit, obj, verify_obj ) )
+    return False
+
+  def __eq__( self, hexdata ):
+    import zlib
+    try:
+      s = zlib.decompress( ''.join( line.strip().decode('hex') for line in hexdata.splitlines() ) )
+      ndigit, verify_obj = eval( s, numpy.__dict__ )
+    except Exception, e:
+      log.error( 'failed to decode hexdata: %s' % e )
+      equal = False
+    else:
+      equal = self.__compare( verify_obj, self.obj, ndigit, title='compare' )
+    if not equal:
+      log.warning( 'objects are not equal; if this is expected replace hexdata with:\n%s' % self )
+    return equal
+      
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
