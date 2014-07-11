@@ -37,7 +37,6 @@ class Fork( object ):
     else:
       self.child_pid = None
       self.iproc = self.nprocs-1
-    self.logger = log.context( 'proc %d' % ( self.iproc+1 ), depth=2 )
     return self.iproc
 
   def __exit__( self, *exc_info ):
@@ -63,7 +62,6 @@ class Fork( object ):
           status = 1
         elif child_status:
           status = 1
-      self.logger.disable()
     except: # should not happen.. but just to be sure
       status = 1
     if self.iproc:
@@ -92,7 +90,6 @@ class AlternativeFork( object ):
     else:
       self.children = children
       self.iproc = 0
-    self.logger = log.context( 'proc %d' % ( self.iproc+1 ), depth=2 )
     return self.iproc
 
   def __exit__( self, *exc_info ):
@@ -109,7 +106,6 @@ class AlternativeFork( object ):
         self.children.remove( child_pid )
         if child_status:
           status = 1
-      self.logger.disable()
     except: # should not happen.. but just to be sure
       status = 1
     if self.iproc:
