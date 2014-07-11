@@ -1,3 +1,11 @@
+# -*- coding: utf8 -*-
+#
+# Module TOPOLOGY
+#
+# Part of Nutils: open source numerical utilities for Python. Jointly developed
+# by HvZ Computational Engineering, TU/e Multiscale Engineering Fluid Dynamics,
+# and others. More info at http://nutils.org <info@nutils.org>. (c) 2014
+
 """
 The topology module defines the topology objects, notably the
 :class:`StructuredTopology` and :class:`UnstructuredTopology`. Maintaining
