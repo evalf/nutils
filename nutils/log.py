@@ -101,13 +101,14 @@ boldgreen = ColorStream(2,1)
 boldred = ColorStream(1,1)
 red = ColorStream(1,0)
 boldblue = ColorStream(4,1)
+boldyellow = ColorStream(3,1)
 gray = ColorStream(0,1)
 
 colorpicker = {
   'path': boldgreen,
   'error': boldred,
   'warning': red,
-  'user': boldblue,
+  'user': boldyellow,
   'progress': gray,
 }
 
