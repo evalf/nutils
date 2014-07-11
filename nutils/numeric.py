@@ -26,15 +26,6 @@ except:
     assert A.shape == B.shape and axes > 0
     return ((A*B).reshape(A.shape[:-axes]+(-1,))).sum(-1)
 
-class HashableArray( numpy.ndarray ):
-  def __hash__( self ):
-    return hash( tuple(self.flat) )
-  def __eq__( self, other ):
-    return isinstance(other,HashableArray) \
-       and self.shape == other.shape \
-       and self.dtype == other.dtype \
-       and numpy.equal(self,other).all()
-
 def overlapping( arr, axis=-1, n=2 ):
   'reinterpret data with overlaps'
 

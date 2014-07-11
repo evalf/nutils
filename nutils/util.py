@@ -153,39 +153,6 @@ def profile( func ):
   raw_input( 'press enter to continue' )
   return retval
 
-class Cache( object ):
-  'cache'
-
-  def __init__( self, *args ):
-    'constructor'
-
-    import hashlib
-    strhash = ','.join( str(arg) for arg in args )
-    md5hash = hashlib.md5( strhash ).hexdigest()
-    log.info( 'using cache:', md5hash )
-    cachedir = core.getprop( 'cachedir', 'cache' )
-    if not os.path.exists( cachedir ):
-      os.makedirs( cachedir )
-    path = os.path.join( cachedir, md5hash )
-    self.data = file( path, 'ab+' if not core.getprop( 'recache', False ) else 'wb+' )
-
-  def __call__( self, func, *args, **kwargs ):
-    'call'
-
-    name = func.__name__ + ''.join( ' %s' % arg for arg in args ) + ''.join( ' %s=%s' % item for item in kwargs.iteritems() )
-    pos = self.data.tell()
-    try:
-      data = cPickle.load( self.data )
-    except EOFError:
-      data = func( *args, **kwargs)
-      self.data.seek( pos )
-      cPickle.dump( data, self.data, -1 )
-      msg = 'written to'
-    else:
-      msg = 'loaded from'
-    log.info( msg, 'cache:', name, '[%db]' % (self.data.tell()-pos) )
-    return data
-
 def getpath( pattern ):
   'create file in dumpdir'
 
