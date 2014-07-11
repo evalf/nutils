@@ -14,37 +14,42 @@ def makeplots( domain, geom, sol, index ):
     plt.ylim( 0, .5*numpy.pi )
 
 
-def main( nelems=8, degree=1, beltrami=False ):
+def main( nelems=None, degree=1 ):
 
-  verts = numpy.linspace( 0, .5*numpy.pi, nelems+1 )
-  #domain, geom = mesh.rectilinear( [verts,verts] )
-  domain, geom = mesh.demo( xmax=.5*numpy.pi, ymax=.5*numpy.pi )
+  if nelems:
+    verts = numpy.linspace( 0, .5*numpy.pi, nelems+1 )
+    domain, geom = mesh.rectilinear( [verts,verts] )
+  else:
+    domain, geom = mesh.demo( xmax=.5*numpy.pi, ymax=.5*numpy.pi )
+    if degree != 1:
+      log.warning( 'setting degree=%d for triangular mesh' % degree )
+      degree = 1
+
   x, y = geom
   exact = function.sin(x) * function.exp(y)
-  funcsp = domain.splinefunc( degree=degree )
-  if beltrami:
-    geom = function.concatenate([ geom, (x**2-y**2)[_] ])
+  flux = numpy.exp(.5*numpy.pi) * function.sin(x)
+  dirichlet = function.sin(x)
 
-  laplace = function.outer( funcsp.grad(geom,ndims=2) ).sum()
+  funcsp = domain.splinefunc( degree=degree )
+  laplace = function.outer( funcsp.grad(geom) ).sum()
   matrix = domain.integrate( laplace, geometry=geom, ischeme='gauss4', title='matrix' )
-  tmp = funcsp * numpy.exp(.5*numpy.pi) * function.sin(x)
-  rhs = domain.boundary['top'].integrate( tmp, geometry=geom, ischeme='gauss6', title='rhs' )
-  cons = domain.boundary['left,bottom'].project( function.sin(x), ischeme='gauss6', geometry=geom, onto=funcsp, title='left,bottom edge' )
+  rhs = domain.boundary['top'].integrate( funcsp * flux, geometry=geom, ischeme='gauss6', title='rhs' )
+  cons = domain.boundary['left,bottom'].project( dirichlet, ischeme='gauss6', geometry=geom, onto=funcsp, title='left,bottom edge' )
   lhs = matrix.solve( rhs, constrain=cons, tol=1e-8, symmetric=True )
   sol = funcsp.dot(lhs)
 
-  makeplots( domain.refined, geom[:2], sol, nelems )
+  makeplots( domain.refined, geom, sol, nelems )
   error = sol - exact
-  err = numpy.sqrt( domain.integrate( [ error**2, ( error.grad(geom,ndims=2)**2 ).sum() ], geometry=geom, ischeme='gauss6', title='computing error' ) )
-  log.info( 'errors: l2=%f, h1=%f' % tuple(err) )
+  err = numpy.sqrt( domain.integrate( [ error**2, ( error.grad(geom)**2 ).sum() ], geometry=geom, ischeme='gauss6', title='computing error' ) )
+  log.user( 'errors: l2=%f, h1=%f' % tuple(err) )
 
-  return err
+  return err, rhs, cons, lhs
 
 
 def conv( degree=1, niter=4 ):
 
   __log__ = log.range( 'refine', niter )
-  l2err, h1err = zip( *[ main( nelems=2**i, degree=degree ) for i in __log__ ] )
+  l2err, h1err = zip( *[ main( nelems=2**i, degree=degree )[0] for i in __log__ ] )
   h = (.25*numpy.pi) * .5**numpy.arange(niter)
 
   with plot.PyPlot( 'convergence' ) as plt:
@@ -60,4 +65,35 @@ def conv( degree=1, niter=4 ):
     plt.grid( True )
 
 
-util.run( main, conv )
+def unittest():
+
+  retvals = main( degree=1 )
+  assert debug.CmpData( retvals ) == '''
+    78daad924b8a03310c44afd361dc427fc9c799456f73ffe5286a1bb2cb6262303c84ac2a97ade338
+    1cd4dcaf137924a06314d2788c8340d4f8fa411c0c28248d041422abeae8b3db11b05657bf8a25e1
+    c9d74951c28e990bc5c91aff2f51377dfe3ec7de670de75992a82f754b6dac3286bf5886808972a3
+    81b17a479060d1e7a8fca1e09ddcfbe84fbb9c2884f8ed4b01997ca5502f448d5fb64710c67347ad
+    660ba7ca4655a1d5cb16373a24e53dd74023b07142306d09098dfd772c634d30095ea93ffe007cc0
+    8beb'''
+
+  retvals = main( nelems=4, degree=1 )
+  assert debug.CmpData( retvals ) == '''
+    78daad91cb6a03310c457f67863a42efc7e774916dfe7f598fc70e2404da811a0cc796aead2b69db
+    36062db4fb0db92984a274a4b6b70d01fbba7f21b65f9180d96b28afc802483c2ecb088432fe96fb
+    220b16bc2c2b10565f5d3128b1e3a4ed46604538588153b4a31dd7cc92831d888a3a7a13c8d0d3eb
+    e3fbf1b27b1b9cf363a87f6e891f4304485ca3c4f7d03fd569e081a7f30489a1a363d6caaba3a996
+    6b94cb432f4c23668269f040062e3dcb1550eaefcee62e7f7daa9e357391c92656a50e5450739aef
+    3ebd136852cc5ccaa4f905ab2d59b2c8c0bded3f2eaca579'''
+
+  retvals = main( nelems=4, degree=2 )
+  assert debug.CmpData( retvals ) == '''
+    78dab5924d8ec3300885af93681cc43fe638b3e8b6f75f8e63bb69ab992cda6a22457a12f0197868
+    5916024d97cb86521894839ae4b2960501db77f9422caf480732940e799320e0a4d908f42e810039
+    f5e5b2278229c667044ab64f080eacd5fa1e9a1d1b430aed8bd5c61649ee723320acd1b4edfe6162
+    971b81ab50d70116b173bc1566a276e4f5fbfaeb377017390d57d088f3703678c5d330dd27fb2bfc
+    0f233248c89002463e5a37609c530404e1b8b404f3b099706cc1211ca3cbbdfdd6dbb0562b6797dc
+    5cb63a65b00ec31f16d5ca88eaad2cabcf5ca679a0025c7d48058c1847f7b0cbfd90442721f62607
+    c169e60ad4d6e52454cc5beed3294adc097910aa1c84380884e389b5ac3fd638e94a'''
+
+
+util.run( main, conv, unittest )
