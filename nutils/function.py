@@ -1677,14 +1677,19 @@ class Power( ArrayFunc ):
   def __init__( self, func, power ):
     'constructor'
 
-    assert _isfunc( func )
+    assert _isfunc( func ) or _isfunc( power )
     assert _isscalar( power )
     self.func = func
     self.power = power
     ArrayFunc.__init__( self, args=[func,power], evalf=numpy.power, shape=func.shape )
 
   def _localgradient( self, ndims ):
-    return self.power * ( self.func**(self.power-1) )[...,_] * localgradient( self.func, ndims )
+    # self = func**power
+    # ln self = power * ln func
+    # self` / self = power` * ln func + power * func` / func
+    # self` = power` * ln func * self + power * func` * func**(power-1)
+    return self.power * power( self.func, self.power-1 )[...,_] * localgradient( self.func, ndims ) \
+         + ( ln( self.func ) * self )[...,_] * localgradient( self.power, ndims )
 
   def _power( self, n ):
     func = self.func
@@ -3010,7 +3015,7 @@ def power( arg, n ):
   if n == 0:
     return numpy.ones( arg.shape )
 
-  if isinstance( arg, numpy.ndarray ):
+  if not _isfunc( arg ) and not _isfunc( n ):
     return numpy.power( arg, n )
 
   retval = _call( arg, '_power', n )
