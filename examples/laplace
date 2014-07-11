@@ -48,11 +48,18 @@ def main( nelems=None, degree=1, plots=True ):
   return err, rhs, cons, lhs
 
 
-def conv( degree=1, niter=4 ):
+def conv( degree=1, nrefine=4 ):
 
-  __log__ = log.range( 'refine', niter )
-  l2err, h1err = zip( *[ main( nelems=2**i, degree=degree )[0] for i in __log__ ] )
-  h = (.25*numpy.pi) * .5**numpy.arange(niter)
+  l2err = []
+  h1err = []
+
+  __log__ = log.range( 'refine', nrefine )
+  for irefine in __log__:
+    err, rhs, cons, lhs = main( nelems=2**irefine, degree=degree )
+    l2err.append( err[0] )
+    h1err.append( err[1] )
+
+  h = (.25*numpy.pi) * .5**numpy.arange(nrefine)
 
   with plot.PyPlot( 'convergence' ) as plt:
     plt.subplot( 211 )
