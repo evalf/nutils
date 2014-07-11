@@ -14,7 +14,7 @@ def makeplots( domain, geom, sol, index ):
     plt.ylim( 0, .5*numpy.pi )
 
 
-def main( nelems=None, degree=1 ):
+def main( nelems=None, degree=1, plots=True ):
 
   if nelems:
     verts = numpy.linspace( 0, .5*numpy.pi, nelems+1 )
@@ -38,7 +38,9 @@ def main( nelems=None, degree=1 ):
   lhs = matrix.solve( rhs, constrain=cons, tol=1e-8, symmetric=True )
   sol = funcsp.dot(lhs)
 
-  makeplots( domain.refined, geom, sol, nelems )
+  if plots:
+    makeplots( domain.refined, geom, sol, nelems )
+
   error = sol - exact
   err = numpy.sqrt( domain.integrate( [ error**2, ( error.grad(geom)**2 ).sum() ], geometry=geom, ischeme='gauss6', title='computing error' ) )
   log.user( 'errors: l2=%f, h1=%f' % tuple(err) )
@@ -67,7 +69,7 @@ def conv( degree=1, niter=4 ):
 
 def unittest():
 
-  retvals = main( degree=1 )
+  retvals = main( degree=1, plots=False )
   assert debug.CmpData( retvals ) == '''
     78daad924b8a03310c44afd361dc427fc9c799456f73ffe5286a1bb2cb6262303c84ac2a97ade338
     1cd4dcaf137924a06314d2788c8340d4f8fa411c0c28248d041422abeae8b3db11b05657bf8a25e1
@@ -76,7 +78,7 @@ def unittest():
     660ba7ca4655a1d5cb16373a24e53dd74023b07142306d09098dfd772c634d30095ea93ffe007cc0
     8beb'''
 
-  retvals = main( nelems=4, degree=1 )
+  retvals = main( nelems=4, degree=1, plots=False )
   assert debug.CmpData( retvals ) == '''
     78daad91cb6a03310c457f67863a42efc7e774916dfe7f598fc70e2404da811a0cc796aead2b69db
     36062db4fb0db92984a274a4b6b70d01fbba7f21b65f9180d96b28afc802483c2ecb088432fe96fb
@@ -85,7 +87,7 @@ def unittest():
     6b94cb432f4c23668269f040062e3dcb1550eaefcee62e7f7daa9e357391c92656a50e5450739aef
     3ebd136852cc5ccaa4f905ab2d59b2c8c0bded3f2eaca579'''
 
-  retvals = main( nelems=4, degree=2 )
+  retvals = main( nelems=4, degree=2, plots=False )
   assert debug.CmpData( retvals ) == '''
     78dab5924d8ec3300885af93681cc43fe638b3e8b6f75f8e63bb69ab992cda6a22457a12f0197868
     5916024d97cb86521894839ae4b2960501db77f9422caf480732940e799320e0a4d908f42e810039
