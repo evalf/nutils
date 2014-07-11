@@ -6,27 +6,10 @@ from nutils import *
 @log.title
 def makeplots( domain, geom, velo, pres, index ):
 
-  funcsp = domain.splinefunc( degree=2 )
-  grad = funcsp.grad( geom )
-  laplace = function.outer( grad ).sum()
   vortfunc = velo.grad(geom)[1,0] - velo.grad(geom)[0,1]
-  matrix, rhs = domain.integrate( [ laplace, vortfunc * funcsp ], geometry=geom, ischeme='gauss9' )
-  rhs += domain.boundary['right'].integrate( ( geom.normal() * [-velo[1],velo[0]] ).sum() * funcsp, geometry=geom, ischeme='gauss9' )
-  cons = domain.boundary['left'].project( 0, onto=funcsp, geometry=geom, ischeme='gauss9' )
-  lhs = matrix.solve( rhs, constrain=cons )
-  streamfunc = funcsp.dot( lhs )
-
   bbox = -2.5, 10, -5, 5
   xy, uv = domain.elem_eval( [ geom, velo ], ischeme='uniform1', title='flow field', separate=False )
-  points, stream, flow, pres, vort = domain.elem_eval( [ geom, streamfunc, function.norm2(velo), pres, vortfunc ], ischeme='bezier9', separate=True )
-
-  period = 1.
-  with plot.PyPlot( 'stream', index=index ) as plt:
-    from matplotlib import cm
-    plt.mesh( points, stream%period, edgecolors='none', triangulate='bezier', cmap=cm.hsv )
-    plt.clim( 0, period )
-    plt.xlim( bbox[:2] )
-    plt.ylim( bbox[2:] )
+  points, flow, pres, vort = domain.elem_eval( [ geom, function.norm2(velo), pres, vortfunc ], ischeme='bezier9', separate=True )
 
   with plot.PyPlot( 'flow', index=index ) as plt:
     plt.mesh( points, flow, edgecolors='none', triangulate='bezier' )
