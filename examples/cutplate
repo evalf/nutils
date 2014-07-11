@@ -16,7 +16,7 @@ def main( nelems=10, stress=Hook(1,1) ):
   wholedomain, geom = mesh.rectilinear( [verts,verts] )
   dspace = wholedomain.splinefunc( degree=3 ).vector( 2 )
   levelset = function.norm2( geom ) - .5
-  domain = wholedomain.trim( levelset, maxrefine=3 )
+  domain = wholedomain.trim( levelset, maxrefine=2 )
 
   support = domain.integrate( function.norm2( dspace ), geometry=geom, ischeme='gauss3' )
   cons = util.NanVec( len(support) )
@@ -29,7 +29,7 @@ def main( nelems=10, stress=Hook(1,1) ):
   lhs = matrix.solve( constrain=cons, tol=1e-5, symmetric=True )
   disp = dspace.dot( lhs )
 
-  points, colors = domain.elem_eval( [ geom + disp, stress(disp,geom)[0,1] ], ischeme='bezier3', separate=True )
+  points, colors = domain.simplex.elem_eval( [ geom + disp, stress(disp,geom)[0,1] ], ischeme='bezier3', separate=True )
   with plot.PyPlot( 'dspace' ) as plt:
     plt.mesh( points, colors )
     plt.colorbar()

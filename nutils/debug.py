@@ -12,7 +12,7 @@ interactive shell environment. Access to these components is primarily via
 :func:`breakpoint` and an exception handler in :func:`nutils.util.run`.
 """
 
-from . import core
+from . import core, cache
 import sys, cmd, re, os, linecache
 
 class Frame( object ):
@@ -41,20 +41,17 @@ class Frame( object ):
   def getline( self, lineno ):
     return linecache.getline( self.frame.f_code.co_filename, lineno )
 
-  @property
-  @core.cache
+  @cache.property
   def where( self ):
     relpath = os.path.relpath( self.frame.f_code.co_filename )
     name = self._name( self.frame )
     return 'File "%s", line %d, in %s' % ( relpath, self.lineno, name )
 
-  @property
-  @core.cache
+  @cache.property
   def context( self ):
     return '  %s\n    %s' % ( self.where,self.getline( self.lineno ).strip() )
 
-  @property
-  @core.cache
+  @cache.property
   def source( self ):
     path = self.frame.f_code.co_filename
     lineno = self.frame.f_code.co_firstlineno

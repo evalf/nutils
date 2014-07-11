@@ -30,9 +30,10 @@ possible only via inverting of the geometry function, which is a fundamentally
 expensive and currently unsupported operation.
 """
 
-from . import util, numpy, numeric, log, core, _
+from . import util, numpy, numeric, log, core, cache, _
 import sys, warnings
 
+CACHE   = object()
 ELEM    = object()
 POINTS  = object()
 WEIGHTS = object()
@@ -45,6 +46,7 @@ class CompiledEvaluable( object ):
 
     self.data = data
     self.operations = operations
+    self.cache = cache.CallDict()
     if core.getprop( 'dot', False ):
       self.graphviz()
 
@@ -55,7 +57,7 @@ class CompiledEvaluable( object ):
       ischeme = ischeme[elem]
 
     if isinstance( ischeme, str ):
-      points, weights = elem.eval( ischeme )
+      points, weights = self.cache( elem.reference.getischeme, ischeme )
     elif isinstance( ischeme, tuple ):
       points, weights = ischeme
       assert points.shape[-1] == elem.ndims
@@ -69,8 +71,8 @@ class CompiledEvaluable( object ):
     else:
       raise Exception, 'invalid integration scheme of type %r' % type(ischeme)
 
-    N = len(self.data) + 3
-    values = self.data + [ elem, points, weights ]
+    N = len(self.data) + 4
+    values = self.data + [ self.cache, elem, points, weights ]
     for op, indices in self.operations:
       args = [ values[N+i] for i in indices ]
       try:
@@ -166,6 +168,8 @@ class Evaluable( object ):
             break
         else:
           idx = arg.__compile(data,operations)
+      elif arg is CACHE:
+        idx = -4
       elif arg is ELEM:
         idx = -3
       elif arg is POINTS:
@@ -174,7 +178,7 @@ class Evaluable( object ):
         idx = -1
       else:
         data.insert( 0, arg )
-        idx = -len(data)-3
+        idx = -len(data)-4
       indices[iarg] = idx
     operations.append( (self,indices) )
     return len(operations)-1
@@ -305,7 +309,7 @@ class Cascade( Evaluable ):
 
     self.ndims = ndims
     self.side = side
-    Evaluable.__init__( self, args=[ELEM,POINTS,ndims,side], evalf=self.cascade )
+    Evaluable.__init__( self, args=[CACHE,ELEM,POINTS,ndims,side], evalf=self.cascade )
 
   def transform( self, ndims ):
     if ndims == self.ndims:
@@ -314,19 +318,19 @@ class Cascade( Evaluable ):
     return Transform( self, Cascade(ndims,self.side) )
 
   @staticmethod
-  def cascade( elem, points, ndims, side ):
+  def cascade( cache, elem, points, ndims, side ):
     'evaluate'
 
     while elem.ndims != ndims \
         or elem.interface and elem.interface[side][0].ndims < elem.ndims: # TODO make less dirty
       elem, transform = elem.interface[side] if elem.interface \
                    else elem.context or elem.parent
-      points = transform.eval( points )
+      points = cache( transform.eval, points )
 
     cascade = [ (elem,points) ]
     while elem.parent:
       elem, transform = elem.parent
-      points = transform.eval( points )
+      points = cache( transform.eval, points )
       cascade.append( (elem,points) )
 
     return cascade
@@ -813,10 +817,10 @@ class Function( ArrayFunc ):
     self.cascade = cascade
     self.stdmap = stdmap
     self.igrad = igrad
-    ArrayFunc.__init__( self, args=(cascade,stdmap,igrad), evalf=self.function, shape=(axis,)+(cascade.ndims,)*igrad )
+    ArrayFunc.__init__( self, args=(CACHE,cascade,stdmap,igrad), evalf=self.function, shape=(axis,)+(cascade.ndims,)*igrad )
 
   @staticmethod
-  def function( cascade, stdmap, igrad ):
+  def function( cache, cascade, stdmap, igrad ):
     'evaluate'
 
     fvals = []
@@ -826,9 +830,9 @@ class Function( ArrayFunc ):
         continue
       if isinstance( std, tuple ):
         std, keep = std
-        F = std.eval(points,grad=igrad)[(Ellipsis,keep)+(slice(None),)*igrad]
+        F = cache( std.eval, points, igrad )[(Ellipsis,keep)+(slice(None),)*igrad]
       else:
-        F = std.eval(points,grad=igrad)
+        F = cache( std.eval, points, igrad )
       for axis in range(-igrad,0):
         F = numeric.dot( F, elem.inv_root_transform, axis )
       fvals.append( F )
@@ -1835,7 +1839,7 @@ class Pointdata( ArrayFunc ):
   @staticmethod
   def pointdata( elem, points, data ):
     myvals,mypoint = data[elem]
-    assert mypoint is points, 'Illegal point set'
+    assert numpy.equal( mypoint, points ).all(), 'Illegal point set'
     return myvals
 
   def update_max( self, func ):
@@ -3223,7 +3227,8 @@ def pointdata ( topo, ischeme, func=None, shape=None, value=None ):
 
   data = {}
   for elem in topo:
-    ipoints, iweights = elem.eval( ischeme )
+    # TODO use cache for getischeme
+    ipoints, iweights = elem.reference.getischeme( ischeme )
     values = numpy.empty( ipoints.shape[:-1]+shape, dtype=float )
     values[:] = func.eval(elem,ischeme) if func is not None else value
     data[ elem ] = values, ipoints

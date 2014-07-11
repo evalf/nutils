@@ -17,8 +17,8 @@ def makeplots( domain, geom, sol, index ):
 def main( nelems=8, degree=1, beltrami=False ):
 
   verts = numpy.linspace( 0, .5*numpy.pi, nelems+1 )
-  domain, geom = mesh.rectilinear( [verts,verts] )
-  #domain, geom = mesh.demo( xmax=.5*numpy.pi, ymax=.5*numpy.pi )
+  #domain, geom = mesh.rectilinear( [verts,verts] )
+  domain, geom = mesh.demo( xmax=.5*numpy.pi, ymax=.5*numpy.pi )
   x, y = geom
   exact = function.sin(x) * function.exp(y)
   funcsp = domain.splinefunc( degree=degree )
@@ -33,7 +33,7 @@ def main( nelems=8, degree=1, beltrami=False ):
   lhs = matrix.solve( rhs, constrain=cons, tol=1e-8, symmetric=True )
   sol = funcsp.dot(lhs)
 
-  makeplots( domain, geom[:2], sol, nelems )
+  makeplots( domain.refined, geom[:2], sol, nelems )
   error = sol - exact
   err = numpy.sqrt( domain.integrate( [ error**2, ( error.grad(geom,ndims=2)**2 ).sum() ], geometry=geom, ischeme='gauss6', title='computing error' ) )
   log.info( 'errors: l2=%f, h1=%f' % tuple(err) )

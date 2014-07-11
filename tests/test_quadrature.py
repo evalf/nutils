@@ -17,7 +17,7 @@ class TestGaussQuadrature( object ):
       log.info( 'Exact: F = %8.6e' % exact )
       for p in range( 1, MAXORDER+1 ):
         name = 'gauss%d' % p
-        points, weights = elem.eval( name )
+        points, weights = elem.reference.getischeme( name )
   
         Fq = (weights*numpy.prod(points**numpy.array(ab)[_,:],axis=1)).sum()
   
@@ -25,7 +25,7 @@ class TestGaussQuadrature( object ):
   
         log.info( '%s: n = %02d, F = %8.6e, rel.err. = %8.6e, %s' % (name,len(weights),Fq,err,'Exact' if err < EPS else 'Not exact') )
   
-        if isinstance( elem, element.QuadElement ):
+        if isinstance( elem.reference, element.QuadReference ):
           expect_exact = p // 2 >= numpy.amax(ab) // 2
         else:
           expect_exact = p >= order
@@ -106,7 +106,9 @@ class TestSingularQuadrature( object ):
                 1:1, n-1:1, n:1, n*(m-1):1,
               n+1:2, 2*n-1:2, n*(m-1)+1:2, n*m-1:2}
     for i, elem in enumerate( self.domainp ):
-      assert elem0.neighbor( elem ) == neighbor.get( i, -1 ), \
+      common_vertices = set(elem0.vertices) & set(elem.vertices)
+      neighborhood = { 0:-1, 1:2, 2:1, 4:0 }[ len(common_vertices) ]
+      assert neighborhood == neighbor.get( i, -1 ), \
         'Error with neighbor detection'
 
   def test_orientations( self ):
@@ -148,7 +150,7 @@ class TestSingularQuadrature( object ):
       # transforms for periodic, structured grid
       relative_position = relative_positions.get( (iy-ix, jy-jx), -1 )
       if relative_position == -1: continue # any transformation will do
-      assert elem.orientation[1:] in valid_transformations[relative_position], 'Error with reorientation'
+      assert elem.reference.transf in valid_transformations[relative_position], 'Error with reorientation'
 
   def test_transformations( self ):
     'Test transformations performed on gauss schemes for codim 1 neighbors'
@@ -158,17 +160,16 @@ class TestSingularQuadrature( object ):
     elems = {}
     tlist = set(range(8))
     for i, elem in enumerate( self.ddomainp ):
-      n, t1, t2 = elem.orientation
-      if n==neighbor:
+      if elem.reference.neighborhood==neighbor:
         try:
-          tlist.remove(t1)
-          elems[t1,t2] = elem
+          tlist.remove(elem.reference.transf[0])
+          elems[elem.reference.transf] = elem
           if not len(tlist): break
         except KeyError:
           pass
 
     # Alternative coordinate computation
-    points, weights = elem.get_quad_bem_ischeme( ischeme, neighbor )
+    points, weights = elem.reference.get_quad_bem_ischeme( ischeme, elem.reference.neighborhood )
     rotation_matrix = [
         numpy.array( [ [1, 0],  [0, 1]] ), # 0/4*pi rotation
         numpy.array( [ [0, -1], [1, 0]] ), # 1/4*pi rotation
@@ -191,7 +192,7 @@ class TestSingularQuadrature( object ):
       points_ref = numpy.empty( points.shape )
       points_ref[:,:2] = transform( points[:,:2], t1 )
       points_ref[:,2:] = transform( points[:,2:], t2 )
-      points_test = elem.singular_ischeme_quad( orientation=elem.orientation, ischeme=ischeme )[0]
+      points_test = elem.reference.singular_ischeme_quad( points, elem.reference.transf )
       assert numpy.linalg.norm( points_ref-points_test ) < 1.e-14
 
       # See if inverse transformation brings back to points[0]
@@ -205,7 +206,7 @@ class TestSingularQuadrature( object ):
   def plot_gauss_on_3x4( self, elem, ischeme='singular3' ):
     'Given a product element on our 3x4 domain (see __init__), plot gauss points'
     with plot.PyPlot( 'quad' ) as fig:
-      pts, wts = elem.eval( ischeme )
+      pts, wts = elem.reference.getischeme( ischeme )
       affine = [int(n) for n in re.findall( r'\d+', elem.elem1.vertices[0].id )] # find elem1 position
       fig.plot( pts[:,0] + affine[0] - 1.5,
                 pts[:,1] + affine[1] - 1.5, 'rx' )
@@ -214,7 +215,7 @@ class TestSingularQuadrature( object ):
                 pts[:,3] + affine[1] - 1.5, 'g+' )
       for x in range( 4 ): fig.plot( [x-1.5, x-1.5], [-1.5, 2.5], 'b-' ) # grid
       for y in range( 5 ): fig.plot( [-1.5, 1.5], [y-1.5, y-1.5], 'b-' )
-      fig.title( 'n:%i, t:%i, %i'%elem.orientation )
+      fig.title( 'n:%i, t:%i, %i'%( elem.reference.neighbor, elem.reference.transf[0], elem.reference.transf[1] ) )
       fig.axes().set_aspect('equal', 'datalim')
 
   def _integrate( self, func, geom, qset=range(1,9), qmax=16, slopes=None, plot_quad_points=False ):
@@ -240,7 +241,7 @@ class TestSingularQuadrature( object ):
     ecoll = [{}, {}, {}, {}]
     for i, elem in enumerate( ddomain ):
       if not i in index: continue
-      ecoll[elem.orientation[0]][elem.orientation[1:]] = elem
+      ecoll[elem.reference.neighborhood][elem.reference.transf] = elem
 
     # integrands and primitives
     for neighbor, elems in enumerate( ecoll ):

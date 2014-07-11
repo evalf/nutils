@@ -123,7 +123,7 @@ class Log( object ):
 class StdLog( Log ):
 
   def getstream( self, level, *contexts ):
-    verbosity = core.getprop( 'verbosity', 6 )
+    verbosity = core.getprop( 'verbose', 6 )
     if level in LEVELS[ verbosity: ]:
       stream = devnull
     elif core.getprop( 'richoutput', False ):

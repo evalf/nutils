@@ -106,9 +106,18 @@ unit = _Unit()
 def delaunay( points ):
   'delaunay triangulation'
 
+  points = numpy.asarray( points )
+  npoints, ndims = points.shape
+  assert ndims >= 1, 'ndims should be at least 1'
+  if npoints < 1 + ndims:
+    return []
+  if ndims == 1:
+    indices = numpy.argsort( points[:,0] )
+    return numeric.overlapping( indices )
   from scipy import spatial
   with suppressed_output:
-    return spatial.Delaunay( points )
+    submesh = spatial.Delaunay( points )
+  return submesh.vertices
 
 def withrepr( f ):
   'add string representation to generated function'
@@ -532,10 +541,6 @@ def run( *functions ):
     log.info( 'finish %s\n' % time.ctime() )
     log.info( 'elapsed %02.0f:%02.0f:%02.0f' % ( hours, minutes, seconds ) )
 
-    cacheinfo = core.cache_info( brief=True )
-    if cacheinfo:
-      log.warning( '\n  '.join( ['some caches were saturated:'] + cacheinfo ) )
-
     if core.getprop( 'profile' ):
       import pstats
       stream = log.getstream( 'warning' )
@@ -544,8 +549,6 @@ def run( *functions ):
 
     if exc_info:
       debug.write_html( htmlfile, exc_info )
-      htmlfile.write( '<span class="info">Cache usage:<ul>%s</ul></span>' % '\n'.join( '<li>%s</li>' % line for line in core.cache_info( brief=False ) ) )
-      htmlfile.flush()
       debug.traceback_explorer( exc_info )
 
     sys.exit( failed )

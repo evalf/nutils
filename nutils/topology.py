@@ -15,7 +15,7 @@ out in element loops. For lower level operations topologies can be used as
 :mod:`nutils.element` iterators.
 """
 
-from . import element, function, util, numpy, parallel, matrix, log, core, numeric, _
+from . import element, function, util, numpy, parallel, matrix, log, core, numeric, cache, _
 import warnings, itertools
 
 class Topology( object ):
@@ -44,7 +44,6 @@ class Topology( object ):
     assert not refine, 'not all refinement elements were found: %s' % '\n '.join( str(e) for e in refine )
     return HierarchicalTopology( self, refined )
 
-  @core.cache
   def stdfunc( self, degree ):
     'spline from vertices'
 
@@ -57,6 +56,11 @@ class Topology( object ):
     fmap = dict.fromkeys( self, element.PolyTriangle(1) )
     nmap = { elem: numpy.array([ dofmap[n] for n in elem.vertices ]) for elem in self }
     return function.function( fmap=fmap, nmap=nmap, ndofs=len(dofmap), ndims=2 )
+
+  @cache.property
+  def simplex( self ):
+    simplices = [ simplex for elem in self for simplex in elem.simplices ]
+    return UnstructuredTopology( ndims=self.ndims, elements=simplices )
 
   def __add__( self, other ):
     'add topologies'
@@ -131,6 +135,7 @@ class Topology( object ):
       for ifunc, index, data in idata.eval( elem, ischeme ):
         retvals[ifunc][s+index] = data
 
+    log.debug( 'cache', idata.cache.summary() )
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
     if single_arg:
       retvals, = retvals
@@ -164,6 +169,7 @@ class Topology( object ):
       for retval, data in zip( retvals, area_data[1:] ):
         retval[ielem] = data / area
 
+    log.debug( 'cache', idata.cache.summary() )
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
     if single_arg:
       retvals, = retvals
@@ -188,7 +194,7 @@ class Topology( object ):
     for retval in retvals:
       retval[:] = numpy.nan
 
-    data = function.Tuple([ function.Tuple([ func, retval ]) for func, retval in zip( funcs, retvals ) ])
+    data = function.Tuple([ function.Tuple([ func, retval ]) for func, retval in zip( funcs, retvals ) ]).compiled()
 
     __log__ = log.iter( 'elem', self )
     for elem in __log__:
@@ -198,6 +204,8 @@ class Topology( object ):
           retval[selection] = func
 
     retvals = [ retval.reshape( shape[1:] + func.shape ) for func, retval in zip( funcs, retvals ) ]
+
+    log.debug( 'cache', data.cache.summary() )
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
     if single_arg:
       retvals, = retvals
@@ -264,6 +272,7 @@ class Topology( object ):
         with lock:
           retvals[ifunc][index] += data
 
+    log.debug( 'cache', idata.cache.summary() )
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
     if single_arg:
       retvals, = retvals
@@ -305,8 +314,9 @@ class Topology( object ):
 
     __log__ = log.iter( 'elem', self )
     for elem in parallel.pariter( __log__ ):
-      assert isinstance( elem, element.ProductElement )
-      compare_elem = cmp( elem.elem1, elem.elem2 )
+      assert isinstance( elem.reference, element.ProductReference )
+      (elem1,trans1), (elem2,trans2) = elem.interface
+      compare_elem = cmp( elem1, elem2 )
       if compare_elem < 0:
         continue
       for ifunc, lock, index, data in idata.eval( elem, ischeme ):
@@ -315,6 +325,7 @@ class Topology( object ):
           if compare_elem > 0:
             retvals[ifunc][index[::-1]] += data.T
 
+    log.debug( 'cache', idata.cache.summary() )
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
     if single_arg:
       retvals, = retvals
@@ -610,8 +621,7 @@ class StructuredTopology( Topology ):
     periodic = [ idim for idim in self.periodic if idim < len(item) and item[idim] == slice(None) ]
     return StructuredTopology( self.structure[item], periodic=periodic )
 
-  @property
-  @core.cache
+  @cache.property
   def boundary( self ):
     'boundary'
 
@@ -645,8 +655,7 @@ class StructuredTopology( Topology ):
     topo.groups = dict( zip( ( 'left', 'right', 'bottom', 'top', 'front', 'back' ), boundaries ) )
     return topo
 
-  @property
-  @core.cache
+  @cache.property
   def interfaces( self ):
     'interfaces'
 
@@ -668,7 +677,6 @@ class StructuredTopology( Topology ):
         interfaces.append( ielem )
     return UnstructuredTopology( interfaces, ndims=self.ndims-1 )
 
-  @core.cache
   def splinefunc( self, degree, neumann=(), knots=None, periodic=None, closed=False, removedofs=None ):
     'spline from vertices'
 
@@ -751,7 +759,6 @@ class StructuredTopology( Topology ):
 
     return function.function( funcmap, dofmap, dofcount, self.ndims )
 
-  @core.cache
   def discontfunc( self, degree ):
     'discontinuous shape functions'
 
@@ -766,7 +773,6 @@ class StructuredTopology( Topology ):
 
     return function.function( funcmap, dofmap, dofs.size, self.ndims )
 
-  @core.cache
   def curvefreesplinefunc( self ):
     'spline from vertices'
 
@@ -815,7 +821,6 @@ class StructuredTopology( Topology ):
 
     return self.splinefunc( degree=1 )
 
-  @core.cache
   def stdfunc( self, degree ):
     'spline from vertices'
 
@@ -873,31 +878,24 @@ class StructuredTopology( Topology ):
       vertex_structure[...,idim] = numpy.asarray( ivertices ).reshape( shape )
     return self.linearfunc().dot( vertex_structure.reshape( -1, self.ndims ) )
 
-  @core.weakcache
-  def refine_nu( self, N ):
-    'refine non-uniformly'
-
-    N = tuple(N)
-    assert len(N) == self.ndims
-    structure = numpy.array( [ elem.children_by(N) if elem is not None else [None]*numpy.product(N) for elem in self.structure.flat ] )
-    structure = structure.reshape( self.structure.shape + tuple(N) )
-    structure = structure.transpose( sum( [ ( i, self.ndims+i ) for i in range(self.ndims) ], () ) )
-    structure = structure.reshape( self.structure.shape * numpy.asarray(N) )
-    refined = StructuredTopology( structure )
-    refined.groups = { key: group.refine_nu( N ) for key, group in self.groups.items() }
-    return refined
-
   @property
   def refined( self ):
-    'refine entire topology'
+    'refine non-uniformly'
 
-    return self.refine_nu( (2,)*self.ndims )
+    structure = numpy.array( [ elem.children if elem is not None else [None]*(2**self.ndims) for elem in self.structure.flat ] )
+    structure = structure.reshape( self.structure.shape + (2,)*self.ndims )
+    structure = structure.transpose( sum( [ ( i, self.ndims+i ) for i in range(self.ndims) ], () ) )
+    structure = structure.reshape( numpy.array(self.structure.shape) * 2 )
+    refined = StructuredTopology( structure )
+    refined.groups = { key: group.refined for key, group in self.groups.items() }
+    return refined
 
   def trim( self, levelset, maxrefine, lscheme='bezier3', finestscheme='uniform2', evalrefine=0, title='trimming', log=log ):
     'trim element along levelset'
 
     __log__ = log.iter( title, self.structure.ravel() )
-    trimmedelems = [ elem.trim( levelset=levelset, maxrefine=maxrefine, lscheme=lscheme, finestscheme=finestscheme, evalrefine=evalrefine ) for elem in __log__ ]
+    levelset = function.ascompiled( levelset )
+    trimmedelems = [ elem.trim( levelset=levelset, maxrefine=maxrefine ) for elem in __log__ ]
     trimmedstructure = numpy.array( trimmedelems ).reshape( self.structure.shape )
     return StructuredTopology( trimmedstructure, periodic=self.periodic )
 
@@ -906,28 +904,11 @@ class StructuredTopology( Topology ):
 
     return '%s(%s)' % ( self.__class__.__name__, 'x'.join(map(str,self.structure.shape)) )
 
-  @property
-  @core.cache
+  @cache.property
   def multiindex( self ):
     'Inverse map of self.structure: given an element find its location in the structure.'
     return dict( (self.structure[alpha], alpha) for alpha in numpy.ndindex( self.structure.shape ) )
 
-  def neighbor( self, elem0, elem1 ):
-    'Neighbor detection, returns codimension of interface, -1 for non-neighboring elements.'
-
-    return elem0.neighbor( elem1 )
-
-    # REPLACES:
-    alpha0 = self.multiindex[elem0]
-    alpha1 = self.multiindex[elem1]
-    diff = numpy.array(alpha0) - numpy.array(alpha1)
-    for i, shi in enumerate( self.structure.shape ):
-      if diff[i] in (shi-1, 1-shi) and i in self.periodic:
-        diff[i] = -numpy.sign( shi )
-    if set(diff).issubset( (-1,0,1) ):
-      return numpy.sum(numpy.abs(diff))
-    return -1
-    
 class IndexedTopology( Topology ):
   'trimmed topology'
   
@@ -964,16 +945,14 @@ class IndexedTopology( Topology ):
     ind = function.DofMap( ElemMap(dofmap,self.ndims) ),
     return function.Inflate( (ndofs,), [(func,ind)] )
 
-  @property
-  @core.weakcache
+  @cache.property
   def refined( self ):
     'refine all elements 2x'
 
     elements = [ child for elem in self.elements for child in elem.children if child is not None ]
     return IndexedTopology( self.topo.refined, elements )
 
-  @property
-  @core.cache
+  @cache.property
   def boundary( self ):
     'boundary'
 
@@ -1015,14 +994,14 @@ class UnstructuredTopology( Topology ):
 
     return self.namedfuncs[ 'bubble1' ]
 
-  @property
-  @core.weakcache
+  @cache.property
   def refined( self ):
     'refined (=refine(2))'
 
     try:
       linearfunc = self.linearfunc()
       (func,(dofaxis,)), = function.blocks( linearfunc )
+      dofaxis = dofaxis.compiled()
       ndofs = linearfunc.shape[0]
       edges = {}
       nmap = {}
@@ -1036,9 +1015,9 @@ class UnstructuredTopology( Topology ):
       if not dofaxis:
         continue
 
-      vertexdofs = dofaxis(elem,None)
+      vertexdofs = dofaxis.eval(elem,None)
       edgedofs = []
-      if isinstance( elem, element.TriangularElement ):
+      if isinstance( elem.reference, element.TriangularReference ):
         for i in range(3):
           j = (i+1)%3
           try:
@@ -1087,8 +1066,7 @@ class HierarchicalTopology( Topology ):
 
     return len(self.elements)
 
-  @property
-  @core.cache
+  @cache.property
   def boundary( self ):
     'boundary elements & groups'
 
@@ -1113,8 +1091,7 @@ class HierarchicalTopology( Topology ):
     boundary.groups = dict( ( tag, UnstructuredTopology( group, ndims=self.ndims-1 ) ) for tag, group in bgroups.items() )
     return boundary
 
-  @property
-  @core.cache
+  @cache.property
   def interfaces( self ):
     'interface elements & groups'
 
@@ -1258,17 +1235,17 @@ def glue( master, slave, geometry, tol=1.e-10, verbose=False ):
   assert master.ndims == 2 and slave.ndims == 2, '1D boundaries for now.' # see dists computation and update_vertices
 
   if isinstance( geometry, tuple ):
-    master_geom, slave_geom = geometry
+    master_geom, slave_geom = map( function.ascompiled, geometry )
   else:
-    master_geom = slave_geom = geometry
+    master_geom = slave_geom = function.ascompiled( geometry )
 
   vtxmap = {} # THE old vertex -> nex vertex mapping
 
   log.info( 'pairing elements [%i]' % len(master.boundary[gluekey]) )
   slave_vertex_locations = { slave_elem:
-    slave_geom( slave_elem, 'bezier2' ) for slave_elem in slave.boundary[gluekey] }
+    slave_geom.eval( slave_elem, 'bezier2' ) for slave_elem in slave.boundary[gluekey] }
   for master_elem in master.boundary[gluekey]:
-    master_locs = master_geom( master_elem, 'bezier2' )
+    master_locs = master_geom.eval( master_elem, 'bezier2' )
     meshwidth = numpy.linalg.norm( numpy.diff( master_locs, axis=0 ) )
     assert meshwidth > tol, 'tol. (%.2e) > element size (%.2e)' % (tol, meshwidth)
     for slave_elem, slave_locs in slave_vertex_locations.iteritems():

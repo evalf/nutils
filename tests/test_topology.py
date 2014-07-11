@@ -11,38 +11,38 @@ class ConnectivityStructuredBase( object ):
   def test_1DConnectivity( self ):
     domain = mesh.rectilinear( 1*(grid,), periodic=[0] if self.periodic else [] )[0]
     elem = domain.structure
-    assert domain.neighbor( elem[0], elem[0] ) ==  0, 'Failed to identify codim 0 neighbors'
-    assert domain.neighbor( elem[1], elem[2] ) ==  1, 'Failed to identify codim 1 neighbors'
+    assert element.neighbor( elem[0], elem[0] ) ==  0, 'Failed to identify codim 0 neighbors'
+    assert element.neighbor( elem[1], elem[2] ) ==  1, 'Failed to identify codim 1 neighbors'
     if self.periodic:
-      assert domain.neighbor( elem[0], elem[2] ) ==  1, 'Failed to identify periodicity neighbors'
+      assert element.neighbor( elem[0], elem[2] ) ==  1, 'Failed to identify periodicity neighbors'
     else:
-      assert domain.neighbor( elem[0], elem[2] ) == -1, 'Failed to identify non-neighbors'
+      assert element.neighbor( elem[0], elem[2] ) == -1, 'Failed to identify non-neighbors'
 
   def test_2DConnectivity( self ):
     domain = mesh.rectilinear( 2*(grid,), periodic=[0] if self.periodic else [] )[0]
     elem = domain.structure
-    assert domain.neighbor( elem[0,0], elem[0,0] ) ==  0, 'Failed to identify codim 0 neighbors'
-    assert domain.neighbor( elem[1,1], elem[1,2] ) ==  1, 'Failed to identify codim 1 neighbors'
-    assert domain.neighbor( elem[0,0], elem[1,1] ) ==  2, 'Failed to identify codim 2 neighbors'
-    assert domain.neighbor( elem[1,1], elem[0,0] ) ==  2, 'Failed to identify codim 2 neighbors'
+    assert element.neighbor( elem[0,0], elem[0,0] ) ==  0, 'Failed to identify codim 0 neighbors'
+    assert element.neighbor( elem[1,1], elem[1,2] ) ==  1, 'Failed to identify codim 1 neighbors'
+    assert element.neighbor( elem[0,0], elem[1,1] ) ==  2, 'Failed to identify codim 2 neighbors'
+    assert element.neighbor( elem[1,1], elem[0,0] ) ==  2, 'Failed to identify codim 2 neighbors'
     if self.periodic:
-      assert domain.neighbor( elem[2,1], elem[0,1] ) ==  1, 'Failed to identify periodicity neighbors'
-      assert domain.neighbor( elem[2,1], elem[0,0] ) ==  2, 'Failed to identify periodicity neighbors'
+      assert element.neighbor( elem[2,1], elem[0,1] ) ==  1, 'Failed to identify periodicity neighbors'
+      assert element.neighbor( elem[2,1], elem[0,0] ) ==  2, 'Failed to identify periodicity neighbors'
     else:
-      assert domain.neighbor( elem[2,1], elem[0,1] ) == -1, 'Failed to identify non-neighbors'
+      assert element.neighbor( elem[2,1], elem[0,1] ) == -1, 'Failed to identify non-neighbors'
 
   def test_3DConnectivity( self ):
     domain = mesh.rectilinear( 3*(grid,), periodic=[0] if self.periodic else [] )[0]
     elem = domain.structure
-    assert domain.neighbor( elem[1,1,1], elem[1,1,1] ) ==  0, 'Failed to identify codim 0 neighbors'
-    assert domain.neighbor( elem[1,1,1], elem[1,1,2] ) ==  1, 'Failed to identify codim 1 neighbors'
-    assert domain.neighbor( elem[1,1,1], elem[1,2,2] ) ==  2, 'Failed to identify codim 2 neighbors'
-    assert domain.neighbor( elem[1,1,1], elem[2,2,2] ) ==  3, 'Failed to identify codim 3 neighbors'
+    assert element.neighbor( elem[1,1,1], elem[1,1,1] ) ==  0, 'Failed to identify codim 0 neighbors'
+    assert element.neighbor( elem[1,1,1], elem[1,1,2] ) ==  1, 'Failed to identify codim 1 neighbors'
+    assert element.neighbor( elem[1,1,1], elem[1,2,2] ) ==  2, 'Failed to identify codim 2 neighbors'
+    assert element.neighbor( elem[1,1,1], elem[2,2,2] ) ==  3, 'Failed to identify codim 3 neighbors'
     if self.periodic:
-      assert domain.neighbor( elem[0,2,2], elem[2,2,2] ) ==  1, 'Failed to identify periodicity neighbors'
-      assert domain.neighbor( elem[0,2,2], elem[2,1,2] ) ==  2, 'Failed to identify periodicity neighbors'
+      assert element.neighbor( elem[0,2,2], elem[2,2,2] ) ==  1, 'Failed to identify periodicity neighbors'
+      assert element.neighbor( elem[0,2,2], elem[2,1,2] ) ==  2, 'Failed to identify periodicity neighbors'
     else:
-      assert domain.neighbor( elem[0,2,2], elem[2,2,2] ) == -1, 'Failed to identify non-neighbors'
+      assert element.neighbor( elem[0,2,2], elem[2,2,2] ) == -1, 'Failed to identify non-neighbors'
 
 class TestConnectivityStructured( ConnectivityStructuredBase ):
   periodic = False
@@ -56,26 +56,28 @@ class TestStructure2D( object ):
   def verify_connectivity( self, structure, geom ):
     (e00,e01), (e10,e11) = structure
 
-    a0 = geom( e00, numpy.array([0,1]) )
-    a1 = geom( e01, numpy.array([0,0]) )
+    geom = geom.compiled()
+
+    a0 = geom.eval( e00, numpy.array([0,1]) )
+    a1 = geom.eval( e01, numpy.array([0,0]) )
     numpy.testing.assert_array_almost_equal( a0, a1 )
 
-    b0 = geom( e10, numpy.array([1,1]) )
-    b1 = geom( e11, numpy.array([1,0]) )
+    b0 = geom.eval( e10, numpy.array([1,1]) )
+    b1 = geom.eval( e11, numpy.array([1,0]) )
     numpy.testing.assert_array_almost_equal( b0, b1 )
 
-    c0 = geom( e00, numpy.array([1,0]) )
-    c1 = geom( e10, numpy.array([0,0]) )
+    c0 = geom.eval( e00, numpy.array([1,0]) )
+    c1 = geom.eval( e10, numpy.array([0,0]) )
     numpy.testing.assert_array_almost_equal( c0, c1 )
 
-    d0 = geom( e01, numpy.array([1,1]) )
-    d1 = geom( e11, numpy.array([0,1]) )
+    d0 = geom.eval( e01, numpy.array([1,1]) )
+    d1 = geom.eval( e11, numpy.array([0,1]) )
     numpy.testing.assert_array_almost_equal( d0, d1 )
 
-    x00 = geom( e00, numpy.array([1,1]) )
-    x01 = geom( e01, numpy.array([1,0]) )
-    x10 = geom( e10, numpy.array([0,1]) )
-    x11 = geom( e11, numpy.array([0,0]) )
+    x00 = geom.eval( e00, numpy.array([1,1]) )
+    x01 = geom.eval( e01, numpy.array([1,0]) )
+    x10 = geom.eval( e10, numpy.array([0,1]) )
+    x11 = geom.eval( e11, numpy.array([0,0]) )
     numpy.testing.assert_array_almost_equal( x00, x01 )
     numpy.testing.assert_array_almost_equal( x10, x11 )
     numpy.testing.assert_array_almost_equal( x00, x11 )
@@ -222,7 +224,7 @@ class TestTopologyGlueing( object ):
     neighbor_tests = [[(0,1),1], [(0,2),1], [(0,0),2], [(0,3),2], [(1,1),-1]]
     index = lambda alpha, offset=16: offset+numpy.ravel_multi_index( alpha, (4,4) ) # Return index of multiindex
     for alpha, n in neighbor_tests:
-      assert elem[3].neighbor( elem[index(alpha)] ) == n, \
+      assert element.neighbor( elem[3], elem[index(alpha)] ) == n, \
           'Failed to identify codim %i neighbor over boundary' % n
 
     # 2. Orientation information should also be preserved, cf. test_quadrature.TestSingularQuadrature.test_orientations
@@ -237,8 +239,8 @@ class TestTopologyGlueing( object ):
       orientation = orientations.get( str( pelem.elem2 ), [-1, (0,0)] )
       ecoll[orientation[0]][pelem.__repr__()] = pelem
       if visual: self.plot_gauss_on_circle( pelem )
-      assert pelem.orientation[0] == orientation[0], 'Incorrect neighbor type.'
-      assert pelem.orientation[1:] in orientation[1:], 'Incorrect transformation.'
+      assert pelem.reference.neighborhood == orientation[0], 'Incorrect neighbor type.'
+      assert pelem.reference.transf in orientation[1:], 'Incorrect transformation.'
 
     # 3. Integration should converge, cf. test_quadrature.TestSingularQuadrature.test_stronglysingularfunc
     kwargs = {'qset':(2,4), 'qmax':8, 'slopes':(-0.0, -1.0, -1.0, -1.0)}

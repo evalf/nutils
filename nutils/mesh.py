@@ -48,7 +48,7 @@ def rectilinear( vertices, periodic=(), name='rect' ):
 
   ndims = len(vertices)
   indices = numpy.ogrid[ tuple( slice(len(n)-1) for n in vertices ) ]
-  domainelem = element.Element( ndims=ndims, vertices=[] )
+  domainelem = element.Element( reference=element.Reference(ndims,0), vertices=[] )
 
   vertexfmt = name + '(' + ','.join( '%%%dd' % len(str(len(n)-1)) for n in vertices ) + ')'
   vertexobjs = util.objmap( lambda *index: element.PrimaryVertex(vertexfmt%index), *numpy.ogrid[ tuple( slice(len(n)) for n in vertices ) ] )
@@ -374,13 +374,13 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   + [ ( 12+(i+1)%8, 12+i, i+1+(i//2) ) for i in range( 8) ]
   + [ ( 12+i, 12+(i+1)%8, 20 )         for i in range( 8) ] )
   
-  domainelem = element.Element( ndims=2, vertices=[] )
+  domainelem = element.Element( reference=element.Reference(2,0), vertices=[] )
   elements = []
-  vertices = numpy.array([ element.PrimaryVertex( 'demo.%d' % ivertex ) for ivertex in range(len(vertices)) ])
+  vertexobjs = numpy.array([ element.PrimaryVertex( 'demo.%d' % ivertex ) for ivertex in range(len(vertices)) ])
   for ielem, elemvertices in enumerate( vertices ):
     elemcoords = coords[ numpy.array(elemvertices) ]
     parent = domainelem, element.AffineTransformation( offset=elemcoords[2], transform=(elemcoords[:2]-elemcoords[2]).T )
-    elem = element.TriangularElement( vertices=vertices[elemvertices], parent=parent )
+    elem = element.TriangularElement( vertices=vertexobjs[elemvertices], parent=parent )
     elements.append( elem )
 
   fmap = dict.fromkeys( elements, element.PolyTriangle(1) )
@@ -389,7 +389,7 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   bgroups = { 'top': belems[0:3], 'left': belems[3:6], 'bottom': belems[6:9], 'right': belems[9:12] }
 
   linearfunc = function.function( fmap, nmap, ndofs=21, ndims=2 )
-  namedfuncs = { 'spline2': linearfunc }
+  namedfuncs = { 'spline1': linearfunc }
   topo = topology.UnstructuredTopology( elements, ndims=2, namedfuncs=namedfuncs )
   topo.boundary = topology.UnstructuredTopology( belems, ndims=1 )
   topo.boundary.groups = dict( ( tag, topology.UnstructuredTopology( group, ndims=1 ) ) for tag, group in bgroups.items() )

@@ -6,7 +6,7 @@ class FuncTest( object ):
   haslocalgradient = True
 
   def __init__( self ):
-    domainelem = element.Element( ndims=2, vertices=[] )
+    domainelem = element.Element( reference=element.QuadReference(2), vertices=[0,1,2,3] )
     r, theta = function.ElemFunc( domainelem ) # corners at (0,0), (0,1), (1,1), (1,0)
     geom = r * function.stack([ function.cos(theta), function.sin(theta) ])
     trans = element.AffineTransformation( offset=[1,0], transform=[[2,1],[-1,3]] )
@@ -21,7 +21,7 @@ class FuncTest( object ):
     #iface = element.QuadElement( ndims=1, id='test.quad.quad.iface', interface=((elem,trans1),(elem,trans2)) )
     cvertices = [element.PrimaryVertex('C(%d)'%i) for i in range(2)]
     iface = element.QuadElement( ndims=1, vertices=cvertices, interface=(elem.edge(1).context,elem.edge(0).context) )
-    ifpoints, ifweights = iface.eval('uniform2')
+    ifpoints, ifweights = iface.reference.getischeme('uniform2')
 
     fmap = { elem: element.PolyLine( element.PolyLine.bernstein_poly(1) )
                  * element.PolyLine( element.PolyLine.bernstein_poly(2) ) }
@@ -29,7 +29,7 @@ class FuncTest( object ):
     funcsp = function.function( fmap, nmap, ndofs=6, ndims=2 )
     numpy.random.seed(0)
     args = [ ( numpy.random.uniform( size=shape+(funcsp.shape[0],) ) * funcsp ).sum() for shape in self.shapes ]
-    points, weights = elem.eval('uniform2')
+    points, weights = elem.reference.getischeme('uniform2')
 
     self.args = args
     self.argsfun = function.Tuple( args ).compiled()

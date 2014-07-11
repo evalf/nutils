@@ -26,6 +26,28 @@ except:
     assert A.shape == B.shape and axes > 0
     return ((A*B).reshape(A.shape[:-axes]+(-1,))).sum(-1)
 
+class HashableArray( numpy.ndarray ):
+  def __hash__( self ):
+    return hash( tuple(self.flat) )
+  def __eq__( self, other ):
+    return isinstance(other,HashableArray) \
+       and self.shape == other.shape \
+       and self.dtype == other.dtype \
+       and numpy.equal(self,other).all()
+
+def overlapping( arr, axis=-1, n=2 ):
+  'reinterpret data with overlaps'
+
+  arr = numpy.asarray( arr )
+  if axis < 0:
+    axis += arr.ndim
+  assert 0 <= axis < arr.ndim
+  shape = arr.shape[:axis] + (arr.shape[axis]-n+1,n) + arr.shape[axis+1:]
+  strides = arr.strides[:axis] + (arr.strides[axis],arr.strides[axis]) + arr.strides[axis+1:]
+  overlapping = numpy.lib.stride_tricks.as_strided( arr, shape, strides )
+  overlapping.flags.writeable = False
+  return overlapping
+
 def normdim( ndim, n ):
   'check bounds and make positive'
 
