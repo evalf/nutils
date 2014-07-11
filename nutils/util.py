@@ -339,6 +339,8 @@ def run( *functions ):
     'nprocs': 1,
     'outdir': '~/public_html',
     'verbose': 5,
+    'richoutput': False,
+    'tbexplore': False,
     'imagetype': 'png',
     'symlink': False,
     'recache': False,
@@ -359,6 +361,8 @@ def run( *functions ):
   --nprocs=%(nprocs)-14s Select number of processors
   --outdir=%(outdir)-14s Define directory for output
   --verbose=%(verbose)-13s Set verbosity level, 9=all
+  --richoutput=%(richoutput)-10s Use rich output (colors, unicode)
+  --tbexplore=%(tbexplore)-11s Start traceback explorer on error
   --imagetype=%(imagetype)-11s Set image type
   --symlink=%(symlink)-13s Create symlink to latest results
   --recache=%(recache)-13s Overwrite existing cache
@@ -516,7 +520,8 @@ def run( *functions ):
 
     if exc_info:
       debug.write_html( htmlfile, exc_info )
-      debug.traceback_explorer( exc_info )
+      if core.getprop( 'tbexplore', False ):
+        debug.traceback_explorer( exc_info )
 
     sys.exit( failed )
 
