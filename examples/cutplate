@@ -3,38 +3,63 @@
 from nutils import *
 
 
-@util.withrepr
-def Hook( lmbda, mu ):
-  return lambda disp, geom: \
-    lmbda * disp.div(geom)[...,_,_] * function.eye( geom.shape[0] ) \
-  + (2*mu) * disp.symgrad(geom)
+@log.title
+def makeplots( domain, geom, stress ):
 
-
-def main( nelems=10, stress=Hook(1,1) ):
-
-  verts = numpy.linspace( 0, 1, nelems+1 )
-  wholedomain, geom = mesh.rectilinear( [verts,verts] )
-  dspace = wholedomain.splinefunc( degree=3 ).vector( 2 )
-  levelset = function.norm2( geom ) - .5
-  domain = wholedomain.trim( levelset, maxrefine=2 )
-
-  support = domain.integrate( function.norm2( dspace ), geometry=geom, ischeme='gauss3' )
-  cons = util.NanVec( len(support) )
-  cons[ support==0 ] = 0
-  cons |= wholedomain.boundary['left,right'].project( geom*[.5,0], geometry=geom, ischeme='gauss3', onto=dspace )
-  cons |= wholedomain.boundary['right'].project( [.5,0], geometry=geom, ischeme='gauss3', onto=dspace )
-
-  elasticity = function.outer( dspace.grad(geom), stress(dspace,geom) ).sum([2,3])
-  matrix = domain.integrate( elasticity, geometry=geom, ischeme='gauss3' )
-  lhs = matrix.solve( constrain=cons, tol=1e-5, symmetric=True )
-  disp = dspace.dot( lhs )
-
-  points, colors = domain.simplex.elem_eval( [ geom + disp, stress(disp,geom)[0,1] ], ischeme='bezier3', separate=True )
-  with plot.PyPlot( 'dspace' ) as plt:
+  points, colors = domain.simplex.elem_eval( [ geom, stress[0,1] ], ischeme='bezier3', separate=True )
+  with plot.PyPlot( 'stress', ndigits=0 ) as plt:
     plt.mesh( points, colors )
     plt.colorbar()
     plt.axis( 'equal' )
     plt.xlim( 0, 1.5 )
 
 
-util.run( main )
+def main( nelems=8, maxrefine=2, stress=library.Hooke(lmbda=1,mu=1), plots=True ):
+
+  verts = numpy.linspace( 0, 1, nelems+1 )
+  wholedomain, geom = mesh.rectilinear( [verts,verts] )
+  dspace = wholedomain.splinefunc( degree=2 ).vector( 2 )
+  levelset = function.norm2( geom ) - .5
+  domain = wholedomain.trim( levelset, maxrefine=maxrefine )
+
+  support = domain.integrate( function.norm2( dspace ), geometry=geom, ischeme='gauss6' )
+  cons = util.NanVec( len(support) )
+  cons[ support==0 ] = 0
+  cons |= wholedomain.boundary['left,right'].project( geom*[.5,0], geometry=geom, ischeme='gauss6', onto=dspace )
+  cons |= wholedomain.boundary['right'].project( [.5,0], geometry=geom, ischeme='gauss6', onto=dspace )
+
+  elasticity = function.outer( dspace.grad(geom), stress(dspace,geom) ).sum([2,3])
+  matrix = domain.integrate( elasticity, geometry=geom, ischeme='gauss6' )
+  lhs = matrix.solve( constrain=cons, tol=1e-5, symmetric=True )
+  disp = dspace.dot( lhs )
+
+  if plots:
+    makeplots( domain, geom+disp, stress(disp,geom) )
+
+  return lhs, cons
+
+
+def unittest():
+
+  retvals = main( nelems=4, maxrefine=2, plots=False )
+  assert debug.CmpData( retvals ) == '''
+    78dacd934d6e03310885af93a833887ff071bac836f75f96d838dd3789d4912c7d42f861788c1e97
+    0b02d677fb423cfe88048422b713e51820ec5448151d8a63a2030d7c44f93008659b98401a3e5121
+    8479e6163a2d05011e1213b972d1b6aeb86e44b17d8d501b5d291a9187b5985a6a238dc11bc9715f
+    0bf7c64cfbd5ede728583c4b18d268ac97af045b2379015ff7e224489a4393e3e4076b0f3075c81c
+    76852d872e16f08ce5c7e9e035cfc9a5e299ed0ddbec554a84595bc420037dd531709e56573cca34
+    da5eabca4aaf0d10c68e124b76156592fd1021d2adcdd1fb520e62977c640837623696468c955bbd
+    33e7b3b15abf98fcfa54afc71b7e93fbf7fda3e73facdfa77b7c8795d71f682e2202'''
+
+  retvals = main( nelems=4, maxrefine=3, plots=False )
+  assert debug.CmpData( retvals ) == '''
+    78dacdd34b6ec3400800d0eb34aa83f87f8ed345b6b9ffb2c4c3e4004d22d592a527048c0db61e5f
+    5f08d8d7ed1bf1f8230bc2c26f57d4a6a249930e8292f4930e8c8c4d3e0c42914e26904d542144ec
+    cc6dbaad3201ae586420257ef6f5dc44895d46824357dd442199666a9943aada5122ab5d16b199e9
+    f8ec4b3eb4c027d70b3d283cb4359217f8fa2eae0489f898941c5786b419553358ce6177d8527c59
+    c08b72d9dbb272ba8bf10a4b33f06cd85ba8889d8ca2b2ce31708e6912bdb4b2d9b5d2a43b10564d
+    9448794ee984da0f2214ba6cc0a1fbf42ab7a160ee2826c5ee11397504ccdb5db8be187ec3542fc7
+    1b7e93fbcffda3f77ff8fc3efd8eef58e5e517a25b226e'''
+
+
+util.run( main, unittest )
