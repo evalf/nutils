@@ -1165,6 +1165,10 @@ class StdElem( cache.Immutable ):
 
   __slots__ = 'ndims', 'nshapes'
 
+  def __init__( self, ndims, nshapes ):
+    self.ndims = ndims
+    self.nshapes = nshapes
+
   def __mul__( self, other ):
     'multiply elements'
 
@@ -1191,8 +1195,7 @@ class PolyProduct( StdElem ):
 
     self.std1 = std1
     self.std2 = std2
-    self.ndims = std1.ndims + std2.ndims
-    self.nshapes = std1.nshapes * std2.nshapes
+    StdElem.__init__( self, std1.ndims+std2.ndims, std1.nshapes*std2.nshapes )
 
   def eval( self, points, grad=0 ):
     'evaluate'
@@ -1342,10 +1345,10 @@ class PolyLine( StdElem ):
     '''Create polynomial from order x nfuncs array of coefficients 'poly'.
        Evaluates to sum_i poly[i,:] x**i.'''
 
-    self.ndims = 1
     self.poly = numpy.asarray( poly, dtype=float )
-    order, self.nshapes = self.poly.shape
+    order, nshapes = self.poly.shape
     self.degree = order - 1
+    StdElem.__init__( self, ndims=1, nshapes=nshapes )
 
   def eval( self, points, grad=0 ):
     'evaluate'
@@ -1388,6 +1391,7 @@ class PolyTriangle( StdElem ):
     'constructor'
 
     assert order == 1
+    StdElem.__init__( self, ndims=2, nshapes=3 )
 
   def eval( self, points, grad=0 ):
     'eval'
