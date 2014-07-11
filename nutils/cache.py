@@ -84,15 +84,24 @@ class FileCache( object ):
   def __init__( self, *args ):
     'constructor'
 
-    import hashlib
-    strhash = ','.join( str(arg) for arg in args )
-    md5hash = hashlib.md5( strhash ).hexdigest()
-    log.info( 'using cache:', md5hash )
+    import os, numpy
+    self.myhash = hash( args )
+    hexhash = hex( self.myhash )[2:]
     cachedir = core.getprop( 'cachedir', 'cache' )
     if not os.path.exists( cachedir ):
       os.makedirs( cachedir )
-    path = os.path.join( cachedir, md5hash )
-    self.data = file( path, 'ab+' if not core.getprop( 'recache', False ) else 'wb+' )
+    path = os.path.join( cachedir, hexhash )
+    allhash = numpy.array( [ hash(arg) for arg in args ], 'uint' )
+    if not os.path.isfile( path ) or core.getprop( 'recache', False ):
+      log.info( 'starting new cache:', hexhash )
+      data = open( path, 'wb+' )
+      allhash.tofile( data )
+    else:
+      log.info( 'continuing from cache:', hexhash )
+      data = open( path, 'ab+' )
+      checkhash = numpy.fromfile( data, 'uint', len(allhash) )
+      assert all( checkhash == allhash ), 'hash clash'
+    self.data = data
 
   def __call__( self, func, *args, **kwargs ):
     'call'
@@ -111,6 +120,9 @@ class FileCache( object ):
       msg = 'loaded from'
     log.info( msg, 'cache:', name, '[%db]' % (self.data.tell()-pos) )
     return data
+
+  def __hash__( self ):
+    return self.myhash
 
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
