@@ -8,7 +8,7 @@ def makeplots( domain, geom, stress ):
 
   points, colors = domain.simplex.elem_eval( [ geom, stress[0,1] ], ischeme='bezier3', separate=True )
   with plot.PyPlot( 'stress', ndigits=0 ) as plt:
-    plt.mesh( points, colors )
+    plt.mesh( points, colors, triangulate='bezier' )
     plt.colorbar()
     plt.axis( 'equal' )
     plt.xlim( 0, 1.5 )
