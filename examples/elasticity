@@ -3,7 +3,18 @@
 from nutils import *
 
 
-def main( nelems=20, stress=library.Hooke(lmbda=1,mu=1), degree=1 ):
+@log.title
+def makeplots( domain, geom, stress ):
+
+  points, colors = domain.elem_eval( [ geom, stress[0,1] ], ischeme='bezier3', separate=True )
+  with plot.PyPlot( 'stress', ndigits=0 ) as plt:
+    plt.mesh( points, colors, triangulate='bezier' )
+    plt.colorbar()
+    plt.axis( 'equal' )
+    plt.xlim( 0, 1.5 )
+
+
+def main( nelems=8, stress=library.Hooke(lmbda=1,mu=1), degree=2, plots=True ):
 
   verts = numpy.linspace( 0, 1, nelems+1 )
   domain, geom = mesh.rectilinear( [verts,verts] )
@@ -17,10 +28,27 @@ def main( nelems=20, stress=library.Hooke(lmbda=1,mu=1), degree=1 ):
   lhs = matrix.solve( constrain=cons, tol=1e-10, symmetric=True )
   disp = dspace.dot( lhs )
 
-  points, colors = domain.elem_eval( [ geom + disp, stress(disp,geom)[0,1] ], ischeme='bezier4', separate=True )
-  with plot.PyPlot( 'solution' ) as plt:
-    plt.mesh( points, colors, triangulate='bezier' )
-    plt.xlim(0,1.5)
+  if plots:
+    makeplots( domain, geom+disp, stress(disp,geom) )
+
+  return lhs, cons
 
 
-util.run( main )
+def unittest():
+
+  retvals = main( nelems=4, degree=1, plots=False )
+  assert debug.CmpData( retvals ) == '''
+    eNq9ks0KwyAQhF8nobrsn7vu4/SQa9//2DTRIKSXpFBB+BhmdHDVNE0IuK7lgZiuIIGI6ZKRViRV7iji
+    Z/XwMhTh0lClUEMJwrN6eAW8kHek0IYWYWf18Ja971W8+SQGVeLTl9fq7lU2JCjMsWQqKQ9yHtwVBDE2
+    VGBWa2eIF9uDg5wHdwXzkBZUjn5j9c8Q9uAh58FdwZG9B0V2VUDd6hq0LdjlPLjndPfDvJ6v2/u/c/yl
+    6bc9p/kNluvI/g=='''
+
+  retvals = main( nelems=4, degree=2, plots=False )
+  assert debug.CmpData( retvals ) == '''
+    eNrNk8GKQyEMRX+nj2owiTHxc2bRbf9/WZkXbeBNN31TqCAc5N5rjFrT5VKgjHG7lpLeRANUa7dcKMlY
+    VXTkTu2ISxBsCJ0qD8SBpqaOKrUfMQiWjQF5lOOIC0sTPWIQLFsFVsaFtFZF5A8MgmmTvSUn8PxdCPTS
+    6bepBNpIvNWCZAM55chBkoNToaPt2IArm1+SKtZdHDlIcnAaNESdIdLVi2KsvmPkIMnBOYptpXtIY5wn
+    Q244Q54cJDk4Rx4bekg1nZWQsM6QJwdJDs4t/cNPuf/cPzq/4QV++oyv5pa2B3kJHpY='''
+
+
+util.run( main, unittest )
