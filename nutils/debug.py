@@ -296,20 +296,14 @@ class CmpData( object ):
       else repr(obj) if isinstance (obj,str) \
       else '(%s,)' % ','.join( cls.__serialize(o,floatfmt) for o in obj )
 
-  @staticmethod
-  def __wrap( s, n=80 ):
-    while s:
-      yield s[:n]
-      s = s[n:]
-
-  def hexdata( self, ndigit=4 ):
-    import zlib
-    floatfmt = '%%.%de' % ndigit
-    s = '%d,%s' % ( ndigit, self.__serialize(self.obj,floatfmt) )
-    return '\n'.join( self.__wrap( zlib.compress( s, 9 ).encode('hex') ) )
+  def base64( self, ndigit=4 ):
+    import zlib, binascii, re
+    serialized = self.__serialize( self.obj, floatfmt='%%.%de' % ndigit )
+    binary = zlib.compress( str(ndigit) + ',' + serialized, 9 )
+    return re.sub( '(.{80})', r'\1\n', binascii.b2a_base64( binary ) )
 
   def __str__( self ):
-    return self.hexdata()
+    return self.base64()
 
   @classmethod
   @log.title
@@ -343,18 +337,19 @@ class CmpData( object ):
       log.error( 'non equal to %s digits: %e != %e' % ( ndigit, obj, verify_obj ) )
     return False
 
-  def __eq__( self, hexdata ):
-    import zlib
+  def __eq__( self, base64 ):
+    import zlib, binascii, re
     try:
-      s = zlib.decompress( ''.join( line.strip().decode('hex') for line in hexdata.splitlines() ) )
-      ndigit, verify_obj = eval( s, numpy.__dict__ )
+      binary = binascii.a2b_base64( re.sub( '\s+', '', base64 ) )
+      serialized = zlib.decompress( binary )
+      ndigit, verify_obj = eval( serialized, numpy.__dict__ )
     except Exception, e:
-      log.error( 'failed to decode hexdata: %s' % e )
+      log.error( 'failed to decode base64 data: %s' % e )
       equal = False
     else:
       equal = self.__compare( verify_obj, self.obj, ndigit, title='compare' )
     if not equal:
-      log.warning( 'objects are not equal; if this is expected replace hexdata with:\n%s' % self )
+      log.warning( 'objects are not equal; if this is expected replace base64 data with:\n%s' % self )
     return equal
       
 
