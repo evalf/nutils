@@ -292,6 +292,7 @@ class CmpData( object ):
   @classmethod
   def __serialize( cls, obj, floatfmt ):
     return floatfmt % obj if isinstance(obj,float) \
+      else str(obj) if isinstance(obj,int) \
       else repr(obj) if isinstance (obj,str) \
       else '(%s,)' % ','.join( cls.__serialize(o,floatfmt) for o in obj )
 
@@ -318,6 +319,10 @@ class CmpData( object ):
         return all([ cls.__compare( vo, o, ndigit, title='#%d' % i )
           for i, (vo,o) in enumerate( zip( verify_obj, obj ) ) ])
       log.error( 'non matching lenghts: %d != %d' % ( len(verify_obj), len(obj) ) )
+    elif not isinstance(verify_obj,float):
+      if verify_obj == obj:
+        return True
+      log.error( 'non equal: %s != %d' % ( obj, verify_obj ) )
     elif verify_obj == 0:
       if obj == 0:
         return True
