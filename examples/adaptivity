@@ -27,7 +27,7 @@ def makeplots( domain, geom, greysmooth, index, indicator, supp ):
     plt.colorbar()
 
 
-def main( degree=2, niter=30, triangular=False ):
+def main( degree=2, niter=30, triangular=False, plot=True ):
 
   if triangular:
     if degree != 1:
@@ -39,23 +39,54 @@ def main( degree=2, niter=30, triangular=False ):
 
   greydata = function.tanh( ( function.norm2(geom) - .5 ) * 20 )
 
-  __log__ = log.count( 'iter' )
+  __log__ = log.range( 'iter', niter )
   for iiter in __log__:
 
     funcsp = domain.splinefunc( degree=degree )
     greysmooth = domain.projection( greydata, geometry=geom, onto=funcsp, ischeme='gauss3', droptol=0, verify=int(funcsp.shape[0]) )
     indicator = ( greysmooth - greydata )**2
-    if iiter >= niter:
-      break
 
     weighted_residual = domain.integrate( funcsp * indicator, geometry=geom, ischeme='gauss3' )
-    #refine = weighted_residual.argsort()[-len(weighted_residual)//8:-1]
     refine = weighted_residual.argsort()[-1:]
     supp = function.supp( funcsp, indices=refine )
 
-    makeplots( domain, geom, greysmooth, iiter, indicator, supp )
+    if plot:
+      makeplots( domain, geom, greysmooth, iiter, indicator, supp )
 
     domain = domain.refined_by( supp )
 
+  return weighted_residual
 
-util.run( main )
+
+def unittest():
+
+  retvals = main( degree=1, triangular=True, niter=6, plot=False )
+  assert debug.CmpData( retvals ) == '''
+    eNptkesNwzAIhNdpJQfxsoGBsv8KJQ6NUNV/n053B8Y6XgTTBM+DaBAIxzwP9CFgjppoYwITXbgGJ7In
+    asdmaLFWxiBBvFUBFL8NDBgsiTMxyLh6Gz6GFpuAtnyrCssZ94imErBVjMCWRI0QZqp9zZVLRbLYq3vG
+    doMlipHVi5uhqf/KAtxDfjGXDJfdq0CI9whLdd29lC++PiDLGjZDaxAI5VmndsN78Mrr7NVXIqnj1zBF
+    63yPt6nvD9lzbFg='''
+
+  retvals = main( degree=1, triangular=False, niter=11, plot=False )
+  assert debug.CmpData( retvals ) == '''
+    eNplkdttxUAIRNtJJAfB8i7o9t9C8AavsPKH0DBzALm+FpBGfH7QLobUtCrzEsBQ3V0CF7m7cRmwRFap
+    1V3kj8BcfAuG2cvhaBew727cvrlyp43gkTZ8h5aKQSqC8EpIF94lAbrx1iaEsDaOOmYHG6s3ztESENqt
+    9SplBW+BFgNin4SC/hYavkO7wHkvpHWdXJtXa8yEbZcCrPYsf3BGxBgrX8LbV+5DJWqbsSk3zvEdgrHb
+    4B3Bw6E+hOTNEL7kdJWeCCV6DmWdVh9ifLqRau1gvvI8toPLjN3O1R17jEj+MbzSju9wGJAD5xV8Il5b
+    HN5BNhi+fwGGxqIp'''
+
+  retvals = main( degree=2, triangular=False, niter=12, plot=False )
+  assert debug.CmpData( retvals ) == '''
+    eNpVVFuOJDEIu86u1BPxCoEDzf2vMCRFSu76QhFljO3EPv94cPL8/SH/rDGNucrcZVj+/jB/oCGG25Qq
+    42NDmL0aqE5NdfcKIkCDDJZYDabCVqXiCECABh9sayP4R8fMiNO7hijNgzvHEl1nWo6IfJjN4pt2StnU
+    HzoyzIz6t1yuzfcF4xG5T6uXh4nqQagyc49YtZDZXH2qabd3CclBqI39jBBk9g22ph2wNdS2OlXqKHGe
+    hhwr49Fs1fL0aCY1LePgwprADMBkhEscs0oHc+lTIuIewVO9N2bWZ3kdob7OCEDI3XBHkNGr78WF0xqh
+    LTUYAJrBmkAHHAJRQQfgCxaC6iAULAQegy2g5NfGszoOnQJLolNGhXZFn4rMeUofNOe7Mcv9TZm8bcn6
+    WnVTmafkuhebQ5WVdYtrYRpTixq5L8M59ch5EUzoIvDia3f67SVfq6VmdW8wZdE+LR2sDUiK1SEIouhr
+    uh7fzmAn7cHLOG65Omd7Y7emI4/HO780jXqar4h28wWbldSYvXxRWI1glNTPyuTwVzN65Xt02Kqb+ep7
+    DGa9qoN8oANs8TWYH76+S5/ab9/rPFgIXoCoIAlsAWAlSar14DdGkAcwFkQFHSBykB0IARgLXoB8kFSI
+    HGQH8gAWguoQcEgqRO4rRq/zX2YR+V0+uV+uGix58zvFroX8UN/Z4ZB8nxXxewvnQdgj1OX2ivYI3q/G
+    vPc4fHZDBK0Gi5LylpT3HsukeB+mBgM6X9MA7F0I+AIdmAYbw0LAF+iAJLAxLAR8//8BIxCm4w=='''
+
+
+util.run( main, unittest )
