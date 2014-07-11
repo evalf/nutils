@@ -35,7 +35,7 @@ def Gauss( center, width, height ):
   return lambda x: height * function.exp( -((x-center)/width)**2 )
 
 
-def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e-8, timestep=0 ):
+def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e-8, timestep=0, plot=True ):
 
   verts = numpy.linspace( 0, 1, nelems+1 )
   domain, geom = mesh.rectilinear( [verts,verts] )
@@ -85,11 +85,13 @@ def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e
     stokesmat += inertmat
 
   precon = stokesmat.getprecon( 'splu' )
-  lhs = stokesmat.solve( stokesrhs, constrain=cons, tol=1e-10, precon=precon )
+  stokeslhs = stokesmat.solve( stokesrhs, constrain=cons, tol=1e-10, precon=precon )
 
   __log__ = log.count( 'iter' )
+  lhs = stokeslhs
   for iiter in __log__:
-    makeplots( domain, geom, vspace.dot(lhs), pspace.dot(lhs), iiter )
+    if plot:
+      makeplots( domain, geom, vspace.dot(lhs), pspace.dot(lhs), iiter )
     ugradu = ( vspace.grad(geom) * vspace.dot(lhs) ).sum()
     convection = reynolds * function.outer( vspace, ugradu ).sum()
     matrix = stokesmat + domain.integrate( convection, ischeme='gauss9', geometry=geom, title='navstokes matrix' )
@@ -103,5 +105,31 @@ def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e
         break
     lhs = matrix.solve( rhs, constrain=cons, tol=1e-10, precon=precon )
 
+  return stokeslhs, iiter, lhs
 
-util.run( main )
+
+def unittest():
+
+  retvals = main( nelems=4, reynolds=1000, bump=None, strong=False, tol=1e-3, timestep=0, plot=False )
+  assert debug.CmpData( retvals ) == '''
+    78daad565b921c3108bbcea632ed326f3850ee7f85e036785cf9ce1feb0235128259fefcfc3c30a6
+    11fd79267e70cc0878c387078ae21bd388c0d8cf38d47965c3470690c01bd26036c9903e8f0c01af
+    6c1db8b3dfca0097371d0689c51b7a62f30679684c90b9b32dbbe2f34db0e09d83c349370a0f22f1
+    429981fa1f5bf91fa25c18490db0e8c45026eb42a27abe0a17f9989b838ec8b80a43002a390cacbe
+    926d341780886a1ac476a3304cb573b34f3f62cf16fb2a7caecae72a7daedaabf4eaf4b95a7dae5e
+    9fabd9e7eaf6d6f892e7b9f4b9e4796e7db25255fffc9e73b1033fe048534fbbf9c79bb2e494d8e9
+    ab1949f4df3bc748e3eb2b91963fb68536a6a529dedae515f5b7361d84800d6900dcaa8ad0e9d24c
+    67c7ee0523d9cddc66493f919bd6f341b9402e8c0be2b9302e888bcf45e7627391b9b83c17994bd9
+    e792f652f612f6d2f592d506eb5a0cd0cfaf0fc0e727273a09bccce813e9e8e34e05caca5f8b8059
+    b180d9cf31401d0a6486cf9e9b4271cee524d96ed1a164dc7b6a843d1d37c4b37a11d1ef88723e69
+    e8bd4e528d6832e899f92035e805c9d8ba13742c1be830d1bd16793e9cb55058d07a8524b86f0385
+    e07713191bc44dce561a31bf8092a32d4297b02b23af677150a5afc834fd5f35131a64c1718e0be0
+    0c2784fba00bd46d8d41dc876e1d04a17361840bd8b49a863ee1ef3744a380399c7a8fc9bf70eca0
+    e5525936aeece9e77618d0d146a26f476a26708467ec3875cd71d7e06f898d609eb8a92d7873edf8
+    e89a2cc4f672a4f3d5fdf5380ec169f5ca62b3364683702f920f5e66dccfac3e2b99a6604180d281
+    88c99d80ac6fc84328e8bcca065eacf82c2b18c98ed3cf88a710946b1749b9278a487030b0ea38a7
+    d44730ad9ddbd4d8695038474166d4b153b70e63522b236cdac9b83cb2d73ffac6a48954b4ead003
+    2a4c391a42d5e540ac9fd6cdc567dd265aff06acbafa959de90be03c2cbffe02f527d43e'''
+
+
+util.run( main, unittest )
