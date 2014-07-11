@@ -335,7 +335,7 @@ class CmpData( object ):
       maxerr = .5 * 10**exp
       if abs(verify_obj-obj) <= maxerr:
         return True
-      log.error( 'non equal to %s digits: %s != %s' % ( ndigit, obj, verify_obj ) )
+      log.error( 'non equal to %s digits: %e != %e' % ( ndigit, obj, verify_obj ) )
     return False
 
   def __eq__( self, hexdata ):
