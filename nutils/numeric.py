@@ -26,6 +26,11 @@ except:
     assert A.shape == B.shape and axes > 0
     return ((A*B).reshape(A.shape[:-axes]+(-1,))).sum(-1)
 
+def round( arr ):
+  arr = numpy.asarray( arr )
+  return arr if arr.dtype == int \
+    else ( arr - numpy.less(arr,0) + .5 ).astype( int )
+
 def overlapping( arr, axis=-1, n=2 ):
   'reinterpret data with overlaps'
 
