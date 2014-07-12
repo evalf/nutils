@@ -983,17 +983,6 @@ class Element( object ):
   def edge( self, iedge ):
     return self.edges[iedge]
 
-  def zoom( self, elemset, points ):
-    'zoom points'
-
-    elem = self
-    totaltransform = 1
-    while elem not in elemset:
-      elem, transform = self.parent
-      points = transform( points )
-      totaltransform = numpy.dot( transform.transform, totaltransform )
-    return elem, points, totaltransform
-
   def __str__( self ):
     'string representation'
 
@@ -1007,38 +996,12 @@ class Element( object ):
   def __eq__( self, other ):
     'hash'
 
-    return self is other or ( self.__class__ == other.__class__
-                          and self.vertices == other.vertices
-                          and self.parent == other.parent
-                          and self.context == other.context
-                          and self.interface == other.interface )
-
-  def intersected( self, levelset, lscheme, evalrefine=0 ):
-    '''check levelset intersection:
-
-    +1 for levelset > 0 everywhere
-    -1 for levelset < 0 everywhere
-    =0 for intersected element'''
-
-    elems = iter( [self] )
-    for irefine in range(evalrefine):
-      elems = ( child for elem in elems for child in elem.children )
-
-    levelset = function.ascompiled( levelset )
-    inside = levelset.eval( elems.next(), lscheme ) > 0
-    if inside.all():
-      for elem in elems:
-        inside = levelset.eval( elem, lscheme ) > 0
-        if not inside.all():
-          return 0
-      return 1
-    elif not inside.any():
-      for elem in elems:
-        inside = levelset.eval( elem, lscheme ) > 0
-        if inside.any():
-          return 0
-      return -1
-    return 0
+    return self is other or ( isinstance( other, Element )
+      and self.reference == other.reference
+      and self.vertices == other.vertices
+      and self.parent == other.parent
+      and self.context == other.context
+      and self.interface == other.interface )
 
   def trim( self, levelset, maxrefine, numer=100 ):
     'trim element along levelset'
@@ -1110,9 +1073,6 @@ class Element( object ):
       return None
     reference = MosaicReference( self.ndims, tuple(children) )
     return Element( reference=reference, vertices=[], parent=(self,IdentityTransformation(self.ndims)) )
-
-  def get_trimmededges ( self, maxrefine ):
-    return []
 
 def ProductElement( elem1, elem2 ):
   ndims = elem1.ndims + elem2.ndims

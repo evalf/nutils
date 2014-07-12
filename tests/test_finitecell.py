@@ -12,12 +12,11 @@ class FiniteCellTestBase( object ):
   def test_volume ( self ):
     vol = self.fdomain.integrate( 1., geometry=self.geom, ischeme='gauss1' )
     log.info( 'Volume =', vol, '(%5.4f)' % self.vol_exact )
-
-    topo = topology.UnstructuredTopology( self.fdomain.get_trimmededges( self.maxrefine ), ndims=self.ndims-1 )
     numpy.testing.assert_almost_equal( vol, self.vol_exact, decimal=self.vol_decimal )
 
 ### Temporarily disabled:
 #
+#   topo = topology.UnstructuredTopology( self.fdomain.get_trimmededges( self.maxrefine ), ndims=self.ndims-1 )
 #   vol_gauss = (1./float(self.ndims))*topo.integrate( sum(self.geom*self.geom.normal()), geometry=self.geom, ischeme='gauss1' )
 #   log.info( 'Volume (Gauss)=', vol_gauss, '(%5.4f)' % vol )
 #

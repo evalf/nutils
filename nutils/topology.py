@@ -580,18 +580,6 @@ class Topology( object ):
 
     return self if n <= 0 else self.refined.refine( n-1 )
 
-  @log.title
-  def get_simplices( self, maxrefine ):
-    'Getting simplices'
-
-    return [ simplex for elem in self for simplex in elem.get_simplices( maxrefine ) ]
-
-  @log.title
-  def get_trimmededges( self, maxrefine ):
-    'Getting trimmed edges'
-
-    return [ trimmededge for elem in self for trimmededge in elem.get_trimmededges( maxrefine ) ]
-
 class StructuredTopology( Topology ):
   'structured topology'
 
