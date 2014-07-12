@@ -9,7 +9,7 @@ docs:
 	${MAKE} -C docs html
 
 dev: build
-	cp build/lib*/nutils/_numeric.so nutils
+	cp -vu build/lib*/nutils/_numeric.so nutils
 
 test: test_nose test_examples
 
