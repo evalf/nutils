@@ -829,11 +829,16 @@ class StructuredTopology( Topology ):
 
     return self.splinefunc( degree=1 )
 
-  def stdfunc( self, degree ):
+  def stdfunc( self, degree, removedofs=None ):
     'spline from vertices'
 
     if isinstance( degree, int ):
       degree = ( degree, ) * self.ndims
+
+    if removedofs == None:
+      removedofs = [None] * self.ndims
+    else:
+      assert len(removedofs) == self.ndims
 
     vertex_structure = numpy.array( 0 )
     dofcount = 1
@@ -850,11 +855,21 @@ class StructuredTopology( Topology ):
       if idim in self.periodic:
         numbers[-1] = numbers[0]
         nd -= 1
-      vertex_structure = vertex_structure[...,_] * nd + numbers
+      remove = removedofs[idim]
+      if remove is None:
+        vertex_structure = vertex_structure[...,_] * nd + numbers
+      else:
+        mask = numpy.zeros( nd, dtype=bool )
+        mask[numpy.array(remove)] = True
+        nd -= mask.sum()
+        numbers -= mask.cumsum()
+        vertex_structure = vertex_structure[...,_] * nd + numbers
+        vertex_structure[...,mask] = -1
       dofcount *= nd
       slices.append( [ slice(p*i,p*i+p+1) for i in range(n) ] )
 
     dofmap = {}
+    funcmap = {}
     hasnone = False
     for item in numpy.broadcast( self.structure, *numpy.ix_(*slices) ):
       elem = item[0]
@@ -862,7 +877,14 @@ class StructuredTopology( Topology ):
         hasnone = True
       else:
         S = item[1:]
-        dofmap[ elem ] = vertex_structure[S].ravel()
+        dofs = vertex_structure[S].ravel()
+        mask = dofs >= 0
+        if mask.all():
+          dofmap[ elem ] = dofs
+          funcmap[elem] = stdelem
+        elif mask.any():
+          dofmap[ elem ] = dofs[mask]
+          funcmap[elem] = stdelem, mask
 
     if hasnone:
       touched = numpy.zeros( dofcount, dtype=bool )
@@ -872,7 +894,6 @@ class StructuredTopology( Topology ):
       dofcount = int(renumber[-1])
       dofmap = dict( ( elem, renumber[dofs]-1 ) for elem, dofs in dofmap.iteritems() )
 
-    funcmap = dict( numpy.broadcast( self.structure, stdelem ) )
     return function.function( funcmap, dofmap, dofcount, self.ndims )
 
   def rectilinearfunc( self, gridvertices ):
