@@ -62,10 +62,10 @@ def unittest():
 
   retvals = main( degree=1, triangular=True, niter=6, plot=False )
   assert debug.CmpData( retvals ) == '''
-    eNptkesNwzAIhNdpJQfxsoGBsv8KJQ6NUNV/n053B8Y6XgTTBM+DaBAIxzwP9CFgjppoYwITXbgGJ7In
-    asdmaLFWxiBBvFUBFL8NDBgsiTMxyLh6Gz6GFpuAtnyrCssZ94imErBVjMCWRI0QZqp9zZVLRbLYq3vG
-    doMlipHVi5uhqf/KAtxDfjGXDJfdq0CI9whLdd29lC++PiDLGjZDaxAI5VmndsN78Mrr7NVXIqnj1zBF
-    63yPt6nvD9lzbFg='''
+    eNp1kNsNQkEIRNvRZCW8Fwqy/xZEXG/ww7+TyTAD6Lo5cPJ+PogWAQfF84GxBJK2FO5lwJu80BcDmXGh
+    ThyGMTbCGBQtWhXACGpkYMIqRnur4tRhA38N3zGF1PRWFYJTumKoVUwkB7c5N1aYYZx9w/DrTRft1QNE
+    FLsiQM2o1R/Dpf4LQzRpdaCCb4+zei32uWJDSBu6gnKfsQuHYSTUfy3svDqIqYu92vKjGmSqHIOn+nnf
+    5R3q/QXYz2w/'''
 
   retvals = main( degree=1, triangular=False, niter=11, plot=False )
   assert debug.CmpData( retvals ) == '''

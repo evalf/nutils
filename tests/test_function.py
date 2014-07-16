@@ -7,18 +7,15 @@ class FuncTest( object ):
 
   def __init__( self ):
     domainelem = element.Element( reference=element.QuadReference(2), vertices=[0,1,2,3] )
-    r, theta = function.ElemFunc( domainelem ) # corners at (0,0), (0,1), (1,1), (1,0)
+    r, theta = function.ElemFunc( 2 ) # corners at (0,0), (0,1), (1,1), (1,0)
     geom = r * function.stack([ function.cos(theta), function.sin(theta) ])
-    trans = element.AffineTransformation( offset=[1,0], transform=[[2,1],[-1,3]] )
+    trans = transform.linear([[2,1],[-1,3]]) >> transform.shift([1,0])
     avertices = [element.PrimaryVertex('A(%d)'%i) for i in range(4)]
     interelem = element.QuadElement( ndims=2, vertices=avertices, parent=(domainelem,trans) ) # corners at (1,0), (3,-1), (4,2), (2,3)
-    trans = element.AffineTransformation( offset=[1,0], transform=[[0,1],[-1,0]] )
+    trans = transform.linear([[0,1],[-1,0]]) >> transform.shift([1,0])
     bvertices = [element.PrimaryVertex('B(%d)'%i) for i in range(4)]
     elem = element.QuadElement( ndims=2, vertices=bvertices, parent=(interelem,trans) ) # corners at (3,-1), (2,-4), (4,-5), (5,-2)
 
-    #trans1 = element.AffineTransformation( offset=[1,0], transform=[[1,0]] )
-    #trans2 = element.AffineTransformation( offset=[0,0], transform=[[1,0]] )
-    #iface = element.QuadElement( ndims=1, id='test.quad.quad.iface', interface=((elem,trans1),(elem,trans2)) )
     cvertices = [element.PrimaryVertex('C(%d)'%i) for i in range(2)]
     iface = element.QuadElement( ndims=1, vertices=cvertices, interface=(elem.edge(1).context,elem.edge(0).context) )
     ifpoints, ifweights = iface.reference.getischeme('uniform2')
@@ -52,7 +49,8 @@ class FuncTest( object ):
       if numpy.all( numpy.abs(err) < 1e-12 ):
         countdown -= 1
       dxi_root = ( Jinv.eval(self.elem,xi) * err[...,_,:] ).sum(-1)
-      xi = xi + numpy.dot( dxi_root, self.elem.inv_root_transform.T )
+      #xi = xi + numpy.dot( dxi_root, self.elem.inv_root_transform.T )
+      xi = xi + numpy.dot( dxi_root, self.elem.root_transform.inv.matrix.T )
       iiter += 1
       assert iiter < 100, 'failed to converge in 100 iterations'
     return xi
@@ -84,7 +82,8 @@ class FuncTest( object ):
     if not self.haslocalgradient:
       return
     eps = 1e-6
-    D = numpy.array([-.5*eps,.5*eps])[:,_,_] * self.elem.inv_root_transform.T[_,:,:]
+    #D = numpy.array([-.5*eps,.5*eps])[:,_,_] * self.elem.inv_root_transform.T[_,:,:]
+    D = numpy.array([-.5*eps,.5*eps])[:,_,_] * self.elem.root_transform.inv.matrix.T[_,:,:]
     fdpoints = self.points[_,_,:,:] + D[:,:,_,:]
     F = self.n_op( *self.argsfun.eval(self.elem,fdpoints) )
     fdgrad = ((F[1]-F[0])/eps).transpose( numpy.roll(numpy.arange(F.ndim-1),-1) )

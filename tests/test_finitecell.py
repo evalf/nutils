@@ -7,7 +7,7 @@ class FiniteCellTestBase( object ):
 
   def __init__ ( self ):
     domain, self.geom = mesh.rectilinear( (numpy.linspace(-1.,1.,self.nelems+1),)*self.ndims )
-    self.fdomain = domain.trim( levelset=self.levelset, maxrefine=self.maxrefine, finestscheme=self.finestscheme )
+    self.fdomain = domain.trim( levelset=self.levelset, maxrefine=self.maxrefine )
 
   def test_volume ( self ):
     vol = self.fdomain.integrate( 1., geometry=self.geom, ischeme='gauss1' )
@@ -42,7 +42,6 @@ class TestCircle( FiniteCellTestBase ):
     return -sum(self.geom*self.geom)+1./numpy.pi
 
   maxrefine    = 4
-  finestscheme = 'simplex1'
 
   vol_decimal = 3
   vol_exact   = 1.
@@ -62,7 +61,6 @@ class TestSphere( FiniteCellTestBase ):
     return -sum(self.geom*self.geom)+self.r2
 
   maxrefine    = 2
-  finestscheme = 'simplex1'
 
   vol_decimal = 2
   vol_exact   = 1.

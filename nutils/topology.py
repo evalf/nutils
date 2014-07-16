@@ -23,7 +23,7 @@ out in element loops. For lower level operations topologies can be used as
 :mod:`nutils.element` iterators.
 """
 
-from . import element, function, util, numpy, parallel, matrix, log, core, numeric, cache, _
+from . import element, function, util, numpy, parallel, matrix, log, core, numeric, cache, rational, _
 import warnings, itertools
 
 class Topology( object ):
@@ -656,17 +656,17 @@ class StructuredTopology( Topology ):
     'interfaces'
 
     interfaces = []
-    eye = numpy.eye(self.ndims-1)
+    eye = numpy.eye( self.ndims-1, dtype=int )
     for idim in range(self.ndims):
       s1 = (slice(None),)*idim + (slice(-1),)
       s2 = (slice(None),)*idim + (slice(1,None),)
       for elem1, elem2 in numpy.broadcast( self.structure[s1], self.structure[s2] ):
-        A = numpy.zeros((self.ndims,self.ndims-1))
+        A = numpy.zeros( (self.ndims,self.ndims-1), dtype=int )
         A[:idim] = eye[:idim]
         A[idim+1:] = -eye[idim:]
-        b = numpy.hstack( [ numpy.zeros(idim+1), numpy.ones(self.ndims-idim) ] )
-        context1 = elem1, element.AffineTransformation( b[1:], A )
-        context2 = elem2, element.AffineTransformation( b[:-1], A )
+        b = numpy.hstack( [ numpy.zeros( idim+1, dtype=int ), numpy.ones( self.ndims-idim, dtype=int ) ] )
+        context1 = elem1, transform.linear(A) >> transform.shift(b[1:])
+        context2 = elem2, transform.linear(A) >> transform.shift(b[:-1])
         vertices = numpy.reshape( elem1.vertices, [2]*elem1.ndims )[s2].ravel()
         assert numpy.all( vertices == numpy.reshape( elem2.vertices, [2]*elem1.ndims )[s1].ravel() )
         ielem = element.QuadElement( ndims=self.ndims-1, vertices=vertices, interface=(context1,context2) )
@@ -886,12 +886,13 @@ class StructuredTopology( Topology ):
     refined.groups = { key: group.refined for key, group in self.groups.items() }
     return refined
 
-  def trim( self, levelset, maxrefine, lscheme='bezier3', finestscheme='uniform2', evalrefine=0, title='trimming', log=log ):
+  def trim( self, levelset, maxrefine, evalrefine=0, eps=.01 ):
     'trim element along levelset'
 
-    __log__ = log.iter( title, self.structure.ravel() )
+    eps = rational.rational( 1, numeric.round(1./eps) )
     levelset = function.ascompiled( levelset )
-    trimmedelems = [ elem.trim( levelset=levelset, maxrefine=maxrefine ) for elem in __log__ ]
+    __log__ = log.iter( 'elem', self.structure.ravel() )
+    trimmedelems = [ elem.trim( levelset=levelset, maxrefine=maxrefine, eps=eps ) for elem in __log__ ]
     trimmedstructure = numpy.array( trimmedelems ).reshape( self.structure.shape )
     return StructuredTopology( trimmedstructure, periodic=self.periodic )
 
@@ -1284,11 +1285,11 @@ def glue( master, slave, geometry, tol=1.e-10, verbose=False ):
       continue
     emap[belem] = element.QuadElement( belem.ndims,
       vertices=[ vtxmap.get(vtx,vtx) for vtx in belem.vertices ],
-      parent=(belem,element.IdentityTransformation(belem.ndims)) )
+      parent=(belem,transform.identify(belem.ndims)) )
     elem, trans = belem.context
     emap[elem] = element.QuadElement( elem.ndims,
       vertices=[ vtxmap.get(vtx,vtx) for vtx in elem.vertices ],
-      parent=(elem,element.IdentityTransformation(elem.ndims)) )
+      parent=(elem,transform.identify(elem.ndims)) )
 
   _wrapelem = lambda elem: emap.get(elem,elem)
   def _wraptopo( topo ):

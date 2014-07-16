@@ -30,7 +30,7 @@ possible only via inverting of the geometry function, which is a fundamentally
 expensive and currently unsupported operation.
 """
 
-from . import util, numpy, numeric, log, core, cache, _
+from . import util, numpy, numeric, log, core, cache, transform, _
 import sys, warnings
 
 CACHE   = object()
@@ -125,9 +125,9 @@ class CompiledEvaluable( object ):
     'print stack'
 
     if values is None:
-      values = self.data + [ '<elem>', '<points>', '<weights>' ]
+      values = self.data + [ '<cache>', '<elem>', '<points>', '<weights>' ]
 
-    N = len(self.data) + 3
+    N = len(self.data) + 4
 
     lines = []
     for i, (op,indices) in enumerate( self.operations ):
@@ -309,7 +309,7 @@ class Cascade( Evaluable ):
 
     self.ndims = ndims
     self.side = side
-    Evaluable.__init__( self, args=[CACHE,ELEM,POINTS,ndims,side], evalf=self.cascade )
+    Evaluable.__init__( self, args=[CACHE,ELEM,ndims,side], evalf=self.cascade )
 
   def transform( self, ndims ):
     if ndims == self.ndims:
@@ -318,20 +318,22 @@ class Cascade( Evaluable ):
     return Transform( self, Cascade(ndims,self.side) )
 
   @staticmethod
-  def cascade( cache, elem, points, ndims, side ):
+  def cascade( cache, elem, ndims, side ):
     'evaluate'
+
+    fulltrans = transform.identity( elem.ndims )
 
     while elem.ndims != ndims \
         or elem.interface and elem.interface[side][0].ndims < elem.ndims: # TODO make less dirty
-      elem, transform = elem.interface[side] if elem.interface \
-                   else elem.context or elem.parent
-      points = cache( transform.eval, points )
+      elem, trans = elem.interface[side] if elem.interface \
+               else elem.context or elem.parent
+      fulltrans >>= trans
 
-    cascade = [ (elem,points) ]
+    cascade = [ (elem,fulltrans) ]
     while elem.parent:
-      elem, transform = elem.parent
-      points = cache( transform.eval, points )
-      cascade.append( (elem,points) )
+      elem, trans = elem.parent
+      fulltrans >>= trans
+      cascade.append( (elem,fulltrans) )
 
     return cascade
 
@@ -790,15 +792,17 @@ class Transform( ArrayFunc ):
     fromelem = fromcascade[0][0]
     toelem = tocascade[0][0]
 
-    elem = toelem
-    T = elem.inv_root_transform
-    while elem is not fromelem:
-      elem, transform = elem.interface[side] if elem.interface \
-                   else elem.context or elem.parent
-      T = numpy.dot( transform.transform, T )
-    T = numpy.dot( elem.root_transform, T )
+    # toelem.ndims < fromelem.ndims
 
-    return T
+    elem = toelem
+    trans_from_to = elem.root_transform.inv
+    while elem is not fromelem:
+      elem, trans = elem.interface[side] if elem.interface \
+               else elem.context or elem.parent
+      trans_from_to >>= trans
+    trans_from_to >>= elem.root_transform
+
+    return trans_from_to.matrix
 
   def _localgradient( self, ndims ):
     return _zeros( self.shape + (ndims,) )
@@ -817,24 +821,25 @@ class Function( ArrayFunc ):
     self.cascade = cascade
     self.stdmap = stdmap
     self.igrad = igrad
-    ArrayFunc.__init__( self, args=(CACHE,cascade,stdmap,igrad), evalf=self.function, shape=(axis,)+(cascade.ndims,)*igrad )
+    ArrayFunc.__init__( self, args=(CACHE,POINTS,cascade,stdmap,igrad), evalf=self.function, shape=(axis,)+(cascade.ndims,)*igrad )
 
   @staticmethod
-  def function( cache, cascade, stdmap, igrad ):
+  def function( cache, points, cascade, stdmap, igrad ):
     'evaluate'
 
     fvals = []
-    for elem, points in cascade:
+    for elem, trans in cascade:
       std = stdmap.get(elem)
       if not std:
         continue
+      transpoints = cache( trans.apply, points )
       if isinstance( std, tuple ):
         std, keep = std
-        F = cache( std.eval, points, igrad )[(Ellipsis,keep)+(slice(None),)*igrad]
+        F = cache( std.eval, transpoints, igrad )[(Ellipsis,keep)+(slice(None),)*igrad]
       else:
-        F = cache( std.eval, points, igrad )
+        F = cache( std.eval, transpoints, igrad )
       for axis in range(-igrad,0):
-        F = numeric.dot( F, elem.inv_root_transform, axis )
+        F = numeric.dot( F, elem.root_transform.inv.matrix, axis )
       fvals.append( F )
     assert fvals, 'no function values encountered'
     return fvals[0] if len(fvals) == 1 else numpy.concatenate( fvals, axis=-1-igrad )
@@ -843,7 +848,6 @@ class Function( ArrayFunc ):
     return Function( self.cascade.inv, self.stdmap, self.igrad, self.shape[0] )
 
   def _localgradient( self, ndims ):
-    assert ndims <= self.cascade.ndims
     grad = Function( self.cascade, self.stdmap, self.igrad+1, self.shape[0] )
     return grad if ndims == self.cascade.ndims \
       else dot( grad[...,_], self.cascade.transform( ndims ), axes=-2 )
@@ -1595,7 +1599,7 @@ class Debug( ArrayFunc ):
   def debug( arr ):
     'debug'
 
-    print arr
+    log.debug( 'debug output:\n%s' % arr )
     return arr
 
   def __str__( self ):
@@ -1727,40 +1731,38 @@ class Power( ArrayFunc ):
 class ElemFunc( ArrayFunc ):
   'trivial func'
 
-  __slots__ = 'domainelem', 'side', 'cascade'
+  __slots__ = 'side', 'cascade'
 
-  def __init__( self, domainelem, side=0 ):
+  def __init__( self, ndims, side=0 ):
     'constructor'
 
-    self.domainelem = domainelem
     self.side = side
-    self.cascade = Cascade( domainelem.ndims, side )
-    ArrayFunc.__init__( self, args=[self.cascade,domainelem], evalf=self.elemfunc, shape=[domainelem.ndims] )
+    self.cascade = Cascade( ndims, side )
+    ArrayFunc.__init__( self, args=[POINTS,self.cascade], evalf=self.elemfunc, shape=[ndims] )
 
   @staticmethod
-  def elemfunc( cascade, domainelem ):
+  def elemfunc( points, cascade ):
     'evaluate'
 
-    for elem, points in cascade:
-      if elem is domainelem:
-        return points
-    raise Exception, '%r not found' % domainelem
+    domainelem, trans = cascade[-1]
+    return trans.apply( points )
 
   def _localgradient( self, ndims ):
     return self.cascade.transform( ndims )
 
   def _opposite( self ):
-    return ElemFunc( self.domainelem, 1-self.side )
+    ndims, = self.shape
+    return ElemFunc( ndims, 1-self.side )
 
   def find( self, elem, C ):
     'find coordinates'
 
-    assert C.ndim == 2 and C.shape[1] == self.domainelem.ndims
-    assert elem.ndims == self.domainelem.ndims # for now
+    assert C.ndim == 2 and C.shape[1] == self.ndims
+    assert elem.ndims == self.ndims # for now
     pelem, transform = elem.parent
     offset = transform.offset
     Tinv = transform.invtrans
-    while pelem is not self.domainelem:
+    while pelem.parent:
       pelem, newtransform = pelem.parent
       transform = transform.nest( newtransform )
     return elem.select_contained( transform.invapply( C ), eps=1e-10 )

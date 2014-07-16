@@ -78,10 +78,10 @@ def unittest():
 
   retvals = main( degree=1, plots=False )
   assert debug.CmpData( retvals ) == '''
-    eNqtkkuKAzEMRK/TYdxCf8nHmUVvc//lKGobsstiYjA8hKwql63jOBzU3K8TeSSgYxTSeIyDQNT4+kEc
-    DCgkjQQUIqvq6LPbEbBWV7+KJeHJ10lRwo6ZC8XJGv8vUTd9/j7H3mcN51mSqC91S22sMoa/WIaAiXKj
-    gbF6R5Bg0eeo/KHgndz76E+7nCiE+O1LAZl8pVAvRI1ftkcQxnNHrWYLp8pGVaHVyxY3OiTlPddAI7Bx
-    QjBtCQmN/XcsY00wCV6pP/4AfMCL6w=='''
+    eNqtkksKA0EIRK8zIT3i3+7jZJFt7r+M4ziQXRZJQ8NDxCoLdWybgzrHc0ceE9CNEmncxkYgGvq8Iw4G
+    5CWFBBTMXXWyVe0ImK+qf8WUCE4JihR2RGoU9xN/l8hNX4/XuP5+rM2WW+mhPg0Ls4wLZ7IMAStTiQYm
+    PCuCmVWJwuwVPOP6HP3tpxOFED/TVUBa0SmYd/x/tkcQpvOKWuVKfalYo5p497L1PXjaZK9hBpojClf6
+    QWsJCb3MY55JTzAJ7tRvb4gGi/s='''
 
   retvals = main( nelems=4, degree=1, plots=False )
   assert debug.CmpData( retvals ) == '''

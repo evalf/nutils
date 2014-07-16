@@ -26,6 +26,13 @@ except:
     assert A.shape == B.shape and axes > 0
     return ((A*B).reshape(A.shape[:-axes]+(-1,))).sum(-1)
 
+def grid( shape ):
+  shape = tuple(shape)
+  grid = numpy.empty( (len(shape),)+shape, dtype=int )
+  for i, sh in enumerate( shape ):
+    grid[i] = numpy.arange(sh)[(slice(None),)+(numpy.newaxis,)*(len(shape)-i-1)]
+  return grid
+
 def round( arr ):
   arr = numpy.asarray( arr )
   return arr if arr.dtype == int \

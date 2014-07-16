@@ -16,104 +16,8 @@ have a well defined reference coordinate system, and provide pointsets for
 purposes of integration and sampling.
 """
 
-from . import log, util, numpy, core, numeric, function, cache, _
+from . import log, util, numpy, core, numeric, function, cache, transform, rational, _
 import warnings
-
-class Transformation( object ):
-  'transform points'
-
-  __slots__ = 'fromdim', 'todim'
-
-  def __init__( self, fromdim, todim ):
-    'constructor'
-
-    self.fromdim = fromdim
-    self.todim = todim
-
-  def __str__( self ):
-    'string representation'
-
-    return '%s(%d->%d)' % ( self.__class__.__name__, self.fromdim, self.todim )
-
-  def eval( self, points ):
-    'evaluate'
-
-    if points is None:
-      return None
-
-    return self._eval( points )
-
-class SliceTransformation( Transformation ):
-  'take slice'
-
-  __slots__ = 'slice',
-
-  def __init__( self, fromdim, start=None, stop=None, step=None ):
-    'constructor'
-
-    self.slice = slice( start, stop, step )
-    Transformation.__init__( self, fromdim, todim=len(range(fromdim)[self.slice]) )
-  
-  def _eval( self, points ):
-    'apply transformation'
-
-    assert points.shape[1] == self.fromdim
-    return util.ImmutableArray( points[:,self.slice] )
-
-class AffineTransformation( Transformation ):
-  'affine transformation'
-
-  __slots__ = 'offset', 'transform'
-
-  def __init__( self, offset, transform ):
-    'constructor'
-
-    self.offset = numpy.asarray( offset )
-    assert self.offset.ndim == 1
-    self.transform = numpy.asarray( transform )
-    assert self.transform.ndim == 2
-    assert self.transform.shape[0] == self.offset.shape[0]
-    Transformation.__init__( self, fromdim=self.transform.shape[1], todim=self.transform.shape[0] )
-
-  @property
-  def invtrans( self ):
-    'inverse transformation'
-
-    assert self.todim == self.fromdim
-    return numpy.linalg.inv( self.transform )
-
-  @property
-  def det( self ):
-    'determinant'
-
-    assert self.todim == self.fromdim
-    return numpy.linalg.det( self.transform )
-
-  def nest( self, other ):
-    'merge transformations'
-
-    offset = other.offset + numeric.dot( other.transform, self.offset )
-    transform = numeric.dot( other.transform, self.transform )
-    return AffineTransformation( offset, transform )
-
-  def get_transform( self ):
-    'get transformation copy'
-
-    return self.transform.copy()
-
-  def invapply( self, coords ):
-    'apply inverse transformation'
-
-    return numeric.dot( coords - self.offset, self.invtrans.T )
-
-  def _eval( self, points ):
-    'apply transformation'
-
-    assert isinstance( points, numpy.ndarray )
-    return util.ImmutableArray( self.offset + numeric.dot( points, self.transform.T ) )
-
-def IdentityTransformation( ndims ):
-  return AffineTransformation( numpy.zeros(ndims), numpy.eye(ndims) )
 
 PrimaryVertex = str
 HalfVertex = lambda vertex1, vertex2, xi=.5: '%s<%.3f>%s' % ( (vertex1,xi,vertex2) if vertex1 < vertex2 else (vertex2,1-xi,vertex1) )
@@ -128,7 +32,7 @@ class Reference( cache.Immutable ):
 
   @property
   def simplices( self ):
-    return [ (IdentityTransformation(self.ndims),self) ]
+    return [ (transform.identity(self.ndims),self) ]
 
 class QuadReference( Reference ):
   'quadrilateral reference element'
@@ -138,7 +42,7 @@ class QuadReference( Reference ):
 
   @cache.property
   def vertices( self ):
-    return numpy.array( list(numpy.ndindex((2,)*self.ndims)), dtype=float )
+    return numpy.array( list(numpy.ndindex((2,)*self.ndims)), dtype=int )
 
   @cache.property
   def ribbon2vertices( self ):
@@ -228,7 +132,7 @@ class QuadReference( Reference ):
 
     scale = numpy.diag((.5,)*self.ndims)
     # warning: cache property make cyclic reference
-    return [ ( AffineTransformation( offset=numpy.array(I)*.5, transform=scale ), self ) for I in numpy.ndindex(*(2,)*self.ndims) ]
+    return [ ( transform.shift(index) >> transform.half(self.ndims), self ) for index in numpy.ndindex(*(2,)*self.ndims) ]
 
   def get_child_vertices( self, vertices ):
     child_vertices = numpy.empty( [3]*self.ndims, dtype=object )
@@ -245,21 +149,21 @@ class QuadReference( Reference ):
 
     transforms = []
     for idim in range( self.ndims ):
-      offset = numpy.zeros( self.ndims )
+      offset = numpy.zeros( self.ndims, dtype=int )
       offset[:idim] = 1
-      transform = numpy.zeros(( self.ndims, self.ndims-1 ))
-      transform.flat[ :(self.ndims-1)*idim :self.ndims] = -1
-      transform.flat[self.ndims*(idim+1)-1::self.ndims] = 1
+      matrix = numpy.zeros( ( self.ndims, self.ndims-1 ), dtype=int )
+      matrix.flat[ :(self.ndims-1)*idim :self.ndims] = -1
+      matrix.flat[self.ndims*(idim+1)-1::self.ndims] = 1
       # flip normal:
       offset[idim-1] = 1 - offset[idim-1]
-      transform[idim-1] *= -1
-      transforms.append( AffineTransformation( offset=offset.copy(), transform=transform.copy() ) )
+      matrix[idim-1] *= -1
+      transforms.append( transform.linear(matrix) >> transform.shift(offset) )
       # other side:
       offset[idim] = 1
       # flip normal back:
       offset[idim-1] = 1 - offset[idim-1]
-      transform[idim-1] *= -1
-      transforms.append( AffineTransformation( offset=offset, transform=transform ) )
+      matrix[idim-1] *= -1
+      transforms.append( transform.linear(matrix) >> transform.shift(offset) )
     edgeref = QuadReference( self.ndims-1 )
     return [ (trans,edgeref) for trans in transforms ]
 
@@ -347,14 +251,14 @@ class TriangularReference( Reference ):
 
   @cache.property
   def children( self ):
-    scale = numpy.diag( [.5,.5] )
     transforms = [
-      ( [ 0, 0],  scale ),
-      ( [ 0,.5],  scale ),
-      ( [.5, 0],  scale ),
-      ( [.5,.5], -scale ) ]
+      transform.half(2),
+      transform.shift([0,1]) >> transform.half(2),
+      transform.shift([1,0]) >> transform.half(2),
+      transform.shift([-1,-1]) >> transform.linear([[-1,0],[0,-1]],rational.half)
+    ]
     # warning: cache property make cyclic reference
-    return [ (AffineTransformation(offset,trans),self) for offset, trans in transforms ]
+    return [ (trans,self) for trans in transforms ]
 
   def get_child_vertices( self, vertices ):
     v1, v2, v3 = vertices
@@ -365,9 +269,9 @@ class TriangularReference( Reference ):
   def edges( self ):
     edge = QuadReference(1)
     return (
-      ( AffineTransformation( offset=[0,0], transform=[[ 1],[ 0]] ), edge ),
-      ( AffineTransformation( offset=[1,0], transform=[[-1],[ 1]] ), edge ),
-      ( AffineTransformation( offset=[0,1], transform=[[ 0],[-1]] ), edge ) )
+      ( transform.linear([[ 1],[ 0]]), edge ),
+      ( transform.linear([[-1],[ 1]]) >> transform.shift([1,0]), edge ),
+      ( transform.linear([[ 0],[-1]]) >> transform.shift([0,1]), edge ) )
 
   def get_edge_vertices( self, vertices ):
     return [ vertices[::-2], vertices[:2], vertices[1:] ]
@@ -546,10 +450,10 @@ class TetrahedronReference( Reference ):
     assert len(vertices) == 4
     edge = TriangularReference()
     return [
-      ( AffineTransformation( offset=[0,0,0], transform=[[ 0, 1],[1,0],[0,0]] ), edge ),
-      ( AffineTransformation( offset=[0,0,0], transform=[[ 1, 0],[0,0],[0,1]] ), edge ),
-      ( AffineTransformation( offset=[0,0,0], transform=[[ 0, 0],[0,1],[1,0]] ), edge ),
-      ( AffineTransformation( offset=[1,0,0], transform=[[-1,-1],[1,0],[0,1]] ), edge ) ]
+      ( transfor,linear([[ 0, 1],[1,0],[0,0]]), edge ),
+      ( transfor,linear([[ 1, 0],[0,0],[0,1]]), edge ),
+      ( transfor,linear([[ 0, 0],[0,1],[1,0]]), edge ),
+      ( transfor,linear([[-1,-1],[1,0],[0,1]]) >> transform.shift([1,0,0]), edge ) ]
 
   def get_edgevertices( self, vertices ):
     v1, v2, v3, v4 = vertices
@@ -557,186 +461,6 @@ class TetrahedronReference( Reference ):
 
 class MosaicReference( Reference ):
   'mosaic reference element'
-
-  def __init__( self ):
-    Reference.__init__( self, ndims=3, nverts=4 )
-
-  def getischeme( self, where ):
-    '''get integration scheme
-       http://people.sc.fsu.edu/~jburkardt/datasets/quadrature_rules_tet/quadrature_rules_tet.html'''
-
-    if where.startswith( 'vtk' ):
-      coords = numpy.array([[0,0,0],[1,0,0],[0,1,0],[0,0,1]]).T
-      weights = None
-    elif where == 'gauss1':
-      coords = numpy.array( [[1],[1],[1]] ) / 4.
-      weights = numpy.array( [1] ) / 6.
-    elif where == 'gauss2':
-      coords = numpy.array([[0.5854101966249685,0.1381966011250105,0.1381966011250105],
-                            [0.1381966011250105,0.1381966011250105,0.1381966011250105],
-                            [0.1381966011250105,0.1381966011250105,0.5854101966249685],
-                            [0.1381966011250105,0.5854101966249685,0.1381966011250105]]).T
-      weights = numpy.array([1,1,1,1]) / 24.
-    elif where == 'gauss3':
-      coords = numpy.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
-                            [0.5000000000000000,0.1666666666666667,0.1666666666666667],
-                            [0.1666666666666667,0.1666666666666667,0.1666666666666667],
-                            [0.1666666666666667,0.1666666666666667,0.5000000000000000],
-                            [0.1666666666666667,0.5000000000000000,0.1666666666666667]]).T
-      weights = numpy.array([-0.8000000000000000,0.4500000000000000,0.4500000000000000,0.4500000000000000,0.4500000000000000]) / 6.
-    elif where == 'gauss4':
-      coords = numpy.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
-                            [0.7857142857142857,0.0714285714285714,0.0714285714285714],
-                            [0.0714285714285714,0.0714285714285714,0.0714285714285714],
-                            [0.0714285714285714,0.0714285714285714,0.7857142857142857],
-                            [0.0714285714285714,0.7857142857142857,0.0714285714285714],
-                            [0.1005964238332008,0.3994035761667992,0.3994035761667992],
-                            [0.3994035761667992,0.1005964238332008,0.3994035761667992],
-                            [0.3994035761667992,0.3994035761667992,0.1005964238332008],
-                            [0.3994035761667992,0.1005964238332008,0.1005964238332008],
-                            [0.1005964238332008,0.3994035761667992,0.1005964238332008],
-                            [0.1005964238332008,0.1005964238332008,0.3994035761667992]]).T
-      weights = numpy.array([-0.0789333333333333,0.0457333333333333,0.0457333333333333,0.0457333333333333,0.0457333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333]) / 6.
-    elif where == 'gauss5':
-      coords = numpy.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
-                            [0.0000000000000000,0.3333333333333333,0.3333333333333333],
-                            [0.3333333333333333,0.3333333333333333,0.3333333333333333],
-                            [0.3333333333333333,0.3333333333333333,0.0000000000000000],
-                            [0.3333333333333333,0.0000000000000000,0.3333333333333333],
-                            [0.7272727272727273,0.0909090909090909,0.0909090909090909],
-                            [0.0909090909090909,0.0909090909090909,0.0909090909090909],
-                            [0.0909090909090909,0.0909090909090909,0.7272727272727273],
-                            [0.0909090909090909,0.7272727272727273,0.0909090909090909],
-                            [0.4334498464263357,0.0665501535736643,0.0665501535736643],
-                            [0.0665501535736643,0.4334498464263357,0.0665501535736643],
-                            [0.0665501535736643,0.0665501535736643,0.4334498464263357],
-                            [0.0665501535736643,0.4334498464263357,0.4334498464263357],
-                            [0.4334498464263357,0.0665501535736643,0.4334498464263357],
-                            [0.4334498464263357,0.4334498464263357,0.0665501535736643]]).T
-      weights = numpy.array([0.1817020685825351,0.0361607142857143,0.0361607142857143,0.0361607142857143,0.0361607142857143,0.0698714945161738,0.0698714945161738,0.0698714945161738,0.0698714945161738,0.0656948493683187,0.0656948493683187,0.0656948493683187,0.0656948493683187,0.0656948493683187,0.0656948493683187]) / 6.
-    elif where == 'gauss6':
-      coords = numpy.array([[0.3561913862225449,0.2146028712591517,0.2146028712591517],
-                            [0.2146028712591517,0.2146028712591517,0.2146028712591517],
-                            [0.2146028712591517,0.2146028712591517,0.3561913862225449],
-                            [0.2146028712591517,0.3561913862225449,0.2146028712591517],
-                            [0.8779781243961660,0.0406739585346113,0.0406739585346113],
-                            [0.0406739585346113,0.0406739585346113,0.0406739585346113],
-                            [0.0406739585346113,0.0406739585346113,0.8779781243961660],
-                            [0.0406739585346113,0.8779781243961660,0.0406739585346113],
-                            [0.0329863295731731,0.3223378901422757,0.3223378901422757],
-                            [0.3223378901422757,0.3223378901422757,0.3223378901422757],
-                            [0.3223378901422757,0.3223378901422757,0.0329863295731731],
-                            [0.3223378901422757,0.0329863295731731,0.3223378901422757],
-                            [0.2696723314583159,0.0636610018750175,0.0636610018750175],
-                            [0.0636610018750175,0.2696723314583159,0.0636610018750175],
-                            [0.0636610018750175,0.0636610018750175,0.2696723314583159],
-                            [0.6030056647916491,0.0636610018750175,0.0636610018750175],
-                            [0.0636610018750175,0.6030056647916491,0.0636610018750175],
-                            [0.0636610018750175,0.0636610018750175,0.6030056647916491],
-                            [0.0636610018750175,0.2696723314583159,0.6030056647916491],
-                            [0.2696723314583159,0.6030056647916491,0.0636610018750175],
-                            [0.6030056647916491,0.0636610018750175,0.2696723314583159],
-                            [0.0636610018750175,0.6030056647916491,0.2696723314583159],
-                            [0.2696723314583159,0.0636610018750175,0.6030056647916491],
-                            [0.6030056647916491,0.2696723314583159,0.0636610018750175]]).T
-      weights = numpy.array([0.0399227502581679,0.0399227502581679,0.0399227502581679,0.0399227502581679,0.0100772110553207,0.0100772110553207,0.0100772110553207,0.0100772110553207,0.0553571815436544,0.0553571815436544,0.0553571815436544,0.0553571815436544,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857]) / 6.
-    elif where == 'gauss7':
-      coords = numpy.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
-                            [0.7653604230090441,0.0782131923303186,0.0782131923303186],
-                            [0.0782131923303186,0.0782131923303186,0.0782131923303186],
-                            [0.0782131923303186,0.0782131923303186,0.7653604230090441],
-                            [0.0782131923303186,0.7653604230090441,0.0782131923303186],
-                            [0.6344703500082868,0.1218432166639044,0.1218432166639044],
-                            [0.1218432166639044,0.1218432166639044,0.1218432166639044],
-                            [0.1218432166639044,0.1218432166639044,0.6344703500082868],
-                            [0.1218432166639044,0.6344703500082868,0.1218432166639044],
-                            [0.0023825066607383,0.3325391644464206,0.3325391644464206],
-                            [0.3325391644464206,0.3325391644464206,0.3325391644464206],
-                            [0.3325391644464206,0.3325391644464206,0.0023825066607383],
-                            [0.3325391644464206,0.0023825066607383,0.3325391644464206],
-                            [0.0000000000000000,0.5000000000000000,0.5000000000000000],
-                            [0.5000000000000000,0.0000000000000000,0.5000000000000000],
-                            [0.5000000000000000,0.5000000000000000,0.0000000000000000],
-                            [0.5000000000000000,0.0000000000000000,0.0000000000000000],
-                            [0.0000000000000000,0.5000000000000000,0.0000000000000000],
-                            [0.0000000000000000,0.0000000000000000,0.5000000000000000],
-                            [0.2000000000000000,0.1000000000000000,0.1000000000000000],
-                            [0.1000000000000000,0.2000000000000000,0.1000000000000000],
-                            [0.1000000000000000,0.1000000000000000,0.2000000000000000],
-                            [0.6000000000000000,0.1000000000000000,0.1000000000000000],
-                            [0.1000000000000000,0.6000000000000000,0.1000000000000000],
-                            [0.1000000000000000,0.1000000000000000,0.6000000000000000],
-                            [0.1000000000000000,0.2000000000000000,0.6000000000000000],
-                            [0.2000000000000000,0.6000000000000000,0.1000000000000000],
-                            [0.6000000000000000,0.1000000000000000,0.2000000000000000],
-                            [0.1000000000000000,0.6000000000000000,0.2000000000000000],
-                            [0.2000000000000000,0.1000000000000000,0.6000000000000000],
-                            [0.6000000000000000,0.2000000000000000,0.1000000000000000]]).T
-      weights = numpy.array([0.1095853407966528,0.0635996491464850,0.0635996491464850,0.0635996491464850,0.0635996491464850,-0.3751064406859797,-0.3751064406859797,-0.3751064406859797,-0.3751064406859797,0.0293485515784412,0.0293485515784412,0.0293485515784412,0.0293485515784412,0.0058201058201058,0.0058201058201058,0.0058201058201058,0.0058201058201058,0.0058201058201058,0.0058201058201058,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105]) / 6.
-    elif where == 'gauss8':
-      coords = numpy.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
-                            [0.6175871903000830,0.1274709365666390,0.1274709365666390],
-                            [0.1274709365666390,0.1274709365666390,0.1274709365666390],
-                            [0.1274709365666390,0.1274709365666390,0.6175871903000830],
-                            [0.1274709365666390,0.6175871903000830,0.1274709365666390],
-                            [0.9037635088221031,0.0320788303926323,0.0320788303926323],
-                            [0.0320788303926323,0.0320788303926323,0.0320788303926323],
-                            [0.0320788303926323,0.0320788303926323,0.9037635088221031],
-                            [0.0320788303926323,0.9037635088221031,0.0320788303926323],
-                            [0.4502229043567190,0.0497770956432810,0.0497770956432810],
-                            [0.0497770956432810,0.4502229043567190,0.0497770956432810],
-                            [0.0497770956432810,0.0497770956432810,0.4502229043567190],
-                            [0.0497770956432810,0.4502229043567190,0.4502229043567190],
-                            [0.4502229043567190,0.0497770956432810,0.4502229043567190],
-                            [0.4502229043567190,0.4502229043567190,0.0497770956432810],
-                            [0.3162695526014501,0.1837304473985499,0.1837304473985499],
-                            [0.1837304473985499,0.3162695526014501,0.1837304473985499],
-                            [0.1837304473985499,0.1837304473985499,0.3162695526014501],
-                            [0.1837304473985499,0.3162695526014501,0.3162695526014501],
-                            [0.3162695526014501,0.1837304473985499,0.3162695526014501],
-                            [0.3162695526014501,0.3162695526014501,0.1837304473985499],
-                            [0.0229177878448171,0.2319010893971509,0.2319010893971509],
-                            [0.2319010893971509,0.0229177878448171,0.2319010893971509],
-                            [0.2319010893971509,0.2319010893971509,0.0229177878448171],
-                            [0.5132800333608811,0.2319010893971509,0.2319010893971509],
-                            [0.2319010893971509,0.5132800333608811,0.2319010893971509],
-                            [0.2319010893971509,0.2319010893971509,0.5132800333608811],
-                            [0.2319010893971509,0.0229177878448171,0.5132800333608811],
-                            [0.0229177878448171,0.5132800333608811,0.2319010893971509],
-                            [0.5132800333608811,0.2319010893971509,0.0229177878448171],
-                            [0.2319010893971509,0.5132800333608811,0.0229177878448171],
-                            [0.0229177878448171,0.2319010893971509,0.5132800333608811],
-                            [0.5132800333608811,0.0229177878448171,0.2319010893971509],
-                            [0.7303134278075384,0.0379700484718286,0.0379700484718286],
-                            [0.0379700484718286,0.7303134278075384,0.0379700484718286],
-                            [0.0379700484718286,0.0379700484718286,0.7303134278075384],
-                            [0.1937464752488044,0.0379700484718286,0.0379700484718286],
-                            [0.0379700484718286,0.1937464752488044,0.0379700484718286],
-                            [0.0379700484718286,0.0379700484718286,0.1937464752488044],
-                            [0.0379700484718286,0.7303134278075384,0.1937464752488044],
-                            [0.7303134278075384,0.1937464752488044,0.0379700484718286],
-                            [0.1937464752488044,0.0379700484718286,0.7303134278075384],
-                            [0.0379700484718286,0.1937464752488044,0.7303134278075384],
-                            [0.7303134278075384,0.0379700484718286,0.1937464752488044],
-                            [0.1937464752488044,0.7303134278075384,0.0379700484718286]]).T
-      weights = numpy.array([-0.2359620398477557,0.0244878963560562,0.0244878963560562,0.0244878963560562,0.0244878963560562,0.0039485206398261,0.0039485206398261,0.0039485206398261,0.0039485206398261,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852]) / 6.
-    else:
-      raise Exception, 'invalid element evaluation: %r' % where
-    return util.ImmutableArray( coords.T ), util.ImmutableArray( weights )
-
-  @property
-  def edges( self ):
-    assert len(vertices) == 4
-    edge = TriangularReference()
-    return [
-      ( AffineTransformation( offset=[0,0,0], transform=[[ 0, 1],[1,0],[0,0]] ), edge ),
-      ( AffineTransformation( offset=[0,0,0], transform=[[ 1, 0],[0,0],[0,1]] ), edge ),
-      ( AffineTransformation( offset=[0,0,0], transform=[[ 0, 0],[0,1],[1,0]] ), edge ),
-      ( AffineTransformation( offset=[1,0,0], transform=[[-1,-1],[1,0],[0,1]] ), edge ) ]
-
-  def get_edgevertices( self, vertices ):
-    v1, v2, v3, v4 = vertices
-    return [ [v1,v3,v2], [v1,v2,v4], [v1,v4,v3], [v2,v3,v4] ] # TODO check!
 
   def __init__( self, ndims, children ):
     self.children = children
@@ -749,9 +473,9 @@ class MosaicReference( Reference ):
     allweights = []
     for trans, child in self.children:
       points, weights = child.getischeme( ischeme )
-      allcoords.append( trans.eval(points) )
+      allcoords.append( trans.apply(points) )
       if weights is not None:
-        allweights.append( weights * trans.det )
+        allweights.append( weights * float(trans.det) )
 
     coords = util.ImmutableArray( numpy.concatenate( allcoords, axis=0 ) )
     weights = util.ImmutableArray( numpy.concatenate( allweights, axis=0 ) ) \
@@ -761,7 +485,7 @@ class MosaicReference( Reference ):
 
   @cache.property
   def simplices( self ):
-    return [ (trans2.nest(trans1),simplex) for trans1, child in self.children for trans2, simplex in child.simplices ]
+    return [ ( trans1 >> trans2, simplex ) for trans2, child in self.children for trans1, simplex in child.simplices ]
 
 class ProductReference( Reference ):
   'product reference element'
@@ -933,7 +657,7 @@ class Element( object ):
 
   Represents the topological shape.'''
 
-  __slots__ = 'reference', 'vertices', 'ndims', 'index', 'parent', 'context', 'interface', 'root_transform', 'inv_root_transform', 'root_det'
+  __slots__ = 'reference', 'vertices', 'ndims', 'index', 'parent', 'context', 'interface', 'root_transform', 'root_det'
 
   def __init__( self, reference, vertices, index=None, parent=None, context=None, interface=None, root_det=None ):
     'constructor'
@@ -954,11 +678,10 @@ class Element( object ):
       self.root_det = root_det
     elif parent:
       pelem, trans = parent
-      self.root_transform = numpy.dot( pelem.root_transform, trans.transform )
-      self.inv_root_transform = numpy.dot( trans.invtrans, pelem.inv_root_transform )
-      self.root_det = pelem.root_det * trans.det
+      self.root_transform = trans >> pelem.root_transform
+      self.root_det = self.root_transform.det
     else:
-      self.inv_root_transform = self.root_transform = numpy.eye( self.ndims )
+      self.root_transform = transform.identity( self.ndims )
       self.root_det = 1.
 
   def __mul__( self, other ):
@@ -1003,9 +726,11 @@ class Element( object ):
       and self.context == other.context
       and self.interface == other.interface )
 
-  def trim( self, levelset, maxrefine, numer=100 ):
+  def trim( self, levelset, maxrefine, eps ):
     'trim element along levelset'
 
+    assert rational.isrational( eps )
+    numer = int( rational.unit / eps )
     children = []
     if maxrefine <= 0:
       repeat = True
@@ -1023,7 +748,7 @@ class Element( object ):
           if a * b < 0: # strict sign change
             x = int( numer * a / float(a-b) + .5 ) # round to [0,1,..,numer]
             if 0 < x < numer:
-              isects.append(( float(x)/numer, ribbon ))
+              isects.append(( x, ribbon ))
             else: # near intersection of vertex
               v = ribbon[ (0,numer).index(x) ]
               log.debug( 'rounding vertex #%d from %f to 0' % ( v, levels[v] ) )
@@ -1032,9 +757,10 @@ class Element( object ):
       coords = self.reference.vertices
       if isects:
         coords = numpy.vstack([
-          self.reference.vertices,
-          [ numpy.dot( (1-x,x), self.reference.vertices[ribbon] ) for x, ribbon in isects ]
+          self.reference.vertices * numer,
+          [ numpy.dot( (numer-x,x), self.reference.vertices[ribbon] ) for x, ribbon in isects ]
         ])
+      assert coords.dtype == int
       if self.ndims == 2:
         simplex = TriangularReference()
       elif self.ndims == 3:
@@ -1056,14 +782,14 @@ class Element( object ):
         if numpy.linalg.det( matrix.astype(float) ) < 0:
           tri[-2:] = tri[-1], tri[-2]
           matrix = ( coords[tri[1:]] - offset ).T
-        trans = AffineTransformation( offset, matrix )
+        trans = transform.linear(matrix,eps) >> transform.shift(offset,eps)
         children.append(( trans, simplex ))
     else:
       complete = True
       for child in self.children:
         _self, trans = child.parent
         assert _self is self
-        trimmed = child.trim( levelset, maxrefine-1 )
+        trimmed = child.trim( levelset, maxrefine-1, eps )
         complete = complete and trimmed == child
         if trimmed != None:
           children.append( (trans,trimmed.reference) )
@@ -1072,15 +798,12 @@ class Element( object ):
     if not children:
       return None
     reference = MosaicReference( self.ndims, tuple(children) )
-    return Element( reference=reference, vertices=[], parent=(self,IdentityTransformation(self.ndims)) )
+    return Element( reference=reference, vertices=[], parent=(self,transform.identity(self.ndims)) )
 
 def ProductElement( elem1, elem2 ):
-  ndims = elem1.ndims + elem2.ndims
-  slice1 = SliceTransformation( fromdim=ndims, stop=elem1.ndims )
-  slice2 = SliceTransformation( fromdim=ndims, start=elem1.ndims )
-
-  iface1 = elem1, slice1
-  iface2 = elem2, slice2
+  eye = numpy.eye( elem1.ndims + elem2.ndims, dtype=int )
+  iface1 = elem1, transform.linear( eye[:elem1.ndims] )
+  iface2 = elem2, transform.linear( eye[elem1.ndims:] )
   #vertices = [] # TODO [ ProductVertex(vertex1,vertex2) for vertex1 in elem1.vertices for vertex2 in elem2.vertices ]
   vertices = [ ProductVertex(vertex1,vertex2) for vertex1 in elem1.vertices for vertex2 in elem2.vertices ]
 
@@ -1097,12 +820,12 @@ def ProductElement( elem1, elem2 ):
     elif neighborhood != -1:
       # define local map rotations
       if neighborhood==1:
-        transform = [0,2], [2,3], [3,1], [1,0], [2,0], [3,2], [1,3], [0,1]
+        vertex = [0,2], [2,3], [3,1], [1,0], [2,0], [3,2], [1,3], [0,1]
       elif neighborhood==2:
-        transform = [0], [2], [3], [1]
+        vertex = [0], [2], [3], [1]
       else:
         raise ValueError( 'Unknown neighbor type %i' % neighborhood )
-      transf = transform.index( vertices1 ), transform.index( vertices2 )
+      transf = vertex.index( vertices1 ), vertex.index( vertices2 )
   reference = ProductReference( elem1.reference, elem2.reference, neighborhood, transf )
   root_det = elem1.root_det * elem2.root_det
 

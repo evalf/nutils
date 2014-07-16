@@ -81,10 +81,10 @@ def unittest():
 
   retvals = main( nelems=8, init='sine', mean=0, std=.1, maxiter=10, plot=False )
   assert debug.CmpData( retvals ) == '''
-    eNq9kksOwyAMRK+TSGAZf8AcqPe/QmkIaLJsF92NLDTPnsHSUTgdOUhD2yuzpNyou/PUlYqUmFpJm9nU
-    hZTZh9akVIrVa+wUVebrRrXXKWN4+O0dJG6bE+J9aqfeRRdHzHxxvMeYl5pgDK/BBL2RCatk2DDD4o9z
-    9pVwPGSCUQVxW2sPjKluDHdZGK4cNyb0Gn8wJiEL09xvb+awW5q28udrvi1He6u/lPOvz4YR7mQzBJ6h
-    h/yoZ5cGXULF0PyZzjccJbBH'''
+    eNq9UrkNwzAMXMcBRILiJ2og779CHOsBXSZFugMh3CstR6VyQKCEtBOICzTsZjSwY+UaAwtKUx24ohDZ
+    haUI1qp+nw3Debxu6N0HjIvDJncgm26dYOsDG/bOsnRY1SZh11ZPqK08r+tx4sjUWTI5gWQQku9Hmh0y
+    ZU+V5KYCqS3Xl4yKbBnqvGTIKaZMyH3+yCgHL5lmNrmJQidU+ST/a5qvtlF0l5+2+ddXyw3uYiH1DWkG
+    eKyzN0tTpoXT8K/yegPaAK/p'''
 
 
 util.run( main, unittest )

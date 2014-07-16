@@ -305,7 +305,12 @@ def iter( title, iterable, length=None ):
   return IterLog( title, _iter(iterable), length )
 
 def enumerate( title, iterable, length=None ):
-  return IterLog( title, _enumerate(iterable), len(iterable) if length is None else length )
+  if length is None:
+    try:
+      length = len(iterable)
+    except:
+      pass
+  return IterLog( title, _enumerate(iterable), length )
 
 def count( title, start=0 ):
   from itertools import count

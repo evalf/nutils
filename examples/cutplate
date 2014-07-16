@@ -43,19 +43,19 @@ def unittest():
 
   retvals = main( nelems=4, maxrefine=2, plots=False )
   assert debug.CmpData( retvals ) == '''
-    eNrNk01uAzEIha+TqDOIf/Bxusg291+W2DjdN4nUkSx9QvhheIwelwsC1nf7Qjz+iASEIrcT5Rgg7FRI
-    FR2KY6IDDXxE+TAIZZuYQBo+USGEeeYWOi0FAR4SE7ly0bauuG5EsX2NUBtdKRqRh7WYWmojjcEbyXFf
-    C/fGTPvV7ecoWDxLGNJorJevBFsjeQFf9+IkSJpDk+PkB2sPMHXIHHaFLYcuFvCM5cfp4DXPyaXime0N
-    2+xVSoRZW8QgA33VMXCeVlc8yjTaXqvKSq8NEMaOEkt2FWWS/RAh0q3N0ftSDmKXfGQIN2I2lkaMlVu9
-    M+ezsVq/mPz6VK/HG36T+/f9o+c/rN+ne3yHldcfaC4iAg=='''
+    eNrNk8tqw0AMRX8nobbQW5rP6SLb/P+yyowm3TcJ1GA4CPnqcWU9LhcErOf2hXj8EQkIRW4nyjFA2KmQ
+    KjoUx0QHGviI8mEQyjYxgTR8okII88wtdFoKAjwkJnLlom1dcd2IYvszQm10pWhEHtZiaqmNNAZvJMf9
+    Wbg3ZtqvbrejYPEsYUijsTpfCbZW8gK+7sVJkDSXJsfJD9ZeYOqQuewKWw5dLOAZy4/TwQfy5FLxzPaG
+    bc4qJcKsLWKQgb7qGDhPqyseZRptr1VlpdcFCGNHiSW7ijLJbkSIdGtz9L2Ug9glHxnCjZiyO9UYC2t2
+    5nwOVucXk1/f6vV4w29y/75/9P0P5/fpGd9h5fUHZ3kiAg=='''
 
   retvals = main( nelems=4, maxrefine=3, plots=False )
   assert debug.CmpData( retvals ) == '''
-    eNrN00tuw0AIANDrNKqD+H+O00W2uf+yxMPkAE0i1ZKlJwSMDbYeX18I2NftG/H4IwvCwm9X1KaiSZMO
-    gpL0kw6MjE0+DEKRTiaQTVQhROzMbbqtMgGuWGQgJX729dxEiV1GgkNX3UQhmWZqmUOq2lEiq10WsZnp
-    +OxLPrTAJ9cLPSg8tDWSF/j6Lq4EifiYlBxXhrQZVTNYzmF32FJ8WcCLctnbsnK6i/EKSzPwbNhbqIid
-    jKKyzjFwjmkSvbSy2bXSpDsQVk2USHlO6YTaDyIUumzAofv0KrehYO4oJsXuETl1BMzbXbi+GH7DVC/H
-    G36T+8/9o/d/+Pw+/Y7vWOXlF6JbIm4='''
+    eNrNk8ttw0AMRNuJEZng/1NODr66/2NoLdcFxDYQAQIeBuRQy1np8fWFgP3cvhGPP2JBWPjtitqoaNJI
+    B0FJ+okOjIyNfBiEIp2YQDaqQojYWdvottoEuGIhAynx09dzI0rsNhIcdNWNKCRjppY5SFVbJbLabREb
+    Mx2fvuSDFvjEdaAHCg/aWskL+HoWV4JEfGxKjitD2qyqMVjOZbdsKb5YwItysTfLqmkX4yVLY+Bp2ClU
+    xC5GUV1zDJxjTKJDK5uslabcgbBqVCLlmdIFtT9EKHSxAYfu6VVug4K5VUyK7RE5fQTMKduv1o3hN2z1
+    crzhN7n/3D/6/ofr9+kzviPKyy+i7yJu'''
 
 
 util.run( main, unittest )

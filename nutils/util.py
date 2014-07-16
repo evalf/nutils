@@ -485,8 +485,8 @@ def run( *functions ):
     try:
       func( **kwargs )
       failed = 0
-    except KeyboardInterrupt:
-      log.error( 'killed by user' )
+#   except KeyboardInterrupt:
+#     log.error( 'killed by user' )
     except Terminate, exc:
       log.error( 'terminated:', exc )
     except:
