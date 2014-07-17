@@ -107,7 +107,7 @@ class CompiledEvaluable( object ):
     print >> dot.stdin, 'digraph {'
     print >> dot.stdin, 'graph [ dpi=72 ];'
 
-    data = self.data + [ '<elem>', '<points>', '<weights>' ]
+    data = self.data + [ '<cache>', '<elem>', '<points>', '<weights>' ]
     for i, (op,indices) in enumerate( self.operations ):
       args = [ '%%%d=%s' % ( iarg, _obj2str( data[idx] ) ) for iarg, idx in enumerate( indices ) if idx < 0 ]
       vertex = 'label="%s"' % r'\n'.join( [ '%d. %s' % ( i, op ) ] + args )
@@ -765,7 +765,7 @@ class OrientationHack( ArrayFunc ):
     'evaluate'
 
     pelem, trans = elem.interface[side] if elem.interface else elem.context
-    offset, = trans.offset
+    offset, = trans.apply( numpy.array([]) )
     return numpy.sign( offset - .5 )
 
   def _opposite( self ):
