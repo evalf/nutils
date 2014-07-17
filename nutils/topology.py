@@ -23,7 +23,7 @@ out in element loops. For lower level operations topologies can be used as
 :mod:`nutils.element` iterators.
 """
 
-from . import element, function, util, numpy, parallel, matrix, log, core, numeric, cache, rational, _
+from . import element, function, util, numpy, parallel, matrix, log, core, numeric, cache, rational, transform, _
 import warnings, itertools
 
 class Topology( object ):
@@ -660,16 +660,22 @@ class StructuredTopology( Topology ):
     for idim in range(self.ndims):
       s1 = (slice(None),)*idim + (slice(-1),)
       s2 = (slice(None),)*idim + (slice(1,None),)
-      for elem1, elem2 in numpy.broadcast( self.structure[s1], self.structure[s2] ):
-        A = numpy.zeros( (self.ndims,self.ndims-1), dtype=int )
-        A[:idim] = eye[:idim]
-        A[idim+1:] = -eye[idim:]
-        b = numpy.hstack( [ numpy.zeros( idim+1, dtype=int ), numpy.ones( self.ndims-idim, dtype=int ) ] )
-        context1 = elem1, transform.linear(A) >> transform.shift(b[1:])
-        context2 = elem2, transform.linear(A) >> transform.shift(b[:-1])
+      if idim in self.periodic:
+        t1 = (slice(None),)*idim + (slice(None),)
+        t2 = (slice(None),)*idim + (numpy.array( range(1,self.structure.shape[idim]) + [0] ),)
+      else:
+        t1, t2 = s1, s2
+      A = numpy.zeros( (self.ndims,self.ndims-1), dtype=int )
+      A[:idim] = eye[:idim]
+      A[idim+1:] = -eye[idim:]
+      b = numpy.hstack( [ numpy.zeros( idim+1, dtype=int ), numpy.ones( self.ndims-idim, dtype=int ) ] )
+      trans1 = transform.linear(A) >> transform.shift(b[1:])
+      trans2 = transform.linear(A) >> transform.shift(b[:-1])
+      for elem1, elem2 in numpy.broadcast( self.structure[t1], self.structure[t2] ):
+        interface = (elem1,trans1), (elem2,trans2)
         vertices = numpy.reshape( elem1.vertices, [2]*elem1.ndims )[s2].ravel()
         assert numpy.all( vertices == numpy.reshape( elem2.vertices, [2]*elem1.ndims )[s1].ravel() )
-        ielem = element.QuadElement( ndims=self.ndims-1, vertices=vertices, interface=(context1,context2) )
+        ielem = element.QuadElement( ndims=self.ndims-1, vertices=vertices, interface=interface )
         interfaces.append( ielem )
     return UnstructuredTopology( interfaces, ndims=self.ndims-1 )
 
