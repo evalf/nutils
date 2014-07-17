@@ -72,7 +72,7 @@ class Compound( Transform ):
 
   @cache.property
   def matrix( self ):
-    return numpy.dot( self.trans2.matrix, self.trans1.matrix )
+    return rational.dot( self.trans2.matrix, self.trans1.matrix )
 
   @cache.property
   def inv( self ):
@@ -82,20 +82,18 @@ class Compound( Transform ):
     return self.trans2.apply( self.trans1.apply( points ) )
 
   def __str__( self ):
-    return '%s << %s' % ( self.trans1, self.trans2 )
+    return '%s >> %s' % ( self.trans1, self.trans2 )
 
 class Shift( Transform ):
 
-  def __init__( self, shift, factor ):
+  def __init__( self, shift ):
+    assert rational.isarray( shift ) and shift.ndim == 1
     Transform.__init__( self, len(shift), len(shift) )
-    self.shift = numpy.array( shift )
-    assert self.shift.dtype == int
-    self.factor = factor
+    self.shift = shift
 
   @cache.property
   def inv( self ):
-    # y = x + n/d b <=> x = y + n/d (-b)
-    return shift( -self.shift, self.factor )
+    return shift( -self.shift )
 
   @property
   def det( self ):
@@ -107,10 +105,10 @@ class Shift( Transform ):
 
   def apply( self, points ):
     assert points.shape[-1] == self.fromdims
-    return points + self.shift * float(self.factor)
+    return points + self.shift
 
   def __str__( self ):
-    return '+%s:%s' % ( self.factor, ','.join( str(i) for i in self.shift ) )
+    return '+%s' % self.shift
 
 class Scale( Transform ):
 
@@ -120,7 +118,7 @@ class Scale( Transform ):
     
   def apply( self, points ):
     assert points.shape[-1] == self.fromdims
-    return points * float(self.factor)
+    return points * self.factor
 
   @property
   def matrix( self ):
@@ -139,52 +137,29 @@ class Scale( Transform ):
 
 class Linear( Transform ):
 
-  def __init__( self, shape, numbers, factor ):
-    Transform.__init__( self, *shape )
-    self.linear = numpy.array( numbers ).reshape( shape )
-    self.factor = factor
+  def __init__( self, linear ):
+    assert rational.isarray( linear ) and linear.ndim == 2
+    Transform.__init__( self, *linear.shape )
+    self.linear = linear
 
   def apply( self, points ):
     assert points.shape[-1] == self.fromdims
-    return numpy.dot( points, self.linear.T ) * float(self.factor)
+    return rational.dot( points, self.linear.T )
 
   @property
   def matrix( self ):
-    return self.linear * float(self.factor)
+    return rational.asfloat( self.linear )
 
   @cache.property
   def det( self ):
-    assert self.fromdims == self.todims
-    if self.fromdims == 2:
-      (a,b),(c,d) = self.linear
-      intdet = a*d - b*c
-    elif self.fromdims == 3:
-      (a,b,c),(d,e,f),(g,h,i) = self.linear
-      intdet = a*e*i + b*f*g + c*d*h - c*e*g - b*d*i - a*f*h
-    else:
-      raise NotImplementedError, 'ndims=%d' % self.ndims
-    det = rational.factor(intdet) * self.factor**self.fromdims
-    #assert abs( numpy.linalg.det(self.matrix) - float(det) ) < 1e-15
-    return det
+    return rational.det( self.linear )
   
   @cache.property
   def inv( self ):
-    assert self.fromdims == self.todims
-    if self.todims == 2:
-      (a,b),(c,d) = self.linear
-      invlinear = (d,-b),(-c,a)
-    elif self.todims == 3:
-      raise NotImplementedError
-      (a,b,c),(d,e,f),(g,h,i) = self.linear
-      invlinear = (e*i-f*h,c*h-b*i,b*f-c*e),(f*g-d*i,a*i-c*g,c*d-a*f),(d*h-e*g,b*g-a*h,a*e-b*d)
-    else:
-      raise NotImplementedError, 'ndims=%d' % self.ndims
-    inv = linear( invlinear, self.factor/self.det )
-    #assert numpy.linalg.norm( numpy.dot( self.matrix, inv.matrix ) - numpy.eye(self.todims) ) < 1e-15
-    return inv
+    return linear( rational.inv( self.linear ) )
 
   def __str__( self ):
-    return '*%s:%s' % ( self.factor, ';'.join( '%s' % ','.join( str(i) for i in row ) for row in self.linear ) )
+    return '*%s' % self.linear
 
 
 ## UTILITY FUNCTIONS
@@ -201,19 +176,11 @@ def scale( ndims, factor ):
 def half( ndims ):
   return Scale( ndims, rational.half )
 
-def shift( shift, factor=rational.unit ):
-  if not any( shift ):
-    return identity( len(shift) )
-  shift, common = rational.gcd( shift )
-  common *= rational.asrational( factor )
-  return Shift( tuple(shift), common )
+def shift( shift, numer=rational.unit ):
+  return Shift( rational.frac(shift,numer) )
 
-def linear( matrix, factor=rational.unit ):
-  matrix = numpy.asarray(matrix)
-  numbers, common = rational.gcd( matrix.ravel() )
-  assert any( numbers )
-  common *= rational.asrational( factor )
-  return Linear( matrix.shape, tuple(numbers), common )
+def linear( matrix, numer=rational.unit ):
+  return Linear( rational.frac(matrix,numer) )
 
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

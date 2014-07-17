@@ -255,7 +255,7 @@ class TriangularReference( Reference ):
       transform.half(2),
       transform.shift([0,1]) >> transform.half(2),
       transform.shift([1,0]) >> transform.half(2),
-      transform.shift([-1,-1]) >> transform.linear([[-1,0],[0,-1]],rational.half)
+      transform.shift([-1,-1]) >> transform.linear([[-1,0],[0,-1]],2)
     ]
     # warning: cache property make cyclic reference
     return [ (trans,self) for trans in transforms ]
@@ -726,11 +726,10 @@ class Element( object ):
       and self.context == other.context
       and self.interface == other.interface )
 
-  def trim( self, levelset, maxrefine, eps ):
+  def trim( self, levelset, maxrefine, numer ):
     'trim element along levelset'
 
-    assert rational.isrational( eps )
-    numer = int( rational.unit / eps )
+    assert rational.isrational( numer )
     children = []
     if maxrefine <= 0:
       repeat = True
@@ -757,8 +756,8 @@ class Element( object ):
       coords = self.reference.vertices
       if isects:
         coords = numpy.vstack([
-          self.reference.vertices * numer,
-          [ numpy.dot( (numer-x,x), self.reference.vertices[ribbon] ) for x, ribbon in isects ]
+          self.reference.vertices * int(numer),
+          [ numpy.dot( (int(numer)-x,x), self.reference.vertices[ribbon] ) for x, ribbon in isects ]
         ])
       assert coords.dtype == int
       if self.ndims == 2:
@@ -782,14 +781,14 @@ class Element( object ):
         if numpy.linalg.det( matrix.astype(float) ) < 0:
           tri[-2:] = tri[-1], tri[-2]
           matrix = ( coords[tri[1:]] - offset ).T
-        trans = transform.linear(matrix,eps) >> transform.shift(offset,eps)
+        trans = transform.linear(matrix,numer) >> transform.shift(offset,numer)
         children.append(( trans, simplex ))
     else:
       complete = True
       for child in self.children:
         _self, trans = child.parent
         assert _self is self
-        trimmed = child.trim( levelset, maxrefine-1, eps )
+        trimmed = child.trim( levelset, maxrefine-1, numer )
         complete = complete and trimmed == child
         if trimmed != None:
           children.append( (trans,trimmed.reference) )

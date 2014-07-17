@@ -356,8 +356,8 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   Q /= 2 * numpy.sqrt( abs(Q).max(axis=0) / numpy.sqrt(2) )
   R = numpy.zeros([2,1])
 
-  scale = rational.Rational([-1,-1,-1])
-  coords = numeric.round( numpy.hstack( [P,Q,R] ).T * float(1/scale) )
+  scale = rational.Rational([1,1,1])
+  coords = numeric.round( numpy.hstack( [P,Q,R] ).T * float(scale) )
 
   vertices = numpy.array(
     [ ( i, (i+1)%12, 12+(i-i//3)%8 )   for i in range(12) ]

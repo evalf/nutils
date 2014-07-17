@@ -910,10 +910,10 @@ class StructuredTopology( Topology ):
   def trim( self, levelset, maxrefine, evalrefine=0, eps=.01 ):
     'trim element along levelset'
 
-    eps = rational.rational( 1, numeric.round(1./eps) )
+    numer = rational.asrational( numeric.round(1./eps) )
     levelset = function.ascompiled( levelset )
     __log__ = log.iter( 'elem', self.structure.ravel() )
-    trimmedelems = [ elem.trim( levelset=levelset, maxrefine=maxrefine, eps=eps ) for elem in __log__ ]
+    trimmedelems = [ elem.trim( levelset=levelset, maxrefine=maxrefine, numer=numer ) for elem in __log__ ]
     trimmedstructure = numpy.array( trimmedelems ).reshape( self.structure.shape )
     return StructuredTopology( trimmedstructure, periodic=self.periodic )
 

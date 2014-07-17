@@ -51,11 +51,11 @@ def unittest():
 
   retvals = main( nelems=4, maxrefine=3, plots=False )
   assert debug.CmpData( retvals ) == '''
-    eNrNk8ttw0AMRNuJEZng/1NODr66/2NoLdcFxDYQAQIeBuRQy1np8fWFgP3cvhGPP2JBWPjtitqoaNJI
-    B0FJ+okOjIyNfBiEIp2YQDaqQojYWdvottoEuGIhAynx09dzI0rsNhIcdNWNKCRjppY5SFVbJbLabREb
-    Mx2fvuSDFvjEdaAHCg/aWskL+HoWV4JEfGxKjitD2qyqMVjOZbdsKb5YwItysTfLqmkX4yVLY+Bp2ClU
-    xC5GUV1zDJxjTKJDK5uslabcgbBqVCLlmdIFtT9EKHSxAYfu6VVug4K5VUyK7RE5fQTMKduv1o3hN2z1
-    crzhN7n/3D/6/ofr9+kzviPKyy+i7yJu'''
+    eNrN00tuw0AIANDrNKqD+H+O00W2uf+yxMPkAE0i1ZKlJwSMDbYeX18I2NftG/H4IwvCwm9X1KaiSZMO
+    gpL0kw6MjE0+DEKRTiaQTVQhROzMbbqtMgGuWGQgJX729dxEiV1GgkNX3UQhmWZqmUOq2lEiq10WsZnp
+    +OxLPrTAJ9cLPSg8tDWSF/j6Lq4EifiYlBxXhrQZVTNYzmF32FJ8WcCLctnbsnK6i/EKSzPwbNhbqIid
+    jKKyzjFwjmkSvbSy2bXSpDsQVk2USHlO6YTaDyIUumzAofv0KrehYO4oJsXuETl1BMzbXbi+GH7DVC/H
+    G36T+8/9o/d/+Pw+/Y7vWOXlF6JbIm4='''
 
 
 util.run( main, unittest )
