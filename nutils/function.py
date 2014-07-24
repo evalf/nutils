@@ -2201,8 +2201,8 @@ class Repeat( ArrayFunc ):
     return repeat( take(self.func,index,axis), self.length, self.axis )
 
   def _takediag( self ):
-    assert self.axis < self.ndim-2
-    return repeat( takediag( self.func ), self.length, self.axis )
+    return repeat( takediag( self.func ), self.length, self.axis ) if self.axis < self.ndim-2 \
+      else get( self.func, self.axis, 0 )
 
   def _cross( self, other, axis ):
     if axis != self.axis:
