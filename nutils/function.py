@@ -3272,7 +3272,7 @@ def iwscale( coords, ndims ):
   cndims, = coords.shape
   assert J.shape == (cndims,ndims), 'wrong jacobian shape: got %s, expected %s' % ( J.shape, (cndims, ndims) )
   if cndims == ndims:
-    detJ = determinant( J )
+    detJ = abs( determinant( J ) )
   elif ndims == 1:
     detJ = norm2( J[:,0], axis=0 )
   elif cndims == 3 and ndims == 2:
