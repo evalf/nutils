@@ -1,0 +1,114 @@
+#! /usr/bin/python
+
+from nutils import *
+
+
+def makeplots( domain, geom, u ):
+  xp, up = domain.elem_eval( [ geom, u ], ischeme='bezier9', separate=True )
+  with plot.PyPlot( 'solution', ndigits=4 ) as plt:
+    plt.mesh( xp, up, edgewidth=0.1, edgecolor='white' )
+    if domain.ndims == 2:
+      plt.gca().set_aspect( 'equal' )
+      plt.clim(0,1)
+      plt.colorbar()
+    else:
+      plt.ylim( -.1, 1.1 )
+
+
+def main( nelems=40, degree=1, timestep=.01, tol=1e-10, cg=False, alpha=.5, ndims=1, maxiter=-1, plots=True, tau=1 ):
+  
+  if ndims == 1:
+    domain, geom = mesh.rectilinear( [numpy.linspace(0,1,nelems+1)], periodic=[0] )
+    convec = numpy.array( [.5] )
+    u = function.piecewise( geom[0], [.4,.6], 0, 1, 0 )
+  elif ndims == 2:
+    nodes = numpy.linspace( -1, 1, nelems+1 )
+    domain, geom = mesh.rectilinear( [nodes,nodes] )
+    x, y = geom
+    convec = function.stack([ y, -x ])
+    center0 = .5, 0
+    width = .25
+    u = function.exp( -( ( ( geom - center0 ) / width )**2 ).sum() )
+  else:
+    raise Exception, 'not supported: ndims=%s' % ndims
+
+  funcsp = ( domain.splinefunc if cg else domain.discontfunc )( degree )
+  lhs = domain.project( u, onto=funcsp, geometry=geom, ptype='convolute', ischeme='gauss5' )
+
+  A1 = (1./timestep) * function.outer( funcsp )
+  A2 = function.outer( ( funcsp[:,_] * -convec ).div(geom), funcsp )
+  matrix1, matrix2 = domain.integrate( [ A1, A2 ], geometry=geom, ischeme='gauss5' )
+  if not cg:
+    upwind = alpha * function.sign( ( function.mean(convec) * geom.normal() ).sum() )
+    funcsp_cv = funcsp[:,_] * convec
+    F = ( function.mean(funcsp_cv)
+        + function.jump(funcsp_cv) * upwind ).dotnorm( geom )
+    A2i = function.outer( function.jump(funcsp), F )
+    matrix2i = domain.interfaces.integrate( A2i, geometry=geom, ischeme='gauss5' )
+    matrix2 = matrix2 + matrix2i
+
+  __log__ = log.count( 'timestep' )
+  for itime in __log__:
+
+    if plots:
+      makeplots( domain, geom, funcsp.dot(lhs) )
+
+    matrix = matrix1 + tau * matrix2
+    rhs = matrix1.matvec(lhs) + (tau-1) * matrix2.matvec(lhs)
+    lhs = matrix.solve( rhs )
+
+    if itime == maxiter:
+      break
+
+  return rhs, lhs
+
+
+def unittest():
+
+  retvals = main( ndims=1, nelems=10, timestep=.01, degree=1, cg=False, maxiter=2, plots=False )
+  assert debug.checkdata( retvals, '''
+    eNolz9sNBSEIBNB2dhNIGF5iQbf/Fi6wXzOKxiPocYK+9Dwh7j8uOhX3x5fYxWRLIvBjCBnybvGTPQKI
+    1VO/Zhmzp+RSfdzIS89kSMWX2LxAX+lnj9okl2e/HMTwU1OOVU+yYeqTLageHOJ7RQbZYM9aLyNNtzhu
+    DRhem5YZy2W0/GvWdb2A5ZYwqeXAlgsJXWbN2qlxskxYfN4AMEykLDd0PtrM/lFsCYkYb2/o5EvvH/a/
+    Tcg=''' )
+
+  retvals = main( ndims=1, nelems=10, timestep=.01, degree=1, cg=False, maxiter=2, plots=False, tau=.5 )
+  assert debug.checkdata( retvals, '''
+    eNotj1sOBCEIBK8zk2Bi8xIONPe/wgLuV5cB7RL0KIFfeh5mw7eCkL6/lbQAu5Bu/NWRzOOCukYB0+Kj
+    8ifetQ4hCSkQ0tjZadg+uSGdgN+MrLlW0e73G7gnRod70yu75tBS5AUJOy1Zwrw5G1fo8SvMGGGrhjLZ
+    5GE2vouTcUmO2AjDNwZsy9TXrfEsnfHL6AUlTdar5+oDxubtiTzRqdo/9to4bgMC5xYGX/GX3h8rdE32''' )
+  
+  retvals = main( ndims=1, nelems=10, timestep=.01, degree=2, cg=False, maxiter=2, plots=False )
+  assert debug.checkdata( retvals, '''
+    eNotkdGtxTAIQ9dpJSKBgQAD3f1XeEBff3xKaMGO0GMkeOl55Cb/ThI8WouOoBakn9Ub/jvCdNLZmoRC
+    EQvCJQvHvbQJZAlbCN6K0tEbWIJFnympFFaNeRVxVxXfuWqOpnuP7k2NV8+92Y1OHsBogbvx0jGzGtAU
+    G72M/iLooBwDcN2ClsbYPVJuA51Bmd61rjH7NQAm69mt/s1Ld32Em7mmFVyf+wrjNX3QmyxJpnwlC44v
+    CKmoJbkTwBjzNdy77Hu5xNZ3/a7X/MQoMZfUAZhjG83nUrzTFh7tuZEDkh4TAKI2iJ42e19yn4bs0dBN
+    JmSWmSSQsc5eev8Akwt0HA==''' )
+
+  retvals = main( ndims=2, nelems=4, timestep=.01, degree=1, cg=False, maxiter=2, plots=False )
+  assert debug.checkdata( retvals, '''
+    eNpNU1uOLSAI285Moom8YUGz/y1cKOck96uKSJFWOj96iH/Pz88lF/u79M7VIu0VnesU/nfrXM5ILIQs
+    ZsFFtjmszH83zi2ba3luEuWemb7J4kNeNddKy3FEzwkLYZ4UaVqmPbuRzoix05uSXFaDFPaGi+jloD7q
+    RD/dcQ1SeZ9b06UOasx9P6Iug1GWg5aGvRcL6jb3YCDefKIxKMFb15KnnjHjvhCDJ0s7v0dI1Y+QHuUr
+    oNPuMS05Kb555r5xoUEz2nrM259vn6qh6DMK5+qx77Eg5OMdNnz0P1/m808/irj5Io1Gg755Yjp5/V5D
+    fTPMyd9IMPNK7NsY3JJBeU3V9YezwAOt4SIlwQFNg/G1JyYjRr8NEAWqGM9gu0gPcsvSkzcLLfsaSuLr
+    g5CPSWIKw1GkBsWyGMjj2uZme7DKFczA57ahrdLE0JQdB/w10StBk23uiac8xd7yfZo2cHGyI+Aylaoz
+    a0nd51kxli9eA86z7Dg7BCMMtgXxKaVt2BF0jDCG02NPV9gnEIRkBtfCQKhogebfdQv8YASWecN8Nnyo
+    CawTr4XBMiTfLyAFRlpLmNSno8zthMFEHLUdLWrND7XDFMtIvlMsxdT63+Mr/p7ff/ed7UI=''' )
+
+  retvals = main( ndims=2, nelems=3, timestep=.01, degree=2, cg=False, maxiter=2, plots=False )
+  assert debug.checkdata( retvals, '''
+    eNo1VMmN4EAITGdGsiXuI6DJP4WFwvuwqqFpzsL8/NjD8vv8/LzMbn8v0zNf552UpXHSyLnsR91i0dkg
+    d9BgjQ/zvzcfUY1Fbr2HnF1rmNl6CjbCixJ44gpZLPaGB1GDB42z85ZLwWhd8sOkhMOrQudUleTuku/O
+    zBGXU/xLJBQ34hs4HjfhxeoSyLqlxCS4LvwRSl5kWt8rC/Sm5NDntsK2QjkkWlR3yBrqQDvZ2/KQFegC
+    bObauFbliyKmyCO3XsQvxA1r3Ccb9CHIY9Kg1Ssl9OF57zIQb+pFHTO5yzsIeq7NY/zS2o1erg6hHjt9
+    hB3I3QzM7c/ipw9OoMTphywnUyx2ZSBuFfKXuPglevW0If7Ui76GMuz1y2smhzqGnM4Blr2e9ZFiZ5FD
+    1WAGWzLBmtdiq1mFyFmUgFdWBoWHKi7EG5bGW+84nycgRslSZ5+aHBWzwJS3iuBrWg8M39b0884ocBiO
+    gNQT9TK+p8h8pzJ8jN2HjRaCUlxccUE3/lekMU+LBC9f68BhBoSGvKyOQ6HDsdEILVNQeVvXGKlTHGXC
+    6CguoFZaYxSWR43ZVlCROxio4keFW433Zj8OXG/N8zjLoX0GdD1jjrhhJ6rhrutYMjJ6tS9keYCtQxqk
+    /M7v4KOhg57dtwavtMHS/MqfeWHvora43bfl06Ay0FnpeJ+QmfXbg29fiW8v5XiZJKjB2UElwYR2r/r+
+    CxJ+v7jbf63/TVEHCX+f33+t+Sfz''' )
+
+
+util.run( main, unittest )
