@@ -284,73 +284,85 @@ def breakpoint():
     its current state and even alter it. Closing the explorer will resume
     program execution.''' ).cmdloop()
 
-class CmpData( object ):
+def base64_enc( obj, ndigit, prec ):
+  import zlib, binascii, re
+  serialized = __serialize( obj, ndigit, prec )
+  binary = zlib.compress( '1,(%d,%d),%s' % ( ndigit, prec, serialized ), 9 )
+  return re.sub( '(.{80})', r'\1\n', binascii.b2a_base64( binary ) )
 
-  def __init__( self, obj ):
-    self.obj = obj
+def base64_dec( base64 ):
+  import zlib, binascii, re
+  binary = binascii.a2b_base64( re.sub( '\s+', '', base64 ) )
+  serialized = zlib.decompress( binary )
+  proto, args, obj = eval( serialized, numpy.__dict__ )
+  return proto, args, obj
 
-  @classmethod
-  def __serialize( cls, obj, floatfmt ):
-    return floatfmt % obj if isinstance(obj,float) \
-      else str(obj) if isinstance(obj,int) \
-      else repr(obj) if isinstance (obj,str) \
-      else '(%s,)' % ','.join( cls.__serialize(o,floatfmt) for o in obj )
+def __serialize( obj, ndigit, prec ):
+  if isinstance(obj,int):
+    return str(obj)
+  if isinstance(obj,str):
+    return repr(obj)
+  if not isinstance( obj, float ): # assume iterable
+    return '(%s,)' % ','.join( __serialize(o,ndigit,prec) for o in obj )
+  if not numpy.isfinite(obj): # nan, inf
+    return str(obj)
+  if not obj:
+    return '0'
+  n = numeric.floor( numpy.log10( abs(obj) ) )
+  N = max(n,-prec) - (ndigit-1)
+  i = int( obj * 10.**-N + ( .5 if obj >= 0 else -.5 ) )
+  return '%de%d' % (i,N) if i else '0'
 
-  def base64( self, ndigit=4 ):
-    import zlib, binascii, re
-    serialized = self.__serialize( self.obj, floatfmt='%%.%de' % ndigit )
-    binary = zlib.compress( str(ndigit) + ',' + serialized, 9 )
-    return re.sub( '(.{80})', r'\1\n', binascii.b2a_base64( binary ) )
+@log.title
+def __compare( verify_obj, obj, ndigit, prec ):
+  if isinstance(verify_obj,tuple):
+    if len(verify_obj) == len(obj):
+      return all([ __compare( vo, o, ndigit, prec, title='#%d' % i )
+        for i, (vo,o) in enumerate( zip( verify_obj, obj ) ) ])
+    log.error( 'non matching lenghts: %d != %d' % ( len(verify_obj), len(obj) ) )
+  elif not isinstance(verify_obj,float):
+    if verify_obj == obj:
+      return True
+    log.error( 'non equal: %s != %d' % ( obj, verify_obj ) )
+  elif verify_obj == 0:
+    if obj == 0:
+      return True
+    log.error( 'expected zero: %s' % obj )
+  elif numpy.isnan(verify_obj):
+    if numpy.isnan(obj):
+      return True
+    log.error( 'expected nan: %s' % obj )
+  elif numpy.isinf(verify_obj):
+    if numpy.isinf(obj):
+      return True
+    log.error( 'expected inf: %s' % obj )
+  else:
+    n = numeric.floor( numpy.log10( abs(verify_obj) ) )
+    N = max(n,-prec) - (ndigit-1)
+    maxerr = .5 * 10.**N
+    if abs(verify_obj-obj) <= maxerr:
+      return True
+    log.error( 'non equal to %s digits: %e != %e' % ( ndigit, obj, verify_obj ) )
+  return False
 
-  def __str__( self ):
-    return self.base64()
-
-  @classmethod
-  @log.title
-  def __compare( cls, verify_obj, obj, ndigit ):
-    if isinstance(verify_obj,tuple):
-      if len(verify_obj) == len(obj):
-        return all([ cls.__compare( vo, o, ndigit, title='#%d' % i )
-          for i, (vo,o) in enumerate( zip( verify_obj, obj ) ) ])
-      log.error( 'non matching lenghts: %d != %d' % ( len(verify_obj), len(obj) ) )
-    elif not isinstance(verify_obj,float):
-      if verify_obj == obj:
-        return True
-      log.error( 'non equal: %s != %d' % ( obj, verify_obj ) )
-    elif verify_obj == 0:
-      if obj == 0:
-        return True
-      log.error( 'expected zero: %s' % obj )
-    elif numpy.isnan(verify_obj):
-      if numpy.isnan(obj):
-        return True
-      log.error( 'expected nan: %s' % obj )
-    elif numpy.isinf(verify_obj):
-      if numpy.isinf(obj):
-        return True
-      log.error( 'expected inf: %s' % obj )
-    else:
-      exp = numpy.floor( numpy.log10( abs(verify_obj) ) ) - ndigit
-      maxerr = .5 * 10**exp
-      if abs(verify_obj-obj) <= maxerr:
-        return True
-      log.error( 'non equal to %s digits: %e != %e' % ( ndigit, obj, verify_obj ) )
-    return False
-
-  def __eq__( self, base64 ):
-    import zlib, binascii, re
-    try:
-      binary = binascii.a2b_base64( re.sub( '\s+', '', base64 ) )
-      serialized = zlib.decompress( binary )
-      ndigit, verify_obj = eval( serialized, numpy.__dict__ )
-    except Exception, e:
-      log.error( 'failed to decode base64 data: %s' % e )
-      equal = False
-    else:
-      equal = self.__compare( verify_obj, self.obj, ndigit, title='compare' )
-    if not equal:
-      log.warning( 'objects are not equal; if this is expected replace base64 data with:\n%s' % self )
-    return equal
-      
+@log.title
+def checkdata( obj, base64 ):
+  import zlib, binascii, re
+  try:
+    proto, args, verify_obj = base64_dec( base64 )
+    assert proto == 1, 'unsupported protocol version %s' % proto
+    ndigit, prec = args
+  except Exception, e:
+    log.error( 'failed to decode base64 data: %s' % e )
+    equal = False
+    ndigit = 4
+    prec = 15
+  else:
+    log.debug( 'checking with ndigit=%d, prec=%d' % ( ndigit, prec ) )
+    equal = __compare( verify_obj, obj, ndigit, prec, title='compare' )
+  if not equal:
+    s = base64_enc( obj, ndigit, prec )
+    log.warning( 'objects are not equal; if this is expected replace base64 data with:\n%s' % s )
+  return equal
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

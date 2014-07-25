@@ -61,32 +61,29 @@ def main( degree=2, niter=30, triangular=False, plot=True ):
 def unittest():
 
   retvals = main( degree=1, triangular=True, niter=6, plot=False )
-  assert debug.CmpData( retvals ) == '''
-    eNp1kNsNQkEIRNvRZCW8Fwqy/xZEXG/ww7+TyTAD6Lo5cPJ+PogWAQfF84GxBJK2FO5lwJu80BcDmXGh
-    ThyGMTbCGBQtWhXACGpkYMIqRnur4tRhA38N3zGF1PRWFYJTumKoVUwkB7c5N1aYYZx9w/DrTRft1QNE
-    FLsiQM2o1R/Dpf4LQzRpdaCCb4+zei32uWJDSBu6gnKfsQuHYSTUfy3svDqIqYu92vKjGmSqHIOn+nnf
-    5R3q/QXYz2w/'''
+  assert debug.checkdata( retvals, '''
+    eNplkFsOxSAIRLfTJprwFhbU/W/hClX7cb8GjjMExHZJQ73bZRT8dJwdOc0CGweOWUBTGpNEI1R9+ji6
+    +TGeKAlYEQb3KogQn+4TsGV268eXUUIhgThFzdoAlxOHWiqRYm3h+vIwzm2cWWqSS64Z38Pq/4IAdc5W
+    sfGeI4hcxXBekwjKuXTzk+BQrx9xpBxtAJG9RkhxC61r1/vu7x9BJVWy''' )
 
   retvals = main( degree=1, triangular=False, niter=11, plot=False )
-  assert debug.CmpData( retvals ) == '''
-    eNplkdttxUAIRNtJJAfB8i7o9t9C8AavsPKH0DBzALm+FpBGfH7QLobUtCrzEsBQ3V0CF7m7cRmwRFap
-    1V3kj8BcfAuG2cvhaBew727cvrlyp43gkTZ8h5aKQSqC8EpIF94lAbrx1iaEsDaOOmYHG6s3ztESENqt
-    9SplBW+BFgNin4SC/hYavkO7wHkvpHWdXJtXa8yEbZcCrPYsf3BGxBgrX8LbV+5DJWqbsSk3zvEdgrHb
-    4B3Bw6E+hOTNEL7kdJWeCCV6DmWdVh9ifLqRau1gvvI8toPLjN3O1R17jEj+MbzSju9wGJAD5xV8Il5b
-    HN5BNhi+fwGGxqIp'''
+  assert debug.checkdata( retvals, '''
+    eNpNkOsNBCEIhNvZS7zE4SkFbf8t3MqCuV8oznwDYlwyoJ9xETTubwwOm/cXNGQu3Q24PBUYxvIo1gBh
+    5YP5+9DW4ygBsVsK4MHJPPADPZCjAecTjwiXPGAWJ5bwm6iOTDC2TGwFMPdhDgjlDOoycy0s2vUgWkDO
+    ureyoKxsIrsKa6I7qkGtg+C5+7NkIH1suXz7u98j9gDNbT1hZl+XU92Lo3hXs+RxcOZjRfrVnOuTy8er
+    vsRTB8g///DK3/rO7ZzDLc6Zp/I7r/mfH0o8fyU=''' )
 
   retvals = main( degree=2, triangular=False, niter=12, plot=False )
-  assert debug.CmpData( retvals ) == '''
-    eNpVVFuOJDEIu86u1BPxCoEDzf2vMCRFSu76QhFljO3EPv94cPL8/SH/rDGNucrcZVj+/jB/oCGG25Qq
-    42NDmL0aqE5NdfcKIkCDDJZYDabCVqXiCECABh9sayP4R8fMiNO7hijNgzvHEl1nWo6IfJjN4pt2StnU
-    HzoyzIz6t1yuzfcF4xG5T6uXh4nqQagyc49YtZDZXH2qabd3CclBqI39jBBk9g22ph2wNdS2OlXqKHGe
-    hhwr49Fs1fL0aCY1LePgwprADMBkhEscs0oHc+lTIuIewVO9N2bWZ3kdob7OCEDI3XBHkNGr78WF0xqh
-    LTUYAJrBmkAHHAJRQQfgCxaC6iAULAQegy2g5NfGszoOnQJLolNGhXZFn4rMeUofNOe7Mcv9TZm8bcn6
-    WnVTmafkuhebQ5WVdYtrYRpTixq5L8M59ch5EUzoIvDia3f67SVfq6VmdW8wZdE+LR2sDUiK1SEIouhr
-    uh7fzmAn7cHLOG65Omd7Y7emI4/HO780jXqar4h28wWbldSYvXxRWI1glNTPyuTwVzN65Xt02Kqb+ep7
-    DGa9qoN8oANs8TWYH76+S5/ab9/rPFgIXoCoIAlsAWAlSar14DdGkAcwFkQFHSBykB0IARgLXoB8kFSI
-    HGQH8gAWguoQcEgqRO4rRq/zX2YR+V0+uV+uGix58zvFroX8UN/Z4ZB8nxXxewvnQdgj1OX2ivYI3q/G
-    vPc4fHZDBK0Gi5LylpT3HsukeB+mBgM6X9MA7F0I+AIdmAYbw0LAF+iAJLAxLAR8//8BIxCm4w=='''
+  assert debug.checkdata( retvals, '''
+    eNpVVFGu2DAIu84m9UlxgAAH2v2vsDQQd/sqCjEYmxTPL31gv59fQM4/P/m4Kf78YO4gbAc73ZlY+h7g
+    0Yl9AHlCRXdgH4ip/c1Cy3xT66tHFFMLbyYesSyQTxmnjPnUUzgj8jQ3ZAUTWT2nqtbl9FV0LhyR69yB
+    Tjko2HhT49mgVSeS1QI+C6VzFUF2/+DqduAuOk8gM/yk0g8xeRxHDN3ETi/7yLM74TOWvOIaDp19MM6V
+    XQ9WYwGQE0iIn3oXlIBWuaGj1ekyPJlDSiYKx8lJnT2pKUXhVKRDuakXByZTOkEpqcU3hM2i4cjqHphR
+    J3PWpq1h1gzPXu2UAP9y3oKpyAk2wVIjVKsOUuuyRVYdrOPEi2oDYPC2JEsNjFVwhdSJSXfXmmtLl6PE
+    zBi9+S7oFquJ+fXYo08Gyp39OIqGjKPqrrw8S/kLN+07MSIKpW/T/RC3lXd0dNALtlS9HgXVvYJRA45F
+    gl+HY3Lu77LzM7jWUG0KSE043aV3wTKyjKGvtIrqUxHORO9pJx2i+pSPAnBR6D3tpFXUmmpxq7go9P7z
+    9RrzSTtG65foyimjOTd5Q786IOS+Q+nlti4o7yt+78w2BN5P1BH934rodY9LPnqcrRNfgv/f9KtM+KVK
+    PmzKypyCVMmHTTkgpyBV8vn9F/KIXbI=''' )
 
 
 util.run( main, unittest )

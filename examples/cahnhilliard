@@ -80,11 +80,10 @@ def main( nelems=40, epsilon=None, timestep=.01, init='random', mean=-.3, std=.1
 def unittest():
 
   retvals = main( nelems=8, init='sine', mean=0, std=.1, maxiter=10, plot=False )
-  assert debug.CmpData( retvals ) == '''
-    eNq9UrkNwzAMXMcBRILiJ2og779CHOsBXSZFugMh3CstR6VyQKCEtBOICzTsZjSwY+UaAwtKUx24ohDZ
-    haUI1qp+nw3Debxu6N0HjIvDJncgm26dYOsDG/bOsnRY1SZh11ZPqK08r+tx4sjUWTI5gWQQku9Hmh0y
-    ZU+V5KYCqS3Xl4yKbBnqvGTIKaZMyH3+yCgHL5lmNrmJQidU+ST/a5qvtlF0l5+2+ddXyw3uYiH1DWkG
-    eKyzN0tTpoXT8K/yegPaAK/p'''
+  assert debug.checkdata( retvals, '''
+    eNqtkcsNxDAIBdtJJJDAGAMFbf8trILB191DTv4PjzHDNYH1hosJLnTx+UEFtFDNyeIxciJi+4iF6IML
+    hDmvqC95Rlthz+g8Vl70UQzz2tGIgo2ZsOclO/Syz/vBIRxmF8Guih3jxKqcHbw7Oa052SjWlGJRbBYt
+    TpZLJGsO3yzbDKJc+xR7P9dvXRp/6nr1G0+z1T22Dmw/eISVwDbaitv5DfcXXRSISA==''' )
 
 
 util.run( main, unittest )
