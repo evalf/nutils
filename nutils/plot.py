@@ -140,13 +140,13 @@ class PyPlot( BasePlot ):
     'plot elemtwise mesh'
 
     assert isinstance( points, numpy.ndarray ) and points.dtype == float
-    assert points.shape[-1] == 2
     if colors is not  None:
       assert isinstance( colors, numpy.ndarray ) and colors.dtype == float
       assert points.shape[:-1] == colors.shape
 
     if points.ndim == 3: # gridded data: nxpoints x nypoints x ndims
 
+      assert points.shape[-1] == 2
       assert colors is not None
       data = colors.ravel()
       xy = points.reshape( -1, 2 ).T
@@ -157,6 +157,13 @@ class PyPlot( BasePlot ):
       edges = None
 
     elif points.ndim == 2: # mesh: npoints x ndims
+
+      ndims = points.shape[1]
+      if ndims == 1:
+        self.plot( points[:,0], colors )
+        return
+      else:
+        assert ndims == 2, 'unsupported: ndims=%s' % ndims
 
       nans = numpy.isnan( points ).all( axis=1 )
       split, = numpy.where( nans )

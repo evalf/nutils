@@ -37,18 +37,17 @@ def main( nelems=8, stress=library.Hooke(lmbda=1,mu=1), degree=2, plots=True ):
 def unittest():
 
   retvals = main( nelems=4, degree=1, plots=False )
-  assert debug.CmpData( retvals ) == '''
-    eNq9ks0KwyAQhF8nobrsn7vu4/SQa9//2DTRIKSXpFBB+BhmdHDVNE0IuK7lgZiuIIGI6ZKRViRV7iji
-    Z/XwMhTh0lClUEMJwrN6eAW8kHek0IYWYWf18Ja971W8+SQGVeLTl9fq7lU2JCjMsWQqKQ9yHtwVBDE2
-    VGBWa2eIF9uDg5wHdwXzkBZUjn5j9c8Q9uAh58FdwZG9B0V2VUDd6hq0LdjlPLjndPfDvJ6v2/u/c/yl
-    6bc9p/kNluvI/g=='''
+  assert debug.checkdata( retvals, '''
+    eNqlkMsKAyEMRX9HIUKePj6ni27n/5d11MwgFEpbJBxyc8AQgqBAFiEEBH8kkp+p56Q6Kbr1a84mPKhi
+    g9Jo69dcii1Sm0Tc+zk3nPkn3pvmqj0x4FLqySSmfQWqkK7InSpIJ5XZxsAMebpX5E7NpQ1XeTCp5LZc
+    j9ypBWW6MphaK66uxJV+5nv343H8XN9f6p/f3lWE+AJ3U40B''' )
 
   retvals = main( nelems=4, degree=2, plots=False )
-  assert debug.CmpData( retvals ) == '''
-    eNrNk8GKQyEMRX+nj2owiTHxc2bRbf9/WZkXbeBNN31TqCAc5N5rjFrT5VKgjHG7lpLeRANUa7dcKMlY
-    VXTkTu2ISxBsCJ0qD8SBpqaOKrUfMQiWjQF5lOOIC0sTPWIQLFsFVsaFtFZF5A8MgmmTvSUn8PxdCPTS
-    6bepBNpIvNWCZAM55chBkoNToaPt2IArm1+SKtZdHDlIcnAaNESdIdLVi2KsvmPkIMnBOYptpXtIY5wn
-    Q244Q54cJDk4Rx4bekg1nZWQsM6QJwdJDs4t/cNPuf/cPzq/4QV++oyv5pa2B3kJHpY='''
+  assert debug.checkdata( retvals, '''
+    eNq1kkEOhDAIRa+jSUmgFNoeZxZuvf9yKhRHF7OYTIxp3hd+KVQpLSWRrGlZMH2eRrVvIEkQq5E73zjj
+    4aOeywajUjveB6vIjRGfPiZGJzlR9caIT1/hypPZKXpnxN03+sNfeJ1dOtpMuWq2GYVGTU1wishAWGun
+    dlC5FLuOWskMp4gMhLUpZd+iaKcxueEUkYGwNlErpsrGTKy+JURkIKxN2RsrzZizzFNCRAbCOn6F623s
+    r/3R9c+Xerq3b2tN6xs8dM45''' )
 
 
 util.run( main, unittest )

@@ -31,11 +31,12 @@ def makeplots( domain, geom, velo, pres, index ):
 
 
 @util.withrepr
-def Gauss( center, width, height ):
-  return lambda x: height * function.exp( -((x-center)/width)**2 )
+def Gauss( center=.75, width=.25, height=.25 ):
+  return lambda (x,y): function.stack([ x,
+    height * function.exp( -((x-center)/width)**2 ) * (1-y) + y ])
 
 
-def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e-8, timestep=0, plot=True ):
+def main( nelems=16, reynolds=2e3, curve=Gauss(), strong=False, tol=1e-8, timestep=0, plot=True, solvetol=1e-10 ):
 
   verts = numpy.linspace( 0, 1, nelems+1 )
   domain, geom = mesh.rectilinear( [verts,verts] )
@@ -46,11 +47,8 @@ def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e
   vspace = function.stack( [ vx, vy ], axis=1 )
   pspace = domain.splinefunc( degree=2 )
 
-  if bump:
-    x, y = geom
-    y_bump = domain.projection( bump(x) * (1-y) + y, onto=domain.splinefunc( degree=2 ), geometry=geom, ischeme='gauss9' )
-    geom = function.stack([ x, y_bump ])
-    # piola
+  if curve:
+    geom = curve(geom)
     J = function.localgradient( geom, domain.ndims )
     detJ = function.determinant( J )
     vspace = ( vspace[...,_,:] * J ).sum() / detJ
@@ -84,8 +82,8 @@ def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e
     inertmat = domain.integrate( inertia, ischeme='gauss9', geometry=geom, title='adding inertia' )
     stokesmat += inertmat
 
-  precon = stokesmat.getprecon( 'splu' )
-  stokeslhs = stokesmat.solve( stokesrhs, constrain=cons, tol=1e-10, precon=precon )
+  precon = stokesmat.getprecon( 'splu' ) if solvetol else None
+  stokeslhs = stokesmat.solve( stokesrhs, constrain=cons, tol=solvetol, precon=precon )
 
   __log__ = log.count( 'iter' )
   lhs = stokeslhs
@@ -103,27 +101,25 @@ def main( nelems=16, reynolds=2e3, bump=Gauss(.75,.25,.25), strong=False, tol=1e
       log.info( 'residual:', res )
       if res < tol:
         break
-    lhs = matrix.solve( rhs, constrain=cons, tol=1e-10, precon=precon )
+    lhs = matrix.solve( rhs, constrain=cons, tol=solvetol, precon=precon )
 
   return stokeslhs, iiter, lhs
 
 
 def unittest():
 
-  retvals = main( nelems=4, reynolds=1000, bump=None, strong=False, tol=1e-3, timestep=0, plot=False )
-  assert debug.CmpData( retvals ) == '''
-    eNqtVluSHDEIu86mMu0ybzhQ7n+F4DZ4XPnOH+sCNRKCWf78/DwwphH9eSZ+cMwIeMOHB4riG9OIwNjP
-    ONR5ZcNHBpDAG9JgNsmQPo8MAa9sHbiz38oAlzcdBonFG3pi8wZ5aEyQubMtu+LzTbDgnYPDSTcKDyLx
-    QpmB+h9b+R+iXBhJDbDoxFAm60Kier4KF/mYm4OOyLgKQwAqOQysvpJtNBeAiGoaxHajMEy1c7NPP2LP
-    FvsqfK7K5yp9rtqr9Or0uVp9rl6fq9nn6vbW+JLnufS55HlufbJSVf/8nnOxAz/gSFNPu/nHm7LklNjp
-    qxlJ9N87x0jj6yuRlj+2hTampSne2uUV9bc2HYSADWkA3KqK0OnSTGfH7gUj2c3cZkk/kZvW80G5QC6M
-    C+K5MC6Ii89F52Jzkbm4PBeZS9nnkvZS9hL20vWS1QbrWgzQz68PwOcnJzoJvMzoE+no404Fyspfi4BZ
-    sYDZzzFAHQpkhs+em0JxzuUk2W7RoWTce2qEPR03xLN6EdHviHI+aei9TlKNaDLomfkgNegFydi6E3Qs
-    G+gw0b0WeT6ctVBY0HqFJLhvA4XgdxMZG8RNzlYaMb+AkqMtQpewKyOvZ3FQpa/INP1fNRMaZMFxjgvg
-    DCeE+6AL1G2NQdyHbh0EoXNhhAvYtJqGPuHvN0SjgDmceo/Jv3DsoOVSWTau7OnndhjQ0Uaib0dqJnCE
-    Z+w4dc1x1+BviY1gnripLXhz7fjomizE9nKk89X99TgOwWn1ymKzNkaDcC+SD15m3M+sPiuZpmBBgNKB
-    iMmdgKxvyEMo6LzKBl6s+CwrGMmO08+IpxCUaxdJuSeKSHAwsOo4p9RHMK2d29TYaVA4R0Fm1LFTtw5j
-    UisjbNrJuDyy1z/6xqSJVLTq0AMqTDkaQtXlQKyf1s3FZ90mWv8GrLr6lZ3pC+A8LL/+AvUn1D4='''
+  retvals = main( nelems=4, reynolds=1000, curve=None, strong=False, tol=1e-3, timestep=0, plot=False, solvetol=0 )
+  assert debug.checkdata( retvals, '''
+    eNqdVFuOJDEIu063VJHCGw7U97/CBAitmc/dr1Sl7GATU/C8+AF5P6/Xgm30WfLgjsh1MYrmA0XUh4Xq
+    /Fn8CJDkSsz2WfosEWiKYiISGuAJOchaPaKoizZIIWxbPyBY1Cd00nxg6tV31v2/Mv9uZhiLAEtYKN8i
+    RLUxyCM9dgrS2HV4hEABwrCOCtq1Au4SAWK5gqnVvrrcZuzuwSDXQNdg14AHO8XXVF9Tfk39NQK+bRhP
+    a0yNp/U1BTsL0hEJfR2ABFcBUn45vnXXg4ScUzBVkv25u2XBVzcaF/gUsARjIDTboA8mEWqsWbPBvUiy
+    pQ0wudfG5QxlGENYwxjCKBtho2tkjao1ssb/mgaM/7E/7r/mM1Dgz/vc8/NasQnrkn3fSzDvbLLeDt+w
+    IuzeiHO3Rdnh3UWFEslIFVZVsg6tdaPIDTsnvLtBhKh9aEMAehJ03wgc/zdRpLcKeitUSwt6hqQjptzN
+    pS2dLKKYfELPlbppCzDi5IpTccb++bCrbXjE3z50H8e2ev4B7Dk32g2rfubVQjkJYpoRkDs+RURT7kmF
+    e9AdKw7vLJNfJrdDE+8G874Ig4uQ6JSfOehmICPeoYxu+rcLZaAeWuE55v6yxv2x5pkJQI3MCEqG6ryz
+    9FBp/nVOZpyhN1ibQNmUQwDlJuR0534OLD7nRuL3+xEnHVuwTiE5UiNT3IknddcAe/8wsIC8oRm6YfcZ
+    LHhnQEru+Sd6j+puNcLeAOQ6zKKnh0S1gOglD2nXO6gOQWqDfVurSCJkCvFOzfsHd7Jopg==''' )
 
 
 util.run( main, unittest )

@@ -124,10 +124,12 @@ def withrepr( f ):
 
   code = f.func_code
   argnames = code.co_varnames[:code.co_argcount]
+  defaults = dict( zip( reversed(argnames), reversed(f.func_defaults) ) )
   class function_wrapper( object ):
     def __init__( self, *args, **kwargs ):
       self.fun = f( *args, **kwargs )
-      self.items = zip( argnames, args ) + [ (name,kwargs[name]) for name in argnames[len(args):] ]
+      self.items = zip( argnames, args ) \
+        + [ (name,kwargs[name] if name in kwargs else defaults[name]) for name in argnames[len(args):] ]
     def __getattr__( self, attr ):
       for key, value in self.items:
         if key == attr:

@@ -371,7 +371,9 @@ def asfloat( obj ):
 
 def dot( A, B ):
   if not isexact( A ) or not isexact( B ):
-    return numpy.dot( asfloat(A), asfloat(B) )
+    Aflt = asfloat(A)
+    Bflt = asfloat(B)
+    return numpy.dot( Aflt, Bflt ).view( Aflt.__class__ ) # .view necesssary for 1D Aflt (numpy exception)
   A, a = asarray( A ).decompose()
   B, b = asarray( B ).decompose()
   return Array( numpy.dot( A, B ), a * b, False )
