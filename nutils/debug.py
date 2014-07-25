@@ -356,7 +356,7 @@ def checkdata( obj, base64 ):
     log.error( 'failed to decode base64 data: %s' % e )
     equal = False
     ndigit = 4
-    prec = 15
+    prec = 12
   else:
     log.debug( 'checking with ndigit=%d, prec=%d' % ( ndigit, prec ) )
     equal = __compare( verify_obj, obj, ndigit, prec, title='compare' )
