@@ -38,6 +38,11 @@ def round( arr ):
   return arr if arr.dtype == int \
     else ( arr - numpy.less(arr,0) + .5 ).astype( int )
 
+def floor( arr ):
+  ass = numpy.asarray( arr )
+  return arr if arr.dtype == int \
+    else ( arr - numpy.less(arr,0) ).astype( int )
+
 def overlapping( arr, axis=-1, n=2 ):
   'reinterpret data with overlaps'
 
