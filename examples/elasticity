@@ -14,7 +14,7 @@ def makeplots( domain, geom, stress ):
     plt.xlim( 0, 1.5 )
 
 
-def main( nelems=8, stress=library.Hooke(lmbda=1,mu=1), degree=2, plots=True ):
+def main( nelems=8, stress=library.Hooke(lmbda=1,mu=1), degree=2, plots=True, solvetol=1e-10 ):
 
   verts = numpy.linspace( 0, 1, nelems+1 )
   domain, geom = mesh.rectilinear( [verts,verts] )
@@ -25,7 +25,7 @@ def main( nelems=8, stress=library.Hooke(lmbda=1,mu=1), degree=2, plots=True ):
 
   cons = domain.boundary['left'].project( 0, geometry=geom, onto=dspace, ischeme='gauss2' ) \
        | domain.boundary['right'].project( .5, geometry=geom, onto=nfval, ischeme='gauss2' )
-  lhs = matrix.solve( constrain=cons, tol=1e-10, symmetric=True )
+  lhs = matrix.solve( constrain=cons, tol=solvetol, symmetric=True )
   disp = dspace.dot( lhs )
 
   if plots:
@@ -36,18 +36,18 @@ def main( nelems=8, stress=library.Hooke(lmbda=1,mu=1), degree=2, plots=True ):
 
 def unittest():
 
-  retvals = main( nelems=4, degree=1, plots=False )
+  retvals = main( nelems=4, degree=1, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
-    eNqlkMsKAyEMRX9HIUKePj6ni27n/5d11MwgFEpbJBxyc8AQgqBAFiEEBH8kkp+p56Q6Kbr1a84mPKhi
-    g9Jo69dcii1Sm0Tc+zk3nPkn3pvmqj0x4FLqySSmfQWqkK7InSpIJ5XZxsAMebpX5E7NpQ1XeTCp5LZc
-    j9ypBWW6MphaK66uxJV+5nv343H8XN9f6p/f3lWE+AJ3U40B''' )
+    eNqlkEsKwzAMRK8Tg1z09ec4XXSb+y/r2FZbh0IhBYsZ6Q1YiGBTIAuwbXiDz0ci6REbJNWhoks/OZtw
+    VxXrKpWWfnLJNpXqUMS1H9xwzH/pad1UtI0NOOdyaBtF99FhEaRDldk85D46LCnXHlKur9D00WHJKCMk
+    8g4NHx22q5623O/75bp4mH++/FYBwhP0AIpZ''' )
 
-  retvals = main( nelems=4, degree=2, plots=False )
+  retvals = main( nelems=4, degree=2, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
-    eNq1kkEOhDAIRa+jSUmgFNoeZxZuvf9yKhRHF7OYTIxp3hd+KVQpLSWRrGlZMH2eRrVvIEkQq5E73zjj
-    4aOeywajUjveB6vIjRGfPiZGJzlR9caIT1/hypPZKXpnxN03+sNfeJ1dOtpMuWq2GYVGTU1wishAWGun
-    dlC5FLuOWskMp4gMhLUpZd+iaKcxueEUkYGwNlErpsrGTKy+JURkIKxN2RsrzZizzFNCRAbCOn6F623s
-    r/3R9c+Xerq3b2tN6xs8dM45''' )
+    eNq1ksEOwyAIhl+nTXQRENDH2aHXvv9xFqRJ1+ywLEtqvr/wi0gLaakJeE3LUh7p7WmgfcucuBQ1UqcL
+    Zzx80LFuedRrx/ugMl8Y8ekjoOIEZxG5MOLTV0lpEp0sV0bcfaO/8g3vE+Be7GaognZThlFZUj5FZHJY
+    tUM7KFSrDUUVzHCKyOSwNgH0LVLsNAI3nCIyOayNxYqJkBGBxLeEiEwOaxPyxmozIvI8JURkcljHb3Gf
+    yf7c/7p+/2r/7vDTWtP6AuDh0ok=''' )
 
 
 util.run( main, unittest )

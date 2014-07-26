@@ -110,16 +110,16 @@ def unittest():
 
   retvals = main( nelems=4, reynolds=1000, curve=None, strong=False, tol=1e-3, timestep=0, plot=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
-    eNqdVFuOJDEIu063VJHCGw7U97/CBAitmc/dr1Sl7GATU/C8+AF5P6/Xgm30WfLgjsh1MYrmA0XUh4Xq
-    /Fn8CJDkSsz2WfosEWiKYiISGuAJOchaPaKoizZIIWxbPyBY1Cd00nxg6tV31v2/Mv9uZhiLAEtYKN8i
-    RLUxyCM9dgrS2HV4hEABwrCOCtq1Au4SAWK5gqnVvrrcZuzuwSDXQNdg14AHO8XXVF9Tfk39NQK+bRhP
-    a0yNp/U1BTsL0hEJfR2ABFcBUn45vnXXg4ScUzBVkv25u2XBVzcaF/gUsARjIDTboA8mEWqsWbPBvUiy
-    pQ0wudfG5QxlGENYwxjCKBtho2tkjao1ssb/mgaM/7E/7r/mM1Dgz/vc8/NasQnrkn3fSzDvbLLeDt+w
-    IuzeiHO3Rdnh3UWFEslIFVZVsg6tdaPIDTsnvLtBhKh9aEMAehJ03wgc/zdRpLcKeitUSwt6hqQjptzN
-    pS2dLKKYfELPlbppCzDi5IpTccb++bCrbXjE3z50H8e2ev4B7Dk32g2rfubVQjkJYpoRkDs+RURT7kmF
-    e9AdKw7vLJNfJrdDE+8G874Ig4uQ6JSfOehmICPeoYxu+rcLZaAeWuE55v6yxv2x5pkJQI3MCEqG6ryz
-    9FBp/nVOZpyhN1ibQNmUQwDlJuR0534OLD7nRuL3+xEnHVuwTiE5UiNT3IknddcAe/8wsIC8oRm6YfcZ
-    LHhnQEru+Sd6j+puNcLeAOQ6zKKnh0S1gOglD2nXO6gOQWqDfVurSCJkCvFOzfsHd7Jopg==''' )
+    eNqdVEuy5DAIu053VTzFH3Ogvv8VxoDpem85s3LiSEaSIfi85EF9P6/XQnD+LH0IInJdQmr5wBH1YZFt
+    +Sx5FFlzZRH/LHuWKjbFKBEJDdwJOchad0RRFwNqIRy8Hwg96hNttnwQ7nVD1v2/Mv9uZhiLkUpYmNwi
+    zLUxyCM9IAVZQB0eoViAcKqjgqFWJCgRqJ4runnt29YbBnQGg1wDXYNdAx7sFF9TfU35NfXXCPjGMJ7W
+    mBpP62sKIQvyEYl9HUiMVwFxfjm+DepBQ88plCrZf93d8pCrm1wKfAp4gikIm+3YB7MqN9a92bh3kRS0
+    DQjvXRuXM5RhDGENYwijbISNrpE1qtbIGv9rAhj/Y3/cj3n487zPFT+vFcBU97vh5u+721Lshnv7lBB6
+    I861FgVid4CGpU+Iq0/N2LtfvTPi7dQtItDZMJH1oQ1B7CEwuLd/rN9mYrtVaLdC8xwHO/PR3WXSuTJo
+    NxVzTGtij5RttxbgLMnVzcUZ++cDVGJ0xN8cOsKxbTuH359zmR1YRZm3iuUkWHi6X+/kFJHcpIcU70F3
+    oiR2tzHvy5R26Lo7YIGLcLwIjW7wMwIdBgnRncfo0L8plIF6aIXnmPu3GvfH2s52QLLI9iDNfjrvoj1P
+    lj+c02hbsDfEmsAZyiGgSRNysHM/Z5WecyPx8/2I0+5Y9J4+3sSNTHGnM7lTQ+r9w6ACCmAzDBD6DFG6
+    7a8l9/wOd08ptBqV3QCSOsyjB4fVrIC0Sx4x1DuaDUFrQzZ4q0gi9ry8/wKeqGYR''' )
 
 
 util.run( main, unittest )

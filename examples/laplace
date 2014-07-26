@@ -14,7 +14,7 @@ def makeplots( domain, geom, sol, index ):
     plt.ylim( 0, .5*numpy.pi )
 
 
-def main( nelems=None, degree=1, plots=True ):
+def main( nelems=None, degree=1, plots=True, solvetol=1e-10 ):
 
   if nelems:
     verts = numpy.linspace( 0, .5*numpy.pi, nelems+1 )
@@ -35,7 +35,7 @@ def main( nelems=None, degree=1, plots=True ):
   matrix = domain.integrate( laplace, geometry=geom, ischeme='gauss4', title='matrix' )
   rhs = domain.boundary['top'].integrate( funcsp * flux, geometry=geom, ischeme='gauss6', title='rhs' )
   cons = domain.boundary['left,bottom'].project( dirichlet, ischeme='gauss6', geometry=geom, onto=funcsp, title='left,bottom edge' )
-  lhs = matrix.solve( rhs, constrain=cons, tol=1e-8, symmetric=True )
+  lhs = matrix.solve( rhs, constrain=cons, tol=solvetol, symmetric=True )
   sol = funcsp.dot(lhs)
 
   if plots:
@@ -76,24 +76,24 @@ def conv( degree=1, nrefine=4 ):
 
 def unittest():
 
-  retvals = main( degree=1, plots=False )
+  retvals = main( degree=1, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
-    eNqdkMEKAzEIRH9nFwxodDT5nB5y3f8/NroUll4KJYRHEmc0I3QYCU46DjfX1UCDHasZ7TtRi9WUOveZ
-    FIleZxfPEv5afVfLoHxMWOFZsD2v10Wf3XaDbRjbcCDZhKes5qQITQKq2WkgLCmsnBM8XX7t3dRCPWXG
-    veQdXh/6fwAJ4I7CtDjNioaidFR0HrceFpXq9MHlo3Hr2StSgVb9SecbwzRdyg==''' )
+    eNqdkMEKAzEIRH9nF0zR6GjyOT3kuv9/bHQp9FZaiDwSnNGM0GEkOOk43FxXAw12rGa030QtVlPq3GdS
+    JHrdXTxb+PHz2a7X86J3tT1iW8a2HEg24SmrOSlCk4BqzhoISwor5w6fLt9qD7VQT5lxL3mH15f+X0AC
+    uMMwLU6zoqEoHRWex62HReU6fXD5aNx69gpVoNV/0vkCPmxdQg==''' )
 
-  retvals = main( nelems=4, degree=1, plots=False )
+  retvals = main( nelems=4, degree=1, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
-    eNqdkM2OwzAIhF8nkYjk4cfA4+wh17z/sYZutG3V08qyBj7MaGTQpgTbadtYc5yHkbouVVps0POA2Qvd
-    vUPeegjyPOSvd5bXPoXt19JS5nk4HbBEFcqx3sYCzFrFRJklSXgvXT/X23VM+cZTLL5xDHSYT/6vMDYd
-    pSHeIcDKZY7QWXqHw9BobuqlzGmlokDpHRYy++d4cPtwZu+pWvvd4aHxnCN6Lqztt3DPd9ofEi9qkQ==''' )
+    eNqdkM1uAzEIhF9nV2IjDz8GHqeHveb9jzWkWzVpTpFsDfoww8igTQm207ax5jgPI3VdqrTYuNHvAbMX
+    /ssc8o9BkOchz8xZXlkK288aS5nn4XTAElUox3ofCzBrFRNlmiThPXT/uj9dx5R3PMXiHcdAB3rlH4Wx
+    6SgN8Q4BVi5zhM7SKxyGRnNTL2VOKxUFSq+wkNk/yIPbhzN7TtXa7woPjUcf0X1hbb+Fu7/T/g3BeW4p''' )
 
-  retvals = main( nelems=4, degree=2, plots=False )
+  retvals = main( nelems=4, degree=2, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
-    eNqlUctuwzAM+50GsAG9ZX3ODrn2/4+TlBnruvZUBAEdkoopCcdNBuoxbjeUsHPaICE/p47kYOzHUKHI
-    X4aTOqc8MAgU5+RHRgWfGAz+yxhJ1H/yuknB6feBzFE4FSEPKzNdONGE6+DqGTIGRkBV37/u/14143fa
-    kqp/rUXEeqchAFT+V9pnHRB7p2VFK1SCTuiOWBhq/b27MrfmM1HPGGX1ZAlrjYlOWrg7RUC6fNFbojQW
-    Mq32C/gq3N3vTaHXvek3bJ2XX/4FXb8nkn758a8nv19+bN8xjm/NbpQM''' )
+    eNqlUUtuhTAMvA5ISeW/4+N0wfbdf1nbFKni8VaVQBNmxsFj49hkoO5j21DCjmmDhPyYOpKDr/H3MVQo
+    5UZz8seUO41AcUx+o1XwicbgB9pIou7OZiYFZ6UPZI7CqQh5WNnxiRNNuA6unhFiYARU9ev79faqGX/S
+    llT9sxYR65OGAFAhnrT/JSD27pYVrVAJukN3xMJQ6+8rlbk1nx31tFFWj5ewlpzopIVXUgSk0xe9NEpj
+    IdNqv4Cvwiv9tS70+m/6DVvn5ad/QddfE0m//PrXze+nH9u3j/0HiSeZcA==''' )
 
 
 util.run( main, conv, unittest )

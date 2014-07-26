@@ -14,7 +14,7 @@ def makeplots( domain, geom, stress ):
     plt.xlim( 0, 1.5 )
 
 
-def main( nelems=8, maxrefine=2, stress=library.Hooke(lmbda=1,mu=1), plots=True ):
+def main( nelems=8, maxrefine=2, stress=library.Hooke(lmbda=1,mu=1), plots=True, solvetol=1e-5 ):
 
   verts = numpy.linspace( 0, 1, nelems+1 )
   wholedomain, geom = mesh.rectilinear( [verts,verts] )
@@ -30,7 +30,7 @@ def main( nelems=8, maxrefine=2, stress=library.Hooke(lmbda=1,mu=1), plots=True 
 
   elasticity = function.outer( dspace.grad(geom), stress(dspace,geom) ).sum([2,3])
   matrix = domain.integrate( elasticity, geometry=geom, ischeme='gauss6' )
-  lhs = matrix.solve( constrain=cons, tol=1e-5, symmetric=True )
+  lhs = matrix.solve( constrain=cons, tol=solvetol, symmetric=True )
   disp = dspace.dot( lhs )
 
   if plots:
@@ -41,19 +41,19 @@ def main( nelems=8, maxrefine=2, stress=library.Hooke(lmbda=1,mu=1), plots=True 
 
 def unittest():
 
-  retvals = main( nelems=4, maxrefine=2, plots=False )
+  retvals = main( nelems=4, maxrefine=2, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
-    eNq1UUmKw0AM/I4D3aDS1urnzMHX/P8YSzJMchyGYExJVlVZC8ahA/YYx0Hj9wFIzuljC/s5L8ZWJDo2
-    ndOGLZXEgEaiLuGs6/LiCW9NZLQOW26f9E0eqNC1dSSVi1oUYu9GePPWKoywW1++aqt9jNpHuNCI6C/4
-    PvvENVUOPzlQ3XLoziknW3QgHqsC914IwquibJxaZtYiWCyUmTmjvizeFZj2Dh25uytHS6A3UQQdGK/6
-    iRIV4yqUUiikFavbAnO0tO5lH3NdN35Pnz/Pr77/OcG3e/tcy+MFToy+qQ==''' )
+    eNq1kU0OAjEIha8zJq3hn3IcF269/1IKs1I3xpjM5KOUR8srjkMG6mUcB1zHyzdRfN0njxDG+8zCYN80
+    jMzrUOfYXChFcZa9L+62yRSwSSh06q0J3HUQReu+Alx1LLqKGNFE6zrvurV67Vj3EvWTUHphKioAfMMP
+    FriS7q1Ji+tOSd+zTtI9XAZsQRXYGVC1SzsWJW0QYUtSETsx1Ygr4xRSTgqUo1aT5hr7lDTuPIQhugdZ
+    ew1USuZuzuDSilWcSNQKDqke79Pls78nH7fHX//fH+XfN/xk1OUJfkjFhw==''' )
 
-  retvals = main( nelems=4, maxrefine=3, plots=False )
+  retvals = main( nelems=4, maxrefine=3, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
-    eNq1kcuKwzAMRX8nBRv0fnzOLLLt/y8bSYFpl8NQgjnWzZVsybgOWaiPdRywfr90jXP7SgE99+VIzqIR
-    0Ll1qQsUA7Vjceb6L25WZMooEgre+T4EGR+O32Ri4PaxaJ/DmDfRxuddTyLszqemOg5hYqamAsBf+N77
-    xijR1qbQvjWFd5ebNKQ3bDmKWXJtMLTJnWJX4zWAMgBLF1OjUZyqt2uGgi0YYs9SEbs43vpmRu+NkmsX
-    z2yBGboCQ9Bk+GQg3Wdw1tz1o6/rjd/D58/zq+s/T/Dtu32O5fEC/ta/Ag==''' )
+    eNq1UTluAzEM/I4NSAHv4zkp3Pr/ZURyq9hFgMCAFqMdzoxECtdNFup93W7wtX6tjcr02LxSER77CJO1
+    0Kj+damzFcYRFopPXTywkCmlkFDo8tsgyOiweTHpfAFunkVj/NA8I9rovHmJ8Mvf54j6hTB5TI0K4/8r
+    vhmBh2SVNkV0JoVh9bpJQ3rDlj2FbZZaG8ySnnEIn1g77SeMAJyL2Go8jDP05JSj0SA7VJGiowQnmxk7
+    eyt5KwSmcgrt5M4uxyRtJMqxpvRhr92dZ38ln9/Pj37/f5RP3/DdoO4/9HrFWA==''' )
 
 
 util.run( main, unittest )

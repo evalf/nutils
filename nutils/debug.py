@@ -307,11 +307,11 @@ def __serialize( obj, ndigit, prec ):
   if not numpy.isfinite(obj): # nan, inf
     return str(obj)
   if not obj:
-    return '0'
+    return '0.'
   n = numeric.floor( numpy.log10( abs(obj) ) )
-  N = max(n,-prec) - (ndigit-1)
+  N = max( n-(ndigit-1), -prec )
   i = int( obj * 10.**-N + ( .5 if obj >= 0 else -.5 ) )
-  return '%de%d' % (i,N) if i else '0'
+  return '%de%d' % (i,N) if i and N else '%d.' % i
 
 @log.title
 def __compare( verify_obj, obj, ndigit, prec ):
@@ -324,10 +324,6 @@ def __compare( verify_obj, obj, ndigit, prec ):
     if verify_obj == obj:
       return True
     log.error( 'non equal: %s != %d' % ( obj, verify_obj ) )
-  elif verify_obj == 0:
-    if obj == 0:
-      return True
-    log.error( 'expected zero: %s' % obj )
   elif numpy.isnan(verify_obj):
     if numpy.isnan(obj):
       return True
@@ -337,8 +333,11 @@ def __compare( verify_obj, obj, ndigit, prec ):
       return True
     log.error( 'expected inf: %s' % obj )
   else:
-    n = numeric.floor( numpy.log10( abs(verify_obj) ) )
-    N = max(n,-prec) - (ndigit-1)
+    if verify_obj:
+      n = numeric.floor( numpy.log10( abs(verify_obj) ) )
+      N = max( n-(ndigit-1), -prec )
+    else:
+      N = -prec
     maxerr = .5 * 10.**N
     if abs(verify_obj-obj) <= maxerr:
       return True
@@ -356,7 +355,7 @@ def checkdata( obj, base64 ):
     log.error( 'failed to decode base64 data: %s' % e )
     equal = False
     ndigit = 4
-    prec = 12
+    prec = 15
   else:
     log.debug( 'checking with ndigit=%d, prec=%d' % ( ndigit, prec ) )
     equal = __compare( verify_obj, obj, ndigit, prec, title='compare' )

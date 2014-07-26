@@ -81,9 +81,9 @@ def unittest():
 
   retvals = main( nelems=8, init='sine', mean=0, std=.1, maxiter=10, plot=False )
   assert debug.checkdata( retvals, '''
-    eNqtkcsNxDAIBdtJJJDAGAMFbf8trILB191DTv4PjzHDNYH1hosJLnTx+UEFtFDNyeIxciJi+4iF6IML
-    hDmvqC95Rlthz+g8Vl70UQzz2tGIgo2ZsOclO/Syz/vBIRxmF8Guih3jxKqcHbw7Oa052SjWlGJRbBYt
-    TpZLJGsO3yzbDKJc+xR7P9dvXRp/6nr1G0+z1T22Dmw/eISVwDbaitv5DfcXXRSISA==''' )
+    eNqtkdsNBCEIRdvRBDY8VLCg6b+FzSBYwXyBgofLlaEN4NmhMUFDVx8PTkDbc0ayWCQSVTslVqIHFyhz
+    tExf+kZb297oLCsaXZJhnjdz74TJCBj9oNKqVfN9fXk1AGsiloQrKTWW6NriruVkkqyhyaJ9WLQ4WK47
+    WEP8sOwwiOLsQ+17XR9Z9en33UVzcywrsLzBa1aaV26WveV3h/4HtuWGNw==''' )
 
 
 util.run( main, unittest )
