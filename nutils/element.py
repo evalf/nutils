@@ -64,7 +64,7 @@ class QuadReference( Reference ):
     'get integration scheme'
 
     if self.ndims == 0:
-      return util.ImmutableArray( numpy.zeros([1,0]) ), util.ImmutableArray( numpy.array([1.]) )
+      return numpy.zeros([1,0]), numpy.array([1.])
 
     x = w = None
     if where.startswith( 'gauss' ):
@@ -124,7 +124,7 @@ class QuadReference( Reference ):
       weights = reduce( lambda weights, wi: ( weights * wi[:,_] ).ravel(), w )
     else:
       weights = None
-    return util.ImmutableArray( coords ), util.ImmutableArray( weights )
+    return coords, weights
 
   @cache.property
   def children( self ):
@@ -247,7 +247,7 @@ class TriangularReference( Reference ):
       weights = None
     else:
       raise Exception, 'invalid element evaluation: %r' % where
-    return util.ImmutableArray( coords.T ), util.ImmutableArray( weights ) if weights is not None else None
+    return coords.T, weights
 
   @cache.property
   def children( self ):
@@ -443,7 +443,7 @@ class TetrahedronReference( Reference ):
       weights = numpy.array([-0.2359620398477557,0.0244878963560562,0.0244878963560562,0.0244878963560562,0.0244878963560562,0.0039485206398261,0.0039485206398261,0.0039485206398261,0.0039485206398261,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852]) / 6.
     else:
       raise Exception, 'invalid element evaluation: %r' % where
-    return util.ImmutableArray( coords.T ), util.ImmutableArray( weights )
+    return coords.T, weights
 
   @property
   def edges( self ):
@@ -477,8 +477,8 @@ class MosaicReference( Reference ):
       if weights is not None:
         allweights.append( weights * float(trans.det) )
 
-    coords = util.ImmutableArray( numpy.concatenate( allcoords, axis=0 ) )
-    weights = util.ImmutableArray( numpy.concatenate( allweights, axis=0 ) ) \
+    coords = numpy.concatenate( allcoords, axis=0 )
+    weights = numpy.concatenate( allweights, axis=0 ) \
       if len(allweights) == len(allcoords) else None
 
     return coords, weights
@@ -513,7 +513,7 @@ class ProductReference( Reference ):
       return function.stack( (ty, tx) if transf%2 else (tx, ty), axis=1 )
     transfpoints[:,:2] = transform( points[:,:2], transf[0] )
     transfpoints[:,2:] = transform( points[:,2:], transf[1] )
-    return util.ImmutableArray( transfpoints )
+    return transfpoints
 
   @staticmethod
   def get_tri_bem_ischeme( self, ischeme, neighborhood ):
@@ -529,12 +529,12 @@ class ProductReference( Reference ):
       pts4 = pts0 + temp
       pts5 = xi*(1 - eta1*eta2)
       pts6 = xi*eta1 - temp
-      points = util.ImmutableArray(
+      points = numpy.array(
         [[1-xi,   1-pts2, 1-xi,   1-pts5, 1-pts2, 1-xi  ],
          [pts1, pts3, pts4, pts0, pts6, pts0],
          [1-pts2, 1-xi,   1-pts5, 1-xi,   1-xi,   1-pts2],
          [pts3, pts1, pts0, pts4, pts0, pts6]]).reshape( 4, -1 ).T
-      points = util.ImmutableArray( points * [-1,1,-1,1] + [1,0,1,0] ) # flipping in x -GJ
+      points = points * [-1,1,-1,1] + [1,0,1,0] # flipping in x -GJ
       weights = numpy.concatenate( 6*[xi**3*eta1**2*eta2*weights] )
     elif neighborhood == 1:
       A = xi*eta1
@@ -546,7 +546,7 @@ class ProductReference( Reference ):
       G = xi - D
       H = B - D
       I = A - D
-      points = util.ImmutableArray(
+      points = numpy.array(
         [[1-xi, 1-xi, 1-E,  1-G,  1-G ],
          [C,  G,  F,  H,  I ],
          [1-E,  1-G,  1-xi, 1-xi, 1-xi],
@@ -557,7 +557,7 @@ class ProductReference( Reference ):
       A = xi*eta2
       B = A*eta3
       C = xi*eta1
-      points = util.ImmutableArray(
+      points = numpy.array(
         [[1-xi, 1-A ],
          [C,  B ],
          [1-A,  1-xi],
@@ -565,7 +565,7 @@ class ProductReference( Reference ):
       weights = numpy.concatenate( 2*[xi**2*A*weights] )
     else:
       assert neighborhood == -1, 'invalid neighborhood %r' % neighborhood
-      points = util.ImmutableArray([ eta1*eta2, 1-eta2, eta3*xi, 1-xi ]).T
+      points = numpy.array([ eta1*eta2, 1-eta2, eta3*xi, 1-xi ]).T
       weights = eta2*xi*weights
     return points, weights
 
@@ -581,7 +581,7 @@ class ProductReference( Reference ):
       B = (1 - xe)*eta2
       C = xi + A
       D = xe + B
-      points = util.ImmutableArray(
+      points = numpy.array(
         [[A, B, A, D, B, C, C, D],
          [B, A, D, A, C, B, D, C],
          [C, D, C, B, D, A, A, B],
@@ -596,7 +596,7 @@ class ProductReference( Reference ):
       E = 1 - A
       F = E*eta3
       G = A + F
-      points = util.ImmutableArray(
+      points = numpy.array(
         [[D,  C,  G,  G,  F,  F ],
          [B,  B,  B,  xi, B,  xi],
          [C,  D,  F,  F,  G,  G ],
@@ -606,7 +606,7 @@ class ProductReference( Reference ):
       A = xi*eta1
       B = xi*eta2
       C = xi*eta3
-      points = util.ImmutableArray(
+      points = numpy.array(
         [[xi, A,  A,  A ], 
          [A,  xi, B,  B ],
          [B,  B,  xi, C ], 
@@ -622,7 +622,7 @@ class ProductReference( Reference ):
     coords2, weights2 = ischeme2
     if weights1 is not None:
       assert weights2 is not None
-      weights = util.ImmutableArray( ( weights1[:,_] * weights2[_,:] ).ravel() )
+      weights = ( weights1[:,_] * weights2[_,:] ).ravel()
     else:
       assert weights2 is None
       weights = None
@@ -631,7 +631,7 @@ class ProductReference( Reference ):
     coords = numpy.empty( [ coords1.shape[0], coords2.shape[0], ndims1+ndims2 ] )
     coords[:,:,:ndims1] = coords1[:,_,:]
     coords[:,:,ndims1:] = coords2[_,:,:]
-    coords = util.ImmutableArray( coords.reshape(-1,ndims1+ndims2) )
+    coords = coords.reshape(-1,ndims1+ndims2)
     return coords, weights
     
   def getischeme( self, where ):
@@ -934,7 +934,7 @@ class PolyLine( StdElem ):
       revpoly[k,k] = root = (-1)**degree if k == 0 else ( revpoly[k-1,k] * (k*2-1-degree) ) / k
       for i in range(k+1,degree+1-k):
         revpoly[i,k] = revpoly[k,i] = root = ( root * (k+i-degree-1) ) / i
-    return revpoly[::-1].view( util.ImmutableArray )
+    return revpoly[::-1]
 
   @classmethod
   def spline_poly( cls, p, n ):
@@ -957,7 +957,7 @@ class PolyLine( StdElem ):
         extractions[i,-j-1:-1,-j-1] = extractions[i-1,-j:,-1]
 
     poly = cls.bernstein_poly( p )
-    return numeric.contract( extractions[:,_,:,:], poly[_,:,_,:], axis=-1 ).view( util.ImmutableArray )
+    return numeric.contract( extractions[:,_,:,:], poly[_,:,_,:], axis=-1 )
 
   @classmethod
   def spline_elems( cls, p, n ):

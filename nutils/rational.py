@@ -365,15 +365,11 @@ def asfloat( obj ):
   if isarray( obj ):
     array, factor = obj.decompose()
     return array * float(factor)
-  if isinstance( obj, numpy.ndarray ) and obj.dtype == float:
-    return obj # don't touch, might be of derived type
   return numpy.asarray( obj, dtype=float )
 
 def dot( A, B ):
   if not isexact( A ) or not isexact( B ):
-    Aflt = asfloat(A)
-    Bflt = asfloat(B)
-    return numpy.dot( Aflt, Bflt ).view( Aflt.__class__ ) # .view necesssary for 1D Aflt (numpy exception)
+    return numpy.dot( asfloat(A), asfloat(B) )
   A, a = asarray( A ).decompose()
   B, b = asarray( B ).decompose()
   return Array( numpy.dot( A, B ), a * b, False )

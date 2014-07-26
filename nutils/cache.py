@@ -27,19 +27,49 @@ def property( f ):
   return _property(cache_property_wrapper)
 
 
+def _keyfromargs( func, args, kwargs ):
+  code = func.func_code
+  names = code.co_varnames[len(args)+1:code.co_argcount]
+  for name in names:
+    try:
+      val = kwargs.pop(name)
+    except KeyError:
+      index = names.index(name)-len(names)
+      try:
+        val = cls.__init__.func_defaults[index]
+      except Exception as e:
+        raise TypeError, '%s missing mandatory argument %r' % ( func.__name__, name )
+    args += val,
+  assert not kwargs, '%s got invalid arguments: %s' % ( func.__name__, ', '.join(kwargs) )
+  mask = 0
+  key = []
+  for arg in args:
+    try:
+      hash(arg)
+    except:
+      mask |= 1 << len(key)
+      arg = id(arg)
+    key.append( arg )
+  return mask, tuple(key)
+
+
 class CallDict( dict ):
   'very simple cache object'
 
   hit = 0
 
-  def __call__( self, *key ):
-    'cache(func,*args): execute func(args) and cache result'
+  def __call__( self, func, *args, **kwargs ):
+    '''cache(func,*args,**kwargs):
+    Execute func(*args,**kwargs) and cache the result.'''
+
+    key = func, _keyfromargs( func, args, kwargs )
     value = self.get( key )
     if value is None:
-      value = key[0]( *key[1:] )
+      value = func( *args )
       self[ key ] = value
     else:
       self.hit += 1
+
     return value
 
   def summary( self ):
@@ -57,24 +87,12 @@ class Immutable( object ):
       type.__init__( cls, *args, **kwargs )
       cls.cache = weakref.WeakValueDictionary()
     def __call__( cls, *args, **kwargs ):
-      code = cls.__init__.func_code
-      names = code.co_varnames[len(args)+1:code.co_argcount]
-      for name in names:
-        try:
-          val = kwargs.pop(name)
-        except KeyError:
-          index = names.index(name)-len(names)
-          try:
-            val = cls.__init__.func_defaults[index]
-          except Exception as e:
-            raise TypeError, '%s.__init__ missing mandatory argument %r' % ( cls.__name__, name )
-        args += val,
-      assert not kwargs, '%s.__init__ got invalid arguments: %s' % ( cls.__name__, ', '.join(kwargs) )
+      key = _keyfromargs( cls.__init__, args, kwargs )
       try:
-        self = cls.cache[args]
+        self = cls.cache[key]
       except KeyError:
         self = type.__call__( cls, *args )
-        cls.cache[args] = self
+        cls.cache[key] = self
       return self
 
 
