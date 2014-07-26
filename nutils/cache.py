@@ -27,16 +27,18 @@ def property( f ):
   return _property(cache_property_wrapper)
 
 
-def _keyfromargs( func, args, kwargs ):
+def _keyfromargs( func, args, kwargs, offset=0 ):
+  if getattr( func, '__self__' ): # bound instancemethod
+    offset += 1
   code = func.func_code
-  names = code.co_varnames[len(args)+1:code.co_argcount]
+  names = code.co_varnames[offset+len(args):code.co_argcount]
   for name in names:
     try:
       val = kwargs.pop(name)
     except KeyError:
       index = names.index(name)-len(names)
       try:
-        val = cls.__init__.func_defaults[index]
+        val = func.func_defaults[index]
       except Exception as e:
         raise TypeError, '%s missing mandatory argument %r' % ( func.__name__, name )
     args += val,
@@ -65,7 +67,7 @@ class CallDict( dict ):
     key = func, _keyfromargs( func, args, kwargs )
     value = self.get( key )
     if value is None:
-      value = func( *args )
+      value = func( *args, **kwargs )
       self[ key ] = value
     else:
       self.hit += 1
@@ -87,11 +89,11 @@ class Immutable( object ):
       type.__init__( cls, *args, **kwargs )
       cls.cache = weakref.WeakValueDictionary()
     def __call__( cls, *args, **kwargs ):
-      key = _keyfromargs( cls.__init__, args, kwargs )
+      key = _keyfromargs( cls.__init__, args, kwargs, 1 )
       try:
         self = cls.cache[key]
       except KeyError:
-        self = type.__call__( cls, *args )
+        self = type.__call__( cls, *args, **kwargs )
         cls.cache[key] = self
       return self
 
