@@ -10,21 +10,11 @@
 The numeric module provides methods that are lacking from the numpy module. An
 accompanying extension module _numeric.c should be compiled to benefit from
 extra performance, although a Python-only implementation is provided as
-fallback. A warning message is printed if the extension module is not found.
+fallback. A warning is issued if the extension module is not found.
 """
 
-import numpy, warnings
-
-try:
-  from _numeric import _contract, SaneArray
-except:
-  warnings.warn( '''Failed to load _numeric module.
-  Falling back on equivalent python implementation. THIS
-  MAY SEVERELY IMPACT PERFORMANCE! Pleace compile the C
-  extensions by running 'make' in the nutils directory.''', stacklevel=2 )
-  def _contract( A, B, axes ):
-    assert A.shape == B.shape and axes > 0
-    return ((A*B).reshape(A.shape[:-axes]+(-1,))).sum(-1)
+import numpy
+from _numeric import _contract
 
 def grid( shape ):
   shape = tuple(shape)

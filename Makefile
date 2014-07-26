@@ -1,3 +1,6 @@
+dev: build
+	cp -vu build/lib*/nutils/_numeric.so nutils
+
 build:
 	python setup.py build clean
 
@@ -7,9 +10,6 @@ dist:
 
 docs:
 	${MAKE} -C docs html
-
-dev: build
-	cp -vu build/lib*/nutils/_numeric.so nutils
 
 test: test_nose test_examples
 
