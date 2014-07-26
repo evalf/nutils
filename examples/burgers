@@ -1,0 +1,104 @@
+#! /usr/bin/python
+
+from nutils import *
+
+
+def makeplots( domain, geom, u ):
+  if domain.ndims == 1:
+    xp, up = domain.elem_eval( [ geom, u ], ischeme='bezier9', separate=True )
+    with plot.PyPlot( 'solution' ) as plt:
+      plt.plot( xp[:,0], up[:,0] )
+      plt.ylim( -.1, 1.1 )
+  elif domain.ndims == 2:
+    X, C = domain.elem_eval( [ geom, function.norm2(u) ], ischeme='bezier3', separate=True )
+    xp, up = domain.elem_eval( [ geom, u ], ischeme='uniform3', separate=False )
+    with plot.PyPlot( 'solution' ) as plt:
+      plt.mesh( X, C, edgewidth=.1, edgecolor='w' )
+      plt.clim( 0, 1 )
+      plt.gca().set_aspect( 'equal' )
+      plt.quiver( xp[:,0], xp[:,1], up[:,0], up[:,1] )
+      plt.xlim(-1,1)
+      plt.ylim(-1,1)
+
+
+def main( nelems=40, degree=1, timestep=.001, tol=1e-8, cg=False, alpha=.5, ndims=1, maxiter=-1, plots=True, tau=1 ):
+  
+  if ndims == 1:
+    domain, geom = mesh.rectilinear( [numpy.linspace(0,1,nelems+1)], periodic=[0] )
+    u = function.piecewise( geom[0], [.4,.6], 0, 1, 0 )[_]
+  elif ndims == 2:
+    nodes = numpy.linspace( -1, 1, nelems+1 )
+    domain, geom = mesh.rectilinear( [nodes,nodes], periodic=[0,1] )
+    width = .5
+    u = function.piecewise( ( geom**2 ).sum(), [width**2], 1, 0 ) *  (1,1)
+  else:
+    raise Exception, 'not supported: ndims=%s' % ndims
+
+  funcsp = ( domain.splinefunc if cg else domain.discontfunc )( degree ).vector( ndims )
+  lhs = domain.project( u, onto=funcsp, geometry=geom, ptype='convolute', ischeme='gauss5' )
+
+  A1 = (1./timestep) * function.outer( funcsp ).sum()
+  matrix1 = domain.integrate( A1, geometry=geom, ischeme='gauss5' )
+
+  __log__ = log.count( 'timestep' )
+  for itime in __log__:
+
+    if plots:
+      makeplots( domain, geom, funcsp.dot(lhs) )
+
+    __log__ = log.count( 'picard' )
+    for ipicard in __log__:
+
+      u = funcsp.dot( lhs )
+      A2 = function.outer( ( funcsp[:,:,_] * -u ).div(geom), funcsp ).sum()
+      matrix2 = domain.integrate( A2, geometry=geom, ischeme='gauss5' )
+      if not cg:
+        upwind = alpha * function.sign( ( function.mean(u) * geom.normal() ).sum() )
+        funcsp_cv = funcsp[:,:,_] * u
+        F = ( function.mean(funcsp_cv)
+            + function.jump(funcsp_cv) * upwind ).dotnorm( geom )
+        A2i = function.outer( function.jump(funcsp), F ).sum()
+        matrix2i = domain.interfaces.integrate( A2i, geometry=geom, ischeme='gauss5' )
+        matrix2 = matrix2 + matrix2i
+
+      if not ipicard:
+        rhs = matrix1.matvec(lhs) + (tau-1) * matrix2.matvec(lhs)
+
+      matrix = matrix1 + tau * matrix2
+      res = matrix.res( lhs, rhs )
+      log.info( 'residual:', res )
+      if res < tol:
+        break
+
+      lhs = matrix.solve( rhs )
+
+    if itime == maxiter:
+      break
+
+  return rhs, lhs
+
+
+def unittest():
+
+  retvals = main( ndims=1, nelems=10, timestep=.001, degree=1, cg=False, maxiter=2, plots=False )
+  assert debug.checkdata( retvals, '''
+    eNp1zlEKACEIRdHtFOigpeVbUPvfwljz24BwQOGiUjFSr1SKPHQdC7XFjQxoWxeVTzkqkPZ0xuJxKWT9
+    Lx7oc3G+IBYnIjK3wBhnr4EtO1oe/FqvLy7mJ1k=''' )
+
+  retvals = main( ndims=1, nelems=10, timestep=.001, degree=2, cg=False, maxiter=2, plots=False )
+  assert debug.checkdata( retvals, '''
+    eNqNj2sKAzEIhK+zC6ZkfCR6oL3/FarJtpT+aSEwo0z0E3QowU46jv6gn08w+tWYRNi36qvmrSK3aili
+    xNWEOGBXG9Sg4mVUeJYCMwcA1Mw1o8g/02y1vnYn4z+I02fOyaMQUqtDrVcdLlj9XijZj1qjxAMr33j0
+    WcaHZdAyOGQz30ZMUyeB3Tfz2ykHL/gP2vMJAeRHZg==''' )
+
+  retvals = main( ndims=2, nelems=4, timestep=.001, degree=1, cg=False, maxiter=2, plots=False )
+  assert debug.checkdata( retvals, '''
+    eNrtk2tqxDAMhK+zC3bx6GFbB8r9r1BbXjlJ+2d/FQoLAVl5zDfSEKSHJOgzPR7lK715ZTLTI4PGibWP
+    E27PWSFHpiREdqs9eimzsvJ6r69eSOusKG30kipjipeE1jBvwJSPbDdYiIXIFn2JSVesvrZrZVV/D607
+    jKXa1B7w5qxagnXO602MHDbD3Wn3ZTOkQ3IjXtLMYP+A4fo4D++H8cnjj/IY/8hbYbQuYxDwwE4/wyV0
+    cmY8bGxh/IwH7HZa6bdqYuw9QG4Xay6Tuu4T8Zp3brCm3DsPty0BfaxaU1Zjmk+utFALlVANNROm1Ytd
+    K1OpTsN05eJToCb0oo63Qo6/bCAG36s4NxCut9lwv10HaQOCuEnKnT2eTFTx42SQ37v+pPZfUnum5zci
+    umZZ''' )
+
+
+util.run( main, unittest )
