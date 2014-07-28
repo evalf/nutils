@@ -17,8 +17,9 @@ test_nose: dev
 	nosetests tests
 
 test_examples: dev
-	for script in examples/*; do \
-		python $$script unittest --tbexplore=False; \
+	@for script in examples/*; do \
+		echo $$script; \
+		python $$script unittest --tbexplore=False --verbose=3; \
 	done
 
 clean:
