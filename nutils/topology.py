@@ -1299,11 +1299,11 @@ def glue( master, slave, geometry, tol=1.e-10, verbose=False ):
       continue
     emap[belem] = element.QuadElement( belem.ndims,
       vertices=[ vtxmap.get(vtx,vtx) for vtx in belem.vertices ],
-      parent=(belem,transform.identify(belem.ndims)) )
+      parent=(belem,transform.identity(belem.ndims)) )
     elem, trans = belem.context
     emap[elem] = element.QuadElement( elem.ndims,
       vertices=[ vtxmap.get(vtx,vtx) for vtx in elem.vertices ],
-      parent=(elem,transform.identify(elem.ndims)) )
+      parent=(elem,transform.identity(elem.ndims)) )
 
   _wrapelem = lambda elem: emap.get(elem,elem)
   def _wraptopo( topo ):

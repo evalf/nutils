@@ -464,10 +464,10 @@ class ArrayFunc( Evaluable ):
     elif grad.shape == (3,1):
       normal = cross( grad[:,0], self.normal(), axis=0 ).normalized()
     elif grad.shape == (1,0):
-      normal = OrientationHack()[_]
+      normal = 1
     else:
       raise NotImplementedError, 'cannot compute normal for %dx%d jacobian' % ( self.shape[0], ndims )
-    return normal
+    return normal * ElemSign(ndims)
 
   def curvature( self, ndims=-1 ):
     'curvature'
@@ -557,6 +557,23 @@ class ArrayFunc( Evaluable ):
     return '%s<%s>' % ( self.__class__.__name__, ','.join(map(str,self.shape)) )
 
   __repr__ = __str__
+
+class ElemSign( ArrayFunc ):
+  'sign'
+
+  def __init__( self, ndims ):
+    'constructor'
+
+    cascade = Cascade(ndims)
+    ArrayFunc.__init__( self, args=[cascade], evalf=self.elemsign, shape=() )
+
+  @staticmethod
+  def elemsign( cascade ):
+    elem, trans = cascade[0]
+    return elem.sign
+
+  def _localgradient( self, ndims ):
+    return _zeros( (ndims,) )
 
 class ElemArea( ArrayFunc ):
   'element area'
@@ -747,28 +764,6 @@ class IWeights( ArrayFunc ):
 
     rootelem, roottrans = cascade[-1]
     return rational.asfloat(roottrans.det) * weights
-
-class OrientationHack( ArrayFunc ):
-  'orientation hack for 1d elements; VERY dirty'
-
-  __slots__ = 'side',
-
-  def __init__( self, side=0 ):
-    'constructor'
-
-    self.side = side
-    ArrayFunc.__init__( self, args=[ELEM,side], evalf=self.orientation, shape=[] )
-
-  @staticmethod
-  def orientation( elem, side ):
-    'evaluate'
-
-    pelem, trans = elem.interface[side] if elem.interface else elem.context
-    offset, = trans.apply( numpy.array([]) )
-    return numpy.sign( offset - .5 )
-
-  def _opposite( self ):
-    return OrientationHack( 1-self.side )
 
 class Transform( ArrayFunc ):
   'transform'

@@ -165,8 +165,8 @@ class Linear( Transform ):
 
   @cache.property
   def det( self ):
-    return rational.det( self.matrix ) if self.fromdims == self.todims \
-      else rational.ext( self.matrix )
+    assert self.fromdims == self.todims
+    return rational.det( self.matrix )
   
   @cache.property
   def inv( self ):

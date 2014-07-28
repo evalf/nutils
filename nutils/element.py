@@ -148,32 +148,26 @@ class QuadReference( Reference ):
     'edge transforms'
 
     transforms = []
+    edgeref = QuadReference( self.ndims-1 )
+    side = -1
     for idim in range( self.ndims ):
       offset = numpy.zeros( self.ndims, dtype=int )
-      offset[:idim] = 1
       matrix = numpy.zeros( ( self.ndims, self.ndims-1 ), dtype=int )
-      matrix.flat[ :(self.ndims-1)*idim :self.ndims] = -1
+      matrix.flat[ :(self.ndims-1)*idim :self.ndims] = 1
       matrix.flat[self.ndims*(idim+1)-1::self.ndims] = 1
-      # flip normal:
-      offset[idim-1] = 1 - offset[idim-1]
-      matrix[idim-1] *= -1
-      transforms.append( transform.linear(matrix) >> transform.shift(offset) )
-      # other side:
+      linear = transform.linear(matrix)
+      transforms.append(( linear, side, edgeref ))
       offset[idim] = 1
-      # flip normal back:
-      offset[idim-1] = 1 - offset[idim-1]
-      matrix[idim-1] *= -1
-      transforms.append( transform.linear(matrix) >> transform.shift(offset) )
-    edgeref = QuadReference( self.ndims-1 )
-    return [ (trans,edgeref) for trans in transforms ]
+      side = -side
+      transforms.append(( linear >> transform.shift(offset), side, edgeref ))
+    return transforms
 
   def get_edge_vertices( self, vertices ):
     vertices = numpy.reshape( vertices, (2,)*self.ndims )
     edge_vertices = []
     for idim in range(self.ndims):
       for iside in (0,1):
-        s = (slice(None,None, 1 if iside else -1),) * idim + (iside,) \
-          + (slice(None,None,-1 if iside else  1),) * (self.ndims-idim-1)
+        s = (slice(None),) * idim + (iside,) + (slice(None),) * (self.ndims-idim-1)
         edge_vertices.append( vertices[s].ravel() )
     return edge_vertices
 
@@ -269,9 +263,9 @@ class TriangularReference( Reference ):
   def edges( self ):
     edge = QuadReference(1)
     return (
-      ( transform.linear([[ 1],[ 0]]), edge ),
-      ( transform.linear([[-1],[ 1]]) >> transform.shift([1,0]), edge ),
-      ( transform.linear([[ 0],[-1]]) >> transform.shift([0,1]), edge ) )
+      ( transform.linear([[ 1],[ 0]]), 1, edge ),
+      ( transform.linear([[-1],[ 1]]) >> transform.shift([1,0]), 1, edge ),
+      ( transform.linear([[ 0],[-1]]) >> transform.shift([0,1]), 1, edge ) )
 
   def get_edge_vertices( self, vertices ):
     return [ vertices[::-2], vertices[:2], vertices[1:] ]
@@ -450,10 +444,10 @@ class TetrahedronReference( Reference ):
     assert len(vertices) == 4
     edge = TriangularReference()
     return [
-      ( transfor,linear([[ 0, 1],[1,0],[0,0]]), edge ),
-      ( transfor,linear([[ 1, 0],[0,0],[0,1]]), edge ),
-      ( transfor,linear([[ 0, 0],[0,1],[1,0]]), edge ),
-      ( transfor,linear([[-1,-1],[1,0],[0,1]]) >> transform.shift([1,0,0]), edge ) ]
+      ( transfor,linear([[ 0, 1],[1,0],[0,0]]), 1, edge ),
+      ( transfor,linear([[ 1, 0],[0,0],[0,1]]), 1, edge ),
+      ( transfor,linear([[ 0, 0],[0,1],[1,0]]), 1, edge ),
+      ( transfor,linear([[-1,-1],[1,0],[0,1]]) >> transform.shift([1,0,0]), 1, edge ) ]
 
   def get_edgevertices( self, vertices ):
     v1, v2, v3, v4 = vertices
@@ -657,9 +651,9 @@ class Element( object ):
 
   Represents the topological shape.'''
 
-  __slots__ = 'reference', 'vertices', 'ndims', 'index', 'parent', 'context', 'interface'
+  __slots__ = 'reference', 'vertices', 'ndims', 'index', 'parent', 'context', 'interface', 'sign'
 
-  def __init__( self, reference, vertices, index=None, parent=None, context=None, interface=None ):
+  def __init__( self, reference, vertices, index=None, parent=None, context=None, interface=None, sign=1 ):
     'constructor'
 
     assert isinstance( reference, Reference )
@@ -673,6 +667,7 @@ class Element( object ):
     self.parent = parent
     self.context = context
     self.interface = interface
+    self.sign = sign
 
   def __mul__( self, other ):
     'multiply elements'
@@ -681,17 +676,17 @@ class Element( object ):
 
   @property
   def simplices( self ):
-    return [ Element( reference, vertices=[None]*reference.nverts, parent=(self,trans) ) for trans, reference in self.reference.simplices ]
+    return [ Element( reference, vertices=[None]*reference.nverts, parent=(self,trans), sign=self.sign ) for trans, reference in self.reference.simplices ]
 
   @property
   def children( self ):
-    return tuple( Element( reference=reference, vertices=vertices, parent=(self,transform) )
+    return tuple( Element( reference=reference, vertices=vertices, parent=(self,transform), sign=self.sign )
       for (transform,reference), vertices in zip(self.reference.children,self.reference.get_child_vertices(self.vertices)) )
 
   @property
   def edges( self ):
-    return tuple( Element( reference=reference, vertices=vertices, context=(self,transform) )
-      for (transform,reference), vertices in zip(self.reference.edges,self.reference.get_edge_vertices(self.vertices)) )
+    return tuple( Element( reference=reference, vertices=vertices, context=(self,transform), sign=self.sign*sign )
+      for (transform,sign,reference), vertices in zip(self.reference.edges,self.reference.get_edge_vertices(self.vertices)) )
 
   def edge( self, iedge ):
     return self.edges[iedge]
@@ -787,7 +782,7 @@ class Element( object ):
     if not children:
       return None
     reference = MosaicReference( self.ndims, tuple(children) )
-    return Element( reference=reference, vertices=[], parent=(self,transform.identity(self.ndims)) )
+    return Element( reference=reference, vertices=[], parent=(self,transform.identity(self.ndims)), sign=self.sign )
 
 def ProductElement( elem1, elem2 ):
   eye = numpy.eye( elem1.ndims + elem2.ndims, dtype=int )
@@ -817,19 +812,19 @@ def ProductElement( elem1, elem2 ):
       transf = vertex.index( vertices1 ), vertex.index( vertices2 )
   reference = ProductReference( elem1.reference, elem2.reference, neighborhood, transf )
 
-  return Element( reference=reference, vertices=vertices, interface=(iface1,iface2) )
+  return Element( reference=reference, vertices=vertices, interface=(iface1,iface2), sign=1 )
   
 def QuadElement( ndims, vertices, index=None, parent=None, context=None, interface=None ):
   reference = QuadReference( ndims )
-  return Element( reference, vertices, index=index, parent=parent, context=context, interface=interface )
+  return Element( reference, vertices, index=index, parent=parent, context=context, interface=interface, sign=1 )
 
 def TriangularElement( vertices, index=None, parent=None, context=None ):
   reference = TriangularReference()
-  return Element( reference=reference, vertices=vertices, index=index, parent=parent, context=context )
+  return Element( reference=reference, vertices=vertices, index=index, parent=parent, context=context, sign=1 )
 
 def TetrahedronElement( vertices, index=None, parent=None, context=None ):
   reference = TetrahedronReference()
-  return Element( reference=reference, vertices=vertices, index=index, parent=parent, context=context )
+  return Element( reference=reference, vertices=vertices, index=index, parent=parent, context=context, sign=1 )
 
 class StdElem( cache.Immutable ):
   'stdelem base class'
