@@ -49,7 +49,7 @@ def rectilinear( richshape, periodic=(), name='rect' ):
     tmp[-1] = tmp[0]
   indices = numeric.grid( shape )
   structure = numpy.empty( indices.shape[1:], dtype=object )
-  domainelem = element.Element( reference=element.Reference(ndims,0), vertices=[] )
+  domainelem = element.Element( reference=element.Reference( numpy.zeros((0,ndims)) ), vertices=[] )
   for index in indices.reshape( ndims, -1 ).T:
     vertices = vertexobjs[tuple(slice(i,i+2) for i in index)].ravel()
     parent = domainelem, transform.shift(index)
@@ -364,7 +364,7 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   + [ ( 12+(i+1)%8, 12+i, i+1+(i//2) ) for i in range( 8) ]
   + [ ( 12+i, 12+(i+1)%8, 20 )         for i in range( 8) ] )
   
-  domainelem = element.Element( reference=element.Reference(2,0), vertices=[] )
+  domainelem = element.Element( reference=element.Reference( numpy.zeros((0,2)) ), vertices=[] )
   elements = []
   vertexobjs = numpy.array([ element.PrimaryVertex( 'demo.%d' % ivertex ) for ivertex in range(len(vertices)) ])
   for ielem, elemvertices in enumerate( vertices ):

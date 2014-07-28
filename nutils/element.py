@@ -26,9 +26,9 @@ ProductVertex = lambda *vertices: ','.join( vertices )
 class Reference( cache.Immutable ):
   'reference element'
 
-  def __init__( self, ndims, nverts ):
-    self.ndims = ndims
-    self.nverts = nverts
+  def __init__( self, vertices ):
+    self.vertices = numpy.asarray( vertices )
+    self.nverts, self.ndims = self.vertices.shape
 
   @property
   def simplices( self ):
@@ -38,11 +38,8 @@ class QuadReference( Reference ):
   'quadrilateral reference element'
 
   def __init__( self, ndims ):
-    Reference.__init__( self, ndims=ndims, nverts=2**ndims )
-
-  @cache.property
-  def vertices( self ):
-    return numpy.array( list(numpy.ndindex((2,)*self.ndims)), dtype=int )
+    vertices = list( numpy.ndindex((2,)*ndims) )
+    Reference.__init__( self, vertices )
 
   @cache.property
   def ribbon2vertices( self ):
@@ -181,7 +178,8 @@ class TriangularReference( Reference ):
   * edge local coords run counter-clockwise.'''
 
   def __init__( self ):
-    Reference.__init__( self, ndims=2, nverts=3 )
+    vertices = [[0,0],[1,0],[0,1]] # TODO check
+    Reference.__init__( self, vertices )
 
   def getischeme( self, where ):
     '''get integration scheme
@@ -274,7 +272,8 @@ class TetrahedronReference( Reference ):
   'tetrahedron reference element'
 
   def __init__( self ):
-    Reference.__init__( self, ndims=3, nverts=4 )
+    vertices = [[0,0,0],[1,0,0],[0,1,0],[0,0,1]] # TODO check
+    Reference.__init__( self, vertices )
 
   def getischeme( self, where ):
     '''get integration scheme
@@ -458,7 +457,8 @@ class MosaicReference( Reference ):
 
   def __init__( self, ndims, children ):
     self.children = children
-    Reference.__init__( self, ndims=ndims, nverts=0 )
+    vertices = numpy.zeros( (0,ndims) )
+    Reference.__init__( self, vertices )
 
   def getischeme( self, ischeme ):
     'get integration scheme'
@@ -495,7 +495,11 @@ class ProductReference( Reference ):
     self.ref2 = ref2
     self.neighborhood = neighborhood
     self.transf = transf
-    Reference.__init__( self, ndims=ref1.ndims+ref2.ndims, nverts=ref1.nverts*ref2.nverts )
+    ndims = ref1.ndims + ref2.ndims
+    vertices = numpy.empty( (ref1.nverts,ref2.nverts,ndims) )
+    vertices[:,:,:ref1.ndims] = ref1.vertices[:,_]
+    vertices[:,:,ref1.ndims:] = ref2.vertices[_,:]
+    Reference.__init__( self, vertices.reshape(-1,ndims) )
 
   @staticmethod
   def singular_ischeme_quad( points, transf ):
