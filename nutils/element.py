@@ -17,7 +17,7 @@ purposes of integration and sampling.
 """
 
 from . import log, util, numpy, core, numeric, function, cache, transform, rational, _
-import warnings
+import re, warnings
 
 PrimaryVertex = str
 HalfVertex = lambda vertex1, vertex2, xi=.5: '%s<%.3f>%s' % ( (vertex1,xi,vertex2) if vertex1 < vertex2 else (vertex2,1-xi,vertex1) )
@@ -33,6 +33,18 @@ class Reference( cache.Immutable ):
   @property
   def simplices( self ):
     return [ (transform.identity(self.ndims),self) ]
+
+  def getischeme( self, ischeme ):
+
+    if self.ndims == 0:
+      return numpy.zeros([1,0]), numpy.array([1.])
+
+    match = re.match( '([a-zA-Z]+)(.+)', ischeme )
+    assert match, 'cannot parse integration scheme %r' % ischeme
+    ptype, args = match.groups()
+    get = getattr( self, 'getischeme_'+ptype )
+    return get( eval(args) ) if args else get()
+    
 
 class QuadReference( Reference ):
   'quadrilateral reference element'
@@ -57,71 +69,69 @@ class QuadReference( Reference ):
     x, w = numpy.linalg.eigh( numpy.diagflat(d,-1) ) # eigh operates (by default) on lower triangle
     return (x+1) * .5, w[0]**2
 
-  def getischeme( self, where ):
-    'get integration scheme'
-
-    if self.ndims == 0:
-      return numpy.zeros([1,0]), numpy.array([1.])
-
-    x = w = None
-    if where.startswith( 'gauss' ):
-      N = eval( where[5:] )
-      if isinstance( N, tuple ):
-        assert len(N) == self.ndims
-      else:
-        N = [N]*self.ndims
-      x, w = zip( *map( self.getgauss, N ) )
-    elif where.startswith( 'uniform' ):
-      N = eval( where[7:] )
-      if isinstance( N, tuple ):
-        assert len(N) == self.ndims
-      else:
-        N = [N]*self.ndims
-      x = [ numpy.arange( .5, n ) / n for n in N ]
-      w = [ numeric.appendaxes( 1./n, n ) for n in N ]
-    elif where.startswith( 'bezier' ):
-      N = int( where[6:] )
-      x = [ numpy.linspace( 0, 1, N ) ] * self.ndims
-      w = [ numeric.appendaxes( 1./N, N ) ] * self.ndims
-    elif where.startswith( 'subdivision' ):
-      N = int( where[11:] ) + 1
-      x = [ numpy.linspace( 0, 1, N ) ] * self.ndims
-      w = None
-    elif where.startswith( 'vtk' ):
-      if self.ndims == 1:
-        coords = numpy.array([[0,1]]).T
-      elif self.ndims == 2:
-        eps = 0 if not len(where[3:]) else float(where[3:]) # subdivision fix (avoid extraordinary point)
-        coords = numpy.array([[eps,eps],[1-eps,eps],[1-eps,1-eps],[eps,1-eps]])
-      elif self.ndims == 3:
-        coords = numpy.array([ [0,0,0], [1,0,0], [0,1,0], [1,1,0], [0,0,1], [1,0,1], [0,1,1], [1,1,1] ])
-      else:
-        raise Exception, 'contour not supported for ndims=%d' % self.ndims
-    elif where.startswith( 'contour' ):
-      N = int( where[7:] )
-      p = numpy.linspace( 0, 1, N )
-      if self.ndims == 1:
-        coords = p[_].T
-      elif self.ndims == 2:
-        coords = numpy.array([ p[ range(N) + [N-1]*(N-2) + range(N)[::-1] + [0]*(N-1) ],
-                               p[ [0]*(N-1) + range(N) + [N-1]*(N-2) + range(0,N)[::-1] ] ]).T
-      elif self.ndims == 3:
-        assert N == 0
-        coords = numpy.array([ [0,0,0], [1,0,0], [0,1,0], [1,1,0], [0,0,1], [1,0,1], [0,1,1], [1,1,1] ])
-      else:
-        raise Exception, 'contour not supported for ndims=%d' % self.ndims
+  def getischeme_gauss( self, N ):
+    if isinstance( N, tuple ):
+      assert len(N) == self.ndims
     else:
-      raise Exception, 'invalid element evaluation %r' % where
-    if x is not None:
-      coords = numpy.empty( map( len, x ) + [ self.ndims ] )
-      for i, xi in enumerate( x ):
-        coords[...,i] = xi[ (slice(None),) + (_,)*(self.ndims-i-1) ]
-      coords = coords.reshape( -1, self.ndims )
-    if w is not None:
-      weights = reduce( lambda weights, wi: ( weights * wi[:,_] ).ravel(), w )
+      N = [N]*self.ndims
+    x, w = zip( *map( self.getgauss, N ) )
+    coords = numpy.empty( map( len, x ) + [ self.ndims ] )
+    for i, xi in enumerate( x ):
+      coords[...,i] = xi[ (slice(None),) + (_,)*(self.ndims-i-1) ]
+    weights = reduce( lambda weights, wi: ( weights * wi[:,_] ).ravel(), w )
+    return coords.reshape( -1, self.ndims ), weights
+
+  def getischeme_uniform( self, N ):
+    if isinstance( N, tuple ):
+      assert len(N) == self.ndims
     else:
-      weights = None
-    return coords, weights
+      N = [N]*self.ndims
+    x = [ numpy.arange( .5, n ) / n for n in N ]
+    w = [ numeric.appendaxes( 1./n, n ) for n in N ]
+    coords = numpy.empty( map( len, x ) + [ self.ndims ] )
+    for i, xi in enumerate( x ):
+      coords[...,i] = xi[ (slice(None),) + (_,)*(self.ndims-i-1) ]
+    weights = reduce( lambda weights, wi: ( weights * wi[:,_] ).ravel(), w )
+    return coords.reshape( -1, self.ndims ), weights
+
+  def getischeme_bezier( self, N ):
+    x = [ numpy.linspace( 0, 1, N ) ] * self.ndims
+    coords = numpy.empty( map( len, x ) + [ self.ndims ] )
+    for i, xi in enumerate( x ):
+      coords[...,i] = xi[ (slice(None),) + (_,)*(self.ndims-i-1) ]
+    return coords.reshape( -1, self.ndims ), None
+
+  def getischeme_subdivision( self, N ):
+    x = [ numpy.linspace( 0, 1, N ) ] * self.ndims
+    coords = numpy.empty( map( len, x ) + [ self.ndims ] )
+    for i, xi in enumerate( x ):
+      coords[...,i] = xi[ (slice(None),) + (_,)*(self.ndims-i-1) ]
+    return coords.reshape( -1, self.ndims ), None
+
+  def getischeme_vtk( self ):
+    if self.ndims == 1:
+      coords = numpy.array([[0,1]]).T
+    elif self.ndims == 2:
+      coords = numpy.array([[0,0],[1-0,0],[1-0,1-0],[0,1-0]])
+    elif self.ndims == 3:
+      coords = numpy.array([ [0,0,0], [1,0,0], [0,1,0], [1,1,0], [0,0,1], [1,0,1], [0,1,1], [1,1,1] ])
+    else:
+      raise Exception, 'vtk not supported for ndims=%d' % self.ndims
+    return coords, None
+
+  def getischeme_contour( self, N ):
+    p = numpy.linspace( 0, 1, N )
+    if self.ndims == 1:
+      coords = p[_].T
+    elif self.ndims == 2:
+      coords = numpy.array([ p[ range(N) + [N-1]*(N-2) + range(N)[::-1] + [0]*(N-1) ],
+                             p[ [0]*(N-1) + range(N) + [N-1]*(N-2) + range(0,N)[::-1] ] ]).T
+    elif self.ndims == 3:
+      assert N == 0
+      coords = numpy.array([ [0,0,0], [1,0,0], [0,1,0], [1,1,0], [0,0,1], [1,0,1], [0,1,1], [1,1,1] ])
+    else:
+      raise Exception, 'contour not supported for ndims=%d' % self.ndims
+    return coords, None
 
   @cache.property
   def children( self ):
@@ -181,65 +191,65 @@ class TriangularReference( Reference ):
     vertices = [[0,0],[1,0],[0,1]] # TODO check
     Reference.__init__( self, vertices )
 
-  def getischeme( self, where ):
-    '''get integration scheme
-    gaussian quadrature: http://www.cs.rpi.edu/~flaherje/pdf/fea6.pdf
-    '''
+  def getischeme_contour( self, n ):
+    p = numpy.arange( n+1, dtype=float ) / (n+1)
+    z = numpy.zeros_like( p )
+    return numpy.hstack(( [1-p,p], [z,1-p], [p,z] )).T, None
 
-    if where.startswith( 'contour' ):
-      n = int( where[7:] or 0 )
-      p = numpy.arange( n+1, dtype=float ) / (n+1)
-      z = numpy.zeros_like( p )
-      coords = numpy.hstack(( [1-p,p], [z,1-p], [p,z] ))
-      weights = None
-    elif where.startswith( 'vtk' ):
-      coords = numpy.array([[0,0],[1,0],[0,1]]).T
-      weights = None
-    elif where == 'gauss1':
+  def getischeme_vtk( self ):
+    return numpy.array([[0,0],[1,0],[0,1]]), None
+
+  def getischeme_gauss( self, n ):
+    '''get integration scheme
+    http://www.cs.rpi.edu/~flaherje/pdf/fea6.pdf
+    '''
+    assert n > 0
+    if n == 1:
       coords = numpy.array( [[1],[1]] ) / 3.
       weights = numpy.array( [1] ) / 2.
-    elif where in 'gauss2':
+    elif n == 2:
       coords = numpy.array( [[4,1,1],[1,4,1]] ) / 6.
       weights = numpy.array( [1,1,1] ) / 6.
-    elif where == 'gauss3':
+    elif n == 3:
       coords = numpy.array( [[5,9,3,3],[5,3,9,3]] ) / 15.
       weights = numpy.array( [-27,25,25,25] ) / 96.
-    elif where == 'gauss4':
+    elif n == 4:
       A = 0.091576213509771; B = 0.445948490915965; W = 0.109951743655322
       coords = numpy.array( [[1-2*A,A,A,1-2*B,B,B],[A,1-2*A,A,B,1-2*B,B]] )
       weights = numpy.array( [W,W,W,1/3.-W,1/3.-W,1/3.-W] ) / 2.
-    elif where == 'gauss5':
+    elif n == 5:
       A = 0.101286507323456; B = 0.470142064105115; V = 0.125939180544827; W = 0.132394152788506
       coords = numpy.array( [[1./3,1-2*A,A,A,1-2*B,B,B],[1./3,A,1-2*A,A,B,1-2*B,B]] )
       weights = numpy.array( [1-3*V-3*W,V,V,V,W,W,W] ) / 2.
-    elif where == 'gauss6':
+    elif n == 6:
       A = 0.063089014491502; B = 0.249286745170910; C = 0.310352451033785; D = 0.053145049844816; V = 0.050844906370207; W = 0.116786275726379
       VW = 1/6. - (V+W) / 2.
       coords = numpy.array( [[1-2*A,A,A,1-2*B,B,B,1-C-D,1-C-D,C,C,D,D],[A,1-2*A,A,B,1-2*B,B,C,D,1-C-D,D,1-C-D,C]] )
       weights = numpy.array( [V,V,V,W,W,W,VW,VW,VW,VW,VW,VW] ) / 2.
-    elif where == 'gauss7':
+    else:
+      if n > 7:
+        warnings.warn('Inexact integration for polynomial of degree %i'%n)
       A = 0.260345966079038; B = 0.065130102902216; C = 0.312865496004875; D = 0.048690315425316; U = 0.175615257433204; V = 0.053347235608839; W = 0.077113760890257
       coords = numpy.array( [[1./3,1-2*A,A,A,1-2*B,B,B,1-C-D,1-C-D,C,C,D,D],[1./3,A,1-2*A,A,B,1-2*B,B,C,D,1-C-D,D,1-C-D,C]] )
       weights = numpy.array( [1-3*U-3*V-6*W,U,U,U,V,V,V,W,W,W,W,W,W] ) / 2.
-    elif where[:7] == 'uniform':
-      N = int( where[7:] )
-      points = ( numpy.arange( N ) + 1./3 ) / N
-      NN = N**2
-      C = numpy.empty( [2,N,N] )
-      C[0] = points[:,_]
-      C[1] = points[_,:]
-      coords = C.reshape( 2, NN )
-      flip = coords[0] + coords[1] > 1
-      coords[:,flip] = 1 - coords[::-1,flip]
-      weights = numeric.appendaxes( .5/NN, NN )
-    elif where[:6] == 'bezier':
-      N = int( where[6:] )
-      points = numpy.linspace( 0, 1, N )
-      coords = numpy.array([ [x,y] for i, y in enumerate(points) for x in points[:N-i] ]).T
-      weights = None
-    else:
-      raise Exception, 'invalid element evaluation: %r' % where
     return coords.T, weights
+
+  def getischeme_uniform( self, N ):
+    points = ( numpy.arange( N ) + 1./3 ) / N
+    NN = N**2
+    C = numpy.empty( [2,N,N] )
+    C[0] = points[:,_]
+    C[1] = points[_,:]
+    coords = C.reshape( 2, NN )
+    flip = coords[0] + coords[1] > 1
+    coords[:,flip] = 1 - coords[::-1,flip]
+    weights = numeric.appendaxes( .5/NN, NN )
+    return coords.T, weights
+
+  def getischeme_bezier( self, N ):
+    points = numpy.linspace( 0, 1, N )
+    coords = numpy.array([ [x,y] for i, y in enumerate(points) for x in points[:N-i] ]).T
+    return coords.T, None
 
   @cache.property
   def children( self ):
@@ -275,30 +285,30 @@ class TetrahedronReference( Reference ):
     vertices = [[0,0,0],[1,0,0],[0,1,0],[0,0,1]] # TODO check
     Reference.__init__( self, vertices )
 
-  def getischeme( self, where ):
+  def getischeme_vtk( self ):
+    return numpy.array([[0,0,0],[1,0,0],[0,1,0],[0,0,1]]), None
+
+  def getischeme_gauss( self, n ):
     '''get integration scheme
        http://people.sc.fsu.edu/~jburkardt/datasets/quadrature_rules_tet/quadrature_rules_tet.html'''
-
-    if where.startswith( 'vtk' ):
-      coords = numpy.array([[0,0,0],[1,0,0],[0,1,0],[0,0,1]]).T
-      weights = None
-    elif where == 'gauss1':
+    assert n > 0
+    if n == 1:
       coords = numpy.array( [[1],[1],[1]] ) / 4.
       weights = numpy.array( [1] ) / 6.
-    elif where == 'gauss2':
+    elif n == 2:
       coords = numpy.array([[0.5854101966249685,0.1381966011250105,0.1381966011250105],
                             [0.1381966011250105,0.1381966011250105,0.1381966011250105],
                             [0.1381966011250105,0.1381966011250105,0.5854101966249685],
                             [0.1381966011250105,0.5854101966249685,0.1381966011250105]]).T
       weights = numpy.array([1,1,1,1]) / 24.
-    elif where == 'gauss3':
+    elif n == 3:
       coords = numpy.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
                             [0.5000000000000000,0.1666666666666667,0.1666666666666667],
                             [0.1666666666666667,0.1666666666666667,0.1666666666666667],
                             [0.1666666666666667,0.1666666666666667,0.5000000000000000],
                             [0.1666666666666667,0.5000000000000000,0.1666666666666667]]).T
       weights = numpy.array([-0.8000000000000000,0.4500000000000000,0.4500000000000000,0.4500000000000000,0.4500000000000000]) / 6.
-    elif where == 'gauss4':
+    elif n == 4:
       coords = numpy.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
                             [0.7857142857142857,0.0714285714285714,0.0714285714285714],
                             [0.0714285714285714,0.0714285714285714,0.0714285714285714],
@@ -311,7 +321,7 @@ class TetrahedronReference( Reference ):
                             [0.1005964238332008,0.3994035761667992,0.1005964238332008],
                             [0.1005964238332008,0.1005964238332008,0.3994035761667992]]).T
       weights = numpy.array([-0.0789333333333333,0.0457333333333333,0.0457333333333333,0.0457333333333333,0.0457333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333]) / 6.
-    elif where == 'gauss5':
+    elif n == 5:
       coords = numpy.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
                             [0.0000000000000000,0.3333333333333333,0.3333333333333333],
                             [0.3333333333333333,0.3333333333333333,0.3333333333333333],
@@ -328,7 +338,7 @@ class TetrahedronReference( Reference ):
                             [0.4334498464263357,0.0665501535736643,0.4334498464263357],
                             [0.4334498464263357,0.4334498464263357,0.0665501535736643]]).T
       weights = numpy.array([0.1817020685825351,0.0361607142857143,0.0361607142857143,0.0361607142857143,0.0361607142857143,0.0698714945161738,0.0698714945161738,0.0698714945161738,0.0698714945161738,0.0656948493683187,0.0656948493683187,0.0656948493683187,0.0656948493683187,0.0656948493683187,0.0656948493683187]) / 6.
-    elif where == 'gauss6':
+    elif n == 6:
       coords = numpy.array([[0.3561913862225449,0.2146028712591517,0.2146028712591517],
                             [0.2146028712591517,0.2146028712591517,0.2146028712591517],
                             [0.2146028712591517,0.2146028712591517,0.3561913862225449],
@@ -354,7 +364,7 @@ class TetrahedronReference( Reference ):
                             [0.2696723314583159,0.0636610018750175,0.6030056647916491],
                             [0.6030056647916491,0.2696723314583159,0.0636610018750175]]).T
       weights = numpy.array([0.0399227502581679,0.0399227502581679,0.0399227502581679,0.0399227502581679,0.0100772110553207,0.0100772110553207,0.0100772110553207,0.0100772110553207,0.0553571815436544,0.0553571815436544,0.0553571815436544,0.0553571815436544,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857]) / 6.
-    elif where == 'gauss7':
+    elif n == 7:
       coords = numpy.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
                             [0.7653604230090441,0.0782131923303186,0.0782131923303186],
                             [0.0782131923303186,0.0782131923303186,0.0782131923303186],
@@ -387,7 +397,9 @@ class TetrahedronReference( Reference ):
                             [0.2000000000000000,0.1000000000000000,0.6000000000000000],
                             [0.6000000000000000,0.2000000000000000,0.1000000000000000]]).T
       weights = numpy.array([0.1095853407966528,0.0635996491464850,0.0635996491464850,0.0635996491464850,0.0635996491464850,-0.3751064406859797,-0.3751064406859797,-0.3751064406859797,-0.3751064406859797,0.0293485515784412,0.0293485515784412,0.0293485515784412,0.0293485515784412,0.0058201058201058,0.0058201058201058,0.0058201058201058,0.0058201058201058,0.0058201058201058,0.0058201058201058,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105]) / 6.
-    elif where == 'gauss8':
+    else:
+      if n > 8:
+        warnings.warn('Inexact integration for polynomial of degree %i'%n)
       coords = numpy.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
                             [0.6175871903000830,0.1274709365666390,0.1274709365666390],
                             [0.1274709365666390,0.1274709365666390,0.1274709365666390],
@@ -434,8 +446,6 @@ class TetrahedronReference( Reference ):
                             [0.7303134278075384,0.0379700484718286,0.1937464752488044],
                             [0.1937464752488044,0.7303134278075384,0.0379700484718286]]).T
       weights = numpy.array([-0.2359620398477557,0.0244878963560562,0.0244878963560562,0.0244878963560562,0.0244878963560562,0.0039485206398261,0.0039485206398261,0.0039485206398261,0.0039485206398261,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852]) / 6.
-    else:
-      raise Exception, 'invalid element evaluation: %r' % where
     return coords.T, weights
 
   @property
@@ -516,7 +526,7 @@ class ProductReference( Reference ):
   @staticmethod
   def get_tri_bem_ischeme( self, ischeme, neighborhood ):
     'Some cached quantities for the singularity quadrature scheme.'
-    points, weights = QuadElement.getischeme( ndims=4, where=ischeme )
+    points, weights = QuadReference(4).getischeme( ischeme )
     eta1, eta2, eta3, xi = points.T
     if neighborhood == 0:
       temp = xi*eta1*eta2*eta3
