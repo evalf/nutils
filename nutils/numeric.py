@@ -280,41 +280,6 @@ def takediag( A ):
     strides = A.strides[:-2] + (A.strides[-2]+A.strides[-1],)
   return numpy.lib.stride_tricks.as_strided( A, shape, strides )
 
-def inverse( A ):
-  'linearized inverse'
-
-  assert isinstance( A, numpy.ndarray )
-  assert A.shape[-2] == A.shape[-1]
-  if A.shape[-1] == 1:
-    Ainv = numpy.reciprocal( A )
-  elif A.shape[-1] == 2:
-    det = A[...,0,0] * A[...,1,1] - A[...,0,1] * A[...,1,0]
-    Ainv = numpy.empty( A.shape )
-    numpy.divide( A[...,1,1],  det, Ainv[...,0,0] )
-    numpy.divide( A[...,0,0],  det, Ainv[...,1,1] )
-    numpy.divide( A[...,1,0], -det, Ainv[...,1,0] )
-    numpy.divide( A[...,0,1], -det, Ainv[...,0,1] )
-  else:
-    Ainv = numpy.empty( A.shape )
-    for I in numpy.lib.index_tricks.ndindex( A.shape[:-2] ):
-      Ainv[I] = numpy.linalg.inv( A[I] )
-  return Ainv
-
-def determinant( A ):
-  'determinant'
-
-  assert isinstance( A, numpy.ndarray )
-  assert A.shape[-2] == A.shape[-1]
-  if A.shape[-1] == 1:
-    det = A[...,0,0]
-  elif A.shape[-1] == 2:
-    det = A[...,0,0] * A[...,1,1] - A[...,0,1] * A[...,1,0]
-  else:
-    det = numpy.empty( A.shape[:-2] )
-    for I in numpy.lib.index_tricks.ndindex( A.shape[:-2] ):
-      det[I] = numpy.linalg.det( A[I] )
-  return det
-
 def eig( A, sort=False ):
   ''' eig
   Compute the eigenvalues and vectors of a hermitian matrix
@@ -389,17 +354,12 @@ def mean( A, weights=None, axis=-1 ):
 
   return A.mean( axis ) if weights is None else dot( A, weights / weights.sum(), axis )
 
-def norm2( A, axis=-1 ):
-  'L2 norm over specified axis'
-
-  return numpy.asarray( numpy.sqrt( contract( A, A, axis ) ) )
-
 def normalize( A, axis=-1 ):
   'devide by normal'
 
   s = [ slice(None) ] * A.ndim
   s[axis] = numpy.newaxis
-  return A / norm2( A, axis )[ tuple(s) ]
+  return A / numpy.linlg.norm( A, axis )[ tuple(s) ]
 
 def cross( v1, v2, axis ):
   'cross product'
@@ -409,6 +369,13 @@ def cross( v1, v2, axis ):
   elif v2.ndim < v1.ndim:
     v2 = v2[ (numpy.newaxis,)*(v1.ndim-v2.ndim) ]
   return numpy.cross( v1, v2, axis=axis )
+
+def times( A, B ):
+  """Times
+  Multiply such that shapes are concatenated."""
+  A = numpy.asarray( A )
+  B = numpy.asarray( B )
+  return A[(Ellipsis,)+(numpy.newaxis,)*B.ndim] * B
 
 def stack( arrays, axis=0 ):
   'powerful array stacker with singleton expansion'

@@ -159,8 +159,7 @@ class Topology( object ):
       funcs = funcs,
 
     retvals = []
-    #iweights = geometry.iweights( self.ndims )
-    iweights = function.iwscale( geometry, self.ndims ) * function.IWeights()
+    iweights = function.iweights( geometry, self.ndims )
     idata = [ iweights ]
     for func in funcs:
       func = function.asarray( func )
@@ -242,20 +241,14 @@ class Topology( object ):
     return graph
 
   @log.title
-  def integrate( self, funcs, ischeme, geometry=None, iweights=None, force_dense=False ):
+  def integrate( self, funcs, ischeme, geometry, force_dense=False ):
     'integrate'
 
     single_arg = not isinstance(funcs,(list,tuple))
     if single_arg:
       funcs = funcs,
 
-    if iweights is None:
-      assert geometry is not None, 'conflicting arguments geometry and iweights'
-      iweights = function.iwscale( geometry, self.ndims ) * function.IWeights()
-    else:
-      assert geometry is None, 'conflicting arguments geometry and iweights'
-    assert iweights.ndim == 0
-
+    iweights = function.iweights( geometry, self.ndims )
     integrands = []
     retvals = []
     for ifunc, func in enumerate( funcs ):
@@ -288,20 +281,14 @@ class Topology( object ):
     return retvals
 
   @log.title
-  def integrate_symm( self, funcs, ischeme, geometry=None, iweights=None, force_dense=False ):
+  def integrate_symm( self, funcs, ischeme, geometry, force_dense=False ):
     'integrate a symmetric integrand on a product domain' # TODO: find a proper home for this
 
     single_arg = not isinstance(funcs,list)
     if single_arg:
       funcs = funcs,
 
-    if iweights is None:
-      assert geometry is not None, 'conflicting arguments geometry and iweights'
-      iweights = function.iwscale( geometry, self.ndims ) * function.IWeights()
-    else:
-      assert geometry is None, 'conflicting arguments geometry and iweights'
-    assert iweights.ndim == 0
-
+    iweights = function.iweights( geometry, self.ndims )
     integrands = []
     retvals = []
     for ifunc, func in enumerate( funcs ):

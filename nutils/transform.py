@@ -21,13 +21,25 @@ class Transform( cache.Immutable ):
     self.todims = todims
     self.fromdims = fromdims
 
+  def lstrip( self, trans ):
+    assert self == trans, 'cannot find sub-transformation'
+    return identity( self.todims )
+
+  @property
+  def det( self ):
+    raise NotImplementedError
+
+  @property
+  def inv( self ):
+    raise NotImplementedError
+
   def __rshift__( self, other ):
     assert isinstance( other, Transform )
     assert self.todims == other.fromdims
     return Compound( self, other )
 
   def __str__( self ):
-    return '?'
+    return '#%x' % id(self)
 
   def __repr__( self ):
     return '%s(%s)' % ( self.__class__.__name__, self )
@@ -47,7 +59,7 @@ class Identity( Transform ):
 
   @property
   def matrix( self ):
-    return numpy.eye( self.fromdims )
+    return rational.eye( self.fromdims )
 
   def apply( self, points ):
     assert points.shape[-1] == self.fromdims
@@ -65,6 +77,11 @@ class Compound( Transform ):
     Transform.__init__( self, trans2.todims, trans1.fromdims )
     self.trans1 = trans1
     self.trans2 = trans2
+
+  def lstrip( self, trans ):
+    return self.trans2 if self.trans1 == trans \
+      else self.trans2.lstrip( trans.trans2 ) if isinstance( trans, Compound ) and trans.trans1 == self.trans1 \
+      else self.trans1.lstrip(trans) >> self.trans2
 
   @cache.property
   def det( self ):
@@ -101,7 +118,7 @@ class Shift( Transform ):
 
   @property
   def matrix( self ):
-    return numpy.eye( self.todims )
+    return rational.eye( self.todims )
 
   def apply( self, points ):
     assert points.shape[-1] == self.fromdims
@@ -122,7 +139,7 @@ class Scale( Transform ):
 
   @property
   def matrix( self ):
-    return numpy.eye(self.todims) * float(self.factor)
+    return rational.eye(self.todims) * self.factor
 
   @property
   def det( self ):
@@ -137,29 +154,26 @@ class Scale( Transform ):
 
 class Linear( Transform ):
 
-  def __init__( self, linear ):
-    assert rational.isarray( linear ) and linear.ndim == 2
-    Transform.__init__( self, *linear.shape )
-    self.linear = linear
+  def __init__( self, matrix ):
+    assert rational.isarray( matrix ) and matrix.ndim == 2
+    Transform.__init__( self, *matrix.shape )
+    self.matrix = matrix
 
   def apply( self, points ):
     assert points.shape[-1] == self.fromdims
-    return rational.dot( points, self.linear.T )
-
-  @property
-  def matrix( self ):
-    return rational.asfloat( self.linear )
+    return rational.dot( points, self.matrix.T )
 
   @cache.property
   def det( self ):
-    return rational.det( self.linear )
+    return rational.det( self.matrix ) if self.fromdims == self.todims \
+      else rational.ext( self.matrix )
   
   @cache.property
   def inv( self ):
-    return linear( rational.inv( self.linear ) )
+    return linear( rational.inv( self.matrix ) )
 
   def __str__( self ):
-    return '*%s' % self.linear
+    return '*%s' % self.matrix
 
 
 ## UTILITY FUNCTIONS

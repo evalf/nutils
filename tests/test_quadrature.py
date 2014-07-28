@@ -232,8 +232,7 @@ class TestSingularQuadrature( object ):
     # geometry and topology need same periodicity for singular scheme to work!
     domain, geom = geom
     ddomain = domain * domain
-    iw = function.iwscale( geom, domain.ndims )
-    iweights = iw * function.opposite( iw ) * function.IWeights()
+    dgeom = function.concatenate([ geom, function.opposite(geom) ])
 
     # all possible different schemes and transformations
     assert m>2 and n>3, 'Insufficient mesh size for all element types to be present.'
@@ -248,12 +247,12 @@ class TestSingularQuadrature( object ):
       if devel: errs, Fset = {}, {}
       if compare_to_gauss: errsg = {}
       for key, elem in elems.iteritems():
-        topo = topology.UnstructuredTopology( [elem], ndims=2 )
-        F = topo.integrate( func(geom), iweights=iweights, ischeme='singular%i'%qmax )
+        topo = topology.UnstructuredTopology( [elem], ndims=elem.ndims )
+        F = topo.integrate( func(geom), geometry=dgeom, ischeme='singular%i'%qmax )
         if compare_to_gauss:
           A = {0:8, 1:6, 2:4, 3:1}[neighbor]
           qg = int(qmax*(A**.25))
-          Fg = topo.integrate( func(geom), iweights=iweights, ischeme='gauss%i'%(2*qg-2) )
+          Fg = topo.integrate( func(geom), geometry=dgeom, ischeme='gauss%i'%(2*qg-2) )
         if plot_quad_points: self.plot_gauss_on_3x4( elem )
 
         if devel:
@@ -262,24 +261,24 @@ class TestSingularQuadrature( object ):
           errs[key] = []
           if compare_to_gauss: errsg[key] = []
           for q in qset:
-            Fq = topo.integrate( func(geom), iweights=iweights, ischeme='singular%i'%q )
+            Fq = topo.integrate( func(geom), geometry=dgeom, ischeme='singular%i'%q )
             errs[key].append( numpy.abs(F/Fq-1) )
             if compare_to_gauss:
               qg = int(q*(A**.25))
-              Fgq = topo.integrate( func(geom), iweights=iweights, ischeme='gauss%i'%(2*qg-2) )
+              Fgq = topo.integrate( func(geom), geometry=dgeom, ischeme='gauss%i'%(2*qg-2) )
               errsg[key].append( numpy.abs(Fg/Fgq-1) )
 
         elif len(qset) == 1:
           # Test assertions on exact quadrature
-          Fq = topo.integrate( func(geom), iweights=iweights, ischeme='singular%i'%qset[0] )
+          Fq = topo.integrate( func(geom), geometry=dgeom, ischeme='singular%i'%qset[0] )
           err = numpy.abs(F/Fq-1)
           assert err < 1.e-12, 'Nonexact quadrature, err = %.1e' % err
 
         elif len(qset) == 2:
           # Test assertions on convergence rate of quadrature
           q0, q1 = tuple( qset )
-          F0 = topo.integrate( func(geom), iweights=iweights, ischeme='singular%i'%q0 )
-          F1 = topo.integrate( func(geom), iweights=iweights, ischeme='singular%i'%q1 )
+          F0 = topo.integrate( func(geom), geometry=dgeom, ischeme='singular%i'%q0 )
+          F1 = topo.integrate( func(geom), geometry=dgeom, ischeme='singular%i'%q1 )
           err0 = numpy.abs(F/F0-1)
           err1 = numpy.abs(F/F1-1)
           slope = numpy.log10(err1/err0)/(q1-q0)

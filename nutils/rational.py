@@ -280,6 +280,29 @@ def inv( array ):
     raise NotImplementedError, 'shape=' + tuple(array.shape)
   return inv
 
+def ext( array ):
+  """Exterior
+  For array of shape (n,n-1) return n-vector ex such that ex.array = 0 and
+  det(arr;ex) = ex.ex"""
+  assert isarray(array)
+  if array.shape == (1,0):
+    ext = Array( (1,), unit, True )
+  elif array.shape == (2,1):
+    ((a,),(b,)), scale = array.decompose()
+    ext = Array( (-b,a), unit/scale, True )
+  elif array.shape == (3,2):
+    ((a,b),(c,d),(e,f)), scale = array.decompose()
+    ext = Array( (c*f-e*d,e*b-a*f,a*d-c*b), unit/scale, False )
+  else:
+    raise NotImplementedError, 'shape=%s' % (array.shape,)
+  # VERIFY
+  A = asfloat( array )
+  v = asfloat( ext )
+  Av = numpy.concatenate( [A,v[:,numpy.newaxis]], axis=1 )
+  numpy.testing.assert_almost_equal( numpy.dot( v, A ), 0 )
+  numpy.testing.assert_almost_equal( numpy.linalg.det(Av), numpy.dot(v,v) )
+  return ext
+
 def factor( n ):
   assert isinstance( n, int ) and n > 0
   factors = []
@@ -373,5 +396,8 @@ def dot( A, B ):
   A, a = asarray( A ).decompose()
   B, b = asarray( B ).decompose()
   return Array( numpy.dot( A, B ), a * b, False )
+
+def eye( ndims ):
+  return Array( numpy.eye(ndims,dtype=int), unit, True )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

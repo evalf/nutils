@@ -9,12 +9,12 @@ class FuncTest( object ):
     domainelem = element.Element( reference=element.QuadReference(2), vertices=[0,1,2,3] )
     r, theta = function.ElemFunc( 2 ) # corners at (0,0), (0,1), (1,1), (1,0)
     geom = r * function.stack([ function.cos(theta), function.sin(theta) ])
-    trans = transform.linear([[2,1],[-1,3]]) >> transform.shift([1,0])
+    trans2 = transform.linear([[2,1],[-1,3]]) >> transform.shift([1,0])
     avertices = [element.PrimaryVertex('A(%d)'%i) for i in range(4)]
-    interelem = element.QuadElement( ndims=2, vertices=avertices, parent=(domainelem,trans) ) # corners at (1,0), (3,-1), (4,2), (2,3)
-    trans = transform.linear([[0,1],[-1,0]]) >> transform.shift([1,0])
+    interelem = element.QuadElement( ndims=2, vertices=avertices, parent=(domainelem,trans2) ) # corners at (1,0), (3,-1), (4,2), (2,3)
+    trans1 = transform.linear([[0,1],[-1,0]]) >> transform.shift([1,0])
     bvertices = [element.PrimaryVertex('B(%d)'%i) for i in range(4)]
-    elem = element.QuadElement( ndims=2, vertices=bvertices, parent=(interelem,trans) ) # corners at (3,-1), (2,-4), (4,-5), (5,-2)
+    elem = element.QuadElement( ndims=2, vertices=bvertices, parent=(interelem,trans1) ) # corners at (3,-1), (2,-4), (4,-5), (5,-2)
 
     cvertices = [element.PrimaryVertex('C(%d)'%i) for i in range(2)]
     iface = element.QuadElement( ndims=1, vertices=cvertices, interface=(elem.edge(1).context,elem.edge(0).context) )
@@ -36,6 +36,8 @@ class FuncTest( object ):
     self.geomfun = geom.compiled()
     self.iface = iface
     self.ifpoints = ifpoints
+    roottrans = trans1 >> trans2
+    self.invroottransmatrix = rational.asfloat( roottrans.inv.matrix )
 
   def find( self, target, xi0 ):
     ndim, = self.geom.shape
@@ -50,7 +52,7 @@ class FuncTest( object ):
         countdown -= 1
       dxi_root = ( Jinv.eval(self.elem,xi) * err[...,_,:] ).sum(-1)
       #xi = xi + numpy.dot( dxi_root, self.elem.inv_root_transform.T )
-      xi = xi + numpy.dot( dxi_root, self.elem.root_transform.inv.matrix.T )
+      xi = xi + numpy.dot( dxi_root, self.invroottransmatrix.T )
       iiter += 1
       assert iiter < 100, 'failed to converge in 100 iterations'
     return xi
@@ -82,8 +84,7 @@ class FuncTest( object ):
     if not self.haslocalgradient:
       return
     eps = 1e-6
-    #D = numpy.array([-.5*eps,.5*eps])[:,_,_] * self.elem.inv_root_transform.T[_,:,:]
-    D = numpy.array([-.5*eps,.5*eps])[:,_,_] * self.elem.root_transform.inv.matrix.T[_,:,:]
+    D = numpy.array([-.5*eps,.5*eps])[:,_,_] * self.invroottransmatrix.T[_,:,:]
     fdpoints = self.points[_,_,:,:] + D[:,:,_,:]
     F = self.n_op( *self.argsfun.eval(self.elem,fdpoints) )
     fdgrad = ((F[1]-F[0])/eps).transpose( numpy.roll(numpy.arange(F.ndim-1),-1) )
@@ -257,32 +258,32 @@ class TestTakediag3x3( FuncTest ):
 class TestDet1x1( FuncTest ):
   shapes = [(1,3,1)]
   op = staticmethod(lambda a: function.determinant(a,(0,2)))
-  n_op = staticmethod(lambda a: numeric.determinant(a.swapaxes(-3,-2)))
+  n_op = staticmethod(lambda a: numpy.linalg.det(a.swapaxes(-3,-2)))
 
 class TestDet2x2( FuncTest ):
   shapes = [(2,3,2)]
   op = staticmethod(lambda a: function.determinant(a,(0,2)))
-  n_op = staticmethod(lambda a: numeric.determinant(a.swapaxes(-3,-2)))
+  n_op = staticmethod(lambda a: numpy.linalg.det(a.swapaxes(-3,-2)))
 
 class TestDet3x3( FuncTest ):
   shapes = [(3,2,3)]
   op = staticmethod(lambda a: function.determinant(a,(0,2)))
-  n_op = staticmethod(lambda a: numeric.determinant(a.swapaxes(-3,-2)))
+  n_op = staticmethod(lambda a: numpy.linalg.det(a.swapaxes(-3,-2)))
 
 class TestInv1x1( FuncTest ):
   shapes = [(1,3,1)]
   op = staticmethod(lambda a: function.inverse(a,(0,2)))
-  n_op = staticmethod(lambda a: numeric.inverse(a.swapaxes(-3,-2)).swapaxes(-3,-2))
+  n_op = staticmethod(lambda a: numpy.linalg.inv(a.swapaxes(-3,-2)).swapaxes(-3,-2))
 
 class TestInv2x2( FuncTest ):
   shapes = [(2,3,2)]
   op = staticmethod(lambda a: function.inverse(a,(0,2)))
-  n_op = staticmethod(lambda a: numeric.inverse(a.swapaxes(-3,-2)).swapaxes(-3,-2))
+  n_op = staticmethod(lambda a: numpy.linalg.inv(a.swapaxes(-3,-2)).swapaxes(-3,-2))
 
 class TestInv3x3( FuncTest ):
   shapes = [(3,2,3)]
   op = staticmethod(lambda a: function.inverse(a,(0,2)))
-  n_op = staticmethod(lambda a: numeric.inverse(a.swapaxes(-3,-2)).swapaxes(-3,-2))
+  n_op = staticmethod(lambda a: numpy.linalg.inv(a.swapaxes(-3,-2)).swapaxes(-3,-2))
 
 class TestRepeat( FuncTest ):
   shapes = [(2,1,2)]

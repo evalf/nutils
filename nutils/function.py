@@ -30,7 +30,7 @@ possible only via inverting of the geometry function, which is a fundamentally
 expensive and currently unsupported operation.
 """
 
-from . import util, numpy, numeric, log, core, cache, transform, _
+from . import util, numpy, numeric, log, core, cache, transform, rational, _
 import sys, warnings
 
 CACHE   = object()
@@ -314,7 +314,6 @@ class Cascade( Evaluable ):
   def transform( self, ndims ):
     if ndims == self.ndims:
       return eye( ndims )
-    assert self.ndims > ndims
     return Transform( self, Cascade(ndims,self.side) )
 
   @staticmethod
@@ -323,8 +322,7 @@ class Cascade( Evaluable ):
 
     fulltrans = transform.identity( elem.ndims )
 
-    while elem.ndims != ndims \
-        or elem.interface and elem.interface[side][0].ndims < elem.ndims: # TODO make less dirty
+    while elem.ndims != ndims:
       elem, trans = elem.interface[side] if elem.interface \
                else elem.context or elem.parent
       fulltrans >>= trans
@@ -738,16 +736,17 @@ class IWeights( ArrayFunc ):
 
   __slots__ = ()
 
-  def __init__( self ):
+  def __init__( self, ndims ):
     'constructor'
 
-    ArrayFunc.__init__( self, args=[ELEM,WEIGHTS], evalf=self.iweights, shape=() )
+    ArrayFunc.__init__( self, args=[Cascade(ndims),WEIGHTS], evalf=self.iweights, shape=() )
 
   @staticmethod
-  def iweights( elem, weights ):
+  def iweights( cascade, weights ):
     'evaluate'
 
-    return elem.root_det * weights
+    rootelem, roottrans = cascade[-1]
+    return rational.asfloat(roottrans.det) * weights
 
 class OrientationHack( ArrayFunc ):
   'orientation hack for 1d elements; VERY dirty'
@@ -774,41 +773,28 @@ class OrientationHack( ArrayFunc ):
 class Transform( ArrayFunc ):
   'transform'
 
-  __slots__ = 'fromcascade', 'tocascade', 'side'
+  __slots__ = 'fromcascade', 'tocascade'
 
-  def __init__( self, fromcascade, tocascade, side=0 ):
+  def __init__( self, fromcascade, tocascade ):
     'constructor'
 
-    assert fromcascade.ndims > tocascade.ndims
     self.fromcascade = fromcascade
     self.tocascade = tocascade
-    self.side = side
-    ArrayFunc.__init__( self, args=[fromcascade,tocascade,side], evalf=self.transform, shape=(fromcascade.ndims,tocascade.ndims) )
+    ArrayFunc.__init__( self, args=[fromcascade,tocascade], evalf=self.transform, shape=(fromcascade.ndims,tocascade.ndims) )
 
   @staticmethod
-  def transform( fromcascade, tocascade, side ):
+  def transform( fromcascade, tocascade ):
     'transform'
 
-    fromelem = fromcascade[0][0]
-    toelem = tocascade[0][0]
-
-    # toelem.ndims < fromelem.ndims
-
-    elem = toelem
-    trans_from_to = elem.root_transform.inv
-    while elem is not fromelem:
-      elem, trans = elem.interface[side] if elem.interface \
-               else elem.context or elem.parent
-      trans_from_to >>= trans
-    trans_from_to >>= elem.root_transform
-
-    return trans_from_to.matrix
+    fromroot, fromtrans = fromcascade[-1]
+    toroot, totrans = tocascade[-1]
+    return rational.asfloat( fromtrans.lstrip( totrans ).matrix )
 
   def _localgradient( self, ndims ):
     return _zeros( self.shape + (ndims,) )
 
   def _opposite( self ):
-    return Transform( self.fromcascade, self.tocascade, 1-self.side )
+    return Transform( opposite(self.fromcascade), opposite(self.tocascade) )
 
 class Function( ArrayFunc ):
   'function'
@@ -839,7 +825,8 @@ class Function( ArrayFunc ):
       else:
         F = cache( std.eval, transpoints, igrad )
       for axis in range(-igrad,0):
-        F = numeric.dot( F, elem.root_transform.inv.matrix, axis )
+        roottrans = cascade[-1][1].lstrip( trans )
+        F = numeric.dot( F, rational.asfloat(roottrans.inv.matrix), axis )
       fvals.append( F )
     assert fvals, 'no function values encountered'
     return fvals[0] if len(fvals) == 1 else numpy.concatenate( fvals, axis=-1-igrad )
@@ -914,7 +901,7 @@ class Inverse( ArrayFunc ):
 
     assert func.shape[-1] == func.shape[-2]
     self.func = func
-    ArrayFunc.__init__( self, args=[func], evalf=numeric.inverse, shape=func.shape )
+    ArrayFunc.__init__( self, args=[func], evalf=numpy.linalg.inv, shape=func.shape )
 
   def _localgradient( self, ndims ):
     G = localgradient( self.func, ndims )
@@ -1190,7 +1177,7 @@ class Determinant( ArrayFunc ):
     'contructor'
 
     self.func = func
-    ArrayFunc.__init__( self, args=[func], evalf=numeric.determinant, shape=func.shape[:-2] )
+    ArrayFunc.__init__( self, args=[func], evalf=numpy.linalg.det, shape=func.shape[:-2] )
 
   def _localgradient( self, ndims ):
     Finv = swapaxes( inverse( self.func ) )
@@ -2701,7 +2688,7 @@ def determinant( arg, axes=(-2,-1) ):
   shape = arg.shape[:-2]
 
   if not _isfunc( arg ):
-    return numeric.determinant( arg )
+    return numpy.linalg.det( arg )
 
   retval = _call( arg, '_determinant' )
   if retval is not None:
@@ -2726,7 +2713,7 @@ def inverse( arg, axes=(-2,-1) ):
   arg = align( arg, trans, arg.ndim )
 
   if not _isfunc( arg ):
-    return numeric.inverse( arg ).transpose( trans )
+    return numpy.linalg.inv( arg ).transpose( trans )
 
   retval = _call( arg, '_inverse' )
   if retval is not None:
@@ -3264,24 +3251,18 @@ def fdapprox( func, w, dofs, delta=1.e-5 ):
     dfunc_fd.append( (func( *x1 ) - func( *x0 ))/step )
   return dfunc_fd
 
-def iwscale( coords, ndims ):
+def iweights( coords, ndims ):
   'integration weights scale'
 
   assert coords.ndim == 1
   J = localgradient( coords, ndims )
   cndims, = coords.shape
   assert J.shape == (cndims,ndims), 'wrong jacobian shape: got %s, expected %s' % ( J.shape, (cndims, ndims) )
-  if cndims == ndims:
-    detJ = abs( determinant( J ) )
-  elif ndims == 1:
-    detJ = norm2( J[:,0], axis=0 )
-  elif cndims == 3 and ndims == 2:
-    detJ = norm2( cross( J[:,0], J[:,1], axis=0 ), axis=0 )
-  elif ndims == 0:
-    detJ = 1.
-  else:
-    raise NotImplementedError, 'cannot compute determinant for %dx%d jacobian' % J.shape[:2]
-  return detJ
+  assert cndims >= ndims, 'geometry dimension < topology dimension'
+  detJ = abs( determinant( J ) ) if cndims == ndims \
+    else 1. if ndims == 0 \
+    else determinant( ( J[:,:,_] * J[:,_,:] ).sum(0) )**.5
+  return detJ * IWeights(ndims)
 
 def supp( funcsp, indices ):
   'find support of selection of basis functions'

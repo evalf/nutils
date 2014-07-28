@@ -24,15 +24,13 @@ class TestGaussDoubleInt( object ):
   def test_polynomials( self ):
     domain, geom = mesh.rectilinear( [[0,.5,1]] )
     ddomain = domain * domain
-
-    iw = function.iwscale( geom, domain.ndims )
-    iweights = iw * function.opposite( iw ) * function.IWeights()
+    dgeom = function.concatenate([ geom, function.opposite(geom) ])
 
     x = geom[0]
     y = function.opposite( geom[0] )
 
-    self.distance( ddomain.integrate( x-y, iweights=iweights, ischeme='gauss2' ) )
-    self.distancesquared( ddomain.integrate( (x-y)**2, iweights=iweights, ischeme='gauss2' ) )
+    self.distance( ddomain.integrate( x-y, geometry=dgeom, ischeme='gauss2' ) )
+    self.distancesquared( ddomain.integrate( (x-y)**2, geometry=dgeom, ischeme='gauss2' ) )
 
 class TestSingularDoubleInt( object ):
   'Regularized quadrature on product domain.'
@@ -46,16 +44,14 @@ class TestSingularDoubleInt( object ):
     grid = numpy.linspace( 0., 1., 4 )
     domain, geom = mesh.rectilinear( 2*(grid,) )
     ddomain = domain * domain
-
-    iw = function.iwscale( geom, domain.ndims )
-    iweights = iw * function.opposite( iw ) * function.IWeights()
+    dgeom = function.concatenate([ geom, function.opposite(geom) ])
 
     x = geom
     y = function.opposite( geom[0] )
     r = function.norm2( x-y )
     
-    self.patch( ddomain.integrate( 1, iweights=iweights, ischeme='singular2' ) )
-    self.distance( ddomain.integrate( r**2, iweights=iweights, ischeme='singular3' ) )
+    self.patch( ddomain.integrate( 1, geometry=dgeom, ischeme='singular2' ) )
+    self.distance( ddomain.integrate( r**2, geometry=dgeom, ischeme='singular3' ) )
 
 class TestNormalInKernelOfV( object ):
   'Convolute normal with single-layer to verify it is in the kernel, note that this works with all gauss schemes!'
@@ -73,13 +69,12 @@ class TestNormalInKernelOfV( object ):
       plot.writevtu( 'geometry.vtu', domain.refine(3), geometry )
       if refine: warnings.warn( 'The plotted geometry is a projection, and a bad approximation.' )
 
-    iw = function.iwscale( geometry, self.domain.ndims )
-    iweights = iw * function.opposite( iw ) * function.IWeights()
+    dgeom = function.concatenate([ geometry, function.opposite(geometry) ])
 
     x = geometry
     y = function.opposite( geometry )
 
-    return self.ddomain.integrate( (V(x,y)*x.normal()).sum(), iweights=iweights, ischeme='singular{0}'.format(degree) )
+    return self.ddomain.integrate( (V(x,y)*x.normal()).sum(), geometry=dgeom, ischeme='singular{0}'.format(degree) )
 
   def test_SphericalGeometry( self ):
     'n in ker(V), case: sphere.'
@@ -127,15 +122,13 @@ class TestOneInKernelOfK( object ):
   def template( self, geometry, degree ):
     trac = self.domain.splinefunc( degree=2*(2,) ).vector(3)
     vinf = function.stack( (0.,0.,1.) )
-
-    iw = function.iwscale( geometry, self.domain.ndims )
-    iweights = iw * function.opposite( iw ) * function.IWeights()
+    dgeom = function.concatenate([ geometry, function.opposite(geometry) ])
 
     x = geometry
     y = function.opposite( geometry )
 
     Kvinf = (K(x, y)[:,:]*vinf[_,:]).sum(-1)
-    doublelayer = self.ddomain.integrate( (trac[:,:]*Kvinf[_,:]).sum(), iweights=iweights, ischeme='singular{0}'.format(degree) )
+    doublelayer = self.ddomain.integrate( (trac[:,:]*Kvinf[_,:]).sum(), geometry=dgeom, ischeme='singular{0}'.format(degree) )
     identity = self.domain.integrate( (trac*vinf).sum(), geometry=geometry, ischeme='gauss4' )
 
     return .5*identity + doublelayer
@@ -169,6 +162,8 @@ class TestShearFlow( object ):
         (r*cos(theta) + R)*sin(phi),
          r*sin(theta)] )
   
+    dtorus = function.concatenate([ torus, function.opposite(torus) ])
+
     # boundary data
     velo_shear = function.stack( [torus[2], 0., 0.] )
     trac_shear = function.stack( [torus.normal()[2], 0., torus.normal()[0]] )
@@ -176,16 +171,14 @@ class TestShearFlow( object ):
   
     l2norm = lambda self, func: numpy.sqrt( self.domain.integrate( func**2, geometry=self.torus, ischeme='gauss6' ).sum() )
   
-    iw = function.iwscale( torus, domain.ndims )
-    iweights = iw * function.opposite( iw ) * function.IWeights()
     x = torus
     y = function.opposite( x )
     
     rhs = 0.5*domain.integrate( (funcsp*velo_shear).sum(-1), geometry=x, ischeme='gauss4' ) \
         + ddomain.integrate( (funcsp*(K(x,y)*function.opposite(velo_shear)).sum()).sum(),
-          iweights=iweights, ischeme='singular5', title='bem[K]' )
+          geometry=dtorus, ischeme='singular5', title='bem[K]' )
     mat = ddomain.integrate_symm( (funcsp*(V(x,y)*function.opposite(funcsp)[:,_,_,:]).sum()).sum(),
-          iweights=iweights, ischeme='singular3', force_dense=True, title='bem[V]' )
+          geometry=dtorus, ischeme='singular3', force_dense=True, title='bem[V]' )
     lhs = mat.solve( rhs, tol=1.e-8 )
     trac = funcsp.dot(lhs)
     trac_err, surf = domain.integrate( ((trac-trac_shear)**2, 1), geometry=x, ischeme='gauss6' )

@@ -657,9 +657,9 @@ class Element( object ):
 
   Represents the topological shape.'''
 
-  __slots__ = 'reference', 'vertices', 'ndims', 'index', 'parent', 'context', 'interface', 'root_transform', 'root_det'
+  __slots__ = 'reference', 'vertices', 'ndims', 'index', 'parent', 'context', 'interface'
 
-  def __init__( self, reference, vertices, index=None, parent=None, context=None, interface=None, root_det=None ):
+  def __init__( self, reference, vertices, index=None, parent=None, context=None, interface=None ):
     'constructor'
 
     assert isinstance( reference, Reference )
@@ -673,16 +673,6 @@ class Element( object ):
     self.parent = parent
     self.context = context
     self.interface = interface
-
-    if root_det is not None:
-      self.root_det = root_det
-    elif parent:
-      pelem, trans = parent
-      self.root_transform = trans >> pelem.root_transform
-      self.root_det = self.root_transform.det
-    else:
-      self.root_transform = transform.identity( self.ndims )
-      self.root_det = 1.
 
   def __mul__( self, other ):
     'multiply elements'
@@ -826,9 +816,8 @@ def ProductElement( elem1, elem2 ):
         raise ValueError( 'Unknown neighbor type %i' % neighborhood )
       transf = vertex.index( vertices1 ), vertex.index( vertices2 )
   reference = ProductReference( elem1.reference, elem2.reference, neighborhood, transf )
-  root_det = elem1.root_det * elem2.root_det
 
-  return Element( reference=reference, vertices=vertices, interface=(iface1,iface2), root_det=root_det )
+  return Element( reference=reference, vertices=vertices, interface=(iface1,iface2) )
   
 def QuadElement( ndims, vertices, index=None, parent=None, context=None, interface=None ):
   reference = QuadReference( ndims )
