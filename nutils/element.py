@@ -651,9 +651,9 @@ class Element( object ):
 
   Represents the topological shape.'''
 
-  __slots__ = 'reference', 'vertices', 'ndims', 'index', 'parent', 'context', 'interface', 'sign'
+  __slots__ = 'reference', 'vertices', 'parent', 'parents', 'sign'
 
-  def __init__( self, reference, vertices, index=None, parent=None, context=None, interface=None, sign=1 ):
+  def __init__( self, reference, vertices, parent=None, parents=None, sign=1 ):
     'constructor'
 
     assert isinstance( reference, Reference )
@@ -661,13 +661,21 @@ class Element( object ):
     #assert all( isinstance(vertex,Vertex) for vertex in vertices )
     self.reference = reference
     self.vertices = tuple(vertices)
-    self.ndims = reference.ndims
-    assert index is None or parent is None
-    self.index = index
-    self.parent = parent
-    self.context = context
-    self.interface = interface
+    if parent:
+      assert not parents
+      self.parent = parent
+      self.parents = parent, parent
+    elif parents:
+      self.parent = None
+      self.parents = parents
+    else:
+      self.parent = None
+      self.parents = None
     self.sign = sign
+
+  @property
+  def ndims( self ):
+    return self.reference.ndims
 
   def __mul__( self, other ):
     'multiply elements'
@@ -685,7 +693,7 @@ class Element( object ):
 
   @property
   def edges( self ):
-    return tuple( Element( reference=reference, vertices=vertices, context=(self,transform), sign=self.sign*sign )
+    return tuple( Element( reference=reference, vertices=vertices, parent=(self,transform), sign=self.sign*sign )
       for (transform,sign,reference), vertices in zip(self.reference.edges,self.reference.get_edge_vertices(self.vertices)) )
 
   def edge( self, iedge ):
@@ -708,8 +716,7 @@ class Element( object ):
       and self.reference == other.reference
       and self.vertices == other.vertices
       and self.parent == other.parent
-      and self.context == other.context
-      and self.interface == other.interface )
+      and self.parents == other.parents )
 
   def trim( self, levelset, maxrefine, numer ):
     'trim element along levelset'
@@ -812,19 +819,19 @@ def ProductElement( elem1, elem2 ):
       transf = vertex.index( vertices1 ), vertex.index( vertices2 )
   reference = ProductReference( elem1.reference, elem2.reference, neighborhood, transf )
 
-  return Element( reference=reference, vertices=vertices, interface=(iface1,iface2), sign=1 )
+  return Element( reference=reference, vertices=vertices, parents=(iface1,iface2), sign=1 )
   
-def QuadElement( ndims, vertices, index=None, parent=None, context=None, interface=None ):
+def QuadElement( ndims, vertices, parent=None, parents=None ):
   reference = QuadReference( ndims )
-  return Element( reference, vertices, index=index, parent=parent, context=context, interface=interface, sign=1 )
+  return Element( reference, vertices, parent=parent, parents=parents, sign=1 )
 
-def TriangularElement( vertices, index=None, parent=None, context=None ):
+def TriangularElement( vertices, parent=None ):
   reference = TriangularReference()
-  return Element( reference=reference, vertices=vertices, index=index, parent=parent, context=context, sign=1 )
+  return Element( reference=reference, vertices=vertices, parent=parent, sign=1 )
 
-def TetrahedronElement( vertices, index=None, parent=None, context=None ):
+def TetrahedronElement( vertices, parent=None ):
   reference = TetrahedronReference()
-  return Element( reference=reference, vertices=vertices, index=index, parent=parent, context=context, sign=1 )
+  return Element( reference=reference, vertices=vertices, parent=parent, sign=1 )
 
 class StdElem( cache.Immutable ):
   'stdelem base class'

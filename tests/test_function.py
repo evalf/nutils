@@ -17,7 +17,7 @@ class FuncTest( object ):
     elem = element.QuadElement( ndims=2, vertices=bvertices, parent=(interelem,trans1) ) # corners at (3,-1), (2,-4), (4,-5), (5,-2)
 
     cvertices = [element.PrimaryVertex('C(%d)'%i) for i in range(2)]
-    iface = element.QuadElement( ndims=1, vertices=cvertices, interface=(elem.edge(1).context,elem.edge(0).context) )
+    iface = element.QuadElement( ndims=1, vertices=cvertices, parents=(elem.edge(1).parent,elem.edge(0).parent) )
     ifpoints, ifweights = iface.reference.getischeme('uniform2')
 
     fmap = { elem: element.PolyLine( element.PolyLine.bernstein_poly(1) )

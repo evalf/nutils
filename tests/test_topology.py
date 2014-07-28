@@ -235,7 +235,7 @@ class TestTopologyGlueing( object ):
                     str( elem[index((0,0))] ): [2, (2,3), (2,6), (5,3), (5,6)]}
     ecoll = [{}, {}, {}, {}] # Collect product elements to be used in integration test below.
     for alpha, pelem in enumerate( ddom ):
-      elem2 = pelem.interface[1][0]
+      elem2 = pelem.parents[1][0]
       orientation = orientations.get( str( elem2 ), [-1, (0,0)] )
       ecoll[orientation[0]][pelem.__repr__()] = pelem
       if visual: self.plot_gauss_on_circle( pelem )

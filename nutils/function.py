@@ -321,18 +321,14 @@ class Cascade( Evaluable ):
     'evaluate'
 
     fulltrans = transform.identity( elem.ndims )
-
-    while elem.ndims != ndims:
-      elem, trans = elem.interface[side] if elem.interface \
-               else elem.context or elem.parent
+    cascade = []
+    while True:
+      if elem.ndims == ndims:
+        cascade.append(( elem, fulltrans ))
+      if not elem.parents:
+        break
+      elem, trans = elem.parents[side]
       fulltrans >>= trans
-
-    cascade = [ (elem,fulltrans) ]
-    while elem.parent:
-      elem, trans = elem.parent
-      fulltrans >>= trans
-      cascade.append( (elem,fulltrans) )
-
     return cascade
 
   @property

@@ -310,7 +310,7 @@ class Topology( object ):
     __log__ = log.iter( 'elem', self )
     for elem in parallel.pariter( __log__ ):
       assert isinstance( elem.reference, element.ProductReference )
-      (elem1,trans1), (elem2,trans2) = elem.interface
+      (elem1,trans1), (elem2,trans2) = elem.parents
       compare_elem = cmp( elem1, elem2 )
       if compare_elem < 0:
         continue
@@ -525,7 +525,7 @@ class Topology( object ):
       for irefine in range( nrefine ):
         belemset = set()
         for belem in topo.boundary:
-          celem, transform = belem.context
+          celem, transform = belem.parent
           if celem in topoelems:
             belemset.add( belem )
         allbelems.extend( belemset )
@@ -540,7 +540,7 @@ class Topology( object ):
       topo = self # topology to examine in next level refinement
       for irefine in range( nrefine ):
         for ielem in topo.interfaces:
-          (celem1,transform1), (celem2,transform2) = ielem.interface
+          (celem1,transform1), (celem2,transform2) = ielem.parents
           if celem1 in topoelems:
             while True:
               if celem2 in topoelems:
@@ -659,10 +659,10 @@ class StructuredTopology( Topology ):
       trans1 = transform.linear(A) >> transform.shift(b[:-1])
       trans2 = transform.linear(A) >> transform.shift(b[1:])
       for elem1, elem2 in numpy.broadcast( self.structure[t1], self.structure[t2] ):
-        interface = (elem1,trans1), (elem2,trans2)
+        parents = (elem1,trans1), (elem2,trans2)
         vertices = numpy.reshape( elem1.vertices, [2]*elem1.ndims )[s2].ravel()
         assert numpy.all( vertices == numpy.reshape( elem2.vertices, [2]*elem1.ndims )[s1].ravel() )
-        ielem = element.QuadElement( ndims=self.ndims-1, vertices=vertices, interface=interface )
+        ielem = element.QuadElement( ndims=self.ndims-1, vertices=vertices, parents=parents )
         interfaces.append( ielem )
     return UnstructuredTopology( interfaces, ndims=self.ndims-1 )
 
@@ -1088,7 +1088,7 @@ class HierarchicalTopology( Topology ):
       belemset = set()
       myelems = elems.intersection( topo )
       for belem in topo.boundary:
-        celem, transform = belem.context
+        celem, transform = belem.parent
         if celem in myelems:
           belemset.add( belem )
       allbelems.extend( belemset )
@@ -1111,7 +1111,7 @@ class HierarchicalTopology( Topology ):
     while elems:
       myelems = elems.intersection( topo )
       for ielem in topo.interfaces:
-        (celem1,transform1), (celem2,transform2) = ielem.interface
+        (celem1,transform1), (celem2,transform2) = ielem.parents
         if celem1 in myelems:
           while True:
             if celem2 in self.elements:
@@ -1300,7 +1300,7 @@ def glue( master, slave, geometry, tol=1.e-10, verbose=False ):
     emap[belem] = element.QuadElement( belem.ndims,
       vertices=[ vtxmap.get(vtx,vtx) for vtx in belem.vertices ],
       parent=(belem,transform.identity(belem.ndims)) )
-    elem, trans = belem.context
+    elem, trans = belem.parent
     emap[elem] = element.QuadElement( elem.ndims,
       vertices=[ vtxmap.get(vtx,vtx) for vtx in elem.vertices ],
       parent=(elem,transform.identity(elem.ndims)) )
