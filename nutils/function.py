@@ -1640,6 +1640,9 @@ class Take( ArrayFunc ):
   def _localgradient( self, ndims ):
     return take( localgradient( self.func, ndims ), self.indices, self.axis )
 
+  def _opposite( self ):
+    return take( opposite(self.func), self.indices, self.axis )
+
   def _take( self, index, axis ):
     if axis == self.axis:
       if numpy.all( numpy.diff( self.indices ) == 1 ):
