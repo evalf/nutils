@@ -1116,6 +1116,9 @@ class Concatenate( ArrayFunc ):
   def _power( self, n ):
     return concatenate( [ power( func, n ) for func in self.funcs ], self.axis )
 
+  def _repeat( self, length, axis ):
+    return concatenate( [ repeat( func, length, axis ) for func in self.funcs ], self.axis )
+
 class Interpolate( ArrayFunc ):
   'interpolate uniformly spaced data; stepwise for now'
 
