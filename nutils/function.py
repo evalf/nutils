@@ -1117,7 +1117,8 @@ class Concatenate( ArrayFunc ):
     return concatenate( [ power( func, n ) for func in self.funcs ], self.axis )
 
   def _repeat( self, length, axis ):
-    return concatenate( [ repeat( func, length, axis ) for func in self.funcs ], self.axis )
+    if axis != self.axis:
+      return concatenate( [ repeat( func, length, axis ) for func in self.funcs ], self.axis )
 
 class Interpolate( ArrayFunc ):
   'interpolate uniformly spaced data; stepwise for now'
@@ -2079,6 +2080,10 @@ class Inflate( ArrayFunc ):
 
   def _opposite( self ):
     return inflate( opposite(self.func), opposite(self.dofmap), self.length, self.axis )
+
+  def _repeat( self, length, axis ):
+    if axis != self.axis:
+      return inflate( repeat(self.func,length,axis), self.dofmap, self.length, self.axis )
 
 class Diagonalize( ArrayFunc ):
   'diagonal matrix'
