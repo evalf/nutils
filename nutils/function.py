@@ -1120,6 +1120,10 @@ class Concatenate( ArrayFunc ):
     if axis != self.axis:
       return concatenate( [ repeat( func, length, axis ) for func in self.funcs ], self.axis )
 
+  def _diagonalize( self ):
+    if self.axis < self.ndim-1:
+      return concatenate( [ diagonalize(func) for func in self.funcs ], self.axis )
+
 class Interpolate( ArrayFunc ):
   'interpolate uniformly spaced data; stepwise for now'
 
