@@ -99,7 +99,7 @@ class CompiledEvaluable( object ):
     imgpath = util.getpath( 'dot{0:03x}.' + imgtype )
 
     try:
-      dot = subprocess.Popen( [dotpath,'-Tjpg'], stdin=subprocess.PIPE, stdout=open(imgpath,'w') )
+      dot = subprocess.Popen( [dotpath,'-T'+imgtype], stdin=subprocess.PIPE, stdout=open(imgpath,'w') )
     except OSError:
       log.error( 'error: failed to execute', dotpath )
       return False
