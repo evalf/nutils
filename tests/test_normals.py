@@ -16,6 +16,19 @@ class NormalTest( object ):
     volumes = self.domain.boundary.integrate( self.geom * self.geom.normal(), geometry=self.geom, ischeme='gauss2' )
     numpy.testing.assert_almost_equal( volume, volumes )
 
+  def test_interfaces( self ):
+    funcsp = self.domain.discontfunc( degree=2 )
+    f = ( funcsp[:,_] * numpy.arange(funcsp.shape[0]*self.domain.ndims).reshape(-1,self.domain.ndims) ).sum(0)
+    g = funcsp.dot( numpy.arange(funcsp.shape[0]) )
+
+    fg1 = self.domain.integrate( ( f * g.grad(self.geom) ).sum(), geometry=self.geom, ischeme='gauss2' )
+    fg2 = self.domain.boundary.integrate( (f*g).dotnorm(self.geom), geometry=self.geom, ischeme='gauss2' ) \
+        + self.domain.interfaces.integrate( function.jump(f*g).dotnorm(self.geom), geometry=self.geom, ischeme='gauss2' ) \
+        - self.domain.integrate( f.div(self.geom) * g, geometry=self.geom, ischeme='gauss2' )
+
+    numpy.testing.assert_almost_equal( fg1, fg2 )
+
+
 class Test2D( NormalTest ):
 
   def __init__( self ):

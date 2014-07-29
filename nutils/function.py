@@ -566,7 +566,7 @@ class ElemSign( ArrayFunc ):
   @staticmethod
   def elemsign( cascade ):
     elem, trans = cascade[0]
-    return elem.sign
+    return numpy.array(elem.sign)
 
   def _localgradient( self, ndims ):
     return _zeros( (ndims,) )
