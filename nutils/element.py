@@ -608,28 +608,37 @@ class Element( object ):
 
   Represents the topological shape.'''
 
-  __slots__ = 'reference', 'vertices', 'parent', 'parents', 'sign'
+  __slots__ = 'reference', 'parents', 'sign', '__vertices', '__cmpkey', '__hash'
 
-  def __init__( self, reference, vertices, parent=None, parents=None, sign=1 ):
+  def __init__( self, reference, vertices=None, parent=None, parents=None, sign=1 ):
     'constructor'
 
     assert isinstance( reference, Reference )
-    assert len(vertices) == reference.nverts
-    #assert all( isinstance(vertex,Vertex) for vertex in vertices )
     self.reference = reference
-    self.vertices = tuple(vertices)
-    if parent:
-      assert not parents
-      self.parent = parent
-      self.parents = parent, parent
-    elif parents:
-      self.parent = None
+    if vertices is not None:
+      vertices = tuple(vertices)
+      assert len(vertices) == reference.nverts
+    self.__vertices = vertices
+    if parents:
+      assert not parent
       self.parents = parents
     else:
-      self.parent = None
-      self.parents = None
+      self.parents = parent, parent
     assert abs(sign) == 1
     self.sign = sign
+    self.__cmpkey = reference, self.parents, vertices, sign
+    self.__hash = hash( self.__cmpkey )
+
+  @property
+  def parent( self ):
+    return self.parents[0]
+
+  @property
+  def vertices( self ):
+    if self.__vertices is None:
+      pelem, trans = self.parent
+      self.__vertices = [ pelem.getvtx(trans.apply(v)) for v in self.reference.vertices ]
+    return self.__vertices
 
   @property
   def ndims( self ):
@@ -642,25 +651,21 @@ class Element( object ):
 
   @property
   def simplices( self ):
-    return [ Element( reference, vertices=[None]*reference.nverts, parent=(self,trans), sign=self.sign ) for trans, reference in self.reference.simplices ]
+    return [ Element( reference, parent=(self,trans), sign=self.sign ) for trans, reference in self.reference.simplices ]
 
   def getvtx( self, coord ):
     coords, coord, common = rational.common_factor( self.reference.vertices, coord )
-    try:
-      index = coords.tolist().index( coord.tolist() )
-      vertex = self.vertices[index]
-    except:
-      vertex = None
-    return vertex
+    index = coords.tolist().index( coord.tolist() )
+    return self.vertices[index]
 
   @property
   def children( self ):
-    return tuple( Element( reference=child, vertices=[self.getvtx(trans.apply(v)) for v in child.vertices], parent=(self,trans), sign=self.sign )
+    return tuple( Element( reference=child, parent=(self,trans), sign=self.sign )
       for trans, child in self.reference.children )
 
   @property
   def edges( self ):
-    return tuple( Element( reference=edge, vertices=[self.getvtx(trans.apply(v)) for v in edge.vertices], parent=(self,trans), sign=self.sign*sign )
+    return tuple( Element( reference=edge, parent=(self,trans), sign=self.sign*sign )
       for trans, sign, edge in self.reference.edges )
 
   def edge( self, iedge ):
@@ -674,16 +679,12 @@ class Element( object ):
   def __hash__( self ):
     'hash'
 
-    return hash(str(self))
+    return self.__hash
 
   def __eq__( self, other ):
     'hash'
 
-    return self is other or ( isinstance( other, Element )
-      and self.reference == other.reference
-      and self.vertices == other.vertices
-      and self.parent == other.parent
-      and self.parents == other.parents )
+    return self is other or isinstance( other, Element ) and self.__cmpkey == other.__cmpkey
 
   def trim( self, levelset, maxrefine, numer ):
     'trim element along levelset'
@@ -756,14 +757,12 @@ class Element( object ):
     if not children:
       return None
     reference = MosaicReference( self.ndims, tuple(children) )
-    return Element( reference=reference, vertices=[], parent=(self,transform.identity(self.ndims)), sign=self.sign )
+    return Element( reference=reference, parent=(self,transform.identity(self.ndims)), sign=self.sign )
 
 def ProductElement( elem1, elem2 ):
   eye = numpy.eye( elem1.ndims + elem2.ndims, dtype=int )
   iface1 = elem1, transform.linear( eye[:elem1.ndims] )
   iface2 = elem2, transform.linear( eye[elem1.ndims:] )
-  #vertices = [] # TODO [ ProductVertex(vertex1,vertex2) for vertex1 in elem1.vertices for vertex2 in elem2.vertices ]
-  vertices = [ ProductVertex(vertex1,vertex2) for vertex1 in elem1.vertices for vertex2 in elem2.vertices ]
 
   transf = 0, 0
   neighborhood = -1
@@ -786,17 +785,17 @@ def ProductElement( elem1, elem2 ):
       transf = vertex.index( vertices1 ), vertex.index( vertices2 )
   reference = ProductReference( elem1.reference, elem2.reference, neighborhood, transf )
 
-  return Element( reference=reference, vertices=vertices, parents=(iface1,iface2), sign=1 )
+  return Element( reference=reference, parents=(iface1,iface2), sign=1 )
   
-def QuadElement( ndims, vertices, parent=None, parents=None ):
+def QuadElement( ndims, vertices=None, parent=None, parents=None ):
   reference = SimplexReference(1)**ndims if ndims else SimplexReference(0)
   return Element( reference, vertices, parent=parent, parents=parents, sign=1 )
 
-def TriangularElement( vertices, parent=None ):
+def TriangularElement( vertices=None, parent=None ):
   reference = SimplexReference(2)
   return Element( reference=reference, vertices=vertices, parent=parent, sign=1 )
 
-def TetrahedronElement( vertices, parent=None ):
+def TetrahedronElement( vertices=None, parent=None ):
   reference = SimplexReference(3)
   return Element( reference=reference, vertices=vertices, parent=parent, sign=1 )
 

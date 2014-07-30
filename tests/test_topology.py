@@ -110,9 +110,7 @@ class TestTopologyGlueing( object ):
     self.geom0 = function.stack( [x, y, abs(1-x**2-y**2)] ) # Don't take sqrt, upsets BEM conv.
 
     # Plane, rotated to ensure singular-integration-compatible connectivity
-    self.topo1, (xi, eta) = mesh.rectilinear( 2*(grid,) )
-    for elem in self.topo1: # relabel vertices
-      elem.vertices = tuple( vertex+"/" for vertex in elem.vertices )
+    self.topo1, (xi, eta) = mesh.rectilinear( 2*(grid,), name='rect2' )
     x, y = sin(xi)*cos(eta)-sin(eta)*cos(xi), sin(xi)*cos(eta)+sin(eta)*cos(xi)
     self.geom1 = function.stack( [x, -y, 0] ) # minus to get normal downwards
 

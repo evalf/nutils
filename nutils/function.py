@@ -325,7 +325,7 @@ class Cascade( Evaluable ):
     while True:
       if elem.ndims == ndims:
         cascade.append(( elem, fulltrans ))
-      if not elem.parents:
+      if not elem.parent:
         break
       elem, trans = elem.parents[side]
       fulltrans >>= trans
