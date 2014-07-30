@@ -175,6 +175,40 @@ class Linear( Transform ):
   def __str__( self ):
     return '*%s' % self.matrix
 
+class Tensor( Transform ):
+
+  def __init__( self, trans1, trans2 ):
+    assert isinstance( trans1, Transform )
+    assert isinstance( trans2, Transform )
+    Transform.__init__( self, trans1.todims+trans2.todims, trans1.fromdims+trans2.fromdims )
+    self.trans1 = trans1
+    self.trans2 = trans2
+
+  def apply( self, points ):
+    points1 = self.trans1.apply( points[...,:self.trans1.fromdims] )
+    points2 = self.trans2.apply( points[...,self.trans1.fromdims:] )
+    points1, points2, factor = rational.common_factor( points1, points2 )
+    points = numpy.concatenate( [ points1, points2 ], axis=-1 )
+    return points if factor is None else rational.Array( points, factor, True )
+
+  @cache.property
+  def matrix( self ):
+    matrix1, matrix2, factor = rational.common_factor( self.trans1.matrix, self.trans2.matrix )
+    matrix = numpy.zeros( [self.todims,self.fromdims], dtype=int )
+    matrix[:self.trans1.todims,:self.trans1.fromdims] = matrix1
+    matrix[self.trans1.todims:,self.trans1.fromdims:] = matrix2
+    return rational.Array( matrix, factor, True )
+
+  @property
+  def det( self ):
+    return self.trans1.det * self.trans2.det
+
+  @property
+  def inv( self ):
+    return Tensor( self.trans1.inv, self.trans2.inv )
+
+  def __str__( self ):
+    return '[%s; %s]' % ( self.trans1, self.trans2 )
 
 ## UTILITY FUNCTIONS
 
@@ -196,5 +230,7 @@ def shift( shift, numer=rational.unit ):
 def linear( matrix, numer=rational.unit ):
   return Linear( rational.frac(matrix,numer) )
 
+def tensor( trans1, trans2 ):
+  return Tensor( trans1, trans2 )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

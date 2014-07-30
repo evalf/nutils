@@ -25,7 +25,7 @@ class TestGaussQuadrature( object ):
   
         log.info( '%s: n = %02d, F = %8.6e, rel.err. = %8.6e, %s' % (name,len(weights),Fq,err,'Exact' if err < EPS else 'Not exact') )
   
-        if isinstance( elem.reference, element.QuadReference ):
+        if elem.reference == element.SimplexReference(1)**elem.ndims:
           expect_exact = p // 2 >= numpy.amax(ab) // 2
         else:
           expect_exact = p >= order

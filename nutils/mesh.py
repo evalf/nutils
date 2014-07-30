@@ -49,7 +49,7 @@ def rectilinear( richshape, periodic=(), name='rect' ):
     tmp[-1] = tmp[0]
   indices = numeric.grid( shape )
   structure = numpy.empty( indices.shape[1:], dtype=object )
-  domainelem = element.Element( reference=element.Reference( numpy.zeros((0,ndims)) ), vertices=[] )
+  domainelem = element.Element( reference=element.Reference( numpy.zeros((0,ndims),dtype=int) ), vertices=[] )
   for index in indices.reshape( ndims, -1 ).T:
     vertices = vertexobjs[tuple(slice(i,i+2) for i in index)].ravel()
     parent = domainelem, transform.shift(index)
@@ -356,7 +356,7 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   Q /= 2 * numpy.sqrt( abs(Q).max(axis=0) / numpy.sqrt(2) )
   R = numpy.zeros([2,1])
 
-  scale = rational.Rational([1,1,1])
+  scale = rational.Scalar([1,1,1])
   coords = numeric.round( numpy.hstack( [P,Q,R] ).T * float(scale) )
 
   vertices = numpy.array(
@@ -364,7 +364,7 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   + [ ( 12+(i+1)%8, 12+i, i+1+(i//2) ) for i in range( 8) ]
   + [ ( 12+i, 12+(i+1)%8, 20 )         for i in range( 8) ] )
   
-  domainelem = element.Element( reference=element.Reference( numpy.zeros((0,2)) ), vertices=[] )
+  domainelem = element.Element( reference=element.Reference( numpy.zeros((0,2),dtype=int) ), vertices=[] )
   elements = []
   vertexobjs = numpy.array([ element.PrimaryVertex( 'demo.%d' % ivertex ) for ivertex in range(len(vertices)) ])
   for ielem, elemvertices in enumerate( vertices ):
@@ -375,7 +375,7 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
 
   fmap = dict.fromkeys( elements, element.PolyTriangle(1) )
   nmap = dict( zip( elements, vertices ) )
-  belems = [ elem.edge(1) for elem in elements[:12] ]
+  belems = [ elem.edge(2) for elem in elements[:12] ]
   bgroups = { 'top': belems[0:3], 'left': belems[3:6], 'bottom': belems[6:9], 'right': belems[9:12] }
 
   linearfunc = function.function( fmap, nmap, ndofs=21, ndims=2 )

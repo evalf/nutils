@@ -6,7 +6,7 @@ class FuncTest( object ):
   haslocalgradient = True
 
   def __init__( self ):
-    domainelem = element.Element( reference=element.QuadReference(2), vertices=[0,1,2,3] )
+    domainelem = element.Element( reference=element.SimplexReference(1)**2, vertices=[0,1,2,3] )
     r, theta = function.ElemFunc( 2 ) # corners at (0,0), (0,1), (1,1), (1,0)
     geom = r * function.stack([ function.cos(theta), function.sin(theta) ])
     trans2 = transform.linear([[2,1],[-1,3]]) >> transform.shift([1,0])

@@ -35,6 +35,14 @@ class Test2D( NormalTest ):
     domain, geom = mesh.rectilinear( [[1,1.5,2],[-1,0]] )
     NormalTest.__init__( self, domain, geom )
 
+  def test_boundaries( self ):
+    normal = self.geom.normal()
+    boundary = self.domain.boundary
+    for name, n in zip( ['right','top'], numpy.eye(2) ):
+      numpy.testing.assert_almost_equal( boundary[name].elem_eval( normal, ischeme='gauss1', separate=False )-n, 0 )
+    for name, n in zip( ['left','bottom'], -numpy.eye(2) ):
+      numpy.testing.assert_almost_equal( boundary[name].elem_eval( normal, ischeme='gauss1', separate=False )-n, 0 )
+
 class Test2DCurve( NormalTest ):
 
   def __init__( self ):
@@ -47,3 +55,11 @@ class Test3D( NormalTest ):
   def __init__( self ):
     domain, geom = mesh.rectilinear( [[1,1.5,2],[-1,0],[0,2,4]] )
     NormalTest.__init__( self, domain, geom )
+
+  def test_boundaries( self ):
+    normal = self.geom.normal()
+    boundary = self.domain.boundary
+    for name, n in zip( ['right','top','back'], numpy.eye(3) ):
+      numpy.testing.assert_almost_equal( boundary[name].elem_eval( normal, ischeme='gauss1', separate=False )-n, 0 )
+    for name, n in zip( ['left','bottom','front'], -numpy.eye(3) ):
+      numpy.testing.assert_almost_equal( boundary[name].elem_eval( normal, ischeme='gauss1', separate=False )-n, 0 )

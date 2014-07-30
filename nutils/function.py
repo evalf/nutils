@@ -63,7 +63,7 @@ class CompiledEvaluable( object ):
       assert points.shape[-1] == elem.ndims
       assert points.shape[:-1] == weights.shape, 'non matching shapes: points.shape=%s, weights.shape=%s' % ( points.shape, weights.shape )
     elif isinstance( ischeme, numpy.ndarray ):
-      points = ischeme
+      points = ischeme.astype( float )
       weights = None
       assert points.shape[-1] == elem.ndims
     elif ischeme is None:

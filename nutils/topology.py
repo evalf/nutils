@@ -1028,7 +1028,7 @@ class UnstructuredTopology( Topology ):
 
       vertexdofs = dofaxis.eval(elem,None)
       edgedofs = []
-      if isinstance( elem.reference, element.TriangularReference ):
+      if isinstance( elem.reference, element.SimplexReference ):
         for i in range(3):
           j = (i+1)%3
           try:

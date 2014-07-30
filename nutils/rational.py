@@ -53,11 +53,11 @@ class Primes( object ):
 
 primes = Primes()
 
-class Rational( object ):
+class Scalar( object ):
 
   __array_priority__ = 1
 
-  def __init__( self, init=() ):
+  def __init__( self, init ):
     while len(init) and init[-1] == 0:
       init = init[:-1]
     if isinstance( init, numpy.ndarray ):
@@ -70,11 +70,11 @@ class Rational( object ):
     return hash( self.__n )
 
   def __eq__( self, other ):
-    return self is other or isrational(other) and self.__n == other.__n
+    return self is other or isscalar(other) and self.__n == other.__n
 
   def __op( self, other, op ):
     assert self.__n or other.__n, 'trivial cases should be handled by caller'
-    return Rational( numpy.hstack([
+    return Scalar( numpy.hstack([
       op( self.__n, other.__n[:len(self.__n)] ),
       op( 0, other.__n[len(self.__n):] ) ]) if len(self.__n) < len(other.__n)
                 else numpy.hstack([
@@ -86,9 +86,10 @@ class Rational( object ):
   def __mul__( self, other ):
     if not isexact( other ):
       return float(self) * other
+    other = asrational( other )
     if isarray( other ):
       return other * self
-    assert isrational( other )
+    assert isscalar( other )
     return other if not self.__n \
       else self if not other.__n \
       else self.__op( other, numpy.add )
@@ -99,6 +100,7 @@ class Rational( object ):
   def __add__( self, other ):
     if not isexact( other ):
       return float(self) + other
+    other = asrational( other )
     if isarray( other ):
       return other + self
     raise NotImplementedError
@@ -106,6 +108,7 @@ class Rational( object ):
   def __sub__( self, other ):
     if not isexact( other ):
       return float(self) - other
+    other = asrational( other )
     if isarray( other ):
       return other - self
     raise NotImplementedError
@@ -113,13 +116,14 @@ class Rational( object ):
   def __div__( self, other ):
     if not isexact( other ):
       return float(self) / other
-    assert isrational( other )
+    other = asrational( other )
+    assert isscalar( other )
     return self if not other.__n \
-      else Rational( numpy.negative(other.__n) ) if not self.__n \
+      else Scalar( numpy.negative(other.__n) ) if not self.__n \
       else self.__op( other, numpy.subtract )
 
   def __rdiv__( self, other ):
-    return Rational( numpy.negative(self.__n) ) * other
+    return Scalar( numpy.negative(self.__n) ) * other
 
   __rmul__ = __mul__
   __radd__ = __add__
@@ -129,8 +133,8 @@ class Rational( object ):
   def __pow__( self, n ):
     assert isinstance( n, int )
     if n == 0 or not self.__n:
-      return Rational()
-    return Rational( numpy.multiply( self.__n, n ) )
+      return unit
+    return Scalar( numpy.multiply( self.__n, n ) )
 
   def __float__( self ):
     numer, denom = self.frac
@@ -145,7 +149,7 @@ class Rational( object ):
     return '%d/%d' % self.frac
 
   def __repr__( self ):
-    return 'Rational(%s)' % str(self)
+    return 'Scalar(%s)' % str(self)
 
   def factor( self ):
     return zip( primes, self.__n )
@@ -162,21 +166,33 @@ class Rational( object ):
 
   @property
   def numer( self ):
-    return Rational( self.__n and numpy.maximum( 0, self.__n ) )
+    return Scalar( self.__n and numpy.maximum( 0, self.__n ) )
   
   @property
   def denom( self ):
-    return Rational( self.__n and numpy.minimum( 0, self.__n ) )
+    return Scalar( self.__n and numpy.minimum( 0, self.__n ) )
 
-unit = Rational()
-half = Rational((-1,))
+  def gcd( self, other ):
+    """a.gcd(b)
+
+    Return largest rational c such that a/c and b/c are integer."""
+
+    other = asscalar( other )
+    if self == other:
+      return self
+    d = len(other.__n) - len(self.__n)
+    return Scalar( numpy.minimum( self.__n + (0,)*d, other.__n + (0,)*-d ) )
+
+
+unit = Scalar(())
+half = Scalar((-1,))
 
 class Array( object ):
 
   __array_priority__ = 1
 
   def __init__( self, array, factor=unit, isfactored=False ):
-    assert isrational( factor )
+    assert isscalar( factor )
     array = numpy.asarray( array )
     assert array.dtype == int
     if isfactored:
@@ -218,24 +234,34 @@ class Array( object ):
   def __add__( self, other ):
     if not isexact( other ):
       return self.__array * float(self.__factor) + other
-    raise NotImplementedError
+    other = asrational( other )
+    assert isarray( other )
+    common = self.__factor.gcd( other.__factor )
+    return Array( self.__array * int(self.__factor/common)
+              + other.__array * int(other.__factor/common), common, False )
 
   def __sub__( self, other ):
     if not isexact( other ):
       return self.__array * float(self.__factor) - other
-    raise NotImplementedError
+    other = asrational( other )
+    assert isarray( other )
+    common = self.__factor.gcd( other.__factor )
+    return Array( self.__array * int(self.__factor/common)
+              - other.__array * int(other.__factor/common), common, False )
 
   def __mul__( self, other ):
     if not isexact( other ):
       return self.__array * ( other * float(self.__factor) )
-    if isrational( other ):
+    other = asrational( other )
+    if isscalar( other ):
       return Array( self.__array, self.__factor*other, True )
     raise NotImplementedError
 
   def __div__( self, other ):
     if not isexact( other ):
       return self.__array * ( float(self.__factor) / other )
-    if isrational( other ):
+    other = asrational( other )
+    if isscalar( other ):
       return Array( self.__array, self.__factor/other, True )
     raise NotImplementedError
 
@@ -317,25 +343,25 @@ def factor( n ):
       factors.append( count )
       if n < len(masks):
         break
-  factor = Rational( factors )
+  factor = Scalar( factors )
   while n > 1:
     mask = masks[n]
     nums = []
     while mask:
       nums.append( int(mask&1) )
       mask >>= 1
-    r = Rational( nums )
+    r = Scalar( nums )
     factor *= r
     n //= int(r)
   return factor
 
-def isrational( num ):
-  return isinstance( num, Rational )
+def isscalar( num ):
+  return isinstance( num, Scalar )
 
-def asrational( num ):
+def asscalar( num ):
   if isinstance( num, int ):
     num = factor( num )
-  assert isrational( num )
+  assert isscalar( num )
   return num
 
 def isarray( arr ):
@@ -348,27 +374,30 @@ def asarray( arr ):
   assert arr.dtype == int
   return Array( arr, unit, False )
 
-def isexact( obj ):
-  return isrational(obj) or isarray(obj)
+def isrational(obj):
+  return isscalar(obj) or isarray(obj)
 
-def asexact( obj ):
-  return obj if isexact( obj ) \
-    else asrational( obj ) if isinstance( obj, int ) \
+def isexact( obj ):
+  return isinstance(obj,numpy.ndarray) and obj.dtype == int or isinstance(obj,int) or isrational(obj)
+
+def asrational( obj ):
+  return obj if isrational( obj ) \
+    else asscalar( obj ) if isinstance( obj, int ) \
     else asarray( obj )
 
 def frac( numer, denom ):
-  return asexact( numer ) / asrational( denom )
+  return asrational( numer ) / asscalar( denom )
 
 def gcd( numbers ):
   numbers = numpy.asarray( numbers )
   assert numbers.dtype == int
   if not numbers.size:
-    return numbers, Rational()
+    return numbers, unit
   unique = numpy.unique( numpy.abs(numbers.flat) )
   if unique[0] == 0:
     unique = unique[1:]
   if not unique.size:
-    return numbers, Rational()
+    return numbers, unit
   common = factor( unique[0] )
   unique = unique[1:]
   if unique.size:
@@ -379,16 +408,26 @@ def gcd( numbers ):
         unique //= prime
         n += 1
       factors.append( n )
-    common = Rational( factors )
+    common = Scalar( factors )
   return numbers // int(common), common
 
 def asfloat( obj ):
-  if isinstance(obj,int) or isrational(obj):
+  if isinstance(obj,int) or isscalar(obj):
     return float(obj)
   if isarray( obj ):
     array, factor = obj.decompose()
     return array * float(factor)
   return numpy.asarray( obj, dtype=float )
+
+def asint( obj ):
+  if isinstance(obj,numpy.ndarray) and obj.dtype == int or isinstance(obj,int):
+    return obj
+  if isarray( obj ):
+    ints, scale = obj.decompose()
+    return ints * int(scale)
+  if isscalar( obj ):
+    return int(obj)
+  raise Exception, 'cannot convert to int: %r' % obj
 
 def dot( A, B ):
   if not isexact( A ) or not isexact( B ):
@@ -399,5 +438,13 @@ def dot( A, B ):
 
 def eye( ndims ):
   return Array( numpy.eye(ndims,dtype=int), unit, True )
+
+def common_factor( arr1, arr2 ):
+  if not isexact(arr1) or not isexact(arr2):
+    return asfloat(arr1), asfloat(arr2), None
+  int1, factor1 = asarray(arr1).decompose()
+  int2, factor2 = asarray(arr2).decompose()
+  common = factor1.gcd( factor2 )
+  return int1 * int(factor1/common), int2 * int(factor2/common), common
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
