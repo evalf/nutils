@@ -253,7 +253,7 @@ class TestSingularQuadrature( object ):
       if devel: errs, Fset = {}, {}
       if compare_to_gauss: errsg = {}
       for key, elem in elems.iteritems():
-        topo = topology.UnstructuredTopology( [elem], ndims=elem.ndims )
+        topo = topology.Topology( [elem] )
         F = topo.integrate( func(geom), geometry=dgeom, ischeme='singular%i'%qmax )
         if compare_to_gauss:
           A = {0:8, 1:6, 2:4, 3:1}[neighbor]

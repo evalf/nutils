@@ -58,9 +58,9 @@ def unittest():
 
   retvals = main( degree=1, triangular=True, niter=6, plot=False )
   assert debug.checkdata( retvals, '''
-    eNplkFsOxSAIRLfTJprwFhbU/W/hClX7cb8GjjMExHZJQ73bZRT8dJwdOc0CGweOWUBTGpNEI1R9+ji6
-    +TGeKAlYEQb3KogQn+4TsGV268eXUUIhgThFzdoAlxOHWiqRYm3h+vIwzm2cWWqSS64Z38Pq/4IAdc5W
-    sfGeI4hcxXBekwjKuXTzk+BQrx9xpBxtAJG9RkhxC61r1/vu7x9BJVWy''' )
+    eNpdj9sNxSAMQ9dppSDlTTJQ91/hQkrRbb8cbHMIBIcC2QkHK/rVCME5ZQzD5uAxEAhGVCRJvQZmoqsF
+    GPdRSWAyu1ofTfF/ffxvf4M2ej9mYVVlntpB03CeaSFCJzIhRPS+mS7T0OAswtPYwSJ8yYRoL+3mM1ci
+    KbJ6v7fsIYvIWM2lj7+Ljpj1vyCeKEmLOntarZCpr3z55w86vFWy''' )
 
   retvals = main( degree=1, triangular=False, niter=11, plot=False )
   assert debug.checkdata( retvals, '''

@@ -63,6 +63,17 @@ class SimplexReference( Reference ):
     vertices = numpy.concatenate( [ numpy.zeros(ndims,dtype=int)[_,:],
                                     numpy.eye(ndims,dtype=int) ], axis=0 )
     Reference.__init__( self, vertices )
+    self._bernsteincache = [] # TEMPORARY
+
+  def stdfunc( self, degree ):
+    if self.ndims == 1:
+      if len(self._bernsteincache) <= degree or self._bernsteincache[degree] is None:
+        self._bernsteincache += [None] * (degree-len(self._bernsteincache))
+        self._bernsteincache.append( PolyLine( PolyLine.bernstein_poly(degree) ) )
+      return self._bernsteincache[degree]
+    if self.ndims == 2:
+      return PolyTriangle(degree)
+    raise NotImplementedError
 
   @cache.property
   def ribbon2vertices( self ):
@@ -343,6 +354,17 @@ class TensorReference( Reference ):
     vertices[:,:,ref1.ndims:] = ref2.vertices[_,:]
     Reference.__init__( self, vertices.reshape(-1,ndims) )
 
+  def stdfunc( self, degree, *n ):
+    if n:
+      degree = (degree,)+n
+      assert len(degree) == self.ndims
+      degree1 = degree[:self.ref1.ndims]
+      degree2 = degree[self.ref1.ndims:]
+    else:
+      degree1 = degree2 = degree
+    return self.ref1.stdfunc( degree1 ) \
+         * self.ref2.stdfunc( degree2 )
+
   @cache.property
   def ribbon2vertices( self ):
     r2v1 = self.ref1.ribbon2vertices[:,_,:] + self.ref1.nverts * numpy.arange(self.ref2.nverts)[_,:,_]
@@ -399,12 +421,9 @@ class TensorReference( Reference ):
 
   @cache.property
   def children( self ):
-    tmp = [ ( transform.tensor(trans1,trans2), child1*child2 )
+    return [ ( transform.tensor(trans1,trans2), child1*child2 )
       for trans1, child1 in self.ref1.children
         for trans2, child2 in self.ref2.children ]
-    for trans, child in tmp:
-      assert trans.fromdims == child.ndims
-    return tmp
 
 class MosaicReference( Reference ):
   'mosaic reference element'
@@ -443,7 +462,7 @@ class ProductReference( Reference ):
     overlap in right location. Returns 3-element tuple:
     * neighborhood, as given by Element.neighbor(),
     * transf1, required rotation of elem1 map: {0:0, 1:pi/2, 2:pi, 3:3*pi/2},
-    * transf2, required rotation of elem2 map (is indep of transf1 in UnstructuredTopology.'''
+    * transf2, required rotation of elem2 map (is indep of transf1 in Topology.'''
 
     self.ref1 = ref1
     self.ref2 = ref2
@@ -1057,9 +1076,9 @@ class PolyTriangle( StdElem ):
     npoints, ndim = points.shape
     if grad == 0:
       x, y = points.T
-      data = numpy.array( [ x, y, 1-x-y ] ).T
+      data = numpy.array( [ 1-x-y, x, y ] ).T
     elif grad == 1:
-      data = numpy.array( [[1,0],[0,1],[-1,-1]], dtype=float )
+      data = numpy.array( [[-1,-1],[1,0],[0,1]], dtype=float )
     else:
       data = numpy.array( 0 ).reshape( (1,) * (grad+ndim) )
     return data

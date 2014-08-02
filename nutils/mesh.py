@@ -172,7 +172,7 @@ def gmesh( path, btags={}, name=None ):
   for i, el in enumerate( belements ):
     if not set(belements[i-1].vertices) & set(el.vertices):
       structured = False
-      numpy.warnings.warn( 'Boundary elements are not sorted: boundary group will be an UnstructuredTopology.' )
+      numpy.warnings.warn( 'Boundary elements are not sorted: boundary group will be an unstructured Topology.' )
       break
 
   linearfunc = function.function( fmap, nmap, nvertices, 2 )
@@ -183,16 +183,15 @@ def gmesh( path, btags={}, name=None ):
     nmap_b[key] = numpy.concatenate( [val, [nvertices+i]] )
   bubblefunc = function.function( fmap_b, nmap_b, nvertices+len(nmap), 2 )
 
-  namedfuncs = { 'spline1': linearfunc, 'bubble1': bubblefunc }
-  topo = topology.UnstructuredTopology( elements, ndims=2, namedfuncs=namedfuncs )
-  topo.boundary = topology.UnstructuredTopology( belements, ndims=1 )
+  topo = topology.Topology( elements )
+  topo.boundary = topology.Topology( belements )
   topo.boundary.groups = {}
   for tag, group in bgroups.items():
     try:
       tag = btags[tag]
     except:
       pass
-    topo.boundary.groups[tag] = topology.UnstructuredTopology( group, ndims=1 )
+    topo.boundary.groups[tag] = topology.Topology( group )
 
   geom = linearfunc.dot( coords )
   return topo, geom
@@ -215,7 +214,6 @@ def triangulation( vertices, nvertices ):
   dofaxis = function.DofAxis( nvertices, nmap )
   stdelem = element.PolyTriangle( 1 )
   linearfunc = function.Function( dofaxis=dofaxis, stdmap=dict.fromkeys(nmap,stdelem) )
-  namedfuncs = { 'spline1': linearfunc }
 
   connectivity = dict( bedges.iterkeys() )
   N = list( connectivity.popitem() )
@@ -228,7 +226,7 @@ def triangulation( vertices, nvertices ):
     elem, iedge = bedges[ n12 ]
     structure.append( elem.edge( iedge ) )
     
-  topo = topology.UnstructuredTopology( list(nmap), ndims=2, namedfuncs=namedfuncs )
+  topo = topology.Topology( nmap )
   topo.boundary = topology.StructuredTopology( structure, periodic=(1,) )
   return topo
 
@@ -290,7 +288,6 @@ def igatool( path, name=None ):
     nmap[ elem ] = nids
 
   splinefunc = function.function( fmap, nmap, NumberOfPoints, ndims )
-  namedfuncs = { 'spline%d' % degree: splinefunc }
 
   boundaries = {}
   elemgroups = {}
@@ -307,27 +304,29 @@ def igatool( path, name=None ):
     I = util.arraymap( A.GetComponent, int, range(A.GetSize()), 0 )
     if grouptype == 'edge':
       belements = [ elements[i//4].edge( renumber[i%4] ) for i in I ]
-      boundaries[ groupname ] = topology.UnstructuredTopology( belements, ndims=ndims-1 )
+      boundaries[ groupname ] = topology.Topology( belements )
     elif grouptype == 'vertex':
       vertexgroups[ groupname ] = I
     elif grouptype == 'element':
-      elemgroups[ groupname ] = topology.UnstructuredTopology( [ elements[i] for i in I ], namedfuncs=namedfuncs, ndims=2 )
+      elemgroups[ groupname ] = topology.Topology( elements[i] for i in I )
     else:
       raise Exception, 'unknown group type: %r' % grouptype
 
-  topo = topology.UnstructuredTopology( elements, namedfuncs=namedfuncs, ndims=ndims )
+  topo = topology.Topology( elements )
   topo.groups = elemgroups
-  topo.boundary = topology.UnstructuredTopology( elements=[], ndims=ndims-1 )
-  topo.boundary.groups = boundaries
+  if boundaries:
+    topo.boundary = topology.Topology( elem for topo in boundaries.values() for elem in topo )
+    topo.boundary.groups = boundaries
 
   for group in elemgroups.values():
     myboundaries = {}
     for name, boundary in boundaries.iteritems():
       belems = [ belem for belem in boundary.elements if belem.parent[0] in group ]
       if belems:
-        myboundaries[ name ] = topology.UnstructuredTopology( belems, ndims=ndims-1 )
-    group.boundary = topology.UnstructuredTopology( elements=[], ndims=ndims-1 )
-    group.boundary.groups = myboundaries
+        myboundaries[ name ] = topology.Topology( belems )
+    if myboundaries:
+      group.boundary = topology.Topology( elem for topo in myboundaries.values() for elem in topo )
+      group.boundary.groups = myboundaries
 
   funcsp = topo.splinefunc( degree=degree )
   coords = ( funcsp[:,_] * points ).sum( 0 )
@@ -372,17 +371,12 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
     elem = element.Element( reference, trans >> root )
     elements.append( elem )
 
-  stdfunc = element.PolyTriangle(1)
-  fmap = { elem.transform: stdfunc for elem in elements }
-  nmap = { elem.transform: vtx for elem, vtx in zip( elements, vertices ) }
   belems = [ elem.edge(2) for elem in elements[:12] ]
   bgroups = { 'top': belems[0:3], 'left': belems[3:6], 'bottom': belems[6:9], 'right': belems[9:12] }
 
-  linearfunc = function.function( fmap, nmap, ndofs=21, ndims=2 )
-  namedfuncs = { 'spline1': linearfunc }
-  topo = topology.UnstructuredTopology( elements, ndims=2, namedfuncs=namedfuncs )
-  topo.boundary = topology.UnstructuredTopology( belems, ndims=1 )
-  topo.boundary.groups = dict( ( tag, topology.UnstructuredTopology( group, ndims=1 ) ) for tag, group in bgroups.items() )
+  topo = topology.Topology( elements )
+  topo.boundary = topology.Topology( belems )
+  topo.boundary.groups = dict( ( tag, topology.Topology( group ) ) for tag, group in bgroups.items() )
 
   geom = [.5*(xmin+xmax),.5*(ymin+ymax)] \
        + [.5*(xmax-xmin),.5*(ymax-ymin)] * function.ElemFunc( 2 )
