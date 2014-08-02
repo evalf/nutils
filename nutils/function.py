@@ -34,7 +34,7 @@ from . import util, numpy, numeric, log, core, cache, transform, rational, _
 import sys, warnings
 
 CACHE   = object()
-ELEM    = object()
+TRANS   = object()
 POINTS  = object()
 WEIGHTS = object()
 
@@ -53,26 +53,34 @@ class CompiledEvaluable( object ):
   def eval( self, elem, ischeme ):
     'evaluate'
 
-    if isinstance( ischeme, dict ):
-      ischeme = ischeme[elem]
-
-    if isinstance( ischeme, str ):
-      points, weights = self.cache( elem.reference.getischeme, ischeme )
-    elif isinstance( ischeme, tuple ):
-      points, weights = ischeme
-      assert points.shape[-1] == elem.ndims
-      assert points.shape[:-1] == weights.shape, 'non matching shapes: points.shape=%s, weights.shape=%s' % ( points.shape, weights.shape )
-    elif isinstance( ischeme, numpy.ndarray ):
-      points = ischeme.astype( float )
+    if isinstance( elem, tuple ):
+      assert isinstance( ischeme, numpy.ndarray )
+      points = ischeme
       weights = None
-      assert points.shape[-1] == elem.ndims
-    elif ischeme is None:
-      points = weights = None
+      transform, opposite = elem
+      assert points.shape[-1] == transform.fromdims == opposite.fromdims
+      trans = elem
     else:
-      raise Exception, 'invalid integration scheme of type %r' % type(ischeme)
+      trans = elem.transform, elem.opposite
+      if isinstance( ischeme, dict ):
+        ischeme = ischeme[elem]
+      if isinstance( ischeme, str ):
+        points, weights = self.cache( elem.reference.getischeme, ischeme )
+      elif isinstance( ischeme, tuple ):
+        points, weights = ischeme
+        assert points.shape[-1] == elem.ndims
+        assert points.shape[:-1] == weights.shape, 'non matching shapes: points.shape=%s, weights.shape=%s' % ( points.shape, weights.shape )
+      elif isinstance( ischeme, numpy.ndarray ):
+        points = ischeme.astype( float )
+        weights = None
+        assert points.shape[-1] == elem.ndims
+      elif ischeme is None:
+        points = weights = None
+      else:
+        raise Exception, 'invalid integration scheme of type %r' % type(ischeme)
 
     N = len(self.data) + 4
-    values = self.data + [ self.cache, elem, points, weights ]
+    values = self.data + [ self.cache, trans, points, weights ]
     for op, indices in self.operations:
       args = [ values[N+i] for i in indices ]
       try:
@@ -107,7 +115,7 @@ class CompiledEvaluable( object ):
     print >> dot.stdin, 'digraph {'
     print >> dot.stdin, 'graph [ dpi=72 ];'
 
-    data = self.data + [ '<cache>', '<elem>', '<points>', '<weights>' ]
+    data = self.data + [ '<cache>', '<trans>', '<points>', '<weights>' ]
     for i, (op,indices) in enumerate( self.operations ):
       args = [ '%%%d=%s' % ( iarg, _obj2str( data[idx] ) ) for iarg, idx in enumerate( indices ) if idx < 0 ]
       vertex = 'label="%s"' % r'\n'.join( [ '%d. %s' % ( i, op ) ] + args )
@@ -125,7 +133,7 @@ class CompiledEvaluable( object ):
     'print stack'
 
     if values is None:
-      values = self.data + [ '<cache>', '<elem>', '<points>', '<weights>' ]
+      values = self.data + [ '<cache>', '<trans>', '<points>', '<weights>' ]
 
     N = len(self.data) + 4
 
@@ -170,7 +178,7 @@ class Evaluable( object ):
           idx = arg.__compile(data,operations)
       elif arg is CACHE:
         idx = -4
-      elif arg is ELEM:
+      elif arg is TRANS:
         idx = -3
       elif arg is POINTS:
         idx = -2
@@ -309,7 +317,7 @@ class Cascade( Evaluable ):
 
     self.ndims = ndims
     self.side = side
-    Evaluable.__init__( self, args=[CACHE,ELEM,ndims,side], evalf=self.cascade )
+    Evaluable.__init__( self, args=[CACHE,TRANS,ndims,side], evalf=self.cascade )
 
   def transform( self, ndims ):
     if ndims == self.ndims:
@@ -317,19 +325,10 @@ class Cascade( Evaluable ):
     return Transform( self, Cascade(ndims,self.side) )
 
   @staticmethod
-  def cascade( cache, elem, ndims, side ):
+  def cascade( cache, trans, ndims, side ):
     'evaluate'
 
-    fulltrans = transform.identity( elem.ndims )
-    cascade = []
-    while True:
-      if elem.ndims == ndims:
-        cascade.append(( elem, fulltrans ))
-      if not elem.parent:
-        break
-      elem, trans = elem.parents[side]
-      fulltrans >>= trans
-    return cascade
+    return [ (t1,t2) for t1, t2 in trans[side] if t1.todims == ndims ]
 
   @property
   def inv( self ):
@@ -561,12 +560,13 @@ class ElemSign( ArrayFunc ):
     'constructor'
 
     cascade = Cascade(ndims)
-    ArrayFunc.__init__( self, args=[cascade], evalf=self.elemsign, shape=() )
+    ArrayFunc.__init__( self, args=[TRANS,ndims], evalf=self.elemsign, shape=() )
 
   @staticmethod
-  def elemsign( cascade ):
-    elem, trans = cascade[0]
-    return numpy.array(elem.sign)
+  def elemsign( (trans,opposide), ndims ):
+    for trans1, trans2 in trans:
+      if trans2.fromdims == ndims:
+        return trans2.sign
 
   def _localgradient( self, ndims ):
     return _zeros( (ndims,) )
@@ -758,8 +758,8 @@ class IWeights( ArrayFunc ):
   def iweights( cascade, weights ):
     'evaluate'
 
-    rootelem, roottrans = cascade[-1]
-    return rational.asfloat(roottrans.det) * weights
+    roottrans1, roottrans2 = cascade[-1]
+    return rational.asfloat(roottrans1.det) * weights
 
 class Transform( ArrayFunc ):
   'transform'
@@ -779,7 +779,7 @@ class Transform( ArrayFunc ):
 
     fromroot, fromtrans = fromcascade[-1]
     toroot, totrans = tocascade[-1]
-    return rational.asfloat( fromtrans.lstrip( totrans ).matrix )
+    return rational.asfloat( totrans.rstrip(fromtrans).matrix )
 
   def _localgradient( self, ndims ):
     return _zeros( self.shape + (ndims,) )
@@ -805,19 +805,20 @@ class Function( ArrayFunc ):
     'evaluate'
 
     fvals = []
-    for elem, trans in cascade:
-      std = stdmap.get(elem)
+    roottrans1, roottrans2 = cascade[-1]
+    for trans1, trans2 in cascade:
+      std = stdmap.get(trans2)
       if not std:
         continue
-      transpoints = cache( trans.apply, points )
+      transpoints = cache( trans1.apply, points )
       if isinstance( std, tuple ):
         std, keep = std
         F = cache( std.eval, transpoints, igrad )[(Ellipsis,keep)+(slice(None),)*igrad]
       else:
         F = cache( std.eval, transpoints, igrad )
       for axis in range(-igrad,0):
-        roottrans = cascade[-1][1].lstrip( trans )
-        F = numeric.dot( F, rational.asfloat(roottrans.inv.matrix), axis )
+        matrix = trans2.rstrip( roottrans2 ).inv.matrix
+        F = numeric.dot( F, rational.asfloat(matrix), axis )
       fvals.append( F )
     assert fvals, 'no function values encountered'
     return fvals[0] if len(fvals) == 1 else numpy.concatenate( fvals, axis=-1-igrad )
@@ -922,8 +923,8 @@ class DofMap( ArrayFunc ):
     'evaluate'
 
     alldofs = []
-    for elem, points in cascade:
-      dofs = dofmap.get( elem )
+    for trans1, trans2 in cascade:
+      dofs = dofmap.get( trans2 )
       if dofs is not None:
         alldofs.append( dofs )
     assert alldofs, 'no dofs encountered'
@@ -1733,8 +1734,8 @@ class ElemFunc( ArrayFunc ):
   def elemfunc( points, cascade ):
     'evaluate'
 
-    domainelem, trans = cascade[-1]
-    return trans.apply( points )
+    roottrans1, roottrans2 = cascade[-1]
+    return roottrans1.apply( points )
 
   def _localgradient( self, ndims ):
     return self.cascade.transform( ndims )
@@ -1830,11 +1831,11 @@ class Pointdata( ArrayFunc ):
 
     assert isinstance(data,dict)
     self.data = data
-    ArrayFunc.__init__( self, args=[ELEM,POINTS,self.data], evalf=self.pointdata, shape=shape )
+    ArrayFunc.__init__( self, args=[TRANS,POINTS,self.data], evalf=self.pointdata, shape=shape )
 
   @staticmethod
-  def pointdata( elem, points, data ):
-    myvals,mypoint = data[elem]
+  def pointdata( (trans,opposite), points, data ):
+    myvals,mypoint = data[trans]
     assert numpy.equal( mypoint, points ).all(), 'Illegal point set'
     return myvals
 
@@ -1842,7 +1843,7 @@ class Pointdata( ArrayFunc ):
     func = asarray(func)
     assert func.shape == self.shape
     func = ascompiled(func)
-    data = dict( (elem,(numpy.maximum(func.eval(elem,points),values),points)) for elem,(values,points) in self.data.iteritems() )
+    data = dict( (trans,(numpy.maximum(func.eval((trans,trans),points),values),points)) for trans,(values,points) in self.data.iteritems() )
 
     return Pointdata( data, self.shape )
 
@@ -2301,8 +2302,8 @@ def _obj2str( obj ):
     return '<points>'
   if obj is WEIGHTS:
     return '<weights>'
-  if obj is ELEM:
-    return '<elem>'
+  if obj is TRANS:
+    return '<trans>'
   return str(obj)
 
 def _findcommon( (a1,a2), (b1,b2) ):
@@ -3231,7 +3232,7 @@ def pointdata ( topo, ischeme, func=None, shape=None, value=None ):
     ipoints, iweights = elem.reference.getischeme( ischeme )
     values = numpy.empty( ipoints.shape[:-1]+shape, dtype=float )
     values[:] = func.eval(elem,ischeme) if func is not None else value
-    data[ elem ] = values, ipoints
+    data[ elem.transform ] = values, ipoints
 
   return Pointdata( data, shape )
 
@@ -3278,18 +3279,15 @@ def supp( funcsp, indices ):
   for func, axes in funcsp.blocks:
     dofmap = axes[0].dofmap
     stdmap = func.stdmap
-    for elem, dofs in dofmap.items():
-      while True:
-        std = stdmap.get( elem )
+    for trans, dofs in dofmap.items():
+      for trans1, trans2 in trans:
+        std = stdmap.get( trans2 )
         nshapes = 0 if not std \
            else std[1].sum() if isinstance( std, tuple ) \
            else std.nshapes
         if numpy.intersect1d( dofs[:nshapes], indices, assume_unique=True ).size:
-          supp.append( elem )
+          supp.append( trans2 )
         dofs = dofs[nshapes:]
-        if not elem.parent:
-          break
-        elem, trans = elem.parent
       assert not dofs.size
   return supp
 

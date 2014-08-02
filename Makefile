@@ -14,7 +14,7 @@ docs:
 test: test_nose test_examples
 
 test_nose: dev
-	nosetests tests
+	nosetests -v tests
 
 test_examples: dev
 	@for script in examples/*; do \

@@ -17,13 +17,29 @@ import numpy
 
 class Transform( cache.Immutable ):
 
-  def __init__( self, todims, fromdims ):
+  def __init__( self, todims, fromdims, sign ):
     self.todims = todims
     self.fromdims = fromdims
+    assert abs(sign) == 1
+    self.sign = sign
 
-  def lstrip( self, trans ):
+  @property
+  def flipped( self ):
+    return self
+
+  def __iter__( self ):
+    yield identity(self.fromdims), self
+
+  def __getitem__( self, i ):
+    assert i >= 0
+    for item in self:
+      if not i:
+        return item
+      i -= 1
+
+  def rstrip( self, trans ):
     assert self == trans, 'cannot find sub-transformation'
-    return identity( self.todims )
+    return identity( self.fromdims )
 
   @property
   def det( self ):
@@ -47,7 +63,7 @@ class Transform( cache.Immutable ):
 class Identity( Transform ):
 
   def __init__( self, ndims ):
-    Transform.__init__( self, ndims, ndims )
+    Transform.__init__( self, ndims, ndims, 1 )
 
   @property
   def det( self ):
@@ -74,14 +90,22 @@ class Compound( Transform ):
     assert isinstance( trans1, Transform )
     assert isinstance( trans2, Transform )
     assert trans1.todims == trans2.fromdims
-    Transform.__init__( self, trans2.todims, trans1.fromdims )
+    Transform.__init__( self, trans2.todims, trans1.fromdims, trans1.sign * trans2.sign )
     self.trans1 = trans1
     self.trans2 = trans2
 
-  def lstrip( self, trans ):
-    return self.trans2 if self.trans1 == trans \
-      else self.trans2.lstrip( trans.trans2 ) if isinstance( trans, Compound ) and trans.trans1 == self.trans1 \
-      else self.trans1.lstrip(trans) >> self.trans2
+  @property
+  def flipped( self ):
+    return Compound( self.trans1.flipped, self.trans2.flipped )
+
+  def __iter__( self ):
+    yield identity(self.fromdims), self
+    for t1, t2 in self.trans2:
+      yield self.trans1 >> t1, t2
+
+  def rstrip( self, trans ):
+    return identity( self.fromdims ) if self == trans \
+      else self.trans1 >> self.trans2.rstrip( trans )
 
   @cache.property
   def det( self ):
@@ -105,7 +129,7 @@ class Shift( Transform ):
 
   def __init__( self, shift ):
     assert rational.isarray( shift ) and shift.ndim == 1
-    Transform.__init__( self, len(shift), len(shift) )
+    Transform.__init__( self, len(shift), len(shift), 1 )
     self.shift = shift
 
   @cache.property
@@ -130,7 +154,7 @@ class Shift( Transform ):
 class Scale( Transform ):
 
   def __init__( self, ndims, factor ):
-    Transform.__init__( self, ndims, ndims )
+    Transform.__init__( self, ndims, ndims, 1 )
     self.factor = factor
     
   def apply( self, points ):
@@ -152,37 +176,50 @@ class Scale( Transform ):
   def __str__( self ):
     return '*%s' % str(self.factor)
 
-class Linear( Transform ):
+class Updim( Transform ):
 
-  def __init__( self, matrix ):
+  def __init__( self, matrix, sign ):
     assert rational.isarray( matrix ) and matrix.ndim == 2
-    Transform.__init__( self, *matrix.shape )
+    Transform.__init__( self, matrix.shape[0], matrix.shape[1], sign )
     self.matrix = matrix
+
+  @property
+  def flipped( self ):
+    return Updim( self.matrix, -self.sign )
 
   def apply( self, points ):
     assert points.shape[-1] == self.fromdims
     return rational.dot( points, self.matrix.T )
 
+  def __str__( self ):
+    return '*%s' % self.matrix
+
+class Linear( Updim ):
+
+  def __init__( self, matrix ):
+    assert matrix.shape[0] == matrix.shape[1]
+    Updim.__init__( self, matrix, 1 )
+
   @cache.property
   def det( self ):
-    assert self.fromdims == self.todims
     return rational.det( self.matrix )
   
   @cache.property
   def inv( self ):
     return linear( rational.inv( self.matrix ) )
 
-  def __str__( self ):
-    return '*%s' % self.matrix
-
 class Tensor( Transform ):
 
   def __init__( self, trans1, trans2 ):
     assert isinstance( trans1, Transform )
     assert isinstance( trans2, Transform )
-    Transform.__init__( self, trans1.todims+trans2.todims, trans1.fromdims+trans2.fromdims )
+    Transform.__init__( self, trans1.todims+trans2.todims, trans1.fromdims+trans2.fromdims, trans1.sign * trans2.sign )
     self.trans1 = trans1
     self.trans2 = trans2
+
+  @property
+  def flipped( self ):
+    return Tensor( self.trans1.flipped, self.trans2.flipped )
 
   def apply( self, points ):
     points1 = self.trans1.apply( points[...,:self.trans1.fromdims] )
@@ -229,6 +266,9 @@ def shift( shift, numer=rational.unit ):
 
 def linear( matrix, numer=rational.unit ):
   return Linear( rational.frac(matrix,numer) )
+
+def updim( matrix, sign, numer=rational.unit ):
+  return Updim( rational.frac(matrix,numer), sign )
 
 def tensor( trans1, trans2 ):
   return Tensor( trans1, trans2 )

@@ -32,17 +32,19 @@ def _keyfromargs( func, args, kwargs, offset=0 ):
     offset += 1
   code = func.func_code
   names = code.co_varnames[offset+len(args):code.co_argcount]
-  for name in names:
-    try:
-      val = kwargs.pop(name)
-    except KeyError:
-      index = names.index(name)-len(names)
+  if names:
+    kwargs = kwargs.copy()
+    for name in names:
       try:
-        val = func.func_defaults[index]
-      except Exception as e:
-        raise TypeError, '%s missing mandatory argument %r' % ( func.__name__, name )
-    args += val,
-  assert not kwargs, '%s got invalid arguments: %s' % ( func.__name__, ', '.join(kwargs) )
+        val = kwargs.pop(name)
+      except KeyError:
+        index = names.index(name)-len(names)
+        try:
+          val = func.func_defaults[index]
+        except Exception as e:
+          raise TypeError, '%s missing mandatory argument %r' % ( func.__name__, name )
+      args += val,
+    assert not kwargs, '%s got invalid arguments: %s' % ( func.__name__, ', '.join(kwargs) )
   mask = 0
   key = []
   for arg in args:

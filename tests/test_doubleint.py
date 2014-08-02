@@ -2,7 +2,6 @@
 
 from nutils import *
 import numpy, warnings
-almostEquals = lambda val, places=7: numpy.abs( val ) < 10.**(-places)
 infnorm = lambda f: numpy.linalg.norm( f, numpy.inf )
 grid = lambda n: numpy.linspace( -n/2., n/2., n+1 )
 pi = numpy.pi
@@ -14,12 +13,7 @@ def K( x, y ):
   return 0.75*pi**-1. * (x-y)[:,_]*(x-y)[_,:] * ((x-y)*y.normal()).sum() * rInv**5
 
 class TestGaussDoubleInt( object ):
-  'Gauss quadrature on product domain.'
-  def distance( self, val ):
-    assert almostEquals( val - 0. )
-
-  def distancesquared( self, val ):
-    assert almostEquals( val - 1./6 )
+  # Gauss quadrature on product domain.
 
   def test_polynomials( self ):
     domain, geom = mesh.rectilinear( [[0,.5,1]] )
@@ -29,16 +23,20 @@ class TestGaussDoubleInt( object ):
     x = geom[0]
     y = function.opposite( geom[0] )
 
-    self.distance( ddomain.integrate( x-y, geometry=dgeom, ischeme='gauss2' ) )
-    self.distancesquared( ddomain.integrate( (x-y)**2, geometry=dgeom, ischeme='gauss2' ) )
+    numpy.testing.assert_almost_equal(
+      ddomain.integrate( x-y, geometry=dgeom, ischeme='gauss2' ), 0 )
+
+    numpy.testing.assert_almost_equal(
+      ddomain.integrate( (x-y)**2, geometry=dgeom, ischeme='gauss2' ), 1./6 )
 
 class TestSingularDoubleInt( object ):
-  'Regularized quadrature on product domain.'
+  # Regularized quadrature on product domain.
+
   def patch( self, val ):
-    assert almostEquals( val - 1. )
+    numpy.testing.assert_almost_equal( val, 1 )
 
   def distance( self, val ):
-    assert almostEquals( val - 1./3 )
+    numpy.testing.assert_almost_equal( val, 1./3 )
 
   def test_Integration( self ):
     grid = numpy.linspace( 0., 1., 4 )
@@ -54,7 +52,9 @@ class TestSingularDoubleInt( object ):
     self.distance( ddomain.integrate( r**2, geometry=dgeom, ischeme='singular3' ) )
 
 class TestNormalInKernelOfV( object ):
-  'Convolute normal with single-layer to verify it is in the kernel, note that this works with all gauss schemes!'
+  # Convolute normal with single-layer to verify it is in the kernel, note that
+  # this works with all gauss schemes!'
+
   def __init__( self ):
     'Geometry definitions.'
     domain, geom = mesh.rectilinear( (grid(4),grid(2)), periodic=(0,) )
@@ -77,16 +77,16 @@ class TestNormalInKernelOfV( object ):
     return self.ddomain.integrate( (V(x,y)*x.normal()).sum(), geometry=dgeom, ischeme='singular{0}'.format(degree) )
 
   def test_SphericalGeometry( self ):
-    'n in ker(V), case: sphere.'
+    # n in ker(V), case: sphere.
     cos, sin, pi = function.cos, function.sin, numpy.pi
     phi, theta = .5*pi*self.geom # |phi| < pi, |theta| < pi/2
     self.sphere = function.stack( [cos(phi)*cos(theta), sin(phi)*cos(theta), sin(theta)] )
 
     err = self.template( 4, self.sphere )
-    assert almostEquals( infnorm(err) - 0., places=3 )
+    numpy.testing.assert_almost_equal( infnorm(err), 0., decimal=3 )
 
   def test_PolyhedronGeometry( self ):
-    'n in ker(V), case: polyhedron'
+    # n in ker(V), case: polyhedron
     # raise NotImplemented( 'Choose has no .opposite yet' )
 
     abs = function.abs
@@ -94,13 +94,15 @@ class TestNormalInKernelOfV( object ):
     self.octahedron = function.Concatenate( [[(1.-abs( eta ))*function.piecewise( xi, (-1., 0., 1.), 1, -2*xi-1, -1, 2*xi-3 )], [(1.-abs( eta ))*function.piecewise( xi, (-1., 0., 1.), 2*xi+3, 1, 1-2*xi, -1 )], [numpy.sqrt(2)*eta]] )
 
     err = self.template( 4, self.octahedron )
-    assert almostEquals( infnorm( err ) - 0., places=3 )
+    numpy.testing.assert_almost_equal( infnorm( err ), 0, decimal=3 )
 
 class TestKroneckerKernelGivesSurface( object ):
-  'Convolute a uniform velocity field with the identity to verify it gives the surface.'
+  # Convolute a uniform velocity field with the identity to verify it gives the
+  # surface.
 
   def test_SphericalGeometry( self ):
-    'Integrating Id gives surf, case: sphere.'
+    #Integrating Id gives surf, case: sphere.
+
     domain, geom = mesh.rectilinear( (grid(4),grid(2)), periodic=(0,) )
     cos, sin, pi = function.cos, function.sin, numpy.pi
     phi, theta = .5*pi*geom # |phi| < pi, |theta| < pi/2
@@ -110,10 +112,12 @@ class TestKroneckerKernelGivesSurface( object ):
     val = domain.integrate( (velo*vinf).sum(-1), geometry=sphere, ischeme='gauss8' ).sum()
 
     surf = 4.*pi
-    assert almostEquals( val-surf )
+    numpy.testing.assert_almost_equal( val, surf )
 
 class TestOneInKernelOfK( object ):
-  'Convolute a uniform velocity field with the dual-layer to verify it is in the kernel.'
+  # Convolute a uniform velocity field with the dual-layer to verify it is in
+  # the kernel.
+
   def __init__( self ):
     'Geometry definitions.'
     domain, geom = mesh.rectilinear( (grid(4),grid(2)), periodic=(0,) )
@@ -134,33 +138,33 @@ class TestOneInKernelOfK( object ):
     return .5*identity + doublelayer
 
   def test_SphericalGeometry( self ):
-    '1 in ker(K), case: sphere.'
+    # 1 in ker(K), case: sphere.
+
     cos, sin, pi = function.cos, function.sin, numpy.pi
     phi, theta = .5*pi*self.geom # |phi| < pi, |theta| < pi/2
     self.sphere = function.stack( [cos(phi)*cos(theta), sin(phi)*cos(theta), sin(theta)] )
 
     err = infnorm( self.template( self.sphere, 4 ) )
-    assert almostEquals( err - 0., places=2 )
+    numpy.testing.assert_almost_equal( err, 0, decimal=2 )
 
 class TestShearFlow( object ):
-  'Torus cut of shear flow.'
+  # Torus cut of shear flow.
+
   def test_InteriorProblem( self, N=4 ):
-    'Interior Dirichlet on torus, shear flow.'
+    # Interior Dirichlet on torus, shear flow.
     # domain, space
-    cos, sin = function.cos, function.sin
-    grid = lambda n: numpy.linspace( -2., 2., n+1 )
-    # domain, geom = mesh.rectilinear( 2*(grid(4),), periodic=(0,1) )
-    domain, geom = mesh.rectilinear( 2*(grid(N),), periodic=(0,1) )
-    ddomain = domain*domain
-    funcsp = domain.splinefunc( degree=2*(4,) ).vector(3)
+    grid = numpy.linspace( -2., 2., N+1 )
+    domain, geom = mesh.rectilinear( [grid,grid], periodic=(0,1) )
+    ddomain = domain * domain
+    funcsp = domain.splinefunc( degree=4 ).vector(3)
     
     # geometry
     R, r = 3, 1
     phi, theta = .5*pi*geom
     torus = function.stack( [
-        (r*cos(theta) + R)*cos(phi),
-        (r*cos(theta) + R)*sin(phi),
-         r*sin(theta)] )
+        (r*function.cos(theta) + R)*function.cos(phi),
+        (r*function.cos(theta) + R)*function.sin(phi),
+         r*function.sin(theta)] )
   
     dtorus = function.concatenate([ torus, function.opposite(torus) ])
 
@@ -168,8 +172,6 @@ class TestShearFlow( object ):
     velo_shear = function.stack( [torus[2], 0., 0.] )
     trac_shear = function.stack( [torus.normal()[2], 0., torus.normal()[0]] )
     assert numpy.abs( domain.integrate( (velo_shear*torus.normal()).sum(-1), geometry=torus, ischeme='gauss2' ) ) < 1.e-12, 'int v.n = 0 condition violated.'
-  
-    l2norm = lambda self, func: numpy.sqrt( self.domain.integrate( func**2, geometry=self.torus, ischeme='gauss6' ).sum() )
   
     x = torus
     y = function.opposite( x )
@@ -183,7 +185,7 @@ class TestShearFlow( object ):
     trac = funcsp.dot(lhs)
     trac_err, surf = domain.integrate( ((trac-trac_shear)**2, 1), geometry=x, ischeme='gauss6' )
     err = numpy.sqrt( trac_err.sum() )/surf
-    assert almostEquals( err, places=2 ), 'err = %.3e'%err
+    numpy.testing.assert_almost_equal( err, 0, decimal=2 ), 'err = %.3e'%err
 
 def main( N=8 ):
   a = TestShearFlow()

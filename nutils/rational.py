@@ -197,11 +197,16 @@ class Array( object ):
     assert array.dtype == int
     if isfactored:
       self.__array = array
-      self.__factor = factor
+      self.__factor = factor if array.any() else unit
     else:
-      numbers, common = gcd( array.ravel() )
-      self.__array = numbers.reshape( array.shape )
-      self.__factor = factor * common
+      self.__array, self.__factor = gcd( array, factor )
+
+  def __iter__( self ):
+    for array in self.__array:
+      yield Array( array, self.__factor, False )
+
+  def __getitem__( self, item ):
+    return Array( self.__array[item], self.__factor, False )
 
   @property
   def ndim( self ):
@@ -276,10 +281,24 @@ class Array( object ):
   __rtruediv__ = __rdiv__
 
   def decompose( self ):
-    return self.__array, self.__factor
+    return self.__array.copy(), self.__factor
+
+  @cache.property
+  def frac( self ):
+    numbers, indices = numpy.unique( abs(self.__array.ravel()), return_inverse=True )
+    frac = numpy.array(
+      [ (0,1) ] + [ ( factor(n) * self.__factor ).frac for n in numbers[1:] ] if numbers[0] == 0
+             else [ ( factor(n) * self.__factor ).frac for n in numbers ]
+      ).T[:,indices].reshape( (2,)+self.shape )
+    frac[0] *= numpy.sign( self.__array )
+    return frac
 
   def __str__( self ):
-    return str(self.__factor) + str(self.__array.tolist()).replace( ' ', '' )
+    numer, denom = self.__factor.frac
+    s = _a2s( self.__array * numer )
+    return s if denom == 1 else '%s/%s' % ( s, denom )
+
+_a2s = lambda array: '[%s]' % ','.join( _a2s(a) for a in array ) if isinstance(array,numpy.ndarray) else str(array)
 
 def det( array ):
   assert isarray(array)
@@ -388,7 +407,7 @@ def asrational( obj ):
 def frac( numer, denom ):
   return asrational( numer ) / asscalar( denom )
 
-def gcd( numbers ):
+def gcd( numbers, scalar=unit ):
   numbers = numpy.asarray( numbers )
   assert numbers.dtype == int
   if not numbers.size:
@@ -409,7 +428,7 @@ def gcd( numbers ):
         n += 1
       factors.append( n )
     common = Scalar( factors )
-  return numbers // int(common), common
+  return numbers // int(common), common * scalar
 
 def asfloat( obj ):
   if isinstance(obj,int) or isscalar(obj):
