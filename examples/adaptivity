@@ -4,26 +4,22 @@ from nutils import *
 
 
 @log.title
-def makeplots( domain, geom, greysmooth, index, indicator, supp ):
+def makeplots( domain, geom, greysmooth, index, indicator ):
 
-  xp, yp = topology.UnstructuredTopology( supp, domain.ndims ).elem_eval( geom, ischeme='contour2', separate=True ).T
   points, fval, xgrad, indic = domain.elem_eval( [ geom, greysmooth, greysmooth.grad(geom)[0], indicator ], ischeme='bezier4', separate=True )
 
   with plot.PyPlot( 'fval', index=index ) as plt:
     plt.mesh( points, fval, triangulate='bezier' )
-    plt.plot( xp, yp, 'w' )
     plt.clim( -1, 1 )
     plt.colorbar()
 
   with plot.PyPlot( 'xgrad', index=index ) as plt:
     plt.mesh( points, xgrad, triangulate='bezier' )
-    plt.plot( xp, yp, 'w' )
     plt.clim( 0, 18 )
     plt.colorbar()
 
   with plot.PyPlot( 'indicator', index=index ) as plt:
     plt.mesh( points, indic, triangulate='bezier' )
-    plt.plot( xp, yp, 'w' )
     plt.colorbar()
 
 
@@ -51,7 +47,7 @@ def main( degree=2, niter=30, triangular=False, plot=True ):
     supp = function.supp( funcsp, indices=refine )
 
     if plot:
-      makeplots( domain, geom, greysmooth, iiter, indicator, supp )
+      makeplots( domain, geom, greysmooth, iiter, indicator )
 
     domain = domain.refined_by( supp )
 

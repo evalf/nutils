@@ -40,15 +40,13 @@ class Topology( object ):
     refine = set( refine )
     refined = []
     for elem in self:
-      if elem in refine:
-        refine.remove( elem )
+      if elem.transform in refine:
+        refine.remove( elem.transform )
         refined.extend( elem.children )
       else:
         refined.append( elem )
-      while elem.parent: # only for argument checking:
-        elem, trans = elem.parent
-        refine.discard( elem )
-
+      for trans1, trans2 in elem.transform:
+        refine.discard( trans2 )
     assert not refine, 'not all refinement elements were found: %s' % '\n '.join( str(e) for e in refine )
     return HierarchicalTopology( self, refined )
 
@@ -310,15 +308,16 @@ class Topology( object ):
     __log__ = log.iter( 'elem', self )
     for elem in parallel.pariter( __log__ ):
       assert isinstance( elem.reference, element.ProductReference )
-      (elem1,trans1), (elem2,trans2) = elem.parents
-      compare_elem = cmp( elem1, elem2 )
-      if compare_elem < 0:
+      elemcmp = cmp( elem.transform.trans2, elem.opposite.trans2 )
+      if elemcmp < 0:
         continue
       for ifunc, lock, index, data in idata.eval( elem, ischeme ):
         with lock:
           retvals[ifunc][index] += data
-          if compare_elem > 0:
+          if elemcmp:
             retvals[ifunc][index[::-1]] += data.T
+          else:
+            numpy.testing.assert_almost_equal( data, data.T, err_msg='symmetry check failed' )
 
     log.debug( 'cache', idata.cache.summary() )
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
@@ -579,11 +578,6 @@ class StructuredTopology( Topology ):
     self.groups = {}
     Topology.__init__( self, structure.ndim )
 
-  def make_periodic( self, periodic ):
-    'add periodicity'
-
-    return StructuredTopology( self.structure, periodic=periodic )
-
   def __len__( self ):
     'number of elements'
 
@@ -655,11 +649,13 @@ class StructuredTopology( Topology ):
       A[:idim] = -eye[:idim]
       A[idim+1:] = eye[idim:]
       b = numpy.hstack( [ numpy.ones( idim+1, dtype=int ), numpy.zeros( self.ndims-idim, dtype=int ) ] )
-      trans1 = transform.linear(A) >> transform.shift(b[:-1])
-      trans2 = transform.linear(A) >> transform.shift(b[1:])
+      trans1 = transform.updim(A,sign=1) >> transform.shift(b[:-1])
+      trans2 = transform.updim(A,sign=-1) >> transform.shift(b[1:])
+      edge = element.SimplexReference(1)**(self.ndims-1)
       for elem1, elem2 in numpy.broadcast( self.structure[t1], self.structure[t2] ):
-        parents = (elem1,trans1), (elem2,trans2)
-        ielem = element.QuadElement( ndims=self.ndims-1, parents=parents )
+        assert elem1.transform == elem1.opposite
+        assert elem2.transform == elem2.opposite
+        ielem = element.Element( edge, trans1 >> elem1.transform, trans2 >> elem2.transform )
         interfaces.append( ielem )
     return UnstructuredTopology( interfaces, ndims=self.ndims-1 )
 
@@ -701,6 +697,7 @@ class StructuredTopology( Topology ):
       numbers = numpy.arange( nd )
       if periodic_i and p > 0:
         overlap = p
+        assert len(numbers) >= 2 * overlap
         numbers[ -overlap: ] = numbers[ :overlap ]
         nd -= overlap
       remove = removedofs[idim]
@@ -729,11 +726,11 @@ class StructuredTopology( Topology ):
         dofs = vertex_structure[S].ravel()
         mask = dofs >= 0
         if mask.all():
-          dofmap[ elem ] = dofs
-          funcmap[elem] = std
+          dofmap[elem.transform] = dofs
+          funcmap[elem.transform] = std
         elif mask.any():
-          dofmap[ elem ] = dofs[mask]
-          funcmap[elem] = std, mask
+          dofmap[elem.transform] = dofs[mask]
+          funcmap[elem.transform] = std, mask
 
     if hasnone:
       touched = numpy.zeros( dofcount, dtype=bool )
@@ -741,7 +738,7 @@ class StructuredTopology( Topology ):
         touched[ dofs ] = True
       renumber = touched.cumsum()
       dofcount = int(renumber[-1])
-      dofmap = dict( ( elem, renumber[dofs]-1 ) for elem, dofs in dofmap.iteritems() )
+      dofmap = dict( ( trans, renumber[dofs]-1 ) for trans, dofs in dofmap.iteritems() )
 
     return function.function( funcmap, dofmap, dofcount, self.ndims )
 
@@ -752,10 +749,10 @@ class StructuredTopology( Topology ):
       degree = ( degree, ) * self.ndims
 
     dofs = numpy.arange( numpy.product(numpy.array(degree)+1) * len(self) ).reshape( len(self), -1 )
-    dofmap = dict( zip( self, dofs ) )
+    dofmap = { elem.transform: dof for elem, dof in zip( self, dofs ) }
 
     stdelem = util.product( element.PolyLine( element.PolyLine.bernstein_poly( d ) ) for d in degree )
-    funcmap = dict( numpy.broadcast( self.structure, stdelem ) )
+    funcmap = { elem.transform: stdelem for elem in self }
 
     return function.function( funcmap, dofmap, dofs.size, self.ndims )
 
@@ -1034,15 +1031,16 @@ class UnstructuredTopology( Topology ):
             edgedof = edges[( vertexdofs[j], vertexdofs[i] )] = ndofs
             ndofs += 1
           edgedofs.append( edgedof )
-        nmap[ children[0] ] = numpy.array([ edgedofs[2], edgedofs[1], vertexdofs[2] ])
-        nmap[ children[1] ] = numpy.array([ edgedofs[0], vertexdofs[1], edgedofs[1] ])
-        nmap[ children[2] ] = numpy.array([ vertexdofs[0], edgedofs[0], edgedofs[2] ])
-        nmap[ children[3] ] = numpy.array([ edgedofs[1], edgedofs[2], edgedofs[0] ])
+        nmap[ children[0].transform ] = numpy.array([ edgedofs[2], edgedofs[1], vertexdofs[2] ])
+        nmap[ children[1].transform ] = numpy.array([ edgedofs[0], vertexdofs[1], edgedofs[1] ])
+        nmap[ children[2].transform ] = numpy.array([ vertexdofs[0], edgedofs[0], edgedofs[2] ])
+        nmap[ children[3].transform ] = numpy.array([ edgedofs[1], edgedofs[2], edgedofs[0] ])
       else:
         dofaxis = None
 
     if dofaxis:
-      fmap = dict.fromkeys( elements, element.PolyTriangle(1) )
+      std = element.PolyTriangle(1)
+      fmap = { elem.transform: std for elem in elements }
       linearfunc = function.function( fmap, nmap, ndofs, self.ndims )
       namedfuncs = { 'spline1': linearfunc }
     else:
@@ -1060,6 +1058,7 @@ class HierarchicalTopology( Topology ):
       basetopo = basetopo.basetopo
     self.basetopo = basetopo
     self.elements = tuple(elements)
+    self.edict = { elem.transform: elem.reference for elem in elements }
     Topology.__init__( self, basetopo.ndims )
 
   def __iter__( self ):
@@ -1150,37 +1149,38 @@ class HierarchicalTopology( Topology ):
       supported = numpy.ones( funcsp.shape[0], dtype=bool ) # True if dof is contained in topoelems or parentelems
       touchtopo = numpy.zeros( funcsp.shape[0], dtype=bool ) # True if dof touches at least one topoelem
       myelems = [] # all top-level or parent elements in level irefine
-      for elem, idofs in dofaxis.dofmap.items():
-        if elem in self.elements:
+      for trans, idofs in dofaxis.dofmap.items():
+        ref = self.edict.get( trans )
+        if ref:
           remaining -= 1
           touchtopo[idofs] = True
-          myelems.append( elem )
-          newdiscard.append( elem )
+          myelems.append( trans )
+          newdiscard.append( trans )
         else:
-          pelem, trans = elem.parent
-          if pelem in discard:
-            newdiscard.append( elem )
+          trans1, trans2 = trans[1]
+          if trans2 in discard:
+            newdiscard.append( trans )
             supported[idofs] = False
           else:
-            parentelems.append( elem )
-            myelems.append( elem )
+            parentelems.append( trans )
+            myelems.append( trans )
   
       keep = numpy.logical_and( supported, touchtopo ) # THE refinement law
 
-      for elem in myelems: # loop over all top-level or parent elements in level irefine
-        idofs = dofaxis.dofmap[elem] # local dof numbers
+      for trans in myelems: # loop over all top-level or parent elements in level irefine
+        idofs = dofaxis.dofmap[trans] # local dof numbers
         mykeep = keep[idofs]
-        std = func.stdmap[elem]
+        std = func.stdmap[trans]
         assert isinstance(std,element.StdElem)
         if mykeep.all():
-          stdmap[elem] = std # use all shapes from this level
+          stdmap[trans] = std # use all shapes from this level
         elif mykeep.any():
-          stdmap[elem] = std, mykeep # use some shapes from this level
+          stdmap[trans] = std, mykeep # use some shapes from this level
         newdofs = [ ndofs + keep[:idof].sum() for idof in idofs if keep[idof] ] # new dof numbers
         if irefine: # not at lowest level
-          pelem, transform = elem.parent
-          newdofs.extend( dofmap[pelem] ) # add dofs of all underlying 'broader' shapes
-        dofmap[elem] = numpy.array(newdofs) # add result to IEN mapping of new function object
+          trans1, trans2 = trans[1]
+          newdofs.extend( dofmap[trans2] ) # add dofs of all underlying 'broader' shapes
+        dofmap[trans] = numpy.array(newdofs) # add result to IEN mapping of new function object
   
       ndofs += keep.sum() # update total number of dofs
       if not remaining:
@@ -1191,8 +1191,8 @@ class HierarchicalTopology( Topology ):
 
       raise Exception, 'elements remaining after %d iterations' % maxrefine
 
-    for elem in parentelems:
-      del dofmap[elem] # remove auxiliary elements
+    for trans in parentelems:
+      del dofmap[trans] # remove auxiliary elements
 
     return function.function( stdmap, dofmap, ndofs, self.ndims )
 
@@ -1226,106 +1226,5 @@ class ElemMap( dict ):
     'string representation'
 
     return 'ElemMap(#%d,%dD)' % ( len(self), self.ndims )
-
-@log.title
-def glue( master, slave, geometry, tol=1.e-10, verbose=False ):
-  'Glue topologies along boundary group __glue__.'
-
-  gluekey = '__glue__'
-
-  # Checks on input
-  assert gluekey in master.boundary.groups and \
-         gluekey in slave.boundary.groups, 'Must identify glue boundary first.'
-  assert len(master.boundary[gluekey]) == \
-          len(slave.boundary[gluekey]), 'Minimum requirement is that cardinality is equal.'
-  assert master.ndims == 2 and slave.ndims == 2, '1D boundaries for now.' # see dists computation and update_vertices
-
-  if isinstance( geometry, tuple ):
-    master_geom, slave_geom = map( function.ascompiled, geometry )
-  else:
-    master_geom = slave_geom = function.ascompiled( geometry )
-
-  vtxmap = {} # THE old vertex -> nex vertex mapping
-
-  log.info( 'pairing elements [%i]' % len(master.boundary[gluekey]) )
-  slave_vertex_locations = { slave_elem:
-    slave_geom.eval( slave_elem, 'bezier2' ) for slave_elem in slave.boundary[gluekey] }
-  for master_elem in master.boundary[gluekey]:
-    master_locs = master_geom.eval( master_elem, 'bezier2' )
-    meshwidth = numpy.linalg.norm( numpy.diff( master_locs, axis=0 ) )
-    assert meshwidth > tol, 'tol. (%.2e) > element size (%.2e)' % (tol, meshwidth)
-    for slave_elem, slave_locs in slave_vertex_locations.iteritems():
-      dists = (numpy.linalg.norm( master_locs-slave_locs ),
-               numpy.linalg.norm( master_locs-slave_locs[::-1] ))
-      if min(*dists) < tol:
-        break # don't check if a second element can be paired.
-    else:
-      if verbose:
-        from matplotlib import pyplot
-        pyplot.clf()
-        pyplot.plot( master_locs[:,0], master_locs[:,1], '.-', label='master' )
-        mindist = numpy.inf
-        for slave_elem, slave_locs in slave_vertex_locations.iteritems():
-          verts = slave_locs[:,:2].T.flatten()
-          pyplot.plot( verts[:2], verts[2:], label='%.3f'%dist )
-          mindist = min( mindist,
-            numpy.linalg.norm( master_locs-slave_locs ),
-            numpy.linalg.norm( master_locs-slave_locs[::-1] ) )
-        pyplot.legend()
-        pyplot.axis('equal')
-        pyplot.title('min dist: %.3e'%mindist)
-        it = locals().get('it',-1) + 1
-        name = 'glue%i.jpg'%it
-        pyplot.savefig( core.getprop( 'dumpdir' )+name )
-        log.path(name)
-      raise AssertionError( 'Could not pair master element: %s (maybe tol is set too low?)' % master_elem )
-    slave_vertex_locations.pop( slave_elem )
-    new_vertices = master_elem.vertices if dists[0] < tol \
-              else reversed( master_elem.vertices )
-
-    for oldvtx, newvtx in zip( slave_elem.vertices, new_vertices ):
-      assert vtxmap.setdefault( oldvtx, newvtx ) == newvtx, 'conflicting vertex info'
-
-  assert not slave_vertex_locations, 'Could not pair slave elements: %s' % slave_vertex_locations.keys()
-
-  # we can forget everything now and continue with the vtxmap
-
-  emap = {} # elem->newelem map
-  for belem in slave.boundary:
-    if not any( vtx in vtxmap for vtx in belem.vertices ):
-      continue
-    emap[belem] = element.QuadElement( belem.ndims,
-      vertices=[ vtxmap.get(vtx,vtx) for vtx in belem.vertices ],
-      parent=(belem,transform.identity(belem.ndims)) )
-    elem, trans = belem.parent
-    emap[elem] = element.QuadElement( elem.ndims,
-      vertices=[ vtxmap.get(vtx,vtx) for vtx in elem.vertices ],
-      parent=(elem,transform.identity(elem.ndims)) )
-
-  _wrapelem = lambda elem: emap.get(elem,elem)
-  def _wraptopo( topo ):
-    elems = map( _wrapelem, topo )
-    return UnstructuredTopology( elems, ndims=topo.ndims ) if not isinstance( topo, UnstructuredTopology ) \
-      else StructuredTopology( numpy.asarray(elems).reshape(slave.structure.shape) )
-
-  # generate glued topology
-  elems = list( master ) + map( _wrapelem, slave )
-  union = UnstructuredTopology( elems, master.ndims )
-  union.groups['master'] = master
-  union.groups['slave'] = _wraptopo(slave)
-  union.groups.update({ 'master_'+key: topo for key, topo in master.groups.iteritems() })
-  union.groups.update({ 'slave_' +key: _wraptopo(topo) for key, topo in slave.groups.iteritems() })
-
-  # generate topology boundary
-  belems = [ belem for belem in master.boundary if belem not in master.boundary[gluekey] ] \
-    + [ _wrapelem(belem) for belem in slave.boundary if belem not in slave.boundary[gluekey] ]
-  union.boundary = UnstructuredTopology( belems, master.ndims-1 )
-  union.boundary.groups['master'] = master.boundary
-  union.boundary.groups['slave'] = _wraptopo(slave.boundary)
-  union.boundary.groups.update({ 'master_'+key: topo for key, topo in master.boundary.groups.iteritems() if key != gluekey })
-  union.boundary.groups.update({ 'slave_' +key: _wraptopo(topo) for key, topo in slave.boundary.groups.iteritems() if key != gluekey })
-
-  log.info( 'created glued topology [%i]' % len(union) )
-  return union
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

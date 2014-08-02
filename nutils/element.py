@@ -51,10 +51,11 @@ class Reference( cache.Immutable ):
       else TensorReference( self, other )
 
   def __pow__( self, n ):
-    assert isinstance( n, int ) and n >= 1
-    return self if n == 1 else self * self**(n-1)
+    assert isinstance( n, int ) and n >= 0
+    return SimplexReference(0) if n == 0 \
+      else self if n == 1 \
+      else self * self**(n-1)
 
-    
 class SimplexReference( Reference ):
 
   def __init__( self, ndims ):
@@ -327,9 +328,9 @@ class SimplexReference( Reference ):
     edge = SimplexReference( self.ndims-1 )
     eye = numpy.eye( self.ndims, dtype=int )
     return [
-      ( transform.linear( eye[range(i)+range(i+1,self.ndims)].T ), 1 if i%1 else -1, edge )
+      ( transform.updim( eye[range(i)+range(i+1,self.ndims)].T, sign=1 if i%1 else -1 ), edge )
           for i in range( self.ndims ) ] + [
-      ( transform.linear( (eye[1:]-eye[0]).T ) >> transform.shift( eye[0] ), 1, edge ) ]
+      ( transform.updim( (eye[1:]-eye[0]).T, sign=1 ) >> transform.shift( eye[0] ), edge ) ]
 
 class TensorReference( Reference ):
 
@@ -393,8 +394,8 @@ class TensorReference( Reference ):
 
   @cache.property
   def edges( self ):
-    return [ ( transform.tensor( trans1, transform.identity(self.ref2.ndims) ), sign1, edge1 * self.ref2 ) for trans1, sign1, edge1 in self.ref1.edges ] \
-         + [ ( transform.tensor( transform.identity(self.ref1.ndims), trans2 ), -sign2, self.ref1 * edge2 ) for trans2, sign2, edge2 in self.ref2.edges ]
+    return [ ( transform.tensor( trans1, transform.identity(self.ref2.ndims) ), edge1 * self.ref2 ) for trans1, edge1 in self.ref1.edges ] \
+         + [ ( transform.tensor( transform.identity(self.ref1.ndims), trans2.flipped ), self.ref1 * edge2 ) for trans2, edge2 in self.ref2.edges ]
 
   @cache.property
   def children( self ):
@@ -590,101 +591,156 @@ class ProductReference( Reference ):
     
     if where.startswith( 'singular' ):
       gauss = 'gauss%d'% (int(where[8:])*2-2)
-      if self.ref1 == self.ref2 == SimplexReference(1)**2:
-        points, weights = self.get_quad_bem_ischeme( gauss, self.neighborhood )
-        mod_points = self.singular_ischeme_quad( points, self.transf )
-        xw = mod_points, weights
-      elif self.ref1 == self.ref2 == SimplexReference(2):
-        xw = self.get_tri_bem_ischeme( gauss, self.neighborhood )
-      else:
-        raise Exception, 'invalid element type %r' % type(self.ref1)
+      assert self.ref1 == self.ref2 == SimplexReference(1)**2
+      points, weights = self.get_quad_bem_ischeme( gauss, self.neighborhood )
+      mod_points = self.singular_ischeme_quad( points, self.transf )
+      xw = mod_points, weights
     else:
       where1, where2 = where.split( '*' ) if '*' in where else ( where, where )
       xw = self.concat( self.ref1.getischeme(where1), self.ref2.getischeme(where2) )
     return xw
 
+
+class VertexTrans( transform.Transform ):
+
+  def __init__( self, coords, vertices ):
+    self.coords = coords
+    self.vertices = rational.asarray(vertices)
+    nverts, ndims = vertices.shape
+    transform.Transform.__init__( self, None, ndims, 1 )
+
+  def apply( self, coords ):
+    assert coord.ndim == 1
+    mycoords, coords, common = rational.common_factor( self.coords, coord )
+    return [ self.vertices[mycoords.tolist().index(coord.tolist())] for coord in coords ]
+
+
+class RootTrans( transform.Transform ):
+
+  def __init__( self, name, shape ):
+    transform.Transform.__init__( self, None, len(shape), 1 )
+    self.I, = numpy.where( shape )
+    self.w = rational.asarray( numpy.take( shape, self.I ) )
+    self.fmt = name+'{}'
+
+  def apply( self, coords ):
+    assert coords.ndim == 2
+    if self.I.size:
+      ci, wi, factor = rational.common_factor( coords, self.w )
+      ci[:,self.I] = ci[:,self.I] % wi
+      coords = rational.Array( ci, factor, True )
+    return map( self.fmt.format, coords )
+
+  def __str__( self ):
+    return repr( self.fmt.format('*') )
+
+
+class RootTransEdges( transform.Transform ):
+
+  def __init__( self, name, shape ):
+    transform.Transform.__init__( self, None, len(shape), 1 )
+    self.shape = shape
+    assert isinstance( name, numpy.ndarray )
+    assert name.shape == (3,)*len(shape)
+    self.name = name.copy()
+
+  def apply( self, coords ):
+    assert coords.ndim == 2
+    labels = []
+    for coord in coords.T.frac.T:
+      right = (coord[:,1]==1) & (coord[:,0]==self.shape)
+      left = coord[:,0]==0
+      where = (1+right)-left
+      s = self.name[tuple(where)] + '[%s]' % ','.join( str(n) if d == 1 else '%d/%d' % (n,d) for n, d in coord[where==1] )
+      labels.append( s )
+    return labels
+
+  def __str__( self ):
+    return repr( ','.join(self.name.flat)+'*' )
+
+class RenameTrans( transform.Transform ):
+
+  def __init__( self, rename ):
+    transform.Transform.__init__( self, None, None, 1 )
+    self.rename = rename
+
+  def apply( self, coords ):
+    return [ self.rename.get(coord,coord) for coord in coords ]
+
+  def __str__( self ):
+    return '<rename>'
+
 class Element( object ):
-  '''Element base class.
 
-  Represents the topological shape.'''
+  __slots__ = 'transform', 'reference', 'opposite', '__vertices'
 
-  __slots__ = 'reference', 'parents', 'sign', '__vertices', '__cmpkey', '__hash'
-
-  def __init__( self, reference, vertices=None, parent=None, parents=None, sign=1 ):
-    'constructor'
-
-    assert isinstance( reference, Reference )
+  def __init__( self, reference, transform, opposite=None ):
+    assert transform.fromdims == reference.ndims
     self.reference = reference
-    if vertices is not None:
-      vertices = tuple(vertices)
-      assert len(vertices) == reference.nverts
-    self.__vertices = vertices
-    if parents:
-      assert not parent
-      self.parents = parents
-    else:
-      self.parents = parent, parent
-    assert abs(sign) == 1
-    self.sign = sign
-    self.__cmpkey = reference, self.parents, vertices, sign
-    self.__hash = hash( self.__cmpkey )
+    self.transform = transform
+    self.opposite = opposite or transform
+    self.__vertices = None
 
-  @property
-  def parent( self ):
-    return self.parents[0]
+  def __eq__( self, other ):
+    return self is other or isinstance(other,Element) \
+      and self.reference == other.reference \
+      and self.transform == other.transform \
+      and self.opposite == other.opposite
+
+  def __mul__( self, other ):
+    ndims = self.ndims + other.ndims
+    eye = numpy.eye( ndims, dtype=int )
+    if self.reference == other.reference == SimplexReference(1)**2:
+      lookup = { v: i2 for i2, v in enumerate(other.vertices) }
+      common = [ (i1,lookup[v]) for i1, v in enumerate(self.vertices) if v in lookup ]
+      if not common:
+        neighborhood = -1
+        transf = 0, 0
+      elif len(common) == 4:
+        neighborhood = 0
+        assert self == other
+        transf = 0, 0
+      elif len(common) == 2:
+        neighborhood = 1
+        vertex = (0,2), (2,3), (3,1), (1,0), (2,0), (3,2), (1,3), (0,1)
+        transf = tuple( vertex.index(v) for v in zip(*common) )
+      elif len(common) == 1:
+        neighborhood = 2
+        transf = tuple( (0,3,1,2)[v] for v in common[0] )
+      else:
+        raise ValueError( 'Unknown neighbor type %i' % neighborhood )
+      reference = ProductReference( self.reference, other.reference, neighborhood, transf )
+    else:
+      reference = TensorReference( self.reference, other.reference )
+    return Element( reference, transform.updim(eye[:self.ndims],1) >> self.transform,
+                               transform.updim(eye[self.ndims:],1) >> other.transform )
 
   @property
   def vertices( self ):
     if self.__vertices is None:
-      pelem, trans = self.parent
-      self.__vertices = [ pelem.getvtx(trans.apply(v)) for v in self.reference.vertices ]
+      self.__vertices = self.transform.apply( self.reference.vertices )
     return self.__vertices
 
   @property
   def ndims( self ):
     return self.reference.ndims
 
-  def __mul__( self, other ):
-    'multiply elements'
-
-    return ProductElement( self, other )
-
   @property
-  def simplices( self ):
-    return [ Element( reference, parent=(self,trans), sign=self.sign ) for trans, reference in self.reference.simplices ]
-
-  def getvtx( self, coord ):
-    coords, coord, common = rational.common_factor( self.reference.vertices, coord )
-    index = coords.tolist().index( coord.tolist() )
-    return self.vertices[index]
-
-  @property
-  def children( self ):
-    return tuple( Element( reference=child, parent=(self,trans), sign=self.sign )
-      for trans, child in self.reference.children )
+  def nverts( self ):
+    return self.reference.nverts
 
   @property
   def edges( self ):
-    return tuple( Element( reference=edge, parent=(self,trans), sign=self.sign*sign )
-      for trans, sign, edge in self.reference.edges )
-
+    return [ self.edge(i) for i in range(self.nverts) ]
+    
   def edge( self, iedge ):
-    return self.edges[iedge]
+    trans, edge = self.reference.edges[iedge]
+    return Element( edge, trans >> self.transform, trans >> self.opposite )
 
-  def __str__( self ):
-    'string representation'
-
-    return '%s(%s)' % ( self.__class__.__name__, self.vertices )
-
-  def __hash__( self ):
-    'hash'
-
-    return self.__hash
-
-  def __eq__( self, other ):
-    'hash'
-
-    return self is other or isinstance( other, Element ) and self.__cmpkey == other.__cmpkey
+  @property
+  def children( self ):
+    return [ Element( child, trans >> self.transform, trans >> self.opposite )
+      for trans, child in self.reference.children ]
 
   def trim( self, levelset, maxrefine, numer ):
     'trim element along levelset'
@@ -720,12 +776,7 @@ class Element( object ):
           [ numpy.dot( (int(numer)-x,x), self.reference.vertices[ribbon] ) for x, ribbon in isects ]
         ])
       assert coords.dtype == int
-      if self.ndims == 2:
-        simplex = SimplexReference(2)
-      elif self.ndims == 3:
-        simplex = SimplexReference(3)
-      else:
-        raise NotImplementedError
+      simplex = SimplexReference( self.ndims )
       for tri in util.delaunay( coords ):
         ispos = isneg = False
         for ivert in tri:
@@ -745,9 +796,8 @@ class Element( object ):
         children.append(( trans, simplex ))
     else:
       complete = True
-      for child in self.children:
-        _self, trans = child.parent
-        assert _self is self
+      for trans, child in self.reference.children:
+        child = Element( child, trans >> self.transform, trans >> self.opposite )
         trimmed = child.trim( levelset, maxrefine-1, numer )
         complete = complete and trimmed == child
         if trimmed != None:
@@ -757,47 +807,16 @@ class Element( object ):
     if not children:
       return None
     reference = MosaicReference( self.ndims, tuple(children) )
-    return Element( reference=reference, parent=(self,transform.identity(self.ndims)), sign=self.sign )
+    return Element( reference, self.transform, self.opposite )
 
-def ProductElement( elem1, elem2 ):
-  eye = numpy.eye( elem1.ndims + elem2.ndims, dtype=int )
-  iface1 = elem1, transform.linear( eye[:elem1.ndims] )
-  iface2 = elem2, transform.linear( eye[elem1.ndims:] )
+  @property
+  def simplices( self ):
+    return [ Element( reference, trans >> self.transform, trans >> self.opposite )
+      for trans, reference in self.reference.simplices ]
 
-  transf = 0, 0
-  neighborhood = -1
-  if elem1.reference == elem2.reference == SimplexReference(1)**2:
-    common_vertices = list( set(elem1.vertices) & set(elem2.vertices) )
-    vertices1 = [elem1.vertices.index( ni ) for ni in common_vertices]
-    vertices2 = [elem2.vertices.index( ni ) for ni in common_vertices]
-    neighborhood = neighbor( elem1, elem2 )
-    if neighborhood == 0:
-      # test for strange topological features
-      assert elem1 == elem2, 'Topological feature not supported: try refining here, possibly periodicity causes elems to touch on both sides.'
-    elif neighborhood != -1:
-      # define local map rotations
-      if neighborhood==1:
-        vertex = [0,2], [2,3], [3,1], [1,0], [2,0], [3,2], [1,3], [0,1]
-      elif neighborhood==2:
-        vertex = [0], [2], [3], [1]
-      else:
-        raise ValueError( 'Unknown neighbor type %i' % neighborhood )
-      transf = vertex.index( vertices1 ), vertex.index( vertices2 )
-  reference = ProductReference( elem1.reference, elem2.reference, neighborhood, transf )
+  def __str__( self ):
+    return 'Element(%s)' % self.vertices
 
-  return Element( reference=reference, parents=(iface1,iface2), sign=1 )
-  
-def QuadElement( ndims, vertices=None, parent=None, parents=None ):
-  reference = SimplexReference(1)**ndims if ndims else SimplexReference(0)
-  return Element( reference, vertices, parent=parent, parents=parents, sign=1 )
-
-def TriangularElement( vertices=None, parent=None ):
-  reference = SimplexReference(2)
-  return Element( reference=reference, vertices=vertices, parent=parent, sign=1 )
-
-def TetrahedronElement( vertices=None, parent=None ):
-  reference = SimplexReference(3)
-  return Element( reference=reference, vertices=vertices, parent=parent, sign=1 )
 
 class StdElem( cache.Immutable ):
   'stdelem base class'
@@ -1112,17 +1131,5 @@ class ExtractionWrapper( object ):
     'string representation'
 
     return '%s#%x:%s' % ( self.__class__.__name__, id(self), self.stdelem )
-
-def neighbor( elem1, elem2 ):
-  ncommon = len( set(elem1.vertices) & set(elem2.vertices) )
-  if elem1.reference == elem2.reference == SimplexReference(1):
-    neighbormap = { 0:-1, 1:1, 2:0 }
-  elif elem1.reference == elem2.reference == SimplexReference(1)**2:
-    neighbormap = { 0:-1, 1:2, 2:1, 4:0 }
-  elif elem1.reference == elem2.reference == SimplexReference(1)**3:
-    neighbormap = { 0:-1, 1:3, 2:2, 4:1, 8:0 }
-  else:
-    raise NotImplementedError, 'neighbor for %s and %s' % ( elem1, elem2 )
-  return neighbormap[ncommon]
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

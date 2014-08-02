@@ -42,22 +42,22 @@ def rectilinear( richshape, periodic=(), name='rect' ):
     offset = 0
   if all( s == scale[0] for s in scale[1:] ):
     scale = scale[0]
-  vertexfmt = name + '(%s)' % ','.join( ['%d'] * ndims )
-  vertexobjs = util.objmap( lambda *index: element.PrimaryVertex(vertexfmt%index), *numpy.ogrid[ tuple( slice(n+1) for n in shape ) ] )
-  for idim in periodic:
-    tmp = numeric.bringforward( vertexobjs, idim )
-    tmp[-1] = tmp[0]
   indices = numeric.grid( shape )
   structure = numpy.empty( indices.shape[1:], dtype=object )
-  domainelem = element.Element( reference=element.Reference( numpy.zeros((0,ndims),dtype=int) ), vertices=[] )
+
+  if isinstance( name, str ):
+    wrap = tuple( sh if i in periodic else 0 for i, sh in enumerate(shape) )
+    root = element.RootTrans( name, wrap )
+  else:
+    assert all( ( name.take(0,i) == name.take(2,i) ).all() for i in periodic )
+    root = element.RootTransEdges( name, shape )
+
+  reference = element.SimplexReference(1)**ndims
   for index in indices.reshape( ndims, -1 ).T:
-    vertices = vertexobjs[tuple(slice(i,i+2) for i in index)].ravel()
-    parent = domainelem, transform.shift(index)
-    structure[tuple(index)] = element.QuadElement( ndims=ndims, parent=parent, vertices=vertices )
+    structure[tuple(index)] = element.Element( reference, transform.shift(index) >> root )
   topo = topology.StructuredTopology( structure, periodic=periodic )
   coords = function.ElemFunc( ndims ) * scale + offset
   return topo, coords
-
 
 def revolve( topo, coords, nelems, degree=3, axis=0 ):
   'revolve coordinates'
@@ -185,8 +185,7 @@ def gmesh( path, btags={}, name=None ):
 
   namedfuncs = { 'spline1': linearfunc, 'bubble1': bubblefunc }
   topo = topology.UnstructuredTopology( elements, ndims=2, namedfuncs=namedfuncs )
-  topo.boundary = topology.StructuredTopology( belements, periodic=(0,) ) if structured else \
-                  topology.UnstructuredTopology( belements, ndims=1 )
+  topo.boundary = topology.UnstructuredTopology( belements, ndims=1 )
   topo.boundary.groups = {}
   for tag, group in bgroups.items():
     try:
@@ -364,17 +363,18 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   + [ ( 12+(i+1)%8, 12+i, i+1+(i//2) ) for i in range( 8) ]
   + [ ( 12+i, 12+(i+1)%8, 20 )         for i in range( 8) ] )
   
-  domainelem = element.Element( reference=element.Reference( numpy.zeros((0,2),dtype=int) ), vertices=[] )
   elements = []
-  vertexobjs = numpy.array([ element.PrimaryVertex( 'demo.%d' % ivertex ) for ivertex in range(len(vertices)) ])
+  root = element.RootTrans( 'demo', shape=(0,0) )
+  reference = element.SimplexReference(2)
   for ielem, elemvertices in enumerate( vertices ):
     elemcoords = coords[ numpy.array(elemvertices) ]
-    parent = domainelem, transform.linear((elemcoords[:2]-elemcoords[2]).T,scale) >> transform.shift(elemcoords[2],scale)
-    elem = element.TriangularElement( vertices=vertexobjs[elemvertices], parent=parent )
+    trans = transform.linear((elemcoords[:2]-elemcoords[2]).T,scale) >> transform.shift(elemcoords[2],scale)
+    elem = element.Element( reference, trans >> root )
     elements.append( elem )
 
-  fmap = dict.fromkeys( elements, element.PolyTriangle(1) )
-  nmap = dict( zip( elements, vertices ) )
+  stdfunc = element.PolyTriangle(1)
+  fmap = { elem.transform: stdfunc for elem in elements }
+  nmap = { elem.transform: vtx for elem, vtx in zip( elements, vertices ) }
   belems = [ elem.edge(2) for elem in elements[:12] ]
   bgroups = { 'top': belems[0:3], 'left': belems[3:6], 'bottom': belems[6:9], 'right': belems[9:12] }
 
