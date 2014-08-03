@@ -573,12 +573,8 @@ class StructuredTopology( Topology ):
       periodic = [ d - (d>idim) for d in self.periodic if d != idim ] # TODO check that dimensions are correct for ndim > 2
       boundaries.append( StructuredTopology( belems, periodic=periodic ) )
 
-    if self.ndims == 2:
-      structure = numpy.concatenate([ boundaries[i].structure for i in [0,2,1,3] ])
-      topo = StructuredTopology( structure, periodic=[0] )
-    else:
-      allbelems = [ belem for boundary in boundaries for belem in boundary.structure.flat if belem is not None ]
-      topo = Topology( allbelems )
+    allbelems = [ belem for boundary in boundaries for belem in boundary.structure.flat if belem is not None ]
+    topo = Topology( allbelems )
 
     topo.groups = dict( zip( ( 'left', 'right', 'bottom', 'top', 'front', 'back' ), boundaries ) )
     return topo
