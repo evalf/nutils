@@ -18,15 +18,15 @@ def main( nelems=8, maxrefine=2, stress=library.Hooke(lmbda=1,mu=1), plots=True,
 
   verts = numpy.linspace( 0, 1, nelems+1 )
   wholedomain, geom = mesh.rectilinear( [verts,verts] )
-  dspace = wholedomain.splinefunc( degree=2 ).vector( 2 )
   levelset = function.norm2( geom ) - .5
-  domain = wholedomain.trim( levelset, maxrefine=maxrefine )
+  domain, complement = wholedomain.trim( levelset, maxrefine=maxrefine )
+  dspace = domain.splinefunc( degree=2 ).vector( 2 )
 
   support = domain.integrate( function.norm2( dspace ), geometry=geom, ischeme='gauss6' )
   cons = util.NanVec( len(support) )
   cons[ support==0 ] = 0
-  cons |= wholedomain.boundary['left,right'].project( geom*[.5,0], geometry=geom, ischeme='gauss6', onto=dspace )
-  cons |= wholedomain.boundary['right'].project( [.5,0], geometry=geom, ischeme='gauss6', onto=dspace )
+  cons |= domain.boundary['left,right'].project( geom*[.5,0], geometry=geom, ischeme='gauss6', onto=dspace )
+  cons |= domain.boundary['right'].project( [.5,0], geometry=geom, ischeme='gauss6', onto=dspace )
 
   elasticity = function.outer( dspace.grad(geom), stress(dspace,geom) ).sum([2,3])
   matrix = domain.integrate( elasticity, geometry=geom, ischeme='gauss6' )

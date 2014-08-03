@@ -7,7 +7,7 @@ class FiniteCellTestBase( object ):
 
   def __init__ ( self ):
     domain, self.geom = mesh.rectilinear( (numpy.linspace(-1.,1.,self.nelems+1),)*self.ndims )
-    self.fdomain = domain.trim( levelset=self.levelset, maxrefine=self.maxrefine )
+    self.fdomain, complement = domain.trim( levelset=self.levelset, maxrefine=self.maxrefine )
 
   def test_volume ( self ):
     vol = self.fdomain.integrate( 1., geometry=self.geom, ischeme='gauss1' )

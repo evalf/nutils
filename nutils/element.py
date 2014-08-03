@@ -67,7 +67,8 @@ class Element( object ):
     'trim element along levelset'
 
     assert rational.isrational( numer )
-    children = []
+    pos = []
+    neg = []
     if maxrefine <= 0:
       repeat = True
       levels = levelset.eval( self, 'bezier2' )
@@ -75,9 +76,9 @@ class Element( object ):
         repeat = False
         assert levels.shape == (self.reference.nverts,)
         if numpy.greater_equal( levels, 0 ).all():
-          return self
+          return self, None
         if numpy.less_equal( levels, 0 ).all():
-          return None
+          return None, self
         isects = []
         for ribbon in self.reference.ribbon2vertices:
           a, b = levels[ribbon]
@@ -106,29 +107,27 @@ class Element( object ):
             ispos = ispos or sign > 0
             isneg = isneg or sign < 0
         assert ispos is not isneg, 'domains do not separate in two convex parts'
-        if isneg:
-          continue
         offset = coords[tri[0]]
         matrix = ( coords[tri[1:]] - offset ).T
         if numpy.linalg.det( matrix.astype(float) ) < 0:
           tri[-2:] = tri[-1], tri[-2]
           matrix = ( coords[tri[1:]] - offset ).T
         trans = transform.linear(matrix,numer) >> transform.shift(offset,numer)
-        children.append(( trans, simplex ))
+        ( pos if ispos else neg ).append(( trans, simplex ))
     else:
-      complete = True
       for trans, child in self.reference.children:
         child = Element( child, trans >> self.transform, trans >> self.opposite )
-        trimmed = child.trim( levelset, maxrefine-1, numer )
-        complete = complete and trimmed == child
-        if trimmed != None:
-          children.append( (trans,trimmed.reference) )
-      if complete:
-        return self
-    if not children:
-      return None
-    reference = MosaicReference( self.ndims, tuple(children) )
-    return Element( reference, self.transform, self.opposite )
+        poschild, negchild = child.trim( levelset, maxrefine-1, numer )
+        if poschild:
+          pos.append( (trans,poschild.reference) )
+        if negchild:
+          neg.append( (trans,negchild.reference) )
+    if not neg:
+      return self, None
+    if not pos:
+      return None, self
+    return Element( MosaicReference( self.ndims, tuple(pos) ), self.transform, self.opposite ), \
+           Element( MosaicReference( self.ndims, tuple(neg) ), self.transform, self.opposite )
 
   @property
   def simplices( self ):

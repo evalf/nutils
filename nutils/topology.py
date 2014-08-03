@@ -518,13 +518,17 @@ class Topology( object ):
 
     numer = rational.asrational( numeric.round(1./eps) )
     levelset = function.ascompiled( levelset )
-    trimmedelems = []
+    poselems = []
+    negelems = []
     __log__ = log.iter( 'elem', self.structure.ravel() )
     for elem in __log__:
-      trimelem = elem.trim( levelset=levelset, maxrefine=maxrefine, numer=numer )
-      if trimelem:
-        trimmedelems.append( trimelem )
-    return TrimmedTopology( self, trimmedelems )
+      pos, neg = elem.trim( levelset=levelset, maxrefine=maxrefine, numer=numer )
+      if pos:
+        poselems.append( pos )
+      if neg:
+        negelems.append( neg )
+    return TrimmedTopology( self, poselems ), \
+           TrimmedTopology( self, negelems )
 
 
 class StructuredTopology( Topology ):
@@ -977,7 +981,14 @@ class TrimmedTopology( Topology ):
 
   @cache.property
   def boundary( self ):
-    return self.basetopo.boundary
+    warnings.warn( 'warning: boundaries of trimmed topologies are not trimmed' )
+    belems = []
+    for belem in self.basetopo.boundary:
+      for trans1, trans2 in belem.transform:
+        if trans2.fromdims == self.ndims and trans2 in self.emat:
+          belems.append( belem )
+          break
+    return TrimmedTopology( self.basetopo.boundary, belems )
 
   @cache.property
   def emat( self ):
@@ -992,7 +1003,34 @@ class TrimmedTopology( Topology ):
         elements.append( trimelem )
     return TrimmedTopology( keytopo, elements )
 
+  def _prune( self, funcsp ):
+    (func,(dofaxis,)), = function.blocks( funcsp )
+    nmap = {}
+    fmap = {}
+    renumber = {}
+    for elem in self:
+      trans = elem.transform
+      dofs = []
+      for dof in dofaxis.dofmap[trans]:
+        newdof = renumber.get(dof)
+        if newdof is None:
+          newdof = len(renumber)
+          renumber[dof] = newdof
+        dofs.append( newdof )
+      nmap[trans] = numpy.array(dofs)
+      fmap[trans] = func.stdmap[trans]
+    return function.function( fmap=fmap, nmap=nmap, ndofs=len(renumber), ndims=self.ndims )
+
+  @log.title
+  def stdfunc( self, *args, **kwargs ):
+    return self._prune( self.basetopo.stdfunc( *args, **kwargs ) )
+
+  @log.title
+  def linearfunc( self, *args, **kwargs ):
+    return self._prune( self.basetopo.linearfunc( *args, **kwargs ) )
+
+  @log.title
   def splinefunc( self, *args, **kwargs ):
-    return self.basetopo.splinefunc( *args, **kwargs )
+    return self._prune( self.basetopo.splinefunc( *args, **kwargs ) )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
