@@ -27,6 +27,14 @@ def property( f ):
   return _property(cache_property_wrapper)
 
 
+class _id( object ):
+  def __init__( self, obj ):
+    self.obj = obj
+  def __hash__( self ):
+    return hash( id(self.obj) )
+  def __eq__( self, other ):
+    return isinstance(other,_id) and self.obj is other.obj
+
 def _keyfromargs( func, args, kwargs, offset=0 ):
   if getattr( func, '__self__' ): # bound instancemethod
     offset += 1
@@ -45,16 +53,14 @@ def _keyfromargs( func, args, kwargs, offset=0 ):
           raise TypeError, '%s missing mandatory argument %r' % ( func.__name__, name )
       args += val,
     assert not kwargs, '%s got invalid arguments: %s' % ( func.__name__, ', '.join(kwargs) )
-  mask = 0
   key = []
   for arg in args:
     try:
       hash(arg)
     except:
-      mask |= 1 << len(key)
-      arg = id(arg)
+      arg = _id(arg)
     key.append( arg )
-  return mask, tuple(key)
+  return tuple(key)
 
 
 class CallDict( dict ):
