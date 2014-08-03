@@ -513,6 +513,20 @@ class Topology( object ):
 
     return self if n <= 0 else self.refined.refine( n-1 )
 
+  def trim( self, levelset, maxrefine, evalrefine=0, eps=.01 ):
+    'trim element along levelset'
+
+    numer = rational.asrational( numeric.round(1./eps) )
+    levelset = function.ascompiled( levelset )
+    trimmedelems = []
+    __log__ = log.iter( 'elem', self.structure.ravel() )
+    for elem in __log__:
+      trimelem = elem.trim( levelset=levelset, maxrefine=maxrefine, numer=numer )
+      if trimelem:
+        trimmedelems.append( trimelem )
+    return TrimmedTopology( self, trimmedelems )
+
+
 class StructuredTopology( Topology ):
   'structured topology'
 
@@ -523,7 +537,7 @@ class StructuredTopology( Topology ):
     self.structure = structure
     self.periodic = tuple(periodic)
     self.groups = {}
-    Topology.__init__( self, filter(None,structure.flat) )
+    Topology.__init__( self, structure.flat )
 
   def __getitem__( self, item ):
     'subtopology'
@@ -774,16 +788,6 @@ class StructuredTopology( Topology ):
     refined.groups = { key: group.refined for key, group in self.groups.items() }
     return refined
 
-  def trim( self, levelset, maxrefine, evalrefine=0, eps=.01 ):
-    'trim element along levelset'
-
-    numer = rational.asrational( numeric.round(1./eps) )
-    levelset = function.ascompiled( levelset )
-    __log__ = log.iter( 'elem', self.structure.ravel() )
-    trimmedelems = [ elem.trim( levelset=levelset, maxrefine=maxrefine, numer=numer ) for elem in __log__ ]
-    trimmedstructure = numpy.array( trimmedelems ).reshape( self.structure.shape )
-    return StructuredTopology( trimmedstructure, periodic=self.periodic )
-
   def __str__( self ):
     'string representation'
 
@@ -967,5 +971,32 @@ class RefinedTopology( Topology ):
   @cache.property
   def boundary( self ):
     return self.basetopo.boundary.refined
+
+class TrimmedTopology( Topology ):
+  'trimmed'
+
+  def __init__( self, basetopo, elements ):
+    self.basetopo = basetopo
+    Topology.__init__( self, elements )
+
+  @cache.property
+  def boundary( self ):
+    return self.basetopo.boundary
+
+  @cache.property
+  def emat( self ):
+    return { elem.transform: elem for elem in self }
+
+  def __getitem__( self, key ):
+    elements = []
+    keytopo = self.basetopo[key]
+    for elem in self.basetopo[key]:
+      trimelem = self.emat.get(elem.transform)
+      if trimelem is not None:
+        elements.append( trimelem )
+    return TrimmedTopology( keytopo, elements )
+
+  def splinefunc( self, *args, **kwargs ):
+    return self.basetopo.splinefunc( *args, **kwargs )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
