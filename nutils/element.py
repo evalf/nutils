@@ -66,68 +66,13 @@ class Element( object ):
   def trim( self, levelset, maxrefine, numer ):
     'trim element along levelset'
 
-    assert rational.isrational( numer )
-    pos = []
-    neg = []
-    if maxrefine <= 0:
-      repeat = True
-      levels = levelset.eval( self, 'bezier2' )
-      while repeat: # set almost-zero points to zero if cutoff within eps
-        repeat = False
-        assert levels.shape == (self.reference.nverts,)
-        if numpy.greater_equal( levels, 0 ).all():
-          return self, None
-        if numpy.less_equal( levels, 0 ).all():
-          return None, self
-        isects = []
-        for ribbon in self.reference.ribbon2vertices:
-          a, b = levels[ribbon]
-          if a * b < 0: # strict sign change
-            x = int( numer * a / float(a-b) + .5 ) # round to [0,1,..,numer]
-            if 0 < x < numer:
-              isects.append(( x, ribbon ))
-            else: # near intersection of vertex
-              v = ribbon[ (0,numer).index(x) ]
-              log.debug( 'rounding vertex #%d from %f to 0' % ( v, levels[v] ) )
-              levels[v] = 0
-              repeat = True
-      coords = self.reference.vertices
-      if isects:
-        coords = numpy.vstack([
-          self.reference.vertices * int(numer),
-          [ numpy.dot( (int(numer)-x,x), self.reference.vertices[ribbon] ) for x, ribbon in isects ]
-        ])
-      assert coords.dtype == int
-      simplex = SimplexReference( self.ndims )
-      for tri in util.delaunay( coords ):
-        ispos = isneg = False
-        for ivert in tri:
-          if ivert < self.reference.nverts:
-            sign = levels[ivert]
-            ispos = ispos or sign > 0
-            isneg = isneg or sign < 0
-        assert ispos is not isneg, 'domains do not separate in two convex parts'
-        offset = coords[tri[0]]
-        matrix = ( coords[tri[1:]] - offset ).T
-        if numpy.linalg.det( matrix.astype(float) ) < 0:
-          tri[-2:] = tri[-1], tri[-2]
-          matrix = ( coords[tri[1:]] - offset ).T
-        trans = transform.linear(matrix,numer) >> transform.shift(offset,numer)
-        ( pos if ispos else neg ).append(( trans, simplex ))
-    else:
-      for trans, child in self.reference.children:
-        child = Element( child, trans >> self.transform, trans >> self.opposite )
-        poschild, negchild = child.trim( levelset, maxrefine-1, numer )
-        if poschild:
-          pos.append( (trans,poschild.reference) )
-        if negchild:
-          neg.append( (trans,negchild.reference) )
+    pos, neg = self.reference.trim( self.transform, levelset, maxrefine, numer )
     if not neg:
       return self, None
     if not pos:
       return None, self
-    return Element( MosaicReference( self.ndims, tuple(pos) ), self.transform, self.opposite ), \
-           Element( MosaicReference( self.ndims, tuple(neg) ), self.transform, self.opposite )
+    return Element( pos, self.transform, self.opposite ), \
+           Element( neg, self.transform, self.opposite )
 
   @property
   def simplices( self ):
@@ -174,6 +119,71 @@ class Reference( object ):
     return SimplexReference(0) if n == 0 \
       else self if n == 1 \
       else self * self**(n-1)
+
+  def trim( self, trans, levelset, maxrefine, numer ):
+    'trim element along levelset'
+
+    assert rational.isrational( numer )
+    pos = []
+    neg = []
+    if maxrefine <= 0:
+      repeat = True
+      levels = levelset.eval( Element(self,trans), 'bezier2' )
+      while repeat: # set almost-zero points to zero if cutoff within eps
+        repeat = False
+        assert levels.shape == (self.nverts,)
+        if numpy.greater_equal( levels, 0 ).all():
+          return self, None
+        if numpy.less_equal( levels, 0 ).all():
+          return None, self
+        isects = []
+        for ribbon in self.ribbon2vertices:
+          a, b = levels[ribbon]
+          if a * b < 0: # strict sign change
+            x = int( numer * a / float(a-b) + .5 ) # round to [0,1,..,numer]
+            if 0 < x < numer:
+              isects.append(( x, ribbon ))
+            else: # near intersection of vertex
+              v = ribbon[ (0,numer).index(x) ]
+              log.debug( 'rounding vertex #%d from %f to 0' % ( v, levels[v] ) )
+              levels[v] = 0
+              repeat = True
+      coords = self.vertices
+      if isects:
+        coords = numpy.vstack([
+          self.vertices * int(numer),
+          [ numpy.dot( (int(numer)-x,x), self.vertices[ribbon] ) for x, ribbon in isects ]
+        ])
+      assert coords.dtype == int
+      simplex = SimplexReference( self.ndims )
+      for tri in util.delaunay( coords ):
+        ispos = isneg = False
+        for ivert in tri:
+          if ivert < self.nverts:
+            sign = levels[ivert]
+            ispos = ispos or sign > 0
+            isneg = isneg or sign < 0
+        assert ispos is not isneg, 'domains do not separate in two convex parts'
+        offset = coords[tri[0]]
+        matrix = ( coords[tri[1:]] - offset ).T
+        if numpy.linalg.det( matrix.astype(float) ) < 0:
+          tri[-2:] = tri[-1], tri[-2]
+          matrix = ( coords[tri[1:]] - offset ).T
+        trans = transform.linear(matrix,numer) >> transform.shift(offset,numer)
+        ( pos if ispos else neg ).append(( trans, simplex ))
+    else:
+      for ctrans, child in self.children:
+        poschild, negchild = child.trim( ctrans >> trans, levelset, maxrefine-1, numer )
+        if poschild:
+          pos.append( (ctrans,poschild) )
+        if negchild:
+          neg.append( (ctrans,negchild) )
+    if not neg:
+      return self, None
+    if not pos:
+      return None, self
+    return MosaicReference( self.ndims, tuple(pos) ), \
+           MosaicReference( self.ndims, tuple(neg) )
 
 class SimplexReference( Reference ):
 
