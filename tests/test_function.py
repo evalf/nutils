@@ -14,10 +14,8 @@ class FuncTest( object ):
     r, theta = function.ElemFunc( 2 ) # corners at (0,0), (0,1), (1,1), (1,0)
     geom = r * function.stack([ function.cos(theta), function.sin(theta) ])
 
-    fmap = { elem.transform: element.PolyLine( element.PolyLine.bernstein_poly(1) )
-                           * element.PolyLine( element.PolyLine.bernstein_poly(2) ) }
-    nmap = { elem.transform: numpy.arange(6) }
-    funcsp = function.function( fmap, nmap, ndofs=6, ndims=2 )
+    funcsp = topology.StructuredTopology([[ elem ]]).splinefunc( (1,2) )
+
     numpy.random.seed(0)
     args = [ ( numpy.random.uniform( size=shape+(funcsp.shape[0],) ) * funcsp ).sum() for shape in shapes ]
     points, weights = elem.reference.getischeme('uniform2')
