@@ -41,10 +41,6 @@ class Topology( object ):
   def __iter__( self ):
     return iter( self.elements )
 
-  @property
-  def refined( self ):
-    return Topology( child for elem in self for child in elem.children )
-
   def stdfunc( self, degree ):
     'spline from vertices'
 
@@ -508,142 +504,9 @@ class Topology( object ):
 
     return constrain
 
-  @log.title
-  def refinedfunc( self, dofaxis, refine, degree ):
-    'create refined space by refining dofs in existing one'
-
-    warnings.warn( 'refinedfunc is replaced by refined_by + splinefunc; this function will be removed in future' % ischeme, DeprecationWarning )
-
-    refine = set(refine) # make unique and equip with set operations
-  
-    # initialize
-    topoelems = [] # non-overlapping 'top-level' elements, will make up the new domain
-    parentelems = [] # all parents, grandparents etc of topoelems
-    nrefine = 0 # number of nested topologies after refinement
-
-    dofmap = dofaxis.dofmap
-    topo = self
-    while topo: # elements to examine in next level refinement
-      nexttopo = []
-      refined = set() # refined dofs in current refinement level
-      __log__ = log.iter( 'elem', topo )
-      for elem in __log__: # loop over remaining elements in refinement level 'nrefine'
-        dofs = dofmap.get( elem ) # dof numbers for current funcsp object
-        if dofs is not None: # elem is a top-level element
-          supp = refine.intersection(dofs) # supported dofs that are tagged for refinement
-          if supp: # elem supports dofs for refinement
-            parentelems.append( elem ) # elem will become a parent
-            topoelems.extend( filter(None,elem.children) ) # children will become top-level elements
-            refined.update( supp ) # dofs will not be considered in following refinement levels
-          else: # elem does not support dofs for refinement
-            topoelems.append( elem ) # elem remains a top-level elemnt
-        else: # elem is not a top-level element
-          parentelems.append( elem ) # elem is a parent
-          nexttopo.extend( filter(None,elem.children) ) # examine children in next iteration
-      refine -= refined # discard dofs to prevent further consideration
-      topo = nexttopo # prepare for next iteration
-      nrefine += 1 # update refinement level
-    assert not refine, 'unrefined leftover: %s' % refine
-    if refined: # last considered level contained refinements
-      nrefine += 1 # this raises the total level to nrefine + 1
-
-    # initialize
-    dofmap = {} # IEN mapping of new function object
-    stdmap = {} # shape function mapping of new function object, plus boolean vector indicating which shapes to retain
-    ndofs = 0 # total number of dofs of new function object
-  
-    topo = self # topology to examine in next level refinement
-    __log__ = log.range( 'level', nrefine )
-    for irefine in __log__:
-  
-      funcsp = topo.splinefunc( degree ) # shape functions for level irefine
-      (func,(dofaxis,)), = function.blocks( funcsp ) # separate elem-local funcs and global placement index
-  
-      supported = numpy.ones( funcsp.shape[0], dtype=bool ) # True if dof is contained in topoelems or parentelems
-      touchtopo = numpy.zeros( funcsp.shape[0], dtype=bool ) # True if dof touches at least one topoelem
-      myelems = [] # all top-level or parent elements in level irefine
-
-      __log__ = log.iter( 'element', dofaxis.dofmap.items() )
-      for elem, idofs in __log__:
-        if elem in topoelems:
-          touchtopo[idofs] = True
-          myelems.append( elem )
-        elif elem in parentelems:
-          myelems.append( elem )
-        else:
-          supported[idofs] = False
-  
-      keep = numpy.logical_and( supported, touchtopo ) # THE refinement law
-      if keep.all() and irefine == nrefine - 1:
-        return topo, funcsp
-  
-      for elem in myelems: # loop over all top-level or parent elements in level irefine
-        idofs = dofaxis.dofmap[elem] # local dof numbers
-        mykeep = keep[idofs]
-        std = func.stdmap[elem]
-        assert isinstance(std,element.StdElem)
-        if mykeep.all():
-          stdmap[elem] = std # use all shapes from this level
-        elif mykeep.any():
-          stdmap[elem] = std, mykeep # use some shapes from this level
-        newdofs = [ ndofs + keep[:idof].sum() for idof in idofs if keep[idof] ] # new dof numbers
-        if elem not in self: # at lowest level
-          pelem, transform = elem.parent
-          newdofs.extend( dofmap[pelem] ) # add dofs of all underlying 'broader' shapes
-        dofmap[elem] = numpy.array(newdofs) # add result to IEN mapping of new function object
-  
-      ndofs += keep.sum() # update total number of dofs
-      topo = topo.refined # proceed to next level
-  
-    for elem in parentelems:
-      del dofmap[elem] # remove auxiliary elements
-
-    funcsp = function.function( stdmap, dofmap, ndofs, self.ndims )
-    domain = Topology( topoelems )
-
-    if hasattr( topo, 'boundary' ):
-      allbelems = []
-      bgroups = {}
-      topo = self # topology to examine in next level refinement
-      for irefine in range( nrefine ):
-        belemset = set()
-        for belem in topo.boundary:
-          celem, transform = belem.parent
-          if celem in topoelems:
-            belemset.add( belem )
-        allbelems.extend( belemset )
-        for btag, belems in topo.boundary.groups.iteritems():
-          bgroups.setdefault( btag, [] ).extend( belemset.intersection(belems) )
-        topo = topo.refined # proceed to next level
-      domain.boundary = Topology( allbelems )
-      domain.boundary.groups = dict( ( tag, Topology( group ) ) for tag, group in bgroups.items() )
-
-    if hasattr( topo, 'interfaces' ):
-      allinterfaces = []
-      topo = self # topology to examine in next level refinement
-      for irefine in range( nrefine ):
-        for ielem in topo.interfaces:
-          (celem1,transform1), (celem2,transform2) = ielem.parents
-          if celem1 in topoelems:
-            while True:
-              if celem2 in topoelems:
-                allinterfaces.append( ielem )
-                break
-              if not celem2.parent:
-                break
-              celem2, transform2 = celem2.parent
-          elif celem2 in topoelems:
-            while True:
-              if celem1 in topoelems:
-                allinterfaces.append( ielem )
-                break
-              if not celem1.parent:
-                break
-              celem1, transform1 = celem1.parent
-        topo = topo.refined # proceed to next level
-      domain.interfaces = Topology( allinterfaces )
-  
-    return domain, funcsp
+  @property
+  def refined( self ):
+    return RefinedTopology( self )
 
   def refine( self, n ):
     'refine entire topology n times'
@@ -1089,5 +952,20 @@ class HierarchicalTopology( Topology ):
   @log.title
   def splinefunc( self, *args, **kwargs ):
     return self._funcspace( lambda topo: topo.splinefunc( *args, **kwargs ) )
+
+class RefinedTopology( Topology ):
+  'refinement'
+
+  def __init__( self, basetopo ):
+    self.basetopo = basetopo
+    elements = [ child for elem in basetopo for child in elem.children ]
+    Topology.__init__( self, elements )
+
+  def __getitem__( self, key ):
+    return self.basetopo[key].refined
+
+  @cache.property
+  def boundary( self ):
+    return self.basetopo.boundary.refined
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
