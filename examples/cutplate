@@ -43,17 +43,17 @@ def unittest():
 
   retvals = main( nelems=4, maxrefine=2, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
-    eNq1kU0OAjEIha8zJq3hn3IcF269/1IKs1I3xpjM5KOUR8srjkMG6mUcB1zHyzdRfN0njxDG+8zCYN80
-    jMzrUOfYXChFcZa9L+62yRSwSSh06q0J3HUQReu+Alx1LLqKGNFE6zrvurV67Vj3EvWTUHphKioAfMMP
-    FriS7q1Ji+tOSd+zTtI9XAZsQRXYGVC1SzsWJW0QYUtSETsx1Ygr4xRSTgqUo1aT5hr7lDTuPIQhugdZ
-    ew1USuZuzuDSilWcSNQKDqke79Pls78nH7fHX//fH+XfN/xk1OUJfkjFhw==''' )
+    eNq9UUlqQzEMvc4P2EGTJes4WWSb+y+r4SeUEkrbRcHmSc96mozjkIHrMo4DrqOPC+N9Bu1siYq+73MN
+    MdP0mRwSCYUSQ7KMPUNCoie1UU4KOKmJYpGGIw1LEmLghdplBLjSsaxdiO6NqB1nHbd3+4bVpiw7EUov
+    TIULAH6Dr/knba4OAi1HmLRy4tjApkAdRNgPwXsSqWJ1alKJ00hSn6SRSxuLViWvsmssgdqu1pjhYxeN
+    5db7ZAbvvKRlCFClYu4uGExasbsEErWCXeDs5MuJD3/Zj9vj7f309E3UT++fv+N/2nu3ossHV4fDXw==''' )
 
   retvals = main( nelems=4, maxrefine=3, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
-    eNq1UTluAzEM/I4NSAHv4zkp3Pr/ZURyq9hFgMCAFqMdzoxECtdNFup93W7wtX6tjcr02LxSER77CJO1
-    0Kj+damzFcYRFopPXTywkCmlkFDo8tsgyOiweTHpfAFunkVj/NA8I9rovHmJ8Mvf54j6hTB5TI0K4/8r
-    vhmBh2SVNkV0JoVh9bpJQ3rDlj2FbZZaG8ySnnEIn1g77SeMAJyL2Go8jDP05JSj0SA7VJGiowQnmxk7
-    eyt5KwSmcgrt5M4uxyRtJMqxpvRhr92dZ38ln9/Pj37/f5RP3/DdoO4/9HrFWA==''' )
+    eNq9UUtqQzEMvM4L2EV/S8fpotvcf1lLeg0lhBCyCNjIHs2MZBnHIQP1Mo4DvkavUISfueFgzWiUdx2y
+    HPPOFJKRUCjjluhiS8qW2Ak5KjcExZ77vum8bdpWFpZcTKqcABeRRb3LQOGMaM1bhYv7OvXVjug6I7Qf
+    U0WF1r8ab++f5F4O5Ib5hEnqUhMQ3lTbL4+ayDRYnECq2KJmMNW4sgmahRa4GLgPLtHTzSI6lL0SBlE1
+    FMlrboJtx4xtobS6C+jMTpSSq4lUtNNEomhpyF8nd2t/+O18/b4+3P9ST1iv7re/4zPtPRrR5RfIp8Mw''' )
 
 
 util.run( main, unittest )
