@@ -513,7 +513,7 @@ class Topology( object ):
 
     return self if n <= 0 else self.refined.refine( n-1 )
 
-  def trim( self, levelset, maxrefine, evalrefine=0, eps=.01 ):
+  def trim( self, levelset, maxrefine, eps=.01 ):
     'trim element along levelset'
 
     numer = rational.asrational( numeric.round(1./eps) )

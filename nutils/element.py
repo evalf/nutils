@@ -123,30 +123,47 @@ class Reference( object ):
   def trim( self, trans, levelset, maxrefine, numer ):
     'trim element along levelset'
 
+    assert maxrefine >= 0
     assert rational.isrational( numer )
     pos = []
     neg = []
-    if maxrefine <= 0:
+
+    if trans: # levelset is not evaluated
+      try:
+        levelset = levelset.eval( Element(self,trans), 'simplex%d' % maxrefine )
+      except:
+        pass
+      else:
+        trans = False
+
+    if not trans: # levelset is evaluated
+      if numpy.greater_equal( levelset, 0 ).all():
+        return self, None
+      if numpy.less_equal( levelset, 0 ).all():
+        return None, self
+
+    if not maxrefine:
+
+      assert not trans, 'failed to evaluate levelset up to level maxrefine'
+      assert levelset.shape == (self.nverts,)
       repeat = True
-      levels = levelset.eval( Element(self,trans), 'bezier2' )
       while repeat: # set almost-zero points to zero if cutoff within eps
         repeat = False
-        assert levels.shape == (self.nverts,)
-        if numpy.greater_equal( levels, 0 ).all():
+        if numpy.greater_equal( levelset, 0 ).all():
           return self, None
-        if numpy.less_equal( levels, 0 ).all():
+        if numpy.less_equal( levelset, 0 ).all():
           return None, self
         isects = []
         for ribbon in self.ribbon2vertices:
-          a, b = levels[ribbon]
+          a, b = levelset[ribbon]
           if a * b < 0: # strict sign change
             x = int( numer * a / float(a-b) + .5 ) # round to [0,1,..,numer]
             if 0 < x < numer:
               isects.append(( x, ribbon ))
             else: # near intersection of vertex
               v = ribbon[ (0,numer).index(x) ]
-              log.debug( 'rounding vertex #%d from %f to 0' % ( v, levels[v] ) )
-              levels[v] = 0
+              log.debug( 'rounding vertex #%d from %f to 0' % ( v, levelset[v] ) )
+              levelset[v] = 0
               repeat = True
       coords = self.vertices
       if isects:
@@ -160,7 +177,7 @@ class Reference( object ):
         ispos = isneg = False
         for ivert in tri:
           if ivert < self.nverts:
-            sign = levels[ivert]
+            sign = levelset[ivert]
             ispos = ispos or sign > 0
             isneg = isneg or sign < 0
         assert ispos is not isneg, 'domains do not separate in two convex parts'
@@ -169,19 +186,24 @@ class Reference( object ):
         if numpy.linalg.det( matrix.astype(float) ) < 0:
           tri[-2:] = tri[-1], tri[-2]
           matrix = ( coords[tri[1:]] - offset ).T
-        trans = transform.linear(matrix,numer) >> transform.shift(offset,numer)
-        ( pos if ispos else neg ).append(( trans, simplex ))
+        strans = transform.linear(matrix,numer) >> transform.shift(offset,numer)
+        ( pos if ispos else neg ).append(( strans, simplex ))
+
     else:
+
       for ctrans, child in self.children:
-        poschild, negchild = child.trim( ctrans >> trans, levelset, maxrefine-1, numer )
+        poschild, negchild = child.trim( ctrans >> trans, levelset, maxrefine-1, numer ) if trans \
+                        else child.trim( False, levelset[self.subsimplex(ctrans,maxrefine)], maxrefine-1, numer )
         if poschild:
           pos.append( (ctrans,poschild) )
         if negchild:
           neg.append( (ctrans,negchild) )
+
     if not neg:
       return self, None
     if not pos:
       return None, self
+
     return MosaicReference( self.ndims, tuple(pos) ), \
            MosaicReference( self.ndims, tuple(neg) )
 
@@ -447,21 +469,36 @@ class SimplexReference( Reference ):
       return numpy.array([ [x,y] for i, y in enumerate(points) for x in points[:np-i] ]), None
     raise NotImplementedError
 
+  def getischeme_simplex( self, n ):
+    return self.getischeme_bezier( 2**n+1 )
+
   @cache.property
-  def children( self ):
+  def child_transforms( self ):
     half = transform.half( self.ndims )
     if self.ndims == 1:
-      transforms = [ half, transform.shift([1]) >> half ]
-    elif self.ndims == 2:
-      transforms = [
-        half,
+      return [ half,
+        transform.shift([1]) >> half ]
+    if self.ndims == 2:
+      return [ half,
         transform.shift([0,1]) >> half,
         transform.shift([1,0]) >> half,
         transform.shift([-1,-1]) >> transform.linear([[-1,0],[0,-1]],2)
       ]
-    else:
-      raise NotImplementedError
-    return [ (trans,self) for trans in transforms ]
+    raise NotImplementedError
+
+  @property
+  def children( self ):
+    return [ (ctrans,self) for ctrans in self.child_transforms ]
+
+  def subsimplex( self, ctrans, i ):
+    assert self.ndims == 1
+    index = self.child_transforms.index( ctrans )
+    N = 2**i+1
+    n = N//2+1-index
+    I = numpy.empty( N, dtype=bool )
+    I[:n] = 1-index
+    I[n:] = index
+    return I
 
   @cache.property
   def edges( self ):
@@ -471,6 +508,11 @@ class SimplexReference( Reference ):
       ( transform.updim( eye[range(i)+range(i+1,self.ndims)].T, sign=1 if i%1 else -1 ), edge )
           for i in range( self.ndims ) ] + [
       ( transform.updim( (eye[1:]-eye[0]).T, sign=1 ) >> transform.shift( eye[0] ), edge ) ]
+
+  def __str__( self ):
+    return 'SimplexReference(%d)' % self.ndims
+
+  __repr__ = __str__
 
 class TensorReference( Reference ):
 
@@ -482,6 +524,13 @@ class TensorReference( Reference ):
     vertices[:,:,:ref1.ndims] = ref1.vertices[:,_]
     vertices[:,:,ref1.ndims:] = ref2.vertices[_,:]
     Reference.__init__( self, vertices.reshape(-1,ndims) )
+
+  def subsimplex( self, ctrans, i ):
+    if not isinstance( ctrans, transform.Tensor ):
+      raise KeyError, ctrans
+    I1 = self.ref1.subsimplex( ctrans.trans1, i )
+    I2 = self.ref2.subsimplex( ctrans.trans2, i )
+    return ( I1[:,_] & I2[_,:] ).ravel()
 
   def stdfunc( self, degree, *n ):
     if n:
