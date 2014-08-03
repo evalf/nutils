@@ -425,6 +425,138 @@ class TensorReference( Reference ):
       for trans1, child1 in self.ref1.children
         for trans2, child2 in self.ref2.children ]
 
+class NeighborhoodTensorReference( TensorReference ):
+  'product reference element'
+
+  def __init__( self, ref1, ref2, neighborhood, transf ):
+    '''Neighborhood of elem1 and elem2 and transformations to get mutual
+    overlap in right location. Returns 3-element tuple:
+    * neighborhood, as given by Element.neighbor(),
+    * transf1, required rotation of elem1 map: {0:0, 1:pi/2, 2:pi, 3:3*pi/2},
+    * transf2, required rotation of elem2 map (is indep of transf1 in Topology.'''
+
+    TensorReference.__init__( self, ref1, ref2 )
+    self.neighborhood = neighborhood
+    self.transf = transf
+
+  def singular_ischeme_quad( self, points ):
+    transfpoints = numpy.empty( points.shape )
+    def transform( points, transf ):
+      x, y = points[:,0], points[:,1]
+      tx = x if transf in (0,1,6,7) else 1-x
+      ty = y if transf in (0,3,4,7) else 1-y
+      return function.stack( (ty, tx) if transf%2 else (tx, ty), axis=1 )
+    transfpoints[:,:2] = transform( points[:,:2], self.transf[0] )
+    transfpoints[:,2:] = transform( points[:,2:], self.transf[1] )
+    return transfpoints
+
+  def get_tri_bem_ischeme( self, ischeme ):
+    'Some cached quantities for the singularity quadrature scheme.'
+    points, weights = (SimplexReference(1)**4).getischeme( ischeme )
+    eta1, eta2, eta3, xi = points.T
+    if self.neighborhood == 0:
+      temp = xi*eta1*eta2*eta3
+      pts0 = xi*eta1*(1 - eta2)
+      pts1 = xi - pts0
+      pts2 = xi - temp
+      pts3 = xi*(1 - eta1)
+      pts4 = pts0 + temp
+      pts5 = xi*(1 - eta1*eta2)
+      pts6 = xi*eta1 - temp
+      points = numpy.array(
+        [[1-xi,   1-pts2, 1-xi,   1-pts5, 1-pts2, 1-xi  ],
+         [pts1, pts3, pts4, pts0, pts6, pts0],
+         [1-pts2, 1-xi,   1-pts5, 1-xi,   1-xi,   1-pts2],
+         [pts3, pts1, pts0, pts4, pts0, pts6]]).reshape( 4, -1 ).T
+      points = points * [-1,1,-1,1] + [1,0,1,0] # flipping in x -GJ
+      weights = numpy.concatenate( 6*[xi**3*eta1**2*eta2*weights] )
+    elif self.neighborhood == 1:
+      A = xi*eta1
+      B = A*eta2
+      C = A*eta3
+      D = B*eta3
+      E = xi - B
+      F = A - B
+      G = xi - D
+      H = B - D
+      I = A - D
+      points = numpy.array(
+        [[1-xi, 1-xi, 1-E,  1-G,  1-G ],
+         [C,  G,  F,  H,  I ],
+         [1-E,  1-G,  1-xi, 1-xi, 1-xi],
+         [F,  H,  D,  A,  B ]] ).reshape( 4, -1 ).T
+      temp = xi*A
+      weights = numpy.concatenate( [A*temp*weights] + 4*[B*temp*weights] )
+    elif self.neighborhood == 2:
+      A = xi*eta2
+      B = A*eta3
+      C = xi*eta1
+      points = numpy.array(
+        [[1-xi, 1-A ],
+         [C,  B ],
+         [1-A,  1-xi],
+         [B,  C ]] ).reshape( 4, -1 ).T
+      weights = numpy.concatenate( 2*[xi**2*A*weights] )
+    else:
+      assert self.neighborhood == -1, 'invalid neighborhood %r' % self.neighborhood
+      points = numpy.array([ eta1*eta2, 1-eta2, eta3*xi, 1-xi ]).T
+      weights = eta2*xi*weights
+    return points, weights
+
+  def get_quad_bem_ischeme( self, ischeme ):
+    'Some cached quantities for the singularity quadrature scheme.'
+    quad = SimplexReference(1)**4
+    points, weights = quad.getischeme( ischeme )
+    eta1, eta2, eta3, xi = points.T
+    if self.neighborhood == 0:
+      xe = xi*eta1
+      A = (1 - xi)*eta3
+      B = (1 - xe)*eta2
+      C = xi + A
+      D = xe + B
+      points = numpy.array(
+        [[A, B, A, D, B, C, C, D],
+         [B, A, D, A, C, B, D, C],
+         [C, D, C, B, D, A, A, B],
+         [D, C, B, C, A, D, B, A]]).reshape( 4, -1 ).T
+      weights = numpy.concatenate( 8*[xi*(1-xi)*(1-xe)*weights] )
+    elif self.neighborhood == 1:
+      ox = 1 - xi
+      A = xi*eta1
+      B = xi*eta2
+      C = ox*eta3
+      D = C + xi
+      E = 1 - A
+      F = E*eta3
+      G = A + F
+      points = numpy.array(
+        [[D,  C,  G,  G,  F,  F ],
+         [B,  B,  B,  xi, B,  xi],
+         [C,  D,  F,  F,  G,  G ],
+         [A,  A,  xi, B,  xi, B ]]).reshape( 4, -1 ).T
+      weights = numpy.concatenate( 2*[xi**2*ox*weights] + 4*[xi**2*E*weights] )
+    elif self.neighborhood == 2:
+      A = xi*eta1
+      B = xi*eta2
+      C = xi*eta3
+      points = numpy.array(
+        [[xi, A,  A,  A ], 
+         [A,  xi, B,  B ],
+         [B,  B,  xi, C ], 
+         [C,  C,  C,  xi]]).reshape( 4, -1 ).T
+      weights = numpy.concatenate( 4*[xi**3*weights] )
+    else:
+      assert self.neighborhood == -1, 'invalid neighborhood %r' % self.neighborhood
+    return points, weights
+
+  def getischeme_singular( self, n ):
+    'get integration scheme'
+    
+    gauss = 'gauss%d'% (n*2-2)
+    assert self.ref1 == self.ref2 == SimplexReference(1)**2
+    points, weights = self.get_quad_bem_ischeme( gauss )
+    return self.singular_ischeme_quad( points ), weights
+
 class MosaicReference( Reference ):
   'mosaic reference element'
 
@@ -454,170 +586,6 @@ class MosaicReference( Reference ):
   def simplices( self ):
     return [ ( trans1 >> trans2, simplex ) for trans2, child in self.children for trans1, simplex in child.simplices ]
 
-class ProductReference( Reference ):
-  'product reference element'
-
-  def __init__( self, ref1, ref2, neighborhood, transf ):
-    '''Neighborhood of elem1 and elem2 and transformations to get mutual
-    overlap in right location. Returns 3-element tuple:
-    * neighborhood, as given by Element.neighbor(),
-    * transf1, required rotation of elem1 map: {0:0, 1:pi/2, 2:pi, 3:3*pi/2},
-    * transf2, required rotation of elem2 map (is indep of transf1 in Topology.'''
-
-    self.ref1 = ref1
-    self.ref2 = ref2
-    self.neighborhood = neighborhood
-    self.transf = transf
-    ndims = ref1.ndims + ref2.ndims
-    vertices = numpy.empty( (ref1.nverts,ref2.nverts,ndims), dtype=int )
-    vertices[:,:,:ref1.ndims] = ref1.vertices[:,_]
-    vertices[:,:,ref1.ndims:] = ref2.vertices[_,:]
-    Reference.__init__( self, vertices.reshape(-1,ndims) )
-
-  @staticmethod
-  def singular_ischeme_quad( points, transf ):
-    transfpoints = numpy.empty( points.shape )
-    def transform( points, transf ):
-      x, y = points[:,0], points[:,1]
-      tx = x if transf in (0,1,6,7) else 1-x
-      ty = y if transf in (0,3,4,7) else 1-y
-      return function.stack( (ty, tx) if transf%2 else (tx, ty), axis=1 )
-    transfpoints[:,:2] = transform( points[:,:2], transf[0] )
-    transfpoints[:,2:] = transform( points[:,2:], transf[1] )
-    return transfpoints
-
-  @staticmethod
-  def get_tri_bem_ischeme( self, ischeme, neighborhood ):
-    'Some cached quantities for the singularity quadrature scheme.'
-    points, weights = (SimplexReference(1)**4).getischeme( ischeme )
-    eta1, eta2, eta3, xi = points.T
-    if neighborhood == 0:
-      temp = xi*eta1*eta2*eta3
-      pts0 = xi*eta1*(1 - eta2)
-      pts1 = xi - pts0
-      pts2 = xi - temp
-      pts3 = xi*(1 - eta1)
-      pts4 = pts0 + temp
-      pts5 = xi*(1 - eta1*eta2)
-      pts6 = xi*eta1 - temp
-      points = numpy.array(
-        [[1-xi,   1-pts2, 1-xi,   1-pts5, 1-pts2, 1-xi  ],
-         [pts1, pts3, pts4, pts0, pts6, pts0],
-         [1-pts2, 1-xi,   1-pts5, 1-xi,   1-xi,   1-pts2],
-         [pts3, pts1, pts0, pts4, pts0, pts6]]).reshape( 4, -1 ).T
-      points = points * [-1,1,-1,1] + [1,0,1,0] # flipping in x -GJ
-      weights = numpy.concatenate( 6*[xi**3*eta1**2*eta2*weights] )
-    elif neighborhood == 1:
-      A = xi*eta1
-      B = A*eta2
-      C = A*eta3
-      D = B*eta3
-      E = xi - B
-      F = A - B
-      G = xi - D
-      H = B - D
-      I = A - D
-      points = numpy.array(
-        [[1-xi, 1-xi, 1-E,  1-G,  1-G ],
-         [C,  G,  F,  H,  I ],
-         [1-E,  1-G,  1-xi, 1-xi, 1-xi],
-         [F,  H,  D,  A,  B ]] ).reshape( 4, -1 ).T
-      temp = xi*A
-      weights = numpy.concatenate( [A*temp*weights] + 4*[B*temp*weights] )
-    elif neighborhood == 2:
-      A = xi*eta2
-      B = A*eta3
-      C = xi*eta1
-      points = numpy.array(
-        [[1-xi, 1-A ],
-         [C,  B ],
-         [1-A,  1-xi],
-         [B,  C ]] ).reshape( 4, -1 ).T
-      weights = numpy.concatenate( 2*[xi**2*A*weights] )
-    else:
-      assert neighborhood == -1, 'invalid neighborhood %r' % neighborhood
-      points = numpy.array([ eta1*eta2, 1-eta2, eta3*xi, 1-xi ]).T
-      weights = eta2*xi*weights
-    return points, weights
-
-  @staticmethod
-  def get_quad_bem_ischeme( ischeme, neighborhood ):
-    'Some cached quantities for the singularity quadrature scheme.'
-    quad = SimplexReference(1)**4
-    points, weights = quad.getischeme( ischeme )
-    eta1, eta2, eta3, xi = points.T
-    if neighborhood == 0:
-      xe = xi*eta1
-      A = (1 - xi)*eta3
-      B = (1 - xe)*eta2
-      C = xi + A
-      D = xe + B
-      points = numpy.array(
-        [[A, B, A, D, B, C, C, D],
-         [B, A, D, A, C, B, D, C],
-         [C, D, C, B, D, A, A, B],
-         [D, C, B, C, A, D, B, A]]).reshape( 4, -1 ).T
-      weights = numpy.concatenate( 8*[xi*(1-xi)*(1-xe)*weights] )
-    elif neighborhood == 1:
-      ox = 1 - xi
-      A = xi*eta1
-      B = xi*eta2
-      C = ox*eta3
-      D = C + xi
-      E = 1 - A
-      F = E*eta3
-      G = A + F
-      points = numpy.array(
-        [[D,  C,  G,  G,  F,  F ],
-         [B,  B,  B,  xi, B,  xi],
-         [C,  D,  F,  F,  G,  G ],
-         [A,  A,  xi, B,  xi, B ]]).reshape( 4, -1 ).T
-      weights = numpy.concatenate( 2*[xi**2*ox*weights] + 4*[xi**2*E*weights] )
-    elif neighborhood == 2:
-      A = xi*eta1
-      B = xi*eta2
-      C = xi*eta3
-      points = numpy.array(
-        [[xi, A,  A,  A ], 
-         [A,  xi, B,  B ],
-         [B,  B,  xi, C ], 
-         [C,  C,  C,  xi]]).reshape( 4, -1 ).T
-      weights = numpy.concatenate( 4*[xi**3*weights] )
-    else:
-      assert neighborhood == -1, 'invalid neighborhood %r' % neighborhood
-    return points, weights
-
-  @staticmethod
-  def concat( ischeme1, ischeme2 ):
-    coords1, weights1 = ischeme1
-    coords2, weights2 = ischeme2
-    if weights1 is not None:
-      assert weights2 is not None
-      weights = ( weights1[:,_] * weights2[_,:] ).ravel()
-    else:
-      assert weights2 is None
-      weights = None
-    npoints1,ndims1 = coords1.shape  
-    npoints2,ndims2 = coords2.shape 
-    coords = numpy.empty( [ coords1.shape[0], coords2.shape[0], ndims1+ndims2 ] )
-    coords[:,:,:ndims1] = coords1[:,_,:]
-    coords[:,:,ndims1:] = coords2[_,:,:]
-    coords = coords.reshape(-1,ndims1+ndims2)
-    return coords, weights
-    
-  def getischeme( self, where ):
-    'get integration scheme'
-    
-    if where.startswith( 'singular' ):
-      gauss = 'gauss%d'% (int(where[8:])*2-2)
-      assert self.ref1 == self.ref2 == SimplexReference(1)**2
-      points, weights = self.get_quad_bem_ischeme( gauss, self.neighborhood )
-      mod_points = self.singular_ischeme_quad( points, self.transf )
-      xw = mod_points, weights
-    else:
-      where1, where2 = where.split( '*' ) if '*' in where else ( where, where )
-      xw = self.concat( self.ref1.getischeme(where1), self.ref2.getischeme(where2) )
-    return xw
 
 
 class VertexTrans( transform.Transform ):
@@ -691,14 +659,13 @@ class RenameTrans( transform.Transform ):
 
 class Element( object ):
 
-  __slots__ = 'transform', 'reference', 'opposite', '__vertices'
+  __slots__ = 'transform', 'reference', 'opposite'
 
   def __init__( self, reference, transform, opposite=None ):
     assert transform.fromdims == reference.ndims
     self.reference = reference
     self.transform = transform
     self.opposite = opposite or transform
-    self.__vertices = None
 
   def __eq__( self, other ):
     return self is other or isinstance(other,Element) \
@@ -706,39 +673,9 @@ class Element( object ):
       and self.transform == other.transform \
       and self.opposite == other.opposite
 
-  def __mul__( self, other ):
-    ndims = self.ndims + other.ndims
-    eye = numpy.eye( ndims, dtype=int )
-    if self.reference == other.reference == SimplexReference(1)**2:
-      lookup = { v: i2 for i2, v in enumerate(other.vertices) }
-      common = [ (i1,lookup[v]) for i1, v in enumerate(self.vertices) if v in lookup ]
-      if not common:
-        neighborhood = -1
-        transf = 0, 0
-      elif len(common) == 4:
-        neighborhood = 0
-        assert self == other
-        transf = 0, 0
-      elif len(common) == 2:
-        neighborhood = 1
-        vertex = (0,2), (2,3), (3,1), (1,0), (2,0), (3,2), (1,3), (0,1)
-        transf = tuple( vertex.index(v) for v in zip(*common) )
-      elif len(common) == 1:
-        neighborhood = 2
-        transf = tuple( (0,3,1,2)[v] for v in common[0] )
-      else:
-        raise ValueError( 'Unknown neighbor type %i' % neighborhood )
-      reference = ProductReference( self.reference, other.reference, neighborhood, transf )
-    else:
-      reference = TensorReference( self.reference, other.reference )
-    return Element( reference, transform.updim(eye[:self.ndims],1) >> self.transform,
-                               transform.updim(eye[self.ndims:],1) >> other.transform )
-
   @property
   def vertices( self ):
-    if self.__vertices is None:
-      self.__vertices = self.transform.apply( self.reference.vertices )
-    return self.__vertices
+    return self.transform.apply( self.reference.vertices )
 
   @property
   def ndims( self ):

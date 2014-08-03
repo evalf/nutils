@@ -125,8 +125,54 @@ class Topology( object ):
   def __mul__( self, other ):
     'element products'
 
-    elems = util.Product( self, other )
-    return Topology( elems )
+    quad = element.SimplexReference(1)**2
+    ndims = self.ndims + other.ndims
+    eye = numpy.eye( ndims, dtype=int )
+    self_trans = transform.updim(eye[:self.ndims],1)
+    other_trans = transform.updim(eye[self.ndims:],1)
+
+    if any( elem.reference != quad for elem in self ) or any( elem.reference != quad for elem in other ):
+      return Topology( element.Element( elem1.reference * elem2.reference, self_trans >> elem1.transform, other_trans >> elem2.transform )
+        for elem1 in self for elem2 in other )
+
+    elements = []
+    self_vertices = [ elem.vertices for elem in self ]
+    if self == other:
+      other_vertices = self_vertices
+      issym = False#True
+    else:
+      other_vertices = [ elem.vertices for elem in other ]
+      issym = False
+    for i, elemi in enumerate(self):
+      lookup = { v: n for n, v in enumerate(self_vertices[i]) }
+      for j, elemj in enumerate(other):
+        if issym and i == j:
+          reference = element.NeighborhoodTensorReference( elemi.reference, elemj.reference, 0, (0,0) )
+          elements.append( element.Element( reference, self_trans >> elemi.transform, other_trans >> elemj.transform ) )
+          break
+        common = [ (lookup[v],n) for n, v in enumerate(other_vertices[j]) if v in lookup ]
+        if not common:
+          neighborhood = -1
+          transf = 0, 0
+        elif len(common) == 4:
+          neighborhood = 0
+          assert elemi == elemj
+          transf = 0, 0
+        elif len(common) == 2:
+          neighborhood = 1
+          vertex = (0,2), (2,3), (3,1), (1,0), (2,0), (3,2), (1,3), (0,1)
+          transf = tuple( vertex.index(v) for v in zip(*common) )
+        elif len(common) == 1:
+          neighborhood = 2
+          transf = tuple( (0,3,1,2)[v] for v in common[0] )
+        else:
+          raise ValueError( 'Unknown neighbor type %i' % neighborhood )
+        reference = element.NeighborhoodTensorReference( elemi.reference, elemj.reference, neighborhood, transf )
+        elements.append( element.Element( reference, self_trans >> elemi.transform, other_trans >> elemj.transform ) )
+        if issym:
+          reference = element.NeighborhoodTensorReference( elemj.reference, elemi.reference, neighborhood, transf[::-1] )
+          elements.append( element.Element( reference, self_trans >> elemj.transform, other_trans >> elemi.transform ) )
+    return Topology( elements )
 
   def __getitem__( self, item ):
     'subtopology'
@@ -345,7 +391,7 @@ class Topology( object ):
 
     __log__ = log.iter( 'elem', self )
     for elem in parallel.pariter( __log__ ):
-      assert isinstance( elem.reference, element.ProductReference )
+      assert isinstance( elem.reference, element.NeighborhoodTensorReference )
       elemcmp = cmp( elem.transform.trans2, elem.opposite.trans2 )
       if elemcmp < 0:
         continue
