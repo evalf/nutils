@@ -81,23 +81,19 @@ class CallDict( dict ):
       else 'effectivity %d%% (%d hits, %d misses)' % ( (100*self.hit)/(self.hit+len(self)), self.hit, len(self) )
 
 
-class Immutable( object ):
-  'weakly cache object instances based on init args'
-
-  __slots__ = '__weakref__',
-
-  class __metaclass__( type ):
-    def __init__( cls, *args, **kwargs ):
-      type.__init__( cls, *args, **kwargs )
-      cls.cache = weakref.WeakValueDictionary()
-    def __call__( cls, *args, **kwargs ):
-      key = _keyfromargs( cls.__init__, args, kwargs, 1 )
-      try:
-        self = cls.cache[key]
-      except KeyError:
-        self = type.__call__( cls, *args, **kwargs )
-        cls.cache[key] = self
-      return self
+class Meta( type ):
+  def __init__( cls, *args, **kwargs ):
+    #print 'creating immutable class', cls.__name__
+    type.__init__( cls, *args, **kwargs )
+    cls.cache = weakref.WeakValueDictionary()
+  def __call__( cls, *args, **kwargs ):
+    key = _keyfromargs( cls.__init__, args, kwargs, 1 )
+    try:
+      self = cls.cache[key]
+    except KeyError:
+      self = type.__call__( cls, *args, **kwargs )
+      cls.cache[key] = self
+    return self
 
 
 class FileCache( object ):

@@ -19,12 +19,132 @@ purposes of integration and sampling.
 from . import log, util, numpy, core, numeric, function, cache, transform, rational, _
 import re, warnings
 
-PrimaryVertex = str
-HalfVertex = lambda vertex1, vertex2, xi=.5: '%s<%.3f>%s' % ( (vertex1,xi,vertex2) if vertex1 < vertex2 else (vertex2,1-xi,vertex1) )
-ProductVertex = lambda *vertices: ','.join( vertices )
 
-class Reference( cache.Immutable ):
+## ELEMENT
+
+class Element( object ):
+
+  __slots__ = 'transform', 'reference', 'opposite'
+
+  def __init__( self, reference, transform, opposite=None ):
+    assert transform.fromdims == reference.ndims
+    self.reference = reference
+    self.transform = transform
+    self.opposite = opposite or transform
+
+  def __eq__( self, other ):
+    return self is other or isinstance(other,Element) \
+      and self.reference == other.reference \
+      and self.transform == other.transform \
+      and self.opposite == other.opposite
+
+  @property
+  def vertices( self ):
+    return self.transform.apply( self.reference.vertices )
+
+  @property
+  def ndims( self ):
+    return self.reference.ndims
+
+  @property
+  def nverts( self ):
+    return self.reference.nverts
+
+  @property
+  def edges( self ):
+    return [ self.edge(i) for i in range(self.nverts) ]
+    
+  def edge( self, iedge ):
+    trans, edge = self.reference.edges[iedge]
+    return Element( edge, trans >> self.transform, trans >> self.opposite )
+
+  @property
+  def children( self ):
+    return [ Element( child, trans >> self.transform, trans >> self.opposite )
+      for trans, child in self.reference.children ]
+
+  def trim( self, levelset, maxrefine, numer ):
+    'trim element along levelset'
+
+    assert rational.isrational( numer )
+    children = []
+    if maxrefine <= 0:
+      repeat = True
+      levels = levelset.eval( self, 'bezier2' )
+      while repeat: # set almost-zero points to zero if cutoff within eps
+        repeat = False
+        assert levels.shape == (self.reference.nverts,)
+        if numpy.greater_equal( levels, 0 ).all():
+          return self
+        if numpy.less_equal( levels, 0 ).all():
+          return None
+        isects = []
+        for ribbon in self.reference.ribbon2vertices:
+          a, b = levels[ribbon]
+          if a * b < 0: # strict sign change
+            x = int( numer * a / float(a-b) + .5 ) # round to [0,1,..,numer]
+            if 0 < x < numer:
+              isects.append(( x, ribbon ))
+            else: # near intersection of vertex
+              v = ribbon[ (0,numer).index(x) ]
+              log.debug( 'rounding vertex #%d from %f to 0' % ( v, levels[v] ) )
+              levels[v] = 0
+              repeat = True
+      coords = self.reference.vertices
+      if isects:
+        coords = numpy.vstack([
+          self.reference.vertices * int(numer),
+          [ numpy.dot( (int(numer)-x,x), self.reference.vertices[ribbon] ) for x, ribbon in isects ]
+        ])
+      assert coords.dtype == int
+      simplex = SimplexReference( self.ndims )
+      for tri in util.delaunay( coords ):
+        ispos = isneg = False
+        for ivert in tri:
+          if ivert < self.reference.nverts:
+            sign = levels[ivert]
+            ispos = ispos or sign > 0
+            isneg = isneg or sign < 0
+        assert ispos is not isneg, 'domains do not separate in two convex parts'
+        if isneg:
+          continue
+        offset = coords[tri[0]]
+        matrix = ( coords[tri[1:]] - offset ).T
+        if numpy.linalg.det( matrix.astype(float) ) < 0:
+          tri[-2:] = tri[-1], tri[-2]
+          matrix = ( coords[tri[1:]] - offset ).T
+        trans = transform.linear(matrix,numer) >> transform.shift(offset,numer)
+        children.append(( trans, simplex ))
+    else:
+      complete = True
+      for trans, child in self.reference.children:
+        child = Element( child, trans >> self.transform, trans >> self.opposite )
+        trimmed = child.trim( levelset, maxrefine-1, numer )
+        complete = complete and trimmed == child
+        if trimmed != None:
+          children.append( (trans,trimmed.reference) )
+      if complete:
+        return self
+    if not children:
+      return None
+    reference = MosaicReference( self.ndims, tuple(children) )
+    return Element( reference, self.transform, self.opposite )
+
+  @property
+  def simplices( self ):
+    return [ Element( reference, trans >> self.transform, trans >> self.opposite )
+      for trans, reference in self.reference.simplices ]
+
+  def __str__( self ):
+    return 'Element(%s)' % self.vertices
+
+
+## REFERENCE ELEMENTS
+
+class Reference( object ):
   'reference element'
+
+  __metaclass__ = cache.Meta
 
   def __init__( self, vertices ):
     self.vertices = numpy.asarray( vertices )
@@ -587,197 +707,12 @@ class MosaicReference( Reference ):
     return [ ( trans1 >> trans2, simplex ) for trans2, child in self.children for trans1, simplex in child.simplices ]
 
 
+# SHAPE FUNCTIONS
 
-class VertexTrans( transform.Transform ):
-
-  def __init__( self, coords, vertices ):
-    self.coords = coords
-    self.vertices = rational.asarray(vertices)
-    nverts, ndims = vertices.shape
-    transform.Transform.__init__( self, None, ndims, 1 )
-
-  def apply( self, coords ):
-    assert coord.ndim == 1
-    mycoords, coords, common = rational.common_factor( self.coords, coord )
-    return [ self.vertices[mycoords.tolist().index(coord.tolist())] for coord in coords ]
-
-
-class RootTrans( transform.Transform ):
-
-  def __init__( self, name, shape ):
-    transform.Transform.__init__( self, None, len(shape), 1 )
-    self.I, = numpy.where( shape )
-    self.w = rational.asarray( numpy.take( shape, self.I ) )
-    self.fmt = name+'{}'
-
-  def apply( self, coords ):
-    assert coords.ndim == 2
-    if self.I.size:
-      ci, wi, factor = rational.common_factor( coords, self.w )
-      ci[:,self.I] = ci[:,self.I] % wi
-      coords = rational.Array( ci, factor, True )
-    return map( self.fmt.format, coords )
-
-  def __str__( self ):
-    return repr( self.fmt.format('*') )
-
-
-class RootTransEdges( transform.Transform ):
-
-  def __init__( self, name, shape ):
-    transform.Transform.__init__( self, None, len(shape), 1 )
-    self.shape = shape
-    assert isinstance( name, numpy.ndarray )
-    assert name.shape == (3,)*len(shape)
-    self.name = name.copy()
-
-  def apply( self, coords ):
-    assert coords.ndim == 2
-    labels = []
-    for coord in coords.T.frac.T:
-      right = (coord[:,1]==1) & (coord[:,0]==self.shape)
-      left = coord[:,0]==0
-      where = (1+right)-left
-      s = self.name[tuple(where)] + '[%s]' % ','.join( str(n) if d == 1 else '%d/%d' % (n,d) for n, d in coord[where==1] )
-      labels.append( s )
-    return labels
-
-  def __str__( self ):
-    return repr( ','.join(self.name.flat)+'*' )
-
-class RenameTrans( transform.Transform ):
-
-  def __init__( self, rename ):
-    transform.Transform.__init__( self, None, None, 1 )
-    self.rename = rename
-
-  def apply( self, coords ):
-    return [ self.rename.get(coord,coord) for coord in coords ]
-
-  def __str__( self ):
-    return '<rename>'
-
-class Element( object ):
-
-  __slots__ = 'transform', 'reference', 'opposite'
-
-  def __init__( self, reference, transform, opposite=None ):
-    assert transform.fromdims == reference.ndims
-    self.reference = reference
-    self.transform = transform
-    self.opposite = opposite or transform
-
-  def __eq__( self, other ):
-    return self is other or isinstance(other,Element) \
-      and self.reference == other.reference \
-      and self.transform == other.transform \
-      and self.opposite == other.opposite
-
-  @property
-  def vertices( self ):
-    return self.transform.apply( self.reference.vertices )
-
-  @property
-  def ndims( self ):
-    return self.reference.ndims
-
-  @property
-  def nverts( self ):
-    return self.reference.nverts
-
-  @property
-  def edges( self ):
-    return [ self.edge(i) for i in range(self.nverts) ]
-    
-  def edge( self, iedge ):
-    trans, edge = self.reference.edges[iedge]
-    return Element( edge, trans >> self.transform, trans >> self.opposite )
-
-  @property
-  def children( self ):
-    return [ Element( child, trans >> self.transform, trans >> self.opposite )
-      for trans, child in self.reference.children ]
-
-  def trim( self, levelset, maxrefine, numer ):
-    'trim element along levelset'
-
-    assert rational.isrational( numer )
-    children = []
-    if maxrefine <= 0:
-      repeat = True
-      levels = levelset.eval( self, 'bezier2' )
-      while repeat: # set almost-zero points to zero if cutoff within eps
-        repeat = False
-        assert levels.shape == (self.reference.nverts,)
-        if numpy.greater_equal( levels, 0 ).all():
-          return self
-        if numpy.less_equal( levels, 0 ).all():
-          return None
-        isects = []
-        for ribbon in self.reference.ribbon2vertices:
-          a, b = levels[ribbon]
-          if a * b < 0: # strict sign change
-            x = int( numer * a / float(a-b) + .5 ) # round to [0,1,..,numer]
-            if 0 < x < numer:
-              isects.append(( x, ribbon ))
-            else: # near intersection of vertex
-              v = ribbon[ (0,numer).index(x) ]
-              log.debug( 'rounding vertex #%d from %f to 0' % ( v, levels[v] ) )
-              levels[v] = 0
-              repeat = True
-      coords = self.reference.vertices
-      if isects:
-        coords = numpy.vstack([
-          self.reference.vertices * int(numer),
-          [ numpy.dot( (int(numer)-x,x), self.reference.vertices[ribbon] ) for x, ribbon in isects ]
-        ])
-      assert coords.dtype == int
-      simplex = SimplexReference( self.ndims )
-      for tri in util.delaunay( coords ):
-        ispos = isneg = False
-        for ivert in tri:
-          if ivert < self.reference.nverts:
-            sign = levels[ivert]
-            ispos = ispos or sign > 0
-            isneg = isneg or sign < 0
-        assert ispos is not isneg, 'domains do not separate in two convex parts'
-        if isneg:
-          continue
-        offset = coords[tri[0]]
-        matrix = ( coords[tri[1:]] - offset ).T
-        if numpy.linalg.det( matrix.astype(float) ) < 0:
-          tri[-2:] = tri[-1], tri[-2]
-          matrix = ( coords[tri[1:]] - offset ).T
-        trans = transform.linear(matrix,numer) >> transform.shift(offset,numer)
-        children.append(( trans, simplex ))
-    else:
-      complete = True
-      for trans, child in self.reference.children:
-        child = Element( child, trans >> self.transform, trans >> self.opposite )
-        trimmed = child.trim( levelset, maxrefine-1, numer )
-        complete = complete and trimmed == child
-        if trimmed != None:
-          children.append( (trans,trimmed.reference) )
-      if complete:
-        return self
-    if not children:
-      return None
-    reference = MosaicReference( self.ndims, tuple(children) )
-    return Element( reference, self.transform, self.opposite )
-
-  @property
-  def simplices( self ):
-    return [ Element( reference, trans >> self.transform, trans >> self.opposite )
-      for trans, reference in self.reference.simplices ]
-
-  def __str__( self ):
-    return 'Element(%s)' % self.vertices
-
-
-class StdElem( cache.Immutable ):
+class StdElem( object ):
   'stdelem base class'
 
-  __slots__ = 'ndims', 'nshapes'
+  __metaclass__ = cache.Meta
 
   def __init__( self, ndims, nshapes ):
     self.ndims = ndims
@@ -1087,5 +1022,6 @@ class ExtractionWrapper( object ):
     'string representation'
 
     return '%s#%x:%s' % ( self.__class__.__name__, id(self), self.stdelem )
+
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

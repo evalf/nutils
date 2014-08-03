@@ -38,7 +38,7 @@ class TestGaussQuadrature( object ):
 
   def test_lineelement( self ):
     MAXORDER = 7
-    roottrans = element.RootTrans( 'test', (0,) )
+    roottrans = transform.RootTrans( 'test', (0,) )
     elem = element.Element( element.SimplexReference(1), roottrans )
     F = lambda a: 1./float(1+a)
   
@@ -46,7 +46,7 @@ class TestGaussQuadrature( object ):
 
   def test_quadelement( self ):
     MAXORDER = 7
-    roottrans = element.RootTrans( 'test', (0,0) )
+    roottrans = transform.RootTrans( 'test', (0,0) )
     elem = element.Element( element.SimplexReference(1)**2, roottrans )
     F = lambda *args: numpy.prod(numpy.array(args)+1)**-1.
 
@@ -54,7 +54,7 @@ class TestGaussQuadrature( object ):
 
   def test_hexelement( self ):
     MAXORDER = 7
-    roottrans = element.RootTrans( 'test', (0,0,0) )
+    roottrans = transform.RootTrans( 'test', (0,0,0) )
     elem = element.Element( element.SimplexReference(1)**3, roottrans )
     F = lambda *args: numpy.prod(numpy.array(args)+1)**-1.
 
@@ -62,7 +62,7 @@ class TestGaussQuadrature( object ):
 
   def test_triangularelement( self ):
     MAXORDER = 7
-    roottrans = element.RootTrans( 'test', (0,0) )
+    roottrans = transform.RootTrans( 'test', (0,0) )
     elem = element.Element( element.SimplexReference(2), roottrans )
     F = lambda a,b: gamma(1+a)*gamma(1+b)/gamma(3+a+b)
 
@@ -70,7 +70,7 @@ class TestGaussQuadrature( object ):
 
   def test_tetrahedralelement( self ):
     MAXORDER = 8
-    roottrans = element.RootTrans( 'test', (0,0,0) )
+    roottrans = transform.RootTrans( 'test', (0,0,0) )
     elem = element.Element( element.SimplexReference(3), roottrans )
     F = lambda a,b,c: gamma(1+a)*gamma(1+b)*gamma(1+c)/gamma(4+a+b+c)
 

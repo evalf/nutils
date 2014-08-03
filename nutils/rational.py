@@ -15,6 +15,8 @@ from . import cache, log
 import numpy, collections
 
 
+## PRIMES
+
 masks = [ 0, 0 ] # primes per number encoded as bitmask
 
 class Primes( object ):
@@ -52,6 +54,9 @@ class Primes( object ):
       self.__masks.extend( [0] * ( i - len(self.__masks) ) + [ 1 << iprime ] )
 
 primes = Primes()
+
+
+## SCALAR
 
 class Scalar( object ):
 
@@ -187,6 +192,9 @@ class Scalar( object ):
 unit = Scalar(())
 half = Scalar((-1,))
 
+
+## ARRAY
+
 class Array( object ):
 
   __array_priority__ = 1
@@ -299,6 +307,9 @@ class Array( object ):
     return s if denom == 1 else '%s/%s' % ( s, denom )
 
 _a2s = lambda array: '[%s]' % ','.join( _a2s(a) for a in array ) if isinstance(array,numpy.ndarray) else str(array)
+
+
+## UTILITY FUNCTIONS
 
 def det( array ):
   assert isarray(array)
@@ -465,5 +476,6 @@ def common_factor( arr1, arr2 ):
   int2, factor2 = asarray(arr2).decompose()
   common = factor1.gcd( factor2 )
   return int1 * int(factor1/common), int2 * int(factor2/common), common
+
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

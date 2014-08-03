@@ -47,10 +47,10 @@ def rectilinear( richshape, periodic=(), name='rect' ):
 
   if isinstance( name, str ):
     wrap = tuple( sh if i in periodic else 0 for i, sh in enumerate(shape) )
-    root = element.RootTrans( name, wrap )
+    root = transform.RootTrans( name, wrap )
   else:
     assert all( ( name.take(0,i) == name.take(2,i) ).all() for i in periodic )
-    root = element.RootTransEdges( name, shape )
+    root = transform.RootTransEdges( name, shape )
 
   reference = element.SimplexReference(1)**ndims
   for index in indices.reshape( ndims, -1 ).T:
@@ -363,7 +363,7 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   + [ ( 12+i, 12+(i+1)%8, 20 )         for i in range( 8) ] )
   
   elements = []
-  root = element.RootTrans( 'demo', shape=(0,0) )
+  root = transform.RootTrans( 'demo', shape=(0,0) )
   reference = element.SimplexReference(2)
   for ielem, elemvertices in enumerate( vertices ):
     elemcoords = coords[ numpy.array(elemvertices) ]

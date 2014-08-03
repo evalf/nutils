@@ -15,7 +15,7 @@ from . import cache, rational
 import numpy
 
 
-class Transform( cache.Immutable ):
+class Transform( object ):
 
   def __init__( self, todims, fromdims, sign ):
     self.todims = todims
@@ -60,10 +60,17 @@ class Transform( cache.Immutable ):
   def __repr__( self ):
     return '%s(%s)' % ( self.__class__.__name__, self )
 
-class Identity( Transform ):
+
+## IMMUTABLE TRANSFORMS
+
+class ImmutableTransform( Transform ):
+
+  __metaclass__ = cache.Meta
+
+class Identity( ImmutableTransform ):
 
   def __init__( self, ndims ):
-    Transform.__init__( self, ndims, ndims, 1 )
+    ImmutableTransform.__init__( self, ndims, ndims, 1 )
 
   @property
   def det( self ):
@@ -84,13 +91,13 @@ class Identity( Transform ):
   def __str__( self ):
     return '='
 
-class Compound( Transform ):
+class Compound( ImmutableTransform ):
 
   def __init__( self, trans1, trans2 ):
     assert isinstance( trans1, Transform )
     assert isinstance( trans2, Transform )
     assert trans1.todims == trans2.fromdims
-    Transform.__init__( self, trans2.todims, trans1.fromdims, trans1.sign * trans2.sign )
+    ImmutableTransform.__init__( self, trans2.todims, trans1.fromdims, trans1.sign * trans2.sign )
     self.trans1 = trans1
     self.trans2 = trans2
 
@@ -125,11 +132,11 @@ class Compound( Transform ):
   def __str__( self ):
     return '%s >> %s' % ( self.trans1, self.trans2 )
 
-class Shift( Transform ):
+class Shift( ImmutableTransform ):
 
   def __init__( self, shift ):
     assert rational.isarray( shift ) and shift.ndim == 1
-    Transform.__init__( self, len(shift), len(shift), 1 )
+    ImmutableTransform.__init__( self, len(shift), len(shift), 1 )
     self.shift = shift
 
   @cache.property
@@ -151,10 +158,10 @@ class Shift( Transform ):
   def __str__( self ):
     return '+%s' % self.shift
 
-class Scale( Transform ):
+class Scale( ImmutableTransform ):
 
   def __init__( self, ndims, factor ):
-    Transform.__init__( self, ndims, ndims, 1 )
+    ImmutableTransform.__init__( self, ndims, ndims, 1 )
     self.factor = factor
     
   def apply( self, points ):
@@ -176,11 +183,11 @@ class Scale( Transform ):
   def __str__( self ):
     return '*%s' % str(self.factor)
 
-class Updim( Transform ):
+class Updim( ImmutableTransform ):
 
   def __init__( self, matrix, sign ):
     assert rational.isarray( matrix ) and matrix.ndim == 2
-    Transform.__init__( self, matrix.shape[0], matrix.shape[1], sign )
+    ImmutableTransform.__init__( self, matrix.shape[0], matrix.shape[1], sign )
     self.matrix = matrix
 
   @property
@@ -208,12 +215,12 @@ class Linear( Updim ):
   def inv( self ):
     return linear( rational.inv( self.matrix ) )
 
-class Tensor( Transform ):
+class Tensor( ImmutableTransform ):
 
   def __init__( self, trans1, trans2 ):
     assert isinstance( trans1, Transform )
     assert isinstance( trans2, Transform )
-    Transform.__init__( self, trans1.todims+trans2.todims, trans1.fromdims+trans2.fromdims, trans1.sign * trans2.sign )
+    ImmutableTransform.__init__( self, trans1.todims+trans2.todims, trans1.fromdims+trans2.fromdims, trans1.sign * trans2.sign )
     self.trans1 = trans1
     self.trans2 = trans2
 
@@ -247,8 +254,71 @@ class Tensor( Transform ):
   def __str__( self ):
     return '[%s; %s]' % ( self.trans1, self.trans2 )
 
-## UTILITY FUNCTIONS
 
+## VERTEX TRANSFORMS
+
+class VertexTransform( Transform ):
+
+  def __init__( self, fromdims ):
+    Transform.__init__( self, None, fromdims, 1 )
+
+class MapTrans( VertexTransform ):
+
+  def __init__( self, coords, vertices ):
+    self.coords = coords
+    self.vertices = rational.asarray(vertices)
+    nverts, ndims = vertices.shape
+    VertexTransform.__init__( self, ndims )
+
+  def apply( self, coords ):
+    assert coord.ndim == 1
+    mycoords, coords, common = rational.common_factor( self.coords, coord )
+    return [ self.vertices[mycoords.tolist().index(coord.tolist())] for coord in coords ]
+
+class RootTrans( VertexTransform ):
+
+  def __init__( self, name, shape ):
+    VertexTransform.__init__( self, len(shape) )
+    self.I, = numpy.where( shape )
+    self.w = rational.asarray( numpy.take( shape, self.I ) )
+    self.fmt = name+'{}'
+
+  def apply( self, coords ):
+    assert coords.ndim == 2
+    if self.I.size:
+      ci, wi, factor = rational.common_factor( coords, self.w )
+      ci[:,self.I] = ci[:,self.I] % wi
+      coords = rational.Array( ci, factor, True )
+    return map( self.fmt.format, coords )
+
+  def __str__( self ):
+    return repr( self.fmt.format('*') )
+
+class RootTransEdges( VertexTransform ):
+
+  def __init__( self, name, shape ):
+    VertexTransform.__init__( self, len(shape) )
+    self.shape = shape
+    assert isinstance( name, numpy.ndarray )
+    assert name.shape == (3,)*len(shape)
+    self.name = name.copy()
+
+  def apply( self, coords ):
+    assert coords.ndim == 2
+    labels = []
+    for coord in coords.T.frac.T:
+      right = (coord[:,1]==1) & (coord[:,0]==self.shape)
+      left = coord[:,0]==0
+      where = (1+right)-left
+      s = self.name[tuple(where)] + '[%s]' % ','.join( str(n) if d == 1 else '%d/%d' % (n,d) for n, d in coord[where==1] )
+      labels.append( s )
+    return labels
+
+  def __str__( self ):
+    return repr( ','.join(self.name.flat)+'*' )
+
+
+## UTILITY FUNCTIONS
 
 def identity( ndims ):
   return Identity( ndims )
@@ -272,5 +342,6 @@ def updim( matrix, sign, numer=rational.unit ):
 
 def tensor( trans1, trans2 ):
   return Tensor( trans1, trans2 )
+
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

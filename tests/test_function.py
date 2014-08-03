@@ -7,7 +7,7 @@ class FuncTest( object ):
 
     roottrans = transform.linear([[0,1],[-1,0]]) >> transform.shift([1,0]) \
              >> transform.linear([[2,1],[-1,3]]) >> transform.shift([1,0])
-    elem = element.Element( element.SimplexReference(1)**2, roottrans >> element.RootTrans( 'test', (0,0) ) )
+    elem = element.Element( element.SimplexReference(1)**2, roottrans >> transform.RootTrans( 'test', (0,0) ) )
     iface = element.Element( elem.edge(0).reference, elem.edge(0).transform, elem.edge(1).transform )
     ifpoints, ifweights = iface.reference.getischeme('uniform2')
 
