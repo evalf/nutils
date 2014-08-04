@@ -130,7 +130,7 @@ class Reference( object ):
 
     if trans: # levelset is not evaluated
       try:
-        levelset = levelset.eval( Element(self,trans), 'simplex%d' % maxrefine )
+        levelset = levelset.eval( Element(self,trans), 'vertex%d' % maxrefine )
       except:
         pass
       else:
@@ -193,7 +193,7 @@ class Reference( object ):
 
       for ctrans, child in self.children:
         poschild, negchild = child.trim( trans << ctrans, levelset, maxrefine-1, numer ) if trans \
-                        else child.trim( False, levelset[self.subsimplex(ctrans,maxrefine)], maxrefine-1, numer )
+                        else child.trim( False, levelset[self.subvertex(ctrans,maxrefine)], maxrefine-1, numer )
         if poschild:
           pos.append( (ctrans,poschild) )
         if negchild:
@@ -469,7 +469,7 @@ class SimplexReference( Reference ):
       return numpy.array([ [x,y] for i, y in enumerate(points) for x in points[:np-i] ]), None
     raise NotImplementedError
 
-  def getischeme_simplex( self, n ):
+  def getischeme_vertex( self, n ):
     return self.getischeme_bezier( 2**n+1 )
 
   @cache.property
@@ -490,7 +490,7 @@ class SimplexReference( Reference ):
   def children( self ):
     return [ (ctrans,self) for ctrans in self.child_transforms ]
 
-  def subsimplex( self, ctrans, i ):
+  def subvertex( self, ctrans, i ):
     assert self.ndims == 1
     index = self.child_transforms.index( ctrans )
     N = 2**i+1
@@ -525,11 +525,11 @@ class TensorReference( Reference ):
     vertices[:,:,ref1.ndims:] = ref2.vertices[_,:]
     Reference.__init__( self, vertices.reshape(-1,ndims) )
 
-  def subsimplex( self, ctrans, i ):
+  def subvertex( self, ctrans, i ):
     if not isinstance( ctrans, transform.Tensor ):
       raise KeyError, ctrans
-    I1 = self.ref1.subsimplex( ctrans.trans1, i )
-    I2 = self.ref2.subsimplex( ctrans.trans2, i )
+    I1 = self.ref1.subvertex( ctrans.trans1, i )
+    I2 = self.ref2.subvertex( ctrans.trans2, i )
     return ( I1[:,_] & I2[_,:] ).ravel()
 
   def stdfunc( self, degree, *n ):
