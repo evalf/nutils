@@ -492,13 +492,15 @@ def run( *functions ):
   warnings.resetwarnings()
 
   t0 = time.time()
-  tb = False
 
   if prop.profile:
     import cProfile
     prof = cProfile.Profile()
     prof.enable()
 
+  failed = 1
+  exc_info = None
+  tb = False
   try:
     func( **kwargs )
   except KeyboardInterrupt:
@@ -506,8 +508,11 @@ def run( *functions ):
   except Terminate, exc:
     log.error( 'terminated:', exc )
   except:
+    exc_info = sys.exc_info()
     tb = debug.exception()
     log.stack( repr(sys.exc_value), tb )
+  else:
+    failed = 0
 
   if prop.profile:
     prof.disable()
@@ -538,19 +543,16 @@ def run( *functions ):
     stream.write( 'profile results:\n' )
     pstats.Stats( prof, stream=stream ).strip_dirs().sort_stats( 'time' ).print_stats()
 
-  if not tb:
-    sys.exit( 0 )
+  if tb:
+    debug.write_html( htmlfile, exc_info[1], tb )
+    htmlfile.write( '<span class="info">Cache usage:<ul>%s</ul></span>' % '\n'.join( '<li>%s</li>' % line for line in core.cache_info( brief=False ) ) )
+    htmlfile.flush()
+    debug.Explorer( repr(sys.exc_value), tb, intro='''\
+      Your program has died. The traceback exporer allows you to examine its
+      post-mortem state to figure out why this happened. Type 'help' for an
+      overview of commands to get going.''' ).cmdloop()
 
-  debug.write_html( htmlfile, sys.exc_value, tb )
-  htmlfile.write( '<span class="info">Cache usage:<ul>%s</ul></span>' % '\n'.join( '<li>%s</li>' % line for line in core.cache_info( brief=False ) ) )
-  htmlfile.flush()
-
-  debug.Explorer( repr(sys.exc_value), tb, intro='''\
-    Your program has died. The traceback exporer allows you to examine its
-    post-mortem state to figure out why this happened. Type 'help' for an
-    overview of commands to get going.''' ).cmdloop()
-
-  sys.exit( 1 )
+  sys.exit( failed )
 
 class Terminate( Exception ):
   pass

@@ -3,7 +3,6 @@
 from nutils import *
 
 
-@parallel.fork
 def makeplots( domain, geom, sol, index ):
 
   log.context( 'plots' )
