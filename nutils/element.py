@@ -192,8 +192,12 @@ class Reference( object ):
     else:
 
       for ctrans, child in self.children:
-        poschild, negchild = child.trim( trans << ctrans, levelset, maxrefine-1, numer ) if trans \
-                        else child.trim( False, levelset[self.subvertex(ctrans,maxrefine)], maxrefine-1, numer )
+        if trans:
+          poschild, negchild = child.trim( trans << ctrans, levelset, maxrefine-1, numer )
+        else:
+          N, I = self.subvertex(ctrans,maxrefine)
+          assert len(levelset) == N
+          poschild, negchild = child.trim( False, levelset[I], maxrefine-1, numer )
         if poschild:
           pos.append( (ctrans,poschild) )
         if negchild:
@@ -491,14 +495,17 @@ class SimplexReference( Reference ):
     return [ (ctrans,self) for ctrans in self.child_transforms ]
 
   def subvertex( self, ctrans, i ):
-    assert self.ndims == 1
     index = self.child_transforms.index( ctrans )
-    N = 2**i+1
-    n = N//2+1-index
-    I = numpy.empty( N, dtype=bool )
-    I[:n] = 1-index
-    I[n:] = index
-    return I
+    n = 2**(i-1)
+    if self.ndims == 1:
+      return 2*n+1, numpy.arange(n+1) if index == 0 else numpy.arange(n,2*n+1)
+    if self.ndims == 2:
+      return ((2*n+2)*(2*n+1))//2, numpy.concatenate(
+             [ (((4*n+3-i)*i)//2) + numpy.arange(n+1-i) for i in range(n+1) ] if index == 0
+        else [ ((3*(n+1)*n)//2) + numpy.arange(((n+2)*(n+1))//2) ] if index == 1
+        else [ (((4*n+3-i)*i)//2+n) + numpy.arange(n+1-i) for i in range(n+1) ] if index == 2
+        else [ (((3*n+3+i)*(n-i))//2) + numpy.arange(n,i-1,-1) for i in range(n+1) ] )
+    raise NotImplementedError, 'ndims=%d' % self.ndims
 
   @cache.property
   def edges( self ):
@@ -528,9 +535,9 @@ class TensorReference( Reference ):
   def subvertex( self, ctrans, i ):
     if not isinstance( ctrans, transform.Tensor ):
       raise KeyError, ctrans
-    I1 = self.ref1.subvertex( ctrans.trans1, i )
-    I2 = self.ref2.subvertex( ctrans.trans2, i )
-    return ( I1[:,_] & I2[_,:] ).ravel()
+    N1, I1 = self.ref1.subvertex( ctrans.trans1, i )
+    N2, I2 = self.ref2.subvertex( ctrans.trans2, i )
+    return N1 * N2, ( N2 * I1[:,_] + I2[_,:] ).ravel()
 
   def stdfunc( self, degree, *n ):
     if n:
