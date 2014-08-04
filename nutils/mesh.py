@@ -54,7 +54,7 @@ def rectilinear( richshape, periodic=(), name='rect' ):
 
   reference = element.SimplexReference(1)**ndims
   for index in indices.reshape( ndims, -1 ).T:
-    structure[tuple(index)] = element.Element( reference, transform.shift(index) >> root )
+    structure[tuple(index)] = element.Element( reference, root << transform.shift(index) )
   topo = topology.StructuredTopology( structure, periodic=periodic )
   coords = function.ElemFunc( ndims ) * scale + offset
   return topo, coords
@@ -367,8 +367,8 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   reference = element.SimplexReference(2)
   for ielem, elemvertices in enumerate( vertices ):
     elemcoords = coords[ numpy.array(elemvertices) ]
-    trans = transform.linear((elemcoords[:2]-elemcoords[2]).T,scale) >> transform.shift(elemcoords[2],scale)
-    elem = element.Element( reference, trans >> root )
+    trans = transform.shift(elemcoords[2],scale) << transform.linear((elemcoords[:2]-elemcoords[2]).T,scale)
+    elem = element.Element( reference, root << trans )
     elements.append( elem )
 
   belems = [ elem.edge(2) for elem in elements[:12] ]

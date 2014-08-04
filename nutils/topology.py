@@ -58,7 +58,7 @@ class Topology( object ):
         dofs[i] = dof
       stdfunc = elem.reference.stdfunc(1)
       assert stdfunc.nshapes == elem.nverts
-      fmap[elem.transform] = stdfunc
+      fmap[elem.transform] = (stdfunc,None),
       nmap[elem.transform] = dofs
     return function.function( fmap=fmap, nmap=nmap, ndofs=len(dofmap), ndims=self.ndims )
 
@@ -76,7 +76,7 @@ class Topology( object ):
     ndofs = 0
     for elem in self:
       stdfunc = elem.reference.stdfunc(degree)
-      fmap[elem.transform] = stdfunc
+      fmap[elem.transform] = (stdfunc,None),
       nmap[elem.transform] = ndofs + numpy.arange(stdfunc.nshapes)
       ndofs += stdfunc.nshapes
     return function.function( fmap=fmap, nmap=nmap, ndofs=ndofs, ndims=self.ndims )
@@ -93,13 +93,9 @@ class Topology( object ):
     refined = []
     for elem in self:
       if elem.transform in refine:
-        refine.remove( elem.transform )
         refined.extend( elem.children )
       else:
         refined.append( elem )
-      for trans1, trans2 in elem.transform:
-        refine.discard( trans2 )
-    assert not refine, 'not all refinement elements were found: %s' % '\n '.join( str(e) for e in refine )
     return HierarchicalTopology( self, refined )
 
   def __add__( self, other ):
@@ -128,7 +124,7 @@ class Topology( object ):
     other_trans = transform.updim(eye[self.ndims:],1)
 
     if any( elem.reference != quad for elem in self ) or any( elem.reference != quad for elem in other ):
-      return Topology( element.Element( elem1.reference * elem2.reference, self_trans >> elem1.transform, other_trans >> elem2.transform )
+      return Topology( element.Element( elem1.reference * elem2.reference, elem1.transform << self_trans, elem2.transform << other_trans )
         for elem1 in self for elem2 in other )
 
     elements = []
@@ -144,7 +140,7 @@ class Topology( object ):
       for j, elemj in enumerate(other):
         if issym and i == j:
           reference = element.NeighborhoodTensorReference( elemi.reference, elemj.reference, 0, (0,0) )
-          elements.append( element.Element( reference, self_trans >> elemi.transform, other_trans >> elemj.transform ) )
+          elements.append( element.Element( reference, elemi.transform << self_trans, elemj.transform << other_trans ) )
           break
         common = [ (lookup[v],n) for n, v in enumerate(other_vertices[j]) if v in lookup ]
         if not common:
@@ -164,10 +160,10 @@ class Topology( object ):
         else:
           raise ValueError( 'Unknown neighbor type %i' % neighborhood )
         reference = element.NeighborhoodTensorReference( elemi.reference, elemj.reference, neighborhood, transf )
-        elements.append( element.Element( reference, self_trans >> elemi.transform, other_trans >> elemj.transform ) )
+        elements.append( element.Element( reference, elemi.transform << self_trans, elemj.transform << other_trans ) )
         if issym:
           reference = element.NeighborhoodTensorReference( elemj.reference, elemi.reference, neighborhood, transf[::-1] )
-          elements.append( element.Element( reference, self_trans >> elemj.transform, other_trans >> elemi.transform ) )
+          elements.append( element.Element( reference, elemj.transform << self_trans, elemi.transform << other_trans ) )
     return Topology( elements )
 
   def __getitem__( self, item ):
@@ -388,7 +384,9 @@ class Topology( object ):
     __log__ = log.iter( 'elem', self )
     for elem in parallel.pariter( __log__ ):
       assert isinstance( elem.reference, element.NeighborhoodTensorReference )
-      elemcmp = cmp( elem.transform.trans2, elem.opposite.trans2 )
+      head1, tail1 = elem.transform.parent
+      head2, tail2 = elem.opposite.parent
+      elemcmp = cmp( head1, head2 )
       if elemcmp < 0:
         continue
       for ifunc, lock, index, data in idata.eval( elem, ischeme ):
@@ -530,7 +528,6 @@ class Topology( object ):
     return TrimmedTopology( self, poselems ), \
            TrimmedTopology( self, negelems )
 
-
 class StructuredTopology( Topology ):
   'structured topology'
 
@@ -600,13 +597,13 @@ class StructuredTopology( Topology ):
       A[:idim] = -eye[:idim]
       A[idim+1:] = eye[idim:]
       b = numpy.hstack( [ numpy.ones( idim+1, dtype=int ), numpy.zeros( self.ndims-idim, dtype=int ) ] )
-      trans1 = transform.updim(A,sign=1) >> transform.shift(b[:-1])
-      trans2 = transform.updim(A,sign=-1) >> transform.shift(b[1:])
+      trans1 = transform.shift(b[:-1]) << transform.updim(A,sign=1)
+      trans2 = transform.shift(b[1:]) << transform.updim(A,sign=-1)
       edge = element.SimplexReference(1)**(self.ndims-1)
       for elem1, elem2 in numpy.broadcast( self.structure[t1], self.structure[t2] ):
         assert elem1.transform == elem1.opposite
         assert elem2.transform == elem2.opposite
-        ielem = element.Element( edge, trans1 >> elem1.transform, trans2 >> elem2.transform )
+        ielem = element.Element( edge, elem1.transform << trans1, elem2.transform << trans2 )
         interfaces.append( ielem )
     return Topology( interfaces )
 
@@ -678,10 +675,11 @@ class StructuredTopology( Topology ):
         mask = dofs >= 0
         if mask.all():
           dofmap[elem.transform] = dofs
-          funcmap[elem.transform] = std
-        elif mask.any():
+          funcmap[elem.transform] = (std,None),
+        else:
+          assert mask.any()
           dofmap[elem.transform] = dofs[mask]
-          funcmap[elem.transform] = std, mask
+          funcmap[elem.transform] = (std,mask),
 
     if hasnone:
       touched = numpy.zeros( dofcount, dtype=bool )
@@ -750,10 +748,10 @@ class StructuredTopology( Topology ):
         mask = dofs >= 0
         if mask.all():
           dofmap[ elem ] = dofs
-          funcmap[elem] = stdelem
+          funcmap[elem] = (stdelem,None),
         elif mask.any():
           dofmap[ elem ] = dofs[mask]
-          funcmap[elem] = stdelem, mask
+          funcmap[elem] = (stdelem,mask),
 
     if hasnone:
       touched = numpy.zeros( dofcount, dtype=bool )
@@ -810,15 +808,8 @@ class HierarchicalTopology( Topology ):
     self.edict = { elem.transform: elem.reference for elem in elements }
     Topology.__init__( self, elements )
 
-  def __iter__( self ):
-    'iterate over elements'
-
-    return iter(self.elements)
-
-  def __len__( self ):
-    'number of elements'
-
-    return len(self.elements)
+    self.maxrefine = max( elem.transform.len for elem in elements ) \
+                   - min( elem.transform.len for elem in self.basetopo )
 
   @cache.property
   def boundary( self ):
@@ -878,72 +869,78 @@ class HierarchicalTopology( Topology ):
     return Topology( allinterfaces )
 
   def _funcspace( self, mkspace ):
+    'build hierarchical function space'
 
-    dofmap = {} # IEN mapping of new function object
-    stdmap = {} # shape function mapping of new function object, plus boolean vector indicating which shapes to retain
+    collect = {}
     ndofs = 0 # total number of dofs of new function object
     remaining = len(self) # element count down (know when to stop)
+
+    self_transforms = set( elem.transform for elem in self )
   
     topo = self.basetopo # topology to examine in next level refinement
-    newdiscard = []
-    parentelems = []
-    maxrefine = 9
-    for irefine in range( maxrefine ):
-  
+    for irefine in range( self.maxrefine+1 ):
+
       funcsp = mkspace( topo ) # shape functions for level irefine
-      (func,(dofaxis,)), = function.blocks( funcsp ) # separate elem-local funcs and global placement index
-  
-      discard = set(newdiscard)
-      newdiscard = []
-      supported = numpy.ones( funcsp.shape[0], dtype=bool ) # True if dof is contained in topoelems or parentelems
-      touchtopo = numpy.zeros( funcsp.shape[0], dtype=bool ) # True if dof touches at least one topoelem
+      supported = numpy.ones( funcsp.shape[0], dtype=bool ) # True if dof is fully contained in self or parents
+      touchtopo = numpy.zeros( funcsp.shape[0], dtype=bool ) # True if dof touches at least one elem in self
       myelems = [] # all top-level or parent elements in level irefine
-      for trans, idofs in dofaxis.dofmap.items():
-        ref = self.edict.get( trans )
-        if ref:
-          remaining -= 1
-          touchtopo[idofs] = True
-          myelems.append( trans )
-          newdiscard.append( trans )
+
+      for trans, idofs, stds in function._unpack( funcsp ):
+        try:
+          head, tail = trans.lookup( self_transforms )
+        except: # trans is coarser than domain
+          myelems.append(( trans, idofs, stds ))
         else:
-          trans1, trans2 = trans[1]
-          if trans2 in discard:
-            newdiscard.append( trans )
+          if head == trans: # trans is in domain
+            remaining -= 1
+            touchtopo[idofs] = True
+            myelems.append(( trans, idofs, stds ))
+          else: # trans is finer than domain
             supported[idofs] = False
-          else:
-            parentelems.append( trans )
-            myelems.append( trans )
   
       keep = numpy.logical_and( supported, touchtopo ) # THE refinement law
+      renumber = (ndofs-1) + keep.cumsum()
 
-      for trans in myelems: # loop over all top-level or parent elements in level irefine
-        idofs = dofaxis.dofmap[trans] # local dof numbers
+      for trans, idofs, stds in myelems: # loop over all top-level or parent elements in level irefine
+        (std,origkeep), = stds
+        assert origkeep is None
         mykeep = keep[idofs]
-        std = func.stdmap[trans]
-        assert isinstance(std,element.StdElem)
         if mykeep.all():
-          stdmap[trans] = std # use all shapes from this level
+          newstds = (std,None),
+          newdofs = renumber[idofs]
         elif mykeep.any():
-          stdmap[trans] = std, mykeep # use some shapes from this level
-        newdofs = [ ndofs + keep[:idof].sum() for idof in idofs if keep[idof] ] # new dof numbers
-        if irefine: # not at lowest level
-          trans1, trans2 = trans[1]
-          newdofs.extend( dofmap[trans2] ) # add dofs of all underlying 'broader' shapes
-        dofmap[trans] = numpy.array(newdofs) # add result to IEN mapping of new function object
+          newstds = (std,mykeep),
+          newdofs = renumber[idofs[mykeep]]
+        else:
+          newstds = (None,None),
+          newdofs = numpy.zeros( [0], dtype=int )
+        if irefine:
+          parent, head = trans.parent
+          olddofs, oldstds = collect[ parent ] # dofs, stds of all underlying 'broader' shapes
+          newstds += oldstds
+          newdofs = numpy.hstack([ newdofs, olddofs ])
+        collect[ trans ] = newdofs, newstds # add result to IEN mapping of new function object
   
-      ndofs += keep.sum() # update total number of dofs
+      ndofs += int( keep.sum() ) # update total number of dofs
       if not remaining:
         break
       topo = topo.refined # proceed to next level
   
     else:
 
-      raise Exception, 'elements remaining after %d iterations' % maxrefine
+      raise Exception, 'elements remaining after %d iterations' % self.maxrefine
 
-    for trans in parentelems:
-      del dofmap[trans] # remove auxiliary elements
+    nmap = {}
+    fmap = {}
+    check = numpy.zeros( ndofs, dtype=bool )
+    for elem in self:
+      dofs, stds = collect[ elem.transform ]
+      nmap[ elem.transform ] = dofs
+      fmap[ elem.transform ] = stds
+      check[dofs] = True
+    assert check.all()
 
-    return function.function( stdmap, dofmap, ndofs, self.ndims )
+    return function.function( fmap=fmap, nmap=nmap, ndofs=ndofs, ndims=self.ndims )
 
   @log.title
   def stdfunc( self, *args, **kwargs ):
@@ -982,12 +979,7 @@ class TrimmedTopology( Topology ):
   @cache.property
   def boundary( self ):
     warnings.warn( 'warning: boundaries of trimmed topologies are not trimmed' )
-    belems = []
-    for belem in self.basetopo.boundary:
-      for trans1, trans2 in belem.transform:
-        if trans2.fromdims == self.ndims and trans2 in self.emat:
-          belems.append( belem )
-          break
+    belems = [ belem for belem in self.basetopo.boundary if belem.transform.lookup(self.emat) ]
     return TrimmedTopology( self.basetopo.boundary, belems )
 
   @cache.property

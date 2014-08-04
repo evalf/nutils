@@ -56,11 +56,11 @@ class Element( object ):
     
   def edge( self, iedge ):
     trans, edge = self.reference.edges[iedge]
-    return Element( edge, trans >> self.transform, trans >> self.opposite )
+    return Element( edge, self.transform << trans, self.opposite << trans )
 
   @property
   def children( self ):
-    return [ Element( child, trans >> self.transform, trans >> self.opposite )
+    return [ Element( child, self.transform << trans, self.opposite << trans )
       for trans, child in self.reference.children ]
 
   def trim( self, levelset, maxrefine, numer ):
@@ -76,7 +76,7 @@ class Element( object ):
 
   @property
   def simplices( self ):
-    return [ Element( reference, trans >> self.transform, trans >> self.opposite )
+    return [ Element( reference, self.transform << trans, self.opposite << trans )
       for trans, reference in self.reference.simplices ]
 
   def __str__( self ):
@@ -186,13 +186,13 @@ class Reference( object ):
         if numpy.linalg.det( matrix.astype(float) ) < 0:
           tri[-2:] = tri[-1], tri[-2]
           matrix = ( coords[tri[1:]] - offset ).T
-        strans = transform.linear(matrix,numer) >> transform.shift(offset,numer)
+        strans = transform.shift(offset,numer) << transform.linear(matrix,numer)
         ( pos if ispos else neg ).append(( strans, simplex ))
 
     else:
 
       for ctrans, child in self.children:
-        poschild, negchild = child.trim( ctrans >> trans, levelset, maxrefine-1, numer ) if trans \
+        poschild, negchild = child.trim( trans << ctrans, levelset, maxrefine-1, numer ) if trans \
                         else child.trim( False, levelset[self.subsimplex(ctrans,maxrefine)], maxrefine-1, numer )
         if poschild:
           pos.append( (ctrans,poschild) )
@@ -477,12 +477,12 @@ class SimplexReference( Reference ):
     half = transform.half( self.ndims )
     if self.ndims == 1:
       return [ half,
-        transform.shift([1]) >> half ]
+        half << transform.shift([1]) ]
     if self.ndims == 2:
       return [ half,
-        transform.shift([0,1]) >> half,
-        transform.shift([1,0]) >> half,
-        transform.shift([-1,-1]) >> transform.linear([[-1,0],[0,-1]],2)
+        half << transform.shift([0,1]),
+        half << transform.shift([1,0]),
+        transform.linear([[-1,0],[0,-1]],2) << transform.shift([-1,-1])
       ]
     raise NotImplementedError
 
@@ -507,7 +507,7 @@ class SimplexReference( Reference ):
     return [
       ( transform.updim( eye[range(i)+range(i+1,self.ndims)].T, sign=1 if i%1 else -1 ), edge )
           for i in range( self.ndims ) ] + [
-      ( transform.updim( (eye[1:]-eye[0]).T, sign=1 ) >> transform.shift( eye[0] ), edge ) ]
+      ( transform.shift( eye[0] ) << transform.updim( (eye[1:]-eye[0]).T, sign=1 ), edge ) ]
 
   def __str__( self ):
     return 'SimplexReference(%d)' % self.ndims
@@ -762,7 +762,7 @@ class MosaicReference( Reference ):
 
   @cache.property
   def simplices( self ):
-    return [ ( trans1 >> trans2, simplex ) for trans2, child in self.children for trans1, simplex in child.simplices ]
+    return [ ( trans2 << trans1, simplex ) for trans2, child in self.children for trans1, simplex in child.simplices ]
 
 
 # SHAPE FUNCTIONS

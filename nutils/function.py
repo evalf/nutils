@@ -307,32 +307,18 @@ class PointShape( Evaluable ):
 
     return points.shape[:-1]
 
-class Cascade( Evaluable ):
-  'point cascade: list of (elem,points) tuples'
+class Elemtrans( Evaluable ):
+  'transform'
 
-  __slots__ = 'ndims', 'side'
+  __slots__ = 'side',
 
-  def __init__( self, ndims, side=0 ):
-    'constructor'
-
-    self.ndims = ndims
+  def __init__( self, side ):
+    Evaluable.__init__( self, args=[TRANS,side], evalf=self.transform )
     self.side = side
-    Evaluable.__init__( self, args=[CACHE,TRANS,ndims,side], evalf=self.cascade )
-
-  def transform( self, ndims ):
-    if ndims == self.ndims:
-      return eye( ndims )
-    return Transform( self, Cascade(ndims,self.side) )
 
   @staticmethod
-  def cascade( cache, trans, ndims, side ):
-    'evaluate'
-
-    return [ (t1,t2) for t1, t2 in trans[side] if t1.todims == ndims ]
-
-  @property
-  def inv( self ):
-    return Cascade( self.ndims, 1-self.side )
+  def transform( trans, side ):
+    return trans[side]
 
 # ARRAYFUNC
 #
@@ -462,7 +448,7 @@ class ArrayFunc( Evaluable ):
       normal = 1
     else:
       raise NotImplementedError, 'cannot compute normal for %dx%d jacobian' % ( self.shape[0], ndims )
-    return normal * ElemSign(ndims)
+    return normal * ElemSign( ndims )
 
   def curvature( self, ndims=-1 ):
     'curvature'
@@ -556,17 +542,23 @@ class ArrayFunc( Evaluable ):
 class ElemSign( ArrayFunc ):
   'sign'
 
-  def __init__( self, ndims ):
+  def __init__( self, ndims, side=0 ):
     'constructor'
 
-    cascade = Cascade(ndims)
-    ArrayFunc.__init__( self, args=[TRANS,ndims], evalf=self.elemsign, shape=() )
+    ArrayFunc.__init__( self, args=[Elemtrans(side),ndims], evalf=self.elemsign, shape=() )
+    self.side = side
+    self.ndims = ndims
 
   @staticmethod
-  def elemsign( (trans,opposide), ndims ):
-    for trans1, trans2 in trans:
-      if trans2.fromdims == ndims:
-        return trans2.sign
+  def elemsign( trans, ndims ):
+    try:
+      sign = trans.sign( ndims+1, ndims )
+    except:
+      sign = 1 # for situations like 3D geom and 2D topo. Needs some thinking.
+    return sign
+
+  def _opposite( self ):
+    return ElemSign( self.ndims, 1-self.side )
 
   def _localgradient( self, ndims ):
     return _zeros( (ndims,) )
@@ -749,87 +741,86 @@ class IWeights( ArrayFunc ):
 
   __slots__ = ()
 
-  def __init__( self, ndims ):
+  def __init__( self ):
     'constructor'
 
-    ArrayFunc.__init__( self, args=[Cascade(ndims),WEIGHTS], evalf=self.iweights, shape=() )
+    ArrayFunc.__init__( self, args=[Elemtrans(0),WEIGHTS], evalf=self.iweights, shape=() )
 
   @staticmethod
-  def iweights( cascade, weights ):
+  def iweights( trans, weights ):
     'evaluate'
 
-    roottrans1, roottrans2 = cascade[-1]
-    return rational.asfloat(roottrans1.det) * weights
+    return rational.asfloat( trans.strip_to(trans.fromdims).det ) * weights
 
 class Transform( ArrayFunc ):
   'transform'
 
-  __slots__ = 'fromcascade', 'tocascade'
+  __slots__ = 'fromdims', 'todims', 'side'
 
-  def __init__( self, fromcascade, tocascade ):
+  def __init__( self, todims, fromdims, side ):
     'constructor'
 
-    self.fromcascade = fromcascade
-    self.tocascade = tocascade
-    ArrayFunc.__init__( self, args=[fromcascade,tocascade], evalf=self.transform, shape=(fromcascade.ndims,tocascade.ndims) )
+    assert fromdims != todims
+    self.fromdims = fromdims
+    self.todims = todims
+    self.side = side
+    ArrayFunc.__init__( self, args=[Elemtrans(side),todims,fromdims], evalf=self.transform, shape=(todims,fromdims) )
 
   @staticmethod
-  def transform( fromcascade, tocascade ):
+  def transform( trans, todims, fromdims ):
     'transform'
 
-    fromroot, fromtrans = fromcascade[-1]
-    toroot, totrans = tocascade[-1]
-    return rational.asfloat( totrans.rstrip(fromtrans).matrix )
+    return rational.asfloat( trans.strip_from(fromdims).strip_to(todims).matrix )
 
   def _localgradient( self, ndims ):
     return _zeros( self.shape + (ndims,) )
 
   def _opposite( self ):
-    return Transform( opposite(self.fromcascade), opposite(self.tocascade) )
+    return Transform( self.todims, self.fromdims, 1-self.side )
 
 class Function( ArrayFunc ):
   'function'
 
-  __slots__ = 'cascade', 'stdmap', 'igrad'
+  __slots__ = 'side', 'ndims', 'stdmap', 'igrad'
 
-  def __init__( self, cascade, stdmap, igrad, axis ):
+  def __init__( self, ndims, stdmap, igrad, axis, side=0 ):
     'constructor'
 
-    self.cascade = cascade
+    self.side = side
+    self.ndims = ndims
     self.stdmap = stdmap
     self.igrad = igrad
-    ArrayFunc.__init__( self, args=(CACHE,POINTS,cascade,stdmap,igrad), evalf=self.function, shape=(axis,)+(cascade.ndims,)*igrad )
+    ArrayFunc.__init__( self, args=(CACHE,POINTS,Elemtrans(side),stdmap,igrad), evalf=self.function, shape=(axis,)+(ndims,)*igrad )
 
   @staticmethod
-  def function( cache, points, cascade, stdmap, igrad ):
+  def function( cache, points, trans, stdmap, igrad ):
     'evaluate'
 
+    head, tail = trans.lookup( stdmap )
+    stds = stdmap[head]
     fvals = []
-    roottrans1, roottrans2 = cascade[-1]
-    for trans1, trans2 in cascade:
-      std = stdmap.get(trans2)
-      if not std:
-        continue
-      transpoints = cache( trans1.apply, points )
-      if isinstance( std, tuple ):
-        std, keep = std
-        F = cache( std.eval, transpoints, igrad )[(Ellipsis,keep)+(slice(None),)*igrad]
-      else:
+    for std, keep in stds:
+      if std:
+        transpoints = cache( tail.apply, points )
         F = cache( std.eval, transpoints, igrad )
-      for axis in range(-igrad,0):
-        matrix = trans2.rstrip( roottrans2 ).inv.matrix
-        F = numeric.dot( F, rational.asfloat(matrix), axis )
-      fvals.append( F )
-    assert fvals, 'no function values encountered'
+        if keep is not None:
+          F = F[(Ellipsis,keep)+(slice(None),)*igrad]
+        if igrad:
+          matrix = rational.asfloat( head.strip_to(head.fromdims).inv.matrix )
+          for axis in range(-igrad,0):
+            F = numeric.dot( F, matrix, axis )
+        fvals.append( F )
+      head, _tail = head.parent
+      tail >>= _tail
     return fvals[0] if len(fvals) == 1 else numpy.concatenate( fvals, axis=-1-igrad )
 
   def _opposite( self ):
-    return Function( self.cascade.inv, self.stdmap, self.igrad, self.shape[0] )
+    return Function( self.ndims, self.stdmap, self.igrad, self.shape[0], 1-self.side )
 
   def _localgradient( self, ndims ):
-    grad = Function( self.cascade, self.stdmap, self.igrad+1, self.shape[0] )
-    return grad if ndims == self.cascade.ndims \
-      else dot( grad[...,_], self.cascade.transform( ndims ), axes=-2 )
+    grad = Function( self.ndims, self.stdmap, self.igrad+1, self.shape[0], self.side )
+    return grad if ndims == self.ndims \
+      else dot( grad[...,_], Transform( self.ndims, ndims, self.side ), axes=-2 )
 
 class Choose( ArrayFunc ):
   'piecewise function'
@@ -909,29 +900,24 @@ class Inverse( ArrayFunc ):
 class DofMap( ArrayFunc ):
   'dof axis'
 
-  __slots__ = 'cascade', 'dofmap'
+  __slots__ = 'side', 'dofmap'
 
-  def __init__( self, cascade, dofmap, axis ):
+  def __init__( self, dofmap, axis, side=0 ):
     'new'
 
-    self.cascade = cascade
+    self.side = side
     self.dofmap = dofmap
-    ArrayFunc.__init__( self, args=(cascade,dofmap), evalf=self.evalmap, shape=[axis], dtype=int )
+    ArrayFunc.__init__( self, args=(Elemtrans(side),dofmap), evalf=self.evalmap, shape=[axis], dtype=int )
 
   @staticmethod
-  def evalmap( cascade, dofmap ):
+  def evalmap( trans, dofmap ):
     'evaluate'
 
-    alldofs = []
-    for trans1, trans2 in cascade:
-      dofs = dofmap.get( trans2 )
-      if dofs is not None:
-        alldofs.append( dofs )
-    assert alldofs, 'no dofs encountered'
-    return alldofs[0] if len(alldofs) == 1 else numpy.concatenate( alldofs )
+    head, tail = trans.lookup(dofmap)
+    return dofmap[head]
 
   def _opposite( self ):
-    return DofMap( self.cascade.inv, self.dofmap, self.shape[0] )
+    return DofMap( self.dofmap, self.shape[0], 1-self.side )
 
 class Concatenate( ArrayFunc ):
   'concatenate'
@@ -1721,41 +1707,27 @@ class Power( ArrayFunc ):
 class ElemFunc( ArrayFunc ):
   'trivial func'
 
-  __slots__ = 'side', 'cascade'
+  __slots__ = 'side',
 
   def __init__( self, ndims, side=0 ):
     'constructor'
 
     self.side = side
-    self.cascade = Cascade( ndims, side )
-    ArrayFunc.__init__( self, args=[POINTS,self.cascade], evalf=self.elemfunc, shape=[ndims] )
+    ArrayFunc.__init__( self, args=[POINTS,Elemtrans(side),ndims], evalf=self.elemfunc, shape=[ndims] )
 
   @staticmethod
-  def elemfunc( points, cascade ):
+  def elemfunc( points, trans, ndims ):
     'evaluate'
 
-    roottrans1, roottrans2 = cascade[-1]
-    return roottrans1.apply( points )
+    return trans.strip_to(ndims).apply( points )
 
   def _localgradient( self, ndims ):
-    return self.cascade.transform( ndims )
+    return eye( ndims ) if self.shape[0] == ndims \
+      else Transform( self.shape[0], ndims, self.side )
 
   def _opposite( self ):
     ndims, = self.shape
     return ElemFunc( ndims, 1-self.side )
-
-  def find( self, elem, C ):
-    'find coordinates'
-
-    assert C.ndim == 2 and C.shape[1] == self.ndims
-    assert elem.ndims == self.ndims # for now
-    pelem, transform = elem.parent
-    offset = transform.offset
-    Tinv = transform.invtrans
-    while pelem.parent:
-      pelem, newtransform = pelem.parent
-      transform = transform.nest( newtransform )
-    return elem.select_contained( transform.invapply( C ), eps=1e-10 )
 
 class Pointwise( ArrayFunc ):
   'pointwise transformation'
@@ -1831,10 +1803,10 @@ class Pointdata( ArrayFunc ):
 
     assert isinstance(data,dict)
     self.data = data
-    ArrayFunc.__init__( self, args=[TRANS,POINTS,self.data], evalf=self.pointdata, shape=shape )
+    ArrayFunc.__init__( self, args=[Elemtrans(0),POINTS,self.data], evalf=self.pointdata, shape=shape )
 
   @staticmethod
-  def pointdata( (trans,opposite), points, data ):
+  def pointdata( trans, points, data ):
     myvals,mypoint = data[trans]
     assert numpy.equal( mypoint, points ).all(), 'Illegal point set'
     return myvals
@@ -3139,9 +3111,8 @@ def function( fmap, nmap, ndofs, ndims ):
   'create function on ndims-element'
 
   axis = '~%d' % ndofs
-  cascade = Cascade(ndims)
-  func = Function( cascade, fmap, igrad=0, axis=axis )
-  dofmap = DofMap( cascade, nmap, axis=axis )
+  func = Function( ndims, fmap, igrad=0, axis=axis )
+  dofmap = DofMap( nmap, axis=axis )
   return Inflate( func, dofmap, length=ndofs, axis=0 )
 
 def take( arg, index, axis ):
@@ -3269,26 +3240,31 @@ def iweights( coords, ndims ):
   detJ = abs( determinant( J ) ) if cndims == ndims \
     else 1. if ndims == 0 \
     else determinant( ( J[:,:,_] * J[:,_,:] ).sum(0) )**.5
-  return detJ * IWeights(ndims)
+  return detJ * IWeights()
+
+def _unpack( funcsp ):
+  for func, axes in funcsp.blocks:
+    dofmap = axes[0].dofmap
+    stdmap = func.stdmap
+    for trans, dofs in dofmap.items():
+      yield trans, dofs, stdmap[trans]
+  
 
 def supp( funcsp, indices ):
   'find support of selection of basis functions'
 
   # FRAGILE! makes lots of assumptions on the nature of funcsp
   supp = []
-  for func, axes in funcsp.blocks:
-    dofmap = axes[0].dofmap
-    stdmap = func.stdmap
-    for trans, dofs in dofmap.items():
-      for trans1, trans2 in trans:
-        std = stdmap.get( trans2 )
-        nshapes = 0 if not std \
-           else std[1].sum() if isinstance( std, tuple ) \
+  for trans, dofs, stds in _unpack( funcsp ):
+    for std, keep in stds:
+      nshapes = 0 if not std \
+           else keep.sum() if keep is not None \
            else std.nshapes
-        if numpy.intersect1d( dofs[:nshapes], indices, assume_unique=True ).size:
-          supp.append( trans2 )
-        dofs = dofs[nshapes:]
-      assert not dofs.size
+      if numpy.intersect1d( dofs[:nshapes], indices, assume_unique=True ).size:
+        supp.append( trans )
+      dofs = dofs[nshapes:]
+      trans, head = trans.parent
+    assert not dofs.size
   return supp
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

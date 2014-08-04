@@ -17,42 +17,52 @@ import numpy
 
 class Transform( object ):
 
-  def __init__( self, todims, fromdims, sign ):
+  def __init__( self, todims, fromdims ):
     self.todims = todims
     self.fromdims = fromdims
-    assert abs(sign) == 1
-    self.sign = sign
+
+  def lookup( self, transforms ):
+    if self not in transforms:
+      return None
+    return self, identity(self,fromdims)
+
+  def strip_from( self, ndims ):
+    if self.fromdims == ndims:
+      return self
+    assert self.todims == ndims
+    return identity( ndims )
+
+  def strip_to( self, ndims ):
+    if self.todims == ndims:
+      return self
+    assert self.fromdims == ndims
+    return identity( ndims )
 
   @property
   def flipped( self ):
     return self
 
-  def __iter__( self ):
-    yield identity(self.fromdims), self
-
-  def __getitem__( self, i ):
-    assert i >= 0
-    for item in self:
-      if not i:
-        return item
-      i -= 1
-
-  def rstrip( self, trans ):
-    assert self == trans, 'cannot find sub-transformation'
-    return identity( self.fromdims )
-
   @property
   def det( self ):
     raise NotImplementedError
+
+  def sign( self, todims, fromdims ):
+    assert self.todims == todims and self.fromdims == fromdims
+    return 1
 
   @property
   def inv( self ):
     raise NotImplementedError
 
-  def __rshift__( self, other ):
+  def __lshift__( self, other ):
+    # self << other
     assert isinstance( other, Transform )
-    assert self.todims == other.fromdims
-    return Compound( self, other )
+    assert self.fromdims == other.todims
+    return Compound( (self,other) )
+
+  def __rshift__( self, other ):
+    # self >> other
+    return other << self
 
   def __str__( self ):
     return '#%x' % id(self)
@@ -70,7 +80,7 @@ class ImmutableTransform( Transform ):
 class Identity( ImmutableTransform ):
 
   def __init__( self, ndims ):
-    ImmutableTransform.__init__( self, ndims, ndims, 1 )
+    ImmutableTransform.__init__( self, ndims, ndims )
 
   @property
   def det( self ):
@@ -93,50 +103,96 @@ class Identity( ImmutableTransform ):
 
 class Compound( ImmutableTransform ):
 
-  def __init__( self, trans1, trans2 ):
-    assert isinstance( trans1, Transform )
-    assert isinstance( trans2, Transform )
-    assert trans1.todims == trans2.fromdims
-    ImmutableTransform.__init__( self, trans2.todims, trans1.fromdims, trans1.sign * trans2.sign )
-    self.trans1 = trans1
-    self.trans2 = trans2
+  def __init__( self, transforms ):
+    assert len(transforms) > 1
+    self.__transforms = transforms
+    ImmutableTransform.__init__( self, transforms[0].todims, transforms[-1].fromdims )
+    self.len = len(self.__transforms)
+
+  def lookup( self, transforms ):
+    # to be replaced by bisection soon
+    if self in transforms:
+      return self, identity(self.fromdims)
+    headtrans = self.__transforms[:-1]
+    tail = self.__transforms[-1:]
+    while headtrans:
+      head = Compound(headtrans) if len(headtrans) > 1 else headtrans[0]
+      if head in transforms:
+        return head, Compound(tail) if len(tail) > 1 else tail[0]
+      tail = headtrans[-1:] + tail
+      headtrans = headtrans[:-1]
+    return None
+
+  def strip_from( self, ndims ):
+    if self.fromdims == ndims:
+      return self
+    for i in range( self.len-2, -1, -1 ):
+      if self.__transforms[i].fromdims == ndims:
+        return Compound( self.__transforms[:i+1] ) if i else self.__transforms[0]
+    assert self.todims == ndims
+    return identity( ndims )
+    
+  def strip_to( self, ndims ):
+    if self.todims == ndims:
+      return self
+    for i in range( 1, self.len ):
+      if self.__transforms[i].todims == ndims:
+        return Compound( self.__transforms[i:] ) if i < self.len-1 else self.__transforms[-1]
+    assert self.fromdims == ndims
+    return identity( ndims )
+
+  def __lshift__( self, other ):
+    # self << other
+    assert isinstance( other, Transform )
+    assert self.fromdims == other.todims
+    return Compound( self.__transforms+(other,) )
+
+  def sign( self, todims, fromdims ):
+    for trans in self.__transforms:
+      if trans.todims == todims and trans.fromdims == fromdims:
+        return trans.sign( todims, fromdims )
+    raise Exception
 
   @property
   def flipped( self ):
-    return Compound( self.trans1.flipped, self.trans2.flipped )
-
-  def __iter__( self ):
-    yield identity(self.fromdims), self
-    for t1, t2 in self.trans2:
-      yield self.trans1 >> t1, t2
-
-  def rstrip( self, trans ):
-    return identity( self.fromdims ) if self == trans \
-      else self.trans1 >> self.trans2.rstrip( trans )
+    return Compound( tuple( trans.flipped for trans in self.__transforms ) )
 
   @cache.property
   def det( self ):
-    return self.trans1.det * self.trans2.det
+    det = self.__transforms[0].det
+    for trans in self.__transforms[1:]:
+      det *= trans.det
+    return det
 
   @cache.property
   def matrix( self ):
-    return rational.dot( self.trans2.matrix, self.trans1.matrix )
+    matrix = self.__transforms[0].matrix
+    for trans in self.__transforms[1:]:
+      matrix = rational.dot( matrix, trans.matrix )
+    return matrix
 
   @cache.property
   def inv( self ):
-    return self.trans2.inv >> self.trans1.inv
+    return Compound( tuple( trans.inv for trans in reversed(self.__transforms) ) )
 
   def apply( self, points ):
-    return self.trans2.apply( self.trans1.apply( points ) )
+    for trans in reversed(self.__transforms):
+      points = trans.apply( points )
+    return points
+
+  @property
+  def parent( self ):
+    return ( self.__transforms[0] if self.len == 2
+        else Compound( self.__transforms[:-1] ) ), self.__transforms[-1]
 
   def __str__( self ):
-    return '%s >> %s' % ( self.trans1, self.trans2 )
+    return '(%s)' % ' << '.join( str(trans) for trans in self.__transforms )
 
 class Shift( ImmutableTransform ):
 
   def __init__( self, shift ):
     assert rational.isarray( shift ) and shift.ndim == 1
-    ImmutableTransform.__init__( self, len(shift), len(shift), 1 )
+    ImmutableTransform.__init__( self, len(shift), len(shift) )
     self.shift = shift
 
   @cache.property
@@ -161,7 +217,7 @@ class Shift( ImmutableTransform ):
 class Scale( ImmutableTransform ):
 
   def __init__( self, ndims, factor ):
-    ImmutableTransform.__init__( self, ndims, ndims, 1 )
+    ImmutableTransform.__init__( self, ndims, ndims )
     self.factor = factor
     
   def apply( self, points ):
@@ -187,12 +243,18 @@ class Updim( ImmutableTransform ):
 
   def __init__( self, matrix, sign ):
     assert rational.isarray( matrix ) and matrix.ndim == 2
-    ImmutableTransform.__init__( self, matrix.shape[0], matrix.shape[1], sign )
+    ImmutableTransform.__init__( self, matrix.shape[0], matrix.shape[1] )
     self.matrix = matrix
+    assert abs(sign) == 1
+    self.__sign = sign
+
+  def sign( self, todims, fromdims ):
+    assert self.todims == todims and self.fromdims == fromdims
+    return self.__sign
 
   @property
   def flipped( self ):
-    return Updim( self.matrix, -self.sign )
+    return Updim( self.matrix, -self.__sign )
 
   def apply( self, points ):
     assert points.shape[-1] == self.fromdims
@@ -220,9 +282,14 @@ class Tensor( ImmutableTransform ):
   def __init__( self, trans1, trans2 ):
     assert isinstance( trans1, Transform )
     assert isinstance( trans2, Transform )
-    ImmutableTransform.__init__( self, trans1.todims+trans2.todims, trans1.fromdims+trans2.fromdims, trans1.sign * trans2.sign )
+    ImmutableTransform.__init__( self, trans1.todims+trans2.todims, trans1.fromdims+trans2.fromdims )
     self.trans1 = trans1
     self.trans2 = trans2
+
+  def sign( self, todims, fromdims ):
+    assert self.todims == todims and self.fromdims == fromdims
+    return self.trans1.sign( self.trans1.todims, self.trans1.fromdims ) \
+         * self.trans2.sign( self.trans2.todims, self.trans2.fromdims )
 
   @property
   def flipped( self ):
@@ -260,7 +327,7 @@ class Tensor( ImmutableTransform ):
 class VertexTransform( Transform ):
 
   def __init__( self, fromdims ):
-    Transform.__init__( self, None, fromdims, 1 )
+    Transform.__init__( self, None, fromdims )
 
 class MapTrans( VertexTransform ):
 
