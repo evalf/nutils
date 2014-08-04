@@ -22,7 +22,7 @@ def main( nelems=None, degree=1, plots=True, solvetol=1e-10 ):
   else:
     domain, geom = mesh.demo( xmax=.5*numpy.pi, ymax=.5*numpy.pi )
     if degree != 1:
-      log.warning( 'setting degree=%d for triangular mesh' % degree )
+      log.warning( 'setting degree=1 for triangular mesh' )
       degree = 1
 
   x, y = geom
