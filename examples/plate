@@ -1,0 +1,115 @@
+#!/usr/bin/env python
+#See Hughes et al., CMAME 194 (2005), pp. 4135-4195
+
+from nutils import *
+
+def exact( geom, L, R, E, nu, Tx ):
+
+  r = function.norm2( geom )
+  theta = function.arctan2(geom[1],geom[0])
+
+  mu = E/(2.*(1.+nu))
+  k  = 3.-4.*nu #Plane strain case (see e.g. http://en.wikiversity.org/wiki/Introduction_to_Elasticity/Plate_with_hole_in_tension)
+
+  ux = (Tx*R)/(8.*mu)*( r/R*(k+1)*function.cos(theta)+\
+                        2.*R/r*((k+1)*function.cos(theta)+function.cos(3*theta))+\
+                       -2.*R**3/(r**3)*function.cos(3*theta)                      )
+  uy = (Tx*R)/(8.*mu)*( r/R*(k-3)*function.sin(theta)+\
+                        2.*R/r*((1-k)*function.sin(theta)+function.sin(3*theta))+\
+                       -2.*R**3/(r**3)*function.sin(3*theta)                      )
+
+  return function.stack( (ux,uy) )
+
+l2 = lambda u : (u**2).sum()
+h1 = lambda u, geom : l2(u) + (u.grad(geom)**2).sum([0,1]) 
+
+def main ( L=4, R=1, E=1e5, nu=0.3, Tx=10, m=5, p=2, maxrefine=4, plots=True ):
+
+  #Initiate the stress function
+  stress = library.Hooke(E=E,nu=nu)
+
+  #Construct the trimmed domain
+  if m==None:
+    domain, geom = mesh.demo( xmax=L, ymax=L )
+    if p != 1:
+      log.warning( 'setting degree=%d for triangular mesh' % p )
+      p = 1
+  else:
+    domain, geom = mesh.rectilinear( [numpy.linspace(0,L,m+1)]*2 )
+
+  #Trim the domain
+  tdomain, complement = domain.trim( function.norm2( geom )-R**2, maxrefine=maxrefine, eps=5e-3 )
+
+  #Get the exact solution
+  u_ex = exact( geom, L, R, E, nu, Tx )
+  s_ex = stress( u_ex, geom )
+
+  #Set up the FE problem
+  funcspu = tdomain.splinefunc( p, removedofs=((0,),None) )
+  funcspv = tdomain.splinefunc( p, removedofs=(None,(0,)) )
+  funcsp = function.vectorize( (funcspu,funcspv) )
+  lhs = function.outer( funcsp.grad(geom), stress(funcsp,geom) ).sum([2,3])
+  rhs = ( funcsp[:,:]*s_ex.dotnorm(geom)[_,:] ).sum([1])
+  K = tdomain.integrate( lhs, geometry=geom, ischeme='gauss2' )
+  f = tdomain.boundary['right,top'].integrate( rhs,  geometry=geom, ischeme='gauss2' )
+
+  sol = K.solve( f )
+  u = funcsp.dot( sol )
+  s = stress( u, geom )
+
+  #Compute errors
+  e = u - u_ex
+  L2_ex, L2, H1_ex, H1 = numpy.sqrt( tdomain.integrate( [l2(u_ex),l2(e),h1(u_ex,geom),h1(e,geom)], geometry=geom, ischeme='gauss2' ) )
+
+  log.info( 'Relative L2-error = %10.8e' % (L2/L2_ex) )
+  log.info( 'Relative H1-error = %10.8e' % (H1/H1_ex) )
+
+  #Plot solution
+  if plots:
+    points, s_vals, s_ex_vals = tdomain.simplex.elem_eval( [ geom, s[0,0]/float(Tx), s_ex[0,0]/float(Tx) ], ischeme='vertex2', separate=True )
+    with plot.PyPlot( 'stress' ) as plt:
+      plt.mesh( points, s_vals, triangulate='bezier' )
+      plt.colorbar()
+      plt.axis('equal')
+    with plot.PyPlot( 'stress_ex' ) as plt:
+      plt.mesh( points, s_ex_vals, triangulate='bezier' )
+      plt.colorbar()
+      plt.axis('equal')
+    with plot.PyPlot( 'stress_err' ) as plt:
+      plt.mesh( points, s_vals-s_ex_vals, triangulate='bezier' )
+      plt.colorbar()
+      plt.axis('equal')
+
+  return L2/L2_ex, H1/H1_ex, f, sol
+
+def conv ( niter=4, L=4, R=1, E=1e5, nu=0.3, Tx=10, m=4, p=2, maxrefine=4, plots=False ):
+
+  __logger__ = log.range( 'refine', niter )
+  l2err, h1err, f, sol = zip( *[ main( L=L, R=R, E=E, nu=nu, Tx=Tx, m=m*(2**i), p=p, maxrefine=maxrefine, plots=False ) for i in __logger__  ] )
+  h = (L/float(m)) * .5**numpy.arange(niter)
+
+  with plot.PyPlot( 'convergence' ) as plt:
+    plt.subplot( 211 )
+    plt.loglog( h, l2err, 'k*--' )
+    plt.slope_triangle( h, l2err )
+    plt.ylabel( 'L2 error' )
+    plt.grid( True )
+    plt.subplot( 212 )
+    plt.loglog( h, h1err, 'k*--' )
+    plt.slope_triangle( h, h1err )
+    plt.ylabel( 'H1 error' )
+    plt.grid( True )
+
+def unittest ():
+  retvals = main( m=3, plots=False )
+  assert debug.checkdata( retvals, '''
+    eNp1j4tpAzAMRNdJQC76fwbK/ivUkhJooQXDs6zz6UTwUCB7wsOZ4nUMCPlS4YFf8OdhDmkBh3HzZ4/C
+    qk0k0V9HICqwSZxXy5CV2rUaDf+bcY94UttrYDUJRX+NO4wySY+a5lzCYzRHbJc4LDKtuyB73dwB5IxN
+    1c6QwCbUNZvF9Kuy6ZnZfUqvqbn3vXWtXrRqGTwU2prJlzhUZFvS6nL9JW11KTP32ARLOEQ2Tnex8n2Z
+    5QNM/UoKjnvFdiT3N6nqXmR9D3m+X9w/l412BGWNvUzePvzR8MQ8zETTSsR3CjF6a2R8nvD8BnfOeqw=''' )
+
+  #TO DO: subvertex for simplex ndims>1
+  #retvals = main( m=None, plots=False )
+  #assert debug.checkdata( retvals, '' )
+
+util.run( main, conv, unittest )

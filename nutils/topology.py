@@ -518,7 +518,7 @@ class Topology( object ):
     levelset = function.ascompiled( levelset )
     poselems = []
     negelems = []
-    __log__ = log.iter( 'elem', self.structure.ravel() )
+    __log__ = log.iter( 'elem', self )
     for elem in __log__:
       pos, neg = elem.trim( levelset=levelset, maxrefine=maxrefine, numer=numer )
       if pos:
