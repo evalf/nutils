@@ -14,13 +14,20 @@ def makeplots( domain, geom, stress ):
     plt.xlim( 0, 1.5 )
 
 
-def main( nelems=8, maxrefine=2, stress=library.Hooke(lmbda=1,mu=1), plots=True, solvetol=1e-5 ):
+def main( nelems=None, maxrefine=2, degree=1, stress=library.Hooke(lmbda=1,mu=1), plots=True, solvetol=1e-5 ):
 
-  verts = numpy.linspace( 0, 1, nelems+1 )
-  wholedomain, geom = mesh.rectilinear( [verts,verts] )
+  if nelems:
+    verts = numpy.linspace( 0, 1, nelems+1 )
+    wholedomain, geom = mesh.rectilinear( [verts,verts] )
+  else:
+    wholedomain, geom = mesh.demo()
+    if degree != 1:
+      log.warning( 'setting degree=1 for triangular mesh' )
+      degree = 1
+
   levelset = function.norm2( geom ) - .5
   domain, complement = wholedomain.trim( levelset, maxrefine=maxrefine )
-  dspace = domain.splinefunc( degree=2 ).vector( 2 )
+  dspace = domain.splinefunc( degree=degree ).vector( 2 )
 
   support = domain.integrate( function.norm2( dspace ), geometry=geom, ischeme='gauss6' )
   cons = util.NanVec( len(support) )
@@ -41,14 +48,20 @@ def main( nelems=8, maxrefine=2, stress=library.Hooke(lmbda=1,mu=1), plots=True,
 
 def unittest():
 
-  retvals = main( nelems=4, maxrefine=2, plots=False, solvetol=0 )
+  retvals = main( nelems=None, degree=2, maxrefine=2, plots=False, solvetol=0 )
+  assert debug.checkdata( retvals, '''
+    eNp9UMsOwyAM+51WClPegc/ZYdf+/3ENsK2rukkgOwQ7BoJFgWyFZZHm9CgKhoiJQi6J7MyJVGvtyO6J
+    eMtF1nBWym5J1Wo/Usc66rCj8QtVRL8GGs/BQ184aE/k6V3MbDczKII8SLByJxyjNQIVIbapEm2RHYqQ
+    RJtaxaofBTX1WTFlVAPW1i/s/7Ldt3fC5Mc99JOdm+fn/jK6kP71vWyusD4BEutu9A==''' )
+
+  retvals = main( nelems=4, degree=2, maxrefine=2, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
     eNq9UUlqQzEMvc4P2EGTJes4WWSb+y+r4SeUEkrbRcHmSc96mozjkIHrMo4DrqOPC+N9Bu1siYq+73MN
     MdP0mRwSCYUSQ7KMPUNCoie1UU4KOKmJYpGGIw1LEmLghdplBLjSsaxdiO6NqB1nHbd3+4bVpiw7EUov
     TIULAH6Dr/knba4OAi1HmLRy4tjApkAdRNgPwXsSqWJ1alKJ00hSn6SRSxuLViWvsmssgdqu1pjhYxeN
     5db7ZAbvvKRlCFClYu4uGExasbsEErWCXeDs5MuJD3/Zj9vj7f309E3UT++fv+N/2nu3ossHV4fDXw==''' )
 
-  retvals = main( nelems=4, maxrefine=3, plots=False, solvetol=0 )
+  retvals = main( nelems=4, degree=2, maxrefine=3, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
     eNq9UUtqQzEMvM4L2EV/S8fpotvcf1lLeg0lhBCyCNjIHs2MZBnHIQP1Mo4DvkavUISfueFgzWiUdx2y
     HPPOFJKRUCjjluhiS8qW2Ak5KjcExZ77vum8bdpWFpZcTKqcABeRRb3LQOGMaM1bhYv7OvXVjug6I7Qf
