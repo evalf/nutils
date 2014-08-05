@@ -595,7 +595,7 @@ class StructuredTopology( Topology ):
         s = tuple(s)
         belems = numpy.frompyfunc( lambda elem: elem.edge( iedge ) if elem is not None else None, 1, 1 )( self.structure[s] )
       else:
-        belems = numpy.array( self.structure[-iside].edge( 1-iedge ) )
+        belems = numpy.array( self.structure[iside-1].edge( iedge ) )
       periodic = [ d - (d>idim) for d in self.periodic if d != idim ] # TODO check that dimensions are correct for ndim > 2
       boundaries.append( StructuredTopology( belems, periodic=periodic ) )
 
