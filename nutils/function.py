@@ -555,7 +555,7 @@ class ElemSign( ArrayFunc ):
       sign = trans.sign( ndims+1, ndims )
     except:
       sign = 1 # for situations like 3D geom and 2D topo. Needs some thinking.
-    return sign
+    return numpy.array(sign)
 
   def _opposite( self ):
     return ElemSign( self.ndims, 1-self.side )
