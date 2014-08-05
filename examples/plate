@@ -42,20 +42,20 @@ def main ( L=4, R=1, E=1e5, nu=0.3, Tx=10, m=5, p=2, maxrefine=4, plots=True ):
 
   #Get the exact solution
   u_ex = exact( geom, L, R, E, nu, Tx )
-  s_ex = stress( u_ex, geom )
+  s_ex = stress( u_ex.symgrad(geom) )
 
   #Set up the FE problem
   funcspu = tdomain.splinefunc( p, removedofs=((0,),None) )
   funcspv = tdomain.splinefunc( p, removedofs=(None,(0,)) )
   funcsp = function.vectorize( (funcspu,funcspv) )
-  lhs = function.outer( funcsp.grad(geom), stress(funcsp,geom) ).sum([2,3])
+  lhs = function.outer( funcsp.grad(geom), stress(funcsp.symgrad(geom)) ).sum([2,3])
   rhs = ( funcsp[:,:]*s_ex.dotnorm(geom)[_,:] ).sum([1])
   K = tdomain.integrate( lhs, geometry=geom, ischeme='gauss2' )
   f = tdomain.boundary['right,top'].integrate( rhs,  geometry=geom, ischeme='gauss2' )
 
   sol = K.solve( f )
   u = funcsp.dot( sol )
-  s = stress( u, geom )
+  s = stress( u.symgrad(geom) )
 
   #Compute errors
   e = u - u_ex
