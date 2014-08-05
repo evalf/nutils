@@ -27,17 +27,20 @@ def rectilinear( richshape, periodic=(), name='rect' ):
   shape = []
   offset = []
   scale = []
+  uniform = True
   for v in richshape:
     if isinstance( v, int ):
       assert v > 0
       shape.append( v )
       scale.append( 1 )
       offset.append( 0 )
-    else:
-      assert numpy.equal( v, numpy.linspace(v[0],v[-1],len(v)) ).all()
+    elif numpy.equal( v, numpy.linspace(v[0],v[-1],len(v)) ).all():
       shape.append( len(v)-1 )
       scale.append( (v[-1]-v[0]) / float(len(v)-1) )
       offset.append( v[0] )
+    else:
+      shape.append( len(v)-1 )
+      uniform = False
   if all( o == 0 for o in offset[1:] ):
     offset = 0
   if all( s == scale[0] for s in scale[1:] ):
@@ -56,8 +59,13 @@ def rectilinear( richshape, periodic=(), name='rect' ):
   for index in indices.reshape( ndims, -1 ).T:
     structure[tuple(index)] = element.Element( reference, root << transform.shift(index) )
   topo = topology.StructuredTopology( structure, periodic=periodic )
-  coords = function.ElemFunc( ndims ) * scale + offset
-  return topo, coords
+  if uniform:
+    geom = function.ElemFunc( ndims ) * scale + offset
+  else:
+    funcsp = topo.splinefunc( degree=1, periodic=() )
+    coords = numeric.meshgrid( *richshape ).reshape( ndims, -1 )
+    geom = ( funcsp * coords ).sum()
+  return topo, geom
 
 def revolve( topo, coords, nelems, degree=3, axis=0 ):
   'revolve coordinates'
