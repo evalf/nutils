@@ -67,13 +67,17 @@ class Orthotropic(object):
   
   def __init__( self, E, G, nu ):
 
-    vbar = function.product( nu )
+    E   = function.asarray(E)
+    nu  = function.asarray(nu)
+    G   = function.asarray(G)
+
+    vbar = function.product( nu,axis=0 )
     vv = nu[:,_]*nu[_,:]
     NE = -function.sqrt( E[:,_]*E[_,:] ) * ( vbar/vv + vv )  + function.diagonalize(E*(2.*nu**2-1.+vbar/nu**2))
     NE /= (nu**2).sum() + 2*vbar - 1
     
     self.NE     = NE
-    self.Gbar   = function.product( G )
+    self.Gbar   = function.product( G,axis=0 )
     self.Ginv   = 1./G
 
   def __call__( self, epsilon ):
