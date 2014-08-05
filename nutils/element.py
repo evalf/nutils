@@ -102,7 +102,7 @@ class Reference( object ):
   def getischeme( self, ischeme ):
     if self.ndims == 0:
       return numpy.zeros([1,0]), numpy.array([1.])
-    match = re.match( '([a-zA-Z]+)(.+)', ischeme )
+    match = re.match( '([a-zA-Z]+)(.*)', ischeme )
     assert match, 'cannot parse integration scheme %r' % ischeme
     ptype, args = match.groups()
     get = getattr( self, 'getischeme_'+ptype )
@@ -511,10 +511,9 @@ class SimplexReference( Reference ):
   def edges( self ):
     edge = SimplexReference( self.ndims-1 )
     eye = numpy.eye( self.ndims, dtype=int )
-    return [
-      ( transform.updim( eye[range(i)+range(i+1,self.ndims)].T, sign=1 if i%1 else -1 ), edge )
-          for i in range( self.ndims ) ] + [
-      ( transform.shift( eye[0] ) << transform.updim( (eye[1:]-eye[0]).T, sign=1 ), edge ) ]
+    return [ ( transform.shift( eye[0] ) << transform.updim( (eye[1:]-eye[0]).T, sign=1 ), edge ) ] \
+         + [ ( transform.updim( eye[range(i)+range(i+1,self.ndims)].T, sign=1 if i%1 else -1 ), edge )
+                  for i in range( self.ndims ) ]
 
   def __str__( self ):
     return 'SimplexReference(%d)' % self.ndims
@@ -1031,35 +1030,30 @@ class BubbleTriangle( StdElem ):
 
   __slots__ = ()
 
-  def __init__( self, order ):
-    'constructor'
-
-    assert order == 1
+  def __init__( self ):
+    StdElem.__init__( self, ndims=2, nshapes=4 )
 
   def eval( self, points, grad=0 ):
     'eval'
 
-    npoints, ndim = points.shape
+    npoints, ndims = points.shape
+    assert ndims == 2, 'Triangle takes 2D coordinates'
+    x, y = points.T
     if grad == 0:
-      x, y = points.T
-      data = numpy.array( [ x, y, 1-x-y, 27*x*y*(1-x-y) ] ).T
+      data = numpy.array( [ 1-x-y, x, y, 27*x*y*(1-x-y) ] ).T
     elif grad == 1:
-      x, y = points.T
-      const_block = numpy.array( [1,0,0,1,-1,-1]*npoints, dtype=float ).reshape( npoints,3,2 )
-      grad1_bubble = 27*numpy.array( [y*(1-2*x-y),x*(1-x-2*y)] ).T.reshape( npoints,1,2 )
-      data = numpy.concatenate( [const_block, grad1_bubble], axis=1 )
+      data = numpy.empty( (npoints,4,2) )
+      data[:] = [-1,-1], [1,0], [0,1], [27*y*(1-2*x-y),27*x*(1-x-2*y)]
     elif grad == 2:
-      x, y = points.T
-      zero_block = numpy.zeros( (npoints,3,2,2) )
-      grad2_bubble = 27*numpy.array( [-2*y,1-2*x-2*y, 1-2*x-2*y,-2*x] ).T.reshape( npoints,1,2,2 )
-      data = numpy.concatenate( [zero_block, grad2_bubble], axis=1 )
+      data = numpy.zeros( (npoints,4,2,2) )
+      data[:,3] = [-27*2*y,27*(1-2*x-2*y)], [27*(1-2*x-2*y),-27*2*x]
     elif grad == 3:
-      zero_block = numpy.zeros( (3,2,2,2) )
-      grad3_bubble = 27*numpy.array( [0,-2,-2,-2,-2,-2,-2,0], dtype=float ).reshape( 1,2,2,2 )
-      data = numpy.concatenate( [zero_block, grad3_bubble], axis=0 )
+      data = numpy.zeros( (1,4,2,2,2) )
+      data[:,3] = -2
+      data[:,3,0,0,0] = 0
+      data[:,3,1,1,1] = 0
     else:
-      assert ndim==2, 'Triangle takes 2D coordinates' # otherwise tested by unpacking points.T
-      data = numpy.array( 0 ).reshape( (1,) * (grad+2) )
+      data = numpy.zeros( (1,4)+(2,)*grad )
     return data
 
   def __repr__( self ):

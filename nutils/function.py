@@ -799,8 +799,13 @@ class Function( ArrayFunc ):
     head, tail = trans.lookup( stdmap )
     stds = stdmap[head]
     fvals = []
+    descend = 0
     for std, keep in stds:
       if std:
+        while descend:
+          head, _tail = head.parent
+          tail >>= _tail
+          descend -= 1
         transpoints = cache( tail.apply, points )
         F = cache( std.eval, transpoints, igrad )
         if keep is not None:
@@ -810,8 +815,7 @@ class Function( ArrayFunc ):
           for axis in range(-igrad,0):
             F = numeric.dot( F, matrix, axis )
         fvals.append( F )
-      head, _tail = head.parent
-      tail >>= _tail
+      descend += 1
     return fvals[0] if len(fvals) == 1 else numpy.concatenate( fvals, axis=-1-igrad )
 
   def _opposite( self ):

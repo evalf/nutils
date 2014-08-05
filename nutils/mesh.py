@@ -122,8 +122,6 @@ def gmesh( path, btags={}, name=None ):
   fmap = {}
 
   assert lines.next() == '$Elements\n'
-  domainelem = element.Element( ndims=2, vertices=[] )
-  vertexobjs = numpy.array( [ element.PrimaryVertex( '%s(%d)' % (name,ivertex) ) for ivertex in range(nvertices) ], dtype=object )
   for ielem in range( int( lines.next() ) ):
     items = lines.next().split()
     assert int( items[0] ) == ielem + 1
@@ -138,7 +136,8 @@ def gmesh( path, btags={}, name=None ):
       if elemtype == 2: # interior element, triangle
         if numpy.linalg.det( elemcoords[:2] - elemcoords[2] ) < 0:
           elemvertices[:2] = elemvertices[1], elemvertices[0]
-        elem = element.TriangularElement( vertices=vertexobjs[ elemvertices ] )
+        ref = element.SimplexReference(2)
+        elem = element.Element( ref, transform.MapTrans(ref.vertices,elemvertices) )
         stdelem = element.PolyTriangle( 1 )
       else: # interior element, quadrilateral
         raise NotImplementedError
@@ -148,7 +147,7 @@ def gmesh( path, btags={}, name=None ):
       fmap[ elem ] = stdelem
       nmap[ elem ] = elemvertices
       for n in elemvertices:
-        connected[ n ].add( elem )
+        connected[ n ].add( tuple(elemvertices) )
     elif elemtype == 15: # boundary vertex
       pass
     else:
@@ -157,31 +156,17 @@ def gmesh( path, btags={}, name=None ):
 
   belements = []
   bgroups = {}
-  for vertices, tags in boundary:
-    n1, n2 = vertices
-    elem, = connected[n1] & connected[n2]
-    loc_vert_indices = [elem.vertices.index(vertexobjs[v]) for v in vertices] # in [0,1,2]
-    match = numpy.array( loc_vert_indices ).sum()-1
-    iedge = [1, 0, 2][match]
-    belem = elem.edge( iedge )
+  for bvertices, tags in boundary:
+    n1, n2 = bvertices
+    elemvertices, = connected[n1] & connected[n2]
+    assert len(elemvertices) == 3 # just triangles for now
+    iedge, = [ i for i, v in enumerate(elemvertices) if v not in bvertices ]
+    ref = element.SimplexReference(2)
+    trans, edge = ref.edge(iedge)
+    belem = element.Element( edge, transform.MapTrans(ref.vertices,elemvertices) << trans )
     belements.append( belem )
     for tag in tags:
       bgroups.setdefault( tag, [] ).append( belem )
-
-  structured = True
-  for i, el in enumerate( belements ):
-    if not set(belements[i-1].vertices) & set(el.vertices):
-      structured = False
-      numpy.warnings.warn( 'Boundary elements are not sorted: boundary group will be an unstructured Topology.' )
-      break
-
-  linearfunc = function.function( fmap, nmap, nvertices, 2 )
-  # Extend linearfunc by bubble functions for the P^1+bubble basis
-  fmap_b, nmap_b = {}, {}
-  for i, (key,val) in enumerate( nmap.iteritems() ): # enumerate bubble functions
-    fmap_b[key] = element.BubbleTriangle( 1 )
-    nmap_b[key] = numpy.concatenate( [val, [nvertices+i]] )
-  bubblefunc = function.function( fmap_b, nmap_b, nvertices+len(nmap), 2 )
 
   topo = topology.Topology( elements )
   topo.boundary = topology.Topology( belements )
@@ -193,7 +178,8 @@ def gmesh( path, btags={}, name=None ):
       pass
     topo.boundary.groups[tag] = topology.Topology( group )
 
-  geom = linearfunc.dot( coords )
+  linearfunc = topo.stdfunc()
+  geom = ( linearfunc[:,_] * coords ).sum(0)
   return topo, geom
 
 def triangulation( vertices, nvertices ):
@@ -371,7 +357,7 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
     elem = element.Element( reference, root << trans )
     elements.append( elem )
 
-  belems = [ elem.edge(2) for elem in elements[:12] ]
+  belems = [ elem.edge(0) for elem in elements[:12] ]
   bgroups = { 'top': belems[0:3], 'left': belems[3:6], 'bottom': belems[6:9], 'right': belems[9:12] }
 
   topo = topology.Topology( elements )

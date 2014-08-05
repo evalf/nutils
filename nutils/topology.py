@@ -41,7 +41,7 @@ class Topology( object ):
   def __iter__( self ):
     return iter( self.elements )
 
-  def stdfunc( self, degree ):
+  def stdfunc( self, degree=1 ):
     'spline from vertices'
 
     assert degree == 1 # for now!
@@ -61,6 +61,28 @@ class Topology( object ):
       fmap[elem.transform] = (stdfunc,None),
       nmap[elem.transform] = dofs
     return function.function( fmap=fmap, nmap=nmap, ndofs=len(dofmap), ndims=self.ndims )
+
+  def bubblefunc( self ):
+    'spline from vertices'
+
+    assert self.ndims == 2
+    dofmap = {}
+    fmap = {}
+    nmap = {}
+    stdfunc = element.BubbleTriangle()
+    for ielem, elem in enumerate(self):
+      assert elem.reference == element.SimplexReference(2)
+      dofs = numpy.empty( elem.nverts+1, dtype=int )
+      for i, v in enumerate( elem.vertices ):
+        dof = dofmap.get(v)
+        if dof is None:
+          dof = len(self) + len(dofmap)
+          dofmap[v] = dof
+        dofs[i] = dof
+      dofs[ elem.nverts ] = ielem
+      fmap[elem.transform] = (stdfunc,None),
+      nmap[elem.transform] = dofs
+    return function.function( fmap=fmap, nmap=nmap, ndofs=len(self)+len(dofmap), ndims=self.ndims )
 
   def splinefunc( self, degree ):
 
@@ -528,6 +550,9 @@ class Topology( object ):
     return TrimmedTopology( self, poselems ), \
            TrimmedTopology( self, negelems )
 
+def UnstructuredTopology( elems, ndims ):
+  return Topology( elems )
+
 class StructuredTopology( Topology ):
   'structured topology'
 
@@ -563,7 +588,7 @@ class StructuredTopology( Topology ):
       iside = iedge % 2
       if self.ndims > 1:
         s = [ slice(None,None,-1) ] * idim \
-          + [ -iside, ] \
+          + [ iside-1, ] \
           + [ slice(None,None,1) ] * (self.ndims-idim-1)
         if not iside: # TODO: check that this is correct for all dimensions; should match conventions in elem.edge
           s[idim-1] = slice(None,None,1 if idim else -1)
@@ -577,7 +602,7 @@ class StructuredTopology( Topology ):
     allbelems = [ belem for boundary in boundaries for belem in boundary.structure.flat if belem is not None ]
     topo = Topology( allbelems )
 
-    topo.groups = dict( zip( ( 'left', 'right', 'bottom', 'top', 'front', 'back' ), boundaries ) )
+    topo.groups = dict( zip( ( 'right', 'left', 'top', 'bottom', 'back', 'front' ), boundaries ) )
     return topo
 
   @cache.property
