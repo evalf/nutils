@@ -37,7 +37,7 @@ class Hooke:
 
     if verify:
       for key, value in kwargs.items():
-        numpy.testing.assert_almost_equal( value, getattr(self,key) )
+        numpy.testing.assert_approx_equal( value, getattr(self,key) )
 
   def _set_from_lame( self, lmbda, mu ):
     self.lmbda = float(lmbda)
@@ -76,7 +76,7 @@ class Orthotropic(object):
     self.Gbar   = function.product( G )
     self.Ginv   = 1./G
 
-  def __call__( self, epsilson ):
+  def __call__( self, epsilon ):
     assert epsilon.shape[-1] == epsilon.shape[-2]
     epsdiag = function.takediag( epsilon )
     GG = self.Ginv[:,_] * self.Ginv[_,:] * self.Gbar
