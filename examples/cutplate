@@ -35,13 +35,13 @@ def main( nelems=None, maxrefine=2, degree=1, stress=library.Hooke(lmbda=1,mu=1)
   cons |= domain.boundary['left,right'].project( geom*[.5,0], geometry=geom, ischeme='gauss6', onto=dspace )
   cons |= domain.boundary['right'].project( [.5,0], geometry=geom, ischeme='gauss6', onto=dspace )
 
-  elasticity = function.outer( dspace.grad(geom), stress(dspace,geom) ).sum([2,3])
+  elasticity = function.outer( dspace.grad(geom), stress(dspace.symgrad(geom)) ).sum([2,3])
   matrix = domain.integrate( elasticity, geometry=geom, ischeme='gauss6' )
   lhs = matrix.solve( constrain=cons, tol=solvetol, symmetric=True )
   disp = dspace.dot( lhs )
 
   if plots:
-    makeplots( domain, geom+disp, stress(disp,geom) )
+    makeplots( domain, geom+disp, stress(disp.symgrad(geom)) )
 
   return lhs, cons
 

@@ -47,9 +47,10 @@ class Hooke:
     self.lmbda = (nu*E)/((1.+nu)*(1.-2.*nu))
     self.mu = E/(2.*(1.+nu))
 
-  def __call__ ( self, disp, coords ): 
-    return self.lmbda * disp.div(coords)[...,_,_] * function.eye( coords.shape[0] ) \
-      + (2*self.mu) * disp.symgrad(coords)
+  def __call__ ( self, epsilon ):
+    ndims = epsilon.shape[-2]
+    assert epsilon.shape[-1] == ndims
+    return self.lmbda * function.trace( epsilon )[...,_,_] * function.eye(ndims) + 2 * self.mu * epsilon
     
   def __str__( self ):
     return 'Hooke(mu=%s,lmbda=%s)' % ( self.mu, self.lmbda )
@@ -75,11 +76,9 @@ class Orthotropic(object):
     self.Gbar   = function.product( G )
     self.Ginv   = 1./G
 
-
-  def __call__( self, disp, coords ):
-    gradu = disp.grad( coords )
-    diag_gradu = function.takediag( gradu )
-    GG = self.Ginv[:,_]*self.Ginv[_,:]*self.Gbar
-    return function.diagonalize( (self.NE * diag_gradu[...,_,:]).sum() - 2.*self.Gbar*self.Ginv**2*diag_gradu ) \
-        + GG*( gradu+gradu.swapaxes(-2,-1) )
+  def __call__( self, epsilson ):
+    assert epsilon.shape[-1] == epsilon.shape[-2]
+    epsdiag = function.takediag( epsilon )
+    GG = self.Ginv[:,_] * self.Ginv[_,:] * self.Gbar
+    return function.diagonalize( (self.NE * epsdiag[...,_,:]).sum() - 2.*self.Gbar*self.Ginv**2*epsdiag ) + 2 * GG * epsilon
       
