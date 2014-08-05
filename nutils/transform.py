@@ -332,15 +332,17 @@ class VertexTransform( Transform ):
 class MapTrans( VertexTransform ):
 
   def __init__( self, coords, vertices ):
-    self.coords = coords
-    self.vertices = rational.asarray(vertices)
-    nverts, ndims = vertices.shape
+    self.coords = rational.asarray(coords)
+    nverts, ndims = coords.shape
+    assert len(vertices) == nverts
+    self.vertices = vertices
     VertexTransform.__init__( self, ndims )
 
   def apply( self, coords ):
-    assert coord.ndim == 1
-    mycoords, coords, common = rational.common_factor( self.coords, coord )
-    return [ self.vertices[mycoords.tolist().index(coord.tolist())] for coord in coords ]
+    assert coords.ndim == 2
+    self_coords, coords, common = rational.common_factor( self.coords, coords )
+    indices = map( self_coords.tolist().index, coords.tolist() )
+    return [ self.vertices[n] for n in indices ]
 
 class RootTrans( VertexTransform ):
 
