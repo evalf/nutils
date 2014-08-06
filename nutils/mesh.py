@@ -170,7 +170,7 @@ def gmesh( path, btags={}, name=None ):
     assert len(elemvertices) == 3 # just triangles for now
     iedge, = [ i for i, v in enumerate(elemvertices) if v not in bvertices ]
     ref = element.SimplexReference(2)
-    trans, edge = ref.edge(iedge)
+    trans, edge = ref.edges[iedge]
     belem = element.Element( edge, transform.MapTrans(ref.vertices,elemvertices) << trans )
     belements.append( belem )
     for tag in tags:
