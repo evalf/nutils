@@ -264,10 +264,10 @@ class Topology( object ):
       assert all( isinstance(sh,int) for sh in func.shape )
       idata.append( function.elemint( func, iweights ) )
       retvals.append( numpy.empty( (len(self),)+func.shape ) )
-    idata = function.Tuple( idata )
+    idata = function.Tuple( idata ).compiled()
 
     for ielem, elem in enumerate( self ):
-      area_data = idata( elem, ischeme )
+      area_data = idata.eval( elem, ischeme )
       area = area_data[0].sum()
       for retval, data in zip( retvals, area_data[1:] ):
         retval[ielem] = data / area
