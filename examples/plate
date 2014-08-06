@@ -3,7 +3,7 @@
 
 from nutils import *
 
-def exact( geom, L, R, E, nu, Tx ):
+def exact( geom, R, E, nu, Tx ):
 
   r = function.norm2( geom )
   theta = function.arctan2(geom[1],geom[0])
@@ -41,7 +41,7 @@ def main ( L=4, R=1, E=1e5, nu=0.3, Tx=10, m=5, p=2, maxrefine=4, plots=True ):
   tdomain, complement = domain.trim( function.norm2( geom )-R**2, maxrefine=maxrefine, eps=5e-3 )
 
   #Get the exact solution
-  u_ex = exact( geom, L, R, E, nu, Tx )
+  u_ex = exact( geom, R, E, nu, Tx )
   s_ex = stress( u_ex.symgrad(geom) )
 
   #Set up the FE problem
@@ -68,16 +68,19 @@ def main ( L=4, R=1, E=1e5, nu=0.3, Tx=10, m=5, p=2, maxrefine=4, plots=True ):
   log.info( 'Relative L2-error = %10.8e' % (L2/L2_ex) )
   log.info( 'Relative H1-error = %10.8e' % (H1/H1_ex) )
 
-  K_dense = K.toarray()
-  cond = numpy.linalg.cond(K_dense) 
-  log.info( 'Condition number = %4.2e' % cond )
-  diag = numpy.diag(K_dense)
-  log.info( 'Condition number (est.) = %4.2e' % (max(diag)/min(diag),) )
-  precon  = 1./numpy.sqrt(diag)
-  K_dense*=precon[_,:]
-  K_dense*=precon[:,_]
-  cond_diag = numpy.linalg.cond(K_dense)
-  log.info( 'Condition number (preconditioned) = %4.2e' % cond_diag )
+  if m < 10:
+    K_dense = K.toarray()
+    cond = numpy.linalg.cond(K_dense) 
+    log.info( 'Condition number = %4.2e' % cond )
+    diag = numpy.diag(K_dense)
+    log.info( 'Condition number (est.) = %4.2e' % (max(diag)/min(diag),) )
+    precon  = 1./numpy.sqrt(diag)
+    K_dense*=precon[_,:]
+    K_dense*=precon[:,_]
+    cond_diag = numpy.linalg.cond(K_dense)
+    log.info( 'Condition number (preconditioned) = %4.2e' % cond_diag )
+  else:
+    cond = cond_diag = None
 
   #Plot solution
   if plots:
@@ -127,9 +130,10 @@ def conv ( niter=4, L=4, R=1, E=1e5, nu=0.3, Tx=10, m=4, p=2, maxrefine=4, plots
 def unittest ():
   retvals = main( m=3, plots=False )
   assert debug.checkdata( retvals, '''
-    eNp1j4tpAzAMRNdJQC76fwbK/ivUkhJooQXDs6zz6UTwUCB7wsOZ4nUMCPlS4YFf8OdhDmkBh3HzZ4/C
-    qk0k0V9HICqwSZxXy5CV2rUaDf+bcY94UttrYDUJRX+NO4wySY+a5lzCYzRHbJc4LDKtuyB73dwB5IxN
-    1c6QwCbUNZvF9Kuy6ZnZfUqvqbn3vXWtXrRqGTwU2prJlzhUZFvS6nL9JW11KTP32ARLOEQ2Tnex8n2Z
-    5QNM/UoKjnvFdiT3N6nqXmR9D3m+X9w/l412BGWNvUzePvzR8MQ8zETTSsR3CjF6a2R8nvD8BnfOeqw=''' )
+    eNp1kYtpAzAMRNdJQC76fwbK/ivUkhJooQXDs6zz+YQJHgpkT3g4U7yOASFfKjzwC/5czCEt4DBu/uxR
+    WLWJJPrrCEQFNonzahmyUrtWo+F/b9wlntT2GlhNQtFfzx1GmaRHTXM24TGaI7ZDHBaZ1h2QvW7uAHLG
+    pmpnSGAT6prNYvpV2fTM7D6l19Tc8966Vi9atQweCm3N5EscKrItaXW5/pK2upR599gESzhENk53sPI9
+    meEDTP1KCo57xXYk9zap6m5kfQ95vk/cP5uNdgRljb1M3j780fDEPMxE00rEdwoxemtkfJ6g9y8ZgnG+
+    V1OGz284a39N''' )
 
 util.run( main, conv, unittest )
