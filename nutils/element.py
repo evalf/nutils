@@ -144,6 +144,7 @@ class Reference( object ):
 
     if not maxrefine:
 
+      int_numer = int(numer)
       assert not trans, 'failed to evaluate levelset up to level maxrefine'
       assert levelset.shape == (self.nverts,)
       repeat = True
@@ -157,37 +158,44 @@ class Reference( object ):
         for ribbon in self.ribbon2vertices:
           a, b = levelset[ribbon]
           if a * b < 0: # strict sign change
-            x = int( numer * a / float(a-b) + .5 ) # round to [0,1,..,numer]
-            if 0 < x < numer:
+            x = int( int_numer * a / float(a-b) + .5 ) # round to [0,1,..,numer]
+            if 0 < x < int_numer:
               isects.append(( x, ribbon ))
             else: # near intersection of vertex
-              v = ribbon[ (0,numer).index(x) ]
+              v = ribbon[ (0,int_numer).index(x) ]
               log.debug( 'rounding vertex #%d from %f to 0' % ( v, levelset[v] ) )
               levelset[v] = 0
               repeat = True
-      coords = self.vertices
+      coords = self.vertices * int_numer
       if isects:
         coords = numpy.vstack([
-          self.vertices * int(numer),
-          [ numpy.dot( (int(numer)-x,x), self.vertices[ribbon] ) for x, ribbon in isects ]
+          self.vertices * int_numer,
+          [ numpy.dot( (int_numer-x,x), self.vertices[ribbon] ) for x, ribbon in isects ]
         ])
       assert coords.dtype == int
       simplex = SimplexReference( self.ndims )
-      for tri in util.delaunay( coords ):
-        ispos = isneg = False
-        for ivert in tri:
-          if ivert < self.nverts:
-            sign = levelset[ivert]
-            ispos = ispos or sign > 0
-            isneg = isneg or sign < 0
-        assert ispos is not isneg, 'domains do not separate in two convex parts'
+      triangulation = util.delaunay( coords )
+      sign = [ all( levelset[tri[tri<self.nverts]] > 0 )
+             - all( levelset[tri[tri<self.nverts]] < 0 ) for tri in triangulation ]
+
+      if not all(sign): # fast route failed, fall back on separate triangulations
+        I = numpy.concatenate([ numpy.where( levelset >= 0 )[0], numpy.arange( self.nverts, len(coords) ) ])
+        postri = [ I[tri] for tri in util.delaunay( coords[I] ) ]
+        I = numpy.concatenate([ numpy.where( levelset <= 0 )[0], numpy.arange( self.nverts, len(coords) ) ])
+        negtri = [ I[tri] for tri in util.delaunay( coords[I] ) ]
+        assert sorted( sorted(tri) for tri in postri if all(tri >= self.nverts) ) \
+            == sorted( sorted(tri) for tri in negtri if all(tri >= self.nverts) ), 'element does not separate in two contex parts'
+        triangulation = postri + negtri
+        sign = [1] * len(postri) + [-1] * len(negtri)
+
+      for i, tri in enumerate( triangulation ):
         offset = coords[tri[0]]
         matrix = ( coords[tri[1:]] - offset ).T
         if numpy.linalg.det( matrix.astype(float) ) < 0:
           tri[-2:] = tri[-1], tri[-2]
           matrix = ( coords[tri[1:]] - offset ).T
         strans = transform.shift(offset,numer) << transform.linear(matrix,numer)
-        ( pos if ispos else neg ).append(( strans, simplex ))
+        ( pos if sign[i] > 0 else neg ).append(( strans, simplex ))
 
     else:
 
