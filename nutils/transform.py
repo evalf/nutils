@@ -24,7 +24,7 @@ class Transform( object ):
   def lookup( self, transforms ):
     if self not in transforms:
       return None
-    return self, identity(self,fromdims)
+    return self, identity(self.fromdims)
 
   def strip_from( self, ndims ):
     if self.fromdims == ndims:
@@ -63,9 +63,6 @@ class Transform( object ):
   def __rshift__( self, other ):
     # self >> other
     return other << self
-
-  def __str__( self ):
-    return '#%x' % id(self)
 
   def __repr__( self ):
     return '%s(%s)' % ( self.__class__.__name__, self )
@@ -335,7 +332,7 @@ class MapTrans( VertexTransform ):
     self.coords = rational.asarray(coords)
     nverts, ndims = coords.shape
     assert len(vertices) == nverts
-    self.vertices = vertices
+    self.vertices = tuple(vertices)
     VertexTransform.__init__( self, ndims )
 
   def apply( self, coords ):
@@ -343,6 +340,9 @@ class MapTrans( VertexTransform ):
     self_coords, coords, common = rational.common_factor( self.coords, coords )
     indices = map( self_coords.tolist().index, coords.tolist() )
     return [ self.vertices[n] for n in indices ]
+
+  def __str__( self ):
+    return ','.join( str(v) for v in self.vertices )
 
 class RootTrans( VertexTransform ):
 

@@ -140,22 +140,16 @@ def gmesh( path, btags={}, name=None ):
     elemcoords = coords[ elemvertices ]
     if elemtype == 1: # boundary edge
       boundary.append(( elemvertices, tags ))
-    elif elemtype in (2,4):
-      if elemtype == 2: # interior element, triangle
-        if numpy.linalg.det( elemcoords[:2] - elemcoords[2] ) < 0:
-          elemvertices[:2] = elemvertices[1], elemvertices[0]
-        ref = element.SimplexReference(2)
-        elem = element.Element( ref, transform.MapTrans(ref.vertices,elemvertices) )
-        stdelem = element.PolyTriangle( 1 )
-      else: # interior element, quadrilateral
-        raise NotImplementedError
-        elem = element.QuadElement( ndims=2 )
-        stdelem = element.PolyQuad( (2,2) )
-      elements.append( elem )
-      fmap[ elem ] = stdelem
-      nmap[ elem ] = elemvertices
+    elif elemtype == 2: # interior element, triangle
+      if numpy.linalg.det( elemcoords[:2] - elemcoords[2] ) < 0:
+        elemvertices[:2] = elemvertices[1], elemvertices[0]
+      ref = element.SimplexReference(2)
+      maptrans = transform.MapTrans(ref.vertices,elemvertices)
+      elements.append( element.Element(ref,maptrans) )
+      fmap[ maptrans ] = (ref.stdfunc(1),None),
+      nmap[ maptrans ] = elemvertices
       for n in elemvertices:
-        connected[ n ].add( tuple(elemvertices) )
+        connected[ n ].add( maptrans )
     elif elemtype == 15: # boundary vertex
       pass
     else:
@@ -166,12 +160,12 @@ def gmesh( path, btags={}, name=None ):
   bgroups = {}
   for bvertices, tags in boundary:
     n1, n2 = bvertices
-    elemvertices, = connected[n1] & connected[n2]
-    assert len(elemvertices) == 3 # just triangles for now
-    iedge, = [ i for i, v in enumerate(elemvertices) if v not in bvertices ]
+    maptrans, = connected[n1] & connected[n2]
+    assert len(maptrans.vertices) == 3 # just triangles for now
+    iedge, = [ i for i, v in enumerate(maptrans.vertices) if v not in bvertices ]
     ref = element.SimplexReference(2)
     trans, edge = ref.edges[iedge]
-    belem = element.Element( edge, transform.MapTrans(ref.vertices,elemvertices) << trans )
+    belem = element.Element( edge, maptrans << trans )
     belements.append( belem )
     for tag in tags:
       bgroups.setdefault( tag, [] ).append( belem )
@@ -186,12 +180,14 @@ def gmesh( path, btags={}, name=None ):
       pass
     topo.boundary.groups[tag] = topology.Topology( group )
 
-  linearfunc = topo.stdfunc()
+  linearfunc = function.function( fmap=fmap, nmap=nmap, ndofs=nvertices, ndims=topo.ndims )
   geom = ( linearfunc[:,_] * coords ).sum(0)
   return topo, geom
 
 def triangulation( vertices, nvertices ):
   'triangulation'
+
+  raise NotImplementedError
 
   bedges = {}
   nmap = {}
