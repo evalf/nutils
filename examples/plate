@@ -68,15 +68,17 @@ def main ( L=4, R=1, E=1e5, nu=0.3, Tx=10, m=5, p=2, maxrefine=4, plots=True ):
   log.info( 'Relative L2-error = %10.8e' % (L2/L2_ex) )
   log.info( 'Relative H1-error = %10.8e' % (H1/H1_ex) )
 
+  condition = numpy.linalg.cond if m < 10 else lambda mat : -1
+
   K_dense = K.toarray()
-  cond = numpy.linalg.cond(K_dense) 
+  cond = condition(K_dense) 
   log.info( 'Condition number = %4.2e' % cond )
   diag = numpy.diag(K_dense)
   log.info( 'Condition number (est.) = %4.2e' % (max(diag)/min(diag),) )
   precon  = 1./numpy.sqrt(diag)
   K_dense*=precon[_,:]
   K_dense*=precon[:,_]
-  cond_diag = numpy.linalg.cond(K_dense)
+  cond_diag = condition(K_dense)
   log.info( 'Condition number (preconditioned) = %4.2e' % cond_diag )
 
   #Plot solution
@@ -127,9 +129,10 @@ def conv ( niter=4, L=4, R=1, E=1e5, nu=0.3, Tx=10, m=4, p=2, maxrefine=4, plots
 def unittest ():
   retvals = main( m=3, plots=False )
   assert debug.checkdata( retvals, '''
-    eNp1j4tpAzAMRNdJQC76fwbK/ivUkhJooQXDs6zz6UTwUCB7wsOZ4nUMCPlS4YFf8OdhDmkBh3HzZ4/C
-    qk0k0V9HICqwSZxXy5CV2rUaDf+bcY94UttrYDUJRX+NO4wySY+a5lzCYzRHbJc4LDKtuyB73dwB5IxN
-    1c6QwCbUNZvF9Kuy6ZnZfUqvqbn3vXWtXrRqGTwU2prJlzhUZFvS6nL9JW11KTP32ARLOEQ2Tnex8n2Z
-    5QNM/UoKjnvFdiT3N6nqXmR9D3m+X9w/l412BGWNvUzePvzR8MQ8zETTSsR3CjF6a2R8nvD8BnfOeqw=''' )
+    eNp1kQlqQzEMRK+TgFy0LwfK/a9QS0qghRYMz7LG49H/BA8Fsic8nClex4CQLxUe+AV/LuaQFnAYN3/2
+    KKzaRBL9dQSiApvEebUMWaldq9HwvzfuEk9qew2sJqHor+cOo0zSo6Y5m/AYzRHbIQ6LTOsOyF43dwA5
+    Y1O1MySwCXXNZjH9qmx6Znaf0mtq7nlvXasXrVoGD4W2ZvIlDhXZlrS6XH9JW13KvHtsgiUcIhunO1j5
+    nszwAaZ+JQXHvWI7knubVHU3sr6HPN8n7p/NRjuCssZeJm8f/mh4Yh5momkl4juFGL01Mj7P+xFBGYJx
+    fq+mDJ/fOIF/Tg==''' )
 
 util.run( main, conv, unittest )
