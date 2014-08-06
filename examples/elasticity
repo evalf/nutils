@@ -25,7 +25,7 @@ def main( nelems=8, stress=library.Hooke(lmbda=1,mu=1), degree=2, plots=True, so
 
   cons = domain.boundary['left'].project( 0, geometry=geom, onto=dspace, ischeme='gauss2' ) \
        | domain.boundary['right'].project( .5, geometry=geom, onto=nfval, ischeme='gauss2' )
-  lhs = matrix.solve( constrain=cons, tol=solvetol, symmetric=True )
+  lhs = matrix.solve( constrain=cons, tol=solvetol, symmetric=True, precon='diag' )
   disp = dspace.dot( lhs )
 
   if plots:

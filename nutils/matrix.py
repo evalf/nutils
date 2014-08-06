@@ -218,7 +218,6 @@ class SparseMatrix( Matrix ):
       for irow, icols in enumerate( graph ):
         a, b = self.indptr[irow:irow+2]
         self.indices[a:b] = icols
-    self.precon_cache = {}
     Matrix.__init__( self, (nrows, ncols or nrows) )
 
   def reshape( self, (nrows,ncols) ):
@@ -422,23 +421,46 @@ class SparseMatrix( Matrix ):
     x[J] = krylov( matvec, b, x0=x0, tol=tol, maxiter=maxiter, restart=restart, callback=callback, precon=precon )
     return x
 
-  def getprecon( self, name='SPLU', constrain=None, lconstrain=None, rconstrain=None ):
-    name = name.upper()
-    x, I, J = parsecons( constrain, lconstrain, rconstrain, self.shape )
-    cij = tuple(numpy.where(~I)[0]), tuple(numpy.where(~J)[0]), name
-    precon = self.precon_cache.get( cij )
-    if precon is None:
-      log.info( 'building %s preconditioner' % name )
-      A = scipy.sparse.csr_matrix( (self.data,self.indices,self.indptr), shape=self.shape )[numpy.where(I)[0],:][:,numpy.where(J)[0]].tocsc()
-      if name == 'SPLU':
-        precon = scipy.sparse.linalg.splu( A )
-      elif name == 'SPILU':
-        precon = scipy.sparse.linalg.spilu( A, drop_tol=1e-5, fill_factor=None, drop_rule=None, permc_spec=None, diag_pivot_thresh=None, relax=None, panel_size=None, options=None )
-      else:
-        raise Exception, 'invalid preconditioner %r' % name
-      self.precon_cache[ cij ] = precon
-    return precon.solve
+  def select( self, rows, cols ):
+    if isinstance( rows, numpy.ndarray ) and rows.dtype == bool:
+      rows, = numpy.where( rows )
+    if isinstance( cols, numpy.ndarray ) and cols.dtype == bool:
+      cols, = numpy.where( cols )
+    assert len(rows) == len(cols)
+    select = numpy.empty( len(rows) )
+    for iitem, irow in enumerate( rows ):
+      icol = cols[iitem]
+      a, b = self.indptr[irow:irow+2]
+      i = a + numpy.searchsorted( self.indices[a:b], icol )
+      assert self.indices[i] == icol
+      select[iitem] = self.data[i]
+    return select
 
+  @property
+  def diag( self ):
+    nrows = self.shape[0]
+    assert self.shape[1] == ncols
+    I = range(nrows)
+    return self.select(I,I)
+
+  def getprecon( self, name='SPLU', constrain=None, lconstrain=None, rconstrain=None ):
+    name = name.lower()
+    x, I, J = parsecons( constrain, lconstrain, rconstrain, self.shape )
+    log.info( 'building %s preconditioner' % name )
+    if name == 'splu':
+      A = scipy.sparse.csr_matrix( (self.data,self.indices,self.indptr), shape=self.shape )[I,:][:,J].tocsc()
+      splu = scipy.sparse.linalg.splu( A )
+      precon = splu.solve
+    elif name == 'spilu':
+      A = scipy.sparse.csr_matrix( (self.data,self.indices,self.indptr), shape=self.shape )[I,:][:,J].tocsc()
+      spilu = scipy.sparse.linalg.spilu( A, drop_tol=1e-5, fill_factor=None, drop_rule=None, permc_spec=None, diag_pivot_thresh=None, relax=None, panel_size=None, options=None )
+      precon = spilu.solve
+    elif name == 'diag':
+      D = self.select(I,J)
+      precon = numpy.reciprocal( D ).__mul__
+    else:
+      raise Exception, 'invalid preconditioner %r' % name
+    return precon
 
 class DenseMatrix( Matrix ):
   'matrix wrapper class'
