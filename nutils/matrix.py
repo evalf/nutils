@@ -436,12 +436,9 @@ class SparseMatrix( Matrix ):
       select[iitem] = self.data[i]
     return select
 
-  @property
-  def diag( self ):
-    nrows = self.shape[0]
-    assert self.shape[1] == ncols
-    I = range(nrows)
-    return self.select(I,I)
+  def diag( self, constrain=None, lconstrain=None, rconstrain=None ):
+    x, I, J = parsecons( constrain, lconstrain, rconstrain, self.shape )
+    return self.select(I,J)
 
   def getprecon( self, name='SPLU', constrain=None, lconstrain=None, rconstrain=None ):
     name = name.lower()
