@@ -284,10 +284,10 @@ def breakpoint():
     its current state and even alter it. Closing the explorer will resume
     program execution.''' ).cmdloop()
 
-def base64_enc( obj, ndigit, prec ):
+def base64_enc( obj, nsig, ndec ):
   import zlib, binascii, re
-  serialized = __serialize( obj, ndigit, prec )
-  binary = zlib.compress( '1,(%d,%d),%s' % ( ndigit, prec, serialized ), 9 )
+  serialized = __serialize( obj, nsig, ndec )
+  binary = zlib.compress( '1,(%d,%d),%s' % ( nsig, ndec, serialized ), 9 )
   return re.sub( '(.{80})', r'\1\n', binascii.b2a_base64( binary ) )
 
 def base64_dec( base64 ):
@@ -297,27 +297,27 @@ def base64_dec( base64 ):
   proto, args, obj = eval( serialized, numpy.__dict__ )
   return proto, args, obj
 
-def __serialize( obj, ndigit, prec ):
+def __serialize( obj, nsig, ndec ):
   if isinstance(obj,int):
     return str(obj)
   if isinstance(obj,str):
     return repr(obj)
   if not isinstance( obj, float ): # assume iterable
-    return '(%s,)' % ','.join( __serialize(o,ndigit,prec) for o in obj )
+    return '(%s,)' % ','.join( __serialize(o,nsig,ndec) for o in obj )
   if not numpy.isfinite(obj): # nan, inf
     return str(obj)
   if not obj:
     return '0.'
   n = numeric.floor( numpy.log10( abs(obj) ) )
-  N = max( n-(ndigit-1), -prec )
+  N = max( n-(nsig-1), -ndec )
   i = int( obj * 10.**-N + ( .5 if obj >= 0 else -.5 ) )
   return '%de%d' % (i,N) if i and N else '%d.' % i
 
 @log.title
-def __compare( verify_obj, obj, ndigit, prec ):
+def __compare( verify_obj, obj, nsig, ndec ):
   if isinstance(verify_obj,tuple):
     if len(verify_obj) == len(obj):
-      return all([ __compare( vo, o, ndigit, prec, title='#%d' % i )
+      return all([ __compare( vo, o, nsig, ndec, title='#%d' % i )
         for i, (vo,o) in enumerate( zip( verify_obj, obj ) ) ])
     log.error( 'non matching lenghts: %d != %d' % ( len(verify_obj), len(obj) ) )
   elif not isinstance(verify_obj,float):
@@ -335,13 +335,13 @@ def __compare( verify_obj, obj, ndigit, prec ):
   else:
     if verify_obj:
       n = numeric.floor( numpy.log10( abs(verify_obj) ) )
-      N = max( n-(ndigit-1), -prec )
+      N = max( n-(nsig-1), -ndec )
     else:
-      N = -prec
+      N = -ndec
     maxerr = .5 * 10.**N
     if abs(verify_obj-obj) <= maxerr:
       return True
-    log.error( 'non equal to %s digits: %e != %e' % ( ndigit, obj, verify_obj ) )
+    log.error( 'non equal to %s digits: %e != %e' % ( nsig, obj, verify_obj ) )
   return False
 
 @log.title
@@ -350,17 +350,17 @@ def checkdata( obj, base64 ):
   try:
     proto, args, verify_obj = base64_dec( base64 )
     assert proto == 1, 'unsupported protocol version %s' % proto
-    ndigit, prec = args
+    nsig, ndec = args
   except Exception, e:
     log.error( 'failed to decode base64 data: %s' % e )
     equal = False
-    ndigit = 4
-    prec = 15
+    nsig = 4
+    ndec = 15
   else:
-    log.debug( 'checking with ndigit=%d, prec=%d' % ( ndigit, prec ) )
-    equal = __compare( verify_obj, obj, ndigit, prec, title='compare' )
+    log.debug( 'checking %d significant digits up to %d decimals' % ( nsig, ndec ) )
+    equal = __compare( verify_obj, obj, nsig, ndec, title='compare' )
   if not equal:
-    s = base64_enc( obj, ndigit, prec )
+    s = base64_enc( obj, nsig, ndec )
     log.warning( 'objects are not equal; if this is expected replace base64 data with:\n%s' % s )
   return equal
 
