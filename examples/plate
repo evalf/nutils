@@ -130,10 +130,11 @@ def conv ( niter=4, L=4, R=1, E=1e5, nu=0.3, Tx=10, m=4, p=2, maxrefine=4, plots
 def unittest ():
   retvals = main( m=3, plots=False )
   assert debug.checkdata( retvals, '''
-    eNp1kYtpAzAMRNdJQC76fwbK/ivUkhJooQXDs6zz+YQJHgpkT3g4U7yOASFfKjzwC/5czCEt4DBu/uxR
-    WLWJJPrrCEQFNonzahmyUrtWo+F/b9wlntT2GlhNQtFfzx1GmaRHTXM24TGaI7ZDHBaZ1h2QvW7uAHLG
-    pmpnSGAT6prNYvpV2fTM7D6l19Tc8966Vi9atQweCm3N5EscKrItaXW5/pK2upR599gESzhENk53sPI9
-    meEDTP1KCo57xXYk9zap6m5kfQ95vk/cP5uNdgRljb1M3j780fDEPMxE00rEdwoxemtkfJ6g9y8ZgnG+
-    V1OGz284a39N''' )
+    eNp1kQlqQzEMRK+TgFy0LwfK/a9QS0qghRYMz7LG49H/BA8Fsic8nClex4CQLxUe+AV/LuaQFnAYN3/2
+    KKzaRBL9dQSiApvEebUMWaldq9HwvzfuEk9qew2sJqHor+cOo0zSo6Y5m/AYzRHbIQ6LTOsOyF43dwA5
+    Y1O1MySwCXXNZjH9qmx6Znaf0mtq7nlvXasXrVoGD4W2ZvIlDhXZlrS6XH9JW13KvHtsgiUcIhunO1j5
+    nszwAaZ+JQXHvWI7knubVHU3sr6HPN8n7p/NRjuCssZeJm8f/mh4Yh5momkl4juFGL01Mj7P+xFBGYJx
+    fq+mDJ/fOIF/Tg==
+  ''' )
 
 util.run( main, conv, unittest )
