@@ -128,7 +128,7 @@ def conv ( niter=4, L=4, R=1, E=1e5, nu=0.3, Tx=10, m=4, p=2, maxrefine=4, plots
     plt.grid( True )
 
 def unittest ():
-  retvals = main( m=3, plots=True )
+  retvals = main( m=3, plots=False )
   assert debug.checkdata( retvals, '''
     eNp1kQlqQzEMRK+TgFy0LwfK/a9QS0qghRYMz7LG49H/BA8Fsic8nClex4CQLxUe+AV/LuaQFnAYN3/2
     KKzaRBL9dQSiApvEebUMWaldq9HwvzfuEk9qew2sJqHor+cOo0zSo6Y5m/AYzRHbIQ6LTOsOyF43dwA5
