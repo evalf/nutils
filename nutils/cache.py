@@ -11,7 +11,7 @@ The cache module.
 """
 
 from . import core, log
-import os, weakref
+import os, weakref, numpy
 
 
 _property = property
@@ -26,14 +26,41 @@ def property( f ):
   assert not cache_property_wrapper.__closure__
   return _property(cache_property_wrapper)
 
-
-class _id( object ):
+class Array( object ):
+  # FRAGILE: assumes array contents are not going to be changed
+  def __init__( self, array ):
+    self.array = array
+    self.quickdata = array.shape, tuple( array.flat[::array.size//32+1] )
+  def __hash__( self ):
+    return hash( self.quickdata )
+  def __eq__( self, other ):
+    # check full array only if we really must
+    return isinstance(other,Array) and ( self.array is other.array
+      or self.quickdata == other.quickdata and
+        ( self.array.size <= len(self.quickdata[1]) or numpy.all( self.array == other.array ) ) )
+  
+class ID( object ):
   def __init__( self, obj ):
     self.obj = obj
   def __hash__( self ):
     return hash( id(self.obj) )
   def __eq__( self, other ):
-    return isinstance(other,_id) and self.obj is other.obj
+    return isinstance(other,ID) and self.obj is other.obj
+
+_list_token = object() # for identifying former lists
+_dict_token = object() # for identifying former dictionaries
+def _hashable( obj ):
+  try:
+    hash(obj)
+  except:
+    pass
+  else:
+    return obj
+  return Array( obj ) if isinstance( obj, numpy.ndarray ) \
+    else tuple( _hashable(o) for o in obj ) if isinstance( obj, tuple ) \
+    else (_list_token,) + tuple( _hashable(o) for o in obj ) if isinstance( obj, list ) \
+    else (_dict_token,) + tuple( _hashable(item) for item in obj.items() ) if isinstance( obj, dict ) \
+    else ID( obj )
 
 def _keyfromargs( func, args, kwargs, offset=0 ):
   if getattr( func, '__self__' ): # bound instancemethod
@@ -53,14 +80,7 @@ def _keyfromargs( func, args, kwargs, offset=0 ):
           raise TypeError, '%s missing mandatory argument %r' % ( func.__name__, name )
       args += val,
     assert not kwargs, '%s got invalid arguments: %s' % ( func.__name__, ', '.join(kwargs) )
-  key = []
-  for arg in args:
-    try:
-      hash(arg)
-    except:
-      arg = _id(arg)
-    key.append( arg )
-  return tuple(key)
+  return tuple( _hashable(arg) for arg in args )
 
 
 class CallDict( dict ):
