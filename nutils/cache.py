@@ -27,7 +27,7 @@ def property( f ):
   return _property(cache_property_wrapper)
 
 class HashableArray( object ):
-  # FRAGILE: for arrays >= 32 items, assumes contents are not going to be changed
+  # FRAGILE: assumes contents are not going to be changed
   def __init__( self, array ):
     self.array = array
     self.quickdata = array.shape, tuple( array.flat[::array.size//32+1] )
@@ -36,16 +36,15 @@ class HashableArray( object ):
   def __eq__( self, other ):
     # check full array only if we really must
     return isinstance(other,HashableArray) and ( self.array is other.array
-      or self.quickdata == other.quickdata and
-        ( self.array.size <= len(self.quickdata[1]) or numpy.all( self.array == other.array ) ) )
+      or self.quickdata == other.quickdata and numpy.all( self.array == other.array ) )
   
 class HashableList( tuple ):
   def __new__( cls, L ):
-    return tuple.__new__( cls, (_hashable(item) for item in L) )
+    return tuple.__new__( cls, map( _hashable, L ) )
 
 class HashableDict( frozenset ):
   def __new__( cls, D ):
-    return frozenset.__new__( cls, (_hashable(item) for item in D.items()) )
+    return frozenset.__new__( cls, map( _hashable, D.items() ) )
 
 class HashableAny( object ):
   def __init__( self, obj ):
