@@ -1,0 +1,223 @@
+Changelog
+=========
+
+Nutils is under active development and the API is not frozen. Active
+users are advised to keep an eye on this file to stay up to date with
+the most prominent user-facing changes.
+
+
+New: diag preconditioner
+
+  New syntax:
+  >> matrix.solve( rhs, symmetric=True, precon='diag' )
+
+  Simple diagonal scaler, also available via matrix.get_precon('diag').
+
+
+Changed: Hooke and Orthotropic
+
+  Old syntax:
+  >> library.Hooke( disp, geometry )
+
+  New syntax:
+  >> library.Hooke( disp.symgrad(geometry) )
+
+  Likewise for Orthotropic. The argument represents the strain tensor
+  and should be symmetric in the last two axes.
+
+
+Changed: trimming
+
+  New syntax:
+  >> domain, complement = wholedomain.trim( levelset, maxrefine=3, eps=.01 )
+
+  The two returned topologies add up to wholedomain. The evalrefine
+  argument vanished; evaluation takes place at the lowest possible
+  level.
+
+
+New: DG examples
+
+  New example scrips advec and burgers demonstrate and test 1D/2D
+  discontinuous galerkin computations.
+
+
+New: util.withrepr supports default values
+
+  Unchanged syntax:
+  >> @util.withrepr
+  >> def f( a, b=2 ):
+
+  Default values are now handled appropriately.
+
+
+New: 1D plot.mesh
+
+  Unchanged syntax:
+  >> xy, c = domain.elem_eval( [ geom, func ], ischeme='bezier2' )
+  >> with plot.Pyplot( 'func' ) as plt:
+  >>   plt.mesh( xy, c )
+
+  Mesh now extends to 1D domains.
+
+
+New: transform module
+
+  Objects and operations for affine coordinate transformations.
+
+
+New: rational module
+
+  New syntax:
+  >> s = rational.frac( 2, 3 ) # Scalar: 2/3
+  >> A = rational.frac( [[2,-3],[0,1]], 3 ) # Array: [[2/3,-1],[0,1/3]]
+
+  Objects and operations for doing exact rational arithmetic.
+
+
+New: variable exponent in function.Power
+
+  Unchanged syntax:
+  >> a**b
+
+  The exponent `b` can now be a nutils function.
+
+
+New: makefile test rules
+
+  New makefile rules:
+  # make test
+  # make test_nose
+  # make test_examples
+
+  Make test runs test_nose and test_examples in sequence. Test_nose
+  calls nosetest on the tests directory. Test_examples calls the
+  unittest target of all scripts in the examples directory in sequence.
+
+
+New: data comparison
+
+  New syntax
+  >> s = debug.base64_enc( myobj, ndig=4, ndec=15 )
+  >> debug.base64_dec( s ) == myobj # True
+  >> debug.checkdata( myobj, s ) # True
+
+  Data serialization useful for embedded result checking. Floats are
+  stored up to `nsig` significant digits or `ndec` decimals. Checkdata
+  performs float comparisons up to corresponding precision.
+
+  All examples have a unittest target to verify consistency of results.
+  Users are strongly encouraged to follow this example.
+
+
+New: numeric integer methods
+
+  New syntax
+  >> a = numeric.round( [.2, 1.2 ] )
+  >> a = numeric.floor( [.2, 1.2 ] )
+
+  Identical to numpy.round, numpy.floor, except the return dtype is
+  integer.
+
+
+Changed: traceback explorer disabled by default
+
+  New command line switch:
+  --tbexplore
+
+  Activates the traceback explorer on program failure. To change the
+  default behavior add tbexplore=True to your .nutilsrc file.
+
+
+New: rich output
+
+  New command line switch:
+  --richoutput
+
+  Activates color and unicode output. To change the default behavior add
+  richoutput=True to your .nutilsrc file.
+
+
+Changed: breakpoint
+
+  Old syntax
+  >> util.breakpoint()
+
+  New syntax
+  >> debug.breakpoint()
+
+
+Changed: infinite iterator
+
+  Old syntax:
+  >> for iiter in util.iterate( 'iteration' )
+
+  New syntax:
+  >> __log__ = log.count( 'iteration' )
+  >> for iiter in __log__:
+
+  See changed: log iterators.
+
+
+Changed: log iterators
+
+  Old syntax:
+  >> for item in log.iterate( 'myiter', iterable ):
+
+  New syntax:
+  >> __log__ = log.iter( 'myiter', iterable )
+  >> for item in __log__:
+
+  This admittedly peculiar syntax is does away with hidden frame
+  modifications. The __log__ variable must be set for the logging system
+  to pick it up. Log.iter is equivalent to the builtin iter except for
+  the name argument; also available are log.enumerate and log.count.
+
+
+Changed: log context
+
+  Old syntax:
+  >> log.context( 'mycontext' )
+
+  New syntax:
+  >> __log__ = log.StaticLog( 'mycontext' )
+
+  Preferable alternative:
+  >> @log.title
+  >> def myfunc( arg1, arg2, .. ):
+
+  The log.title decorator adds a 'title' argument which defaults to the
+  name of the function, and sets a logger context accordingly upon
+  calling.
+
+
+Changed: properties
+
+  Old syntax:
+  >> from nutils import prop
+  >> prop.mysetting = 1
+  ..
+  >> print prop.mysetting
+
+  New syntax:
+  >> __mysetting__ = 1
+  ..
+  >> from nutils import core
+  >> print core.getprop( 'mysetting' )
+
+  Properties provide a flexible mechanism for making arbitrary settings
+  available to functions in nested scope, but not the calling scope.
+  They act like globals but the usual downsides [1].
+
+  [1] http://programmers.stackexchange.com/questions/148108/why-is-global-state-so-evil
+
+
+
+
+Release history
+---------------
+
+2014-08-04 Released v1.0 "Bakmi"
+
+
+vim:textwidth=72
