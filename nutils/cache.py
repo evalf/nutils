@@ -26,8 +26,8 @@ def property( f ):
   assert not cache_property_wrapper.__closure__
   return _property(cache_property_wrapper)
 
-class Array( object ):
-  # FRAGILE: assumes array contents are not going to be changed
+class HashableArray( object ):
+  # FRAGILE: for arrays >= 32 items, assumes contents are not going to be changed
   def __init__( self, array ):
     self.array = array
     self.quickdata = array.shape, tuple( array.flat[::array.size//32+1] )
@@ -35,20 +35,26 @@ class Array( object ):
     return hash( self.quickdata )
   def __eq__( self, other ):
     # check full array only if we really must
-    return isinstance(other,Array) and ( self.array is other.array
+    return isinstance(other,HashableArray) and ( self.array is other.array
       or self.quickdata == other.quickdata and
         ( self.array.size <= len(self.quickdata[1]) or numpy.all( self.array == other.array ) ) )
   
-class ID( object ):
+class HashableList( tuple ):
+  def __new__( cls, L ):
+    return tuple.__new__( cls, (_hashable(item) for item in L) )
+
+class HashableDict( frozenset ):
+  def __new__( cls, D ):
+    return frozenset.__new__( cls, (_hashable(item) for item in D.items()) )
+
+class HashableAny( object ):
   def __init__( self, obj ):
     self.obj = obj
   def __hash__( self ):
     return hash( id(self.obj) )
   def __eq__( self, other ):
-    return isinstance(other,ID) and self.obj is other.obj
+    return isinstance(other,HashableAny) and self.obj is other.obj
 
-_list_token = object() # for identifying former lists
-_dict_token = object() # for identifying former dictionaries
 def _hashable( obj ):
   try:
     hash(obj)
@@ -56,11 +62,12 @@ def _hashable( obj ):
     pass
   else:
     return obj
-  return Array( obj ) if isinstance( obj, numpy.ndarray ) \
-    else tuple( _hashable(o) for o in obj ) if isinstance( obj, tuple ) \
-    else (_list_token,) + tuple( _hashable(o) for o in obj ) if isinstance( obj, list ) \
-    else (_dict_token,) + tuple( _hashable(item) for item in obj.items() ) if isinstance( obj, dict ) \
-    else ID( obj )
+  return tuple( _hashable(o) for o in obj ) if isinstance( obj, tuple ) \
+    else frozenset( _hashable(o) for o in obj ) if isinstance( obj, (set,frozenset) ) \
+    else HashableArray( obj ) if isinstance( obj, numpy.ndarray ) \
+    else HashableList( obj ) if isinstance( obj, list ) \
+    else HashableDict( obj ) if isinstance( obj, dict ) \
+    else HashableAny( obj )
 
 def _keyfromargs( func, args, kwargs, offset=0 ):
   if getattr( func, '__self__' ): # bound instancemethod
