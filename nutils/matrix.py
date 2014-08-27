@@ -85,7 +85,7 @@ def krylov( matvec, b, x0=None, tol=1e-5, restart=None, maxiter=0, precon=None, 
         firsttime = False
       bnrm2, res, info = stoptest( vec1, bnrm2, info )
       if callback:
-        callback( (iiter,res) )
+        callback( (iiter,res,x.copy()) )
     else:
       assert ijob == -1
       break

@@ -15,8 +15,8 @@ mesh writers are provided at this point; output is handled by the
 :mod:`nutils.plot` module.
 """
 
-from . import topology, function, util, element, numpy, numeric, transform, rational, _
-import os
+from . import topology, function, util, element, numpy, numeric, transform, rational, log, _
+import os, warnings
 
 # MESH GENERATORS
 
@@ -96,91 +96,120 @@ def revolve( topo, coords, nelems, degree=3, axis=0 ):
 
   return revolved_topo, revolved_func.dot( weights )
 
-def gmesh( path, btags={}, name=None ):
+def gmesh( fname, tags={}, name=None, use_elementary=False ):
   'gmesh'
 
+  if isinstance(fname,str):
+    lines = iter(open(fname,'r'))
+  else:
+    lines = iter(fname)
+    fname = 'mesh'
+
   if name is None:
-    name = os.path.basename(path)
+    name = os.path.basename(fname)
 
-  if isinstance( btags, str ):
-    btags = { i+1: btag for i, btag in enumerate( btags.split(',') ) }
+  if isinstance( tags, str ):
+    warnings.warn('String format for groups is depricated, please use dictionary format instead with (key,value)=(physical ID,group name)',DeprecationWarning)
+    tags = { i+1: tag for i, tag in enumerate( tags.split(',') ) }
 
-  lines = iter( open( path, 'r' ) )
-
-  assert lines.next() == '$MeshFormat\n'
-  version, filetype, datasize = lines.next().split()
-  assert lines.next() == '$EndMeshFormat\n'
-
-  assert lines.next() == '$Nodes\n'
-  nvertices = int( lines.next() )
-  coords = numpy.empty(( nvertices, 3 ))
-  for iNode in range( nvertices ):
-    items = lines.next().split()
-    assert int( items[0] ) == iNode + 1
-    coords[ iNode ] = map( float, items[1:] )
-  assert lines.next() == '$EndNodes\n'
-
-  assert numpy.all( abs( coords[:,2] ) < 1e-5 ), 'ndims=3 case not yet implemented.'
+  #Parse the file
+  sections = {}
+  for line in lines:
+    line = line.strip()
+    assert line[0]=='$'
+    sname = line[1:]
+    slines = []
+    for sline in lines:
+      sline = sline.strip()
+      if sline=='$End%s'%sname:
+        break
+      slines.append( sline ) 
+    sections[sname] = slines  
+        
+  #Nodes
+  nodedata = sections.pop('Nodes')
+  nnodes = int(nodedata.pop(0))
+  assert len(nodedata)==nnodes
+        
+  coords = numpy.empty((nnodes,3))
+  coords[:] = numpy.nan
+  nidmap = {}
+  for line in nodedata:
+    words = line.split()
+    nid = len(nidmap)
+    nidmap[int(words[0])] = nid
+    coords[nid] = map( float, words[1:] )
+  assert not numpy.isnan(coords).any()
+  assert numpy.all( coords[:,2] ) == 0, 'ndims=3 case not yet implemented.'
   coords = coords[:,:2]
 
-  boundary = []
-  elements = []
-  connected = [ set() for i in range( nvertices ) ]
-  nmap = {}
+  #Elements
+  elemdata = sections.pop('Elements')
+  nelems = int(elemdata.pop(0))
+  assert len(elemdata)==nelems
+
+  elems = {}
+  elemgroups = {}
+  edges = {}
+  edgegroups = {}
   fmap = {}
-
-  assert lines.next() == '$Elements\n'
-  for ielem in range( int( lines.next() ) ):
-    items = lines.next().split()
-    assert int( items[0] ) == ielem + 1
-    elemtype = int( items[1] )
-    ntags = int( items[2] )
-    tags = [ int(tag) for tag in set( items[3:3+ntags] ) ]
-    elemvertices = numpy.asarray( items[3+ntags:], dtype=int ) - 1
-    elemcoords = coords[ elemvertices ]
-    if elemtype == 1: # boundary edge
-      boundary.append(( elemvertices, tags ))
-    elif elemtype == 2: # interior element, triangle
-      if numpy.linalg.det( elemcoords[:2] - elemcoords[2] ) < 0:
-        elemvertices[:2] = elemvertices[1], elemvertices[0]
-      ref = element.SimplexReference(2)
-      maptrans = transform.MapTrans(ref.vertices,elemvertices)
-      elements.append( element.Element(ref,maptrans) )
-      fmap[ maptrans ] = (ref.stdfunc(1),None),
-      nmap[ maptrans ] = elemvertices
-      for n in elemvertices:
-        connected[ n ].add( maptrans )
-    elif elemtype == 15: # boundary vertex
-      pass
+  nmap = {}
+  for line in elemdata:
+    words = line.split()
+    etype = int(words[1] )
+    ntags = int( words[2] )
+    if use_elementary:
+      assert words[3] == '0', 'option use_elementary=True conflicts with non-zero physical tag'
+      tag = tags.get( int( words[4] ), 'elementary' + words[4] )
     else:
-      raise Exception, 'element type #%d not supported' % elemtype
-  assert lines.next() == '$EndElements\n'
+      tag = tags.get( int( words[3] ), 'physical' + words[3] )
 
-  belements = []
-  bgroups = {}
-  for bvertices, tags in boundary:
-    n1, n2 = bvertices
-    maptrans, = connected[n1] & connected[n2]
-    assert len(maptrans.vertices) == 3 # just triangles for now
-    iedge, = [ i for i, v in enumerate(maptrans.vertices) if v not in bvertices ]
-    ref = element.SimplexReference(2)
-    trans, edge = ref.edges[iedge]
-    belem = element.Element( edge, maptrans << trans )
-    belements.append( belem )
-    for tag in tags:
-      bgroups.setdefault( tag, [] ).append( belem )
+    nids = numpy.array([ nidmap[int(gmshid)] for gmshid in words[3+ntags:] ])
+    elemkey = tuple(sorted(nids))
+    if etype == 1: # Linear line
+      edgegroups.setdefault(tag,[]).append(elemkey)
+    elif etype == 2: # linear triangle
+      assert len(nids)==3
+      try:
+        elem = elems[elemkey]
+      except KeyError:
+        elemcoords = coords[nids]
+        if numpy.linalg.det( elemcoords[:2] - elemcoords[2] ) < 0:
+          nids[:2] = nids[1], nids[0]
+        ref = element.SimplexReference(2)
+        maptrans = transform.MapTrans(ref.vertices,nids)
+        elem = element.Element(ref,maptrans)
+        elems[elemkey] = elem
+      
+        fmap[maptrans] = (ref.stdfunc(1),None),
+        nmap[maptrans] = nids
+        for iedge, edge in enumerate([[1,2],[0,2],[0,1]]):
+          edgekey = tuple(sorted(nids[edge]))
+          try:
+            edges.pop( edgekey )
+          except KeyError:
+            edges[edgekey] = elem.edge(iedge)
+      elemgroups.setdefault(tag,[]).append(elem)
+    elif etype == 15:
+      assert use_elementary, 'Boundary vertex encountered in mesh with elementary groups.'
+    else:
+      raise NotImplementedError('Unknown GMSH element type %i' % etype)
 
-  topo = topology.Topology( elements )
-  topo.boundary = topology.Topology( belements )
-  topo.boundary.groups = {}
-  for tag, group in bgroups.items():
-    try:
-      tag = btags[tag]
-    except:
-      pass
-    topo.boundary.groups[tag] = topology.Topology( group )
+  topo = topology.Topology( elems.values() )
+  topo.groups = elemgroups
+  topo.boundary = topology.Topology( edges.values() )
+  topo.boundary.groups = { tag: topology.Topology([ edges[edgekey] for edgekey in edgekeys ]) for tag, edgekeys in edgegroups.items() }
 
-  linearfunc = function.function( fmap=fmap, nmap=nmap, ndofs=nvertices, ndims=topo.ndims )
+  for tag in tags.values():
+    if tag not in topo.groups and tag not in topo.boundary.groups:
+      warnings.warn('tag %r defined but not used' % tag )
+
+  log.info('Parsed GMSH file:')
+  log.info('Nodes (#%d)' % nnodes)
+  log.info('Topology (#%d) with groups: %s' % (len(topo), ', '.join('%s (#%d)' % (name,len(subtopo)) for name,subtopo in topo.groups.items())))
+  log.info('Boundary (#%d) with groups: %s' % (len(topo.boundary), ', '.join('%s (#%d)' % (name,len(subtopo)) for name,subtopo in topo.boundary.groups.items())))
+
+  linearfunc = function.function( fmap=fmap, nmap=nmap, ndofs=nnodes, ndims=topo.ndims )
   geom = ( linearfunc[:,_] * coords ).sum(0)
   return topo, geom
 
