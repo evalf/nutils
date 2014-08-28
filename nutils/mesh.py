@@ -103,7 +103,7 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
     lines = iter(open(fname,'r'))
   else:
     lines = iter(fname)
-    fname = 'mesh'
+    fname = '<iterable>'
 
   if name is None:
     name = os.path.basename(fname)
