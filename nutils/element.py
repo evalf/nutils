@@ -520,7 +520,7 @@ class SimplexReference( Reference ):
     edge = SimplexReference( self.ndims-1 )
     eye = numpy.eye( self.ndims, dtype=int )
     return [ ( transform.shift( eye[0] ) << transform.updim( (eye[1:]-eye[0]).T, sign=1 ), edge ) ] \
-         + [ ( transform.updim( eye[range(i)+range(i+1,self.ndims)].T, sign=1 if i%1 else -1 ), edge )
+         + [ ( transform.updim( eye[range(i)+range(i+1,self.ndims)].T, sign=1 if i%2 else -1 ), edge )
                   for i in range( self.ndims ) ]
 
   def __str__( self ):
