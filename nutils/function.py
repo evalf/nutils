@@ -157,7 +157,7 @@ class CompiledEvaluable( object ):
 class Evaluable( object ):
   'Base class'
 
-  __slots__ = 'evalf', 'args'
+  __metaclass__ = cache.Meta
 
   def __init__( self, args, evalf ):
     'constructor'
@@ -199,20 +199,6 @@ class Evaluable( object ):
     operations = []
     self.__compile( data, operations ) # compile expressions
     return CompiledEvaluable( data, operations )
-
-  def __eq__( self, other ):
-    'compare'
-
-    return self is other or (
-          self.__class__ == other.__class__
-      and self.evalf == other.evalf
-      and len( self.args ) == len( other.args )
-      and all( _equal(arg1,arg2) for arg1, arg2 in zip( self.args, other.args ) ) )
-
-  def __ne__( self, other ):
-    'not equal'
-
-    return not self == other
 
   def asciitree( self ):
     'string representation'
@@ -1238,16 +1224,10 @@ class Multiply( ArrayFunc ):
   def __init__( self, func1, func2 ):
     'constructor'
 
+    assert _issorted( func1, func2 )
     shape = _jointshape( func1.shape, func2.shape )
     self.funcs = func1, func2
     ArrayFunc.__init__( self, args=self.funcs, evalf=numpy.multiply, shape=shape )
-
-  def __eq__( self, other ):
-    'compare'
-
-    return self is other or (
-          isinstance( other, Multiply )
-      and _matchpairs( self.funcs, other.funcs ) )
 
   def _sum( self, axis ):
     func1, func2 = self.funcs
@@ -1282,10 +1262,10 @@ class Multiply( ArrayFunc ):
   def _multiply( self, other ):
     func1, func2 = self.funcs
     func1_other = multiply( func1, other )
-    if Multiply( func1, other ) != func1_other:
+    if Multiply( *_sorted(func1,other) ) != func1_other:
       return multiply( func1_other, func2 )
     func2_other = multiply( func2, other )
-    if Multiply( func2, other ) != func2_other:
+    if Multiply( *_sorted(func2,other) ) != func2_other:
       return multiply( func1, func2_other )
 
   def _localgradient( self, ndims ):
@@ -1378,17 +1358,11 @@ class Add( ArrayFunc ):
   def __init__( self, func1, func2 ):
     'constructor'
 
+    assert _issorted( func1, func2 )
     self.funcs = func1, func2
     shape = _jointshape( func1.shape, func2.shape )
     dtype = _jointdtype(func1,func2)
     ArrayFunc.__init__( self, args=self.funcs, evalf=numpy.add, shape=shape, dtype=dtype )
-
-  def __eq__( self, other ):
-    'compare'
-
-    return self is other or (
-          isinstance( other, Add )
-      and _matchpairs( self.funcs, other.funcs ) )
 
   def _sum( self, axis ):
     return sum( self.funcs[0], axis ) + sum( self.funcs[1], axis )
@@ -1416,10 +1390,10 @@ class Add( ArrayFunc ):
   def _add( self, other ):
     func1, func2 = self.funcs
     func1_other = add( func1, other )
-    if Add( func1, other ) != func1_other:
+    if Add( *_sorted(func1,other) ) != func1_other:
       return add( func1_other, func2 )
     func2_other = add( func2, other )
-    if Add( func2, other ) != func2_other:
+    if Add( *_sorted(func2,other) ) != func2_other:
       return add( func1, func2_other )
 
 class BlockAdd( Add ):
@@ -1429,30 +1403,30 @@ class BlockAdd( Add ):
 
   def _multiply( self, other ):
     func1, func2 = self.funcs
-    return BlockAdd( func1 * other, func2 * other )
+    return BlockAdd( *_sorted( func1 * other, func2 * other ) )
 
   def _inflate( self, dofmap, length, axis ):
     func1, func2 = self.funcs
-    return BlockAdd( inflate( func1, dofmap, length, axis ),
-                     inflate( func2, dofmap, length, axis ) )
+    return BlockAdd( *_sorted( inflate( func1, dofmap, length, axis ),
+                               inflate( func2, dofmap, length, axis ) ) )
 
   def _align( self, axes, ndim ):
     func1, func2 = self.funcs
-    return BlockAdd( align(func1,axes,ndim), align(func2,axes,ndim) )
+    return BlockAdd( *_sorted( align(func1,axes,ndim), align(func2,axes,ndim) ) )
 
   def _negative( self ):
     func1, func2 = self.funcs
-    return BlockAdd( negative(func1), negative(func2) )
+    return BlockAdd( *_sorted( negative(func1), negative(func2) ) )
 
   def _add( self, other ):
     func1, func2 = self.funcs
     try1 = func1 + other
-    if try1 != BlockAdd( func1, other ):
+    if try1 != BlockAdd( *_sorted( func1, other ) ):
       return try1 + func2
     try2 = func2 + other
-    if try2 != BlockAdd( func2, other ):
+    if try2 != BlockAdd( *_sorted( func2, other ) ):
       return try2 + func1
-    return BlockAdd( self, other )
+    return BlockAdd( *_sorted( self, other ) )
 
   @property
   def blocks( self ):
@@ -1493,10 +1467,10 @@ class Dot( ArrayFunc ):
       other = insert( other, ax )
     assert other.ndim == self.func1.ndim == self.func2.ndim
     func1_other = multiply( self.func1, other )
-    if Multiply( self.func1, other ) != func1_other:
+    if Multiply( *_sorted(self.func1,other) ) != func1_other:
       return dot( func1_other, self.func2, self.axes )
     func2_other = multiply( self.func2, other )
-    if Multiply( self.func2, other ) != func2_other:
+    if Multiply( *_sorted(self.func2,other) ) != func2_other:
       return dot( self.func1, func2_other, self.axes )
 
   def _add( self, other ):
@@ -2023,7 +1997,7 @@ class Inflate( ArrayFunc ):
   def _add( self, other ):
     if isinstance( other, Inflate ) and self.axis == other.axis and self.dofmap == other.dofmap:
       return inflate( add(self.func,other.func), self.dofmap, self.length, self.axis )
-    return BlockAdd( self, other )
+    return BlockAdd( *_sorted( self, other ) )
 
   def _cross( self, other, axis ):
     if isinstance( other, Inflate ) and self.axis == other.axis:
@@ -2294,7 +2268,6 @@ def _findcommon( (a1,a2), (b1,b2) ):
   if _equal( a2, b2 ):
     return a2, (a1,b1)
 
-_matchpairs = lambda (a1,a2), (b1,b2): _equal(a1,b1) and _equal(a2,b2) or _equal(a1,b2) and _equal(a2,b1)
 _max = max
 _min = min
 _sum = sum
@@ -2308,6 +2281,10 @@ _subsnonesh = lambda shape: tuple( 1 if sh is None else sh for sh in shape )
 _normdims = lambda ndim, shapes: tuple( numeric.normdim(ndim,sh) for sh in shapes )
 _zeros = lambda shape: Zeros( shape )
 _zeros_like = lambda arr: _zeros( arr.shape )
+
+# for consistency in Add and Multiply arguments: the smallest Evaluable first
+_issorted = lambda a, b: not isinstance(b,Evaluable) or isinstance(a,Evaluable) and a <= b
+_sorted = lambda a, b: (a,b) if _issorted(a,b) else (b,a)
 
 def _call( obj, attr, *args ):
   'call method if it exists, return None otherwise'
@@ -2357,8 +2334,6 @@ def _equal( arg1, arg2 ):
 def asarray( arg ):
   'convert to ArrayFunc or numpy.ndarray'
 
-  if isinstance( arg, numpy.ndarray ) and arg.ndim == 0:
-    arg = arg[...]
   if _isfunc(arg):
     return arg
   arg = numpy.asarray( arg )
@@ -2924,7 +2899,7 @@ def multiply( arg1, arg2 ):
     assert retval.shape == shape, 'bug in %s._multiply' % arg2
     return retval
 
-  return Multiply( arg1, arg2 )
+  return Multiply( *_sorted(arg1,arg2) )
 
 def add( arg1, arg2 ):
   'add'
@@ -2958,7 +2933,7 @@ def add( arg1, arg2 ):
     assert retval.shape == shape, 'bug in %s._add' % arg2
     return retval
 
-  return Add( arg1, arg2 )
+  return Add( *_sorted(arg1,arg2) )
 
 def negative( arg ):
   'make negative'

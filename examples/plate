@@ -107,7 +107,7 @@ def main ( L=4, R=1, E=1e5, nu=0.3, Tx=10, m=5, p=2, maxrefine=4, plots=True ):
       plt.colorbar()
       plt.axis('equal')
 
-  return L2/L2_ex, H1/H1_ex, f, sol, len(info), len(info_diag), cond, cond_diag
+  return L2/L2_ex, H1/H1_ex, f, sol, cond, cond_diag
 
 def conv ( niter=4, L=4, R=1, E=1e5, nu=0.3, Tx=10, m=4, p=2, maxrefine=4, plots=False ):
 
@@ -130,10 +130,10 @@ def conv ( niter=4, L=4, R=1, E=1e5, nu=0.3, Tx=10, m=4, p=2, maxrefine=4, plots
 def unittest ():
   retvals = main( m=3, plots=False )
   assert debug.checkdata( retvals, '''
-    eNp1kYtpAzAMRNdJQC76fwbK/ivUkhJooQXDs6zz+YQJHgpkT3g4U7yOASFfKjzwC/5czCEt4DBu/uxR
-    WLWJJPrrCEQFNonzahmyUrtWo+F/b9wlntT2GlhNQtFfzx1GmaRHTXM24TGaI7ZDHBaZ1h2QvW7uAHLG
-    pmpnSGAT6prNYvpV2fTM7D6l19Tc8966Vi9atQweCm3N5EscKrItaXW5/pK2upR599gESzhENk53sPI9
-    meEDTP1KCo57xXYk9zap6m5kfQ95vk/cP5uNdgRljb1M3j780fDEPMxE00rEdwoxemtkfJ6g9y8ZgnG+
-    V1OGz284a39N''' )
+    eNp1kQlqQzEMRK+TgFy0LwfK/a9QS0qghRYMz7Lmj0Z8gocC2RMezhSvY0DIlwoP/II/D3NICziMmz97
+    FFZtIon+OgJRgU3ivFqGrNSu1Wj434x7xJPaXgOrSSj6a9xhlEl61DTnEh6jOWK7xGGRad0F2evmDiBn
+    bKp2hgQ2oa7ZLKZflU3PzO5Tek3Nve+ta/WiVcvgodDWTL7EoSLbklaX6y9pq0uZuccmWMIhsnG6i5Xv
+    yywfYOpXUnDcK7YjuV+Tqu5F1veQ5/vF/XPZaEdQ1tjL5O3DHw1PzMNMNK1EfKcQo7dGxucJwTg/VlOG
+    z29BpH4o''' )
 
 util.run( main, conv, unittest )

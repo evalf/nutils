@@ -11,7 +11,7 @@ The cache module.
 """
 
 from . import core, log
-import os, weakref
+import os, weakref, numpy
 
 
 _property = property
@@ -26,14 +26,47 @@ def property( f ):
   assert not cache_property_wrapper.__closure__
   return _property(cache_property_wrapper)
 
+class HashableArray( object ):
+  # FRAGILE: assumes contents are not going to be changed
+  def __init__( self, array ):
+    self.array = array
+    self.quickdata = array.shape, tuple( array.flat[::array.size//32+1] )
+  def __hash__( self ):
+    return hash( self.quickdata )
+  def __eq__( self, other ):
+    # check full array only if we really must
+    return isinstance(other,HashableArray) and ( self.array is other.array
+      or self.quickdata == other.quickdata and numpy.all( self.array == other.array ) )
+  
+class HashableList( tuple ):
+  def __new__( cls, L ):
+    return tuple.__new__( cls, map( _hashable, L ) )
 
-class _id( object ):
+class HashableDict( frozenset ):
+  def __new__( cls, D ):
+    return frozenset.__new__( cls, map( _hashable, D.items() ) )
+
+class HashableAny( object ):
   def __init__( self, obj ):
     self.obj = obj
   def __hash__( self ):
     return hash( id(self.obj) )
   def __eq__( self, other ):
-    return isinstance(other,_id) and self.obj is other.obj
+    return isinstance(other,HashableAny) and self.obj is other.obj
+
+def _hashable( obj ):
+  try:
+    hash(obj)
+  except:
+    pass
+  else:
+    return obj
+  return tuple( _hashable(o) for o in obj ) if isinstance( obj, tuple ) \
+    else frozenset( _hashable(o) for o in obj ) if isinstance( obj, (set,frozenset) ) \
+    else HashableArray( obj ) if isinstance( obj, numpy.ndarray ) \
+    else HashableList( obj ) if isinstance( obj, list ) \
+    else HashableDict( obj ) if isinstance( obj, dict ) \
+    else HashableAny( obj )
 
 def _keyfromargs( func, args, kwargs, offset=0 ):
   if getattr( func, '__self__' ): # bound instancemethod
@@ -53,14 +86,7 @@ def _keyfromargs( func, args, kwargs, offset=0 ):
           raise TypeError, '%s missing mandatory argument %r' % ( func.__name__, name )
       args += val,
     assert not kwargs, '%s got invalid arguments: %s' % ( func.__name__, ', '.join(kwargs) )
-  key = []
-  for arg in args:
-    try:
-      hash(arg)
-    except:
-      arg = _id(arg)
-    key.append( arg )
-  return tuple(key)
+  return tuple( _hashable(arg) for arg in args )
 
 
 class CallDict( dict ):
