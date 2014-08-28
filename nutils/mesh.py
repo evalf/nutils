@@ -99,21 +99,13 @@ def revolve( topo, coords, nelems, degree=3, axis=0 ):
 def gmesh( fname, tags={}, name=None, use_elementary=False ):
   'gmesh'
 
-  if isinstance(fname,str):
-    lines = iter(open(fname,'r'))
-  else:
-    lines = iter(fname)
-    fname = '<iterable>'
-
-  if name is None:
-    name = os.path.basename(fname)
-
   if isinstance( tags, str ):
     warnings.warn('String format for groups is depricated, please use dictionary format instead with (key,value)=(physical ID,group name)',DeprecationWarning)
     tags = { i+1: tag for i, tag in enumerate( tags.split(',') ) }
 
   #Parse the file
   sections = {}
+  lines = iter(open(fname,'r') if isinstance(fname,str) else fname)
   for line in lines:
     line = line.strip()
     assert line[0]=='$'
@@ -177,7 +169,7 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
         if numpy.linalg.det( elemcoords[:2] - elemcoords[2] ) < 0:
           nids[:2] = nids[1], nids[0]
         ref = element.SimplexReference(2)
-        maptrans = transform.MapTrans(ref.vertices,nids)
+        maptrans = transform.MapTrans(ref.vertices,nids if not name else [name+str(nid) for nid in nids])
         elem = element.Element(ref,maptrans)
         elems[elemkey] = elem
       
