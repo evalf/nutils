@@ -97,7 +97,21 @@ def revolve( topo, coords, nelems, degree=3, axis=0 ):
   return revolved_topo, revolved_func.dot( weights )
 
 def gmesh( fname, tags={}, name=None, use_elementary=False ):
-  'gmesh'
+  """Gmesh parser
+
+  Parser for Gmesh files in `.msh` format. See the `Gmesh manual <http://geuz.org/gmsh/doc/texinfo/gmsh.html>`_ for details.
+
+  Args:
+      fname (str): Path to mesh file
+      tags (dict, optional): Dictionary mapping gmesh group IDs to names
+      name (str, optional): Name of parsed topology, defaults to None
+      use_elementary (bool, optional): Option to indicate whether Gmsh is used with elementary groups only (i.e. no physical groups are defined), defaults to False
+
+  Returns:
+      topo (:class:`nutils.topology.Topology`): Topology of parsed Gmesh file
+      geom (:class:`nutils.function.ArrayFunc`): Isoparametric map
+
+  """
 
   if isinstance( tags, str ):
     warnings.warn('String format for groups is depricated, please use dictionary format instead with (key,value)=(physical ID,group name)',DeprecationWarning)
