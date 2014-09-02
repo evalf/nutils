@@ -363,7 +363,7 @@ class ArrayFunc( Evaluable ):
     arr = self
     while myitem:
       it = myitem.pop(0)
-      if isinstance(it,int): # retrieve one item from axis
+      if numeric.isint(it): # retrieve one item from axis
         arr = get( arr, n, it )
       elif it == _: # insert a singleton axis
         arr = insert( arr, n )
@@ -2273,7 +2273,6 @@ _min = min
 _sum = sum
 _isfunc = lambda arg: isinstance( arg, ArrayFunc )
 _isscalar = lambda arg: asarray(arg).ndim == 0
-_isint = lambda arg: numpy.asarray( arg ).dtype == int
 _ascending = lambda arg: ( numpy.diff(arg) > 0 ).all()
 _iszero = lambda arg: isinstance( arg, Zeros ) or isinstance( arg, numpy.ndarray ) and numpy.all( arg == 0 )
 _isunit = lambda arg: not _isfunc(arg) and ( numpy.asarray(arg) == 1 ).all()
@@ -2457,12 +2456,12 @@ def repeat( arg, length, axis ):
 def get( arg, iax, item ):
   'get item'
 
-  assert _isint( item ) and _isscalar( item )
+  assert numeric.isint( item )
 
   arg = asarray( arg )
   iax = numeric.normdim( arg.ndim, iax )
   sh = arg.shape[iax]
-  assert isinstance(sh,int), 'cannot get item %r from axis %r' % ( item, sh )
+  assert numeric.isint( sh ), 'cannot get item %r from axis %r' % ( item, sh )
 
   item = 0 if sh == 1 \
     else numeric.normdim( sh, item )
@@ -3153,7 +3152,7 @@ def blocks( arg ):
   try:
     blocks = arg.blocks
   except AttributeError:
-    blocks = [( arg, tuple( numpy.arange(n) if isinstance(n,int) else None for n in arg.shape ) )]
+    blocks = [( arg, tuple( numpy.arange(n) if numeric.isint(n) else None for n in arg.shape ) )]
   return blocks
 
 def pointdata ( topo, ischeme, func=None, shape=None, value=None ):

@@ -13,7 +13,7 @@ platforms, notably excluding Windows. On unsupported platforms parallel features
 will disable and a warning is printed.
 """
 
-from . import core, log, numpy, debug
+from . import core, log, numpy, debug, numeric
 import os, sys, multiprocessing, thread
 
 Lock = multiprocessing.Lock
@@ -149,10 +149,10 @@ def shzeros( shape, dtype=float ):
   'create zero-initialized array in shared memory'
 
   # return numpy.zeros( shape, dtype=dtype ) # TODO: toggle to numpy for debugging
-  if isinstance( shape, int ):
+  if numeric.isint( shape ):
     shape = shape,
   else:
-    assert all( isinstance(sh,int) for sh in shape )
+    assert all( numeric.isint(sh) for sh in shape )
   size = numpy.product( shape ) if shape else 1
   if dtype == float:
     typecode = 'd'
@@ -160,7 +160,7 @@ def shzeros( shape, dtype=float ):
     typecode = 'i'
   else:
     raise Exception, 'invalid dtype: %r' % dtype
-  buf = multiprocessing.RawArray( typecode, size )
+  buf = multiprocessing.RawArray( typecode, int(size) )
   return numpy.frombuffer( buf, dtype ).reshape( shape )
 
 def pariter( iterable ):

@@ -43,9 +43,13 @@ class Frame( object ):
 
   @cache.property
   def where( self ):
-    relpath = os.path.relpath( self.frame.f_code.co_filename )
+    path = self.frame.f_code.co_filename
+    try:
+      path = os.path.relpath( path )
+    except: # relpath can fail, for instance if file is on different drive
+      pass
     name = self._name( self.frame )
-    return 'File "%s", line %d, in %s' % ( relpath, self.lineno, name )
+    return 'File "%s", line %d, in %s' % ( path, self.lineno, name )
 
   @cache.property
   def context( self ):

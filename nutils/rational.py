@@ -11,7 +11,7 @@ The rational module.
 """
 
 from __future__ import division
-from . import cache, log
+from . import cache, log, numeric
 import numpy, collections
 
 
@@ -136,7 +136,7 @@ class Scalar( object ):
   __rtruediv__ = __rdiv__
 
   def __pow__( self, n ):
-    assert isinstance( n, int )
+    assert numeric.isint( n )
     if n == 0 or not self.__n:
       return unit
     return Scalar( numpy.multiply( self.__n, n ) )

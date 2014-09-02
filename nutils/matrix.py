@@ -245,19 +245,19 @@ class SparseMatrix( Matrix ):
   def __getitem__( self, (rows,cols) ):
     'get submatrix'
 
-    if isinstance(cols,numpy.ndarray) and cols.dtype == bool:
+    if numeric.isboolarray( cols ):
       assert len(cols) == self.shape[1]
       cols, = cols.nonzero()
-    elif isinstance(cols,numpy.ndarray) and cols.dtype == int:
+    elif numeric.isintarray( cols ):
       pass
     else:
       raise Exception, 'invalid column argument'
     ncols = len(cols)
 
-    if isinstance(rows,numpy.ndarray) and rows.dtype == bool:
+    if numeric.isboolarray( rows ):
       assert len(rows) == self.shape[0]
       rows, = rows.nonzero()
-    elif isinstance(rows,numpy.ndarray) and rows.dtype == int:
+    elif numeric.isintarray( rows ):
       pass
     else:
       raise Exception, 'invalid row argument'
