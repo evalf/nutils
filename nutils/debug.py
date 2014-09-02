@@ -107,7 +107,7 @@ class Explorer( cmd.Cmd ):
       hh = '─'
       vv = '│'
     else:
-      ul = ul = ll = lr = '+'
+      ul = ur = ll = lr = '+'
       hh = '-'
       vv = '|'
     self.intro = '\n'.join(
