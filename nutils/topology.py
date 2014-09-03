@@ -844,19 +844,15 @@ class HierarchicalTopology( Topology ):
     allbelems = []
     bgroups = {}
     topo = self.basetopo # topology to examine in next level refinement
-    elems = set( self )
-    while elems:
-      belemset = set()
-      myelems = elems.intersection( topo )
-      for belem in topo.boundary:
-        celem, transform = belem.parent
-        if celem in myelems:
-          belemset.add( belem )
-      allbelems.extend( belemset )
+    transforms = set( elem.transform for elem in self )
+    while transforms:
+      mytransforms = transforms.intersection( elem.transform for elem in topo )
+      mybelems = set( belem for belem in topo.boundary if belem.transform.parent[0] in mytransforms )
+      allbelems.extend( mybelems )
       for btag, belems in topo.boundary.groups.iteritems():
-        bgroups.setdefault( btag, [] ).extend( belemset.intersection(belems) )
+        bgroups.setdefault( btag, [] ).extend( mybelems.intersection(belems) )
       topo = topo.refined # proceed to next level
-      elems -= myelems
+      transforms -= mytransforms
     boundary = Topology( allbelems )
     boundary.groups = dict( ( tag, Topology( group ) ) for tag, group in bgroups.items() )
     return boundary
