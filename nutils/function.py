@@ -431,7 +431,7 @@ class ArrayFunc( Evaluable ):
     elif grad.shape == (3,1):
       normal = cross( grad[:,0], self.normal(), axis=0 ).normalized()
     elif grad.shape == (1,0):
-      normal = 1
+      normal = [1]
     else:
       raise NotImplementedError, 'cannot compute normal for %dx%d jacobian' % ( self.shape[0], ndims )
     return normal * ElemSign( ndims )
