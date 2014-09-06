@@ -66,9 +66,9 @@ class Scalar( object ):
     while len(init) and init[-1] == 0:
       init = init[:-1]
     if isinstance( init, numpy.ndarray ):
-      assert init.dtype == int
+      assert init.dtype in (int,long)
     else:
-      assert all( isinstance(n,int) for n in init )
+      assert all( isinstance( n, (int,long) ) for n in init )
     self.__n = tuple( init )
 
   def __hash__( self ):
@@ -136,7 +136,7 @@ class Scalar( object ):
   __rtruediv__ = __rdiv__
 
   def __pow__( self, n ):
-    assert isinstance( n, int )
+    assert isinstance( n, (int,long) )
     if n == 0 or not self.__n:
       return unit
     return Scalar( numpy.multiply( self.__n, n ) )
@@ -202,19 +202,17 @@ class Array( object ):
   def __init__( self, array, factor=unit, isfactored=False ):
     assert isscalar( factor )
     array = numpy.asarray( array )
-    assert array.dtype == int
-    if isfactored:
-      self.__array = array
-      self.__factor = factor if array.any() else unit
-    else:
-      self.__array, self.__factor = gcd( array, factor )
+    assert array.dtype in (int,long)
+    self.__array, self.__factor = ( array, factor ) if isfactored else gcd( array, factor )
+    self.__nonzero = array.any()
+    assert self.__nonzero or self.__factor == unit
 
   def __iter__( self ):
     for array in self.__array:
-      yield Array( array, self.__factor, False )
+      yield Array( array, self.__factor )
 
   def __getitem__( self, item ):
-    return Array( self.__array[item], self.__factor, False )
+    return Array( self.__array[item], self.__factor )
 
   @property
   def ndim( self ):
@@ -226,7 +224,7 @@ class Array( object ):
 
   @property
   def T( self ):
-    return Array( self.__array.T, self.__factor, True )
+    return Array( self.__array.T, self.__factor, isfactored=True )
 
   def __len__( self ):
     return len(self.__array)
@@ -242,7 +240,7 @@ class Array( object ):
     return self is other or isarray(other) and self.__cmpdata == other.__cmpdata
 
   def __neg__( self ):
-    return Array( -self.__array, self.__factor, True )
+    return Array( -self.__array, self.__factor, isfactored=True )
 
   def __add__( self, other ):
     if not isexact( other ):
@@ -251,7 +249,7 @@ class Array( object ):
     assert isarray( other )
     common = self.__factor.gcd( other.__factor )
     return Array( self.__array * int(self.__factor/common)
-              + other.__array * int(other.__factor/common), common, False )
+              + other.__array * int(other.__factor/common), common )
 
   def __sub__( self, other ):
     if not isexact( other ):
@@ -260,14 +258,16 @@ class Array( object ):
     assert isarray( other )
     common = self.__factor.gcd( other.__factor )
     return Array( self.__array * int(self.__factor/common)
-              - other.__array * int(other.__factor/common), common, False )
+              - other.__array * int(other.__factor/common), common )
 
   def __mul__( self, other ):
     if not isexact( other ):
       return self.__array * ( other * float(self.__factor) )
     other = asrational( other )
     if isscalar( other ):
-      return Array( self.__array, self.__factor*other, True )
+      if not self.__nonzero:
+        return self # 0 * a = 0
+      return Array( self.__array, self.__factor*other, isfactored=True )
     raise NotImplementedError
 
   def __div__( self, other ):
@@ -275,7 +275,7 @@ class Array( object ):
       return self.__array * ( float(self.__factor) / other )
     other = asrational( other )
     if isscalar( other ):
-      return Array( self.__array, self.__factor/other, True )
+      return Array( self.__array, self.__factor/other, isfactored=True ) if self.__nonzero else self
     raise NotImplementedError
 
   def __rdiv__( self, other ):
@@ -312,29 +312,39 @@ _a2s = lambda array: '[%s]' % ','.join( _a2s(a) for a in array ) if isinstance(a
 ## UTILITY FUNCTIONS
 
 def det( array ):
+  '''returns determinant as Scalar (must be >0)'''
   assert isarray(array)
-  if array.shape == (2,2):
+  if array.shape == (1,1):
+    ((a,),), scale = array.decompose()
+    assert a == 1
+    det = scale
+  elif array.shape == (2,2):
     ((a,b),(c,d)), scale = array.decompose()
-    det = a*d - b*c
+    det = factor( a*d - b*c ) * scale**2
   elif array.shape == (3,3):
     ((a,b,c),(d,e,f),(g,h,i)), scale = array.decompose()
-    det = a*e*i + b*f*g + c*d*h - c*e*g - b*d*i - a*f*h
+    det = factor( a*e*i + b*f*g + c*d*h - c*e*g - b*d*i - a*f*h ) * scale**3
   else:
     raise NotImplementedError, 'shape=' + str(array.shape)
-  return factor(det) * scale**len(array)
+  return det
 
-def inv( array ):
+def invdet( array ):
+  '''invdet(array) = inv(array) * det(array)'''
   assert isarray(array)
-  if array.shape == (2,2):
+  if array.shape == (1,1):
+    inv = ones( (1,1) )
+  elif array.shape == (2,2):
     ((a,b),(c,d)), scale = array.decompose()
-    inv = Array( ((d,-b),(-c,a)), scale / det(array), True )
+    inv = Array( ((d,-b),(-c,a)), scale, isfactored=True )
   elif array.shape == (3,3):
-    raise NotImplementedError
     ((a,b,c),(d,e,f),(g,h,i)), scale = array.decompose()
-    inv = Array( ((e*i-f*h,c*h-b*i,b*f-c*e),(f*g-d*i,a*i-c*g,c*d-a*f),(d*h-e*g,b*g-a*h,a*e-b*d)), scale / det(array), False )
+    inv = Array( ((e*i-f*h,c*h-b*i,b*f-c*e),(f*g-d*i,a*i-c*g,c*d-a*f),(d*h-e*g,b*g-a*h,a*e-b*d)), scale**2 )
   else:
     raise NotImplementedError, 'shape=' + tuple(array.shape)
   return inv
+  
+def inv( array ):
+  return invdet( array ) / det( array )
 
 def ext( array ):
   """Exterior
@@ -342,13 +352,13 @@ def ext( array ):
   det(arr;ex) = ex.ex"""
   assert isarray(array)
   if array.shape == (1,0):
-    ext = Array( (1,), unit, True )
+    ext = Array( (1,), unit, isfactored=True )
   elif array.shape == (2,1):
     ((a,),(b,)), scale = array.decompose()
-    ext = Array( (-b,a), unit/scale, True )
+    ext = Array( (-b,a), unit/scale, isfactored=True )
   elif array.shape == (3,2):
     ((a,b),(c,d),(e,f)), scale = array.decompose()
-    ext = Array( (c*f-e*d,e*b-a*f,a*d-c*b), unit/scale, False )
+    ext = Array( (c*f-e*d,e*b-a*f,a*d-c*b), unit/scale )
   else:
     raise NotImplementedError, 'shape=%s' % (array.shape,)
   # VERIFY
@@ -360,7 +370,7 @@ def ext( array ):
   return ext
 
 def factor( n ):
-  assert isinstance( n, int ) and n > 0
+  assert isinstance( n, (int,long) ) and n > 0
   factors = []
   if n >= len(masks):
     __log__ = log.iter( 'extending primes', primes )
@@ -383,13 +393,14 @@ def factor( n ):
     r = Scalar( nums )
     factor *= r
     n //= int(r)
+  assert n == 1
   return factor
 
 def isscalar( num ):
   return isinstance( num, Scalar )
 
 def asscalar( num ):
-  if isinstance( num, int ):
+  if isinstance( num, (int,long) ):
     num = factor( num )
   assert isscalar( num )
   return num
@@ -401,18 +412,18 @@ def asarray( arr ):
   if isarray( arr ):
     return arr
   arr = numpy.asarray( arr )
-  assert arr.dtype == int
-  return Array( arr, unit, False )
+  assert arr.dtype in (int,long)
+  return Array( arr, unit )
 
 def isrational(obj):
   return isscalar(obj) or isarray(obj)
 
 def isexact( obj ):
-  return isinstance(obj,numpy.ndarray) and obj.dtype == int or isinstance(obj,int) or isrational(obj)
+  return isinstance(obj,numpy.ndarray) and obj.dtype in (int,long) or isinstance(obj,(int,long)) or isrational(obj)
 
 def asrational( obj ):
   return obj if isrational( obj ) \
-    else asscalar( obj ) if isinstance( obj, int ) \
+    else asscalar( obj ) if isinstance( obj, (int,long) ) \
     else asarray( obj )
 
 def frac( numer, denom ):
@@ -420,7 +431,7 @@ def frac( numer, denom ):
 
 def gcd( numbers, scalar=unit ):
   numbers = numpy.asarray( numbers )
-  assert numbers.dtype == int
+  assert numbers.dtype in (int,long)
   if not numbers.size:
     return numbers, unit
   unique = numpy.unique( numpy.abs(numbers.flat) )
@@ -442,7 +453,7 @@ def gcd( numbers, scalar=unit ):
   return numbers // int(common), common * scalar
 
 def asfloat( obj ):
-  if isinstance(obj,int) or isscalar(obj):
+  if isinstance(obj,(int,long)) or isscalar(obj):
     return float(obj)
   if isarray( obj ):
     array, factor = obj.decompose()
@@ -450,7 +461,7 @@ def asfloat( obj ):
   return numpy.asarray( obj, dtype=float )
 
 def asint( obj ):
-  if isinstance(obj,numpy.ndarray) and obj.dtype == int or isinstance(obj,int):
+  if isinstance(obj,numpy.ndarray) and obj.dtype in (int,long) or isinstance(obj,(int,long)):
     return obj
   if isarray( obj ):
     ints, scale = obj.decompose()
@@ -464,10 +475,16 @@ def dot( A, B ):
     return numpy.dot( asfloat(A), asfloat(B) )
   A, a = asarray( A ).decompose()
   B, b = asarray( B ).decompose()
-  return Array( numpy.dot( A, B ), a * b, False )
+  return Array( numpy.dot( A, B ), a * b )
 
 def eye( ndims ):
-  return Array( numpy.eye(ndims,dtype=int), unit, True )
+  return Array( numpy.eye(ndims,dtype=int), unit, isfactored=True )
+
+def zeros( shape ):
+  return Array( numpy.zeros(shape,dtype=int), unit, isfactored=True )
+
+def ones( shape ):
+  return Array( numpy.ones(shape,dtype=int), unit, isfactored=True )
 
 def common_factor( arr1, arr2 ):
   if not isexact(arr1) or not isexact(arr2):
