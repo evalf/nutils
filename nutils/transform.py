@@ -15,54 +15,126 @@ from . import cache, rational
 import numpy
 
 
-class Transform( object ):
+class TransformChain( tuple ):
 
-  def __init__( self, todims, fromdims ):
-    self.todims = todims
-    self.fromdims = fromdims
+  __slots__ = ()
+
+  @property
+  def todims( self ):
+    return self[0].todims
+
+  @property
+  def fromdims( self ):
+    return self[-1].fromdims
+
+  @property
+  def isflipped( self ):
+    return any( trans.isflipped for trans in self )
 
   def lookup( self, transforms ):
-    if self not in transforms:
-      return None
-    return self, identity(self.fromdims)
+    # to be replaced by bisection soon
+    if self in transforms:
+      return self, identity(self.fromdims)
+    headtrans = self[:-1]
+    tail = self[-1:]
+    while headtrans:
+      head = TransformChain(headtrans)
+      if head in transforms:
+        return head, TransformChain(tail)
+      tail = headtrans[-1:] + tail
+      headtrans = headtrans[:-1]
+    return None
 
-  def strip_from( self, ndims ):
-    if self.fromdims == ndims:
+  def slice( self, fromdims=None, todims=None ):
+    if fromdims is None:
+      fromdims = self.fromdims
+    if todims is None:
+      todims = self.todims
+    if fromdims == self.fromdims and todims == self.todims:
       return self
-    assert self.todims == ndims
-    return identity( ndims )
+    transforms = self
+    while transforms and transforms[-1].fromdims != fromdims:
+      transforms = transforms[:-1]
+    while transforms and transforms[0].todims != todims:
+      transforms = transforms[1:]
+    if transforms:
+      return TransformChain( transforms )
+    assert fromdims == todims, 'invalid slice (%d,%d) of %s' % ( todims, fromdims, self )
+    return identity(fromdims)
 
-  def strip_to( self, ndims ):
-    if self.todims == ndims:
-      return self
-    assert self.fromdims == ndims
-    return identity( ndims )
+  def __lshift__( self, other ):
+    # self << other
+    assert isinstance( other, TransformChain )
+    assert self.fromdims == other.todims
+    return TransformChain( self + other )
+
+  def __rshift__( self, other ):
+    # self >> other
+    assert isinstance( other, TransformChain )
+    assert self.todims == other.fromdims
+    return TransformChain( other + self )
 
   @property
   def flipped( self ):
-    return self
+    return TransformChain( tuple( trans.flipped for trans in self ) )
+
+  @property
+  def det( self ):
+    det = self[0].det
+    for trans in self[1:]:
+      det *= trans.det
+    return det
+
+  @property
+  def offset( self ):
+    offset = self[-1].offset
+    for trans in self[-2::-1]:
+      offset = trans.apply( offset ) + trans.offset
+    return offset
+
+  @property
+  def matrix( self ):
+    matrix = self[0].matrix
+    for trans in self[1:]:
+      matrix = rational.dot( matrix, trans.matrix )
+    return matrix
+
+  @property
+  def invmatrix( self ):
+    invmatrix = self[-1].invmatrix
+    for trans in self[:-1]:
+      invmatrix = rational.dot( invmatrix, trans.invmatrix )
+    return invmatrix
+
+  def apply( self, points ):
+    for trans in reversed(self):
+      points = trans.apply( points )
+    return points
+
+  @property
+  def parent( self ):
+    assert len( self ) >= 2
+    return TransformChain( self[:-1] ), TransformChain( self[-1:] )
+
+  def __str__( self ):
+    return ' << '.join( str(trans) for trans in self )
+
+
+class TransformItem( object ):
+
+  def __init__( self, todims, fromdims, isflipped ):
+    self.todims = todims
+    self.fromdims = fromdims
+    if todims == fromdims:
+      assert not isflipped
+    self.isflipped = isflipped
 
   @property
   def det( self ):
     raise NotImplementedError
 
-  def sign( self, todims, fromdims ):
-    assert self.todims == todims and self.fromdims == fromdims
-    return 1
-
-  @property
-  def inv( self ):
-    raise NotImplementedError
-
-  def __lshift__( self, other ):
-    # self << other
-    assert isinstance( other, Transform )
-    assert self.fromdims == other.todims
-    return Compound( (self,other) )
-
-  def __rshift__( self, other ):
-    # self >> other
-    return other << self
+  def __str__( self ):
+    return '<TransformItem>' # should be redefined
 
   def __repr__( self ):
     return '%s(%s)' % ( self.__class__.__name__, self )
@@ -70,131 +142,18 @@ class Transform( object ):
 
 ## IMMUTABLE TRANSFORMS
 
-class ImmutableTransform( Transform ):
+class ImmutableTransform( TransformItem ):
 
   __metaclass__ = cache.Meta
 
 class Identity( ImmutableTransform ):
 
   def __init__( self, ndims ):
-    ImmutableTransform.__init__( self, ndims, ndims )
-
-  @property
-  def det( self ):
-    return rational.unit
-
-  @property
-  def inv( self ):
-    return self
-
-  @property
-  def matrix( self ):
-    return rational.eye( self.fromdims )
-
-  def apply( self, points ):
-    assert points.shape[-1] == self.fromdims
-    return points
-
-  def __str__( self ):
-    return '='
-
-class Compound( ImmutableTransform ):
-
-  def __init__( self, transforms ):
-    assert len(transforms) > 1
-    self.__transforms = transforms
-    ImmutableTransform.__init__( self, transforms[0].todims, transforms[-1].fromdims )
-    self.len = len(self.__transforms)
-
-  def lookup( self, transforms ):
-    # to be replaced by bisection soon
-    if self in transforms:
-      return self, identity(self.fromdims)
-    headtrans = self.__transforms[:-1]
-    tail = self.__transforms[-1:]
-    while headtrans:
-      head = Compound(headtrans) if len(headtrans) > 1 else headtrans[0]
-      if head in transforms:
-        return head, Compound(tail) if len(tail) > 1 else tail[0]
-      tail = headtrans[-1:] + tail
-      headtrans = headtrans[:-1]
-    return None
-
-  def strip_from( self, ndims ):
-    if self.fromdims == ndims:
-      return self
-    for i in range( self.len-2, -1, -1 ):
-      if self.__transforms[i].fromdims == ndims:
-        return Compound( self.__transforms[:i+1] ) if i else self.__transforms[0]
-    assert self.todims == ndims
-    return identity( ndims )
-    
-  def strip_to( self, ndims ):
-    if self.todims == ndims:
-      return self
-    for i in range( 1, self.len ):
-      if self.__transforms[i].todims == ndims:
-        return Compound( self.__transforms[i:] ) if i < self.len-1 else self.__transforms[-1]
-    assert self.fromdims == ndims
-    return identity( ndims )
-
-  def __lshift__( self, other ):
-    # self << other
-    assert isinstance( other, Transform )
-    assert self.fromdims == other.todims
-    return Compound( self.__transforms+(other,) )
-
-  def sign( self, todims, fromdims ):
-    for trans in self.__transforms:
-      if trans.todims == todims and trans.fromdims == fromdims:
-        return trans.sign( todims, fromdims )
-    raise Exception
+    ImmutableTransform.__init__( self, ndims, ndims, False )
 
   @property
   def flipped( self ):
-    return Compound( tuple( trans.flipped for trans in self.__transforms ) )
-
-  @cache.property
-  def det( self ):
-    det = self.__transforms[0].det
-    for trans in self.__transforms[1:]:
-      det *= trans.det
-    return det
-
-  @cache.property
-  def matrix( self ):
-    matrix = self.__transforms[0].matrix
-    for trans in self.__transforms[1:]:
-      matrix = rational.dot( matrix, trans.matrix )
-    return matrix
-
-  @cache.property
-  def inv( self ):
-    return Compound( tuple( trans.inv for trans in reversed(self.__transforms) ) )
-
-  def apply( self, points ):
-    for trans in reversed(self.__transforms):
-      points = trans.apply( points )
-    return points
-
-  @property
-  def parent( self ):
-    return ( self.__transforms[0] if self.len == 2
-        else Compound( self.__transforms[:-1] ) ), self.__transforms[-1]
-
-  def __str__( self ):
-    return '(%s)' % ' << '.join( str(trans) for trans in self.__transforms )
-
-class Shift( ImmutableTransform ):
-
-  def __init__( self, shift ):
-    assert rational.isarray( shift ) and shift.ndim == 1
-    ImmutableTransform.__init__( self, len(shift), len(shift) )
-    self.shift = shift
-
-  @cache.property
-  def inv( self ):
-    return shift( -self.shift )
+    return self
 
   @property
   def det( self ):
@@ -204,127 +163,56 @@ class Shift( ImmutableTransform ):
   def matrix( self ):
     return rational.eye( self.todims )
 
+  @property
+  def invmatrix( self ):
+    return rational.eye( self.todims )
+
+  @property
+  def offset( self ):
+    return rational.zeros( self.todims )
+
   def apply( self, points ):
     assert points.shape[-1] == self.fromdims
-    return points + self.shift
+    return points
 
   def __str__( self ):
-    return '+%s' % self.shift
+    return '='
 
-class Scale( ImmutableTransform ):
+class Affine( ImmutableTransform ):
 
-  def __init__( self, ndims, factor ):
-    ImmutableTransform.__init__( self, ndims, ndims )
-    self.factor = factor
-    
-  def apply( self, points ):
-    assert points.shape[-1] == self.fromdims
-    return points * self.factor
-
-  @property
-  def matrix( self ):
-    return rational.eye(self.todims) * self.factor
-
-  @property
-  def det( self ):
-    return self.factor**self.fromdims
-
-  @property
-  def inv( self ):
-    return scale( self.fromdims, rational.unit/self.factor )
-
-  def __str__( self ):
-    return '*%s' % str(self.factor)
-
-class Updim( ImmutableTransform ):
-
-  def __init__( self, matrix, sign ):
-    assert rational.isarray( matrix ) and matrix.ndim == 2
-    ImmutableTransform.__init__( self, matrix.shape[0], matrix.shape[1] )
+  def __init__( self, matrix, offset, isflipped ):
     self.matrix = matrix
-    assert abs(sign) == 1
-    self.__sign = sign
-
-  def sign( self, todims, fromdims ):
-    assert self.todims == todims and self.fromdims == fromdims
-    return self.__sign
+    self.offset = offset
+    assert matrix.ndim == 2 and offset.shape == matrix.shape[:1]
+    ImmutableTransform.__init__( self, matrix.shape[0], matrix.shape[1], isflipped )
 
   @property
   def flipped( self ):
-    return Updim( self.matrix, -self.__sign )
+    return self if self.fromdims == self.todims \
+      else Affine( self.matrix, self.offset, not self.isflipped )
 
   def apply( self, points ):
     assert points.shape[-1] == self.fromdims
-    return rational.dot( points, self.matrix.T )
-
-  def __str__( self ):
-    return '*%s' % self.matrix
-
-class Linear( Updim ):
-
-  def __init__( self, matrix ):
-    assert matrix.shape[0] == matrix.shape[1]
-    Updim.__init__( self, matrix, 1 )
+    return rational.dot( points, self.matrix.T ) + self.offset
 
   @cache.property
   def det( self ):
     return rational.det( self.matrix )
-  
-  @cache.property
-  def inv( self ):
-    return linear( rational.inv( self.matrix ) )
-
-class Tensor( ImmutableTransform ):
-
-  def __init__( self, trans1, trans2 ):
-    assert isinstance( trans1, Transform )
-    assert isinstance( trans2, Transform )
-    ImmutableTransform.__init__( self, trans1.todims+trans2.todims, trans1.fromdims+trans2.fromdims )
-    self.trans1 = trans1
-    self.trans2 = trans2
-
-  def sign( self, todims, fromdims ):
-    assert self.todims == todims and self.fromdims == fromdims
-    return self.trans1.sign( self.trans1.todims, self.trans1.fromdims ) \
-         * self.trans2.sign( self.trans2.todims, self.trans2.fromdims )
-
-  @property
-  def flipped( self ):
-    return Tensor( self.trans1.flipped, self.trans2.flipped )
-
-  def apply( self, points ):
-    points1 = self.trans1.apply( points[...,:self.trans1.fromdims] )
-    points2 = self.trans2.apply( points[...,self.trans1.fromdims:] )
-    points1, points2, factor = rational.common_factor( points1, points2 )
-    points = numpy.concatenate( [ points1, points2 ], axis=-1 )
-    return points if factor is None else rational.Array( points, factor, True )
 
   @cache.property
-  def matrix( self ):
-    matrix1, matrix2, factor = rational.common_factor( self.trans1.matrix, self.trans2.matrix )
-    matrix = numpy.zeros( [self.todims,self.fromdims], dtype=int )
-    matrix[:self.trans1.todims,:self.trans1.fromdims] = matrix1
-    matrix[self.trans1.todims:,self.trans1.fromdims:] = matrix2
-    return rational.Array( matrix, factor, True )
-
-  @property
-  def det( self ):
-    return self.trans1.det * self.trans2.det
-
-  @property
-  def inv( self ):
-    return Tensor( self.trans1.inv, self.trans2.inv )
+  def invmatrix( self ):
+    return rational.invdet( self.matrix ) / self.det
 
   def __str__( self ):
-    return '[%s; %s]' % ( self.trans1, self.trans2 )
+    return '%s x + %s' % ( self.matrix, self.offset )
 
 
 ## VERTEX TRANSFORMS
 
-class VertexTransform( Transform ):
+class VertexTransform( TransformItem ):
 
   def __init__( self, fromdims ):
-    Transform.__init__( self, None, fromdims )
+    TransformItem.__init__( self, None, fromdims, False )
 
 class MapTrans( VertexTransform ):
 
@@ -390,27 +278,21 @@ class RootTransEdges( VertexTransform ):
 ## UTILITY FUNCTIONS
 
 def identity( ndims ):
-  return Identity( ndims )
+  return TransformChain(( Identity( ndims ), ))
 
-def scale( ndims, factor ):
-  if factor == rational.unit:
-    return identity( ndims )
-  return Scale( ndims, rational.asrational(factor) )
+def affine( matrix, offset=None, numer=rational.unit, isflipped=False ):
+  r_matrix = rational.frac( matrix, numer )
+  r_offset = rational.frac( offset, numer ) if offset is not None \
+        else rational.zeros( r_matrix.shape[0] )
+  return TransformChain(( Affine( r_matrix, r_offset, isflipped ), ))
 
-def half( ndims ):
-  return Scale( ndims, rational.half )
+def roottrans( name, shape ):
+  return TransformChain(( RootTrans( name, shape ), ))
 
-def shift( shift, numer=rational.unit ):
-  return Shift( rational.frac(shift,numer) )
+def roottransedges( name, shape ):
+  return TransformChain(( RootTransEdges( name, shape ), ))
 
-def linear( matrix, numer=rational.unit ):
-  return Linear( rational.frac(matrix,numer) )
-
-def updim( matrix, sign, numer=rational.unit ):
-  return Updim( rational.frac(matrix,numer), sign )
-
-def tensor( trans1, trans2 ):
-  return Tensor( trans1, trans2 )
-
+def maptrans( coords, vertices ):
+  return TransformChain(( MapTrans( coords, vertices ), ))
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

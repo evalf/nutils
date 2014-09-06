@@ -23,6 +23,7 @@ import re, warnings
 ## ELEMENT
 
 class Element( object ):
+  'element class'
 
   __slots__ = 'transform', 'reference', 'opposite'
 
@@ -194,16 +195,16 @@ class Reference( object ):
         if numpy.linalg.det( matrix.astype(float) ) < 0:
           tri[-2:] = tri[-1], tri[-2]
           matrix = ( coords[tri[1:]] - offset ).T
-        strans = transform.shift(offset,numer) << transform.linear(matrix,numer)
+        strans = transform.affine( matrix, offset, numer)
         ( pos if sign[i] > 0 else neg ).append(( strans, simplex ))
 
     else:
 
-      for ctrans, child in self.children:
+      for ichild, (ctrans,child) in enumerate( self.children ):
         if trans:
           poschild, negchild = child.trim( trans << ctrans, levelset, maxrefine-1, numer )
         else:
-          N, I = self.subvertex(ctrans,maxrefine)
+          N, I = self.subvertex(ichild,maxrefine)
           assert len(levelset) == N
           poschild, negchild = child.trim( False, levelset[I], maxrefine-1, numer )
         if poschild:
@@ -220,6 +221,7 @@ class Reference( object ):
            MosaicReference( self.ndims, tuple(neg) )
 
 class SimplexReference( Reference ):
+  'simplex reference'
 
   def __init__( self, ndims ):
     assert ndims >= 0
@@ -486,32 +488,34 @@ class SimplexReference( Reference ):
 
   @cache.property
   def child_transforms( self ):
-    half = transform.half( self.ndims )
+    eye = numpy.eye( self.ndims, dtype=int )
     if self.ndims == 1:
-      return [ half,
-        half << transform.shift([1]) ]
+      return [
+        transform.affine( eye, None, 2 ),
+        transform.affine( eye, eye[:,0], 2 ) ]
     if self.ndims == 2:
-      return [ half,
-        half << transform.shift([0,1]),
-        half << transform.shift([1,0]),
-        transform.linear([[-1,0],[0,-1]],2) << transform.shift([-1,-1])
-      ]
+      return [
+        transform.affine( eye, None, 2 ),
+        transform.affine( eye, eye[:,1], 2 ),
+        transform.affine( eye, eye[:,0], 2 ),
+        transform.affine( -eye, [1,1], 2 ) ]
     raise NotImplementedError
 
   @property
   def children( self ):
     return [ (ctrans,self) for ctrans in self.child_transforms ]
 
-  def subvertex( self, ctrans, i ):
-    index = self.child_transforms.index( ctrans )
+  def subvertex( self, ichild, i ):
     n = 2**(i-1)
     if self.ndims == 1:
-      return 2*n+1, numpy.arange(n+1) if index == 0 else numpy.arange(n,2*n+1)
+      assert 0 <= ichild < 2
+      return 2*n+1, numpy.arange(n+1) if ichild == 0 else numpy.arange(n,2*n+1)
     if self.ndims == 2:
+      assert 0 <= ichild < 4
       return ((2*n+2)*(2*n+1))//2, numpy.concatenate(
-             [ (((4*n+3-i)*i)//2) + numpy.arange(n+1-i) for i in range(n+1) ] if index == 0
-        else [ ((3*(n+1)*n)//2) + numpy.arange(((n+2)*(n+1))//2) ] if index == 1
-        else [ (((4*n+3-i)*i)//2+n) + numpy.arange(n+1-i) for i in range(n+1) ] if index == 2
+             [ (((4*n+3-i)*i)//2) + numpy.arange(n+1-i) for i in range(n+1) ] if ichild == 0
+        else [ ((3*(n+1)*n)//2) + numpy.arange(((n+2)*(n+1))//2) ] if ichild == 1
+        else [ (((4*n+3-i)*i)//2+n) + numpy.arange(n+1-i) for i in range(n+1) ] if ichild == 2
         else [ (((3*n+3+i)*(n-i))//2) + numpy.arange(n,i-1,-1) for i in range(n+1) ] )
     raise NotImplementedError, 'ndims=%d' % self.ndims
 
@@ -519,8 +523,8 @@ class SimplexReference( Reference ):
   def edges( self ):
     edge = SimplexReference( self.ndims-1 )
     eye = numpy.eye( self.ndims, dtype=int )
-    return [ ( transform.shift( eye[0] ) << transform.updim( (eye[1:]-eye[0]).T, sign=1 ), edge ) ] \
-         + [ ( transform.updim( eye[range(i)+range(i+1,self.ndims)].T, sign=1 if i%2 else -1 ), edge )
+    return [ ( transform.affine( (eye[1:]-eye[0]).T, eye[0] ), edge ) ] \
+         + [ ( transform.affine( eye[range(i)+range(i+1,self.ndims)].T, isflipped=(i%2==0) ), edge )
                   for i in range( self.ndims ) ]
 
   def __str__( self ):
@@ -529,6 +533,7 @@ class SimplexReference( Reference ):
   __repr__ = __str__
 
 class TensorReference( Reference ):
+  'tensor reference'
 
   def __init__( self, ref1, ref2 ):
     self.ref1 = ref1
@@ -539,11 +544,10 @@ class TensorReference( Reference ):
     vertices[:,:,ref1.ndims:] = ref2.vertices[_,:]
     Reference.__init__( self, vertices.reshape(-1,ndims) )
 
-  def subvertex( self, ctrans, i ):
-    if not isinstance( ctrans, transform.Tensor ):
-      raise KeyError, ctrans
-    N1, I1 = self.ref1.subvertex( ctrans.trans1, i )
-    N2, I2 = self.ref2.subvertex( ctrans.trans2, i )
+  def subvertex( self, ichild, i ):
+    ichild1, ichild2 = divmod( ichild, len(self.ref2.children) )
+    N1, I1 = self.ref1.subvertex( ichild1, i )
+    N2, I2 = self.ref2.subvertex( ichild2, i )
     return N1 * N2, ( N2 * I1[:,_] + I2[_,:] ).ravel()
 
   def stdfunc( self, degree, *n ):
@@ -608,14 +612,25 @@ class TensorReference( Reference ):
 
   @cache.property
   def edges( self ):
-    return [ ( transform.tensor( trans1, transform.identity(self.ref2.ndims) ), edge1 * self.ref2 ) for trans1, edge1 in self.ref1.edges ] \
-         + [ ( transform.tensor( transform.identity(self.ref1.ndims), trans2.flipped ), self.ref1 * edge2 ) for trans2, edge2 in self.ref2.edges ]
+    return [ ( transform.affine(
+                rational.blockdiag([ trans1.matrix, rational.eye(self.ref2.ndims) ]),
+                rational.stack([ trans1.offset, rational.zeros(self.ref2.ndims) ]),
+                isflipped=trans1.isflipped ), edge1 * self.ref2 )
+                  for trans1, edge1 in self.ref1.edges ] \
+         + [ ( transform.affine(
+                rational.blockdiag([ rational.eye(self.ref1.ndims), trans2.matrix ]),
+                rational.stack([ rational.zeros(self.ref1.ndims), trans2.offset ]),
+                isflipped=not trans2.isflipped ), self.ref1 * edge2 )
+                  for trans2, edge2 in self.ref2.edges ]
 
   @cache.property
   def children( self ):
-    return [ ( transform.tensor(trans1,trans2), child1*child2 )
-      for trans1, child1 in self.ref1.children
-        for trans2, child2 in self.ref2.children ]
+    return [ ( transform.affine(
+                rational.blockdiag([ trans1.matrix, trans2.matrix ]),
+                rational.stack([ trans1.offset, trans2.offset ]),
+                isflipped=trans1.isflipped or trans2.isflipped ), child1 * child2 )
+                  for trans1, child1 in self.ref1.children
+                    for trans2, child2 in self.ref2.children ]
 
 class NeighborhoodTensorReference( TensorReference ):
   'product reference element'

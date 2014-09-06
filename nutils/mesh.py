@@ -50,14 +50,15 @@ def rectilinear( richshape, periodic=(), name='rect' ):
 
   if isinstance( name, str ):
     wrap = tuple( sh if i in periodic else 0 for i, sh in enumerate(shape) )
-    root = transform.RootTrans( name, wrap )
+    root = transform.roottrans( name, wrap )
   else:
     assert all( ( name.take(0,i) == name.take(2,i) ).all() for i in periodic )
-    root = transform.RootTransEdges( name, shape )
+    root = transform.roottransedges( name, shape )
 
   reference = element.SimplexReference(1)**ndims
+  eye = numpy.eye( ndims, dtype=int )
   for index in indices.reshape( ndims, -1 ).T:
-    structure[tuple(index)] = element.Element( reference, root << transform.shift(index) )
+    structure[tuple(index)] = element.Element( reference, root << transform.affine(eye,index) )
   topo = topology.StructuredTopology( structure, periodic=periodic )
   if uniform:
     geom = function.ElemFunc( ndims ) * scale + offset
@@ -183,7 +184,7 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
         if numpy.linalg.det( elemcoords[:2] - elemcoords[2] ) < 0:
           nids[:2] = nids[1], nids[0]
         ref = element.SimplexReference(2)
-        maptrans = transform.MapTrans(ref.vertices,nids if not name else [name+str(nid) for nid in nids])
+        maptrans = transform.maptrans(ref.vertices,nids if not name else [name+str(nid) for nid in nids])
         elem = element.Element(ref,maptrans)
         elems[elemkey] = elem
       
@@ -388,11 +389,11 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   + [ ( 12+i, 12+(i+1)%8, 20 )         for i in range( 8) ] )
   
   elements = []
-  root = transform.RootTrans( 'demo', shape=(0,0) )
+  root = transform.roottrans( 'demo', shape=(0,0) )
   reference = element.SimplexReference(2)
   for ielem, elemvertices in enumerate( vertices ):
     elemcoords = coords[ numpy.array(elemvertices) ]
-    trans = transform.shift(elemcoords[2],scale) << transform.linear((elemcoords[:2]-elemcoords[2]).T,scale)
+    trans = transform.affine( (elemcoords[:2]-elemcoords[2]).T, elemcoords[2], scale )
     elem = element.Element( reference, root << trans )
     elements.append( elem )
 

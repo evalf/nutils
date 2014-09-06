@@ -5,9 +5,8 @@ class FuncTest( object ):
 
   def __init__( self, op, n_op, *shapes ):
 
-    roottrans = transform.linear([[0,1],[-1,0]]) >> transform.shift([1,0]) \
-             >> transform.linear([[2,1],[-1,3]]) >> transform.shift([1,0])
-    elem = element.Element( element.SimplexReference(1)**2, roottrans >> transform.RootTrans( 'test', (0,0) ) )
+    roottrans = transform.affine( [[0,1],[-1,0]], [1,0] ) >> transform.affine( [[2,1],[-1,3]], [1,0] )
+    elem = element.Element( element.SimplexReference(1)**2, roottrans >> transform.roottrans( 'test', (0,0) ) )
     iface = element.Element( elem.edge(0).reference, elem.edge(0).transform, elem.edge(1).transform )
     ifpoints, ifweights = iface.reference.getischeme('uniform2')
 
@@ -30,7 +29,7 @@ class FuncTest( object ):
     self.geomfun = geom.compiled()
     self.iface = iface
     self.ifpoints = ifpoints
-    self.invroottransmatrix = rational.asfloat( roottrans.inv.matrix )
+    self.invroottransmatrix = rational.asfloat( roottrans.invmatrix )
 
   def find( self, target, xi0 ):
     ndim, = self.geom.shape

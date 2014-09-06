@@ -494,5 +494,16 @@ def common_factor( arr1, arr2 ):
   common = factor1.gcd( factor2 )
   return int1 * int(factor1/common), int2 * int(factor2/common), common
 
+def stack( args ):
+  arr1, arr2, common = common_factor( *args ) # support only 2 args for now
+  stack = numpy.concatenate([ arr1, arr2 ])
+  return Array( stack, common, isfactored=True )
+
+def blockdiag( args ):
+  arr1, arr2, common = common_factor( *args ) # support only 2 args for now
+  blockdiag = numpy.zeros( (arr1.shape[0]+arr2.shape[0],arr1.shape[1]+arr2.shape[1]), dtype=int )
+  blockdiag[:arr1.shape[0],:arr1.shape[1]] = arr1
+  blockdiag[arr1.shape[0]:,arr1.shape[1]:] = arr2
+  return Array( blockdiag, common, isfactored=True )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

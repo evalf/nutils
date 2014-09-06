@@ -142,8 +142,8 @@ class Topology( object ):
     quad = element.SimplexReference(1)**2
     ndims = self.ndims + other.ndims
     eye = numpy.eye( ndims, dtype=int )
-    self_trans = transform.updim(eye[:self.ndims],1)
-    other_trans = transform.updim(eye[self.ndims:],1)
+    self_trans = transform.affine(eye[:self.ndims])
+    other_trans = transform.affine(eye[self.ndims:])
 
     if any( elem.reference != quad for elem in self ) or any( elem.reference != quad for elem in other ):
       return Topology( element.Element( elem1.reference * elem2.reference, elem1.transform << self_trans, elem2.transform << other_trans )
@@ -622,8 +622,8 @@ class StructuredTopology( Topology ):
       A[:idim] = -eye[:idim]
       A[idim+1:] = eye[idim:]
       b = numpy.hstack( [ numpy.ones( idim+1, dtype=int ), numpy.zeros( self.ndims-idim, dtype=int ) ] )
-      trans1 = transform.shift(b[:-1]) << transform.updim(A,sign=1)
-      trans2 = transform.shift(b[1:]) << transform.updim(A,sign=-1)
+      trans1 = transform.affine( A, b[:-1], isflipped=False )
+      trans2 = transform.affine( A, b[1:], isflipped=True )
       edge = element.SimplexReference(1)**(self.ndims-1)
       for elem1, elem2 in numpy.broadcast( self.structure[t1], self.structure[t2] ):
         assert elem1.transform == elem1.opposite
@@ -833,8 +833,8 @@ class HierarchicalTopology( Topology ):
     self.edict = { elem.transform: elem.reference for elem in elements }
     Topology.__init__( self, elements )
 
-    self.maxrefine = max( elem.transform.len for elem in elements ) \
-                   - min( elem.transform.len for elem in self.basetopo )
+    self.maxrefine = max( len(elem.transform) for elem in elements ) \
+                   - min( len(elem.transform) for elem in self.basetopo )
 
   @cache.property
   def boundary( self ):

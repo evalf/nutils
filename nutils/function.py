@@ -538,10 +538,10 @@ class ElemSign( ArrayFunc ):
   @staticmethod
   def elemsign( trans, ndims ):
     try:
-      sign = trans.sign( ndims+1, ndims )
-    except:
-      sign = 1 # for situations like 3D geom and 2D topo. Needs some thinking.
-    return numpy.array(sign)
+      ntrans = trans.slice( todims=ndims+1, fromdims=ndims )
+    except: # possibly ndim topo, n+1dim geom
+      return numpy.array( 1 )
+    return numpy.array( -1 if ntrans.isflipped else 1 )
 
   def _opposite( self ):
     return ElemSign( self.ndims, 1-self.side )
@@ -736,7 +736,7 @@ class IWeights( ArrayFunc ):
   def iweights( trans, weights ):
     'evaluate'
 
-    return rational.asfloat( trans.strip_to(trans.fromdims).det ) * weights
+    return rational.asfloat( trans.slice(todims=trans.fromdims).det ) * weights
 
 class Transform( ArrayFunc ):
   'transform'
@@ -756,7 +756,7 @@ class Transform( ArrayFunc ):
   def transform( trans, todims, fromdims ):
     'transform'
 
-    return rational.asfloat( trans.strip_from(fromdims).strip_to(todims).matrix )
+    return rational.asfloat( trans.slice(fromdims=fromdims,todims=todims).matrix )
 
   def _localgradient( self, ndims ):
     return _zeros( self.shape + (ndims,) )
@@ -797,7 +797,7 @@ class Function( ArrayFunc ):
         if keep is not None:
           F = F[(Ellipsis,keep)+(slice(None),)*igrad]
         if igrad:
-          matrix = rational.asfloat( head.strip_to(head.fromdims).inv.matrix )
+          matrix = rational.asfloat( head.slice(todims=head.fromdims).invmatrix )
           for axis in range(-igrad,0):
             F = numeric.dot( F, matrix, axis )
         fvals.append( F )
@@ -1697,7 +1697,7 @@ class ElemFunc( ArrayFunc ):
   def elemfunc( points, trans, ndims ):
     'evaluate'
 
-    return trans.strip_to(ndims).apply( points )
+    return trans.slice(todims=ndims).apply( points )
 
   def _localgradient( self, ndims ):
     return eye( ndims ) if self.shape[0] == ndims \
