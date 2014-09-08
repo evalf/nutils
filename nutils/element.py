@@ -116,7 +116,7 @@ class Reference( object ):
       else TensorReference( self, other )
 
   def __pow__( self, n ):
-    assert isinstance( n, int ) and n >= 0
+    assert numeric.isint( n ) and n >= 0
     return SimplexReference(0) if n == 0 \
       else self if n == 1 \
       else self * self**(n-1)

@@ -49,7 +49,7 @@ def overlapping( arr, axis=-1, n=2 ):
 def normdim( ndim, n ):
   'check bounds and make positive'
 
-  assert isinstance(ndim,int) and ndim >= 0, 'ndim must be positive integer, got %s' % ndim
+  assert isint(ndim) and ndim >= 0, 'ndim must be positive integer, got %s' % ndim
   if n < 0:
     n += ndim
   assert 0 <= n < ndim, 'argument out of bounds: %s not in [0,%s)' % (n,ndim)
@@ -417,5 +417,17 @@ def check_equal_wrapper( f1, f2 ):
     numpy.testing.assert_array_almost_equal( v1, v2 )
     return v1
   return f12
+
+def isbool( a ):
+  return isinstance( a, bool ) or isboolarray(a) and a.ndim == 0
+
+def isboolarray( a ):
+  return isinstance( a, numpy.ndarray ) and a.dtype == bool
+
+def isint( a ):
+  return isinstance( a, (int,long,numpy.int64) ) or isintarray(a) and a.ndim == 0
+
+def isintarray( a ):
+  return isinstance( a, numpy.ndarray ) and a.dtype in (int,long,numpy.int64)
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
