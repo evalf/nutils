@@ -536,7 +536,7 @@ class Topology( object ):
   def trim( self, levelset, maxrefine, eps=.01 ):
     'trim element along levelset'
 
-    numer = rational.asrational( numeric.round(1./eps) )
+    numer = rational.round(1./eps)
     levelset = function.ascompiled( levelset )
     poselems = []
     negelems = []

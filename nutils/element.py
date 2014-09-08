@@ -98,7 +98,7 @@ class Reference( object ):
 
   @property
   def simplices( self ):
-    return [ (transform.identity(self.ndims),self) ]
+    return [ (transform.identity,self) ]
 
   def getischeme( self, ischeme ):
     if self.ndims == 0:
@@ -488,17 +488,16 @@ class SimplexReference( Reference ):
 
   @cache.property
   def child_transforms( self ):
-    eye = numpy.eye( self.ndims, dtype=int )
     if self.ndims == 1:
       return [
-        transform.affine( eye, None, 2 ),
-        transform.affine( eye, eye[:,0], 2 ) ]
+        transform.affine( 1, [0], 2 ),
+        transform.affine( 1, [1], 2 ) ]
     if self.ndims == 2:
       return [
-        transform.affine( eye, None, 2 ),
-        transform.affine( eye, eye[:,1], 2 ),
-        transform.affine( eye, eye[:,0], 2 ),
-        transform.affine( -eye, [1,1], 2 ) ]
+        transform.affine(  1, [0,0], 2 ),
+        transform.affine(  1, [0,1], 2 ),
+        transform.affine(  1, [1,0], 2 ),
+        transform.affine( -1, [1,1], 2 ) ]
     raise NotImplementedError
 
   @property
@@ -613,24 +612,29 @@ class TensorReference( Reference ):
   @cache.property
   def edges( self ):
     return [ ( transform.affine(
-                rational.blockdiag([ trans1.matrix, rational.eye(self.ref2.ndims) ]),
+                rational.blockdiag([ trans1.linear, rational.eye(self.ref2.ndims) ]),
                 rational.stack([ trans1.offset, rational.zeros(self.ref2.ndims) ]),
                 isflipped=trans1.isflipped ), edge1 * self.ref2 )
                   for trans1, edge1 in self.ref1.edges ] \
          + [ ( transform.affine(
-                rational.blockdiag([ rational.eye(self.ref1.ndims), trans2.matrix ]),
+                rational.blockdiag([ rational.eye(self.ref1.ndims), trans2.linear ]),
                 rational.stack([ rational.zeros(self.ref1.ndims), trans2.offset ]),
                 isflipped=not trans2.isflipped ), self.ref1 * edge2 )
                   for trans2, edge2 in self.ref2.edges ]
 
   @cache.property
   def children( self ):
-    return [ ( transform.affine(
-                rational.blockdiag([ trans1.matrix, trans2.matrix ]),
-                rational.stack([ trans1.offset, trans2.offset ]),
-                isflipped=trans1.isflipped or trans2.isflipped ), child1 * child2 )
-                  for trans1, child1 in self.ref1.children
-                    for trans2, child2 in self.ref2.children ]
+    children = []
+    for trans1, child1 in self.ref1.children:
+      for trans2, child2 in self.ref2.children:
+        offset = rational.stack([ trans1.offset, trans2.offset ])
+        if trans1.linear.ndim == 0 and trans1.linear == trans2.linear:
+          trans = transform.affine( trans1.linear, offset )
+        else:
+          assert trans1.ndim == trans2.ndim == 2
+          trans = transform.affine( rational.blockdiag([ trans1.linear, trans2.linear ]), offset ) # TODO isflipped?
+        children.append(( trans, child1 * child2 ))
+    return children
 
 class NeighborhoodTensorReference( TensorReference ):
   'product reference element'

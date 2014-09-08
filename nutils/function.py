@@ -736,7 +736,7 @@ class IWeights( ArrayFunc ):
   def iweights( trans, weights ):
     'evaluate'
 
-    return rational.asfloat( trans.slice(todims=trans.fromdims).det ) * weights
+    return float( trans.slice(todims=trans.fromdims).det ) * weights
 
 class Transform( ArrayFunc ):
   'transform'
@@ -756,7 +756,9 @@ class Transform( ArrayFunc ):
   def transform( trans, todims, fromdims ):
     'transform'
 
-    return rational.asfloat( trans.slice(fromdims=fromdims,todims=todims).matrix )
+    matrix = trans.slice(fromdims=fromdims,todims=todims).linear
+    assert matrix.ndim == 2
+    return matrix.astype( float )
 
   def _localgradient( self, ndims ):
     return _zeros( self.shape + (ndims,) )
@@ -797,9 +799,12 @@ class Function( ArrayFunc ):
         if keep is not None:
           F = F[(Ellipsis,keep)+(slice(None),)*igrad]
         if igrad:
-          matrix = rational.asfloat( head.slice(todims=head.fromdims).invmatrix )
-          for axis in range(-igrad,0):
-            F = numeric.dot( F, matrix, axis )
+          invlinear = head.slice(todims=head.fromdims).invlinear.astype( float )
+          if invlinear.ndim:
+            for axis in range(-igrad,0):
+              F = numeric.dot( F, invlinear, axis )
+          elif invlinear != 1:
+            F = F * (invlinear**igrad)
         fvals.append( F )
       descend += 1
     return fvals[0] if len(fvals) == 1 else numpy.concatenate( fvals, axis=-1-igrad )

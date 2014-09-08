@@ -29,7 +29,7 @@ class FuncTest( object ):
     self.geomfun = geom.compiled()
     self.iface = iface
     self.ifpoints = ifpoints
-    self.invroottransmatrix = rational.asfloat( roottrans.invmatrix )
+    self.invroottransmatrix = roottrans.invlinear.astype( float )
 
   def find( self, target, xi0 ):
     ndim, = self.geom.shape
