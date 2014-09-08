@@ -27,11 +27,11 @@ class Element( object ):
 
   __slots__ = 'transform', 'reference', 'opposite'
 
-  def __init__( self, reference, transform, opposite=None ):
-    assert transform.fromdims == reference.ndims
+  def __init__( self, reference, trans, opposite=None ):
+    assert trans.fromdims == reference.ndims
     self.reference = reference
-    self.transform = transform
-    self.opposite = opposite or transform
+    self.transform = transform.canonical( trans )
+    self.opposite = transform.canonical( opposite ) if opposite is not None else self.transform
 
   def __eq__( self, other ):
     return self is other or isinstance(other,Element) \

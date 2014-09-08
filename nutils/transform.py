@@ -282,7 +282,7 @@ class RootTransEdges( VertexTransform ):
     return repr( ','.join(self.name.flat)+'*' )
 
 
-## UTILITY FUNCTIONS
+## CONSTRUCTORS
 
 identity = TransformChain()
 
@@ -302,6 +302,23 @@ def roottransedges( name, shape ):
 
 def maptrans( coords, vertices ):
   return TransformChain(( MapTrans( coords, vertices ), ))
+
+
+## UTILITY FUNCTIONS
+
+def canonical( transchain ):
+  # keep at highest ndims possible
+  chain = []
+  trans1 = transchain[ 0 ]
+  for trans2 in transchain[ 1: ]:
+    if isinstance( trans2, Scale ) and trans1.todims == trans1.fromdims + 1:
+      offset = trans1.apply( trans2.offset ) + (1-trans2.linear) * trans1.offset
+      chain.append( Scale( trans2.linear, offset ) )
+    else:
+      chain.append( trans1 )
+      trans1 = trans2
+  chain.append( trans1 )
+  return TransformChain( chain )
 
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

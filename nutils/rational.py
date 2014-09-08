@@ -114,6 +114,14 @@ class Rational( object ):
       return self.numer / float(self.denom) - other
     return Rational( self.numer * other.denom - other.numer * self.denom, self.denom * other.denom )
 
+  def __rsub__( self, other ):
+    if other is 0:
+      return -self
+    other = asarray( other )
+    if not isrational( other ):
+      return other - self.numer / float(self.denom)
+    return Rational( other.numer * self.denom - self.numer * other.denom, self.denom * other.denom )
+
   def __mul__( self, other ):
     if other is 1:
       return self
