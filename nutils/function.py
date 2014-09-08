@@ -787,13 +787,8 @@ class Function( ArrayFunc ):
     head, tail = trans.lookup( stdmap )
     stds = stdmap[head]
     fvals = []
-    descend = 0
     for std, keep in stds:
       if std:
-        while descend:
-          head, _tail = head.parent
-          tail >>= _tail
-          descend -= 1
         transpoints = cache( tail.apply, points )
         F = cache( std.eval, transpoints, igrad )
         if keep is not None:
@@ -806,7 +801,8 @@ class Function( ArrayFunc ):
           elif invlinear != 1:
             F = F * (invlinear**igrad)
         fvals.append( F )
-      descend += 1
+      head, _tail = head.parent
+      tail >>= _tail
     return fvals[0] if len(fvals) == 1 else numpy.concatenate( fvals, axis=-1-igrad )
 
   def _opposite( self ):

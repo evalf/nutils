@@ -118,7 +118,7 @@ class TransformChain( tuple ):
 
   @property
   def parent( self ):
-    assert len( self ) >= 2
+    assert len( self ) >= 1
     return TransformChain( self[:-1] ), TransformChain( self[-1:] )
 
   def __str__( self ):
