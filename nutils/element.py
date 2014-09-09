@@ -266,10 +266,8 @@ class SimplexReference( Reference ):
     if self.ndims == 0: # point
       return numpy.zeros((1,0)), numpy.ones(1)
     if self.ndims == 1: # line
-      k = numpy.arange( 1, degree // 2 + 1 )
-      d = k / numpy.sqrt( 4*k**2-1 )
-      x, w = numpy.linalg.eigh( numpy.diagflat(d,-1) ) # eigh operates (by default) on lower triangle
-      return (x[:,_]+1) * .5, w[0]**2
+      x, w = gauss( degree )
+      return x[:,_], w
     if self.ndims == 2: # triangle: http://www.cs.rpi.edu/~flaherje/pdf/fea6.pdf
       if degree == 1:
         coords = numpy.array( [[1],[1]] ) / 3.
@@ -1108,6 +1106,15 @@ class ExtractionWrapper( object ):
     'string representation'
 
     return '%s#%x:%s' % ( self.__class__.__name__, id(self), self.stdelem )
+
+
+# UTILITY FUNCTIONS
+
+def gauss( degree ):
+  k = numpy.arange( 1, degree // 2 + 1 )
+  d = k / numpy.sqrt( 4*k**2-1 )
+  x, w = numpy.linalg.eigh( numpy.diagflat(d,-1) ) # eigh operates (by default) on lower triangle
+  return (x+1) * .5, w[0]**2
 
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
