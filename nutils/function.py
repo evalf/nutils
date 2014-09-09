@@ -337,6 +337,7 @@ class ArrayFunc( Evaluable ):
   def __rsub__( self, other ): return subtract( other, self )
   def __neg__( self ): return negative( self )
   def __pow__( self, n ): return power( self, n )
+  def __abs__( self ): return abs( self )
   def sum( self, axes=-1 ): return sum( self, axes )
 
   # standalone methods
@@ -3006,30 +3007,27 @@ def eig( arg, axes=(-2,-1), symmetric=False, sort=False ):
 
   # Move the axis with matrices
   trans = range(ax1) + [-2] + range(ax1,ax2-1) + [-1] + range(ax2-1,arg.ndim-2)
-  arg = align( arg, trans, arg.ndim )
-
-  shapeval = arg.shape[:-1]
-  shapevec = arg.shape
+  aligned_arg = align( arg, trans, arg.ndim )
 
   # When it's an array calculate directly
-  if not _isfunc(arg):
-    eigval, eigvec = numeric.eigh( arg, sort ) if symmetric else numeric.eig( arg, sort )
-    return eigval, eigvec
-
-  # Use _call to see if the object has its own _eig function
-  ret = _call( arg, '_eig' )
-
-  if ret is not None:
-    # Check the shapes
-    eigval, eigvec = ret
-    assert eigval.shape == shapeval, 'bug in %s._eig' % arg
-    assert eigvec.shape == shapevec, 'bug in %s._eig' % arg
+  if not _isfunc(aligned_arg):
+    eigval, eigvec = numeric.eigh( aligned_arg, sort ) if symmetric else numeric.eig( aligned_arg, sort )
   else:
-    eig = Eig( arg, symmetric=symmetric, sort=sort )
-    eigval = ArrayFromTuple( eig, index=0, shape=arg.shape[:-1] )
-    eigvec = ArrayFromTuple( eig, index=1, shape=arg.shape )
+    # Use _call to see if the object has its own _eig function
+    ret = _call( aligned_arg, '_eig' )
+    if ret is not None:
+      # Check the shapes
+      eigval, eigvec = ret
+    else:
+      eig = Eig( aligned_arg, symmetric=symmetric, sort=sort )
+      eigval = ArrayFromTuple( eig, index=0, shape=aligned_arg.shape[:-1] )
+      eigvec = ArrayFromTuple( eig, index=1, shape=aligned_arg.shape )
 
   # Return the evaluable function objects in a tuple like numpy
+  eigval = transpose( diagonalize( eigval ), trans )
+  eigvec = transpose( eigvec, trans )
+  assert eigvec.shape == arg.shape
+  assert eigval.shape == arg.shape
   return eigval, eigvec
 
 nsymgrad = lambda arg, coords: ( symgrad(arg,coords) * coords.normal() ).sum()
