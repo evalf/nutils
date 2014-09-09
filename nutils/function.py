@@ -327,18 +327,19 @@ class ArrayFunc( Evaluable ):
 
   # mathematical operators
 
-  def __mul__( self, other ): return multiply( self, other )
-  def __rmul__( self, other ): return multiply( other, self )
-  def __div__( self, other ): return divide( self, other )
-  def __rdiv__( self, other ): return divide( other, self )
-  def __add__( self, other ): return add( self, other )
-  def __radd__( self, other ): return add( other, self )
-  def __sub__( self, other ): return subtract( self, other )
-  def __rsub__( self, other ): return subtract( other, self )
-  def __neg__( self ): return negative( self )
-  def __pow__( self, n ): return power( self, n )
-  def __abs__( self ): return abs( self )
-  def sum( self, axes=-1 ): return sum( self, axes )
+  __mul__  = lambda self, other: multiply( self, other )
+  __rmul__ = lambda self, other: multiply( other, self )
+  __div__  = lambda self, other: divide( self, other )
+  __rdiv__ = lambda self, other: divide( other, self )
+  __add__  = lambda self, other: add( self, other )
+  __radd__ = lambda self, other: add( other, self )
+  __sub__  = lambda self, other: subtract( self, other )
+  __rsub__ = lambda self, other: subtract( other, self )
+  __neg__  = lambda self: negative( self )
+  __pow__  = lambda self, n: power( self, n )
+  __abs__  = lambda self: abs( self )
+  __len__  = lambda self: self.shape[0]
+  sum      = lambda self, axes=-1: sum( self, axes )
 
   # standalone methods
 
@@ -498,10 +499,13 @@ class ArrayFunc( Evaluable ):
 
     return trace( self.grad( coords, ndims ), -1, -2 )
 
-  def dotnorm( self, coords, ndims=0 ):
+  def dotnorm( self, coords, ndims=0, axis=-1 ):
     'normal component'
 
-    return sum( self * coords.normal( ndims-1 ) )
+    axis = numeric.normdim( self.ndim, axis )
+    normal = coords.normal( ndims-1 )
+    assert normal.shape == (self.shape[axis],)
+    return ( self * normal[(slice(None),)+(_,)*(self.ndim-axis-1)] ).sum( axis )
 
   def ngrad( self, coords, ndims=0 ):
     'normal gradient'
