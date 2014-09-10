@@ -837,6 +837,11 @@ class HierarchicalTopology( Topology ):
                    - min( len(elem.transform) for elem in self.basetopo )
 
   @cache.property
+  def refined( self ):
+    elements = [ child for elem in self for child in elem.children ]
+    return HierarchicalTopology( self.basetopo, elements )
+
+  @cache.property
   def boundary( self ):
     'boundary elements & groups'
 
