@@ -92,7 +92,7 @@ class TransformChain( tuple ):
   def offset( self ):
     offset = self[-1].offset
     for trans in self[-2::-1]:
-      offset = trans.apply( offset ) + trans.offset
+      offset = trans.apply( offset )
     return offset
 
   @property
@@ -122,7 +122,10 @@ class TransformChain( tuple ):
     return TransformChain( self[:-1] ), TransformChain( self[-1:] )
 
   def __str__( self ):
-    return ' << '.join( str(trans) for trans in self )
+    return ' << '.join( str(trans) for trans in self ) if self else '='
+
+  def __repr__( self ):
+    return 'TransformChain( %s )' % (self,)
 
 
 ## TRANSFORM ITEMS
@@ -133,6 +136,9 @@ class TransformItem( object ):
     self.todims = todims
     self.fromdims = fromdims
     self.isflipped = isflipped
+
+  def __repr__( self ):
+    return '%s( %s )' % ( self.__class__.__name__, self )
 
 class Shift( TransformItem ):
 
@@ -179,9 +185,6 @@ class Scale( TransformItem ):
 
   def __str__( self ):
     return '%s x + %s' % ( self.linear, self.offset )
-
-  def __repr__( self ):
-    return 'Scale( %s )' % self
 
 class Matrix( TransformItem ):
 
@@ -303,6 +306,11 @@ def roottransedges( name, shape ):
 def maptrans( coords, vertices ):
   return TransformChain(( MapTrans( coords, vertices ), ))
 
+def equivalent( trans1, trans2 ):
+  trans1 = TransformChain( trans1 )
+  trans2 = TransformChain( trans2 )
+  return trans1.linear == trans2.linear and trans1.offset == trans2.offset
+
 
 ## UTILITY FUNCTIONS
 
@@ -312,8 +320,9 @@ def canonical( transchain ):
   trans1 = transchain[ 0 ]
   for trans2 in transchain[ 1: ]:
     if isinstance( trans2, Scale ) and trans1.todims == trans1.fromdims + 1:
-      offset = trans1.apply( trans2.offset ) + (1-trans2.linear) * trans1.offset
-      chain.append( Scale( trans2.linear, offset ) )
+      newscale = Scale( trans2.linear, trans1.apply( trans2.offset ) - trans2.linear * trans1.offset )
+      assert equivalent( (trans1,trans2), (newscale,trans1) )
+      chain.append( newscale )
     else:
       chain.append( trans1 )
       trans1 = trans2

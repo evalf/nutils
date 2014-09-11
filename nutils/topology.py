@@ -35,6 +35,31 @@ class Topology( object ):
     self.elements = tuple(elements)
     self.ndims = self.elements[0].ndims # assume all equal
 
+  def __contains__( self, element ):
+    return self.edict.get( element.transform ) == element
+
+  @cache.property
+  def edict( self ):
+    '''transform -> element mapping'''
+    return { elem.transform: elem for elem in self }
+
+  @cache.property
+  def transrange( self ):
+    nmin = nmax = len(self.elements[0].transform)
+    for elem in self.elements[1:]:
+      n = len(elem.transform)
+      nmin = min( n, nmin )
+      nmax = max( n, nmax )
+    return nmin, nmax
+
+  @property
+  def refine_iter( self ):
+    topo = self
+    __log__ = log.count( 'refinement level' )
+    for irefine in __log__:
+      yield topo
+      topo = topo.refined
+
   def __len__( self ):
     return len( self.elements )
 
@@ -827,40 +852,34 @@ class HierarchicalTopology( Topology ):
   def __init__( self, basetopo, elements ):
     'constructor'
 
-    if isinstance( basetopo, HierarchicalTopology ):
-      basetopo = basetopo.basetopo
-    self.basetopo = basetopo
-    self.edict = { elem.transform: elem.reference for elem in elements }
+    self.basetopo = basetopo if not isinstance( basetopo, HierarchicalTopology ) else basetopo.basetopo
     Topology.__init__( self, elements )
-
-    self.maxrefine = max( len(elem.transform) for elem in elements ) \
-                   - min( len(elem.transform) for elem in self.basetopo )
 
   @cache.property
   def refined( self ):
     elements = [ child for elem in self for child in elem.children ]
     return HierarchicalTopology( self.basetopo, elements )
 
+  def __getitem__( self, item ):
+    itemtopo = self.basetopo[item]
+    elems = []
+    for topo in itemtopo.refine_iter:
+      elems.extend( elem for elem in topo if elem in self )
+      if topo.transrange[0] >= self.transrange[1]:
+        break
+    return HierarchicalTopology( itemtopo, elems )
+
   @cache.property
   def boundary( self ):
-    'boundary elements & groups'
+    'boundary elements'
 
-    assert hasattr( self.basetopo, 'boundary' )
-    allbelems = []
-    bgroups = {}
-    topo = self.basetopo # topology to examine in next level refinement
-    transforms = set( elem.transform for elem in self )
-    while transforms:
-      mytransforms = transforms.intersection( elem.transform for elem in topo )
-      mybelems = set( belem for belem in topo.boundary if belem.transform.parent[0] in mytransforms )
-      allbelems.extend( mybelems )
-      for btag, belems in topo.boundary.groups.iteritems():
-        bgroups.setdefault( btag, [] ).extend( mybelems.intersection(belems) )
-      topo = topo.refined # proceed to next level
-      transforms -= mytransforms
-    boundary = Topology( allbelems )
-    boundary.groups = dict( ( tag, Topology( group ) ) for tag, group in bgroups.items() )
-    return boundary
+    boundarytopo = self.basetopo.boundary
+    elems = []
+    for topo in boundarytopo.refine_iter:
+      elems.extend( elem for elem in topo if elem.transform[:-1] in self.edict )
+      if topo.transrange[0] - 1 >= self.transrange[1]:
+        break
+    return HierarchicalTopology( boundarytopo, elems )
 
   @cache.property
   def interfaces( self ):
@@ -901,19 +920,17 @@ class HierarchicalTopology( Topology ):
     ndofs = 0 # total number of dofs of new function object
     remaining = len(self) # element count down (know when to stop)
 
-    self_transforms = set( elem.transform for elem in self )
-  
-    topo = self.basetopo # topology to examine in next level refinement
-    for irefine in range( self.maxrefine+1 ):
+    for topo in self.basetopo.refine_iter:
+      assert topo.transrange[0] <= self.transrange[1]
 
-      funcsp = mkspace( topo ) # shape functions for level irefine
+      funcsp = mkspace( topo ) # shape functions for current level
       supported = numpy.ones( funcsp.shape[0], dtype=bool ) # True if dof is fully contained in self or parents
       touchtopo = numpy.zeros( funcsp.shape[0], dtype=bool ) # True if dof touches at least one elem in self
-      myelems = [] # all top-level or parent elements in level irefine
+      myelems = [] # all top-level or parent elements in current level
 
       for trans, idofs, stds in function._unpack( funcsp ):
         try:
-          head, tail = trans.lookup( self_transforms )
+          head, tail = trans.lookup( self.edict )
         except: # trans is coarser than domain
           myelems.append(( trans, idofs, stds ))
         else:
@@ -927,7 +944,7 @@ class HierarchicalTopology( Topology ):
       keep = numpy.logical_and( supported, touchtopo ) # THE refinement law
       renumber = (ndofs-1) + keep.cumsum()
 
-      for trans, idofs, stds in myelems: # loop over all top-level or parent elements in level irefine
+      for trans, idofs, stds in myelems: # loop over all top-level or parent elements in current level
         (std,origkeep), = stds
         assert origkeep is None
         mykeep = keep[idofs]
@@ -940,9 +957,8 @@ class HierarchicalTopology( Topology ):
         else:
           newstds = (None,None),
           newdofs = numpy.zeros( [0], dtype=int )
-        if irefine:
-          parent, head = trans.parent
-          olddofs, oldstds = collect[ parent ] # dofs, stds of all underlying 'broader' shapes
+        if topo != self.basetopo:
+          olddofs, oldstds = collect[ trans[:-1] ] # dofs, stds of all underlying 'broader' shapes
           newstds += oldstds
           newdofs = numpy.hstack([ newdofs, olddofs ])
         collect[ trans ] = newdofs, newstds # add result to IEN mapping of new function object
@@ -950,11 +966,6 @@ class HierarchicalTopology( Topology ):
       ndofs += int( keep.sum() ) # update total number of dofs
       if not remaining:
         break
-      topo = topo.refined # proceed to next level
-  
-    else:
-
-      raise Exception, 'elements remaining after %d iterations' % self.maxrefine
 
     nmap = {}
     fmap = {}
