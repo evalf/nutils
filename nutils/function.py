@@ -789,12 +789,11 @@ class Function( ArrayFunc ):
   def function( cache, points, trans, stdmap, igrad ):
     'evaluate'
 
-    head, tail = trans.lookup( stdmap )
-    stds = stdmap[head]
     fvals = []
-    for std, keep in stds:
+    head = trans.lookup( stdmap )
+    for std, keep in stdmap[head]:
       if std:
-        transpoints = cache( tail.apply, points )
+        transpoints = cache( trans[len(head):].apply, points )
         F = cache( std.eval, transpoints, igrad )
         if keep is not None:
           F = F[(Ellipsis,keep)+(slice(None),)*igrad]
@@ -806,8 +805,7 @@ class Function( ArrayFunc ):
           elif invlinear != 1:
             F = F * (invlinear**igrad)
         fvals.append( F )
-      head, _tail = head.parent
-      tail >>= _tail
+      head = head[:-1]
     return fvals[0] if len(fvals) == 1 else numpy.concatenate( fvals, axis=-1-igrad )
 
   def _opposite( self ):
@@ -909,8 +907,7 @@ class DofMap( ArrayFunc ):
   def evalmap( trans, dofmap ):
     'evaluate'
 
-    head, tail = trans.lookup(dofmap)
-    return dofmap[head]
+    return dofmap[ trans.lookup(dofmap) ]
 
   def _opposite( self ):
     return DofMap( self.dofmap, self.shape[0], 1-self.side )
@@ -3249,7 +3246,7 @@ def supp( funcsp, indices ):
       if numpy.intersect1d( dofs[:nshapes], indices, assume_unique=True ).size:
         supp.append( trans )
       dofs = dofs[nshapes:]
-      trans, head = trans.parent
+      trans = trans[:-1]
     assert not dofs.size
   return supp
 

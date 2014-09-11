@@ -431,18 +431,17 @@ class Topology( object ):
     __log__ = log.iter( 'elem', self )
     for elem in parallel.pariter( __log__ ):
       assert isinstance( elem.reference, element.NeighborhoodTensorReference )
-      head1, tail1 = elem.transform.parent
-      head2, tail2 = elem.opposite.parent
-      elemcmp = cmp( head1, head2 )
-      if elemcmp < 0:
+      head1 = elem.transform[:-1]
+      head2 = elem.opposite[:-1]
+      if head1 < head2:
         continue
       for ifunc, lock, index, data in idata.eval( elem, ischeme ):
         with lock:
           retvals[ifunc][index] += data
-          if elemcmp:
-            retvals[ifunc][index[::-1]] += data.T
-          else:
+          if head1 == head2:
             numpy.testing.assert_almost_equal( data, data.T, err_msg='symmetry check failed' )
+          else:
+            retvals[ifunc][index[::-1]] += data.T
 
     log.debug( 'cache', idata.cache.summary() )
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
@@ -885,6 +884,7 @@ class HierarchicalTopology( Topology ):
   def interfaces( self ):
     'interface elements & groups'
 
+    raise NotImplementedError, 'awaiting reimplementation'
     assert hasattr( self.basetopo, 'interfaces' )
     allinterfaces = []
     topo = self.basetopo # topology to examine in next level refinement
@@ -929,17 +929,15 @@ class HierarchicalTopology( Topology ):
       myelems = [] # all top-level or parent elements in current level
 
       for trans, idofs, stds in function._unpack( funcsp ):
-        try:
-          head, tail = trans.lookup( self.edict )
-        except: # trans is coarser than domain
+        mytrans = trans.lookup( self.edict )
+        if mytrans == trans: # trans is in domain
+          remaining -= 1
+          touchtopo[idofs] = True
           myelems.append(( trans, idofs, stds ))
-        else:
-          if head == trans: # trans is in domain
-            remaining -= 1
-            touchtopo[idofs] = True
-            myelems.append(( trans, idofs, stds ))
-          else: # trans is finer than domain
-            supported[idofs] = False
+        elif mytrans: # trans is finer than domain
+          supported[idofs] = False
+        else: # trans is coarser than domain
+          myelems.append(( trans, idofs, stds ))
   
       keep = numpy.logical_and( supported, touchtopo ) # THE refinement law
       renumber = (ndofs-1) + keep.cumsum()

@@ -19,6 +19,9 @@ class TransformChain( tuple ):
 
   __slots__ = ()
 
+  def __getslice__( self, i, j ):
+    return TransformChain( tuple.__getslice__( self, i, j ) )
+
   @property
   def todims( self ):
     return self[0].todims
@@ -33,15 +36,10 @@ class TransformChain( tuple ):
 
   def lookup( self, transforms ):
     # to be replaced by bisection soon
-    if self in transforms:
-      return self, identity
-    headtrans = self[:-1]
-    tail = self[-1:]
+    headtrans = self
     while headtrans:
-      head = TransformChain(headtrans)
-      if head in transforms:
-        return head, TransformChain(tail)
-      tail = headtrans[-1:] + tail
+      if headtrans in transforms:
+        return headtrans
       headtrans = headtrans[:-1]
     return None
 
@@ -57,10 +55,8 @@ class TransformChain( tuple ):
       transforms = transforms[:-1]
     while transforms and transforms[0].todims != todims:
       transforms = transforms[1:]
-    if transforms:
-      return TransformChain( transforms )
-    assert fromdims == todims, 'invalid slice (%d,%d) of %s' % ( todims, fromdims, self )
-    return identity
+    assert transforms or fromdims == todims, 'invalid slice (%d,%d) of %s' % ( todims, fromdims, self )
+    return transforms
 
   def __lshift__( self, other ):
     # self << other
@@ -79,7 +75,7 @@ class TransformChain( tuple ):
 
   @property
   def flipped( self ):
-    return TransformChain( tuple( trans.flipped for trans in self ) )
+    return TransformChain( trans.flipped for trans in self )
 
   @property
   def det( self ):
@@ -115,11 +111,6 @@ class TransformChain( tuple ):
     for trans in reversed(self):
       points = trans.apply( points )
     return points
-
-  @property
-  def parent( self ):
-    assert len( self ) >= 1
-    return TransformChain( self[:-1] ), TransformChain( self[-1:] )
 
   def __str__( self ):
     return ' << '.join( str(trans) for trans in self ) if self else '='
@@ -286,8 +277,6 @@ class RootTransEdges( VertexTransform ):
 
 
 ## CONSTRUCTORS
-
-identity = TransformChain()
 
 def affine( linear=None, offset=None, numer=1, isflipped=False ):
   r_offset = rational.asrational( offset ) / numer if offset is not None else rational.zeros( len(linear) )
