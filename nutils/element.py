@@ -577,7 +577,7 @@ class TensorReference( Reference ):
       points = [[0,0,0],[1,0,0],[0,1,0],[1,1,0],[0,0,1],[1,0,1],[0,1,1],[1,1,1]]
     else:
       raise NotImplementedError
-    return numeric.array(points), numeric.ones(self.nverts)
+    return numpy.array(points), numpy.ones(self.nverts)
 
   def getischeme_contour( self, n ):
     assert self == SimplexReference(1)**2
