@@ -586,7 +586,7 @@ class TensorReference( Reference ):
     return numpy.hstack(( [p,z], [1-z,p], [1-p,1-z], [z,1-p] )).T, None
 
   def getischeme( self, ischeme ):
-    match = re.match( '([a-zA-Z]+)(.+)', ischeme )
+    match = re.match( '([a-zA-Z]+)(.*)', ischeme )
     assert match, 'cannot parse integration scheme %r' % ischeme
     ptype, args = match.groups()
     get = getattr( self, 'getischeme_'+ptype, None )
