@@ -1700,7 +1700,7 @@ class ElemFunc( ArrayFunc ):
   def elemfunc( points, trans, ndims ):
     'evaluate'
 
-    return trans.slice(todims=ndims).apply( points )
+    return trans.slice(todims=ndims).apply( points ).astype( float )
 
   def _localgradient( self, ndims ):
     return eye( ndims ) if self.shape[0] == ndims \
