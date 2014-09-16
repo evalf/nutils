@@ -69,7 +69,7 @@ def _hashable( obj ):
     else HashableAny( obj )
 
 def _keyfromargs( func, args, kwargs, offset=0 ):
-  if getattr( func, '__self__' ) is not None: # bound instancemethod
+  if getattr( func, '__self__', None ) is not None: # bound instancemethod
     offset += 1
   code = func.func_code
   names = code.co_varnames[offset+len(args):code.co_argcount]

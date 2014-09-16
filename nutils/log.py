@@ -329,9 +329,20 @@ def stack( msg ):
   print( msg, *reversed(frames), sep='\n', file=_getstream( 'error' ) )
 
 def title( f ): # decorator
-  def wrapped( *args, **kwargs ):
-    __log__ = StaticLog( kwargs.pop( 'title', f.func_name ) )
-    return f( *args, **kwargs )
+  assert getattr( f, '__self__', None ) is None, 'cannot decorate bound instance method'
+  default = f.func_name
+  argnames = f.func_code.co_varnames[:f.func_code.co_argcount]
+  if 'title' in argnames:
+    index = argnames.index( 'title' )
+    if index >= len(argnames) - len(f.func_defaults):
+      default = f.func_defaults[ index-len(argnames) ]
+    def wrapped( *args, **kwargs ):
+      __log__ = StaticLog( args[index] if index < len(args) else kwargs.get('title',default) )
+      return f( *args, **kwargs )
+  else:
+    def wrapped( *args, **kwargs ):
+      __log__ = StaticLog( kwargs.pop('title',default) )
+      return f( *args, **kwargs )
   return wrapped
 
 

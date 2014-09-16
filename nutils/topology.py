@@ -38,126 +38,21 @@ class Topology( object ):
   def __contains__( self, element ):
     return self.edict.get( element.transform ) == element
 
-  @cache.property
-  def edict( self ):
-    '''transform -> element mapping'''
-    return { elem.transform: elem for elem in self }
-
-  @cache.property
-  def transrange( self ):
-    nmin = nmax = len(self.elements[0].transform)
-    for elem in self.elements[1:]:
-      n = len(elem.transform)
-      nmin = min( n, nmin )
-      nmax = max( n, nmax )
-    return nmin, nmax
-
-  @property
-  def refine_iter( self ):
-    topo = self
-    __log__ = log.count( 'refinement level' )
-    for irefine in __log__:
-      yield topo
-      topo = topo.refined
-
   def __len__( self ):
     return len( self.elements )
 
   def __iter__( self ):
     return iter( self.elements )
 
-  def stdfunc( self, degree=1 ):
-    'spline from vertices'
-
-    assert degree == 1 # for now!
-    dofmap = {}
-    fmap = {}
-    nmap = {}
-    for elem in self:
-      dofs = numpy.empty( elem.nverts, dtype=int )
-      for i, v in enumerate( elem.vertices ):
-        dof = dofmap.get(v)
-        if dof is None:
-          dof = len(dofmap)
-          dofmap[v] = dof
-        dofs[i] = dof
-      stdfunc = elem.reference.stdfunc(1)
-      assert stdfunc.nshapes == elem.nverts
-      fmap[elem.transform] = (stdfunc,None),
-      nmap[elem.transform] = dofs
-    return function.function( fmap=fmap, nmap=nmap, ndofs=len(dofmap), ndims=self.ndims )
-
-  def bubblefunc( self ):
-    'spline from vertices'
-
-    assert self.ndims == 2
-    dofmap = {}
-    fmap = {}
-    nmap = {}
-    stdfunc = element.BubbleTriangle()
-    for ielem, elem in enumerate(self):
-      assert elem.reference == element.SimplexReference(2)
-      dofs = numpy.empty( elem.nverts+1, dtype=int )
-      for i, v in enumerate( elem.vertices ):
-        dof = dofmap.get(v)
-        if dof is None:
-          dof = len(self) + len(dofmap)
-          dofmap[v] = dof
-        dofs[i] = dof
-      dofs[ elem.nverts ] = ielem
-      fmap[elem.transform] = (stdfunc,None),
-      nmap[elem.transform] = dofs
-    return function.function( fmap=fmap, nmap=nmap, ndofs=len(self)+len(dofmap), ndims=self.ndims )
-
-  def splinefunc( self, degree ):
-
-    assert degree == 1
-    return self.stdfunc( degree )
-
-  def discontfunc( self, degree ):
-    'discontinuous shape functions'
-
-    assert isinstance( degree, int ) and degree >= 0
-    fmap = {}
-    nmap = {}
-    ndofs = 0
-    for elem in self:
-      stdfunc = elem.reference.stdfunc(degree)
-      fmap[elem.transform] = (stdfunc,None),
-      nmap[elem.transform] = ndofs + numpy.arange(stdfunc.nshapes)
-      ndofs += stdfunc.nshapes
-    return function.function( fmap=fmap, nmap=nmap, ndofs=ndofs, ndims=self.ndims )
-
-  @cache.property
-  def simplex( self ):
-    simplices = [ simplex for elem in self for simplex in elem.simplices ]
-    return Topology( simplices )
-
-  def refined_by( self, refine ):
-    'create refined space by refining dofs in existing one'
-
-    refine = set( refine )
-    refined = []
-    for elem in self:
-      if elem.transform in refine:
-        refined.extend( elem.children )
-      else:
-        refined.append( elem )
-    return HierarchicalTopology( self, refined )
-
   def __add__( self, other ):
     'add topologies'
 
-    if self is other:
-      return self
     assert self.ndims == other.ndims
     return Topology( set(self) | set(other) )
 
   def __sub__( self, other ):
-    'add topologies'
+    'subtract topologies'
 
-    if self is other:
-      return self
     assert self.ndims == other.ndims
     return Topology( set(self) - set(other) )
 
@@ -218,6 +113,117 @@ class Topology( object ):
 
     items = ( self.groups[it] for it in item.split( ',' ) )
     return sum( items, items.next() )
+
+  @cache.property
+  def edict( self ):
+    '''transform -> element mapping'''
+    return { elem.transform: elem for elem in self }
+
+  @cache.property
+  def transrange( self ):
+    nmin = nmax = len(self.elements[0].transform)
+    for elem in self.elements[1:]:
+      n = len(elem.transform)
+      nmin = min( n, nmin )
+      nmax = max( n, nmax )
+    return nmin, nmax
+
+  @property
+  def refine_iter( self ):
+    topo = self
+    __log__ = log.count( 'refinement level' )
+    for irefine in __log__:
+      yield topo
+      topo = topo.refined
+
+  stdfunc     = lambda self, *args, **kwargs: self.basis( 'std', *args, **kwargs )
+  linearfunc  = lambda self, *args, **kwargs: self.basis( 'std', degree=1, *args, **kwargs )
+  splinefunc  = lambda self, *args, **kwargs: self.basis( 'spline', *args, **kwargs )
+  bubblefunc  = lambda self, *args, **kwargs: self.basis( 'bubble', *args, **kwargs )
+  discontfunc = lambda self, *args, **kwargs: self.basis( 'discont', *args, **kwargs )
+
+  def basis( self, name, *args, **kwargs ):
+    f = getattr( self, 'basis_' + name )
+    return f( *args, **kwargs )
+
+  def basis_std( self, degree=1 ):
+    'spline from vertices'
+
+    assert degree == 1 # for now!
+    dofmap = {}
+    fmap = {}
+    nmap = {}
+    for elem in self:
+      dofs = numpy.empty( elem.nverts, dtype=int )
+      for i, v in enumerate( elem.vertices ):
+        dof = dofmap.get(v)
+        if dof is None:
+          dof = len(dofmap)
+          dofmap[v] = dof
+        dofs[i] = dof
+      stdfunc = elem.reference.stdfunc(1)
+      assert stdfunc.nshapes == elem.nverts
+      fmap[elem.transform] = (stdfunc,None),
+      nmap[elem.transform] = dofs
+    return function.function( fmap=fmap, nmap=nmap, ndofs=len(dofmap), ndims=self.ndims )
+
+  def basis_bubble( self ):
+    'spline from vertices'
+
+    assert self.ndims == 2
+    dofmap = {}
+    fmap = {}
+    nmap = {}
+    stdfunc = element.BubbleTriangle()
+    for ielem, elem in enumerate(self):
+      assert elem.reference == element.SimplexReference(2)
+      dofs = numpy.empty( elem.nverts+1, dtype=int )
+      for i, v in enumerate( elem.vertices ):
+        dof = dofmap.get(v)
+        if dof is None:
+          dof = len(self) + len(dofmap)
+          dofmap[v] = dof
+        dofs[i] = dof
+      dofs[ elem.nverts ] = ielem
+      fmap[elem.transform] = (stdfunc,None),
+      nmap[elem.transform] = dofs
+    return function.function( fmap=fmap, nmap=nmap, ndofs=len(self)+len(dofmap), ndims=self.ndims )
+
+  def basis_spline( self, degree ):
+
+    assert degree == 1
+    return self.stdfunc( degree )
+
+  def basis_discont( self, degree ):
+    'discontinuous shape functions'
+
+    assert isinstance( degree, int ) and degree >= 0
+    fmap = {}
+    nmap = {}
+    ndofs = 0
+    for elem in self:
+      stdfunc = elem.reference.stdfunc(degree)
+      fmap[elem.transform] = (stdfunc,None),
+      nmap[elem.transform] = ndofs + numpy.arange(stdfunc.nshapes)
+      ndofs += stdfunc.nshapes
+    return function.function( fmap=fmap, nmap=nmap, ndofs=ndofs, ndims=self.ndims )
+
+  @cache.property
+  def simplex( self ):
+    simplices = [ simplex for elem in self for simplex in elem.simplices ]
+    return Topology( simplices )
+
+  def refined_by( self, refine ):
+    'create refined space by refining dofs in existing one'
+
+    refine = set( refine )
+    refined = []
+    for elem in self:
+      if elem.transform in refine:
+        refined.extend( elem.children )
+      else:
+        refined.append( elem )
+    return HierarchicalTopology( self, refined )
 
   @log.title
   def elem_eval( self, funcs, ischeme, separate=False ):
@@ -656,7 +662,7 @@ class StructuredTopology( Topology ):
         interfaces.append( ielem )
     return Topology( interfaces )
 
-  def splinefunc( self, degree, neumann=(), knots=None, periodic=None, closed=False, removedofs=None ):
+  def basis_spline( self, degree, neumann=(), knots=None, periodic=None, closed=False, removedofs=None ):
     'spline from vertices'
 
     if periodic is None:
@@ -740,12 +746,7 @@ class StructuredTopology( Topology ):
 
     return function.function( funcmap, dofmap, dofcount, self.ndims )
 
-  def linearfunc( self ):
-    'linears'
-
-    return self.splinefunc( degree=1 )
-
-  def stdfunc( self, degree, removedofs=None ):
+  def basis_std( self, degree, removedofs=None ):
     'spline from vertices'
 
     if isinstance( degree, int ):
@@ -811,17 +812,6 @@ class StructuredTopology( Topology ):
       dofmap = dict( ( elem, renumber[dofs]-1 ) for elem, dofs in dofmap.iteritems() )
 
     return function.function( funcmap, dofmap, dofcount, self.ndims )
-
-  def rectilinearfunc( self, gridvertices ):
-    'rectilinear func'
-
-    assert len( gridvertices ) == self.ndims
-    vertex_structure = numpy.empty( map( len, gridvertices ) + [self.ndims] )
-    for idim, ivertices in enumerate( gridvertices ):
-      shape = [1,] * self.ndims
-      shape[idim] = -1
-      vertex_structure[...,idim] = numpy.asarray( ivertices ).reshape( shape )
-    return self.linearfunc().dot( vertex_structure.reshape( -1, self.ndims ) )
 
   @property
   def refined( self ):
@@ -913,7 +903,8 @@ class HierarchicalTopology( Topology ):
       elems -= myelems
     return Topology( allinterfaces )
 
-  def _funcspace( self, mkspace ):
+  @log.title
+  def basis( self, name, *args, **kwargs ):
     'build hierarchical function space'
 
     collect = {}
@@ -923,7 +914,7 @@ class HierarchicalTopology( Topology ):
     for topo in self.basetopo.refine_iter:
       assert topo.transrange[0] <= self.transrange[1]
 
-      funcsp = mkspace( topo ) # shape functions for current level
+      funcsp = topo.basis( name, *args, **kwargs ) # shape functions for current level
       supported = numpy.ones( funcsp.shape[0], dtype=bool ) # True if dof is fully contained in self or parents
       touchtopo = numpy.zeros( funcsp.shape[0], dtype=bool ) # True if dof touches at least one elem in self
       myelems = [] # all top-level or parent elements in current level
@@ -977,18 +968,6 @@ class HierarchicalTopology( Topology ):
 
     return function.function( fmap=fmap, nmap=nmap, ndofs=ndofs, ndims=self.ndims )
 
-  @log.title
-  def stdfunc( self, *args, **kwargs ):
-    return self._funcspace( lambda topo: topo.stdfunc( *args, **kwargs ) )
-
-  @log.title
-  def linearfunc( self, *args, **kwargs ):
-    return self._funcspace( lambda topo: topo.linearfunc( *args, **kwargs ) )
-
-  @log.title
-  def splinefunc( self, *args, **kwargs ):
-    return self._funcspace( lambda topo: topo.splinefunc( *args, **kwargs ) )
-
 class RefinedTopology( Topology ):
   'refinement'
 
@@ -1030,7 +1009,9 @@ class TrimmedTopology( Topology ):
         elements.append( trimelem )
     return TrimmedTopology( keytopo, elements )
 
-  def _prune( self, funcsp ):
+  @log.title
+  def basis( self, name, *args, **kwargs ):
+    funcsp = self.basetopo.basis( name, *args, **kwargs )
     (func,(dofaxis,)), = function.blocks( funcsp )
     nmap = {}
     fmap = {}
@@ -1048,16 +1029,5 @@ class TrimmedTopology( Topology ):
       fmap[trans] = func.stdmap[trans]
     return function.function( fmap=fmap, nmap=nmap, ndofs=len(renumber), ndims=self.ndims )
 
-  @log.title
-  def stdfunc( self, *args, **kwargs ):
-    return self._prune( self.basetopo.stdfunc( *args, **kwargs ) )
-
-  @log.title
-  def linearfunc( self, *args, **kwargs ):
-    return self._prune( self.basetopo.linearfunc( *args, **kwargs ) )
-
-  @log.title
-  def splinefunc( self, *args, **kwargs ):
-    return self._prune( self.basetopo.splinefunc( *args, **kwargs ) )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
