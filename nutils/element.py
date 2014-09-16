@@ -98,7 +98,7 @@ class Reference( object ):
 
   @property
   def simplices( self ):
-    return [ (transform.identity,self) ]
+    return [ (transform.TransformChain(),self) ]
 
   def getischeme( self, ischeme ):
     if self.ndims == 0:
