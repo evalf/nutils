@@ -234,7 +234,7 @@ class Topology( object ):
       funcs = funcs,
 
     slices = []
-    pointshape = function.PointShape().compiled()
+    pointshape = function.PointShape()
     npoints = 0
     separators = []
     __log__ = log.iter( 'elem', self )
@@ -262,15 +262,16 @@ class Topology( object ):
       else:
         idata.append( function.Tuple( [ ifunc, (), func ] ) )
       retvals.append( retval )
-    idata = function.Tuple( idata ).compiled()
+    idata = function.Tuple( idata )
+    fcache = cache.CallDict()
 
     __log__ = log.enumerate( 'elem', self )
     for ielem, elem in parallel.pariter( __log__ ):
       s = slices[ielem],
-      for ifunc, index, data in idata.eval( elem, ischeme ):
+      for ifunc, index, data in idata.eval( elem, ischeme, fcache ):
         retvals[ifunc][s+index] = data
 
-    log.debug( 'cache', idata.cache.summary() )
+    log.debug( 'cache', fcache.summary() )
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
     if single_arg:
       retvals, = retvals
@@ -295,51 +296,16 @@ class Topology( object ):
       assert all( isinstance(sh,int) for sh in func.shape )
       idata.append( function.elemint( func, iweights ) )
       retvals.append( numpy.empty( (len(self),)+func.shape ) )
-    idata = function.Tuple( idata ).compiled()
+    idata = function.Tuple( idata )
 
+    fcache = cache.CallDict()
     for ielem, elem in enumerate( self ):
-      area_data = idata.eval( elem, ischeme )
+      area_data = idata.eval( elem, ischeme, fcache )
       area = area_data[0].sum()
       for retval, data in zip( retvals, area_data[1:] ):
         retval[ielem] = data / area
 
-    log.debug( 'cache', idata.cache.summary() )
-    log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
-    if single_arg:
-      retvals, = retvals
-
-    return retvals
-
-  @log.title
-  def grid_eval( self, funcs, geometry, C ):
-    'evaluate grid points'
-
-    single_arg = not isinstance(funcs,(tuple,list))
-    if single_arg:
-      funcs = funcs,
-
-    C = numpy.asarray( C )
-    assert C.shape[0] == self.ndims
-    shape = C.shape
-    C = C.reshape( self.ndims, -1 )
-
-    funcs = [ function.asarray(func) for func in funcs ]
-    retvals = [ numpy.empty( C.shape[1:] + func.shape ) for func in funcs ]
-    for retval in retvals:
-      retval[:] = numpy.nan
-
-    data = function.Tuple([ function.Tuple([ func, retval ]) for func, retval in zip( funcs, retvals ) ]).compiled()
-
-    __log__ = log.iter( 'elem', self )
-    for elem in __log__:
-      points, selection = geometry.find( elem, C.T )
-      if selection is not None:
-        for func, retval in data( elem, points ):
-          retval[selection] = func
-
-    retvals = [ retval.reshape( shape[1:] + func.shape ) for func, retval in zip( funcs, retvals ) ]
-
-    log.debug( 'cache', data.cache.summary() )
+    log.debug( 'cache', fcache.summary() )
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
     if single_arg:
       retvals, = retvals
@@ -352,7 +318,7 @@ class Topology( object ):
 
     nrows, ncols = func.shape
     graph = [ [] for irow in range(nrows) ]
-    IJ = function.Tuple([ function.Tuple(ind) for f, ind in function.blocks( func ) ]).compiled()
+    IJ = function.Tuple([ function.Tuple(ind) for f, ind in function.blocks( func ) ])
 
     __log__ = log.iter( 'elem', self )
     for elem in __log__:
@@ -392,15 +358,16 @@ class Topology( object ):
         if not function._iszero( func ):
           integrands.append( function.Tuple([ ifunc, lock, (), function.elemint( func, iweights ) ]) )
       retvals.append( array )
-    idata = function.Tuple( integrands ).compiled()
+    idata = function.Tuple( integrands )
+    fcache = cache.CallDict()
 
     __log__ = log.iter( 'elem', self )
     for elem in parallel.pariter( __log__ ):
-      for ifunc, lock, index, data in idata.eval( elem, ischeme ):
+      for ifunc, lock, index, data in idata.eval( elem, ischeme, fcache ):
         with lock:
           retvals[ifunc][index] += data
 
-    log.debug( 'cache', idata.cache.summary() )
+    log.debug( 'cache', fcache.summary() )
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
     if single_arg:
       retvals, = retvals
@@ -432,7 +399,8 @@ class Topology( object ):
         if not function._iszero( func ):
           integrands.append( function.Tuple([ ifunc, lock, (), function.elemint( func, iweights ) ]) )
       retvals.append( array )
-    idata = function.Tuple( integrands ).compiled()
+    idata = function.Tuple( integrands )
+    fcache = cache.CallDict()
 
     __log__ = log.iter( 'elem', self )
     for elem in parallel.pariter( __log__ ):
@@ -441,7 +409,7 @@ class Topology( object ):
       head2 = elem.opposite[:-1]
       if head1 < head2:
         continue
-      for ifunc, lock, index, data in idata.eval( elem, ischeme ):
+      for ifunc, lock, index, data in idata.eval( elem, ischeme, fcache ):
         with lock:
           retvals[ifunc][index] += data
           if head1 == head2:
@@ -449,7 +417,7 @@ class Topology( object ):
           else:
             retvals[ifunc][index[::-1]] += data.T
 
-    log.debug( 'cache', idata.cache.summary() )
+    log.debug( 'cache', fcache.summary() )
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
     if single_arg:
       retvals, = retvals
@@ -567,7 +535,6 @@ class Topology( object ):
     'trim element along levelset'
 
     numer = rational.round(1./eps)
-    levelset = function.ascompiled( levelset )
     poselems = []
     negelems = []
     __log__ = log.iter( 'elem', self )

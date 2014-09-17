@@ -17,8 +17,6 @@ geometry and function bases for analysis.
 Nutils functions are essentially postponed python functions, stored in a tree
 structure of input/output dependencies. Many :class:`ArrayFunc` objects have
 directly recognizable numpy equivalents, such as :class:`Sin` or
-:class:`Inverse`. By not evaluating directly but merely stacking operations,
-coplex operations can be defined prior to entering a quadrature loop, allowing
 for a higher lever style programming. It also allows for automatic
 differentiation and code optimization.
 
@@ -38,21 +36,96 @@ TRANS   = object()
 POINTS  = object()
 WEIGHTS = object()
 
-class CompiledEvaluable( object ):
-  'serialized version of evaluable object for actual evaluation'
+class Evaluable( object ):
+  'Base class'
 
-  def __init__( self, data, operations ):
+  __metaclass__ = cache.Meta
+
+  def __init__( self, args, evalf ):
     'constructor'
 
-    self.data = data
-    self.operations = operations
-    self.cache = cache.CallDict()
-    if core.getprop( 'dot', False ):
-      self.graphviz()
+    self.__evalf = evalf
+    self.__args = tuple(args)
 
-  def eval( self, elem, ischeme ):
+  @cache.property
+  def serialized( self ):
+    '''returns (data,ops,inds), where len(ops) = len(inds)-1'''
+
+    mydata = [ CACHE, TRANS, POINTS, WEIGHTS ]
+    myops = []
+    myinds = []
+
+    indices = []
+    for arg in self.__args:
+
+      if not isinstance( arg, Evaluable ):
+        index = _isindex( arg, mydata )
+        if index == -1:
+          ren = numpy.hstack([ numpy.arange(len(mydata)), len(mydata)+1+numpy.arange(len(myops)) ])
+          myinds = map( ren.__getitem__, myinds )
+          indices = map( ren.__getitem__, indices )
+          index = len(mydata)
+          mydata.append( arg )
+        indices.append( index )
+        continue
+
+      index = _isindex( arg, myops )
+      if index != -1:
+        indices.append( len(mydata)+index )
+        continue
+        
+      argdata, argops, arginds = arg.serialized
+
+      renumber = numpy.empty( len(argdata)+len(argops), dtype=int )
+      ndata = len(mydata)
+      for i, obj in enumerate( argdata ):
+        index = _isindex( obj, mydata )
+        if index == -1:
+          index = len(mydata)
+          mydata.append( obj )
+        renumber[i] = index
+      if len(mydata) > ndata:
+        ren = numpy.hstack([ numpy.arange(ndata), len(mydata)+numpy.arange(len(myops)) ])
+        myinds = map( ren.__getitem__, myinds )
+        indices = map( ren.__getitem__, indices )
+      for i, (op,ind) in enumerate( zip(argops,arginds) ):
+        index = _isindex( op, myops )
+        if index == -1:
+          index = len(myops)
+          myops.append( op )
+          myinds.append( renumber[ind] )
+        renumber[len(argdata)+i] = len(mydata)+index
+
+      indices.append( len(mydata)+len(myops) )
+      myops.append( arg )
+      myinds.append( renumber[arginds[-1]] )
+
+    myinds.append( indices )
+    for op, ind in zip( myops, myinds ) + [ (self,indices) ]:
+      for i, arg in zip( ind, op.__args ):
+        assert arg is ( mydata[i] if i < len(mydata) else myops[i-len(mydata)] )
+
+    return tuple(mydata), tuple(myops), tuple(myinds)
+
+  def asciitree( self ):
+    'string representation'
+
+    key = self.evalf.__name__
+    lines = []
+    indent = '\n' + ' ' + ' ' * len(key)
+    for it in reversed( self.args ):
+      s = it.asciitree() if isinstance(it,Evaluable) else _obj2str(it)
+      lines.append( indent.join( s.splitlines() ) )
+      indent = '\n' + '|' + ' ' * len(key)
+    indent = '\n' + '+' + '-' * (len(key)-1) + ' '
+    return key + ' ' + indent.join( reversed( lines ) )
+
+  def __str__( self ):
+    return self.__class__.__name__
+
+  def eval( self, elem, ischeme, fcache=lambda f, *args: f(*args) ):
     'evaluate'
-
+    
     if isinstance( elem, tuple ):
       assert isinstance( ischeme, numpy.ndarray )
       points = ischeme
@@ -65,7 +138,7 @@ class CompiledEvaluable( object ):
       if isinstance( ischeme, dict ):
         ischeme = ischeme[elem]
       if isinstance( ischeme, str ):
-        points, weights = self.cache( elem.reference.getischeme, ischeme )
+        points, weights = fcache( elem.reference.getischeme, ischeme )
       elif isinstance( ischeme, tuple ):
         points, weights = ischeme
         assert points.shape[-1] == elem.ndims
@@ -79,12 +152,13 @@ class CompiledEvaluable( object ):
       else:
         raise Exception, 'invalid integration scheme of type %r' % type(ischeme)
 
-    N = len(self.data) + 4
-    values = self.data + [ self.cache, trans, points, weights ]
-    for op, indices in self.operations:
-      args = [ values[N+i] for i in indices ]
+    data, ops, inds = self.serialized
+    assert data[:4] == ( CACHE, TRANS, POINTS, WEIGHTS )
+    values = [ fcache, trans, points, weights ] + list( data[4:] )
+    for op, indices in zip( ops, inds ) + [(self,inds[-1])]:
+      args = [ values[i] for i in indices ]
       try:
-        retval = op.evalf( *args )
+        retval = op.__evalf( *args )
       except KeyboardInterrupt:
         raise
       except:
@@ -132,15 +206,14 @@ class CompiledEvaluable( object ):
   def stackstr( self, values=None ):
     'print stack'
 
+    data, ops, inds = self.serialized
     if values is None:
-      values = self.data + [ '<cache>', '<trans>', '<points>', '<weights>' ]
-
-    N = len(self.data) + 4
+      values = [ '<cache>', '<trans>', '<points>', '<weights>' ] + data[4:]
 
     lines = []
-    for i, (op,indices) in enumerate( self.operations ):
+    for i, (op,indices) in enumerate( zip(ops,inds) + [(self,inds[-1])] ):
       line = '  %%%d =' % i
-      args = [ '%%%d' % idx if idx >= 0 else _obj2str(values[N+idx]) for idx in indices ]
+      args = [ '%%%d' % (idx-len(data)) if idx >= len(data) else _obj2str(values[idx]) for idx in indices ]
       try:
         code = op.evalf.func_code
         names = code.co_varnames[ :code.co_argcount ]
@@ -150,71 +223,9 @@ class CompiledEvaluable( object ):
         pass
       line += ' %s( %s )' % ( op, ', '.join( args ) )
       lines.append( line )
-      if N+i == len(values):
+      if i == len(values):
         break
     return '\n'.join( lines )
-
-class Evaluable( object ):
-  'Base class'
-
-  __metaclass__ = cache.Meta
-
-  def __init__( self, args, evalf ):
-    'constructor'
-
-    self.evalf = evalf
-    self.args = tuple(args)
-
-  def __compile( self, data, operations ):
-    'compile'
-
-    indices = numpy.empty( len(self.args), dtype=int )
-    for iarg, arg in enumerate( self.args ):
-      if isinstance(arg,Evaluable):
-        for idx, (op,idcs) in enumerate( operations ):
-          if op == arg:
-            break
-        else:
-          idx = arg.__compile(data,operations)
-      elif arg is CACHE:
-        idx = -4
-      elif arg is TRANS:
-        idx = -3
-      elif arg is POINTS:
-        idx = -2
-      elif arg is WEIGHTS:
-        idx = -1
-      else:
-        data.insert( 0, arg )
-        idx = -len(data)-4
-      indices[iarg] = idx
-    operations.append( (self,indices) )
-    return len(operations)-1
-
-  @log.title
-  def compiled( self ):
-    'compiled'
-
-    data = []
-    operations = []
-    self.__compile( data, operations ) # compile expressions
-    return CompiledEvaluable( data, operations )
-
-  def asciitree( self ):
-    'string representation'
-
-    key = self.evalf.__name__
-    lines = []
-    indent = '\n' + ' ' + ' ' * len(key)
-    for it in reversed( self.args ):
-      s = it.asciitree() if isinstance(it,Evaluable) else _obj2str(it)
-      lines.append( indent.join( s.splitlines() ) )
-      indent = '\n' + '|' + ' ' * len(key)
-    indent = '\n' + '+' + '-' * (len(key)-1) + ' '
-    return key + ' ' + indent.join( reversed( lines ) )
-
-  def __str__( self ):
-    return self.__class__.__name__
 
 class EvaluationError( Exception ):
   'evaluation error'
@@ -237,8 +248,6 @@ class EvaluationError( Exception ):
 
 class Tuple( Evaluable ):
   'combine'
-
-  __slots__ = 'items',
 
   def __init__( self, items ):
     'constructor'
@@ -280,8 +289,6 @@ class Tuple( Evaluable ):
 class PointShape( Evaluable ):
   'shape of integration points'
 
-  __slots__ = ()
-
   def __init__( self ):
     'constructor'
 
@@ -295,8 +302,6 @@ class PointShape( Evaluable ):
 
 class Elemtrans( Evaluable ):
   'transform'
-
-  __slots__ = 'side',
 
   def __init__( self, side ):
     Evaluable.__init__( self, args=[TRANS,side], evalf=self.transform )
@@ -314,7 +319,6 @@ class ArrayFunc( Evaluable ):
   'array function'
 
   __array_priority__ = 1. # http://stackoverflow.com/questions/7042496/numpy-coercion-problem-for-left-sided-binary-operator/7057530#7057530
-  __slots__ = 'shape', 'ndim', 'dtype'
 
   def __init__( self, evalf, args, shape, dtype=float ):
     'constructor'
@@ -557,8 +561,6 @@ class ElemSign( ArrayFunc ):
 class ElemArea( ArrayFunc ):
   'element area'
 
-  __slots__ = ()
-
   def __init__( self, weights ):
     'constructor'
 
@@ -573,8 +575,6 @@ class ElemArea( ArrayFunc ):
 
 class ElemInt( ArrayFunc ):
   'elementwise integration'
-
-  __slots__ = ()
 
   def __init__( self, func, weights ):
     'constructor'
@@ -593,8 +593,6 @@ class ElemInt( ArrayFunc ):
 
 class Align( ArrayFunc ):
   'align axes'
-
-  __slots__ = 'func', 'axes'
 
   def __init__( self, func, axes, ndim ):
     'constructor'
@@ -674,8 +672,6 @@ class Align( ArrayFunc ):
 class Get( ArrayFunc ):
   'get'
 
-  __slots__ = 'func', 'axis', 'item'
-
   def __init__( self, func, axis, item ):
     'constructor'
 
@@ -706,8 +702,6 @@ class Get( ArrayFunc ):
 class Product( ArrayFunc ):
   'product'
 
-  __slots__ = 'func', 'axis'
-
   def __init__( self, func, axis ):
     'constructor'
 
@@ -730,8 +724,6 @@ class Product( ArrayFunc ):
 class IWeights( ArrayFunc ):
   'integration weights'
 
-  __slots__ = ()
-
   def __init__( self ):
     'constructor'
 
@@ -745,8 +737,6 @@ class IWeights( ArrayFunc ):
 
 class Transform( ArrayFunc ):
   'transform'
-
-  __slots__ = 'fromdims', 'todims', 'side'
 
   def __init__( self, todims, fromdims, side ):
     'constructor'
@@ -773,8 +763,6 @@ class Transform( ArrayFunc ):
 
 class Function( ArrayFunc ):
   'function'
-
-  __slots__ = 'side', 'ndims', 'stdmap', 'igrad'
 
   def __init__( self, ndims, stdmap, igrad, axis, side=0 ):
     'constructor'
@@ -819,8 +807,6 @@ class Function( ArrayFunc ):
 class Choose( ArrayFunc ):
   'piecewise function'
 
-  __slots__ = 'level', 'choices'
-
   def __init__( self, level, choices ):
     'constructor'
 
@@ -849,8 +835,6 @@ class Choose( ArrayFunc ):
 class Choose2D( ArrayFunc ):
   'piecewise function'
 
-  __slots__ = ()
-
   def __init__( self, coords, contour, fin, fout ):
     'constructor'
 
@@ -870,8 +854,6 @@ class Choose2D( ArrayFunc ):
 
 class Inverse( ArrayFunc ):
   'inverse'
-
-  __slots__ = 'func',
 
   def __init__( self, func ):
     'constructor'
@@ -894,8 +876,6 @@ class Inverse( ArrayFunc ):
 class DofMap( ArrayFunc ):
   'dof axis'
 
-  __slots__ = 'side', 'dofmap'
-
   def __init__( self, dofmap, axis, side=0 ):
     'new'
 
@@ -914,8 +894,6 @@ class DofMap( ArrayFunc ):
 
 class Concatenate( ArrayFunc ):
   'concatenate'
-
-  __slots__ = 'funcs', 'axis'
 
   def __init__( self, funcs, axis=0 ):
     'constructor'
@@ -1107,8 +1085,6 @@ class Concatenate( ArrayFunc ):
 class Interpolate( ArrayFunc ):
   'interpolate uniformly spaced data; stepwise for now'
 
-  __slots__ = ()
-
   def __init__( self, x, xp, fp, left=None, right=None ):
     'constructor'
 
@@ -1123,8 +1099,6 @@ class Interpolate( ArrayFunc ):
 
 class Cross( ArrayFunc ):
   'cross product'
-
-  __slots__ = 'func1', 'func2', 'axis'
 
   def __init__( self, func1, func2, axis ):
     'contructor'
@@ -1150,8 +1124,6 @@ class Cross( ArrayFunc ):
 class Determinant( ArrayFunc ):
   'normal'
 
-  __slots__ = 'func',
-
   def __init__( self, func ):
     'contructor'
 
@@ -1168,8 +1140,6 @@ class Determinant( ArrayFunc ):
 
 class DofIndex( ArrayFunc ):
   'element-based indexing'
-
-  __slots__ = 'array', 'iax', 'index'
 
   def __init__( self, array, iax, index ):
     'constructor'
@@ -1221,8 +1191,6 @@ class DofIndex( ArrayFunc ):
 
 class Multiply( ArrayFunc ):
   'multiply'
-
-  __slots__ = 'funcs',
 
   def __init__( self, func1, func2 ):
     'constructor'
@@ -1300,8 +1268,6 @@ class Multiply( ArrayFunc ):
 class Negative( ArrayFunc ):
   'negate'
 
-  __slots__ = 'func',
-
   def __init__( self, func ):
     'constructor'
 
@@ -1356,8 +1322,6 @@ class Negative( ArrayFunc ):
 class Add( ArrayFunc ):
   'add'
 
-  __slots__ = 'funcs',
-
   def __init__( self, func1, func2 ):
     'constructor'
 
@@ -1402,8 +1366,6 @@ class Add( ArrayFunc ):
 class BlockAdd( Add ):
   'block addition (used for DG)'
 
-  __slots__ = ()
-
   def _multiply( self, other ):
     func1, func2 = self.funcs
     return BlockAdd( *_sorted( func1 * other, func2 * other ) )
@@ -1441,8 +1403,6 @@ class BlockAdd( Add ):
 
 class Dot( ArrayFunc ):
   'dot'
-
-  __slots__ = 'func1', 'func2', 'naxes'
 
   def __init__( self, func1, func2, naxes ):
     'constructor'
@@ -1516,8 +1476,6 @@ class Dot( ArrayFunc ):
 class Sum( ArrayFunc ):
   'sum'
 
-  __slots__ = 'axis', 'func'
-
   def __init__( self, func, axis ):
     'constructor'
 
@@ -1540,8 +1498,6 @@ class Sum( ArrayFunc ):
 
 class Debug( ArrayFunc ):
   'debug'
-
-  __slots__ = 'func',
 
   def __init__( self, func ):
     'constructor'
@@ -1567,8 +1523,6 @@ class Debug( ArrayFunc ):
 class TakeDiag( ArrayFunc ):
   'extract diagonal'
 
-  __slots__ = 'func',
-
   def __init__( self, func ):
     'constructor'
 
@@ -1588,8 +1542,6 @@ class TakeDiag( ArrayFunc ):
 
 class Take( ArrayFunc ):
   'generalization of numpy.take(), to accept lists, slices, arrays'
-
-  __slots__ = 'func', 'axis', 'indices'
 
   def __init__( self, func, indices, axis ):
     'constructor'
@@ -1632,8 +1584,6 @@ class Take( ArrayFunc ):
 
 class Power( ArrayFunc ):
   'power'
-
-  __slots__ = 'func', 'power'
 
   def __init__( self, func, power ):
     'constructor'
@@ -1688,8 +1638,6 @@ class Power( ArrayFunc ):
 class ElemFunc( ArrayFunc ):
   'trivial func'
 
-  __slots__ = 'side',
-
   def __init__( self, ndims, side=0 ):
     'constructor'
 
@@ -1712,8 +1660,6 @@ class ElemFunc( ArrayFunc ):
 
 class Pointwise( ArrayFunc ):
   'pointwise transformation'
-
-  __slots__ = 'arr', 'evalf', 'deriv'
 
   def __init__( self, arr, evalf, deriv ):
     'constructor'
@@ -1743,8 +1689,6 @@ class Pointwise( ArrayFunc ):
 
 class Sign( ArrayFunc ):
   'sign'
-
-  __slots__ = 'func',
 
   def __init__( self, func ):
     'constructor'
@@ -1777,8 +1721,6 @@ class Sign( ArrayFunc ):
 
 class Pointdata( ArrayFunc ):
 
-  __slots__ = 'data',
-
   def __init__ ( self, data, shape ):
     'constructor'
 
@@ -1795,7 +1737,6 @@ class Pointdata( ArrayFunc ):
   def update_max( self, func ):
     func = asarray(func)
     assert func.shape == self.shape
-    func = ascompiled(func)
     data = dict( (trans,(numpy.maximum(func.eval((trans,trans),points),values),points)) for trans,(values,points) in self.data.iteritems() )
 
     return Pointdata( data, self.shape )
@@ -1803,8 +1744,6 @@ class Pointdata( ArrayFunc ):
 
 class Eig( Evaluable ):
   'Eig'
-
-  __slots__ = 'func', 'shape', 'symmetric'
 
   def __init__( self, func, symmetric=False, sort=False ):
     'contructor'
@@ -1845,8 +1784,6 @@ class ArrayFromTuple( ArrayFunc ):
 
 class Zeros( ArrayFunc ):
   'zero'
-
-  __slots__ = ()
 
   def __init__( self, shape ):
     'constructor'
@@ -1930,8 +1867,6 @@ class Zeros( ArrayFunc ):
 
 class Inflate( ArrayFunc ):
   'inflate'
-
-  __slots__ = 'func', 'dofmap', 'length', 'axis'
 
   def __init__( self, func, dofmap, length, axis ):
     'constructor'
@@ -2045,8 +1980,6 @@ class Inflate( ArrayFunc ):
 class Diagonalize( ArrayFunc ):
   'diagonal matrix'
 
-  __slots__ = 'func',
-
   def __init__( self, func ):
     'constructor'
 
@@ -2094,8 +2027,6 @@ class Diagonalize( ArrayFunc ):
 
 class Repeat( ArrayFunc ):
   'repeat singleton axis'
-
-  __slots__ = 'func', 'axis', 'length'
 
   def __init__( self, func, length, axis ):
     'constructor'
@@ -2169,8 +2100,6 @@ class Repeat( ArrayFunc ):
 
 class Const( ArrayFunc ):
   'pointwise transformation'
-
-  __slots__ = ()
 
   def __init__( self, func ):
     'constructor'
@@ -2349,11 +2278,6 @@ def asfunc( obj ):
   'convert to Evaluable'
   return obj if isinstance( obj, Evaluable ) \
     else asarray( obj ) # TODO make asarray return ArrayFunc always
-
-def ascompiled( obj ):
-  'convert to CompiledEvaluable'
-  return obj if isinstance( obj, CompiledEvaluable ) \
-    else asfunc( obj ).compiled()
 
 def _asarray( arg ):
   warnings.warn( '_asarray is deprecated, use asarray instead', DeprecationWarning )
@@ -3163,7 +3087,6 @@ def pointdata ( topo, ischeme, func=None, shape=None, value=None ):
     assert value is None
     assert shape is None
     shape = func.shape
-    func = ascompiled( func )
   else: # func is None
     if value is not None:
       assert shape is None
@@ -3230,7 +3153,6 @@ def _unpack( funcsp ):
     for trans, dofs in dofmap.items():
       yield trans, dofs + dof0, stdmap[trans]
   
-
 def supp( funcsp, indices ):
   'find support of selection of basis functions'
 
@@ -3247,5 +3169,15 @@ def supp( funcsp, indices ):
       trans = trans[:-1]
     assert not dofs.size
   return supp
+
+
+## INTERNAL HELPER FUNCTIONS
+
+def _isindex( item, iterable ):
+  for index, obj in enumerate(iterable):
+    if obj is item:
+      return index
+  return -1
+
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

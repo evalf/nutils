@@ -69,8 +69,6 @@ class TestStructure2D( object ):
   def verify_connectivity( self, structure, geom ):
     (e00,e01), (e10,e11) = structure
 
-    geom = geom.compiled()
-
     a0 = geom.eval( e00, numpy.array([0,1]) )
     a1 = geom.eval( e01, numpy.array([0,0]) )
     numpy.testing.assert_array_almost_equal( a0, a1 )
