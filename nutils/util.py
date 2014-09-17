@@ -491,6 +491,14 @@ def run( *functions ):
     log.info( 'finish %s\n' % time.ctime() )
     log.info( 'elapsed %02.0f:%02.0f:%02.0f' % ( hours, minutes, seconds ) )
 
+    if core.getprop( 'uncollected_summary', False ):
+      import gc
+      ncollect = gc.collect()
+      if ncollect:
+        log.warning( 'found %d uncollected objects' % ncollect )
+      else:
+        log.info( 'found no uncollected objects' )
+
     if core.getprop( 'profile' ):
       import pstats
       stream = log.getstream( 'warning' )
