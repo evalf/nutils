@@ -306,8 +306,7 @@ class PointShape( Evaluable ):
 
     return Evaluable.__init__( self, args=[POINTS] )
 
-  @staticmethod
-  def evalf( points ):
+  def evalf( self, points ):
     'evaluate'
 
     return points.shape[:-1]
@@ -316,12 +315,11 @@ class Elemtrans( Evaluable ):
   'transform'
 
   def __init__( self, side ):
-    Evaluable.__init__( self, args=[TRANS,side] )
+    Evaluable.__init__( self, args=[TRANS] )
     self.side = side
 
-  @staticmethod
-  def evalf( trans, side ):
-    return trans[side]
+  def evalf( self, trans ):
+    return trans[ self.side ]
 
 # ARRAYFUNC
 #
