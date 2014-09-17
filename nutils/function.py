@@ -254,14 +254,24 @@ class Tuple( Evaluable ):
   def __init__( self, items ):
     'constructor'
 
-    self.items = tuple( items )
-    Evaluable.__init__( self, args=self.items )
+    args = []
+    indices = []
+    for i, item in enumerate(items):
+      if isinstance( item, Evaluable ):
+        args.append( item )
+        indices.append( i )
 
-  @staticmethod
-  def evalf( *f ):
+    self.items = tuple( items )
+    self.indices = tuple( indices )
+    Evaluable.__init__( self, args )
+
+  def evalf( self, *items ):
     'evaluate'
 
-    return f
+    T = list(self.items)
+    for index, item in zip( self.indices, items ):
+      T[index] = item
+    return tuple( T )
 
   def __iter__( self ):
     'iterate'
