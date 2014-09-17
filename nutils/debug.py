@@ -368,4 +368,54 @@ def checkdata( obj, base64 ):
     log.warning( 'objects are not equal; if this is expected replace base64 data with:\n%s' % s )
   return equal
 
+def trace_uncollected( exhaustive=False ):
+  import gc
+  gc.set_debug( gc.DEBUG_SAVEALL )
+  ncollect = gc.collect()
+  if not ncollect:
+    log.info( 'found no uncollected objects' )
+    return
+  log.warning( 'found %d uncollected objects' % ncollect )
+  if not exhaustive:
+    return
+  garbage = { id(obj): obj for obj in gc.garbage }
+  pointers = {}
+  for n, obj in garbage.items():
+    indices = [ id(refobj) for refobj in gc.get_referents(obj) if id(refobj) in garbage ]
+    if indices:
+      pointers[n] = indices
+  changed = True
+  while changed:
+    changed = False
+    for n, refs in pointers.items():
+      newrefs = [ i for i in refs if i in pointers ]
+      if newrefs != refs:
+        changed = True
+        if not newrefs:
+          pointers.pop( n )
+        elif newrefs != refs:
+          pointers[n] = newrefs
+  strpointers = {}
+  discard = []
+  for n, refs in pointers.items():
+    obj = garbage[n]
+    if hasattr( obj, '__dict__' ) and id(obj.__dict__) in pointers:
+      discard.append( id(obj.__dict__) )
+      strpointers[n] = [ ( '.%s' % attr, id(refobj) ) for attr, refobj in obj.__dict__.items() if id(refobj) in pointers ]
+    else:
+      ids = { id(getattr(obj,attr)): '.%s' % attr for attr in obj.__slots__ } if hasattr( obj, '__slots__' ) and isinstance( obj.__slots__, tuple ) \
+       else { id(item): '#%d' % iitem for iitem, item in enumerate(obj) } if isinstance( obj, (list,tuple) ) \
+       else { id(item): repr(key) for key, item in obj.items() } if isinstance( obj, dict ) \
+       else {}
+      strpointers[n] = [ ( ids.get(i,'?'), i ) for i in refs ]
+  for i in discard:
+    strpointers.pop( i )
+  if strpointers:
+    log.warning( 'of which %d in circular reference:' % len(strpointers) )
+    renumber = { n: i+1 for i, n in enumerate( strpointers ) }
+    for n, refs in strpointers.items():
+      refstr = ', '.join( s + '->%d' % renumber[i] for s, i in refs )
+      log.warning( '%3d. %s: %s' % ( renumber[n], type(garbage[n]).__name__, refstr ) )
+
+
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
