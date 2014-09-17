@@ -115,13 +115,10 @@ def contract( A, B, axis=-1 ):
   m = _abc[26-A.ndim:]
   n = _abc[26-B.ndim:]
 
-  maxdim = max(A.ndim,B.ndim)
-  if axis is -1: # shortcut
-    o = _abc[26-maxdim:25]
-  else:
-    axes = [axis] if isinstance(axis,int) else axis
-    I = sorted( 26 - maxdim + normdim( maxdim, axis ) for axis in axes )
-    o = ''.join( _abc[a+1:b] for a, b in zip( [-1]+I, I+[maxdim] ) if a+1 != b )
+  maxdim = max( A.ndim, B.ndim )
+  axes = sorted( [ normdim(maxdim,axis) ] if isinstance(axis,int) else [ normdim(maxdim,ax) for ax in axis ] )
+  o = _abc[26-maxdim:26-len(axes)] if axes == range( maxdim-len(axes), maxdim ) \
+    else ''.join( _abc[27-maxdim+a:26-maxdim+b] for a, b in zip( [-1]+axes, axes+[maxdim] ) if a+1 != b )
 
   return numpy.einsum( '%s,%s->%s' % (m,n,o), A, B )
 
