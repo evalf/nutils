@@ -7,15 +7,12 @@
 # and others. More info at http://nutils.org <info@nutils.org>. (c) 2014
 
 """
-The numeric module provides methods that are lacking from the numpy module. An
-accompanying extension module _numeric.c should be compiled to benefit from
-extra performance, although a Python-only implementation is provided as
-fallback. A warning is issued if the extension module is not found.
+The numeric module provides methods that are lacking from the numpy module.
 """
 
 import numpy
 
-_abc = 'abcdefghijklmnopqrstuvwxyz'
+_abc = 'abcdefghijklmnopqrstuvwxyz' # indices for einsum
 
 def grid( shape ):
   shape = tuple(shape)
