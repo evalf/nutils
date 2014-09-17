@@ -12,7 +12,7 @@ The numeric module provides methods that are lacking from the numpy module.
 
 import numpy
 
-_abc = 'abcdefghijklmnopqrstuvwxyz' # indices for einsum
+_abc = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' # indices for einsum
 
 def grid( shape ):
   shape = tuple(shape)
@@ -112,25 +112,27 @@ def contract( A, B, axis=-1 ):
   A = numpy.asarray( A )
   B = numpy.asarray( B )
 
-  m = _abc[26-A.ndim:]
-  n = _abc[26-B.ndim:]
-
   maxdim = max( A.ndim, B.ndim )
+  m = _abc[maxdim-A.ndim:maxdim]
+  n = _abc[maxdim-B.ndim:maxdim]
+
   axes = sorted( [ normdim(maxdim,axis) ] if isinstance(axis,int) else [ normdim(maxdim,ax) for ax in axis ] )
-  o = _abc[26-maxdim:26-len(axes)] if axes == range( maxdim-len(axes), maxdim ) \
-    else ''.join( _abc[27-maxdim+a:26-maxdim+b] for a, b in zip( [-1]+axes, axes+[maxdim] ) if a+1 != b )
+  o = _abc[:maxdim-len(axes)] if axes == range( maxdim-len(axes), maxdim ) \
+    else ''.join( _abc[a+1:b] for a, b in zip( [-1]+axes, axes+[maxdim] ) if a+1 != b )
 
   return numpy.einsum( '%s,%s->%s' % (m,n,o), A, B )
 
 def contract_fast( A, B, naxes ):
   'contract last n axes'
 
+  assert naxes >= 0
   A = numpy.asarray( A )
   B = numpy.asarray( B )
 
-  m = _abc[26-A.ndim:]
-  n = _abc[26-B.ndim:]
-  o = _abc[26-max(A.ndim,B.ndim):26-naxes]
+  maxdim = max( A.ndim, B.ndim )
+  m = _abc[maxdim-A.ndim:maxdim]
+  n = _abc[maxdim-B.ndim:maxdim]
+  o = _abc[:maxdim-naxes]
 
   return numpy.einsum( '%s,%s->%s' % (m,n,o), A, B )
 
