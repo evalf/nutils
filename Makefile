@@ -1,6 +1,3 @@
-dev: build
-	cp -vu build/lib*/nutils/_numeric.so nutils
-
 build:
 	python setup.py build clean
 
@@ -13,10 +10,10 @@ docs:
 
 test: test_nose test_examples
 
-test_nose: dev
+test_nose:
 	nosetests -v tests
 
-test_examples: dev
+test_examples:
 	@for script in examples/*; do \
 		echo $$script; \
 		python $$script unittest --tbexplore=False --verbose=3; \
@@ -24,9 +21,9 @@ test_examples: dev
 
 clean:
 	rm -fr build dist
-	rm -f MANIFEST nutils/*.pyc nutils/_numeric.so
+	rm -f MANIFEST nutils/*.pyc
 	${MAKE} -C docs clean
 
-.PHONY: build dist docs dev test test_nose test_examples clean
+.PHONY: build dist docs test test_nose test_examples clean
 
 # vim:noexpandtab

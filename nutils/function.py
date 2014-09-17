@@ -1804,19 +1804,18 @@ class Pointdata( ArrayFunc ):
 class Eig( Evaluable ):
   'Eig'
 
-  __slots__ = 'func', 'shape', 'symmetric', 'sort'
+  __slots__ = 'func', 'shape', 'symmetric'
 
   def __init__( self, func, symmetric=False, sort=False ):
     'contructor'
 
-    Evaluable.__init__( self, args=[func, sort], evalf=numeric.eigh if symmetric else numeric.eig )
+    Evaluable.__init__( self, args=[func], evalf=numpy.linalg.eigh if symmetric else numpy.linalg.eig )
     self.symmetric = symmetric
-    self.sort = sort
     self.func = func
     self.shape = func.shape
 
   def _opposite( self ):
-    return Eig( opposite(self.func), self.symmetric, self.sort )
+    return Eig( opposite(self.func), self.symmetric )
 
 class ArrayFromTuple( ArrayFunc ):
 
@@ -2989,14 +2988,13 @@ def sign( arg ):
 
   return Sign( arg )
 
-def eig( arg, axes=(-2,-1), symmetric=False, sort=False ):
+def eig( arg, axes=(-2,-1), symmetric=False ):
   '''eig( arg, axes [ symmetric ] )
   Compute the eigenvalues and vectors of a matrix. The eigenvalues and vectors
   are positioned on the last axes.
 
   * tuple axes       The axis on which the eigenvalues and vectors are calculated
-  * bool  symmetric  Is the matrix symmetric
-  * int   sort       Sort the eigenvalues and vectors (-1=descending, 0=unsorted, 1=ascending)'''
+  * bool  symmetric  Is the matrix symmetric'''
 
   # Sort axis
   arg = asarray( arg )
@@ -3012,7 +3010,7 @@ def eig( arg, axes=(-2,-1), symmetric=False, sort=False ):
 
   # When it's an array calculate directly
   if not _isfunc(aligned_arg):
-    eigval, eigvec = numeric.eigh( aligned_arg, sort ) if symmetric else numeric.eig( aligned_arg, sort )
+    eigval, eigvec = numeric.eigh( aligned_arg ) if symmetric else numeric.eig( aligned_arg )
   else:
     # Use _call to see if the object has its own _eig function
     ret = _call( aligned_arg, '_eig' )
@@ -3020,7 +3018,7 @@ def eig( arg, axes=(-2,-1), symmetric=False, sort=False ):
       # Check the shapes
       eigval, eigvec = ret
     else:
-      eig = Eig( aligned_arg, symmetric=symmetric, sort=sort )
+      eig = Eig( aligned_arg, symmetric=symmetric )
       eigval = ArrayFromTuple( eig, index=0, shape=aligned_arg.shape[:-1] )
       eigvec = ArrayFromTuple( eig, index=1, shape=aligned_arg.shape )
 
