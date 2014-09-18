@@ -550,14 +550,13 @@ class ElemSign( ArrayFunc ):
   def __init__( self, ndims, side=0 ):
     'constructor'
 
-    ArrayFunc.__init__( self, args=[Elemtrans(side),ndims], shape=() )
+    ArrayFunc.__init__( self, args=[Elemtrans(side)], shape=() )
     self.side = side
     self.ndims = ndims
 
-  @staticmethod
-  def evalf( trans, ndims ):
+  def evalf( self, trans ):
     try:
-      ntrans = trans.slice( todims=ndims+1, fromdims=ndims )
+      ntrans = trans.slice( todims=self.ndims+1, fromdims=self.ndims )
     except: # possibly ndim topo, n+1dim geom
       return numpy.array( 1 )
     return numpy.array( -1 if ntrans.isflipped else 1 )
@@ -577,8 +576,7 @@ class ElemArea( ArrayFunc ):
     assert weights.ndim == 0
     ArrayFunc.__init__( self, args=[weights], shape=weights.shape )
 
-  @staticmethod
-  def evalf( weights ):
+  def evalf( self, weights ):
     'evaluate'
 
     return numpy.sum( weights )
@@ -591,13 +589,13 @@ class ElemInt( ArrayFunc ):
 
     assert _isfunc( func ) and _isfunc( weights )
     assert weights.ndim == 0
-    ArrayFunc.__init__( self, args=[weights,func,func.ndim], shape=func.shape )
+    self.funcdim = func.ndim
+    ArrayFunc.__init__( self, args=[weights,func], shape=func.shape )
 
-  @staticmethod
-  def evalf( w, f, ndim ):
+  def evalf( self, w, f ):
     'evaluate'
 
-    if f.ndim == ndim: # the missing point axis problem
+    if f.ndim == self.funcdim: # the missing point axis problem
       return f * w.sum()
     return numeric.dot( w, f ) if w.size else numpy.zeros( f.shape[1:] )
 
@@ -615,14 +613,13 @@ class Align( ArrayFunc ):
     for ax, sh in zip( self.axes, func.shape ):
       shape[ax] = sh
     negaxes = [ ax-ndim for ax in self.axes ]
-    ArrayFunc.__init__( self, args=[func,negaxes,ndim], shape=shape )
+    ArrayFunc.__init__( self, args=[func,negaxes], shape=shape )
 
-  @staticmethod
-  def evalf( arr, trans, ndim ):
+  def evalf( self, arr, trans ):
     'align'
 
     extra = arr.ndim - len(trans)
-    return numeric.align( arr, range(extra)+trans, ndim+extra )
+    return numeric.align( arr, range(extra)+trans, self.ndim+extra )
 
   def _elemint( self, weights ):
     return align( elemint( self.func, weights ), self.axes, self.ndim )
@@ -690,11 +687,12 @@ class Get( ArrayFunc ):
     self.item = item
     assert 0 <= axis < func.ndim, 'axis is out of bounds'
     assert 0 <= item < func.shape[axis], 'item is out of bounds'
-    s = (Ellipsis,item) + (slice(None),)*(func.ndim-axis-1)
+    self.item_shiftright = (Ellipsis,item) + (slice(None),)*(func.ndim-axis-1)
     shape = func.shape[:axis] + func.shape[axis+1:]
-    ArrayFunc.__init__( self, args=(func,s), shape=shape )
+    ArrayFunc.__init__( self, args=[func], shape=shape )
 
-  evalf = staticmethod(numpy.ndarray.__getitem__)
+  def evalf( self, arr ):
+    return arr[ self.item_shiftright ]
 
   def _localgradient( self, ndims ):
     f = localgradient( self.func, ndims )
@@ -721,9 +719,11 @@ class Product( ArrayFunc ):
     self.axis = axis
     assert 0 <= axis < func.ndim
     shape = func.shape[:axis] + func.shape[axis+1:]
-    ArrayFunc.__init__( self, args=[func,axis-func.ndim], shape=shape )
+    self.axis_shiftright = axis - func.ndim
+    ArrayFunc.__init__( self, args=[func], shape=shape )
 
-  evalf = staticmethod(numpy.product)
+  def evalf( self, arr ):
+    return numpy.product( arr, axis=self.axis_shiftright )
 
   def _localgradient( self, ndims ):
     return self[...,_] * ( localgradient(self.func,ndims) / self.func[...,_] ).sum( self.axis )
@@ -743,8 +743,7 @@ class IWeights( ArrayFunc ):
 
     ArrayFunc.__init__( self, args=[Elemtrans(0),WEIGHTS], shape=() )
 
-  @staticmethod
-  def evalf( trans, weights ):
+  def evalf( self, trans, weights ):
     'evaluate'
 
     return float( trans.slice(todims=trans.fromdims).det ) * weights
@@ -759,13 +758,12 @@ class Transform( ArrayFunc ):
     self.fromdims = fromdims
     self.todims = todims
     self.side = side
-    ArrayFunc.__init__( self, args=[Elemtrans(side),todims,fromdims], shape=(todims,fromdims) )
+    ArrayFunc.__init__( self, args=[Elemtrans(side)], shape=(todims,fromdims) )
 
-  @staticmethod
-  def evalf( trans, todims, fromdims ):
+  def evalf( self, trans ):
     'transform'
 
-    matrix = trans.slice(fromdims=fromdims,todims=todims).linear
+    matrix = trans.slice(fromdims=self.fromdims,todims=self.todims).linear
     assert matrix.ndim == 2
     return matrix.astype( float )
 
@@ -785,30 +783,29 @@ class Function( ArrayFunc ):
     self.ndims = ndims
     self.stdmap = stdmap
     self.igrad = igrad
-    ArrayFunc.__init__( self, args=(CACHE,POINTS,Elemtrans(side),stdmap,igrad), shape=(axis,)+(ndims,)*igrad )
+    ArrayFunc.__init__( self, args=(CACHE,POINTS,Elemtrans(side)), shape=(axis,)+(ndims,)*igrad )
 
-  @staticmethod
-  def evalf( cache, points, trans, stdmap, igrad ):
+  def evalf( self, cache, points, trans ):
     'evaluate'
 
     fvals = []
-    head = trans.lookup( stdmap )
-    for std, keep in stdmap[head]:
+    head = trans.lookup( self.stdmap )
+    for std, keep in self.stdmap[head]:
       if std:
         transpoints = cache( trans[len(head):].apply, points )
-        F = cache( std.eval, transpoints, igrad )
+        F = cache( std.eval, transpoints, self.igrad )
         if keep is not None:
-          F = F[(Ellipsis,keep)+(slice(None),)*igrad]
-        if igrad:
+          F = F[(Ellipsis,keep)+(slice(None),)*self.igrad]
+        if self.igrad:
           invlinear = head.slice(todims=head.fromdims).invlinear.astype( float )
           if invlinear.ndim:
-            for axis in range(-igrad,0):
+            for axis in range(-self.igrad,0):
               F = numeric.dot( F, invlinear, axis )
           elif invlinear != 1:
-            F = F * (invlinear**igrad)
+            F = F * (invlinear**self.igrad)
         fvals.append( F )
       head = head[:-1]
-    return fvals[0] if len(fvals) == 1 else numpy.concatenate( fvals, axis=-1-igrad )
+    return fvals[0] if len(fvals) == 1 else numpy.concatenate( fvals, axis=-1-self.igrad )
 
   def _opposite( self ):
     return Function( self.ndims, self.stdmap, self.igrad, self.shape[0], 1-self.side )
