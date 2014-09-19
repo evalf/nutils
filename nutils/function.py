@@ -828,8 +828,7 @@ class Choose( ArrayFunc ):
     assert level.ndim == len( shape )
     ArrayFunc.__init__( self, args=(level,)+self.choices, shape=shape )
 
-  @staticmethod
-  def evalf( level, *choices ):
+  def evalf( self, level, *choices ):
     'choose'
 
     return numpy.choose( level, choices )
@@ -850,14 +849,15 @@ class Choose2D( ArrayFunc ):
     'constructor'
 
     shape = _jointshape( fin.shape, fout.shape )
+    self.contour = contour
     ArrayFunc.__init__( self, args=(coords,contour,fin,fout), shape=shape )
 
   @staticmethod
-  def evalf( xy, contour, fin, fout ):
+  def evalf( self, xy, fin, fout ):
     'evaluate'
 
     from matplotlib import nxutils
-    mask = nxutils.points_inside_poly( xy.T, contour )
+    mask = nxutils.points_inside_poly( xy.T, self.contour )
     out = numpy.empty( fin.shape or fout.shape )
     out[...,mask] = fin[...,mask] if fin.shape else fin
     out[...,~mask] = fout[...,~mask] if fout.shape else fout
@@ -894,13 +894,12 @@ class DofMap( ArrayFunc ):
 
     self.side = side
     self.dofmap = dofmap
-    ArrayFunc.__init__( self, args=(Elemtrans(side),dofmap), shape=[axis], dtype=int )
+    ArrayFunc.__init__( self, args=[Elemtrans(side)], shape=[axis], dtype=int )
 
-  @staticmethod
-  def evalf( trans, dofmap ):
+  def evalf( self, trans ):
     'evaluate'
 
-    return dofmap[ trans.lookup(dofmap) ]
+    return self.dofmap[ trans.lookup(self.dofmap) ]
 
   def _opposite( self ):
     return DofMap( self.dofmap, self.shape[0], 1-self.side )
@@ -924,12 +923,13 @@ class Concatenate( ArrayFunc ):
     shape = _jointshape( *[ func.shape[:axis] + (sh,) + func.shape[axis+1:] for func in funcs ] )
     self.funcs = tuple(funcs)
     self.axis = axis
-    ArrayFunc.__init__( self, args=(axis-ndim,)+self.funcs, shape=shape )
+    self.axis_shiftright = axis-ndim
+    ArrayFunc.__init__( self, args=self.funcs, shape=shape )
 
-  @staticmethod
-  def evalf( iax, *arrays ):
+  def evalf( self, *arrays ):
     'evaluate'
 
+    iax = self.axis_shiftright
     ndim = numpy.max([ array.ndim for array in arrays ])
     axlen = util.sum( array.shape[iax] for array in arrays )
     shape = _jointshape( *[ (1,)*(ndim-array.ndim) + array.shape[:iax] + (axlen,) + ( array.shape[iax+1:] if iax != -1 else () ) for array in arrays ] )
@@ -1108,9 +1108,14 @@ class Interpolate( ArrayFunc ):
       warnings.warn( 'supplied x-values are non-increasing' )
 
     assert x.ndim == 0
-    ArrayFunc.__init__( self, args=[x,xp,fp,left,right], shape=() )
+    ArrayFunc.__init__( self, args=[x], shape=() )
+    self.xp = xp
+    self.fp = fp
+    self.left = left
+    self.right = right
 
-  evalf = staticmethod(numpy.interp)
+  def evalf( self, x ):
+    return numpy.interp( x, self.xp, self.fp, self.left, self.right )
 
 class Cross( ArrayFunc ):
   'cross product'
@@ -1123,9 +1128,11 @@ class Cross( ArrayFunc ):
     self.axis = axis
     shape = _jointshape( func1.shape, func2.shape )
     assert 0 <= axis < len(shape), 'axis out of bounds: axis={0}, len(shape)={1}'.format( axis, len(shape) )
-    ArrayFunc.__init__( self, args=(func1,func2,axis-len(shape)), shape=shape )
+    self.axis_shiftright = axis-len(shape)
+    ArrayFunc.__init__( self, args=(func1,func2), shape=shape )
 
-  evalf = staticmethod(numeric.cross)
+  def evalf( self, a, b ):
+    return numeric.cross( a, b, self.axis_shiftright )
 
   def _localgradient( self, ndims ):
     return cross( self.func1[...,_], localgradient(self.func2,ndims), axis=self.axis ) \
