@@ -359,6 +359,8 @@ class Topology( object ):
           integrands.append( function.Tuple([ ifunc, lock, (), function.elemint( func, iweights ) ]) )
       retvals.append( array )
     idata = function.Tuple( integrands )
+    if core.getprop( 'dot', False ):
+      idata.graphviz()
     fcache = cache.CallDict()
 
     __log__ = log.iter( 'elem', self )

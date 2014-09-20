@@ -31,10 +31,16 @@ expensive and currently unsupported operation.
 from . import util, numpy, numeric, log, core, cache, transform, rational, _
 import sys, warnings
 
-CACHE   = object()
-TRANS   = object()
-POINTS  = object()
-WEIGHTS = object()
+class Token( object ):
+  def __init__( self, name ):
+    self.name = name
+  def __str__( self ):
+    return self.name
+
+CACHE   = Token( 'Cache' )
+TRANS   = Token( 'Trans' )
+POINTS  = Token( 'Points' )
+WEIGHTS = Token( 'Weights' )
 
 TOKENS = CACHE, TRANS, POINTS, WEIGHTS
 
@@ -83,7 +89,7 @@ class Evaluable( object ):
   def asciitree( self ):
     'string representation'
 
-    key = self.__class__.__name__
+    key = str(self)
     lines = []
     indent = '\n' + ' ' + ' ' * len(key)
     for it in reversed( self.__args ):
@@ -126,7 +132,8 @@ class Evaluable( object ):
         raise Exception, 'invalid integration scheme of type %r' % type(ischeme)
 
     ops, inds = self.serialized
-    values = [ fcache, trans, points, weights ] # should match TOKENS
+    assert TOKENS == ( CACHE, TRANS, POINTS, WEIGHTS )
+    values = [ fcache, trans, points, weights ]
     for op, indices in zip( ops, inds ) + [(self,inds[-1])]:
       args = [ values[i] for i in indices ]
       try:
@@ -152,6 +159,8 @@ class Evaluable( object ):
     imgtype = core.getprop( 'imagetype', 'png' )
     imgpath = util.getpath( 'dot{0:03x}.' + imgtype )
 
+    ops, inds = self.serialized
+
     try:
       dot = subprocess.Popen( [dotpath,'-T'+imgtype], stdin=subprocess.PIPE, stdout=open(imgpath,'w') )
     except OSError:
@@ -160,16 +169,11 @@ class Evaluable( object ):
 
     print >> dot.stdin, 'digraph {'
     print >> dot.stdin, 'graph [ dpi=72 ];'
-
-    data = self.data + [ '<cache>', '<trans>', '<points>', '<weights>' ]
-    for i, (op,indices) in enumerate( self.operations ):
-      args = [ '%%%d=%s' % ( iarg, _obj2str( data[idx] ) ) for iarg, idx in enumerate( indices ) if idx < 0 ]
-      vertex = 'label="%s"' % r'\n'.join( [ '%d. %s' % ( i, op ) ] + args )
-      print >> dot.stdin, '%d [%s]' % ( i, vertex )
-      for iarg, idx in enumerate( indices ):
-        if idx >= 0:
-          print >> dot.stdin, '%d -> %d [label="%%%d"];' % ( idx, i, iarg );
-
+    dot.stdin.writelines( '%d [label="%d. %s"];\n' % (i,i,name)
+      for i, name in enumerate( TOKENS + ops + (self,) ) )
+    dot.stdin.writelines( '%d -> %d;\n' % (j,i)
+      for i, indices in enumerate( ([],)*len(TOKENS) + inds )
+        for j in indices )
     print >> dot.stdin, '}'
     dot.stdin.close()
 
@@ -180,7 +184,7 @@ class Evaluable( object ):
 
     ops, inds = self.serialized
     lines = []
-    for name in '<cache>','<trans>','<points>','<weights>':
+    for name in TOKENS:
       lines.append( '  %%%d = %s' % ( len(lines), name ) )
     for op, indices in zip(ops,inds) + [(self,inds[-1])]:
       args = [ '%%%d' % idx for idx in indices ]
