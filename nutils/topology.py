@@ -525,9 +525,9 @@ class Topology( object ):
       W = numpy.zeros( onto.shape[0] )
       I = numpy.zeros( onto.shape[0], dtype=bool )
       fun = function.asarray( fun )
-      data = function.Tuple( function.Tuple([ fun, f, function.Tuple(ind) ]) for f, ind in function.blocks( onto ) )
+      data = function.Tuple( function.Tuple([ fun, f, function.Tuple(ind) ]) for f, ind in function.blocks( onto ) ).compiled()
       for elem in self:
-        for f, w, ind in data( elem, 'bezier2' ):
+        for f, w, ind in data.eval( elem, 'bezier2' ):
           w = w.swapaxes(0,1) # -> dof axis, point axis, ...
           wf = w * f[ (slice(None),)+numpy.ix_(*ind[1:]) ]
           W[ind[0]] += w.reshape(w.shape[0],-1).sum(1)
