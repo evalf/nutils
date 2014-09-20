@@ -218,7 +218,8 @@ class Evaluable( object ):
       args = [ '%%%d' % (idx-len(data)) if idx >= len(data) else _obj2str(values[idx]) for idx in indices ]
       try:
         code = op.evalf.func_code
-        names = code.co_varnames[ :code.co_argcount ]
+        offset = 1 if getattr( op.evalf, '__self__', None ) is not None else 0
+        names = code.co_varnames[ offset:code.co_argcount ]
         names += tuple( '%s[%d]' % ( code.co_varnames[ code.co_argcount ], n ) for n in range( len(indices) - len(names) ) )
         args = [ '%s=%s' % item for item in zip( names, args ) ]
       except:
