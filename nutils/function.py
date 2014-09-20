@@ -44,6 +44,7 @@ class Evaluable( object ):
   def __init__( self, args ):
     'constructor'
 
+    assert all( isinstance(arg,Evaluable) or arg is CACHE or arg is TRANS or arg is POINTS or arg is WEIGHTS for arg in args )
     self.__args = tuple(args)
 
   def evalf( self ):
@@ -112,10 +113,10 @@ class Evaluable( object ):
   def asciitree( self ):
     'string representation'
 
-    key = self.evalf.__name__
+    key = self.__class__.__name__
     lines = []
     indent = '\n' + ' ' + ' ' * len(key)
-    for it in reversed( self.args ):
+    for it in reversed( self.__args ):
       s = it.asciitree() if isinstance(it,Evaluable) else _obj2str(it)
       lines.append( indent.join( s.splitlines() ) )
       indent = '\n' + '|' + ' ' * len(key)
@@ -613,14 +614,14 @@ class Align( ArrayFunc ):
     shape = [ 1 ] * ndim
     for ax, sh in zip( self.axes, func.shape ):
       shape[ax] = sh
-    negaxes = [ ax-ndim for ax in self.axes ]
-    ArrayFunc.__init__( self, args=[func,negaxes], shape=shape )
+    self.negaxes = [ ax-ndim for ax in self.axes ]
+    ArrayFunc.__init__( self, args=[func], shape=shape )
 
-  def evalf( self, arr, trans ):
+  def evalf( self, arr ):
     'align'
 
-    extra = arr.ndim - len(trans)
-    return numeric.align( arr, range(extra)+trans, self.ndim+extra )
+    extra = arr.ndim - len(self.negaxes)
+    return numeric.align( arr, range(extra)+self.negaxes, self.ndim+extra )
 
   def _elemint( self, weights ):
     return align( elemint( self.func, weights ), self.axes, self.ndim )
@@ -823,14 +824,19 @@ class Choose( ArrayFunc ):
     'constructor'
 
     self.level = level
-    self.choices = tuple(choices)
+    self.choices = tuple( choices )
     shape = _jointshape( *[ choice.shape for choice in choices ] )
     level = level[ (_,)*(len(shape)-level.ndim) ]
     assert level.ndim == len( shape )
-    ArrayFunc.__init__( self, args=(level,)+self.choices, shape=shape )
+    self.ivar = [ i for i, choice in enumerate(choices) if isinstance(choice,ArrayFunc) ]
+    ArrayFunc.__init__( self, args=[ level ] + [ choices[i] for i in self.ivar ], shape=shape )
 
-  def evalf( self, level, *choices ):
+  def evalf( self, level, *varchoices ):
     'choose'
+
+    choices = list( self.choices )
+    for i, choice in zip( self.ivar, varchoices ):
+      choices[i] = choice
 
     return numpy.choose( level, choices )
 
@@ -924,12 +930,17 @@ class Concatenate( ArrayFunc ):
       sh = sum( lengths )
     shape = _jointshape( *[ func.shape[:axis] + (sh,) + func.shape[axis+1:] for func in funcs ] )
     self.funcs = tuple(funcs)
+    self.ivar = [ i for i, func in enumerate(funcs) if isinstance(func,Evaluable) ]
     self.axis = axis
     self.axis_shiftright = axis-ndim
-    ArrayFunc.__init__( self, args=self.funcs, shape=shape )
+    ArrayFunc.__init__( self, args=[ funcs[i] for i in self.ivar ], shape=shape )
 
-  def evalf( self, *arrays ):
+  def evalf( self, *varargs ):
     'evaluate'
+
+    arrays = list( self.funcs )
+    for i, arg in zip( self.ivar, varargs ):
+      arrays[i] = arg
 
     iax = self.axis_shiftright
     ndim = numpy.max([ array.ndim for array in arrays ])
@@ -1180,14 +1191,14 @@ class DofIndex( ArrayFunc ):
     self.iax = iax
     self.index = index
     shape = self.array.shape[:iax] + index.shape + self.array.shape[iax+1:]
-    item = [ slice(None) ] * self.array.ndim
-    item[iax] = index
-    ArrayFunc.__init__( self, args=[self.array]+item, shape=shape )
+    ArrayFunc.__init__( self, args=[index], shape=shape )
 
-  def evalf( self, arr, *item ):
+  def evalf( self, index ):
     'evaluate'
 
-    return arr[item]
+    item = [ slice(None) ] * self.array.ndim
+    item[self.iax] = index
+    return self.array[ tuple(item) ]
 
   def _get( self, i, item ):
     if self.iax <= i < self.iax + self.index.ndim:
@@ -1224,12 +1235,14 @@ class Multiply( ArrayFunc ):
     'constructor'
 
     assert _issorted( func1, func2 )
-    shape = _jointshape( func1.shape, func2.shape )
+    assert isinstance( func1, ArrayFunc )
     self.funcs = func1, func2
-    ArrayFunc.__init__( self, args=self.funcs, shape=shape )
+    args = self.funcs[:1+isinstance( func2, ArrayFunc )]
+    shape = _jointshape( func1.shape, func2.shape )
+    ArrayFunc.__init__( self, args=args, shape=shape )
 
-  def evalf( self, arr1, arr2 ):
-    return arr1 * arr2
+  def evalf( self, arr1, arr2=None ):
+    return arr1 * ( arr2 if arr2 is not None else self.funcs[1] )
 
   def _sum( self, axis ):
     func1, func2 = self.funcs
@@ -1264,10 +1277,10 @@ class Multiply( ArrayFunc ):
   def _multiply( self, other ):
     func1, func2 = self.funcs
     func1_other = multiply( func1, other )
-    if Multiply( *_sorted(func1,other) ) != func1_other:
+    if not _checksame( func1_other, Multiply, func1, other ):
       return multiply( func1_other, func2 )
     func2_other = multiply( func2, other )
-    if Multiply( *_sorted(func2,other) ) != func2_other:
+    if not _checksame( func2_other, Multiply, func2, other ):
       return multiply( func1, func2_other )
 
   def _localgradient( self, ndims ):
@@ -1360,13 +1373,14 @@ class Add( ArrayFunc ):
     'constructor'
 
     assert _issorted( func1, func2 )
+    assert isinstance( func1, ArrayFunc )
     self.funcs = func1, func2
+    args = self.funcs[:1+isinstance( func2, ArrayFunc )]
     shape = _jointshape( func1.shape, func2.shape )
-    dtype = _jointdtype(func1,func2)
-    ArrayFunc.__init__( self, args=self.funcs, shape=shape, dtype=dtype )
+    ArrayFunc.__init__( self, args=args, shape=shape )
 
-  def evalf( self, arr1, arr2 ):
-    return arr1 + arr2
+  def evalf( self, arr1, arr2=None ):
+    return arr1 + ( arr2 if arr2 is not None else self.funcs[1] )
 
   def _sum( self, axis ):
     return sum( self.funcs[0], axis ) + sum( self.funcs[1], axis )
@@ -1394,10 +1408,10 @@ class Add( ArrayFunc ):
   def _add( self, other ):
     func1, func2 = self.funcs
     func1_other = add( func1, other )
-    if Add( *_sorted(func1,other) ) != func1_other:
+    if not _checksame( func1_other, Add, func1, other ):
       return add( func1_other, func2 )
     func2_other = add( func2, other )
-    if Add( *_sorted(func2,other) ) != func2_other:
+    if not _checksame( func2_other, Add, func2, other ):
       return add( func1, func2_other )
 
 class BlockAdd( Add ):
@@ -1423,10 +1437,10 @@ class BlockAdd( Add ):
   def _add( self, other ):
     func1, func2 = self.funcs
     try1 = func1 + other
-    if try1 != BlockAdd( *_sorted( func1, other ) ):
+    if not _checksame( try1, BlockAdd, func1, other ):
       return try1 + func2
     try2 = func2 + other
-    if try2 != BlockAdd( *_sorted( func2, other ) ):
+    if not _checksame( try2, BlockAdd, func2, other ):
       return try2 + func1
     return BlockAdd( *_sorted( self, other ) )
 
@@ -1444,58 +1458,66 @@ class Dot( ArrayFunc ):
   def __init__( self, func1, func2, naxes ):
     'constructor'
 
+    assert _issorted( func1, func2 )
+    assert isinstance( func1, ArrayFunc )
     assert naxes > 0
-    self.func1 = func1
-    self.func2 = func2
     self.naxes = naxes
+    self.funcs = func1, func2
+    args = self.funcs[:1+isinstance( func2, ArrayFunc )]
     shape = _jointshape( func1.shape, func2.shape )[:-naxes]
-    ArrayFunc.__init__( self, args=(func1,func2), shape=shape )
+    ArrayFunc.__init__( self, args=args, shape=shape )
 
-  def evalf( self, arr1, arr2 ):
-    return numeric.contract_fast( arr1, arr2, self.naxes )
+  def evalf( self, arr1, arr2=None ):
+    return numeric.contract_fast( arr1, arr2 if arr2 is not None else self.funcs[1], self.naxes )
 
   @property
   def axes( self ):
     return range( self.ndim, self.ndim + self.naxes )
 
   def _get( self, i, item ):
-    return dot( get( self.func1, i, item ), get( self.func2, i, item ), [ ax-1 for ax in self.axes ] )
+    func1, func2 = self.funcs
+    return dot( get( func1, i, item ), get( func2, i, item ), [ ax-1 for ax in self.axes ] )
 
   def _localgradient( self, ndims ):
-    return dot( localgradient( self.func1, ndims ), self.func2[...,_], self.axes ) \
-         + dot( self.func1[...,_], localgradient( self.func2, ndims ), self.axes )
+    func1, func2 = self.funcs
+    return dot( localgradient( func1, ndims ), func2[...,_], self.axes ) \
+         + dot( func1[...,_], localgradient( func2, ndims ), self.axes )
 
   def _multiply( self, other ):
+    func1, func2 = self.funcs
     for ax in self.axes:
       other = insert( other, ax )
-    assert other.ndim == self.func1.ndim == self.func2.ndim
-    func1_other = multiply( self.func1, other )
-    if Multiply( *_sorted(self.func1,other) ) != func1_other:
-      return dot( func1_other, self.func2, self.axes )
-    func2_other = multiply( self.func2, other )
-    if Multiply( *_sorted(self.func2,other) ) != func2_other:
-      return dot( self.func1, func2_other, self.axes )
+    assert other.ndim == func1.ndim == func2.ndim
+    func1_other = multiply( func1, other )
+    if not _checksame( func1_other, Multiply, func1, other ):
+      return dot( func1_other, func2, self.axes )
+    func2_other = multiply( func2, other )
+    if not _checksame( func2_other, Multiply, func2, other ):
+      return dot( func1, func2_other, self.axes )
 
   def _add( self, other ):
     if isinstance( other, Dot ) and self.axes == other.axes:
-      common = _findcommon( (self.func1,self.func2), (other.func1,other.func2) )
+      common = _findcommon( self.funcs, other.funcs )
       if common:
         f, (g1,g2) = common
         return dot( f, g1 + g2, self.axes )
 
   def _takediag( self ):
     n1, n2 = self.ndim-2, self.ndim-1
-    return dot( takediag( self.func1, n1, n2 ), takediag( self.func2, n1, n2 ), [ ax-2 for ax in self.axes ] )
+    func1, func2 = self.funcs
+    return dot( takediag( func1, n1, n2 ), takediag( func2, n1, n2 ), [ ax-2 for ax in self.axes ] )
 
   def _sum( self, axis ):
-    return dot( self.func1, self.func2, self.axes + [axis] )
+    func1, func2 = self.funcs
+    return dot( func1, func2, self.axes + [axis] )
 
   def _take( self, index, axis ):
-    return dot( take(self.func1,index,axis), take(self.func2,index,axis), self.axes )
+    func1, func2 = self.funcs
+    return dot( take(func1,index,axis), take(func2,index,axis), self.axes )
 
   def _concatenate( self, other, axis ):
     if isinstance( other, Dot ) and other.axes == self.axes:
-      common = _findcommon( (self.func1,self.func2), (other.func1,other.func2) )
+      common = _findcommon( self.funcs, other.funcs )
       if common:
         f, g12 = common
         tryconcat = concatenate( g12, axis )
@@ -1503,15 +1525,17 @@ class Dot( ArrayFunc ):
           return dot( f, tryconcat, self.axes )
 
   def _opposite( self ):
-    return dot( opposite(self.func1), opposite(self.func2), self.axes )
+    func1, func2 = self.funcs
+    return dot( opposite(func1), opposite(func2), self.axes )
 
   def _negative( self ):
-    negfunc1 = -self.func1
+    func1, func2 = self.funcs
+    negfunc1 = -func1
     if not isinstance( negfunc1, Negative ):
-      return dot( negfunc1, self.func2, self.axes )
-    negfunc2 = -self.func2
+      return dot( negfunc1, func2, self.axes )
+    negfunc2 = -func2
     if not isinstance( negfunc2, Negative ):
-      return dot( self.func1, negfunc2, self.axes )
+      return dot( func1, negfunc2, self.axes )
 
 class Sum( ArrayFunc ):
   'sum'
@@ -1638,14 +1662,18 @@ class Power( ArrayFunc ):
   def __init__( self, func, power ):
     'constructor'
 
-    assert _isfunc( func ) or _isfunc( power )
     assert _isscalar( power )
     self.func = func
     self.power = power
-    ArrayFunc.__init__( self, args=[func,power], shape=func.shape )
+    self.varbase = isinstance( func, ArrayFunc )
+    self.varexp = isinstance( power, ArrayFunc )
+    assert self.varbase or self.varexp
+    args = ([func] if self.varbase else []) + ([power] if self.varexp else [])
+    ArrayFunc.__init__( self, args=args, shape=func.shape )
 
-  def evalf( self, arr, n ):
-    return numpy.power( arr, n )
+  def evalf( self, *args ):
+    return numpy.power( args[0] if self.varbase else self.func,
+                        args[-1] if self.varexp else self.power )
 
   def _localgradient( self, ndims ):
     # self = func**power
@@ -1713,31 +1741,38 @@ class ElemFunc( ArrayFunc ):
 class Pointwise( ArrayFunc ):
   'pointwise transformation'
 
-  def __init__( self, arr, evalf, deriv ):
+  def __init__( self, args, evalfun, deriv ):
     'constructor'
 
-    assert _isfunc( arr )
-    shape = arr.shape[1:]
-    self.arr = arr
-    self.evalf = evalf
+    assert _isfunc( args )
+    shape = args.shape[1:]
+    self.args = args
+    self.evalfun = evalfun
     self.deriv = deriv
-    ArrayFunc.__init__( self, args=tuple(arr), shape=shape )
+    self.ivar = [ i for i, arg in enumerate( args ) if isinstance( arg, ArrayFunc ) ]
+    ArrayFunc.__init__( self, args=[ args[i] for i in self.ivar ], shape=shape )
+
+  def evalf( self, *varargs ):
+    args = list( self.args )
+    for i, arg in zip( self.ivar, varargs ):
+      args[i] = arg
+    return self.evalfun( *args )
 
   def _localgradient( self, ndims ):
-    return ( self.deriv( self.arr )[...,_] * localgradient( self.arr, ndims ) ).sum( 0 )
+    return ( self.deriv( self.args )[...,_] * localgradient( self.args, ndims ) ).sum( 0 )
 
   def _takediag( self ):
-    return pointwise( takediag(self.arr), self.evalf, self.deriv )
+    return pointwise( takediag(self.args), self.evalfun, self.deriv )
 
   def _get( self, axis, item ):
-    return pointwise( get( self.arr, axis+1, item ), self.evalf, self.deriv )
+    return pointwise( get( self.args, axis+1, item ), self.evalfun, self.deriv )
 
   def _take( self, index, axis ):
-    return pointwise( take( self.arr, index, axis+1 ), self.evalf, self.deriv )
+    return pointwise( take( self.args, index, axis+1 ), self.evalfun, self.deriv )
 
   def _opposite( self ):
-    opp_arr = [ opposite(f) for f in self.arr ]
-    return pointwise( opp_arr, self.evalf, self.deriv )
+    opp_args = [ opposite(f) for f in self.args ]
+    return pointwise( opp_args, self.evalfun, self.deriv )
 
 class Sign( ArrayFunc ):
   'sign'
@@ -1933,7 +1968,7 @@ class Inflate( ArrayFunc ):
     self.axis = axis
     shape = func.shape[:axis] + (length,) + func.shape[axis+1:]
     self.axis_shiftright = axis-func.ndim
-    ArrayFunc.__init__( self, args=[func,dofmap,length], shape=shape )
+    ArrayFunc.__init__( self, args=[func,dofmap], shape=shape )
 
   def evalf( self, array, indices ):
     'inflate'
@@ -2043,10 +2078,10 @@ class Diagonalize( ArrayFunc ):
     assert n != 1
     shape = func.shape + (n,)
     self.func = func
-    ArrayFunc.__init__( self, args=[func], shape=shape )
+    ArrayFunc.__init__( self, args=[func] if isinstance(func,ArrayFunc) else [], shape=shape )
 
-  def evalf( self, arr ):
-    return numeric.diagonalize( arr )
+  def evalf( self, arr=None ):
+    return numeric.diagonalize( arr if arr is not None else self.func )
 
   def _localgradient( self, ndims ):
     return swapaxes( diagonalize( swapaxes( localgradient( self.func, ndims ), (-2,-1) ) ), (-3,-1) )
@@ -2096,10 +2131,10 @@ class Repeat( ArrayFunc ):
     self.length = length
     shape = func.shape[:axis] + (length,) + func.shape[axis+1:]
     self.axis_shiftright = axis-func.ndim
-    ArrayFunc.__init__( self, args=[func], shape=shape )
+    ArrayFunc.__init__( self, args=[func] if isinstance(func,ArrayFunc) else [], shape=shape )
 
-  def evalf( self, arr ):
-    return numeric.fastrepeat( arr, self.length, self.axis_shiftright )
+  def evalf( self, arr=None ):
+    return numeric.fastrepeat( arr if arr is not None else self.func, self.length, self.axis_shiftright )
 
   def _negative( self ):
     return repeat( -self.func, self.length, self.axis )
@@ -2614,7 +2649,8 @@ def dot( arg1, arg2, axes ):
     assert retval.shape == shape, 'bug in %s._dot' % arg2
     return retval
 
-  return Dot( arg1, arg2, naxes )
+  a, b = _sorted( arg1, arg2 )
+  return Dot( a, b, naxes )
 
 def determinant( arg, axes=(-2,-1) ):
   'determinant'
@@ -3234,6 +3270,15 @@ def supp( funcsp, indices ):
 
 
 ## INTERNAL HELPER FUNCTIONS
+
+def _checksame( obj, cls, arg1, arg2 ):
+  # temporary, specific to Add and Multiply
+  if obj.__class__ != cls:
+    return False
+  A, B = obj.funcs
+  a, b = _sorted( arg1, arg2 )
+  return A.shape == a.shape and numpy.all( A == a ) \
+     and B.shape == b.shape and numpy.all( B == B )
 
 def _isindex( item, iterable ):
   for index, obj in enumerate(iterable):
