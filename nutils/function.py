@@ -175,17 +175,15 @@ class Evaluable( object ):
 
     log.path( os.path.basename(imgpath) )
 
-  def stackstr( self, values=None ):
+  def stackstr( self, nlines=-1 ):
     'print stack'
 
-    data, ops, inds = self.serialized
-    if values is None:
-      values = [ '<cache>', '<trans>', '<points>', '<weights>' ] + data[4:]
-
+    ops, inds = self.serialized
     lines = []
-    for i, (op,indices) in enumerate( zip(ops,inds) + [(self,inds[-1])] ):
-      line = '  %%%d =' % i
-      args = [ '%%%d' % (idx-len(data)) if idx >= len(data) else _obj2str(values[idx]) for idx in indices ]
+    for name in '<cache>','<trans>','<points>','<weights>':
+      lines.append( '  %%%d = %s' % ( len(lines), name ) )
+    for op, indices in zip(ops,inds) + [(self,inds[-1])]:
+      args = [ '%%%d' % idx for idx in indices ]
       try:
         code = op.evalf.func_code
         offset = 1 if getattr( op.evalf, '__self__', None ) is not None else 0
@@ -194,9 +192,8 @@ class Evaluable( object ):
         args = [ '%s=%s' % item for item in zip( names, args ) ]
       except:
         pass
-      line += ' %s( %s )' % ( op, ', '.join( args ) )
-      lines.append( line )
-      if i == len(values):
+      lines.append( '  %%%d = %s( %s )' % ( len(lines), op, ', '.join( args ) ) )
+      if len(lines) == nlines+1:
         break
     return '\n'.join( lines )
 
@@ -217,7 +214,7 @@ class EvaluationError( Exception ):
   def __str__( self ):
     'string representation'
 
-    return '\n%s --> %s: %s' % ( self.evaluable.stackstr( self.values ), self.etype.__name__, self.evalue )
+    return '\n%s --> %s: %s' % ( self.evaluable.stackstr( nlines=len(self.values) ), self.etype.__name__, self.evalue )
 
 class Tuple( Evaluable ):
   'combine'
