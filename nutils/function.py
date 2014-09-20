@@ -873,7 +873,8 @@ class Inverse( ArrayFunc ):
     self.func = func
     ArrayFunc.__init__( self, args=[func], shape=func.shape )
 
-  evalf = staticmethod(numpy.linalg.inv)
+  def evalf( self, arr ):
+    return numpy.linalg.inv( arr )
 
   def _localgradient( self, ndims ):
     G = localgradient( self.func, ndims )
@@ -1154,7 +1155,8 @@ class Determinant( ArrayFunc ):
     self.func = func
     ArrayFunc.__init__( self, args=[func], shape=func.shape[:-2] )
 
-  evalf = staticmethod(numpy.linalg.det)
+  def evalf( self, arr ):
+    return numpy.linalg.det( arr )
 
   def _localgradient( self, ndims ):
     Finv = swapaxes( inverse( self.func ) )
@@ -1181,8 +1183,7 @@ class DofIndex( ArrayFunc ):
     item[iax] = index
     ArrayFunc.__init__( self, args=[self.array]+item, shape=shape )
 
-  @staticmethod
-  def evalf( arr, *item ):
+  def evalf( self, arr, *item ):
     'evaluate'
 
     return arr[item]
@@ -1226,7 +1227,8 @@ class Multiply( ArrayFunc ):
     self.funcs = func1, func2
     ArrayFunc.__init__( self, args=self.funcs, shape=shape )
 
-  evalf = staticmethod(numpy.multiply)
+  def evalf( self, arr1, arr2 ):
+    return arr1 * arr2
 
   def _sum( self, axis ):
     func1, func2 = self.funcs
@@ -1302,7 +1304,8 @@ class Negative( ArrayFunc ):
     self.func = func
     ArrayFunc.__init__( self, args=[func], shape=func.shape )
 
-  evalf = staticmethod(numpy.negative)
+  def evalf( self, arr ):
+    return -arr
 
   @property
   def blocks( self ):
@@ -1361,7 +1364,8 @@ class Add( ArrayFunc ):
     dtype = _jointdtype(func1,func2)
     ArrayFunc.__init__( self, args=self.funcs, shape=shape, dtype=dtype )
 
-  evalf = staticmethod(numpy.add)
+  def evalf( self, arr1, arr2 ):
+    return arr1 + arr2
 
   def _sum( self, axis ):
     return sum( self.funcs[0], axis ) + sum( self.funcs[1], axis )
@@ -1444,9 +1448,10 @@ class Dot( ArrayFunc ):
     self.func2 = func2
     self.naxes = naxes
     shape = _jointshape( func1.shape, func2.shape )[:-naxes]
-    ArrayFunc.__init__( self, args=(func1,func2,naxes), shape=shape )
+    ArrayFunc.__init__( self, args=(func1,func2), shape=shape )
 
-  evalf = staticmethod(numeric.contract_fast)
+  def evalf( self, arr1, arr2 ):
+    return numeric.contract_fast( arr1, arr2, self.naxes )
 
   @property
   def axes( self ):
@@ -1517,9 +1522,11 @@ class Sum( ArrayFunc ):
     self.func = func
     assert 0 <= axis < func.ndim, 'axis out of bounds'
     shape = func.shape[:axis] + func.shape[axis+1:]
-    ArrayFunc.__init__( self, args=[func,axis-func.ndim], shape=shape )
+    self.axis_shiftright = axis-func.ndim
+    ArrayFunc.__init__( self, args=[func], shape=shape )
 
-  evalf = staticmethod(numpy.sum)
+  def evalf( self, arr ):
+    return numpy.sum( arr, self.axis_shiftright )
 
   def _sum( self, axis ):
     trysum = sum( self.func, axis+(axis>=self.axis) )
@@ -1541,8 +1548,7 @@ class Debug( ArrayFunc ):
     self.func = func
     ArrayFunc.__init__( self, args=[func], shape=func.shape )
 
-  @staticmethod
-  def evalf( arr ):
+  def evalf( self, arr ):
     'debug'
 
     log.debug( 'debug output:\n%s' % arr )
@@ -1566,7 +1572,8 @@ class TakeDiag( ArrayFunc ):
     self.func = func
     ArrayFunc.__init__( self, args=[func], shape=func.shape[:-1] )
 
-  evalf = staticmethod(numeric.takediag)
+  def evalf( self, arr ):
+    return numeric.takediag( arr )
 
   def _localgradient( self, ndims ):
     return swapaxes( takediag( localgradient( self.func, ndims ), -3, -2 ) )
@@ -1601,9 +1608,11 @@ class Take( ArrayFunc ):
     newlen, = numpy.empty( func.shape[axis] )[ indices ].shape
     assert newlen > 0
     shape = func.shape[:axis] + (newlen,) + func.shape[axis+1:]
-    ArrayFunc.__init__( self, args=(func,(Ellipsis,)+tuple(s)), shape=shape )
+    self.item = (Ellipsis,)+tuple(s)
+    ArrayFunc.__init__( self, args=[func], shape=shape )
 
-  evalf = staticmethod(numpy.ndarray.__getitem__)
+  def evalf( self, arr ):
+    return arr[ self.item ]
 
   def _localgradient( self, ndims ):
     return take( localgradient( self.func, ndims ), self.indices, self.axis )
@@ -1634,7 +1643,8 @@ class Power( ArrayFunc ):
     self.power = power
     ArrayFunc.__init__( self, args=[func,power], shape=func.shape )
 
-  evalf = staticmethod(numpy.power)
+  def evalf( self, arr, n ):
+    return numpy.power( arr, n )
 
   def _localgradient( self, ndims ):
     # self = func**power
@@ -1684,13 +1694,12 @@ class ElemFunc( ArrayFunc ):
     'constructor'
 
     self.side = side
-    ArrayFunc.__init__( self, args=[POINTS,Elemtrans(side),ndims], shape=[ndims] )
+    ArrayFunc.__init__( self, args=[POINTS,Elemtrans(side)], shape=[ndims] )
 
-  @staticmethod
-  def evalf( points, trans, ndims ):
+  def evalf( self, points, trans ):
     'evaluate'
 
-    return trans.slice(todims=ndims).apply( points ).astype( float )
+    return trans.slice(todims=self.shape[0]).apply( points ).astype( float )
 
   def _localgradient( self, ndims ):
     return eye( ndims ) if self.shape[0] == ndims \
@@ -1739,7 +1748,8 @@ class Sign( ArrayFunc ):
     self.func = func
     ArrayFunc.__init__( self, args=[func], shape=func.shape )
 
-  evalf = staticmethod(numpy.sign)
+  def evalf( self, arr ):
+    return numpy.sign( arr )
 
   def _localgradient( self, ndims ):
     return _zeros( self.shape + (ndims,) )
@@ -1770,11 +1780,10 @@ class Pointdata( ArrayFunc ):
 
     assert isinstance(data,dict)
     self.data = data
-    ArrayFunc.__init__( self, args=[Elemtrans(0),POINTS,self.data], shape=shape )
+    ArrayFunc.__init__( self, args=[Elemtrans(0),POINTS], shape=shape )
 
-  @staticmethod
-  def evalf( trans, points, data ):
-    myvals,mypoint = data[trans]
+  def evalf( self, trans, points ):
+    myvals, mypoint = self.data[trans]
     assert numpy.equal( mypoint, points ).all(), 'Illegal point set'
     return myvals
 
@@ -1796,7 +1805,10 @@ class Eig( Evaluable ):
     self.symmetric = symmetric
     self.func = func
     self.shape = func.shape
-    self.evalf = numpy.linalg.eigh if symmetric else numpy.linalg.eig 
+    self.eig = numpy.linalg.eigh if symmetric else numpy.linalg.eig 
+
+  def evalf( self, arr ):
+    return self.eig( arr )
 
   def _opposite( self ):
     return Eig( opposite(self.func), self.symmetric )
@@ -1806,11 +1818,10 @@ class ArrayFromTuple( ArrayFunc ):
   def __init__( self, arrays, index, shape ):
     self.arrays = arrays
     self.index = index
-    ArrayFunc.__init__( self, args=[arrays,index], shape=shape )
+    ArrayFunc.__init__( self, args=[arrays], shape=shape )
 
-  @staticmethod
-  def evalf( arrays, index ):
-    return arrays[ index ]
+  def evalf( self, arrays ):
+    return arrays[ self.index ]
 
   def _opposite( self ):
     return ArrayFromTuple( opposite(self.arrays), self.index, self.shape )
@@ -1834,14 +1845,13 @@ class Zeros( ArrayFunc ):
     'constructor'
 
     shape = tuple( shape )
-    ArrayFunc.__init__( self, args=[POINTS,shape], shape=shape )
+    ArrayFunc.__init__( self, args=[POINTS], shape=shape )
 
-  @staticmethod
-  def evalf( points, shape ):
+  def evalf( self, points ):
     'prepend point axes'
 
-    assert not any( sh is None for sh in shape ), 'cannot evaluate zeros for shape %s' % (shape,)
-    shape = points.shape[:-1] + shape
+    assert not any( sh is None for sh in self.shape ), 'cannot evaluate zeros for shape %s' % (self.shape,)
+    shape = points.shape[:-1] + self.shape
     strides = [0] * len(shape)
     return numpy.lib.stride_tricks.as_strided( numpy.array(0.), shape, strides )
 
@@ -1921,17 +1931,17 @@ class Inflate( ArrayFunc ):
     self.length = length
     self.axis = axis
     shape = func.shape[:axis] + (length,) + func.shape[axis+1:]
-    ArrayFunc.__init__( self, args=[func,dofmap,length,axis-func.ndim], shape=shape )
+    self.axis_shiftright = axis-func.ndim
+    ArrayFunc.__init__( self, args=[func,dofmap,length], shape=shape )
 
-  @staticmethod
-  def evalf( array, indices, length, axis ):
+  def evalf( self, array, indices ):
     'inflate'
 
     warnings.warn( 'using explicit inflation; this is usually a bug.' )
     shape = list( array.shape )
-    shape[axis] = length
+    shape[self.axis_shiftright] = self.length
     inflated = numpy.zeros( shape )
-    inflated[(Ellipsis,indices)+(slice(None),)*(-axis-1)] = array
+    inflated[(Ellipsis,indices)+(slice(None),)*(-self.axis_shiftright-1)] = array
     return inflated
 
   @property
@@ -2034,7 +2044,8 @@ class Diagonalize( ArrayFunc ):
     self.func = func
     ArrayFunc.__init__( self, args=[func], shape=shape )
 
-  evalf = staticmethod(numeric.diagonalize)
+  def evalf( self, arr ):
+    return numeric.diagonalize( arr )
 
   def _localgradient( self, ndims ):
     return swapaxes( diagonalize( swapaxes( localgradient( self.func, ndims ), (-2,-1) ) ), (-3,-1) )
@@ -2083,9 +2094,11 @@ class Repeat( ArrayFunc ):
     self.axis = axis
     self.length = length
     shape = func.shape[:axis] + (length,) + func.shape[axis+1:]
-    ArrayFunc.__init__( self, args=[func,length,axis-func.ndim], shape=shape )
+    self.axis_shiftright = axis-func.ndim
+    ArrayFunc.__init__( self, args=[func], shape=shape )
 
-  evalf = staticmethod(numeric.fastrepeat)
+  def evalf( self, arr ):
+    return numeric.fastrepeat( arr, self.length, self.axis_shiftright )
 
   def _negative( self ):
     return repeat( -self.func, self.length, self.axis )
@@ -2150,19 +2163,18 @@ class Repeat( ArrayFunc ):
 class Const( ArrayFunc ):
   'pointwise transformation'
 
-  def __init__( self, func ):
+  def __init__( self, arr ):
     'constructor'
 
-    func = numpy.asarray( func )
-    ArrayFunc.__init__( self, args=(POINTS,func), shape=func.shape )
+    self.arr = numpy.asarray( arr )
+    ArrayFunc.__init__( self, args=[POINTS], shape=self.arr.shape )
 
-  @staticmethod
-  def evalf( points, arr ):
+  def evalf( self, points ):
     'prepend point axes'
 
-    shape = points.shape[:-1] + arr.shape
-    strides = (0,) * (points.ndim-1) + arr.strides
-    return numpy.lib.stride_tricks.as_strided( arr, shape, strides )
+    shape = points.shape[:-1] + self.arr.shape
+    strides = (0,) * (points.ndim-1) + self.arr.strides
+    return numpy.lib.stride_tricks.as_strided( self.arr, shape, strides )
 
   def _localgradient( self, ndims ):
     return _zeros( self.shape+(ndims,) )
