@@ -36,6 +36,8 @@ TRANS   = object()
 POINTS  = object()
 WEIGHTS = object()
 
+TOKENS = CACHE, TRANS, POINTS, WEIGHTS
+
 class Evaluable( object ):
   'Base class'
 
@@ -44,7 +46,7 @@ class Evaluable( object ):
   def __init__( self, args ):
     'constructor'
 
-    assert all( isinstance(arg,Evaluable) or arg is CACHE or arg is TRANS or arg is POINTS or arg is WEIGHTS for arg in args )
+    assert all( isinstance(arg,Evaluable) or arg in TOKENS for arg in args )
     self.__args = tuple(args)
 
   def evalf( self ):
@@ -52,63 +54,31 @@ class Evaluable( object ):
 
   @cache.property
   def serialized( self ):
-    '''returns (data,ops,inds), where len(ops) = len(inds)-1'''
+    '''returns (ops,inds), where len(ops) = len(inds)-1'''
 
-    mydata = [ CACHE, TRANS, POINTS, WEIGHTS ]
-    myops = []
+    myops = list( TOKENS )
     myinds = []
-
     indices = []
     for arg in self.__args:
-
-      if not isinstance( arg, Evaluable ):
-        index = _isindex( arg, mydata )
-        if index == -1:
-          ren = numpy.hstack([ numpy.arange(len(mydata)), len(mydata)+1+numpy.arange(len(myops)) ])
-          myinds = map( ren.__getitem__, myinds )
-          indices = map( ren.__getitem__, indices )
-          index = len(mydata)
-          mydata.append( arg )
-        indices.append( index )
-        continue
-
-      index = _isindex( arg, myops )
-      if index != -1:
-        indices.append( len(mydata)+index )
-        continue
-        
-      argdata, argops, arginds = arg.serialized
-
-      renumber = numpy.empty( len(argdata)+len(argops), dtype=int )
-      ndata = len(mydata)
-      for i, obj in enumerate( argdata ):
-        index = _isindex( obj, mydata )
-        if index == -1:
-          index = len(mydata)
-          mydata.append( obj )
-        renumber[i] = index
-      if len(mydata) > ndata:
-        ren = numpy.hstack([ numpy.arange(ndata), len(mydata)+numpy.arange(len(myops)) ])
-        myinds = map( ren.__getitem__, myinds )
-        indices = map( ren.__getitem__, indices )
-      for i, (op,ind) in enumerate( zip(argops,arginds) ):
-        index = _isindex( op, myops )
-        if index == -1:
-          index = len(myops)
-          myops.append( op )
-          myinds.append( renumber[ind] )
-        renumber[len(argdata)+i] = len(mydata)+index
-
-      indices.append( len(mydata)+len(myops) )
-      myops.append( arg )
-      myinds.append( renumber[arginds[-1]] )
-
+      try:
+        index = myops.index( arg )
+      except ValueError:
+        argops, arginds = arg.serialized
+        renumber = range( len(TOKENS) )
+        for op, ind in zip( argops, arginds ):
+          try:
+            n = myops.index( op )
+          except ValueError:
+            n = len(myops)
+            myops.append( op )
+            myinds.append( numpy.take(renumber,ind) )
+          renumber.append( n )
+        index = len(myops)
+        myops.append( arg )
+        myinds.append( numpy.take(renumber,arginds[-1]) )
+      indices.append( index )
     myinds.append( indices )
-    for op, ind in zip( myops, myinds ) + [ (self,indices) ]:
-      for i, arg in zip( ind, op.__args ):
-        assert arg is ( mydata[i] if i < len(mydata) else myops[i-len(mydata)] )
-
-    return tuple(mydata), tuple(myops), tuple(myinds)
+    return tuple(myops[len(TOKENS):]), tuple(myinds)
 
   def asciitree( self ):
     'string representation'
@@ -155,9 +125,8 @@ class Evaluable( object ):
       else:
         raise Exception, 'invalid integration scheme of type %r' % type(ischeme)
 
-    data, ops, inds = self.serialized
-    assert data[:4] == ( CACHE, TRANS, POINTS, WEIGHTS )
-    values = [ fcache, trans, points, weights ] + list( data[4:] )
+    ops, inds = self.serialized
+    values = [ fcache, trans, points, weights ] # should match TOKENS
     for op, indices in zip( ops, inds ) + [(self,inds[-1])]:
       args = [ values[i] for i in indices ]
       try:
@@ -3281,10 +3250,10 @@ def _checksame( obj, cls, arg1, arg2 ):
      and B.shape == b.shape and numpy.all( B == B )
 
 def _isindex( item, iterable ):
-  for index, obj in enumerate(iterable):
-    if obj is item:
-      return index
-  return -1
+  try:
+    return iterable.index( item )
+  except:
+    return -1
 
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
