@@ -3244,11 +3244,5 @@ def _checksame( obj, cls, arg1, arg2 ):
   return A.shape == a.shape and numpy.all( A == a ) \
      and B.shape == b.shape and numpy.all( B == B )
 
-def _isindex( item, iterable ):
-  try:
-    return iterable.index( item )
-  except:
-    return -1
-
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
