@@ -31,16 +31,10 @@ expensive and currently unsupported operation.
 from . import util, numpy, numeric, log, core, cache, transform, rational, _
 import sys, warnings
 
-class Token( object ):
-  def __init__( self, name ):
-    self.name = name
-  def __str__( self ):
-    return self.name
-
-CACHE   = Token( 'Cache' )
-TRANS   = Token( 'Trans' )
-POINTS  = Token( 'Points' )
-WEIGHTS = Token( 'Weights' )
+CACHE = 'Cache'
+TRANS = 'Trans'
+POINTS = 'Points'
+WEIGHTS = 'Weights'
 
 TOKENS = CACHE, TRANS, POINTS, WEIGHTS
 
