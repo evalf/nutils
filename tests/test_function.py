@@ -36,7 +36,13 @@ class FuncTest( object ):
     Jinv = function.inverse( J )
     countdown = 5
     iiter = 0
-    xi = xi0
+    assert target.shape[-1:] == self.geom.shape
+    if xi0.shape != target.shape:
+      tmp = numpy.empty_like( target )
+      tmp[...] = xi0
+      xi0 = tmp
+    target = target.reshape( -1, target.shape[-1] )
+    xi = xi0.reshape( -1, xi0.shape[-1] )
     while countdown:
       err = target - self.geom.eval(self.elem,xi)
       if numpy.all( numpy.abs(err) < 1e-12 ):
@@ -46,7 +52,7 @@ class FuncTest( object ):
       xi = xi + numpy.dot( dxi_root, self.invroottransmatrix.T )
       iiter += 1
       assert iiter < 100, 'failed to converge in 100 iterations'
-    return xi
+    return xi.reshape( xi0.shape )
 
   def test_eval( self ):
     numpy.testing.assert_array_almost_equal(
@@ -77,29 +83,38 @@ class FuncTestGrad( FuncTest ):
     eps = 1e-6
     D = numpy.array([-.5*eps,.5*eps])[:,_,_] * self.invroottransmatrix.T[_,:,:]
     fdpoints = self.points[_,_,:,:] + D[:,:,_,:]
-    F = self.n_op( *self.argsfun.eval(self.elem,fdpoints) )
+    tmp = self.n_op( *self.argsfun.eval(self.elem,fdpoints.reshape(-1,fdpoints.shape[-1])) )
+    F = tmp.reshape( fdpoints.shape[:-1] + tmp.shape[1:] )
     fdgrad = ((F[1]-F[0])/eps).transpose( numpy.roll(numpy.arange(F.ndim-1),-1) )
     G = function.localgradient( self.op( *self.args ), ndims=self.elem.ndims )
-    numpy.testing.assert_array_almost_equal( fdgrad, G.eval(self.elem,self.points), decimal=5 )
+    exact = numpy.empty_like( fdgrad )
+    exact[...] = G.eval(self.elem,self.points)
+    numpy.testing.assert_array_almost_equal( fdgrad, exact, decimal=5 )
 
   def test_gradient( self ):
     eps = 1e-6
     D = numpy.array([-.5*eps,.5*eps])[:,_,_] * numpy.eye(2)
     fdpoints = self.find( self.geom.eval(self.elem,self.points)[_,_,:,:] + D[:,:,_,:], self.points[_,_,:,:] )
-    F = self.n_op( *self.argsfun.eval(self.elem,fdpoints) )
+    tmp = self.n_op( *self.argsfun.eval(self.elem,fdpoints.reshape(-1,fdpoints.shape[-1])) )
+    F = tmp.reshape( fdpoints.shape[:-1] + tmp.shape[1:] )
     fdgrad = ((F[1]-F[0])/eps).transpose( numpy.roll(numpy.arange(F.ndim-1),-1) )
     G = self.op( *self.args ).grad(self.geom)
-    numpy.testing.assert_array_almost_equal( fdgrad, G.eval(self.elem,self.points), decimal=5 )
+    exact = numpy.empty_like( fdgrad )
+    exact[...] = G.eval(self.elem,self.points)
+    numpy.testing.assert_array_almost_equal( fdgrad, exact, decimal=5 )
 
   def test_doublegradient( self ):
     eps = 1e-5
     D = numpy.array([-.5*eps,.5*eps])[:,_,_] * numpy.eye(2)
     DD = D[:,_,:,_,:] + D[_,:,_,:,:]
     fdpoints = self.find( self.geom.eval(self.elem,self.points)[_,_,_,_,:,:] + DD[:,:,:,:,_,:], self.points[_,_,_,_,:,:] )
-    F = self.n_op( *self.argsfun.eval(self.elem,fdpoints) )
+    tmp = self.n_op( *self.argsfun.eval(self.elem,fdpoints.reshape(-1,fdpoints.shape[-1])) )
+    F = tmp.reshape( fdpoints.shape[:-1] + tmp.shape[1:] )
     fddgrad = (((F[1,1]-F[1,0])-(F[0,1]-F[0,0]))/(eps**2)).transpose( numpy.roll(numpy.arange(F.ndim-2),-2) )
     G = self.op( *self.args ).grad(self.geom).grad(self.geom)
-    numpy.testing.assert_array_almost_equal( fddgrad, G.eval(self.elem,self.points), decimal=2 )
+    exact = numpy.empty_like( fddgrad )
+    exact[...] = G.eval(self.elem,self.points)
+    numpy.testing.assert_array_almost_equal( fddgrad, exact, decimal=2 )
 
   def test_opposite( self ):
     opposite_args = function.Tuple([ function.opposite(arg) for arg in self.args ])

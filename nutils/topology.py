@@ -287,23 +287,22 @@ class Topology( object ):
       funcs = funcs,
 
     retvals = []
-    iweights = function.iweights( geometry, self.ndims )
-    idata = [ iweights ]
+    iwscale = function.iwscale( geometry, self.ndims )
+    idata = [ iwscale ]
     for func in funcs:
       func = function.asarray( func )
-      if not function._isfunc( func ):
-        func = function.Const( func )
-      assert all( isinstance(sh,int) for sh in func.shape )
-      idata.append( function.elemint( func, iweights ) )
+      assert all( numeric.isint(sh) for sh in func.shape )
+      idata.append( func * iwscale )
       retvals.append( numpy.empty( (len(self),)+func.shape ) )
     idata = function.Tuple( idata )
 
     fcache = cache.CallDict()
     for ielem, elem in enumerate( self ):
+      ipoints, iweights = fcache( elem.reference.getischeme, ischeme[elem] if isinstance(ischeme,dict) else ischeme )
       area_data = idata.eval( elem, ischeme, fcache )
-      area = area_data[0].sum()
+      area = numeric.dot( iweights, area_data[0] )
       for retval, data in zip( retvals, area_data[1:] ):
-        retval[ielem] = data / area
+        retval[ielem] = numeric.dot( iweights, data ) / area
 
     log.debug( 'cache', fcache.summary() )
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
@@ -341,7 +340,7 @@ class Topology( object ):
     if single_arg:
       funcs = funcs,
 
-    iweights = function.iweights( geometry, self.ndims )
+    iwscale = function.iwscale( geometry, self.ndims )
     integrands = []
     retvals = []
     for ifunc, func in enumerate( funcs ):
@@ -352,11 +351,11 @@ class Topology( object ):
            else matrix.DenseMatrix( func.shape ) if force_dense \
            else matrix.SparseMatrix( self.build_graph(func), func.shape[1] )
         for f, ind in function.blocks( func ):
-          integrands.append( function.Tuple([ ifunc, lock, function.Tuple(ind), function.elemint( f, iweights ) ]) )
+          integrands.append( function.Tuple([ ifunc, lock, function.Tuple(ind), f * iwscale ]) )
       else:
         array = parallel.shzeros( func.shape, dtype=float )
         if not function._iszero( func ):
-          integrands.append( function.Tuple([ ifunc, lock, (), function.elemint( func, iweights ) ]) )
+          integrands.append( function.Tuple([ ifunc, lock, (), func * iwscale ]) )
       retvals.append( array )
     idata = function.Tuple( integrands )
     if core.getprop( 'dot', False ):
@@ -365,9 +364,11 @@ class Topology( object ):
 
     __log__ = log.iter( 'elem', self )
     for elem in parallel.pariter( __log__ ):
-      for ifunc, lock, index, data in idata.eval( elem, ischeme, fcache ):
+      ipoints, iweights = fcache( elem.reference.getischeme, ischeme[elem] if isinstance(ischeme,dict) else ischeme )
+      for ifunc, lock, index, data in idata.eval( elem, ipoints, fcache ):
+        intdata = numeric.dot( iweights, data )
         with lock:
-          retvals[ifunc][index] += data
+          retvals[ifunc][index] += intdata
 
     log.debug( 'cache', fcache.summary() )
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
@@ -384,7 +385,7 @@ class Topology( object ):
     if single_arg:
       funcs = funcs,
 
-    iweights = function.iweights( geometry, self.ndims )
+    iwscale = function.iwscale( geometry, self.ndims )
     integrands = []
     retvals = []
     for ifunc, func in enumerate( funcs ):
@@ -395,11 +396,11 @@ class Topology( object ):
            else matrix.DenseMatrix( func.shape ) if force_dense \
            else matrix.SparseMatrix( self.build_graph(func), func.shape[1] )
         for f, ind in function.blocks( func ):
-          integrands.append( function.Tuple([ ifunc, lock, function.Tuple(ind), function.elemint( f, iweights ) ]) )
+          integrands.append( function.Tuple([ ifunc, lock, function.Tuple(ind), f * iwscale ]) )
       else:
         array = parallel.shzeros( func.shape, dtype=float )
         if not function._iszero( func ):
-          integrands.append( function.Tuple([ ifunc, lock, (), function.elemint( func, iweights ) ]) )
+          integrands.append( function.Tuple([ ifunc, lock, (), func * iwscale ]) )
       retvals.append( array )
     idata = function.Tuple( integrands )
     fcache = cache.CallDict()
@@ -411,13 +412,15 @@ class Topology( object ):
       head2 = elem.opposite[:-1]
       if head1 < head2:
         continue
-      for ifunc, lock, index, data in idata.eval( elem, ischeme, fcache ):
+      ipoints, iweights = fcache( elem.reference.getischeme, ischeme[elem] if isinstance(ischeme,dict) else ischeme )
+      for ifunc, lock, index, data in idata.eval( elem, ipoints, fcache ):
+        intdata = numeric.dot( iweights, data )
         with lock:
-          retvals[ifunc][index] += data
+          retvals[ifunc][index] += intdata
           if head1 == head2:
-            numpy.testing.assert_almost_equal( data, data.T, err_msg='symmetry check failed' )
+            numpy.testing.assert_almost_equal( intdata, intdata.T, err_msg='symmetry check failed' )
           else:
-            retvals[ifunc][index[::-1]] += data.T
+            retvals[ifunc][index[::-1]] += intdata.T
 
     log.debug( 'cache', fcache.summary() )
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )

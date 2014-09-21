@@ -34,9 +34,8 @@ import sys, warnings
 CACHE = 'Cache'
 TRANS = 'Trans'
 POINTS = 'Points'
-WEIGHTS = 'Weights'
 
-TOKENS = CACHE, TRANS, POINTS, WEIGHTS
+TOKENS = CACHE, TRANS, POINTS
 
 class Evaluable( object ):
   'Base class'
@@ -102,7 +101,6 @@ class Evaluable( object ):
     if isinstance( elem, tuple ):
       assert isinstance( ischeme, numpy.ndarray )
       points = ischeme
-      weights = None
       transform, opposite = elem
       assert points.shape[-1] == transform.fromdims == opposite.fromdims
       trans = elem
@@ -118,16 +116,19 @@ class Evaluable( object ):
         assert points.shape[:-1] == weights.shape, 'non matching shapes: points.shape=%s, weights.shape=%s' % ( points.shape, weights.shape )
       elif isinstance( ischeme, numpy.ndarray ):
         points = ischeme.astype( float )
-        weights = None
         assert points.shape[-1] == elem.ndims
       elif ischeme is None:
-        points = weights = None
+        points = None
       else:
         raise Exception, 'invalid integration scheme of type %r' % type(ischeme)
 
+    assert trans[0].fromdims == trans[1].fromdims
+    if points is not None:
+      assert points.ndim == 2 and points.shape[1] == trans[0].fromdims
+
     ops, inds = self.serialized
-    assert TOKENS == ( CACHE, TRANS, POINTS, WEIGHTS )
-    values = [ fcache, trans, points, weights ]
+    assert TOKENS == ( CACHE, TRANS, POINTS )
+    values = [ fcache, trans, points ]
     for op, indices in zip( ops, inds ) + [(self,inds[-1])]:
       args = [ values[i] for i in indices ]
       try:
@@ -286,6 +287,42 @@ class Elemtrans( Evaluable ):
 
   def evalf( self, trans ):
     return trans[ self.side ]
+
+# INDEXVECTOR
+#
+# 1D int vector, used for indexing
+
+class IndexVector( Evaluable ):
+
+  __array_priority__ = 1. # http://stackoverflow.com/questions/7042496/numpy-coercion-problem-for-left-sided-binary-operator/7057530#7057530
+
+  def __init__( self, args, length ):
+    self.shape = length,
+    self.ndim = 1
+    Evaluable.__init__( self, args=args )
+
+class DofMap( IndexVector ):
+  'dof axis'
+
+  def __init__( self, dofmap, axis, side=0, offset=0 ):
+    'new'
+
+    self.side = side
+    self.dofmap = dofmap
+    self.offset = offset
+    IndexVector.__init__( self, args=[Elemtrans(side)], length=axis )
+
+  def __add__( self, offset ):
+    assert numeric.isint( offset )
+    return DofMap( self.dofmap, self.shape[0], self.side, self.offset+offset )
+
+  def evalf( self, trans ):
+    'evaluate'
+
+    return self.dofmap[ trans.lookup(self.dofmap) ] + self.offset
+
+  def _opposite( self ):
+    return DofMap( self.dofmap, self.shape[0], 1-self.side )
 
 # ARRAYFUNC
 #
@@ -524,46 +561,14 @@ class ElemSign( ArrayFunc ):
     try:
       ntrans = trans.slice( todims=self.ndims+1, fromdims=self.ndims )
     except: # possibly ndim topo, n+1dim geom
-      return numpy.array( 1 )
-    return numpy.array( -1 if ntrans.isflipped else 1 )
+      return numpy.array([ 1 ])
+    return numpy.array( -1 if ntrans.isflipped else 1 )[_]
 
   def _opposite( self ):
     return ElemSign( self.ndims, 1-self.side )
 
   def _localgradient( self, ndims ):
     return _zeros( (ndims,) )
-
-class ElemArea( ArrayFunc ):
-  'element area'
-
-  def __init__( self, weights ):
-    'constructor'
-
-    assert weights.ndim == 0
-    ArrayFunc.__init__( self, args=[weights], shape=weights.shape )
-
-  def evalf( self, weights ):
-    'evaluate'
-
-    return numpy.sum( weights )
-
-class ElemInt( ArrayFunc ):
-  'elementwise integration'
-
-  def __init__( self, func, weights ):
-    'constructor'
-
-    assert _isfunc( func ) and _isfunc( weights )
-    assert weights.ndim == 0
-    self.funcdim = func.ndim
-    ArrayFunc.__init__( self, args=[weights,func], shape=func.shape )
-
-  def evalf( self, w, f ):
-    'evaluate'
-
-    if f.ndim == self.funcdim: # the missing point axis problem
-      return f * w.sum()
-    return numeric.dot( w, f ) if w.size else numpy.zeros( f.shape[1:] )
 
 class Align( ArrayFunc ):
   'align axes'
@@ -584,11 +589,9 @@ class Align( ArrayFunc ):
   def evalf( self, arr ):
     'align'
 
+    assert arr.ndim == len(self.axes)+1
     extra = arr.ndim - len(self.negaxes)
     return numeric.align( arr, range(extra)+self.negaxes, self.ndim+extra )
-
-  def _elemint( self, weights ):
-    return align( elemint( self.func, weights ), self.axes, self.ndim )
 
   def _align( self, axes, ndim ):
     newaxes = [ axes[i] for i in self.axes ]
@@ -658,6 +661,7 @@ class Get( ArrayFunc ):
     ArrayFunc.__init__( self, args=[func], shape=shape )
 
   def evalf( self, arr ):
+    assert arr.ndim == self.ndim+2
     return arr[ self.item_shiftright ]
 
   def _localgradient( self, ndims ):
@@ -689,6 +693,7 @@ class Product( ArrayFunc ):
     ArrayFunc.__init__( self, args=[func], shape=shape )
 
   def evalf( self, arr ):
+    assert arr.ndim == self.ndim+2
     return numpy.product( arr, axis=self.axis_shiftright )
 
   def _localgradient( self, ndims ):
@@ -701,18 +706,18 @@ class Product( ArrayFunc ):
   def _opposite( self ):
     return product( opposite(self.func), self.axis )
 
-class IWeights( ArrayFunc ):
+class Iwscale( ArrayFunc ):
   'integration weights'
 
   def __init__( self ):
     'constructor'
 
-    ArrayFunc.__init__( self, args=[Elemtrans(0),WEIGHTS], shape=() )
+    ArrayFunc.__init__( self, args=[Elemtrans(0)], shape=() )
 
-  def evalf( self, trans, weights ):
+  def evalf( self, trans ):
     'evaluate'
 
-    return float( trans.slice(todims=trans.fromdims).det ) * weights
+    return numpy.asarray( trans.slice(todims=trans.fromdims).det, dtype=float )[_]
 
 class Transform( ArrayFunc ):
   'transform'
@@ -731,7 +736,7 @@ class Transform( ArrayFunc ):
 
     matrix = trans.slice(fromdims=self.fromdims,todims=self.todims).linear
     assert matrix.ndim == 2
-    return matrix.astype( float )
+    return matrix.astype( float )[_]
 
   def _localgradient( self, ndims ):
     return _zeros( self.shape + (ndims,) )
@@ -760,6 +765,7 @@ class Function( ArrayFunc ):
       if std:
         transpoints = cache( trans[len(head):].apply, points )
         F = cache( std.eval, transpoints, self.igrad )
+        assert F.ndim == self.igrad+2
         if keep is not None:
           F = F[(Ellipsis,keep)+(slice(None),)*self.igrad]
         if self.igrad:
@@ -798,10 +804,10 @@ class Choose( ArrayFunc ):
   def evalf( self, level, *varchoices ):
     'choose'
 
-    choices = list( self.choices )
+    choices = [ choice[_] for choice in self.choices ]
     for i, choice in zip( self.ivar, varchoices ):
       choices[i] = choice
-
+    assert all( choice.ndim == self.ndim+1 for choice in choices )
     return numpy.choose( level, choices )
 
   def _localgradient( self, ndims ):
@@ -845,6 +851,7 @@ class Inverse( ArrayFunc ):
     ArrayFunc.__init__( self, args=[func], shape=func.shape )
 
   def evalf( self, arr ):
+    assert arr.ndim == self.ndim+1
     return numpy.linalg.inv( arr )
 
   def _localgradient( self, ndims ):
@@ -857,24 +864,6 @@ class Inverse( ArrayFunc ):
 
   def _opposite( self ):
     return Inverse( opposite(self.func) )
-
-class DofMap( ArrayFunc ):
-  'dof axis'
-
-  def __init__( self, dofmap, axis, side=0 ):
-    'new'
-
-    self.side = side
-    self.dofmap = dofmap
-    ArrayFunc.__init__( self, args=[Elemtrans(side)], shape=[axis], dtype=int )
-
-  def evalf( self, trans ):
-    'evaluate'
-
-    return self.dofmap[ trans.lookup(self.dofmap) ]
-
-  def _opposite( self ):
-    return DofMap( self.dofmap, self.shape[0], 1-self.side )
 
 class Concatenate( ArrayFunc ):
   'concatenate'
@@ -902,9 +891,10 @@ class Concatenate( ArrayFunc ):
   def evalf( self, *varargs ):
     'evaluate'
 
-    arrays = list( self.funcs )
+    arrays = [ func[_] for func in self.funcs ]
     for i, arg in zip( self.ivar, varargs ):
       arrays[i] = arg
+    assert all( arr.ndim == self.ndim+1 for arr in arrays )
 
     iax = self.axis_shiftright
     ndim = numpy.max([ array.ndim for array in arrays ])
@@ -1109,6 +1099,7 @@ class Cross( ArrayFunc ):
     ArrayFunc.__init__( self, args=(func1,func2), shape=shape )
 
   def evalf( self, a, b ):
+    assert a.ndim == b.ndim == self.ndim+1
     return numeric.cross( a, b, self.axis_shiftright )
 
   def _localgradient( self, ndims ):
@@ -1132,6 +1123,7 @@ class Determinant( ArrayFunc ):
     ArrayFunc.__init__( self, args=[func], shape=func.shape[:-2] )
 
   def evalf( self, arr ):
+    assert arr.ndim == self.ndim+3
     return numpy.linalg.det( arr )
 
   def _localgradient( self, ndims ):
@@ -1162,7 +1154,7 @@ class DofIndex( ArrayFunc ):
 
     item = [ slice(None) ] * self.array.ndim
     item[self.iax] = index
-    return self.array[ tuple(item) ]
+    return self.array[ tuple(item) ][_]
 
   def _get( self, i, item ):
     if self.iax <= i < self.iax + self.index.ndim:
@@ -1206,6 +1198,7 @@ class Multiply( ArrayFunc ):
     ArrayFunc.__init__( self, args=args, shape=shape )
 
   def evalf( self, arr1, arr2=None ):
+    assert arr1.ndim == self.ndim+1
     return arr1 * ( arr2 if arr2 is not None else self.funcs[1] )
 
   def _sum( self, axis ):
@@ -1283,6 +1276,7 @@ class Negative( ArrayFunc ):
     ArrayFunc.__init__( self, args=[func], shape=func.shape )
 
   def evalf( self, arr ):
+    assert arr.ndim == self.ndim+1
     return -arr
 
   @property
@@ -1301,9 +1295,6 @@ class Negative( ArrayFunc ):
 
   def _negative( self ):
     return self.func
-
-  def _elemint( self, weights ):
-    return -elemint( self.func, weights )
 
   def _align( self, axes, ndim ):
     return -align( self.func, axes, ndim )
@@ -1344,6 +1335,7 @@ class Add( ArrayFunc ):
     ArrayFunc.__init__( self, args=args, shape=shape )
 
   def evalf( self, arr1, arr2=None ):
+    assert arr1.ndim == self.ndim+1
     return arr1 + ( arr2 if arr2 is not None else self.funcs[1] )
 
   def _sum( self, axis ):
@@ -1432,6 +1424,7 @@ class Dot( ArrayFunc ):
     ArrayFunc.__init__( self, args=args, shape=shape )
 
   def evalf( self, arr1, arr2=None ):
+    assert arr1.ndim == self.ndim+1+self.naxes
     return numeric.contract_fast( arr1, arr2 if arr2 is not None else self.funcs[1], self.naxes )
 
   @property
@@ -1515,6 +1508,7 @@ class Sum( ArrayFunc ):
     ArrayFunc.__init__( self, args=[func], shape=shape )
 
   def evalf( self, arr ):
+    assert arr.ndim == self.ndim+2
     return numpy.sum( arr, self.axis_shiftright )
 
   def _sum( self, axis ):
@@ -1540,6 +1534,7 @@ class Debug( ArrayFunc ):
   def evalf( self, arr ):
     'debug'
 
+    assert arr.ndim == self.ndim+1
     log.debug( 'debug output:\n%s' % arr )
     return arr
 
@@ -1562,6 +1557,7 @@ class TakeDiag( ArrayFunc ):
     ArrayFunc.__init__( self, args=[func], shape=func.shape[:-1] )
 
   def evalf( self, arr ):
+    assert arr.ndim == self.ndim+2
     return numeric.takediag( arr )
 
   def _localgradient( self, ndims ):
@@ -1601,6 +1597,7 @@ class Take( ArrayFunc ):
     ArrayFunc.__init__( self, args=[func], shape=shape )
 
   def evalf( self, arr ):
+    assert arr.ndim == self.ndim+1
     return arr[ self.item ]
 
   def _localgradient( self, ndims ):
@@ -1717,9 +1714,10 @@ class Pointwise( ArrayFunc ):
     ArrayFunc.__init__( self, args=[ args[i] for i in self.ivar ], shape=shape )
 
   def evalf( self, *varargs ):
-    args = list( self.args )
+    args = [ arg[_] for arg in self.args ]
     for i, arg in zip( self.ivar, varargs ):
       args[i] = arg
+    assert all( arr.ndim == self.ndim+1 for arr in args )
     return self.evalfun( *args )
 
   def _localgradient( self, ndims ):
@@ -1749,6 +1747,7 @@ class Sign( ArrayFunc ):
     ArrayFunc.__init__( self, args=[func], shape=func.shape )
 
   def evalf( self, arr ):
+    assert arr.ndim == self.ndim+1
     return numpy.sign( arr )
 
   def _localgradient( self, ndims ):
@@ -1774,6 +1773,7 @@ class Sign( ArrayFunc ):
       return expand( 1., self.shape )
 
 class Pointdata( ArrayFunc ):
+  'pointdata'
 
   def __init__ ( self, data, shape ):
     'constructor'
@@ -1808,12 +1808,14 @@ class Eig( Evaluable ):
     self.eig = numpy.linalg.eigh if symmetric else numpy.linalg.eig 
 
   def evalf( self, arr ):
+    assert arr.ndim == len(self.shape)+1
     return self.eig( arr )
 
   def _opposite( self ):
     return Eig( opposite(self.func), self.symmetric )
 
 class ArrayFromTuple( ArrayFunc ):
+  'array from tuple'
 
   def __init__( self, arrays, index, shape ):
     self.arrays = arrays
@@ -1826,18 +1828,6 @@ class ArrayFromTuple( ArrayFunc ):
   def _opposite( self ):
     return ArrayFromTuple( opposite(self.arrays), self.index, self.shape )
 
-# PRIORITY OBJECTS
-#
-# Prority objects get priority in situations like A + B, which can be evaluated
-# as A.__add__(B) and B.__radd__(A), such that they get to decide on how the
-# operation is performed. The reason is that these objects are wasteful,
-# generally introducing a lot of zeros, and we would like to see them disappear
-# by the act of subsequent operations. For this annihilation to work well
-# priority objects keep themselves at the surface where magic happens.
-#
-# Update: "priority objects" as such do not exist anymore, might be
-# reintroduced later on.
-
 class Zeros( ArrayFunc ):
   'zero'
 
@@ -1845,15 +1835,13 @@ class Zeros( ArrayFunc ):
     'constructor'
 
     shape = tuple( shape )
-    ArrayFunc.__init__( self, args=[POINTS], shape=shape )
+    ArrayFunc.__init__( self, args=[], shape=shape )
 
-  def evalf( self, points ):
+  def evalf( self ):
     'prepend point axes'
 
     assert not any( sh is None for sh in self.shape ), 'cannot evaluate zeros for shape %s' % (self.shape,)
-    shape = points.shape[:-1] + self.shape
-    strides = [0] * len(shape)
-    return numpy.lib.stride_tricks.as_strided( numpy.array(0.), shape, strides )
+    return numpy.zeros( (1,) + self.shape )
 
   @property
   def blocks( self ):
@@ -1911,9 +1899,6 @@ class Zeros( ArrayFunc ):
     assert not isinstance( self.shape[axis], int )
     return _zeros( self.shape[:axis] + (length,) + self.shape[axis+1:] )
 
-  def _elemint( self, weights ):
-    return numpy.zeros( [1]*self.ndim )
-
   def _power( self, n ):
     return self
 
@@ -1937,6 +1922,7 @@ class Inflate( ArrayFunc ):
   def evalf( self, array, indices ):
     'inflate'
 
+    assert array.ndim == self.ndim+1
     warnings.warn( 'using explicit inflation; this is usually a bug.' )
     shape = list( array.shape )
     shape[self.axis_shiftright] = self.length
@@ -2045,7 +2031,8 @@ class Diagonalize( ArrayFunc ):
     ArrayFunc.__init__( self, args=[func] if isinstance(func,ArrayFunc) else [], shape=shape )
 
   def evalf( self, arr=None ):
-    return numeric.diagonalize( arr if arr is not None else self.func )
+    assert arr is None or arr.ndim == self.ndim
+    return numeric.diagonalize( arr if arr is not None else self.func[_] )
 
   def _localgradient( self, ndims ):
     return swapaxes( diagonalize( swapaxes( localgradient( self.func, ndims ), (-2,-1) ) ), (-3,-1) )
@@ -2098,7 +2085,8 @@ class Repeat( ArrayFunc ):
     ArrayFunc.__init__( self, args=[func] if isinstance(func,ArrayFunc) else [], shape=shape )
 
   def evalf( self, arr=None ):
-    return numeric.fastrepeat( arr if arr is not None else self.func, self.length, self.axis_shiftright )
+    assert arr is None or arr.ndim == self.ndim+1
+    return numeric.fastrepeat( arr if arr is not None else self.func[_], self.length, self.axis_shiftright )
 
   def _negative( self ):
     return repeat( -self.func, self.length, self.axis )
@@ -2159,25 +2147,6 @@ class Repeat( ArrayFunc ):
 
   def _opposite( self ):
     return repeat( opposite(self.func), self.length, self.axis )
-
-class Const( ArrayFunc ):
-  'pointwise transformation'
-
-  def __init__( self, arr ):
-    'constructor'
-
-    self.arr = numpy.asarray( arr )
-    ArrayFunc.__init__( self, args=[POINTS], shape=self.arr.shape )
-
-  def evalf( self, points ):
-    'prepend point axes'
-
-    shape = points.shape[:-1] + self.arr.shape
-    strides = (0,) * (points.ndim-1) + self.arr.strides
-    return numpy.lib.stride_tricks.as_strided( self.arr, shape, strides )
-
-  def _localgradient( self, ndims ):
-    return _zeros( self.shape+(ndims,) )
 
 # AUXILIARY FUNCTIONS
 
@@ -2240,12 +2209,6 @@ def _obj2str( obj ):
     return I
   if obj is Ellipsis:
     return '...'
-  if obj is POINTS:
-    return '<points>'
-  if obj is WEIGHTS:
-    return '<weights>'
-  if obj is TRANS:
-    return '<trans>'
   return str(obj)
 
 def _findcommon( (a1,a2), (b1,b2) ):
@@ -2498,19 +2461,16 @@ def bringforward( arg, axis ):
     return arg
   return transpose( args, [axis] + range(axis) + range(axis+1,args.ndim) )
 
-def elemint( arg, weights ):
-  'elementwise integration'
-
-  arg = asarray( arg )
-
-  if not _isfunc( arg ):
-    return arg * ElemArea( weights )
-
-  retval = _call( arg, '_elemint', weights )
-  if retval is not None:
-    return retval
-
-  return ElemInt( arg, weights )
+def iwscale( geom, ndims ):
+  assert geom.ndim == 1
+  J = localgradient( geom, ndims )
+  cndims, = geom.shape
+  assert J.shape == (cndims,ndims), 'wrong jacobian shape: got %s, expected %s' % ( J.shape, (cndims, ndims) )
+  assert cndims >= ndims, 'geometry dimension < topology dimension'
+  detJ = abs( determinant( J ) ) if cndims == ndims \
+    else 1. if ndims == 0 \
+    else determinant( ( J[:,:,_] * J[:,_,:] ).sum(0) )**.5
+  return detJ * Iwscale()
 
 def grad( arg, coords, ndims=0 ):
   'local derivative'
@@ -3088,7 +3048,7 @@ def take( arg, index, axis ):
     assert index.stop != None and index.stop > 0
     index = numpy.arange( index.start or 0, index.stop, index.step )
     assert index.size > 0
-  elif not _isfunc( index ):
+  elif not isinstance( index, IndexVector ):
     index = numpy.asarray( index, dtype=int )
     assert numpy.all( index >= 0 )
     assert index.size > 0
@@ -3097,7 +3057,7 @@ def take( arg, index, axis ):
   if arg.shape[axis] == 1:
     return repeat( arg, index.shape[0], axis )
 
-  if not _isfunc( index ):
+  if not isinstance( index, IndexVector ):
     allindices = numpy.arange( arg.shape[axis] )
     index = allindices[index]
     if numpy.all( index == allindices ):
@@ -3110,7 +3070,7 @@ def take( arg, index, axis ):
   if retval is not None:
     return retval
 
-  if _isfunc( index ):
+  if isinstance( index, IndexVector ):
     return DofIndex( arg, axis, index )
 
   if not _isfunc( arg ):
@@ -3189,19 +3149,6 @@ def fdapprox( func, w, dofs, delta=1.e-5 ):
     x1 = tuple( wi.dot( pert ) for wi in w )
     dfunc_fd.append( (func( *x1 ) - func( *x0 ))/step )
   return dfunc_fd
-
-def iweights( coords, ndims ):
-  'integration weights scale'
-
-  assert coords.ndim == 1
-  J = localgradient( coords, ndims )
-  cndims, = coords.shape
-  assert J.shape == (cndims,ndims), 'wrong jacobian shape: got %s, expected %s' % ( J.shape, (cndims, ndims) )
-  assert cndims >= ndims, 'geometry dimension < topology dimension'
-  detJ = abs( determinant( J ) ) if cndims == ndims \
-    else 1. if ndims == 0 \
-    else determinant( ( J[:,:,_] * J[:,_,:] ).sum(0) )**.5
-  return detJ * IWeights()
 
 def _unpack( funcsp ):
   for func, axes in funcsp.blocks:

@@ -1039,9 +1039,9 @@ class PolyTriangle( StdElem ):
       x, y = points.T
       data = numpy.array( [ 1-x-y, x, y ] ).T
     elif grad == 1:
-      data = numpy.array( [[-1,-1],[1,0],[0,1]], dtype=float )
+      data = numpy.array( [[[-1,-1],[1,0],[0,1]]], dtype=float )
     else:
-      data = numpy.array( 0 ).reshape( (1,) * (grad+ndim) )
+      data = numpy.zeros( (1,3)+(2,)*grad )
     return data
 
   def __repr__( self ):
