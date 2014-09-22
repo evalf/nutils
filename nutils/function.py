@@ -1239,11 +1239,13 @@ class Multiply( ArrayFunc ):
 
   def _multiply( self, other ):
     func1, func2 = self.funcs
-    func1_other = multiply( func1, other )
-    if not _checksame( func1_other, Multiply, func1, other ):
+    if not _isfunc( other ) and not _isfunc( func2 ):
+      return multiply( func1, numpy.multiply( func2, other ) )
+    func1_other = _call( func1, '_multiply', other )
+    if func1_other is not None:
       return multiply( func1_other, func2 )
-    func2_other = multiply( func2, other )
-    if not _checksame( func2_other, Multiply, func2, other ):
+    func2_other = _call( func2, '_multiply', other )
+    if func2_other is not None:
       return multiply( func1, func2_other )
 
   def _localgradient( self, ndims ):
@@ -1369,11 +1371,13 @@ class Add( ArrayFunc ):
 
   def _add( self, other ):
     func1, func2 = self.funcs
-    func1_other = add( func1, other )
-    if not _checksame( func1_other, Add, func1, other ):
+    if not _isfunc( other ) and not _isfunc( func2 ):
+      return add( func1, numpy.add( func2, other ) )
+    func1_other = _call( func1, '_add', other )
+    if func1_other is not None:
       return add( func1_other, func2 )
-    func2_other = add( func2, other )
-    if not _checksame( func2_other, Add, func2, other ):
+    func2_other = _call( func2, '_add', other )
+    if func2_other is not None:
       return add( func1, func2_other )
 
 class BlockAdd( Add ):
@@ -1381,30 +1385,32 @@ class BlockAdd( Add ):
 
   def _multiply( self, other ):
     func1, func2 = self.funcs
-    return BlockAdd( *_sorted( func1 * other, func2 * other ) )
+    return blockadd( multiply(func1,other), multiply(func2,other) )
 
   def _inflate( self, dofmap, length, axis ):
     func1, func2 = self.funcs
-    return BlockAdd( *_sorted( inflate( func1, dofmap, length, axis ),
-                               inflate( func2, dofmap, length, axis ) ) )
+    return blockadd( inflate( func1, dofmap, length, axis ),
+                     inflate( func2, dofmap, length, axis ) )
 
   def _align( self, axes, ndim ):
     func1, func2 = self.funcs
-    return BlockAdd( *_sorted( align(func1,axes,ndim), align(func2,axes,ndim) ) )
+    return blockadd( align(func1,axes,ndim), align(func2,axes,ndim) )
 
   def _negative( self ):
     func1, func2 = self.funcs
-    return BlockAdd( *_sorted( negative(func1), negative(func2) ) )
+    return blockadd( negative(func1), negative(func2) )
 
   def _add( self, other ):
     func1, func2 = self.funcs
-    try1 = func1 + other
-    if not _checksame( try1, BlockAdd, func1, other ):
-      return try1 + func2
-    try2 = func2 + other
-    if not _checksame( try2, BlockAdd, func2, other ):
-      return try2 + func1
-    return BlockAdd( *_sorted( self, other ) )
+    if not _isfunc( other ) and not _isfunc( func2 ):
+      return blockadd( func1, numpy.add( func2, other ) )
+    func1_other = _call( func1, '_add', other )
+    if func1_other is not None:
+      return blockadd( func1_other, func2 )
+    func2_other = _call( func2, '_add', other )
+    if func2_other is not None:
+      return blockadd( func1, func2_other )
+    return blockadd( self, other )
 
   @property
   def blocks( self ):
@@ -1451,11 +1457,13 @@ class Dot( ArrayFunc ):
     for ax in self.axes:
       other = insert( other, ax )
     assert other.ndim == func1.ndim == func2.ndim
-    func1_other = multiply( func1, other )
-    if not _checksame( func1_other, Multiply, func1, other ):
+    if not _isfunc( other ) and not _isfunc( func2 ):
+      return dot( func1, numpy.multiply( func2, other ), self.axes )
+    func1_other = _call( func1, '_multiply', other )
+    if func1_other is not None:
       return dot( func1_other, func2, self.axes )
-    func2_other = multiply( func2, other )
-    if not _checksame( func2_other, Multiply, func2, other ):
+    func2_other = _call( func2, '_multiply', other )
+    if func2_other is not None:
       return dot( func1, func2_other, self.axes )
 
   def _add( self, other ):
@@ -1981,7 +1989,7 @@ class Inflate( ArrayFunc ):
   def _add( self, other ):
     if isinstance( other, Inflate ) and self.axis == other.axis and self.dofmap == other.dofmap:
       return inflate( add(self.func,other.func), self.dofmap, self.length, self.axis )
-    return BlockAdd( *_sorted( self, other ) )
+    return blockadd( self, other )
 
   def _cross( self, other, axis ):
     if isinstance( other, Inflate ) and self.axis == other.axis:
@@ -2888,6 +2896,9 @@ def add( arg1, arg2 ):
 
   return Add( *_sorted(arg1,arg2) )
 
+def blockadd( arg1, arg2 ):
+  return BlockAdd( *sorted([ arg1, arg2 ]) )
+
 def negative( arg ):
   'make negative'
 
@@ -3178,18 +3189,6 @@ def supp( funcsp, indices ):
       trans = trans[:-1]
     assert not dofs.size
   return supp
-
-
-## INTERNAL HELPER FUNCTIONS
-
-def _checksame( obj, cls, arg1, arg2 ):
-  # temporary, specific to Add and Multiply
-  if obj.__class__ != cls:
-    return False
-  A, B = obj.funcs
-  a, b = _sorted( arg1, arg2 )
-  return A.shape == a.shape and numpy.all( A == a ) \
-     and B.shape == b.shape and numpy.all( B == B )
 
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
