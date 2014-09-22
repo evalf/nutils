@@ -1229,9 +1229,9 @@ class Multiply( ArrayFunc ):
 
   def _determinant( self ):
     if self.funcs[0].shape[-2:] == (1,1):
-      return determinant( self.funcs[1] ) * self.funcs[0][...,0,0]
+      return determinant( self.funcs[1] ) * (self.funcs[0][...,0,0]**self.shape[-1])
     if self.funcs[1].shape[-2:] == (1,1):
-      return determinant( self.funcs[0] ) * self.funcs[1][...,0,0]
+      return determinant( self.funcs[0] ) * (self.funcs[1][...,0,0]**self.shape[-1])
 
   def _product( self, axis ):
     func1, func2 = self.funcs
