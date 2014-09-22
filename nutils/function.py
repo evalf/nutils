@@ -673,8 +673,8 @@ class Get( ArrayFunc ):
     return get( f, self.axis, self.item )
 
   def _get( self, i, item ):
-    tryget = get( self.func, i+(i>=self.axis), item )
-    if not isinstance( tryget, Get ): # avoid inf recursion
+    tryget = _call( self.func, '_get', i+(i>=self.axis), item )
+    if tryget is not None:
       return get( tryget, self.axis, self.item )
 
   def _take( self, indices, axis ):
@@ -1267,11 +1267,11 @@ class Multiply( ArrayFunc ):
 
   def _negative( self ):
     func1, func2 = self.funcs
-    negfunc1 = -func1
-    if not isinstance( negfunc1, Negative ):
+    negfunc1 = _call( func1, '_negative' )
+    if negfunc1 is not None:
       return multiply( negfunc1, func2 )
-    negfunc2 = -func2
-    if not isinstance( negfunc2, Negative ):
+    negfunc2 = _call( func2, '_negative' )
+    if negfunc2 is not None:
       return multiply( func1, negfunc2 )
 
 class Negative( ArrayFunc ):
@@ -1491,8 +1491,8 @@ class Dot( ArrayFunc ):
       common = _findcommon( self.funcs, other.funcs )
       if common:
         f, g12 = common
-        tryconcat = concatenate( g12, axis )
-        if not isinstance( tryconcat, Concatenate ): # avoid inf recursion
+        tryconcat = _call( g12, '_concatenate', axis )
+        if tryconcat is not None:
           return dot( f, tryconcat, self.axes )
 
   def _opposite( self ):
@@ -1501,11 +1501,11 @@ class Dot( ArrayFunc ):
 
   def _negative( self ):
     func1, func2 = self.funcs
-    negfunc1 = -func1
-    if not isinstance( negfunc1, Negative ):
+    negfunc1 = _call( func1, '_negative' )
+    if negfunc1 is not None:
       return dot( negfunc1, func2, self.axes )
-    negfunc2 = -func2
-    if not isinstance( negfunc2, Negative ):
+    negfunc2 = _call( func2, '_negative' )
+    if negfunc2 is not None:
       return dot( func1, negfunc2, self.axes )
 
 class Sum( ArrayFunc ):
@@ -1526,8 +1526,8 @@ class Sum( ArrayFunc ):
     return numpy.sum( arr, self.axis_shiftright )
 
   def _sum( self, axis ):
-    trysum = sum( self.func, axis+(axis>=self.axis) )
-    if not isinstance( trysum, Sum ): # avoid inf recursion
+    trysum = _call( self.func, '_sum', axis+(axis>=self.axis) )
+    if trysum is not None:
       return sum( trysum, self.axis )
 
   def _localgradient( self, ndims ):
@@ -1627,8 +1627,8 @@ class Take( ArrayFunc ):
       else:
         indices = self.indices[index]
       return take( self.func, indices, axis )
-    trytake = take( self.func, index, axis )
-    if not isinstance( trytake, Take ): # avoid inf recursion
+    trytake = _call( self.func, '_take', index, axis )
+    if trytake is not None:
       return take( trytake, self.indices, self.axis )
 
 class Power( ArrayFunc ):
