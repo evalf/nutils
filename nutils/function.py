@@ -1051,9 +1051,6 @@ class Concatenate( ArrayFunc ):
       return util.sum( funcs )
     return concatenate( funcs, self.axis )
 
-  def _negative( self ):
-    return concatenate( [ -func for func in self.funcs ], self.axis )
-
   def _opposite( self ):
     return concatenate( [ opposite(func) for func in self.funcs ], self.axis )
 
@@ -1187,9 +1184,6 @@ class DofIndex( ArrayFunc ):
   def _opposite( self ):
     return take( self.array, opposite(self.index), self.iax )
 
-  def _negative( self ):
-    return take( -self.array, self.index, self.iax )
-
 class Multiply( ArrayFunc ):
   'multiply'
 
@@ -1265,69 +1259,10 @@ class Multiply( ArrayFunc ):
     func1, func2 = self.funcs
     return opposite(func1) * opposite(func2)
 
-  def _negative( self ):
-    func1, func2 = self.funcs
-    negfunc1 = _call( func1, '_negative' )
-    if negfunc1 is not None:
-      return multiply( negfunc1, func2 )
-    negfunc2 = _call( func2, '_negative' )
-    if negfunc2 is not None:
-      return multiply( func1, negfunc2 )
-
-class Negative( ArrayFunc ):
-  'negate'
-
-  def __init__( self, func ):
-    'constructor'
-
-    self.func = func
-    ArrayFunc.__init__( self, args=[func], shape=func.shape )
-
-  def evalf( self, arr ):
-    assert arr.ndim == self.ndim+1
-    return -arr
-
-  @property
-  def blocks( self ):
-    for ind, f in blocks( self.func ):
-      yield ind, negative(f)
-
-  def _add( self, other ):
-    if isinstance( other, Negative ):
-      return negative( self.func + other.func )
-
-  def _multiply( self, other ):
-    if isinstance( other, Negative ):
-      return self.func * other.func
-    return negative( self.func * other )
-
-  def _negative( self ):
-    return self.func
-
-  def _align( self, axes, ndim ):
-    return -align( self.func, axes, ndim )
-
-  def _get( self, i, item ):
-    return -get( self.func, i, item )
-
-  def _sum( self, axis ):
-    return -sum( self.func, axis )
-
-  def _localgradient( self, ndims ):
-    return -localgradient( self.func, ndims )
-
-  def _takediag( self ):
-    return -takediag( self.func )
-
-  def _take( self, index, axis ):
-    return -take( self.func, index, axis )
-
-  def _opposite( self ):
-    return -opposite(self.func)
-
   def _power( self, n ):
-    if n%2 == 0:
-      return power( self.func, n )
+    func1, func2 = self.funcs
+    if not _isfunc( func2 ):
+      return multiply( power(func1,n), numpy.power(func2,n) )
 
 class Add( ArrayFunc ):
   'add'
@@ -1395,10 +1330,6 @@ class BlockAdd( Add ):
   def _align( self, axes, ndim ):
     func1, func2 = self.funcs
     return blockadd( align(func1,axes,ndim), align(func2,axes,ndim) )
-
-  def _negative( self ):
-    func1, func2 = self.funcs
-    return blockadd( negative(func1), negative(func2) )
 
   def _add( self, other ):
     func1, func2 = self.funcs
@@ -1498,15 +1429,6 @@ class Dot( ArrayFunc ):
   def _opposite( self ):
     func1, func2 = self.funcs
     return dot( opposite(func1), opposite(func2), self.axes )
-
-  def _negative( self ):
-    func1, func2 = self.funcs
-    negfunc1 = _call( func1, '_negative' )
-    if negfunc1 is not None:
-      return dot( negfunc1, func2, self.axes )
-    negfunc2 = _call( func2, '_negative' )
-    if negfunc2 is not None:
-      return dot( func1, negfunc2, self.axes )
 
 class Sum( ArrayFunc ):
   'sum'
@@ -1884,9 +1806,6 @@ class Zeros( ArrayFunc ):
     shape = _jointshape( self.shape, other.shape )
     return _zeros( shape )
 
-  def _negative( self ):
-    return self
-
   def _diagonalize( self ):
     return _zeros( self.shape + (self.shape[-1],) )
 
@@ -1999,9 +1918,6 @@ class Inflate( ArrayFunc ):
       other = take( other, self.dofmap, self.axis )
     return inflate( cross(self.func,other,axis), self.dofmap, self.length, self.axis )
 
-  def _negative( self ):
-    return inflate( negative(self.func), self.dofmap, self.length, self.axis )
-
   def _power( self, n ):
     return inflate( power(self.func,n), self.dofmap, self.length, self.axis )
 
@@ -2069,9 +1985,6 @@ class Diagonalize( ArrayFunc ):
     if isinstance( other, Diagonalize ):
       return diagonalize( self.func + other.func )
 
-  def _negative( self ):
-    return diagonalize( -self.func )
-
   def _sum( self, axis ):
     if axis >= self.ndim-2:
       return self.func
@@ -2101,9 +2014,6 @@ class Repeat( ArrayFunc ):
   def evalf( self, arr=None ):
     assert arr is None or arr.ndim == self.ndim+1
     return numeric.fastrepeat( arr if arr is not None else self.func[_], self.length, self.axis_shiftright )
-
-  def _negative( self ):
-    return repeat( -self.func, self.length, self.axis )
 
   def _localgradient( self, ndims ):
     return repeat( localgradient( self.func, ndims ), self.length, self.axis )
@@ -2899,21 +2809,6 @@ def add( arg1, arg2 ):
 def blockadd( arg1, arg2 ):
   return BlockAdd( *sorted([ arg1, arg2 ]) )
 
-def negative( arg ):
-  'make negative'
-
-  arg = asarray(arg)
-
-  if not _isfunc( arg ):
-    return numpy.negative( arg )
-
-  retval = _call( arg, '_negative' )
-  if retval is not None:
-    assert retval.shape == arg.shape, 'bug in %s._negative' % arg
-    return retval
-
-  return Negative( arg )
-
 def power( arg, n ):
   'power'
 
@@ -2992,6 +2887,7 @@ def eig( arg, axes=(-2,-1), symmetric=False ):
   assert eigval.shape == arg.shape
   return eigval, eigvec
 
+negative = lambda arg: multiply( arg, -1 )
 nsymgrad = lambda arg, coords: ( symgrad(arg,coords) * coords.normal() ).sum()
 ngrad = lambda arg, coords: ( grad(arg,coords) * coords.normal() ).sum()
 sin = lambda arg: pointwise( [arg], numpy.sin, cos )
