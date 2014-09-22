@@ -334,7 +334,7 @@ def title( f ): # decorator
   argnames = f.func_code.co_varnames[:f.func_code.co_argcount]
   if 'title' in argnames:
     index = argnames.index( 'title' )
-    if index >= len(argnames) - len(f.func_defaults):
+    if index >= len(argnames) - len(f.func_defaults or []):
       default = f.func_defaults[ index-len(argnames) ]
     def wrapped( *args, **kwargs ):
       __log__ = StaticLog( args[index] if index < len(args) else kwargs.get('title',default) )
