@@ -248,18 +248,18 @@ class SparseMatrix( Matrix ):
     if numeric.isboolarray( cols ):
       assert len(cols) == self.shape[1]
       cols, = cols.nonzero()
-    elif numeric.isintarray( cols ):
-      pass
-    else:
+    elif isinstance( cols, slice ):
+      cols = numpy.arange( *cols.indices( self.shape[1] ) )
+    elif not numeric.isintarray( cols ):
       raise Exception, 'invalid column argument'
     ncols = len(cols)
 
     if numeric.isboolarray( rows ):
       assert len(rows) == self.shape[0]
       rows, = rows.nonzero()
-    elif numeric.isintarray( rows ):
-      pass
-    else:
+    elif isinstance( rows, slice ):
+      rows = numpy.arange( *rows.indices( self.shape[0] ) )
+    elif not numeric.isintarray( rows ):
       raise Exception, 'invalid row argument'
     nrows = len(rows)
 

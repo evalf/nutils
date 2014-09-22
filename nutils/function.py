@@ -360,6 +360,10 @@ class ArrayFunc( Evaluable ):
 
   # standalone methods
 
+  @property
+  def blocks( self ):
+    return [( tuple( slice(0,n) if numeric.isint(n) else None for n in self.shape ), self )]
+
   def vector( self, ndims ):
     'vectorize'
 
@@ -914,8 +918,10 @@ class Concatenate( ArrayFunc ):
   def blocks( self ):
     n = 0
     for func in self.funcs:
-      for f, ind in blocks( func ):
-        yield f, ind[:self.axis] + (ind[self.axis]+n,) + ind[self.axis+1:]
+      for ind, f in blocks( func ):
+        oldind = ind[self.axis]
+        newind = slice( oldind.start+n, oldind.stop+n ) if isinstance( oldind, slice ) else oldind+n
+        yield ind[:self.axis] + (newind,) + ind[self.axis+1:], f
       n += func.shape[self.axis]
 
   def _get( self, i, item ):
@@ -1281,8 +1287,8 @@ class Negative( ArrayFunc ):
 
   @property
   def blocks( self ):
-    for f, ind in blocks( self.func ):
-      yield negative(f), ind
+    for ind, f in blocks( self.func ):
+      yield ind, negative(f)
 
   def _add( self, other ):
     if isinstance( other, Negative ):
@@ -1403,10 +1409,10 @@ class BlockAdd( Add ):
   @property
   def blocks( self ):
     func1, func2 = self.funcs
-    for f, ind in blocks( func1 ):
-      yield f, ind
-    for f, ind in blocks( func2 ):
-      yield f, ind
+    for ind, f in blocks( func1 ):
+      yield ind, f
+    for ind, f in blocks( func2 ):
+      yield ind, f
 
 class Dot( ArrayFunc ):
   'dot'
@@ -1932,9 +1938,9 @@ class Inflate( ArrayFunc ):
 
   @property
   def blocks( self ):
-    for f, ind in blocks( self.func ):
+    for ind, f in blocks( self.func ):
       assert ind[self.axis] == None
-      yield f, ind[:self.axis] + (self.dofmap,) + ind[self.axis+1:]
+      yield ind[:self.axis] + (self.dofmap,) + ind[self.axis+1:], f
 
   def _inflate( self, dofmap, length, axis ):
     assert axis != self.axis
@@ -3091,13 +3097,7 @@ def inflate( arg, dofmap, length, axis ):
 
   return Inflate( arg, dofmap, length, axis )
 
-def blocks( arg ):
-  arg = asarray( arg )
-  try:
-    blocks = arg.blocks
-  except AttributeError:
-    blocks = [( arg, tuple( numpy.arange(n) if numeric.isint(n) else None for n in arg.shape ) )]
-  return blocks
+blocks = lambda arg: asarray( arg ).blocks
 
 def pointdata ( topo, ischeme, func=None, shape=None, value=None ):
   'point data'
@@ -3151,7 +3151,7 @@ def fdapprox( func, w, dofs, delta=1.e-5 ):
   return dfunc_fd
 
 def _unpack( funcsp ):
-  for func, axes in funcsp.blocks:
+  for axes, func in funcsp.blocks:
     dofax = axes[0]
     if isinstance( dofax, Add ):
       dofax, dof0 = dofax.funcs

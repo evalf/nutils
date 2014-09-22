@@ -257,7 +257,7 @@ class Topology( object ):
       if separate:
         retval[separators] = numpy.nan
       if function._isfunc( func ):
-        for f, ind in function.blocks( func ):
+        for ind, f in function.blocks( func ):
           idata.append( function.Tuple( [ ifunc, function.Tuple(ind), f ] ) )
       else:
         idata.append( function.Tuple( [ ifunc, (), func ] ) )
@@ -269,7 +269,7 @@ class Topology( object ):
     for ielem, elem in parallel.pariter( __log__ ):
       s = slices[ielem],
       for ifunc, index, data in idata.eval( elem, ischeme, fcache ):
-        retvals[ifunc][s+index] = data
+        retvals[ifunc][s+index] += data
 
     log.debug( 'cache', fcache.summary() )
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
@@ -317,13 +317,16 @@ class Topology( object ):
 
     nrows, ncols = func.shape
     graph = [ [] for irow in range(nrows) ]
-    IJ = function.Tuple([ function.Tuple(ind) for f, ind in function.blocks( func ) ])
+    IJ = function.Tuple([ function.Tuple(ind) for ind, f in function.blocks( func ) ])
+
+    irows = numpy.arange( nrows )
+    icols = numpy.arange( ncols )
 
     __log__ = log.iter( 'elem', self )
     for elem in __log__:
       for I, J in IJ.eval( elem, None ):
-        for i in I:
-          graph[i].append(J)
+        for i in irows[I]:
+          graph[i].append( icols[J] )
 
     __log__ = log.enumerate( 'dof', graph )
     for irow, g in __log__:
@@ -350,7 +353,7 @@ class Topology( object ):
         array = parallel.shzeros( func.shape, dtype=float ) if func.ndim != 2 \
            else matrix.DenseMatrix( func.shape ) if force_dense \
            else matrix.SparseMatrix( self.build_graph(func), func.shape[1] )
-        for f, ind in function.blocks( func ):
+        for ind, f in function.blocks( func ):
           integrands.append( function.Tuple([ ifunc, lock, function.Tuple(ind), f * iwscale ]) )
       else:
         array = parallel.shzeros( func.shape, dtype=float )
@@ -395,7 +398,7 @@ class Topology( object ):
         array = parallel.shzeros( func.shape, dtype=float ) if func.ndim != 2 \
            else matrix.DenseMatrix( func.shape ) if force_dense \
            else matrix.SparseMatrix( self.build_graph(func), func.shape[1] )
-        for f, ind in function.blocks( func ):
+        for ind, f in function.blocks( func ):
           integrands.append( function.Tuple([ ifunc, lock, function.Tuple(ind), f * iwscale ]) )
       else:
         array = parallel.shzeros( func.shape, dtype=float )
@@ -498,7 +501,7 @@ class Topology( object ):
       W = numpy.zeros( onto.shape[0] )
       I = numpy.zeros( onto.shape[0], dtype=bool )
       fun = function.asarray( fun )
-      data = function.Tuple( function.Tuple([ fun, f, function.Tuple(ind) ]) for f, ind in function.blocks( onto ) )
+      data = function.Tuple( function.Tuple([ fun, f, function.Tuple(ind) ]) for ind, f in function.blocks( onto ) )
       for elem in self:
         for f, w, ind in data( elem, 'bezier2' ):
           w = w.swapaxes(0,1) # -> dof axis, point axis, ...
@@ -984,7 +987,7 @@ class TrimmedTopology( Topology ):
   @log.title
   def basis( self, name, *args, **kwargs ):
     funcsp = self.basetopo.basis( name, *args, **kwargs )
-    (func,(dofaxis,)), = function.blocks( funcsp )
+    ((dofaxis,),func), = function.blocks( funcsp )
     nmap = {}
     fmap = {}
     renumber = {}
