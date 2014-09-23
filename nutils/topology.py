@@ -445,8 +445,7 @@ class Topology( object ):
     log.debug( 'projection type:', ptype )
 
     if exact_boundaries:
-      assert constrain is None
-      constrain = self.boundary.project( fun, onto, geometry, title='boundaries', ischeme=ischeme, tol=tol, droptol=droptol, ptype=ptype )
+      constrain |= self.boundary.project( fun, onto, geometry, constrain=constrain, title='boundaries', ischeme=ischeme, tol=tol, droptol=droptol, ptype=ptype )
     elif constrain is None:
       constrain = util.NanVec( onto.shape[0] )
     else:
@@ -772,11 +771,11 @@ class StructuredTopology( Topology ):
         dofs = vertex_structure[S].ravel()
         mask = dofs >= 0
         if mask.all():
-          dofmap[ elem ] = dofs
-          funcmap[elem] = (stdelem,None),
+          dofmap[ elem.transform ] = dofs
+          funcmap[ elem.transform ] = (stdelem,None),
         elif mask.any():
-          dofmap[ elem ] = dofs[mask]
-          funcmap[elem] = (stdelem,mask),
+          dofmap[ elem.transform ] = dofs[mask]
+          funcmap[ elem.transform ] = (stdelem,mask),
 
     if hasnone:
       touched = numpy.zeros( dofcount, dtype=bool )
@@ -784,7 +783,7 @@ class StructuredTopology( Topology ):
         touched[ dofs ] = True
       renumber = touched.cumsum()
       dofcount = int(renumber[-1])
-      dofmap = dict( ( elem, renumber[dofs]-1 ) for elem, dofs in dofmap.iteritems() )
+      dofmap = { trans: renumber[dofs]-1 for trans, dofs in dofmap.iteritems() }
 
     return function.function( funcmap, dofmap, dofcount, self.ndims )
 
