@@ -29,11 +29,11 @@ import warnings, itertools
 class Topology( object ):
   'topology base class'
 
-  def __init__( self, elements ):
+  def __init__( self, elements, ndims=None ):
     'constructor'
 
     self.elements = tuple(elements)
-    self.ndims = self.elements[0].ndims # assume all equal
+    self.ndims = self.elements[0].ndims if ndims is None else ndims # assume all equal
 
   def __contains__( self, element ):
     return self.edict.get( element.transform ) == element
@@ -502,7 +502,7 @@ class Topology( object ):
       fun = function.asarray( fun )
       data = function.Tuple( function.Tuple([ fun, f, function.Tuple(ind) ]) for ind, f in function.blocks( onto ) )
       for elem in self:
-        for f, w, ind in data( elem, 'bezier2' ):
+        for f, w, ind in data.eval( elem, 'bezier2' ):
           w = w.swapaxes(0,1) # -> dof axis, point axis, ...
           wf = w * f[ (slice(None),)+numpy.ix_(*ind[1:]) ]
           W[ind[0]] += w.reshape(w.shape[0],-1).sum(1)
@@ -586,27 +586,30 @@ class StructuredTopology( Topology ):
     shape = numpy.asarray( self.structure.shape ) + 1
     vertices = numpy.arange( numpy.product(shape) ).reshape( shape )
 
-    boundaries = []
-    for iedge in range( 2 * self.ndims ):
-      idim = iedge // 2
-      iside = iedge % 2
-      if self.ndims > 1:
-        s = [ slice(None,None,-1) ] * idim \
-          + [ iside-1, ] \
-          + [ slice(None,None,1) ] * (self.ndims-idim-1)
-        if not iside: # TODO: check that this is correct for all dimensions; should match conventions in elem.edge
-          s[idim-1] = slice(None,None,1 if idim else -1)
-        s = tuple(s)
-        belems = numpy.frompyfunc( lambda elem: elem.edge( iedge ) if elem is not None else None, 1, 1 )( self.structure[s] )
-      else:
-        belems = numpy.array( self.structure[iside-1].edge( iedge ) )
-      periodic = [ d - (d>idim) for d in self.periodic if d != idim ] # TODO check that dimensions are correct for ndim > 2
-      boundaries.append( StructuredTopology( belems, periodic=periodic ) )
+    boundaries = {}
+    for idim in range(self.ndims):
+      if idim in self.periodic:
+        continue
+      for iside in range(2):
+        iedge = 2 * idim + iside
+        if self.ndims > 1:
+          s = [ slice(None,None,-1) ] * idim \
+            + [ iside-1, ] \
+            + [ slice(None,None,1) ] * (self.ndims-idim-1)
+          if not iside: # TODO: check that this is correct for all dimensions; should match conventions in elem.edge
+            s[idim-1] = slice(None,None,1 if idim else -1)
+          s = tuple(s)
+          belems = numpy.frompyfunc( lambda elem: elem.edge( iedge ) if elem is not None else None, 1, 1 )( self.structure[s] )
+        else:
+          belems = numpy.array( self.structure[iside-1].edge( iedge ) )
+        periodic = [ d - (d>idim) for d in self.periodic if d != idim ] # TODO check that dimensions are correct for ndim > 2
+        name = ( 'right', 'left', 'top', 'bottom', 'back', 'front' )[iedge]
+        boundaries[name] = StructuredTopology( belems, periodic=periodic )
 
-    allbelems = [ belem for boundary in boundaries for belem in boundary.structure.flat if belem is not None ]
-    topo = Topology( allbelems )
+    allbelems = [ belem for boundary in boundaries.values() for belem in boundary.structure.flat if belem is not None ]
+    topo = Topology( allbelems, self.ndims-1 )
+    topo.groups = boundaries
 
-    topo.groups = dict( zip( ( 'right', 'left', 'top', 'bottom', 'back', 'front' ), boundaries ) )
     return topo
 
   @cache.property
