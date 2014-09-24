@@ -13,7 +13,7 @@ point of a nutils application, taking care of command line parsing, output dir
 creation and initiation of a log file.
 """
 
-from . import log, debug, core
+from . import log, debug, core, version
 import sys, os, time, numpy, cPickle, hashlib, weakref, warnings, itertools
 
 class _SuppressedOutput( object ):
@@ -284,6 +284,14 @@ class Statm( object ):
 class Terminate( Exception ):
   pass
 
+def githash( path ):
+  git = os.path.join( path, '.git' )
+  head = open( os.path.join( git, 'HEAD' ) ).read()
+  assert head.startswith( 'ref:' )
+  ref = head[4:].strip()
+  githash, = open( os.path.join( git, ref ) ).read().split()
+  return githash
+
 def run( *functions ):
   'call function specified on command line'
 
@@ -418,10 +426,13 @@ def run( *functions ):
     __dumpdir__ = dumpdir
     __cachedir__ = basedir + 'cache'
 
-    commandline = [ ' '.join([ scriptname, funcname ]) ] + [ '  --%s=%s' % item for item in kwargs.items() ]
+    try:
+      gitversion = version + '.' + githash(os.path.dirname(os.path.dirname(__file__)))[:8]
+    except:
+      gitversion = version
+    log.info( 'nutils v%s\n' % gitversion )
 
-    log.info( 'nutils v0.1+dev' )
-    log.info()
+    commandline = [ ' '.join([ scriptname, funcname ]) ] + [ '  --%s=%s' % item for item in kwargs.items() ]
     log.info( ' \\\n'.join( commandline ) + '\n' )
     log.info( 'start %s\n' % time.ctime() )
 
