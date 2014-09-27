@@ -723,6 +723,25 @@ class StructuredTopology( Topology ):
 
     return function.function( funcmap, dofmap, dofcount, self.ndims )
 
+  def basis_discont( self, degree ):
+    'discontinuous shape functions'
+
+    if isinstance( degree, int ):
+      degree = (degree,) * self.ndims
+    assert len(degree) == self.ndims
+    assert all( p >= 0 for p in degree )
+
+    stdfunc = util.product( element.PolyLine( element.PolyLine.bernstein_poly(p) ) for p in degree )
+      
+    fmap = {}
+    nmap = {}
+    ndofs = 0
+    for elem in self:
+      fmap[elem.transform] = (stdfunc,None),
+      nmap[elem.transform] = ndofs + numpy.arange(stdfunc.nshapes)
+      ndofs += stdfunc.nshapes
+    return function.function( fmap=fmap, nmap=nmap, ndofs=ndofs, ndims=self.ndims )
+
   def basis_std( self, degree, removedofs=None ):
     'spline from vertices'
 
