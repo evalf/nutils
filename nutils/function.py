@@ -48,7 +48,7 @@ class Evaluable( object ):
     assert all( isinstance(arg,Evaluable) or arg in TOKENS for arg in args )
     self.__args = tuple(args)
 
-  def evalf( self ):
+  def evalf( self, *args ):
     raise NotImplementedError, 'Evaluable derivatives should implement the evalf method'
 
   @cache.property
