@@ -14,6 +14,8 @@ from __future__ import division
 from . import cache, rational, numeric
 import numpy
 
+_noarg = object()
+
 
 class TransformChain( tuple ):
 
@@ -43,10 +45,10 @@ class TransformChain( tuple ):
       headtrans = headtrans[:-1]
     return None
 
-  def slice( self, fromdims=None, todims=None ):
-    if fromdims is None:
+  def slice( self, fromdims=_noarg, todims=_noarg ):
+    if fromdims is _noarg:
       fromdims = self.fromdims
-    if todims is None:
+    if todims is _noarg:
       todims = self.todims
     if fromdims == self.fromdims and todims == self.todims:
       return self
