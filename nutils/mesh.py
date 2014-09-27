@@ -210,10 +210,10 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
     if tag not in topo.groups and tag not in topo.boundary.groups:
       warnings.warn('tag %r defined but not used' % tag )
 
-  log.info('Parsed GMSH file:')
-  log.info('Nodes (#%d)' % nnodes)
-  log.info('Topology (#%d) with groups: %s' % (len(topo), ', '.join('%s (#%d)' % (name,len(subtopo)) for name,subtopo in topo.groups.items())))
-  log.info('Boundary (#%d) with groups: %s' % (len(topo.boundary), ', '.join('%s (#%d)' % (name,len(subtopo)) for name,subtopo in topo.boundary.groups.items())))
+  log.info('parsed GMSH file:')
+  log.info('* nodes (#%d)' % nnodes)
+  log.info('* topology (#%d) with groups: %s' % (len(topo), ', '.join('%s (#%d)' % (name,len(subtopo)) for name,subtopo in topo.groups.items())))
+  log.info('* boundary (#%d) with groups: %s' % (len(topo.boundary), ', '.join('%s (#%d)' % (name,len(subtopo)) for name,subtopo in topo.boundary.groups.items())))
 
   linearfunc = function.function( fmap=fmap, nmap=nmap, ndofs=nnodes, ndims=topo.ndims )
   geom = ( linearfunc[:,_] * coords ).sum(0)
