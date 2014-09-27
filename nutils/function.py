@@ -2956,35 +2956,37 @@ def take( arg, index, axis ):
   arg = asarray( arg )
   axis = numeric.normdim( arg.ndim, axis )
 
+  if isinstance( index, IndexVector ):
+    if index.shape[0] == 1:
+      return insert( get( arg, axis, index[0] ), axis )
+    retval = _call( arg, '_take', index, axis )
+    if retval is not None:
+      return retval
+    return DofIndex( arg, axis, index )
+
   if isinstance( index, slice ):
-    assert index.start == None or index.start >= 0
-    assert index.stop != None and index.stop > 0
-    index = numpy.arange( index.start or 0, index.stop, index.step )
-    assert index.size > 0
-  elif not isinstance( index, IndexVector ):
-    index = numpy.asarray( index, dtype=int )
+    n = arg.shape[axis]
+    if n == 1:
+      assert index.stop != None and index.stop > 0
+      n = index.stop
+    index = numpy.arange( *index.indices(n) )
+  else:
+    index = numpy.asarray( index )
     assert numpy.all( index >= 0 )
-    assert index.size > 0
-  assert index.ndim == 1
+  assert numeric.isintarray(index) and index.ndim == 1 and len(index) > 0
+
+  if len(index) == arg.shape[axis] and all( index == numpy.arange(arg.shape[axis]) ):
+    return arg
 
   if arg.shape[axis] == 1:
     return repeat( arg, index.shape[0], axis )
 
-  if not isinstance( index, IndexVector ):
-    allindices = numpy.arange( arg.shape[axis] )
-    index = allindices[index]
-    if numpy.all( index == allindices ):
-      return arg
-
-  if index.shape[0] == 1:
+  if len(index) == 1:
     return insert( get( arg, axis, index[0] ), axis )
 
   retval = _call( arg, '_take', index, axis )
   if retval is not None:
     return retval
-
-  if isinstance( index, IndexVector ):
-    return DofIndex( arg, axis, index )
 
   if not _isfunc( arg ):
     return numpy.take( arg, index, axis )
