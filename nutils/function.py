@@ -563,7 +563,8 @@ class ElemSign( ArrayFunc ):
 
   def evalf( self, trans ):
     try:
-      ntrans = trans.slice( todims=self.ndims+1, fromdims=self.ndims )
+      head, tail = trans.split( self.ndims )
+      ntrans = head[-1]
     except: # possibly ndim topo, n+1dim geom
       return numpy.array([ 1 ])
     return numpy.array( -1 if ntrans.isflipped else 1 )[_]
@@ -721,7 +722,7 @@ class Iwscale( ArrayFunc ):
   def evalf( self, trans ):
     'evaluate'
 
-    return numpy.asarray( trans.slice(todims=trans.fromdims).det, dtype=float )[_]
+    return numpy.asarray( trans.split()[1].det, dtype=float )[_]
 
 class Transform( ArrayFunc ):
   'transform'
@@ -738,7 +739,7 @@ class Transform( ArrayFunc ):
   def evalf( self, trans ):
     'transform'
 
-    matrix = trans.slice(fromdims=self.fromdims,todims=self.todims).linear
+    matrix = trans.split( self.fromdims )[0].split( self.todims )[1].linear
     assert matrix.ndim == 2
     return matrix.astype( float )[_]
 
@@ -773,7 +774,7 @@ class Function( ArrayFunc ):
         if keep is not None:
           F = F[(Ellipsis,keep)+(slice(None),)*self.igrad]
         if self.igrad:
-          invlinear = head.slice(todims=head.fromdims).invlinear.astype( float )
+          invlinear = head.split()[1].invlinear.astype( float )
           if invlinear.ndim:
             for axis in range(-self.igrad,0):
               F = numeric.dot( F, invlinear, axis )
@@ -1625,7 +1626,7 @@ class ElemFunc( ArrayFunc ):
   def evalf( self, points, trans ):
     'evaluate'
 
-    return trans.slice(todims=self.shape[0]).apply( points ).astype( float )
+    return trans.split(self.shape[0])[1].apply( points ).astype( float )
 
   def _localgradient( self, ndims ):
     return eye( ndims ) if self.shape[0] == ndims \
