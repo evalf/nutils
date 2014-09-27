@@ -34,6 +34,11 @@ class Topology( object ):
 
     self.elements = tuple(elements)
     self.ndims = self.elements[0].ndims if ndims is None else ndims # assume all equal
+    self.__groups = {}
+
+  @property
+  def groupnames( self ):
+    return self.__groups.keys()
 
   def __contains__( self, element ):
     return self.edict.get( element.transform ) == element
@@ -111,8 +116,13 @@ class Topology( object ):
   def __getitem__( self, item ):
     'subtopology'
 
-    items = ( self.groups[it] for it in item.split( ',' ) )
+    items = ( self.__groups[it] for it in item.split( ',' ) )
     return sum( items, items.next() )
+
+  def __setitem__( self, item, topo ):
+    assert isinstance( topo, Topology ), 'wrong type: got %s, expected Topology' % type(topo)
+    assert topo.ndims == self.ndims, 'wrong dimension: got %d, expected %d' % ( topo.ndims, self.ndims )
+    self.__groups[item] = topo
 
   @cache.property
   def edict( self ):
@@ -566,7 +576,6 @@ class StructuredTopology( Topology ):
     structure = numpy.asarray(structure)
     self.structure = structure
     self.periodic = tuple(periodic)
-    self.groups = {}
     Topology.__init__( self, structure.flat )
 
   def __getitem__( self, item ):
@@ -608,7 +617,8 @@ class StructuredTopology( Topology ):
 
     allbelems = [ belem for boundary in boundaries.values() for belem in boundary.structure.flat if belem is not None ]
     topo = Topology( allbelems, self.ndims-1 )
-    topo.groups = boundaries
+    for name, btopo in boundaries.items():
+      topo[name] = btopo
 
     return topo
 
@@ -818,7 +828,8 @@ class StructuredTopology( Topology ):
     structure = structure.transpose( sum( [ ( i, self.ndims+i ) for i in range(self.ndims) ], () ) )
     structure = structure.reshape( numpy.array(self.structure.shape) * 2 )
     refined = StructuredTopology( structure )
-    refined.groups = { key: group.refined for key, group in self.groups.items() }
+    for group in self.groupnames:
+      refined[group] = self[group].refined
     return refined
 
   def __str__( self ):
