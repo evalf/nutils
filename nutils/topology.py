@@ -35,6 +35,29 @@ class Topology( object ):
     self.elements = tuple(elements)
     self.ndims = self.elements[0].ndims if ndims is None else ndims # assume all equal
     self.__groups = {}
+    self.__boundary = None
+
+  def set_boundary( self, boundary ):
+    assert self.__class__.boundary == Topology.boundary, 'cannot set boundary of %s' % self.__class__.__name__
+    assert isinstance( boundary, Topology )
+    assert boundary.ndims == self.ndims - 1
+    self.__boundary = boundary
+
+  @property
+  def boundary( self ):
+    if not self.__boundary:
+      edges = {}
+      __log__ = log.iter( 'elem', self )
+      for elem in __log__:
+        elemcoords = elem.vertices
+        for iedge, iverts in enumerate( elem.reference.edge2vertices ):
+          edgekey = tuple( sorted( c for c, n in zip( elemcoords, iverts ) if n ) )
+          try:
+            edges.pop( edgekey )
+          except KeyError:
+            edges[edgekey] = elem.edge(iedge)
+      self.__boundary = Topology( edges.values() )
+    return self.__boundary
 
   @property
   def groupnames( self ):
@@ -122,6 +145,8 @@ class Topology( object ):
   def __setitem__( self, item, topo ):
     assert isinstance( topo, Topology ), 'wrong type: got %s, expected Topology' % type(topo)
     assert topo.ndims == self.ndims, 'wrong dimension: got %d, expected %d' % ( topo.ndims, self.ndims )
+    for elem in topo:
+      assert self.edict[elem.transform] == elem, 'group %r is not a subtopology' % item
     self.__groups[item] = topo
 
   @cache.property

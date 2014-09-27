@@ -205,7 +205,7 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
   for group, grouptopo in elemgroups.items():
     topo[group] = topology.Topology( grouptopo )
 
-  topo.boundary = topology.Topology( edges.values() )
+  topo.set_boundary( topology.Topology( edges.values() ) )
   for group, edgekeys in edgegroups.items():
     topo.boundary[group] = topology.Topology([ edges[edgekey] for edgekey in edgekeys ])
 
@@ -255,7 +255,7 @@ def triangulation( vertices, nvertices ):
     structure.append( elem.edge( iedge ) )
     
   topo = topology.Topology( nmap )
-  topo.boundary = topology.StructuredTopology( structure, periodic=(1,) )
+  topo.set_boundary( topology.StructuredTopology( structure, periodic=(1,) ) )
   return topo
 
 def igatool( path, name=None ):
@@ -345,7 +345,7 @@ def igatool( path, name=None ):
     topo[groupname] = grouptopo
 
   if boundaries:
-    topo.boundary = topology.Topology( elem for topo in boundaries.values() for elem in topo )
+    topo.set_boundary( topology.Topology( elem for topo in boundaries.values() for elem in topo ) )
     for groupname, grouptopo in boundaries.items():
       topo.boundary[groupname] = grouptopo
 
@@ -356,7 +356,7 @@ def igatool( path, name=None ):
       if belems:
         myboundaries[ name ] = topology.Topology( belems )
     if myboundaries:
-      group.boundary = topology.Topology( elem for topo in myboundaries.values() for elem in topo )
+      group.set_boundary( topology.Topology( elem for topo in myboundaries.values() for elem in topo ) )
       for groupname, grouptopo in myboundaries.items():
         group.boundary[groupname] = grouptopo
 
@@ -406,7 +406,7 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   bgroups = { 'top': belems[0:3], 'left': belems[3:6], 'bottom': belems[6:9], 'right': belems[9:12] }
 
   topo = topology.Topology( elements )
-  topo.boundary = topology.Topology( belems )
+  topo.set_boundary( topology.Topology( belems ) )
   for tag, group in bgroups.items():
     topo.boundary[tag] = topology.Topology( group )
 
