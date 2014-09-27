@@ -989,18 +989,14 @@ class TrimmedTopology( Topology ):
   @cache.property
   def boundary( self ):
     warnings.warn( 'warning: boundaries of trimmed topologies are not trimmed' )
-    belems = [ belem for belem in self.basetopo.boundary if belem.transform.lookup(self.emat) ]
+    belems = [ belem for belem in self.basetopo.boundary if belem.transform.lookup(self.edict) ]
     return TrimmedTopology( self.basetopo.boundary, belems )
-
-  @cache.property
-  def emat( self ):
-    return { elem.transform: elem for elem in self }
 
   def __getitem__( self, key ):
     elements = []
     keytopo = self.basetopo[key]
-    for elem in self.basetopo[key]:
-      trimelem = self.emat.get(elem.transform)
+    for elem in keytopo:
+      trimelem = self.edict.get(elem.transform)
       if trimelem is not None:
         elements.append( trimelem )
     return TrimmedTopology( keytopo, elements )

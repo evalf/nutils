@@ -11,7 +11,7 @@ The transform module.
 """
 
 from __future__ import division
-from . import cache, rational
+from . import cache, rational, numeric
 import numpy
 
 
@@ -215,7 +215,8 @@ class VertexTransform( TransformItem ):
 class MapTrans( VertexTransform ):
 
   def __init__( self, coords, vertices ):
-    self.coords = rational.asrational(coords)
+    self.coords = numpy.asarray(coords)
+    assert numeric.isintarray( self.coords )
     nverts, ndims = coords.shape
     assert len(vertices) == nverts
     self.vertices = tuple(vertices)
