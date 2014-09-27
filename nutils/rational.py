@@ -183,7 +183,7 @@ def det( array ):
     ((a,b,c),(d,e,f),(g,h,i)) = array.numer
     det = Rational( a*e*i + b*f*g + c*d*h - c*e*g - b*d*i - a*f*h, array.denom**3 )
   else:
-    raise NotImplementedError, 'shape=' + tuple(array.shape)
+    raise NotImplementedError, 'shape=' + str(array.shape)
   return det
 
 def invdet( array ):
