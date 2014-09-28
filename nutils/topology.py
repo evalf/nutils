@@ -626,16 +626,10 @@ class StructuredTopology( Topology ):
         continue
       for iside in range(2):
         iedge = 2 * idim + iside
-        if self.ndims > 1:
-          s = [ slice(None,None,-1) ] * idim \
-            + [ iside-1, ] \
-            + [ slice(None,None,1) ] * (self.ndims-idim-1)
-          if not iside: # TODO: check that this is correct for all dimensions; should match conventions in elem.edge
-            s[idim-1] = slice(None,None,1 if idim else -1)
-          s = tuple(s)
-          belems = numpy.frompyfunc( lambda elem: elem.edge( iedge ) if elem is not None else None, 1, 1 )( self.structure[s] )
-        else:
-          belems = numpy.array( self.structure[iside-1].edge( iedge ) )
+        s = [ slice(None) ] * self.ndims
+        s[idim] = iside-1
+        s = tuple(s)
+        belems = numpy.frompyfunc( lambda elem: elem.edge( iedge ) if elem is not None else None, 1, 1 )( self.structure[s] )
         periodic = [ d - (d>idim) for d in self.periodic if d != idim ] # TODO check that dimensions are correct for ndim > 2
         name = ( 'right', 'left', 'top', 'bottom', 'back', 'front' )[iedge]
         boundaries[name] = StructuredTopology( belems, periodic=periodic )
