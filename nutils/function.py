@@ -2073,6 +2073,23 @@ class Repeat( ArrayFunc ):
   def _opposite( self ):
     return repeat( opposite(self.func), self.length, self.axis )
 
+class Guard( ArrayFunc ):
+  'bar all simplifications'
+
+  def __init__( self, fun ):
+    self.fun = fun
+    ArrayFunc.__init__( self, args=[fun], shape=fun.shape )
+
+  @staticmethod
+  def evalf( dat ):
+    return dat
+
+  def _opposite( self ):
+    return Guard( opposite(self.fun) )
+
+  def _localgradient( self, ndims ):
+    return Guard( localgradient(self.fun,ndims) )
+
 # AUXILIARY FUNCTIONS
 
 def _jointshape( *shapes ):
