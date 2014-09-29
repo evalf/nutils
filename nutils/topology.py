@@ -251,7 +251,7 @@ class Topology( object ):
   def refined_by( self, refine ):
     'create refined space by refining dofs in existing one'
 
-    refine = set( refine )
+    refine = set( item.transform if isinstance(item,element.Element) else item for item in refine )
     refined = []
     for elem in self:
       if elem.transform in refine:
