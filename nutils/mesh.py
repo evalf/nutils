@@ -41,10 +41,11 @@ def rectilinear( richshape, periodic=(), name='rect' ):
     else:
       shape.append( len(v)-1 )
       uniform = False
-  if all( o == 0 for o in offset[1:] ):
-    offset = 0
-  if all( s == scale[0] for s in scale[1:] ):
-    scale = scale[0]
+  if uniform:
+    if all( o == 0 for o in offset[1:] ):
+      offset = 0
+    if all( s == scale[0] for s in scale[1:] ):
+      scale = scale[0]
   indices = numeric.grid( shape )
   structure = numpy.empty( indices.shape[1:], dtype=object )
 
@@ -76,8 +77,8 @@ def revolve( topo, coords, nelems, degree=3, axis=0 ):
   structure = numpy.array([ [ element.QuadElement( ndims=topo.ndims+1 ) for elem in topo ] for ielem in range(nelems) ])
   revolved_topo = topology.StructuredTopology( structure.reshape( nelems, *topo.structure.shape ), periodic=0 )
   if nelems % 2 == 0:
-    revolved_topo.groups[ 'top' ] = revolved_topo[:nelems//2]
-    revolved_topo.groups[ 'bottom' ] = revolved_topo[nelems//2:]
+    revolved_topo[ 'top' ] = revolved_topo[:nelems//2]
+    revolved_topo[ 'bottom' ] = revolved_topo[nelems//2:]
 
   print 'topo:', revolved_topo.structure.shape
   revolved_func = revolved_topo.splinefunc( degree=(degree,)+DEGREE )
@@ -202,18 +203,21 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
       raise NotImplementedError('Unknown GMSH element type %i' % etype)
 
   topo = topology.Topology( elems.values() )
-  topo.groups = elemgroups
-  topo.boundary = topology.Topology( edges.values() )
-  topo.boundary.groups = { tag: topology.Topology([ edges[edgekey] for edgekey in edgekeys ]) for tag, edgekeys in edgegroups.items() }
+  for group, grouptopo in elemgroups.items():
+    topo[group] = topology.Topology( grouptopo )
+
+  topo.set_boundary( topology.Topology( edges.values() ) )
+  for group, edgekeys in edgegroups.items():
+    topo.boundary[group] = topology.Topology([ edges[edgekey] for edgekey in edgekeys ])
 
   for tag in tags.values():
-    if tag not in topo.groups and tag not in topo.boundary.groups:
+    if tag not in topo.groupnames and tag not in topo.boundary.groupnames:
       warnings.warn('tag %r defined but not used' % tag )
 
   log.info('parsed GMSH file:')
   log.info('* nodes (#%d)' % nnodes)
-  log.info('* topology (#%d) with groups: %s' % (len(topo), ', '.join('%s (#%d)' % (name,len(subtopo)) for name,subtopo in topo.groups.items())))
-  log.info('* boundary (#%d) with groups: %s' % (len(topo.boundary), ', '.join('%s (#%d)' % (name,len(subtopo)) for name,subtopo in topo.boundary.groups.items())))
+  log.info('* topology (#%d) with groups: %s' % (len(topo), ', '.join('%s (#%d)' % (name,len(topo[name])) for name in topo.groupnames)))
+  log.info('* boundary (#%d) with groups: %s' % (len(topo.boundary), ', '.join('%s (#%d)' % (name,len(topo.boundary[name])) for name in topo.boundary.groupnames)))
 
   linearfunc = function.function( fmap=fmap, nmap=nmap, ndofs=nnodes, ndims=topo.ndims )
   geom = ( linearfunc[:,_] * coords ).sum(0)
@@ -252,7 +256,7 @@ def triangulation( vertices, nvertices ):
     structure.append( elem.edge( iedge ) )
     
   topo = topology.Topology( nmap )
-  topo.boundary = topology.StructuredTopology( structure, periodic=(1,) )
+  topo.set_boundary( topology.StructuredTopology( structure, periodic=(1,) ) )
   return topo
 
 def igatool( path, name=None ):
@@ -338,10 +342,13 @@ def igatool( path, name=None ):
       raise Exception, 'unknown group type: %r' % grouptype
 
   topo = topology.Topology( elements )
-  topo.groups = elemgroups
+  for groupname, grouptopo in elemgroups.items():
+    topo[groupname] = grouptopo
+
   if boundaries:
-    topo.boundary = topology.Topology( elem for topo in boundaries.values() for elem in topo )
-    topo.boundary.groups = boundaries
+    topo.set_boundary( topology.Topology( elem for topo in boundaries.values() for elem in topo ) )
+    for groupname, grouptopo in boundaries.items():
+      topo.boundary[groupname] = grouptopo
 
   for group in elemgroups.values():
     myboundaries = {}
@@ -350,8 +357,9 @@ def igatool( path, name=None ):
       if belems:
         myboundaries[ name ] = topology.Topology( belems )
     if myboundaries:
-      group.boundary = topology.Topology( elem for topo in myboundaries.values() for elem in topo )
-      group.boundary.groups = myboundaries
+      group.set_boundary( topology.Topology( elem for topo in myboundaries.values() for elem in topo ) )
+      for groupname, grouptopo in myboundaries.items():
+        group.boundary[groupname] = grouptopo
 
   funcsp = topo.splinefunc( degree=degree )
   coords = ( funcsp[:,_] * points ).sum( 0 )
@@ -399,8 +407,9 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   bgroups = { 'top': belems[0:3], 'left': belems[3:6], 'bottom': belems[6:9], 'right': belems[9:12] }
 
   topo = topology.Topology( elements )
-  topo.boundary = topology.Topology( belems )
-  topo.boundary.groups = dict( ( tag, topology.Topology( group ) ) for tag, group in bgroups.items() )
+  topo.set_boundary( topology.Topology( belems ) )
+  for tag, group in bgroups.items():
+    topo.boundary[tag] = topology.Topology( group )
 
   geom = [.5*(xmin+xmax),.5*(ymin+ymax)] \
        + [.5*(xmax-xmin),.5*(ymax-ymin)] * function.ElemFunc( 2 )

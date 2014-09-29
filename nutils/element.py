@@ -244,6 +244,10 @@ class SimplexReference( Reference ):
   def ribbon2vertices( self ):
     return numpy.array([ (i,j) for i in range( self.ndims+1 ) for j in range( i+1, self.ndims+1 ) ])
 
+  @property
+  def edge2vertices( self ):
+    return ~numpy.eye( self.nverts, dtype=bool )
+
   def getischeme_contour( self, n ):
     assert self.ndims == 2
     p = numpy.arange( n+1, dtype=float ) / (n+1)

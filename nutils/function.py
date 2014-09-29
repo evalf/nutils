@@ -48,7 +48,7 @@ class Evaluable( object ):
     assert all( isinstance(arg,Evaluable) or arg in TOKENS for arg in args )
     self.__args = tuple(args)
 
-  def evalf( self ):
+  def evalf( self, *args ):
     raise NotImplementedError, 'Evaluable derivatives should implement the evalf method'
 
   @cache.property
@@ -563,7 +563,8 @@ class ElemSign( ArrayFunc ):
 
   def evalf( self, trans ):
     try:
-      ntrans = trans.slice( todims=self.ndims+1, fromdims=self.ndims )
+      head, tail = trans.split( self.ndims )
+      ntrans = head[-1]
     except: # possibly ndim topo, n+1dim geom
       return numpy.array([ 1 ])
     return numpy.array( -1 if ntrans.isflipped else 1 )[_]
@@ -721,7 +722,7 @@ class Iwscale( ArrayFunc ):
   def evalf( self, trans ):
     'evaluate'
 
-    return numpy.asarray( trans.slice(todims=trans.fromdims).det, dtype=float )[_]
+    return numpy.asarray( trans.split()[1].det, dtype=float )[_]
 
 class Transform( ArrayFunc ):
   'transform'
@@ -738,7 +739,7 @@ class Transform( ArrayFunc ):
   def evalf( self, trans ):
     'transform'
 
-    matrix = trans.slice(fromdims=self.fromdims,todims=self.todims).linear
+    matrix = trans.split( self.fromdims )[0].split( self.todims )[1].linear
     assert matrix.ndim == 2
     return matrix.astype( float )[_]
 
@@ -773,7 +774,7 @@ class Function( ArrayFunc ):
         if keep is not None:
           F = F[(Ellipsis,keep)+(slice(None),)*self.igrad]
         if self.igrad:
-          invlinear = head.slice(todims=head.fromdims).invlinear.astype( float )
+          invlinear = head.split()[1].invlinear.astype( float )
           if invlinear.ndim:
             for axis in range(-self.igrad,0):
               F = numeric.dot( F, invlinear, axis )
@@ -1625,7 +1626,7 @@ class ElemFunc( ArrayFunc ):
   def evalf( self, points, trans ):
     'evaluate'
 
-    return trans.slice(todims=self.shape[0]).apply( points ).astype( float )
+    return trans.split(self.shape[0])[1].apply( points ).astype( float )
 
   def _localgradient( self, ndims ):
     return eye( ndims ) if self.shape[0] == ndims \
@@ -2071,6 +2072,23 @@ class Repeat( ArrayFunc ):
 
   def _opposite( self ):
     return aslength( opposite(self.func), self.length, self.axis )
+
+class Guard( ArrayFunc ):
+  'bar all simplifications'
+
+  def __init__( self, fun ):
+    self.fun = fun
+    ArrayFunc.__init__( self, args=[fun], shape=fun.shape )
+
+  @staticmethod
+  def evalf( dat ):
+    return dat
+
+  def _opposite( self ):
+    return Guard( opposite(self.fun) )
+
+  def _localgradient( self, ndims ):
+    return Guard( localgradient(self.fun,ndims) )
 
 # AUXILIARY FUNCTIONS
 
@@ -2961,35 +2979,37 @@ def take( arg, index, axis ):
   arg = asarray( arg )
   axis = numeric.normdim( arg.ndim, axis )
 
+  if isinstance( index, IndexVector ):
+    if index.shape[0] == 1:
+      return insert( get( arg, axis, index[0] ), axis )
+    retval = _call( arg, '_take', index, axis )
+    if retval is not None:
+      return retval
+    return DofIndex( arg, axis, index )
+
   if isinstance( index, slice ):
-    assert index.start == None or index.start >= 0
-    assert index.stop != None and index.stop > 0
-    index = numpy.arange( index.start or 0, index.stop, index.step )
-    assert index.size > 0
-  elif not isinstance( index, IndexVector ):
-    index = numpy.asarray( index, dtype=int )
+    n = arg.shape[axis]
+    if n == 1:
+      assert index.stop != None and index.stop > 0
+      n = index.stop
+    index = numpy.arange( *index.indices(n) )
+  else:
+    index = numpy.asarray( index )
     assert numpy.all( index >= 0 )
-    assert index.size > 0
-  assert index.ndim == 1
+  assert numeric.isintarray(index) and index.ndim == 1 and len(index) > 0
+
+  if len(index) == arg.shape[axis] and all( index == numpy.arange(arg.shape[axis]) ):
+    return arg
 
   if arg.shape[axis] == 1:
     return repeat( arg, index.shape[0], axis )
 
-  if not isinstance( index, IndexVector ):
-    allindices = numpy.arange( arg.shape[axis] )
-    index = allindices[index]
-    if numpy.all( index == allindices ):
-      return arg
-
-  if index.shape[0] == 1:
+  if len(index) == 1:
     return insert( get( arg, axis, index[0] ), axis )
 
   retval = _call( arg, '_take', index, axis )
   if retval is not None:
     return retval
-
-  if isinstance( index, IndexVector ):
-    return DofIndex( arg, axis, index )
 
   if not _isfunc( arg ):
     return numpy.take( arg, index, axis )

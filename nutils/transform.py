@@ -14,6 +14,8 @@ from __future__ import division
 from . import cache, rational, numeric
 import numpy
 
+_noarg = object()
+
 
 class TransformChain( tuple ):
 
@@ -43,20 +45,15 @@ class TransformChain( tuple ):
       headtrans = headtrans[:-1]
     return None
 
-  def slice( self, fromdims=None, todims=None ):
-    if fromdims is None:
-      fromdims = self.fromdims
-    if todims is None:
-      todims = self.todims
-    if fromdims == self.fromdims and todims == self.todims:
-      return self
-    transforms = self
-    while transforms and transforms[-1].fromdims != fromdims:
-      transforms = transforms[:-1]
-    while transforms and transforms[0].todims != todims:
-      transforms = transforms[1:]
-    assert transforms or fromdims == todims, 'invalid slice (%d,%d) of %s' % ( todims, fromdims, self )
-    return transforms
+  def split( self, ndims=_noarg ):
+    if ndims is _noarg:
+      ndims = self.fromdims
+    for i, trans in reversed(list(enumerate(self))):
+      if trans.fromdims == ndims and trans.todims != ndims:
+        return self[:i+1], self[i+1:]
+    if self.todims == ndims:
+      return TransformChain(), self
+    raise Exception, 'dimension not found in chain: %s' % ndims
 
   def __lshift__( self, other ):
     # self << other
