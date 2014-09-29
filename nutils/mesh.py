@@ -41,10 +41,11 @@ def rectilinear( richshape, periodic=(), name='rect' ):
     else:
       shape.append( len(v)-1 )
       uniform = False
-  if all( o == 0 for o in offset[1:] ):
-    offset = 0
-  if all( s == scale[0] for s in scale[1:] ):
-    scale = scale[0]
+  if uniform:
+    if all( o == 0 for o in offset[1:] ):
+      offset = 0
+    if all( s == scale[0] for s in scale[1:] ):
+      scale = scale[0]
   indices = numeric.grid( shape )
   structure = numpy.empty( indices.shape[1:], dtype=object )
 
