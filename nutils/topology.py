@@ -346,6 +346,7 @@ class Topology( object ):
     iwscale = function.iwscale( geometry, self.ndims )
     integrands = []
     retvals = []
+    count = []
     for ifunc, func in enumerate( funcs ):
       func = function.asarray( func )
       lock = parallel.Lock()
@@ -360,7 +361,9 @@ class Topology( object ):
         if not function._iszero( func ):
           integrands.append( function.Tuple([ ifunc, lock, (), func * iwscale ]) )
       retvals.append( array )
+      count.append( len(integrands) - sum(count) )
     idata = function.Tuple( integrands )
+    log.info( 'integrating %s distinct blocks' % '+'.join( str(n) for n in count ) )
     if core.getprop( 'dot', False ):
       idata.graphviz()
     fcache = cache.CallDict()
@@ -963,17 +966,21 @@ class RefinedTopology( Topology ):
 class TrimmedTopology( Topology ):
   'trimmed'
 
-  def __init__( self, basetopo, elements ):
+  def __init__( self, basetopo, elements, trimmed=[] ):
     self.basetopo = basetopo
+    self.trimmed = tuple(trimmed)
     Topology.__init__( self, elements )
 
   @cache.property
   def boundary( self ):
     warnings.warn( 'warning: boundaries of trimmed topologies are not trimmed' )
-    belems = [ belem for belem in self.basetopo.boundary if belem.transform.lookup(self.edict) ]
+    belems = list( self.trimmed ) + [ belem for belem in self.basetopo.boundary if belem.transform.lookup(self.edict) ]
     return TrimmedTopology( self.basetopo.boundary, belems )
 
   def __getitem__( self, key ):
+    if key == 'trimmed':
+      elements = [ elem for elem in self if not elem.transform.lookup( self.basetopo.edict ) ]
+      return Topology( elements, ndims=self.ndims )
     elements = []
     keytopo = self.basetopo[key]
     for elem in keytopo:

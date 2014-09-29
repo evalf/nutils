@@ -1059,7 +1059,7 @@ class Concatenate( ArrayFunc ):
 
   def _repeat( self, length, axis ):
     if axis != self.axis:
-      return concatenate( [ repeat( func, length, axis ) for func in self.funcs ], self.axis )
+      return concatenate( [ aslength( func, length, axis ) for func in self.funcs ], self.axis )
 
   def _diagonalize( self ):
     if self.axis < self.ndim-1:
@@ -1946,7 +1946,7 @@ class Inflate( ArrayFunc ):
 
   def _repeat( self, length, axis ):
     if axis != self.axis:
-      return inflate( repeat(self.func,length,axis), self.dofmap, self.length, self.axis )
+      return inflate( aslength(self.func,length,axis), self.dofmap, self.length, self.axis )
 
 class Diagonalize( ArrayFunc ):
   'diagonal matrix'
@@ -2016,48 +2016,48 @@ class Repeat( ArrayFunc ):
     return numeric.fastrepeat( arr if arr is not None else self.func[_], self.length, self.axis_shiftright )
 
   def _localgradient( self, ndims ):
-    return repeat( localgradient( self.func, ndims ), self.length, self.axis )
+    return aslength( localgradient( self.func, ndims ), self.length, self.axis )
 
   def _get( self, axis, item ):
     if axis == self.axis:
       assert 0 <= item < self.length
       return get( self.func, axis, 0 )
-    return repeat( get( self.func, axis, item ), self.length, self.axis-(axis<self.axis) )
+    return aslength( get( self.func, axis, item ), self.length, self.axis-(axis<self.axis) )
 
   def _sum( self, axis ):
     if axis == self.axis:
       return get( self.func, axis, 0 ) * self.length
-    return repeat( sum( self.func, axis ), self.length, self.axis-(axis<self.axis) )
+    return aslength( sum( self.func, axis ), self.length, self.axis-(axis<self.axis) )
 
   def _product( self, axis ):
     if axis == self.axis:
       return get( self.func, axis, 0 )**self.length
-    return repeat( product( self.func, axis ), self.length, self.axis-(axis<self.axis) )
+    return aslength( product( self.func, axis ), self.length, self.axis-(axis<self.axis) )
 
   def _power( self, n ):
-    return repeat( power( self.func, n ), self.length, self.axis )
+    return aslength( power( self.func, n ), self.length, self.axis )
 
   def _add( self, other ):
-    return repeat( self.func + other, self.length, self.axis )
+    return aslength( self.func + other, self.length, self.axis )
 
   def _multiply( self, other ):
-    return repeat( self.func * other, self.length, self.axis )
+    return aslength( self.func * other, self.length, self.axis )
 
   def _align( self, shuffle, ndim ):
-    return repeat( align(self.func,shuffle,ndim), self.length, shuffle[self.axis] )
+    return aslength( align(self.func,shuffle,ndim), self.length, shuffle[self.axis] )
 
   def _take( self, index, axis ):
     if axis == self.axis:
-      return repeat( self.func, index.shape[0], self.axis )
-    return repeat( take(self.func,index,axis), self.length, self.axis )
+      return aslength( self.func, index.shape[0], self.axis )
+    return aslength( take(self.func,index,axis), self.length, self.axis )
 
   def _takediag( self ):
-    return repeat( takediag( self.func ), self.length, self.axis ) if self.axis < self.ndim-2 \
+    return aslength( takediag( self.func ), self.length, self.axis ) if self.axis < self.ndim-2 \
       else get( self.func, self.axis, 0 )
 
   def _cross( self, other, axis ):
     if axis != self.axis:
-      return repeat( cross( self.func, other, axis ), self.length, self.axis )
+      return aslength( cross( self.func, other, axis ), self.length, self.axis )
 
   def _dot( self, other, naxes ):
     axes = range( self.ndim-naxes, self.ndim )
@@ -2067,10 +2067,10 @@ class Repeat( ArrayFunc ):
       return func
     if self.axis >= self.ndim - naxes:
       return func * self.length
-    return repeat( func, self.length, self.axis )
+    return aslength( func, self.length, self.axis )
 
   def _opposite( self ):
-    return repeat( opposite(self.func), self.length, self.axis )
+    return aslength( opposite(self.func), self.length, self.axis )
 
 # AUXILIARY FUNCTIONS
 
@@ -2303,20 +2303,25 @@ def expand( arg, shape ):
   assert len(shape) == arg.ndim
 
   for i, sh in enumerate( shape ):
-    arg = repeat( arg, sh, i )
+    arg = aslength( arg, sh, i )
   assert arg.shape == shape
 
   return arg
+
+def aslength( arg, length, axis ):
+  'as length'
+
+  arg = asarray( arg )
+  if arg.shape[axis] == length:
+    return arg
+
+  return repeat( arg, length, axis )
 
 def repeat( arg, length, axis ):
   'repeat'
 
   arg = asarray( arg )
   axis = numeric.normdim( arg.ndim, axis )
-
-  if arg.shape[axis] == length:
-    return arg
-
   assert arg.shape[axis] == 1
 
   retval = _call( arg, '_repeat', length, axis )
