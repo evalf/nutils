@@ -757,6 +757,151 @@ class StructuredTopology( Topology ):
 
     return function.function( funcmap, dofmap, dofcount, self.ndims )
 
+  def basis_bspline( self, degree, knotvalues=None, knotmultiplicities=None, periodic=None ):
+    'Bspline from vertices'
+    
+    if periodic is None:
+      periodic = self.periodic
+
+    if isinstance( degree, int ):
+      degree = [degree]*self.ndims
+
+    assert len(degree)==self.ndims
+
+    if knotvalues is None:
+      knotvalues = [None]*self.ndims
+    
+    if knotmultiplicities is None:
+      knotmultiplicities = [None]*self.ndims
+
+    vertex_structure = numpy.array( 0 )
+    dofcount = 1
+    slices = []
+    cache = {}
+    for idim in range( self.ndims ):
+      p = degree[idim]
+      n = self.structure.shape[idim]
+      isperiodic = idim in periodic
+
+      k = knotvalues[idim]
+      if k is None: #Defaults to uniform spacing
+        k = numpy.arange(n+1)
+      else:
+        k = numpy.asarray( k )
+
+      m = knotmultiplicities[idim]
+      if m is None: #Defaults to open spline without internal repetitions
+        m = numpy.array([p+1]+[1]*(n-1)+[p+1]) if not isperiodic else numpy.ones(n+1,dtype=int)
+      else:
+        m = numpy.array(m) #Make copy to prevent overwriting of data
+
+      assert min(m)>0 and max(m)<=p+1, 'Incorrect multiplicity encountered'
+      assert len(k)==len(m), 'Length mismatch between knots vector and knot multiplicities vector'
+      assert len(k)==n+1, 'Knot vector size does not match the topology size'
+
+      if not isperiodic:
+        nd = sum(m)-p-1
+        npre  = p+1-m[0]  #Number of knots to be appended to front
+        npost = p+1-m[-1] #Number of knots to be appended to rear
+        m[0] = m[-1] = p+1
+      else:
+        assert m[0]==m[-1], 'Periodic spline multiplicity expected'
+        assert m[0]<p+1, 'Endpoint multiplicity for periodic spline should be p or smaller'
+
+        nd = sum(m[:-1])
+        npre = npost = 0
+        k = numpy.concatenate( [ k[-p-1:-1]+k[0]-k[-1], k, k[1:1+p]-k[0]+k[-1]] )
+        m = numpy.concatenate( [ m[-p-1:-1], m, m[1:1+p] ] )
+
+      km = numpy.array([ki for ki,mi in zip(k,m) for cnt in range(mi)],dtype=float)
+      assert len(km)==sum(m)
+      assert nd>0, 'No basis functions defined. Knot vector too short.'
+
+      stdelems_i = []
+      slices_i = []
+      offsets = numpy.cumsum(m[:-1])-p
+      if isperiodic:
+        offsets = offsets[p:-p]
+      offset0 = offsets[0]+npre
+
+      for offset in offsets:
+        start = max(offset0-offset,0) #Zero unless prepending influence
+        stop  = p+1-max(offset-offsets[-1]+npost,0) #Zero unless appending influence
+        slices_i.append( slice(offset-offset0+start,offset-offset0+stop) )
+        lknots  = km[offset:offset+2*p] - km[offset] #Copy operation required
+        if p: #Normalize for optimized caching
+          lknots /= lknots[-1]
+        key = ( tuple(numeric.round(lknots*numpy.iinfo(numpy.int32).max)), p )
+        try:
+          coeffs = cache[key]
+        except KeyError:
+          coeffs = self._localsplinebasis( lknots, p )
+          cache[key] = coeffs
+        poly = element.PolyLine( coeffs[:,start:stop] )
+        stdelems_i.append( poly )
+      stdelems = stdelems[...,_]*stdelems_i if idim else numpy.array(stdelems_i)
+
+      numbers = numpy.arange(nd)
+      if isperiodic:
+        numbers = numpy.concatenate([numbers,numbers[:p]])
+      vertex_structure = vertex_structure[...,_]*nd+numbers
+      dofcount*=nd
+      slices.append(slices_i)
+
+    #Cache effectivity
+    log.debug( 'Local knot vector cache effectivity: %d' % (100*(1.-len(cache)/float(sum(self.structure.shape)))) )
+
+    dofmap = {}
+    funcmap = {}
+    for item in numpy.broadcast( self.structure, stdelems, *numpy.ix_(*slices) ):
+      elem = item[0]
+      std = item[1]
+      S = item[2:]
+      dofs = vertex_structure[S].ravel()
+      dofmap[elem.transform] = dofs
+      funcmap[elem.transform] = (std,None),
+
+    return function.function( funcmap, dofmap, dofcount, self.ndims )
+
+  @staticmethod
+  def _localsplinebasis ( lknots, p ):
+  
+    assert isinstance(lknots,numpy.ndarray), 'Local knot vector should be numpy array'
+    assert len(lknots)==2*p, 'Expected 2*p local knots'
+  
+    #Based on Algorithm A2.2 Piegl and Tiller
+    N    = [None]*(p+1)
+    N[0] = numpy.poly1d([1.])
+  
+    if p > 0:
+  
+      assert (lknots[:-1]-lknots[1:]<numpy.spacing(1)).all(), 'Local knot vector should be non-decreasing'
+      assert lknots[p]-lknots[p-1]>numpy.spacing(1), 'Element size should be positive'
+      
+      lknots = lknots.astype(float)
+  
+      xi = numpy.poly1d([lknots[p]-lknots[p-1],lknots[p-1]])
+  
+      left  = [None]*p
+      right = [None]*p
+  
+      for i in range(p):
+        left[i] = xi - lknots[p-i-1]
+        right[i] = -xi + lknots[p+i]
+        saved = 0.
+        for r in range(i+1):
+          temp = N[r]/(lknots[p+r]-lknots[p+r-i-1])
+          N[r] = saved+right[r]*temp
+          saved = left[i-r]*temp
+        N[i+1] = saved
+
+    assert all(Ni.order==p for Ni in N)
+
+    return numpy.array([Ni.coeffs for Ni in N]).T[::-1]
+
+  def linearfunc( self ):
+    'linears'
+
   def basis_discont( self, degree ):
     'discontinuous shape functions'
 

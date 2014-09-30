@@ -41,11 +41,6 @@ def rectilinear( richshape, periodic=(), name='rect' ):
     else:
       shape.append( len(v)-1 )
       uniform = False
-  if uniform:
-    if all( o == 0 for o in offset[1:] ):
-      offset = 0
-    if all( s == scale[0] for s in scale[1:] ):
-      scale = scale[0]
   indices = numeric.grid( shape )
   structure = numpy.empty( indices.shape[1:], dtype=object )
 
@@ -61,6 +56,10 @@ def rectilinear( richshape, periodic=(), name='rect' ):
     structure[tuple(index)] = element.Element( reference, root << transform.affine(offset=index) )
   topo = topology.StructuredTopology( structure, periodic=periodic )
   if uniform:
+    if all( o == 0 for o in offset[1:] ):
+      offset = 0
+    if all( s == scale[0] for s in scale[1:] ):
+      scale = scale[0]
     geom = function.ElemFunc( ndims ) * scale + offset
   else:
     funcsp = topo.splinefunc( degree=1, periodic=() )
