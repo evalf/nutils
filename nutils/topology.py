@@ -843,7 +843,7 @@ class StructuredTopology( Topology ):
 
     return function.function( funcmap, dofmap, dofcount, self.ndims )
 
-  @property
+  @cache.property
   def refined( self ):
     'refine non-uniformly'
 
