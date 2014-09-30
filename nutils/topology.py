@@ -139,6 +139,8 @@ class Topology( object ):
   def __getitem__( self, item ):
     'subtopology'
 
+    if not isinstance( item, str ):
+      raise KeyError, str(item)
     items = ( self.__groups[it] for it in item.split( ',' ) )
     return sum( items, items.next() )
 
@@ -1024,19 +1026,23 @@ class TrimmedTopology( Topology ):
   def boundary( self ):
     warnings.warn( 'warning: boundaries of trimmed topologies are not trimmed' )
     belems = list( self.trimmed ) + [ belem for belem in self.basetopo.boundary if belem.transform.lookup(self.edict) ]
-    return TrimmedTopology( self.basetopo.boundary, belems )
+    boundary = TrimmedTopology( self.basetopo.boundary, belems )
+    if self.trimmed:
+      boundary['trimmed'] = Topology( self.trimmed )
+    return boundary
 
   def __getitem__( self, key ):
-    if key == 'trimmed':
-      elements = [ elem for elem in self if not elem.transform.lookup( self.basetopo.edict ) ]
-      return Topology( elements, ndims=self.ndims )
-    elements = []
-    keytopo = self.basetopo[key]
-    for elem in keytopo:
-      trimelem = self.edict.get(elem.transform)
-      if trimelem is not None:
-        elements.append( trimelem )
-    return TrimmedTopology( keytopo, elements )
+    try:
+      itemtopo = Topology.__getitem__( self, key )
+    except KeyError:
+      elements = []
+      keytopo = self.basetopo[key]
+      for elem in keytopo:
+        trimelem = self.edict.get(elem.transform)
+        if trimelem is not None:
+          elements.append( trimelem )
+      itemtopo = TrimmedTopology( keytopo, elements )
+    return itemtopo
 
   @log.title
   def basis( self, name, *args, **kwargs ):
