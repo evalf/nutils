@@ -772,6 +772,7 @@ class StructuredTopology( Topology ):
     vertex_structure = numpy.array( 0 )
     dofcount = 1
     slices = []
+    cache = {}
     for idim in range( self.ndims ):
       p = degree[idim]
       n = self.structure.shape[idim]
@@ -825,7 +826,13 @@ class StructuredTopology( Topology ):
         lknots  = km[offset:offset+2*p] - km[offset] #Copy operation required
         if p: #Normalize for optimized caching
           lknots /= lknots[-1]
-        poly = element.PolyLine( self._localsplinebasis( lknots, p )[:,start:stop] )
+        key = ( tuple(numeric.round(lknots*numpy.iinfo(numpy.int32).max)), p )
+        try:
+          coeffs = cache[key]
+        except KeyError:
+          coeffs = self._localsplinebasis( lknots, p )
+          cache[key] = coeffs
+        poly = element.PolyLine( coeffs[:,start:stop] )
         stdelems_i.append( poly )
       stdelems = stdelems[...,_]*stdelems_i if idim else numpy.array(stdelems_i)
 
@@ -835,6 +842,9 @@ class StructuredTopology( Topology ):
       vertex_structure = vertex_structure[...,_]*nd+numbers
       dofcount*=nd
       slices.append(slices_i)
+
+    #Cache effectivity
+    log.debug( 'Local knot vector cache effectivity: %d' % (100*(1.-len(cache)/float(sum(self.structure.shape)))) )
 
     dofmap = {}
     funcmap = {}
