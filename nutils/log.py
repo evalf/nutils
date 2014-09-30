@@ -19,7 +19,7 @@ from . import core
 warnings.showwarning = lambda message, category, filename, lineno, *args: \
   warning( '%s: %s\n  In %s:%d' % ( category.__name__, message, filename, lineno ) )
 
-LEVELS = 'path', 'error', 'warning', 'user', 'info', 'progress', 'debug'
+LEVELS = 'path', 'error', 'warning', 'user', 'progress', 'info', 'debug'
 
 
 # references to objects that are going to be redefined
@@ -157,7 +157,12 @@ class HtmlLog( Log ):
     self.__html = html
 
   def getstream( self, level, *contexts ):
-    return HtmlStream( level, contexts, self.__html )
+    verbosity = core.getprop( 'verbose', 6 )
+    if level in LEVELS[ verbosity: ]:
+      stream = devnull
+    else:
+      stream = HtmlStream( level, contexts, self.__html )
+    return stream
 
 
 class CaptureLog( Log ):
@@ -329,9 +334,20 @@ def stack( msg ):
   print( msg, *reversed(frames), sep='\n', file=_getstream( 'error' ) )
 
 def title( f ): # decorator
-  def wrapped( *args, **kwargs ):
-    __log__ = StaticLog( kwargs.pop( 'title', f.func_name ) )
-    return f( *args, **kwargs )
+  assert getattr( f, '__self__', None ) is None, 'cannot decorate bound instance method'
+  default = f.func_name
+  argnames = f.func_code.co_varnames[:f.func_code.co_argcount]
+  if 'title' in argnames:
+    index = argnames.index( 'title' )
+    if index >= len(argnames) - len(f.func_defaults or []):
+      default = f.func_defaults[ index-len(argnames) ]
+    def wrapped( *args, **kwargs ):
+      __log__ = StaticLog( args[index] if index < len(args) else kwargs.get('title',default) )
+      return f( *args, **kwargs )
+  else:
+    def wrapped( *args, **kwargs ):
+      __log__ = StaticLog( kwargs.pop('title',default) )
+      return f( *args, **kwargs )
   return wrapped
 
 

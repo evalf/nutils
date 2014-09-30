@@ -5,11 +5,54 @@ Nutils is under active development and the API is not frozen. Active
 users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
+
+Changed: Evaluable base class
+
+  Relevant only for custom Evaluable/ArrayFunc objects. The evalf method
+  changes from constructor argument to instance/class method.
+
+  Old syntax:
+  >> class MyEval( function.Evaluable ):
+  >>   def __init__( self, .. ):
+  >>     function.Evaluable( args=[..], evalf=my_static_function, shape=.. )
+
+  New syntax:
+  >> class MyEval( function.Evaluable ):
+  >>   def __init__( self, .. ):
+  >>     function.Evaluable( args=[..], shape=.. )
+  >>   def evalf( self, .. ):
+  >>     ..
+
+  Moreover, the `args` argument may only contain Evaluable objects.
+  Static information is to be passed through `self`.
+
+
+Removed: _numeric C-extension
+
+  At this point nutils is pure Python. It is no longer necessary to run
+  make to compile extension modules. The numeric.py module remains
+  unchanged.
+
+
+Changed: periodic boundary groups
+
+  Touching elements of periodic domains are no longer part of the
+  `boundary` topology. It is still available as boundary of an
+  appropriate non-periodic subtopology.
+
+  Old syntax:
+  >> domain.boundary['left'] # periodic boundary
+
+  New syntax:
+  >> domain[:,:1].boundary['left']
+
+
 Changed: gmesh reader
 
   Argument 'btags' renamed to 'tags'. Applies to all elements (boundary
   and interior). New optional argument 'use_elementary' to indicate
-  whether gmesh is used without physical groups (default: False).
+  whether gmesh is used without physical groups (default False).
+
 
 New: diag preconditioner
 

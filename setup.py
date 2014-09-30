@@ -33,9 +33,7 @@ research by Phd and MSc students.
 
 setup(
   name = 'nutils',
-  version = '0.99',
-  include_dirs = [ numpy.get_include() ],
-  ext_modules = [ Extension( 'nutils._numeric', sources=['nutils/_numeric.c'] ) ],
+  version = '1.x',
   description = 'Numerical Utilities',
   author = 'Gertjan van Zwieten and others',
   author_email = 'info@nutils.org',

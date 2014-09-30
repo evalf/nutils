@@ -5,9 +5,8 @@ class FuncTest( object ):
 
   def __init__( self, op, n_op, *shapes ):
 
-    roottrans = transform.linear([[0,1],[-1,0]]) >> transform.shift([1,0]) \
-             >> transform.linear([[2,1],[-1,3]]) >> transform.shift([1,0])
-    elem = element.Element( element.SimplexReference(1)**2, roottrans >> transform.RootTrans( 'test', (0,0) ) )
+    roottrans = transform.affine( [[0,1],[-1,0]], [1,0] ) >> transform.affine( [[2,1],[-1,3]], [1,0] )
+    elem = element.Element( element.SimplexReference(1)**2, roottrans >> transform.roottrans( 'test', (0,0) ) )
     iface = element.Element( elem.edge(0).reference, elem.edge(0).transform, elem.edge(1).transform )
     ifpoints, ifweights = iface.reference.getischeme('uniform2')
 
@@ -23,24 +22,29 @@ class FuncTest( object ):
     self.op = op
     self.n_op = n_op
     self.args = args
-    self.argsfun = function.Tuple( args ).compiled()
+    self.argsfun = function.Tuple( args )
     self.elem = elem
     self.points = points
     self.geom = geom
-    self.geomfun = geom.compiled()
     self.iface = iface
     self.ifpoints = ifpoints
-    self.invroottransmatrix = rational.asfloat( roottrans.inv.matrix )
+    self.invroottransmatrix = roottrans.invlinear.astype( float )
 
   def find( self, target, xi0 ):
     ndim, = self.geom.shape
     J = function.localgradient( self.geom, ndim )
-    Jinv = function.inverse( J ).compiled()
+    Jinv = function.inverse( J )
     countdown = 5
     iiter = 0
-    xi = xi0
+    assert target.shape[-1:] == self.geom.shape
+    if xi0.shape != target.shape:
+      tmp = numpy.empty_like( target )
+      tmp[...] = xi0
+      xi0 = tmp
+    target = target.reshape( -1, target.shape[-1] )
+    xi = xi0.reshape( -1, xi0.shape[-1] )
     while countdown:
-      err = target - self.geomfun.eval(self.elem,xi)
+      err = target - self.geom.eval(self.elem,xi)
       if numpy.all( numpy.abs(err) < 1e-12 ):
         countdown -= 1
       dxi_root = ( Jinv.eval(self.elem,xi) * err[...,_,:] ).sum(-1)
@@ -48,12 +52,12 @@ class FuncTest( object ):
       xi = xi + numpy.dot( dxi_root, self.invroottransmatrix.T )
       iiter += 1
       assert iiter < 100, 'failed to converge in 100 iterations'
-    return xi
+    return xi.reshape( xi0.shape )
 
   def test_eval( self ):
     numpy.testing.assert_array_almost_equal(
       self.n_op( *self.argsfun.eval(self.elem,self.points) ),
-        self.op( *self.args ).compiled().eval(self.elem,self.points), decimal=15 )
+        self.op( *self.args ).eval(self.elem,self.points), decimal=15 )
 
   def test_getitem( self ):
     shape = self.op( *self.args ).shape
@@ -61,7 +65,7 @@ class FuncTest( object ):
       s = (Ellipsis,) + (slice(None),)*idim + (shape[idim]//2,) + (slice(None),)*(len(shape)-idim-1)
       numpy.testing.assert_array_almost_equal(
         self.n_op( *self.argsfun.eval(self.elem,self.points) )[s],
-          self.op( *self.args )[s].compiled().eval(self.elem,self.points), decimal=15 )
+          self.op( *self.args )[s].eval(self.elem,self.points), decimal=15 )
 
   def test_getslice( self ):
     shape = self.op( *self.args ).shape
@@ -71,7 +75,7 @@ class FuncTest( object ):
       s = (Ellipsis,) + (slice(None),)*idim + (slice(0,shape[idim]-1),) + (slice(None),)*(len(shape)-idim-1)
       numpy.testing.assert_array_almost_equal(
         self.n_op( *self.argsfun.eval(self.elem,self.points) )[s],
-          self.op( *self.args )[s].compiled().eval(self.elem,self.points), decimal=15 )
+          self.op( *self.args )[s].eval(self.elem,self.points), decimal=15 )
 
 class FuncTestGrad( FuncTest ):
 
@@ -79,35 +83,44 @@ class FuncTestGrad( FuncTest ):
     eps = 1e-6
     D = numpy.array([-.5*eps,.5*eps])[:,_,_] * self.invroottransmatrix.T[_,:,:]
     fdpoints = self.points[_,_,:,:] + D[:,:,_,:]
-    F = self.n_op( *self.argsfun.eval(self.elem,fdpoints) )
+    tmp = self.n_op( *self.argsfun.eval(self.elem,fdpoints.reshape(-1,fdpoints.shape[-1])) )
+    F = tmp.reshape( fdpoints.shape[:-1] + tmp.shape[1:] )
     fdgrad = ((F[1]-F[0])/eps).transpose( numpy.roll(numpy.arange(F.ndim-1),-1) )
-    G = function.localgradient( self.op( *self.args ), ndims=self.elem.ndims ).compiled()
-    numpy.testing.assert_array_almost_equal( fdgrad, G.eval(self.elem,self.points), decimal=5 )
+    G = function.localgradient( self.op( *self.args ), ndims=self.elem.ndims )
+    exact = numpy.empty_like( fdgrad )
+    exact[...] = G.eval(self.elem,self.points)
+    numpy.testing.assert_array_almost_equal( fdgrad, exact, decimal=5 )
 
   def test_gradient( self ):
     eps = 1e-6
     D = numpy.array([-.5*eps,.5*eps])[:,_,_] * numpy.eye(2)
-    fdpoints = self.find( self.geomfun.eval(self.elem,self.points)[_,_,:,:] + D[:,:,_,:], self.points[_,_,:,:] )
-    F = self.n_op( *self.argsfun.eval(self.elem,fdpoints) )
+    fdpoints = self.find( self.geom.eval(self.elem,self.points)[_,_,:,:] + D[:,:,_,:], self.points[_,_,:,:] )
+    tmp = self.n_op( *self.argsfun.eval(self.elem,fdpoints.reshape(-1,fdpoints.shape[-1])) )
+    F = tmp.reshape( fdpoints.shape[:-1] + tmp.shape[1:] )
     fdgrad = ((F[1]-F[0])/eps).transpose( numpy.roll(numpy.arange(F.ndim-1),-1) )
-    G = self.op( *self.args ).grad(self.geom).compiled()
-    numpy.testing.assert_array_almost_equal( fdgrad, G.eval(self.elem,self.points), decimal=5 )
+    G = self.op( *self.args ).grad(self.geom)
+    exact = numpy.empty_like( fdgrad )
+    exact[...] = G.eval(self.elem,self.points)
+    numpy.testing.assert_array_almost_equal( fdgrad, exact, decimal=5 )
 
   def test_doublegradient( self ):
     eps = 1e-5
     D = numpy.array([-.5*eps,.5*eps])[:,_,_] * numpy.eye(2)
     DD = D[:,_,:,_,:] + D[_,:,_,:,:]
-    fdpoints = self.find( self.geomfun.eval(self.elem,self.points)[_,_,_,_,:,:] + DD[:,:,:,:,_,:], self.points[_,_,_,_,:,:] )
-    F = self.n_op( *self.argsfun.eval(self.elem,fdpoints) )
+    fdpoints = self.find( self.geom.eval(self.elem,self.points)[_,_,_,_,:,:] + DD[:,:,:,:,_,:], self.points[_,_,_,_,:,:] )
+    tmp = self.n_op( *self.argsfun.eval(self.elem,fdpoints.reshape(-1,fdpoints.shape[-1])) )
+    F = tmp.reshape( fdpoints.shape[:-1] + tmp.shape[1:] )
     fddgrad = (((F[1,1]-F[1,0])-(F[0,1]-F[0,0]))/(eps**2)).transpose( numpy.roll(numpy.arange(F.ndim-2),-2) )
-    G = self.op( *self.args ).grad(self.geom).grad(self.geom).compiled()
-    numpy.testing.assert_array_almost_equal( fddgrad, G.eval(self.elem,self.points), decimal=2 )
+    G = self.op( *self.args ).grad(self.geom).grad(self.geom)
+    exact = numpy.empty_like( fddgrad )
+    exact[...] = G.eval(self.elem,self.points)
+    numpy.testing.assert_array_almost_equal( fddgrad, exact, decimal=2 )
 
   def test_opposite( self ):
-    opposite_args = function.Tuple([ function.opposite(arg) for arg in self.args ]).compiled()
+    opposite_args = function.Tuple([ function.opposite(arg) for arg in self.args ])
     numpy.testing.assert_array_almost_equal(
       self.n_op( *opposite_args.eval(self.iface,self.ifpoints) ),
-        function.opposite( self.op( *self.args ) ).compiled().eval(self.iface,self.ifpoints), decimal=15 )
+        function.opposite( self.op( *self.args ) ).eval(self.iface,self.ifpoints), decimal=15 )
 
 # UNARY POINTWISE OPERATIONS
 

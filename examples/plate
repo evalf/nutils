@@ -86,9 +86,9 @@ def main ( L=4, R=1, E=1e5, nu=0.3, Tx=10, m=5, p=2, maxrefine=4, plots=True ):
   if plots:
 
     with plot.PyPlot('Solver_convergence') as plt:
-      x, y = numpy.array(info).T
+      x, y, lhsarr = zip( *info )
       plt.semilogy( x, y, '.-', label='No precon' )
-      x, y = numpy.array(info_diag).T
+      x, y, lhsarr = zip( *info_diag )
       plt.semilogy( x, y, 'r.-', label='Diag precon' )
       plt.legend()
       plt.grid()

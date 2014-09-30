@@ -13,36 +13,8 @@ point of a nutils application, taking care of command line parsing, output dir
 creation and initiation of a log file.
 """
 
-from . import log, debug, core
+from . import log, debug, core, version
 import sys, os, time, numpy, cPickle, hashlib, weakref, warnings, itertools
-
-def unreachable_items():
-  # see http://stackoverflow.com/questions/16911559/trouble-understanding-pythons-gc-garbage-for-tracing-memory-leaks
-  # first time setup
-  import gc
-  gc.set_threshold( 0 ) # only manual sweeps
-  gc.set_debug( gc.DEBUG_SAVEALL ) # keep unreachable items as garbage
-  gc.enable() # start gc if not yet running (is this necessary?)
-  # operation
-  if gc.collect() == 0:
-    log.info( 'no unreachable items' )
-  else:
-    fmt = '[%%0%dd] %%s' % len(str(len(gc.garbage)-1))
-    log.info( 'unreachable items:\n '
-            + '\n '.join( fmt % item for item in enumerate( gc.garbage ) ) )
-    _deep_purge_list( gc.garbage ) # remove unreachable items
-
-def _deep_purge_list( garbage ):
-  for item in garbage:
-    if isinstance( item, dict ):
-      item.clear()
-    if isinstance( item, list ):
-      del item[:]
-    try:
-      item.__dict__.clear()
-    except:
-      pass
-  del garbage[:]
 
 class _SuppressedOutput( object ):
   'suppress all output by redirection to /dev/null'
@@ -309,6 +281,17 @@ class Statm( object ):
     return '\n'.join( [ 'STATM:     G  M  k  b' ]
       + [ attr + ' ' + (' %s'%getattr(self,attr)).rjust(20-len(attr),'-') for attr in self.__slots__ ] )
 
+class Terminate( Exception ):
+  pass
+
+def githash( path ):
+  git = os.path.join( path, '.git' )
+  head = open( os.path.join( git, 'HEAD' ) ).read()
+  assert head.startswith( 'ref:' )
+  ref = head[4:].strip()
+  githash, = open( os.path.join( git, ref ) ).read().split()
+  return githash
+
 def run( *functions ):
   'call function specified on command line'
 
@@ -443,10 +426,13 @@ def run( *functions ):
     __dumpdir__ = dumpdir
     __cachedir__ = basedir + 'cache'
 
-    commandline = [ ' '.join([ scriptname, funcname ]) ] + [ '  --%s=%s' % item for item in kwargs.items() ]
+    try:
+      gitversion = version + '.' + githash(os.path.dirname(os.path.dirname(__file__)))[:8]
+    except:
+      gitversion = version
+    log.info( 'nutils v%s\n' % gitversion )
 
-    log.info( 'nutils v0.1+dev' )
-    log.info()
+    commandline = [ ' '.join([ scriptname, funcname ]) ] + [ '  --%s=%s' % item for item in kwargs.items() ]
     log.info( ' \\\n'.join( commandline ) + '\n' )
     log.info( 'start %s\n' % time.ctime() )
 
@@ -464,8 +450,8 @@ def run( *functions ):
     try:
       func( **kwargs )
       failed = 0
-#   except KeyboardInterrupt:
-#     log.error( 'killed by user' )
+    except KeyboardInterrupt:
+      log.error( 'killed by user' )
     except Terminate, exc:
       log.error( 'terminated:', exc )
     except:
@@ -491,6 +477,9 @@ def run( *functions ):
     log.info( 'finish %s\n' % time.ctime() )
     log.info( 'elapsed %02.0f:%02.0f:%02.0f' % ( hours, minutes, seconds ) )
 
+    if core.getprop( 'uncollected_summary', False ):
+      debug.trace_uncollected()
+
     if core.getprop( 'profile' ):
       import pstats
       stream = log.getstream( 'warning' )
@@ -508,9 +497,5 @@ def run( *functions ):
 
     htmlfile.write( '</pre></body></html>\n' )
     htmlfile.close()
-
-
-class Terminate( Exception ):
-  pass
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

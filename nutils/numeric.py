@@ -7,14 +7,12 @@
 # and others. More info at http://nutils.org <info@nutils.org>. (c) 2014
 
 """
-The numeric module provides methods that are lacking from the numpy module. An
-accompanying extension module _numeric.c should be compiled to benefit from
-extra performance, although a Python-only implementation is provided as
-fallback. A warning is issued if the extension module is not found.
+The numeric module provides methods that are lacking from the numpy module.
 """
 
 import numpy
-from _numeric import _contract
+
+_abc = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' # indices for einsum
 
 def grid( shape ):
   shape = tuple(shape)
@@ -49,7 +47,7 @@ def overlapping( arr, axis=-1, n=2 ):
 def normdim( ndim, n ):
   'check bounds and make positive'
 
-  assert isinstance(ndim,int) and ndim >= 0, 'ndim must be positive integer, got %s' % ndim
+  assert isint(ndim) and ndim >= 0, 'ndim must be positive integer, got %s' % ndim
   if n < 0:
     n += ndim
   assert 0 <= n < ndim, 'argument out of bounds: %s not in [0,%s)' % (n,ndim)
@@ -59,15 +57,21 @@ def align( arr, trans, ndim ):
   '''create new array of ndim from arr with axes moved accordin
   to trans'''
 
-  # as_strided will check validity of trans
   arr = numpy.asarray( arr )
-  trans = numpy.asarray( trans, dtype=int )
-  assert len(trans) == arr.ndim
-  strides = numpy.zeros( ndim, dtype=int )
-  strides[trans] = arr.strides
-  shape = numpy.ones( ndim, dtype=int )
-  shape[trans] = arr.shape
-  return numpy.lib.stride_tricks.as_strided( arr, shape, strides )
+  assert arr.ndim == len(trans)
+  if not len(trans):
+    return arr[(numpy.newaxis,)*ndim]
+  transpose = numpy.empty( ndim, dtype=int )
+  trans = numpy.asarray( trans )
+  nnew = ndim - len(trans)
+  if nnew > 0:
+    remaining = numpy.ones( ndim, dtype=bool )
+    remaining[trans] = False
+    inew, = remaining.nonzero()
+    trans = numpy.hstack([ inew, trans ])
+    arr = arr[(numpy.newaxis,)*nnew]
+  transpose[trans] = numpy.arange(ndim)
+  return arr.transpose( transpose )
 
 def get( arr, axis, item ):
   'take single item from array axis'
@@ -105,128 +109,49 @@ def linspace2d( start, stop, steps ):
 def contract( A, B, axis=-1 ):
   'contract'
 
-  A = numpy.asarray( A, dtype=float )
-  B = numpy.asarray( B, dtype=float )
+  A = numpy.asarray( A )
+  B = numpy.asarray( B )
 
-  n = B.ndim - A.ndim
-  if n > 0:
-    Ashape = list(B.shape[:n]) + list(A.shape)
-    Astrides = [0]*n + list(A.strides)
-    Bshape = list(B.shape)
-    Bstrides = list(B.strides)
-  elif n < 0:
-    n = -n
-    Ashape = list(A.shape)
-    Astrides = list(A.strides)
-    Bshape = list(A.shape[:n]) + list(B.shape)
-    Bstrides = [0]*n + list(B.strides)
-  else:
-    Ashape = list(A.shape)
-    Astrides = list(A.strides)
-    Bshape = list(B.shape)
-    Bstrides = list(B.strides)
+  maxdim = max( A.ndim, B.ndim )
+  m = _abc[maxdim-A.ndim:maxdim]
+  n = _abc[maxdim-B.ndim:maxdim]
 
-  shape = Ashape
-  nd = len(Ashape)
-  for i in range( n, nd ):
-    if Ashape[i] == 1:
-      shape[i] = Bshape[i]
-      Astrides[i] = 0
-    elif Bshape[i] == 1:
-      Bstrides[i] = 0
-    else:
-      assert Ashape[i] == Bshape[i]
+  axes = sorted( [ normdim(maxdim,axis) ] if isinstance(axis,int) else [ normdim(maxdim,ax) for ax in axis ] )
+  o = _abc[:maxdim-len(axes)] if axes == range( maxdim-len(axes), maxdim ) \
+    else ''.join( _abc[a+1:b] for a, b in zip( [-1]+axes, axes+[maxdim] ) if a+1 != b )
 
-  if isinstance( axis, int ):
-    axis = axis,
-  axis = sorted( [ ax+nd if ax < 0 else ax for ax in axis ], reverse=True )
-  for ax in axis:
-    assert 0 <= ax < nd, 'invalid contraction axis'
-    shape.append( shape.pop(ax) )
-    Astrides.append( Astrides.pop(ax) )
-    Bstrides.append( Bstrides.pop(ax) )
-
-  A = numpy.lib.stride_tricks.as_strided( A, shape, Astrides )
-  B = numpy.lib.stride_tricks.as_strided( B, shape, Bstrides )
-
-  if not A.size:
-    return numpy.zeros( A.shape[:-len(axis)] )
-
-  return _contract( A, B, len(axis) )
+  return numpy.einsum( '%s,%s->%s' % (m,n,o), A, B )
 
 def contract_fast( A, B, naxes ):
   'contract last n axes'
 
-  A = numpy.asarray( A, dtype=float )
-  B = numpy.asarray( B, dtype=float )
+  assert naxes >= 0
+  A = numpy.asarray( A )
+  B = numpy.asarray( B )
 
-  n = B.ndim - A.ndim
-  if n > 0:
-    Ashape = list(B.shape[:n]) + list(A.shape)
-    Astrides = [0]*n + list(A.strides)
-    Bshape = list(B.shape)
-    Bstrides = list(B.strides)
-  elif n < 0:
-    n = -n
-    Ashape = list(A.shape)
-    Astrides = list(A.strides)
-    Bshape = list(A.shape[:n]) + list(B.shape)
-    Bstrides = [0]*n + list(B.strides)
-  else:
-    Ashape = list(A.shape)
-    Astrides = list(A.strides)
-    Bshape = list(B.shape)
-    Bstrides = list(B.strides)
+  maxdim = max( A.ndim, B.ndim )
+  m = _abc[maxdim-A.ndim:maxdim]
+  n = _abc[maxdim-B.ndim:maxdim]
+  o = _abc[:maxdim-naxes]
 
-  shape = list(Ashape)
-  for i in range( len(Ashape) ):
-    if Ashape[i] == 1:
-      shape[i] = Bshape[i]
-      Astrides[i] = 0
-    elif Bshape[i] == 1:
-      Bstrides[i] = 0
-    else:
-      assert Ashape[i] == Bshape[i]
-
-  A = numpy.lib.stride_tricks.as_strided( A, shape, Astrides )
-  B = numpy.lib.stride_tricks.as_strided( B, shape, Bstrides )
-
-  if not A.size:
-    return numpy.zeros( shape[:-naxes] )
-
-  return _contract( A, B, naxes )
+  return numpy.einsum( '%s,%s->%s' % (m,n,o), A, B )
 
 def dot( A, B, axis=-1 ):
   '''Transform axis of A by contraction with first axis of B and inserting
      remaining axes. Note: with default axis=-1 this leads to multiplication of
      vectors and matrices following linear algebra conventions.'''
 
-  A = numpy.asarray( A, dtype=float )
-  B = numpy.asarray( B, dtype=float )
+  A = numpy.asarray( A )
+  B = numpy.asarray( B )
 
-  if axis < 0:
-    axis += A.ndim
-  assert 0 <= axis < A.ndim
+  m = _abc[:A.ndim]
+  x = _abc[A.ndim:A.ndim+B.ndim-1]
+  n = m[axis] + x
+  o = m[:axis] + x
+  if axis != -1:
+    o += m[axis+1:]
 
-  if A.shape[axis] == 1 or B.shape[0] == 1:
-    return A.sum(axis)[(slice(None),)*axis+(numpy.newaxis,)*(B.ndim-1)] \
-         * B.sum(0)[(Ellipsis,)+(numpy.newaxis,)*(A.ndim-1-axis)]
-
-  assert A.shape[axis] == B.shape[0]
-
-  if B.ndim != 1 or axis != A.ndim-1:
-    shape = A.shape[:axis] + B.shape[1:] + A.shape[axis+1:] + A.shape[axis:axis+1]
-    Astrides = A.strides[:axis] + (0,) * (B.ndim-1) + A.strides[axis+1:] + A.strides[axis:axis+1]
-    A = numpy.lib.stride_tricks.as_strided( A, shape, Astrides )
-
-  if A.ndim > 1:
-    Bstrides = (0,) * axis + B.strides[1:] + (0,) * (A.ndim-B.ndim-axis) + B.strides[:1]
-    B = numpy.lib.stride_tricks.as_strided( B, A.shape, Bstrides )
-
-  if not A.size:
-    return numpy.zeros( A.shape[:-1] )
-
-  return _contract( A, B, 1 )
+  return numpy.einsum( '%s,%s->%s' % (m,n,o), A, B )
 
 def fastrepeat( A, nrepeat, axis=-1 ):
   'repeat axis by 0stride'
@@ -268,65 +193,11 @@ def appendaxes( A, shape ):
   return numpy.lib.stride_tricks.as_strided( A, A.shape + shape, A.strides + (0,)*len(shape) )
 
 def takediag( A ):
-  if A.shape[-1] == 1:
-    shape = A.shape[:-1]
-    strides = A.strides[:-1]
-  elif A.shape[-2] == 1:
-    shape = A.shape[:-2] + A.shape[-1:]
-    strides = A.strides[:-2] + A.strides[-1:]
-  else:
-    assert A.shape[-1] == A.shape[-2]
-    shape = A.shape[:-1]
-    strides = A.strides[:-2] + (A.strides[-2]+A.strides[-1],)
-  return numpy.lib.stride_tricks.as_strided( A, shape, strides )
-
-def eig( A, sort=False ):
-  ''' eig
-  Compute the eigenvalues and vectors of a hermitian matrix
-  sort   -1/0/1 -> descending / unsorted / ascending
-  '''
-  assert isinstance( A, numpy.ndarray )
-  assert A.shape[-2] == A.shape[-1]
-
-  sort = int(sort)
-
-  eigval = numpy.empty( A.shape[:-1] )
-  eigvec = numpy.empty( A.shape )
-
-  for I in numpy.lib.index_tricks.ndindex( A.shape[:-2] ):
-    val, vec = numpy.linalg.eig( A[I] )
-    if sort != 0:
-      idx = val.argsort()
-      val = val[idx[::sort]]
-      vec = vec[:,idx[::sort]]
-    eigval[I] = val
-    eigvec[I] = vec
-
-  return (eigval, eigvec)
-
-def eigh( A, sort=False ):
-  ''' eigh
-  Compute the eigenvalues and vectors of a hermitian matrix
-  sort   -1/0/1 -> descending / unsorted / ascending
-  '''
-  assert isinstance( A, numpy.ndarray )
-  assert A.shape[-2] == A.shape[-1]
-
-  sort = int(sort)
-
-  eigval = numpy.empty( A.shape[:-1] )
-  eigvec = numpy.empty( A.shape )
-
-  for I in numpy.lib.index_tricks.ndindex( A.shape[:-2] ):
-    val, vec = numpy.linalg.eigh( A[I] )
-    if sort != 0:
-      idx = val.argsort()
-      val = val[idx[::sort]]
-      vec = vec[:,idx[::sort]]
-    eigval[I] = val
-    eigvec[I] = vec
-
-  return (eigval, eigvec)
+  diag = A[...,0] if A.shape[-1] == 1 \
+    else A[...,0,:] if A.shape[-2] == 1 \
+    else numpy.einsum( '...ii->...i', A )
+  diag.flags.writeable = False
+  return diag
 
 def reshape( A, *shape ):
   'more useful reshape'
@@ -375,7 +246,12 @@ def times( A, B ):
   Multiply such that shapes are concatenated."""
   A = numpy.asarray( A )
   B = numpy.asarray( B )
-  return A[(Ellipsis,)+(numpy.newaxis,)*B.ndim] * B
+
+  o = _abs[:A.ndim+B.ndim]
+  m = o[:A.ndim]
+  n = o[A.ndim:]
+
+  return numpy.einsum( '%s,%s->%s' % (m,n,o), A, B )
 
 def stack( arrays, axis=0 ):
   'powerful array stacker with singleton expansion'
@@ -407,15 +283,22 @@ def diagonalize( arg ):
   'append axis, place last axis on diagonal of self and new'
 
   diagonalized = numpy.zeros( arg.shape + (arg.shape[-1],) )
-  takediag( diagonalized )[:] = arg
+  diag = numpy.einsum( '...ii->...i', diagonalized )
+  assert diag.base is diagonalized
+  diag.flags.writeable = True
+  diag[:] = arg
   return diagonalized
 
-def check_equal_wrapper( f1, f2 ):
-  def f12( *args ):
-    v1 = f1( *args )
-    v2 = f2( *args )
-    numpy.testing.assert_array_almost_equal( v1, v2 )
-    return v1
-  return f12
+def isbool( a ):
+  return isinstance( a, bool ) or isboolarray(a) and a.ndim == 0
+
+def isboolarray( a ):
+  return isinstance( a, numpy.ndarray ) and a.dtype == bool
+
+def isint( a ):
+  return isinstance( a, (int,long,numpy.int64) ) or isintarray(a) and a.ndim == 0
+
+def isintarray( a ):
+  return isinstance( a, numpy.ndarray ) and a.dtype in (int,long,numpy.int64)
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

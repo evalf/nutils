@@ -23,14 +23,15 @@ import re, warnings
 ## ELEMENT
 
 class Element( object ):
+  'element class'
 
   __slots__ = 'transform', 'reference', 'opposite'
 
-  def __init__( self, reference, transform, opposite=None ):
-    assert transform.fromdims == reference.ndims
+  def __init__( self, reference, trans, opposite=None ):
+    assert trans.fromdims == reference.ndims
     self.reference = reference
-    self.transform = transform
-    self.opposite = opposite or transform
+    self.transform = transform.canonical( trans )
+    self.opposite = transform.canonical( opposite ) if opposite is not None else self.transform
 
   def __eq__( self, other ):
     return self is other or isinstance(other,Element) \
@@ -97,7 +98,7 @@ class Reference( object ):
 
   @property
   def simplices( self ):
-    return [ (transform.identity(self.ndims),self) ]
+    return [ (transform.TransformChain(),self) ]
 
   def getischeme( self, ischeme ):
     if self.ndims == 0:
@@ -115,7 +116,7 @@ class Reference( object ):
       else TensorReference( self, other )
 
   def __pow__( self, n ):
-    assert isinstance( n, int ) and n >= 0
+    assert numeric.isint( n ) and n >= 0
     return SimplexReference(0) if n == 0 \
       else self if n == 1 \
       else self * self**(n-1)
@@ -194,16 +195,16 @@ class Reference( object ):
         if numpy.linalg.det( matrix.astype(float) ) < 0:
           tri[-2:] = tri[-1], tri[-2]
           matrix = ( coords[tri[1:]] - offset ).T
-        strans = transform.shift(offset,numer) << transform.linear(matrix,numer)
+        strans = transform.affine( matrix, offset, numer)
         ( pos if sign[i] > 0 else neg ).append(( strans, simplex ))
 
     else:
 
-      for ctrans, child in self.children:
+      for ichild, (ctrans,child) in enumerate( self.children ):
         if trans:
           poschild, negchild = child.trim( trans << ctrans, levelset, maxrefine-1, numer )
         else:
-          N, I = self.subvertex(ctrans,maxrefine)
+          N, I = self.subvertex(ichild,maxrefine)
           assert len(levelset) == N
           poschild, negchild = child.trim( False, levelset[I], maxrefine-1, numer )
         if poschild:
@@ -220,6 +221,7 @@ class Reference( object ):
            MosaicReference( self.ndims, tuple(neg) )
 
 class SimplexReference( Reference ):
+  'simplex reference'
 
   def __init__( self, ndims ):
     assert ndims >= 0
@@ -241,6 +243,10 @@ class SimplexReference( Reference ):
   @cache.property
   def ribbon2vertices( self ):
     return numpy.array([ (i,j) for i in range( self.ndims+1 ) for j in range( i+1, self.ndims+1 ) ])
+
+  @property
+  def edge2vertices( self ):
+    return ~numpy.eye( self.nverts, dtype=bool )
 
   def getischeme_contour( self, n ):
     assert self.ndims == 2
@@ -264,10 +270,8 @@ class SimplexReference( Reference ):
     if self.ndims == 0: # point
       return numpy.zeros((1,0)), numpy.ones(1)
     if self.ndims == 1: # line
-      k = numpy.arange( 1, degree // 2 + 1 )
-      d = k / numpy.sqrt( 4*k**2-1 )
-      x, w = numpy.linalg.eigh( numpy.diagflat(d,-1) ) # eigh operates (by default) on lower triangle
-      return (x[:,_]+1) * .5, w[0]**2
+      x, w = gauss( degree )
+      return x[:,_], w
     if self.ndims == 2: # triangle: http://www.cs.rpi.edu/~flaherje/pdf/fea6.pdf
       if degree == 1:
         coords = numpy.array( [[1],[1]] ) / 3.
@@ -486,32 +490,33 @@ class SimplexReference( Reference ):
 
   @cache.property
   def child_transforms( self ):
-    half = transform.half( self.ndims )
     if self.ndims == 1:
-      return [ half,
-        half << transform.shift([1]) ]
+      return [
+        transform.affine( 1, [0], 2 ),
+        transform.affine( 1, [1], 2 ) ]
     if self.ndims == 2:
-      return [ half,
-        half << transform.shift([0,1]),
-        half << transform.shift([1,0]),
-        transform.linear([[-1,0],[0,-1]],2) << transform.shift([-1,-1])
-      ]
+      return [
+        transform.affine(  1, [0,0], 2 ),
+        transform.affine(  1, [0,1], 2 ),
+        transform.affine(  1, [1,0], 2 ),
+        transform.affine( -1, [1,1], 2 ) ]
     raise NotImplementedError
 
   @property
   def children( self ):
     return [ (ctrans,self) for ctrans in self.child_transforms ]
 
-  def subvertex( self, ctrans, i ):
-    index = self.child_transforms.index( ctrans )
+  def subvertex( self, ichild, i ):
     n = 2**(i-1)
     if self.ndims == 1:
-      return 2*n+1, numpy.arange(n+1) if index == 0 else numpy.arange(n,2*n+1)
+      assert 0 <= ichild < 2
+      return 2*n+1, numpy.arange(n+1) if ichild == 0 else numpy.arange(n,2*n+1)
     if self.ndims == 2:
+      assert 0 <= ichild < 4
       return ((2*n+2)*(2*n+1))//2, numpy.concatenate(
-             [ (((4*n+3-i)*i)//2) + numpy.arange(n+1-i) for i in range(n+1) ] if index == 0
-        else [ ((3*(n+1)*n)//2) + numpy.arange(((n+2)*(n+1))//2) ] if index == 1
-        else [ (((4*n+3-i)*i)//2+n) + numpy.arange(n+1-i) for i in range(n+1) ] if index == 2
+             [ (((4*n+3-i)*i)//2) + numpy.arange(n+1-i) for i in range(n+1) ] if ichild == 0
+        else [ ((3*(n+1)*n)//2) + numpy.arange(((n+2)*(n+1))//2) ] if ichild == 1
+        else [ (((4*n+3-i)*i)//2+n) + numpy.arange(n+1-i) for i in range(n+1) ] if ichild == 2
         else [ (((3*n+3+i)*(n-i))//2) + numpy.arange(n,i-1,-1) for i in range(n+1) ] )
     raise NotImplementedError, 'ndims=%d' % self.ndims
 
@@ -519,8 +524,8 @@ class SimplexReference( Reference ):
   def edges( self ):
     edge = SimplexReference( self.ndims-1 )
     eye = numpy.eye( self.ndims, dtype=int )
-    return [ ( transform.shift( eye[0] ) << transform.updim( (eye[1:]-eye[0]).T, sign=1 ), edge ) ] \
-         + [ ( transform.updim( eye[range(i)+range(i+1,self.ndims)].T, sign=1 if i%2 else -1 ), edge )
+    return [ ( transform.affine( (eye[1:]-eye[0]).T, eye[0] ), edge ) ] \
+         + [ ( transform.affine( eye[range(i)+range(i+1,self.ndims)].T, isflipped=(i%2==0) ), edge )
                   for i in range( self.ndims ) ]
 
   def __str__( self ):
@@ -529,6 +534,7 @@ class SimplexReference( Reference ):
   __repr__ = __str__
 
 class TensorReference( Reference ):
+  'tensor reference'
 
   def __init__( self, ref1, ref2 ):
     self.ref1 = ref1
@@ -539,11 +545,10 @@ class TensorReference( Reference ):
     vertices[:,:,ref1.ndims:] = ref2.vertices[_,:]
     Reference.__init__( self, vertices.reshape(-1,ndims) )
 
-  def subvertex( self, ctrans, i ):
-    if not isinstance( ctrans, transform.Tensor ):
-      raise KeyError, ctrans
-    N1, I1 = self.ref1.subvertex( ctrans.trans1, i )
-    N2, I2 = self.ref2.subvertex( ctrans.trans2, i )
+  def subvertex( self, ichild, i ):
+    ichild1, ichild2 = divmod( ichild, len(self.ref2.children) )
+    N1, I1 = self.ref1.subvertex( ichild1, i )
+    N2, I2 = self.ref2.subvertex( ichild2, i )
     return N1 * N2, ( N2 * I1[:,_] + I2[_,:] ).ravel()
 
   def stdfunc( self, degree, *n ):
@@ -576,7 +581,7 @@ class TensorReference( Reference ):
       points = [[0,0,0],[1,0,0],[0,1,0],[1,1,0],[0,0,1],[1,0,1],[0,1,1],[1,1,1]]
     else:
       raise NotImplementedError
-    return numeric.array(points), numeric.ones(self.nverts)
+    return numpy.array(points), numpy.ones(self.nverts)
 
   def getischeme_contour( self, n ):
     assert self == SimplexReference(1)**2
@@ -585,7 +590,7 @@ class TensorReference( Reference ):
     return numpy.hstack(( [p,z], [1-z,p], [1-p,1-z], [z,1-p] )).T, None
 
   def getischeme( self, ischeme ):
-    match = re.match( '([a-zA-Z]+)(.+)', ischeme )
+    match = re.match( '([a-zA-Z]+)(.*)', ischeme )
     assert match, 'cannot parse integration scheme %r' % ischeme
     ptype, args = match.groups()
     get = getattr( self, 'getischeme_'+ptype, None )
@@ -608,14 +613,30 @@ class TensorReference( Reference ):
 
   @cache.property
   def edges( self ):
-    return [ ( transform.tensor( trans1, transform.identity(self.ref2.ndims) ), edge1 * self.ref2 ) for trans1, edge1 in self.ref1.edges ] \
-         + [ ( transform.tensor( transform.identity(self.ref1.ndims), trans2.flipped ), self.ref1 * edge2 ) for trans2, edge2 in self.ref2.edges ]
+    return [ ( transform.affine(
+                rational.blockdiag([ trans1.linear, rational.eye(self.ref2.ndims) ]),
+                rational.stack([ trans1.offset, rational.zeros(self.ref2.ndims) ]),
+                isflipped=trans1.isflipped ), edge1 * self.ref2 )
+                  for trans1, edge1 in self.ref1.edges ] \
+         + [ ( transform.affine(
+                rational.blockdiag([ rational.eye(self.ref1.ndims), trans2.linear ]),
+                rational.stack([ rational.zeros(self.ref1.ndims), trans2.offset ]),
+                isflipped=not trans2.isflipped ), self.ref1 * edge2 )
+                  for trans2, edge2 in self.ref2.edges ]
 
   @cache.property
   def children( self ):
-    return [ ( transform.tensor(trans1,trans2), child1*child2 )
-      for trans1, child1 in self.ref1.children
-        for trans2, child2 in self.ref2.children ]
+    children = []
+    for trans1, child1 in self.ref1.children:
+      for trans2, child2 in self.ref2.children:
+        offset = rational.stack([ trans1.offset, trans2.offset ])
+        if trans1.linear.ndim == 0 and trans1.linear == trans2.linear:
+          trans = transform.affine( trans1.linear, offset )
+        else:
+          assert trans1.ndim == trans2.ndim == 2
+          trans = transform.affine( rational.blockdiag([ trans1.linear, trans2.linear ]), offset ) # TODO isflipped?
+        children.append(( trans, child1 * child2 ))
+    return children
 
 class NeighborhoodTensorReference( TensorReference ):
   'product reference element'
@@ -1022,9 +1043,9 @@ class PolyTriangle( StdElem ):
       x, y = points.T
       data = numpy.array( [ 1-x-y, x, y ] ).T
     elif grad == 1:
-      data = numpy.array( [[-1,-1],[1,0],[0,1]], dtype=float )
+      data = numpy.array( [[[-1,-1],[1,0],[0,1]]], dtype=float )
     else:
-      data = numpy.array( 0 ).reshape( (1,) * (grad+ndim) )
+      data = numpy.zeros( (1,3)+(2,)*grad )
     return data
 
   def __repr__( self ):
@@ -1089,6 +1110,15 @@ class ExtractionWrapper( object ):
     'string representation'
 
     return '%s#%x:%s' % ( self.__class__.__name__, id(self), self.stdelem )
+
+
+# UTILITY FUNCTIONS
+
+def gauss( degree ):
+  k = numpy.arange( 1, degree // 2 + 1 )
+  d = k / numpy.sqrt( 4*k**2-1 )
+  x, w = numpy.linalg.eigh( numpy.diagflat(d,-1) ) # eigh operates (by default) on lower triangle
+  return (x+1) * .5, w[0]**2
 
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

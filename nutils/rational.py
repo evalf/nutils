@@ -11,124 +11,145 @@ The rational module.
 """
 
 from __future__ import division
-from . import cache, log
-import numpy, collections
+import numpy
 
 
-## PRIMES
-
-masks = [ 0, 0 ] # primes per number encoded as bitmask
-
-class Primes( object ):
-
-  def __init__( self ):
-    self.__primes = [] # all prime numbers found thus far
-    self.__masks = collections.deque([ 0 ]) # primes per number in progress
-
-  def __iter__( self ):
-    for prime in self.__primes:
-      yield prime
-    while True:
-      mask = self.__masks.popleft()
-      if mask:
-        masks.append( mask )
-        iprime = 0
-        while mask:
-          if mask & 1:
-            self.__mark( iprime )
-          mask >>= 1
-          iprime += 1
-      else: # found prime
-        iprime = len(self.__primes)
-        prime = len(masks)
-        self.__primes.append( prime )
-        self.__mark( iprime )
-        masks.append( 1 << iprime )
-        yield prime
-
-  def __mark( self, iprime ):
-    i = self.__primes[iprime] - 1
-    if i < len( self.__masks ):
-      self.__masks[ i ] |= 1 << iprime
-    else:
-      self.__masks.extend( [0] * ( i - len(self.__masks) ) + [ 1 << iprime ] )
-
-primes = Primes()
-
-
-## SCALAR
-
-class Scalar( object ):
+class Rational( object ):
 
   __array_priority__ = 1
 
-  def __init__( self, init ):
-    while len(init) and init[-1] == 0:
-      init = init[:-1]
-    if isinstance( init, numpy.ndarray ):
-      assert init.dtype == int
-    else:
-      assert all( isinstance(n,int) for n in init )
-    self.__n = tuple( init )
+  def __init__( self, numer, denom=1, isfactored=False ):
+    assert isinstance( denom, (int,long) ) and denom > 0
+    if not isinstance( numer, numpy.ndarray ):
+      numer = numpy.array( numer )
+      numer.flags.writeable = False
+    assert numer.dtype in (int,long)
+    if denom != 1 and not isfactored:
+      numbers = numpy.unique( abs(numer) )[::-1].tolist() # unique descending
+      if not numbers[-1]:
+        numbers.pop() # ignore zero
+      common = denom
+      while numbers and common > 1:
+        n = numbers.pop()
+        while n: # GCD: Euclid's algorithm
+          common, n = n, common % n
+      if common != 1:
+        numer = numer // common
+        if numer.flags.writeable:
+          numer.flags.writeable = False
+        denom //= common
+    if numer.flags.writeable:
+      numer = numer.copy()
+      numer.flags.writeable = False
+    self.numer = numer
+    self.denom = denom
+
+  def __iter__( self ):
+    for array in self.numer:
+      yield Rational( array, self.denom )
+
+  def __getitem__( self, item ):
+    return Rational( self.numer[item], self.denom )
+
+  def __int__( self ):
+    assert self.ndim == 0 and self.denom == 1
+    return int(self.numer)
+
+  def __float__( self ):
+    assert self.ndim == 0
+    return float(self.numer) / self.denom
+
+  def astype( self, tp ):
+    if tp == int:
+      assert self.denom == 1
+      return self.numer
+    assert tp == float
+    return self.numer / float(self.denom)
+
+  @property
+  def size( self ):
+    return self.numer.size
+
+  @property
+  def ndim( self ):
+    return self.numer.ndim
+
+  @property
+  def shape( self ):
+    return self.numer.shape
+
+  @property
+  def T( self ):
+    return Rational( self.numer.T, self.denom, isfactored=True )
+
+  def __len__( self ):
+    return len(self.numer)
+
+  @property
+  def __cmpdata( self ):
+    return self.numer.shape, tuple(self.numer.flat), self.denom
 
   def __hash__( self ):
-    return hash( self.__n )
+    return hash( self.__cmpdata )
 
   def __eq__( self, other ):
-    return self is other or isscalar(other) and self.__n == other.__n
-
-  def __op( self, other, op ):
-    assert self.__n or other.__n, 'trivial cases should be handled by caller'
-    return Scalar( numpy.hstack([
-      op( self.__n, other.__n[:len(self.__n)] ),
-      op( 0, other.__n[len(self.__n):] ) ]) if len(self.__n) < len(other.__n)
-                else numpy.hstack([
-      op( self.__n[:len(other.__n)], other.__n ),
-      op( self.__n[len(other.__n):], 0 ) ]) if len(self.__n) > len(other.__n)
-                else
-      op( self.__n, other.__n ) )
-
-  def __mul__( self, other ):
-    if not isexact( other ):
-      return float(self) * other
-    other = asrational( other )
-    if isarray( other ):
-      return other * self
-    assert isscalar( other )
-    return other if not self.__n \
-      else self if not other.__n \
-      else self.__op( other, numpy.add )
+    return self is other or isrational(other) and self.__cmpdata == other.__cmpdata
 
   def __neg__( self ):
-    raise TypeError, 'rational cannot be negated'
+    return Rational( -self.numer, self.denom, isfactored=True )
 
   def __add__( self, other ):
-    if not isexact( other ):
-      return float(self) + other
-    other = asrational( other )
-    if isarray( other ):
-      return other + self
-    raise NotImplementedError
+    if other is 0:
+      return self
+    other = asarray( other )
+    if not isrational( other ):
+      return self.numer / float(self.denom) + other
+    return Rational( self.numer * other.denom + other.numer * self.denom, self.denom * other.denom )
 
   def __sub__( self, other ):
-    if not isexact( other ):
-      return float(self) - other
-    other = asrational( other )
-    if isarray( other ):
-      return other - self
-    raise NotImplementedError
+    if other is 0:
+      return self
+    other = asarray( other )
+    if not isrational( other ):
+      return self.numer / float(self.denom) - other
+    return Rational( self.numer * other.denom - other.numer * self.denom, self.denom * other.denom )
+
+  def __rsub__( self, other ):
+    if other is 0:
+      return -self
+    other = asarray( other )
+    if not isrational( other ):
+      return other - self.numer / float(self.denom)
+    return Rational( other.numer * self.denom - self.numer * other.denom, self.denom * other.denom )
+
+  def __mul__( self, other ):
+    if other is 1:
+      return self
+    other = asarray( other )
+    if not isrational( other ):
+      return self.numer * ( other / float(self.denom) )
+    return Rational( self.numer * other.numer, self.denom * other.denom )
 
   def __div__( self, other ):
-    if not isexact( other ):
-      return float(self) / other
-    other = asrational( other )
-    assert isscalar( other )
-    return self if not other.__n \
-      else Scalar( numpy.negative(other.__n) ) if not self.__n \
-      else self.__op( other, numpy.subtract )
+    if other is 1:
+      return self
+    other = asarray( other )
+    if not isrational( other ):
+      return self.numer / ( other * float(self.denom) )
+    assert other.size == 1, 'only scalar division supported for now'
+    numer, = other.numer.flat
+    denom = other.denom
+    assert numer != 0
+    if numer < 0:
+      numer = -numer
+      denum = -denom
+    return Rational( self.numer * denom, self.denom * numer )
 
   def __rdiv__( self, other ):
-    return Scalar( numpy.negative(self.__n) ) * other
+    other = asarray( other )
+    if not isrational( other ):
+      return ( other * float(self.denom) ) / self.numer
+    return other / self
 
   __rmul__ = __mul__
   __radd__ = __add__
@@ -137,218 +158,65 @@ class Scalar( object ):
 
   def __pow__( self, n ):
     assert isinstance( n, int )
-    if n == 0 or not self.__n:
-      return unit
-    return Scalar( numpy.multiply( self.__n, n ) )
-
-  def __float__( self ):
-    numer, denom = self.frac
-    return numer / denom
-  
-  def __int__( self ):
-    numer, denom = self.frac
-    assert denom == 1
-    return numer
-  
-  def __str__( self ):
-    return '%d/%d' % self.frac
-
-  def __repr__( self ):
-    return 'Scalar(%s)' % str(self)
-
-  def factor( self ):
-    return zip( primes, self.__n )
-
-  @cache.property
-  def frac( self ):
-    numer = denom = 1
-    for p, n in zip( primes, self.__n ):
-      if n > 0:
-        numer *= p**+n
-      elif n < 0:
-        denom *= p**-n
-    return numer, denom
-
-  @property
-  def numer( self ):
-    return Scalar( self.__n and numpy.maximum( 0, self.__n ) )
-  
-  @property
-  def denom( self ):
-    return Scalar( self.__n and numpy.minimum( 0, self.__n ) )
-
-  def gcd( self, other ):
-    """a.gcd(b)
-
-    Return largest rational c such that a/c and b/c are integer."""
-
-    other = asscalar( other )
-    if self == other:
-      return self
-    d = len(other.__n) - len(self.__n)
-    return Scalar( numpy.minimum( self.__n + (0,)*d, other.__n + (0,)*-d ) )
-
-
-unit = Scalar(())
-half = Scalar((-1,))
-
-
-## ARRAY
-
-class Array( object ):
-
-  __array_priority__ = 1
-
-  def __init__( self, array, factor=unit, isfactored=False ):
-    assert isscalar( factor )
-    array = numpy.asarray( array )
-    assert array.dtype == int
-    if isfactored:
-      self.__array = array
-      self.__factor = factor if array.any() else unit
-    else:
-      self.__array, self.__factor = gcd( array, factor )
-
-  def __iter__( self ):
-    for array in self.__array:
-      yield Array( array, self.__factor, False )
-
-  def __getitem__( self, item ):
-    return Array( self.__array[item], self.__factor, False )
-
-  @property
-  def ndim( self ):
-    return self.__array.ndim
-
-  @property
-  def shape( self ):
-    return self.__array.shape
-
-  @property
-  def T( self ):
-    return Array( self.__array.T, self.__factor, True )
-
-  def __len__( self ):
-    return len(self.__array)
-
-  @property
-  def __cmpdata( self ):
-    return self.__array.shape, tuple(self.__array.flat), self.__factor
-
-  def __hash__( self ):
-    return hash( self.__cmpdata )
-
-  def __eq__( self, other ):
-    return self is other or isarray(other) and self.__cmpdata == other.__cmpdata
-
-  def __neg__( self ):
-    return Array( -self.__array, self.__factor, True )
-
-  def __add__( self, other ):
-    if not isexact( other ):
-      return self.__array * float(self.__factor) + other
-    other = asrational( other )
-    assert isarray( other )
-    common = self.__factor.gcd( other.__factor )
-    return Array( self.__array * int(self.__factor/common)
-              + other.__array * int(other.__factor/common), common, False )
-
-  def __sub__( self, other ):
-    if not isexact( other ):
-      return self.__array * float(self.__factor) - other
-    other = asrational( other )
-    assert isarray( other )
-    common = self.__factor.gcd( other.__factor )
-    return Array( self.__array * int(self.__factor/common)
-              - other.__array * int(other.__factor/common), common, False )
-
-  def __mul__( self, other ):
-    if not isexact( other ):
-      return self.__array * ( other * float(self.__factor) )
-    other = asrational( other )
-    if isscalar( other ):
-      return Array( self.__array, self.__factor*other, True )
-    raise NotImplementedError
-
-  def __div__( self, other ):
-    if not isexact( other ):
-      return self.__array * ( float(self.__factor) / other )
-    other = asrational( other )
-    if isscalar( other ):
-      return Array( self.__array, self.__factor/other, True )
-    raise NotImplementedError
-
-  def __rdiv__( self, other ):
-    if not isexact( other ):
-      return ( other / float(self.__factor) ) / self.__array
-    raise NotImplementedError
-
-  __rmul__ = __mul__
-  __radd__ = __add__
-  __truediv__ = __div__
-  __rtruediv__ = __rdiv__
-
-  def decompose( self ):
-    return self.__array.copy(), self.__factor
-
-  @cache.property
-  def frac( self ):
-    numbers, indices = numpy.unique( abs(self.__array.ravel()), return_inverse=True )
-    frac = numpy.array(
-      [ (0,1) ] + [ ( factor(n) * self.__factor ).frac for n in numbers[1:] ] if numbers[0] == 0
-             else [ ( factor(n) * self.__factor ).frac for n in numbers ]
-      ).T[:,indices].reshape( (2,)+self.shape )
-    frac[0] *= numpy.sign( self.__array )
-    return frac
+    return Rational( self.numer**n, self.denom**n ) if n > 1 \
+      else self if n == 1 \
+      else ones( self.shape ) if n == 0 \
+      else 1 / (self**-n)
 
   def __str__( self ):
-    numer, denom = self.__factor.frac
-    s = _a2s( self.__array * numer )
-    return s if denom == 1 else '%s/%s' % ( s, denom )
+    return '%s/%s' % ( str(self.numer.tolist()).replace(' ',''), self.denom )
 
-_a2s = lambda array: '[%s]' % ','.join( _a2s(a) for a in array ) if isinstance(array,numpy.ndarray) else str(array)
 
 
 ## UTILITY FUNCTIONS
 
+unit = Rational( 1 )
+
 def det( array ):
-  assert isarray(array)
-  if array.shape == (2,2):
-    ((a,b),(c,d)), scale = array.decompose()
-    det = a*d - b*c
+  array = asrational( array )
+  if array.shape == (1,1):
+    det = array[0,0]
+  elif array.shape == (2,2):
+    ((a,b),(c,d)) = array.numer
+    det = Rational( a*d - b*c, array.denom**2 )
   elif array.shape == (3,3):
-    ((a,b,c),(d,e,f),(g,h,i)), scale = array.decompose()
-    det = a*e*i + b*f*g + c*d*h - c*e*g - b*d*i - a*f*h
+    ((a,b,c),(d,e,f),(g,h,i)) = array.numer
+    det = Rational( a*e*i + b*f*g + c*d*h - c*e*g - b*d*i - a*f*h, array.denom**3 )
   else:
     raise NotImplementedError, 'shape=' + str(array.shape)
-  return factor(det) * scale**len(array)
+  return det
 
-def inv( array ):
-  assert isarray(array)
-  if array.shape == (2,2):
-    ((a,b),(c,d)), scale = array.decompose()
-    inv = Array( ((d,-b),(-c,a)), scale / det(array), True )
+def invdet( array ):
+  '''invdet(array) = inv(array) * det(array)'''
+  array = asrational(array)
+  if array.shape == (1,1):
+    invdet = ones( (1,1) )
+  elif array.shape == (2,2):
+    ((a,b),(c,d)) = array.numer
+    invdet = Rational( ((d,-b),(-c,a)), array.denom, isfactored=True )
   elif array.shape == (3,3):
-    raise NotImplementedError
-    ((a,b,c),(d,e,f),(g,h,i)), scale = array.decompose()
-    inv = Array( ((e*i-f*h,c*h-b*i,b*f-c*e),(f*g-d*i,a*i-c*g,c*d-a*f),(d*h-e*g,b*g-a*h,a*e-b*d)), scale / det(array), False )
+    ((a,b,c),(d,e,f),(g,h,i)) = array.numer
+    invdet = Rational( ((e*i-f*h,c*h-b*i,b*f-c*e),(f*g-d*i,a*i-c*g,c*d-a*f),(d*h-e*g,b*g-a*h,a*e-b*d)), array.denom**2 )
   else:
     raise NotImplementedError, 'shape=' + tuple(array.shape)
-  return inv
+  return invdet
+  
+def inv( array ):
+  return invdet( array ) / det( array )
 
 def ext( array ):
   """Exterior
   For array of shape (n,n-1) return n-vector ex such that ex.array = 0 and
   det(arr;ex) = ex.ex"""
-  assert isarray(array)
+  array = asrational(array)
   if array.shape == (1,0):
-    ext = Array( (1,), unit, True )
+    ext = ones( 1 )
   elif array.shape == (2,1):
-    ((a,),(b,)), scale = array.decompose()
-    ext = Array( (-b,a), unit/scale, True )
+    ((a,),(b,)) = array.numer * array.denom
+    ext = Rational( (-b,a) )
   elif array.shape == (3,2):
-    ((a,b),(c,d),(e,f)), scale = array.decompose()
-    ext = Array( (c*f-e*d,e*b-a*f,a*d-c*b), unit/scale, False )
+    ((a,b),(c,d),(e,f)) = array.numer * array.denom
+    ext = Rational( (c*f-e*d,e*b-a*f,a*d-c*b) )
   else:
     raise NotImplementedError, 'shape=%s' % (array.shape,)
   # VERIFY
@@ -359,123 +227,56 @@ def ext( array ):
   numpy.testing.assert_almost_equal( numpy.linalg.det(Av), numpy.dot(v,v) )
   return ext
 
-def factor( n ):
-  assert isinstance( n, int ) and n > 0
-  factors = []
-  if n >= len(masks):
-    __log__ = log.iter( 'extending primes', primes )
-    for prime in __log__:
-      assert n >= prime
-      count = 0
-      while n % prime == 0:
-        n //= prime
-        count += 1
-      factors.append( count )
-      if n < len(masks):
-        break
-  factor = Scalar( factors )
-  while n > 1:
-    mask = masks[n]
-    nums = []
-    while mask:
-      nums.append( int(mask&1) )
-      mask >>= 1
-    r = Scalar( nums )
-    factor *= r
-    n //= int(r)
-  return factor
+def isrational( arr ):
+  return isinstance( arr, Rational )
 
-def isscalar( num ):
-  return isinstance( num, Scalar )
-
-def asscalar( num ):
-  if isinstance( num, int ):
-    num = factor( num )
-  assert isscalar( num )
-  return num
-
-def isarray( arr ):
-  return isinstance( arr, Array )
+def asrational( arr ):
+  return arr if isrational( arr ) else Rational( arr )
 
 def asarray( arr ):
-  if isarray( arr ):
+  if isrational( arr ):
     return arr
   arr = numpy.asarray( arr )
-  assert arr.dtype == int
-  return Array( arr, unit, False )
-
-def isrational(obj):
-  return isscalar(obj) or isarray(obj)
-
-def isexact( obj ):
-  return isinstance(obj,numpy.ndarray) and obj.dtype == int or isinstance(obj,int) or isrational(obj)
-
-def asrational( obj ):
-  return obj if isrational( obj ) \
-    else asscalar( obj ) if isinstance( obj, int ) \
-    else asarray( obj )
-
-def frac( numer, denom ):
-  return asrational( numer ) / asscalar( denom )
-
-def gcd( numbers, scalar=unit ):
-  numbers = numpy.asarray( numbers )
-  assert numbers.dtype == int
-  if not numbers.size:
-    return numbers, unit
-  unique = numpy.unique( numpy.abs(numbers.flat) )
-  if unique[0] == 0:
-    unique = unique[1:]
-  if not unique.size:
-    return numbers, unit
-  common = factor( unique[0] )
-  unique = unique[1:]
-  if unique.size:
-    factors = []
-    for prime, count in common.factor():
-      n = 0
-      while count > n and not numpy.any( unique % prime ):
-        unique //= prime
-        n += 1
-      factors.append( n )
-    common = Scalar( factors )
-  return numbers // int(common), common * scalar
-
-def asfloat( obj ):
-  if isinstance(obj,int) or isscalar(obj):
-    return float(obj)
-  if isarray( obj ):
-    array, factor = obj.decompose()
-    return array * float(factor)
-  return numpy.asarray( obj, dtype=float )
-
-def asint( obj ):
-  if isinstance(obj,numpy.ndarray) and obj.dtype == int or isinstance(obj,int):
-    return obj
-  if isarray( obj ):
-    ints, scale = obj.decompose()
-    return ints * int(scale)
-  if isscalar( obj ):
-    return int(obj)
-  raise Exception, 'cannot convert to int: %r' % obj
+  if arr.dtype in (int,long):
+    return Rational( arr )
+  return arr
 
 def dot( A, B ):
-  if not isexact( A ) or not isexact( B ):
-    return numpy.dot( asfloat(A), asfloat(B) )
-  A, a = asarray( A ).decompose()
-  B, b = asarray( B ).decompose()
-  return Array( numpy.dot( A, B ), a * b, False )
+  A = asarray( A )
+  B = asarray( B )
+  if not isrational( A ) or not isrational( B ):
+    return numpy.dot( A.astype(float), B.astype(float) )
+  return Rational( numpy.dot( A.numer, B.numer ), A.denom * B.denom )
 
 def eye( ndims ):
-  return Array( numpy.eye(ndims,dtype=int), unit, True )
+  return Rational( numpy.eye(ndims,dtype=int) )
 
-def common_factor( arr1, arr2 ):
-  if not isexact(arr1) or not isexact(arr2):
-    return asfloat(arr1), asfloat(arr2), None
-  int1, factor1 = asarray(arr1).decompose()
-  int2, factor2 = asarray(arr2).decompose()
-  common = factor1.gcd( factor2 )
-  return int1 * int(factor1/common), int2 * int(factor2/common), common
+def zeros( shape ):
+  return Rational( numpy.zeros(shape,dtype=int) )
 
+def ones( shape ):
+  return Rational( numpy.ones(shape,dtype=int) )
+
+def stack( (arg1,arg2) ):
+  arg1 = asrational( arg1 )
+  arg2 = asrational( arg2 )
+  assert arg1.ndim == arg2.ndim == 1
+  return Rational( numpy.concatenate([ arg1.numer * arg2.denom, arg2.numer * arg1.denom ]), arg1.denom * arg2.denom )
+
+def blockdiag( (arg1,arg2) ):
+  arg1 = asrational( arg1 )
+  arg2 = asrational( arg2 )
+  assert arg1.ndim == arg2.ndim == 2
+  blockdiag = numpy.zeros( (arg1.shape[0]+arg2.shape[0],arg1.shape[1]+arg2.shape[1]), dtype=int )
+  blockdiag[:arg1.shape[0],:arg1.shape[1]] = arg1.numer * arg2.denom
+  blockdiag[arg1.shape[0]:,arg1.shape[1]:] = arg2.numer * arg1.denom
+  return Rational( blockdiag, arg1.denom * arg2.denom )
+
+def round( array, denom=1 ):
+  array = asarray( array )
+  if isrational( array ):
+    return array
+  numer = array * denom
+  return Rational( ( numer - numpy.less(numer,0) + .5 ).astype( int ), denom )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
