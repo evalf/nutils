@@ -448,11 +448,11 @@ class SparseMatrix( Matrix ):
     x, I, J = parsecons( constrain, lconstrain, rconstrain, self.shape )
     log.info( 'building %s preconditioner' % name )
     if name == 'splu':
-      A = scipy.sparse.csr_matrix( (self.data,self.indices,self.indptr), shape=self.shape )[I,:][:,J].tocsc()
+      A = self.toscipy()[I,:][:,J].tocsc()
       splu = scipy.sparse.linalg.splu( A )
       precon = splu.solve
     elif name == 'spilu':
-      A = scipy.sparse.csr_matrix( (self.data,self.indices,self.indptr), shape=self.shape )[I,:][:,J].tocsc()
+      A = self.toscipy()[I,:][:,J].tocsc()
       spilu = scipy.sparse.linalg.spilu( A, drop_tol=1e-5, fill_factor=None, drop_rule=None, permc_spec=None, diag_pivot_thresh=None, relax=None, panel_size=None, options=None )
       precon = spilu.solve
     elif name == 'diag':
