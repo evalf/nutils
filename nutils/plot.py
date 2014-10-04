@@ -281,9 +281,6 @@ class PyPlot( BasePlot ):
 
   def slope_marker( self, x, y, slope, width=.2, xoffset=0, yoffset=.2, color='0.3' ):
 
-    slopestr = str( slope )
-    slope = float( slope )
-
     xscale = self.gca().get_xscale()
     yscale = self.gca().get_yscale()
 
@@ -299,7 +296,7 @@ class PyPlot( BasePlot ):
     else:
       raise Exception, 'unknown x-axis scale %r' % xscale
 
-    H = W * slope
+    H = W * float(slope)
     if yscale == 'linear':
       y0 = y - H
       yc = y - .5 * H
@@ -312,15 +309,15 @@ class PyPlot( BasePlot ):
     from matplotlib import transforms
     dpi = self.gcf().dpi_scale_trans
     shifttrans = self.gca().transData \
-               + transforms.ScaledTranslation( xoffset, numpy.sign(slope*width) * yoffset, dpi )
+               + transforms.ScaledTranslation( xoffset, numpy.sign(H) * yoffset, dpi )
 
     triangle = self.Polygon( [ (x0,y0), (x,y), (xc,y) ], closed=False, ec=color, fc='none', transform=shifttrans )
     self.gca().add_patch( triangle )
 
-    self.text( xc, yc, slopestr, color=color,
-      horizontalalignment = 'right' if width > 0 else 'left',
-      verticalalignment = 'top' if slope < 0 else 'bottom',
-      transform = shifttrans + transforms.ScaledTranslation( numpy.sign(width) * -.05, numpy.sign(slope) * .05, dpi ) )
+    self.text( xc, yc, str(slope), color=color,
+      horizontalalignment = 'right' if W > 0 else 'left',
+      verticalalignment = 'top' if H < 0 else 'bottom',
+      transform = shifttrans + transforms.ScaledTranslation( numpy.sign(W) * -.05, numpy.sign(H) * .05, dpi ) )
 
   def slope_triangle( self, x, y, fillcolor='0.9', edgecolor='k', xoffset=0, yoffset=0.1, slopefmt='{0:.1f}' ):
     '''Draw slope triangle for supplied y(x)
