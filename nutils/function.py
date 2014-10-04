@@ -2113,15 +2113,6 @@ def _matchndim( *arrays ):
   ndim = _max( array.ndim for array in arrays )
   return [ array[(_,)*(ndim-array.ndim)] for array in arrays ]
 
-def _isiterable( obj ):
-  'check for iterability'
-
-  try:
-    iter(obj)
-  except TypeError:
-    return False
-  return True
-
 def _obj2str( obj ):
   'convert object to string'
 
@@ -2447,7 +2438,7 @@ def sum( arg, axes=-1 ):
 
   arg = asarray( arg )
 
-  if _isiterable(axes):
+  if util.isiterable(axes):
     if len(axes) == 0:
       return arg
     axes = _norm_and_sort( arg.ndim, axes )
@@ -2476,7 +2467,7 @@ def dot( arg1, arg2, axes ):
   arg1, arg2 = _matchndim( arg1, arg2 )
   shape = _jointshape( arg1.shape, arg2.shape )
 
-  if _isiterable(axes):
+  if util.isiterable(axes):
     if len(axes) == 0:
       return arg1 * arg2
     axes = _norm_and_sort( len(shape), axes )

@@ -16,6 +16,15 @@ creation and initiation of a log file.
 from . import log, debug, core, version
 import sys, os, time, numpy, cPickle, hashlib, weakref, warnings, itertools
 
+def isiterable( obj ):
+  'check for iterability'
+
+  try:
+    iter(obj)
+  except TypeError:
+    return False
+  return True
+
 class _SuppressedOutput( object ):
   'suppress all output by redirection to /dev/null'
 
