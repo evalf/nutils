@@ -82,7 +82,7 @@ class Topology( object ):
     'subtract topologies'
 
     assert self.ndims == other.ndims
-    return Topology( set(self) - set(other) )
+    return Topology( set(self) - set(other), self.ndims )
 
   def __mul__( self, other ):
     'element products'
@@ -1166,6 +1166,12 @@ class TrimmedTopology( Topology ):
     self.basetopo = basetopo
     self.trimmed = tuple(trimmed)
     Topology.__init__( self, elements )
+
+  @cache.property
+  def refined( self ):
+    elements = [ child for elem in self for child in elem.children ]
+    trimmed = [ child for elem in self.trimmed for child in elem.children ]
+    return TrimmedTopology( self.basetopo.refined, elements, trimmed )
 
   @cache.property
   def boundary( self ):

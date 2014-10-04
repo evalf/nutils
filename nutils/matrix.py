@@ -373,6 +373,9 @@ class SparseMatrix( Matrix ):
       array[irow,self.indices[a:b]] = self.data[a:b]
     return array
 
+  def toscipy( self ):
+    return scipy.sparse.csr_matrix( (self.data,self.indices,self.indptr), shape=self.shape )
+
   def todense( self ):
     'convert to dense matrix'
 
