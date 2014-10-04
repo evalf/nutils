@@ -233,6 +233,9 @@ def isrational( arr ):
 def asrational( arr ):
   return arr if isrational( arr ) else Rational( arr )
 
+def frac( a, b ):
+  return asrational(a) / asrational(b)
+
 def asarray( arr ):
   if isrational( arr ):
     return arr
