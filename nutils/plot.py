@@ -12,6 +12,7 @@ backends. At this point `matplotlib <http://matplotlib.org/>`_ and `vtk
 <http://vtk.org>`_ are supported.
 """
 
+from __future__ import division
 from . import topology, util, numpy, function, element, log, core, numeric, debug, _
 from scipy import spatial # for def mesh; import cannot be postponed apparently
 import os, warnings
@@ -277,6 +278,49 @@ class PyPlot( BasePlot ):
     self.gca().add_collection( polycol )
     self.sci( polycol )
     return polycol
+
+  def slope_marker( self, x, y, slope, width=.2, xoffset=0, yoffset=.2, color='0.3' ):
+
+    slopestr = str( slope )
+    slope = float( slope )
+
+    xscale = self.gca().get_xscale()
+    yscale = self.gca().get_yscale()
+
+    xmin, xmax = self.gca().get_xlim()
+    if xscale == 'linear':
+      W = ( xmax - xmin ) * width
+      x0 = x - W
+      xc = x - .5 * W
+    elif xscale == 'log':
+      W = numpy.log10( xmax / xmin ) * width
+      x0 = x * 10**-W
+      xc = x * 10**(-.5*W)
+    else:
+      raise Exception, 'unknown x-axis scale %r' % xscale
+
+    H = W * slope
+    if yscale == 'linear':
+      y0 = y - H
+      yc = y - .5 * H
+    elif yscale == 'log':
+      y0 = y * 10**-H
+      yc = y * 10**(-.5*H)
+    else:
+      raise Exception, 'unknown x-axis scale %r' % xscale
+
+    from matplotlib import transforms
+    dpi = self.gcf().dpi_scale_trans
+    shifttrans = self.gca().transData \
+               + transforms.ScaledTranslation( xoffset, numpy.sign(slope*width) * yoffset, dpi )
+
+    triangle = self.Polygon( [ (x0,y0), (x,y), (xc,y) ], closed=False, ec=color, fc='none', transform=shifttrans )
+    self.gca().add_patch( triangle )
+
+    self.text( xc, yc, slopestr, color=color,
+      horizontalalignment = 'right' if width > 0 else 'left',
+      verticalalignment = 'top' if slope < 0 else 'bottom',
+      transform = shifttrans + transforms.ScaledTranslation( numpy.sign(width) * -.05, numpy.sign(slope) * .05, dpi ) )
 
   def slope_triangle( self, x, y, fillcolor='0.9', edgecolor='k', xoffset=0, yoffset=0.1, slopefmt='{0:.1f}' ):
     '''Draw slope triangle for supplied y(x)
