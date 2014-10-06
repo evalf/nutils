@@ -671,7 +671,7 @@ class StructuredTopology( Topology ):
         assert elem2.transform == elem2.opposite
         ielem = element.Element( edge, elem1.transform << trans1, elem2.transform << trans2 )
         interfaces.append( ielem )
-    return Topology( interfaces )
+    return Topology( interfaces, self.ndims-1 )
 
   def basis_spline( self, degree, neumann=(), knots=None, periodic=None, closed=False, removedofs=None ):
     'spline from vertices'
@@ -1077,7 +1077,7 @@ class HierarchicalTopology( Topology ):
             celem1, transform1 = celem1.parent
       topo = topo.refined # proceed to next level
       elems -= myelems
-    return Topology( allinterfaces )
+    return Topology( allinterfaces, self.ndims-1 )
 
   @log.title
   def basis( self, name, *args, **kwargs ):
