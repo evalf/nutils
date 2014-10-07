@@ -2223,13 +2223,24 @@ def asarray( arg ):
 
   if _isfunc(arg):
     return arg
-  arg = numpy.asarray( arg )
-  if arg.dtype == object:
-    return stack( arg, axis=0 )
-  elif numpy.all( arg == 0 ):
-    return _zeros( arg.shape )
-  else:
-    return arg
+
+  if isinstance( arg, numpy.ndarray ) or not util.isiterable( arg ):
+    array = numpy.asarray( arg )
+    assert array.dtype != object
+    if numpy.all( array == 0 ):
+      return _zeros( array.shape )
+    return array
+
+  args = [ asarray(a) for a in arg ]
+
+  if all( isinstance( arg, numpy.ndarray ) for arg in args ):
+    array = numpy.array( args )
+    assert array.dtype != object
+    if numpy.all( array == 0 ):
+      return _zeros( array.shape )
+    return array
+
+  return stack( args, axis=0 )
 
 def asfunc( obj ):
   'convert to Evaluable'
