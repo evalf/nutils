@@ -281,10 +281,10 @@ class PyPlot( BasePlot ):
 
   def slope_marker( self, x, y, slope, width=.2, xoffset=0, yoffset=.2, color='0.3' ):
 
-    xscale = self.gca().get_xscale()
-    yscale = self.gca().get_yscale()
+    ax = self.gca()
 
-    xmin, xmax = self.gca().get_xlim()
+    xscale = ax.get_xscale()
+    xmin, xmax = ax.get_xlim()
     if xscale == 'linear':
       W = ( xmax - xmin ) * width
       x0 = x - W
@@ -296,6 +296,7 @@ class PyPlot( BasePlot ):
     else:
       raise Exception, 'unknown x-axis scale %r' % xscale
 
+    yscale = ax.get_yscale()
     H = W * float(slope)
     if yscale == 'linear':
       y0 = y - H
@@ -308,11 +309,10 @@ class PyPlot( BasePlot ):
 
     from matplotlib import transforms
     dpi = self.gcf().dpi_scale_trans
-    shifttrans = self.gca().transData \
-               + transforms.ScaledTranslation( xoffset, numpy.sign(H) * yoffset, dpi )
+    shifttrans = ax.transData + transforms.ScaledTranslation( xoffset, numpy.sign(H) * yoffset, dpi )
 
     triangle = self.Polygon( [ (x0,y0), (x,y), (xc,y) ], closed=False, ec=color, fc='none', transform=shifttrans )
-    self.gca().add_patch( triangle )
+    ax.add_patch( triangle )
 
     self.text( xc, yc, str(slope), color=color,
       horizontalalignment = 'right' if W > 0 else 'left',
