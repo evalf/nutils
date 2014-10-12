@@ -24,7 +24,7 @@ out in element loops. For lower level operations topologies can be used as
 """
 
 from . import element, function, util, numpy, parallel, matrix, log, core, numeric, cache, rational, transform, _
-import warnings, itertools
+import warnings
 
 class Topology( object ):
   'topology base class'
