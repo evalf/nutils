@@ -553,4 +553,25 @@ class DenseMatrix( Matrix ):
 
     return x
 
+# UTILITY FUNCTIONS
+
+def assemble( data, index, shape, force_dense=False ):
+  'create data from values and indices'
+
+  if len(shape) == 0:
+    retval = data.sum()
+  elif len(shape) == 2 and not force_dense:
+    import scipy.sparse
+    csr = scipy.sparse.csr_matrix( (data,index), shape )
+    graph = csr.data, csr.indices, csr.indptr
+    retval = SparseMatrix( graph, shape[1] )
+  else:
+    flatindex = numpy.dot( numpy.cumprod( (1,)+shape[:0:-1] )[::-1], index )
+    retval = numpy.bincount( flatindex, data, numpy.prod(shape) ).reshape( shape )
+    if retval.ndim == 2:
+      retval = DenseMatrix( retval )
+  assert retval.shape == shape
+  log.debug( 'assembled', '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,shape)) ) )
+  return retval
+
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

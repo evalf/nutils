@@ -174,7 +174,8 @@ def meshgrid( *args ):
 
   args = map( numpy.asarray, args )
   shape = [ len(args) ] + [ arg.size for arg in args if arg.ndim ]
-  grid = numpy.empty( shape )
+  dtype = int if all( isintarray(a) for a in args ) else float
+  grid = numpy.empty( shape, dtype=dtype )
   n = len(shape)-1
   for i, arg in enumerate( args ):
     if arg.ndim:

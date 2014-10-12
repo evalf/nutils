@@ -35,7 +35,7 @@ class FiniteCellTestBase( object ):
 class TestCircle( FiniteCellTestBase ):
 
   ndims  = 2
-  nelems = 5
+  nelems = 6
   
   @property
   def levelset ( self ):
@@ -52,7 +52,7 @@ class TestCircle( FiniteCellTestBase ):
 class TestSphere( FiniteCellTestBase ):
 
   ndims  = 3
-  nelems = 7
+  nelems = 6
   
   r2 = numpy.power(3./(4.*numpy.pi),2./3.)
 
@@ -60,7 +60,7 @@ class TestSphere( FiniteCellTestBase ):
   def levelset ( self ):
     return -sum(self.geom*self.geom)+self.r2
 
-  maxrefine    = 2
+  maxrefine    = 3
 
   vol_decimal = 2
   vol_exact   = 1.
@@ -72,12 +72,12 @@ class TestSphere( FiniteCellTestBase ):
 def two_D ():
   test_obj = TestCircle()
   test_obj.test_volume()
-  test_obj.test_surfacearea()
+  #test_obj.test_surfacearea()
 
 def three_D ():
   test_obj = TestSphere()
   test_obj.test_volume()
-  test_obj.test_surfacearea()
+  #test_obj.test_surfacearea()
 
 if __name__ == '__main__':
   util.run( two_D, three_D )

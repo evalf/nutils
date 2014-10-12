@@ -348,129 +348,118 @@ class Topology( object ):
 
     return retvals
 
-  @log.title
-  def build_graph( self, func ):
-    'get matrix sparsity'
+  def _integrate( self, funcs, ischeme ):
 
-    nrows, ncols = func.shape
-    graph = [ [] for irow in range(nrows) ]
-    IJ = function.Tuple([ function.Tuple(ind) for ind, f in function.blocks( func ) ])
+    # Functions may consist of several blocks, such as originating from
+    # chaining. Here we make a list of all blocks consisting of triplets of
+    # argument id, evaluable index, and evaluable values.
 
-    irows = numpy.arange( nrows )
-    icols = numpy.arange( ncols )
+    blocks = [ ( ifunc, function.Tuple(ind), f )
+      for ifunc, func in enumerate( funcs )
+        for ind, f in function.blocks( func ) ]
 
-    __log__ = log.iter( 'elem', self )
-    for elem in __log__:
-      for I, J in IJ.eval( elem, None ):
-        for i in irows[I]:
-          graph[i].append( icols[J] )
+    block2func, indices, values = zip( *blocks )
+    indexfunc = function.Tuple( indices )
+    valuefunc = function.Tuple( values )
 
-    __log__ = log.enumerate( 'dof', graph )
-    for irow, g in __log__:
-      # release memory as we go
-      if g: graph[irow] = numpy.unique( numpy.concatenate( g ) )
+    log.debug( 'integrating %s distinct blocks' % '+'.join(
+      str(block2func.count(ifunc)) for ifunc in range(len(funcs)) ) )
 
-    return graph
+    if core.getprop( 'dot', False ):
+      valuefunc.graphviz()
+
+    fcache = cache.CallDict()
+
+    # To allocate (shared) memory for all block data we evaluate indexfunc to
+    # build an nblocks x nelems+1 offset array, and nblocks index lists of
+    # length nelems.
+
+    offsets = numpy.zeros( ( len(blocks), len(self)+1 ), dtype=int )
+    indices = [ [] for i in range( len(blocks) ) ]
+
+    for ielem, elem in enumerate( self ):
+      for iblock, index in enumerate( indexfunc.eval( elem, None, fcache ) ):
+        n = util.product( len(ind) for ind in index ) if index else 1
+        offsets[iblock,ielem+1] = offsets[iblock,ielem] + n
+        indices[iblock].append( index )
+
+    # Since several blocks may belong to the same function, we post process the
+    # offsets to form consecutive intervals in longer arrays. The length of
+    # these arrays is captured in the nfuncs-array nvals.
+
+    nvals = numpy.zeros( len(funcs), dtype=int )
+    for iblock, ifunc in enumerate( block2func ):
+      offsets[iblock] += nvals[ifunc]
+      nvals[ifunc] = offsets[iblock,-1]
+
+    # The data_index list contains shared memory index and value arrays for
+    # each function argument.
+
+    data_index = [
+      ( parallel.shzeros( n, dtype=float ),
+        parallel.shzeros( (funcs[ifunc].ndim,n), dtype=int ) )
+            for ifunc, n in enumerate(nvals) ]
+
+    # In a second, parallel element loop, valuefunc is evaluated to fill the
+    # data part of data_index using the offsets array for location. Each
+    # element has its own location so no locks are required. The index part of
+    # data_index is filled in the same loop. It does not use valuefunc data but
+    # benefits from parallel speedup.
+
+    __log__ = log.enumerate( 'elem', self )
+    for ielem, elem in parallel.pariter( __log__ ):
+      ipoints, iweights = fcache( elem.reference.getischeme, ischeme[elem] if isinstance(ischeme,dict) else ischeme )
+      for iblock, intdata in enumerate( valuefunc.eval( elem, ipoints, fcache ) ):
+        s = slice(*offsets[iblock,ielem:ielem+2])
+        data, index = data_index[ block2func[iblock] ]
+        w_intdata = numeric.dot( iweights, intdata )
+        data[s] = w_intdata.ravel()
+        si = (slice(None),) + (_,) * (w_intdata.ndim-1)
+        for idim, ii in enumerate( indices[iblock][ielem] ):
+          index[idim,s].reshape(w_intdata.shape)[...] = ii[si]
+          si = si[:-1]
+
+    log.debug( 'cache', fcache.summary() )
+
+    return data_index
 
   @log.title
   def integrate( self, funcs, ischeme, geometry, force_dense=False ):
     'integrate'
 
-    single_arg = not isinstance(funcs,(list,tuple))
-    if single_arg:
-      funcs = funcs,
-
     iwscale = function.iwscale( geometry, self.ndims )
-    integrands = []
-    retvals = []
-    count = []
-    for ifunc, func in enumerate( funcs ):
-      func = function.asarray( func )
-      lock = parallel.Lock()
-      if function._isfunc( func ):
-        array = parallel.shzeros( func.shape, dtype=float ) if func.ndim != 2 \
-           else matrix.DenseMatrix( func.shape ) if force_dense \
-           else matrix.SparseMatrix( self.build_graph(func), func.shape[1] )
-        for ind, f in function.blocks( func ):
-          integrands.append( function.Tuple([ ifunc, lock, function.Tuple(ind), f * iwscale ]) )
-      else:
-        array = parallel.shzeros( func.shape, dtype=float )
-        if not function._iszero( func ):
-          integrands.append( function.Tuple([ ifunc, lock, (), func * iwscale ]) )
-      retvals.append( array )
-      count.append( len(integrands) - sum(count) )
-    idata = function.Tuple( integrands )
-    log.info( 'integrating %s distinct blocks' % '+'.join( str(n) for n in count ) )
-    if core.getprop( 'dot', False ):
-      idata.graphviz()
-    fcache = cache.CallDict()
-
-    __log__ = log.iter( 'elem', self )
-    for elem in parallel.pariter( __log__ ):
-      ipoints, iweights = fcache( elem.reference.getischeme, ischeme[elem] if isinstance(ischeme,dict) else ischeme )
-      for ifunc, lock, index, data in idata.eval( elem, ipoints, fcache ):
-        intdata = numeric.dot( iweights, data )
-        with lock:
-          retvals[ifunc][index] += intdata
-
-    log.debug( 'cache', fcache.summary() )
-    log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
-    if single_arg:
-      retvals, = retvals
-
-    return retvals
+    single_arg = not isinstance( funcs, (list,tuple) )
+    integrands = [ funcs * iwscale ] if single_arg else [ func * iwscale for func in funcs ]
+    data_index = self._integrate( integrands, ischeme )
+    retvals = [ matrix.assemble( data, index, integrand.shape, force_dense ) for integrand, (data,index) in zip( integrands, data_index ) ]
+    return retvals[0] if single_arg else retvals
 
   @log.title
   def integrate_symm( self, funcs, ischeme, geometry, force_dense=False ):
     'integrate a symmetric integrand on a product domain' # TODO: find a proper home for this
 
-    single_arg = not isinstance(funcs,list)
-    if single_arg:
-      funcs = funcs,
-
     iwscale = function.iwscale( geometry, self.ndims )
-    integrands = []
-    retvals = []
-    for ifunc, func in enumerate( funcs ):
-      func = function.asarray( func )
-      lock = parallel.Lock()
-      if function._isfunc( func ):
-        array = parallel.shzeros( func.shape, dtype=float ) if func.ndim != 2 \
-           else matrix.DenseMatrix( func.shape ) if force_dense \
-           else matrix.SparseMatrix( self.build_graph(func), func.shape[1] )
-        for ind, f in function.blocks( func ):
-          integrands.append( function.Tuple([ ifunc, lock, function.Tuple(ind), f * iwscale ]) )
-      else:
-        array = parallel.shzeros( func.shape, dtype=float )
-        if not function._iszero( func ):
-          integrands.append( function.Tuple([ ifunc, lock, (), func * iwscale ]) )
-      retvals.append( array )
-    idata = function.Tuple( integrands )
-    fcache = cache.CallDict()
-
-    __log__ = log.iter( 'elem', self )
-    for elem in parallel.pariter( __log__ ):
+    single_arg = not isinstance( funcs, (list,tuple) )
+    integrands = [ funcs * iwscale ] if single_arg else [ func * iwscale for func in funcs ]
+    assert all( integrand.ndim == 2 for integrand in integrands )
+    diagelems = []
+    trielems = []
+    for elem in self:
       assert isinstance( elem.reference, element.NeighborhoodTensorReference )
       head1 = elem.transform[:-1]
       head2 = elem.opposite[:-1]
-      if head1 < head2:
-        continue
-      ipoints, iweights = fcache( elem.reference.getischeme, ischeme[elem] if isinstance(ischeme,dict) else ischeme )
-      for ifunc, lock, index, data in idata.eval( elem, ipoints, fcache ):
-        intdata = numeric.dot( iweights, data )
-        with lock:
-          retvals[ifunc][index] += intdata
-          if head1 == head2:
-            numpy.testing.assert_almost_equal( intdata, intdata.T, err_msg='symmetry check failed' )
-          else:
-            retvals[ifunc][index[::-1]] += intdata.T
-
-    log.debug( 'cache', fcache.summary() )
-    log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
-    if single_arg:
-      retvals, = retvals
-
-    return retvals
+      if head1 == head2:
+        diagelems.append( elem )
+      elif head1 < head2:
+        trielems.append( elem )
+    diag_data_index = Topology( diagelems, self.ndims )._integrate( integrands, ischeme )
+    tri_data_index = Topology( trielems, self.ndims )._integrate( integrands, ischeme )
+    retvals = []
+    for integrand, (diagdata,diagindex), (tridata,triindex) in zip( integrands, diag_data_index, tri_data_index ):
+      data = numpy.concatenate( [ diagdata, tridata, tridata ], axis=0 )
+      index = numpy.concatenate( [ diagindex, triindex, triindex[::-1] ], axis=1 )
+      retvals.append( matrix.assemble( data, index, integrand.shape, force_dense ) )
+    return retvals[0] if single_arg else retvals
 
   def projection( self, fun, onto, geometry, **kwargs ):
     'project and return as function'

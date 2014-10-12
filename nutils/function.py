@@ -358,11 +358,15 @@ class ArrayFunc( Evaluable ):
   __len__  = lambda self: self.shape[0]
   sum      = lambda self, axes=-1: sum( self, axes )
 
+  @property
+  def size( self ):
+    return numpy.prod( self.shape, dtype=int )
+
   # standalone methods
 
   @property
   def blocks( self ):
-    return [( tuple( slice(0,n) if numeric.isint(n) else None for n in self.shape ), self )]
+    return [( tuple( numpy.arange(n) if numeric.isint(n) else None for n in self.shape ), self )]
 
   def vector( self, ndims ):
     'vectorize'
@@ -920,9 +924,7 @@ class Concatenate( ArrayFunc ):
     n = 0
     for func in self.funcs:
       for ind, f in blocks( func ):
-        oldind = ind[self.axis]
-        newind = slice( oldind.start+n, oldind.stop+n ) if isinstance( oldind, slice ) else oldind+n
-        yield ind[:self.axis] + (newind,) + ind[self.axis+1:], f
+        yield ind[:self.axis] + (ind[self.axis]+n,) + ind[self.axis+1:], f
       n += func.shape[self.axis]
 
   def _get( self, i, item ):
@@ -3031,7 +3033,11 @@ def inflate( arg, dofmap, length, axis ):
 
   return Inflate( arg, dofmap, length, axis )
 
-blocks = lambda arg: asarray( arg ).blocks
+def blocks( arg ):
+  arg = asarray( arg )
+  return arg.blocks if _isfunc( arg ) \
+    else [] if numpy.all( arg == 0 ) \
+    else [( map(numpy.arange,arg.shape), arg )]
 
 def pointdata ( topo, ischeme, func=None, shape=None, value=None ):
   'point data'
