@@ -180,12 +180,11 @@ class Reference( object ):
              - all( levelset[tri[tri<self.nverts]] < 0 ) for tri in triangulation ]
 
       if not all(sign): # fast route failed, fall back on separate triangulations
+        oninterface = numpy.concatenate( [ levelset==0, numpy.ones( len(coords)-self.nverts, dtype=bool ) ] )
         I = numpy.concatenate([ numpy.where( levelset >= 0 )[0], numpy.arange( self.nverts, len(coords) ) ])
-        postri = [ I[tri] for tri in util.delaunay( coords[I] ) ]
+        postri = [ I[tri] for tri in util.delaunay( coords[I] ) if not oninterface[ I[tri] ].all() ]
         I = numpy.concatenate([ numpy.where( levelset <= 0 )[0], numpy.arange( self.nverts, len(coords) ) ])
-        negtri = [ I[tri] for tri in util.delaunay( coords[I] ) ]
-        assert sorted( sorted(tri) for tri in postri if all(tri >= self.nverts) ) \
-            == sorted( sorted(tri) for tri in negtri if all(tri >= self.nverts) ), 'element does not separate in two contex parts'
+        negtri = [ I[tri] for tri in util.delaunay( coords[I] ) if not oninterface[ I[tri] ].all() ]
         triangulation = postri + negtri
         sign = [1] * len(postri) + [-1] * len(negtri)
 
