@@ -30,30 +30,6 @@ class FuncTest( object ):
     self.ifpoints = ifpoints
     self.invroottransmatrix = roottrans.invlinear.astype( float )
 
-  def find( self, target, xi0 ):
-    ndim, = self.geom.shape
-    J = function.localgradient( self.geom, ndim )
-    Jinv = function.inverse( J )
-    countdown = 5
-    iiter = 0
-    assert target.shape[-1:] == self.geom.shape
-    if xi0.shape != target.shape:
-      tmp = numpy.empty_like( target )
-      tmp[...] = xi0
-      xi0 = tmp
-    target = target.reshape( -1, target.shape[-1] )
-    xi = xi0.reshape( -1, xi0.shape[-1] )
-    while countdown:
-      err = target - self.geom.eval(self.elem,xi)
-      if numpy.all( numpy.abs(err) < 1e-12 ):
-        countdown -= 1
-      dxi_root = ( Jinv.eval(self.elem,xi) * err[...,_,:] ).sum(-1)
-      #xi = xi + numpy.dot( dxi_root, self.elem.inv_root_transform.T )
-      xi = xi + numpy.dot( dxi_root, self.invroottransmatrix.T )
-      iiter += 1
-      assert iiter < 100, 'failed to converge in 100 iterations'
-    return xi.reshape( xi0.shape )
-
   def test_eval( self ):
     numpy.testing.assert_array_almost_equal(
       self.n_op( *self.argsfun.eval(self.elem,self.points) ),
@@ -78,6 +54,30 @@ class FuncTest( object ):
           self.op( *self.args )[s].eval(self.elem,self.points), decimal=15 )
 
 class FuncTestGrad( FuncTest ):
+
+  def find( self, target, xi0 ):
+    ndim, = self.geom.shape
+    J = function.localgradient( self.geom, ndim )
+    Jinv = function.inverse( J )
+    countdown = 5
+    iiter = 0
+    assert target.shape[-1:] == self.geom.shape
+    if xi0.shape != target.shape:
+      tmp = numpy.empty_like( target )
+      tmp[...] = xi0
+      xi0 = tmp
+    target = target.reshape( -1, target.shape[-1] )
+    xi = xi0.reshape( -1, xi0.shape[-1] )
+    while countdown:
+      err = target - self.geom.eval(self.elem,xi)
+      if numpy.all( numpy.abs(err) < 1e-12 ):
+        countdown -= 1
+      dxi_root = ( Jinv.eval(self.elem,xi) * err[...,_,:] ).sum(-1)
+      #xi = xi + numpy.dot( dxi_root, self.elem.inv_root_transform.T )
+      xi = xi + numpy.dot( dxi_root, self.invroottransmatrix.T )
+      iiter += 1
+      assert iiter < 100, 'failed to converge in 100 iterations'
+    return xi.reshape( xi0.shape )
 
   def test_localgradient( self ):
     eps = 1e-6
@@ -104,7 +104,7 @@ class FuncTestGrad( FuncTest ):
     numpy.testing.assert_array_almost_equal( fdgrad, exact, decimal=5 )
 
   def test_doublegradient( self ):
-    eps = 1e-5
+    eps = .000022
     D = numpy.array([-.5*eps,.5*eps])[:,_,_] * numpy.eye(2)
     DD = D[:,_,:,_,:] + D[_,:,_,:,:]
     fdpoints = self.find( self.geom.eval(self.elem,self.points)[_,_,_,_,:,:] + DD[:,:,:,:,_,:], self.points[_,_,_,_,:,:] )
@@ -121,6 +121,7 @@ class FuncTestGrad( FuncTest ):
     numpy.testing.assert_array_almost_equal(
       self.n_op( *opposite_args.eval(self.iface,self.ifpoints) ),
         function.opposite( self.op( *self.args ) ).eval(self.iface,self.ifpoints), decimal=15 )
+
 
 # UNARY POINTWISE OPERATIONS
 
@@ -313,6 +314,7 @@ class TestArctan2( FuncTestGrad ):
 class TestStack( FuncTestGrad ):
   def __init__( self ):
     FuncTestGrad.__init__( self, lambda a,b: function.stack([a,b]), lambda a,b: numpy.concatenate( [a[...,_,:],b[...,_,:]], axis=-2), (3,), (3,) )
+
 
 # EVAL ONLY
 
