@@ -295,9 +295,9 @@ class Topology( object ):
         retval[separators] = numpy.nan
       if function._isfunc( func ):
         for ind, f in function.blocks( func ):
-          idata.append( function.Tuple( [ ifunc, function.Tuple(ind), f ] ) )
+          idata.append( function.Tuple([ ifunc, ind, f ]) )
       else:
-        idata.append( function.Tuple( [ ifunc, (), func ] ) )
+        idata.append( function.Tuple([ ifunc, (), func ]) )
       retvals.append( retval )
     idata = function.Tuple( idata )
     fcache = cache.CallDict()
@@ -354,7 +354,7 @@ class Topology( object ):
     # chaining. Here we make a list of all blocks consisting of triplets of
     # argument id, evaluable index, and evaluable values.
 
-    blocks = [ ( ifunc, function.Tuple(ind), f )
+    blocks = [ ( ifunc, ind, f )
       for ifunc, func in enumerate( funcs )
         for ind, f in function.blocks( func ) ]
 
@@ -529,7 +529,7 @@ class Topology( object ):
       W = numpy.zeros( onto.shape[0] )
       I = numpy.zeros( onto.shape[0], dtype=bool )
       fun = function.asarray( fun )
-      data = function.Tuple( function.Tuple([ fun, f, function.Tuple(ind) ]) for ind, f in function.blocks( onto ) )
+      data = function.Tuple( function.Tuple([ fun, f, ind ]) for ind, f in function.blocks( onto ) )
       for elem in self:
         for f, w, ind in data.eval( elem, 'bezier2' ):
           w = w.swapaxes(0,1) # -> dof axis, point axis, ...
@@ -582,6 +582,59 @@ class Topology( object ):
         negelems.append( neg )
     return TrimmedTopology( self, poselems ), \
            TrimmedTopology( self, negelems )
+
+  def elem_project( self, funcs, degree, ischeme=None, check_exact=False ):
+
+    single_arg = not isinstance( funcs, (list,tuple) )
+    if single_arg:
+      funcs = funcs,
+
+    if ischeme is None:
+      ischeme = 'gauss%d' % (degree*2)
+
+    blocks = function.Tuple([ function.Tuple([ function.Tuple( ind_f )
+      for ind_f in function.blocks( func ) ])
+        for func in funcs ])
+
+    bases = {}
+    extractions = [ [] for ifunc in range(len(funcs) ) ]
+
+    __log__ = log.iter( 'elem', self )
+    for elem in __log__:
+
+      try:
+        points, projector, basis = bases[ elem.reference ]
+      except KeyError:
+        points, weights = elem.reference.getischeme( ischeme )
+        basis = elem.reference.stdfunc(degree).eval( points )
+        npoints, nfuncs = basis.shape
+        A = numeric.dot( weights, basis[:,:,_] * basis[:,_,:] )
+        projector = numpy.linalg.solve( A, basis.T * weights )
+        bases[ elem.reference ] = points, projector, basis
+
+      for ifunc, ind_val in enumerate( blocks.eval( elem, points ) ):
+
+        if len(ind_val) == 1:
+          (allind, sumval), = ind_val
+        else:
+          allind, where = zip( *[ numpy.unique( [ i for ind, val in ind_val for i in ind[iax] ], return_inverse=True ) for iax in range( funcs[ifunc].ndim ) ] )
+          sumval = numpy.zeros( [ len(points) ] + map( len, allind ) )
+          for ind, val in ind_val:
+            I, where = zip( *[ ( w[:len(n)], w[len(n):] ) for w, n in zip( where, ind ) ] )
+            sumval[ numpy.ix_( range(len(points)), *I ) ] += val
+          assert not any( where )
+
+        ex = numeric.dot( projector, sumval )
+        if check_exact:
+          numpy.testing.assert_almost_equal( sumval, numeric.dot( basis, ex ), decimal=15 )
+
+        extractions[ifunc].append(( allind, ex ))
+
+    if single_arg:
+      extractions, = extractions
+
+    return extractions
+
 
 def UnstructuredTopology( elems, ndims ):
   return Topology( elems )

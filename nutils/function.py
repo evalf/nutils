@@ -366,7 +366,7 @@ class ArrayFunc( Evaluable ):
 
   @property
   def blocks( self ):
-    return [( tuple( numpy.arange(n) if numeric.isint(n) else None for n in self.shape ), self )]
+    return [( Tuple([ numpy.arange(n) if numeric.isint(n) else None for n in self.shape ]), self )]
 
   def vector( self, ndims ):
     'vectorize'
@@ -924,7 +924,7 @@ class Concatenate( ArrayFunc ):
     n = 0
     for func in self.funcs:
       for ind, f in blocks( func ):
-        yield ind[:self.axis] + (ind[self.axis]+n,) + ind[self.axis+1:], f
+        yield Tuple( ind[:self.axis] + (ind[self.axis]+n,) + ind[self.axis+1:] ), f
       n += func.shape[self.axis]
 
   def _get( self, i, item ):
@@ -1870,7 +1870,7 @@ class Inflate( ArrayFunc ):
   def blocks( self ):
     for ind, f in blocks( self.func ):
       assert ind[self.axis] == None
-      yield ind[:self.axis] + (self.dofmap,) + ind[self.axis+1:], f
+      yield Tuple( ind[:self.axis] + (self.dofmap,) + ind[self.axis+1:] ), f
 
   def _inflate( self, dofmap, length, axis ):
     assert axis != self.axis
@@ -3037,7 +3037,7 @@ def blocks( arg ):
   arg = asarray( arg )
   return arg.blocks if _isfunc( arg ) \
     else [] if numpy.all( arg == 0 ) \
-    else [( map(numpy.arange,arg.shape), arg )]
+    else [( Tuple( map(numpy.arange,arg.shape) ), arg )]
 
 def pointdata ( topo, ischeme, func=None, shape=None, value=None ):
   'point data'
