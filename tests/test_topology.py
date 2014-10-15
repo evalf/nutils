@@ -16,7 +16,7 @@ def neighbor( elem1, elem2 ):
     return {4:0,2:1,1:2}[ncommon]
   if elem1.reference == elem2.reference == element.SimplexReference(1)**3:
     return {8:0,4:1,2:2,1:3}[ncommon]
-  raise NotImplementedError, '%s, %s' % ( elem1.reference, elem2.reference )
+  raise NotImplementedError( '%s, %s' % ( elem1.reference, elem2.reference ) )
 
 class ConnectivityStructuredBase( object ):
   'Tests StructuredTopology.neighbor(), also handles periodicity.'

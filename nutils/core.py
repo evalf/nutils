@@ -11,6 +11,7 @@ The core module provides a collection of low level constructs that have no
 dependencies on other nutils modules. Primarily for internal use.
 """
 
+from __future__ import print_function, division
 import sys
 
 _nodefault = object()
@@ -45,7 +46,7 @@ def getprop( name, default=_nodefault ):
       return frame.f_locals[key]
     frame = frame.f_back
   if default is _nodefault:
-    raise NameError, 'property %r is not defined' % name
+    raise NameError( 'property %r is not defined' % name )
   return default
 
 

@@ -23,6 +23,7 @@ out in element loops. For lower level operations topologies can be used as
 :mod:`nutils.element` iterators.
 """
 
+from __future__ import print_function, division
 from . import element, function, util, numpy, parallel, matrix, log, core, numeric, cache, rational, transform, _
 import warnings
 
@@ -140,9 +141,9 @@ class Topology( object ):
     'subtopology'
 
     if not isinstance( item, str ):
-      raise KeyError, str(item)
+      raise KeyError( str(item) )
     items = ( self.__groups[it] for it in item.split( ',' ) )
-    return sum( items, items.next() )
+    return sum( items, next(items) )
 
   def __setitem__( self, item, topo ):
     assert isinstance( topo, Topology ), 'wrong type: got %s, expected Topology' % type(topo)
@@ -309,7 +310,7 @@ class Topology( object ):
         retvals[ifunc][s+index] += data
 
     log.debug( 'cache', fcache.summary() )
-    log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
+    log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join( str(n) for n in retval.shape ) ) for retval in retvals ) )
     if single_arg:
       retvals, = retvals
 
@@ -342,7 +343,7 @@ class Topology( object ):
         retval[ielem] = numeric.dot( iweights, data ) / area
 
     log.debug( 'cache', fcache.summary() )
-    log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,retval.shape)) ) for retval in retvals ) )
+    log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join( str(n) for n in retval.shape ) ) for retval in retvals ) )
     if single_arg:
       retvals, = retvals
 
@@ -542,7 +543,7 @@ class Topology( object ):
       constrain[I] = F[I] / W[I]
 
     else:
-      raise Exception, 'invalid projection %r' % ptype
+      raise Exception( 'invalid projection %r' % ptype )
 
     errfun2 = ( onto.dot( constrain | 0 ) - fun )**2
     if errfun2.ndim == 1:
@@ -618,7 +619,7 @@ class Topology( object ):
           (allind, sumval), = ind_val
         else:
           allind, where = zip( *[ numpy.unique( [ i for ind, val in ind_val for i in ind[iax] ], return_inverse=True ) for iax in range( funcs[ifunc].ndim ) ] )
-          sumval = numpy.zeros( [ len(points) ] + map( len, allind ) )
+          sumval = numpy.zeros( [ len(n) for n in (points,) + allind ] )
           for ind, val in ind_val:
             I, where = zip( *[ ( w[:len(n)], w[len(n):] ) for w, n in zip( where, ind ) ] )
             sumval[ numpy.ix_( range(len(points)), *I ) ] += val
@@ -795,7 +796,7 @@ class StructuredTopology( Topology ):
         touched[ dofs ] = True
       renumber = touched.cumsum()
       dofcount = int(renumber[-1])
-      dofmap = dict( ( trans, renumber[dofs]-1 ) for trans, dofs in dofmap.iteritems() )
+      dofmap = dict( ( trans, renumber[dofs]-1 ) for trans, dofs in dofmap.items() )
 
     return function.function( funcmap, dofmap, dofcount, self.ndims )
 
@@ -1026,7 +1027,7 @@ class StructuredTopology( Topology ):
         touched[ dofs ] = True
       renumber = touched.cumsum()
       dofcount = int(renumber[-1])
-      dofmap = { trans: renumber[dofs]-1 for trans, dofs in dofmap.iteritems() }
+      dofmap = { trans: renumber[dofs]-1 for trans, dofs in dofmap.items() }
 
     return function.function( funcmap, dofmap, dofcount, self.ndims )
 
@@ -1046,7 +1047,7 @@ class StructuredTopology( Topology ):
   def __str__( self ):
     'string representation'
 
-    return '%s(%s)' % ( self.__class__.__name__, 'x'.join(map(str,self.structure.shape)) )
+    return '%s(%s)' % ( self.__class__.__name__, 'x'.join( str(n) for n in self.structure.shape ) )
 
   @cache.property
   def multiindex( self ):
@@ -1092,7 +1093,7 @@ class HierarchicalTopology( Topology ):
   def interfaces( self ):
     'interface elements & groups'
 
-    raise NotImplementedError, 'awaiting reimplementation'
+    raise NotImplementedError( 'awaiting reimplementation' )
     assert hasattr( self.basetopo, 'interfaces' )
     allinterfaces = []
     topo = self.basetopo # topology to examine in next level refinement

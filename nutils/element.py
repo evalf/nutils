@@ -16,6 +16,7 @@ have a well defined reference coordinate system, and provide pointsets for
 purposes of integration and sampling.
 """
 
+from __future__ import print_function, division
 from . import log, util, numpy, core, numeric, function, cache, transform, rational, _
 import re, warnings
 
@@ -32,6 +33,9 @@ class Element( object ):
     self.reference = reference
     self.transform = transform.canonical( trans )
     self.opposite = transform.canonical( opposite ) if opposite is not None else self.transform
+
+  def __hash__( self ):
+    return object.__hash__( self )
 
   def __eq__( self, other ):
     return self is other or isinstance(other,Element) \
@@ -86,10 +90,8 @@ class Element( object ):
 
 ## REFERENCE ELEMENTS
 
-class Reference( object ):
+class Reference( cache.Immutable ):
   'reference element'
-
-  __metaclass__ = cache.Meta
 
   def __init__( self, vertices ):
     self.vertices = numpy.asarray( vertices )
@@ -517,14 +519,14 @@ class SimplexReference( Reference ):
         else [ ((3*(n+1)*n)//2) + numpy.arange(((n+2)*(n+1))//2) ] if ichild == 1
         else [ (((4*n+3-i)*i)//2+n) + numpy.arange(n+1-i) for i in range(n+1) ] if ichild == 2
         else [ (((3*n+3+i)*(n-i))//2) + numpy.arange(n,i-1,-1) for i in range(n+1) ] )
-    raise NotImplementedError, 'ndims=%d' % self.ndims
+    raise NotImplementedError( 'ndims=%d' % self.ndims )
 
   @cache.property
   def edges( self ):
     edge = SimplexReference( self.ndims-1 )
     eye = numpy.eye( self.ndims, dtype=int )
     return [ ( transform.affine( (eye[1:]-eye[0]).T, eye[0] ), edge ) ] \
-         + [ ( transform.affine( eye[range(i)+range(i+1,self.ndims)].T, isflipped=(i%2==0) ), edge )
+         + [ ( transform.affine( eye[ list(range(i))+list(range(i+1,self.ndims)) ].T, isflipped=(i%2==0) ), edge )
                   for i in range( self.ndims ) ]
 
   def __str__( self ):
@@ -801,10 +803,8 @@ class MosaicReference( Reference ):
 
 # SHAPE FUNCTIONS
 
-class StdElem( object ):
+class StdElem( cache.Immutable ):
   'stdelem base class'
-
-  __metaclass__ = cache.Meta
 
   def __init__( self, ndims, nshapes ):
     self.ndims = ndims
@@ -867,7 +867,7 @@ class PolyProduct( StdElem ):
     for n in range(2**grad):
       index = n>>R&1
       n = index.argsort() # index[s] = [0,...,1]
-      shuffle = range(points.ndim) + list( points.ndim + n )
+      shuffle = list( range(points.ndim) ) + list( points.ndim + n )
       iprod = index.sum()
       data.transpose(shuffle)[E+s[iprod:iprod+grad]] = G12[iprod]
 
@@ -922,7 +922,7 @@ class PolyLine( StdElem ):
   def spline_elems( cls, p, n ):
     'spline elements, minimum amount (just for caching)'
 
-    return map( cls, cls.spline_poly(p,n) )
+    return [ cls(c) for c in cls.spline_poly(p,n) ]
 
   @classmethod
   def spline_elems_neumann( cls, p, n ):

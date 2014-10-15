@@ -193,7 +193,7 @@ class TestSingularQuadrature( object ):
         points if not case//4 else points*flip_vector + shift_vector[1])
     transform = lambda points, case: rotate( flip( points, case ), case )
 
-    for (t1, t2), elem in elems.iteritems():
+    for (t1, t2), elem in elems.items():
       # See if ProductElement.singular_ischeme_quad() gives same result
       points_ref = numpy.empty( points.shape )
       points_ref[:,:2] = transform( points[:,:2], t1 )
@@ -252,7 +252,7 @@ class TestSingularQuadrature( object ):
     for neighbor, elems in enumerate( ecoll ):
       if devel: errs, Fset = {}, {}
       if compare_to_gauss: errsg = {}
-      for key, elem in elems.iteritems():
+      for key, elem in elems.items():
         topo = topology.Topology( [elem] )
         F = topo.integrate( func(geom), geometry=dgeom, ischeme='singular%i'%qmax )
         if compare_to_gauss:
@@ -298,7 +298,7 @@ class TestSingularQuadrature( object ):
         with plot.PyPlot( 'conv' ) as fig:
           style = 'x-', '+-', '*-', '.-', 'o-', '^-', 's-', 'h-'
           styleg = 'x:', '+:', '*:', '.:'
-          for key, val in errs.iteritems():
+          for key, val in errs.items():
             label = 't:%i,%i'%key+' F=%.3e'%Fset[key]
             fig.semilogy( qset, val, style[key[0]], label=label )
             if neighbor and compare_to_gauss: fig.semilogy( qset, errsg[key], styleg[key[0]], label=label+' [g]' )

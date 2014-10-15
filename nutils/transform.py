@@ -10,7 +10,7 @@
 The transform module.
 """
 
-from __future__ import division
+from __future__ import print_function, division
 from . import cache, rational, numeric
 import numpy
 
@@ -20,6 +20,10 @@ _noarg = object()
 class TransformChain( tuple ):
 
   __slots__ = ()
+
+  def __getitem__( self, item ):
+    trans = tuple.__getitem__( self, item )
+    return TransformChain( trans ) if isinstance( trans, tuple ) else trans
 
   def __getslice__( self, i, j ):
     return TransformChain( tuple.__getslice__( self, i, j ) )
@@ -53,7 +57,7 @@ class TransformChain( tuple ):
         return self[:i+1], self[i+1:]
     if self.todims == ndims:
       return TransformChain(), self
-    raise Exception, 'dimension not found in chain: %s' % ndims
+    raise Exception( 'dimension not found in chain: %s' % ndims )
 
   def __lshift__( self, other ):
     # self << other
@@ -118,12 +122,17 @@ class TransformChain( tuple ):
 
 ## TRANSFORM ITEMS
 
-class TransformItem( object ):
+class TransformItem( cache.Immutable ):
 
   def __init__( self, todims, fromdims, isflipped ):
     self.todims = todims
     self.fromdims = fromdims
     self.isflipped = isflipped
+
+  __lt__ = lambda self, other: id(self) <  id(other)
+  __gt__ = lambda self, other: id(self) >  id(other)
+  __le__ = lambda self, other: id(self) <= id(other)
+  __ge__ = lambda self, other: id(self) >= id(other)
 
   def __repr__( self ):
     return '%s( %s )' % ( self.__class__.__name__, self )
@@ -147,8 +156,6 @@ class Shift( TransformItem ):
     return 'x + %s' % self.offset
 
 class Scale( TransformItem ):
-
-  __metaclass__ = cache.Meta
 
   def __init__( self, linear, offset ):
     assert linear.ndim == 0 and offset.ndim == 1
@@ -175,8 +182,6 @@ class Scale( TransformItem ):
     return '%s x + %s' % ( self.linear, self.offset )
 
 class Matrix( TransformItem ):
-
-  __metaclass__ = cache.Meta
 
   def __init__( self, linear, offset, isflipped ):
     self.linear = linear
@@ -245,7 +250,7 @@ class RootTrans( VertexTransform ):
       wi = self.w * coords.denom
       ci[:,self.I] = ci[:,self.I] % wi
       coords = rational.Rational( ci, coords.denom )
-    return map( self.fmt.format, coords )
+    return [ self.fmt.format(c) for c in coords ]
 
   def __str__( self ):
     return repr( self.fmt.format('*') )

@@ -19,6 +19,17 @@ test_examples:
 		python $$script unittest --tbexplore=False --verbose=3; \
 	done
 
+test3: test3_nose test3_examples
+
+test3_nose:
+	nosetests3 -v tests
+
+test3_examples:
+	@for script in examples/*; do \
+		echo $$script; \
+		python3 $$script unittest --tbexplore=False --verbose=3; \
+	done
+
 clean:
 	rm -fr build dist
 	rm -f MANIFEST nutils/*.pyc

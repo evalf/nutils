@@ -10,6 +10,7 @@
 The numeric module provides methods that are lacking from the numpy module.
 """
 
+from __future__ import print_function, division
 import numpy
 
 _abc = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' # indices for einsum
@@ -172,7 +173,7 @@ def fastmeshgrid( X, Y ):
 def meshgrid( *args ):
   'multi-dimensional meshgrid generalisation'
 
-  args = map( numpy.asarray, args )
+  args = [ numpy.asarray(arg) for arg in args ]
   shape = [ len(args) ] + [ arg.size for arg in args if arg.ndim ]
   dtype = int if all( isintarray(a) for a in args ) else float
   grid = numpy.empty( shape, dtype=dtype )
@@ -291,15 +292,15 @@ def diagonalize( arg ):
   return diagonalized
 
 def isbool( a ):
-  return isinstance( a, bool ) or isboolarray(a) and a.ndim == 0
+  return isboolarray( a ) and a.ndim == 0 or numpy.issubdtype( type(a), numpy.bool )
 
 def isboolarray( a ):
-  return isinstance( a, numpy.ndarray ) and a.dtype == bool
+  return isinstance( a, numpy.ndarray ) and numpy.issubdtype( a.dtype, numpy.bool )
 
 def isint( a ):
-  return isinstance( a, (int,long,numpy.int64) ) or isintarray(a) and a.ndim == 0
+  return isintarray( a ) and a.ndim == 0 or numpy.issubdtype( type(a), numpy.integer )
 
 def isintarray( a ):
-  return isinstance( a, numpy.ndarray ) and a.dtype in (int,long,numpy.int64)
+  return isinstance( a, numpy.ndarray ) and numpy.issubdtype( a.dtype, numpy.integer )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

@@ -30,7 +30,7 @@ def main( nelems=40, degree=1, timestep=.01, tol=1e-10, cg=False, alpha=.5, ndim
     width = .25
     u = function.exp( -( ( ( geom - center0 ) / width )**2 ).sum() )
   else:
-    raise Exception, 'not supported: ndims=%s' % ndims
+    raise Exception( 'not supported: ndims=%s' % ndims )
 
   funcsp = ( domain.splinefunc if cg else domain.discontfunc )( degree )
   lhs = domain.project( u, onto=funcsp, geometry=geom, ptype='convolute', ischeme='gauss5' )

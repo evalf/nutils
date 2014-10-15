@@ -12,7 +12,7 @@ The log module provides print methods ``debug``, ``info``, ``user``,
 stdout as well as to an html formatted log file if so configured.
 """
 
-from __future__ import print_function
+from __future__ import print_function, division
 import sys, time, os, warnings, re
 from . import core
 
@@ -119,7 +119,7 @@ colorpicker = {
 class Log( object ):
 
   def kill( self ):
-    raise Exception, 'primary loggers are immortable'
+    raise Exception( 'primary loggers are immortable' )
 
   @property
   def living( self ):
@@ -131,7 +131,7 @@ class Log( object ):
 
   @property
   def parent( self ):
-    raise Exception, 'primary loggers have no parents'
+    raise Exception( 'primary loggers have no parents' )
 
 
 class StdLog( Log ):
@@ -335,12 +335,12 @@ def stack( msg ):
 
 def title( f ): # decorator
   assert getattr( f, '__self__', None ) is None, 'cannot decorate bound instance method'
-  default = f.func_name
-  argnames = f.func_code.co_varnames[:f.func_code.co_argcount]
+  default = f.__name__
+  argnames = f.__code__.co_varnames[:f.__code__.co_argcount]
   if 'title' in argnames:
     index = argnames.index( 'title' )
-    if index >= len(argnames) - len(f.func_defaults or []):
-      default = f.func_defaults[ index-len(argnames) ]
+    if index >= len(argnames) - len(f.__defaults__ or []):
+      default = f.__defaults__[ index-len(argnames) ]
     def wrapped( *args, **kwargs ):
       __log__ = StaticLog( args[index] if index < len(args) else kwargs.get('title',default) )
       return f( *args, **kwargs )

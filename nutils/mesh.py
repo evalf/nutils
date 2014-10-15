@@ -15,6 +15,7 @@ mesh writers are provided at this point; output is handled by the
 :mod:`nutils.plot` module.
 """
 
+from __future__ import print_function, division
 from . import topology, function, util, element, numpy, numeric, transform, rational, log, _
 import os, warnings
 
@@ -67,35 +68,6 @@ def rectilinear( richshape, periodic=(), name='rect' ):
     geom = ( funcsp * coords ).sum()
   return topo, geom
 
-def revolve( topo, coords, nelems, degree=3, axis=0 ):
-  'revolve coordinates'
-
-  # This is a hack. We need to be able to properly multiply topologies.
-  DEGREE = (2,) # Degree of coords element
-
-  structure = numpy.array([ [ element.QuadElement( ndims=topo.ndims+1 ) for elem in topo ] for ielem in range(nelems) ])
-  revolved_topo = topology.StructuredTopology( structure.reshape( nelems, *topo.structure.shape ), periodic=0 )
-  if nelems % 2 == 0:
-    revolved_topo[ 'top' ] = revolved_topo[:nelems//2]
-    revolved_topo[ 'bottom' ] = revolved_topo[nelems//2:]
-
-  print 'topo:', revolved_topo.structure.shape
-  revolved_func = revolved_topo.splinefunc( degree=(degree,)+DEGREE )
-
-  assert isinstance( coords, function.StaticDot )
-  assert coords.array.ndim == 2
-  nvertices, ndims = coords.array.shape
-
-  phi = ( .5 + numpy.arange(nelems) - .5*degree ) * ( 2 * numpy.pi / nelems )
-  weights = numpy.empty(( nelems, nvertices, ndims+1 ))
-  weights[...,:axis] = coords.array[:,:axis]
-  weights[...,axis] = numpy.cos(phi)[:,_] * coords.array[:,axis]
-  weights[...,axis+1] = numpy.sin(phi)[:,_] * coords.array[:,axis]
-  weights[...,axis+2:] = coords.array[:,axis+1:]
-  weights = numeric.reshape( weights, 2, 1 )
-
-  return revolved_topo, revolved_func.dot( weights )
-
 def gmesh( fname, tags={}, name=None, use_elementary=False ):
   """Gmesh parser
 
@@ -144,7 +116,7 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
     words = line.split()
     nid = len(nidmap)
     nidmap[int(words[0])] = nid
-    coords[nid] = map( float, words[1:] )
+    coords[nid] = [ float(n) for n in words[1:] ]
   assert not numpy.isnan(coords).any()
   assert numpy.all( coords[:,2] ) == 0, 'ndims=3 case not yet implemented.'
   coords = coords[:,:2]
@@ -338,7 +310,7 @@ def igatool( path, name=None ):
     elif grouptype == 'element':
       elemgroups[ groupname ] = topology.Topology( elements[i] for i in I )
     else:
-      raise Exception, 'unknown group type: %r' % grouptype
+      raise Exception( 'unknown group type: %r' % grouptype )
 
   topo = topology.Topology( elements )
   for groupname, grouptopo in elemgroups.items():
@@ -351,7 +323,7 @@ def igatool( path, name=None ):
 
   for group in elemgroups.values():
     myboundaries = {}
-    for name, boundary in boundaries.iteritems():
+    for name, boundary in boundaries.items():
       belems = [ belem for belem in boundary.elements if belem.parent[0] in group ]
       if belems:
         myboundaries[ name ] = topology.Topology( belems )
@@ -369,7 +341,7 @@ def fromfunc( func, nelems, ndims, degree=1 ):
 
   if isinstance( nelems, int ):
     nelems = [ nelems ]
-  assert len( nelems ) == func.func_code.co_argcount
+  assert len( nelems ) == func.__code__.co_argcount
   topo, ref = rectilinear( [ numpy.linspace(0,1,n+1) for n in nelems ] )
   funcsp = topo.splinefunc( degree=degree ).vector( ndims )
   coords = topo.projection( func, onto=funcsp, coords=ref, exact_boundaries=True )

@@ -12,10 +12,13 @@ backends. At this point `matplotlib <http://matplotlib.org/>`_ and `vtk
 <http://vtk.org>`_ are supported.
 """
 
-from __future__ import division
+from __future__ import print_function, division
 from . import topology, util, numpy, function, element, log, core, numeric, debug, _
-from scipy import spatial # for def mesh; import cannot be postponed apparently
 import os, warnings
+try:
+  from scipy import spatial # for def mesh; import cannot be postponed apparently
+except ImportError:
+  pass
 
 def _nansplit( data ):
   n, = numpy.where( numpy.isnan( data.reshape( data.shape[0], -1 ) ).any( axis=1 ) )
@@ -217,9 +220,9 @@ class PyPlot( BasePlot ):
             vertices = numpy.concatenate( [vert1,vert2], axis=0 )
             hull = numpy.concatenate([ numpy.arange(ntri), numpy.arange(ntri-1,0,-1).cumsum()+ntri-1, numpy.arange(ntri+1,2,-1).cumsum()[::-1]-ntri-1 ])
           else:
-            raise Exception, 'cannot match points to a bezier scheme'
+            raise Exception( 'cannot match points to a bezier scheme' )
         else:
-          raise Exception, 'unknown triangulation method %r' % triangulate
+          raise Exception( 'unknown triangulation method %r' % triangulate )
         P.append( epoints.T )
         N.append( vertices + npoints )
         if colors is not None:
@@ -235,7 +238,7 @@ class PyPlot( BasePlot ):
 
     else:
 
-      raise Exception, 'invalid points shape %r' % ( points.shape, )
+      raise Exception( 'invalid points shape %r' % ( points.shape, ) )
   
     TriMesh = self._trimesh_class()
     polycol = TriMesh( xy, triangles, rasterized=True, **kwargs )
@@ -294,7 +297,7 @@ class PyPlot( BasePlot ):
       x0 = x * 10**-W
       xc = x * 10**(-.5*W)
     else:
-      raise Exception, 'unknown x-axis scale %r' % xscale
+      raise Exception( 'unknown x-axis scale %r' % xscale )
 
     yscale = ax.get_yscale()
     H = W * float(slope)
@@ -305,7 +308,7 @@ class PyPlot( BasePlot ):
       y0 = y * 10**-H
       yc = y * 10**(-.5*H)
     else:
-      raise Exception, 'unknown x-axis scale %r' % xscale
+      raise Exception( 'unknown x-axis scale %r' % xscale )
 
     from matplotlib import transforms
     dpi = self.gcf().dpi_scale_trans
@@ -525,7 +528,7 @@ class VTKFile( BasePlot ):
         vtkelem = vtk.vtkVoxel() # TODO hexahedron for not rectilinear NOTE ordering changes!
 
       if not vtkelem:
-        raise Exception('not sure what to do with cells with ndims=%d and npoints=%d' % (ndims,np))
+        raise Exception( 'not sure what to do with cells with ndims=%d and npoints=%d' % (ndims,np) )
 
       if ndims < 3:
         pts = numpy.concatenate([pts,numpy.zeros(shape=(pts.shape[0],3-ndims))],axis=1)
@@ -637,7 +640,7 @@ class Pylab( object ):
     n = len( os.listdir( dumpdir ) )
     imgpath = util.getpath( self.name )
     pyplot.savefig( imgpath, format=imgpath.split('.')[-1] )
-    os.chmod( imgpath, 0644 )
+    os.chmod( imgpath, 0o644 )
     pyplot.close()
     log.path( os.path.basename(imgpath) )
 
@@ -752,7 +755,7 @@ class PylabAxis( object ):
     nfun = len(xfun)
     assert len(yfun) == nfun
 
-    special_args = zip( *[ zip( [key]*nfun, val ) for (key,val) in kwargs.iteritems() if isinstance(val,list) and len(val) == nfun ] )
+    special_args = zip( *[ zip( [key]*nfun, val ) for (key,val) in kwargs.items() if isinstance(val,list) and len(val) == nfun ] )
     XYD = [ ([],[],dict(d)) for d in special_args or [[]] * nfun ]
     xypairs = function.Tuple( [ function.Tuple(v) for v in zip( xfun, yfun, XYD ) ] )
 
@@ -832,7 +835,7 @@ def preview( coords, topology, cscheme='contour8' ):
       else:
         pyplot.title( '?ZXY'[iplt] )
   else:
-    raise Exception, 'need 2D or 3D coordinates'
+    raise Exception( 'need 2D or 3D coordinates' )
   pyplot.show()
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

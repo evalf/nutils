@@ -10,6 +10,7 @@
 The cache module.
 """
 
+from __future__ import print_function, division
 from . import core, log
 import os, weakref, numpy
 
@@ -18,10 +19,10 @@ _property = property
 def property( f ):
   def cache_property_wrapper( self, f=f ):
     try:
-      value = self.__dict__[f.func_name]
+      value = self.__dict__[f.__name__]
     except KeyError:
       value = f( self )
-      self.__dict__[f.func_name] = value
+      self.__dict__[f.__name__] = value
     return value
   assert not cache_property_wrapper.__closure__
   return _property(cache_property_wrapper)
@@ -71,7 +72,7 @@ def _hashable( obj ):
 def _keyfromargs( func, args, kwargs, offset=0 ):
   if getattr( func, '__self__', None ) is not None: # bound instancemethod
     offset += 1
-  code = func.func_code
+  code = func.__code__
   names = code.co_varnames[offset+len(args):code.co_argcount]
   if names:
     kwargs = kwargs.copy()
@@ -81,9 +82,9 @@ def _keyfromargs( func, args, kwargs, offset=0 ):
       except KeyError:
         index = names.index(name)-len(names)
         try:
-          val = func.func_defaults[index]
+          val = func.__defaults__[index]
         except Exception as e:
-          raise TypeError, '%s missing mandatory argument %r' % ( func.__name__, name )
+          raise TypeError( '%s missing mandatory argument %r' % ( func.__name__, name ) )
       args += val,
     assert not kwargs, '%s got invalid arguments: %s' % ( func.__name__, ', '.join(kwargs) )
   return tuple( _hashable(arg) for arg in args )
@@ -113,7 +114,7 @@ class CallDict( dict ):
       else 'effectivity %d%% (%d hits, %d misses)' % ( (100*self.hit)/(self.hit+len(self)), self.hit, len(self) )
 
 
-class Meta( type ):
+class ImmutableMeta( type ):
   def __init__( cls, *args, **kwargs ):
     #print 'creating immutable class', cls.__name__
     type.__init__( cls, *args, **kwargs )
@@ -127,6 +128,11 @@ class Meta( type ):
       cls.cache[key] = self
     return self
 
+try: # for python 2/3 compatibility
+  exec( 'class Immutable( object, metaclass=ImmutableMeta ): pass' )
+except SyntaxError:
+  class Immutable( object ):
+    __metaclass__ = ImmutableMeta
 
 class FileCache( object ):
   'cache'
@@ -157,7 +163,7 @@ class FileCache( object ):
     'call'
 
     import cPickle
-    name = func.__name__ + ''.join( ' %s' % arg for arg in args ) + ''.join( ' %s=%s' % item for item in kwargs.iteritems() )
+    name = func.__name__ + ''.join( ' %s' % arg for arg in args ) + ''.join( ' %s=%s' % item for item in kwargs.items() )
     pos = self.data.tell()
     try:
       data = cPickle.load( self.data )

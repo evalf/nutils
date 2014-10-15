@@ -14,6 +14,7 @@ solving linear systems. Matrices can be converted to numpy arrays via
 ``toarray`` or scipy matrices via ``toscipy``.
 """
 
+from __future__ import print_function, division
 from . import util, numpy, log
 
 
@@ -145,7 +146,7 @@ class ScipyMatrix( Matrix ):
     elif name == 'diag':
       precon = numpy.reciprocal( A.diagonal() ).__mul__
     else:
-      raise Exception, 'invalid preconditioner %r' % name
+      raise Exception( 'invalid preconditioner %r' % name )
     return scipy.sparse.linalg.LinearOperator( A.shape, precon, dtype=float )
 
 class NumpyMatrix( Matrix ):
@@ -202,7 +203,7 @@ def assemble( data, index, shape, force_dense=False ):
     if retval.ndim == 2:
       retval = NumpyMatrix( retval )
   assert retval.shape == shape
-  log.debug( 'assembled', '%s(%s)' % ( retval.__class__.__name__, ','.join(map(str,shape)) ) )
+  log.debug( 'assembled', '%s(%s)' % ( retval.__class__.__name__, ','.join( str(n) for n in shape ) ) )
   return retval
 
 def parsecons( constrain, lconstrain, rconstrain, shape ):

@@ -10,27 +10,26 @@
 The rational module.
 """
 
-from __future__ import division
+from __future__ import print_function, division
 import numpy
-
 
 class Rational( object ):
 
   __array_priority__ = 1
 
   def __init__( self, numer, denom=1, isfactored=False ):
-    assert isinstance( denom, (int,long) ) and denom > 0
+    assert isint(denom) and denom > 0
     if not isinstance( numer, numpy.ndarray ):
       numer = numpy.array( numer )
       numer.flags.writeable = False
-    assert numer.dtype in (int,long)
+    assert isint(numer)
     if denom != 1 and not isfactored:
-      numbers = numpy.unique( abs(numer) )[::-1].tolist() # unique descending
-      if not numbers[-1]:
-        numbers.pop() # ignore zero
+      absnumers = numpy.unique( abs(numer) )[::-1].tolist() # unique descending
+      if not absnumers[-1]:
+        absnumers.pop() # ignore zero
       common = denom
-      while numbers and common > 1:
-        n = numbers.pop()
+      while absnumers and common > 1:
+        n = absnumers.pop()
         while n: # GCD: Euclid's algorithm
           common, n = n, common % n
       if common != 1:
@@ -170,6 +169,8 @@ class Rational( object ):
 
 ## UTILITY FUNCTIONS
 
+isint = lambda a: numpy.issubdtype( a.dtype if isinstance(a,numpy.ndarray) else type(a), numpy.integer )
+
 unit = Rational( 1 )
 
 def det( array ):
@@ -183,7 +184,7 @@ def det( array ):
     ((a,b,c),(d,e,f),(g,h,i)) = array.numer
     det = Rational( a*e*i + b*f*g + c*d*h - c*e*g - b*d*i - a*f*h, array.denom**3 )
   else:
-    raise NotImplementedError, 'shape=' + str(array.shape)
+    raise NotImplementedError( 'shape=' + str(array.shape) )
   return det
 
 def invdet( array ):
@@ -198,7 +199,7 @@ def invdet( array ):
     ((a,b,c),(d,e,f),(g,h,i)) = array.numer
     invdet = Rational( ((e*i-f*h,c*h-b*i,b*f-c*e),(f*g-d*i,a*i-c*g,c*d-a*f),(d*h-e*g,b*g-a*h,a*e-b*d)), array.denom**2 )
   else:
-    raise NotImplementedError, 'shape=' + tuple(array.shape)
+    raise NotImplementedError( 'shape=' + tuple(array.shape) )
   return invdet
   
 def inv( array ):
@@ -218,7 +219,7 @@ def ext( array ):
     ((a,b),(c,d),(e,f)) = array.numer * array.denom
     ext = Rational( (c*f-e*d,e*b-a*f,a*d-c*b) )
   else:
-    raise NotImplementedError, 'shape=%s' % (array.shape,)
+    raise NotImplementedError( 'shape=%s' % (array.shape,) )
   # VERIFY
   A = asfloat( array )
   v = asfloat( ext )
@@ -240,7 +241,7 @@ def asarray( arr ):
   if isrational( arr ):
     return arr
   arr = numpy.asarray( arr )
-  if arr.dtype in (int,long):
+  if isint(arr):
     return Rational( arr )
   return arr
 
@@ -260,13 +261,15 @@ def zeros( shape ):
 def ones( shape ):
   return Rational( numpy.ones(shape,dtype=int) )
 
-def stack( (arg1,arg2) ):
+def stack( args ):
+  arg1, arg2 = args
   arg1 = asrational( arg1 )
   arg2 = asrational( arg2 )
   assert arg1.ndim == arg2.ndim == 1
   return Rational( numpy.concatenate([ arg1.numer * arg2.denom, arg2.numer * arg1.denom ]), arg1.denom * arg2.denom )
 
-def blockdiag( (arg1,arg2) ):
+def blockdiag( args ):
+  arg1, arg2 = args
   arg1 = asrational( arg1 )
   arg2 = asrational( arg2 )
   assert arg1.ndim == arg2.ndim == 2

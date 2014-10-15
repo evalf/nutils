@@ -28,6 +28,7 @@ possible only via inverting of the geometry function, which is a fundamentally
 expensive and currently unsupported operation.
 """
 
+from __future__ import print_function, division
 from . import util, numpy, numeric, log, core, cache, transform, rational, _
 import sys, warnings
 
@@ -37,10 +38,8 @@ POINTS = 'Points'
 
 TOKENS = CACHE, TRANS, POINTS
 
-class Evaluable( object ):
+class Evaluable( cache.Immutable ):
   'Base class'
-
-  __metaclass__ = cache.Meta
 
   def __init__( self, args ):
     'constructor'
@@ -49,7 +48,7 @@ class Evaluable( object ):
     self.__args = tuple(args)
 
   def evalf( self, *args ):
-    raise NotImplementedError, 'Evaluable derivatives should implement the evalf method'
+    raise NotImplementedError( 'Evaluable derivatives should implement the evalf method' )
 
   @cache.property
   def serialized( self ):
@@ -63,7 +62,7 @@ class Evaluable( object ):
         index = myops.index( arg )
       except ValueError:
         argops, arginds = arg.serialized
-        renumber = range( len(TOKENS) )
+        renumber = list( range( len(TOKENS) ) )
         for op, ind in zip( argops, arginds ):
           try:
             n = myops.index( op )
@@ -120,7 +119,7 @@ class Evaluable( object ):
       elif ischeme is None:
         points = None
       else:
-        raise Exception, 'invalid integration scheme of type %r' % type(ischeme)
+        raise Exception( 'invalid integration scheme of type %r' % type(ischeme) )
 
     assert trans[0].fromdims == trans[1].fromdims
     if points is not None:
@@ -129,7 +128,7 @@ class Evaluable( object ):
     ops, inds = self.serialized
     assert TOKENS == ( CACHE, TRANS, POINTS )
     values = [ fcache, trans, points ]
-    for op, indices in zip( ops, inds ) + [(self,inds[-1])]:
+    for op, indices in zip( list(ops)+[self], inds ):
       args = [ values[i] for i in indices ]
       try:
         retval = op.evalf( *args )
@@ -137,7 +136,7 @@ class Evaluable( object ):
         raise
       except:
         etype, evalue, traceback = sys.exc_info()
-        raise EvaluationError, ( etype, evalue, self, values ), traceback
+        raise EvaluationError( etype, evalue, self, values ).with_traceback( traceback )
       values.append( retval )
     return values[-1]
 
@@ -181,10 +180,10 @@ class Evaluable( object ):
     lines = []
     for name in TOKENS:
       lines.append( '  %%%d = %s' % ( len(lines), name ) )
-    for op, indices in zip(ops,inds) + [(self,inds[-1])]:
+    for op, indices in zip( list(ops)+[self], inds ):
       args = [ '%%%d' % idx for idx in indices ]
       try:
-        code = op.evalf.func_code
+        code = op.evalf.__code__
         offset = 1 if getattr( op.evalf, '__self__', None ) is not None else 0
         names = code.co_varnames[ offset:code.co_argcount ]
         names += tuple( '%s[%d]' % ( code.co_varnames[ code.co_argcount ], n ) for n in range( len(indices) - len(names) ) )
@@ -347,7 +346,9 @@ class ArrayFunc( Evaluable ):
   __mul__  = lambda self, other: multiply( self, other )
   __rmul__ = lambda self, other: multiply( other, self )
   __div__  = lambda self, other: divide( self, other )
+  __truediv__ = __div__
   __rdiv__ = lambda self, other: divide( other, self )
+  __rtruediv__ = __rdiv__
   __add__  = lambda self, other: add( self, other )
   __radd__ = lambda self, other: add( other, self )
   __sub__  = lambda self, other: subtract( self, other )
@@ -417,7 +418,7 @@ class ArrayFunc( Evaluable ):
     'split first axis'
 
     if not self.shape:
-      raise TypeError, 'scalar function is not iterable'
+      raise TypeError( 'scalar function is not iterable' )
 
     return ( self[i,...] for i in range(self.shape[0]) )
 
@@ -433,7 +434,7 @@ class ArrayFunc( Evaluable ):
     while numpy.any( numeric.contract( r, r, axis=-1 ) > tol ):
       niter += 1
       if niter >= maxiter:
-        raise Exception, 'failed to converge in %d iterations' % maxiter
+        raise Exception( 'failed to converge in %d iterations' % maxiter )
       points = points.offset( numeric.contract( Jinv( elem, points ), r[:,_,:], axis=-1 ) )
       r = target - self( elem, points )
     return points
@@ -460,7 +461,7 @@ class ArrayFunc( Evaluable ):
     elif grad.shape == (1,0):
       normal = [1]
     else:
-      raise NotImplementedError, 'cannot compute normal for %dx%d jacobian' % ( self.shape[0], ndims )
+      raise NotImplementedError( 'cannot compute normal for %dx%d jacobian' % ( self.shape[0], ndims ) )
     return normal * ElemSign( ndims )
 
   def curvature( self, ndims=-1 ):
@@ -501,7 +502,7 @@ class ArrayFunc( Evaluable ):
       Ginv = inverse( G )
       Jinv = ( J[_,:,:] * Ginv[:,_,:] ).sum()
     else:
-      raise Exception, 'cannot invert %sx%s jacobian' % J.shape
+      raise Exception( 'cannot invert %sx%s jacobian' % J.shape )
     return sum( localgradient( self, ndims )[...,_] * Jinv, axes=-2 )
 
   def laplace( self, coords, ndims=0 ):
@@ -551,7 +552,7 @@ class ArrayFunc( Evaluable ):
   def __str__( self ):
     'string representation'
 
-    return '%s<%s>' % ( self.__class__.__name__, ','.join(map(str,self.shape)) )
+    return '%s<%s>' % ( self.__class__.__name__, ','.join( str(n) for n in self.shape ) )
 
   __repr__ = __str__
 
@@ -600,7 +601,7 @@ class Align( ArrayFunc ):
 
     assert arr.ndim == len(self.axes)+1
     extra = arr.ndim - len(self.negaxes)
-    return numeric.align( arr, range(extra)+self.negaxes, self.ndim+extra )
+    return numeric.align( arr, list(range(extra))+self.negaxes, self.ndim+extra )
 
   def _align( self, axes, ndim ):
     newaxes = [ axes[i] for i in self.axes ]
@@ -1031,7 +1032,7 @@ class Concatenate( ArrayFunc ):
           break
         n += func.shape[axis]
       else:
-        raise Exception, 'index out of bounds'
+        raise Exception( 'index out of bounds' )
       length = 1
       while length < len(indices) and n <= indices[length] < n + func.shape[axis]:
         length += 1
@@ -1375,7 +1376,7 @@ class Dot( ArrayFunc ):
 
   @property
   def axes( self ):
-    return range( self.ndim, self.ndim + self.naxes )
+    return list( range( self.ndim, self.ndim + self.naxes ) )
 
   def _get( self, i, item ):
     func1, func2 = self.funcs
@@ -1729,7 +1730,7 @@ class Pointdata( ArrayFunc ):
   def update_max( self, func ):
     func = asarray(func)
     assert func.shape == self.shape
-    data = dict( (trans,(numpy.maximum(func.eval((trans,trans),points),values),points)) for trans,(values,points) in self.data.iteritems() )
+    data = dict( (trans,(numpy.maximum(func.eval((trans,trans),points),values),points)) for trans,(values,points) in self.data.items() )
 
     return Pointdata( data, self.shape )
 
@@ -2121,7 +2122,7 @@ def _obj2str( obj ):
   if isinstance( obj, numpy.ndarray ):
     if obj.size < 6:
       return _obj2str(obj.tolist())
-    return 'array<%s>' % 'x'.join( map( str, obj.shape ) )
+    return 'array<%s>' % 'x'.join( str(n) for n in obj.shape )
   if isinstance( obj, list ):
     if len(obj) < 6:
       return '[%s]' % ','.join( _obj2str(o) for o in obj )
@@ -2146,9 +2147,11 @@ def _obj2str( obj ):
     return '...'
   return str(obj)
 
-def _findcommon( (a1,a2), (b1,b2) ):
+def _findcommon( a, b ):
   'find common item in 2x2 data'
 
+  a1, a2 = a
+  b1, b2 = b
   if _equal( a1, b1 ):
     return a1, (a2,b2)
   if _equal( a1, b2 ):
@@ -2172,7 +2175,7 @@ _zeros = lambda shape: Zeros( shape )
 _zeros_like = lambda arr: _zeros( arr.shape )
 
 # for consistency in Add and Multiply arguments: the smallest Evaluable first
-_issorted = lambda a, b: not isinstance(b,Evaluable) or isinstance(a,Evaluable) and a <= b
+_issorted = lambda a, b: not isinstance(b,Evaluable) or isinstance(a,Evaluable) and id(a) <= id(b)
 _sorted = lambda a, b: (a,b) if _issorted(a,b) else (b,a)
 
 def _call( obj, attr, *args ):
@@ -2200,7 +2203,7 @@ def _dtypestr( arg ):
     return 'int'
   if arg.dtype == float:
     return 'double'
-  raise Exception, 'unknown dtype %s' % arg.dtype
+  raise Exception( 'unknown dtype %s' % arg.dtype )
 
 def _equal( arg1, arg2 ):
   'compare two objects'
@@ -2274,7 +2277,7 @@ def stack( args, axis=0 ):
 def chain( funcs ):
   'chain'
 
-  funcs = map( asarray, funcs )
+  funcs = [ asarray(func) for func in funcs ]
   shapes = [ func.shape[0] for func in funcs ]
   return [ concatenate( [ func if i==j else _zeros( (sh,) + func.shape[1:] )
              for j, sh in enumerate(shapes) ], axis=0 )
@@ -2300,7 +2303,7 @@ def merge( funcs ):
       nmap = dofmap.dofmap.copy()
     else:
       targetlen = len( nmap ) + len( dofmap.dofmap )
-      nmap.update( dict( (key, val+offset) for key, val in dofmap.dofmap.iteritems() ) )
+      nmap.update( dict( (key, val+offset) for key, val in dofmap.dofmap.items() ) )
       assert len( nmap ) == targetlen, 'Don`t allow overlap.'
 
     if cascade is None:
@@ -2387,7 +2390,7 @@ def align( arg, axes, ndim ):
   axes = _normdims( ndim, axes )
   assert len(set(axes)) == len(axes), 'duplicate axes in align'
 
-  if list(axes) == range(ndim):
+  if util.allequal( axes, range(ndim) ):
     return arg
 
   if not _isfunc( arg ):
@@ -2504,7 +2507,7 @@ def dot( arg1, arg2, axes ):
   if not _isfunc(arg1) and not _isfunc(arg2):
     return numeric.contract( arg1, arg2, axes )
 
-  shuffle = range( len(shape) )
+  shuffle = list( range( len(shape) ) )
   for ax in reversed( axes ):
     shuffle.append( shuffle.pop(ax) )
 
@@ -2539,7 +2542,7 @@ def determinant( arg, axes=(-2,-1) ):
   if n == 1:
     return get( get( arg, ax2, 0 ), ax1, 0 )
 
-  trans = range(ax1) + [-2] + range(ax1,ax2-1) + [-1] + range(ax2-1,arg.ndim-2)
+  trans = list(range(ax1)) + [-2] + list(range(ax1,ax2-1)) + [-1] + list(range(ax2-1,arg.ndim-2))
   arg = align( arg, trans, arg.ndim )
   shape = arg.shape[:-2]
 
@@ -2565,7 +2568,7 @@ def inverse( arg, axes=(-2,-1) ):
   if n == 1:
     return reciprocal( arg )
 
-  trans = range(ax1) + [-2] + range(ax1,ax2-1) + [-1] + range(ax2-1,arg.ndim-2)
+  trans = list(range(ax1)) + [-2] + list(range(ax1,ax2-1)) + [-1] + list(range(ax2-1,arg.ndim-2))
   arg = align( arg, trans, arg.ndim )
 
   if not _isfunc( arg ):
@@ -2585,7 +2588,7 @@ def takediag( arg, ax1=-2, ax2=-1 ):
   ax1, ax2 = _norm_and_sort( arg.ndim, (ax1,ax2) )
   assert ax2 > ax1 # strict
 
-  axes = range(ax1) + [-2] + range(ax1,ax2-1) + [-1] + range(ax2-1,arg.ndim-2)
+  axes = list(range(ax1)) + [-2] + list(range(ax1,ax2-1)) + [-1] + list(range(ax2-1,arg.ndim-2))
   arg = align( arg, axes, arg.ndim )
 
   if arg.shape[-1] == 1:
@@ -2691,13 +2694,18 @@ def transpose( arg, trans=None ):
   'transpose'
 
   arg = asarray( arg )
+  if not arg.ndim:
+    assert not trans
+    return arg
+
   if trans is None:
     invtrans = range( arg.ndim-1, -1, -1 )
   else:
     trans = _normdims( arg.ndim, trans )
-    assert sorted(trans) == range(arg.ndim)
+    assert util.allequal( sorted(trans), range(arg.ndim) )
     invtrans = numpy.empty( arg.ndim, dtype=int )
     invtrans[ numpy.asarray(trans) ] = numpy.arange( arg.ndim )
+
   return align( arg, invtrans, arg.ndim )
 
 def product( arg, axis ):
@@ -2834,7 +2842,7 @@ def add( arg1, arg2 ):
   return Add( *_sorted(arg1,arg2) )
 
 def blockadd( arg1, arg2 ):
-  return BlockAdd( *sorted([ arg1, arg2 ]) )
+  return BlockAdd( *_sorted( arg1, arg2 ) )
 
 def power( arg, n ):
   'power'
@@ -2890,7 +2898,7 @@ def eig( arg, axes=(-2,-1), symmetric=False ):
   assert arg.shape[ax1] == arg.shape[ax2]
 
   # Move the axis with matrices
-  trans = range(ax1) + [-2] + range(ax1,ax2-1) + [-1] + range(ax2-1,arg.ndim-2)
+  trans = list(range(ax1)) + [-2] + list(range(ax1,ax2-1)) + [-1] + list(range(ax2-1,arg.ndim-2))
   aligned_arg = align( arg, trans, arg.ndim )
 
   # When it's an array calculate directly
@@ -3037,7 +3045,7 @@ def blocks( arg ):
   arg = asarray( arg )
   return arg.blocks if _isfunc( arg ) \
     else [] if numpy.all( arg == 0 ) \
-    else [( Tuple( map(numpy.arange,arg.shape) ), arg )]
+    else [( Tuple( numpy.arange(n) for n in arg.shape ), arg )]
 
 def pointdata ( topo, ischeme, func=None, shape=None, value=None ):
   'point data'

@@ -13,8 +13,9 @@ platforms, notably excluding Windows. On unsupported platforms parallel features
 will disable and a warning is printed.
 """
 
+from __future__ import print_function, division
 from . import core, log, numpy, debug, numeric
-import os, sys, multiprocessing, thread
+import os, sys, multiprocessing
 
 Lock = multiprocessing.Lock
 cpu_count = multiprocessing.cpu_count
@@ -129,9 +130,10 @@ def fork( func, nice=19 ):
   def wrapped( *args, **kwargs ):
     pid = os.fork()
     if pid:
-      thread.start_new_thread( waitpid_noerr, (pid,) ) # kill the zombies
-      # see: http://stackoverflow.com/a/13331632/445031
-      # this didn't work: http://stackoverflow.com/a/6718735/445031
+      # import thread
+      # thread.start_new_thread( waitpid_noerr, (pid,) ) # kill the zombies
+      # # see: http://stackoverflow.com/a/13331632/445031
+      # # this didn't work: http://stackoverflow.com/a/6718735/445031
       return pid
     try:
       os.nice( nice )
@@ -161,7 +163,7 @@ def shzeros( shape, dtype=float ):
     typecode = 'i'
     dtype = numpy.int32
   else:
-    raise Exception, 'invalid dtype: %r' % dtype
+    raise Exception( 'invalid dtype: %r' % dtype )
   buf = multiprocessing.RawArray( typecode, int(size) )
   return numpy.frombuffer( buf, dtype ).reshape( shape )
 

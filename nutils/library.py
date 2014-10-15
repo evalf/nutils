@@ -12,6 +12,7 @@ nevertheless have a wide enough range of applicability to be useful as generic
 building blocks.
 """
 
+from __future__ import print_function, division
 from . import function, _, numeric
 import numpy
 
@@ -22,7 +23,7 @@ def _tryall( obj, prefix, kwargs ):
         return getattr( obj, name )( **kwargs )
       except TypeError:
         pass
-  raise Exception, 'not supported: ' + ', '.join( kwargs.keys() )
+  raise Exception( 'not supported: ' + ', '.join( kwargs.keys() ) )
 
 class Hooke:
 

@@ -13,8 +13,9 @@ point of a nutils application, taking care of command line parsing, output dir
 creation and initiation of a log file.
 """
 
+from __future__ import print_function, division
 from . import log, debug, core, version
-import sys, os, time, numpy, cPickle, hashlib, weakref, warnings, itertools
+import sys, os, time, numpy, hashlib, weakref, warnings
 
 def isiterable( obj ):
   'check for iterability'
@@ -80,19 +81,19 @@ def delaunay( points ):
 def withrepr( f ):
   'add string representation to generated function'
 
-  code = f.func_code
+  code = f.__code__
   argnames = code.co_varnames[:code.co_argcount]
-  defaults = dict( zip( reversed(argnames), reversed(f.func_defaults) ) )
+  defaults = dict( zip( reversed(argnames), reversed(f.__defaults__) ) )
   class function_wrapper( object ):
     def __init__( self, *args, **kwargs ):
       self.fun = f( *args, **kwargs )
-      self.items = zip( argnames, args ) \
+      self.items = list( zip( argnames, args ) ) \
         + [ (name,kwargs[name] if name in kwargs else defaults[name]) for name in argnames[len(args):] ]
     def __getattr__( self, attr ):
       for key, value in self.items:
         if key == attr:
           return value
-      raise AttributeError, attr
+      raise AttributeError( attr )
     def __call__( self, *args, **kwargs ):
       return self.fun( *args, **kwargs )
     def __str__( self ):
@@ -133,16 +134,26 @@ def sum( seq ):
   'a better sum'
 
   seq = iter(seq)
-  return _sum( seq, seq.next() )
+  return _sum( seq, next(seq) )
 
 def product( seq ):
   'multiply items in sequence'
 
   seq = iter(seq)
-  prod = seq.next()
+  prod = next(seq)
   for item in seq:
     prod = prod * item
   return prod
+
+def allequal( seq1, seq2 ):
+  seq1 = iter(seq1)
+  seq2 = iter(seq2)
+  for item1, item2 in zip( seq1, seq2 ):
+    if item1 != item2:
+      return False
+  if list(seq1) or list(seq2):
+    return False
+  return True
 
 def clone( obj ):
   'clone object'
@@ -224,7 +235,7 @@ class Clock( object ):
 def tensorial( args ):
   'create n-dimensional array containing tensorial combinations of n args'
 
-  shape = map( len, args )
+  shape = [ len(arg) for arg in args ]
   array = numpy.empty( shape, dtype=object )
   for index in numpy.lib.index_tricks.ndindex( *shape ):
     array[index] = tuple([ arg[i] for arg, i in zip(args,index) ])
@@ -233,20 +244,19 @@ def tensorial( args ):
 def arraymap( f, dtype, *args ):
   'call f for sequence of arguments and cast to dtype'
 
-  return numpy.array( map( f, args[0] ) if len( args ) == 1
+  return numpy.array( [ f( arg ) for arg in args[0] ] if len( args ) == 1
                  else [ f( *arg ) for arg in numpy.broadcast( *args ) ], dtype=dtype )
 
 def objmap( func, *arrays ):
   'map numpy arrays'
 
-  #arrays = map( numpy.asarray, arrays )
   arrays = [ numpy.asarray( array, dtype=object ) for array in arrays ]
   return numpy.frompyfunc( func, len(arrays), 1 )( *arrays )
 
 def fail( msg, *args ):
   'generate exception'
 
-  raise Exception, msg % args
+  raise Exception( msg % args )
 
 class Locals( object ):
   'local namespace as object'
@@ -260,9 +270,9 @@ class Locals( object ):
 def getkwargdefaults( func ):
   'helper for run'
 
-  defaults = func.func_defaults or []
-  N = func.func_code.co_argcount - len( defaults )
-  return zip( func.func_code.co_varnames[N:], defaults )
+  defaults = func.__defaults__ or []
+  N = func.__code__.co_argcount - len( defaults )
+  return zip( func.__code__.co_varnames[N:], defaults )
 
 class Statm( object ):
   'memory statistics on systems that support it'
@@ -319,15 +329,16 @@ def run( *functions ):
     'profile': False,
   }
   try:
-    execfile( os.path.expanduser( '~/.nutilsrc' ), {}, properties )
+    nutilsrc = os.path.expanduser( '~/.nutilsrc' )
+    exec( open(nutilsrc).read(), {}, properties )
   except IOError:
     pass # file does not exist
   except:
-    print 'Skipping .nutilsrc: ' + debug.format_exc()
+    print( 'Skipping .nutilsrc: ' + debug.format_exc() )
 
   if '-h' in sys.argv[1:] or '--help' in sys.argv[1:]:
-    print 'Usage: %s [FUNC] [ARGS]' % sys.argv[0]
-    print '''
+    print( 'Usage: %s [FUNC] [ARGS]' % sys.argv[0] )
+    print( '''
   --help                  Display this help
   --nprocs=%(nprocs)-14s Select number of processors
   --outdir=%(outdir)-14s Define directory for output
@@ -338,27 +349,27 @@ def run( *functions ):
   --symlink=%(symlink)-13s Create symlink to latest results
   --recache=%(recache)-13s Overwrite existing cache
   --dot=%(dot)-17s Set graphviz executable
-  --profile=%(profile)-13s Show profile summary at exit''' % properties
+  --profile=%(profile)-13s Show profile summary at exit''' % properties )
     for i, func in enumerate( functions ):
-      print
-      print 'Arguments for %s%s' % ( func.func_name, '' if i else ' (default)' )
-      print
+      print()
+      print( 'Arguments for %s%s' % ( func.__name__, '' if i else ' (default)' ) )
+      print()
       for kwarg, default in getkwargdefaults( func ):
-        print '  --%s=%s' % ( kwarg, default )
+        print( '  --%s=%s' % ( kwarg, default ) )
     return
 
   if sys.argv[1:] and not sys.argv[1].startswith( '-' ):
     argv = sys.argv[2:]
     funcname = sys.argv[1]
     for func in functions:
-      if func.func_name == funcname:
+      if func.__name__ == funcname:
         break
     else:
-      print 'error: invalid function name: %s' % funcname
+      print( 'error: invalid function name: %s' % funcname )
       return
   else:
     func = functions[0]
-    funcname = func.func_name
+    funcname = func.__name__
     argv = sys.argv[1:]
   kwargs = dict( getkwargdefaults( func ) )
   for arg in argv:
@@ -377,7 +388,7 @@ def run( *functions ):
       assert arg in properties, 'invalid argument %r' % arg
       properties[arg] = val
 
-  locals().update({ '__%s__' % name: value for name, value in properties.iteritems() })
+  locals().update({ '__%s__' % name: value for name, value in properties.items() })
 
   scriptname = os.path.basename(sys.argv[0])
   outdir = os.path.expanduser( core.getprop( 'outdir' ) ).rstrip( os.sep ) + os.sep
@@ -405,7 +416,7 @@ def run( *functions ):
   logpath = os.path.join( os.path.dirname( log.__file__ ), '_log' ) + os.sep
   for filename in os.listdir( logpath ):
     if filename[0] != '.' and ( not os.path.isfile( outdir + filename ) or os.path.getmtime( outdir + filename ) < os.path.getmtime( logpath + filename ) ):
-      print 'updating', filename
+      print( 'updating', filename )
       open( outdir + filename, 'w' ).write( open( logpath + filename, 'r' ).read() )
 
   redirect = '<html>\n<head>\n<meta http-equiv="cache-control" content="max-age=0" />\n' \
@@ -415,8 +426,8 @@ def run( *functions ):
            + '<meta http-equiv="pragma" content="no-cache" />\n' \
            + '<meta http-equiv="refresh" content="0;URL=%slog.html" />\n</head>\n</html>\n'
 
-  print >> open( outdir+'log.html', 'w' ), redirect % ( scriptname + '/' + timepath )
-  print >> open( basedir+'log.html', 'w' ), redirect % ( timepath )
+  print( redirect % ( scriptname + '/' + timepath ), file=open( outdir+'log.html', 'w' ) )
+  print( redirect % ( timepath ), file=open( basedir+'log.html', 'w' ) )
 
   htmlfile = open( dumpdir+'log.html', 'w' )
   htmlfile.write( '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "DTD/xhtml1-strict.dtd">\n' )
@@ -461,7 +472,7 @@ def run( *functions ):
       failed = 0
     except KeyboardInterrupt:
       log.error( 'killed by user' )
-    except Terminate, exc:
+    except Terminate as exc:
       log.error( 'terminated:', exc )
     except:
       exc_info = sys.exc_info()

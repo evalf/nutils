@@ -32,8 +32,8 @@ def makeplots( domain, geom, velo, pres, index ):
 
 @util.withrepr
 def Gauss( center=.75, width=.25, height=.25 ):
-  return lambda (x,y): function.stack([ x,
-    height * function.exp( -((x-center)/width)**2 ) * (1-y) + y ])
+  return lambda xy: function.stack([ xy[0],
+    height * function.exp( -((xy[0]-center)/width)**2 ) * (1-xy[1]) + xy[1] ])
 
 
 def main( nelems=16, reynolds=2e3, curve=Gauss(), strong=False, tol=1e-8, timestep=0, plot=True, solvetol=1e-10 ):

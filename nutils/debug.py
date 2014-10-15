@@ -12,6 +12,7 @@ interactive shell environment. Access to these components is primarily via
 :func:`breakpoint` and an exception handler in :func:`nutils.util.run`.
 """
 
+from __future__ import print_function, division
 from . import core, cache, numeric, log
 import sys, cmd, re, os, linecache, numpy
 
@@ -29,9 +30,9 @@ class Frame( object ):
     # If frame is a class method try to add the class name
     # http://stackoverflow.com/questions/2203424/python-how-to-retrieve-class-information-from-a-frame-object/15704609#15704609
     name = frame.f_code.co_name
-    for classname, obj in frame.f_globals.iteritems():
+    for classname, obj in frame.f_globals.items():
       try:
-        assert obj.__dict__[name].func_code is frame.f_code
+        assert obj.__dict__[name].__code__ is frame.f_code
       except:
         pass
       else:
@@ -128,15 +129,15 @@ class Explorer( cmd.Cmd ):
     'show traceback up to index'
 
     for i, f in enumerate(self.frames):
-      print ' *'[i == self.index] + f.context[1:]
-    print ' ', self.msg
+      print( ' *'[i == self.index] + f.context[1:] )
+    print( ' ', self.msg )
 
   def do_s( self, arg ):
     '''Show source code of the currently focussed frame.'''
 
     for f in self.frames[:self.index+1]:
-      print f.where
-    print f.source
+      print( f.where )
+    print( f.source )
 
   def do_l( self, arg ):
     '''List the stack and exception type'''
@@ -146,7 +147,7 @@ class Explorer( cmd.Cmd ):
   def do_q( self, arg ):
     '''Quit traceback exploror.'''
 
-    print 'quit.'
+    print( 'quit.' )
     return True
 
   def do_u( self, arg ):
@@ -169,22 +170,22 @@ class Explorer( cmd.Cmd ):
     frame = self.frames[self.index].frame
     maxlen = max( len(name) for name in frame.f_locals )
     fmt = '  %' + str(maxlen) + 's : %s'
-    for item in frame.f_locals.iteritems():
-      print fmt % item
+    for item in frame.f_locals.items():
+      print( fmt % item )
 
   def do_p( self, arg ):
     '''Print local of global variable, or function evaluation.'''
 
     frame = self.frames[self.index].frame
-    print eval(arg,frame.f_globals,frame.f_locals)
+    print( eval(arg,frame.f_globals,frame.f_locals) )
 
   def onecmd( self, text ):
     'wrap command handling to avoid a second death'
 
     try:
       return cmd.Cmd.onecmd( self, text )
-    except Exception, e:
-      print '%s in %r:' % ( e.__class__.__name__, text ), e
+    except Exception as e:
+      print( '%s in %r:' % ( e.__class__.__name__, text ), e )
 
   def do_pp( self, arg ):
     '''Pretty-print local of global variable, or function evaluation.'''
@@ -264,7 +265,7 @@ def write_html( out, exc_info ):
       out.write( fmt % line )
     out.write( '\n\n' )
     out.write( '<table border="1" style="border:none; margin:0px; padding:0px;">\n' )
-    for key, val in f.frame.f_locals.iteritems():
+    for key, val in f.frame.f_locals.items():
       try:
         val = str(val).replace('<','&lt;').replace('>','&gt;')
       except:
@@ -355,7 +356,7 @@ def checkdata( obj, base64 ):
     proto, args, verify_obj = base64_dec( base64 )
     assert proto == 1, 'unsupported protocol version %s' % proto
     nsig, ndec = args
-  except Exception, e:
+  except Exception as e:
     log.error( 'failed to decode base64 data: %s' % e )
     equal = False
     nsig = 4

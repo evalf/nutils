@@ -72,8 +72,10 @@ class TestNormalInKernelOfV( object ):
     dgeom = function.concatenate([ geometry, function.opposite(geometry) ])
 
     x = geometry
-    print '@@', x.shape
     y = function.opposite( geometry )
+
+    tmp = self.ddomain.integrate( (V(x,y)).sum(), geometry=dgeom, ischeme='singular{0}'.format(degree) )
+    print( tmp )
 
     return self.ddomain.integrate( (V(x,y)*x.normal()).sum(), geometry=dgeom, ischeme='singular{0}'.format(degree) )
 
