@@ -698,7 +698,7 @@ class StructuredTopology( Topology ):
     for idim in range(self.ndims):
       if idim in self.periodic:
         t1 = (slice(None),)*idim + (slice(None),)
-        t2 = (slice(None),)*idim + (numpy.array( range(1,self.structure.shape[idim]) + [0] ),)
+        t2 = (slice(None),)*idim + (numpy.array( list(range(1,self.structure.shape[idim])) + [0] ),)
       else:
         t1 = (slice(None),)*idim + (slice(-1),)
         t2 = (slice(None),)*idim + (slice(1,None),)
