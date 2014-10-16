@@ -85,6 +85,7 @@ class PyPlot( BasePlot ):
     self.names = [ self.name + '.' + ext for ext in imgtype.split(',') ]
 
     self.__dict__.update( pyplot.__dict__ )
+    self.axis = lambda *args: [pyplot.axis(arg) for arg in args]
 
     self._fig = self.figure( **kwargs )
     #self._fig.patch.set_alpha( 0 )
