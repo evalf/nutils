@@ -303,12 +303,17 @@ class Statm( object ):
 class Terminate( Exception ):
   pass
 
-def githash( path ):
-  git = os.path.join( path, '.git' )
-  head = open( os.path.join( git, 'HEAD' ) ).read()
+def githash( path, depth=0  ):
+  abspath = os.path.abspath( path )
+  for i in range( depth ):
+    abspath = os.path.dirname( abspath )
+  git = os.path.join( abspath, '.git' )
+  with open( os.path.join( git, 'HEAD' ) ) as HEAD:
+    head = HEAD.read()
   assert head.startswith( 'ref:' )
   ref = head[4:].strip()
-  githash, = open( os.path.join( git, ref ) ).read().split()
+  with open( os.path.join( git, ref ) ) as ref:
+    githash, = ref.read().split()
   return githash
 
 def run( *functions ):
@@ -447,7 +452,7 @@ def run( *functions ):
     __cachedir__ = basedir + 'cache'
 
     try:
-      gitversion = version + '.' + githash(os.path.dirname(os.path.dirname(__file__)))[:8]
+      gitversion = version + '.' + githash(__file__,2)[:8]
     except:
       gitversion = version
     log.info( 'nutils v%s\n' % gitversion )
