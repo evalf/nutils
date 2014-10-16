@@ -359,7 +359,7 @@ class Topology( object ):
       for ifunc, func in enumerate( funcs )
         for ind, f in function.blocks( func ) ]
 
-    block2func, indices, values = zip( *blocks )
+    block2func, indices, values = zip( *blocks ) if blocks else ([],[],[])
     indexfunc = function.Tuple( indices )
     valuefunc = function.Tuple( values )
 
