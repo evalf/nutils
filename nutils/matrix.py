@@ -199,7 +199,7 @@ def assemble( data, index, shape, force_dense=False ):
     retval = ScipyMatrix( csr )
   else:
     flatindex = numpy.dot( numpy.cumprod( (1,)+shape[:0:-1] )[::-1], index )
-    retval = numpy.bincount( flatindex, data, numpy.prod(shape) ).reshape( shape )
+    retval = numpy.bincount( flatindex, data, numpy.prod(shape) ).reshape( shape ).astype( data.dtype, copy=False )
     if retval.ndim == 2:
       retval = NumpyMatrix( retval )
   assert retval.shape == shape
