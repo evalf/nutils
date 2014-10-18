@@ -79,5 +79,49 @@ def three_D ():
   test_obj.test_volume()
   #test_obj.test_surfacearea()
 
+class TestHierarchical():
+
+  def test_hierarchical( self, makeplots=False ):
+
+    # Topologies:
+    # ref0    [  .  .  .  |  .  .  .  ]
+    # ref1    [  .  .  .  |  .  |  .  ]
+    # ref2    [  .  .  .  |  |  |  .  ]
+    # trimmed [  .  .  .  |]
+
+    ref0, geom = mesh.rectilinear( [[0,1,2]] )
+    e1, e2 = ref0
+    ref1 = ref0.refined_by( [e2] )
+    e1, e2, e3 = ref1
+    ref2 = ref1.refined_by( [e2] )
+
+    basis = ref2.basis( 'std', degree=1 )
+    assert basis.shape == (5,)
+    x, y = ref2.elem_eval( [ geom[0], basis ], ischeme='bezier2', separate=False )
+    assert numpy.all( y == .25 * numpy.array(
+      [[4,0,0,0,0],
+       [0,4,0,0,0],
+       [0,3,2,0,4],
+       [0,2,4,0,0],
+       [0,0,0,4,0]] )[[0,1,1,2,2,3,3,4]] )
+
+    if makeplots:
+      with plot.PyPlot( 'basis' ) as plt:
+        plt.plot( x, y )
+
+    levelset = 1.125 - geom[0]
+    trimmed, complement = ref2.trim( levelset, maxrefine=3 )
+    trimbasis = trimmed.basis( 'std', degree=1 )
+    x, y = trimmed.simplex.elem_eval( [ geom[0], trimbasis ], ischeme='bezier2', separate=False )
+    assert numpy.all( y == .125 * numpy.array(
+      [[8,0,0],
+       [0,8,0],
+       [0,7,4]] )[[0,1,1,2]] )
+
+    if makeplots:
+      with plot.PyPlot( 'basis' ) as plt:
+        plt.plot( x, y )
+
+
 if __name__ == '__main__':
-  util.run( two_D, three_D )
+  util.run( TestHierarchical().test_hierarchical, two_D, three_D )

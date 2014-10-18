@@ -1126,6 +1126,14 @@ class HierarchicalTopology( Topology ):
   def basis( self, name, *args, **kwargs ):
     'build hierarchical function space'
 
+    # The law: a basis function is retained if all elements of self can
+    # evaluate it through cascade, and at least one element of self can
+    # evaluate it directly.
+
+    # Procedure: per refinement level, track which basis functions have at
+    # least one supporting element coinsiding with self ('touched') and no
+    # supporting element finer than self ('supported').
+
     collect = {}
     ndofs = 0 # total number of dofs of new function object
     remaining = len(self) # element count down (know when to stop)
@@ -1186,6 +1194,12 @@ class HierarchicalTopology( Topology ):
     assert check.all()
 
     return function.function( fmap=fmap, nmap=nmap, ndofs=ndofs, ndims=self.ndims )
+
+  def trim( self, *args, **kwargs ):
+    poselems, negelems = Topology.trim( self, *args, **kwargs )
+    return HierarchicalTopology( self.basetopo, poselems ), \
+           HierarchicalTopology( self.basetopo, negelems )
+
 
 class RefinedTopology( Topology ):
   'refinement'
