@@ -12,7 +12,7 @@ The cache module.
 
 from __future__ import print_function, division
 from . import core, log
-import os, weakref, numpy
+import os, sys, weakref, numpy
 
 
 _property = property
@@ -140,6 +140,12 @@ class FileCache( object ):
   def __init__( self, *args ):
     'constructor'
 
+    if sys.version_info.major == 2:
+      self.init1( args )
+    else:
+      self.init2( args )
+
+  def init1( self, args ):
     import os, numpy
     self.myhash = hash( args )
     hexhash = hex( self.myhash )[2:]
@@ -159,18 +165,44 @@ class FileCache( object ):
       assert all( checkhash == allhash ), 'hash clash'
     self.data = data
 
+  def init2( self, args ):
+    import os, numpy, hashlib, pickle
+    serial = pickle.dumps( args, -1 )
+    self.myhash = hash( serial )
+    hexhash = hashlib.md5(serial).hexdigest()
+    cachedir = core.getprop( 'cachedir', 'cache' )
+    if not os.path.exists( cachedir ):
+      os.makedirs( cachedir )
+    path = os.path.join( cachedir, hexhash )
+    if not os.path.isfile( path ) or core.getprop( 'recache', False ):
+      log.info( 'starting new cache:', hexhash )
+      data = open( path, 'wb+' )
+      data.write( serial )
+      data.flush()
+    else:
+      log.info( 'continuing from cache:', hexhash )
+      data = open( path, 'ab+' )
+      data.seek(0)
+      recovered_args = pickle.load( data )
+      assert recovered_args == args, 'hash clash'
+    self.data = data
+
   def __call__( self, func, *args, **kwargs ):
     'call'
 
-    import cPickle
+    try:
+      import cPickle as pickle
+    except ImportError:
+      import pickle
     name = func.__name__ + ''.join( ' %s' % arg for arg in args ) + ''.join( ' %s=%s' % item for item in kwargs.items() )
     pos = self.data.tell()
     try:
-      data = cPickle.load( self.data )
+      data = pickle.load( self.data )
     except EOFError:
       data = func( *args, **kwargs)
       self.data.seek( pos )
-      cPickle.dump( data, self.data, -1 )
+      pickle.dump( data, self.data, -1 )
+      self.data.flush()
       msg = 'written to'
     else:
       msg = 'loaded from'
