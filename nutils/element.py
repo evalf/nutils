@@ -783,7 +783,7 @@ class MosaicReference( Reference ):
   def getischeme( self, ischeme ):
     'get integration scheme'
     
-    assert ischeme.startswith('gauss')
+    assert not ischeme.startswith('vertex')
     allcoords = []
     allweights = []
     for trans, child in self.children:
