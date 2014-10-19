@@ -116,7 +116,6 @@ class CallDict( dict ):
 
 class ImmutableMeta( type ):
   def __init__( cls, *args, **kwargs ):
-    #print 'creating immutable class', cls.__name__
     type.__init__( cls, *args, **kwargs )
     cls.cache = weakref.WeakValueDictionary()
   def __call__( cls, *args, **kwargs ):
@@ -133,6 +132,15 @@ try: # for python 2/3 compatibility
 except SyntaxError:
   class Immutable( object ):
     __metaclass__ = ImmutableMeta
+
+def findargs( self ):
+  for args, obj in self.__class__.cache.items():
+    if obj is self:
+      return args
+  raise ValueError( 'object missing from cache' )
+
+Immutable.__reduce__ = lambda self: ( self.__class__, findargs(self) )
+Immutable.__str__ = lambda self: '{}({})'.format( self.__class__.__name__, ','.join( str(arg) for arg in findargs(self) ) )
 
 class FileCache( object ):
   'cache'
