@@ -81,25 +81,44 @@ def delaunay( points ):
 def withrepr( f ):
   'add string representation to generated function'
 
-  code = f.__code__
-  argnames = code.co_varnames[:code.co_argcount]
-  defaults = dict( zip( reversed(argnames), reversed(f.__defaults__) ) )
   class function_wrapper( object ):
+    func = staticmethod( f )
+    argnames = f.__code__.co_varnames[:f.__code__.co_argcount]
+    defaults = dict( zip( reversed(argnames), reversed(f.__defaults__) ) )
     def __init__( self, *args, **kwargs ):
-      self.fun = f( *args, **kwargs )
-      self.items = list( zip( argnames, args ) ) \
-        + [ (name,kwargs[name] if name in kwargs else defaults[name]) for name in argnames[len(args):] ]
+      for name in self.__class__.argnames[len(args):]:
+        try:
+          arg = kwargs[name]
+        except KeyError:
+          arg = self.__class__.defaults[name]
+        args += arg,
+      self.__setstate__( args )
+    def __setstate__( self, state ):
+      assert len(state) == len(self.__class__.argnames)
+      self.__args = state
+      self.__func_instance = self.__class__.func( *state )
+    def __getstate__( self ):
+      return self.__args
     def __getattr__( self, attr ):
-      for key, value in self.items:
-        if key == attr:
-          return value
-      raise AttributeError( attr )
+      try:
+        index = self.__class__.argnames.index( attr )
+      except ValueError:
+        raise AttributeError( attr )
+      return self.__args[index]
     def __call__( self, *args, **kwargs ):
-      return self.fun( *args, **kwargs )
+      return self.__func_instance( *args, **kwargs )
+    def __eq__( self, other ):
+      return other.__class__ == self.__class__ \
+         and other.__class__.func == self.__class__.func \
+         and other.__args == self.__args
     def __str__( self ):
-      args = ','.join( '%s=%s' % item for item in self.items )
-      return '%s(%s)' % ( f.__name__, args )
-  return function_wrapper
+      argstr = ','.join( '%s=%s' % item for item in zip( self.__class__.argnames, self.__args ) )
+      return '%s(%s)' % ( f.__name__, argstr )
+
+  from functools import update_wrapper, WRAPPER_ASSIGNMENTS
+  assignments = list( WRAPPER_ASSIGNMENTS )
+  assignments.remove( '__doc__' ) # for python2
+  return update_wrapper( function_wrapper, f, assignments, [] )
 
 def profile( func ):
   import cProfile, pstats
