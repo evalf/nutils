@@ -145,6 +145,9 @@ class Reference( cache.Immutable ):
       if numpy.less_equal( levelset, 0 ).all():
         return None, self
 
+    if not maxrefine and isinstance( self, MosaicReference ):
+      maxrefine += 1
+
     if not maxrefine:
 
       int_numer = int(numer)
@@ -781,7 +784,8 @@ class MosaicReference( Reference ):
 
   def getischeme( self, ischeme ):
     'get integration scheme'
-
+    
+    assert not ischeme.startswith('vertex')
     allcoords = []
     allweights = []
     for trans, child in self.children:
