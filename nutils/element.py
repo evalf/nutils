@@ -1075,7 +1075,8 @@ class BubbleTriangle( StdElem ):
       data = numpy.array( [ 1-x-y, x, y, 27*x*y*(1-x-y) ] ).T
     elif grad == 1:
       data = numpy.empty( (npoints,4,2) )
-      data[:] = [-1,-1], [1,0], [0,1], [27*y*(1-2*x-y),27*x*(1-x-2*y)]
+      data[:,:3] = numpy.array( [[[-1,-1], [1,0], [0,1]]] )
+      data[:,3] = numpy.array( [27*y*(1-2*x-y),27*x*(1-x-2*y)] ).T
     elif grad == 2:
       data = numpy.zeros( (npoints,4,2,2) )
       data[:,3] = [-27*2*y,27*(1-2*x-2*y)], [27*(1-2*x-2*y),-27*2*x]
