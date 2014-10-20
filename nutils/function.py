@@ -2423,7 +2423,7 @@ def iwscale( geom, ndims ):
   assert cndims >= ndims, 'geometry dimension < topology dimension'
   detJ = abs( determinant( J ) ) if cndims == ndims \
     else 1. if ndims == 0 \
-    else determinant( ( J[:,:,_] * J[:,_,:] ).sum(0) )**.5
+    else abs( determinant( ( J[:,:,_] * J[:,_,:] ).sum(0) ) )**.5
   return detJ * Iwscale()
 
 def grad( arg, coords, ndims=0 ):
