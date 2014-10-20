@@ -490,6 +490,8 @@ class SimplexReference( Reference ):
     raise NotImplementedError
 
   def getischeme_vertex( self, n ):
+    if n == 0:
+      return self.vertices, None
     return self.getischeme_bezier( 2**n+1 )
 
   @cache.property
