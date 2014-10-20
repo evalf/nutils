@@ -156,7 +156,7 @@ class Rational( object ):
   __rtruediv__ = __rdiv__
 
   def __pow__( self, n ):
-    assert isinstance( n, int )
+    assert isint( n )
     return Rational( self.numer**n, self.denom**n ) if n > 1 \
       else self if n == 1 \
       else ones( self.shape ) if n == 0 \
