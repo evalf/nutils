@@ -136,7 +136,11 @@ class Evaluable( cache.Immutable ):
         raise
       except:
         etype, evalue, traceback = sys.exc_info()
-        raise EvaluationError( etype, evalue, self, values ).with_traceback( traceback )
+        excargs = etype, evalue, self, values
+        try: # python2/3
+          exec( 'raise EvaluationError, excargs, traceback' )
+        except SyntaxError:
+          raise EvaluationError(*excargs).with_traceback( traceback )
       values.append( retval )
     return values[-1]
 
