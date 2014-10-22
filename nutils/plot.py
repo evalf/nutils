@@ -286,6 +286,9 @@ class PyPlot( BasePlot ):
 
     ax = self.gca()
 
+    if float(slope) > 0:
+      width = -width
+
     xscale = ax.get_xscale()
     xmin, xmax = ax.get_xlim()
     if xscale == 'linear':
