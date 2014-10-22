@@ -139,8 +139,17 @@ def findargs( self ):
       return args
   raise ValueError( 'object missing from cache' )
 
+def immutable_str( self ):
+  try:
+    args = findargs(self)
+  except ValueError:
+    s = str( type(self) )
+  else:
+    s = '{}({})'.format( self.__class__.__name__, ','.join( str(arg) for arg in args ) )
+  return s
+
 Immutable.__reduce__ = lambda self: ( self.__class__, findargs(self) )
-Immutable.__str__ = lambda self: '{}({})'.format( self.__class__.__name__, ','.join( str(arg) for arg in findargs(self) ) )
+Immutable.__str__ = immutable_str
 
 class FileCache( object ):
   'cache'
