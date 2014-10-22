@@ -805,8 +805,7 @@ class Choose( ArrayFunc ):
 
     self.level = level
     self.choices = tuple( choices )
-    shape = _jointshape( *[ choice.shape for choice in choices ] )
-    level = level[ (_,)*(len(shape)-level.ndim) ]
+    shape = _jointshape( level.shape, *[ choice.shape for choice in choices ] )
     assert level.ndim == len( shape )
     self.ivar = [ i for i, choice in enumerate(choices) if isinstance(choice,ArrayFunc) ]
     ArrayFunc.__init__( self, args=[ level ] + [ choices[i] for i in self.ivar ], shape=shape )
@@ -2731,7 +2730,9 @@ def product( arg, axis ):
 def choose( level, choices ):
   'choose'
 
-  choices = _matchndim( *choices )
+  level_choices = _matchndim( level, *choices )
+  assert level_choices[0] == level, 'incompatible level and choices'
+  choices = level_choices[1:]
   if _isfunc(level) or any( _isfunc(choice) for choice in choices ):
     return Choose( level, choices )
   return numpy.choose( level, choices )
