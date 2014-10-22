@@ -2734,12 +2734,10 @@ def product( arg, axis ):
 def choose( level, choices ):
   'choose'
 
+  if not _isfunc(level) and not any( _isfunc(choice) for choice in choices ):
+    return numpy.choose( level, choices )
   level_choices = _matchndim( level, *choices )
-  assert level_choices[0] == level, 'incompatible level and choices'
-  choices = level_choices[1:]
-  if _isfunc(level) or any( _isfunc(choice) for choice in choices ):
-    return Choose( level, choices )
-  return numpy.choose( level, choices )
+  return Choose( level_choices[0], level_choices[1:] )
 
 def cross( arg1, arg2, axis ):
   'cross product'
