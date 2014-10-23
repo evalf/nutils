@@ -14,7 +14,7 @@ creation and initiation of a log file.
 """
 
 from __future__ import print_function, division
-from . import log, debug, core, version
+from . import log, debug, core, version, numeric
 import sys, os, time, numpy, hashlib, weakref, warnings
 
 def isiterable( obj ):
