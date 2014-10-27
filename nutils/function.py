@@ -2429,6 +2429,9 @@ def iwscale( geom, ndims ):
     else abs( determinant( ( J[:,:,_] * J[:,_,:] ).sum(0) ) )**.5
   return detJ * Iwscale()
 
+def iwdscale( geom, ndims ):
+  return iwscale( geom, ndims ) * iwscale( opposite(geom), ndims ) / Iwscale()
+
 def grad( arg, coords, ndims=0 ):
   'local derivative'
 

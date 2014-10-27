@@ -425,10 +425,14 @@ class Topology( object ):
     return data_index
 
   @log.title
-  def integrate( self, funcs, ischeme, geometry, force_dense=False ):
+  def integrate( self, funcs, ischeme, geometry=None, iwscale=None, force_dense=False ):
     'integrate'
 
-    iwscale = function.iwscale( geometry, self.ndims )
+    if iwscale is None:
+      assert geometry is not None
+      iwscale = function.iwscale( geometry, self.ndims )
+    else:
+      assert iwscale is not None
     single_arg = not isinstance( funcs, (list,tuple) )
     integrands = [ funcs * iwscale ] if single_arg else [ func * iwscale for func in funcs ]
     data_index = self._integrate( integrands, ischeme )
@@ -436,10 +440,14 @@ class Topology( object ):
     return retvals[0] if single_arg else retvals
 
   @log.title
-  def integrate_symm( self, funcs, ischeme, geometry, force_dense=False ):
+  def integrate_symm( self, funcs, ischeme, geometry=None, iwscale=None, force_dense=False ):
     'integrate a symmetric integrand on a product domain' # TODO: find a proper home for this
 
-    iwscale = function.iwscale( geometry, self.ndims )
+    if iwscale is None:
+      assert geometry is not None
+      iwscale = function.iwscale( geometry, self.ndims )
+    else:
+      assert iwscale is not None
     single_arg = not isinstance( funcs, (list,tuple) )
     integrands = [ funcs * iwscale ] if single_arg else [ func * iwscale for func in funcs ]
     assert all( integrand.ndim == 2 for integrand in integrands )

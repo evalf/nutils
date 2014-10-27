@@ -18,16 +18,16 @@ class TestGaussDoubleInt( object ):
   def test_polynomials( self ):
     domain, geom = mesh.rectilinear( [[0,.5,1]] )
     ddomain = domain * domain
-    dgeom = function.concatenate([ geom, function.opposite(geom) ])
+    iwscale = function.iwdscale(geom,domain.ndims)
 
     x = geom[0]
     y = function.opposite( geom[0] )
 
     numpy.testing.assert_almost_equal(
-      ddomain.integrate( x-y, geometry=dgeom, ischeme='gauss2' ), 0 )
+      ddomain.integrate( x-y, iwscale=iwscale, ischeme='gauss2' ), 0 )
 
     numpy.testing.assert_almost_equal(
-      ddomain.integrate( (x-y)**2, geometry=dgeom, ischeme='gauss2' ), 1./6 )
+      ddomain.integrate( (x-y)**2, iwscale=iwscale, ischeme='gauss2' ), 1./6 )
 
 class TestSingularDoubleInt( object ):
   # Regularized quadrature on product domain.
@@ -42,14 +42,14 @@ class TestSingularDoubleInt( object ):
     grid = numpy.linspace( 0., 1., 4 )
     domain, geom = mesh.rectilinear( 2*(grid,) )
     ddomain = domain * domain
-    dgeom = function.concatenate([ geom, function.opposite(geom) ])
+    iwscale = function.iwdscale(geom,domain.ndims)
 
     x = geom
     y = function.opposite( geom[0] )
     r = function.norm2( x-y )
     
-    self.patch( ddomain.integrate( 1, geometry=dgeom, ischeme='singular2' ) )
-    self.distance( ddomain.integrate( r**2, geometry=dgeom, ischeme='singular3' ) )
+    self.patch( ddomain.integrate( 1, iwscale=iwscale, ischeme='singular2' ) )
+    self.distance( ddomain.integrate( r**2, iwscale=iwscale, ischeme='singular3' ) )
 
 class TestNormalInKernelOfV( object ):
   # Convolute normal with single-layer to verify it is in the kernel, note that
@@ -69,15 +69,15 @@ class TestNormalInKernelOfV( object ):
       plot.writevtu( 'geometry.vtu', domain.refine(3), geometry )
       if refine: warnings.warn( 'The plotted geometry is a projection, and a bad approximation.' )
 
-    dgeom = function.concatenate([ geometry, function.opposite(geometry) ])
+    iwscale = function.iwdscale(geometry,self.domain.ndims)
 
     x = geometry
     y = function.opposite( geometry )
 
-    tmp = self.ddomain.integrate( (V(x,y)).sum(), geometry=dgeom, ischeme='singular{0}'.format(degree) )
+    tmp = self.ddomain.integrate( (V(x,y)).sum(), iwscale=iwscale, ischeme='singular{0}'.format(degree) )
     print( tmp )
 
-    return self.ddomain.integrate( (V(x,y)*x.normal()).sum(), geometry=dgeom, ischeme='singular{0}'.format(degree) )
+    return self.ddomain.integrate( (V(x,y)*x.normal()).sum(), iwscale=iwscale, ischeme='singular{0}'.format(degree) )
 
   def test_SphericalGeometry( self ):
     # n in ker(V), case: sphere.
@@ -129,13 +129,13 @@ class TestOneInKernelOfK( object ):
   def template( self, geometry, degree ):
     trac = self.domain.splinefunc( degree=2*(2,) ).vector(3)
     vinf = function.stack( (0.,0.,1.) )
-    dgeom = function.concatenate([ geometry, function.opposite(geometry) ])
+    iwscale = function.iwdscale( geometry, self.domain.ndims )
 
     x = geometry
     y = function.opposite( geometry )
 
     Kvinf = (K(x, y)[:,:]*vinf[_,:]).sum(-1)
-    doublelayer = self.ddomain.integrate( (trac[:,:]*Kvinf[_,:]).sum(), geometry=dgeom, ischeme='singular{0}'.format(degree) )
+    doublelayer = self.ddomain.integrate( (trac[:,:]*Kvinf[_,:]).sum(), iwscale=iwscale, ischeme='singular{0}'.format(degree) )
     identity = self.domain.integrate( (trac*vinf).sum(), geometry=geometry, ischeme='gauss4' )
 
     return .5*identity + doublelayer

@@ -52,11 +52,11 @@ class TransformChain( tuple ):
   def split( self, ndims=_noarg ):
     if ndims is _noarg:
       ndims = self.fromdims
-    for i, trans in reversed(list(enumerate(self))):
-      if trans.fromdims == ndims and trans.todims != ndims:
-        return self[:i+1], self[i+1:]
     if self.todims == ndims:
       return TransformChain(), self
+    for i, trans in enumerate(self):
+      if trans.fromdims == ndims:
+        return self[:i+1], self[i+1:]
     raise Exception( 'dimension not found in chain: %s' % ndims )
 
   def __lshift__( self, other ):
