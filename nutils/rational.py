@@ -47,6 +47,9 @@ class Rational( object ):
     for array in self.numer:
       yield Rational( array, self.denom )
 
+  def __abs__( self ):
+    return Rational( abs(self.numer), self.denom, isfactored=True )
+
   def __getitem__( self, item ):
     return Rational( self.numer[item], self.denom )
 

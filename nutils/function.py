@@ -731,7 +731,7 @@ class Iwscale( ArrayFunc ):
   def evalf( self, trans ):
     'evaluate'
 
-    return numpy.asarray( trans.split()[1].det, dtype=float )[_]
+    return abs( numpy.asarray( trans.split()[1].det, dtype=float )[_] )
 
 class Transform( ArrayFunc ):
   'transform'
