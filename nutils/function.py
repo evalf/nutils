@@ -3113,14 +3113,11 @@ def fdapprox( func, w, dofs, delta=1.e-5 ):
 def _unpack( funcsp ):
   for axes, func in funcsp.blocks:
     dofax = axes[0]
-    if isinstance( dofax, Add ):
-      dofax, dof0 = dofax.funcs
-    else:
-      dof0 = 0
+    assert isinstance( dofax, DofMap )
     dofmap = dofax.dofmap
     stdmap = func.stdmap
     for trans, dofs in dofmap.items():
-      yield trans, dofs + dof0, stdmap[trans]
+      yield trans, dofs + dofax.offset, stdmap[trans]
   
 def supp( funcsp, indices ):
   'find support of selection of basis functions'
