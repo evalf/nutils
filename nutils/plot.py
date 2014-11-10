@@ -443,10 +443,10 @@ class DataFile( BasePlot ):
     self.fout.close()
 
   def printline( self, line ):
-    print >> self.fout, line 
+    print(line,file=self.fout)
 
   def printlist( self, lst, delim=' ', start='', stop='' ):
-    print >> self.fout, start + delim.join(str(s) for s in lst)  + stop
+    print(start + delim.join(str(s) for s in lst)  + stop,file=self.fout) 
 
 class VTKFile( BasePlot ):
   'vtk file'
