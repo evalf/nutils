@@ -111,6 +111,10 @@ class Reference( cache.Immutable ):
     get = getattr( self, 'getischeme_'+ptype )
     return get( eval(args) ) if args else get()
 
+  @classmethod
+  def register( cls, ptype, func ):
+    setattr( cls, 'getischeme_%s' % ptype, func )
+
   def __mul__( self, other ):
     assert isinstance( other, Reference )
     return other if self.ndims == 0 \
@@ -181,15 +185,15 @@ class Reference( cache.Immutable ):
       assert coords.dtype == int
       simplex = SimplexReference( self.ndims )
       triangulation = util.delaunay( coords )
-      sign = [ all( levelset[tri[tri<self.nverts]] > 0 )
-             - all( levelset[tri[tri<self.nverts]] < 0 ) for tri in triangulation ]
+      sign = [ all( levelset[tri[tri<self.nverts]] >= 0 )
+             - all( levelset[tri[tri<self.nverts]] <= 0 ) for tri in triangulation ]
 
       if not all(sign): # fast route failed, fall back on separate triangulations
         oninterface = numpy.concatenate( [ levelset==0, numpy.ones( len(coords)-self.nverts, dtype=bool ) ] )
         I = numpy.concatenate([ numpy.where( levelset >= 0 )[0], numpy.arange( self.nverts, len(coords) ) ])
-        postri = [ I[tri] for tri in util.delaunay( coords[I] ) if not oninterface[ I[tri] ].all() ]
+        postri = [ I[tri] for tri in util.delaunay( coords[I] ) ]
         I = numpy.concatenate([ numpy.where( levelset <= 0 )[0], numpy.arange( self.nverts, len(coords) ) ])
-        negtri = [ I[tri] for tri in util.delaunay( coords[I] ) if not oninterface[ I[tri] ].all() ]
+        negtri = [ I[tri] for tri in util.delaunay( coords[I] ) ]
         triangulation = postri + negtri
         sign = [1] * len(postri) + [-1] * len(negtri)
 
@@ -260,7 +264,7 @@ class SimplexReference( Reference ):
 
   def getischeme_vtk( self ):
     assert self.ndims in (2,3)
-    return self.vertices, None
+    return self.vertices.astype(float), None
 
   def getischeme_gauss( self, degree ):
     '''get integration scheme
@@ -491,7 +495,7 @@ class SimplexReference( Reference ):
 
   def getischeme_vertex( self, n ):
     if n == 0:
-      return self.vertices, None
+      return self.vertices.astype(float), None
     return self.getischeme_bezier( 2**n+1 )
 
   @cache.property
@@ -587,7 +591,7 @@ class TensorReference( Reference ):
       points = [[0,0,0],[1,0,0],[0,1,0],[1,1,0],[0,0,1],[1,0,1],[0,1,1],[1,1,1]]
     else:
       raise NotImplementedError
-    return numpy.array(points), numpy.ones(self.nverts)
+    return numpy.array(points,dtype=float), numpy.ones(self.nverts,dtype=float)
 
   def getischeme_contour( self, n ):
     assert self == SimplexReference(1)**2
@@ -1001,6 +1005,7 @@ class PolyLine( StdElem ):
     'evaluate'
 
     assert points.shape[-1] == 1
+    assert points.dtype == float
     x = points[...,0]
 
     if grad > self.degree:

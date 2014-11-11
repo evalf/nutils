@@ -477,7 +477,7 @@ class Topology( object ):
     return onto.dot( weights )
 
   @log.title
-  def project( self, fun, onto, geometry, tol=0, ischeme=None, droptol=1e-8, exact_boundaries=False, constrain=None, verify=None, maxiter=0, ptype='lsqr' ):
+  def project( self, fun, onto, geometry, tol=0, ischeme=None, droptol=1e-8, exact_boundaries=False, constrain=None, verify=None, maxiter=0, ptype='lsqr', precon='diag' ):
     'L2 projection of function onto function space'
 
     log.debug( 'projection type:', ptype )
@@ -507,7 +507,7 @@ class Topology( object ):
       else:
         solvecons = constrain.copy()
         solvecons[~(constrain.where|N)] = 0
-        u = A.solve( b, solvecons, tol=tol, symmetric=True, maxiter=maxiter )
+        u = A.solve( b, solvecons, tol=tol, symmetric=True, maxiter=maxiter, precon=precon )
         constrain[N] = u[N]
 
     elif ptype == 'convolute':
@@ -576,6 +576,7 @@ class Topology( object ):
 
     return self if n <= 0 else self.refined.refine( n-1 )
 
+  @log.title
   def trim( self, levelset, maxrefine, eps=.01 ):
     'trim element along levelset'
 

@@ -18,6 +18,28 @@ from __future__ import print_function, division
 from . import util, numpy, log
 
 
+class Callback ( object ):
+
+  def __init__ ( self, b, tol, matvec, callback=None ):
+    self.ncalls = 0
+    self.logtol = numpy.log10(tol)
+    self.clock = util.Clock()
+    self.callback = callback
+    self.b = b
+    self.bnorm = min(1.,numpy.linalg.norm(b))
+    self.dot = matvec
+
+  def __call__ ( self, res ):
+    self.ncalls += 1
+    clockcheck = self.clock.check()
+    if clockcheck or self.callback:
+      if isinstance( res, numpy.ndarray ): # assume res=x
+        res = numpy.linalg.norm( self.b - self.dot(res) )
+      if self.callback:
+        self.callback( res )
+      if clockcheck:
+        log.progress( 'residual %.2e (%.0f%%)' % ( res, 100. * numpy.log10(res/self.bnorm) / self.logtol ) )
+
 class Matrix( object ):
   'matrix base class'
 
@@ -102,15 +124,7 @@ class ScipyMatrix( Matrix ):
         _tmp[_J] = v
         return _dot(_tmp)[_I]
 
-    def mycallback( res, _bnorm=min(1.,numpy.linalg.norm(b)), _logtol=numpy.log10(tol), _clock=util.Clock(), _callback=callback, _b=b, _dot=matvec ):
-      clockcheck = _clock.check()
-      if clockcheck or _callback:
-        if isinstance( res, numpy.ndarray ): # assume res=x
-          res = numpy.linalg.norm( _b - _dot(res) )
-        if _callback:
-          _callback( res )
-        if clockcheck:
-          log.progress( 'residual %.2e (%.0f%%)' % ( res, 100. * numpy.log10(res/_bnorm) / _logtol ) )
+    mycallback = Callback( b, tol, matvec, callback=callback )
 
     if isinstance( precon, str ):
       precon = self.getprecon( precon, constrain, lconstrain, rconstrain )
@@ -128,6 +142,7 @@ class ScipyMatrix( Matrix ):
     A = scipy.sparse.linalg.LinearOperator( b.shape*2, matvec, dtype=float )
     x[J], info = solverfun( A, b, M=precon, tol=tol, x0=x0, callback=mycallback, **solverargs )
     assert info == 0, '%s solver failed with status %d' % ( solver, info )
+    log.info('Linear solver converged in %d iterations' % mycallback.ncalls)
     return x
 
   def getprecon( self, name='SPLU', constrain=None, lconstrain=None, rconstrain=None ):
