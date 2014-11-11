@@ -26,6 +26,7 @@ class Callback ( object ):
     self.clock = util.Clock()
     self.callback = callback
     self.b = b
+    self.bnorm = min(1.,numpy.linalg.norm(b))
     self.dot = matvec
 
   def __call__ ( self, res ):
