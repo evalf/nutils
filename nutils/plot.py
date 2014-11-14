@@ -124,6 +124,9 @@ class PyPlot( BasePlot ):
         self.xy = xy
         self.tri = tri
         self._facecolors = numpy.zeros([numpy.max(tri)+1,4]) # fully transparent
+
+      def get_paths( self ):
+        return []
     
       @allow_rasterization
       def draw(self, renderer):
