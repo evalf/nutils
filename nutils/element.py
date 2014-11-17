@@ -500,6 +500,10 @@ class SimplexReference( Reference ):
 
   @cache.property
   def child_transforms( self ):
+    if self.ndims == 0:
+      return [
+        transform.affine( 1, [], 2 ),
+      ]
     if self.ndims == 1:
       return [
         transform.affine( 1, [0], 2 ),

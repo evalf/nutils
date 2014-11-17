@@ -20,10 +20,12 @@ class Rational( object ):
   def __init__( self, numer, denom=1, isfactored=False ):
     assert isint(denom) and denom > 0
     if not isinstance( numer, numpy.ndarray ):
-      numer = numpy.array( numer )
+      numer = numpy.array( numer ) if numer else numpy.array( [], dtype=int )
       numer.flags.writeable = False
     assert isint(numer)
-    if denom != 1 and not isfactored:
+    if not numer.size:
+      denom = 1
+    elif denom != 1 and not isfactored:
       absnumers = numpy.unique( abs(numer) )[::-1].tolist() # unique descending
       if not absnumers[-1]:
         absnumers.pop() # ignore zero
