@@ -240,9 +240,7 @@ class _PrintableIterator( object ):
             if self.__dt > self.__dtmax > 0:
               self.__dt = self.__dtmax
           progress()
-          if now > self.__tnext:
-            warnings.warn( 'logger connection lost, disabling further progress output.' )
-            self.__alive = False
+          self.__tnext = now + self.__dt
         yield item
     finally:
       self.__alive = False
