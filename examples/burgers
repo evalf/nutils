@@ -40,14 +40,12 @@ def main( nelems=40, degree=1, timestep=.001, tol=1e-8, cg=False, alpha=.5, ndim
   A1 = (1./timestep) * function.outer( funcsp ).sum()
   matrix1 = domain.integrate( A1, geometry=geom, ischeme='gauss5' )
 
-  __log__ = log.count( 'timestep' )
-  for itime in __log__:
+  for itime in log.count( 'timestep' ):
 
     if plots:
       makeplots( domain, geom, funcsp.dot(lhs) )
 
-    __log__ = log.count( 'picard' )
-    for ipicard in __log__:
+    for ipicard in log.count( 'picard' ):
 
       u = funcsp.dot( lhs )
       A2 = function.outer( ( funcsp[:,:,_] * -u ).div(geom), funcsp ).sum()

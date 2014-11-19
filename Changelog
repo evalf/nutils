@@ -6,6 +6,21 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+Reverted: log iterators
+
+  Manually setting the __log__ property is removed and the old notation
+  is reintroduced. The change is backwards incompatible, in a way that
+  an warning is issued and output is written to a fallback stream in
+  case __log__ is manually overwritten. Update your code as follows:
+
+  Removed syntax:
+  >> __log__ = log.iter( 'elem', topo )
+  >> for elem in __log__:
+
+  Restored syntax:
+  >> for elem in log.iter( 'elem', topo ):
+
+
 Changed: Evaluable base class
 
   Relevant only for custom Evaluable/ArrayFunc objects. The evalf method
@@ -195,42 +210,13 @@ Changed: breakpoint
   >> debug.breakpoint()
 
 
-Changed: infinite iterator
-
-  Old syntax:
-  >> for iiter in util.iterate( 'iteration' )
-
-  New syntax:
-  >> __log__ = log.count( 'iteration' )
-  >> for iiter in __log__:
-
-  See changed: log iterators.
-
-
-Changed: log iterators
-
-  Old syntax:
-  >> for item in log.iterate( 'myiter', iterable ):
-
-  New syntax:
-  >> __log__ = log.iter( 'myiter', iterable )
-  >> for item in __log__:
-
-  This admittedly peculiar syntax is does away with hidden frame
-  modifications. The __log__ variable must be set for the logging system
-  to pick it up. Log.iter is equivalent to the builtin iter except for
-  the name argument; also available are log.enumerate and log.count.
-
-
 Changed: log context
 
   Old syntax:
-  >> log.context( 'mycontext' )
+  >> def myfunc( arg1, arg2, .. ):
+  >>   log.context( 'myfunc' )
 
   New syntax:
-  >> __log__ = log.StaticLog( 'mycontext' )
-
-  Preferable alternative:
   >> @log.title
   >> def myfunc( arg1, arg2, .. ):
 

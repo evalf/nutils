@@ -47,8 +47,7 @@ def main( nelems=40, degree=1, timestep=.01, tol=1e-10, cg=False, alpha=.5, ndim
     matrix2i = domain.interfaces.integrate( A2i, geometry=geom, ischeme='gauss5' )
     matrix2 = matrix2 + matrix2i
 
-  __log__ = log.count( 'timestep' )
-  for itime in __log__:
+  for itime in log.count( 'timestep' ):
 
     if plots:
       makeplots( domain, geom, funcsp.dot(lhs) )

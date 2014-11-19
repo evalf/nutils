@@ -53,8 +53,7 @@ def conv( degree=1, nrefine=4 ):
   l2err = []
   h1err = []
 
-  __log__ = log.range( 'refine', nrefine )
-  for irefine in __log__:
+  for irefine in log.range( 'refine', nrefine ):
     err, rhs, cons, lhs = main( nelems=2**irefine, degree=degree )
     l2err.append( err[0] )
     h1err.append( err[1] )

@@ -3102,8 +3102,7 @@ def fdapprox( func, w, dofs, delta=1.e-5 ):
   step = numpy.linalg.norm( dofs, numpy.inf )*delta
   ndofs = len( dofs )
   dfunc_fd = []
-  __log__ = log.range( 'dof', ndofs )
-  for i in __log__:
+  for i in log.range( 'dof', ndofs ):
     pert = dofs.copy()
     pert[i] += step
     x1 = tuple( wi.dot( pert ) for wi in w )

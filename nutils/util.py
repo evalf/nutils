@@ -466,7 +466,7 @@ def run( *functions ):
 
   try:
 
-    __log__ = log.HtmlLog( htmlfile )
+    __log__ = log.Log( log.HtmlStreamFactory(htmlfile) )
     __dumpdir__ = dumpdir
     __cachedir__ = basedir + 'cache'
 

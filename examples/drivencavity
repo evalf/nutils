@@ -85,9 +85,8 @@ def main( nelems=16, reynolds=2e3, curve=Gauss(), strong=False, tol=1e-8, timest
   precon = stokesmat.getprecon( 'splu' ) if solvetol else None
   stokeslhs = stokesmat.solve( stokesrhs, constrain=cons, tol=solvetol, precon=precon )
 
-  __log__ = log.count( 'iter' )
   lhs = stokeslhs
-  for iiter in __log__:
+  for iiter in log.count( 'iter' ):
     if plot:
       makeplots( domain, geom, vspace.dot(lhs), pspace.dot(lhs), iiter )
     ugradu = ( vspace.grad(geom) * vspace.dot(lhs) ).sum()

@@ -743,8 +743,7 @@ class PylabAxis( object ):
     'quiver builder'
   
     xyuv = function.Concatenate( [ coords, quiver ] )
-    __log__ = log.iter( 'elem', topology )
-    XYUV = [ xyuv( elem, sample ) for elem in __log__ ]
+    XYUV = [ xyuv( elem, sample ) for elem in log.iter( 'elem', topology ) ]
     self.quiver( *numpy.concatenate( XYUV, 0 ).T, scale=scale )
 
   def add_graph( self, xfun, yfun, topology, sample='contour10', logx=False, logy=False, **kwargs ):

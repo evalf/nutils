@@ -35,8 +35,7 @@ def main( degree=2, niter=30, triangular=False, plot=True ):
 
   greydata = function.tanh( ( function.norm2(geom) - .5 ) * 20 )
 
-  __log__ = log.range( 'iter', niter )
-  for iiter in __log__:
+  for iiter in log.range( 'iter', niter ):
 
     funcsp = domain.splinefunc( degree=degree )
     greysmooth = domain.projection( greydata, geometry=geom, onto=funcsp, ischeme='gauss3', droptol=0, verify=int(funcsp.shape[0]) )

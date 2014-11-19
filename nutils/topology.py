@@ -48,8 +48,7 @@ class Topology( object ):
   def boundary( self ):
     if not self.__boundary:
       edges = {}
-      __log__ = log.iter( 'elem', self )
-      for elem in __log__:
+      for elem in log.iter( 'elem', self ):
         elemcoords = elem.vertices
         for iedge, iverts in enumerate( elem.reference.edge2vertices ):
           edgekey = tuple( sorted( c for c, n in zip( elemcoords, iverts ) if n ) )
@@ -169,8 +168,7 @@ class Topology( object ):
   @property
   def refine_iter( self ):
     topo = self
-    __log__ = log.count( 'refinement level' )
-    for irefine in __log__:
+    for irefine in log.count( 'refinement level' ):
       yield topo
       topo = topo.refined
 
@@ -275,8 +273,7 @@ class Topology( object ):
     pointshape = function.PointShape()
     npoints = 0
     separators = []
-    __log__ = log.iter( 'elem', self )
-    for elem in __log__:
+    for elem in log.iter( 'elem', self ):
       np, = pointshape.eval( elem, ischeme )
       slices.append( slice(npoints,npoints+np) )
       npoints += np
@@ -303,8 +300,7 @@ class Topology( object ):
     idata = function.Tuple( idata )
     fcache = cache.CallDict()
 
-    __log__ = log.enumerate( 'elem', self )
-    for ielem, elem in parallel.pariter( __log__ ):
+    for ielem, elem in parallel.pariter( log.enumerate( 'elem', self ) ):
       s = slices[ielem],
       for ifunc, index, data in idata.eval( elem, ischeme, fcache ):
         retvals[ifunc][s+index] += data
@@ -407,8 +403,7 @@ class Topology( object ):
     # data_index is filled in the same loop. It does not use valuefunc data but
     # benefits from parallel speedup.
 
-    __log__ = log.enumerate( 'elem', self )
-    for ielem, elem in parallel.pariter( __log__ ):
+    for ielem, elem in parallel.pariter( log.enumerate( 'elem', self ) ):
       ipoints, iweights = fcache( elem.reference.getischeme, ischeme[elem] if isinstance(ischeme,dict) else ischeme )
       for iblock, intdata in enumerate( valuefunc.eval( elem, ipoints, fcache ) ):
         s = slice(*offsets[iblock,ielem:ielem+2])
@@ -583,8 +578,7 @@ class Topology( object ):
     numer = rational.round(1./eps)
     poselems = []
     negelems = []
-    __log__ = log.iter( 'elem', self )
-    for elem in __log__:
+    for elem in log.iter( 'elem', self ):
       pos, neg = elem.trim( levelset=levelset, maxrefine=maxrefine, numer=numer )
       if pos:
         poselems.append( pos )
@@ -609,8 +603,7 @@ class Topology( object ):
     bases = {}
     extractions = [ [] for ifunc in range(len(funcs) ) ]
 
-    __log__ = log.iter( 'elem', self )
-    for elem in __log__:
+    for elem in log.iter( 'elem', self ):
 
       try:
         points, projector, basis = bases[ elem.reference ]

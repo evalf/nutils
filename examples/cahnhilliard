@@ -51,8 +51,7 @@ def main( nelems=40, epsilon=None, timestep=.01, init='random', mean=-.3, std=.1
   else:
     raise Exception, 'unknown init %r' % init
 
-  __log__ = log.count( 'timestep' )
-  for iiter in __log__:
+  for iiter in log.count( 'timestep' ):
 
     if plot:
       makeplots( domain, geom, c, psi(c), iiter )
