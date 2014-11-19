@@ -49,7 +49,7 @@ def main( nelems=40, epsilon=None, timestep=.01, init='random', mean=-.3, std=.1
     x, y = geom
     c = mean + (y-.5+.5*function.sin(x*2*numpy.pi)) * std
   else:
-    raise Exception, 'unknown init %r' % init
+    raise Exception( 'unknown init %r' % init )
 
   for iiter in log.count( 'timestep' ):
 

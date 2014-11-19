@@ -32,7 +32,7 @@ def main( nelems=40, degree=1, timestep=.001, tol=1e-8, cg=False, alpha=.5, ndim
     width = .5
     u = function.piecewise( ( geom**2 ).sum(), [width**2], 1, 0 ) *  (1,1)
   else:
-    raise Exception, 'not supported: ndims=%s' % ndims
+    raise Exception( 'not supported: ndims=%s' % ndims )
 
   funcsp = ( domain.splinefunc if cg else domain.discontfunc )( degree ).vector( ndims )
   lhs = domain.project( u, onto=funcsp, geometry=geom, ptype='convolute', ischeme='gauss5' )
