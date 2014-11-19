@@ -97,7 +97,7 @@ class ScipyMatrix( Matrix ):
     return supp
 
   @log.title
-  def solve( self, b=None, constrain=None, lconstrain=None, rconstrain=None, tol=0, x0=None, solver=None, symmetric=False, title='solving system', callback=None, precon='diag', **solverargs ):
+  def solve( self, b=None, constrain=None, lconstrain=None, rconstrain=None, tol=0, x0=None, solver=None, symmetric=False, title='solving system', callback=None, precon=None, **solverargs ):
     'solve'
 
     import scipy.sparse.linalg
