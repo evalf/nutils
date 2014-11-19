@@ -1758,6 +1758,18 @@ class Pointdata( ArrayFunc ):
 
     return Pointdata( data, self.shape )
 
+class Elemwise( ArrayFunc ):
+  'elementwise constant data'
+
+  def __init__( self, fmap, shape ):
+    self.fmap = fmap
+    ArrayFunc.__init__( self, args=[TRANS], shape=shape )
+
+  def evalf( self, transform ):
+    trans = transform[0].lookup( self.fmap )
+    value = numpy.asarray( self.fmap[trans] )
+    assert value.shape == self.shape
+    return value[_]
 
 class Eig( Evaluable ):
   'Eig'
