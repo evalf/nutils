@@ -2942,7 +2942,7 @@ def eig( arg, axes=(-2,-1), symmetric=False ):
 
   # When it's an array calculate directly
   if not _isfunc(aligned_arg):
-    eigval, eigvec = numeric.eigh( aligned_arg ) if symmetric else numeric.eig( aligned_arg )
+    eigval, eigvec = numpy.linalg.eigh( aligned_arg ) if symmetric else numpy.linalg.eig( aligned_arg )
   else:
     # Use _call to see if the object has its own _eig function
     ret = _call( aligned_arg, '_eig' )
