@@ -78,18 +78,30 @@ class Evaluable( cache.Immutable ):
     myinds.append( indices )
     return tuple(myops[len(TOKENS):]), tuple(myinds)
 
-  def asciitree( self ):
+  def asciitree( self, seen=None ):
     'string representation'
 
-    key = str(self)
-    lines = []
-    indent = '\n' + ' ' + ' ' * len(key)
-    for it in reversed( self.__args ):
-      s = it.asciitree() if isinstance(it,Evaluable) else _obj2str(it)
-      lines.append( indent.join( s.splitlines() ) )
-      indent = '\n' + '|' + ' ' * len(key)
-    indent = '\n' + '+' + '-' * (len(key)-1) + ' '
-    return key + ' ' + indent.join( reversed( lines ) )
+    if seen is None:
+      seen = [ None ] * len(TOKENS)
+    try:
+      index = seen.index( self )
+    except ValueError:
+      pass
+    else:
+      return '%{}'.format( index )
+    asciitree = str(self)
+    if core.getprop( 'richoutput', False ):
+      select = '├ ', '└ '
+      bridge = '│ ', '  '
+    else:
+      select = ': ', ': '
+      bridge = '| ', '  '
+    for iarg, arg in enumerate( self.__args ):
+      n = iarg >= len(self.__args) - 1
+      asciitree += '\n' + select[n] + ( ('\n' + bridge[n]).join( arg.asciitree( seen ).splitlines() ) if isinstance(arg,Evaluable) else '<{}>'.format(arg) )
+    index = len(seen)
+    seen.append( self )
+    return '%{} = {}'.format( index, asciitree )
 
   def __str__( self ):
     return self.__class__.__name__
@@ -1212,7 +1224,10 @@ class Multiply( ArrayFunc ):
 
   def evalf( self, arr1, arr2=None ):
     assert arr1.ndim == self.ndim+1
-    return arr1 * ( arr2 if arr2 is not None else self.funcs[1] )
+    if arr2 is None:
+      return arr1 * self.funcs[1]
+    assert arr2.ndim == self.ndim+1
+    return arr1 * arr2
 
   def _sum( self, axis ):
     func1, func2 = self.funcs
