@@ -57,7 +57,7 @@ def main ( L=4, R=1, E=1e5, nu=0.3, Tx=10, m=5, p=2, maxrefine=4, plots=True ):
   info_diag = []
 
   sol = K.solve( b=f, tol=1e-12, callback=info_diag.append, symmetric=True, precon='diag' )
-  K.solve( b=f, tol=1e-12, callback=info.append, symmetric=True )
+  K.solve( b=f, tol=1e-12, callback=info.append, symmetric=True, precon=None )
   u = funcsp.dot( sol )
   s = stress( u.symgrad(geom) )
 
@@ -86,10 +86,8 @@ def main ( L=4, R=1, E=1e5, nu=0.3, Tx=10, m=5, p=2, maxrefine=4, plots=True ):
   if plots:
 
     with plot.PyPlot('Solver_convergence') as plt:
-      x, y, lhsarr = zip( *info )
-      plt.semilogy( x, y, '.-', label='No precon' )
-      x, y, lhsarr = zip( *info_diag )
-      plt.semilogy( x, y, 'r.-', label='Diag precon' )
+      plt.semilogy( range(len(info)), info, '.-', label='No precon' )
+      plt.semilogy( range(len(info_diag)), info_diag, 'r.-', label='Diag precon' )
       plt.legend()
       plt.grid()
 
