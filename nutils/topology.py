@@ -303,7 +303,7 @@ class Topology( object ):
     for ielem, elem in parallel.pariter( log.enumerate( 'elem', self ) ):
       s = slices[ielem],
       for ifunc, index, data in idata.eval( elem, ischeme, fcache ):
-        retvals[ifunc][s+index] += data
+        retvals[ifunc][s+numpy.ix_(*index)] += data
 
     log.debug( 'cache', fcache.summary() )
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join( str(n) for n in retval.shape ) ) for retval in retvals ) )
