@@ -98,6 +98,26 @@ class Reference( cache.Immutable ):
     assert self.vertices.dtype == int
     self.nverts, self.ndims = self.vertices.shape
 
+  def selfcheck( self, decimal=10 ):
+    if self.ndims == 0:
+      return
+    x, w = self.getischeme( 'gauss1' )
+    volume = w.sum()
+    assert volume > 0
+    check_volume = 0
+    check_zero = 0
+    L = []
+    for trans, edge in self.edges:
+      xe, we = edge.getischeme( 'gauss1' )
+      w_normal = we[:,_] * rational.ext( trans.linear ).astype( float )
+      if trans.isflipped:
+        w_normal = -w_normal
+      L.append(( trans, edge, trans.apply(xe), numpy.linalg.norm(w_normal.sum(0)), w_normal ))
+      check_zero += w_normal.sum(0)
+      check_volume += numeric.contract( trans.apply(xe), w_normal, axis=0 )
+    numpy.testing.assert_almost_equal( check_zero, 0, decimal, '%s fails divergence test' % self )
+    numpy.testing.assert_almost_equal( check_volume, volume, decimal, '%s fails divergence test' % self )
+
   @property
   def simplices( self ):
     return [ (transform.TransformChain(),self) ]
@@ -236,6 +256,7 @@ class SimplexReference( Reference ):
     vertices = numpy.concatenate( [ numpy.zeros(ndims,dtype=int)[_,:],
                                     numpy.eye(ndims,dtype=int) ], axis=0 )
     Reference.__init__( self, vertices )
+    self.selfcheck()
     self._bernsteincache = [] # TEMPORARY
 
   def stdfunc( self, degree ):
@@ -558,6 +579,7 @@ class TensorReference( Reference ):
     vertices[:,:,:ref1.ndims] = ref1.vertices[:,_]
     vertices[:,:,ref1.ndims:] = ref2.vertices[_,:]
     Reference.__init__( self, vertices.reshape(-1,ndims) )
+    self.selfcheck()
 
   def subvertex( self, ichild, i ):
     ichild1, ichild2 = divmod( ichild, len(self.ref2.children) )
@@ -629,13 +651,13 @@ class TensorReference( Reference ):
   def edges( self ):
     return [ ( transform.affine(
                 rational.blockdiag([ trans1.linear, rational.eye(self.ref2.ndims) ]),
-                rational.stack([ trans1.offset, rational.zeros(self.ref2.ndims) ]),
+                rational.concatenate([ trans1.offset, rational.zeros(self.ref2.ndims) ]),
                 isflipped=trans1.isflipped ), edge1 * self.ref2 )
                   for trans1, edge1 in self.ref1.edges ] \
          + [ ( transform.affine(
                 rational.blockdiag([ rational.eye(self.ref1.ndims), trans2.linear ]),
-                rational.stack([ rational.zeros(self.ref1.ndims), trans2.offset ]),
-                isflipped=not trans2.isflipped ), self.ref1 * edge2 )
+                rational.concatenate([ rational.zeros(self.ref1.ndims), trans2.offset ]),
+                isflipped=trans2.isflipped if self.ref1.ndims%2==0 else not trans2.isflipped ), self.ref1 * edge2 )
                   for trans2, edge2 in self.ref2.edges ]
 
   @cache.property
@@ -643,7 +665,7 @@ class TensorReference( Reference ):
     children = []
     for trans1, child1 in self.ref1.children:
       for trans2, child2 in self.ref2.children:
-        offset = rational.stack([ trans1.offset, trans2.offset ])
+        offset = rational.concatenate([ trans1.offset, trans2.offset ])
         if trans1.linear.ndim == 0 and trans1.linear == trans2.linear:
           trans = transform.affine( trans1.linear, offset )
         else:

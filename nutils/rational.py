@@ -20,7 +20,9 @@ class Rational( object ):
   def __init__( self, numer, denom=1, isfactored=False ):
     assert isint(denom) and denom > 0
     if not isinstance( numer, numpy.ndarray ):
-      numer = numpy.array( numer ) if numer else numpy.array( [], dtype=int )
+      numer = numpy.array( numer )
+      if not numer.size:
+        numer = numpy.astype( int )
       numer.flags.writeable = False
     assert isint(numer)
     if not numer.size:
@@ -180,17 +182,32 @@ unit = Rational( 1 )
 
 def det( array ):
   array = asrational( array )
-  if array.shape == (1,1):
-    det = array[0,0]
-  elif array.shape == (2,2):
+  assert array.ndim == 2 and array.shape[0] == array.shape[1]
+  zeros = array.numer == 0
+  if zeros.any():
+    nzcols = zeros.sum( axis=0 )
+    nzrows = zeros.sum( axis=1 )
+    if max(nzcols) > max(nzrows):
+      j = numpy.argmax( nzcols )
+      IJ = [ (i,j) for i in (~zeros[:,j]).nonzero()[0] ]
+    else:
+      i = numpy.argmax( nzrows )
+      IJ = [ (i,j) for j in (~zeros[i,:]).nonzero()[0] ]
+    n = numpy.arange( len(array) )
+    # laplace's formula
+    return sum( det(array[numpy.ix_(n!=i,n!=j)]) * ( array[i,j] if (i+j)%2==0 else -array[i,j] )
+      for i, j in IJ ) if IJ else zero
+  if len(array) == 1:
+    retval = array[0,0]
+  elif len(array) == 2:
     ((a,b),(c,d)) = array.numer
-    det = Rational( a*d - b*c, array.denom**2 )
-  elif array.shape == (3,3):
+    retval = Rational( a*d - b*c, array.denom**2 )
+  elif len(array) == 3:
     ((a,b,c),(d,e,f),(g,h,i)) = array.numer
-    det = Rational( a*e*i + b*f*g + c*d*h - c*e*g - b*d*i - a*f*h, array.denom**3 )
+    retval = Rational( a*e*i + b*f*g + c*d*h - c*e*g - b*d*i - a*f*h, array.denom**3 )
   else:
     raise NotImplementedError( 'shape=' + str(array.shape) )
-  return det
+  return retval
 
 def invdet( array ):
   '''invdet(array) = inv(array) * det(array)'''
@@ -215,22 +232,27 @@ def ext( array ):
   For array of shape (n,n-1) return n-vector ex such that ex.array = 0 and
   det(arr;ex) = ex.ex"""
   array = asrational(array)
-  if array.shape == (1,0):
+  assert array.ndim == 2 and array.shape[0] == array.shape[1]+1
+  zeros = ( array.numer == 0 ).all( axis=1 )
+  if len(array) == 1:
     ext = ones( 1 )
-  elif array.shape == (2,1):
+  elif len(array) == 2:
     ((a,),(b,)) = array.numer * array.denom
-    ext = Rational( (-b,a) )
-  elif array.shape == (3,2):
+    ext = Rational( (b,-a) )
+  elif any(zeros):
+    alpha = det(array[~zeros])
+    (i,), = zeros.nonzero()
+    v = zeros * ( alpha.numer if i%2==0 else -alpha.numer )
+    ext = Rational( v, alpha.denom, True )
+  elif len(array) == 3:
     ((a,b),(c,d),(e,f)) = array.numer * array.denom
     ext = Rational( (c*f-e*d,e*b-a*f,a*d-c*b) )
   else:
     raise NotImplementedError( 'shape=%s' % (array.shape,) )
   # VERIFY
-  A = asfloat( array )
-  v = asfloat( ext )
-  Av = numpy.concatenate( [A,v[:,numpy.newaxis]], axis=1 )
-  numpy.testing.assert_almost_equal( numpy.dot( v, A ), 0 )
-  numpy.testing.assert_almost_equal( numpy.linalg.det(Av), numpy.dot(v,v) )
+  Av = concatenate( [ext[:,numpy.newaxis],array], axis=1 )
+  assert equal( dot( ext, array ), 0 ).all()
+  assert equal( det(Av), dot(ext,ext) ).all()
   return ext
 
 def isrational( arr ):
@@ -266,12 +288,14 @@ def zeros( shape ):
 def ones( shape ):
   return Rational( numpy.ones(shape,dtype=int) )
 
-def stack( args ):
-  arg1, arg2 = args
-  arg1 = asrational( arg1 )
-  arg2 = asrational( arg2 )
-  assert arg1.ndim == arg2.ndim == 1
-  return Rational( numpy.concatenate([ arg1.numer * arg2.denom, arg2.numer * arg1.denom ]), arg1.denom * arg2.denom )
+def equal( A, B ):
+  A = asrational( A )
+  B = asrational( B )
+  return numpy.equal( A.numer * B.denom, B.numer * A.denom )
+
+def concatenate( args, axis=0 ):
+  arg1, arg2 = map( asrational, args )
+  return Rational( numpy.concatenate([ arg1.numer * arg2.denom, arg2.numer * arg1.denom ], axis=axis ), arg1.denom * arg2.denom )
 
 def blockdiag( args ):
   arg1, arg2 = args
