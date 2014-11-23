@@ -54,8 +54,12 @@ class HtmlStream( Stream ):
 
   def __init__( self, level, context, html ):
     self.level = level
-    self.buf = ' &middot; '
-    self.head = self.buf.join( context )
+    if context:
+      self.buf = ' &middot; '
+      self.head = self.buf.join( context )
+    else:
+      self.buf = None
+      self.head = ''
     self.body = ''
     self.html = html
 
