@@ -230,7 +230,10 @@ class _PrintableIterator( object ):
     return '%s %d' % ( self.__text, self.__index ) if self.__length is None \
       else '%s %d/%d (%d%%)' % ( self.__text, self.__index, self.__length, (self.__index-.5) * 100. / self.__length )
 
-  def __nonzero__( self ):
+  def __nonzero__( self ): # python2
+    return self.__alive
+
+  def __bool__( self ): # python3
     return self.__alive
 
   def __iter__( self ):
