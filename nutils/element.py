@@ -147,13 +147,71 @@ class Reference( cache.Immutable ):
       else self if n == 1 \
       else self * self**(n-1)
 
+  def _trim_triangulate( self, levelset, numer ):
+    'triangulate based on vertex levelset values'
+
+    assert numeric.isint( numer )
+    assert levelset.shape == (self.nverts,)
+    repeat = True
+    while repeat: # set almost-zero points to zero if cutoff within eps
+      repeat = False
+      if numpy.greater_equal( levelset, 0 ).all():
+        return self, None
+      if numpy.less_equal( levelset, 0 ).all():
+        return None, self
+      isects = []
+      for ribbon in self.ribbon2vertices:
+        a, b = levelset[ribbon]
+        if a * b < 0: # strict sign change
+          x = int( numer * a / float(a-b) + .5 ) # round to [0,1,..,numer]
+          if 0 < x < numer:
+            isects.append(( x, ribbon ))
+          else: # near intersection of vertex
+            v = ribbon[ (0,numer).index(x) ]
+            log.debug( 'rounding vertex #%d from %f to 0' % ( v, levelset[v] ) )
+            levelset[v] = 0
+            repeat = True
+    coords = self.vertices * numer
+    if isects:
+      coords = numpy.vstack([
+        self.vertices * numer,
+        [ numpy.dot( (numer-x,x), self.vertices[ribbon] ) for x, ribbon in isects ]
+      ])
+    assert coords.dtype == int
+    simplex = SimplexReference( self.ndims )
+    triangulation = util.delaunay( coords )
+    sign = [ all( levelset[tri[tri<self.nverts]] >= 0 )
+           - all( levelset[tri[tri<self.nverts]] <= 0 ) for tri in triangulation ]
+
+    if not all(sign): # fast route failed, fall back on separate triangulations
+      oninterface = numpy.concatenate( [ levelset==0, numpy.ones( len(coords)-self.nverts, dtype=bool ) ] )
+      I = numpy.concatenate([ numpy.where( levelset >= 0 )[0], numpy.arange( self.nverts, len(coords) ) ])
+      postri = [ I[tri] for tri in util.delaunay( coords[I] ) ]
+      I = numpy.concatenate([ numpy.where( levelset <= 0 )[0], numpy.arange( self.nverts, len(coords) ) ])
+      negtri = [ I[tri] for tri in util.delaunay( coords[I] ) ]
+      triangulation = postri + negtri
+      sign = [1] * len(postri) + [-1] * len(negtri)
+
+    pos = []
+    neg = []
+
+    for i, tri in enumerate( triangulation ):
+      offset = coords[tri[0]]
+      matrix = ( coords[tri[1:]] - offset ).T
+      if numpy.linalg.det( matrix.astype(float) ) < 0:
+        tri[-2:] = tri[-1], tri[-2]
+        matrix = ( coords[tri[1:]] - offset ).T
+      strans = transform.affine( matrix, offset, numer)
+      ( pos if sign[i] > 0 else neg ).append(( strans, simplex ))
+
+    return MosaicReference( self.ndims, tuple(pos) ), \
+           MosaicReference( self.ndims, tuple(neg) )
+
   def trim( self, trans, levelset, maxrefine, numer ):
     'trim element along levelset'
 
     assert maxrefine >= 0
-    assert rational.isrational( numer )
-    pos = []
-    neg = []
+    assert numeric.isint( numer )
 
     if trans: # levelset is not evaluated
       try:
@@ -170,75 +228,26 @@ class Reference( cache.Immutable ):
         return None, self
 
     if not maxrefine and isinstance( self, MosaicReference ):
-      maxrefine += 1
+      maxrefine += 1 # for trimming of trimmed elements, hack until MosaicReference.trim is implemented
 
     if not maxrefine:
-
-      int_numer = int(numer)
       assert not trans, 'failed to evaluate levelset up to level maxrefine'
-      assert levelset.shape == (self.nverts,)
-      repeat = True
-      while repeat: # set almost-zero points to zero if cutoff within eps
-        repeat = False
-        if numpy.greater_equal( levelset, 0 ).all():
-          return self, None
-        if numpy.less_equal( levelset, 0 ).all():
-          return None, self
-        isects = []
-        for ribbon in self.ribbon2vertices:
-          a, b = levelset[ribbon]
-          if a * b < 0: # strict sign change
-            x = int( int_numer * a / float(a-b) + .5 ) # round to [0,1,..,numer]
-            if 0 < x < int_numer:
-              isects.append(( x, ribbon ))
-            else: # near intersection of vertex
-              v = ribbon[ (0,int_numer).index(x) ]
-              log.debug( 'rounding vertex #%d from %f to 0' % ( v, levelset[v] ) )
-              levelset[v] = 0
-              repeat = True
-      coords = self.vertices * int_numer
-      if isects:
-        coords = numpy.vstack([
-          self.vertices * int_numer,
-          [ numpy.dot( (int_numer-x,x), self.vertices[ribbon] ) for x, ribbon in isects ]
-        ])
-      assert coords.dtype == int
-      simplex = SimplexReference( self.ndims )
-      triangulation = util.delaunay( coords )
-      sign = [ all( levelset[tri[tri<self.nverts]] >= 0 )
-             - all( levelset[tri[tri<self.nverts]] <= 0 ) for tri in triangulation ]
+      return self._trim_triangulate( levelset, numer )
 
-      if not all(sign): # fast route failed, fall back on separate triangulations
-        oninterface = numpy.concatenate( [ levelset==0, numpy.ones( len(coords)-self.nverts, dtype=bool ) ] )
-        I = numpy.concatenate([ numpy.where( levelset >= 0 )[0], numpy.arange( self.nverts, len(coords) ) ])
-        postri = [ I[tri] for tri in util.delaunay( coords[I] ) ]
-        I = numpy.concatenate([ numpy.where( levelset <= 0 )[0], numpy.arange( self.nverts, len(coords) ) ])
-        negtri = [ I[tri] for tri in util.delaunay( coords[I] ) ]
-        triangulation = postri + negtri
-        sign = [1] * len(postri) + [-1] * len(negtri)
+    pos = []
+    neg = []
 
-      for i, tri in enumerate( triangulation ):
-        offset = coords[tri[0]]
-        matrix = ( coords[tri[1:]] - offset ).T
-        if numpy.linalg.det( matrix.astype(float) ) < 0:
-          tri[-2:] = tri[-1], tri[-2]
-          matrix = ( coords[tri[1:]] - offset ).T
-        strans = transform.affine( matrix, offset, numer)
-        ( pos if sign[i] > 0 else neg ).append(( strans, simplex ))
-
-    else:
-
-      for ichild, (ctrans,child) in enumerate( self.children ):
-        if trans:
-          poschild, negchild = child.trim( trans << ctrans, levelset, maxrefine-1, numer )
-        else:
-          N, I = self.subvertex(ichild,maxrefine)
-          assert len(levelset) == N
-          poschild, negchild = child.trim( False, levelset[I], maxrefine-1, numer )
-        if poschild:
-          pos.append( (ctrans,poschild) )
-        if negchild:
-          neg.append( (ctrans,negchild) )
+    for ichild, (ctrans,child) in enumerate( self.children ):
+      if trans:
+        poschild, negchild = child.trim( trans << ctrans, levelset, maxrefine-1, numer )
+      else:
+        N, I = self.subvertex(ichild,maxrefine)
+        assert len(levelset) == N
+        poschild, negchild = child.trim( False, levelset[I], maxrefine-1, numer )
+      if poschild:
+        pos.append( (ctrans,poschild) )
+      if negchild:
+        neg.append( (ctrans,negchild) )
 
     if not neg:
       return self, None
