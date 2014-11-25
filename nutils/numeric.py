@@ -27,6 +27,10 @@ def round( arr ):
   return arr if arr.dtype == int \
     else ( arr - numpy.less(arr,0) + .5 ).astype( int )
 
+def sign( arr ):
+  arr = numpy.asarray( arr )
+  return (arr>=0).astype(int) - (arr<=0).astype(int)
+
 def floor( arr ):
   ass = numpy.asarray( arr )
   return arr if arr.dtype == int \

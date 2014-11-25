@@ -62,7 +62,7 @@ class _Unit( object ):
 
 unit = _Unit()
 
-def delaunay( points ):
+def delaunay( points, positive=False ):
   'delaunay triangulation'
 
   points = numpy.asarray( points )
@@ -76,7 +76,12 @@ def delaunay( points ):
   from scipy import spatial
   with suppressed_output:
     submesh = spatial.Delaunay( points )
-  return submesh.vertices
+  vertices = numpy.asarray( submesh.vertices )
+  if positive:
+    for tri in submesh.vertices:
+      if numpy.linalg.det( points[tri[1:]] - points[tri[0]] ) < 0:
+        tri[-2:] = tri[-1], tri[-2]
+  return vertices
 
 def withrepr( f ):
   'add string representation to generated function'

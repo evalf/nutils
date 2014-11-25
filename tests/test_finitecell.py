@@ -5,80 +5,47 @@ import numpy
 
 class FiniteCellTestBase( object ):
 
-  def __init__ ( self ):
-    domain, self.geom = mesh.rectilinear( (numpy.linspace(-1.,1.,self.nelems+1),)*self.ndims )
-    self.fdomain, complement = domain.trim( levelset=self.levelset, maxrefine=self.maxrefine )
+  def __init__ ( self, ndims, nelems, maxrefine, voldec, surfdec ):
+    domain, self.geom = mesh.rectilinear( (numpy.linspace(0,1,nelems+1),)*ndims )
+    self.radius = numpy.sqrt( .5 )
+    levelset = self.radius**2 - ( self.geom**2 ).sum()
+    self.trimdomain, complement = domain.trim( levelset=levelset, maxrefine=maxrefine )
+    V = 1.
+    Vprev = 1. / (numpy.pi*self.radius)
+    for idim in range( ndims ):
+      S = Vprev * (2*numpy.pi*self.radius)
+      Vprev = V
+      V = S * (self.radius/(idim+1))
+    self.volume = V / 2**ndims
+    self.trimsurface = S / 2**ndims
+    self.totalsurface = self.trimsurface + Vprev / (2**(ndims-1)) * ndims
+    self.voldec = voldec
+    self.surfdec = surfdec
 
-  def test_volume ( self ):
-    vol = self.fdomain.integrate( 1., geometry=self.geom, ischeme='gauss1' )
-    log.info( 'Volume =', vol, '(%5.4f)' % self.vol_exact )
-    numpy.testing.assert_almost_equal( vol, self.vol_exact, decimal=self.vol_decimal )
+  def all( self ):
+    self.test_volume()
+    self.test_surface()
 
-### Temporarily disabled:
-#
-#   topo = topology.UnstructuredTopology( self.fdomain.get_trimmededges( self.maxrefine ), ndims=self.ndims-1 )
-#   vol_gauss = (1./float(self.ndims))*topo.integrate( sum(self.geom*self.geom.normal()), geometry=self.geom, ischeme='gauss1' )
-#   log.info( 'Volume (Gauss)=', vol_gauss, '(%5.4f)' % vol )
-#
-#   numpy.testing.assert_almost_equal( vol_gauss, vol, decimal=14 )
-#
-# def test_surfacearea ( self ):
-#   topo = topology.UnstructuredTopology( self.fdomain.get_trimmededges( self.maxrefine ), ndims=self.ndims-1 )
-#   surf = topo.integrate( 1., geometry=self.geom, ischeme='gauss1' )
-#   log.info( 'Surface area =', surf, '(%5.4f)' % self.surf_exact )
-#
-#   if __name__ == '__main__':
-#     plot.writevtu( 'surface.vtu', topo, self.geom )
-#
-#   numpy.testing.assert_almost_equal( surf, self.surf_exact, decimal=self.surf_decimal )
+  def test_volume( self ):
+    vol = self.trimdomain.volume_check( self.geom, decimal=15 )
+    numpy.testing.assert_almost_equal( vol, self.volume, decimal=self.voldec )
+ 
+  def test_surface( self ):
+    trimsurface = self.trimdomain.boundary['trimmed'].volume( self.geom )
+    numpy.testing.assert_almost_equal( trimsurface, self.trimsurface, decimal=self.surfdec )
+    totalsurface = self.trimdomain.boundary.volume( self.geom )
+    numpy.testing.assert_almost_equal( totalsurface, self.totalsurface, decimal=self.surfdec )
 
 class TestCircle( FiniteCellTestBase ):
 
-  ndims  = 2
-  nelems = 6
+  def __init__( self ):
+    FiniteCellTestBase.__init__( self, ndims=2, nelems=2, maxrefine=5, voldec=3, surfdec=3 )
   
-  @property
-  def levelset ( self ):
-    return -sum(self.geom*self.geom)+1./numpy.pi
-
-  maxrefine    = 4
-
-  vol_decimal = 3
-  vol_exact   = 1.
-
-  surf_exact   = 2.*numpy.sqrt(numpy.pi)
-  surf_decimal = 3
-
 class TestSphere( FiniteCellTestBase ):
 
-  ndims  = 3
-  nelems = 6
+  def __init__( self ):
+    FiniteCellTestBase.__init__( self, ndims=3, nelems=2, maxrefine=4, voldec=2, surfdec=2 )
   
-  r2 = numpy.power(3./(4.*numpy.pi),2./3.)
-
-  @property
-  def levelset ( self ):
-    return -sum(self.geom*self.geom)+self.r2
-
-  maxrefine    = 3
-
-  vol_decimal = 2
-  vol_exact   = 1.
-
-  surf_exact   = 4.8091571139 #4.*numpy.pi*r2
-  surf_decimal = 10
-  
-
-def two_D ():
-  test_obj = TestCircle()
-  test_obj.test_volume()
-  #test_obj.test_surfacearea()
-
-def three_D ():
-  test_obj = TestSphere()
-  test_obj.test_volume()
-  #test_obj.test_surfacearea()
-
 class TestHierarchical():
 
   def test_hierarchical( self, makeplots=False ):
@@ -124,4 +91,7 @@ class TestHierarchical():
 
 
 if __name__ == '__main__':
-  util.run( TestHierarchical().test_hierarchical, two_D, three_D )
+  def hierarchical(): return TestHierarchical().test_hierarchical()
+  def two_D(): return TestCircle().all()
+  def three_D(): return TestSphere().all()
+  util.run( hierarchical, two_D, three_D )

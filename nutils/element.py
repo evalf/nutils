@@ -63,6 +63,12 @@ class Element( object ):
     trans, edge = self.reference.edges[iedge]
     return Element( edge, self.transform << trans, self.opposite << trans )
 
+  def findedge( self, trans ):
+    edge = self.reference.findedge( trans )
+    if not edge:
+      return None
+    return Element( edge, self.transform << trans, self.opposite << trans )
+
   @property
   def children( self ):
     return [ Element( child, self.transform << trans, self.opposite << trans )
@@ -73,11 +79,13 @@ class Element( object ):
 
     pos, neg = self.reference.trim( self.transform, levelset, maxrefine, numer )
     if not neg:
-      return self, None
+      return (self,pos[1]), None
     if not pos:
-      return None, self
-    return Element( pos, self.transform, self.opposite ), \
-           Element( neg, self.transform, self.opposite )
+      return None, (self,neg[1])
+    posref, postrim = pos
+    negref, negtrim = neg
+    return ( Element( posref, self.transform, self.opposite ), postrim ), \
+           ( Element( negref, self.transform, self.opposite ), negtrim )
 
   @property
   def simplices( self ):
@@ -118,9 +126,22 @@ class Reference( cache.Immutable ):
     numpy.testing.assert_almost_equal( check_zero, 0, decimal, '%s fails divergence test' % self )
     numpy.testing.assert_almost_equal( check_volume, volume, decimal, '%s fails divergence test' % self )
 
+  def findedge( self, trans ):
+    return dict( self.edges )[ trans ]
+
   @property
   def simplices( self ):
     return [ (transform.TransformChain(),self) ]
+
+  @cache.property
+  def edge2vertex( self ):
+    edge2vertex = []
+    for trans, edge in self.edges:
+      where = numpy.zeros( self.nverts, dtype=bool )
+      for v in trans.apply( edge.vertices ):
+        where |= rational.equal( self.vertices, v ).all( axis=1 )
+      edge2vertex.append( where )
+    return numpy.array( edge2vertex )
 
   def getischeme( self, ischeme ):
     if self.ndims == 0:
@@ -155,10 +176,11 @@ class Reference( cache.Immutable ):
     repeat = True
     while repeat: # set almost-zero points to zero if cutoff within eps
       repeat = False
-      if numpy.greater_equal( levelset, 0 ).all():
-        return self, None
-      if numpy.less_equal( levelset, 0 ).all():
-        return None, self
+      allpos = numpy.greater_equal( levelset, 0 ).all()
+      if allpos or numpy.less_equal( levelset, 0 ).all():
+        ifaces, = numpy.where( ~( self.edge2vertex[:,levelset != 0].any() ) )
+        retval = self, tuple( self.edges[i][0] for i in ifaces )
+        return (retval,None) if allpos else (None,retval)
       isects = []
       for ribbon in self.ribbon2vertices:
         a, b = levelset[ribbon]
@@ -171,6 +193,7 @@ class Reference( cache.Immutable ):
             log.debug( 'rounding vertex #%d from %f to 0' % ( v, levelset[v] ) )
             levelset[v] = 0
             repeat = True
+
     coords = self.vertices * numer
     if isects:
       coords = numpy.vstack([
@@ -178,34 +201,40 @@ class Reference( cache.Immutable ):
         [ numpy.dot( (numer-x,x), self.vertices[ribbon] ) for x, ribbon in isects ]
       ])
     assert coords.dtype == int
+
+    triangulation = util.delaunay( coords, True )
+
+    sides = ([],{},{}), ([],{},{}) # elems, belems, ifaces
     simplex = SimplexReference( self.ndims )
-    triangulation = util.delaunay( coords )
-    sign = [ all( levelset[tri[tri<self.nverts]] >= 0 )
-           - all( levelset[tri[tri<self.nverts]] <= 0 ) for tri in triangulation ]
-
-    if not all(sign): # fast route failed, fall back on separate triangulations
-      oninterface = numpy.concatenate( [ levelset==0, numpy.ones( len(coords)-self.nverts, dtype=bool ) ] )
-      I = numpy.concatenate([ numpy.where( levelset >= 0 )[0], numpy.arange( self.nverts, len(coords) ) ])
-      postri = [ I[tri] for tri in util.delaunay( coords[I] ) ]
-      I = numpy.concatenate([ numpy.where( levelset <= 0 )[0], numpy.arange( self.nverts, len(coords) ) ])
-      negtri = [ I[tri] for tri in util.delaunay( coords[I] ) ]
-      triangulation = postri + negtri
-      sign = [1] * len(postri) + [-1] * len(negtri)
-
-    pos = []
-    neg = []
-
-    for i, tri in enumerate( triangulation ):
+    for tri in triangulation:
+      nonzero = [ i for i, ivert in enumerate(tri) if ivert < len(levelset) and levelset[ivert] != 0 ]
+      if not nonzero:
+        isneg = False
+      else:
+        side = levelset[tri[nonzero]] < 0
+        isneg = side[0]
+        assert all( side == isneg )
+      elems, belems, ifaces = sides[isneg]
       offset = coords[tri[0]]
       matrix = ( coords[tri[1:]] - offset ).T
-      if numpy.linalg.det( matrix.astype(float) ) < 0:
-        tri[-2:] = tri[-1], tri[-2]
-        matrix = ( coords[tri[1:]] - offset ).T
+      assert numpy.linalg.det( matrix.astype(float) ) > 0
       strans = transform.affine( matrix, offset, numer)
-      ( pos if sign[i] > 0 else neg ).append(( strans, simplex ))
+      elems.append(( strans, simplex ))
+      if len(nonzero) <= 1:
+        for iedge in nonzero or range( simplex.nverts ):
+          etrans, edge = simplex.edges[ iedge ]
+          mtrans = ( strans << etrans ).flat
+          key = tuple( sorted( ivert for i, ivert in enumerate(tri) if i != iedge ) )
+          if key in ifaces:
+            del belems[ifaces[key]]
+            del ifaces[key]
+          else:
+            ifaces[key] = mtrans
+            belems[mtrans] = edge
 
-    return MosaicReference( self.ndims, tuple(pos) ), \
-           MosaicReference( self.ndims, tuple(neg) )
+    poskeys, negkeys = [ sorted(ifaces) for elems, belems, ifaces in sides ]
+    assert poskeys == negkeys # interfaces match
+    return [ ( MosaicReference( self.ndims, elems, belems ), belems.keys() ) for elems, belems, ifaces in sides ]
 
   def trim( self, trans, levelset, maxrefine, numer ):
     'trim element along levelset'
@@ -222,10 +251,10 @@ class Reference( cache.Immutable ):
         trans = False
 
     if not trans: # levelset is evaluated
-      if numpy.greater_equal( levelset, 0 ).all():
-        return self, None
-      if numpy.less_equal( levelset, 0 ).all():
-        return None, self
+      allpos = numpy.greater( levelset, 0 ).all() # strict
+      if allpos or numpy.less( levelset, 0 ).all(): # strict
+        retval = self, ()
+        return (retval,None) if allpos else (None,retval)
 
     if not maxrefine and isinstance( self, MosaicReference ):
       maxrefine += 1 # for trimming of trimmed elements, hack until MosaicReference.trim is implemented
@@ -234,28 +263,26 @@ class Reference( cache.Immutable ):
       assert not trans, 'failed to evaluate levelset up to level maxrefine'
       return self._trim_triangulate( levelset, numer )
 
-    pos = []
-    neg = []
+    sides = ([],{}), ([],{}) # elems, belems
 
     for ichild, (ctrans,child) in enumerate( self.children ):
       if trans:
-        poschild, negchild = child.trim( trans << ctrans, levelset, maxrefine-1, numer )
+        trims = child.trim( trans << ctrans, levelset, maxrefine-1, numer )
       else:
         N, I = self.subvertex(ichild,maxrefine)
         assert len(levelset) == N
-        poschild, negchild = child.trim( False, levelset[I], maxrefine-1, numer )
-      if poschild:
-        pos.append( (ctrans,poschild) )
-      if negchild:
-        neg.append( (ctrans,negchild) )
+        trims = child.trim( False, levelset[I], maxrefine-1, numer )
+      for isneg in [ i for i, trim in enumerate(trims) if trim ]:
+        elems, belems = sides[isneg]
+        ref, iface = trims[isneg]
+        elems.append( (ctrans,ref) )
+        belems.update({ (ctrans << etrans).flat: ForwardReference( ref.findedge(etrans) ) for etrans in iface })
 
-    if not neg:
-      return self, None
-    if not pos:
-      return None, self
+    retvals = [ (self,belems.keys()) if elems else None for elems, belems in sides ]
+    if not all( retvals ): # element is not cut in two, but may contain interface
+      return retvals
 
-    return MosaicReference( self.ndims, tuple(pos) ), \
-           MosaicReference( self.ndims, tuple(neg) )
+    return [ ( MosaicReference( self.ndims, elems, belems ), belems.keys() ) for elems, belems in sides ]
 
 class SimplexReference( Reference ):
   'simplex reference'
@@ -818,10 +845,38 @@ class NeighborhoodTensorReference( TensorReference ):
 class MosaicReference( Reference ):
   'mosaic reference element'
 
-  def __init__( self, ndims, children ):
-    self.children = children
+  def __init__( self, ndims, children, edgedict={} ):
+    self.children = tuple(children)
+    self.edgedict = dict(edgedict)
     vertices = numpy.zeros( (0,ndims), dtype=int )
     Reference.__init__( self, vertices )
+
+  def findedge( self, etrans ):
+    edge = self.edgedict.get( etrans )
+    if not edge:
+      echildren = []
+      if any( isinstance( child, MosaicReference ) for ctrans, child in self.children ):
+        for ctrans, child in self.children:
+          try:
+            x = transform.solve( etrans, ctrans << etrans )
+          except:
+            pass
+          else:
+            echild = child.findedge( etrans )
+            if echild:
+              echildren.append(( x, echild ))
+      else:
+        for ctrans, child in self.children:
+          for cetrans, echild in child.edges:
+            try:
+              x = transform.solve( etrans, ctrans << cetrans )
+            except:
+              pass
+            else:
+              echildren.append(( x, echild ))
+      edge = MosaicReference( self.ndims-1, echildren ) if echildren else None
+      self.edgedict[ etrans ] = edge
+    return edge
 
   def getischeme( self, ischeme ):
     'get integration scheme'
@@ -833,7 +888,7 @@ class MosaicReference( Reference ):
       points, weights = child.getischeme( ischeme )
       allcoords.append( trans.apply(points) )
       if weights is not None:
-        allweights.append( weights * float(trans.det) )
+        allweights.append( weights * abs(float(trans.det)) )
 
     coords = numpy.concatenate( allcoords, axis=0 )
     weights = numpy.concatenate( allweights, axis=0 ) \
@@ -844,6 +899,28 @@ class MosaicReference( Reference ):
   @cache.property
   def simplices( self ):
     return [ ( trans2 << trans1, simplex ) for trans2, child in self.children for trans1, simplex in child.simplices ]
+
+class ForwardReference( Reference ):
+  'necessary to count refinement levels of trimmed boundaries'
+
+  def __init__( self, child ):
+    self.child = child
+    Reference.__init__( self, child.vertices )
+
+  def getischeme( self, ischeme ):
+    return self.child.getischeme( ischeme )
+
+  @property
+  def simplices( self ):
+    return self.child.simplices
+
+  @property
+  def edges( self ):
+    return [ ( etrans, ForwardReference(edge) ) for etrans, edge in self.child.edges ]
+
+  @property
+  def children( self ):
+    return ( transform.TransformChain(), self.child ),
 
 
 # SHAPE FUNCTIONS

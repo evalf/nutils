@@ -119,6 +119,11 @@ class TransformChain( tuple ):
   def __repr__( self ):
     return 'TransformChain( %s )' % (self,)
 
+  @property
+  def flat( self ):
+    return self if len(self) == 1 \
+      else affine( self.linear, self.offset, isflipped=self.isflipped )
+
 
 ## TRANSFORM ITEMS
 
@@ -321,5 +326,19 @@ def canonical( transchain ):
   chain.append( trans1 )
   return TransformChain( chain )
 
+def solve( transA, transB ): # A << X = B
+  A = transA.linear
+  B = transB.linear
+  assert A.ndim == B.ndim == 2
+  a = transA.offset
+  b = transB.offset
+  AAinv = rational.inv( rational.dot( A.T, A ) )
+  X = rational.dot( AAinv, rational.dot( A.T, B ) ) # A X = B
+  x = rational.dot( AAinv, rational.dot( A.T, b-a ) ) # A x + a = b
+  transX = affine( X, x )
+  transAX = transA << transX
+  assert transAX.linear == transB.linear
+  assert transAX.offset == transB.offset
+  return transX
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

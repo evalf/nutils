@@ -577,15 +577,21 @@ class Topology( object ):
 
     numer = numeric.round(1./eps)
     poselems = []
+    postrims = []
     negelems = []
+    negtrims = []
     for elem in log.iter( 'elem', self ):
       pos, neg = elem.trim( levelset=levelset, maxrefine=maxrefine, numer=numer )
       if pos:
-        poselems.append( pos )
+        poselem, postrim = pos
+        poselems.append( poselem )
+        postrims.extend( poselem.findedge(trans) for trans in postrim )
       if neg:
-        negelems.append( neg )
-    return TrimmedTopology( self, poselems ), \
-           TrimmedTopology( self, negelems )
+        negelem, negtrim = neg
+        negelems.append( negelem )
+        negtrims.extend( negelem.findedge(trans) for trans in negtrim )
+    return TrimmedTopology( self, poselems, postrims ), \
+           TrimmedTopology( self, negelems, negtrims )
 
   def elem_project( self, funcs, degree, ischeme=None, check_exact=False ):
 
@@ -638,6 +644,17 @@ class Topology( object ):
 
     return extractions
 
+  @log.title
+  def volume( self, geometry, ischeme='gauss1' ):
+    return self.integrate( 1, geometry=geometry, ischeme=ischeme )
+
+  @log.title
+  def volume_check( self, geometry, ischeme='gauss1', decimal=15 ):
+    volume = self.volume( geometry, ischeme )
+    zeros, volumes = self.boundary.integrate( [ geometry.normal(), geometry * geometry.normal() ], geometry=geometry, ischeme=ischeme )
+    numpy.testing.assert_almost_equal( zeros, 0., decimal=decimal )
+    numpy.testing.assert_almost_equal( volumes, volume, decimal=decimal )
+    return volume
 
 def UnstructuredTopology( elems, ndims ):
   return Topology( elems )
@@ -1202,7 +1219,6 @@ class HierarchicalTopology( Topology ):
     return HierarchicalTopology( self.basetopo, poselems ), \
            HierarchicalTopology( self.basetopo, negelems )
 
-
 class RefinedTopology( Topology ):
   'refinement'
 
@@ -1234,8 +1250,15 @@ class TrimmedTopology( Topology ):
 
   @cache.property
   def boundary( self ):
-    warnings.warn( 'warning: boundaries of trimmed topologies are not trimmed' )
-    belems = list( self.trimmed ) + [ belem for belem in self.basetopo.boundary if belem.transform.lookup(self.edict) ]
+    belems = list( self.trimmed )
+    for belem in self.basetopo.boundary:
+      trans = belem.transform
+      elem = self.edict.get( trans[:-1] )
+      if elem:
+        belem = elem.findedge( trans[-1:] )
+        if belem:
+          belems.append( belem )
+
     boundary = TrimmedTopology( self.basetopo.boundary, belems )
     if self.trimmed:
       boundary['trimmed'] = Topology( self.trimmed )
