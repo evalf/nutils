@@ -129,13 +129,15 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
   elems = {}
   elemgroups = {}
   edges = {}
+  vertexgroups = {}
+  vertices = {}
   edgegroups = {}
   fmap = {}
   nmap = {}
   for line in elemdata:
     words = line.split()
-    etype = int(words[1] )
-    ntags = int( words[2] )
+    etype = int(words[1])
+    ntags = int(words[2])
     if use_elementary:
       assert words[3] == '0', 'option use_elementary=True conflicts with non-zero physical tag'
       tag = tags.get( int( words[4] ), 'elementary' + words[4] )
@@ -158,18 +160,30 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
         maptrans = transform.maptrans(ref.vertices,nids if not name else [name+str(nid) for nid in nids])
         elem = element.Element(ref,maptrans)
         elems[elemkey] = elem
-      
         fmap[maptrans] = (ref.stdfunc(1),None),
         nmap[maptrans] = nids
+
+        #Extract the edges
         for iedge, edge in enumerate([[1,2],[0,2],[0,1]]):
           edgekey = tuple(sorted(nids[edge]))
           try:
             edges.pop( edgekey )
           except KeyError:
             edges[edgekey] = elem.edge(iedge)
+
+        #Extract the vertices
+        vref = element.SimplexReference(0)
+        for ivertex in range(3): #GMSH and Nutils node ordering coincide
+          zeroD_to_twoD = transform.affine( linear=numpy.zeros(shape=(2,0),dtype=int),offset=ref.vertices[ivertex] )
+          vmaptrans = maptrans << zeroD_to_twoD
+          vertexkey = (nids[ivertex],)
+          velem = element.Element(vref,vmaptrans)
+          vertices.setdefault(vertexkey,[]).append(velem)
+
       elemgroups.setdefault(tag,[]).append(elem)
     elif etype == 15:
-      assert use_elementary, 'Boundary vertex encountered in mesh with elementary groups.'
+      if not use_elementary:
+        vertexgroups.setdefault(tag,[]).append(elemkey)
     else:
       raise NotImplementedError('Unknown GMSH element type %i' % etype)
 
@@ -181,14 +195,22 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
   for group, edgekeys in edgegroups.items():
     topo.boundary[group] = topology.Topology([ edges[edgekey] for edgekey in edgekeys ])
 
+  topo.points = topology.Topology( [vertex for vertexkeys in vertexgroups.values() for vertexkey in vertexkeys for vertex in vertices[vertexkey]], ndims=0 )
+  for group, vertexkeys in vertexgroups.items():
+    topo.points[group] = topology.Topology([vertex for vertexkey in vertexkeys for vertex in vertices[vertexkey]])
+
   for tag in tags.values():
-    if tag not in topo.groupnames and tag not in topo.boundary.groupnames:
+    if tag not in topo.groupnames and \
+       tag not in topo.boundary.groupnames and \
+       tag not in topo.points.groupnames:
+
       warnings.warn('tag %r defined but not used' % tag )
 
   log.info('parsed GMSH file:')
   log.info('* nodes (#%d)' % nnodes)
   log.info('* topology (#%d) with groups: %s' % (len(topo), ', '.join('%s (#%d)' % (name,len(topo[name])) for name in topo.groupnames)))
   log.info('* boundary (#%d) with groups: %s' % (len(topo.boundary), ', '.join('%s (#%d)' % (name,len(topo.boundary[name])) for name in topo.boundary.groupnames)))
+  log.info('* points (#%d) with groups: %s' % (len(topo.points), ', '.join('%s (#%d)' % (name,len(topo.points[name])) for name in topo.points.groupnames)))
 
   linearfunc = function.function( fmap=fmap, nmap=nmap, ndofs=nnodes, ndims=topo.ndims )
   geom = ( linearfunc[:,_] * coords ).sum(0)
