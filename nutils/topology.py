@@ -590,8 +590,8 @@ class Topology( object ):
         negelem, negtrim = neg
         negelems.append( negelem )
         negtrims.extend( negelem.findedge(trans) for trans in negtrim )
-    return TrimmedTopology( self, poselems, postrims ), \
-           TrimmedTopology( self, negelems, negtrims )
+    return TrimmedTopology( self, poselems, postrims, ndims=self.ndims ), \
+           TrimmedTopology( self, negelems, negtrims, ndims=self.ndims )
 
   def elem_project( self, funcs, degree, ischeme=None, check_exact=False ):
 
@@ -1237,10 +1237,10 @@ class RefinedTopology( Topology ):
 class TrimmedTopology( Topology ):
   'trimmed'
 
-  def __init__( self, basetopo, elements, trimmed=[] ):
+  def __init__( self, basetopo, elements, trimmed=[], ndims=None ):
     self.basetopo = basetopo
     self.trimmed = tuple(trimmed)
-    Topology.__init__( self, elements )
+    Topology.__init__( self, elements, ndims )
 
   @cache.property
   def refined( self ):
