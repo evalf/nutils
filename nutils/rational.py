@@ -13,6 +13,17 @@ The rational module.
 from __future__ import print_function, division
 import numpy
 
+def gcd( *numbers ):
+  uniqdesc = numpy.unique( numpy.abs(numbers) )[::-1].tolist() # unique descending
+  if uniqdesc[-1] == 0:
+    uniqdesc.pop() # ignore zero
+  gcd = uniqdesc.pop()
+  while uniqdesc and gcd > 1:
+    n = uniqdesc.pop()
+    while n: # Euclid's algorithm
+      gcd, n = n, gcd % n
+  return gcd
+
 class Rational( object ):
 
   __array_priority__ = 1
@@ -28,14 +39,7 @@ class Rational( object ):
     if not numer.size:
       denom = 1
     elif denom != 1 and not isfactored:
-      absnumers = numpy.unique( abs(numer) )[::-1].tolist() # unique descending
-      if not absnumers[-1]:
-        absnumers.pop() # ignore zero
-      common = denom
-      while absnumers and common > 1:
-        n = absnumers.pop()
-        while n: # GCD: Euclid's algorithm
-          common, n = n, common % n
+      common = gcd( denom, *numer.flat )
       if common != 1:
         numer = numer // common
         if numer.flags.writeable:
@@ -110,7 +114,8 @@ class Rational( object ):
     other = asarray( other )
     if not isrational( other ):
       return self.numer / float(self.denom) + other
-    return Rational( self.numer * other.denom + other.numer * self.denom, self.denom * other.denom )
+    common = gcd( self.denom, other.denom )
+    return Rational( self.numer * (other.denom//common) + other.numer * (self.denom//common), self.denom * (other.denom//common) )
 
   def __sub__( self, other ):
     if other is 0:
@@ -118,7 +123,8 @@ class Rational( object ):
     other = asarray( other )
     if not isrational( other ):
       return self.numer / float(self.denom) - other
-    return Rational( self.numer * other.denom - other.numer * self.denom, self.denom * other.denom )
+    common = gcd( self.denom, other.denom )
+    return Rational( self.numer * (other.denom//common) - other.numer * (self.denom//common), self.denom * (other.denom//common) )
 
   def __rsub__( self, other ):
     if other is 0:
@@ -178,6 +184,7 @@ class Rational( object ):
 
 isint = lambda a: numpy.issubdtype( a.dtype if isinstance(a,numpy.ndarray) else type(a), numpy.integer )
 
+zero = Rational( 0 )
 unit = Rational( 1 )
 
 def det( array ):
