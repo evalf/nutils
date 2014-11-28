@@ -195,7 +195,7 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
   for group, edgekeys in edgegroups.items():
     topo.boundary[group] = topology.Topology([ edges[edgekey] for edgekey in edgekeys ])
 
-  topo.points = topology.Topology( [vertex for vertexkeys in vertexgroups.values() for vertexkey in vertexkeys for vertex in vertices[vertexkey]] )
+  topo.points = topology.Topology( [vertex for vertexkeys in vertexgroups.values() for vertexkey in vertexkeys for vertex in vertices[vertexkey]], ndims=0 )
   for group, vertexkeys in vertexgroups.items():
     topo.points[group] = topology.Topology([vertex for vertexkey in vertexkeys for vertex in vertices[vertexkey]])
 
