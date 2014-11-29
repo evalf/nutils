@@ -27,8 +27,11 @@ class FiniteCellTestBase( object ):
     self.test_surface()
 
   def test_volume( self ):
-    vol = self.trimdomain.volume_check( self.geom, decimal=15 )
+    vol = self.trimdomain.volume( self.geom )
     numpy.testing.assert_almost_equal( vol, self.volume, decimal=self.voldec )
+
+  def test_divergence( self ):
+    self.trimdomain.volume_check( self.geom, decimal=15 )
  
   def test_surface( self ):
     trimsurface = self.trimdomain.boundary['trimmed'].volume( self.geom )
