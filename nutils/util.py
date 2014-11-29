@@ -271,6 +271,14 @@ def arraymap( f, dtype, *args ):
   return numpy.array( [ f( arg ) for arg in args[0] ] if len( args ) == 1
                  else [ f( *arg ) for arg in numpy.broadcast( *args ) ], dtype=dtype )
 
+def allunique( iterable ):
+  iterable = tuple( iterable )
+  return len(iterable) == len(set(iterable))
+
+def minmax( iterable ):
+  iterable = tuple( iterable )
+  return min(iterable), max(iterable)
+
 def objmap( func, *arrays ):
   'map numpy arrays'
 
