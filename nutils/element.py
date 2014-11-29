@@ -78,14 +78,14 @@ class Element( object ):
     'trim element along levelset'
 
     pos, neg = self.reference.trim( self.transform, levelset, maxrefine, numer )
-    if not neg:
-      return (self,pos[1]), None
-    if not pos:
-      return None, (self,neg[1])
-    posref, postrim = pos
-    negref, negtrim = neg
-    return ( Element( posref, self.transform, self.opposite ), postrim ), \
-           ( Element( negref, self.transform, self.opposite ), negtrim )
+    poselem = negelem = None
+    if pos:
+      posref, postrim = pos
+      poselem = Element( posref, self.transform, self.opposite ), postrim
+    if neg:
+      negref, negtrim = neg
+      negelem = Element( negref, self.transform, self.opposite ), negtrim
+    return poselem, negelem
 
   @property
   def simplices( self ):
@@ -173,68 +173,65 @@ class Reference( cache.Immutable ):
 
     assert numeric.isint( numer )
     assert levelset.shape == (self.nverts,)
-    repeat = True
-    while repeat: # set almost-zero points to zero if cutoff within eps
-      repeat = False
-      allpos = numpy.greater_equal( levelset, 0 ).all()
-      if allpos or numpy.less_equal( levelset, 0 ).all():
-        ifaces, = numpy.where( ~( self.edge2vertex[:,levelset != 0].any() ) )
-        retval = self, tuple( self.edges[i][0] for i in ifaces )
-        return (retval,None) if allpos else (None,retval)
-      isects = []
-      for ribbon in self.ribbon2vertices:
-        a, b = levelset[ribbon]
-        if a * b < 0: # strict sign change
-          x = int( numer * a / float(a-b) + .5 ) # round to [0,1,..,numer]
-          if 0 < x < numer:
-            isects.append(( x, ribbon ))
-          else: # near intersection of vertex
-            v = ribbon[ (0,numer).index(x) ]
-            log.debug( 'rounding vertex #%d from %f to 0' % ( v, levelset[v] ) )
-            levelset[v] = 0
-            repeat = True
 
-    coords = self.vertices * numer
-    if isects:
-      coords = numpy.vstack([
-        self.vertices * numer,
-        [ numpy.dot( (numer-x,x), self.vertices[ribbon] ) for x, ribbon in isects ]
-      ])
-    assert coords.dtype == int
+    coords = list( self.vertices * numer )
+    vmap = list( numpy.arange(self.nverts) )
+    for ivert in self.ribbon2vertices:
+      a, b = levelset[ivert]
+      if numpy.sign(a) != numpy.sign(b):
+        x = int( numer * a / float(a-b) + .5 ) # round to [0,1,..,numer]
+        if x == 0:
+          vmap.append( ivert[0] )
+          x = 1e-5
+        elif x == numer:
+          vmap.append( ivert[1] )
+          x = 1 - 1e-5
+        else:
+          vmap.append( len(vmap) )
+        coords.append( numpy.dot( (numer-x,x), self.vertices[ivert] ) )
 
     triangulation = util.delaunay( coords, True )
 
-    sides = ([],{},{}), ([],{},{}) # elems, belems, ifaces
+    sides = ([],{}), ([],{}) # elems, belems
+    ifaces = {}, {}
     simplex = SimplexReference( self.ndims )
     for tri in triangulation:
-      nonzero = [ i for i, ivert in enumerate(tri) if ivert < len(levelset) and levelset[ivert] != 0 ]
-      if not nonzero:
-        isneg = False
+      onvertex = tri < self.nverts
+      if not onvertex.any():
+        isneg = False # if all points have level 0, add element to positive side for now
       else:
-        side = levelset[tri[nonzero]] < 0
-        isneg = side[0]
-        assert all( side == isneg )
-      elems, belems, ifaces = sides[isneg]
-      offset = coords[tri[0]]
-      matrix = ( coords[tri[1:]] - offset ).T
-      assert numpy.linalg.det( matrix.astype(float) ) > 0
-      strans = transform.affine( matrix, offset, numer)
-      elems.append(( strans, simplex ))
-      if len(nonzero) <= 1:
-        for iedge in nonzero or range( simplex.nverts ):
-          etrans, edge = simplex.edges[ iedge ]
-          mtrans = ( strans << etrans ).flat
-          key = tuple( sorted( ivert for i, ivert in enumerate(tri) if i != iedge ) )
-          if key in ifaces:
-            del belems[ifaces[key]]
-            del ifaces[key]
+        minlevel, maxlevel = util.minmax( levelset[tri[onvertex]] )
+        assert minlevel * maxlevel >= 0, 'element did not separate in a positive and negative part'
+        isneg = minlevel < 0
+      vtri = numpy.take( vmap, tri )
+      offset = coords[vtri[0]]
+      matrix = numpy.array([ coords[i] - offset for i in vtri[1:] ]).T
+      strans = transform.affine( matrix, offset, numer )
+      elems, belems = sides[isneg]
+      if onvertex.sum() <= 1 and util.allunique( vtri[~onvertex] ):
+        iface = ifaces[isneg]
+        for iedge in numpy.arange( simplex.nverts )[ onvertex if onvertex.any() else slice(None) ]:
+          key = tuple( sorted( ivert for i, ivert in enumerate(vtri) if i != iedge ) )
+          if key in iface:
+            del belems[iface[key]]
+            del iface[key]
           else:
-            ifaces[key] = mtrans
+            etrans, edge = simplex.edges[ iedge ]
+            mtrans = ( strans << etrans ).flat
+            iface[key] = mtrans
             belems[mtrans] = edge
+      volume = numpy.linalg.det( matrix.astype(float) )
+      assert volume >= 0
+      if volume:
+        elems.append(( strans, simplex ))
 
-    poskeys, negkeys = [ sorted(ifaces) for elems, belems, ifaces in sides ]
-    assert poskeys == negkeys # interfaces match
-    return [ ( MosaicReference( self.ndims, elems, belems ), belems.keys() ) for elems, belems, ifaces in sides ]
+    poskeys, negkeys = map( set, ifaces )
+    if poskeys != negkeys:
+      log.warning( 'leftover interfaces:',
+        ', '.join( str(ifaces[0][key]) for key in poskeys-negkeys ), 'and',
+        ', '.join( str(ifaces[1][key]) for key in negkeys-poskeys ) )
+
+    return sides
 
   def trim( self, trans, levelset, maxrefine, numer ):
     'trim element along levelset'
@@ -261,28 +258,36 @@ class Reference( cache.Immutable ):
 
     if not maxrefine:
       assert not trans, 'failed to evaluate levelset up to level maxrefine'
-      return self._trim_triangulate( levelset, numer )
+      sides = self._trim_triangulate( levelset, numer )
+    else:
+      sides = ([],{}), ([],{}) # elems, belems
+      for ichild, (ctrans,child) in enumerate( self.children ):
+        if trans:
+          trims = child.trim( trans << ctrans, levelset, maxrefine-1, numer )
+        else:
+          N, I = self.subvertex(ichild,maxrefine)
+          assert len(levelset) == N
+          trims = child.trim( False, levelset[I], maxrefine-1, numer )
+        for isneg in [ i for i, trim in enumerate(trims) if trim ]:
+          elems, belems = sides[isneg]
+          ref, iface = trims[isneg]
+          elems.append( (ctrans,ref) )
+          belems.update({ (ctrans << etrans).flat: ForwardReference( ref.findedge(etrans) ) for etrans in iface })
 
-    sides = ([],{}), ([],{}) # elems, belems
+    (poselems,posbelems), (negelems,negbelems) = sides
 
-    for ichild, (ctrans,child) in enumerate( self.children ):
-      if trans:
-        trims = child.trim( trans << ctrans, levelset, maxrefine-1, numer )
-      else:
-        N, I = self.subvertex(ichild,maxrefine)
-        assert len(levelset) == N
-        trims = child.trim( False, levelset[I], maxrefine-1, numer )
-      for isneg in [ i for i, trim in enumerate(trims) if trim ]:
-        elems, belems = sides[isneg]
-        ref, iface = trims[isneg]
-        elems.append( (ctrans,ref) )
-        belems.update({ (ctrans << etrans).flat: ForwardReference( ref.findedge(etrans) ) for etrans in iface })
+    identity = (transform.identity,self),
+    if not poselems:
+      posmosaic = None
+      negmosaic = MosaicReference( self.ndims, identity, negbelems ) if negbelems else self, negbelems.keys()
+    elif not negelems:
+      posmosaic = MosaicReference( self.ndims, identity, posbelems ) if posbelems else self, posbelems.keys()
+      negmosaic = None
+    else:
+      posmosaic = MosaicReference( self.ndims, poselems, posbelems ), posbelems.keys()
+      negmosaic = MosaicReference( self.ndims, negelems, negbelems ), negbelems.keys()
 
-    retvals = [ (self,belems.keys()) if elems else None for elems, belems in sides ]
-    if not all( retvals ): # element is not cut in two, but may contain interface
-      return retvals
-
-    return [ ( MosaicReference( self.ndims, elems, belems ), belems.keys() ) for elems, belems in sides ]
+    return posmosaic, negmosaic
 
 class SimplexReference( Reference ):
   'simplex reference'

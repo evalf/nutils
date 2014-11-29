@@ -56,17 +56,18 @@ def unittest():
 
   retvals = main( nelems=4, degree=2, maxrefine=2, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
-    eNq9UUlqQzEMvc4P2EGTJes4WWSb+y+r4SeUEkrbRcHmSc96mozjkIHrMo4DrqOPC+N9Bu1siYq+73MN
-    MdP0mRwSCYUSQ7KMPUNCoie1UU4KOKmJYpGGIw1LEmLghdplBLjSsaxdiO6NqB1nHbd3+4bVpiw7EUov
-    TIULAH6Dr/knba4OAi1HmLRy4tjApkAdRNgPwXsSqWJ1alKJ00hSn6SRSxuLViWvsmssgdqu1pjhYxeN
-    5db7ZAbvvKRlCFClYu4uGExasbsEErWCXeDs5MuJD3/Zj9vj7f309E3UT++fv+N/2nu3ossHV4fDXw==''' )
+    eNq9UTuOQzEIvM6LZK/4g4+T4rW5f7kPsJQUUbRpVrI1MDDGAI5DBuptHAcF4Dl5wE+eJbrOecUWQaKR
+    0zl1iLunz7QkkVAqfknUwTMFF69NBao0BZzURFlVRJxLJqW50LgRmOr5XZ5xbcSd1+UlotERC9U3QumF
+    qVAB4BukEHoOYTJIFK1WfUwS0zQ0/ArYIMbyp1EKrVVONYipGiuNJM2iSafgliyr3gisRquClmiIUD5S
+    JaJIK5lhv0taVQU6g5mwEMJa4VV3IhG1tHaiu6/Xc63+cX9sJ6139yX0Ieuv99ul/Pf/3g3p9gswGceJ''' )
 
   retvals = main( nelems=4, degree=2, maxrefine=3, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
-    eNq9UUtqQzEMvM4L2EV/S8fpotvcf1lLeg0lhBCyCNjIHs2MZBnHIQP1Mo4DvkavUISfueFgzWiUdx2y
-    HPPOFJKRUCjjluhiS8qW2Ak5KjcExZ77vum8bdpWFpZcTKqcABeRRb3LQOGMaM1bhYv7OvXVjug6I7Qf
-    U0WF1r8ab++f5F4O5Ib5hEnqUhMQ3lTbL4+ayDRYnECq2KJmMNW4sgmahRa4GLgPLtHTzSI6lL0SBlE1
-    FMlrboJtx4xtobS6C+jMTpSSq4lUtNNEomhpyF8nd2t/+O18/b4+3P9ST1iv7re/4zPtPRrR5RfIp8Mw''' )
+    eNq9Uc1qhCEMfJ1d0JKfiTGP08N33fc/1kRLS1lK91JQxkycZIzcbmhs93a7iTOuro3ecoWBrr5ywZE4
+    xOfVrcGnZKwSnigMTlwScxp5hUPjUJMtNkWaVGfDzCZwLRmcqw3G1oAUVR5WsXIcZN/30sbCOf3odx3z
+    g1T2oFJoRPQKStD8GkJX2m3EgvIdXZbRPBjS/2giE5UYIE+iVPW4RZpFDS3JMWKTLqGfh3qLECpjupsM
+    mqUy5qrNgJRAdRPdZJQCxJa4EjX5ZfcovMbeWeRIA3Sc/Fjr6x/vjxPk6dn+lvrl1l/3q5/y3/6eDen+
+    ATq3x4Q=''' )
 
 
 util.run( main, unittest )

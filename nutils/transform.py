@@ -311,6 +311,8 @@ def equivalent( trans1, trans2 ):
 
 ## UTILITY FUNCTIONS
 
+identity = TransformChain()
+
 def canonical( transchain ):
   # keep at highest ndims possible
   chain = []
