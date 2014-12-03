@@ -3141,6 +3141,8 @@ def _unpack( funcsp ):
     dofax = axes[0]
     assert isinstance( dofax, DofMap )
     dofmap = dofax.dofmap
+    if isinstance( func, Align ):
+      func = func.func
     stdmap = func.stdmap
     for trans, dofs in dofmap.items():
       yield trans, dofs + dofax.offset, stdmap[trans]
