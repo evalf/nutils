@@ -1761,15 +1761,21 @@ class Pointdata( ArrayFunc ):
 class Elemwise( ArrayFunc ):
   'elementwise constant data'
 
-  def __init__( self, fmap, shape ):
+  def __init__( self, fmap, shape, default=None ):
     self.fmap = fmap
+    self.default = default
     ArrayFunc.__init__( self, args=[TRANS], shape=shape )
 
   def evalf( self, transform ):
     trans = transform[0].lookup( self.fmap )
-    value = numpy.asarray( self.fmap[trans] )
-    assert value.shape == self.shape
+    value = self.fmap.get( trans, self.default )
+    assert value is not None, 'transformation not found: {}'.format( transform[0] )
+    value = numpy.asarray( value )
+    assert value.shape == self.shape, 'wrong shape: {} != {}'.format( value.shape, self.shape )
     return value[_]
+
+  def _localgradient( self, ndims ):
+    return _zeros( self.shape+(ndims,) )
 
 class Eig( Evaluable ):
   'Eig'

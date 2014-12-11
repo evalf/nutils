@@ -656,6 +656,9 @@ class Topology( object ):
     numpy.testing.assert_almost_equal( volumes, volume, decimal=decimal )
     return volume
 
+  def indicator( self ):
+    return function.Elemwise( { elem.transform: 1. for elem in self }, (), default=0. )
+
 def UnstructuredTopology( elems, ndims ):
   return Topology( elems )
 
