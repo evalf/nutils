@@ -33,7 +33,7 @@ class Rational( object ):
     if not isinstance( numer, numpy.ndarray ):
       numer = numpy.array( numer )
       if not numer.size:
-        numer = numpy.astype( int )
+        numer = numer.astype( int )
       numer.flags.writeable = False
     assert isint(numer)
     if not numer.size:
