@@ -540,9 +540,9 @@ class SimplexReference( Reference ):
       C[0] = points[:,_]
       C[1] = points[_,:]
       coords = C.reshape( 2, nn )
-      flip = coords[0] + numpy.greater( coords[1], 1 )
+      flip = coords.sum(0) > 1
       coords[:,flip] = 1 - coords[::-1,flip]
-      weights = numpy.appendaxes( .5/nn, nn )
+      weights = numeric.appendaxes( .5/nn, nn )
     else:
       raise NotImplementedError
     return coords.T, weights
