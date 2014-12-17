@@ -612,6 +612,8 @@ class SimplexReference( Reference ):
 class TensorReference( Reference ):
   'tensor reference'
 
+  _re_ischeme = re.compile( '([a-zA-Z]+)(.*)' )
+
   def __init__( self, ref1, ref2 ):
     self.ref1 = ref1
     self.ref2 = ref2
@@ -667,19 +669,22 @@ class TensorReference( Reference ):
     return numpy.hstack(( [p,z], [1-z,p], [1-p,1-z], [z,1-p] )).T, None
 
   def getischeme( self, ischeme ):
-    match = re.match( '([a-zA-Z]+)(.*)', ischeme )
-    assert match, 'cannot parse integration scheme %r' % ischeme
-    ptype, args = match.groups()
-    get = getattr( self, 'getischeme_'+ptype, None )
-    if get:
-      return get( eval(args) ) if args else get()
-    if args and ',' in args:
-      args = eval(args)
-      assert len(args) == self.ndims
-      ischeme1 = ptype+','.join( str(n) for n in args[:self.ref1.ndims] )
-      ischeme2 = ptype+','.join( str(n) for n in args[self.ref1.ndims:] )
+    if '*' in ischeme:
+      ischeme1, ischeme2 = ischeme.split( '*', 1 )
     else:
-      ischeme1 = ischeme2 = ischeme
+      match = self._re_ischeme.match( ischeme )
+      assert match, 'cannot parse integration scheme %r' % ischeme
+      ptype, args = match.groups()
+      get = getattr( self, 'getischeme_'+ptype, None )
+      if get:
+        return get( eval(args) ) if args else get()
+      if args and ',' in args:
+        args = eval(args)
+        assert len(args) == self.ndims
+        ischeme1 = ptype+','.join( str(n) for n in args[:self.ref1.ndims] )
+        ischeme2 = ptype+','.join( str(n) for n in args[self.ref1.ndims:] )
+      else:
+        ischeme1 = ischeme2 = ischeme
     ipoints1, iweights1 = self.ref1.getischeme( ischeme1 )
     ipoints2, iweights2 = self.ref2.getischeme( ischeme2 )
     ipoints = numpy.empty( (ipoints1.shape[0],ipoints2.shape[0],self.ndims) )
