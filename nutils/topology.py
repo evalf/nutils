@@ -405,6 +405,7 @@ class Topology( object ):
 
     for ielem, elem in parallel.pariter( log.enumerate( 'elem', self ) ):
       ipoints, iweights = fcache( elem.reference.getischeme, ischeme[elem] if isinstance(ischeme,dict) else ischeme )
+      assert iweights is not None, 'no integration weights found'
       for iblock, intdata in enumerate( valuefunc.eval( elem, ipoints, fcache ) ):
         s = slice(*offsets[iblock,ielem:ielem+2])
         data, index = data_index[ block2func[iblock] ]
