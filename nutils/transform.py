@@ -306,7 +306,7 @@ def maptrans( coords, vertices ):
 def equivalent( trans1, trans2 ):
   trans1 = TransformChain( trans1 )
   trans2 = TransformChain( trans2 )
-  return trans1.linear == trans2.linear and trans1.offset == trans2.offset
+  return numpy.all( trans1.linear == trans2.linear ) and numpy.all( trans1.offset == trans2.offset )
 
 
 ## UTILITY FUNCTIONS
