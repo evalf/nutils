@@ -1062,7 +1062,7 @@ class StructuredTopology( Topology ):
     structure = structure.reshape( self.structure.shape + (2,)*self.ndims )
     structure = structure.transpose( sum( [ ( i, self.ndims+i ) for i in range(self.ndims) ], () ) )
     structure = structure.reshape( numpy.array(self.structure.shape) * 2 )
-    refined = StructuredTopology( structure )
+    refined = StructuredTopology( structure, periodic=self.periodic )
     for group in self.groupnames:
       refined[group] = self[group].refined
     return refined
@@ -1253,9 +1253,10 @@ class TrimmedTopology( Topology ):
     return TrimmedTopology( self.basetopo.refined, elements, trimmed )
 
   @cache.property
+  @log.title
   def boundary( self ):
     belems = list( self.trimmed )
-    for belem in self.basetopo.boundary:
+    for belem in log.iter( 'element', self.basetopo.boundary ):
       trans = belem.transform
       elem = self.edict.get( trans[:-1] )
       if elem:

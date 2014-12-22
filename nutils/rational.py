@@ -13,23 +13,79 @@ The rational module.
 from __future__ import print_function, division
 import numpy
 
-def gcd( *numbers ):
-  uniqdesc = numpy.unique( numpy.abs(numbers) )[::-1].tolist() # unique descending
-  if uniqdesc[-1] == 0:
-    uniqdesc.pop() # ignore zero
-  gcd = uniqdesc.pop()
-  while uniqdesc and gcd > 1:
-    n = uniqdesc.pop()
-    while n: # Euclid's algorithm
-      gcd, n = n, gcd % n
-  return gcd
+
+## OPERATIONS
+
+def _logical( op, A, B ):
+  A = asarray( A )
+  B = asarray( B )
+  if not isrational( A ) or not isrational( B ):
+    return op( A.astype(float), B.astype(float) )
+  common = gcd( A.denom, B.denom )
+  return op( A.numer * (B.denom//common), B.numer * (A.denom//common) )
+
+greater       = lambda A, B: _logical( numpy.greater,       A, B )
+greater_equal = lambda A, B: _logical( numpy.greater_equal, A, B )
+less          = lambda A, B: _logical( numpy.less,          A, B )
+less_equal    = lambda A, B: _logical( numpy.less_equal,    A, B )
+equal         = lambda A, B: _logical( numpy.equal,         A, B )
+not_equal     = lambda A, B: _logical( numpy.not_equal,     A, B )
+
+def _addsub( op, A, B ):
+  A = asarray( A )
+  B = asarray( B )
+  if not isrational( A ) or not isrational( B ):
+    return op( A.astype(float), B.astype(float) )
+  common = gcd( A.denom, B.denom )
+  return Rational( op( A.numer * (B.denom//common), B.numer * (A.denom//common) ), A.denom * (B.denom//common) )
+
+add      = lambda A, B: _addsub( numpy.add,      A, B )
+subtract = lambda A, B: _addsub( numpy.subtract, A, B )
+
+def multiply( A, B ):
+  A = asarray( A )
+  B = asarray( B )
+  if not isrational( A ) or not isrational( B ):
+    return A.astype(float) * B.astype(float)
+  return Rational( A.numer * B.numer, A.denom * B.denom )
+
+def divide( A, B ):
+  A = asarray( A )
+  B = asarray( B )
+  if not isrational( A ) or not isrational( B ):
+    return A.astype(float) / B.astype(float)
+  assert B.ndim == 0, 'only scalar division supported for now'
+  sign = 1 if B.numer > 0 else -1
+  return Rational( sign * A.numer * B.denom, sign * A.denom * B.numer )
+
+def power( A, n ):
+  assert isint( n ) and numpy.ndim(n) == 0
+  A = asarray( A )
+  if not isrational( A ):
+    return numpy.power( A, n )
+  return Rational( A.numer**n, A.denom**n ) if n > 1 \
+    else A if n == 1 \
+    else ones( A.shape ) if n == 0 \
+    else 1 / power( A, -n )
+
+def _unary( op, A ):
+  A = asarray( A )
+  if not isrational( A ):
+    return op( A )
+  return Rational( op(A.numer), A.denom, isfactored=True )
+
+negative = lambda A: _unary( numpy.negative, A )
+transpose = lambda A, axes=None: _unary( lambda A: numpy.transpose(A,axes), A )
+absolute = lambda A: _unary( numpy.absolute, A )
+
+## RATIONAL CLASS
 
 class Rational( object ):
 
   __array_priority__ = 1
 
   def __init__( self, numer, denom=1, isfactored=False ):
-    assert isint(denom) and denom > 0
+    assert isint(denom) and numpy.ndim(denom) == 0 and denom > 0
     if not isinstance( numer, numpy.ndarray ):
       numer = numpy.array( numer )
       if not numer.size:
@@ -55,8 +111,10 @@ class Rational( object ):
     for array in self.numer:
       yield Rational( array, self.denom )
 
-  def __abs__( self ):
-    return Rational( abs(self.numer), self.denom, isfactored=True )
+  def __nonzero__( self ):
+    return bool(self.numer)
+
+  __bool__ = __nonzero__ # python3
 
   def __getitem__( self, item ):
     return Rational( self.numer[item], self.denom )
@@ -88,107 +146,51 @@ class Rational( object ):
   def shape( self ):
     return self.numer.shape
 
-  @property
-  def T( self ):
-    return Rational( self.numer.T, self.denom, isfactored=True )
-
   def __len__( self ):
     return len(self.numer)
 
-  @property
-  def __cmpdata( self ):
-    return self.numer.shape, tuple(self.numer.flat), self.denom
-
-  def __hash__( self ):
-    return hash( self.__cmpdata )
-
-  def __eq__( self, other ):
-    return self is other or isrational(other) and self.__cmpdata == other.__cmpdata
-
-  def __neg__( self ):
-    return Rational( -self.numer, self.denom, isfactored=True )
-
-  def __add__( self, other ):
-    if other is 0:
-      return self
-    other = asarray( other )
-    if not isrational( other ):
-      return self.numer / float(self.denom) + other
-    common = gcd( self.denom, other.denom )
-    return Rational( self.numer * (other.denom//common) + other.numer * (self.denom//common), self.denom * (other.denom//common) )
-
-  def __sub__( self, other ):
-    if other is 0:
-      return self
-    other = asarray( other )
-    if not isrational( other ):
-      return self.numer / float(self.denom) - other
-    common = gcd( self.denom, other.denom )
-    return Rational( self.numer * (other.denom//common) - other.numer * (self.denom//common), self.denom * (other.denom//common) )
-
-  def __rsub__( self, other ):
-    if other is 0:
-      return -self
-    other = asarray( other )
-    if not isrational( other ):
-      return other - self.numer / float(self.denom)
-    return Rational( other.numer * self.denom - self.numer * other.denom, self.denom * other.denom )
-
-  def __mul__( self, other ):
-    if other is 1:
-      return self
-    other = asarray( other )
-    if not isrational( other ):
-      return self.numer * ( other / float(self.denom) )
-    return Rational( self.numer * other.numer, self.denom * other.denom )
-
-  def __div__( self, other ):
-    if other is 1:
-      return self
-    other = asarray( other )
-    if not isrational( other ):
-      return self.numer / ( other * float(self.denom) )
-    assert other.size == 1, 'only scalar division supported for now'
-    numer, = other.numer.flat
-    denom = other.denom
-    assert numer != 0
-    if numer < 0:
-      numer = -numer
-      denum = -denom
-    return Rational( self.numer * denom, self.denom * numer )
-
-  def __rdiv__( self, other ):
-    other = asarray( other )
-    if not isrational( other ):
-      return ( other * float(self.denom) ) / self.numer
-    return other / self
-
-  __rmul__ = __mul__
-  __radd__ = __add__
-  __truediv__ = __div__
+  T = property( transpose )
+  __neg__ = negative
+  __gt__ = greater
+  __ge__ = greater_equal
+  __lt__ = less
+  __le__ = less_equal
+  __eq__ = equal
+  __ne__ = not_equal
+  __add__ = add
+  __radd__ = add
+  __sub__ = subtract
+  __rsub__ = lambda self, other: subtract( other, self )
+  __mul__ = multiply
+  __rmul__ = multiply
+  __div__ = divide
+  __truediv__ = divide
+  __rdiv__ = lambda self, other: divide( other, self )
   __rtruediv__ = __rdiv__
-
-  def __pow__( self, n ):
-    assert isint( n )
-    return Rational( self.numer**n, self.denom**n ) if n > 1 \
-      else self if n == 1 \
-      else ones( self.shape ) if n == 0 \
-      else 1 / (self**-n)
+  __pow__ = power
+  __abs__ = absolute
 
   def __str__( self ):
     return '%s/%s' % ( str(self.numer.tolist()).replace(' ',''), self.denom )
 
 
-
 ## UTILITY FUNCTIONS
 
-isint = lambda a: numpy.issubdtype( a.dtype if isinstance(a,numpy.ndarray) else type(a), numpy.integer )
-
-zero = Rational( 0 )
-unit = Rational( 1 )
+def gcd( *numbers ):
+  uniqdesc = numpy.unique( numpy.abs(numbers) )[::-1].tolist() # unique descending
+  if uniqdesc[-1] == 0:
+    uniqdesc.pop() # ignore zero
+  gcd = uniqdesc.pop()
+  while uniqdesc and gcd > 1:
+    n = uniqdesc.pop()
+    while n: # Euclid's algorithm
+      gcd, n = n, gcd % n
+  return gcd
 
 def det( array ):
-  array = asrational( array )
+  array = asarray( array )
+  if not isrational( array ):
+    return numpy.linalg.det( array )
   assert array.ndim == 2 and array.shape[0] == array.shape[1]
   zeros = array.numer == 0
   if zeros.any():
@@ -218,7 +220,9 @@ def det( array ):
 
 def invdet( array ):
   '''invdet(array) = inv(array) * det(array)'''
-  array = asrational(array)
+  array = asarray(array)
+  if not isrational( array ):
+    return numpy.linalg.inv(array) * numpy.linalg.det(array)
   if array.shape == (1,1):
     invdet = ones( (1,1) )
   elif array.shape == (2,2):
@@ -232,13 +236,17 @@ def invdet( array ):
   return invdet
   
 def inv( array ):
+  array = asarray(array)
+  if not isrational( array ):
+    return numpy.linalg.inv( array )
   return invdet( array ) / det( array )
 
 def ext( array ):
   """Exterior
   For array of shape (n,n-1) return n-vector ex such that ex.array = 0 and
   det(arr;ex) = ex.ex"""
-  array = asrational(array)
+  array = asarray(array)
+  assert isrational(array)
   assert array.ndim == 2 and array.shape[0] == array.shape[1]+1
   zeros = ( array.numer == 0 ).all( axis=1 )
   if len(array) == 1:
@@ -262,22 +270,18 @@ def ext( array ):
   assert equal( det(Av), dot(ext,ext) ).all()
   return ext
 
-def isrational( arr ):
-  return isinstance( arr, Rational )
-
-def asrational( arr ):
-  return arr if isrational( arr ) else Rational( arr )
-
-def frac( a, b ):
-  return asrational(a) / asrational(b)
+isint = lambda a: numpy.issubdtype( a.dtype if isinstance(a,numpy.ndarray) else type(a), numpy.integer )
+isrational = lambda arr: isinstance( arr, Rational )
 
 def asarray( arr ):
-  if isrational( arr ):
-    return arr
-  arr = numpy.asarray( arr )
-  if isint(arr):
-    return Rational( arr )
+  if not isinstance( arr, Rational ):
+    arr = numpy.asarray( arr )
+    if numpy.issubdtype( arr.dtype, numpy.integer ):
+      arr = Rational( arr )
   return arr
+
+def frac( a, b ):
+  return asarray(a) / asarray(b)
 
 def dot( A, B ):
   A = asarray( A )
@@ -295,19 +299,17 @@ def zeros( shape ):
 def ones( shape ):
   return Rational( numpy.ones(shape,dtype=int) )
 
-def equal( A, B ):
-  A = asrational( A )
-  B = asrational( B )
-  return numpy.equal( A.numer * B.denom, B.numer * A.denom )
-
 def concatenate( args, axis=0 ):
-  arg1, arg2 = map( asrational, args )
+  args = [ asarray(arg) for arg in args ]
+  if not all( isrational(arg) for arg in args ):
+    return numpy.concatenate( [ arg.astype(float) for arg in args ], axis=axis )
+  arg1, arg2 = args
   return Rational( numpy.concatenate([ arg1.numer * arg2.denom, arg2.numer * arg1.denom ], axis=axis ), arg1.denom * arg2.denom )
 
 def blockdiag( args ):
+  args = [ asarray(arg) for arg in args ]
+  assert all( isrational(arg) for arg in args )
   arg1, arg2 = args
-  arg1 = asrational( arg1 )
-  arg2 = asrational( arg2 )
   assert arg1.ndim == arg2.ndim == 2
   blockdiag = numpy.zeros( (arg1.shape[0]+arg2.shape[0],arg1.shape[1]+arg2.shape[1]), dtype=int )
   blockdiag[:arg1.shape[0],:arg1.shape[1]] = arg1.numer * arg2.denom
@@ -320,5 +322,8 @@ def round( array, denom=1 ):
     return array
   numer = array * denom
   return Rational( ( numer - numpy.less(numer,0) + .5 ).astype( int ), denom )
+
+zero = Rational( 0 )
+unit = Rational( 1 )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

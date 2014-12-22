@@ -292,8 +292,8 @@ def breakpoint():
 def base64_enc( obj, nsig, ndec ):
   import zlib, binascii, re
   serialized = __serialize( obj, nsig, ndec )
-  binary = zlib.compress( '1,(%d,%d),%s' % ( nsig, ndec, serialized ), 9 )
-  return re.sub( '(.{80})', r'\1\n', binascii.b2a_base64( binary ) )
+  binary = zlib.compress( '1,({},{}),{}'.format( nsig, ndec, serialized ).encode(), 9 )
+  return re.sub( '(.{80})', r'\1\n', binascii.b2a_base64( binary ).decode() )
 
 def base64_dec( base64 ):
   import zlib, binascii, re

@@ -231,7 +231,7 @@ class MapTrans( VertexTransform ):
 
   def apply( self, coords ):
     assert coords.ndim == 2
-    coords = rational.asrational( coords )
+    coords = rational.asarray( coords )
     assert coords.denom == 1 # for now
     indices = map( self.coords.tolist().index, coords.numer.tolist() )
     return [ self.vertices[n] for n in indices ]
@@ -249,7 +249,7 @@ class RootTrans( VertexTransform ):
 
   def apply( self, coords ):
     assert coords.ndim == 2
-    coords = rational.asrational( coords )
+    coords = rational.asarray( coords )
     if self.I.size:
       ci = coords.numer.copy()
       wi = self.w * coords.denom
@@ -287,8 +287,8 @@ class RootTransEdges( VertexTransform ):
 ## CONSTRUCTORS
 
 def affine( linear=None, offset=None, numer=1, isflipped=False ):
-  r_offset = rational.asrational( offset ) / numer if offset is not None else rational.zeros( len(linear) )
-  r_linear = rational.asrational( linear ) / numer if linear is not None else rational.unit
+  r_offset = rational.asarray( offset ) / numer if offset is not None else rational.zeros( len(linear) )
+  r_linear = rational.asarray( linear ) / numer if linear is not None else rational.unit
   return TransformChain((
          Matrix( r_linear, r_offset, isflipped ) if r_linear.ndim
     else Scale( r_linear, r_offset ) if r_linear != rational.unit
@@ -339,8 +339,8 @@ def solve( transA, transB ): # A << X = B
   x = rational.dot( AAinv, rational.dot( A.T, b-a ) ) # A x + a = b
   transX = affine( X, x )
   transAX = transA << transX
-  assert transAX.linear == transB.linear
-  assert transAX.offset == transB.offset
+  if numpy.any( transAX.linear != transB.linear ) or numpy.any( transAX.offset != transB.offset ):
+    return None
   return transX
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

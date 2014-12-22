@@ -11,7 +11,7 @@ The cache module.
 """
 
 from __future__ import print_function, division
-from . import core, log
+from . import core, log, rational
 import os, sys, weakref, numpy
 
 
@@ -64,6 +64,7 @@ def _hashable( obj ):
     return obj
   return tuple( _hashable(o) for o in obj ) if isinstance( obj, tuple ) \
     else frozenset( _hashable(o) for o in obj ) if isinstance( obj, (set,frozenset) ) \
+    else ( obj.denom, HashableArray(obj.numer) ) if isinstance( obj, rational.Rational ) \
     else HashableArray( obj ) if isinstance( obj, numpy.ndarray ) \
     else HashableList( obj ) if isinstance( obj, list ) \
     else HashableDict( obj ) if isinstance( obj, dict ) \

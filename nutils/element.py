@@ -182,10 +182,10 @@ class Reference( cache.Immutable ):
         x = int( numer * a / float(a-b) + .5 ) # round to [0,1,..,numer]
         if x == 0:
           vmap.append( ivert[0] )
-          x = 1e-5
+          x = .01
         elif x == numer:
           vmap.append( ivert[1] )
-          x = 1 - 1e-5
+          x = numer - .01
         else:
           vmap.append( len(vmap) )
         coords.append( numpy.dot( (numer-x,x), self.vertices[ivert] ) )
@@ -220,7 +220,7 @@ class Reference( cache.Immutable ):
             mtrans = ( strans << etrans ).flat
             iface[key] = mtrans
             belems[mtrans] = edge
-      volume = numpy.linalg.det( matrix.astype(float) )
+      volume = rational.det( matrix )
       assert volume >= 0
       if volume:
         elems.append(( strans, simplex ))
@@ -276,12 +276,11 @@ class Reference( cache.Immutable ):
 
     (poselems,posbelems), (negelems,negbelems) = sides
 
-    identity = (transform.identity,self),
     if not poselems:
       posmosaic = None
-      negmosaic = MosaicReference( self.ndims, identity, negbelems ) if negbelems else self, negbelems.keys()
+      negmosaic = MosaicReference( self.ndims, negelems, negbelems ) if negbelems else self, negbelems.keys()
     elif not negelems:
-      posmosaic = MosaicReference( self.ndims, identity, posbelems ) if posbelems else self, posbelems.keys()
+      posmosaic = MosaicReference( self.ndims, poselems, posbelems ) if posbelems else self, posbelems.keys()
       negmosaic = None
     else:
       posmosaic = MosaicReference( self.ndims, poselems, posbelems ), posbelems.keys()
@@ -867,22 +866,16 @@ class MosaicReference( Reference ):
       echildren = []
       if any( isinstance( child, MosaicReference ) for ctrans, child in self.children ):
         for ctrans, child in self.children:
-          try:
-            x = transform.solve( etrans, ctrans << etrans )
-          except:
-            pass
-          else:
+          x = transform.solve( etrans, ctrans << etrans )
+          if x is not None:
             echild = child.findedge( etrans )
             if echild:
               echildren.append(( x, echild ))
       else:
         for ctrans, child in self.children:
           for cetrans, echild in child.edges:
-            try:
-              x = transform.solve( etrans, ctrans << cetrans )
-            except:
-              pass
-            else:
+            x = transform.solve( etrans, ctrans << cetrans )
+            if x is not None:
               echildren.append(( x, echild ))
       edge = MosaicReference( self.ndims-1, echildren ) if echildren else None
       self.edgedict[ etrans ] = edge
