@@ -2906,7 +2906,7 @@ def power( arg, n ):
     return numpy.ones( arg.shape )
 
   if not _isfunc( arg ) and not _isfunc( n ):
-    return numpy.power( arg, n )
+    return numpy.power( arg.astype(float), n )
 
   retval = _call( arg, '_power', n )
   if retval is not None:
