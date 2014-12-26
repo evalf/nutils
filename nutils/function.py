@@ -236,14 +236,13 @@ class Tuple( Evaluable ):
   def __init__( self, items ):
     'constructor'
 
+    self.items = tuple( items )
     args = []
     indices = []
-    for i, item in enumerate(items):
+    for i, item in enumerate(self.items):
       if isinstance( item, Evaluable ):
         args.append( item )
         indices.append( i )
-
-    self.items = tuple( items )
     self.indices = tuple( indices )
     Evaluable.__init__( self, args )
 
