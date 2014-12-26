@@ -38,7 +38,8 @@ class Callback ( object ):
       if self.callback:
         self.callback( res )
       if clockcheck:
-        log.progress( 'residual %.2e (%.0f%%)' % ( res, 100. * numpy.log10(res/self.bnorm) / self.logtol ) )
+        scaledres = res / self.bnorm
+        log.progress( 'residual %.2e (%.0f%%)' % ( scaledres, 100. * numpy.log10(scaledres) / self.logtol ) )
 
 class Matrix( object ):
   'matrix base class'
