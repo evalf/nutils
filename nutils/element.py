@@ -582,6 +582,9 @@ class SimplexReference( Reference ):
     return [ (ctrans,self) for ctrans in self.child_transforms ]
 
   def subvertex( self, ichild, i ):
+    if i == 0:
+      assert ichild == 0
+      return self.nverts, numpy.arange(self.nverts)
     n = 2**(i-1)
     if self.ndims == 1:
       assert 0 <= ichild < 2
@@ -910,7 +913,15 @@ class ForwardReference( Reference ):
     self.child = child
     Reference.__init__( self, child.vertices )
 
+  def subvertex( self, ichild, i ):
+    if i == 0:
+      assert ichild == 0
+      return self.child.nverts, numpy.arange(self.child.nverts)
+    return self.child.subvertex( ichild, i-1 )
+
   def getischeme( self, ischeme ):
+    if ischeme.startswith( 'vertex' ):
+      ischeme = 'vertex{}'.format( int(ischeme[6:])-1 )
     return self.child.getischeme( ischeme )
 
   @property
