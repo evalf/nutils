@@ -1790,7 +1790,7 @@ class Eig( Evaluable ):
     self.symmetric = symmetric
     self.func = func
     self.shape = func.shape
-    self.eig = numpy.linalg.eigh if symmetric else numpy.linalg.eig 
+    self.eig = numpy.linalg.eigh if symmetric else numeric.eig
 
   def evalf( self, arr ):
     assert arr.ndim == len(self.shape)+1
