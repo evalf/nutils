@@ -315,7 +315,7 @@ def eig( A ):
           vectors[n] -= numpy.dot( numpy.dot( W, vectors[n] ), W ) # gram schmidt orthonormalization
           scale = numpy.linalg.norm(vectors[n])
           if scale < 1e-8: # vectors are near linearly dependent
-            u, s, vh = numpy.linalg.svd( A - unique[i] * numpy.eye(len(A)) )
+            u, s, vh = numpy.linalg.svd( A[index] - unique[i] * numpy.eye(len(inverse)) )
             nnz = numpy.argsort( abs(s) )[:len(where)]
             vectors[where] = vh[nnz].conj()
             break
