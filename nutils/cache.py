@@ -227,6 +227,10 @@ class FileCache( object ):
     log.info( msg, 'cache:', name, '[%db]' % (self.data.tell()-pos) )
     return data
 
+  def truncate( self ):
+    log.info( 'truncating cache' )
+    self.data.truncate()
+
   def __hash__( self ):
     return self.myhash
 
