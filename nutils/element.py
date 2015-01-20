@@ -196,18 +196,24 @@ class Reference( cache.Immutable ):
     ifaces = {}, {}
     simplex = SimplexReference( self.ndims )
     for tri in triangulation:
+      vtri = numpy.take( vmap, tri )
+      offset = coords[vtri[0]]
+      matrix = numpy.array([ coords[i] - offset for i in vtri[1:] ]).T
+      volume = rational.det( matrix )
+      assert volume >= 0
       onvertex = tri < self.nverts
       if not onvertex.any():
         isneg = False # if all points have level 0, add element to positive side for now
       else:
         minlevel, maxlevel = util.minmax( levelset[tri[onvertex]] )
-        assert minlevel * maxlevel >= 0, 'element did not separate in a positive and negative part'
+        if minlevel * maxlevel < 0:
+          assert not volume, 'element did not separate in a positive and negative part'
+          continue
         isneg = minlevel < 0
-      vtri = numpy.take( vmap, tri )
-      offset = coords[vtri[0]]
-      matrix = numpy.array([ coords[i] - offset for i in vtri[1:] ]).T
-      strans = transform.affine( matrix, offset, numer )
       elems, belems = sides[isneg]
+      strans = transform.affine( matrix, offset, numer )
+      if volume:
+        elems.append(( strans, simplex ))
       if onvertex.sum() <= 1 and util.allunique( vtri[~onvertex] ):
         iface = ifaces[isneg]
         for iedge in numpy.arange( simplex.nverts )[ onvertex if onvertex.any() else slice(None) ]:
@@ -220,10 +226,6 @@ class Reference( cache.Immutable ):
             mtrans = ( strans << etrans ).flat
             iface[key] = mtrans
             belems[mtrans] = edge
-      volume = rational.det( matrix )
-      assert volume >= 0
-      if volume:
-        elems.append(( strans, simplex ))
 
     poskeys, negkeys = map( set, ifaces )
     if poskeys != negkeys:
