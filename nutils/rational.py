@@ -86,26 +86,14 @@ class Rational( object ):
 
   def __init__( self, numer, denom=1, isfactored=False ):
     assert isint(denom) and numpy.ndim(denom) == 0 and denom > 0
-    if not isinstance( numer, numpy.ndarray ):
-      numer = numpy.array( numer )
-      if not numer.size:
-        numer = numer.astype( int )
-      numer.flags.writeable = False
-    assert isint(numer)
-    if not numer.size:
-      denom = 1
-    elif denom != 1 and not isfactored:
-      common = gcd( denom, *numer.flat )
+    self.denom = numpy.int64( denom )
+    self.numer = numpy.array( numer, dtype=numpy.int64 )
+    if self.denom != 1 and not isfactored:
+      common = gcd( self.denom, *self.numer.flat )
       if common != 1:
-        numer = numer // common
-        if numer.flags.writeable:
-          numer.flags.writeable = False
-        denom //= common
-    if numer.flags.writeable:
-      numer = numer.copy()
-      numer.flags.writeable = False
-    self.numer = numer
-    self.denom = denom
+        self.numer //= common
+        self.denom //= common
+    self.numer.flags.writeable = False
 
   def __iter__( self ):
     for array in self.numer:
@@ -172,6 +160,13 @@ class Rational( object ):
 
   def __str__( self ):
     return '%s/%s' % ( str(self.numer.tolist()).replace(' ',''), self.denom )
+
+  def __hash__( self ):
+    raise TypeError( "unhashable type: 'Rational'" )
+    # Actually being immutable there is no reason why Rational should be
+    # unhashable, except if we implement __hash__ we must also implement __eq__
+    # such that it returns True on equality. Sounds fair enough, except numpy
+    # decided differently. We choose to cripple our object for consistency.
 
 
 ## UTILITY FUNCTIONS
