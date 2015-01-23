@@ -61,11 +61,14 @@ class Matrix( object ):
     matrix = self.toarray()[numpy.ix_(I,J)]
     return numpy.linalg.cond( matrix )
 
-  def res( self, x, b=0, constrain=None, lconstrain=None, rconstrain=None ):
+  def res( self, x, b=0, constrain=None, lconstrain=None, rconstrain=None, scaled=True ):
     'residual'
 
     x0, I, J = parsecons( constrain, lconstrain, rconstrain, self.shape )
-    return numpy.linalg.norm( (self.matvec(x)-b)[I] ) / numpy.linalg.norm( (self.matvec(x0)-b)[I] )
+    res = numpy.linalg.norm( (self.matvec(x)-b)[I] )
+    if scaled:
+      res /= numpy.linalg.norm( (self.matvec(x0)-b)[I] )
+    return res
 
   def clone( self ):
     warnings.warn( 'warning: arrays are immutable; clone returns self for backwards compatibility', DeprecationWarning )
