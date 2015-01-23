@@ -1,0 +1,88 @@
+#! /usr/bin/env python
+
+from nutils import *
+
+
+def makeplots( name, domain, geom, sigma ):
+
+  sigma_dev = sigma - (function.trace(sigma)/domain.ndims) * function.eye(domain.ndims)
+  vonmises = function.sqrt( ( sigma_dev**2 ).sum([0,1]) * 3./2 ) # TODO check fix for 2D
+
+  points, colors = domain.simplex.elem_eval( [ geom, vonmises ], ischeme='bezier3', separate=True )
+  with plot.PyPlot( name ) as plt:
+    plt.mesh( points, colors, triangulate='bezier' )
+    plt.colorbar()
+    plt.axis( 'equal' )
+    plt.clim( 0, 1 )
+
+
+def main( nelems=12, stress=library.Hooke(lmbda=1,mu=1), degree=2, angle=15, restol=1e-8, trim=False, plots=True ):
+
+  verts = numpy.linspace( 0, 1, nelems+1 )
+  domain, geom0 = mesh.rectilinear( [verts,verts] )
+
+  if trim:
+    levelset = function.norm2( geom0 - (.5,.5) ) - .2
+    domain, complement = domain.trim( levelset, maxrefine=2 )
+
+  dspace = domain.splinefunc( degree=degree ).vector( 2 )
+
+  phi = angle * numpy.pi / 180.
+  a = numpy.cos(phi) - 1, -numpy.sin(phi)
+  b = numpy.sin(2*phi), numpy.cos(2*phi) - 1
+  x, y = geom0
+  cons = domain.boundary['left,right'].project( x*(a+y*b), onto=dspace, ischeme='gauss6', geometry=geom0 )
+
+  E = dspace.symgrad(geom0)
+  A = function.outer( dspace.grad(geom0), stress(E) ).sum([-2,-1])
+  matrix = domain.integrate( A, geometry=geom0, ischeme='gauss6' )
+
+  lhs = matrix.solve( constrain=cons )
+  disp = dspace.dot( lhs )
+  geom = geom0 + disp
+
+  if plots:
+    strain = disp.symgrad(geom0)
+    makeplots( 'linear', domain, geom, stress(strain) )
+
+  for istep in log.count( 'newton' ):
+
+    E = dspace.symgrad(geom) - .5 * function.add_T( ( dspace.grad(geom)[:,:,:,_] * disp.grad(geom)[_,:,_,:] ).sum(1) )
+    F = .5 * function.outer( disp.grad(geom), axis=1 ).sum(0)
+    A = function.outer( dspace.grad(geom), stress(E) ).sum([-2,-1])
+    B = ( dspace.grad(geom) * stress(-F) ).sum([-2,-1])
+    matrix, rhs = domain.integrate( [ A, B ], geometry=geom, ischeme='gauss6' )
+
+    res = matrix.res( lhs, rhs, constrain=cons )
+    log.user( 'residual:', res )
+    if res < restol:
+      break
+
+    lhs = matrix.solve( rhs, constrain=cons )
+    disp = dspace.dot( lhs )
+    geom = geom0 + disp
+
+  if plots:
+    strain = disp.symgrad(geom) - .5 * function.outer( disp.grad(geom), axis=1 ).sum(0)
+    makeplots( 'finite', domain, geom, stress(strain) )
+
+  return lhs
+
+
+def unittest():
+
+  retvals = main( nelems=4, degree=1, angle=1, plots=False )
+  assert debug.checkdata( retvals, '''
+    eNpdkAtqhDEIhK+zC7E4vj3Qf/8r7JqkUAqB+UJGR4P1sgV/rxf/rL9HOfKhXMJRD8UywEYDkNFm3ndl
+    8EO1TGv7KnW/49vgIV9IrVGSLkzDCK9jUGxDd4+Kp20jXHSM5anbmMrbECyjaumj/wYWE58yAsNnIkrH
+    TiSBYDqR3WyS0D7QxeeJ+8A3ZS9AZWIXJnCgcMr7txzgPkNrnDWR5heCL2RcaByo8zfvD7CbUag=''' )
+
+  retvals = main( nelems=4, degree=2, angle=1, plots=False )
+  assert debug.checkdata( retvals, '''
+    eNplUdltxTAMW+c9wCp0HwNl/xVqyc5PCwQgLVOmxND66CL7rg/+rD+fZtoDsdQ5G0lJH/DFit4oZNxo
+    hDJ1FB2dO/VZo0YfWdZIZPiALRKWRiB16QYOxxaktNEWSh3hNNpiMp0GE8FukDQ5LzqPsGRe5OAYrJ6g
+    HYzHQZnGgbj0vOjeKCg5qDFO/0PIqlk+tajRkScUYLddyO0hOOvCmweY1gQBRldMHDVX7DWTg1aeLr+j
+    7QrGITcvsMAJEGL23KRmzk0Ig8+GTHGJ4CV+K6I3Bc1L/L0KtUvs/ovwvCTfStUhiRPW9xfS8neS''' )
+
+
+util.run( main, unittest )
