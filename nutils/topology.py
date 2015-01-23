@@ -1282,10 +1282,8 @@ class TrimmedTopology( Topology ):
       itemtopo = TrimmedTopology( keytopo, elements )
     return itemtopo
 
-  @log.title
-  def basis( self, name, *args, **kwargs ):
-    funcsp = self.basetopo.basis( name, *args, **kwargs )
-    ((dofaxis,),func), = function.blocks( funcsp )
+  def prune_basis( self, basis ):
+    ((dofaxis,),func), = function.blocks( basis )
     nmap = {}
     fmap = {}
     renumber = {}
@@ -1301,6 +1299,11 @@ class TrimmedTopology( Topology ):
       nmap[trans] = numpy.array(dofs)
       fmap[trans] = func.stdmap[trans]
     return function.function( fmap=fmap, nmap=nmap, ndofs=len(renumber), ndims=self.ndims )
+
+  @log.title
+  def basis( self, name, *args, **kwargs ):
+    basis = self.basetopo.basis( name, *args, **kwargs )
+    return self.prune_basis( basis )
 
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
