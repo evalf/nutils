@@ -1306,4 +1306,21 @@ class TrimmedTopology( Topology ):
     return self.prune_basis( basis )
 
 
+# UTILITY FUNCTIONS
+
+def common_refine( topo1, topo2 ):
+  commonelem = []
+  topo2trans = { elem.transform: elem for elem in topo2 }
+  for elem1 in topo1:
+    head = elem1.transform.lookup( topo2trans )
+    if head:
+      commonelem.append( elem1 )
+      topo2trans[ head ] = None
+  commonelem.extend( elem for elem in topo2trans.values() if elem is not None )
+  base1 = topo1.basetopo if isinstance( topo1, topology.HierarchicalTopology ) else topo1
+  base2 = topo2.basetopo if isinstance( topo2, topology.HierarchicalTopology ) else topo2
+  assert base1 == base2
+  return topology.HierarchicalTopology( base1, commonelem )
+
+
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
