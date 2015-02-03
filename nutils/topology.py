@@ -1284,21 +1284,20 @@ class TrimmedTopology( Topology ):
 
   def prune_basis( self, basis ):
     ((dofaxis,),func), = function.blocks( basis )
-    nmap = {}
-    fmap = {}
-    renumber = {}
+
+    used = numpy.zeros( len(basis), dtype=bool )
     for elem in self:
-      trans = elem.transform
-      dofs = []
-      for dof in dofaxis.dofmap[trans]:
-        newdof = renumber.get(dof)
-        if newdof is None:
-          newdof = len(renumber)
-          renumber[dof] = newdof
-        dofs.append( newdof )
-      nmap[trans] = numpy.array(dofs)
-      fmap[trans] = func.stdmap[trans]
-    return function.function( fmap=fmap, nmap=nmap, ndofs=len(renumber), ndims=self.ndims )
+      used[ dofaxis.dofmap[elem.transform] ] = True
+
+    ndofs = used.sum()
+    renumber = numpy.empty( len(basis), dtype=int )
+    renumber[:] = ndofs # invalid index
+    renumber[used] = numpy.arange(ndofs)
+
+    nmap = { elem.transform: renumber[ dofaxis.dofmap[elem.transform] ] for elem in self }
+    fmap = { elem.transform: func.stdmap[elem.transform] for elem in self }
+
+    return function.function( fmap=fmap, nmap=nmap, ndofs=ndofs, ndims=self.ndims )
 
   @log.title
   def basis( self, name, *args, **kwargs ):

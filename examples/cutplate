@@ -50,24 +50,23 @@ def unittest():
 
   retvals = main( nelems=None, degree=2, maxrefine=2, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
-    eNp9UMsOwyAM+51WClPegc/ZYdf+/3ENsK2rukkgOwQ7BoJFgWyFZZHm9CgKhoiJQi6J7MyJVGvtyO6J
-    eMtF1nBWym5J1Wo/Usc66rCj8QtVRL8GGs/BQ184aE/k6V3MbDczKII8SLByJxyjNQIVIbapEm2RHYqQ
-    RJtaxaofBTX1WTFlVAPW1i/s/7Ldt3fC5Mc99JOdm+fn/jK6kP71vWyusD4BEutu9A==''' )
+    eNqFkEsOwyAMRK+TSFD5bzhOF93m/svGmLb0I1UCvQEzYwssmxTUvWwbd8NblaIAEGQ0DpIRBbG1Nkhm
+    QbjEQu0wT6w0pGhLkumgQct717XBg8Is743TX8nxnMgiu6rqGaKlMlAKJ6EhyLOUA1VG0ukijI5a0J2D
+    LN2DOjMEmryc2MXmiaSPwvkvx/V4ThZ63emb6rO4GteAz7Af1r+5Xw/2st8BJ+pu9A==''' )
 
   retvals = main( nelems=4, degree=2, maxrefine=2, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
-    eNq9UTuOQzEIvM6LZK/4g4+T4rW5f7kPsJQUUbRpVrI1MDDGAI5DBuptHAcF4Dl5wE+eJbrOecUWQaKR
-    0zl1iLunz7QkkVAqfknUwTMFF69NBao0BZzURFlVRJxLJqW50LgRmOr5XZ5xbcSd1+UlotERC9U3QumF
-    qVAB4BukEHoOYTJIFK1WfUwS0zQ0/ArYIMbyp1EKrVVONYipGiuNJM2iSafgliyr3gisRquClmiIUD5S
-    JaJIK5lhv0taVQU6g5mwEMJa4VV3IhG1tHaiu6/Xc63+cX9sJ6139yX0Ieuv99ul/Pf/3g3p9gswGceJ''' )
+    eNq9kc1uxCAMhF8nK0Flj395nB5y3fc/NtiRqlV72UMrEX3gzBgYeBw62B7jOJDE55RBH99jsq4qLrV1
+    zku6QJuOwDltWFBsJptuakj914jYFCzdBCu1X+4+JK2j0qlLkwTlu/cTXjf51nVfzWwGc9HiJpVfBUUj
+    oneIVPwIwZfXIaaQZqnM67YT6lYTCVQO0z1rAvIOKOOy+IBwKx17Bx/TLFdVAiklVfZNZ6ZaM6rOqt1b
+    pMOeBqtmSq0QARcpvR3RrRlAWyt3e7lXj+vpn5/Pl9Je/+X37qP89/l+C+nxBdZIx4k=''' )
 
   retvals = main( nelems=4, degree=2, maxrefine=3, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
-    eNq9Uc1qhCEMfJ1d0JKfiTGP08N33fc/1kRLS1lK91JQxkycZIzcbmhs93a7iTOuro3ecoWBrr5ywZE4
-    xOfVrcGnZKwSnigMTlwScxp5hUPjUJMtNkWaVGfDzCZwLRmcqw3G1oAUVR5WsXIcZN/30sbCOf3odx3z
-    g1T2oFJoRPQKStD8GkJX2m3EgvIdXZbRPBjS/2giE5UYIE+iVPW4RZpFDS3JMWKTLqGfh3qLECpjupsM
-    mqUy5qrNgJRAdRPdZJQCxJa4EjX5ZfcovMbeWeRIA3Sc/Fjr6x/vjxPk6dn+lvrl1l/3q5/y3/6eDen+
-    ATq3x4Q=''' )
+    eNq9kTtuRDEIRbczI9kRn4sxy0kx7ey/jIEnJVHSTJFItg7G/OFxw2C7j9tNnPGYOujt80w27FSGgR7z
+    mAZHcokfvQ1zWsnNFkm4cv7DtyRVwpPC4PbXaJK2HVdcrNaDFOUHq7dyXGRvu8x7uLdf/p3P/CJVXqgU
+    jYheoQTtH0NwiUo6lTqrWFB2O+XUXYJW30dYK0oQQtGQH2uIbLQByFMxzaJGmOEriGlHXbR7tszlwoB0
+    Em3FNFkVHMSWPB+1hVPf5eG1jckil2ugYn/tq89Z/fP9+U2V77+8ry7lv+v7bUj3D+CNx4Q=''' )
 
 
 util.run( main, unittest )
