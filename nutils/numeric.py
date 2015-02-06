@@ -324,10 +324,10 @@ def eig( A ):
   return L, V
 
 def isbool( a ):
-  return isboolarray( a ) and a.ndim == 0 or numpy.issubdtype( type(a), numpy.bool )
+  return isboolarray( a ) and a.ndim == 0 or type(a) == bool
 
 def isboolarray( a ):
-  return isinstance( a, numpy.ndarray ) and numpy.issubdtype( a.dtype, numpy.bool )
+  return isinstance( a, numpy.ndarray ) and a.dtype == bool
 
 def isint( a ):
   return isintarray( a ) and a.ndim == 0 or numpy.issubdtype( type(a), numpy.integer )

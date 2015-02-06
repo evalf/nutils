@@ -315,6 +315,9 @@ class IndexVector( Evaluable ):
     self.ndim = 1
     Evaluable.__init__( self, args=args )
 
+  def __str__( self ):
+    return '%s<%s>' % ( self.__class__.__name__, ','.join( str(n) for n in self.shape ) )
+
 class DofMap( IndexVector ):
   'dof axis'
 
@@ -407,7 +410,10 @@ class ArrayFunc( Evaluable ):
     arr = self
     while myitem:
       it = myitem.pop(0)
-      if numeric.isint(it): # retrieve one item from axis
+      if isinstance(it,numpy.ndarray): # numpy first because of 'equals issues'
+        arr = take( arr, it, n )
+        n += 1
+      elif numeric.isint(it): # retrieve one item from axis
         arr = get( arr, n, it )
       elif it == _: # insert a singleton axis
         arr = insert( arr, n )
@@ -422,7 +428,7 @@ class ArrayFunc( Evaluable ):
       elif isinstance(it,slice) and it.step in (1,None) and it.stop == ( it.start or 0 ) + 1: # special case: unit length slice
         arr = insert( get( arr, n, it.start or 0 ), n )
         n += 1
-      elif isinstance(it,(slice,list,tuple,numpy.ndarray)): # modify axis (shorten, extend or renumber one axis)
+      elif isinstance(it,(slice,list,tuple)): # modify axis (shorten, extend or renumber one axis)
         arr = take( arr, it, n )
         n += 1
       else:
@@ -818,6 +824,38 @@ class Function( ArrayFunc ):
     grad = Function( self.ndims, self.stdmap, self.igrad+1, self.shape[0], self.side )
     return grad if ndims == self.ndims \
       else dot( grad[...,_], Transform( self.ndims, ndims, self.side ), axes=-2 )
+
+  def _take( self, indices, axis ):
+    if axis != 0:
+      return
+    assert isinstance( indices, DofMap )
+    assert indices.shape[0] == self.shape[0]
+    stdmap = {}
+    for trans, stdkeep in self.stdmap.items():
+      ind = indices.dofmap[trans]
+      assert all( numpy.diff( ind ) > 0 )
+      nshapes = sum( 0 if not std else std.nshapes if keep is None else sum(keep) for std, keep in stdkeep )
+      where = numpy.zeros( nshapes, dtype=bool )
+      where[ind] = True
+      newstdkeep = []
+      for std, keep in stdkeep:
+        if std:
+          if keep is None:
+            n = std.nshapes
+            keep = where[:n]
+          else:
+            n = sum(keep)
+            keep = keep.copy()
+            keep[keep] = where[:n]
+          if not keep.any():
+            std = None
+          elif keep.all():
+            keep = None
+          where = where[n:]
+        newstdkeep.append(( std, keep ))
+      assert not where.size
+      stdmap[trans] = newstdkeep
+    return Function( self.ndims, stdmap, self.igrad, indices.target, side=self.side )
 
 class Choose( ArrayFunc ):
   'piecewise function'
@@ -1975,9 +2013,27 @@ class Inflate( ArrayFunc ):
 
   def _take( self, index, axis ):
     if axis == self.axis:
-      assert index == self.dofmap
-      return self.func
-    return inflate( take( self.func, index, axis ), self.dofmap, self.axis )
+      if index == self.dofmap:
+        return self.func
+      assert numeric.isintarray(index) and index.ndim == 1
+      if self.dofmap.offset != 0:
+        raise NotImplementedError
+      reverse_index = numpy.empty( self.shape[axis], dtype=int )
+      reverse_index[:] = -1
+      reverse_index[index] = numpy.arange( len(index) )
+      globaldofs = {}
+      localdofs = {}
+      for trans, dofs in self.dofmap.dofmap.items():
+        newdofs = reverse_index[dofs]
+        keep = newdofs != -1
+        globaldofs[trans] = newdofs[keep]
+        localdofs[trans], = numpy.where(keep)
+      strlen = '~%d'%len(index)
+      dofmap = DofMap( globaldofs, axis=strlen, target=len(index), side=self.dofmap.side )
+      index = DofMap( localdofs, axis=self.dofmap.shape[0], target=strlen, side=self.dofmap.side )
+    else:
+      dofmap = self.dofmap
+    return inflate( take( self.func, index, axis ), dofmap, self.axis )
 
   def _diagonalize( self ):
     assert self.axis < self.ndim-1
@@ -3055,6 +3111,10 @@ def take( arg, index, axis ):
   else:
     index = numpy.asarray( index )
     assert numpy.all( index >= 0 )
+
+  if numeric.isboolarray(index) and index.ndim == 1 and len(index) == arg.shape[axis]:
+    index, = numpy.where( index )
+
   assert numeric.isintarray(index) and index.ndim == 1 and len(index) > 0
 
   if len(index) == arg.shape[axis] and all( index == numpy.arange(arg.shape[axis]) ):
