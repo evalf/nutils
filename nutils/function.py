@@ -671,7 +671,11 @@ class Align( ArrayFunc ):
       return align( self.func + other.func, self.axes, self.ndim )
 
   def _take( self, indices, axis ):
-    n = self.axes.index( axis )
+    try:
+      n = self.axes.index( axis )
+    except ValueError:
+      assert isinstance( indices, DofMap )
+      return self
     return align( take( self.func, indices, n ), self.axes, self.ndim )
 
   def _opposite( self ):
@@ -3100,6 +3104,8 @@ def take( arg, index, axis ):
     retval = _call( arg, '_take', index, axis )
     if retval is not None:
       return retval
+    if arg.shape[axis] == 1:
+      return arg
     return DofIndex( arg, axis, index )
 
   if isinstance( index, slice ):
