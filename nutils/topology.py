@@ -1010,7 +1010,7 @@ class StructuredTopology( Topology ):
 
       nd = n * p + 1
       numbers = numpy.arange( nd )
-      if idim in self.periodic:
+      if idim in self.periodic and p > 0:
         numbers[-1] = numbers[0]
         nd -= 1
       remove = removedofs[idim]
