@@ -347,6 +347,7 @@ def title( f ): # decorator
     gettitle = lambda args, kwargs: args[index] if index < len(args) else kwargs.get('title',default)
   else:
     gettitle = lambda args, kwargs: kwargs.pop('title',default)
+  @functools.wraps(f)
   def wrapped( *args, **kwargs ):
     __log__ = _getlog().clone()
     __log__.append( gettitle(args,kwargs) )
