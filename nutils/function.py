@@ -805,7 +805,7 @@ class Function( ArrayFunc ):
     head = trans.lookup( self.stdmap )
     for std, keep in self.stdmap[head]:
       if std:
-        transpoints = cache( trans[len(head):].apply, points )
+        transpoints = cache( trans.slicefrom(len(head)).apply, points )
         F = cache( std.eval, transpoints, self.igrad )
         assert F.ndim == self.igrad+2
         if keep is not None:
@@ -818,7 +818,7 @@ class Function( ArrayFunc ):
           elif invlinear != 1:
             F = F * (invlinear**self.igrad)
         fvals.append( F )
-      head = head[:-1]
+      head = head.sliceto(-1)
     return fvals[0] if len(fvals) == 1 else numpy.concatenate( fvals, axis=-1-self.igrad )
 
   def _opposite( self ):

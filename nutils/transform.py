@@ -21,12 +21,11 @@ class TransformChain( tuple ):
 
   __slots__ = ()
 
-  def __getitem__( self, item ):
-    trans = tuple.__getitem__( self, item )
-    return TransformChain( trans ) if isinstance( trans, tuple ) else trans
+  def slicefrom( self, i ):
+    return TransformChain( self[i:] )
 
-  def __getslice__( self, i, j ):
-    return TransformChain( tuple.__getslice__( self, i, j ) )
+  def sliceto( self, j ):
+    return TransformChain( self[:j] )
 
   @property
   def todims( self ):
@@ -46,7 +45,7 @@ class TransformChain( tuple ):
     while headtrans:
       if headtrans in transforms:
         return headtrans
-      headtrans = headtrans[:-1]
+      headtrans = headtrans.sliceto(-1)
     return None
 
   def split( self, ndims=_noarg ):
@@ -56,7 +55,7 @@ class TransformChain( tuple ):
       return TransformChain(), self
     for i, trans in enumerate(self):
       if trans.fromdims == ndims:
-        return self[:i+1], self[i+1:]
+        return self.sliceto(i+1), self.slicefrom(i+1)
     raise Exception( 'dimension not found in chain: %s' % ndims )
 
   def __lshift__( self, other ):
