@@ -31,8 +31,8 @@ class Element( object ):
   def __init__( self, reference, trans, opposite=None ):
     assert trans.fromdims == reference.ndims
     self.reference = reference
-    self.transform = transform.canonical( trans )
-    self.opposite = transform.canonical( opposite ) if opposite is not None else self.transform
+    self.transform = trans.canonical
+    self.opposite = opposite.canonical if opposite is not None else self.transform
 
   def __hash__( self ):
     return object.__hash__( self )

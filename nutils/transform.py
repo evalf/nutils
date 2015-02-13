@@ -124,6 +124,22 @@ class TransformChain( tuple ):
     return self if len(self) == 1 \
       else affine( self.linear, self.offset, isflipped=self.isflipped )
 
+  @property
+  def canonical( self ):
+    # keep at highest ndims possible
+    chain = []
+    trans1 = self[ 0 ]
+    for trans2 in self[ 1: ]:
+      if isinstance( trans2, Scale ) and trans1.todims == trans1.fromdims + 1:
+        newscale = Scale( trans2.linear, trans1.apply( trans2.offset ) - trans2.linear * trans1.offset )
+        assert equivalent( (trans1,trans2), (newscale,trans1) )
+        chain.append( newscale )
+      else:
+        chain.append( trans1 )
+        trans1 = trans2
+    chain.append( trans1 )
+    return TransformChain( chain )
+
 
 ## TRANSFORM ITEMS
 
@@ -312,21 +328,6 @@ def equivalent( trans1, trans2 ):
 ## UTILITY FUNCTIONS
 
 identity = TransformChain()
-
-def canonical( transchain ):
-  # keep at highest ndims possible
-  chain = []
-  trans1 = transchain[ 0 ]
-  for trans2 in transchain[ 1: ]:
-    if isinstance( trans2, Scale ) and trans1.todims == trans1.fromdims + 1:
-      newscale = Scale( trans2.linear, trans1.apply( trans2.offset ) - trans2.linear * trans1.offset )
-      assert equivalent( (trans1,trans2), (newscale,trans1) )
-      chain.append( newscale )
-    else:
-      chain.append( trans1 )
-      trans1 = trans2
-  chain.append( trans1 )
-  return TransformChain( chain )
 
 def solve( transA, transB ): # A << X = B
   A = transA.linear
