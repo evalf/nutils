@@ -1169,7 +1169,13 @@ class HierarchicalTopology( Topology ):
       touchtopo = numpy.zeros( funcsp.shape[0], dtype=bool ) # True if dof touches at least one elem in self
       myelems = [] # all top-level or parent elements in current level
 
-      for trans, idofs, stds in function._unpack( funcsp ):
+      (axes,func), = function.blocks( funcsp )
+      dofmap = axes[0].dofmap
+      stdmap = func.stdmap
+      for elem in topo:
+        trans = elem.transform
+        idofs = dofmap[trans]
+        stds = stdmap[trans]
         mytrans = trans.lookup( self.edict )
         if mytrans == trans: # trans is in domain
           remaining -= 1
