@@ -489,7 +489,7 @@ class ArrayFunc( Evaluable ):
       normal = [1]
     else:
       raise NotImplementedError( 'cannot compute normal for %dx%d jacobian' % ( self.shape[0], ndims ) )
-    return normal * ElemSign( ndims )
+    return normal * Orientation( ndims )
 
   def curvature( self, ndims=-1 ):
     'curvature'
@@ -583,7 +583,7 @@ class ArrayFunc( Evaluable ):
 
   __repr__ = __str__
 
-class ElemSign( ArrayFunc ):
+class Orientation( ArrayFunc ):
   'sign'
 
   def __init__( self, ndims, side=0 ):
@@ -597,7 +597,7 @@ class ElemSign( ArrayFunc ):
     return numpy.array([ trans.orientation(self.ndims) ])
 
   def _opposite( self ):
-    return ElemSign( self.ndims, 1-self.side )
+    return Orientation( self.ndims, 1-self.side )
 
   def _localgradient( self, ndims ):
     return _zeros( (ndims,) )
