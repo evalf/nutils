@@ -745,21 +745,17 @@ class Product( ArrayFunc ):
 class Iwscale( ArrayFunc ):
   'integration weights'
 
-  def __init__( self ):
+  def __init__( self, ndims ):
     'constructor'
 
+    self.fromdims = ndims
     ArrayFunc.__init__( self, args=[Elemtrans(0)], shape=() )
 
   def evalf( self, trans ):
     'evaluate'
 
-    #return abs( numpy.asarray( trans.split()[1].det, dtype=float )[_] )
-    iwscale = 1.
-    for tr in reversed(trans):
-      if tr.todims != trans.fromdims:
-        break
-      iwscale *= tr.det
-    return numpy.array([ abs(float(iwscale)) ])
+    assert trans.fromdims == self.fromdims
+    return abs( numpy.asarray( trans.split(self.fromdims)[1].det, dtype=float )[_] )
 
 class Transform( ArrayFunc ):
   'transform'
@@ -2535,10 +2531,10 @@ def iwscale( geom, ndims ):
   detJ = abs( determinant( J ) ) if cndims == ndims \
     else 1. if ndims == 0 \
     else abs( determinant( ( J[:,:,_] * J[:,_,:] ).sum(0) ) )**.5
-  return detJ * Iwscale()
+  return detJ * Iwscale(ndims)
 
 def iwdscale( geom, ndims ):
-  return iwscale( geom, ndims ) * iwscale( opposite(geom), ndims ) / Iwscale()
+  return iwscale( geom, ndims ) * iwscale( opposite(geom), ndims ) / Iwscale(ndims)
 
 def grad( arg, coords, ndims=0 ):
   'local derivative'
