@@ -227,7 +227,7 @@ def invdet( array ):
     ((a,b,c),(d,e,f),(g,h,i)) = array.numer
     invdet = Rational( ((e*i-f*h,c*h-b*i,b*f-c*e),(f*g-d*i,a*i-c*g,c*d-a*f),(d*h-e*g,b*g-a*h,a*e-b*d)), array.denom**2 )
   else:
-    raise NotImplementedError( 'shape=' + tuple(array.shape) )
+    raise NotImplementedError( 'shape={}'.format(array.shape) )
   return invdet
   
 def inv( array ):
