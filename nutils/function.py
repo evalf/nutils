@@ -328,6 +328,10 @@ class DofMap( IndexVector ):
     self.dofmap = dofmap
     self.offset = offset
     self.target = target
+    for trans in dofmap:
+      break
+    self.ndims = trans.fromdims
+
     IndexVector.__init__( self, args=[Elemtrans(side)], length=axis )
 
   def __add__( self, offset ):
@@ -337,6 +341,7 @@ class DofMap( IndexVector ):
   def evalf( self, trans ):
     'evaluate'
 
+    trans = trans.promote( self.ndims )
     return self.dofmap[ trans.lookup(self.dofmap) ] + self.offset
 
   def _opposite( self ):
@@ -589,12 +594,7 @@ class ElemSign( ArrayFunc ):
     self.ndims = ndims
 
   def evalf( self, trans ):
-    try:
-      head, tail = trans.split( self.ndims )
-      ntrans = head[-1]
-    except: # possibly ndim topo, n+1dim geom
-      return numpy.array([ 1 ])
-    return numpy.array( -1 if ntrans.isflipped else 1 )[_]
+    return numpy.array([ trans.orientation(self.ndims) ])
 
   def _opposite( self ):
     return ElemSign( self.ndims, 1-self.side )
@@ -776,8 +776,9 @@ class Transform( ArrayFunc ):
   def evalf( self, trans ):
     'transform'
 
-    matrix = trans.split( self.fromdims )[0].split( self.todims )[1].linear
-    assert matrix.ndim == 2
+    trans = trans.promote(self.fromdims).split(self.fromdims)[0].split(self.todims)[1]
+    matrix = trans.linear
+    assert matrix.shape == (self.todims,self.fromdims)
     return matrix.astype( float )[_]
 
   def _localgradient( self, ndims ):
@@ -796,12 +797,16 @@ class Function( ArrayFunc ):
     self.ndims = ndims
     self.stdmap = stdmap
     self.igrad = igrad
+    for trans in stdmap:
+      break
+    self.fromdims = trans.fromdims
     ArrayFunc.__init__( self, args=(CACHE,POINTS,Elemtrans(side)), shape=(axis,)+(ndims,)*igrad )
 
   def evalf( self, cache, points, trans ):
     'evaluate'
 
     fvals = []
+    trans = trans.promote( self.fromdims )
     head = trans.lookup( self.stdmap )
     for std, keep in self.stdmap[head]:
       if std:
@@ -811,7 +816,7 @@ class Function( ArrayFunc ):
         if keep is not None:
           F = F[(Ellipsis,keep)+(slice(None),)*self.igrad]
         if self.igrad:
-          invlinear = head.split()[1].invlinear.astype( float )
+          invlinear = head.split(self.fromdims)[1].invlinear.astype( float )
           if invlinear.ndim:
             for axis in range(-self.igrad,0):
               F = numeric.dot( F, invlinear, axis )
@@ -1694,7 +1699,9 @@ class ElemFunc( ArrayFunc ):
   def evalf( self, points, trans ):
     'evaluate'
 
-    return trans.split(self.shape[0])[1].apply( points ).astype( float )
+    trans = trans.promote( self.shape[0] )
+    ptrans = trans.split( self.shape[0] )[1]
+    return ptrans.apply( points ).astype( float )
 
   def _localgradient( self, ndims ):
     return eye( ndims ) if self.shape[0] == ndims \

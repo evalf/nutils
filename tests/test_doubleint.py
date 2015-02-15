@@ -12,7 +12,7 @@ def K( x, y ):
   rInv = function.norm2( x-y )**-1.
   return 0.75*pi**-1. * (x-y)[:,_]*(x-y)[_,:] * ((x-y)*y.normal()).sum() * rInv**5
 
-class TestGaussDoubleInt( object ):
+class BakTestGaussDoubleInt( object ):
   # Gauss quadrature on product domain.
 
   def test_polynomials( self ):
@@ -29,7 +29,7 @@ class TestGaussDoubleInt( object ):
     numpy.testing.assert_almost_equal(
       ddomain.integrate( (x-y)**2, iwscale=iwscale, ischeme='gauss2' ), 1./6 )
 
-class TestSingularDoubleInt( object ):
+class BakTestSingularDoubleInt( object ):
   # Regularized quadrature on product domain.
 
   def patch( self, val ):
@@ -51,7 +51,7 @@ class TestSingularDoubleInt( object ):
     self.patch( ddomain.integrate( 1, iwscale=iwscale, ischeme='singular2' ) )
     self.distance( ddomain.integrate( r**2, iwscale=iwscale, ischeme='singular3' ) )
 
-class TestNormalInKernelOfV( object ):
+class BakTestNormalInKernelOfV( object ):
   # Convolute normal with single-layer to verify it is in the kernel, note that
   # this works with all gauss schemes!'
 
@@ -99,7 +99,7 @@ class TestNormalInKernelOfV( object ):
     err = self.template( 4, self.octahedron )
     numpy.testing.assert_almost_equal( infnorm( err ), 0, decimal=3 )
 
-class TestKroneckerKernelGivesSurface( object ):
+class BakTestKroneckerKernelGivesSurface( object ):
   # Convolute a uniform velocity field with the identity to verify it gives the
   # surface.
 
@@ -117,7 +117,7 @@ class TestKroneckerKernelGivesSurface( object ):
     surf = 4.*pi
     numpy.testing.assert_almost_equal( val, surf )
 
-class TestOneInKernelOfK( object ):
+class BakTestOneInKernelOfK( object ):
   # Convolute a uniform velocity field with the dual-layer to verify it is in
   # the kernel.
 
@@ -150,7 +150,7 @@ class TestOneInKernelOfK( object ):
     err = infnorm( self.template( self.sphere, 4 ) )
     numpy.testing.assert_almost_equal( err, 0, decimal=2 )
 
-class TestShearFlow( object ):
+class BakTestShearFlow( object ):
   # Torus cut of shear flow.
 
   def test_InteriorProblem( self, N=4 ):

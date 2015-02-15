@@ -76,7 +76,7 @@ class TestGaussQuadrature( object ):
 
     self._test ( MAXORDER, elem, F )
 
-class TestSingularQuadrature( object ):
+class BakTestSingularQuadrature( object ):
   # Singular bivariate quadrature and convergence on quadrilaterals
 
   def __init__( self ):

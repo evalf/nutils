@@ -1107,7 +1107,11 @@ class HierarchicalTopology( Topology ):
     boundarytopo = self.basetopo.boundary
     elems = []
     for topo in boundarytopo.refine_iter:
-      elems.extend( elem for elem in topo if elem.transform.sliceto(-1) in self.edict )
+      for elem in topo:
+        trans = elem.transform.promote( self.ndims )
+        head = trans.lookup( self.edict )
+        if head:
+          elems.append( elem )
       if topo.transrange[0] - 1 >= self.transrange[1]:
         break
     return HierarchicalTopology( boundarytopo, elems )
@@ -1263,10 +1267,11 @@ class TrimmedTopology( Topology ):
   def boundary( self ):
     belems = list( self.trimmed )
     for belem in log.iter( 'element', self.basetopo.boundary ):
-      trans = belem.transform
-      elem = self.edict.get( trans.sliceto(-1) )
-      if elem:
-        belem = elem.findedge( trans.slicefrom(-1) )
+      trans = belem.transform.promote( self.ndims )
+      head = trans.lookup( self.edict )
+      if head:
+        elem = self.edict[ head ]
+        belem = elem.findedge( trans.slicefrom(len(head)) )
         if belem:
           belems.append( belem )
 

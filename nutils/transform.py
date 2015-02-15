@@ -11,10 +11,8 @@ The transform module.
 """
 
 from __future__ import print_function, division
-from . import cache, rational, numeric
+from . import cache, rational, numeric, core
 import numpy
-
-_noarg = object()
 
 
 class TransformChain( tuple ):
@@ -37,7 +35,18 @@ class TransformChain( tuple ):
 
   @property
   def isflipped( self ):
-    return any( trans.isflipped for trans in self )
+    assert self.todims == self.fromdims+1
+    index = core.index( trans.fromdims == self.fromdims for trans in self )
+    updim = self[index]
+    assert updim.todims == self.todims
+    return updim.isflipped
+
+  def orientation( self, ndims ):
+    # returns orientation (+1/-1) for ndims->ndims+1 transformation
+    index = core.index( trans.fromdims == ndims for trans in self )
+    updim = self[index]
+    assert updim.todims == ndims+1
+    return -1 if updim.isflipped else 1
 
   def lookup( self, transforms ):
     # to be replaced by bisection soon
@@ -48,15 +57,12 @@ class TransformChain( tuple ):
       headtrans = headtrans.sliceto(-1)
     return None
 
-  def split( self, ndims=_noarg ):
-    if ndims is _noarg:
-      ndims = self.fromdims
-    if self.todims == ndims:
-      return TransformChain(), self
-    for i, trans in enumerate(self):
-      if trans.fromdims == ndims:
-        return self.sliceto(i+1), self.slicefrom(i+1)
-    raise Exception( 'dimension not found in chain: %s' % ndims )
+  def split( self, ndims ):
+    if self[-1].todims != ndims:
+      assert self[-1].fromdims == ndims
+      return self, identity
+    i = core.index( trans.todims == ndims for trans in self )
+    return self.sliceto(i), self.slicefrom(i)
 
   def __lshift__( self, other ):
     # self << other
@@ -125,19 +131,27 @@ class TransformChain( tuple ):
 
   @property
   def canonical( self ):
-    # keep at highest ndims possible
-    chain = []
-    trans1 = self[ 0 ]
-    for trans2 in self[ 1: ]:
-      if isinstance( trans2, Scale ) and trans1.todims == trans1.fromdims + 1:
-        newscale = Scale( trans2.linear, trans1.apply( trans2.offset ) - trans2.linear * trans1.offset )
-        assert equivalent( (trans1,trans2), (newscale,trans1) )
-        chain.append( newscale )
-      else:
-        chain.append( trans1 )
-        trans1 = trans2
-    chain.append( trans1 )
-    return TransformChain( chain )
+    # Keep at lowest ndims possible. The reason is that in this form we can do
+    # lookups of embedded elements.
+    items = list( self )
+    for i in range(len(items)-1)[::-1]:
+      trans1, trans2 = items[i:i+2]
+      if isinstance( trans1, Scale ) and trans2.todims == trans2.fromdims + 1:
+        newscale = solve( TransformChain([trans2]), TransformChain([trans1,trans2]) )
+        if newscale:
+          items[i:i+2] = trans2, newscale
+    return TransformChain( items )
+
+  def promote( self, ndims ):
+    if ndims == self.fromdims:
+      return self
+    index = core.index( trans.fromdims == self.fromdims for trans in self )
+    uptrans = self[index]
+    assert uptrans.todims == self.fromdims+1
+    body = tuple( Scale( scale.linear, uptrans.apply(scale.offset) - scale.linear * uptrans.offset ) for scale in self[index+1:] )
+    # self[:index] << body << uptrans == self
+    assert equivalent( body+(uptrans,), self[index:] )
+    return TransformChain( TransformChain(self[:index]+body).promote(ndims)+(uptrans,) )
 
 
 ## TRANSFORM ITEMS
@@ -329,6 +343,9 @@ def equivalent( trans1, trans2 ):
 identity = TransformChain()
 
 def solve( transA, transB ): # A << X = B
+  assert transA.fromdims == transB.fromdims and transA.todims == transB.todims
+  if transB.fromdims == 0:
+    return None
   A = transA.linear
   B = transB.linear
   assert A.ndim == B.ndim == 2
@@ -336,6 +353,8 @@ def solve( transA, transB ): # A << X = B
   b = transB.offset
   AAinv = rational.inv( rational.dot( A.T, A ) )
   X = rational.dot( AAinv, rational.dot( A.T, B ) ) # A X = B
+  if X.shape == (1,1): # TODO fix for nd scaled identity
+    X = X[0,0]
   x = rational.dot( AAinv, rational.dot( A.T, b-a ) ) # A x + a = b
   transX = affine( X, x )
   transAX = transA << transX
