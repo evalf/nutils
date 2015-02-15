@@ -292,15 +292,16 @@ class PointShape( Evaluable ):
 
     return points.shape[:-1]
 
-class Elemtrans( Evaluable ):
+class TransformChain( Evaluable ):
   'transform'
 
-  def __init__( self, side ):
+  def __init__( self, side, promote ):
     Evaluable.__init__( self, args=[TRANS] )
     self.side = side
+    self.promote = promote
 
   def evalf( self, trans ):
-    return trans[ self.side ]
+    return trans[ self.side ].promote( self.promote )
 
 # INDEXVECTOR
 #
@@ -330,9 +331,8 @@ class DofMap( IndexVector ):
     self.target = target
     for trans in dofmap:
       break
-    self.ndims = trans.fromdims
 
-    IndexVector.__init__( self, args=[Elemtrans(side)], length=axis )
+    IndexVector.__init__( self, args=[TransformChain(side,trans.fromdims)], length=axis )
 
   def __add__( self, offset ):
     assert numeric.isint( offset )
@@ -341,7 +341,6 @@ class DofMap( IndexVector ):
   def evalf( self, trans ):
     'evaluate'
 
-    trans = trans.promote( self.ndims )
     return self.dofmap[ trans.lookup(self.dofmap) ] + self.offset
 
   def _opposite( self ):
@@ -589,7 +588,7 @@ class Orientation( ArrayFunc ):
   def __init__( self, ndims, side=0 ):
     'constructor'
 
-    ArrayFunc.__init__( self, args=[Elemtrans(side)], shape=() )
+    ArrayFunc.__init__( self, args=[TransformChain(side,ndims)], shape=() )
     self.side = side
     self.ndims = ndims
 
@@ -749,7 +748,7 @@ class Iwscale( ArrayFunc ):
     'constructor'
 
     self.fromdims = ndims
-    ArrayFunc.__init__( self, args=[Elemtrans(0)], shape=() )
+    ArrayFunc.__init__( self, args=[TransformChain(0,ndims)], shape=() )
 
   def evalf( self, trans ):
     'evaluate'
@@ -767,12 +766,12 @@ class Transform( ArrayFunc ):
     self.fromdims = fromdims
     self.todims = todims
     self.side = side
-    ArrayFunc.__init__( self, args=[Elemtrans(side)], shape=(todims,fromdims) )
+    ArrayFunc.__init__( self, args=[TransformChain(side,fromdims)], shape=(todims,fromdims) )
 
   def evalf( self, trans ):
     'transform'
 
-    trans = trans.promote(self.fromdims).split(self.fromdims)[0].split(self.todims)[1]
+    trans = trans.split(self.fromdims)[0].split(self.todims)[1]
     matrix = trans.linear
     assert matrix.shape == (self.todims,self.fromdims)
     return matrix.astype( float )[_]
@@ -795,14 +794,12 @@ class Function( ArrayFunc ):
     self.igrad = igrad
     for trans in stdmap:
       break
-    self.fromdims = trans.fromdims
-    ArrayFunc.__init__( self, args=(CACHE,POINTS,Elemtrans(side)), shape=(axis,)+(ndims,)*igrad )
+    ArrayFunc.__init__( self, args=(CACHE,POINTS,TransformChain(side,trans.fromdims)), shape=(axis,)+(ndims,)*igrad )
 
   def evalf( self, cache, points, trans ):
     'evaluate'
 
     fvals = []
-    trans = trans.promote( self.fromdims )
     head = trans.lookup( self.stdmap )
     for std, keep in self.stdmap[head]:
       if std:
@@ -812,7 +809,7 @@ class Function( ArrayFunc ):
         if keep is not None:
           F = F[(Ellipsis,keep)+(slice(None),)*self.igrad]
         if self.igrad:
-          invlinear = head.split(self.fromdims)[1].invlinear.astype( float )
+          invlinear = head.split(head.fromdims)[1].invlinear.astype( float )
           if invlinear.ndim:
             for axis in range(-self.igrad,0):
               F = numeric.dot( F, invlinear, axis )
@@ -1690,12 +1687,11 @@ class ElemFunc( ArrayFunc ):
     'constructor'
 
     self.side = side
-    ArrayFunc.__init__( self, args=[POINTS,Elemtrans(side)], shape=[ndims] )
+    ArrayFunc.__init__( self, args=[POINTS,TransformChain(side,ndims)], shape=[ndims] )
 
   def evalf( self, points, trans ):
     'evaluate'
 
-    trans = trans.promote( self.shape[0] )
     ptrans = trans.split( self.shape[0] )[1]
     return ptrans.apply( points ).astype( float )
 
@@ -1788,11 +1784,16 @@ class Pointdata( ArrayFunc ):
 
     assert isinstance(data,dict)
     self.data = data
-    ArrayFunc.__init__( self, args=[Elemtrans(0),POINTS], shape=shape )
+    for trans in data:
+      break
+    ArrayFunc.__init__( self, args=[TransformChain(0,trans.fromdims),POINTS], shape=shape )
 
   def evalf( self, trans, points ):
-    myvals, mypoint = self.data[trans]
-    assert numpy.equal( mypoint, points ).all(), 'Illegal point set'
+    head = trans.lookup( self.data )
+    tail = trans.slicefrom( len(head) )
+    evalpoints = tail.apply( points )
+    myvals, mypoints = self.data[head]
+    assert numpy.equal( mypoints, evalpoints ).all(), 'Illegal point set'
     return myvals
 
   def update_max( self, func ):
@@ -1809,12 +1810,14 @@ class Elemwise( ArrayFunc ):
     self.fmap = fmap
     self.default = default
     self.side = side
-    ArrayFunc.__init__( self, args=[Elemtrans(side)], shape=shape )
+    for trans in fmap:
+      break
+    ArrayFunc.__init__( self, args=[TransformChain(side,trans.fromdims)], shape=shape )
 
-  def evalf( self, transform ):
-    trans = transform.lookup( self.fmap )
+  def evalf( self, trans ):
+    trans = trans.lookup( self.fmap )
     value = self.fmap.get( trans, self.default )
-    assert value is not None, 'transformation not found: {}'.format( transform )
+    assert value is not None, 'transformation not found: {}'.format( trans )
     value = numpy.asarray( value )
     assert value.shape == self.shape, 'wrong shape: {} != {}'.format( value.shape, self.shape )
     return value[_]
