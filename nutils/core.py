@@ -49,5 +49,11 @@ def getprop( name, default=_nodefault ):
     raise NameError( 'property %r is not defined' % name )
   return default
 
+def index( items ):
+  for i, item in enumerate(items):
+    if item:
+      return i
+  raise ValueError
+
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
