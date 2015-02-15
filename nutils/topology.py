@@ -156,15 +156,6 @@ class Topology( object ):
     '''transform -> element mapping'''
     return { elem.transform: elem for elem in self }
 
-  @cache.property
-  def transrange( self ):
-    nmin = nmax = len(self.elements[0].transform)
-    for elem in self.elements[1:]:
-      n = len(elem.transform)
-      nmin = min( n, nmin )
-      nmax = max( n, nmax )
-    return nmin, nmax
-
   @property
   def refine_iter( self ):
     topo = self
@@ -1087,67 +1078,43 @@ class HierarchicalTopology( Topology ):
     Topology.__init__( self, elements )
 
   @cache.property
+  @log.title
+  def levels( self ):
+    levels = [ self.basetopo ]
+    for elem in self:
+      trans = elem.transform.lookup( self.basetopo.edict )
+      assert trans, 'element is not a refinement of basetopo'
+      nrefine = len(elem.transform) - len(trans)
+      while nrefine >= len(levels):
+        levels.append( levels[-1].refined )
+      assert elem.transform in levels[nrefine].edict, 'element is not a refinement of basetopo'
+    return tuple(levels)
+
+  @cache.property
   def refined( self ):
     elements = [ child for elem in self for child in elem.children ]
     return HierarchicalTopology( self.basetopo, elements )
 
   def __getitem__( self, item ):
     itemtopo = self.basetopo[item]
-    elems = []
-    for topo in itemtopo.refine_iter:
-      elems.extend( elem for elem in topo if elem in self )
-      if topo.transrange[0] >= self.transrange[1]:
-        break
+    elems = [ elem for elem in self if elem.transform.lookup(itemtopo.edict) ]
     return HierarchicalTopology( itemtopo, elems )
 
   @cache.property
   def boundary( self ):
     'boundary elements'
 
-    boundarytopo = self.basetopo.boundary
-    elems = []
-    for topo in boundarytopo.refine_iter:
-      for elem in topo:
-        trans = elem.transform.promote( self.ndims )
-        head = trans.lookup( self.edict )
-        if head:
-          elems.append( elem )
-      if topo.transrange[0] - 1 >= self.transrange[1]:
-        break
-    return HierarchicalTopology( boundarytopo, elems )
+    belems = [ belem for topo in log.iter( 'level', self.levels ) for belem in topo.boundary if belem.transform.promote( self.ndims ).sliceto(-1) in self.edict ]
+    return HierarchicalTopology( self.basetopo.boundary, belems )
 
   @cache.property
   def interfaces( self ):
     'interface elements & groups'
 
-    raise NotImplementedError( 'awaiting reimplementation' )
-    assert hasattr( self.basetopo, 'interfaces' )
-    allinterfaces = []
-    topo = self.basetopo # topology to examine in next level refinement
-    elems = set( self )
-    while elems:
-      myelems = elems.intersection( topo )
-      for ielem in topo.interfaces:
-        (celem1,transform1), (celem2,transform2) = ielem.parents
-        if celem1 in myelems:
-          while True:
-            if celem2 in self.elements:
-              allinterfaces.append( ielem )
-              break
-            if not celem2.parent:
-              break
-            celem2, transform2 = celem2.parent
-        elif celem2 in myelems:
-          while True:
-            if celem1 in self.elements:
-              allinterfaces.append( ielem )
-              break
-            if not celem1.parent:
-              break
-            celem1, transform1 = celem1.parent
-      topo = topo.refined # proceed to next level
-      elems -= myelems
-    return Topology( allinterfaces, self.ndims-1 )
+    ielems = [ ielem for topo in log.iter( 'level', self.levels ) for ielem in topo.interfaces
+      if ielem.transform.promote( self.ndims ).sliceto(-1) in self.edict and ielem.opposite.promote( self.ndims ).lookup( self.edict )
+      or ielem.opposite.promote( self.ndims ).sliceto(-1) in self.edict and ielem.transform.promote( self.ndims ).lookup( self.edict ) ]
+    return HierarchicalTopology( self.basetopo.interfaces, ielems )
 
   @log.title
   def basis( self, name, *args, **kwargs ):
@@ -1165,8 +1132,7 @@ class HierarchicalTopology( Topology ):
     ndofs = 0 # total number of dofs of new function object
     remaining = len(self) # element count down (know when to stop)
 
-    for topo in self.basetopo.refine_iter:
-      assert topo.transrange[0] <= self.transrange[1]
+    for topo in log.iter( 'level', self.levels ):
 
       funcsp = topo.basis( name, *args, **kwargs ) # shape functions for current level
       supported = numpy.ones( funcsp.shape[0], dtype=bool ) # True if dof is fully contained in self or parents
@@ -1266,16 +1232,16 @@ class TrimmedTopology( Topology ):
   @log.title
   def boundary( self ):
     belems = list( self.trimmed )
-    for belem in log.iter( 'element', self.basetopo.boundary ):
+    boundarytopo = self.basetopo.boundary
+    for belem in log.iter( 'element', boundarytopo ):
       trans = belem.transform.promote( self.ndims )
-      head = trans.lookup( self.edict )
-      if head:
-        elem = self.edict[ head ]
-        belem = elem.findedge( trans.slicefrom(len(head)) )
+      elem = self.edict.get( trans.sliceto(-1) )
+      if elem:
+        belem = elem.findedge( trans.slicefrom(-1) )
         if belem:
           belems.append( belem )
 
-    boundary = TrimmedTopology( self.basetopo.boundary, belems )
+    boundary = TrimmedTopology( boundarytopo, belems )
     if self.trimmed:
       boundary['trimmed'] = Topology( self.trimmed )
     return boundary
@@ -1284,12 +1250,8 @@ class TrimmedTopology( Topology ):
     try:
       itemtopo = Topology.__getitem__( self, key )
     except KeyError:
-      elements = []
       keytopo = self.basetopo[key]
-      for elem in keytopo:
-        trimelem = self.edict.get(elem.transform)
-        if trimelem is not None:
-          elements.append( trimelem )
+      elements = [ elem for elem in map( self.edict.get, keytopo.edict ) if elem ]
       itemtopo = TrimmedTopology( keytopo, elements )
     return itemtopo
 
