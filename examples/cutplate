@@ -26,7 +26,7 @@ def main( nelems=None, maxrefine=2, degree=1, stress=library.Hooke(lmbda=1,mu=1)
       degree = 1
 
   levelset = function.norm2( geom ) - .5
-  domain, complement = wholedomain.trim( levelset, maxrefine=maxrefine )
+  domain, complement = wholedomain.trim( levelset, maxrefine=maxrefine, check=False )
   dspace = domain.splinefunc( degree=degree ).vector( 2 )
 
   support = domain.integrate( function.norm2( dspace ), geometry=geom, ischeme='gauss6' )
@@ -50,23 +50,23 @@ def unittest():
 
   retvals = main( nelems=None, degree=2, maxrefine=2, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
-    eNqFkEsOwyAMRK+TSFD5bzhOF93m/svGmLb0I1UCvQEzYwssmxTUvWwbd8NblaIAEGQ0DpIRBbG1Nkhm
-    QbjEQu0wT6w0pGhLkumgQct717XBg8Is743TX8nxnMgiu6rqGaKlMlAKJ6EhyLOUA1VG0ukijI5a0J2D
-    LN2DOjMEmryc2MXmiaSPwvkvx/V4ThZ63emb6rO4GteAz7Af1r+5Xw/2st8BJ+pu9A==''' )
+    eNqFUMsKAyEM/B0FLXmrn9PDXvf/jzXqFrstFJSZmJlJEFOQhBpTCNwMjyxJAcCR0diRjMgRa60DycwR
+    Hn5QG6yKlUaAaJ24hGLQ5nuxfcCFwiyfg6c/U0E9snl2VtUeoikzMAxSSHgQKrM1F+qCKstFWNQ7WEwc
+    WepQKtDIEPBJlxObyKpoCfu/nM/zvZnz/U7fYvfmbtwD7mE/rH9zvwQxxRctim72''' )
 
   retvals = main( nelems=4, degree=2, maxrefine=2, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
-    eNq9kc1uxCAMhF8nK0Flj395nB5y3fc/NtiRqlV72UMrEX3gzBgYeBw62B7jOJDE55RBH99jsq4qLrV1
-    zku6QJuOwDltWFBsJptuakj914jYFCzdBCu1X+4+JK2j0qlLkwTlu/cTXjf51nVfzWwGc9HiJpVfBUUj
-    oneIVPwIwZfXIaaQZqnM67YT6lYTCVQO0z1rAvIOKOOy+IBwKx17Bx/TLFdVAiklVfZNZ6ZaM6rOqt1b
-    pMOeBqtmSq0QARcpvR3RrRlAWyt3e7lXj+vpn5/Pl9Je/+X37qP89/l+C+nxBdZIx4k=''' )
+    eNq9kUtuQzEIRbfzItkVcPnYy8kg0+x/WAOVqlSdZNBKtg7gi8GYx6WD7TauS1T0MTHo43tNVl4Z3Grx
+    mEe6WZMucWjDgpBcbOVrgPJcIywJ2ZwUxup87GbmpY686GgSSg+10oP3FzlaF821Wh/c9U4jTZIipGhE
+    9A5lZd8/huBi1dQEad0q5pyvnaK2y0CIleG+ahBCObAzoJ2N+RCwtwBsGZhmmyoSsirXtO9wbqlx+6yK
+    LgJuw8QrVUlKCUgVBS3vjKjik6UPJnZ2bi/v6nW+/nl/voTS/8v97qf8d3+/Den2CY0Ix2M=''' )
 
   retvals = main( nelems=4, degree=2, maxrefine=3, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
-    eNq9kTtuRDEIRbczI9kRn4sxy0kx7ey/jIEnJVHSTJFItg7G/OFxw2C7j9tNnPGYOujt80w27FSGgR7z
-    mAZHcokfvQ1zWsnNFkm4cv7DtyRVwpPC4PbXaJK2HVdcrNaDFOUHq7dyXGRvu8x7uLdf/p3P/CJVXqgU
-    jYheoQTtH0NwiUo6lTqrWFB2O+XUXYJW30dYK0oQQtGQH2uIbLQByFMxzaJGmOEriGlHXbR7tszlwoB0
-    Em3FNFkVHMSWPB+1hVPf5eG1jckil2ugYn/tq89Z/fP9+U2V77+8ry7lv+v7bUj3D+CNx4Q=''' )
+    eNq9UTluAzEM/I4NSAFvSs9J4db/LyMOF8iBNC4SQMJI5AxPHjcb7Pdxu4kveUwd9PZ5JrvuMm6PfMxD
+    3RyFIXnsPjwpChcHFVqqlN9ycaHKhk7YqPUVr5C0eQy7RfuN1KAzB095X8jZvFzAtfLSI495XkidXwXo
+    RPQKyq4+fwwhr+KnUldzRoXup1gwHoq+zyNiwyKkjgFZNRpDpAovglWMGNODWpKy4XJdwKBl+DODwGbU
+    SZQ7hkuAYcTA48AW9FKyZYLIItrSbSjra199zuqf789vpvr/5X11Kf9d329Dun8A5g3Hig==''' )
 
 
 util.run( main, unittest )

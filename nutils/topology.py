@@ -564,24 +564,20 @@ class Topology( object ):
     return self if n <= 0 else self.refined.refine( n-1 )
 
   @log.title
-  def trim( self, levelset, maxrefine, eps=.01 ):
+  def trim( self, levelset, maxrefine, check=True, eps=1/30. ):
     'trim element along levelset'
 
-    numer = numeric.round(1./eps)
-    poselems = []
-    postrims = []
-    negelems = []
-    negtrims = []
+    denom = numeric.round(1./eps)
+    poselems, negelems = [], []
+    postrims, negtrims = [], []
     for elem in log.iter( 'elem', self ):
-      pos, neg = elem.trim( levelset=levelset, maxrefine=maxrefine, numer=numer )
+      pos, neg, ifaces = elem.trim( levelset=levelset, maxrefine=maxrefine, denom=denom, check=check )
       if pos:
-        poselem, postrim = pos
-        poselems.append( poselem )
-        postrims.extend( poselem.findedge(trans) for trans in postrim )
+        poselems.append( pos )
+        postrims.extend( ifaces )
       if neg:
-        negelem, negtrim = neg
-        negelems.append( negelem )
-        negtrims.extend( negelem.findedge(trans) for trans in negtrim )
+        negelems.append( neg )
+        negtrims.extend( iface.flipped for iface in ifaces )
     return TrimmedTopology( self, poselems, postrims, ndims=self.ndims ), \
            TrimmedTopology( self, negelems, negtrims, ndims=self.ndims )
 
@@ -1237,7 +1233,7 @@ class TrimmedTopology( Topology ):
       trans = belem.transform.promote( self.ndims )
       elem = self.edict.get( trans.sliceto(-1) )
       if elem:
-        belem = elem.findedge( trans.slicefrom(-1) )
+        belem = elem.getedge( trans.slicefrom(-1) )
         if belem:
           belems.append( belem )
 

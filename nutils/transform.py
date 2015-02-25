@@ -35,11 +35,7 @@ class TransformChain( tuple ):
 
   @property
   def isflipped( self ):
-    assert self.todims == self.fromdims+1
-    index = core.index( trans.fromdims == self.fromdims for trans in self )
-    updim = self[index]
-    assert updim.todims == self.todims
-    return updim.isflipped
+    return sum( trans.isflipped for trans in self ) % 2 == 1
 
   def orientation( self, ndims ):
     # returns orientation (+1/-1) for ndims->ndims+1 transformation
@@ -81,6 +77,7 @@ class TransformChain( tuple ):
 
   @property
   def flipped( self ):
+    assert len(self) == 1
     return TransformChain( trans.flipped for trans in self )
 
   @property
@@ -137,8 +134,11 @@ class TransformChain( tuple ):
     for i in range(len(items)-1)[::-1]:
       trans1, trans2 = items[i:i+2]
       if isinstance( trans1, Scale ) and trans2.todims == trans2.fromdims + 1:
-        newscale = solve( TransformChain([trans2]), TransformChain([trans1,trans2]) )
-        if newscale:
+        try:
+          newscale = solve( TransformChain([trans2]), TransformChain([trans1,trans2]) )
+        except numpy.linalg.LinAlgError:
+          pass
+        else:
           items[i:i+2] = trans2, newscale
     return TransformChain( items )
 
@@ -317,11 +317,28 @@ class RootTransEdges( VertexTransform ):
 
 def affine( linear=None, offset=None, numer=1, isflipped=False ):
   r_offset = rational.asarray( offset ) / numer if offset is not None else rational.zeros( len(linear) )
-  r_linear = rational.asarray( linear ) / numer if linear is not None else rational.unit
+  n, = r_offset.shape
+  if linear is None:
+    r_linear = rational.unit
+  else:
+    r_linear = rational.asarray( linear ) / numer
+    if r_linear.ndim == 2:
+      assert r_linear.shape[0] == n
+      if r_linear.shape[1] == n:
+        if n == 0:
+          r_linear = rational.unit
+        elif n == 1 or r_linear.numer[0,-1] == 0 and numpy.all( r_linear.numer == r_linear.numer[0,0] * numpy.eye(n) ):
+          r_linear = r_linear[0,0]
+    else:
+      assert r_linear.ndim == 0
   return TransformChain((
          Matrix( r_linear, r_offset, isflipped ) if r_linear.ndim
     else Scale( r_linear, r_offset ) if r_linear != rational.unit
     else Shift( r_offset ), ))
+
+def simplex( coords, isflipped=False ):
+  offset = coords[0]
+  return affine( (coords[1:]-offset).T, offset, isflipped=isflipped )
 
 def roottrans( name, shape ):
   return TransformChain(( RootTrans( name, shape ), ))
@@ -343,23 +360,11 @@ def equivalent( trans1, trans2 ):
 identity = TransformChain()
 
 def solve( transA, transB ): # A << X = B
+  assert transA.isflipped == transB.isflipped
   assert transA.fromdims == transB.fromdims and transA.todims == transB.todims
-  if transB.fromdims == 0:
-    return None
-  A = transA.linear
-  B = transB.linear
-  assert A.ndim == B.ndim == 2
-  a = transA.offset
-  b = transB.offset
-  AAinv = rational.inv( rational.dot( A.T, A ) )
-  X = rational.dot( AAinv, rational.dot( A.T, B ) ) # A X = B
-  if X.shape == (1,1): # TODO fix for nd scaled identity
-    X = X[0,0]
-  x = rational.dot( AAinv, rational.dot( A.T, b-a ) ) # A x + a = b
-  transX = affine( X, x )
-  transAX = transA << transX
-  if numpy.any( transAX.linear != transB.linear ) or numpy.any( transAX.offset != transB.offset ):
-    return None
+  X, x = rational.solve( transA.linear, transB.linear, transB.offset - transA.offset )
+  transX = affine( X, x, isflipped=False )
+  assert ( transA << transX ).flat == transB.flat
   return transX
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

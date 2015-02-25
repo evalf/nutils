@@ -5,11 +5,11 @@ import numpy
 
 class FiniteCellTestBase( object ):
 
-  def __init__ ( self, ndims, nelems, maxrefine, voldec, surfdec ):
+  def __init__ ( self, ndims, nelems, maxrefine, errtol ):
     domain, self.geom = mesh.rectilinear( (numpy.linspace(0,1,nelems+1),)*ndims )
     self.radius = numpy.sqrt( .5 )
     levelset = self.radius**2 - ( self.geom**2 ).sum()
-    self.trimdomain, complement = domain.trim( levelset=levelset, maxrefine=maxrefine )
+    self.trimdomain, complement = domain.trim( levelset=levelset, maxrefine=maxrefine, check=False )
     V = 1.
     Vprev = 1. / (numpy.pi*self.radius)
     for idim in range( ndims ):
@@ -19,8 +19,7 @@ class FiniteCellTestBase( object ):
     self.volume = V / 2**ndims
     self.trimsurface = S / 2**ndims
     self.totalsurface = self.trimsurface + Vprev / (2**(ndims-1)) * ndims
-    self.voldec = voldec
-    self.surfdec = surfdec
+    self.errtol = errtol
 
   def all( self ):
     self.test_volume()
@@ -28,26 +27,32 @@ class FiniteCellTestBase( object ):
 
   def test_volume( self ):
     vol = self.trimdomain.volume( self.geom )
-    numpy.testing.assert_almost_equal( vol, self.volume, decimal=self.voldec )
+    volerr = abs( vol - self.volume ) / self.volume
+    log.user( 'volume error:', volerr )
+    assert volerr < self.errtol, 'volume tolerance not met: {:.2e} > {:.2e}'.format( volerr, self.errtol )
 
   def test_divergence( self ):
     self.trimdomain.volume_check( self.geom, decimal=15 )
  
   def test_surface( self ):
     trimsurface = self.trimdomain.boundary['trimmed'].volume( self.geom )
-    numpy.testing.assert_almost_equal( trimsurface, self.trimsurface, decimal=self.surfdec )
+    trimerr = abs( trimsurface - self.trimsurface ) / self.trimsurface
+    log.user( 'trim surface error:', trimerr )
     totalsurface = self.trimdomain.boundary.volume( self.geom )
-    numpy.testing.assert_almost_equal( totalsurface, self.totalsurface, decimal=self.surfdec )
+    totalerr = abs( totalsurface - self.totalsurface ) / self.totalsurface
+    log.user( 'total surface error:', totalerr )
+    assert trimerr < self.errtol, 'trim surface tolerance not met: {:.2e} > {:.2e}'.format( trimerr, self.errtol )
+    assert totalerr < self.errtol, 'total surface tolerance not met: {:.2e} > {:.2e}'.format( totalerr, self.errtol )
 
 class TestCircle( FiniteCellTestBase ):
 
   def __init__( self ):
-    FiniteCellTestBase.__init__( self, ndims=2, nelems=2, maxrefine=5, voldec=3, surfdec=3 )
+    FiniteCellTestBase.__init__( self, ndims=2, nelems=2, maxrefine=5, errtol=2.1e-4 )
   
 class TestSphere( FiniteCellTestBase ):
 
   def __init__( self ):
-    FiniteCellTestBase.__init__( self, ndims=3, nelems=2, maxrefine=4, voldec=2, surfdec=2 )
+    FiniteCellTestBase.__init__( self, ndims=3, nelems=2, maxrefine=3, errtol=6e-3 )
   
 class TestHierarchical():
 
@@ -93,8 +98,24 @@ class TestHierarchical():
         plt.plot( x, y )
 
 
+class TestSpecialCases( object ):
+
+  def test_half( self ):
+    domain, geom = mesh.rectilinear( [[0,.5,1]]*2 )
+    x, y = geom
+    #domain.trim( (x-y) * (x-y+.25), maxrefine=1, check=True )
+    #return
+    eps = .0001
+    for maxrefine in 0, 1, 2:
+      for perturb in 0, 1, -1, x-.5, x-y:
+        pos, neg = domain.trim( y-.75+eps*perturb, maxrefine=maxrefine, check=True )
+      for perturb in 0, 1, -1, y-.5, x-y:
+        pos, neg = domain.trim( x-.75+eps*perturb, maxrefine=maxrefine, check=True )
+
+
 if __name__ == '__main__':
+  def special(): return TestSpecialCases().test_half()
   def hierarchical(): return TestHierarchical().test_hierarchical()
   def two_D(): return TestCircle().all()
   def three_D(): return TestSphere().all()
-  util.run( hierarchical, two_D, three_D )
+  util.run( special, hierarchical, two_D, three_D )
