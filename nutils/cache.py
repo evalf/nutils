@@ -16,6 +16,7 @@ import os, sys, weakref, numpy
 
 
 _property = property
+
 def property( f ):
   def cache_property_wrapper( self, f=f ):
     try:
@@ -26,6 +27,21 @@ def property( f ):
     return value
   assert not cache_property_wrapper.__closure__
   return _property(cache_property_wrapper)
+
+def argdict( f ):
+  def cache_argdict_wrapper( self, f=f ):
+    cache = self.__dict__.setdefault( f.__name__, {} )
+    def f_wrapped( *args ):
+      key = _hashable( args )
+      try:
+        value = cache[key]
+      except KeyError:
+        value = f( self, *args )
+        cache[key] = value
+      return value
+    return f_wrapped
+  assert not cache_argdict_wrapper.__closure__
+  return _property(cache_argdict_wrapper)
 
 class HashableArray( object ):
   # FRAGILE: assumes contents are not going to be changed
