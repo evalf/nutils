@@ -247,16 +247,16 @@ def ext( array ):
   if len(array) == 1:
     ext = ones( 1 )
   elif len(array) == 2:
-    ((a,),(b,)) = array.numer * array.denom
-    ext = Rational( (b,-a) )
+    ((a,),(b,)) = array.numer
+    ext = Rational( (b,-a), array.denom, isfactored=True )
   elif any(zeros):
     alpha = det(array[~zeros])
     (i,), = zeros.nonzero()
     v = zeros * ( alpha.numer if i%2==0 else -alpha.numer )
-    ext = Rational( v, alpha.denom, True )
+    ext = Rational( v, alpha.denom, isfactored=True )
   elif len(array) == 3:
-    ((a,b),(c,d),(e,f)) = array.numer * array.denom
-    ext = Rational( (c*f-e*d,e*b-a*f,a*d-c*b) )
+    ((a,b),(c,d),(e,f)) = array.numer
+    ext = Rational( (c*f-e*d,e*b-a*f,a*d-c*b), array.denom**2 )
   else:
     raise NotImplementedError( 'shape=%s' % (array.shape,) )
   # VERIFY
@@ -270,7 +270,10 @@ isrational = lambda arr: isinstance( arr, Rational )
 
 def asarray( arr ):
   if not isinstance( arr, Rational ):
-    arr = numpy.asarray( arr )
+    if not isinstance( arr, numpy.ndarray ):
+      arr = numpy.asarray( arr )
+      if not arr.size:
+        arr = numpy.zeros( arr.shape, dtype=int )
     if numpy.issubdtype( arr.dtype, numpy.integer ):
       arr = Rational( arr )
   return arr
@@ -317,6 +320,37 @@ def round( array, denom=1 ):
     return array
   numer = array * denom
   return Rational( ( numer - numpy.less(numer,0) + .5 ).astype( int ), denom )
+
+def solve( A, *B ):
+  A = asarray( A )
+  assert A.ndim == 2
+  B = [ asarray(b) for b in B ]
+  assert all( b.shape[0] == A.shape[0] and b.ndim in (1,2) for b in B )
+  S = [ slice(i,i+b.shape[1]) if b.ndim == 2 else i for b, i in zip( B, numpy.cumsum([0]+[ b[0].size for b in B[:-1] ]) ) ]
+  if not isrational( A ) or not all( isrational( b ) for b in B ):
+    A = A.astype(float)
+    B = numpy.concatenate( [ b.astype(float).reshape(len(b),-1) for b in B ], axis=1 )
+    Y = numpy.linalg.solve( A, B )
+    X = [ Y[:,s] for s in S ]
+  else:
+    Ab = numpy.concatenate( [ A.numer ] + [ b.numer.reshape(len(b),-1) for b in B ], axis=1 )
+    n = A.shape[1]
+    for icol in range(n):
+      if not Ab[icol,icol]:
+        Ab[icol:] = Ab[icol+numpy.argsort([ abs(v) if v else numpy.inf for v in Ab[icol:,icol] ])]
+      Ab[:icol] = Ab[:icol] * Ab[icol,icol] - Ab[:icol,icol,numpy.newaxis] * Ab[icol,:]
+      Ab[icol+1:] = Ab[icol+1:] * Ab[icol,icol] - Ab[icol+1:,icol,numpy.newaxis] * Ab[icol,:]
+    if Ab[n:].any():
+      raise numpy.linalg.LinAlgError( 'linear system has no solution' )
+    w = numpy.diag( Ab[:n,:n] )
+    denom = gcd(*w)
+    numer = Ab[:n,n:] * ( denom // w[:,numpy.newaxis] )
+    X = [ Rational( numer[:,s] * A.denom, denom * b.denom ) for (s,b) in zip(S,B) ]
+    assert not any( ( dot( A, x ) - b ).numer.any() for (x,b) in zip(X,B) )
+  if len(B) == 1:
+    X, = X
+  return X
+
 
 zero = Rational( 0 )
 unit = Rational( 1 )
