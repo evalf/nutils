@@ -145,8 +145,8 @@ class ScipyMatrix( Matrix ):
 
     A = scipy.sparse.linalg.LinearOperator( b.shape*2, matvec, dtype=float )
     x[J], info = solverfun( A, b, M=precon, tol=tol, x0=x0, callback=mycallback, **solverargs )
-    assert info == 0, '%s solver failed with status %d' % ( solver, info )
-    log.info('Linear solver converged in %d iterations' % mycallback.ncalls)
+    assert info == 0, '%s solver failed with status %d' % (solver, info)
+    log.info( '%s solver converged in %d iterations' % (solver.upper(), mycallback.ncalls) )
     return x
 
   def getprecon( self, name='SPLU', constrain=None, lconstrain=None, rconstrain=None ):
