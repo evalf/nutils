@@ -2347,6 +2347,8 @@ def asarray( arg ):
     return array
 
   args = [ asarray(a) for a in arg ]
+  ndim = _max( arg.ndim for arg in args )
+  args = [ arg[(_,)*(ndim-arg.ndim)] for arg in args ]
 
   if all( isinstance( arg, numpy.ndarray ) for arg in args ):
     array = numpy.array( args )
