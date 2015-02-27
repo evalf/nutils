@@ -1248,7 +1248,8 @@ class TrimmedTopology( Topology ):
     except KeyError:
       keytopo = self.basetopo[key]
       elements = [ elem for elem in map( self.edict.get, keytopo.edict ) if elem ]
-      itemtopo = TrimmedTopology( keytopo, elements )
+      trimmed = [ elem for elem in self.trimmed if elem.transform.promote(self.ndims).sliceto(-1) in keytopo.edict ]
+      itemtopo = TrimmedTopology( keytopo, elements, trimmed )
     return itemtopo
 
   def prune_basis( self, basis ):
