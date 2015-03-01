@@ -569,17 +569,52 @@ class Topology( object ):
 
     denom = numeric.round(1./eps)
     poselems, negelems = [], []
-    postrims, negtrims = [], []
+    trims = []
+    allposouter, allnegouter = {}, {}
     for elem in log.iter( 'elem', self ):
-      pos, neg, ifaces = elem.trim( levelset=levelset, maxrefine=maxrefine, denom=denom, check=check )
+      pos, neg, ifaces, posouter, negouter = elem.trim( levelset=levelset, maxrefine=maxrefine, denom=denom, check=check )
+      allposouter.update({ tuple(sorted(edge.vertices)): edge for edge in posouter })
+      allnegouter.update({ tuple(sorted(edge.vertices)): edge for edge in negouter })
+      trims.extend( ifaces )
       if pos:
         poselems.append( pos )
-        postrims.extend( ifaces )
       if neg:
         negelems.append( neg )
-        negtrims.extend( iface.flipped for iface in ifaces )
-    return TrimmedTopology( self, poselems, postrims, ndims=self.ndims ), \
-           TrimmedTopology( self, negelems, negtrims, ndims=self.ndims )
+
+    if allposouter or allnegouter:
+      for verts in set(allposouter) & set(allnegouter):
+        posedge = allposouter.pop( verts )
+        negedge = allnegouter.pop( verts )
+        ref = posedge.reference
+        assert ref == negedge.reference
+        assert posedge.vertices == negedge.vertices
+        trims.append( element.Element( ref, posedge.transform, negedge.transform ) )
+      for (allouter,elems,ispos) in (allposouter,negelems,True), (allnegouter,poselems,False):
+        if not allouter:
+          continue
+        vertmap = {}
+        for ielem, elem in enumerate(elems):
+          for vert in elem.vertices:
+            vertmap.setdefault( vert, [] ).append( ielem )
+        for verts, edge in allouter.items():
+          ref = edge.reference
+          try:
+            ielem, = reduce( numpy.intersect1d, [ vertmap[vert] for vert in verts ] )
+          except KeyError: # not opposite; edge lies on domain boundary
+            oppedge = edge.flipped # WARNING leads to unevaluable opposite
+          else:
+            elem = elems[ielem]
+            match = numpy.all( [ elem.reference.edge2vertex[:,ivert] for ivert, vert in enumerate(elem.vertices) if vert in verts ], axis=0 )
+            (iedge,), = numpy.where( match )
+            oppedge = elem.edges[iedge]
+            assert ref == oppedge.reference
+            assert edge.vertices == oppedge.vertices
+            elems[ielem] = elem.without_edges([ oppedge ])
+          iface = element.Element( ref, edge.transform, oppedge.transform )
+          trims.append( iface if ispos else iface.flipped )
+
+    return TrimmedTopology( self, poselems, trims, ndims=self.ndims ), \
+           TrimmedTopology( self, negelems, [ trim.flipped for trim in trims ], ndims=self.ndims )
 
   def elem_project( self, funcs, degree, ischeme=None, check_exact=False ):
 
@@ -1280,6 +1315,5 @@ def common_refine( topo1, topo2 ):
   base2 = topo2.basetopo if isinstance( topo2, HierarchicalTopology ) else topo2
   assert base1 == base2
   return HierarchicalTopology( base1, commonelem )
-
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

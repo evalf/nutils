@@ -76,17 +76,21 @@ class Element( object ):
     'trim element along levelset'
 
     assert self.transform == self.opposite
-    pos, neg, ifaces, posifaces, negifaces = self.reference.trim( (self.transform,levelset), maxrefine, denom, check )
-    assert not posifaces
-    assert not negifaces
+    pos, neg, ifaces, posouter, negouter = self.reference.trim( (self.transform,levelset), maxrefine, denom, check )
     poselem = pos and Element( pos, self.transform )
     negelem = neg and Element( neg, self.transform )
     ifaces = [ Element( edge, self.transform<<postrans, self.transform<<negtrans ) for postrans, negtrans, edge in ifaces ]
-    return poselem, negelem, ifaces
+    posouter = [ Element( edge, self.transform<<trans ) for trans, edge in posouter ]
+    negouter = [ Element( edge, self.transform<<trans ) for trans, edge in negouter ]
+    return poselem, negelem, ifaces, posouter, negouter
 
   @property
   def flipped( self ):
     return Element( self.reference, self.opposite, self.transform )
+
+  def without_edges( self, edges ):
+    ref = self.reference.without_edges( (edge.transform.fromtrans( self.transform ), edge.reference) for edge in edges )
+    return Element( ref, self.transform, self.opposite )
 
   @property
   def simplices( self ):
@@ -94,7 +98,7 @@ class Element( object ):
       for trans, reference in self.reference.simplices ]
 
   def __str__( self ):
-    return 'Element(%s)' % self.vertices
+    return 'Element({})'.format( self.vertices )
 
 
 ## REFERENCE ELEMENTS
@@ -152,20 +156,30 @@ class Reference( cache.Immutable ):
   def register( cls, ptype, func ):
     setattr( cls, 'getischeme_%s' % ptype, func )
 
-  def without_edges( self, edges ):
+  def with_edges( self, edges ):
     edges = tuple(edges)
-    return RemovedEdgeReference( self, edges ) if edges else self
+    assert edges
+    if hasattr( self, 'edges' ) and len(edges) == len(self.edges) and sorted(edges) == sorted(self.edges):
+      return self
+    return WithEdgesReference( self, edges )
+
+  def without_edges( self, removededges ):
+    removededges = dict(removededges)
+    edges = []
+    for trans, edge in self.edges:
+      rmedge = removededges.pop( trans, False )
+      if rmedge:
+        edge = rmedge.complement( edge )
+      edges.append(( trans, edge ))
+    assert not removededges
+    return WithEdgesReference( self, edges )
 
   def with_children( self, children ):
     children = tuple(children)
     assert children
-    if len(children) == len(self.children):
-      for ctrans, child in children:
-        if self.childdict.pop(ctrans) != child:
-          break
-      else:
-        return self
-    return ForwardReference( self, children )
+    if len(children) == len(self.children) and sorted(children) == sorted(self.children):
+      return self
+    return WithChildrenReference( self, children )
 
   def __mul__( self, other ):
     assert isinstance( other, Reference )
@@ -199,6 +213,7 @@ class Reference( cache.Immutable ):
         else:
           numer.append( numpy.dot( (denom-x,x), self.vertices[[i,j]] ) )
           vertex2edge.append( vertex2edge[i] & vertex2edge[j] )
+
     coords = rational.Rational( numer, denom )
     vertex2edge = numpy.array(vertex2edge)
     vsigns = numpy.zeros( len(coords), dtype=int )
@@ -210,21 +225,12 @@ class Reference( cache.Immutable ):
     if not haspos or -1 not in vsigns:
       if ( vsigns == 0 ).sum() < self.ndims:
         return (self,None,[],[],[]) if haspos else (None,self,[],[],[])
-      edges = [ ([],[]) for i in range(vertex2edge.shape[1]) ]
-      for tri in numpy.concatenate( signed_triangulate( coords.astype(float), vsigns ), axis=0 ):
-        tri2edge = vertex2edge[tri]
-        iedges, = numpy.where( tri2edge.sum( axis=0 ) == self.ndims )
-        for iedge in iedges:
-          onedge = tri2edge[:,iedge]
-          (itriedge,), = numpy.where( ~onedge )
-          edges[iedge][vsigns[tri[onedge]].any()].append( simplex.edges[itriedge] )
       outer = []
-      for iedge, (extra,myedge) in enumerate( edges ):
-        if not myedge:
+      for iedge, mask in enumerate( vertex2edge.T ):
+        oniface = vsigns[mask] == 0
+        if oniface.all():
           outer.append( self.edges[iedge] )
-        elif not extra:
-          pass
-        else:
+        elif oniface.sum() >= self.ndims:
           raise NotImplementedError
       ref = self.without_edges( outer )
       if check:
@@ -234,8 +240,26 @@ class Reference( cache.Immutable ):
     postri, negtri = signed_triangulate( coords.astype(float), vsigns )
     assert len(postri) and len(negtri)
 
-    posmosaic = MosaicReference( self, coords, postri, vertex2edge,  vsigns )
-    negmosaic = MosaicReference( self, coords, negtri, vertex2edge, -vsigns )
+    mosaics = ()
+    simplex = SimplexReference( self.ndims )
+    for isneg, triangulation in enumerate([ postri, negtri ]):
+      simplices = [ transform.simplex(coords[tri]) for tri in triangulation ]
+      edges = []
+      for iedge, (etrans,baseedge) in enumerate( self.edges ):
+        onedge = vertex2edge.T[iedge]
+        signs = -vsigns[onedge] if isneg else vsigns[onedge]
+        if not any( signs == 1 ):
+          edge = None
+        elif sum( signs == 0 ) <= self.ndims and all( signs >= 0 ):
+          edge = baseedge
+        else:
+          etriangulation = [ tri[onedge[tri]] for tri in triangulation ]
+          esimplices = [ transform.solve( etrans, transform.simplex( coords[tri], isflipped=etrans.isflipped ) )
+            for tri in etriangulation if len(tri) == self.ndims and any( vsigns[tri] ) ]
+          edge = MultiSimplexReference( baseedge, esimplices )
+        edges.append(( etrans, edge ))
+      mosaics += WithEdgesReference( MultiSimplexReference( self, simplices ), edges ),
+    posmosaic, negmosaic = mosaics
 
     posifaces, negifaces = {}, {}
     for ifaces, triangulation in (posifaces,postri), (negifaces,negtri):
@@ -279,10 +303,9 @@ class Reference( cache.Immutable ):
       else:
         evaluated_levels = True
 
-    haspos = any( levels > 0 )
-    if not haspos or not any( levels < 0 ):
-      if ( levels == 0 ).sum() < self.ndims:
-        return (self,None,[],[],[]) if haspos else (None,self,[],[],[])
+    allpos = all( levels > 0 )
+    if allpos or all( levels < 0 ):
+      return (self,None,[],[],[]) if allpos else (None,self,[],[],[])
 
     if not maxrefine:
       assert evaluated_levels, 'failed to evaluate levelset up to level maxrefine'
@@ -319,8 +342,8 @@ class Reference( cache.Immutable ):
             assert self.getedge( etrans ).childdict[xtrans] == edge
             outer.setdefault( etrans, [] ).append(( xtrans, edge ))
 
-    posouter = [ ( etrans, self.getedge( etrans ).with_children(children) ) for etrans, children in posouter.items() ]
-    negouter = [ ( etrans, self.getedge( etrans ).with_children(children) ) for etrans, children in negouter.items() ]
+    posouter = [ ( etrans, self.getedge(etrans).with_children(children) ) for etrans, children in posouter.items() ]
+    negouter = [ ( etrans, self.getedge(etrans).with_children(children) ) for etrans, children in negouter.items() ]
 
     if not negelems:
 
@@ -937,21 +960,17 @@ class NeighborhoodTensorReference( TensorReference ):
     points, weights = self.get_quad_bem_ischeme( gauss )
     return self.singular_ischeme_quad( points ), weights
 
-class CompositionReference( Reference ):
-  'mosaic reference element'
+class WithChildrenReference( Reference ):
 
-  def __init__( self, baseref, simplices ):
-    self.baseref = baseref
-    self.__simplices = simplices
+  def __init__( self, baseref, children ):
+    self.__baseref = baseref
+    self.__children = tuple(children)
+    assert self.__children
     Reference.__init__( self, baseref.vertices )
 
   @property
-  def simplices( self ):
-    return self.__simplices
-
-  @cache.property
-  def edges( self ):
-    return [ (trans, self.getedge(trans)) for trans, baseedge in self.baseref.edges ]
+  def children( self ):
+    return self.__children
 
   def getischeme( self, ischeme ):
     'get integration scheme'
@@ -959,7 +978,7 @@ class CompositionReference( Reference ):
     assert not ischeme.startswith('vertex')
     allcoords = []
     allweights = []
-    for trans, simplex in self.simplices:
+    for trans, simplex in self.children:
       points, weights = simplex.getischeme( ischeme )
       allcoords.append( trans.apply(points) )
       if weights is not None:
@@ -971,105 +990,86 @@ class CompositionReference( Reference ):
 
     return coords, weights
 
-class ForwardReference( CompositionReference ):
-
-  def __init__( self, baseref, children ):
-    self.__children = tuple(children)
-    assert self.children
-    simplices = [ (trans2<<trans1, simplex) for trans2, child in self.children for trans1, simplex in child.simplices ]
-    CompositionReference.__init__( self, baseref, simplices )
+  @property
+  def simplices( self ):
+    return self.__simplices
 
   @property
-  def children( self ):
-    return self.__children
+  def simplices( self ):
+    return [ (trans2<<trans1, simplex) for trans2, child in self.children for trans1, simplex in child.simplices ]
+
+  @cache.property
+  def edges( self ):
+    return [ (trans, self.getedge(trans)) for trans, baseedge in self.__baseref.edges ]
 
   @cache.argdict
   def getedge( self, etrans ):
     parts = []
     iscomplete = True
-    baseedge = self.baseref.getedge( etrans )
+    baseedge = self.__baseref.getedge( etrans )
     assert baseedge
-    for ctrans, child in baseedge.children:
+    for ctrans, cedge in baseedge.children:
       trans = ( etrans << ctrans ).promote( self.ndims )
       child = self.childdict.get( trans.sliceto(-1) )
       edge = child and child.getedge( trans.slicefrom(-1) )
       if edge:
         parts.append(( ctrans, edge ))
-      if not edge or isinstance( edge, CompositionReference ):
-        iscomplete = False
+      if iscomplete:
+        iscomplete = edge == cedge
     if iscomplete:
       return baseedge
     if not parts:
       return None
-    return ForwardReference( baseedge, parts )
+    return baseedge.with_children( parts )
 
   def complement( self, baseref ):
-    assert self.baseref == baseref
+    assert self.__baseref == baseref
     complement = []
     for ctrans, child in baseref.children:
       if ctrans in self.childdict:
         assert self.childdict[ctrans] == child
       else:
         complement.append(( ctrans, child ))
-    return ForwardReference( baseref, complement )
+    return baseref.with_children( complement )
 
-class MosaicReference( CompositionReference ):
+class WithEdgesReference( Reference ):
 
-  def __init__( self, baseref, coords, triangulation, vertex2edge, vsigns ):
-    self.coords = coords
-    self.triangulation = triangulation
-    self.onedge = { trans: vertex2edge[:,iedge] for iedge, (trans,edge) in enumerate( baseref.edges ) }
-    self.vsigns = vsigns
-    simplex = SimplexReference( baseref.ndims )
-    simplices = [ ( transform.simplex(coords[tri]), simplex ) for tri in triangulation ]
-    CompositionReference.__init__( self, baseref, simplices )
-
-  @cache.argdict
-  def getedge( self, etrans ):
-    simplex = SimplexReference( self.ndims-1 )
-    onedge = self.onedge[etrans]
-    signs = self.vsigns[onedge]
-    if not any( signs == 1 ):
-      return None
-    hasiface = sum( signs == 0 ) > self.ndims
-    baseedge = self.baseref.getedge( etrans )
-    if not hasiface and all( signs >= 0 ):
-      return baseedge
-    simplices = []
-    for itri, tri in enumerate( self.triangulation ):
-      v = tri[onedge[tri]]
-      if len(v) != self.ndims or hasiface and not any(vsigns[v]):
-        continue
-      strans = transform.simplex( self.coords[v], isflipped=etrans.isflipped )
-      x = transform.solve( etrans, strans ) # strans = etrans << x
-      simplices.append( (x,simplex) )
-    return CompositionReference( baseedge, simplices )
-
-class RemovedEdgeReference( Reference ):
-
-  def __init__( self, baseref, removededges ):
-    self.baseref = baseref
-    self.__removededges = dict(removededges)
+  def __init__( self, baseref, edges ):
+    self.__baseref = baseref
+    self.edges = edges
     Reference.__init__( self, baseref.vertices )
 
+  @property
+  def simplices( self ):
+    return self.__baseref.simplices
+
   def getischeme( self, ischeme ):
-    return self.baseref.getischeme( ischeme )
+    return self.__baseref.getischeme( ischeme )
+
+class MultiSimplexReference( Reference ):
+
+  def __init__( self, baseref, transforms ):
+    self.__baseref = baseref
+    self.__transforms = transforms
+    Reference.__init__( self, baseref.vertices )
 
   @property
-  def children( self ):
-    return self.baseref.children
+  def simplices( self ):
+    simplex = SimplexReference( self.ndims )
+    return [ (trans,simplex) for trans in self.__transforms ]
 
-  @cache.property
-  def edges( self ):
-    return [ (trans, self.getedge(trans)) for trans, baseedge in self.baseref.edges ]
-
-  @cache.argdict
-  def getedge( self, trans ):
-    edge = self.baseref.getedge( trans )
-    if trans in self.__removededges:
-      rmedge = self.__removededges.pop( trans )
-      edge = rmedge.complement( edge )
-    return edge
+  def getischeme( self, ischeme ):
+    'get integration scheme'
+    
+    assert not ischeme.startswith('vertex')
+    simplex = SimplexReference( self.ndims )
+    points, weights = simplex.getischeme( ischeme )
+    allcoords = numpy.empty( (len(self.__transforms),)+points.shape, dtype=float )
+    allweights = numpy.empty( (len(self.__transforms),)+weights.shape, dtype=float )
+    for i, trans in enumerate( self.__transforms ):
+      allcoords[i] = trans.apply(points)
+      allweights[i] = weights * abs(float(trans.det))
+    return allcoords.reshape(-1,self.ndims), allweights.ravel()
 
 
 # SHAPE FUNCTIONS

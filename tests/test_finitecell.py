@@ -100,21 +100,53 @@ class TestHierarchical():
 
 class TestSpecialCases( object ):
 
-  def test_half( self ):
+  def test_almost_all_positive( self ):
     domain, geom = mesh.rectilinear( [[0,.5,1]]*2 )
     x, y = geom
-    #domain.trim( (x-y) * (x-y+.25), maxrefine=1, check=True )
-    #return
+    domain.trim( (x-y) * (x-y+.25), maxrefine=1, check=True )
+
+  def test_intra_elem_2d( self ):
+    domain, geom = mesh.rectilinear( [[0,.5,1]]*2 )
     eps = .0001
+    x, y = geom
+    for maxrefine in 0, 1:
+      for perturb in 0, 1, -1, x-.5, x-y:
+        pos, neg = domain.trim( y-.5+eps*perturb, maxrefine=maxrefine, check=True )
+        pos.volume_check( geom )
+        neg.volume_check( geom )
+      for perturb in 0, 1, -1, y-.5, x-y:
+        pos, neg = domain.trim( x-.5+eps*perturb, maxrefine=maxrefine, check=True )
+        pos.volume_check( geom )
+        neg.volume_check( geom )
+
+  def test_inter_elem_2d( self ):
+    domain, geom = mesh.rectilinear( [[0,.5,1]]*2 )
+    eps = .0001
+    x, y = geom
     for maxrefine in 0, 1, 2:
       for perturb in 0, 1, -1, x-.5, x-y:
         pos, neg = domain.trim( y-.75+eps*perturb, maxrefine=maxrefine, check=True )
       for perturb in 0, 1, -1, y-.5, x-y:
         pos, neg = domain.trim( x-.75+eps*perturb, maxrefine=maxrefine, check=True )
 
+  #def test_inter_elem_3d( self ):
+  #  domain, geom = mesh.rectilinear( [[0,.5],[0,.5],[0,.5,1]] )
+  #  eps = .0001
+  #  x, y, z = geom
+  #  for maxrefine in 0, 1, 2:
+  #    for perturb in 0, 1, -1, x-.5, y-.5, x-y:
+  #      pos, neg = domain.trim( z-.75+eps*perturb, maxrefine=maxrefine, check=True )
+
+  def all( self ):
+    #self.test_inter_elem_3d()
+    #return
+    self.test_inter_elem_2d()
+    self.test_intra_elem_2d()
+    self.test_almost_all_positive()
+
 
 if __name__ == '__main__':
-  def special(): return TestSpecialCases().test_half()
+  def special(): return TestSpecialCases().all()
   def hierarchical(): return TestHierarchical().test_hierarchical()
   def two_D(): return TestCircle().all()
   def three_D(): return TestSphere().all()

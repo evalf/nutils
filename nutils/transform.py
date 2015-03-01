@@ -25,6 +25,12 @@ class TransformChain( tuple ):
   def sliceto( self, j ):
     return TransformChain( self[:j] )
 
+  def fromtrans( self, trans ):
+    # assuming self and trans both canonical
+    mytrans = self.promote( trans.fromdims )
+    assert mytrans[:len(trans)] == trans
+    return mytrans[len(trans):]
+
   @property
   def todims( self ):
     return self[0].todims
@@ -263,7 +269,7 @@ class MapTrans( VertexTransform ):
     coords = rational.asarray( coords )
     assert coords.denom == 1 # for now
     indices = map( self.coords.tolist().index, coords.numer.tolist() )
-    return [ self.vertices[n] for n in indices ]
+    return tuple( self.vertices[n] for n in indices )
 
   def __str__( self ):
     return ','.join( str(v) for v in self.vertices )
@@ -284,7 +290,7 @@ class RootTrans( VertexTransform ):
       wi = self.w * coords.denom
       ci[:,self.I] = ci[:,self.I] % wi
       coords = rational.Rational( ci, coords.denom )
-    return [ self.fmt.format(c) for c in coords ]
+    return tuple( self.fmt.format(c) for c in coords )
 
   def __str__( self ):
     return repr( self.fmt.format('*') )
