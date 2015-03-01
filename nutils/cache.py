@@ -47,7 +47,7 @@ class HashableArray( object ):
   # FRAGILE: assumes contents are not going to be changed
   def __init__( self, array ):
     self.array = array
-    self.quickdata = array.shape, tuple( array.flat[::array.size//32+1] )
+    self.quickdata = array.shape, tuple( array.flat[::array.size//32+1] ) if array.size else None # required to prevent segfault
   def __hash__( self ):
     return hash( self.quickdata )
   def __eq__( self, other ):
