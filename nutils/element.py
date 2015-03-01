@@ -241,28 +241,35 @@ class Reference( cache.Immutable ):
     assert len(postri) and len(negtri)
 
     mosaics = ()
-    simplex = SimplexReference( self.ndims )
-    for isneg, triangulation in enumerate([ postri, negtri ]):
-      simplices = [ transform.simplex(coords[tri]) for tri in triangulation ]
+    posouter, negouter = [], []
+    posifaces, negifaces = {}, {}
+    for triangulation, ifaces, outer, sign in (postri,posifaces,posouter,+1), (negtri,negifaces,negouter,-1):
+      sref = MultiSimplexReference( self, [ transform.simplex(coords[tri]) for tri in triangulation ] )
       edges = []
       for iedge, (etrans,baseedge) in enumerate( self.edges ):
         onedge = vertex2edge.T[iedge]
-        signs = -vsigns[onedge] if isneg else vsigns[onedge]
-        if not any( signs == 1 ):
+        signs = vsigns[onedge]
+        if not any( signs == sign ):
           edge = None
-        elif sum( signs == 0 ) <= self.ndims and all( signs >= 0 ):
+        elif not any( signs == -sign ) and sum( signs == 0 ) < self.ndims:
           edge = baseedge
         else:
-          etriangulation = [ tri[onedge[tri]] for tri in triangulation ]
-          esimplices = [ transform.solve( etrans, transform.simplex( coords[tri], isflipped=etrans.isflipped ) )
-            for tri in etriangulation if len(tri) == self.ndims and any( vsigns[tri] ) ]
-          edge = MultiSimplexReference( baseedge, esimplices )
+          transforms = []
+          outertransforms = []
+          for tri in triangulation:
+            etri = tri[ onedge[tri] ]
+            if len(etri) == self.ndims:
+              strans = transform.solve( etrans, transform.simplex( coords[etri], isflipped=etrans.isflipped ) )
+              if any( vsigns[etri] ):
+                transforms.append( strans )
+              else:
+                ifaces[ tuple(sorted(etri)) ] = None
+                outertransforms.append( strans )
+          if outertransforms:
+            outer.append(( etrans, MultiSimplexReference( baseedge, outertransforms ) ))
+          edge = MultiSimplexReference( baseedge, transforms ) if transforms else None
         edges.append(( etrans, edge ))
-      mosaics += WithEdgesReference( MultiSimplexReference( self, simplices ), edges ),
-    posmosaic, negmosaic = mosaics
-
-    posifaces, negifaces = {}, {}
-    for ifaces, triangulation in (posifaces,postri), (negifaces,negtri):
+      mosaics += WithEdgesReference( sref, edges ),
       for tri in triangulation:
         where, = numpy.where( vsigns[tri] != 0 )
         if len(where) <= 1:
@@ -272,7 +279,7 @@ class Reference( cache.Immutable ):
               del ifaces[key]
             else:
               ifaces[key] = tri, iedge
-      
+
     ifaces = []
     for key, (tri,iedge) in posifaces.items():
       negifaces.pop( key )
@@ -282,10 +289,11 @@ class Reference( cache.Immutable ):
     assert not negifaces
 
     if check:
-      refcheck( posmosaic, posmosaic.edges + [ (postrans,edge) for postrans, negtrans, edge in ifaces ] )
-      refcheck( negmosaic, negmosaic.edges + [ (negtrans,edge) for postrans, negtrans, edge in ifaces ] )
+      posmosaic, negmosaic = mosaics
+      refcheck( posmosaic, posmosaic.edges + [ (postrans,edge) for postrans, negtrans, edge in ifaces ] + posouter )
+      refcheck( negmosaic, negmosaic.edges + [ (negtrans,edge) for postrans, negtrans, edge in ifaces ] + negouter )
 
-    return posmosaic, negmosaic, ifaces, [], []
+    return mosaics + (ifaces,posouter,negouter)
 
   def trim( self, levels, maxrefine, denom, check ):
     'trim element along levelset'
