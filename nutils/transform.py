@@ -152,12 +152,19 @@ class TransformChain( tuple ):
     if ndims == self.fromdims:
       return self
     index = core.index( trans.fromdims == self.fromdims for trans in self )
+    body = list( self[:index] )
     uptrans = self[index]
     assert uptrans.todims == self.fromdims+1
-    body = tuple( Scale( scale.linear, uptrans.apply(scale.offset) - scale.linear * uptrans.offset ) for scale in self[index+1:] )
-    # self[:index] << body << uptrans == self
-    assert equivalent( body+(uptrans,), self[index:] )
-    return TransformChain( TransformChain(self[:index]+body).promote(ndims)+(uptrans,) )
+    for i in range( index+1, len(self) ):
+      scale = self[i]
+      if not isinstance( scale, Scale ):
+        break
+      newscale = Scale( scale.linear, uptrans.apply(scale.offset) - scale.linear * uptrans.offset )
+      body.append( newscale )
+    else:
+      i = len(self)+1
+    assert equivalent( body[index:]+[uptrans], self[index:i] )
+    return TransformChain( TransformChain(body).promote(ndims)+(uptrans,)+self[i:] )
 
 
 ## TRANSFORM ITEMS
