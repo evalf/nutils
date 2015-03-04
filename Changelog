@@ -6,6 +6,16 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+Changed: strict dimension equality in function.outer
+
+  Function.outer allows arguments of different dimension by left-padding
+  the smallest prior to multiplication. There is no clear reason for
+  this generality and it hinders error checking. Therefore in future in
+  function.outer( a, b ), a.ndim must equal b.ndim.
+
+  In a brief transition period non-equality emits a warning.
+
+
 Reverted: log iterators
 
   Manually setting the __log__ property is removed and the old notation
