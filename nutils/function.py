@@ -559,6 +559,10 @@ class ArrayFunc( Evaluable ):
     assert normal.shape == (self.shape[axis],)
     return ( self * normal[(slice(None),)+(_,)*(self.ndim-axis-1)] ).sum( axis )
 
+  def tangent( self, geom ):
+    normal = geom.normal()
+    return self - ( self * normal ).sum(-1)[...,_] * normal
+
   def ngrad( self, coords, ndims=0 ):
     'normal gradient'
 
