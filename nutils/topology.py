@@ -952,9 +952,6 @@ class StructuredTopology( Topology ):
 
     return numpy.array([Ni.coeffs for Ni in N]).T[::-1]
 
-  def linearfunc( self ):
-    'linears'
-
   def basis_discont( self, degree ):
     'discontinuous shape functions'
 
