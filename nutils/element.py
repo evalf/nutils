@@ -1073,11 +1073,13 @@ class MultiSimplexReference( Reference ):
     simplex = SimplexReference( self.ndims )
     points, weights = simplex.getischeme( ischeme )
     allcoords = numpy.empty( (len(self.__transforms),)+points.shape, dtype=float )
-    allweights = numpy.empty( (len(self.__transforms),)+weights.shape, dtype=float )
+    if weights is not None:
+      allweights = numpy.empty( (len(self.__transforms),)+weights.shape, dtype=float )
     for i, trans in enumerate( self.__transforms ):
       allcoords[i] = trans.apply(points)
-      allweights[i] = weights * abs(float(trans.det))
-    return allcoords.reshape(-1,self.ndims), allweights.ravel()
+      if weights is not None:
+        allweights[i] = weights * abs(float(trans.det))
+    return allcoords.reshape(-1,self.ndims), allweights.ravel() if weights is not None else None
 
 
 # SHAPE FUNCTIONS
