@@ -983,7 +983,9 @@ class WithChildrenReference( Reference ):
   def getischeme( self, ischeme ):
     'get integration scheme'
     
-    assert not ischeme.startswith('vertex')
+    if ischeme.startswith('vertex'):
+      return self.__baseref.getischeme( ischeme )
+
     allcoords = []
     allweights = []
     for trans, simplex in self.children:
@@ -1069,7 +1071,9 @@ class MultiSimplexReference( Reference ):
   def getischeme( self, ischeme ):
     'get integration scheme'
     
-    assert not ischeme.startswith('vertex')
+    if ischeme.startswith('vertex'):
+      return self.__baseref.getischeme( ischeme )
+
     simplex = SimplexReference( self.ndims )
     points, weights = simplex.getischeme( ischeme )
     allcoords = numpy.empty( (len(self.__transforms),)+points.shape, dtype=float )
