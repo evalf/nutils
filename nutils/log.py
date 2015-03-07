@@ -31,6 +31,12 @@ class Stream( object ):
     for line in lines:
       self.write( line )
 
+  def flush( self ):
+    pass
+
+  def close( self ):
+    self.flush()
+
   def write( self, text ):
     raise NotImplementedError( 'write method must be overloaded' )
 
@@ -44,6 +50,9 @@ class ColorStream( Stream ):
     colorid = self._colors.index( color )
     boldid = 1 if bold else 0
     self.fmt = '\033[%d;3%dm%%s\033[0m' % ( boldid, colorid )
+
+  def flush( self ):
+    sys.stdout.flush()
 
   def write( self, text ):
     sys.stdout.write( self.fmt % text )
@@ -62,8 +71,10 @@ class HtmlStream( Stream ):
       self.head = ''
     self.body = ''
     self.html = html
+    self.isopen = True
 
   def write( self, text ):
+    assert self.isopen
     if not text:
       return
     if self.buf:
@@ -80,7 +91,10 @@ class HtmlStream( Stream ):
     return '<a href="%s">%s</a>' % (filename,filename) if ext not in whitelist \
       else '<a href="%s" name="%s" class="plot">%s</a>' % (filename,filename,filename)
 
-  def __del__( self ):
+  def close( self ):
+    assert self.isopen
+    self.isopen = False
+
     body = self.body
     if self.level == 'path':
       body = re.sub( r'\b\w+([.]\w+)\b', self._path2href, body )
@@ -91,6 +105,10 @@ class HtmlStream( Stream ):
     self.html.write( line )
     self.html.flush()
 
+  def __del__( self ):
+    if self.isopen:
+      self.close()
+
 class PostponedStream( Stream ):
   '''Send postponedtext to postponedstream upon first written character, unless
   the first character is a carriage return. In that case postponedtext is
@@ -100,6 +118,9 @@ class PostponedStream( Stream ):
     self.postponedstream = postponedstream
     self.postponedtext = postponedtext
     self.stream = stream
+
+  def flush( self ):
+    self.stream.flush()
 
   def write( self, text ):
     if not text:
@@ -116,6 +137,14 @@ class Tee( Stream ):
   def __init__( self, *streams ):
     self.streams = streams
 
+  def flush( self ):
+    for stream in self.streams:
+      stream.flush()
+
+  def close( self ):
+    for stream in self.streams:
+      stream.close()
+
   def write( self, text ):
     for stream in self.streams:
       stream.write( text )
@@ -125,6 +154,15 @@ class DevNull( Stream ):
 
   def write( self, text ):
     pass
+
+class CaptureStream( Stream ):
+  '''Append all output silently to chunks member.'''
+
+  def __init__( self, chunks ):
+    self.__chunks = chunks
+
+  def write( self, text ):
+    self.__chunks.append( text )
 
 
 ## STREAM FACTORIES
@@ -167,11 +205,51 @@ class HtmlStreamFactory( StreamFactory ):
 
   def __init__( self, html ):
     self.html = html
-    self.stdout = StdoutStreamFactory()
     StreamFactory.__init__( self )
 
   def __call__( self, level, context ):
-    return Tee( self.stdout( level, context ), HtmlStream( level, context, self.html ) )
+    return HtmlStream( level, context, self.html )
+
+class TeeStreamFactory( StreamFactory ):
+  '''Combines multiple factory output into a Tee stream'''
+
+  def __init__( self, *factories ):
+    self.factories = factories
+    StreamFactory.__init__( self )
+
+  def __call__( self, level, context ):
+    return Tee( *[ factory(level,context) for factory in self.factories ] )
+    
+class ProgressStreamFactory( StreamFactory ):
+  '''Factory wrapper that writes log level indication characters to a second stream.'''
+
+  def __init__( self, stream, factory ):
+    stream.flush()
+    self.stream = stream
+    self.factory = factory
+    StreamFactory.__init__( self )
+
+  def __call__( self, level, context ):
+    self.stream.write( level[0] )
+    self.stream.flush()
+    return self.factory( level, context )
+
+class CaptureStreamFactory( StreamFactory ):
+  '''Capture all stream output silently in a 'captured' member.'''
+
+  def __init__( self ):
+    self.chunks = []
+    StreamFactory.__init__( self )
+
+  @property
+  def captured( self ):
+    return ''.join( self.chunks )
+
+  def __call__( self, level, context ):
+    sep = ' > '
+    self.chunks.append( sep.join(context) )
+    stream = CaptureStream( self.chunks )
+    return PostponedStream( stream, sep, stream )
 
 
 ## LOG
@@ -188,6 +266,13 @@ class Log( object ):
     self.streamfactory = streamfactory
     self.context = context
 
+  def _print( self, level, *args, **kw ):
+    print( *args, file=self.getstream(level), **kw )
+
+  def __getattr__( self, attr ):
+    assert attr in LEVELS
+    return functools.partial( self._print, attr )
+
   def clone( self ):
     return Log( self.streamfactory, self.context )
 
@@ -195,7 +280,9 @@ class Log( object ):
     self.context = [ item for item in self.context if item ]
     self.context.append( newitem )
 
-  def getstream( self, level, verbosity ):
+  def getstream( self, level, verbosity=None ):
+    if verbosity is None:
+      verbosity = core.getprop('verbose',9)
     if level in LEVELS[ verbosity: ]:
       return DevNull()
     context = [ str(item) for item in self.context if item ]
@@ -217,13 +304,15 @@ class _PrintableIterator( object ):
     self.__length = length
     self.__iterator = iterator
     self.__index = 0
-    self.__alive = _append_context_item( self )
-
+    self.__alive = True
+    
     # clock
     self.__dt = core.getprop( 'progress_interval', 1. )
     self.__dtexp = core.getprop( 'progress_interval_scale', 2 )
     self.__dtmax = core.getprop( 'progress_interval_max', 0 )
     self.__tnext = time.time() + self.__dt
+
+    append( self )
 
   def __str__( self ):
     self.__tnext = time.time() + self.__dt
@@ -252,39 +341,6 @@ class _PrintableIterator( object ):
     finally:
       self.__alive = False
 
-def _getlog( default=Log(StdoutStreamFactory()) ):
-  '''Return log property if set, else fall back on stdout log or other
-  specified default.'''
-
-  log = core.getprop( 'log', None )
-  if log is None:
-    log = default
-  elif not isinstance( log, Log ):
-    warnings.warn( '''Invalid logger object found: {!r}
-  This is usually caused by manually setting the __log__ variable.'''.format(log), stacklevel=2 )
-    log = default
-  return log
-
-def _append_context_item( item ):
-  '''Append context item to log property it it is set, and return True. If log
-  property is not set do nothing and return False.'''
-
-  log = _getlog(None)
-  if not log:
-    return False
-  log.append( item )
-  return True
-
-def _getstream( level ):
-  '''Return log stream, falling back on stdout stream if log property is not set.'''
-
-  return _getlog().getstream( level, core.getprop('verbose',9) )
-
-def _print( level, *args, **kw ):
-  '''Print on currently active stream at given level'''
-
-  print( *args, file=_getstream(level), **kw )
-
 def _len( iterable ):
   '''Return length if available, otherwise None'''
 
@@ -294,9 +350,27 @@ def _len( iterable ):
     return None
 
 
-## MODULE METHODS
+## MODULE-ACCESIBLE LOG METHODS
 
-locals().update({ level: functools.partial( _print, level ) for level in LEVELS })
+__methods__ = LEVELS + ( 'getstream', 'clone', 'append' )
+
+def _logmethod( attr ):
+  def wrapper( *args, **kwargs ):
+    log = core.getprop( 'log', None )
+    if not isinstance( log, Log ):
+      if log is not None:
+        warnings.warn( '''Invalid logger object found: {!r}
+          This is usually caused by manually setting the __log__ variable.'''.format(log), stacklevel=2 )
+      log = Log( StdoutStreamFactory() )
+    method = getattr( log, attr )
+    return method( *args, **kwargs )
+  wrapper.__name__ = attr
+  return wrapper
+
+locals().update({ name: _logmethod(name) for name in __methods__ })
+
+
+## MODULE-ONLY METHODS
 
 def range( title, *args ):
   '''Progress logger identical to built in range'''
@@ -330,7 +404,7 @@ def stack( msg ):
     frames = debug.frames_from_traceback( tb )
   else:
     frames = debug.frames_from_callstack( depth=2 )
-  print( msg, *reversed(frames), sep='\n', file=_getstream( 'error' ) )
+  print( msg, *reversed(frames), sep='\n', file=getstream( 'error' ) )
 
 def title( f ): # decorator
   '''Decorator, adds title argument with default value equal to the name of the
@@ -349,7 +423,7 @@ def title( f ): # decorator
     gettitle = lambda args, kwargs: kwargs.pop('title',default)
   @functools.wraps(f)
   def wrapped( *args, **kwargs ):
-    __log__ = _getlog().clone()
+    __log__ = clone()
     __log__.append( gettitle(args,kwargs) )
     return f( *args, **kwargs )
   return wrapped

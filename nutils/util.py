@@ -479,7 +479,7 @@ def run( *functions ):
 
   try:
 
-    __log__ = log.Log( log.HtmlStreamFactory(htmlfile) )
+    __log__ = log.Log( log.TeeStreamFactory( log.HtmlStreamFactory(htmlfile), log.StdoutStreamFactory() ) )
     __dumpdir__ = dumpdir
     __cachedir__ = basedir + 'cache'
 

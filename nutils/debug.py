@@ -276,12 +276,12 @@ def write_html( out, exc_info ):
   out.write( '</span>' )
   out.flush()
 
-def traceback_explorer( exc_info ):
+def traceback_explorer( exc_info, intro=None ):
   exc_type, exc_value, tb = exc_info
-  Explorer( repr(exc_value), frames_from_traceback(tb), '''
-    Your program has died. The traceback exporer allows you to examine its
-    post-mortem state to figure out why this happened. Type 'help' for an
-    overview of commands to get going.''' ).cmdloop()
+  intro = intro or '''Your program has died. The traceback exporer allows
+    you to examine its post-mortem state to figure out why this happened.
+    Type 'help' for an overview of commands to get going.'''
+  Explorer( repr(exc_value), frames_from_traceback(tb), intro ).cmdloop()
 
 def breakpoint():
   Explorer( 'Suspended.', frames_from_callstack(2), '''

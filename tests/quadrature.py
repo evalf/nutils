@@ -1,82 +1,82 @@
 #!/usr/bin/env python
 
 from nutils import *
-import numpy, re
-from math import gamma
+from . import register, unittest
+import math, re
 
-class TestGaussQuadrature( object ):
+def _test( MAXORDER, elem, F, EPS=1e-12 ):
+  funcstring = '*'.join(['x^%d','y^%d','z^%d'][:elem.ndims])
+  for ab in numpy.ndindex( (MAXORDER,)*elem.ndims ):
+    exact = F(*ab)
+    order = sum(ab)
+    #log.info( ('\nIntegrating f = ' + funcstring + ', order = %d, elem = %s') % tuple(list(ab)+[order,elem]) )
+    #log.info( 'Exact: F = %8.6e' % exact )
+    for p in range( 1, MAXORDER+1 ):
+      name = 'gauss%d' % p
+      points, weights = elem.reference.getischeme( name )
+
+      Fq = (weights*numpy.prod(points**numpy.array(ab)[_,:],axis=1)).sum()
+
+      err = abs(Fq-exact)/exact
+
+      #log.info( '%s: n = %02d, F = %8.6e, rel.err. = %8.6e, %s' % (name,len(weights),Fq,err,'Exact' if err < EPS else 'Not exact') )
+
+      if elem.reference == element.SimplexReference(1)**elem.ndims:
+        expect_exact = p // 2 >= numpy.amax(ab) // 2
+      else:
+        expect_exact = p >= order
+
+      if expect_exact:
+        assert err < EPS, 'Integration should be exact'
+      else:
+        # Counterexamples can be constructed, but in the case of monomials with MAXORDER<8 this assert is verified
+        assert err > EPS, 'Integration should not be exact'
+
+@register
+def gauss():
   # Gaussian quadrature and exact integration on different element types
 
-  def _test( self, MAXORDER, elem, F, EPS=1e-12 ):
-    funcstring = '*'.join(['x^%d','y^%d','z^%d'][:elem.ndims])
-  
-    for ab in numpy.ndindex( (MAXORDER,)*elem.ndims ):
-      exact = F(*ab)
-      order = sum(ab)
-      log.info( ('\nIntegrating f = ' + funcstring + ', order = %d, elem = %s') % tuple(list(ab)+[order,elem]) )
-      log.info( 'Exact: F = %8.6e' % exact )
-      for p in range( 1, MAXORDER+1 ):
-        name = 'gauss%d' % p
-        points, weights = elem.reference.getischeme( name )
-  
-        Fq = (weights*numpy.prod(points**numpy.array(ab)[_,:],axis=1)).sum()
-  
-        err = abs(Fq-exact)/exact
-  
-        log.info( '%s: n = %02d, F = %8.6e, rel.err. = %8.6e, %s' % (name,len(weights),Fq,err,'Exact' if err < EPS else 'Not exact') )
-  
-        if elem.reference == element.SimplexReference(1)**elem.ndims:
-          expect_exact = p // 2 >= numpy.amax(ab) // 2
-        else:
-          expect_exact = p >= order
-
-        if expect_exact:
-          assert err < EPS, 'Integration should be exact'
-        else:
-          # Counterexamples can be constructed, but in the case of monomials with MAXORDER<8 this assert is verified
-          assert err > EPS, 'Integration should not be exact'
-
-  def test_lineelement( self ):
+  @unittest
+  def lineelement():
     MAXORDER = 7
     roottrans = transform.roottrans( 'test', (0,) )
     elem = element.Element( element.SimplexReference(1), roottrans )
     F = lambda a: 1./float(1+a)
-  
-    self._test ( MAXORDER, elem, F )
+    _test( MAXORDER, elem, F )
 
-  def test_quadelement( self ):
+  @unittest
+  def quadelement():
     MAXORDER = 7
     roottrans = transform.roottrans( 'test', (0,0) )
     elem = element.Element( element.SimplexReference(1)**2, roottrans )
     F = lambda *args: numpy.prod(numpy.array(args)+1)**-1.
+    _test( MAXORDER, elem, F )
 
-    self._test ( MAXORDER, elem, F )
-
-  def test_hexelement( self ):
+  @unittest
+  def hexelement():
     MAXORDER = 7
     roottrans = transform.roottrans( 'test', (0,0,0) )
     elem = element.Element( element.SimplexReference(1)**3, roottrans )
     F = lambda *args: numpy.prod(numpy.array(args)+1)**-1.
+    _test( MAXORDER, elem, F )
 
-    self._test ( MAXORDER, elem, F )
-
-  def test_triangularelement( self ):
+  @unittest
+  def triangularelement():
     MAXORDER = 7
     roottrans = transform.roottrans( 'test', (0,0) )
     elem = element.Element( element.SimplexReference(2), roottrans )
-    F = lambda a,b: gamma(1+a)*gamma(1+b)/gamma(3+a+b)
+    F = lambda a,b: math.gamma(1+a)*math.gamma(1+b)/math.gamma(3+a+b)
+    _test( MAXORDER, elem, F )
 
-    self._test( MAXORDER, elem, F )
-
-  def test_tetrahedralelement( self ):
+  @unittest
+  def tetrahedralelement():
     MAXORDER = 8
     roottrans = transform.roottrans( 'test', (0,0,0) )
     elem = element.Element( element.SimplexReference(3), roottrans )
-    F = lambda a,b,c: gamma(1+a)*gamma(1+b)*gamma(1+c)/gamma(4+a+b+c)
+    F = lambda a,b,c: math.gamma(1+a)*math.gamma(1+b)*math.gamma(1+c)/math.gamma(4+a+b+c)
+    _test( MAXORDER, elem, F )
 
-    self._test ( MAXORDER, elem, F )
-
-class BakTestSingularQuadrature( object ):
+class TestSingularQuadrature( object ):
   # Singular bivariate quadrature and convergence on quadrilaterals
 
   def __init__( self ):
@@ -347,13 +347,3 @@ class BakTestSingularQuadrature( object ):
     kwargs = {'qset':(6,10), 'qmax':16, 'slopes':(-.1, -.4, -.6, -.2)}
     if visual: kwargs.update( {'qset':range(1,10), 'plot_quad_points':True} )
     self._integrate( func, (self.domain, self.hull), **kwargs )
-
-def visualinspect():
-  'Visual inspection of singular quadrature convergence: for tests calling _integrate(), remove the qset argument'
-  visual = TestSingularQuadrature()
-  visual.test_stronglysingularfunc( visual=True )
-
-if __name__ == '__main__':
-  util.run( visualinspect )
-
-# vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

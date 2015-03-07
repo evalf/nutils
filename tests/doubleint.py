@@ -12,7 +12,7 @@ def K( x, y ):
   rInv = function.norm2( x-y )**-1.
   return 0.75*pi**-1. * (x-y)[:,_]*(x-y)[_,:] * ((x-y)*y.normal()).sum() * rInv**5
 
-class BakTestGaussDoubleInt( object ):
+class TestGaussDoubleInt( object ):
   # Gauss quadrature on product domain.
 
   def test_polynomials( self ):
@@ -29,7 +29,7 @@ class BakTestGaussDoubleInt( object ):
     numpy.testing.assert_almost_equal(
       ddomain.integrate( (x-y)**2, iwscale=iwscale, ischeme='gauss2' ), 1./6 )
 
-class BakTestSingularDoubleInt( object ):
+class TestSingularDoubleInt( object ):
   # Regularized quadrature on product domain.
 
   def patch( self, val ):
@@ -51,7 +51,7 @@ class BakTestSingularDoubleInt( object ):
     self.patch( ddomain.integrate( 1, iwscale=iwscale, ischeme='singular2' ) )
     self.distance( ddomain.integrate( r**2, iwscale=iwscale, ischeme='singular3' ) )
 
-class BakTestNormalInKernelOfV( object ):
+class TestNormalInKernelOfV( object ):
   # Convolute normal with single-layer to verify it is in the kernel, note that
   # this works with all gauss schemes!'
 
@@ -99,7 +99,7 @@ class BakTestNormalInKernelOfV( object ):
     err = self.template( 4, self.octahedron )
     numpy.testing.assert_almost_equal( infnorm( err ), 0, decimal=3 )
 
-class BakTestKroneckerKernelGivesSurface( object ):
+class TestKroneckerKernelGivesSurface( object ):
   # Convolute a uniform velocity field with the identity to verify it gives the
   # surface.
 
@@ -117,7 +117,7 @@ class BakTestKroneckerKernelGivesSurface( object ):
     surf = 4.*pi
     numpy.testing.assert_almost_equal( val, surf )
 
-class BakTestOneInKernelOfK( object ):
+class TestOneInKernelOfK( object ):
   # Convolute a uniform velocity field with the dual-layer to verify it is in
   # the kernel.
 
@@ -150,7 +150,7 @@ class BakTestOneInKernelOfK( object ):
     err = infnorm( self.template( self.sphere, 4 ) )
     numpy.testing.assert_almost_equal( err, 0, decimal=2 )
 
-class BakTestShearFlow( object ):
+class TestShearFlow( object ):
   # Torus cut of shear flow.
 
   def test_InteriorProblem( self, N=4 ):
@@ -189,13 +189,3 @@ class BakTestShearFlow( object ):
     trac_err, surf = domain.integrate( ((trac-trac_shear)**2, 1), geometry=x, ischeme='gauss6' )
     err = numpy.sqrt( trac_err.sum() )/surf
     numpy.testing.assert_almost_equal( err, 0, decimal=2 ), 'err = %.3e'%err
-
-def main( N=8 ):
-  a = TestShearFlow()
-  a.test_InteriorProblem( N=N )
-  raw_input( 'hit any key to exit' )
-
-if __name__ == '__main__':
-  util.run( main )
-
-# vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

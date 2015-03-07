@@ -8,10 +8,10 @@ dist:
 docs:
 	${MAKE} -C docs html
 
-test: test_nose test_examples
+test: test_unit test_examples
 
-test_nose:
-	nosetests -v tests
+test_unit:
+	python -m tests
 
 test_examples:
 	@for script in examples/*; do \
@@ -19,10 +19,10 @@ test_examples:
 		python $$script unittest --tbexplore=False --verbose=3; \
 	done
 
-test3: test3_nose test3_examples
+test3: test3_unit test3_examples
 
-test3_nose:
-	nosetests3 -v tests
+test3_unit:
+	python3 -m tests
 
 test3_examples:
 	@for script in examples/*; do \
@@ -35,6 +35,6 @@ clean:
 	rm -f MANIFEST nutils/*.pyc
 	${MAKE} -C docs clean
 
-.PHONY: build dist docs test test_nose test_examples clean
+.PHONY: build dist docs test test_unit test_examples clean
 
 # vim:noexpandtab

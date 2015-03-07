@@ -1,11 +1,13 @@
 from nutils import *
-import numpy
+from . import register, unittest
 
 grid = numpy.linspace( 0., 1., 5 )
 
-class TestPointdata ( object ):
+@register
+def check():
 
-  def test_1Dpointdata ( self ):
+  @unittest
+  def pointdata1d():
 
     domain, geom = mesh.rectilinear( 1*(grid,) )
     ischeme = 'gauss4'
