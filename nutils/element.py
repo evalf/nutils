@@ -111,27 +111,65 @@ class Reference( cache.Immutable ):
     assert self.vertices.dtype == int
     self.nverts, self.ndims = self.vertices.shape
 
-  def getedge( self, trans ):
-    for etrans, edge in self.edges:
-      if trans == etrans:
-        return edge
-    raise KeyError( trans )
+  def __or__( self, other ):
+    if other is None:
+      return self
+    if self == other:
+      return self
+    return NotImplemented
 
-  def complement( self, baseref ):
-    assert self == baseref
-    return None
+  def __ror__( self, other ):
+    return self.__or__( other )
+
+  def __sub__( self, other ):
+    if other == self:
+      return None
+    if other is None:
+      return self
+    return NotImplemented
+
+  def __rsub__( self, other ):
+    if other == self:
+      return None
+    if other is None:
+      raise TypeError
+    return NotImplemented
+
+  def __mul__( self, other ):
+    assert isinstance( other, Reference )
+    return other if self.ndims == 0 \
+      else self if other.ndims == 0 \
+      else TensorReference( self, other )
+
+  def __pow__( self, n ):
+    assert numeric.isint( n ) and n >= 0
+    return SimplexReference(0) if n == 0 \
+      else self if n == 1 \
+      else self * self**(n-1)
 
   @property
-  def childdict( self ):
-    return dict( self.children )
+  def edges( self ):
+    return zip( self.edge_transforms, self.edge_refs )
 
-  @cache.property
-  def edgechilddict( self ):
-    return { (etrans << ctrans).promote( self.ndims ): ( etrans, ctrans ) for etrans, edge in self.edges for ctrans, child in edge.children }
+  @property
+  def children( self ):
+    return zip( self.child_transforms, self.child_refs )
 
   @property
   def simplices( self ):
     return [ (transform.TransformChain(),self) ]
+
+  def getedge( self, trans ):
+    index = self.edge_transforms.index(trans)
+    return self.edge_refs[index]
+
+  def getchild( self, trans ):
+    index = self.child_transforms.index(trans)
+    return self.child_refs[index]
+
+  @cache.property
+  def edgechilddict( self ):
+    return { (etrans << ctrans).promote( self.ndims ): ( etrans, ctrans ) for etrans, edge in self.edges for ctrans in edge.child_transforms }
 
   @cache.property
   def edge2vertex( self ):
@@ -157,41 +195,28 @@ class Reference( cache.Immutable ):
     setattr( cls, 'getischeme_%s' % ptype, func )
 
   def with_edges( self, edges ):
-    edges = tuple(edges)
-    assert edges
-    if hasattr( self, 'edges' ) and len(edges) == len(self.edges) and sorted(edges) == sorted(self.edges):
+    edgedict = dict(edges)
+    edge_refs = tuple( edgedict.pop(etrans,None) for etrans in self.edge_transforms )
+    assert not edgedict
+    if edge_refs == getattr(self,'edge_refs',None):
       return self
-    return WithEdgesReference( self, edges )
+    return WithEdgesReference( self, edge_refs )
 
   def without_edges( self, removededges ):
     removededges = dict(removededges)
-    edges = []
-    for trans, edge in self.edges:
-      rmedge = removededges.pop( trans, False )
-      if rmedge:
-        edge = rmedge.complement( edge )
-      edges.append(( trans, edge ))
+    edge_refs = tuple( edge - removededges.pop(trans,None) for trans, edge in self.edges )
     assert not removededges
-    return WithEdgesReference( self, edges )
+    if edge_refs == getattr(self,'edge_refs',None):
+      return self
+    return WithEdgesReference( self, edge_refs )
 
   def with_children( self, children ):
-    children = tuple(children)
-    assert children
-    if len(children) == len(self.children) and sorted(children) == sorted(self.children):
+    childdict = dict( children )
+    child_refs = tuple( childdict.pop(ctrans,None) for ctrans in self.child_transforms )
+    assert not childdict
+    if child_refs == self.child_refs:
       return self
-    return WithChildrenReference( self, children )
-
-  def __mul__( self, other ):
-    assert isinstance( other, Reference )
-    return other if self.ndims == 0 \
-      else self if other.ndims == 0 \
-      else TensorReference( self, other )
-
-  def __pow__( self, n ):
-    assert numeric.isint( n ) and n >= 0
-    return SimplexReference(0) if n == 0 \
-      else self if n == 1 \
-      else self * self**(n-1)
+    return WithChildrenReference( self, child_refs )
 
   def triangulate( self, levels, denom, check ):
     'triangulate based on vertex levelset values'
@@ -219,20 +244,31 @@ class Reference( cache.Immutable ):
     vsigns = numpy.zeros( len(coords), dtype=int )
     vsigns[~oniface] = numpy.sign(levels[~oniface])
 
-    simplex = SimplexReference( self.ndims )
-
     haspos = +1 in vsigns
     if not haspos or -1 not in vsigns:
       if ( vsigns == 0 ).sum() < self.ndims:
         return (self,None,[],[],[]) if haspos else (None,self,[],[],[])
+      inner = []
       outer = []
-      for iedge, mask in enumerate( vertex2edge.T ):
-        oniface = vsigns[mask] == 0
+      for iedge, onedge in enumerate( vertex2edge.T ):
+        oniface = vsigns[onedge] == 0
+        etrans, edge = self.edges[iedge]
         if oniface.all():
-          outer.append( self.edges[iedge] )
+          outer.append(( etrans, edge ))
+          inner.append(( etrans, None ))
         elif oniface.sum() >= self.ndims:
-          raise NotImplementedError
-      ref = self.without_edges( outer )
+          ecoords = etrans.solve( coords[onedge] )
+          innertrans = []
+          outertrans = []
+          for tri in util.delaunay( ecoords.astype(float) ):
+            strans = transform.simplex( ecoords[tri] )
+            ( outertrans if oniface[tri].all() else innertrans ).append( strans )
+          assert innertrans and outertrans
+          outer.append(( etrans, MultiSimplexReference(edge,outertrans,complement=innertrans) ))
+          inner.append(( etrans, MultiSimplexReference(edge,innertrans,complement=outertrans) ))
+        else:
+          inner.append(( etrans, edge ))
+      ref = self.with_edges( inner )
       if check:
         refcheck( ref, ref.edges + outer )
       return (ref,None,[],outer,[]) if haspos else (None,ref,[],[],outer)
@@ -266,10 +302,10 @@ class Reference( cache.Immutable ):
                 ifaces[ tuple(sorted(etri)) ] = None
                 outertransforms.append( strans )
           if outertransforms:
-            outer.append(( etrans, MultiSimplexReference( baseedge, outertransforms ) ))
-          edge = MultiSimplexReference( baseedge, transforms ) if transforms else None
+            outer.append(( etrans, MultiSimplexReference( baseedge, outertransforms, complement=transforms ) ))
+          edge = MultiSimplexReference( baseedge, transforms, complement=outertransforms ) if transforms else None
         edges.append(( etrans, edge ))
-      mosaics += WithEdgesReference( sref, edges ),
+      mosaics += sref.with_edges( edges ),
       for tri in triangulation:
         where, = numpy.where( vsigns[tri] != 0 )
         if len(where) <= 1:
@@ -281,6 +317,7 @@ class Reference( cache.Immutable ):
               ifaces[key] = tri, iedge
 
     ifaces = []
+    simplex = SimplexReference( self.ndims )
     for key, (tri,iedge) in posifaces.items():
       negifaces.pop( key )
       etrans, edge = simplex.edges[iedge]
@@ -347,7 +384,6 @@ class Reference( cache.Immutable ):
             if not inner.pop( flat.flipped, False ):
               inner[flat] = edge
           else:
-            assert self.getedge( etrans ).childdict[xtrans] == edge
             outer.setdefault( etrans, [] ).append(( xtrans, edge ))
 
     posouter = [ ( etrans, self.getedge(etrans).with_children(children) ) for etrans, children in posouter.items() ]
@@ -371,15 +407,16 @@ class Reference( cache.Immutable ):
 
       for trans, edge in posinner.items():
         flipped = trans.flipped
-        if neginner.pop( flipped, False ):
-          ifaces.append(( trans, flipped, edge ))
+        edge2 = neginner.pop( flipped, False )
+        if edge2:
+          ifaces.append(( trans, flipped, edge|edge2 ))
         else:
           edgeverts = trans.apply( edge.vertices )
           ielem, iedge = findbyverts( negelems, trans.apply(edge.vertices) )
           elemtrans, ref = negelems[ielem]
           trans2, edge2 = ref.edges[iedge]
           assert (elemtrans<<trans2).flat == trans.flipped
-          ifaces.append(( trans, trans.flipped, edge ))
+          ifaces.append(( trans, trans.flipped, edge|edge2 ))
           negelems[ielem] = elemtrans, ref.without_edges( [(trans2,edge2)] )
 
       for trans, edge in neginner.items():
@@ -388,7 +425,7 @@ class Reference( cache.Immutable ):
         elemtrans, ref = poselems[ielem]
         trans2, edge2 = ref.edges[iedge]
         assert (elemtrans<<trans2).flat == trans.flipped
-        ifaces.append(( trans.flipped, trans, edge ))
+        ifaces.append(( trans.flipped, trans, edge|edge2 ))
         poselems[ielem] = elemtrans, ref.without_edges( [(trans2,edge2)] )
 
       posmosaic = self.with_children( poselems )
@@ -396,9 +433,9 @@ class Reference( cache.Immutable ):
 
     if check:
       if posmosaic:
-        refcheck( posmosaic, list(posmosaic.edges) + [ (postrans,edge) for postrans, negtrans, edge in ifaces ] + posouter )
+        refcheck( posmosaic, posmosaic.edges + [ (postrans,edge) for postrans, negtrans, edge in ifaces ] + posouter )
       if negmosaic:
-        refcheck( negmosaic, list(negmosaic.edges) + [ (negtrans,edge) for postrans, negtrans, edge in ifaces ] + negouter )
+        refcheck( negmosaic, negmosaic.edges + [ (negtrans,edge) for postrans, negtrans, edge in ifaces ] + negouter )
 
     return posmosaic, negmosaic, ifaces, posouter, negouter
 
@@ -692,8 +729,8 @@ class SimplexReference( Reference ):
     raise NotImplementedError
 
   @property
-  def children( self ):
-    return [ (ctrans,self) for ctrans in self.child_transforms ]
+  def child_refs( self ):
+    return (self,) * len(self.child_transforms)
 
   def subvertex( self, ichild, i ):
     if i == 0:
@@ -713,12 +750,14 @@ class SimplexReference( Reference ):
     raise NotImplementedError( 'ndims=%d' % self.ndims )
 
   @cache.property
-  def edges( self ):
-    edge = SimplexReference( self.ndims-1 )
+  def edge_transforms( self ):
     eye = numpy.eye( self.ndims, dtype=int )
-    return [ ( transform.affine( (eye[1:]-eye[0]).T, eye[0] ), edge ) ] \
-         + [ ( transform.affine( eye[ list(range(i))+list(range(i+1,self.ndims)) ].T, isflipped=(i%2==0) ), edge )
-                  for i in range( self.ndims ) ]
+    return tuple([ transform.affine( (eye[1:]-eye[0]).T, eye[0] ) ]
+               + [ transform.affine( eye[ list(range(i))+list(range(i+1,self.ndims)) ].T, isflipped=(i%2==0) ) for i in range( self.ndims ) ])
+
+  @property
+  def edge_refs( self ):
+    return (SimplexReference( self.ndims-1 ),) * (self.ndims+1)
 
   def __str__( self ):
     return 'SimplexReference(%d)' % self.ndims
@@ -741,7 +780,7 @@ class TensorReference( Reference ):
     refcheck( self )
 
   def subvertex( self, ichild, i ):
-    ichild1, ichild2 = divmod( ichild, len(self.ref2.children) )
+    ichild1, ichild2 = divmod( ichild, len(self.ref2.child_transforms) )
     N1, I1 = self.ref1.subvertex( ichild1, i )
     N2, I2 = self.ref2.subvertex( ichild2, i )
     return N1 * N2, ( N2 * I1[:,_] + I2[_,:] ).ravel()
@@ -810,31 +849,35 @@ class TensorReference( Reference ):
     return ipoints.reshape( -1, self.ndims ), iweights
 
   @cache.property
-  def edges( self ):
-    return [ ( transform.affine(
-                rational.blockdiag([ trans1.linear, rational.eye(self.ref2.ndims) ]),
-                rational.concatenate([ trans1.offset, rational.zeros(self.ref2.ndims) ]),
-                isflipped=trans1.isflipped ), edge1 * self.ref2 )
-                  for trans1, edge1 in self.ref1.edges ] \
-         + [ ( transform.affine(
-                rational.blockdiag([ rational.eye(self.ref1.ndims), trans2.linear ]),
-                rational.concatenate([ rational.zeros(self.ref1.ndims), trans2.offset ]),
-                isflipped=trans2.isflipped if self.ref1.ndims%2==0 else not trans2.isflipped ), self.ref1 * edge2 )
-                  for trans2, edge2 in self.ref2.edges ]
+  def edge_transforms( self ):
+    return tuple(
+      [ transform.affine(
+        rational.blockdiag([ trans1.linear, rational.eye(self.ref2.ndims) ]),
+        rational.concatenate([ trans1.offset, rational.zeros(self.ref2.ndims) ]),
+        isflipped=trans1.isflipped )
+          for trans1 in self.ref1.edge_transforms ]
+   + [ transform.affine(
+        rational.blockdiag([ rational.eye(self.ref1.ndims), trans2.linear ]),
+        rational.concatenate([ rational.zeros(self.ref1.ndims), trans2.offset ]),
+        isflipped=trans2.isflipped if self.ref1.ndims%2==0 else not trans2.isflipped )
+          for trans2 in self.ref2.edge_transforms ])
+
+  @property
+  def edge_refs( self ):
+    return tuple([ edge1 * self.ref2 for edge1 in self.ref1.edge_refs ]
+               + [ self.ref1 * edge2 for edge2 in self.ref2.edge_refs ])
 
   @cache.property
-  def children( self ):
-    children = []
-    for trans1, child1 in self.ref1.children:
-      for trans2, child2 in self.ref2.children:
-        offset = rational.concatenate([ trans1.offset, trans2.offset ])
-        if trans1.linear.ndim == 0 and trans1.linear == trans2.linear:
-          trans = transform.affine( trans1.linear, offset )
-        else:
-          assert trans1.ndim == trans2.ndim == 2
-          trans = transform.affine( rational.blockdiag([ trans1.linear, trans2.linear ]), offset ) # TODO isflipped?
-        children.append(( trans, child1 * child2 ))
-    return children
+  def child_transforms( self ):
+    return [ transform.affine( trans1.linear if trans1.linear.ndim == 0 and trans1.linear == trans2.linear
+                          else rational.blockdiag([ trans1.linear, trans2.linear ]),
+                               rational.concatenate([ trans1.offset, trans2.offset ]) )
+            for trans1 in self.ref1.child_transforms
+              for trans2 in self.ref2.child_transforms ]
+
+  @property
+  def child_refs( self ):
+    return tuple( child1 * child2 for child1 in self.ref1.child_refs for child2 in self.ref2.child_refs )
 
 class NeighborhoodTensorReference( TensorReference ):
   'product reference element'
@@ -970,15 +1013,27 @@ class NeighborhoodTensorReference( TensorReference ):
 
 class WithChildrenReference( Reference ):
 
-  def __init__( self, baseref, children ):
-    self.__baseref = baseref
-    self.__children = tuple(children)
-    assert self.__children
+  def __init__( self, baseref, child_refs ):
+    assert not isinstance( baseref, WithChildrenReference )
+    assert isinstance( child_refs, tuple ) and len(child_refs) == len(baseref.child_transforms) and any(child_refs) and child_refs != baseref.child_refs
+    self.baseref = baseref
+    self.edge_transforms = baseref.edge_transforms
+    self.child_transforms = baseref.child_transforms
+    self.child_refs = child_refs
     Reference.__init__( self, baseref.vertices )
 
-  @property
-  def children( self ):
-    return self.__children
+  def __or__( self, other ):
+    if other is None:
+      return self
+    if other == self.baseref:
+      return other
+    if not isinstance( other, WithChildrenReference ) or other.baseref != self.baseref:
+      raise TypeError
+    child_refs = tuple( child1 | child2 if child1 or child2 else None for child1, child2 in zip( self.child_refs, other.child_refs ) )
+    assert child_refs
+    if child_refs == self.baseref.child_refs:
+      return self
+    return WithChildrenReference( self.baseref, child_refs )
 
   def getischeme( self, ischeme ):
     'get integration scheme'
@@ -987,10 +1042,11 @@ class WithChildrenReference( Reference ):
     allcoords = []
     allweights = []
     for trans, simplex in self.children:
-      points, weights = simplex.getischeme( ischeme )
-      allcoords.append( trans.apply(points) )
-      if weights is not None:
-        allweights.append( weights * abs(float(trans.det)) )
+      if simplex:
+        points, weights = simplex.getischeme( ischeme )
+        allcoords.append( trans.apply(points) )
+        if weights is not None:
+          allweights.append( weights * abs(float(trans.det)) )
 
     coords = numpy.concatenate( allcoords, axis=0 )
     weights = numpy.concatenate( allweights, axis=0 ) \
@@ -1004,21 +1060,27 @@ class WithChildrenReference( Reference ):
 
   @property
   def simplices( self ):
-    return [ (trans2<<trans1, simplex) for trans2, child in self.children for trans1, simplex in child.simplices ]
+    #return [ (trans2<<trans1, simplex) for trans2, child in self.children for trans1, simplex in child.simplices ]
+    simplices = []
+    for trans2, child in self.children:
+      if child:
+        for trans1, simplex in child.simplices:
+          simplices.append(( trans2<<trans1, simplex ))
+    return simplices
 
-  @cache.property
-  def edges( self ):
-    return [ (trans, self.getedge(trans)) for trans, baseedge in self.__baseref.edges ]
+  @property
+  def edge_refs( self ):
+    return tuple( self.getedge(trans) for trans in self.edge_transforms )
 
   @cache.argdict
   def getedge( self, etrans ):
     parts = []
     iscomplete = True
-    baseedge = self.__baseref.getedge( etrans )
+    baseedge = self.baseref.getedge( etrans )
     assert baseedge
     for ctrans, cedge in baseedge.children:
       trans = ( etrans << ctrans ).promote( self.ndims )
-      child = self.childdict.get( trans.sliceto(-1) )
+      child = self.getchild( trans.sliceto(-1) )
       edge = child and child.getedge( trans.slicefrom(-1) )
       if edge:
         parts.append(( ctrans, edge ))
@@ -1030,36 +1092,61 @@ class WithChildrenReference( Reference ):
       return None
     return baseedge.with_children( parts )
 
-  def complement( self, baseref ):
-    assert self.__baseref == baseref
-    complement = []
+  def __rsub__( self, baseref ):
+    assert self.baseref == baseref
+    complements = []
     for ctrans, child in baseref.children:
-      if ctrans in self.childdict:
-        assert self.childdict[ctrans] == child
-      else:
-        complement.append(( ctrans, child ))
-    return baseref.with_children( complement )
+      complement = child - self.getchild(ctrans)
+      if complement:
+        complements.append(( ctrans, complement ))
+    return baseref.with_children( complements )
 
 class WithEdgesReference( Reference ):
 
-  def __init__( self, baseref, edges ):
-    self.__baseref = baseref
-    self.edges = edges
+  def __init__( self, baseref, edge_refs ):
+    assert not isinstance( baseref, WithEdgesReference )
+    assert isinstance( edge_refs, tuple ) and len(edge_refs) == len(baseref.edge_transforms) and any(edge_refs) and edge_refs != getattr(baseref,'edge_refs',None)
+    self.baseref = baseref
+    self.edge_transforms = baseref.edge_transforms
+    self.edge_refs = edge_refs
     Reference.__init__( self, baseref.vertices )
 
   @property
   def simplices( self ):
-    return self.__baseref.simplices
+    return self.baseref.simplices
 
   def getischeme( self, ischeme ):
-    return self.__baseref.getischeme( ischeme )
+    return self.baseref.getischeme( ischeme )
 
 class MultiSimplexReference( Reference ):
 
-  def __init__( self, baseref, transforms ):
-    self.__baseref = baseref
-    self.__transforms = transforms
+  def __init__( self, baseref, transforms, complement=None ):
+    self.baseref = baseref
+    self.edge_transforms = baseref.edge_transforms
+    self.__transforms = tuple(transforms)
+    self.__complement = complement and tuple(complement)
     Reference.__init__( self, baseref.vertices )
+
+  def __or__( self, other ):
+    if other is None:
+      return self
+    if other == self.baseref:
+      return other
+    if not isinstance( other, MultiSimplexReference ) or other.baseref != self.baseref:
+      raise TypeError
+    assert self.__complement and other.__complement
+    total = set(self.__transforms+self.__complement)
+    assert set(other.__transforms+other.__complement) == total
+    transforms = set(self.__transforms) | set(other.__transforms)
+    complement = total - transforms
+    if not complement:
+      return self.baseref
+    return MultiSimplexReference( self.baseref, tuple(transforms), tuple(complement) )
+
+  def __rsub__( self, baseref ):
+    assert self.baseref == baseref
+    assert self.__complement
+    return MultiSimplexReference( self.baseref, self.__complement, self.__transforms )
 
   @property
   def simplices( self ):

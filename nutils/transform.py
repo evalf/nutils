@@ -121,6 +121,9 @@ class TransformChain( tuple ):
       points = trans.apply( points )
     return points
 
+  def solve( self, points ):
+    return rational.solve( self.linear, (points - self.offset).T ).T
+
   def __str__( self ):
     return ' << '.join( str(trans) for trans in self ) if self else '='
 
