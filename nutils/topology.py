@@ -609,7 +609,7 @@ class Topology( object ):
             oppedge = elem.edges[iedge]
             assert ref == oppedge.reference
             assert edge.vertices == oppedge.vertices
-            elems[ielem] = elem.without_edges([ oppedge ])
+            elems[ielem] = elem.without_edge( oppedge )
           iface = element.Element( ref, edge.transform, oppedge.transform )
           trims.append( iface if ispos else iface.flipped )
 

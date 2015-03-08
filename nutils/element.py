@@ -80,17 +80,19 @@ class Element( object ):
     poselem = pos and Element( pos, self.transform )
     negelem = neg and Element( neg, self.transform )
     ifaces = [ Element( edge, self.transform<<postrans, self.transform<<negtrans ) for postrans, negtrans, edge in ifaces ]
-    posouter = [ Element( edge, self.transform<<trans ) for trans, edge in posouter ]
-    negouter = [ Element( edge, self.transform<<trans ) for trans, edge in negouter ]
+    posouter = [ Element( edge, self.transform<<trans ) for trans, edge in zip( self.reference.edge_transforms, posouter ) if edge ]
+    negouter = [ Element( edge, self.transform<<trans ) for trans, edge in zip( self.reference.edge_transforms, negouter ) if edge ]
     return poselem, negelem, ifaces, posouter, negouter
 
   @property
   def flipped( self ):
     return Element( self.reference, self.opposite, self.transform )
 
-  def without_edges( self, edges ):
-    ref = self.reference.without_edges( (edge.transform.fromtrans( self.transform ), edge.reference) for edge in edges )
-    return Element( ref, self.transform, self.opposite )
+  def without_edge( self, edge ):
+    iedge = self.reference.edge_transforms.index( edge.transform.fromtrans( self.transform ) )
+    edge_refs = list( self.reference.edge_refs )
+    edge_refs[iedge] -= edge.reference
+    return Element( self.reference.with_edges( edge_refs ), self.transform, self.opposite )
 
   @property
   def simplices( self ):
@@ -148,6 +150,14 @@ class Reference( cache.Immutable ):
       else self * self**(n-1)
 
   @property
+  def nedges( self ):
+    return len( self.edge_transforms )
+
+  @property
+  def nchildren( self ):
+    return len( self.child_transforms )
+
+  @property
   def edges( self ):
     return zip( self.edge_transforms, self.edge_refs )
 
@@ -169,7 +179,7 @@ class Reference( cache.Immutable ):
 
   @cache.property
   def edgechilddict( self ):
-    return { (etrans << ctrans).promote( self.ndims ): ( etrans, ctrans ) for etrans, edge in self.edges for ctrans in edge.child_transforms }
+    return { (etrans << ctrans).promote( self.ndims ): ( iedge, ctrans ) for iedge, (etrans,edge) in enumerate(self.edges) for ctrans in edge.child_transforms }
 
   @cache.property
   def edge2vertex( self ):
@@ -194,18 +204,8 @@ class Reference( cache.Immutable ):
   def register( cls, ptype, func ):
     setattr( cls, 'getischeme_%s' % ptype, func )
 
-  def with_edges( self, edges ):
-    edgedict = dict(edges)
-    edge_refs = tuple( edgedict.pop(etrans,None) for etrans in self.edge_transforms )
-    assert not edgedict
-    if edge_refs == getattr(self,'edge_refs',None):
-      return self
-    return WithEdgesReference( self, edge_refs )
-
-  def without_edges( self, removededges ):
-    removededges = dict(removededges)
-    edge_refs = tuple( edge - removededges.pop(trans,None) for trans, edge in self.edges )
-    assert not removededges
+  def with_edges( self, edge_refs ):
+    edge_refs = tuple(edge_refs)
     if edge_refs == getattr(self,'edge_refs',None):
       return self
     return WithEdgesReference( self, edge_refs )
@@ -249,13 +249,13 @@ class Reference( cache.Immutable ):
       if ( vsigns == 0 ).sum() < self.ndims:
         return (self,None,[],[],[]) if haspos else (None,self,[],[],[])
       inner = []
-      outer = []
+      outer = [ None ] * self.nedges
       for iedge, onedge in enumerate( vertex2edge.T ):
         oniface = vsigns[onedge] == 0
         etrans, edge = self.edges[iedge]
         if oniface.all():
-          outer.append(( etrans, edge ))
-          inner.append(( etrans, None ))
+          outer[iedge] = edge
+          inner.append( None )
         elif oniface.sum() >= self.ndims:
           ecoords = etrans.solve( coords[onedge] )
           innertrans = []
@@ -264,20 +264,20 @@ class Reference( cache.Immutable ):
             strans = transform.simplex( ecoords[tri] )
             ( outertrans if oniface[tri].all() else innertrans ).append( strans )
           assert innertrans and outertrans
-          outer.append(( etrans, MultiSimplexReference(edge,outertrans,complement=innertrans) ))
-          inner.append(( etrans, MultiSimplexReference(edge,innertrans,complement=outertrans) ))
+          outer[iedge] = MultiSimplexReference(edge,outertrans,complement=innertrans)
+          inner.append( MultiSimplexReference(edge,innertrans,complement=outertrans) )
         else:
-          inner.append(( etrans, edge ))
+          inner.append( edge )
       ref = self.with_edges( inner )
       if check:
-        refcheck( ref, ref.edges + outer )
-      return (ref,None,[],outer,[]) if haspos else (None,ref,[],[],outer)
+        refcheck( ref, ref.edges + zip(self.edge_transforms,outer) )
+      return (ref,None,[],outer,[None]*self.nedges) if haspos else (None,ref,[],[None]*self.nedges,outer)
 
     postri, negtri = signed_triangulate( coords.astype(float), vsigns )
     assert len(postri) and len(negtri)
 
     mosaics = ()
-    posouter, negouter = [], []
+    posouter, negouter = [None]*self.nedges, [None]*self.nedges
     posifaces, negifaces = {}, {}
     for triangulation, ifaces, outer, sign in (postri,posifaces,posouter,+1), (negtri,negifaces,negouter,-1):
       sref = MultiSimplexReference( self, [ transform.simplex(coords[tri]) for tri in triangulation ] )
@@ -302,9 +302,9 @@ class Reference( cache.Immutable ):
                 ifaces[ tuple(sorted(etri)) ] = None
                 outertransforms.append( strans )
           if outertransforms:
-            outer.append(( etrans, MultiSimplexReference( baseedge, outertransforms, complement=transforms ) ))
+            outer[iedge] = MultiSimplexReference( baseedge, outertransforms, complement=transforms )
           edge = MultiSimplexReference( baseedge, transforms, complement=outertransforms ) if transforms else None
-        edges.append(( etrans, edge ))
+        edges.append( edge )
       mosaics += sref.with_edges( edges ),
       for tri in triangulation:
         where, = numpy.where( vsigns[tri] != 0 )
@@ -327,8 +327,8 @@ class Reference( cache.Immutable ):
 
     if check:
       posmosaic, negmosaic = mosaics
-      refcheck( posmosaic, posmosaic.edges + [ (postrans,edge) for postrans, negtrans, edge in ifaces ] + posouter )
-      refcheck( negmosaic, negmosaic.edges + [ (negtrans,edge) for postrans, negtrans, edge in ifaces ] + negouter )
+      refcheck( posmosaic, posmosaic.edges + [ (postrans,edge) for postrans, negtrans, edge in ifaces ] + zip(self.edge_transforms,posouter) )
+      refcheck( negmosaic, negmosaic.edges + [ (negtrans,edge) for postrans, negtrans, edge in ifaces ] + zip(self.edge_transforms,negouter) )
 
     return mosaics + (ifaces,posouter,negouter)
 
@@ -350,7 +350,8 @@ class Reference( cache.Immutable ):
 
     allpos = all( levels > 0 )
     if allpos or all( levels < 0 ):
-      return (self,None,[],[],[]) if allpos else (None,self,[],[],[])
+      return (self,None,[],[None]*self.nedges,[None]*self.nedges) if allpos \
+        else (None,self,[],[None]*self.nedges,[None]*self.nedges)
 
     if not maxrefine:
       assert evaluated_levels, 'failed to evaluate levelset up to level maxrefine'
@@ -358,7 +359,7 @@ class Reference( cache.Immutable ):
 
     poselems, negelems = [], []
     posinner, neginner = {}, {}
-    posouter, negouter = {}, {}
+    posouter, negouter = [None]*self.nedges, [None]*self.nedges
     ifaces = []
     for ichild, (ctrans,child) in enumerate( self.children ):
       if evaluated_levels:
@@ -375,33 +376,32 @@ class Reference( cache.Immutable ):
         negelems.append(( ctrans, cnegelem ))
       ifaces.extend( ( (ctrans<<postrans).flat, (ctrans<<negtrans).flat, edge ) for postrans, negtrans, edge in cifaces )
       for childouter, outer, inner in (cposouter,posouter,posinner), (cnegouter,negouter,neginner):
-        for outertrans, edge in childouter:
-          mytrans = ctrans<<outertrans
+        for ichildedge, edge in enumerate(childouter):
+          if not edge:
+            continue
+          mytrans = ctrans << child.edge_transforms[ichildedge]
           try:
-            etrans, xtrans = self.edgechilddict[mytrans]
+            iedge, xtrans = self.edgechilddict[mytrans]
           except KeyError:
             flat = mytrans.flat
             if not inner.pop( flat.flipped, False ):
               inner[flat] = edge
           else:
-            outer[etrans] = self.getedge(etrans).with_children( [(xtrans,edge)] ) | outer.get(etrans)
-
-    posouter = list( posouter.items() )
-    negouter = list( negouter.items() )
+            outer[iedge] |= self.edge_refs[iedge].with_children( [(xtrans,edge)] )
 
     if not negelems:
 
-      assert not ifaces and not negouter
+      assert not ifaces and not any(negouter)
       assert not posinner and not neginner
-      posmosaic = self.without_edges( posouter )
+      posmosaic = self.with_edges( edge - rmedge for edge, rmedge in zip( self.edge_refs, posouter ) )
       negmosaic = None
 
     elif not poselems:
 
-      assert not ifaces and not posouter
+      assert not ifaces and not any(posouter)
       assert not posinner and not neginner
       posmosaic = None
-      negmosaic = self.without_edges( negouter )
+      negmosaic = self.with_edges( edge - rmedge for edge, rmedge in zip( self.edge_refs, negouter ) )
 
     else:
 
@@ -417,7 +417,9 @@ class Reference( cache.Immutable ):
           trans2, edge2 = ref.edges[iedge]
           assert (elemtrans<<trans2).flat == trans.flipped
           ifaces.append(( trans, trans.flipped, edge|edge2 ))
-          negelems[ielem] = elemtrans, ref.without_edges( [(trans2,edge2)] )
+          edge_refs = list( ref.edge_refs )
+          edge_refs[iedge] -= edge2
+          negelems[ielem] = elemtrans, ref.with_edges( edge_refs )
 
       for trans, edge in neginner.items():
         edgeverts = trans.apply( edge.vertices )
@@ -426,16 +428,18 @@ class Reference( cache.Immutable ):
         trans2, edge2 = ref.edges[iedge]
         assert (elemtrans<<trans2).flat == trans.flipped
         ifaces.append(( trans.flipped, trans, edge|edge2 ))
-        poselems[ielem] = elemtrans, ref.without_edges( [(trans2,edge2)] )
+        edge_refs = list( ref.edge_refs )
+        edge_refs[iedge] -= edge2
+        poselems[ielem] = elemtrans, ref.with_edges( edge_refs )
 
       posmosaic = self.with_children( poselems )
       negmosaic = self.with_children( negelems )
 
     if check:
       if posmosaic:
-        refcheck( posmosaic, posmosaic.edges + [ (postrans,edge) for postrans, negtrans, edge in ifaces ] + posouter )
+        refcheck( posmosaic, posmosaic.edges + [ (postrans,edge) for postrans, negtrans, edge in ifaces ] + list(zip(self.edge_transforms,posouter)) )
       if negmosaic:
-        refcheck( negmosaic, negmosaic.edges + [ (negtrans,edge) for postrans, negtrans, edge in ifaces ] + negouter )
+        refcheck( negmosaic, negmosaic.edges + [ (negtrans,edge) for postrans, negtrans, edge in ifaces ] + list(zip(self.edge_transforms,negouter)) )
 
     return posmosaic, negmosaic, ifaces, posouter, negouter
 
