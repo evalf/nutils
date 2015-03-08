@@ -384,10 +384,10 @@ class Reference( cache.Immutable ):
             if not inner.pop( flat.flipped, False ):
               inner[flat] = edge
           else:
-            outer.setdefault( etrans, [] ).append(( xtrans, edge ))
+            outer[etrans] = self.getedge(etrans).with_children( [(xtrans,edge)] ) | outer.get(etrans)
 
-    posouter = [ ( etrans, self.getedge(etrans).with_children(children) ) for etrans, children in posouter.items() ]
-    negouter = [ ( etrans, self.getedge(etrans).with_children(children) ) for etrans, children in negouter.items() ]
+    posouter = list( posouter.items() )
+    negouter = list( negouter.items() )
 
     if not negelems:
 
@@ -1032,7 +1032,7 @@ class WithChildrenReference( Reference ):
     child_refs = tuple( child1 | child2 if child1 or child2 else None for child1, child2 in zip( self.child_refs, other.child_refs ) )
     assert child_refs
     if child_refs == self.baseref.child_refs:
-      return self
+      return self.baseref
     return WithChildrenReference( self.baseref, child_refs )
 
   def getischeme( self, ischeme ):

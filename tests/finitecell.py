@@ -121,7 +121,7 @@ def specialcases():
   domain, geom = mesh.rectilinear( [[0,.5],[0,.5],[0,.5,1]] )
   x, y, z = geom
 
-  for perturb, how in (0,'mid'), (1,'pos'), (-1,'neg'), (x-.5,'ramp'):#, (x-y,'tilt'):
+  for perturb, how in (0,'mid'), (1,'pos'), (-1,'neg'), (x-.5,'ramp'), (x-y,'tilt'):
     for maxrefine in 0, 1, 2:
 
       @unittest( how + str(maxrefine) )
