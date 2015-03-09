@@ -157,16 +157,18 @@ class TransformChain( tuple ):
     index = core.index( trans.fromdims == self.fromdims for trans in self )
     body = list( self[:index] )
     uptrans = self[index]
-    assert uptrans.todims == self.fromdims+1
-    for i in range( index+1, len(self) ):
-      scale = self[i]
-      if not isinstance( scale, Scale ):
-        break
-      newscale = Scale( scale.linear, uptrans.apply(scale.offset) - scale.linear * uptrans.offset )
-      body.append( newscale )
+    if uptrans.todims != self.fromdims+1:
+      i = index+1
     else:
-      i = len(self)+1
-    assert equivalent( body[index:]+[uptrans], self[index:i] )
+      for i in range( index+1, len(self) ):
+        scale = self[i]
+        if not isinstance( scale, Scale ):
+          break
+        newscale = Scale( scale.linear, uptrans.apply(scale.offset) - scale.linear * uptrans.offset )
+        body.append( newscale )
+      else:
+        i = len(self)+1
+      assert equivalent( body[index:]+[uptrans], self[index:i] )
     return TransformChain( TransformChain(body).promote(ndims)+(uptrans,)+self[i:] )
 
 

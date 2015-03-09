@@ -25,7 +25,7 @@ $Nodes
 13 0.750000000000653 0.749999999999347 0
 $EndNodes
 $Elements
-28
+29
 1 15 2 0 1 1
 2 15 2 0 2 2
 3 15 2 0 3 3
@@ -54,6 +54,7 @@ $Elements
 26 2 2 0 6 1 5 12
 27 2 2 0 6 2 6 10
 28 2 2 0 6 4 8 11
+29 15 2 0 7 9
 $EndElements'''
 
 gmsh_physical = '''\
@@ -77,7 +78,7 @@ $Nodes
 13 0.750000000000653 0.749999999999347 0
 $EndNodes
 $Elements
-24
+25
 1 1 2 7 1 1 5
 2 1 2 7 1 5 2
 3 1 2 7 2 2 6
@@ -102,6 +103,7 @@ $Elements
 22 2 2 9 6 1 5 12
 23 2 2 9 6 2 6 10
 24 2 2 9 6 4 8 11
+25 15 2 3 7 9
 $EndElements'''
 
 @register( 'elementary', gmsh_elementary, {}, 1, 4, True )
@@ -124,3 +126,9 @@ def check( data, tags, exact_volume, exact_length, use_elementary ):
   def divergence():
     volumes = domain.boundary.integrate( geom*geom.normal(), geometry=geom, ischeme='gauss1' )
     numpy.testing.assert_almost_equal( volumes, 1., decimal=10 )
+
+  @unittest
+  def pointeval():
+    xy = domain.points.elem_eval( geom, ischeme='gauss1' )
+    assert xy.shape == ( 7 if not use_elementary else 0, 2 )
+    assert numpy.all( xy == .5 )
