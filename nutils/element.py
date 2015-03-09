@@ -64,7 +64,8 @@ class Element( object ):
     return Element( edge, self.transform << trans, self.opposite << trans )
 
   def getedge( self, trans ):
-    edge = self.reference.getedge( trans )
+    iedge = self.reference.edge_transforms.index(trans)
+    edge = self.reference.edge_refs[iedge]
     return edge and Element( edge, self.transform << trans, self.opposite << trans )
 
   @property
@@ -178,14 +179,6 @@ class Reference( cache.Immutable ):
   @property
   def simplices( self ):
     return [ (transform.TransformChain(),self) ]
-
-  def getedge( self, trans ):
-    index = self.edge_transforms.index(trans)
-    return self.edge_refs[index]
-
-  def getchild( self, trans ):
-    index = self.child_transforms.index(trans)
-    return self.child_refs[index]
 
   @cache.property
   def childedgemap( self ):
@@ -487,8 +480,8 @@ class SimplexReference( Reference ):
     vertices = numpy.concatenate( [ numpy.zeros(ndims,dtype=int)[_,:],
                                     numpy.eye(ndims,dtype=int) ], axis=0 )
     Reference.__init__( self, vertices )
-    refcheck( self )
     self._bernsteincache = [] # TEMPORARY
+    refcheck( self )
 
   def stdfunc( self, degree ):
     if self.ndims == 1:
@@ -791,9 +784,10 @@ class SimplexReference( Reference ):
 
   @cache.property
   def edge_transforms( self ):
-    eye = numpy.eye( self.ndims, dtype=int )
-    return tuple([ transform.affine( (eye[1:]-eye[0]).T, eye[0] ) ]
-               + [ transform.affine( eye[ list(range(i))+list(range(i+1,self.ndims)) ].T, isflipped=(i%2==0) ) for i in range( self.ndims ) ])
+    vertices = numpy.zeros( (self.ndims+1,self.ndims), dtype=int )
+    vertices[1:] = numpy.eye( self.ndims, dtype=int )
+    return tuple([ transform.simplex( vertices[1:] ) ]
+               + [ transform.simplex( numpy.concatenate( [vertices[:i+1],vertices[i+2:]], axis=0 ), isflipped=(i%2==0) ) for i in range( self.ndims ) ])
 
   @property
   def edge_refs( self ):
@@ -1052,6 +1046,7 @@ class NeighborhoodTensorReference( TensorReference ):
     return self.singular_ischeme_quad( points ), weights
 
 class WithChildrenReference( Reference ):
+  'base reference with explicit children'
 
   def __init__( self, baseref, child_refs ):
     assert not isinstance( baseref, WithChildrenReference )
@@ -1074,6 +1069,10 @@ class WithChildrenReference( Reference ):
     if child_refs == self.baseref.child_refs:
       return self.baseref
     return WithChildrenReference( self.baseref, child_refs )
+
+  def __rsub__( self, baseref ):
+    assert self.baseref == baseref
+    return baseref.with_children( child - rmchild for child, rmchild in zip( baseref.child_refs, self.child_refs ) )
 
   def getischeme( self, ischeme ):
     'get integration scheme'
@@ -1098,39 +1097,20 @@ class WithChildrenReference( Reference ):
 
   @property
   def simplices( self ):
-    return self.__simplices
+    return [ (trans2<<trans1, simplex) for trans2, child in self.children for trans1, simplex in (child.simplices if child else []) ]
 
-  @property
-  def simplices( self ):
-    #return [ (trans2<<trans1, simplex) for trans2, child in self.children for trans1, simplex in child.simplices ]
-    simplices = []
-    for trans2, child in self.children:
-      if child:
-        for trans1, simplex in child.simplices:
-          simplices.append(( trans2<<trans1, simplex ))
-    return simplices
-
-  @property
+  @cache.property
   def edge_refs( self ):
-    return tuple( self.getedge(trans) for trans in self.edge_transforms )
-
-  @cache.argdict
-  def getedge( self, etrans ):
-    myedge = self.baseref.edge_transforms.index( etrans )
-    baseedge = self.baseref.edge_refs[myedge]
-    child_refs = [None] * baseedge.nchildren
+    all_child_refs = [ [None] * baseedge.nchildren for baseedge in self.baseref.edge_refs ]
     for child, row in zip( self.child_refs, self.baseref.childedgemap ):
       if child:
         for edge, (ichild,iedge,isouter) in zip( child.edge_refs, row ):
-          if isouter and iedge == myedge:
-            child_refs[ichild] = edge
-    return baseedge.with_children( child_refs )
-
-  def __rsub__( self, baseref ):
-    assert self.baseref == baseref
-    return baseref.with_children( child - self.getchild(ctrans) for ctrans, child in baseref.children )
+          if isouter:
+            all_child_refs[iedge][ichild] = edge
+    return tuple( baseedge.with_children( child_refs ) for baseedge, child_refs in zip( self.baseref.edge_refs, all_child_refs ) )
 
 class WithEdgesReference( Reference ):
+  'base reference with explicit edges'
 
   def __init__( self, baseref, edge_refs ):
     assert not isinstance( baseref, WithEdgesReference )
@@ -1148,6 +1128,7 @@ class WithEdgesReference( Reference ):
     return self.baseref.getischeme( ischeme )
 
 class MultiSimplexReference( Reference ):
+  'triangulation'
 
   def __init__( self, baseref, transforms, complement=None ):
     self.baseref = baseref
@@ -1564,5 +1545,6 @@ def refcheck( ref, edges=None, decimal=10 ):
     check_volume += numeric.contract( trans.apply(xe), w_normal, axis=0 )
   numpy.testing.assert_almost_equal( check_zero, 0, decimal, '%s fails divergence test' % ref )
   numpy.testing.assert_almost_equal( check_volume, volume, decimal, '%s fails divergence test' % ref )
+
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
