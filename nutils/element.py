@@ -116,12 +116,22 @@ class Reference( cache.Immutable ):
   def __or__( self, other ):
     if other is None:
       return self
-    if self == other:
+    if other == self:
       return self
     return NotImplemented
 
   def __ror__( self, other ):
     return self.__or__( other )
+
+  def __xor__( self, other ):
+    if other is None:
+      return self
+    if other == self:
+      return None
+    return NotImplemented
+
+  def __rxor__( self, other ):
+    return self.__xor__( self, other )
 
   def __sub__( self, other ):
     if other == self:
@@ -178,8 +188,29 @@ class Reference( cache.Immutable ):
     return self.child_refs[index]
 
   @cache.property
-  def edgechilddict( self ):
-    return { (etrans << ctrans).promote( self.ndims ): ( iedge, ctrans ) for iedge, (etrans,edge) in enumerate(self.edges) for ctrans in edge.child_transforms }
+  def childedgemap( self ):
+    vmap = {}
+    childedgemap = tuple( [None] * child.nedges for child in self.child_refs )
+    for iedge, (etrans,edge) in enumerate(self.edges):
+      for ichild, (ctrans,child) in enumerate(edge.children):
+        v = frozenset( str(c) for c in (etrans<<ctrans).apply(child.vertices) )
+        vmap[v] = ichild, iedge, True
+    for ichild, (ctrans,child) in enumerate(self.children):
+      for iedge, (etrans,edge) in enumerate(child.edges):
+        v = frozenset( str(c) for c in (ctrans<<etrans).apply(edge.vertices) )
+        try:
+          jchild, jedge, isouter = childedgemap[ichild][iedge] = vmap.pop(v)
+        except KeyError:
+          vmap[v] = ichild, iedge, False
+        else:
+          trans = ( self.child_transforms[ichild] << self.child_refs[ichild].edge_transforms[iedge] ).flat
+          if isouter:
+            assert trans == ( self.edge_transforms[jedge] << self.edge_refs[jedge].child_transforms[jchild] ).flat
+          else:
+            assert trans == ( self.child_transforms[jchild] << self.child_refs[jchild].edge_transforms[jedge] ).flat.flipped
+            childedgemap[jchild][jedge] = ichild, iedge, False
+    assert not vmap
+    return childedgemap
 
   @cache.property
   def edge2vertex( self ):
@@ -210,10 +241,10 @@ class Reference( cache.Immutable ):
       return self
     return WithEdgesReference( self, edge_refs )
 
-  def with_children( self, children ):
-    childdict = dict( children )
-    child_refs = tuple( childdict.pop(ctrans,None) for ctrans in self.child_transforms )
-    assert not childdict
+  def with_children( self, child_refs ):
+    child_refs = tuple(child_refs)
+    if not any( child_refs ):
+      return None
     if child_refs == self.child_refs:
       return self
     return WithChildrenReference( self, child_refs )
@@ -246,10 +277,11 @@ class Reference( cache.Immutable ):
 
     haspos = +1 in vsigns
     if not haspos or -1 not in vsigns:
+      empty = (None,)*self.nedges
       if ( vsigns == 0 ).sum() < self.ndims:
-        return (self,None,[],[],[]) if haspos else (None,self,[],[],[])
+        return (self,None,(),empty,empty) if haspos else (None,self,(),empty,empty)
       inner = []
-      outer = [ None ] * self.nedges
+      outer = list( empty )
       for iedge, onedge in enumerate( vertex2edge.T ):
         oniface = vsigns[onedge] == 0
         etrans, edge = self.edges[iedge]
@@ -271,7 +303,7 @@ class Reference( cache.Immutable ):
       ref = self.with_edges( inner )
       if check:
         refcheck( ref, ref.edges + zip(self.edge_transforms,outer) )
-      return (ref,None,[],outer,[None]*self.nedges) if haspos else (None,ref,[],[None]*self.nedges,outer)
+      return (ref,None,(),outer,empty) if haspos else (None,ref,(),empty,outer)
 
     postri, negtri = signed_triangulate( coords.astype(float), vsigns )
     assert len(postri) and len(negtri)
@@ -359,7 +391,8 @@ class Reference( cache.Immutable ):
 
     poselems, negelems = [], []
     posinner, neginner = {}, {}
-    posouter, negouter = [None]*self.nedges, [None]*self.nedges
+    posouter = [ [None]*edge.nchildren for edge in self.edge_refs ]
+    negouter = [ [None]*edge.nchildren for edge in self.edge_refs ]
     ifaces = []
     for ichild, (ctrans,child) in enumerate( self.children ):
       if evaluated_levels:
@@ -370,33 +403,34 @@ class Reference( cache.Immutable ):
         trans, levelfun = levels
         childlevels = trans << ctrans, levelfun
       cposelem, cnegelem, cifaces, cposouter, cnegouter = child.trim( childlevels, maxrefine-1, denom, check )
-      if cposelem:
-        poselems.append(( ctrans, cposelem ))
-      if cnegelem:
-        negelems.append(( ctrans, cnegelem ))
+      poselems.append( cposelem )
+      negelems.append( cnegelem )
       ifaces.extend( ( (ctrans<<postrans).flat, (ctrans<<negtrans).flat, edge ) for postrans, negtrans, edge in cifaces )
       for childouter, outer, inner in (cposouter,posouter,posinner), (cnegouter,negouter,neginner):
         for ichildedge, edge in enumerate(childouter):
           if not edge:
             continue
-          mytrans = ctrans << child.edge_transforms[ichildedge]
-          try:
-            iedge, xtrans = self.edgechilddict[mytrans]
-          except KeyError:
-            flat = mytrans.flat
-            if not inner.pop( flat.flipped, False ):
-              inner[flat] = edge
+          jchild, jedge, isouter = self.childedgemap[ichild][ichildedge]
+          if isouter:
+            outer[jedge][jchild] |= edge
           else:
-            outer[iedge] |= self.edge_refs[iedge].with_children( [(xtrans,edge)] )
+            ichild2, ichildedge2, edge2 = inner.pop( (jchild,jedge), (ichild,ichildedge,None) )
+            assert (ichild2,ichildedge2) == (ichild,ichildedge)
+            remaining = edge^edge2
+            if remaining:
+              inner[ichild,ichildedge] = jchild, jedge, remaining
 
-    if not negelems:
+    posouter = [ edge.with_children( child_refs ) for edge, child_refs in zip( self.edge_refs, posouter ) ]
+    negouter = [ edge.with_children( child_refs ) for edge, child_refs in zip( self.edge_refs, negouter ) ]
+
+    if not any(negelems):
 
       assert not ifaces and not any(negouter)
       assert not posinner and not neginner
       posmosaic = self.with_edges( edge - rmedge for edge, rmedge in zip( self.edge_refs, posouter ) )
       negmosaic = None
 
-    elif not poselems:
+    elif not any(poselems):
 
       assert not ifaces and not any(posouter)
       assert not posinner and not neginner
@@ -405,32 +439,34 @@ class Reference( cache.Immutable ):
 
     else:
 
-      for trans, edge in posinner.items():
-        flipped = trans.flipped
-        edge2 = neginner.pop( flipped, False )
-        if edge2:
-          ifaces.append(( trans, flipped, edge|edge2 ))
-        else:
-          edgeverts = trans.apply( edge.vertices )
-          ielem, iedge = findbyverts( negelems, trans.apply(edge.vertices) )
-          elemtrans, ref = negelems[ielem]
-          trans2, edge2 = ref.edges[iedge]
+      for (ichild,iedge), (jchild,jedge,edge) in posinner.items():
+        ctrans, child = self.children[ichild]
+        trans = (ctrans << child.edge_transforms[iedge]).flat
+        try:
+          ichild2, iedge2, edge2 = neginner.pop( (jchild,jedge) )
+        except KeyError:
+          elemtrans = self.child_transforms[jchild]
+          ref = negelems[jchild]
+          trans2, edge2 = ref.edges[jedge]
           assert (elemtrans<<trans2).flat == trans.flipped
           ifaces.append(( trans, trans.flipped, edge|edge2 ))
           edge_refs = list( ref.edge_refs )
-          edge_refs[iedge] -= edge2
-          negelems[ielem] = elemtrans, ref.with_edges( edge_refs )
+          edge_refs[jedge] -= edge2
+          negelems[jchild] = ref.with_edges( edge_refs )
+        else:
+          ifaces.append(( trans, trans.flipped, edge|edge2 ))
 
-      for trans, edge in neginner.items():
-        edgeverts = trans.apply( edge.vertices )
-        ielem, iedge = findbyverts( poselems, trans.apply(edge.vertices) )
-        elemtrans, ref = poselems[ielem]
-        trans2, edge2 = ref.edges[iedge]
+      for (ichild,iedge), (jchild,jedge,edge) in neginner.items():
+        ctrans, child = self.children[ichild]
+        trans = (ctrans << child.edge_transforms[iedge]).flat
+        elemtrans = self.child_transforms[jchild]
+        ref = poselems[jchild]
+        trans2, edge2 = ref.edges[jedge]
         assert (elemtrans<<trans2).flat == trans.flipped
         ifaces.append(( trans.flipped, trans, edge|edge2 ))
         edge_refs = list( ref.edge_refs )
-        edge_refs[iedge] -= edge2
-        poselems[ielem] = elemtrans, ref.with_edges( edge_refs )
+        edge_refs[jedge] -= edge2
+        poselems[jchild] = ref.with_edges( edge_refs )
 
       posmosaic = self.with_children( poselems )
       negmosaic = self.with_children( negelems )
@@ -1019,7 +1055,7 @@ class WithChildrenReference( Reference ):
 
   def __init__( self, baseref, child_refs ):
     assert not isinstance( baseref, WithChildrenReference )
-    assert isinstance( child_refs, tuple ) and len(child_refs) == len(baseref.child_transforms) and any(child_refs) and child_refs != baseref.child_refs
+    assert isinstance( child_refs, tuple ) and len(child_refs) == baseref.nchildren and any(child_refs) and child_refs != baseref.child_refs
     self.baseref = baseref
     self.edge_transforms = baseref.edge_transforms
     self.child_transforms = baseref.child_transforms
@@ -1078,38 +1114,25 @@ class WithChildrenReference( Reference ):
 
   @cache.argdict
   def getedge( self, etrans ):
-    parts = []
-    iscomplete = True
-    baseedge = self.baseref.getedge( etrans )
-    assert baseedge
-    for ctrans, cedge in baseedge.children:
-      trans = ( etrans << ctrans ).promote( self.ndims )
-      child = self.getchild( trans.sliceto(-1) )
-      edge = child and child.getedge( trans.slicefrom(-1) )
-      if edge:
-        parts.append(( ctrans, edge ))
-      if iscomplete:
-        iscomplete = edge == cedge
-    if iscomplete:
-      return baseedge
-    if not parts:
-      return None
-    return baseedge.with_children( parts )
+    myedge = self.baseref.edge_transforms.index( etrans )
+    baseedge = self.baseref.edge_refs[myedge]
+    child_refs = [None] * baseedge.nchildren
+    for child, row in zip( self.child_refs, self.baseref.childedgemap ):
+      if child:
+        for edge, (ichild,iedge,isouter) in zip( child.edge_refs, row ):
+          if isouter and iedge == myedge:
+            child_refs[ichild] = edge
+    return baseedge.with_children( child_refs )
 
   def __rsub__( self, baseref ):
     assert self.baseref == baseref
-    complements = []
-    for ctrans, child in baseref.children:
-      complement = child - self.getchild(ctrans)
-      if complement:
-        complements.append(( ctrans, complement ))
-    return baseref.with_children( complements )
+    return baseref.with_children( child - self.getchild(ctrans) for ctrans, child in baseref.children )
 
 class WithEdgesReference( Reference ):
 
   def __init__( self, baseref, edge_refs ):
     assert not isinstance( baseref, WithEdgesReference )
-    assert isinstance( edge_refs, tuple ) and len(edge_refs) == len(baseref.edge_transforms) and any(edge_refs) and edge_refs != getattr(baseref,'edge_refs',None)
+    assert isinstance( edge_refs, tuple ) and len(edge_refs) == baseref.nedges and any(edge_refs) and edge_refs != getattr(baseref,'edge_refs',None)
     self.baseref = baseref
     self.edge_transforms = baseref.edge_transforms
     self.edge_refs = edge_refs
@@ -1535,14 +1558,5 @@ def refcheck( ref, edges=None, decimal=10 ):
     check_volume += numeric.contract( trans.apply(xe), w_normal, axis=0 )
   numpy.testing.assert_almost_equal( check_zero, 0, decimal, '%s fails divergence test' % ref )
   numpy.testing.assert_almost_equal( check_volume, volume, decimal, '%s fails divergence test' % ref )
-
-def findbyverts( elems, edgeverts ):
-  for ielem, (elemtrans,ref) in enumerate( elems ):
-    elemverts = elemtrans.apply( ref.vertices )
-    match = ( elemverts[:,_,:] == edgeverts[_,:,:] ).all( axis=2 ).any( axis=1 )
-    if sum(match) == len(edgeverts):
-      (iedge,), = numpy.where( ref.edge2vertex[:,match].all(axis=1) )
-      return ielem, iedge
-  raise KeyError
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
