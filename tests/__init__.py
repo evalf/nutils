@@ -49,6 +49,11 @@ def _package( f, __scope__ ):
     except Exception, e:
       log.stack( 'error: {}'.format(e) )
       results0.append(( __scope__, 3 ))
+      if tbexplore:
+        intro = '''Test package {!r} failed. The traceback explorer allows you
+          to examine the failure state. Closing the explorer will resume
+          testing with the next package.'''.format(__scope__)
+        debug.traceback_explorer( sys.exc_info(), intro )
     else:
       dt = time.time() - t0
       npassed = sum( status == 0 for name, status in __results__ )
@@ -101,8 +106,9 @@ def unittest( arg ):
     if captured:
       log.error( 'captured output:\n-----\n{}-----'.format(captured) )
     if tbexplore:
-      intro = '''Unit test failed. The traceback explorer allows you to examine
-        the failure state. Closing the explorer will resume testing.'''
+      intro = '''Unit test {!r} failed. The traceback explorer allows you to
+        examine the failure state. Closing the explorer will resume
+        testing.'''.format( name )
       debug.traceback_explorer( exc_info, intro )
 
 
