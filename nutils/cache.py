@@ -12,7 +12,7 @@ The cache module.
 
 from __future__ import print_function, division
 from . import core, log, rational
-import os, sys, weakref, numpy
+import os, sys, weakref, numpy, functools
 
 
 _property = property
@@ -29,19 +29,17 @@ def property( f ):
   return _property(cache_property_wrapper)
 
 def argdict( f ):
-  def cache_argdict_wrapper( self, f=f ):
-    cache = self.__dict__.setdefault( f.__name__, {} )
-    def f_wrapped( *args ):
-      key = _hashable( args )
-      try:
-        value = cache[key]
-      except KeyError:
-        value = f( self, *args )
-        cache[key] = value
-      return value
-    return f_wrapped
-  assert not cache_argdict_wrapper.__closure__
-  return _property(cache_argdict_wrapper)
+  cache = {}
+  @functools.wraps( f )
+  def f_wrapped( *args ):
+    key = _hashable( args )
+    try:
+      value = cache[key]
+    except KeyError:
+      value = f( *args )
+      cache[key] = value
+    return value
+  return f_wrapped
 
 class HashableArray( object ):
   # FRAGILE: assumes contents are not going to be changed

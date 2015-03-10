@@ -20,7 +20,7 @@ def check():
 
   @unittest
   def line():
-    ref = element.SimplexReference(1)
+    ref = element.LineReference()
     a = numpy.sqrt(1/3.)
     b = numpy.sqrt(3/5.)
     _test( ref, 'gauss1', [[.5]], [1.] )
@@ -33,7 +33,7 @@ def check():
     _test( ref, 'uniform3', [[1/6.],[1/2.],[5/6.]], [1/3.]*3 )
 
   def quad():
-    ref = element.SimplexReference(1)**2
+    ref = element.LineReference()**2
     a = numpy.sqrt(1/3.)
     b = numpy.sqrt(3/5.)
     _test( ref, 'gauss1', [[.5,.5]], [1.] )
@@ -48,7 +48,7 @@ def check():
     _test( ref, 'uniform2*gauss2', [[.25,.5-.5*a],[.25,.5+.5*a],[.75,.5-.5*a],[.75,.5+.5*a]], [1/4.]*4 )
 
   def testTriangle():
-    ref = element.SimplexReference(2)
+    ref = element.TriangleReference()
     _test( ref, 'gauss1', [[1/3.,1/3.]], [.5] )
     _test( ref, 'gauss2', [[2/3.,1/6.],[1/6.,2/3.],[1/6.,1/6.]], [1/6.]*3 )
     _test( ref, 'gauss3', [[1/3.,1/3.],[3/5.,1/5.],[1/5.,3/5.],[1/5.,1/5.]], [-9/32.,25/96.,25/96.,25/96.] )
@@ -56,11 +56,11 @@ def check():
     _test( ref, 'uniform2', [[1/6.,1/6.],[1/6.,2/3.],[2/3.,1/6.],[1/3.,1/3.]], [1/8.]*4 )
 
   def testHexagon():
-    ref = element.SimplexReference(1)**3
+    ref = element.LineReference()**3
     _test( ref, 'uniform1', [[.5,.5,.5]], [1.] )
 
   def testPrism():
-    ref = element.SimplexReference(1)*element.SimplexReference(2)
+    ref = element.LineReference()*element.TriangleReference()
     _test( ref, 'uniform1', [[.5,1/3.,1/3.]], [.5] )
     _test( ref, 'uniform2', [[.25,1/6.,1/6.],[.25,1/6.,2/3.],[.25,2/3.,1/6.],[.25,1/3.,1/3.],[.75,1/6.,1/6.],[.75,1/6.,2/3.],[.75,2/3.,1/6.],[.75,1/3.,1/3.]], [1/16.]*8 )
     _test( ref, 'uniform1*gauss2', [[.5,2/3.,1/6.],[.5,1/6.,2/3.],[.5,1/6.,1/6.]], [1/6.]*3 )

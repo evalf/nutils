@@ -355,6 +355,7 @@ def affine( linear=None, offset=None, numer=1, isflipped=False ):
     else Shift( r_offset ), ))
 
 def simplex( coords, isflipped=False ):
+  coords = rational.asarray(coords)
   offset = coords[0]
   return affine( (coords[1:]-offset).T, offset, isflipped=isflipped )
 

@@ -11,11 +11,11 @@ def neighbor( elem1, elem2 ):
   ncommon = sum( v in elem1_vertices for v in elem2.vertices )
   if not ncommon:
     return -1
-  if elem1.reference == elem2.reference == element.SimplexReference(1):
+  if elem1.reference == elem2.reference == element.LineReference():
     return {2:0,1:1}[ncommon]
-  if elem1.reference == elem2.reference == element.SimplexReference(1)**2:
+  if elem1.reference == elem2.reference == element.LineReference()**2:
     return {4:0,2:1,1:2}[ncommon]
-  if elem1.reference == elem2.reference == element.SimplexReference(1)**3:
+  if elem1.reference == elem2.reference == element.LineReference()**3:
     return {8:0,4:1,2:2,1:3}[ncommon]
   raise NotImplementedError( '%s, %s' % ( elem1.reference, elem2.reference ) )
 

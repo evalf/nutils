@@ -2,79 +2,42 @@
 
 from nutils import *
 from . import register, unittest
-import math, re
+import scipy.special, re
 
-def _test( MAXORDER, elem, F, EPS=1e-12 ):
-  funcstring = '*'.join(['x^%d','y^%d','z^%d'][:elem.ndims])
-  for ab in numpy.ndindex( (MAXORDER,)*elem.ndims ):
-    exact = F(*ab)
-    order = sum(ab)
-    #log.info( ('\nIntegrating f = ' + funcstring + ', order = %d, elem = %s') % tuple(list(ab)+[order,elem]) )
-    #log.info( 'Exact: F = %8.6e' % exact )
-    for p in range( 1, MAXORDER+1 ):
-      name = 'gauss%d' % p
-      points, weights = elem.reference.getischeme( name )
 
-      Fq = (weights*numpy.prod(points**numpy.array(ab)[_,:],axis=1)).sum()
-
-      err = abs(Fq-exact)/exact
-
-      #log.info( '%s: n = %02d, F = %8.6e, rel.err. = %8.6e, %s' % (name,len(weights),Fq,err,'Exact' if err < EPS else 'Not exact') )
-
-      if elem.reference == element.SimplexReference(1)**elem.ndims:
-        expect_exact = p // 2 >= numpy.amax(ab) // 2
-      else:
-        expect_exact = p >= order
-
-      if expect_exact:
-        assert err < EPS, 'Integration should be exact'
-      else:
-        # Counterexamples can be constructed, but in the case of monomials with MAXORDER<8 this assert is verified
-        assert err > EPS, 'Integration should not be exact'
-
-@register
-def gauss():
+@register( 'line', 1, True )
+@register( 'quad', 2, True )
+@register( 'hex', 3, True )
+@register( 'tri', 2, False )
+@register( 'tet', 3, False, maxdegree=8 )
+def gauss( ndims, istensor, maxdegree=7, eps=1e-12 ):
   # Gaussian quadrature and exact integration on different element types
 
-  @unittest
-  def lineelement():
-    MAXORDER = 7
-    roottrans = transform.roottrans( 'test', (0,) )
-    elem = element.Element( element.SimplexReference(1), roottrans )
-    F = lambda a: 1./float(1+a)
-    _test( MAXORDER, elem, F )
+  if istensor:
+    ref = element.LineReference()**ndims
+    exactfun = lambda p: 1./(numpy.asarray(p)+1).prod()
+  else:
+    ref = element.getsimplex(ndims)
+    exactfun = lambda p: scipy.special.gamma(1+numpy.asarray(p)).prod()/scipy.special.gamma(len(p)+1+sum(p))
+
+  callcache = cache.CallDict()
 
   @unittest
-  def quadelement():
-    MAXORDER = 7
-    roottrans = transform.roottrans( 'test', (0,0) )
-    elem = element.Element( element.SimplexReference(1)**2, roottrans )
-    F = lambda *args: numpy.prod(numpy.array(args)+1)**-1.
-    _test( MAXORDER, elem, F )
+  def check():
 
-  @unittest
-  def hexelement():
-    MAXORDER = 7
-    roottrans = transform.roottrans( 'test', (0,0,0) )
-    elem = element.Element( element.SimplexReference(1)**3, roottrans )
-    F = lambda *args: numpy.prod(numpy.array(args)+1)**-1.
-    _test( MAXORDER, elem, F )
+    for p in numpy.ndindex( (maxdegree,)*ref.ndims ):
+      exact = exactfun( p )
+      for degree in range( 1, maxdegree+1 ):
+        points, weights = callcache( ref.getischeme, 'gauss%d' % degree )
+        result = numpy.dot( weights, numpy.prod(points**p,axis=1) )
+        error = abs(result-exact) / exact
+        expect_exact = degree // 2 >= max(p) // 2 if istensor else degree >= sum(p)
+        if expect_exact:
+          assert error < eps, 'integration should be exact'
+        else:
+          assert error > eps, 'integration should not be exact'
+          # Counterexamples can be constructed, but in the case of monomials with maxdegree<8 this assert is verified
 
-  @unittest
-  def triangularelement():
-    MAXORDER = 7
-    roottrans = transform.roottrans( 'test', (0,0) )
-    elem = element.Element( element.SimplexReference(2), roottrans )
-    F = lambda a,b: math.gamma(1+a)*math.gamma(1+b)/math.gamma(3+a+b)
-    _test( MAXORDER, elem, F )
-
-  @unittest
-  def tetrahedralelement():
-    MAXORDER = 8
-    roottrans = transform.roottrans( 'test', (0,0,0) )
-    elem = element.Element( element.SimplexReference(3), roottrans )
-    F = lambda a,b,c: math.gamma(1+a)*math.gamma(1+b)*math.gamma(1+c)/math.gamma(4+a+b+c)
-    _test( MAXORDER, elem, F )
 
 class TestSingularQuadrature( object ):
   # Singular bivariate quadrature and convergence on quadrilaterals

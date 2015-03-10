@@ -52,7 +52,7 @@ def rectilinear( richshape, periodic=(), name='rect' ):
     assert all( ( name.take(0,i) == name.take(2,i) ).all() for i in periodic )
     root = transform.roottransedges( name, shape )
 
-  reference = element.SimplexReference(1)**ndims
+  reference = element.LineReference()**ndims
   for index in indices.reshape( ndims, -1 ).T:
     structure[tuple(index)] = element.Element( reference, root << transform.affine(offset=index) )
   topo = topology.StructuredTopology( structure, periodic=periodic )
@@ -156,7 +156,7 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
         elemcoords = coords[nids]
         if numpy.linalg.det( elemcoords[:2] - elemcoords[2] ) < 0:
           nids[:2] = nids[1], nids[0]
-        ref = element.SimplexReference(2)
+        ref = element.TriangleReference()
         maptrans = transform.maptrans(ref.vertices,nids if not name else [name+str(nid) for nid in nids])
         elem = element.Element(ref,maptrans)
         elems[elemkey] = elem
@@ -172,7 +172,7 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
             edges[edgekey] = elem.edge(iedge)
 
         #Extract the vertices
-        vref = element.SimplexReference(0)
+        vref = element.PointReference()
         for ivertex in range(3): #GMSH and Nutils node ordering coincide
           zeroD_to_twoD = transform.affine( linear=numpy.zeros(shape=(2,0),dtype=int),offset=ref.vertices[ivertex] )
           vmaptrans = maptrans << zeroD_to_twoD
@@ -389,7 +389,7 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   
   elements = []
   root = transform.roottrans( 'demo', shape=(0,0) )
-  reference = element.SimplexReference(2)
+  reference = element.TriangleReference()
   for ielem, elemvertices in enumerate( vertices ):
     elemcoords = coords[ numpy.array(elemvertices) ]
     trans = transform.affine( (elemcoords[:2]-elemcoords[2]).T, elemcoords[2] )

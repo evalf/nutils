@@ -156,7 +156,7 @@ class Reference( cache.Immutable ):
 
   def __pow__( self, n ):
     assert numeric.isint( n ) and n >= 0
-    return SimplexReference(0) if n == 0 \
+    return PointReference() if n == 0 \
       else self if n == 1 \
       else self * self**(n-1)
 
@@ -342,10 +342,9 @@ class Reference( cache.Immutable ):
               ifaces[key] = tri, iedge
 
     ifaces = []
-    simplex = SimplexReference( self.ndims )
     for key, (tri,iedge) in posifaces.items():
       negifaces.pop( key )
-      etrans, edge = simplex.edges[iedge]
+      etrans, edge = getsimplex(self.ndims).edges[iedge]
       trans = ( transform.simplex( coords[tri] ) << etrans ).flat
       ifaces.append(( trans, trans.flipped, edge ))
     assert not negifaces
@@ -477,21 +476,10 @@ class SimplexReference( Reference ):
 
   def __init__( self, ndims ):
     assert ndims >= 0
-    vertices = numpy.concatenate( [ numpy.zeros(ndims,dtype=int)[_,:],
-                                    numpy.eye(ndims,dtype=int) ], axis=0 )
+    vertices = numpy.concatenate( [ numpy.zeros(ndims,dtype=int)[_,:], numpy.eye(ndims,dtype=int) ], axis=0 )
+    if ndims:
+      self.edge_refs = (getsimplex(ndims-1),) * (ndims+1)
     Reference.__init__( self, vertices )
-    self._bernsteincache = [] # TEMPORARY
-    refcheck( self )
-
-  def stdfunc( self, degree ):
-    if self.ndims == 1:
-      if len(self._bernsteincache) <= degree or self._bernsteincache[degree] is None:
-        self._bernsteincache += [None] * (degree-len(self._bernsteincache))
-        self._bernsteincache.append( PolyLine( PolyLine.bernstein_poly(degree) ) )
-      return self._bernsteincache[degree]
-    if self.ndims == 2:
-      return PolyTriangle(degree)
-    raise NotImplementedError
 
   @cache.property
   def ribbon2vertices( self ):
@@ -501,302 +489,223 @@ class SimplexReference( Reference ):
   def edge2vertices( self ):
     return ~numpy.eye( self.nverts, dtype=bool )
 
-  def getischeme_contour( self, n ):
-    assert self.ndims == 2
-    p = numpy.arange( n+1, dtype=float ) / (n+1)
-    z = numpy.zeros_like( p )
-    return numpy.hstack(( [1-p,p], [z,1-p], [p,z] )).T, None
-
-  def getischeme_vtk( self ):
-    assert self.ndims in (2,3)
-    return self.vertices.astype(float), None
-
-  def getischeme_gauss( self, degree ):
-    '''get integration scheme
-    http://www.cs.rpi.edu/~flaherje/pdf/fea6.pdf
-    '''
-    if isinstance( degree, tuple ):
-      assert len(degree) == self.ndims
-      degree = sum(degree)
-
-    assert isinstance( degree, int ) and degree >= 0
-    if self.ndims == 0: # point
-      return numpy.zeros((1,0)), numpy.ones(1)
-    if self.ndims == 1: # line
-      x, w = gauss( degree )
-      return x[:,_], w
-    if self.ndims == 2: # triangle: http://www.cs.rpi.edu/~flaherje/pdf/fea6.pdf
-      if degree == 1:
-        coords = numpy.array( [[1],[1]] ) / 3.
-        weights = numpy.array( [1] ) / 2.
-      elif degree == 2:
-        coords = numpy.array( [[4,1,1],[1,4,1]] ) / 6.
-        weights = numpy.array( [1,1,1] ) / 6.
-      elif degree == 3:
-        coords = numpy.array( [[5,9,3,3],[5,3,9,3]] ) / 15.
-        weights = numpy.array( [-27,25,25,25] ) / 96.
-      elif degree == 4:
-        A = 0.091576213509771; B = 0.445948490915965; W = 0.109951743655322
-        coords = numpy.array( [[1-2*A,A,A,1-2*B,B,B],[A,1-2*A,A,B,1-2*B,B]] )
-        weights = numpy.array( [W,W,W,1/3.-W,1/3.-W,1/3.-W] ) / 2.
-      elif degree == 5:
-        A = 0.101286507323456; B = 0.470142064105115; V = 0.125939180544827; W = 0.132394152788506
-        coords = numpy.array( [[1./3,1-2*A,A,A,1-2*B,B,B],[1./3,A,1-2*A,A,B,1-2*B,B]] )
-        weights = numpy.array( [1-3*V-3*W,V,V,V,W,W,W] ) / 2.
-      elif degree == 6:
-        A = 0.063089014491502; B = 0.249286745170910; C = 0.310352451033785; D = 0.053145049844816; V = 0.050844906370207; W = 0.116786275726379
-        VW = 1/6. - (V+W) / 2.
-        coords = numpy.array( [[1-2*A,A,A,1-2*B,B,B,1-C-D,1-C-D,C,C,D,D],[A,1-2*A,A,B,1-2*B,B,C,D,1-C-D,D,1-C-D,C]] )
-        weights = numpy.array( [V,V,V,W,W,W,VW,VW,VW,VW,VW,VW] ) / 2.
-      else:
-        A = 0.260345966079038; B = 0.065130102902216; C = 0.312865496004875; D = 0.048690315425316; U = 0.175615257433204; V = 0.053347235608839; W = 0.077113760890257
-        coords = numpy.array( [[1./3,1-2*A,A,A,1-2*B,B,B,1-C-D,1-C-D,C,C,D,D],[1./3,A,1-2*A,A,B,1-2*B,B,C,D,1-C-D,D,1-C-D,C]] )
-        weights = numpy.array( [1-3*U-3*V-6*W,U,U,U,V,V,V,W,W,W,W,W,W] ) / 2.
-        if degree > 7:
-          warnings.warn('Inexact integration for polynomial of degree %i'%degree)
-    elif self.ndims == 3: # tetrahedron: http://people.sc.fsu.edu/~jburkardt/datasets/quadrature_rules_tet/quadrature_rules_tet.html'''
-      if degree == 1:
-        coords = numpy.array( [[1],[1],[1]] ) / 4.
-        weights = numpy.array( [1] ) / 6.
-      elif degree == 2:
-        coords = numpy.array([[0.5854101966249685,0.1381966011250105,0.1381966011250105],
-                              [0.1381966011250105,0.1381966011250105,0.1381966011250105],
-                              [0.1381966011250105,0.1381966011250105,0.5854101966249685],
-                              [0.1381966011250105,0.5854101966249685,0.1381966011250105]]).T
-        weights = numpy.array([1,1,1,1]) / 24.
-      elif degree == 3:
-        coords = numpy.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
-                              [0.5000000000000000,0.1666666666666667,0.1666666666666667],
-                              [0.1666666666666667,0.1666666666666667,0.1666666666666667],
-                              [0.1666666666666667,0.1666666666666667,0.5000000000000000],
-                              [0.1666666666666667,0.5000000000000000,0.1666666666666667]]).T
-        weights = numpy.array([-0.8000000000000000,0.4500000000000000,0.4500000000000000,0.4500000000000000,0.4500000000000000]) / 6.
-      elif degree == 4:
-        coords = numpy.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
-                              [0.7857142857142857,0.0714285714285714,0.0714285714285714],
-                              [0.0714285714285714,0.0714285714285714,0.0714285714285714],
-                              [0.0714285714285714,0.0714285714285714,0.7857142857142857],
-                              [0.0714285714285714,0.7857142857142857,0.0714285714285714],
-                              [0.1005964238332008,0.3994035761667992,0.3994035761667992],
-                              [0.3994035761667992,0.1005964238332008,0.3994035761667992],
-                              [0.3994035761667992,0.3994035761667992,0.1005964238332008],
-                              [0.3994035761667992,0.1005964238332008,0.1005964238332008],
-                              [0.1005964238332008,0.3994035761667992,0.1005964238332008],
-                              [0.1005964238332008,0.1005964238332008,0.3994035761667992]]).T
-        weights = numpy.array([-0.0789333333333333,0.0457333333333333,0.0457333333333333,0.0457333333333333,0.0457333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333,0.1493333333333333]) / 6.
-      elif degree == 5:
-        coords = numpy.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
-                              [0.0000000000000000,0.3333333333333333,0.3333333333333333],
-                              [0.3333333333333333,0.3333333333333333,0.3333333333333333],
-                              [0.3333333333333333,0.3333333333333333,0.0000000000000000],
-                              [0.3333333333333333,0.0000000000000000,0.3333333333333333],
-                              [0.7272727272727273,0.0909090909090909,0.0909090909090909],
-                              [0.0909090909090909,0.0909090909090909,0.0909090909090909],
-                              [0.0909090909090909,0.0909090909090909,0.7272727272727273],
-                              [0.0909090909090909,0.7272727272727273,0.0909090909090909],
-                              [0.4334498464263357,0.0665501535736643,0.0665501535736643],
-                              [0.0665501535736643,0.4334498464263357,0.0665501535736643],
-                              [0.0665501535736643,0.0665501535736643,0.4334498464263357],
-                              [0.0665501535736643,0.4334498464263357,0.4334498464263357],
-                              [0.4334498464263357,0.0665501535736643,0.4334498464263357],
-                              [0.4334498464263357,0.4334498464263357,0.0665501535736643]]).T
-        weights = numpy.array([0.1817020685825351,0.0361607142857143,0.0361607142857143,0.0361607142857143,0.0361607142857143,0.0698714945161738,0.0698714945161738,0.0698714945161738,0.0698714945161738,0.0656948493683187,0.0656948493683187,0.0656948493683187,0.0656948493683187,0.0656948493683187,0.0656948493683187]) / 6.
-      elif degree == 6:
-        coords = numpy.array([[0.3561913862225449,0.2146028712591517,0.2146028712591517],
-                              [0.2146028712591517,0.2146028712591517,0.2146028712591517],
-                              [0.2146028712591517,0.2146028712591517,0.3561913862225449],
-                              [0.2146028712591517,0.3561913862225449,0.2146028712591517],
-                              [0.8779781243961660,0.0406739585346113,0.0406739585346113],
-                              [0.0406739585346113,0.0406739585346113,0.0406739585346113],
-                              [0.0406739585346113,0.0406739585346113,0.8779781243961660],
-                              [0.0406739585346113,0.8779781243961660,0.0406739585346113],
-                              [0.0329863295731731,0.3223378901422757,0.3223378901422757],
-                              [0.3223378901422757,0.3223378901422757,0.3223378901422757],
-                              [0.3223378901422757,0.3223378901422757,0.0329863295731731],
-                              [0.3223378901422757,0.0329863295731731,0.3223378901422757],
-                              [0.2696723314583159,0.0636610018750175,0.0636610018750175],
-                              [0.0636610018750175,0.2696723314583159,0.0636610018750175],
-                              [0.0636610018750175,0.0636610018750175,0.2696723314583159],
-                              [0.6030056647916491,0.0636610018750175,0.0636610018750175],
-                              [0.0636610018750175,0.6030056647916491,0.0636610018750175],
-                              [0.0636610018750175,0.0636610018750175,0.6030056647916491],
-                              [0.0636610018750175,0.2696723314583159,0.6030056647916491],
-                              [0.2696723314583159,0.6030056647916491,0.0636610018750175],
-                              [0.6030056647916491,0.0636610018750175,0.2696723314583159],
-                              [0.0636610018750175,0.6030056647916491,0.2696723314583159],
-                              [0.2696723314583159,0.0636610018750175,0.6030056647916491],
-                              [0.6030056647916491,0.2696723314583159,0.0636610018750175]]).T
-        weights = numpy.array([0.0399227502581679,0.0399227502581679,0.0399227502581679,0.0399227502581679,0.0100772110553207,0.0100772110553207,0.0100772110553207,0.0100772110553207,0.0553571815436544,0.0553571815436544,0.0553571815436544,0.0553571815436544,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857,0.0482142857142857]) / 6.
-      elif degree == 7:
-        coords = numpy.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
-                              [0.7653604230090441,0.0782131923303186,0.0782131923303186],
-                              [0.0782131923303186,0.0782131923303186,0.0782131923303186],
-                              [0.0782131923303186,0.0782131923303186,0.7653604230090441],
-                              [0.0782131923303186,0.7653604230090441,0.0782131923303186],
-                              [0.6344703500082868,0.1218432166639044,0.1218432166639044],
-                              [0.1218432166639044,0.1218432166639044,0.1218432166639044],
-                              [0.1218432166639044,0.1218432166639044,0.6344703500082868],
-                              [0.1218432166639044,0.6344703500082868,0.1218432166639044],
-                              [0.0023825066607383,0.3325391644464206,0.3325391644464206],
-                              [0.3325391644464206,0.3325391644464206,0.3325391644464206],
-                              [0.3325391644464206,0.3325391644464206,0.0023825066607383],
-                              [0.3325391644464206,0.0023825066607383,0.3325391644464206],
-                              [0.0000000000000000,0.5000000000000000,0.5000000000000000],
-                              [0.5000000000000000,0.0000000000000000,0.5000000000000000],
-                              [0.5000000000000000,0.5000000000000000,0.0000000000000000],
-                              [0.5000000000000000,0.0000000000000000,0.0000000000000000],
-                              [0.0000000000000000,0.5000000000000000,0.0000000000000000],
-                              [0.0000000000000000,0.0000000000000000,0.5000000000000000],
-                              [0.2000000000000000,0.1000000000000000,0.1000000000000000],
-                              [0.1000000000000000,0.2000000000000000,0.1000000000000000],
-                              [0.1000000000000000,0.1000000000000000,0.2000000000000000],
-                              [0.6000000000000000,0.1000000000000000,0.1000000000000000],
-                              [0.1000000000000000,0.6000000000000000,0.1000000000000000],
-                              [0.1000000000000000,0.1000000000000000,0.6000000000000000],
-                              [0.1000000000000000,0.2000000000000000,0.6000000000000000],
-                              [0.2000000000000000,0.6000000000000000,0.1000000000000000],
-                              [0.6000000000000000,0.1000000000000000,0.2000000000000000],
-                              [0.1000000000000000,0.6000000000000000,0.2000000000000000],
-                              [0.2000000000000000,0.1000000000000000,0.6000000000000000],
-                              [0.6000000000000000,0.2000000000000000,0.1000000000000000]]).T
-        weights = numpy.array([0.1095853407966528,0.0635996491464850,0.0635996491464850,0.0635996491464850,0.0635996491464850,-0.3751064406859797,-0.3751064406859797,-0.3751064406859797,-0.3751064406859797,0.0293485515784412,0.0293485515784412,0.0293485515784412,0.0293485515784412,0.0058201058201058,0.0058201058201058,0.0058201058201058,0.0058201058201058,0.0058201058201058,0.0058201058201058,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105,0.1653439153439105]) / 6.
-      else: #degree=8 exact otherwise not exact
-        coords = numpy.array([[0.2500000000000000,0.2500000000000000,0.2500000000000000],
-                              [0.6175871903000830,0.1274709365666390,0.1274709365666390],
-                              [0.1274709365666390,0.1274709365666390,0.1274709365666390],
-                              [0.1274709365666390,0.1274709365666390,0.6175871903000830],
-                              [0.1274709365666390,0.6175871903000830,0.1274709365666390],
-                              [0.9037635088221031,0.0320788303926323,0.0320788303926323],
-                              [0.0320788303926323,0.0320788303926323,0.0320788303926323],
-                              [0.0320788303926323,0.0320788303926323,0.9037635088221031],
-                              [0.0320788303926323,0.9037635088221031,0.0320788303926323],
-                              [0.4502229043567190,0.0497770956432810,0.0497770956432810],
-                              [0.0497770956432810,0.4502229043567190,0.0497770956432810],
-                              [0.0497770956432810,0.0497770956432810,0.4502229043567190],
-                              [0.0497770956432810,0.4502229043567190,0.4502229043567190],
-                              [0.4502229043567190,0.0497770956432810,0.4502229043567190],
-                              [0.4502229043567190,0.4502229043567190,0.0497770956432810],
-                              [0.3162695526014501,0.1837304473985499,0.1837304473985499],
-                              [0.1837304473985499,0.3162695526014501,0.1837304473985499],
-                              [0.1837304473985499,0.1837304473985499,0.3162695526014501],
-                              [0.1837304473985499,0.3162695526014501,0.3162695526014501],
-                              [0.3162695526014501,0.1837304473985499,0.3162695526014501],
-                              [0.3162695526014501,0.3162695526014501,0.1837304473985499],
-                              [0.0229177878448171,0.2319010893971509,0.2319010893971509],
-                              [0.2319010893971509,0.0229177878448171,0.2319010893971509],
-                              [0.2319010893971509,0.2319010893971509,0.0229177878448171],
-                              [0.5132800333608811,0.2319010893971509,0.2319010893971509],
-                              [0.2319010893971509,0.5132800333608811,0.2319010893971509],
-                              [0.2319010893971509,0.2319010893971509,0.5132800333608811],
-                              [0.2319010893971509,0.0229177878448171,0.5132800333608811],
-                              [0.0229177878448171,0.5132800333608811,0.2319010893971509],
-                              [0.5132800333608811,0.2319010893971509,0.0229177878448171],
-                              [0.2319010893971509,0.5132800333608811,0.0229177878448171],
-                              [0.0229177878448171,0.2319010893971509,0.5132800333608811],
-                              [0.5132800333608811,0.0229177878448171,0.2319010893971509],
-                              [0.7303134278075384,0.0379700484718286,0.0379700484718286],
-                              [0.0379700484718286,0.7303134278075384,0.0379700484718286],
-                              [0.0379700484718286,0.0379700484718286,0.7303134278075384],
-                              [0.1937464752488044,0.0379700484718286,0.0379700484718286],
-                              [0.0379700484718286,0.1937464752488044,0.0379700484718286],
-                              [0.0379700484718286,0.0379700484718286,0.1937464752488044],
-                              [0.0379700484718286,0.7303134278075384,0.1937464752488044],
-                              [0.7303134278075384,0.1937464752488044,0.0379700484718286],
-                              [0.1937464752488044,0.0379700484718286,0.7303134278075384],
-                              [0.0379700484718286,0.1937464752488044,0.7303134278075384],
-                              [0.7303134278075384,0.0379700484718286,0.1937464752488044],
-                              [0.1937464752488044,0.7303134278075384,0.0379700484718286]]).T
-        weights = numpy.array([-0.2359620398477557,0.0244878963560562,0.0244878963560562,0.0244878963560562,0.0244878963560562,0.0039485206398261,0.0039485206398261,0.0039485206398261,0.0039485206398261,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0263055529507371,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0829803830550589,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0254426245481023,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852,0.0134324384376852]) / 6.
-        if degree > 8:
-          warnings.warn('Inexact integration for polynomial of degree %i'%degree)
-    else:
-      raise NotImplementedError
-    return coords.T, weights
-
-  def getischeme_uniform( self, n ):
-    if self.ndims == 1:
-      return numpy.arange( .5, n )[:,_] / n, numeric.appendaxes( 1./n, n )
-    elif self.ndims == 2:
-      points = numpy.arange( 1./3, n ) / n
-      nn = n**2
-      C = numpy.empty( [2,n,n] )
-      C[0] = points[:,_]
-      C[1] = points[_,:]
-      coords = C.reshape( 2, nn )
-      flip = coords.sum(0) > 1
-      coords[:,flip] = 1 - coords[::-1,flip]
-      weights = numeric.appendaxes( .5/nn, nn )
-    else:
-      raise NotImplementedError
-    return coords.T, weights
-
-  def getischeme_bezier( self, np ):
-    points = numpy.linspace( 0, 1, np )
-    if self.ndims == 1:
-      return points[:,_], None
-    if self.ndims == 2:
-      return numpy.array([ [x,y] for i, y in enumerate(points) for x in points[:np-i] ]), None
-    raise NotImplementedError
+  @property
+  def child_refs( self ):
+    return (self,) * len(self.child_transforms)
 
   def getischeme_vertex( self, n ):
     if n == 0:
       return self.vertices.astype(float), None
     return self.getischeme_bezier( 2**n+1 )
 
-  @cache.property
-  def child_transforms( self ):
-    if self.ndims == 0:
-      return [
-        transform.affine( 1, [], 2 ),
-      ]
-    if self.ndims == 1:
-      return [
-        transform.affine( 1, [0], 2 ),
-        transform.affine( 1, [1], 2 ) ]
-    if self.ndims == 2:
-      return [
-        transform.affine(  1, [0,0], 2 ),
-        transform.affine(  1, [0,1], 2 ),
-        transform.affine(  1, [1,0], 2 ),
-        transform.affine( -1, [1,1], 2 ) ]
-    raise NotImplementedError
+  def __str__( self ):
+    return self.__class__.__name__
 
-  @property
-  def child_refs( self ):
-    return (self,) * len(self.child_transforms)
+  __repr__ = __str__
+
+class PointReference( SimplexReference ):
+  '0D simplex'
+
+  def __init__( self ):
+    SimplexReference.__init__( self, 0 )
+    self.child_transforms = transform.identity,
+
+  def getischeme( self, ischeme ):
+    return numpy.zeros((1,0)), numpy.ones(1)
+
+class LineReference( SimplexReference ):
+  '1D simplex'
+
+  def __init__( self ):
+    self._bernsteincache = [] # TEMPORARY
+    SimplexReference.__init__( self, 1 )
+    self.edge_transforms = transform.simplex( self.vertices[1:], isflipped=False ), transform.simplex( self.vertices[:1], isflipped=True )
+    self.child_transforms = transform.affine( 1, [0], 2 ), transform.affine( 1, [1], 2 )
+    refcheck( self )
+
+  def stdfunc( self, degree ):
+    if len(self._bernsteincache) <= degree or self._bernsteincache[degree] is None:
+      self._bernsteincache += [None] * (degree-len(self._bernsteincache))
+      self._bernsteincache.append( PolyLine( PolyLine.bernstein_poly(degree) ) )
+    return self._bernsteincache[degree]
+
+  def getischeme_gauss( self, degree ):
+    assert isinstance( degree, int ) and degree >= 0
+    x, w = gauss( degree )
+    return x[:,_], w
+
+  def getischeme_uniform( self, n ):
+    return numpy.arange( .5, n )[:,_] / n, numeric.appendaxes( 1./n, n )
+
+  def getischeme_bezier( self, np ):
+    return numpy.linspace( 0, 1, np )[:,_], None
+
+  def subvertex( self, ichild, i ):
+    if i == 0:
+      assert ichild == 0
+      return self.nverts, numpy.arange(self.nverts)
+    assert 0 <= ichild < 2
+    n = 2**i+1
+    return n, numpy.arange(n//2+1) if ichild == 0 else numpy.arange(n//2,n)
+
+class TriangleReference( SimplexReference ):
+  '2D simplex'
+
+  def __init__( self ):
+    SimplexReference.__init__( self, 2 )
+    self.edge_transforms = transform.simplex( self.vertices[1:] ), transform.simplex( self.vertices[::-2] ), transform.simplex( self.vertices[:-1] )
+    self.child_transforms = transform.affine( 1, [0,0], 2 ), transform.affine( 1, [0,1], 2 ), transform.affine( 1, [1,0], 2 ), transform.affine( -1, [1,1], 2 )
+    refcheck( self )
+
+  def stdfunc( self, degree ):
+    return PolyTriangle(degree)
+
+  def getischeme_contour( self, n ):
+    p = numpy.arange( n+1, dtype=float ) / (n+1)
+    z = numpy.zeros_like( p )
+    return numpy.hstack(( [1-p,p], [z,1-p], [p,z] )).T, None
+
+  def getischeme_vtk( self ):
+    return self.vertices.astype(float), None
+
+  def getischeme_gauss( self, degree ):
+    '''get integration scheme
+    http://www.cs.rpi.edu/~flaherje/pdf/fea6.pdf'''
+    if isinstance( degree, tuple ):
+      assert len(degree) == self.ndims
+      degree = sum(degree)
+    assert isinstance( degree, int ) and degree >= 0
+
+    I = [0,0],
+    J = [1,1],[0,1],[1,0]
+    K = [1,2],[2,0],[0,1],[2,1],[1,0],[0,2]
+
+    icw = [
+      ( I, [1/3], 1 )
+    ] if degree == 1 else [
+      ( J, [2/3,1/6], 1/3 )
+    ] if degree == 2 else [
+      ( I, [1/3], -9/16 ),
+      ( J, [3/5,1/5], 25/48 ),
+    ] if degree == 3 else [
+      ( J, [0.816847572980458,0.091576213509771], 0.109951743655322 ),
+      ( J, [0.108103018168070,0.445948490915965], 0.223381589678011 ),
+    ] if degree == 4 else [
+      ( I, [1/3], 0.225 ),
+      ( J, [0.797426985353088,0.101286507323456], 0.125939180544827 ),
+      ( J, [0.059715871789770,0.470142064105115], 0.132394152788506 ),
+    ] if degree == 5 else [
+      ( J, [0.873821971016996,0.063089014491502], 0.050844906370207 ),
+      ( J, [0.501426509658180,0.249286745170910], 0.116786275726379 ),
+      ( K, [0.636502499121399,0.310352451033785,0.053145049844816], 0.082851075618374 ),
+    ] if degree == 6 else [
+      ( I, [1/3.], -0.149570044467671 ),
+      ( J, [0.479308067841924,0.260345966079038], 0.175615257433204 ),
+      ( J, [0.869739794195568,0.065130102902216], 0.053347235608839 ),
+      ( K, [0.638444188569809,0.312865496004875,0.048690315425316], 0.077113760890257 ),
+    ]
+
+    if degree > 7:
+      warnings.warn( 'inexact integration for polynomial of degree %i'.format(degree) )
+
+    return numpy.concatenate( [ numpy.take(c,i) for i, c, w in icw ], axis=0 ), \
+           numpy.concatenate( [ [w/2] * len(i) for i, c, w in icw ] )
+
+  def getischeme_uniform( self, n ):
+    points = numpy.arange( 1./3, n ) / n
+    nn = n**2
+    C = numpy.empty( [2,n,n] )
+    C[0] = points[:,_]
+    C[1] = points[_,:]
+    coords = C.reshape( 2, nn )
+    flip = coords.sum(0) > 1
+    coords[:,flip] = 1 - coords[::-1,flip]
+    weights = numeric.appendaxes( .5/nn, nn )
+    return coords.T, weights
+
+  def getischeme_bezier( self, np ):
+    points = numpy.linspace( 0, 1, np )
+    return numpy.array([ [x,y] for i, y in enumerate(points) for x in points[:np-i] ]), None
 
   def subvertex( self, ichild, i ):
     if i == 0:
       assert ichild == 0
       return self.nverts, numpy.arange(self.nverts)
     n = 2**(i-1)
-    if self.ndims == 1:
-      assert 0 <= ichild < 2
-      return 2*n+1, numpy.arange(n+1) if ichild == 0 else numpy.arange(n,2*n+1)
-    if self.ndims == 2:
-      assert 0 <= ichild < 4
-      return ((2*n+2)*(2*n+1))//2, numpy.concatenate(
-             [ (((4*n+3-i)*i)//2) + numpy.arange(n+1-i) for i in range(n+1) ] if ichild == 0
-        else [ ((3*(n+1)*n)//2) + numpy.arange(((n+2)*(n+1))//2) ] if ichild == 1
-        else [ (((4*n+3-i)*i)//2+n) + numpy.arange(n+1-i) for i in range(n+1) ] if ichild == 2
-        else [ (((3*n+3+i)*(n-i))//2) + numpy.arange(n,i-1,-1) for i in range(n+1) ] )
-    raise NotImplementedError( 'ndims=%d' % self.ndims )
+    assert 0 <= ichild < 4
+    return ((2*n+2)*(2*n+1))//2, numpy.concatenate(
+           [ (((4*n+3-i)*i)//2) + numpy.arange(n+1-i) for i in range(n+1) ] if ichild == 0
+      else [ ((3*(n+1)*n)//2) + numpy.arange(((n+2)*(n+1))//2) ] if ichild == 1
+      else [ (((4*n+3-i)*i)//2+n) + numpy.arange(n+1-i) for i in range(n+1) ] if ichild == 2
+      else [ (((3*n+3+i)*(n-i))//2) + numpy.arange(n,i-1,-1) for i in range(n+1) ] )
 
-  @cache.property
-  def edge_transforms( self ):
-    vertices = numpy.zeros( (self.ndims+1,self.ndims), dtype=int )
-    vertices[1:] = numpy.eye( self.ndims, dtype=int )
-    return tuple([ transform.simplex( vertices[1:] ) ]
-               + [ transform.simplex( numpy.concatenate( [vertices[:i+1],vertices[i+2:]], axis=0 ), isflipped=(i%2==0) ) for i in range( self.ndims ) ])
+class TetrahedronReference( SimplexReference ):
+  '3D simplex'
 
-  @property
-  def edge_refs( self ):
-    return (SimplexReference( self.ndims-1 ),) * (self.ndims+1)
+  def __init__( self ):
+    SimplexReference.__init__( self, 3 )
+    self.edge_transforms = tuple( transform.simplex(self.vertices[I]) for I in [[1,2,3],[0,3,2],[3,0,1],[2,1,0]] )
+    refcheck( self )
 
-  def __str__( self ):
-    return 'SimplexReference(%d)' % self.ndims
+  def getischeme_vtk( self ):
+    return self.vertices.astype(float), None
 
-  __repr__ = __str__
+  def getischeme_gauss( self, degree ):
+    '''get integration scheme
+    http://www.cs.rpi.edu/~flaherje/pdf/fea6.pdf'''
+    if isinstance( degree, tuple ):
+      assert len(degree) == 3
+      degree = sum(degree)
+    assert isinstance( degree, int ) and degree >= 0
+
+    I = [0,0,0],
+    J = [1,1,1],[0,1,1],[1,1,0],[1,0,1]
+    K = [0,1,1],[1,0,1],[1,1,0],[1,0,0],[0,1,0],[0,0,1]
+    L = [0,1,1],[1,0,1],[1,1,0],[2,1,1],[1,2,1],[1,1,2],[1,0,2],[0,2,1],[2,1,0],[1,2,0],[0,1,2],[2,0,1]
+
+    icw = [
+      ( I, [1/4], 1 ),
+    ] if degree == 1 else [
+      ( J, [0.5854101966249685,0.1381966011250105], 1/4 ),
+    ] if degree == 2 else [
+      ( I, [.25], -.8 ),
+      ( J, [.5,1/6], .45 ),
+    ] if degree == 3 else [
+      ( I, [.25], -.2368/3 ),
+      ( J, [0.7857142857142857,0.0714285714285714], .1372/3 ),
+      ( K, [0.1005964238332008,0.3994035761667992], .448/3 ),
+    ] if degree == 4 else [
+      ( I, [.25], 0.1817020685825351 ),
+      ( J, [0,1/3.], 0.0361607142857143 ),
+      ( J, [8/11.,1/11.], 0.0698714945161738 ),
+      ( K, [0.4334498464263357,0.0665501535736643], 0.0656948493683187 ),
+    ] if degree == 5 else [
+      ( J, [0.3561913862225449,0.2146028712591517], 0.0399227502581679 ),
+      ( J, [0.8779781243961660,0.0406739585346113], 0.0100772110553207 ),
+      ( J, [0.0329863295731731,0.3223378901422757], 0.0553571815436544 ),
+      ( L, [0.2696723314583159,0.0636610018750175,0.6030056647916491], 0.0482142857142857 ),
+    ] if degree == 6 else [
+      ( I, [.25], 0.1095853407966528 ),
+      ( J, [0.7653604230090441,0.0782131923303186],  0.0635996491464850 ),
+      ( J, [0.6344703500082868,0.1218432166639044], -0.3751064406859797 ),
+      ( J, [0.0023825066607383,0.3325391644464206],  0.0293485515784412 ),
+      ( K, [0,.5], 0.0058201058201058 ),
+      ( L, [.2,.1,.6], 0.1653439153439105 )
+    ] if degree == 7 else [
+      ( I, [.25], -0.2359620398477557),
+      ( J, [0.6175871903000830,0.1274709365666390], 0.0244878963560562),
+      ( J, [0.9037635088221031,0.0320788303926323], 0.0039485206398261),
+      ( K, [0.4502229043567190,0.0497770956432810], 0.0263055529507371),
+      ( K, [0.3162695526014501,0.1837304473985499], 0.0829803830550589),
+      ( L, [0.0229177878448171,0.2319010893971509,0.5132800333608811], 0.0254426245481023),
+      ( L, [0.7303134278075384,0.0379700484718286,0.1937464752488044], 0.0134324384376852),
+    ]
+
+    if degree > 8:
+      warnings.warn( 'inexact integration for polynomial of degree %i'.format(degree) )
+
+    return numpy.concatenate( [ numpy.take(c,i) for i, c, w in icw ], axis=0 ), \
+           numpy.concatenate( [ [w/6] * len(i) for i, c, w in icw ] )
 
 class TensorReference( Reference ):
   'tensor reference'
@@ -843,16 +752,16 @@ class TensorReference( Reference ):
     return self.ref1.stdfunc(degree) * self.ref2.stdfunc(degree)
 
   def getischeme_vtk( self ):
-    if self == SimplexReference(1)**2:
+    if self == LineReference()**2:
       points = [[0,0],[1,0],[1,1],[0,1]]
-    elif self == SimplexReference(1)**3:
+    elif self == LineReference()**3:
       points = [[0,0,0],[1,0,0],[0,1,0],[1,1,0],[0,0,1],[1,0,1],[0,1,1],[1,1,1]]
     else:
       raise NotImplementedError
     return numpy.array(points,dtype=float), numpy.ones(self.nverts,dtype=float)
 
   def getischeme_contour( self, n ):
-    assert self == SimplexReference(1)**2
+    assert self == LineReference()**2
     p = numpy.arange( n+1, dtype=float ) / (n+1)
     z = numpy.zeros_like( p )
     return numpy.hstack(( [p,z], [1-z,p], [1-p,1-z], [z,1-p] )).T, None
@@ -940,7 +849,7 @@ class NeighborhoodTensorReference( TensorReference ):
 
   def get_tri_bem_ischeme( self, ischeme ):
     'Some cached quantities for the singularity quadrature scheme.'
-    points, weights = (SimplexReference(1)**4).getischeme( ischeme )
+    points, weights = (LineReference()**4).getischeme( ischeme )
     eta1, eta2, eta3, xi = points.T
     if self.neighborhood == 0:
       temp = xi*eta1*eta2*eta3
@@ -993,7 +902,7 @@ class NeighborhoodTensorReference( TensorReference ):
 
   def get_quad_bem_ischeme( self, ischeme ):
     'Some cached quantities for the singularity quadrature scheme.'
-    quad = SimplexReference(1)**4
+    quad = LineReference()**4
     points, weights = quad.getischeme( ischeme )
     eta1, eta2, eta3, xi = points.T
     if self.neighborhood == 0:
@@ -1041,7 +950,7 @@ class NeighborhoodTensorReference( TensorReference ):
     'get integration scheme'
     
     gauss = 'gauss%d'% (n*2-2)
-    assert self.ref1 == self.ref2 == SimplexReference(1)**2
+    assert self.ref1 == self.ref2 == LineReference()**2
     points, weights = self.get_quad_bem_ischeme( gauss )
     return self.singular_ischeme_quad( points ), weights
 
@@ -1160,7 +1069,7 @@ class MultiSimplexReference( Reference ):
 
   @property
   def simplices( self ):
-    simplex = SimplexReference( self.ndims )
+    simplex = getsimplex(self.ndims)
     return [ (trans,simplex) for trans in self.__transforms ]
 
   def getischeme( self, ischeme ):
@@ -1169,7 +1078,7 @@ class MultiSimplexReference( Reference ):
     if ischeme.startswith('vertex'):
       return self.__baseref.getischeme( ischeme )
 
-    simplex = SimplexReference( self.ndims )
+    simplex = getsimplex(self.ndims)
     points, weights = simplex.getischeme( ischeme )
     allcoords = numpy.empty( (len(self.__transforms),)+points.shape, dtype=float )
     if weights is not None:
@@ -1495,6 +1404,7 @@ class ExtractionWrapper( object ):
 
 # UTILITY FUNCTIONS
 
+@cache.argdict
 def gauss( degree ):
   k = numpy.arange( 1, degree // 2 + 1 )
   d = k / numpy.sqrt( 4*k**2-1 )
@@ -1523,8 +1433,6 @@ def signed_triangulate( points, vsigns ):
   return triangulation[ esigns > 0 ], triangulation[ esigns < 0 ]
 
 def refcheck( ref, edges=None, decimal=10 ):
-  if ref.ndims == 0:
-    return
   if edges is None:
     edges = ref.edges
   x, w = ref.getischeme( 'gauss1' )
@@ -1545,6 +1453,10 @@ def refcheck( ref, edges=None, decimal=10 ):
     check_volume += numeric.contract( trans.apply(xe), w_normal, axis=0 )
   numpy.testing.assert_almost_equal( check_zero, 0, decimal, '%s fails divergence test' % ref )
   numpy.testing.assert_almost_equal( check_volume, volume, decimal, '%s fails divergence test' % ref )
+
+def getsimplex( ndims ):
+  constructors = PointReference, LineReference, TriangleReference, TetrahedronReference
+  return constructors[ndims]()
 
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
