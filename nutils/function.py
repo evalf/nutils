@@ -840,7 +840,7 @@ class Function( ArrayFunc ):
     for trans, stdkeep in self.stdmap.items():
       ind = indices.dofmap[trans]
       assert all( numpy.diff( ind ) > 0 )
-      nshapes = sum( 0 if not std else std.nshapes if keep is None else sum(keep) for std, keep in stdkeep )
+      nshapes = _sum( 0 if not std else std.nshapes if keep is None else keep.sum() for std, keep in stdkeep )
       where = numpy.zeros( nshapes, dtype=bool )
       where[ind] = True
       newstdkeep = []
@@ -850,7 +850,7 @@ class Function( ArrayFunc ):
             n = std.nshapes
             keep = where[:n]
           else:
-            n = sum(keep)
+            n = keep.sum()
             keep = keep.copy()
             keep[keep] = where[:n]
           if not keep.any():
@@ -955,7 +955,7 @@ class Concatenate( ArrayFunc ):
       assert all( n == None for n in lengths )
       sh = None
     else:
-      sh = sum( lengths )
+      sh = _sum( lengths )
     shape = _jointshape( *[ func.shape[:axis] + (sh,) + func.shape[axis+1:] for func in funcs ] )
     self.funcs = tuple(funcs)
     self.ivar = [ i for i, func in enumerate(funcs) if isinstance(func,Evaluable) ]
@@ -2350,6 +2350,8 @@ def asarray( arg ):
       return _zeros( array.shape )
     return array
 
+  assert isinstance( arg, (list,tuple) ) # be strict to avoid infinite loops
+
   args = [ asarray(a) for a in arg ]
   ndim = _max( arg.ndim for arg in args )
   args = [ arg[(_,)*(ndim-arg.ndim)] for arg in args ]
@@ -2746,7 +2748,7 @@ def localgradient( arg, ndims ):
 def dotnorm( arg, coords, ndims=0 ):
   'normal component'
 
-  return sum( arg * coords.normal( ndims-1 ) )
+  return sum( arg * coords.normal( ndims-1 ), -1 )
 
 def kronecker( arg, axis, length, pos ):
   'kronecker'
