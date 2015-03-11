@@ -635,7 +635,7 @@ class TriangleReference( SimplexReference ):
     N = 1 + 2**irefine # points along parent edge
     n = 1 + 2**(irefine-1) # points along child edge
 
-    flatten_parent = lambda i, j: j + i*N + (i*(1-i))//2
+    flatten_parent = lambda i, j: j + i*N - (i*(i-1))//2
 
     if ichild == 0: # lower left
       flatten_child = lambda i, j: flatten_parent( i, j )
@@ -649,7 +649,6 @@ class TriangleReference( SimplexReference ):
       raise Exception, 'invalid ichild: {}'.format( ichild )
 
     return ((N+1)*N)//2, numpy.concatenate([ flatten_child(i,numpy.arange(n-i)) for i in range(n) ])
-
 
 class TetrahedronReference( SimplexReference ):
   '3D simplex'

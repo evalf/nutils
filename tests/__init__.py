@@ -65,8 +65,7 @@ def _package( f, __scope__ ):
 
 def register( arg0, *args, **kwargs ):
   if not callable( arg0 ):
-    assert isinstance( arg0, str )
-    return lambda f: register( _withattrs( lambda: f( *args, **kwargs ), __name__=f.__name__+':'+arg0, __module__=f.__module__, __wraps__=f ) )
+    return lambda f: register( _withattrs( lambda: f( *args, **kwargs ), __name__=f.__name__+':'+str(arg0), __module__=f.__module__, __wraps__=f ) )
   assert not args and not kwargs
   pkgname, scope = ( arg0.__module__ + '.' + arg0.__name__ ).split( '.', 1 )
   assert pkgname == __name__
@@ -93,8 +92,7 @@ def _unittest( f ):
 
 def unittest( arg ):
   if not callable( arg ):
-    assert isinstance( arg, str )
-    return lambda f: unittest( _withattrs( f, __name__=f.__name__+':'+arg ) )
+    return lambda f: unittest( _withattrs( f, __name__=f.__name__+':'+str(arg) ) )
   name = core.getprop('scope') + '.' + arg.__name__
   if selection and not any( name == arg or name.startswith( arg+'.' ) for arg in selection ):
     return

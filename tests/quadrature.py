@@ -13,25 +13,23 @@ import scipy.special, re
 def gauss( ndims, istensor, maxdegree=7, eps=1e-12 ):
   # Gaussian quadrature and exact integration on different element types
 
+  monomials = numpy.mgrid[ (slice(maxdegree),)*ndims ].reshape(ndims,-1).T
   if istensor:
     ref = element.LineReference()**ndims
-    exactfun = lambda p: 1./(numpy.asarray(p)+1).prod()
+    integrals = numpy.reciprocal((monomials+1.).prod(-1))
   else:
     ref = element.getsimplex(ndims)
-    exactfun = lambda p: scipy.special.gamma(1+numpy.asarray(p)).prod()/scipy.special.gamma(len(p)+1+sum(p))
+    integrals = scipy.special.gamma(monomials+1.).prod(-1) / scipy.special.gamma(ndims+1+monomials.sum(-1))
 
-  callcache = cache.CallDict()
+  for degree in range( 1, maxdegree+1 ):
 
-  @unittest
-  def check():
-
-    for p in numpy.ndindex( (maxdegree,)*ref.ndims ):
-      exact = exactfun( p )
-      for degree in range( 1, maxdegree+1 ):
-        points, weights = callcache( ref.getischeme, 'gauss%d' % degree )
-        result = numpy.dot( weights, numpy.prod(points**p,axis=1) )
-        error = abs(result-exact) / exact
-        expect_exact = degree // 2 >= max(p) // 2 if istensor else degree >= sum(p)
+    @unittest( degree )
+    def degree():
+      points, weights = ref.getischeme( 'gauss%d' % degree )
+      for monomial, integral in zip( monomials, integrals ):
+        result = numpy.dot( weights, numpy.prod(points**monomial,axis=-1) )
+        error = abs(result-integral) / integral
+        expect_exact = degree // 2 >= max(monomial) // 2 if istensor else degree >= sum(monomial)
         if expect_exact:
           assert error < eps, 'integration should be exact'
         else:
