@@ -30,38 +30,35 @@ import warnings
 class Topology( object ):
   'topology base class'
 
-  def __init__( self, elements, ndims=None ):
+  def __init__( self, elements, ndims=None, groups={} ):
     'constructor'
 
     self.elements = tuple(elements)
     self.ndims = self.elements[0].ndims if ndims is None else ndims # assume all equal
-    self.__groups = {}
-    self.__boundary = None
+    self.groups = groups.copy()
 
   def set_boundary( self, boundary ):
     assert self.__class__.boundary == Topology.boundary, 'cannot set boundary of %s' % self.__class__.__name__
     assert isinstance( boundary, Topology )
     assert boundary.ndims == self.ndims - 1
-    self.__boundary = boundary
+    self.__dict__['boundary'] = boundary
 
-  @property
+  @cache.property
   def boundary( self ):
-    if not self.__boundary:
-      edges = {}
-      for elem in log.iter( 'elem', self ):
-        elemcoords = elem.vertices
-        for iedge, iverts in enumerate( elem.reference.edge2vertices ):
-          edgekey = tuple( sorted( c for c, n in zip( elemcoords, iverts ) if n ) )
-          try:
-            edges.pop( edgekey )
-          except KeyError:
-            edges[edgekey] = elem.edge(iedge)
-      self.__boundary = Topology( edges.values() )
-    return self.__boundary
+    edges = {}
+    for elem in log.iter( 'elem', self ):
+      elemcoords = elem.vertices
+      for iedge, iverts in enumerate( elem.reference.edge2vertices ):
+        edgekey = tuple( sorted( c for c, n in zip( elemcoords, iverts ) if n ) )
+        try:
+          edges.pop( edgekey )
+        except KeyError:
+          edges[edgekey] = elem.edge(iedge)
+    return Topology( edges.values() )
 
   @property
   def groupnames( self ):
-    return self.__groups.keys()
+    return self.groups.keys()
 
   def __contains__( self, element ):
     return self.edict.get( element.transform ) == element
@@ -141,15 +138,14 @@ class Topology( object ):
 
     if not isinstance( item, str ):
       raise KeyError( str(item) )
-    items = ( self.__groups[it] for it in item.split( ',' ) )
-    return sum( items, next(items) )
+    return util.sum( self.groups[it] for it in item.split( ',' ) )
 
   def __setitem__( self, item, topo ):
     assert isinstance( topo, Topology ), 'wrong type: got %s, expected Topology' % type(topo)
     assert topo.ndims == self.ndims, 'wrong dimension: got %d, expected %d' % ( topo.ndims, self.ndims )
     for elem in topo:
       assert self.edict[elem.transform] == elem, 'group %r is not a subtopology' % item
-    self.__groups[item] = topo
+    self.groups[item] = topo
 
   @cache.property
   def edict( self ):
@@ -696,13 +692,13 @@ def UnstructuredTopology( elems, ndims ):
 class StructuredTopology( Topology ):
   'structured topology'
 
-  def __init__( self, structure, periodic=() ):
+  def __init__( self, structure, periodic=(), groups={} ):
     'constructor'
 
     structure = numpy.asarray(structure)
     self.structure = structure
     self.periodic = tuple(periodic)
-    Topology.__init__( self, structure.flat )
+    Topology.__init__( self, structure.flat, groups=groups )
 
   def __getitem__( self, item ):
     'subtopology'
@@ -1089,10 +1085,8 @@ class StructuredTopology( Topology ):
     structure = structure.reshape( self.structure.shape + (2,)*self.ndims )
     structure = structure.transpose( sum( [ ( i, self.ndims+i ) for i in range(self.ndims) ], () ) )
     structure = structure.reshape( numpy.array(self.structure.shape) * 2 )
-    refined = StructuredTopology( structure, periodic=self.periodic )
-    for group in self.groupnames:
-      refined[group] = self[group].refined
-    return refined
+    groups = { name: topo.refined for name, topo in self.groups.items() }
+    return StructuredTopology( structure, periodic=self.periodic, groups=groups )
 
   def __str__( self ):
     'string representation'
@@ -1107,11 +1101,11 @@ class StructuredTopology( Topology ):
 class HierarchicalTopology( Topology ):
   'collection of nested topology elments'
 
-  def __init__( self, basetopo, elements ):
+  def __init__( self, basetopo, elements, groups={} ):
     'constructor'
 
     self.basetopo = basetopo if not isinstance( basetopo, HierarchicalTopology ) else basetopo.basetopo
-    Topology.__init__( self, elements )
+    Topology.__init__( self, elements, groups={} )
 
   @cache.property
   @log.title
@@ -1238,10 +1232,10 @@ class HierarchicalTopology( Topology ):
 class RefinedTopology( Topology ):
   'refinement'
 
-  def __init__( self, basetopo ):
+  def __init__( self, basetopo, groups={} ):
     self.basetopo = basetopo
     elements = [ child for elem in basetopo for child in elem.children ]
-    Topology.__init__( self, elements )
+    Topology.__init__( self, elements, groups=groups )
 
   def __getitem__( self, key ):
     return self.basetopo[key].refined
@@ -1253,16 +1247,17 @@ class RefinedTopology( Topology ):
 class TrimmedTopology( Topology ):
   'trimmed'
 
-  def __init__( self, basetopo, elements, trimmed=[], ndims=None ):
+  def __init__( self, basetopo, elements, trimmed=[], ndims=None, groups={} ):
     self.basetopo = basetopo
     self.trimmed = tuple(trimmed)
-    Topology.__init__( self, elements, ndims )
+    Topology.__init__( self, elements, ndims, groups=groups )
 
   @cache.property
   def refined( self ):
     elements = [ child for elem in self for child in elem.children ]
     trimmed = [ child for elem in self.trimmed for child in elem.children ]
-    return TrimmedTopology( self.basetopo.refined, elements, trimmed )
+    groups = { name: topo.refined for name, topo in self.groups.items() }
+    return TrimmedTopology( self.basetopo.refined, elements, trimmed, groups=groups )
 
   @cache.property
   @log.title
@@ -1283,14 +1278,15 @@ class TrimmedTopology( Topology ):
     return boundary
 
   def __getitem__( self, key ):
-    try:
-      itemtopo = Topology.__getitem__( self, key )
-    except KeyError:
-      keytopo = self.basetopo[key]
-      elements = [ elem for elem in map( self.edict.get, keytopo.edict ) if elem ]
-      trimmed = [ elem for elem in self.trimmed if elem.transform.promote(self.ndims).sliceto(-1) in keytopo.edict ]
-      itemtopo = TrimmedTopology( keytopo, elements, trimmed )
-    return itemtopo
+    if isinstance(key,str) and key in self.groups:
+      return self.groups[key]
+    keytopo = self.basetopo[key]
+    elements = [ elem for elem in map( self.edict.get, keytopo.edict ) if elem ]
+    trimmed = [ elem for elem in self.trimmed if elem.transform.promote(self.ndims).sliceto(-1) in keytopo.edict ]
+    topo = TrimmedTopology( keytopo, elements, trimmed )
+    if isinstance(key,str):
+      self.groups[key] = topo
+    return topo
 
   def prune_basis( self, basis ):
     used = numpy.zeros( len(basis), dtype=bool )
