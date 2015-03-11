@@ -54,7 +54,7 @@ def rectilinear( richshape, periodic=(), name='rect' ):
 
   reference = element.LineReference()**ndims
   for index in indices.reshape( ndims, -1 ).T:
-    structure[tuple(index)] = element.Element( reference, root << transform.affine(offset=index) )
+    structure[tuple(index)] = element.Element( reference, root << transform.affine(0,index) )
   topo = topology.StructuredTopology( structure, periodic=periodic )
   if uniform:
     if all( o == offset[0] for o in offset[1:] ):
@@ -174,7 +174,7 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
         #Extract the vertices
         vref = element.PointReference()
         for ivertex in range(3): #GMSH and Nutils node ordering coincide
-          zeroD_to_twoD = transform.affine( linear=numpy.zeros(shape=(2,0),dtype=int),offset=ref.vertices[ivertex] )
+          zeroD_to_twoD = transform.affine( linear=numpy.zeros(shape=(2,0),dtype=int), offset=ref.vertices[ivertex], isflipped=False )
           vmaptrans = maptrans << zeroD_to_twoD
           vertexkey = (nids[ivertex],)
           velem = element.Element(vref,vmaptrans)
@@ -383,19 +383,13 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   coords = rational.round( numpy.hstack( [P,Q,R] ).T, denom=30 )
 
   vertices = numpy.array(
-    [ ( i, (i+1)%12, 12+(i-i//3)%8 )   for i in range(12) ]
-  + [ ( 12+(i+1)%8, 12+i, i+1+(i//2) ) for i in range( 8) ]
-  + [ ( 12+i, 12+(i+1)%8, 20 )         for i in range( 8) ] )
+    [ [ 12+(i-i//3)%8, i, (i+1)%12 ] for i in range(12) ]
+  + [ [ i+1+(i//2), 12+(i+1)%8, 12+i ] for i in range(8) ]
+  + [ [ 20, 12+i, 12+(i+1)%8 ] for i in range(8) ] )
   
-  elements = []
   root = transform.roottrans( 'demo', shape=(0,0) )
   reference = element.TriangleReference()
-  for ielem, elemvertices in enumerate( vertices ):
-    elemcoords = coords[ numpy.array(elemvertices) ]
-    trans = transform.affine( (elemcoords[:2]-elemcoords[2]).T, elemcoords[2] )
-    elem = element.Element( reference, root << trans )
-    elements.append( elem )
-
+  elements = [ element.Element( reference, root << transform.simplex(coords[iverts]) ) for iverts in vertices ]
   belems = [ elem.edge(0) for elem in elements[:12] ]
   bgroups = { 'top': belems[0:3], 'left': belems[3:6], 'bottom': belems[6:9], 'right': belems[9:12] }
 

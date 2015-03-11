@@ -79,7 +79,7 @@ class TransformChain( tuple ):
 
   @property
   def flipped( self ):
-    assert len(self) == 1
+    assert len(self) == 1 and self.todims == self.fromdims+1
     return TransformChain( trans.flipped for trans in self )
 
   @property
@@ -139,12 +139,15 @@ class TransformChain( tuple ):
     for i in range(len(items)-1)[::-1]:
       trans1, trans2 = items[i:i+2]
       if isinstance( trans1, Scale ) and trans2.todims == trans2.fromdims + 1:
+        trans12 = TransformChain(( trans1, trans2 )).flat
         try:
-          newscale, = solve( TransformChain([trans2]), TransformChain([trans1,trans2]) )
+          newlinear, newoffset = rational.solve( trans2.linear, trans12.linear, trans12.offset - trans2.offset )
         except numpy.linalg.LinAlgError:
           pass
         else:
-          items[i:i+2] = trans2, newscale
+          trans21 = TransformChain( (trans2,) + affine( newlinear, newoffset ) )
+          assert trans21.flat == trans12
+          items[i:i+2] = trans21
     return TransformChain( items )
 
   def promote( self, ndims ):
@@ -172,10 +175,9 @@ class TransformChain( tuple ):
 
 class TransformItem( cache.Immutable ):
 
-  def __init__( self, todims, fromdims, isflipped ):
+  def __init__( self, todims, fromdims ):
     self.todims = todims
     self.fromdims = fromdims
-    self.isflipped = isflipped
 
   __lt__ = lambda self, other: id(self) <  id(other)
   __gt__ = lambda self, other: id(self) >  id(other)
@@ -190,12 +192,9 @@ class Shift( TransformItem ):
   def __init__( self, offset ):
     self.linear = self.invlinear = self.det = rational.unit
     self.offset = offset
+    self.isflipped = False
     assert offset.ndim == 1
-    TransformItem.__init__( self, offset.shape[0], offset.shape[0], False )
-
-  @property
-  def flipped( self ):
-    return self
+    TransformItem.__init__( self, offset.shape[0], offset.shape[0] )
 
   def apply( self, points ):
     return points + self.offset
@@ -209,11 +208,8 @@ class Scale( TransformItem ):
     assert linear.ndim == 0 and offset.ndim == 1
     self.linear = linear
     self.offset = offset
-    TransformItem.__init__( self, offset.shape[0], offset.shape[0], False )
-
-  @property
-  def flipped( self ):
-    return self
+    self.isflipped = linear < 0 and len(offset)%2 == 1
+    TransformItem.__init__( self, offset.shape[0], offset.shape[0] )
 
   def apply( self, points ):
     return self.linear * points + self.offset
@@ -231,19 +227,28 @@ class Scale( TransformItem ):
 
 class Matrix( TransformItem ):
 
-  def __init__( self, linear, offset, isflipped ):
+  def __init__( self, linear, offset ):
     self.linear = linear
     self.offset = offset
     assert linear.ndim == 2 and offset.shape == linear.shape[:1]
-    TransformItem.__init__( self, linear.shape[0], linear.shape[1], isflipped )
-
-  @property
-  def flipped( self ):
-    return Matrix( self.linear, self.offset, not self.isflipped )
+    TransformItem.__init__( self, linear.shape[0], linear.shape[1] )
 
   def apply( self, points ):
     assert points.shape[-1] == self.fromdims
     return rational.dot( points, self.linear.T ) + self.offset
+
+  def __str__( self ):
+    return '{}{}{}'.format( '~' if self.isflipped else '', self.offset, ''.join( '+{}*x{}'.format( v, i ) for i, v in enumerate(self.linear.T) ) )
+
+class Square( Matrix ):
+
+  def __init__( self, linear, offset ):
+    Matrix.__init__( self, linear, offset )
+    assert self.fromdims == self.todims
+
+  @property
+  def isflipped( self ):
+    return self.det < 0
 
   @cache.property
   def det( self ):
@@ -253,13 +258,23 @@ class Matrix( TransformItem ):
   def invlinear( self ):
     return rational.invdet( self.linear ) / self.det
 
-  def __str__( self ):
-    return '{}{}{}'.format( '~' if self.isflipped else '', self.offset, ''.join( '+{}*x{}'.format( v, i ) for i, v in enumerate(self.linear.T) ) )
+class Updim( Matrix ):
+
+  def __init__( self, linear, offset, isflipped ):
+    assert isflipped in (True,False)
+    self.isflipped = isflipped
+    Matrix.__init__( self, linear, offset )
+    assert self.todims > self.fromdims
+
+  @property
+  def flipped( self ):
+    return Updim( self.linear, self.offset, not self.isflipped )
 
 class VertexTransform( TransformItem ):
 
   def __init__( self, fromdims ):
-    TransformItem.__init__( self, None, fromdims, False )
+    TransformItem.__init__( self, None, fromdims )
+    self.isflipped = False
 
 class MapTrans( VertexTransform ):
 
@@ -328,28 +343,27 @@ class RootTransEdges( VertexTransform ):
 
 ## CONSTRUCTORS
 
-def affine( linear=None, offset=None, numer=1, isflipped=False ):
-  r_offset = rational.asarray( offset ) / numer if offset is not None else rational.zeros( len(linear) )
+def affine( linear, offset, numer=1, isflipped=None ):
+  r_offset = rational.frac( offset, numer )
+  r_linear = rational.frac( linear, numer )
   n, = r_offset.shape
-  if linear is None:
-    r_linear = rational.unit
-  else:
-    r_linear = rational.asarray( linear ) / numer
-    if r_linear.ndim == 2:
-      assert r_linear.shape[0] == n
-      if r_linear.shape[1] == n:
-        if n == 0:
-          r_linear = rational.unit
-        elif n == 1 or r_linear.numer[0,-1] == 0 and numpy.all( r_linear.numer == r_linear.numer[0,0] * numpy.eye(n) ):
-          r_linear = r_linear[0,0]
+  if r_linear.ndim == 2:
+    assert r_linear.shape[0] == n
+    if r_linear.shape[1] == n:
+      trans = Shift( r_offset ) if n == 0 \
+         else Scale( r_linear[0,0], r_offset ) if n == 1 or r_linear.numer[0,-1] == 0 and numpy.all( r_linear.numer == r_linear.numer[0,0] * numpy.eye(n) ) \
+         else Square( r_linear, r_offset )
     else:
-      assert r_linear.ndim == 0
-  return TransformChain((
-         Matrix( r_linear, r_offset, isflipped ) if r_linear.ndim
-    else Scale( r_linear, r_offset ) if r_linear != rational.unit
-    else Shift( r_offset ), ))
+      trans = Updim( r_linear, r_offset, isflipped )
+  else:
+    assert r_linear.ndim == 0
+    trans = Scale( r_linear, r_offset ) if r_linear \
+       else Shift( r_offset )
+  if isflipped is not None:
+    assert trans.isflipped == isflipped
+  return TransformChain( [trans] )
 
-def simplex( coords, isflipped=False ):
+def simplex( coords, isflipped=None ):
   coords = rational.asarray(coords)
   offset = coords[0]
   return affine( (coords[1:]-offset).T, offset, isflipped=isflipped )
@@ -369,16 +383,9 @@ def equivalent( trans1, trans2 ):
   return numpy.all( trans1.linear == trans2.linear ) and numpy.all( trans1.offset == trans2.offset ) and trans1.isflipped == trans2.isflipped
 
 
-## UTILITY FUNCTIONS
+## INSTANCES
 
 identity = TransformChain()
 
-def solve( transA, transB ): # A << X = B
-  assert transA.isflipped == transB.isflipped
-  assert transA.fromdims == transB.fromdims and transA.todims == transB.todims
-  X, x = rational.solve( transA.linear, transB.linear, transB.offset - transA.offset )
-  transX = affine( X, x, isflipped=False )
-  assert ( transA << transX ).flat == transB.flat
-  return transX
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

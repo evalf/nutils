@@ -320,7 +320,10 @@ class Reference( cache.Immutable ):
           for tri in triangulation:
             etri = tri[ onedge[tri] ]
             if len(etri) == self.ndims:
-              strans = transform.solve( etrans, transform.simplex( coords[etri], isflipped=etrans.isflipped ) )
+              trioffset = coords[etri[0]]
+              trilinear = ( coords[etri[1:]] - trioffset ).T
+              slinear, soffset = rational.solve( etrans.linear, trilinear, trioffset - etrans.offset )
+              strans = transform.affine( slinear, soffset ) # etrans << strans == affine( trilinear, trioffset ) ~/flip
               if any( vsigns[etri] ):
                 transforms.append( strans )
               else:
@@ -553,7 +556,7 @@ class TriangleReference( SimplexReference ):
 
   def __init__( self ):
     SimplexReference.__init__( self, 2 )
-    self.edge_transforms = transform.simplex( self.vertices[1:] ), transform.simplex( self.vertices[::-2] ), transform.simplex( self.vertices[:-1] )
+    self.edge_transforms = transform.simplex( self.vertices[1:], isflipped=False ), transform.simplex( self.vertices[::-2], isflipped=False ), transform.simplex( self.vertices[:-1], isflipped=False )
     self.child_transforms = transform.affine(1,[0,0],2), transform.affine(1,[0,1],2), transform.affine(1,[1,0],2), transform.affine([[0,-1],[-1,0]],[1,1],2,isflipped=True )
     refcheck( self )
 
@@ -655,7 +658,7 @@ class TetrahedronReference( SimplexReference ):
 
   def __init__( self ):
     SimplexReference.__init__( self, 3 )
-    self.edge_transforms = tuple( transform.simplex(self.vertices[I]) for I in [[1,2,3],[0,3,2],[3,0,1],[2,1,0]] )
+    self.edge_transforms = tuple( transform.simplex( self.vertices[I], isflipped=False ) for I in [[1,2,3],[0,3,2],[3,0,1],[2,1,0]] )
     refcheck( self )
 
   def getischeme_vtk( self ):
