@@ -571,8 +571,10 @@ class Topology( object ):
     poselems, negelems = [], []
     trims = []
     allposouter, allnegouter = {}, {}
+    fcache = cache.CallDict()
+
     for elem in log.iter( 'elem', self ):
-      pos, neg, ifaces, posouter, negouter = elem.trim( levelset=levelset, maxrefine=maxrefine, denom=denom, check=check )
+      pos, neg, ifaces, posouter, negouter = elem.trim( levelset=levelset, maxrefine=maxrefine, denom=denom, check=check, fcache=fcache )
       allposouter.update({ tuple(sorted(edge.vertices)): edge for edge in posouter })
       allnegouter.update({ tuple(sorted(edge.vertices)): edge for edge in negouter })
       trims.extend( ifaces )
@@ -581,7 +583,10 @@ class Topology( object ):
       if neg:
         negelems.append( neg )
 
+    log.debug( 'cache', fcache.summary() )
+
     if allposouter or allnegouter:
+      log.info( 'inter-element trims detected; post processing' )
       for verts in set(allposouter) & set(allnegouter):
         posedge = allposouter.pop( verts )
         negedge = allnegouter.pop( verts )
@@ -589,6 +594,9 @@ class Topology( object ):
         assert ref == negedge.reference
         assert posedge.vertices == negedge.vertices
         trims.append( element.Element( ref, posedge.transform, negedge.transform ) )
+
+    if allposouter or allnegouter:
+      log.info( 'one-sides interface elements remaining; performing full domain search' )
       for (allouter,elems,ispos) in (allposouter,negelems,True), (allnegouter,poselems,False):
         if not allouter:
           continue

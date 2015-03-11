@@ -44,11 +44,7 @@ class TransformChain( tuple ):
     return sum( trans.isflipped for trans in self ) % 2 == 1
 
   def orientation( self, ndims ):
-    # returns orientation (+1/-1) for ndims->ndims+1 transformation
-    index = core.index( trans.fromdims == ndims for trans in self )
-    updim = self[index]
-    assert updim.todims == ndims+1
-    return -1 if updim.isflipped else 1
+    return -1 if self.isflipped else +1
 
   def lookup( self, transforms ):
     # to be replaced by bisection soon
@@ -60,11 +56,11 @@ class TransformChain( tuple ):
     return None
 
   def split( self, ndims ):
-    if self[-1].todims != ndims:
-      assert self[-1].fromdims == ndims
-      return self, identity
-    i = core.index( trans.todims == ndims for trans in self )
-    return self.sliceto(i), self.slicefrom(i)
+    # split after the first occurrence of .fromdims==ndims, the base part
+    # representing the coordinate system for integration/gradients at the level
+    # specified.
+    i = core.index( trans.fromdims == ndims for trans in self )
+    return self.sliceto(i+1), self.slicefrom(i+1)
 
   def __lshift__( self, other ):
     # self << other
@@ -144,7 +140,7 @@ class TransformChain( tuple ):
       trans1, trans2 = items[i:i+2]
       if isinstance( trans1, Scale ) and trans2.todims == trans2.fromdims + 1:
         try:
-          newscale = solve( TransformChain([trans2]), TransformChain([trans1,trans2]) )
+          newscale, = solve( TransformChain([trans2]), TransformChain([trans1,trans2]) )
         except numpy.linalg.LinAlgError:
           pass
         else:
@@ -187,7 +183,7 @@ class TransformItem( cache.Immutable ):
   __ge__ = lambda self, other: id(self) >= id(other)
 
   def __repr__( self ):
-    return '%s( %s )' % ( self.__class__.__name__, self )
+    return '{}( {} )'.format( self.__class__.__name__, self )
 
 class Shift( TransformItem ):
 
@@ -205,7 +201,7 @@ class Shift( TransformItem ):
     return points + self.offset
 
   def __str__( self ):
-    return 'x + %s' % self.offset
+    return '{}+x'.format( self.offset )
 
 class Scale( TransformItem ):
 
@@ -231,7 +227,7 @@ class Scale( TransformItem ):
     return 1 / self.linear
 
   def __str__( self ):
-    return '%s x + %s' % ( self.linear, self.offset )
+    return '{}+{}*x'.format( self.offset, self.linear )
 
 class Matrix( TransformItem ):
 
@@ -243,8 +239,7 @@ class Matrix( TransformItem ):
 
   @property
   def flipped( self ):
-    return self if self.fromdims == self.todims \
-      else Matrix( self.linear, self.offset, not self.isflipped )
+    return Matrix( self.linear, self.offset, not self.isflipped )
 
   def apply( self, points ):
     assert points.shape[-1] == self.fromdims
@@ -259,7 +254,7 @@ class Matrix( TransformItem ):
     return rational.invdet( self.linear ) / self.det
 
   def __str__( self ):
-    return '%s x + %s' % ( self.linear, self.offset )
+    return '{}{}{}'.format( '~' if self.isflipped else '', self.offset, ''.join( '+{}*x{}'.format( v, i ) for i, v in enumerate(self.linear.T) ) )
 
 class VertexTransform( TransformItem ):
 
@@ -371,7 +366,7 @@ def maptrans( coords, vertices ):
 def equivalent( trans1, trans2 ):
   trans1 = TransformChain( trans1 )
   trans2 = TransformChain( trans2 )
-  return numpy.all( trans1.linear == trans2.linear ) and numpy.all( trans1.offset == trans2.offset )
+  return numpy.all( trans1.linear == trans2.linear ) and numpy.all( trans1.offset == trans2.offset ) and trans1.isflipped == trans2.isflipped
 
 
 ## UTILITY FUNCTIONS

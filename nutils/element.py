@@ -73,11 +73,11 @@ class Element( object ):
     return [ Element( child, self.transform << trans, self.opposite << trans )
       for trans, child in self.reference.children ]
 
-  def trim( self, levelset, maxrefine, denom, check ):
+  def trim( self, levelset, maxrefine, denom, check, fcache ):
     'trim element along levelset'
 
     assert self.transform == self.opposite
-    pos, neg, ifaces, posouter, negouter = self.reference.trim( (self.transform,levelset), maxrefine, denom, check )
+    pos, neg, ifaces, posouter, negouter = self.reference.trim( (self.transform,levelset), maxrefine, denom, check, fcache )
     poselem = pos and Element( pos, self.transform )
     negelem = neg and Element( neg, self.transform )
     ifaces = [ Element( edge, self.transform<<postrans, self.transform<<negtrans ) for postrans, negtrans, edge in ifaces ]
@@ -178,7 +178,7 @@ class Reference( cache.Immutable ):
 
   @property
   def simplices( self ):
-    return [ (transform.TransformChain(),self) ]
+    return [ (transform.identity,self) ]
 
   @cache.property
   def childedgemap( self ):
@@ -186,11 +186,11 @@ class Reference( cache.Immutable ):
     childedgemap = tuple( [None] * child.nedges for child in self.child_refs )
     for iedge, (etrans,edge) in enumerate(self.edges):
       for ichild, (ctrans,child) in enumerate(edge.children):
-        v = frozenset( str(c) for c in (etrans<<ctrans).apply(child.vertices) )
+        v = tuple( sorted( (etrans<<ctrans).apply(child.vertices).totuple() ) )
         vmap[v] = ichild, iedge, True
     for ichild, (ctrans,child) in enumerate(self.children):
       for iedge, (etrans,edge) in enumerate(child.edges):
-        v = frozenset( str(c) for c in (ctrans<<etrans).apply(edge.vertices) )
+        v = tuple( sorted( (ctrans<<etrans).apply(edge.vertices).totuple() ) )
         try:
           jchild, jedge, isouter = childedgemap[ichild][iedge] = vmap.pop(v)
         except KeyError:
@@ -356,7 +356,7 @@ class Reference( cache.Immutable ):
 
     return mosaics + (ifaces,posouter,negouter)
 
-  def trim( self, levels, maxrefine, denom, check ):
+  def trim( self, levels, maxrefine, denom, check, fcache ):
     'trim element along levelset'
 
     assert maxrefine >= 0
@@ -366,7 +366,7 @@ class Reference( cache.Immutable ):
     if not evaluated_levels: # levelset is not evaluated
       trans, levelfun = levels
       try:
-        levels = levelfun.eval( Element(self,trans), 'vertex%d' % maxrefine )
+        levels = levelfun.eval( Element(self,trans), 'vertex%d' % maxrefine, fcache )
       except function.EvaluationError:
         pass
       else:
@@ -388,13 +388,13 @@ class Reference( cache.Immutable ):
     ifaces = []
     for ichild, (ctrans,child) in enumerate( self.children ):
       if evaluated_levels:
-        N, I = self.subvertex( ichild, maxrefine )
+        N, I = fcache( self.subvertex, ichild, maxrefine )
         assert len(levels) == N
         childlevels = levels[I]
       else:
         trans, levelfun = levels
         childlevels = trans << ctrans, levelfun
-      cposelem, cnegelem, cifaces, cposouter, cnegouter = child.trim( childlevels, maxrefine-1, denom, check )
+      cposelem, cnegelem, cifaces, cposouter, cnegouter = child.trim( childlevels, maxrefine-1, denom, check, fcache )
       poselems.append( cposelem )
       negelems.append( cnegelem )
       ifaces.extend( ( (ctrans<<postrans).flat, (ctrans<<negtrans).flat, edge ) for postrans, negtrans, edge in cifaces )
@@ -493,7 +493,7 @@ class SimplexReference( Reference ):
   def child_refs( self ):
     return (self,) * len(self.child_transforms)
 
-  def getischeme_vertex( self, n ):
+  def getischeme_vertex( self, n=0 ):
     if n == 0:
       return self.vertices.astype(float), None
     return self.getischeme_bezier( 2**n+1 )
@@ -520,7 +520,7 @@ class LineReference( SimplexReference ):
     self._bernsteincache = [] # TEMPORARY
     SimplexReference.__init__( self, 1 )
     self.edge_transforms = transform.simplex( self.vertices[1:], isflipped=False ), transform.simplex( self.vertices[:1], isflipped=True )
-    self.child_transforms = transform.affine( 1, [0], 2 ), transform.affine( 1, [1], 2 )
+    self.child_transforms = transform.affine(1,[0],2), transform.affine(1,[1],2)
     refcheck( self )
 
   def stdfunc( self, degree ):
@@ -554,7 +554,7 @@ class TriangleReference( SimplexReference ):
   def __init__( self ):
     SimplexReference.__init__( self, 2 )
     self.edge_transforms = transform.simplex( self.vertices[1:] ), transform.simplex( self.vertices[::-2] ), transform.simplex( self.vertices[:-1] )
-    self.child_transforms = transform.affine( 1, [0,0], 2 ), transform.affine( 1, [0,1], 2 ), transform.affine( 1, [1,0], 2 ), transform.affine( -1, [1,1], 2 )
+    self.child_transforms = transform.affine(1,[0,0],2), transform.affine(1,[0,1],2), transform.affine(1,[1,0],2), transform.affine([[0,-1],[-1,0]],[1,1],2,isflipped=True )
     refcheck( self )
 
   def stdfunc( self, degree ):
@@ -627,17 +627,29 @@ class TriangleReference( SimplexReference ):
     points = numpy.linspace( 0, 1, np )
     return numpy.array([ [x,y] for i, y in enumerate(points) for x in points[:np-i] ]), None
 
-  def subvertex( self, ichild, i ):
-    if i == 0:
+  def subvertex( self, ichild, irefine ):
+    if irefine == 0:
       assert ichild == 0
       return self.nverts, numpy.arange(self.nverts)
-    n = 2**(i-1)
-    assert 0 <= ichild < 4
-    return ((2*n+2)*(2*n+1))//2, numpy.concatenate(
-           [ (((4*n+3-i)*i)//2) + numpy.arange(n+1-i) for i in range(n+1) ] if ichild == 0
-      else [ ((3*(n+1)*n)//2) + numpy.arange(((n+2)*(n+1))//2) ] if ichild == 1
-      else [ (((4*n+3-i)*i)//2+n) + numpy.arange(n+1-i) for i in range(n+1) ] if ichild == 2
-      else [ (((3*n+3+i)*(n-i))//2) + numpy.arange(n,i-1,-1) for i in range(n+1) ] )
+
+    N = 1 + 2**irefine # points along parent edge
+    n = 1 + 2**(irefine-1) # points along child edge
+
+    flatten_parent = lambda i, j: j + i*N + (i*(1-i))//2
+
+    if ichild == 0: # lower left
+      flatten_child = lambda i, j: flatten_parent( i, j )
+    elif ichild == 1: # upper left
+      flatten_child = lambda i, j: flatten_parent( n-1+i, j )
+    elif ichild == 2: # lower right
+      flatten_child = lambda i, j: flatten_parent( i, n-1+j )
+    elif ichild == 3: # inverted
+      flatten_child = lambda i, j: flatten_parent( n-1-j, n-1-i )
+    else:
+      raise Exception, 'invalid ichild: {}'.format( ichild )
+
+    return ((N+1)*N)//2, numpy.concatenate([ flatten_child(i,numpy.arange(n-i)) for i in range(n) ])
+
 
 class TetrahedronReference( SimplexReference ):
   '3D simplex'
@@ -987,7 +999,7 @@ class WithChildrenReference( Reference ):
     'get integration scheme'
     
     if ischeme.startswith('vertex'):
-      return self.__baseref.getischeme( ischeme )
+      return self.baseref.getischeme( ischeme )
 
     allcoords = []
     allweights = []
@@ -1076,7 +1088,7 @@ class MultiSimplexReference( Reference ):
     'get integration scheme'
     
     if ischeme.startswith('vertex'):
-      return self.__baseref.getischeme( ischeme )
+      return self.baseref.getischeme( ischeme )
 
     simplex = getsimplex(self.ndims)
     points, weights = simplex.getischeme( ischeme )
