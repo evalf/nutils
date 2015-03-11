@@ -28,6 +28,18 @@ def property( f ):
   assert not cache_property_wrapper.__closure__
   return _property(cache_property_wrapper)
 
+def weakproperty( f ):
+  def cache_property_wrapper( self, f=f ):
+    value = self.__dict__.get( f.__name__ )
+    if value:
+      value = value()
+    if not value:
+      value = f( self )
+      self.__dict__[f.__name__] = weakref.ref(value)
+    return value
+  assert not cache_property_wrapper.__closure__
+  return _property(cache_property_wrapper)
+
 def argdict( f ):
   cache = {}
   @functools.wraps( f )
