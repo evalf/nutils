@@ -162,11 +162,19 @@ class Rational( object ):
     return '%s/%s' % ( str(self.numer.tolist()).replace(' ',''), self.denom )
 
   def __hash__( self ):
+    if self.ndim == 0:
+      return hash( self.totuple() ) # compatible with int hash
     raise TypeError( "unhashable type: 'Rational'" )
     # Actually being immutable there is no reason why Rational should be
     # unhashable, except if we implement __hash__ we must also implement __eq__
     # such that it returns True on equality. Sounds fair enough, except numpy
     # decided differently. We choose to cripple our object for consistency.
+
+  def totuple( self ):
+    'convert to nested tuple of integers or (numer,denom) pairs'
+    if self.ndim == 0:
+      return int(self.numer) if self.denom == 1 else (int(self.numer),int(self.denom))
+    return tuple( item.totuple() for item in self )
 
 
 ## UTILITY FUNCTIONS
