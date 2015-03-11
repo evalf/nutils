@@ -473,25 +473,34 @@ class Topology( object ):
       assert isinstance( constrain, util.NanVec )
       assert constrain.shape == onto.shape[:1]
 
+    avg_error = None # setting this depends on projection type
+
     if ptype == 'lsqr':
       assert ischeme is not None, 'please specify an integration scheme for lsqr-projection'
+      fun2 = function.asarray( fun )**2
       if len( onto.shape ) == 1:
         Afun = function.outer( onto )
         bfun = onto * fun
       elif len( onto.shape ) == 2:
         Afun = function.outer( onto ).sum( 2 )
         bfun = function.sum( onto * fun )
+        if fun2.ndim:
+          fun2 = fun2.sum(-1)
       else:
         raise Exception
-      A, b = self.integrate( [Afun,bfun], geometry=geometry, ischeme=ischeme, title='building system' )
+      assert fun2.ndim == 0
+      A, b, f2, area = self.integrate( [Afun,bfun,fun2,1], geometry=geometry, ischeme=ischeme, title='building system' )
       N = A.rowsupp(droptol)
       if numpy.all( b == 0 ):
         constrain[~constrain.where&N] = 0
+        avg_error = 0.
       else:
         solvecons = constrain.copy()
         solvecons[~(constrain.where|N)] = 0
         u = A.solve( b, solvecons, tol=tol, symmetric=True, maxiter=maxiter, precon=precon )
         constrain[N] = u[N]
+        err2 = f2 - numpy.dot( 2*b-A.matvec(u), u ) # can be negative ~zero due to rounding errors
+        avg_error = numpy.sqrt( err2 ) / area if err2 > 0 else 0
 
     elif ptype == 'convolute':
       assert ischeme is not None, 'please specify an integration scheme for convolute-projection'
@@ -536,17 +545,13 @@ class Topology( object ):
     else:
       raise Exception( 'invalid projection %r' % ptype )
 
-    errfun2 = ( onto.dot( constrain | 0 ) - fun )**2
-    if errfun2.ndim == 1:
-      errfun2 = errfun2.sum()
-    error2, area = self.integrate( [ errfun2, 1 ], geometry=geometry, ischeme=ischeme or 'gauss2' )
-    avg_error = numpy.sqrt(error2) / area
-
     numcons = constrain.where.sum()
+    info = 'constrained {}/{} dofs'.format( numcons, constrain.size )
+    if avg_error is not None:
+      info += ', error {:.2e}/area'.format( avg_error )
+    log.info( info )
     if verify is not None:
       assert numcons == verify, 'number of constraints does not meet expectation: %d != %d' % ( numcons, verify )
-
-    log.info( 'constrained %d/%d dofs, error %.2e/area' % ( numcons, constrain.size, avg_error ) )
 
     return constrain
 
