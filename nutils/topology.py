@@ -143,8 +143,7 @@ class Topology( object ):
   def __setitem__( self, item, topo ):
     assert isinstance( topo, Topology ), 'wrong type: got %s, expected Topology' % type(topo)
     assert topo.ndims == self.ndims, 'wrong dimension: got %d, expected %d' % ( topo.ndims, self.ndims )
-    for elem in topo:
-      assert self.edict[elem.transform] == elem, 'group %r is not a subtopology' % item
+    assert all( elem.transform in self.edict for elem in topo ), 'group %r is not a subtopology' % item
     self.groups[item] = topo
 
   @cache.property
