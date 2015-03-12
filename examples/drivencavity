@@ -6,119 +6,93 @@ from nutils import *
 @log.title
 def makeplots( domain, geom, velo, pres, index ):
 
-  xy, uv = domain.elem_eval( [ geom, velo ], ischeme='uniform1', title='flow field', separate=False )
+  xy, uv = domain.elem_eval( [ geom, velo ], ischeme='uniform2', title='flow field', separate=False )
   points, velo, pres, div = domain.elem_eval( [ geom, function.norm2(velo), pres, velo.div(geom) ], ischeme='bezier5', separate=True )
 
   with plot.PyPlot( 'velo', index=index, ndigits=4 ) as plt:
-    plt.mesh( points, velo, edgecolors='none', triangulate='bezier' )
-    plt.clim( 0, .9 )
+    plt.mesh( points, velo, triangulate='bezier' )
+    plt.clim( 0, 1 )
     plt.colorbar()
     plt.quiver( xy[:,0], xy[:,1], uv[:,0], uv[:,1] )
-    plt.xlim( 0, 1 )
-    plt.ylim( 0, 1 )
 
   with plot.PyPlot( 'pres', index=index, ndigits=4 ) as plt:
-    plt.mesh( points, pres, edgecolors='none', triangulate='bezier' )
+    plt.mesh( points, pres, triangulate='bezier' )
     plt.colorbar()
-    plt.xlim( 0, 1 )
-    plt.ylim( 0, 1 )
 
   with plot.PyPlot( 'div', index=index, ndigits=4 ) as plt:
-    plt.mesh( points, div, edgecolors='none', triangulate='bezier' )
+    plt.mesh( points, div, triangulate='bezier' )
     plt.colorbar()
-    plt.xlim( 0, 1 )
-    plt.ylim( 0, 1 )
 
 
-@util.withrepr
-def Gauss( center=.75, width=.25, height=.25 ):
-  return lambda xy: function.stack([ xy[0],
-    height * function.exp( -((xy[0]-center)/width)**2 ) * (1-xy[1]) + xy[1] ])
-
-
-def main( nelems=16, reynolds=2e3, curve=Gauss(), strong=False, tol=1e-8, timestep=0, plot=True, solvetol=1e-10 ):
+def main( nelems=8, reynolds=2e3, warp=False, tol=1e-8, plot=True, solvetol=1e-10, maxiter=numpy.inf ):
 
   verts = numpy.linspace( 0, 1, nelems+1 )
   domain, geom = mesh.rectilinear( [verts,verts] )
-  vx, vy = function.chain([
-    domain.splinefunc( degree=(3,2), removedofs=((0,-1),None) ),
-    domain.splinefunc( degree=(2,3), removedofs=(None,(0,-1)) )
-  ])
-  vspace = function.stack( [ vx, vy ], axis=1 )
-  pspace = domain.splinefunc( degree=2 )
+  pbasis = domain.basis( 'spline', degree=1 )
+  vbasis = function.vectorize([
+    domain.basis( 'spline', degree=(2,1), removedofs=((0,-1),None) ),
+    domain.basis( 'spline', degree=(1,2), removedofs=(None,(0,-1)) ) ])
 
-  if curve:
-    geom = curve(geom)
+  if warp:
+    x, y = geom
+    geom = (y+2) * function.rotmat(x*.4)[:,1] - (0,2) # slight downward bend
     J = function.localgradient( geom, domain.ndims )
     detJ = function.determinant( J )
-    vspace = ( vspace[...,_,:] * J ).sum() / detJ
-    pspace = pspace / detJ
+    vbasis = ( vbasis[...,_,:] * J ).sum() / detJ # piola transform
+    pbasis = pbasis / detJ
 
-  vspace, pspace, lspace = function.chain([ vspace, pspace, [1.] ])
+  vbasis, pbasis, lbasis = function.chain([ vbasis, pbasis, [1.] ])
 
-  stress = 2 * vspace.symgrad(geom) - pspace[:,_,_] * function.eye( domain.ndims )
+  stress = (2./reynolds) * vbasis.symgrad(geom) - pbasis[:,_,_] * function.eye( domain.ndims )
 
-  A = function.outer( vspace.grad(geom), stress ).sum([2,3])
-  A += function.outer( pspace, vspace.div(geom) )
-  A += function.outer( lspace, pspace )
-  A += function.outer( pspace, lspace )
+  A = function.outer( vbasis.grad(geom), stress ).sum([2,3])
+  A += function.outer( pbasis, vbasis.div(geom) )
+  A += function.outer( lbasis, pbasis )
+  A += function.outer( pbasis, lbasis )
 
   stokesmat = domain.integrate( A, geometry=geom, ischeme='gauss9', title='stokes matrix' )
 
-  if strong:
-    stokesrhs = 0
-    cons = domain.boundary['top'].project( 1, geometry=geom, onto=vspace[:,0], ischeme='gauss3', title='top boundary' ) \
-         | domain.boundary.project( 0, geometry=geom, onto=vspace, ischeme='gauss3', title='other boundary' )
-  else:
-    ALPHA = .01 * nelems * reynolds
-    Utop = [1,0]
-    weakterm = ALPHA * vspace - 2 * vspace.nsymgrad(geom)
-    stokesmat += domain.boundary.integrate( function.outer( weakterm, vspace ).sum(), geometry=geom, ischeme='gauss9', title='weak bc stokes matrix' )
-    stokesrhs = domain.boundary['top'].integrate( ( weakterm * Utop ).sum(), geometry=geom, ischeme='gauss9', title='weak bc rhs' )
-    cons = None
+  utop = geom.tangent([1,0]).normalized()
 
-  if timestep:
-    inertia = (1./timestep) * function.outer( vspace ).sum()
-    inertmat = domain.integrate( inertia, ischeme='gauss9', geometry=geom, title='adding inertia' )
-    stokesmat += inertmat
+  alpha = .01 * nelems # stabilization
+  nietzsche = alpha * vbasis - (2./reynolds) * vbasis.nsymgrad(geom)
+  stokesmat += domain.boundary.integrate( function.outer( nietzsche, vbasis ).sum(), geometry=geom, ischeme='gauss9', title='weak bc stokes matrix' )
+  rhs = domain.boundary['top'].integrate( ( nietzsche * utop ).sum(), geometry=geom, ischeme='gauss9', title='weak bc rhs' )
 
   precon = stokesmat.getprecon( 'splu' ) if solvetol else None
-  stokeslhs = stokesmat.solve( stokesrhs, constrain=cons, tol=solvetol, precon=precon )
-
-  lhs = stokeslhs
-  for iiter in log.count( 'iter' ):
+  lhs = stokesmat.solve( rhs, tol=solvetol, precon=precon )
+  for iiter in log.count( 'picard' ):
     if plot:
-      makeplots( domain, geom, vspace.dot(lhs), pspace.dot(lhs), iiter )
-    ugradu = ( vspace.grad(geom) * vspace.dot(lhs) ).sum()
-    convection = reynolds * function.outer( vspace, ugradu ).sum()
+      makeplots( domain, geom, vbasis.dot(lhs), pbasis.dot(lhs), iiter )
+    ugradu = ( vbasis.grad(geom) * vbasis.dot(lhs) ).sum()
+    convection = function.outer( vbasis, ugradu ).sum()
     matrix = stokesmat + domain.integrate( convection, ischeme='gauss9', geometry=geom, title='navstokes matrix' )
-    if timestep:
-      rhs = stokesrhs + inertmat.matvec( lhs )
-    else:
-      rhs = stokesrhs
-      res = matrix.res( lhs, rhs, constrain=cons )
-      log.info( 'residual:', res )
-      if res < tol:
-        break
-    lhs = matrix.solve( rhs, constrain=cons, tol=solvetol, precon=precon )
+    res = matrix.res( lhs, rhs )
+    log.info( 'residual:', res )
+    if res < tol or iiter >= maxiter:
+      break
+    lhs = matrix.solve( rhs, tol=solvetol, precon=precon, restart=999 )
 
-  return stokeslhs, iiter, lhs
+  return lhs, res
 
 
 def unittest():
 
-  retvals = main( nelems=4, reynolds=1000, curve=None, strong=False, tol=1e-3, timestep=0, plot=False, solvetol=0 )
+  retvals = main( nelems=4, reynolds=1e3, warp=False, tol=0, maxiter=1, plot=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
-    eNqdVEuy5DAIu053VTzFH3Ogvv8VxoDpem85s3LiSEaSIfi85EF9P6/XQnD+LH0IInJdQmr5wBH1YZFt
-    +Sx5FFlzZRH/LHuWKjbFKBEJDdwJOchad0RRFwNqIRy8Hwg96hNttnwQ7nVD1v2/Mv9uZhiLkUpYmNwi
-    zLUxyCM9IAVZQB0eoViAcKqjgqFWJCgRqJ4runnt29YbBnQGg1wDXYNdAx7sFF9TfU35NfXXCPjGMJ7W
-    mBpP62sKIQvyEYl9HUiMVwFxfjm+DepBQ88plCrZf93d8pCrm1wKfAp4gikIm+3YB7MqN9a92bh3kRS0
-    DQjvXRuXM5RhDGENYwijbISNrpE1qtbIGv9rAhj/Y3/cj3n487zPFT+vFcBU97vh5u+721Lshnv7lBB6
-    I861FgVid4CGpU+Iq0/N2LtfvTPi7dQtItDZMJH1oQ1B7CEwuLd/rN9mYrtVaLdC8xwHO/PR3WXSuTJo
-    NxVzTGtij5RttxbgLMnVzcUZ++cDVGJ0xN8cOsKxbTuH359zmR1YRZm3iuUkWHi6X+/kFJHcpIcU70F3
-    oiR2tzHvy5R26Lo7YIGLcLwIjW7wMwIdBgnRncfo0L8plIF6aIXnmPu3GvfH2s52QLLI9iDNfjrvoj1P
-    lj+c02hbsDfEmsAZyiGgSRNysHM/Z5WecyPx8/2I0+5Y9J4+3sSNTHGnM7lTQ+r9w6ACCmAzDBD6DFG6
-    7a8l9/wOd08ptBqV3QCSOsyjB4fVrIC0Sx4x1DuaDUFrQzZ4q0gi9ry8/wKeqGYR''' )
+    eNpFkettAzEMg9dJALsw9bQGyv4r1BYv7S8dJIr+xMN42YC/x+s1XbZ/pg/LpbdOaMln2gjTvA2sK7Ax
+    pdZqhUCNnb3X/ZBcuNUKuwcmVpRWUYqolqK8Jb6zXQOgqW+AKzviTtSjgdyzzb+g0yCtFM0G/QMELvkZ
+    GBtaaXwT7RhpZzFGSTx0wRMtdxIC+eVW0DP9OcDRo39gBwML2ZR8SREM6tRWIM2aa0X3Y1Vw7sm+NPfM
+    VLmA88TXj2nopgOMG3Q6GSSJS3eQAqtTOcfWI9Unz2Vtqk88s+qeEEdSdIWRpxisii4G7B3w+hnvk/L9
+    6TrevwShfCg=''' )
+
+  retvals = main( nelems=4, reynolds=1e3, warp=True, tol=0, maxiter=1, plot=False, solvetol=0 )
+  assert debug.checkdata( retvals, '''
+    eNpVUOuNgzEIW6eVkhPmzUDdf4Um8Ol09yuAHduA9dIFe6/Xa6MoP9sWVPS+W0n9FqzRA0ZKA+Zan+1r
+    ezj3xMsaCk60hujpdW0wRTNSLEdV2G7h5DV2Qz323W+OAXbo+AEP09kf5kiVVecICP8L6IFowMYLNB7m
+    0wtfBT9KmHQB2B0YUb8b9sQN6FCksicF1vn75BXnKZBOs/QTtLIONVZV8H2Bmq+R42bUMSsDjXM0fjZX
+    uoMNzQ7KacMMGiWSySkYqe0ZUyhJHwU0yDlSthb/FsdnloTRUDwu4pLNgN17Hlcv/F2Vftb7LKN2l3t/
+    ARObfLY=''' )
 
 
 util.run( main, unittest )
