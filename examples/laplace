@@ -6,44 +6,39 @@ from nutils import *
 @log.title
 def makeplots( domain, geom, sol, index ):
 
-  points, colors = domain.elem_eval( [ geom, sol ], ischeme='bezier4', separate=True )
+  points, colors = domain.elem_eval( [ geom, sol ], ischeme='bezier9', separate=True )
   with plot.PyPlot( 'solution', index=index ) as plt:
     plt.mesh( points, colors, triangulate='bezier' )
     plt.colorbar()
-    plt.xlim( 0, .5*numpy.pi )
-    plt.ylim( 0, .5*numpy.pi )
 
 
-def main( nelems=None, degree=1, plots=True, solvetol=1e-10 ):
+def main( nelems=None, degree=1, basistype='spline', solvetol=1e-10, withplots=True ):
 
   if nelems:
     verts = numpy.linspace( 0, .5*numpy.pi, nelems+1 )
     domain, geom = mesh.rectilinear( [verts,verts] )
   else:
     domain, geom = mesh.demo( xmax=.5*numpy.pi, ymax=.5*numpy.pi )
-    if degree != 1:
-      log.warning( 'setting degree=1 for triangular mesh' )
-      degree = 1
+    assert degree == 1, 'degree={} unsupported for triangular mesh'.format( degree )
 
   x, y = geom
   exact = function.sin(x) * function.exp(y)
-  flux = numpy.exp(.5*numpy.pi) * function.sin(x)
-  dirichlet = function.sin(x)
+  flux = exact.ngrad( geom )
 
-  funcsp = domain.splinefunc( degree=degree )
-  laplace = function.outer( funcsp.grad(geom) ).sum()
-  matrix = domain.integrate( laplace, geometry=geom, ischeme='gauss4', title='matrix' )
-  rhs = domain.boundary['top'].integrate( funcsp * flux, geometry=geom, ischeme='gauss6', title='rhs' )
-  cons = domain.boundary['left,bottom'].project( dirichlet, ischeme='gauss6', geometry=geom, onto=funcsp, title='left,bottom edge' )
+  basis = domain.basis( basistype, degree=degree )
+  laplace = function.outer( basis.grad(geom) ).sum()
+  matrix = domain.integrate( laplace, geometry=geom, ischeme='gauss4' )
+  rhs = domain.boundary['right,top'].integrate( basis * flux, geometry=geom, ischeme='gauss7' )
+  cons = domain.boundary['left,bottom'].project( exact, ischeme='gauss7', geometry=geom, onto=basis )
   lhs = matrix.solve( rhs, constrain=cons, tol=solvetol, symmetric=True )
-  sol = funcsp.dot(lhs)
+  sol = basis.dot(lhs)
 
-  if plots:
-    makeplots( domain.refined, geom, sol, nelems )
+  if withplots:
+    makeplots( domain, geom, sol, nelems )
 
   error = sol - exact
-  err = numpy.sqrt( domain.integrate( [ error**2, ( error.grad(geom)**2 ).sum() ], geometry=geom, ischeme='gauss6', title='computing error' ) )
-  log.user( 'errors: l2=%f, h1=%f' % tuple(err) )
+  err = numpy.sqrt( domain.integrate( [ error**2, ( error.grad(geom)**2 ).sum() ], geometry=geom, ischeme='gauss7' ) )
+  log.user( 'errors: l2={}, h1={}'.format(*err) )
 
   return err, rhs, cons, lhs
 
@@ -75,19 +70,19 @@ def conv( degree=1, nrefine=4 ):
 
 def unittest():
 
-  retvals = main( degree=1, plots=False, solvetol=0 )
+  retvals = main( degree=1, withplots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
     eNqNUDkOwzAM+04CyIVu2c/p4DX/H2spTYa2QwEbommBpESwKZDtsG2uLrMZdHSbTWFx+AASjdkEGHlk
     TYqC35CdPHsX/PMs1eN5wK/bltcSjqXaLetJ4qDZvB5iIYnNRNI2uW6hFyYUzGSfysuUh2p+aYhXRa5W
     ViuezWs+Yqt5v8J4nJ53INOoPX2GGt4x6xWMJPvkDkdhdm7Ua43sKsWblPMO+wvOeV1C''' )
 
-  retvals = main( nelems=4, degree=1, plots=False, solvetol=0 )
+  retvals = main( nelems=4, degree=1, withplots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
     eNqdkM1uAzEIhF9nV2IjDz8GHqeHveb9jzWkWzVpTpFsDfoww8igTQm207ax5jgPI3VdqrTYuNHvAbMX
     /ssc8o9BkOchz8xZXlkK288aS5nn4XTAElUox3ofCzBrFRNlmiThPXT/uj9dx5R3PMXiHcdAB3rlH4Wx
     6SgN8Q4BVi5zhM7SKxyGRnNTL2VOKxUFSq+wkNk/yIPbhzN7TtXa7woPjUcf0X1hbb+Fu7/T/g3BeW4p''' )
 
-  retvals = main( nelems=4, degree=2, plots=False, solvetol=0 )
+  retvals = main( nelems=4, degree=2, withplots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
     eNqlUUtuhTAMvA5ISeW/4+N0wfbdf1nbFKni8VaVQBNmxsFj49hkoO5j21DCjmmDhPyYOpKDr/H3MVQo
     5UZz8seUO41AcUx+o1XwicbgB9pIou7OZiYFZ6UPZI7CqQh5WNnxiRNNuA6unhFiYARU9ev79faqGX/S
