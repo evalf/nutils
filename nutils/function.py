@@ -559,9 +559,9 @@ class ArrayFunc( Evaluable ):
     assert normal.shape == (self.shape[axis],)
     return ( self * normal[(slice(None),)+(_,)*(self.ndim-axis-1)] ).sum( axis )
 
-  def tangent( self, geom ):
-    normal = geom.normal()
-    return self - ( self * normal ).sum(-1)[...,_] * normal
+  def tangent( self, vec ):
+    normal = self.normal()
+    return vec - ( vec * normal ).sum(-1)[...,_] * normal
 
   def ngrad( self, coords, ndims=0 ):
     'normal gradient'
@@ -3050,6 +3050,7 @@ nsymgrad = lambda arg, coords: ( symgrad(arg,coords) * coords.normal() ).sum()
 ngrad = lambda arg, coords: ( grad(arg,coords) * coords.normal() ).sum()
 sin = lambda arg: pointwise( [arg], numpy.sin, cos )
 cos = lambda arg: pointwise( [arg], numpy.cos, lambda x: -sin(x) )
+rotmat = lambda arg: asarray( [[cos(arg),sin(arg)],[-sin(arg),cos(arg)]] )
 tan = lambda arg: pointwise( [arg], numpy.tan, lambda x: cos(x)**-2 )
 arcsin = lambda arg: pointwise( [arg], numpy.arcsin, lambda x: reciprocal(sqrt(1-x**2)) )
 arccos = lambda arg: pointwise( [arg], numpy.arccos, lambda x: -reciprocal(sqrt(1-x**2)) )
