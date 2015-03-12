@@ -13,20 +13,9 @@ backends. At this point `matplotlib <http://matplotlib.org/>`_ and `vtk
 """
 
 from __future__ import print_function, division
-from . import topology, util, numpy, function, element, log, core, numeric, debug, _
+from . import numpy, log, core, _
 import os, warnings
-try:
-  from scipy import spatial # for def mesh; import cannot be postponed apparently
-except ImportError:
-  pass
 
-def _nansplit( data ):
-  n, = numpy.where( numpy.isnan( data.reshape( data.shape[0], -1 ) ).any( axis=1 ) )
-  N = numpy.concatenate( [ [-1], n, [data.shape[0]] ] )
-  return [ data[a:b] for a, b in zip( N[:-1]+1, N[1:] ) ]
-
-def _nanfilter( data ):
-  return data[~numpy.isnan( data.reshape( data.shape[0], -1 ) ).all( axis=1 )]
 
 class BasePlot( object ):
   'base class for plotting objects'
@@ -93,7 +82,6 @@ class PyPlot( BasePlot ):
     self.__dict__.update( pyplot.__dict__ )
 
     self._fig = self.figure( **kwargs )
-    #self._fig.patch.set_alpha( 0 )
 
   def __exit__( self, *exc_info ):
     'exit with block'
@@ -108,51 +96,16 @@ class PyPlot( BasePlot ):
     'save images'
 
     self.savefig( os.path.join( self.path, name ) )
-    #self.close()
-
-  @staticmethod
-  def _trimesh_class():
-    'backport of TriMesh (function prevents unneccecary loading)'
-
-    from matplotlib.collections import Collection
-    from matplotlib.artist import allow_rasterization
-    
-    class TriMesh( Collection ):
-
-      def __init__(self, xy, tri, **kwargs):
-        Collection.__init__(self, **kwargs)
-        self.xy = xy
-        self.tri = tri
-        self._facecolors = numpy.zeros([numpy.max(tri)+1,4]) # fully transparent
-
-      def get_paths( self ):
-        return []
-    
-      @allow_rasterization
-      def draw(self, renderer):
-        if not self.get_visible():
-          return
-        renderer.open_group(self.__class__.__name__)
-        transform = self.get_transform()
-        verts = self.xy.T[self.tri]
-        self.update_scalarmappable()
-        colors = self._facecolors[self.tri]
-        gc = renderer.new_gc()
-        self._set_gc_clip(gc)
-        gc.set_linewidth(self.get_linewidth()[0])
-        renderer.draw_gouraud_triangles(gc, verts, colors, transform.frozen())
-        gc.restore()
-        renderer.close_group(self.__class__.__name__)
-
-    return TriMesh
 
   def mesh( self, points, colors=None, edgecolors='k', edgewidth=None, triangulate='delaunay', setxylim=True, **kwargs ):
     'plot elemtwise mesh'
 
     assert isinstance( points, numpy.ndarray ) and points.dtype == float
-    if colors is not  None:
+    if colors is not None:
       assert isinstance( colors, numpy.ndarray ) and colors.dtype == float
       assert points.shape[:-1] == colors.shape
+
+    import matplotlib.tri
 
     if points.ndim == 3: # gridded data: nxpoints x nypoints x ndims
 
@@ -180,10 +133,10 @@ class PyPlot( BasePlot ):
       if colors is not None:
         assert numpy.isnan( colors[split] ).all()
   
-      P = []
-      N = []
-      C = []
-      E = []
+      all_epoints = []
+      all_vertices = []
+      all_colors = []
+      edges = []
       npoints = 0
   
       for a, b in zip( numpy.concatenate([[0],split+1]), numpy.concatenate([split,[nans.size]]) ):
@@ -194,23 +147,23 @@ class PyPlot( BasePlot ):
         if colors is not None:
           ecolors = colors[a:b]
         if triangulate == 'delaunay':
-          tri = spatial.Delaunay( epoints )
+          import scipy.spatial
+          tri = scipy.spatial.Delaunay( epoints )
           vertices = tri.vertices
-          e0 = [ edge[0] for edge in tri.convex_hull ]
-          e1 = [ edge[1] for edge in tri.convex_hull ]
-          last = e1.pop()
-          hull = [ e0.pop(), last ]
-          while e0:
-            try:
-              index = e0.index( last )
-              last = e1[index]
-            except ValueError:
-              index = e1.index( last )
-              last = e0[index]
-            e0.pop( index )
-            e1.pop( index )
-            hull.append( last )
-          assert hull[0] == hull[-1]
+          connectivity = {}
+          for e0, e1 in tri.convex_hull: # build inverted data structure for fast lookups
+            connectivity.setdefault( e0, [] ).append( e1 )
+            connectivity.setdefault( e1, [] ).append( e0 )
+          p = tri.convex_hull[0,0] # first point (arbitrary)
+          q = connectivity.pop(p)[0] # second point (arbitrary orientation)
+          hull = [ p ]
+          while connectivity:
+            hull.append( q )
+            q, r = connectivity.pop( hull[-1] )
+            if q == hull[-2]:
+              q = r
+          assert q == p
+          hull.append( q )
         elif triangulate == 'bezier':
           nquad = int( numpy.sqrt(np) + .5 )
           ntri = int( numpy.sqrt((2*np)+.25) )
@@ -229,47 +182,42 @@ class PyPlot( BasePlot ):
             raise Exception( 'cannot match points to a bezier scheme' )
         else:
           raise Exception( 'unknown triangulation method %r' % triangulate )
-        P.append( epoints.T )
-        N.append( vertices + npoints )
+        all_epoints.append( epoints.T )
+        all_vertices.append( vertices + npoints )
         if colors is not None:
-          C.append( ecolors )
-        E.append( epoints[hull] )
+          all_colors.append( ecolors )
+        edges.append( epoints[hull] )
         npoints += np
   
-      xy = numpy.concatenate( P, axis=1 )
-      triangles = numpy.concatenate( N, axis=0 )
+      xy = numpy.concatenate( all_epoints, axis=1 )
+      triangles = numpy.concatenate( all_vertices, axis=0 )
       if colors is not None:
-        data = numpy.concatenate( C )
-      edges = E
+        data = numpy.concatenate( all_colors )
 
     else:
 
       raise Exception( 'invalid points shape %r' % ( points.shape, ) )
-  
-    TriMesh = self._trimesh_class()
-    polycol = TriMesh( xy, triangles, rasterized=True, **kwargs )
+
     if colors is not None:
-      polycol.set_array( data )
+      trimesh = self.tripcolor( xy[0], xy[1], triangles, data, shading='gouraud', rasterized=True )
 
     if edges and edgecolors != 'none':
+      if edgewidth is None:
+        edgewidth = .1 if colors is not None else .5
       from matplotlib.collections import LineCollection
-      linecol = LineCollection( edges, linewidths=(edgewidth,) if edgewidth is not None else None )
+      linecol = LineCollection( edges, linewidths=(edgewidth,) )
       linecol.set_color( edgecolors )
       self.gca().add_collection( linecol )
 
-    self.gca().add_collection( polycol )
-    self.sci( polycol )
-    
     if setxylim:
       xmin, ymin = numpy.min( xy, axis=1 )
       xmax, ymax = numpy.max( xy, axis=1 )
       self.xlim( xmin, xmax )
       self.ylim( ymin, ymax )
     
-    if edgecolors != 'none':
-      return polycol, linecol
-
-    return polycol
+    return linecol if colors is None \
+      else trimesh if edgecolors == 'none' \
+      else (trimesh, linecol)
 
   def polycol( self, verts, facecolors='none', **kwargs ):
     'add polycollection'
@@ -604,8 +552,13 @@ class VTKFile( BasePlot ):
       array.SetTuple( i, d )
     return array
 
+
+## AUXILIARY FUNCTIONS
+
 def writevtu( name, topo, coords, pointdata={}, celldata={}, ascii=False, superelements=False, maxrefine=3, ndigits=0, ischeme='gauss1', **kwargs ):
   'write vtu from coords function'
+
+  from . import element, topology
 
   with VTKFile( name, ascii=ascii, ndigits=ndigits ) as vtkfile:
 
@@ -629,248 +582,13 @@ def writevtu( name, topo, coords, pointdata={}, celldata={}, ascii=False, supere
       for key, array in zip( keys, arrays ):
         vtkfile.celldataarray( key, array )
 
-######## OLD PLOTTING INTERFACE ############
+def _nansplit( data ):
+  n, = numpy.where( numpy.isnan( data.reshape( data.shape[0], -1 ) ).any( axis=1 ) )
+  N = numpy.concatenate( [ [-1], n, [data.shape[0]] ] )
+  return [ data[a:b] for a, b in zip( N[:-1]+1, N[1:] ) ]
 
-class Pylab( object ):
-  'matplotlib figure'
+def _nanfilter( data ):
+  return data[~numpy.isnan( data.reshape( data.shape[0], -1 ) ).all( axis=1 )]
 
-  def __init__( self, title, name='graph{0:03x}' ):
-    'constructor'
-
-    import matplotlib
-    matplotlib.use( 'Agg', warn=False )
-
-    if '.' not in name.format(0):
-      imgtype = core.getprop( 'imagetype', 'png' )
-      name += '.' + imgtype
-
-    if isinstance( title, (list,tuple) ):
-      self.title = numpy.array( title, dtype=object )
-      self.shape = self.title.shape
-      if self.title.ndim == 1:
-        self.title = self.title[:,_]
-      assert self.title.ndim == 2
-    else:
-      self.title = numpy.array( [[ title ]] )
-      self.shape = ()
-    self.name = name
-
-  def __enter__( self ):
-    'enter with block'
-
-    from matplotlib import pyplot
-    pyplot.figure()
-    n, m = self.title.shape
-    axes = [ PylabAxis( pyplot.subplot(n,m,iax+1), title ) for iax, title in enumerate( self.title.ravel() ) ]
-    return numpy.array( axes, dtype=object ).reshape( self.shape ) if self.shape else axes[0]
-
-  def __exit__( self, exc, msg, tb ):
-    'exit with block'
-
-    if exc:
-      log.error( 'ERROR: plot failed:', msg or exc )
-      return #True
-
-    from matplotlib import pyplot
-    dumpdir = core.getprop( 'dumpdir' )
-    n = len( os.listdir( dumpdir ) )
-    imgpath = util.getpath( self.name )
-    pyplot.savefig( imgpath, format=imgpath.split('.')[-1] )
-    os.chmod( imgpath, 0o644 )
-    pyplot.close()
-    log.path( os.path.basename(imgpath) )
-
-class PylabAxis( object ):
-  'matplotlib axis augmented with nutils-specific functions'
-
-  def __init__( self, ax, title ):
-    'constructor'
-
-    if title:
-      ax.set_title( title )
-    self._ax = ax
-
-  def __getattr__( self, attr ):
-    'forward getattr to axis'
-
-    return getattr( self._ax, attr )
-
-  @log.title
-  def add_mesh( self, coords, topology, deform=0, color=None, edgecolors='none', linewidth=1, xmargin=0, ymargin=0, aspect='equal', cbar='vertical', ischeme='gauss2', cscheme='contour3', clim=None, frame=True, colormap=None ):
-    'plot mesh'
-  
-    assert topology.ndims == 2
-    from matplotlib import pyplot, collections
-    poly = []
-    values = []
-    ndims, = coords.shape
-    assert ndims in (2,3)
-    if color:
-      assert color.ndim == 0
-      color = function.Tuple([ color, coords.iweights(ndims=2) ])
-    plotcoords = coords + deform
-    for elem in topology:
-      C = plotcoords( elem, cscheme )
-      if ndims == 3:
-        C = project3d( C )
-        cx, cy = numpy.hstack( [ C, C[:,:1] ] )
-        if ( (cx[1:]-cx[:-1]) * (cy[1:]+cy[:-1]) ).sum() > 0:
-          continue
-      if color:
-        c, w = color( elem, ischeme )
-        values.append( numeric.mean( c, weights=w, axis=0 ) if c.ndim > 0 else c )
-      poly.append( C )
-  
-    if values:
-      elements = collections.PolyCollection( poly, edgecolors=edgecolors, linewidth=linewidth, rasterized=True )
-      elements.set_array( numpy.asarray(values) )
-      if colormap is not None:
-        elements.set_cmap( pyplot.cm.gray if colormap is False else colormap )
-      if cbar:
-        pyplot.colorbar( elements, ax=self._ax, orientation=cbar )
-    else:
-      elements = collections.PolyCollection( poly, edgecolors='black', facecolors='none', linewidth=linewidth, rasterized=True )
-
-    if clim:
-      elements.set_clim( *clim )
-
-    if ndims == 3:
-      self.get_xaxis().set_visible( False )
-      self.get_yaxis().set_visible( False )
-      self.box( 'off' )
-
-    self.add_collection( elements )
-    vertices = numpy.concatenate( poly )
-    xmin, ymin = vertices.min(0)
-    xmax, ymax = vertices.max(0)
-
-    if xmargin is not None:
-      if not isinstance( xmargin, tuple ):
-        xmargin = xmargin, xmargin
-      self.set_xlim( xmin - xmargin[0], xmax + xmargin[1] )
-
-    if ymargin is not None:
-      if not isinstance( ymargin, tuple ):
-        ymargin = ymargin, ymargin
-      self.set_ylim( ymin - ymargin[0], ymax + ymargin[1] )
-
-    if aspect:
-      self.set_aspect( aspect )
-      self.set_autoscale_on( False )
-
-    self.set_frame_on( frame )
-    return elements
-  
-  def add_quiver( self, coords, topology, quiver, sample='uniform3', scale=None ):
-    'quiver builder'
-  
-    xyuv = function.Concatenate( [ coords, quiver ] )
-    XYUV = [ xyuv( elem, sample ) for elem in log.iter( 'elem', topology ) ]
-    self.quiver( *numpy.concatenate( XYUV, 0 ).T, scale=scale )
-
-  def add_graph( self, xfun, yfun, topology, sample='contour10', logx=False, logy=False, **kwargs ):
-    'plot graph of function on 1d topology'
-
-    try:
-      xfun = [ xf for xf in xfun ]
-    except TypeError:
-      xfun = [ xfun ]
-
-    try:
-      yfun = [ yf for yf in yfun ]
-    except TypeError:
-      yfun = [ yfun ]
-
-    if len(xfun) == 1:
-      xfun *= len(yfun)
-
-    if len(yfun) == 1:
-      yfun *= len(xfun)
-
-    nfun = len(xfun)
-    assert len(yfun) == nfun
-
-    special_args = zip( *[ zip( [key]*nfun, val ) for (key,val) in kwargs.items() if isinstance(val,list) and len(val) == nfun ] )
-    XYD = [ ([],[],dict(d)) for d in special_args or [[]] * nfun ]
-    xypairs = function.Tuple( [ function.Tuple(v) for v in zip( xfun, yfun, XYD ) ] )
-
-    for elem in topology:
-      for x, y, xyd in xypairs( elem, sample ):
-
-        if y.ndim == 1 and y.shape[0] == 1:
-          y = y[0]
-
-        xyd[0].extend( x if x.ndim else [x] * y.size )
-        xyd[0].append( numpy.nan )
-        xyd[1].extend( y if y.ndim else [y] * x.size )
-        xyd[1].append( numpy.nan )
-
-    plotfun = self.loglog if logx and logy \
-         else self.semilogx if logx \
-         else self.semilogy if logy \
-         else self.plot
-    for x, y, d in XYD:
-      kwargs.update(d)
-      plotfun( x, y, **kwargs )
-
-  def add_convplot( self, x, y, drop=0.8, shift=1.1, slope=True, **kwargs ): 
-    """Convergence plot including slope triangle (below graph) for supplied y(x),
-       drop  = distance graph & triangle,
-       shift = distance triangle & text."""
-    self.loglog( x, y, 'k.-', **kwargs )
-    self.grid( True )
-    if slope:
-      if x[-1] < x[0]: # inverted order
-        slx   = numpy.array( [x[-2], x[-2], x[-1], x[-2]] )
-        sly   = numpy.array( [y[-2], y[-1], y[-1], y[-2]] )*drop
-      if x[-1] > x[0]:
-        slx   = numpy.array( [x[-1], x[-1], x[-2], x[-1]] )
-        sly   = numpy.array( [y[-1], y[-2], y[-2], y[-1]] )/drop
-      # slope = r'$%2.1f$' % (y[-2]*x[-1]/(x[-2]*y[-1]))
-      slope = r'$%2.1f$' % (numpy.diff( numpy.log10( y[-2:] ) )/numpy.diff( numpy.log10( x[-2:] ) ))
-      self.loglog( slx, sly, color='k', label='_nolegend_' )
-      self.text( slx[-1]*shift, numpy.mean( sly[:2] )*drop, slope )
-
-def project3d( C ):
-  sqrt2 = numpy.sqrt( 2 )
-  sqrt3 = numpy.sqrt( 3 )
-  sqrt6 = numpy.sqrt( 6 )
-  R = numpy.array( [[ sqrt3, 0, -sqrt3 ], [ 1, 2, 1 ], [ sqrt2, -sqrt2, sqrt2 ]] ) / sqrt6
-  return numeric.transform( C, R[:,::2], axis=0 )
-
-def preview( coords, topology, cscheme='contour8' ):
-  'preview function'
-
-  if topology.ndims == 3:
-    topology = topology.boundary
-
-  from matplotlib import pyplot, collections
-  if coords.shape[0] == 2:
-    mesh( coords, topology, cscheme=cscheme )
-  elif coords.shape[0] == 3:
-    polys = [ [] for i in range(4) ]
-    for elem in topology:
-      contour = coords( elem, cscheme )
-      polys[0].append( project3d( contour ).T )
-      polys[1].append( contour[:2].T )
-      polys[2].append( contour[1:].T )
-      polys[3].append( contour[::2].T )
-    for iplt, poly in enumerate( polys ):
-      elements = collections.PolyCollection( poly, edgecolors='black', facecolors='none', linewidth=1, rasterized=True )
-      ax = pyplot.subplot( 2, 2, iplt+1 )
-      ax.add_collection( elements )
-      xmin, ymin = numpy.min( [ numpy.min(p,axis=0) for p in poly ], axis=0 )
-      xmax, ymax = numpy.max( [ numpy.max(p,axis=0) for p in poly ], axis=0 )
-      d = .02 * (xmax-xmin+ymax-ymin)
-      pyplot.axis([ xmin-d, xmax+d, ymin-d, ymax+d ])
-      if iplt == 0:
-        ax.get_xaxis().set_visible( False )
-        ax.get_yaxis().set_visible( False )
-        pyplot.box( 'off' )
-      else:
-        pyplot.title( '?ZXY'[iplt] )
-  else:
-    raise Exception( 'need 2D or 3D coordinates' )
-  pyplot.show()
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
