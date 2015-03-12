@@ -29,6 +29,7 @@ class Element( object ):
   __slots__ = 'transform', 'reference', 'opposite'
 
   def __init__( self, reference, trans, opposite=None ):
+    assert isinstance( reference, Reference )
     assert trans.fromdims == reference.ndims
     self.reference = reference
     self.transform = trans.canonical
@@ -71,7 +72,7 @@ class Element( object ):
   @property
   def children( self ):
     return [ Element( child, self.transform << trans, self.opposite << trans )
-      for trans, child in self.reference.children ]
+      for trans, child in self.reference.children if child ]
 
   def trim( self, levelset, maxrefine, denom, check, fcache ):
     'trim element along levelset'
