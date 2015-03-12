@@ -106,7 +106,7 @@ class ScipyMatrix( Matrix ):
 
     import scipy.sparse.linalg
 
-    if b is None:
+    if b is None or not isinstance( b, numpy.ndarray ) and b == 0:
       b = numpy.zeros( self.shape[0] )
     else:
       b = numpy.asarray( b, dtype=float )
