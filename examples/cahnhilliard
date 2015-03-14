@@ -4,21 +4,37 @@ from nutils import *
 
 
 @log.title
-def makeplots( domain, geom, c, psi, index ):
+def makeplots( domain, geom, c, mu, energies, niter ):
 
-  force = c * psi.grad(geom)
-  xpnt, cpnt = domain.elem_eval( [ geom, c ], ischeme='bezier5', title='mesh', separate=True )
+  force = c * mu.grad(geom)
+  xpnt, cpnt = domain.elem_eval( [ geom, c ], ischeme='bezier4', title='mesh', separate=True )
   xy, uv = domain.elem_eval( [ geom, force ], ischeme='uniform1', title='quiver', separate=False )
+  Emix, Eiface = numpy.array(energies).T
 
-  with plot.PyPlot( 'concentration', ndigits=4, index=index ) as plt:
+  with plot.PyPlot( 'concentration', ndigits=4, index=len(energies) ) as plt:
     plt.mesh( xpnt, cpnt )
     plt.colorbar()
+    plt.clim( -1, 1 )
     plt.quiver( xy[:,0], xy[:,1], uv[:,0], uv[:,1], pivot='middle' )
-    plt.xlim( 0, 1 )
-    plt.ylim( 0, 1 )
+    ax = plt.gca()
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_aspect( 'equal' )
+    ax = plt.axes( [.07,.05,.35,.25], axisbg='w' )
+    ax.patch.set_alpha( .8 )
+    for E, c, name in (Emix+Eiface,'b','total'), (Emix,'r','mixture'), (Eiface,'g','interface'):
+      plt.plot( E, '-'+c )
+      plt.plot( len(E)-1, E[-1], c+'o', label=name )
+    plt.legend( bbox_to_anchor=(0,.36), loc='center left', numpoints=1, frameon=False, fontsize=8 )
+    plt.xlim( 0, niter )
+    plt.ylim( 0, (Emix[0]+Eiface[0]) * 1.1 )
+    ax.set_xticks([])
+    ax.set_yticks([])
+    plt.xlabel( 'time' )
+    plt.ylabel( 'energy' )
 
 
-def main( nelems=40, epsilon=None, timestep=.01, init='random', mean=-.3, std=.1, tol=1e-5, maxiter=-1, plot=True ):
+def main( nelems=20, epsilon=None, timestep=.01, init='random', mean=-.3, std=.1, tol=1e-5, niter=50, plot=True ):
 
   mineps = 2./nelems
   if epsilon is None:
@@ -29,60 +45,59 @@ def main( nelems=40, epsilon=None, timestep=.01, init='random', mean=-.3, std=.1
 
   xnodes = ynodes = numpy.linspace(0,1,nelems+1)
   domain, geom = mesh.rectilinear( [ xnodes, ynodes ], periodic=[0] )
-  funcsp = domain.splinefunc( degree=3, neumann=(2,3), removedofs=(None,(0,-1)) )
 
-  psi_c = lambda c_: (1./epsilon) * (2*c_)
-  psi_m = lambda c_: -epsilon * c_.laplace(geom)
-  psi_e = lambda c_: (1./epsilon) * (c_**3-3*c_)
+  cbasis, mubasis = function.chain([ domain.basis( 'spline', degree=2 ), domain.basis( 'spline', degree=2 ) ])
 
-  psi = lambda c_: psi_c(c_) + psi_m(c_) + psi_e(c_)
+  Emix = lambda c: .5 * (c-1)**2 * (c+1)**2
+  Eiface = lambda c: .5 * epsilon**2 * (c.grad(geom)**2).sum(-1)
+  f_p = lambda c_: 4*c_
+  f_n = lambda c_: 6*c - 2*c_**3
 
-  A = function.outer( funcsp ) \
-    + timestep * function.outer( funcsp.grad(geom), psi_c(funcsp).grad(geom) ).sum() \
-    - timestep * function.outer( funcsp.laplace(geom), psi_m(funcsp) )
+  A = function.outer( cbasis ) \
+    + timestep * function.outer( cbasis.grad(geom), mubasis.grad(geom) ).sum() \
+    + function.outer( mubasis, mubasis - f_p(cbasis) ) \
+    - epsilon**2 * function.outer( mubasis.grad(geom), cbasis.grad(geom) ).sum()
+
   matrix = domain.integrate( A, geometry=geom, ischeme='gauss4' )
 
   if init == 'random':
     numpy.random.seed( 0 )
-    c = funcsp.dot( numpy.random.normal( mean, std, funcsp.shape ) )
+    c = cbasis.dot( numpy.random.normal( mean, std, cbasis.shape ) )
   elif init == 'sine':
     x, y = geom
     c = mean + (y-.5+.5*function.sin(x*2*numpy.pi)) * std
   else:
     raise Exception( 'unknown init %r' % init )
 
-  for iiter in log.count( 'timestep' ):
+  energies = []
 
-    if plot:
-      makeplots( domain, geom, c, psi(c), iiter )
+  for iiter in log.range( 'timestep', niter ):
 
-    if iiter == maxiter:
-      break
-
-    b = funcsp * c - timestep * ( funcsp.grad(geom) * psi_e(c).grad(geom) ).sum()
-    rhs, total = domain.integrate( [ b, c ], geometry=geom, ischeme='gauss4' )
-
-    log.user( 'total concentration:', total )
-
-    if iiter:
-      res = matrix.res( lhs, rhs )
-      log.info( 'residual:', res )
-      if res < tol:
-        break
+    b = cbasis * c - mubasis * f_n(c)
+    rhs, total, energy_mix, energy_iface = domain.integrate( [ b, c, Emix(c), Eiface(c) ], geometry=geom, ischeme='gauss4' )
+    log.user( 'concentration {}, energy {}'.format( total, energy_mix + energy_iface ) )
+    energies.append(( energy_mix, energy_iface ))
 
     lhs = matrix.solve( rhs, tol=1e-10 )
-    c = funcsp.dot( lhs )
+    c = cbasis.dot( lhs )
+    mu = mubasis.dot( lhs )
 
-  return iiter, lhs
+    if plot:
+      makeplots( domain, geom, c, mu, energies, niter )
+
+  return lhs, energies
 
 
 def unittest():
 
-  retvals = main( nelems=8, init='sine', mean=0, std=.1, maxiter=10, plot=False )
+  retvals = main( nelems=8, init='sine', mean=0, std=.1, niter=10, plot=False )
   assert debug.checkdata( retvals, '''
-    eNqtkdsNBCEIRdvRBDY8VLCg6b+FzSBYwXyBgofLlaEN4NmhMUFDVx8PTkDbc0ayWCQSVTslVqIHFyhz
-    tExf+kZb297oLCsaXZJhnjdz74TJCBj9oNKqVfN9fXk1AGsiloQrKTWW6NriruVkkqyhyaJ9WLQ4WK47
-    WEP8sOwwiOLsQ+17XR9Z9en33UVzcywrsLzBa1aaV26WveV3h/4HtuWGNw==''' )
+    eNq1VFuyxSAI207vTJnBBwgLOvvfwq1gbDfg9AOMGkmolvvqd5G/+7qoFJYf9ftNXKT8SG7SYZm0ojyT
+    oc1/pHdv3mNcxpjR1PqKGhu+ScwQlhL2EshAjtNwPOrZdQ1mz53MySXdJZI6OEi9lR4FmrQoqKsmV63B
+    VUdZsR7jPCL+SJt2ydBAEEVQSZBN8AG+wCg4t608wmqN64qpkUvMd20WhkmOqZhm/7pbIqOpr36sQ59k
+    GbFjTGAltm6uzY7jCOcTCqJdoaeSJ9bsRq6U2gKvjxvwqeCvQCdRKQsjOUh6RP6RRqHiJQGaIHKr3j7A
+    GIJTBOtoe3mCdL6p3YfH5TWR+W8/2IbGdAWQBaRsLzQCkj5eKB8CyXuSUFvQh4sTau/GedUm5B8oXyr1
+    uiFJeque0PP9A2PDVD8=''' )
 
 
 util.run( main, unittest )
