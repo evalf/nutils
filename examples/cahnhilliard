@@ -4,7 +4,7 @@ from nutils import *
 
 
 @log.title
-def makeplots( domain, geom, c, mu, energies, niter ):
+def makeplots( domain, geom, c, mu, energies, nsteps ):
 
   force = c * mu.grad(geom)
   xpnt, cpnt = domain.elem_eval( [ geom, c ], ischeme='bezier4', title='mesh', separate=True )
@@ -25,18 +25,20 @@ def makeplots( domain, geom, c, mu, energies, niter ):
     for E, c, name in (Emix+Eiface,'b','total'), (Emix,'r','mixture'), (Eiface,'g','interface'):
       plt.plot( E, '-'+c )
       plt.plot( len(E)-1, E[-1], c+'o', label=name )
-    plt.legend( bbox_to_anchor=(0,.36), loc='center left', numpoints=1, frameon=False, fontsize=8 )
-    plt.xlim( 0, niter )
-    plt.ylim( 0, (Emix[0]+Eiface[0]) * 1.1 )
+    plt.legend( numpoints=1, frameon=False, fontsize=8 )
+    plt.xlim( 0, nsteps )
+    plt.ylim( 0, Emix[0] + Eiface[0] )
     ax.set_xticks([])
     ax.set_yticks([])
     plt.xlabel( 'time' )
     plt.ylabel( 'energy' )
 
 
-def main( nelems=20, epsilon=None, timestep=.01, init='random', mean=-.3, std=.1, tol=1e-5, niter=50, plot=True ):
+def main( nelems=20, epsilon=None, timestep=.01, maxtime=1., init='random', plot=True ):
 
-  mineps = 2./nelems
+  mineps = 1./nelems
+  nsteps = numeric.round( maxtime / timestep )
+
   if epsilon is None:
     log.info( 'setting epsilon=%f' % mineps )
     epsilon = mineps
@@ -44,7 +46,7 @@ def main( nelems=20, epsilon=None, timestep=.01, init='random', mean=-.3, std=.1
     log.warning( 'epsilon under crititical threshold: %f < %f' % ( epsilon, mineps ) )
 
   xnodes = ynodes = numpy.linspace(0,1,nelems+1)
-  domain, geom = mesh.rectilinear( [ xnodes, ynodes ], periodic=[0] )
+  domain, geom = mesh.rectilinear( [ xnodes, ynodes ] )
 
   cbasis, mubasis = function.chain([ domain.basis( 'spline', degree=2 ), domain.basis( 'spline', degree=2 ) ])
 
@@ -62,42 +64,48 @@ def main( nelems=20, epsilon=None, timestep=.01, init='random', mean=-.3, std=.1
 
   if init == 'random':
     numpy.random.seed( 0 )
-    c = cbasis.dot( numpy.random.normal( mean, std, cbasis.shape ) )
-  elif init == 'sine':
-    x, y = geom
-    c = mean + (y-.5+.5*function.sin(x*2*numpy.pi)) * std
+    c = cbasis.dot( numpy.random.normal(0,.5,cbasis.shape) )
+  elif init == 'bubbles':
+    R1 = .25
+    R2 = numpy.sqrt(.5) * R1 # area2 = .5 * area1
+    c = 1 + function.tanh( (R1-function.norm2(geom-(.5+R2/numpy.sqrt(2)+.8*epsilon)))/epsilon ) \
+          + function.tanh( (R2-function.norm2(geom-(.5-R1/numpy.sqrt(2)-.8*epsilon)))/epsilon )
   else:
     raise Exception( 'unknown init %r' % init )
 
   energies = []
 
-  for iiter in log.range( 'timestep', niter ):
+  for istep in log.range( 'timestep', nsteps ):
 
     b = cbasis * c - mubasis * f_n(c)
     rhs, total, energy_mix, energy_iface = domain.integrate( [ b, c, Emix(c), Eiface(c) ], geometry=geom, ischeme='gauss4' )
     log.user( 'concentration {}, energy {}'.format( total, energy_mix + energy_iface ) )
     energies.append(( energy_mix, energy_iface ))
 
-    lhs = matrix.solve( rhs, tol=1e-10 )
+    lhs = matrix.solve( rhs, tol=1e-12 )
     c = cbasis.dot( lhs )
     mu = mubasis.dot( lhs )
 
     if plot:
-      makeplots( domain, geom, c, mu, energies, niter )
+      makeplots( domain, geom, c, mu, energies, nsteps )
 
   return lhs, energies
 
 
 def unittest():
 
-  retvals = main( nelems=8, init='sine', mean=0, std=.1, niter=10, plot=False )
+  retvals = main( nelems=8, init='bubbles', maxtime=.1, plot=False )
   assert debug.checkdata( retvals, '''
-    eNq1VFuyxSAI207vTJnBBwgLOvvfwq1gbDfg9AOMGkmolvvqd5G/+7qoFJYf9ftNXKT8SG7SYZm0ojyT
-    oc1/pHdv3mNcxpjR1PqKGhu+ScwQlhL2EshAjtNwPOrZdQ1mz53MySXdJZI6OEi9lR4FmrQoqKsmV63B
-    VUdZsR7jPCL+SJt2ydBAEEVQSZBN8AG+wCg4t608wmqN64qpkUvMd20WhkmOqZhm/7pbIqOpr36sQ59k
-    GbFjTGAltm6uzY7jCOcTCqJdoaeSJ9bsRq6U2gKvjxvwqeCvQCdRKQsjOUh6RP6RRqHiJQGaIHKr3j7A
-    GIJTBOtoe3mCdL6p3YfH5TWR+W8/2IbGdAWQBaRsLzQCkj5eKB8CyXuSUFvQh4sTau/GedUm5B8oXyr1
-    uiFJeque0PP9A2PDVD8=''' )
+    eNqFlWuOIzEIhK8zK3UkgzGPA839r7BtF5DHRlrNDxxP5+uqAjt0/chF68/18+PL7Pchly9fuxpT7LqE
+    /PexrocNmXvj4THPE4+YhJ0QHrlQflsUzVcQqHLeoiSU1ElFlaJqUdd3amkr2jL284D6UGA5OLEEfvCy
+    5GskbVot9NVqi2ucGMOpuUOc1ytv3el9aC5IuBYw0NG129b3BNa3bAWCULXIxcS7jJxq4e+96PjacCts
+    4CQAKRAfGyotc9TJH43tXlR6bbfUFcxMzltc1vnsjDicWT6HpPranajoymkpK1iMdUx5JDwyx39G46Wr
+    HWimVjZbWcEMJl17ML5A9aOl2YHKrGyWsoK5MkY29gHQy13GqbZHd110n5DjeKqh+nmemQ+Hc3QouZT5
+    Fyd0H9vNnQEe3svTJHnyHx70pp7maOqS1KOGKjHAgw6KDNfZsioqvt96ihPpMwb0rFDwKL+f3GWadb3n
+    k75KT3E8Pyt0MEnONvpCI2d8FC/1VD7lq/QURwT+zHMS+VwJrHuIdh3nruh8u87x6qv1FOcOJK+WdQbj
+    nqi6Enmcf1Wrni2rqCsiWCtJTxQNxbiSI517QeNb27ttFXfGVPaeqhrFCgcPvq+115F8Yb61riPPqNpg
+    q2rUvcAlsX+RKLRGiXOPCYebJj23Ao2l0VsMWvg+ewtP2UBWU3sLhnxBzd4aYPi5Mc7Wfcxx3oYUi0xw
+    j4z924YtxZXmvKdpb91/fwHLrpoa''' )
 
 
 util.run( main, unittest )
