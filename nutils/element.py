@@ -78,23 +78,15 @@ class Element( object ):
     'trim element along levelset'
 
     assert self.transform == self.opposite
-    pos, neg, ifaces, posouter, negouter = self.reference.trim( (self.transform,levelset), maxrefine, denom, check, fcache )
+    pos, neg, ifaces, outerifaces = self.reference.trim( (self.transform,levelset), maxrefine, denom, check, fcache )
     poselem = pos and Element( pos, self.transform )
     negelem = neg and Element( neg, self.transform )
     ifaces = [ Element( edge, self.transform<<postrans, self.transform<<negtrans ) for postrans, negtrans, edge in ifaces ]
-    posouter = [ Element( edge, self.transform<<trans ) for trans, edge in zip( self.reference.edge_transforms, posouter ) if edge ]
-    negouter = [ Element( edge, self.transform<<trans ) for trans, edge in zip( self.reference.edge_transforms, negouter ) if edge ]
-    return poselem, negelem, ifaces, posouter, negouter
+    return poselem, negelem, ifaces, outerifaces
 
   @property
   def flipped( self ):
     return Element( self.reference, self.opposite, self.transform )
-
-  def without_edge( self, edge ):
-    iedge = self.reference.edge_transforms.index( edge.transform.fromtrans( self.transform ) )
-    edge_refs = list( self.reference.edge_refs )
-    edge_refs[iedge] -= edge.reference
-    return Element( self.reference.with_edges( edge_refs ), self.transform, self.opposite )
 
   @property
   def simplices( self ):
@@ -125,6 +117,16 @@ class Reference( cache.Immutable ):
   def __ror__( self, other ):
     return self.__or__( other )
 
+  def __and__( self, other ):
+    if other is None:
+      return None
+    if other == self:
+      return self
+    return NotImplemented
+
+  def __rand__( self, other ):
+    return self.__and__( other )
+
   def __xor__( self, other ):
     if other is None:
       return self
@@ -133,7 +135,7 @@ class Reference( cache.Immutable ):
     return NotImplemented
 
   def __rxor__( self, other ):
-    return self.__xor__( self, other )
+    return self.__xor__( other )
 
   def __sub__( self, other ):
     if other == self:
@@ -229,12 +231,6 @@ class Reference( cache.Immutable ):
   def register( cls, ptype, func ):
     setattr( cls, 'getischeme_%s' % ptype, func )
 
-  def with_edges( self, edge_refs ):
-    edge_refs = tuple(edge_refs)
-    if edge_refs == getattr(self,'edge_refs',None):
-      return self
-    return WithEdgesReference( self, edge_refs )
-
   def with_children( self, child_refs ):
     child_refs = tuple(child_refs)
     if not any( child_refs ):
@@ -244,10 +240,32 @@ class Reference( cache.Immutable ):
     return WithChildrenReference( self, child_refs )
 
   def triangulate( self, levels, denom, check ):
-    'triangulate based on vertex levelset values'
+    '''Triangulate based on vertex levelset values
+    
+    Use linear interpolation to determing edge intersections and perform
+    triangulation to separate self in a positive and negative part. If 'check'
+    is True perform a divergence check of the resulting parts.
 
+    Args:
+      levels (array): levelset values for all vertices.
+      denom (int): round edge intersections to denom+1 discrete points
+        including endpoints.
+      check (bool): perform divergence check of resulting elements.
+
+    Returns:
+      * positive element or None
+      * negative element or None
+      * list of (postrans,negtrans,reference) interface tuples
+      * nedges-tuple of interface transforms
+    '''
+    
     assert numeric.isint( denom )
     assert levels.shape == (self.nverts,)
+
+    # Loop over ribbons and use linear interpolation to find levelset
+    # intersections. Also keep track of which existing vertices are intersected
+    # within .5/denom distance, and which edges contain the newly introduced
+    # vertices.
 
     numer = list( self.vertices * denom )
     vertex2edge = list(self.edge2vertex.T)
@@ -264,101 +282,80 @@ class Reference( cache.Immutable ):
           numer.append( numpy.dot( (denom-x,x), self.vertices[[i,j]] ) )
           vertex2edge.append( vertex2edge[i] & vertex2edge[j] )
 
-    coords = rational.Rational( numer, denom )
-    vertex2edge = numpy.array(vertex2edge)
-    vsigns = numpy.zeros( len(coords), dtype=int )
+    # These are the resulting three objects:
+
+    coords = rational.Rational( numer, denom ) # rational coordinates of all vertices
+    edge2vertex = numpy.array(vertex2edge).T # nedges x nvertex boolean connectivity matrix
+    vsigns = numpy.zeros( len(coords), dtype=int ) # levelset sign of all vertices {-1,0,+1}
     vsigns[~oniface] = numpy.sign(levels[~oniface])
+
+    # First check if one of the nonzero signs is absent. In that case we can
+    # return self and None, with no interface elements, but possibly with (part
+    # of the) edges subtraced in case the interface slices ndims or more
+    # vertices. Removed edges are returned as 4th or 5th item for further
+    # processing at the coarser level.
 
     haspos = +1 in vsigns
     if not haspos or -1 not in vsigns:
-      empty = (None,)*self.nedges
-      if ( vsigns == 0 ).sum() < self.ndims:
-        return (self,None,(),empty,empty) if haspos else (None,self,(),empty,empty)
-      inner = []
-      outer = list( empty )
-      for iedge, onedge in enumerate( vertex2edge.T ):
-        oniface = vsigns[onedge] == 0
-        etrans, edge = self.edges[iedge]
-        if oniface.all():
-          outer[iedge] = edge
-          inner.append( None )
-        elif oniface.sum() >= self.ndims:
-          ecoords = etrans.solve( coords[onedge] )
-          innertrans = []
-          outertrans = []
-          for tri in util.delaunay( ecoords.astype(float) ):
-            strans = transform.simplex( ecoords[tri] )
-            ( outertrans if oniface[tri].all() else innertrans ).append( strans )
-          assert innertrans and outertrans
-          outer[iedge] = MultiSimplexReference(edge,outertrans,complement=innertrans)
-          inner.append( MultiSimplexReference(edge,innertrans,complement=outertrans) )
-        else:
-          inner.append( edge )
-      ref = self.with_edges( inner )
-      if check:
-        refcheck( ref, ref.edges + zip(self.edge_transforms,outer) )
-      return (ref,None,(),outer,empty) if haspos else (None,ref,(),empty,outer)
+      oniface = vsigns == 0
+      where = [ iedge for iedge, onedge in enumerate( edge2vertex ) if oniface[onedge].sum() >= self.ndims ] if oniface.sum() >= self.ndims else []
+      return (self,None,(),where) if haspos else (None,self,(),where)
 
-    postri, negtri = signed_triangulate( coords.astype(float), vsigns )
-    assert len(postri) and len(negtri)
+    # If it is clear the element is divided, use the signed_triangulate helper
+    # function to create a triangulation for the positive and negative part.
 
-    mosaics = ()
-    posouter, negouter = [None]*self.nedges, [None]*self.nedges
-    posifaces, negifaces = {}, {}
-    for triangulation, ifaces, outer, sign in (postri,posifaces,posouter,+1), (negtri,negifaces,negouter,-1):
-      sref = MultiSimplexReference( self, [ transform.simplex(coords[tri]) for tri in triangulation ] )
-      edges = []
-      for iedge, (etrans,baseedge) in enumerate( self.edges ):
-        onedge = vertex2edge.T[iedge]
-        signs = vsigns[onedge]
-        if not any( signs == sign ):
-          edge = None
-        elif not any( signs == -sign ) and sum( signs == 0 ) < self.ndims:
-          edge = baseedge
-        else:
-          transforms = []
-          outertransforms = []
-          for tri in triangulation:
-            etri = tri[ onedge[tri] ]
-            if len(etri) == self.ndims:
-              trioffset = coords[etri[0]]
-              trilinear = ( coords[etri[1:]] - trioffset ).T
-              slinear, soffset = rational.solve( etrans.linear, trilinear, trioffset - etrans.offset )
-              strans = transform.affine( slinear, soffset ) # etrans << strans == affine( trilinear, trioffset ) ~/flip
-              if any( vsigns[etri] ):
-                transforms.append( strans )
-              else:
-                ifaces[ tuple(sorted(etri)) ] = None
-                outertransforms.append( strans )
-          if outertransforms:
-            outer[iedge] = MultiSimplexReference( baseedge, outertransforms, complement=transforms )
-          edge = MultiSimplexReference( baseedge, transforms, complement=outertransforms ) if transforms else None
-        edges.append( edge )
-      mosaics += sref.with_edges( edges ),
+    postriangulation, negtriangulation = signed_triangulate( coords.astype(float), vsigns )
+
+    posinner = []
+    neginner = []
+
+    for iedge, onedge in enumerate( edge2vertex ):
+      etrans, edge = self.edges[iedge]
+      signs = vsigns[onedge]
+      if not any( signs == -1 ) and sum( signs == 0 ) < self.ndims:
+        posinner.append( edge )
+        neginner.append( None )
+      elif not any( signs == +1 ) and sum( signs == 0 ) < self.ndims:
+        posinner.append( None )
+        neginner.append( edge )
+      else:
+        posetri = [ tri[onedge[tri]] for tri in postriangulation if onedge[tri].sum() == self.ndims ]
+        negetri = [ tri[onedge[tri]] for tri in negtriangulation if onedge[tri].sum() == self.ndims ]
+        assert posetri and negetri
+        posinnertrans = tuple( solvetrans( etrans, coords[etri] ) for etri in posetri )
+        neginnertrans = tuple( solvetrans( etrans, coords[etri] ) for etri in negetri )
+        posinner.append( MultiSimplexReference( edge, posinnertrans, neginnertrans ) )
+        neginner.append( MultiSimplexReference( edge, neginnertrans, posinnertrans ) )
+
+    poschildrefs = tuple( transform.simplex(coords[tri]) for tri in postriangulation )
+    negchildrefs = tuple( transform.simplex(coords[tri]) for tri in negtriangulation )
+
+    posmosaic = MultiSimplexReference( self, poschildrefs, negchildrefs, edge_refs=tuple(posinner) )
+    negmosaic = MultiSimplexReference( self, negchildrefs, poschildrefs, edge_refs=tuple(neginner) )
+
+    posifaces = {}
+    negifaces = {}
+    arange = numpy.arange(self.ndims+1)
+    for triangulation, ifaces in (postriangulation,posifaces), (negtriangulation,negifaces):
       for tri in triangulation:
         where, = numpy.where( vsigns[tri] != 0 )
-        if len(where) <= 1:
-          for iedge in where if len(where) else range(self.ndims+1):
-            key = tuple( sorted( tuple(tri[:iedge]) + tuple(tri[iedge+1:]) ) )
-            if key in ifaces:
-              del ifaces[key]
-            else:
-              ifaces[key] = tri, iedge
+        for iedge in where if len(where) == 1 else [] if len(where) else arange:
+          key = tuple(sorted(tri[arange!=iedge]))
+          if not ifaces.pop( key, False ):
+            ifaces[key] = tri, iedge
 
     ifaces = []
-    for key, (tri,iedge) in posifaces.items():
-      negifaces.pop( key )
+    assert posifaces.keys() == negifaces.keys()
+    for tri, iedge in posifaces.values():
       etrans, edge = getsimplex(self.ndims).edges[iedge]
       trans = ( transform.simplex( coords[tri] ) << etrans ).flat
       ifaces.append(( trans, trans.flipped, edge ))
-    assert not negifaces
 
     if check:
-      posmosaic, negmosaic = mosaics
-      refcheck( posmosaic, posmosaic.edges + [ (postrans,edge) for postrans, negtrans, edge in ifaces ] + zip(self.edge_transforms,posouter) )
-      refcheck( negmosaic, negmosaic.edges + [ (negtrans,edge) for postrans, negtrans, edge in ifaces ] + zip(self.edge_transforms,negouter) )
+      refcheck( posmosaic, posmosaic.edges + [ (postrans,edge) for postrans, negtrans, edge in ifaces ] )
+      refcheck( negmosaic, negmosaic.edges + [ (negtrans,edge) for postrans, negtrans, edge in ifaces ] )
 
-    return mosaics + (ifaces,posouter,negouter)
+    return posmosaic, negmosaic, ifaces, []
 
   def trim( self, levels, maxrefine, denom, check, fcache ):
     'trim element along levelset'
@@ -378,18 +375,17 @@ class Reference( cache.Immutable ):
 
     allpos = all( levels > 0 )
     if allpos or all( levels < 0 ):
-      return (self,None,[],[None]*self.nedges,[None]*self.nedges) if allpos \
-        else (None,self,[],[None]*self.nedges,[None]*self.nedges)
+      return (self,None,(),()) if allpos else (None,self,(),())
 
     if not maxrefine:
       assert evaluated_levels, 'failed to evaluate levelset up to level maxrefine'
       return self.triangulate( levels, denom, check )
 
-    poselems, negelems = [], []
-    posinner, neginner = {}, {}
-    posouter = [ [None]*edge.nchildren for edge in self.edge_refs ]
-    negouter = [ [None]*edge.nchildren for edge in self.edge_refs ]
+    poselems = []
+    negelems = []
     ifaces = []
+    innerifaces = set()
+    outerifaces = set()
     for ichild, (ctrans,child) in enumerate( self.children ):
       if evaluated_levels:
         N, I = fcache( self.subvertex, ichild, maxrefine )
@@ -398,82 +394,50 @@ class Reference( cache.Immutable ):
       else:
         trans, levelfun = levels
         childlevels = trans << ctrans, levelfun
-      cposelem, cnegelem, cifaces, cposouter, cnegouter = child.trim( childlevels, maxrefine-1, denom, check, fcache )
+      cposelem, cnegelem, cifaces, cifaceedges = child.trim( childlevels, maxrefine-1, denom, check, fcache )
       poselems.append( cposelem )
       negelems.append( cnegelem )
       ifaces.extend( ( (ctrans<<postrans).flat, (ctrans<<negtrans).flat, edge ) for postrans, negtrans, edge in cifaces )
-      for childouter, outer, inner in (cposouter,posouter,posinner), (cnegouter,negouter,neginner):
-        for ichildedge, edge in enumerate(childouter):
-          if not edge:
-            continue
-          jchild, jedge, isouter = self.childedgemap[ichild][ichildedge]
-          if isouter:
-            outer[jedge][jchild] |= edge
-          else:
-            ichild2, ichildedge2, edge2 = inner.pop( (jchild,jedge), (ichild,ichildedge,None) )
-            assert (ichild2,ichildedge2) == (ichild,ichildedge)
-            remaining = edge^edge2
-            if remaining:
-              inner[ichild,ichildedge] = jchild, jedge, remaining
-
-    posouter = [ edge.with_children( child_refs ) for edge, child_refs in zip( self.edge_refs, posouter ) ]
-    negouter = [ edge.with_children( child_refs ) for edge, child_refs in zip( self.edge_refs, negouter ) ]
-
-    if not any(negelems):
-
-      assert not ifaces and not any(negouter)
-      assert not posinner and not neginner
-      posmosaic = self.with_edges( edge - rmedge for edge, rmedge in zip( self.edge_refs, posouter ) )
-      negmosaic = None
-
-    elif not any(poselems):
-
-      assert not ifaces and not any(posouter)
-      assert not posinner and not neginner
-      posmosaic = None
-      negmosaic = self.with_edges( edge - rmedge for edge, rmedge in zip( self.edge_refs, negouter ) )
-
-    else:
-
-      for (ichild,iedge), (jchild,jedge,edge) in posinner.items():
-        ctrans, child = self.children[ichild]
-        trans = (ctrans << child.edge_transforms[iedge]).flat
-        try:
-          ichild2, iedge2, edge2 = neginner.pop( (jchild,jedge) )
-        except KeyError:
-          elemtrans = self.child_transforms[jchild]
-          ref = negelems[jchild]
-          trans2, edge2 = ref.edges[jedge]
-          assert (elemtrans<<trans2).flat == trans.flipped
-          ifaces.append(( trans, trans.flipped, edge|edge2 ))
-          edge_refs = list( ref.edge_refs )
-          edge_refs[jedge] -= edge2
-          negelems[jchild] = ref.with_edges( edge_refs )
+      for iedge in cifaceedges:
+        jchild, jedge, isouter = self.childedgemap[ichild][iedge]
+        if isouter:
+          outerifaces.add(jedge)
         else:
-          ifaces.append(( trans, trans.flipped, edge|edge2 ))
+          innerifaces.add((ichild,iedge,jchild,jedge) if ichild < jchild else (jchild,jedge,ichild,iedge))
 
-      for (ichild,iedge), (jchild,jedge,edge) in neginner.items():
-        ctrans, child = self.children[ichild]
-        trans = (ctrans << child.edge_transforms[iedge]).flat
-        elemtrans = self.child_transforms[jchild]
-        ref = poselems[jchild]
-        trans2, edge2 = ref.edges[jedge]
-        assert (elemtrans<<trans2).flat == trans.flipped
-        ifaces.append(( trans.flipped, trans, edge|edge2 ))
-        edge_refs = list( ref.edge_refs )
-        edge_refs[jedge] -= edge2
-        poselems[jchild] = ref.with_edges( edge_refs )
+    posmosaic = self.with_children( poselems )
+    negmosaic = self.with_children( negelems )
 
-      posmosaic = self.with_children( poselems )
-      negmosaic = self.with_children( negelems )
+    for ichild, iedge, jchild, jedge in innerifaces:
+      posrefi = poselems[ichild] and poselems[ichild].edge_refs[iedge]
+      posrefj = poselems[jchild] and poselems[jchild].edge_refs[jedge]
+      ref = posrefi^posrefj if posrefi or posrefj else None
+
+      negrefi = negelems[ichild] and negelems[ichild].edge_refs[iedge]
+      negrefj = negelems[jchild] and negelems[jchild].edge_refs[jedge]
+      _ref = negrefi^negrefj if negrefi or negrefj else None
+      assert _ref == ref
+
+      if not ref:
+        continue
+
+      transi = (self.child_transforms[ichild] << self.child_refs[ichild].edge_transforms[iedge]).flat
+      transj = (self.child_transforms[jchild] << self.child_refs[jchild].edge_transforms[jedge]).flat
+
+      if ref == ref & posrefi == ref & negrefj:
+        assert not ref & negrefi and not ref & posrefj
+        ifaces.append(( transi, transj, ref ))
+      elif ref == ref & posrefj == ref & negrefi:
+        assert not ref & negrefj and not ref & posrefi
+        ifaces.append(( transj, transi, ref ))
+      else:
+        raise NotImplementedError
 
     if check:
-      if posmosaic:
-        refcheck( posmosaic, posmosaic.edges + [ (postrans,edge) for postrans, negtrans, edge in ifaces ] + list(zip(self.edge_transforms,posouter)) )
-      if negmosaic:
-        refcheck( negmosaic, negmosaic.edges + [ (negtrans,edge) for postrans, negtrans, edge in ifaces ] + list(zip(self.edge_transforms,negouter)) )
+      if posmosaic: refcheck( posmosaic, posmosaic.edges + [ (postrans,edge) for postrans, negtrans, edge in ifaces ] )
+      if negmosaic: refcheck( negmosaic, negmosaic.edges + [ (negtrans,edge) for postrans, negtrans, edge in ifaces ] )
 
-    return posmosaic, negmosaic, ifaces, posouter, negouter
+    return posmosaic, negmosaic, ifaces, outerifaces
 
 class SimplexReference( Reference ):
   'simplex reference'
@@ -969,34 +933,49 @@ class NeighborhoodTensorReference( TensorReference ):
     points, weights = self.get_quad_bem_ischeme( gauss )
     return self.singular_ischeme_quad( points ), weights
 
-class WithChildrenReference( Reference ):
+class PartialReference( Reference ):
+
+  def __init__( self, baseref ):
+    assert isinstance( baseref, Reference )
+    self.baseref = baseref
+    Reference.__init__( self, baseref.vertices )
+
+  def __or__( self, other ):
+    return self if other is None \
+      else self.baseref if other == self.baseref \
+      else self._logical( other, lambda ref1, ref2: ref1 | ref2 )
+
+  def __and__( self, other ):
+    return None if other is None \
+      else self if other == self.baseref \
+      else self._logical( other, lambda ref1, ref2: ref1 & ref2 )
+
+  def __xor__( self, other ):
+    return None if other is None \
+      else ~self if other == self.baseref \
+      else self._logical( other, lambda ref1, ref2: ref1 ^ ref2 )
+
+  def __rsub__( self, other ):
+    if other != self.baseref:
+      return NotImplemented
+    return ~self
+
+class WithChildrenReference( PartialReference ):
   'base reference with explicit children'
 
   def __init__( self, baseref, child_refs ):
     assert not isinstance( baseref, WithChildrenReference )
     assert isinstance( child_refs, tuple ) and len(child_refs) == baseref.nchildren and any(child_refs) and child_refs != baseref.child_refs
-    self.baseref = baseref
     self.edge_transforms = baseref.edge_transforms
     self.child_transforms = baseref.child_transforms
     self.child_refs = child_refs
-    Reference.__init__( self, baseref.vertices )
+    PartialReference.__init__( self, baseref )
 
-  def __or__( self, other ):
-    if other is None:
-      return self
-    if other == self.baseref:
-      return other
-    if not isinstance( other, WithChildrenReference ) or other.baseref != self.baseref:
-      raise TypeError
-    child_refs = tuple( child1 | child2 if child1 or child2 else None for child1, child2 in zip( self.child_refs, other.child_refs ) )
-    assert child_refs
-    if child_refs == self.baseref.child_refs:
-      return self.baseref
-    return WithChildrenReference( self.baseref, child_refs )
+  def __not__( self ):
+    return self._logical( self.baseref, lambda ref1, ref2: ref2 - ref1 )
 
-  def __rsub__( self, baseref ):
-    assert self.baseref == baseref
-    return baseref.with_children( child - rmchild for child, rmchild in zip( baseref.child_refs, self.child_refs ) )
+  def _logical( self, other, op ):
+    return self.baseref.with_children( op(child1,child2) if child1 or child2 else None for child1, child2 in zip( self.child_refs, other.child_refs ) )
 
   def getischeme( self, ischeme ):
     'get integration scheme'
@@ -1033,54 +1012,50 @@ class WithChildrenReference( Reference ):
             all_child_refs[iedge][ichild] = edge
     return tuple( baseedge.with_children( child_refs ) for baseedge, child_refs in zip( self.baseref.edge_refs, all_child_refs ) )
 
-class WithEdgesReference( Reference ):
-  'base reference with explicit edges'
-
-  def __init__( self, baseref, edge_refs ):
-    assert not isinstance( baseref, WithEdgesReference )
-    assert isinstance( edge_refs, tuple ) and len(edge_refs) == baseref.nedges and any(edge_refs) and edge_refs != getattr(baseref,'edge_refs',None)
-    self.baseref = baseref
-    self.edge_transforms = baseref.edge_transforms
-    self.edge_refs = edge_refs
-    Reference.__init__( self, baseref.vertices )
-
-  @property
-  def simplices( self ):
-    return self.baseref.simplices
-
-  def getischeme( self, ischeme ):
-    return self.baseref.getischeme( ischeme )
-
-class MultiSimplexReference( Reference ):
+class MultiSimplexReference( PartialReference ):
   'triangulation'
 
-  def __init__( self, baseref, transforms, complement=None ):
-    self.baseref = baseref
+  def __init__( self, baseref, transforms, complement, edge_refs=None ):
     self.edge_transforms = baseref.edge_transforms
-    self.__transforms = tuple(transforms)
-    self.__complement = complement and tuple(complement)
-    Reference.__init__( self, baseref.vertices )
+    assert isinstance( transforms, tuple ) and transforms
+    self.__transforms = transforms
+    assert isinstance( complement, tuple )
+    self.__complement = tuple(complement)
+    if edge_refs is not None:
+      assert isinstance( edge_refs, tuple) and len(edge_refs) == len(self.edge_transforms)
+      self.edge_refs = edge_refs
+    PartialReference.__init__( self, baseref )
 
-  def __or__( self, other ):
-    if other is None:
-      return self
-    if other == self.baseref:
-      return other
-    if not isinstance( other, MultiSimplexReference ) or other.baseref != self.baseref:
-      raise TypeError
-    assert self.__complement and other.__complement
-    total = set(self.__transforms+self.__complement)
-    assert set(other.__transforms+other.__complement) == total
-    transforms = set(self.__transforms) | set(other.__transforms)
-    complement = total - transforms
-    if not complement:
-      return self.baseref
-    return MultiSimplexReference( self.baseref, tuple(transforms), tuple(complement) )
+  def __eq__( self, other ):
+    return self is other or isinstance(other,MultiSimplexReference) and other.baseref == self.baseref and other.keymap.keys() == self.keymap.keys()
 
-  def __rsub__( self, baseref ):
-    assert self.baseref == baseref
-    assert self.__complement
+  def __not__( self ):
     return MultiSimplexReference( self.baseref, self.__complement, self.__transforms )
+
+  @cache.property
+  def keymap( self ):
+    vertices = getsimplex(self.ndims).vertices
+    keymap = {}
+    for trans in self.__transforms:
+      key = tuple(sorted(trans.apply(vertices).totuple()))
+      keymap[key] = trans, True
+    for trans in self.__complement:
+      key = tuple(sorted(trans.apply(vertices).totuple()))
+      assert key not in keymap
+      keymap[key] = trans, False
+    return keymap
+
+  def _logical( self, other, op ):
+    if not isinstance( other, MultiSimplexReference ) or other.baseref != self.baseref:
+      return NotImplemented
+    assert self.keymap.keys() == other.keymap.keys(), 'incompatible triangulations'
+    transforms = []
+    complement = []
+    for (selftrans,inself), (othertrans,inother) in zip( self.keymap.values(), other.keymap.values() ):
+      ( transforms if op(inself,inother) else complement ).append( selftrans )
+    return None if not transforms \
+      else self.baseref if not complement \
+      else MultiSimplexReference( self.baseref, tuple(transforms), tuple(complement) )
 
   @property
   def simplices( self ):
@@ -1433,13 +1408,13 @@ def signed_triangulate( points, vsigns ):
   esigns = numpy.array([ +1 if min(s) >= 0 else -1 if max(s) <= 0 else 0 for s in vsigns[triangulation] ])
   if not esigns.all():
     ambiguous, = numpy.where( esigns == 0 )
-    extra = []
+    vmap = list(range(len(vsigns)))
+    W = numpy.array([ .01/ndims, .99 ])
     for tri in triangulation[ambiguous]:
-      I = numpy.where( vsigns[tri] == 0 )[0]
-      points = numpy.concatenate([ points, [ numpy.dot( [ 0.99 if i == j else .01/ndims for j in tri ], points[tri] ) for i in I ]], axis=0 )
-      extra.extend( I )
-    vmap = numpy.concatenate( [ numpy.arange(len(vsigns)), extra ] )
-    triangulation = [ tri for tri in vmap[ util.delaunay( points ) ] if len(set(tri)) == len(tri) ]
+      I, = numpy.where( vsigns[tri] == 0 )
+      points = numpy.vstack([ points, numpy.dot( W[(numpy.arange(ndims+1)==I[:,_]).astype(int)], points[tri] ) ])
+      vmap.extend( tri[I] )
+    triangulation = numpy.array([ tri for tri in numpy.take(vmap,util.delaunay(points)) if len(set(tri)) == len(tri) ])
     esigns = numpy.array([ +1 if min(s) >= 0 else -1 if max(s) <= 0 else 0 for s in vsigns[triangulation] ])
     assert esigns.all()
   for tri in triangulation:
@@ -1473,5 +1448,10 @@ def getsimplex( ndims ):
   constructors = PointReference, LineReference, TriangleReference, TetrahedronReference
   return constructors[ndims]()
 
+def solvetrans( etrans, coords ):
+  trioffset = coords[0]
+  trilinear = ( coords[1:] - trioffset ).T
+  slinear, soffset = rational.solve( etrans.linear, trilinear, trioffset - etrans.offset )
+  return transform.affine( slinear, soffset ) # etrans << strans == affine( trilinear, trioffset ) ~/flip
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

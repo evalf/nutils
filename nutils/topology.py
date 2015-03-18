@@ -568,61 +568,92 @@ class Topology( object ):
     'trim element along levelset'
 
     denom = numeric.round(1./eps)
-    poselems, negelems = [], []
+    elems = []
     trims = []
-    allposouter, allnegouter = {}, {}
+    extras = {}
     fcache = cache.CallDict()
 
     for elem in log.iter( 'elem', self ):
-      pos, neg, ifaces, posouter, negouter = elem.trim( levelset=levelset, maxrefine=maxrefine, denom=denom, check=check, fcache=fcache )
-      allposouter.update({ tuple(sorted(edge.vertices)): edge for edge in posouter })
-      allnegouter.update({ tuple(sorted(edge.vertices)): edge for edge in negouter })
+      pos, neg, ifaces, extra = elem.trim( levelset=levelset, maxrefine=maxrefine, denom=denom, check=check, fcache=fcache )
+      elems.append(( pos, neg ))
       trims.extend( ifaces )
-      if pos:
-        poselems.append( pos )
-      if neg:
-        negelems.append( neg )
+      for iedge in extra:
+        negref = neg and neg.edge(iedge).reference
+        posref = pos and pos.edge(iedge).reference
+        ref = posref^negref
+        if ref & posref:
+          ispos = True
+        elif ref & negref:
+          ispos = False
+        else:
+          raise NotImplementedError
+        edge = elem.edge(iedge)
+        trans = edge.transform
+        key = tuple(sorted(edge.vertices))
+        if key in extras:
+          _ref, _ispos, _trans = extras.pop( key )
+          assert ref == _ref
+          if ispos != _ispos:
+            trims.append( element.Element( ref, trans if ispos else _trans, _trans if ispos else trans ) )
+        else:
+          extras[key] = ref, ispos, trans
 
     log.debug( 'cache', fcache.summary() )
 
-    if allposouter or allnegouter:
-      log.info( 'inter-element trims detected; post processing' )
-      for verts in set(allposouter) & set(allnegouter):
-        posedge = allposouter.pop( verts )
-        negedge = allnegouter.pop( verts )
-        ref = posedge.reference
-        assert ref == negedge.reference
-        assert posedge.vertices == negedge.vertices
-        trims.append( element.Element( ref, posedge.transform, negedge.transform ) )
+    for key in log.iter( 'remaining', extras ):
+      ielems = reduce( numpy.intersect1d, [ self.v2elem[vert] for vert in key ] )
+      if len(ielems) == 1: # vertices lie on boundary
+        continue # if the interface coincides with the boundary, the boundary wins
 
-    if allposouter or allnegouter:
-      log.info( 'one-sides interface elements remaining; performing full domain search' )
-      for (allouter,elems,ispos) in (allposouter,negelems,True), (allnegouter,poselems,False):
-        if not allouter:
-          continue
-        vertmap = {}
-        for ielem, elem in enumerate(elems):
-          for vert in elem.vertices:
-            vertmap.setdefault( vert, [] ).append( ielem )
-        for verts, edge in allouter.items():
-          ref = edge.reference
-          try:
-            ielem, = reduce( numpy.intersect1d, [ vertmap[vert] for vert in verts ] )
-          except KeyError: # not opposite; edge lies on domain boundary
-            oppedge = edge.flipped # WARNING leads to unevaluable opposite
-          else:
-            elem = elems[ielem]
-            match = numpy.all( [ elem.reference.edge2vertex[:,ivert] for ivert, vert in enumerate(elem.vertices) if vert in verts ], axis=0 )
-            (iedge,), = numpy.where( match )
-            oppedge = elem.edges[iedge]
-            assert ref == oppedge.reference
-            assert edge.vertices == oppedge.vertices
-            elems[ielem] = elem.without_edge( oppedge )
-          iface = element.Element( ref, edge.transform, oppedge.transform )
-          trims.append( iface if ispos else iface.flipped )
+      ielem1, ielem2 = ielems
+      pos1, neg1 = elems[ielem1]
+      pos2, neg2 = elems[ielem2]
 
-    return TrimmedTopology( self, poselems, trims, ndims=self.ndims ), \
-           TrimmedTopology( self, negelems, [ trim.flipped for trim in trims ], ndims=self.ndims )
+      elem1 = self.elements[ielem1]
+      mask1 = numpy.array([ vtx in key for vtx in elem1.vertices ])
+      (iedge1,), = numpy.where(( elem1.reference.edge2vertex == mask1 ).all( axis=1 ))
+
+      elem2 = self.elements[ielem2]
+      mask2 = numpy.array([ vtx in key for vtx in elem2.vertices ])
+      (iedge2,), = numpy.where(( elem1.reference.edge2vertex == mask2 ).all( axis=1 ))
+
+      posref1 = pos1 and pos1.reference.edge_refs[iedge1]
+      posref2 = pos2 and pos2.reference.edge_refs[iedge2]
+      ref = posref1^posref2 if posref1 or posref2 else None
+
+      negref1 = neg1 and neg1.reference.edge_refs[iedge1]
+      negref2 = neg2 and neg2.reference.edge_refs[iedge2]
+      _ref = negref1^negref2 if negref1 or negref2 else None
+      assert _ref == ref
+
+      if not ref:
+        continue
+
+      trans1 = elem1.edge( iedge1 ).transform
+      trans2 = elem2.edge( iedge2 ).transform
+
+      if ref == ref & posref1 == ref & negref2:
+        assert not ref & negref1 and not ref & posref2
+        iface = element.Element( ref, trans1, trans2 )
+      elif ref == ref & posref2 == ref & negref1:
+        assert not ref & negref2 and not ref & posref1
+        iface = element.Element( ref, trans2, trans1 )
+      else:
+        raise NotImplementedError
+
+      trims.append( iface )
+
+    return TrimmedTopology( self, [ pos for pos, neg in elems if pos ], trims, ndims=self.ndims ), \
+           TrimmedTopology( self, [ neg for pos, neg in elems if neg ], [ trim.flipped for trim in trims ], ndims=self.ndims )
+
+  @cache.property
+  @log.title
+  def v2elem( self ):
+    v2elem = {}
+    for ielem, elem in log.enumerate( 'elem', self ):
+      for vert in elem.vertices:
+        v2elem.setdefault( vert, [] ).append( ielem )
+    return v2elem
 
   def elem_project( self, funcs, degree, ischeme=None, check_exact=False ):
 
