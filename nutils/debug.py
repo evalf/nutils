@@ -324,11 +324,14 @@ def __compare( verify_obj, obj, nsig, ndec ):
     if len(verify_obj) == len(obj):
       return all([ __compare( vo, o, nsig, ndec, title='#%d' % i )
         for i, (vo,o) in enumerate( zip( verify_obj, obj ) ) ])
-    log.error( 'non matching lenghts: %d != %d' % ( len(verify_obj), len(obj) ) )
+    log.error( 'non matching lenghts: {} != {}'.format( len(verify_obj), len(obj) ) )
   elif not isinstance(verify_obj,float):
-    if verify_obj == obj:
+    if type(verify_obj) != type(obj):
+      log.error( 'non equal object types: {} != {}'.format( type(obj), type(verify_obj) ) )
+    elif verify_obj != obj:
+      log.error( 'non equal objects: {} != {}'.format( obj, verify_obj ) )
+    else:
       return True
-    log.error( 'non equal: %s != %d' % ( obj, verify_obj ) )
   elif numpy.isnan(verify_obj):
     if numpy.isnan(obj):
       return True
