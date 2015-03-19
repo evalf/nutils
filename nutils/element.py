@@ -964,7 +964,7 @@ class PartialReference( Reference ):
       else self._logical( other, lambda ref1, ref2: ref1 & ref2 )
 
   def __xor__( self, other ):
-    return None if other is None \
+    return self if other is None \
       else ~self if other == self.baseref \
       else self._logical( other, lambda ref1, ref2: ref1 ^ ref2 )
 
@@ -984,7 +984,7 @@ class WithChildrenReference( PartialReference ):
     self.child_refs = child_refs
     PartialReference.__init__( self, baseref )
 
-  def __not__( self ):
+  def __invert__( self ):
     return self._logical( self.baseref, lambda ref1, ref2: ref2 - ref1 )
 
   def _logical( self, other, op ):
@@ -1042,7 +1042,7 @@ class MultiSimplexReference( PartialReference ):
   def __eq__( self, other ):
     return self is other or isinstance(other,MultiSimplexReference) and other.baseref == self.baseref and other.keymap.keys() == self.keymap.keys()
 
-  def __not__( self ):
+  def __invert__( self ):
     return MultiSimplexReference( self.baseref, self.__complement, self.__transforms )
 
   @cache.property
