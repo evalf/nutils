@@ -236,9 +236,15 @@ class PyPlot( BasePlot ):
     self.sci( polycol )
     return polycol
 
-  def slope_marker( self, x, y, slope, width=.2, xoffset=0, yoffset=.2, color='0.3' ):
+  def slope_marker( self, x, y, slope=None, width=.2, xoffset=0, yoffset=.2, color='0.5' ):
 
     ax = self.gca()
+
+    if slope is None:
+      x_, x = x[-2:]
+      y_, y = y[-2:]
+      slope = numpy.log(y/y_) / numpy.log(x/x_)
+      slope = numpy.round( slope * 100 ) / 100.
 
     if float(slope) > 0:
       width = -width
