@@ -574,10 +574,10 @@ class Topology( object ):
     fcache = cache.CallDict()
 
     for elem in log.iter( 'elem', self ):
-      pos, neg, ifaces, extra = elem.trim( levelset=levelset, maxrefine=maxrefine, denom=denom, check=check, fcache=fcache )
+      pos, neg, interfaces, intrafaces = elem.trim( levelset=levelset, maxrefine=maxrefine, denom=denom, check=check, fcache=fcache )
       elems.append(( pos, neg ))
-      trims.extend( ifaces )
-      for iedge in extra:
+      trims.extend( interfaces )
+      for iedge in intrafaces:
         negref = neg and neg.edge(iedge).reference
         posref = pos and pos.edge(iedge).reference
         ref = posref^negref
