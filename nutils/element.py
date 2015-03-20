@@ -304,36 +304,8 @@ class Reference( cache.Immutable ):
 
     postriangulation, negtriangulation = signed_triangulate( coords.astype(float), vsigns )
 
-    pos_child_refs = tuple( transform.simplex(coords[tri]) for tri in postriangulation )
-    neg_child_refs = tuple( transform.simplex(coords[tri]) for tri in negtriangulation )
-
-    # Construct the edge reference lists for the positive and negative element
-
-    pos_edge_refs = []
-    neg_edge_refs = []
-
-    for iedge, onedge in enumerate( edge2vertex ):
-      etrans, edge = self.edges[iedge]
-      signs = vsigns[onedge]
-      if not any( signs == -1 ) and sum( signs == 0 ) < self.ndims:
-        pos_edge_refs.append( edge )
-        neg_edge_refs.append( None )
-      elif not any( signs == +1 ) and sum( signs == 0 ) < self.ndims:
-        pos_edge_refs.append( None )
-        neg_edge_refs.append( edge )
-      else:
-        posetri = [ tri[onedge[tri]] for tri in postriangulation if onedge[tri].sum() == self.ndims ]
-        negetri = [ tri[onedge[tri]] for tri in negtriangulation if onedge[tri].sum() == self.ndims ]
-        assert posetri and negetri
-        posinnertrans = tuple( solvetrans( etrans, coords[etri] ) for etri in posetri )
-        neginnertrans = tuple( solvetrans( etrans, coords[etri] ) for etri in negetri )
-        pos_edge_refs.append( MultiSimplexReference( edge, posinnertrans, neginnertrans ) )
-        neg_edge_refs.append( MultiSimplexReference( edge, neginnertrans, posinnertrans ) )
-
-    # Create the MultiSimplexReference objects
-
-    posmosaic = MultiSimplexReference( self, pos_child_refs, neg_child_refs, edge_refs=tuple(pos_edge_refs) )
-    negmosaic = MultiSimplexReference( self, neg_child_refs, pos_child_refs, edge_refs=tuple(neg_edge_refs) )
+    posmosaic = MultiSimplexReference( self, coords, postriangulation, negtriangulation, edge2vertex )
+    negmosaic = MultiSimplexReference( self, coords, negtriangulation, postriangulation, edge2vertex )
 
     # Collect all triangle edges with zero levelset value, accounting for
     # duplicate entries by cancellation. The resulting dictionaries map a
@@ -467,7 +439,7 @@ class SimplexReference( Reference ):
     return numpy.array([ (i,j) for i in range( self.ndims+1 ) for j in range( i+1, self.ndims+1 ) ])
 
   @property
-  def edge2vertices( self ):
+  def edge2vertex( self ):
     return ~numpy.eye( self.nverts, dtype=bool )
 
   @property
@@ -1028,47 +1000,48 @@ class WithChildrenReference( PartialReference ):
 class MultiSimplexReference( PartialReference ):
   'triangulation'
 
-  def __init__( self, baseref, transforms, complement, edge_refs=None ):
+  def __init__( self, baseref, coords, self_triangulation, comp_triangulation, edge2vertex=None ):
     self.edge_transforms = baseref.edge_transforms
-    assert isinstance( transforms, tuple ) and transforms
-    self.__transforms = transforms
-    assert isinstance( complement, tuple )
-    self.__complement = tuple(complement)
-    if edge_refs is not None:
-      assert isinstance( edge_refs, tuple) and len(edge_refs) == len(self.edge_transforms)
-      self.edge_refs = edge_refs
+    assert coords.shape[0] >= baseref.nverts and coords.shape[1] == baseref.ndims
+    self.__coords = coords
+    assert isinstance( self_triangulation, numpy.ndarray ) and self_triangulation.shape[0] > 0 and self_triangulation.shape[1] == baseref.ndims+1
+    self.__self_triangulation = self_triangulation
+    self.__transforms = tuple( transform.simplex(coords[tri]) for tri in self_triangulation )
+    assert isinstance( comp_triangulation, numpy.ndarray ) and comp_triangulation.shape[0] > 0 and comp_triangulation.shape[1] == baseref.ndims+1
+    self.__comp_triangulation = comp_triangulation
+    self.__edge2vertex = edge2vertex
     PartialReference.__init__( self, baseref )
 
   def __eq__( self, other ):
     return self is other or isinstance(other,MultiSimplexReference) and other.baseref == self.baseref and other.keymap.keys() == self.keymap.keys()
 
   def __invert__( self ):
-    return MultiSimplexReference( self.baseref, self.__complement, self.__transforms )
+    return MultiSimplexReference( self.baseref, self.__coords, self.__comp_triangulation, self.__self_triangulation, self.__edge2vertex )
 
   @cache.property
   def keymap( self ):
     vertices = getsimplex(self.ndims).vertices
     keymap = {}
-    for trans in self.__transforms:
-      key = tuple(sorted(trans.apply(vertices).totuple()))
-      keymap[key] = trans, True
-    for trans in self.__complement:
-      key = tuple(sorted(trans.apply(vertices).totuple()))
+    for tri in self.__self_triangulation:
+      key = tuple(sorted(self.__coords[tri].totuple()))
+      keymap[key] = tri, True
+    for tri in self.__comp_triangulation:
+      key = tuple(sorted(self.__coords[tri].totuple()))
       assert key not in keymap
-      keymap[key] = trans, False
+      keymap[key] = tri, False
     return keymap
 
   def _logical( self, other, op ):
     if not isinstance( other, MultiSimplexReference ) or other.baseref != self.baseref:
       return NotImplemented
     assert self.keymap.keys() == other.keymap.keys(), 'incompatible triangulations'
-    transforms = []
-    complement = []
-    for (selftrans,inself), (othertrans,inother) in zip( self.keymap.values(), other.keymap.values() ):
-      ( transforms if op(inself,inother) else complement ).append( selftrans )
-    return None if not transforms \
-      else self.baseref if not complement \
-      else MultiSimplexReference( self.baseref, tuple(transforms), tuple(complement) )
+    self_triangulation = []
+    comp_triangulation = []
+    for (selftri,inself), (othertri,inother) in zip( self.keymap.values(), other.keymap.values() ):
+      ( self_triangulation if op(inself,inother) else comp_triangulation ).append( selftri )
+    return None if not self_triangulation \
+      else self.baseref if not comp_triangulation \
+      else MultiSimplexReference( self.baseref, self.__coords, tuple(self_triangulation), tuple(comp_triangulation), self.__edge2vertex )
 
   @property
   def simplices( self ):
@@ -1091,6 +1064,29 @@ class MultiSimplexReference( PartialReference ):
       if weights is not None:
         allweights[i] = weights * abs(float(trans.det))
     return allcoords.reshape(-1,self.ndims), allweights.ravel() if weights is not None else None
+
+  @cache.property
+  def edge_refs( self ):
+    edge_refs = []
+    for iedge, onedge in enumerate( self.__edge2vertex ):
+      etrans, edge = self.baseref.edges[iedge]
+      self_etri = numpy.array([ tri[onedge[tri]] for tri in self.__self_triangulation if onedge[tri].sum() == self.ndims ])
+      comp_etri = numpy.array([ tri[onedge[tri]] for tri in self.__comp_triangulation if onedge[tri].sum() == self.ndims ])
+      if not len(self_etri):
+        newedge = None
+      elif not len(comp_etri):
+        newedge = edge
+      else:
+        used = numpy.zeros( len(self.__coords), dtype=bool )
+        for etri in self_etri:
+          used[etri] = True
+        for etri in comp_etri:
+          used[etri] = True
+        ecoords = etrans.solve( self.__coords[used] )
+        renumber = used.cumsum()-1
+        newedge = MultiSimplexReference( edge, ecoords, renumber[self_etri], renumber[comp_etri] )
+      edge_refs.append( newedge )
+    return tuple(edge_refs)
 
 
 # SHAPE FUNCTIONS
@@ -1460,11 +1456,5 @@ def refcheck( ref, edges=None, decimal=10 ):
 def getsimplex( ndims ):
   constructors = PointReference, LineReference, TriangleReference, TetrahedronReference
   return constructors[ndims]()
-
-def solvetrans( etrans, coords ):
-  trioffset = coords[0]
-  trilinear = ( coords[1:] - trioffset ).T
-  slinear, soffset = rational.solve( etrans.linear, trilinear, trioffset - etrans.offset )
-  return transform.affine( slinear, soffset ) # etrans << strans == affine( trilinear, trioffset ) ~/flip
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
