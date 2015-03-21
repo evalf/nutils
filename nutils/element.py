@@ -289,58 +289,25 @@ class Reference( cache.Immutable ):
     vsigns = numpy.zeros( len(coords), dtype=int ) # levelset sign of all vertices {-1,0,+1}
     vsigns[~oniface] = numpy.sign(levels[~oniface])
 
-    # First check if one of the nonzero signs is absent. In that case we can
-    # return self and None, with no interface elements, but possibly marking
-    # some 'intraface' edges for inspection at the coarser level.
+    # First check if one of the nonzero signs is absent, in which case we can
+    # return self and None. Otherwise perform a signed triangulation.
+    
+    if -1 not in vsigns:
+      refs = self, None
+    elif +1 not in vsigns:
+      refs = None, self
+    else:
+      postriangulation, negtriangulation = signed_triangulate( coords.astype(float), vsigns )
+      refs = MultiSimplexReference( self, coords, postriangulation, negtriangulation, edge2vertex, check ), \
+             MultiSimplexReference( self, coords, negtriangulation, postriangulation, edge2vertex, check )
 
-    haspos = +1 in vsigns
-    if not haspos or -1 not in vsigns:
-      oniface = vsigns == 0
-      intrafaces = [ iedge for iedge, onedge in enumerate( edge2vertex ) if oniface[onedge].sum() >= self.ndims ] if oniface.sum() >= self.ndims else []
-      return (self,None,(),intrafaces) if haspos else (None,self,(),intrafaces)
+    # Finallty, mark zero-level edges for inspection at the coarser level.
 
-    # If it is clear the element is divided, use the signed_triangulate helper
-    # function to create a triangulation for the positive and negative part.
+    oniface = vsigns == 0
+    intrafaces = [] if oniface.sum() < self.ndims \
+            else [ iedge for iedge, onedge in enumerate( edge2vertex ) if oniface[onedge].sum() >= self.ndims ]
 
-    postriangulation, negtriangulation = signed_triangulate( coords.astype(float), vsigns )
-
-    posmosaic = MultiSimplexReference( self, coords, postriangulation, negtriangulation, edge2vertex )
-    negmosaic = MultiSimplexReference( self, coords, negtriangulation, postriangulation, edge2vertex )
-
-    # Collect all triangle edges with zero levelset value, accounting for
-    # duplicate entries by cancellation. The resulting dictionaries map a
-    # coordinate-based identifier to the corresponding vertex numbers and edge
-    # number.
-
-    posifaces = {}
-    negifaces = {}
-    arange = numpy.arange(self.ndims+1)
-    for triangulation, ifaces in (postriangulation,posifaces), (negtriangulation,negifaces):
-      for tri in triangulation:
-        where, = numpy.where( vsigns[tri] != 0 )
-        for iedge in where if len(where) == 1 else [] if len(where) else arange:
-          key = tuple(sorted(tri[arange!=iedge]))
-          if not ifaces.pop( key, False ):
-            ifaces[key] = tri, iedge
-
-    # Create the list of interfaces, consisting of 3-tuples with transform,
-    # opposite transform, and reference.
-
-    interfaces = []
-    assert posifaces.keys() == negifaces.keys()
-    for tri, iedge in posifaces.values():
-      etrans, edge = getsimplex(self.ndims).edges[iedge]
-      trans = ( transform.simplex( coords[tri] ) << etrans ).flat
-      interfaces.append(( trans, trans.flipped, edge ))
-
-    # Finally, perform a divergence check on the resulting elements, edges and
-    # interfaces (optional).
-
-    if check:
-      refcheck( posmosaic, posmosaic.edges + [ (postrans,edge) for postrans, negtrans, edge in interfaces ] )
-      refcheck( negmosaic, negmosaic.edges + [ (negtrans,edge) for postrans, negtrans, edge in interfaces ] )
-
-    return posmosaic, negmosaic, interfaces, []
+    return refs, intrafaces
 
   def trim( self, levels, maxrefine, denom, check, fcache ):
     'trim element along levelset'
@@ -364,7 +331,10 @@ class Reference( cache.Immutable ):
 
     if not maxrefine:
       assert evaluated_levels, 'failed to evaluate levelset up to level maxrefine'
-      return self.triangulate( levels, denom, check )
+      (pos,neg), intrafaces = self.triangulate( levels, denom, check )
+      edge = getsimplex( self.ndims-1 )
+      interfaces = [ ( trans, trans.flipped, edge ) for trans in pos.edge_transforms[self.nedges:] ] if pos else []
+      return pos, neg, interfaces, intrafaces
 
     poselems = []
     negelems = []
@@ -1000,8 +970,7 @@ class WithChildrenReference( PartialReference ):
 class MultiSimplexReference( PartialReference ):
   'triangulation'
 
-  def __init__( self, baseref, coords, self_triangulation, comp_triangulation, edge2vertex=None ):
-    self.edge_transforms = baseref.edge_transforms
+  def __init__( self, baseref, coords, self_triangulation, comp_triangulation, edge2vertex=None, check=False ):
     assert coords.shape[0] >= baseref.nverts and coords.shape[1] == baseref.ndims
     self.__coords = coords
     assert isinstance( self_triangulation, numpy.ndarray ) and self_triangulation.shape[0] > 0 and self_triangulation.shape[1] == baseref.ndims+1
@@ -1011,6 +980,50 @@ class MultiSimplexReference( PartialReference ):
     self.__comp_triangulation = comp_triangulation
     self.__edge2vertex = edge2vertex
     PartialReference.__init__( self, baseref )
+    if check:
+      refcheck( self )
+
+  @cache.property
+  def edge_transforms( self ):
+    edgemasks = numeric.overlapping( numpy.arange(1,2*self.ndims+1)%(self.ndims+1), n=self.ndims )
+    interfaces = {}
+    for itri, etris in enumerate( self.__self_triangulation[:,edgemasks] ):
+      iedges, = numpy.where( ~(self.__edge2vertex[:,etris].all(axis=2).any(axis=0)) )
+      for iedge in iedges:
+        key = tuple(sorted(etris[iedge]))
+        try:
+          interfaces.pop( key )
+        except KeyError:
+          interfaces[key] = itri, iedge
+    simplex = getsimplex( self.ndims )
+    interfaces = tuple( (self.__transforms[itri] << simplex.edge_transforms[iedge]).flat for itri, iedge in interfaces.values() )
+    return self.baseref.edge_transforms + interfaces
+
+  @cache.property
+  def edge_refs( self ):
+    # to avoid circular references we cannot mention 'self' inside getedgeref
+    def getedgeref( iedge,
+        baseref = self.baseref,
+        coords = self.__coords,
+        self_triangulation = self.__self_triangulation,
+        comp_triangulation = self.__comp_triangulation,
+        edge2vertex = self.__edge2vertex ):
+      if iedge >= baseref.nedges:
+        return getsimplex(baseref.ndims-1)
+      onedge = edge2vertex[iedge]
+      self_etri = numpy.array([ tri[onedge[tri]] for tri in self_triangulation if onedge[tri].sum() == baseref.ndims ])
+      if not len(self_etri):
+        return None
+      comp_etri = numpy.array([ tri[onedge[tri]] for tri in comp_triangulation if onedge[tri].sum() == baseref.ndims ])
+      if not len(comp_etri):
+        return baseref.edge_refs[iedge]
+      used = numpy.zeros( len(coords), dtype=bool )
+      used[self_etri] = True
+      used[comp_etri] = True
+      ecoords = baseref.edge_transforms[iedge].solve( coords[used] )
+      renumber = used.cumsum()-1
+      return MultiSimplexReference( baseref.edge_refs[iedge], ecoords, renumber[self_etri], renumber[comp_etri] )
+    return cache.Tuple( self.nedges, getedgeref )
 
   def __eq__( self, other ):
     return self is other or isinstance(other,MultiSimplexReference) and other.baseref == self.baseref and other.keymap.keys() == self.keymap.keys()
@@ -1041,7 +1054,7 @@ class MultiSimplexReference( PartialReference ):
       ( self_triangulation if op(inself,inother) else comp_triangulation ).append( selftri )
     return None if not self_triangulation \
       else self.baseref if not comp_triangulation \
-      else MultiSimplexReference( self.baseref, self.__coords, tuple(self_triangulation), tuple(comp_triangulation), self.__edge2vertex )
+      else MultiSimplexReference( self.baseref, self.__coords, numpy.array(self_triangulation), numpy.array(comp_triangulation), self.__edge2vertex )
 
   @property
   def simplices( self ):
@@ -1064,29 +1077,6 @@ class MultiSimplexReference( PartialReference ):
       if weights is not None:
         allweights[i] = weights * abs(float(trans.det))
     return allcoords.reshape(-1,self.ndims), allweights.ravel() if weights is not None else None
-
-  @cache.property
-  def edge_refs( self ):
-    edge_refs = []
-    for iedge, onedge in enumerate( self.__edge2vertex ):
-      etrans, edge = self.baseref.edges[iedge]
-      self_etri = numpy.array([ tri[onedge[tri]] for tri in self.__self_triangulation if onedge[tri].sum() == self.ndims ])
-      comp_etri = numpy.array([ tri[onedge[tri]] for tri in self.__comp_triangulation if onedge[tri].sum() == self.ndims ])
-      if not len(self_etri):
-        newedge = None
-      elif not len(comp_etri):
-        newedge = edge
-      else:
-        used = numpy.zeros( len(self.__coords), dtype=bool )
-        for etri in self_etri:
-          used[etri] = True
-        for etri in comp_etri:
-          used[etri] = True
-        ecoords = etrans.solve( self.__coords[used] )
-        renumber = used.cumsum()-1
-        newedge = MultiSimplexReference( edge, ecoords, renumber[self_etri], renumber[comp_etri] )
-      edge_refs.append( newedge )
-    return tuple(edge_refs)
 
 
 # SHAPE FUNCTIONS

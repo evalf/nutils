@@ -260,5 +260,18 @@ class FileCache( object ):
   def __hash__( self ):
     return self.myhash
 
+class Tuple( object ):
+  __unknown = object()
+  def __init__( self, length, getitem ):
+    self.__items = [ self.__unknown ] * length
+    self.__getitem = getitem
+  def __len__( self ):
+    return len(self.__items)
+  def __getitem__( self, item ):
+    obj = self.__items[item]
+    if obj is self.__unknown:
+      obj = self.__getitem( item )
+      self.__items[item] = obj
+    return obj
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
