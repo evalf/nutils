@@ -78,10 +78,10 @@ class Element( object ):
     'trim element along levelset'
 
     assert self.transform == self.opposite
-    pos, neg, interfaces, intrafaces = self.reference.trim( (self.transform,levelset), maxrefine, denom, check, fcache )
+    (pos,neg), intrafaces = self.reference.trim( (self.transform,levelset), maxrefine, denom, check, fcache )
     poselem = pos and Element( pos, self.transform )
     negelem = neg and Element( neg, self.transform )
-    interfaces = [ Element( edge, self.transform<<postrans, self.transform<<negtrans ) for postrans, negtrans, edge in interfaces ]
+    interfaces = [ Element( edge, self.transform<<trans.flat ) for trans, edge in zip( pos.edge_transforms[self.reference.nedges:], pos.edge_refs[self.reference.nedges:] ) ] if pos else []
     return poselem, negelem, interfaces, intrafaces
 
   @property
@@ -209,6 +209,15 @@ class Reference( cache.Immutable ):
     return childedgemap
 
   @cache.property
+  def edge2children( self ):
+    edge2children = [ [ None ] * edge.nchildren for edge in self.edge_refs ]
+    for ichild, row in enumerate(self.childedgemap):
+      for iedge, (jchild,jedge,isouter) in enumerate( row ):
+        if isouter:
+          edge2children[jedge][jchild] = ichild, iedge
+    return tuple( edge2children )
+
+  @cache.property
   def edge2vertex( self ):
     edge2vertex = []
     for trans, edge in self.edges:
@@ -231,83 +240,13 @@ class Reference( cache.Immutable ):
   def register( cls, ptype, func ):
     setattr( cls, 'getischeme_%s' % ptype, func )
 
-  def with_children( self, child_refs ):
+  def with_children( self, child_refs, interfaces=[], check=False ):
     child_refs = tuple(child_refs)
     if not any( child_refs ):
       return None
     if child_refs == self.child_refs:
       return self
-    return WithChildrenReference( self, child_refs )
-
-  def triangulate( self, levels, denom, check ):
-    '''Triangulate based on vertex levelset values
-    
-    Use linear interpolation to determing edge intersections and perform
-    triangulation to separate self in a positive and negative part. If 'check'
-    is True perform a divergence check of the resulting parts.
-
-    Args:
-      levels (array): levelset values for all vertices.
-      denom (int): round edge intersections to denom+1 discrete points
-        including endpoints.
-      check (bool): perform divergence check of resulting elements.
-
-    Returns:
-      * positive element or None
-      * negative element or None
-      * list of (postrans,negtrans,reference) interface tuples
-      * list of (candidate) intraface edges
-    '''
-    
-    assert numeric.isint( denom )
-    assert levels.shape == (self.nverts,)
-
-    # Loop over ribbons and use linear interpolation to find levelset
-    # intersections. Also keep track of which existing vertices are intersected
-    # within .5/denom distance, and which edges contain the newly introduced
-    # vertices.
-
-    numer = list( self.vertices * denom )
-    vertex2edge = list(self.edge2vertex.T)
-    oniface = numpy.zeros( len(levels), dtype=bool )
-    for i, j in self.ribbon2vertices:
-      a, b = levels[[i,j]]
-      if numpy.sign(a) != numpy.sign(b):
-        x = int( denom * a / float(a-b) + .5 ) # round to [0,1,..,denom]
-        if x == 0:
-          oniface[i] = True
-        elif x == denom:
-          oniface[j] = True
-        else:
-          numer.append( numpy.dot( (denom-x,x), self.vertices[[i,j]] ) )
-          vertex2edge.append( vertex2edge[i] & vertex2edge[j] )
-
-    # These are the resulting three objects:
-
-    coords = rational.Rational( numer, denom ) # rational coordinates of all vertices
-    edge2vertex = numpy.array(vertex2edge).T # nedges x nvertex boolean connectivity matrix
-    vsigns = numpy.zeros( len(coords), dtype=int ) # levelset sign of all vertices {-1,0,+1}
-    vsigns[~oniface] = numpy.sign(levels[~oniface])
-
-    # First check if one of the nonzero signs is absent, in which case we can
-    # return self and None. Otherwise perform a signed triangulation.
-    
-    if -1 not in vsigns:
-      refs = self, None
-    elif +1 not in vsigns:
-      refs = None, self
-    else:
-      postriangulation, negtriangulation = signed_triangulate( coords.astype(float), vsigns )
-      refs = MultiSimplexReference( self, coords, postriangulation, negtriangulation, edge2vertex, check ), \
-             MultiSimplexReference( self, coords, negtriangulation, postriangulation, edge2vertex, check )
-
-    # Finallty, mark zero-level edges for inspection at the coarser level.
-
-    oniface = vsigns == 0
-    intrafaces = [] if oniface.sum() < self.ndims \
-            else [ iedge for iedge, onedge in enumerate( edge2vertex ) if oniface[onedge].sum() >= self.ndims ]
-
-    return refs, intrafaces
+    return WithChildrenReference( self, child_refs, interfaces, check )
 
   def trim( self, levels, maxrefine, denom, check, fcache ):
     'trim element along levelset'
@@ -325,74 +264,93 @@ class Reference( cache.Immutable ):
       else:
         evaluated_levels = True
 
-    allpos = all( levels > 0 )
-    if allpos or all( levels < 0 ):
-      return (self,None,(),()) if allpos else (None,self,(),())
+    if evaluated_levels and ( levels > 0 ).all():
+      refs = self, None
+      intrafaces = ()
 
-    if not maxrefine:
-      assert evaluated_levels, 'failed to evaluate levelset up to level maxrefine'
-      (pos,neg), intrafaces = self.triangulate( levels, denom, check )
-      edge = getsimplex( self.ndims-1 )
-      interfaces = [ ( trans, trans.flipped, edge ) for trans in pos.edge_transforms[self.nedges:] ] if pos else []
-      return pos, neg, interfaces, intrafaces
+    elif evaluated_levels and ( levels < 0 ).all():
+      refs = None, self
+      intrafaces = ()
 
-    poselems = []
-    negelems = []
-    ifaces = []
-    interfaces = set()
-    intrafaces = set()
-    for ichild, (ctrans,child) in enumerate( self.children ):
-      if evaluated_levels:
-        N, I = fcache( self.subvertex, ichild, maxrefine )
-        assert len(levels) == N
-        childlevels = levels[I]
-      else:
-        trans, levelfun = levels
-        childlevels = trans << ctrans, levelfun
-      cposelem, cnegelem, cinterfaces, cintrafaces = child.trim( childlevels, maxrefine-1, denom, check, fcache )
-      poselems.append( cposelem )
-      negelems.append( cnegelem )
-      ifaces.extend( ( (ctrans<<postrans).flat, (ctrans<<negtrans).flat, edge ) for postrans, negtrans, edge in cinterfaces )
-      for iedge in cintrafaces:
-        jchild, jedge, isouter = self.childedgemap[ichild][iedge]
-        if isouter:
-          intrafaces.add(jedge)
+    elif maxrefine > 0:
+      poselems = []
+      negelems = []
+      interfaces = set()
+      intrafaces = set()
+      for ichild, (ctrans,child) in enumerate( self.children ):
+        if evaluated_levels:
+          N, I = fcache( self.subvertex, ichild, maxrefine )
+          assert len(levels) == N
+          childlevels = levels[I]
         else:
-          interfaces.add((ichild,iedge,jchild,jedge) if ichild < jchild else (jchild,jedge,ichild,iedge))
+          trans, levelfun = levels
+          childlevels = trans << ctrans, levelfun
+        (cposelem,cnegelem), cintrafaces = child.trim( childlevels, maxrefine-1, denom, check, fcache )
+        poselems.append( cposelem )
+        negelems.append( cnegelem )
+        for iedge in cintrafaces:
+          jchild, jedge, isouter = self.childedgemap[ichild][iedge]
+          if isouter:
+            intrafaces.add(jedge)
+          else:
+            interfaces.add((ichild,iedge,jchild,jedge) if ichild < jchild else (jchild,jedge,ichild,iedge))
+      refs = self.with_children( poselems, interfaces, check ), self.with_children( negelems, interfaces, check )
 
-    posmosaic = self.with_children( poselems )
-    negmosaic = self.with_children( negelems )
-
-    for ichild, iedge, jchild, jedge in interfaces:
-      posrefi = poselems[ichild] and poselems[ichild].edge_refs[iedge]
-      posrefj = poselems[jchild] and poselems[jchild].edge_refs[jedge]
-      ref = posrefi^posrefj if posrefi or posrefj else None
-
-      negrefi = negelems[ichild] and negelems[ichild].edge_refs[iedge]
-      negrefj = negelems[jchild] and negelems[jchild].edge_refs[jedge]
-      _ref = negrefi^negrefj if negrefi or negrefj else None
-      assert _ref == ref
-
-      if not ref:
-        continue
-
-      transi = (self.child_transforms[ichild] << self.child_refs[ichild].edge_transforms[iedge]).flat
-      transj = (self.child_transforms[jchild] << self.child_refs[jchild].edge_transforms[jedge]).flat
-
-      if ref == ref & posrefi == ref & negrefj:
-        assert not ref & negrefi and not ref & posrefj
-        ifaces.append(( transi, transj, ref ))
-      elif ref == ref & posrefj == ref & negrefi:
-        assert not ref & negrefj and not ref & posrefi
-        ifaces.append(( transj, transi, ref ))
+    else:
+      assert evaluated_levels, 'failed to evaluate levelset up to level maxrefine'
+      assert levels.shape == (self.nverts,)
+  
+      numer = []
+      vertex2edge = list(self.edge2vertex.T)
+      newlevels = levels.tolist()
+      for i, j in self.ribbon2vertices:
+        a, b = levels[[i,j]]
+        if numpy.sign(a) != numpy.sign(b):
+          x = int( denom * a / float(a-b) + .5 ) # round to [0,1,..,denom]
+          if x == 0:
+            newlevels[i] = 0
+          elif x == denom:
+            newlevels[j] = 0
+          else: # add new vertex with level zero
+            numer.append( numpy.dot( (denom-x,x), self.vertices[[i,j]] ) )
+            vertex2edge.append( vertex2edge[i] & vertex2edge[j] )
+            newlevels.append( 0 )
+  
+      newlevels = numpy.array(newlevels)
+      edge2vertex = numpy.array(vertex2edge).T # nedges x nvertex boolean connectivity matrix
+      if ( newlevels >= 0 ).all():
+        refs = self, None
+      elif ( newlevels <= 0 ).all():
+        refs = None, self
       else:
-        raise NotImplementedError
+        vertices = rational.concatenate( [ self.vertices, rational.frac(numer,denom) ] ) # rational coordinates of all vertices
+        postriangulation, negtriangulation = signed_triangulate( vertices.astype(float), newlevels )
+        refs = MultiSimplexReference( self, vertices, postriangulation, negtriangulation, edge2vertex, check ), \
+               MultiSimplexReference( self, vertices, negtriangulation, postriangulation, edge2vertex, check )
+  
+      oniface = newlevels == 0
+      intrafaces = [ iedge for iedge, onedge in enumerate( edge2vertex ) if oniface[onedge].sum() >= self.ndims ]
 
-    if check:
-      if posmosaic: refcheck( posmosaic, posmosaic.edges + [ (postrans,edge) for postrans, negtrans, edge in ifaces ] )
-      if negmosaic: refcheck( negmosaic, negmosaic.edges + [ (negtrans,edge) for postrans, negtrans, edge in ifaces ] )
+    return refs, intrafaces
 
-    return posmosaic, negmosaic, ifaces, intrafaces
+  def check_edges( self, decimal=10 ):
+    x, w = self.getischeme( 'gauss1' )
+    volume = w.sum()
+    assert volume > 0
+    check_volume = 0
+    check_zero = 0
+    for trans, edge in self.edges:
+      if not edge:
+        continue
+      xe, we = edge.getischeme( 'gauss1' )
+      w_normal = we[:,_] * rational.ext( trans.linear ).astype( float )
+      if trans.isflipped:
+        w_normal = -w_normal
+      check_zero += w_normal.sum(0)
+      check_volume += numeric.contract( trans.apply(xe), w_normal, axis=0 )
+    numpy.testing.assert_almost_equal( check_zero, 0, decimal, '%s fails divergence test' % self )
+    numpy.testing.assert_almost_equal( check_volume, volume, decimal, '%s fails divergence test' % self )
+
 
 class SimplexReference( Reference ):
   'simplex reference'
@@ -444,7 +402,7 @@ class LineReference( SimplexReference ):
     SimplexReference.__init__( self, 1 )
     self.edge_transforms = transform.simplex( self.vertices[1:], isflipped=False ), transform.simplex( self.vertices[:1], isflipped=True )
     self.child_transforms = transform.affine(1,[0],2), transform.affine(1,[1],2)
-    refcheck( self )
+    self.check_edges()
 
   def stdfunc( self, degree ):
     if len(self._bernsteincache) <= degree or self._bernsteincache[degree] is None:
@@ -478,7 +436,7 @@ class TriangleReference( SimplexReference ):
     SimplexReference.__init__( self, 2 )
     self.edge_transforms = transform.simplex( self.vertices[1:], isflipped=False ), transform.simplex( self.vertices[::-2], isflipped=False ), transform.simplex( self.vertices[:-1], isflipped=False )
     self.child_transforms = transform.affine(1,[0,0],2), transform.affine(1,[0,1],2), transform.affine(1,[1,0],2), transform.affine([[0,-1],[-1,0]],[1,1],2,isflipped=True )
-    refcheck( self )
+    self.check_edges()
 
   def stdfunc( self, degree ):
     return PolyTriangle(degree)
@@ -579,7 +537,7 @@ class TetrahedronReference( SimplexReference ):
   def __init__( self ):
     SimplexReference.__init__( self, 3 )
     self.edge_transforms = tuple( transform.simplex( self.vertices[I], isflipped=False ) for I in [[1,2,3],[0,3,2],[3,0,1],[2,1,0]] )
-    refcheck( self )
+    self.check_edges()
 
   def getischeme_vtk( self ):
     return self.vertices.astype(float), None
@@ -654,7 +612,7 @@ class TensorReference( Reference ):
     vertices[:,:,:ref1.ndims] = ref1.vertices[:,_]
     vertices[:,:,ref1.ndims:] = ref2.vertices[_,:]
     Reference.__init__( self, vertices.reshape(-1,ndims) )
-    refcheck( self )
+    self.check_edges()
 
   def subvertex( self, ichild, i ):
     ichild1, ichild2 = divmod( ichild, len(self.ref2.child_transforms) )
@@ -918,13 +876,36 @@ class PartialReference( Reference ):
 class WithChildrenReference( PartialReference ):
   'base reference with explicit children'
 
-  def __init__( self, baseref, child_refs ):
+  def __init__( self, baseref, child_refs, interfaces=[], check=False ):
     assert not isinstance( baseref, WithChildrenReference )
     assert isinstance( child_refs, tuple ) and len(child_refs) == baseref.nchildren and any(child_refs) and child_refs != baseref.child_refs
-    self.edge_transforms = baseref.edge_transforms
     self.child_transforms = baseref.child_transforms
     self.child_refs = child_refs
     PartialReference.__init__( self, baseref )
+    self.mkinterfaces( interfaces )
+    if check:
+      self.check_edges()
+
+  def mkinterfaces( self, interfaces ):
+    self.__interfaces = []
+    for ichild, iedge, jchild, jedge in interfaces:
+      refi = self.child_refs[ichild] and self.child_refs[ichild].edge_refs[iedge]
+      refj = self.child_refs[jchild] and self.child_refs[jchild].edge_refs[jedge]
+      ref = refi^refj if refi or refj else None
+      if not ref:
+        continue
+
+      transi = (self.baseref.child_transforms[ichild] << self.baseref.child_refs[ichild].edge_transforms[iedge]).flat
+      transj = (self.baseref.child_transforms[jchild] << self.baseref.child_refs[jchild].edge_transforms[jedge]).flat
+
+      if ref == (ref & refi):
+        assert not (ref & refj)
+        self.__interfaces.append(( transi, transj, ref ))
+      elif ref == (ref & refj):
+        assert not (ref & refi)
+        self.__interfaces.append(( transj, transi, ref ))
+      else:
+        raise NotImplementedError
 
   def __invert__( self ):
     return self._logical( self.baseref, lambda ref1, ref2: ref2 - ref1 )
@@ -958,14 +939,26 @@ class WithChildrenReference( PartialReference ):
     return [ (trans2<<trans1, simplex) for trans2, child in self.children for trans1, simplex in (child.simplices if child else []) ]
 
   @cache.property
+  def edge_transforms( self ):
+    edge_transforms = list( self.baseref.edge_transforms )
+    for trans, mychild, basechild in zip( self.child_transforms, self.child_refs, self.baseref.child_refs ):
+      if mychild:
+        edge_transforms.extend( trans << etrans for etrans in mychild.edge_transforms[basechild.nedges:] )
+    edge_transforms.extend( trans for trans, opptrans, ref in self.__interfaces )
+    return tuple(edge_transforms)
+
+  @cache.property
   def edge_refs( self ):
-    all_child_refs = [ [None] * baseedge.nchildren for baseedge in self.baseref.edge_refs ]
-    for child, row in zip( self.child_refs, self.baseref.childedgemap ):
-      if child:
-        for edge, (ichild,iedge,isouter) in zip( child.edge_refs, row ):
-          if isouter:
-            all_child_refs[iedge][ichild] = edge
-    return tuple( baseedge.with_children( child_refs ) for baseedge, child_refs in zip( self.baseref.edge_refs, all_child_refs ) )
+    # to avoid circular references we cannot mention 'self' inside getedgeref
+    def getedgeref( iedge, baseref=self.baseref, child_refs=self.child_refs ):
+      return baseref.edge_refs[iedge].with_children(
+        child_refs[jchild] and child_refs[jchild].edge_refs[jedge] for jchild, jedge in baseref.edge2children[iedge] )
+    items = [ cache.Tuple.unknown ] * self.baseref.nedges
+    for mychild, basechild in zip( self.child_refs, self.baseref.child_refs ):
+      if mychild:
+        items.extend( mychild.edge_refs[basechild.nedges:] )
+    items.extend( ref for trans, opptrans, ref in self.__interfaces )
+    return cache.Tuple( items, getedgeref )
 
 class MultiSimplexReference( PartialReference ):
   'triangulation'
@@ -981,7 +974,7 @@ class MultiSimplexReference( PartialReference ):
     self.__edge2vertex = edge2vertex
     PartialReference.__init__( self, baseref )
     if check:
-      refcheck( self )
+      self.check_edges()
 
   @cache.property
   def edge_transforms( self ):
@@ -1008,8 +1001,6 @@ class MultiSimplexReference( PartialReference ):
         self_triangulation = self.__self_triangulation,
         comp_triangulation = self.__comp_triangulation,
         edge2vertex = self.__edge2vertex ):
-      if iedge >= baseref.nedges:
-        return getsimplex(baseref.ndims-1)
       onedge = edge2vertex[iedge]
       self_etri = numpy.array([ tri[onedge[tri]] for tri in self_triangulation if onedge[tri].sum() == baseref.ndims ])
       if not len(self_etri):
@@ -1023,7 +1014,8 @@ class MultiSimplexReference( PartialReference ):
       ecoords = baseref.edge_transforms[iedge].solve( coords[used] )
       renumber = used.cumsum()-1
       return MultiSimplexReference( baseref.edge_refs[iedge], ecoords, renumber[self_etri], renumber[comp_etri] )
-    return cache.Tuple( self.nedges, getedgeref )
+    items = [ cache.Tuple.unknown ] * self.baseref.nedges + [ getsimplex(self.ndims-1) ] * (self.nedges-self.baseref.nedges)
+    return cache.Tuple( items, getedgeref )
 
   def __eq__( self, other ):
     return self is other or isinstance(other,MultiSimplexReference) and other.baseref == self.baseref and other.keymap.keys() == self.keymap.keys()
@@ -1421,30 +1413,9 @@ def signed_triangulate( points, vsigns ):
       tri[-2:] = tri[-1], tri[-2]
   return triangulation[ esigns > 0 ], triangulation[ esigns < 0 ]
 
-def refcheck( ref, edges=None, decimal=10 ):
-  if edges is None:
-    edges = ref.edges
-  x, w = ref.getischeme( 'gauss1' )
-  volume = w.sum()
-  assert volume > 0
-  check_volume = 0
-  check_zero = 0
-  L = []
-  for trans, edge in edges:
-    if not edge:
-      continue
-    xe, we = edge.getischeme( 'gauss1' )
-    w_normal = we[:,_] * rational.ext( trans.linear ).astype( float )
-    if trans.isflipped:
-      w_normal = -w_normal
-    L.append(( trans, edge, trans.apply(xe), numpy.linalg.norm(w_normal.sum(0)), w_normal ))
-    check_zero += w_normal.sum(0)
-    check_volume += numeric.contract( trans.apply(xe), w_normal, axis=0 )
-  numpy.testing.assert_almost_equal( check_zero, 0, decimal, '%s fails divergence test' % ref )
-  numpy.testing.assert_almost_equal( check_volume, volume, decimal, '%s fails divergence test' % ref )
-
 def getsimplex( ndims ):
   constructors = PointReference, LineReference, TriangleReference, TetrahedronReference
   return constructors[ndims]()
+
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
