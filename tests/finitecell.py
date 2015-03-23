@@ -11,7 +11,7 @@ def cutdomain( ndims, nelems, maxrefine, errtol ):
   domain, geom = mesh.rectilinear( (numpy.linspace(0,1,nelems+1),)*ndims )
   radius = numpy.sqrt( .5 )
   levelset = radius**2 - ( geom**2 ).sum()
-  trimdomain, complement = domain.trim( levelset=levelset, maxrefine=maxrefine, check=False )
+  pos, neg = domain.trim( levelset=levelset, maxrefine=maxrefine, check=False )
   V = 1.
   Vprev = 1. / (numpy.pi*radius)
   for idim in range( ndims ):
@@ -25,21 +25,23 @@ def cutdomain( ndims, nelems, maxrefine, errtol ):
 
   @unittest
   def volume():
-    volume = trimdomain.volume( geom )
+    volume = pos.volume( geom )
     volerr = abs( volume - exact_volume ) / exact_volume
     log.user( 'volume error:', volerr )
     assert volerr < errtol, 'volume tolerance not met: {:.2e} > {:.2e}'.format( volerr, errtol )
 
-  @unittest
-  def divergence():
-    trimdomain.volume_check( geom, decimal=15 )
+  for name, dom in ('pos',pos), ('neg',neg):
+    @unittest( name )
+    def div():
+      dom.volume_check( geom, decimal=15 )
+      dom.volume_check( geom, decimal=15 )
  
   @unittest
   def surface():
-    trimsurface = trimdomain.boundary['trimmed'].volume( geom )
+    trimsurface = pos.boundary['trimmed'].volume( geom )
     trimerr = abs( trimsurface - exact_trimsurface ) / exact_trimsurface
     log.user( 'trim surface error:', trimerr )
-    totalsurface = trimdomain.boundary.volume( geom )
+    totalsurface = pos.boundary.volume( geom )
     totalerr = abs( totalsurface - exact_totalsurface ) / exact_totalsurface
     log.user( 'total surface error:', totalerr )
     assert trimerr < errtol, 'trim surface tolerance not met: {:.2e} > {:.2e}'.format( trimerr, errtol )

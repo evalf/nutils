@@ -31,6 +31,7 @@ class Element( object ):
   def __init__( self, reference, trans, opposite=None ):
     assert isinstance( reference, Reference )
     assert trans.fromdims == reference.ndims
+    assert trans.todims == None
     self.reference = reference
     self.transform = trans.canonical
     self.opposite = opposite.canonical if opposite is not None else self.transform
@@ -78,11 +79,7 @@ class Element( object ):
     'trim element along levelset'
 
     assert self.transform == self.opposite
-    (pos,neg), intrafaces = self.reference.trim( (self.transform,levelset), maxrefine, denom, check, fcache )
-    poselem = pos and Element( pos, self.transform )
-    negelem = neg and Element( neg, self.transform )
-    interfaces = [ Element( edge, self.transform<<trans.flat ) for trans, edge in zip( pos.edge_transforms[self.reference.nedges:], pos.edge_refs[self.reference.nedges:] ) ] if pos else []
-    return poselem, negelem, interfaces, intrafaces
+    return self.reference.trim( (self.transform,levelset), maxrefine, denom, check, fcache )
 
   @property
   def flipped( self ):
@@ -265,11 +262,11 @@ class Reference( cache.Immutable ):
         evaluated_levels = True
 
     if evaluated_levels and ( levels > 0 ).all():
-      refs = self, None
+      posneg = self, None
       intrafaces = ()
 
     elif evaluated_levels and ( levels < 0 ).all():
-      refs = None, self
+      posneg = None, self
       intrafaces = ()
 
     elif maxrefine > 0:
@@ -294,7 +291,7 @@ class Reference( cache.Immutable ):
             intrafaces.add(jedge)
           else:
             interfaces.add((ichild,iedge,jchild,jedge) if ichild < jchild else (jchild,jedge,ichild,iedge))
-      refs = self.with_children( poselems, interfaces, check ), self.with_children( negelems, interfaces, check )
+      posneg = self.with_children( poselems, interfaces, check ), self.with_children( negelems, interfaces, check )
 
     else:
       assert evaluated_levels, 'failed to evaluate levelset up to level maxrefine'
@@ -319,19 +316,19 @@ class Reference( cache.Immutable ):
       newlevels = numpy.array(newlevels)
       edge2vertex = numpy.array(vertex2edge).T # nedges x nvertex boolean connectivity matrix
       if ( newlevels >= 0 ).all():
-        refs = self, None
+        posneg = self, None
       elif ( newlevels <= 0 ).all():
-        refs = None, self
+        posneg = None, self
       else:
         vertices = rational.concatenate( [ self.vertices, rational.frac(numer,denom) ] ) # rational coordinates of all vertices
         postriangulation, negtriangulation = signed_triangulate( vertices.astype(float), newlevels )
-        refs = MultiSimplexReference( self, vertices, postriangulation, negtriangulation, edge2vertex, check ), \
-               MultiSimplexReference( self, vertices, negtriangulation, postriangulation, edge2vertex, check )
+        posneg = MultiSimplexReference( self, vertices, postriangulation, negtriangulation, edge2vertex, check ), \
+                 MultiSimplexReference( self, vertices, negtriangulation, postriangulation, edge2vertex, check )
   
       oniface = newlevels == 0
       intrafaces = [ iedge for iedge, onedge in enumerate( edge2vertex ) if oniface[onedge].sum() >= self.ndims ]
 
-    return refs, intrafaces
+    return posneg, intrafaces
 
   def check_edges( self, decimal=10 ):
     x, w = self.getischeme( 'gauss1' )
@@ -1385,12 +1382,18 @@ class ExtractionWrapper( object ):
 
 # UTILITY FUNCTIONS
 
-@cache.argdict
+_gauss = []
 def gauss( degree ):
-  k = numpy.arange( 1, degree // 2 + 1 )
-  d = k / numpy.sqrt( 4*k**2-1 )
-  x, w = numpy.linalg.eigh( numpy.diagflat(d,-1) ) # eigh operates (by default) on lower triangle
-  return (x+1) * .5, w[0]**2
+  n = degree // 2
+  while len(_gauss) <= n:
+    _gauss.append( None )
+  gaussn = _gauss[n]
+  if gaussn is None:
+    k = numpy.arange(n) + 1
+    d = k / numpy.sqrt( 4*k**2-1 )
+    x, w = numpy.linalg.eigh( numpy.diagflat(d,-1) ) # eigh operates (by default) on lower triangle
+    _gauss[n] = gaussn = (x+1) * .5, w[0]**2
+  return gaussn
 
 def signed_triangulate( points, vsigns ):
   points = numpy.asarray( points )
