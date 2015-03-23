@@ -310,7 +310,8 @@ def concatenate( args, axis=0 ):
   if not all( isrational(arg) for arg in args ):
     return numpy.concatenate( [ arg.astype(float) for arg in args ], axis=axis )
   arg1, arg2 = args
-  return Rational( numpy.concatenate([ arg1.numer * arg2.denom, arg2.numer * arg1.denom ], axis=axis ), arg1.denom * arg2.denom )
+  common = gcd( arg1.denom, arg2.denom )
+  return Rational( numpy.concatenate([ arg1.numer * (arg2.denom//common), arg2.numer * (arg1.denom//common) ], axis=axis ), arg1.denom * (arg2.denom//common) )
 
 def blockdiag( args ):
   args = [ asarray(arg) for arg in args ]
