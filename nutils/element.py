@@ -321,9 +321,9 @@ class Reference( cache.Immutable ):
         posneg = None, self
       else:
         vertices = rational.concatenate( [ self.vertices, rational.frac(numer,denom) ] ) # rational coordinates of all vertices
-        postriangulation, negtriangulation = signed_triangulate( vertices.astype(float), newlevels )
-        posneg = MultiSimplexReference( self, vertices, postriangulation, negtriangulation, edge2vertex, check ), \
-                 MultiSimplexReference( self, vertices, negtriangulation, postriangulation, edge2vertex, check )
+        triangulation, ispos = signed_triangulate( vertices.astype(float), newlevels )
+        posneg = MultiSimplexReference( self, vertices, triangulation,  ispos, edge2vertex, check ), \
+                 MultiSimplexReference( self, vertices, triangulation, ~ispos, edge2vertex, check )
   
       oniface = newlevels == 0
       intrafaces = [ iedge for iedge, onedge in enumerate( edge2vertex ) if oniface[onedge].sum() >= self.ndims ]
@@ -960,14 +960,14 @@ class WithChildrenReference( PartialReference ):
 class MultiSimplexReference( PartialReference ):
   'triangulation'
 
-  def __init__( self, baseref, coords, self_triangulation, comp_triangulation, edge2vertex=None, check=False ):
+  def __init__( self, baseref, coords, triangulation, ismine, edge2vertex=None, check=False ):
     assert coords.shape[0] >= baseref.nverts and coords.shape[1] == baseref.ndims
     self.__coords = coords
-    assert isinstance( self_triangulation, numpy.ndarray ) and self_triangulation.shape[0] > 0 and self_triangulation.shape[1] == baseref.ndims+1
-    self.__self_triangulation = self_triangulation
-    self.__transforms = tuple( transform.simplex(coords[tri]) for tri in self_triangulation )
-    assert isinstance( comp_triangulation, numpy.ndarray ) and comp_triangulation.shape[0] > 0 and comp_triangulation.shape[1] == baseref.ndims+1
-    self.__comp_triangulation = comp_triangulation
+    assert isinstance( triangulation, numpy.ndarray ) and triangulation.shape[1] == baseref.ndims+1
+    self.__triangulation = triangulation
+    assert isinstance( ismine, numpy.ndarray ) and len(ismine) == len(triangulation) and ismine.any()
+    self.__ismine = ismine
+    self.__transforms = tuple( transform.simplex(coords[tri]) for tri in triangulation[ismine] )
     self.__edge2vertex = edge2vertex
     PartialReference.__init__( self, baseref )
     if check:
@@ -977,7 +977,8 @@ class MultiSimplexReference( PartialReference ):
   def edge_transforms( self ):
     edgemasks = numeric.overlapping( numpy.arange(1,2*self.ndims+1)%(self.ndims+1), n=self.ndims )
     interfaces = {}
-    for itri, etris in enumerate( self.__self_triangulation[:,edgemasks] ):
+    for itri, tri in enumerate( self.__triangulation[self.__ismine] ):
+      etris = tri[edgemasks]
       iedges, = numpy.where( ~(self.__edge2vertex[:,etris].all(axis=2).any(axis=0)) )
       for iedge in iedges:
         key = tuple(sorted(etris[iedge]))
@@ -995,55 +996,36 @@ class MultiSimplexReference( PartialReference ):
     def getedgeref( iedge,
         baseref = self.baseref,
         coords = self.__coords,
-        self_triangulation = self.__self_triangulation,
-        comp_triangulation = self.__comp_triangulation,
+        triangulation = self.__triangulation,
+        ismine = self.__ismine,
         edge2vertex = self.__edge2vertex ):
       onedge = edge2vertex[iedge]
-      self_etri = numpy.array([ tri[onedge[tri]] for tri in self_triangulation if onedge[tri].sum() == baseref.ndims ])
-      if not len(self_etri):
+      used_triangles = numpy.array([ onedge[tri].sum() == baseref.ndims for tri in triangulation ])
+      ismineused = ismine[used_triangles]
+      if not ismineused.any():
         return None
-      comp_etri = numpy.array([ tri[onedge[tri]] for tri in comp_triangulation if onedge[tri].sum() == baseref.ndims ])
-      if not len(comp_etri):
+      if ismineused.all():
         return baseref.edge_refs[iedge]
-      used = numpy.zeros( len(coords), dtype=bool )
-      used[self_etri] = True
-      used[comp_etri] = True
-      ecoords = baseref.edge_transforms[iedge].solve( coords[used] )
-      renumber = used.cumsum()-1
-      return MultiSimplexReference( baseref.edge_refs[iedge], ecoords, renumber[self_etri], renumber[comp_etri] )
+      etri = numpy.array([ tri[onedge[tri]] for tri in triangulation[used_triangles] ])
+      used_coords = numpy.zeros( len(coords), dtype=bool )
+      used_coords[etri] = True
+      renumber = used_coords.cumsum()-1
+      ecoords = baseref.edge_transforms[iedge].solve( coords[used_coords] )
+      return MultiSimplexReference( baseref.edge_refs[iedge], ecoords, renumber[etri], ismineused )
     items = [ cache.Tuple.unknown ] * self.baseref.nedges + [ getsimplex(self.ndims-1) ] * (self.nedges-self.baseref.nedges)
     return cache.Tuple( items, getedgeref )
 
-  def __eq__( self, other ):
-    return self is other or isinstance(other,MultiSimplexReference) and other.baseref == self.baseref and other.keymap.keys() == self.keymap.keys()
-
   def __invert__( self ):
-    return MultiSimplexReference( self.baseref, self.__coords, self.__comp_triangulation, self.__self_triangulation, self.__edge2vertex )
-
-  @cache.property
-  def keymap( self ):
-    vertices = getsimplex(self.ndims).vertices
-    keymap = {}
-    for tri in self.__self_triangulation:
-      key = tuple(sorted(self.__coords[tri].totuple()))
-      keymap[key] = tri, True
-    for tri in self.__comp_triangulation:
-      key = tuple(sorted(self.__coords[tri].totuple()))
-      assert key not in keymap
-      keymap[key] = tri, False
-    return keymap
+    return MultiSimplexReference( self.baseref, self.__coords, self.__triangulation, ~self.__ismine, self.__edge2vertex )
 
   def _logical( self, other, op ):
-    if not isinstance( other, MultiSimplexReference ) or other.baseref != self.baseref:
+    if not isinstance( other, MultiSimplexReference ) or other.baseref != self.baseref \
+         or ( other.__coords != self.__coords ).any() or ( other.__triangulation != self.__triangulation ).any():
       return NotImplemented
-    assert self.keymap.keys() == other.keymap.keys(), 'incompatible triangulations'
-    self_triangulation = []
-    comp_triangulation = []
-    for (selftri,inself), (othertri,inother) in zip( self.keymap.values(), other.keymap.values() ):
-      ( self_triangulation if op(inself,inother) else comp_triangulation ).append( selftri )
-    return None if not self_triangulation \
-      else self.baseref if not comp_triangulation \
-      else MultiSimplexReference( self.baseref, self.__coords, numpy.array(self_triangulation), numpy.array(comp_triangulation), self.__edge2vertex )
+    ismine = op( self.__ismine, other.__ismine )
+    return None if not ismine.any() \
+      else self.baseref if ismine.all() \
+      else MultiSimplexReference( self.baseref, self.__coords, self.__triangulation, ismine, self.__edge2vertex )
 
   @property
   def simplices( self ):
@@ -1414,7 +1396,7 @@ def signed_triangulate( points, vsigns ):
   for tri in triangulation:
     if numpy.linalg.det( points[tri[1:]] - points[tri[0]] ) < 0:
       tri[-2:] = tri[-1], tri[-2]
-  return triangulation[ esigns > 0 ], triangulation[ esigns < 0 ]
+  return triangulation, esigns > 0
 
 def getsimplex( ndims ):
   constructors = PointReference, LineReference, TriangleReference, TetrahedronReference
