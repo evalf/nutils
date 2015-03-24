@@ -63,7 +63,7 @@ class Element( object ):
     
   def edge( self, iedge ):
     trans, edge = self.reference.edges[iedge]
-    return Element( edge, self.transform << trans, self.opposite << trans )
+    return Element( edge, self.transform << trans, self.opposite << trans ) if edge else None
 
   def getedge( self, trans ):
     iedge = self.reference.edge_transforms.index(trans)

@@ -55,12 +55,12 @@ class TransformChain( tuple ):
       headtrans = headtrans.sliceto(-1)
     return None
 
-  def split( self, ndims ):
-    # split after the first occurrence of .fromdims==ndims, the base part
-    # representing the coordinate system for integration/gradients at the level
-    # specified.
-    i = core.index( trans.fromdims == ndims for trans in self )
-    return self.sliceto(i+1), self.slicefrom(i+1)
+  def split( self, ndims, after=True ):
+    # split before/after the first occurrence of .fromdims==ndims. For
+    # after=True (default) the base part represents the coordinate system for
+    # integration/gradients at the level specified.
+    i = core.index( trans.fromdims == ndims for trans in self ) + after
+    return self.sliceto(i), self.slicefrom(i)
 
   def __lshift__( self, other ):
     # self << other

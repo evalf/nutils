@@ -61,7 +61,8 @@ class Topology( object ):
     return self.groups.keys()
 
   def __contains__( self, element ):
-    return self.edict.get( element.transform ) == element
+    ielem = self.edict.get(element.transform)
+    return ielem is not None and self.elements[ielem] == element
 
   def __len__( self ):
     return len( self.elements )
@@ -148,8 +149,8 @@ class Topology( object ):
 
   @cache.property
   def edict( self ):
-    '''transform -> element mapping'''
-    return { elem.transform: elem for elem in self }
+    '''transform -> ielement mapping'''
+    return { elem.transform: ielem for ielem, elem in enumerate(self) }
 
   @property
   def refine_iter( self ):
@@ -1309,12 +1310,14 @@ class TrimmedTopology( Topology ):
     belems = list( trimmed )
     basebtopo = self.basetopo.boundary
     for belem in log.iter( 'element', basebtopo ):
-      trans = belem.transform.promote( self.ndims )
-      elem = self.edict.get( trans.sliceto(-1) )
-      if elem:
-        belem = elem.getedge( trans.slicefrom(-1) )
-        if belem:
-          belems.append( belem )
+      head, tail = belem.transform.promote( self.ndims ).split( self.ndims-1, after=False )
+      ielem = self.basetopo.edict[head]
+      ref = self.__refs[ielem]
+      if ref:
+        iedge = ref.edge_transforms.index(tail)
+        edge = ref.edge_refs[iedge]
+        if edge:
+          belems.append( element.Element( edge, belem.transform, belem.opposite ) )
 
     boundary = Topology( belems )
     if trimmed:
@@ -1322,8 +1325,8 @@ class TrimmedTopology( Topology ):
     for name, basebgroup in basebtopo.groups.items():
       refs = []
       for basebelem in basebgroup:
-        belem = boundary.edict.get(basebelem.transform)
-        refs.append( belem and belem.reference )
+        ibelem = boundary.edict.get(basebelem.transform)
+        refs.append( boundary.elements[ibelem].reference if ibelem is not None else None )
       if any( refs ):
         boundary[name] = TrimmedTopology( basebgroup, refs )
     return boundary
@@ -1332,7 +1335,7 @@ class TrimmedTopology( Topology ):
     if isinstance(key,str) and key in self.groups:
       return self.groups[key]
     keytopo = self.basetopo[key]
-    elements = [ elem for elem in map( self.edict.get, keytopo.edict ) if elem ]
+    elements = [ self.elements[ielem] for ielem in map( self.edict.get, keytopo.edict ) if ielem is not None ]
     trimmed = [ elem for elem in self.trimmed if elem.transform.promote(self.ndims).sliceto(-1) in keytopo.edict ]
     topo = TrimmedTopology( keytopo, elements, trimmed )
     if isinstance(key,str):

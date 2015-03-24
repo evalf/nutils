@@ -9,12 +9,12 @@ def makeplots( domain, geom, sigma, index ):
   sigma_dev = sigma - (function.trace(sigma)/domain.ndims) * function.eye(domain.ndims)
   vonmises = function.sqrt( ( sigma_dev**2 ).sum([0,1]) * 3./2 ) # TODO check fix for 2D
 
-  points, colors = domain.simplex.elem_eval( [ geom, vonmises ], ischeme='bezier3', separate=True )
+  points, colors = domain.simplex.elem_eval( [ geom, vonmises ], ischeme='bezier5', separate=True )
   with plot.PyPlot( 'solution', index=index ) as plt:
     plt.mesh( points, colors, triangulate='bezier' )
     plt.colorbar()
-    plt.axis( 'equal' )
-    plt.xlim( 0, 1.25 )
+    plt.xlim( 0, 1.3 )
+    plt.ylim( 0, 1.3 )
 
 
 def main( nelems=None, maxrefine=2, radius=.5, degree=1, stress=library.Hooke(lmbda=1,mu=1), plots=True, solvetol=1e-5 ):
