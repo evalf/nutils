@@ -299,41 +299,22 @@ class Reference( cache.Immutable ):
 
     else:
       assert evaluated_levels, 'failed to evaluate levelset up to level maxrefine'
-      assert levels.shape == (self.nverts,)
-  
-      numer = []
-      vertex2edge = list(self.edge2vertex.T)
-      newlevels = levels.tolist()
-      for i, j in self.ribbon2vertices:
-        a, b = levels[[i,j]]
-        if numpy.sign(a) != numpy.sign(b):
-          x = int( denom * a / float(a-b) + .5 ) # round to [0,1,..,denom]
-          if x == 0:
-            newlevels[i] = 0
-          elif x == denom:
-            newlevels[j] = 0
-          else: # add new vertex with level zero
-            numer.append( numpy.dot( (denom-x,x), self.vertices[[i,j]] ) )
-            vertex2edge.append( vertex2edge[i] & vertex2edge[j] )
-            newlevels.append( 0 )
-  
-      newlevels = numpy.array(newlevels)
-      edge2vertex = numpy.array(vertex2edge).T # nedges x nvertex boolean connectivity matrix
-      if ( newlevels >= 0 ).all():
+      newverts, hasvtx, oniface = mknewvtx( self.vertices, levels, self.ribbon2vertices, denom )
+      newedge2vertex = self.edge2vertex[:,self.ribbon2vertices[hasvtx]].all( axis=2 )
+      if ( levels[~oniface] >= 0 ).all():
         posneg = self, None
-      elif ( newlevels <= 0 ).all():
+      elif ( levels[~oniface] <= 0 ).all():
         posneg = None, self
       else:
-        newverts = rational.frac(numer,denom)
         vertices = numpy.concatenate( [ self.vertices.astype(float), newverts.astype(float) ] )
+        newlevels = numpy.zeros( len(vertices) )
+        newlevels[:self.nverts][~oniface] = levels[~oniface]
         triangulation, ispos = signed_triangulate( vertices, newlevels )
-        posneg = MultiSimplexReference( self, newverts, triangulation,  ispos, edge2vertex, check ), \
-                 MultiSimplexReference( self, newverts, triangulation, ~ispos, edge2vertex, check )
-  
-      oniface = newlevels == 0
-      intrafaces = [ iedge for iedge, onedge in enumerate( edge2vertex ) if oniface[onedge].sum() >= self.ndims ]
+        posneg = MultiSimplexReference( self, newverts, triangulation,  ispos, newedge2vertex, check ), \
+                 MultiSimplexReference( self, newverts, triangulation, ~ispos, newedge2vertex, check )
+      intrafaces, = numpy.where( self.edge2vertex[:,oniface].sum(1) + newedge2vertex.sum(1) >= self.ndims )
 
-    return posneg, intrafaces
+    return posneg, tuple(intrafaces)
 
   def check_edges( self, decimal=10 ):
     x, w = self.getischeme( 'gauss1' )
@@ -969,16 +950,18 @@ class WithChildrenReference( PartialReference ):
 class MultiSimplexReference( PartialReference ):
   'triangulation'
 
-  def __init__( self, baseref, newverts, triangulation, ismine, edge2vertex=None, check=False ):
+  def __init__( self, baseref, newverts, triangulation, ismine, newedge2vertex=None, check=False ):
     assert newverts.shape[1] == baseref.ndims
     self.__newverts = newverts
     assert isinstance( triangulation, numpy.ndarray ) and triangulation.shape[1] == baseref.ndims+1
     self.__triangulation = triangulation
     assert isinstance( ismine, numpy.ndarray ) and len(ismine) == len(triangulation) and ismine.any()
     self.__ismine = ismine
-    coords = rational.concatenate([ baseref.vertices, newverts ])
-    self.__transforms = tuple( transform.simplex(coords[tri]) for tri in triangulation[ismine] )
-    self.__edge2vertex = edge2vertex
+    self.__coords = rational.concatenate([ baseref.vertices, newverts ])
+    self.__transforms = tuple( transform.simplex(self.__coords[tri]) for tri in triangulation[ismine] )
+    self.__newedge2vertex = newedge2vertex
+    if newedge2vertex is not None:
+      self.__edge2vertex = numpy.concatenate( [ baseref.edge2vertex, newedge2vertex ], axis=1 )
     PartialReference.__init__( self, baseref )
     if check:
       self.check_edges()
@@ -1038,7 +1021,7 @@ class MultiSimplexReference( PartialReference ):
     return cache.Tuple( items, getedgeref )
 
   def __invert__( self ):
-    return MultiSimplexReference( self.baseref, self.__newverts, self.__triangulation, ~self.__ismine, self.__edge2vertex )
+    return MultiSimplexReference( self.baseref, self.__newverts, self.__triangulation, ~self.__ismine, self.__newedge2vertex )
 
   def _logical( self, other, op ):
     if not isinstance( other, MultiSimplexReference ) or other.baseref != self.baseref \
@@ -1047,7 +1030,7 @@ class MultiSimplexReference( PartialReference ):
     ismine = op( self.__ismine, other.__ismine )
     return None if not ismine.any() \
       else self.baseref if ismine.all() \
-      else MultiSimplexReference( self.baseref, self.__newverts, self.__triangulation, ismine, self.__edge2vertex )
+      else MultiSimplexReference( self.baseref, self.__newverts, self.__triangulation, ismine, self.__newedge2vertex )
 
   @property
   def simplices( self ):
@@ -1424,5 +1407,21 @@ def getsimplex( ndims ):
   constructors = PointReference, LineReference, TriangleReference, TetrahedronReference
   return constructors[ndims]()
 
+def mknewvtx( vertices, levels, ribbons, denom ):
+  numer = []
+  oniface = levels == 0
+  hasvtx = numpy.zeros( len(ribbons), dtype=bool )
+  for iribbon, (i,j) in enumerate(ribbons):
+    a, b = levels[[i,j]]
+    if a * b < 0:
+      x = int( denom * a / float(a-b) + .5 ) # round to [0,1,..,denom]
+      if x == 0:
+        oniface[i] = True
+      elif x == denom:
+        oniface[j] = True
+      else: # add new vertex with level zero
+        numer.append( numpy.dot( (denom-x,x), vertices[[i,j]] ) )
+        hasvtx[iribbon] = True
+  return rational.frac(numer,denom), hasvtx, oniface
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
