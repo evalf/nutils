@@ -275,6 +275,10 @@ class Reference( cache.Immutable ):
       interfaces = set()
       intrafaces = set()
       for ichild, (ctrans,child) in enumerate( self.children ):
+        if not child:
+          poselems.append( None )
+          negelems.append( None )
+          continue
         if evaluated_levels:
           N, I = fcache( self.subvertex, ichild, maxrefine )
           assert len(levels) == N
@@ -320,10 +324,11 @@ class Reference( cache.Immutable ):
       elif ( newlevels <= 0 ).all():
         posneg = None, self
       else:
-        vertices = rational.concatenate( [ self.vertices, rational.frac(numer,denom) ] ) # rational coordinates of all vertices
-        triangulation, ispos = signed_triangulate( vertices.astype(float), newlevels )
-        posneg = MultiSimplexReference( self, vertices, triangulation,  ispos, edge2vertex, check ), \
-                 MultiSimplexReference( self, vertices, triangulation, ~ispos, edge2vertex, check )
+        newverts = rational.frac(numer,denom)
+        vertices = numpy.concatenate( [ self.vertices.astype(float), newverts.astype(float) ] )
+        triangulation, ispos = signed_triangulate( vertices, newlevels )
+        posneg = MultiSimplexReference( self, newverts, triangulation,  ispos, edge2vertex, check ), \
+                 MultiSimplexReference( self, newverts, triangulation, ~ispos, edge2vertex, check )
   
       oniface = newlevels == 0
       intrafaces = [ iedge for iedge, onedge in enumerate( edge2vertex ) if oniface[onedge].sum() >= self.ndims ]
@@ -957,16 +962,21 @@ class WithChildrenReference( PartialReference ):
     items.extend( ref for trans, opptrans, ref in self.__interfaces )
     return cache.Tuple( items, getedgeref )
 
+  @property
+  def subvertex( self ):
+    return self.baseref.subvertex
+
 class MultiSimplexReference( PartialReference ):
   'triangulation'
 
-  def __init__( self, baseref, coords, triangulation, ismine, edge2vertex=None, check=False ):
-    assert coords.shape[0] >= baseref.nverts and coords.shape[1] == baseref.ndims
-    self.__coords = coords
+  def __init__( self, baseref, newverts, triangulation, ismine, edge2vertex=None, check=False ):
+    assert newverts.shape[1] == baseref.ndims
+    self.__newverts = newverts
     assert isinstance( triangulation, numpy.ndarray ) and triangulation.shape[1] == baseref.ndims+1
     self.__triangulation = triangulation
     assert isinstance( ismine, numpy.ndarray ) and len(ismine) == len(triangulation) and ismine.any()
     self.__ismine = ismine
+    coords = rational.concatenate([ baseref.vertices, newverts ])
     self.__transforms = tuple( transform.simplex(coords[tri]) for tri in triangulation[ismine] )
     self.__edge2vertex = edge2vertex
     PartialReference.__init__( self, baseref )
@@ -995,7 +1005,7 @@ class MultiSimplexReference( PartialReference ):
     # to avoid circular references we cannot mention 'self' inside getedgeref
     def getedgeref( iedge,
         baseref = self.baseref,
-        coords = self.__coords,
+        newverts = self.__newverts,
         triangulation = self.__triangulation,
         ismine = self.__ismine,
         edge2vertex = self.__edge2vertex ):
@@ -1007,25 +1017,37 @@ class MultiSimplexReference( PartialReference ):
       if ismineused.all():
         return baseref.edge_refs[iedge]
       etri = numpy.array([ tri[onedge[tri]] for tri in triangulation[used_triangles] ])
-      used_coords = numpy.zeros( len(coords), dtype=bool )
+      used_coords = numpy.zeros( baseref.nverts+len(newverts), dtype=bool )
       used_coords[etri] = True
-      renumber = used_coords.cumsum()-1
-      ecoords = baseref.edge_transforms[iedge].solve( coords[used_coords] )
-      return MultiSimplexReference( baseref.edge_refs[iedge], ecoords, renumber[etri], ismineused )
+      used_vertices = used_coords[:baseref.nverts]
+      used_newverts = used_coords[baseref.nverts:]
+      # find edge-transformed vertices for numbering
+      A = baseref.vertices[used_vertices]
+      B = baseref.edge_transforms[iedge].apply( baseref.edge_refs[iedge].vertices )
+      I, J = ( A[:,_,:] == B[_,:,:] ).all( axis=2 ).nonzero()
+      assert ( B[J] == A ).all()
+      # map new vertices to edge coords
+      enewverts = baseref.edge_transforms[iedge].solve( newverts[used_newverts] )
+      # set up renumbering for triangles
+      renumber = numpy.empty( len(used_coords), dtype=int )
+      renumber[:baseref.nverts][used_vertices] = J
+      renumber[baseref.nverts:][used_newverts] = len(J) + numpy.arange(len(enewverts))
+      return MultiSimplexReference( baseref.edge_refs[iedge], enewverts, renumber[etri], ismineused )
+
     items = [ cache.Tuple.unknown ] * self.baseref.nedges + [ getsimplex(self.ndims-1) ] * (self.nedges-self.baseref.nedges)
     return cache.Tuple( items, getedgeref )
 
   def __invert__( self ):
-    return MultiSimplexReference( self.baseref, self.__coords, self.__triangulation, ~self.__ismine, self.__edge2vertex )
+    return MultiSimplexReference( self.baseref, self.__newverts, self.__triangulation, ~self.__ismine, self.__edge2vertex )
 
   def _logical( self, other, op ):
     if not isinstance( other, MultiSimplexReference ) or other.baseref != self.baseref \
-         or ( other.__coords != self.__coords ).any() or ( other.__triangulation != self.__triangulation ).any():
+         or ( other.__newverts != self.__newverts ).any() or ( other.__triangulation != self.__triangulation ).any():
       return NotImplemented
     ismine = op( self.__ismine, other.__ismine )
     return None if not ismine.any() \
       else self.baseref if ismine.all() \
-      else MultiSimplexReference( self.baseref, self.__coords, self.__triangulation, ismine, self.__edge2vertex )
+      else MultiSimplexReference( self.baseref, self.__newverts, self.__triangulation, ismine, self.__edge2vertex )
 
   @property
   def simplices( self ):
