@@ -97,7 +97,7 @@ class PyPlot( BasePlot ):
 
     self.savefig( os.path.join( self.path, name ) )
 
-  def mesh( self, points, colors=None, edgecolors='k', edgewidth=None, triangulate='delaunay', setxylim=True, **kwargs ):
+  def mesh( self, points, colors=None, edgecolors='k', edgewidth=None, triangulate='delaunay', setxylim=True, aspect='equal', cmap='jet' ):
     'plot elemtwise mesh'
 
     assert isinstance( points, numpy.ndarray ) and points.dtype == float
@@ -199,7 +199,7 @@ class PyPlot( BasePlot ):
       raise Exception( 'invalid points shape %r' % ( points.shape, ) )
 
     if colors is not None:
-      trimesh = self.tripcolor( xy[0], xy[1], triangles, data, shading='gouraud', rasterized=True )
+      trimesh = self.tripcolor( xy[0], xy[1], triangles, data, shading='gouraud', rasterized=True, cmap=cmap )
 
     if edges and edgecolors != 'none':
       if edgewidth is None:
@@ -208,6 +208,9 @@ class PyPlot( BasePlot ):
       linecol = LineCollection( edges, linewidths=(edgewidth,) )
       linecol.set_color( edgecolors )
       self.gca().add_collection( linecol )
+
+    if aspect:
+      self.gca().set_aspect( aspect )
 
     if setxylim:
       xmin, ymin = numpy.min( xy, axis=1 )
