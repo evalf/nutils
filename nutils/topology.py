@@ -565,7 +565,7 @@ class Topology( object ):
     return self if n <= 0 else self.refined.refine( n-1 )
 
   @log.title
-  def trim( self, levelset, maxrefine, check=True, eps=1/30. ):
+  def trim( self, levelset, maxrefine, check=True, eps=1/30., name='trimmed' ):
     'trim element along levelset'
 
     denom = numeric.round(1./eps)
@@ -644,8 +644,8 @@ class Topology( object ):
 
       trims.append( iface )
 
-    return TrimmedTopology( self, [ pos for pos, neg in elems ], trims, ndims=self.ndims ), \
-           TrimmedTopology( self, [ neg for pos, neg in elems ], [ trim.flipped for trim in trims ], ndims=self.ndims )
+    return TrimmedTopology( self, [ pos for pos, neg in elems ], name, trims, ndims=self.ndims ), \
+           TrimmedTopology( self, [ neg for pos, neg in elems ], name, [ trim.flipped for trim in trims ], ndims=self.ndims )
 
   @cache.property
   @log.title
@@ -1283,10 +1283,11 @@ class RefinedTopology( Topology ):
 class TrimmedTopology( Topology ):
   'trimmed'
 
-  def __init__( self, basetopo, refs, trimmed=[], ndims=None, groups={} ):
+  def __init__( self, basetopo, refs, trimname=None, trimmed=[], ndims=None, groups={} ):
     assert len(refs) == len(basetopo)
     self.__refs = refs
     self.basetopo = basetopo
+    self.trimname = trimname
     self.trimmed = tuple(trimmed)
     elements = [ element.Element( ref, elem.transform, elem.opposite ) for elem, ref in zip( basetopo, refs ) if ref ]
     Topology.__init__( self, elements, ndims, groups=groups )
@@ -1305,23 +1306,23 @@ class TrimmedTopology( Topology ):
     for elem, ref in zip( self.basetopo, self.__refs ):
       if ref:
         n = elem.reference.nedges
-        trimmed.extend( element.Element( edge, elem.transform<<trans.flat, elem.opposite<<trans.flat ) for trans, edge in zip( ref.edge_transforms[n:], ref.edge_refs[n:] ) )
+        trimmed.extend( element.Element( edge, elem.transform<<trans, elem.opposite<<trans ) for trans, edge in zip( ref.edge_transforms[n:], ref.edge_refs[n:] ) )
 
     belems = list( trimmed )
     basebtopo = self.basetopo.boundary
     for belem in log.iter( 'element', basebtopo ):
-      head, tail = belem.transform.promote( self.ndims ).split( self.ndims-1, after=False )
+      btrans = belem.transform.promote( self.ndims )
+      head = btrans.lookup( self.basetopo.edict )
       ielem = self.basetopo.edict[head]
       ref = self.__refs[ielem]
       if ref:
+        tail = btrans.slicefrom(len(head))
         iedge = ref.edge_transforms.index(tail)
         edge = ref.edge_refs[iedge]
         if edge:
           belems.append( element.Element( edge, belem.transform, belem.opposite ) )
 
     boundary = Topology( belems )
-    if trimmed:
-      boundary['trimmed'] = Topology( trimmed )
     for name, basebgroup in basebtopo.groups.items():
       refs = []
       for basebelem in basebgroup:
@@ -1329,6 +1330,10 @@ class TrimmedTopology( Topology ):
         refs.append( boundary.elements[ibelem].reference if ibelem is not None else None )
       if any( refs ):
         boundary[name] = TrimmedTopology( basebgroup, refs )
+    if trimmed:
+      oldtrimtopo = boundary.groups.get( self.trimname )
+      newtrimtopo = Topology(trimmed)
+      boundary[self.trimname] = oldtrimtopo + newtrimtopo if oldtrimtopo else newtrimtopo
     return boundary
 
   def __getitem__( self, key ):
