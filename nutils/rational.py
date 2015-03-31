@@ -159,7 +159,12 @@ class Rational( object ):
   __abs__ = absolute
 
   def __str__( self ):
-    return '%s/%s' % ( str(self.numer.tolist()).replace(' ',''), self.denom )
+    if self.ndim == 0:
+      return str(self.numer) if self.denom == 1 else '{}/{}'.format( self.numer, self.denom )
+    return '[{}]'.format( ','.join( str(a) for a in self ) )
+
+  def __repr__( self ):
+    return 'Rational({})'.format(self)
 
   def __hash__( self ):
     if self.ndim == 0:
@@ -360,8 +365,8 @@ def solve( A, *B ):
     X, = X
   return X
 
-
 zero = Rational( 0 )
 unit = Rational( 1 )
+half = Rational( 1, 2 )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
