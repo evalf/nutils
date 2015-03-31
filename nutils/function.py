@@ -597,7 +597,8 @@ class Orientation( ArrayFunc ):
     self.ndims = ndims
 
   def evalf( self, trans ):
-    return numpy.array([ trans.orientation(self.ndims) ])
+    head, tail = trans.split( self.ndims )
+    return numpy.array([ head.orientation ])
 
   def _opposite( self ):
     return Orientation( self.ndims, 1-self.side )
