@@ -61,7 +61,8 @@ class Topology( object ):
     return self.groups.keys()
 
   def __contains__( self, element ):
-    return self.edict.get( element.transform ) == element
+    ielem = self.edict.get(element.transform)
+    return ielem is not None and self.elements[ielem] == element
 
   def __len__( self ):
     return len( self.elements )
@@ -148,8 +149,8 @@ class Topology( object ):
 
   @cache.property
   def edict( self ):
-    '''transform -> element mapping'''
-    return { elem.transform: elem for elem in self }
+    '''transform -> ielement mapping'''
+    return { elem.transform: ielem for ielem, elem in enumerate(self) }
 
   @property
   def refine_iter( self ):
@@ -564,7 +565,7 @@ class Topology( object ):
     return self if n <= 0 else self.refined.refine( n-1 )
 
   @log.title
-  def trim( self, levelset, maxrefine, check=True, eps=1/30. ):
+  def trim( self, levelset, maxrefine, check=True, eps=1/30., name='trimmed' ):
     'trim element along levelset'
 
     denom = numeric.round(1./eps)
@@ -574,12 +575,12 @@ class Topology( object ):
     fcache = cache.CallDict()
 
     for elem in log.iter( 'elem', self ):
-      pos, neg, interfaces, intrafaces = elem.trim( levelset=levelset, maxrefine=maxrefine, denom=denom, check=check, fcache=fcache )
-      elems.append(( pos, neg ))
-      trims.extend( interfaces )
+      posneg, intrafaces = elem.trim( levelset=levelset, maxrefine=maxrefine, denom=denom, check=check, fcache=fcache )
+      elems.append(( posneg ))
       for iedge in intrafaces:
-        negref = neg and neg.edge(iedge).reference
-        posref = pos and pos.edge(iedge).reference
+        pos, neg = posneg
+        negref = neg and neg.edge_refs[iedge]
+        posref = pos and pos.edge_refs[iedge]
         ref = posref^negref
         if ref & posref:
           ispos = True
@@ -617,20 +618,20 @@ class Topology( object ):
       mask2 = numpy.array([ vtx in key for vtx in elem2.vertices ])
       (iedge2,), = numpy.where(( elem1.reference.edge2vertex == mask2 ).all( axis=1 ))
 
-      posref1 = pos1 and pos1.reference.edge_refs[iedge1]
-      posref2 = pos2 and pos2.reference.edge_refs[iedge2]
+      posref1 = pos1 and pos1.edge_refs[iedge1]
+      posref2 = pos2 and pos2.edge_refs[iedge2]
       ref = posref1^posref2 if posref1 or posref2 else None
 
-      negref1 = neg1 and neg1.reference.edge_refs[iedge1]
-      negref2 = neg2 and neg2.reference.edge_refs[iedge2]
+      negref1 = neg1 and neg1.edge_refs[iedge1]
+      negref2 = neg2 and neg2.edge_refs[iedge2]
       _ref = negref1^negref2 if negref1 or negref2 else None
       assert _ref == ref
 
       if not ref:
         continue
 
-      trans1 = elem1.edge( iedge1 ).transform
-      trans2 = elem2.edge( iedge2 ).transform
+      trans1 = elem1.transform << elem1.reference.edge_transforms[iedge1]
+      trans2 = elem2.transform << elem2.reference.edge_transforms[iedge2]
 
       if ref == ref & posref1 == ref & negref2:
         assert not ref & negref1 and not ref & posref2
@@ -643,8 +644,8 @@ class Topology( object ):
 
       trims.append( iface )
 
-    return TrimmedTopology( self, [ pos for pos, neg in elems if pos ], trims, ndims=self.ndims ), \
-           TrimmedTopology( self, [ neg for pos, neg in elems if neg ], [ trim.flipped for trim in trims ], ndims=self.ndims )
+    return TrimmedTopology( self, [ pos for pos, neg in elems ], name, trims, ndims=self.ndims ), \
+           TrimmedTopology( self, [ neg for pos, neg in elems ], name, [ trim.flipped for trim in trims ], ndims=self.ndims )
 
   @cache.property
   @log.title
@@ -1282,9 +1283,13 @@ class RefinedTopology( Topology ):
 class TrimmedTopology( Topology ):
   'trimmed'
 
-  def __init__( self, basetopo, elements, trimmed=[], ndims=None, groups={} ):
+  def __init__( self, basetopo, refs, trimname=None, trimmed=[], ndims=None, groups={} ):
+    assert len(refs) == len(basetopo)
+    self.__refs = refs
     self.basetopo = basetopo
+    self.trimname = trimname
     self.trimmed = tuple(trimmed)
+    elements = [ element.Element( ref, elem.transform, elem.opposite ) for elem, ref in zip( basetopo, refs ) if ref ]
     Topology.__init__( self, elements, ndims, groups=groups )
 
   @cache.property
@@ -1297,26 +1302,45 @@ class TrimmedTopology( Topology ):
   @cache.property
   @log.title
   def boundary( self ):
-    belems = list( self.trimmed )
-    boundarytopo = self.basetopo.boundary
-    for belem in log.iter( 'element', boundarytopo ):
-      trans = belem.transform.promote( self.ndims )
-      elem = self.edict.get( trans.sliceto(-1) )
-      if elem:
-        belem = elem.getedge( trans.slicefrom(-1) )
-        if belem:
-          belems.append( belem )
+    trimmed = list( self.trimmed )
+    for elem, ref in zip( self.basetopo, self.__refs ):
+      if ref:
+        n = elem.reference.nedges
+        trimmed.extend( element.Element( edge, elem.transform<<trans, elem.opposite<<trans ) for trans, edge in zip( ref.edge_transforms[n:], ref.edge_refs[n:] ) )
 
-    boundary = TrimmedTopology( boundarytopo, belems )
-    if self.trimmed:
-      boundary['trimmed'] = Topology( self.trimmed )
+    belems = list( trimmed )
+    basebtopo = self.basetopo.boundary
+    for belem in log.iter( 'element', basebtopo ):
+      btrans = belem.transform.promote( self.ndims )
+      head = btrans.lookup( self.basetopo.edict )
+      ielem = self.basetopo.edict[head]
+      ref = self.__refs[ielem]
+      if ref:
+        tail = btrans.slicefrom(len(head))
+        iedge = ref.edge_transforms.index(tail)
+        edge = ref.edge_refs[iedge]
+        if edge:
+          belems.append( element.Element( edge, belem.transform, belem.opposite ) )
+
+    boundary = Topology( belems )
+    for name, basebgroup in basebtopo.groups.items():
+      refs = []
+      for basebelem in basebgroup:
+        ibelem = boundary.edict.get(basebelem.transform)
+        refs.append( boundary.elements[ibelem].reference if ibelem is not None else None )
+      if any( refs ):
+        boundary[name] = TrimmedTopology( basebgroup, refs )
+    if trimmed:
+      oldtrimtopo = boundary.groups.get( self.trimname )
+      newtrimtopo = Topology(trimmed)
+      boundary[self.trimname] = oldtrimtopo + newtrimtopo if oldtrimtopo else newtrimtopo
     return boundary
 
   def __getitem__( self, key ):
     if isinstance(key,str) and key in self.groups:
       return self.groups[key]
     keytopo = self.basetopo[key]
-    elements = [ elem for elem in map( self.edict.get, keytopo.edict ) if elem ]
+    elements = [ self.elements[ielem] for ielem in map( self.edict.get, keytopo.edict ) if ielem is not None ]
     trimmed = [ elem for elem in self.trimmed if elem.transform.promote(self.ndims).sliceto(-1) in keytopo.edict ]
     topo = TrimmedTopology( keytopo, elements, trimmed )
     if isinstance(key,str):

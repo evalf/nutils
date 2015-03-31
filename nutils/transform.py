@@ -43,7 +43,8 @@ class TransformChain( tuple ):
   def isflipped( self ):
     return sum( trans.isflipped for trans in self ) % 2 == 1
 
-  def orientation( self, ndims ):
+  @property
+  def orientation( self ):
     return -1 if self.isflipped else +1
 
   def lookup( self, transforms ):
@@ -55,12 +56,12 @@ class TransformChain( tuple ):
       headtrans = headtrans.sliceto(-1)
     return None
 
-  def split( self, ndims ):
-    # split after the first occurrence of .fromdims==ndims, the base part
-    # representing the coordinate system for integration/gradients at the level
-    # specified.
-    i = core.index( trans.fromdims == ndims for trans in self )
-    return self.sliceto(i+1), self.slicefrom(i+1)
+  def split( self, ndims, after=True ):
+    # split before/after the first occurrence of .fromdims==ndims. For
+    # after=True (default) the base part represents the coordinate system for
+    # integration/gradients at the level specified.
+    i = core.index( trans.fromdims == ndims for trans in self ) + after
+    return self.sliceto(i), self.slicefrom(i)
 
   def __lshift__( self, other ):
     # self << other
@@ -138,7 +139,7 @@ class TransformChain( tuple ):
     items = list( self )
     for i in range(len(items)-1)[::-1]:
       trans1, trans2 = items[i:i+2]
-      if isinstance( trans1, Scale ) and trans2.todims == trans2.fromdims + 1:
+      if isinstance( trans1, Scale ) and trans1.linear == rational.half and trans2.todims == trans2.fromdims + 1:
         trans12 = TransformChain(( trans1, trans2 )).flat
         try:
           newlinear, newoffset = rational.solve( trans2.linear, trans12.linear, trans12.offset - trans2.offset )
@@ -161,7 +162,7 @@ class TransformChain( tuple ):
     else:
       for i in range( index+1, len(self) ):
         scale = self[i]
-        if not isinstance( scale, Scale ):
+        if not isinstance( scale, Scale ) or scale.linear != rational.half:
           break
         newscale = Scale( scale.linear, uptrans.apply(scale.offset) - scale.linear * uptrans.offset )
         body.append( newscale )

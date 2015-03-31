@@ -159,7 +159,12 @@ class Rational( object ):
   __abs__ = absolute
 
   def __str__( self ):
-    return '%s/%s' % ( str(self.numer.tolist()).replace(' ',''), self.denom )
+    if self.ndim == 0:
+      return str(self.numer) if self.denom == 1 else '{}/{}'.format( self.numer, self.denom )
+    return '[{}]'.format( ','.join( str(a) for a in self ) )
+
+  def __repr__( self ):
+    return 'Rational({})'.format(self)
 
   def __hash__( self ):
     if self.ndim == 0:
@@ -310,7 +315,8 @@ def concatenate( args, axis=0 ):
   if not all( isrational(arg) for arg in args ):
     return numpy.concatenate( [ arg.astype(float) for arg in args ], axis=axis )
   arg1, arg2 = args
-  return Rational( numpy.concatenate([ arg1.numer * arg2.denom, arg2.numer * arg1.denom ], axis=axis ), arg1.denom * arg2.denom )
+  common = gcd( arg1.denom, arg2.denom )
+  return Rational( numpy.concatenate([ arg1.numer * (arg2.denom//common), arg2.numer * (arg1.denom//common) ], axis=axis ), arg1.denom * (arg2.denom//common) )
 
 def blockdiag( args ):
   args = [ asarray(arg) for arg in args ]
@@ -359,8 +365,8 @@ def solve( A, *B ):
     X, = X
   return X
 
-
 zero = Rational( 0 )
 unit = Rational( 1 )
+half = Rational( 1, 2 )
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
