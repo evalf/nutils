@@ -388,5 +388,15 @@ def equivalent( trans1, trans2 ):
 
 identity = TransformChain()
 
+def solve( T1, T2 ): # T1 << x == T2
+  assert isinstance( T1, TransformChain )
+  assert isinstance( T2, TransformChain )
+  while T1 and T2 and T1[0] == T2[0]:
+    T1 = T1.slicefrom(1)
+    T2 = T2.slicefrom(1)
+  # A1 * ( Ax * xi + bx ) + b1 == A2 * xi + b2 => A1 * Ax = A2, A1 * bx + b1 = b2
+  Ax, bx = rational.solve( T1.linear, T2.linear, T2.offset - T1.offset )
+  return affine( Ax, bx )
+
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

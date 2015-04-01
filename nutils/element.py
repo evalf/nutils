@@ -26,7 +26,7 @@ import re, warnings
 class Element( object ):
   'element class'
 
-  __slots__ = 'transform', 'reference', 'opposite'
+  __slots__ = 'transform', 'reference', '__opposite'
 
   def __init__( self, reference, trans, opposite=None ):
     assert isinstance( reference, Reference )
@@ -34,7 +34,15 @@ class Element( object ):
     assert trans.todims == None
     self.reference = reference
     self.transform = trans.canonical
-    self.opposite = opposite.canonical if opposite is not None else self.transform
+    if opposite is not None:
+      opposite = opposite.canonical
+      if opposite == self.transform:
+        opposite = None
+    self.__opposite = opposite
+
+  @property
+  def opposite( self ):
+    return self.__opposite or self.transform
 
   def __hash__( self ):
     return object.__hash__( self )
@@ -43,7 +51,7 @@ class Element( object ):
     return self is other or isinstance(other,Element) \
       and self.reference == other.reference \
       and self.transform == other.transform \
-      and self.opposite == other.opposite
+      and self.__opposite == other.__opposite
 
   @property
   def vertices( self ):
@@ -67,31 +75,31 @@ class Element( object ):
     
   def edge( self, iedge ):
     trans, edge = self.reference.edges[iedge]
-    return Element( edge, self.transform << trans, self.opposite << trans ) if edge else None
+    return Element( edge, self.transform << trans, self.__opposite and self.__opposite << trans ) if edge else None
 
   def getedge( self, trans ):
     iedge = self.reference.edge_transforms.index(trans)
     edge = self.reference.edge_refs[iedge]
-    return edge and Element( edge, self.transform << trans, self.opposite << trans )
+    return edge and Element( edge, self.transform << trans, self.__opposite and self.__opposite << trans )
 
   @property
   def children( self ):
-    return [ Element( child, self.transform << trans, self.opposite << trans )
+    return [ Element( child, self.transform << trans, self.__opposite and self.__opposite << trans )
       for trans, child in self.reference.children if child ]
 
   def trim( self, levelset, maxrefine, denom, check, fcache ):
     'trim element along levelset'
 
-    assert self.transform == self.opposite
+    assert not self.__opposite
     return self.reference.trim( (self.transform,levelset), maxrefine, denom, check, fcache )
 
   @property
   def flipped( self ):
-    return Element( self.reference, self.opposite, self.transform )
+    return Element( self.reference, self.__opposite, self.transform ) if self.__opposite else self
 
   @property
   def simplices( self ):
-    return [ Element( reference, self.transform << trans, self.opposite << trans )
+    return [ Element( reference, self.transform << trans, self.__opposite and self.__opposite << trans )
       for trans, reference in self.reference.simplices ]
 
   def __str__( self ):

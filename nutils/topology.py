@@ -593,9 +593,10 @@ class Topology( object ):
         key = tuple(sorted(edge.vertices))
         if key in extras:
           _ref, _ispos, _trans = extras.pop( key )
-          assert ref == _ref
+          #assert ref == _ref ## would be good to check this but we cannot currently account for rotations -GJ 2015/4
           if ispos != _ispos:
-            trims.append( element.Element( ref, trans if ispos else _trans, _trans if ispos else trans ) )
+            trims.append( element.Element(  ref,  trans, _trans << transform.solve(_trans,trans) ) if ispos
+                     else element.Element( _ref, _trans,  trans << transform.solve(trans,_trans) ) )
         else:
           extras[key] = ref, ispos, trans
 
