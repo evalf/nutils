@@ -82,7 +82,7 @@ def main( nelems=20, epsilon=None, timestep=.01, maxtime=1., init='random', plot
     log.user( 'concentration {}, energy {}'.format( total, energy_mix + energy_iface ) )
     energies.append(( energy_mix, energy_iface ))
 
-    lhs = matrix.solve( rhs, tol=1e-12 )
+    lhs = matrix.solve( rhs, tol=1e-12, restart=999 )
     c = cbasis.dot( lhs )
     mu = mubasis.dot( lhs )
 

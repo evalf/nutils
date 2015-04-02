@@ -21,7 +21,7 @@ import os, warnings
 
 # MESH GENERATORS
 
-def rectilinear( richshape, periodic=(), name='rect' ):
+def rectilinear( richshape, periodic=(), name='rect', revolved=False ):
   'rectilinear mesh'
 
   ndims = len(richshape)
@@ -66,6 +66,19 @@ def rectilinear( richshape, periodic=(), name='rect' ):
     funcsp = topo.splinefunc( degree=1, periodic=() )
     coords = numeric.meshgrid( *richshape ).reshape( ndims, -1 )
     geom = ( funcsp * coords ).sum()
+
+  if revolved:
+    topo = topology.RevolvedTopology(topo)
+    theta = function.RevolutionAngle()
+    if topo.ndims == 1:
+      r, = function.revolved(geom)
+      geom = r * function.stack([ function.cos(theta), function.sin(theta) ])
+    elif topo.ndims == 2:
+      r, y = function.revolved(geom)
+      geom = function.stack([ r * function.cos(theta), y, r * function.sin(theta) ])
+    else:
+      raise NotImplementedError, 'ndims={}'.format( topo.ndims )
+
   return topo, geom
 
 def gmesh( fname, tags={}, name=None, use_elementary=False ):

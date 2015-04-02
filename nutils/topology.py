@@ -308,7 +308,7 @@ class Topology( object ):
       funcs = funcs,
 
     retvals = []
-    iwscale = function.iwscale( geometry, self.ndims )
+    iwscale = function.jacobian( geometry, self.ndims ) * function.Iwscale(self.ndims)
     idata = [ iwscale ]
     for func in funcs:
       func = function.asarray( func )
@@ -408,14 +408,10 @@ class Topology( object ):
     return data_index
 
   @log.title
-  def integrate( self, funcs, ischeme, geometry=None, iwscale=None, force_dense=False ):
+  def integrate( self, funcs, ischeme, geometry, force_dense=False ):
     'integrate'
 
-    if iwscale is None:
-      assert geometry is not None
-      iwscale = function.iwscale( geometry, self.ndims )
-    else:
-      assert iwscale is not None
+    iwscale = function.jacobian( geometry, self.ndims ) * function.Iwscale(self.ndims)
     single_arg = not isinstance( funcs, (list,tuple) )
     integrands = [ funcs * iwscale ] if single_arg else [ func * iwscale for func in funcs ]
     data_index = self._integrate( integrands, ischeme )
@@ -423,14 +419,10 @@ class Topology( object ):
     return retvals[0] if single_arg else retvals
 
   @log.title
-  def integrate_symm( self, funcs, ischeme, geometry=None, iwscale=None, force_dense=False ):
+  def integrate_symm( self, funcs, ischeme, geometry, force_dense=False ):
     'integrate a symmetric integrand on a product domain' # TODO: find a proper home for this
 
-    if iwscale is None:
-      assert geometry is not None
-      iwscale = function.iwscale( geometry, self.ndims )
-    else:
-      assert iwscale is not None
+    iwscale = function.jacobian( geometry, self.ndims ) * function.Iwscale(self.ndims)
     single_arg = not isinstance( funcs, (list,tuple) )
     integrands = [ funcs * iwscale ] if single_arg else [ func * iwscale for func in funcs ]
     assert all( integrand.ndim == 2 for integrand in integrands )
@@ -1360,6 +1352,38 @@ class TrimmedTopology( Topology ):
   def basis( self, name, *args, **kwargs ):
     basis = self.basetopo.basis( name, *args, **kwargs )
     return self.prune_basis( basis )
+
+class RevolvedTopology( Topology ):
+  'revolved'
+
+  def __init__( self, basetopo ):
+    self.basetopo = basetopo
+    Topology.__init__( self, basetopo )
+
+  @property
+  def boundary( self ):
+    return RevolvedTopology(self.basetopo.boundary)
+
+  def __getitem__( self, item ):
+    return RevolvedTopology(self.basetopo[item])
+
+  @log.title
+  def integrate( self, funcs, ischeme, geometry, force_dense=False ):
+    iwscale = function.jacobian( geometry, self.ndims+1 ) * function.Iwscale(self.ndims)
+    single_arg = not isinstance( funcs, (list,tuple) )
+    integrands = [ funcs * iwscale ] if single_arg else [ func * iwscale for func in funcs ]
+    data_index = self._integrate( integrands, ischeme )
+    retvals = [ matrix.assemble( data, index, integrand.shape, force_dense ) for integrand, (data,index) in zip( integrands, data_index ) ]
+    return retvals[0] if single_arg else retvals
+
+  def basis( self, name, *args, **kwargs ):
+    return function.revolved( self.basetopo.basis( name, *args, **kwargs ) )
+
+  def elem_eval( self, *args, **kwargs ):
+    return self.basetopo.elem_eval( *args, **kwargs )
+
+  def refined_by( self, refine ):
+    return RevolvedTopology( self.basetopo.refined_by(refine) )
 
 
 # UTILITY FUNCTIONS
