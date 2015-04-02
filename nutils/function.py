@@ -303,6 +303,7 @@ class TransformChain( Evaluable ):
   def evalf( self, trans ):
     return trans[ self.side ].promote( self.promote )
 
+
 # INDEXVECTOR
 #
 # 1D int vector, used for indexing
@@ -345,6 +346,7 @@ class DofMap( IndexVector ):
 
   def _opposite( self ):
     return DofMap( self.dofmap, self.shape[0], self.target, 1-self.side )
+
 
 # ARRAYFUNC
 #
@@ -1134,6 +1136,9 @@ class Concatenate( ArrayFunc ):
   def _diagonalize( self ):
     if self.axis < self.ndim-1:
       return concatenate( [ diagonalize(func) for func in self.funcs ], self.axis )
+
+  def _revolved( self ):
+    return concatenate( [ revolved(func) for func in self.funcs ], self.axis )
 
 class Interpolate( ArrayFunc ):
   'interpolate uniformly spaced data; stepwise for now'
@@ -2067,6 +2072,9 @@ class Inflate( ArrayFunc ):
     if axis != self.axis:
       return inflate( aslength(self.func,length,axis), self.dofmap, self.axis )
 
+  def _revolved( self ):
+    return inflate( revolved(self.func), self.dofmap, self.axis )
+
 class Diagonalize( ArrayFunc ):
   'diagonal matrix'
 
@@ -2207,6 +2215,38 @@ class Guard( ArrayFunc ):
 
   def _localgradient( self, ndims ):
     return Guard( localgradient(self.fun,ndims) )
+
+
+# CIRCULAR SYMMETRY
+
+class RevolutionAngle( ArrayFunc ):
+  'scalar with a 2pi gradient in highest local dimension'
+
+  def __init__( self ):
+    ArrayFunc.__init__( self, args=[], shape=() )
+
+  def evalf( self ):
+    return numpy.zeros( [1] )
+
+  def _localgradient( self, ndims ):
+    lgrad = numpy.zeros( ndims )
+    lgrad[-1] = 2*numpy.pi
+    return lgrad
+
+class Revolved( ArrayFunc ):
+  'implement an extra local dimension with zero gradient'
+
+  def __init__( self, func ):
+    assert _isfunc( func )
+    self.func = func
+    ArrayFunc.__init__( self, args=[func], shape=func.shape )
+
+  def evalf( self, func ):
+    return func
+
+  def _localgradient( self, ndims ):
+    return revolved( concatenate( [ localgradient(self.func,ndims-1), _zeros(self.func.shape+(1,)) ], axis=-1 ) )
+
 
 # AUXILIARY FUNCTIONS
 
@@ -2375,6 +2415,7 @@ def _asarray( arg ):
   warnings.warn( '_asarray is deprecated, use asarray instead', DeprecationWarning )
   return asarray( arg )
 
+
 # FUNCTIONS
 
 def insert( arg, n ):
@@ -2534,7 +2575,7 @@ def bringforward( arg, axis ):
     return arg
   return transpose( args, [axis] + range(axis) + range(axis+1,args.ndim) )
 
-def iwscale( geom, ndims ):
+def jacobian( geom, ndims ):
   assert geom.ndim == 1
   J = localgradient( geom, ndims )
   cndims, = geom.shape
@@ -2543,10 +2584,7 @@ def iwscale( geom, ndims ):
   detJ = abs( determinant( J ) ) if cndims == ndims \
     else 1. if ndims == 0 \
     else abs( determinant( ( J[:,:,_] * J[:,_,:] ).sum(0) ) )**.5
-  return detJ * Iwscale(ndims)
-
-def iwdscale( geom, ndims ):
-  return iwscale( geom, ndims ) * iwscale( opposite(geom), ndims ) / Iwscale(ndims)
+  return detJ
 
 def grad( arg, coords, ndims=0 ):
   'local derivative'
@@ -2894,6 +2932,9 @@ def pointwise( args, evalf, deriv ):
 
   args = asarray( _matchndim(*args) )
   if _isfunc(args):
+    retval = _call( args, '_pointwise', evalf, deriv )
+    if retval is not None:
+      return retval
     return Pointwise( args, evalf, deriv )
   return evalf( *args )
 
@@ -3045,6 +3086,15 @@ def eig( arg, axes=(-2,-1), symmetric=False ):
   assert eigvec.shape == arg.shape
   assert eigval.shape == arg.shape
   return eigval, eigvec
+
+def revolved( arg ):
+  arg = asarray( arg )
+  if not _isfunc( arg ) or _iszero( arg ):
+    return arg
+  retval = _call( arg, '_revolved' )
+  if retval is not None:
+    return retval
+  return Revolved( arg )
 
 negative = lambda arg: multiply( arg, -1 )
 nsymgrad = lambda arg, coords: ( symgrad(arg,coords) * coords.normal() ).sum()
