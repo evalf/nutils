@@ -2241,6 +2241,10 @@ class Revolved( ArrayFunc ):
     self.func = func
     ArrayFunc.__init__( self, args=[func], shape=func.shape )
 
+  @property
+  def blocks( self ):
+    return self.func.blocks
+
   def evalf( self, func ):
     return func
 

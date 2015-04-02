@@ -1389,6 +1389,11 @@ class RevolvedTopology( Topology ):
 # UTILITY FUNCTIONS
 
 def common_refine( topo1, topo2 ):
+  isrevolved = isinstance( topo1, RevolvedTopology )
+  assert isinstance( topo2, RevolvedTopology ) == isrevolved
+  if isrevolved:
+    topo1 = topo1.basetopo
+    topo2 = topo2.basetopo
   commonelem = []
   topo2trans = { elem.transform: elem for elem in topo2 }
   for elem1 in topo1:
@@ -1400,6 +1405,10 @@ def common_refine( topo1, topo2 ):
   base1 = topo1.basetopo if isinstance( topo1, HierarchicalTopology ) else topo1
   base2 = topo2.basetopo if isinstance( topo2, HierarchicalTopology ) else topo2
   assert base1 == base2
-  return HierarchicalTopology( base1, commonelem )
+  commontopo = HierarchicalTopology( base1, commonelem )
+  if isrevolved:
+    commontopo = RevolvedTopology( commontopo )
+  return commontopo
+
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
