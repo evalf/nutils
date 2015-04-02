@@ -294,6 +294,7 @@ class Log( object ):
 # references to objects that are going to be redefined
 _range = range
 _iter = iter
+_zip = zip
 _enumerate = enumerate
 
 class _PrintableIterator( object ):
@@ -387,6 +388,11 @@ def enumerate( title, iterable, length=None ):
   '''Progress logger identical to built in enumerate'''
 
   return _PrintableIterator( title, _enumerate(iterable), length or _len(iterable) )
+
+def zip( title, *iterables ):
+  '''Progress logger identical to built in enumerate'''
+
+  return _PrintableIterator( title, _zip(*iterables), None )
 
 def count( title, start=0 ):
   '''Progress logger identical to itertools.count'''

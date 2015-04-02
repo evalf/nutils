@@ -335,4 +335,32 @@ def isint( a ):
 def isintarray( a ):
   return isinstance( a, numpy.ndarray ) and numpy.issubdtype( a.dtype, numpy.integer )
 
+def ortho_complement( N, tol=1e-8 ):
+
+  N = numpy.array(N)
+  assert N.shape[0] < N.shape[1]
+  for i, n in enumerate(N):
+    n -= dot( dot( N[:i], n ), N[:i] )
+    n /= numpy.linalg.norm(n)
+  # dot( N, N.T ) == I
+
+  X = numpy.eye( N.shape[1] ) - dot( N.T, N )
+  # dot( X, N.T ) == 0
+
+  Y = numpy.empty( (N.shape[1]-N.shape[0],N.shape[1]) )
+  for y in Y:
+    alpha = numpy.linalg.norm( X, axis=1 )
+    i = numpy.argmax( alpha )
+    assert alpha[i] > tol, '{} < {}'.format( alpha[i], tol )
+    y[:] = X[i] / alpha[i]
+    X = numpy.vstack( [X[:i],X[i+1:]] ) # not necessary but saves work
+    X -= dot( X, y )[:,numpy.newaxis] * y
+  # dot( Y, N.T ) == 0
+  # dot( Y, Y.T ) == I
+
+  nextalpha = numpy.max( numpy.linalg.norm( X, axis=1 ) )
+  assert nextalpha < tol, '{} > {}'.format( nextalpha, tol )
+  return Y
+
+
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
