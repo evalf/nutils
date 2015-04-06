@@ -1410,5 +1410,17 @@ def common_refine( topo1, topo2 ):
     commontopo = RevolvedTopology( commontopo )
   return commontopo
 
+def trimmed_from_elems( basetopo, elems, belems, trimname='trimmed' ):
+  isrevolved = isinstance( basetopo, RevolvedTopology )
+  if isrevolved:
+    basetopo = basetopo.basetopo
+  edict = { elem.transform: elem.reference for elem in elems }
+  refs = [ edict.pop(elem.transform,None) for elem in basetopo ]
+  assert not edict, 'leftover elements'
+  trimmedtopo = TrimmedTopology( basetopo, refs=refs, trimname=trimname, trimmed=belems )
+  if isrevolved:
+    trimmedtopo = RevolvedTopology( trimmedtopo )
+  return trimmedtopo
+
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
