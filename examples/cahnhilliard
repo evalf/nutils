@@ -6,10 +6,10 @@ from nutils import *
 @log.title
 def makeplots( domain, geom, c, mu, energies, nsteps ):
 
-  force = c * mu.grad(geom)
+  force = mu * c.grad(geom)
   xpnt, cpnt = domain.elem_eval( [ geom, c ], ischeme='bezier4', title='mesh', separate=True )
   xy, uv = domain.elem_eval( [ geom, force ], ischeme='uniform1', title='quiver', separate=False )
-  Emix, Eiface = numpy.array(energies).T
+  Emix, Eiface, Ewall = numpy.array(energies).T
 
   with plot.PyPlot( 'concentration', ndigits=4, index=len(energies) ) as plt:
     plt.mesh( xpnt, cpnt )
@@ -22,7 +22,7 @@ def makeplots( domain, geom, c, mu, energies, nsteps ):
     ax.set_aspect( 'equal' )
     ax = plt.axes( [.07,.05,.35,.25], axisbg='w' )
     ax.patch.set_alpha( .8 )
-    for E, c, name in (Emix+Eiface,'b','total'), (Emix,'r','mixture'), (Eiface,'g','interface'):
+    for E, c, name in (Emix+Eiface+Ewall,'b','total'), (Emix,'r','mixture'), (Eiface,'g','interface'), (Ewall,'y','wall'):
       plt.plot( E, '-'+c )
       plt.plot( len(E)-1, E[-1], c+'o', label=name )
     plt.legend( numpoints=1, frameon=False, fontsize=8 )
@@ -34,7 +34,7 @@ def makeplots( domain, geom, c, mu, energies, nsteps ):
     plt.ylabel( 'energy' )
 
 
-def main( nelems=20, epsilon=None, timestep=.01, maxtime=1., init='random', plot=True ):
+def main( nelems=20, epsilon=None, timestep=.01, maxtime=1., ewall=0, init='random', plot=True ):
 
   mineps = 1./nelems
   nsteps = numeric.round( maxtime / timestep )
@@ -50,10 +50,8 @@ def main( nelems=20, epsilon=None, timestep=.01, maxtime=1., init='random', plot
 
   cbasis, mubasis = function.chain([ domain.basis( 'spline', degree=2 ), domain.basis( 'spline', degree=2 ) ])
 
-  Emix = lambda c: .5 * (c-1)**2 * (c+1)**2
-  Eiface = lambda c: .5 * epsilon**2 * (c.grad(geom)**2).sum(-1)
   f_p = lambda c_: 4*c_
-  f_n = lambda c_: 6*c - 2*c_**3
+  f_n = lambda c_: 6*c_ - 2*c_**3
 
   A = function.outer( cbasis ) \
     + timestep * function.outer( cbasis.grad(geom), mubasis.grad(geom) ).sum() \
@@ -61,6 +59,7 @@ def main( nelems=20, epsilon=None, timestep=.01, maxtime=1., init='random', plot
     - epsilon**2 * function.outer( mubasis.grad(geom), cbasis.grad(geom) ).sum()
 
   matrix = domain.integrate( A, geometry=geom, ischeme='gauss4' )
+  rhs0 = domain.boundary.integrate( mubasis * ewall, geometry=geom, ischeme='gauss4' )
 
   if init == 'random':
     numpy.random.seed( 0 )
@@ -78,11 +77,16 @@ def main( nelems=20, epsilon=None, timestep=.01, maxtime=1., init='random', plot
   for istep in log.range( 'timestep', nsteps ):
 
     b = cbasis * c - mubasis * f_n(c)
-    rhs, total, energy_mix, energy_iface = domain.integrate( [ b, c, Emix(c), Eiface(c) ], geometry=geom, ischeme='gauss4' )
-    log.user( 'concentration {}, energy {}'.format( total, energy_mix + energy_iface ) )
-    energies.append(( energy_mix, energy_iface ))
+    Emix = .5 * (c-1)**2 * (c+1)**2
+    Eiface = .5 * epsilon**2 * (c.grad(geom)**2).sum(-1)
+    Ewall = abs(ewall) + ewall * c
 
-    lhs = matrix.solve( rhs, tol=1e-12, restart=999 )
+    rhs, total, energy_mix, energy_iface = domain.integrate( [ b, c, Emix, Eiface ], geometry=geom, ischeme='gauss4' )
+    energy_wall = domain.boundary.integrate( Ewall, geometry=geom, ischeme='gauss4' )
+    log.user( 'concentration {}, energy {}'.format( total, energy_mix + energy_iface + energy_wall ) )
+    energies.append(( energy_mix, energy_iface, energy_wall ))
+
+    lhs = matrix.solve( rhs0 + rhs, tol=1e-12, restart=999 )
     c = cbasis.dot( lhs )
     mu = mubasis.dot( lhs )
 
