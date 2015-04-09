@@ -36,6 +36,9 @@ def floor( arr ):
   return arr if arr.dtype == int \
     else ( arr - numpy.less(arr,0) ).astype( int )
 
+def ceil( arr ):
+  return numpy.ceil( arr ).astype( int )
+
 def overlapping( arr, axis=-1, n=2 ):
   'reinterpret data with overlaps'
 
