@@ -390,6 +390,19 @@ class PyPlot( BasePlot ):
     image = image.resize( [int( scale*size ) for size in image.size ])
     dpi   = self._fig.get_dpi()
     self._fig.figimage( numpy.array( image ).astype(float)/255, location[0]*dpi, location[1]*dpi, zorder=10 ).set_alpha(alpha)
+
+  @staticmethod
+  def _tickspacing( axis, base ):
+    from matplotlib import ticker
+    loc = ticker.MultipleLocator( base=base )
+    axis.set_major_locator(loc)
+
+  def xtickspacing( self, base ):
+    self._tickspacing( self.gca().xaxis, base )
+
+  def ytickspacing( self, base ):
+    self._tickspacing( self.gca().yaxis, base )
+
     
 class DataFile( BasePlot ):
   """data file"""
