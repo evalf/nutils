@@ -19,7 +19,6 @@ def makeplots( domain, geom, c, mu, energies, nsteps ):
     ax = plt.gca()
     ax.set_xticks([])
     ax.set_yticks([])
-    ax.set_aspect( 'equal' )
     ax = plt.axes( [.07,.05,.35,.25], axisbg='w' )
     ax.patch.set_alpha( .8 )
     for E, c, name in (Emix+Eiface+Ewall,'b','total'), (Emix,'r','mixture'), (Eiface,'g','interface'), (Ewall,'y','wall'):
@@ -34,10 +33,11 @@ def makeplots( domain, geom, c, mu, energies, nsteps ):
     plt.ylabel( 'energy' )
 
 
-def main( nelems=20, epsilon=None, timestep=.01, maxtime=1., ewall=0, init='random', plot=True ):
+def main( nelems=20, epsilon=None, timestep=.01, maxtime=1., theta=90, init='random', plot=True ):
 
   mineps = 1./nelems
   nsteps = numeric.round( maxtime / timestep )
+  ewall = .5 * numpy.cos( theta * numpy.pi / 180 )
 
   if epsilon is None:
     log.info( 'setting epsilon=%f' % mineps )
@@ -50,13 +50,15 @@ def main( nelems=20, epsilon=None, timestep=.01, maxtime=1., ewall=0, init='rand
 
   cbasis, mubasis = function.chain([ domain.basis( 'spline', degree=2 ), domain.basis( 'spline', degree=2 ) ])
 
-  f_p = lambda c_: 4*c_
-  f_n = lambda c_: 6*c_ - 2*c_**3
+  # mixing energy and splitting: F' = f_p - f_n
+  F = lambda c_: (.5/epsilon**2) * (c_**2-1)**2
+  f_p = lambda c_: (1./epsilon**2) * 4*c_
+  f_n = lambda c_: (1./epsilon**2) * ( 6*c_ - 2*c_**3 )
 
   A = function.outer( cbasis ) \
-    + timestep * function.outer( cbasis.grad(geom), mubasis.grad(geom) ).sum() \
+    + (timestep*epsilon**2) * function.outer( cbasis.grad(geom), mubasis.grad(geom) ).sum() \
     + function.outer( mubasis, mubasis - f_p(cbasis) ) \
-    - epsilon**2 * function.outer( mubasis.grad(geom), cbasis.grad(geom) ).sum()
+    - function.outer( mubasis.grad(geom), cbasis.grad(geom) ).sum()
 
   matrix = domain.integrate( A, geometry=geom, ischeme='gauss4' )
   rhs0 = domain.boundary.integrate( mubasis * ewall, geometry=geom, ischeme='gauss4' )
@@ -77,9 +79,9 @@ def main( nelems=20, epsilon=None, timestep=.01, maxtime=1., ewall=0, init='rand
   for istep in log.range( 'timestep', nsteps ):
 
     b = cbasis * c - mubasis * f_n(c)
-    Emix = .5 * (c-1)**2 * (c+1)**2
-    Eiface = .5 * epsilon**2 * (c.grad(geom)**2).sum(-1)
-    Ewall = abs(ewall) + ewall * c
+    Emix = F(c)
+    Eiface = .5 * (c.grad(geom)**2).sum(-1)
+    Ewall = ( abs(ewall) + ewall * c )
 
     rhs, total, energy_mix, energy_iface = domain.integrate( [ b, c, Emix, Eiface ], geometry=geom, ischeme='gauss4' )
     energy_wall = domain.boundary.integrate( Ewall, geometry=geom, ischeme='gauss4' )
@@ -100,16 +102,16 @@ def unittest():
 
   retvals = main( nelems=8, init='bubbles', maxtime=.1, plot=False )
   assert debug.checkdata( retvals, '''
-    eNqFlWuOIzEIhK8zK3UkgzGPA839r7BtF5DHRlrNDxxP5+uqAjt0/chF68/18+PL7Pchly9fuxpT7LqE
-    /PexrocNmXvj4THPE4+YhJ0QHrlQflsUzVcQqHLeoiSU1ElFlaJqUdd3amkr2jL284D6UGA5OLEEfvCy
-    5GskbVot9NVqi2ucGMOpuUOc1ytv3el9aC5IuBYw0NG129b3BNa3bAWCULXIxcS7jJxq4e+96PjacCts
-    4CQAKRAfGyotc9TJH43tXlR6bbfUFcxMzltc1vnsjDicWT6HpPranajoymkpK1iMdUx5JDwyx39G46Wr
-    HWimVjZbWcEMJl17ML5A9aOl2YHKrGyWsoK5MkY29gHQy13GqbZHd110n5DjeKqh+nmemQ+Hc3QouZT5
-    Fyd0H9vNnQEe3svTJHnyHx70pp7maOqS1KOGKjHAgw6KDNfZsioqvt96ihPpMwb0rFDwKL+f3GWadb3n
-    k75KT3E8Pyt0MEnONvpCI2d8FC/1VD7lq/QURwT+zHMS+VwJrHuIdh3nruh8u87x6qv1FOcOJK+WdQbj
-    nqi6Enmcf1Wrni2rqCsiWCtJTxQNxbiSI517QeNb27ttFXfGVPaeqhrFCgcPvq+115F8Yb61riPPqNpg
-    q2rUvcAlsX+RKLRGiXOPCYebJj23Ao2l0VsMWvg+ewtP2UBWU3sLhnxBzd4aYPi5Mc7Wfcxx3oYUi0xw
-    j4z924YtxZXmvKdpb91/fwHLrpoa''' )
+    eNptlVmSIjEMRK/TEwETlqz1QH3/K4xLGwVD9IdcwvWcmTI0PH7oAfzn8fNjrPr7pIex8VUVwa/KBPb7
+    5MdTF+2r8TTfsePpG7LjhKsWgm+Lphk7JJXiFAGCom5oKjVVmsrfqa2taaxosUFsSWLRsbCQfEfW4osX
+    bWsv5G51xA2OFNOpmqU46yOP7vK+pBZA2Is0MNGN29H3AvZbyp5BiKjXYudZCga9sPdZTHxjeBQOcEMC
+    wTM+1KzAalk3fgx2ZtHpjd1W1zBVilOMOJ4NMw5DpM9L0nOdSXR07bSVNcwXhynzgnvl+N/VuE11Aq3U
+    2uYoa5imSZO5GF+g8jHSmkBn1jZbWcNMMD5ngPicheM9Zj91PwDs7MPDAc56cU4lhKh7aVS8FESNfc0R
+    8F1cTZ5L8YqLUjwsnn3worae4SzJ87n0Kax8vs4LXnEkK4i/13pv9NSzeVVOXyKpi0rvOSjqWl7V3vOB
+    dz3NsZ37xMqnxn5X3pcf8YVRzeJ5cu582lfraQ7Xcwz+5KSa+Wjyzn6O2vPqnDuf9lV6hhNfm32+lIvy
+    KhPrig4JpMQe/Yyso86I2lpLeqGO9hD3BOBwdS3829hnXBV3x9T2XqpeKE2nZ7HhfiW/MEPvRF5RjcFR
+    NaizoFhc/5EAua9S8Nffqw1bIhXbHrTqUmali9+6eUkErx/Z6e68iufnYN+7NRiiOwEt9HB4e3VXZMFA
+    eutCjpqPiVt3UWjgnYlG9/z9AzNTnmg=''' )
 
 
 util.run( main, unittest )
