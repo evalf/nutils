@@ -339,6 +339,7 @@ def isintarray( a ):
   return isinstance( a, numpy.ndarray ) and numpy.issubdtype( a.dtype, numpy.integer )
 
 def ortho_complement( N, tol=1e-8 ):
+  '''return orthogonal complement to non-square matrix N'''
 
   N = numpy.array(N)
   assert N.shape[0] < N.shape[1]
@@ -365,5 +366,16 @@ def ortho_complement( N, tol=1e-8 ):
   assert nextalpha < tol, '{} > {}'.format( nextalpha, tol )
   return Y
 
+def asobjvector( v ):
+  v = tuple(v)
+  A = numpy.empty( len(v), dtype=object )
+  A[:] = v
+  return A
+
+def invorder( n ):
+  assert n.dtype == int and n.ndim == 1
+  ninv = numpy.empty( len(n), dtype=int )
+  ninv[n] = numpy.arange( len(n) )
+  return ninv
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
