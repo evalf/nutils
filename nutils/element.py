@@ -323,7 +323,7 @@ class Reference( cache.Immutable ):
         vertices = rational.concatenate( [ self.vertices, newverts ] )
         newlevels = numpy.zeros( len(vertices) )
         newlevels[:self.nverts][~oniface] = levels[~oniface]
-        triangulation, ispos = signed_triangulate( vertices.astype(float), newlevels )
+        triangulation, ispos = signed_triangulate( vertices, newlevels )
         edge2vertex = numpy.concatenate( [ self.edge2vertex, edge2newvert ], axis=1 )
         posneg = MultiSimplexReference( self, vertices, triangulation,  ispos, edge2vertex, check ), \
                  MultiSimplexReference( self, vertices, triangulation, ~ispos, edge2vertex, check )
@@ -1086,7 +1086,8 @@ class MultiSimplexReference( WrappedReference ):
 
   def _logical( self, other, op ):
     if not isinstance( other, MultiSimplexReference ) or other.baseref != self.baseref \
-         or ( other.coords != self.coords ).any() or ( other.triangulation != self.triangulation ).any():
+         or len(other.coords) != len(self.coords) or ( other.coords != self.coords ).any() \
+         or len(other.triangulation) != len(self.triangulation) or ( other.triangulation != self.triangulation ).any():
       return NotImplemented
     ismine = op( self.ismine, other.ismine )
     return None if not ismine.any() \
@@ -1151,7 +1152,7 @@ class MultiSimplexReference( WrappedReference ):
         trinewverts = [ len(coords) + inewvert for inewvert, irib in enumerate(isectribs) if irib in ribs ]
         if trinewverts:
           pts = numpy.concatenate([ tri, trinewverts ])
-          newtri, ispos = signed_triangulate( vertices[pts].astype(float), newlevels[pts] )
+          newtri, ispos = signed_triangulate( vertices[pts], newlevels[pts] )
           triangulation.extend( normtri(pts[newtri]) )
           allispos.extend( ispos )
         else:
@@ -1506,10 +1507,10 @@ def gauss( degree ):
   return gaussn
 
 def signed_triangulate( points, vsigns ):
-  points = numpy.asarray( points )
   assert len(points) == len(vsigns)
   npoints, ndims = points.shape
-  triangulation = util.delaunay( points )
+  fpoints = points.astype(float)
+  triangulation = util.delaunay( fpoints )
   esigns = numpy.array([ +1 if min(s) >= 0 else -1 if max(s) <= 0 else 0 for s in vsigns[triangulation] ])
   if not esigns.all():
     ambiguous, = numpy.where( esigns == 0 )
@@ -1517,14 +1518,21 @@ def signed_triangulate( points, vsigns ):
     W = numpy.array([ .01/ndims, .99 ])
     for tri in triangulation[ambiguous]:
       I, = numpy.where( vsigns[tri] == 0 )
-      points = numpy.vstack([ points, numpy.dot( W[(numpy.arange(ndims+1)==I[:,_]).astype(int)], points[tri] ) ])
+      fpoints = numpy.vstack([ fpoints, numpy.dot( W[(numpy.arange(ndims+1)==I[:,_]).astype(int)], fpoints[tri] ) ])
       vmap.extend( tri[I] )
-    triangulation = numpy.array([ tri for tri in numpy.take(vmap,util.delaunay(points)) if len(set(tri)) == len(tri) ])
+    triangulation = numpy.array([ tri for tri in numpy.take(vmap,util.delaunay(fpoints)) if len(set(tri)) == len(tri) ])
     esigns = numpy.array([ +1 if min(s) >= 0 else -1 if max(s) <= 0 else 0 for s in vsigns[triangulation] ])
     assert esigns.all()
+  selection = []
   for tri in triangulation:
-    if numpy.linalg.det( points[tri[1:]] - points[tri[0]] ) < 0:
+    area = rational.det( points[tri[1:]] - points[tri[0]] )
+    if area < 0:
       tri[-2:] = tri[-1], tri[-2]
+    selection.append( area != 0 )
+  selection = numpy.array( selection )
+  if selection.any():
+    triangulation = triangulation[selection]
+    esigns = esigns[selection]
   triangulation = normtri( triangulation )
   renumber = arglexsort( triangulation )
   return triangulation[renumber], esigns[renumber] > 0
