@@ -876,6 +876,11 @@ class WrappedReference( Reference ):
       else ~self if other == self.baseref \
       else self._logical( other, lambda ref1, ref2: ref1 ^ ref2 )
 
+  def __sub__( self, other ):
+    if other.__class__ == self.__class__ and other.baseref == self:
+      return ~other
+    return Reference.__sub__( self, other )
+
   def __rsub__( self, other ):
     if other != self.baseref:
       return NotImplemented
@@ -1070,8 +1075,9 @@ class MultiSimplexReference( WrappedReference ):
         used_coords[t] = True
         etri.append( t )
       ecoords = etrans.solve( coords[used_coords] )
-      triangulation = numpy.take( used_coords.cumsum()-1, etri )
-      return MultiSimplexReference( baseedge, ecoords, triangulation, ismineused )
+      triangulation = normtri( numpy.take( used_coords.cumsum()-1, etri ) )
+      renumber = arglexsort( triangulation )
+      return MultiSimplexReference( baseedge, ecoords, triangulation[renumber], ismineused[renumber] )
     items = [ cache.Tuple.unknown ] * self.baseref.nedges + [ getsimplex(self.ndims-1) ] * len(self.interfaces)
     return cache.Tuple( items, getedgeref )
 
@@ -1146,7 +1152,7 @@ class MultiSimplexReference( WrappedReference ):
         if trinewverts:
           pts = numpy.concatenate([ tri, trinewverts ])
           newtri, ispos = signed_triangulate( vertices[pts].astype(float), newlevels[pts] )
-          triangulation.extend( pts[newtri] )
+          triangulation.extend( normtri(pts[newtri]) )
           allispos.extend( ispos )
         else:
           ispos = ( newlevels[tri] >= 0 ).all()
@@ -1154,8 +1160,9 @@ class MultiSimplexReference( WrappedReference ):
           assert ispos != isneg
           triangulation.append( tri )
           allispos.append( ispos )
-      triangulation = numpy.array( triangulation )
-      allispos = numpy.array( allispos )
+      renumber = arglexsort( triangulation )
+      triangulation = numpy.array(triangulation)[renumber]
+      allispos = numpy.array(allispos)[renumber]
       thisedge2vertex = numpy.concatenate( [ edge2coords, edge2newcoord ], axis=1 )
       posneg = MultiSimplexReference( self, vertices, triangulation,  allispos, thisedge2vertex, check ), \
                MultiSimplexReference( self, vertices, triangulation, ~allispos, thisedge2vertex, check )
@@ -1518,7 +1525,9 @@ def signed_triangulate( points, vsigns ):
   for tri in triangulation:
     if numpy.linalg.det( points[tri[1:]] - points[tri[0]] ) < 0:
       tri[-2:] = tri[-1], tri[-2]
-  return triangulation, esigns > 0
+  triangulation = normtri( triangulation )
+  renumber = arglexsort( triangulation )
+  return triangulation[renumber], esigns[renumber] > 0
 
 def getsimplex( ndims ):
   constructors = PointReference, LineReference, TriangleReference, TetrahedronReference
@@ -1556,5 +1565,18 @@ def index_or_append( items, item ):
     index = len(items)
     items.append( item )
   return index
+
+def normtri( triangulation ):
+  triangulation = numpy.asarray(triangulation)
+  if triangulation.shape[1] <= 2:
+    return triangulation
+  I = numpy.argsort( triangulation, axis=1 ).T
+  oddperm = sum( (I[n+1:] < i).sum(axis=0) for n, i in enumerate(I[:-1]) ) % 2 == 1
+  I[-2:,oddperm] = I[:-3:-1,oddperm]
+  return numpy.array([ tuple(tri[i]) for tri, i in zip( triangulation, I.T ) ])
+
+def arglexsort( triangulation ):
+  return numpy.argsort( numeric.asobjvector( tuple(tri) for tri in triangulation ) )
+
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
