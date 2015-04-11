@@ -80,8 +80,8 @@ class TransformChain( tuple ):
 
   @property
   def flipped( self ):
-    assert len(self) == 1 and self.todims == self.fromdims+1
-    return TransformChain( trans.flipped for trans in self )
+    assert self.todims == self.fromdims+1
+    return TransformChain( trans.flipped if trans.todims == trans.fromdims+1 else trans for trans in self )
 
   @property
   def det( self ):
@@ -378,10 +378,15 @@ def roottransedges( name, shape ):
 def maptrans( coords, vertices ):
   return TransformChain(( MapTrans( coords, vertices ), ))
 
-def equivalent( trans1, trans2 ):
+def equivalent( trans1, trans2, flipped=False ):
   trans1 = TransformChain( trans1 )
   trans2 = TransformChain( trans2 )
-  return numpy.all( trans1.linear == trans2.linear ) and numpy.all( trans1.offset == trans2.offset ) and trans1.isflipped == trans2.isflipped
+  if trans1 == trans2:
+    return not flipped
+  while trans1 and trans2 and trans1[0] == trans2[0]:
+    trans1 = trans1.slicefrom(1)
+    trans2 = trans2.slicefrom(1)
+  return numpy.all( trans1.linear == trans2.linear ) and numpy.all( trans1.offset == trans2.offset ) and trans1.isflipped^trans2.isflipped == flipped
 
 
 ## INSTANCES
