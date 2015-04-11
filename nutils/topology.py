@@ -562,8 +562,8 @@ class Topology( object ):
 
     denom = numeric.round(1./eps)
     elems = []
-    trims = []
     extras = {}
+    pairs = []
     fcache = cache.CallDict()
 
     for elem in log.iter( 'elem', self ):
@@ -576,17 +576,13 @@ class Topology( object ):
         edge = elem.edge(iedge)
         trans = edge.transform
         key = tuple(sorted(edge.vertices))
+        value = posref, negref, trans
         try:
-          _posref, _negref, _trans = extras.pop( key )
+          oppvalue = extras.pop( key )
         except KeyError:
-          extras[key] = posref, negref, trans
+          extras[key] = value
         else:
-          assert transform.equivalent( trans, _trans, flipped=True )
-          ref = (posref or _posref) and posref^_posref
-          assert ((negref or _negref) and negref^_negref) == ref
-          if ref:
-            trims.append( element.Element( ref,  trans, _trans ) if ref & posref
-                     else element.Element( ref, _trans,  trans ) )
+          pairs.append( value + oppvalue )
 
     log.debug( 'cache', fcache.summary() )
 
@@ -594,44 +590,33 @@ class Topology( object ):
       ielems = reduce( numpy.intersect1d, [ self.v2elem[vert] for vert in key ] )
       if len(ielems) == 1: # vertices lie on boundary
         continue # if the interface coincides with the boundary, the boundary wins
+      assert len(ielems) == 2
+      value = ()
+      for ielem in ielems:
+        pos, neg = elems[ielem]
+        elem = self.elements[ielem]
+        mask = numpy.array([ vtx in key for vtx in elem.vertices ])
+        (iedge,), = numpy.where(( elem.reference.edge2vertex == mask ).all( axis=1 ))
+        posref = pos and pos.edge_refs[iedge]
+        negref = neg and neg.edge_refs[iedge]
+        trans = elem.transform << elem.reference.edge_transforms[iedge]
+        value += posref, negref, trans
+      pairs.append( value )
 
-      ielem1, ielem2 = ielems
-      pos1, neg1 = elems[ielem1]
-      pos2, neg2 = elems[ielem2]
-
-      elem1 = self.elements[ielem1]
-      mask1 = numpy.array([ vtx in key for vtx in elem1.vertices ])
-      (iedge1,), = numpy.where(( elem1.reference.edge2vertex == mask1 ).all( axis=1 ))
-
-      elem2 = self.elements[ielem2]
-      mask2 = numpy.array([ vtx in key for vtx in elem2.vertices ])
-      (iedge2,), = numpy.where(( elem1.reference.edge2vertex == mask2 ).all( axis=1 ))
-
-      posref1 = pos1 and pos1.edge_refs[iedge1]
-      posref2 = pos2 and pos2.edge_refs[iedge2]
-      ref = posref1^posref2 if posref1 or posref2 else None
-
-      negref1 = neg1 and neg1.edge_refs[iedge1]
-      negref2 = neg2 and neg2.edge_refs[iedge2]
-      _ref = negref1^negref2 if negref1 or negref2 else None
-      assert _ref == ref
-
-      if not ref:
-        continue
-
-      trans1 = elem1.transform << elem1.reference.edge_transforms[iedge1]
-      trans2 = elem2.transform << elem2.reference.edge_transforms[iedge2]
-
-      if ref == ref & posref1 == ref & negref2:
-        assert not ref & negref1 and not ref & posref2
-        iface = element.Element( ref, trans1, trans2 )
-      elif ref == ref & posref2 == ref & negref1:
-        assert not ref & negref2 and not ref & posref1
-        iface = element.Element( ref, trans2, trans1 )
+    trims = []
+    for posref, negref, trans, _posref, _negref, _trans in pairs:
+      ref = (posref or _posref) and posref^_posref
+      _ref = (negref or _negref) and negref^_negref
+      if transform.equivalent( trans, _trans, flipped=True ):
+        assert ref == _ref
       else:
-        raise NotImplementedError
-
-      trims.append( iface )
+        # edges are rotated; in this case we have no way of asserting
+        # identity, we can only make the transformation matching and hope
+        # we didn't make any mistakes
+        _trans <<= transform.solve(_trans,trans)
+      if ref:
+        trims.append( element.Element( ref, trans, _trans ) if ref & posref
+                 else element.Element( _ref, _trans, trans ) )
 
     return TrimmedTopology( self, [ pos for pos, neg in elems ], name, trims, ndims=self.ndims ), \
            TrimmedTopology( self, [ neg for pos, neg in elems ], name, [ trim.flipped for trim in trims ], ndims=self.ndims )
