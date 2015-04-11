@@ -232,8 +232,9 @@ class Reference( cache.Immutable ):
     edge2vertex = []
     for trans, edge in self.edges:
       where = numpy.zeros( self.nverts, dtype=bool )
-      for v in trans.apply( edge.vertices ):
-        where |= rational.equal( self.vertices, v ).all( axis=1 )
+      if edge:
+        for v in trans.apply( edge.vertices ):
+          where |= rational.equal( self.vertices, v ).all( axis=1 )
       edge2vertex.append( where )
     return numpy.array( edge2vertex )
 
@@ -1012,6 +1013,8 @@ class MultiSimplexReference( WrappedReference ):
     assert isinstance( ismine, numpy.ndarray ) and len(ismine) == len(triangulation) and ismine.any()
     self.ismine = ismine
     self.__transforms = tuple( transform.simplex(self.coords[tri]) for tri in triangulation[ismine] )
+    self.__areas = numpy.array([ float(trans.det) for trans in self.__transforms ])
+    assert numpy.all( self.__areas > 0 )
     assert edge2coords is None or edge2coords.shape == ( baseref.nedges, len(coords) )
     self.__edge2coords = edge2coords
     WrappedReference.__init__( self, baseref )
@@ -1053,14 +1056,22 @@ class MultiSimplexReference( WrappedReference ):
       ismineused = ismine[used_triangles]
       if not ismineused.any():
         return None
+      baseedge = baseref.edge_refs[iedge]
       if ismineused.all():
-        return baseref.edge_refs[iedge]
-      etri = numpy.array([ tri[onedge[tri]] for tri in triangulation[used_triangles] ])
+        return baseedge
+      etrans = baseref.edge_transforms[iedge]
       used_coords = numpy.zeros( len(coords), dtype=bool )
-      used_coords[etri] = True
-      ecoords = baseref.edge_transforms[iedge].solve( coords[used_coords] )
-      renumber = used_coords.cumsum()-1
-      return MultiSimplexReference( baseref.edge_refs[iedge], ecoords, renumber[etri], ismineused )
+      etri = []
+      for tri in triangulation[used_triangles]:
+        w = onedge[tri]
+        t = tri[w]
+        if w[int(etrans.isflipped)::2].all(): # even/odd point is removed
+          t[-2:] = t[-1], t[-2] # flip simplex
+        used_coords[t] = True
+        etri.append( t )
+      ecoords = etrans.solve( coords[used_coords] )
+      triangulation = numpy.take( used_coords.cumsum()-1, etri )
+      return MultiSimplexReference( baseedge, ecoords, triangulation, ismineused )
     items = [ cache.Tuple.unknown ] * self.baseref.nedges + [ getsimplex(self.ndims-1) ] * len(self.interfaces)
     return cache.Tuple( items, getedgeref )
 
@@ -1087,16 +1098,10 @@ class MultiSimplexReference( WrappedReference ):
     if ischeme.startswith('vertex'):
       return self.baseref.getischeme( ischeme )
 
-    simplex = getsimplex(self.ndims)
-    points, weights = simplex.getischeme( ischeme )
-    allcoords = numpy.empty( (len(self.__transforms),)+points.shape, dtype=float )
-    if weights is not None:
-      allweights = numpy.empty( (len(self.__transforms),)+weights.shape, dtype=float )
-    for i, trans in enumerate( self.__transforms ):
-      allcoords[i] = trans.apply(points)
-      if weights is not None:
-        allweights[i] = weights * abs(float(trans.det))
-    return allcoords.reshape(-1,self.ndims), allweights.ravel() if weights is not None else None
+    points, weights = getsimplex(self.ndims).getischeme( ischeme )
+    allpoints = numpy.array([ trans.apply(points) for trans in self.__transforms ]).reshape(-1,self.ndims)
+    allweights = ( self.__areas[:,_] * weights ).ravel() if weights is not None else None
+    return allpoints, allweights
 
   @cache.property
   def edge2coords( self ):
@@ -1537,9 +1542,12 @@ def mknewvtx( vertices, levels, ribbons, denom ):
       elif x == denom:
         oniface[j] = True
       else: # add new vertex with level zero
-        numer.append( numpy.dot( (denom-x,x), vertices[[i,j]] ) )
+        numer.append( tuple( numpy.dot( (denom-x,x), vertices[[i,j]] ) ) )
         isectribs.append( iribbon )
-  return rational.frac(numer,superdenom) if numer else numpy.zeros( (0,vertices.shape[1]), dtype=int ), numpy.array(isectribs,dtype=int), oniface
+  if not numer:
+    return numpy.zeros( (0,vertices.shape[1]), dtype=int ), numpy.zeros( (0,), dtype=int ), oniface
+  numer, isectribs = zip( *sorted( zip( numer, isectribs ) ) ) # canonical ordering (for element equivalence)
+  return rational.frac(numer,superdenom), numpy.array(isectribs), oniface
 
 def index_or_append( items, item ):
   try:

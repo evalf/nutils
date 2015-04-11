@@ -571,26 +571,22 @@ class Topology( object ):
       elems.append(( posneg ))
       for iedge in intrafaces:
         pos, neg = posneg
-        negref = neg and neg.edge_refs[iedge]
         posref = pos and pos.edge_refs[iedge]
-        ref = posref^negref
-        if ref & posref:
-          ispos = True
-        elif ref & negref:
-          ispos = False
-        else:
-          raise NotImplementedError
+        negref = neg and neg.edge_refs[iedge]
         edge = elem.edge(iedge)
         trans = edge.transform
         key = tuple(sorted(edge.vertices))
-        if key in extras:
-          _ref, _ispos, _trans = extras.pop( key )
-          #assert ref == _ref ## would be good to check this but we cannot currently account for rotations -GJ 2015/4
-          if ispos != _ispos:
-            trims.append( element.Element(  ref,  trans, _trans << transform.solve(_trans,trans) ) if ispos
-                     else element.Element( _ref, _trans,  trans << transform.solve(trans,_trans) ) )
+        try:
+          _posref, _negref, _trans = extras.pop( key )
+        except KeyError:
+          extras[key] = posref, negref, trans
         else:
-          extras[key] = ref, ispos, trans
+          assert transform.equivalent( trans, _trans, flipped=True )
+          ref = (posref or _posref) and posref^_posref
+          assert ((negref or _negref) and negref^_negref) == ref
+          if ref:
+            trims.append( element.Element( ref,  trans, _trans ) if ref & posref
+                     else element.Element( ref, _trans,  trans ) )
 
     log.debug( 'cache', fcache.summary() )
 
@@ -1299,7 +1295,7 @@ class TrimmedTopology( Topology ):
     for elem, ref in zip( self.basetopo, self.__refs ):
       if ref:
         n = elem.reference.nedges
-        trimmed.extend( element.Element( edge, elem.transform<<trans, elem.opposite<<trans ) for trans, edge in zip( ref.edge_transforms[n:], ref.edge_refs[n:] ) )
+        trimmed.extend( element.Element( edge, elem.transform<<trans, elem.transform<<trans.flipped ) for trans, edge in zip( ref.edge_transforms[n:], ref.edge_refs[n:] ) )
 
     belems = list( trimmed )
     basebtopo = self.basetopo.boundary
