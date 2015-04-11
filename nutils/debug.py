@@ -95,7 +95,7 @@ class Explorer( cmd.Cmd ):
     cmd.Cmd.__init__( self, completekey='tab' )
 
     lines = [ 'WELCOME TO TRACEBACK EXPLORER.' ]
-    maxlen = 44
+    maxlen = 45
     nextline = ''
     for word in intro.split():
       if not nextline or len(nextline) + 1 + len(word) > maxlen:
@@ -278,7 +278,7 @@ def write_html( out, exc_info ):
 
 def traceback_explorer( exc_info, intro=None ):
   exc_type, exc_value, tb = exc_info
-  intro = intro or '''Your program has died. The traceback exporer allows
+  intro = intro or '''Your program has died. The traceback explorer allows
     you to examine its post-mortem state to figure out why this happened.
     Type 'help' for an overview of commands to get going.'''
   Explorer( repr(exc_value), frames_from_traceback(tb), intro ).cmdloop()
