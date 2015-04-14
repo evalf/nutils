@@ -1314,9 +1314,9 @@ class TrimmedTopology( Topology ):
     if isinstance(key,str) and key in self.groups:
       return self.groups[key]
     keytopo = self.basetopo[key]
-    elements = [ self.elements[ielem] for ielem in map( self.edict.get, keytopo.edict ) if ielem is not None ]
+    refs = [ self.__refs[ self.basetopo.edict[elem.transform] ] for elem in keytopo ]
     trimmed = [ elem for elem in self.trimmed if elem.transform.promote(self.ndims).sliceto(-1) in keytopo.edict ]
-    topo = TrimmedTopology( keytopo, elements, trimmed )
+    topo = TrimmedTopology( keytopo, refs, trimmed )
     if isinstance(key,str):
       self.groups[key] = topo
     return topo
