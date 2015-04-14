@@ -47,7 +47,7 @@ def main( nelems=None, maxrefine=2, radius=.5, degree=1, stress=library.Hooke(lm
   disp = dspace.dot( lhs )
 
   if plots:
-    makeplots( domain[1:-1,1:-1], geom+disp, stress(disp.symgrad(geom)), index=nelems )
+    makeplots( domain, geom+disp, stress(disp.symgrad(geom)), index=nelems )
 
   error = disp - uexact
   err = numpy.sqrt( domain.integrate( [ (error**2).sum(-1), ( error.grad(geom)**2 ).sum([-2,-1]) ], geometry=geom, ischeme='gauss7' ) )

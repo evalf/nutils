@@ -1268,10 +1268,13 @@ class TrimmedTopology( Topology ):
 
   @cache.property
   def refined( self ):
-    elements = [ child for elem in self for child in elem.children ]
+    elems = [ child for elem in self for child in elem.children ]
+    edict = { elem.transform: elem.reference for elem in elems }
+    refs = [ edict.pop(elem.transform,None) for elem in self.basetopo.refined ]
+    assert not edict, 'leftover elements'
     trimmed = [ child for elem in self.trimmed for child in elem.children ]
     groups = { name: topo.refined for name, topo in self.groups.items() }
-    return TrimmedTopology( self.basetopo.refined, elements, trimmed, groups=groups )
+    return TrimmedTopology( self.basetopo.refined, refs, trimmed, groups=groups )
 
   @cache.property
   @log.title
