@@ -139,7 +139,7 @@ class TransformChain( tuple ):
     items = list( self )
     for i in range(len(items)-1)[::-1]:
       trans1, trans2 = items[i:i+2]
-      if isinstance( trans1, Scale ) and trans1.linear == rational.half and trans2.todims == trans2.fromdims + 1:
+      if isinstance( trans1, Scale ) and trans1.linear == rational.half and trans2.todims == trans2.fromdims + 1 and trans2.fromdims > 0:
         trans12 = TransformChain(( trans1, trans2 )).flat
         try:
           newlinear, newoffset = rational.solve( trans2.linear, trans12.linear, trans12.offset - trans2.offset )
