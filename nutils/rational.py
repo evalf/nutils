@@ -185,9 +185,13 @@ class Rational( object ):
 ## UTILITY FUNCTIONS
 
 def gcd( *numbers ):
+  if not numbers:
+    return 1
   uniqdesc = numpy.unique( numpy.abs(numbers) )[::-1].tolist() # unique descending
   if uniqdesc[-1] == 0:
     uniqdesc.pop() # ignore zero
+  if not uniqdesc:
+    return 1
   gcd = uniqdesc.pop()
   while uniqdesc and gcd > 1:
     n = uniqdesc.pop()
