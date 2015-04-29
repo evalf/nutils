@@ -199,6 +199,11 @@ class PyPlot( BasePlot ):
       raise Exception( 'invalid points shape %r' % ( points.shape, ) )
 
     if colors is not None:
+      finite = numpy.isfinite(data)
+      if not finite.all():
+        data = data[finite]
+        xy = xy[:,finite]
+        triangles = (finite.cumsum()-1)[ triangles[finite[triangles].all(axis=1)] ]
       trimesh = self.tripcolor( xy[0], xy[1], triangles, data, shading='gouraud', rasterized=True, cmap=cmap )
 
     if edges and edgecolors != 'none':
