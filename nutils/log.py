@@ -394,11 +394,11 @@ def zip( title, *iterables ):
 
   return _PrintableIterator( title, _zip(*iterables), None )
 
-def count( title, start=0 ):
+def count( title, start=0, step=1 ):
   '''Progress logger identical to itertools.count'''
 
   from itertools import count
-  return _PrintableIterator( title, count(start), None )
+  return _PrintableIterator( title, count(start,step), None )
     
 def stack( msg ):
   '''Print stack trace'''
