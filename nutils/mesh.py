@@ -77,7 +77,7 @@ def rectilinear( richshape, periodic=(), name='rect', revolved=False ):
       r, y = function.revolved(geom)
       geom = function.stack([ r * function.cos(theta), y, r * function.sin(theta) ])
     else:
-      raise NotImplementedError, 'ndims={}'.format( topo.ndims )
+      raise NotImplementedError( 'ndims={}'.format( topo.ndims ) )
 
   return topo, geom
 

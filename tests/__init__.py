@@ -20,7 +20,7 @@ def _run():
   except KeyboardInterrupt:
     log.info( 'aborted.' )
     sys.exit( -1 )
-  except Exception, e:
+  except Exception as e:
     log.stack( 'error in unit testing framework: {}'.format(e) )
     log.info( 'crashed.' )
     sys.exit( -2 )
@@ -46,7 +46,7 @@ def _package( f, __scope__ ):
     t0 = time.time()
     try:
       f()
-    except Exception, e:
+    except Exception as e:
       log.stack( 'error: {}'.format(e) )
       results0.append(( __scope__, 3 ))
       if tbexplore:
@@ -80,13 +80,15 @@ def _unittest( f ):
   __log__ = log.Log( log.ProgressStreamFactory( infostream, output ) )
   try:
     f()
-  except AssertionError, e:
+  except AssertionError as e:
     status = 1
-  except Exception, e:
+    infostream.write( ' FAILED: {}\n'.format( str(e).strip() ) )
+  except Exception as e:
     status = 2
+    infostream.write( ' ERROR: {}\n'.format( str(e).strip() ) )
   else:
     status = 0
-  infostream.write( ' OK\n' if status == 0 else ' {}: {}\n'.format( 'FAILED' if status == 1 else 'ERROR', str(e).strip() ) )
+    infostream.write( ' OK\n' )
   infostream.close()
   return status, output.captured, sys.exc_info()
 

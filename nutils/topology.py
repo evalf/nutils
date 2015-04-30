@@ -25,7 +25,7 @@ out in element loops. For lower level operations topologies can be used as
 
 from __future__ import print_function, division
 from . import element, function, util, numpy, parallel, matrix, log, core, numeric, cache, rational, transform, _
-import warnings
+import warnings, functools
 
 class Topology( object ):
   'topology base class'
@@ -587,7 +587,7 @@ class Topology( object ):
     log.debug( 'cache', fcache.summary() )
 
     for key in log.iter( 'remaining', extras ):
-      ielems = reduce( numpy.intersect1d, [ self.v2elem[vert] for vert in key ] )
+      ielems = functools.reduce( numpy.intersect1d, [ self.v2elem[vert] for vert in key ] )
       if len(ielems) == 1: # vertices lie on boundary
         continue # if the interface coincides with the boundary, the boundary wins
       assert len(ielems) == 2
