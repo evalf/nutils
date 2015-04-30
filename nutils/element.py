@@ -182,11 +182,11 @@ class Reference( cache.Immutable ):
 
   @property
   def edges( self ):
-    return zip( self.edge_transforms, self.edge_refs )
+    return list( zip( self.edge_transforms, self.edge_refs ) )
 
   @property
   def children( self ):
-    return zip( self.child_transforms, self.child_refs )
+    return list( zip( self.child_transforms, self.child_refs ) )
 
   @property
   def simplices( self ):
@@ -524,7 +524,7 @@ class TriangleReference( SimplexReference ):
     elif ichild == 3: # inverted
       flatten_child = lambda i, j: flatten_parent( n-1-j, n-1-i )
     else:
-      raise Exception, 'invalid ichild: {}'.format( ichild )
+      raise Exception( 'invalid ichild: {}'.format( ichild ) )
 
     return ((N+1)*N)//2, numpy.concatenate([ flatten_child(i,numpy.arange(n-i)) for i in range(n) ])
 
