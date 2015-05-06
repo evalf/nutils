@@ -570,13 +570,10 @@ class Topology( object ):
       posneg, intrafaces = elem.trim( levelset=levelset, maxrefine=maxrefine, denom=denom, check=check, fcache=fcache )
       elems.append(( posneg ))
       for iedge in intrafaces:
-        pos, neg = posneg
-        posref = pos and pos.edge_refs[iedge]
-        negref = neg and neg.edge_refs[iedge]
         edge = elem.edge(iedge)
         trans = edge.transform
         key = tuple(sorted(edge.vertices))
-        value = posref, negref, trans
+        value = posneg, iedge, trans
         try:
           oppvalue = extras.pop( key )
         except KeyError:
@@ -593,18 +590,22 @@ class Topology( object ):
       assert len(ielems) == 2
       value = ()
       for ielem in ielems:
-        pos, neg = elems[ielem]
+        posneg = elems[ielem]
         elem = self.elements[ielem]
         mask = numpy.array([ vtx in key for vtx in elem.vertices ])
         (iedge,), = numpy.where(( elem.reference.edge2vertex == mask ).all( axis=1 ))
-        posref = pos and pos.edge_refs[iedge]
-        negref = neg and neg.edge_refs[iedge]
         trans = elem.transform << elem.reference.edge_transforms[iedge]
-        value += posref, negref, trans
+        value += posneg, iedge, trans
       pairs.append( value )
 
     trims = []
-    for posref, negref, trans, _posref, _negref, _trans in pairs:
+    for (pos,neg), iedge, trans, (_pos,_neg), _iedge, _trans in pairs:
+
+      posref = pos and pos.edge_refs[iedge]
+      negref = neg and neg.edge_refs[iedge]
+      _posref = _pos and _pos.edge_refs[_iedge]
+      _negref = _neg and _neg.edge_refs[_iedge]
+
       ref = (posref or _posref) and posref^_posref
       _ref = (negref or _negref) and negref^_negref
       if transform.equivalent( trans, _trans, flipped=True ):

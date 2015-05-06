@@ -910,30 +910,30 @@ class WithChildrenReference( WrappedReference ):
     self.child_transforms = baseref.child_transforms
     self.child_refs = child_refs
     WrappedReference.__init__( self, baseref )
-    self.mkinterfaces( interfaces )
+    self.__interfaces_arg = interfaces
     if check:
       self.check_edges()
 
-  def mkinterfaces( self, interfaces ):
-    self.__interfaces = []
-    for ichild, iedge, jchild, jedge in interfaces:
+  @cache.property
+  def __interfaces( self ):
+    interfaces = []
+    for ichild, iedge, jchild, jedge in self.__interfaces_arg:
       refi = self.child_refs[ichild] and self.child_refs[ichild].edge_refs[iedge]
       refj = self.child_refs[jchild] and self.child_refs[jchild].edge_refs[jedge]
       ref = refi^refj if refi or refj else None
       if not ref:
         continue
-
       transi = self.baseref.child_transforms[ichild] << self.baseref.child_refs[ichild].edge_transforms[iedge]
       transj = self.baseref.child_transforms[jchild] << self.baseref.child_refs[jchild].edge_transforms[jedge]
-
       if ref == (ref & refi):
         assert not (ref & refj)
-        self.__interfaces.append(( ichild, iedge, transi, transj, ref ))
+        interfaces.append(( ichild, iedge, transi, transj, ref ))
       elif ref == (ref & refj):
         assert not (ref & refi)
-        self.__interfaces.append(( jchild, jedge, transj, transi, ref ))
+        interfaces.append(( jchild, jedge, transj, transi, ref ))
       else:
         raise NotImplementedError
+    return tuple(interfaces)
 
   def __invert__( self ):
     return self._logical( self.baseref, lambda ref1, ref2: ref2 - ref1 )
@@ -1585,6 +1585,5 @@ def normtri( triangulation ):
 
 def arglexsort( triangulation ):
   return numpy.argsort( numeric.asobjvector( tuple(tri) for tri in triangulation ) )
-
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
