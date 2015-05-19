@@ -232,16 +232,20 @@ def frames_from_traceback( tb ):
     tb = tb.tb_next
   return frames
 
-def frames_from_callstack( depth=1 ):
-  try:
-    frame = sys._getframe( depth )
-  except ValueError:
-    return []
+def frames_from_frame( frame ):
   frames = []
   while frame:
     frames.append( Frame( frame ) )
     frame = frame.f_back
   return frames[::-1]
+
+def frames_from_callstack( depth=1 ):
+  try:
+    frame = sys._getframe( depth )
+  except ValueError:
+    return []
+  else:
+    return frames_from_frame( frame )
 
 def write_html( out, exc_info ):
   'write exception info to html file'
@@ -276,12 +280,19 @@ def write_html( out, exc_info ):
   out.write( '</span>' )
   out.flush()
 
-def traceback_explorer( exc_info, intro=None ):
+def traceback_explorer( exc_info ):
   exc_type, exc_value, tb = exc_info
-  intro = intro or '''Your program has died. The traceback explorer allows
-    you to examine its post-mortem state to figure out why this happened.
-    Type 'help' for an overview of commands to get going.'''
-  Explorer( repr(exc_value), frames_from_traceback(tb), intro ).cmdloop()
+  Explorer( repr(exc_value), frames_from_traceback(tb), '''
+    Your program has died. The traceback explorer allows you to examine its
+    post-mortem state to figure out why this happened. Type 'help' for an
+    overview of commands to get going.''' ).cmdloop()
+
+def signal_handler( sig, frame ):
+  print() # to open een new line under ^Z
+  Explorer( 'Signal: {}.'.format(sig), frames_from_frame(frame), '''
+    Your program is suspended. The traceback explorer allows you to examine
+    its current state and even alter it. Closing the explorer will resume
+    program execution.''' ).cmdloop()
 
 def breakpoint():
   Explorer( 'Suspended.', frames_from_callstack(2), '''

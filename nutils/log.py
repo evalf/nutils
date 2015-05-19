@@ -434,5 +434,9 @@ def title( f ): # decorator
     return f( *args, **kwargs )
   return wrapped
 
+def signal_handler( sig, frame ):
+  log = core.getprop( 'log', None, frame=frame )
+  if log is not None:
+    log.progress()
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

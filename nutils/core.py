@@ -15,7 +15,7 @@ from __future__ import print_function, division
 import sys
 
 _nodefault = object()
-def getprop( name, default=_nodefault ):
+def getprop( name, default=_nodefault, frame=None ):
   """Access a semi-global property.
 
   The use of global variables is discouraged, as changes can go unnoticed and
@@ -39,8 +39,9 @@ def getprop( name, default=_nodefault ):
       NameError.
   """
 
-  frame = sys._getframe(1)
   key = '__%s__' % name
+  if frame is None:
+    frame = sys._getframe(1)
   while frame:
     if key in frame.f_locals:
       return frame.f_locals[key]

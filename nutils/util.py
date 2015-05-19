@@ -484,6 +484,12 @@ def run( *functions ):
     __cachedir__ = basedir + 'cache'
 
     try:
+      import signal
+      signal.signal( signal.SIGTSTP, debug.signal_handler ) # start traceback explorer at ^Z
+    except Exception as e:
+      log.warning( 'failed to install signal handler:', e )
+
+    try:
       gitversion = version + '.' + githash(__file__,2)[:8]
     except:
       gitversion = version
