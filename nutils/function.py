@@ -2529,10 +2529,10 @@ def get( arg, iax, item ):
   arg = asarray( arg )
   iax = numeric.normdim( arg.ndim, iax )
   sh = arg.shape[iax]
-  assert numeric.isint( sh ), 'cannot get item %r from axis %r' % ( item, sh )
 
-  item = 0 if sh == 1 \
-    else numeric.normdim( sh, item )
+  if numeric.isint( sh ):
+    item = 0 if sh == 1 \
+      else numeric.normdim( sh, item )
 
   if not _isfunc( arg ):
     return numeric.get( arg, iax, item )
