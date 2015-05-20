@@ -168,7 +168,7 @@ class Rational( object ):
 
   def __hash__( self ):
     if self.ndim == 0:
-      return hash( self.totuple() ) # compatible with int hash
+      return hash( int(self.numer) if self.denom == 1 else (int(self.numer),int(self.denom)) ) # compatible with int hash
     raise TypeError( "unhashable type: 'Rational'" )
     # Actually being immutable there is no reason why Rational should be
     # unhashable, except if we implement __hash__ we must also implement __eq__
@@ -176,10 +176,9 @@ class Rational( object ):
     # decided differently. We choose to cripple our object for consistency.
 
   def totuple( self ):
-    'convert to nested tuple of integers or (numer,denom) pairs'
-    if self.ndim == 0:
-      return int(self.numer) if self.denom == 1 else (int(self.numer),int(self.denom))
-    return tuple( item.totuple() for item in self )
+    'convert to nested tuple of Rational scalars'
+
+    return self if self.ndim == 0 else tuple( item.totuple() for item in self )
 
 
 ## UTILITY FUNCTIONS
