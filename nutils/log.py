@@ -400,16 +400,9 @@ def count( title, start=0, step=1 ):
   from itertools import count
   return _PrintableIterator( title, count(start,step), None )
     
-def stack( msg ):
+def stack( msg, frames ):
   '''Print stack trace'''
 
-  from . import debug
-  if isinstance( msg, tuple ):
-    exc_type, exc_value, tb = msg
-    msg = repr( exc_value )
-    frames = debug.frames_from_traceback( tb )
-  else:
-    frames = debug.frames_from_callstack( depth=2 )
   print( msg, *reversed(frames), sep='\n', file=getstream( 'error' ) )
 
 def title( f ): # decorator

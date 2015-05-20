@@ -43,21 +43,13 @@ class BasePlot( object ):
 
     return self
 
-  def __exit__( self, *exc_info ):
+  def __exit__( self, exc_type, exc_value, exc_tb ):
     'exit with block'
 
-    exc_type, exc_value, exc_tb = exc_info
-    if exc_type == KeyboardInterrupt:
-      pass
-    elif exc_type:
-      log.stack( exc_info )
-    else:
-      if self.names:
-        for name in self.names:
-          self.save( name )
-        log.path( ', '.join( self.names ) )
-      return True
-    return False
+    if not exc_type and self.names:
+      for name in self.names:
+        self.save( name )
+      log.path( ', '.join( self.names ) )
 
   def save ( self, name ):
     return

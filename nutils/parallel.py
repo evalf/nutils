@@ -40,21 +40,20 @@ class Fork( object ):
       self.iproc = self.nprocs-1
     return self.iproc
 
-  def __exit__( self, *exc_info ):
+  def __exit__( self, exctype, excvalue, tb ):
     'kill all processes but first one'
 
-    exctype, excvalue, tb = exc_info
     status = 0
     try:
       if exctype == KeyboardInterrupt:
         status = 1
       elif exctype == GeneratorExit:
         if self.iproc:
-          log.stack( 'generator failed with unknown exception' )
+          log.error( 'generator failed with unknown exception' )
         status = 1
       elif exctype:
         if self.iproc:
-          log.stack( exc_info )
+          log.stack( repr(excvalue), debug.frames_from_traceback(tb) )
         status = 1
       if self.child_pid:
         child_pid, child_status = os.waitpid( self.child_pid, 0 )
@@ -93,14 +92,13 @@ class AlternativeFork( object ):
       self.iproc = 0
     return self.iproc
 
-  def __exit__( self, *exc_info ):
+  def __exit__( self, exctype, excvalue, tb ):
     'kill all processes but first one'
 
-    exctype, excvalue, tb = exc_info
     status = 0
     try:
       if exctype:
-        log.stack( exc_info )
+        log.stack( repr(excvalue), debug.frames_from_traceback(tb) )
         status = 1
       while self.children:
         child_pid, child_status = os.wait()
@@ -141,7 +139,8 @@ def fork( func, nice=19 ):
     except KeyboardInterrupt:
       pass
     except:
-      log.stack( sys.exc_info() )
+      exc, frames = debug.exc_info()
+      log.stack( repr(exc), frames )
     finally:
       os._exit( 0 )
 

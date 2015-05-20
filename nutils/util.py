@@ -509,7 +509,7 @@ def run( *functions ):
       prof.enable()
 
     failed = 1
-    exc_info = None
+    frames = None
     try:
       func( **kwargs )
       failed = 0
@@ -517,9 +517,9 @@ def run( *functions ):
       log.error( 'killed by user' )
     except Terminate as exc:
       log.error( 'terminated:', exc )
-    except:
-      exc_info = sys.exc_info()
-      log.stack( exc_info )
+    except Exception:
+      exc, frames = debug.exc_info()
+      log.stack( repr(exc), frames )
 
     if core.getprop( 'profile' ):
       prof.disable()
@@ -549,10 +549,13 @@ def run( *functions ):
       stream.write( 'profile results:\n' )
       pstats.Stats( prof, stream=stream ).strip_dirs().sort_stats( 'time' ).print_stats()
 
-    if exc_info:
-      debug.write_html( htmlfile, exc_info )
+    if frames:
+      debug.write_html( htmlfile, repr(exc), frames )
       if core.getprop( 'tbexplore', False ):
-        debug.traceback_explorer( exc_info )
+        debug.explore( repr(exc), frames, '''
+          Your program has died. The traceback explorer allows you to
+          examine its post-mortem state to figure out why this happened.
+          Type 'help' for an overview of commands to get going.''' )
 
     sys.exit( failed )
 

@@ -20,8 +20,9 @@ def _run():
   except KeyboardInterrupt:
     log.info( 'aborted.' )
     sys.exit( -1 )
-  except Exception as e:
-    log.stack( 'error in unit testing framework: {}'.format(e) )
+  except:
+    exc, frames = debug.exc_info()
+    log.stack( 'error in unit testing framework: {}'.format(exc), frames )
     log.info( 'crashed.' )
     sys.exit( -2 )
   passed, failed, error, packagefail = results_by_status = [], [], [], []
@@ -46,14 +47,15 @@ def _package( f, __scope__ ):
     t0 = time.time()
     try:
       f()
-    except Exception as e:
-      log.stack( 'error: {}'.format(e) )
+    except:
+      exc, frames = debug.exc_info()
+      log.stack( 'error: {}'.format(exc), frames )
       results0.append(( __scope__, 3 ))
       if tbexplore:
-        intro = '''Test package {!r} failed. The traceback explorer allows you
-          to examine the failure state. Closing the explorer will resume
-          testing with the next package.'''.format(__scope__)
-        debug.traceback_explorer( sys.exc_info(), intro )
+        debug.explore( repr(exc), frames, '''Test package
+          {!r} failed. The traceback explorer allows you to examine the failure
+          state. Closing the explorer will resume testing with the next
+          package.'''.format(__scope__) )
     else:
       dt = time.time() - t0
       npassed = sum( status == 0 for name, status in __results__ )
@@ -80,17 +82,20 @@ def _unittest( f ):
   __log__ = log.Log( log.ProgressStreamFactory( infostream, output ) )
   try:
     f()
-  except AssertionError as e:
+  except AssertionError:
     status = 1
-    infostream.write( ' FAILED: {}\n'.format( str(e).strip() ) )
-  except Exception as e:
+    exc, frames = debug.exc_info()
+    infostream.write( ' FAILED: {}\n'.format( str(exc).strip() ) )
+  except:
     status = 2
-    infostream.write( ' ERROR: {}\n'.format( str(e).strip() ) )
+    exc, frames = debug.exc_info()
+    infostream.write( ' ERROR: {}\n'.format( str(exc).strip() ) )
   else:
     status = 0
+    exc = frames = None
     infostream.write( ' OK\n' )
   infostream.close()
-  return status, output.captured, sys.exc_info()
+  return status, output.captured, exc, frames
 
 def unittest( arg ):
   if not callable( arg ):
@@ -100,16 +105,15 @@ def unittest( arg ):
     return
   __log__ = log.clone()
   __log__.append( arg.__name__ )
-  status, captured, exc_info = _unittest( arg )
+  status, captured, exc, frames = _unittest( arg )
   core.getprop('results').append(( name, status ))
   if status:
     if captured:
       log.error( 'captured output:\n-----\n{}-----'.format(captured) )
     if tbexplore:
-      intro = '''Unit test {!r} failed. The traceback explorer allows you to
-        examine the failure state. Closing the explorer will resume
-        testing.'''.format( name )
-      debug.traceback_explorer( exc_info, intro )
+      debug.explore( repr(exc), frames, '''Unit test {!r} failed. The traceback
+        explorer allows you to examine the failure state. Closing the explorer
+        will resume testing.'''.format( name ) )
 
 
 ## HELPER FUNCTIONS

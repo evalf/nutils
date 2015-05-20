@@ -222,8 +222,12 @@ class Explorer( cmd.Cmd ):
     return [ base+name for name in objs if name.startswith(text) ]
 
 def format_exc():
+  exc_value, frames = exc_info()
+  return '\n'.join( [ repr(exc_value) ] + [ str(f) for f in frames ] )
+
+def exc_info():
   exc_type, exc_value, tb = sys.exc_info()
-  return '\n'.join( [ repr(exc_value) ] + [ str(f) for f in frames_from_traceback( tb ) ] )
+  return exc_value, frames_from_traceback( tb )
 
 def frames_from_traceback( tb ):
   frames = []
@@ -247,15 +251,13 @@ def frames_from_callstack( depth=1 ):
   else:
     return frames_from_frame( frame )
 
-def write_html( out, exc_info ):
+def write_html( out, msg, frames ):
   'write exception info to html file'
 
-  exc_type, exc_value, tb = exc_info
-  frames = frames_from_traceback( tb )
   out.write( '<span class="info">' )
   out.write( '\n<hr/>' )
   out.write( '<b>EXHAUSTIVE POST-MORTEM DUMP FOLLOWS</b>\n' )
-  out.write( '\n'.join( [ repr(exc_value) ] + [ str(f) for f in frames ] ) )
+  out.write( '\n'.join( [ repr(msg) ] + [ str(f) for f in frames ] ) )
   out.write( '<hr/>\n' )
   for f in reversed(frames):
     out.write( f.context.splitlines()[0] + '\n' )
@@ -280,25 +282,21 @@ def write_html( out, exc_info ):
   out.write( '</span>' )
   out.flush()
 
-def traceback_explorer( exc_info ):
-  exc_type, exc_value, tb = exc_info
-  Explorer( repr(exc_value), frames_from_traceback(tb), '''
-    Your program has died. The traceback explorer allows you to examine its
-    post-mortem state to figure out why this happened. Type 'help' for an
-    overview of commands to get going.''' ).cmdloop()
+def explore( msg, frames, intro ):
+  Explorer( msg, frames, intro ).cmdloop()
 
 def signal_handler( sig, frame ):
   print() # to open een new line under ^Z
-  Explorer( 'Signal: {}.'.format(sig), frames_from_frame(frame), '''
+  explore( 'Signal: {}.'.format(sig), frames_from_frame(frame), '''
     Your program is suspended. The traceback explorer allows you to examine
     its current state and even alter it. Closing the explorer will resume
-    program execution.''' ).cmdloop()
+    program execution.''' )
 
 def breakpoint():
-  Explorer( 'Suspended.', frames_from_callstack(2), '''
+  explore( 'Suspended.', frames_from_callstack(2), '''
     Your program is suspended. The traceback explorer allows you to examine
     its current state and even alter it. Closing the explorer will resume
-    program execution.''' ).cmdloop()
+    program execution.''' )
 
 def base64_enc( obj, nsig, ndec ):
   import zlib, binascii, re
