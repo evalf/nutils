@@ -125,7 +125,7 @@ class TransformChain( tuple ):
     return ' << '.join( str(trans) for trans in self ) if self else '='
 
   def __repr__( self ):
-    return 'TransformChain( %s )' % (self,)
+    return '{}( {} )'.format( self.__class__.__name__, self )
 
   @property
   def flat( self ):
@@ -139,7 +139,7 @@ class TransformChain( tuple ):
     items = list( self )
     for i in range(len(items)-1)[::-1]:
       trans1, trans2 = items[i:i+2]
-      if isinstance( trans1, Scale ) and trans1.linear == rational.half and trans2.todims == trans2.fromdims + 1 and trans2.fromdims > 0:
+      if mayswap( trans1, trans2 ):
         trans12 = TransformChain(( trans1, trans2 )).flat
         try:
           newlinear, newoffset = rational.solve( trans2.linear, trans12.linear, trans12.offset - trans2.offset )
@@ -149,27 +149,58 @@ class TransformChain( tuple ):
           trans21 = TransformChain( (trans2,) + affine( newlinear, newoffset ) )
           assert trans21.flat == trans12
           items[i:i+2] = trans21
-    return TransformChain( items )
+    return CanonicalTransformChain( items )
+
+  def promote( self, ndims ):
+    raise Exception( 'promotion only possible from canonical form' )
+
+class CanonicalTransformChain( TransformChain ):
+
+  def slicefrom( self, i ):
+    return CanonicalTransformChain( TransformChain.slicefrom( self, i ) )
+
+  def sliceto( self, j ):
+    return CanonicalTransformChain( TransformChain.sliceto( self, j ) )
+
+  def __lshift__( self, other ):
+    # self << other
+    joint = TransformChain.__lshift__( self, other )
+    if self and other and isinstance( other, CanonicalTransformChain ) and not mayswap( self[-1], other[0] ):
+      joint = CanonicalTransformChain( joint )
+    return joint
+
+  @property
+  def flipped( self ):
+    return CanonicalTransformChain( TransformChain.flipped.fget( self ) )
+
+  @property
+  def canonical( self ):
+    return self
 
   def promote( self, ndims ):
     if ndims == self.fromdims:
       return self
     index = core.index( trans.fromdims == self.fromdims for trans in self )
-    body = list( self[:index] )
     uptrans = self[index]
-    if uptrans.todims != self.fromdims+1:
-      i = index+1
+    if index == len(self)-1 or not mayswap( self[index+1], uptrans ):
+      A = self.sliceto(index)
+      B = self.slicefrom(index)
     else:
+      body = list( self[:index] )
       for i in range( index+1, len(self) ):
         scale = self[i]
-        if not isinstance( scale, Scale ) or scale.linear != rational.half:
+        if not mayswap( scale, uptrans ):
           break
         newscale = Scale( scale.linear, uptrans.apply(scale.offset) - scale.linear * uptrans.offset )
         body.append( newscale )
       else:
         i = len(self)+1
       assert equivalent( body[index:]+[uptrans], self[index:i] )
-    return TransformChain( TransformChain(body).promote(ndims)+(uptrans,)+self[i:] )
+      A = CanonicalTransformChain( body )
+      B = CanonicalTransformChain( (uptrans,) + self[i:] )
+    return A.promote(ndims) << B
+
+mayswap = lambda trans1, trans2: isinstance( trans1, Scale ) and trans1.linear == rational.half and trans2.todims == trans2.fromdims + 1 and trans2.fromdims > 0
 
 
 ## TRANSFORM ITEMS
@@ -362,7 +393,7 @@ def affine( linear, offset, numer=1, isflipped=None ):
        else Shift( r_offset )
   if isflipped is not None:
     assert trans.isflipped == isflipped
-  return TransformChain( [trans] )
+  return CanonicalTransformChain( [trans] )
 
 def simplex( coords, isflipped=None ):
   coords = rational.asarray(coords)
@@ -370,13 +401,13 @@ def simplex( coords, isflipped=None ):
   return affine( (coords[1:]-offset).T, offset, isflipped=isflipped )
 
 def roottrans( name, shape ):
-  return TransformChain(( RootTrans( name, shape ), ))
+  return CanonicalTransformChain(( RootTrans( name, shape ), ))
 
 def roottransedges( name, shape ):
-  return TransformChain(( RootTransEdges( name, shape ), ))
+  return CanonicalTransformChain(( RootTransEdges( name, shape ), ))
 
 def maptrans( coords, vertices ):
-  return TransformChain(( MapTrans( coords, vertices ), ))
+  return CanonicalTransformChain(( MapTrans( coords, vertices ), ))
 
 def equivalent( trans1, trans2, flipped=False ):
   trans1 = TransformChain( trans1 )
@@ -391,7 +422,7 @@ def equivalent( trans1, trans2, flipped=False ):
 
 ## INSTANCES
 
-identity = TransformChain()
+identity = CanonicalTransformChain()
 
 def solve( T1, T2 ): # T1 << x == T2
   assert isinstance( T1, TransformChain )
