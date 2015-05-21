@@ -97,7 +97,7 @@ class ScipyMatrix( Matrix ):
     supp = numpy.empty( self.shape[0], dtype=bool )
     for irow in range( self.shape[0] ):
       a, b = self.core.indptr[irow:irow+2]
-      supp[irow] = a != b and ( tol == 0 or numpy.any( numpy.abs( self.core.data[a:b] ) > tol ) )
+      supp[irow] = a != b and numpy.any( numpy.abs( self.core.data[a:b] ) > tol )
     return supp
 
   @log.title

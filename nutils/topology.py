@@ -452,7 +452,7 @@ class Topology( object ):
     return onto.dot( weights )
 
   @log.title
-  def project( self, fun, onto, geometry, tol=0, ischeme=None, droptol=1e-8, exact_boundaries=False, constrain=None, verify=None, maxiter=0, ptype='lsqr', precon='diag' ):
+  def project( self, fun, onto, geometry, tol=0, ischeme=None, droptol=1e-12, exact_boundaries=False, constrain=None, verify=None, maxiter=0, ptype='lsqr', precon='diag' ):
     'L2 projection of function onto function space'
 
     log.debug( 'projection type:', ptype )
