@@ -37,12 +37,6 @@ class Topology( object ):
     self.ndims = self.elements[0].ndims if ndims is None else ndims # assume all equal
     self.groups = groups.copy()
 
-  def set_boundary( self, boundary ):
-    assert self.__class__.boundary == Topology.boundary, 'cannot set boundary of %s' % self.__class__.__name__
-    assert isinstance( boundary, Topology )
-    assert boundary.ndims == self.ndims - 1
-    self.__dict__['boundary'] = boundary
-
   @cache.property
   def boundary( self ):
     edges = {}
@@ -55,6 +49,19 @@ class Topology( object ):
         except KeyError:
           edges[edgekey] = elem.edge(iedge)
     return Topology( edges.values() )
+
+  def outward_from( self, outward, inward=None ):
+    'direct interface elements to evaluate in topo first'
+
+    directed = []
+    for iface in self:
+      if not iface.transform.lookup( outward.edict ):
+        assert iface.opposite.lookup( outward.edict ), 'interface not adjacent to outward topo'
+        iface = element.Element( iface.reference, iface.opposite, iface.transform )
+      if inward:
+        assert iface.opposite.lookup( inward.edict ), 'interface no adjacent to inward topo'
+      directed.append( iface )
+    return Topology( directed )
 
   @property
   def groupnames( self ):

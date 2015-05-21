@@ -138,10 +138,12 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
   elemdata = sections.pop('Elements')
   nelems = int(elemdata.pop(0))
   assert len(elemdata)==nelems
+  flip = transform.affine( -1, [1] )
 
   elems = {}
   elemgroups = {}
   edges = {}
+  ifaces = {}
   vertexgroups = {}
   vertices = {}
   edgegroups = {}
@@ -177,12 +179,18 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
         nmap[maptrans] = nids
 
         #Extract the edges
-        for iedge, edge in enumerate([[1,2],[0,2],[0,1]]):
-          edgekey = tuple(sorted(nids[edge]))
+        for iedge, iverts in enumerate([[1,2],[0,2],[0,1]]):
+          edge = elem.edge(iedge)
+          key = tuple(sorted(nids[iverts]))
           try:
-            edges.pop( edgekey )
+            opposite = edges.pop( key )
           except KeyError:
-            edges[edgekey] = elem.edge(iedge)
+            edges[key] = edge
+          else:
+            assert edge.reference == opposite.reference
+            iface = element.Element( edge.reference, edge.transform, opposite.transform << flip )
+            #assert iface.transform.apply( iface.reference.vertices ) == iface.opposite.apply( iface.reference.vertices )
+            ifaces[key] = iface
 
         #Extract the vertices
         vref = element.PointReference()
@@ -204,9 +212,20 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
   for group, grouptopo in elemgroups.items():
     topo[group] = topology.Topology( grouptopo )
 
-  topo.set_boundary( topology.Topology( edges.values() ) )
-  for group, edgekeys in edgegroups.items():
-    topo.boundary[group] = topology.Topology([ edges[edgekey] for edgekey in edgekeys ])
+  topo.boundary = topology.Topology( edges.values() )
+  topo.interfaces = topology.Topology( ifaces.values() )
+  for group, keys in edgegroups.items():
+    bgrouptopo = []
+    igrouptopo = []
+    for key in keys:
+      try:
+        bgrouptopo.append( edges[key] )
+      except KeyError:
+        igrouptopo.append( ifaces[key] )
+    if bgrouptopo:
+      topo.boundary[group] = topology.Topology( bgrouptopo )
+    if igrouptopo:
+      topo.interfaces[group] = topology.Topology( igrouptopo )
 
   topo.points = topology.Topology( [vertex for vertexkeys in vertexgroups.values() for vertexkey in vertexkeys for vertex in vertices[vertexkey]], ndims=0 )
   for group, vertexkeys in vertexgroups.items():
@@ -215,6 +234,7 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
   for tag in tags.values():
     if tag not in topo.groupnames and \
        tag not in topo.boundary.groupnames and \
+       tag not in topo.interfaces.groupnames and \
        tag not in topo.points.groupnames:
 
       warnings.warn('tag %r defined but not used' % tag )
@@ -223,6 +243,7 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
   log.info('* nodes (#%d)' % nnodes)
   log.info('* topology (#%d) with groups: %s' % (len(topo), ', '.join('%s (#%d)' % (name,len(topo[name])) for name in topo.groupnames)))
   log.info('* boundary (#%d) with groups: %s' % (len(topo.boundary), ', '.join('%s (#%d)' % (name,len(topo.boundary[name])) for name in topo.boundary.groupnames)))
+  log.info('* interfaces (#%d) with groups: %s' % (len(topo.interfaces), ', '.join('%s (#%d)' % (name,len(topo.interfaces[name])) for name in topo.interfaces.groupnames)))
   log.info('* points (#%d) with groups: %s' % (len(topo.points), ', '.join('%s (#%d)' % (name,len(topo.points[name])) for name in topo.points.groupnames)))
 
   linearfunc = function.function( fmap=fmap, nmap=nmap, ndofs=nnodes, ndims=topo.ndims )
@@ -262,7 +283,7 @@ def triangulation( vertices, nvertices ):
     structure.append( elem.edge( iedge ) )
     
   topo = topology.Topology( nmap )
-  topo.set_boundary( topology.StructuredTopology( structure, periodic=(1,) ) )
+  topo.boundary = topology.StructuredTopology( structure, periodic=(1,) )
   return topo
 
 def igatool( path, name=None ):
@@ -352,7 +373,7 @@ def igatool( path, name=None ):
     topo[groupname] = grouptopo
 
   if boundaries:
-    topo.set_boundary( topology.Topology( elem for topo in boundaries.values() for elem in topo ) )
+    topo.boundary = topology.Topology( elem for topo in boundaries.values() for elem in topo )
     for groupname, grouptopo in boundaries.items():
       topo.boundary[groupname] = grouptopo
 
@@ -363,7 +384,7 @@ def igatool( path, name=None ):
       if belems:
         myboundaries[ name ] = topology.Topology( belems )
     if myboundaries:
-      group.set_boundary( topology.Topology( elem for topo in myboundaries.values() for elem in topo ) )
+      group.boundary = topology.Topology( elem for topo in myboundaries.values() for elem in topo )
       for groupname, grouptopo in myboundaries.items():
         group.boundary[groupname] = grouptopo
 
@@ -407,7 +428,7 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   bgroups = { 'top': belems[0:3], 'left': belems[3:6], 'bottom': belems[6:9], 'right': belems[9:12] }
 
   topo = topology.Topology( elements )
-  topo.set_boundary( topology.Topology( belems ) )
+  topo.boundary = topology.Topology( belems )
   for tag, group in bgroups.items():
     topo.boundary[tag] = topology.Topology( group )
 
