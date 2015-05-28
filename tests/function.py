@@ -67,6 +67,10 @@ from . import register, unittest
 @register( 'arctan2', function.arctan2, numpy.arctan2, [(3,1),(1,3)] )
 @register( 'stack', lambda a,b: function.stack([a,b]), lambda a,b: numpy.concatenate( [a[...,_,:],b[...,_,:]], axis=-2), [(3,),(3,)] )
 @register( 'eig', lambda a: function.eig(a,symmetric=False)[1], lambda a: numpy.array([ numpy.linalg.eig(ai)[1] for ai in a ]), [(3,3)], hasgrad=False )
+@register( 'real', function.real, numpy.real, [(3,)], hasgrad=False )
+@register( 'imag', function.imag, numpy.imag, [(3,)], hasgrad=False )
+@register( 'conjugate', function.conjugate, numpy.conjugate, [(3,)], hasgrad=False )
+@register( 'angle', function.angle, numpy.angle, [(3,)], hasgrad=False )
 def check( op, n_op, shapes, hasgrad=True ):
 
   roottrans = transform.affine( [[0,1],[-1,0]], [1,0] ) >> transform.affine( [[2,1],[-1,3]], [1,0] )
