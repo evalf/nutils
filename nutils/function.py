@@ -988,7 +988,7 @@ class Concatenate( ArrayFunc ):
     ndim = numpy.max([ array.ndim for array in arrays ])
     axlen = util.sum( array.shape[iax] for array in arrays )
     shape = _jointshape( *[ (1,)*(ndim-array.ndim) + array.shape[:iax] + (axlen,) + ( array.shape[iax+1:] if iax != -1 else () ) for array in arrays ] )
-    dtype = float if any( array.dtype == float for array in arrays ) else int
+    dtype = numpy.concatenate([ numpy.array([], array.dtype) for array in arrays ]).dtype
     retval = numpy.empty( shape, dtype=dtype )
     n0 = 0
     for array in arrays:
