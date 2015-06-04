@@ -12,7 +12,7 @@ dependencies on other nutils modules. Primarily for internal use.
 """
 
 from __future__ import print_function, division
-import sys
+import sys, functools
 
 _nodefault = object()
 def getprop( name, default=_nodefault, frame=None ):
@@ -51,10 +51,53 @@ def getprop( name, default=_nodefault, frame=None ):
   return default
 
 def index( items ):
+  """Index of the first nonzero item.
+
+  Args:
+      items: Any iterable object
+
+  Returns:
+      The index of the first item for which bool(item) returns True.
+  """
+
   for i, item in enumerate(items):
     if item:
       return i
   raise ValueError
+
+def single_or_multiple( f ):
+  """
+  Method wrapper, converts first positional argument to tuple: tuples/lists
+  are passed on as tuples, other objects are turned into tuple singleton.
+  Return values should match the length of the argument list, and are unpacked
+  if the original argument was not a tuple/list.
+
+  >>> class Test:
+  >>>   @single_or_multiple
+  >>>   def square( args ):
+  >>>     return [ v**2 for v in args ]
+  >>>
+  >>> T = Test()
+  >>> a = T.square( 2 ) # 4
+  >>> a, b = T.square( [2,3] ) # (4,9)
+
+  Args:
+      f: Method that expects a tuple as first positional argument, and that
+      returns a list/tuple of the same length.
+
+  Returns:
+      Wrapped method.
+  """
+
+  @functools.wraps( f )
+  def wrapped( self, arg0, *args, **kwargs ):
+    ismultiple = isinstance( arg0, (list,tuple) )
+    arg0mod = tuple(arg0) if ismultiple else (arg0,)
+    retvals = f( self, arg0mod, *args, **kwargs )
+    if not ismultiple:
+      retvals, = retvals
+    return retvals
+  return wrapped
 
 
 # vim:shiftwidth=2:foldmethod=indent:foldnestmax=2

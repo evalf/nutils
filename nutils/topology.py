@@ -256,12 +256,9 @@ class Topology( object ):
     return HierarchicalTopology( self, refined )
 
   @log.title
+  @core.single_or_multiple
   def elem_eval( self, funcs, ischeme, separate=False, geometry=None ):
     'element-wise evaluation'
-
-    single_arg = not isinstance(funcs,(tuple,list))
-    if single_arg:
-      funcs = funcs,
 
     if geometry:
       iwscale = function.jacobian( geometry, self.ndims ) * function.Iwscale(self.ndims)
@@ -308,26 +305,15 @@ class Topology( object ):
 
     log.debug( 'cache', fcache.summary() )
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join( str(n) for n in retval.shape ) ) for retval in retvals ) )
-    if single_arg:
-      retvals, = retvals
-
     return retvals
 
   @log.title
+  @core.single_or_multiple
   def elem_mean( self, funcs, geometry, ischeme ):
-    'element-wise integration'
+    'element-wise average'
 
-    single_arg = not isinstance(funcs,(tuple,list))
-    if single_arg:
-      funcs = funcs,
-
-    retvals = self.elem_eval( (1,)+tuple(funcs), geometry=geometry, ischeme=ischeme )
-    retvals = [ v / retvals[0][(slice(None),)+(_,)*(v.ndim-1)] for v in retvals[1:] ]
-
-    if single_arg:
-      retvals, = retvals
-
-    return retvals
+    retvals = self.elem_eval( (1,)+funcs, geometry=geometry, ischeme=ischeme )
+    return [ v / retvals[0][(slice(None),)+(_,)*(v.ndim-1)] for v in retvals[1:] ]
 
   def _integrate( self, funcs, ischeme ):
 
@@ -405,23 +391,22 @@ class Topology( object ):
     return data_index
 
   @log.title
+  @core.single_or_multiple
   def integrate( self, funcs, ischeme, geometry, force_dense=False ):
     'integrate'
 
     iwscale = function.jacobian( geometry, self.ndims ) * function.Iwscale(self.ndims)
-    single_arg = not isinstance( funcs, (list,tuple) )
-    integrands = [ funcs * iwscale ] if single_arg else [ func * iwscale for func in funcs ]
+    integrands = [ func * iwscale for func in funcs ]
     data_index = self._integrate( integrands, ischeme )
-    retvals = [ matrix.assemble( data, index, integrand.shape, force_dense ) for integrand, (data,index) in zip( integrands, data_index ) ]
-    return retvals[0] if single_arg else retvals
+    return [ matrix.assemble( data, index, integrand.shape, force_dense ) for integrand, (data,index) in zip( integrands, data_index ) ]
 
   @log.title
+  @core.single_or_multiple
   def integrate_symm( self, funcs, ischeme, geometry, force_dense=False ):
     'integrate a symmetric integrand on a product domain' # TODO: find a proper home for this
 
     iwscale = function.jacobian( geometry, self.ndims ) * function.Iwscale(self.ndims)
-    single_arg = not isinstance( funcs, (list,tuple) )
-    integrands = [ funcs * iwscale ] if single_arg else [ func * iwscale for func in funcs ]
+    integrands = [ func * iwscale for func in funcs ]
     assert all( integrand.ndim == 2 for integrand in integrands )
     diagelems = []
     trielems = []
@@ -440,7 +425,7 @@ class Topology( object ):
       data = numpy.concatenate( [ diagdata, tridata, tridata ], axis=0 )
       index = numpy.concatenate( [ diagindex, triindex, triindex[::-1] ], axis=1 )
       retvals.append( matrix.assemble( data, index, integrand.shape, force_dense ) )
-    return retvals[0] if single_arg else retvals
+    return retvals
 
   def projection( self, fun, onto, geometry, **kwargs ):
     'project and return as function'
@@ -628,11 +613,9 @@ class Topology( object ):
         v2elem.setdefault( vert, [] ).append( ielem )
     return v2elem
 
+  @log.title
+  @core.single_or_multiple
   def elem_project( self, funcs, degree, ischeme=None, check_exact=False ):
-
-    single_arg = not isinstance( funcs, (list,tuple) )
-    if single_arg:
-      funcs = funcs,
 
     if ischeme is None:
       ischeme = 'gauss%d' % (degree*2)
@@ -673,9 +656,6 @@ class Topology( object ):
           numpy.testing.assert_almost_equal( sumval, numeric.dot( basis, ex ), decimal=15 )
 
         extractions[ifunc].append(( allind, ex ))
-
-    if single_arg:
-      extractions, = extractions
 
     return extractions
 
@@ -1351,13 +1331,12 @@ class RevolvedTopology( Topology ):
     return RevolvedTopology(self.basetopo[item])
 
   @log.title
+  @core.single_or_multiple
   def integrate( self, funcs, ischeme, geometry, force_dense=False ):
     iwscale = function.jacobian( geometry, self.ndims+1 ) * function.Iwscale(self.ndims)
-    single_arg = not isinstance( funcs, (list,tuple) )
-    integrands = [ funcs * iwscale ] if single_arg else [ func * iwscale for func in funcs ]
+    integrands = [ func * iwscale for func in funcs ]
     data_index = self._integrate( integrands, ischeme )
-    retvals = [ matrix.assemble( data, index, integrand.shape, force_dense ) for integrand, (data,index) in zip( integrands, data_index ) ]
-    return retvals[0] if single_arg else retvals
+    return [ matrix.assemble( data, index, integrand.shape, force_dense ) for integrand, (data,index) in zip( integrands, data_index ) ]
 
   def basis( self, name, *args, **kwargs ):
     return function.revolved( self.basetopo.basis( name, *args, **kwargs ) )
