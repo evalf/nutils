@@ -1329,9 +1329,9 @@ class TrimmedTopology( Topology ):
   def prune_basis( self, basis ):
     used = numpy.zeros( len(basis), dtype=bool )
     for axes, func in function.blocks( basis ):
-      dofmap = axes[0].dofmap
+      dofmap = axes[0]
       for elem in self:
-        used[ dofmap[elem.transform] ] = True
+        used[ dofmap.dofmap[elem.transform] + dofmap.offset ] = True
     return basis[used]
 
   @log.title
