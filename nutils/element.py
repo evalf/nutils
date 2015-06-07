@@ -1469,7 +1469,7 @@ class BubbleTriangle( StdElem ):
 
     return '%s#%x' % ( self.__class__.__name__, id(self) )
 
-class ExtractionWrapper( object ):
+class ExtractionWrapper( StdElem ):
   'extraction wrapper'
 
   __slots__ = 'stdelem', 'extraction'
@@ -1477,8 +1477,14 @@ class ExtractionWrapper( object ):
   def __init__( self, stdelem, extraction ):
     'constructor'
 
+    assert extraction.ndim == 2
+    assert stdelem.nshapes == extraction.shape[0]
     self.stdelem = stdelem
     self.extraction = extraction
+    StdElem.__init__( self, stdelem.ndims, extraction.shape[1] )
+
+  def extract( self, extraction ):
+    return ExtractionWrapper( self.stdelem, numpy.dot( self.extraction, extraction ) )
 
   def eval( self, points, grad=0 ):
     'call'

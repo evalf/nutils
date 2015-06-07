@@ -18,15 +18,19 @@ import os, sys, weakref, numpy, functools
 _property = property
 
 def property( f ):
-  def cache_property_wrapper( self, f=f ):
+  name = f.__name__
+  def property_getter( self, name=name, f=f ):
     try:
-      value = self.__dict__[f.__name__]
+      value = self.__dict__[name]
     except KeyError:
       value = f( self )
-      self.__dict__[f.__name__] = value
+      self.__dict__[name] = value
     return value
-  assert not cache_property_wrapper.__closure__
-  return _property(cache_property_wrapper)
+  def property_setter( self, value, name=name ):
+    assert name not in self.__dict__, 'property can be set only once'
+    self.__dict__[name] = value
+  assert not property_getter.__closure__ and not property_setter.__closure__
+  return _property( fget=property_getter, fset=property_setter )
 
 def weakproperty( f ):
   def cache_property_wrapper( self, f=f ):

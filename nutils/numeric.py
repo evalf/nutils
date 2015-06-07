@@ -239,7 +239,7 @@ def normalize( A, axis=-1 ):
 
   s = [ slice(None) ] * A.ndim
   s[axis] = numpy.newaxis
-  return A / numpy.linlg.norm( A, axis )[ tuple(s) ]
+  return A / numpy.linalg.norm( A, axis=axis )[ tuple(s) ]
 
 def cross( v1, v2, axis ):
   'cross product'
