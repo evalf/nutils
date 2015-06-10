@@ -210,10 +210,7 @@ class PyPlot( BasePlot ):
       self.gca().set_aspect( aspect )
 
     if setxylim:
-      xmin, ymin = numpy.min( xy, axis=1 )
-      xmax, ymax = numpy.max( xy, axis=1 )
-      self.xlim( xmin, xmax )
-      self.ylim( ymin, ymax )
+      self.autoscale( enable=True, axis='both', tight=True )
     
     return linecol if colors is None \
       else trimesh if edgecolors == 'none' \
