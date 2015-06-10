@@ -1323,12 +1323,16 @@ class RevolvedTopology( Topology ):
     self.basetopo = basetopo
     Topology.__init__( self, basetopo )
 
-  @property
+  @cache.property
   def boundary( self ):
     return RevolvedTopology(self.basetopo.boundary)
 
   def __getitem__( self, item ):
     return RevolvedTopology(self.basetopo[item])
+
+  def __setitem__( self, item, topo ):
+    assert isinstance( topo, RevolvedTopology )
+    self.basetopo.__setitem__( item, topo.basetopo )
 
   @log.title
   @core.single_or_multiple
