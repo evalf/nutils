@@ -14,7 +14,7 @@ backends. At this point `matplotlib <http://matplotlib.org/>`_ and `vtk
 
 from __future__ import print_function, division
 from . import numpy, log, core, _
-import os, warnings
+import os, warnings, sys
 
 
 class BasePlot( object ):
@@ -421,152 +421,189 @@ class DataFile( BasePlot ):
 class VTKFile( BasePlot ):
   'vtk file'
 
+  _vtkdtypes = (
+    ( numpy.dtype('u1'), 'unsigned_char' ),
+    ( numpy.dtype('i1'), 'char' ),
+    ( numpy.dtype('u2'), 'unsigned_short' ),
+    ( numpy.dtype('i2'), 'short' ),
+    ( numpy.dtype('u4'), 'unsigned_int' ), # also 'unsigned_long_int'
+    ( numpy.dtype('i4'), 'int' ), # also 'unsigned_int'
+    ( numpy.float32, 'float' ),
+    ( numpy.float64, 'double' ),
+  )
+
   def __init__( self, name, index=None, ndigits=0, ascii=False ):
     'constructor'
 
     BasePlot.__init__( self, name, ndigits=ndigits, index=index )
 
-    import vtk 
+    self.names = [self.name+'.vtk']
 
-    if self.name.lower().endswith('.vtu') or self.name.lower().endswith('.vtr'):
-      self.names = [self.name]
-    else:  
-      self.names = [self.name+'.vtu']
+    if ascii is True or ascii == 'ascii':
+      self.ascii = True
+    elif ascii is False or ascii == 'binary':
+      self.ascii = False
+    else:
+      raise ValueError( 'unexpected value for argument `ascii`: {!r}' )
 
-    self.ascii   = ascii
-    self.vtkMesh = None
+    self._mesh = None
+    self._dataarrays = { 'points': [], 'cells': [] }
+
+  def _getvtkdtype( self, data ):
+    for dtype, vtkdtype in self._vtkdtypes:
+      if dtype == data.dtype:
+        return vtkdtype
+    raise ValueError( 'No matching VTK dtype for {}.'.format( data.dtype ) )
+
+  def _writearray( self, output, array ):
+    if self.ascii:
+      array.tofile( output, sep=' ' )
+      output.write( b'\n' )
+    else:
+      if sys.byteorder != 'big':
+        array = array.byteswap()
+      array.tofile( output )
 
   def save( self, name ):
-    import vtk
-    assert self.vtkMesh is not None
-    if isinstance(self.vtkMesh,vtk.vtkUnstructuredGrid ):
-      vtkWriter = vtk.vtkXMLUnstructuredGridWriter()
-    elif isinstance(self.vtkMesh,vtk.vtkRectilinearGrid ):
-      vtkWriter = vtk.vtkXMLRectilinearGridWriter()
-    else:
-      raise NotImplementedError()
- 
-    vtkWriter.SetInput   ( self.vtkMesh )
-    vtkWriter.SetFileName( os.path.join( self.path, name ) )
-    if self.ascii:
-      vtkWriter.SetDataModeToAscii()
-    vtkWriter.Write()
+    assert self._mesh is not None, 'Grid not specified'
 
-  def vertices( self, points ):
+    with open( os.path.join( self.path, name ), 'wb' ) as vtk:
+      if sys.version_info.major == 2:
+        write = vtk.write
+      else:
+        write = lambda s: vtk.write( s.encode( 'ascii' ) )
 
-    assert isinstance( points, (list,tuple,numpy.ndarray) ), 'Expected list of point arrays'
+      # header
+      write( '# vtk DataFile Version 3.0\n' )
+      write( 'vtk output\n' )
+      if self.ascii:
+        write( 'ASCII\n' )
+      else:
+        write( 'BINARY\n' )
 
-    import vtk
+      # mesh
+      if self._mesh[0] == 'unstructured':
+        meshtype, ndims, npoints, ncells, points, cells, celltypes = self._mesh
+        write( 'DATASET UNSTRUCTURED_GRID\n' )
+        write( 'POINTS {} {}\n'.format( npoints, self._getvtkdtype( points ) ) )
+        self._writearray( vtk, points )
+        write( 'CELLS {} {}\n'.format( ncells, len( cells ) ) )
+        self._writearray( vtk, cells )
+        write( 'CELL_TYPES {}\n'.format( ncells ) )
+        self._writearray( vtk, celltypes )
+      elif self._mesh[0] == 'rectilinear':
+        meshtype, ndims, npoints, ncells, coords = self._mesh
+        write( 'DATASET RECTILINEAR_GRID\n' )
+        write( 'DIMENSIONS {} {} {}\n'.format( *map( len, coords ) ) )
+        for label, array in zip( 'XYZ', coords ):
+          write( '{}_COORDINATES {} {}\n'.format( label, len(array), self._getvtkdtype( array ) ) )
+          self._writearray( array )
+      else:
+        raise NotImplementedError
 
-    self.vtkMesh = vtk.vtkUnstructuredGrid()
-    vtkPoints = vtk.vtkPoints()
-    vtkPoints.SetNumberOfPoints( sum(pts.shape[0] for pts in points) )
-
-    cnt = 0
-    for pts in points:
-      if pts.shape[1] < 3:
-        pts = numpy.concatenate([pts,numpy.zeros(shape=(pts.shape[0],3-pts.shape[1]))],axis=1)
-
-      for point in pts:
-        vtkPoints .SetPoint( cnt, point )
-        cellpoints = vtk.vtkVertex().GetPointIds()
-        cellpoints.SetId( 0, cnt )
-        self.vtkMesh.InsertNextCell( vtk.vtkVertex().GetCellType(), cellpoints )
-        cnt +=1
-
-    self.vtkMesh.SetPoints( vtkPoints )
+      # data
+      for location in 'points', 'cells':
+        if not self._dataarrays[location]:
+          continue
+        if location == 'points':
+          write( 'POINT_DATA {}\n'.format( npoints ) )
+        elif location == 'cells':
+          write( 'CELL_DATA {}\n'.format( ncells ) )
+        for name, vector, ncomponents, data in self._dataarrays[location]:
+          vtkdtype = self._getvtkdtype( data )
+          if vector:
+            write( 'VECTORS {} {}\n'.format( name, vtkdtype ) )
+          else:
+            write( 'SCALARS {} {} {}\n'.format( name, vtkdtype, ncomponents ) )
+            write( 'LOOKUP_TABLE default\n' )
+          self._writearray( vtk, data )
 
   def rectilineargrid( self, coords ):
     """set rectilinear grid"""
-    assert len(coords)==3
-    import vtk
-
-    self.vtkMesh = vtk.vtkRectilinearGrid()
-    self.vtkMesh.SetDimensions( map( len, coords ) )
-    self.vtkMesh.SetXCoordinates( self.__vtkarray('X',coords[0]) )
-    self.vtkMesh.SetYCoordinates( self.__vtkarray('Y',coords[1]) )
-    self.vtkMesh.SetZCoordinates( self.__vtkarray('Z',coords[2]) )
+    assert 1 <= len(coords) <= 3, 'Exptected a list of 1, 2 or 3 coordinate arrays, got {} instead'.format( len(coords) )
+    ndims = len(coords)
+    npoints = 1
+    ncells = 1
+    coords = list( coords )
+    for i in range( ndims ):
+      npoints *= len( coords[i] )
+      ncells *= 1 - len( coords[i] )
+      assert len( coords[i].shape ) == 1, 'Expected a one-dimensional array for coordinate {}, got an array with shape {!r}'.format( i, coords[i].shape )
+    for i in range( ndims, 3 ):
+      coords.append( numpy.array( [0], dtype=numpy.int32 ) )
+    self._mesh = 'rectilinear', ndims, npoints, ncells, coords
 
   def unstructuredgrid( self, points, npars=None ):
     """set unstructured grid"""
 
-    points = _nansplit( points )
-    #assert isinstance( points, (list,tuple,numpy.ndarray) ), 'Expected list of point arrays'
+    cellpoints = _nansplit( points )
+    npoints = sum( map( len, cellpoints ) )
+    ncells = len( cellpoints )
 
-    import vtk
+    points = numpy.zeros( [npoints, 3], dtype=points.dtype )
+    cells = numpy.empty( [npoints+ncells], dtype=numpy.int32 )
+    celltypes = numpy.empty( [ncells], dtype=numpy.int32 )
 
-    self.vtkMesh = vtk.vtkUnstructuredGrid()
-    vtkPoints = vtk.vtkPoints()
-    vtkPoints.SetNumberOfPoints( sum(pts.shape[0] for pts in points) )
-
-    cnt = 0
-    for pts in points:
+    j = 0
+    for i, pts in enumerate( cellpoints ):
 
       np, ndims = pts.shape
       if not npars:
         npars = ndims
 
-      vtkelem   = None
-
       if np == 2:
-        vtkelem = vtk.vtkLine()
+        celltype = 3
       elif np == 3:
-        vtkelem = vtk.vtkTriangle()
-      elif np == 4:  
+        celltype = 5
+      elif np == 4:
         if npars == 2:
-          vtkelem = vtk.vtkQuad()
+          celltype = 9
         elif npars == 3:
-          vtkelem = vtk.vtkTetra()
+          celltype = 10
       elif np == 8:
-        vtkelem = vtk.vtkVoxel() # TODO hexahedron for not rectilinear NOTE ordering changes!
+        celltype = 11 # TODO hexahedron for not rectilinear NOTE ordering changes!
 
-      if not vtkelem:
-        raise Exception( 'not sure what to do with cells with ndims=%d and npoints=%d' % (ndims,np) )
+      if not celltype:
+        raise Exception( 'not sure what to do with cells with ndims={} and npoints={}'.format(ndims,np) )
 
-      if ndims < 3:
-        pts = numpy.concatenate([pts,numpy.zeros(shape=(pts.shape[0],3-ndims))],axis=1)
+      celltypes[i] = celltype
+      cells[i+j] = np
+      for k, p in enumerate( pts ):
+        cells[i+j+k+1] = j+k
+        points[j+k,:ndims] = p
+      j += np
 
-      cellpoints = vtkelem.GetPointIds()
+    self._mesh = 'unstructured', ndims, npoints, ncells, points.ravel(), cells, celltypes
 
-      for i,point in enumerate(pts):
-        vtkPoints .SetPoint( cnt, point )
-        cellpoints.SetId( i, cnt )
-        cnt +=1
-    
-      self.vtkMesh.InsertNextCell( vtkelem.GetCellType(), cellpoints )
-
-    self.vtkMesh.SetPoints( vtkPoints )
-
-  def celldataarray( self, name, data ):
+  def celldataarray( self, name, data, vector=None ):
     'add cell array'
-    assert self.vtkMesh is not None
-    ncells = self.vtkMesh.GetNumberOfCells()
-    assert ncells == data.shape[0], 'Cell data array should have %d entries' % ncells
-    self.vtkMesh.GetCellData().AddArray( self.__vtkarray(name,data) )
+    self._adddataarray( name, data, 'cells', vector )
 
-  def pointdataarray( self, name, data ):
+  def pointdataarray( self, name, data, vector=None ):
     'add cell array'
-    assert self.vtkMesh is not None
-    npoints = self.vtkMesh.GetNumberOfPoints()
+    self._adddataarray( name, data, 'points', vector )
 
-    if npoints != data.shape[0]:
-      data = _nanfilter( data )
+  def _adddataarray( self, name, data, location, vector ):
+    assert self._mesh is not None, 'Grid not specified'
+    ndims, npoints, ncells = self._mesh[1:4]
+    ncomponents = data.shape[1] if len( data.shape ) == 2 else 1
+    if vector is None:
+      vector = len( data.shape ) == 2
 
-    assert npoints == data.shape[0], 'Point data array should have %d entries' % npoints
+    if location == 'points':
+      if npoints != data.shape[0]:
+        data = _nanfilter( data )
+      assert npoints == data.shape[0], 'Point data array should have {} entries'.format(npoints)
+    elif location == 'cells':
+      assert ncells == data.shape[0], 'Cell data array should have {} entries'.format(ncells)
+    assert len( data.shape ) <= 2, 'Data array should have at most 2 axes: {} and components (optional)'.format(location)
+    if vector:
+      assert ncomponents == ndims, 'Data array should have {} components per entry'.format(ndims)
+      if ndims != 3:
+        data = numpy.concatenate( [data, numpy.zeros( [data.shape[0], 3-ndims], dtype=data.dtype ) ], axis=1 )
+      ncomponents = 3
 
-    self.vtkMesh.GetPointData().AddArray( self.__vtkarray(name,data) )
-
-  def __vtkarray( self, name, data ):
-    import vtk
-    if data.ndim == 1:
-      data = data[:,_]
-    array = vtk.vtkFloatArray()
-    array.SetName( name )
-    array.SetNumberOfComponents( data.shape[1] )
-    array.SetNumberOfTuples( data.shape[0] )
-    for i,d in enumerate(data):
-      array.SetTuple( i, d )
-    return array
+    self._dataarrays[location].append(( name, vector, ncomponents, data.ravel() ))
 
 
 ## AUXILIARY FUNCTIONS
