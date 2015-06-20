@@ -1,12 +1,13 @@
 #! /usr/bin/env python
 
+from __future__ import division
 from nutils import *
 
 
 @log.title
 def makeplots( domain, geom, velo, pres, index ):
 
-  xy, uv = domain.elem_eval( [ geom, velo ], ischeme='uniform2', title='flow field', separate=False )
+  xy, uv = domain.elem_eval( [ geom, velo ], ischeme='uniform2', separate=False )
   points, velo, pres, div = domain.elem_eval( [ geom, function.norm2(velo), pres, velo.div(geom) ], ischeme='bezier5', separate=True )
 
   with plot.PyPlot( 'velo', index=index, ndigits=4 ) as plt:
@@ -24,7 +25,10 @@ def makeplots( domain, geom, velo, pres, index ):
     plt.colorbar()
 
 
-def main( nelems=8, reynolds=2e3, warp=False, tol=1e-8, plot=True, solvetol=1e-10, maxiter=numpy.inf ):
+def main( nelems=8, viscosity=1e-3, density=1, warp=False, plot=True, tol=1e-5, maxiter=numpy.inf ):
+
+  Re = density / viscosity # based on unit length and velocity
+  log.user( 'reynolds number: {:.1f}'.format(Re) )
 
   verts = numpy.linspace( 0, 1, nelems+1 )
   domain, geom = mesh.rectilinear( [verts,verts] )
@@ -41,58 +45,51 @@ def main( nelems=8, reynolds=2e3, warp=False, tol=1e-8, plot=True, solvetol=1e-1
     vbasis = ( vbasis[...,_,:] * J ).sum(-1) / detJ # piola transform
     pbasis = pbasis / detJ
 
-  vbasis, pbasis, lbasis = function.chain([ vbasis, pbasis, [1.] ])
+  vbasis, pbasis, lbasis = function.chain([ vbasis, pbasis, [1] ])
+  stressbasis = (2*viscosity) * vbasis.symgrad(geom) - (pbasis)[:,_,_] * function.eye( domain.ndims )
 
-  stress = (2./reynolds) * vbasis.symgrad(geom) - pbasis[:,_,_] * function.eye( domain.ndims )
-
-  A = function.outer( vbasis.grad(geom), stress ).sum([2,3])
-  A += function.outer( pbasis, vbasis.div(geom) )
-  A += function.outer( lbasis, pbasis )
-  A += function.outer( pbasis, lbasis )
-
-  stokesmat = domain.integrate( A, geometry=geom, ischeme='gauss9', title='stokes matrix' )
+  A = function.outer( vbasis.grad(geom), stressbasis ).sum([2,3]) \
+    + function.outer( pbasis, vbasis.div(geom)+lbasis ) \
+    + function.outer( lbasis, pbasis )
+  stokesmat = domain.integrate( A, geometry=geom, ischeme='gauss9' )
 
   utop = geom.tangent([1,0]).normalized()
+  h = function.ElementSize( geom, -1 )
+  nietzsche = (10*viscosity/h) * vbasis - stressbasis.dotnorm(geom)
+  stokesmat += domain.boundary.integrate( function.outer( nietzsche, vbasis ).sum(-1), geometry=geom, ischeme='gauss9' )
+  rhs = domain.boundary['top'].integrate( ( nietzsche * utop ).sum(-1), geometry=geom, ischeme='gauss9' )
+  lhs = stokesmat.solve( rhs, tol=tol, solver='cg', precon='spilu' )
 
-  alpha = .01 * nelems # stabilization
-  nietzsche = alpha * vbasis - (2./reynolds) * vbasis.nsymgrad(geom)
-  stokesmat += domain.boundary.integrate( function.outer( nietzsche, vbasis ).sum(-1), geometry=geom, ischeme='gauss9', title='weak bc stokes matrix' )
-  rhs = domain.boundary['top'].integrate( ( nietzsche * utop ).sum(-1), geometry=geom, ischeme='gauss9', title='weak bc rhs' )
-
-  precon = stokesmat.getprecon( 'splu' ) if solvetol else None
-  lhs = stokesmat.solve( rhs, tol=solvetol, precon=precon )
-  for iiter in log.count( 'picard' ):
+  for iiter in log.count( 'picard', stop=maxiter ):
     if plot:
       makeplots( domain, geom, vbasis.dot(lhs), pbasis.dot(lhs), iiter )
     ugradu = ( vbasis.grad(geom) * vbasis.dot(lhs) ).sum(-1)
-    convection = function.outer( vbasis, ugradu ).sum(-1)
-    matrix = stokesmat + domain.integrate( convection, ischeme='gauss9', geometry=geom, title='navstokes matrix' )
-    res = matrix.res( lhs, rhs )
-    log.info( 'residual:', res )
-    if res < tol or iiter >= maxiter:
+    convection = density * function.outer( vbasis, ugradu ).sum(-1)
+    matrix = stokesmat + domain.integrate( convection, ischeme='gauss9', geometry=geom )
+    lhs, info = matrix.solve( rhs, x0=lhs, tol=tol, info=True, precon='spilu', restart=999 )
+    if info.niter == 0:
       break
-    lhs = matrix.solve( rhs, tol=solvetol, precon=precon, restart=999 )
 
-  return lhs, res
+  return lhs, info.res
 
 
 def unittest():
 
-  retvals = main( nelems=4, reynolds=1e3, warp=False, tol=0, maxiter=1, plot=False, solvetol=0 )
+  retvals = main( nelems=4, viscosity=1e-3, warp=False, tol=1e-15, maxiter=1, plot=False )
   assert debug.checkdata( retvals, '''
-    eNpFkettAzEMg9dJALsw9bQGyv4r1BYv7S8dJIr+xMN42YC/x+s1XbZ/pg/LpbdOaMln2gjTvA2sK7Ax
-    pdZqhUCNnb3X/ZBcuNUKuwcmVpRWUYqolqK8Jb6zXQOgqW+AKzviTtSjgdyzzb+g0yCtFM0G/QMELvkZ
-    GBtaaXwT7RhpZzFGSTx0wRMtdxIC+eVW0DP9OcDRo39gBwML2ZR8SREM6tRWIM2aa0X3Y1Vw7sm+NPfM
-    VLmA88TXj2nopgOMG3Q6GSSJS3eQAqtTOcfWI9Unz2Vtqk88s+qeEEdSdIWRpxisii4G7B3w+hnvk/L9
-    6TrevwShfCg=''' )
+    eNpNktttQzEMQ9dJAbsw9bQGyv4r1BZv2v5EgUTRR8TFeNmAf43Xa7psf08flktvndCS97QRpnkbWFdg
+    Y0qt1QqBGjt7r/tHcuFWK+wemFhRWkUpolqK8pb4znYNgKa+Aa7siDtRjwZyzzb/gE6DtFI0G/QXELjk
+    Z2BsaKXxTbRjpJ3FGCXx0AVPtNxJCOSHW0HP9OcAR4/+gB0MLGRT8iFFMKhTW4E0a64V3Y9Vwbkn+9Lc
+    M1PlAs4TXz+moZsOMG7Q6WSQJC7dQQqsTuUcW49UnzyXtak+8cyqe0IcSdEVRp5isCq6GLB3wOt7nE8F
+    qe0DvRUYct7B2fr328qvHwXKg10=''' )
 
-  retvals = main( nelems=4, reynolds=1e3, warp=True, tol=0, maxiter=1, plot=False, solvetol=0 )
+  retvals = main( nelems=4, viscosity=1e-3, warp=True, tol=1e-15, maxiter=1, plot=False )
   assert debug.checkdata( retvals, '''
-    eNpVUOuNgzEIW6eVkhPmzUDdf4Um8Ol09yuAHduA9dIFe6/Xa6MoP9sWVPS+W0n9FqzRA0ZKA+Zan+1r
-    ezj3xMsaCk60hujpdW0wRTNSLEdV2G7h5DV2Qz323W+OAXbo+AEP09kf5kiVVecICP8L6IFowMYLNB7m
-    0wtfBT9KmHQB2B0YUb8b9sQN6FCksicF1vn75BXnKZBOs/QTtLIONVZV8H2Bmq+R42bUMSsDjXM0fjZX
-    uoMNzQ7KacMMGiWSySkYqe0ZUyhJHwU0yDlSthb/FsdnloTRUDwu4pLNgN17Hlcv/F2Vftb7LKN2l3t/
-    ARObfLY=''' )
+    eNpVUuuNgzEIW6eVkhPmzUDdf4VL4Kt09wsHjDEoWC9dsPd6vTZg8dm2NigGlIR8ti+odoK50AUxkQGZ
+    Q2W2LmmR32hVHbeK8VAjpxlJ2dRHxNVHDO45IFwbRIHbQEr3CtCqX6tyEj0N6X8NAtlKUtU8e3jIMaNU
+    eXWFlG7ckNvoi0X8SehjW5yeRcIfm6H//RrKGng8l/sadboLxDKljuBrPJanVr+z2oAG7L7Fhn82ZzRw
+    IrkgCZ2Yla+SaBNg1TfaTJhlLKbXyjqqmo/WGdNA2LsZbdxXsvXYONQbGTMUdoecO5n1eehnna+Cosm6
+    nf2B44XPZNjU37/5EIEz''' )
 
 
 util.run( main, unittest )
