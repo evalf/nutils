@@ -16,7 +16,8 @@ import sys, functools, os
 
 globalproperties = {
   'nprocs': 1,
-  'outdir': '~/public_html',
+  'outrootdir': '~/public_html',
+  'outdir': '.',
   'verbose': 6,
   'richoutput': False,
   'tbexplore': False,
