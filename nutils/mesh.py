@@ -437,4 +437,4 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
 
   return topo, geom
 
-# vim:shiftwidth=2:foldmethod=indent:foldnestmax=1
+# vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=1

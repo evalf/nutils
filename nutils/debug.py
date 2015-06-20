@@ -444,4 +444,4 @@ def trace_uncollected( exhaustive=False ):
       log.warning( '%3d. %s: %s' % ( renumber[n], type(garbage[n]).__name__, refstr ) )
 
 
-# vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
+# vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

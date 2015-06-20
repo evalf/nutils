@@ -249,4 +249,4 @@ def parsecons( constrain, lconstrain, rconstrain, shape ):
   return x, I, J
 
 
-# vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
+# vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

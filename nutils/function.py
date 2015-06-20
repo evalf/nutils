@@ -3311,4 +3311,4 @@ def supp( funcsp, indices ):
   return supp
 
 
-# vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
+# vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

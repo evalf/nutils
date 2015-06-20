@@ -432,4 +432,4 @@ def signal_handler( sig, frame ):
   if log is not None:
     log.progress()
 
-# vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
+# vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

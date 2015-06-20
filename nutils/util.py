@@ -564,4 +564,4 @@ def run( *functions ):
     htmlfile.write( '</pre></body></html>\n' )
     htmlfile.close()
 
-# vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
+# vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
