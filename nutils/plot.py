@@ -644,4 +644,4 @@ def _nanfilter( data ):
   return data[~numpy.isnan( data.reshape( data.shape[0], -1 ) ).all( axis=1 )]
 
 
-# vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
+# vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

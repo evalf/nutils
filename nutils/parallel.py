@@ -195,4 +195,4 @@ def parmap( func, iterable, shape=(), dtype=float ):
     out[i] = func( item )
   return out
 
-# vim:shiftwidth=2:foldmethod=indent:foldnestmax=1
+# vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=1
