@@ -15,7 +15,7 @@ creation and initiation of a log file.
 
 from __future__ import print_function, division
 from . import log, debug, core, version, numeric
-import sys, os, time, numpy, hashlib, weakref, warnings
+import sys, os, time, numpy, hashlib, weakref, warnings, collections
 
 def isiterable( obj ):
   'check for iterability'
@@ -310,7 +310,7 @@ def getkwargdefaults( func ):
 
   defaults = func.__defaults__ or []
   N = func.__code__.co_argcount - len( defaults )
-  return zip( func.__code__.co_varnames[N:], defaults )
+  return collections.OrderedDict( zip( func.__code__.co_varnames[N:], defaults ) )
 
 class Statm( object ):
   'memory statistics on systems that support it'
@@ -397,7 +397,7 @@ def run( *functions ):
       print()
       print( 'Arguments for %s%s' % ( func.__name__, '' if i else ' (default)' ) )
       print()
-      for kwarg, default in getkwargdefaults( func ):
+      for kwarg, default in getkwargdefaults( func ).items():
         print( '  --%s=%s' % ( kwarg, default ) )
     return
 
@@ -414,7 +414,7 @@ def run( *functions ):
     func = functions[0]
     funcname = func.__name__
     argv = sys.argv[1:]
-  kwargs = dict( getkwargdefaults( func ) )
+  kwargs = getkwargdefaults( func )
   for arg in argv:
     assert arg.startswith('--'), 'invalid argument %r' % arg
     arg = arg[2:]
