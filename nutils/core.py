@@ -12,7 +12,29 @@ dependencies on other nutils modules. Primarily for internal use.
 """
 
 from __future__ import print_function, division
-import sys, functools
+import sys, functools, os
+
+globalproperties = {
+  'nprocs': 1,
+  'outdir': '~/public_html',
+  'verbose': 6,
+  'richoutput': False,
+  'tbexplore': False,
+  'imagetype': 'png',
+  'symlink': False,
+  'recache': False,
+  'dot': False,
+  'profile': False,
+}
+try:
+  nutilsrc = os.path.expanduser( '~/.nutilsrc' )
+  exec( open(nutilsrc).read(), {}, globalproperties )
+except IOError:
+  pass # file does not exist
+except:
+  exc_value, frames = sys.exc_info()
+  exc_str = '\n'.join( [ repr(exc_value) ] + [ str(f) for f in frames ] )
+  print( 'Skipping .nutilsrc: {}'.format(exc_str) )
 
 _nodefault = object()
 def getprop( name, default=_nodefault, frame=None ):
@@ -46,6 +68,8 @@ def getprop( name, default=_nodefault, frame=None ):
     if key in frame.f_locals:
       return frame.f_locals[key]
     frame = frame.f_back
+  if name in globalproperties:
+    return globalproperties[name]
   if default is _nodefault:
     raise NameError( 'property %r is not defined' % name )
   return default

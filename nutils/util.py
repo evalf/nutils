@@ -380,26 +380,6 @@ def run( *functions ):
 
   assert functions
 
-  properties = {
-    'nprocs': 1,
-    'outdir': '~/public_html',
-    'verbose': 6,
-    'richoutput': False,
-    'tbexplore': False,
-    'imagetype': 'png',
-    'symlink': False,
-    'recache': False,
-    'dot': False,
-    'profile': False,
-  }
-  try:
-    nutilsrc = os.path.expanduser( '~/.nutilsrc' )
-    exec( open(nutilsrc).read(), {}, properties )
-  except IOError:
-    pass # file does not exist
-  except:
-    print( 'Skipping .nutilsrc: ' + debug.format_exc() )
-
   if '-h' in sys.argv[1:] or '--help' in sys.argv[1:]:
     print( 'Usage: %s [FUNC] [ARGS]' % sys.argv[0] )
     print( '''
@@ -413,7 +393,7 @@ def run( *functions ):
   --symlink=%(symlink)-13s Create symlink to latest results
   --recache=%(recache)-13s Overwrite existing cache
   --dot=%(dot)-17s Set graphviz executable
-  --profile=%(profile)-13s Show profile summary at exit''' % properties )
+  --profile=%(profile)-13s Show profile summary at exit''' % core.globalproperties )
     for i, func in enumerate( functions ):
       print()
       print( 'Arguments for %s%s' % ( func.__name__, '' if i else ' (default)' ) )
@@ -436,6 +416,7 @@ def run( *functions ):
     funcname = func.__name__
     argv = sys.argv[1:]
   kwargs = getkwargdefaults( func )
+  properties = {}
   for arg in argv:
     assert arg.startswith('--'), 'invalid argument %r' % arg
     arg = arg[2:]
@@ -449,7 +430,7 @@ def run( *functions ):
     if arg in kwargs:
       kwargs[ arg ] = val
     else:
-      assert arg in properties, 'invalid argument %r' % arg
+      assert arg in core.globalproperties, 'invalid argument %r' % arg
       properties[arg] = val
 
   locals().update({ '__%s__' % name: value for name, value in properties.items() })
