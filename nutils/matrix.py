@@ -18,28 +18,28 @@ from __future__ import print_function, division
 from . import util, numpy, log
 
 
-class Callback ( object ):
+class SolverInfo ( object ):
 
-  def __init__ ( self, b, tol, matvec, callback=None ):
-    self.ncalls = 0
-    self.logtol = numpy.log10(tol)
-    self.clock = util.Clock()
-    self.callback = callback
-    self.b = b
-    self.bnorm = min(1.,numpy.linalg.norm(b))
-    self.dot = matvec
+  def __init__ ( self, tol, callback=None ):
+    self.niter = 0
+    self._res = numpy.empty( 16 )
+    self._logtol = numpy.log10(tol)
+    self._clock = util.Clock()
+    self._callback = callback
+
+  @property
+  def res( self ):
+    return self._res[:self.niter]
 
   def __call__ ( self, res ):
-    self.ncalls += 1
-    clockcheck = self.clock.check()
-    if clockcheck or self.callback:
-      if isinstance( res, numpy.ndarray ): # assume res=x
-        res = numpy.linalg.norm( self.b - self.dot(res) )
-      if self.callback:
-        self.callback( res )
-      if clockcheck:
-        scaledres = res / self.bnorm
-        log.progress( 'residual %.2e (%.0f%%)' % ( scaledres, 100. * numpy.log10(scaledres) / self.logtol ) )
+    if self.niter == len(self._res):
+      self._res.resize( 2*self.niter )
+    self._res[self.niter] = res
+    self.niter += 1
+    if self._callback:
+      self._callback( res )
+    if self._clock.check():
+      log.progress( 'residual %.2e (%.0f%%)' % ( res, 100. * numpy.log10(res) / self._logtol ) )
 
 class Matrix( object ):
   'matrix base class'
@@ -101,25 +101,12 @@ class ScipyMatrix( Matrix ):
     return supp
 
   @log.title
-  def solve( self, b=None, constrain=None, lconstrain=None, rconstrain=None, tol=0, x0=None, solver=None, symmetric=False, title='solving system', callback=None, precon=None, **solverargs ):
+  def solve( self, b=None, constrain=None, lconstrain=None, rconstrain=None, tol=0, x0=None, solver=None, symmetric=False, title='solving system', callback=None, precon=None, info=False, **solverargs ):
     'solve'
 
-    import scipy.sparse.linalg
-
-    if b is None or not isinstance( b, numpy.ndarray ) and b == 0:
-      b = numpy.zeros( self.shape[0] )
-    else:
-      b = numpy.asarray( b, dtype=float )
-      assert b.ndim == 1, 'right-hand-side has shape %s, expected a vector' % (b.shape,)
-      assert b.shape == self.shape[:1]
-
     x, I, J = parsecons( constrain, lconstrain, rconstrain, self.shape )
-    b = ( b - self.core.dot(x) )[I]
-
-    if tol == 0:
-      A = self.toarray()[ numpy.ix_(I,J) ]
-      x[J] = numpy.linalg.solve( A, b )
-      return x
+    b = ( ( b if b is not None else 0 ) - self.matvec(x) )[I]
+    x0 = x0[J] if x0 is not None else numpy.zeros( J.sum() )
 
     if I.all() and J.all():
       matvec = self.core.dot
@@ -128,26 +115,33 @@ class ScipyMatrix( Matrix ):
         _tmp[_J] = v
         return _dot(_tmp)[_I]
 
-    mycallback = Callback( b, tol, matvec, callback=callback )
+    log.info( 'residual:', numpy.linalg.norm(b-matvec(x0)) / numpy.linalg.norm(b) )
+
+    if tol == 0:
+      A = self.toarray()[ numpy.ix_(I,J) ]
+      x[J] = numpy.linalg.solve( A, b )
+      return x
 
     if isinstance( precon, str ):
       precon = self.getprecon( precon, constrain, lconstrain, rconstrain )
-
-    if x0 is not None:
-      x0 = x0[J]
 
     if symmetric:
       assert solver is None
       solver = 'cg'
     elif solver is None:
       solver = 'gmres'
+
+    import scipy.sparse.linalg
     solverfun = getattr( scipy.sparse.linalg, solver )
+    solverinfo = SolverInfo( tol, callback=callback )
+    mycallback = solverinfo if solver != 'cg' else lambda x: solverinfo( numpy.linalg.norm(b-matvec(x)) / numpy.linalg.norm(b) )
 
     A = scipy.sparse.linalg.LinearOperator( b.shape*2, matvec, dtype=float )
-    x[J], info = solverfun( A, b, M=precon, tol=tol, x0=x0, callback=mycallback, **solverargs )
-    assert info == 0, '%s solver failed with status %d' % (solver, info)
-    log.info( '%s solver converged in %d iterations' % (solver.upper(), mycallback.ncalls) )
-    return x
+    x[J], status = solverfun( A, b, M=precon, tol=tol, x0=x0, callback=mycallback, **solverargs )
+    assert status == 0, '%s solver failed with status %d' % (solver, status)
+    log.info( '%s solver converged in %d iterations' % (solver.upper(), solverinfo.niter) )
+
+    return (x,solverinfo) if info else x
 
   def getprecon( self, name='SPLU', constrain=None, lconstrain=None, rconstrain=None ):
 
