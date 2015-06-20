@@ -588,6 +588,19 @@ class ArrayFunc( Evaluable ):
 
   __repr__ = __str__
 
+class ElementSize( ArrayFunc ):
+  'dimension of hypercube with same volume as element'
+
+  def __init__( self, geometry, ndims=None ):
+    assert geometry.ndim == 1
+    self.ndims = len(geometry) if ndims is None else len(geometry)+ndims if ndims < 0 else ndims
+    iwscale = jacobian( geometry, self.ndims ) * Iwscale(self.ndims)
+    ArrayFunc.__init__( self, args=[iwscale], shape=() )
+
+  def evalf( self, iwscale ):
+    volume = iwscale.sum()
+    return numpy.power( volume, 1/self.ndims )[_]
+
 class Orientation( ArrayFunc ):
   'sign'
 
