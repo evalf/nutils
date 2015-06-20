@@ -13,7 +13,7 @@ stdout as well as to an html formatted log file if so configured.
 """
 
 from __future__ import print_function, division
-import sys, time, os, warnings, re, functools
+import sys, time, os, warnings, re, functools, numpy
 from . import core
 
 warnings.showwarning = lambda message, category, filename, lineno, *args: \
@@ -350,6 +350,11 @@ def _len( iterable ):
   except:
     return None
 
+def _count( index, step, stop ):
+  while index < stop:
+    yield index
+    index += step
+
 
 ## MODULE-ACCESIBLE LOG METHODS
 
@@ -394,11 +399,10 @@ def zip( title, *iterables ):
 
   return _PrintableIterator( title, _zip(*iterables), None )
 
-def count( title, start=0, step=1 ):
+def count( title, start=0, step=1, stop=numpy.inf ):
   '''Progress logger identical to itertools.count'''
 
-  from itertools import count
-  return _PrintableIterator( title, count(start,step), None )
+  return _PrintableIterator( title, _count(start,step,stop), None )
     
 def stack( msg, frames ):
   '''Print stack trace'''
