@@ -104,9 +104,11 @@ class ScipyMatrix( Matrix ):
   def solve( self, b=None, constrain=None, lconstrain=None, rconstrain=None, tol=0, x0=None, solver=None, symmetric=False, title='solving system', callback=None, precon=None, info=False, **solverargs ):
     'solve'
 
+    solverinfo = SolverInfo( tol, callback=callback )
+
     x, I, J = parsecons( constrain, lconstrain, rconstrain, self.shape )
-    b = ( ( b if b is not None else 0 ) - self.matvec(x) )[I]
-    x0 = x0[J] if x0 is not None else numpy.zeros( J.sum() )
+    _b = ( ( b if b is not None else 0 ) - self.matvec(x) )[I]
+    _x0 = x0[J] if x0 is not None else numpy.zeros( J.sum() )
 
     if I.all() and J.all():
       matvec = self.core.dot
@@ -115,11 +117,14 @@ class ScipyMatrix( Matrix ):
         _tmp[_J] = v
         return _dot(_tmp)[_I]
 
-    log.info( 'residual:', numpy.linalg.norm(b-matvec(x0)) / numpy.linalg.norm(b) )
+    res0 = numpy.linalg.norm(_b-matvec(_x0)) / numpy.linalg.norm(_b)
+    log.info( 'residual:', res0 )
+    if res0 < tol:
+      return (x0,solverinfo) if info else x0
 
     if tol == 0:
-      A = self.toarray()[ numpy.ix_(I,J) ]
-      x[J] = numpy.linalg.solve( A, b )
+      _A = self.toarray()[ numpy.ix_(I,J) ]
+      x[J] = numpy.linalg.solve( _A, _b )
       return x
 
     if isinstance( precon, str ):
@@ -133,11 +138,10 @@ class ScipyMatrix( Matrix ):
 
     import scipy.sparse.linalg
     solverfun = getattr( scipy.sparse.linalg, solver )
-    solverinfo = SolverInfo( tol, callback=callback )
-    mycallback = solverinfo if solver != 'cg' else lambda x: solverinfo( numpy.linalg.norm(b-matvec(x)) / numpy.linalg.norm(b) )
+    mycallback = solverinfo if solver != 'cg' else lambda x: solverinfo( numpy.linalg.norm(_b-matvec(x)) / numpy.linalg.norm(_b) )
 
-    A = scipy.sparse.linalg.LinearOperator( b.shape*2, matvec, dtype=float )
-    x[J], status = solverfun( A, b, M=precon, tol=tol, x0=x0, callback=mycallback, **solverargs )
+    _A = scipy.sparse.linalg.LinearOperator( _b.shape*2, matvec, dtype=float )
+    x[J], status = solverfun( _A, _b, M=precon, tol=tol, x0=_x0, callback=mycallback, **solverargs )
     assert status == 0, '%s solver failed with status %d' % (solver, status)
     log.info( '%s solver converged in %d iterations' % (solver.upper(), solverinfo.niter) )
 
