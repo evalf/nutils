@@ -2482,7 +2482,7 @@ def merge( funcs ):
 def vectorize( args ):
   'vectorize'
 
-  return util.sum( kronecker( func, axis=1, length=len(args), pos=ifun ) for ifun, func in enumerate( chain( args ) ) )
+  return stack( chain(args), axis=-1 )
 
 def expand( arg, shape ):
   'expand'
