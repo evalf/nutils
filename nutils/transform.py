@@ -435,4 +435,4 @@ def solve( T1, T2 ): # T1 << x == T2
   return affine( Ax, bx )
 
 
-# vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
+# vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

@@ -294,4 +294,4 @@ class Tuple( object ):
       self.__items[i] = item = self.__getitem( self.__start + i * self.__stride )
     return item
 
-# vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
+# vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

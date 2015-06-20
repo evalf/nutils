@@ -378,4 +378,4 @@ def invorder( n ):
   ninv[n] = numpy.arange( len(n) )
   return ninv
 
-# vim:shiftwidth=2:foldmethod=indent:foldnestmax=2
+# vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
