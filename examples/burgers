@@ -30,32 +30,32 @@ def main( nelems=40, degree=1, timestep=.001, tol=1e-8, cg=False, alpha=.5, ndim
     nodes = numpy.linspace( -1, 1, nelems+1 )
     domain, geom = mesh.rectilinear( [nodes,nodes], periodic=[0,1] )
     width = .5
-    u = function.piecewise( ( geom**2 ).sum(), [width**2], 1, 0 ) *  (1,1)
+    u = function.piecewise( ( geom**2 ).sum(-1), [width**2], 1, 0 ) *  (1,1)
   else:
     raise Exception( 'not supported: ndims=%s' % ndims )
 
-  funcsp = ( domain.splinefunc if cg else domain.discontfunc )( degree ).vector( ndims )
-  lhs = domain.project( u, onto=funcsp, geometry=geom, ptype='convolute', ischeme='gauss5' )
+  basis = domain.basis( 'spline' if cg else 'discont', degree=degree ).vector( ndims )
+  lhs = domain.project( u, onto=basis, geometry=geom, ptype='convolute', ischeme='gauss5' )
 
-  A1 = (1./timestep) * function.outer( funcsp ).sum()
+  A1 = (1./timestep) * function.outer( basis ).sum(-1)
   matrix1 = domain.integrate( A1, geometry=geom, ischeme='gauss5' )
 
   for itime in log.count( 'timestep' ):
 
     if plots:
-      makeplots( domain, geom, funcsp.dot(lhs) )
+      makeplots( domain, geom, basis.dot(lhs) )
 
     for ipicard in log.count( 'picard' ):
 
-      u = funcsp.dot( lhs )
-      A2 = function.outer( ( funcsp[:,:,_] * -u ).div(geom), funcsp ).sum()
+      u = basis.dot( lhs )
+      A2 = function.outer( ( basis[:,:,_] * -u ).div(geom), basis ).sum(-1)
       matrix2 = domain.integrate( A2, geometry=geom, ischeme='gauss5' )
       if not cg:
-        upwind = alpha * function.sign( ( function.mean(u) * geom.normal() ).sum() )
-        funcsp_cv = funcsp[:,:,_] * u
+        upwind = alpha * function.sign( ( function.mean(u) * geom.normal() ).sum(-1) )
+        funcsp_cv = basis[:,:,_] * u
         F = ( function.mean(funcsp_cv)
             + function.jump(funcsp_cv) * upwind ).dotnorm( geom )
-        A2i = function.outer( function.jump(funcsp), F ).sum()
+        A2i = function.outer( function.jump(basis), F ).sum(-1)
         matrix2i = domain.interfaces.integrate( A2i, geometry=geom, ischeme='gauss5' )
         matrix2 = matrix2 + matrix2i
 

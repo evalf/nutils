@@ -56,9 +56,9 @@ def main( nelems=20, epsilon=None, timestep=.01, maxtime=1., theta=90, init='ran
   f_n = lambda c_: (1./epsilon**2) * ( 6*c_ - 2*c_**3 )
 
   A = function.outer( cbasis ) \
-    + (timestep*epsilon**2) * function.outer( cbasis.grad(geom), mubasis.grad(geom) ).sum() \
+    + (timestep*epsilon**2) * function.outer( cbasis.grad(geom), mubasis.grad(geom) ).sum(-1) \
     + function.outer( mubasis, mubasis - f_p(cbasis) ) \
-    - function.outer( mubasis.grad(geom), cbasis.grad(geom) ).sum()
+    - function.outer( mubasis.grad(geom), cbasis.grad(geom) ).sum(-1)
 
   matrix = domain.integrate( A, geometry=geom, ischeme='gauss4' )
   rhs0 = domain.boundary.integrate( mubasis * ewall, geometry=geom, ischeme='gauss4' )

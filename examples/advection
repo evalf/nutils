@@ -28,29 +28,29 @@ def main( nelems=40, degree=1, timestep=.01, tol=1e-10, cg=False, alpha=.5, ndim
     convec = function.stack([ y, -x ])
     center0 = .5, 0
     width = .25
-    u = function.exp( -( ( ( geom - center0 ) / width )**2 ).sum() )
+    u = function.exp( -( ( ( geom - center0 ) / width )**2 ).sum(-1) )
   else:
     raise Exception( 'not supported: ndims=%s' % ndims )
 
-  funcsp = ( domain.splinefunc if cg else domain.discontfunc )( degree )
-  lhs = domain.project( u, onto=funcsp, geometry=geom, ptype='convolute', ischeme='gauss5' )
+  basis = domain.basis( 'spline' if cg else 'discont', degree=degree )
+  lhs = domain.project( u, onto=basis, geometry=geom, ptype='convolute', ischeme='gauss5' )
 
-  A1 = (1./timestep) * function.outer( funcsp )
-  A2 = function.outer( ( funcsp[:,_] * -convec ).div(geom), funcsp )
+  A1 = (1./timestep) * function.outer( basis )
+  A2 = function.outer( ( basis[:,_] * -convec ).div(geom), basis )
   matrix1, matrix2 = domain.integrate( [ A1, A2 ], geometry=geom, ischeme='gauss5' )
   if not cg:
-    upwind = alpha * function.sign( ( function.mean(convec) * geom.normal() ).sum() )
-    funcsp_cv = funcsp[:,_] * convec
+    upwind = alpha * function.sign( ( function.mean(convec) * geom.normal() ).sum(-1) )
+    funcsp_cv = basis[:,_] * convec
     F = ( function.mean(funcsp_cv)
         + function.jump(funcsp_cv) * upwind ).dotnorm( geom )
-    A2i = function.outer( function.jump(funcsp), F )
+    A2i = function.outer( function.jump(basis), F )
     matrix2i = domain.interfaces.integrate( A2i, geometry=geom, ischeme='gauss5' )
     matrix2 = matrix2 + matrix2i
 
   for itime in log.count( 'timestep' ):
 
     if plots:
-      makeplots( domain, geom, funcsp.dot(lhs) )
+      makeplots( domain, geom, basis.dot(lhs) )
 
     matrix = matrix1 + tau * matrix2
     rhs = matrix1.matvec(lhs) + (tau-1) * matrix2.matvec(lhs)

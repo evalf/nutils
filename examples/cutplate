@@ -35,16 +35,16 @@ def main( nelems=None, maxrefine=2, radius=.5, degree=1, stress=library.Hooke(lm
 
   levelset = function.norm2( geom ) - radius
   domain, complement = wholedomain.trim( levelset, maxrefine=maxrefine, check=False )
-  dspace = domain.splinefunc( degree=degree ).vector( 2 )
+  dbasis = domain.basis( 'spline', degree=degree ).vector( 2 )
 
-  cons = domain.boundary['left'].project( 0, geometry=geom, ischeme='gauss6', onto=dspace[:,0] )
-  cons |= domain.boundary['bottom'].project( 0, geometry=geom, ischeme='gauss6', onto=dspace[:,1] )
-  cons |= domain.boundary['top,right'].project( uexact, geometry=geom, ischeme='gauss6', onto=dspace )
+  cons = domain.boundary['left'].project( 0, geometry=geom, ischeme='gauss6', onto=dbasis[:,0] )
+  cons |= domain.boundary['bottom'].project( 0, geometry=geom, ischeme='gauss6', onto=dbasis[:,1] )
+  cons |= domain.boundary['top,right'].project( uexact, geometry=geom, ischeme='gauss6', onto=dbasis )
 
-  elasticity = function.outer( dspace.grad(geom), stress(dspace.symgrad(geom)) ).sum([2,3])
+  elasticity = function.outer( dbasis.grad(geom), stress(dbasis.symgrad(geom)) ).sum([2,3])
   matrix = domain.integrate( elasticity, geometry=geom, ischeme='gauss6' )
   lhs = matrix.solve( constrain=cons, tol=solvetol, symmetric=True, precon='diag' )
-  disp = dspace.dot( lhs )
+  disp = dbasis.dot( lhs )
 
   if plots:
     makeplots( domain, geom+disp, stress(disp.symgrad(geom)), index=nelems )

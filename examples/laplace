@@ -26,7 +26,7 @@ def main( nelems=None, degree=1, basistype='spline', solvetol=1e-10, withplots=T
   flux = exact.ngrad( geom )
 
   basis = domain.basis( basistype, degree=degree )
-  laplace = function.outer( basis.grad(geom) ).sum()
+  laplace = function.outer( basis.grad(geom) ).sum(-1)
   matrix = domain.integrate( laplace, geometry=geom, ischeme='gauss4' )
   rhs = domain.boundary['right,top'].integrate( basis * flux, geometry=geom, ischeme='gauss7' )
   cons = domain.boundary['left,bottom'].project( exact, ischeme='gauss7', geometry=geom, onto=basis )
@@ -37,7 +37,7 @@ def main( nelems=None, degree=1, basistype='spline', solvetol=1e-10, withplots=T
     makeplots( domain, geom, sol, nelems )
 
   error = sol - exact
-  err = numpy.sqrt( domain.integrate( [ error**2, ( error.grad(geom)**2 ).sum() ], geometry=geom, ischeme='gauss7' ) )
+  err = numpy.sqrt( domain.integrate( [ error**2, ( error.grad(geom)**2 ).sum(-1) ], geometry=geom, ischeme='gauss7' ) )
   log.user( 'errors: l2={}, h1={}'.format(*err) )
 
   return err, rhs, cons, lhs

@@ -37,13 +37,13 @@ def main( degree=2, niter=30, triangular=False, plot=True ):
 
   for iiter in log.range( 'iter', niter ):
 
-    funcsp = domain.splinefunc( degree=degree )
-    greysmooth = domain.projection( greydata, geometry=geom, onto=funcsp, ischeme='gauss3', droptol=0, verify=int(funcsp.shape[0]) )
+    basis = domain.basis( 'spline', degree=degree )
+    greysmooth = domain.projection( greydata, geometry=geom, onto=basis, ischeme='gauss3', droptol=0, verify=int(basis.shape[0]) )
     indicator = ( greysmooth - greydata )**2
 
-    weighted_residual = domain.integrate( funcsp * indicator, geometry=geom, ischeme='gauss3' )
+    weighted_residual = domain.integrate( basis * indicator, geometry=geom, ischeme='gauss3' )
     refine = weighted_residual.argsort()[-1:]
-    supp = function.supp( funcsp, indices=refine )
+    supp = function.supp( basis, indices=refine )
 
     if plot:
       makeplots( domain, geom, greysmooth, iiter, indicator )

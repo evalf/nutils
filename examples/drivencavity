@@ -38,7 +38,7 @@ def main( nelems=8, reynolds=2e3, warp=False, tol=1e-8, plot=True, solvetol=1e-1
     geom = (y+2) * function.rotmat(x*.4)[:,1] - (0,2) # slight downward bend
     J = function.localgradient( geom, domain.ndims )
     detJ = function.determinant( J )
-    vbasis = ( vbasis[...,_,:] * J ).sum() / detJ # piola transform
+    vbasis = ( vbasis[...,_,:] * J ).sum(-1) / detJ # piola transform
     pbasis = pbasis / detJ
 
   vbasis, pbasis, lbasis = function.chain([ vbasis, pbasis, [1.] ])
@@ -56,16 +56,16 @@ def main( nelems=8, reynolds=2e3, warp=False, tol=1e-8, plot=True, solvetol=1e-1
 
   alpha = .01 * nelems # stabilization
   nietzsche = alpha * vbasis - (2./reynolds) * vbasis.nsymgrad(geom)
-  stokesmat += domain.boundary.integrate( function.outer( nietzsche, vbasis ).sum(), geometry=geom, ischeme='gauss9', title='weak bc stokes matrix' )
-  rhs = domain.boundary['top'].integrate( ( nietzsche * utop ).sum(), geometry=geom, ischeme='gauss9', title='weak bc rhs' )
+  stokesmat += domain.boundary.integrate( function.outer( nietzsche, vbasis ).sum(-1), geometry=geom, ischeme='gauss9', title='weak bc stokes matrix' )
+  rhs = domain.boundary['top'].integrate( ( nietzsche * utop ).sum(-1), geometry=geom, ischeme='gauss9', title='weak bc rhs' )
 
   precon = stokesmat.getprecon( 'splu' ) if solvetol else None
   lhs = stokesmat.solve( rhs, tol=solvetol, precon=precon )
   for iiter in log.count( 'picard' ):
     if plot:
       makeplots( domain, geom, vbasis.dot(lhs), pbasis.dot(lhs), iiter )
-    ugradu = ( vbasis.grad(geom) * vbasis.dot(lhs) ).sum()
-    convection = function.outer( vbasis, ugradu ).sum()
+    ugradu = ( vbasis.grad(geom) * vbasis.dot(lhs) ).sum(-1)
+    convection = function.outer( vbasis, ugradu ).sum(-1)
     matrix = stokesmat + domain.integrate( convection, ischeme='gauss9', geometry=geom, title='navstokes matrix' )
     res = matrix.res( lhs, rhs )
     log.info( 'residual:', res )

@@ -47,47 +47,47 @@ def main( nelems=24, reynolds=100., strong=False, tol=1e-8, rotation=0., timeste
   cylinder = domain.boundary['left']
   farfield = domain.boundary['right']
 
-  vspace = function.vectorize([ domain.splinefunc( degree=(2,1) ), domain.splinefunc( degree=(1,2) ) ])
-  pspace = domain.splinefunc( degree=1 )
-  vspace, pspace, lspace = function.chain([ vspace, pspace, [1.] ])
+  vbasis = function.vectorize([ domain.basis( 'spline', degree=(2,1) ), domain.basis( 'spline', degree=(1,2) ) ])
+  pbasis = domain.basis( 'spline', degree=1 )
+  vbasis, pbasis, lbasis = function.chain([ vbasis, pbasis, [1.] ])
 
   # piola
   J = function.localgradient( geom, domain.ndims )
   detJ = function.determinant( J )
-  vspace = ( vspace[...,_,:] * J ).sum() / detJ
-  pspace = pspace / detJ
+  vbasis = ( vbasis[...,_,:] * J ).sum(-1) / detJ
+  pbasis = pbasis / detJ
 
-  stress = 2 * vspace.symgrad(geom) - pspace[:,_,_] * function.eye( domain.ndims )
+  stress = 2 * vbasis.symgrad(geom) - pbasis[:,_,_] * function.eye( domain.ndims )
 
-  A = function.outer( vspace.grad(geom), stress ).sum([2,3])
-  A += function.outer( pspace, vspace.div(geom) )
-  A += function.outer( lspace, pspace )
-  A += function.outer( pspace, lspace )
+  A = function.outer( vbasis.grad(geom), stress ).sum([2,3])
+  A += function.outer( pbasis, vbasis.div(geom) )
+  A += function.outer( lbasis, pbasis )
+  A += function.outer( pbasis, lbasis )
 
   stokesmat = domain.integrate( A, geometry=geom, ischeme='gauss9', title='stokes matrix' )
 
-  cons = farfield.project( [1,0], geometry=geom, onto=vspace, title='farfield bc', ischeme='gauss9', tol=1e-12 )
+  cons = farfield.project( [1,0], geometry=geom, onto=vbasis, title='farfield bc', ischeme='gauss9', tol=1e-12 )
   if strong:
     stokesrhs = 0
-    cons |= cylinder.project( cyl_velo, geometry=geom, onto=vspace, ischeme='gauss9', title='cylinder bc', tol=1e-12 )
+    cons |= cylinder.project( cyl_velo, geometry=geom, onto=vbasis, ischeme='gauss9', title='cylinder bc', tol=1e-12 )
   else:
     ALPHA = .01 * nelems * reynolds
-    weakterm = ALPHA * vspace - 2 * vspace.nsymgrad(geom)
-    stokesmat += cylinder.integrate( function.outer( weakterm, vspace ).sum(), geometry=geom, ischeme='gauss9', title='weak bc stokes matrix' )
-    stokesrhs = cylinder.integrate( ( weakterm * cyl_velo ).sum(), geometry=geom, ischeme='gauss9', title='weak bc rhs' )
-    cons |= cylinder.project( 0, geometry=geom, onto=vspace.dotnorm(geom), ischeme='gauss9', title='cylinder bc', tol=1e-12 )
+    weakterm = ALPHA * vbasis - 2 * vbasis.nsymgrad(geom)
+    stokesmat += cylinder.integrate( function.outer( weakterm, vbasis ).sum(-1), geometry=geom, ischeme='gauss9', title='weak bc stokes matrix' )
+    stokesrhs = cylinder.integrate( ( weakterm * cyl_velo ).sum(-1), geometry=geom, ischeme='gauss9', title='weak bc rhs' )
+    cons |= cylinder.project( 0, geometry=geom, onto=vbasis.dotnorm(geom), ischeme='gauss9', title='cylinder bc', tol=1e-12 )
 
   lhs = stokesmat.solve( stokesrhs, constrain=cons )#, tol=1e-10, restart=9999, precon='spilu' )
 
   if timestep:
-    inertia = (1./timestep) * function.outer( vspace ).sum()
+    inertia = (1./timestep) * function.outer( vbasis ).sum(-1)
     inertmat = domain.integrate( inertia, ischeme='gauss9', geometry=geom, title='adding inertia' )
     stokesmat += inertmat
 
   for iiter in log.count( 'iter' ):
-    makeplots( domain, geom, vspace.dot(lhs), pspace.dot(lhs), iiter )
-    ugradu = ( vspace.grad(geom) * vspace.dot(lhs) ).sum()
-    convection = reynolds * function.outer( vspace, ugradu ).sum()
+    makeplots( domain, geom, vbasis.dot(lhs), pbasis.dot(lhs), iiter )
+    ugradu = ( vbasis.grad(geom) * vbasis.dot(lhs) ).sum(-1)
+    convection = reynolds * function.outer( vbasis, ugradu ).sum(-1)
     matrix = stokesmat + domain.integrate( convection, ischeme='gauss9', geometry=geom, title='navstokes matrix' )
     if timestep:
       rhs = stokesrhs + inertmat.matvec( lhs )
