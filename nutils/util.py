@@ -209,7 +209,8 @@ class NanVec( numpy.ndarray ):
     if numpy.isscalar( other ):
       self[ where ] = other
     else:
-      where &= other.where
+      assert isinstance( other, numpy.ndarray ) and other.shape == self.shape
+      where &= ~numpy.isnan(other)
       self[ where ] = other[ where ]
     return self
 
@@ -229,6 +230,11 @@ class NanVec( numpy.ndarray ):
     'combine'
 
     return self.copy().__ior__( other )
+
+  def __invert__( self ):
+    nanvec = NanVec( len(self) )
+    nanvec[numpy.isnan(self)] = 0
+    return nanvec
 
 class Clock( object ):
   'simple interval timer'
