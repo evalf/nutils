@@ -15,7 +15,7 @@ from . import register, unittest
 @register( 'cosh', function.cosh, numpy.cosh, [(3,)] )
 @register( 'sinh', function.sinh, numpy.sinh, [(3,)] )
 @register( 'abs', function.abs, numpy.abs, [(3,)] )
-@register( 'sign', function.sign, numpy.sign, [(3,)] )
+@register( 'sign', function.sign, numpy.sign, [(3,)], testcomplex=False )
 @register( 'power', lambda a: function.power(a,1.5), lambda a: numpy.power(a,1.5), [(3,)] )
 @register( 'negative', function.negative, numpy.negative, [(3,)] )
 @register( 'reciprocal', function.reciprocal, numpy.reciprocal, [(3,)] )
@@ -33,7 +33,7 @@ from . import register, unittest
 @register( 'cosh', function.cosh, numpy.cosh, [(3,)] )
 @register( 'sinh', function.sinh, numpy.sinh, [(3,)] )
 @register( 'abs', function.abs, numpy.abs, [(3,)] )
-@register( 'sign', function.sign, numpy.sign, [(3,)] )
+@register( 'sign', function.sign, numpy.sign, [(3,)], testcomplex=False )
 @register( 'power', lambda a: function.power(a,1.5), lambda a: numpy.power(a,1.5), [(3,)] )
 @register( 'negative', function.negative, numpy.negative, [(3,)] )
 @register( 'reciproc', function.reciprocal, numpy.reciprocal, [(3,)] )
@@ -60,14 +60,18 @@ from . import register, unittest
 @register( 'subtract', lambda a,b: a - b, numpy.subtract, [(3,1),(1,3)] )
 @register( 'product', lambda a,b: (a*b).sum(-2), lambda a,b: (a*b).sum(-2), [(2,3,1),(1,3,2)] )
 @register( 'cross', lambda a,b: function.cross(a,b,-2), lambda a,b: numpy.cross(a,b,axis=-2), [(2,3,1),(1,3,2)] )
-@register( 'min', lambda a,b: function.min(a,b), numpy.minimum, [(3,1),(1,3)] )
-@register( 'max', lambda a,b: function.max(a,b), numpy.maximum, [(3,1),(1,3)] )
-@register( 'greater', lambda a,b: function.greater(a,b), numpy.greater, [(3,1),(1,3)] )
-@register( 'less', lambda a,b: function.less(a,b), numpy.less, [(3,1),(1,3)] )
-@register( 'arctan2', function.arctan2, numpy.arctan2, [(3,1),(1,3)] )
+@register( 'min', lambda a,b: function.min(a,b), numpy.minimum, [(3,1),(1,3)], testcomplex=False )
+@register( 'max', lambda a,b: function.max(a,b), numpy.maximum, [(3,1),(1,3)], testcomplex=False )
+@register( 'greater', lambda a,b: function.greater(a,b), numpy.greater, [(3,1),(1,3)], testcomplex=False )
+@register( 'less', lambda a,b: function.less(a,b), numpy.less, [(3,1),(1,3)], testcomplex=False )
+@register( 'arctan2', function.arctan2, numpy.arctan2, [(3,1),(1,3)], testcomplex=False )
 @register( 'stack', lambda a,b: function.stack([a,b]), lambda a,b: numpy.concatenate( [a[...,_,:],b[...,_,:]], axis=-2), [(3,),(3,)] )
 @register( 'eig', lambda a: function.eig(a,symmetric=False)[1], lambda a: numpy.array([ numpy.linalg.eig(ai)[1] for ai in a ]), [(3,3)], hasgrad=False )
-def check( op, n_op, shapes, hasgrad=True ):
+@register( 'real', function.real, numpy.real, [(3,)], hasgrad=False )
+@register( 'imag', function.imag, numpy.imag, [(3,)], hasgrad=False )
+@register( 'conjugate', function.conjugate, numpy.conjugate, [(3,)], hasgrad=False )
+@register( 'angle', function.angle, numpy.angle, [(3,)], hasgrad=False )
+def check( op, n_op, shapes, hasgrad=True, testcomplex=True ):
 
   roottrans = transform.affine( [[0,1],[-1,0]], [1,0] ) >> transform.affine( [[2,1],[-1,3]], [1,0] )
   elem = element.Element( element.LineReference()**2, roottrans >> transform.roottrans( 'test', (0,0) ) )
@@ -111,6 +115,15 @@ def check( op, n_op, shapes, hasgrad=True ):
       numpy.testing.assert_array_almost_equal(
         n_op( *argsfun.eval(elem,points) )[s],
           op( *args )[s].eval(elem,points), decimal=15 )
+
+  if testcomplex:
+    complexargs = [ ( ( numpy.random.uniform( size=shape+(funcsp.shape[0],) ) + 1j*numpy.random.uniform( size=shape+(funcsp.shape[0],) ) ) * funcsp ).sum() for shape in shapes ]
+    complexargsfun = function.Tuple( complexargs )
+    @unittest
+    def evalcomplex():
+      numpy.testing.assert_array_almost_equal(
+        n_op( *complexargsfun.eval(elem,points) ),
+          op( *complexargs ).eval(elem,points), decimal=15 )
 
   if not hasgrad:
     return

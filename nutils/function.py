@@ -383,6 +383,16 @@ class ArrayFunc( Evaluable ):
   __abs__  = lambda self: abs( self )
   __len__  = lambda self: self.shape[0]
   sum      = lambda self, axes=-1: sum( self, axes )
+  conjugate = lambda self: conjugate( self )
+  conj     = lambda self: conjugate( self )
+
+  @property
+  def real( self ):
+    return real( self )
+
+  @property
+  def imag( self ):
+    return imag( self )
 
   @property
   def size( self ):
@@ -991,7 +1001,7 @@ class Concatenate( ArrayFunc ):
     ndim = numpy.max([ array.ndim for array in arrays ])
     axlen = util.sum( array.shape[iax] for array in arrays )
     shape = _jointshape( *[ (1,)*(ndim-array.ndim) + array.shape[:iax] + (axlen,) + ( array.shape[iax+1:] if iax != -1 else () ) for array in arrays ] )
-    dtype = float if any( array.dtype == float for array in arrays ) else int
+    dtype = numpy.concatenate([ numpy.array([], array.dtype) for array in arrays ]).dtype
     retval = numpy.empty( shape, dtype=dtype )
     n0 = 0
     for array in arrays:
@@ -3135,7 +3145,7 @@ greater = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg
 less = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.less, _zeros_like )
 min = lambda arg1, *args: choose( argmin( arg1 if not args else (arg1,)+args, axis=0 ), arg1 if not args else (arg1,)+args )
 max = lambda arg1, *args: choose( argmax( arg1 if not args else (arg1,)+args, axis=0 ), arg1 if not args else (arg1,)+args )
-abs = lambda arg: arg * sign(arg)
+abs = lambda arg: pointwise( [arg], numpy.abs, sign )
 sinh = lambda arg: .5 * ( exp(arg) - exp(-arg) )
 cosh = lambda arg: .5 * ( exp(arg) + exp(-arg) )
 tanh = lambda arg: 1 - 2. / ( exp(2*arg) + 1 )
@@ -3150,6 +3160,11 @@ subtract = lambda arg1, arg2: add( arg1, negative(arg2) )
 mean = lambda arg: .5 * ( arg + opposite(arg) )
 jump = lambda arg: arg - opposite(arg)
 add_T = lambda arg, axes=(-2,-1): swapaxes( arg, axes ) + arg
+real = lambda arg: pointwise( [arg], numpy.real, None )
+imag = lambda arg: pointwise( [arg], numpy.imag, None )
+conjugate = lambda arg: pointwise( [arg], numpy.conjugate, None )
+conj = conjugate
+angle = lambda arg: pointwise( [arg], numpy.angle, None )
 
 def swapaxes( arg, axes=(-2,-1) ):
   'swap axes'
