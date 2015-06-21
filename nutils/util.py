@@ -15,7 +15,7 @@ creation and initiation of a log file.
 
 from __future__ import print_function, division
 from . import log, debug, core, version, numeric
-import sys, os, time, numpy, hashlib, weakref, warnings, collections
+import sys, os, time, numpy, hashlib, weakref, warnings, collections, inspect
 
 def isiterable( obj ):
   'check for iterability'
@@ -305,12 +305,33 @@ class Locals( object ):
     frame = sys._getframe( 1 )
     self.__dict__.update( frame.f_locals )
 
-def getkwargdefaults( func ):
+def _getkwargdefaults_new( func ):
   'helper for run'
 
-  defaults = func.__defaults__ or []
-  N = func.__code__.co_argcount - len( defaults )
-  return collections.OrderedDict( zip( func.__code__.co_varnames[N:], defaults ) )
+  kwargs = collections.OrderedDict()
+  signature = inspect.signature( func )
+  for parameter in signature.parameters.values():
+    if parameter.kind in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD):
+      continue
+    if parameter.default is parameter.empty:
+      raise ValueError( 'Function cannot be called without arguments.' )
+    kwargs[parameter.name] = parameter.default
+  return kwargs
+
+def _getkwargdefaults_legacy( func ):
+  'helper for run'
+
+  args, varargs, keywords, defaults = inspect.getargspec( func )
+  if defaults is None:
+    defaults = []
+  if len( defaults ) != len( args ):
+    raise ValueError( 'Function cannot be called without arguments.' )
+  return collections.OrderedDict(zip(args, defaults))
+
+if sys.version_info >= (3,3):
+  getkwargdefaults = _getkwargdefaults_new
+else:
+  getkwargdefaults = _getkwargdefaults_legacy
 
 class Statm( object ):
   'memory statistics on systems that support it'
