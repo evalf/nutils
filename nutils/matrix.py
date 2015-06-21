@@ -23,7 +23,7 @@ class SolverInfo ( object ):
   def __init__ ( self, tol, callback=None ):
     self.niter = 0
     self._res = numpy.empty( 16 )
-    self._logtol = numpy.log10(tol)
+    self._tol = tol
     self._clock = util.Clock()
     self._callback = callback
 
@@ -39,7 +39,7 @@ class SolverInfo ( object ):
     if self._callback:
       self._callback( res )
     if self._clock.check():
-      log.progress( 'residual %.2e (%.0f%%)' % ( res, 100. * numpy.log10(res) / self._logtol ) )
+      log.progress( 'residual %.2e (%.0f%%)' % ( res, 100. * numpy.log10(res) / numpy.log10(self._tol) ) )
 
 class Matrix( object ):
   'matrix base class'
