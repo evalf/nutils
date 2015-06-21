@@ -20,74 +20,86 @@ import os, warnings, sys
 class BasePlot( object ):
   'base class for plotting objects'
 
-  def __init__ ( self, name, ndigits=0, index=None ):
+  def __init__ ( self, name=None, ndigits=0, index=None, dumpdir=None ):
+    'constructor'
 
-    self.path = core.getprop( 'dumpdir' )
+    self.path = dumpdir or core.getprop( 'dumpdir' )
+    self.name = name
+    self.index = index
+    self.ndigits = ndigits
 
-    assert isinstance(ndigits,int) and ndigits >= 0, 'nonnegative integer required'
-    if ndigits:
-      if index is None:
-        index = 1
-        for filename in os.listdir( self.path ):
-          if filename.startswith( name ):
-            num = filename[len(name):].split('.')[0]
-            if num.isdigit():
-              index = max( index, int(num)+1 )
-      name += str(index).rjust(ndigits,'0')
-
-    self.name  = name
-    self.names = None
+  def getpath( self, name, index, ext ):
+    if name is None:
+      name = self.name
+    if index is None:
+      index = self.index
+    if self.ndigits and index is None:
+      index = _getnextindex( self.path, name, ext )
+    if index is not None:
+      name += str(index).rjust( self.ndigits, '0' )
+    name += '.' + ext
+    log.path( name )
+    return os.path.join( self.path, name )
 
   def __enter__( self ):
     'enter with block'
 
+    assert self.name, 'name must be set to use as with-context'
     return self
 
   def __exit__( self, exc_type, exc_value, exc_tb ):
     'exit with block'
 
-    if not exc_type and self.names:
-      for name in self.names:
-        self.save( name )
-      log.path( ', '.join( self.names ) )
+    self.save( self.name, self.index )
+    self.close()
 
-  def save ( self, name ):
-    return
+  def __del__( self ):
+    try:
+      self.close()
+    except Exception as e:
+      log.error( 'failed to close:', e )
+
+  def save( self, name=None, index=None ):
+    pass
+
+  def close( self ):
+    pass
 
 class PyPlot( BasePlot ):
   'matplotlib figure'
 
-  def __init__( self, name, imgtype=None, ndigits=3, index=None, **kwargs ):
+  def __init__( self, name=None, imgtype=None, ndigits=3, index=None, **kwargs ):
     'constructor'
 
-    BasePlot.__init__( self, name, ndigits=ndigits, index=index )
-
     import matplotlib
-
     matplotlib.use( 'Agg', warn=False )
-
     from matplotlib import pyplot
 
-    imgtype = core.getprop( 'imagetype', 'png' ) if imgtype is None else imgtype
-    self.names = [ self.name + '.' + ext for ext in imgtype.split(',') ]
+    BasePlot.__init__( self, name, ndigits=ndigits, index=index )
+    self.imgtype = imgtype or core.getprop( 'imagetype', 'png' )
+    self._fig = pyplot.figure( **kwargs )
+    self._pyplot = pyplot
 
-    self.__dict__.update( pyplot.__dict__ )
+  def __getattr__( self, attr ):
+    return getattr( self._pyplot, attr )
 
-    self._fig = self.figure( **kwargs )
+  def close( self ):
+    'close figure'
 
-  def __exit__( self, *exc_info ):
-    'exit with block'
-
-    BasePlot.__exit__( self, *exc_info )
+    if not self._fig:
+      return # already closed
     try:
-      self.close( self._fig )
+      self._pyplot.close( self._fig )
     except:
       log.warning( 'failed to close figure' )
+    self._fig = None
 
-  def save( self, name ):
+  def save( self, name=None, index=None ):
     'save images'
 
-    self.savefig( os.path.join( self.path, name ) )
+    assert self._fig, 'figure is closed'
+    for ext in self.imgtype.split( ',' ):
+      self.savefig( self.getpath(name,index,ext) )
 
   def mesh( self, points, colors=None, edgecolors='k', edgewidth=None, triangulate='delaunay', setxylim=True, aspect='equal', cmap='jet' ):
     'plot elemtwise mesh'
@@ -397,26 +409,25 @@ class PyPlot( BasePlot ):
   def ytickspacing( self, base ):
     self._tickspacing( self.gca().yaxis, base )
 
-    
 class DataFile( BasePlot ):
   """data file"""
 
-  def __init__( self, name, index=None, ndigits=0, mode='w' ):
+  def __init__( self, name=None, index=None, ext='txt', ndigits=0 ):
     'constructor'
 
     BasePlot.__init__( self, name, ndigits=ndigits, index=index )
+    self.ext = ext
+    self.lines = []
 
-    self.names = [name]
-    self.fout  = open( os.path.join(self.path,name), mode )
-
-  def save( self, name ):
-    self.fout.close()
+  def save( self, name=None, index=None ):
+    with open( self.getpath(name,index,self.ext), 'w' ) as fout:
+      fout.writelines( self.lines )
 
   def printline( self, line ):
-    print(line,file=self.fout)
+    self.lines.append( line+'\n' )
 
   def printlist( self, lst, delim=' ', start='', stop='' ):
-    print(start + delim.join(str(s) for s in lst)  + stop,file=self.fout) 
+    self.lines.append( start + delim.join( str(s) for s in lst ) + stop + '\n' )
 
 class VTKFile( BasePlot ):
   'vtk file'
@@ -432,12 +443,10 @@ class VTKFile( BasePlot ):
     ( numpy.float64, 'double' ),
   )
 
-  def __init__( self, name, index=None, ndigits=0, ascii=False ):
+  def __init__( self, name=None, index=None, ndigits=0, ascii=False ):
     'constructor'
 
     BasePlot.__init__( self, name, ndigits=ndigits, index=index )
-
-    self.names = [self.name+'.vtk']
 
     if ascii is True or ascii == 'ascii':
       self.ascii = True
@@ -464,10 +473,9 @@ class VTKFile( BasePlot ):
         array = array.byteswap()
       array.tofile( output )
 
-  def save( self, name ):
+  def save( self, name=None, index=None ):
     assert self._mesh is not None, 'Grid not specified'
-
-    with open( os.path.join( self.path, name ), 'wb' ) as vtk:
+    with open( self.getpath(name,index,'vtk'), 'wb' ) as vtk:
       if sys.version_info.major == 2:
         write = vtk.write
       else:
@@ -643,5 +651,13 @@ def _nansplit( data ):
 def _nanfilter( data ):
   return data[~numpy.isnan( data.reshape( data.shape[0], -1 ) ).all( axis=1 )]
 
+def _getnextindex( path, name, ext ):
+  index = 0
+  for filename in os.listdir( path ):
+    if filename.startswith(name) and filename.endswith('.'+ext):
+      num = filename[len(name):-len(ext)-1]
+      if num.isdigit():
+        index = max( index, int(num)+1 )
+  return index
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
