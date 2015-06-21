@@ -26,15 +26,18 @@ globalproperties = {
   'dot': False,
   'profile': False,
 }
-try:
-  nutilsrc = os.path.expanduser( '~/.nutilsrc' )
-  exec( open(nutilsrc).read(), {}, globalproperties )
-except IOError:
-  pass # file does not exist
-except:
-  exc_value, frames = sys.exc_info()
-  exc_str = '\n'.join( [ repr(exc_value) ] + [ str(f) for f in frames ] )
-  print( 'Skipping .nutilsrc: {}'.format(exc_str) )
+
+for nutilsrc in ['~/.config/nutils/config', '~/.nutilsrc']:
+  nutilsrc = os.path.expanduser( nutilsrc )
+  if not os.path.isfile( nutilsrc ):
+    continue
+  try:
+    exec( open(nutilsrc).read(), {}, globalproperties )
+  except:
+    exc_value, frames = sys.exc_info()
+    exc_str = '\n'.join( [ repr(exc_value) ] + [ str(f) for f in frames ] )
+    print( 'Skipping .nutilsrc: {}'.format(exc_str) )
+  break
 
 _nodefault = object()
 def getprop( name, default=_nodefault, frame=None ):
