@@ -23,7 +23,7 @@ class BasePlot( object ):
   def __init__ ( self, name=None, ndigits=0, index=None, outdir=None ):
     'constructor'
 
-    self.path = outdir or core.getprop( 'outdir' )
+    self.path = outdir or core.getoutdir()
     self.name = name
     self.index = index
     self.ndigits = ndigits

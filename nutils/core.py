@@ -78,6 +78,12 @@ def getprop( name, default=_nodefault, frame=None ):
     raise NameError( 'property %r is not defined' % name )
   return default
 
+def getoutdir():
+  outdir = getprop( 'outdir' )
+  if not os.path.isdir( outdir ):
+    os.makedirs( outdir )
+  return outdir
+
 def index( items ):
   """Index of the first nonzero item.
 
