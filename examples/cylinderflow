@@ -8,26 +8,28 @@ from nutils import *
 def makeplots( domain, geom, velo, pres, index ):
 
   vort = velo.grad(geom)[1,0] - velo.grad(geom)[0,1]
-  xlim = -2.5, 10
+  xlim = -4, 14
   ylim = -5, 5
   xy, uv = domain.elem_eval( [ geom, velo ], ischeme='uniform1', separate=False )
   points, flow, pres, vort = domain.elem_eval( [ geom, function.norm2(velo), pres, vort ], ischeme='bezier5', separate=True )
 
   with plot.PyPlot( 'flow', index=index ) as plt:
     plt.mesh( points, flow, triangulate='bezier' )
+    plt.colorbar( orientation='horizontal' )
     plt.xlim( xlim )
     plt.ylim( ylim )
-    plt.clim( 0, 1 )
     plt.quiver( xy[:,0], xy[:,1], uv[:,0], uv[:,1] )
 
   with plot.PyPlot( 'pres', index=index ) as plt:
     plt.mesh( points, pres, triangulate='bezier' )
+    plt.colorbar( orientation='horizontal' )
     plt.xlim( xlim )
     plt.ylim( ylim )
     plt.quiver( xy[:,0], xy[:,1], uv[:,0], uv[:,1] )
 
   with plot.PyPlot( 'vort', index=index ) as plt:
     plt.mesh( points, vort, triangulate='bezier' )
+    plt.colorbar( orientation='horizontal' )
     plt.xlim( xlim )
     plt.ylim( ylim )
     plt.quiver( xy[:,0], xy[:,1], uv[:,0], uv[:,1] )
