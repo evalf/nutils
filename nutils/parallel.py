@@ -125,13 +125,13 @@ def fork( func, nice=19 ):
     log.warning( 'fork does not exist on this platform; running %s in serial' % func.__name__ )
     return func
 
+  import thread
   def wrapped( *args, **kwargs ):
     pid = os.fork()
     if pid:
-      # import thread
-      # thread.start_new_thread( waitpid_noerr, (pid,) ) # kill the zombies
-      # # see: http://stackoverflow.com/a/13331632/445031
-      # # this didn't work: http://stackoverflow.com/a/6718735/445031
+      thread.start_new_thread( waitpid_noerr, (pid,) ) # kill the zombies
+      # see: http://stackoverflow.com/a/13331632/445031
+      # this didn't work: http://stackoverflow.com/a/6718735/445031
       return pid
     try:
       os.nice( nice )
