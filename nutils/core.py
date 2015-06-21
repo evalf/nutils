@@ -12,7 +12,33 @@ dependencies on other nutils modules. Primarily for internal use.
 """
 
 from __future__ import print_function, division
-import sys, functools
+import sys, functools, os
+
+globalproperties = {
+  'nprocs': 1,
+  'outrootdir': '~/public_html',
+  'outdir': '.',
+  'verbose': 6,
+  'richoutput': False,
+  'tbexplore': False,
+  'imagetype': 'png',
+  'symlink': False,
+  'recache': False,
+  'dot': False,
+  'profile': False,
+}
+
+for nutilsrc in ['~/.config/nutils/config', '~/.nutilsrc']:
+  nutilsrc = os.path.expanduser( nutilsrc )
+  if not os.path.isfile( nutilsrc ):
+    continue
+  try:
+    exec( open(nutilsrc).read(), {}, globalproperties )
+  except:
+    exc_value, frames = sys.exc_info()
+    exc_str = '\n'.join( [ repr(exc_value) ] + [ str(f) for f in frames ] )
+    print( 'Skipping .nutilsrc: {}'.format(exc_str) )
+  break
 
 _nodefault = object()
 def getprop( name, default=_nodefault, frame=None ):
@@ -46,9 +72,17 @@ def getprop( name, default=_nodefault, frame=None ):
     if key in frame.f_locals:
       return frame.f_locals[key]
     frame = frame.f_back
+  if name in globalproperties:
+    return globalproperties[name]
   if default is _nodefault:
     raise NameError( 'property %r is not defined' % name )
   return default
+
+def getoutdir():
+  outdir = getprop( 'outdir' )
+  if not os.path.isdir( outdir ):
+    os.makedirs( outdir )
+  return outdir
 
 def index( items ):
   """Index of the first nonzero item.

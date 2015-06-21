@@ -20,10 +20,10 @@ import os, warnings, sys
 class BasePlot( object ):
   'base class for plotting objects'
 
-  def __init__ ( self, name=None, ndigits=0, index=None, dumpdir=None ):
+  def __init__ ( self, name=None, ndigits=0, index=None, outdir=None ):
     'constructor'
 
-    self.path = dumpdir or core.getprop( 'dumpdir' )
+    self.path = outdir or core.getoutdir()
     self.name = name
     self.index = index
     self.ndigits = ndigits

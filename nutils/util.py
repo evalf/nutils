@@ -15,7 +15,7 @@ creation and initiation of a log file.
 
 from __future__ import print_function, division
 from . import log, debug, core, version, numeric
-import sys, os, time, numpy, hashlib, weakref, warnings
+import sys, os, time, numpy, hashlib, weakref, warnings, collections, inspect
 
 def isiterable( obj ):
   'check for iterability'
@@ -139,17 +139,17 @@ def profile( func ):
   return retval
 
 def getpath( pattern ):
-  'create file in dumpdir'
+  'create file in outdir'
 
-  dumpdir = core.getprop( 'dumpdir' )
+  outdir = core.getprop( 'outdir', '.' )
   if pattern == pattern.format( 0 ):
-    return dumpdir + pattern
+    return outdir + pattern
   prefix = pattern.split( '{' )[0]
-  names = [ name for name in os.listdir( dumpdir ) if name.startswith(prefix) ]
+  names = [ name for name in os.listdir( outdir ) if name.startswith(prefix) ]
   n = len(names)
   while True:
     n += 1
-    newname = dumpdir + pattern.format( n )
+    newname = outdir + pattern.format( n )
     if not os.path.isfile( newname ):
       return newname
 
@@ -305,12 +305,33 @@ class Locals( object ):
     frame = sys._getframe( 1 )
     self.__dict__.update( frame.f_locals )
 
-def getkwargdefaults( func ):
+def _getkwargdefaults_new( func ):
   'helper for run'
 
-  defaults = func.__defaults__ or []
-  N = func.__code__.co_argcount - len( defaults )
-  return zip( func.__code__.co_varnames[N:], defaults )
+  kwargs = collections.OrderedDict()
+  signature = inspect.signature( func )
+  for parameter in signature.parameters.values():
+    if parameter.kind in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD):
+      continue
+    if parameter.default is parameter.empty:
+      raise ValueError( 'Function cannot be called without arguments.' )
+    kwargs[parameter.name] = parameter.default
+  return kwargs
+
+def _getkwargdefaults_legacy( func ):
+  'helper for run'
+
+  args, varargs, keywords, defaults = inspect.getargspec( func )
+  if defaults is None:
+    defaults = []
+  if len( defaults ) != len( args ):
+    raise ValueError( 'Function cannot be called without arguments.' )
+  return collections.OrderedDict(zip(args, defaults))
+
+if sys.version_info >= (3,3):
+  getkwargdefaults = _getkwargdefaults_new
+else:
+  getkwargdefaults = _getkwargdefaults_legacy
 
 class Statm( object ):
   'memory statistics on systems that support it'
@@ -359,32 +380,13 @@ def run( *functions ):
 
   assert functions
 
-  properties = {
-    'nprocs': 1,
-    'outdir': '~/public_html',
-    'verbose': 6,
-    'richoutput': False,
-    'tbexplore': False,
-    'imagetype': 'png',
-    'symlink': False,
-    'recache': False,
-    'dot': False,
-    'profile': False,
-  }
-  try:
-    nutilsrc = os.path.expanduser( '~/.nutilsrc' )
-    exec( open(nutilsrc).read(), {}, properties )
-  except IOError:
-    pass # file does not exist
-  except:
-    print( 'Skipping .nutilsrc: ' + debug.format_exc() )
-
   if '-h' in sys.argv[1:] or '--help' in sys.argv[1:]:
     print( 'Usage: %s [FUNC] [ARGS]' % sys.argv[0] )
     print( '''
   --help                  Display this help
   --nprocs=%(nprocs)-14s Select number of processors
-  --outdir=%(outdir)-14s Define directory for output
+  --outrootdir=%(outrootdir)-10s Define the root directory for output
+  --outdir=               Define custom directory for output
   --verbose=%(verbose)-13s Set verbosity level, 9=all
   --richoutput=%(richoutput)-10s Use rich output (colors, unicode)
   --tbexplore=%(tbexplore)-11s Start traceback explorer on error
@@ -392,12 +394,12 @@ def run( *functions ):
   --symlink=%(symlink)-13s Create symlink to latest results
   --recache=%(recache)-13s Overwrite existing cache
   --dot=%(dot)-17s Set graphviz executable
-  --profile=%(profile)-13s Show profile summary at exit''' % properties )
+  --profile=%(profile)-13s Show profile summary at exit''' % core.globalproperties )
     for i, func in enumerate( functions ):
       print()
       print( 'Arguments for %s%s' % ( func.__name__, '' if i else ' (default)' ) )
       print()
-      for kwarg, default in getkwargdefaults( func ):
+      for kwarg, default in getkwargdefaults( func ).items():
         print( '  --%s=%s' % ( kwarg, default ) )
     return
 
@@ -414,7 +416,8 @@ def run( *functions ):
     func = functions[0]
     funcname = func.__name__
     argv = sys.argv[1:]
-  kwargs = dict( getkwargdefaults( func ) )
+  kwargs = getkwargdefaults( func )
+  properties = {}
   for arg in argv:
     assert arg.startswith('--'), 'invalid argument %r' % arg
     arg = arg[2:]
@@ -428,51 +431,59 @@ def run( *functions ):
     if arg in kwargs:
       kwargs[ arg ] = val
     else:
-      assert arg in properties, 'invalid argument %r' % arg
+      assert arg in core.globalproperties, 'invalid argument %r' % arg
       properties[arg] = val
 
   locals().update({ '__%s__' % name: value for name, value in properties.items() })
 
   scriptname = os.path.basename(sys.argv[0])
-  outdir = os.path.expanduser( core.getprop( 'outdir' ) ).rstrip( os.sep ) + os.sep
-  basedir = outdir + scriptname + os.sep
+  outrootdir = os.path.expanduser( core.getprop( 'outrootdir' ) ).rstrip( os.sep ) + os.sep
+  basedir = outrootdir + scriptname + os.sep
   localtime = time.localtime()
   timepath = time.strftime( '%Y/%m/%d/%H-%M-%S/', localtime )
+  outdir = properties.get( 'outdir', None )
 
-  dumpdir = basedir + timepath
-  os.makedirs( dumpdir ) # asserts nonexistence
+  if outdir is None:
+    # `outdir` not specified on the commandline, use default directory layout
 
-  if core.getprop( 'symlink' ):
-    for i in range(2): # make two links
-      target = outdir
-      dest = ''
-      if i: # global link
-        target += scriptname + os.sep
-      else: # script-local link
-        dest += scriptname + os.sep
-      target += core.getprop( 'symlink' )
-      dest += timepath
-      if os.path.islink( target ):
-        os.remove( target )
-      os.symlink( dest, target )
+    outdir = basedir + timepath
+    os.makedirs( outdir ) # asserts nonexistence
 
-  logpath = os.path.join( os.path.dirname( log.__file__ ), '_log' ) + os.sep
-  for filename in os.listdir( logpath ):
-    if filename[0] != '.' and ( not os.path.isfile( outdir + filename ) or os.path.getmtime( outdir + filename ) < os.path.getmtime( logpath + filename ) ):
-      print( 'updating', filename )
-      open( outdir + filename, 'w' ).write( open( logpath + filename, 'r' ).read() )
+    if core.getprop( 'symlink' ):
+      for i in range(2): # make two links
+        target = outrootdir
+        dest = ''
+        if i: # global link
+          target += scriptname + os.sep
+        else: # script-local link
+          dest += scriptname + os.sep
+        target += core.getprop( 'symlink' )
+        dest += timepath
+        if os.path.islink( target ):
+          os.remove( target )
+        os.symlink( dest, target )
 
-  redirect = '<html>\n<head>\n<meta http-equiv="cache-control" content="max-age=0" />\n' \
-           + '<meta http-equiv="cache-control" content="no-cache" />\n' \
-           + '<meta http-equiv="expires" content="0" />\n' \
-           + '<meta http-equiv="expires" content="Tue, 01 Jan 1980 1:00:00 GMT" />\n' \
-           + '<meta http-equiv="pragma" content="no-cache" />\n' \
-           + '<meta http-equiv="refresh" content="0;URL=%slog.html" />\n</head>\n</html>\n'
+    logpath = os.path.join( os.path.dirname( log.__file__ ), '_log' ) + os.sep
+    for filename in os.listdir( logpath ):
+      if filename[0] != '.' and ( not os.path.isfile( outrootdir + filename ) or os.path.getmtime( outrootdir + filename ) < os.path.getmtime( logpath + filename ) ):
+        print( 'updating', filename )
+        open( outrootdir + filename, 'w' ).write( open( logpath + filename, 'r' ).read() )
 
-  print( redirect % ( scriptname + '/' + timepath ), file=open( outdir+'log.html', 'w' ) )
-  print( redirect % ( timepath ), file=open( basedir+'log.html', 'w' ) )
+    redirect = '<html>\n<head>\n<meta http-equiv="cache-control" content="max-age=0" />\n' \
+             + '<meta http-equiv="cache-control" content="no-cache" />\n' \
+             + '<meta http-equiv="expires" content="0" />\n' \
+             + '<meta http-equiv="expires" content="Tue, 01 Jan 1980 1:00:00 GMT" />\n' \
+             + '<meta http-equiv="pragma" content="no-cache" />\n' \
+             + '<meta http-equiv="refresh" content="0;URL=%slog.html" />\n</head>\n</html>\n'
 
-  htmlfile = open( dumpdir+'log.html', 'w' )
+    print( redirect % ( scriptname + '/' + timepath ), file=open( outrootdir+'log.html', 'w' ) )
+    print( redirect % ( timepath ), file=open( basedir+'log.html', 'w' ) )
+
+  elif not os.path.isdir( outdir ):
+    # use custom directory layout, skip creating symlinks, redirects
+    os.makedirs( outdir )
+
+  htmlfile = open( os.path.join( outdir, 'log.html' ), 'w' )
   htmlfile.write( '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "DTD/xhtml1-strict.dtd">\n' )
   htmlfile.write( '<html><head>\n' )
   htmlfile.write( '<title>%s %s</title>\n' % ( scriptname, time.strftime( '%Y/%m/%d %H:%M:%S', localtime ) ) )
@@ -486,7 +497,7 @@ def run( *functions ):
   try:
 
     __log__ = log.Log( log.TeeStreamFactory( log.HtmlStreamFactory(htmlfile), log.StdoutStreamFactory() ) )
-    __dumpdir__ = dumpdir
+    __outdir__ = outdir
     __cachedir__ = basedir + 'cache'
 
     try:
