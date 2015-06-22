@@ -368,8 +368,4 @@ def solve( A, *B ):
     X, = X
   return X
 
-zero = Rational( 0 )
-unit = Rational( 1 )
-half = Rational( 1, 2 )
-
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

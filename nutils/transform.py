@@ -99,7 +99,7 @@ class TransformChain( tuple ):
 
   @property
   def linear( self ):
-    linear = rational.unit
+    linear = rational.Rational(1)
     for trans in self:
       linear = rational.dot( linear, trans.linear ) if linear.ndim and trans.linear.ndim \
           else linear * trans.linear
@@ -107,7 +107,7 @@ class TransformChain( tuple ):
 
   @property
   def invlinear( self ):
-    invlinear = rational.unit
+    invlinear = rational.Rational(1)
     for trans in self:
       invlinear = rational.dot( trans.invlinear, invlinear ) if invlinear.ndim and trans.linear.ndim \
              else trans.invlinear * invlinear
@@ -200,7 +200,7 @@ class CanonicalTransformChain( TransformChain ):
       B = CanonicalTransformChain( (uptrans,) + self[i:] )
     return A.promote(ndims) << B
 
-mayswap = lambda trans1, trans2: isinstance( trans1, Scale ) and trans1.linear == rational.half and trans2.todims == trans2.fromdims + 1 and trans2.fromdims > 0
+mayswap = lambda trans1, trans2: isinstance( trans1, Scale ) and trans1.linear == rational.Rational(1,2) and trans2.todims == trans2.fromdims + 1 and trans2.fromdims > 0
 
 
 ## TRANSFORM ITEMS
@@ -222,7 +222,7 @@ class TransformItem( cache.Immutable ):
 class Shift( TransformItem ):
 
   def __init__( self, offset ):
-    self.linear = self.invlinear = self.det = rational.unit
+    self.linear = self.invlinear = self.det = rational.Rational(1)
     self.offset = offset
     self.isflipped = False
     assert offset.ndim == 1

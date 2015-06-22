@@ -21,14 +21,15 @@ import os
 
 sys.path.insert(0, os.path.abspath('..'))
 
-class Mock(object):
-  @staticmethod
-  def __getattr__(name):
-    return object
+class Fake(object):
+  def __init__( self, **attrs ):
+    self.__dict__.update( attrs )
+  def __getattr__( self, attr ):
+    return None
 
-for mod_name in ( 'numpy', 'scipy', 'scipy.sparse', 'scipy.sparse.linalg',
-    'scipy.sparse.linalg.isolve', 'matplotlib' ):
-  sys.modules[mod_name] = Mock()
+sys.modules[ 'numpy' ] = Fake( __version__='1.8', dtype=lambda o: None, ndarray=Fake )
+sys.modules[ 'scipy' ] = Fake()
+sys.modules[ 'matplotlib' ] = Fake()
 
 # -- General configuration ------------------------------------------------
 
