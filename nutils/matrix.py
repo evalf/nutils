@@ -117,16 +117,16 @@ class ScipyMatrix( Matrix ):
         _tmp[_J] = v
         return _dot(_tmp)[_I]
 
+    if tol == 0:
+      _A = self.toarray()[ numpy.ix_(I,J) ]
+      x[J] = numpy.linalg.solve( _A, _b )
+      return x
+
     if x0 is not None:
       res0 = numpy.linalg.norm(_b-matvec(_x0)) / numpy.linalg.norm(_b)
       log.info( 'residual:', res0 )
       if res0 < tol:
         return (x0,solverinfo) if info else x0
-
-    if tol == 0:
-      _A = self.toarray()[ numpy.ix_(I,J) ]
-      x[J] = numpy.linalg.solve( _A, _b )
-      return x
 
     if isinstance( precon, str ):
       precon = self.getprecon( precon, constrain, lconstrain, rconstrain )
