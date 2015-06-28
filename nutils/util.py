@@ -403,24 +403,17 @@ def run( *functions ):
         print( '  --%s=%s' % ( kwarg, default ) )
     return
 
-  if sys.argv[1:] and not sys.argv[1].startswith( '-' ):
-    argv = sys.argv[2:]
-    funcname = sys.argv[1]
-    for func in functions:
-      if func.__name__ == funcname:
-        break
-    else:
-      print( 'error: invalid function name: %s' % funcname )
-      return
-  else:
-    func = functions[0]
-    funcname = func.__name__
-    argv = sys.argv[1:]
+  func = functions[0]
+  argv = sys.argv[1:]
+  funcbyname = { func.__name__: func for func in functions }
+  if argv and argv[0] in funcbyname:
+    func = funcbyname[argv[0]]
+    argv = argv[1:]
+
   kwargs = getkwargdefaults( func )
   properties = {}
   for arg in argv:
-    assert arg.startswith('--'), 'invalid argument %r' % arg
-    arg = arg[2:]
+    arg = arg.lstrip('-')
     try:
       arg, val = arg.split( '=', 1 )
       val = eval( val, sys._getframe(1).f_globals )
@@ -512,7 +505,7 @@ def run( *functions ):
       gitversion = version
     log.info( 'nutils v%s\n' % gitversion )
 
-    commandline = [ ' '.join([ scriptname, funcname ]) ] + [ '  --%s=%s' % item for item in kwargs.items() ]
+    commandline = [ ' '.join([ scriptname, func.__name__ ]) ] + [ '  --%s=%s' % item for item in kwargs.items() ]
     log.info( ' \\\n'.join( commandline ) + '\n' )
     log.info( 'start %s\n' % time.ctime() )
 
