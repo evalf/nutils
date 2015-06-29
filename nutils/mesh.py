@@ -65,7 +65,7 @@ def rectilinear( richshape, periodic=(), name='rect', revolved=False ):
   else:
     funcsp = topo.splinefunc( degree=1, periodic=() )
     coords = numeric.meshgrid( *richshape ).reshape( ndims, -1 )
-    geom = ( funcsp * coords ).sum()
+    geom = ( funcsp * coords ).sum( -1 )
 
   if revolved:
     topo = topology.RevolvedTopology(topo)
