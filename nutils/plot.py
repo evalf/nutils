@@ -13,7 +13,7 @@ backends. At this point `matplotlib <http://matplotlib.org/>`_ and `vtk
 """
 
 from __future__ import print_function, division
-from . import numpy, log, core, _
+from . import numpy, log, core, cache, _
 import os, warnings, sys
 
 
@@ -81,7 +81,8 @@ class PyPlot( BasePlot ):
     self._pyplot = pyplot
 
   def __getattr__( self, attr ):
-    return getattr( self._pyplot, attr )
+    pyplot = self.__dict__['_pyplot'] # avoid recursion
+    return getattr( pyplot, attr )
 
   def close( self ):
     'close figure'
@@ -90,8 +91,8 @@ class PyPlot( BasePlot ):
       return # already closed
     try:
       self._pyplot.close( self._fig )
-    except:
-      log.warning( 'failed to close figure' )
+    except Exception as e:
+      log.warning( 'failed to close figure: {}'.format(e) )
     self._fig = None
 
   def save( self, name=None, index=None ):
@@ -101,118 +102,73 @@ class PyPlot( BasePlot ):
     for ext in self.imgtype.split( ',' ):
       self.savefig( self.getpath(name,index,ext) )
 
-  def mesh( self, points, colors=None, edgecolors='k', edgewidth=None, triangulate='delaunay', setxylim=True, aspect='equal', cmap='jet' ):
+  def mesh( self, points, values=None, edgecolors='k', edgewidth=None, triangulate='delaunay', setxylim=True, aspect='equal', cmap='jet' ):
     'plot elemtwise mesh'
 
-    assert isinstance( points, numpy.ndarray ) and points.dtype == float
-    if colors is not None:
-      assert isinstance( colors, numpy.ndarray ) and colors.dtype == float
-      assert points.shape[:-1] == colors.shape
+    if values is not None:
+      assert len(values) == len(points)
 
-    import matplotlib.tri
-
-    if points.ndim == 3: # gridded data: nxpoints x nypoints x ndims
+    if isinstance( points, numpy.ndarray ): # bulk data
 
       assert points.shape[-1] == 2
-      assert colors is not None
-      data = colors.ravel()
-      xy = points.reshape( -1, 2 ).T
-      ind = numpy.arange( xy.shape[1] ).reshape( points.shape[:-1] )
-      vert1 = numpy.array([ ind[:-1,:-1].ravel(), ind[1:,:-1].ravel(), ind[:-1,1:].ravel() ]).T
-      vert2 = numpy.array([ ind[1:,1:].ravel(), ind[1:,:-1].ravel(), ind[:-1,1:].ravel() ]).T
-      triangles = numpy.concatenate( [vert1,vert2], axis=0 )
-      edges = None
-
-    elif points.ndim == 2: # mesh: npoints x ndims
-
-      ndims = points.shape[1]
-      if ndims == 1:
-        self.plot( points[:,0], colors )
-        return
+      if points.ndim == 2: # npoints x 2
+        triangulation, hull = _triangulate_delaunay( points )
+      elif points.ndim == 3: # nxpoints x nypoints x 2
+        triangulation, hull = _triangulate_quad( points.shape[0], points.shape[1] )
+        points = points.reshape( -1, 2 )
       else:
-        assert ndims == 2, 'unsupported: ndims=%s' % ndims
+        raise Exception( 'invalid array shape: {}'.format(triangulate) )
+      edges = points[hull],
+      if values is not None:
+        values = values.ravel()
+        assert len(values) == len(points)
 
-      nans = numpy.isnan( points ).all( axis=1 )
-      split, = numpy.where( nans )
-      if colors is not None:
-        assert numpy.isnan( colors[split] ).all()
-  
-      all_epoints = []
-      all_vertices = []
-      all_colors = []
+    elif points[0].shape[1] == 1: # line plot
+
+      edges = []
+      for epoints, evalues in zip( points, values ):
+        assert evalues.ndim == 1 and epoints.shape == evalues.shape + (1,)
+        edges.append( numpy.array([ epoints[:,0], evalues ]).T )
+      values = None
+      aspect = None
+
+    else: # mesh data
+
+      fcache = cache.CallDict()
+      triangulation = []
       edges = []
       npoints = 0
-  
-      for a, b in zip( numpy.concatenate([[0],split+1]), numpy.concatenate([split,[nans.size]]) ):
-        np = b - a
+      for epoints in points:
+        np = len(epoints)
+        assert epoints.shape == (np,2)
         if np == 0:
           continue
-        epoints = points[a:b]
-        if colors is not None:
-          ecolors = colors[a:b]
         if triangulate == 'delaunay':
-          import scipy.spatial
-          tri = scipy.spatial.Delaunay( epoints )
-          vertices = tri.vertices
-          connectivity = {}
-          for e0, e1 in tri.convex_hull: # build inverted data structure for fast lookups
-            connectivity.setdefault( e0, [] ).append( e1 )
-            connectivity.setdefault( e1, [] ).append( e0 )
-          p = tri.convex_hull[0,0] # first point (arbitrary)
-          q = connectivity.pop(p)[0] # second point (arbitrary orientation)
-          hull = [ p ]
-          while connectivity:
-            hull.append( q )
-            q, r = connectivity.pop( hull[-1] )
-            if q == hull[-2]:
-              q = r
-          assert q == p
-          hull.append( q )
+          vertices, hull = _triangulate_delaunay( epoints )
         elif triangulate == 'bezier':
-          nquad = int( numpy.sqrt(np) + .5 )
-          ntri = int( numpy.sqrt((2*np)+.25) )
-          if nquad**2 == np:
-            ind = numpy.arange(np).reshape(nquad,nquad)
-            vert1 = numpy.array([ ind[:-1,:-1].ravel(), ind[1:,:-1].ravel(), ind[:-1,1:].ravel() ]).T
-            vert2 = numpy.array([ ind[1:,1:].ravel(), ind[1:,:-1].ravel(), ind[:-1,1:].ravel() ]).T
-            vertices = numpy.concatenate( [vert1,vert2], axis=0 )
-            hull = numpy.concatenate([ ind[:,0], ind[-1,1:], ind[-2::-1,-1], ind[0,-2::-1] ])
-          elif ntri * (ntri+1) == 2 * np:
-            vert1 = [ ((2*ntri-i+1)*i)//2+numpy.array([j,j+1,j+ntri-i]) for i in range(ntri-1) for j in range(ntri-i-1) ]
-            vert2 = [ ((2*ntri-i+1)*i)//2+numpy.array([j+1,j+ntri-i+1,j+ntri-i]) for i in range(ntri-1) for j in range(ntri-i-2) ]
-            vertices = numpy.concatenate( [vert1,vert2], axis=0 )
-            hull = numpy.concatenate([ numpy.arange(ntri), numpy.arange(ntri-1,0,-1).cumsum()+ntri-1, numpy.arange(ntri+1,2,-1).cumsum()[::-1]-ntri-1 ])
-          else:
-            raise Exception( 'cannot match points to a bezier scheme' )
+          vertices, hull = fcache( _triangulate_bezier, np )
         else:
           raise Exception( 'unknown triangulation method %r' % triangulate )
-        all_epoints.append( epoints.T )
-        all_vertices.append( vertices + npoints )
-        if colors is not None:
-          all_colors.append( ecolors )
+        triangulation.append( vertices + npoints )
         edges.append( epoints[hull] )
         npoints += np
-  
-      xy = numpy.concatenate( all_epoints, axis=1 )
-      triangles = numpy.concatenate( all_vertices, axis=0 )
-      if colors is not None:
-        data = numpy.concatenate( all_colors )
+      points = numpy.concatenate( points, axis=0 )
+      triangulation = numpy.concatenate( triangulation, axis=0 )
+      if values is not None:
+        values = numpy.concatenate( values, axis=0 )
+        assert values.shape == (npoints,)
 
-    else:
-
-      raise Exception( 'invalid points shape %r' % ( points.shape, ) )
-
-    if colors is not None:
-      finite = numpy.isfinite(data)
+    if values is not None:
+      finite = numpy.isfinite(values)
       if not finite.all():
-        data = data[finite]
-        xy = xy[:,finite]
-        triangles = (finite.cumsum()-1)[ triangles[finite[triangles].all(axis=1)] ]
-      trimesh = self.tripcolor( xy[0], xy[1], triangles, data, shading='gouraud', rasterized=True, cmap=cmap )
+        values = values[finite]
+        points = points[finite]
+        triangulation = (finite.cumsum()-1)[ triangulation[finite[triangulation].all(axis=1)] ]
+      trimesh = self.tripcolor( points[:,0], points[:,1], triangulation, values, shading='gouraud', rasterized=True, cmap=cmap )
 
-    if edges and edgecolors != 'none':
+    if edgecolors != 'none':
       if edgewidth is None:
-        edgewidth = .1 if colors is not None else .5
+        edgewidth = .1 if values is not None else .5
       from matplotlib.collections import LineCollection
       linecol = LineCollection( edges, linewidths=(edgewidth,) )
       linecol.set_color( edgecolors )
@@ -224,7 +180,7 @@ class PyPlot( BasePlot ):
     if setxylim:
       self.autoscale( enable=True, axis='both', tight=True )
     
-    return linecol if colors is None \
+    return linecol if values is None \
       else trimesh if edgecolors == 'none' \
       else (trimesh, linecol)
 
@@ -232,8 +188,6 @@ class PyPlot( BasePlot ):
     'add polycollection'
   
     from matplotlib import collections
-    assert verts.ndim == 2 and verts.shape[1] == 2
-    verts = _nansplit( verts )
     if facecolors != 'none':
       assert isinstance(facecolors,numpy.ndarray) and facecolors.shape == (len(verts),)
       array = facecolors
@@ -541,10 +495,9 @@ class VTKFile( BasePlot ):
       coords.append( numpy.array( [0], dtype=numpy.int32 ) )
     self._mesh = 'rectilinear', ndims, npoints, ncells, coords
 
-  def unstructuredgrid( self, points, npars=None ):
+  def unstructuredgrid( self, cellpoints, npars=None ):
     """set unstructured grid"""
 
-    cellpoints = _nansplit( points )
     npoints = sum( map( len, cellpoints ) )
     ncells = len( cellpoints )
 
@@ -594,19 +547,23 @@ class VTKFile( BasePlot ):
   def _adddataarray( self, name, data, location, vector ):
     assert self._mesh is not None, 'Grid not specified'
     ndims, npoints, ncells = self._mesh[1:4]
-    ncomponents = data.shape[1] if len( data.shape ) == 2 else 1
-    if vector is None:
-      vector = len( data.shape ) == 2
+
+    assert len(data) == ncells, 'data mismatch: expected length {}, got {}'.format( len(data), ncells )
 
     if location == 'points':
-      if npoints != data.shape[0]:
-        data = _nanfilter( data )
+      data = numpy.concatenate( data, axis=0 )
       assert npoints == data.shape[0], 'Point data array should have {} entries'.format(npoints)
-    elif location == 'cells':
-      assert ncells == data.shape[0], 'Cell data array should have {} entries'.format(ncells)
-    assert len( data.shape ) <= 2, 'Data array should have at most 2 axes: {} and components (optional)'.format(location)
+    elif location != 'cells':
+      raise Exception( 'invalid location: {}'.format( location ) )
+
+    assert data.ndim <= 2, 'data array should have at most 2 axes: {} and components (optional)'.format(location)
+
+    ncomponents = data.shape[1] if data.ndim == 2 else 1
+    if vector is None:
+      vector = data.ndim == 2
+
     if vector:
-      assert ncomponents == ndims, 'Data array should have {} components per entry'.format(ndims)
+      assert ncomponents == ndims, 'data array should have {} components per entry'.format(ndims)
       if ndims != 3:
         data = numpy.concatenate( [data, numpy.zeros( [data.shape[0], 3-ndims], dtype=data.dtype ) ], axis=1 )
       ncomponents = 3
@@ -643,14 +600,6 @@ def writevtu( name, topo, coords, pointdata={}, celldata={}, ascii=False, supere
       for key, array in zip( keys, arrays ):
         vtkfile.celldataarray( key, array )
 
-def _nansplit( data ):
-  n, = numpy.where( numpy.isnan( data.reshape( data.shape[0], -1 ) ).any( axis=1 ) )
-  N = numpy.concatenate( [ [-1], n, [data.shape[0]] ] )
-  return [ data[a:b] for a, b in zip( N[:-1]+1, N[1:] ) ]
-
-def _nanfilter( data ):
-  return data[~numpy.isnan( data.reshape( data.shape[0], -1 ) ).all( axis=1 )]
-
 def _getnextindex( path, name, ext ):
   index = 0
   for filename in os.listdir( path ):
@@ -659,5 +608,52 @@ def _getnextindex( path, name, ext ):
       if num.isdigit():
         index = max( index, int(num)+1 )
   return index
+
+def _triangulate_quad( n, m ):
+  ind = numpy.arange( n*m ).reshape( n, m )
+  vert1 = numpy.array([ ind[:-1,:-1].ravel(), ind[1:,:-1].ravel(), ind[:-1,1:].ravel() ]).T
+  vert2 = numpy.array([ ind[1:,1:].ravel(), ind[1:,:-1].ravel(), ind[:-1,1:].ravel() ]).T
+  vertices = numpy.concatenate( [vert1,vert2], axis=0 )
+  hull = numpy.concatenate([ ind[:,0], ind[-1,1:], ind[-2::-1,-1], ind[0,-2::-1] ])
+  return vertices, hull
+
+def _triangulate_tri( n ):
+  vert1 = [ ((2*n-i+1)*i)//2+numpy.array([j,j+1,j+n-i]) for i in range(n-1) for j in range(n-i-1) ]
+  vert2 = [ ((2*n-i+1)*i)//2+numpy.array([j+1,j+n-i+1,j+n-i]) for i in range(n-1) for j in range(n-i-2) ]
+  vertices = numpy.concatenate( [vert1,vert2], axis=0 )
+  hull = numpy.concatenate([ numpy.arange(n), numpy.arange(n-1,0,-1).cumsum()+n-1, numpy.arange(n+1,2,-1).cumsum()[::-1]-n-1 ])
+  return vertices, hull
+
+def _triangulate_bezier( np ):
+  nquad = int( numpy.sqrt(np) + .5 )
+  if nquad**2 == np:
+    return _triangulate_quad( nquad, nquad )
+  ntri = int( numpy.sqrt((2*np)+.25) )
+  if ntri * (ntri+1) == 2 * np:
+    return _triangulate_tri( ntri )
+  raise Exception( 'cannot match points to a bezier scheme' )
+
+def _mkloop( edges ):
+  connectivity = {}
+  for e0, e1 in edges: # build inverted data structure for fast lookups
+    connectivity.setdefault( e0, [] ).append( e1 )
+    connectivity.setdefault( e1, [] ).append( e0 )
+  p = edges[0,0] # first point (arbitrary)
+  q = connectivity.pop(p)[0] # second point (arbitrary orientation)
+  hull = [ p ]
+  while connectivity:
+    hull.append( q )
+    q, r = connectivity.pop( hull[-1] )
+    if q == hull[-2]:
+      q = r
+  assert q == p
+  hull.append( q )
+  return hull
+
+def _triangulate_delaunay( points ):
+  import scipy.spatial
+  tri = scipy.spatial.Delaunay( points )
+  return tri.vertices, _mkloop( tri.convex_hull )
+
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

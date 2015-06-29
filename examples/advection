@@ -6,7 +6,7 @@ from nutils import *
 def makeplots( domain, geom, u ):
   xp, up = domain.elem_eval( [ geom, u ], ischeme='bezier9', separate=True )
   with plot.PyPlot( 'solution', ndigits=4 ) as plt:
-    plt.mesh( xp, up, edgewidth=0.1, edgecolor='white' )
+    plt.mesh( xp, up )
     if domain.ndims == 2:
       plt.gca().set_aspect( 'equal' )
       plt.clim(0,1)

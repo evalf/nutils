@@ -8,12 +8,53 @@ the most prominent user-facing changes.
 
 Changed: linear solver arguments
 
-  The initial vector `x0` has been renamed to `lhs0` for consistency
-  with the (unchanged) `rhs` argument. A tol=0 value still defaults to a
-  direct solver if no `solver` was specified explicitly, but has been
-  changed to a faster sparse direct solver. A nonzero `info` value
+  The initial vector 'x0' has been renamed to 'lhs0' for consistency
+  with the (unchanged) 'rhs' argument. A tol=0 value still defaults to a
+  direct solver if no 'solver' was specified explicitly, but it has been
+  changed to a faster sparse direct solver. A nonzero 'info' value
   causes solve to return a (lhs,info) tuple, with info containing all
   the .res residuals and a .niter iteration count.
+
+
+Changed: Topology.elem_eval returns a list if separate=True
+
+  Data returned by elem_eval used to contain nan-values as separation
+  markers if separate=True. In the new implementation the data is
+  split into a list of arrays, matching the number and ordering of the
+  elements in the topology. The functions in the plot module have been
+  updated to support (and demand) the new data type.
+
+
+Changed: properties dumpdir, outdir, outrootdir
+
+  Two global properties have been renamed as follows:
+  - dumpdir -> outdir
+  - outdir -> outrootdir
+
+  The outrootdir defaults to ~/public_html and can be redefined from the
+  command line or in the .nutilsrc configuration file. The outdir
+  defaults to the current directory and is redefined by util.run,
+  nesting the name/date/time subdirectory sequence under outrootdir.
+  For manual acces, the new convenience function `core.getoutdir`
+  handles directory creation and returns the path.
+
+
+Changed: sum axes argument
+
+  The behaviour of function.sum and ArrayFunc.sum is inconsistent with
+  that of the numpy counterparts. In case no axes argument is specified,
+  numpy sums over all axes, whereas nutils sums over the last axis. To
+  undo this mistake and transition to numpy's behaviour, calling sum
+  without an axes argument is deprecated and will be forbidden in nutils
+  3.0. In nutils 4.0 it will be reintroduced with the corrected meaning.
+
+  Old syntax:
+  >> A.sum()
+  >> function.sum( A )
+
+  New syntax:
+  >> A.sum( -1 )
+  >> function.sum( A, -1 )
 
 
 Changed: strict dimension equality in function.outer
