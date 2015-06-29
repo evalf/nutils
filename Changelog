@@ -35,7 +35,7 @@ Changed: properties dumpdir, outdir, outrootdir
   command line or in the .nutilsrc configuration file. The outdir
   defaults to the current directory and is redefined by util.run,
   nesting the name/date/time subdirectory sequence under outrootdir.
-  For manual acces, the new convenience function `core.getoutdir`
+  For manual access, the new convenience function `core.getoutdir`
   handles directory creation and returns the path.
 
 
