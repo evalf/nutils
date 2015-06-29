@@ -50,8 +50,12 @@ class BasePlot( object ):
   def __exit__( self, exc_type, exc_value, exc_tb ):
     'exit with block'
 
-    self.save( self.name, self.index )
-    self.close()
+    if not exc_type:
+      self.save( self.name, self.index )
+    try:
+      self.close()
+    except Exception as e:
+      log.error( 'failed to close:', e )
 
   def __del__( self ):
     try:
@@ -498,40 +502,29 @@ class VTKFile( BasePlot ):
   def unstructuredgrid( self, cellpoints, npars=None ):
     """set unstructured grid"""
 
-    npoints = sum( map( len, cellpoints ) )
-    ncells = len( cellpoints )
+    points = numpy.concatenate( cellpoints, axis=0 )
+    npoints, ndims = points.shape
 
-    points = numpy.zeros( [npoints, 3], dtype=points.dtype )
-    cells = numpy.empty( [npoints+ncells], dtype=numpy.int32 )
-    celltypes = numpy.empty( [ncells], dtype=numpy.int32 )
+    if ndims == 2:
+      points = numpy.concatenate( [ points, numpy.zeros_like(points[:,:1]) ], axis=1 )
+    assert points.shape[1] == 3
+
+    if npars is None:
+      npars = ndims
+    assert npars in (2,3)
+
+    celltypemap = { 2: 3, 3: 5, 4: 9 if npars == 2 else 10, 8: 11 }
+
+    ncells = len( cellpoints )
+    cells = numpy.empty( npoints+ncells, dtype=numpy.int32 )
+    celltypes = numpy.empty( ncells, dtype=numpy.int32 )
 
     j = 0
     for i, pts in enumerate( cellpoints ):
-
-      np, ndims = pts.shape
-      if not npars:
-        npars = ndims
-
-      if np == 2:
-        celltype = 3
-      elif np == 3:
-        celltype = 5
-      elif np == 4:
-        if npars == 2:
-          celltype = 9
-        elif npars == 3:
-          celltype = 10
-      elif np == 8:
-        celltype = 11 # TODO hexahedron for not rectilinear NOTE ordering changes!
-
-      if not celltype:
-        raise Exception( 'not sure what to do with cells with ndims={} and npoints={}'.format(ndims,np) )
-
-      celltypes[i] = celltype
+      np = len(pts)
+      celltypes[i] = celltypemap[np]
       cells[i+j] = np
-      for k, p in enumerate( pts ):
-        cells[i+j+k+1] = j+k
-        points[j+k,:ndims] = p
+      cells[i+j+1:i+j+1+np] = j + numpy.arange(np)
       j += np
 
     self._mesh = 'unstructured', ndims, npoints, ncells, points.ravel(), cells, celltypes
