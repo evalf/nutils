@@ -5,9 +5,9 @@ from nutils import *
 
 def makeplots( domain, geom, u ):
   if domain.ndims == 1:
-    xp, up = domain.elem_eval( [ geom, u ], ischeme='bezier9', separate=True )
+    xp, up = domain.elem_eval( [ geom, u[0] ], ischeme='bezier9', separate=True )
     with plot.PyPlot( 'solution' ) as plt:
-      plt.plot( xp[:,0], up[:,0] )
+      plt.mesh( xp, up )
       plt.ylim( -.1, 1.1 )
   elif domain.ndims == 2:
     X, C = domain.elem_eval( [ geom, function.norm2(u) ], ischeme='bezier3', separate=True )

@@ -269,25 +269,16 @@ class Topology( object ):
       slices = []
       pointshape = function.PointShape()
       npoints = 0
-      separators = []
       for elem in log.iter( 'elem', self ):
         np, = pointshape.eval( elem, ischeme )
         slices.append( slice(npoints,npoints+np) )
         npoints += np
-        if separate:
-          separators.append( npoints )
-          npoints += 1
-      if separate:
-        separators = numpy.array( separators[:-1], dtype=int )
-        npoints -= 1
 
     retvals = []
     idata = []
     for ifunc, func in enumerate( funcs ):
       func = function.asarray( func ) * iwscale
       retval = parallel.shzeros( (npoints,)+func.shape, dtype=func.dtype )
-      if separate:
-        retval[separators] = numpy.nan
       if function._isfunc( func ):
         for ind, f in function.blocks( func ):
           idata.append( function.Tuple([ ifunc, ind, f ]) )
@@ -305,6 +296,10 @@ class Topology( object ):
 
     log.debug( 'cache', fcache.summary() )
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join( str(n) for n in retval.shape ) ) for retval in retvals ) )
+
+    if separate:
+      retvals = [ [ retval[s] for s in slices ] for retval in retvals ]
+
     return retvals
 
   @log.title
@@ -457,7 +452,7 @@ class Topology( object ):
         bfun = onto * fun
       elif len( onto.shape ) == 2:
         Afun = function.outer( onto ).sum( 2 )
-        bfun = function.sum( onto * fun )
+        bfun = function.sum( onto * fun, -1 )
         if fun2.ndim:
           fun2 = fun2.sum(-1)
       else:
@@ -482,7 +477,7 @@ class Topology( object ):
         ufun = onto * fun
         afun = onto
       elif len( onto.shape ) == 2:
-        ufun = function.sum( onto * fun )
+        ufun = function.sum( onto * fun, axis=-1 )
         afun = function.norm2( onto )
       else:
         raise Exception

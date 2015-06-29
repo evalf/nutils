@@ -6,6 +6,15 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+Changed: Topology.elem_eval returns a list if separate=True
+
+  Data returned by elem_eval used to contain nan-values as separation
+  markers if separate=True. In the new implementation the data is
+  split into a list of arrays, matching the number and ordering of the
+  elements in the topology. The functions in the plot module have been
+  updated to support (and demand) the new data type.
+
+
 Changed: properties dumpdir, outdir, outrootdir
 
   Two global properties have been renamed as follows:
