@@ -101,52 +101,48 @@ class ScipyMatrix( Matrix ):
     return supp
 
   @log.title
-  def solve( self, b=None, constrain=None, lconstrain=None, rconstrain=None, tol=0, x0=None, solver=None, symmetric=False, title='solving system', callback=None, precon=None, info=False, **solverargs ):
+  def solve( self, rhs=None, constrain=None, lconstrain=None, rconstrain=None, tol=0, lhs0=None, solver=None, symmetric=False, title='solving system', callback=None, precon=None, info=False, **solverargs ):
     'solve'
 
     solverinfo = SolverInfo( tol, callback=callback )
 
-    x, I, J = parsecons( constrain, lconstrain, rconstrain, self.shape )
-    _b = ( ( b if b is not None else 0 ) - self.matvec(x) )[I]
-    _x0 = x0[J] if x0 is not None else numpy.zeros( J.sum() )
+    lhs, I, J = parsecons( constrain, lconstrain, rconstrain, self.shape )
+    A = self.core
+    if not I.all():
+      A = A[I,:]
+    b = ( rhs[I] if rhs is not None else 0 ) - A * lhs
+    if not J.all():
+      A = A[:,J]
 
-    if I.all() and J.all():
-      matvec = self.core.dot
+    if lhs0 is None:
+      x0 = None
     else:
-      def matvec( v, _tmp=numpy.zeros(self.shape[1]), _dot=self.core.dot, _I=I, _J=J ):
-        _tmp[_J] = v
-        return _dot(_tmp)[_I]
-
-    if tol == 0:
-      _A = self.toarray()[ numpy.ix_(I,J) ]
-      x[J] = numpy.linalg.solve( _A, _b )
-      return x
-
-    if x0 is not None:
-      res0 = numpy.linalg.norm(_b-matvec(_x0)) / numpy.linalg.norm(_b)
+      x0 = lhs0[J]
+      res0 = numpy.linalg.norm(b-A*x0) / numpy.linalg.norm(b)
       log.info( 'residual:', res0 )
       if res0 < tol:
-        return (x0,solverinfo) if info else x0
+        return (lhs0,solverinfo) if info else lhs0
 
-    if isinstance( precon, str ):
-      precon = self.getprecon( precon, constrain, lconstrain, rconstrain )
-
-    if symmetric:
-      assert solver is None
-      solver = 'cg'
-    elif solver is None:
-      solver = 'gmres'
+    if not solver:
+      solver = 'spsolve' if tol == 0 else 'cg' if symmetric else 'gmres'
 
     import scipy.sparse.linalg
     solverfun = getattr( scipy.sparse.linalg, solver )
-    mycallback = solverinfo if solver != 'cg' else lambda x: solverinfo( numpy.linalg.norm(_b-matvec(x)) / numpy.linalg.norm(_b) )
+    solverinfo_x = lambda x: solverinfo( numpy.linalg.norm(b-A*x) / numpy.linalg.norm(b) )
+    if solver == 'spsolve':
+      log.info( 'solving system using sparse direct solver' )
+      x = solverfun( A, b, **solverargs )
+      solverinfo_x( x )
+    else:
+      if isinstance( precon, str ):
+        precon = self.getprecon( precon, constrain, lconstrain, rconstrain )
+      mycallback = solverinfo if solver != 'cg' else solverinfo_x
+      x, status = solverfun( A, b, M=precon, tol=tol, x0=x0, callback=mycallback, **solverargs )
+      assert status == 0, '%s solver failed with status %d' % (solver, status)
+      log.info( '%s solver converged in %d iterations' % (solver.upper(), solverinfo.niter) )
+    lhs[J] = x
 
-    _A = scipy.sparse.linalg.LinearOperator( _b.shape*2, matvec, dtype=float )
-    x[J], status = solverfun( _A, _b, M=precon, tol=tol, x0=_x0, callback=mycallback, **solverargs )
-    assert status == 0, '%s solver failed with status %d' % (solver, status)
-    log.info( '%s solver converged in %d iterations' % (solver.upper(), solverinfo.niter) )
-
-    return (x,solverinfo) if info else x
+    return (lhs,solverinfo) if info else lhs
 
   def getprecon( self, name='SPLU', constrain=None, lconstrain=None, rconstrain=None ):
 

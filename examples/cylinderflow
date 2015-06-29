@@ -83,7 +83,7 @@ def main( nelems=24, viscosity=1e-3, density=1, tol=1e-8, rotation=0, timestep=.
     makeplots( domain, geom, vbasis.dot(lhs), pbasis.dot(lhs), iiter )
     convection = density * ( vbasis.grad(geom) * vbasis.dot(lhs) ).sum(-1)
     matrix = stokesmat + domain.integrate( function.outer( vbasis, convection ).sum(-1), ischeme='gauss9', geometry=geom )
-    lhs = matrix.solve( rhs + inertmat.matvec(lhs), x0=lhs, constrain=cons, tol=tol, restart=9999, precon='spilu' )
+    lhs = matrix.solve( rhs + inertmat.matvec(lhs), lhs0=lhs, constrain=cons, tol=tol, restart=9999, precon='spilu' )
   
 
 def unittest():

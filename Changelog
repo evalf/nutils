@@ -6,6 +6,16 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+Changed: linear solver arguments
+
+  The initial vector `x0` has been renamed to `lhs0` for consistency
+  with the (unchanged) `rhs` argument. A tol=0 value still defaults to a
+  direct solver if no `solver` was specified explicitly, but has been
+  changed to a faster sparse direct solver. A nonzero `info` value
+  causes solve to return a (lhs,info) tuple, with info containing all
+  the .res residuals and a .niter iteration count.
+
+
 Changed: strict dimension equality in function.outer
 
   Function.outer allows arguments of different dimension by left-padding
