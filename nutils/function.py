@@ -382,7 +382,7 @@ class ArrayFunc( Evaluable ):
   __pow__  = lambda self, n: power( self, n )
   __abs__  = lambda self: abs( self )
   __len__  = lambda self: self.shape[0]
-  sum      = lambda self, axes=None: sum( self, axes )
+  sum      = lambda self, axis=None: sum( self, axis )
 
   @property
   def size( self ):
@@ -528,10 +528,10 @@ class ArrayFunc( Evaluable ):
     elif J.shape[0] == J.shape[1] + 1: # gamma gradient
       G = ( J[:,:,_] * J[:,_,:] ).sum( 0 )
       Ginv = inverse( G )
-      Jinv = ( J[_,:,:] * Ginv[:,_,:] ).sum()
+      Jinv = ( J[_,:,:] * Ginv[:,_,:] ).sum( -1 )
     else:
       raise Exception( 'cannot invert %sx%s jacobian' % J.shape )
-    return sum( localgradient( self, ndims )[...,_] * Jinv, axes=-2 )
+    return sum( localgradient( self, ndims )[...,_] * Jinv, axis=-2 )
 
   def laplace( self, coords, ndims=0 ):
     'laplacian'
@@ -1220,7 +1220,7 @@ class Determinant( ArrayFunc ):
   def _localgradient( self, ndims ):
     Finv = swapaxes( inverse( self.func ) )
     G = localgradient( self.func, ndims )
-    return self[...,_] * sum( Finv[...,_] * G, axes=[-3,-2] )
+    return self[...,_] * sum( Finv[...,_] * G, axis=[-3,-2] )
 
   def _opposite( self ):
     return determinant( opposite(self.func) )
@@ -1546,7 +1546,7 @@ class Sum( ArrayFunc ):
     return sum( localgradient( self.func, ndims ), self.axis )
 
   def _opposite( self ):
-    return sum( opposite(self.func), axes=self.axis )
+    return sum( opposite(self.func), axis=self.axis )
 
 class Debug( ArrayFunc ):
   'debug'
@@ -2626,26 +2626,31 @@ def div( arg, coords, ndims=0 ):
   assert arg.shape[-1:] == coords.shape
   return _zeros( arg.shape[:-1] )
 
-def sum( arg, axes=None ):
-  'sum over multiply axes'
+def sum( arg, axis=None, axes=None ):
+  'sum over one or multiply axes'
 
-  if axes is None:
+  if axes is not None:
+    assert axis is None, 'axes and axis cannot be simultaneously specified'
+    warnings.warn( 'The axes argument is deprecated; please use axis instead', DeprecationWarning, stacklevel=2 )
+    axis = axes
+
+  if axis is None:
     warnings.warn( '''Please specify sum(...,-1) explicitly for summing over
-  the last axis. Summation without an axes argument will be deprecated in
-  nutils 3.0, to transition to numpy consistent behaviour in nutils 4.0''', DeprecationWarning )
-    axes = -1
+  the last axis. Summation without an axis argument will be deprecated in
+  nutils 3.0, to transition to numpy consistent behaviour in nutils 4.0''', DeprecationWarning, stacklevel=2 )
+    axis = -1
 
   arg = asarray( arg )
 
-  if util.isiterable(axes):
-    if len(axes) == 0:
+  if util.isiterable(axis):
+    if len(axis) == 0:
       return arg
-    axes = _norm_and_sort( arg.ndim, axes )
-    assert numpy.all( numpy.diff(axes) > 0 ), 'duplicate axes in sum'
-    arg = sum( arg, axes[1:] )
-    axis = axes[0]
+    axis = _norm_and_sort( arg.ndim, axis )
+    assert numpy.all( numpy.diff(axis) > 0 ), 'duplicate axes in sum'
+    arg = sum( arg, axis[1:] )
+    axis = axis[0]
   else:
-    axis = numeric.normdim( arg.ndim, axes )
+    axis = numeric.normdim( arg.ndim, axis )
 
   if arg.shape[axis] == 1:
     return get( arg, axis, 0 )
@@ -3120,8 +3125,8 @@ def revolved( arg ):
   return Revolved( arg )
 
 negative = lambda arg: multiply( arg, -1 )
-nsymgrad = lambda arg, coords: ( symgrad(arg,coords) * coords.normal() ).sum()
-ngrad = lambda arg, coords: ( grad(arg,coords) * coords.normal() ).sum()
+nsymgrad = lambda arg, coords: ( symgrad(arg,coords) * coords.normal() ).sum(-1)
+ngrad = lambda arg, coords: ( grad(arg,coords) * coords.normal() ).sum(-1)
 sin = lambda arg: pointwise( [arg], numpy.sin, cos )
 cos = lambda arg: pointwise( [arg], numpy.cos, lambda x: -sin(x) )
 rotmat = lambda arg: asarray( [[cos(arg),sin(arg)],[-sin(arg),cos(arg)]] )
@@ -3146,8 +3151,8 @@ sinh = lambda arg: .5 * ( exp(arg) - exp(-arg) )
 cosh = lambda arg: .5 * ( exp(arg) + exp(-arg) )
 tanh = lambda arg: 1 - 2. / ( exp(2*arg) + 1 )
 arctanh = lambda arg: .5 * ( ln(1+arg) - ln(1-arg) )
-piecewise = lambda level, intervals, *funcs: choose( sum( greater( insert(level,-1), intervals ) ), funcs )
-trace = lambda arg, n1=-2, n2=-1: sum( takediag( arg, n1, n2 ) )
+piecewise = lambda level, intervals, *funcs: choose( sum( greater( insert(level,-1), intervals ), -1 ), funcs )
+trace = lambda arg, n1=-2, n2=-1: sum( takediag( arg, n1, n2 ), -1 )
 eye = lambda n: diagonalize( expand( [1.], (n,) ) )
 norm2 = lambda arg, axis=-1: sqrt( sum( arg * arg, axis ) )
 heaviside = lambda arg: choose( greater( arg, 0 ), [0.,1.] )
