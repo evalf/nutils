@@ -6,6 +6,20 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+Changed: properties dumpdir, outdir, outrootdir
+
+  Two global properties have been renamed as follows:
+  - dumpdir -> outdir
+  - outdir -> outrootdir
+
+  The outrootdir defaults to ~/public_html and can be redefined from the
+  command line or in the .nutilsrc configuration file. The outdir
+  defaults to the current directory and is redefined by util.run,
+  nesting the name/date/time subdirectory sequence under outrootdir.
+  For manual acces, the new convenience function `core.getoutdir`
+  handles directory creation and returns the path.
+
+
 Changed: sum axes argument
 
   The behaviour of function.sum and ArrayFunc.sum is inconsistent with
