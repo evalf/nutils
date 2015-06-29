@@ -19,7 +19,7 @@ from . import core
 warnings.showwarning = lambda message, category, filename, lineno, *args: \
   warning( '%s: %s\n  In %s:%d' % ( category.__name__, message, filename, lineno ) )
 
-LEVELS = 'path', 'error', 'warning', 'user', 'progress', 'info', 'debug'
+LEVELS = 'path', 'error', 'warning', 'user', 'info', 'progress', 'debug'
 
 
 ## STREAMS

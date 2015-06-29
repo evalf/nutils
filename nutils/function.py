@@ -943,7 +943,17 @@ class Inverse( ArrayFunc ):
 
   def evalf( self, arr ):
     assert arr.ndim == self.ndim+1
-    return numpy.linalg.inv( arr )
+    try:
+      inv = numpy.linalg.inv( arr )
+    except numpy.linalg.LinAlgError:
+      inv = numpy.empty_like( arr )
+      flat = (-1,) + arr.shape[-2:]
+      for arri, invi in zip( arr.reshape(flat), inv.reshape(flat) ):
+        try:
+          invi[...] = numpy.linalg.inv(arri)
+        except numpy.linalg.LinAlgError:
+          invi[...] = numpy.nan
+    return inv
 
   def _localgradient( self, ndims ):
     G = localgradient( self.func, ndims )
