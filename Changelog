@@ -39,7 +39,7 @@ Changed: properties dumpdir, outdir, outrootdir
   handles directory creation and returns the path.
 
 
-Changed: sum axes argument
+Changed: sum axis argument
 
   The behaviour of function.sum and ArrayFunc.sum is inconsistent with
   that of the numpy counterparts. In case no axes argument is specified,
