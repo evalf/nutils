@@ -6,6 +6,24 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+Changed: sum axes argument
+
+  The behaviour of function.sum and ArrayFunc.sum is inconsistent with
+  that of the numpy counterparts. In case no axes argument is specified,
+  numpy sums over all axes, whereas nutils sums over the last axis. To
+  undo this mistake and transition to numpy's behaviour, calling sum
+  without an axes argument is deprecated and will be forbidden in nutils
+  3.0. In nutils 4.0 it will be reintroduced with the corrected meaning.
+
+  Old syntax:
+  >> A.sum()
+  >> function.sum( A )
+
+  New syntax:
+  >> A.sum( -1 )
+  >> function.sum( A, -1 )
+
+
 Changed: strict dimension equality in function.outer
 
   Function.outer allows arguments of different dimension by left-padding

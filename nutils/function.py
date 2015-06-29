@@ -382,7 +382,7 @@ class ArrayFunc( Evaluable ):
   __pow__  = lambda self, n: power( self, n )
   __abs__  = lambda self: abs( self )
   __len__  = lambda self: self.shape[0]
-  sum      = lambda self, axes=-1: sum( self, axes )
+  sum      = lambda self, axes=None: sum( self, axes )
 
   @property
   def size( self ):
@@ -2626,8 +2626,14 @@ def div( arg, coords, ndims=0 ):
   assert arg.shape[-1:] == coords.shape
   return _zeros( arg.shape[:-1] )
 
-def sum( arg, axes=-1 ):
+def sum( arg, axes=None ):
   'sum over multiply axes'
+
+  if axes is None:
+    warnings.warn( '''Please specify sum(...,-1) explicitly for summing over
+  the last axis. Summation without an axes argument will be deprecated in
+  nutils 3.0, to transition to numpy consistent behaviour in nutils 4.0''', DeprecationWarning )
+    axes = -1
 
   arg = asarray( arg )
 
@@ -2939,7 +2945,7 @@ def outer( arg1, arg2=None, axis=0 ):
   'outer product'
 
   if arg2 is not None and arg1.ndim != arg2.ndim:
-    warnings.warn( 'varying ndims in function.outer; this will be forbidden in future' )
+    warnings.warn( 'varying ndims in function.outer; this will be forbidden in future', DeprecationWarning )
   arg1, arg2 = _matchndim( arg1, arg2 if arg2 is not None else arg1 )
   axis = numeric.normdim( arg1.ndim, axis )
   return insert(arg1,axis+1) * insert(arg2,axis)
