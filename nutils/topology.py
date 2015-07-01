@@ -27,6 +27,8 @@ from __future__ import print_function, division
 from . import element, function, util, numpy, parallel, matrix, log, core, numeric, cache, rational, transform, _
 import warnings, functools
 
+_identity = lambda x: x
+
 class Topology( object ):
   'topology base class'
 
@@ -257,7 +259,7 @@ class Topology( object ):
 
   @log.title
   @core.single_or_multiple
-  def elem_eval( self, funcs, ischeme, separate=False, geometry=None ):
+  def elem_eval( self, funcs, ischeme, separate=False, geometry=None, edit=_identity ):
     'element-wise evaluation'
 
     if geometry:
@@ -277,7 +279,7 @@ class Topology( object ):
     retvals = []
     idata = []
     for ifunc, func in enumerate( funcs ):
-      func = function.asarray( func ) * iwscale
+      func = function.asarray( edit( func * iwscale ) )
       retval = parallel.shzeros( (npoints,)+func.shape, dtype=func.dtype )
       if function._isfunc( func ):
         for ind, f in function.blocks( func ):
@@ -387,21 +389,21 @@ class Topology( object ):
 
   @log.title
   @core.single_or_multiple
-  def integrate( self, funcs, ischeme, geometry, force_dense=False ):
+  def integrate( self, funcs, ischeme, geometry, force_dense=False, edit=_identity ):
     'integrate'
 
     iwscale = function.jacobian( geometry, self.ndims ) * function.Iwscale(self.ndims)
-    integrands = [ func * iwscale for func in funcs ]
+    integrands = [ function.asarray( edit( func * iwscale ) ) for func in funcs ]
     data_index = self._integrate( integrands, ischeme )
     return [ matrix.assemble( data, index, integrand.shape, force_dense ) for integrand, (data,index) in zip( integrands, data_index ) ]
 
   @log.title
   @core.single_or_multiple
-  def integrate_symm( self, funcs, ischeme, geometry, force_dense=False ):
+  def integrate_symm( self, funcs, ischeme, geometry, force_dense=False, edit=_identity ):
     'integrate a symmetric integrand on a product domain' # TODO: find a proper home for this
 
     iwscale = function.jacobian( geometry, self.ndims ) * function.Iwscale(self.ndims)
-    integrands = [ func * iwscale for func in funcs ]
+    integrands = [ function.asarray( edit( func * iwscale ) ) for func in funcs ]
     assert all( integrand.ndim == 2 for integrand in integrands )
     diagelems = []
     trielems = []
@@ -429,13 +431,13 @@ class Topology( object ):
     return onto.dot( weights )
 
   @log.title
-  def project( self, fun, onto, geometry, tol=0, ischeme=None, droptol=1e-12, exact_boundaries=False, constrain=None, verify=None, ptype='lsqr', precon='diag', **solverargs ):
+  def project( self, fun, onto, geometry, tol=0, ischeme=None, droptol=1e-12, exact_boundaries=False, constrain=None, verify=None, ptype='lsqr', precon='diag', edit=_identity, **solverargs ):
     'L2 projection of function onto function space'
 
     log.debug( 'projection type:', ptype )
 
     if exact_boundaries:
-      constrain |= self.boundary.project( fun, onto, geometry, constrain=constrain, title='boundaries', ischeme=ischeme, tol=tol, droptol=droptol, ptype=ptype )
+      constrain |= self.boundary.project( fun, onto, geometry, constrain=constrain, title='boundaries', ischeme=ischeme, tol=tol, droptol=droptol, ptype=ptype, edit=edit )
     elif constrain is None:
       constrain = util.NanVec( onto.shape[0] )
     else:
@@ -458,7 +460,7 @@ class Topology( object ):
       else:
         raise Exception
       assert fun2.ndim == 0
-      A, b, f2, area = self.integrate( [Afun,bfun,fun2,1], geometry=geometry, ischeme=ischeme, title='building system' )
+      A, b, f2, area = self.integrate( [Afun,bfun,fun2,1], geometry=geometry, ischeme=ischeme, edit=edit, title='building system' )
       N = A.rowsupp(droptol)
       if numpy.all( b == 0 ):
         constrain[~constrain.where&N] = 0
@@ -481,7 +483,7 @@ class Topology( object ):
         afun = function.norm2( onto )
       else:
         raise Exception
-      u, scale = self.integrate( [ ufun, afun ], geometry=geometry, ischeme=ischeme )
+      u, scale = self.integrate( [ ufun, afun ], geometry=geometry, ischeme=ischeme, edit=edit )
       N = ~constrain.where & ( scale > droptol )
       constrain[N] = u[N] / scale[N]
 
@@ -1382,6 +1384,5 @@ def trimmed_from_elems( basetopo, elems, belems, trimname='trimmed' ):
   if isrevolved:
     trimmedtopo = RevolvedTopology( trimmedtopo )
   return trimmedtopo
-
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
