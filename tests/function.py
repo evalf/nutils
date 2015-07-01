@@ -112,6 +112,12 @@ def check( op, n_op, shapes, hasgrad=True ):
         n_op( *argsfun.eval(elem,points) )[s],
           op( *args )[s].eval(elem,points), decimal=15 )
 
+  @unittest
+  def edit():
+    identity = lambda arg: function.edit( arg, identity )
+    func = op( *args )
+    assert identity(func) == func
+
   if not hasgrad:
     return
 

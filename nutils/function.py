@@ -211,6 +211,9 @@ class Evaluable( cache.Immutable ):
         break
     return '\n'.join( lines )
 
+  def _edit( self, op ):
+    return self
+
 class EvaluationError( Exception ):
   'evaluation error'
 
@@ -700,6 +703,9 @@ class Align( ArrayFunc ):
   def _opposite( self ):
     return align( opposite(self.func), self.axes, self.ndim )
 
+  def _edit( self, op ):
+    return align( op(self.func), self.axes, self.ndim )
+
 class Get( ArrayFunc ):
   'get'
 
@@ -734,6 +740,9 @@ class Get( ArrayFunc ):
   def _opposite( self ):
     return get( opposite(self.func), self.axis, self.item )
 
+  def _edit( self, op ):
+    return get( op(self.func), self.axis, self.item )
+
 class Product( ArrayFunc ):
   'product'
 
@@ -760,6 +769,9 @@ class Product( ArrayFunc ):
 
   def _opposite( self ):
     return product( opposite(self.func), self.axis )
+
+  def _edit( self, op ):
+    return product( op(self.func), self.axis )
 
 class Iwscale( ArrayFunc ):
   'integration weights'
@@ -910,6 +922,9 @@ class Choose( ArrayFunc ):
   def _opposite( self ):
     return choose( opposite(self.level), tuple(opposite(c) for c in self.choices) )
 
+  def _edit( self, op ):
+    return choose( op(self.level), [ op(choice) for choice in self.choices ] )
+
 class Choose2D( ArrayFunc ):
   'piecewise function'
 
@@ -965,6 +980,9 @@ class Inverse( ArrayFunc ):
 
   def _opposite( self ):
     return Inverse( opposite(self.func) )
+
+  def _edit( self, op ):
+    return inverse( op(self.func) )
 
 class Concatenate( ArrayFunc ):
   'concatenate'
@@ -1152,16 +1170,15 @@ class Concatenate( ArrayFunc ):
   def _power( self, n ):
     return concatenate( [ power( func, n ) for func in self.funcs ], self.axis )
 
-  def _repeat( self, length, axis ):
-    if axis != self.axis:
-      return concatenate( [ aslength( func, length, axis ) for func in self.funcs ], self.axis )
-
   def _diagonalize( self ):
     if self.axis < self.ndim-1:
       return concatenate( [ diagonalize(func) for func in self.funcs ], self.axis )
 
   def _revolved( self ):
     return concatenate( [ revolved(func) for func in self.funcs ], self.axis )
+
+  def _edit( self, op ):
+    return concatenate( [ op(func) for func in self.funcs ], self.axis )
 
 class Interpolate( ArrayFunc ):
   'interpolate uniformly spaced data; stepwise for now'
@@ -1214,6 +1231,9 @@ class Cross( ArrayFunc ):
   def _opposite( self ):
     return cross( opposite(self.func1), opposite(self.func2), self.axis )
 
+  def _edit( self, op ):
+    return cross( op(self.func1), op(self.func2), self.axis )
+
 class Determinant( ArrayFunc ):
   'normal'
 
@@ -1234,6 +1254,9 @@ class Determinant( ArrayFunc ):
 
   def _opposite( self ):
     return determinant( opposite(self.func) )
+
+  def _edit( self, op ):
+    return determinant( op(self.func) )
 
 class DofIndex( ArrayFunc ):
   'element-based indexing'
@@ -1281,6 +1304,9 @@ class DofIndex( ArrayFunc ):
 
   def _opposite( self ):
     return take( self.array, opposite(self.index), self.iax )
+
+  def _edit( self, op ):
+    return take( self.array, op(self.index), self.iax )
 
 class Multiply( ArrayFunc ):
   'multiply'
@@ -1365,6 +1391,10 @@ class Multiply( ArrayFunc ):
     if not _isfunc( func2 ):
       return multiply( power(func1,n), numpy.power(func2,n) )
 
+  def _edit( self, op ):
+    func1, func2 = self.funcs
+    return multiply( op(func1), op(func2) )
+
 class Add( ArrayFunc ):
   'add'
 
@@ -1416,6 +1446,10 @@ class Add( ArrayFunc ):
     if func2_other is not None:
       return add( func1, func2_other )
 
+  def _edit( self, op ):
+    func1, func2 = self.funcs
+    return add( op(func1), op(func2) )
+
 class BlockAdd( Add ):
   'block addition (used for DG)'
 
@@ -1450,6 +1484,10 @@ class BlockAdd( Add ):
       yield ind, f
     for ind, f in blocks( func2 ):
       yield ind, f
+
+  def _edit( self, op ):
+    func1, func2 = self.funcs
+    return blockadd( op(func1), op(func2) )
 
 class Dot( ArrayFunc ):
   'dot'
@@ -1530,6 +1568,10 @@ class Dot( ArrayFunc ):
     func1, func2 = self.funcs
     return dot( opposite(func1), opposite(func2), self.axes )
 
+  def _edit( self, op ):
+    func1, func2 = self.funcs
+    return dot( op(func1), op(func2), self.axes )
+
 class Sum( ArrayFunc ):
   'sum'
 
@@ -1558,6 +1600,9 @@ class Sum( ArrayFunc ):
   def _opposite( self ):
     return sum( opposite(self.func), axis=self.axis )
 
+  def _edit( self, op ):
+    return sum( op(self.func), axis=self.axis )
+
 class Debug( ArrayFunc ):
   'debug'
 
@@ -1582,6 +1627,9 @@ class Debug( ArrayFunc ):
   def _localgradient( self, ndims ):
     return Debug( localgradient( self.func, ndims ) )
 
+  def _edit( self, op ):
+    return Debug( op(self.func) )
+
 class TakeDiag( ArrayFunc ):
   'extract diagonal'
 
@@ -1605,6 +1653,9 @@ class TakeDiag( ArrayFunc ):
 
   def _opposite( self ):
     return takediag( opposite(self.func) )
+
+  def _edit( self, op ):
+    return takediag( op(self.func) )
 
 class Take( ArrayFunc ):
   'generalization of numpy.take(), to accept lists, slices, arrays'
@@ -1652,6 +1703,9 @@ class Take( ArrayFunc ):
     trytake = _call( self.func, '_take', index, axis )
     if trytake is not None:
       return take( trytake, self.indices, self.axis )
+
+  def _edit( self, op ):
+    return take( op(self.func), self.indices, self.axis )
 
 class Power( ArrayFunc ):
   'power'
@@ -1713,6 +1767,9 @@ class Power( ArrayFunc ):
     if self.power % 2 == 0:
       return expand( 1., self.shape )
 
+  def _edit( self, op ):
+    return power( op(self.func), op(self.power) )
+
 class ElemFunc( ArrayFunc ):
   'trivial func'
 
@@ -1747,15 +1804,11 @@ class Pointwise( ArrayFunc ):
     self.args = args
     self.evalfun = evalfun
     self.deriv = deriv
-    self.ivar = [ i for i, arg in enumerate( args ) if isinstance( arg, ArrayFunc ) ]
-    ArrayFunc.__init__( self, args=[ args[i] for i in self.ivar ], shape=shape )
+    ArrayFunc.__init__( self, args=[args], shape=shape )
 
-  def evalf( self, *varargs ):
-    args = [ arg[_] for arg in self.args ]
-    for i, arg in zip( self.ivar, varargs ):
-      args[i] = arg
-    assert all( arr.ndim == self.ndim+1 for arr in args )
-    return self.evalfun( *args )
+  def evalf( self, args ):
+    assert args.shape[1:] == self.args.shape
+    return self.evalfun( *args.swapaxes(0,1) )
 
   def _localgradient( self, ndims ):
     return ( self.deriv( self.args )[...,_] * localgradient( self.args, ndims ) ).sum( 0 )
@@ -1772,6 +1825,9 @@ class Pointwise( ArrayFunc ):
   def _opposite( self ):
     opp_args = [ opposite(f) for f in self.args ]
     return pointwise( opp_args, self.evalfun, self.deriv )
+
+  def _edit( self, op ):
+    return pointwise( op(self.args), self.evalfun, self.deriv )
 
 class Sign( ArrayFunc ):
   'sign'
@@ -1808,6 +1864,9 @@ class Sign( ArrayFunc ):
   def _power( self, n ):
     if n % 2 == 0:
       return expand( 1., self.shape )
+
+  def _edit( self, op ):
+    return sign( op(self.func) )
 
 class Pointdata( ArrayFunc ):
   'pointdata'
@@ -1880,6 +1939,9 @@ class Eig( Evaluable ):
   def _opposite( self ):
     return Eig( opposite(self.func), self.symmetric )
 
+  def _edit( self, op ):
+    return Eig( op(self.func), self.symmetric )
+
 class ArrayFromTuple( ArrayFunc ):
   'array from tuple'
 
@@ -1893,6 +1955,9 @@ class ArrayFromTuple( ArrayFunc ):
 
   def _opposite( self ):
     return ArrayFromTuple( opposite(self.arrays), self.index, self.shape )
+
+  def _edit( self, op ):
+    return ArrayFromTuple( op(self.arrays), self.index, self.shape )
 
 class Zeros( ArrayFunc ):
   'zero'
@@ -1967,6 +2032,12 @@ class Zeros( ArrayFunc ):
 
   def _opposite( self ):
     return self
+
+  def _pointwise( self, evalf, deriv ):
+    value = evalf( *numpy.zeros(self.shape[0]) )
+    if value == 0:
+      return _zeros( self.shape[1:] )
+    return expand( numpy.array(value)[(_,)*(self.ndim-1)], self.shape[1:] )
 
 class Inflate( ArrayFunc ):
   'inflate'
@@ -2093,10 +2164,13 @@ class Inflate( ArrayFunc ):
 
   def _repeat( self, length, axis ):
     if axis != self.axis:
-      return inflate( aslength(self.func,length,axis), self.dofmap, self.axis )
+      return inflate( repeat(self.func,length,axis), self.dofmap, self.axis )
 
   def _revolved( self ):
     return inflate( revolved(self.func), self.dofmap, self.axis )
+
+  def _edit( self, op ):
+    return inflate( op(self.func), self.dofmap, self.axis )
 
 class Diagonalize( ArrayFunc ):
   'diagonal matrix'
@@ -2147,6 +2221,9 @@ class Diagonalize( ArrayFunc ):
   def _opposite( self ):
     return diagonalize( opposite(self.func) )
 
+  def _edit( self, op ):
+    return diagonalize( op(self.func) )
+
 class Repeat( ArrayFunc ):
   'repeat singleton axis'
 
@@ -2166,23 +2243,23 @@ class Repeat( ArrayFunc ):
     return numeric.fastrepeat( arr if arr is not None else self.func[_], self.length, self.axis_shiftright )
 
   def _localgradient( self, ndims ):
-    return aslength( localgradient( self.func, ndims ), self.length, self.axis )
+    return repeat( localgradient( self.func, ndims ), self.length, self.axis )
 
   def _get( self, axis, item ):
     if axis == self.axis:
       assert 0 <= item < self.length
       return get( self.func, axis, 0 )
-    return aslength( get( self.func, axis, item ), self.length, self.axis-(axis<self.axis) )
+    return repeat( get( self.func, axis, item ), self.length, self.axis-(axis<self.axis) )
 
   def _sum( self, axis ):
     if axis == self.axis:
       return get( self.func, axis, 0 ) * self.length
-    return aslength( sum( self.func, axis ), self.length, self.axis-(axis<self.axis) )
+    return repeat( sum( self.func, axis ), self.length, self.axis-(axis<self.axis) )
 
   def _product( self, axis ):
     if axis == self.axis:
       return get( self.func, axis, 0 )**self.length
-    return aslength( product( self.func, axis ), self.length, self.axis-(axis<self.axis) )
+    return repeat( product( self.func, axis ), self.length, self.axis-(axis<self.axis) )
 
   def _power( self, n ):
     return aslength( power( self.func, n ), self.length, self.axis )
@@ -2194,15 +2271,15 @@ class Repeat( ArrayFunc ):
     return aslength( self.func * other, self.length, self.axis )
 
   def _align( self, shuffle, ndim ):
-    return aslength( align(self.func,shuffle,ndim), self.length, shuffle[self.axis] )
+    return repeat( align(self.func,shuffle,ndim), self.length, shuffle[self.axis] )
 
   def _take( self, index, axis ):
     if axis == self.axis:
-      return aslength( self.func, index.shape[0], self.axis )
-    return aslength( take(self.func,index,axis), self.length, self.axis )
+      return repeat( self.func, index.shape[0], self.axis )
+    return repeat( take(self.func,index,axis), self.length, self.axis )
 
   def _takediag( self ):
-    return aslength( takediag( self.func ), self.length, self.axis ) if self.axis < self.ndim-2 \
+    return repeat( takediag( self.func ), self.length, self.axis ) if self.axis < self.ndim-2 \
       else get( self.func, self.axis, 0 )
 
   def _cross( self, other, axis ):
@@ -2220,7 +2297,15 @@ class Repeat( ArrayFunc ):
     return aslength( func, self.length, self.axis )
 
   def _opposite( self ):
-    return aslength( opposite(self.func), self.length, self.axis )
+    return repeat( opposite(self.func), self.length, self.axis )
+
+  def _edit( self, op ):
+    return repeat( op(self.func), self.length, self.axis )
+
+  def _concatenate( self, other, axis ):
+    if isinstance( other, Repeat ):
+      return aslength( aslength( concatenate( [self.func,other.func], axis ), self.length, self.axis ), other.length, other.axis )
+    return aslength( concatenate( [self.func,other], axis ), self.length, self.axis )
 
 class Guard( ArrayFunc ):
   'bar all simplifications'
@@ -2273,6 +2358,9 @@ class Revolved( ArrayFunc ):
 
   def _localgradient( self, ndims ):
     return revolved( concatenate( [ localgradient(self.func,ndims-1), _zeros(self.func.shape+(1,)) ], axis=-1 ) )
+
+  def _edit( self, op ):
+    return revolved( op(self.func) )
 
 
 # AUXILIARY FUNCTIONS
@@ -2347,6 +2435,7 @@ _max = max
 _min = min
 _sum = sum
 _isfunc = lambda arg: isinstance( arg, ArrayFunc )
+_isevaluable = lambda arg: isinstance( arg, Evaluable )
 _isscalar = lambda arg: asarray(arg).ndim == 0
 _ascending = lambda arg: ( numpy.diff(arg) > 0 ).all()
 _iszero = lambda arg: isinstance( arg, Zeros ) or isinstance( arg, numpy.ndarray ) and numpy.all( arg == 0 )
@@ -3171,6 +3260,7 @@ subtract = lambda arg1, arg2: add( arg1, negative(arg2) )
 mean = lambda arg: .5 * ( arg + opposite(arg) )
 jump = lambda arg: arg - opposite(arg)
 add_T = lambda arg, axes=(-2,-1): swapaxes( arg, axes ) + arg
+edit = lambda arg, f: arg._edit(f) if _isevaluable(arg) else arg
 
 def swapaxes( arg, axes=(-2,-1) ):
   'swap axes'
@@ -3343,6 +3433,5 @@ def supp( funcsp, indices ):
       trans = trans[:-1]
     assert not dofs.size
   return supp
-
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
