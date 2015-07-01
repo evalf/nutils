@@ -700,9 +700,6 @@ class Align( ArrayFunc ):
       return self
     return align( take( self.func, indices, n ), self.axes, self.ndim )
 
-  def _opposite( self ):
-    return align( opposite(self.func), self.axes, self.ndim )
-
   def _edit( self, op ):
     return align( op(self.func), self.axes, self.ndim )
 
@@ -737,9 +734,6 @@ class Get( ArrayFunc ):
   def _take( self, indices, axis ):
     return get( take( self.func, indices, axis+(axis>=self.axis) ), self.axis, self.item )
 
-  def _opposite( self ):
-    return get( opposite(self.func), self.axis, self.item )
-
   def _edit( self, op ):
     return get( op(self.func), self.axis, self.item )
 
@@ -766,9 +760,6 @@ class Product( ArrayFunc ):
   def _get( self, i, item ):
     func = get( self.func, i+(i>=self.axis), item )
     return product( func, self.axis-(i<self.axis) )
-
-  def _opposite( self ):
-    return product( opposite(self.func), self.axis )
 
   def _edit( self, op ):
     return product( op(self.func), self.axis )
@@ -919,9 +910,6 @@ class Choose( ArrayFunc ):
       return _zeros( self.shape + (ndims,) )
     return Choose( self.level[...,_], grads )
 
-  def _opposite( self ):
-    return choose( opposite(self.level), tuple(opposite(c) for c in self.choices) )
-
   def _edit( self, op ):
     return choose( op(self.level), [ op(choice) for choice in self.choices ] )
 
@@ -977,9 +965,6 @@ class Inverse( ArrayFunc ):
     I = sum( self[...,:,:,_,_]
               * H[...,_,:,:,:], -3 )
     return -I
-
-  def _opposite( self ):
-    return Inverse( opposite(self.func) )
 
   def _edit( self, op ):
     return inverse( op(self.func) )
@@ -1164,9 +1149,6 @@ class Concatenate( ArrayFunc ):
       return util.sum( funcs )
     return concatenate( funcs, self.axis )
 
-  def _opposite( self ):
-    return concatenate( [ opposite(func) for func in self.funcs ], self.axis )
-
   def _power( self, n ):
     return concatenate( [ power( func, n ) for func in self.funcs ], self.axis )
 
@@ -1228,9 +1210,6 @@ class Cross( ArrayFunc ):
     if axis != self.axis:
       return cross( take(self.func1,index,axis), take(self.func2,index,axis), self.axis )
 
-  def _opposite( self ):
-    return cross( opposite(self.func1), opposite(self.func2), self.axis )
-
   def _edit( self, op ):
     return cross( op(self.func1), op(self.func2), self.axis )
 
@@ -1251,9 +1230,6 @@ class Determinant( ArrayFunc ):
     Finv = swapaxes( inverse( self.func ) )
     G = localgradient( self.func, ndims )
     return self[...,_] * sum( Finv[...,_] * G, axis=[-3,-2] )
-
-  def _opposite( self ):
-    return determinant( opposite(self.func) )
 
   def _edit( self, op ):
     return determinant( op(self.func) )
@@ -1301,9 +1277,6 @@ class DofIndex( ArrayFunc ):
     if isinstance( other, DofIndex ) and self.iax == other.iax and self.index == other.index:
       array = numpy.concatenate( [ self.array, other.array ], axis )
       return take( array, self.index, self.iax )
-
-  def _opposite( self ):
-    return take( self.array, opposite(self.index), self.iax )
 
   def _edit( self, op ):
     return take( self.array, op(self.index), self.iax )
@@ -1382,10 +1355,6 @@ class Multiply( ArrayFunc ):
     func1, func2 = self.funcs
     return take( func1, index, axis ) * take( func2, index, axis )
 
-  def _opposite( self ):
-    func1, func2 = self.funcs
-    return opposite(func1) * opposite(func2)
-
   def _power( self, n ):
     func1, func2 = self.funcs
     if not _isfunc( func2 ):
@@ -1430,10 +1399,6 @@ class Add( ArrayFunc ):
   def _take( self, index, axis ):
     func1, func2 = self.funcs
     return take( func1, index, axis ) + take( func2, index, axis )
-
-  def _opposite( self ):
-    func1, func2 = self.funcs
-    return opposite(func1) + opposite(func2)
 
   def _add( self, other ):
     func1, func2 = self.funcs
@@ -1564,10 +1529,6 @@ class Dot( ArrayFunc ):
         if tryconcat is not None:
           return dot( f, tryconcat, self.axes )
 
-  def _opposite( self ):
-    func1, func2 = self.funcs
-    return dot( opposite(func1), opposite(func2), self.axes )
-
   def _edit( self, op ):
     func1, func2 = self.funcs
     return dot( op(func1), op(func2), self.axes )
@@ -1596,9 +1557,6 @@ class Sum( ArrayFunc ):
 
   def _localgradient( self, ndims ):
     return sum( localgradient( self.func, ndims ), self.axis )
-
-  def _opposite( self ):
-    return sum( opposite(self.func), axis=self.axis )
 
   def _edit( self, op ):
     return sum( op(self.func), axis=self.axis )
@@ -1651,9 +1609,6 @@ class TakeDiag( ArrayFunc ):
     if axis != self.ndim-1:
       return takediag( sum( self.func, axis ) )
 
-  def _opposite( self ):
-    return takediag( opposite(self.func) )
-
   def _edit( self, op ):
     return takediag( op(self.func) )
 
@@ -1689,9 +1644,6 @@ class Take( ArrayFunc ):
 
   def _localgradient( self, ndims ):
     return take( localgradient( self.func, ndims ), self.indices, self.axis )
-
-  def _opposite( self ):
-    return take( opposite(self.func), self.indices, self.axis )
 
   def _take( self, index, axis ):
     if axis == self.axis:
@@ -1753,9 +1705,6 @@ class Power( ArrayFunc ):
 
   def _take( self, index, axis ):
     return power( take( self.func, index, axis ), self.power )
-
-  def _opposite( self ):
-    return power( opposite(self.func), self.power )
 
   def _multiply( self, other ):
     if isinstance( other, Power ) and self.func == other.func:
@@ -1822,10 +1771,6 @@ class Pointwise( ArrayFunc ):
   def _take( self, index, axis ):
     return pointwise( take( self.args, index, axis+1 ), self.evalfun, self.deriv )
 
-  def _opposite( self ):
-    opp_args = [ opposite(f) for f in self.args ]
-    return pointwise( opp_args, self.evalfun, self.deriv )
-
   def _edit( self, op ):
     return pointwise( op(self.args), self.evalfun, self.deriv )
 
@@ -1854,9 +1799,6 @@ class Sign( ArrayFunc ):
 
   def _take( self, index, axis ):
     return sign( take( self.func, index, axis ) )
-
-  def _opposite( self ):
-    return sign( opposite( self.func ) )
 
   def _sign( self ):
     return self
@@ -1936,9 +1878,6 @@ class Eig( Evaluable ):
     assert arr.ndim == len(self.shape)+1
     return self.eig( arr )
 
-  def _opposite( self ):
-    return Eig( opposite(self.func), self.symmetric )
-
   def _edit( self, op ):
     return Eig( op(self.func), self.symmetric )
 
@@ -1952,9 +1891,6 @@ class ArrayFromTuple( ArrayFunc ):
 
   def evalf( self, arrays ):
     return arrays[ self.index ]
-
-  def _opposite( self ):
-    return ArrayFromTuple( opposite(self.arrays), self.index, self.shape )
 
   def _edit( self, op ):
     return ArrayFromTuple( op(self.arrays), self.index, self.shape )
@@ -2028,9 +1964,6 @@ class Zeros( ArrayFunc ):
     return _zeros( self.shape[:axis] + (dofmap.target,) + self.shape[axis+1:] )
 
   def _power( self, n ):
-    return self
-
-  def _opposite( self ):
     return self
 
   def _pointwise( self, evalf, deriv ):
@@ -2159,9 +2092,6 @@ class Inflate( ArrayFunc ):
       return arr
     return inflate( arr, self.dofmap, self.axis-(axis<self.axis) )
 
-  def _opposite( self ):
-    return inflate( opposite(self.func), opposite(self.dofmap), self.axis )
-
   def _repeat( self, length, axis ):
     if axis != self.axis:
       return inflate( repeat(self.func,length,axis), self.dofmap, self.axis )
@@ -2170,7 +2100,7 @@ class Inflate( ArrayFunc ):
     return inflate( revolved(self.func), self.dofmap, self.axis )
 
   def _edit( self, op ):
-    return inflate( op(self.func), self.dofmap, self.axis )
+    return inflate( op(self.func), op(self.dofmap), self.axis )
 
 class Diagonalize( ArrayFunc ):
   'diagonal matrix'
@@ -2217,9 +2147,6 @@ class Diagonalize( ArrayFunc ):
   def _align( self, axes, ndim ):
     if axes[-2:] in [ (ndim-2,ndim-1), (ndim-1,ndim-2) ]:
       return diagonalize( align( self.func, axes[:-2] + (ndim-2,), ndim-1 ) )
-
-  def _opposite( self ):
-    return diagonalize( opposite(self.func) )
 
   def _edit( self, op ):
     return diagonalize( op(self.func) )
@@ -2296,9 +2223,6 @@ class Repeat( ArrayFunc ):
       return func * self.length
     return aslength( func, self.length, self.axis )
 
-  def _opposite( self ):
-    return repeat( opposite(self.func), self.length, self.axis )
-
   def _edit( self, op ):
     return repeat( op(self.func), self.length, self.axis )
 
@@ -2318,8 +2242,8 @@ class Guard( ArrayFunc ):
   def evalf( dat ):
     return dat
 
-  def _opposite( self ):
-    return Guard( opposite(self.fun) )
+  def _edit( self, op ):
+    return Guard( op(self.fun) )
 
   def _localgradient( self, ndims ):
     return Guard( localgradient(self.fun,ndims) )
@@ -3278,7 +3202,11 @@ def opposite( arg ):
   if not isinstance( arg, Evaluable ):
     return arg
 
-  return arg._opposite()
+  retval = _call( arg, '_opposite' )
+  if retval is not None:
+    return retval
+
+  return arg._edit( opposite )
 
 def function( fmap, nmap, ndofs, ndims ):
   'create function on ndims-element'
