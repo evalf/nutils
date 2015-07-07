@@ -2157,6 +2157,7 @@ class Repeat( ArrayFunc ):
   def __init__( self, func, length, axis ):
     'constructor'
 
+    assert length != 1
     assert func.shape[axis] == 1
     self.func = func
     self.axis = axis
@@ -2227,6 +2228,8 @@ class Repeat( ArrayFunc ):
     return repeat( op(self.func), self.length, self.axis )
 
   def _concatenate( self, other, axis ):
+    if axis == self.axis:
+      return
     if isinstance( other, Repeat ):
       return aslength( aslength( concatenate( [self.func,other.func], axis ), self.length, self.axis ), other.length, other.axis )
     return aslength( concatenate( [self.func,other], axis ), self.length, self.axis )
@@ -2548,6 +2551,8 @@ def repeat( arg, length, axis ):
   arg = asarray( arg )
   axis = numeric.normdim( arg.ndim, axis )
   assert arg.shape[axis] == 1
+  if length == 1:
+    return arg
 
   retval = _call( arg, '_repeat', length, axis )
   if retval is not None:
