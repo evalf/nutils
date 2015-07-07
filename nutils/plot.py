@@ -138,7 +138,13 @@ class PyPlot( BasePlot ):
 
     else: # mesh data
 
-      fcache = cache.CallDict()
+      if triangulate == 'delaunay':
+        _triangulate = _triangulate_delaunay
+      elif triangulate == 'bezier':
+        _triangulate = _compose( cache.Wrapper(_triangulate_bezier), len )
+      else:
+        raise Exception( 'unknown triangulation method %r' % triangulate )
+
       triangulation = []
       edges = []
       npoints = 0
@@ -147,12 +153,7 @@ class PyPlot( BasePlot ):
         assert epoints.shape == (np,2)
         if np == 0:
           continue
-        if triangulate == 'delaunay':
-          vertices, hull = _triangulate_delaunay( epoints )
-        elif triangulate == 'bezier':
-          vertices, hull = fcache( _triangulate_bezier, np )
-        else:
-          raise Exception( 'unknown triangulation method %r' % triangulate )
+        vertices, hull = _triangulate( epoints )
         triangulation.append( vertices + npoints )
         edges.append( epoints[hull] )
         npoints += np
@@ -651,5 +652,7 @@ def _triangulate_delaunay( points ):
   tri = scipy.spatial.Delaunay( points )
   return tri.vertices, _mkloop( tri.convex_hull )
 
+def _compose( f, g ):
+  return lambda *args, **kwargs: f( g( *args, **kwargs ) )
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

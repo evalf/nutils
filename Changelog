@@ -6,6 +6,27 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+Changed: caching function return values
+
+  The CallDict mechanism for caching function calls by arguments has
+  been split up in Wrapper and WrapperCache. Wrapper is a function
+  decorator that caches return values of a single function based on its
+  arguments. WrapperCache maintains a dynamic collection of Wrapper
+  instances.
+
+  Old syntax:
+  >> fcache = cache.CallDict()
+  >> retval = fcache( func, arg1, arg2 )
+
+  New syntax:
+  >> fcache = cache.WrapperCache()
+  >> retval = fcache[func]( arg1, arg2 )
+
+  Alternative new syntax:
+  >> wrapped_func = cache.Wrapper(func)
+  >> retval = wrapped_func( arg1, arg2 )
+
+
 Changed: linear solver arguments
 
   The initial vector 'x0' has been renamed to 'lhs0' for consistency

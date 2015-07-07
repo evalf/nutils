@@ -289,14 +289,14 @@ class Topology( object ):
       retvals.append( retval )
     idata = function.Tuple( idata )
 
-    fcache = cache.CallDict()
+    fcache = cache.WrapperCache()
     for ielem, elem in parallel.pariter( log.enumerate( 'elem', self ) ):
-      ipoints, iweights = fcache( elem.reference.getischeme, ischeme )
+      ipoints, iweights = fcache[elem.reference.getischeme]( ischeme )
       s = slices[ielem],
       for ifunc, index, data in idata.eval( elem, ipoints, fcache ):
         retvals[ifunc][s+numpy.ix_(*index)] += numeric.dot(iweights,data) if geometry else data
 
-    log.debug( 'cache', fcache.summary() )
+    log.debug( 'cache', fcache.stats )
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join( str(n) for n in retval.shape ) ) for retval in retvals ) )
 
     if separate:
@@ -332,7 +332,7 @@ class Topology( object ):
     if core.getprop( 'dot', False ):
       valuefunc.graphviz()
 
-    fcache = cache.CallDict()
+    fcache = cache.WrapperCache()
 
     # To allocate (shared) memory for all block data we evaluate indexfunc to
     # build an nblocks x nelems+1 offset array, and nblocks index lists of
@@ -371,7 +371,7 @@ class Topology( object ):
     # benefits from parallel speedup.
 
     for ielem, elem in parallel.pariter( log.enumerate( 'elem', self ) ):
-      ipoints, iweights = fcache( elem.reference.getischeme, ischeme[elem] if isinstance(ischeme,dict) else ischeme )
+      ipoints, iweights = fcache[elem.reference.getischeme]( ischeme[elem] if isinstance(ischeme,dict) else ischeme )
       assert iweights is not None, 'no integration weights found'
       for iblock, intdata in enumerate( valuefunc.eval( elem, ipoints, fcache ) ):
         s = slice(*offsets[iblock,ielem:ielem+2])
@@ -383,7 +383,7 @@ class Topology( object ):
           index[idim,s].reshape(w_intdata.shape)[...] = ii[si]
           si = si[:-1]
 
-    log.debug( 'cache', fcache.summary() )
+    log.debug( 'cache', fcache.stats )
 
     return data_index
 
@@ -543,7 +543,7 @@ class Topology( object ):
     elems = []
     extras = {}
     pairs = []
-    fcache = cache.CallDict()
+    fcache = cache.WrapperCache()
 
     for elem in log.iter( 'elem', self ):
       posneg, intrafaces = elem.trim( levelset=levelset, maxrefine=maxrefine, denom=denom, check=check, fcache=fcache )
@@ -560,7 +560,7 @@ class Topology( object ):
         else:
           pairs.append( value + oppvalue )
 
-    log.debug( 'cache', fcache.summary() )
+    log.debug( 'cache', fcache.stats )
 
     for key in log.iter( 'remaining', extras ):
       ielems = functools.reduce( numpy.intersect1d, [ self.v2elem[vert] for vert in key ] )

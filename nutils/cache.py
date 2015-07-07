@@ -120,30 +120,70 @@ def _keyfromargs( func, args, kwargs, offset=0 ):
     assert not kwargs, '%s got invalid arguments: %s' % ( func.__name__, ', '.join(kwargs) )
   return tuple( _hashable(arg) for arg in args )
 
+class Wrapper( object ):
+  'function decorator that caches results by arguments'
 
-class CallDict( dict ):
-  'very simple cache object'
+  def __init__( self, func ):
+    self.func = func
+    self.cache = {}
+    self.count = 0
 
-  hit = 0
-
-  def __call__( self, func, *args, **kwargs ):
-    '''cache(func,*args,**kwargs):
-    Execute func(*args,**kwargs) and cache the result.'''
-
-    key = func, _keyfromargs( func, args, kwargs )
-    value = self.get( key )
+  def __call__( self, *args, **kwargs ):
+    self.count += 1
+    key = _keyfromargs( self.func, args, kwargs )
+    value = self.cache.get( key )
     if value is None:
-      value = func( *args, **kwargs )
-      self[ key ] = value
-    else:
-      self.hit += 1
-
+      value = self.func( *args, **kwargs )
+      self.cache[ key ] = value
     return value
 
-  def summary( self ):
-    return 'not used' if not self \
-      else 'effectivity %d%% (%d hits, %d misses)' % ( (100*self.hit)/(self.hit+len(self)), self.hit, len(self) )
+  @property
+  def hits( self ):
+    return self.count - len(self.cache)
 
+class WrapperCache( object ):
+  'maintains a cache for Wrapper instances'
+
+  def __init__( self ):
+    self.cache = {}
+
+  def __getitem__( self, func ):
+    try:
+      wrapper = self.cache[func]
+    except KeyError:
+      wrapper = Wrapper( func )
+      self.cache[func] = wrapper
+    return wrapper
+
+  @property
+  def stats( self ):
+    hits = count = 0
+    for wrapper in self.cache.values():
+      hits += wrapper.hits
+      count += wrapper.count
+    return 'not used' if not count \
+      else 'effectivity %d%% (hit %d/%d calls over %d functions)' % ( 100*hits/count, hits, count, len(self.cache) )
+
+class WrapperDummyCache( object ):
+  'placeholder object'
+
+  stats = 'caching disabled'
+
+  def __getitem__( self, func ):
+    return func
+
+class CallDict( object ):
+  'deprecated object'
+
+  def __init__( self ):
+    warnings.warn( 'CallDict will be removed in future, please use WrapperCache instead', DeprecationWarning, stacklevel=2 )
+    self.wrappercache = WrapperCache()
+
+  def __call__( self, func, *args, **kwargs ):
+    return self.wrappercache[func]( *args, **kwargs )
+
+  def summary( self ):
+    return self.wrappercache.stats
 
 class ImmutableMeta( type ):
   def __init__( cls, *args, **kwargs ):

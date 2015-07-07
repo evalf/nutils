@@ -106,7 +106,7 @@ class Evaluable( cache.Immutable ):
   def __str__( self ):
     return self.__class__.__name__
 
-  def eval( self, elem, ischeme, fcache=lambda f, *args: f(*args) ):
+  def eval( self, elem, ischeme, fcache=cache.WrapperDummyCache() ):
     'evaluate'
     
     if isinstance( elem, tuple ):
@@ -120,7 +120,7 @@ class Evaluable( cache.Immutable ):
       if isinstance( ischeme, dict ):
         ischeme = ischeme[elem]
       if isinstance( ischeme, str ):
-        points, weights = fcache( elem.reference.getischeme, ischeme )
+        points, weights = fcache[elem.reference.getischeme]( ischeme )
       elif isinstance( ischeme, tuple ):
         points, weights = ischeme
         assert points.shape[-1] == elem.ndims
@@ -826,8 +826,8 @@ class Function( ArrayFunc ):
     head = trans.lookup( self.stdmap )
     for std, keep in self.stdmap[head]:
       if std:
-        transpoints = cache( trans.slicefrom(len(head)).apply, points )
-        F = cache( std.eval, transpoints, self.igrad )
+        transpoints = cache[trans.slicefrom(len(head)).apply]( points )
+        F = cache[std.eval]( transpoints, self.igrad )
         assert F.ndim == self.igrad+2
         if keep is not None:
           F = F[(Ellipsis,keep)+(slice(None),)*self.igrad]

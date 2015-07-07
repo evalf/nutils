@@ -294,7 +294,7 @@ class Reference( cache.Immutable ):
           negelems.append( None )
           continue
         if evaluated_levels:
-          N, I = fcache( self.subvertex, ichild, maxrefine )
+          N, I = fcache[self.subvertex]( ichild, maxrefine )
           assert len(levels) == N
           childlevels = levels[I]
         else:
