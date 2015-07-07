@@ -3367,4 +3367,9 @@ def supp( funcsp, indices ):
     assert not dofs.size
   return supp
 
+def J( geometry, ndims=0 ):
+  if ndims <= 0:
+    ndims += len(geometry)
+  return jacobian( geometry, ndims ) * Iwscale(ndims)
+
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
