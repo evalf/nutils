@@ -3367,8 +3367,10 @@ def supp( funcsp, indices ):
     assert not dofs.size
   return supp
 
-def J( geometry, ndims=0 ):
-  if ndims <= 0:
+def J( geometry, ndims=None ):
+  if ndims is None:
+    ndims = len(geometry)
+  elif ndims < 0:
     ndims += len(geometry)
   return jacobian( geometry, ndims ) * Iwscale(ndims)
 

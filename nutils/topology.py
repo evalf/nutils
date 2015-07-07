@@ -263,7 +263,7 @@ class Topology( object ):
     'element-wise evaluation'
 
     if geometry:
-      iwscale = function.jacobian( geometry, self.ndims ) * function.Iwscale(self.ndims)
+      iwscale = function.J( geometry, self.ndims )
       npoints = len(self)
       slices = range(npoints)
     else:
@@ -389,20 +389,20 @@ class Topology( object ):
 
   @log.title
   @core.single_or_multiple
-  def integrate( self, funcs, ischeme, geometry, force_dense=False, edit=_identity ):
+  def integrate( self, funcs, ischeme, geometry=None, force_dense=False, edit=_identity ):
     'integrate'
 
-    iwscale = function.jacobian( geometry, self.ndims ) * function.Iwscale(self.ndims)
+    iwscale = function.J( geometry, self.ndims ) if geometry else 1
     integrands = [ function.asarray( edit( func * iwscale ) ) for func in funcs ]
     data_index = self._integrate( integrands, ischeme )
     return [ matrix.assemble( data, index, integrand.shape, force_dense ) for integrand, (data,index) in zip( integrands, data_index ) ]
 
   @log.title
   @core.single_or_multiple
-  def integrate_symm( self, funcs, ischeme, geometry, force_dense=False, edit=_identity ):
+  def integrate_symm( self, funcs, ischeme, geometry=None, force_dense=False, edit=_identity ):
     'integrate a symmetric integrand on a product domain' # TODO: find a proper home for this
 
-    iwscale = function.jacobian( geometry, self.ndims ) * function.Iwscale(self.ndims)
+    iwscale = function.J( geometry, self.ndims ) if geometry else 1
     integrands = [ function.asarray( edit( func * iwscale ) ) for func in funcs ]
     assert all( integrand.ndim == 2 for integrand in integrands )
     diagelems = []
