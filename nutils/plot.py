@@ -367,6 +367,9 @@ class PyPlot( BasePlot ):
   def ytickspacing( self, base ):
     self._tickspacing( self.gca().yaxis, base )
 
+  def vectors( self, xy, uv, **kwargs ):
+    self.quiver( xy[:,0], xy[:,1], uv[:,0], uv[:,1], angles='xy', **kwargs )
+
 class DataFile( BasePlot ):
   """data file"""
 
