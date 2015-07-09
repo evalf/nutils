@@ -19,7 +19,7 @@ structure of input/output dependencies. Many :class:`ArrayFunc` objects have
 directly recognizable numpy equivalents, such as :class:`Sin` or
 :class:`Inverse`. By not evaluating directly but merely stacking operations,
 complex operations can be defined prior to entering a quadrature loop, allowing
-for a higher lever style programming. It also allows for automatic
+for a higher level style programming. It also allows for automatic
 differentiation and code optimization.
 
 It is important to realize that nutils functions do not map for a physical
