@@ -832,7 +832,7 @@ class Function( ArrayFunc ):
         if keep is not None:
           F = F[(Ellipsis,keep)+(slice(None),)*self.igrad]
         if self.igrad:
-          invlinear = head.split(head.fromdims)[1].invlinear.astype( float )
+          invlinear = head.split(head.fromdims)[1].invlinear
           if invlinear.ndim:
             for axis in range(-self.igrad,0):
               F = numeric.dot( F, invlinear, axis )

@@ -16,7 +16,7 @@ mesh writers are provided at this point; output is handled by the
 """
 
 from __future__ import print_function, division
-from . import topology, function, util, element, numpy, numeric, transform, rational, log, _
+from . import topology, function, util, element, numpy, numeric, transform, log, _
 import os, warnings
 
 # MESH GENERATORS
@@ -414,7 +414,7 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   Q /= 2 * numpy.sqrt( abs(Q).max(axis=0) / numpy.sqrt(2) )
   R = numpy.zeros([2,1])
 
-  coords = rational.round( numpy.hstack( [P,Q,R] ).T, denom=30 )
+  coords = numpy.round( numpy.hstack( [P,Q,R] ).T * 2**5 ) / 2**5
 
   vertices = numpy.array(
     [ [ 12+(i-i//3)%8, i, (i+1)%12 ] for i in range(12) ]

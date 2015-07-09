@@ -11,7 +11,7 @@ The transform module.
 """
 
 from __future__ import print_function, division
-from . import cache, rational, numeric, core
+from . import cache, numeric, core
 import numpy
 
 
@@ -99,17 +99,17 @@ class TransformChain( tuple ):
 
   @property
   def linear( self ):
-    linear = rational.Rational(1)
+    linear = numpy.array( 1. )
     for trans in self:
-      linear = rational.dot( linear, trans.linear ) if linear.ndim and trans.linear.ndim \
+      linear = numpy.dot( linear, trans.linear ) if linear.ndim and trans.linear.ndim \
           else linear * trans.linear
     return linear
 
   @property
   def invlinear( self ):
-    invlinear = rational.Rational(1)
+    invlinear = numpy.array( 1. )
     for trans in self:
-      invlinear = rational.dot( trans.invlinear, invlinear ) if invlinear.ndim and trans.linear.ndim \
+      invlinear = numpy.dot( trans.invlinear, invlinear ) if invlinear.ndim and trans.linear.ndim \
              else trans.invlinear * invlinear
     return invlinear
 
@@ -119,7 +119,7 @@ class TransformChain( tuple ):
     return points
 
   def solve( self, points ):
-    return rational.solve( self.linear, (points - self.offset).T ).T
+    return numeric.solve_exact( self.linear, (points - self.offset).T ).T
 
   def __str__( self ):
     return ' << '.join( str(trans) for trans in self ) if self else '='
@@ -142,7 +142,7 @@ class TransformChain( tuple ):
       if mayswap( trans1, trans2 ):
         trans12 = TransformChain(( trans1, trans2 )).flat
         try:
-          newlinear, newoffset = rational.solve( trans2.linear, trans12.linear, trans12.offset - trans2.offset )
+          newlinear, newoffset = numeric.solve_exact( trans2.linear, trans12.linear, trans12.offset - trans2.offset )
         except numpy.linalg.LinAlgError:
           pass
         else:
@@ -200,7 +200,7 @@ class CanonicalTransformChain( TransformChain ):
       B = CanonicalTransformChain( (uptrans,) + self[i:] )
     return A.promote(ndims) << B
 
-mayswap = lambda trans1, trans2: isinstance( trans1, Scale ) and trans1.linear == rational.Rational(1,2) and trans2.todims == trans2.fromdims + 1 and trans2.fromdims > 0
+mayswap = lambda trans1, trans2: isinstance( trans1, Scale ) and trans1.linear == .5 and trans2.todims == trans2.fromdims + 1 and trans2.fromdims > 0
 
 
 ## TRANSFORM ITEMS
@@ -222,7 +222,7 @@ class TransformItem( cache.Immutable ):
 class Shift( TransformItem ):
 
   def __init__( self, offset ):
-    self.linear = self.invlinear = self.det = rational.Rational(1)
+    self.linear = self.invlinear = self.det = 1.
     self.offset = offset
     self.isflipped = False
     assert offset.ndim == 1
@@ -267,7 +267,7 @@ class Matrix( TransformItem ):
 
   def apply( self, points ):
     assert points.shape[-1] == self.fromdims
-    return rational.dot( points, self.linear.T ) + self.offset
+    return numpy.dot( points, self.linear.T ) + self.offset
 
   def __str__( self ):
     return '{}{}{}'.format( '~' if self.isflipped else '', self.offset, ''.join( '+{}*x{}'.format( v, i ) for i, v in enumerate(self.linear.T) ) )
@@ -284,11 +284,11 @@ class Square( Matrix ):
 
   @cache.property
   def det( self ):
-    return rational.det( self.linear )
+    return numeric.det_exact( self.linear )
 
   @cache.property
   def invlinear( self ):
-    return rational.invdet( self.linear ) / self.det
+    return numpy.linalg.inv( self.linear )
 
 class Updim( Matrix ):
 
@@ -320,9 +320,8 @@ class MapTrans( VertexTransform ):
 
   def apply( self, coords ):
     assert coords.ndim == 2
-    coords = rational.asarray( coords )
-    assert coords.denom == 1 # for now
-    indices = map( self.coords.tolist().index, coords.numer.tolist() )
+    coords = numpy.asarray( coords )
+    indices = map( self.coords.tolist().index, coords.tolist() )
     return tuple( self.vertices[n] for n in indices )
 
   def __str__( self ):
@@ -334,20 +333,18 @@ class RootTrans( VertexTransform ):
     VertexTransform.__init__( self, len(shape) )
     self.I, = numpy.where( shape )
     self.w = numpy.take( shape, self.I )
-    self.fmt = name+'{}'
+    self.name = name
 
   def apply( self, coords ):
+    coords = numpy.asarray(coords)
     assert coords.ndim == 2
-    coords = rational.asarray( coords )
     if self.I.size:
-      ci = coords.numer.copy()
-      wi = self.w * coords.denom
-      ci[:,self.I] = ci[:,self.I] % wi
-      coords = rational.Rational( ci, coords.denom )
-    return tuple( self.fmt.format(c) for c in coords )
+      coords = coords.copy()
+      coords[:,self.I] %= self.w
+    return tuple( self.name + str(c) for c in coords.tolist() )
 
   def __str__( self ):
-    return repr( self.fmt.format('*') )
+    return repr( self.name + '[*]' )
 
 class RootTransEdges( VertexTransform ):
 
@@ -375,15 +372,15 @@ class RootTransEdges( VertexTransform ):
 
 ## CONSTRUCTORS
 
-def affine( linear, offset, numer=1, isflipped=None ):
-  r_offset = rational.frac( offset, numer )
-  r_linear = rational.frac( linear, numer )
+def affine( linear, offset, denom=1, isflipped=None ):
+  r_offset = numpy.asarray( offset ) / denom
+  r_linear = numpy.asarray( linear ) / denom
   n, = r_offset.shape
   if r_linear.ndim == 2:
     assert r_linear.shape[0] == n
     if r_linear.shape[1] == n:
       trans = Shift( r_offset ) if n == 0 \
-         else Scale( r_linear[0,0], r_offset ) if n == 1 or r_linear.numer[0,-1] == 0 and numpy.all( r_linear.numer == r_linear.numer[0,0] * numpy.eye(n) ) \
+         else Scale( r_linear[0,0], r_offset ) if n == 1 or r_linear[0,-1] == 0 and numpy.all( r_linear == r_linear[0,0] * numpy.eye(n) ) \
          else Square( r_linear, r_offset )
     else:
       trans = Updim( r_linear, r_offset, isflipped )
@@ -396,7 +393,7 @@ def affine( linear, offset, numer=1, isflipped=None ):
   return CanonicalTransformChain( [trans] )
 
 def simplex( coords, isflipped=None ):
-  coords = rational.asarray(coords)
+  coords = numpy.asarray(coords)
   offset = coords[0]
   return affine( (coords[1:]-offset).T, offset, isflipped=isflipped )
 
@@ -431,7 +428,7 @@ def solve( T1, T2 ): # T1 << x == T2
     T1 = T1.slicefrom(1)
     T2 = T2.slicefrom(1)
   # A1 * ( Ax * xi + bx ) + b1 == A2 * xi + b2 => A1 * Ax = A2, A1 * bx + b1 = b2
-  Ax, bx = rational.solve( T1.linear, T2.linear, T2.offset - T1.offset )
+  Ax, bx = numeric.solve_exact( T1.linear, T2.linear, T2.offset - T1.offset )
   return affine( Ax, bx )
 
 

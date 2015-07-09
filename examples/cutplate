@@ -85,10 +85,10 @@ def unittest():
 
   retvals = main( nelems=None, degree=2, maxrefine=2, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
-    eNplUkkOwzAI/E4qmYrFYPOcHnLt/481xo7aVApiQDBmRqFy1EL6KMfBXeQEK9WdTtAyeu/Xu1AzPmEM
-    EVPk6Bl7i5HA+IxvoUj34NomAbO1TcCIvHEE6KAPRrDacVNDZ5SrcEPfxXf8vj7SmDQLJXON1XSvDUlU
-    XaacmyzvecCWpthq5JTX+KrINOUQ1ZmRlzzF7IvOfJNNXTznUzqJzUOgEtqU/ucBqC+wjYDmlJ3tBgza
-    7JhrrqtUTcBi62og776xSafw59srYEqfLsNAjNaP8PgAzxOBdQ==''' )
+    eNplkksOwyAMRK+TSrjyHzhOF9nm/stiwFWbSkEeI9v4jULl0EL2KMfBrfoJXgyln2Bl3F2vq1B1PmEU
+    kWjEuHPyFiWh8RnfVhHuh7VSNDJXzgHUu6eOA0ZkMRFc1XI0NF6rzKQ7aibf5/f1EaCLWJDMNnbCbBtI
+    pH3h3LB6E46yRDMMN2zjVTHbGbktHMI6I9KKnPdr4B2bWiylH3QSl4ighDLR/zwAG8xTpBFQ+y5ON6Dp
+    Ft51CeOFMoTi3hoYMXliPoc/314Bb/CPYSCO+0d4vAHvloFx''' )
 
   retvals = main( nelems=4, degree=2, maxrefine=2, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''

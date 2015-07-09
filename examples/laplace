@@ -72,9 +72,9 @@ def unittest():
 
   retvals = main( degree=1, withplots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
-    eNqNUDkOwzAM+04CyIVu2c/p4DX/H2spTYa2QwEbommBpESwKZDtsG2uLrMZdHSbTWFx+AASjdkEGHlk
-    TYqC35CdPHsX/PMs1eN5wK/bltcSjqXaLetJ4qDZvB5iIYnNRNI2uW6hFyYUzGSfysuUh2p+aYhXRa5W
-    ViuezWs+Yqt5v8J4nJ53INOoPX2GGt4x6xWMJPvkDkdhdm7Ua43sKsWblPMO+wvOeV1C''' )
+    eNqNkEEOAyEIRa8zk2AjHxA9Thdu5/7LChm7aLtoonnwRfjKdCixnXQcTbrNYtQrdBalpdUHsQCzCKFa
+    MiSOwgxhnLUr/HOtrtfzol+7rMZtFieII5jiwOCdCMNnaWSqNcaG1pu0HXPFCGefnddQDNU4Uo/yxapJ
+    qOQVGDJnWA9+mWld8qlvQ6Y+Qvg0NRwS3MZYPL9rm+PbAWrjZLvPTTx40vkCzKNdVA==''' )
 
   retvals = main( nelems=4, degree=1, withplots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''

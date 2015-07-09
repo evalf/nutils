@@ -23,18 +23,13 @@ def grid( shape ):
   return grid
 
 def round( arr ):
-  arr = numpy.asarray( arr )
-  return arr if arr.dtype == int \
-    else ( arr - numpy.less(arr,0) + .5 ).astype( int )
+  return numpy.round( arr ).astype( int )
 
 def sign( arr ):
-  arr = numpy.asarray( arr )
-  return (arr>=0).astype(int) - (arr<=0).astype(int)
+  return numpy.sign( arr ).astype( int )
 
 def floor( arr ):
-  ass = numpy.asarray( arr )
-  return arr if arr.dtype == int \
-    else ( arr - numpy.less(arr,0) ).astype( int )
+  return numpy.floor( arr ).astype( int )
 
 def ceil( arr ):
   return numpy.ceil( arr ).astype( int )
@@ -377,5 +372,120 @@ def invorder( n ):
   ninv = numpy.empty( len(n), dtype=int )
   ninv[n] = numpy.arange( len(n) )
   return ninv
+
+def blockdiag( args ):
+  args = [ numpy.asarray(arg) for arg in args ]
+  shapes = numpy.array([ arg.shape for arg in args ])
+  blockdiag = numpy.zeros( shapes.sum(0) )
+  for arg, (i,j) in zip( args, shapes.cumsum(0) ):
+    blockdiag[ i-arg.shape[0]:i, j-arg.shape[1]:j ] = arg
+  return blockdiag
+
+
+# EXACT OPERATIONS ON FLOATS
+
+def solve_exact( A, *B ):
+  A = numpy.asarray( A )
+  assert A.ndim == 2
+  B = [ numpy.asarray(b) for b in B ]
+  assert all( b.shape[0] == A.shape[0] and b.ndim in (1,2) for b in B )
+  n = A.shape[1]
+  S = [ slice(i,i+b.shape[1]) if b.ndim == 2 else i for b, i in zip( B, numpy.cumsum([n]+[ b[0].size for b in B[:-1] ]) ) ]
+  Ab = numpy.concatenate( [ A ] + [ b.reshape(len(b),-1) for b in B ], axis=1 )
+  for icol in range(n):
+    if not Ab[icol,icol]:
+      Ab[icol:] = Ab[icol+numpy.argsort([ abs(v) if v else numpy.inf for v in Ab[icol:,icol] ])]
+    Ab[:icol] = Ab[:icol] * Ab[icol,icol] - Ab[:icol,icol,numpy.newaxis] * Ab[icol,:]
+    Ab[icol+1:] = Ab[icol+1:] * Ab[icol,icol] - Ab[icol+1:,icol,numpy.newaxis] * Ab[icol,:]
+  if Ab[n:].any():
+    raise numpy.linalg.LinAlgError( 'linear system has no solution' )
+  Ab[:n,n:] /= numpy.diag( Ab[:n,:n] )[:,numpy.newaxis]
+  X = [ Ab[:n,s] for s in S ]
+  assert all( numpy.all( dot(A,x) == b ) for (x,b) in zip(X,B) )
+  if len(B) == 1:
+    X, = X
+  return X
+
+def adj_exact( A ):
+  '''adj(A) = inv(A) * det(A)'''
+  A = numpy.asarray(A)
+  assert A.ndim == 2 and A.shape[0] == A.shape[1]
+  if len(A) == 1:
+    adj = numpy.ones( (1,1) )
+  elif len(A) == 2:
+    ((a,b),(c,d)) = A
+    adj = numpy.array(((d,-b),(-c,a)))
+  elif len(A) == 3:
+    ((a,b,c),(d,e,f),(g,h,i)) = A
+    adj = numpy.array(((e*i-f*h,c*h-b*i,b*f-c*e),(f*g-d*i,a*i-c*g,c*d-a*f),(d*h-e*g,b*g-a*h,a*e-b*d)))
+  else:
+    raise NotImplementedError( 'shape={}'.format(A.shape) )
+  return adj
+
+def det_exact( A ):
+  # for some reason, numpy.linalg.det suffers from rounding errors
+  A = numpy.asarray( A )
+  assert A.ndim == 2 and A.shape[0] == A.shape[1]
+  if len(A) == 1:
+    retval = A[0,0]
+  elif len(A) == 2:
+    ((a,b),(c,d)) = A
+    retval = a*d - b*c
+  elif len(A) == 3:
+    ((a,b,c),(d,e,f),(g,h,i)) = A
+    retval = a*e*i + b*f*g + c*d*h - c*e*g - b*d*i - a*f*h
+  else:
+    raise NotImplementedError( 'shape=' + str(A.shape) )
+  return retval
+
+def inv_exact( A ):
+  A = numpy.asarray( A )
+  Ainv = adj_exact( A ) / det_exact( A )
+  eye = contract( A[...,:,:,numpy.newaxis], Ainv[...,numpy.newaxis,:,:], axis=-2 )
+  assert numpy.all( eye == numpy.eye(A.shape[-1]) )
+  return Ainv
+
+def ext( A ):
+  """Exterior
+  For array of shape (n,n-1) return n-vector ex such that ex.array = 0 and
+  det(arr;ex) = ex.ex"""
+  A = numpy.asarray(A)
+  assert A.ndim == 2 and A.shape[0] == A.shape[1]+1
+  if len(A) == 1:
+    ext = numpy.ones( 1 )
+  elif len(A) == 2:
+    ((a,),(b,)) = A
+    ext = numpy.array((b,-a))
+  elif len(A) == 3:
+    ((a,b),(c,d),(e,f)) = A
+    ext = numpy.array((c*f-e*d,e*b-a*f,a*d-c*b))
+  else:
+    raise NotImplementedError( 'shape=%s' % (A.shape,) )
+  # VERIFY
+  Av = numpy.concatenate( [ext[:,numpy.newaxis],A], axis=1 )
+  assert numpy.all( dot( ext, A ) == 0 )
+  assert numpy.all( det_exact(Av) == dot(ext,ext) )
+  return ext
+
+def fextract( A ):
+  A = numpy.asarray( A, dtype=numpy.float64 )
+  bits = A.view( numpy.int64 )
+  sign = numpy.sign(bits)
+  exponent = ( (bits>>52) & ((1<<11)-1) ) - 1075
+  mantissa = ( bits & ((1<<52)-1) ) | (1<<52)
+  # from here on A == sign * mantissa * 2.**exponent
+  for tryshift in 32, 16, 8, 4, 2, 1:
+    shift = tryshift * ( mantissa & ((1<<tryshift)-1) == 0 )
+    mantissa >>= shift
+    exponent += shift
+  if not A.ndim:
+    return sign * mantissa, sign and exponent
+  iszero = sign == 0
+  minexp = numpy.min( exponent[~iszero] )
+  shift = exponent[~iszero] - minexp
+  assert not numpy.any( mantissa[~iszero] >> (63-shift) )
+  mantissa[~iszero] <<= shift
+  return sign * mantissa, minexp
+
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

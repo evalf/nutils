@@ -17,7 +17,7 @@ purposes of integration and sampling.
 """
 
 from __future__ import print_function, division
-from . import log, util, numpy, core, numeric, function, cache, transform, rational, _
+from . import log, util, numpy, core, numeric, function, cache, transform, _
 import re, warnings
 
 
@@ -198,11 +198,11 @@ class Reference( cache.Immutable ):
     childedgemap = tuple( [None] * child.nedges for child in self.child_refs )
     for iedge, (etrans,edge) in enumerate(self.edges):
       for ichild, (ctrans,child) in enumerate(edge.children):
-        v = tuple( sorted( (etrans<<ctrans).apply(child.vertices).totuple() ) )
+        v = tuple( sorted( tuple(vi) for vi in (etrans<<ctrans).apply(child.vertices) ) )
         vmap[v] = ichild, iedge, True
     for ichild, (ctrans,child) in enumerate(self.children):
       for iedge, (etrans,edge) in enumerate(child.edges):
-        v = tuple( sorted( (ctrans<<etrans).apply(edge.vertices).totuple() ) )
+        v = tuple( sorted( tuple(vi) for vi in (ctrans<<etrans).apply(edge.vertices) ) )
         try:
           jchild, jedge, isouter = childedgemap[ichild][iedge] = vmap.pop(v)
         except KeyError:
@@ -234,7 +234,7 @@ class Reference( cache.Immutable ):
       where = numpy.zeros( self.nverts, dtype=bool )
       if edge:
         for v in trans.apply( edge.vertices ):
-          where |= rational.equal( self.vertices, v ).all( axis=1 )
+          where |= numpy.all( self.vertices == v, axis=1 )
       edge2vertex.append( where )
     return numpy.array( edge2vertex )
 
@@ -320,7 +320,7 @@ class Reference( cache.Immutable ):
       elif ( levels[~oniface] <= 0 ).all():
         posneg = None, self
       else:
-        vertices = rational.concatenate( [ self.vertices, newverts ] )
+        vertices = numpy.concatenate( [ self.vertices, newverts ] )
         newlevels = numpy.zeros( len(vertices) )
         newlevels[:self.nverts][~oniface] = levels[~oniface]
         triangulation, ispos = signed_triangulate( vertices, newlevels )
@@ -341,7 +341,7 @@ class Reference( cache.Immutable ):
       if not edge:
         continue
       xe, we = edge.getischeme( 'gauss1' )
-      w_normal = we[:,_] * rational.ext( trans.linear ).astype( float )
+      w_normal = we[:,_] * numeric.ext( trans.linear )
       if trans.isflipped:
         w_normal = -w_normal
       check_zero += w_normal.sum(0)
@@ -684,13 +684,13 @@ class TensorReference( Reference ):
   def edge_transforms( self ):
     return tuple(
       [ transform.affine(
-        rational.blockdiag([ trans1.linear, rational.eye(self.ref2.ndims) ]),
-        rational.concatenate([ trans1.offset, rational.zeros(self.ref2.ndims) ]),
+        numeric.blockdiag([ trans1.linear, numpy.eye(self.ref2.ndims) ]),
+        numpy.concatenate([ trans1.offset, numpy.zeros(self.ref2.ndims) ]),
         isflipped=trans1.isflipped )
           for trans1 in self.ref1.edge_transforms ]
    + [ transform.affine(
-        rational.blockdiag([ rational.eye(self.ref1.ndims), trans2.linear ]),
-        rational.concatenate([ rational.zeros(self.ref1.ndims), trans2.offset ]),
+        numeric.blockdiag([ numpy.eye(self.ref1.ndims), trans2.linear ]),
+        numpy.concatenate([ numpy.zeros(self.ref1.ndims), trans2.offset ]),
         isflipped=trans2.isflipped if self.ref1.ndims%2==0 else not trans2.isflipped )
           for trans2 in self.ref2.edge_transforms ])
 
@@ -702,8 +702,8 @@ class TensorReference( Reference ):
   @cache.property
   def child_transforms( self ):
     return [ transform.affine( trans1.linear if trans1.linear.ndim == 0 and trans1.linear == trans2.linear
-                          else rational.blockdiag([ trans1.linear, trans2.linear ]),
-                               rational.concatenate([ trans1.offset, trans2.offset ]) )
+                          else numeric.blockdiag([ trans1.linear, trans2.linear ]),
+                               numpy.concatenate([ trans1.offset, trans2.offset ]) )
             for trans1 in self.ref1.child_transforms
               for trans2 in self.ref2.child_transforms ]
 
@@ -1142,7 +1142,7 @@ class MultiSimplexReference( WrappedReference ):
     elif ( coordlevels[~oniface] <= 0 ).all():
       posneg = None, self
     else:
-      vertices = rational.concatenate( [ coords, newverts ], axis=0 )
+      vertices = numpy.concatenate( [ coords, newverts ], axis=0 )
       newlevels = numpy.zeros( len(vertices) )
       newlevels[:len(coords)][~oniface] = coordlevels[~oniface]
       triangulation = []
@@ -1531,7 +1531,7 @@ def signed_triangulate( points, vsigns ):
     assert esigns.all()
   selection = []
   for tri in triangulation:
-    area = rational.det( points[tri[1:]] - points[tri[0]] )
+    area = numeric.det_exact( points[tri[1:]] - points[tri[0]] )
     if area < 0:
       tri[-2:] = tri[-1], tri[-2]
     selection.append( area != 0 )
@@ -1551,11 +1551,6 @@ def mknewvtx( vertices, levels, ribbons, denom ):
   numer = []
   oniface = levels == 0
   isectribs = []
-  if rational.isrational( vertices ):
-    superdenom = denom * vertices.denom
-    vertices = vertices.numer
-  else:
-    superdenom = denom
   for iribbon, (i,j) in enumerate(ribbons):
     a, b = levels[[i,j]]
     if a * b < 0:
@@ -1570,7 +1565,7 @@ def mknewvtx( vertices, levels, ribbons, denom ):
   if not numer:
     return numpy.zeros( (0,vertices.shape[1]), dtype=int ), numpy.zeros( (0,), dtype=int ), oniface
   numer, isectribs = zip( *sorted( zip( numer, isectribs ) ) ) # canonical ordering (for element equivalence)
-  return rational.frac(numer,superdenom), numpy.array(isectribs), oniface
+  return numer/denom, numpy.array(isectribs), oniface
 
 def index_or_append( items, item ):
   try:
