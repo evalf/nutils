@@ -32,7 +32,7 @@ expensive and currently unsupported operation.
 
 from __future__ import print_function, division
 from . import util, numpy, numeric, log, core, cache, transform, rational, _
-import sys, warnings
+import sys, warnings, itertools
 
 CACHE = 'Cache'
 TRANS = 'Trans'
@@ -2953,6 +2953,23 @@ def choose( level, choices ):
     return numpy.choose( level, choices )
   level_choices = _matchndim( level, *choices )
   return Choose( level_choices[0], level_choices[1:] )
+
+def _condlist_to_level( *condlist ):
+  level = 0
+  mask = 1
+  for i, condition in enumerate(condlist):
+    condition = numpy.asarray(condition, bool)
+    level += (i+1)*mask*condition
+    mask *= 1-condition
+  return level
+
+def select( condlist, choicelist, default=0 ):
+  'select'
+
+  if not any(map(_isfunc, itertools.chain( condlist, choicelist, [default] ))):
+    return numpy.select( condlist, choicelist, default=default )
+  level = pointwise( condlist, _condlist_to_level, None )
+  return choose( level, (default,)+tuple(choicelist) )
 
 def cross( arg1, arg2, axis ):
   'cross product'
