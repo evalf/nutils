@@ -85,7 +85,7 @@ class HtmlStream( Stream ):
 
   @staticmethod
   def _path2href( match ):
-    whitelist = ['.jpg','.png','.svg','.txt'] + core.getprop( 'plot_extensions', [] )
+    whitelist = ['.jpg','.png','.svg','.txt','.mp4','.webm'] + core.getprop( 'plot_extensions', [] )
     filename = match.group(0)
     ext = match.group(1)
     return '<a href="%s">%s</a>' % (filename,filename) if ext not in whitelist \
