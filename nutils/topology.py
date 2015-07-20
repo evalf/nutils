@@ -94,7 +94,7 @@ class Topology( object ):
   def __mul__( self, other ):
     'element products'
 
-    quad = element.LineReference()**2
+    quad = element.getsimplex(1)**2
     ndims = self.ndims + other.ndims
     eye = numpy.eye( ndims, dtype=int )
     self_trans = transform.affine(eye[:self.ndims])
@@ -208,7 +208,7 @@ class Topology( object ):
     nmap = {}
     stdfunc = element.BubbleTriangle()
     for ielem, elem in enumerate(self):
-      assert elem.reference == element.TriangleReference()
+      assert isinstance( elem.reference, element.TriangleReference )
       dofs = numpy.empty( elem.nverts+1, dtype=int )
       for i, v in enumerate( elem.vertices ):
         dof = dofmap.get(v)
@@ -742,7 +742,7 @@ class StructuredTopology( Topology ):
       b = numpy.hstack( [ numpy.ones( idim+1, dtype=int ), numpy.zeros( self.ndims-idim, dtype=int ) ] )
       trans1 = transform.affine( A, b[:-1], isflipped=False )
       trans2 = transform.affine( A, b[1:], isflipped=True )
-      edge = element.LineReference()**(self.ndims-1)
+      edge = element.getsimplex(1)**(self.ndims-1)
       for elem1, elem2 in numpy.broadcast( self.structure[t1], self.structure[t2] ):
         assert elem1.transform == elem1.opposite
         assert elem2.transform == elem2.opposite

@@ -15,7 +15,7 @@ def gauss( ndims, istensor, maxdegree=7, eps=1e-12 ):
 
   monomials = numpy.mgrid[ (slice(maxdegree),)*ndims ].reshape(ndims,-1).T
   if istensor:
-    ref = element.LineReference()**ndims
+    ref = element.getsimplex(1)**ndims
     integrals = numpy.reciprocal((monomials+1.).prod(-1))
   else:
     ref = element.getsimplex(ndims)

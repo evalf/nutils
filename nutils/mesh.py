@@ -52,7 +52,7 @@ def rectilinear( richshape, periodic=(), name='rect', revolved=False ):
     assert all( ( name.take(0,i) == name.take(2,i) ).all() for i in periodic )
     root = transform.roottransedges( name, shape )
 
-  reference = element.LineReference()**ndims
+  reference = element.getsimplex(1)**ndims
   for index in indices.reshape( ndims, -1 ).T:
     structure[tuple(index)] = element.Element( reference, root << transform.affine(0,index) )
   topo = topology.StructuredTopology( structure, periodic=periodic )
@@ -171,7 +171,7 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
         elemcoords = coords[nids]
         if numpy.linalg.det( elemcoords[:2] - elemcoords[2] ) < 0:
           nids[:2] = nids[1], nids[0]
-        ref = element.TriangleReference()
+        ref = element.getsimplex(2)
         maptrans = transform.maptrans(ref.vertices,nids if not name else [name+str(nid) for nid in nids])
         elem = element.Element(ref,maptrans)
         elems[elemkey] = elem
@@ -193,7 +193,7 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
             ifaces[key] = iface
 
         #Extract the vertices
-        vref = element.PointReference()
+        vref = element.getsimplex(0)
         for ivertex in range(3): #GMSH and Nutils node ordering coincide
           zeroD_to_twoD = transform.affine( linear=numpy.zeros(shape=(2,0),dtype=int), offset=ref.vertices[ivertex], isflipped=False )
           vmaptrans = maptrans << zeroD_to_twoD
@@ -259,7 +259,7 @@ def triangulation( vertices, nvertices ):
   nmap = {}
   I = numpy.array( [[2,0],[0,1],[1,2]] )
   for n123 in vertices:
-    elem = element.TriangularElement()
+    elem = element.getsimplex(2)
     nmap[ elem ] = n123
     for iedge, (n1,n2) in enumerate( n123[I] ):
       try:
@@ -422,7 +422,7 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   + [ [ 20, 12+i, 12+(i+1)%8 ] for i in range(8) ] )
   
   root = transform.roottrans( 'demo', shape=(0,0) )
-  reference = element.TriangleReference()
+  reference = element.getsimplex(2)
   elements = [ element.Element( reference, root << transform.simplex(coords[iverts]) ) for iverts in vertices ]
   belems = [ elem.edge(0) for elem in elements[:12] ]
   bgroups = { 'top': belems[0:3], 'left': belems[3:6], 'bottom': belems[6:9], 'right': belems[9:12] }

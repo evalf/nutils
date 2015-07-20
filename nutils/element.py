@@ -18,7 +18,7 @@ purposes of integration and sampling.
 
 from __future__ import print_function, division
 from . import log, util, numpy, core, numeric, function, cache, transform, _
-import re, warnings
+import re, warnings, math
 
 
 ## ELEMENT
@@ -168,7 +168,7 @@ class Reference( cache.Immutable ):
 
   def __pow__( self, n ):
     assert numeric.isint( n ) and n >= 0
-    return PointReference() if n == 0 \
+    return getsimplex(0) if n == 0 \
       else self if n == 1 \
       else self * self**(n-1)
 
@@ -352,11 +352,18 @@ class Reference( cache.Immutable ):
 class SimplexReference( Reference ):
   'simplex reference'
 
-  def __init__( self, ndims ):
-    assert ndims >= 0
-    vertices = numpy.concatenate( [ numpy.zeros(ndims,dtype=int)[_,:], numpy.eye(ndims,dtype=int) ], axis=0 )
+  def __init__( self, vertices ):
+    nverts, ndims = vertices.shape
+    assert nverts == ndims+1
     if ndims:
       self.edge_refs = (getsimplex(ndims-1),) * (ndims+1)
+      self.x0 = vertices[0]
+      self.dx = vertices[1:] - self.x0
+      self.volume = numpy.linalg.det(self.dx) / math.factorial(ndims)
+      assert self.volume != 0
+      self.inverted = self.volume < 0
+      if self.inverted:
+        self.volume = -self.volume
     Reference.__init__( self, vertices )
 
   @cache.property
@@ -371,9 +378,12 @@ class SimplexReference( Reference ):
   def child_refs( self ):
     return (self,) * len(self.child_transforms)
 
+  def getischeme_vtk( self ):
+    return self.vertices, None
+
   def getischeme_vertex( self, n=0 ):
     if n == 0:
-      return self.vertices.astype(float), None
+      return self.vertices, None
     return self.getischeme_bezier( 2**n+1 )
 
   def __str__( self ):
@@ -384,8 +394,8 @@ class SimplexReference( Reference ):
 class PointReference( SimplexReference ):
   '0D simplex'
 
-  def __init__( self ):
-    SimplexReference.__init__( self, 0 )
+  def __init__( self, vertices ):
+    SimplexReference.__init__( self, vertices )
     self.child_transforms = transform.identity,
 
   def getischeme( self, ischeme ):
@@ -394,10 +404,10 @@ class PointReference( SimplexReference ):
 class LineReference( SimplexReference ):
   '1D simplex'
 
-  def __init__( self ):
+  def __init__( self, vertices ):
     self._bernsteincache = [] # TEMPORARY
-    SimplexReference.__init__( self, 1 )
-    self.edge_transforms = transform.simplex( self.vertices[1:], isflipped=False ), transform.simplex( self.vertices[:1], isflipped=True )
+    SimplexReference.__init__( self, vertices )
+    self.edge_transforms = transform.simplex( vertices[1:], isflipped=False ), transform.simplex( vertices[:1], isflipped=True )
     self.child_transforms = transform.affine(1,[0],2), transform.affine(1,[1],2)
     self.check_edges()
 
@@ -410,13 +420,13 @@ class LineReference( SimplexReference ):
   def getischeme_gauss( self, degree ):
     assert isinstance( degree, int ) and degree >= 0
     x, w = gauss( degree )
-    return x[:,_], w
+    return self.x0 + x[:,_] * self.dx, w * self.volume
 
   def getischeme_uniform( self, n ):
-    return numpy.arange( .5, n )[:,_] / n, numeric.appendaxes( 1./n, n )
+    return self.x0 + ( numpy.arange(.5,n) / n )[:,_] * self.dx, numeric.appendaxes( self.volume/n, n )
 
   def getischeme_bezier( self, np ):
-    return numpy.linspace( 0, 1, np )[:,_], None
+    return self.x0 + numpy.linspace( 0, 1, np )[:,_] * self.dx, None
 
   def subvertex( self, ichild, i ):
     if i == 0:
@@ -429,9 +439,9 @@ class LineReference( SimplexReference ):
 class TriangleReference( SimplexReference ):
   '2D simplex'
 
-  def __init__( self ):
-    SimplexReference.__init__( self, 2 )
-    self.edge_transforms = transform.simplex( self.vertices[1:], isflipped=False ), transform.simplex( self.vertices[::-2], isflipped=False ), transform.simplex( self.vertices[:-1], isflipped=False )
+  def __init__( self, vertices ):
+    SimplexReference.__init__( self, vertices )
+    self.edge_transforms = tuple( transform.simplex( vertices[I], isflipped=self.inverted ) for I in [slice(1,None),slice(None,None,-2),slice(2)] )
     self.child_transforms = transform.affine(1,[0,0],2), transform.affine(1,[0,1],2), transform.affine(1,[1,0],2), transform.affine([[0,-1],[-1,0]],[1,1],2,isflipped=True )
     self.check_edges()
 
@@ -441,10 +451,7 @@ class TriangleReference( SimplexReference ):
   def getischeme_contour( self, n ):
     p = numpy.arange( n+1, dtype=float ) / (n+1)
     z = numpy.zeros_like( p )
-    return numpy.hstack(( [1-p,p], [z,1-p], [p,z] )).T, None
-
-  def getischeme_vtk( self ):
-    return self.vertices.astype(float), None
+    return self.x0 + numpy.dot( numpy.hstack(( [1-p,p], [z,1-p], [p,z] )).T, self.dx ), None
 
   def getischeme_gauss( self, degree ):
     '''get integration scheme
@@ -486,8 +493,8 @@ class TriangleReference( SimplexReference ):
     if degree > 7:
       warnings.warn( 'inexact integration for polynomial of degree %i'.format(degree) )
 
-    return numpy.concatenate( [ numpy.take(c,i) for i, c, w in icw ], axis=0 ), \
-           numpy.concatenate( [ [w/2] * len(i) for i, c, w in icw ] )
+    return self.x0 + numpy.dot( numpy.concatenate( [ numpy.take(c,i) for i, c, w in icw ], axis=0 ), self.dx ), \
+           numpy.concatenate( [ [w*self.volume] * len(i) for i, c, w in icw ] )
 
   def getischeme_uniform( self, n ):
     points = numpy.arange( 1./3, n ) / n
@@ -498,12 +505,12 @@ class TriangleReference( SimplexReference ):
     coords = C.reshape( 2, nn )
     flip = coords.sum(0) > 1
     coords[:,flip] = 1 - coords[::-1,flip]
-    weights = numeric.appendaxes( .5/nn, nn )
-    return coords.T, weights
+    weights = numeric.appendaxes( self.volume/nn, nn )
+    return self.x0 + numpy.dot( coords.T, self.dx ), weights
 
   def getischeme_bezier( self, np ):
     points = numpy.linspace( 0, 1, np )
-    return numpy.array([ [x,y] for i, y in enumerate(points) for x in points[:np-i] ]), None
+    return self.x0 + numpy.dot( numpy.array([ [x,y] for i, y in enumerate(points) for x in points[:np-i] ]), self.dx ), None
 
   def subvertex( self, ichild, irefine ):
     if irefine == 0:
@@ -531,13 +538,10 @@ class TriangleReference( SimplexReference ):
 class TetrahedronReference( SimplexReference ):
   '3D simplex'
 
-  def __init__( self ):
-    SimplexReference.__init__( self, 3 )
-    self.edge_transforms = tuple( transform.simplex( self.vertices[I], isflipped=False ) for I in [[1,2,3],[0,3,2],[3,0,1],[2,1,0]] )
+  def __init__( self, vertices ):
+    SimplexReference.__init__( self, vertices )
+    self.edge_transforms = tuple( transform.simplex( vertices[I], isflipped=self.inverted ) for I in [[1,2,3],[0,3,2],[3,0,1],[2,1,0]] )
     self.check_edges()
-
-  def getischeme_vtk( self ):
-    return self.vertices.astype(float), None
 
   def getischeme_gauss( self, degree ):
     '''get integration scheme
@@ -593,8 +597,8 @@ class TetrahedronReference( SimplexReference ):
     if degree > 8:
       warnings.warn( 'inexact integration for polynomial of degree %i'.format(degree) )
 
-    return numpy.concatenate( [ numpy.take(c,i) for i, c, w in icw ], axis=0 ), \
-           numpy.concatenate( [ [w/6] * len(i) for i, c, w in icw ] )
+    return self.x0 + numpy.dot( numpy.concatenate( [ numpy.take(c,i) for i, c, w in icw ], axis=0 ), self.dx ), \
+           numpy.concatenate( [ [w*self.volume] * len(i) for i, c, w in icw ] )
 
 class TensorReference( Reference ):
   'tensor reference'
@@ -641,16 +645,16 @@ class TensorReference( Reference ):
     return self.ref1.stdfunc(degree) * self.ref2.stdfunc(degree)
 
   def getischeme_vtk( self ):
-    if self == LineReference()**2:
+    if self == getsimplex(1)**2:
       points = [[0,0],[1,0],[1,1],[0,1]]
-    elif self == LineReference()**3:
+    elif self == getsimplex(1)**3:
       points = [[0,0,0],[1,0,0],[0,1,0],[1,1,0],[0,0,1],[1,0,1],[0,1,1],[1,1,1]]
     else:
       raise NotImplementedError
     return numpy.array(points,dtype=float), numpy.ones(self.nverts,dtype=float)
 
   def getischeme_contour( self, n ):
-    assert self == LineReference()**2
+    assert self == getsimplex(1)**2
     p = numpy.arange( n+1, dtype=float ) / (n+1)
     z = numpy.zeros_like( p )
     return numpy.hstack(( [p,z], [1-z,p], [1-p,1-z], [z,1-p] )).T, None
@@ -738,7 +742,7 @@ class NeighborhoodTensorReference( TensorReference ):
 
   def get_tri_bem_ischeme( self, ischeme ):
     'Some cached quantities for the singularity quadrature scheme.'
-    points, weights = (LineReference()**4).getischeme( ischeme )
+    points, weights = (getsimplex(1)**4).getischeme( ischeme )
     eta1, eta2, eta3, xi = points.T
     if self.neighborhood == 0:
       temp = xi*eta1*eta2*eta3
@@ -791,7 +795,7 @@ class NeighborhoodTensorReference( TensorReference ):
 
   def get_quad_bem_ischeme( self, ischeme ):
     'Some cached quantities for the singularity quadrature scheme.'
-    quad = LineReference()**4
+    quad = getsimplex(1)**4
     points, weights = quad.getischeme( ischeme )
     eta1, eta2, eta3, xi = points.T
     if self.neighborhood == 0:
@@ -839,7 +843,7 @@ class NeighborhoodTensorReference( TensorReference ):
     'get integration scheme'
     
     gauss = 'gauss%d'% (n*2-2)
-    assert self.ref1 == self.ref2 == LineReference()**2
+    assert self.ref1 == self.ref2 == getsimplex(1)**2
     points, weights = self.get_quad_bem_ischeme( gauss )
     return self.singular_ischeme_quad( points ), weights
 
@@ -1545,7 +1549,8 @@ def signed_triangulate( points, vsigns ):
 
 def getsimplex( ndims ):
   constructors = PointReference, LineReference, TriangleReference, TetrahedronReference
-  return constructors[ndims]()
+  vertices = numpy.concatenate( [ numpy.zeros(ndims,dtype=int)[_,:], numpy.eye(ndims,dtype=int) ], axis=0 )
+  return constructors[ndims]( vertices )
 
 def mknewvtx( vertices, levels, ribbons, denom ):
   numer = []

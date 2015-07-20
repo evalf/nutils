@@ -70,7 +70,7 @@ from . import register, unittest
 def check( op, n_op, shapes, hasgrad=True ):
 
   roottrans = transform.affine( [[0,1],[-1,0]], [1,0] ) >> transform.affine( [[2,1],[-1,3]], [1,0] )
-  elem = element.Element( element.LineReference()**2, roottrans >> transform.roottrans( 'test', (0,0) ) )
+  elem = element.Element( element.getsimplex(1)**2, roottrans >> transform.roottrans( 'test', (0,0) ) )
   iface = element.Element( elem.edge(0).reference, elem.edge(0).transform, elem.edge(1).transform )
   ifpoints, ifweights = iface.reference.getischeme('uniform2')
 
