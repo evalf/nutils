@@ -727,7 +727,7 @@ class StructuredTopology( Topology ):
   def interfaces( self ):
     'interfaces'
 
-    interfaces = []
+    groups = []
     eye = numpy.eye( self.ndims-1, dtype=int )
     for idim in range(self.ndims):
       if idim in self.periodic:
@@ -743,12 +743,17 @@ class StructuredTopology( Topology ):
       trans1 = transform.affine( A, b[:-1], isflipped=False )
       trans2 = transform.affine( A, b[1:], isflipped=True )
       edge = element.LineReference()**(self.ndims-1)
+      group = []
       for elem1, elem2 in numpy.broadcast( self.structure[t1], self.structure[t2] ):
         assert elem1.transform == elem1.opposite
         assert elem2.transform == elem2.opposite
         ielem = element.Element( edge, elem1.transform << trans1, elem2.transform << trans2 )
-        interfaces.append( ielem )
-    return Topology( interfaces, self.ndims-1 )
+        group.append( ielem )
+      groups.append( group )
+    topo = Topology( util.sum(groups), self.ndims-1 )
+    for idim, group in enumerate( groups ):
+      topo[ 'dir{}'.format(idim) ] = Topology( group, self.ndims-1 )
+    return topo
 
   def basis_spline( self, degree, neumann=(), knots=None, periodic=None, closed=False, removedofs=None ):
     'spline from vertices'
