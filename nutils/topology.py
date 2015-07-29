@@ -1079,8 +1079,8 @@ class StructuredTopology( Topology ):
     assert len(itopos) == self.ndims
     return UnionTopology( itopos, names=[ 'dir{}'.format(idim) for idim in range(self.ndims) ] )
 
-  def basis_spline( self, degree, knotvalues=None, knotmultiplicities=None, periodic=None, removedofs=None ):
-    'spline basis'
+  def _basis_spline( self, degree, knotvalues=None, knotmultiplicities=None, periodic=None ):
+    'spline with structure information'
     
     if periodic is None:
       periodic = self.periodic
@@ -1095,11 +1095,6 @@ class StructuredTopology( Topology ):
     
     if knotmultiplicities is None:
       knotmultiplicities = [None]*self.ndims
-
-    if removedofs == None:
-      removedofs = [None] * self.ndims
-    else:
-      assert len(removedofs) == self.ndims
 
     vertex_structure = numpy.array( 0 )
     dofshape = []
@@ -1187,7 +1182,17 @@ class StructuredTopology( Topology ):
       dofs = vertex_structure[S].ravel()
       dofmap[trans] = dofs
       funcmap[trans] = std
+    return funcmap, dofmap, dofshape
 
+  def basis_spline( self, degree, knotvalues=None, knotmultiplicities=None, periodic=None, removedofs=None ):
+    'spline basis'
+
+    if removedofs == None:
+      removedofs = [None] * self.ndims
+    else:
+      assert len(removedofs) == self.ndims
+
+    funcmap, dofmap, dofshape = self._basis_spline( degree=degree, knotvalues=knotvalues, knotmultiplicities=knotmultiplicities, periodic=periodic )
     func = function.function( funcmap, dofmap, numpy.product(dofshape) )
     if not any( removedofs ):
       return func
