@@ -378,4 +378,19 @@ def invorder( n ):
   ninv[n] = numpy.arange( len(n) )
   return ninv
 
+def nanjoin( args, axis=0 ):
+  args = [ numpy.asarray(arg) for arg in args ]
+  assert args
+  assert axis >= 0
+  shape = list( args[0].shape )
+  shape[axis] = sum( arg.shape[axis] for arg in args ) + len(args) - 1
+  concat = numpy.empty( shape, dtype=float )
+  concat[:] = numpy.nan
+  i = 0
+  for arg in args:
+    j = i + arg.shape[axis]
+    concat[(slice(None),)*axis+(slice(i,j),)] = arg
+    i = j + 1
+  return concat
+
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
