@@ -536,7 +536,7 @@ class Topology( object ):
     return self if n <= 0 else self.refined.refine( n-1 )
 
   @log.title
-  def trim( self, levelset, maxrefine, check=True, eps=1/30., name='trimmed' ):
+  def trim( self, levelset, maxrefine, check=True, eps=1/64., name='trimmed' ):
     'trim element along levelset'
 
     denom = numeric.round(1./eps)

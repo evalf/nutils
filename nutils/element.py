@@ -113,7 +113,7 @@ class Reference( cache.Immutable ):
 
   def __init__( self, vertices ):
     self.vertices = numpy.asarray( vertices )
-    assert self.vertices.dtype == int
+    #assert self.vertices.dtype == int
     self.nverts, self.ndims = self.vertices.shape
 
   def __or__( self, other ):
@@ -238,6 +238,10 @@ class Reference( cache.Immutable ):
       edge2vertex.append( where )
     return numpy.array( edge2vertex )
 
+  @cache.property
+  def edgevertexmap( self ):
+    return [ numpy.array( map( self.vertices.tolist().index, etrans.apply(edge.vertices).tolist() ), dtype=int ) for etrans, edge in self.edges ]
+
   def getischeme( self, ischeme ):
     if self.ndims == 0:
       return numpy.zeros([1,0]), numpy.array([1.])
@@ -313,23 +317,36 @@ class Reference( cache.Immutable ):
 
     else:
       assert evaluated_levels, 'failed to evaluate levelset up to level maxrefine'
-      newverts, isectribs, oniface = mknewvtx( self.vertices, levels, self.ribbon2vertices, denom )
-      edge2newvert = self.edge2vertex[:,self.ribbon2vertices[isectribs]].all( axis=2 )
-      if ( levels[~oniface] >= 0 ).all():
-        posneg = self, None
-      elif ( levels[~oniface] <= 0 ).all():
-        posneg = None, self
-      else:
-        vertices = numpy.concatenate( [ self.vertices, newverts ] )
-        newlevels = numpy.zeros( len(vertices) )
-        newlevels[:self.nverts][~oniface] = levels[~oniface]
-        triangulation, ispos = signed_triangulate( vertices, newlevels )
-        edge2vertex = numpy.concatenate( [ self.edge2vertex, edge2newvert ], axis=1 )
-        posneg = MultiSimplexReference( self, vertices, triangulation,  ispos, edge2vertex, check ), \
-                 MultiSimplexReference( self, vertices, triangulation, ~ispos, edge2vertex, check )
-      intrafaces, = numpy.where( self.edge2vertex[:,oniface].sum(1) + edge2newvert.sum(1) >= self.ndims )
+      posneg = self.slice( levels, denom )
+      intrafaces = numpy.arange( self.nedges ) # FOR NOW
 
     return posneg, tuple(intrafaces)
+
+  def slice( self, levels, denom ):
+    if numpy.all( levels >= 0 ):
+      return self, None
+    if numpy.all( levels <= 0 ):
+      return None, self
+    assert len(levels) == self.nverts
+    midpoint = numpy.mean( [ self.vertices[v1] + ( self.vertices[v2]-self.vertices[v1] ) * (levels[v1]/(levels[v1]-levels[v2]))
+      for v1, v2 in self.ribbon2vertices if levels[v1] * levels[v2] <= 0 and levels[v1] != levels[v2] ], axis=0 )
+    midpoint = numpy.round( midpoint * (1024*denom) ) / (1024*denom)
+    posrefs = []
+    negrefs = []
+    for iedge, edgeref in enumerate( self.edge_refs ):
+      pos, neg = edgeref.slice( levels[self.edgevertexmap[iedge]], denom )
+      posrefs.append( pos )
+      negrefs.append( neg )
+    if not any( negrefs ):
+      return self, None
+    if not any( posrefs ):
+      return None, self
+    return MosaicReference( self, posrefs, midpoint ), MosaicReference( self, negrefs, midpoint )
+
+  def cone( self, trans, tip ):
+    assert trans.fromdims == self.ndims
+    assert trans.todims == len(tip)
+    return Cone( self, trans, tip )
 
   def check_edges( self, decimal=10 ):
     x, w = self.getischeme( 'gauss1' )
@@ -436,6 +453,55 @@ class LineReference( SimplexReference ):
     n = 2**i+1
     return n, numpy.arange(n//2+1) if ichild == 0 else numpy.arange(n//2,n)
 
+  def slice( self, levels, denom ):
+    a, b = levels
+    if a * b < 0:
+      x = int( denom * a / float(a-b) + .5 ) / denom
+      if 0 < x < 1:
+        vertices = numpy.array([0,x,1])[:,_]
+        return ( LineReference(vertices[:2]), LineReference(vertices[1:]) ) if a > 0 \
+          else ( LineReference(vertices[1:]), LineReference(vertices[:2]) )
+    return (self,None) if a + b > 0 else (None,self)
+
+  def cone( self, trans, tip ):
+    assert trans.fromdims == self.ndims
+    assert trans.todims == len(tip)
+    return TriangleReference( numpy.vstack([ [tip], trans.apply( self.vertices ) ]) )
+
+  def __sub__( self, other ):
+    if other is None:
+      return self
+    if self == other:
+      return None
+    if not isinstance( other, LineReference ):
+      return NotImplemented
+    assert self.inverted == other.inverted
+    v1, v2 = self.vertices
+    w1, w2 = other.vertices
+    if v1 == w1:
+      assert w2 < v2
+      return LineReference( numpy.array([w2,v2]) )
+    if v2 == w2:
+      assert w1 > v1
+      return LineReference( numpy.array([v1,w1]) )
+    return NotImplemented
+
+  def __and__( self, other ):
+    if other is None:
+      return None
+    if self == other:
+      return self
+    assert isinstance( other, LineReference )
+    assert self.inverted == other.inverted
+    v1, v2 = self.vertices
+    w1, w2 = other.vertices
+    a = max(v1,w1)
+    b = min(v2,w2)
+    if a == b:
+      return None
+    assert a < b
+    return LineReference( numpy.array([a,b]) )
+
 class TriangleReference( SimplexReference ):
   '2D simplex'
 
@@ -534,6 +600,11 @@ class TriangleReference( SimplexReference ):
       raise Exception( 'invalid ichild: {}'.format( ichild ) )
 
     return ((N+1)*N)//2, numpy.concatenate([ flatten_child(i,numpy.arange(n-i)) for i in range(n) ])
+
+  def cone( self, trans, tip ):
+    assert trans.fromdims == self.ndims
+    assert trans.todims == len(tip)
+    return TetrahedronReference( numpy.vstack([ [tip], trans.apply(self.vertices) ]) )
 
 class TetrahedronReference( SimplexReference ):
   '3D simplex'
@@ -715,6 +786,66 @@ class TensorReference( Reference ):
   def child_refs( self ):
     return tuple( child1 * child2 for child1 in self.ref1.child_refs for child2 in self.ref2.child_refs )
 
+class Cone( Reference ):
+  'cone'
+
+  def __init__( self, edgeref, etrans, tip ):
+    vertices = numpy.vstack([ [tip], etrans.apply( edgeref.vertices ) ])
+    Reference.__init__( self, vertices )
+    self.edgeref = edgeref
+    self.etrans = etrans
+    self.axisref = getsimplex(1)
+    self.tip = tip
+    ext = numeric.ext( etrans.linear )
+    self.height = abs( numpy.dot( tip - etrans.offset, ext ) / numpy.linalg.norm( ext ) )
+    self.check_edges()
+
+  @cache.property
+  def edge_transforms( self ):
+    edge_transforms = [ self.etrans ]
+    for trans, edge in self.edgeref.edges:
+      if edge:
+        b = self.etrans.apply( trans.offset )
+        A = numpy.hstack([ numpy.dot( self.etrans.linear, trans.linear ), (self.tip-b)[:,_] ])
+        newtrans = transform.affine( A, b, isflipped=self.etrans.isflipped==trans.isflipped )
+        edge_transforms.append( newtrans )
+    return edge_transforms
+
+  @cache.property
+  def edge_refs( self ):
+    extrudetrans = transform.affine( numpy.eye(self.ndims-1)[:,:-1], numpy.zeros(self.ndims-1), isflipped=False )
+    tip = numpy.array( [0]*(self.ndims-2)+[1], dtype=float )
+    return [ self.edgeref ] + [ edge.cone( extrudetrans, tip ) for trans, edge in self.edgeref.edges if edge ]
+
+  def getischeme( self, ischeme ):
+    if ischeme == 'vtk':
+      return self.getischeme_vtk()
+    epoints, eweights = self.edgeref.getischeme( ischeme )
+    tpoints, tweights = self.axisref.getischeme( ischeme )
+    s = 1/self.ndims
+    tx, = ( tpoints.T )**s
+    points = ( tx[:,_,_] * (self.etrans.apply(epoints)-self.tip)[_,:,:] + self.tip ).reshape( -1, self.ndims )
+    if tweights is None:
+      weights = None
+    else:
+      wx = tweights * s * self.height
+      weights = ( eweights[_,:] * wx[:,_] ).ravel()
+    return points, weights
+
+  def getischeme_vtk( self ):
+    assert self.ndims == 3
+    if self.nverts == 4:
+      I = slice(None)
+    elif self.nverts == 5:
+      I = numpy.array([0,1,3,2,4])
+    else:
+      raise Exception( 'invalid number of points: {}'.format(self.nverts) )
+    return self.vertices[I], None
+
+  @property
+  def simplices( self ):
+    return [ ( trans, ref.cone(self.etrans,self.tip) ) for trans, ref in self.edgeref.simplices ]
+
 class NeighborhoodTensorReference( TensorReference ):
   'product reference element'
 
@@ -866,17 +997,19 @@ class WrappedReference( Reference ):
     return self.baseref.subvertex
 
   def __or__( self, other ):
-    return self if other is None \
-      else self.baseref if other == self.baseref \
+    return self if other is None or other == self \
+      else self.baseref if other == self.baseref or other == ~self \
       else self._logical( other, lambda ref1, ref2: ref1 | ref2 )
 
   def __and__( self, other ):
-    return None if other is None \
-      else self if other == self.baseref \
+    return None if other is None or other == ~self \
+      else self if other == self.baseref or other == self \
       else self._logical( other, lambda ref1, ref2: ref1 & ref2 )
 
   def __xor__( self, other ):
     return self if other is None \
+      else None if other == self \
+      else self.baseref if other == ~self \
       else ~self if other == self.baseref \
       else self._logical( other, lambda ref1, ref2: ref1 ^ ref2 )
 
@@ -1011,97 +1144,48 @@ class WithChildrenReference( WrappedReference ):
     edge2children.extend( [(ichild,iedge)] for ichild, iedge, trans, opptrans, ref in self.__interfaces )
     return tuple( edge2children )
 
-class MultiSimplexReference( WrappedReference ):
+class MosaicReference( WrappedReference ):
   'triangulation'
 
-  def __init__( self, baseref, coords, triangulation, ismine, edge2coords=None, check=False ):
-    assert coords.shape[1] == baseref.ndims
-    self.coords = coords
-    assert isinstance( triangulation, numpy.ndarray ) and triangulation.shape[1] == baseref.ndims+1
-    self.triangulation = triangulation
-    assert isinstance( ismine, numpy.ndarray ) and len(ismine) == len(triangulation) and ismine.any()
-    self.ismine = ismine
-    self.__transforms = tuple( transform.simplex(self.coords[tri]) for tri in triangulation[ismine] )
-    self.__areas = numpy.array([ float(trans.det) for trans in self.__transforms ])
-    assert numpy.all( self.__areas > 0 )
-    assert edge2coords is None or edge2coords.shape == ( baseref.nedges, len(coords) )
-    self.__edge2coords = edge2coords
+  def __init__( self, baseref, edge_refs, midpoint ):
+    self._edge_refs = tuple( edge_refs )
+    self._midpoint = midpoint
     WrappedReference.__init__( self, baseref )
-    if check:
-      self.check_edges()
+    self.check_edges()
 
   @cache.property
-  def interfaces( self ):
-    edgemasks = numeric.overlapping( numpy.arange(1,2*self.ndims+1)%(self.ndims+1), n=self.ndims )
-    interfaces = {}
-    for itri, tri in enumerate( self.triangulation[self.ismine] ):
-      etris = tri[edgemasks]
-      iedges, = numpy.where( ~(self.__edge2coords[:,etris].all(axis=2).any(axis=0)) )
-      for iedge in iedges:
-        key = tuple(sorted(etris[iedge]))
+  def keep( self ):
+    keep = {}
+    for sub in self.subrefs:
+      for trans2, edge2 in sub.edges[1:]:
+        vertices = tuple( sorted( tuple(v) for v in trans2.apply(edge2.vertices) ) )
         try:
-          interfaces.pop( key )
+          keep.pop( vertices )
         except KeyError:
-          interfaces[key] = itri, iedge
-    return tuple( interfaces.values() )
+          keep[vertices] = trans2, edge2
+    return keep.values()
 
   @cache.property
   def edge_transforms( self ):
-    simplex = getsimplex( self.ndims )
-    interfaces = tuple( self.__transforms[itri] << simplex.edge_transforms[iedge] for itri, iedge in self.interfaces )
-    return self.baseref.edge_transforms + interfaces
+    return self.baseref.edge_transforms + tuple( trans for trans, ref in self.keep )
 
   @cache.property
   def edge_refs( self ):
-    # to avoid circular references we cannot mention 'self' inside getedgeref
-    def getedgeref( iedge,
-        baseref = self.baseref,
-        coords = self.coords,
-        triangulation = self.triangulation,
-        ismine = self.ismine,
-        edge2vertex = self.__edge2coords ):
-      onedge = edge2vertex[iedge]
-      used_triangles = numpy.array([ onedge[tri].sum() == baseref.ndims for tri in triangulation ])
-      ismineused = ismine[used_triangles]
-      if not ismineused.any():
-        return None
-      baseedge = baseref.edge_refs[iedge]
-      if ismineused.all():
-        return baseedge
-      etrans = baseref.edge_transforms[iedge]
-      used_coords = numpy.zeros( len(coords), dtype=bool )
-      etri = []
-      for tri in triangulation[used_triangles]:
-        w = onedge[tri]
-        t = tri[w]
-        if w[int(etrans.isflipped)::2].all(): # even/odd point is removed
-          t[-2:] = t[-1], t[-2] # flip simplex
-        used_coords[t] = True
-        etri.append( t )
-      ecoords = etrans.solve( coords[used_coords] )
-      triangulation = normtri( numpy.take( used_coords.cumsum()-1, etri ) )
-      renumber = arglexsort( triangulation )
-      return MultiSimplexReference( baseedge, ecoords, triangulation[renumber], ismineused[renumber] )
-    items = [ cache.Tuple.unknown ] * self.baseref.nedges + [ getsimplex(self.ndims-1) ] * len(self.interfaces)
-    return cache.Tuple( items, getedgeref )
+    return self._edge_refs + tuple( ref for trans, ref in self.keep )
 
-  def __invert__( self ):
-    return MultiSimplexReference( self.baseref, self.coords, self.triangulation, ~self.ismine, self.__edge2coords )
-
-  def _logical( self, other, op ):
-    if not isinstance( other, MultiSimplexReference ) or other.baseref != self.baseref \
-         or len(other.coords) != len(self.coords) or ( other.coords != self.coords ).any() \
-         or len(other.triangulation) != len(self.triangulation) or ( other.triangulation != self.triangulation ).any():
-      return NotImplemented
-    ismine = op( self.ismine, other.ismine )
-    return None if not ismine.any() \
-      else self.baseref if ismine.all() \
-      else MultiSimplexReference( self.baseref, self.coords, self.triangulation, ismine, self.__edge2coords )
+  @cache.property
+  def subrefs( self ):
+    subrefs = []
+    for trans, ref in zip( self.baseref.edge_transforms, self._edge_refs ):
+      if False: #isinstance( ref, MosaicReference ):
+        subrefs.extend( subref.cone(trans,self._midpoint) for subref in ref.subrefs )
+      elif ref:
+        subrefs.append( ref.cone(trans,self._midpoint) )
+    return subrefs
 
   @property
   def simplices( self ):
-    simplex = getsimplex(self.ndims)
-    return [ (trans,simplex) for trans in self.__transforms ]
+    return [ simplex for subvol in self.subrefs for simplex in subvol.simplices ]
 
   def getischeme( self, ischeme ):
     'get integration scheme'
@@ -1109,78 +1193,21 @@ class MultiSimplexReference( WrappedReference ):
     if ischeme.startswith('vertex'):
       return self.baseref.getischeme( ischeme )
 
-    points, weights = getsimplex(self.ndims).getischeme( ischeme )
-    allpoints = numpy.array([ trans.apply(points) for trans in self.__transforms ]).reshape(-1,self.ndims)
-    allweights = ( self.__areas[:,_] * weights ).ravel() if weights is not None else None
-    return allpoints, allweights
-
-  @cache.property
-  def edge2coords( self ):
-    ifaceedge2vertex = numpy.zeros( (len(self.interfaces),len(self.coords)), dtype=bool )
-    arange = numpy.arange(self.ndims+1)
-    mytriangulation = self.triangulation[self.ismine]
-    for mask, (itri,iedge) in zip( ifaceedge2vertex, self.interfaces ):
-      mask[mytriangulation[itri][arange!=iedge]] = True
-    return numpy.concatenate( [ self.__edge2coords, ifaceedge2vertex ], axis=0 )
-
-  def trim( self, levels, maxrefine, denom, check, fcache ):
-    if not isinstance( levels, numpy.ndarray ):
-      trans, levelfun = levels
-      levels = levelfun.eval( Element(self,trans), 'vertex%d' % maxrefine, fcache )
-
-    mytriangulation = self.triangulation[self.ismine]
-    used = numpy.zeros( len(self.coords), dtype=bool )
-    used[mytriangulation] = True
-    mytriangulation = (used.cumsum()-1)[mytriangulation]
-    edge2coords = self.edge2coords[:,used]
-    coords = self.coords[used]
-    coordlevels = self.stdfunc(1).eval( coords.astype(float) ).dot( levels )
-    simplexribbons = numpy.array([ [i,j] for i in range(self.ndims) for j in range(i+1,self.ndims+1) ])
-    allribbons = [ tuple(ribbon) for tri in mytriangulation for ribbon in numpy.sort( tri[simplexribbons], axis=1 ) ]
-    uniqueribbons = []
-    tri2ribs = numpy.array([ index_or_append(uniqueribbons,item) for item in allribbons ]).reshape( len(mytriangulation), len(simplexribbons) )
-    newverts, isectribs, oniface = mknewvtx( coords, coordlevels, uniqueribbons, denom )
-    edge2newcoord = edge2coords[:,numpy.array(uniqueribbons)[isectribs]].all( axis=2 )
-    if ( coordlevels[~oniface] >= 0 ).all():
-      posneg = self, None
-    elif ( coordlevels[~oniface] <= 0 ).all():
-      posneg = None, self
+    allpoints, allweights = zip( *[ subvol.getischeme(ischeme) for subvol in self.subrefs ] )
+    points = numpy.concatenate( allpoints, axis=0 )
+    if allweights[0] is None:
+      assert not any( allweights )
+      weights = None
     else:
-      vertices = numpy.concatenate( [ coords, newverts ], axis=0 )
-      newlevels = numpy.zeros( len(vertices) )
-      newlevels[:len(coords)][~oniface] = coordlevels[~oniface]
-      triangulation = []
-      allispos = []
-      for itri, tri in enumerate( mytriangulation ):
-        ribs = tri2ribs[itri]
-        trinewverts = [ len(coords) + inewvert for inewvert, irib in enumerate(isectribs) if irib in ribs ]
-        if trinewverts:
-          pts = numpy.concatenate([ tri, trinewverts ])
-          newtri, ispos = signed_triangulate( vertices[pts], newlevels[pts] )
-          triangulation.extend( normtri(pts[newtri]) )
-          allispos.extend( ispos )
-        else:
-          ispos = ( newlevels[tri] >= 0 ).all()
-          isneg = ( newlevels[tri] <= 0 ).all()
-          assert ispos != isneg
-          triangulation.append( tri )
-          allispos.append( ispos )
-      renumber = arglexsort( triangulation )
-      triangulation = numpy.array(triangulation)[renumber]
-      allispos = numpy.array(allispos)[renumber]
-      thisedge2vertex = numpy.concatenate( [ edge2coords, edge2newcoord ], axis=1 )
-      posneg = MultiSimplexReference( self, vertices, triangulation,  allispos, thisedge2vertex, check ), \
-               MultiSimplexReference( self, vertices, triangulation, ~allispos, thisedge2vertex, check )
-    intrafaces, = numpy.where( edge2coords[:,oniface].sum(1) + edge2newcoord.sum(1) >= self.ndims )
-    return posneg, intrafaces
+      weights = numpy.concatenate( allweights, axis=0 )
+    return points, weights
 
-  @property
-  def childedgemap( self ):
-    raise NotImplementedError
+  def __invert__( self ):
+    inv_edge_refs = [ base_edge - edge for base_edge, edge in zip( self.baseref.edge_refs, self._edge_refs ) ]
+    return MosaicReference( self.baseref, inv_edge_refs, self._midpoint )
 
-  @property
-  def edge2children( self ):
-    raise NotImplementedError
+  def _logical( self, other, op ):
+    return NotImplemented
 
 
 # SHAPE FUNCTIONS
@@ -1516,37 +1543,6 @@ def gauss( degree ):
     _gauss[n] = gaussn = (x+1) * .5, w[0]**2
   return gaussn
 
-def signed_triangulate( points, vsigns ):
-  assert len(points) == len(vsigns)
-  npoints, ndims = points.shape
-  fpoints = points.astype(float)
-  triangulation = util.delaunay( fpoints )
-  esigns = numpy.array([ +1 if min(s) >= 0 else -1 if max(s) <= 0 else 0 for s in vsigns[triangulation] ])
-  if not esigns.all():
-    ambiguous, = numpy.where( esigns == 0 )
-    vmap = list(range(len(vsigns)))
-    W = numpy.array([ .01/ndims, .99 ])
-    for tri in triangulation[ambiguous]:
-      I, = numpy.where( vsigns[tri] == 0 )
-      fpoints = numpy.vstack([ fpoints, numpy.dot( W[(numpy.arange(ndims+1)==I[:,_]).astype(int)], fpoints[tri] ) ])
-      vmap.extend( tri[I] )
-    triangulation = numpy.array([ tri for tri in numpy.take(vmap,util.delaunay(fpoints)) if len(set(tri)) == len(tri) ])
-    esigns = numpy.array([ +1 if min(s) >= 0 else -1 if max(s) <= 0 else 0 for s in vsigns[triangulation] ])
-    assert esigns.all()
-  selection = []
-  for tri in triangulation:
-    area = numeric.det_exact( points[tri[1:]] - points[tri[0]] )
-    if area < 0:
-      tri[-2:] = tri[-1], tri[-2]
-    selection.append( area != 0 )
-  selection = numpy.array( selection )
-  if selection.any():
-    triangulation = triangulation[selection]
-    esigns = esigns[selection]
-  triangulation = normtri( triangulation )
-  renumber = arglexsort( triangulation )
-  return triangulation[renumber], esigns[renumber] > 0
-
 def getsimplex( ndims ):
   constructors = PointReference, LineReference, TriangleReference, TetrahedronReference
   vertices = numpy.concatenate( [ numpy.zeros(ndims,dtype=int)[_,:], numpy.eye(ndims,dtype=int) ], axis=0 )
@@ -1580,16 +1576,8 @@ def index_or_append( items, item ):
     items.append( item )
   return index
 
-def normtri( triangulation ):
-  triangulation = numpy.asarray(triangulation)
-  if triangulation.shape[1] <= 2:
-    return triangulation
-  I = numpy.argsort( triangulation, axis=1 ).T
-  oddperm = sum( (I[n+1:] < i).sum(axis=0) for n, i in enumerate(I[:-1]) ) % 2 == 1
-  I[-2:,oddperm] = I[:-3:-1,oddperm]
-  return numpy.array([ tuple(tri[i]) for tri, i in zip( triangulation, I.T ) ])
-
 def arglexsort( triangulation ):
   return numpy.argsort( numeric.asobjvector( tuple(tri) for tri in triangulation ) )
+
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
