@@ -461,10 +461,6 @@ def ext( A ):
     ext = numpy.array((c*f-e*d,e*b-a*f,a*d-c*b))
   else:
     raise NotImplementedError( 'shape=%s' % (A.shape,) )
-  # VERIFY
-  Av = numpy.concatenate( [ext[:,numpy.newaxis],A], axis=1 )
-  assert numpy.all( dot( ext, A ) == 0 )
-  assert numpy.all( det_exact(Av) == dot(ext,ext) )
   return ext
 
 def fextract( A ):
