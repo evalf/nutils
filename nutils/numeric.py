@@ -465,23 +465,32 @@ def ext( A ):
 
 def fextract( A ):
   A = numpy.asarray( A, dtype=numpy.float64 )
-  bits = A.view( numpy.int64 )
-  sign = numpy.sign(bits)
-  exponent = ( (bits>>52) & ((1<<11)-1) ) - 1075
-  mantissa = ( bits & ((1<<52)-1) ) | (1<<52)
-  # from here on A == sign * mantissa * 2.**exponent
-  for tryshift in 32, 16, 8, 4, 2, 1:
-    shift = tryshift * ( mantissa & ((1<<tryshift)-1) == 0 )
-    mantissa >>= shift
-    exponent += shift
-  if not A.ndim:
-    return sign * mantissa, sign and exponent
-  iszero = sign == 0
-  minexp = numpy.min( exponent[~iszero] )
-  shift = exponent[~iszero] - minexp
-  assert not numpy.any( mantissa[~iszero] >> (63-shift) )
-  mantissa[~iszero] <<= shift
-  return sign * mantissa, minexp
+  bits = A.view( numpy.int64 ).ravel()
+  nz = ( bits & 0x7fffffffffffffff ).astype(bool)
+  if not nz.any():
+    return numpy.zeros( A.shape, dtype=int ), 0
+  bits = bits[nz]
+  sign = numpy.sign( bits )
+  exponent = ( (bits>>52) & 0x7ff ) - 1075
+  mantissa = 0x10000000000000 | ( bits & 0xfffffffffffff )
+  # from here on A == sign * mantissa * 2**exponent
+  for shift in 32, 16, 8, 4, 2, 1:
+    I = mantissa & ((1<<shift)-1) == 0
+    if I.any():
+      mantissa[I] >>= shift
+      exponent[I] += shift
+  minexp = numpy.min( exponent )
+  shift = exponent - minexp
+  assert not numpy.any( mantissa >> (63-shift) )
+  mantissa <<= shift
+  fullmantissa = numpy.zeros( A.shape, dtype=int )
+  fullmantissa.flat[nz] = sign * mantissa
+  return fullmantissa, minexp
 
+def fstr( A ):
+  if A.ndim:
+    return '[{}]'.format( ','.join( fstr(a) for a in A ) )
+  mantissa, exp = fextract( A )
+  return str( mantissa << exp ) if exp >= 0 else '{}/{}'.format( mantissa, 1<<(-exp) )
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

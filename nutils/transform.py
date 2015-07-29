@@ -232,7 +232,7 @@ class Shift( TransformItem ):
     return points + self.offset
 
   def __str__( self ):
-    return '{}+x'.format( self.offset )
+    return '{}+x'.format( numeric.fstr(self.offset) )
 
 class Scale( TransformItem ):
 
@@ -255,7 +255,7 @@ class Scale( TransformItem ):
     return 1 / self.linear
 
   def __str__( self ):
-    return '{}+{}*x'.format( self.offset, self.linear )
+    return '{}+{}*x'.format( numeric.fstr(self.offset), numeric.fstr(self.linear) )
 
 class Matrix( TransformItem ):
 
@@ -270,7 +270,7 @@ class Matrix( TransformItem ):
     return numpy.dot( points, self.linear.T ) + self.offset
 
   def __str__( self ):
-    return '{}{}{}'.format( '~' if self.isflipped else '', self.offset, ''.join( '+{}*x{}'.format( v, i ) for i, v in enumerate(self.linear.T) ) )
+    return '{}{}{}'.format( '~' if self.isflipped else '', numeric.fstr(self.offset), ''.join( '+{}*x{}'.format( numeric.fstr(v), i ) for i, v in enumerate(self.linear.T) ) )
 
 class Square( Matrix ):
 
