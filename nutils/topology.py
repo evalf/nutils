@@ -1338,9 +1338,9 @@ class RevolvedTopology( Topology ):
 
   @log.title
   @core.single_or_multiple
-  def integrate( self, funcs, ischeme, geometry, force_dense=False ):
+  def integrate( self, funcs, ischeme, geometry, force_dense=False, edit=_identity ):
     iwscale = function.jacobian( geometry, self.ndims+1 ) * function.Iwscale(self.ndims)
-    integrands = [ func * iwscale for func in funcs ]
+    integrands = [ function.asarray( edit( func * iwscale ) ) for func in funcs ]
     data_index = self._integrate( integrands, ischeme )
     return [ matrix.assemble( data, index, integrand.shape, force_dense ) for integrand, (data,index) in zip( integrands, data_index ) ]
 
