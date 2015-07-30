@@ -1,7 +1,7 @@
 
 from nutils import *
 from . import register, unittest
-import numpy, copy, sys, pickle, subprocess, base64
+import numpy, copy, sys, pickle, subprocess, base64, itertools
 
 grid = numpy.linspace( 0., 1., 4 )
 
@@ -52,20 +52,24 @@ def verify_boundaries( domain, geom ):
   rhs = domain.boundary.integrate( f*function.normal(geom), ischeme='gauss2', geometry=geom )
   numpy.testing.assert_array_almost_equal( lhs, rhs )
 
-def verify_interfaces( domain, geom, periodic ):
+def verify_interfaces( domain, geom, periodic, interfaces=None, elemindicator=None ):
   # If `periodic` is true, the domain should be a unit hypercube or this test
   # might fail.  The function `f` defined below is C0 continuous on a periodic
   # hypercube and Cinf continuous inside the hypercube.
-  x1, x2, n1, n2 = domain.interfaces.elem_eval( [ geom, function.opposite(geom), geom.normal(), function.opposite(geom.normal()) ], 'gauss2', separate=False )
+  if interfaces is None:
+    interfaces = domain.interfaces
+  x1, x2, n1, n2 = interfaces.elem_eval( [ geom, function.opposite(geom), geom.normal(), function.opposite(geom.normal()) ], 'gauss2', separate=False )
   if not periodic:
     numpy.testing.assert_array_almost_equal( x1, x2 )
   numpy.testing.assert_array_almost_equal( n1, -n2 )
 
   # Test ∫_E f_,i = ∫_∂E f n_i ∀ E in `domain`.
   f = ((0.5 - geom)**2).sum(axis=0)
-  elemindicator = domain.basis( 'discont', degree=0 ).vector( domain.ndims )
+  if elemindicator is None:
+    elemindicator = domain.basis( 'discont', degree=0 )
+  elemindicator = elemindicator.vector( domain.ndims )
   lhs = domain.integrate( (elemindicator*f.grad(geom)[None]).sum(axis=1), ischeme='gauss2', geometry=geom )
-  rhs = domain.interfaces.integrate( (-function.jump(elemindicator)*f*function.normal(geom)[None]).sum(axis=1), ischeme='gauss2', geometry=geom )
+  rhs = interfaces.integrate( (-function.jump(elemindicator)*f*function.normal(geom)[None]).sum(axis=1), ischeme='gauss2', geometry=geom )
   if len( domain.boundary ):
     rhs += domain.boundary.integrate( (elemindicator*f*function.normal(geom)[None]).sum(axis=1), ischeme='gauss2', geometry=geom )
   numpy.testing.assert_array_almost_equal( lhs, rhs )
@@ -367,3 +371,98 @@ def hierarchical( ndims, pos, periodic=() ):
   @unittest
   def interfaces():
     verify_interfaces( domain, geom, periodic )
+
+
+@register('3', npatches=(3,))
+@register('2x2', npatches=(2,2))
+@register('3x3', npatches=(3,3))
+@register('2x2x3', npatches=(2,2,3))
+def multipatch_hyperrect(npatches):
+
+  npatches = numpy.array(npatches)
+  indices = numpy.arange((npatches+1).prod()).reshape(npatches+1)
+
+  domain, geom = mesh.multipatch(
+    patches=[ indices[tuple(map(slice, i, numpy.array(i)+2))].ravel().tolist() for i in itertools.product(*map(range, npatches)) ],
+    patchverts=tuple( itertools.product( *map( range, npatches+1 ) ) ),
+    nelems=4,
+  )
+
+  @unittest
+  def spline_basis():
+    basis = domain.basis( 'spline', degree=2 )
+    coeffs = domain.project( 1, onto=basis, geometry=geom, ischeme='gauss4' )
+    numpy.testing.assert_array_almost_equal( coeffs, numpy.ones( coeffs.shape ) )
+
+  @unittest
+  def discont_basis():
+    basis = domain.basis( 'discont', degree=2 )
+    coeffs = domain.project( 1, onto=basis, geometry=geom, ischeme='gauss4' )
+    numpy.testing.assert_array_almost_equal( coeffs, numpy.ones( coeffs.shape ) )
+
+  @unittest
+  def boundaries():
+    verify_boundaries( domain, geom )
+
+  @unittest
+  def interfaces():
+    verify_interfaces( domain, geom, periodic=False )
+
+  @unittest
+  def interpatch_interfaces():
+    verify_interfaces( domain, geom, periodic=False, interfaces=domain.interfaces['interpatch'], elemindicator=domain.basis( 'patch' ) )
+
+
+@register
+def multipatch_L():
+
+  # 2---5
+  # |   |
+  # 1---4------7
+  # |   |      |
+  # 0---3------6
+
+  domain, geom = mesh.multipatch(
+    patches=[ [0,1,3,4], [1,2,4,5], [3,4,6,7] ],
+    patchverts=[ [0,0], [0,1], [0,2], [1,0], [1,1], [1,2], [3,0], [3,1] ],
+    nelems={None: 4, (3,6): 8, (4,7): 8} )
+
+  @unittest
+  def spline_basis():
+    basis = domain.basis( 'spline', degree=2 )
+    coeffs = domain.project( 1, onto=basis, geometry=geom, ischeme='gauss4' )
+    numpy.testing.assert_array_almost_equal( coeffs, numpy.ones( coeffs.shape ) )
+
+  @unittest
+  def discont_basis():
+    basis = domain.basis( 'discont', degree=2 )
+    coeffs = domain.project( 1, onto=basis, geometry=geom, ischeme='gauss4' )
+    numpy.testing.assert_array_almost_equal( coeffs, numpy.ones( coeffs.shape ) )
+
+  @unittest
+  def patch_basis():
+    patch_index = domain.basis( 'patch' ).dot([0, 1, 2])
+    for ipatch in range(3):
+        vals = domain['patch{}'.format(ipatch)].elem_eval( patch_index, ischeme='gauss1' )
+        numpy.testing.assert_array_almost_equal( vals, ipatch )
+
+
+#@register  # not yet implemented
+def multipatch_corner_connectivity():
+
+  #     4---6
+  #     |   |
+  # 1---3---5
+  # |   |
+  # 0---2
+
+  domain, geom = mesh.multipatch(
+    patches=[ [0,1,2,3], [3,4,5,6] ],
+    patchverts=[ [0,0], [0,1], [1,0], [1,1], [1,2], [2,1], [2,2] ],
+    nelems=1 )
+
+  @unittest
+  def test():
+    basis = domain.basis('spline', degree=1)
+    # 4 basis functions per patch, minus one for vertex 3.
+    assert len(basis) == 7
