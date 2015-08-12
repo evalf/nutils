@@ -390,7 +390,7 @@ def solve_exact( A, *B ):
   B = [ numpy.asarray(b) for b in B ]
   assert all( b.shape[0] == A.shape[0] and b.ndim in (1,2) for b in B )
   n = A.shape[1]
-  S = [ slice(i,i+b.shape[1]) if b.ndim == 2 else i for b, i in zip( B, numpy.cumsum([n]+[ b[0].size for b in B[:-1] ]) ) ]
+  S = [ slice(i,i+b.shape[1]) if b.ndim == 2 else i for b, i in zip( B, numpy.cumsum([0]+[ b[0].size for b in B[:-1] ]) ) ]
   Ab = numpy.concatenate( [ A ] + [ b.reshape(len(b),-1) for b in B ], axis=1 )
   for icol in range(n):
     if not Ab[icol,icol]:
@@ -399,8 +399,8 @@ def solve_exact( A, *B ):
     Ab[icol+1:] = Ab[icol+1:] * Ab[icol,icol] - Ab[icol+1:,icol,numpy.newaxis] * Ab[icol,:]
   if Ab[n:].any():
     raise numpy.linalg.LinAlgError( 'linear system has no solution' )
-  Ab[:n,n:] /= numpy.diag( Ab[:n,:n] )[:,numpy.newaxis]
-  X = [ Ab[:n,s] for s in S ]
+  Y = div_exact( Ab[:n,n:], numpy.diag( Ab[:n,:n] )[:,numpy.newaxis] )
+  X = [ Y[:,s] for s in S ]
   assert all( numpy.all( dot(A,x) == b ) for (x,b) in zip(X,B) )
   if len(B) == 1:
     X, = X
@@ -427,23 +427,29 @@ def det_exact( A ):
   A = numpy.asarray( A )
   assert A.ndim == 2 and A.shape[0] == A.shape[1]
   if len(A) == 1:
-    retval = A[0,0]
+    det = A[0,0]
   elif len(A) == 2:
     ((a,b),(c,d)) = A
-    retval = a*d - b*c
+    det = a*d - b*c
   elif len(A) == 3:
     ((a,b,c),(d,e,f),(g,h,i)) = A
-    retval = a*e*i + b*f*g + c*d*h - c*e*g - b*d*i - a*f*h
+    det = a*e*i + b*f*g + c*d*h - c*e*g - b*d*i - a*f*h
   else:
     raise NotImplementedError( 'shape=' + str(A.shape) )
-  return retval
+  return det
+
+def div_exact( A, B ):
+  Am, Ae = fextract( A )
+  Bm, Be = fextract( B )
+  assert Bm.all(), 'division by zero'
+  Cm, rem = divmod( Am, Bm )
+  assert not rem.any(), 'indivisible arguments'
+  Ce = Ae - Be
+  return fconstruct( Cm, Ce )
 
 def inv_exact( A ):
   A = numpy.asarray( A )
-  Ainv = adj_exact( A ) / det_exact( A )
-  eye = contract( A[...,:,:,numpy.newaxis], Ainv[...,numpy.newaxis,:,:], axis=-2 )
-  assert numpy.all( eye == numpy.eye(A.shape[-1]) )
-  return Ainv
+  return div_exact( adj_exact(A), det_exact(A) )
 
 def ext( A ):
   """Exterior
@@ -463,29 +469,37 @@ def ext( A ):
     raise NotImplementedError( 'shape=%s' % (A.shape,) )
   return ext
 
-def fextract( A ):
+def fextract( A, single=False ):
   A = numpy.asarray( A, dtype=numpy.float64 )
   bits = A.view( numpy.int64 ).ravel()
   nz = ( bits & 0x7fffffffffffffff ).astype(bool)
   if not nz.any():
-    return numpy.zeros( A.shape, dtype=int ), 0
+    return ( numpy.zeros( A.shape, dtype=int ), 0 ) if single else numpy.zeros( (2,)+A.shape, dtype=int )
   bits = bits[nz]
   sign = numpy.sign( bits )
   exponent = ( (bits>>52) & 0x7ff ) - 1075
   mantissa = 0x10000000000000 | ( bits & 0xfffffffffffff )
-  # from here on A == sign * mantissa * 2**exponent
+  # from here on A.flat[nz] == sign * mantissa * 2**exponent
   for shift in 32, 16, 8, 4, 2, 1:
     I = mantissa & ((1<<shift)-1) == 0
     if I.any():
       mantissa[I] >>= shift
       exponent[I] += shift
+  if not single:
+    retval = numpy.zeros( (2,)+A.shape, dtype=int )
+    retval.reshape(2,-1)[:,nz] = sign * mantissa, exponent
+    return retval
   minexp = numpy.min( exponent )
   shift = exponent - minexp
   assert not numpy.any( mantissa >> (63-shift) )
-  mantissa <<= shift
   fullmantissa = numpy.zeros( A.shape, dtype=int )
-  fullmantissa.flat[nz] = sign * mantissa
+  fullmantissa.flat[nz] = sign * (mantissa << shift)
   return fullmantissa, minexp
+
+def fconstruct( m, e ):
+  f = numpy.power( 2., e )
+  f *= m
+  return f
 
 def fstr( A ):
   if A.ndim:
