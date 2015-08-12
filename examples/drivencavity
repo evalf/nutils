@@ -70,26 +70,26 @@ def main( nelems=8, viscosity=1e-3, density=1, warp=False, plot=True, tol=1e-5, 
     if info.niter == 0:
       break
 
-  return lhs, info.res
+  return rhs, lhs
 
 
 def unittest():
 
   retvals = main( nelems=4, viscosity=1e-3, warp=False, tol=1e-15, maxiter=1, plot=False )
   assert debug.checkdata( retvals, '''
-    eNpNktttQzEMQ9dJAbsw9bQGyv4r1BZv2v5EgUTRR8TFeNmAf43Xa7psf08flktvndCS97QRpnkbWFdg
-    Y0qt1QqBGjt7r/tHcuFWK+wemFhRWkUpolqK8pb4znYNgKa+Aa7siDtRjwZyzzb/gE6DtFI0G/QXELjk
-    Z2BsaKXxTbRjpJ3FGCXx0AVPtNxJCOSHW0HP9OcAR4/+gB0MLGRT8iFFMKhTW4E0a64V3Y9Vwbkn+9Lc
-    M1PlAs4TXz+moZsOMG7Q6WSQJC7dQQqsTuUcW49UnzyXtak+8cyqe0IcSdEVRp5isCq6GLB3wOt7nE8F
-    qe0DvRUYct7B2fr328qvHwXKg10=''' )
+    eNrFkl1uxCAMhK+zK0Hl8S8+UO5/hYKdbJ8q9a0SEpE9DJ+HYLx0wN7j9aKv0cvd45oxnIiu6ePTwF3I
+    Pzd+tfr3tSeexsuuaUOD5OwTknxNHa4SpwA6Ah2T8/BvBUO0K2vR+eAgnF0TqxrKmi3NbCk8S4q0ktiK
+    cnWgTW0BfWS5n46YF5BZlPkDOhVcSpYo0A8gcMh3Q7sgGdp3ohw9FPVC7Ded94gaKxoC8XAL2jPsHsBQ
+    rR9gQwfmvFrykMI7qL2XAqFaXORVd0rvvkXXubhnhPABnDu+ukxcVjtA+0Q77QyiiVOWNwWoUtnD5i2V
+    O0/SMpU7npmJ+hH3m7QrtHmygxUW6oCtAq4/5f0NMWaoJA==''' )
 
   retvals = main( nelems=4, viscosity=1e-3, warp=True, tol=1e-15, maxiter=1, plot=False )
   assert debug.checkdata( retvals, '''
-    eNpVUuuNgzEIW6eVkhPmzUDdf4VL4Kt09wsHjDEoWC9dsPd6vTZg8dm2NigGlIR8ti+odoK50AUxkQGZ
-    Q2W2LmmR32hVHbeK8VAjpxlJ2dRHxNVHDO45IFwbRIHbQEr3CtCqX6tyEj0N6X8NAtlKUtU8e3jIMaNU
-    eXWFlG7ckNvoi0X8SehjW5yeRcIfm6H//RrKGng8l/sadboLxDKljuBrPJanVr+z2oAG7L7Fhn82ZzRw
-    IrkgCZ2Yla+SaBNg1TfaTJhlLKbXyjqqmo/WGdNA2LsZbdxXsvXYONQbGTMUdoecO5n1eehnna+Cosm6
-    nf2B44XPZNjU37/5EIEz''' )
+    eNrFUltuBCAIvM5uoo3DmwPt/a9QBbdpP5r0r4kJIwwwiBgPGdDneDzWx+jDtNZr2iBp+xWQaAfbXwO/
+    lvr3syeegPpr6phY3iDZ+eiESDmIEhVgZW4Q0VQirZDksmM1s+wUVmqqRycjVhT1FjGxLgazaOAmBTxB
+    JSC4chmoqm+pvB3VDWHfBQJRlTizeHp5iBYjK6M2tKQWMcEncW+G2a5Druy9xTuI25Xp8lOvIrWA+X25
+    t1BbZwAfKqss6Aj3YSFZ98gSIA49d9bm78kJBfYf4gNioRw98qnEUgRo1htNWuhh1DtXU8uKqHWt3aYA
+    k1UySriNIK22vqnHErop9DTZ76SK+2Gf4/kJAvSoLA==''' )
 
 
 util.run( main, unittest )
