@@ -11,7 +11,7 @@ def cutdomain( ndims, nelems, maxrefine, errtol ):
   domain, geom = mesh.rectilinear( (numpy.linspace(0,1,nelems+1),)*ndims )
   radius = numpy.sqrt( .5 )
   levelset = radius**2 - ( geom**2 ).sum()
-  pos, neg = domain.trim( levelset=levelset, maxrefine=maxrefine, check=False )
+  pos, neg = domain.trim( levelset=levelset, maxrefine=maxrefine )
   V = 1.
   Vprev = 1. / (numpy.pi*radius)
   for idim in range( ndims ):
@@ -100,7 +100,7 @@ def specialcases():
 
   @unittest
   def almost_all_positive():
-    domain.trim( (x-y) * (x-y+.25), maxrefine=1, check=True )
+    domain.trim( (x-y) * (x-y+.25), maxrefine=1 )
 
   eps = .0001
 
@@ -110,13 +110,13 @@ def specialcases():
 
         @unittest( direction + how + str(maxrefine) )
         def inter_elem_2d():
-          pos, neg = domain.trim( eta-.75+eps*perturb, maxrefine=maxrefine, check=True )
+          pos, neg = domain.trim( eta-.75+eps*perturb, maxrefine=maxrefine )
 
       for maxrefine in 0, 1:
 
         @unittest( ('x' if xi is x else 'y') + how + str(maxrefine) )
         def intra_elem_2d():
-          pos, neg = domain.trim( eta-.5+eps*perturb, maxrefine=maxrefine, check=True )
+          pos, neg = domain.trim( eta-.5+eps*perturb, maxrefine=maxrefine )
           pos.volume_check( geom )
           neg.volume_check( geom )
 
@@ -128,4 +128,4 @@ def specialcases():
 
       @unittest( how + str(maxrefine) )
       def inter_elem_3d():
-        pos, neg = domain.trim( z-.75+eps*perturb, maxrefine=maxrefine, check=True )
+        pos, neg = domain.trim( z-.75+eps*perturb, maxrefine=maxrefine )

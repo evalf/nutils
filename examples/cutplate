@@ -34,7 +34,7 @@ def main( nelems=None, maxrefine=2, radius=.5, degree=1, stress=library.Hooke(lm
   uexact = .2 * geom * ( [1-stress.nu,-stress.nu] + [2-2*stress.nu,2*stress.nu-1]/r2 + (.5-.5/r2)*[x**2-3*y**2,3*x**2-y**2]/r2**2 )
 
   levelset = function.norm2( geom ) - radius
-  domain, complement = wholedomain.trim( levelset, maxrefine=maxrefine, check=False )
+  domain, complement = wholedomain.trim( levelset, maxrefine=maxrefine )
   dbasis = domain.basis( 'spline', degree=degree ).vector( 2 )
 
   cons = domain.boundary['left'].project( 0, geometry=geom, ischeme='gauss6', onto=dbasis[:,0] )

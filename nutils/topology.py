@@ -536,7 +536,7 @@ class Topology( object ):
     return self if n <= 0 else self.refined.refine( n-1 )
 
   @log.title
-  def trim( self, levelset, maxrefine, check=True, eps=1/64., name='trimmed' ):
+  def trim( self, levelset, maxrefine, eps=1/64., name='trimmed' ):
     'trim element along levelset'
 
     denom = numeric.round(1./eps)
@@ -546,7 +546,7 @@ class Topology( object ):
     fcache = cache.WrapperCache()
 
     for elem in log.iter( 'elem', self ):
-      posneg, intrafaces = elem.trim( levelset=levelset, maxrefine=maxrefine, denom=denom, check=check, fcache=fcache )
+      posneg, intrafaces = elem.trim( levelset=levelset, maxrefine=maxrefine, denom=denom, fcache=fcache )
       elems.append(( posneg ))
       for iedge in intrafaces:
         edge = elem.edge(iedge)

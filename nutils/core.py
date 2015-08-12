@@ -26,6 +26,7 @@ globalproperties = {
   'recache': False,
   'dot': False,
   'profile': False,
+  'selfcheck': False,
 }
 
 for nutilsrc in ['~/.config/nutils/config', '~/.nutilsrc']:

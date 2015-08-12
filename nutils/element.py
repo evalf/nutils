@@ -87,11 +87,11 @@ class Element( object ):
     return [ Element( child, self.transform << trans, self.__opposite and self.__opposite << trans )
       for trans, child in self.reference.children if child ]
 
-  def trim( self, levelset, maxrefine, denom, check, fcache ):
+  def trim( self, levelset, maxrefine, denom, fcache ):
     'trim element along levelset'
 
     assert not self.__opposite
-    return self.reference.trim( (self.transform,levelset), maxrefine, denom, check, fcache )
+    return self.reference.trim( (self.transform,levelset), maxrefine, denom, fcache )
 
   @property
   def flipped( self ):
@@ -255,15 +255,15 @@ class Reference( cache.Immutable ):
   def register( cls, ptype, func ):
     setattr( cls, 'getischeme_%s' % ptype, func )
 
-  def with_children( self, child_refs, interfaces=[], check=False ):
+  def with_children( self, child_refs, interfaces=[] ):
     child_refs = tuple(child_refs)
     if not any( child_refs ):
       return None
     if child_refs == self.child_refs:
       return self
-    return WithChildrenReference( self, child_refs, interfaces, check )
+    return WithChildrenReference( self, child_refs, interfaces )
 
-  def trim( self, levels, maxrefine, denom, check, fcache ):
+  def trim( self, levels, maxrefine, denom, fcache ):
     'trim element along levelset'
 
     assert maxrefine >= 0
@@ -304,7 +304,7 @@ class Reference( cache.Immutable ):
         else:
           trans, levelfun = levels
           childlevels = trans << ctrans, levelfun
-        (cposelem,cnegelem), cintrafaces = child.trim( childlevels, maxrefine-1, denom, check, fcache )
+        (cposelem,cnegelem), cintrafaces = child.trim( childlevels, maxrefine-1, denom, fcache )
         poselems.append( cposelem )
         negelems.append( cnegelem )
         for iedge in cintrafaces:
@@ -313,7 +313,7 @@ class Reference( cache.Immutable ):
             intrafaces.add(jedge)
           else:
             interfaces.add((ichild,iedge,jchild,jedge) if ichild < jchild else (jchild,jedge,ichild,iedge))
-      posneg = self.with_children( poselems, interfaces, check ), self.with_children( negelems, interfaces, check )
+      posneg = self.with_children( poselems, interfaces ), self.with_children( negelems, interfaces )
 
     else:
       assert evaluated_levels, 'failed to evaluate levelset up to level maxrefine'
@@ -426,7 +426,8 @@ class LineReference( SimplexReference ):
     SimplexReference.__init__( self, vertices )
     self.edge_transforms = transform.simplex( vertices[1:], isflipped=False ), transform.simplex( vertices[:1], isflipped=True )
     self.child_transforms = transform.affine(1,[0],2), transform.affine(1,[1],2)
-    self.check_edges()
+    if core.getprop( 'selfcheck', False ):
+      self.check_edges()
 
   def stdfunc( self, degree ):
     if len(self._bernsteincache) <= degree or self._bernsteincache[degree] is None:
@@ -509,7 +510,8 @@ class TriangleReference( SimplexReference ):
     SimplexReference.__init__( self, vertices )
     self.edge_transforms = tuple( transform.simplex( vertices[I], isflipped=self.inverted ) for I in [slice(1,None),slice(None,None,-2),slice(2)] )
     self.child_transforms = transform.affine(1,[0,0],2), transform.affine(1,[0,1],2), transform.affine(1,[1,0],2), transform.affine([[0,-1],[-1,0]],[1,1],2,isflipped=True )
-    self.check_edges()
+    if core.getprop( 'selfcheck', False ):
+      self.check_edges()
 
   def stdfunc( self, degree ):
     return PolyTriangle(degree)
@@ -612,7 +614,8 @@ class TetrahedronReference( SimplexReference ):
   def __init__( self, vertices ):
     SimplexReference.__init__( self, vertices )
     self.edge_transforms = tuple( transform.simplex( vertices[I], isflipped=self.inverted ) for I in [[1,2,3],[0,3,2],[3,0,1],[2,1,0]] )
-    self.check_edges()
+    if core.getprop( 'selfcheck', False ):
+      self.check_edges()
 
   def getischeme_gauss( self, degree ):
     '''get integration scheme
@@ -684,7 +687,8 @@ class TensorReference( Reference ):
     vertices[:,:,:ref1.ndims] = ref1.vertices[:,_]
     vertices[:,:,ref1.ndims:] = ref2.vertices[_,:]
     Reference.__init__( self, vertices.reshape(-1,ndims) )
-    self.check_edges()
+    if core.getprop( 'selfcheck', False ):
+      self.check_edges()
 
   def subvertex( self, ichild, i ):
     ichild1, ichild2 = divmod( ichild, len(self.ref2.child_transforms) )
@@ -798,7 +802,8 @@ class Cone( Reference ):
     self.tip = tip
     ext = numeric.ext( etrans.linear )
     self.height = abs( numpy.dot( tip - etrans.offset, ext ) / numpy.linalg.norm( ext ) )
-    self.check_edges()
+    if core.getprop( 'selfcheck', False ):
+      self.check_edges()
 
   @cache.property
   def edge_transforms( self ):
@@ -1042,13 +1047,13 @@ class ForwardReference( WrappedReference ):
 class WithChildrenReference( WrappedReference ):
   'base reference with explicit children'
 
-  def __init__( self, baseref, child_refs, interfaces=[], check=False ):
+  def __init__( self, baseref, child_refs, interfaces=[] ):
     assert isinstance( child_refs, tuple ) and len(child_refs) == baseref.nchildren and any(child_refs) and child_refs != baseref.child_refs
     self.child_transforms = baseref.child_transforms
     self.child_refs = child_refs
     WrappedReference.__init__( self, baseref )
     self.__interfaces_arg = interfaces
-    if check:
+    if core.getprop( 'selfcheck', False ):
       self.check_edges()
 
   @cache.property
@@ -1151,7 +1156,8 @@ class MosaicReference( WrappedReference ):
     self._edge_refs = tuple( edge_refs )
     self._midpoint = midpoint
     WrappedReference.__init__( self, baseref )
-    self.check_edges()
+    if core.getprop( 'selfcheck', False ):
+      self.check_edges()
 
   @cache.property
   def keep( self ):
