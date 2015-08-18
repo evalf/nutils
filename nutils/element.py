@@ -1150,7 +1150,7 @@ class MosaicReference( Reference ):
           index = len(vertices)
           vertices.append( vertex )
         indices.append( index )
-      edgevertexmap.append( numpy.array(indices) )
+      edgevertexmap.append( numpy.array(indices,dtype=int) )
     self._edgevertexmap = edgevertexmap
 
     Reference.__init__( self, vertices )
