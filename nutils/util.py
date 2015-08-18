@@ -523,7 +523,6 @@ def run( *functions ):
     frames = None
     try:
       func( **kwargs )
-      failed = 0
     except KeyboardInterrupt:
       log.error( 'killed by user' )
     except Terminate as exc:
@@ -531,6 +530,8 @@ def run( *functions ):
     except Exception:
       exc, frames = debug.exc_info()
       log.stack( repr(exc), frames )
+    else:
+      failed = 0
 
     if core.getprop( 'profile' ):
       prof.disable()
