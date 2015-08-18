@@ -91,6 +91,11 @@ class TransformChain( tuple ):
     return det
 
   @property
+  def ext( self ):
+    ext = numeric.ext( self.linear )
+    return ext if not self.isflipped else -ext
+
+  @property
   def offset( self ):
     offset = self[-1].offset
     for trans in self[-2::-1]:
