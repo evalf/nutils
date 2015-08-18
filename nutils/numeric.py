@@ -507,4 +507,12 @@ def fstr( A ):
   mantissa, exp = fextract( A )
   return str( mantissa << exp ) if exp >= 0 else '{}/{}'.format( mantissa, 1<<(-exp) )
 
+def fhex( A ):
+  if A.ndim:
+    return '[{}]'.format( ','.join( fhex(a) for a in A ) )
+  mantissa, exp = fextract( A )
+  div, mod = divmod( exp, 4 )
+  h = '{:+x}'.format( mantissa << mod )[1:]
+  return ( '-' if mantissa < 0 else '' ) + '0x' + ( h.ljust( len(h)+div, '0' ) if div >= 0 else ( h[:div] or '0' ) + '.' + h[div:].rjust( -div, '0' ) )
+
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
