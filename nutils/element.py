@@ -219,8 +219,6 @@ class Reference( cache.Immutable ):
     return [ numpy.array( map( self.vertices.tolist().index, etrans.apply(edge.vertices).tolist() ), dtype=int ) for etrans, edge in self.edges ]
 
   def getischeme( self, ischeme ):
-    if self.ndims == 0:
-      return numpy.zeros([1,0]), numpy.array([1.])
     match = re.match( '([a-zA-Z]+)(.*)', ischeme )
     assert match, 'cannot parse integration scheme %r' % ischeme
     ptype, args = match.groups()
