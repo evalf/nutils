@@ -307,6 +307,7 @@ class Reference( cache.Immutable ):
       return
     x, w = self.getischeme( 'gauss1' )
     volume = w.sum()
+    assert abs( volume - self.volume ) < tol
     assert volume > 0
     check_volume = 0
     check_zero = 0
@@ -795,7 +796,7 @@ class Cone( Reference ):
     if tweights is None:
       weights = None
     else:
-      wx = tweights * s * self.height
+      wx = tweights * s * self.extnorm * self.height
       weights = ( eweights[_,:] * wx[:,_] ).ravel()
     return points, weights
 
