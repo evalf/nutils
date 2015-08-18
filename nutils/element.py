@@ -1116,22 +1116,17 @@ class WithChildrenReference( WrappedReference ):
     edge2children.extend( [(ichild,iedge)] for ichild, iedge, trans, ref in self.__interfaces )
     return tuple( edge2children )
 
-class MosaicReference( WrappedReference ):
+class MosaicReference( Reference ):
   'triangulation'
 
   def __init__( self, baseref, edge_refs, midpoint ):
+    assert len(edge_refs) == baseref.nedges
+    self.baseref = baseref
     self._edge_refs = tuple( edge_refs )
     self._midpoint = midpoint
-    WrappedReference.__init__( self, baseref )
-    if core.getprop( 'selfcheck', False ):
-      self.check_edges()
 
-  @property
-  def volume( self ):
-    return sum( subref.volume for subref in self.subrefs )
+    self.subrefs = [ ref.cone(trans,midpoint) for trans, ref in zip( baseref.edge_transforms, edge_refs ) if ref ]
 
-  @cache.property
-  def keep( self ):
     keep = {}
     for sub in self.subrefs:
       for trans2, edge2 in sub.edges[1:]:
@@ -1140,19 +1135,39 @@ class MosaicReference( WrappedReference ):
           keep.pop( vertices )
         except KeyError:
           keep[vertices] = trans2, edge2
-    return keep.values()
 
-  @cache.property
-  def edge_transforms( self ):
-    return self.baseref.edge_transforms + tuple( trans for trans, ref in self.keep )
+    self.edge_transforms = tuple(baseref.edge_transforms) + tuple( trans for trans, ref in keep.values() )
+    self.edge_refs = tuple(edge_refs) + tuple( ref for trans, ref in keep.values() )
 
-  @cache.property
-  def edge_refs( self ):
-    return self._edge_refs + tuple( ref for trans, ref in self.keep )
+    vertices = []
+    edgevertexmap = []
+    for etrans, eref in self.edges:
+      indices = []
+      for vertex in etrans.apply( eref.vertices ).tolist():
+        try:
+          index = vertices.index( vertex )
+        except ValueError:
+          index = len(vertices)
+          vertices.append( vertex )
+        indices.append( index )
+      edgevertexmap.append( numpy.array(indices) )
+    self._edgevertexmap = edgevertexmap
 
-  @cache.property
-  def subrefs( self ):
-    return [ ref.cone(trans,self._midpoint) for trans, ref in zip( self.baseref.edge_transforms, self._edge_refs ) if ref ]
+    Reference.__init__( self, vertices )
+
+    if core.getprop( 'selfcheck', False ):
+      self.check_edges()
+
+  @property
+  def edgevertexmap( self ):
+    return self._edgevertexmap
+
+  def stdfunc( self, degree ):
+    return self.baseref.stdfunc( degree )
+
+  @property
+  def volume( self ):
+    return sum( subref.volume for subref in self.subrefs )
 
   @property
   def simplices( self ):
