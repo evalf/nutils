@@ -89,7 +89,10 @@ class Topology( object ):
     'subtract topologies'
 
     assert self.ndims == other.ndims
-    return Topology( set(self) - set(other), self.ndims )
+    refmap = { trans: other.elements[index].reference for trans, index in other.edict.items() }
+    refs = [ elem.reference - refmap.pop(elem.transform,elem.reference.empty) for elem in self ]
+    assert not refmap, 'subtracted topology is not a subtopology'
+    return TrimmedTopology( self, refs )
 
   def __mul__( self, other ):
     'element products'
@@ -545,61 +548,49 @@ class Topology( object ):
     pairs = []
     fcache = cache.WrapperCache()
 
-    for elem in log.iter( 'elem', self ):
-      posneg, intrafaces = elem.trim( levelset=levelset, maxrefine=maxrefine, denom=denom, fcache=fcache )
-      elems.append(( posneg ))
-      for iedge in intrafaces:
-        edge = elem.edge(iedge)
-        trans = edge.transform
-        key = tuple(sorted(edge.vertices))
-        value = posneg, iedge, trans
-        try:
-          oppvalue = extras.pop( key )
-        except KeyError:
-          extras[key] = value
-        else:
-          pairs.append( value + oppvalue )
+    refs = [ elem.trim( levelset=levelset, maxrefine=maxrefine, denom=denom, fcache=fcache ) for elem in log.iter( 'elem', self ) ]
+    return TrimmedTopology( self, refs, name, [] )
 
     log.debug( 'cache', fcache.stats )
 
-    for key in log.iter( 'remaining', extras ):
-      ielems = functools.reduce( numpy.intersect1d, [ self.v2elem[vert] for vert in key ] )
-      if len(ielems) == 1: # vertices lie on boundary
-        continue # if the interface coincides with the boundary, the boundary wins
-      assert len(ielems) == 2
-      value = ()
-      for ielem in ielems:
-        posneg = elems[ielem]
-        elem = self.elements[ielem]
-        mask = numpy.array([ vtx in key for vtx in elem.vertices ])
-        (iedge,), = numpy.where(( elem.reference.edge2vertex == mask ).all( axis=1 ))
-        trans = elem.transform << elem.reference.edge_transforms[iedge]
-        value += posneg, iedge, trans
-      pairs.append( value )
+#   for key in log.iter( 'remaining', extras ):
+#     ielems = functools.reduce( numpy.intersect1d, [ self.v2elem[vert] for vert in key ] )
+#     if len(ielems) == 1: # vertices lie on boundary
+#       continue # if the interface coincides with the boundary, the boundary wins
+#     assert len(ielems) == 2
+#     value = ()
+#     for ielem in ielems:
+#       posneg = elems[ielem]
+#       elem = self.elements[ielem]
+#       mask = numpy.array([ vtx in key for vtx in elem.vertices ])
+#       (iedge,), = numpy.where(( elem.reference.edge2vertex == mask ).all( axis=1 ))
+#       trans = elem.transform << elem.reference.edge_transforms[iedge]
+#       value += posneg, iedge, trans
+#     pairs.append( value )
 
-    trims = []
-    for (pos,neg), iedge, trans, (_pos,_neg), _iedge, _trans in pairs:
+#   trims = []
+#   for (pos,neg), iedge, trans, (_pos,_neg), _iedge, _trans in pairs:
 
-      posref = pos and pos.edge_refs[iedge]
-      negref = neg and neg.edge_refs[iedge]
-      _posref = _pos and _pos.edge_refs[_iedge]
-      _negref = _neg and _neg.edge_refs[_iedge]
+#     posref = pos and pos.edge_refs[iedge]
+#     negref = neg and neg.edge_refs[iedge]
+#     _posref = _pos and _pos.edge_refs[_iedge]
+#     _negref = _neg and _neg.edge_refs[_iedge]
 
-      ref = (posref or _posref) and posref^_posref
-      _ref = (negref or _negref) and negref^_negref
-      if transform.equivalent( trans, _trans, flipped=True ):
-        assert ref == _ref
-      else:
-        # edges are rotated; in this case we have no way of asserting
-        # identity, we can only make the transformation matching and hope
-        # we didn't make any mistakes
-        _trans <<= transform.solve(_trans,trans)
-      if ref:
-        trims.append( element.Element( ref, trans, _trans ) if ref & posref
-                 else element.Element( _ref, _trans, trans ) )
+#     ref = (posref or _posref) and posref^_posref
+#     _ref = (negref or _negref) and negref^_negref
+#     if transform.equivalent( trans, _trans, flipped=True ):
+#       assert ref == _ref
+#     else:
+#       # edges are rotated; in this case we have no way of asserting
+#       # identity, we can only make the transformation matching and hope
+#       # we didn't make any mistakes
+#       _trans <<= transform.solve(_trans,trans)
+#     if ref:
+#       trims.append( element.Element( ref, trans, _trans ) if ref & posref
+#                else element.Element( _ref, _trans, trans ) )
 
-    return TrimmedTopology( self, [ pos for pos, neg in elems ], name, trims, ndims=self.ndims ), \
-           TrimmedTopology( self, [ neg for pos, neg in elems ], name, [ trim.flipped for trim in trims ], ndims=self.ndims )
+#   return TrimmedTopology( self, [ pos for pos, neg in elems ], name, trims, ndims=self.ndims ), \
+#          TrimmedTopology( self, [ neg for pos, neg in elems ], name, [ trim.flipped for trim in trims ], ndims=self.ndims )
 
   @cache.property
   @log.title
@@ -1210,9 +1201,8 @@ class HierarchicalTopology( Topology ):
     return function.function( fmap=fmap, nmap=nmap, ndofs=ndofs, ndims=self.ndims )
 
   def trim( self, *args, **kwargs ):
-    poselems, negelems = Topology.trim( self, *args, **kwargs )
-    return HierarchicalTopology( self.basetopo, poselems ), \
-           HierarchicalTopology( self.basetopo, negelems )
+    elems = Topology.trim( self, *args, **kwargs )
+    return HierarchicalTopology( self.basetopo, elems )
 
 class RefinedTopology( Topology ):
   'refinement'
@@ -1232,14 +1222,14 @@ class RefinedTopology( Topology ):
 class TrimmedTopology( Topology ):
   'trimmed'
 
-  def __init__( self, basetopo, refs, trimname=None, trimmed=[], ndims=None, groups={} ):
+  def __init__( self, basetopo, refs, trimname=None, trimmed=[], groups={} ):
     assert len(refs) == len(basetopo)
     self.__refs = refs
     self.basetopo = basetopo
     self.trimname = trimname
     self.trimmed = tuple(trimmed)
     elements = [ element.Element( ref, elem.transform, elem.opposite ) for elem, ref in zip( basetopo, refs ) if ref ]
-    Topology.__init__( self, elements, ndims, groups=groups )
+    Topology.__init__( self, elements, basetopo.ndims, groups=groups )
 
   @cache.property
   def refined( self ):

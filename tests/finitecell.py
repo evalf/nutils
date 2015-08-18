@@ -11,7 +11,8 @@ def cutdomain( ndims, nelems, maxrefine, errtol ):
   domain, geom = mesh.rectilinear( (numpy.linspace(0,1,nelems+1),)*ndims )
   radius = numpy.sqrt( .5 )
   levelset = radius**2 - ( geom**2 ).sum()
-  pos, neg = domain.trim( levelset=levelset, maxrefine=maxrefine )
+  pos = domain.trim( levelset=levelset, maxrefine=maxrefine )
+  neg = domain - pos
   V = 1.
   Vprev = 1. / (numpy.pi*radius)
   for idim in range( ndims ):
@@ -80,7 +81,7 @@ def hierarchical():
   @unittest
   def trimmed( makeplots=False ):
     levelset = 1.125 - geom[0]
-    trimmed, complement = ref2.trim( levelset, maxrefine=3 )
+    trimmed = ref2.trim( levelset, maxrefine=3 )
     trimbasis = trimmed.basis( 'std', degree=1 )
     x, y = trimmed.simplex.elem_eval( [ geom[0], trimbasis ], ischeme='bezier2', separate=False )
     assert numpy.all( y == .125 * numpy.array(
@@ -110,14 +111,15 @@ def specialcases():
 
         @unittest( direction + how + str(maxrefine) )
         def inter_elem_2d():
-          pos, neg = domain.trim( eta-.75+eps*perturb, maxrefine=maxrefine )
+          domain.trim( eta-.75+eps*perturb, maxrefine=maxrefine )
 
       for maxrefine in 0, 1:
 
         @unittest( ('x' if xi is x else 'y') + how + str(maxrefine) )
         def intra_elem_2d():
-          pos, neg = domain.trim( eta-.5+eps*perturb, maxrefine=maxrefine )
+          pos = domain.trim( eta-.5+eps*perturb, maxrefine=maxrefine )
           pos.volume_check( geom )
+          neg = domain - pos
           neg.volume_check( geom )
 
   domain, geom = mesh.rectilinear( [[0,.5],[0,.5],[0,.5,1]] )
@@ -128,4 +130,4 @@ def specialcases():
 
       @unittest( how + str(maxrefine) )
       def inter_elem_3d():
-        pos, neg = domain.trim( z-.75+eps*perturb, maxrefine=maxrefine )
+        domain.trim( z-.75+eps*perturb, maxrefine=maxrefine )
