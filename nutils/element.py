@@ -803,7 +803,7 @@ class Cone( Reference ):
     if self.nverts == 4:
       I = slice(None)
     elif self.nverts == 5:
-      I = numpy.array([0,1,3,2,4])
+      I = numpy.array([1,2,4,3,0])
     else:
       raise Exception( 'invalid number of points: {}'.format(self.nverts) )
     return self.vertices[I], None
