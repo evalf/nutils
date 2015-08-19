@@ -293,6 +293,7 @@ class Reference( cache.Immutable ):
 
     if self.ndims == 1:
       midpoint = self.vertices[0] + ( self.vertices[1]-self.vertices[0] ) * (levels[0]/(levels[0]-levels[1]))
+
     else:
 
       #TODO: Optimization possible for case in which no EmptyReferences are present
@@ -317,8 +318,8 @@ class Reference( cache.Immutable ):
       midpoint /= length
 
     midpoint = numpy.round( midpoint * (1024*denom) ) / (1024*denom)
-
-    return MosaicReference( self, refs, midpoint )
+    mosaic = MosaicReference( self, refs, midpoint )
+    return mosaic if mosaic.subrefs != [self] else self
 
   def cone( self, trans, tip ):
     assert trans.fromdims == self.ndims
@@ -347,10 +348,14 @@ class Reference( cache.Immutable ):
       return
     s = [ 'divergence check failed: ' + ', '.join( name for (name,ok) in (('zero',zero_ok),('volume',volume_ok)) if not ok ) ]
     try:
+      s.append( 'Vertices:' )
+      s.extend( '{} {}'.format( chr(ord('A')+i), numeric.fhex(v) ) for i, v in enumerate( self.vertices ) )
+      index = self.vertices.tolist().index
+      vtx2abc = lambda vertices: '[' + ','.join( chr(ord('A')+index(v)) for v in vertices.tolist() ) + ']'
       s.append( 'Volume:' )
-      s.extend( '* {} {} -> {}'.format( ref, numeric.fhex(trans.apply(ref.vertices)), numeric.fhex(trans.det*ref.volume) ) for trans, ref in self.simplices )
+      s.extend( '* {} {} -> {}'.format( ref, vtx2abc(trans.apply(ref.vertices)), trans.det*ref.volume ) for trans, ref in self.simplices )
       s.append( 'Edges:' )
-      s.extend( '* {} {} -> {}'.format( subref, numeric.fhex((etrans<<subtrans).apply(subref.vertices)), numeric.fhex((etrans<<subtrans).ext*subref.volume) ) for etrans, eref in self.edges for subtrans, subref in eref.simplices )
+      s.extend( '* {} {} -> {}'.format( subref, vtx2abc((etrans<<subtrans).apply(subref.vertices)), numeric.fhex((etrans<<subtrans).ext*subref.volume) ) for etrans, eref in self.edges for subtrans, subref in eref.simplices )
     except Exception as e:
       s.extend( 'processing failed: {}'.format(e) )
     raise MyException( '\n'.join(s) )
