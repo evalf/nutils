@@ -290,9 +290,34 @@ class Reference( cache.Immutable ):
       return self
     if not any( refs ):
       return self.empty
-    midpoint = numpy.mean( [ self.vertices[v1] + ( self.vertices[v2]-self.vertices[v1] ) * (levels[v1]/(levels[v1]-levels[v2]))
-      for v1, v2 in self.ribbon2vertices if levels[v1] * levels[v2] <= 0 and levels[v1] != levels[v2] ], axis=0 )
+
+    if self.ndims == 1:
+      midpoint = self.vertices[0] + ( self.vertices[1]-self.vertices[0] ) * (levels[0]/(levels[0]-levels[1]))
+    else:
+
+      #TODO: Optimization possible for case in which no EmptyReferences are present
+      keep = {}
+      for trans, ref in zip(self.edge_transforms,refs):
+        vertices = trans.apply( ref.vertices )
+        for (trans2, edge2), indices in zip(ref.edges,ref.edgevertexmap):
+          if edge2:
+            key = tuple(sorted(tuple(v) for v in vertices[indices]))
+            try:
+              keep.pop( key )
+            except KeyError:
+              keep[key] = trans, trans2, edge2
+
+      length = 0.
+      midpoint = 0.
+      for  trans, trans2, edge2 in keep.values():
+        points, weights = edge2.getischeme( 'gauss1' )
+        wtot = weights.sum()*numpy.linalg.norm(trans2.ext)*numpy.linalg.norm(trans.ext)
+        length += wtot
+        midpoint += wtot * (trans<<trans2).apply( numeric.dot( weights, points )/weights.sum() )
+      midpoint /= length
+
     midpoint = numpy.round( midpoint * (1024*denom) ) / (1024*denom)
+
     return MosaicReference( self, refs, midpoint )
 
   def cone( self, trans, tip ):
@@ -1048,11 +1073,25 @@ class WithChildrenReference( WrappedReference ):
   def _logical( self, other, op ):
     return self.baseref.with_children( op(child1,child2) if child1 or child2 else None for child1, child2 in zip( self.child_refs, other.child_refs ) )
 
+  def subvertex( self, ichild, i ):
+    assert 0<=ichild<self.nchildren
+    npoints = 0
+    for childindex, child in enumerate(self.child_refs):
+      if child:
+        points, weights = child.getischeme( 'vertex%d' % (i-1) )
+        assert weights is None
+        if childindex == ichild:
+          rng = numpy.arange( npoints, npoints+len(points) )
+        npoints += len(points)
+      elif ichild==childindex:
+        rng = numpy.array([],dtype=int)
+    return npoints, rng
+
   def getischeme( self, ischeme ):
     'get integration scheme'
     
     if ischeme.startswith('vertex'):
-      return self.baseref.getischeme( ischeme )
+      ischeme = 'vertex%d' % (int(ischeme[6:])-1)
 
     allcoords = []
     allweights = []
@@ -1175,7 +1214,8 @@ class MosaicReference( Reference ):
     'get integration scheme'
     
     if ischeme.startswith('vertex'):
-      return self.baseref.getischeme( ischeme )
+      assert ischeme=='vertex' or ischeme=='vertex0'
+      return self.vertices, None
 
     allpoints, allweights = zip( *[ subvol.getischeme(ischeme) for subvol in self.subrefs ] )
     points = numpy.concatenate( allpoints, axis=0 )
