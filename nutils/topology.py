@@ -543,14 +543,9 @@ class Topology( object ):
     'trim element along levelset'
 
     denom = numeric.round(1./eps)
-    elems = []
-    extras = {}
-    pairs = []
     fcache = cache.WrapperCache()
-
     refs = [ elem.trim( levelset=levelset, maxrefine=maxrefine, denom=denom, fcache=fcache ) for elem in log.iter( 'elem', self ) ]
-    return TrimmedTopology( self, refs, name, [] )
-
+    return TrimmedTopology( self, refs, name )
     log.debug( 'cache', fcache.stats )
 
 #   for key in log.iter( 'remaining', extras ):
@@ -1222,12 +1217,11 @@ class RefinedTopology( Topology ):
 class TrimmedTopology( Topology ):
   'trimmed'
 
-  def __init__( self, basetopo, refs, trimname=None, trimmed=[], groups={} ):
+  def __init__( self, basetopo, refs, trimname=None, groups={} ):
     assert len(refs) == len(basetopo)
     self.__refs = refs
     self.basetopo = basetopo
     self.trimname = trimname
-    self.trimmed = tuple(trimmed)
     elements = [ element.Element( ref, elem.transform, elem.opposite ) for elem, ref in zip( basetopo, refs ) if ref ]
     Topology.__init__( self, elements, basetopo.ndims, groups=groups )
 
@@ -1238,20 +1232,19 @@ class TrimmedTopology( Topology ):
     basetopo = self.basetopo.refined
     refs = [ edict.pop(elem.transform,None) for elem in basetopo ]
     assert not edict, 'leftover elements'
-    trimmed = [ child for elem in self.trimmed for child in elem.children ]
     groups = { name: topo.refined for name, topo in self.groups.items() }
-    return TrimmedTopology( basetopo, refs, self.trimname, trimmed, groups=groups )
+    return TrimmedTopology( basetopo, refs, self.trimname, groups=groups )
 
   @cache.property
   @log.title
   def boundary( self ):
-    trimmed = list( self.trimmed )
+    trimmed = []
     for elem, ref in zip( self.basetopo, self.__refs ):
       if ref:
         n = elem.reference.nedges
-        trimmed.extend( element.Element( edge, elem.transform<<trans, elem.transform<<trans.flipped ) for trans, edge in zip( ref.edge_transforms[n:], ref.edge_refs[n:] ) )
+        trimmed.extend( element.Element( edge, elem.transform<<trans, elem.transform<<trans.flipped ) for trans, edge in ref.edges[n:] )
 
-    belems = list( trimmed )
+    belems = []
     basebtopo = self.basetopo.boundary
     for belem in log.iter( 'element', basebtopo ):
       btrans = belem.transform.promote( self.ndims )
@@ -1265,7 +1258,7 @@ class TrimmedTopology( Topology ):
         if edge:
           belems.append( element.Element( edge, belem.transform, belem.opposite ) )
 
-    boundary = Topology( belems )
+    boundary = Topology( trimmed + belems )
     for name, basebgroup in basebtopo.groups.items():
       refs = []
       for basebelem in basebgroup:
@@ -1273,10 +1266,12 @@ class TrimmedTopology( Topology ):
         refs.append( boundary.elements[ibelem].reference if ibelem is not None else None )
       if any( refs ):
         boundary[name] = TrimmedTopology( basebgroup, refs )
+
     if trimmed:
       oldtrimtopo = boundary.groups.get( self.trimname )
       newtrimtopo = Topology(trimmed)
       boundary[self.trimname] = oldtrimtopo + newtrimtopo if oldtrimtopo else newtrimtopo
+
     return boundary
 
   def __getitem__( self, key ):
@@ -1362,17 +1357,5 @@ def common_refine( topo1, topo2 ):
   if isrevolved:
     commontopo = RevolvedTopology( commontopo )
   return commontopo
-
-def trimmed_from_elems( basetopo, elems, belems, trimname='trimmed' ):
-  isrevolved = isinstance( basetopo, RevolvedTopology )
-  if isrevolved:
-    basetopo = basetopo.basetopo
-  edict = { elem.transform: elem.reference for elem in elems }
-  refs = [ edict.pop(elem.transform,None) for elem in basetopo ]
-  assert not edict, 'leftover elements'
-  trimmedtopo = TrimmedTopology( basetopo, refs=refs, trimname=trimname, trimmed=belems )
-  if isrevolved:
-    trimmedtopo = RevolvedTopology( trimmedtopo )
-  return trimmedtopo
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
