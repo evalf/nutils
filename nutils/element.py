@@ -376,7 +376,7 @@ class SimplexReference( Reference ):
       self.x0 = vertices[0]
       self.dx = vertices[1:] - self.x0
       self.volume = numpy.linalg.det(self.dx) / math.factorial(ndims)
-      assert self.volume != 0
+      #assert self.volume != 0
       self.inverted = self.volume < 0
       if self.inverted:
         self.volume = -self.volume
@@ -1027,7 +1027,7 @@ class WithChildrenReference( WrappedReference ):
 
   @property
   def volume( self ):
-    return sum( trans.det * ref.volume for trans, ref in self.children )
+    return sum( abs(trans.det) * ref.volume for trans, ref in self.children )
 
   __rsub__ = lambda self, other: self.baseref.with_children( other_child-self_child for self_child, other_child in zip( self.child_refs, other.child_refs ) ) if self.baseref == other or isinstance( other, WithChildrenReference ) and self.baseref == other.baseref else NotImplementedError
 
@@ -1056,9 +1056,9 @@ class WithChildrenReference( WrappedReference ):
 
     allcoords = []
     allweights = []
-    for trans, simplex in self.children:
-      if simplex:
-        points, weights = simplex.getischeme( ischeme )
+    for trans, ref in self.children:
+      if ref:
+        points, weights = ref.getischeme( ischeme )
         allcoords.append( trans.apply(points) )
         if weights is not None:
           allweights.append( weights * abs(float(trans.det)) )
