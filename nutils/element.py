@@ -824,11 +824,12 @@ class Cone( Reference ):
     return points, weights
 
   def getischeme_vtk( self ):
-    assert self.ndims == 3
-    if self.nverts == 4:
+    if self.nverts == 4 and self.ndims==3:
       I = slice(None)
-    elif self.nverts == 5:
+    elif self.nverts == 5 and self.ndims==3:
       I = numpy.array([1,2,4,3,0])
+    elif self.nverts == 3 and self.ndims==2:
+      I = slice(None)
     else:
       raise Exception( 'invalid number of points: {}'.format(self.nverts) )
     return self.vertices[I], None
@@ -1036,6 +1037,10 @@ class OwnChildReference( WrappedReference ):
   def edge2children( self ):
     return self.baseref.edge2children
 
+  @property
+  def simplices( self ):
+    return self.baseref.simplices
+
 class WithChildrenReference( WrappedReference ):
   'base reference with explicit children'
 
@@ -1062,12 +1067,11 @@ class WithChildrenReference( WrappedReference ):
     for (ichild,iedge), (jchild,jedge) in self.baseref.interfaces:
       edge1 = self.child_refs[ichild].edge_refs[iedge]
       edge2 = self.child_refs[jchild].edge_refs[jedge]
-      if edge2 and not edge1:
-        interfaces.append(( jchild, jedge, self.child_transforms[jchild] << self.child_refs[jchild].edge_transforms[jedge], self.child_refs[jchild].edge_refs[jedge] ))
-      elif edge1 and not edge2:
-        interfaces.append(( ichild, iedge, self.child_transforms[ichild] << self.child_refs[ichild].edge_transforms[iedge], self.child_refs[ichild].edge_refs[iedge] ))
-      elif edge1 != edge2:
-        raise Exception
+      if edge1 != edge2:
+        if edge1:
+          interfaces.append(( ichild, iedge, self.child_transforms[ichild] << self.child_refs[ichild].edge_transforms[iedge], self.child_refs[ichild].edge_refs[iedge] ))
+        if edge2:
+          interfaces.append(( jchild, jedge, self.child_transforms[jchild] << self.child_refs[jchild].edge_transforms[jedge], self.child_refs[jchild].edge_refs[jedge] ))
     return interfaces
 
   def _logical( self, other, op ):
