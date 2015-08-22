@@ -1074,9 +1074,13 @@ class WithChildrenReference( WrappedReference ):
       edge2 = self.child_refs[jchild].edge_refs[jedge]
       if edge1 != edge2:
         if edge1:
-          interfaces.append(( ichild, iedge, self.child_transforms[ichild] << self.child_refs[ichild].edge_transforms[iedge], self.child_refs[ichild].edge_refs[iedge] ))
+          trans = self.child_transforms[ichild] << self.child_refs[ichild].edge_transforms[iedge]
+          if trans not in self.baseref.edge_transforms:
+            interfaces.append(( ichild, iedge, trans, self.child_refs[ichild].edge_refs[iedge] ))
         if edge2:
-          interfaces.append(( jchild, jedge, self.child_transforms[jchild] << self.child_refs[jchild].edge_transforms[jedge], self.child_refs[jchild].edge_refs[jedge] ))
+          trans = self.child_transforms[jchild] << self.child_refs[jchild].edge_transforms[jedge]
+          if trans not in self.baseref.edge_transforms:
+            interfaces.append(( jchild, jedge, trans, self.child_refs[jchild].edge_refs[jedge] ))
     return interfaces
 
   def _logical( self, other, op ):
