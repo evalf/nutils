@@ -714,7 +714,8 @@ class StructuredTopology( Topology ):
     'interfaces'
 
     interfaces = []
-    eye = numpy.eye( self.ndims-1, dtype=int )
+    ref = element.getsimplex(1)**self.ndims
+    edge = element.getsimplex(1)**(self.ndims-1)
     for idim in range(self.ndims):
       if idim in self.periodic:
         t1 = (slice(None),)*idim + (slice(None),)
@@ -722,13 +723,7 @@ class StructuredTopology( Topology ):
       else:
         t1 = (slice(None),)*idim + (slice(-1),)
         t2 = (slice(None),)*idim + (slice(1,None),)
-      A = numpy.zeros( (self.ndims,self.ndims-1), dtype=int )
-      A[:idim] = -eye[:idim]
-      A[idim+1:] = eye[idim:]
-      b = numpy.hstack( [ numpy.ones( idim+1, dtype=int ), numpy.zeros( self.ndims-idim, dtype=int ) ] )
-      trans1 = transform.affine( A, b[:-1], isflipped=False )
-      trans2 = transform.affine( A, b[1:], isflipped=True )
-      edge = element.getsimplex(1)**(self.ndims-1)
+      trans1, trans2 = ref.edge_transforms[idim*2:idim*2+2]
       for elem1, elem2 in numpy.broadcast( self.structure[t1], self.structure[t2] ):
         assert elem1.transform == elem1.opposite
         assert elem2.transform == elem2.opposite
@@ -1217,8 +1212,9 @@ class RefinedTopology( Topology ):
 class TrimmedTopology( Topology ):
   'trimmed'
 
-  def __init__( self, basetopo, refs, trimname=None, groups={} ):
+  def __init__( self, basetopo, refs, trimname='trimmed', groups={} ):
     assert len(refs) == len(basetopo)
+    assert all( isinstance(ref,element.Reference) for ref in refs )
     self.__refs = refs
     self.basetopo = basetopo
     self.trimname = trimname
@@ -1230,15 +1226,60 @@ class TrimmedTopology( Topology ):
     elems = [ child for elem in self for child in elem.children ]
     edict = { elem.transform: elem.reference for elem in elems }
     basetopo = self.basetopo.refined
-    refs = [ edict.pop(elem.transform,None) for elem in basetopo ]
+    refs = [ edict.pop(elem.transform,elem.reference.empty) for elem in basetopo ]
     assert not edict, 'leftover elements'
     groups = { name: topo.refined for name, topo in self.groups.items() }
     return TrimmedTopology( basetopo, refs, self.trimname, groups=groups )
 
   @cache.property
+  def __interfaces( self ):
+    try:
+      ifacebasetopo = self.basetopo.interfaces
+    except AttributeError:
+      warnings.warn( 'base topology has no interfaces attribute; trimmed boundary may be incomplete' )
+      return []
+    refs = []
+    for iface in ifacebasetopo:
+      btrans1 = iface.transform.promote( self.ndims )
+      head1 = btrans1.lookup( self.basetopo.edict )
+      tail1 = btrans1.slicefrom( len(head1) )
+      btrans2 = iface.opposite.promote( self.ndims )
+      head2 = btrans2.lookup( self.basetopo.edict )
+      tail2 = btrans2.slicefrom( len(head2) )
+      r1 = self.__refs[ self.basetopo.edict[head1] ]
+      e1 = r1.edge_refs[ r1.edge_transforms.index(tail1) ]
+      r2 = self.__refs[ self.basetopo.edict[head2] ]
+      e2 = r2.edge_refs[ r2.edge_transforms.index(tail2) ]
+      refs.append(( iface, e1, e2 ))
+    return refs
+
+  @cache.property
+  def interfaces( self ):
+    ifacerefs = []
+    for iface, ref1, ref2 in self.__interfaces:
+      if ref1 == ref2:
+        ifacerefs.append( ref1 )
+      if not ref2:
+        ifacerefs.append( ref2 )
+      elif not ref1:
+        ifacerefs.append( ref1 )
+      else:
+        raise NotImplementedError
+    return TrimmedTopology( self.basetopo.interfaces, ifacerefs )
+
+  @cache.property
   @log.title
   def boundary( self ):
     trimmed = []
+    for iface, ref1, ref2 in self.__interfaces:
+      if ref1 == ref2:
+        pass
+      elif not ref2:
+        trimmed.append( iface )
+      elif not ref1:
+        trimmed.append( iface.flipped )
+      else:
+        warnings.warn( 'trimmed boundary is incomplete' )
     for elem, ref in zip( self.basetopo, self.__refs ):
       if ref:
         n = elem.reference.nedges
@@ -1263,7 +1304,7 @@ class TrimmedTopology( Topology ):
       refs = []
       for basebelem in basebgroup:
         ibelem = boundary.edict.get(basebelem.transform)
-        refs.append( boundary.elements[ibelem].reference if ibelem is not None else None )
+        refs.append( boundary.elements[ibelem].reference if ibelem is not None else basebelem.reference.empty )
       if any( refs ):
         boundary[name] = TrimmedTopology( basebgroup, refs )
 
@@ -1279,8 +1320,7 @@ class TrimmedTopology( Topology ):
       return self.groups[key]
     keytopo = self.basetopo[key]
     refs = [ self.__refs[ self.basetopo.edict[elem.transform] ] for elem in keytopo ]
-    trimmed = [ elem for elem in self.trimmed if elem.transform.promote(self.ndims).sliceto(-1) in keytopo.edict ]
-    topo = TrimmedTopology( keytopo, refs, self.trimname, trimmed )
+    topo = TrimmedTopology( keytopo, refs, self.trimname )
     if isinstance(key,str):
       self.groups[key] = topo
     return topo
