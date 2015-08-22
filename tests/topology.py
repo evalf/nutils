@@ -106,3 +106,10 @@ def structure2d():
       #verify_connectivity( bnd.structure, geom )
       xn = bnd.elem_eval( geom.dotnorm(geom), ischeme='gauss1', separate=False )
       numpy.testing.assert_array_less( 0, xn, 'inward pointing normals' )
+
+  @unittest
+  def interfaces():
+    domain, geom = mesh.rectilinear( [[-1,0,1]]*3 )
+    x1, x2, n1, n2 = domain.interfaces.elem_eval( [ geom, function.opposite(geom), geom.normal(), function.opposite(geom.normal()) ], 'gauss2', separate=False )
+    assert numpy.all( x1 == x2 )
+    assert numpy.all( n1 == -n2 )
