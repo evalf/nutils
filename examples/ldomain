@@ -1,0 +1,113 @@
+#! /usr/bin/env python
+
+from nutils import *
+
+
+@log.title
+def plotdomain( title, domain, geom, sol ):
+  points, colors = domain.elem_eval( [ geom, sol ], ischeme='bezier9', separate=True )
+  bpoints = domain['aoi'].elem_eval( geom, ischeme='bezier2', separate=False )
+  with plot.PyPlot( title ) as plt:
+    plt.mesh( points, colors, edgewidth=.2, triangulate='bezier' )
+    plt.colorbar()
+    plt.mesh( bpoints, edgewidth=2, setxylim=False )
+
+
+@log.title
+def plotconv( conv, optimal_slopes ):
+  ndofs_, error_, h1global_ = zip( *conv )
+  with plot.PyPlot( 'convergence' ) as plt:
+    plt.loglog( ndofs_, error_, 'ko-', label='L(err)' )
+    plt.slope_marker( ndofs_[-1], error_[-1], slope=optimal_slopes[0] )
+    plt.loglog( ndofs_, h1global_, 'ko:', label='|err|_H1 global' )
+    plt.slope_marker( ndofs_[-1], h1global_[-1], slope=optimal_slopes[1] )
+    plt.legend( loc=3, frameon=False )
+    plt.grid()
+
+
+def main( degree=1, solvetol=1e-10, circle=False, uniform=False, basistype='std', maxrefine=9 ):
+
+  verts = numpy.linspace( -1, 1, 7 )
+  basetopo, geom = mesh.rectilinear( [verts,verts] )
+  domain = basetopo - basetopo[3:,:3]
+  domain['aoi'] = domain.trim( .04 - ((geom+.5)**2).sum(-1), maxrefine=5 ) if circle else domain[1:2,1:2]
+
+  x, y = geom
+  r2 = ( geom**2 ).sum(-1)
+  exact = r2**(1./3) * function.sin( (2./3) * function.arctan2(-y,-x) )
+  flux = exact.ngrad( geom )
+
+  plotdomain( 'exact', domain, geom, exact )
+  plotdomain( 'laplace', domain, geom, exact.laplace(geom) )
+
+  gauss = 'gauss5'
+  gaussfine = 'gauss9'
+  conv = []
+
+  if uniform:
+    optimal_slopes = -rational.frac(2,3), -rational.frac(1,3)
+  else:
+    optimal_slopes = -rational.frac(degree,1), -rational.frac(degree,2)
+
+  nrefine = 1
+
+  for iiter in log.count( 'iter' ):
+
+    basis = domain.basis( basistype, degree=degree )
+    laplace = function.outer( basis.grad(geom) ).sum(-1)
+    matrix = domain.integrate( laplace, geometry=geom, ischeme=gauss )
+    rhs = domain.boundary['trimmed'].integrate( basis * flux, geometry=geom, ischeme=gaussfine )
+    cons = domain.boundary['left,right,top,bottom'].project( exact, ischeme=gaussfine, geometry=geom, onto=basis )
+    lhs = matrix.solve( rhs, constrain=cons, tol=solvetol, symmetric=True )
+    sol = basis.dot(lhs)
+
+    err_goal = domain['aoi'].integrate( exact-sol, geometry=geom, ischeme=gaussfine )
+    err_h1 = domain.integrate( ((exact-sol).grad(geom)**2).sum(-1), geometry=geom, ischeme=gaussfine )**.5
+    conv.append(( len(lhs), abs(err_goal), err_h1 ))
+
+    log.user( 'goal error: %.2e' % err_goal )
+
+    plotconv( conv, optimal_slopes )
+    plotdomain( 'solution', domain, geom, sol )
+    plotdomain( 'error', domain, geom, sol-exact )
+
+    log.info( 'maximum refinement level:', nrefine )
+    if nrefine >= maxrefine:
+      break
+
+    if uniform:
+
+      domain = domain.refined
+      nrefine += 1
+
+    else:
+
+      dualdomain = domain.refined
+      dualbasis = dualdomain.basis( basistype, degree=degree )
+      duallaplace = function.outer( dualbasis.grad(geom) ).sum(-1)
+      dualmatrix = dualdomain.integrate( duallaplace, geometry=geom, ischeme=gauss )
+      dualrhs = dualdomain['aoi'].integrate( dualbasis, geometry=geom, ischeme=gauss )
+      dualcons = dualdomain.boundary['left,right,top,bottom'].project( 0, ischeme=gauss, geometry=geom, onto=dualbasis )
+      duallhs = dualmatrix.solve( dualrhs, constrain=dualcons, tol=solvetol, symmetric=True )
+      dualw = dualbasis * duallhs
+
+      plotdomain( 'dual', dualdomain, geom, dualw.sum(-1) )
+
+      error_est_w = dualdomain.boundary['trimmed'].integrate( dualw * flux, geometry=geom, ischeme=gaussfine ) \
+                  - dualdomain.integrate( ( dualw.grad(geom) * sol.grad(geom) ).sum(-1), geometry=geom, ischeme=gauss )
+
+      error_est = error_est_w.sum(-1)
+      log.user( 'error estimate: %.2e (%.1f%% accurate)' % ( error_est, 100.*error_est/err_goal ) )
+
+      I, = numpy.where( error_est_w**2 > numpy.mean(error_est_w**2) )
+      supp = [ trans[:-1] for trans in function.supp( dualbasis, indices=I ) ]
+      domain = domain.refined_by( supp )
+      nrefine = len(domain.levels)
+
+
+def unittest():
+
+  pass
+
+
+util.run( main, unittest )
