@@ -1028,6 +1028,14 @@ class OwnChildReference( WrappedReference ):
     WrappedReference.__init__( self, baseref )
 
   @property
+  def edge_refs( self ):
+    return self.baseref.edge_refs
+
+  @property
+  def edge_transforms( self ):
+    return self.baseref.edge_transforms
+
+  @property
   def volume( self ):
     return self.baseref.volume
 
