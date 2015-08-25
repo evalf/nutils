@@ -399,7 +399,10 @@ def solve_exact( A, *B ):
     Ab[icol+1:] = Ab[icol+1:] * Ab[icol,icol] - Ab[icol+1:,icol,numpy.newaxis] * Ab[icol,:]
   if Ab[n:].any():
     raise numpy.linalg.LinAlgError( 'linear system has no solution' )
-  Y = div_exact( Ab[:n,n:], numpy.diag( Ab[:n,:n] )[:,numpy.newaxis] )
+  try:
+    Y = div_exact( Ab[:n,n:], numpy.diag( Ab[:n,:n] )[:,numpy.newaxis] )
+  except:
+    raise numpy.linalg.LinAlgError( 'linear system has no base2 solution' )
   X = [ Y[:,s] for s in S ]
   assert all( numpy.all( dot(A,x) == b ) for (x,b) in zip(X,B) )
   if len(B) == 1:
