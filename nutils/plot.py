@@ -479,13 +479,18 @@ class VTKFile( BasePlot ):
           write( 'POINT_DATA {}\n'.format( npoints ) )
         elif location == 'cells':
           write( 'CELL_DATA {}\n'.format( ncells ) )
-        for name, vector, ncomponents, data in self._dataarrays[location]:
+        for name, data in self._dataarrays[location]:
           vtkdtype = self._getvtkdtype( data )
-          if vector:
-            write( 'VECTORS {} {}\n'.format( name, vtkdtype ) )
-          else:
-            write( 'SCALARS {} {} {}\n'.format( name, vtkdtype, ncomponents ) )
+          if data.ndim==1:
+            write( 'SCALARS {} {} {}\n'.format( name, vtkdtype, 1 ) )
             write( 'LOOKUP_TABLE default\n' )
+          elif data.ndim==2:
+            write( 'VECTORS {} {}\n'.format( name, vtkdtype ) )
+          elif data.ndim==3:
+            write( 'TENSORS {} {}\n'.format( name, vtkdtype ) )
+          else:
+            raise Exception('Unsupported data dimension')
+
           self._writearray( vtk, data )
 
   def rectilineargrid( self, coords ):
@@ -533,15 +538,15 @@ class VTKFile( BasePlot ):
 
     self._mesh = 'unstructured', ndims, npoints, ncells, points.ravel(), cells, celltypes
 
-  def celldataarray( self, name, data, vector=None ):
+  def celldataarray( self, name, data ):
     'add cell array'
-    self._adddataarray( name, data, 'cells', vector )
+    self._adddataarray( name, data, 'cells' )
 
-  def pointdataarray( self, name, data, vector=None ):
+  def pointdataarray( self, name, data ):
     'add cell array'
-    self._adddataarray( name, data, 'points', vector )
+    self._adddataarray( name, data, 'points' )
 
-  def _adddataarray( self, name, data, location, vector ):
+  def _adddataarray( self, name, data, location ):
     assert self._mesh is not None, 'Grid not specified'
     ndims, npoints, ncells = self._mesh[1:4]
 
@@ -553,19 +558,16 @@ class VTKFile( BasePlot ):
     elif location != 'cells':
       raise Exception( 'invalid location: {}'.format( location ) )
 
-    assert data.ndim <= 2, 'data array should have at most 2 axes: {} and components (optional)'.format(location)
+    assert data.ndim <= 3, 'data array should have at most 3 axes: {} and components (optional)'.format(location)
 
-    ncomponents = data.shape[1] if data.ndim == 2 else 1
-    if vector is None:
-      vector = data.ndim == 2
+    extshp  = (data.shape[0],)+(3,)*(data.ndim-1)
+    if data.shape == extshp:
+      extdata = data
+    else:
+      extdata = numpy.zeros( extshp, dtype=data.dtype )
+      extdata[tuple(slice(sh) for sh in data.shape)] = data
 
-    if vector:
-      assert ncomponents == ndims, 'data array should have {} components per entry'.format(ndims)
-      if ndims != 3:
-        data = numpy.concatenate( [data, numpy.zeros( [data.shape[0], 3-ndims], dtype=data.dtype ) ], axis=1 )
-      ncomponents = 3
-
-    self._dataarrays[location].append(( name, vector, ncomponents, data.ravel() ))
+    self._dataarrays[location].append(( name, extdata ))
 
 
 ## AUXILIARY FUNCTIONS
