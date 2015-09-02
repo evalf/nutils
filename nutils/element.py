@@ -225,13 +225,13 @@ class Reference( cache.Immutable ):
   def register( cls, ptype, func ):
     setattr( cls, 'getischeme_%s' % ptype, func )
 
-  def with_children( self, child_refs, interfaces=[] ):
+  def with_children( self, child_refs ):
     child_refs = tuple(child_refs)
     if not any( child_refs ):
       return self.empty
     if child_refs == self.child_refs:
       return self
-    return WithChildrenReference( self, child_refs, interfaces )
+    return WithChildrenReference( self, child_refs )
 
   def trim( self, levels, maxrefine, denom, fcache ):
     'trim element along levelset'
@@ -1003,7 +1003,7 @@ class OwnChildReference( Reference ):
 class WithChildrenReference( Reference ):
   'base reference with explicit children'
 
-  def __init__( self, baseref, child_refs, interfaces=[] ):
+  def __init__( self, baseref, child_refs ):
     assert isinstance( child_refs, tuple ) and len(child_refs) == baseref.nchildren and any(child_refs) and child_refs != baseref.child_refs
     assert all( isinstance(child_ref,Reference) for child_ref in child_refs )
     assert all( child_ref.ndims == baseref.ndims for child_ref in child_refs )
@@ -1011,7 +1011,6 @@ class WithChildrenReference( Reference ):
     self.child_transforms = baseref.child_transforms
     self.child_refs = child_refs
     Reference.__init__( self, baseref.vertices )
-    self.__interfaces_arg = interfaces
     if core.getprop( 'selfcheck', False ):
       self.check_edges()
 
