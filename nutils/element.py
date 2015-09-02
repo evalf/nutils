@@ -225,6 +225,9 @@ class Reference( cache.Immutable ):
     get = getattr( self, 'getischeme_'+ptype )
     return get( eval(args) ) if args else get()
 
+  def register( self, name, func ):
+    setattr( self.__class__, 'getischeme_'+name, func )
+
   @classmethod
   def register( cls, ptype, func ):
     setattr( cls, 'getischeme_%s' % ptype, func )
@@ -727,9 +730,9 @@ class TensorReference( Reference ):
       match = self._re_ischeme.match( ischeme )
       assert match, 'cannot parse integration scheme %r' % ischeme
       ptype, args = match.groups()
-      get = getattr( self, 'getischeme_'+ptype, None )
+      get = self.__class__.__dict__.get( 'getischeme_'+ptype )
       if get:
-        return get( eval(args) ) if args else get()
+        return get( self, eval(args) ) if args else get( self )
       if args and ',' in args:
         args = eval(args)
         assert len(args) == self.ndims
