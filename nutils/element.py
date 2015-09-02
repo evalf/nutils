@@ -157,30 +157,29 @@ class Reference( cache.Immutable ):
 
   @cache.property
   def childedgemap( self ):
-    # ichild, iedge -> jchild, jedge, isouter
-    # isouter=True: coinciding interface
-    # isouter=False: corresponding edge
+    # ichild>iedge --> jchild>jedge, isouter=False (corresponding edge)
+    # ichild>iedge --> jchild<jedge, isouter=True (coinciding interface)
+
     vmap = {}
     childedgemap = tuple( [None] * child.nedges for child in self.child_refs )
-    for iedge, (etrans,edge) in enumerate(self.edges):
-      for ichild, (ctrans,child) in enumerate(edge.children):
-        v = tuple( sorted( tuple(vi) for vi in (etrans<<ctrans).apply(child.vertices) ) )
-        vmap[v] = ichild, iedge, True
+
     for ichild, (ctrans,child) in enumerate(self.children):
       for iedge, (etrans,edge) in enumerate(child.edges):
-        v = tuple( sorted( tuple(vi) for vi in (ctrans<<etrans).apply(edge.vertices) ) )
+        v = (ctrans<<etrans).flat
         try:
-          jchild, jedge, isouter = childedgemap[ichild][iedge] = vmap.pop(v)
+          jchild, jedge = vmap.pop(v.flipped)
         except KeyError:
-          vmap[v] = ichild, iedge, False
+          vmap[v] = ichild, iedge
         else:
-          trans = ( self.child_transforms[ichild] << self.child_refs[ichild].edge_transforms[iedge] ).flat
-          if isouter:
-            assert trans == ( self.edge_transforms[jedge] << self.edge_refs[jedge].child_transforms[jchild] ).flat
-          else:
-            assert trans == ( self.child_transforms[jchild] << self.child_refs[jchild].edge_transforms[jedge] ).flat.flipped
-            childedgemap[jchild][jedge] = ichild, iedge, False
-    assert not vmap
+          childedgemap[jchild][jedge] = ichild, iedge, False
+          childedgemap[ichild][iedge] = jchild, jedge, False
+
+    for iedge, (etrans,edge) in enumerate(self.edges):
+      for ichild, (ctrans,child) in enumerate(edge.children):
+        jchild, jedge = vmap.pop( (etrans<<ctrans).flat )
+        childedgemap[jchild][jedge] = ichild, iedge, True
+
+    assert not vmap, 'boundaries and edges do not commute'
     return childedgemap
 
   @cache.property
