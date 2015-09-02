@@ -115,9 +115,6 @@ class Reference( cache.Immutable ):
     self.vertices = numpy.asarray( vertices )
     self.nverts, self.ndims = self.vertices.shape
 
-  #__or__ = __ror__ = lambda self, other: other if other.contains(self) else self if self.contains(other) else NotImplemented
-  #__xor__ = __rxor__ = lambda self, other: other - self if other.contains(self) else self - other if self.contains(other) else NotImplemented
-
   __and__ = __rand__ = lambda self, other: self if self == other else NotImplemented
   __sub__ = __rsub__ = lambda self, other: self.empty if self == other else NotImplemented
   __bool__ = __nonzero__ = lambda self: bool(self.volume)
@@ -366,11 +363,9 @@ class Reference( cache.Immutable ):
 
   __repr__ = __str__
 
-
 class MyException( Exception ):
   def __repr__( self ):
     return str(self)
-
 
 class EmptyReference( Reference ):
   'inverse reference element'
@@ -385,7 +380,6 @@ class EmptyReference( Reference ):
 
   __and__ = __rand__ = __sub__ = lambda self, other: self if other.ndims == self.ndims else NotImplemented
   __rsub__ = lambda self, other: other if other.ndims == self.ndims else NotImplemented
-
 
 class SimplexReference( Reference ):
   'simplex reference'
@@ -976,57 +970,17 @@ class NeighborhoodTensorReference( TensorReference ):
     points, weights = self.get_quad_bem_ischeme( gauss )
     return self.singular_ischeme_quad( points ), weights
 
-class WrappedReference( Reference ):
-  'derive properties from baseref'
-
-  def __init__( self, baseref ):
-    self.baseref = baseref
-    Reference.__init__( self, baseref.vertices )
-
-# def getischeme( self, ischeme ):
-#   return self.baseref.getischeme( ischeme )
-
-  def stdfunc( self, degree ):
-    return self.baseref.stdfunc( degree )
-
-  @property
-  def subvertex( self ):
-    return self.baseref.subvertex
-
-#  def __or__( self, other ):
-#    return self if other is None or other == self \
-#      else self.baseref if other == self.baseref or other == ~self \
-#      else self._logical( other, lambda ref1, ref2: ref1 | ref2 )
-#
-#  def __and__( self, other ):
-#    return None if other is None or other == ~self \
-#      else self if other == self.baseref or other == self \
-#      else self._logical( other, lambda ref1, ref2: ref1 & ref2 )
-#
-#  def __xor__( self, other ):
-#    return self if other is None \
-#      else None if other == self \
-#      else self.baseref if other == ~self \
-#      else ~self if other == self.baseref \
-#      else self._logical( other, lambda ref1, ref2: ref1 ^ ref2 )
-#
-#  def __sub__( self, other ):
-#    if other.__class__ == self.__class__ and other.baseref == self:
-#      return ~other
-#    return Reference.__sub__( self, other )
-#
-#  def __rsub__( self, other ):
-#    if other != self.baseref:
-#      return NotImplemented
-#    return ~self
-
-class OwnChildReference( WrappedReference ):
+class OwnChildReference( Reference ):
   'forward self as child'
 
   def __init__( self, baseref ):
+    self.baseref = baseref
     self.child_refs = baseref,
     self.child_transforms = transform.identity,
-    WrappedReference.__init__( self, baseref )
+    Reference.__init__( self, baseref.vertices )
+
+  def stdfunc( self, degree ):
+    return self.baseref.stdfunc( degree )
 
   @property
   def volume( self ):
@@ -1047,19 +1001,23 @@ class OwnChildReference( WrappedReference ):
   def simplices( self ):
     return self.baseref.simplices
 
-class WithChildrenReference( WrappedReference ):
+class WithChildrenReference( Reference ):
   'base reference with explicit children'
 
   def __init__( self, baseref, child_refs, interfaces=[] ):
     assert isinstance( child_refs, tuple ) and len(child_refs) == baseref.nchildren and any(child_refs) and child_refs != baseref.child_refs
     assert all( isinstance(child_ref,Reference) for child_ref in child_refs )
     assert all( child_ref.ndims == baseref.ndims for child_ref in child_refs )
+    self.baseref = baseref
     self.child_transforms = baseref.child_transforms
     self.child_refs = child_refs
-    WrappedReference.__init__( self, baseref )
+    Reference.__init__( self, baseref.vertices )
     self.__interfaces_arg = interfaces
     if core.getprop( 'selfcheck', False ):
       self.check_edges()
+
+  def stdfunc( self, degree ):
+    return self.baseref.stdfunc( degree )
 
   def transform( self, trans ):
     baseref = self.baseref.transform(trans)
@@ -1227,6 +1185,9 @@ class MosaicReference( Reference ):
 
     if core.getprop( 'selfcheck', False ):
       self.check_edges()
+
+  def stdfunc( self, degree ):
+    return self.baseref.stdfunc( degree )
 
   def transform( self, trans ):
     if trans == transform.identity:
