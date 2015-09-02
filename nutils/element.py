@@ -116,15 +116,15 @@ class Reference( cache.Immutable ):
     self.nverts, self.ndims = self.vertices.shape
 
   #__or__ = __ror__ = lambda self, other: other if other.contains(self) else self if self.contains(other) else NotImplemented
-  #__and__ = __rand__ = lambda self, other: self if other.contains(self) else other if self.contains(other) else NotImplemented
   #__xor__ = __rxor__ = lambda self, other: other - self if other.contains(self) else self - other if self.contains(other) else NotImplemented
 
+  __and__ = __rand__ = lambda self, other: self if self == other else NotImplemented
   __sub__ = __rsub__ = lambda self, other: self.empty if self == other else NotImplemented
   __bool__ = __nonzero__ = lambda self: bool(self.volume)
 
   @property
   def empty( self ):
-    return EmptyReference( self )
+    return EmptyReference( self.ndims )
 
   def __mul__( self, other ):
     assert isinstance( other, Reference )
@@ -299,14 +299,15 @@ class Reference( cache.Immutable ):
       #TODO: Optimization possible for case in which no EmptyReferences are present
       keep = {}
       for trans, ref in zip(self.edge_transforms,refs):
-        vertices = trans.apply( ref.vertices )
-        for (trans2, edge2), indices in zip(ref.edges,ref.edgevertexmap):
-          if edge2:
-            key = tuple(sorted(tuple(v) for v in vertices[indices]))
-            try:
-              keep.pop( key )
-            except KeyError:
-              keep[key] = trans, trans2, edge2
+        if ref:
+          vertices = trans.apply( ref.vertices )
+          for (trans2, edge2), indices in zip(ref.edges,ref.edgevertexmap):
+            if edge2:
+              key = tuple(sorted(tuple(v) for v in vertices[indices]))
+              try:
+                keep.pop( key )
+              except KeyError:
+                keep[key] = trans, trans2, edge2
 
       length = 0.
       midpoint = 0.
@@ -376,23 +377,14 @@ class EmptyReference( Reference ):
 
   volume = 0
 
-  def __init__( self, baseref ):
-    self.baseref = baseref
-    Reference.__init__( self, numpy.zeros((0,baseref.ndims)) )
+  def __init__( self, ndims ):
+    Reference.__init__( self, numpy.zeros((0,ndims)) )
 
-  @property
-  def edge_transforms( self ):
-    return self.baseref.edge_transforms
+  def transform( self, trans ):
+    return self
 
-  @cache.property
-  def edge_refs( self ):
-    return [ edge_ref.empty for edge_ref in self.baseref.edge_refs ]
-
-# __and__ = __rand__ = lambda self, other: self if self.baseref == other.rootref else NotImplemented
-# __or__ = __ror__ = __xor__ = __rxor__ = __rsub__ = lambda self, other: other if self.baseref == other.rootref else NotImplemented
-
-  __rsub__ = lambda self, other: other if other.ndims == self.ndims else NotImplementedError
-  __bool__ = __nonzero__ = lambda self: False
+  __and__ = __rand__ = __sub__ = lambda self, other: self if other.ndims == self.ndims else NotImplemented
+  __rsub__ = lambda self, other: other if other.ndims == self.ndims else NotImplemented
 
 
 class SimplexReference( Reference ):
@@ -411,6 +403,10 @@ class SimplexReference( Reference ):
       if self.inverted:
         self.volume = -self.volume
     Reference.__init__( self, vertices )
+
+  def transform( self, trans ):
+    assert trans in self.rotations
+    return self
 
   @cache.property
   def ribbon2vertices( self ):
@@ -441,6 +437,7 @@ class PointReference( SimplexReference ):
   '0D simplex'
 
   volume = 1
+  rotations = transform.identity,
 
   def __init__( self, vertices ):
     SimplexReference.__init__( self, vertices )
@@ -462,6 +459,10 @@ class LineReference( SimplexReference ):
     self.child_transforms = transform.affine(1,[0],2), transform.affine(1,[1],2)
     if core.getprop( 'selfcheck', False ):
       self.check_edges()
+
+  @cache.property
+  def rotations( self ):
+    return transform.identity, transform.affine( [[-1]], self.vertices[1] )
 
   def stdfunc( self, degree ):
     if len(self._bernsteincache) <= degree or self._bernsteincache[degree] is None:
@@ -1060,27 +1061,46 @@ class WithChildrenReference( WrappedReference ):
     if core.getprop( 'selfcheck', False ):
       self.check_edges()
 
+  def transform( self, trans ):
+    baseref = self.baseref.transform(trans)
+    child_refs = []
+    for ctrans, childref in baseref.children:
+      for rtrans in childref.rotations:
+        try:
+          index = self.baseref.child_transforms.index( (trans << ctrans << rtrans).flat )
+        except ValueError:
+          pass
+        else:
+          break
+      else:
+        raise Exception( 'failed to transform element' )
+      child_refs.append( self.child_refs[index].transform( rtrans ) )
+    return WithChildrenReference( baseref, child_refs )
+
   @property
   def volume( self ):
     return sum( abs(trans.det) * ref.volume for trans, ref in self.children )
 
-  __rsub__ = lambda self, other: self.baseref.with_children( other_child-self_child for self_child, other_child in zip( self.child_refs, other.child_refs ) ) if self.baseref == other or isinstance( other, WithChildrenReference ) and self.baseref == other.baseref else NotImplementedError
+  __sub__ = lambda self, other: self.empty if other in (self,self.baseref) else self.baseref.with_children( self_child-other_child for self_child, other_child in zip( self.child_refs, other.child_refs ) ) if other == self.baseref or isinstance( other, WithChildrenReference ) and self.baseref == other.baseref else NotImplemented
+  __rsub__ = lambda self, other: self.baseref.with_children( other_child-self_child for self_child, other_child in zip( self.child_refs, other.child_refs ) ) if other == self.baseref else NotImplemented
 
   @cache.property
   def __interfaces( self ):
     interfaces = []
     for (ichild,iedge), (jchild,jedge) in self.baseref.interfaces:
-      edge1 = self.child_refs[ichild].edge_refs[iedge]
-      edge2 = self.child_refs[jchild].edge_refs[jedge]
+      child1 = self.child_refs[ichild]
+      child2 = self.child_refs[jchild]
+      edge1 = child1.edge_refs[iedge] if child1 else EmptyReference(self.ndims-1)
+      edge2 = child2.edge_refs[jedge] if child2 else EmptyReference(self.ndims-1)
       if edge1 != edge2:
         if edge1:
-          trans = self.child_transforms[ichild] << self.child_refs[ichild].edge_transforms[iedge]
+          trans = self.child_transforms[ichild] << child1.edge_transforms[iedge]
           if trans not in self.baseref.edge_transforms:
-            interfaces.append(( ichild, iedge, trans, self.child_refs[ichild].edge_refs[iedge] ))
+            interfaces.append(( ichild, iedge, trans, child1.edge_refs[iedge] ))
         if edge2:
-          trans = self.child_transforms[jchild] << self.child_refs[jchild].edge_transforms[jedge]
+          trans = self.child_transforms[jchild] << child2.edge_transforms[jedge]
           if trans not in self.baseref.edge_transforms:
-            interfaces.append(( jchild, jedge, trans, self.child_refs[jchild].edge_refs[jedge] ))
+            interfaces.append(( jchild, jedge, trans, child2.edge_refs[jedge] ))
     return interfaces
 
   def _logical( self, other, op ):
@@ -1139,7 +1159,7 @@ class WithChildrenReference( WrappedReference ):
     # to avoid circular references we cannot mention 'self' inside getedgeref
     def getedgeref( iedge, baseref=self.baseref, child_refs=self.child_refs, edge2children=self.edge2children ):
       baseedge = baseref.edge_refs[iedge]
-      return baseedge and baseedge.with_children( child_refs[jchild].edge_refs[jedge] for jchild, jedge in edge2children[iedge] )
+      return baseedge and baseedge.with_children( child_refs[jchild].edge_refs[jedge] if child_refs[jchild] else EmptyReference(self.ndims-1) for jchild, jedge in edge2children[iedge] )
     items = [ cache.Tuple.unknown ] * self.baseref.nedges
     for mychild, basechild in zip( self.child_refs, self.baseref.child_refs ):
       if mychild:
@@ -1208,6 +1228,24 @@ class MosaicReference( Reference ):
     if core.getprop( 'selfcheck', False ):
       self.check_edges()
 
+  def transform( self, trans ):
+    if trans == transform.identity:
+      return self
+    baseref = self.baseref.transform(trans)
+    edge_refs = []
+    for etrans, edgeref in baseref.edges:
+      for rtrans in edgeref.rotations:
+        try:
+          index = self.baseref.edge_transforms.index( (trans << etrans << rtrans).flat )
+        except ValueError:
+          pass
+        else:
+          break
+      else:
+        raise Exception( 'failed to transform element' )
+      edge_refs.append( self._edge_refs[index].transform( rtrans ) )
+    return MosaicReference( baseref, edge_refs, trans.apply(self._midpoint) )
+
   @property
   def edgevertexmap( self ):
     return self._edgevertexmap
@@ -1238,6 +1276,8 @@ class MosaicReference( Reference ):
     else:
       weights = numpy.concatenate( allweights, axis=0 )
     return points, weights
+
+  __sub__ = lambda self, other: self.empty if other in (self,self.baseref) else NotImplemented
 
   def __rsub__( self, other ):
     assert other == self.baseref

@@ -40,17 +40,35 @@ class Topology( object ):
     self.groups = groups.copy()
 
   @cache.property
-  def boundary( self ):
+  @log.title
+  def edge_search( self ):
     edges = {}
+    ifaces = []
     for elem in log.iter( 'elem', self ):
       elemcoords = elem.vertices
-      for iedge, iverts in enumerate( elem.reference.edge2vertices ):
+      for iedge, iverts in enumerate( elem.reference.edge2vertex ):
         edgekey = tuple( sorted( c for c, n in zip( elemcoords, iverts ) if n ) )
+        edge = elem.edge(iedge)
         try:
-          edges.pop( edgekey )
+          oppedge = edges.pop( edgekey )
         except KeyError:
-          edges[edgekey] = elem.edge(iedge)
-    return Topology( edges.values() )
+          edges[edgekey] = edge
+        else:
+          assert edge.reference == oppedge.reference
+          ifaces.append(( edge, oppedge ))
+    return tuple(edges.values()), tuple(ifaces)
+
+  @cache.property
+  def boundary( self ):
+    edges, interfaces = self.edge_search
+    return Topology( edges )
+
+  @cache.property
+  def interfaces( self ):
+    edges, interfaces = self.edge_search
+    return Topology([ element.Element( edge.reference, edge.transform,
+      oppedge.transform << transform.solve( oppedge.transform, edge.transform ) )
+        for edge, oppedge in interfaces ])
 
   def outward_from( self, outward, inward=None ):
     'direct interface elements to evaluate in topo first'
@@ -1232,14 +1250,10 @@ class TrimmedTopology( Topology ):
     return TrimmedTopology( basetopo, refs, self.trimname, groups=groups )
 
   @cache.property
-  def __interfaces( self ):
-    try:
-      ifacebasetopo = self.basetopo.interfaces
-    except AttributeError:
-      warnings.warn( 'base topology has no interfaces attribute; trimmed boundary may be incomplete' )
-      return []
+  @log.title
+  def trimmed_edges( self ):
     refs = []
-    for iface in ifacebasetopo:
+    for iface in log.iter( 'elem', self.basetopo.interfaces ):
       btrans1 = iface.transform.promote( self.ndims )
       head1 = btrans1.lookup( self.basetopo.edict )
       tail1 = btrans1.slicefrom( len(head1) )
@@ -1247,39 +1261,34 @@ class TrimmedTopology( Topology ):
       head2 = btrans2.lookup( self.basetopo.edict )
       tail2 = btrans2.slicefrom( len(head2) )
       r1 = self.__refs[ self.basetopo.edict[head1] ]
-      e1 = r1.edge_refs[ r1.edge_transforms.index(tail1) ]
+      if r1:
+        e1 = r1.edge_refs[ r1.edge_transforms.index(tail1) ]
+      else:
+        e1 = iface.reference.empty
       r2 = self.__refs[ self.basetopo.edict[head2] ]
-      e2 = r2.edge_refs[ r2.edge_transforms.index(tail2) ]
+      if r2:
+        tail2head = tail2.lookup( r2.edge_transforms ) # strip optional opposite adjustment transformation (temporary?)
+        tail2tail = tail2.slicefrom( len(tail2head) )
+        e2 = r2.edge_refs[ r2.edge_transforms.index(tail2head) ].transform( tail2tail )
+      else:
+        e2 = iface.reference.empty
       refs.append(( iface, e1, e2 ))
     return refs
 
   @cache.property
   def interfaces( self ):
-    ifacerefs = []
-    for iface, ref1, ref2 in self.__interfaces:
-      if ref1 == ref2:
-        ifacerefs.append( ref1 )
-      if not ref2:
-        ifacerefs.append( ref2 )
-      elif not ref1:
-        ifacerefs.append( ref1 )
-      else:
-        raise NotImplementedError
-    return TrimmedTopology( self.basetopo.interfaces, ifacerefs )
+    return TrimmedTopology( self.basetopo.interfaces, [ ref1 & ref2 for iface, ref1, ref2 in self.trimmed_edges ] )
 
   @cache.property
-  @log.title
   def boundary( self ):
     trimmed = []
-    for iface, ref1, ref2 in self.__interfaces:
-      if ref1 == ref2:
-        pass
-      elif not ref2:
-        trimmed.append( iface )
-      elif not ref1:
-        trimmed.append( iface.flipped )
-      else:
-        warnings.warn( 'trimmed boundary is incomplete' )
+    for iface, ref1, ref2 in self.trimmed_edges:
+      edge = ref1 - ref2
+      oppedge = ref2 - ref1
+      if edge:
+        trimmed.append( element.Element( edge, iface.transform, iface.opposite ) )
+      if oppedge:
+        trimmed.append( element.Element( oppedge, iface.opposite, iface.transform ) )
     for elem, ref in zip( self.basetopo, self.__refs ):
       if ref:
         n = elem.reference.nedges
