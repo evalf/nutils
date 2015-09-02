@@ -733,9 +733,8 @@ class TensorReference( Reference ):
       get = self.__class__.__dict__.get( 'getischeme_'+ptype )
       if get:
         return get( self, eval(args) ) if args else get( self )
-      if args and ',' in args:
+      if args and ',' in args and len(eval(args)) == self.ndims:
         args = eval(args)
-        assert len(args) == self.ndims
         ischeme1 = ptype+','.join( str(n) for n in args[:self.ref1.ndims] )
         ischeme2 = ptype+','.join( str(n) for n in args[self.ref1.ndims:] )
       else:
