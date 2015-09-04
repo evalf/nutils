@@ -314,9 +314,15 @@ class Reference( cache.Immutable ):
         midpoint += wtot * (trans<<trans2).apply( numeric.dot( weights, points )/weights.sum() )
       midpoint /= length
 
-    midpoint = numpy.round( midpoint * (1024*denom) ) / (1024*denom)
-    mosaic = MosaicReference( self, refs, midpoint )
-    return mosaic if mosaic.subrefs != [self] else self
+    midpoint = numpy.round( midpoint * denom ) / denom
+
+    vtx_on_midpoint, = ( self.vertices == midpoint ).all( axis=1 ).nonzero()
+    if vtx_on_midpoint.size:
+      ivtx, = vtx_on_midpoint
+      if all( newref == oldref for oldref, newref, contains_midpoint in zip( self.edge_refs, refs, self.edge2vertex[:,ivtx] ) if not contains_midpoint ):
+        return self
+
+    return MosaicReference( self, refs, midpoint )
 
   def cone( self, trans, tip ):
     assert trans.fromdims == self.ndims
