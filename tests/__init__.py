@@ -12,6 +12,7 @@ packages = []
 
 def _run():
   __richoutput__ = True
+  __selfcheck__ = True
   __log__ = log.clone()
   __results__ = []
   try:
