@@ -354,7 +354,7 @@ class Reference( cache.Immutable ):
       s.append( 'Edges:' )
       s.extend( '* {} {} -> {}'.format( subref, vtx2abc((etrans<<subtrans).apply(subref.vertices)), numeric.fhex((etrans<<subtrans).ext*subref.volume) ) for etrans, eref in self.edges for subtrans, subref in eref.simplices )
     except Exception as e:
-      s.extend( 'processing failed: {}'.format(e) )
+      s.append( 'processing failed: {}'.format(e) )
     raise MyException( '\n'.join(s) )
 
   def __str__( self ):
@@ -390,7 +390,7 @@ class SimplexReference( Reference ):
       self.edge_refs = (getsimplex(ndims-1),) * (ndims+1)
       self.x0 = vertices[0]
       self.dx = vertices[1:] - self.x0
-      self.volume = numpy.linalg.det(self.dx) / math.factorial(ndims)
+      self.volume = numeric.det_exact(self.dx) / math.factorial(ndims)
       #assert self.volume != 0
       self.inverted = self.volume < 0
       if self.inverted:
@@ -655,6 +655,8 @@ class TensorReference( Reference ):
 
   _re_ischeme = re.compile( '([a-zA-Z]+)(.*)' )
 
+  rotations = transform.identity, # TODO extend
+
   def __init__( self, ref1, ref2 ):
     self.ref1 = ref1
     self.ref2 = ref2
@@ -665,6 +667,10 @@ class TensorReference( Reference ):
     Reference.__init__( self, vertices.reshape(-1,ndims) )
     if core.getprop( 'selfcheck', False ):
       self.check_edges()
+
+  def transform( self, trans ):
+    assert trans in self.rotations
+    return self
 
   @property
   def volume( self ):
@@ -797,7 +803,7 @@ class Cone( Reference ):
       if edge:
         b = self.etrans.apply( trans.offset )
         A = numpy.hstack([ numpy.dot( self.etrans.linear, trans.linear ), (self.tip-b)[:,_] ])
-        newtrans = transform.affine( A, b, isflipped=self.etrans.isflipped^trans.isflipped )
+        newtrans = transform.affine( A, b, isflipped=self.etrans.isflipped^trans.isflipped^(self.ndims%2==1) ) # isflipped logic tested up to 3D
         edge_transforms.append( newtrans )
     return edge_transforms
 
@@ -807,19 +813,13 @@ class Cone( Reference ):
     tip = numpy.array( [0]*(self.ndims-2)+[1], dtype=float )
     return [ self.edgeref ] + [ edge.cone( extrudetrans, tip ) for trans, edge in self.edgeref.edges if edge ]
 
-  def getischeme( self, ischeme ):
-    if ischeme == 'vtk':
-      return self.getischeme_vtk()
-    epoints, eweights = self.edgeref.getischeme( ischeme )
-    tpoints, tweights = self.axisref.getischeme( ischeme )
-    s = 1/self.ndims
-    tx, = ( tpoints.T )**s
+  def getischeme_gauss( self, degree ):
+    epoints, eweights = self.edgeref.getischeme( 'gauss{}'.format(degree) )
+    tpoints, tweights = self.axisref.getischeme_gauss( degree + self.ndims - 1 )
+    tx, = tpoints.T
     points = ( tx[:,_,_] * (self.etrans.apply(epoints)-self.tip)[_,:,:] + self.tip ).reshape( -1, self.ndims )
-    if tweights is None:
-      weights = None
-    else:
-      wx = tweights * s * self.extnorm * self.height
-      weights = ( eweights[_,:] * wx[:,_] ).ravel()
+    wx = tx**(self.ndims-1) * tweights * self.extnorm * self.height
+    weights = ( eweights[_,:] * wx[:,_] ).ravel()
     return points, weights
 
   def getischeme_vtk( self ):
@@ -835,7 +835,9 @@ class Cone( Reference ):
 
   @property
   def simplices( self ):
-    return [ ( trans, ref.cone(self.etrans,self.tip) ) for trans, ref in self.edgeref.simplices ]
+    if self.edgeref.ndims == 2 and isinstance( self.edgeref, TensorReference ): # square-based pyramids are ok
+      return [ ( transform.identity, self ) ]
+    return [ ( transform.identity, ref.cone(self.etrans<<trans,self.tip) ) for trans, ref in self.edgeref.simplices ]
 
 class NeighborhoodTensorReference( TensorReference ):
   'product reference element'
