@@ -1044,7 +1044,8 @@ class WithChildrenReference( Reference ):
     return sum( abs(trans.det) * ref.volume for trans, ref in self.children )
 
   __sub__ = lambda self, other: self.empty if other in (self,self.baseref) else self.baseref.with_children( self_child-other_child for self_child, other_child in zip( self.child_refs, other.child_refs ) ) if other == self.baseref or isinstance( other, WithChildrenReference ) and self.baseref == other.baseref else NotImplemented
-  __rsub__ = lambda self, other: self.baseref.with_children( other_child-self_child for self_child, other_child in zip( self.child_refs, other.child_refs ) ) if other == self.baseref else NotImplemented
+  __rsub__ = lambda self, other: self.baseref.with_children( other_child - self_child for self_child, other_child in zip( self.child_refs, other.child_refs ) ) if other == self.baseref else NotImplemented
+  __and__ = __rand__ = lambda self, other: self.baseref.with_children( self_child & other_child for self_child, other_child in zip( self.child_refs, other.child_refs ) ) if other == self.baseref or isinstance( other, WithChildrenReference ) and other.baseref == self.baseref else NotImplemented
 
   @cache.property
   def __interfaces( self ):
