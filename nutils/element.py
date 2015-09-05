@@ -315,14 +315,8 @@ class Reference( cache.Immutable ):
       midpoint /= length
 
     midpoint = numpy.round( midpoint * denom ) / denom
-
-    vtx_on_midpoint, = ( self.vertices == midpoint ).all( axis=1 ).nonzero()
-    if vtx_on_midpoint.size:
-      ivtx, = vtx_on_midpoint
-      if all( newref == oldref for oldref, newref, contains_midpoint in zip( self.edge_refs, refs, self.edge2vertex[:,ivtx] ) if not contains_midpoint ):
-        return self
-
-    return MosaicReference( self, refs, midpoint )
+    mosaic = MosaicReference( self, refs, midpoint )
+    return mosaic if mosaic.volume < self.volume else self
 
   def cone( self, trans, tip ):
     assert trans.fromdims == self.ndims
@@ -1025,11 +1019,15 @@ class WithChildrenReference( Reference ):
   def stdfunc( self, degree ):
     return self.baseref.stdfunc( degree )
 
+  @property
+  def rotations( self ):
+    return self.baseref.rotations
+
   def transform( self, trans ):
     baseref = self.baseref.transform(trans)
     child_refs = []
-    for ctrans, childref in baseref.children:
-      for rtrans in childref.rotations:
+    for ctrans in baseref.child_transforms:
+      for rtrans in self.rotations: # TODO change to child rotations
         try:
           index = self.baseref.child_transforms.index( (trans << ctrans << rtrans).flat )
         except ValueError:
@@ -1194,6 +1192,10 @@ class MosaicReference( Reference ):
 
   def stdfunc( self, degree ):
     return self.baseref.stdfunc( degree )
+
+  @property
+  def rotations( self ):
+    return self.baseref.rotations
 
   def transform( self, trans ):
     if trans == transform.identity:
