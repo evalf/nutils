@@ -500,9 +500,7 @@ def fextract( A, single=False ):
   return fullmantissa, minexp
 
 def fconstruct( m, e ):
-  f = numpy.power( 2., e )
-  f *= m
-  return f
+  return numpy.asarray( m ) * numpy.power( 2., e )
 
 def fstr( A ):
   if A.ndim:

@@ -86,28 +86,28 @@ def unittest():
 
   retvals = main( nelems=None, degree=2, maxrefine=2, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
-    eNplkEuOxCAMRK+TSHjkv/FxetHbvv9yMISoJyOBykaU4RW1QxvZ2Y6De+AbvBkqv8HaOPu8Po3CRzsu
-    kWhpnTl5rytV40+tqyp5btagMjIH7wGU6buuDUZkNRFc1fZo6Cx5N+mou/nef18fAiliRTJt7ITbNpBI
-    c+E8sLLLpN5ohuGlCy/E+tWR2zQyYUxFWsq2MK+BT2zq9Sm90UlcSkEJ58v/MwAbzLPYQUDkCuFOA7qi
-    L1dqLBdzXoXuXwMjxq5dxSuf76yAL/A7MBBflrOdv+D0gX4=''' )
+    eNplUEGOxDAI+04rhRUQIOE5c5jr/P+4IZRqtisVGSLsYlM7pJGe7Th4mr3BmqLwG7Stt8/r02jYGtcS
+    dQmMNyObsRI9/sR3dQHPYhkURObBJUDuVn0UKJGGIpiIljRM7n4Pbig1fNffvy8A713DyaaxERZtWSLx
+    tPOw5bNv12VNcVhg2hvd+JrIdBOZcGxESmRNm5fg0zbNOEpu69StB4IQbu3/GYAuz7upIGB4hnCnAVPi
+    jmC5zGQxVxMn7auBMdeiN8l8vrMCJkudCgy6JeVs5y/k+YF3''' )
 
   retvals = main( nelems=4, degree=2, maxrefine=2, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
-    eNqdUstuAzEI/J1EWioY87A/p4dc8//H2uAkbZW9RNoVmMGAZ5DjoofY9bhcTJrfKA7h1m9kx4zdv+8H
-    f72+df7/g4es9HeYq9kZJrPPjfQ9ZpYYdI2S1tLCJC1LnqUjcQn3d7VotIizASZoY4FvHkadB84wN4sz
-    zNQf90gGZn2fDnMGCdo5HUUkaWRStSbZImvW9odwima8XjaJGMsOZV/5CKRImE7arQJQrAKuyYz2PHeP
-    fKtHTfBQBqi6M5+LUa57rSfTkvPpUy005W2TcYhgK1GKuGT8UwWrX5vEdC6GBuvYDnZki0qC0TJ5TpNT
-    UEgUwd29nCHQfeupNinb1mEHycYuHqZeFV4bYM1nwz4bKlfnZiUzWUg5v5aCIFHCD0ekA8duaLvz54ty
-    /QFkLOId''' )
+    eNqdUsuOwzAI/J1WCivAvPw5e+i1/39cAk53u0oulRKBGfOaMW032Ujv2+2mJOMBvhGO+QDdMvb8fm74
+    9fvt5/8/46T9+hlmonqFUfZ5gJxjqoWxjFhWy7JSWaQ6U3Dh5GZntWAO96sBEtRa9GQxCJx8hZmqX2Eq
+    duQBTc76lg5iBYElsBxhL9JAqWsl2USRS4w3wsGH1IZJRG04hSqRnSuP0ym7VGBuVplNihmJOod57Wq+
+    7FKGOea6j80odt6IYppqPnmpxUNw2ZqHiXgp0YoYVfxTBbNfkQAa2FRN1MPh5uwQFYin1+VjKnBqOiDM
+    VhaxrKyX2iBHzZwqWofJHXHdF9O3F6Ajsk9kQ8HuPLRlBvXW4++jACZv4aftKqXDtson7e18/lDuP2VC
+    4hw=''' )
 
   retvals = main( nelems=4, degree=2, maxrefine=3, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
-    eNqdkkluwzAMRa/jAGbBmdJxuvA2919WIuU0LexNABuk9KmB74v2TXeyx75thtIPiJ2Q4wDbx9zz+7nj
-    1+83x/9/xk6z/EpzNbvTiFAO0GvNLDVWaStaRjbKiJRjapw6hfvVXtAl4u4CQ7Q+xYvGoGHnO83N4k4z
-    9XMdUOexv48EMSeBtWEmypHQwMhO2ESuB8gf4BAe2aEqZ4ddMe/MIZJxJBmXC8xFlbmIkLYk1bzlFcZ2
-    WXc6w9xx1VMRxSIrrcZ5P325xaK0Yu7PRLycqHVOde6HDhL1NiGARWSj0FFlJVzMTlOBZEIZxSwTnQ5c
-    VPihuXkVE+ta9XIbFL1UlShDrHPygDAt6e0FCE6xjQMVW4pivvwLqgPfHgUwTVOG8d0pMhl0q5uBfR34
-    8UN5/ABtKuIm''' )
+    eNqdUjluAzEM/I4NLAMOxUN6Tgq3/n8ZiZSdOPA2BnZBSsNzRjguesCux+Vi3OxGcYAlbmTHvLt/3w/+
+    +v3W+f8vPLDC32GuZmcYwO1G+h4zS0y09W0trRjSMvKMLokj3N/VotEizgaYoI0FvlmMOg85w9wszjBT
+    f+QRhsz6Ph3mvCTRzumoRJJGBnuQDazl2gvhFB68NlOtTYeyrniJVnY6abcKIsWqSDEC7clU954jePSM
+    eygjMnjHoxjlYrb1Oud8+lRLmmLbrC+AbCUqz1F9P1QQGL5IIItN1WCV7Uhx9hCV0NAzWJpnNQqUpNS9
+    9qMB0Z31VJuUvSpoi+piQyo+bC1mLy+gcUy3z4bKldfMt36Bmu7PoyDBip/CD0ekM9mtuSbtu+HHD+X6
+    Azyw4hE=''' )
 
 
 util.run( main, conv, unittest )
