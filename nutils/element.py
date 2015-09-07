@@ -1016,6 +1016,9 @@ class WithChildrenReference( Reference ):
     if core.getprop( 'selfcheck', False ):
       self.check_edges()
 
+  def with_children( self, child_refs ):
+    return self.baseref.with_children( child_refs )
+
   def stdfunc( self, degree ):
     return self.baseref.stdfunc( degree )
 
