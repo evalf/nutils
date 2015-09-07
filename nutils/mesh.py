@@ -116,6 +116,18 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
         break
       slines.append( sline ) 
     sections[sname] = slines  
+
+  #PhysicalNames
+  names = sections.pop( 'PhysicalNames', [0] )
+  assert int(names.pop(0)) == len(names)
+  for line in names:
+    words = line.split()
+    nid = int(words[1])
+    name = words[2].strip( '"' )
+    if nid not in tags:
+      tags[nid] = name
+    else:
+      warnings.warn( 'renamed physical group name {!r} to {!r}'.format( name, tags[nid] ) )
         
   #Nodes
   nodedata = sections.pop('Nodes')

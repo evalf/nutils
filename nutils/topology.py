@@ -731,7 +731,7 @@ class StructuredTopology( Topology ):
   def interfaces( self ):
     'interfaces'
 
-    interfaces = []
+    groups = []
     ref = element.getsimplex(1)**self.ndims
     edge = element.getsimplex(1)**(self.ndims-1)
     for idim in range(self.ndims):
@@ -742,12 +742,17 @@ class StructuredTopology( Topology ):
         t1 = (slice(None),)*idim + (slice(-1),)
         t2 = (slice(None),)*idim + (slice(1,None),)
       trans1, trans2 = ref.edge_transforms[idim*2:idim*2+2]
+      group = []
       for elem1, elem2 in numpy.broadcast( self.structure[t1], self.structure[t2] ):
         assert elem1.transform == elem1.opposite
         assert elem2.transform == elem2.opposite
         ielem = element.Element( edge, elem1.transform << trans1, elem2.transform << trans2 )
-        interfaces.append( ielem )
-    return Topology( interfaces, self.ndims-1 )
+        group.append( ielem )
+      groups.append( group )
+    topo = Topology( util.sum(groups), self.ndims-1 )
+    for idim, group in enumerate( groups ):
+      topo[ 'dir{}'.format(idim) ] = Topology( group, self.ndims-1 )
+    return topo
 
   def basis_spline( self, degree, neumann=(), knots=None, periodic=None, closed=False, removedofs=None ):
     'spline from vertices'
@@ -1367,9 +1372,9 @@ class RevolvedTopology( Topology ):
 
   @log.title
   @core.single_or_multiple
-  def integrate( self, funcs, ischeme, geometry, force_dense=False ):
+  def integrate( self, funcs, ischeme, geometry, force_dense=False, edit=_identity ):
     iwscale = function.jacobian( geometry, self.ndims+1 ) * function.Iwscale(self.ndims)
-    integrands = [ func * iwscale for func in funcs ]
+    integrands = [ function.asarray( edit( func * iwscale ) ) for func in funcs ]
     data_index = self._integrate( integrands, ischeme )
     return [ matrix.assemble( data, index, integrand.shape, force_dense ) for integrand, (data,index) in zip( integrands, data_index ) ]
 
