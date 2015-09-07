@@ -1250,12 +1250,19 @@ class MosaicReference( Reference ):
       weights = numpy.concatenate( allweights, axis=0 )
     return points, weights
 
-  __sub__ = lambda self, other: self.empty if other in (self,self.baseref) else NotImplemented
+  def __sub__( self, other ):
+    if other in (self,self.baseref):
+      return self.empty
+    if isinstance( other, MosaicReference ) and other.baseref == self:
+      inv_edge_refs = [ baseedge - edge for baseedge, edge in zip( self.edge_refs, other._edge_refs ) ]
+      return MosaicReference( self, inv_edge_refs, other._midpoint )
+    return NotImplemented
 
   def __rsub__( self, other ):
-    assert other == self.baseref
-    inv_edge_refs = [ baseedge - edge for baseedge, edge in zip( self.baseref.edge_refs, self._edge_refs ) ]
-    return MosaicReference( self.baseref, inv_edge_refs, self._midpoint )
+    if other == self.baseref:
+      inv_edge_refs = [ baseedge - edge for baseedge, edge in zip( other.edge_refs, self._edge_refs ) ]
+      return MosaicReference( other, inv_edge_refs, self._midpoint )
+    return NotImplemented
 
 
 # SHAPE FUNCTIONS
