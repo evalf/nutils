@@ -1667,14 +1667,14 @@ class Power( ArrayFunc ):
   def __init__( self, func, power ):
     'constructor'
 
-    assert _isscalar( power )
     self.func = func
     self.power = power
+    shape = _jointshape( func.shape, power.shape )
     self.varbase = isinstance( func, ArrayFunc )
     self.varexp = isinstance( power, ArrayFunc )
     assert self.varbase or self.varexp
     args = ([func] if self.varbase else []) + ([power] if self.varexp else [])
-    ArrayFunc.__init__( self, args=args, shape=func.shape )
+    ArrayFunc.__init__( self, args=args, shape=shape )
 
   def evalf( self, *args ):
     return numpy.power( args[0] if self.varbase else self.func,
@@ -1685,28 +1685,28 @@ class Power( ArrayFunc ):
     # ln self = power * ln func
     # self` / self = power` * ln func + power * func` / func
     # self` = power` * ln func * self + power * func` * func**(power-1)
-    return self.power * power( self.func, self.power-1 )[...,_] * localgradient( self.func, ndims ) \
+    return ( self.power * power( self.func, self.power-1 ) )[...,_] * localgradient( self.func, ndims ) \
          + ( ln( self.func ) * self )[...,_] * localgradient( self.power, ndims )
 
   def _power( self, n ):
     func = self.func
     newpower = n * self.power
-    if self.power % 2 == 0 and newpower % 2 != 0:
+    if _iszero( self.power % 2 ) and not _iszero( newpower % 2 ):
       func = abs( func )
     return power( func, newpower )
 
   def _get( self, i, item ):
-    return get( self.func, i, item )**self.power
+    return get( self.func, i, item )**get( self.power, i, item )
 
   def _sum( self, axis ):
-    if self.power == 2:
+    if not _isfunc(self.power) and numpy.all( self.power == 2 ):
       return dot( self.func, self.func, axis )
 
   def _takediag( self ):
-    return takediag( self.func )**self.power
+    return power( takediag( self.func ), takediag( self.power ) )
 
   def _take( self, index, axis ):
-    return power( take( self.func, index, axis ), self.power )
+    return power( take( self.func, index, axis ), take( self.power, index, axis ) )
 
   def _multiply( self, other ):
     if isinstance( other, Power ) and self.func == other.func:
@@ -1715,7 +1715,7 @@ class Power( ArrayFunc ):
       return power( self.func, self.power + 1 )
 
   def _sign( self ):
-    if self.power % 2 == 0:
+    if _iszero( self.power % 2 ):
       return expand( 1., self.shape )
 
   def _edit( self, op ):
@@ -1806,7 +1806,7 @@ class Sign( ArrayFunc ):
     return self
 
   def _power( self, n ):
-    if n % 2 == 0:
+    if _iszero( n % 2 ):
       return expand( 1., self.shape )
 
   def _edit( self, op ):
@@ -3087,14 +3087,14 @@ def blockadd( arg1, arg2 ):
 def power( arg, n ):
   'power'
 
-  arg = asarray( arg )
-  assert _isscalar( n )
+  arg, n = _matchndim( arg, n )
+  shape = _jointshape( arg.shape, n.shape )
 
-  if n == 1:
-    return arg
+  if not _isfunc( n ) and numpy.all( n == 1 ):
+    return expand( arg, shape )
 
-  if n == 0:
-    return numpy.ones( arg.shape )
+  if _iszero( n ):
+    return numpy.ones( shape )
 
   if not _isfunc( arg ) and not _isfunc( n ):
     return numpy.power( arg.astype(float), n )
