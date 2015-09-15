@@ -742,29 +742,31 @@ class Get( ArrayFunc ):
 class Product( ArrayFunc ):
   'product'
 
-  def __init__( self, func, axis ):
+  def __init__( self, func ):
     'constructor'
 
+    assert func.shape[-1] > 1
     self.func = func
-    self.axis = axis
-    assert 0 <= axis < func.ndim
-    shape = func.shape[:axis] + func.shape[axis+1:]
-    self.axis_shiftright = axis - func.ndim
-    ArrayFunc.__init__( self, args=[func], shape=shape )
+    ArrayFunc.__init__( self, args=[func], shape=func.shape[:-1] )
 
   def evalf( self, arr ):
     assert arr.ndim == self.ndim+2
-    return numpy.product( arr, axis=self.axis_shiftright )
+    return numpy.product( arr, axis=-1 )
 
   def _localgradient( self, ndims ):
-    return self[...,_] * ( localgradient(self.func,ndims) / self.func[...,_] ).sum( self.axis )
+    grad = localgradient( self.func, ndims )
+    funcs = stack( [ util.product( self.func[...,j] for j in range(self.func.shape[-1]) if i != j ) for i in range( self.func.shape[-1] ) ], axis=-1 )
+    return ( grad * funcs[...,_] ).sum( -2 )
+
+    ## this is a cleaner form, but is invalid if self.func contains zero values:
+    #return self[...,_] * ( localgradient(self.func,ndims) / self.func[...,_] ).sum(-2)
 
   def _get( self, i, item ):
-    func = get( self.func, i+(i>=self.axis), item )
-    return product( func, self.axis-(i<self.axis) )
+    func = get( self.func, i, item )
+    return product( func, -1 )
 
   def _edit( self, op ):
-    return product( op(self.func), self.axis )
+    return product( op(self.func), -1 )
 
 class Iwscale( ArrayFunc ):
   'integration weights'
@@ -2940,12 +2942,15 @@ def product( arg, axis ):
   if not _isfunc( arg ):
     return numpy.product( arg, axis )
 
-  retval = _call( arg, '_product', axis )
+  trans = list(range(axis)) + [-1] + list(range(axis,arg.ndim-1))
+  aligned_arg = align( arg, trans, arg.ndim )
+
+  retval = _call( aligned_arg, '_product', arg.ndim-1 )
   if retval is not None:
-    assert retval.shape == shape, 'bug in %s._product' % arg
+    assert retval.shape == shape, 'bug in %s._product' % aligned_arg
     return retval
 
-  return Product( arg, axis )
+  return Product( aligned_arg )
 
 def choose( level, choices ):
   'choose'
