@@ -1446,6 +1446,12 @@ class BlockAdd( Add ):
       return blockadd( func1, func2_other )
     return blockadd( self, other )
 
+  def _dot( self, other, naxes ):
+    func1, func2 = self.funcs
+    n = numpy.arange( self.ndim-naxes, self.ndim )
+    dot1, dot2 = _sorted( dot(func1,other,n), dot(func2,other,n) )
+    return BlockAdd( dot1, dot2 )
+
   @property
   def blocks( self ):
     func1, func2 = self.funcs
