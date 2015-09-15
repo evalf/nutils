@@ -1685,7 +1685,8 @@ class Power( ArrayFunc ):
     # ln self = power * ln func
     # self` / self = power` * ln func + power * func` / func
     # self` = power` * ln func * self + power * func` * func**(power-1)
-    return ( self.power * power( self.func, self.power-1 ) )[...,_] * localgradient( self.func, ndims ) \
+    powerm1 = self.power-1 if _isfunc(self.power) else numpy.choose( self.power==0, [self.power-1,0] ) # avoid introducing negative powers where possible
+    return ( self.power * power( self.func, powerm1 ) )[...,_] * localgradient( self.func, ndims ) \
          + ( ln( self.func ) * self )[...,_] * localgradient( self.power, ndims )
 
   def _power( self, n ):
