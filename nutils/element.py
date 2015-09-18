@@ -279,11 +279,11 @@ class Reference( cache.Immutable ):
     return trimmed
 
   def slice( self, levels, denom ):
-    assert len(levels) == self.nverts
     if numpy.all( levels >= 0 ):
       return self
     if numpy.all( levels <= 0 ):
       return self.empty
+    assert len(levels)==self.nverts
     refs = [ edgeref.slice( levels[self.edgevertexmap[iedge]], denom ) for iedge, edgeref in enumerate( self.edge_refs ) ]
     if refs == list(self.edge_refs):
       return self
