@@ -534,7 +534,11 @@ def run( *functions ):
     if core.getprop( 'profile' ):
       prof.disable()
 
-    if hasattr( os, 'wait' ):
+    if hasattr( os, 'wait' ) and frames is None:
+      # clear exception info, helps closing subprocesses that otherwise cause a
+      # deadlock when calling `os.wait` below
+      sys.exc_clear()
+      exc = None
       try: # wait for child processes to die
         while True:
           pid, status = os.wait()
