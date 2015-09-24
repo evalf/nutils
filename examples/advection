@@ -3,9 +3,11 @@
 from nutils import *
 
 
-def makeplots( domain, geom, u ):
+def makeplots( domain, geom, u, plt ):
   xp, up = domain.elem_eval( [ geom, u ], ischeme='bezier9', separate=True )
-  with plot.PyPlot( 'solution', ndigits=4 ) as plt:
+  if plt is True:
+    plt = plot.PyPlot( 'solution', ndigits=4 )
+  with plt:
     plt.mesh( xp, up )
     if domain.ndims == 2:
       plt.gca().set_aspect( 'equal' )
@@ -15,7 +17,7 @@ def makeplots( domain, geom, u ):
       plt.ylim( -.1, 1.1 )
 
 
-def main( nelems=40, degree=1, timestep=.01, tol=1e-10, cg=False, alpha=.5, ndims=1, maxiter=-1, plots=True, tau=1 ):
+def main( nelems=40, degree=1, timestep=.01, tol=1e-10, cg=False, alpha=.5, ndims=1, maxiter=-1, plt=True, tau=1 ):
   
   if ndims == 1:
     domain, geom = mesh.rectilinear( [numpy.linspace(0,1,nelems+1)], periodic=[0] )
@@ -31,6 +33,9 @@ def main( nelems=40, degree=1, timestep=.01, tol=1e-10, cg=False, alpha=.5, ndim
     u = function.exp( -( ( ( geom - center0 ) / width )**2 ).sum(-1) )
   else:
     raise Exception( 'not supported: ndims=%s' % ndims )
+
+  if plt == 'video':
+    plt = plot.PyPlotVideo( 'solution' )
 
   basis = domain.basis( 'spline' if cg else 'discont', degree=degree )
   lhs = domain.project( u, onto=basis, geometry=geom, ptype='convolute', ischeme='gauss5' )
@@ -49,8 +54,8 @@ def main( nelems=40, degree=1, timestep=.01, tol=1e-10, cg=False, alpha=.5, ndim
 
   for itime in log.count( 'timestep' ):
 
-    if plots:
-      makeplots( domain, geom, basis.dot(lhs) )
+    if plt:
+      makeplots( domain, geom, basis.dot(lhs), plt )
 
     matrix = matrix1 + tau * matrix2
     rhs = matrix1.matvec(lhs) + (tau-1) * matrix2.matvec(lhs)
@@ -64,20 +69,20 @@ def main( nelems=40, degree=1, timestep=.01, tol=1e-10, cg=False, alpha=.5, ndim
 
 def unittest():
 
-  retvals = main( ndims=1, nelems=10, timestep=.01, degree=1, cg=False, maxiter=2, plots=False )
+  retvals = main( ndims=1, nelems=10, timestep=.01, degree=1, cg=False, maxiter=2, plt=False )
   assert debug.checkdata( retvals, '''
     eNolz9sNBSEIBNB2dhNIGF5iQbf/Fi6wXzOKxiPocUK89Dwh7j8uOhX3x5fYxWRLIvBjCBnybvGTPQKI
     1VO/Zhmzp+RSfdzIS89kSMWX2LxAX+lnj9okl2e/HMTwU1OOVU+SoOqTLageHOJ7RQbZYM9aLyNNtzhu
     DRhem5YZy2W0/GvWdb2A5ZYwqeXAlgsJXWbN2qlxskxYfN4AMEykLDd0PtrM/lFsCYkYb2/o5EvvH/rr
     Tcs=''' )
 
-  retvals = main( ndims=1, nelems=10, timestep=.01, degree=1, cg=False, maxiter=2, plots=False, tau=.5 )
+  retvals = main( ndims=1, nelems=10, timestep=.01, degree=1, cg=False, maxiter=2, plt=False, tau=.5 )
   assert debug.checkdata( retvals, '''
     eNotj1sOBCEIBK8zk2Bi8xIONPe/wgLuV5cB7RL0KMFeeh5mw7eCkL6/lbQAu5Bu/NWRzOOCukYB0+Kj
     8ifetQ4hCSkQ0tjZadg+uSGdgN+MrLlW0e73G7gnRod70yu75tBS5AUJOy1Zwrw5G1fo8SvMGGGrhjLZ
     5GE2vouTcUmO2AjDNwZsy9TXrfEsnfHL6AUlTdar5+oDxubtiTzRqdo/9to4bgMC5xYGX/GX3h8vo035''' )
   
-  retvals = main( ndims=1, nelems=10, timestep=.01, degree=2, cg=False, maxiter=2, plots=False )
+  retvals = main( ndims=1, nelems=10, timestep=.01, degree=2, cg=False, maxiter=2, plt=False )
   assert debug.checkdata( retvals, '''
     eNotkdGtxTAIQ9dpJSKBgQAD3f1XeEBff3xKaMGO0GMk/tLzyE3+nSR4tBYdQS1IP6s3/HeE6aSzNQmF
     IhaESxaOe2kTyBK2ELwVpaM3sASLPlNSKawa8yririq+c9UcTfce3Zsar557sxudPIDRAnfjpWNmNaAp
@@ -85,7 +90,7 @@ def unittest():
     EFJRS3IngDHma7h32fdyia3v+l2v+YlRYi6pAzDHNprPpXinLTzacyMHJD0mAERtED1t9r7kPg3Zo6Gb
     TMgsM0kgY5299P4BmUR0Hw==''' )
 
-  retvals = main( ndims=2, nelems=4, timestep=.01, degree=1, cg=False, maxiter=2, plots=False )
+  retvals = main( ndims=2, nelems=4, timestep=.01, degree=1, cg=False, maxiter=2, plt=False )
   assert debug.checkdata( retvals, '''
     eNpNU1uOLSAI285Moom8YUGz/y1cKOck96uKSJFWOj96yH7Pz88lF/u79M7VIu0VnesU/nfrXM5ILIQs
     ZsFFtjmszH83zi2ba3luEuWemb7J4kNeNddKy3FEzwkLYZ4UaVqmPbuRzoix05uSXFaDFPaGi+jloD7q
@@ -96,7 +101,7 @@ def unittest():
     ltR9nhVj+eI14DzLjrNDMMJgWxCfUtqGHUHHCGM4PfZ0hX0CQUhmcC0MhIoWaP5dt8APRmCZN8xnw4ea
     wDrxWhgsQ/L9AlJgpLWESX06ytxOGEzEUdvRotb8UDtMsYzkO8VSTK3/Pb7i7/n9BwRU7UU=''' )
 
-  retvals = main( ndims=2, nelems=3, timestep=.01, degree=2, cg=False, maxiter=2, plots=False )
+  retvals = main( ndims=2, nelems=3, timestep=.01, degree=2, cg=False, maxiter=2, plt=False )
   assert debug.checkdata( retvals, '''
     eNo1VMmNIDEITGdGsiVuTECTfwoLRe+jVQZjzqL5/Nhh/z0/P5fZ7e8ynf4q96QshZNG9mUddYtBZ4Nc
     QY3vsJj/3TyiGoNcug85641hZukq2AgvnsATv5DBx17wIGrwoLF2XrIpGI1LPkxKOFwVWqeqJHuXvHdm

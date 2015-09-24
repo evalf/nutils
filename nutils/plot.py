@@ -14,7 +14,7 @@ backends. At this point `matplotlib <http://matplotlib.org/>`_ and `vtk
 
 from __future__ import print_function, division
 from . import numpy, log, core, cache, _
-import os, warnings, sys
+import os, warnings, sys, subprocess
 
 
 class BasePlot( object ):
@@ -83,6 +83,14 @@ class PyPlot( BasePlot ):
     self.imgtype = imgtype or core.getprop( 'imagetype', 'png' )
     self._fig = pyplot.figure( **kwargs )
     self._pyplot = pyplot
+
+  def __enter__( self ):
+    'enter with block'
+
+    # make this figure active
+    self._pyplot.figure(self._fig.number)
+
+    return super( PyPlot, self ).__enter__()
 
   def __getattr__( self, attr ):
     pyplot = self.__dict__['_pyplot'] # avoid recursion
@@ -370,6 +378,113 @@ class PyPlot( BasePlot ):
 
   def vectors( self, xy, uv, **kwargs ):
     self.quiver( xy[:,0], xy[:,1], uv[:,0], uv[:,1], angles='xy', **kwargs )
+
+class PyPlotVideo( PyPlot ):
+  '''matplotlib based video generator
+
+  Video generator based on matplotlib figures.  Follows the same syntax as
+  `PyPlot`.
+
+  Parameters
+  ----------
+
+  clearfigure: bool, default: True
+    If True clears the matplotlib figure after writing each frame.
+
+  framerate: int, float, default: 24
+    Framerate in frames per second of the generated video.
+
+  videotype: str, default: 'webm' unless overriden by property ``videotype``
+    Video type of the generated video.  Note that not every video type supports
+    playback before the video has been finalized, i.e. before ``close`` has
+    been called.
+
+  Nutils properties
+  -----------------
+
+  videotype: see parameter with the same name
+
+  videoencoder: str, default: 'ffmpeg'
+    Name or path of the video encoder.  The video encoder should take the same
+    arguments as 'ffmpeg'.
+
+  Examples
+  --------
+
+  Using a ``with``-statement:
+
+    video = PyPlotVideo('video')
+    for timestep in timesteps:
+      ...
+      with video:
+        video.plot(...)
+        video.title('frame {:04d}'.format(video.frame))
+    video.close()
+
+  Using ``saveframe``:
+
+    video = PyPlotVideo('video')
+    for timestep in timesteps:
+      ...
+      video.plot(...)
+      video.title('frame {:04d}'.format(video.frame))
+      video.saveframe()
+    video.close()
+  '''
+
+  def __init__(self, name, videotype=None, clearfigure=True, framerate=24):
+    'constructor'
+
+    PyPlot.__init__( self, ndigits=0 )
+
+    self.frame = 0
+    self._clearfigure = clearfigure
+    if videotype is None:
+      videotype = core.getprop( 'videotype', 'webm' )
+    self._encoder = subprocess.Popen([
+        core.getprop( 'videoencoder', 'ffmpeg' ),
+        '-loglevel', 'quiet',
+        '-probesize', '1k',
+        '-analyzeduration', '1',
+        '-y',
+        '-f', 'image2pipe',
+        '-vcodec', 'png',
+        '-r', str(framerate),
+        '-i', '-',
+        '-b:v', '1500k',
+        self.getpath( name, None, videotype ),
+      ], stdin=subprocess.PIPE )
+
+  def __enter__( self ):
+    'enter with block'
+
+    # make this figure active
+    self._pyplot.figure(self._fig.number)
+
+    return self
+
+  def __exit__( self, exc_type, exc_value, exc_tb ):
+    'exit with block'
+
+    if not exc_type:
+      self.saveframe()
+
+  def saveframe( self ):
+    'add a video frame'
+
+    assert self._fig, 'video is closed'
+    self.savefig( self._encoder.stdin, format='png' )
+    if self._clearfigure:
+      self._fig.clear()
+
+  def close( self ):
+    'finalize video'
+
+    if not self._encoder:
+      return # already closed
+    self._encoder.stdin.close()
+    self._encoder = None
+    PyPlot.close( self )
 
 class DataFile( BasePlot ):
   """data file"""
