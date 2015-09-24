@@ -84,6 +84,14 @@ class PyPlot( BasePlot ):
     self._fig = pyplot.figure( **kwargs )
     self._pyplot = pyplot
 
+  def __enter__( self ):
+    'enter with block'
+
+    # make this figure active
+    self._pyplot.figure(self._fig.number)
+
+    return super( PyPlot, self ).__enter__()
+
   def __getattr__( self, attr ):
     pyplot = self.__dict__['_pyplot'] # avoid recursion
     return getattr( pyplot, attr )
