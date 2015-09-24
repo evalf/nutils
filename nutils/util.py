@@ -536,13 +536,6 @@ def run( *functions ):
     if core.getprop( 'profile' ):
       prof.disable()
 
-    if hasattr( os, 'wait' ):
-      try: # wait for child processes to die
-        while True:
-          pid, status = os.wait()
-      except OSError: # no more children
-        pass
-
     dt = time.time() - t0
     hours = dt // 3600
     minutes = dt // 60 - 60 * hours
