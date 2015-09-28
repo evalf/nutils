@@ -114,6 +114,18 @@ class PyPlot( BasePlot ):
     for ext in self.imgtype.split( ',' ):
       self.savefig( self.getpath(name,index,ext) )
 
+  def line( self, points, values, **kwargs ):
+    'plot line'
+
+    segments = numpy.concatenate( [ numpy.array([xy[:-1],xy[1:]]).swapaxes(0,1) for xy in points ], axis=0 )
+    array = numpy.concatenate( [ .5 * ( v[:-1] + v[1:] ) for v in values ], axis=0 )
+    from matplotlib.collections import LineCollection
+    lc = LineCollection( segments, array=array, **kwargs )
+    ax = self.gca()
+    ax.add_collection( lc )
+    self.sci( lc )
+    return lc
+
   def mesh( self, points, values=None, edgecolors='k', edgewidth=None, triangulate='delaunay', setxylim=True, aspect='equal', cmap='jet' ):
     'plot elemtwise mesh'
 
