@@ -1,0 +1,13 @@
+language: python
+sudo: false
+python:
+  - "2.7"
+  - "3.4"
+install:
+  - wget http://repo.continuum.io/miniconda/Miniconda-latest-Linux-x86_64.sh -O miniconda.sh
+  - bash miniconda.sh -b -p $HOME/miniconda
+  - export PATH="$HOME/miniconda/bin:$PATH"
+  - conda update --yes conda
+  - conda install --yes python=$TRAVIS_PYTHON_VERSION pip numpy scipy
+script: PYTHONPATH="$PWD" make test
+# vim: ts=2:sts=2:sw=2:et
