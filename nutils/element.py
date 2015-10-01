@@ -212,7 +212,7 @@ class Reference( cache.Immutable ):
 
   @cache.property
   def edgevertexmap( self ):
-    return [ numpy.array( map( self.vertices.tolist().index, etrans.apply(edge.vertices).tolist() ), dtype=int ) for etrans, edge in self.edges ]
+    return [ numpy.array( list( map( self.vertices.tolist().index, etrans.apply(edge.vertices).tolist() ) ), dtype=int ) for etrans, edge in self.edges ]
 
   def getischeme( self, ischeme ):
     match = re.match( '([a-zA-Z]+)(.*)', ischeme )
@@ -439,7 +439,8 @@ class PointReference( SimplexReference ):
   def getischeme( self, ischeme ):
     return numpy.zeros((1,0)), numpy.ones(1)
 
-  def slice( self, (level,), denom ):
+  def slice( self, levels, denom ):
+    level, = levels
     return self if level > 0 else self.empty
 
 class LineReference( SimplexReference ):
