@@ -1081,15 +1081,14 @@ class WithChildrenReference( Reference ):
       child2 = self.child_refs[jchild]
       edge1 = child1.edge_refs[iedge] if child1 else EmptyReference(self.ndims-1)
       edge2 = child2.edge_refs[jedge] if child2 else EmptyReference(self.ndims-1)
-      if edge1 != edge2:
-        if edge1:
-          trans = self.child_transforms[ichild] << child1.edge_transforms[iedge]
-          if trans not in self.baseref.edge_transforms:
-            interfaces.append(( ichild, iedge, trans, child1.edge_refs[iedge] ))
-        if edge2:
-          trans = self.child_transforms[jchild] << child2.edge_transforms[jedge]
-          if trans not in self.baseref.edge_transforms:
-            interfaces.append(( jchild, jedge, trans, child2.edge_refs[jedge] ))
+      if edge1 - edge2:
+        trans = self.child_transforms[ichild] << child1.edge_transforms[iedge]
+        if trans not in self.baseref.edge_transforms:
+          interfaces.append(( ichild, iedge, trans, edge1-edge2 ))
+      if edge2 - edge1:
+        trans = self.child_transforms[jchild] << child2.edge_transforms[jedge]
+        if trans not in self.baseref.edge_transforms:
+          interfaces.append(( jchild, jedge, trans, edge2-edge1 ))
     return interfaces
 
   def _logical( self, other, op ):
