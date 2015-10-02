@@ -183,6 +183,25 @@ class Reference( cache.Immutable ):
     return childedgemap
 
   @cache.property
+  def ribbons( self ):
+    # tuples of (iedge1,jedge1), (iedge2,jedge2) pairs
+    assert self.ndims >= 2
+    transforms = {}
+    ribbons = []
+    for iedge1, (etrans1,edge1) in enumerate( self.edges ):
+      for iedge2, (etrans2,edge2) in enumerate( edge1.edges ):
+        key = tuple( sorted( tuple(p) for p in (etrans1 << etrans2).apply( edge2.vertices ) ) )
+        try:
+          jedge1, jedge2 = transforms.pop(key)
+        except KeyError:
+          transforms[key] = iedge1, iedge2
+        else:
+          assert self.edge_refs[jedge1].edge_refs[jedge2] == edge2
+          ribbons.append(( (iedge1,iedge2), (jedge1,jedge2) ))
+    assert not transforms
+    return tuple( ribbons )
+
+  @cache.property
   def interfaces( self ):
     return [ ((ichild,iedge),(jchild,jedge))
       for ichild, tmp in enumerate( self.childedgemap )
@@ -370,6 +389,9 @@ class EmptyReference( Reference ):
   'inverse reference element'
 
   volume = 0
+
+  edge_transforms = ()
+  edge_refs = ()
 
   def __init__( self, ndims ):
     Reference.__init__( self, numpy.zeros((0,ndims)) )
@@ -812,7 +834,7 @@ class Cone( Reference ):
   def edge_refs( self ):
     extrudetrans = transform.affine( numpy.eye(self.ndims-1)[:,:-1], numpy.zeros(self.ndims-1), isflipped=False )
     tip = numpy.array( [0]*(self.ndims-2)+[1], dtype=float )
-    return [ self.edgeref ] + [ edge.cone( extrudetrans, tip ) for trans, edge in self.edgeref.edges if edge ]
+    return [ self.edgeref ] + [ edge.cone( extrudetrans, tip ) for edge in self.edgeref.edge_refs if edge ]
 
   def getischeme_gauss( self, degree ):
     epoints, eweights = self.edgeref.getischeme( 'gauss{}'.format(degree) )
@@ -1162,19 +1184,41 @@ class MosaicReference( Reference ):
     self._edge_refs = tuple( edge_refs )
     self._midpoint = midpoint
 
-    self.subrefs = [ ref.cone(trans,midpoint) for trans, ref in zip( baseref.edge_transforms, edge_refs ) if ref ]
+    self.edge_refs = list( edge_refs )
+    self.edge_transforms = list( baseref.edge_transforms )
 
-    keep = {}
-    for sub in self.subrefs:
-      for trans2, edge2 in sub.edges[1:]:
-        vertices = tuple( sorted( tuple(v) for v in trans2.apply(edge2.vertices) ) )
-        try:
-          keep.pop( vertices )
-        except KeyError:
-          keep[vertices] = trans2, edge2
+    if baseref.ndims == 1:
 
-    self.edge_transforms = tuple(baseref.edge_transforms) + tuple( trans for trans, ref in keep.values() )
-    self.edge_refs = tuple(edge_refs) + tuple( ref for trans, ref in keep.values() )
+      nz = [ i for i, edge in enumerate(edge_refs) if edge ]
+      if len(nz) == 1:
+        self.edge_refs.append( getsimplex(0) )
+        self.edge_transforms.append( transform.affine( linear=numpy.zeros((1,0)), offset=midpoint, isflipped=not baseref.edge_transforms[nz[0]].isflipped ) )
+      else:
+        assert len(nz) == 2
+
+    else:
+
+      newedges = [ ( etrans1, etrans2, edge ) for (etrans1,orig), new in zip( baseref.edges, edge_refs ) for etrans2, edge in new.edges[orig.nedges:] ]
+      for (iedge1,iedge2), (jedge1,jedge2) in baseref.ribbons:
+        Ei = edge_refs[iedge1]
+        ei = Ei and Ei.edge_refs[iedge2]
+        Ej = edge_refs[jedge1]
+        ej = Ej and Ej.edge_refs[jedge2]
+        if ej and not ei:
+          newedges.append(( self.edge_transforms[jedge1], Ej.edge_transforms[jedge2], ej ))
+        elif ei and not ej:
+          newedges.append(( self.edge_transforms[iedge1], Ei.edge_transforms[iedge2], ei ))
+        elif ei and ej:
+          assert ei == ej
+
+      extrudetrans = transform.affine( numpy.eye(baseref.ndims-1)[:,:-1], numpy.zeros(baseref.ndims-1), isflipped=False )
+      tip = numpy.array( [0]*(baseref.ndims-2)+[1], dtype=float )
+      for etrans, trans, edge in newedges:
+        b = etrans.apply( trans.offset )
+        A = numpy.hstack([ numpy.dot( etrans.linear, trans.linear ), (midpoint-b)[:,_] ])
+        newtrans = transform.affine( A, b, isflipped=etrans.isflipped^trans.isflipped^(baseref.ndims%2==1) ) # isflipped logic tested up to 3D
+        self.edge_transforms.append( newtrans )
+        self.edge_refs.append( edge.cone( extrudetrans, tip ) )
 
     vertices = []
     edgevertexmap = []
@@ -1194,6 +1238,10 @@ class MosaicReference( Reference ):
 
     if core.getprop( 'selfcheck', False ):
       self.check_edges()
+
+  @cache.property
+  def subrefs( self ):
+    return [ ref.cone(trans,self._midpoint) for trans, ref in zip( self.baseref.edge_transforms, self._edge_refs ) if ref ]
 
   def stdfunc( self, degree ):
     return self.baseref.stdfunc( degree )
