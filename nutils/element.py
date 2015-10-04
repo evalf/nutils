@@ -189,15 +189,17 @@ class Reference( cache.Immutable ):
     transforms = {}
     ribbons = []
     for iedge1, (etrans1,edge1) in enumerate( self.edges ):
-      for iedge2, (etrans2,edge2) in enumerate( edge1.edges ):
-        key = tuple( sorted( tuple(p) for p in (etrans1 << etrans2).apply( edge2.vertices ) ) )
-        try:
-          jedge1, jedge2 = transforms.pop(key)
-        except KeyError:
-          transforms[key] = iedge1, iedge2
-        else:
-          assert self.edge_refs[jedge1].edge_refs[jedge2] == edge2
-          ribbons.append(( (iedge1,iedge2), (jedge1,jedge2) ))
+      if edge1:
+        for iedge2, (etrans2,edge2) in enumerate( edge1.edges ):
+          if edge2:
+            key = tuple( sorted( tuple(p) for p in (etrans1 << etrans2).apply( edge2.vertices ) ) )
+            try:
+              jedge1, jedge2 = transforms.pop(key)
+            except KeyError:
+              transforms[key] = iedge1, iedge2
+            else:
+              assert self.edge_refs[jedge1].edge_refs[jedge2] == edge2
+              ribbons.append(( (iedge1,iedge2), (jedge1,jedge2) ))
     assert not transforms
     return tuple( ribbons )
 
@@ -1001,7 +1003,20 @@ class OwnChildReference( Reference ):
     self.baseref = baseref
     self.child_refs = baseref,
     self.child_transforms = transform.identity,
+    self.interfaces = ()
     Reference.__init__( self, baseref.vertices )
+
+  @property
+  def rotations( self ):
+    return self.baseref.rotations
+
+  @property
+  def edge_transforms( self ):
+    return self.baseref.edge_transforms
+
+  @property
+  def edge_refs( self ):
+    return self.baseref.edge_refs
 
   def stdfunc( self, degree ):
     return self.baseref.stdfunc( degree )
@@ -1012,14 +1027,6 @@ class OwnChildReference( Reference ):
 
   def getischeme( self, ischeme ):
     return self.baseref.getischeme( ischeme )
-
-  @property
-  def childedgemap( self ):
-    return self.baseref.childedgemap
-
-  @property
-  def edge2children( self ):
-    return self.baseref.edge2children
 
   @property
   def simplices( self ):
@@ -1046,6 +1053,10 @@ class WithChildrenReference( Reference ):
   def rotations( self ):
     return self.baseref.rotations
 
+  @property
+  def interfaces( self ):
+    return self.baseref.interfaces
+
   def transform( self, trans ):
     baseref = self.baseref.transform(trans)
     child_refs = []
@@ -1071,9 +1082,9 @@ class WithChildrenReference( Reference ):
   __and__ = __rand__ = lambda self, other: self.baseref.with_children( self_child & other_child for self_child, other_child in zip( self.child_refs, other.child_refs ) ) if other == self.baseref or isinstance( other, WithChildrenReference ) and other.baseref == self.baseref else NotImplemented
 
   @cache.property
-  def __interfaces( self ):
+  def __extra_edges( self ):
     interfaces = []
-    for (ichild,iedge), (jchild,jedge) in self.baseref.interfaces:
+    for (ichild,iedge), (jchild,jedge) in self.interfaces:
       child1 = self.child_refs[ichild]
       child2 = self.child_refs[jchild]
       edge1 = child1.edge_refs[iedge] if child1 else EmptyReference(self.ndims-1)
@@ -1087,9 +1098,6 @@ class WithChildrenReference( Reference ):
         if trans not in self.baseref.edge_transforms:
           interfaces.append(( jchild, jedge, trans, edge2-edge1 ))
     return interfaces
-
-  def _logical( self, other, op ):
-    return self.baseref.with_children( op(child1,child2) if child1 or child2 else None for child1, child2 in zip( self.child_refs, other.child_refs ) )
 
   def subvertex( self, ichild, i ):
     assert 0<=ichild<self.nchildren
@@ -1136,7 +1144,7 @@ class WithChildrenReference( Reference ):
     for trans, mychild, basechild in zip( self.child_transforms, self.child_refs, self.baseref.child_refs ):
       if mychild:
         edge_transforms.extend( trans << etrans for etrans in mychild.edge_transforms[basechild.nedges:] )
-    edge_transforms.extend( trans for ichild, iedge, trans, ref in self.__interfaces )
+    edge_transforms.extend( trans for ichild, iedge, trans, ref in self.__extra_edges )
     return tuple(edge_transforms)
 
   @cache.property
@@ -1149,7 +1157,7 @@ class WithChildrenReference( Reference ):
     for mychild, basechild in zip( self.child_refs, self.baseref.child_refs ):
       if mychild:
         items.extend( OwnChildReference(edge) for edge in mychild.edge_refs[basechild.nedges:] )
-    items.extend( OwnChildReference(ref) for ichild, iedge, trans, ref in self.__interfaces )
+    items.extend( OwnChildReference(ref) for ichild, iedge, trans, ref in self.__extra_edges )
     return cache.Tuple( items, getedgeref )
 
   @property
@@ -1168,7 +1176,7 @@ class WithChildrenReference( Reference ):
       if mychild:
         basechild = self.baseref.child_refs[ichild]
         edge2children.extend( [(ichild,iedge)] for iedge in range(basechild.nedges,mychild.nedges) )
-    edge2children.extend( [(ichild,iedge)] for ichild, iedge, trans, ref in self.__interfaces )
+    edge2children.extend( [(ichild,iedge)] for ichild, iedge, trans, ref in self.__extra_edges )
     return tuple( edge2children )
 
 class MosaicReference( Reference ):
