@@ -1,5 +1,5 @@
-PYTHON?=python
-COVERAGE?=python-coverage
+PYTHON?=python3
+COVERAGE?=python3-coverage
 
 build:
 	${PYTHON} setup.py build clean
@@ -20,17 +20,6 @@ test_examples:
 	@for script in examples/*; do \
 		echo $$script; \
 		${PYTHON} $$script unittest --tbexplore=False --verbose=3; \
-	done
-
-test3: test3_unit test3_examples
-
-test3_unit:
-	python3 -m tests
-
-test3_examples:
-	@for script in examples/*; do \
-		echo $$script; \
-		python3 $$script unittest --tbexplore=False --verbose=3; \
 	done
 
 coverage:
