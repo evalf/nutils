@@ -1,5 +1,3 @@
-# -*- coding: utf8 -*-
-#
 # Module CACHE
 #
 # Part of Nutils: open source numerical utilities for Python. Jointly developed

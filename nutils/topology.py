@@ -1,5 +1,3 @@
-# -*- coding: utf8 -*-
-#
 # Module TOPOLOGY
 #
 # Part of Nutils: open source numerical utilities for Python. Jointly developed

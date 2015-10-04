@@ -1,5 +1,3 @@
-# -*- coding: utf8 -*-
-#
 # Module FUNCTION
 #
 # Part of Nutils: open source numerical utilities for Python. Jointly developed
