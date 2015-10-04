@@ -811,9 +811,10 @@ class Cone( Reference ):
     self.etrans = etrans
     self.axisref = getsimplex(1)
     self.tip = tip
-    ext = numeric.ext( etrans.linear )
+    ext = etrans.ext
     self.extnorm = numpy.linalg.norm( ext )
-    self.height = abs( numpy.dot( tip - etrans.offset, ext ) / self.extnorm )
+    self.height = numpy.dot( etrans.offset - tip, ext ) / self.extnorm
+    assert self.height >= 0, 'tip is positioned at the negative side of edge'
     if core.getprop( 'selfcheck', False ):
       self.check_edges()
 
