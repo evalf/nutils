@@ -335,7 +335,7 @@ class Reference( cache.Immutable ):
 
     midpoint = numpy.round( midpoint * denom ) / denom
     mosaic = MosaicReference( self, refs, midpoint )
-    return mosaic if mosaic.volume < self.volume else self
+    return self.empty if mosaic.volume == 0 else mosaic if mosaic.volume < self.volume else self
 
   def cone( self, trans, tip ):
     assert trans.fromdims == self.ndims
