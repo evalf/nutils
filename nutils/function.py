@@ -32,7 +32,7 @@ expensive and currently unsupported operation.
 
 from __future__ import print_function, division
 from . import util, numpy, numeric, log, core, cache, transform, rational, _
-import sys, warnings, itertools, functools, operator
+import sys, warnings, itertools, functools, operator, inspect
 
 CACHE = 'Cache'
 TRANS = 'Trans'
@@ -2999,6 +2999,76 @@ def takediag( arg, ax1=-2, ax2=-1 ):
 
   return TakeDiag( arg )
 
+def partial_derivative( func, arg_key, arg_axes ):
+  '''partial derivative of a function
+
+  Compute the partial derivative of `func` with respect to argument `arg_key`,
+  limited to the axes `arg_axes` of argument `arg_key`.
+
+  Parameters
+  ----------
+  func : function
+  arg_key : int or str
+      Reference to an argument of `func`.  If `arg_key` is an `int`, `arg_key`
+      is the index of a positional argument of `func`.  If `arg_key` is a
+      `str`, `arg_key` is the name of an argument of `func`.
+  arg_axes : iterable of int
+      List of axes, where each axis should be in `[0,arg.ndim)`, where `arg` is
+      the argument refered to by `arg_key`.
+
+  Returns
+  -------
+  function
+      Partial derivative of `func`.  The shape of this function is the
+      concatenation of the shape of `func` and the shape of the `arg_axes` of
+      `arg`, where `arg` is the argument refered to by `arg_key`.
+  '''
+
+  if not isinstance( arg_key, (int, str) ):
+    raise ValueError( 'arg_key: expected an int or str, got {!r}'.format( arg_key ) )
+  arg_axes = tuple(arg_axes)
+
+  sig = inspect.signature( func )
+  if isinstance( arg_key, str ) and arg_key in sig.parameters:
+    # convert `arg_key` to index if possible
+    param = sig.parameters[arg_key]
+    if param.kind in (param.POSITIONAL_ONLY, param.POSITIONAL_OR_KEYWORD):
+      for i, (n, p) in enumerate( self._signature.parameters.items() ):
+        if p.kind not in (p.POSITIONAL, p.POSITIONAL_OR_KEYWORD):
+          break
+        if n == arg_key:
+          arg_key = i
+          break
+
+  @functools.wraps( func )
+  def wrapper( *args, **kwargs ):
+    ba = sig.bind( *args, **kwargs )
+    # add default arguments
+    for param in sig.parameters.values():
+      if (param.name not in ba.arguments and param.default is not param.empty):
+        ba.arguments[param.name] = param.default
+
+    # replace argument `arg_key` with a derivative helper
+    if isinstance(arg_key, int):
+      args = list(ba.args)
+      orig = args[arg_key]
+      var = DerivativeHelper( orig.shape, arg_axes )
+      args[arg_key] = var
+      kwargs = ba.kwargs
+    elif arg_key in ba.kwargs:
+      args = ba.args
+      kwargs = dict(ba.kwargs)
+      orig = ba.kwargs[arg_key]
+      var = DerivativeHelper( orig.shape, arg_axes )
+      kwargs[arg_key] = var
+    else:
+      raise ValueError( 'argument not found: {!r}'.format( arg_key ) )
+
+    # compute derivative and replace derivative helper with original argument
+    replace = lambda f: orig if f is var else edit( f, replace )
+    return replace( derivative( func( *args, **kwargs ), var, tuple( var.shape[i] for i in arg_axes ) ) )
+
+  return wrapper
 
 def derivative( func, var, shape, seen=None ):
   'derivative'
