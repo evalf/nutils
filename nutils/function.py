@@ -2969,6 +2969,9 @@ def choose( level, choices ):
   if not _isfunc(level) and not any( _isfunc(choice) for choice in choices ):
     return numpy.choose( level, choices )
   level_choices = _matchndim( level, *choices )
+  if all( map( _iszero, level_choices[1:] ) ):
+    shape = _jointshape( *( a.shape for a in level_choices ) )
+    return _zeros( shape )
   return Choose( level_choices[0], level_choices[1:] )
 
 def _condlist_to_level( *condlist ):
