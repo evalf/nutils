@@ -2378,6 +2378,31 @@ class TrigTangent( ArrayFunc ):
   def _edit( self, op ):
     return TrigTangent( edit(self.angle,op) )
 
+class DerivativeHelper( ArrayFunc ):
+  'helper class for computing derivatives'
+
+  def __init__( self, shape, axes ):
+    self._axes = tuple(axes)
+    assert all(0 <= axis < len(shape) for axis in self._axes)
+    ArrayFunc.__init__( self, args=[], shape=shape )
+
+  def evalf( self ):
+    raise ValueError( 'unwrap {!r} before evaluation'.format( self ) )
+
+  def _edit( self, op ):
+    return self
+
+  def _derivative( self, var, shape, seen ):
+    if var is self:
+      assert shape == tuple( self.shape[axis] for axis in self._axes )
+      result = 1
+      for i, axis in enumerate( self._axes ):
+        result *= align( eye( self.shape[axis] ), ( axis, self.ndim+i ), self.ndim+len(self._axes) )
+      return result
+    else:
+      return _zeros( self.shape + shape )
+
+
 # CIRCULAR SYMMETRY
 
 class RevolutionAngle( ArrayFunc ):
