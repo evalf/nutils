@@ -4,14 +4,16 @@ from nutils import *
 
 
 @log.title
-def makeplots( domain, geom, c, mu, energies, nsteps ):
+def makeplots( domain, geom, c, mu, energies, nsteps, plt ):
 
   force = mu * c.grad(geom)
   xpnt, cpnt = domain.elem_eval( [ geom, c ], ischeme='bezier4', title='mesh', separate=True )
   xy, uv = domain.elem_eval( [ geom, force ], ischeme='uniform1', title='quiver', separate=False )
   Emix, Eiface, Ewall = numpy.array(energies).T
 
-  with plot.PyPlot( 'concentration', ndigits=4, index=len(energies) ) as plt:
+  if plt is True:
+    plt = plot.PyPlot( 'concentration', ndigits=4, index=len(energies) )
+  with plt:
     plt.mesh( xpnt, cpnt )
     plt.colorbar()
     plt.clim( -1, 1 )
@@ -33,7 +35,7 @@ def makeplots( domain, geom, c, mu, energies, nsteps ):
     plt.ylabel( 'energy' )
 
 
-def main( nelems=20, epsilon=None, timestep=.01, maxtime=1., theta=90, init='random', plot=True ):
+def main( nelems=20, epsilon=None, timestep=.01, maxtime=1., theta=90, init='random', plt=True ):
 
   mineps = 1./nelems
   nsteps = numeric.round( maxtime / timestep )
@@ -44,6 +46,9 @@ def main( nelems=20, epsilon=None, timestep=.01, maxtime=1., theta=90, init='ran
     epsilon = mineps
   elif epsilon < mineps:
     log.warning( 'epsilon under crititical threshold: %f < %f' % ( epsilon, mineps ) )
+
+  if plt == 'video':
+    plt = plot.PyPlotVideo( 'concentration' )
 
   xnodes = ynodes = numpy.linspace(0,1,nelems+1)
   domain, geom = mesh.rectilinear( [ xnodes, ynodes ] )
@@ -92,15 +97,15 @@ def main( nelems=20, epsilon=None, timestep=.01, maxtime=1., theta=90, init='ran
     c = cbasis.dot( lhs )
     mu = mubasis.dot( lhs )
 
-    if plot:
-      makeplots( domain, geom, c, mu, energies, nsteps )
+    if plt:
+      makeplots( domain, geom, c, mu, energies, nsteps, plt )
 
   return lhs, energies
 
 
 def unittest():
 
-  retvals = main( nelems=8, init='bubbles', maxtime=.1, plot=False )
+  retvals = main( nelems=8, init='bubbles', maxtime=.1, plt=False )
   assert debug.checkdata( retvals, '''
     eNptlVmSIjEMRK/TEwETlqz1QH3/K4xLGwVD9IdcwvWcmTI0PH7oAfzn8fNjrPr7pIex8VUVwa/KBPb7
     5MdTF+2r8TTfsePpG7LjhKsWgm+Lphk7JJXiFAGCom5oKjVVmsrfqa2taaxosUFsSWLRsbCQfEfW4osX

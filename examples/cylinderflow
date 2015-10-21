@@ -5,7 +5,7 @@ from nutils import *
 
 
 @log.title
-def makeplots( domain, geom, velo, pres, index ):
+def makeplots( domain, geom, velo, pres, index, plts ):
 
   vort = velo.grad(geom)[1,0] - velo.grad(geom)[0,1]
   xlim = -4, 14
@@ -13,29 +13,22 @@ def makeplots( domain, geom, velo, pres, index ):
   xy, uv = domain.elem_eval( [ geom, velo ], ischeme='uniform1', separate=False )
   points, flow, pres, vort = domain.elem_eval( [ geom, function.norm2(velo), pres, vort ], ischeme='bezier5', separate=True )
 
-  with plot.PyPlot( 'flow', index=index ) as plt:
-    plt.mesh( points, flow, triangulate='bezier' )
-    plt.colorbar( orientation='horizontal' )
-    plt.xlim( xlim )
-    plt.ylim( ylim )
-    plt.quiver( xy[:,0], xy[:,1], uv[:,0], uv[:,1] )
+  if plts is True:
+    plts = [ plot.PyPlot( name, index=index ) for name in [ 'flow', 'pres', 'vort' ] ]
 
-  with plot.PyPlot( 'pres', index=index ) as plt:
-    plt.mesh( points, pres, triangulate='bezier' )
-    plt.colorbar( orientation='horizontal' )
-    plt.xlim( xlim )
-    plt.ylim( ylim )
-    plt.quiver( xy[:,0], xy[:,1], uv[:,0], uv[:,1] )
-
-  with plot.PyPlot( 'vort', index=index ) as plt:
-    plt.mesh( points, vort, triangulate='bezier' )
-    plt.colorbar( orientation='horizontal' )
-    plt.xlim( xlim )
-    plt.ylim( ylim )
-    plt.quiver( xy[:,0], xy[:,1], uv[:,0], uv[:,1] )
+  for plt, value in zip(plts, [flow, pres, vort]):
+    with plt:
+      plt.mesh( points, value, triangulate='bezier' )
+      plt.colorbar( orientation='horizontal' )
+      plt.xlim( xlim )
+      plt.ylim( ylim )
+      plt.quiver( xy[:,0], xy[:,1], uv[:,0], uv[:,1] )
 
 
-def main( nelems=24, viscosity=1e-3, density=1, tol=1e-8, rotation=0, timestep=.1, maxradius=50 ):
+def main( nelems=24, viscosity=1e-3, density=1, tol=1e-8, rotation=0, timestep=.1, maxradius=50, plt=True ):
+
+  if plt == 'video':
+    plt = [ plot.PyPlotVideo( name ) for name in [ 'flow', 'pres', 'vort' ] ]
 
   rscale = 2*numpy.pi / nelems
   melems = numpy.ceil( numpy.log(maxradius) / rscale ).astype( int )
@@ -80,7 +73,7 @@ def main( nelems=24, viscosity=1e-3, density=1, tol=1e-8, rotation=0, timestep=.
 
   stokesmat += inertmat
   for iiter in log.count( 'timestep' ):
-    makeplots( domain, geom, vbasis.dot(lhs), pbasis.dot(lhs), iiter )
+    makeplots( domain, geom, vbasis.dot(lhs), pbasis.dot(lhs), iiter, plt )
     convection = density * ( vbasis.grad(geom) * vbasis.dot(lhs) ).sum(-1)
     matrix = stokesmat + domain.integrate( function.outer( vbasis, convection ).sum(-1), ischeme='gauss9', geometry=geom )
     lhs = matrix.solve( rhs + inertmat.matvec(lhs), lhs0=lhs, constrain=cons, tol=tol, restart=9999, precon='spilu' )
