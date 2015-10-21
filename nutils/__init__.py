@@ -1,6 +1,6 @@
 import numpy
 
-assert numpy.__version__.split('.') >= '1.8'.split('.'), \
+assert numpy.__version__.split('.')[:2] >= '1.8'.split('.'), \
   'nutils requires numpy 1.8 or higher, got %s' % numpy.__version__
 
 version = '1.dev'
