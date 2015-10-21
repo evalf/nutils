@@ -118,7 +118,10 @@ class ScipyMatrix( Matrix ):
       x0 = None
     else:
       x0 = lhs0[J]
-      res0 = numpy.linalg.norm(b-A*x0) / numpy.linalg.norm(b)
+      res0 = numpy.linalg.norm(b-A*x0)
+      bnorm = numpy.linalg.norm(b)
+      if bnorm:
+        res0 /= bnorm
       log.info( 'residual:', res0 )
       if res0 < tol:
         return (lhs0,solverinfo) if info else lhs0
