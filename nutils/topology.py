@@ -118,8 +118,8 @@ class Topology( object ):
     quad = element.getsimplex(1)**2
     ndims = self.ndims + other.ndims
     eye = numpy.eye( ndims, dtype=int )
-    self_trans = transform.affine(eye[:self.ndims])
-    other_trans = transform.affine(eye[self.ndims:])
+    self_trans = transform.affine(eye[:self.ndims], numpy.zeros(self.ndims), isflipped=False )
+    other_trans = transform.affine(eye[self.ndims:], numpy.zeros(other.ndims), isflipped=False )
 
     if any( elem.reference != quad for elem in self ) or any( elem.reference != quad for elem in other ):
       return Topology( element.Element( elem1.reference * elem2.reference, elem1.transform << self_trans, elem2.transform << other_trans )
