@@ -1633,24 +1633,29 @@ class Take( ArrayFunc ):
     self.axis = axis
     self.indices = indices
 
-    # try for regular slice
-    start = indices[0]
-    step = indices[1] - start
-    stop = start + step * len(indices)
-
+    args = [func]
     s = [ slice(None) ] * func.ndim
-    s[axis] = slice( start, stop, step ) if numpy.all( numpy.diff(indices) == step ) \
-         else indices
 
-    newlen, = numpy.empty( func.shape[axis] )[ indices ].shape
-    assert newlen > 0
+    if _isevaluable(indices):
+      s[axis] = indices
+      newlen, = indices.shape
+      args.append( Tuple((Ellipsis,)+tuple(s)) )
+    else:
+      # try for regular slice
+      start = indices[0]
+      step = indices[1] - start
+      stop = start + step * len(indices)
+      s[axis] = slice( start, stop, step ) if numpy.all( numpy.diff(indices) == step ) else indices
+      newlen, = numpy.empty( func.shape[axis] )[ indices ].shape
+      assert newlen > 0
+      self.item = (Ellipsis,)+tuple(s)
+
     shape = func.shape[:axis] + (newlen,) + func.shape[axis+1:]
-    self.item = (Ellipsis,)+tuple(s)
-    ArrayFunc.__init__( self, args=[func], shape=shape )
+    ArrayFunc.__init__( self, args=args, shape=shape )
 
-  def evalf( self, arr ):
+  def evalf( self, arr, item=None ):
     assert arr.ndim == self.ndim+1
-    return arr[ self.item ]
+    return arr[ item or self.item ]
 
   def _localgradient( self, ndims ):
     return take( localgradient( self.func, ndims ), self.indices, self.axis )
@@ -3266,7 +3271,7 @@ def take( arg, index, axis ):
       return retval
     if arg.shape[axis] == 1:
       return arg
-    return DofIndex( arg, axis, index )
+    return DofIndex( arg, axis, index ) if isinstance(arg,numpy.ndarray) else Take( arg, index, axis )
 
   if isinstance( index, slice ):
     n = arg.shape[axis]
