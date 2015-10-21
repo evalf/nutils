@@ -210,7 +210,7 @@ class NanVec( numpy.ndarray ):
       self[ where ] = other
     else:
       assert isinstance( other, numpy.ndarray ) and other.shape == self.shape
-      where &= ~numpy.isnan(other)
+      where &= ~numpy.isnan( other.view(numpy.ndarray) )
       self[ where ] = other[ where ]
     return self
 
