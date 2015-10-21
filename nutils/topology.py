@@ -557,12 +557,11 @@ class Topology( object ):
     return self if n <= 0 else self.refined.refine( n-1 )
 
   @log.title
-  def trim( self, levelset, maxrefine, eps=1/64., name='trimmed' ):
+  def trim( self, levelset, maxrefine, ndivisions=8, name='trimmed' ):
     'trim element along levelset'
 
-    denom = numeric.round(1./eps)
     fcache = cache.WrapperCache()
-    refs = [ elem.trim( levelset=levelset, maxrefine=maxrefine, denom=denom, fcache=fcache ) for elem in log.iter( 'elem', self ) ]
+    refs = [ elem.trim( levelset=levelset, maxrefine=maxrefine, ndivisions=ndivisions, fcache=fcache ) for elem in log.iter( 'elem', self ) ]
     return TrimmedTopology( self, refs, name )
     log.debug( 'cache', fcache.stats )
 

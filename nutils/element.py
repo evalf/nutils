@@ -87,11 +87,11 @@ class Element( object ):
     return [ Element( child, self.transform << trans, self.__opposite and self.__opposite << trans )
       for trans, child in self.reference.children if child ]
 
-  def trim( self, levelset, maxrefine, denom, fcache ):
+  def trim( self, levelset, maxrefine, ndivisions, fcache ):
     'trim element along levelset'
 
     assert not self.__opposite
-    return self.reference.trim( (self.transform,levelset), maxrefine, denom, fcache )
+    return self.reference.trim( (self.transform,levelset), maxrefine, ndivisions, fcache )
 
   @property
   def flipped( self ):
@@ -254,11 +254,11 @@ class Reference( cache.Immutable ):
       return self
     return WithChildrenReference( self, child_refs )
 
-  def trim( self, levels, maxrefine, denom, fcache ):
+  def trim( self, levels, maxrefine, ndivisions, fcache ):
     'trim element along levelset'
 
     assert maxrefine >= 0
-    assert numeric.isint( denom )
+    assert numeric.isint( ndivisions )
 
     evaluated_levels = isinstance( levels, numpy.ndarray )
     if not evaluated_levels: # levelset is not evaluated
@@ -287,22 +287,22 @@ class Reference( cache.Immutable ):
           else:
             trans, levelfun = levels
             childlevels = trans << ctrans, levelfun
-          cref = child.trim( childlevels, maxrefine-1, denom, fcache )
+          cref = child.trim( childlevels, maxrefine-1, ndivisions, fcache )
         childrefs.append( cref )
       trimmed = self.with_children( childrefs )
     else:
       assert evaluated_levels, 'failed to evaluate levelset up to level maxrefine'
-      trimmed = self.slice( levels, denom )
+      trimmed = self.slice( levels, ndivisions )
 
     return trimmed
 
-  def slice( self, levels, denom ):
+  def slice( self, levels, ndivisions ):
     assert len(levels) == self.nverts
     if numpy.all( levels >= 0 ):
       return self
     if numpy.all( levels <= 0 ):
       return self.empty
-    refs = [ edgeref.slice( levels[self.edgevertexmap[iedge]], denom ) for iedge, edgeref in enumerate( self.edge_refs ) ]
+    refs = [ edgeref.slice( levels[self.edgevertexmap[iedge]], ndivisions ) for iedge, edgeref in enumerate( self.edge_refs ) ]
     if refs == list(self.edge_refs):
       return self
     if not any( refs ):
@@ -335,7 +335,8 @@ class Reference( cache.Immutable ):
         midpoint += wtot * (trans<<trans2).apply( numeric.dot( weights, points )/weights.sum() )
       midpoint /= length
 
-    midpoint = numpy.round( midpoint * denom ) / denom
+    eps = 2**ndivisions
+    midpoint = numpy.round( midpoint * eps ) / eps
     mosaic = MosaicReference( self, refs, midpoint )
     return self.empty if mosaic.volume == 0 else mosaic if mosaic.volume < self.volume else self
 
@@ -463,7 +464,7 @@ class PointReference( SimplexReference ):
   def getischeme( self, ischeme ):
     return numpy.zeros((1,0)), numpy.ones(1)
 
-  def slice( self, levels, denom ):
+  def slice( self, levels, ndivisions ):
     level, = levels
     return self if level > 0 else self.empty
 
@@ -1655,26 +1656,6 @@ def gauss( degree ):
 def getsimplex( ndims ):
   vertices = numpy.concatenate( [ numpy.zeros(ndims,dtype=int)[_,:], numpy.eye(ndims,dtype=int) ], axis=0 )
   return Simplex_by_dim[ndims]( vertices )
-
-def mknewvtx( vertices, levels, ribbons, denom ):
-  numer = []
-  oniface = levels == 0
-  isectribs = []
-  for iribbon, (i,j) in enumerate(ribbons):
-    a, b = levels[[i,j]]
-    if a * b < 0:
-      x = int( denom * a / float(a-b) + .5 ) # round to [0,1,..,denom]
-      if x == 0:
-        oniface[i] = True
-      elif x == denom:
-        oniface[j] = True
-      else: # add new vertex with level zero
-        numer.append( tuple( numpy.dot( (denom-x,x), vertices[[i,j]] ) ) )
-        isectribs.append( iribbon )
-  if not numer:
-    return numpy.zeros( (0,vertices.shape[1]), dtype=int ), numpy.zeros( (0,), dtype=int ), oniface
-  numer, isectribs = zip( *sorted( zip( numer, isectribs ) ) ) # canonical ordering (for element equivalence)
-  return numer/denom, numpy.array(isectribs), oniface
 
 def index_or_append( items, item ):
   try:
