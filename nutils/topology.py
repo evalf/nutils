@@ -103,14 +103,16 @@ class Topology( object ):
     assert self.ndims == other.ndims
     return Topology( set(self) | set(other) )
 
-  def __sub__( self, other ):
-    'subtract topologies'
-
+  def _sub( self, other ):
+    assert isinstance( other, Topology )
     assert self.ndims == other.ndims
     refmap = { trans: other.elements[index].reference for trans, index in other.edict.items() }
     refs = [ elem.reference - refmap.pop(elem.transform,elem.reference.empty) for elem in self ]
     assert not refmap, 'subtracted topology is not a subtopology'
     return TrimmedTopology( self, refs )
+
+  __sub__ = lambda self, other: self._sub( other ) if isinstance( other, Topology ) and not isinstance( other, TrimmedTopology ) else NotImplemented
+  __rsub__ = lambda self, other: other._sub( self ) if isinstance( other, Topology ) else NotImplemented
 
   def __mul__( self, other ):
     'element products'
@@ -1242,6 +1244,14 @@ class TrimmedTopology( Topology ):
     self.trimname = trimname
     elements = [ element.Element( ref, elem.transform, elem.opposite ) for elem, ref in zip( basetopo, refs ) if ref ]
     Topology.__init__( self, elements, basetopo.ndims, groups=groups )
+
+  @property
+  def _inverse( self ):
+    refs = [ elem.reference - ref for elem, ref in zip( self.basetopo, self.__refs ) ]
+    return TrimmedTopology( self.basetopo, refs, self.trimname )
+
+  __sub__ = lambda self, other: self._inverse if isinstance( other, TrimmedTopology ) and other.basetopo == self else Topology.__sub__( self, other )
+  __rsub__ = lambda self, other: self._inverse if other == self.basetopo else Topology.__rsub__( self, other )
 
   @cache.property
   def refined( self ):
