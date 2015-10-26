@@ -89,7 +89,7 @@ def withrepr( f ):
   class function_wrapper( object ):
     func = staticmethod( f )
     argnames = f.__code__.co_varnames[:f.__code__.co_argcount]
-    defaults = dict( zip( reversed(argnames), reversed(f.__defaults__) ) )
+    defaults = dict( zip( reversed(argnames), reversed(f.__defaults__) ) ) if f.__defaults__ else {}
     def __init__( self, *args, **kwargs ):
       for name in self.__class__.argnames[len(args):]:
         try:
