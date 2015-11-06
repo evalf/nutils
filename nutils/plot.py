@@ -114,13 +114,15 @@ class PyPlot( BasePlot ):
     for ext in self.imgtype.split( ',' ):
       self.savefig( self.getpath(name,index,ext) )
 
-  def line( self, points, values, **kwargs ):
+  def line( self, points, values=None, **kwargs ):
     'plot line'
 
     segments = numpy.concatenate( [ numpy.array([xy[:-1],xy[1:]]).swapaxes(0,1) for xy in points ], axis=0 )
-    array = numpy.concatenate( [ .5 * ( v[:-1] + v[1:] ) for v in values ], axis=0 )
     from matplotlib.collections import LineCollection
-    lc = LineCollection( segments, array=array, **kwargs )
+    lc = LineCollection( segments, **kwargs )
+    if values is not None:
+      array = numpy.concatenate( [ .5 * ( v[:-1] + v[1:] ) for v in values ], axis=0 )
+      lc.set_array( array )
     ax = self.gca()
     ax.add_collection( lc )
     self.sci( lc )
