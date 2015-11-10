@@ -1918,7 +1918,7 @@ class ArrayFromTuple( ArrayFunc ):
     return arrays[ self.index ]
 
   def _edit( self, op ):
-    return ArrayFromTuple( op(self.arrays), self.index, self.shape )
+    return array_from_tuple( op(self.arrays), self.index, self.shape )
 
 class Zeros( ArrayFunc ):
   'zero'
@@ -3203,8 +3203,8 @@ def eig( arg, axes=(-2,-1), symmetric=False ):
       eigval, eigvec = ret
     else:
       eig = Eig( aligned_arg, symmetric=symmetric )
-      eigval = ArrayFromTuple( eig, index=0, shape=aligned_arg.shape[:-1] )
-      eigvec = ArrayFromTuple( eig, index=1, shape=aligned_arg.shape )
+      eigval = array_from_tuple( eig, index=0, shape=aligned_arg.shape[:-1] )
+      eigvec = array_from_tuple( eig, index=1, shape=aligned_arg.shape )
 
   # Return the evaluable function objects in a tuple like numpy
   eigval = transpose( diagonalize( eigval ), trans )
@@ -3212,6 +3212,14 @@ def eig( arg, axes=(-2,-1), symmetric=False ):
   assert eigvec.shape == arg.shape
   assert eigval.shape == arg.shape
   return eigval, eigvec
+
+def array_from_tuple( arrays, index, shape ):
+  if isinstance( arrays, Tuple ):
+    array = arrays.items[index]
+    assert array.shape == shape
+    return array
+  else:
+    return ArrayFromTuple( arrays, index, shape )
 
 def revolved( arg ):
   arg = asarray( arg )
