@@ -32,7 +32,7 @@ expensive and currently unsupported operation.
 
 from __future__ import print_function, division
 from . import util, numpy, numeric, log, core, cache, transform, rational, _
-import sys, warnings, itertools
+import sys, warnings, itertools, functools, collections, operator
 
 CACHE = 'Cache'
 TRANS = 'Trans'
@@ -1419,50 +1419,59 @@ class Add( ArrayFunc ):
     func1, func2 = self.funcs
     return add( op(func1), op(func2) )
 
-class BlockAdd( Add ):
+class BlockAdd( ArrayFunc ):
   'block addition (used for DG)'
 
-  def _multiply( self, other ):
-    func1, func2 = self.funcs
-    return blockadd( multiply(func1,other), multiply(func2,other) )
+  def __init__( self, funcs ):
+    'constructor'
 
-  def _inflate( self, dofmap, axis ):
-    func1, func2 = self.funcs
-    return blockadd( inflate( func1, dofmap, axis ), inflate( func2, dofmap, axis ) )
+    self.funcs = tuple( funcs )
+    shape = _jointshape( *( func.shape for func in self.funcs ) )
+    ArrayFunc.__init__( self, args=funcs, shape=shape )
 
-  def _align( self, axes, ndim ):
-    func1, func2 = self.funcs
-    return blockadd( align(func1,axes,ndim), align(func2,axes,ndim) )
+  def evalf( self, *args ):
+    assert all( arg.ndim == self.ndim+1 for arg in args )
+    return functools.reduce( operator.add, args )
 
   def _add( self, other ):
-    func1, func2 = self.funcs
-    if not _isfunc( other ) and not _isfunc( func2 ):
-      return blockadd( func1, numpy.add( func2, other ) )
-    func1_other = _call( func1, '_add', other )
-    if func1_other is not None:
-      return blockadd( func1_other, func2 )
-    func2_other = _call( func2, '_add', other )
-    if func2_other is not None:
-      return blockadd( func1, func2_other )
     return blockadd( self, other )
 
   def _dot( self, other, naxes ):
-    func1, func2 = self.funcs
     n = numpy.arange( self.ndim-naxes, self.ndim )
-    dot1, dot2 = _sorted( dot(func1,other,n), dot(func2,other,n) )
-    return BlockAdd( dot1, dot2 )
+    return blockadd( *( dot( func, other, n ) for func in self.funcs ) )
+
+  def _edit( self, op ):
+    return blockadd( *map( op, self.funcs ) )
+
+  def _sum( self, axis ):
+    return blockadd( *( sum( func, axis ) for func in self.funcs ) )
+
+  def _localgradient( self, ndims ):
+    return blockadd( *( localgradient( func, ndims ) for func in self.funcs ) )
+
+  def _get( self, i, item ):
+    return blockadd( *( get( func, i, item ) for func in self.funcs ) )
+
+  def _takediag( self ):
+    return blockadd( *( takediag( func ) for func in self.funcs ) )
+
+  def _take( self, indices, axis ):
+    return blockadd( *( take( func, indices, axis ) for func in self.funcs ) )
+
+  def _align( self, axes, ndim ):
+    return blockadd( *( align( func, axes, ndim ) for func in self.funcs ) )
+
+  def _multiply( self, other ):
+    return blockadd( *( multiply( func, other ) for func in self.funcs ) )
+
+  def _inflate( self, dofmap, axis ):
+    return blockadd( *( inflate( func, dofmap, axis ) for func in self.funcs ) )
 
   @property
   def blocks( self ):
-    func1, func2 = self.funcs
-    for ind, f in blocks( func1 ):
-      yield ind, f
-    for ind, f in blocks( func2 ):
-      yield ind, f
-
-  def _edit( self, op ):
-    func1, func2 = self.funcs
-    return blockadd( op(func1), op(func2) )
+    for func in self.funcs:
+      for ind, f in blocks( func ):
+        yield ind, f
 
 class Dot( ArrayFunc ):
   'dot'
@@ -3101,8 +3110,30 @@ def add( arg1, arg2 ):
 
   return Add( *_sorted(arg1,arg2) )
 
-def blockadd( arg1, arg2 ):
-  return BlockAdd( *_sorted( arg1, arg2 ) )
+def blockadd( *args ):
+  args = tuple( itertools.chain( *( arg.funcs if isinstance( arg, BlockAdd ) else [arg] for arg in args ) ) )
+  # group all `Inflate` objects with the same axis and dofmap
+  inflates = collections.OrderedDict()
+  for arg in args:
+    key = []
+    while isinstance( arg, Inflate ):
+      key.append( ( arg.dofmap, arg.axis ) )
+      arg = arg.func
+    inflates.setdefault( tuple(key), [] ).append( arg )
+  # add inflate args with the same axis and dofmap, blockadd the remainder
+  args = []
+  for key, values in inflates.items():
+    if key is ():
+      continue
+    arg = functools.reduce( operator.add, values )
+    for dofmap, axis in reversed( key ):
+      arg = inflate( arg, dofmap, axis )
+    args.append( arg )
+  args.extend( inflates.get( (), () ) )
+  if len( args ) == 1:
+    return args[0]
+  else:
+    return BlockAdd( args )
 
 def power( arg, n ):
   'power'
