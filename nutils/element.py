@@ -1207,15 +1207,15 @@ class MosaicReference( Reference ):
       newedges = [ ( etrans1, etrans2, edge ) for (etrans1,orig), new in zip( baseref.edges, edge_refs ) for etrans2, edge in new.edges[orig.nedges:] ]
       for (iedge1,iedge2), (jedge1,jedge2) in baseref.ribbons:
         Ei = edge_refs[iedge1]
-        ei = Ei and Ei.edge_refs[iedge2]
+        ei = Ei.edge_refs[iedge2] if Ei else EmptyReference(Ei.ndims-1)
         Ej = edge_refs[jedge1]
-        ej = Ej and Ej.edge_refs[jedge2]
-        if ej and not ei:
-          newedges.append(( self.edge_transforms[jedge1], Ej.edge_transforms[jedge2], ej ))
-        elif ei and not ej:
-          newedges.append(( self.edge_transforms[iedge1], Ei.edge_transforms[iedge2], ei ))
-        elif ei and ej:
-          assert ei == ej
+        ej = Ej.edge_refs[jedge2] if Ej else EmptyReference(Ej.ndims-1)
+        ejsubi = ej - ei
+        if ejsubi:
+          newedges.append(( self.edge_transforms[jedge1], Ej.edge_transforms[jedge2], ejsubi ))
+        eisubj = ei - ej
+        if eisubj:
+          newedges.append(( self.edge_transforms[iedge1], Ei.edge_transforms[iedge2], eisubj ))
 
       extrudetrans = transform.affine( numpy.eye(baseref.ndims-1)[:,:-1], numpy.zeros(baseref.ndims-1), isflipped=False )
       tip = numpy.array( [0]*(baseref.ndims-2)+[1], dtype=float )
