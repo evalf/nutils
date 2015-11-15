@@ -1413,10 +1413,8 @@ def common_refine( topo1, topo2 ):
       commonelem.append( elem1 )
       topo2trans[ head ] = None
   commonelem.extend( elem for elem in topo2trans.values() if elem is not None )
-  base1 = topo1.basetopo if isinstance( topo1, HierarchicalTopology ) else topo1
-  base2 = topo2.basetopo if isinstance( topo2, HierarchicalTopology ) else topo2
-  assert base1 == base2
-  commontopo = HierarchicalTopology( base1, commonelem )
+  basetopo = topo1.basetopo if isinstance( topo1, HierarchicalTopology ) else topo1
+  commontopo = HierarchicalTopology( basetopo, commonelem )
   if isrevolved:
     commontopo = RevolvedTopology( commontopo )
   return commontopo
