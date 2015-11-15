@@ -435,6 +435,7 @@ def run( *functions ):
   localtime = time.localtime()
   timepath = time.strftime( '%Y/%m/%d/%H-%M-%S/', localtime )
   outdir = properties.get( 'outdir', None )
+  token = '{:.0f}'.format( time.mktime(localtime) ) # added as argument to log.html as yet another non-caching measure
 
   if outdir is None:
     # `outdir` not specified on the commandline, use default directory layout
@@ -484,7 +485,7 @@ def run( *functions ):
   htmlfile.write( '<link rel="stylesheet" type="text/css" href="../../../../../style.css">\n' )
   htmlfile.write( '<link rel="stylesheet" type="text/css" href="../../../../../custom.css">\n' )
   htmlfile.write( '</head><body><pre>\n' )
-  htmlfile.write( '<span id="navbar">goto: <a class="nav_latest" href="../../../../log.html">latest %s</a> | <a class="nav_latestall" href="../../../../../log.html">latest overall</a> | <a class="nav_index" href="../../../../../">index</a></span>\n\n' % scriptname )
+  htmlfile.write( '<span id="navbar">goto: <a class="nav_latest" href="../../../../log.html?{1:}">latest {0:}</a> | <a class="nav_latestall" href="../../../../../log.html?{1:}">latest overall</a> | <a class="nav_index" href="../../../../../">index</a></span>\n\n'.format( scriptname, token ) )
   htmlfile.flush()
 
   try:
