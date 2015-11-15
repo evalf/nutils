@@ -131,3 +131,29 @@ def specialcases():
       @unittest( how + str(maxrefine) )
       def inter_elem_3d():
         domain.trim( z-.75+eps*perturb, maxrefine=maxrefine )
+
+
+@register
+def setoperations():
+
+  domain, geom = mesh.rectilinear( [[-.5,-1./6,1./6,.5]]*2 ) # unit square
+  x, y = geom
+  bottomright = domain.trim( x-y, maxrefine=0, name='trim1' )
+  right = bottomright.trim( x+y, maxrefine=0, name='trim2' )
+  bottom = bottomright - right
+  topleft = domain - bottomright
+  top = topleft.trim( x+y, maxrefine=0, name='trim2' )
+  left = topleft - top
+
+  Lexact = 1+numpy.sqrt(2)
+  for name, dom in ('left',left), ('top',top), ('right',right), ('bottom',bottom):
+    @unittest( name )
+    def check():
+      L = dom.boundary.integrate( 1, geometry=geom, ischeme='gauss1' )
+      assert numpy.isclose( L, 1+numpy.sqrt(2)  ), 'full boundary: wrong length: {} != {}'.format( L, 1+numpy.sqrt(2) )
+      L = dom.boundary[name].integrate( 1, geometry=geom, ischeme='gauss1' )
+      assert numpy.isclose( L, 1  ), '{}: wrong length: {} != {}'.format( name, L, 1 )
+      L = dom.boundary['trim1'].integrate( 1, geometry=geom, ischeme='gauss1' )
+      assert numpy.isclose( L, .5*numpy.sqrt(2)  ), 'trim1: wrong length: {} != {}'.format( L, .5*numpy.sqrt(2) )
+      L = dom.boundary['trim2'].integrate( 1, geometry=geom, ischeme='gauss1' )
+      assert numpy.isclose( L, .5*numpy.sqrt(2)  ), 'trim2: wrong length: {} != {}'.format( L, .5*numpy.sqrt(2) )

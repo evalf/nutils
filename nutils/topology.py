@@ -1250,7 +1250,7 @@ class TrimmedTopology( Topology ):
     refs = [ elem.reference - ref for elem, ref in zip( self.basetopo, self.__refs ) ]
     return TrimmedTopology( self.basetopo, refs, self.trimname )
 
-  __sub__ = lambda self, other: self._inverse if isinstance( other, TrimmedTopology ) and other.basetopo == self else Topology.__sub__( self, other )
+  __sub__ = lambda self, other: other._inverse if isinstance( other, TrimmedTopology ) and other.basetopo == self else Topology.__sub__( self, other )
   __rsub__ = lambda self, other: self._inverse if other == self.basetopo else Topology.__rsub__( self, other )
 
   @cache.property
