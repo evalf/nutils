@@ -470,8 +470,11 @@ def run( *functions ):
              + '<meta http-equiv="pragma" content="no-cache" />\n' \
              + '<meta http-equiv="refresh" content="0;URL=%slog.html" />\n</head>\n</html>\n'
 
-    print( redirect % ( scriptname + '/' + timepath ), file=open( outrootdir+'log.html', 'w' ) )
-    print( redirect % ( timepath ), file=open( basedir+'log.html', 'w' ) )
+    with open( outrootdir+'log.html', 'w' ) as redirlog1:
+      print( redirect % ( scriptname + '/' + timepath ), file=redirlog1 )
+
+    with open( basedir+'log.html', 'w' ) as redirlog2:
+      print( redirect % ( timepath ), file=redirlog2 )
 
   elif not os.path.isdir( outdir ):
     # use custom directory layout, skip creating symlinks, redirects

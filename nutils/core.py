@@ -34,7 +34,8 @@ for nutilsrc in ['~/.config/nutils/config', '~/.nutilsrc']:
   if not os.path.isfile( nutilsrc ):
     continue
   try:
-    exec( open(nutilsrc).read(), {}, globalproperties )
+    with open(nutilsrc) as rc:
+      exec( rc.read(), {}, globalproperties )
   except:
     exc_value, frames = sys.exc_info()
     exc_str = '\n'.join( [ repr(exc_value) ] + [ str(f) for f in frames ] )
