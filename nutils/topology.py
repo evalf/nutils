@@ -524,14 +524,16 @@ class Topology( object ):
       W = numpy.zeros( onto.shape[0] )
       I = numpy.zeros( onto.shape[0], dtype=bool )
       fun = function.asarray( fun )
-      data = function.Tuple( function.Tuple([ fun, f, ind ]) for ind, f in function.blocks( onto ) )
+      data = function.Tuple( function.Tuple([ fun, onto_f, onto_ind ]) for onto_ind, onto_f in function.blocks( onto ) )
       for elem in self:
-        for f, w, ind in data.eval( elem, 'bezier2' ):
-          w = w.swapaxes(0,1) # -> dof axis, point axis, ...
-          wf = w * f[ (slice(None),)+numpy.ix_(*ind[1:]) ]
-          W[ind[0]] += w.reshape(w.shape[0],-1).sum(1)
-          F[ind[0]] += wf.reshape(w.shape[0],-1).sum(1)
-          I[ind[0]] = True
+        for fun_, onto_f_, onto_ind_ in data.eval( elem, 'bezier2' ):
+          onto_f_ = onto_f_.swapaxes(0,1) # -> dof axis, point axis, ...
+          indfun_ = fun_[ (slice(None),)+numpy.ix_(*onto_ind_[1:]) ]
+          assert onto_f_.shape[0] == len(onto_ind_[0])
+          assert onto_f_.shape[1:] == indfun_.shape
+          W[onto_ind_[0]] += onto_f_.reshape(onto_f_.shape[0],-1).sum(1)
+          F[onto_ind_[0]] += ( onto_f_ * indfun_ ).reshape(onto_f_.shape[0],-1).sum(1)
+          I[onto_ind_[0]] = True
 
       I[constrain.where] = False
       constrain[I] = F[I] / W[I]
