@@ -412,6 +412,9 @@ class ArrayFunc( Evaluable ):
   def __getitem__( self, item ):
     'get item, general function which can eliminate, add or modify axes.'
 
+    if isinstance( item, str ):
+      from . import index
+      return index.wrap( self, item )
     myitem = list( item if isinstance( item, tuple ) else [item] )
     n = 0
     arr = self
