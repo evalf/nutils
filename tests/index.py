@@ -23,6 +23,7 @@ def indexedarray():
 
   domain, geom = mesh.rectilinear( [3,3,3] )
   basis = domain.basis( 'spline', degree=3 )
+  surface = function.concatenate([geom, [1]])
 
   a = geom
   b = geom**2
@@ -110,3 +111,15 @@ def indexedarray():
   @unittest
   def surfgrad():
     assert d['i;j'].unwrap(geom) == d.grad(geom, -1)
+
+  @unittest
+  def domain_integrate():
+    x = domain.integrate( d['i,k']*d['j,k'], geometry=geom, ischeme='gauss3' )
+    y = domain.integrate( function.outer( d.grad(geom) ).sum(2), geometry=geom, ischeme='gauss3' )
+    numpy.testing.assert_almost_equal( x.toscipy().todense(), y.toscipy().todense() )
+
+  @unittest
+  def surface_integrate():
+    x = domain.integrate( d['i;k']*d['j;k'], geometry=surface, ischeme='gauss3' )
+    y = domain.integrate( function.outer( d.grad(surface, -1) ).sum(2), geometry=surface, ischeme='gauss3' )
+    numpy.testing.assert_almost_equal( x.toscipy().todense(), y.toscipy().todense() )
