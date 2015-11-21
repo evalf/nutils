@@ -2,7 +2,7 @@
 
 from nutils import *
 from . import register, unittest
-import numpy, copy
+import numpy, copy, sys, pickle, subprocess, base64
 
 grid = numpy.linspace( 0., 1., 4 )
 
@@ -113,3 +113,35 @@ def structure2d():
     x1, x2, n1, n2 = domain.interfaces.elem_eval( [ geom, function.opposite(geom), geom.normal(), function.opposite(geom.normal()) ], 'gauss2', separate=False )
     assert numpy.all( x1 == x2 )
     assert numpy.all( n1 == -n2 )
+
+def _test_pickle_dump_load( data ):
+  if sys.version_info.major == 2:
+    script = b'from nutils import *\nimport pickle, base64\npickle.loads( base64.decodestring( """' \
+      + base64.encodestring( pickle.dumps( data, 2 ) ) \
+      + b'""" ) )'
+  else:
+    script = b'from nutils import *\nimport pickle, base64\npickle.loads( base64.decodebytes( b"""' \
+      + base64.encodebytes( pickle.dumps( data ) ) \
+      + b'""" ) )'
+  p = subprocess.Popen( [ sys.executable ], stdin=subprocess.PIPE )
+  p.communicate( script )
+  assert p.wait() == 0, 'unpickling failed'
+
+@register
+def picklability():
+
+  @unittest
+  def domain():
+    domain, geom = mesh.rectilinear( [[0,1,2]]*2 )
+    _test_pickle_dump_load( domain )
+
+  @unittest
+  def geom():
+    domain, geom = mesh.rectilinear( [[0,1,2]]*2 )
+    _test_pickle_dump_load( geom )
+
+  @unittest
+  def basis():
+    domain, geom = mesh.rectilinear( [[0,1,2]]*2 )
+    basis = domain.basis( 'spline', degree=2 )
+    _test_pickle_dump_load( basis )

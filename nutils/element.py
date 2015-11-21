@@ -40,6 +40,9 @@ class Element( object ):
         opposite = None
     self.__opposite = opposite
 
+  def __getnewargs__( self ):
+    return self.reference, self.transform, self.__opposite
+
   @property
   def opposite( self ):
     return self.__opposite or self.transform
@@ -1357,6 +1360,9 @@ class PolyProduct( StdElem ):
     self.std2 = std2
     StdElem.__init__( self, std1.ndims+std2.ndims, std1.nshapes*std2.nshapes )
 
+  def __getnewargs__( self ):
+    return self.std1, self.std2
+
   def eval( self, points, grad=0 ):
     'evaluate'
     # log.debug( '@ PolyProduct.eval: ', id(self), id(points), id(grad) )
@@ -1510,6 +1516,9 @@ class PolyLine( StdElem ):
     self.degree = order - 1
     StdElem.__init__( self, ndims=1, nshapes=nshapes )
 
+  def __getnewargs__( self ):
+    return self.poly,
+
   def eval( self, points, grad=0 ):
     'evaluate'
 
@@ -1554,6 +1563,9 @@ class PolyTriangle( StdElem ):
     assert order == 1
     StdElem.__init__( self, ndims=2, nshapes=3 )
 
+  def __getnewargs__( self ):
+    return 1,
+
   def eval( self, points, grad=0 ):
     'eval'
 
@@ -1580,6 +1592,9 @@ class BubbleTriangle( StdElem ):
 
   def __init__( self ):
     StdElem.__init__( self, ndims=2, nshapes=4 )
+
+  def __getnewargs__( self ):
+    return ()
 
   def eval( self, points, grad=0 ):
     'eval'
@@ -1623,6 +1638,9 @@ class ExtractionWrapper( StdElem ):
     self.stdelem = stdelem
     self.extraction = extraction
     StdElem.__init__( self, stdelem.ndims, extraction.shape[1] )
+
+  def __getnewargs__( self ):
+    return self.stdelem, self.extraction
 
   def extract( self, extraction ):
     return ExtractionWrapper( self.stdelem, numpy.dot( self.extraction, extraction ) )
