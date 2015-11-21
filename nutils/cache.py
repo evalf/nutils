@@ -57,7 +57,11 @@ def argdict( f ):
     return value
   return f_wrapped
 
-class HashableArray( object ):
+class HashableBase( object ):
+
+  pass
+
+class HashableArray( HashableBase ):
   # FRAGILE: assumes contents are not going to be changed
   def __init__( self, array ):
     self.array = array
@@ -68,22 +72,34 @@ class HashableArray( object ):
     # check full array only if we really must
     return isinstance(other,HashableArray) and ( self.array is other.array
       or self.quickdata == other.quickdata and numpy.all( self.array == other.array ) )
+  @property
+  def _orig( self ):
+    return self.array
   
-class HashableList( tuple ):
+class HashableList( tuple, HashableBase ):
   def __new__( cls, L ):
     return tuple.__new__( cls, map( _hashable, L ) )
+  @property
+  def _orig( self ):
+    return list( self )
 
-class HashableDict( frozenset ):
+class HashableDict( frozenset, HashableBase ):
   def __new__( cls, D ):
-    return frozenset.__new__( cls, map( _hashable, D.items() ) )
+    return frozenset.__new__( cls, map( _hashable, D if isinstance( D, frozenset ) else dict( D ).items() ) )
+  @property
+  def _orig( self ):
+    return dict( self )
 
-class HashableAny( object ):
+class HashableAny( HashableBase ):
   def __init__( self, obj ):
     self.obj = obj
   def __hash__( self ):
     return hash( id(self.obj) )
   def __eq__( self, other ):
     return isinstance(other,HashableAny) and self.obj is other.obj
+  @property
+  def _orig( self ):
+    return self.obj
 
 def _hashable( obj ):
   try:
@@ -207,7 +223,7 @@ except SyntaxError:
 def findargs( self ):
   for args, obj in self.__class__.cache.items():
     if obj is self:
-      return args
+      return tuple( arg._orig if isinstance( arg, HashableBase ) else arg for arg in args )
   raise ValueError( 'object missing from cache' )
 
 def immutable_str( self ):
@@ -219,7 +235,7 @@ def immutable_str( self ):
     s = '{}({})'.format( self.__class__.__name__, ','.join( str(arg) for arg in args ) )
   return s
 
-Immutable.__reduce__ = lambda self: ( self.__class__, findargs(self) )
+Immutable.__getnewargs__ = findargs
 Immutable.__str__ = immutable_str
 
 class FileCache( object ):
