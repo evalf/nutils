@@ -227,7 +227,7 @@ class TransformItem( cache.Immutable ):
 class Shift( TransformItem ):
 
   def __init__( self, offset ):
-    self.linear = self.invlinear = self.det = 1.
+    self.linear = self.invlinear = self.det = numpy.array(1.)
     self.offset = offset
     self.isflipped = False
     assert offset.ndim == 1
