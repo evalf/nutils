@@ -42,8 +42,6 @@ def rectilinear( richshape, periodic=(), name='rect', revolved=False ):
     else:
       shape.append( len(v)-1 )
       uniform = False
-  indices = numeric.grid( shape )
-  structure = numpy.empty( indices.shape[1:], dtype=object )
 
   if isinstance( name, str ):
     wrap = tuple( sh if i in periodic else 0 for i, sh in enumerate(shape) )
@@ -52,10 +50,9 @@ def rectilinear( richshape, periodic=(), name='rect', revolved=False ):
     assert all( ( name.take(0,i) == name.take(2,i) ).all() for i in periodic )
     root = transform.roottransedges( name, shape )
 
-  reference = element.getsimplex(1)**ndims
-  for index in indices.reshape( ndims, -1 ).T:
-    structure[tuple(index)] = element.Element( reference, root << transform.affine(0,index) )
-  topo = topology.StructuredTopology( structure, periodic=periodic )
+  extent = [ topology.DimProps(0,n,idim in periodic) for idim, n in enumerate(shape) ]
+  topo = topology.StructuredTopology( root, extent )
+
   if uniform:
     if all( o == offset[0] for o in offset[1:] ):
       offset = offset[0]

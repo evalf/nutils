@@ -69,15 +69,18 @@ from . import register, unittest
 @register( 'eig', lambda a: function.eig(a,symmetric=False)[1], lambda a: numpy.array([ numpy.linalg.eig(ai)[1] for ai in a ]), [(3,3)], hasgrad=False )
 def check( op, n_op, shapes, hasgrad=True ):
 
+  anchor = transform.roottrans( 'test', (0,0) )
   roottrans = transform.affine( [[0,1],[-1,0]], [1,0] ) >> transform.affine( [[2,1],[-1,3]], [1,0] )
-  elem = element.Element( element.getsimplex(1)**2, roottrans >> transform.roottrans( 'test', (0,0) ) )
+  extent = topology.DimProps(0,1,False), topology.DimProps(0,1,False)
+  domain = topology.StructuredTopology( root=anchor<<roottrans, extent=extent )
+  elem, = domain
   iface = element.Element( elem.edge(0).reference, elem.edge(0).transform, elem.edge(1).transform )
   ifpoints, ifweights = iface.reference.getischeme('uniform2')
 
   r, theta = function.ElemFunc( 2 ) # corners at (0,0), (0,1), (1,1), (1,0)
   geom = r * function.stack([ function.cos(theta), function.sin(theta) ])
 
-  funcsp = topology.StructuredTopology([[ elem ]]).splinefunc( (1,2) )
+  funcsp = domain.basis( 'spline', degree=(1,2) )
 
   numpy.random.seed(0)
   args = [ ( numpy.random.uniform( size=shape+(funcsp.shape[0],) ) * funcsp ).sum() for shape in shapes ]
