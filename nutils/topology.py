@@ -709,18 +709,20 @@ class StructuredTopology( Topology ):
     self.root = root
     self.extent = tuple(extent)
     self.nrefine = nrefine
-    ndims = sum( props.isdim for props in self.extent )
-    Topology.__init__( self, ndims, groups=groups )
+    self._shape = tuple( props.j - props.i for props in self.extent if props.isdim )
+    Topology.__init__( self, len(self._shape), groups=groups )
 
   def __iter__( self ):
-    return self.structure.flat
+    reference = element.getsimplex(1)**self.ndims
+    return ( element.Element( reference, trans ) for trans in self._structure.flat )
 
   def __len__( self ):
-    return self.structure.size
+    return numpy.prod( self._shape )
 
   def getelem( self, index ):
     assert isinstance( index, int )
-    return self.structure.flat[index]
+    reference = element.getsimplex(1)**self.ndims
+    return element.Element( reference, self._structure.flat[index] )
 
   def __getitem__( self, item ):
     'subtopology'
@@ -777,6 +779,7 @@ class StructuredTopology( Topology ):
 
   @property
   def structure( self ):
+    warnings.warn( 'topology.structure will be removed in future', DeprecationWarning )
     reference = element.getsimplex(1)**self.ndims
     @numeric.broadcasted
     def mkelem( trans ):
@@ -804,16 +807,13 @@ class StructuredTopology( Topology ):
     for idim in range(self.ndims):
       if idim in self.periodic:
         t1 = (slice(None),)*idim + (slice(None),)
-        t2 = (slice(None),)*idim + (numpy.array( list(range(1,self.structure.shape[idim])) + [0] ),)
+        t2 = (slice(None),)*idim + (numpy.array( list(range(1,self._shape[idim])) + [0] ),)
       else:
         t1 = (slice(None),)*idim + (slice(-1),)
         t2 = (slice(None),)*idim + (slice(1,None),)
       trans1, trans2 = ref.edge_transforms[idim*2:idim*2+2]
-      ielems = []
-      for elem1, elem2 in numpy.broadcast( self.structure[t1], self.structure[t2] ):
-        assert elem1.transform == elem1.opposite
-        assert elem2.transform == elem2.opposite
-        ielems.append( element.Element( edge, elem1.transform << trans1, elem2.transform << trans2 ) )
+      ielems = [ element.Element( edge, elem1trans << trans1, elem2trans << trans2 )
+        for elem1trans, elem2trans in numpy.broadcast( self._structure[t1], self._structure[t2] ) ]
       groups[ 'dir{}'.format(idim) ] = UnstructuredTopology( self.ndims-1, ielems )
     return GroupedTopology( groups )
 
@@ -837,7 +837,7 @@ class StructuredTopology( Topology ):
 
     for idim in range( self.ndims ):
       periodic_i = idim in periodic
-      n = self.structure.shape[idim]
+      n = self._shape[idim]
       p = degree[idim]
       #k = knots[idim]
 
@@ -873,31 +873,19 @@ class StructuredTopology( Topology ):
 
     dofmap = {}
     funcmap = {}
-    hasnone = False
-    for item in numpy.broadcast( self.structure, stdelems, *numpy.ix_(*slices) ):
-      elem = item[0]
+    for item in numpy.broadcast( self._structure, stdelems, *numpy.ix_(*slices) ):
+      trans = item[0]
       std = item[1]
-      if elem is None:
-        hasnone = True
+      S = item[2:]
+      dofs = vertex_structure[S].ravel()
+      mask = dofs >= 0
+      if mask.all():
+        dofmap[trans] = dofs
+        funcmap[trans] = (std,None),
       else:
-        S = item[2:]
-        dofs = vertex_structure[S].ravel()
-        mask = dofs >= 0
-        if mask.all():
-          dofmap[elem.transform] = dofs
-          funcmap[elem.transform] = (std,None),
-        else:
-          assert mask.any()
-          dofmap[elem.transform] = dofs[mask]
-          funcmap[elem.transform] = (std,mask),
-
-    if hasnone:
-      touched = numpy.zeros( dofcount, dtype=bool )
-      for dofs in dofmap.itervalues():
-        touched[ dofs ] = True
-      renumber = touched.cumsum()
-      dofcount = int(renumber[-1])
-      dofmap = dict( ( trans, renumber[dofs]-1 ) for trans, dofs in dofmap.items() )
+        assert mask.any()
+        dofmap[trans] = dofs[mask]
+        funcmap[trans] = (std,mask),
 
     return function.function( funcmap, dofmap, dofcount, self.ndims )
 
@@ -924,7 +912,7 @@ class StructuredTopology( Topology ):
     cache = {}
     for idim in range( self.ndims ):
       p = degree[idim]
-      n = self.structure.shape[idim]
+      n = self._shape[idim]
       isperiodic = idim in periodic
 
       k = knotvalues[idim]
@@ -993,17 +981,17 @@ class StructuredTopology( Topology ):
       slices.append(slices_i)
 
     #Cache effectivity
-    log.debug( 'Local knot vector cache effectivity: %d' % (100*(1.-len(cache)/float(sum(self.structure.shape)))) )
+    log.debug( 'Local knot vector cache effectivity: %d' % (100*(1.-len(cache)/float(sum(self._shape)))) )
 
     dofmap = {}
     funcmap = {}
-    for item in numpy.broadcast( self.structure, stdelems, *numpy.ix_(*slices) ):
-      elem = item[0]
+    for item in numpy.broadcast( self._structure, stdelems, *numpy.ix_(*slices) ):
+      trans = item[0]
       std = item[1]
       S = item[2:]
       dofs = vertex_structure[S].ravel()
-      dofmap[elem.transform] = dofs
-      funcmap[elem.transform] = (std,None),
+      dofmap[trans] = dofs
+      funcmap[trans] = (std,None),
 
     return function.function( funcmap, dofmap, dofcount, self.ndims )
 
@@ -1080,7 +1068,7 @@ class StructuredTopology( Topology ):
     stdelem = util.product( element.PolyLine( element.PolyLine.bernstein_poly( d ) ) for d in degree )
 
     for idim in range( self.ndims ):
-      n = self.structure.shape[idim]
+      n = self._shape[idim]
       p = degree[idim]
 
       nd = n * p + 1
@@ -1103,29 +1091,17 @@ class StructuredTopology( Topology ):
 
     dofmap = {}
     funcmap = {}
-    hasnone = False
-    for item in numpy.broadcast( self.structure, *numpy.ix_(*slices) ):
-      elem = item[0]
-      if elem is None:
-        hasnone = True
-      else:
-        S = item[1:]
-        dofs = vertex_structure[S].ravel()
-        mask = dofs >= 0
-        if mask.all():
-          dofmap[ elem.transform ] = dofs
-          funcmap[ elem.transform ] = (stdelem,None),
-        elif mask.any():
-          dofmap[ elem.transform ] = dofs[mask]
-          funcmap[ elem.transform ] = (stdelem,mask),
-
-    if hasnone:
-      touched = numpy.zeros( dofcount, dtype=bool )
-      for dofs in dofmap.itervalues():
-        touched[ dofs ] = True
-      renumber = touched.cumsum()
-      dofcount = int(renumber[-1])
-      dofmap = { trans: renumber[dofs]-1 for trans, dofs in dofmap.items() }
+    for item in numpy.broadcast( self._structure, *numpy.ix_(*slices) ):
+      trans = item[0]
+      S = item[1:]
+      dofs = vertex_structure[S].ravel()
+      mask = dofs >= 0
+      if mask.all():
+        dofmap[ trans ] = dofs
+        funcmap[ trans ] = (stdelem,None),
+      elif mask.any():
+        dofmap[ trans ] = dofs[mask]
+        funcmap[ trans ] = (stdelem,mask),
 
     return function.function( funcmap, dofmap, dofcount, self.ndims )
 
@@ -1141,12 +1117,7 @@ class StructuredTopology( Topology ):
   def __str__( self ):
     'string representation'
 
-    return '%s(%s)' % ( self.__class__.__name__, 'x'.join( str(n) for n in self.structure.shape ) )
-
-  @cache.property
-  def multiindex( self ):
-    'Inverse map of self.structure: given an element find its location in the structure.'
-    return dict( (self.structure[alpha], alpha) for alpha in numpy.ndindex( self.structure.shape ) )
+    return '%s(%s)' % ( self.__class__.__name__, 'x'.join( str(n) for n in self._shape ) )
 
 class GroupedTopology( Topology ):
   'grouped topology'
