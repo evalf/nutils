@@ -95,6 +95,8 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
 
   """
 
+  ndims = 2
+
   if isinstance( tags, str ):
     warnings.warn('String format for groups is depricated, please use dictionary format instead with (key,value)=(physical ID,group name)',DeprecationWarning)
     tags = { i+1: tag for i, tag in enumerate( tags.split(',') ) }
@@ -217,12 +219,12 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
     else:
       raise NotImplementedError('Unknown GMSH element type %i' % etype)
 
-  topo = topology.Topology( elems.values() )
+  topo = topology.UnstructuredTopology( ndims, elems.values() )
   for group, grouptopo in elemgroups.items():
-    topo[group] = topology.Topology( grouptopo )
+    topo[group] = topology.UnstructuredTopology( ndims, grouptopo )
 
-  topo.boundary = topology.Topology( edges.values() )
-  topo.interfaces = topology.Topology( ifaces.values() )
+  topo.boundary = topology.UnstructuredTopology( ndims-1, edges.values() )
+  topo.interfaces = topology.UnstructuredTopology( ndims-1, ifaces.values() )
   for group, keys in edgegroups.items():
     bgrouptopo = []
     igrouptopo = []
@@ -232,13 +234,13 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
       except KeyError:
         igrouptopo.append( ifaces[key] )
     if bgrouptopo:
-      topo.boundary[group] = topology.Topology( bgrouptopo )
+      topo.boundary[group] = topology.UnstructuredTopology( ndims-1, bgrouptopo )
     if igrouptopo:
-      topo.interfaces[group] = topology.Topology( igrouptopo )
+      topo.interfaces[group] = topology.UnstructuredTopology( ndims-1, igrouptopo )
 
-  topo.points = topology.Topology( [vertex for vertexkeys in vertexgroups.values() for vertexkey in vertexkeys for vertex in vertices[vertexkey]], ndims=0 )
+  topo.points = topology.UnstructuredTopology( 0, [vertex for vertexkeys in vertexgroups.values() for vertexkey in vertexkeys for vertex in vertices[vertexkey]] )
   for group, vertexkeys in vertexgroups.items():
-    topo.points[group] = topology.Topology([vertex for vertexkey in vertexkeys for vertex in vertices[vertexkey]])
+    topo.points[group] = topology.UnstructuredTopology( 0, [vertex for vertexkey in vertexkeys for vertex in vertices[vertexkey]] )
 
   for tag in tags.values():
     if tag not in topo.groupnames and \
@@ -291,7 +293,7 @@ def triangulation( vertices, nvertices ):
     elem, iedge = bedges[ n12 ]
     structure.append( elem.edge( iedge ) )
     
-  topo = topology.Topology( nmap )
+  topo = topology.UnstructuredTopology( ndims, nmap )
   topo.boundary = topology.StructuredTopology( structure, periodic=(1,) )
   return topo
 
@@ -369,20 +371,20 @@ def igatool( path, name=None ):
     I = util.arraymap( A.GetComponent, int, range(A.GetSize()), 0 )
     if grouptype == 'edge':
       belements = [ elements[i//4].edge( renumber[i%4] ) for i in I ]
-      boundaries[ groupname ] = topology.Topology( belements )
+      boundaries[ groupname ] = topology.UnstructuredTopology( ndims-1, belements )
     elif grouptype == 'vertex':
       vertexgroups[ groupname ] = I
     elif grouptype == 'element':
-      elemgroups[ groupname ] = topology.Topology( elements[i] for i in I )
+      elemgroups[ groupname ] = topology.UnstructuredTopology( ndims, [ elements[i] for i in I ] )
     else:
       raise Exception( 'unknown group type: %r' % grouptype )
 
-  topo = topology.Topology( elements )
+  topo = topology.UnstructuredTopology( ndims, elements )
   for groupname, grouptopo in elemgroups.items():
     topo[groupname] = grouptopo
 
   if boundaries:
-    topo.boundary = topology.Topology( elem for topo in boundaries.values() for elem in topo )
+    topo.boundary = topology.UnstructuredTopology( ndims-1, [ elem for topo in boundaries.values() for elem in topo ] )
     for groupname, grouptopo in boundaries.items():
       topo.boundary[groupname] = grouptopo
 
@@ -391,9 +393,9 @@ def igatool( path, name=None ):
     for name, boundary in boundaries.items():
       belems = [ belem for belem in boundary.elements if belem.parent[0] in group ]
       if belems:
-        myboundaries[ name ] = topology.Topology( belems )
+        myboundaries[ name ] = topology.UnstructuredTopology( ndims-1, belems )
     if myboundaries:
-      group.boundary = topology.Topology( elem for topo in myboundaries.values() for elem in topo )
+      group.boundary = topology.UnstructuredTopology( ndims-1, [ elem for topo in myboundaries.values() for elem in topo ] )
       for groupname, grouptopo in myboundaries.items():
         group.boundary[groupname] = grouptopo
 
@@ -436,10 +438,10 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   belems = [ elem.edge(0) for elem in elements[:12] ]
   bgroups = { 'top': belems[0:3], 'left': belems[3:6], 'bottom': belems[6:9], 'right': belems[9:12] }
 
-  topo = topology.Topology( elements )
-  topo.boundary = topology.Topology( belems )
+  topo = topology.UnstructuredTopology( 2, elements )
+  topo.boundary = topology.UnstructuredTopology( 1, belems )
   for tag, group in bgroups.items():
-    topo.boundary[tag] = topology.Topology( group )
+    topo.boundary[tag] = topology.UnstructuredTopology( 1, group )
 
   geom = [.5*(xmin+xmax),.5*(ymin+ymax)] \
        + [.5*(xmax-xmin),.5*(ymax-ymin)] * function.ElemFunc( 2 )

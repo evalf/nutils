@@ -32,12 +32,22 @@ _identity = lambda x: x
 class Topology( object ):
   'topology base class'
 
-  def __init__( self, elements, ndims=None, groups={} ):
+  # subclass needs to implement:
+  # __iter__
+  # __len__
+  # getelem
+
+  def __init__( self, ndims, groups={} ):
     'constructor'
 
-    self.elements = tuple(elements)
-    self.ndims = self.elements[0].ndims if ndims is None else ndims # assume all equal
+    assert isinstance( ndims, int ) and ndims >= 0
+    self.ndims = ndims
     self.groups = groups.copy()
+
+  @property
+  def elements( self ):
+    warnings.warn( 'topology.elements will be removed in future; please use tuple(topology) instead', DeprecationWarning )
+    return tuple( self )
 
   @cache.property
   @log.title
@@ -66,7 +76,7 @@ class Topology( object ):
   @cache.property
   def interfaces( self ):
     edges, interfaces = self.edge_search
-    return Topology([ element.Element( edge.reference, edge.transform,
+    return UnstructuredTopology( self.ndims-1, [ element.Element( edge.reference, edge.transform,
       oppedge.transform << transform.solve( oppedge.transform, edge.transform ) )
         for edge, oppedge in interfaces ])
 
@@ -81,7 +91,7 @@ class Topology( object ):
       if inward:
         assert iface.opposite.lookup( inward.edict ), 'interface no adjacent to inward topo'
       directed.append( iface )
-    return Topology( directed )
+    return UnstructuredTopology( self.ndims, directed )
 
   @property
   def groupnames( self ):
@@ -89,24 +99,18 @@ class Topology( object ):
 
   def __contains__( self, element ):
     ielem = self.edict.get(element.transform)
-    return ielem is not None and self.elements[ielem] == element
-
-  def __len__( self ):
-    return len( self.elements )
-
-  def __iter__( self ):
-    return iter( self.elements )
+    return ielem is not None and self.getelem(ielem) == element
 
   def __add__( self, other ):
     'add topologies'
 
     assert self.ndims == other.ndims
-    return Topology( set(self) | set(other) )
+    return UnstructuredTopology( self.ndims, set(self) | set(other) )
 
   def _sub( self, other ):
     assert isinstance( other, Topology )
     assert self.ndims == other.ndims
-    refmap = { trans: other.elements[index].reference for trans, index in other.edict.items() }
+    refmap = { trans: other.getelem(index).reference for trans, index in other.edict.items() }
     refs = [ elem.reference - refmap.pop(elem.transform,elem.reference.empty) for elem in self ]
     assert not refmap, 'subtracted topology is not a subtopology'
     return TrimmedTopology( self, refs )
@@ -124,8 +128,8 @@ class Topology( object ):
     other_trans = transform.affine(eye[self.ndims:], numpy.zeros(other.ndims), isflipped=False )
 
     if any( elem.reference != quad for elem in self ) or any( elem.reference != quad for elem in other ):
-      return Topology( element.Element( elem1.reference * elem2.reference, elem1.transform << self_trans, elem2.transform << other_trans )
-        for elem1 in self for elem2 in other )
+      return UnstructuredTopology( self.ndims+other.ndims, [ element.Element( elem1.reference * elem2.reference, elem1.transform << self_trans, elem2.transform << other_trans )
+        for elem1 in self for elem2 in other ] )
 
     elements = []
     self_vertices = [ elem.vertices for elem in self ]
@@ -164,7 +168,7 @@ class Topology( object ):
         if issym:
           reference = element.NeighborhoodTensorReference( elemj.reference, elemi.reference, neighborhood, transf[::-1] )
           elements.append( element.Element( reference, elemj.transform << self_trans, elemi.transform << other_trans ) )
-    return Topology( elements )
+    return UnstructuredTopology( self.ndims+other.ndims, elements )
 
   def __getitem__( self, item ):
     'subtopology'
@@ -266,7 +270,7 @@ class Topology( object ):
   @cache.property
   def simplex( self ):
     simplices = [ simplex for elem in self for simplex in elem.simplices ]
-    return Topology( simplices )
+    return UnstructuredTopology( self.ndims, simplices )
 
   def refined_by( self, refine ):
     'create refined space by refining dofs in existing one'
@@ -438,8 +442,8 @@ class Topology( object ):
         diagelems.append( elem )
       elif head1 < head2:
         trielems.append( elem )
-    diag_data_index = Topology( diagelems, self.ndims )._integrate( integrands, ischeme )
-    tri_data_index = Topology( trielems, self.ndims )._integrate( integrands, ischeme )
+    diag_data_index = UnstructuredTopology( self.ndims, diagelems )._integrate( integrands, ischeme )
+    tri_data_index = UnstructuredTopology( self.ndims, trielems )._integrate( integrands, ischeme )
     retvals = []
     for integrand, (diagdata,diagindex), (tridata,triindex) in zip( integrands, diag_data_index, tri_data_index ):
       data = numpy.concatenate( [ diagdata, tridata, tridata ], axis=0 )
@@ -678,8 +682,23 @@ class Topology( object ):
   def indicator( self ):
     return function.Elemwise( { elem.transform: 1. for elem in self }, (), default=0. )
 
-def UnstructuredTopology( elems, ndims ):
-  return Topology( elems )
+class UnstructuredTopology( Topology ):
+  'unstructured topology'
+
+  def __init__( self, ndims, elements, groups={} ):
+    self._elements = tuple(elements)
+    assert all( elem.ndims == ndims for elem in self._elements )
+    Topology.__init__( self, ndims, groups )
+
+  def __iter__( self ):
+    return iter( self._elements )
+
+  def __len__( self ):
+    return len( self._elements )
+
+  def getelem( self, index ):
+    assert isinstance( index, int )
+    return self._elements[index]
 
 class StructuredTopology( Topology ):
   'structured topology'
@@ -690,39 +709,18 @@ class StructuredTopology( Topology ):
     self.root = root
     self.extent = tuple(extent)
     self.nrefine = nrefine
-    Topology.__init__( self, self.structure.flat, groups=groups )
+    ndims = sum( props.isdim for props in self.extent )
+    Topology.__init__( self, ndims, groups=groups )
 
-  @property
-  def periodic( self ):
-    return tuple( idim for idim, props in enumerate(self.extent) if props.isdim and props.isperiodic )
+  def __iter__( self ):
+    return self.structure.flat
 
-  @property
-  def structure( self ):
-    indices = numpy.ix_( *[ numpy.arange(props.i,props.j) if props.isdim else [props.i-props.side] for props in self.extent ] )
-    updim = transform.identity
-    ndims = len(self.extent)
-    active = numpy.ones( ndims, dtype=bool )
-    for order, side, i, idim in sorted( (props.order,props.side,props.i,idim) for idim, props in enumerate(self.extent) if not props.isdim ):
-      where = (numpy.arange(len(active))[active]==idim)
-      matrix = numpy.eye(ndims)[:,~where]
-      offset = where.astype(float) if side else numpy.zeros(ndims)
-      updim <<= transform.affine(matrix,offset,isflipped=(idim%2==1)==side)
-      ndims -= 1
-      active[idim] = False
+  def __len__( self ):
+    return self.structure.size
 
-    reference = element.getsimplex(1)**ndims
-
-    @numeric.broadcasted
-    def mkelem( *index ):
-      index = numpy.array( index )
-      trans = transform.identity
-      for irefine in range( self.nrefine ):
-        index, offset = divmod( index, 2 )
-        trans >>= transform.affine( .5, .5*offset )
-      trans >>= transform.affine( 0, index )
-      return element.Element( reference, self.root << trans << updim )
-
-    return mkelem( *indices )
+  def getelem( self, index ):
+    assert isinstance( index, int )
+    return self.structure.flat[index]
 
   def __getitem__( self, item ):
     'subtopology'
@@ -747,6 +745,44 @@ class StructuredTopology( Topology ):
       extent.append( props )
     return StructuredTopology( self.root, extent, self.nrefine )
 
+  @property
+  def periodic( self ):
+    return tuple( idim for idim, props in enumerate(self.extent) if props.isdim and props.isperiodic )
+
+  @cache.property
+  def _structure( self ):
+    indices = numpy.ix_( *[ numpy.arange(props.i,props.j) if props.isdim else [props.i-props.side] for props in self.extent ] )
+    updim = transform.identity
+    ndims = len(self.extent)
+    active = numpy.ones( ndims, dtype=bool )
+    for order, side, i, idim in sorted( (props.order,props.side,props.i,idim) for idim, props in enumerate(self.extent) if not props.isdim ):
+      where = (numpy.arange(len(active))[active]==idim)
+      matrix = numpy.eye(ndims)[:,~where]
+      offset = where.astype(float) if side else numpy.zeros(ndims)
+      updim <<= transform.affine(matrix,offset,isflipped=(idim%2==1)==side)
+      ndims -= 1
+      active[idim] = False
+
+    @numeric.broadcasted
+    def mktrans( *index ):
+      index = numpy.array( index )
+      trans = transform.identity
+      for irefine in range( self.nrefine ):
+        index, offset = divmod( index, 2 )
+        trans >>= transform.affine( .5, .5*offset )
+      trans >>= transform.affine( 0, index )
+      return self.root << trans << updim
+
+    return mktrans( *indices )
+
+  @property
+  def structure( self ):
+    reference = element.getsimplex(1)**self.ndims
+    @numeric.broadcasted
+    def mkelem( trans ):
+      return element.Element( reference, trans )
+    return mkelem( self._structure )
+
   @cache.property
   def boundary( self ):
     'boundary'
@@ -758,7 +794,7 @@ class StructuredTopology( Topology ):
         for side, n in enumerate( (props.i,props.j) if props.isdim else () ) }
 
     belems = util.sum( list(btopo) for btopo in groups.values() )
-    return Topology( belems, ndims=self.ndims-1, groups=groups )
+    return UnstructuredTopology( self.ndims-1, belems, groups=groups )
 
   @cache.property
   def interfaces( self ):
@@ -782,9 +818,9 @@ class StructuredTopology( Topology ):
         ielem = element.Element( edge, elem1.transform << trans1, elem2.transform << trans2 )
         group.append( ielem )
       groups.append( group )
-    topo = Topology( util.sum(groups), self.ndims-1 )
+    topo = UnstructuredTopology( self.ndims-1, util.sum(groups) )
     for idim, group in enumerate( groups ):
-      topo[ 'dir{}'.format(idim) ] = Topology( group, self.ndims-1 )
+      topo[ 'dir{}'.format(idim) ] = UnstructuredTopology( self.ndims-1, group )
     return topo
 
   def basis_spline( self, degree, neumann=(), knots=None, periodic=None, closed=False, removedofs=None ):
@@ -1118,14 +1154,14 @@ class StructuredTopology( Topology ):
     'Inverse map of self.structure: given an element find its location in the structure.'
     return dict( (self.structure[alpha], alpha) for alpha in numpy.ndindex( self.structure.shape ) )
 
-class HierarchicalTopology( Topology ):
+class HierarchicalTopology( UnstructuredTopology ):
   'collection of nested topology elments'
 
   def __init__( self, basetopo, elements, groups={} ):
     'constructor'
 
     self.basetopo = basetopo if not isinstance( basetopo, HierarchicalTopology ) else basetopo.basetopo
-    Topology.__init__( self, elements, groups={} )
+    UnstructuredTopology.__init__( self, basetopo.ndims, elements, groups={} )
 
   @cache.property
   @log.title
@@ -1253,11 +1289,26 @@ class RefinedTopology( Topology ):
 
   def __init__( self, basetopo, groups={} ):
     self.basetopo = basetopo
-    elements = [ child for elem in basetopo for child in elem.children ]
-    Topology.__init__( self, elements, groups=groups )
+    Topology.__init__( self, basetopo.ndims, groups=groups )
 
-  def __getitem__( self, key ):
-    return self.basetopo[key].refined
+  @cache.property
+  def _elements( self ):
+    return tuple([ child for elem in self.basetopo for child in elem.children ])
+
+  def __iter__( self ):
+    return iter( self._elements )
+
+  def __len__( self ):
+    return len( self._elements )
+
+  def getelem( self, index ):
+    assert isinstance( index, int )
+    return self._elements[ index ]
+
+  def __getitem__( self, item ):
+    if isinstance( item, int ):
+      return self._elements[ item ]
+    return self.basetopo[item].refined
 
   @cache.property
   def boundary( self ):
@@ -1270,10 +1321,22 @@ class TrimmedTopology( Topology ):
     assert len(refs) == len(basetopo)
     assert all( isinstance(ref,element.Reference) for ref in refs )
     self.__refs = refs
+    self._indices = numpy.array( [ index for index, ref in enumerate(self.__refs) if ref ], dtype=int )
     self.basetopo = basetopo
     self.trimname = trimname
-    elements = [ element.Element( ref, elem.transform, elem.opposite ) for elem, ref in zip( basetopo, refs ) if ref ]
-    Topology.__init__( self, elements, basetopo.ndims, groups=groups )
+    Topology.__init__( self, basetopo.ndims, groups=groups )
+
+  def __iter__( self ):
+    return ( element.Element( ref, elem.transform, elem.opposite ) for elem, ref in zip( self.basetopo, self.__refs ) if ref )
+
+  def __len__( self ):
+    return len( self._indices )
+
+  def getelem( self, index ):
+    assert isinstance( index, int )
+    origindex = self._indices[ index ]
+    origelem = self.basetopo.getelem( origindex )
+    return element.Element( self.__refs[origindex], origelem.transform, origelem.opposite )
 
   @property
   def _inverse( self ):
@@ -1352,18 +1415,18 @@ class TrimmedTopology( Topology ):
         if edge:
           belems.append( element.Element( edge, belem.transform, belem.opposite ) )
 
-    boundary = Topology( trimmed + belems )
+    boundary = UnstructuredTopology( self.ndims-1, trimmed + belems )
     for name, basebgroup in basebtopo.groups.items():
       refs = []
       for basebelem in basebgroup:
         ibelem = boundary.edict.get(basebelem.transform)
-        refs.append( boundary.elements[ibelem].reference if ibelem is not None else basebelem.reference.empty )
+        refs.append( boundary.getelem(ibelem).reference if ibelem is not None else basebelem.reference.empty )
       if any( refs ):
         boundary[name] = TrimmedTopology( basebgroup, refs )
 
     if trimmed:
       oldtrimtopo = boundary.groups.get( self.trimname )
-      newtrimtopo = Topology(trimmed)
+      newtrimtopo = UnstructuredTopology( self.ndims-1, trimmed )
       boundary[self.trimname] = oldtrimtopo + newtrimtopo if oldtrimtopo else newtrimtopo
 
     return boundary
@@ -1396,7 +1459,16 @@ class RevolvedTopology( Topology ):
 
   def __init__( self, basetopo ):
     self.basetopo = basetopo
-    Topology.__init__( self, basetopo )
+    Topology.__init__( basetopo.ndims )
+
+  def __iter__( self ):
+    return iter( self.basetopo )
+
+  def __len__( self ):
+    return len( self.basetopo )
+
+  def getelem( self, index ):
+    return self.basetopo.getelem( index )
 
   @cache.property
   def boundary( self ):
