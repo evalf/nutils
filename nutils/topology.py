@@ -792,15 +792,13 @@ class StructuredTopology( Topology ):
     groups = { names[idim][side]: StructuredTopology( self.root, self.extent[:idim] + (BndProps(n,order,side),) + self.extent[idim+1:], self.nrefine )
       for idim, props in enumerate(self.extent)
         for side, n in enumerate( (props.i,props.j) if props.isdim else () ) }
-
-    belems = util.sum( list(btopo) for btopo in groups.values() )
-    return UnstructuredTopology( self.ndims-1, belems, groups=groups )
+    return GroupedTopology( groups )
 
   @cache.property
   def interfaces( self ):
     'interfaces'
 
-    groups = []
+    groups = {}
     ref = element.getsimplex(1)**self.ndims
     edge = element.getsimplex(1)**(self.ndims-1)
     for idim in range(self.ndims):
@@ -811,17 +809,13 @@ class StructuredTopology( Topology ):
         t1 = (slice(None),)*idim + (slice(-1),)
         t2 = (slice(None),)*idim + (slice(1,None),)
       trans1, trans2 = ref.edge_transforms[idim*2:idim*2+2]
-      group = []
+      ielems = []
       for elem1, elem2 in numpy.broadcast( self.structure[t1], self.structure[t2] ):
         assert elem1.transform == elem1.opposite
         assert elem2.transform == elem2.opposite
-        ielem = element.Element( edge, elem1.transform << trans1, elem2.transform << trans2 )
-        group.append( ielem )
-      groups.append( group )
-    topo = UnstructuredTopology( self.ndims-1, util.sum(groups) )
-    for idim, group in enumerate( groups ):
-      topo[ 'dir{}'.format(idim) ] = UnstructuredTopology( self.ndims-1, group )
-    return topo
+        ielems.append( element.Element( edge, elem1.transform << trans1, elem2.transform << trans2 ) )
+      groups[ 'dir{}'.format(idim) ] = UnstructuredTopology( self.ndims-1, ielems )
+    return GroupedTopology( groups )
 
   def basis_spline( self, degree, neumann=(), knots=None, periodic=None, closed=False, removedofs=None ):
     'spline from vertices'
@@ -1153,6 +1147,30 @@ class StructuredTopology( Topology ):
   def multiindex( self ):
     'Inverse map of self.structure: given an element find its location in the structure.'
     return dict( (self.structure[alpha], alpha) for alpha in numpy.ndindex( self.structure.shape ) )
+
+class GroupedTopology( Topology ):
+  'grouped topology'
+
+  def __init__( self, groups ):
+    self._groups = dict(groups)
+    self._topos = list( groups.itervalues() )
+    ndims = self._topos[0].ndims
+    assert all( topo.ndims == ndims for topo in self._topos )
+    Topology.__init__( self, ndims, self._groups )
+
+  def __iter__( self ):
+    return ( elem for topo in self._topos for elem in topo )
+
+  def __len__( self ):
+    return sum( len(topo) for topo in self._topos )
+
+  def getelem( self, index ):
+    for topo in self._topos:
+      nelems = len(topo)
+      if index < nelems:
+        return topo.getelem(index)
+      index -= nelems
+    raise Exception, 'index out of bounds'
 
 class HierarchicalTopology( UnstructuredTopology ):
   'collection of nested topology elments'
