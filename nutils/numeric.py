@@ -397,8 +397,17 @@ def nanjoin( args, axis=0 ):
   return concat
 
 def broadcasted( f ):
-  def wrapped( *args ):
-    return numpy.frompyfunc( f, len(args), 1 )( *args )
+  def wrapped( *args, **kwargs ):
+    if len(args) > 1:
+      bcast = numpy.broadcast( *args )
+      shape = bcast.shape
+    else:
+      arg = numpy.asarray( args[0] )
+      shape = arg.shape
+      bcast = ( (arg,) for arg in arg.flat )
+    retvals = numpy.empty( shape, dtype=object )
+    retvals.ravel()[:] = [ f(*_args,**kwargs) for _args in bcast ]
+    return retvals
   return wrapped
 
 
