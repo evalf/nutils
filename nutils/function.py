@@ -3202,6 +3202,7 @@ def add( arg1, arg2 ):
 
 def blockadd( *args ):
   args = tuple( itertools.chain( *( arg.funcs if isinstance( arg, BlockAdd ) else [arg] for arg in args ) ) )
+  shape = _jointshape( *( arg.shape for arg in args ) )
   # group all `Inflate` objects with the same axis and dofmap
   inflates = util.OrderedDict()
   for arg in args:
@@ -3218,9 +3219,12 @@ def blockadd( *args ):
     arg = functools.reduce( operator.add, values )
     for dofmap, axis in reversed( key ):
       arg = inflate( arg, dofmap, axis )
-    args.append( arg )
-  args.extend( inflates.get( (), () ) )
-  if len( args ) == 1:
+    if not _iszero( arg ):
+      args.append( arg )
+  args.extend( arg for arg in inflates.get( (), () ) if not _iszero( arg ) )
+  if len( args ) == 0:
+    return _zeros( shape )
+  elif len( args ) == 1:
     return args[0]
   else:
     return BlockAdd( args )
