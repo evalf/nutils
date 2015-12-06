@@ -25,7 +25,7 @@ out in element loops. For lower level operations topologies can be used as
 
 from __future__ import print_function, division
 from . import element, function, util, numpy, parallel, matrix, log, core, numeric, cache, rational, transform, _
-import warnings, functools, collections
+import warnings, functools, collections, itertools
 
 _identity = lambda x: x
 
@@ -682,6 +682,18 @@ class Topology( object ):
   def indicator( self ):
     return function.Elemwise( { elem.transform: 1. for elem in self }, (), default=0. )
 
+class EmptyTopology( Topology ):
+  'empty topology'
+
+  def __iter__( self ):
+    return iter([])
+
+  def __len__( self ):
+    return 0
+
+  def getelem( self, index ):
+    raise IndexError( 'out of bounds' )
+
 class UnstructuredTopology( Topology ):
   'unstructured topology'
 
@@ -714,7 +726,7 @@ class StructuredTopology( Topology ):
 
   def __iter__( self ):
     reference = element.getsimplex(1)**self.ndims
-    return ( element.Element( reference, trans ) for trans in self._structure.flat )
+    return ( element.Element( reference, trans, opp ) for trans, opp in itertools.izip( self._transform.flat, self._opposite.flat ) )
 
   def __len__( self ):
     return numpy.prod( self._shape )
@@ -722,7 +734,7 @@ class StructuredTopology( Topology ):
   def getelem( self, index ):
     assert isinstance( index, int )
     reference = element.getsimplex(1)**self.ndims
-    return element.Element( reference, self._structure.flat[index] )
+    return element.Element( reference, self._transform.flat[index], self._opposite.flat[index] )
 
   def __getitem__( self, item ):
     'subtopology'
@@ -751,13 +763,12 @@ class StructuredTopology( Topology ):
   def periodic( self ):
     return tuple( idim for idim, props in enumerate(self.extent) if props.isdim and props.isperiodic )
 
-  @cache.property
-  def _structure( self ):
-    indices = numpy.ix_( *[ numpy.arange(props.i,props.j) if props.isdim else [props.i-props.side] for props in self.extent ] )
+  @staticmethod
+  def mktransforms( extent, root, nrefine ):
     updim = transform.identity
-    ndims = len(self.extent)
+    ndims = len(extent)
     active = numpy.ones( ndims, dtype=bool )
-    for order, side, i, idim in sorted( (props.order,props.side,props.i,idim) for idim, props in enumerate(self.extent) if not props.isdim ):
+    for order, side, idim in sorted( (props.ibound,props.side,idim) for idim, props in enumerate(extent) if not props.isdim ):
       where = (numpy.arange(len(active))[active]==idim)
       matrix = numpy.eye(ndims)[:,~where]
       offset = where.astype(float) if side else numpy.zeros(ndims)
@@ -769,53 +780,64 @@ class StructuredTopology( Topology ):
     def mktrans( *index ):
       index = numpy.array( index )
       trans = transform.identity
-      for irefine in range( self.nrefine ):
+      for irefine in range( nrefine ):
         index, offset = divmod( index, 2 )
         trans >>= transform.affine( .5, .5*offset )
       trans >>= transform.affine( 0, index )
-      return self.root << trans << updim
+      return root << trans << updim
 
+    indices = numpy.ix_( *[ numpy.arange(props.i,props.j) if props.isdim else [props.i-1 if props.side else props.j] for props in extent ] )
     return mktrans( *indices )
+
+  @cache.property
+  def _transform( self ):
+    return self.mktransforms( self.extent, self.root, self.nrefine )
+
+  @cache.property
+  def _opposite( self ):
+    nbounds = len( self.extent ) - self.ndims
+    if nbounds == 0:
+      return self._transform
+    extent = [ BndProps( props.i, props.j, props.ibound, not props.side ) if not props.isdim and props.ibound==nbounds-1 else props for props in self.extent ]
+    return self.mktransforms( extent, self.root, self.nrefine )
 
   @property
   def structure( self ):
     warnings.warn( 'topology.structure will be removed in future', DeprecationWarning )
     reference = element.getsimplex(1)**self.ndims
     @numeric.broadcasted
-    def mkelem( trans ):
-      return element.Element( reference, trans )
-    return mkelem( self._structure )
+    def mkelem( trans, opp ):
+      return element.Element( reference, trans, opp )
+    return mkelem( self._transform, self._opposite )
 
   @cache.property
   def boundary( self ):
     'boundary'
 
-    order = len(self.extent) - self.ndims
+    nbounds = len(self.extent) - self.ndims
     names = ('left','right'), ('bottom','top'), ('front','back')
-    groups = { names[idim][side]: StructuredTopology( self.root, self.extent[:idim] + (BndProps(n,order,side),) + self.extent[idim+1:], self.nrefine )
+    groups = { names[idim][side]: StructuredTopology( self.root, self.extent[:idim] + (BndProps(n,n if not props.isperiodic else 0,nbounds,side),) + self.extent[idim+1:], self.nrefine )
       for idim, props in enumerate(self.extent)
-        for side, n in enumerate( (props.i,props.j) if props.isdim else () ) }
-    return GroupedTopology( groups )
+        for side, n in enumerate( (props.i,props.j) if props.isdim and not props.isperiodic else () ) }
+    return GroupedTopology( named=groups )
 
   @cache.property
   def interfaces( self ):
     'interfaces'
 
     groups = {}
-    ref = element.getsimplex(1)**self.ndims
-    edge = element.getsimplex(1)**(self.ndims-1)
-    for idim in range(self.ndims):
-      if idim in self.periodic:
-        t1 = (slice(None),)*idim + (slice(None),)
-        t2 = (slice(None),)*idim + (numpy.array( list(range(1,self._shape[idim])) + [0] ),)
-      else:
-        t1 = (slice(None),)*idim + (slice(-1),)
-        t2 = (slice(None),)*idim + (slice(1,None),)
-      trans1, trans2 = ref.edge_transforms[idim*2:idim*2+2]
-      ielems = [ element.Element( edge, elem1trans << trans1, elem2trans << trans2 )
-        for elem1trans, elem2trans in numpy.broadcast( self._structure[t1], self._structure[t2] ) ]
-      groups[ 'dir{}'.format(idim) ] = UnstructuredTopology( self.ndims-1, ielems )
-    return GroupedTopology( groups )
+    nbounds = len(self.extent) - self.ndims
+    for idim, props in enumerate(self.extent):
+      if not props.isdim:
+        continue
+      bndprops = [ BndProps( i, i, ibound=nbounds, side=True ) for i in range( props.i+1, props.j ) ]
+      if props.isperiodic:
+        assert props.i == 0
+        bndprops.append( BndProps( props.j, 0, ibound=nbounds, side=True ) )
+      itopo = EmptyTopology( self.ndims-1 ) if not bndprops \
+         else GroupedTopology( unnamed=[ StructuredTopology( self.root, self.extent[:idim] + (props,) + self.extent[idim+1:] ) for props in bndprops ] )
+      groups[ 'dir{}'.format(len(groups)) ] = itopo
+    return GroupedTopology( named=groups )
 
   def basis_spline( self, degree, neumann=(), knots=None, periodic=None, closed=False, removedofs=None ):
     'spline from vertices'
@@ -873,7 +895,7 @@ class StructuredTopology( Topology ):
 
     dofmap = {}
     funcmap = {}
-    for item in numpy.broadcast( self._structure, stdelems, *numpy.ix_(*slices) ):
+    for item in numpy.broadcast( self._transform, stdelems, *numpy.ix_(*slices) ):
       trans = item[0]
       std = item[1]
       S = item[2:]
@@ -985,7 +1007,7 @@ class StructuredTopology( Topology ):
 
     dofmap = {}
     funcmap = {}
-    for item in numpy.broadcast( self._structure, stdelems, *numpy.ix_(*slices) ):
+    for item in numpy.broadcast( self._transform, stdelems, *numpy.ix_(*slices) ):
       trans = item[0]
       std = item[1]
       S = item[2:]
@@ -1091,7 +1113,7 @@ class StructuredTopology( Topology ):
 
     dofmap = {}
     funcmap = {}
-    for item in numpy.broadcast( self._structure, *numpy.ix_(*slices) ):
+    for item in numpy.broadcast( self._transform, *numpy.ix_(*slices) ):
       trans = item[0]
       S = item[1:]
       dofs = vertex_structure[S].ravel()
@@ -1110,7 +1132,7 @@ class StructuredTopology( Topology ):
     'refine non-uniformly'
 
     extent = [ DimProps(i=props.i*2,j=props.j*2,isperiodic=props.isperiodic) if props.isdim
-          else BndProps(i=props.i*2,order=props.order,side=props.side) for props in self.extent ]
+          else BndProps(i=props.i*2,j=props.j*2,ibound=props.ibound,side=props.side) for props in self.extent ]
     groups = { name: topo.refined for name, topo in self.groups.items() }
     return StructuredTopology( self.root, extent, self.nrefine+1, groups )
 
@@ -1122,12 +1144,12 @@ class StructuredTopology( Topology ):
 class GroupedTopology( Topology ):
   'grouped topology'
 
-  def __init__( self, groups ):
-    self._groups = dict(groups)
-    self._topos = list( groups.itervalues() )
+  def __init__( self, unnamed=[], named={} ):
+    assert unnamed or named
+    self._topos = tuple(unnamed) + tuple(named.itervalues())
     ndims = self._topos[0].ndims
     assert all( topo.ndims == ndims for topo in self._topos )
-    Topology.__init__( self, ndims, self._groups )
+    Topology.__init__( self, ndims, named )
 
   def __iter__( self ):
     return ( elem for topo in self._topos for elem in topo )
@@ -1492,7 +1514,7 @@ class RevolvedTopology( Topology ):
 
 DimProps = collections.namedtuple( 'DimProps', ['i','j','isperiodic'] )
 DimProps.isdim = True
-BndProps = collections.namedtuple( 'BndProps', ['i','order','side'] )
+BndProps = collections.namedtuple( 'BndProps', ['i','j','ibound','side'] )
 BndProps.isdim = False
 
 def common_refine( topo1, topo2 ):
