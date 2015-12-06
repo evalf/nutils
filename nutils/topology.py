@@ -766,6 +766,8 @@ class StructuredTopology( Topology ):
 
   @staticmethod
   def mktransforms( axes, root, nrefine ):
+    assert nrefine >= 0
+
     updim = transform.identity
     ndims = len(axes)
     active = numpy.ones( ndims, dtype=bool )
@@ -777,24 +779,30 @@ class StructuredTopology( Topology ):
       ndims -= 1
       active[idim] = False
 
-    @numeric.broadcasted
-    def mktrans( *index ):
-      index = numpy.array( index )
-      trans = transform.identity
-      for irefine in range( nrefine ):
-        index, offset = divmod( index, 2 )
-        trans >>= transform.affine( .5, .5*offset )
-      trans >>= transform.affine( 0, index )
-      return ( root << trans << updim ).canonical
+    grid = [ numpy.arange(axis.i>>nrefine,((axis.j-1)>>nrefine)+1) if axis.isdim else numpy.array([(axis.i-1 if axis.side else axis.j)>>nrefine]) for axis in axes ]
+    indices = numeric.broadcast( *numeric.ix(grid) )
+    transforms = numeric.asobjvector( transform.affine(0,index) for index in log.iter( 'elem', indices, indices.size ) ).reshape( indices.shape )
 
-    indices = numpy.ix_( *[ numpy.arange(axis.i,axis.j) if axis.isdim else [axis.i-1 if axis.side else axis.j] for axis in axes ] )
-    return mktrans( *indices )
+    if nrefine:
+      shifts = numeric.broadcast( *numeric.ix( [0,.5] for axis in axes ) )
+      scales = numeric.asobjvector( transform.affine( .5, shift ) for shift in shifts ).reshape( shifts.shape )
+      for irefine in log.range( 'level', nrefine-1, -1, -1 ):
+        offsets = numpy.array([ r[0] for r in grid ])
+        grid = [ numpy.arange(axis.i>>irefine,((axis.j-1)>>irefine)+1) if axis.isdim else numpy.array([(axis.i-1 if axis.side else axis.j)>>irefine]) for axis in axes ]
+        A = transforms[ numpy.broadcast_arrays( *numeric.ix( r//2-o for r, o in zip( grid, offsets ) ) ) ]
+        B = scales[ numpy.broadcast_arrays( *numeric.ix( r%2 for r in grid ) ) ]
+        transforms = A << B
+      
+    shape = tuple( axis.j - axis.i for axis in axes if axis.isdim )
+    return numeric.asobjvector( ( root << trans << updim ).canonical for trans in log.iter( 'canonical', transforms.flat ) ).reshape( shape )
 
   @cache.property
+  @log.title
   def _transform( self ):
     return self.mktransforms( self.axes, self.root, self.nrefine )
 
   @cache.property
+  @log.title
   def _opposite( self ):
     nbounds = len( self.axes ) - self.ndims
     if nbounds == 0:
@@ -806,10 +814,7 @@ class StructuredTopology( Topology ):
   def structure( self ):
     warnings.warn( 'topology.structure will be removed in future', DeprecationWarning )
     reference = element.getsimplex(1)**self.ndims
-    @numeric.broadcasted
-    def mkelem( trans, opp ):
-      return element.Element( reference, trans, opp )
-    return mkelem( self._transform, self._opposite )
+    return numeric.asobjvector( element.Element( reference, trans, opp ) for trans, opp in numpy.broadcast( self._transform, self._opposite ) ).reshape( self._shape )
 
   @cache.property
   def boundary( self ):
