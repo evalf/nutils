@@ -679,8 +679,8 @@ class StructuredTopology( Topology ):
     self.root = root
     self.axes = tuple(axes)
     self.nrefine = nrefine
-    self._shape = tuple( axis.j - axis.i for axis in self.axes if axis.isdim )
-    Topology.__init__( self, len(self._shape), groups=groups )
+    self.shape = tuple( axis.j - axis.i for axis in self.axes if axis.isdim )
+    Topology.__init__( self, len(self.shape), groups=groups )
 
   def __iter__( self ):
     reference = element.getsimplex(1)**self.ndims
@@ -688,7 +688,7 @@ class StructuredTopology( Topology ):
     return ( element.Element( reference, trans, opp ) for trans, opp in izip( self._transform.flat, self._opposite.flat ) )
 
   def __len__( self ):
-    return numpy.prod( self._shape, dtype=int )
+    return numpy.prod( self.shape, dtype=int )
 
   def getelem( self, index ):
     assert numeric.isint( index )
@@ -772,7 +772,7 @@ class StructuredTopology( Topology ):
   def structure( self ):
     warnings.warn( 'topology.structure will be removed in future', DeprecationWarning )
     reference = element.getsimplex(1)**self.ndims
-    return numeric.asobjvector( element.Element( reference, trans, opp ) for trans, opp in numpy.broadcast( self._transform, self._opposite ) ).reshape( self._shape )
+    return numeric.asobjvector( element.Element( reference, trans, opp ) for trans, opp in numpy.broadcast( self._transform, self._opposite ) ).reshape( self.shape )
 
   @cache.property
   def boundary( self ):
@@ -823,7 +823,7 @@ class StructuredTopology( Topology ):
 
     for idim in range( self.ndims ):
       periodic_i = idim in periodic
-      n = self._shape[idim]
+      n = self.shape[idim]
       p = degree[idim]
       #k = knots[idim]
 
@@ -898,7 +898,7 @@ class StructuredTopology( Topology ):
     cache = {}
     for idim in range( self.ndims ):
       p = degree[idim]
-      n = self._shape[idim]
+      n = self.shape[idim]
       isperiodic = idim in periodic
 
       k = knotvalues[idim]
@@ -967,7 +967,7 @@ class StructuredTopology( Topology ):
       slices.append(slices_i)
 
     #Cache effectivity
-    log.debug( 'Local knot vector cache effectivity: %d' % (100*(1.-len(cache)/float(sum(self._shape)))) )
+    log.debug( 'Local knot vector cache effectivity: %d' % (100*(1.-len(cache)/float(sum(self.shape)))) )
 
     dofmap = {}
     funcmap = {}
@@ -1054,7 +1054,7 @@ class StructuredTopology( Topology ):
     stdelem = util.product( element.PolyLine( element.PolyLine.bernstein_poly( d ) ) for d in degree )
 
     for idim in range( self.ndims ):
-      n = self._shape[idim]
+      n = self.shape[idim]
       p = degree[idim]
 
       nd = n * p + 1
@@ -1103,7 +1103,7 @@ class StructuredTopology( Topology ):
   def __str__( self ):
     'string representation'
 
-    return '%s(%s)' % ( self.__class__.__name__, 'x'.join( str(n) for n in self._shape ) )
+    return '%s(%s)' % ( self.__class__.__name__, 'x'.join( str(n) for n in self.shape ) )
 
 class GroupedTopology( Topology ):
   'grouped topology'

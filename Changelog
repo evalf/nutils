@@ -6,6 +6,25 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+Changed: Topology objects
+
+  The Topology base class no longer takes a list of elements in its
+  constructor. Instead, the __iter__ method should be implemented by the
+  derived class, as well as __len__ for the number of elements, and
+  getelem(index) to access individual elements. The 'elements' attribute
+  is deprecated.
+
+  To create a topology from a gived set of elements use the new
+  UnstructuredTopology class:
+  >> topology.UnstructuredTopology( ndims, elements )
+
+  The StructuredTopology object no longer accepts an array with
+  elements. Instead, an 'axes' argument is provided with information
+  that allows it to generate elements in the fly. The 'structure'
+  attribute is deprecated. A newly added 'shape' tuple is now a
+  documented attribute of the StructuredTopology object.
+
+
 Changed: caching function return values
 
   The CallDict mechanism for caching function calls by arguments has
