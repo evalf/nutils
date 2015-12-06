@@ -361,11 +361,7 @@ def ortho_complement( N, tol=1e-8 ):
   assert nextalpha < tol, '{} > {}'.format( nextalpha, tol )
   return Y
 
-def asobjvector( v ):
-  v = tuple(v)
-  A = numpy.empty( len(v), dtype=object )
-  A[:] = v
-  return A
+asobjvector = lambda v: numpy.array( (None,)+tuple(v), dtype=object )[1:] # 'None' prevents interpretation of objects as axes
 
 def invorder( n ):
   assert n.dtype == int and n.ndim == 1
@@ -398,18 +394,27 @@ def nanjoin( args, axis=0 ):
 
 def broadcasted( f ):
   def wrapped( *args, **kwargs ):
-    if len(args) > 1:
-      bcast = numpy.broadcast( *args )
-      shape = bcast.shape
-    else:
-      arg = numpy.asarray( args[0] )
-      shape = arg.shape
-      bcast = ( (arg,) for arg in arg.flat )
-    retvals = numpy.empty( shape, dtype=object )
-    retvals.ravel()[:] = [ f(*_args,**kwargs) for _args in bcast ]
-    return retvals
+    bcast = broadcast( *args )
+    return asobjvector( f(*_args,**kwargs) for _args in bcast ).reshape( bcast.shape )
   return wrapped
 
+def ix( args ):
+  'version of ix_ that allows for scalars'
+  args = tuple( numpy.asarray(arg) for arg in args )
+  assert all( 0 <= arg.ndim <= 1 for arg in args )
+  idims = numpy.cumsum( [0] + [ arg.ndim for arg in args ] )
+  ndims = idims[-1]
+  return [ arg.reshape((1,)*idim+(arg.size,)+(1,)*(ndims-idim-1)) for idim, arg in zip( idims, args ) ]
+
+class Broadcast1D( object ):
+  def __init__( self, arg ):
+    self.arg = numpy.asarray( arg )
+    self.shape = self.arg.shape
+    self.size = self.arg.size
+  def __iter__( self ):
+    return ( (item,) for item in self.arg.flat )
+
+broadcast = lambda *args: numpy.broadcast( *args ) if len(args) > 1 else Broadcast1D( args[0] )
 
 # EXACT OPERATIONS ON FLOATS
 
