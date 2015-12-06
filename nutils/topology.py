@@ -40,7 +40,7 @@ class Topology( object ):
   def __init__( self, ndims, groups={} ):
     'constructor'
 
-    assert isinstance( ndims, int ) and ndims >= 0
+    assert numeric.isint( ndims ) and ndims >= 0
     self.ndims = ndims
     self.groups = groups.copy()
 
@@ -256,7 +256,7 @@ class Topology( object ):
   def basis_discont( self, degree ):
     'discontinuous shape functions'
 
-    assert isinstance( degree, int ) and degree >= 0
+    assert numeric.isint( degree ) and degree >= 0
     fmap = {}
     nmap = {}
     ndofs = 0
@@ -709,7 +709,7 @@ class UnstructuredTopology( Topology ):
     return len( self._elements )
 
   def getelem( self, index ):
-    assert isinstance( index, int )
+    assert numeric.isint( index )
     return self._elements[index]
 
 class StructuredTopology( Topology ):
@@ -733,7 +733,7 @@ class StructuredTopology( Topology ):
     return numpy.prod( self._shape, dtype=int )
 
   def getelem( self, index ):
-    assert isinstance( index, int )
+    assert numeric.isint( index )
     reference = element.getsimplex(1)**self.ndims
     return element.Element( reference, self._transform.flat[index], self._opposite.flat[index] )
 
@@ -851,7 +851,7 @@ class StructuredTopology( Topology ):
     if periodic is None:
       periodic = self.periodic
 
-    if isinstance( degree, int ):
+    if numeric.isint( degree ):
       degree = ( degree, ) * self.ndims
 
     if removedofs == None:
@@ -923,7 +923,7 @@ class StructuredTopology( Topology ):
     if periodic is None:
       periodic = self.periodic
 
-    if isinstance( degree, int ):
+    if numeric.isint( degree ):
       degree = [degree]*self.ndims
 
     assert len(degree)==self.ndims
@@ -1062,7 +1062,7 @@ class StructuredTopology( Topology ):
   def basis_discont( self, degree ):
     'discontinuous shape functions'
 
-    if isinstance( degree, int ):
+    if numeric.isint( degree ):
       degree = (degree,) * self.ndims
     assert len(degree) == self.ndims
     assert all( p >= 0 for p in degree )
@@ -1081,7 +1081,7 @@ class StructuredTopology( Topology ):
   def basis_std( self, degree, removedofs=None ):
     'spline from vertices'
 
-    if isinstance( degree, int ):
+    if numeric.isint( degree ):
       degree = ( degree, ) * self.ndims
 
     if removedofs == None:
@@ -1319,11 +1319,11 @@ class RefinedTopology( Topology ):
     return len( self._elements )
 
   def getelem( self, index ):
-    assert isinstance( index, int )
+    assert numeric.isint( index )
     return self._elements[ index ]
 
   def __getitem__( self, item ):
-    if isinstance( item, int ):
+    if numeric.isint( item ):
       return self._elements[ item ]
     return self.basetopo[item].refined
 
@@ -1350,7 +1350,7 @@ class TrimmedTopology( Topology ):
     return len( self._indices )
 
   def getelem( self, index ):
-    assert isinstance( index, int )
+    assert numeric.isint( index )
     origindex = self._indices[ index ]
     origelem = self.basetopo.getelem( origindex )
     return element.Element( self.__refs[origindex], origelem.transform, origelem.opposite )
