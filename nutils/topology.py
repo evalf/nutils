@@ -726,10 +726,11 @@ class StructuredTopology( Topology ):
 
   def __iter__( self ):
     reference = element.getsimplex(1)**self.ndims
-    return ( element.Element( reference, trans, opp ) for trans, opp in itertools.izip( self._transform.flat, self._opposite.flat ) )
+    izip = getattr( itertools, 'izip', zip ) # results in iterator zip for both python2 and python3
+    return ( element.Element( reference, trans, opp ) for trans, opp in izip( self._transform.flat, self._opposite.flat ) )
 
   def __len__( self ):
-    return numpy.prod( self._shape )
+    return numpy.prod( self._shape, dtype=int )
 
   def getelem( self, index ):
     assert isinstance( index, int )
@@ -1146,7 +1147,7 @@ class GroupedTopology( Topology ):
 
   def __init__( self, unnamed=[], named={} ):
     assert unnamed or named
-    self._topos = tuple(unnamed) + tuple(named.itervalues())
+    self._topos = tuple(unnamed) + tuple(named.values())
     ndims = self._topos[0].ndims
     assert all( topo.ndims == ndims for topo in self._topos )
     Topology.__init__( self, ndims, named )
@@ -1163,7 +1164,7 @@ class GroupedTopology( Topology ):
       if index < nelems:
         return topo.getelem(index)
       index -= nelems
-    raise Exception, 'index out of bounds'
+    raise Exception( 'index out of bounds' )
 
 class HierarchicalTopology( UnstructuredTopology ):
   'collection of nested topology elments'
