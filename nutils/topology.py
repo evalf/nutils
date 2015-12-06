@@ -785,7 +785,7 @@ class StructuredTopology( Topology ):
         index, offset = divmod( index, 2 )
         trans >>= transform.affine( .5, .5*offset )
       trans >>= transform.affine( 0, index )
-      return root << trans << updim
+      return ( root << trans << updim ).canonical
 
     indices = numpy.ix_( *[ numpy.arange(axis.i,axis.j) if axis.isdim else [axis.i-1 if axis.side else axis.j] for axis in axes ] )
     return mktrans( *indices )
@@ -836,7 +836,7 @@ class StructuredTopology( Topology ):
         assert axis.i == 0
         bndprops.append( BndAxis( axis.j, 0, ibound=nbounds, side=True ) )
       itopo = EmptyTopology( self.ndims-1 ) if not bndprops \
-         else GroupedTopology( unnamed=[ StructuredTopology( self.root, self.axes[:idim] + (axis,) + self.axes[idim+1:] ) for axis in bndprops ] )
+         else GroupedTopology( unnamed=[ StructuredTopology( self.root, self.axes[:idim] + (axis,) + self.axes[idim+1:], self.nrefine ) for axis in bndprops ] )
       groups[ 'dir{}'.format(len(groups)) ] = itopo
     return GroupedTopology( named=groups )
 
