@@ -715,13 +715,13 @@ class UnstructuredTopology( Topology ):
 class StructuredTopology( Topology ):
   'structured topology'
 
-  def __init__( self, root, extent, nrefine=0, groups={} ):
+  def __init__( self, root, axes, nrefine=0, groups={} ):
     'constructor'
 
     self.root = root
-    self.extent = tuple(extent)
+    self.axes = tuple(axes)
     self.nrefine = nrefine
-    self._shape = tuple( props.j - props.i for props in self.extent if props.isdim )
+    self._shape = tuple( axis.j - axis.i for axis in self.axes if axis.isdim )
     Topology.__init__( self, len(self._shape), groups=groups )
 
   def __iter__( self ):
@@ -744,31 +744,31 @@ class StructuredTopology( Topology ):
     if not isinstance( item, tuple ):
       item = item,
     assert len(item) <= self.ndims
-    extent = []
+    axes = []
     idim = 0
-    for props in self.extent:
-      if props.isdim and idim < len(item):
+    for axis in self.axes:
+      if axis.isdim and idim < len(item):
         s = item[idim]
         assert isinstance( s, slice )
-        start, stop, stride = s.indices( props.j - props.i )
+        start, stop, stride = s.indices( axis.j - axis.i )
         assert stride == 1
         assert stop > start
-        if start > 0 or stop < props.j - props.i:
-          props = DimProps( props.i+start, props.i+stop, isperiodic=False )
+        if start > 0 or stop < axis.j - axis.i:
+          axis = DimAxis( axis.i+start, axis.i+stop, isperiodic=False )
         idim += 1
-      extent.append( props )
-    return StructuredTopology( self.root, extent, self.nrefine )
+      axes.append( axis )
+    return StructuredTopology( self.root, axes, self.nrefine )
 
   @property
   def periodic( self ):
-    return tuple( idim for idim, props in enumerate(self.extent) if props.isdim and props.isperiodic )
+    return tuple( idim for idim, axis in enumerate(self.axes) if axis.isdim and axis.isperiodic )
 
   @staticmethod
-  def mktransforms( extent, root, nrefine ):
+  def mktransforms( axes, root, nrefine ):
     updim = transform.identity
-    ndims = len(extent)
+    ndims = len(axes)
     active = numpy.ones( ndims, dtype=bool )
-    for order, side, idim in sorted( (props.ibound,props.side,idim) for idim, props in enumerate(extent) if not props.isdim ):
+    for order, side, idim in sorted( (axis.ibound,axis.side,idim) for idim, axis in enumerate(axes) if not axis.isdim ):
       where = (numpy.arange(len(active))[active]==idim)
       matrix = numpy.eye(ndims)[:,~where]
       offset = where.astype(float) if side else numpy.zeros(ndims)
@@ -786,20 +786,20 @@ class StructuredTopology( Topology ):
       trans >>= transform.affine( 0, index )
       return root << trans << updim
 
-    indices = numpy.ix_( *[ numpy.arange(props.i,props.j) if props.isdim else [props.i-1 if props.side else props.j] for props in extent ] )
+    indices = numpy.ix_( *[ numpy.arange(axis.i,axis.j) if axis.isdim else [axis.i-1 if axis.side else axis.j] for axis in axes ] )
     return mktrans( *indices )
 
   @cache.property
   def _transform( self ):
-    return self.mktransforms( self.extent, self.root, self.nrefine )
+    return self.mktransforms( self.axes, self.root, self.nrefine )
 
   @cache.property
   def _opposite( self ):
-    nbounds = len( self.extent ) - self.ndims
+    nbounds = len( self.axes ) - self.ndims
     if nbounds == 0:
       return self._transform
-    extent = [ BndProps( props.i, props.j, props.ibound, not props.side ) if not props.isdim and props.ibound==nbounds-1 else props for props in self.extent ]
-    return self.mktransforms( extent, self.root, self.nrefine )
+    axes = [ BndAxis( axis.i, axis.j, axis.ibound, not axis.side ) if not axis.isdim and axis.ibound==nbounds-1 else axis for axis in self.axes ]
+    return self.mktransforms( axes, self.root, self.nrefine )
 
   @property
   def structure( self ):
@@ -814,11 +814,11 @@ class StructuredTopology( Topology ):
   def boundary( self ):
     'boundary'
 
-    nbounds = len(self.extent) - self.ndims
+    nbounds = len(self.axes) - self.ndims
     names = ('left','right'), ('bottom','top'), ('front','back')
-    groups = { names[idim][side]: StructuredTopology( self.root, self.extent[:idim] + (BndProps(n,n if not props.isperiodic else 0,nbounds,side),) + self.extent[idim+1:], self.nrefine )
-      for idim, props in enumerate(self.extent)
-        for side, n in enumerate( (props.i,props.j) if props.isdim and not props.isperiodic else () ) }
+    groups = { names[idim][side]: StructuredTopology( self.root, self.axes[:idim] + (BndAxis(n,n if not axis.isperiodic else 0,nbounds,side),) + self.axes[idim+1:], self.nrefine )
+      for idim, axis in enumerate(self.axes)
+        for side, n in enumerate( (axis.i,axis.j) if axis.isdim and not axis.isperiodic else () ) }
     return GroupedTopology( named=groups )
 
   @cache.property
@@ -826,16 +826,16 @@ class StructuredTopology( Topology ):
     'interfaces'
 
     groups = {}
-    nbounds = len(self.extent) - self.ndims
-    for idim, props in enumerate(self.extent):
-      if not props.isdim:
+    nbounds = len(self.axes) - self.ndims
+    for idim, axis in enumerate(self.axes):
+      if not axis.isdim:
         continue
-      bndprops = [ BndProps( i, i, ibound=nbounds, side=True ) for i in range( props.i+1, props.j ) ]
-      if props.isperiodic:
-        assert props.i == 0
-        bndprops.append( BndProps( props.j, 0, ibound=nbounds, side=True ) )
+      bndprops = [ BndAxis( i, i, ibound=nbounds, side=True ) for i in range( axis.i+1, axis.j ) ]
+      if axis.isperiodic:
+        assert axis.i == 0
+        bndprops.append( BndAxis( axis.j, 0, ibound=nbounds, side=True ) )
       itopo = EmptyTopology( self.ndims-1 ) if not bndprops \
-         else GroupedTopology( unnamed=[ StructuredTopology( self.root, self.extent[:idim] + (props,) + self.extent[idim+1:] ) for props in bndprops ] )
+         else GroupedTopology( unnamed=[ StructuredTopology( self.root, self.axes[:idim] + (axis,) + self.axes[idim+1:] ) for axis in bndprops ] )
       groups[ 'dir{}'.format(len(groups)) ] = itopo
     return GroupedTopology( named=groups )
 
@@ -1131,10 +1131,10 @@ class StructuredTopology( Topology ):
   def refined( self ):
     'refine non-uniformly'
 
-    extent = [ DimProps(i=props.i*2,j=props.j*2,isperiodic=props.isperiodic) if props.isdim
-          else BndProps(i=props.i*2,j=props.j*2,ibound=props.ibound,side=props.side) for props in self.extent ]
+    axes = [ DimAxis(i=axis.i*2,j=axis.j*2,isperiodic=axis.isperiodic) if axis.isdim
+        else BndAxis(i=axis.i*2,j=axis.j*2,ibound=axis.ibound,side=axis.side) for axis in self.axes ]
     groups = { name: topo.refined for name, topo in self.groups.items() }
-    return StructuredTopology( self.root, extent, self.nrefine+1, groups )
+    return StructuredTopology( self.root, axes, self.nrefine+1, groups )
 
   def __str__( self ):
     'string representation'
@@ -1512,10 +1512,10 @@ class RevolvedTopology( Topology ):
 
 # UTILITY FUNCTIONS
 
-DimProps = collections.namedtuple( 'DimProps', ['i','j','isperiodic'] )
-DimProps.isdim = True
-BndProps = collections.namedtuple( 'BndProps', ['i','j','ibound','side'] )
-BndProps.isdim = False
+DimAxis = collections.namedtuple( 'DimAxis', ['i','j','isperiodic'] )
+DimAxis.isdim = True
+BndAxis = collections.namedtuple( 'BndAxis', ['i','j','ibound','side'] )
+BndAxis.isdim = False
 
 def common_refine( topo1, topo2 ):
   isrevolved = isinstance( topo1, RevolvedTopology )

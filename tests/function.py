@@ -71,8 +71,8 @@ def check( op, n_op, shapes, hasgrad=True ):
 
   anchor = transform.roottrans( 'test', (0,0) )
   roottrans = transform.affine( [[0,1],[-1,0]], [1,0] ) >> transform.affine( [[2,1],[-1,3]], [1,0] )
-  extent = topology.DimProps(0,1,False), topology.DimProps(0,1,False)
-  domain = topology.StructuredTopology( root=anchor<<roottrans, extent=extent )
+  axes = topology.DimAxis(0,1,False), topology.DimAxis(0,1,False)
+  domain = topology.StructuredTopology( root=anchor<<roottrans, axes=axes )
   elem, = domain
   iface = element.Element( elem.edge(0).reference, elem.edge(0).transform, elem.edge(1).transform )
   ifpoints, ifweights = iface.reference.getischeme('uniform2')

@@ -50,8 +50,8 @@ def rectilinear( richshape, periodic=(), name='rect', revolved=False ):
     assert all( ( name.take(0,i) == name.take(2,i) ).all() for i in periodic )
     root = transform.roottransedges( name, shape )
 
-  extent = [ topology.DimProps(0,n,idim in periodic) for idim, n in enumerate(shape) ]
-  topo = topology.StructuredTopology( root, extent )
+  axes = [ topology.DimAxis(0,n,idim in periodic) for idim, n in enumerate(shape) ]
+  topo = topology.StructuredTopology( root, axes )
 
   if uniform:
     if all( o == offset[0] for o in offset[1:] ):
