@@ -2176,6 +2176,9 @@ class Diagonalize( ArrayFunc ):
   def _edit( self, op ):
     return diagonalize( op(self.func) )
 
+  def _takediag( self ):
+    return self.func
+
 class Repeat( ArrayFunc ):
   'repeat singleton axis'
 
