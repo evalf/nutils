@@ -48,7 +48,7 @@ class Element( object ):
     return self.__opposite or self.transform
 
   def __hash__( self ):
-    return object.__hash__( self )
+    return hash(( self.reference, self.transform, self.__opposite ))
 
   def __eq__( self, other ):
     return self is other or isinstance(other,Element) \
