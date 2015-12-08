@@ -1841,6 +1841,7 @@ class Pointdata( ArrayFunc ):
   def __init__ ( self, data, shape ):
     'constructor'
 
+    warnings.warn( 'Pointdata is deprecated; use Topology.elem_eval( ..., asfunction=True ) instead', DeprecationWarning )
     assert isinstance(data,dict)
     self.data = data
     for trans in data:
@@ -1861,6 +1862,27 @@ class Pointdata( ArrayFunc ):
     data = dict( (trans,(numpy.maximum(func.eval((trans,trans),points),values),points)) for trans,(values,points) in self.data.items() )
 
     return Pointdata( data, self.shape )
+
+class Sampled( ArrayFunc ):
+  'sampled'
+
+  def __init__ ( self, data ):
+    assert isinstance(data,dict)
+    self.data = data.copy()
+    items = self.data.iteritems()
+    trans, (values,points) = items.next()
+    fromdims = trans.fromdims
+    shape = values.shape[1:]
+    assert all( trans.fromdims == fromdims and values.shape == points.shape[:1]+shape for trans, (values,points) in items )
+    ArrayFunc.__init__( self, args=[TransformChain(0,fromdims),POINTS], shape=shape )
+
+  def evalf( self, trans, points ):
+    head = trans.lookup( self.data )
+    tail = trans.slicefrom( len(head) )
+    evalpoints = tail.apply( points )
+    myvals, mypoints = self.data[head]
+    assert numpy.equal( mypoints, evalpoints ).all(), 'Illegal point set'
+    return myvals
 
 class Elemwise( ArrayFunc ):
   'elementwise constant data'

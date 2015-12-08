@@ -283,10 +283,11 @@ class Topology( object ):
 
   @log.title
   @core.single_or_multiple
-  def elem_eval( self, funcs, ischeme, separate=False, geometry=None, edit=_identity ):
+  def elem_eval( self, funcs, ischeme, separate=False, geometry=None, asfunction=False, edit=_identity ):
     'element-wise evaluation'
 
     if geometry:
+      assert not asfunction
       iwscale = function.J( geometry, self.ndims )
       npoints = len(self)
       slices = range(npoints)
@@ -323,7 +324,10 @@ class Topology( object ):
     log.debug( 'cache', fcache.stats )
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join( str(n) for n in retval.shape ) ) for retval in retvals ) )
 
-    if separate:
+    if asfunction:
+      tsp = [ ( elem.transform, s, fcache[elem.reference.getischeme](ischeme)[0] ) for elem, s in zip( self, slices ) ]
+      retvals = [ function.Sampled({ trans: (retval[s],points) for trans, s, points in tsp }) for retval in retvals ]
+    elif separate:
       retvals = [ [ retval[s] for s in slices ] for retval in retvals ]
 
     return retvals
