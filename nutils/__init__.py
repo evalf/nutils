@@ -1,7 +1,7 @@
 import numpy
+from distutils.version import LooseVersion
 
-assert [ int(n) for n in numpy.__version__.split('.') ] >= [1,8], \
-  'nutils requires numpy 1.8 or higher, got %s' % numpy.__version__
+assert LooseVersion(numpy.version.version) >= LooseVersion('1.8'), 'nutils requires numpy 1.8 or higher, got %s' % numpy.version.version
 
 version = '1.dev'
 
