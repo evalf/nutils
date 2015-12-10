@@ -1706,7 +1706,7 @@ class RevolvedTopology( Topology ):
 
   def __init__( self, basetopo ):
     self.basetopo = basetopo
-    Topology.__init__( basetopo.ndims )
+    Topology.__init__( self, basetopo.ndims )
 
   def __iter__( self ):
     return iter( self.basetopo )
