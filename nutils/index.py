@@ -22,9 +22,10 @@ class IndexedArray:
   string may contain only lower case latin characters.  A wrapped array can be
   unwrapped via the `unwrap` method.
 
-  The index string may contain a `,` followed by any strict positive number of
-  indices.  For all indices following the comma a gradient is computed with
-  respect to the geometry specified in the `unwrap` method.
+  The index string may contain a `,` or `;` followed by any strict positive
+  number of indices.  For all indices following the comma or semicolon
+  respectively a gradient or surface gradient is computed with respect to the
+  geometry specified in the `unwrap` method.
 
   Examples.  Let `a` and `b` be `ArrayFunc`s with shape `(n,n)` and `(n,)`.  The
   following pairs are equivalent when unwrapped with geometry `geom`:
@@ -46,6 +47,9 @@ class IndexedArray:
 
       (b['i']*b['j'])[,j']
       trace( (b[:,_]*b[_,:]).grad(geom), 1, 2 )
+
+      b['i;j']
+      b.grad(geom, -1)
   '''
 
   def __init__( self, indices, op, args ):
@@ -107,11 +111,19 @@ class IndexedArray:
       raise ValueError( '`geom` is required for unwrapping this `IndexedArray`' )
     return array.grad( geom )
 
+  @staticmethod
+  def _array_surfgrad( geom, array ):
+    if geom is None:
+      raise ValueError( '`geom` is required for unwrapping this `IndexedArray`' )
+    return array.grad( geom, -1 )
+
   def __getitem__( self, item ):
     if not isinstance( item, str ):
       raise ValueError( 'expected a `str`, got {!r}'.format( item ) )
     if item.startswith( ',' ):
       grad = self._array_grad
+    elif item.startswith( ';' ):
+      grad = self._array_surfgrad
     else:
       raise ValueError( 'additional indices are not allowed, only derivatives' )
     if not all( 'a' <= index <= 'z' for index in item[1:] ):
@@ -247,6 +259,9 @@ def wrap( array, indices ):
   if ',' in indices:
     indices, grad_indices = indices.split( ',', 1 )
     grad_indices = ','+grad_indices
+  elif ';' in indices:
+    indices, grad_indices = indices.split( ';', 1 )
+    grad_indices = ';'+grad_indices
   else:
     grad_indices = ''
   if len( indices ) != len( array.shape ):

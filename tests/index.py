@@ -90,3 +90,7 @@ def indexedarray():
   @unittest( raises=ValueError )
   def grad_triple_index2():
     d['i'][',ii'].unwrap(geom)
+
+  @unittest
+  def surfgrad():
+    assert d['i;j'].unwrap(geom) == d.grad(geom, -1)
