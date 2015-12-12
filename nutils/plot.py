@@ -135,7 +135,6 @@ class PyPlot( BasePlot ):
       assert len(values) == len(points)
 
     if isinstance( points, numpy.ndarray ): # bulk data
-
       assert points.shape[-1] == 2
       if points.ndim == 2: # npoints x 2
         triangulation, hull = _triangulate_delaunay( points )
@@ -148,42 +147,19 @@ class PyPlot( BasePlot ):
       if values is not None:
         values = values.ravel()
         assert len(values) == len(points)
-
     elif points[0].shape[1] == 1: # line plot
-
       edges = []
       for epoints, evalues in zip( points, values ):
         assert evalues.ndim == 1 and epoints.shape == evalues.shape + (1,)
         edges.append( numpy.array([ epoints[:,0], evalues ]).T )
       values = None
       aspect = None
-
     else: # mesh data
-
-      if triangulate == 'delaunay':
-        _triangulate = _triangulate_delaunay
-      elif triangulate == 'bezier':
-        _triangulate = _compose( cache.Wrapper(_triangulate_bezier), len )
-      else:
-        raise Exception( 'unknown triangulation method %r' % triangulate )
-
-      triangulation = []
-      edges = []
-      npoints = 0
-      for epoints in points:
-        np = len(epoints)
-        assert epoints.shape == (np,2)
-        if np == 0:
-          continue
-        vertices, hull = _triangulate( epoints )
-        triangulation.append( vertices + npoints )
-        edges.append( epoints[hull] )
-        npoints += np
+      triangulation, edges = _mktriangulation( points, triangulate )
       points = numpy.concatenate( points, axis=0 )
-      triangulation = numpy.concatenate( triangulation, axis=0 )
       if values is not None:
         values = numpy.concatenate( values, axis=0 )
-        assert values.shape == (npoints,)
+        assert len(values) == len(points)
 
     if values is not None:
       finite = numpy.isfinite(values)
@@ -210,6 +186,35 @@ class PyPlot( BasePlot ):
     return linecol if values is None \
       else trimesh if edgecolors == 'none' \
       else (trimesh, linecol)
+
+  def meshcontour( self, points, values, triangulate='delaunay', mergetol=1e-5, **kwargs ):
+    triangulation, edges = _mktriangulation( points, triangulate )
+    points = numpy.concatenate( points, axis=0 )
+    values = numpy.concatenate( values, axis=0 )
+    assert len(values) == len(points)
+    CS = self.tricontour( points[:,0], points[:,1], triangulation, values, **kwargs )
+    if mergetol: # try to connect continuous segments
+      for collection in log.iter( 'contour', CS.collections ):
+        segments = [ segment for path in collection.get_paths() for segment in path.to_polygons() ]
+        while True:
+          paths = []
+          for segment in segments:
+            for i, path in enumerate(paths):
+              equal = numpy.all( numpy.abs( path[::len(path)-1][:,_] - segment[::len(segment)-1][_,:] ) < mergetol, axis=-1 )
+              if numpy.any( equal ):
+                index = core.index( equal.flat )
+                a = path[:: -1 if index in (0,1) else 1]
+                b = segment[:: -1 if index in (1,3) else 1]
+                assert numpy.all( numpy.abs( a[-1] - b[0] ) < mergetol ) # double check
+                paths[i] = numpy.concatenate( [ a, b[1:] ], axis=0 )
+                break
+            else:
+              paths.append( segment )
+          if len(paths) == len(segments): # no merges happened
+            break
+          segments = paths
+        collection.set_paths( paths )
+    return CS
 
   def polycol( self, verts, facecolors='none', **kwargs ):
     'add polycollection'
@@ -785,5 +790,26 @@ def _triangulate_delaunay( points ):
 
 def _compose( f, g ):
   return lambda *args, **kwargs: f( g( *args, **kwargs ) )
+
+def _mktriangulation( points, triangulate ):
+  if triangulate == 'delaunay':
+    _triangulate = _triangulate_delaunay
+  elif triangulate == 'bezier':
+    _triangulate = _compose( cache.Wrapper(_triangulate_bezier), len )
+  else:
+    raise Exception( 'unknown triangulation method %r' % triangulate )
+  triangulation = []
+  edges = []
+  npoints = 0
+  for epoints in points:
+    np = len(epoints)
+    assert epoints.shape == (np,2)
+    if np == 0:
+      continue
+    vertices, hull = _triangulate( epoints )
+    triangulation.append( vertices + npoints )
+    edges.append( epoints[hull] )
+    npoints += np
+  return numpy.concatenate( triangulation, axis=0 ), edges
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
