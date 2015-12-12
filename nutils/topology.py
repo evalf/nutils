@@ -644,6 +644,11 @@ class Topology( object ):
   def indicator( self ):
     return function.Elemwise( { elem.transform: 1. for elem in self }, (), default=0. )
 
+  def select( self, indicator, ischeme='bezier2' ):
+    values = self.elem_eval( indicator, ischeme, separate=True )
+    selected = [ elem for elem, value in zip( self, values ) if numpy.any( value > 0 ) ]
+    return UnstructuredTopology( self.ndims, selected )
+
 class EmptyTopology( Topology ):
   'empty topology'
 
