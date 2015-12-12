@@ -28,6 +28,8 @@ def indexedarray():
   b = geom**2
   ab_outer = a[:,_]*b[_,:]
   c = basis.grad(geom)
+  d = basis
+  e = basis.vector(domain.ndims)
 
   @unittest
   def outer_product():
@@ -80,3 +82,27 @@ def indexedarray():
   @_unittest_raises( ValueError )
   def triple_index():
     c.grad(geom)['iii']
+
+  @unittest
+  def grad1():
+    assert d['i,j'].unwrap(geom) == d.grad(geom)
+
+  @unittest
+  def grad2():
+    assert d['i'][',j'].unwrap(geom) == d.grad(geom)
+
+  @unittest
+  def grad3():
+    assert d['i,jk'].unwrap(geom) == d.grad(geom).grad(geom)
+
+  @unittest
+  def grad4():
+    assert e['ij,kj'].unwrap(geom) == function.trace( e.grad(geom).grad(geom), 1, 3 )
+
+  @_unittest_raises( ValueError )
+  def grad_triple_index1():
+    d['i,ii'].unwrap(geom)
+
+  @_unittest_raises( ValueError )
+  def grad_triple_index2():
+    d['i'][',ii'].unwrap(geom)
