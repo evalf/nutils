@@ -4,31 +4,34 @@ from __future__ import division
 from nutils import *
 
 
-@log.title
-def makeplots( domain, geom, velo, pres, index, plts ):
+class MakePlots( object ):
 
-  vort = velo.grad(geom)[1,0] - velo.grad(geom)[0,1]
-  xlim = -4, 14
-  ylim = -5, 5
-  xy, uv = domain.elem_eval( [ geom, velo ], ischeme='uniform1', separate=False )
-  points, flow, pres, vort = domain.elem_eval( [ geom, function.norm2(velo), pres, vort ], ischeme='bezier5', separate=True )
+  def __init__( self, domain, geom, xlim=(-4,12), ylim=(-6,6), video=False ):
+    self.xlim = xlim
+    self.ylim = ylim
+    self.geom = geom
+    self.plotdomain = domain.select( function.piecewise( geom[0], xlim, 0, 1, 0 ) * function.piecewise( geom[1], ylim, 0, 1, 0 ) )
+    self.plt = video and plot.PyPlotVideo( 'flow' )
+    self.index = 0
 
-  if plts is True:
-    plts = [ plot.PyPlot( name, index=index ) for name in [ 'flow', 'pres', 'vort' ] ]
+  def __call__( self, velo, pres ):
+    self.index += 1
+    vort = velo.grad(self.geom)[1,0] - velo.grad(self.geom)[0,1]
+    xy, uv = self.plotdomain.elem_eval( [ self.geom, velo ], ischeme='uniform2', separate=False )
+    points, flow, pres, vort = self.plotdomain.elem_eval( [ self.geom, function.norm2(velo), pres, vort ], ischeme='bezier5', separate=True )
+    with self.plt if self.plt else plot.PyPlot( 'flow', index=self.index ) as plt:
+      ax = plt.gcf().add_axes( [0,0,1,1], yticks=[], xticks=[], frame_on=False )
+      plt.mesh( points, vort, triangulate='bezier', aspect=False )
+      CS = plt.meshcontour( points, pres, triangulate='bezier', colors='k', linestyles='solid' )
+      plt.clabel( CS, inline=1, fontsize=10 )
+      plt.vectors( xy, uv )
+      plt.xlim( self.xlim )
+      plt.ylim( self.ylim )
 
-  for plt, value in zip(plts, [flow, pres, vort]):
-    with plt:
-      plt.mesh( points, value, triangulate='bezier' )
-      plt.colorbar( orientation='horizontal' )
-      plt.xlim( xlim )
-      plt.ylim( ylim )
-      plt.quiver( xy[:,0], xy[:,1], uv[:,0], uv[:,1] )
 
+def main( nelems=24, viscosity=1e-3, density=1, tol=1e-8, rotation=0, timestep=.1, maxradius=50, video=False ):
 
-def main( nelems=24, viscosity=1e-3, density=1, tol=1e-8, rotation=0, timestep=.1, maxradius=50, plt=True ):
-
-  if plt == 'video':
-    plt = [ plot.PyPlotVideo( name ) for name in [ 'flow', 'pres', 'vort' ] ]
+  Uinf = numpy.array([ 1, 0 ])
 
   rscale = 2*numpy.pi / nelems
   melems = numpy.ceil( numpy.log(maxradius) / rscale ).astype( int )
@@ -41,8 +44,10 @@ def main( nelems=24, viscosity=1e-3, density=1, tol=1e-8, rotation=0, timestep=.
   geom = radius * normal
   cylvelo = rotation * tangent
 
-  vbasis = function.vectorize([ domain.basis( 'spline', degree=(2,1), removedofs=((0,),None) ), domain.basis( 'spline', degree=(1,2) ) ])
-  pbasis = domain.basis( 'spline', degree=1 )
+  makeplots = MakePlots( domain, geom, video=video )
+
+  vbasis = function.vectorize([ domain.basis( 'spline', degree=(3,2), removedofs=((0,),None) ), domain.basis( 'spline', degree=(2,3) ) ])
+  pbasis = domain.basis( 'spline', degree=2 )
 
   # piola
   J = function.localgradient( geom, domain.ndims )
@@ -57,26 +62,30 @@ def main( nelems=24, viscosity=1e-3, density=1, tol=1e-8, rotation=0, timestep=.
   A = function.outer( vbasis.grad(geom), stressbasis ).sum([2,3]) \
     + function.outer( pbasis, vbasis.div(geom)+lbasis ) \
     + function.outer( lbasis, pbasis )
+  Ao = function.outer( vbasis, density * ( vbasis.grad(geom) * Uinf ).sum(-1) ).sum(-1)
   At = (density/timestep) * function.outer( vbasis ).sum(-1)
-  stokesmat, inertmat = domain.integrate( [ A, At ], geometry=geom, ischeme='gauss9' )
+  Ad = function.outer( vbasis.div(geom) )
+  stokesmat, uniconvec, inertmat, divmat = domain.integrate( [ A, Ao, At, Ad ], geometry=geom, ischeme='gauss9' )
 
   # tangential flow boundary condition
-  h = function.ElementSize( geom, -1 )
-  nietzsche = (10*viscosity/h) * vbasis - stressbasis.dotnorm(geom)
+  h = (2*numpy.pi) / nelems
+  nietzsche = (2*viscosity) * ( (7.5/h) * vbasis - vbasis.symgrad(geom).dotnorm(geom) )
   B = function.outer( nietzsche, vbasis ).sum(-1)
   b = ( nietzsche * cylvelo ).sum(-1)
   bcondmat, rhs = domain.boundary['left'].integrate( [ B, b ], geometry=geom, ischeme='gauss9' )
   stokesmat += bcondmat
 
-  cons = domain.boundary['right'].project( [1,0], geometry=geom, onto=vbasis, ischeme='gauss9', tol=1e-12 )
-  lhs = stokesmat.solve( rhs, constrain=cons, tol=tol, restart=9999, precon='spilu' )
+  cons = domain.boundary['right'].project( Uinf, geometry=geom, onto=vbasis, ischeme='gauss9', tol=1e-12 )
+  lhs = (stokesmat+uniconvec).solve( rhs, constrain=cons, tol=tol, restart=9999, precon='spilu' )
 
   stokesmat += inertmat
+  precon = (stokesmat+uniconvec).getprecon( 'splu', constrain=cons )
   for iiter in log.count( 'timestep' ):
-    makeplots( domain, geom, vbasis.dot(lhs), pbasis.dot(lhs), iiter, plt )
+    log.info( 'velocity divergence:', divmat.matvec(lhs).dot(lhs) )
     convection = density * ( vbasis.grad(geom) * vbasis.dot(lhs) ).sum(-1)
     matrix = stokesmat + domain.integrate( function.outer( vbasis, convection ).sum(-1), ischeme='gauss9', geometry=geom )
-    lhs = matrix.solve( rhs + inertmat.matvec(lhs), lhs0=lhs, constrain=cons, tol=tol, restart=9999, precon='spilu' )
+    lhs = matrix.solve( rhs + inertmat.matvec(lhs), lhs0=lhs, constrain=cons, tol=tol, restart=9999, precon=precon )
+    makeplots( vbasis.dot(lhs), pbasis.dot(lhs) )
   
 
 def unittest():
