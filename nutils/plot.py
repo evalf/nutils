@@ -470,7 +470,8 @@ class PyPlotVideo( PyPlot ):
         '-vcodec', 'png',
         '-r', str(framerate),
         '-i', '-',
-        '-b:v', '1500k',
+        '-crf', '10', # constant quality (4-63, lower means better)
+        '-b:v', '10M', # maximum allowed bitrate
         self.getpath( name, None, videotype ),
       ], stdin=subprocess.PIPE )
 
