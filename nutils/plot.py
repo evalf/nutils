@@ -187,12 +187,15 @@ class PyPlot( BasePlot ):
       else trimesh if edgecolors == 'none' \
       else (trimesh, linecol)
 
-  def meshcontour( self, points, values, triangulate='delaunay', mergetol=1e-5, **kwargs ):
+  def meshcontour( self, points, values, every=None, levels=None, triangulate='delaunay', mergetol=1e-5, **kwargs ):
+    assert not every or levels is None, '"every" and "levels" arguments are mutually exclusive'
     triangulation, edges = _mktriangulation( points, triangulate )
     points = numpy.concatenate( points, axis=0 )
     values = numpy.concatenate( values, axis=0 )
     assert len(values) == len(points)
-    CS = self.tricontour( points[:,0], points[:,1], triangulation, values, **kwargs )
+    if every:
+      levels = numpy.arange( int(min(values)/every), int(max(values)/every)+1 ) * every
+    CS = self.tricontour( points[:,0], points[:,1], triangulation, values, levels=levels, **kwargs )
     if mergetol: # try to connect continuous segments
       for collection in log.iter( 'contour', CS.collections ):
         segments = [ segment for path in collection.get_paths() for segment in path.to_polygons() ]
