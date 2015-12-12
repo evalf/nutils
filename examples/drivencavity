@@ -4,38 +4,37 @@ from __future__ import division
 from nutils import *
 
 
-@log.title
-def makeplots( domain, geom, velo, pres, index ):
+class MakePlots( object ):
 
-  xy, uv = domain.elem_eval( [ geom, velo ], ischeme='uniform2', separate=False )
-  points, velo, pres, div = domain.elem_eval( [ geom, function.norm2(velo), pres, velo.div(geom) ], ischeme='bezier5', separate=True )
+  def __init__( self, domain, geom, dpres=.01 ):
+    self.domain = domain
+    self.geom = geom
+    self.dpres = dpres
+    self.index = 0
 
-  with plot.PyPlot( 'velo', index=index, ndigits=4 ) as plt:
-    plt.mesh( points, velo, triangulate='bezier' )
-    plt.clim( 0, 1 )
-    plt.colorbar()
-    plt.quiver( xy[:,0], xy[:,1], uv[:,0], uv[:,1] )
-
-  with plot.PyPlot( 'pres', index=index, ndigits=4 ) as plt:
-    plt.mesh( points, pres, triangulate='bezier' )
-    plt.colorbar()
-
-  with plot.PyPlot( 'div', index=index, ndigits=4 ) as plt:
-    plt.mesh( points, div, triangulate='bezier' )
-    plt.colorbar()
+  def __call__( self, velo, pres ):
+    self.index += 1
+    xy, uv = self.domain.elem_eval( [ self.geom, velo ], ischeme='uniform2', separate=False )
+    points, velo, pres = self.domain.elem_eval( [ self.geom, function.norm2(velo), pres ], ischeme='bezier9', separate=True )
+    with plot.PyPlot( 'velo', index=self.index, ndigits=4 ) as plt:
+      plt.mesh( points, velo, triangulate='bezier' )
+      plt.clim( 0, 1 )
+      plt.colorbar()
+      plt.quiver( xy[:,0], xy[:,1], uv[:,0], uv[:,1] )
+      plt.meshcontour( points, pres, every=self.dpres, cmap='gray', linestyles='solid', alpha=.8 )
 
 
-def main( nelems=8, viscosity=1e-3, density=1, warp=False, plot=True, tol=1e-5, maxiter=numpy.inf ):
+def main( nelems=8, viscosity=1e-3, density=1, degree=2, warp=False, plot=True, tol=1e-5, maxiter=numpy.inf ):
 
   Re = density / viscosity # based on unit length and velocity
   log.user( 'reynolds number: {:.1f}'.format(Re) )
 
   verts = numpy.linspace( 0, 1, nelems+1 )
   domain, geom = mesh.rectilinear( [verts,verts] )
-  pbasis = domain.basis( 'spline', degree=1 )
+  pbasis = domain.basis( 'spline', degree=degree )
   vbasis = function.vectorize([
-    domain.basis( 'spline', degree=(2,1), removedofs=((0,-1),None) ),
-    domain.basis( 'spline', degree=(1,2), removedofs=(None,(0,-1)) ) ])
+    domain.basis( 'spline', degree=(degree+1,degree), removedofs=((0,-1),None) ),
+    domain.basis( 'spline', degree=(degree,degree+1), removedofs=(None,(0,-1)) ) ])
 
   if warp:
     x, y = geom
@@ -45,24 +44,28 @@ def main( nelems=8, viscosity=1e-3, density=1, warp=False, plot=True, tol=1e-5, 
     vbasis = ( vbasis[...,_,:] * J ).sum(-1) / detJ # piola transform
     pbasis = pbasis / detJ
 
+  makeplots = MakePlots( domain, geom ) if plot else lambda *args: None
+
   vbasis, pbasis, lbasis = function.chain([ vbasis, pbasis, [1] ])
   stressbasis = (2*viscosity) * vbasis.symgrad(geom) - (pbasis)[:,_,_] * function.eye( domain.ndims )
 
   A = function.outer( vbasis.grad(geom), stressbasis ).sum([2,3]) \
     + function.outer( pbasis, vbasis.div(geom)+lbasis ) \
     + function.outer( lbasis, pbasis )
-  stokesmat = domain.integrate( A, geometry=geom, ischeme='gauss9' )
+  Ad = function.outer( vbasis.div(geom) )
+  stokesmat, divmat = domain.integrate( [ A, Ad ], geometry=geom, ischeme='gauss9' )
 
-  utop = geom.tangent([1,0]).normalized()
-  h = function.ElementSize( geom, -1 )
-  nietzsche = (10*viscosity/h) * vbasis - stressbasis.dotnorm(geom)
+  normal = geom.normal()
+  utop = function.asarray([ normal[1], -normal[0] ])
+  h = domain.boundary['top'].integrate( 1, geometry=geom, ischeme='gauss9' ) / nelems
+  nietzsche = (2*viscosity) * ( ((degree+1)*2.5/h) * vbasis - vbasis.symgrad(geom).dotnorm(geom) )
   stokesmat += domain.boundary.integrate( function.outer( nietzsche, vbasis ).sum(-1), geometry=geom, ischeme='gauss9' )
   rhs = domain.boundary['top'].integrate( ( nietzsche * utop ).sum(-1), geometry=geom, ischeme='gauss9' )
   lhs = stokesmat.solve( rhs, tol=tol, solver='cg', precon='spilu' )
 
   for iiter in log.count( 'picard', stop=maxiter ):
-    if plot:
-      makeplots( domain, geom, vbasis.dot(lhs), pbasis.dot(lhs), iiter )
+    log.info( 'velocity divergence:', divmat.matvec(lhs).dot(lhs) )
+    makeplots( vbasis.dot(lhs), pbasis.dot(lhs) )
     ugradu = ( vbasis.grad(geom) * vbasis.dot(lhs) ).sum(-1)
     convection = density * function.outer( vbasis, ugradu ).sum(-1)
     matrix = stokesmat + domain.integrate( convection, ischeme='gauss9', geometry=geom )
@@ -75,7 +78,7 @@ def main( nelems=8, viscosity=1e-3, density=1, warp=False, plot=True, tol=1e-5, 
 
 def unittest():
 
-  retvals = main( nelems=4, viscosity=1e-3, warp=False, tol=1e-15, maxiter=1, plot=False )
+  retvals = main( nelems=4, viscosity=1e-3, degree=1, warp=False, tol=1e-15, maxiter=1, plot=False )
   assert debug.checkdata( retvals, '''
     eNrFkl1uxCAMhK+zK0Hl8S8+UO5/hYKdbJ8q9a0SEpE9DJ+HYLx0wN7j9aKv0cvd45oxnIiu6ePTwF3I
     Pzd+tfr3tSeexsuuaUOD5OwTknxNHa4SpwA6Ah2T8/BvBUO0K2vR+eAgnF0TqxrKmi3NbCk8S4q0ktiK
@@ -83,13 +86,23 @@ def unittest():
     rR9gQwfmvFrykMI7qL2XAqFaXORVd0rvvkXXubhnhPABnDu+ukxcVjtA+0Q77QyiiVOWNwWoUtnD5i2V
     O0/SMpU7npmJ+hH3m7QrtHmygxUW6oCtAq4/5f0NMWaoJA==''' )
 
-  retvals = main( nelems=4, viscosity=1e-3, warp=True, tol=1e-15, maxiter=1, plot=False )
+  retvals = main( nelems=4, viscosity=1e-3, degree=2, warp=False, tol=1e-15, maxiter=1, plot=False )
   assert debug.checkdata( retvals, '''
-    eNrFUltuBCAIvM5uoo3DmwPt/a9QBbdpP5r0r4kJIwwwiBgPGdDneDzWx+jDtNZr2iBp+xWQaAfbXwO/
-    lvr3syeegPpr6phY3iDZ+eiESDmIEhVgZW4Q0VQirZDksmM1s+wUVmqqRycjVhT1FjGxLgazaOAmBTxB
-    JSC4chmoqm+pvB3VDWHfBQJRlTizeHp5iBYjK6M2tKQWMcEncW+G2a5Druy9xTuI25Xp8lOvIrWA+X25
-    t1BbZwAfKqss6Aj3YSFZ98gSIA49d9bm78kJBfYf4gNioRw98qnEUgRo1htNWuhh1DtXU8uKqHWt3aYA
-    k1UySriNIK22vqnHErop9DTZ76SK+2Gf4/kJAvSoLA==''' )
+    eNrVU1mK3UAMvM4bsIP25UBz/yvEUvUbmAmE/AYMaloqqark5utlF/vH9XrRr+vrYyL6vOMKR/yWO3ed
+    /kdODo51ov8z7m/z/uvvMfa2SBkzspIn3sxen/fju6ROvDk75yBsMvFBnEolQYUjc5szzaHMfKIaORJm
+    b0zFHoo4JhVysNzAdOvOjYwat29t7YXoMwfd1JZic220ct5E0ZTGpct9IFHAsmdjjNm2L3Y9auToJsjU
+    yFOJirfuL6s4RJDo7clUD0KvUM7JK+nG21JWdRCBnyWICmccbwl2mI9T9RwqtrmnFEqiV3Ua2foRdvy3
+    ErhbDXEcP3zwNPjgKucggbZv/SKyDnHLipOGiHFsL6JlX4tRE9QxAIa8xuxt6HDpDM0SxTPDf8P57lwM
+    +xSLTTukgmaPw87rkMH+pA4kCxD8WE9lkmFt0aAhrnFobS8V3kpmBhuH03UevzAHcLSjHgvXMtmd1dWk
+    i9es9Wmfy8dvwCb0Ug==''' )
+
+  retvals = main( nelems=4, viscosity=1e-3, degree=1, warp=True, tol=1e-15, maxiter=1, plot=False )
+  assert debug.checkdata( retvals, '''
+    eNrFUluqYzEM204LyeD3Y0Hd/xYmkdvCfAzcv3sI2ESKJOeE18MW+3M9HvRnzVIheu1Yoqmv7esLWA2g
+    HvQz4L9Sv77OxJs7+KZiSb91GzliSjjmEOEGEEV659jRBWR7DzUpdDRMXtvWFjIDI0sLzbmVuI2nC6iq
+    fqn8JQTJ2EiCyVYjaj3Md9Dt1bjPdK5/A9oEzGC4t091JpyM4rw4u03+suS7YaEzGbeNR/CE2GqTu0hA
+    +eZ1jUTD2TP0J2jbpeaxp7yVzze2gXpOIn8r9eDecD8PCBtHSRBUbJCmgmIh3iFIu8+vYCk0Gm8TSuRs
+    sXhTs0a070jXRkuQTxlq6Q0GOxlcpeaakj4P+bmefwHREqhd''' )
 
 
 util.run( main, unittest )
