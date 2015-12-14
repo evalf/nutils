@@ -128,7 +128,7 @@ class PyPlot( BasePlot ):
     self.sci( lc )
     return lc
 
-  def mesh( self, points, values=None, edgecolors='k', edgewidth=None, triangulate='delaunay', mergetol=0, setxylim=True, aspect='equal', cmap='jet' ):
+  def mesh( self, points, values=None, edgecolors='k', edgewidth=.1, triangulate='delaunay', mergetol=0, setxylim=True, aspect='equal', cmap='jet' ):
     'plot elemtwise mesh'
 
     if values is not None:
@@ -170,8 +170,6 @@ class PyPlot( BasePlot ):
       trimesh = self.tripcolor( points[:,0], points[:,1], triangulation, values, shading='gouraud', rasterized=True, cmap=cmap )
 
     if edgecolors != 'none':
-      if edgewidth is None:
-        edgewidth = .1 if values is not None else .5
       from matplotlib.collections import LineCollection
       linecol = LineCollection( edges, linewidths=(edgewidth,) )
       linecol.set_color( edgecolors )
