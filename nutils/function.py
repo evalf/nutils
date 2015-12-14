@@ -31,7 +31,7 @@ expensive and currently unsupported operation.
 """
 
 from . import util, numpy, numeric, log, core, cache, transform, rational, _
-import sys, warnings, itertools, functools, operator, inspect
+import sys, warnings, itertools, functools, operator, inspect, numbers
 
 CACHE = 'Cache'
 TRANS = 'Trans'
@@ -369,21 +369,31 @@ class ArrayFunc( Evaluable ):
 
   # mathematical operators
 
-  __mul__  = lambda self, other: multiply( self, other )
-  __rmul__ = lambda self, other: multiply( other, self )
-  __div__  = lambda self, other: divide( self, other )
+  def _if_array_args( op ):
+    @functools.wraps( op )
+    def wrapper( self, other ):
+      if isinstance( other, ( numbers.Number, numpy.number, numpy.ndarray, ArrayFunc, tuple, list ) ):
+        return op( self, other )
+      else:
+        return NotImplemented
+    return wrapper
+
+  __mul__  = _if_array_args( lambda self, other: multiply( self, other ) )
+  __rmul__ = _if_array_args( lambda self, other: multiply( other, self ) )
+  __div__  = _if_array_args( lambda self, other: divide( self, other ) )
   __truediv__ = __div__
-  __rdiv__ = lambda self, other: divide( other, self )
+  __rdiv__ = _if_array_args( lambda self, other: divide( other, self ) )
   __rtruediv__ = __rdiv__
-  __add__  = lambda self, other: add( self, other )
-  __radd__ = lambda self, other: add( other, self )
-  __sub__  = lambda self, other: subtract( self, other )
-  __rsub__ = lambda self, other: subtract( other, self )
+  __add__  = _if_array_args( lambda self, other: add( self, other ) )
+  __radd__ = _if_array_args( lambda self, other: add( other, self ) )
+  __sub__  = _if_array_args( lambda self, other: subtract( self, other ) )
+  __rsub__ = _if_array_args( lambda self, other: subtract( other, self ) )
   __neg__  = lambda self: negative( self )
-  __pow__  = lambda self, n: power( self, n )
+  __pow__  = _if_array_args( lambda self, n: power( self, n ) )
   __abs__  = lambda self: abs( self )
   __len__  = lambda self: self.shape[0]
   sum      = lambda self, axis=None: sum( self, axis )
+  del _if_array_args
 
   @property
   def size( self ):
