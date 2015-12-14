@@ -6,11 +6,10 @@ from nutils import *
 
 class MakePlots( object ):
 
-  def __init__( self, domain, geom, xlim=(-2,6), ylim=(-3,3), nquiver=1, video=False ):
-    self.xlim = xlim
-    self.ylim = ylim
+  def __init__( self, domain, geom, bbox=((-2,6),(-3,3)), nquiver=1, video=False ):
+    self.bbox = numpy.asarray(bbox)
     self.geom = geom
-    self.plotdomain = domain.select( function.piecewise( geom[0], xlim, 0, 1, 0 ) * function.piecewise( geom[1], ylim, 0, 1, 0 ), 'bezier3' )
+    self.plotdomain = domain.select( function.piecewise( geom[0], self.bbox[0], 0, 1, 0 ) * function.piecewise( geom[1], self.bbox[1], 0, 1, 0 ), 'bezier3' )
     self.plt = video and plot.PyPlotVideo( 'flow' )
     self.every = .01
     self.index = 0
@@ -22,37 +21,35 @@ class MakePlots( object ):
     points, flow, pres = self.plotdomain.elem_eval( [ self.geom, function.norm2(velo), pres ], ischeme='bezier9', separate=True )
     with self.plt if self.plt else plot.PyPlot( 'flow', index=self.index ) as plt:
       ax = plt.gcf().add_axes( [0,0,1,1], yticks=[], xticks=[], frame_on=False )
-      plt.mesh( points, flow, triangulate='bezier', aspect=False, edgecolors='none' )
+      plt.mesh( points, flow, triangulate='bezier', edgecolors='none' )
       plt.clim( 0, 1.5 )
       plt.meshcontour( points, pres, every=self.every, triangulate='bezier', cmap='gray', linestyles='solid', alpha=.8 )
       plt.vectors( xy, uv )
-      plt.xlim( self.xlim )
-      plt.ylim( self.ylim )
-      plt.plot( [0,.25*numpy.cos(angle)], [0,.25*numpy.sin(angle)], 'k-' )
-      plt.plot( [0,.125*numpy.cos(angle+2/3.*numpy.pi)], [0,.125*numpy.sin(angle+2/3.*numpy.pi)], 'k-' )
-      plt.plot( [0,.125*numpy.cos(angle-2/3.*numpy.pi)], [0,.125*numpy.sin(angle-2/3.*numpy.pi)], 'k-' )
+      plt.plot( 0, 0, 'k', marker=(3,2,angle*180/numpy.pi-90), markersize=20 )
+      plt.xlim( self.bbox[0] )
+      plt.ylim( self.bbox[1] )
 
 
-def main( nelems=30, viscosity=1e-2, density=1, tol=1e-12, rotation=0, timestep=1/24, maxradius=25, tmax=numpy.inf, plot=True ):
+def main( nelems=12, viscosity=1e-2, density=1, tol=1e-12, rotation=0, timestep=1/24, maxradius=25, tmax=numpy.inf, withplots=True ):
 
   uinf = numpy.array([ 1, 0 ])
   log.user( 'reynolds number:', density/viscosity )
 
   # construct mesh
-  rscale = (2*numpy.pi) / nelems
+  rscale = numpy.pi / nelems
   melems = numpy.ceil( numpy.log(2*maxradius) / rscale ).astype( int )
-  log.info( 'creating {}x{} mesh, outer radius {:.2f}'.format( melems, nelems, .5*numpy.exp(rscale*melems) ) )
-  domain, (rho,phi) = mesh.rectilinear( [range(melems+1),numpy.linspace(0,2*numpy.pi,nelems+1)], periodic=(1,) )
+  log.info( 'creating {}x{} mesh, outer radius {:.2f}'.format( melems, 2*nelems, .5*numpy.exp(rscale*melems) ) )
+  domain, (rho,phi) = mesh.rectilinear( [range(melems+1),numpy.linspace(0,2*numpy.pi,2*nelems+1)], periodic=(1,) )
   phi += 1e-3 # tiny nudge (0.057 deg) to break element symmetry
-  normal, tangent = function.rotmat(phi)
-  cylvelo = .5 * rotation * tangent
+  tangent, normal = function.rotmat(phi)
+  cylvelo = -.5 * rotation * tangent
   radius = .5 * function.exp( rscale * rho )
   geom = radius * normal
 
   # prepare bases
   J = function.localgradient( geom, domain.ndims )
   detJ = function.determinant( J )
-  vnbasis, vtbasis, pbasis = function.chain([
+  vnbasis, vtbasis, pbasis = function.chain([ # compatible spaces using piola transformation
     domain.basis( 'spline', degree=(3,2), removedofs=((0,),None) )[:,_] * J[:,0] / detJ,
     domain.basis( 'spline', degree=(2,3) )[:,_] * J[:,1] / detJ,
     domain.basis( 'spline', degree=2 ) / detJ,
@@ -84,7 +81,16 @@ def main( nelems=30, viscosity=1e-2, density=1, tol=1e-12, rotation=0, timestep=
   lhs = (stokesmat+uniconvec).solve( rhs, constrain=cons, tol=tol, restart=9999, precon='spilu' )
 
   # prepare plotting
-  makeplots = MakePlots( domain, geom, video=plot=='video', nquiver=60//nelems ) if plot else lambda *args: None
+  if not withplots:
+    makeplots = lambda *args: None
+  else:
+    makeplots = MakePlots( domain, geom, video=withplots=='video', nquiver=24//nelems )
+    mesh_ = domain.elem_eval( geom, ischeme='bezier5', separate=True )
+    inflow_ = inflow.elem_eval( geom, ischeme='bezier5', separate=True )
+    with plot.PyPlot( 'mesh', ndigits=0 ) as plt:
+      plt.mesh( mesh_, triangulate='bezier' )
+      plt.rectangle( makeplots.bbox[:,0], *( makeplots.bbox[:,1] - makeplots.bbox[:,0] ), ec='green' )
+      plt.line( inflow_, colors='red' )
 
   # start time stepping
   stokesmat += inertmat
@@ -103,25 +109,25 @@ def main( nelems=30, viscosity=1e-2, density=1, tol=1e-12, rotation=0, timestep=
 
 def unittest():
 
-  retvals = main( nelems=6, viscosity=1e-2, timestep=.1, tmax=.05, rotation=0, plot=False )
+  retvals = main( nelems=3, viscosity=1e-2, timestep=.1, tmax=.05, rotation=0, withplots=False )
   assert debug.checkdata( retvals, '''
-    eNo1UtmNKDEIa2dXmpG4AwW9/lvYYM/7isNtgz4/8Wj+Pj+vd+q/N57XKmbBdNBQpTC8JwVA5dzXHxM9
-    +HvWvhYqa38ttxbAGCJ9iq8wM6v31TT8X5/D1JCDSC2HZ6TOvj2BDDf2ftXsOmyB2AKbcdTWrW3bSxlw
-    OsnsmmC5ALkaA4puidDLIxHgsd1igcl/yyzo0xRDJTCYSiN0xL8uEpywbG5E3oEG3FojKGguh1xl68tp
-    Scw+6Ug5AwHvoLCrnW85LkX6YQSVeavW5XIgEGtex7g0u8SBMG/fcguOe62nRbmFqVpuxz/WJl6ULrU/
-    kRUuzYAeHgI5tMy4wLKhUCC3KcJruR6KPQo57r6Kc0keBqTg7R0vMPCh+mLFgWYo1LhBiHFubqK4jpmm
-    QpnF5NQvp1Pgsm4Dh7GvmAwbqlPuV6eboAIWV8furLnDe0zfjWd+Ooc0QqPs21Uf3njgX520t/Jg/aQR
-    TBt1V5xfVtFxu0P/3z/Vl8lS''' )
+    eNo1ktmNxEAIRNOZkWyJs4GANv8Uli6YL0rFYfMafj72sH+fj2bU3+vPK0cVgs3OiFKkVNzGYEYmyv3v
+    tecNp7hCw8Y4yXlFKDMMO3lQ4dWGPq96FgSbTolE2XUkmW5kcQxlqR4qXSmpEFZnhjAdpJiSb+yvCFpV
+    bVqUpqVnrSNVaFFFFCdBZJoCIZ4WLYt1KKaE8RUNR+QIB4/Ks8jqAIxoyI3JRZPwQIX63e0SS4NQkiE2
+    WzcxFoB6VX251AJSysTaYoUmwbodNUFMaWmL8QLqf9z9BbhFZgYT2+x0H/lW+p1xAZ0B04ISa/rG9CFn
+    IVOQO9xaLSk/mEoHDH+JDjNcyniAxO/KAPN0qsHD6TUHq8ieZPTPQTid2tsk+RUPYcPpXaExxeL3XO0e
+    QeViiRgnS5Z6jaOHFp1KDGQpGjJ65IdoqR6LdXSOuB/aR1SgK3BmbQSN8XYPzjtNENUWZ801vUeGaz/N
+    nJvtQ/STgeb3H1Hjy18=''' )
 
-  retvals = main( nelems=6, viscosity=1e-2, timestep=.1, tmax=.05, rotation=1, plot=False )
+  retvals = main( nelems=3, viscosity=1e-2, timestep=.1, tmax=.05, rotation=1, withplots=False )
   assert debug.checkdata( retvals, '''
-    eNo1UtmtxEAIa2dXSiTuo6DXfwuPMbNfOMAQbMzPxx727/N5lc3+XnteVaEDurqQCA0FyFQApoi/Vx9J
-    l/MdEtPpj5jbyb/i3hcUMqLOG8/sie51IrsKGrUThdcoE5VQxKbUE6sNUaW3kUVmhBxAfIB0YZZwoCC6
-    +ZezHPvLpJAZkAewNZ+KiqNVPRwNarbc1YR+mT6gsvqKUZCJw1cUDt7FipYbEWaICe+3xTLjnWBY8Ow1
-    Aq4qhYR0rmpGYKSetI2sdcnzzuo92lCGWhM2L7L/mMkrcNFVvhlilNytOi8vuiKR2MrmpABOR9icYzkq
-    aoQnHHKPF9Irku+wd7jj/1OB0Ernzo7zGoDWzzsG+YqOt6bQXLHy0Ha807Egqq/UCi7JtgKynAvDPX55
-    Ry4YY2Fczb1uIu4jXWcN6H3N0T+Xws+WTutSzyVKvb62lD3Ez9hzXDAPal2Zc50VtSMs+FrPrgdJYdMK
-    g6putX6eBnR8/wHOIshG''' )
+    eNo1klmOBCAIRK/TnWjCjh5o7n+FgcL+smRTHvD62GL/rg/nsb/tawtJQLA+ITEuZzswnOv0t2OF33LY
+    2iHJLTTTYThM2eLECRgsEgYNrwhdWyMIgi0FIZL9ni5Jh4clbjtYsk6pSImEsNvPdS6Ni+l6nxZXkKpq
+    k6KkEOL5LHInRRWnOAlOpgkQ4knRa/kslBPC3Kem4+RraJ+N8NHKRI9iDAoqQvDHUHGLoVN+JNgrsC83
+    Ha8+mjSgTKmC0m8VcyXRdl0Sb/au+h6z23aPGcEWYOsa9a/5vw4VMR06ZNO63JkFew+24YTyCE+0zK7w
+    cA1y7kNr88k3i1KPkgeqUoDfz1EHvRmhExHz2a97Z52YBkf9eMBtPf1TX3EdzQrNfas0aiynztawP6jB
+    B3VPrSlY3lmfat9psGc3UcKxJv2O8asS8TYq+NHDUEvUYsgT9sPVe1iiyhyI9MTq5i/k8AtJIxQ+qhif
+    OtNQYmzsDk15eN4+RgzPG4j8/gMnvcmL''' )
 
 
 util.run( main, unittest )
