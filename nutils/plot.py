@@ -128,7 +128,7 @@ class PyPlot( BasePlot ):
     self.sci( lc )
     return lc
 
-  def mesh( self, points, values=None, edgecolors='k', edgewidth=None, triangulate='delaunay', setxylim=True, aspect='equal', cmap='jet' ):
+  def mesh( self, points, values=None, edgecolors='k', edgewidth=None, triangulate='delaunay', mergetol=0, setxylim=True, aspect='equal', cmap='jet' ):
     'plot elemtwise mesh'
 
     if values is not None:
@@ -155,10 +155,10 @@ class PyPlot( BasePlot ):
       values = None
       aspect = None
     else: # mesh data
-      triangulation, edges = _mktriangulation( points, triangulate )
-      points = numpy.concatenate( points, axis=0 )
+      triangulation, edges, keep = _mktriangulation( points, triangulate, mergetol )
+      points = numpy.concatenate( points, axis=0 )[keep]
       if values is not None:
-        values = numpy.concatenate( values, axis=0 )
+        values = numpy.concatenate( values, axis=0 )[keep]
         assert len(values) == len(points)
 
     if values is not None:
@@ -187,37 +187,40 @@ class PyPlot( BasePlot ):
       else trimesh if edgecolors == 'none' \
       else (trimesh, linecol)
 
-  def meshcontour( self, points, values, every=None, levels=None, triangulate='delaunay', mergetol=1e-5, **kwargs ):
+  def meshcontour( self, points, values, every=None, levels=None, triangulate='delaunay', mergetol=0, **kwargs ):
     assert not every or levels is None, '"every" and "levels" arguments are mutually exclusive'
-    triangulation, edges = _mktriangulation( points, triangulate )
-    points = numpy.concatenate( points, axis=0 )
-    values = numpy.concatenate( values, axis=0 )
+    triangulation, edges, keep = _mktriangulation( points, triangulate, mergetol )
+    points = numpy.concatenate( points, axis=0 )[keep]
+    values = numpy.concatenate( values, axis=0 )[keep]
     assert len(values) == len(points)
     if every:
       levels = numpy.arange( int(min(values)/every), int(max(values)/every)+1 ) * every
-    CS = self.tricontour( points[:,0], points[:,1], triangulation, values, levels=levels, **kwargs )
-    if mergetol: # try to connect continuous segments
-      for collection in log.iter( 'contour', CS.collections ):
-        segments = [ segment for path in collection.get_paths() for segment in path.to_polygons() ]
-        while True:
-          paths = []
-          for segment in segments:
-            for i, path in enumerate(paths):
-              equal = numpy.all( numpy.abs( path[::len(path)-1][:,_] - segment[::len(segment)-1][_,:] ) < mergetol, axis=-1 )
-              if numpy.any( equal ):
-                index = core.index( equal.flat )
-                a = path[:: -1 if index in (0,1) else 1]
-                b = segment[:: -1 if index in (1,3) else 1]
-                assert numpy.all( numpy.abs( a[-1] - b[0] ) < mergetol ) # double check
-                paths[i] = numpy.concatenate( [ a, b[1:] ], axis=0 )
-                break
-            else:
-              paths.append( segment )
-          if len(paths) == len(segments): # no merges happened
-            break
-          segments = paths
-        collection.set_paths( paths )
-    return CS
+    return self.tricontour( points[:,0], points[:,1], triangulation, values, levels=levels, **kwargs )
+
+  def meshstreamplot( self, points, velo, spacing, xlim=None, ylim=None, triangulate='delaunay', mergetol=1e-5, linewidth=None, color=None, **kwargs ):
+    from matplotlib.tri.triinterpolate import Triangulation, LinearTriInterpolator
+    triangles, edges, keep = _mktriangulation( points, triangulate=triangulate, mergetol=mergetol )
+    points = numpy.concatenate( points, axis=0 )[keep]
+    velo = numpy.concatenate( velo, axis=0 )[keep]
+    assert points.shape == velo.shape == (len(points),2)
+    triangulation = Triangulation( points[:,0], points[:,1], triangles )
+    if not xlim:
+      xlim = min(points[:,0]), max(points[:,0])
+    nx = int( ( xlim[-1] - xlim[0] ) / spacing )
+    if not ylim:
+      ylim = min(points[:,1]), max(points[:,1])
+    ny = int( ( ylim[-1] - ylim[0] ) / spacing )
+    assert nx > 0 and ny > 0
+    x = .5 * (xlim[0]+xlim[-1]) + ( numpy.arange(nx) - (nx-1)/2 ) * spacing
+    y = .5 * (ylim[0]+ylim[-1]) + ( numpy.arange(ny) - (ny-1)/2 ) * spacing
+    u = LinearTriInterpolator( triangulation, velo[:,0] )( *numpy.broadcast_arrays( x[_,:], y[:,_] ) )
+    v = LinearTriInterpolator( triangulation, velo[:,1] )( *numpy.broadcast_arrays( x[_,:], y[:,_] ) )
+    absvelo = numpy.sqrt( u**2 + v**2 )
+    if linewidth is not None and linewidth < 0: # convention: negative linewidth is scaled with velocity magnitude
+      linewidth = -linewidth * absvelo
+    if color is None: # default: color mapped to velocity magnitude
+      color = absvelo
+    return self.streamplot( x, y, u, v, linewidth=linewidth, color=color, **kwargs )
 
   def polycol( self, verts, facecolors='none', **kwargs ):
     'add polycollection'
@@ -795,7 +798,7 @@ def _triangulate_delaunay( points ):
 def _compose( f, g ):
   return lambda *args, **kwargs: f( g( *args, **kwargs ) )
 
-def _mktriangulation( points, triangulate ):
+def _mktriangulation( points, triangulate, mergetol=0 ):
   if triangulate == 'delaunay':
     _triangulate = _triangulate_delaunay
   elif triangulate == 'bezier':
@@ -814,6 +817,25 @@ def _mktriangulation( points, triangulate ):
     triangulation.append( vertices + npoints )
     edges.append( epoints[hull] )
     npoints += np
-  return numpy.concatenate( triangulation, axis=0 ), edges
+  triangulation = numpy.concatenate( triangulation, axis=0 )
+  if mergetol: # merge duplicate vertices
+    def cmpfun( i, j, _p=numpy.concatenate(points,axis=0) ):
+      for d in _p[i] - _p[j]:
+        if abs(d) > mergetol:
+          return +1 if d > 0 else -1
+      return 0
+    indices = numpy.array( sorted( range(npoints), cmp=cmpfun ), dtype=int )
+    keep = numpy.empty( npoints, dtype=bool )
+    keep[indices] = [ True ] + [ cmpfun( i, j ) for i, j in zip( indices[:-1], indices[1:] ) ]
+    renumber = keep.cumsum()-1
+    for i in indices:
+      if keep[i]:
+        n = renumber[i]
+      else:
+        renumber[i] = n
+    triangulation = renumber[triangulation]
+  else:
+    keep = slice(None)
+  return triangulation, edges, keep
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
