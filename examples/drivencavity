@@ -15,13 +15,12 @@ class MakePlots( object ):
   def __call__( self, velo, pres ):
     self.index += 1
     xy, uv = self.domain.elem_eval( [ self.geom, velo ], ischeme='uniform2', separate=False )
-    points, velo, pres = self.domain.elem_eval( [ self.geom, function.norm2(velo), pres ], ischeme='bezier9', separate=True )
-    with plot.PyPlot( 'velo', index=self.index, ndigits=4 ) as plt:
-      plt.mesh( points, velo, triangulate='bezier' )
-      plt.clim( 0, 1 )
+    points, velo, normvelo, pres = self.domain.elem_eval( [ self.geom, velo, function.norm2(velo), pres ], ischeme='bezier9', separate=True )
+    with plot.PyPlot( 'flow', index=self.index, ndigits=4 ) as plt:
+      plt.mesh( points, triangulate='bezier', edgecolors='lightgray' )
+      plt.meshcontour( points, pres, every=self.dpres, linestyles='solid', alpha=.333 )
       plt.colorbar()
-      plt.quiver( xy[:,0], xy[:,1], uv[:,0], uv[:,1] )
-      plt.meshcontour( points, pres, every=self.dpres, cmap='gray', linestyles='solid', alpha=.8 )
+      plt.meshstreamplot( points, velo, triangulate='bezier', spacing=.01, linewidth=-10, color='k', zorder=9 )
 
 
 def main( nelems=8, viscosity=1e-3, density=1, degree=2, warp=False, plot=True, tol=1e-5, maxiter=numpy.inf ):
@@ -29,40 +28,48 @@ def main( nelems=8, viscosity=1e-3, density=1, degree=2, warp=False, plot=True, 
   Re = density / viscosity # based on unit length and velocity
   log.user( 'reynolds number: {:.1f}'.format(Re) )
 
+  # construct mesh
   verts = numpy.linspace( 0, 1, nelems+1 )
   domain, geom = mesh.rectilinear( [verts,verts] )
-  pbasis = domain.basis( 'spline', degree=degree )
-  vbasis = function.vectorize([
-    domain.basis( 'spline', degree=(degree+1,degree), removedofs=((0,-1),None) ),
-    domain.basis( 'spline', degree=(degree,degree+1), removedofs=(None,(0,-1)) ) ])
 
-  if warp:
+  # construct bases
+  vxbasis, vybasis, pbasis, lbasis = function.chain([
+    domain.basis( 'spline', degree=(degree+1,degree), removedofs=((0,-1),None) ),
+    domain.basis( 'spline', degree=(degree,degree+1), removedofs=(None,(0,-1)) ),
+    domain.basis( 'spline', degree=degree ),
+    [1], # lagrange multiplier
+  ])
+  if not warp:
+    vbasis = function.stack( [ vxbasis, vybasis ], axis=1 )
+  else:
     x, y = geom
     geom = (y+2) * function.rotmat(x*.4)[:,1] - (0,2) # slight downward bend
     J = function.localgradient( geom, domain.ndims )
     detJ = function.determinant( J )
-    vbasis = ( vbasis[...,_,:] * J ).sum(-1) / detJ # piola transform
-    pbasis = pbasis / detJ
-
-  makeplots = MakePlots( domain, geom ) if plot else lambda *args: None
-
-  vbasis, pbasis, lbasis = function.chain([ vbasis, pbasis, [1] ])
+    vbasis = ( vxbasis[:,_] * J[:,0] + vybasis[:,_] * J[:,1] ) / detJ # piola transform
+    pbasis /= detJ
   stressbasis = (2*viscosity) * vbasis.symgrad(geom) - (pbasis)[:,_,_] * function.eye( domain.ndims )
 
+  # construct matrices
   A = function.outer( vbasis.grad(geom), stressbasis ).sum([2,3]) \
     + function.outer( pbasis, vbasis.div(geom)+lbasis ) \
     + function.outer( lbasis, pbasis )
   Ad = function.outer( vbasis.div(geom) )
   stokesmat, divmat = domain.integrate( [ A, Ad ], geometry=geom, ischeme='gauss9' )
 
+  # define boundary conditions
   normal = geom.normal()
   utop = function.asarray([ normal[1], -normal[0] ])
-  h = domain.boundary['top'].integrate( 1, geometry=geom, ischeme='gauss9' ) / nelems
+  h = domain.boundary.elem_eval( 1, geometry=geom, ischeme='gauss9', asfunction=True )
   nietzsche = (2*viscosity) * ( ((degree+1)*2.5/h) * vbasis - vbasis.symgrad(geom).dotnorm(geom) )
   stokesmat += domain.boundary.integrate( function.outer( nietzsche, vbasis ).sum(-1), geometry=geom, ischeme='gauss9' )
   rhs = domain.boundary['top'].integrate( ( nietzsche * utop ).sum(-1), geometry=geom, ischeme='gauss9' )
-  lhs = stokesmat.solve( rhs, tol=tol, solver='cg', precon='spilu' )
 
+  # prepare plotting
+  makeplots = MakePlots( domain, geom ) if plot else lambda *args: None
+
+  # start picard iterations
+  lhs = stokesmat.solve( rhs, tol=tol, solver='cg', precon='spilu' )
   for iiter in log.count( 'picard', stop=maxiter ):
     log.info( 'velocity divergence:', divmat.matvec(lhs).dot(lhs) )
     makeplots( vbasis.dot(lhs), pbasis.dot(lhs) )
@@ -98,11 +105,11 @@ def unittest():
 
   retvals = main( nelems=4, viscosity=1e-3, degree=1, warp=True, tol=1e-15, maxiter=1, plot=False )
   assert debug.checkdata( retvals, '''
-    eNrFUluqYzEM204LyeD3Y0Hd/xYmkdvCfAzcv3sI2ESKJOeE18MW+3M9HvRnzVIheu1Yoqmv7esLWA2g
-    HvQz4L9Sv77OxJs7+KZiSb91GzliSjjmEOEGEEV659jRBWR7DzUpdDRMXtvWFjIDI0sLzbmVuI2nC6iq
-    fqn8JQTJ2EiCyVYjaj3Md9Dt1bjPdK5/A9oEzGC4t091JpyM4rw4u03+suS7YaEzGbeNR/CE2GqTu0hA
-    +eZ1jUTD2TP0J2jbpeaxp7yVzze2gXpOIn8r9eDecD8PCBtHSRBUbJCmgmIh3iFIu8+vYCk0Gm8TSuRs
-    sXhTs0a070jXRkuQTxlq6Q0GOxlcpeaakj4P+bmefwHREqhd''' )
+    eNrFUllqBDAIvc4MxOIWlwPN/a8wUTOFfhT6VwgY8hafEloPXbSf6/HArzVHGPEFtlhcXrDXN6AxgGzD
+    vwG/Wv37ORMDGXGlIkGtCmLZMVk0G7BsAigm1RxgZM0AU22NBUZTGQ9DFxBG7wDceC6S3G5bZwkkLEUl
+    2y0FVp02x8yuWZuT6mVOUMjcUjlMEn8ENKTdQFg7pJF3T5oeIrtx8itwZmsBTQU6w4/VyXm34dQeGd7a
+    T15p7bmQhc7QN2hwPfgKo6xKRDhS7va6o/cY231w5u7uVAZeMUbBjnaZUUAiD4EjJ7CxzEVs8qUPJQyH
+    KljuZerBVxPtFsxUdce0PT9Apusnr+37X5/r+Qavwqg/''' )
 
 
 util.run( main, unittest )
