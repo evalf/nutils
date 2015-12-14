@@ -286,8 +286,8 @@ class Topology( object ):
   def elem_eval( self, funcs, ischeme, separate=False, geometry=None, asfunction=False, edit=_identity ):
     'element-wise evaluation'
 
+    assert not separate or not asfunction, '"separate" and "asfunction" are mutually exclusive'
     if geometry:
-      assert not asfunction
       iwscale = function.J( geometry, self.ndims )
       npoints = len(self)
       slices = range(npoints)
@@ -325,8 +325,11 @@ class Topology( object ):
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join( str(n) for n in retval.shape ) ) for retval in retvals ) )
 
     if asfunction:
-      tsp = [ ( elem.transform, s, fcache[elem.reference.getischeme](ischeme)[0] ) for elem, s in zip( self, slices ) ]
-      retvals = [ function.Sampled({ trans: (retval[s],points) for trans, s, points in tsp }) for retval in retvals ]
+      if geometry:
+        retvals = [ function.Elemwise( { elem.transform: value for elem, value in zip( self, retval ) }, shape=retval.shape[1:] ) for retval in retvals ]
+      else:
+        tsp = [ ( elem.transform, s, fcache[elem.reference.getischeme](ischeme)[0] ) for elem, s in zip( self, slices ) ]
+        retvals = [ function.Sampled({ trans: (retval[s],points) for trans, s, points in tsp }) for retval in retvals ]
     elif separate:
       retvals = [ [ retval[s] for s in slices ] for retval in retvals ]
 
