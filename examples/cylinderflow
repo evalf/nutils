@@ -6,91 +6,122 @@ from nutils import *
 
 class MakePlots( object ):
 
-  def __init__( self, domain, geom, xlim=(-4,12), ylim=(-6,6), video=False ):
+  def __init__( self, domain, geom, xlim=(-2,6), ylim=(-3,3), nquiver=1, video=False ):
     self.xlim = xlim
     self.ylim = ylim
     self.geom = geom
-    self.plotdomain = domain.select( function.piecewise( geom[0], xlim, 0, 1, 0 ) * function.piecewise( geom[1], ylim, 0, 1, 0 ) )
+    self.plotdomain = domain.select( function.piecewise( geom[0], xlim, 0, 1, 0 ) * function.piecewise( geom[1], ylim, 0, 1, 0 ), 'bezier3' )
     self.plt = video and plot.PyPlotVideo( 'flow' )
+    self.every = .01
     self.index = 0
+    self.qscheme = 'uniform{}'.format(max(1,int(nquiver)))
 
-  def __call__( self, velo, pres ):
+  def __call__( self, velo, pres, angle ):
     self.index += 1
-    vort = velo.grad(self.geom)[1,0] - velo.grad(self.geom)[0,1]
-    xy, uv = self.plotdomain.elem_eval( [ self.geom, velo ], ischeme='uniform2', separate=False )
-    points, flow, pres, vort = self.plotdomain.elem_eval( [ self.geom, function.norm2(velo), pres, vort ], ischeme='bezier5', separate=True )
+    xy, uv = self.plotdomain.elem_eval( [ self.geom, velo ], ischeme=self.qscheme, separate=False )
+    points, flow, pres = self.plotdomain.elem_eval( [ self.geom, function.norm2(velo), pres ], ischeme='bezier9', separate=True )
     with self.plt if self.plt else plot.PyPlot( 'flow', index=self.index ) as plt:
       ax = plt.gcf().add_axes( [0,0,1,1], yticks=[], xticks=[], frame_on=False )
-      plt.mesh( points, vort, triangulate='bezier', aspect=False )
-      CS = plt.meshcontour( points, pres, triangulate='bezier', colors='k', linestyles='solid' )
-      plt.clabel( CS, inline=1, fontsize=10 )
+      plt.mesh( points, flow, triangulate='bezier', aspect=False, edgecolors='none' )
+      plt.clim( 0, 1.5 )
+      plt.meshcontour( points, pres, every=self.every, triangulate='bezier', cmap='gray', linestyles='solid', alpha=.8 )
       plt.vectors( xy, uv )
       plt.xlim( self.xlim )
       plt.ylim( self.ylim )
+      plt.plot( [0,.25*numpy.cos(angle)], [0,.25*numpy.sin(angle)], 'k-' )
+      plt.plot( [0,.125*numpy.cos(angle+2/3.*numpy.pi)], [0,.125*numpy.sin(angle+2/3.*numpy.pi)], 'k-' )
+      plt.plot( [0,.125*numpy.cos(angle-2/3.*numpy.pi)], [0,.125*numpy.sin(angle-2/3.*numpy.pi)], 'k-' )
 
 
-def main( nelems=24, viscosity=1e-3, density=1, tol=1e-8, rotation=0, timestep=.1, maxradius=50, video=False ):
+def main( nelems=30, viscosity=1e-2, density=1, tol=1e-12, rotation=0, timestep=1/24, maxradius=25, tmax=numpy.inf, plot=True ):
 
-  Uinf = numpy.array([ 1, 0 ])
+  uinf = numpy.array([ 1, 0 ])
+  log.user( 'reynolds number:', density/viscosity )
 
-  rscale = 2*numpy.pi / nelems
-  melems = numpy.ceil( numpy.log(maxradius) / rscale ).astype( int )
-
-  log.info( 'creating {}x{} mesh, outer radius {:.2f}'.format( melems, nelems, numpy.exp( rscale * melems ) ) )
-
+  # construct mesh
+  rscale = (2*numpy.pi) / nelems
+  melems = numpy.ceil( numpy.log(2*maxradius) / rscale ).astype( int )
+  log.info( 'creating {}x{} mesh, outer radius {:.2f}'.format( melems, nelems, .5*numpy.exp(rscale*melems) ) )
   domain, (rho,phi) = mesh.rectilinear( [range(melems+1),numpy.linspace(0,2*numpy.pi,nelems+1)], periodic=(1,) )
+  phi += 1e-3 # tiny nudge (0.057 deg) to break element symmetry
   normal, tangent = function.rotmat(phi)
-  radius = function.exp( rscale * rho )
+  cylvelo = .5 * rotation * tangent
+  radius = .5 * function.exp( rscale * rho )
   geom = radius * normal
-  cylvelo = rotation * tangent
 
-  makeplots = MakePlots( domain, geom, video=video )
-
-  vbasis = function.vectorize([ domain.basis( 'spline', degree=(3,2), removedofs=((0,),None) ), domain.basis( 'spline', degree=(2,3) ) ])
-  pbasis = domain.basis( 'spline', degree=2 )
-
-  # piola
+  # prepare bases
   J = function.localgradient( geom, domain.ndims )
   detJ = function.determinant( J )
-  vbasis = ( vbasis[...,_,:] * J ).sum(-1) / detJ
-  pbasis = pbasis / detJ
-
-  vbasis, pbasis, lbasis = function.chain([ vbasis, pbasis, [1.] ])
+  vnbasis, vtbasis, pbasis = function.chain([
+    domain.basis( 'spline', degree=(3,2), removedofs=((0,),None) )[:,_] * J[:,0] / detJ,
+    domain.basis( 'spline', degree=(2,3) )[:,_] * J[:,1] / detJ,
+    domain.basis( 'spline', degree=2 ) / detJ,
+  ])
+  vbasis = vnbasis + vtbasis
   stressbasis = (2*viscosity) * vbasis.symgrad(geom) - pbasis[:,_,_] * function.eye( domain.ndims )
 
-  # stokes
-  A = function.outer( vbasis.grad(geom), stressbasis ).sum([2,3]) \
-    + function.outer( pbasis, vbasis.div(geom)+lbasis ) \
-    + function.outer( lbasis, pbasis )
-  Ao = function.outer( vbasis, density * ( vbasis.grad(geom) * Uinf ).sum(-1) ).sum(-1)
+  # prepare matrices
+  A = function.outer( vbasis.grad(geom), stressbasis ).sum([2,3]) + function.outer( pbasis, vbasis.div(geom) )
+  Ao = function.outer( vbasis, density * ( vbasis.grad(geom) * uinf ).sum(-1) ).sum(-1)
   At = (density/timestep) * function.outer( vbasis ).sum(-1)
   Ad = function.outer( vbasis.div(geom) )
   stokesmat, uniconvec, inertmat, divmat = domain.integrate( [ A, Ao, At, Ad ], geometry=geom, ischeme='gauss9' )
 
-  # tangential flow boundary condition
-  h = (2*numpy.pi) / nelems
+  # interior boundary condition (weak imposition of shear verlocity component)
+  inner = domain.boundary['left']
+  h = inner.elem_eval( 1, geometry=geom, ischeme='gauss9', asfunction=True )
   nietzsche = (2*viscosity) * ( (7.5/h) * vbasis - vbasis.symgrad(geom).dotnorm(geom) )
   B = function.outer( nietzsche, vbasis ).sum(-1)
   b = ( nietzsche * cylvelo ).sum(-1)
-  bcondmat, rhs = domain.boundary['left'].integrate( [ B, b ], geometry=geom, ischeme='gauss9' )
+  bcondmat, rhs = inner.integrate( [ B, b ], geometry=geom, ischeme='gauss9' )
   stokesmat += bcondmat
 
-  cons = domain.boundary['right'].project( Uinf, geometry=geom, onto=vbasis, ischeme='gauss9', tol=1e-12 )
+  # exterior boundary condition (full velocity vector imposed at inflow)
+  inflow = domain.boundary['right'].select( -( uinf * geom.normal() ).sum(-1), ischeme='gauss1' )
+  cons = inflow.project( uinf, onto=vbasis, geometry=geom, ischeme='gauss9', tol=1e-12 )
+
+  # initial condition (stationary oseen flow)
   lhs = (stokesmat+uniconvec).solve( rhs, constrain=cons, tol=tol, restart=9999, precon='spilu' )
 
+  # prepare plotting
+  makeplots = MakePlots( domain, geom, video=plot=='video', nquiver=60//nelems ) if plot else lambda *args: None
+
+  # start time stepping
   stokesmat += inertmat
   precon = (stokesmat+uniconvec).getprecon( 'splu', constrain=cons )
-  for iiter in log.count( 'timestep' ):
+  for istep in log.count( 'timestep', start=1 ):
     log.info( 'velocity divergence:', divmat.matvec(lhs).dot(lhs) )
     convection = density * ( vbasis.grad(geom) * vbasis.dot(lhs) ).sum(-1)
     matrix = stokesmat + domain.integrate( function.outer( vbasis, convection ).sum(-1), ischeme='gauss9', geometry=geom )
     lhs = matrix.solve( rhs + inertmat.matvec(lhs), lhs0=lhs, constrain=cons, tol=tol, restart=9999, precon=precon )
-    makeplots( vbasis.dot(lhs), pbasis.dot(lhs) )
+    makeplots( vbasis.dot(lhs), pbasis.dot(lhs), istep*timestep*rotation )
+    if istep*timestep > tmax:
+      break
+
+  return lhs
   
 
 def unittest():
 
-  pass
+  retvals = main( nelems=6, viscosity=1e-2, timestep=.1, tmax=.05, rotation=0, plot=False )
+  assert debug.checkdata( retvals, '''
+    eNo1UtmNKDEIa2dXmpG4AwW9/lvYYM/7isNtgz4/8Wj+Pj+vd+q/N57XKmbBdNBQpTC8JwVA5dzXHxM9
+    +HvWvhYqa38ttxbAGCJ9iq8wM6v31TT8X5/D1JCDSC2HZ6TOvj2BDDf2ftXsOmyB2AKbcdTWrW3bSxlw
+    OsnsmmC5ALkaA4puidDLIxHgsd1igcl/yyzo0xRDJTCYSiN0xL8uEpywbG5E3oEG3FojKGguh1xl68tp
+    Scw+6Ug5AwHvoLCrnW85LkX6YQSVeavW5XIgEGtex7g0u8SBMG/fcguOe62nRbmFqVpuxz/WJl6ULrU/
+    kRUuzYAeHgI5tMy4wLKhUCC3KcJruR6KPQo57r6Kc0keBqTg7R0vMPCh+mLFgWYo1LhBiHFubqK4jpmm
+    QpnF5NQvp1Pgsm4Dh7GvmAwbqlPuV6eboAIWV8furLnDe0zfjWd+Ooc0QqPs21Uf3njgX520t/Jg/aQR
+    TBt1V5xfVtFxu0P/3z/Vl8lS''' )
+
+  retvals = main( nelems=6, viscosity=1e-2, timestep=.1, tmax=.05, rotation=1, plot=False )
+  assert debug.checkdata( retvals, '''
+    eNo1UtmtxEAIa2dXSiTuo6DXfwuPMbNfOMAQbMzPxx727/N5lc3+XnteVaEDurqQCA0FyFQApoi/Vx9J
+    l/MdEtPpj5jbyb/i3hcUMqLOG8/sie51IrsKGrUThdcoE5VQxKbUE6sNUaW3kUVmhBxAfIB0YZZwoCC6
+    +ZezHPvLpJAZkAewNZ+KiqNVPRwNarbc1YR+mT6gsvqKUZCJw1cUDt7FipYbEWaICe+3xTLjnWBY8Ow1
+    Aq4qhYR0rmpGYKSetI2sdcnzzuo92lCGWhM2L7L/mMkrcNFVvhlilNytOi8vuiKR2MrmpABOR9icYzkq
+    aoQnHHKPF9Irku+wd7jj/1OB0Ernzo7zGoDWzzsG+YqOt6bQXLHy0Ha807Egqq/UCi7JtgKynAvDPX55
+    Ry4YY2Fczb1uIu4jXWcN6H3N0T+Xws+WTutSzyVKvb62lD3Ez9hzXDAPal2Zc50VtSMs+FrPrgdJYdMK
+    g6putX6eBnR8/wHOIshG''' )
 
 
 util.run( main, unittest )
