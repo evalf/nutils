@@ -50,6 +50,9 @@ class IndexedArray:
 
       b['i;j']
       b.grad(geom, -1)
+
+      a['i0,1']
+      a[:,0].grad(geom)[:,1]
   '''
 
   def __init__( self, indices, op, args ):
@@ -116,19 +119,24 @@ class IndexedArray:
       grad = self._array_surfgrad
     else:
       raise ValueError( 'additional indices are not allowed, only derivatives' )
-    if not all( 'a' <= index <= 'z' for index in item[1:] ):
-      raise ValueError( 'invalid index, only lower case latin characters are allowed' )
-    if not all( 1 <= c <= 2 for c in collections.Counter( self.indices + item[1:] ).values() ):
+    if not all( 'a' <= index <= 'z' or '0' <= index <= '9' for index in item[1:] ):
+      raise ValueError( 'invalid index, only lower case latin characters and numbers are allowed' )
+    if not all( 1 <= c <= 2 for index, c in collections.Counter( self.indices + item[1:] ).items() if not ('0' <= index <= '9') ):
       raise ValueError( 'indices may not be repeated more than once' )
     indices = self.indices + item[1]
-    if item[1] in self.indices:
+    if '0' <= item[1] <= '9':
+      # `item[1]` is a number
+      # get element `item[1]` of the last axis
+      op = lambda geom, array: grad( geom, array )[..., int(item[1])]
+      # remove this number from `indices`
+      indices = self.indices
+    elif item[1] in self.indices:
       # `item[1]` is a repeated index
       ax1 = indices.index( item[1] )
       ax2 = indices.index( item[1], ax1+1 )
       indices = indices[:ax1] + indices[ax1+1:ax2] + indices[ax2+1:]
       op = lambda geom, array: function.trace( grad( geom, array ), ax1, ax2 )
     else:
-      # `item[1]` is not a repeated index
       op = grad
     result = IndexedArray( indices, op, ( self, ) )
     # apply remaining gradients
@@ -254,10 +262,17 @@ def wrap( array, indices ):
     grad_indices = ''
   if len( indices ) != len( array.shape ):
     raise ValueError( 'expected {} indices, got {}'.format( len( array.shape ), len( indices ) ) )
-  if not all( 'a' <= index <= 'z' for index in indices + grad_indices[1:] ):
-    raise ValueError( 'invalid index, only lower case latin characters are allowed' )
-  if not all( 1 <= c <= 2 for c in collections.Counter( indices + grad_indices[1:] ).values() ):
+  if not all( 'a' <= index <= 'z' or '0' <= index <= '9' for index in indices + grad_indices[1:] ):
+    raise ValueError( 'invalid index, only lower case latin characters and numbers are allowed' )
+  if not all( 1 <= c <= 2 for index, c in collections.Counter( indices + grad_indices[1:] ).items() if not ('0' <= index <= '9') ):
     raise ValueError( 'indices may not be repeated more than once' )
+  # apply numbered indices (skip gradient indices, will be processed in `self[grad_indices]` later)
+  for i, index in reversed( tuple( enumerate( indices ) ) ):
+    if '0' <= index <= '9':
+      # get element `index` of axis `i` from `array`
+      array = array[(slice(None),)*i+(int(index),)+(slice(None),)*(len(indices)-i-1)]
+      # remove this number from `indices`
+      indices = indices[:i] + indices[i+1:]
   # sum repeated indices (skip gradient indices, will be processed in `self[grad_indices]` later)
   for repeated in sorted( ( i for i, c in collections.Counter( indices ).items() if c == 2 ), key = indices.index ):
     ax1 = indices.index( repeated )

@@ -123,3 +123,19 @@ def indexedarray():
     x = domain.integrate( d['i;k']*d['j;k'], geometry=surface, ischeme='gauss3' )
     y = domain.integrate( function.outer( d.grad(surface, -1) ).sum(2), geometry=surface, ischeme='gauss3' )
     numpy.testing.assert_almost_equal( x.toscipy().todense(), y.toscipy().todense() )
+
+  @unittest
+  def number1():
+    assert b['0'].unwrap() == b[0]
+
+  @unittest
+  def number2():
+    assert ab_outer['01'].unwrap() == ab_outer[0,1]
+
+  @unittest
+  def grad_number1():
+    assert a['i,0'].unwrap(geom) == a.grad(geom)[:,0]
+
+  @unittest
+  def grad_number2():
+    assert a['i,01'].unwrap(geom) == a.grad(geom).grad(geom)[:,0,1]
