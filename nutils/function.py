@@ -2757,12 +2757,8 @@ def dot( arg1, arg2, axes ):
   else:
     axes = numeric.normdim( len(shape), axes ),
 
-  for i, axis in enumerate( axes ):
-    if arg1.shape[axis] == 1 or arg2.shape[axis] == 1:
-      arg1 = sum( arg1, axis )
-      arg2 = sum( arg2, axis )
-      axes = axes[:i] + tuple( axis-1 for axis in axes[i+1:] )
-      return dot( arg1, arg2, axes )
+  if _iszero( arg1 ) or _iszero( arg2 ):
+    return _zeros([ s for i, s in enumerate(shape) if i not in axes ])
 
   if _isunit( arg1 ):
     return sum( expand( arg2, shape ), axes )
@@ -2773,6 +2769,13 @@ def dot( arg1, arg2, axes ):
   if not _isfunc(arg1) and not _isfunc(arg2):
     return numeric.contract( arg1, arg2, axes )
 
+  for i, axis in enumerate( axes ):
+    if arg1.shape[axis] == 1 or arg2.shape[axis] == 1:
+      arg1 = sum( arg1, axis )
+      arg2 = sum( arg2, axis )
+      axes = axes[:i] + tuple( axis-1 for axis in axes[i+1:] )
+      return dot( arg1, arg2, axes )
+
   shuffle = list( range( len(shape) ) )
   for ax in reversed( axes ):
     shuffle.append( shuffle.pop(ax) )
@@ -2781,16 +2784,16 @@ def dot( arg1, arg2, axes ):
   arg2 = transpose( arg2, shuffle )
 
   naxes = len( axes )
-  shape = tuple( shape[i] for i in shuffle[:-naxes] )
+  dotshape = tuple( shape[i] for i in shuffle[:-naxes] )
 
   retval = _call( arg1, '_dot', arg2, naxes )
   if retval is not None:
-    assert retval.shape == shape, 'bug in %s._dot' % arg1
+    assert retval.shape == dotshape, 'bug in %s._dot' % arg1
     return retval
 
   retval = _call( arg2, '_dot', arg1, naxes )
   if retval is not None:
-    assert retval.shape == shape, 'bug in %s._dot' % arg2
+    assert retval.shape == dotshape, 'bug in %s._dot' % arg2
     return retval
 
   a, b = _sorted( arg1, arg2 )
