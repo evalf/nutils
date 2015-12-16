@@ -376,7 +376,6 @@ def __compare( verify_obj, obj, nsig, ndec ):
 
 @log.title
 def checkdata( obj, base64 ):
-  import zlib, binascii, re
   try:
     proto, args, verify_obj = base64_dec( base64 )
     assert proto == 1, 'unsupported protocol version %s' % proto
