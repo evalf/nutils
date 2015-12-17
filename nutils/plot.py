@@ -13,7 +13,7 @@ backends. At this point `matplotlib <http://matplotlib.org/>`_ and `vtk
 """
 
 from __future__ import print_function, division
-from . import numpy, log, core, cache, _
+from . import numpy, log, core, cache, numeric, _
 import os, warnings, sys, subprocess
 
 
@@ -128,7 +128,7 @@ class PyPlot( BasePlot ):
     self.sci( lc )
     return lc
 
-  def mesh( self, points, values=None, edgecolors='k', edgewidth=.1, triangulate='delaunay', mergetol=0, setxylim=True, aspect='equal', cmap='jet' ):
+  def mesh( self, points, values=None, edgecolors='k', edgewidth=.1, triangulate='bezier', mergetol=0, setxylim=True, aspect='equal', cmap='jet' ):
     'plot elemtwise mesh'
 
     if values is not None:
@@ -155,8 +155,9 @@ class PyPlot( BasePlot ):
       values = None
       aspect = None
     else: # mesh data
-      triangulation, edges, keep = _mktriangulation( points, triangulate, mergetol )
+      triangulation, hull, keep = _mktriangulation( points, triangulate, mergetol )
       points = numpy.concatenate( points, axis=0 )[keep]
+      edges = points[hull]
       if values is not None:
         values = numpy.concatenate( values, axis=0 )[keep]
         assert len(values) == len(points)
@@ -185,7 +186,7 @@ class PyPlot( BasePlot ):
       else trimesh if edgecolors == 'none' \
       else (trimesh, linecol)
 
-  def meshcontour( self, points, values, every=None, levels=None, triangulate='delaunay', mergetol=0, **kwargs ):
+  def meshcontour( self, points, values, every=None, levels=None, triangulate='bezier', mergetol=0, **kwargs ):
     assert not every or levels is None, '"every" and "levels" arguments are mutually exclusive'
     triangulation, edges, keep = _mktriangulation( points, triangulate, mergetol )
     points = numpy.concatenate( points, axis=0 )[keep]
@@ -195,17 +196,17 @@ class PyPlot( BasePlot ):
       levels = numpy.arange( int(min(values)/every), int(max(values)/every)+1 ) * every
     return self.tricontour( points[:,0], points[:,1], triangulation, values, levels=levels, **kwargs )
 
-  def meshstreamplot( self, points, velo, spacing, xlim=None, ylim=None, triangulate='delaunay', mergetol=1e-5, linewidth=None, color=None, **kwargs ):
+  def meshstreamplot( self, points, velo, spacing, xlim=None, ylim=None, triangulate='bezier', mergetol=1e-5, linewidth=None, color=None, **kwargs ):
     from matplotlib.tri.triinterpolate import Triangulation, LinearTriInterpolator
     triangles, edges, keep = _mktriangulation( points, triangulate=triangulate, mergetol=mergetol )
     points = numpy.concatenate( points, axis=0 )[keep]
     velo = numpy.concatenate( velo, axis=0 )[keep]
     assert points.shape == velo.shape == (len(points),2)
     triangulation = Triangulation( points[:,0], points[:,1], triangles )
-    if not xlim:
+    if xlim is None:
       xlim = min(points[:,0]), max(points[:,0])
     nx = int( ( xlim[-1] - xlim[0] ) / spacing )
-    if not ylim:
+    if ylim is None:
       ylim = min(points[:,1]), max(points[:,1])
     ny = int( ( ylim[-1] - ylim[0] ) / spacing )
     assert nx > 0 and ny > 0
@@ -753,14 +754,14 @@ def _triangulate_quad( n, m ):
   vert2 = numpy.array([ ind[1:,1:].ravel(), ind[1:,:-1].ravel(), ind[:-1,1:].ravel() ]).T
   vertices = numpy.concatenate( [vert1,vert2], axis=0 )
   hull = numpy.concatenate([ ind[:,0], ind[-1,1:], ind[-2::-1,-1], ind[0,-2::-1] ])
-  return vertices, hull
+  return vertices, numeric.overlapping(hull)
 
 def _triangulate_tri( n ):
   vert1 = [ ((2*n-i+1)*i)//2+numpy.array([j,j+1,j+n-i]) for i in range(n-1) for j in range(n-i-1) ]
   vert2 = [ ((2*n-i+1)*i)//2+numpy.array([j+1,j+n-i+1,j+n-i]) for i in range(n-1) for j in range(n-i-2) ]
-  vertices = numpy.concatenate( [vert1,vert2], axis=0 )
+  vertices = numpy.array( vert1+vert2 )
   hull = numpy.concatenate([ numpy.arange(n), numpy.arange(n-1,0,-1).cumsum()+n-1, numpy.arange(n+1,2,-1).cumsum()[::-1]-n-1 ])
-  return vertices, hull
+  return vertices, numeric.overlapping(hull)
 
 def _triangulate_bezier( np ):
   nquad = int( numpy.sqrt(np) + .5 )
@@ -771,27 +772,10 @@ def _triangulate_bezier( np ):
     return _triangulate_tri( ntri )
   raise Exception( 'cannot match points to a bezier scheme' )
 
-def _mkloop( edges ):
-  connectivity = {}
-  for e0, e1 in edges: # build inverted data structure for fast lookups
-    connectivity.setdefault( e0, [] ).append( e1 )
-    connectivity.setdefault( e1, [] ).append( e0 )
-  p = edges[0,0] # first point (arbitrary)
-  q = connectivity.pop(p)[0] # second point (arbitrary orientation)
-  hull = [ p ]
-  while connectivity:
-    hull.append( q )
-    q, r = connectivity.pop( hull[-1] )
-    if q == hull[-2]:
-      q = r
-  assert q == p
-  hull.append( q )
-  return hull
-
 def _triangulate_delaunay( points ):
   import scipy.spatial
   tri = scipy.spatial.Delaunay( points )
-  return tri.vertices, _mkloop( tri.convex_hull )
+  return tri.vertices, tri.convex_hull
 
 def _compose( f, g ):
   return lambda *args, **kwargs: f( g( *args, **kwargs ) )
@@ -803,37 +787,62 @@ def _mktriangulation( points, triangulate, mergetol=0 ):
     _triangulate = _compose( cache.Wrapper(_triangulate_bezier), len )
   else:
     raise Exception( 'unknown triangulation method %r' % triangulate )
+  npoints = 0
+  outerpoints = numpy.empty( (sum(len(p) for p in points),2) ) # allocate for worst case
+  iouter = []
   triangulation = []
   edges = []
-  npoints = 0
+  keep = []
   for epoints in points:
     np = len(epoints)
     assert epoints.shape == (np,2)
     if np == 0:
       continue
-    vertices, hull = _triangulate( epoints )
-    triangulation.append( vertices + npoints )
-    edges.append( epoints[hull] )
-    npoints += np
-  triangulation = numpy.concatenate( triangulation, axis=0 )
-  if mergetol: # merge duplicate vertices
-    def cmpfun( i, j, _p=numpy.concatenate(points,axis=0) ):
-      for d in _p[i] - _p[j]:
-        if abs(d) > mergetol:
-          return +1 if d > 0 else -1
-      return 0
-    indices = numpy.array( sorted( range(npoints), cmp=cmpfun ), dtype=int )
-    keep = numpy.empty( npoints, dtype=bool )
-    keep[indices] = [ True ] + [ cmpfun( i, j ) for i, j in zip( indices[:-1], indices[1:] ) ]
-    renumber = keep.cumsum()-1
-    for i in indices:
-      if keep[i]:
-        n = renumber[i]
-      else:
-        renumber[i] = n
-    triangulation = renumber[triangulation]
-  else:
+    etri, ehull = _triangulate( epoints )
+    if not mergetol:
+      triangulation.append( npoints + etri )
+      edges.append( npoints + ehull )
+      nnew = len(epoints)
+    else:
+      eisouter = numpy.zeros( np, dtype=bool )
+      eisouter[ehull] = True # mask all vertices that are on an edge
+      D = epoints[eisouter,_,:] - outerpoints[_,:len(iouter),:]
+      where = [] # to-be list of indices into outerpoints
+      isnewouter = numpy.ones( len(D), dtype=bool ) # mask all points that have no duplicate in outerpoints
+      for i, j in zip( *numpy.nonzero( numeric.contract( D, D, axis=2 ) < mergetol**2 ) ):
+        isnewouter[i] = False
+        where.append( iouter[j] ) # assuming nonzero yields ordered i!
+      isnew = ~eisouter # vertices that do not lie on the boundary are kept..
+      isnew[eisouter] = isnewouter # ..as well as all vertices that have no duplicate
+      keep.append( isnew )
+      nnew = isnew.sum()
+      renumber = numpy.empty( np, dtype=int ) # renumbering scheme accounting for duplicates
+      renumber[isnew] = npoints + numpy.arange(nnew) # new vertices
+      renumber[~isnew] = where # duplicates
+      triangulation.append( renumber[etri] )
+      eisouter[~isnew] = False # unmask all duplicate vertices, leaving only the new boundary vertices
+      outerpoints[len(iouter):len(iouter)+eisouter.sum()] = epoints[eisouter]
+      iouter.extend( renumber[eisouter] )
+      edges.append( renumber[ehull] )
+    npoints += nnew
+  edges = numpy.concatenate( edges, axis=0 )
+  if not mergetol:
     keep = slice(None)
-  return triangulation, edges, keep
+  else:
+    keep = numpy.concatenate( keep, axis=0 )
+    edges = numpy.sort( edges, axis=1 ) # order edge endpoints to recognize duplicates
+    edges = edges[ numpy.lexsort( edges.T ) ] # sort edges lexicographically
+    edges = edges[ numpy.concatenate( [ [True], numpy.diff( edges, axis=0 ).any(axis=1) ] ) ] # remove duplicates
+  return numpy.concatenate( triangulation, axis=0 ), edges, keep
+
+def _interpolate( points, values, xy ):
+  assert xy.shape[-1] == 2
+  from matplotlib.tri.triinterpolate import Triangulation, LinearTriInterpolator
+  triangles, edges, keep = _mktriangulation( points, triangulate='bezier', mergetol=1e-5 )
+  points = numpy.concatenate( points, axis=0 )[keep]
+  values = numpy.concatenate( values, axis=0 )[keep]
+  triangulation = Triangulation( points[:,0], points[:,1], triangles )
+  interpvalues = numpy.array([ LinearTriInterpolator( triangulation, v )( *xy.reshape(-1,2).T ) for v in values.reshape(len(values),-1).T ]).T
+  return interpvalues.reshape( xy.shape[:-1] + values.shape[1:] )
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
