@@ -1,7 +1,8 @@
 #! /usr/bin/env python
 
 from __future__ import division
-from nutils import *
+from nutils import mesh, plot, util, log, function, _
+import numpy
 
 
 class MakePlots( object ):
@@ -14,16 +15,15 @@ class MakePlots( object ):
 
   def __call__( self, velo, pres ):
     self.index += 1
-    xy, uv = self.domain.elem_eval( [ self.geom, velo ], ischeme='uniform2', separate=False )
-    points, velo, normvelo, pres = self.domain.elem_eval( [ self.geom, velo, function.norm2(velo), pres ], ischeme='bezier9', separate=True )
+    points, velo, pres = self.domain.elem_eval( [ self.geom, velo, pres ], ischeme='bezier9', separate=True )
     with plot.PyPlot( 'flow', index=self.index, ndigits=4 ) as plt:
-      plt.mesh( points, triangulate='bezier', edgecolors='lightgray' )
-      plt.meshcontour( points, pres, every=self.dpres, linestyles='solid', alpha=.333 )
+      tri = plt.mesh( points, mergetol=1e-5 )
+      plt.tricontour( tri, pres, every=self.dpres, linestyles='solid', alpha=.333 )
       plt.colorbar()
-      plt.meshstreamplot( points, velo, triangulate='bezier', spacing=.01, linewidth=-10, color='k', zorder=9 )
+      plt.streamplot( tri, velo, spacing=.01, linewidth=-10, color='k', zorder=9 )
 
 
-def main( nelems=8, viscosity=1e-3, density=1, degree=2, warp=False, withplots=True, tol=1e-5, maxiter=numpy.inf ):
+def main( nelems=12, viscosity=1e-3, density=1, degree=2, warp=False, withplots=True, tol=1e-5, maxiter=numpy.inf ):
 
   Re = density / viscosity # based on unit length and velocity
   log.user( 'reynolds number: {:.1f}'.format(Re) )
