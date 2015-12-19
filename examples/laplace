@@ -1,41 +1,52 @@
 #! /usr/bin/env python
 
-from nutils import *
-
-
-@log.title
-def makeplots( domain, geom, sol, index ):
-
-  points, colors = domain.elem_eval( [ geom, sol ], ischeme='bezier9', separate=True )
-  with plot.PyPlot( 'solution', index=index ) as plt:
-    plt.mesh( points, colors, triangulate='bezier' )
-    plt.colorbar()
+from __future__ import division
+from nutils import mesh, plot, util, function, log
+import numpy
 
 
 def main( nelems=None, degree=1, basistype='spline', solvetol=1e-10, withplots=True ):
 
-  if nelems:
+  # construct mesh
+  if nelems: # rectilinear
     verts = numpy.linspace( 0, .5*numpy.pi, nelems+1 )
     domain, geom = mesh.rectilinear( [verts,verts] )
-  else:
+  else: # triangulated demo mesh
     domain, geom = mesh.demo( xmax=.5*numpy.pi, ymax=.5*numpy.pi )
     assert degree == 1, 'degree={} unsupported for triangular mesh'.format( degree )
 
+  # construct target solution
   x, y = geom
   exact = function.sin(x) * function.exp(y)
   flux = exact.ngrad( geom )
 
+  # prepare basis
   basis = domain.basis( basistype, degree=degree )
+
+  # construct matrix
   laplace = function.outer( basis.grad(geom) ).sum(-1)
   matrix = domain.integrate( laplace, geometry=geom, ischeme='gauss4' )
+
+  # construct right hand side vector from neumann boundary
   rhs = domain.boundary['right,top'].integrate( basis * flux, geometry=geom, ischeme='gauss7' )
+
+  # construct dirichlet boundary constraints
   cons = domain.boundary['left,bottom'].project( exact, ischeme='gauss7', geometry=geom, onto=basis )
-  lhs = matrix.solve( rhs, constrain=cons, tol=solvetol, symmetric=True )
+
+  # solve system
+  lhs = matrix.solve( rhs, constrain=cons, tol=solvetol, solver='cg' )
+
+  # construct solution function
   sol = basis.dot(lhs)
 
+  # plot solution
   if withplots:
-    makeplots( domain, geom, sol, nelems )
+    points, colors = domain.elem_eval( [ geom, sol ], ischeme='bezier9', separate=True )
+    with plot.PyPlot( 'solution', index=nelems ) as plt:
+      plt.mesh( points, colors )
+      plt.colorbar()
 
+  # evaluate approximation error
   error = sol - exact
   err = numpy.sqrt( domain.integrate( [ error**2, ( error.grad(geom)**2 ).sum(-1) ], geometry=geom, ischeme='gauss7' ) )
   log.user( 'errors: l2={}, h1={}'.format(*err) )
