@@ -361,6 +361,25 @@ class Statm( object ):
 class Terminate( Exception ):
   pass
 
+def regularize( bbox, spacing, xy=numpy.empty((0,2)) ):
+  xy = numpy.asarray( xy )
+  index0 = numeric.floor( bbox[:,0] / (2*spacing) ) * 2 - 1
+  shape = numeric.ceil( bbox[:,1] / (2*spacing) ) * 2 + 2 - index0
+  index = numeric.round( xy / spacing ) - index0
+  keep = numpy.all( (index >= 0) & (index < shape), axis=1 )
+  mask = numpy.zeros( shape, dtype=bool )
+  for i, ind in enumerate(index):
+    if keep[i]:
+      if not mask[tuple(ind)]:
+        mask[tuple(ind)] = True
+      else:
+        keep[i] = False
+  coursex = mask[0:-2:2] | mask[1:-1:2] | mask[2::2]
+  coarsexy = coursex[:,0:-2:2] | coursex[:,1:-1:2] | coursex[:,2::2]
+  vacant, = (~coarsexy).ravel().nonzero()
+  newindex = numpy.array( numpy.unravel_index( vacant, coarsexy.shape ) ).T * 2 + index0 + 1
+  return numpy.concatenate( [ newindex * spacing, xy[keep] ], axis=0 )
+
 def githash( path, depth=0  ):
   abspath = os.path.abspath( path )
   for i in range( depth ):
