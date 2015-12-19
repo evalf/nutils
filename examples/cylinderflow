@@ -1,33 +1,37 @@
 #! /usr/bin/env python
 
 from __future__ import division
-from nutils import *
+from nutils import mesh, util, log, function, plot, _
+import numpy
 
 
 class MakePlots( object ):
 
-  def __init__( self, domain, geom, bbox=((-2,6),(-3,3)), nquiver=1, video=False ):
+  def __init__( self, domain, geom, timestep, bbox=((-2,6),(-3,3)), video=False ):
     self.bbox = numpy.asarray(bbox)
-    self.geom = geom
     self.plotdomain = domain.select( function.piecewise( geom[0], self.bbox[0], 0, 1, 0 ) * function.piecewise( geom[1], self.bbox[1], 0, 1, 0 ), 'bezier3' )
+    self.geom = geom
     self.plt = video and plot.PyPlotVideo( 'flow' )
     self.every = .01
     self.index = 0
-    self.qscheme = 'uniform{}'.format(max(1,int(nquiver)))
+    self.timestep = timestep
+    self.spacing = .075
+    self.xy = util.regularize( self.bbox, self.spacing )
 
   def __call__( self, velo, pres, angle ):
     self.index += 1
-    xy, uv = self.plotdomain.elem_eval( [ self.geom, velo ], ischeme=self.qscheme, separate=False )
-    points, flow, pres = self.plotdomain.elem_eval( [ self.geom, function.norm2(velo), pres ], ischeme='bezier9', separate=True )
+    points, velo, flow, pres = self.plotdomain.elem_eval( [ self.geom, velo, function.norm2(velo), pres ], ischeme='bezier9', separate=True )
     with self.plt if self.plt else plot.PyPlot( 'flow', index=self.index ) as plt:
       ax = plt.gcf().add_axes( [0,0,1,1], yticks=[], xticks=[], frame_on=False )
-      plt.mesh( points, flow, triangulate='bezier', edgecolors='none' )
+      tri = plt.mesh( points, flow, mergetol=1e-5 )
       plt.clim( 0, 1.5 )
-      plt.meshcontour( points, pres, every=self.every, triangulate='bezier', cmap='gray', linestyles='solid', alpha=.8 )
-      plt.vectors( xy, uv )
+      plt.tricontour( tri, pres, every=self.every, cmap='gray', linestyles='solid', alpha=.8 )
+      uv = tri.interpolate( self.xy, velo )
+      plt.vectors( self.xy, uv, zorder=9, pivot='mid', stems=False )
       plt.plot( 0, 0, 'k', marker=(3,2,angle*180/numpy.pi-90), markersize=20 )
       plt.xlim( self.bbox[0] )
       plt.ylim( self.bbox[1] )
+    self.xy = util.regularize( self.bbox, self.spacing, self.xy + uv * self.timestep )
 
 
 def main( nelems=12, viscosity=1e-2, density=1, tol=1e-12, rotation=0, timestep=1/24, maxradius=25, tmax=numpy.inf, withplots=True ):
@@ -84,13 +88,13 @@ def main( nelems=12, viscosity=1e-2, density=1, tol=1e-12, rotation=0, timestep=
   if not withplots:
     makeplots = lambda *args: None
   else:
-    makeplots = MakePlots( domain, geom, video=withplots=='video', nquiver=24//nelems )
+    makeplots = MakePlots( domain, geom, video=withplots=='video', timestep=timestep )
     mesh_ = domain.elem_eval( geom, ischeme='bezier5', separate=True )
     inflow_ = inflow.elem_eval( geom, ischeme='bezier5', separate=True )
     with plot.PyPlot( 'mesh', ndigits=0 ) as plt:
-      plt.mesh( mesh_, triangulate='bezier' )
+      plt.mesh( mesh_ )
       plt.rectangle( makeplots.bbox[:,0], *( makeplots.bbox[:,1] - makeplots.bbox[:,0] ), ec='green' )
-      plt.line( inflow_, colors='red' )
+      plt.segments( inflow_, colors='red' )
 
   # start time stepping
   stokesmat += inertmat
