@@ -14,7 +14,7 @@ backends. At this point `matplotlib <http://matplotlib.org/>`_ and `vtk
 
 from __future__ import print_function, division
 from . import numpy, log, core, cache, numeric, _
-import os, warnings, sys, subprocess
+import os, warnings, sys, subprocess, matplotlib.tri
 
 
 class BasePlot( object ):
@@ -114,112 +114,112 @@ class PyPlot( BasePlot ):
     for ext in self.imgtype.split( ',' ):
       self.savefig( self.getpath(name,index,ext) )
 
-  def line( self, points, values=None, **kwargs ):
+  def segments( self, points, values=None, **kwargs ):
     'plot line'
 
     segments = numpy.concatenate( [ numpy.array([xy[:-1],xy[1:]]).swapaxes(0,1) for xy in points ], axis=0 )
     from matplotlib.collections import LineCollection
     lc = LineCollection( segments, **kwargs )
+    ax = self.gca()
+    ax.add_collection( lc )
     if values is not None:
       array = numpy.concatenate( [ .5 * ( v[:-1] + v[1:] ) for v in values ], axis=0 )
       lc.set_array( array )
-    ax = self.gca()
-    ax.add_collection( lc )
-    self.sci( lc )
+      self.sci( lc )
     return lc
 
-  def mesh( self, points, values=None, edgecolors='k', edgewidth=.1, triangulate='bezier', mergetol=0, setxylim=True, aspect='equal', cmap='jet' ):
+  def mesh( self, points, values=None, edgecolors='k', edgewidth=.1, mergetol=0, setxylim=True, aspect='equal', **kwargs ):
     'plot elemtwise mesh'
 
-    if values is not None:
-      assert len(values) == len(points)
+    kwargs.pop( 'triangulate', None ) # ignore deprecated argument
+
+    if not isinstance( points, numpy.ndarray ) and points[0].shape[1] == 1: # line plot
+      if values is not None:
+        self.segments( [ numpy.concatenate( [x,y[:,_]], axis=1 ) for x, y in zip( points, values ) ], values )
+      return
 
     if isinstance( points, numpy.ndarray ): # bulk data
       assert points.shape[-1] == 2
-      if points.ndim == 2: # npoints x 2
-        triangulation, hull = _triangulate_delaunay( points )
-      elif points.ndim == 3: # nxpoints x nypoints x 2
-        triangulation, hull = _triangulate_quad( points.shape[0], points.shape[1] )
-        points = points.reshape( -1, 2 )
-      else:
-        raise Exception( 'invalid array shape: {}'.format(triangulate) )
-      edges = points[hull],
+      triangulation = Triangulation( *points.reshape(-1,2).T )
+      edgecolors = 'none'
       if values is not None:
         values = values.ravel()
-        assert len(values) == len(points)
-    elif points[0].shape[1] == 1: # line plot
-      edges = []
-      for epoints, evalues in zip( points, values ):
-        assert evalues.ndim == 1 and epoints.shape == evalues.shape + (1,)
-        edges.append( numpy.array([ epoints[:,0], evalues ]).T )
-      values = None
-      aspect = None
     else: # mesh data
-      triangulation, hull, keep = _mktriangulation( points, triangulate, mergetol )
-      points = numpy.concatenate( points, axis=0 )[keep]
-      edges = points[hull]
+      tri, edges = triangulate( points, mergetol )
       if values is not None:
-        values = numpy.concatenate( values, axis=0 )[keep]
-        assert len(values) == len(points)
+        values = numpy.concatenate( values, axis=0 )
 
     if values is not None:
-      finite = numpy.isfinite(values)
-      if not finite.all():
-        values = values[finite]
-        points = points[finite]
-        triangulation = (finite.cumsum()-1)[ triangulation[finite[triangulation].all(axis=1)] ]
-      trimesh = self.tripcolor( points[:,0], points[:,1], triangulation, values, shading='gouraud', rasterized=True, cmap=cmap )
-
+      self.tripcolor( tri, values, shading='gouraud', **kwargs )
     if edgecolors != 'none':
-      from matplotlib.collections import LineCollection
-      linecol = LineCollection( edges, linewidths=(edgewidth,) )
-      linecol.set_color( edgecolors )
-      self.gca().add_collection( linecol )
-
+      self.segments( edges, linewidth=edgewidth )
     if aspect:
-      self.gca().set_aspect( aspect )
-
+      self.aspect( aspect )
     if setxylim:
       self.autoscale( enable=True, axis='both', tight=True )
-    
-    return linecol if values is None \
-      else trimesh if edgecolors == 'none' \
-      else (trimesh, linecol)
 
-  def meshcontour( self, points, values, every=None, levels=None, triangulate='bezier', mergetol=0, **kwargs ):
+    return tri
+
+  def aspect( self, *args, **kwargs ):
+    self.gca().set_aspect( *args, **kwargs )
+
+  def tripcolor( self, tri, values, **kwargs ):
+    if not isinstance( tri, matplotlib.tri.Triangulation ):
+      tri, edges = triangulate( tri, mergetol )
+    if not isinstance( values, numpy.ndarray ):
+      values = numpy.concatenate( values, axis=0 )
+    assert len(tri.x) == len(values)
+    mask = numpy.isfinite( values )
+    if not mask.all():
+      tri = Triangulation( tri.x, tri.y, tri.triangles, mask[tri.triangles].all(axis=1) )
+    return self._pyplot.tripcolor( tri, values, **kwargs )
+
+  def tricontour( self, tri, values, every=None, levels=None, mergetol=0, **kwargs ):
     assert not every or levels is None, '"every" and "levels" arguments are mutually exclusive'
-    triangulation, edges, keep = _mktriangulation( points, triangulate, mergetol )
-    points = numpy.concatenate( points, axis=0 )[keep]
-    values = numpy.concatenate( values, axis=0 )[keep]
-    assert len(values) == len(points)
+    if not isinstance( tri, matplotlib.tri.Triangulation ):
+      tri, edges = triangulate( tri, mergetol )
+    if not isinstance( values, numpy.ndarray ):
+      values = numpy.concatenate( values, axis=0 )
+    assert len(tri.x) == len(values)
     if every:
       levels = numpy.arange( int(min(values)/every), int(max(values)/every)+1 ) * every
-    return self.tricontour( points[:,0], points[:,1], triangulation, values, levels=levels, **kwargs )
+    return self._pyplot.tricontour( tri, values, levels=levels, **kwargs )
 
-  def meshstreamplot( self, points, velo, spacing, xlim=None, ylim=None, triangulate='bezier', mergetol=1e-5, linewidth=None, color=None, **kwargs ):
-    from matplotlib.tri.triinterpolate import Triangulation, LinearTriInterpolator
-    triangles, edges, keep = _mktriangulation( points, triangulate=triangulate, mergetol=mergetol )
-    points = numpy.concatenate( points, axis=0 )[keep]
-    velo = numpy.concatenate( velo, axis=0 )[keep]
-    assert points.shape == velo.shape == (len(points),2)
-    triangulation = Triangulation( points[:,0], points[:,1], triangles )
-    if xlim is None:
-      xlim = min(points[:,0]), max(points[:,0])
-    nx = int( ( xlim[-1] - xlim[0] ) / spacing )
-    if ylim is None:
-      ylim = min(points[:,1]), max(points[:,1])
-    ny = int( ( ylim[-1] - ylim[0] ) / spacing )
-    assert nx > 0 and ny > 0
-    x = .5 * (xlim[0]+xlim[-1]) + ( numpy.arange(nx) - (nx-1)/2 ) * spacing
-    y = .5 * (ylim[0]+ylim[-1]) + ( numpy.arange(ny) - (ny-1)/2 ) * spacing
-    u = LinearTriInterpolator( triangulation, velo[:,0] )( *numpy.broadcast_arrays( x[_,:], y[:,_] ) )
-    v = LinearTriInterpolator( triangulation, velo[:,1] )( *numpy.broadcast_arrays( x[_,:], y[:,_] ) )
-    absvelo = numpy.sqrt( u**2 + v**2 )
+  def streamplot( self, tri, velo, spacing, bbox=None, mergetol=1e-5, linewidth=None, color=None, **kwargs ):
+    if isinstance( spacing, numpy.ndarray ):
+      # compatibility with original streamplot function definition
+      x = tri
+      y = velo
+      u = spacing
+      v = bbox
+    else:
+      if not isinstance( tri, matplotlib.tri.Triangulation ):
+        tri, edges = triangulate( tri, mergetol=mergetol )
+      if not isinstance( velo, numpy.ndarray ):
+        velo = numpy.concatenate( velo, axis=0 )
+      assert len(tri.x) == len(velo)
+      if bbox is None:
+        xlim = min(tri.x), max(tri.x)
+        ylim = min(tri.y), max(tri.y)
+      else:
+        xlim, ylim = bbox
+      nx = int( ( xlim[-1] - xlim[0] ) / spacing )
+      ny = int( ( ylim[-1] - ylim[0] ) / spacing )
+      assert nx > 0 and ny > 0
+      x = .5 * (xlim[0]+xlim[-1]) + ( numpy.arange(nx) - (nx-1)/2 ) * spacing
+      y = .5 * (ylim[0]+ylim[-1]) + ( numpy.arange(ny) - (ny-1)/2 ) * spacing
+      uv = interpolate( tri, numeric.meshgrid(x,y).T, velo, mergetol=mergetol )
+      u = uv[...,0]
+      v = uv[...,1]
+    assert isinstance( x, numpy.ndarray ) and x.ndim == 1
+    assert isinstance( y, numpy.ndarray ) and y.ndim == 1
+    assert isinstance( u, numpy.ndarray ) and u.shape == (len(x),len(y))
+    assert isinstance( v, numpy.ndarray ) and v.shape == (len(x),len(y))
     if linewidth is not None and linewidth < 0: # convention: negative linewidth is scaled with velocity magnitude
-      linewidth = -linewidth * absvelo
+      linewidth = -linewidth * numpy.sqrt( u**2 + v**2 )
     if color is None: # default: color mapped to velocity magnitude
-      color = absvelo
-    return self.streamplot( x, y, u, v, linewidth=linewidth, color=color, **kwargs )
+      color = numpy.sqrt( u**2 + v**2 )
+    return self._pyplot.streamplot( x, y, u, v, linewidth=linewidth, color=color, **kwargs )
 
   def polycol( self, verts, facecolors='none', **kwargs ):
     'add polycollection'
@@ -237,6 +237,7 @@ class PyPlot( BasePlot ):
     return polycol
 
   def slope_marker( self, x, y, slope=None, width=.2, xoffset=0, yoffset=.2, color='0.5' ):
+    'slope marker'
 
     ax = self.gca()
 
@@ -400,7 +401,13 @@ class PyPlot( BasePlot ):
   def ytickspacing( self, base ):
     self._tickspacing( self.gca().yaxis, base )
 
-  def vectors( self, xy, uv, **kwargs ):
+  def vectors( self, xy, uv, stems=True, **kwargs ):
+    if not stems:
+      uv = uv / numpy.linalg.norm( uv, axis=1 )[:,_]
+      kwargs['width'] = 1e-3
+      kwargs['headwidth'] = 3e3
+      kwargs['headlength'] = 5e3
+      kwargs['headaxislength'] = 2e3
     self.quiver( xy[:,0], xy[:,1], uv[:,0], uv[:,1], angles='xy', **kwargs )
 
 class PyPlotVideo( PyPlot ):
@@ -710,34 +717,7 @@ class VTKFile( BasePlot ):
     self._dataarrays[location].append(( name, extdata ))
 
 
-## AUXILIARY FUNCTIONS
-
-def writevtu( name, topo, coords, pointdata={}, celldata={}, ascii=False, superelements=False, maxrefine=3, ndigits=0, ischeme='gauss1', **kwargs ):
-  'write vtu from coords function'
-
-  from . import element, topology
-
-  with VTKFile( name, ascii=ascii, ndigits=ndigits ) as vtkfile:
-
-    if not superelements:
-      topo = topo.simplex
-    else:
-      topo = topology.Topology( filter(None,[elem if not isinstance(elem,element.TrimmedElement) else elem.elem for elem in topo]) )
-
-    points = topo.elem_eval( coords, ischeme='vtk', separate=True )
-    vtkfile.unstructuredgrid( points, npars=topo.ndims )
-
-    if pointdata:  
-      keys, values = zip( *pointdata.items() )
-      arrays = topo.elem_eval( values, ischeme='vtk', separate=False )
-      for key, array in zip( keys, arrays ):
-        vtkfile.pointdataarray( key, array )
-
-    if celldata:  
-      keys, values = zip( *celldata.items() )
-      arrays = topo.elem_mean( values, coords=coords, ischeme=ischeme )
-      for key, array in zip( keys, arrays ):
-        vtkfile.celldataarray( key, array )
+## INTERNAL HELPER FUNCTIONS
 
 def _getnextindex( path, name, ext ):
   index = 0
@@ -772,37 +752,52 @@ def _triangulate_bezier( np ):
     return _triangulate_tri( ntri )
   raise Exception( 'cannot match points to a bezier scheme' )
 
-def _triangulate_delaunay( points ):
-  import scipy.spatial
-  tri = scipy.spatial.Delaunay( points )
-  return tri.vertices, tri.convex_hull
 
-def _compose( f, g ):
-  return lambda *args, **kwargs: f( g( *args, **kwargs ) )
+## AUXILIARY FUNCTIONS
 
-def _mktriangulation( points, triangulate, mergetol=0 ):
-  if triangulate == 'delaunay':
-    _triangulate = _triangulate_delaunay
-  elif triangulate == 'bezier':
-    _triangulate = _compose( cache.Wrapper(_triangulate_bezier), len )
-  else:
-    raise Exception( 'unknown triangulation method %r' % triangulate )
+def writevtu( name, topo, coords, pointdata={}, celldata={}, ascii=False, superelements=False, maxrefine=3, ndigits=0, ischeme='gauss1', **kwargs ):
+  'write vtu from coords function'
+
+  from . import element, topology
+
+  with VTKFile( name, ascii=ascii, ndigits=ndigits ) as vtkfile:
+
+    if not superelements:
+      topo = topo.simplex
+    else:
+      topo = topology.Topology( filter(None,[elem if not isinstance(elem,element.TrimmedElement) else elem.elem for elem in topo]) )
+
+    points = topo.elem_eval( coords, ischeme='vtk', separate=True )
+    vtkfile.unstructuredgrid( points, npars=topo.ndims )
+
+    if pointdata:  
+      keys, values = zip( *pointdata.items() )
+      arrays = topo.elem_eval( values, ischeme='vtk', separate=False )
+      for key, array in zip( keys, arrays ):
+        vtkfile.pointdataarray( key, array )
+
+    if celldata:  
+      keys, values = zip( *celldata.items() )
+      arrays = topo.elem_mean( values, coords=coords, ischeme=ischeme )
+      for key, array in zip( keys, arrays ):
+        vtkfile.celldataarray( key, array )
+
+def triangulate( points, mergetol=0 ):
+  triangulate_bezier = cache.Wrapper(_triangulate_bezier)
   npoints = 0
   outerpoints = numpy.empty( (sum(len(p) for p in points),2) ) # allocate for worst case
   iouter = []
   triangulation = []
   edges = []
-  keep = []
   for epoints in points:
     np = len(epoints)
     assert epoints.shape == (np,2)
     if np == 0:
       continue
-    etri, ehull = _triangulate( epoints )
+    etri, ehull = triangulate_bezier( np )
     if not mergetol:
       triangulation.append( npoints + etri )
       edges.append( npoints + ehull )
-      nnew = len(epoints)
     else:
       eisouter = numpy.zeros( np, dtype=bool )
       eisouter[ehull] = True # mask all vertices that are on an edge
@@ -814,35 +809,43 @@ def _mktriangulation( points, triangulate, mergetol=0 ):
         where.append( iouter[j] ) # assuming nonzero yields ordered i!
       isnew = ~eisouter # vertices that do not lie on the boundary are kept..
       isnew[eisouter] = isnewouter # ..as well as all vertices that have no duplicate
-      keep.append( isnew )
       nnew = isnew.sum()
-      renumber = numpy.empty( np, dtype=int ) # renumbering scheme accounting for duplicates
-      renumber[isnew] = npoints + numpy.arange(nnew) # new vertices
+      renumber = npoints + numpy.arange( np ) # renumbering scheme accounting for duplicates
       renumber[~isnew] = where # duplicates
       triangulation.append( renumber[etri] )
       eisouter[~isnew] = False # unmask all duplicate vertices, leaving only the new boundary vertices
       outerpoints[len(iouter):len(iouter)+eisouter.sum()] = epoints[eisouter]
       iouter.extend( renumber[eisouter] )
       edges.append( renumber[ehull] )
-    npoints += nnew
+    npoints += np
   edges = numpy.concatenate( edges, axis=0 )
-  if not mergetol:
-    keep = slice(None)
-  else:
-    keep = numpy.concatenate( keep, axis=0 )
+  if mergetol:
     edges = numpy.sort( edges, axis=1 ) # order edge endpoints to recognize duplicates
     edges = edges[ numpy.lexsort( edges.T ) ] # sort edges lexicographically
     edges = edges[ numpy.concatenate( [ [True], numpy.diff( edges, axis=0 ).any(axis=1) ] ) ] # remove duplicates
-  return numpy.concatenate( triangulation, axis=0 ), edges, keep
+  points = numpy.concatenate( points, axis=0 )
+  return Triangulation( points[:,0], points[:,1], numpy.concatenate( triangulation, axis=0 ) ), points[edges]
 
-def _interpolate( points, values, xy ):
+def interpolate( tri, xy, values, mergetol=1e-5 ):
   assert xy.shape[-1] == 2
-  from matplotlib.tri.triinterpolate import Triangulation, LinearTriInterpolator
-  triangles, edges, keep = _mktriangulation( points, triangulate='bezier', mergetol=1e-5 )
-  points = numpy.concatenate( points, axis=0 )[keep]
-  values = numpy.concatenate( values, axis=0 )[keep]
-  triangulation = Triangulation( points[:,0], points[:,1], triangles )
-  interpvalues = numpy.array([ LinearTriInterpolator( triangulation, v )( *xy.reshape(-1,2).T ) for v in values.reshape(len(values),-1).T ]).T
-  return interpvalues.reshape( xy.shape[:-1] + values.shape[1:] )
+  if not isinstance( tri, matplotlib.tri.Triangulation ):
+    tri, edges = triangulate( tri, mergetol=mergetol )
+  if not isinstance( values, numpy.ndarray ):
+    values = numpy.concatenate( values, axis=0 )
+  assert len(tri.x) == len(values)
+  itri = tri.get_trifinder()( xy[...,0].ravel(), xy[...,1].ravel() )
+  inside = itri != -1
+  itri = itri[inside]
+  interpvalues = numpy.empty( xy.shape[:-1] + values.shape[1:] )
+  interpvalues[:] = numpy.nan
+  xy1 = numpy.concatenate( [ xy.reshape(-1,2)[inside], numpy.ones([len(itri),1]) ], axis=1 )
+  for iv, v in zip( interpvalues.reshape(len(inside),-1).T, values.reshape(len(values),-1).T ):
+    plane_coefficients = tri.calculate_plane_coefficients(v)
+    iv[inside] = numeric.contract( xy1, plane_coefficients[itri], axis=1 )
+  return interpvalues
+
+class Triangulation( matplotlib.tri.Triangulation ):
+  interpolate = interpolate
+
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
