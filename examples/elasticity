@@ -1,6 +1,8 @@
 #! /usr/bin/env python
 
-from nutils import *
+from __future__ import division
+from nutils import mesh, plot, util, log, library, function
+import numpy
 
 
 @log.title
@@ -8,27 +10,35 @@ def makeplots( domain, geom, stress ):
 
   points, colors = domain.elem_eval( [ geom, stress[0,1] ], ischeme='bezier3', separate=True )
   with plot.PyPlot( 'stress', ndigits=0 ) as plt:
-    plt.mesh( points, colors, triangulate='bezier' )
+    plt.mesh( points, colors, tight=False )
     plt.colorbar()
-    plt.axis( 'equal' )
-    plt.xlim( 0, 1.5 )
 
 
-def main( nelems=8, stress=library.Hooke(lmbda=1,mu=1), degree=2, plots=True, solvetol=1e-10 ):
+def main( nelems=12, stress=library.Hooke(lmbda=1,mu=1), degree=2, withplots=True, solvetol=1e-10 ):
 
+  # construct mesh
   verts = numpy.linspace( 0, 1, nelems+1 )
   domain, geom = mesh.rectilinear( [verts,verts] )
+
+  # prepare basis
   dbasis = domain.basis( 'spline', degree=degree ).vector( 2 )
+
+  # construct matrix
   elasticity = function.outer( dbasis.grad(geom), stress(dbasis.symgrad(geom)) ).sum([2,3])
   matrix = domain.integrate( elasticity, geometry=geom, ischeme='gauss2' )
-  nfval = ( dbasis * geom.normal() ).sum(-1)
 
+  # construct dirichlet boundary constraints
   cons = domain.boundary['left'].project( 0, geometry=geom, onto=dbasis, ischeme='gauss2' ) \
-       | domain.boundary['right'].project( .5, geometry=geom, onto=nfval, ischeme='gauss2' )
+       | domain.boundary['right'].project( .5, geometry=geom, onto=dbasis.dotnorm(geom), ischeme='gauss2' )
+
+  # solve system
   lhs = matrix.solve( constrain=cons, tol=solvetol, symmetric=True, precon='diag' )
+
+  # construct solution function
   disp = dbasis.dot( lhs )
 
-  if plots:
+  # plot solution
+  if withplots:
     makeplots( domain, geom+disp, stress(disp.symgrad(geom)) )
 
   return lhs, cons
@@ -36,13 +46,13 @@ def main( nelems=8, stress=library.Hooke(lmbda=1,mu=1), degree=2, plots=True, so
 
 def unittest():
 
-  retvals = main( nelems=4, degree=1, plots=False, solvetol=0 )
+  retvals = main( nelems=4, degree=1, withplots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
     eNqlkEsKwzAMRK8Tg1z09ec4XXSb+y/r2FZbh0IhBYsZ6Q1YiGBTIAuwbXiDz0ci6REbJNWhoks/OZtw
     VxXrKpWWfnLJNpXqUMS1H9xwzH/pad1UtI0NOOdyaBtF99FhEaRDldk85D46LCnXHlKur9D00WHJKCMk
     8g4NHx22q5623O/75bp4mH++/FYBwhP0AIpZ''' )
 
-  retvals = main( nelems=4, degree=2, plots=False, solvetol=0 )
+  retvals = main( nelems=4, degree=2, withplots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
     eNq1ksEOwyAIhl+nTXQRENDH2aHXvv9xFqRJ1+ywLEtqvr/wi0gLaakJeE3LUh7p7WmgfcucuBQ1UqcL
     Zzx80LFuedRrx/ugMl8Y8ekjoOIEZxG5MOLTV0lpEp0sV0bcfaO/8g3vE+Be7GaognZThlFZUj5FZHJY
