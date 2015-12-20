@@ -126,8 +126,10 @@ class ScipyMatrix( Matrix ):
       if res0 < tol:
         return (lhs0,solverinfo) if info else lhs0
 
-    if not solver:
-      solver = 'spsolve' if tol == 0 else 'cg' if symmetric else 'gmres'
+    if tol == 0:
+      solver = 'spsolve'
+    elif not solver:
+      solver = 'cg' if symmetric else 'gmres'
 
     import scipy.sparse.linalg
     solverfun = getattr( scipy.sparse.linalg, solver )
