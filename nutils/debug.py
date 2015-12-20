@@ -332,21 +332,24 @@ def __compare( verify_obj, obj, nsig, ndec ):
   if isinstance(verify_obj,tuple):
     if not isinstance(obj,(tuple,list,numpy.ndarray)):
       log.error( 'non matching types: {} != {}'.format( type(verify_obj), type(obj) ) )
-    if len(verify_obj) != len(obj):
+    elif len(verify_obj) != len(obj):
       log.error( 'non matching lenghts: {} != {}'.format( len(verify_obj), len(obj) ) )
-    return all([ __compare( vo, o, nsig, ndec, title='#%d' % i )
-      for i, (vo,o) in enumerate( zip( verify_obj, obj ) ) ])
+    else:
+      return all([ __compare( vo, o, nsig, ndec, title='#%d' % i )
+        for i, (vo,o) in enumerate( zip( verify_obj, obj ) ) ])
   elif isinstance(verify_obj,dict):
     if not isinstance(obj,dict):
       log.error( 'non matching types: {} != {}'.format( type(verify_obj), type(obj) ) )
-    if len(verify_obj) != len(obj):
+    elif len(verify_obj) != len(obj):
       log.error( 'non matching lenghts: {} != {}'.format( len(verify_obj), len(obj) ) )
-    obj_keys, obj_vals = zip(*sorted(obj.items()))
-    verify_obj_keys, verify_obj_vals = zip(*sorted(verify_obj.items()))
-    if obj_keys != verify_obj_keys:
-      log.error( 'non matching keys' )
-    return all([ __compare( vo, o, nsig, ndec, title='#%d' % i )
-      for i, (vo,o) in enumerate( zip( verify_obj_vals, obj_vals ) ) ])
+    else:
+      obj_keys, obj_vals = zip(*sorted(obj.items()))
+      verify_obj_keys, verify_obj_vals = zip(*sorted(verify_obj.items()))
+      if obj_keys != verify_obj_keys:
+        log.error( 'non matching keys' )
+      else:
+        return all([ __compare( vo, o, nsig, ndec, title='#%d' % i )
+          for i, (vo,o) in enumerate( zip( verify_obj_vals, obj_vals ) ) ])
   elif not isinstance(verify_obj,float):
     if type(verify_obj) != type(obj):
       log.error( 'non equal object types: {} != {}'.format( type(obj), type(verify_obj) ) )
