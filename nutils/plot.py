@@ -128,7 +128,7 @@ class PyPlot( BasePlot ):
       self.sci( lc )
     return lc
 
-  def mesh( self, points, values=None, edgecolors='k', edgewidth=.1, mergetol=0, setxylim=True, aspect='equal', **kwargs ):
+  def mesh( self, points, values=None, edgecolors='k', edgewidth=.1, mergetol=0, setxylim=True, aspect='equal', tight=True, **kwargs ):
     'plot elemtwise mesh'
 
     kwargs.pop( 'triangulate', None ) # ignore deprecated argument
@@ -154,7 +154,7 @@ class PyPlot( BasePlot ):
     if edgecolors != 'none':
       self.segments( edges, linewidth=edgewidth )
     if aspect:
-      self.aspect( aspect )
+      ( self.aspect if tight else self.axis )( aspect )
     if setxylim:
       self.autoscale( enable=True, axis='both', tight=True )
 
