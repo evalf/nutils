@@ -53,6 +53,9 @@ class IndexedArray:
 
       a['i0,1']
       a[:,0].grad(geom)[:,1]
+
+      a['αβ,β']
+      trace( a.grad(geom)[1:,1:,1:] )
   '''
 
   def __init__( self, indices, op, args ):
@@ -62,7 +65,7 @@ class IndexedArray:
     self._op = op
     self._args = tuple( args )
 
-    assert all( 'a' <= index <= 'z' for index in self.indices ), 'invalid index'
+    assert all( 'a' <= index <= 'z' or 'α' <= index <= 'ω' for index in self.indices ), 'invalid index'
     assert len( set( self.indices ) ) == len( self.indices ), 'repeated index'
     assert all( isinstance( arg, IndexedArray ) for arg in self._args ), 'incompatible argument'
 
@@ -119,11 +122,15 @@ class IndexedArray:
       grad = self._array_surfgrad
     else:
       raise ValueError( 'additional indices are not allowed, only derivatives' )
-    if not all( 'a' <= index <= 'z' or '0' <= index <= '9' for index in item[1:] ):
+    if not all( 'a' <= index <= 'z' or 'α' <= index <= 'ω' or '0' <= index <= '9' for index in item[1:] ):
       raise ValueError( 'invalid index, only lower case latin characters and numbers are allowed' )
     if not all( 1 <= c <= 2 for index, c in collections.Counter( self.indices + item[1:] ).items() if not ('0' <= index <= '9') ):
       raise ValueError( 'indices may not be repeated more than once' )
     indices = self.indices + item[1]
+    if 'α' <= item[1] <= 'ω':
+      # `item[1]` is a greek index, slice axis
+      _grad = grad
+      grad = lambda geom, array: _grad( geom, array )[..., slice(1, None)]
     if '0' <= item[1] <= '9':
       # `item[1]` is a number
       # get element `item[1]` of the last axis
@@ -262,10 +269,14 @@ def wrap( array, indices ):
     grad_indices = ''
   if len( indices ) != len( array.shape ):
     raise ValueError( 'expected {} indices, got {}'.format( len( array.shape ), len( indices ) ) )
-  if not all( 'a' <= index <= 'z' or '0' <= index <= '9' for index in indices + grad_indices[1:] ):
+  if not all( 'a' <= index <= 'z' or 'α' <= index <= 'ω' or '0' <= index <= '9' for index in indices + grad_indices[1:] ):
     raise ValueError( 'invalid index, only lower case latin characters and numbers are allowed' )
   if not all( 1 <= c <= 2 for index, c in collections.Counter( indices + grad_indices[1:] ).items() if not ('0' <= index <= '9') ):
     raise ValueError( 'indices may not be repeated more than once' )
+  # slice greek indices
+  for i, index in enumerate( indices ):
+    if 'α' <= index <= 'ω':
+      array = array[(slice(None),)*i+(slice(1,None),)+(slice(None),)*(len(indices)-i-1)]
   # apply numbered indices (skip gradient indices, will be processed in `self[grad_indices]` later)
   for i, index in reversed( tuple( enumerate( indices ) ) ):
     if '0' <= index <= '9':

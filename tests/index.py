@@ -1,3 +1,5 @@
+# -*- coding: utf8 -*-
+
 from nutils import *
 from . import register, unittest
 
@@ -139,3 +141,15 @@ def indexedarray():
   @unittest
   def grad_number2():
     assert a['i,01'].unwrap(geom) == a.grad(geom).grad(geom)[:,0,1]
+
+  @unittest
+  def greek1():
+    assert a['α'].unwrap() == a[1:]
+
+  @unittest
+  def greek2():
+    assert ab_outer['αβ'].unwrap() == ab_outer[1:,1:]
+
+  @unittest
+  def grad_greek1():
+    assert a['α,α'].unwrap(geom) == function.trace(a.grad(geom)[1:,1:])
