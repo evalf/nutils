@@ -213,8 +213,8 @@ class PyPlot( BasePlot ):
       v = uv[...,1]
     assert isinstance( x, numpy.ndarray ) and x.ndim == 1
     assert isinstance( y, numpy.ndarray ) and y.ndim == 1
-    assert isinstance( u, numpy.ndarray ) and u.shape == (len(x),len(y))
-    assert isinstance( v, numpy.ndarray ) and v.shape == (len(x),len(y))
+    assert isinstance( u, numpy.ndarray ) and u.shape == (len(y),len(x))
+    assert isinstance( v, numpy.ndarray ) and v.shape == (len(y),len(x))
     if linewidth is not None and linewidth < 0: # convention: negative linewidth is scaled with velocity magnitude
       linewidth = -linewidth * numpy.sqrt( u**2 + v**2 )
     if color is None: # default: color mapped to velocity magnitude
