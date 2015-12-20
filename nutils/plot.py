@@ -785,8 +785,6 @@ def writevtu( name, topo, coords, pointdata={}, celldata={}, ascii=False, supere
 def triangulate( points, mergetol=0 ):
   triangulate_bezier = cache.Wrapper(_triangulate_bezier)
   npoints = 0
-  outerpoints = numpy.empty( (sum(len(p) for p in points),2) ) # allocate for worst case
-  iouter = []
   triangulation = []
   edges = []
   for epoints in points:
@@ -795,36 +793,27 @@ def triangulate( points, mergetol=0 ):
     if np == 0:
       continue
     etri, ehull = triangulate_bezier( np )
-    if not mergetol:
-      triangulation.append( npoints + etri )
-      edges.append( npoints + ehull )
-    else:
-      eisouter = numpy.zeros( np, dtype=bool )
-      eisouter[ehull] = True # mask all vertices that are on an edge
-      D = epoints[eisouter,_,:] - outerpoints[_,:len(iouter),:]
-      where = [] # to-be list of indices into outerpoints
-      isnewouter = numpy.ones( len(D), dtype=bool ) # mask all points that have no duplicate in outerpoints
-      for i, j in zip( *numpy.nonzero( numeric.contract( D, D, axis=2 ) < mergetol**2 ) ):
-        isnewouter[i] = False
-        where.append( iouter[j] ) # assuming nonzero yields ordered i!
-      isnew = ~eisouter # vertices that do not lie on the boundary are kept..
-      isnew[eisouter] = isnewouter # ..as well as all vertices that have no duplicate
-      nnew = isnew.sum()
-      renumber = npoints + numpy.arange( np ) # renumbering scheme accounting for duplicates
-      renumber[~isnew] = where # duplicates
-      triangulation.append( renumber[etri] )
-      eisouter[~isnew] = False # unmask all duplicate vertices, leaving only the new boundary vertices
-      outerpoints[len(iouter):len(iouter)+eisouter.sum()] = epoints[eisouter]
-      iouter.extend( renumber[eisouter] )
-      edges.append( renumber[ehull] )
+    triangulation.append( npoints + etri )
+    edges.append( npoints + ehull )
     npoints += np
+  triangulation = numpy.concatenate( triangulation, axis=0 )
   edges = numpy.concatenate( edges, axis=0 )
+  points = numpy.concatenate( points, axis=0 )
   if mergetol:
-    edges = numpy.sort( edges, axis=1 ) # order edge endpoints to recognize duplicates
+    import scipy.spatial
+    onedge = numpy.zeros( npoints, dtype=bool )
+    onedge[edges] = True
+    index, = onedge.nonzero()
+    for i, j in sorted( scipy.spatial.cKDTree( points[onedge] ).query_pairs( mergetol ) ):
+      assert i < j
+      index[j] = index[i]
+    renumber = numpy.arange( npoints )
+    renumber[onedge] = index
+    triangulation = renumber[triangulation]
+    edges = numpy.sort( renumber[edges], axis=1 ) # order edge endpoints to recognize duplicates
     edges = edges[ numpy.lexsort( edges.T ) ] # sort edges lexicographically
     edges = edges[ numpy.concatenate( [ [True], numpy.diff( edges, axis=0 ).any(axis=1) ] ) ] # remove duplicates
-  points = numpy.concatenate( points, axis=0 )
-  return Triangulation( points[:,0], points[:,1], numpy.concatenate( triangulation, axis=0 ) ), points[edges]
+  return Triangulation( points[:,0], points[:,1], triangulation ), points[edges]
 
 def interpolate( tri, xy, values, mergetol=1e-5 ):
   assert xy.shape[-1] == 2
