@@ -14,7 +14,7 @@ backends. At this point `matplotlib <http://matplotlib.org/>`_ and `vtk
 
 from __future__ import print_function, division
 from . import numpy, log, core, cache, numeric, _
-import os, warnings, sys, subprocess, matplotlib.tri
+import os, warnings, sys, subprocess
 
 
 class BasePlot( object ):
@@ -844,8 +844,13 @@ def interpolate( tri, xy, values, mergetol=1e-5 ):
     iv[inside] = numeric.contract( xy1, plane_coefficients[itri], axis=1 )
   return interpvalues
 
-class Triangulation( matplotlib.tri.Triangulation ):
-  interpolate = interpolate
+try:
+  import matplotlib.tri
+except:
+  pass
+else:
+  class Triangulation( matplotlib.tri.Triangulation ):
+    interpolate = interpolate
 
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
