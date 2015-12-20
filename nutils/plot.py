@@ -140,7 +140,7 @@ class PyPlot( BasePlot ):
 
     if isinstance( points, numpy.ndarray ): # bulk data
       assert points.shape[-1] == 2
-      triangulation = Triangulation( *points.reshape(-1,2).T )
+      tri = Triangulation( *points.reshape(-1,2).T )
       edgecolors = 'none'
       if values is not None:
         values = values.ravel()
@@ -169,9 +169,9 @@ class PyPlot( BasePlot ):
     if not isinstance( values, numpy.ndarray ):
       values = numpy.concatenate( values, axis=0 )
     assert len(tri.x) == len(values)
-    mask = numpy.isfinite( values )
-    if not mask.all():
-      tri = Triangulation( tri.x, tri.y, tri.triangles, mask[tri.triangles].all(axis=1) )
+    mask = ~numpy.isfinite( values )
+    if mask.any():
+      tri = Triangulation( tri.x, tri.y, tri.triangles, mask[tri.triangles].any(axis=1) )
     return self._pyplot.tripcolor( tri, values, **kwargs )
 
   def tricontour( self, tri, values, every=None, levels=None, mergetol=0, **kwargs ):
