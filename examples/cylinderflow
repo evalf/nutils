@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 
 from __future__ import division
-from nutils import mesh, util, log, function, plot, _
+from nutils import mesh, util, log, function, plot, debug, _
 import numpy
 
 
@@ -22,7 +22,7 @@ class MakePlots( object ):
     self.index += 1
     points, velo, flow, pres = self.plotdomain.elem_eval( [ self.geom, velo, function.norm2(velo), pres ], ischeme='bezier9', separate=True )
     with self.plt if self.plt else plot.PyPlot( 'flow', index=self.index ) as plt:
-      ax = plt.gcf().add_axes( [0,0,1,1], yticks=[], xticks=[], frame_on=False )
+      plt.axes( [0,0,1,1], yticks=[], xticks=[], frame_on=False )
       tri = plt.mesh( points, flow, mergetol=1e-5 )
       plt.clim( 0, 1.5 )
       plt.tricontour( tri, pres, every=self.every, cmap='gray', linestyles='solid', alpha=.8 )
