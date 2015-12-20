@@ -82,7 +82,7 @@ def main( nelems=12, viscosity=1e-2, density=1, tol=1e-12, rotation=0, timestep=
   cons = inflow.project( uinf, onto=vbasis, geometry=geom, ischeme='gauss9', tol=1e-12 )
 
   # initial condition (stationary oseen flow)
-  lhs = (stokesmat+uniconvec).solve( rhs, constrain=cons, tol=tol, restart=9999, precon='spilu' )
+  lhs = (stokesmat+uniconvec).solve( rhs, constrain=cons, tol=0 )
 
   # prepare plotting
   if not withplots:
