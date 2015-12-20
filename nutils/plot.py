@@ -734,14 +734,14 @@ def _triangulate_quad( n, m ):
   vert2 = numpy.array([ ind[1:,1:].ravel(), ind[1:,:-1].ravel(), ind[:-1,1:].ravel() ]).T
   vertices = numpy.concatenate( [vert1,vert2], axis=0 )
   hull = numpy.concatenate([ ind[:,0], ind[-1,1:], ind[-2::-1,-1], ind[0,-2::-1] ])
-  return vertices, numeric.overlapping(hull)
+  return vertices, numpy.array(numeric.overlapping(hull))
 
 def _triangulate_tri( n ):
   vert1 = [ ((2*n-i+1)*i)//2+numpy.array([j,j+1,j+n-i]) for i in range(n-1) for j in range(n-i-1) ]
   vert2 = [ ((2*n-i+1)*i)//2+numpy.array([j+1,j+n-i+1,j+n-i]) for i in range(n-1) for j in range(n-i-2) ]
   vertices = numpy.array( vert1+vert2 )
   hull = numpy.concatenate([ numpy.arange(n), numpy.arange(n-1,0,-1).cumsum()+n-1, numpy.arange(n+1,2,-1).cumsum()[::-1]-n-1 ])
-  return vertices, numeric.overlapping(hull)
+  return vertices, numpy.array(numeric.overlapping(hull))
 
 def _triangulate_bezier( np ):
   nquad = int( numpy.sqrt(np) + .5 )
