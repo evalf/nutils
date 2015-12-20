@@ -35,7 +35,6 @@ def cutdomain( ndims, nelems, maxrefine, errtol ):
     @unittest( name )
     def div():
       dom.volume_check( geom, decimal=15 )
-      dom.volume_check( geom, decimal=15 )
  
   @unittest
   def surface():
@@ -153,7 +152,7 @@ def setoperations():
       assert numpy.isclose( L, 1+numpy.sqrt(2)  ), 'full boundary: wrong length: {} != {}'.format( L, 1+numpy.sqrt(2) )
       L = dom.boundary[name].integrate( 1, geometry=geom, ischeme='gauss1' )
       assert numpy.isclose( L, 1  ), '{}: wrong length: {} != {}'.format( name, L, 1 )
-      L = dom.boundary['trim1'].integrate( 1, geometry=geom, ischeme='gauss1' )
+      L = dom.boundary['trim1' if name not in ('left','top') else '~trim1'].integrate( 1, geometry=geom, ischeme='gauss1' )
       assert numpy.isclose( L, .5*numpy.sqrt(2)  ), 'trim1: wrong length: {} != {}'.format( L, .5*numpy.sqrt(2) )
-      L = dom.boundary['trim2'].integrate( 1, geometry=geom, ischeme='gauss1' )
+      L = dom.boundary['trim2' if name not in ('left','bottom') else '~trim2'].integrate( 1, geometry=geom, ischeme='gauss1' )
       assert numpy.isclose( L, .5*numpy.sqrt(2)  ), 'trim2: wrong length: {} != {}'.format( L, .5*numpy.sqrt(2) )

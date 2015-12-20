@@ -71,7 +71,7 @@ class Topology( object ):
   @cache.property
   def boundary( self ):
     edges, interfaces = self.edge_search
-    return Topology( edges )
+    return UnstructuredTopology( self.ndims-1, edges )
 
   @cache.property
   def interfaces( self ):
@@ -95,7 +95,7 @@ class Topology( object ):
 
   @property
   def groupnames( self ):
-    return self.groups.keys()
+    return set(self.groups.keys())
 
   def __contains__( self, element ):
     ielem = self.edict.get(element.transform)
@@ -1150,6 +1150,10 @@ class HierarchicalTopology( UnstructuredTopology ):
     self.basetopo = basetopo if not isinstance( basetopo, HierarchicalTopology ) else basetopo.basetopo
     UnstructuredTopology.__init__( self, basetopo.ndims, elements, groups={} )
 
+  @property
+  def groupnames( self ):
+    return set(self.groups.keys()) | self.basetopo.groupnames
+
   @cache.property
   @log.title
   def levels( self ):
@@ -1279,6 +1283,10 @@ class RefinedTopology( Topology ):
     self.basetopo = basetopo
     Topology.__init__( self, basetopo.ndims, groups=groups )
 
+  @property
+  def groupnames( self ):
+    return set(self.groups.keys()) | self.basetopo.groupnames
+
   @cache.property
   def _elements( self ):
     return tuple([ child for elem in self.basetopo for child in elem.children ])
@@ -1315,6 +1323,10 @@ class TrimmedTopology( Topology ):
     self.trimboundary = trimboundary
     Topology.__init__( self, basetopo.ndims, groups=groups )
 
+  @property
+  def groupnames( self ):
+    return set(self.groups.keys()) | self.basetopo.groupnames
+
   def __iter__( self ):
     return ( element.Element( ref, elem.transform, elem.opposite ) for elem, ref in zip( self.basetopo, self.__refs ) if ref )
 
@@ -1334,7 +1346,7 @@ class TrimmedTopology( Topology ):
     basetopo = self.basetopo.refined
     refs = [ edict.pop(elem.transform,elem.reference.empty) for elem in basetopo ]
     assert not edict, 'leftover elements'
-    groups = { name: topo.refined for name, topo in self.groups.items() }
+    groups = { name: self[name].refined for name in self.groupnames }
     return TrimmedTopology( basetopo, refs, self.trimboundary if isinstance(self.trimboundary,str) else self.trimboundary.refined, groups=groups )
 
   @cache.property
@@ -1424,8 +1436,8 @@ class TrimmedTopology( Topology ):
       boundary[name] = TrimmedTopology( basebgroup, refs ) if any( refs ) else EmptyTopology( self.ndims-1 )
     if trimmed:
       trimgroups = { self.trimboundary: UnstructuredTopology( self.ndims-1, trimmed ) } if isinstance( self.trimboundary, str ) \
-              else { name: UnstructuredTopology( self.ndims-1, [ elem for elem in trimmed if elem.opposite in btopo.edict ] )
-                      for name, btopo in self.trimboundary.groups.items() }
+              else { name[1:] if name[0] == '~' else '~'+name: UnstructuredTopology( self.ndims-1, [ elem for elem in trimmed if elem.opposite in self.trimboundary[name].edict ] )
+                      for name in self.trimboundary.groupnames }
       for name, btopo in trimgroups.items():
         oldtrimtopo = boundary.groups.get( name )
         boundary[name] = oldtrimtopo + btopo if oldtrimtopo else btopo
