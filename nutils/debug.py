@@ -312,7 +312,7 @@ def base64_dec( base64 ):
   return proto, args, obj
 
 def __serialize( obj, nsig, ndec ):
-  if isinstance(obj,(int,str,unicode)):
+  if isinstance(obj, (int,str,unicode) if sys.version_info < (3,0) else (int,str) ):
     return repr(obj)
   if isinstance(obj,dict):
     return '{%s,}' % ','.join( repr(n) + ':' + __serialize(o,nsig,ndec) for n, o in obj.items() )
