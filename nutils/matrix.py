@@ -19,6 +19,7 @@ from . import util, numpy, log
 
 
 class SolverInfo ( object ):
+  'solver info'
 
   def __init__ ( self, tol, callback=None ):
     self.niter = 0
@@ -86,7 +87,7 @@ class ScipyMatrix( Matrix ):
   toscipy = lambda self: self.core
   __add__ = lambda self, other: ScipyMatrix( self.core + other.toscipy() )
   __sub__ = lambda self, other: ScipyMatrix( self.core - other.toscipy() )
-  __mul__ = lambda self, other: ScipyMatrix( self.core * other )
+  __mul__ = lambda self, other: ScipyMatrix( self.core * (other.toscipy() if isinstance(other,Matrix) else other) )
   __rmul__ = __mul__
   __div__ = lambda self, other: ScipyMatrix( self.core / other )
   T = property( lambda self: ScipyMatrix( self.core.transpose() ) )
