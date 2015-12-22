@@ -1869,8 +1869,8 @@ class Sampled( ArrayFunc ):
   def __init__ ( self, data ):
     assert isinstance(data,dict)
     self.data = data.copy()
-    items = self.data.iteritems()
-    trans, (values,points) = items.next()
+    items = iter(self.data.items())
+    trans, (values,points) = next(items)
     fromdims = trans.fromdims
     shape = values.shape[1:]
     assert all( trans.fromdims == fromdims and values.shape == points.shape[:1]+shape for trans, (values,points) in items )
