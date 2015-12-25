@@ -37,12 +37,12 @@ class Topology( object ):
   # __len__
   # getelem
 
-  def __init__( self, ndims, groups={} ):
+  def __init__( self, ndims ):
     'constructor'
 
     assert numeric.isint( ndims ) and ndims >= 0
     self.ndims = ndims
-    self.groups = groups.copy()
+    self.groups = {}
 
   @property
   def elements( self ):
@@ -667,10 +667,10 @@ class EmptyTopology( Topology ):
 class UnstructuredTopology( Topology ):
   'unstructured topology'
 
-  def __init__( self, ndims, elements, groups={} ):
+  def __init__( self, ndims, elements ):
     self._elements = tuple(elements)
     assert all( elem.ndims == ndims for elem in self._elements )
-    Topology.__init__( self, ndims, groups )
+    Topology.__init__( self, ndims )
 
   def __iter__( self ):
     return iter( self._elements )
@@ -685,14 +685,14 @@ class UnstructuredTopology( Topology ):
 class StructuredTopology( Topology ):
   'structured topology'
 
-  def __init__( self, root, axes, nrefine=0, groups={} ):
+  def __init__( self, root, axes, nrefine=0 ):
     'constructor'
 
     self.root = root
     self.axes = tuple(axes)
     self.nrefine = nrefine
     self.shape = tuple( axis.j - axis.i for axis in self.axes if axis.isdim )
-    Topology.__init__( self, len(self.shape), groups=groups )
+    Topology.__init__( self, len(self.shape) )
 
   def __iter__( self ):
     reference = element.getsimplex(1)**self.ndims
@@ -1109,8 +1109,11 @@ class StructuredTopology( Topology ):
 
     axes = [ DimAxis(i=axis.i*2,j=axis.j*2,isperiodic=axis.isperiodic) if axis.isdim
         else BndAxis(i=axis.i*2,j=axis.j*2,ibound=axis.ibound,side=axis.side) for axis in self.axes ]
-    groups = { name: topo.refined for name, topo in self.groups.items() }
-    return StructuredTopology( self.root, axes, self.nrefine+1, groups )
+    refined = StructuredTopology( self.root, axes, self.nrefine+1 )
+    self.refined = refined # hack to avoid infinite recursion if groups have a back reference TODO fix
+    for name, topo in self.groups.items():
+      refined[name] = topo.refined
+    return refined
 
   def __str__( self ):
     'string representation'
@@ -1125,7 +1128,9 @@ class GroupedTopology( Topology ):
     self._topos = tuple(unnamed) + tuple(named.values())
     ndims = self._topos[0].ndims
     assert all( topo.ndims == ndims for topo in self._topos )
-    Topology.__init__( self, ndims, named )
+    Topology.__init__( self, ndims )
+    for name, topo in named.items():
+      self[name] = topo
 
   def __iter__( self ):
     return ( elem for topo in self._topos for elem in topo )
@@ -1144,11 +1149,11 @@ class GroupedTopology( Topology ):
 class HierarchicalTopology( UnstructuredTopology ):
   'collection of nested topology elments'
 
-  def __init__( self, basetopo, elements, groups={} ):
+  def __init__( self, basetopo, elements ):
     'constructor'
 
     self.basetopo = basetopo if not isinstance( basetopo, HierarchicalTopology ) else basetopo.basetopo
-    UnstructuredTopology.__init__( self, basetopo.ndims, elements, groups={} )
+    UnstructuredTopology.__init__( self, basetopo.ndims, elements )
 
   @property
   def groupnames( self ):
@@ -1173,8 +1178,29 @@ class HierarchicalTopology( UnstructuredTopology ):
     return HierarchicalTopology( self.basetopo, elements )
 
   def __getitem__( self, item ):
+    if isinstance(item,str) and item in self.groups:
+      return self.groups[item]
     itemtopo = self.basetopo[item]
-    elems = [ elem for elem in self if elem.transform.lookup(itemtopo.edict) ]
+    edict = itemtopo.edict
+    if all( self.basetopo.getelem(self.basetopo.edict[elem.transform]).reference == elem.reference for elem in itemtopo ):
+      elems = [ elem for elem in self if elem.transform.lookup(edict) ]
+    else:
+      elems = []
+      for elem in self:
+        head = elem.transform.lookup(itemtopo.edict)
+        if not head:
+          continue
+        itemelem = itemtopo.getelem( itemtopo.edict[head] )
+        ref = itemelem.reference
+        tail = elem.transform.slicefrom( len(head) )
+        while tail:
+          index = ref.child_transforms.index( tail.sliceto(1) )
+          tail = tail.slicefrom(1)
+          ref = ref.child_refs[ index ]
+          if not ref:
+            break
+        else:
+          elems.append( element.Element( ref, elem.transform, elem.opposite ) )
     return HierarchicalTopology( itemtopo, elems )
 
   @cache.property
@@ -1182,8 +1208,20 @@ class HierarchicalTopology( UnstructuredTopology ):
   def boundary( self ):
     'boundary elements'
 
-    belems = [ belem for topo in log.iter( 'level', self.levels ) for belem in topo.boundary if belem.transform.promote( self.ndims ).sliceto(-1) in self.edict ]
-    return HierarchicalTopology( self.basetopo.boundary, belems )
+    basebtopo = self.basetopo.boundary
+    belems = []
+    for belem in log.iter( 'elem', basebtopo ):
+      transform = belem.transform.promote( self.ndims )
+      if transform.lookup( self.edict ):
+        # basetopo boundary element is as fine or finer than element found in
+        # self; this may happen for example when basetopo is a trimmed topology
+        belems.append( belem )
+      else:
+        trans, updim = transform.split( self.ndims-1, after=False )
+        elems = [ elem for elem in self if elem.transform.sliceto(len(trans)) == trans ]
+        belems.extend( element.Element( edge.reference, edge.transform, belem.opposite << edge.transform.slicefrom(len(belem.transform)) )
+          for elem in elems for edge in elem.edges if edge.transform.sliceto(len(belem.transform)) == belem.transform )
+    return HierarchicalTopology( basebtopo, belems )
 
   @cache.property
   def interfaces( self ):
@@ -1279,9 +1317,9 @@ class HierarchicalTopology( UnstructuredTopology ):
 class RefinedTopology( Topology ):
   'refinement'
 
-  def __init__( self, basetopo, groups={} ):
+  def __init__( self, basetopo ):
     self.basetopo = basetopo
-    Topology.__init__( self, basetopo.ndims, groups=groups )
+    Topology.__init__( self, basetopo.ndims )
 
   @property
   def groupnames( self ):
@@ -1313,7 +1351,7 @@ class RefinedTopology( Topology ):
 class TrimmedTopology( Topology ):
   'trimmed'
 
-  def __init__( self, basetopo, refs, trimboundary='trimmed', groups={} ):
+  def __init__( self, basetopo, refs, trimboundary='trimmed' ):
     assert len(refs) == len(basetopo)
     assert all( isinstance(ref,element.Reference) for ref in refs )
     assert isinstance( trimboundary, str ) or isinstance( trimboundary, Topology ) and trimboundary.ndims == basetopo.ndims - 1
@@ -1321,7 +1359,7 @@ class TrimmedTopology( Topology ):
     self._indices = numpy.array( [ index for index, ref in enumerate(self.__refs) if ref ], dtype=int )
     self.basetopo = basetopo
     self.trimboundary = trimboundary
-    Topology.__init__( self, basetopo.ndims, groups=groups )
+    Topology.__init__( self, basetopo.ndims )
 
   @property
   def groupnames( self ):
@@ -1346,8 +1384,11 @@ class TrimmedTopology( Topology ):
     basetopo = self.basetopo.refined
     refs = [ edict.pop(elem.transform,elem.reference.empty) for elem in basetopo ]
     assert not edict, 'leftover elements'
-    groups = { name: self[name].refined for name in self.groupnames }
-    return TrimmedTopology( basetopo, refs, self.trimboundary if isinstance(self.trimboundary,str) else self.trimboundary.refined, groups=groups )
+    refined = TrimmedTopology( basetopo, refs, self.trimboundary if isinstance(self.trimboundary,str) else self.trimboundary.refined )
+    self.refined = refined # hack to avoid infinite recursion if groups have a back reference TODO fix
+    for name, topo in self.groups.items():
+      refined[name] = topo.refined
+    return refined
 
   @cache.property
   @log.title
