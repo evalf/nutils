@@ -93,6 +93,33 @@ def hierarchical():
 
 
 @register
+def hierarchicalboundary():
+
+  domain, geom = mesh.rectilinear( [[0,1,2],[0,1,2]] )
+  left = domain[:1]
+  leftbasis = left.basis( 'std', degree=1 )
+  right = domain[1:]
+  rightbasis = right.basis( 'std', degree=1 )
+  trimmed = domain - right
+  assert trimmed.boundary.integrate( 1, geometry=geom, ischeme='gauss1' ) == 6
+  assert trimmed.boundary['~left'].integrate( 1, geometry=geom, ischeme='gauss1' ) == 2
+  trimmed.boundary['~left'].elem_eval( leftbasis, ischeme='gauss1', separate=False )
+  try:
+    trimmed.boundary['~left'].elem_eval( function.opposite(leftbasis), ischeme='gauss1', separate=False )
+  except:
+    pass
+  else:
+    raise Exception( 'basis evaluates where it is not supposed to' )
+  trimmed.boundary['~left'].elem_eval( function.opposite(rightbasis), ischeme='gauss1', separate=False )
+  try:
+    trimmed.boundary['~left'].elem_eval( rightbasis, ischeme='gauss1', separate=False )
+  except:
+    pass
+  else:
+    raise Exception( 'basis evaluates where it is not supposed to' )
+
+
+@register
 def specialcases():
 
   domain, geom = mesh.rectilinear( [[0,.5,1]]*2 )
