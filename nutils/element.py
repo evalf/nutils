@@ -1082,9 +1082,9 @@ class WithChildrenReference( Reference ):
   def volume( self ):
     return sum( abs(trans.det) * ref.volume for trans, ref in self.children )
 
-  __sub__ = lambda self, other: self.empty if other in (self,self.baseref) else self.baseref.with_children( self_child-other_child for self_child, other_child in zip( self.child_refs, other.child_refs ) ) if other == self.baseref or isinstance( other, WithChildrenReference ) and other.baseref in (self,self.baseref) else NotImplemented
+  __sub__ = lambda self, other: self.empty if other in (self,self.baseref) else self.baseref.with_children( self_child-other_child for self_child, other_child in zip( self.child_refs, other.child_refs ) ) if isinstance( other, WithChildrenReference ) and other.baseref in (self,self.baseref) else NotImplemented
   __rsub__ = lambda self, other: self.baseref.with_children( other_child - self_child for self_child, other_child in zip( self.child_refs, other.child_refs ) ) if other == self.baseref else NotImplemented
-  __and__ = __rand__ = lambda self, other: self.baseref.with_children( self_child & other_child for self_child, other_child in zip( self.child_refs, other.child_refs ) ) if other == self.baseref or isinstance( other, WithChildrenReference ) and other.baseref == self.baseref else NotImplemented
+  __and__ = __rand__ = lambda self, other: self if other == self.baseref else self.baseref.with_children( self_child & other_child for self_child, other_child in zip( self.child_refs, other.child_refs ) ) if isinstance( other, WithChildrenReference ) and other.baseref == self.baseref else NotImplemented
 
   @cache.property
   def __extra_edges( self ):
@@ -1157,7 +1157,7 @@ class WithChildrenReference( Reference ):
     # to avoid circular references we cannot mention 'self' inside getedgeref
     def getedgeref( iedge, baseref=self.baseref, child_refs=self.child_refs, edge2children=self.edge2children ):
       baseedge = baseref.edge_refs[iedge]
-      return baseedge and baseedge.with_children( child_refs[jchild].edge_refs[jedge] if child_refs[jchild] else EmptyReference(self.ndims-1) for jchild, jedge in edge2children[iedge] )
+      return baseedge and baseedge.with_children( child_refs[jchild].edge_refs[jedge] if child_refs[jchild] else EmptyReference(baseref.ndims-1) for jchild, jedge in edge2children[iedge] )
     items = [ cache.Tuple.unknown ] * self.baseref.nedges
     for mychild, basechild in zip( self.child_refs, self.baseref.child_refs ):
       if mychild:
