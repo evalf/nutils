@@ -37,12 +37,21 @@ class Topology( object ):
   # __len__
   # getelem
 
-  def __init__( self, ndims ):
+  def __init__( self, ndims, getitem=None, groups={} ):
     'constructor'
 
     assert numeric.isint( ndims ) and ndims >= 0
+    assert getitem is None or callable(getitem) and getattr(getitem,'__closure__',None) is None
     self.ndims = ndims
-    self.groups = {}
+    self._groups = dict(groups)
+    self._getitem = getitem
+
+  def _getitem_refined( self, name ):
+    return self[name].refined
+
+  @property
+  def groupnames( self ):
+    return set( self._groups )
 
   @property
   def elements( self ):
@@ -92,10 +101,6 @@ class Topology( object ):
         assert iface.opposite.lookup( inward.edict ), 'interface no adjacent to inward topo'
       directed.append( iface )
     return UnstructuredTopology( self.ndims, directed )
-
-  @property
-  def groupnames( self ):
-    return set(self.groups.keys())
 
   def __contains__( self, element ):
     ielem = self.edict.get(element.transform)
@@ -170,15 +175,22 @@ class Topology( object ):
   def __getitem__( self, item ):
     'subtopology'
 
-    if not isinstance( item, str ):
-      raise KeyError( str(item) )
-    return util.sum( self.groups[it] for it in item.split( ',' ) )
+    topos = []
+    for it in item.split(','):
+      topo = self._groups.get( it )
+      if topo is None:
+        if not self._getitem:
+          raise KeyError( it )
+        topo = self._getitem( it )
+        self._groups[it] = topo
+      topos.append( topo )
+    return util.sum( topos )
 
   def __setitem__( self, item, topo ):
-    assert isinstance( topo, Topology ), 'wrong type: got %s, expected Topology' % type(topo)
+    assert isinstance( topo, Topology )
     assert topo.ndims == self.ndims, 'wrong dimension: got %d, expected %d' % ( topo.ndims, self.ndims )
     assert all( elem.transform in self.edict for elem in topo ), 'group %r is not a subtopology' % item
-    self.groups[item] = topo
+    self._groups[item] = topo
 
   @cache.property
   def edict( self ):
@@ -559,7 +571,7 @@ class Topology( object ):
 
     return constrain
 
-  @property
+  @cache.weakproperty
   def refined( self ):
     return RefinedTopology( self )
 
@@ -667,10 +679,10 @@ class EmptyTopology( Topology ):
 class UnstructuredTopology( Topology ):
   'unstructured topology'
 
-  def __init__( self, ndims, elements ):
+  def __init__( self, ndims, elements, getitem=None ):
     self._elements = tuple(elements)
     assert all( elem.ndims == ndims for elem in self._elements )
-    Topology.__init__( self, ndims )
+    Topology.__init__( self, ndims, getitem )
 
   def __iter__( self ):
     return iter( self._elements )
@@ -685,14 +697,14 @@ class UnstructuredTopology( Topology ):
 class StructuredTopology( Topology ):
   'structured topology'
 
-  def __init__( self, root, axes, nrefine=0 ):
+  def __init__( self, root, axes, nrefine=0, getitem=None ):
     'constructor'
 
     self.root = root
     self.axes = tuple(axes)
     self.nrefine = nrefine
     self.shape = tuple( axis.j - axis.i for axis in self.axes if axis.isdim )
-    Topology.__init__( self, len(self.shape) )
+    Topology.__init__( self, len(self.shape), getitem )
 
   def __iter__( self ):
     reference = element.getsimplex(1)**self.ndims
@@ -708,19 +720,15 @@ class StructuredTopology( Topology ):
     return element.Element( reference, self._transform.flat[index], self._opposite.flat[index] )
 
   def __getitem__( self, item ):
-    'subtopology'
-
-    if isinstance( item, str ):
+    items = (item,) if not isinstance( item, tuple ) else item
+    if not all( isinstance(it,slice) for it in items ):
       return Topology.__getitem__( self, item )
-    if not isinstance( item, tuple ):
-      item = item,
-    assert len(item) <= self.ndims
+    assert len(items) <= self.ndims
     axes = []
     idim = 0
     for axis in self.axes:
-      if axis.isdim and idim < len(item):
-        s = item[idim]
-        assert isinstance( s, slice )
+      if axis.isdim and idim < len(items):
+        s = items[idim]
         start, stop, stride = s.indices( axis.j - axis.i )
         assert stride == 1
         assert stop > start
@@ -791,17 +799,16 @@ class StructuredTopology( Topology ):
     'boundary'
 
     nbounds = len(self.axes) - self.ndims
-    names = ('left','right'), ('bottom','top'), ('front','back')
-    groups = { names[idim][side]: StructuredTopology( self.root, self.axes[:idim] + (BndAxis(n,n if not axis.isperiodic else 0,nbounds,side),) + self.axes[idim+1:], self.nrefine )
+    topos = [ StructuredTopology( self.root, self.axes[:idim] + (BndAxis(n,n if not axis.isperiodic else 0,nbounds,side),) + self.axes[idim+1:], self.nrefine )
       for idim, axis in enumerate(self.axes)
-        for side, n in enumerate( (axis.i,axis.j) if axis.isdim and not axis.isperiodic else () ) }
-    return GroupedTopology( named=groups )
+        for side, n in enumerate( (axis.i,axis.j) if axis.isdim and not axis.isperiodic else () ) ]
+    return GroupedTopology( topos, ('left','right','bottom','top','front','back') )
 
   @cache.property
   def interfaces( self ):
     'interfaces'
 
-    groups = {}
+    topos = []
     nbounds = len(self.axes) - self.ndims
     for idim, axis in enumerate(self.axes):
       if not axis.isdim:
@@ -811,9 +818,9 @@ class StructuredTopology( Topology ):
         assert axis.i == 0
         bndprops.append( BndAxis( axis.j, 0, ibound=nbounds, side=True ) )
       itopo = EmptyTopology( self.ndims-1 ) if not bndprops \
-         else GroupedTopology( unnamed=[ StructuredTopology( self.root, self.axes[:idim] + (axis,) + self.axes[idim+1:], self.nrefine ) for axis in bndprops ] )
-      groups[ 'dir{}'.format(len(groups)) ] = itopo
-    return GroupedTopology( named=groups )
+         else GroupedTopology( StructuredTopology( self.root, self.axes[:idim] + (axis,) + self.axes[idim+1:], self.nrefine ) for axis in bndprops )
+      topos.append( itopo )
+    return GroupedTopology( topos, [ 'dir{}'.format(range(self.ndims-1)) ] )
 
   def basis_spline( self, degree, neumann=(), knots=None, periodic=None, closed=False, removedofs=None ):
     'spline from vertices'
@@ -1103,17 +1110,13 @@ class StructuredTopology( Topology ):
 
     return function.function( funcmap, dofmap, dofcount, self.ndims )
 
-  @cache.property
+  @cache.weakproperty
   def refined( self ):
     'refine non-uniformly'
 
     axes = [ DimAxis(i=axis.i*2,j=axis.j*2,isperiodic=axis.isperiodic) if axis.isdim
         else BndAxis(i=axis.i*2,j=axis.j*2,ibound=axis.ibound,side=axis.side) for axis in self.axes ]
-    refined = StructuredTopology( self.root, axes, self.nrefine+1 )
-    self.refined = refined # hack to avoid infinite recursion if groups have a back reference TODO fix
-    for name, topo in self.groups.items():
-      refined[name] = topo.refined
-    return refined
+    return StructuredTopology( self.root, axes, self.nrefine+1, getitem=self._getitem_refined )
 
   def __str__( self ):
     'string representation'
@@ -1123,14 +1126,11 @@ class StructuredTopology( Topology ):
 class GroupedTopology( Topology ):
   'grouped topology'
 
-  def __init__( self, unnamed=[], named={} ):
-    assert unnamed or named
-    self._topos = tuple(unnamed) + tuple(named.values())
+  def __init__( self, topos, names=[] ):
+    self._topos = tuple(topos)
     ndims = self._topos[0].ndims
     assert all( topo.ndims == ndims for topo in self._topos )
-    Topology.__init__( self, ndims )
-    for name, topo in named.items():
-      self[name] = topo
+    Topology.__init__( self, ndims, groups=zip(names,self._topos) )
 
   def __iter__( self ):
     return ( elem for topo in self._topos for elem in topo )
@@ -1149,15 +1149,36 @@ class GroupedTopology( Topology ):
 class HierarchicalTopology( UnstructuredTopology ):
   'collection of nested topology elments'
 
-  def __init__( self, basetopo, elements ):
+  def __init__( self, basetopo, elements, getitem=None ):
     'constructor'
 
     self.basetopo = basetopo if not isinstance( basetopo, HierarchicalTopology ) else basetopo.basetopo
-    UnstructuredTopology.__init__( self, basetopo.ndims, elements )
+    UnstructuredTopology.__init__( self, basetopo.ndims, elements, getitem or functools.partial( self._getitem, basetopo, elements ) )
 
   @property
   def groupnames( self ):
-    return set(self.groups.keys()) | self.basetopo.groupnames
+    return self.basetopo.groupnames | super( HierarchicalTopology, self ).groupnames
+
+  @staticmethod
+  def _getitem( basetopo, elements, name ):
+    itemtopo = basetopo[name]
+    itemelems = []
+    for elem in elements:
+      head = elem.transform.lookup(itemtopo.edict)
+      if not head:
+        continue
+      itemelem = itemtopo.getelem( itemtopo.edict[head] )
+      ref = itemelem.reference
+      tail = elem.transform.slicefrom( len(head) )
+      while tail:
+        index = ref.child_transforms.index( tail.sliceto(1) )
+        ref = ref.child_refs[ index ]
+        if not ref:
+          break
+        tail = tail.slicefrom(1)
+      else:
+        itemelems.append( element.Element( ref, elem.transform, elem.opposite ) )
+    return HierarchicalTopology( itemtopo, itemelems )
 
   @cache.property
   @log.title
@@ -1172,36 +1193,10 @@ class HierarchicalTopology( UnstructuredTopology ):
       assert elem.transform in levels[nrefine].edict, 'element is not a refinement of basetopo'
     return tuple(levels)
 
-  @cache.property
+  @cache.weakproperty
   def refined( self ):
     elements = [ child for elem in self for child in elem.children ]
-    return HierarchicalTopology( self.basetopo, elements )
-
-  def __getitem__( self, item ):
-    if isinstance(item,str) and item in self.groups:
-      return self.groups[item]
-    itemtopo = self.basetopo[item]
-    edict = itemtopo.edict
-    if all( self.basetopo.getelem(self.basetopo.edict[elem.transform]).reference == elem.reference for elem in itemtopo ):
-      elems = [ elem for elem in self if elem.transform.lookup(edict) ]
-    else:
-      elems = []
-      for elem in self:
-        head = elem.transform.lookup(itemtopo.edict)
-        if not head:
-          continue
-        itemelem = itemtopo.getelem( itemtopo.edict[head] )
-        ref = itemelem.reference
-        tail = elem.transform.slicefrom( len(head) )
-        while tail:
-          index = ref.child_transforms.index( tail.sliceto(1) )
-          tail = tail.slicefrom(1)
-          ref = ref.child_refs[ index ]
-          if not ref:
-            break
-        else:
-          elems.append( element.Element( ref, elem.transform, elem.opposite ) )
-    return HierarchicalTopology( itemtopo, elems )
+    return HierarchicalTopology( self.basetopo, elements, getitem=self._getitem_refined )
 
   @cache.property
   @log.title
@@ -1225,7 +1220,7 @@ class HierarchicalTopology( UnstructuredTopology ):
 
   @cache.property
   def interfaces( self ):
-    'interface elements & groups'
+    'interface elements'
 
     ielems = [ ielem for topo in log.iter( 'level', self.levels ) for ielem in topo.interfaces
       if ielem.transform.promote( self.ndims ).sliceto(-1) in self.edict and ielem.opposite.promote( self.ndims ).lookup( self.edict )
@@ -1319,11 +1314,11 @@ class RefinedTopology( Topology ):
 
   def __init__( self, basetopo ):
     self.basetopo = basetopo
-    Topology.__init__( self, basetopo.ndims )
+    Topology.__init__( self, basetopo.ndims, getitem=basetopo._getitem_refined )
 
   @property
   def groupnames( self ):
-    return set(self.groups.keys()) | self.basetopo.groupnames
+    return self.basetopo.groupnames | super( RefinedTopology, self ).groupnames
 
   @cache.property
   def _elements( self ):
@@ -1339,11 +1334,6 @@ class RefinedTopology( Topology ):
     assert numeric.isint( index )
     return self._elements[ index ]
 
-  def __getitem__( self, item ):
-    if numeric.isint( item ):
-      return self._elements[ item ]
-    return self.basetopo[item].refined
-
   @cache.property
   def boundary( self ):
     return self.basetopo.boundary.refined
@@ -1351,7 +1341,7 @@ class RefinedTopology( Topology ):
 class TrimmedTopology( Topology ):
   'trimmed'
 
-  def __init__( self, basetopo, refs, trimboundary='trimmed' ):
+  def __init__( self, basetopo, refs, trimboundary='trimmed', getitem=None ):
     assert len(refs) == len(basetopo)
     assert all( isinstance(ref,element.Reference) for ref in refs )
     assert isinstance( trimboundary, str ) or isinstance( trimboundary, Topology ) and trimboundary.ndims == basetopo.ndims - 1
@@ -1359,11 +1349,36 @@ class TrimmedTopology( Topology ):
     self._indices = numpy.array( [ index for index, ref in enumerate(self.__refs) if ref ], dtype=int )
     self.basetopo = basetopo
     self.trimboundary = trimboundary
-    Topology.__init__( self, basetopo.ndims )
+    Topology.__init__( self, basetopo.ndims, getitem or functools.partial( self._getitem, basetopo, refs, trimboundary ) )
 
   @property
   def groupnames( self ):
-    return set(self.groups.keys()) | self.basetopo.groupnames
+    return self.basetopo.groupnames | super( TrimmedTopology, self ).groupnames
+
+  @staticmethod
+  def _getitem( basetopo, refs, trimboundary, name ):
+    keytopo = basetopo[name]
+    refs = [ refs[ basetopo.edict[elem.transform] ] for elem in keytopo ]
+    return TrimmedTopology( keytopo, refs, trimboundary )
+
+  @staticmethod
+  def _getitem_boundary( basebtopo, bdict, trimboundary, trimmed, name ):
+    if isinstance( trimboundary, Topology ):
+      try:
+        btopo = trimboundary[ name[1:] if name[0] == '~' else '~'+name ]
+      except KeyError:
+        pass
+      else:
+        belems = [ elem for elem in trimmed if elem.opposite in btopo.edict ]
+        if belems:
+          return UnstructuredTopology( basebtopo.ndims, belems )
+    if name == trimboundary:
+      return UnstructuredTopology( basebtopo.ndims, list(trimmed) )
+    basebgroup = basebtopo[name]
+    empty = element.EmptyReference( basebtopo.ndims )
+    refs = [ bdict.get( basebelem.transform, empty ) for basebelem in basebgroup ]
+    return EmptyTopology( basebtopo.ndims ) if not any(refs) \
+      else TrimmedTopology( basebgroup, refs )
 
   def __iter__( self ):
     return ( element.Element( ref, elem.transform, elem.opposite ) for elem, ref in zip( self.basetopo, self.__refs ) if ref )
@@ -1377,18 +1392,14 @@ class TrimmedTopology( Topology ):
     origelem = self.basetopo.getelem( origindex )
     return element.Element( self.__refs[origindex], origelem.transform, origelem.opposite )
 
-  @cache.property
+  @cache.weakproperty
   def refined( self ):
     elems = [ child for elem in self for child in elem.children ]
     edict = { elem.transform: elem.reference for elem in elems }
     basetopo = self.basetopo.refined
     refs = [ edict.pop(elem.transform,elem.reference.empty) for elem in basetopo ]
     assert not edict, 'leftover elements'
-    refined = TrimmedTopology( basetopo, refs, self.trimboundary if isinstance(self.trimboundary,str) else self.trimboundary.refined )
-    self.refined = refined # hack to avoid infinite recursion if groups have a back reference TODO fix
-    for name, topo in self.groups.items():
-      refined[name] = topo.refined
-    return refined
+    return TrimmedTopology( basetopo, refs, self.trimboundary if isinstance(self.trimboundary,str) else self.trimboundary.refined, getitem=self._getitem_refined )
 
   @cache.property
   @log.title
@@ -1454,7 +1465,7 @@ class TrimmedTopology( Topology ):
             assert edge == belem.reference
             trimmed.append( element.Element( edge, belem.opposite, belem.transform ) )
 
-    belems = [] # prior boundary elements (reduced)
+    belems = list(trimmed) # prior boundary elements (reduced)
     basebtopo = self.basetopo.boundary
     for belem in log.iter( 'element', basebtopo ):
       btrans = belem.transform.promote( self.ndims )
@@ -1468,32 +1479,8 @@ class TrimmedTopology( Topology ):
         if edge:
           belems.append( element.Element( edge, belem.transform, belem.opposite ) )
 
-    boundary = UnstructuredTopology( self.ndims-1, trimmed + belems )
-    for name, basebgroup in basebtopo.groups.items():
-      refs = []
-      for basebelem in basebgroup:
-        ibelem = boundary.edict.get(basebelem.transform)
-        refs.append( boundary.getelem(ibelem).reference if ibelem is not None else basebelem.reference.empty )
-      boundary[name] = TrimmedTopology( basebgroup, refs ) if any( refs ) else EmptyTopology( self.ndims-1 )
-    if trimmed:
-      trimgroups = { self.trimboundary: UnstructuredTopology( self.ndims-1, trimmed ) } if isinstance( self.trimboundary, str ) \
-              else { name[1:] if name[0] == '~' else '~'+name: UnstructuredTopology( self.ndims-1, [ elem for elem in trimmed if elem.opposite in self.trimboundary[name].edict ] )
-                      for name in self.trimboundary.groupnames }
-      for name, btopo in trimgroups.items():
-        oldtrimtopo = boundary.groups.get( name )
-        boundary[name] = oldtrimtopo + btopo if oldtrimtopo else btopo
-
-    return boundary
-
-  def __getitem__( self, key ):
-    if isinstance(key,str) and key in self.groups:
-      return self.groups[key]
-    keytopo = self.basetopo[key]
-    refs = [ self.__refs[ self.basetopo.edict[elem.transform] ] for elem in keytopo ]
-    topo = TrimmedTopology( keytopo, refs, self.trimboundary )
-    if isinstance(key,str):
-      self.groups[key] = topo
-    return topo
+    bdict = { belem.transform: belem.reference for belem in belems }
+    return UnstructuredTopology( self.ndims-1, belems, getitem=functools.partial( self._getitem_boundary, basebtopo, bdict, self.trimboundary, trimmed ) )
 
   def prune_basis( self, basis ):
     used = numpy.zeros( len(basis), dtype=bool )
