@@ -175,6 +175,10 @@ class Topology( object ):
   def __getitem__( self, item ):
     'subtopology'
 
+    if not isinstance( item, str ):
+      if not self._getitem:
+        raise KeyError( item )
+      return self._getitem( item )
     topos = []
     for it in item.split(','):
       topo = self._groups.get( it )
