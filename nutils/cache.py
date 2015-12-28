@@ -19,10 +19,12 @@ _property = property
 
 def property( f ):
   name = f.__name__
-  def property_getter( self, name=name, f=f ):
+  def property_getter( self, name=name, f=f, tmp=object() ):
     try:
       value = self.__dict__[name]
+      assert value is not tmp, 'attribute requested during construction'
     except KeyError:
+      self.__dict__[name] = tmp
       value = f( self )
       self.__dict__[name] = value
     return value
