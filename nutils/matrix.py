@@ -16,6 +16,7 @@ solving linear systems. Matrices can be converted to numpy arrays via
 
 from __future__ import print_function, division
 from . import util, numpy, log
+import functools
 
 
 class SolverInfo ( object ):
@@ -32,7 +33,12 @@ class SolverInfo ( object ):
   def res( self ):
     return self._res[:self.niter]
 
-  def __call__ ( self, res ):
+  def __call__ ( self, *args ):
+    if len( args ) == 1:
+      res, = args
+    else:
+      A, b, x = args
+      res = numpy.linalg.norm(b-A*x) / numpy.linalg.norm(b)
     if self.niter == len(self._res):
       self._res.resize( 2*self.niter )
     self._res[self.niter] = res
@@ -105,6 +111,7 @@ class ScipyMatrix( Matrix ):
   def solve( self, rhs=None, constrain=None, lconstrain=None, rconstrain=None, tol=0, lhs0=None, solver=None, symmetric=False, title='solving system', callback=None, precon=None, info=False, **solverargs ):
     'solve'
 
+    import scipy.sparse.linalg
     solverinfo = SolverInfo( tol, callback=callback )
 
     lhs, I, J = parsecons( constrain, lconstrain, rconstrain, self.shape )
@@ -132,17 +139,20 @@ class ScipyMatrix( Matrix ):
     elif not solver:
       solver = 'cg' if symmetric else 'gmres'
 
-    import scipy.sparse.linalg
     solverfun = getattr( scipy.sparse.linalg, solver )
-    solverinfo_x = lambda x: solverinfo( numpy.linalg.norm(b-A*x) / numpy.linalg.norm(b) )
     if solver == 'spsolve':
       log.info( 'solving system using sparse direct solver' )
       x = solverfun( A, b, **solverargs )
-      solverinfo_x( x )
+      solverinfo( A, b, x )
     else:
+      # keep scipy from making things circular by shielding the nature of A
+      A = scipy.sparse.linalg.LinearOperator( A.shape, A.__mul__, dtype=float )
       if isinstance( precon, str ):
         precon = self.getprecon( precon, constrain, lconstrain, rconstrain )
-      mycallback = solverinfo if solver != 'cg' else solverinfo_x
+      elif not precon:
+        # identity operator, because scipy's native identity operator has circular references
+        precon = scipy.sparse.linalg.LinearOperator( A.shape, matvec=lambda x:x, rmatvec=lambda x:x, matmat=lambda x:x, dtype=float )
+      mycallback = solverinfo if solver != 'cg' else functools.partial( solverinfo, A, b )
       x, status = solverfun( A, b, M=precon, tol=tol, x0=x0, callback=mycallback, **solverargs )
       assert status == 0, '%s solver failed with status %d' % (solver, status)
       log.info( '%s solver converged in %d iterations' % (solver.upper(), solverinfo.niter) )
