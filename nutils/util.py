@@ -342,7 +342,7 @@ class OrderedDict( collections.MutableMapping, collections.Sequence ):
 def _getkwargdefaults_new( func ):
   'helper for run'
 
-  kwargs = collections.OrderedDict()
+  kwargs = OrderedDict()
   signature = inspect.signature( func )
   for parameter in signature.parameters.values():
     if parameter.kind in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD):
@@ -360,7 +360,7 @@ def _getkwargdefaults_legacy( func ):
     defaults = []
   if len( defaults ) != len( args ):
     raise ValueError( 'Function cannot be called without arguments.' )
-  return collections.OrderedDict(zip(args, defaults))
+  return OrderedDict(zip(args, defaults))
 
 if sys.version_info >= (3,3):
   getkwargdefaults = _getkwargdefaults_new

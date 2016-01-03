@@ -32,7 +32,7 @@ expensive and currently unsupported operation.
 
 from __future__ import print_function, division
 from . import util, numpy, numeric, log, core, cache, transform, rational, _
-import sys, warnings, itertools, functools, collections, operator
+import sys, warnings, itertools, functools, operator
 
 CACHE = 'Cache'
 TRANS = 'Trans'
@@ -3141,7 +3141,7 @@ def add( arg1, arg2 ):
 def blockadd( *args ):
   args = tuple( itertools.chain( *( arg.funcs if isinstance( arg, BlockAdd ) else [arg] for arg in args ) ) )
   # group all `Inflate` objects with the same axis and dofmap
-  inflates = collections.OrderedDict()
+  inflates = util.OrderedDict()
   for arg in args:
     key = []
     while isinstance( arg, Inflate ):

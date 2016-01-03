@@ -1257,7 +1257,7 @@ class UnionTopology( Topology ):
 
   @cache.property
   def elements( self ):
-    topos = collections.OrderedDict()
+    topos = util.OrderedDict()
     for itopo, topo in enumerate(self._topos):
       for elem in topo:
         topos.setdefault( elem.transform, [] ).append( elem )
