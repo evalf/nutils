@@ -145,3 +145,51 @@ def picklability():
     domain, geom = mesh.rectilinear( [[0,1,2]]*2 )
     basis = domain.basis( 'spline', degree=2 )
     _test_pickle_dump_load( basis )
+
+@register
+def common_refine():
+
+  dom, geom = mesh.rectilinear( [[0,1,2],[0,1,2]] )
+
+  dom1 = dom.refined_by( list(dom)[:1] )
+  fun1 = dom1.basis( 'std', degree=1 )
+  vals1 = .5,.25,.5,1,.5,.25,.5,.25,.0625,.125,.125,.25
+
+  dom234 = dom.refined_by( list(dom)[1:] )
+  fun234 = dom234.basis( 'std', degree=1 )
+  vals234 = .25,.5,.5,1,.125,.0625,.25,.125,.25,.125,.125,.25,.25,.25,.125,.0625,.125,.125,.125,.0625
+
+  dom123 = dom.refined_by( list(dom)[:-1] )
+  fun123 = dom123.basis( 'std', degree=1 )
+  vals123 = 1,.5,.5,.25,.0625,.125,.125,.125,.0625,.125,.25,.25,.25,.125,.125,.25,.125,.25,.0625,.125
+
+  dom4 = dom.refined_by( list(dom)[-1:] )
+  fun4 = dom4.basis( 'std', degree=1 )
+  vals4 = .25,.5,.25,.5,1,.5,.25,.5,.25,.125,.125,.0625
+
+  @unittest
+  def ref1vs234():
+    common = topology.common_refine( dom1, dom234 )
+    assert len(common) == 16
+    vals = common.integrate( fun1, geometry=geom, ischeme='gauss1' )
+    numpy.testing.assert_array_almost_equal( vals, vals1 )
+    vals = common.integrate( fun234, geometry=geom, ischeme='gauss1' )
+    numpy.testing.assert_array_almost_equal( vals, vals234 )
+
+  @unittest
+  def ref1vs4():
+    common = topology.common_refine( dom1, dom4 )
+    assert len(common) == 10
+    vals = common.integrate( fun1, geometry=geom, ischeme='gauss1' )
+    numpy.testing.assert_array_almost_equal( vals, vals1 )
+    vals = common.integrate( fun4, geometry=geom, ischeme='gauss1' )
+    numpy.testing.assert_array_almost_equal( vals, vals4 )
+
+  @unittest
+  def ref123vs234():
+    common = topology.common_refine( dom123, dom234 )
+    assert len(common) == 16
+    vals = common.integrate( fun123, geometry=geom, ischeme='gauss1' )
+    numpy.testing.assert_array_almost_equal( vals, vals123 )
+    vals = common.integrate( fun234, geometry=geom, ischeme='gauss1' )
+    numpy.testing.assert_array_almost_equal( vals, vals234 )

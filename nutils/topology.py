@@ -689,6 +689,10 @@ class ItemTopology( Topology ):
     return self
 
   @property
+  def edict( self ):
+    return self.basetopo.edict
+
+  @property
   def elements( self ):
     return self.basetopo.elements
 
@@ -1751,23 +1755,15 @@ BndAxis = collections.namedtuple( 'BndAxis', ['i','j','ibound','side'] )
 BndAxis.isdim = False
 
 def common_refine( topo1, topo2 ):
-  isrevolved = isinstance( topo1, RevolvedTopology )
-  assert isinstance( topo2, RevolvedTopology ) == isrevolved
-  if isrevolved:
-    topo1 = topo1.basetopo
-    topo2 = topo2.basetopo
-  commonelem = []
+  assert topo1.ndims == topo2.ndims
+  elements = []
   topo2trans = { elem.transform: elem for elem in topo2 }
   for elem1 in topo1:
     head = elem1.transform.lookup( topo2trans )
     if head:
-      commonelem.append( elem1 )
+      elements.append( elem1 )
       topo2trans[ head ] = None
-  commonelem.extend( elem for elem in topo2trans.values() if elem is not None )
-  basetopo = topo1.basetopo if isinstance( topo1, HierarchicalTopology ) else topo1
-  commontopo = HierarchicalTopology( basetopo, commonelem )
-  if isrevolved:
-    commontopo = RevolvedTopology( commontopo )
-  return commontopo
+  elements.extend( elem for elem in topo2trans.values() if elem is not None )
+  return UnstructuredTopology( topo1.ndims, elements )
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
