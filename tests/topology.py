@@ -53,7 +53,7 @@ def connectivity( periodic ):
   @unittest
   def check1d():
     domain = mesh.rectilinear( 1*(grid,), periodic=[0] if periodic else [] )[0]
-    elem = domain.structure
+    elem = domain.basetopo.structure
     assert neighbor( elem[0], elem[0] ) ==  0, 'Failed to identify codim 0 neighbors'
     assert neighbor( elem[1], elem[2] ) ==  1, 'Failed to identify codim 1 neighbors'
     if periodic:
@@ -64,7 +64,7 @@ def connectivity( periodic ):
   @unittest
   def check2d():
     domain = mesh.rectilinear( 2*(grid,), periodic=[0] if periodic else [] )[0]
-    elem = domain.structure
+    elem = domain.basetopo.structure
     assert neighbor( elem[0,0], elem[0,0] ) ==  0, 'Failed to identify codim 0 neighbors'
     assert neighbor( elem[1,1], elem[1,2] ) ==  1, 'Failed to identify codim 1 neighbors'
     assert neighbor( elem[0,0], elem[1,1] ) ==  2, 'Failed to identify codim 2 neighbors'
@@ -78,7 +78,7 @@ def connectivity( periodic ):
   @unittest
   def check3d():
     domain = mesh.rectilinear( 3*(grid,), periodic=[0] if periodic else [] )[0]
-    elem = domain.structure
+    elem = domain.basetopo.structure
     assert neighbor( elem[1,1,1], elem[1,1,1] ) ==  0, 'Failed to identify codim 0 neighbors'
     assert neighbor( elem[1,1,1], elem[1,1,2] ) ==  1, 'Failed to identify codim 1 neighbors'
     assert neighbor( elem[1,1,1], elem[1,2,2] ) ==  2, 'Failed to identify codim 2 neighbors'
@@ -95,7 +95,7 @@ def structure2d():
   @unittest
   def domain():
     domain, geom = mesh.rectilinear( [[-1,0,1]]*2 )
-    verify_connectivity( domain.structure, geom )
+    verify_connectivity( domain.basetopo.structure, geom )
 
   @unittest
   def boundaries():

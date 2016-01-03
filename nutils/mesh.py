@@ -51,7 +51,7 @@ def rectilinear( richshape, periodic=(), name='rect', revolved=False ):
     root = transform.roottransedges( name, shape )
 
   axes = [ topology.DimAxis(0,n,idim in periodic) for idim, n in enumerate(shape) ]
-  topo = topology.StructuredTopology( root, axes )
+  topo = topology.StructuredTopology( root, axes ).withsubs()
 
   if uniform:
     if all( o == offset[0] for o in offset[1:] ):
@@ -219,13 +219,10 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
     else:
       raise NotImplementedError('Unknown GMSH element type %i' % etype)
 
-  topo = topology.UnstructuredTopology( ndims, elems.values() )
-  for group, grouptopo in elemgroups.items():
-    topo[group] = topology.UnstructuredTopology( ndims, grouptopo )
-
-  topo.boundary = topology.UnstructuredTopology( ndims-1, edges.values() )
-  topo.interfaces = topology.UnstructuredTopology( ndims-1, ifaces.values() )
-  for group, keys in edgegroups.items():
+  subtopos = { name: topology.UnstructuredTopology( ndims, subtopo ).withsubs() for name, subtopo in elemgroups.items() }
+  subbtopos = {}
+  subitopos = {}
+  for name, keys in edgegroups.items():
     bgrouptopo = []
     igrouptopo = []
     for key in keys:
@@ -234,28 +231,26 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
       except KeyError:
         igrouptopo.append( ifaces[key] )
     if bgrouptopo:
-      topo.boundary[group] = topology.UnstructuredTopology( ndims-1, bgrouptopo )
+      subbtopos[name] = topology.UnstructuredTopology( ndims-1, bgrouptopo ).withsubs()
     if igrouptopo:
-      topo.interfaces[group] = topology.UnstructuredTopology( ndims-1, igrouptopo )
+      subitopos[name] = topology.UnstructuredTopology( ndims-1, igrouptopo ).withsubs()
+  subptopos = { name: topology.UnstructuredTopology( 0, [vertex for vertexkey in vertexkeys for vertex in vertices[vertexkey]] ).withsubs() for name, vertexkeys in vertexgroups.items() }
 
-  topo.points = topology.UnstructuredTopology( 0, [vertex for vertexkeys in vertexgroups.values() for vertexkey in vertexkeys for vertex in vertices[vertexkey]] )
-  for group, vertexkeys in vertexgroups.items():
-    topo.points[group] = topology.UnstructuredTopology( 0, [vertex for vertexkey in vertexkeys for vertex in vertices[vertexkey]] )
+  topo = topology.UnstructuredTopology( ndims, elems.values() ).withsubs( subtopos )
+  topo.boundary = topology.UnstructuredTopology( ndims-1, edges.values() ).withsubs( subbtopos )
+  topo.interfaces = topology.UnstructuredTopology( ndims-1, ifaces.values() ).withsubs( subitopos )
+  topo.points = topology.UnstructuredTopology( 0, [vertex for vertexkeys in vertexgroups.values() for vertexkey in vertexkeys for vertex in vertices[vertexkey]] ).withsubs( subptopos )
 
-  for tag in tags.values():
-    if tag not in topo.groupnames and \
-       tag not in topo.boundary.groupnames and \
-       tag not in topo.interfaces.groupnames and \
-       tag not in topo.points.groupnames:
-
-      warnings.warn('tag %r defined but not used' % tag )
+  alltags = set(subtopos) | set(subbtopos) | set(subitopos) | set(subptopos)
+  for tag in set(tags.values()) - alltags:
+    warnings.warn('tag %r defined but not used' % tag )
 
   log.info('parsed GMSH file:')
   log.info('* nodes (#%d)' % nnodes)
-  log.info('* topology (#%d) with groups: %s' % (len(topo), ', '.join('%s (#%d)' % (name,len(topo[name])) for name in topo.groupnames)))
-  log.info('* boundary (#%d) with groups: %s' % (len(topo.boundary), ', '.join('%s (#%d)' % (name,len(topo.boundary[name])) for name in topo.boundary.groupnames)))
-  log.info('* interfaces (#%d) with groups: %s' % (len(topo.interfaces), ', '.join('%s (#%d)' % (name,len(topo.interfaces[name])) for name in topo.interfaces.groupnames)))
-  log.info('* points (#%d) with groups: %s' % (len(topo.points), ', '.join('%s (#%d)' % (name,len(topo.points[name])) for name in topo.points.groupnames)))
+  log.info('* topology (#%d) with groups: %s' % (len(topo), ', '.join('%s (#%d)' % (name,len(topo[name])) for name in subtopos)))
+  log.info('* boundary (#%d) with groups: %s' % (len(topo.boundary), ', '.join('%s (#%d)' % (name,len(topo.boundary[name])) for name in subbtopos)))
+  log.info('* interfaces (#%d) with groups: %s' % (len(topo.interfaces), ', '.join('%s (#%d)' % (name,len(topo.interfaces[name])) for name in subitopos)))
+  log.info('* points (#%d) with groups: %s' % (len(topo.points), ', '.join('%s (#%d)' % (name,len(topo.points[name])) for name in subitopos)))
 
   linearfunc = function.function( fmap=fmap, nmap=nmap, ndofs=nnodes, ndims=topo.ndims )
   geom = ( linearfunc[:,_] * coords ).sum(0)
@@ -293,7 +288,7 @@ def triangulation( vertices, nvertices ):
     elem, iedge = bedges[ n12 ]
     structure.append( elem.edge( iedge ) )
     
-  topo = topology.UnstructuredTopology( ndims, nmap )
+  topo = topology.UnstructuredTopology( ndims, nmap ).withsubs()
   topo.boundary = topology.StructuredTopology( structure, periodic=(1,) )
   return topo
 
@@ -438,10 +433,9 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   belems = [ elem.edge(0) for elem in elements[:12] ]
   bgroups = { 'top': belems[0:3], 'left': belems[3:6], 'bottom': belems[6:9], 'right': belems[9:12] }
 
-  topo = topology.UnstructuredTopology( 2, elements )
-  topo.boundary = topology.UnstructuredTopology( 1, belems )
-  for tag, group in bgroups.items():
-    topo.boundary[tag] = topology.UnstructuredTopology( 1, group )
+  topo = topology.UnstructuredTopology( 2, elements ).withsubs()
+  subbtopos = { name: topology.UnstructuredTopology( 1, subtopo ) for name, subtopo in bgroups.items() }
+  topo.boundary = topology.UnstructuredTopology( 1, belems ).withsubs( subbtopos )
 
   geom = [.5*(xmin+xmax),.5*(ymin+ymax)] \
        + [.5*(xmax-xmin),.5*(ymax-ymin)] * function.ElemFunc( 2 )
