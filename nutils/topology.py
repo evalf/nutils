@@ -1253,14 +1253,22 @@ class UnionTopology( Topology ):
 
   @cache.property
   def elements( self ):
-    topos = collections.OrderedDict()
+    elemlists = {}
+    transforms = [] # for order
     for itopo, topo in enumerate(self._topos):
       for elem in topo:
-        topos.setdefault( elem.transform, [] ).append( elem )
+        try:
+          elems = elemlists[elem.transform]
+        except KeyError:
+          transforms.append( elem.transform )
+          elemlists[elem.transform] = [ elem ]
+        else:
+          elems.append( elem )
     elements = []
-    for trans, elems in topos.items():
-      if len(elems) == 1:
-        elements.append( elems[0] )
+    for trans in transforms:
+      elemlist = elemlists[trans]
+      if len(elemlist) == 1:
+        elements.append( elemlist[0] )
       else:
         raise NotImplementedError
     return elements

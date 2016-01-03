@@ -3141,23 +3141,33 @@ def add( arg1, arg2 ):
 def blockadd( *args ):
   args = tuple( itertools.chain( *( arg.funcs if isinstance( arg, BlockAdd ) else [arg] for arg in args ) ) )
   # group all `Inflate` objects with the same axis and dofmap
-  inflates = collections.OrderedDict()
+  inflates = {}
+  dense = []
+  keys = [] # for order
   for arg in args:
     key = []
     while isinstance( arg, Inflate ):
       key.append( ( arg.dofmap, arg.axis ) )
       arg = arg.func
-    inflates.setdefault( tuple(key), [] ).append( arg )
+    if not key:
+      dense.append( arg )
+    else:
+      key = tuple(key)
+      try:
+        values = inflates[key]
+      except KeyError:
+        keys.append( key )
+        inflates[key] = [ arg ]
+      else:
+        values.append( arg )
   # add inflate args with the same axis and dofmap, blockadd the remainder
   args = []
-  for key, values in inflates.items():
-    if key is ():
-      continue
-    arg = functools.reduce( operator.add, values )
+  for key in keys:
+    arg = functools.reduce( operator.add, inflates[key] )
     for dofmap, axis in reversed( key ):
       arg = inflate( arg, dofmap, axis )
     args.append( arg )
-  args.extend( inflates.get( (), () ) )
+  args.extend( dense )
   if len( args ) == 1:
     return args[0]
   else:
