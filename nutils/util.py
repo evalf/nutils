@@ -304,10 +304,45 @@ class Locals( object ):
     frame = sys._getframe( 1 )
     self.__dict__.update( frame.f_locals )
 
+class OrderedDict( collections.MutableMapping, collections.Sequence ):
+  'Dictionary that remembers insertion order'
+
+  # implementation without circular references
+
+  def __init__( self, items=() ):
+    self._keys = []
+    self._dict = {}
+    if isinstance(items, collections.Mapping):
+      items = items.items()
+    for key, value in items:
+      self._dict[key] = value
+      self._keys.append(key)
+
+  def __getitem__( self, key ):
+    return self._dict[key]
+
+  def __setitem__( self, key, value ):
+    if key not in self:
+      self._keys.append(key)
+    self._dict[key] = value
+
+  def __delitem__( self, key ):
+    del self._dict[key]
+    self._keys.remove(key)
+
+  def __contains__( self, key ):
+    return key in self._dict
+
+  def __iter__( self ):
+    return iter( self._keys )
+
+  def __len__( self ):
+    return len( self._dict )
+
 def _getkwargdefaults_new( func ):
   'helper for run'
 
-  kwargs = collections.OrderedDict()
+  kwargs = OrderedDict()
   signature = inspect.signature( func )
   for parameter in signature.parameters.values():
     if parameter.kind in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD):
@@ -325,7 +360,7 @@ def _getkwargdefaults_legacy( func ):
     defaults = []
   if len( defaults ) != len( args ):
     raise ValueError( 'Function cannot be called without arguments.' )
-  return collections.OrderedDict(zip(args, defaults))
+  return OrderedDict(zip(args, defaults))
 
 if sys.version_info >= (3,3):
   getkwargdefaults = _getkwargdefaults_new
