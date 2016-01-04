@@ -118,7 +118,8 @@ class Reference( cache.Immutable ):
     self.vertices = numpy.asarray( vertices )
     self.nverts, self.ndims = self.vertices.shape
 
-  __and__ = __rand__ = lambda self, other: self if self == other else NotImplemented
+  __and__ = lambda self, other: self if self == other else NotImplemented
+  __rand__ = lambda self, other: self & other
   __sub__ = __rsub__ = lambda self, other: self.empty if self == other else NotImplemented
   __bool__ = __nonzero__ = lambda self: bool(self.volume)
 
@@ -405,7 +406,7 @@ class EmptyReference( Reference ):
   def transform( self, trans ):
     return self
 
-  __and__ = __rand__ = __sub__ = lambda self, other: self if other.ndims == self.ndims else NotImplemented
+  __and__ = __sub__ = lambda self, other: self if other.ndims == self.ndims else NotImplemented
   __rsub__ = lambda self, other: other if other.ndims == self.ndims else NotImplemented
 
 class SimplexReference( Reference ):
@@ -1084,7 +1085,7 @@ class WithChildrenReference( Reference ):
 
   __sub__ = lambda self, other: self.empty if other in (self,self.baseref) else self.baseref.with_children( self_child-other_child for self_child, other_child in zip( self.child_refs, other.child_refs ) ) if isinstance( other, WithChildrenReference ) and other.baseref in (self,self.baseref) else NotImplemented
   __rsub__ = lambda self, other: self.baseref.with_children( other_child - self_child for self_child, other_child in zip( self.child_refs, other.child_refs ) ) if other == self.baseref else NotImplemented
-  __and__ = __rand__ = lambda self, other: self if other == self.baseref else self.baseref.with_children( self_child & other_child for self_child, other_child in zip( self.child_refs, other.child_refs ) ) if isinstance( other, WithChildrenReference ) and other.baseref == self.baseref else NotImplemented
+  __and__ = lambda self, other: self if other == self.baseref else self.baseref.with_children( self_child & other_child for self_child, other_child in zip( self.child_refs, other.child_refs ) ) if isinstance( other, WithChildrenReference ) and other.baseref == self.baseref else NotImplemented
 
   @cache.property
   def __extra_edges( self ):
@@ -1248,6 +1249,22 @@ class MosaicReference( Reference ):
     if core.getprop( 'selfcheck', False ):
       self.check_edges()
 
+  __and__ = lambda self, other: self if other in (self,self.baseref) else NotImplemented
+
+  def __sub__( self, other ):
+    if other in (self,self.baseref):
+      return self.empty
+    if isinstance( other, MosaicReference ) and other.baseref == self:
+      inv_edge_refs = [ baseedge - edge for baseedge, edge in zip( self.edge_refs, other._edge_refs ) ]
+      return MosaicReference( self, inv_edge_refs, other._midpoint )
+    return NotImplemented
+
+  def __rsub__( self, other ):
+    if other == self.baseref:
+      inv_edge_refs = [ baseedge - edge for baseedge, edge in zip( other.edge_refs, self._edge_refs ) ]
+      return MosaicReference( other, inv_edge_refs, self._midpoint )
+    return NotImplemented
+
   @cache.property
   def subrefs( self ):
     return [ ref.cone(trans,self._midpoint) for trans, ref in zip( self.baseref.edge_transforms, self._edge_refs ) if ref ]
@@ -1307,20 +1324,6 @@ class MosaicReference( Reference ):
     else:
       weights = numpy.concatenate( allweights, axis=0 )
     return points, weights
-
-  def __sub__( self, other ):
-    if other in (self,self.baseref):
-      return self.empty
-    if isinstance( other, MosaicReference ) and other.baseref == self:
-      inv_edge_refs = [ baseedge - edge for baseedge, edge in zip( self.edge_refs, other._edge_refs ) ]
-      return MosaicReference( self, inv_edge_refs, other._midpoint )
-    return NotImplemented
-
-  def __rsub__( self, other ):
-    if other == self.baseref:
-      inv_edge_refs = [ baseedge - edge for baseedge, edge in zip( other.edge_refs, self._edge_refs ) ]
-      return MosaicReference( other, inv_edge_refs, self._midpoint )
-    return NotImplemented
 
 
 # SHAPE FUNCTIONS
