@@ -9,5 +9,9 @@ install:
   - export PATH="$HOME/miniconda/bin:$PATH"
   - conda update --yes conda
   - conda install --yes python=$TRAVIS_PYTHON_VERSION pip numpy scipy
-script: PYTHONPATH="$PWD" make test
+  - pip install coverage coveralls
+script:
+  - PYTHONPATH="$PWD" COVERAGE=coverage make coverage
+after_success:
+  - coveralls
 # vim: ts=2:sts=2:sw=2:et
