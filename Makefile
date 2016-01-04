@@ -1,8 +1,11 @@
+PYTHON?=python
+COVERAGE?=python-coverage
+
 build:
-	python setup.py build clean
+	${PYTHON} setup.py build clean
 
 dist:
-	python setup.py sdist
+	${PYTHON} setup.py sdist
 	rm -rf nutils.egg-info
 
 docs:
@@ -11,12 +14,12 @@ docs:
 test: test_unit test_examples
 
 test_unit:
-	python -m tests
+	${PYTHON} -m tests
 
 test_examples:
 	@for script in examples/*; do \
 		echo $$script; \
-		python $$script unittest --tbexplore=False --verbose=3; \
+		${PYTHON} $$script unittest --tbexplore=False --verbose=3; \
 	done
 
 test3: test3_unit test3_examples
@@ -30,11 +33,19 @@ test3_examples:
 		python3 $$script unittest --tbexplore=False --verbose=3; \
 	done
 
+coverage:
+	${COVERAGE} erase
+	$(MAKE) test "PYTHON=${COVERAGE} run -a"
+
+htmlcov: coverage
+	rm -rf htmlcov
+	${COVERAGE} html
+
 clean:
 	rm -fr build dist
 	rm -f MANIFEST nutils/*.pyc
 	${MAKE} -C docs clean
 
-.PHONY: build dist docs test test_unit test_examples clean
+.PHONY: build dist docs test test_unit test_examples coverage htmlcov clean
 
 # vim:noexpandtab
