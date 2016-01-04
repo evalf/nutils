@@ -1,7 +1,14 @@
 from nutils import log, debug, core, numpy
 import sys, time
 
-selection = list(sys.argv[1:])
+if 'coverage' in sys.argv[0]:
+  # coverage passes the complete commandline to `sys.argv`
+  # find '-m tests' and keep the tail
+  m = sys.argv.index('-m')
+  assert sys.argv[m+1] == 'tests' # name of this module
+  selection = list(sys.argv[m+2:])
+else:
+  selection = list(sys.argv[1:])
 try:
   selection.remove( '--tbexplore' )
 except ValueError:
