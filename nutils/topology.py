@@ -25,7 +25,7 @@ out in element loops. For lower level operations topologies can be used as
 
 from __future__ import print_function, division
 from . import element, function, util, numpy, parallel, matrix, log, core, numeric, cache, rational, transform, _
-import warnings, functools, collections, itertools
+import warnings, collections, itertools
 
 _identity = lambda x: x
 
@@ -56,11 +56,10 @@ class Topology( object ):
     assert isinstance( other, Topology ) and other.ndims == self.ndims
     return other if not self \
       else self if not other \
-      else NotImplemented if isinstance( other, (ItemTopology,UnionTopology) ) \
+      else NotImplemented if isinstance( other, (ItemTopology,UnionTopology,SubtractionTopology) ) \
       else UnionTopology( (self,other) )
 
-  def __ror__( self, other ):
-    return other.__or__( self )
+  __ror__ = lambda self, other: self.__or__( other )
 
   def __add__( self, other ):
     return self | other
@@ -680,6 +679,9 @@ class ItemTopology( Topology ):
     subtopos = { name[1:] if name[0] == '~' else '~'+name: ~topo for name, topo in self.subtopos.items() }
     return ( ~self.basetopo ).withsubs( subtopos )
 
+  def __eq__( self, other ):
+    return isinstance( other, ItemTopology ) and self.basetopo == other.basetopo and self.subtopos == other.subtopos
+
   def withsubs( self, subtopos={} ):
     if subtopos and core.getprop( 'selfcheck', False ):
       for name, topo in subtopos.items():
@@ -1266,7 +1268,26 @@ class UnionTopology( Topology ):
       if len(elems) == 1:
         elements.append( elems[0] )
       else:
-        raise NotImplementedError
+        refs = [ elem.reference for elem in elems ]
+        while len(refs) > 1: # sweep all possible unions until a single reference is left
+          nrefs = len(refs)
+          iref = 0
+          while iref < len(refs)-1:
+            for jref in range( iref+1, len(refs) ):
+              try:
+                unionref = refs[iref] | refs[jref]
+              except TypeError:
+                pass
+              else:
+                refs[iref] = unionref
+                del refs[jref]
+                break
+            iref += 1
+          assert len(refs) < nrefs, 'incompatible elements in union'
+        unionref, = refs
+        opposite = elems[0].opposite
+        assert all( elem.opposite == opposite for elem in elems[1:] )
+        elements.append( element.Element( unionref, trans, opposite ) )
     return elements
 
 class SubtractionTopology( Topology ):

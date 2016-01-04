@@ -174,7 +174,7 @@ def setoperations():
   Lexact = 1+numpy.sqrt(2)
   for name, dom in ('left',left), ('top',top), ('right',right), ('bottom',bottom):
     @unittest( name )
-    def check():
+    def boundary():
       L = dom.boundary.integrate( 1, geometry=geom, ischeme='gauss1' )
       assert numpy.isclose( L, 1+numpy.sqrt(2)  ), 'full boundary: wrong length: {} != {}'.format( L, 1+numpy.sqrt(2) )
       L = dom.boundary[name].integrate( 1, geometry=geom, ischeme='gauss1' )
@@ -183,3 +183,10 @@ def setoperations():
       assert numpy.isclose( L, .5*numpy.sqrt(2)  ), 'trim1: wrong length: {} != {}'.format( L, .5*numpy.sqrt(2) )
       L = dom.boundary['trim2' if name not in ('left','bottom') else '~trim2'].integrate( 1, geometry=geom, ischeme='gauss1' )
       assert numpy.isclose( L, .5*numpy.sqrt(2)  ), 'trim2: wrong length: {} != {}'.format( L, .5*numpy.sqrt(2) )
+
+  @unittest
+  def union():
+    assert (top|left) | (right|bottom) == domain
+    union = (right|left) | (top|bottom)
+    assert isinstance( union.basetopo, topology.UnionTopology )
+    assert set(union) == set(domain)
