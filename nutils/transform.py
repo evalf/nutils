@@ -378,21 +378,22 @@ class RootTransEdges( VertexTransform ):
 ## CONSTRUCTORS
 
 def affine( linear, offset, denom=1, isflipped=None ):
-  r_offset = numpy.asarray( offset ) / denom
-  r_linear = numpy.asarray( linear ) / denom
+  r_offset = numpy.asarray( offset, dtype=float ) / denom
+  r_linear = numpy.asarray( linear, dtype=float ) / denom
   n, = r_offset.shape
   if r_linear.ndim == 2:
     assert r_linear.shape[0] == n
-    if r_linear.shape[1] == n:
-      trans = Shift( r_offset ) if n == 0 \
-         else Scale( r_linear[0,0], r_offset ) if n == 1 or r_linear[0,-1] == 0 and numpy.all( r_linear == r_linear[0,0] * numpy.eye(n) ) \
-         else Square( r_linear, r_offset )
-    else:
+    if r_linear.shape[1] != n:
       trans = Updim( r_linear, r_offset, isflipped )
+    elif n == 0:
+      trans = Shift( r_offset )
+    elif n == 1 or r_linear[0,-1] == 0 and numpy.all( r_linear == r_linear[0,0] * numpy.eye(n) ):
+      trans = Scale( r_linear[0,0], r_offset ) if r_linear[0,0] != 1 else Shift( r_offset )
+    else:
+      trans = Square( r_linear, r_offset )
   else:
     assert r_linear.ndim == 0
-    trans = Scale( r_linear, r_offset ) if r_linear \
-       else Shift( r_offset )
+    trans = Scale( r_linear, r_offset ) if r_linear != 1 else Shift( r_offset )
   if isflipped is not None:
     assert trans.isflipped == isflipped
   return CanonicalTransformChain( [trans] )
