@@ -415,7 +415,7 @@ def trace_uncollected( exhaustive=False ):
   changed = True
   while changed:
     changed = False
-    for n, refs in pointers.items():
+    for n, refs in list(pointers.items()):
       newrefs = [ i for i in refs if i in pointers ]
       if newrefs != refs:
         changed = True
