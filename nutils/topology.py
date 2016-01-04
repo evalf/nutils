@@ -1698,7 +1698,7 @@ class RevolvedTopology( Topology ):
 
   def __init__( self, basetopo ):
     self.basetopo = basetopo
-    Topology.__init__( basetopo.ndims )
+    Topology.__init__( self, basetopo.ndims )
 
   def __iter__( self ):
     return iter( self.basetopo )
@@ -1707,11 +1707,7 @@ class RevolvedTopology( Topology ):
     return len( self.basetopo )
 
   def __getitem__( self, item ):
-    return RevolvedTopology(self.basetopo[item])
-
-  def __setitem__( self, item, topo ):
-    assert isinstance( topo, RevolvedTopology )
-    self.basetopo.__setitem__( item, topo.basetopo )
+    return RevolvedTopology( self.basetopo[item] )
 
   @property
   def elements( self ):
@@ -1719,7 +1715,7 @@ class RevolvedTopology( Topology ):
 
   @cache.property
   def boundary( self ):
-    return RevolvedTopology(self.basetopo.boundary)
+    return RevolvedTopology( self.basetopo.boundary )
 
   @log.title
   @core.single_or_multiple

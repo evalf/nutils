@@ -193,3 +193,24 @@ def common_refine():
     numpy.testing.assert_array_almost_equal( vals, vals123 )
     vals = common.integrate( fun234, geometry=geom, ischeme='gauss1' )
     numpy.testing.assert_array_almost_equal( vals, vals234 )
+
+@register
+def revolved():
+
+  @unittest
+  def d1():
+    domain, geom = mesh.rectilinear( [[0,1,2]], revolved=True )
+    vol = domain.integrate( 1, geometry=geom, ischeme='gauss9' )
+    numpy.testing.assert_array_almost_equal( vol, 4*numpy.pi )
+    surf = domain.boundary.integrate( 1, geometry=geom, ischeme='gauss9' )
+    numpy.testing.assert_array_almost_equal( surf, 4*numpy.pi )
+
+  @unittest
+  def d2():
+    domain, geom = mesh.rectilinear( [[0,1],[0,1,2]], revolved=True )
+    vol = domain.integrate( 1, geometry=geom, ischeme='gauss9' )
+    numpy.testing.assert_array_almost_equal( vol, 2*numpy.pi )
+    surf = domain.boundary.integrate( 1, geometry=geom, ischeme='gauss9' )
+    numpy.testing.assert_array_almost_equal( surf, 6*numpy.pi )
+    wall = domain.boundary['right'].integrate( 1, geometry=geom, ischeme='gauss9' )
+    numpy.testing.assert_array_almost_equal( wall, 4*numpy.pi )
