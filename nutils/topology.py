@@ -835,7 +835,7 @@ class StructuredTopology( Topology ):
 
     grid = [ numpy.arange(axis.i>>nrefine,((axis.j-1)>>nrefine)+1) if axis.isdim else numpy.array([(axis.i-1 if axis.side else axis.j)>>nrefine]) for axis in axes ]
     indices = numeric.broadcast( *numeric.ix(grid) )
-    transforms = numeric.asobjvector( transform.affine(0,index) for index in log.iter( 'elem', indices, indices.size ) ).reshape( indices.shape )
+    transforms = numeric.asobjvector( transform.affine(1,index) for index in log.iter( 'elem', indices, indices.size ) ).reshape( indices.shape )
 
     if nrefine:
       shifts = numeric.broadcast( *numeric.ix( [0,.5] for axis in axes ) )
@@ -1423,24 +1423,25 @@ class SubsetTopology( Topology ):
     ielems = []
     belems = []
     for iface in log.iter( 'elem', self.basetopo.interfaces ):
-      btrans = iface.transform.promote( self.ndims )
-      head = btrans.lookup( edict )
-      if head:
-        ref = self.elements[edict[head]].reference
-        index = ref.edge_transforms.index( btrans.slicefrom( len(head) ) )
-        edge = ref.edge_refs[ index ]
-      else:
+      head, tail = iface.transform.promote( self.ndims ).split( self.ndims-1, after=False )
+      try:
+        ielem = edict[head]
+      except KeyError:
         edge = empty
-      btrans = iface.opposite.promote( self.ndims )
-      head = btrans.lookup( edict )
-      if head:
-        ref = self.elements[edict[head]].reference
-        tail = btrans.slicefrom( len(head) )
+      else:
+        ref = self.elements[ielem].reference
+        index = ref.edge_transforms.index(tail)
+        edge = ref.edge_refs[ index ]
+      head, tail = iface.opposite.promote( self.ndims ).split( self.ndims-1, after=False )
+      try:
+        ielem = edict[head]
+      except KeyError:
+        oppedge = empty
+      else:
+        ref = self.elements[ielem].reference
         tail2head = tail.lookup( ref.edge_transforms ) # strip optional adjustment transformation (temporary?)
         index = ref.edge_transforms.index( tail2head )
         oppedge = ref.edge_refs[ index ].transform( tail2head.slicefrom( len(tail2head) ) )
-      else:
-        oppedge = empty
       if iface.reference == edge == oppedge: # chortcut
         ielems.append( iface )
       else:
@@ -1478,12 +1479,14 @@ class SubsetTopology( Topology ):
     belems = [] # prior boundary elements (reduced)
     basebtopo = self.basetopo.boundary
     for belem in log.iter( 'element', basebtopo ):
-      btrans = belem.transform.promote( self.ndims )
-      head = btrans.lookup( self.edict )
-      if head:
+      head, tail = belem.transform.promote( self.ndims ).split( self.ndims-1, after=False )
+      try:
         ielem = self.edict[head]
+      except KeyError:
+        pass
+      else:
         ref = self.elements[ielem].reference
-        iedge = ref.edge_transforms.index( btrans.slicefrom(len(head)) )
+        iedge = ref.edge_transforms.index(tail)
         edge = ref.edge_refs[iedge]
         if edge:
           belems.append( element.Element( edge, belem.transform, belem.opposite ) )
