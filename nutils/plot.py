@@ -140,7 +140,8 @@ class PyPlot( BasePlot ):
 
     if isinstance( points, numpy.ndarray ): # bulk data
       assert points.shape[-1] == 2
-      tri = Triangulation( *points.reshape(-1,2).T )
+      import matplotlib.tri
+      tri = matplotlib.tri.Triangulation( *points.reshape(-1,2).T )
       edgecolors = 'none'
       if values is not None:
         values = values.ravel()
@@ -164,6 +165,7 @@ class PyPlot( BasePlot ):
     self.gca().set_aspect( *args, **kwargs )
 
   def tripcolor( self, tri, values, **kwargs ):
+    import matplotlib.tri
     if not isinstance( tri, matplotlib.tri.Triangulation ):
       tri, edges = triangulate( tri, mergetol )
     if not isinstance( values, numpy.ndarray ):
@@ -171,11 +173,12 @@ class PyPlot( BasePlot ):
     assert len(tri.x) == len(values)
     mask = ~numpy.isfinite( values )
     if mask.any():
-      tri = Triangulation( tri.x, tri.y, tri.triangles, mask[tri.triangles].any(axis=1) )
+      tri = matplotlib.tri.Triangulation( tri.x, tri.y, tri.triangles, mask[tri.triangles].any(axis=1) )
     return self._pyplot.tripcolor( tri, values, **kwargs )
 
   def tricontour( self, tri, values, every=None, levels=None, mergetol=0, **kwargs ):
     assert not every or levels is None, '"every" and "levels" arguments are mutually exclusive'
+    import matplotlib.tri
     if not isinstance( tri, matplotlib.tri.Triangulation ):
       tri, edges = triangulate( tri, mergetol )
     if not isinstance( values, numpy.ndarray ):
@@ -193,6 +196,7 @@ class PyPlot( BasePlot ):
       u = spacing
       v = bbox
     else:
+      import matplotlib.tri
       if not isinstance( tri, matplotlib.tri.Triangulation ):
         tri, edges = triangulate( tri, mergetol=mergetol )
       if not isinstance( velo, numpy.ndarray ):
@@ -813,10 +817,12 @@ def triangulate( points, mergetol=0 ):
     edges = numpy.sort( renumber[edges], axis=1 ) # order edge endpoints to recognize duplicates
     edges = edges[ numpy.lexsort( edges.T ) ] # sort edges lexicographically
     edges = edges[ numpy.concatenate( [ [True], numpy.diff( edges, axis=0 ).any(axis=1) ] ) ] # remove duplicates
-  return Triangulation( points[:,0], points[:,1], triangulation ), points[edges]
+  import matplotlib.tri
+  return matplotlib.tri.Triangulation( points[:,0], points[:,1], triangulation ), points[edges]
 
 def interpolate( tri, xy, values, mergetol=1e-5 ):
   assert xy.shape[-1] == 2
+  import matplotlib.tri
   if not isinstance( tri, matplotlib.tri.Triangulation ):
     tri, edges = triangulate( tri, mergetol=mergetol )
   if not isinstance( values, numpy.ndarray ):
@@ -832,14 +838,6 @@ def interpolate( tri, xy, values, mergetol=1e-5 ):
     plane_coefficients = tri.calculate_plane_coefficients(v)
     iv[inside] = numeric.contract( xy1, plane_coefficients[itri], axis=1 )
   return interpvalues
-
-try:
-  import matplotlib.tri
-except:
-  pass
-else:
-  class Triangulation( matplotlib.tri.Triangulation ):
-    interpolate = interpolate
 
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

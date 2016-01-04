@@ -26,7 +26,7 @@ class MakePlots( object ):
       tri = plt.mesh( points, flow, mergetol=1e-5 )
       plt.clim( 0, 1.5 )
       plt.tricontour( tri, pres, every=self.every, cmap='gray', linestyles='solid', alpha=.8 )
-      uv = tri.interpolate( self.xy, velo )
+      uv = plot.interpolate( tri, self.xy, velo )
       plt.vectors( self.xy, uv, zorder=9, pivot='mid', stems=False )
       plt.plot( 0, 0, 'k', marker=(3,2,angle*180/numpy.pi-90), markersize=20 )
       plt.xlim( self.bbox[0] )
