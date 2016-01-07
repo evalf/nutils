@@ -622,6 +622,43 @@ class Topology( object ):
         used[ dofmap.dofmap[elem.transform] + dofmap.offset ] = True
     return basis[used]
 
+  def locate( self, geom, points, ischeme='vertex', scale=1, tol=1e-12, eps=0, maxiter=100 ):
+    assert geom.shape == (self.ndims,)
+    points = numpy.asarray( points, dtype=float )
+    assert points.ndim == 2 and points.shape[1] == self.ndims
+    vertices = self.elem_eval( geom, ischeme=ischeme, separate=True )
+    bboxes = numpy.array([ numpy.mean(v,axis=0) * (1-scale) + numpy.array([ numpy.min(v,axis=0), numpy.max(v,axis=0) ]) * scale
+      for v in vertices ]) # nelems x {min,max} x ndims
+    vref = element.getsimplex(0)
+    pelems = []
+    for point in points:
+      ielems, = ((point >= bboxes[:,0,:]) & (point <= bboxes[:,1,:])).all(axis=-1).nonzero()
+      converged = False
+      for ielem in sorted( ielems, key=lambda i: numpy.linalg.norm(bboxes[i].mean(0)-point) ):
+        elem = self.elements[ielem]
+        xi, w = elem.reference.getischeme( 'gauss1' )
+        xi = ( numpy.dot(w,xi) / w.sum() )[_] if len(xi) > 1 else xi.copy()
+        linear = function.TransformChain( True, self.ndims ).eval( elem, xi ).split(self.ndims)[1].linear
+        J = function.localgradient( geom, self.ndims )
+        J = J * linear if numpy.ndim( linear ) == 0 else ( J[:,:,_] * linear[_,:,:] ).sum(1)
+        geom_J = function.Tuple(( geom, J ))
+        for iiter in range( maxiter ):
+          point_xi, J_xi = geom_J.eval( elem, xi )
+          err = point - point_xi
+          if numpy.all( numpy.abs(err) < tol ):
+            converged = True
+            break
+          xi += numpy.linalg.solve( J_xi, err )
+          if not elem.reference.inside( xi, eps=eps ):
+            break
+        if converged:
+          break
+      else:
+        raise Exception( 'failed to locate point', point )
+      trans = transform.affine( linear=numpy.zeros(shape=(self.ndims,0),dtype=int), offset=xi[0], isflipped=False )
+      pelems.append( element.Element( vref, elem.transform << trans, elem.opposite << trans ) )
+    return UnstructuredTopology( 0, pelems )
+
 class ItemTopology( Topology ):
   'item topology'
 
