@@ -8,6 +8,7 @@ from . import \
   topology,   \
   doubleint,  \
   quadrature, \
+  element,    \
   _run
 
 _run()
