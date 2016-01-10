@@ -428,6 +428,8 @@ class SimplexReference( Reference ):
       if self.inverted:
         self.volume = -self.volume
     Reference.__init__( self, vertices )
+    if self.ndims > 0 and core.getprop( 'selfcheck', False ):
+      self.check_edges()
 
   def transform( self, trans ):
     assert trans in self.rotations
@@ -464,9 +466,9 @@ class PointReference( SimplexReference ):
   volume = 1
   rotations = transform.identity,
 
-  def __init__( self, vertices ):
-    SimplexReference.__init__( self, vertices )
-    self.child_transforms = transform.identity,
+  @property
+  def child_transforms( self ):
+    return transform.identity,
 
   def getischeme( self, ischeme ):
     return numpy.zeros((1,0)), numpy.ones(1)
@@ -478,23 +480,26 @@ class PointReference( SimplexReference ):
 class LineReference( SimplexReference ):
   '1D simplex'
 
-  def __init__( self, vertices ):
-    self._bernsteincache = [] # TEMPORARY
-    SimplexReference.__init__( self, vertices )
-    self.edge_transforms = transform.simplex( vertices[1:], isflipped=self.inverted ), transform.simplex( vertices[:1], isflipped=not self.inverted )
-    self.child_transforms = transform.affine(1,[0],2), transform.affine(1,[1],2)
-    if core.getprop( 'selfcheck', False ):
-      self.check_edges()
+  _bernsteincache = [] # TEMPORARY
+
+  @cache.property
+  def edge_transforms( self ):
+    return transform.simplex( self.vertices[1:], isflipped=self.inverted ), transform.simplex( self.vertices[:1], isflipped=not self.inverted )
+
+  @cache.property
+  def child_transforms( self ):
+    return transform.affine(1,[0],2), transform.affine(1,[1],2)
 
   @cache.property
   def rotations( self ):
     return transform.identity, transform.affine( [[-1]], self.vertices[1] )
 
-  def stdfunc( self, degree ):
-    if len(self._bernsteincache) <= degree or self._bernsteincache[degree] is None:
-      self._bernsteincache += [None] * (degree-len(self._bernsteincache))
-      self._bernsteincache.append( PolyLine( PolyLine.bernstein_poly(degree) ) )
-    return self._bernsteincache[degree]
+  @classmethod
+  def stdfunc( cls, degree ):
+    if len(cls._bernsteincache) <= degree or cls._bernsteincache[degree] is None:
+      cls._bernsteincache += [None] * (degree-len(cls._bernsteincache))
+      cls._bernsteincache.append( PolyLine( PolyLine.bernstein_poly(degree) ) )
+    return cls._bernsteincache[degree]
 
   def getischeme_gauss( self, degree ):
     assert isinstance( degree, int ) and degree >= 0
@@ -518,12 +523,13 @@ class LineReference( SimplexReference ):
 class TriangleReference( SimplexReference ):
   '2D simplex'
 
-  def __init__( self, vertices ):
-    SimplexReference.__init__( self, vertices )
-    self.edge_transforms = tuple( transform.simplex( vertices[I], isflipped=self.inverted ) for I in [slice(1,None),slice(None,None,-2),slice(2)] )
-    self.child_transforms = transform.affine(1,[0,0],2), transform.affine(1,[0,1],2), transform.affine(1,[1,0],2), transform.affine([[0,-1],[-1,0]],[1,1],2,isflipped=True )
-    if core.getprop( 'selfcheck', False ):
-      self.check_edges()
+  @cache.property
+  def edge_transforms( self ):
+    return tuple( transform.simplex( self.vertices[I], isflipped=self.inverted ) for I in [slice(1,None),slice(None,None,-2),slice(2)] )
+
+  @cache.property
+  def child_transforms( self ):
+    return transform.affine(1,[0,0],2), transform.affine(1,[0,1],2), transform.affine(1,[1,0],2), transform.affine([[0,-1],[-1,0]],[1,1],2,isflipped=True )
 
   def stdfunc( self, degree ):
     return PolyTriangle(degree)
@@ -618,11 +624,9 @@ class TriangleReference( SimplexReference ):
 class TetrahedronReference( SimplexReference ):
   '3D simplex'
 
-  def __init__( self, vertices ):
-    SimplexReference.__init__( self, vertices )
-    self.edge_transforms = tuple( transform.simplex( vertices[I], isflipped=self.inverted ) for I in [[1,2,3],[0,3,2],[3,0,1],[2,1,0]] )
-    if core.getprop( 'selfcheck', False ):
-      self.check_edges()
+  @cache.property
+  def edge_transforms( self ):
+    return tuple( transform.simplex( self.vertices[I], isflipped=self.inverted ) for I in [[1,2,3],[0,3,2],[3,0,1],[2,1,0]] )
 
   def getischeme_gauss( self, degree ):
     '''get integration scheme
