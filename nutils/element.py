@@ -419,7 +419,6 @@ class SimplexReference( Reference ):
     nverts, ndims = vertices.shape
     assert nverts == ndims+1
     if ndims:
-      self.edge_refs = (getsimplex(ndims-1),) * (ndims+1)
       self.x0 = vertices[0]
       self.dx = vertices[1:] - self.x0
       self.volume = numeric.det_exact(self.dx) / math.factorial(ndims)
@@ -430,6 +429,15 @@ class SimplexReference( Reference ):
     Reference.__init__( self, vertices )
     if self.ndims > 0 and core.getprop( 'selfcheck', False ):
       self.check_edges()
+
+  @cache.property
+  def edge_refs( self ):
+    return (getsimplex(self.ndims-1),) * (self.ndims+1)
+
+  @cache.property
+  def edge_transforms( self ):
+    assert self.ndims > 0
+    return tuple( transform.simplex( self.vertices[list(range(i))+list(range(i+1,self.ndims+1))], isflipped=(i%2==1)^self.inverted ) for i in range(self.ndims+1) )
 
   def transform( self, trans ):
     assert trans in self.rotations
@@ -442,10 +450,6 @@ class SimplexReference( Reference ):
   @property
   def edge2vertex( self ):
     return ~numpy.eye( self.nverts, dtype=bool )
-
-  @property
-  def child_refs( self ):
-    return (self,) * len(self.child_transforms)
 
   def getischeme_vtk( self ):
     return self.vertices, None
@@ -470,6 +474,10 @@ class PointReference( SimplexReference ):
   def child_transforms( self ):
     return transform.identity,
 
+  @property
+  def child_refs( self ):
+    return self,
+
   def getischeme( self, ischeme ):
     return numpy.zeros((1,0)), numpy.ones(1)
 
@@ -483,12 +491,12 @@ class LineReference( SimplexReference ):
   _bernsteincache = [] # TEMPORARY
 
   @cache.property
-  def edge_transforms( self ):
-    return transform.simplex( self.vertices[1:], isflipped=self.inverted ), transform.simplex( self.vertices[:1], isflipped=not self.inverted )
-
-  @cache.property
   def child_transforms( self ):
     return transform.affine(1,[0],2), transform.affine(1,[1],2)
+
+  @property
+  def child_refs( self ):
+    return self, self
 
   @cache.property
   def rotations( self ):
@@ -524,12 +532,12 @@ class TriangleReference( SimplexReference ):
   '2D simplex'
 
   @cache.property
-  def edge_transforms( self ):
-    return tuple( transform.simplex( self.vertices[I], isflipped=self.inverted ) for I in [slice(1,None),slice(None,None,-2),slice(2)] )
-
-  @cache.property
   def child_transforms( self ):
     return transform.affine(1,[0,0],2), transform.affine(1,[0,1],2), transform.affine(1,[1,0],2), transform.affine([[-1,0],[1,1]],[1,0],2)
+
+  @property
+  def child_refs( self ):
+    return self, self, self, self
 
   def stdfunc( self, degree ):
     return PolyTriangle(degree)
@@ -623,10 +631,6 @@ class TriangleReference( SimplexReference ):
 
 class TetrahedronReference( SimplexReference ):
   '3D simplex'
-
-  @cache.property
-  def edge_transforms( self ):
-    return tuple( transform.simplex( self.vertices[I], isflipped=self.inverted ) for I in [[1,2,3],[0,3,2],[3,0,1],[2,1,0]] )
 
   def getischeme_gauss( self, degree ):
     '''get integration scheme
