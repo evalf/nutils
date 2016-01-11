@@ -529,7 +529,7 @@ class TriangleReference( SimplexReference ):
 
   @cache.property
   def child_transforms( self ):
-    return transform.affine(1,[0,0],2), transform.affine(1,[0,1],2), transform.affine(1,[1,0],2), transform.affine([[0,-1],[-1,0]],[1,1],2,isflipped=True )
+    return transform.affine(1,[0,0],2), transform.affine(1,[0,1],2), transform.affine(1,[1,0],2), transform.affine([[-1,0],[1,1]],[1,0],2)
 
   def stdfunc( self, degree ):
     return PolyTriangle(degree)
@@ -615,7 +615,7 @@ class TriangleReference( SimplexReference ):
     elif ichild == 2: # lower right
       flatten_child = lambda i, j: flatten_parent( i, n-1+j )
     elif ichild == 3: # inverted
-      flatten_child = lambda i, j: flatten_parent( n-1-j, n-1-i )
+      flatten_child = lambda i, j: flatten_parent( i+j, n-1-j )
     else:
       raise Exception( 'invalid ichild: {}'.format( ichild ) )
 

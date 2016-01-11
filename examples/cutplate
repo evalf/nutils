@@ -11,7 +11,7 @@ def makeplots( domain, geom, sigma, index ):
 
   points, colors = domain.simplex.elem_eval( [ geom, vonmises ], ischeme='bezier5', separate=True )
   with plot.PyPlot( 'solution', index=index ) as plt:
-    plt.mesh( points, colors, triangulate='bezier' )
+    plt.mesh( points, colors )
     plt.colorbar()
     plt.xlim( 0, 1.3 )
     plt.ylim( 0, 1.3 )
@@ -86,10 +86,10 @@ def unittest():
 
   retvals = main( nelems=None, degree=2, maxrefine=2, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
-    eNplUEmOwzAM+04CWAPttp7TQ679/3EsL0GbAhZIGaYsksqhhewsx8HN4wIvhkoXWOl379e7UHW+oD8i
-    0cS8c/KWT5LjX57FEp7FWimFzJX3AIrwzbPAiCwngqvaHg2NJe4mHHU3n/X9ewcIEUsnQ8ZOuGXdEmlM
-    Ow9b0YTz2bZmWD1x2qtisTpyG0ImrAORJrJNm2vg0za1XEpv6yQuiaCE4+ffDMC650F2EFBjhnCnAU3R
-    pyq0TRVzLKJ7a2DMdSd3Fc98PrMCXsbvwEB8Ss5y/gPxR4GI''' )
+    eNplUEmOwzAM+04CWAPttp7TQ679/3EsL0GbAhZIGaYsksqhhewsx8HN2wVeDJUusNLv3q93oep8QX9E
+    ool555RPbXD8y7NYwrNYK6WQufIeQBG+eRYYkeVEcFXbo6GxxN2Eo+7ms75/7wAhYulkyNgJt6xbIo1p
+    52ErmnA+29YMqydOe1UsVkduQ8iEdSDSRLZpcw182qaWS+ltncQlEZRw/PybAVj3PMgOAmrMEO40oCn6
+    VIW2qWKORXRvDYy57uSu4pnPZ1bAy/gdGIhPyVnOf+8ugYc=''' )
 
   retvals = main( nelems=4, degree=2, maxrefine=2, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
