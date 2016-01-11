@@ -803,7 +803,7 @@ class TensorReference( Reference ):
 
   @cache.property
   def child_transforms( self ):
-    return [ transform.affine( trans1.linear if trans1.linear.ndim == 0 and trans1.linear == trans2.linear
+    return [ transform.affine( trans1.linear if trans1.linear.ndim == 0 and trans2.linear.ndim == 0 and trans1.linear == trans2.linear
                           else numeric.blockdiag([ trans1.linear, trans2.linear ]),
                                numpy.concatenate([ trans1.offset, trans2.offset ]) )
             for trans1 in self.ref1.child_transforms

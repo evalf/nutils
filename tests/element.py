@@ -15,3 +15,9 @@ def elem( *ndims ):
   for ndim in ndims[1:]:
     ref *= element.getsimplex( ndim )
   assert ref.ndims == sum(ndims)
+
+  if ref.ndims > 0 and not isinstance( ref, element.TetrahedronReference ):
+    @unittest
+    def children():
+      childvol = sum( abs(trans.det) * child.volume for trans, child in ref.children )
+      numpy.testing.assert_almost_equal( childvol, ref.volume )
