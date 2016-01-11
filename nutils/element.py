@@ -192,6 +192,21 @@ class Reference( cache.Immutable ):
   def ribbons( self ):
     # tuples of (iedge1,jedge1), (iedge2,jedge2) pairs
     assert self.ndims >= 2
+    ribbons = tuple( self._ribbons )
+    if core.getprop( 'selfcheck', False ):
+      for (iedge1,iedge2), (jedge1,jedge2) in ribbons:
+        itrans = self.edge_transforms[iedge1] << self.edge_refs[iedge1].edge_transforms[iedge2]
+        jtrans = self.edge_transforms[jedge1] << self.edge_refs[jedge1].edge_transforms[jedge2]
+        assert ( itrans.linear == jtrans.linear ).all() and ( itrans.offset == jtrans.offset ).all()
+        iref = self.edge_refs[iedge1].edge_refs[iedge2]
+        jref = self.edge_refs[jedge1].edge_refs[jedge2]
+        assert iref == jref
+    return ribbons
+
+  @property
+  def _ribbons( self ):
+    # tuples of (iedge1,jedge1), (iedge2,jedge2) pairs
+    assert self.ndims >= 2
     transforms = {}
     ribbons = []
     for iedge1, (etrans1,edge1) in enumerate( self.edges ):
@@ -438,6 +453,10 @@ class SimplexReference( Reference ):
   def edge_transforms( self ):
     assert self.ndims > 0
     return tuple( transform.simplex( self.vertices[list(range(i))+list(range(i+1,self.ndims+1))], isflipped=(i%2==1)^self.inverted ) for i in range(self.ndims+1) )
+
+  @property
+  def _ribbons( self ):
+    return [ ((iedge1,iedge2),(iedge2+1,iedge1)) for iedge1 in range(self.ndims+1) for iedge2 in range(iedge1,self.ndims) ]
 
   def transform( self, trans ):
     assert trans in self.rotations
@@ -804,6 +823,25 @@ class TensorReference( Reference ):
   def edge_refs( self ):
     return tuple([ edge1 * self.ref2 for edge1 in self.ref1.edge_refs ]
                + [ self.ref1 * edge2 for edge2 in self.ref2.edge_refs ])
+
+  @property
+  def _ribbons( self ):
+    ribbons = []
+    for iedge1 in range( self.ref1.nedges ):
+      #iedge = self.ref1.edge_refs[iedge] * self.ref2
+      for iedge2 in range( self.ref2.nedges ):
+        #jedge = self.ref1 * self.ref2.edge_refs[jedge]
+        jedge1 = self.ref1.nedges + iedge2
+        jedge2 = iedge1
+        if self.ref1.ndims > 1:
+          iedge2 += self.ref1.edge_refs[iedge1].nedges
+        ribbons.append( ((iedge1,iedge2),(jedge1,jedge2)) )
+    if self.ref1.ndims >= 2:
+      ribbons.extend( self.ref1.ribbons )
+    if self.ref2.ndims >= 2:
+      ribbons.extend( ((iedge1+self.ref1.nedges,iedge2+self.ref1.nedges),
+                       (jedge1+self.ref1.nedges,jedge2+self.ref1.nedges)) for (iedge1,iedge2), (jedge1,jedge2) in self.ref2.ribbons )
+    return ribbons
 
   @cache.property
   def child_transforms( self ):
