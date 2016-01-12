@@ -47,6 +47,8 @@ class Topology( object ):
     return iter( self.elements )
 
   def __getitem__( self, item ):
+    if item == ():
+      return self
     raise KeyError( item )
 
   def __invert__( self ):
@@ -699,11 +701,15 @@ class ItemTopology( Topology ):
   def __getitem__( self, item ):
     'subtopology'
 
-    if not isinstance( item, str ):
+    if not isinstance( item, tuple ):
+      item = item,
+    if len(item) == 0:
+      return self
+    if not isinstance( item[0], str ):
       return self.basetopo.__getitem__( item )
     topo = EmptyTopology( self.ndims )
-    for it in item.split( ',' ):
-      topo |= self.subtopos[it]
+    for name in item[0].split( ',' ):
+      topo |= self.subtopos[name][item[1:]]
     return topo
 
   def __setitem__( self, item, topo ):
@@ -829,15 +835,17 @@ class StructuredTopology( Topology ):
     return numpy.prod( self.shape, dtype=int )
 
   def __getitem__( self, item ):
-    items = (item,) if not isinstance( item, tuple ) else item
-    if not all( isinstance(it,slice) for it in items ):
-      return Topology.__getitem__( self, item )
-    assert len(items) <= self.ndims
+    if not isinstance( item, tuple ):
+      item = item,
+    if not all( isinstance(it,slice) for it in item ) or len(item) > self.ndims:
+      raise KeyError( item )
+    if all( it == slice(None) for it in item ): # shortcut
+      return self
     axes = []
     idim = 0
     for axis in self.axes:
-      if axis.isdim and idim < len(items):
-        s = items[idim]
+      if axis.isdim and idim < len(item):
+        s = item[idim]
         start, stop, stride = s.indices( axis.j - axis.i )
         assert stride == 1
         assert stop > start
@@ -1293,9 +1301,13 @@ class UnionTopology( Topology ):
     Topology.__init__( self, ndims )
 
   def __getitem__( self, item ):
-    if not isinstance( item, int ):
-      raise KeyError( item )
-    return self._topos[item]
+    if not isinstance( item, tuple ):
+      item = item,
+    if len(item) == 0:
+      return self
+    if not isinstance( item[0], int ):
+      raise KeyError( item[0] )
+    return self._topos[ item[0] ][ item[1:] ]
 
   def __or__( self, other ):
     if isinstance( other, UnionTopology ):
