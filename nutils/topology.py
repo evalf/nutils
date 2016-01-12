@@ -938,7 +938,7 @@ class StructuredTopology( Topology ):
       itopo = EmptyTopology( self.ndims-1 ) if not bndprops \
          else UnionTopology( StructuredTopology( self.root, self.axes[:idim] + (axis,) + self.axes[idim+1:], self.nrefine ) for axis in bndprops )
       topos.append( itopo )
-    return UnionTopology( topos ).withsubs()
+    return UnionTopology( topos ).withsubs({ 'dir{}'.format(idim): topo for idim, topo in enumerate(topos) })
 
   def basis_spline( self, degree, neumann=(), knots=None, periodic=None, closed=False, removedofs=None ):
     'spline from vertices'
@@ -1288,6 +1288,11 @@ class UnionTopology( Topology ):
     ndims = self._topos[0].ndims
     assert all( topo.ndims == ndims for topo in self._topos )
     Topology.__init__( self, ndims )
+
+  def __getitem__( self, item ):
+    if not isinstance( item, int ):
+      raise KeyError( item )
+    return self._topos[item]
 
   def __or__( self, other ):
     if isinstance( other, UnionTopology ):
