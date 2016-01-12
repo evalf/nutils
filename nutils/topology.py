@@ -625,6 +625,9 @@ class Topology( object ):
     return basis[used]
 
   def locate( self, geom, points, ischeme='vertex', scale=1, tol=1e-12, eps=0, maxiter=100 ):
+    if geom.ndim == 0:
+      geom = geom[_]
+      points = points[...,_]
     assert geom.shape == (self.ndims,)
     points = numpy.asarray( points, dtype=float )
     assert points.ndim == 2 and points.shape[1] == self.ndims
@@ -635,8 +638,8 @@ class Topology( object ):
     pelems = []
     for point in points:
       ielems, = ((point >= bboxes[:,0,:]) & (point <= bboxes[:,1,:])).all(axis=-1).nonzero()
-      converged = False
       for ielem in sorted( ielems, key=lambda i: numpy.linalg.norm(bboxes[i].mean(0)-point) ):
+        converged = False
         elem = self.elements[ielem]
         xi, w = elem.reference.getischeme( 'gauss1' )
         xi = ( numpy.dot(w,xi) / w.sum() )[_] if len(xi) > 1 else xi.copy()
@@ -650,10 +653,11 @@ class Topology( object ):
           if numpy.all( numpy.abs(err) < tol ):
             converged = True
             break
-          xi += numpy.linalg.solve( J_xi, err )
-          if not elem.reference.inside( xi, eps=eps ):
+          if iiter and err > prev_err:
             break
-        if converged:
+          prev_err = err
+          xi += numpy.linalg.solve( J_xi, err )
+        if converged and elem.reference.inside( xi, eps=eps ):
           break
       else:
         raise Exception( 'failed to locate point', point )
