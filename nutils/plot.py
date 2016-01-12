@@ -164,12 +164,20 @@ class PyPlot( BasePlot ):
   def aspect( self, *args, **kwargs ):
     self.gca().set_aspect( *args, **kwargs )
 
-  def tripcolor( self, tri, values, **kwargs ):
+  def tripcolor( self, *args, **kwargs ):
     import matplotlib.tri
-    if not isinstance( tri, matplotlib.tri.Triangulation ):
-      tri, edges = triangulate( tri, mergetol )
-    if not isinstance( values, numpy.ndarray ):
-      values = numpy.concatenate( values, axis=0 )
+    assert len(args) >= 2
+    if isinstance( args[0], numpy.ndarray ) and isinstance( args[1], numpy.ndarray ):
+      # args = x, y[, triangles[, mask]], values
+      tri = matplotlib.tri.Triangulation( *args[:-1] )
+      values = args[-1]
+    else:
+      assert len(args) == 2
+      tri, values = args
+      if not isinstance( tri, matplotlib.tri.Triangulation ):
+        tri, edges = triangulate( tri, mergetol )
+      if not isinstance( values, numpy.ndarray ):
+        values = numpy.concatenate( values, axis=0 )
     assert len(tri.x) == len(values)
     mask = ~numpy.isfinite( values )
     if mask.any():
