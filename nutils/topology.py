@@ -912,15 +912,18 @@ class StructuredTopology( Topology ):
     'boundary'
 
     nbounds = len(self.axes) - self.ndims
-    union = EmptyTopology( self.ndims-1 )
-    subtopos = []
+    dirtopos = []
+    subnames = ('left','right'), ('bottom','top'), ('front','back')
+    subtopos = {}
     for idim, axis in enumerate( self.axes ):
-      for side, n in enumerate( (axis.i,axis.j) if axis.isdim and not axis.isperiodic else () ):
-        topo = StructuredTopology( self.root, self.axes[:idim] + (BndAxis(n,n if not axis.isperiodic else 0,nbounds,side),) + self.axes[idim+1:], self.nrefine )
-        subtopos.append( topo )
-        union |= topo
-    subtopos = dict( zip( ('left','right','bottom','top','front','back'), subtopos ) )
-    return union.withsubs( subtopos )
+      if not axis.isdim or axis.isperiodic:
+        continue
+      topos = [ StructuredTopology( self.root, self.axes[:idim] + (BndAxis(n,n if not axis.isperiodic else 0,nbounds,side),) + self.axes[idim+1:], self.nrefine )
+        for side, n in enumerate((axis.i,axis.j)) ]
+      if idim < len(subnames):
+        subtopos.update( zip( subnames[idim], topos ) )
+      dirtopos.append( UnionTopology(topos) )
+    return EmptyTopology() if len(dirtopos) == 0 else UnionTopology( dirtopos ).withsubs( subtopos )
 
   @cache.property
   def interfaces( self ):
