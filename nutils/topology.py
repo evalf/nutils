@@ -649,14 +649,14 @@ class Topology( object ):
         geom_J = function.Tuple(( geom, J ))
         for iiter in range( maxiter ):
           point_xi, J_xi = geom_J.eval( elem, xi )
-          err = point - point_xi
-          if numpy.all( numpy.abs(err) < tol ):
+          err = numpy.linalg.norm( point - point_xi )
+          if err < tol:
             converged = True
             break
           if iiter and err > prev_err:
             break
           prev_err = err
-          xi += numpy.linalg.solve( J_xi, err )
+          xi += numpy.linalg.solve( J_xi, point - point_xi )
         if converged and elem.reference.inside( xi, eps=eps ):
           break
       else:
