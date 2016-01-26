@@ -382,7 +382,6 @@ class Topology( object ):
     diagelems = []
     trielems = []
     for elem in self:
-      assert isinstance( elem.reference, element.NeighborhoodTensorReference )
       head1 = elem.transform[:-1]
       head2 = elem.opposite[:-1]
       if head1 == head2:
