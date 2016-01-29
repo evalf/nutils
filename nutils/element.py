@@ -914,6 +914,13 @@ class Cone( Reference ):
       weights = ( eweights[_,:] * wx[:,_] ).ravel()
     return points, weights
 
+  def getischeme_bezier( self, degree ):
+    assert self.nverts == self.ndims+1
+    spoints, none = getsimplex(self.ndims).getischeme_bezier( degree )
+    offset = self.vertices[0,:]
+    linear = self.vertices[1:,:] - offset
+    return numpy.dot( spoints, linear ) + offset, None
+
   def getischeme_vtk( self ):
     if self.nverts == 4 and self.ndims==3: # tetrahedron
       I = slice(None)
