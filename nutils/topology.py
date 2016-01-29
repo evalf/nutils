@@ -47,6 +47,8 @@ class Topology( object ):
     return iter( self.elements )
 
   def __getitem__( self, item ):
+    if item == ():
+      return self
     raise KeyError( item )
 
   def __invert__( self ):
@@ -380,7 +382,6 @@ class Topology( object ):
     diagelems = []
     trielems = []
     for elem in self:
-      assert isinstance( elem.reference, element.NeighborhoodTensorReference )
       head1 = elem.transform[:-1]
       head2 = elem.opposite[:-1]
       if head1 == head2:
@@ -622,6 +623,47 @@ class Topology( object ):
         used[ dofmap.dofmap[elem.transform] + dofmap.offset ] = True
     return basis[used]
 
+  def locate( self, geom, points, ischeme='vertex', scale=1, tol=1e-12, eps=0, maxiter=100 ):
+    if geom.ndim == 0:
+      geom = geom[_]
+      points = points[...,_]
+    assert geom.shape == (self.ndims,)
+    points = numpy.asarray( points, dtype=float )
+    assert points.ndim == 2 and points.shape[1] == self.ndims
+    vertices = self.elem_eval( geom, ischeme=ischeme, separate=True )
+    bboxes = numpy.array([ numpy.mean(v,axis=0) * (1-scale) + numpy.array([ numpy.min(v,axis=0), numpy.max(v,axis=0) ]) * scale
+      for v in vertices ]) # nelems x {min,max} x ndims
+    vref = element.getsimplex(0)
+    pelems = []
+    for point in points:
+      ielems, = ((point >= bboxes[:,0,:]) & (point <= bboxes[:,1,:])).all(axis=-1).nonzero()
+      for ielem in sorted( ielems, key=lambda i: numpy.linalg.norm(bboxes[i].mean(0)-point) ):
+        converged = False
+        elem = self.elements[ielem]
+        xi, w = elem.reference.getischeme( 'gauss1' )
+        xi = ( numpy.dot(w,xi) / w.sum() )[_] if len(xi) > 1 else xi.copy()
+        linear = function.TransformChain( True, self.ndims ).eval( elem, xi ).split(self.ndims)[1].linear
+        J = function.localgradient( geom, self.ndims )
+        J = J * linear if numpy.ndim( linear ) == 0 else ( J[:,:,_] * linear[_,:,:] ).sum(1)
+        geom_J = function.Tuple(( geom, J ))
+        for iiter in range( maxiter ):
+          point_xi, J_xi = geom_J.eval( elem, xi )
+          err = numpy.linalg.norm( point - point_xi )
+          if err < tol:
+            converged = True
+            break
+          if iiter and err > prev_err:
+            break
+          prev_err = err
+          xi += numpy.linalg.solve( J_xi, point - point_xi )
+        if converged and elem.reference.inside( xi, eps=eps ):
+          break
+      else:
+        raise Exception( 'failed to locate point', point )
+      trans = transform.affine( linear=numpy.zeros(shape=(self.ndims,0),dtype=int), offset=xi[0], isflipped=False )
+      pelems.append( element.Element( vref, elem.transform << trans, elem.opposite << trans ) )
+    return UnstructuredTopology( 0, pelems )
+
 class ItemTopology( Topology ):
   'item topology'
 
@@ -662,11 +704,15 @@ class ItemTopology( Topology ):
   def __getitem__( self, item ):
     'subtopology'
 
-    if not isinstance( item, str ):
+    if not isinstance( item, tuple ):
+      item = item,
+    if len(item) == 0:
+      return self
+    if not isinstance( item[0], str ):
       return self.basetopo.__getitem__( item )
     topo = EmptyTopology( self.ndims )
-    for it in item.split( ',' ):
-      topo |= self.subtopos[it]
+    for name in item[0].split( ',' ):
+      topo |= self.subtopos[name][item[1:]]
     return topo
 
   def __setitem__( self, item, topo ):
@@ -792,15 +838,17 @@ class StructuredTopology( Topology ):
     return numpy.prod( self.shape, dtype=int )
 
   def __getitem__( self, item ):
-    items = (item,) if not isinstance( item, tuple ) else item
-    if not all( isinstance(it,slice) for it in items ):
-      return Topology.__getitem__( self, item )
-    assert len(items) <= self.ndims
+    if not isinstance( item, tuple ):
+      item = item,
+    if not all( isinstance(it,slice) for it in item ) or len(item) > self.ndims:
+      raise KeyError( item )
+    if all( it == slice(None) for it in item ): # shortcut
+      return self
     axes = []
     idim = 0
     for axis in self.axes:
-      if axis.isdim and idim < len(items):
-        s = items[idim]
+      if axis.isdim and idim < len(item):
+        s = item[idim]
         start, stop, stride = s.indices( axis.j - axis.i )
         assert stride == 1
         assert stop > start
@@ -875,15 +923,18 @@ class StructuredTopology( Topology ):
     'boundary'
 
     nbounds = len(self.axes) - self.ndims
-    union = EmptyTopology( self.ndims-1 )
-    subtopos = []
+    dirtopos = []
+    subnames = ('left','right'), ('bottom','top'), ('front','back')
+    subtopos = {}
     for idim, axis in enumerate( self.axes ):
-      for side, n in enumerate( (axis.i,axis.j) if axis.isdim and not axis.isperiodic else () ):
-        topo = StructuredTopology( self.root, self.axes[:idim] + (BndAxis(n,n if not axis.isperiodic else 0,nbounds,side),) + self.axes[idim+1:], self.nrefine )
-        subtopos.append( topo )
-        union |= topo
-    subtopos = dict( zip( ('left','right','bottom','top','front','back'), subtopos ) )
-    return union.withsubs( subtopos )
+      if not axis.isdim or axis.isperiodic:
+        continue
+      topos = [ StructuredTopology( self.root, self.axes[:idim] + (BndAxis(n,n if not axis.isperiodic else 0,nbounds,side),) + self.axes[idim+1:], self.nrefine )
+        for side, n in enumerate((axis.i,axis.j)) ]
+      if idim < len(subnames):
+        subtopos.update( zip( subnames[idim], topos ) )
+      dirtopos.append( UnionTopology(topos) )
+    return EmptyTopology() if len(dirtopos) == 0 else UnionTopology( dirtopos ).withsubs( subtopos )
 
   @cache.property
   def interfaces( self ):
@@ -901,7 +952,7 @@ class StructuredTopology( Topology ):
       itopo = EmptyTopology( self.ndims-1 ) if not bndprops \
          else UnionTopology( StructuredTopology( self.root, self.axes[:idim] + (axis,) + self.axes[idim+1:], self.nrefine ) for axis in bndprops )
       topos.append( itopo )
-    return UnionTopology( topos ).withsubs()
+    return UnionTopology( topos ).withsubs({ 'dir{}'.format(idim): topo for idim, topo in enumerate(topos) })
 
   def basis_spline( self, degree, neumann=(), knots=None, periodic=None, closed=False, removedofs=None ):
     'spline from vertices'
@@ -1251,6 +1302,15 @@ class UnionTopology( Topology ):
     ndims = self._topos[0].ndims
     assert all( topo.ndims == ndims for topo in self._topos )
     Topology.__init__( self, ndims )
+
+  def __getitem__( self, item ):
+    if not isinstance( item, tuple ):
+      item = item,
+    if len(item) == 0:
+      return self
+    if not isinstance( item[0], int ):
+      raise KeyError( item[0] )
+    return self._topos[ item[0] ][ item[1:] ]
 
   def __or__( self, other ):
     if isinstance( other, UnionTopology ):

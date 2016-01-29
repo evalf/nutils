@@ -515,6 +515,12 @@ class LineReference( SimplexReference ):
     n = 2**i+1
     return n, numpy.arange(n//2+1) if ichild == 0 else numpy.arange(n//2,n)
 
+  def inside( self, points, eps=0 ):
+    points = numpy.asarray( points, dtype=float )
+    assert points.ndim == 2 and points.shape[1] == self.ndims
+    vmin, vmax = sorted( self.vertices[:,0] )
+    return ( (points >= vmin-eps) & (points <= vmax+eps) ).all( axis=1 )
+
 class TriangleReference( SimplexReference ):
   '2D simplex'
 
@@ -614,6 +620,12 @@ class TriangleReference( SimplexReference ):
       raise Exception( 'invalid ichild: {}'.format( ichild ) )
 
     return ((N+1)*N)//2, numpy.concatenate([ flatten_child(i,numpy.arange(n-i)) for i in range(n) ])
+
+  def inside( self, points, eps=0 ):
+    points = numpy.asarray( points, dtype=float )
+    assert points.ndim == 2 and points.shape[1] == self.ndims
+    baricentric = numpy.linalg.solve( self.vertices[1:]-self.vertices[0], (points-self.vertices[0]).T ).T
+    return (baricentric >= -eps).all() and (baricentric <= 1+eps).all() and (baricentric.sum(1) <= 1+eps).all()
 
 class TetrahedronReference( SimplexReference ):
   '3D simplex'
@@ -808,6 +820,11 @@ class TensorReference( Reference ):
   @property
   def child_refs( self ):
     return tuple( child1 * child2 for child1 in self.ref1.child_refs for child2 in self.ref2.child_refs )
+
+  def inside( self, points, eps=0 ):
+    points = numpy.asarray( points, dtype=float )
+    assert points.ndim == 2 and points.shape[1] == self.ndims
+    return self.ref1.inside(points[:,:self.ref1.ndims],eps) & self.ref2.inside(points[:,self.ref1.ndims:],eps)
 
 class Cone( Reference ):
   'cone'
