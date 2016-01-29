@@ -93,7 +93,6 @@ class Element( object ):
   def trim( self, levelset, maxrefine, ndivisions, fcache ):
     'trim element along levelset'
 
-    assert not self.__opposite
     return self.reference.trim( (self.transform,levelset), maxrefine, ndivisions, fcache )
 
   @property
