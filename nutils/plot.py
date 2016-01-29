@@ -114,7 +114,7 @@ class PyPlot( BasePlot ):
     for ext in self.imgtype.split( ',' ):
       self.savefig( self.getpath(name,index,ext) )
 
-  def segments( self, points, values=None, **kwargs ):
+  def segments( self, points, color='black', **kwargs ):
     'plot line'
 
     segments = numpy.concatenate( [ numpy.array([xy[:-1],xy[1:]]).swapaxes(0,1) for xy in points ], axis=0 )
@@ -122,8 +122,10 @@ class PyPlot( BasePlot ):
     lc = LineCollection( segments, **kwargs )
     ax = self.gca()
     ax.add_collection( lc )
-    if values is not None:
-      array = numpy.concatenate( [ .5 * ( v[:-1] + v[1:] ) for v in values ], axis=0 )
+    if isinstance( color, str ):
+      lc.set_color( color )
+    else:
+      array = numpy.concatenate( [ .5 * ( v[:-1] + v[1:] ) for v in color ], axis=0 )
       lc.set_array( array )
       self.sci( lc )
     return lc
