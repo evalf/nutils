@@ -314,21 +314,33 @@ class Reference( cache.Immutable ):
     return trimmed
 
   def slice( self, levels, ndivisions ):
+    # slice along levelset by recursing over dimensions
+
     assert len(levels) == self.nverts
     if numpy.all( levels >= 0 ):
       return self
     if numpy.all( levels <= 0 ):
       return self.empty
-    refs = [ edgeref.slice( levels[self.edgevertexmap[iedge]], ndivisions ) for iedge, edgeref in enumerate( self.edge_refs ) ]
-    if refs == list(self.edge_refs):
-      return self
-    if not any( refs ):
-      return self.empty
+
+    nbins = 2**ndivisions
 
     if self.ndims == 1:
-      midpoint = self.vertices[0] + ( self.vertices[1]-self.vertices[0] ) * (levels[0]/(levels[0]-levels[1]))
+
+      l0, l1 = levels
+      xi = numpy.round( l0/(l0-l1) * nbins )
+      if xi in (0,nbins):
+        return self.empty if xi == 0 and l1 < 0 or xi == nbins and l0 < 0 else self
+      v0, v1 = self.vertices
+      midpoint = v0 + (xi/nbins) * (v1-v0)
+      refs = [ PointReference(), EmptyReference(0) ] if l0 < 0 else [ EmptyReference(0), PointReference() ]
 
     else:
+
+      refs = [ edgeref.slice( levels[self.edgevertexmap[iedge]], ndivisions ) for iedge, edgeref in enumerate( self.edge_refs ) ]
+      if refs == list(self.edge_refs):
+        return self
+      if not any( refs ):
+        return self.empty
 
       #TODO: Optimization possible for case in which no EmptyReferences are present
       keep = {}
@@ -351,9 +363,8 @@ class Reference( cache.Immutable ):
         length += wtot
         midpoint += wtot * (trans<<trans2).apply( numeric.dot( weights, points )/weights.sum() )
       midpoint /= length
+      midpoint = numpy.round( midpoint * nbins ) / nbins
 
-    eps = 2**ndivisions
-    midpoint = numpy.round( midpoint * eps ) / eps
     mosaic = MosaicReference( self, refs, midpoint )
     return self.empty if mosaic.volume == 0 else mosaic if mosaic.volume < self.volume else self
 
@@ -486,10 +497,6 @@ class PointReference( SimplexReference ):
 
   def getischeme( self, ischeme ):
     return numpy.zeros((1,0)), numpy.ones(1)
-
-  def slice( self, levels, ndivisions ):
-    level, = levels
-    return self if level > 0 else self.empty
 
 class LineReference( SimplexReference ):
   '1D simplex'
