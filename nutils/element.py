@@ -1266,6 +1266,11 @@ class MosaicReference( Reference ):
 
   def __init__( self, baseref, edge_refs, midpoint ):
     assert len(edge_refs) == baseref.nedges
+    while isinstance( baseref, MosaicReference ) and not any( edge_refs[baseref.baseref.nedges:baseref.nedges] ):
+      # simplify baseref layering if possible
+      edge_refs = edge_refs[:baseref.baseref.nedges] + edge_refs[baseref.nedges:]
+      baseref = baseref.baseref
+
     self.baseref = baseref
     self._edge_refs = tuple( edge_refs )
     self._midpoint = midpoint
