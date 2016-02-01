@@ -1090,7 +1090,7 @@ class OwnChildReference( Reference ):
 
   @property
   def edge_refs( self ):
-    return self.baseref.edge_refs
+    return [ OwnChildReference(edge) for edge in self.baseref.edge_refs ]
 
   def stdfunc( self, degree ):
     return self.baseref.stdfunc( degree )
