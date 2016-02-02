@@ -52,7 +52,7 @@ def main( nelems=20, degree=1, timescale=.5, tol=1e-5, ndims=1, endtime=0, withp
       Am = -function.outer( ( basis[:,_] * beta ).div(geom), basis )
       dmatrix = domain.integrate( Am, geometry=geom, ischeme='gauss5' )
       alpha = .5 * function.sign( function.mean(beta).dotnorm(geom) )
-      Ai = function.outer( function.jump(basis), ( function.mean(basis[:,_]*beta) + alpha * function.jump(basis[:,_]*beta) ).dotnorm(geom) )
+      Ai = function.outer( function.jump(basis), ( alpha * function.jump(basis[:,_]*beta) - function.mean(basis[:,_]*beta) ).dotnorm(geom) )
       dmatrix += domain.interfaces.integrate( Ai, geometry=geom, ischeme='gauss5' )
       lhs, info = ( matrix0 + dmatrix ).solve( rhs, lhs0=lhs, tol=tol, restart=999, precon='spilu', info=True )
       if info.niter == 0:

@@ -6,6 +6,15 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+Changed: jump sign
+
+  The jump operator has been changed according to the following
+  definition: jump(f) := opposite(f) - f. In words, it represents the
+  value of the argument from the side that the normal is pointing
+  toward, minus the value from the side that the normal is pointing away
+  from. Compared to the old definition this means the sign is flipped.
+
+
 Changed: ItemTopology wrapper
 
   Topological groups (domain['name']) are reimplemented in a separate
