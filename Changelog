@@ -6,6 +6,21 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+Changed: ItemTopology wrapper
+
+  Topological groups (domain['name']) are reimplemented in a separate
+  wrapping ItemTopology object. The reason for this is better
+  consistency among the several topology objects and allowing for lazy
+  evaluation without introducing cyclic references. The primary
+  operations (integrate, elem_eval, boundary, etc) haven't changed.
+  However, class-specific attributes such as StructuredTopology.shape
+  are now shielded by the wrapper. Pending a better solution they can
+  still be accessed via the .basetopo attribute.
+
+  >> domain, geom = mesh.rectilinear( [[1,2,3]] )
+  >> domain.basetopo.shape
+
+
 Changed: Topology objects
 
   The Topology base class no longer takes a list of elements in its
