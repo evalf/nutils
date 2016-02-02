@@ -156,10 +156,6 @@ class Reference( cache.Immutable ):
   def children( self ):
     return list( zip( self.child_transforms, self.child_refs ) )
 
-  @property
-  def simplices( self ):
-    return [ (transform.identity,self) ]
-
   @cache.property
   def childedgemap( self ):
     # ichild>iedge --> jchild>jedge, isouter=False (corresponding edge)
@@ -189,6 +185,21 @@ class Reference( cache.Immutable ):
 
   @cache.property
   def ribbons( self ):
+    # tuples of (iedge1,jedge1), (iedge2,jedge2) pairs
+    assert self.ndims >= 2
+    ribbons = tuple( self._ribbons )
+    if core.getprop( 'selfcheck', False ):
+      for (iedge1,iedge2), (jedge1,jedge2) in ribbons:
+        itrans = self.edge_transforms[iedge1] << self.edge_refs[iedge1].edge_transforms[iedge2]
+        jtrans = self.edge_transforms[jedge1] << self.edge_refs[jedge1].edge_transforms[jedge2]
+        assert ( itrans.linear == jtrans.linear ).all() and ( itrans.offset == jtrans.offset ).all()
+        iref = self.edge_refs[iedge1].edge_refs[iedge2]
+        jref = self.edge_refs[jedge1].edge_refs[jedge2]
+        assert iref == jref
+    return ribbons
+
+  @property
+  def _ribbons( self ):
     # tuples of (iedge1,jedge1), (iedge2,jedge2) pairs
     assert self.ndims >= 2
     transforms = {}
@@ -302,21 +313,33 @@ class Reference( cache.Immutable ):
     return trimmed
 
   def slice( self, levels, ndivisions ):
+    # slice along levelset by recursing over dimensions
+
     assert len(levels) == self.nverts
     if numpy.all( levels >= 0 ):
       return self
     if numpy.all( levels <= 0 ):
       return self.empty
-    refs = [ edgeref.slice( levels[self.edgevertexmap[iedge]], ndivisions ) for iedge, edgeref in enumerate( self.edge_refs ) ]
-    if refs == list(self.edge_refs):
-      return self
-    if not any( refs ):
-      return self.empty
+
+    nbins = 2**ndivisions
 
     if self.ndims == 1:
-      midpoint = self.vertices[0] + ( self.vertices[1]-self.vertices[0] ) * (levels[0]/(levels[0]-levels[1]))
+
+      l0, l1 = levels
+      xi = numpy.round( l0/(l0-l1) * nbins )
+      if xi in (0,nbins):
+        return self.empty if xi == 0 and l1 < 0 or xi == nbins and l0 < 0 else self
+      v0, v1 = self.vertices
+      midpoint = v0 + (xi/nbins) * (v1-v0)
+      refs = [ edgeref if levels[self.edgevertexmap[iedge]] > 0 else edgeref.empty for iedge, edgeref in enumerate( self.edge_refs ) ]
 
     else:
+
+      refs = [ edgeref.slice( levels[self.edgevertexmap[iedge]], ndivisions ) for iedge, edgeref in enumerate( self.edge_refs ) ]
+      if refs == list(self.edge_refs):
+        return self
+      if not any( refs ):
+        return self.empty
 
       #TODO: Optimization possible for case in which no EmptyReferences are present
       keep = {}
@@ -339,15 +362,12 @@ class Reference( cache.Immutable ):
         length += wtot
         midpoint += wtot * (trans<<trans2).apply( numeric.dot( weights, points )/weights.sum() )
       midpoint /= length
+      midpoint = numpy.round( midpoint * nbins ) / nbins
 
-    eps = 2**ndivisions
-    midpoint = numpy.round( midpoint * eps ) / eps
     mosaic = MosaicReference( self, refs, midpoint )
     return self.empty if mosaic.volume == 0 else mosaic if mosaic.volume < self.volume else self
 
   def cone( self, trans, tip ):
-    assert trans.fromdims == self.ndims
-    assert trans.todims == len(tip)
     return Cone( self, trans, tip )
 
   def check_edges( self, tol=1e-10 ):
@@ -414,19 +434,24 @@ class EmptyReference( Reference ):
 class SimplexReference( Reference ):
   'simplex reference'
 
-  def __init__( self, vertices ):
-    nverts, ndims = vertices.shape
-    assert nverts == ndims+1
-    if ndims:
-      self.edge_refs = (getsimplex(ndims-1),) * (ndims+1)
-      self.x0 = vertices[0]
-      self.dx = vertices[1:] - self.x0
-      self.volume = numeric.det_exact(self.dx) / math.factorial(ndims)
-      #assert self.volume != 0
-      self.inverted = self.volume < 0
-      if self.inverted:
-        self.volume = -self.volume
-    Reference.__init__( self, vertices )
+  def __init__( self, ndims ):
+    Reference.__init__( self, numpy.concatenate( [ numpy.zeros(ndims,dtype=int)[_,:], numpy.eye(ndims,dtype=int) ], axis=0 ) )
+    self.volume = 1. / math.factorial(ndims)
+    if self.ndims > 0 and core.getprop( 'selfcheck', False ):
+      self.check_edges()
+
+  @cache.property
+  def edge_refs( self ):
+    return (getsimplex(self.ndims-1),) * (self.ndims+1)
+
+  @cache.property
+  def edge_transforms( self ):
+    assert self.ndims > 0
+    return tuple( transform.simplex( self.vertices[list(range(i))+list(range(i+1,self.ndims+1))], isflipped=i%2==1 ) for i in range(self.ndims+1) )
+
+  @property
+  def _ribbons( self ):
+    return [ ((iedge1,iedge2),(iedge2+1,iedge1)) for iedge1 in range(self.ndims+1) for iedge2 in range(iedge1,self.ndims) ]
 
   def transform( self, trans ):
     assert trans in self.rotations
@@ -440,10 +465,6 @@ class SimplexReference( Reference ):
   def edge2vertex( self ):
     return ~numpy.eye( self.nverts, dtype=bool )
 
-  @property
-  def child_refs( self ):
-    return (self,) * len(self.child_transforms)
-
   def getischeme_vtk( self ):
     return self.vertices, None
 
@@ -452,10 +473,9 @@ class SimplexReference( Reference ):
       return self.vertices, None
     return self.getischeme_bezier( 2**n+1 )
 
-  def cone( self, trans, tip ):
-    assert trans.fromdims == self.ndims
-    assert trans.todims == len(tip)
-    return Simplex_by_dim[self.ndims+1]( numpy.vstack([ [tip], trans.apply( self.vertices ) ]) )
+  @property
+  def simplices( self ):
+    return [ (transform.identity,self) ]
 
 class PointReference( SimplexReference ):
   '0D simplex'
@@ -463,27 +483,34 @@ class PointReference( SimplexReference ):
   volume = 1
   rotations = transform.identity,
 
-  def __init__( self, vertices ):
-    SimplexReference.__init__( self, vertices )
-    self.child_transforms = transform.identity,
+  def __init__( self ):
+    SimplexReference.__init__( self, ndims=0 )
+
+  @property
+  def child_transforms( self ):
+    return transform.identity,
+
+  @property
+  def child_refs( self ):
+    return self,
 
   def getischeme( self, ischeme ):
     return numpy.zeros((1,0)), numpy.ones(1)
 
-  def slice( self, levels, ndivisions ):
-    level, = levels
-    return self if level > 0 else self.empty
-
 class LineReference( SimplexReference ):
   '1D simplex'
 
-  def __init__( self, vertices ):
+  def __init__( self ):
     self._bernsteincache = [] # TEMPORARY
-    SimplexReference.__init__( self, vertices )
-    self.edge_transforms = transform.simplex( vertices[1:], isflipped=self.inverted ), transform.simplex( vertices[:1], isflipped=not self.inverted )
-    self.child_transforms = transform.affine(1,[0],2), transform.affine(1,[1],2)
-    if core.getprop( 'selfcheck', False ):
-      self.check_edges()
+    SimplexReference.__init__( self, ndims=1 )
+
+  @cache.property
+  def child_transforms( self ):
+    return transform.affine(1,[0],2), transform.affine(1,[1],2)
+
+  @property
+  def child_refs( self ):
+    return self, self
 
   @cache.property
   def rotations( self ):
@@ -498,13 +525,13 @@ class LineReference( SimplexReference ):
   def getischeme_gauss( self, degree ):
     assert isinstance( degree, int ) and degree >= 0
     x, w = gauss( degree )
-    return self.x0 + x[:,_] * self.dx, w * self.volume
+    return x[:,_], w * self.volume
 
   def getischeme_uniform( self, n ):
-    return self.x0 + ( numpy.arange(.5,n) / n )[:,_] * self.dx, numeric.appendaxes( self.volume/n, n )
+    return ( numpy.arange(.5,n) / n )[:,_], numeric.appendaxes( self.volume/n, n )
 
   def getischeme_bezier( self, np ):
-    return self.x0 + numpy.linspace( 0, 1, np )[:,_] * self.dx, None
+    return numpy.linspace( 0, 1, np )[:,_], None
 
   def subvertex( self, ichild, i ):
     if i == 0:
@@ -523,12 +550,16 @@ class LineReference( SimplexReference ):
 class TriangleReference( SimplexReference ):
   '2D simplex'
 
-  def __init__( self, vertices ):
-    SimplexReference.__init__( self, vertices )
-    self.edge_transforms = tuple( transform.simplex( vertices[I], isflipped=self.inverted ) for I in [slice(1,None),slice(None,None,-2),slice(2)] )
-    self.child_transforms = transform.affine(1,[0,0],2), transform.affine(1,[0,1],2), transform.affine(1,[1,0],2), transform.affine([[0,-1],[-1,0]],[1,1],2,isflipped=True )
-    if core.getprop( 'selfcheck', False ):
-      self.check_edges()
+  def __init__( self ):
+    SimplexReference.__init__( self, ndims=2 )
+
+  @cache.property
+  def child_transforms( self ):
+    return transform.affine(1,[0,0],2), transform.affine(1,[0,1],2), transform.affine(1,[1,0],2), transform.affine([[-1,0],[1,1]],[1,0],2)
+
+  @property
+  def child_refs( self ):
+    return self, self, self, self
 
   def stdfunc( self, degree ):
     return PolyTriangle(degree)
@@ -536,7 +567,7 @@ class TriangleReference( SimplexReference ):
   def getischeme_contour( self, n ):
     p = numpy.arange( n+1, dtype=float ) / (n+1)
     z = numpy.zeros_like( p )
-    return self.x0 + numpy.dot( numpy.hstack(( [1-p,p], [z,1-p], [p,z] )).T, self.dx ), None
+    return numpy.hstack(( [1-p,p], [z,1-p], [p,z] )).T, None
 
   def getischeme_gauss( self, degree ):
     '''get integration scheme
@@ -578,7 +609,7 @@ class TriangleReference( SimplexReference ):
     if degree > 7:
       warnings.warn( 'inexact integration for polynomial of degree %i'.format(degree) )
 
-    return self.x0 + numpy.dot( numpy.concatenate( [ numpy.take(c,i) for i, c, w in icw ], axis=0 ), self.dx ), \
+    return numpy.concatenate( [ numpy.take(c,i) for i, c, w in icw ], axis=0 ), \
            numpy.concatenate( [ [w*self.volume] * len(i) for i, c, w in icw ] )
 
   def getischeme_uniform( self, n ):
@@ -591,11 +622,11 @@ class TriangleReference( SimplexReference ):
     flip = coords.sum(0) > 1
     coords[:,flip] = 1 - coords[::-1,flip]
     weights = numeric.appendaxes( self.volume/nn, nn )
-    return self.x0 + numpy.dot( coords.T, self.dx ), weights
+    return coords.T, weights
 
   def getischeme_bezier( self, np ):
     points = numpy.linspace( 0, 1, np )
-    return self.x0 + numpy.dot( numpy.array([ [x,y] for i, y in enumerate(points) for x in points[:np-i] ]), self.dx ), None
+    return numpy.array([ [x,y] for i, y in enumerate(points) for x in points[:np-i] ]), None
 
   def subvertex( self, ichild, irefine ):
     if irefine == 0:
@@ -614,7 +645,7 @@ class TriangleReference( SimplexReference ):
     elif ichild == 2: # lower right
       flatten_child = lambda i, j: flatten_parent( i, n-1+j )
     elif ichild == 3: # inverted
-      flatten_child = lambda i, j: flatten_parent( n-1-j, n-1-i )
+      flatten_child = lambda i, j: flatten_parent( i+j, n-1-j )
     else:
       raise Exception( 'invalid ichild: {}'.format( ichild ) )
 
@@ -629,11 +660,8 @@ class TriangleReference( SimplexReference ):
 class TetrahedronReference( SimplexReference ):
   '3D simplex'
 
-  def __init__( self, vertices ):
-    SimplexReference.__init__( self, vertices )
-    self.edge_transforms = tuple( transform.simplex( vertices[I], isflipped=self.inverted ) for I in [[1,2,3],[0,3,2],[3,0,1],[2,1,0]] )
-    if core.getprop( 'selfcheck', False ):
-      self.check_edges()
+  def __init__( self ):
+    SimplexReference.__init__( self, ndims=3 )
 
   def getischeme_gauss( self, degree ):
     '''get integration scheme
@@ -689,10 +717,8 @@ class TetrahedronReference( SimplexReference ):
     if degree > 8:
       warnings.warn( 'inexact integration for polynomial of degree %i'.format(degree) )
 
-    return self.x0 + numpy.dot( numpy.concatenate( [ numpy.take(c,i) for i, c, w in icw ], axis=0 ), self.dx ), \
+    return numpy.concatenate( [ numpy.take(c,i) for i, c, w in icw ], axis=0 ), \
            numpy.concatenate( [ [w*self.volume] * len(i) for i, c, w in icw ] )
-
-Simplex_by_dim = PointReference, LineReference, TriangleReference, TetrahedronReference
 
 class TensorReference( Reference ):
   'tensor reference'
@@ -808,9 +834,28 @@ class TensorReference( Reference ):
     return tuple([ edge1 * self.ref2 for edge1 in self.ref1.edge_refs ]
                + [ self.ref1 * edge2 for edge2 in self.ref2.edge_refs ])
 
+  @property
+  def _ribbons( self ):
+    ribbons = []
+    for iedge1 in range( self.ref1.nedges ):
+      #iedge = self.ref1.edge_refs[iedge] * self.ref2
+      for iedge2 in range( self.ref2.nedges ):
+        #jedge = self.ref1 * self.ref2.edge_refs[jedge]
+        jedge1 = self.ref1.nedges + iedge2
+        jedge2 = iedge1
+        if self.ref1.ndims > 1:
+          iedge2 += self.ref1.edge_refs[iedge1].nedges
+        ribbons.append( ((iedge1,iedge2),(jedge1,jedge2)) )
+    if self.ref1.ndims >= 2:
+      ribbons.extend( self.ref1.ribbons )
+    if self.ref2.ndims >= 2:
+      ribbons.extend( ((iedge1+self.ref1.nedges,iedge2+self.ref1.nedges),
+                       (jedge1+self.ref1.nedges,jedge2+self.ref1.nedges)) for (iedge1,iedge2), (jedge1,jedge2) in self.ref2.ribbons )
+    return ribbons
+
   @cache.property
   def child_transforms( self ):
-    return [ transform.affine( trans1.linear if trans1.linear.ndim == 0 and trans1.linear == trans2.linear
+    return [ transform.affine( trans1.linear if trans1.linear.ndim == 0 and trans2.linear.ndim == 0 and trans1.linear == trans2.linear
                           else numeric.blockdiag([ trans1.linear, trans2.linear ]),
                                numpy.concatenate([ trans1.offset, trans2.offset ]) )
             for trans1 in self.ref1.child_transforms
@@ -825,15 +870,20 @@ class TensorReference( Reference ):
     assert points.ndim == 2 and points.shape[1] == self.ndims
     return self.ref1.inside(points[:,:self.ref1.ndims],eps) & self.ref2.inside(points[:,self.ref1.ndims:],eps)
 
+  @property
+  def simplices( self ):
+    return [ (transform.identity,self) ]
+
 class Cone( Reference ):
   'cone'
 
   def __init__( self, edgeref, etrans, tip ):
+    assert etrans.fromdims == edgeref.ndims
+    assert etrans.todims == len(tip)
     vertices = numpy.vstack([ [tip], etrans.apply( edgeref.vertices ) ])
     Reference.__init__( self, vertices )
     self.edgeref = edgeref
     self.etrans = etrans
-    self.axisref = getsimplex(1)
     self.tip = tip
     ext = etrans.ext
     self.extnorm = numpy.linalg.norm( ext )
@@ -849,35 +899,57 @@ class Cone( Reference ):
   @cache.property
   def edge_transforms( self ):
     edge_transforms = [ self.etrans ]
-    for trans, edge in self.edgeref.edges:
-      if edge:
-        b = self.etrans.apply( trans.offset )
-        A = numpy.hstack([ numpy.dot( self.etrans.linear, trans.linear ), (self.tip-b)[:,_] ])
-        newtrans = transform.affine( A, b, isflipped=self.etrans.isflipped^trans.isflipped^(self.ndims%2==1) ) # isflipped logic tested up to 3D
-        edge_transforms.append( newtrans )
+    if self.edgeref.ndims > 0:
+      for trans, edge in self.edgeref.edges:
+        if edge:
+          b = self.etrans.apply( trans.offset )
+          A = numpy.hstack([ numpy.dot( self.etrans.linear, trans.linear ), (self.tip-b)[:,_] ])
+          newtrans = transform.affine( A, b, isflipped=self.etrans.isflipped^trans.isflipped^(self.ndims%2==1) ) # isflipped logic tested up to 3D
+          edge_transforms.append( newtrans )
+    else:
+      edge_transforms.append( transform.affine( numpy.zeros((1,0)), self.tip, isflipped=not self.etrans.isflipped ) )
     return edge_transforms
 
   @cache.property
   def edge_refs( self ):
-    extrudetrans = transform.affine( numpy.eye(self.ndims-1)[:,:-1], numpy.zeros(self.ndims-1), isflipped=False )
-    tip = numpy.array( [0]*(self.ndims-2)+[1], dtype=float )
-    return [ self.edgeref ] + [ edge.cone( extrudetrans, tip ) for edge in self.edgeref.edge_refs if edge ]
+    edge_refs = [ self.edgeref ]
+    if self.edgeref.ndims > 0:
+      extrudetrans = transform.affine( numpy.eye(self.ndims-1)[:,:-1], numpy.zeros(self.ndims-1), isflipped=self.ndims%2==0 )
+      tip = numpy.array( [0]*(self.ndims-2)+[1], dtype=float )
+      edge_refs.extend( edge.cone( extrudetrans, tip ) for edge in self.edgeref.edge_refs if edge )
+    else:
+      edge_refs.append( getsimplex(0) )
+    return edge_refs
 
   def getischeme_gauss( self, degree ):
-    epoints, eweights = self.edgeref.getischeme( 'gauss{}'.format(degree) )
-    tpoints, tweights = self.axisref.getischeme_gauss( degree + self.ndims - 1 )
-    tx, = tpoints.T
-    points = ( tx[:,_,_] * (self.etrans.apply(epoints)-self.tip)[_,:,:] + self.tip ).reshape( -1, self.ndims )
-    wx = tx**(self.ndims-1) * tweights * self.extnorm * self.height
-    weights = ( eweights[_,:] * wx[:,_] ).ravel()
+    if self.nverts == self.ndims+1: # simplex
+      spoints, sweights = getsimplex(self.ndims).getischeme_gauss( degree )
+      offset = self.vertices[0,:]
+      linear = self.vertices[1:,:] - offset
+      points = numpy.dot( spoints, linear ) + offset
+      weights = sweights * abs(numpy.linalg.det(linear))
+    else:
+      epoints, eweights = self.edgeref.getischeme( 'gauss{}'.format(degree) )
+      tpoints, tweights = getsimplex(1).getischeme_gauss( degree + self.ndims - 1 )
+      tx, = tpoints.T
+      points = ( tx[:,_,_] * (self.etrans.apply(epoints)-self.tip)[_,:,:] + self.tip ).reshape( -1, self.ndims )
+      wx = tx**(self.ndims-1) * tweights * self.extnorm * self.height
+      weights = ( eweights[_,:] * wx[:,_] ).ravel()
     return points, weights
 
+  def getischeme_bezier( self, degree ):
+    assert self.nverts == self.ndims+1
+    spoints, none = getsimplex(self.ndims).getischeme_bezier( degree )
+    offset = self.vertices[0,:]
+    linear = self.vertices[1:,:] - offset
+    return numpy.dot( spoints, linear ) + offset, None
+
   def getischeme_vtk( self ):
-    if self.nverts == 4 and self.ndims==3:
+    if self.nverts == 4 and self.ndims==3: # tetrahedron
       I = slice(None)
-    elif self.nverts == 5 and self.ndims==3:
+    elif self.nverts == 5 and self.ndims==3: # pyramid
       I = numpy.array([1,2,4,3,0])
-    elif self.nverts == 3 and self.ndims==2:
+    elif self.nverts == 3 and self.ndims==2: # triangle
       I = slice(None)
     else:
       raise Exception( 'invalid number of points: {}'.format(self.nverts) )
@@ -885,7 +957,7 @@ class Cone( Reference ):
 
   @property
   def simplices( self ):
-    if self.edgeref.ndims == 2 and isinstance( self.edgeref, TensorReference ): # square-based pyramids are ok
+    if self.nverts == self.ndims+1 or self.edgeref.ndims == 2 and self.edgeref.nverts == 4: # simplices and square-based pyramids are ok
       return [ ( transform.identity, self ) ]
     return [ ( transform.identity, ref.cone(self.etrans<<trans,self.tip) ) for trans, ref in self.edgeref.simplices ]
 
@@ -1041,7 +1113,7 @@ class OwnChildReference( Reference ):
 
   @property
   def edge_refs( self ):
-    return self.baseref.edge_refs
+    return [ OwnChildReference(edge) for edge in self.baseref.edge_refs ]
 
   def stdfunc( self, degree ):
     return self.baseref.stdfunc( degree )
@@ -1061,6 +1133,9 @@ class WithChildrenReference( Reference ):
   'base reference with explicit children'
 
   def __init__( self, baseref, child_refs ):
+    while isinstance( baseref, WithChildrenReference ):
+      # remove previous withchildren layer
+      baseref = baseref.baseref
     assert isinstance( child_refs, tuple ) and len(child_refs) == baseref.nchildren and any(child_refs) and child_refs != baseref.child_refs
     assert all( isinstance(child_ref,Reference) for child_ref in child_refs )
     assert all( child_ref.ndims == baseref.ndims for child_ref in child_refs )
@@ -1210,6 +1285,11 @@ class MosaicReference( Reference ):
 
   def __init__( self, baseref, edge_refs, midpoint ):
     assert len(edge_refs) == baseref.nedges
+    while isinstance( baseref, MosaicReference ) and not any( edge_refs[baseref.baseref.nedges:baseref.nedges] ):
+      # simplify baseref layering if possible
+      edge_refs = edge_refs[:baseref.baseref.nedges] + edge_refs[baseref.nedges:]
+      baseref = baseref.baseref
+
     self.baseref = baseref
     self._edge_refs = tuple( edge_refs )
     self._midpoint = midpoint
@@ -1241,7 +1321,7 @@ class MosaicReference( Reference ):
         if eisubj:
           newedges.append(( self.edge_transforms[iedge1], Ei.edge_transforms[iedge2], eisubj ))
 
-      extrudetrans = transform.affine( numpy.eye(baseref.ndims-1)[:,:-1], numpy.zeros(baseref.ndims-1), isflipped=False )
+      extrudetrans = transform.affine( numpy.eye(baseref.ndims-1)[:,:-1], numpy.zeros(baseref.ndims-1), isflipped=baseref.ndims%2==0 )
       tip = numpy.array( [0]*(baseref.ndims-2)+[1], dtype=float )
       for etrans, trans, edge in newedges:
         b = etrans.apply( trans.offset )
@@ -1713,8 +1793,8 @@ def gauss( degree ):
   return gaussn
 
 def getsimplex( ndims ):
-  vertices = numpy.concatenate( [ numpy.zeros(ndims,dtype=int)[_,:], numpy.eye(ndims,dtype=int) ], axis=0 )
-  return Simplex_by_dim[ndims]( vertices )
+  Simplex_by_dim = PointReference, LineReference, TriangleReference, TetrahedronReference
+  return Simplex_by_dim[ndims]()
 
 def index_or_append( items, item ):
   try:

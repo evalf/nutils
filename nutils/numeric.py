@@ -371,6 +371,8 @@ def invorder( n ):
 
 def blockdiag( args ):
   args = [ numpy.asarray(arg) for arg in args ]
+  args = [ arg[numpy.newaxis,numpy.newaxis] if arg.ndim == 0 else arg for arg in args ]
+  assert all( arg.ndim == 2 for arg in args )
   shapes = numpy.array([ arg.shape for arg in args ])
   blockdiag = numpy.zeros( shapes.sum(0) )
   for arg, (i,j) in zip( args, shapes.cumsum(0) ):
