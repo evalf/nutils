@@ -332,7 +332,7 @@ class Reference( cache.Immutable ):
         return self.empty if xi == 0 and l1 < 0 or xi == nbins and l0 < 0 else self
       v0, v1 = self.vertices
       midpoint = v0 + (xi/nbins) * (v1-v0)
-      refs = [ PointReference(), EmptyReference(0) ] if l0 < 0 else [ EmptyReference(0), PointReference() ]
+      refs = [ edgeref if levels[self.edgevertexmap[iedge]] > 0 else edgeref.empty for iedge, edgeref in enumerate( self.edge_refs ) ]
 
     else:
 
