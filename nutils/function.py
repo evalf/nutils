@@ -1427,11 +1427,16 @@ class BlockAdd( ArrayFunc ):
 
     self.funcs = tuple( funcs )
     shape = _jointshape( *( func.shape for func in self.funcs ) )
+    if not isinstance( funcs[-1], Evaluable ):
+      self.const = funcs[-1]
+      funcs = funcs[:-1]
+    else:
+      self.const = 0
     ArrayFunc.__init__( self, args=funcs, shape=shape )
 
   def evalf( self, *args ):
     assert all( arg.ndim == self.ndim+1 for arg in args )
-    return functools.reduce( operator.add, args )
+    return functools.reduce( operator.add, args ) + self.const
 
   def _add( self, other ):
     return blockadd( self, other )
