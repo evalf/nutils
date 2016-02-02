@@ -1117,6 +1117,9 @@ class WithChildrenReference( Reference ):
   'base reference with explicit children'
 
   def __init__( self, baseref, child_refs ):
+    while isinstance( baseref, WithChildrenReference ):
+      # remove previous withchildren layer
+      baseref = baseref.baseref
     assert isinstance( child_refs, tuple ) and len(child_refs) == baseref.nchildren and any(child_refs) and child_refs != baseref.child_refs
     assert all( isinstance(child_ref,Reference) for child_ref in child_refs )
     assert all( child_ref.ndims == baseref.ndims for child_ref in child_refs )
