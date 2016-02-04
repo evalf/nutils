@@ -30,7 +30,7 @@ def check( ndims, curved ):
 
     fg1 = domain.integrate( ( f * g.grad(geom) ).sum(), geometry=geom, ischeme='gauss2' )
     fg2 = domain.boundary.integrate( (f*g).dotnorm(geom), geometry=geom, ischeme='gauss2' ) \
-        + domain.interfaces.integrate( function.jump(f*g).dotnorm(geom), geometry=geom, ischeme='gauss2' ) \
+        - domain.interfaces.integrate( function.jump(f*g).dotnorm(geom), geometry=geom, ischeme='gauss2' ) \
         - domain.integrate( f.div(geom) * g, geometry=geom, ischeme='gauss2' )
 
     numpy.testing.assert_almost_equal( fg1, fg2 )
