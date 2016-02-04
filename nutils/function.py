@@ -844,6 +844,8 @@ class Function( ArrayFunc ):
             F = F * (invlinear**self.igrad)
         fvals.append( F )
       head = head.sliceto(-1)
+    if not fvals:
+      return numpy.zeros( (0,)+(self.ndims,)*self.igrad )
     return fvals[0] if len(fvals) == 1 else numpy.concatenate( fvals, axis=-1-self.igrad )
 
   def _opposite( self ):
