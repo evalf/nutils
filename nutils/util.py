@@ -561,11 +561,11 @@ def run( *functions ):
       gitversion = version + '.' + githash(__file__,2)[:8]
     except:
       gitversion = version
-    log.info( 'nutils v%s\n' % gitversion )
+    log.user( 'nutils v%s\n' % gitversion )
 
     commandline = [ ' '.join([ scriptname, func.__name__ ]) ] + [ '  --%s=%s' % item for item in kwargs.items() ]
-    log.info( ' \\\n'.join( commandline ) + '\n' )
-    log.info( 'start %s\n' % time.ctime() )
+    log.user( ' \\\n'.join( commandline ) + '\n' )
+    log.user( 'start %s\n' % time.ctime() )
 
     warnings.resetwarnings()
 
@@ -598,9 +598,9 @@ def run( *functions ):
     minutes = dt // 60 - 60 * hours
     seconds = dt // 1 - 60 * minutes - 3600 * hours
 
-    log.info()
-    log.info( 'finish %s\n' % time.ctime() )
-    log.info( 'elapsed %02.0f:%02.0f:%02.0f' % ( hours, minutes, seconds ) )
+    log.user()
+    log.user( 'finish %s\n' % time.ctime() )
+    log.user( 'elapsed %02.0f:%02.0f:%02.0f' % ( hours, minutes, seconds ) )
 
     if core.getprop( 'uncollected_summary', False ):
       debug.trace_uncollected()

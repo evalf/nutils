@@ -721,6 +721,9 @@ class ItemTopology( Topology ):
     assert all( elem.transform in self.basetopo.edict for elem in topo ), 'group %r is not a subtopology' % item
     self.subtopos[item] = topo.withsubs()
 
+  def setdefault( self, item, topo ):
+    return self.subtopos.setdefault( item, topo )
+
   def __invert__( self ):
     subtopos = { name[1:] if name[0] == '~' else '~'+name: ~topo for name, topo in self.subtopos.items() }
     return ( ~self.basetopo ).withsubs( subtopos )
