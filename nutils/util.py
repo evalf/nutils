@@ -46,6 +46,21 @@ class _SuppressedOutput( object ):
 
 suppressed_output = _SuppressedOutput()
 
+class BufferStream( object ):
+  '''Stream objects that silently builds a string buffer.'''
+
+  def __init__( self ):
+    self.buf = []
+
+  def __str__( self ):
+    return ''.join( self.buf )
+
+  def write( self, text ):
+    self.buf.append( text )
+
+  def writelines( self, lines ):
+    self.buf.extend( lines )
+
 class Product( object ):
   def __init__( self, iter1, iter2 ):
     self.iter1 = iter1
@@ -525,88 +540,99 @@ def run( *functions ):
   htmlfile.write( '<link rel="stylesheet" type="text/css" href="../../../../../style.css">\n' )
   htmlfile.write( '<link rel="stylesheet" type="text/css" href="../../../../../custom.css">\n' )
   htmlfile.write( '</head><body><pre>\n' )
-  htmlfile.write( '<span id="navbar">goto: <a class="nav_latest" href="../../../../log.html?{1:}">latest {0:}</a> | <a class="nav_latestall" href="../../../../../log.html?{1:}">latest overall</a> | <a class="nav_index" href="../../../../../">index</a></span>\n\n'.format( scriptname, token ) )
-  htmlfile.flush()
+  htmlfile.write( '<span id="navbar">goto: <a class="nav_latest" href="../../../../log.html?{1:}">latest {0:}</a> | <a class="nav_latestall" href="../../../../../log.html?{1:}">latest overall</a> | <a class="nav_index" href="../../../../../">index</a></span>\n'.format( scriptname, token ) )
+
+  textlog = log._mklog()
+
+  __outdir__ = outdir
+  __cachedir__ = basedir + 'cache'
 
   try:
+    import signal
+    signal.signal( signal.SIGTSTP, debug.signal_handler ) # start traceback explorer at ^Z
+  except Exception as e:
+    log.warning( 'failed to install signal handler:', e )
 
-    __log__ = log.Log( log.TeeStreamFactory( log.HtmlStreamFactory(htmlfile), log.StdoutStreamFactory() ) )
-    __outdir__ = outdir
-    __cachedir__ = basedir + 'cache'
+  try:
+    gitversion = version + '.' + githash(__file__,2)[:8]
+  except:
+    gitversion = version
+  log.info( 'nutils v%s\n' % gitversion )
 
-    try:
-      import signal
-      signal.signal( signal.SIGTSTP, debug.signal_handler ) # start traceback explorer at ^Z
-    except Exception as e:
-      log.warning( 'failed to install signal handler:', e )
+  commandline = [ ' '.join([ scriptname, func.__name__ ]) ] + [ '  --%s=%s' % item for item in kwargs.items() ]
+  ctime = time.ctime()
 
-    try:
-      gitversion = version + '.' + githash(__file__,2)[:8]
-    except:
-      gitversion = version
-    log.info( 'nutils v%s\n' % gitversion )
+  textlog.write( 'info', ' \\\n'.join( commandline ) + '\n' )
+  textlog.write( 'info', 'start %s\n' % ctime )
 
-    commandline = [ ' '.join([ scriptname, func.__name__ ]) ] + [ '  --%s=%s' % item for item in kwargs.items() ]
-    log.info( ' \\\n'.join( commandline ) + '\n' )
-    log.info( 'start %s\n' % time.ctime() )
+  htmlfile.write( '<span class="info">\n' )
+  htmlfile.write( '{} {}\n'.format( scriptname, func.__name__ ) )
+  for arg, value in kwargs.items():
+    htmlfile.write( '  --{}={}\n'.format( arg, value ) )
+  htmlfile.write( '\nstart {}\n\n'.format(ctime) )
+  htmlfile.write( '</span>\n' )
 
-    warnings.resetwarnings()
+  warnings.resetwarnings()
 
-    t0 = time.time()
+  t0 = time.time()
 
-    if core.getprop( 'profile' ):
-      import cProfile
-      prof = cProfile.Profile()
-      prof.enable()
+  if core.getprop( 'profile' ):
+    import cProfile
+    prof = cProfile.Profile()
+    prof.enable()
 
-    failed = 1
-    frames = None
-    try:
-      func( **kwargs )
-    except KeyboardInterrupt:
-      log.error( 'killed by user' )
-    except Terminate as exc:
-      log.error( 'terminated:', exc )
-    except Exception:
-      exc, frames = debug.exc_info()
-      log.stack( repr(exc), frames )
-    else:
-      failed = 0
+  failed = 1
+  frames = None
+  htmlfile.flush()
+  __log__ = log.TeeLog( textlog, log.HtmlLog(htmlfile) )
+  try:
+    func( **kwargs )
+  except KeyboardInterrupt:
+    log.error( 'killed by user' )
+  except Terminate as exc:
+    log.error( 'terminated:', exc )
+  except Exception:
+    exc, frames = debug.exc_info()
+    log.stack( repr(exc), frames )
+  else:
+    failed = 0
 
-    if core.getprop( 'profile' ):
-      prof.disable()
+  if core.getprop( 'profile' ):
+    prof.disable()
 
-    dt = time.time() - t0
-    hours = dt // 3600
-    minutes = dt // 60 - 60 * hours
-    seconds = dt // 1 - 60 * minutes - 3600 * hours
+  dt = time.time() - t0
+  hours = dt // 3600
+  minutes = dt // 60 - 60 * hours
+  seconds = dt // 1 - 60 * minutes - 3600 * hours
 
-    log.info()
-    log.info( 'finish %s\n' % time.ctime() )
-    log.info( 'elapsed %02.0f:%02.0f:%02.0f' % ( hours, minutes, seconds ) )
+  textlog.write( 'info', None )
+  textlog.write( 'info', 'finish %s' % time.ctime() )
+  textlog.write( 'info', 'elapsed %02.0f:%02.0f:%02.0f' % ( hours, minutes, seconds ) )
 
-    if core.getprop( 'uncollected_summary', False ):
-      debug.trace_uncollected()
+  htmlfile.write( '<span class="info">\n' )
+  htmlfile.write( '\nfinish {}\nelapsed {:02.0f}:{:02.0f}:{:02.0f}\n\n'.format( time.ctime(), hours, minutes, seconds ) )
+  htmlfile.write( '</span>\n' )
 
-    if core.getprop( 'profile' ):
-      import pstats
-      stream = log.getstream( 'warning' )
-      stream.write( 'profile results:\n' )
-      pstats.Stats( prof, stream=stream ).strip_dirs().sort_stats( 'time' ).print_stats()
+  if core.getprop( 'uncollected_summary', False ):
+    debug.trace_uncollected()
 
-    if frames:
-      debug.write_html( htmlfile, repr(exc), frames )
-      if core.getprop( 'tbexplore', False ):
-        debug.explore( repr(exc), frames, '''
-          Your program has died. The traceback explorer allows you to
-          examine its post-mortem state to figure out why this happened.
-          Type 'help' for an overview of commands to get going.''' )
+  if core.getprop( 'profile' ):
+    import pstats
+    stream = BufferStream()
+    stream.write( 'profile results:\n' )
+    pstats.Stats( prof, stream=stream ).strip_dirs().sort_stats( 'time' ).print_stats()
+    log.warning( str(stream) )
 
-    sys.exit( failed )
+  if frames:
+    debug.write_html( htmlfile, repr(exc), frames )
+    if core.getprop( 'tbexplore', False ):
+      debug.explore( repr(exc), frames, '''
+        Your program has died. The traceback explorer allows you to
+        examine its post-mortem state to figure out why this happened.
+        Type 'help' for an overview of commands to get going.''' )
 
-  finally:
-
-    htmlfile.write( '</pre></body></html>\n' )
-    htmlfile.close()
+  htmlfile.write( '</pre></body></html>\n' )
+  htmlfile.close()
+  sys.exit( failed )
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

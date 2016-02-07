@@ -69,14 +69,14 @@ def main( nelems=12, viscosity=1e-3, density=1, degree=2, warp=False, withplots=
 
   # start picard iterations
   lhs = stokesmat.solve( rhs, tol=tol, solver='cg', precon='spilu' )
-  for iiter in log.count( 'picard', stop=maxiter ):
+  for iiter in log.count( 'picard' ):
     log.info( 'velocity divergence:', divmat.matvec(lhs).dot(lhs) )
     makeplots( vbasis.dot(lhs), pbasis.dot(lhs) )
     ugradu = ( vbasis.grad(geom) * vbasis.dot(lhs) ).sum(-1)
     convection = density * function.outer( vbasis, ugradu ).sum(-1)
     matrix = stokesmat + domain.integrate( convection, ischeme='gauss9', geometry=geom )
     lhs, info = matrix.solve( rhs, lhs0=lhs, tol=tol, info=True, precon='spilu', restart=999 )
-    if info.niter == 0:
+    if iiter == maxiter-1 or info.niter == 0:
       break
 
   return rhs, lhs
