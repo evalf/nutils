@@ -18,28 +18,19 @@ def makeplots( name, domain, geom, sigma ):
     plt.clim( 0, 1 )
 
 
+@log.title
 def newton( res, x0, maxiter, tol, lintol, constrain=None ):
-  for iiter in log.range( 'newton', maxiter+1 ):
-    if iiter == 0:
-      x = x0.copy()
-      if constrain is None:
-        mask = ...
-      else:
-        mask = numpy.isnan( constrain )
-        x[numpy.logical_not(mask)] = constrain[numpy.logical_not(mask)]
-        constrain = numpy.zeros( x.shape )
-        constrain[mask] = numpy.nan
-    else:
-      J = function.partial_derivative(res, 0, [0])(x).eval_integrals()
-      x -= J.solve( residual, tol=lintol, constrain=constrain )
-    residual = res(x).eval_integrals()
-    residual_norm = numpy.linalg.norm(residual[mask], 2)
+  for iiter in log.count( 'iteration' ):
+    J = function.partial_derivative(res, 0, [0])(x0).eval_integrals()
+    b = J.matvec(x0) - res(x0).eval_integrals()
+    x = J.solve( b, tol=lintol, constrain=constrain )
+    residual_norm = numpy.linalg.norm(x-x0)
     log.info('residual norm: {:.5e}'.format(residual_norm))
     if residual_norm < tol:
-      break
-  else:
-    raise Exception( 'newton failed to converge within {} iterations'.format(maxiter) )
-  return x
+      return x
+    if iiter > maxiter:
+      raise Exception( 'newton failed to converge within {} iterations'.format(maxiter) )
+    x0 = x
 
 
 def main( nelems=12, stress=library.Hooke(lmbda=1,mu=1), degree=2, angle=15, restol=1e-8, trim=False, plots=True ):
