@@ -795,6 +795,9 @@ class Iwscale( ArrayFunc ):
     assert trans.fromdims == self.fromdims
     return abs( numpy.asarray( trans.split(self.fromdims)[1].det, dtype=float )[_] )
 
+  def _derivative( self, var, shape, seen ):
+    return _zeros( self.shape + shape )
+
 class Transform( ArrayFunc ):
   'transform'
 
