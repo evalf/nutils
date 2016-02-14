@@ -21,7 +21,7 @@ def makeplots( name, domain, geom, sigma ):
 @log.title
 def newton( res, x0, maxiter, tol, lintol, constrain=None ):
   log.info( 'preparing jacobian' )
-  var = function.DerivativeHelper( x0.shape, [range(x0.ndim)] )
+  var = function.DerivativeHelper( x0.shape, list(range(x0.ndim)) )
   Jvar = function.derivative( res(var), var, var.shape )
   replace = lambda f: x0 if f is var else function.edit( f, replace )
   for iiter in log.count( 'iteration' ):
