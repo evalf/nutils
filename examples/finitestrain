@@ -40,13 +40,12 @@ def newton( res, x0, maxiter, tol, lintol, constrain=None ):
 
 def main( nelems=12, stress=library.Hooke(lmbda=1,mu=1), degree=2, angle=15, restol=1e-8, trim=False, plots=True ):
 
-  _stress = stress
-  def stress( epsilon, indices ):
+  def indstress( epsilon, indices ):
     assert len( indices ) == epsilon.ndim
     align = tuple( map( indices.index, epsilon.indices ) )
     return index.IndexedArray(
       indices,
-      lambda geom, epsilon_array: _stress( function.align( epsilon_array, align, len( indices ) ) ),
+      lambda geom, epsilon_array: stress( function.align( epsilon_array, align, len( indices ) ) ),
       ( epsilon, )
     )
 
@@ -66,30 +65,27 @@ def main( nelems=12, stress=library.Hooke(lmbda=1,mu=1), degree=2, angle=15, res
   cons = domain.boundary['left,right'].project( x*(a+y*b), onto=dbasis, ischeme='gauss6', geometry=geom0 )
 
   E = ( dbasis['jk,l'] + dbasis['jl,k'] ) / 2
-  A = dbasis['ik,l'] * stress(E, 'jkl')
+  A = dbasis['ik,l'] * indstress(E,'jkl')
   matrix = domain.integrate( A, geometry=geom0, ischeme='gauss6' )
 
   lhs = matrix.solve( constrain=cons, tol=restol, precon='spilu' )
-  disp = dbasis.dot( lhs )
-  geom = geom0 + disp
 
   if plots:
+    disp = dbasis.dot( lhs )
     strain = ( disp['j,k'] + disp['k,j'] ) / 2
-    makeplots( 'linear', domain, geom, stress(strain, 'jk').unwrap(geom0) )
+    makeplots( 'linear', domain, geom0+disp, indstress(strain,'jk').unwrap(geom0) )
+
+  eye = function.Guard(function.eye(2))
 
   def res( lhs ):
-    disp = dbasis.dot(lhs)
-    geom = geom0 + disp
-    strain = (disp['j,k'] + disp['k,j'] - disp['l,j'] * disp['l,k']) / 2
-    return domain.integrate_lazy( dbasis['ij,k'] * stress(strain, 'jk'), geometry=geom, ischeme='gauss9' )
+    strain = ( eye['jk'] - geom0['l,j'] * geom0['l,k'] ) / 2
+    return domain.integrate_lazy( dbasis['ij,k'] * indstress(strain,'jk'), geometry=geom0+dbasis.dot(lhs), ischeme='gauss9' )
 
   lhs = newton( res, lhs, maxiter=100, tol=restol, lintol=0, constrain=cons )
-  disp = dbasis.dot( lhs )
-  geom = geom0 + disp
 
   if plots:
-    strain = (disp['j,k'] + disp['k,j'] - disp['l,j'] * disp['l,k']) / 2
-    makeplots( 'finite', domain, geom, stress(strain, 'jk') )
+    strain = ( eye['jk'] - geom0['l,j'] * geom0['l,k'] ) / 2
+    makeplots( 'finite', domain, geom0+dbasis.dot(lhs), indstress(strain,'jk') )
 
   return lhs
 
