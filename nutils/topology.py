@@ -409,13 +409,12 @@ class Topology( object ):
 
     log.debug( 'projection type:', ptype )
 
+    if constrain is None:
+      constrain = util.NanVec( onto.shape[0] )
     if exact_boundaries:
       constrain |= self.boundary.project( fun, onto, geometry, constrain=constrain, title='boundaries', ischeme=ischeme, tol=tol, droptol=droptol, ptype=ptype, edit=edit )
-    elif constrain is None:
-      constrain = util.NanVec( onto.shape[0] )
-    else:
-      assert isinstance( constrain, util.NanVec )
-      assert constrain.shape == onto.shape[:1]
+    assert isinstance( constrain, util.NanVec )
+    assert constrain.shape == onto.shape[:1]
 
     avg_error = None # setting this depends on projection type
 
