@@ -1446,6 +1446,9 @@ class SubsetTopology( Topology ):
   'trimmed'
 
   def __init__( self, basetopo, elements, boundaryname, precise ):
+    # elements must all be at the same level of basetopo
+    # precise=True: all elements are in basetopo
+    # precise=False: not all elements are in basetopo, compute intersection
     assert not boundaryname or isinstance( boundaryname, str )
     self.allelements = tuple(elements)
     if precise:
@@ -1555,6 +1558,8 @@ class SubsetTopology( Topology ):
 
   @log.title
   def basis( self, name, *args, **kwargs ):
+    if isinstance( self.basetopo, HierarchicalTopology ):
+      warnings.warn( 'basis may be linearly dependent; a linearly indepent basis is obtained by trimming first, then creating hierarchical refinements' )
     basis = self.basetopo.basis( name, *args, **kwargs )
     return self.prune_basis( basis )
 
@@ -1772,9 +1777,6 @@ class HierarchicalTopology( Topology ):
     assert check.all()
 
     return function.function( fmap=fmap, nmap=nmap, ndofs=ndofs, ndims=self.ndims )
-
-  def subset( self, elements, boundaryname=None, precise=False ):
-    return self.basetopo.hierarchical( elements )
 
 class RevolvedTopology( Topology ):
   'revolved'

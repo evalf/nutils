@@ -53,8 +53,8 @@ def hierarchical():
   ref0, geom = mesh.rectilinear( [[0,1,2]] )
   e1, e2 = ref0
   ref1 = ref0.refined_by( [e2] )
-  e1, e2, e3 = ref1
-  ref2 = ref1.refined_by( [e2] )
+  e3, e4, e5 = ref1
+  ref2 = ref1.refined_by( [e4] )
 
   # Topologies:
   # ref0    [  .  .  .  |  .  .  .  ]
@@ -80,7 +80,7 @@ def hierarchical():
   @unittest
   def trimmed( makeplots=False ):
     levelset = 1.125 - geom[0]
-    trimmed = ref2.trim( levelset, maxrefine=3 )
+    trimmed = ref0.trim( levelset, maxrefine=3 ).refined_by( [e2] ).refined_by( [e4] )
     trimbasis = trimmed.basis( 'std', degree=1 )
     x, y = trimmed.simplex.elem_eval( [ geom[0], trimbasis ], ischeme='bezier2', separate=False )
     assert numpy.all( y == .125 * numpy.array(
