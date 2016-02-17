@@ -45,10 +45,9 @@ def main( nelems=12, viscosity=1e-2, density=1, tol=1e-12, rotation=0, timestep=
   log.info( 'creating {}x{} mesh, outer radius {:.2f}'.format( melems, 2*nelems, .5*numpy.exp(rscale*melems) ) )
   domain, (rho,phi) = mesh.rectilinear( [range(melems+1),numpy.linspace(0,2*numpy.pi,2*nelems+1)], periodic=(1,) )
   phi += 1e-3 # tiny nudge (0.057 deg) to break element symmetry
-  tangent, normal = function.rotmat(phi)
-  cylvelo = -.5 * rotation * tangent
+  cylvelo = -.5 * rotation * function.trignormal(phi)
   radius = .5 * function.exp( rscale * rho )
-  geom = radius * normal
+  geom = radius * function.trigtangent(phi)
 
   # prepare bases
   J = function.localgradient( geom, domain.ndims )

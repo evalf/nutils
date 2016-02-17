@@ -1368,6 +1368,14 @@ class Multiply( ArrayFunc ):
     func1, func2 = self.funcs
     return multiply( op(func1), op(func2) )
 
+  def _dot( self, other, naxes ):
+    func1, func2 = self.funcs
+    if all( sh == 1 for sh in func1.shape[-naxes:] ):
+      return func1[(Ellipsis,)+(0,)*naxes] * dot( func2, other, list(range(self.ndim-naxes,self.ndim)) )
+    if all( sh == 1 for sh in func2.shape[-naxes:] ):
+      return func2[(Ellipsis,)+(0,)*naxes] * dot( func1, other, list(range(self.ndim-naxes,self.ndim)) )
+
+
 class Add( ArrayFunc ):
   'add'
 
@@ -2305,6 +2313,50 @@ class Guard( ArrayFunc ):
 
   def _localgradient( self, ndims ):
     return Guard( localgradient(self.fun,ndims) )
+
+class TrigNormal( ArrayFunc ):
+  'cos, sin'
+
+  def __init__( self, angle ):
+    assert angle.ndim == 0
+    self.angle = angle
+    ArrayFunc.__init__( self, args=[angle], shape=(2,) )
+
+  def _localgradient( self, ndims ):
+    return TrigTangent( self.angle )[:,_] * localgradient( self.angle, ndims )
+
+  def evalf( self, angle ):
+    return numpy.array([ numpy.cos(angle), numpy.sin(angle) ]).T
+
+  def _dot( self, other, naxes ):
+    assert naxes == 1
+    if isinstance( other, (TrigTangent,TrigNormal) ) and self.angle == other.angle:
+      return numpy.array( 1 if isinstance(other,TrigNormal) else 0 )
+
+  def _opposite( self ):
+    return TrigNormal( opposite(self.angle) )
+
+class TrigTangent( ArrayFunc ):
+  '-sin, cos'
+
+  def __init__( self, angle ):
+    assert angle.ndim == 0
+    self.angle = angle
+    ArrayFunc.__init__( self, args=[angle], shape=(2,) )
+
+  def _localgradient( self, ndims ):
+    return -TrigNormal( self.angle )[:,_] * localgradient( self.angle, ndims )
+
+  def evalf( self, angle ):
+    return numpy.array([ -numpy.sin(angle), numpy.cos(angle) ]).T
+
+  def _dot( self, other, naxes ):
+    assert naxes == 1
+    if isinstance( other, (TrigTangent,TrigNormal) ) and self.angle == other.angle:
+      return numpy.array( 1 if isinstance(other,TrigTangent) else 0 )
+
+  def _opposite( self ):
+    return TrigTangent( opposite(self.angle) )
 
 
 # CIRCULAR SYMMETRY
@@ -3268,7 +3320,9 @@ nsymgrad = lambda arg, coords: ( symgrad(arg,coords) * coords.normal() ).sum(-1)
 ngrad = lambda arg, coords: ( grad(arg,coords) * coords.normal() ).sum(-1)
 sin = lambda arg: pointwise( [arg], numpy.sin, cos )
 cos = lambda arg: pointwise( [arg], numpy.cos, lambda x: -sin(x) )
-rotmat = lambda arg: asarray( [[cos(arg),sin(arg)],[-sin(arg),cos(arg)]] )
+trignormal = lambda angle: TrigNormal( angle )
+trigtangent = lambda angle: TrigTangent( angle )
+rotmat = lambda arg: asarray([ trignormal(arg), trigtangent(arg) ])
 tan = lambda arg: pointwise( [arg], numpy.tan, lambda x: cos(x)**-2 )
 arcsin = lambda arg: pointwise( [arg], numpy.arcsin, lambda x: reciprocal(sqrt(1-x**2)) )
 arccos = lambda arg: pointwise( [arg], numpy.arccos, lambda x: -reciprocal(sqrt(1-x**2)) )
