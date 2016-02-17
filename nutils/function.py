@@ -1518,19 +1518,19 @@ class Dot( ArrayFunc ):
     return dot( localgradient( func1, ndims ), func2[...,_], self.axes ) \
          + dot( func1[...,_], localgradient( func2, ndims ), self.axes )
 
-  def _multiply( self, other ):
-    func1, func2 = self.funcs
-    for ax in self.axes:
-      other = insert( other, ax )
-    assert other.ndim == func1.ndim == func2.ndim
-    if not _isfunc( other ) and not _isfunc( func2 ):
-      return dot( func1, numpy.multiply( func2, other ), self.axes )
-    func1_other = _call( func1, '_multiply', other )
-    if func1_other is not None:
-      return dot( func1_other, func2, self.axes )
-    func2_other = _call( func2, '_multiply', other )
-    if func2_other is not None:
-      return dot( func1, func2_other, self.axes )
+  #def _multiply( self, other ):
+  #  func1, func2 = self.funcs
+  #  for ax in self.axes:
+  #    other = insert( other, ax )
+  #  assert other.ndim == func1.ndim == func2.ndim
+  #  if not _isfunc( other ) and not _isfunc( func2 ):
+  #    return dot( func1, numpy.multiply( func2, other ), self.axes )
+  #  func1_other = _call( func1, '_multiply', other )
+  #  if func1_other is not None:
+  #    return dot( func1_other, func2, self.axes )
+  #  func2_other = _call( func2, '_multiply', other )
+  #  if func2_other is not None:
+  #    return dot( func1, func2_other, self.axes )
 
   def _add( self, other ):
     if isinstance( other, Dot ) and self.axes == other.axes:
