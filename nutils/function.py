@@ -2336,6 +2336,9 @@ class TrigNormal( ArrayFunc ):
   def _opposite( self ):
     return TrigNormal( opposite(self.angle) )
 
+  def _edit( self, op ):
+    return TrigNormal( edit(self.angle,op) )
+
 class TrigTangent( ArrayFunc ):
   '-sin, cos'
 
@@ -2358,6 +2361,8 @@ class TrigTangent( ArrayFunc ):
   def _opposite( self ):
     return TrigTangent( opposite(self.angle) )
 
+  def _edit( self, op ):
+    return TrigTangent( edit(self.angle,op) )
 
 # CIRCULAR SYMMETRY
 
