@@ -33,7 +33,7 @@ research by Phd and MSc students.
 
 setup(
   name = 'nutils',
-  version = '1.x',
+  version = '2.0',
   description = 'Numerical Utilities',
   author = 'Gertjan van Zwieten and others',
   author_email = 'info@nutils.org',
