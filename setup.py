@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 
-import numpy
+import numpy, nutils
 
 extra = {}
 try:
@@ -33,7 +33,7 @@ research by Phd and MSc students.
 
 setup(
   name = 'nutils',
-  version = '1.x',
+  version = nutils.version,
   description = 'Numerical Utilities',
   author = 'Gertjan van Zwieten and others',
   author_email = 'info@nutils.org',
