@@ -20,14 +20,11 @@ def makeplots( name, domain, geom, sigma ):
 
 @log.title
 def newton( res, x0, maxiter, tol, lintol, constrain=None ):
-  log.info( 'preparing jacobian' )
-  var = function.DerivativeHelper( x0.shape, list(range(x0.ndim)) )
-  Jvar = function.derivative( res(var), var, var.shape )
-  replace = lambda f: x0 if f is var else function.edit( f, replace )
+  res = compile.compile( res )
+  res_J = res.J( 0, [0] )
   for iiter in log.count( 'iteration' ):
-    log.info( 'constructing jacobian' )
-    J = replace(Jvar).eval_integrals()
-    b = J.matvec(x0) - res(x0).eval_integrals()
+    J = res_J(x0)
+    b = J.matvec(x0) - res(x0)
     x = J.solve( b, tol=lintol, constrain=constrain )
     residual_norm = numpy.linalg.norm(x-x0)
     log.info('residual norm: {:.5e}'.format(residual_norm))
@@ -77,11 +74,12 @@ def main( nelems=12, stress=library.Hooke(lmbda=1,mu=1), degree=2, angle=15, res
 
   eye = function.Guard(function.eye(2))
 
+  @compile.compile
   def res( lhs ):
     strain = ( eye['jk'] - geom0['l,j'] * geom0['l,k'] ) / 2
-    return domain.integrate_lazy( dbasis['ij,k'] * indstress(strain,'jk'), geometry=geom0+dbasis.dot(lhs), ischeme='gauss9' )
+    return domain.integrate( dbasis['ij,k'] * indstress(strain,'jk'), geometry=geom0+dbasis.dot(lhs), ischeme='gauss9' )
 
-  lhs = newton( res, lhs, maxiter=100, tol=restol, lintol=0, constrain=cons )
+  lhs = newton( res, lhs, maxiter=100, tol=restol, lintol=0, constrain=cons ) #, res_args=(domain,) )
 
   if plots:
     strain = ( eye['jk'] - geom0['l,j'] * geom0['l,k'] ) / 2

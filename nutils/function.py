@@ -109,6 +109,7 @@ class Evaluable( cache.Immutable ):
   def eval( self, elem, ischeme, fcache=cache.WrapperDummyCache() ):
     'evaluate'
     
+    from . import compile
     if isinstance( elem, tuple ):
       assert isinstance( ischeme, numpy.ndarray )
       points = ischeme
@@ -145,6 +146,8 @@ class Evaluable( cache.Immutable ):
       try:
         retval = op.evalf( *args )
       except KeyboardInterrupt:
+        raise
+      except compile.ArgumentNotUnwrappedError:
         raise
       except:
         etype, evalue, traceback = sys.exc_info()
@@ -3091,9 +3094,10 @@ def derivative( func, var, shape, seen=None ):
 
   if seen is None:
     seen = {}
-  func = asarray( func )
+  if not hasattr( func, '_derivative' ):
+    func = asarray( func )
   shape = tuple(shape)
-  if not _isfunc( func ):
+  if not _isfunc( func ) and not hasattr( func, '_derivative' ):
     result = _zeros( func.shape + shape )
   elif func in seen:
     result = seen[func]
