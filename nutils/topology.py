@@ -1,5 +1,3 @@
-# -*- coding: utf8 -*-
-#
 # Module TOPOLOGY
 #
 # Part of Nutils: open source numerical utilities for Python. Jointly developed
@@ -25,11 +23,12 @@ out in element loops. For lower level operations topologies can be used as
 
 from __future__ import print_function, division
 from . import element, function, util, numpy, parallel, matrix, log, core, numeric, cache, rational, transform, _
-import warnings, collections, itertools
+from .index import IndexedArray
+import warnings, functools, collections, itertools
 
 _identity = lambda x: x
 
-class Topology( object ):
+class Topology: #( object ):
   'topology base class'
 
   # subclass needs to implement: .elements
@@ -361,15 +360,32 @@ class Topology( object ):
 
     return data_index
 
+  @staticmethod
+  def _integrate_prepare( funcs, geometry, edit, ndims ):
+    iwscale = function.J( geometry, ndims ) if geometry else 1
+    funcs = [ func.unwrap( geometry ) if isinstance( func, IndexedArray ) else func for func in funcs ]
+    return [ function.asarray( edit( func * iwscale ) ) for func in funcs ]
+
+  def _integrate_evaluate( self, integrands, ischeme, force_dense ):
+    data_index = self._integrate( integrands, ischeme )
+    return [ matrix.assemble( data, index, integrand.shape, force_dense ) for integrand, (data,index) in zip( integrands, data_index ) ]
+
   @log.title
   @core.single_or_multiple
   def integrate( self, funcs, ischeme, geometry=None, force_dense=False, edit=_identity ):
     'integrate'
 
-    iwscale = function.J( geometry, self.ndims ) if geometry else 1
-    integrands = [ function.asarray( edit( func * iwscale ) ) for func in funcs ]
-    data_index = self._integrate( integrands, ischeme )
-    return [ matrix.assemble( data, index, integrand.shape, force_dense ) for integrand, (data,index) in zip( integrands, data_index ) ]
+    from . import compile
+    integrands = self._integrate_prepare( funcs, geometry, edit, self.ndims )
+    try:
+      return self._integrate_evaluate( integrands, ischeme, force_dense )
+    except compile.ArgumentNotUnwrappedError:
+      if force_dense:
+        raise NotImplementedError
+      return [
+        compile.Integrals( { ( self, (), ischeme ): integrand } )
+        for integrand in integrands
+      ]
 
   @log.title
   @core.single_or_multiple
@@ -377,6 +393,7 @@ class Topology( object ):
     'integrate a symmetric integrand on a product domain' # TODO: find a proper home for this
 
     iwscale = function.J( geometry, self.ndims ) if geometry else 1
+    funcs = [ func.unwrap( geometry ) if isinstance( func, IndexedArray ) else func for func in funcs ]
     integrands = [ function.asarray( edit( func * iwscale ) ) for func in funcs ]
     assert all( integrand.ndim == 2 for integrand in integrands )
     diagelems = []
@@ -726,6 +743,9 @@ class ItemTopology( Topology ):
 
   def __eq__( self, other ):
     return isinstance( other, ItemTopology ) and self.basetopo == other.basetopo and self.subtopos == other.subtopos
+
+  def __hash__( self ):
+    return hash( self.basetopo )
 
   def withsubs( self, subtopos={} ):
     if subtopos and core.getprop( 'selfcheck', False ):
@@ -1806,6 +1826,7 @@ class RevolvedTopology( Topology ):
   @core.single_or_multiple
   def integrate( self, funcs, ischeme, geometry, force_dense=False, edit=_identity ):
     iwscale = function.jacobian( geometry, self.ndims+1 ) * function.Iwscale(self.ndims)
+    funcs = [ func.unwrap( geometry ) if isinstance( func, IndexedArray ) else func for func in funcs ]
     integrands = [ function.asarray( edit( func * iwscale ) ) for func in funcs ]
     data_index = self._integrate( integrands, ischeme )
     return [ matrix.assemble( data, index, integrand.shape, force_dense ) for integrand, (data,index) in zip( integrands, data_index ) ]
