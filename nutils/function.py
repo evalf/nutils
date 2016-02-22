@@ -30,7 +30,7 @@ expensive and currently unsupported operation.
 
 from __future__ import print_function, division
 from . import util, numpy, numeric, log, core, cache, transform, rational, _
-import sys, warnings, itertools, functools, operator
+import sys, warnings, itertools, functools, operator, inspect, numbers
 
 CACHE = 'Cache'
 TRANS = 'Trans'
@@ -371,21 +371,31 @@ class ArrayFunc( Evaluable ):
 
   # mathematical operators
 
-  __mul__  = lambda self, other: multiply( self, other )
-  __rmul__ = lambda self, other: multiply( other, self )
-  __div__  = lambda self, other: divide( self, other )
+  def _if_array_args( op ):
+    @functools.wraps( op )
+    def wrapper( self, other ):
+      if isinstance( other, ( numbers.Number, numpy.number, numpy.ndarray, ArrayFunc, tuple, list ) ):
+        return op( self, other )
+      else:
+        return NotImplemented
+    return wrapper
+
+  __mul__  = _if_array_args( lambda self, other: multiply( self, other ) )
+  __rmul__ = _if_array_args( lambda self, other: multiply( other, self ) )
+  __div__  = _if_array_args( lambda self, other: divide( self, other ) )
   __truediv__ = __div__
-  __rdiv__ = lambda self, other: divide( other, self )
+  __rdiv__ = _if_array_args( lambda self, other: divide( other, self ) )
   __rtruediv__ = __rdiv__
-  __add__  = lambda self, other: add( self, other )
-  __radd__ = lambda self, other: add( other, self )
-  __sub__  = lambda self, other: subtract( self, other )
-  __rsub__ = lambda self, other: subtract( other, self )
+  __add__  = _if_array_args( lambda self, other: add( self, other ) )
+  __radd__ = _if_array_args( lambda self, other: add( other, self ) )
+  __sub__  = _if_array_args( lambda self, other: subtract( self, other ) )
+  __rsub__ = _if_array_args( lambda self, other: subtract( other, self ) )
   __neg__  = lambda self: negative( self )
-  __pow__  = lambda self, n: power( self, n )
+  __pow__  = _if_array_args( lambda self, n: power( self, n ) )
   __abs__  = lambda self: abs( self )
   __len__  = lambda self: self.shape[0]
   sum      = lambda self, axis=None: sum( self, axis )
+  del _if_array_args
 
   @property
   def size( self ):
@@ -405,7 +415,7 @@ class ArrayFunc( Evaluable ):
   def dot( self, weights, axis=0 ):
     'array contraction'
 
-    weights = numpy.asarray( weights, dtype=float )
+    weights = asarray( weights )#, dtype=float )
     assert weights.ndim == 1
     s = [ numpy.newaxis ] * self.ndim
     s[axis] = slice(None)
@@ -414,6 +424,9 @@ class ArrayFunc( Evaluable ):
   def __getitem__( self, item ):
     'get item, general function which can eliminate, add or modify axes.'
 
+    if isinstance( item, str ):
+      from . import index
+      return index.wrap( self, item )
     myitem = list( item if isinstance( item, tuple ) else [item] )
     n = 0
     arr = self
@@ -621,8 +634,8 @@ class Orientation( ArrayFunc ):
   def _opposite( self ):
     return Orientation( self.ndims, 1-self.side )
 
-  def _localgradient( self, ndims ):
-    return _zeros( (ndims,) )
+  def _derivative( self, var, shape, seen ):
+    return _zeros( shape )
 
 class Align( ArrayFunc ):
   'align axes'
@@ -677,8 +690,8 @@ class Align( ArrayFunc ):
     trans = [ ax - (ax>axis) for ax in self.axes if ax != axis ]
     return align( func, trans, self.ndim-1 )
 
-  def _localgradient( self, ndims ):
-    return align( localgradient( self.func, ndims ), self.axes+(self.ndim,), self.ndim+1 )
+  def _derivative( self, var, shape, seen ):
+    return align( derivative( self.func, var, shape, seen ), self.axes+tuple(range(self.ndim, self.ndim+len(shape))), self.ndim+len(shape) )
 
   def _multiply( self, other ):
     if not _isfunc(other) and len(self.axes) == other.ndim:
@@ -722,8 +735,8 @@ class Get( ArrayFunc ):
     assert arr.ndim == self.ndim+2
     return arr[ self.item_shiftright ]
 
-  def _localgradient( self, ndims ):
-    f = localgradient( self.func, ndims )
+  def _derivative( self, var, shape, seen ):
+    f = derivative( self.func, var, shape, seen )
     return get( f, self.axis, self.item )
 
   def _get( self, i, item ):
@@ -751,13 +764,14 @@ class Product( ArrayFunc ):
     assert arr.ndim == self.ndim+2
     return numpy.product( arr, axis=-1 )
 
-  def _localgradient( self, ndims ):
-    grad = localgradient( self.func, ndims )
+  def _derivative( self, var, shape, seen ):
+    grad = derivative( self.func, var, shape, seen )
     funcs = stack( [ util.product( self.func[...,j] for j in range(self.func.shape[-1]) if i != j ) for i in range( self.func.shape[-1] ) ], axis=-1 )
-    return ( grad * funcs[...,_] ).sum( -2 )
+    return ( grad * funcs[(...,)+(_,)*len(shape)] ).sum( self.ndim )
 
     ## this is a cleaner form, but is invalid if self.func contains zero values:
-    #return self[...,_] * ( localgradient(self.func,ndims) / self.func[...,_] ).sum(-2)
+    #ext = (...,)+(_,)*len(shape)
+    #return self[ext] * ( derivative(self.func,var,shape,seen) / self.func[ext] ).sum( self.ndim )
 
   def _get( self, i, item ):
     func = get( self.func, i, item )
@@ -801,8 +815,8 @@ class Transform( ArrayFunc ):
     assert matrix.shape == (self.todims,self.fromdims)
     return matrix.astype( float )[_]
 
-  def _localgradient( self, ndims ):
-    return _zeros( self.shape + (ndims,) )
+  def _derivative( self, var, shape, seen ):
+    return _zeros( self.shape + shape )
 
   def _opposite( self ):
     return Transform( self.todims, self.fromdims, 1-self.side )
@@ -847,10 +861,14 @@ class Function( ArrayFunc ):
   def _opposite( self ):
     return Function( self.ndims, self.stdmap, self.igrad, self.shape[0], 1-self.side )
 
-  def _localgradient( self, ndims ):
-    grad = Function( self.ndims, self.stdmap, self.igrad+1, self.shape[0], self.side )
-    return grad if ndims == self.ndims \
-      else dot( grad[...,_], Transform( self.ndims, ndims, self.side ), axes=-2 )
+  def _derivative( self, var, shape, seen ):
+    if var == 'localcoords':
+      ndims, = shape
+      grad = Function( self.ndims, self.stdmap, self.igrad+1, self.shape[0], self.side )
+      return grad if ndims == self.ndims \
+        else dot( grad[...,_], Transform( self.ndims, ndims, self.side ), axes=-2 )
+    else:
+      return _zeros( self.shape+shape )
 
   def _take( self, indices, axis ):
     if axis != 0:
@@ -906,11 +924,11 @@ class Choose( ArrayFunc ):
     assert all( choice.ndim == self.ndim+1 for choice in choices )
     return numpy.choose( level, choices )
 
-  def _localgradient( self, ndims ):
-    grads = [ localgradient( choice, ndims ) for choice in self.choices ]
+  def _derivative( self, var, shape, seen ):
+    grads = [ derivative( choice, var, shape, seen ) for choice in self.choices ]
     if not any( grads ): # all-zero special case; better would be allow merging of intervals
-      return _zeros( self.shape + (ndims,) )
-    return Choose( self.level[...,_], grads )
+      return _zeros( self.shape + shape )
+    return choose( self.level[(...,)+(_,)*len(shape)], grads )
 
   def _edit( self, op ):
     return choose( op(self.level), [ op(choice) for choice in self.choices ] )
@@ -960,8 +978,11 @@ class Inverse( ArrayFunc ):
           invi[...] = numpy.nan
     return inv
 
-  def _localgradient( self, ndims ):
-    G = localgradient( self.func, ndims )
+  def _derivative( self, var, shape, seen ):
+    if len(shape) != 1:
+      # TODO
+      raise NotImplementedError
+    G = derivative( self.func, var, shape, seen )
     H = sum( self[...,_,:,:,_]
               * G[...,:,:,_,:], -3 )
     I = sum( self[...,:,:,_,_]
@@ -1034,8 +1055,8 @@ class Concatenate( ArrayFunc ):
     axis = self.axis - (self.axis > i)
     return concatenate( [ get( f, i, item ) for f in self.funcs ], axis=axis )
 
-  def _localgradient( self, ndims ):
-    funcs = [ localgradient( func, ndims ) for func in self.funcs ]
+  def _derivative( self, var, shape, seen ):
+    funcs = [ derivative( func, var, shape, seen ) for func in self.funcs ]
     return concatenate( funcs, axis=self.axis )
 
   def _multiply( self, other ):
@@ -1087,6 +1108,8 @@ class Concatenate( ArrayFunc ):
       n0 = n1
     assert n0 == self.shape[ self.axis ]
     return concatenate( funcs, self.axis )
+
+  _blockadd = _add
 
   def _sum( self, axis ):
     if axis == self.axis:
@@ -1204,9 +1227,10 @@ class Cross( ArrayFunc ):
     assert a.ndim == b.ndim == self.ndim+1
     return numeric.cross( a, b, self.axis_shiftright )
 
-  def _localgradient( self, ndims ):
-    return cross( self.func1[...,_], localgradient(self.func2,ndims), axis=self.axis ) \
-         - cross( self.func2[...,_], localgradient(self.func1,ndims), axis=self.axis )
+  def _derivative( self, var, shape, seen ):
+    ext = (...,)+(_,)*len(shape)
+    return cross( self.func1[ext], derivative(self.func2,var,shape,seen), axis=self.axis ) \
+         - cross( self.func2[ext], derivative(self.func1,var,shape,seen), axis=self.axis )
 
   def _take( self, index, axis ):
     if axis != self.axis:
@@ -1228,10 +1252,11 @@ class Determinant( ArrayFunc ):
     assert arr.ndim == self.ndim+3
     return numpy.linalg.det( arr )
 
-  def _localgradient( self, ndims ):
+  def _derivative( self, var, shape, seen ):
     Finv = swapaxes( inverse( self.func ) )
-    G = localgradient( self.func, ndims )
-    return self[...,_] * sum( Finv[...,_] * G, axis=[-3,-2] )
+    G = derivative( self.func, var, shape, seen )
+    ext = (...,)+(_,)*len(shape)
+    return self[ext] * sum( Finv[ext] * G, axis=[-2-len(shape),-1-len(shape)] )
 
   def _edit( self, op ):
     return determinant( op(self.func) )
@@ -1272,8 +1297,8 @@ class DofIndex( ArrayFunc ):
     if not _isfunc(other) and other.ndim == 0:
       return take( self.array * other, self.index, self.iax )
 
-  def _localgradient( self, ndims ):
-    return _zeros( self.shape + (ndims,) )
+  def _derivative( self, var, shape, seen ):
+    return _zeros( self.shape + shape )
 
   def _concatenate( self, other, axis ):
     if isinstance( other, DofIndex ) and self.iax == other.iax and self.index == other.index:
@@ -1344,10 +1369,11 @@ class Multiply( ArrayFunc ):
     if func2_other is not None:
       return multiply( func1, func2_other )
 
-  def _localgradient( self, ndims ):
+  def _derivative( self, var, shape, seen ):
     func1, func2 = self.funcs
-    return func1[...,_] * localgradient( func2, ndims ) \
-         + func2[...,_] * localgradient( func1, ndims )
+    ext = (...,)+(_,)*len(shape)
+    return func1[ext] * derivative( func2, var, shape, seen ) \
+         + func2[ext] * derivative( func1, var, shape, seen )
 
   def _takediag( self ):
     func1, func2 = self.funcs
@@ -1394,9 +1420,9 @@ class Add( ArrayFunc ):
   def _sum( self, axis ):
     return sum( self.funcs[0], axis ) + sum( self.funcs[1], axis )
 
-  def _localgradient( self, ndims ):
+  def _derivative( self, var, shape, seen ):
     func1, func2 = self.funcs
-    return localgradient( func1, ndims ) + localgradient( func2, ndims )
+    return derivative( func1, var, shape, seen ) + derivative( func2, var, shape, seen )
 
   def _get( self, i, item ):
     func1, func2 = self.funcs
@@ -1457,8 +1483,8 @@ class BlockAdd( ArrayFunc ):
   def _sum( self, axis ):
     return blockadd( *( sum( func, axis ) for func in self.funcs ) )
 
-  def _localgradient( self, ndims ):
-    return blockadd( *( localgradient( func, ndims ) for func in self.funcs ) )
+  def _derivative( self, var, shape, seen ):
+    return blockadd( *( derivative( func, var, shape, seen ) for func in self.funcs ) )
 
   def _get( self, i, item ):
     return blockadd( *( get( func, i, item ) for func in self.funcs ) )
@@ -1511,10 +1537,11 @@ class Dot( ArrayFunc ):
     func1, func2 = self.funcs
     return dot( get( func1, i, item ), get( func2, i, item ), [ ax-1 for ax in self.axes ] )
 
-  def _localgradient( self, ndims ):
+  def _derivative( self, var, shape, seen ):
     func1, func2 = self.funcs
-    return dot( localgradient( func1, ndims ), func2[...,_], self.axes ) \
-         + dot( func1[...,_], localgradient( func2, ndims ), self.axes )
+    ext = (...,)+(_,)*len(shape)
+    return dot( derivative( func1, var, shape, seen ), func2[ext], self.axes ) \
+         + dot( func1[ext], derivative( func2, var, shape, seen ), self.axes )
 
   #def _multiply( self, other ):
   #  func1, func2 = self.funcs
@@ -1585,8 +1612,8 @@ class Sum( ArrayFunc ):
     if trysum is not None:
       return sum( trysum, self.axis )
 
-  def _localgradient( self, ndims ):
-    return sum( localgradient( self.func, ndims ), self.axis )
+  def _derivative( self, var, shape, seen ):
+    return sum( derivative( self.func, var, shape, seen ), self.axis )
 
   def _edit( self, op ):
     return sum( op(self.func), axis=self.axis )
@@ -1612,8 +1639,8 @@ class Debug( ArrayFunc ):
 
     return '{DEBUG}'
 
-  def _localgradient( self, ndims ):
-    return Debug( localgradient( self.func, ndims ) )
+  def _derivative( self, var, shape, seen ):
+    return Debug( derivative( self.func, var, shape, seen ) )
 
   def _edit( self, op ):
     return Debug( op(self.func) )
@@ -1632,8 +1659,8 @@ class TakeDiag( ArrayFunc ):
     assert arr.ndim == self.ndim+2
     return numeric.takediag( arr )
 
-  def _localgradient( self, ndims ):
-    return swapaxes( takediag( localgradient( self.func, ndims ), -3, -2 ) )
+  def _derivative( self, var, shape, seen ):
+    return swapaxes( takediag( derivative( self.func, var, shape, seen ), -2-len(shape), -1-len(shape) ) )
 
   def _sum( self, axis ):
     if axis != self.ndim-1:
@@ -1677,8 +1704,8 @@ class Take( ArrayFunc ):
     assert arr.ndim == self.ndim+1
     return arr[ item or self.item ]
 
-  def _localgradient( self, ndims ):
-    return take( localgradient( self.func, ndims ), self.indices, self.axis )
+  def _derivative( self, var, shape, seen ):
+    return take( derivative( self.func, var, shape, seen ), self.indices, self.axis )
 
   def _take( self, index, axis ):
     if axis == self.axis:
@@ -1713,14 +1740,15 @@ class Power( ArrayFunc ):
     return numpy.power( args[0] if self.varbase else self.func,
                         args[-1] if self.varexp else self.power )
 
-  def _localgradient( self, ndims ):
+  def _derivative( self, var, shape, seen ):
     # self = func**power
     # ln self = power * ln func
     # self` / self = power` * ln func + power * func` / func
     # self` = power` * ln func * self + power * func` * func**(power-1)
+    ext = (...,)+(_,)*len(shape)
     powerm1 = self.power-1 if _isfunc(self.power) else numpy.choose( self.power==0, [self.power-1,0] ) # avoid introducing negative powers where possible
-    return ( self.power * power( self.func, powerm1 ) )[...,_] * localgradient( self.func, ndims ) \
-         + ( ln( self.func ) * self )[...,_] * localgradient( self.power, ndims )
+    return ( self.power * power( self.func, powerm1 ) )[ext] * derivative( self.func, var, shape, seen ) \
+         + ( ln( self.func ) * self )[ext] * derivative( self.power, var, shape )
 
   def _power( self, n ):
     func = self.func
@@ -1770,9 +1798,13 @@ class ElemFunc( ArrayFunc ):
     ptrans = trans.split( self.shape[0] )[1]
     return ptrans.apply( points ).astype( float )
 
-  def _localgradient( self, ndims ):
-    return eye( ndims ) if self.shape[0] == ndims \
-      else Transform( self.shape[0], ndims, self.side )
+  def _derivative( self, var, shape, seen ):
+    if var == 'localcoords':
+      ndims, = shape
+      return eye( ndims ) if self.shape[0] == ndims \
+        else Transform( self.shape[0], ndims, self.side )
+    else:
+      return _zeros( self.shape+shape )
 
   def _opposite( self ):
     ndims, = self.shape
@@ -1795,8 +1827,8 @@ class Pointwise( ArrayFunc ):
     assert args.shape[1:] == self.args.shape
     return self.evalfun( *args.swapaxes(0,1) )
 
-  def _localgradient( self, ndims ):
-    return ( self.deriv( self.args )[...,_] * localgradient( self.args, ndims ) ).sum( 0 )
+  def _derivative( self, var, shape, seen ):
+    return ( self.deriv( self.args )[(...,)+(_,)*len(shape)] * derivative( self.args, var, shape, seen ) ).sum( 0 )
 
   def _takediag( self ):
     return pointwise( takediag(self.args), self.evalfun, self.deriv )
@@ -1824,8 +1856,8 @@ class Sign( ArrayFunc ):
     assert arr.ndim == self.ndim+1
     return numpy.sign( arr )
 
-  def _localgradient( self, ndims ):
-    return _zeros( self.shape + (ndims,) )
+  def _derivative( self, var, shape, seen ):
+    return _zeros( self.shape + shape )
 
   def _takediag( self ):
     return sign( takediag(self.func) )
@@ -1914,8 +1946,8 @@ class Elemwise( ArrayFunc ):
     assert value.shape == self.shape, 'wrong shape: {} != {}'.format( value.shape, self.shape )
     return value[_]
 
-  def _localgradient( self, ndims ):
-    return _zeros( self.shape+(ndims,) )
+  def _derivative( self, var, shape, seen ):
+    return _zeros( self.shape+shape )
 
   def _opposite( self ):
     return Elemwise( self.fmap, self.shape, self.default, 1-self.side )
@@ -1976,8 +2008,8 @@ class Zeros( ArrayFunc ):
     assert self.shape[axis] == 1
     return _zeros( self.shape[:axis] + (length,) + self.shape[axis+1:] )
 
-  def _localgradient( self, ndims ):
-    return _zeros( self.shape+(ndims,) )
+  def _derivative( self, var, shape, seen ):
+    return _zeros( self.shape+shape )
 
   def _add( self, other ):
     shape = _jointshape( self.shape, other.shape )
@@ -2066,8 +2098,8 @@ class Inflate( ArrayFunc ):
       return
     return inflate( inflate( self.func, dofmap, axis ), self.dofmap, self.axis )
 
-  def _localgradient( self, ndims ):
-    return inflate( localgradient(self.func,ndims), self.dofmap, self.axis )
+  def _derivative( self, var, shape, seen ):
+    return inflate( derivative(self.func,var,shape,seen), self.dofmap, self.axis )
 
   def _align( self, shuffle, ndims ):
     return inflate( align(self.func,shuffle,ndims), self.dofmap, shuffle[self.axis] )
@@ -2176,8 +2208,14 @@ class Diagonalize( ArrayFunc ):
     assert arr is None or arr.ndim == self.ndim
     return numeric.diagonalize( arr if arr is not None else self.func[_] )
 
-  def _localgradient( self, ndims ):
-    return swapaxes( diagonalize( swapaxes( localgradient( self.func, ndims ), (-2,-1) ) ), (-3,-1) )
+  def _derivative( self, var, shape, seen ):
+    result = derivative( self.func, var, shape, seen )
+    # move axis `self.ndim-2` to the end
+    result = align( result, tuple( i for i in range( result.ndim ) if i != self.ndim-2 ) + ( self.ndim-2, ), result.ndim )
+    # diagonalize last axis
+    result = diagonalize( result )
+    # move diagonalized axes left of the derivatives axes
+    return align( result, tuple( range( self.ndim-2 ) ) + tuple( range( self.ndim, result.ndim ) ) + ( self.ndim-2, self.ndim-1 ), result.ndim )
 
   def _get( self, i, item ):
     if i >= self.ndim-2:
@@ -2231,8 +2269,8 @@ class Repeat( ArrayFunc ):
     assert arr is None or arr.ndim == self.ndim+1
     return numeric.fastrepeat( arr if arr is not None else self.func[_], self.length, self.axis_shiftright )
 
-  def _localgradient( self, ndims ):
-    return repeat( localgradient( self.func, ndims ), self.length, self.axis )
+  def _derivative( self, var, shape, seen ):
+    return repeat( derivative( self.func, var, shape, seen ), self.length, self.axis )
 
   def _get( self, axis, item ):
     if axis == self.axis:
@@ -2309,8 +2347,8 @@ class Guard( ArrayFunc ):
   def _edit( self, op ):
     return Guard( op(self.fun) )
 
-  def _localgradient( self, ndims ):
-    return Guard( localgradient(self.fun,ndims) )
+  def _derivative( self, var, shape, seen ):
+    return Guard( derivative(self.fun,var,shape,seen) )
 
 class TrigNormal( ArrayFunc ):
   'cos, sin'
@@ -2320,8 +2358,8 @@ class TrigNormal( ArrayFunc ):
     self.angle = angle
     ArrayFunc.__init__( self, args=[angle], shape=(2,) )
 
-  def _localgradient( self, ndims ):
-    return TrigTangent( self.angle )[:,_] * localgradient( self.angle, ndims )
+  def _derivative( self, var, shape, seen ):
+    return TrigTangent( self.angle )[(...,)+(_,)*len(shape)] * derivative( self.angle, var, shape, seen )
 
   def evalf( self, angle ):
     return numpy.array([ numpy.cos(angle), numpy.sin(angle) ]).T
@@ -2345,8 +2383,8 @@ class TrigTangent( ArrayFunc ):
     self.angle = angle
     ArrayFunc.__init__( self, args=[angle], shape=(2,) )
 
-  def _localgradient( self, ndims ):
-    return -TrigNormal( self.angle )[:,_] * localgradient( self.angle, ndims )
+  def _derivative( self, var, shape, seen ):
+    return -TrigNormal( self.angle )[(...,)+(_,)*len(shape)] * derivative( self.angle, var, shape, seen )
 
   def evalf( self, angle ):
     return numpy.array([ -numpy.sin(angle), numpy.cos(angle) ]).T
@@ -2362,6 +2400,32 @@ class TrigTangent( ArrayFunc ):
   def _edit( self, op ):
     return TrigTangent( edit(self.angle,op) )
 
+class DerivativeHelper( ArrayFunc ):
+  'helper class for computing derivatives'
+
+  def __init__( self, shape, axes ):
+    self._axes = tuple(axes)
+    assert all(0 <= axis < len(shape) for axis in self._axes)
+    ArrayFunc.__init__( self, args=[], shape=shape )
+
+  def evalf( self ):
+    raise ValueError( 'unwrap {!r} before evaluation'.format( self ) )
+
+  def _edit( self, op ):
+    # TODO: Apply edit to underlying variable?
+    return self
+
+  def _derivative( self, var, shape, seen ):
+    if var is self:
+      assert shape == tuple( self.shape[axis] for axis in self._axes )
+      result = 1
+      for i, axis in enumerate( self._axes ):
+        result *= align( eye( self.shape[axis] ), ( axis, self.ndim+i ), self.ndim+len(self._axes) )
+      return result
+    else:
+      return _zeros( self.shape + shape )
+
+
 # CIRCULAR SYMMETRY
 
 class RevolutionAngle( ArrayFunc ):
@@ -2373,10 +2437,14 @@ class RevolutionAngle( ArrayFunc ):
   def evalf( self ):
     return numpy.zeros( [1] )
 
-  def _localgradient( self, ndims ):
-    lgrad = numpy.zeros( ndims )
-    lgrad[-1] = 2*numpy.pi
-    return lgrad
+  def _derivative( self, var, shape, seen ):
+    if var == 'localcoords':
+      ndims, = shape
+      lgrad = numpy.zeros( ndims )
+      lgrad[-1] = 2*numpy.pi
+      return lgrad
+    else:
+      return _zeros( shape )
 
 class Revolved( ArrayFunc ):
   'implement an extra local dimension with zero gradient'
@@ -2393,8 +2461,13 @@ class Revolved( ArrayFunc ):
   def evalf( self, func ):
     return func
 
-  def _localgradient( self, ndims ):
-    return revolved( concatenate( [ localgradient(self.func,ndims-1), _zeros(self.func.shape+(1,)) ], axis=-1 ) )
+  def _derivative( self, var, shape, seen ):
+    if var == 'localcoords':
+      return revolved( concatenate( [ derivative(self.func,var,[shape[0]-1],seen), _zeros(self.func.shape+(1,)) ], axis=-1 ) )
+    else:
+      result = derivative( self.func, var, shape, seen )
+      assert _iszero( result )
+      return result
 
   def _edit( self, op ):
     return revolved( op(self.func) )
@@ -2939,19 +3012,98 @@ def takediag( arg, ax1=-2, ax2=-1 ):
 
   return TakeDiag( arg )
 
+def partial_derivative( func, arg_key, arg_axes ):
+  '''partial derivative of a function
+
+  Compute the partial derivative of `func` with respect to argument `arg_key`,
+  limited to the axes `arg_axes` of argument `arg_key`.
+
+  Parameters
+  ----------
+  func : function
+  arg_key : int or str
+      Reference to an argument of `func`.  If `arg_key` is an `int`, `arg_key`
+      is the index of a positional argument of `func`.  If `arg_key` is a
+      `str`, `arg_key` is the name of an argument of `func`.
+  arg_axes : iterable of int
+      List of axes, where each axis should be in `[0,arg.ndim)`, where `arg` is
+      the argument refered to by `arg_key`.
+
+  Returns
+  -------
+  function
+      Partial derivative of `func`.  The shape of this function is the
+      concatenation of the shape of `func` and the shape of the `arg_axes` of
+      `arg`, where `arg` is the argument refered to by `arg_key`.
+  '''
+
+  if not isinstance( arg_key, (int, str) ):
+    raise ValueError( 'arg_key: expected an int or str, got {!r}'.format( arg_key ) )
+  arg_axes = tuple(arg_axes)
+
+  sig = inspect.signature( func )
+  if isinstance( arg_key, str ) and arg_key in sig.parameters:
+    # convert `arg_key` to index if possible
+    param = sig.parameters[arg_key]
+    if param.kind in (param.POSITIONAL_ONLY, param.POSITIONAL_OR_KEYWORD):
+      for i, (n, p) in enumerate( self._signature.parameters.items() ):
+        if p.kind not in (p.POSITIONAL, p.POSITIONAL_OR_KEYWORD):
+          break
+        if n == arg_key:
+          arg_key = i
+          break
+
+  @functools.wraps( func )
+  def wrapper( *args, **kwargs ):
+    ba = sig.bind( *args, **kwargs )
+    # add default arguments
+    for param in sig.parameters.values():
+      if (param.name not in ba.arguments and param.default is not param.empty):
+        ba.arguments[param.name] = param.default
+
+    # replace argument `arg_key` with a derivative helper
+    if isinstance(arg_key, int):
+      args = list(ba.args)
+      orig = args[arg_key]
+      var = DerivativeHelper( orig.shape, arg_axes )
+      args[arg_key] = var
+      kwargs = ba.kwargs
+    elif arg_key in ba.kwargs:
+      args = ba.args
+      kwargs = dict(ba.kwargs)
+      orig = ba.kwargs[arg_key]
+      var = DerivativeHelper( orig.shape, arg_axes )
+      kwargs[arg_key] = var
+    else:
+      raise ValueError( 'argument not found: {!r}'.format( arg_key ) )
+
+    # compute derivative and replace derivative helper with original argument
+    replace = lambda f: orig if f is var else edit( f, replace )
+    return replace( derivative( func( *args, **kwargs ), var, tuple( var.shape[i] for i in arg_axes ) ) )
+
+  return wrapper
+
+def derivative( func, var, shape, seen=None ):
+  'derivative'
+
+  if seen is None:
+    seen = {}
+  func = asarray( func )
+  shape = tuple(shape)
+  if not _isfunc( func ):
+    result = _zeros( func.shape + shape )
+  elif func in seen:
+    result = seen[func]
+  else:
+    result = func._derivative( var, shape, seen )
+    seen[func] = result
+  assert result.shape == func.shape+shape, 'bug in %s._derivative' % func
+  return result
+
 def localgradient( arg, ndims ):
   'local derivative'
 
-  arg = asarray( arg )
-  shape = arg.shape + (ndims,)
-
-  if not _isfunc( arg ):
-    return _zeros( shape )
-
-  lgrad = arg._localgradient( ndims )
-  assert lgrad.shape == shape, 'bug in %s._localgradient' % arg
-
-  return lgrad
+  return derivative( arg, 'localcoords', (ndims,) )
 
 def dotnorm( arg, coords, ndims=0 ):
   'normal component'
@@ -3200,6 +3352,16 @@ def add( arg1, arg2 ):
 
 def blockadd( *args ):
   args = tuple( itertools.chain( *( arg.funcs if isinstance( arg, BlockAdd ) else [arg] for arg in args ) ) )
+  if len( args ) == 1:
+    return args[0]
+  # try simplifications
+  for i, arg in enumerate( args ):
+    if not hasattr( arg, '_blockadd' ):
+      continue
+    retval = _call( arg, '_blockadd', blockadd( *args[:i]+args[i+1:] ) )
+    if retval is not None:
+      return retval
+  shape = _jointshape( *( arg.shape for arg in args ) )
   # group all `Inflate` objects with the same axis and dofmap
   inflates = util.OrderedDict()
   for arg in args:
@@ -3216,9 +3378,12 @@ def blockadd( *args ):
     arg = functools.reduce( operator.add, values )
     for dofmap, axis in reversed( key ):
       arg = inflate( arg, dofmap, axis )
-    args.append( arg )
-  args.extend( inflates.get( (), () ) )
-  if len( args ) == 1:
+    if not _iszero( arg ):
+      args.append( arg )
+  args.extend( arg for arg in inflates.get( (), () ) if not _iszero( arg ) )
+  if len( args ) == 0:
+    return _zeros( shape )
+  elif len( args ) == 1:
     return args[0]
   else:
     return BlockAdd( args )
