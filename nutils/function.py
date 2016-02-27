@@ -30,7 +30,6 @@ possible only via inverting of the geometry function, which is a fundamentally
 expensive and currently unsupported operation.
 """
 
-from __future__ import print_function, division
 from . import util, numpy, numeric, log, core, cache, transform, rational, _
 import sys, warnings, itertools, functools, operator
 
@@ -151,10 +150,7 @@ class Evaluable( cache.Immutable ):
       except:
         etype, evalue, traceback = sys.exc_info()
         excargs = etype, evalue, self, values
-        try: # python2/3
-          exec( 'raise EvaluationError, excargs, traceback' )
-        except SyntaxError:
-          raise EvaluationError(*excargs).with_traceback( traceback )
+        raise EvaluationError(*excargs).with_traceback( traceback )
       values.append( retval )
     return values[-1]
 

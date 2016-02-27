@@ -12,7 +12,6 @@ The log module provides print methods ``debug``, ``info``, ``user``,
 stdout as well as to an html formatted log file if so configured.
 """
 
-from __future__ import print_function, division
 import sys, time, os, warnings, re, functools, numpy
 from . import core
 
@@ -320,10 +319,7 @@ class _PrintableIterator( object ):
     return '%s %d' % ( self.__text, self.__index ) if self.__length is None \
       else '%s %d/%d (%d%%)' % ( self.__text, self.__index, self.__length, (self.__index-.5) * 100. / self.__length )
 
-  def __nonzero__( self ): # python2
-    return self.__alive
-
-  def __bool__( self ): # python3
+  def __bool__( self ):
     return self.__alive
 
   def __iter__( self ):

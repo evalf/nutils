@@ -16,7 +16,6 @@ have a well defined reference coordinate system, and provide pointsets for
 purposes of integration and sampling.
 """
 
-from __future__ import print_function, division
 from . import log, util, numpy, core, numeric, function, cache, transform, _
 import re, warnings, math
 

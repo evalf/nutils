@@ -1,6 +1,5 @@
 #! /usr/bin/python3
 
-from __future__ import division
 from nutils import mesh, util, log, function, plot, debug, _
 import numpy
 

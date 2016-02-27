@@ -13,7 +13,6 @@ platforms, notably excluding Windows. On unsupported platforms parallel features
 will disable and a warning is printed.
 """
 
-from __future__ import print_function, division
 from . import core, log, numpy, debug, numeric
 import os, sys, multiprocessing
 

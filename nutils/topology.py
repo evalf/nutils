@@ -23,7 +23,6 @@ out in element loops. For lower level operations topologies can be used as
 :mod:`nutils.element` iterators.
 """
 
-from __future__ import print_function, division
 from . import element, function, util, numpy, parallel, matrix, log, core, numeric, cache, rational, transform, _
 import warnings, collections, itertools
 
@@ -830,8 +829,7 @@ class StructuredTopology( Topology ):
 
   def __iter__( self ):
     reference = element.getsimplex(1)**self.ndims
-    izip = getattr( itertools, 'izip', zip ) # results in iterator zip for both python2 and python3
-    return ( element.Element( reference, trans, opp ) for trans, opp in izip( self._transform.flat, self._opposite.flat ) )
+    return ( element.Element( reference, trans, opp ) for trans, opp in zip( self._transform.flat, self._opposite.flat ) )
 
   def __len__( self ):
     return numpy.prod( self.shape, dtype=int )

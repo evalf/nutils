@@ -15,7 +15,6 @@ mesh writers are provided at this point; output is handled by the
 :mod:`nutils.plot` module.
 """
 
-from __future__ import print_function, division
 from . import topology, function, util, element, numpy, numeric, transform, log, _
 import os, warnings
 
