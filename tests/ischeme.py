@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 
 from nutils import *
 from . import register, unittest
