@@ -22,7 +22,7 @@ def gauss( ndims, istensor, maxdegree=7, eps=1e-12 ):
 
   for degree in range( 1, maxdegree+1 ):
 
-    @unittest( degree )
+    @unittest( name=degree )
     def degree():
       points, weights = ref.getischeme( 'gauss%d' % degree )
       for monomial, integral in zip( monomials, integrals ):

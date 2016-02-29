@@ -31,7 +31,7 @@ def cutdomain( ndims, nelems, maxrefine, errtol ):
     assert volerr < errtol, 'volume tolerance not met: {:.2e} > {:.2e}'.format( volerr, errtol )
 
   for name, dom in ('pos',pos), ('neg',neg):
-    @unittest( name )
+    @unittest( name=name )
     def div():
       dom.volume_check( geom, decimal=15 )
  
@@ -134,13 +134,13 @@ def specialcases():
     for perturb, how in (0,'mid'), (1,'pos'), (-1,'neg'), (xi-.5,'ramp'), (xi-eta,'tilt'):
       for maxrefine in 0, 1, 2:
 
-        @unittest( direction + how + str(maxrefine) )
+        @unittest( name=direction+how+str(maxrefine) )
         def inter_elem_2d():
           domain.trim( eta-.75+eps*perturb, maxrefine=maxrefine )
 
       for maxrefine in 0, 1:
 
-        @unittest( ('x' if xi is x else 'y') + how + str(maxrefine) )
+        @unittest( name=('x' if xi is x else 'y')+how+str(maxrefine) )
         def intra_elem_2d():
           pos = domain.trim( eta-.5+eps*perturb, maxrefine=maxrefine )
           pos.volume_check( geom )
@@ -153,7 +153,7 @@ def specialcases():
   for perturb, how in (0,'mid'), (1,'pos'), (-1,'neg'), (x-.5,'ramp'), (x-y,'tilt'):
     for maxrefine in 0, 1, 2:
 
-      @unittest( how + str(maxrefine) )
+      @unittest( name=how+str(maxrefine) )
       def inter_elem_3d():
         domain.trim( z-.75+eps*perturb, maxrefine=maxrefine )
 
@@ -172,7 +172,7 @@ def setoperations():
 
   Lexact = 1+numpy.sqrt(2)
   for name, dom in ('left',left), ('top',top), ('right',right), ('bottom',bottom):
-    @unittest( name )
+    @unittest( name=name )
     def boundary():
       L = dom.boundary.integrate( 1, geometry=geom, ischeme='gauss1' )
       assert numpy.isclose( L, 1+numpy.sqrt(2)  ), 'full boundary: wrong length: {} != {}'.format( L, 1+numpy.sqrt(2) )
