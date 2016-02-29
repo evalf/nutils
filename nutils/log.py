@@ -12,7 +12,7 @@ The log module provides print methods ``debug``, ``info``, ``user``,
 stdout as well as to an html formatted log file if so configured.
 """
 
-import sys, time, os, warnings, re, functools, numpy
+import sys, time, warnings, functools, itertools, re
 from . import core
 
 warnings.showwarning = lambda message, category, filename, lineno, *args: \
@@ -21,271 +21,127 @@ warnings.showwarning = lambda message, category, filename, lineno, *args: \
 LEVELS = 'path', 'error', 'warning', 'user', 'info', 'progress', 'debug'
 
 
-## STREAMS
-
-class Stream( object ):
-  '''File like object with a .write and .writelines method.'''
-
-  def writelines( self, lines ):
-    for line in lines:
-      self.write( line )
-
-  def flush( self ):
-    pass
-
-  def close( self ):
-    self.flush()
-
-  def write( self, text ):
-    raise NotImplementedError( 'write method must be overloaded' )
-
-class ColorStream( Stream ):
-  '''Wraps all text in unix terminal escape sequences to select color and
-  weight.'''
-
-  _colors = 'black', 'red', 'green', 'yellow', 'blue', 'purple', 'cyan', 'white'
-
-  def __init__( self, color, bold=False ):
-    colorid = self._colors.index( color )
-    boldid = 1 if bold else 0
-    self.fmt = '\033[%d;3%dm%%s\033[0m' % ( boldid, colorid )
-
-  def flush( self ):
-    sys.stdout.flush()
-
-  def write( self, text ):
-    sys.stdout.write( self.fmt % text )
-
-class HtmlStream( Stream ):
-  '''Buffers all text, and sends it to html stream upon destruction wrapped in
-  level-dependent html tag.'''
-
-  def __init__( self, level, context, html ):
-    self.level = level
-    if context:
-      self.buf = ' &middot; '
-      self.head = self.buf.join( context )
-    else:
-      self.buf = None
-      self.head = ''
-    self.body = ''
-    self.html = html
-    self.isopen = True
-
-  def write( self, text ):
-    assert self.isopen
-    if not text:
-      return
-    if self.buf:
-      if text != '\n':
-        self.head += self.buf
-      self.buf = None
-    self.body += text.replace( '<', '&lt;' ).replace( '>', '&gt;' )
-
-  @staticmethod
-  def _path2href( match ):
-    whitelist = ['.jpg','.png','.svg','.txt','.mp4','.webm'] + core.getprop( 'plot_extensions', [] )
-    filename = match.group(0)
-    ext = match.group(1)
-    return '<a href="%s">%s</a>' % (filename,filename) if ext not in whitelist \
-      else '<a href="%s" name="%s" class="plot">%s</a>' % (filename,filename,filename)
-
-  def close( self ):
-    assert self.isopen
-    self.isopen = False
-
-    body = self.body
-    if self.level == 'path':
-      body = re.sub( r'\b\w+([.]\w+)\b', self._path2href, body )
-    if self.level:
-      body = '<span class="%s">%s</span>' % ( self.level, body )
-    line = '<span class="line">%s</span>' % ( self.head + body )
-
-    self.html.write( line )
-    self.html.flush()
-
-  def __del__( self ):
-    if self.isopen:
-      self.close()
-
-class PostponedStream( Stream ):
-  '''Send postponedtext to postponedstream upon first written character, unless
-  the first character is a carriage return. In that case postponedtext is
-  dropped.'''
-
-  def __init__( self, postponedstream, postponedtext, stream ):
-    self.postponedstream = postponedstream
-    self.postponedtext = postponedtext
-    self.stream = stream
-
-  def flush( self ):
-    self.stream.flush()
-
-  def write( self, text ):
-    if not text:
-      return
-    if self.postponedtext:
-      if text != '\n':
-        self.postponedstream.write( self.postponedtext )
-      self.postponedtext = None
-    self.stream.write( text )
-
-class Tee( Stream ):
-  '''Duplicates output to several stream.'''
-
-  def __init__( self, *streams ):
-    self.streams = streams
-
-  def flush( self ):
-    for stream in self.streams:
-      stream.flush()
-
-  def close( self ):
-    for stream in self.streams:
-      stream.close()
-
-  def write( self, text ):
-    for stream in self.streams:
-      stream.write( text )
-
-class DevNull( Stream ):
-  '''Discards all input.'''
-
-  def write( self, text ):
-    pass
-
-class CaptureStream( Stream ):
-  '''Append all output silently to chunks member.'''
-
-  def __init__( self, chunks ):
-    self.__chunks = chunks
-
-  def write( self, text ):
-    self.__chunks.append( text )
-
-
-## STREAM FACTORIES
-
-class StreamFactory( object ):
-  '''Callable object that return a stream for given level and context.'''
-  
-  def __call__( self, level, context ):
-    raise NotImplementedError( '__call__ method must be overloaded' )
-
-class StdoutStreamFactory( StreamFactory ):
-  '''Produces stdout stream, optionally with color depending on the richoutput
-  property.'''
-
-  def __init__( self ):
-    if core.getprop( 'richoutput', False ):
-      self.contextstream = ColorStream('black',True)
-      self.sep = sep = ' · '
-      self.streams = {
-        'path': ColorStream( 'green', True ),
-        'error': ColorStream( 'red', True ),
-        'warning': ColorStream( 'red' ),
-        'user': ColorStream( 'yellow', True ),
-        'progress': self.contextstream }
-    else:
-      self.contextstream = sys.stdout
-      self.sep = ' > '
-      self.streams = {}
-    StreamFactory.__init__( self )
-
-  def __call__( self, level, context ):
-    stream = self.streams.get( level, sys.stdout )
-    if not context:
-      return stream
-    self.contextstream.write( self.sep.join(context) )
-    return PostponedStream( self.contextstream, self.sep, stream )
-
-class HtmlStreamFactory( StreamFactory ):
-  '''Produces an html stream.'''
-
-  def __init__( self, html ):
-    self.html = html
-    StreamFactory.__init__( self )
-
-  def __call__( self, level, context ):
-    return HtmlStream( level, context, self.html )
-
-class TeeStreamFactory( StreamFactory ):
-  '''Combines multiple factory output into a Tee stream'''
-
-  def __init__( self, *factories ):
-    self.factories = factories
-    StreamFactory.__init__( self )
-
-  def __call__( self, level, context ):
-    return Tee( *[ factory(level,context) for factory in self.factories ] )
-    
-class ProgressStreamFactory( StreamFactory ):
-  '''Factory wrapper that writes log level indication characters to a second stream.'''
-
-  def __init__( self, stream, factory ):
-    stream.flush()
-    self.stream = stream
-    self.factory = factory
-    StreamFactory.__init__( self )
-
-  def __call__( self, level, context ):
-    self.stream.write( level[0] )
-    self.stream.flush()
-    return self.factory( level, context )
-
-class CaptureStreamFactory( StreamFactory ):
-  '''Capture all stream output silently in a 'captured' member.'''
-
-  def __init__( self ):
-    self.chunks = []
-    StreamFactory.__init__( self )
-
-  @property
-  def captured( self ):
-    return ''.join( self.chunks )
-
-  def __call__( self, level, context ):
-    sep = ' > '
-    self.chunks.append( sep.join(context) )
-    stream = CaptureStream( self.chunks )
-    return PostponedStream( stream, sep, stream )
-
-
 ## LOG
 
 class Log( object ):
-  '''The log object is what is stored in the __log__ property. It contains the
-  streamfactory and a mutable context list, to which items can be added via the
-  .append method. Context items can be anything with a string representation,
-  and will be ignored and purged if nonzero tests False. The log can be cloned
-  with the .clone method.'''
+  '''The log object is what is stored in the __log__ property. It should define
+  a push function to add a contextual layer, a pop method to remove it, and a
+  write method.'''
 
-  def __init__( self, streamfactory, context=() ):
-    assert isinstance( streamfactory, StreamFactory )
-    self.streamfactory = streamfactory
-    self.context = context
+class StdoutLog( Log ):
+  '''Output plain text to stream.'''
 
-  def _print( self, level, *args, **kw ):
-    print( *args, file=self.getstream(level), **kw )
+  def __init__( self, stream=sys.stdout ):
+    self.stream = stream
+    self.context = []
 
-  def __getattr__( self, attr ):
-    assert attr in LEVELS
-    return functools.partial( self._print, attr )
+  def push( self, title ):
+    self.context.append( title )
 
-  def clone( self ):
-    return Log( self.streamfactory, self.context )
+  def pop( self ):
+    self.context.pop()
 
-  def append( self, newitem ):
-    self.context = [ item for item in self.context if item ]
-    self.context.append( newitem )
+  def _mkstr( self, level, text ):
+    return ' > '.join( self.context + [ text ] if text is not None else self.context )
 
-  def getstream( self, level, verbosity=None ):
-    if verbosity is None:
-      verbosity = core.getprop('verbose',9)
-    if level in LEVELS[ verbosity: ]:
-      return DevNull()
-    context = [ str(item) for item in self.context if item ]
-    return self.streamfactory( level, context )
+  def write( self, level, text, endl=True ):
+    verbose = core.getprop( 'verbose', len(LEVELS) )
+    if level not in LEVELS[verbose:]:
+      s = self._mkstr( level, text )
+      self.stream.write( s + '\n' if endl else s )
+
+class RichOutputLog( StdoutLog ):
+  '''Output rich (colored,unicode) text to stream.'''
+
+  # color order: black, red, green, yellow, blue, purple, cyan, white
+
+  cmap = { 'path': (2,1), 'error': (1,1), 'warning': (1,0), 'user': (3,0) }
+
+  def _mkstr( self, level, text ):
+    if text is not None:
+      string = ' · '.join( self.context + [text] )
+      n = len(string) - len(text)
+    else:
+      string = ' · '.join( self.context )
+      n = len(string)
+    try:
+      colorid, boldid = self.cmap[level]
+    except KeyError:
+      return '\033[1;30m{}\033[0m{}'.format( string[:n], string[n:] )
+    else:
+      return '\033[1;30m{}\033[{};3{}m{}\033[0m'.format( string[:n], boldid, colorid, string[n:] )
+
+class HtmlLog( Log ):
+  '''Output html nested lists.'''
+
+  def __init__( self, htmlfile ):
+    self.htmlfile = htmlfile
+    self.context = []
+
+  def push( self, title ):
+    self.context.append( title )
+
+  def pop( self ):
+    if self.context:
+      self.context.pop()
+
+  @staticmethod
+  def _path2href( match ):
+    whitelist = ['.jpg','.png','.svg','.txt','.mp4','.webm'] + list( core.getprop( 'plot_extensions', [] ) )
+    filename = match.group(0)
+    ext = match.group(1)
+    return ( '<a href="{0}">{0}</a>' if ext not in whitelist else '<a href="{0}" name="{0}" class="plot">{0}</a>' ).format(filename)
+
+  def write( self, level, text ):
+    if text is None:
+      return
+    if level == 'path':
+      text = re.sub( r'\b\w+([.]\w+)\b', self._path2href, text )
+    line = ' &middot; '.join( self.context + ['<span class="{}">{}</span>'.format(level,text)] )
+    self.htmlfile.write( '<span class="line">{}</span>\n'.format(line) )
+    self.htmlfile.flush()
+
+class TeeLog( Log ):
+  '''Simultaneously interface multiple logs'''
+
+  def __init__( self, *logs ):
+    self.logs = logs
+
+  def push( self, title ):
+    for log in self.logs:
+      log.push(title)
+
+  def pop( self ):
+    for log in self.logs:
+      log.pop()
+
+  def write( self, level, text ):
+    for log in self.logs:
+      log.write( level, text )
+    
+class CaptureLog( Log ):
+  '''Silently capture output to a string buffer while writing single character
+  progress info to a secondary stream.'''
+
+  def __init__( self, stream=sys.stdout ):
+    self.stream = stream
+    self.context = []
+    self.lines = []
+
+  def push( self, title ):
+    self.context.append( title )
+
+  def pop( self ):
+    self.context.pop()
+
+  def write( self, level, text ):
+    self.lines.append( ' > '.join( self.context + [ text ] if text is not None else self.context ) )
+    self.stream.write( level[0] )
+    self.stream.flush()
+
+  @property
+  def captured( self ):
+    return '\n'.join( self.lines )
 
 
 ## INTERNAL FUNCTIONS
@@ -296,48 +152,6 @@ _iter = iter
 _zip = zip
 _enumerate = enumerate
 
-class _PrintableIterator( object ):
-  'iterable context logger that updates progress info'
-
-  def __init__( self, text, iterator, length=None ):
-    self.__text = text
-    self.__length = length
-    self.__iterator = iterator
-    self.__index = 0
-    self.__alive = True
-    
-    # clock
-    self.__dt = core.getprop( 'progress_interval', 1. )
-    self.__dtexp = core.getprop( 'progress_interval_scale', 2 )
-    self.__dtmax = core.getprop( 'progress_interval_max', 0 )
-    self.__tnext = time.time() + self.__dt
-
-    append( self )
-
-  def __str__( self ):
-    self.__tnext = time.time() + self.__dt
-    return '%s %d' % ( self.__text, self.__index ) if self.__length is None \
-      else '%s %d/%d (%d%%)' % ( self.__text, self.__index, self.__length, (self.__index-.5) * 100. / self.__length )
-
-  def __bool__( self ):
-    return self.__alive
-
-  def __iter__( self ):
-    try:
-      for item in self.__iterator:
-        self.__index += 1
-        now = time.time()
-        if self.__alive and now > self.__tnext:
-          if self.__dtexp != 1:
-            self.__dt *= self.__dtexp
-            if self.__dt > self.__dtmax > 0:
-              self.__dt = self.__dtmax
-          progress()
-          self.__tnext = now + self.__dt
-        yield item
-    finally:
-      self.__alive = False
-
 def _len( iterable ):
   '''Return length if available, otherwise None'''
 
@@ -346,64 +160,93 @@ def _len( iterable ):
   except:
     return None
 
-def _count( index, step, stop ):
-  while index < stop:
-    yield index
-    index += step
+def _logiter( text, iterator, length=None ):
+  dt = core.getprop( 'progress_interval', 1. )
+  dtexp = core.getprop( 'progress_interval_scale', 2 )
+  dtmax = core.getprop( 'progress_interval_max', 0 )
+  tnext = time.time() + dt
+  log = _getlog()
+  index = 0
+  for item in iterator:
+    title = '%s %d' % ( text, index )
+    if length is not None:
+      title += '/%d (%d%%)' % ( length, (index-.5) * 100. / length )
+    index += 1
+    log.push( title )
+    try:
+      now = time.time()
+      if now > tnext:
+        dt *= dtexp
+        if dt > dtmax > 0:
+          dt = dtmax
+        log.write( 'progress', None )
+        tnext = now + dt
+      yield item
+    finally:
+      log.pop()
 
+def _mklog():
+  return RichOutputLog() if core.getprop( 'richoutput', False ) else StdoutLog()
 
-## MODULE-ACCESIBLE LOG METHODS
+def _getlog():
+  log = core.getprop( 'log', None )
+  if not isinstance( log, Log ):
+    if log is not None:
+      warnings.warn( '''Invalid logger object found: {!r}
+        This is usually caused by manually setting the __log__ variable.'''.format(log), stacklevel=2 )
+    log = _mklog()
+  return log
 
-__methods__ = LEVELS + ( 'getstream', 'clone', 'append' )
+def _path2href( match ):
+  whitelist = ['.jpg','.png','.svg','.txt','.mp4','.webm'] + core.getprop( 'plot_extensions', [] )
+  filename = match.group(0)
+  ext = match.group(1)
+  return '<a href="%s">%s</a>' % (filename,filename) if ext not in whitelist \
+    else '<a href="%s" name="%s" class="plot">%s</a>' % (filename,filename,filename)
 
-def _logmethod( attr ):
-  def wrapper( *args, **kwargs ):
-    log = core.getprop( 'log', None )
-    if not isinstance( log, Log ):
-      if log is not None:
-        warnings.warn( '''Invalid logger object found: {!r}
-          This is usually caused by manually setting the __log__ variable.'''.format(log), stacklevel=2 )
-      log = Log( StdoutStreamFactory() )
-    method = getattr( log, attr )
-    return method( *args, **kwargs )
-  wrapper.__name__ = attr
-  return wrapper
-
-locals().update({ name: _logmethod(name) for name in __methods__ })
+def _print( level, *args ):
+  return _getlog().write( level, ' '.join( str(arg) for arg in args ) )
 
 
 ## MODULE-ONLY METHODS
+
+locals().update({ name: functools.partial( _print, name ) for name in LEVELS })
+
+def close():
+  log = core.getprop( 'log', None )
+  if isinstance( log, Log ):
+    log.close()
 
 def range( title, *args ):
   '''Progress logger identical to built in range'''
 
   items = _range( *args )
-  return _PrintableIterator( title, _iter(items), len(items) )
+  return _logiter( title, _iter(items), len(items) )
 
 def iter( title, iterable, length=None ):
   '''Progress logger identical to built in iter'''
 
-  return _PrintableIterator( title, _iter(iterable), length or _len(iterable) )
+  return _logiter( title, _iter(iterable), length or _len(iterable) )
 
 def enumerate( title, iterable, length=None ):
   '''Progress logger identical to built in enumerate'''
 
-  return _PrintableIterator( title, _enumerate(iterable), length or _len(iterable) )
+  return _logiter( title, _enumerate(iterable), length or _len(iterable) )
 
 def zip( title, *iterables ):
   '''Progress logger identical to built in enumerate'''
 
-  return _PrintableIterator( title, _zip(*iterables), None )
+  return _logiter( title, _zip(*iterables), None )
 
-def count( title, start=0, step=1, stop=numpy.inf ):
+def count( title, start=0, step=1 ):
   '''Progress logger identical to itertools.count'''
 
-  return _PrintableIterator( title, _count(start,step,stop), None )
+  return _logiter( title, itertools.count(start,step), None )
     
 def stack( msg, frames ):
   '''Print stack trace'''
 
-  print( msg, *reversed(frames), sep='\n', file=getstream( 'error' ) )
+  error( msg + '\n' + '\n'.join( str(f) for f in reversed(frames) ) )
 
 def title( f ): # decorator
   '''Decorator, adds title argument with default value equal to the name of the
@@ -422,14 +265,13 @@ def title( f ): # decorator
     gettitle = lambda args, kwargs: kwargs.pop('title',default)
   @functools.wraps(f)
   def wrapped( *args, **kwargs ):
-    __log__ = clone()
-    __log__.append( gettitle(args,kwargs) )
-    return f( *args, **kwargs )
+    __log__ = _getlog() # repeat as property for fast retrieval
+    __log__.push( gettitle(args,kwargs) )
+    try:
+      return f( *args, **kwargs )
+    finally:
+      __log__.pop()
   return wrapped
 
-def signal_handler( sig, frame ):
-  log = core.getprop( 'log', None, frame=frame )
-  if log is not None:
-    log.progress()
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

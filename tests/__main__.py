@@ -9,6 +9,6 @@ from . import \
   doubleint,  \
   quadrature, \
   element,    \
-  _run
+  runtests
 
-_run()
+runtests()

@@ -1,130 +1,51 @@
-from nutils import log, debug, core, numpy
-import sys, time
+# -*- coding: utf8 -*-
 
-if 'coverage' in sys.argv[0]:
-  # coverage passes the complete commandline to `sys.argv`
-  # find '-m tests' and keep the tail
-  m = sys.argv.index('-m')
-  assert sys.argv[m+1] == 'tests' # name of this module
-  selection = list(sys.argv[m+2:])
-else:
-  selection = list(sys.argv[1:])
-try:
-  selection.remove( '--tbexplore' )
-except ValueError:
-  tbexplore = False
-else:
-  tbexplore = True
-packages = []
+from nutils import log, debug, core
+import sys, time, collections
 
-def _run():
-  __richoutput__ = True
-  __selfcheck__ = True
-  __log__ = log.clone()
-  __results__ = []
-  try:
-    for package in packages:
-      package()
-  except KeyboardInterrupt:
-    log.info( 'aborted.' )
-    sys.exit( -1 )
-  except:
-    exc, frames = debug.exc_info()
-    log.stack( 'error in unit testing framework: {}'.format(exc), frames )
-    log.info( 'crashed.' )
-    sys.exit( -2 )
-  passed, failed, error, packagefail = results_by_status = [], [], [], []
-  for name, status in __results__:
-    results_by_status[status].append( name )
-  log.info( '{}/{} tests passed.'.format( len(passed), len(__results__) ) )
-  if failed:
-    log.info( '* failures ({}):'.format(len(failed)), ', '.join( failed ) )
-  if error:
-    log.info( '* errors ({}):'.format(len(error)), ', '.join( error ) )
-  if packagefail:
-    log.info( '* package failures ({}):'.format(len(packagefail)), ', '.join( packagefail ) )
-  sys.exit( len(__results__) - len(passed) )
 
-def _package( f, __scope__ ):
-  def wrapper():
-    __log__ = log.clone()
-    for item in __scope__.split('.'):
-      __log__.append( item )
-    results0 = core.getprop('results')
-    __results__ = []
+## INTERNAL VARIABLES
+
+PACKAGES = collections.OrderedDict()
+OK, FAILED, ERROR, PKGERROR = range(4)
+
+
+## INTERNAL METHODS
+
+def _runtests( pkg, whitelist ):
+  __log__ = log._getlog()
+  __results__ = {}
+  if isinstance( pkg, dict ):
+    for key in pkg:
+      if whitelist and key != whitelist[0]:
+        continue
+      __log__.push( key )
+      try:
+        __results__[key] = _runtests( pkg[key], whitelist[1:] )
+      except KeyboardInterrupt:
+        raise
+      finally:
+        __log__.pop()
+  else:
     t0 = time.time()
     try:
-      f()
+      pkg()
+    except KeyboardInterrupt:
+      raise
     except:
       exc, frames = debug.exc_info()
       log.stack( 'error: {}'.format(exc), frames )
-      results0.append(( __scope__, 3 ))
-      if tbexplore:
+      if core.getprop( 'tbexplore', False ):
         debug.explore( repr(exc), frames, '''Test package
           {!r} failed. The traceback explorer allows you to examine the failure
           state. Closing the explorer will resume testing with the next
           package.'''.format(__scope__) )
+      __results__ = PKGERROR
     else:
       dt = time.time() - t0
-      npassed = sum( status == 0 for name, status in __results__ )
-      log.info( 'passed {}/{} tests in {:.2f} seconds'.format( npassed, len(__results__), dt ) )
-      results0.extend( __results__ )
-  wrapper.__module__ = f.__module__
-  wrapper.__name__ = f.__name__
-  return wrapper
-
-def register( arg0, *args, **kwargs ):
-  if not callable( arg0 ):
-    return lambda f: register( _withattrs( lambda: f( *args, **kwargs ), __name__=f.__name__+':'+str(arg0), __module__=f.__module__, __wraps__=f ) )
-  assert not args and not kwargs
-  pkgname, scope = ( arg0.__module__ + '.' + arg0.__name__ ).split( '.', 1 )
-  assert pkgname == __name__
-  if not selection or any( scope == arg or arg.startswith(scope+'.') or scope.startswith(arg+'.') for arg in selection ):
-    packages.append( _package(arg0,scope) )
-  return getattr( arg0, '__wraps__', arg0 )
-
-def _unittest( f ):
-  infostream = log.getstream( 'info' )
-  infostream.write( 'testing..' )
-  output = log.CaptureStreamFactory()
-  __log__ = log.Log( log.ProgressStreamFactory( infostream, output ) )
-  try:
-    f()
-  except AssertionError:
-    status = 1
-    exc, frames = debug.exc_info()
-    infostream.write( ' FAILED: {}\n'.format( str(exc).strip() ) )
-  except:
-    status = 2
-    exc, frames = debug.exc_info()
-    infostream.write( ' ERROR: {}\n'.format( str(exc).strip() ) )
-  else:
-    status = 0
-    exc = frames = None
-    infostream.write( ' OK\n' )
-  infostream.close()
-  return status, output.captured, exc, frames
-
-def unittest( arg ):
-  if not callable( arg ):
-    return lambda f: unittest( _withattrs( f, __name__=f.__name__+':'+str(arg) ) )
-  name = core.getprop('scope') + '.' + arg.__name__
-  if selection and not any( name == arg or name.startswith( arg+'.' ) for arg in selection ):
-    return
-  __log__ = log.clone()
-  __log__.append( arg.__name__ )
-  status, captured, exc, frames = _unittest( arg )
-  core.getprop('results').append(( name, status ))
-  if status:
-    if captured:
-      log.error( 'captured output:\n-----\n{}-----'.format(captured) )
-    if tbexplore:
-      debug.explore( repr(exc), frames, '''Unit test {!r} failed. The traceback
-        explorer allows you to examine the failure state. Closing the explorer
-        will resume testing.'''.format( name ) )
-
-
-## HELPER FUNCTIONS
+      npassed = sum( status == OK for name, status in __results__.items() )
+      __log__.write( 'info', 'passed {}/{} tests in {:.2f} seconds'.format( npassed, len(__results__), dt ) )
+  return __results__
 
 def _withattrs( f, **attrs ):
   wrapped = lambda *args, **kwargs: f( *args, **kwargs )
@@ -133,3 +54,122 @@ def _withattrs( f, **attrs ):
   for attr, value in attrs.items():
     setattr( wrapped, attr, value )
   return wrapped
+
+def _summarize( pkg, name=() ):
+  if not isinstance( pkg, dict ):
+    return { pkg: ['.'.join(name)] }
+  summary = {}
+  for key, val in pkg.items():
+    for status, tests in _summarize( val, name+(key,) ).items():
+      summary.setdefault( status, [] ).extend( tests )
+  return summary
+
+
+## EXPOSED MODULE METHODS
+
+def runtests():
+
+  args = sys.argv[1:] # command line arguments
+
+  if 'coverage' in sys.argv[0]:
+    # coverage passes the complete commandline to `sys.argv`
+    # find '-m tests' and keep the tail
+    m = args.index( '-m' )
+    assert args[m+1] == __name__
+    args = args[m+2:]
+
+  __tbexplore__ = '--tbexplore' in args
+  if __tbexplore__:
+    args.remove( '--tbexplore' )
+  
+  if args:
+    assert len(args) == 1
+    whitelist = args[0].split( '.' )
+  else:
+    whitelist = []
+
+  __richoutput__ = True
+  __selfcheck__ = True
+  __log__ = log._mklog()
+  try:
+    results = _runtests( PACKAGES, whitelist )
+  except KeyboardInterrupt:
+    log.info( 'aborted.' )
+    sys.exit( -1 )
+  except:
+    exc, frames = debug.exc_info()
+    log.stack( 'error in unit testing framework: {}'.format(exc), frames )
+    log.info( 'crashed.' )
+    sys.exit( -2 )
+
+  summary = _summarize(results)
+  ntests = sum( len(tests) for tests in summary.values() )
+  passed = summary.pop( OK, [] )
+  failed = summary.pop( FAILED, [] )
+  error = summary.pop( ERROR, [] )
+  pkgerror = summary.pop( PKGERROR, [] )
+
+  log.info( '{}/{} tests passed.'.format( len(passed), ntests ) )
+  if failed:
+    log.info( '* failures ({}):'.format(len(failed)), ', '.join( failed ) )
+  if error:
+    log.info( '* errors ({}):'.format(len(error)), ', '.join( error ) )
+  if pkgerror:
+    log.info( '* package failures ({}):'.format(len(pkgerror)), ', '.join( pkgerror ) )
+  if summary:
+    log.info( '* invalid status ({}) - this should not happen!'.format(len(summary)) )
+
+  sys.exit( ntests - len(passed) )
+
+def register( arg0, *args, **kwargs ):
+  if not callable( arg0 ):
+    return lambda f: register( _withattrs( lambda: f( *args, **kwargs ), __name__=f.__name__+':'+str(arg0), __module__=f.__module__, __wraps__=f ) )
+  assert not args and not kwargs
+  pkgname, scope = arg0.__module__.split( '.', 1 )
+  assert pkgname == __name__
+  pkg = PACKAGES
+  for item in scope.split( '.' ):
+    pkg = pkg.setdefault( item, collections.OrderedDict() )
+    assert isinstance( pkg, dict )
+  assert arg0.__name__ not in pkg
+  pkg[arg0.__name__] = arg0
+  return getattr( arg0, '__wraps__', arg0 )
+
+def unittest( arg ):
+  if not callable( arg ):
+    return lambda f: unittest( _withattrs( f, __name__=f.__name__+':'+str(arg) ) )
+  name = arg.__name__
+  if core.getprop( 'filter', name ) != name:
+    return
+  parentlog = log._getlog()
+  __log__ = log.CaptureLog()
+  parentlog.push( name )
+  try:
+    parentlog.write( 'info', 'testing..', endl=False )
+    arg()
+  except AssertionError:
+    status = FAILED
+    exc, frames = debug.exc_info()
+    print( ' FAILED:', str(exc).strip() )
+  except KeyboardInterrupt:
+    raise
+  except:
+    status = ERROR
+    exc, frames = debug.exc_info()
+    print( ' ERROR:', str(exc).strip() )
+  else:
+    status = OK
+    exc = frames = None
+    print( ' OK' )
+  finally:
+    parentlog.pop()
+  core.getprop('results')[name] = status
+  if status != OK:
+    parentlog.write( 'info', 'captured output:\n-----\n{}\n-----'.format(__log__.captured) )
+    if core.getprop( 'tbexplore', False ):
+      debug.explore( repr(exc), frames, '''Unit test {!r} failed. The traceback
+        explorer allows you to examine the failure state. Closing the explorer
+        will resume testing.'''.format( name ) )
+
+
+# vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
