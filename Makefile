@@ -1,6 +1,8 @@
 PYTHON?=python3
 COVERAGE?=python3-coverage
 
+EXAMPLES = $(wildcard examples/*)
+
 build:
 	${PYTHON} setup.py build clean
 
@@ -16,11 +18,10 @@ test: test_unit test_examples
 test_unit:
 	${PYTHON} -m tests
 
-test_examples:
-	@for script in examples/*; do \
-		echo $$script; \
-		${PYTHON} $$script unittest --tbexplore=False --verbose=3; \
-	done
+test_examples: $(EXAMPLES)
+
+$(EXAMPLES):
+	${PYTHON} $@ unittest --tbexplore=False --verbose=3
 
 coverage:
 	${COVERAGE} erase
@@ -35,6 +36,6 @@ clean:
 	rm -f MANIFEST nutils/*.pyc
 	${MAKE} -C docs clean
 
-.PHONY: build dist docs test test_unit test_examples coverage htmlcov clean
+.PHONY: build dist docs test test_unit test_examples $(EXAMPLES) coverage htmlcov clean
 
 # vim:noexpandtab
