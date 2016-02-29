@@ -10,7 +10,6 @@
 The rational module.
 """
 
-from __future__ import print_function, division
 import numpy
 
 
@@ -99,10 +98,8 @@ class Rational( object ):
     for array in self.numer:
       yield Rational( array, self.denom )
 
-  def __nonzero__( self ):
+  def __bool__( self ):
     return bool(self.numer)
-
-  __bool__ = __nonzero__ # python3
 
   def __getitem__( self, item ):
     return Rational( self.numer[item], self.denom )

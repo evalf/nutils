@@ -12,7 +12,6 @@ nevertheless have a wide enough range of applicability to be useful as generic
 building blocks.
 """
 
-from __future__ import print_function, division
 from . import function, _, numeric
 import numpy
 

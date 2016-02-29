@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 
 from nutils import *
 from . import register, unittest
@@ -115,14 +114,9 @@ def structure2d():
     assert numpy.all( n1 == -n2 )
 
 def _test_pickle_dump_load( data ):
-  if sys.version_info.major == 2:
-    script = b'from nutils import *\nimport pickle, base64\npickle.loads( base64.decodestring( """' \
-      + base64.encodestring( pickle.dumps( data, 2 ) ) \
-      + b'""" ) )'
-  else:
-    script = b'from nutils import *\nimport pickle, base64\npickle.loads( base64.decodebytes( b"""' \
-      + base64.encodebytes( pickle.dumps( data ) ) \
-      + b'""" ) )'
+  script = b'from nutils import *\nimport pickle, base64\npickle.loads( base64.decodebytes( b"""' \
+    + base64.encodebytes( pickle.dumps( data ) ) \
+    + b'""" ) )'
   p = subprocess.Popen( [ sys.executable ], stdin=subprocess.PIPE )
   p.communicate( script )
   assert p.wait() == 0, 'unpickling failed'

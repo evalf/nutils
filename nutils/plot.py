@@ -12,7 +12,6 @@ backends. At this point `matplotlib <http://matplotlib.org/>`_ and `vtk
 <http://vtk.org>`_ are supported.
 """
 
-from __future__ import print_function, division
 from . import numpy, log, core, cache, numeric, _
 import os, warnings, sys, subprocess
 

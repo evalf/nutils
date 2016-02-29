@@ -11,7 +11,6 @@ The core module provides a collection of low level constructs that have no
 dependencies on other nutils modules. Primarily for internal use.
 """
 
-from __future__ import print_function, division
 import sys, functools, os
 
 globalproperties = {

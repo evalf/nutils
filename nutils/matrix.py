@@ -14,7 +14,6 @@ solving linear systems. Matrices can be converted to numpy arrays via
 ``toarray`` or scipy matrices via ``toscipy``.
 """
 
-from __future__ import print_function, division
 from . import util, numpy, log
 import functools
 

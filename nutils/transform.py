@@ -10,7 +10,6 @@
 The transform module.
 """
 
-from __future__ import print_function, division
 from . import cache, numeric, core
 import numpy
 

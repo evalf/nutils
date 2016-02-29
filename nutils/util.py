@@ -13,7 +13,6 @@ point of a nutils application, taking care of command line parsing, output dir
 creation and initiation of a log file.
 """
 
-from __future__ import print_function, division
 from . import log, debug, core, version, numeric
 import sys, os, time, numpy, hashlib, weakref, warnings, collections, inspect
 
@@ -122,7 +121,6 @@ def withrepr( f ):
 
   from functools import update_wrapper, WRAPPER_ASSIGNMENTS
   assignments = list( WRAPPER_ASSIGNMENTS )
-  assignments.remove( '__doc__' ) # for python2
   return update_wrapper( function_wrapper, f, assignments, [] )
 
 def profile( func ):
@@ -339,7 +337,7 @@ class OrderedDict( collections.MutableMapping, collections.Sequence ):
   def __len__( self ):
     return len( self._dict )
 
-def _getkwargdefaults_new( func ):
+def getkwargdefaults( func ):
   'helper for run'
 
   kwargs = OrderedDict()
@@ -351,21 +349,6 @@ def _getkwargdefaults_new( func ):
       raise ValueError( 'Function cannot be called without arguments.' )
     kwargs[parameter.name] = parameter.default
   return kwargs
-
-def _getkwargdefaults_legacy( func ):
-  'helper for run'
-
-  args, varargs, keywords, defaults = inspect.getargspec( func )
-  if defaults is None:
-    defaults = []
-  if len( defaults ) != len( args ):
-    raise ValueError( 'Function cannot be called without arguments.' )
-  return OrderedDict(zip(args, defaults))
-
-if sys.version_info >= (3,3):
-  getkwargdefaults = _getkwargdefaults_new
-else:
-  getkwargdefaults = _getkwargdefaults_legacy
 
 class Statm( object ):
   'memory statistics on systems that support it'

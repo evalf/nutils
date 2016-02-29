@@ -10,7 +10,6 @@
 The cache module.
 """
 
-from __future__ import print_function, division
 from . import core, log, rational
 import os, sys, weakref, numpy, functools
 
@@ -216,29 +215,22 @@ class ImmutableMeta( type ):
       cls.cache[key] = self
     return self
 
-try: # for python 2/3 compatibility
-  exec( 'class Immutable( object, metaclass=ImmutableMeta ): pass' )
-except SyntaxError:
-  class Immutable( object ):
-    __metaclass__ = ImmutableMeta
+class Immutable( object, metaclass=ImmutableMeta ):
 
-def findargs( self ):
-  for args, obj in self.__class__.cache.items():
-    if obj is self:
-      return tuple( arg._orig if isinstance( arg, HashableBase ) else arg for arg in args )
-  raise ValueError( 'object missing from cache' )
+  def __getnewargs__( self ):
+    for args, obj in self.__class__.cache.items():
+      if obj is self:
+        return tuple( arg._orig if isinstance( arg, HashableBase ) else arg for arg in args )
+    raise ValueError( 'object missing from cache' )
 
-def immutable_str( self ):
-  try:
-    args = findargs(self)
-  except ValueError:
-    s = str( type(self) )
-  else:
-    s = '{}({})'.format( self.__class__.__name__, ','.join( str(arg) for arg in args ) )
-  return s
-
-Immutable.__getnewargs__ = findargs
-Immutable.__str__ = immutable_str
+  def __str__( self ):
+    try:
+      args = findargs(self)
+    except ValueError:
+      s = str( type(self) )
+    else:
+      s = '{}({})'.format( self.__class__.__name__, ','.join( str(arg) for arg in args ) )
+    return s
 
 class FileCache( object ):
   'cache'
@@ -246,32 +238,6 @@ class FileCache( object ):
   def __init__( self, *args ):
     'constructor'
 
-    if sys.version_info.major == 2:
-      self.init1( args )
-    else:
-      self.init2( args )
-
-  def init1( self, args ):
-    import os, numpy
-    self.myhash = hash( args )
-    hexhash = hex( self.myhash )[2:]
-    cachedir = core.getprop( 'cachedir', 'cache' )
-    if not os.path.exists( cachedir ):
-      os.makedirs( cachedir )
-    path = os.path.join( cachedir, hexhash )
-    allhash = numpy.array( [ hash(arg) for arg in args ], 'uint' )
-    if not os.path.isfile( path ) or core.getprop( 'recache', False ):
-      log.info( 'starting new cache:', hexhash )
-      data = open( path, 'wb+' )
-      allhash.tofile( data )
-    else:
-      log.info( 'continuing from cache:', hexhash )
-      data = open( path, 'ab+' )
-      checkhash = numpy.fromfile( data, 'uint', len(allhash) )
-      assert all( checkhash == allhash ), 'hash clash'
-    self.data = data
-
-  def init2( self, args ):
     import os, numpy, hashlib, pickle
     serial = pickle.dumps( args, -1 )
     self.myhash = hash( serial )

@@ -10,7 +10,6 @@
 The numeric module provides methods that are lacking from the numpy module.
 """
 
-from __future__ import print_function, division
 import numpy
 
 _abc = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' # indices for einsum
