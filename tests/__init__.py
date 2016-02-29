@@ -1,7 +1,7 @@
 # -*- coding: utf8 -*-
 
 from nutils import log, debug, core
-import sys, time, collections
+import sys, time, collections, functools
 
 
 ## INTERNAL VARIABLES
@@ -121,24 +121,34 @@ def runtests():
 
   sys.exit( ntests - len(passed) )
 
-def register( arg0, *args, **kwargs ):
-  if not callable( arg0 ):
-    return lambda f: register( _withattrs( lambda: f( *args, **kwargs ), __name__=f.__name__+':'+str(arg0), __module__=f.__module__, __wraps__=f ) )
-  assert not args and not kwargs
-  pkgname, scope = arg0.__module__.split( '.', 1 )
+def register( f, *args, **kwargs ):
+  if not callable( f ):
+    return functools.partial( register, name_suffix=':'+str(f), f_args=args, f_kwargs=kwargs )
+  assert not args
+  name = f.__name__ + kwargs.pop( 'name_suffix', '' )
+  f_args = kwargs.pop( 'f_args', () )
+  f_kwargs = kwargs.pop( 'f_kwargs', {} )
+  assert not kwargs
+  pkgname, scope = f.__module__.split( '.', 1 )
   assert pkgname == __name__
   pkg = PACKAGES
   for item in scope.split( '.' ):
     pkg = pkg.setdefault( item, collections.OrderedDict() )
     assert isinstance( pkg, dict )
-  assert arg0.__name__ not in pkg
-  pkg[arg0.__name__] = arg0
-  return getattr( arg0, '__wraps__', arg0 )
+  assert name not in pkg
+  pkg[name] = lambda: f(*f_args, **f_kwargs)
+  return f
 
-def unittest( arg ):
-  if not callable( arg ):
-    return lambda f: unittest( _withattrs( f, __name__=f.__name__+':'+str(arg) ) )
-  name = arg.__name__
+class _NoException( Exception ): pass
+
+def unittest( *args, name=None, raises=_NoException ):
+  if len(args) == 0:
+    return functools.partial( unittest, name=str(name), raises=raises )
+  elif len(args) > 1:
+    raise TypeError('unittest() takes one positional argument but {} were given'.format( len(args ) ) )
+  arg, = args
+  if name is None:
+    name = arg.__name__
   if core.getprop( 'filter', name ) != name:
     return
   parentlog = log._getlog()
@@ -147,6 +157,10 @@ def unittest( arg ):
   try:
     parentlog.write( 'info', 'testing..', endl=False )
     arg()
+    assert raises is _NoException, 'exception not raised, expected {!r}'.format( raises )
+  except raises:
+    status = OK
+    print( ' OK' )
   except AssertionError:
     status = FAILED
     exc, frames = debug.exc_info()
@@ -159,7 +173,6 @@ def unittest( arg ):
     print( ' ERROR:', str(exc).strip() )
   else:
     status = OK
-    exc = frames = None
     print( ' OK' )
   finally:
     parentlog.pop()
