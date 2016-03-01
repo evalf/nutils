@@ -27,7 +27,7 @@ class Fake(object):
   def __getattr__( self, attr ):
     return None
 
-sys.modules[ 'numpy' ] = Fake( __version__='1.8', dtype=lambda o: None, ndarray=Fake )
+sys.modules[ 'numpy' ] = Fake( version=Fake(version='1.8'), dtype=lambda o: None, ndarray=Fake, empty=lambda *args, **kwargs: None )
 sys.modules[ 'scipy' ] = Fake()
 sys.modules[ 'matplotlib' ] = Fake()
 
