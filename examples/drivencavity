@@ -84,7 +84,7 @@ def main( nelems=12, viscosity=1e-3, density=1, degree=2, warp=False, withplots=
 
 def unittest():
 
-  retvals = main( nelems=4, viscosity=1e-3, degree=1, warp=False, tol=1e-15, maxiter=1, withplots=False )
+  retvals = main( nelems=4, viscosity=1e-3, degree=1, warp=False, tol=0, maxiter=1, withplots=False )
   assert debug.checkdata( retvals, '''
     eNrFkl1uxCAMhK+zK0Hl8S8+UO5/hYKdbJ8q9a0SEpE9DJ+HYLx0wN7j9aKv0cvd45oxnIiu6ePTwF3I
     Pzd+tfr3tSeexsuuaUOD5OwTknxNHa4SpwA6Ah2T8/BvBUO0K2vR+eAgnF0TqxrKmi3NbCk8S4q0ktiK
@@ -92,7 +92,7 @@ def unittest():
     rR9gQwfmvFrykMI7qL2XAqFaXORVd0rvvkXXubhnhPABnDu+ukxcVjtA+0Q77QyiiVOWNwWoUtnD5i2V
     O0/SMpU7npmJ+hH3m7QrtHmygxUW6oCtAq4/5f0NMWaoJA==''' )
 
-  retvals = main( nelems=4, viscosity=1e-3, degree=2, warp=False, tol=1e-15, maxiter=1, withplots=False )
+  retvals = main( nelems=4, viscosity=1e-3, degree=2, warp=False, tol=0, maxiter=1, withplots=False )
   assert debug.checkdata( retvals, '''
     eNrVU1mK3UAMvM4bsIP25UBz/yvEUvUbmAmE/AYMaloqqark5utlF/vH9XrRr+vrYyL6vOMKR/yWO3ed
     /kdODo51ov8z7m/z/uvvMfa2SBkzspIn3sxen/fju6ROvDk75yBsMvFBnEolQYUjc5szzaHMfKIaORJm
@@ -102,7 +102,7 @@ def unittest():
     +xSLTTukgmaPw87rkMH+pA4kCxD8WE9lkmFt0aAhrnFobS8V3kpmBhuH03UevzAHcLSjHgvXMtmd1dWk
     i9es9Wmfy8dvwCb0Ug==''' )
 
-  retvals = main( nelems=4, viscosity=1e-3, degree=1, warp=True, tol=1e-15, maxiter=1, withplots=False )
+  retvals = main( nelems=4, viscosity=1e-3, degree=1, warp=True, tol=0, maxiter=1, withplots=False )
   assert debug.checkdata( retvals, '''
     eNrFUllqBDAIvc4MxOIWlwPN/a8wUTOFfhT6VwgY8hafEloPXbSf6/HArzVHGPEFtlhcXrDXN6AxgGzD
     vwG/Wv37ORMDGXGlIkGtCmLZMVk0G7BsAigm1RxgZM0AU22NBUZTGQ9DFxBG7wDceC6S3G5bZwkkLEUl
