@@ -2408,7 +2408,7 @@ class DerivativeHelper( ArrayFunc ):
   def _derivative( self, var, shape, seen ):
     if var is self:
       assert shape == tuple( self.shape[axis] for axis in self._axes )
-      result = 1
+      result = numpy.array(1)
       for i, axis in enumerate( self._axes ):
         result *= align( eye( self.shape[axis] ), ( axis, self.ndim+i ), self.ndim+len(self._axes) )
       return result
