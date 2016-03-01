@@ -27,3 +27,4 @@ What follows is an automatically generated API reference.
    library/parallel
    library/util
    library/plot
+   library/index

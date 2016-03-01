@@ -1,0 +1,4 @@
+Index
+=====
+
+.. automodule:: nutils.index
