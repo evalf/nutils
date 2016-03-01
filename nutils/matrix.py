@@ -141,7 +141,7 @@ class ScipyMatrix( Matrix ):
     solverfun = getattr( scipy.sparse.linalg, solver )
     if solver == 'spsolve':
       log.info( 'solving system using sparse direct solver' )
-      x = solverfun( A, b, **solverargs )
+      x = solverfun( A, b )
       solverinfo( A, b, x )
     else:
       # keep scipy from making things circular by shielding the nature of A
