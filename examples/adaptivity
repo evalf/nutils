@@ -107,7 +107,7 @@ def main( degree=1, solvetol=1e-10, circle=False, uniform=False, basistype='std'
 
 def unittest():
 
-  retvals = main( degree=1, solvetol=1e-10, circle=False, uniform=False, basistype='std', nrefine=2, withplots=False )
+  retvals = main( degree=1, solvetol=0, circle=False, uniform=False, basistype='std', nrefine=2, withplots=False )
   assert debug.checkdata( retvals, '''
     eNqNVVmuJDkIvM57UuaIfTlQ3/8KjcF21fy1VJIpzBJAmMTnRx7U3+fnxyjzzyuPMNM6iRD6P0Gd8byl
     6Iu3LLiF42LhrRBPb9cS2gBZ9M9r5Ssp4+vj8lrYCOqGbcOAOhqlMXaTSSRIMV4GDeoNkw0GcYw1Y2wC
@@ -124,7 +124,7 @@ def unittest():
     zBtCpe8L0sWz/l5vdrmOAm0mXdMcjx50dKtrMfslFOxl8Wp9ylqi/TgsaDYLYp7FVF+lw7/f5/cvNmnD
     XQ==''' )
 
-  retvals = main( degree=2, solvetol=1e-10, circle=False, uniform=False, basistype='spline', nrefine=1, withplots=False )
+  retvals = main( degree=2, solvetol=0, circle=False, uniform=False, basistype='spline', nrefine=1, withplots=False )
   assert debug.checkdata( retvals, '''
     eNqNVFmuHDEIvM4bqR2ZzcCBcv8rhM2tiZSPSCOZwVBQBW54fvgB+Tw/P4f2/r34EWLOk9ApTwA4ea7X
     uDfrhq6be0TKIWJeGAxYGNj3gWGDwccaQ7Q9N1cRK+dAR5D3CeBdDJgHw0+jHsT23FyDXR3qYLCc5uLW
@@ -138,7 +138,7 @@ def unittest():
     hnzo0attjOdyVlGv5muoUdzmv+2ZSdPM4jwurs0fFjZNoNrdCrzrTLKbtxzBQdt+H5/k/Hq/YsxFADw/
     QPVGZdCO5qcoJ6V6Za27eJDq3w/yn7/P8/kDV7pq1w==''' )
 
-  retvals = main( degree=1, solvetol=1e-10, circle=True, uniform=False, basistype='std', nrefine=1, withplots=False )
+  retvals = main( degree=1, solvetol=0, circle=True, uniform=False, basistype='std', nrefine=1, withplots=False )
   assert debug.checkdata( retvals, '''
     eNqNU1tuAzEIvE4irSvejwP1/leoAW/atD+NLHkCDAyYxeshF+rzejyMMj+XXMLMdRMh1b0UTT4X4rVe
     pjtm3SQLG7K7NFkUO4BMdqRtIDkU8bThHo6bNEdlHBQhEwCOw83DVaXheqeVK0y6jql510eOU7e4usuh
