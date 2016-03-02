@@ -829,6 +829,7 @@ class Function( ArrayFunc ):
     self.ndims = ndims
     self.stdmap = stdmap
     self.igrad = igrad
+    self.localcoords = LocalCoords( self.ndims, side=self.side ) # only an implicit dependency for now
     for trans in stdmap:
       break
     ArrayFunc.__init__( self, args=(CACHE,POINTS,TransformChain(side,trans.fromdims)), shape=(axis,)+(ndims,)*igrad )
@@ -860,13 +861,8 @@ class Function( ArrayFunc ):
     return Function( self.ndims, self.stdmap, self.igrad, self.shape[0], 1-self.side )
 
   def _derivative( self, var, axes, seen ):
-    if isinstance( var, LocalCoords ):
-      ndims, = var.shape
-      grad = Function( self.ndims, self.stdmap, self.igrad+1, self.shape[0], self.side )
-      return grad if ndims == self.ndims \
-        else dot( grad[...,_], Transform( self.ndims, ndims, self.side ), axes=-2 )
-    else:
-      return _zeros( self.shape+_taketuple(var.shape,axes) )
+    grad = Function( self.ndims, self.stdmap, self.igrad+1, self.shape[0], self.side )
+    return ( grad[(...,)+(_,)*len(axes)] * derivative( self.localcoords, var, axes, seen ) ).sum( self.ndim )
 
   def _take( self, indices, axis ):
     if axis != 0:
@@ -1390,7 +1386,6 @@ class Multiply( ArrayFunc ):
     if all( sh == 1 for sh in func2.shape[-naxes:] ):
       return func2[(Ellipsis,)+(0,)*naxes] * dot( func1, other, list(range(self.ndim-naxes,self.ndim)) )
 
-
 class Add( ArrayFunc ):
   'add'
 
@@ -1775,7 +1770,7 @@ class Power( ArrayFunc ):
   def _edit( self, op ):
     return power( op(self.func), op(self.power) )
 
-class ElemFunc( ArrayFunc ):
+class LocalCoords( ArrayFunc ):
   'trivial func'
 
   def __init__( self, ndims, side=0 ):
@@ -1800,7 +1795,7 @@ class ElemFunc( ArrayFunc ):
 
   def _opposite( self ):
     ndims, = self.shape
-    return ElemFunc( ndims, 1-self.side )
+    return LocalCoords( ndims, 1-self.side )
 
 class Pointwise( ArrayFunc ):
   'pointwise transformation'
@@ -2412,12 +2407,6 @@ class DerivativeHelper( ArrayFunc ):
       return result
     else:
       return _zeros( self.shape+_taketuple(var.shape,axes) )
-
-class LocalCoords:
-
-  def __init__( self, ndims ):
-    self.shape = (ndims,)
-    self.ndim = 1
 
 
 # CIRCULAR SYMMETRY

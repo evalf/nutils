@@ -62,7 +62,7 @@ def check( op, n_op, shapes, hasgrad=True ):
   iface = element.Element( elem.edge(0).reference, elem.edge(0).transform, elem.edge(1).transform )
   ifpoints, ifweights = iface.reference.getischeme('uniform2')
 
-  r, theta = function.ElemFunc( 2 ) # corners at (0,0), (0,1), (1,1), (1,0)
+  r, theta = function.LocalCoords( 2 ) # corners at (0,0), (0,1), (1,1), (1,0)
   geom = r * function.stack([ function.cos(theta), function.sin(theta) ])
 
   basis = domain.basis( 'spline', degree=(1,2) )
