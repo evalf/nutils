@@ -1651,7 +1651,8 @@ class TakeDiag( ArrayFunc ):
     return numeric.takediag( arr )
 
   def _derivative( self, var, shape, seen ):
-    return swapaxes( takediag( derivative( self.func, var, shape, seen ), -2-len(shape), -1-len(shape) ) )
+    fder = derivative( self.func, var, shape, seen )
+    return transpose( takediag( fder, self.func.ndim-2, self.func.ndim-1 ), tuple(range(self.func.ndim-2))+(-1,)+tuple(range(self.func.ndim-2,fder.ndim-2)) )
 
   def _sum( self, axis ):
     if axis != self.ndim-1:
@@ -2201,12 +2202,12 @@ class Diagonalize( ArrayFunc ):
 
   def _derivative( self, var, shape, seen ):
     result = derivative( self.func, var, shape, seen )
-    # move axis `self.ndim-2` to the end
-    result = align( result, tuple( i for i in range( result.ndim ) if i != self.ndim-2 ) + ( self.ndim-2, ), result.ndim )
+    # move axis `self.ndim-1` to the end
+    result = transpose( result, [ i for i in range(result.ndim) if i != self.func.ndim-1 ] + [ self.func.ndim-1 ] )
     # diagonalize last axis
     result = diagonalize( result )
     # move diagonalized axes left of the derivatives axes
-    return align( result, tuple( range( self.ndim-2 ) ) + tuple( range( self.ndim, result.ndim ) ) + ( self.ndim-2, self.ndim-1 ), result.ndim )
+    return transpose( result, tuple( range(self.func.ndim-1) ) + (result.ndim-2,result.ndim-1) + tuple( range(self.func.ndim-1,result.ndim-2) ) )
 
   def _get( self, i, item ):
     if i >= self.ndim-2:
@@ -2410,7 +2411,7 @@ class DerivativeHelper( ArrayFunc ):
       assert shape == tuple( self.shape[axis] for axis in self._axes )
       result = numpy.array(1)
       for i, axis in enumerate( self._axes ):
-        result *= align( eye( self.shape[axis] ), ( axis, self.ndim+i ), self.ndim+len(self._axes) )
+        result = result * align( eye( self.shape[axis] ), ( axis, self.ndim+i ), self.ndim+len(self._axes) )
       return result
     else:
       return _zeros( self.shape + shape )

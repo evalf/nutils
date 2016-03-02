@@ -65,10 +65,10 @@ def check( op, n_op, shapes, hasgrad=True ):
   r, theta = function.ElemFunc( 2 ) # corners at (0,0), (0,1), (1,1), (1,0)
   geom = r * function.stack([ function.cos(theta), function.sin(theta) ])
 
-  funcsp = domain.basis( 'spline', degree=(1,2) )
+  basis = domain.basis( 'spline', degree=(1,2) )
 
   numpy.random.seed(0)
-  args = [ ( numpy.random.uniform( size=shape+(funcsp.shape[0],) ) * funcsp ).sum() for shape in shapes ]
+  args = [ ( numpy.random.uniform( size=shape+basis.shape ) * basis ).sum(-1) for shape in shapes ]
   points, weights = elem.reference.getischeme('uniform2')
 
   argsfun = function.Tuple( args )
@@ -145,6 +145,22 @@ def check( op, n_op, shapes, hasgrad=True ):
     exact = numpy.empty_like( fdgrad )
     exact[...] = G.eval(elem,points)
     numpy.testing.assert_array_almost_equal( fdgrad, exact, decimal=5 )
+
+  @unittest
+  def jacobian():
+    eps = 1e-8
+    numpy.random.seed(0)
+    for iarg in range(len(args)):
+      def f(x):
+        myargs = list(args)
+        myargs[iarg] = ( x * basis ).sum(-1)
+        return op( *myargs )
+      J = function.partial_derivative( f, 0 )
+      x0 = numpy.random.uniform( size=shapes[iarg]+basis.shape )
+      dx = numpy.random.normal( size=x0.shape ) * eps
+      fx0, fx1, Jx0 = domain.elem_eval( [ f(x0), f(x0+dx), J(x0) ], ischeme='gauss1' )
+      fx1approx = (fx0 + numeric.contract_fast( Jx0, dx, naxes=dx.ndim ))
+      numpy.testing.assert_array_almost_equal( fx1approx, fx1, decimal=12 )
 
   @unittest
   def gradient( ):
