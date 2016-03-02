@@ -632,8 +632,8 @@ class Orientation( ArrayFunc ):
   def _opposite( self ):
     return Orientation( self.ndims, 1-self.side )
 
-  def _derivative( self, var, shape, seen ):
-    return _zeros( shape )
+  def _derivative( self, var, axes, seen ):
+    return _zeros( _taketuple(var.shape,axes) )
 
 class Align( ArrayFunc ):
   'align axes'
@@ -688,8 +688,8 @@ class Align( ArrayFunc ):
     trans = [ ax - (ax>axis) for ax in self.axes if ax != axis ]
     return align( func, trans, self.ndim-1 )
 
-  def _derivative( self, var, shape, seen ):
-    return align( derivative( self.func, var, shape, seen ), self.axes+tuple(range(self.ndim, self.ndim+len(shape))), self.ndim+len(shape) )
+  def _derivative( self, var, axes, seen ):
+    return align( derivative( self.func, var, axes, seen ), self.axes+tuple(range(self.ndim, self.ndim+len(axes))), self.ndim+len(axes) )
 
   def _multiply( self, other ):
     if not _isfunc(other) and len(self.axes) == other.ndim:
@@ -733,8 +733,8 @@ class Get( ArrayFunc ):
     assert arr.ndim == self.ndim+2
     return arr[ self.item_shiftright ]
 
-  def _derivative( self, var, shape, seen ):
-    f = derivative( self.func, var, shape, seen )
+  def _derivative( self, var, axes, seen ):
+    f = derivative( self.func, var, axes, seen )
     return get( f, self.axis, self.item )
 
   def _get( self, i, item ):
@@ -762,10 +762,10 @@ class Product( ArrayFunc ):
     assert arr.ndim == self.ndim+2
     return numpy.product( arr, axis=-1 )
 
-  def _derivative( self, var, shape, seen ):
-    grad = derivative( self.func, var, shape, seen )
+  def _derivative( self, var, axes, seen ):
+    grad = derivative( self.func, var, axes, seen )
     funcs = stack( [ util.product( self.func[...,j] for j in range(self.func.shape[-1]) if i != j ) for i in range( self.func.shape[-1] ) ], axis=-1 )
-    return ( grad * funcs[(...,)+(_,)*len(shape)] ).sum( self.ndim )
+    return ( grad * funcs[(...,)+(_,)*len(axes)] ).sum( self.ndim )
 
     ## this is a cleaner form, but is invalid if self.func contains zero values:
     #ext = (...,)+(_,)*len(shape)
@@ -813,8 +813,8 @@ class Transform( ArrayFunc ):
     assert matrix.shape == (self.todims,self.fromdims)
     return matrix.astype( float )[_]
 
-  def _derivative( self, var, shape, seen ):
-    return _zeros( self.shape + shape )
+  def _derivative( self, var, axes, seen ):
+    return _zeros( self.shape+_taketuple(var.shape,axes) )
 
   def _opposite( self ):
     return Transform( self.todims, self.fromdims, 1-self.side )
@@ -859,14 +859,14 @@ class Function( ArrayFunc ):
   def _opposite( self ):
     return Function( self.ndims, self.stdmap, self.igrad, self.shape[0], 1-self.side )
 
-  def _derivative( self, var, shape, seen ):
-    if var == 'localcoords':
-      ndims, = shape
+  def _derivative( self, var, axes, seen ):
+    if isinstance( var, LocalCoords ):
+      ndims, = var.shape
       grad = Function( self.ndims, self.stdmap, self.igrad+1, self.shape[0], self.side )
       return grad if ndims == self.ndims \
         else dot( grad[...,_], Transform( self.ndims, ndims, self.side ), axes=-2 )
     else:
-      return _zeros( self.shape+shape )
+      return _zeros( self.shape+_taketuple(var.shape,axes) )
 
   def _take( self, indices, axis ):
     if axis != 0:
@@ -922,11 +922,11 @@ class Choose( ArrayFunc ):
     assert all( choice.ndim == self.ndim+1 for choice in choices )
     return numpy.choose( level, choices )
 
-  def _derivative( self, var, shape, seen ):
-    grads = [ derivative( choice, var, shape, seen ) for choice in self.choices ]
+  def _derivative( self, var, axes, seen ):
+    grads = [ derivative( choice, var, axes, seen ) for choice in self.choices ]
     if not any( grads ): # all-zero special case; better would be allow merging of intervals
-      return _zeros( self.shape + shape )
-    return choose( self.level[(...,)+(_,)*len(shape)], grads )
+      return _zeros( self.shape + _taketuple(var.shape,axes) )
+    return choose( self.level[(...,)+(_,)*len(axes)], grads )
 
   def _edit( self, op ):
     return choose( op(self.level), [ op(choice) for choice in self.choices ] )
@@ -976,9 +976,9 @@ class Inverse( ArrayFunc ):
           invi[...] = numpy.nan
     return inv
 
-  def _derivative( self, var, shape, seen ):
-    G = derivative( self.func, var, shape, seen )
-    n = len( shape )
+  def _derivative( self, var, axes, seen ):
+    G = derivative( self.func, var, axes, seen )
+    n = len(axes)
     a = slice(None)
     return -sum( self[(...,a,a,_,_)+(_,)*n] * G[(...,_,a,a,_)+(a,)*n] * self[(...,_,_,a,a)+(_,)*n], [-2-n, -3-n] )
 
@@ -1048,8 +1048,8 @@ class Concatenate( ArrayFunc ):
     axis = self.axis - (self.axis > i)
     return concatenate( [ get( f, i, item ) for f in self.funcs ], axis=axis )
 
-  def _derivative( self, var, shape, seen ):
-    funcs = [ derivative( func, var, shape, seen ) for func in self.funcs ]
+  def _derivative( self, var, axes, seen ):
+    funcs = [ derivative( func, var, axes, seen ) for func in self.funcs ]
     return concatenate( funcs, axis=self.axis )
 
   def _multiply( self, other ):
@@ -1218,10 +1218,10 @@ class Cross( ArrayFunc ):
     assert a.ndim == b.ndim == self.ndim+1
     return numeric.cross( a, b, self.axis_shiftright )
 
-  def _derivative( self, var, shape, seen ):
-    ext = (...,)+(_,)*len(shape)
-    return cross( self.func1[ext], derivative(self.func2,var,shape,seen), axis=self.axis ) \
-         - cross( self.func2[ext], derivative(self.func1,var,shape,seen), axis=self.axis )
+  def _derivative( self, var, axes, seen ):
+    ext = (...,)+(_,)*len(axes)
+    return cross( self.func1[ext], derivative(self.func2,var,axes,seen), axis=self.axis ) \
+         - cross( self.func2[ext], derivative(self.func1,var,axes,seen), axis=self.axis )
 
   def _take( self, index, axis ):
     if axis != self.axis:
@@ -1243,11 +1243,11 @@ class Determinant( ArrayFunc ):
     assert arr.ndim == self.ndim+3
     return numpy.linalg.det( arr )
 
-  def _derivative( self, var, shape, seen ):
+  def _derivative( self, var, axes, seen ):
     Finv = swapaxes( inverse( self.func ) )
-    G = derivative( self.func, var, shape, seen )
-    ext = (...,)+(_,)*len(shape)
-    return self[ext] * sum( Finv[ext] * G, axis=[-2-len(shape),-1-len(shape)] )
+    G = derivative( self.func, var, axes, seen )
+    ext = (...,)+(_,)*len(axes)
+    return self[ext] * sum( Finv[ext] * G, axis=[-2-len(axes),-1-len(axes)] )
 
   def _edit( self, op ):
     return determinant( op(self.func) )
@@ -1288,8 +1288,8 @@ class DofIndex( ArrayFunc ):
     if not _isfunc(other) and other.ndim == 0:
       return take( self.array * other, self.index, self.iax )
 
-  def _derivative( self, var, shape, seen ):
-    return _zeros( self.shape + shape )
+  def _derivative( self, var, axes, seen ):
+    return _zeros( self.shape + _taketuple(var.shape,axes) )
 
   def _concatenate( self, other, axis ):
     if isinstance( other, DofIndex ) and self.iax == other.iax and self.index == other.index:
@@ -1360,11 +1360,11 @@ class Multiply( ArrayFunc ):
     if func2_other is not None:
       return multiply( func1, func2_other )
 
-  def _derivative( self, var, shape, seen ):
+  def _derivative( self, var, axes, seen ):
     func1, func2 = self.funcs
-    ext = (...,)+(_,)*len(shape)
-    return func1[ext] * derivative( func2, var, shape, seen ) \
-         + func2[ext] * derivative( func1, var, shape, seen )
+    ext = (...,)+(_,)*len(axes)
+    return func1[ext] * derivative( func2, var, axes, seen ) \
+         + func2[ext] * derivative( func1, var, axes, seen )
 
   def _takediag( self ):
     func1, func2 = self.funcs
@@ -1411,9 +1411,9 @@ class Add( ArrayFunc ):
   def _sum( self, axis ):
     return sum( self.funcs[0], axis ) + sum( self.funcs[1], axis )
 
-  def _derivative( self, var, shape, seen ):
+  def _derivative( self, var, axes, seen ):
     func1, func2 = self.funcs
-    return derivative( func1, var, shape, seen ) + derivative( func2, var, shape, seen )
+    return derivative( func1, var, axes, seen ) + derivative( func2, var, axes, seen )
 
   def _get( self, i, item ):
     func1, func2 = self.funcs
@@ -1474,8 +1474,8 @@ class BlockAdd( ArrayFunc ):
   def _sum( self, axis ):
     return blockadd( *( sum( func, axis ) for func in self.funcs ) )
 
-  def _derivative( self, var, shape, seen ):
-    return blockadd( *( derivative( func, var, shape, seen ) for func in self.funcs ) )
+  def _derivative( self, var, axes, seen ):
+    return blockadd( *( derivative( func, var, axes, seen ) for func in self.funcs ) )
 
   def _get( self, i, item ):
     return blockadd( *( get( func, i, item ) for func in self.funcs ) )
@@ -1528,11 +1528,11 @@ class Dot( ArrayFunc ):
     func1, func2 = self.funcs
     return dot( get( func1, i, item ), get( func2, i, item ), [ ax-1 for ax in self.axes ] )
 
-  def _derivative( self, var, shape, seen ):
+  def _derivative( self, var, axes, seen ):
     func1, func2 = self.funcs
-    ext = (...,)+(_,)*len(shape)
-    return dot( derivative( func1, var, shape, seen ), func2[ext], self.axes ) \
-         + dot( func1[ext], derivative( func2, var, shape, seen ), self.axes )
+    ext = (...,)+(_,)*len(axes)
+    return dot( derivative( func1, var, axes, seen ), func2[ext], self.axes ) \
+         + dot( func1[ext], derivative( func2, var, axes, seen ), self.axes )
 
   #def _multiply( self, other ):
   #  func1, func2 = self.funcs
@@ -1603,8 +1603,8 @@ class Sum( ArrayFunc ):
     if trysum is not None:
       return sum( trysum, self.axis )
 
-  def _derivative( self, var, shape, seen ):
-    return sum( derivative( self.func, var, shape, seen ), self.axis )
+  def _derivative( self, var, axes, seen ):
+    return sum( derivative( self.func, var, axes, seen ), self.axis )
 
   def _edit( self, op ):
     return sum( op(self.func), axis=self.axis )
@@ -1630,8 +1630,8 @@ class Debug( ArrayFunc ):
 
     return '{DEBUG}'
 
-  def _derivative( self, var, shape, seen ):
-    return Debug( derivative( self.func, var, shape, seen ) )
+  def _derivative( self, var, axes, seen ):
+    return Debug( derivative( self.func, var, axes, seen ) )
 
   def _edit( self, op ):
     return Debug( op(self.func) )
@@ -1650,8 +1650,8 @@ class TakeDiag( ArrayFunc ):
     assert arr.ndim == self.ndim+2
     return numeric.takediag( arr )
 
-  def _derivative( self, var, shape, seen ):
-    fder = derivative( self.func, var, shape, seen )
+  def _derivative( self, var, axes, seen ):
+    fder = derivative( self.func, var, axes, seen )
     return transpose( takediag( fder, self.func.ndim-2, self.func.ndim-1 ), tuple(range(self.func.ndim-2))+(-1,)+tuple(range(self.func.ndim-2,fder.ndim-2)) )
 
   def _sum( self, axis ):
@@ -1696,8 +1696,8 @@ class Take( ArrayFunc ):
     assert arr.ndim == self.ndim+1
     return arr[ item or self.item ]
 
-  def _derivative( self, var, shape, seen ):
-    return take( derivative( self.func, var, shape, seen ), self.indices, self.axis )
+  def _derivative( self, var, axes, seen ):
+    return take( derivative( self.func, var, axes, seen ), self.indices, self.axis )
 
   def _take( self, index, axis ):
     if axis == self.axis:
@@ -1732,15 +1732,15 @@ class Power( ArrayFunc ):
     return numpy.power( args[0] if self.varbase else self.func,
                         args[-1] if self.varexp else self.power )
 
-  def _derivative( self, var, shape, seen ):
+  def _derivative( self, var, axes, seen ):
     # self = func**power
     # ln self = power * ln func
     # self` / self = power` * ln func + power * func` / func
     # self` = power` * ln func * self + power * func` * func**(power-1)
-    ext = (...,)+(_,)*len(shape)
+    ext = (...,)+(_,)*len(axes)
     powerm1 = self.power-1 if _isfunc(self.power) else numpy.choose( self.power==0, [self.power-1,0] ) # avoid introducing negative powers where possible
-    return ( self.power * power( self.func, powerm1 ) )[ext] * derivative( self.func, var, shape, seen ) \
-         + ( ln( self.func ) * self )[ext] * derivative( self.power, var, shape )
+    return ( self.power * power( self.func, powerm1 ) )[ext] * derivative( self.func, var, axes, seen ) \
+         + ( ln( self.func ) * self )[ext] * derivative( self.power, var, axes )
 
   def _power( self, n ):
     func = self.func
@@ -1790,13 +1790,13 @@ class ElemFunc( ArrayFunc ):
     ptrans = trans.split( self.shape[0] )[1]
     return ptrans.apply( points ).astype( float )
 
-  def _derivative( self, var, shape, seen ):
-    if var == 'localcoords':
-      ndims, = shape
+  def _derivative( self, var, axes, seen ):
+    if isinstance( var, LocalCoords ):
+      ndims, = var.shape
       return eye( ndims ) if self.shape[0] == ndims \
         else Transform( self.shape[0], ndims, self.side )
     else:
-      return _zeros( self.shape+shape )
+      return _zeros( self.shape+_taketuple(var.shape,axes) )
 
   def _opposite( self ):
     ndims, = self.shape
@@ -1819,8 +1819,8 @@ class Pointwise( ArrayFunc ):
     assert args.shape[1:] == self.args.shape
     return self.evalfun( *args.swapaxes(0,1) )
 
-  def _derivative( self, var, shape, seen ):
-    return ( self.deriv( self.args )[(...,)+(_,)*len(shape)] * derivative( self.args, var, shape, seen ) ).sum( 0 )
+  def _derivative( self, var, axes, seen ):
+    return ( self.deriv( self.args )[(...,)+(_,)*len(axes)] * derivative( self.args, var, axes, seen ) ).sum( 0 )
 
   def _takediag( self ):
     return pointwise( takediag(self.args), self.evalfun, self.deriv )
@@ -1848,8 +1848,8 @@ class Sign( ArrayFunc ):
     assert arr.ndim == self.ndim+1
     return numpy.sign( arr )
 
-  def _derivative( self, var, shape, seen ):
-    return _zeros( self.shape + shape )
+  def _derivative( self, var, axes, seen ):
+    return _zeros( self.shape + _taketuple(var.shape,axes) )
 
   def _takediag( self ):
     return sign( takediag(self.func) )
@@ -1938,8 +1938,8 @@ class Elemwise( ArrayFunc ):
     assert value.shape == self.shape, 'wrong shape: {} != {}'.format( value.shape, self.shape )
     return value[_]
 
-  def _derivative( self, var, shape, seen ):
-    return _zeros( self.shape+shape )
+  def _derivative( self, var, axes, seen ):
+    return _zeros( self.shape+_taketuple(var.shape,axes) )
 
   def _opposite( self ):
     return Elemwise( self.fmap, self.shape, self.default, 1-self.side )
@@ -2000,8 +2000,8 @@ class Zeros( ArrayFunc ):
     assert self.shape[axis] == 1
     return _zeros( self.shape[:axis] + (length,) + self.shape[axis+1:] )
 
-  def _derivative( self, var, shape, seen ):
-    return _zeros( self.shape+shape )
+  def _derivative( self, var, axes, seen ):
+    return _zeros( self.shape+_taketuple(var.shape,axes) )
 
   def _add( self, other ):
     shape = _jointshape( self.shape, other.shape )
@@ -2090,8 +2090,8 @@ class Inflate( ArrayFunc ):
       return
     return inflate( inflate( self.func, dofmap, axis ), self.dofmap, self.axis )
 
-  def _derivative( self, var, shape, seen ):
-    return inflate( derivative(self.func,var,shape,seen), self.dofmap, self.axis )
+  def _derivative( self, var, axes, seen ):
+    return inflate( derivative(self.func,var,axes,seen), self.dofmap, self.axis )
 
   def _align( self, shuffle, ndims ):
     return inflate( align(self.func,shuffle,ndims), self.dofmap, shuffle[self.axis] )
@@ -2200,8 +2200,8 @@ class Diagonalize( ArrayFunc ):
     assert arr is None or arr.ndim == self.ndim
     return numeric.diagonalize( arr if arr is not None else self.func[_] )
 
-  def _derivative( self, var, shape, seen ):
-    result = derivative( self.func, var, shape, seen )
+  def _derivative( self, var, axes, seen ):
+    result = derivative( self.func, var, axes, seen )
     # move axis `self.ndim-1` to the end
     result = transpose( result, [ i for i in range(result.ndim) if i != self.func.ndim-1 ] + [ self.func.ndim-1 ] )
     # diagonalize last axis
@@ -2261,8 +2261,8 @@ class Repeat( ArrayFunc ):
     assert arr is None or arr.ndim == self.ndim+1
     return numeric.fastrepeat( arr if arr is not None else self.func[_], self.length, self.axis_shiftright )
 
-  def _derivative( self, var, shape, seen ):
-    return repeat( derivative( self.func, var, shape, seen ), self.length, self.axis )
+  def _derivative( self, var, axes, seen ):
+    return repeat( derivative( self.func, var, axes, seen ), self.length, self.axis )
 
   def _get( self, axis, item ):
     if axis == self.axis:
@@ -2339,8 +2339,8 @@ class Guard( ArrayFunc ):
   def _edit( self, op ):
     return Guard( op(self.fun) )
 
-  def _derivative( self, var, shape, seen ):
-    return Guard( derivative(self.fun,var,shape,seen) )
+  def _derivative( self, var, axes, seen ):
+    return Guard( derivative(self.fun,var,axes,seen) )
 
 class TrigNormal( ArrayFunc ):
   'cos, sin'
@@ -2350,8 +2350,8 @@ class TrigNormal( ArrayFunc ):
     self.angle = angle
     ArrayFunc.__init__( self, args=[angle], shape=(2,) )
 
-  def _derivative( self, var, shape, seen ):
-    return TrigTangent( self.angle )[(...,)+(_,)*len(shape)] * derivative( self.angle, var, shape, seen )
+  def _derivative( self, var, axes, seen ):
+    return TrigTangent( self.angle )[(...,)+(_,)*len(axes)] * derivative( self.angle, var, axes, seen )
 
   def evalf( self, angle ):
     return numpy.array([ numpy.cos(angle), numpy.sin(angle) ]).T
@@ -2375,8 +2375,8 @@ class TrigTangent( ArrayFunc ):
     self.angle = angle
     ArrayFunc.__init__( self, args=[angle], shape=(2,) )
 
-  def _derivative( self, var, shape, seen ):
-    return -TrigNormal( self.angle )[(...,)+(_,)*len(shape)] * derivative( self.angle, var, shape, seen )
+  def _derivative( self, var, axes, seen ):
+    return -TrigNormal( self.angle )[(...,)+(_,)*len(axes)] * derivative( self.angle, var, axes, seen )
 
   def evalf( self, angle ):
     return numpy.array([ -numpy.sin(angle), numpy.cos(angle) ]).T
@@ -2395,9 +2395,7 @@ class TrigTangent( ArrayFunc ):
 class DerivativeHelper( ArrayFunc ):
   'helper class for computing derivatives'
 
-  def __init__( self, shape, axes ):
-    self._axes = tuple(axes)
-    assert all(0 <= axis < len(shape) for axis in self._axes)
+  def __init__( self, shape ):
     ArrayFunc.__init__( self, args=[], shape=shape )
 
   def evalf( self ):
@@ -2406,15 +2404,20 @@ class DerivativeHelper( ArrayFunc ):
   def _edit( self, op ):
     return self
 
-  def _derivative( self, var, shape, seen ):
+  def _derivative( self, var, axes, seen ):
     if var is self:
-      assert shape == tuple( self.shape[axis] for axis in self._axes )
       result = numpy.array(1)
-      for i, axis in enumerate( self._axes ):
-        result = result * align( eye( self.shape[axis] ), ( axis, self.ndim+i ), self.ndim+len(self._axes) )
+      for i, axis in enumerate( axes ):
+        result = result * align( eye( self.shape[axis] ), ( axis, self.ndim+i ), self.ndim+len(axes) )
       return result
     else:
-      return _zeros( self.shape + shape )
+      return _zeros( self.shape+_taketuple(var.shape,axes) )
+
+class LocalCoords:
+
+  def __init__( self, ndims ):
+    self.shape = (ndims,)
+    self.ndim = 1
 
 
 # CIRCULAR SYMMETRY
@@ -2428,14 +2431,14 @@ class RevolutionAngle( ArrayFunc ):
   def evalf( self ):
     return numpy.zeros( [1] )
 
-  def _derivative( self, var, shape, seen ):
-    if var == 'localcoords':
-      ndims, = shape
+  def _derivative( self, var, axes, seen ):
+    if isinstance( var, LocalCoords ):
+      ndims, = var.shape
       lgrad = numpy.zeros( ndims )
       lgrad[-1] = 2*numpy.pi
       return lgrad
     else:
-      return _zeros( shape )
+      return _zeros( _taketuple(var.shape,axes) )
 
 class Revolved( ArrayFunc ):
   'implement an extra local dimension with zero gradient'
@@ -2452,11 +2455,12 @@ class Revolved( ArrayFunc ):
   def evalf( self, func ):
     return func
 
-  def _derivative( self, var, shape, seen ):
-    if var == 'localcoords':
-      return revolved( concatenate( [ derivative(self.func,var,[shape[0]-1],seen), _zeros(self.func.shape+(1,)) ], axis=-1 ) )
+  def _derivative( self, var, axes, seen ):
+    if isinstance( var, LocalCoords ):
+      newvar = LocalCoords( var.shape[0]-1 )
+      return revolved( concatenate( [ derivative(self.func,newvar,axes,seen), _zeros(self.func.shape+(1,)) ], axis=-1 ) )
     else:
-      result = derivative( self.func, var, shape, seen )
+      result = derivative( self.func, var, axes, seen )
       assert _iszero( result )
       return result
 
@@ -2545,6 +2549,7 @@ _subsnonesh = lambda shape: tuple( 1 if sh is None else sh for sh in shape )
 _normdims = lambda ndim, shapes: tuple( numeric.normdim(ndim,sh) for sh in shapes )
 _zeros = lambda shape: Zeros( shape )
 _zeros_like = lambda arr: _zeros( arr.shape )
+_taketuple = lambda values, index: tuple( values[i] for i in index )
 
 # for consistency in Add and Multiply arguments: the smallest Evaluable first
 _issorted = lambda a, b: not isinstance(b,Evaluable) or isinstance(a,Evaluable) and id(a) <= id(b)
@@ -3059,28 +3064,28 @@ def partial_derivative( func, arg_key, arg_axes=None ):
     keyargs = args if isinstance(arg_key,int) else kwargs
     orig = keyargs[arg_key]
     orig_axes = arg_axes if arg_axes is not None else tuple(range(orig.ndim))
-    var = DerivativeHelper( orig.shape, orig_axes )
+    var = DerivativeHelper( orig.shape )
     keyargs[arg_key] = var
 
     # compute derivative and replace derivative helper with original argument
     replace = lambda f: orig if f is var else edit( f, replace )
-    return replace( derivative( func( *args, **kwargs ), var, tuple( var.shape[i] for i in orig_axes ) ) )
+    return replace( derivative( func( *args, **kwargs ), var, orig_axes ) )
 
   return wrapper
 
-def derivative( func, var, shape, seen=None ):
+def derivative( func, var, axes, seen=None ):
   'derivative'
 
   if seen is None:
     seen = {}
   func = asarray( func )
-  shape = tuple(shape)
+  shape = _taketuple( var.shape, axes )
   if not _isfunc( func ):
     result = _zeros( func.shape + shape )
   elif func in seen:
     result = seen[func]
   else:
-    result = func._derivative( var, shape, seen )
+    result = func._derivative( var, axes, seen )
     seen[func] = result
   assert result.shape == func.shape+shape, 'bug in %s._derivative' % func
   return result
@@ -3088,7 +3093,7 @@ def derivative( func, var, shape, seen=None ):
 def localgradient( arg, ndims ):
   'local derivative'
 
-  return derivative( arg, 'localcoords', (ndims,) )
+  return derivative( arg, LocalCoords(ndims), axes=(0,) )
 
 def dotnorm( arg, coords, ndims=0 ):
   'normal component'
