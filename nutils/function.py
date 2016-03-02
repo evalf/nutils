@@ -1770,33 +1770,6 @@ class Power( ArrayFunc ):
   def _edit( self, op ):
     return power( op(self.func), op(self.power) )
 
-class LocalCoords( ArrayFunc ):
-  'trivial func'
-
-  def __init__( self, ndims, side=0 ):
-    'constructor'
-
-    self.side = side
-    ArrayFunc.__init__( self, args=[POINTS,TransformChain(side,ndims)], shape=[ndims] )
-
-  def evalf( self, points, trans ):
-    'evaluate'
-
-    ptrans = trans.split( self.shape[0] )[1]
-    return ptrans.apply( points ).astype( float )
-
-  def _derivative( self, var, axes, seen ):
-    if isinstance( var, LocalCoords ):
-      ndims, = var.shape
-      return eye( ndims ) if self.shape[0] == ndims \
-        else Transform( self.shape[0], ndims, self.side )
-    else:
-      return _zeros( self.shape+_taketuple(var.shape,axes) )
-
-  def _opposite( self ):
-    ndims, = self.shape
-    return LocalCoords( ndims, 1-self.side )
-
 class Pointwise( ArrayFunc ):
   'pointwise transformation'
 
@@ -2387,11 +2360,16 @@ class TrigTangent( ArrayFunc ):
   def _edit( self, op ):
     return TrigTangent( edit(self.angle,op) )
 
-class DerivativeHelper( ArrayFunc ):
+class DerivativeTargetBase( ArrayFunc ):
+  'base class for derivative targets'
+
+  pass
+
+class DerivativeTarget( DerivativeTargetBase ):
   'helper class for computing derivatives'
 
   def __init__( self, shape ):
-    ArrayFunc.__init__( self, args=[], shape=shape )
+    DerivativeTargetBase.__init__( self, args=[], shape=shape )
 
   def evalf( self ):
     raise ValueError( 'unwrap {!r} before evaluation'.format( self ) )
@@ -2407,6 +2385,33 @@ class DerivativeHelper( ArrayFunc ):
       return result
     else:
       return _zeros( self.shape+_taketuple(var.shape,axes) )
+
+class LocalCoords( DerivativeTargetBase ):
+  'trivial func'
+
+  def __init__( self, ndims, side=0 ):
+    'constructor'
+
+    self.side = side
+    DerivativeTargetBase.__init__( self, args=[POINTS,TransformChain(side,ndims)], shape=[ndims] )
+
+  def evalf( self, points, trans ):
+    'evaluate'
+
+    ptrans = trans.split( self.shape[0] )[1]
+    return ptrans.apply( points ).astype( float )
+
+  def _derivative( self, var, axes, seen ):
+    if isinstance( var, LocalCoords ):
+      ndims, = var.shape
+      return eye( ndims ) if self.shape[0] == ndims \
+        else Transform( self.shape[0], ndims, self.side )
+    else:
+      return _zeros( self.shape+_taketuple(var.shape,axes) )
+
+  def _opposite( self ):
+    ndims, = self.shape
+    return LocalCoords( ndims, 1-self.side )
 
 
 # CIRCULAR SYMMETRY
@@ -3053,7 +3058,7 @@ def partial_derivative( func, arg_key, arg_axes=None ):
     keyargs = args if isinstance(arg_key,int) else kwargs
     orig = keyargs[arg_key]
     orig_axes = arg_axes if arg_axes is not None else tuple(range(orig.ndim))
-    var = DerivativeHelper( orig.shape )
+    var = DerivativeTarget( orig.shape )
     keyargs[arg_key] = var
 
     # compute derivative and replace derivative helper with original argument
@@ -3065,6 +3070,7 @@ def partial_derivative( func, arg_key, arg_axes=None ):
 def derivative( func, var, axes, seen=None ):
   'derivative'
 
+  assert isinstance( var, DerivativeTargetBase ), 'invalid derivative target {!r}'.format(var)
   if seen is None:
     seen = {}
   func = asarray( func )
