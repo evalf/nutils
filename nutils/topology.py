@@ -249,7 +249,7 @@ class Topology( object ):
     for ifunc, func in enumerate( funcs ):
       func = function.asarray( edit( func * iwscale ) )
       retval = parallel.shzeros( (npoints,)+func.shape, dtype=func.dtype )
-      if function._isfunc( func ):
+      if function.isarray( func ):
         for ind, f in function.blocks( func ):
           idata.append( function.Tuple([ ifunc, ind, f ]) )
       else:

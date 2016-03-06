@@ -90,7 +90,7 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
 
   Returns:
       topo (:class:`nutils.topology.Topology`): Topology of parsed Gmesh file
-      geom (:class:`nutils.function.ArrayFunc`): Isoparametric map
+      geom (:class:`nutils.function.Array`): Isoparametric map
 
   """
 
