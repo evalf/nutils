@@ -28,7 +28,7 @@ def check( ndims, curved ):
     f = ( funcsp[:,_] * numpy.arange(funcsp.shape[0]*ndims).reshape(-1,ndims) ).sum(0)
     g = funcsp.dot( numpy.arange(funcsp.shape[0]) )
 
-    fg1 = domain.integrate( ( f * g.grad(geom) ).sum(), geometry=geom, ischeme='gauss2' )
+    fg1 = domain.integrate( ( f * g.grad(geom) ).sum(-1), geometry=geom, ischeme='gauss2' )
     fg2 = domain.boundary.integrate( (f*g).dotnorm(geom), geometry=geom, ischeme='gauss2' ) \
         - domain.interfaces.integrate( function.jump(f*g).dotnorm(geom), geometry=geom, ischeme='gauss2' ) \
         - domain.integrate( f.div(geom) * g, geometry=geom, ischeme='gauss2' )

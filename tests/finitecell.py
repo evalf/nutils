@@ -9,7 +9,7 @@ def cutdomain( ndims, nelems, maxrefine, errtol ):
 
   domain, geom = mesh.rectilinear( (numpy.linspace(0,1,nelems+1),)*ndims )
   radius = numpy.sqrt( .5 )
-  levelset = radius**2 - ( geom**2 ).sum()
+  levelset = radius**2 - ( geom**2 ).sum(-1)
   pos = domain.trim( levelset=levelset, maxrefine=maxrefine )
   neg = domain - pos
   V = 1.
