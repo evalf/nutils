@@ -2535,7 +2535,17 @@ class Revolved( Array ):
     return revolved( op(self.func) )
 
 
-# AUXILIARY FUNCTIONS
+# AUXILIARY FUNCTIONS (FOR INTERNAL USE)
+
+_max = max
+_min = min
+_sum = sum
+_abs = abs
+_ascending = lambda arg: ( numpy.diff(arg) > 0 ).all()
+_normdims = lambda ndim, shapes: tuple( numeric.normdim(ndim,sh) for sh in shapes )
+_taketuple = lambda values, index: tuple( values[i] for i in index )
+_issorted = lambda a, b: not isevaluable(b) or isevaluable(a) and id(a) <= id(b)
+_sorted = lambda a, b: (a,b) if _issorted(a,b) else (b,a)
 
 def _jointshape( *shapes ):
   'determine shape after singleton expansion'
@@ -2603,20 +2613,6 @@ def _findcommon( a, b ):
   if a2 == b2:
     return a2, (a1,b1)
 
-_max = max
-_min = min
-_sum = sum
-_abs = abs
-_isscalar = lambda arg: asarray(arg).ndim == 0
-_ascending = lambda arg: ( numpy.diff(arg) > 0 ).all()
-_subsnonesh = lambda shape: tuple( 1 if sh is None else sh for sh in shape )
-_normdims = lambda ndim, shapes: tuple( numeric.normdim(ndim,sh) for sh in shapes )
-_taketuple = lambda values, index: tuple( values[i] for i in index )
-
-# for consistency in Add and Multiply arguments: the smallest Evaluable first
-_issorted = lambda a, b: not isevaluable(b) or isevaluable(a) and id(a) <= id(b)
-_sorted = lambda a, b: (a,b) if _issorted(a,b) else (b,a)
-
 def _invtrans( trans ):
   trans = numpy.asarray(trans)
   assert trans.dtype == int
@@ -2651,8 +2647,71 @@ def _dtypestr( arg ):
     return 'double'
   raise Exception( 'unknown dtype %s' % arg.dtype )
 
+def _unpack( funcsp ):
+  for axes, func in funcsp.blocks:
+    dofax = axes[0]
+    assert isinstance( dofax, DofMap )
+    dofmap = dofax.dofmap
+    if isinstance( func, Align ):
+      func = func.func
+    stdmap = func.stdmap
+    for trans, dofs in dofmap.items():
+      yield trans, dofs + dofax.offset, stdmap[trans]
+  
 
 # FUNCTIONS
+
+isarray = lambda arg: isinstance( arg, Array )
+iszero = lambda arg: isinstance( arg, Zeros )
+isevaluable = lambda arg: isinstance( arg, Evaluable )
+zeros = lambda shape: Zeros( shape )
+zeros_like = lambda arr: zeros( arr.shape )
+grad = lambda arg, coords, ndims=0: asarray( arg ).grad( coords, ndims )
+symgrad = lambda arg, coords, ndims=0: asarray( arg ).symgrad( coords, ndims )
+div = lambda arg, coords, ndims=0: asarray( arg ).div( coords, ndims )
+negative = lambda arg: multiply( arg, -1 )
+nsymgrad = lambda arg, coords: ( symgrad(arg,coords) * coords.normal() ).sum(-1)
+ngrad = lambda arg, coords: ( grad(arg,coords) * coords.normal() ).sum(-1)
+sin = lambda arg: pointwise( [arg], numpy.sin, cos )
+cos = lambda arg: pointwise( [arg], numpy.cos, lambda x: -sin(x) )
+trignormal = lambda angle: TrigNormal( asarray(angle) )
+trigtangent = lambda angle: TrigTangent( asarray(angle) )
+rotmat = lambda arg: asarray([ trignormal(arg), trigtangent(arg) ])
+tan = lambda arg: pointwise( [arg], numpy.tan, lambda x: cos(x)**-2 )
+arcsin = lambda arg: pointwise( [arg], numpy.arcsin, lambda x: reciprocal(sqrt(1-x**2)) )
+arccos = lambda arg: pointwise( [arg], numpy.arccos, lambda x: -reciprocal(sqrt(1-x**2)) )
+exp = lambda arg: pointwise( [arg], numpy.exp, exp )
+ln = lambda arg: pointwise( [arg], numpy.log, reciprocal )
+mod = lambda arg1, arg2: pointwise( [arg1,arg2], numpy.mod )
+log2 = lambda arg: ln(arg) / ln(2)
+log10 = lambda arg: ln(arg) / ln(10)
+sqrt = lambda arg: power( arg, .5 )
+reciprocal = lambda arg: power( arg, -1 )
+argmin = lambda arg, axis: pointwise( bringforward(arg,axis), lambda *x: numpy.argmin(numeric.stack(x),axis=0), zeros_like )
+argmax = lambda arg, axis: pointwise( bringforward(arg,axis), lambda *x: numpy.argmax(numeric.stack(x),axis=0), zeros_like )
+arctan2 = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.arctan2, lambda x: stack([x[1],-x[0]]) / sum(power(x,2),0) )
+greater = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.greater, zeros_like )
+equal = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.equal, zeros_like )
+less = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.less, zeros_like )
+min = lambda arg1, *args: choose( argmin( arg1 if not args else (arg1,)+args, axis=0 ), arg1 if not args else (arg1,)+args )
+max = lambda arg1, *args: choose( argmax( arg1 if not args else (arg1,)+args, axis=0 ), arg1 if not args else (arg1,)+args )
+abs = lambda arg: arg * sign(arg)
+sinh = lambda arg: .5 * ( exp(arg) - exp(-arg) )
+cosh = lambda arg: .5 * ( exp(arg) + exp(-arg) )
+tanh = lambda arg: 1 - 2. / ( exp(2*arg) + 1 )
+arctanh = lambda arg: .5 * ( ln(1+arg) - ln(1-arg) )
+piecewise = lambda level, intervals, *funcs: choose( sum( greater( insert(level,-1), intervals ), -1 ), funcs )
+trace = lambda arg, n1=-2, n2=-1: sum( takediag( arg, n1, n2 ), -1 )
+eye = lambda n: diagonalize( expand( [1.], (n,) ) )
+norm2 = lambda arg, axis=-1: sqrt( sum( multiply( arg, arg ), axis ) )
+heaviside = lambda arg: choose( greater( arg, 0 ), [0.,1.] )
+divide = lambda arg1, arg2: multiply( arg1, reciprocal(arg2) )
+subtract = lambda arg1, arg2: add( arg1, negative(arg2) )
+mean = lambda arg: .5 * ( arg + opposite(arg) )
+jump = lambda arg: opposite(arg) - arg
+add_T = lambda arg, axes=(-2,-1): swapaxes( arg, axes ) + arg
+edit = lambda arg, f: arg._edit(f) if isevaluable(arg) else arg
+blocks = lambda arg: asarray(arg).blocks
 
 def asarray( arg ):
   'convert to Array'
@@ -3389,57 +3448,6 @@ def revolved( arg ):
     return retval
   return Revolved( arg )
 
-isarray = lambda arg: isinstance( arg, Array )
-iszero = lambda arg: isinstance( arg, Zeros )
-isevaluable = lambda arg: isinstance( arg, Evaluable )
-zeros = lambda shape: Zeros( shape )
-zeros_like = lambda arr: zeros( arr.shape )
-grad = lambda arg, coords, ndims=0: asarray( arg ).grad( coords, ndims )
-symgrad = lambda arg, coords, ndims=0: asarray( arg ).symgrad( coords, ndims )
-div = lambda arg, coords, ndims=0: asarray( arg ).div( coords, ndims )
-negative = lambda arg: multiply( arg, -1 )
-nsymgrad = lambda arg, coords: ( symgrad(arg,coords) * coords.normal() ).sum(-1)
-ngrad = lambda arg, coords: ( grad(arg,coords) * coords.normal() ).sum(-1)
-sin = lambda arg: pointwise( [arg], numpy.sin, cos )
-cos = lambda arg: pointwise( [arg], numpy.cos, lambda x: -sin(x) )
-trignormal = lambda angle: TrigNormal( asarray(angle) )
-trigtangent = lambda angle: TrigTangent( asarray(angle) )
-rotmat = lambda arg: asarray([ trignormal(arg), trigtangent(arg) ])
-tan = lambda arg: pointwise( [arg], numpy.tan, lambda x: cos(x)**-2 )
-arcsin = lambda arg: pointwise( [arg], numpy.arcsin, lambda x: reciprocal(sqrt(1-x**2)) )
-arccos = lambda arg: pointwise( [arg], numpy.arccos, lambda x: -reciprocal(sqrt(1-x**2)) )
-exp = lambda arg: pointwise( [arg], numpy.exp, exp )
-ln = lambda arg: pointwise( [arg], numpy.log, reciprocal )
-mod = lambda arg1, arg2: pointwise( [arg1,arg2], numpy.mod )
-log2 = lambda arg: ln(arg) / ln(2)
-log10 = lambda arg: ln(arg) / ln(10)
-sqrt = lambda arg: power( arg, .5 )
-reciprocal = lambda arg: power( arg, -1 )
-argmin = lambda arg, axis: pointwise( bringforward(arg,axis), lambda *x: numpy.argmin(numeric.stack(x),axis=0), zeros_like )
-argmax = lambda arg, axis: pointwise( bringforward(arg,axis), lambda *x: numpy.argmax(numeric.stack(x),axis=0), zeros_like )
-arctan2 = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.arctan2, lambda x: stack([x[1],-x[0]]) / sum(power(x,2),0) )
-greater = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.greater, zeros_like )
-equal = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.equal, zeros_like )
-less = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.less, zeros_like )
-min = lambda arg1, *args: choose( argmin( arg1 if not args else (arg1,)+args, axis=0 ), arg1 if not args else (arg1,)+args )
-max = lambda arg1, *args: choose( argmax( arg1 if not args else (arg1,)+args, axis=0 ), arg1 if not args else (arg1,)+args )
-abs = lambda arg: arg * sign(arg)
-sinh = lambda arg: .5 * ( exp(arg) - exp(-arg) )
-cosh = lambda arg: .5 * ( exp(arg) + exp(-arg) )
-tanh = lambda arg: 1 - 2. / ( exp(2*arg) + 1 )
-arctanh = lambda arg: .5 * ( ln(1+arg) - ln(1-arg) )
-piecewise = lambda level, intervals, *funcs: choose( sum( greater( insert(level,-1), intervals ), -1 ), funcs )
-trace = lambda arg, n1=-2, n2=-1: sum( takediag( arg, n1, n2 ), -1 )
-eye = lambda n: diagonalize( expand( [1.], (n,) ) )
-norm2 = lambda arg, axis=-1: sqrt( sum( multiply( arg, arg ), axis ) )
-heaviside = lambda arg: choose( greater( arg, 0 ), [0.,1.] )
-divide = lambda arg1, arg2: multiply( arg1, reciprocal(arg2) )
-subtract = lambda arg1, arg2: add( arg1, negative(arg2) )
-mean = lambda arg: .5 * ( arg + opposite(arg) )
-jump = lambda arg: opposite(arg) - arg
-add_T = lambda arg, axes=(-2,-1): swapaxes( arg, axes ) + arg
-edit = lambda arg, f: arg._edit(f) if isevaluable(arg) else arg
-
 def swapaxes( arg, axes=(-2,-1) ):
   'swap axes'
 
@@ -3529,8 +3537,6 @@ def inflate( arg, dofmap, axis ):
 
   return Inflate( arg, dofmap, axis )
 
-blocks = lambda arg: asarray(arg).blocks
-
 def pointdata ( topo, ischeme, func=None, shape=None, value=None ):
   'point data'
 
@@ -3581,17 +3587,6 @@ def fdapprox( func, w, dofs, delta=1.e-5 ):
     dfunc_fd.append( (func( *x1 ) - func( *x0 ))/step )
   return dfunc_fd
 
-def _unpack( funcsp ):
-  for axes, func in funcsp.blocks:
-    dofax = axes[0]
-    assert isinstance( dofax, DofMap )
-    dofmap = dofax.dofmap
-    if isinstance( func, Align ):
-      func = func.func
-    stdmap = func.stdmap
-    for trans, dofs in dofmap.items():
-      yield trans, dofs + dofax.offset, stdmap[trans]
-  
 def supp( funcsp, indices ):
   'find support of selection of basis functions'
 
@@ -3615,5 +3610,6 @@ def J( geometry, ndims=None ):
   elif ndims < 0:
     ndims += len(geometry)
   return jacobian( geometry, ndims ) * Iwscale(ndims)
+
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
