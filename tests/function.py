@@ -45,6 +45,7 @@ from . import register, unittest
 @register( 'cross', lambda a,b: function.cross(a,b,-2), lambda a,b: numpy.cross(a,b,axis=-2), [(2,3,1),(1,3,2)] )
 @register( 'min', lambda a,b: function.min(a,b), numpy.minimum, [(3,1),(1,3)] )
 @register( 'max', lambda a,b: function.max(a,b), numpy.maximum, [(3,1),(1,3)] )
+@register( 'equal', lambda a,b: function.equal(a,b), numpy.equal, [(3,1),(1,3)] )
 @register( 'greater', lambda a,b: function.greater(a,b), numpy.greater, [(3,1),(1,3)] )
 @register( 'less', lambda a,b: function.less(a,b), numpy.less, [(3,1),(1,3)] )
 @register( 'arctan2', function.arctan2, numpy.arctan2, [(3,1),(1,3)] )

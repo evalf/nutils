@@ -681,6 +681,10 @@ class Constant( Array ):
   def _sign( self ):
     return asarray( numeric.sign( self.value ) )
 
+  def _choose( self, choices ):
+    if all( isinstance( choice, Constant ) for choice in choices ):
+      return asarray( numpy.choose( self.value, [ choice.value for choice in choices ] ) )
+
 class ElementSize( Array):
   'dimension of hypercube with same volume as element'
 
@@ -771,14 +775,18 @@ class Align( Array ):
     return align( derivative( self.func, var, axes, seen ), self.axes+tuple(range(self.ndim, self.ndim+len(axes))), self.ndim+len(axes) )
 
   def _multiply( self, other ):
-    if not isarray(other) and len(self.axes) == other.ndim:
-      return align( self.func * transpose( other, self.axes ), self.axes, self.ndim )
+    if len(self.axes) == self.ndim:
+      other_trans = _call( other, '_align', _invtrans(self.axes), self.ndim )
+      if other_trans is not None:
+        return align( multiply( self.func, other_trans ), self.axes, self.ndim )
     if isinstance( other, Align ) and self.axes == other.axes:
       return align( self.func * other.func, self.axes, self.ndim )
 
   def _add( self, other ):
-    if not isarray(other) and len(self.axes) == self.ndim:
-      return align( self.func + transpose( other, self.axes ), self.axes, self.ndim )
+    if len(self.axes) == self.ndim:
+      other_trans = _call( other, '_align', _invtrans(self.axes), self.ndim )
+      if other_trans is not None:
+        return align( add( self.func, other_trans ), self.axes, self.ndim )
     if isinstance( other, Align ) and self.axes == other.axes:
       return align( self.func + other.func, self.axes, self.ndim )
 
@@ -1359,10 +1367,6 @@ class DofIndex( Array ):
     if isinstance( other, DofIndex ) and self.iax == other.iax and self.index == other.index:
       return take( self.array + other.array, self.index, self.iax )
 
-  def _multiply( self, other ):
-    if not isarray(other) and other.ndim == 0:
-      return take( self.array * other, self.index, self.iax )
-
   def _derivative( self, var, axes, seen ):
     return _zeros( self.shape + _taketuple(var.shape,axes) )
 
@@ -1381,17 +1385,12 @@ class Multiply( Array ):
     'constructor'
 
     assert _issorted( func1, func2 )
-    assert isinstance( func1, Array )
+    assert isarray(func1) and isarray(func2)
     self.funcs = func1, func2
-    args = self.funcs[:1+isinstance( func2, Array )]
     shape = _jointshape( func1.shape, func2.shape )
-    Array.__init__( self, args=args, shape=shape )
+    Array.__init__( self, args=self.funcs, shape=shape )
 
-  def evalf( self, arr1, arr2=None ):
-    assert arr1.ndim == self.ndim+1
-    if arr2 is None:
-      return arr1 * self.funcs[1]
-    assert arr2.ndim == self.ndim+1
+  def evalf( self, arr1, arr2 ):
     return arr1 * arr2
 
   def _sum( self, axis ):
@@ -1426,8 +1425,6 @@ class Multiply( Array ):
 
   def _multiply( self, other ):
     func1, func2 = self.funcs
-    if not isarray( other ) and not isarray( func2 ):
-      return multiply( func1, numpy.multiply( func2, other ) )
     func1_other = _call( func1, '_multiply', other )
     if func1_other is not None:
       return multiply( func1_other, func2 )
@@ -1451,8 +1448,10 @@ class Multiply( Array ):
 
   def _power( self, n ):
     func1, func2 = self.funcs
-    if not isarray( func2 ):
-      return multiply( power(func1,n), numpy.power(func2,n) )
+    func1pow = _call( func1, '_power', n )
+    func2pow = _call( func2, '_power', n )
+    if func1pow is not None and func2pow is not None:
+      return multiply( func1pow, func2pow )
 
   def _edit( self, op ):
     func1, func2 = self.funcs
@@ -1472,15 +1471,13 @@ class Add( Array ):
     'constructor'
 
     assert _issorted( func1, func2 )
-    assert isinstance( func1, Array )
+    assert isarray(func1) and isarray(func2)
     self.funcs = func1, func2
-    args = self.funcs[:1+isinstance( func2, Array )]
     shape = _jointshape( func1.shape, func2.shape )
-    Array.__init__( self, args=args, shape=shape )
+    Array.__init__( self, args=self.funcs, shape=shape )
 
   def evalf( self, arr1, arr2=None ):
-    assert arr1.ndim == self.ndim+1
-    return arr1 + ( arr2 if arr2 is not None else self.funcs[1] )
+    return arr1 + arr2
 
   def _sum( self, axis ):
     return sum( self.funcs[0], axis ) + sum( self.funcs[1], axis )
@@ -1503,8 +1500,6 @@ class Add( Array ):
 
   def _add( self, other ):
     func1, func2 = self.funcs
-    if not isarray( other ) and not isarray( func2 ):
-      return add( func1, numpy.add( func2, other ) )
     func1_other = _call( func1, '_add', other )
     if func1_other is not None:
       return add( func1_other, func2 )
@@ -1607,20 +1602,6 @@ class Dot( Array ):
     ext = (...,)+(_,)*len(axes)
     return dot( derivative( func1, var, axes, seen ), func2[ext], self.axes ) \
          + dot( func1[ext], derivative( func2, var, axes, seen ), self.axes )
-
-  #def _multiply( self, other ):
-  #  func1, func2 = self.funcs
-  #  for ax in self.axes:
-  #    other = insert( other, ax )
-  #  assert other.ndim == func1.ndim == func2.ndim
-  #  if not isarray( other ) and not isarray( func2 ):
-  #    return dot( func1, numpy.multiply( func2, other ), self.axes )
-  #  func1_other = _call( func1, '_multiply', other )
-  #  if func1_other is not None:
-  #    return dot( func1_other, func2, self.axes )
-  #  func2_other = _call( func2, '_multiply', other )
-  #  if func2_other is not None:
-  #    return dot( func1, func2_other, self.axes )
 
   def _add( self, other ):
     if isinstance( other, Dot ) and self.axes == other.axes:
@@ -1799,15 +1780,10 @@ class Power( Array ):
     self.func = func
     self.power = power
     shape = _jointshape( func.shape, power.shape )
-    self.varbase = isinstance( func, Array )
-    self.varexp = isinstance( power, Array )
-    assert self.varbase or self.varexp
-    args = ([func] if self.varbase else []) + ([power] if self.varexp else [])
-    Array.__init__( self, args=args, shape=shape )
+    Array.__init__( self, args=[func,power], shape=shape )
 
-  def evalf( self, *args ):
-    return numpy.power( args[0] if self.varbase else self.func,
-                        args[-1] if self.varexp else self.power )
+  def evalf( self, base, exp ):
+    return numpy.power( base, exp )
 
   def _derivative( self, var, axes, seen ):
     # self = func**power
@@ -1815,7 +1791,7 @@ class Power( Array ):
     # self` / self = power` * ln func + power * func` / func
     # self` = power` * ln func * self + power * func` * func**(power-1)
     ext = (...,)+(_,)*len(axes)
-    powerm1 = self.power-1 if isarray(self.power) else numpy.choose( self.power==0, [self.power-1,0] ) # avoid introducing negative powers where possible
+    powerm1 = choose( equal( self.power, 0 ), [ self.power-1, 0 ] ) # avoid introducing negative powers where possible
     return ( self.power * power( self.func, powerm1 ) )[ext] * derivative( self.func, var, axes, seen ) \
          + ( ln( self.func ) * self )[ext] * derivative( self.power, var, axes )
 
@@ -1830,7 +1806,7 @@ class Power( Array ):
     return get( self.func, i, item )**get( self.power, i, item )
 
   def _sum( self, axis ):
-    if not isarray(self.power) and numpy.all( self.power == 2 ):
+    if self == (self.func**2):
       return dot( self.func, self.func, axis )
 
   def _takediag( self ):
@@ -2624,7 +2600,7 @@ _abs = abs
 _isevaluable = lambda arg: isinstance( arg, Evaluable )
 _isscalar = lambda arg: asarray(arg).ndim == 0
 _ascending = lambda arg: ( numpy.diff(arg) > 0 ).all()
-_iszero = lambda arg: isinstance( arg, Zeros ) or isinstance( arg, numpy.ndarray ) and numpy.all( arg == 0 )
+_iszero = lambda arg: isinstance( arg, Zeros )
 _isunit = lambda arg: not isarray(arg) and ( numpy.asarray(arg) == 1 ).all()
 _subsnonesh = lambda shape: tuple( 1 if sh is None else sh for sh in shape )
 _normdims = lambda ndim, shapes: tuple( numeric.normdim(ndim,sh) for sh in shapes )
@@ -2635,6 +2611,13 @@ _taketuple = lambda values, index: tuple( values[i] for i in index )
 # for consistency in Add and Multiply arguments: the smallest Evaluable first
 _issorted = lambda a, b: not isinstance(b,Evaluable) or isinstance(a,Evaluable) and id(a) <= id(b)
 _sorted = lambda a, b: (a,b) if _issorted(a,b) else (b,a)
+
+def _invtrans( trans ):
+  trans = numpy.asarray(trans)
+  assert trans.dtype == int
+  invtrans = numpy.empty( len(trans), dtype=int )
+  invtrans[trans] = numpy.arange(len(trans))
+  return invtrans
 
 def _call( obj, attr, *args ):
   'call method if it exists, return None otherwise'
@@ -3171,14 +3154,7 @@ def transpose( arg, trans=None ):
     assert not trans
     return arg
 
-  if trans is None:
-    invtrans = range( arg.ndim-1, -1, -1 )
-  else:
-    trans = _normdims( arg.ndim, trans )
-    assert util.allequal( sorted(trans), range(arg.ndim) )
-    invtrans = numpy.empty( arg.ndim, dtype=int )
-    invtrans[ numpy.asarray(trans) ] = numpy.arange( arg.ndim )
-
+  invtrans = range( arg.ndim-1, -1, -1 ) if trans is None else _invtrans( trans )
   return align( arg, invtrans, arg.ndim )
 
 def product( arg, axis ):
@@ -3204,13 +3180,15 @@ def product( arg, axis ):
 def choose( level, choices ):
   'choose'
 
-  if not isarray(level) and not any( isarray(choice) for choice in choices ):
-    return asarray( numpy.choose( level, choices ) )
-  level_choices = _matchndim( level, *choices )
-  if all( map( _iszero, level_choices[1:] ) ):
-    shape = _jointshape( *( a.shape for a in level_choices ) )
+  level, *choices = _matchndim( level, *choices )
+  shape = _jointshape( level.shape, *( choice.shape for choice in choices ) )
+  if all( map( _iszero, choices ) ):
     return _zeros( shape )
-  return Choose( level_choices[0], level_choices[1:] )
+  retval = _call( level, '_choose', choices )
+  if retval is not None:
+    assert retval.shape == shape, 'bug in %s._choose' % level
+    return retval
+  return Choose( level, choices )
 
 def _condlist_to_level( *condlist ):
   level = 0
@@ -3462,6 +3440,7 @@ argmin = lambda arg, axis: pointwise( bringforward(arg,axis), lambda *x: numpy.a
 argmax = lambda arg, axis: pointwise( bringforward(arg,axis), lambda *x: numpy.argmax(numeric.stack(x),axis=0), _zeros_like )
 arctan2 = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.arctan2, lambda x: stack([x[1],-x[0]]) / sum(power(x,2),0) )
 greater = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.greater, _zeros_like )
+equal = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.equal, _zeros_like )
 less = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.less, _zeros_like )
 min = lambda arg1, *args: choose( argmin( arg1 if not args else (arg1,)+args, axis=0 ), arg1 if not args else (arg1,)+args )
 max = lambda arg1, *args: choose( argmax( arg1 if not args else (arg1,)+args, axis=0 ), arg1 if not args else (arg1,)+args )
