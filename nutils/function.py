@@ -610,7 +610,7 @@ class Constant( Array ):
     return self.value[_]
 
   def _derivative( self, var, axes, seen ):
-    return _zeros( self.shape + _taketuple(var.shape,axes) )
+    return zeros( self.shape + _taketuple(var.shape,axes) )
 
   def _align( self, axes, ndim ):
     return asarray( numeric.align( self.value, axes, ndim ) )
@@ -716,7 +716,7 @@ class Orientation( Array ):
     return Orientation( self.ndims, 1-self.side )
 
   def _derivative( self, var, axes, seen ):
-    return _zeros( _taketuple(var.shape,axes) )
+    return zeros( _taketuple(var.shape,axes) )
 
 class Align( Array ):
   'align axes'
@@ -901,7 +901,7 @@ class Transform( Array ):
     return matrix.astype( float )[_]
 
   def _derivative( self, var, axes, seen ):
-    return _zeros( self.shape+_taketuple(var.shape,axes) )
+    return zeros( self.shape+_taketuple(var.shape,axes) )
 
   def _opposite( self ):
     return Transform( self.todims, self.fromdims, 1-self.side )
@@ -1008,7 +1008,7 @@ class Choose( Array ):
   def _derivative( self, var, axes, seen ):
     grads = [ derivative( choice, var, axes, seen ) for choice in self.choices ]
     if not any( grads ): # all-zero special case; better would be allow merging of intervals
-      return _zeros( self.shape + _taketuple(var.shape,axes) )
+      return zeros( self.shape + _taketuple(var.shape,axes) )
     return choose( self.level[(...,)+(_,)*len(axes)], grads )
 
   def _edit( self, op ):
@@ -1368,7 +1368,7 @@ class DofIndex( Array ):
       return take( self.array + other.array, self.index, self.iax )
 
   def _derivative( self, var, axes, seen ):
-    return _zeros( self.shape + _taketuple(var.shape,axes) )
+    return zeros( self.shape + _taketuple(var.shape,axes) )
 
   def _concatenate( self, other, axis ):
     if isinstance( other, DofIndex ) and self.iax == other.iax and self.index == other.index:
@@ -1798,7 +1798,7 @@ class Power( Array ):
   def _power( self, n ):
     func = self.func
     newpower = n * self.power
-    if _iszero( self.power % 2 ) and not _iszero( newpower % 2 ):
+    if iszero( self.power % 2 ) and not iszero( newpower % 2 ):
       func = abs( func )
     return power( func, newpower )
 
@@ -1822,7 +1822,7 @@ class Power( Array ):
       return power( self.func, self.power + 1 )
 
   def _sign( self ):
-    if _iszero( self.power % 2 ):
+    if iszero( self.power % 2 ):
       return expand( 1., self.shape )
 
   def _edit( self, op ):
@@ -1877,7 +1877,7 @@ class Sign( Array ):
     return numpy.sign( arr )
 
   def _derivative( self, var, axes, seen ):
-    return _zeros( self.shape + _taketuple(var.shape,axes) )
+    return zeros( self.shape + _taketuple(var.shape,axes) )
 
   def _takediag( self ):
     return sign( takediag(self.func) )
@@ -1892,7 +1892,7 @@ class Sign( Array ):
     return self
 
   def _power( self, n ):
-    if _iszero( n % 2 ):
+    if iszero( n % 2 ):
       return expand( 1., self.shape )
 
   def _edit( self, op ):
@@ -1967,7 +1967,7 @@ class Elemwise( Array ):
     return value[_]
 
   def _derivative( self, var, axes, seen ):
-    return _zeros( self.shape+_taketuple(var.shape,axes) )
+    return zeros( self.shape+_taketuple(var.shape,axes) )
 
   def _opposite( self ):
     return Elemwise( self.fmap, self.shape, self.default, 1-self.side )
@@ -2026,10 +2026,10 @@ class Zeros( Array ):
 
   def _repeat( self, length, axis ):
     assert self.shape[axis] == 1
-    return _zeros( self.shape[:axis] + (length,) + self.shape[axis+1:] )
+    return zeros( self.shape[:axis] + (length,) + self.shape[axis+1:] )
 
   def _derivative( self, var, axes, seen ):
-    return _zeros( self.shape+_taketuple(var.shape,axes) )
+    return zeros( self.shape+_taketuple(var.shape,axes) )
 
   def _add( self, other ):
     shape = _jointshape( self.shape, other.shape )
@@ -2037,41 +2037,41 @@ class Zeros( Array ):
 
   def _multiply( self, other ):
     shape = _jointshape( self.shape, other.shape )
-    return _zeros( shape )
+    return zeros( shape )
 
   def _dot( self, other, naxes ):
     shape = _jointshape( self.shape, other.shape )
-    return _zeros( shape[:-naxes] )
+    return zeros( shape[:-naxes] )
 
   def _cross( self, other, axis ):
     shape = _jointshape( self.shape, other.shape )
-    return _zeros( shape )
+    return zeros( shape )
 
   def _diagonalize( self ):
-    return _zeros( self.shape + (self.shape[-1],) )
+    return zeros( self.shape + (self.shape[-1],) )
 
   def _sum( self, axis ):
-    return _zeros( self.shape[:axis] + self.shape[axis+1:] )
+    return zeros( self.shape[:axis] + self.shape[axis+1:] )
 
   def _align( self, axes, ndim ):
     shape = [1] * ndim
     for ax, sh in zip( axes, self.shape ):
       shape[ax] = sh
-    return _zeros( shape )
+    return zeros( shape )
 
   def _get( self, i, item ):
-    return _zeros( self.shape[:i] + self.shape[i+1:] )
+    return zeros( self.shape[:i] + self.shape[i+1:] )
 
   def _takediag( self ):
     sh = _max( self.shape[-2], self.shape[-1] )
-    return _zeros( self.shape[:-2] + (sh,) )
+    return zeros( self.shape[:-2] + (sh,) )
 
   def _take( self, index, axis ):
-    return _zeros( self.shape[:axis] + index.shape + self.shape[axis+1:] )
+    return zeros( self.shape[:axis] + index.shape + self.shape[axis+1:] )
 
   def _inflate( self, dofmap, axis ):
     assert not isinstance( self.shape[axis], int )
-    return _zeros( self.shape[:axis] + (dofmap.target,) + self.shape[axis+1:] )
+    return zeros( self.shape[:axis] + (dofmap.target,) + self.shape[axis+1:] )
 
   def _power( self, n ):
     return self
@@ -2079,7 +2079,7 @@ class Zeros( Array ):
   def _pointwise( self, evalf, deriv ):
     value = evalf( *numpy.zeros(self.shape[0]) )
     if value == 0:
-      return _zeros( self.shape[1:] )
+      return zeros( self.shape[1:] )
     return expand( numpy.array(value)[(_,)*(self.ndim-1)], self.shape[1:] )
 
   def _revolved( self ):
@@ -2447,7 +2447,7 @@ class DerivativeTarget( DerivativeTargetBase ):
         result = result * align( eye( self.shape[axis] ), ( axis, self.ndim+i ), self.ndim+len(axes) )
       return result
     else:
-      return _zeros( self.shape+_taketuple(var.shape,axes) )
+      return zeros( self.shape+_taketuple(var.shape,axes) )
 
 class LocalCoords( DerivativeTargetBase ):
   'trivial func'
@@ -2470,7 +2470,7 @@ class LocalCoords( DerivativeTargetBase ):
       return eye( ndims ) if self.shape[0] == ndims \
         else Transform( self.shape[0], ndims, self.side )
     else:
-      return _zeros( self.shape+_taketuple(var.shape,axes) )
+      return zeros( self.shape+_taketuple(var.shape,axes) )
 
   def _opposite( self ):
     ndims, = self.shape
@@ -2495,7 +2495,7 @@ class RevolutionAngle( Array ):
       lgrad[-1] = 2*numpy.pi
       return lgrad
     else:
-      return _zeros( _taketuple(var.shape,axes) )
+      return zeros( _taketuple(var.shape,axes) )
 
 class Revolved( Array ):
   'implement an extra local dimension with zero gradient'
@@ -2515,10 +2515,10 @@ class Revolved( Array ):
   def _derivative( self, var, axes, seen ):
     if isinstance( var, LocalCoords ):
       newvar = LocalCoords( var.shape[0]-1 )
-      return revolved( concatenate( [ derivative(self.func,newvar,axes,seen), _zeros(self.func.shape+(1,)) ], axis=-1 ) )
+      return revolved( concatenate( [ derivative(self.func,newvar,axes,seen), zeros(self.func.shape+(1,)) ], axis=-1 ) )
     else:
       result = derivative( self.func, var, axes, seen )
-      assert _iszero( result )
+      assert iszero( result )
       return result
 
   def _edit( self, op ):
@@ -2600,12 +2600,9 @@ _abs = abs
 _isevaluable = lambda arg: isinstance( arg, Evaluable )
 _isscalar = lambda arg: asarray(arg).ndim == 0
 _ascending = lambda arg: ( numpy.diff(arg) > 0 ).all()
-_iszero = lambda arg: isinstance( arg, Zeros )
 _isunit = lambda arg: not isarray(arg) and ( numpy.asarray(arg) == 1 ).all()
 _subsnonesh = lambda shape: tuple( 1 if sh is None else sh for sh in shape )
 _normdims = lambda ndim, shapes: tuple( numeric.normdim(ndim,sh) for sh in shapes )
-_zeros = lambda shape: Zeros( shape )
-_zeros_like = lambda arr: _zeros( arr.shape )
 _taketuple = lambda values, index: tuple( values[i] for i in index )
 
 # for consistency in Add and Multiply arguments: the smallest Evaluable first
@@ -2677,7 +2674,7 @@ def asarray( arg ):
     array = numpy.asarray( arg )
     assert array.dtype != object
     if numpy.all( array == 0 ):
-      return _zeros( array.shape )
+      return zeros( array.shape )
     return Constant( array )
 
   return stack( arg, axis=0 )
@@ -2703,7 +2700,7 @@ def chain( funcs ):
 
   funcs = [ asarray(func) for func in funcs ]
   shapes = [ func.shape[0] for func in funcs ]
-  return [ concatenate( [ func if i==j else _zeros( (sh,) + func.shape[1:] )
+  return [ concatenate( [ func if i==j else zeros( (sh,) + func.shape[1:] )
              for j, sh in enumerate(shapes) ], axis=0 )
                for i, func in enumerate(funcs) ]
 
@@ -2887,8 +2884,8 @@ def dot( arg1, arg2, axes ):
   axes = _norm_and_sort( len(shape), axes )
   assert numpy.all( numpy.diff(axes) > 0 ), 'duplicate axes in sum'
 
-  if _iszero( arg1 ) or _iszero( arg2 ):
-    return _zeros([ s for i, s in enumerate(shape) if i not in axes ])
+  if iszero( arg1 ) or iszero( arg2 ):
+    return zeros([ s for i, s in enumerate(shape) if i not in axes ])
 
   if _isunit( arg1 ):
     return sum( expand( arg2, shape ), axes )
@@ -3093,7 +3090,7 @@ def kronecker( arg, axis, length, pos ):
 
   axis = numeric.normdim( arg.ndim+1, axis )
   arg = insert( arg, axis )
-  args = [ _zeros_like(arg) ] * length
+  args = [ zeros_like(arg) ] * length
   args[pos] = arg
   return concatenate( args, axis=axis )
 
@@ -3120,7 +3117,7 @@ def concatenate( args, axis=0 ):
   axis = numeric.normdim( args[0].ndim, axis )
   i = 0
 
-  if all( _iszero(arg) for arg in args ):
+  if all( iszero(arg) for arg in args ):
     shape = list( args[0].shape )
     axis = numeric.normdim( len(shape), axis )
     for arg in args[1:]:
@@ -3131,7 +3128,7 @@ def concatenate( args, axis=0 ):
           shape[i] = arg.shape[i]
         else:
           assert arg.shape[i] in (shape[i],1)
-    return _zeros( shape )
+    return zeros( shape )
 
   while i+1 < len(args):
     arg1, arg2 = args[i:i+2]
@@ -3182,8 +3179,8 @@ def choose( level, choices ):
 
   level, *choices = _matchndim( level, *choices )
   shape = _jointshape( level.shape, *( choice.shape for choice in choices ) )
-  if all( map( _iszero, choices ) ):
-    return _zeros( shape )
+  if all( map( iszero, choices ) ):
+    return zeros( shape )
   retval = _call( level, '_choose', choices )
   if retval is not None:
     assert retval.shape == shape, 'bug in %s._choose' % level
@@ -3281,10 +3278,10 @@ def add( arg1, arg2 ):
   arg1, arg2 = _matchndim( arg1, arg2 )
   shape = _jointshape( arg1.shape, arg2.shape )
 
-  if _iszero( arg1 ):
+  if iszero( arg1 ):
     return expand( arg2, shape )
 
-  if _iszero( arg2 ):
+  if iszero( arg2 ):
     return expand( arg1, shape )
 
   if _equal( arg1, arg2 ):
@@ -3337,7 +3334,7 @@ def power( arg, n ):
   arg, n = _matchndim( arg, n )
   shape = _jointshape( arg.shape, n.shape )
 
-  if _iszero( n ):
+  if iszero( n ):
     return numpy.ones( shape )
 
   retval = _call( arg, '_power', n )
@@ -3415,6 +3412,9 @@ def revolved( arg ):
   return Revolved( arg )
 
 isarray = lambda arg: isinstance( arg, Array )
+iszero = lambda arg: isinstance( arg, Zeros )
+zeros = lambda shape: Zeros( shape )
+zeros_like = lambda arr: zeros( arr.shape )
 grad = lambda arg, coords, ndims=0: asarray( arg ).grad( coords, ndims )
 symgrad = lambda arg, coords, ndims=0: asarray( arg ).symgrad( coords, ndims )
 div = lambda arg, coords, ndims=0: asarray( arg ).div( coords, ndims )
@@ -3436,12 +3436,12 @@ log2 = lambda arg: ln(arg) / ln(2)
 log10 = lambda arg: ln(arg) / ln(10)
 sqrt = lambda arg: power( arg, .5 )
 reciprocal = lambda arg: power( arg, -1 )
-argmin = lambda arg, axis: pointwise( bringforward(arg,axis), lambda *x: numpy.argmin(numeric.stack(x),axis=0), _zeros_like )
-argmax = lambda arg, axis: pointwise( bringforward(arg,axis), lambda *x: numpy.argmax(numeric.stack(x),axis=0), _zeros_like )
+argmin = lambda arg, axis: pointwise( bringforward(arg,axis), lambda *x: numpy.argmin(numeric.stack(x),axis=0), zeros_like )
+argmax = lambda arg, axis: pointwise( bringforward(arg,axis), lambda *x: numpy.argmax(numeric.stack(x),axis=0), zeros_like )
 arctan2 = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.arctan2, lambda x: stack([x[1],-x[0]]) / sum(power(x,2),0) )
-greater = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.greater, _zeros_like )
-equal = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.equal, _zeros_like )
-less = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.less, _zeros_like )
+greater = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.greater, zeros_like )
+equal = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.equal, zeros_like )
+less = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.less, zeros_like )
 min = lambda arg1, *args: choose( argmin( arg1 if not args else (arg1,)+args, axis=0 ), arg1 if not args else (arg1,)+args )
 max = lambda arg1, *args: choose( argmax( arg1 if not args else (arg1,)+args, axis=0 ), arg1 if not args else (arg1,)+args )
 abs = lambda arg: arg * sign(arg)
