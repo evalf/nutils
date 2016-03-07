@@ -609,6 +609,10 @@ class Constant( Array ):
   def evalf( self ):
     return self.value[_]
 
+  @cache.property
+  def _isunit( self ):
+    return numpy.all( self.value == 1 )
+
   def _derivative( self, var, axes, seen ):
     return zeros( self.shape + _taketuple(var.shape,axes) )
 
@@ -632,6 +636,9 @@ class Constant( Array ):
     return asarray( self.value.prod(axis) )
 
   def _multiply( self, other ):
+    if self._isunit:
+      shape = _jointshape( self.shape, other.shape )
+      return expand( other, shape )
     if isinstance( other, Constant ):
       return asarray( numpy.multiply( self.value, other.value ) )
 
@@ -650,6 +657,9 @@ class Constant( Array ):
     return asarray( op(self.value) )
 
   def _dot( self, other, naxes ):
+    if self._isunit:
+      shape = _jointshape( self.shape, other.shape )
+      return sum( expand( other, shape ), list(range(self.ndim-naxes,self.ndim)) )
     if isinstance( other, Constant ):
       return asarray( numeric.contract_fast( self.value, other.value, naxes ) )
 
@@ -2600,7 +2610,6 @@ _abs = abs
 _isevaluable = lambda arg: isinstance( arg, Evaluable )
 _isscalar = lambda arg: asarray(arg).ndim == 0
 _ascending = lambda arg: ( numpy.diff(arg) > 0 ).all()
-_isunit = lambda arg: not isarray(arg) and ( numpy.asarray(arg) == 1 ).all()
 _subsnonesh = lambda shape: tuple( 1 if sh is None else sh for sh in shape )
 _normdims = lambda ndim, shapes: tuple( numeric.normdim(ndim,sh) for sh in shapes )
 _taketuple = lambda values, index: tuple( values[i] for i in index )
@@ -2886,12 +2895,6 @@ def dot( arg1, arg2, axes ):
 
   if iszero( arg1 ) or iszero( arg2 ):
     return zeros([ s for i, s in enumerate(shape) if i not in axes ])
-
-  if _isunit( arg1 ):
-    return sum( expand( arg2, shape ), axes )
-
-  if _isunit( arg2 ):
-    return sum( expand( arg1, shape ), axes )
 
   for i, axis in enumerate( axes ):
     if arg1.shape[axis] == 1 or arg2.shape[axis] == 1:
@@ -3246,12 +3249,6 @@ def multiply( arg1, arg2 ):
 
   arg1, arg2 = _matchndim( arg1, arg2 )
   shape = _jointshape( arg1.shape, arg2.shape )
-
-  if _isunit( arg1 ):
-    return expand( arg2, shape )
-
-  if _isunit( arg2 ):
-    return expand( arg1, shape )
 
   if _equal( arg1, arg2 ):
     return power( arg1, 2 )
