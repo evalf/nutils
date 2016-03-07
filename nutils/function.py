@@ -1413,9 +1413,9 @@ class Multiply( Array ):
 
   def _add( self, other ):
     func1, func2 = self.funcs
-    if _equal( other, func1 ):
+    if other == func1:
       return func1 * (func2+1)
-    if _equal( other, func2 ):
+    if other == func2:
       return func2 * (func1+1)
     if isinstance( other, Multiply ):
       common = _findcommon( self.funcs, other.funcs )
@@ -2594,13 +2594,13 @@ def _findcommon( a, b ):
 
   a1, a2 = a
   b1, b2 = b
-  if _equal( a1, b1 ):
+  if a1 == b1:
     return a1, (a2,b2)
-  if _equal( a1, b2 ):
+  if a1 == b2:
     return a1, (a2,b1)
-  if _equal( a2, b1 ):
+  if a2 == b1:
     return a2, (a1,b2)
-  if _equal( a2, b2 ):
+  if a2 == b2:
     return a2, (a1,b1)
 
 _max = max
@@ -2651,24 +2651,6 @@ def _dtypestr( arg ):
   if arg.dtype == float:
     return 'double'
   raise Exception( 'unknown dtype %s' % arg.dtype )
-
-def _equal( arg1, arg2 ):
-  'compare two objects'
-
-  if arg1 is arg2:
-    return True
-  if isinstance( arg1, dict ) or isinstance( arg2, dict ):
-    return False
-  if isinstance( arg1, (list,tuple) ):
-    if not isinstance( arg2, (list,tuple) ) or len(arg1) != len(arg2):
-      return False
-    return all( _equal(v1,v2) for v1, v2 in zip( arg1, arg2 ) )
-  if not isinstance( arg1, numpy.ndarray ) and not isinstance( arg2, numpy.ndarray ):
-    return arg1 == arg2
-  elif isinstance( arg1, numpy.ndarray ) and isinstance( arg2, numpy.ndarray ):
-    return arg1.shape == arg2.shape and numpy.all( arg1 == arg2 )
-  else:
-    return False
 
 
 # FUNCTIONS
@@ -3250,7 +3232,7 @@ def multiply( arg1, arg2 ):
   arg1, arg2 = _matchndim( arg1, arg2 )
   shape = _jointshape( arg1.shape, arg2.shape )
 
-  if _equal( arg1, arg2 ):
+  if arg1 == arg2:
     return power( arg1, 2 )
 
   for idim, sh in enumerate( shape ):
@@ -3281,7 +3263,7 @@ def add( arg1, arg2 ):
   if iszero( arg2 ):
     return expand( arg1, shape )
 
-  if _equal( arg1, arg2 ):
+  if arg1 == arg2:
     return arg1 * 2
 
   for idim, sh in enumerate( shape ):
