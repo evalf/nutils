@@ -45,7 +45,7 @@ class Evaluable( cache.Immutable ):
   def __init__( self, args ):
     'constructor'
 
-    assert all( isinstance(arg,Evaluable) or arg in TOKENS for arg in args )
+    assert all( isevaluable(arg) or arg in TOKENS for arg in args )
     self.__args = tuple(args)
 
   def evalf( self, *args ):
@@ -99,7 +99,7 @@ class Evaluable( cache.Immutable ):
       bridge = '| ', '  '
     for iarg, arg in enumerate( self.__args ):
       n = iarg >= len(self.__args) - 1
-      asciitree += '\n' + select[n] + ( ('\n' + bridge[n]).join( arg.asciitree( seen ).splitlines() ) if isinstance(arg,Evaluable) else '<{}>'.format(arg) )
+      asciitree += '\n' + select[n] + ( ('\n' + bridge[n]).join( arg.asciitree( seen ).splitlines() ) if isevaluable(arg) else '<{}>'.format(arg) )
     index = len(seen)
     seen.append( self )
     return '%{} = {}'.format( index, asciitree )
@@ -236,7 +236,7 @@ class Tuple( Evaluable ):
     args = []
     indices = []
     for i, item in enumerate(self.items):
-      if isinstance( item, Evaluable ):
+      if isevaluable( item ):
         args.append( item )
         indices.append( i )
     self.indices = tuple( indices )
@@ -646,7 +646,7 @@ class Constant( Array ):
     return asarray( numeric.takediag( self.value ) )
 
   def _take( self, index, axis ):
-    if not isinstance( index, Evaluable ): # TODO change to asarray once DofMap is subclassed from Array
+    if not isevaluable( index ): # TODO change to asarray once DofMap is subclassed from Array
       return asarray( self.value.take( index, axis ) )
 
   def _power( self, n ):
@@ -1096,7 +1096,7 @@ class Concatenate( Array ):
       sh = _sum( lengths )
     shape = _jointshape( *[ func.shape[:axis] + (sh,) + func.shape[axis+1:] for func in funcs ] )
     self.funcs = tuple(funcs)
-    self.ivar = [ i for i, func in enumerate(funcs) if isinstance(func,Evaluable) ]
+    self.ivar = [ i for i, func in enumerate(funcs) if isevaluable(func) ]
     self.axis = axis
     self.axis_shiftright = axis-ndim
     Array.__init__( self, args=[ funcs[i] for i in self.ivar ], shape=shape )
@@ -1529,7 +1529,7 @@ class BlockAdd( Array ):
 
     self.funcs = tuple( funcs )
     shape = _jointshape( *( func.shape for func in self.funcs ) )
-    if not isinstance( funcs[-1], Evaluable ):
+    if not isevaluable( funcs[-1] ):
       self.const = funcs[-1]
       funcs = funcs[:-1]
     else:
@@ -1740,7 +1740,7 @@ class Take( Array ):
     args = [func]
     s = [ slice(None) ] * func.ndim
 
-    if _isevaluable(indices):
+    if isevaluable(indices):
       s[axis] = indices
       newlen, = indices.shape
       args.append( Tuple((Ellipsis,)+tuple(s)) )
@@ -2607,7 +2607,6 @@ _max = max
 _min = min
 _sum = sum
 _abs = abs
-_isevaluable = lambda arg: isinstance( arg, Evaluable )
 _isscalar = lambda arg: asarray(arg).ndim == 0
 _ascending = lambda arg: ( numpy.diff(arg) > 0 ).all()
 _subsnonesh = lambda shape: tuple( 1 if sh is None else sh for sh in shape )
@@ -2615,7 +2614,7 @@ _normdims = lambda ndim, shapes: tuple( numeric.normdim(ndim,sh) for sh in shape
 _taketuple = lambda values, index: tuple( values[i] for i in index )
 
 # for consistency in Add and Multiply arguments: the smallest Evaluable first
-_issorted = lambda a, b: not isinstance(b,Evaluable) or isinstance(a,Evaluable) and id(a) <= id(b)
+_issorted = lambda a, b: not isevaluable(b) or isevaluable(a) and id(a) <= id(b)
 _sorted = lambda a, b: (a,b) if _issorted(a,b) else (b,a)
 
 def _invtrans( trans ):
@@ -3392,6 +3391,7 @@ def revolved( arg ):
 
 isarray = lambda arg: isinstance( arg, Array )
 iszero = lambda arg: isinstance( arg, Zeros )
+isevaluable = lambda arg: isinstance( arg, Evaluable )
 zeros = lambda shape: Zeros( shape )
 zeros_like = lambda arr: zeros( arr.shape )
 grad = lambda arg, coords, ndims=0: asarray( arg ).grad( coords, ndims )
@@ -3438,7 +3438,7 @@ subtract = lambda arg1, arg2: add( arg1, negative(arg2) )
 mean = lambda arg: .5 * ( arg + opposite(arg) )
 jump = lambda arg: opposite(arg) - arg
 add_T = lambda arg, axes=(-2,-1): swapaxes( arg, axes ) + arg
-edit = lambda arg, f: arg._edit(f) if _isevaluable(arg) else arg
+edit = lambda arg, f: arg._edit(f) if isevaluable(arg) else arg
 
 def swapaxes( arg, axes=(-2,-1) ):
   'swap axes'
@@ -3453,7 +3453,7 @@ def swapaxes( arg, axes=(-2,-1) ):
 def opposite( arg ):
   'evaluate jump over interface'
 
-  if not isinstance( arg, Evaluable ):
+  if not isevaluable( arg ):
     return arg
 
   retval = _call( arg, '_opposite' )
