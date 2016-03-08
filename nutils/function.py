@@ -169,21 +169,16 @@ class Evaluable( cache.Immutable ):
 
     ops, inds = self.serialized
 
-    try:
-      dot = subprocess.Popen( [dotpath,'-T'+imgtype], stdin=subprocess.PIPE, stdout=open(imgpath,'w') )
-    except OSError:
-      log.error( 'error: failed to execute', dotpath )
-      return False
+    lines = []
+    lines.append( 'digraph {' )
+    lines.append( 'graph [ dpi=72 ];' )
+    lines.extend( '%d [label="%d. %s"];' % (i,i,name) for i, name in enumerate( TOKENS + ops + (self,) ) )
+    lines.extend( '%d -> %d;' % (j,i) for i, indices in enumerate( ([],)*len(TOKENS) + inds ) for j in indices )
+    lines.append( '}' )
 
-    print >> dot.stdin, 'digraph {'
-    print >> dot.stdin, 'graph [ dpi=72 ];'
-    dot.stdin.writelines( '%d [label="%d. %s"];\n' % (i,i,name)
-      for i, name in enumerate( TOKENS + ops + (self,) ) )
-    dot.stdin.writelines( '%d -> %d;\n' % (j,i)
-      for i, indices in enumerate( ([],)*len(TOKENS) + inds )
-        for j in indices )
-    print >> dot.stdin, '}'
-    dot.stdin.close()
+    with open( imgpath, 'w' ) as img:
+      with subprocess.Popen( [dotpath,'-T'+imgtype], stdin=subprocess.PIPE, stdout=img ) as dot:
+        dot.communicate( '\n'.join(lines).encode() )
 
     log.path( os.path.basename(imgpath) )
 
