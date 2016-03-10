@@ -2532,19 +2532,16 @@ _taketuple = lambda values, index: tuple( values[i] for i in index )
 _issorted = lambda a, b: not isevaluable(b) or isevaluable(a) and id(a) <= id(b)
 _sorted = lambda a, b: (a,b) if _issorted(a,b) else (b,a)
 
-def _jointshape( *shapes ):
+def _jointshape( shape, *shapes ):
   'determine shape after singleton expansion'
 
-  ndim = len(shapes[0])
-  combshape = [1] * ndim
-  for shape in shapes:
-    assert len(shape) == ndim
-    for i, sh in enumerate(shape):
-      if combshape[i] == 1:
-        combshape[i] = sh
-      else:
-        assert sh in ( combshape[i], 1 ), 'incompatible shapes: %s' % ', '.join( str(sh) for sh in shapes )
-  return tuple(combshape)
+  if not shapes:
+    return tuple(shape)
+  other_shape, *remaining_shapes = shapes
+  assert len(shape) == len(other_shape)
+  combined_shape = [ sh1 if sh2 == 1 else sh2 for sh1, sh2 in zip( shape, other_shape ) ]
+  assert all( shc == sh1 for shc, sh1 in zip( combined_shape, shape ) if sh1 != 1 )
+  return _jointshape( combined_shape, *remaining_shapes )
 
 def _matchndim( *arrays ):
   'introduce singleton dimensions to match ndims'
