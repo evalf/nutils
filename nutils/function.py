@@ -300,49 +300,6 @@ class TransformChain( Evaluable ):
     return trans[ self.side ].promote( self.promote )
 
 
-# INDEXVECTOR
-#
-# 1D int vector, used for indexing
-
-class IndexVector( Evaluable ):
-
-  __array_priority__ = 1. # http://stackoverflow.com/questions/7042496/numpy-coercion-problem-for-left-sided-binary-operator/7057530#7057530
-
-  def __init__( self, args, length ):
-    self.shape = length,
-    self.ndim = 1
-    Evaluable.__init__( self, args=args )
-
-  def __str__( self ):
-    return '%s<%s>' % ( self.__class__.__name__, ','.join( str(n) for n in self.shape ) )
-
-class DofMap( IndexVector ):
-  'dof axis'
-
-  def __init__( self, dofmap, axis, side=0, offset=0 ):
-    'new'
-
-    self.side = side
-    self.dofmap = dofmap
-    self.offset = offset
-    for trans in dofmap:
-      break
-
-    IndexVector.__init__( self, args=[TransformChain(side,trans.fromdims)], length=axis )
-
-  def __add__( self, offset ):
-    assert numeric.isint( offset )
-    return DofMap( self.dofmap, self.shape[0], self.side, self.offset+offset )
-
-  def evalf( self, trans ):
-    'evaluate'
-
-    return self.dofmap[ trans.lookup(self.dofmap) ] + self.offset
-
-  def _opposite( self ):
-    return DofMap( self.dofmap, self.shape[0], 1-self.side )
-
-
 # ARRAYFUNC
 #
 # The main evaluable. Closely mimics a numpy array.
@@ -645,8 +602,8 @@ class Constant( Array ):
     return asarray( numeric.takediag( self.value ) )
 
   def _take( self, index, axis ):
-    if not isevaluable( index ): # TODO change to asarray once DofMap is subclassed from Array
-      return asarray( self.value.take( index, axis ) )
+    if isinstance( index, Constant ):
+      return asarray( self.value.take( index.value, axis ) )
 
   def _power( self, n ):
     if isinstance( n, Constant ):
@@ -693,6 +650,32 @@ class Constant( Array ):
   def _choose( self, choices ):
     if all( isinstance( choice, Constant ) for choice in choices ):
       return asarray( numpy.choose( self.value, [ choice.value for choice in choices ] ) )
+
+class DofMap( Array ):
+  'dof axis'
+
+  def __init__( self, dofmap, length, side=0, offset=0 ):
+    'new'
+
+    self.side = side
+    self.dofmap = dofmap
+    self.offset = offset
+    for trans in dofmap:
+      break
+
+    Array.__init__( self, args=[TransformChain(side,trans.fromdims)], shape=(length,) )
+
+  def __add__( self, offset ):
+    assert numeric.isint( offset )
+    return DofMap( self.dofmap, self.shape[0], self.side, self.offset+offset )
+
+  def evalf( self, trans ):
+    'evaluate'
+
+    return self.dofmap[ trans.lookup(self.dofmap) ] + self.offset
+
+  def _opposite( self ):
+    return DofMap( self.dofmap, self.shape[0], 1-self.side )
 
 class ElementSize( Array):
   'dimension of hypercube with same volume as element'
@@ -918,7 +901,7 @@ class Transform( Array ):
 class Function( Array ):
   'function'
 
-  def __init__( self, ndims, stdmap, igrad, axis, side=0 ):
+  def __init__( self, ndims, stdmap, igrad, length, side=0 ):
     'constructor'
 
     self.side = side
@@ -928,7 +911,7 @@ class Function( Array ):
     self.localcoords = LocalCoords( self.ndims, side=self.side ) # only an implicit dependency for now
     for trans in stdmap:
       break
-    Array.__init__( self, args=(CACHE,POINTS,TransformChain(side,trans.fromdims)), shape=(axis,)+(ndims,)*igrad )
+    Array.__init__( self, args=(CACHE,POINTS,TransformChain(side,trans.fromdims)), shape=(length,)+(ndims,)*igrad )
 
   def evalf( self, cache, points, trans ):
     'evaluate'
@@ -2203,8 +2186,8 @@ class Inflate( Array ):
       globaldofs[trans] = newdofs[keep]
       localdofs[trans], = numpy.where(keep)
     strlen = '~%d'%len(index)
-    gdofmap = DofMap( globaldofs, axis=strlen, side=self.dofmap.side )
-    ldofmap = DofMap( localdofs, axis=strlen, side=self.dofmap.side )
+    gdofmap = DofMap( globaldofs, length=strlen, side=self.dofmap.side )
+    ldofmap = DofMap( localdofs, length=strlen, side=self.dofmap.side )
     return inflate( take( self.func, ldofmap, axis ), gdofmap, len(index), self.axis )
 
   def _diagonalize( self ):
@@ -3475,9 +3458,9 @@ def opposite( arg ):
 def function( fmap, nmap, ndofs, ndims ):
   'create function on ndims-element'
 
-  axis = '~%d' % ndofs
-  func = Function( ndims, fmap, igrad=0, axis=axis )
-  dofmap = DofMap( nmap, axis=axis )
+  length = '~%d' % ndofs
+  func = Function( ndims, fmap, igrad=0, length=length )
+  dofmap = DofMap( nmap, length=length )
   return Inflate( func, dofmap, ndofs, axis=0 )
 
 def take( arg, index, axis ):
@@ -3486,7 +3469,7 @@ def take( arg, index, axis ):
   arg = asarray( arg )
   axis = numeric.normdim( arg.ndim, axis )
 
-  if isinstance( index, IndexVector ):
+  if isinstance( index, DofMap ):
     if index.shape[0] == 1:
       return insert( get( arg, axis, index[0] ), axis )
     retval = _call( arg, '_take', index, axis )
