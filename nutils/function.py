@@ -319,13 +319,12 @@ class IndexVector( Evaluable ):
 class DofMap( IndexVector ):
   'dof axis'
 
-  def __init__( self, dofmap, axis, target, side=0, offset=0 ):
+  def __init__( self, dofmap, axis, side=0, offset=0 ):
     'new'
 
     self.side = side
     self.dofmap = dofmap
     self.offset = offset
-    self.target = target
     for trans in dofmap:
       break
 
@@ -333,7 +332,7 @@ class DofMap( IndexVector ):
 
   def __add__( self, offset ):
     assert numeric.isint( offset )
-    return DofMap( self.dofmap, self.shape[0], self.target, self.side, self.offset+offset )
+    return DofMap( self.dofmap, self.shape[0], self.side, self.offset+offset )
 
   def evalf( self, trans ):
     'evaluate'
@@ -341,7 +340,7 @@ class DofMap( IndexVector ):
     return self.dofmap[ trans.lookup(self.dofmap) ] + self.offset
 
   def _opposite( self ):
-    return DofMap( self.dofmap, self.shape[0], self.target, 1-self.side )
+    return DofMap( self.dofmap, self.shape[0], 1-self.side )
 
 
 # ARRAYFUNC
@@ -965,7 +964,6 @@ class Function( Array ):
     if axis != 0:
       return
     assert isinstance( indices, DofMap )
-    assert indices.shape[0] == self.shape[0]
     stdmap = {}
     for trans, stdkeep in self.stdmap.items():
       ind = indices.dofmap[trans]
@@ -991,7 +989,7 @@ class Function( Array ):
         newstdkeep.append(( std, keep ))
       assert not where.size
       stdmap[trans] = newstdkeep
-    return Function( self.ndims, stdmap, self.igrad, indices.target, side=self.side )
+    return Function( self.ndims, stdmap, self.igrad, indices.shape[0], side=self.side )
 
 class Choose( Array ):
   'piecewise function'
@@ -1220,9 +1218,9 @@ class Concatenate( Array ):
     assert n0 == self.shape[self.axis]
     return concatenate( funcs, axis=-1 )
 
-  def _inflate( self, dofmap, axis ):
+  def _inflate( self, dofmap, length, axis ):
     assert not isinstance( self.shape[axis], int )
-    return concatenate( [ inflate(func,dofmap,axis) for func in self.funcs ], self.axis )
+    return concatenate( [ inflate(func,dofmap,length,axis) for func in self.funcs ], self.axis )
 
   def _take( self, indices, axis ):
     if axis != self.axis:
@@ -1571,8 +1569,8 @@ class BlockAdd( Array ):
   def _multiply( self, other ):
     return blockadd( *( multiply( func, other ) for func in self.funcs ) )
 
-  def _inflate( self, dofmap, axis ):
-    return blockadd( *( inflate( func, dofmap, axis ) for func in self.funcs ) )
+  def _inflate( self, dofmap, length, axis ):
+    return blockadd( *( inflate( func, dofmap, length, axis ) for func in self.funcs ) )
 
   @property
   def blocks( self ):
@@ -2079,9 +2077,9 @@ class Zeros( Array ):
   def _take( self, index, axis ):
     return zeros( self.shape[:axis] + index.shape + self.shape[axis+1:] )
 
-  def _inflate( self, dofmap, axis ):
+  def _inflate( self, dofmap, length, axis ):
     assert not isinstance( self.shape[axis], int )
-    return zeros( self.shape[:axis] + (dofmap.target,) + self.shape[axis+1:] )
+    return zeros( self.shape[:axis] + (length,) + self.shape[axis+1:] )
 
   def _power( self, n ):
     return self
@@ -2098,13 +2096,16 @@ class Zeros( Array ):
 class Inflate( Array ):
   'inflate'
 
-  def __init__( self, func, dofmap, axis ):
+  def __init__( self, func, dofmap, length, axis ):
     'constructor'
 
     self.func = func
     self.dofmap = dofmap
+    self.length = length
     self.axis = axis
-    shape = func.shape[:axis] + (dofmap.target,) + func.shape[axis+1:]
+    assert 0 <= axis < func.ndim
+    assert func.shape[axis] == dofmap.shape[0]
+    shape = func.shape[:axis] + (length,) + func.shape[axis+1:]
     self.axis_shiftright = axis-func.ndim
     Array.__init__( self, args=[func,dofmap], shape=shape )
 
@@ -2114,7 +2115,7 @@ class Inflate( Array ):
     assert array.ndim == self.ndim+1
     warnings.warn( 'using explicit inflation; this is usually a bug.' )
     shape = list( array.shape )
-    shape[self.axis_shiftright] = self.dofmap.target
+    shape[self.axis_shiftright] = self.length
     inflated = numpy.zeros( shape )
     inflated[(Ellipsis,indices)+(slice(None),)*(-self.axis_shiftright-1)] = array
     return inflated
@@ -2125,21 +2126,21 @@ class Inflate( Array ):
       assert ind[self.axis] == None
       yield Tuple( ind[:self.axis] + (self.dofmap,) + ind[self.axis+1:] ), f
 
-  def _inflate( self, dofmap, axis ):
+  def _inflate( self, dofmap, length, axis ):
     assert axis != self.axis
     if axis > self.axis:
       return
-    return inflate( inflate( self.func, dofmap, axis ), self.dofmap, self.axis )
+    return inflate( inflate( self.func, dofmap, length, axis ), self.dofmap, self.length, self.axis )
 
   def _derivative( self, var, axes, seen ):
-    return inflate( derivative(self.func,var,axes,seen), self.dofmap, self.axis )
+    return inflate( derivative(self.func,var,axes,seen), self.dofmap, self.length, self.axis )
 
   def _align( self, shuffle, ndims ):
-    return inflate( align(self.func,shuffle,ndims), self.dofmap, shuffle[self.axis] )
+    return inflate( align(self.func,shuffle,ndims), self.dofmap, self.length, shuffle[self.axis] )
 
   def _get( self, axis, item ):
     assert axis != self.axis
-    return inflate( get(self.func,axis,item), self.dofmap, self.axis-(axis<self.axis) )
+    return inflate( get(self.func,axis,item), self.dofmap, self.length, self.axis-(axis<self.axis) )
 
   def _dot( self, other, naxes ):
     axes = range( self.ndim-naxes, self.ndim )
@@ -2151,19 +2152,21 @@ class Inflate( Array ):
     arr = dot( self.func, other, axes )
     if self.axis >= self.ndim - naxes:
       return arr
-    return inflate( arr, self.dofmap, self.axis )
+    return inflate( arr, self.dofmap, self.length, self.axis )
 
   def _multiply( self, other ):
     if isinstance( other, Inflate ) and self.axis == other.axis:
-      assert self.dofmap == other.dofmap
-      other = other.func
-    elif other.shape[self.axis] != 1:
-      other = take( other, self.dofmap, self.axis )
-    return inflate( multiply(self.func,other), self.dofmap, self.axis )
+      assert self.dofmap == other.dofmap and self.length == other.length
+      take_other = other.func
+    elif other.shape[self.axis] == 1:
+      take_other = other
+    else:
+      take_other = take( other, self.dofmap, self.axis )
+    return inflate( multiply(self.func,take_other), self.dofmap, self.length, self.axis )
 
   def _add( self, other ):
     if isinstance( other, Inflate ) and self.axis == other.axis and self.dofmap == other.dofmap:
-      return inflate( add(self.func,other.func), self.dofmap, self.axis )
+      return inflate( add(self.func,other.func), self.dofmap, self.length, self.axis )
     return blockadd( self, other )
 
   def _cross( self, other, axis ):
@@ -2172,58 +2175,57 @@ class Inflate( Array ):
       other = other.func
     elif other.shape[self.axis] != 1:
       other = take( other, self.dofmap, self.axis )
-    return inflate( cross(self.func,other,axis), self.dofmap, self.axis )
+    return inflate( cross(self.func,other,axis), self.dofmap, self.length, self.axis )
 
   def _power( self, n ):
-    return inflate( power(self.func,n), self.dofmap, self.axis )
+    return inflate( power(self.func,n), self.dofmap, self.length, self.axis )
 
   def _takediag( self ):
     assert self.axis < self.ndim-2
-    return inflate( takediag(self.func), self.dofmap, self.axis )
+    return inflate( takediag(self.func), self.dofmap, self.length, self.axis )
 
   def _take( self, index, axis ):
-    if axis == self.axis:
-      if index == self.dofmap:
-        return self.func
-      assert numeric.isintarray(index) and index.ndim == 1
-      if self.dofmap.offset != 0:
-        raise NotImplementedError
-      reverse_index = numpy.empty( self.shape[axis], dtype=int )
-      reverse_index[:] = -1
-      reverse_index[index] = numpy.arange( len(index) )
-      globaldofs = {}
-      localdofs = {}
-      for trans, dofs in self.dofmap.dofmap.items():
-        newdofs = reverse_index[dofs]
-        keep = newdofs != -1
-        globaldofs[trans] = newdofs[keep]
-        localdofs[trans], = numpy.where(keep)
-      strlen = '~%d'%len(index)
-      dofmap = DofMap( globaldofs, axis=strlen, target=len(index), side=self.dofmap.side )
-      index = DofMap( localdofs, axis=self.dofmap.shape[0], target=strlen, side=self.dofmap.side )
-    else:
-      dofmap = self.dofmap
-    return inflate( take( self.func, index, axis ), dofmap, self.axis )
+    if axis != self.axis:
+      return inflate( take( self.func, index, axis ), self.dofmap, self.length, self.axis )
+    if index == self.dofmap:
+      return self.func
+    assert numeric.isintarray(index) and index.ndim == 1
+    if self.dofmap.offset != 0:
+      raise NotImplementedError
+    reverse_index = numpy.empty( self.shape[axis], dtype=int )
+    reverse_index[:] = -1
+    reverse_index[index] = numpy.arange( len(index) )
+    globaldofs = {}
+    localdofs = {}
+    for trans, dofs in self.dofmap.dofmap.items():
+      newdofs = reverse_index[dofs]
+      keep = newdofs != -1
+      globaldofs[trans] = newdofs[keep]
+      localdofs[trans], = numpy.where(keep)
+    strlen = '~%d'%len(index)
+    gdofmap = DofMap( globaldofs, axis=strlen, side=self.dofmap.side )
+    ldofmap = DofMap( localdofs, axis=strlen, side=self.dofmap.side )
+    return inflate( take( self.func, ldofmap, axis ), gdofmap, len(index), self.axis )
 
   def _diagonalize( self ):
     assert self.axis < self.ndim-1
-    return inflate( diagonalize(self.func), self.dofmap, self.axis )
+    return inflate( diagonalize(self.func), self.dofmap, self.length, self.axis )
 
   def _sum( self, axis ):
     arr = sum( self.func, axis )
     if axis == self.axis:
       return arr
-    return inflate( arr, self.dofmap, self.axis-(axis<self.axis) )
+    return inflate( arr, self.dofmap, self.length, self.axis-(axis<self.axis) )
 
   def _repeat( self, length, axis ):
     if axis != self.axis:
-      return inflate( repeat(self.func,length,axis), self.dofmap, self.axis )
+      return inflate( repeat(self.func,length,axis), self.dofmap, self.length, self.axis )
 
   def _revolved( self ):
-    return inflate( revolved(self.func), self.dofmap, self.axis )
+    return inflate( revolved(self.func), self.dofmap, self.length, self.axis )
 
   def _edit( self, op ):
-    return inflate( op(self.func), op(self.dofmap), self.axis )
+    return inflate( op(self.func), op(self.dofmap), self.length, self.axis )
 
 class Diagonalize( Array ):
   'diagonal matrix'
@@ -3347,7 +3349,7 @@ def blockadd( *args ):
   for arg in args:
     key = []
     while isinstance( arg, Inflate ):
-      key.append( ( arg.dofmap, arg.axis ) )
+      key.append( ( arg.dofmap, arg.length, arg.axis ) )
       arg = arg.func
     inflates.setdefault( tuple(key), [] ).append( arg )
   # add inflate args with the same axis and dofmap, blockadd the remainder
@@ -3356,8 +3358,8 @@ def blockadd( *args ):
     if key is ():
       continue
     arg = functools.reduce( operator.add, values )
-    for dofmap, axis in reversed( key ):
-      arg = inflate( arg, dofmap, axis )
+    for dofmap, length, axis in reversed( key ):
+      arg = inflate( arg, dofmap, length, axis )
     args.append( arg )
   args.extend( inflates.get( (), () ) )
   if len( args ) == 1:
@@ -3475,8 +3477,8 @@ def function( fmap, nmap, ndofs, ndims ):
 
   axis = '~%d' % ndofs
   func = Function( ndims, fmap, igrad=0, axis=axis )
-  dofmap = DofMap( nmap, axis=axis, target=ndofs )
-  return Inflate( func, dofmap, axis=0 )
+  dofmap = DofMap( nmap, axis=axis )
+  return Inflate( func, dofmap, ndofs, axis=0 )
 
 def take( arg, index, axis ):
   'take index'
@@ -3524,18 +3526,18 @@ def take( arg, index, axis ):
 
   return Take( arg, index, axis )
 
-def inflate( arg, dofmap, axis ):
+def inflate( arg, dofmap, length, axis ):
   'inflate'
 
   arg = asarray( arg )
   axis = numeric.normdim( arg.ndim, axis )
   assert not isinstance( arg.shape[axis], int )
 
-  retval = _call( arg, '_inflate', dofmap, axis )
+  retval = _call( arg, '_inflate', dofmap, length, axis )
   if retval is not None:
     return retval
 
-  return Inflate( arg, dofmap, axis )
+  return Inflate( arg, dofmap, length, axis )
 
 def pointdata ( topo, ischeme, func=None, shape=None, value=None ):
   'point data'
