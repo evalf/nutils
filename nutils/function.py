@@ -118,12 +118,12 @@ class Evaluable( cache.Immutable ):
       assert self.isconstant
       trans = None
       points = None
-    elif isinstance( elem, tuple ):
-      assert isinstance( ischeme, numpy.ndarray )
+    elif isinstance( elem, transform.TransformChain ):
+      trans = elem, elem
       points = ischeme
-      transform, opposite = elem
-      assert points.shape[-1] == transform.fromdims == opposite.fromdims
+    elif isinstance( elem, tuple ):
       trans = elem
+      points = ischeme
     else:
       trans = elem.transform, elem.opposite
       if isinstance( ischeme, dict ):
@@ -658,25 +658,20 @@ class Constant( Array ):
 class DofMap( Array ):
   'dof axis'
 
-  def __init__( self, dofmap, length, side=0, offset=0 ):
+  def __init__( self, dofmap, length, side=0 ):
     'new'
 
     self.side = side
     self.dofmap = dofmap
-    self.offset = offset
     for trans in dofmap:
       break
 
     Array.__init__( self, args=[TransformChain(side,trans.fromdims)], shape=(length,), dtype=int )
 
-  def __add__( self, offset ):
-    assert numeric.isint( offset )
-    return DofMap( self.dofmap, self.shape[0], self.side, self.offset+offset )
-
   def evalf( self, trans ):
     'evaluate'
 
-    return ( self.dofmap[ trans.lookup(self.dofmap) ] + self.offset )[_]
+    return self.dofmap[ trans.lookup(self.dofmap) ][_]
 
   def _opposite( self ):
     return DofMap( self.dofmap, self.shape[0], 1-self.side )
@@ -949,10 +944,9 @@ class Function( Array ):
   def _take( self, indices, axis ):
     if axis != 0:
       return
-    assert isinstance( indices, DofMap )
     stdmap = {}
     for trans, stdkeep in self.stdmap.items():
-      ind = indices.dofmap[trans]
+      ind, = indices.eval( trans )
       assert all( numpy.diff( ind ) > 0 )
       nshapes = _sum( 0 if not std else std.nshapes if keep is None else keep.sum() for std, keep in stdkeep )
       where = numpy.zeros( nshapes, dtype=bool )
@@ -2140,22 +2134,12 @@ class Inflate( Array ):
       return self.func
     assert index.isconstant
     index, = index.eval()
-    if self.dofmap.offset != 0:
-      raise NotImplementedError
-    reverse_index = numpy.empty( self.shape[axis], dtype=int )
-    reverse_index[:] = -1
-    reverse_index[index] = numpy.arange( len(index) )
-    globaldofs = {}
-    localdofs = {}
-    for trans, dofs in self.dofmap.dofmap.items():
-      newdofs = reverse_index[dofs]
-      keep = newdofs != -1
-      globaldofs[trans] = newdofs[keep]
-      localdofs[trans], = numpy.where(keep)
-    strlen = '~%d'%len(index)
-    gdofmap = DofMap( globaldofs, length=strlen, side=self.dofmap.side )
-    ldofmap = DofMap( localdofs, length=strlen, side=self.dofmap.side )
-    return inflate( take( self.func, ldofmap, axis ), gdofmap, len(index), self.axis )
+    renumber = numpy.empty( self.shape[axis], dtype=int )
+    renumber[:] = -1
+    renumber[index] = numpy.arange( len(index) )
+    select = take( renumber != -1, self.dofmap, axis=0 )
+    dofmap = take( renumber, take( self.dofmap, select, axis=0 ), axis=0 )
+    return inflate( take( self.func, select, axis ), dofmap, len(index), self.axis )
 
   def _diagonalize( self ):
     assert self.axis < self.ndim-1
@@ -2385,6 +2369,19 @@ class TrigTangent( Array ):
   def _edit( self, op ):
     return TrigTangent( edit(self.angle,op) )
 
+class Find( Array ):
+  'indices of boolean index vector'
+
+  def __init__( self, where ):
+    assert isarray(where) and where.ndim == 1 and where.dtype == bool
+    Array.__init__( self, args=[where], shape=['~{}'.format(where.shape[0])], dtype=int )
+
+  def evalf( self, where ):
+    assert where.shape[0] == 1
+    where, = where
+    index, = where.nonzero()
+    return index[_]
+
 class DerivativeTargetBase( Array ):
   'base class for derivative targets'
 
@@ -2594,14 +2591,11 @@ def _norm_and_sort( ndim, args ):
 def _unpack( funcsp ):
   for axes, func in funcsp.blocks:
     dofax = axes[0]
-    assert isinstance( dofax, DofMap )
-    dofmap = dofax.dofmap
     if isinstance( func, Align ):
       func = func.func
-    stdmap = func.stdmap
-    for trans, dofs in dofmap.items():
-      yield trans, dofs + dofax.offset, stdmap[trans]
-  
+    for trans, std in func.stdmap.items():
+      dofs, = dofax.eval( trans )
+      yield trans, dofs, std
 
 # FUNCTIONS
 
@@ -3429,27 +3423,43 @@ def take( arg, index, axis ):
   arg = asarray( arg )
   axis = numeric.normdim( arg.ndim, axis )
 
-  if isarray( index ) and index.isconstant:
-    index, = index.eval()
-
-  if isinstance( index, slice ) or isinstance( index, numpy.ndarray ) and index.dtype == bool:
+  if isinstance( index, slice ):
     index = numpy.arange(arg.shape[axis])[index]
 
-  if isinstance( index, numpy.ndarray ):
-    assert index.ndim == 1 and index.dtype == int
-    if index.size == 1:
-      return insert( get( arg, axis, index[0] ), axis )
-    if index.size == arg.shape[axis] and numpy.all(numpy.diff(index) == 1):
+  index = asarray( index )
+  assert index.ndim == 1
+
+  if index.dtype == bool:
+    assert index.shape[0] == arg.shape[axis]
+    index = find( index )
+
+  assert index.dtype == int
+
+  if index.isconstant:
+    index_, = index.eval()
+    if len(index_) == 1:
+      return insert( get( arg, axis, index_[0] ), axis )
+    if len(index_) == arg.shape[axis] and numpy.all(numpy.diff(index_) == 1):
       return arg
 
-  indexfunc = asarray( index )
-  assert indexfunc.ndim == 1 and indexfunc.dtype == int
-
-  retval = _call( arg, '_take', indexfunc, axis )
+  retval = _call( arg, '_take', index, axis )
   if retval is not None:
     return retval
 
-  return Take( arg, indexfunc, axis )
+  return Take( arg, index, axis )
+
+def find( arg ):
+  'find'
+
+  arg = asarray( arg )
+  assert arg.ndim == 1 and arg.dtype == bool
+
+  if arg.isconstant:
+    arg, = arg.eval()
+    index, = arg.nonzero()
+    return asarray( index )
+
+  return Find( arg )
 
 def inflate( arg, dofmap, length, axis ):
   'inflate'

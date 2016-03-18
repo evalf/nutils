@@ -621,7 +621,8 @@ class Topology( object ):
     for axes, func in function.blocks( basis ):
       dofmap = axes[0]
       for elem in self:
-        used[ dofmap.dofmap[elem.transform] + dofmap.offset ] = True
+        dofs = dofmap.eval( elem )
+        used[dofs] = True
     return basis[used]
 
   def locate( self, geom, points, ischeme='vertex', scale=1, tol=1e-12, eps=0, maxiter=100 ):
@@ -1725,11 +1726,11 @@ class HierarchicalTopology( Topology ):
       myelems = [] # all top-level or parent elements in current level
 
       (axes,func), = function.blocks( funcsp )
-      dofmap = axes[0].dofmap
+      dofmap, = axes
       stdmap = func.stdmap
       for elem in topo:
         trans = elem.transform
-        idofs = dofmap[trans]
+        idofs, = dofmap.eval( elem )
         stds = stdmap[trans]
         mytrans = trans.lookup( self.edict )
         if mytrans == trans: # trans is in domain
