@@ -788,8 +788,7 @@ class Align( Array ):
     try:
       n = self.axes.index( axis )
     except ValueError:
-      assert isinstance( indices, DofMap )
-      return self
+      return
     return align( take( self.func, indices, n ), self.axes, self.ndim )
 
   def _edit( self, op ):
@@ -1131,13 +1130,16 @@ class Concatenate( Array ):
     return concatenate( funcs, axis=self.axis )
 
   def _multiply( self, other ):
-    funcs = []
-    n0 = 0
-    for func in self.funcs:
-      n1 = n0 + func.shape[ self.axis ]
-      funcs.append( func * take( other, slice(n0,n1), self.axis ) )
-      n0 = n1
-    assert n0 == self.shape[ self.axis ]
+    if other.shape[self.axis] == 1:
+      funcs = [ multiply( func, other ) for func in self.funcs ]
+    else:
+      funcs = []
+      n0 = 0
+      for func in self.funcs:
+        n1 = n0 + func.shape[ self.axis ]
+        funcs.append( multiply( func, take( other, slice(n0,n1), self.axis ) ) )
+        n0 = n1
+      assert n0 == self.shape[ self.axis ]
     return concatenate( funcs, self.axis )
 
   def _cross( self, other, axis ):
@@ -1145,13 +1147,16 @@ class Concatenate( Array ):
       n = 1, 2, 0
       m = 2, 0, 1
       return take(self,n,axis) * take(other,m,axis) - take(self,m,axis) * take(other,n,axis)
-    funcs = []
-    n0 = 0
-    for func in self.funcs:
-      n1 = n0 + func.shape[ self.axis ]
-      funcs.append( cross( func, take( other, slice(n0,n1), self.axis ), axis ) )
-      n0 = n1
-    assert n0 == self.shape[ self.axis ]
+    if other.shape[self.axis] == 1:
+      funcs = [ cross( func, other, axis ) for func in self.funcs ]
+    else:
+      funcs = []
+      n0 = 0
+      for func in self.funcs:
+        n1 = n0 + func.shape[ self.axis ]
+        funcs.append( cross( func, take( other, slice(n0,n1), self.axis ), axis ) )
+        n0 = n1
+      assert n0 == self.shape[ self.axis ]
     return concatenate( funcs, self.axis )
 
   def _add( self, other ):
@@ -1171,13 +1176,16 @@ class Concatenate( Array ):
       assert ifun1 == len(self.funcs)
       assert ifun2 == len(other.funcs)
       return concatenate( funcs, axis=self.axis )
-    funcs = []
-    n0 = 0
-    for func in self.funcs:
-      n1 = n0 + func.shape[ self.axis ]
-      funcs.append( func + take( other, slice(n0,n1), self.axis ) )
-      n0 = n1
-    assert n0 == self.shape[ self.axis ]
+    if other.shape[self.axis] == 1:
+      funcs = [ add( func, other ) for func in self.funcs ]
+    else:
+      funcs = []
+      n0 = 0
+      for func in self.funcs:
+        n1 = n0 + func.shape[ self.axis ]
+        funcs.append( func + take( other, slice(n0,n1), self.axis ) )
+        n0 = n1
+      assert n0 == self.shape[ self.axis ]
     return concatenate( funcs, self.axis )
 
   def _sum( self, axis ):
@@ -1211,7 +1219,7 @@ class Concatenate( Array ):
 
   def _take( self, indices, axis ):
     if axis != self.axis:
-      return concatenate( [ take(func,indices,axis) for func in self.funcs ], self.axis )
+      return concatenate( [ take(aslength(func,self.shape[axis],axis),indices,axis) for func in self.funcs ], self.axis )
     funcs = []
     while len(indices):
       n = 0
@@ -1233,17 +1241,22 @@ class Concatenate( Array ):
 
   def _dot( self, other, naxes ):
     axes = range( self.ndim-naxes, self.ndim )
-    n0 = 0
-    funcs = []
-    for f in self.funcs:
-      n1 = n0 + f.shape[self.axis]
-      funcs.append( dot( f, take( other, slice(n0,n1), self.axis ), axes ) )
-      n0 = n1
+    if other.shape[self.axis] == 1:
+      funcs = [ dot( f, other, axes ) for f in self.funcs ]
+    else:
+      n0 = 0
+      funcs = []
+      for f in self.funcs:
+        n1 = n0 + f.shape[self.axis]
+        funcs.append( dot( f, take( other, slice(n0,n1), self.axis ), axes ) )
+        n0 = n1
     if self.axis >= self.ndim - naxes:
       return util.sum( funcs )
     return concatenate( funcs, self.axis )
 
   def _power( self, n ):
+    if n.shape[self.axis] != 1:
+      raise NotImplementedError
     return concatenate( [ power( func, n ) for func in self.funcs ], self.axis )
 
   def _diagonalize( self ):
@@ -1304,7 +1317,7 @@ class Cross( Array ):
 
   def _take( self, index, axis ):
     if axis != self.axis:
-      return cross( take(self.func1,index,axis), take(self.func2,index,axis), self.axis )
+      return cross( take(aslength(self.func1,self.shape[axis],axis),index,axis), take(aslength(self.func2,self.shape[axis],axis),index,axis), self.axis )
 
   def _edit( self, op ):
     return cross( op(self.func1), op(self.func2), self.axis )
@@ -1440,7 +1453,7 @@ class Multiply( Array ):
 
   def _take( self, index, axis ):
     func1, func2 = self.funcs
-    return take( func1, index, axis ) * take( func2, index, axis )
+    return take( aslength(func1,self.shape[axis],axis), index, axis ) * take( aslength(func2,self.shape[axis],axis), index, axis )
 
   def _power( self, n ):
     func1, func2 = self.funcs
@@ -1492,7 +1505,7 @@ class Add( Array ):
 
   def _take( self, index, axis ):
     func1, func2 = self.funcs
-    return take( func1, index, axis ) + take( func2, index, axis )
+    return take( aslength(func1,self.shape[axis],axis), index, axis ) + take( aslength(func2,self.shape[axis],axis), index, axis )
 
   def _add( self, other ):
     func1, func2 = self.funcs
@@ -1550,7 +1563,7 @@ class BlockAdd( Array ):
     return blockadd( *( takediag( func ) for func in self.funcs ) )
 
   def _take( self, indices, axis ):
-    return blockadd( *( take( func, indices, axis ) for func in self.funcs ) )
+    return blockadd( *( take( aslength(func,self.shape[axis],axis), indices, axis ) for func in self.funcs ) )
 
   def _align( self, axes, ndim ):
     return blockadd( *( align( func, axes, ndim ) for func in self.funcs ) )
@@ -1618,7 +1631,7 @@ class Dot( Array ):
 
   def _take( self, index, axis ):
     func1, func2 = self.funcs
-    return dot( take(func1,index,axis), take(func2,index,axis), self.axes )
+    return dot( take( aslength(func1,self.shape[axis],axis), index, axis ), take( aslength(func2,self.shape[axis],axis), index, axis ), self.axes )
 
   def _concatenate( self, other, axis ):
     if isinstance( other, Dot ) and other.axes == self.axes:
@@ -1810,7 +1823,7 @@ class Power( Array ):
     return power( takediag( self.func ), takediag( self.power ) )
 
   def _take( self, index, axis ):
-    return power( take( self.func, index, axis ), take( self.power, index, axis ) )
+    return power( take( aslength(self.func,self.shape[axis],axis), index, axis ), take( aslength(self.power,self.shape[axis],axis), index, axis ) )
 
   def _multiply( self, other ):
     if isinstance( other, Power ) and self.func == other.func:
@@ -3475,8 +3488,6 @@ def take( arg, index, axis ):
     retval = _call( arg, '_take', index, axis )
     if retval is not None:
       return retval
-    if arg.shape[axis] == 1:
-      return arg
     return DofIndex( arg, axis, index ) if isinstance(arg,numpy.ndarray) else Take( arg, index, axis )
 
   if isinstance( index, slice ):
@@ -3496,9 +3507,6 @@ def take( arg, index, axis ):
 
   if len(index) == arg.shape[axis] and all( index == numpy.arange(arg.shape[axis]) ):
     return arg
-
-  if arg.shape[axis] == 1:
-    return repeat( arg, index.shape[0], axis )
 
   if len(index) == 1:
     return insert( get( arg, axis, index[0] ), axis )
