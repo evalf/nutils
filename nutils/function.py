@@ -51,6 +51,10 @@ class Evaluable( cache.Immutable ):
   def evalf( self, *args ):
     raise NotImplementedError( 'Evaluable derivatives should implement the evalf method' )
 
+  @property
+  def isconstant( self ):
+    return all( arg not in TOKENS and arg.isconstant for arg in self.__args )
+
   @cache.property
   def serialized( self ):
     '''returns (ops,inds), where len(ops) = len(inds)-1'''
@@ -107,10 +111,14 @@ class Evaluable( cache.Immutable ):
   def __str__( self ):
     return self.__class__.__name__
 
-  def eval( self, elem, ischeme, fcache=cache.WrapperDummyCache() ):
+  def eval( self, elem=None, ischeme=None, fcache=cache.WrapperDummyCache() ):
     'evaluate'
     
-    if isinstance( elem, tuple ):
+    if elem is None:
+      assert self.isconstant
+      trans = None
+      points = None
+    elif isinstance( elem, tuple ):
       assert isinstance( ischeme, numpy.ndarray )
       points = ischeme
       transform, opposite = elem
@@ -134,7 +142,8 @@ class Evaluable( cache.Immutable ):
       else:
         raise Exception( 'invalid integration scheme of type %r' % type(ischeme) )
 
-    assert trans[0].fromdims == trans[1].fromdims
+    if trans is not None:
+      assert trans[0].fromdims == trans[1].fromdims
     if points is not None:
       assert points.ndim == 2 and points.shape[1] == trans[0].fromdims
 
@@ -382,29 +391,22 @@ class Array( Evaluable ):
     arr = self
     while myitem:
       it = myitem.pop(0)
-      if isinstance(it,numpy.ndarray): # numpy first because of 'equals issues'
-        arr = take( arr, it, n )
-        n += 1
-      elif numeric.isint(it): # retrieve one item from axis
+      eqsafe = not isinstance( it, numpy.ndarray ) # it is not an array, safe to use == comparison
+      if numeric.isint(it): # retrieve one item from axis
         arr = get( arr, n, it )
-      elif it == _: # insert a singleton axis
+      elif eqsafe and it == _: # insert a singleton axis
         arr = insert( arr, n )
         n += 1
-      elif it == slice(None): # select entire axis
+      elif eqsafe and it == slice(None): # select entire axis
         n += 1
-      elif it == Ellipsis: # skip to end
+      elif eqsafe and it == Ellipsis: # skip to end
         remaining_items = len(myitem) - myitem.count(_)
         skip = arr.ndim - n - remaining_items
         assert skip >= 0, 'shape=%s, item=%s' % ( self.shape, _obj2str(item) )
         n += skip
-      elif isinstance(it,slice) and it.step in (1,None) and it.stop == ( it.start or 0 ) + 1: # special case: unit length slice
-        arr = insert( get( arr, n, it.start or 0 ), n )
-        n += 1
-      elif isinstance(it,(slice,list,tuple)): # modify axis (shorten, extend or renumber one axis)
+      else:
         arr = take( arr, it, n )
         n += 1
-      else:
-        raise NotImplementedError
       assert n <= arr.ndim
     return arr
 
@@ -1221,21 +1223,17 @@ class Concatenate( Array ):
   def _take( self, indices, axis ):
     if axis != self.axis:
       return concatenate( [ take(aslength(func,self.shape[axis],axis),indices,axis) for func in self.funcs ], self.axis )
+    if not indices.isconstant:
+      raise NotImplementedError
+    indices, = indices.eval()
+    ifuncs = numpy.hstack([ numpy.repeat(ifunc,func.shape[axis]) for ifunc, func in enumerate(self.funcs) ])[indices]
+    splits, = numpy.nonzero( numpy.diff(ifuncs) != 0 )
     funcs = []
-    while len(indices):
-      n = 0
-      for func in self.funcs:
-        if n <= indices[0] < n + func.shape[axis]:
-          break
-        n += func.shape[axis]
-      else:
-        raise Exception( 'index out of bounds' )
-      length = 1
-      while length < len(indices) and n <= indices[length] < n + func.shape[axis]:
-        length += 1
-      funcs.append( take( func, indices[:length]-n, axis ) )
-      indices = indices[length:]
-    assert funcs, 'empty slice'
+    for i, j in zip( numpy.hstack([ 0, splits+1 ]), numpy.hstack([ splits+1, len(indices) ]) ):
+      ifunc = ifuncs[i]
+      assert numpy.all( ifuncs[i:j] == ifunc )
+      offset = _sum( func.shape[axis] for func in self.funcs[:ifunc] )
+      funcs.append( take( self.funcs[ifunc], indices[i:j] - offset, axis ) )
     if len( funcs ) == 1:
       return funcs[0]
     return concatenate( funcs, axis=axis )
@@ -1344,49 +1342,6 @@ class Determinant( Array ):
 
   def _edit( self, op ):
     return determinant( op(self.func) )
-
-class DofIndex( Array ):
-  'element-based indexing'
-
-  def __init__( self, array, iax, index ):
-    'constructor'
-
-    assert index.ndim >= 1
-    assert isinstance( array, numpy.ndarray )
-    self.array = array
-    assert 0 <= iax < self.array.ndim
-    self.iax = iax
-    self.index = index
-    shape = self.array.shape[:iax] + index.shape + self.array.shape[iax+1:]
-    Array.__init__( self, args=[index], shape=shape, dtype=array.dtype )
-
-  def evalf( self, index ):
-    'evaluate'
-
-    item = [ slice(None) ] * self.array.ndim
-    item[self.iax] = index
-    return self.array[ tuple(item) ][_]
-
-  def _get( self, i, item ):
-    if self.iax <= i < self.iax + self.index.ndim:
-      index = get( self.index, i - self.iax, item )
-      return take( self.array, index, self.iax )
-    return take( get( self.array, i, item ), self.index, self.iax if i > self.iax else self.iax-1 )
-
-  def _add( self, other ):
-    if isinstance( other, DofIndex ) and self.iax == other.iax and self.index == other.index:
-      return take( self.array + other.array, self.index, self.iax )
-
-  def _derivative( self, var, axes, seen ):
-    return zeros( self.shape + _taketuple(var.shape,axes) )
-
-  def _concatenate( self, other, axis ):
-    if isinstance( other, DofIndex ) and self.iax == other.iax and self.index == other.index:
-      array = numpy.concatenate( [ self.array, other.array ], axis )
-      return take( array, self.index, self.iax )
-
-  def _edit( self, op ):
-    return take( self.array, op(self.index), self.iax )
 
 class Multiply( Array ):
   'multiply'
@@ -1736,45 +1691,30 @@ class Take( Array ):
   def __init__( self, func, indices, axis ):
     'constructor'
 
-    assert func.shape[axis] != 1
+    assert isarray(func) and func.shape[axis] != 1
+    assert isarray(indices) and indices.ndim == 1 and indices.dtype == int
+    assert 0 <= axis < func.ndim
+
     self.func = func
     self.axis = axis
     self.indices = indices
 
-    args = [func]
-    s = [ slice(None) ] * func.ndim
+    shape = func.shape[:axis] + indices.shape + func.shape[axis+1:]
+    Array.__init__( self, args=[func,indices], shape=shape, dtype=func.dtype )
 
-    if isevaluable(indices):
-      s[axis] = indices
-      newlen, = indices.shape
-      args.append( Tuple((Ellipsis,)+tuple(s)) )
-    else:
-      # try for regular slice
-      start = indices[0]
-      step = indices[1] - start
-      stop = start + step * len(indices)
-      s[axis] = slice( start, stop, step ) if numpy.all( numpy.diff(indices) == step ) else indices
-      newlen, = numpy.empty( func.shape[axis] )[ indices ].shape
-      assert newlen > 0
-      self.item = (Ellipsis,)+tuple(s)
-
-    shape = func.shape[:axis] + (newlen,) + func.shape[axis+1:]
-    Array.__init__( self, args=args, shape=shape, dtype=func.dtype )
-
-  def evalf( self, arr, item=None ):
-    assert arr.ndim == self.ndim+1
-    return arr[ item or self.item ]
+  def evalf( self, arr, indices ):
+    if indices.ndim == 1:
+      indices = indices[_] # temporary hack to work with non-compliant DofMap
+    if indices.shape[0] != 1:
+      raise NotImplementedError( 'non element-constant indexing not supported yet' )
+    return numpy.take( arr, indices[0], self.axis+1 )
 
   def _derivative( self, var, axes, seen ):
     return take( derivative( self.func, var, axes, seen ), self.indices, self.axis )
 
   def _take( self, index, axis ):
     if axis == self.axis:
-      if numpy.all( numpy.diff( self.indices ) == 1 ):
-        indices = index + self.indices[0]
-      else:
-        indices = self.indices[index]
-      return take( self.func, indices, axis )
+      return take( self.func, self.indices[index], axis )
     trytake = _call( self.func, '_take', index, axis )
     if trytake is not None:
       return take( trytake, self.indices, self.axis )
@@ -2197,7 +2137,8 @@ class Inflate( Array ):
       return inflate( take( self.func, index, axis ), self.dofmap, self.length, self.axis )
     if index == self.dofmap:
       return self.func
-    assert numeric.isintarray(index) and index.ndim == 1
+    assert index.isconstant
+    index, = index.eval()
     if self.dofmap.offset != 0:
       raise NotImplementedError
     reverse_index = numpy.empty( self.shape[axis], dtype=int )
@@ -3487,40 +3428,27 @@ def take( arg, index, axis ):
   arg = asarray( arg )
   axis = numeric.normdim( arg.ndim, axis )
 
-  if isinstance( index, DofMap ):
-    if index.shape[0] == 1:
+  if isarray( index ) and index.isconstant:
+    index, = index.eval()
+
+  if isinstance( index, slice ) or isinstance( index, numpy.ndarray ) and index.dtype == bool:
+    index = numpy.arange(arg.shape[axis])[index]
+
+  if isinstance( index, numpy.ndarray ):
+    assert index.ndim == 1 and index.dtype == int
+    if index.size == 1:
       return insert( get( arg, axis, index[0] ), axis )
-    retval = _call( arg, '_take', index, axis )
-    if retval is not None:
-      return retval
-    return DofIndex( arg, axis, index ) if isinstance(arg,numpy.ndarray) else Take( arg, index, axis )
+    if index.size == arg.shape[axis] and numpy.all(numpy.diff(index) == 1):
+      return arg
 
-  if isinstance( index, slice ):
-    n = arg.shape[axis]
-    if n == 1:
-      assert index.stop != None and index.stop > 0
-      n = index.stop
-    index = numpy.arange( *index.indices(n) )
-  else:
-    index = numpy.asarray( index )
-    assert numpy.all( index >= 0 )
+  indexfunc = asarray( index )
+  assert indexfunc.ndim == 1 and indexfunc.dtype == int
 
-  if numeric.isboolarray(index) and index.ndim == 1 and len(index) == arg.shape[axis]:
-    index, = numpy.where( index )
-
-  assert numeric.isintarray(index) and index.ndim == 1 and len(index) > 0
-
-  if len(index) == arg.shape[axis] and all( index == numpy.arange(arg.shape[axis]) ):
-    return arg
-
-  if len(index) == 1:
-    return insert( get( arg, axis, index[0] ), axis )
-
-  retval = _call( arg, '_take', index, axis )
+  retval = _call( arg, '_take', indexfunc, axis )
   if retval is not None:
     return retval
 
-  return Take( arg, index, axis )
+  return Take( arg, indexfunc, axis )
 
 def inflate( arg, dofmap, length, axis ):
   'inflate'
