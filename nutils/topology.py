@@ -262,7 +262,7 @@ class Topology( object ):
       ipoints, iweights = fcache[elem.reference.getischeme]( ischeme )
       s = slices[ielem],
       for ifunc, index, data in idata.eval( elem, ipoints, fcache ):
-        retvals[ifunc][s+numpy.ix_(*index)] += numeric.dot(iweights,data) if geometry else data
+        retvals[ifunc][s+numpy.ix_(*[ ind for (ind,) in index ])] += numeric.dot(iweights,data) if geometry else data
 
     log.debug( 'cache', fcache.stats )
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join( str(n) for n in retval.shape ) ) for retval in retvals ) )
@@ -317,9 +317,9 @@ class Topology( object ):
 
     for ielem, elem in enumerate( self ):
       for iblock, index in enumerate( indexfunc.eval( elem, None, fcache ) ):
-        n = util.product( len(ind) for ind in index ) if index else 1
+        n = util.product( len(ind) for (ind,) in index ) if index else 1
         offsets[iblock,ielem+1] = offsets[iblock,ielem] + n
-        indices[iblock].append( index )
+        indices[iblock].append([ ind for (ind,) in index ])
 
     # Since several blocks may belong to the same function, we post process the
     # offsets to form consecutive intervals in longer arrays. The length of

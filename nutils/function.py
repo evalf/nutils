@@ -364,7 +364,7 @@ class Array( Evaluable ):
 
   @property
   def blocks( self ):
-    return [( Tuple([ numpy.arange(n) if numeric.isint(n) else None for n in self.shape ]), self )]
+    return [( Tuple([ asarray(numpy.arange(n)) if numeric.isint(n) else None for n in self.shape ]), self )]
 
   def vector( self, ndims ):
     'vectorize'
@@ -676,7 +676,7 @@ class DofMap( Array ):
   def evalf( self, trans ):
     'evaluate'
 
-    return self.dofmap[ trans.lookup(self.dofmap) ] + self.offset
+    return ( self.dofmap[ trans.lookup(self.dofmap) ] + self.offset )[_]
 
   def _opposite( self ):
     return DofMap( self.dofmap, self.shape[0], 1-self.side )
@@ -1703,8 +1703,6 @@ class Take( Array ):
     Array.__init__( self, args=[func,indices], shape=shape, dtype=func.dtype )
 
   def evalf( self, arr, indices ):
-    if indices.ndim == 1:
-      indices = indices[_] # temporary hack to work with non-compliant DofMap
     if indices.shape[0] != 1:
       raise NotImplementedError( 'non element-constant indexing not supported yet' )
     return numpy.take( arr, indices[0], self.axis+1 )
@@ -2060,6 +2058,9 @@ class Inflate( Array ):
   def evalf( self, array, indices ):
     'inflate'
 
+    if indices.shape[0] != 1:
+      raise NotImplementedError
+    indices, = indices
     assert array.ndim == self.ndim+1
     warnings.warn( 'using explicit inflation; this is usually a bug.' )
     shape = list( array.shape )
