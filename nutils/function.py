@@ -791,6 +791,17 @@ class Align( Array ):
   def _edit( self, op ):
     return align( op(self.func), self.axes, self.ndim )
 
+  def _dot( self, other, axes ):
+    if len(self.axes) == self.ndim:
+      funcaxes = tuple( self.axes.index(axis) for axis in axes )
+      trydot = _call( self.func, '_dot', transpose(other,self.axes), funcaxes )
+      if trydot is not None:
+        keep = numpy.ones( self.ndim, dtype=bool )
+        keep[list(axes)] = False
+        axes = [ _sum(keep[:axis]) for axis in self.axes if keep[axis] ]
+        assert len(axes) == trydot.ndim
+        return align( trydot, axes, len(axes) )
+
 class Get( Array ):
   'get'
 
@@ -2201,6 +2212,14 @@ class Diagonalize( Array ):
   def _multiply( self, other ):
     return diagonalize( self.func * takediag( other ) )
 
+  def _dot( self, other, axes ):
+    faxes = [ axis for axis in axes if axis < self.ndim-2 ]
+    if len(faxes) < len(axes): # one of or both diagonalized axes are summed
+      if len(axes) - len(faxes) == 2:
+        faxes.append( self.func.ndim-1 )
+      return dot( self.func, takediag(other), faxes )
+    return diagonalize( dot( self.func, takediag(other), axes ) )
+
   def _add( self, other ):
     if isinstance( other, Diagonalize ):
       return diagonalize( self.func + other.func )
@@ -2219,6 +2238,12 @@ class Diagonalize( Array ):
 
   def _takediag( self ):
     return self.func
+
+  def _take( self, index, axis ):
+    if axis < self.ndim-2:
+      return diagonalize( take( self.func, index, axis ) )
+    diag = diagonalize( take( self.func, index, self.func.ndim-1 ) )
+    return inflate( diag, index, self.func.shape[-1], self.ndim-1 if axis == self.ndim-2 else self.ndim-2 )
 
 class Repeat( Array ):
   'repeat singleton axis'
@@ -2878,10 +2903,16 @@ def dot( arg1, arg2, axes ):
 
   for i, axis in enumerate( axes ):
     if arg1.shape[axis] == 1 or arg2.shape[axis] == 1:
-      arg1 = sum( arg1, axis )
-      arg2 = sum( arg2, axis )
       axes = axes[:i] + tuple( axis-1 for axis in axes[i+1:] )
-      return dot( arg1, arg2, axes )
+      return dot( sum(arg1,axis), sum(arg2,axis), axes )
+
+  for axis, sh1 in enumerate(arg1.shape):
+    if sh1 == 1 and arg2.shape[axis] == 1:
+      assert axis not in axes
+      dotaxes = [ ax - (ax>axis) for ax in axes ]
+      dotargs = dot( sum(arg1,axis), sum(arg2,axis), dotaxes )
+      axis -= _sum( ax<axis for ax in axes )
+      return align( dotargs, [ ax + (ax>=axis) for ax in range(dotargs.ndim) ], dotargs.ndim+1 )
 
   retval = _call( arg1, '_dot', arg2, axes )
   if retval is not None:
@@ -3462,7 +3493,6 @@ def inflate( arg, dofmap, length, axis ):
 
   arg = asarray( arg )
   axis = numeric.normdim( arg.ndim, axis )
-  assert not isinstance( arg.shape[axis], int )
 
   retval = _call( arg, '_inflate', dofmap, length, axis )
   if retval is not None:
