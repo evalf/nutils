@@ -614,12 +614,12 @@ class Constant( Array ):
   def _edit( self, op ):
     return asarray( op(self.value) )
 
-  def _dot( self, other, naxes ):
+  def _dot( self, other, axes ):
     if self._isunit:
       shape = _jointshape( self.shape, other.shape )
-      return sum( expand( other, shape ), list(range(self.ndim-naxes,self.ndim)) )
+      return sum( expand( other, shape ), axes )
     if isinstance( other, Constant ):
-      return asarray( numeric.contract_fast( self.value, other.value, naxes ) )
+      return asarray( numeric.contract( self.value, other.value, axes ) )
 
   def _concatenate( self, other, axis ):
     if isinstance( other, Constant ):
@@ -1232,8 +1232,7 @@ class Concatenate( Array ):
       return funcs[0]
     return concatenate( funcs, axis=axis )
 
-  def _dot( self, other, naxes ):
-    axes = range( self.ndim-naxes, self.ndim )
+  def _dot( self, other, axes ):
     if other.shape[self.axis] == 1:
       funcs = [ dot( f, other, axes ) for f in self.funcs ]
     else:
@@ -1243,9 +1242,9 @@ class Concatenate( Array ):
         n1 = n0 + f.shape[self.axis]
         funcs.append( dot( f, take( other, slice(n0,n1), self.axis ), axes ) )
         n0 = n1
-    if self.axis >= self.ndim - naxes:
+    if self.axis in axes:
       return util.sum( funcs )
-    return concatenate( funcs, self.axis )
+    return concatenate( funcs, self.axis - _sum( axis < self.axis for axis in axes ) )
 
   def _power( self, n ):
     if n.shape[self.axis] != 1:
@@ -1417,12 +1416,16 @@ class Multiply( Array ):
     func1, func2 = self.funcs
     return multiply( op(func1), op(func2) )
 
-  def _dot( self, other, naxes ):
+  def _dot( self, other, axes ):
     func1, func2 = self.funcs
-    if all( sh == 1 for sh in func1.shape[-naxes:] ):
-      return func1[(Ellipsis,)+(0,)*naxes] * dot( func2, other, list(range(self.ndim-naxes,self.ndim)) )
-    if all( sh == 1 for sh in func2.shape[-naxes:] ):
-      return func2[(Ellipsis,)+(0,)*naxes] * dot( func1, other, list(range(self.ndim-naxes,self.ndim)) )
+    s = [ slice(None) ] * self.ndim
+    for axis in axes:
+      s[axis] = 0
+    s = tuple(s)
+    if all( func1.shape[axis] == 1 for axis in axes ):
+      return func1[s] * dot( func2, other, axes )
+    if all( func2.shape[axis] == 1 for axis in axes ):
+      return func2[s] * dot( func1, other, axes )
 
 class Add( Array ):
   'add'
@@ -1495,9 +1498,8 @@ class BlockAdd( Array ):
   def _add( self, other ):
     return blockadd( self, other )
 
-  def _dot( self, other, naxes ):
-    n = numpy.arange( self.ndim-naxes, self.ndim )
-    return blockadd( *( dot( func, other, n ) for func in self.funcs ) )
+  def _dot( self, other, axes ):
+    return blockadd( *( dot( func, other, axes ) for func in self.funcs ) )
 
   def _edit( self, op ):
     return blockadd( *map( op, self.funcs ) )
@@ -1986,9 +1988,9 @@ class Zeros( Array ):
     shape = _jointshape( self.shape, other.shape )
     return zeros( shape, dtype=_jointdtype(self.dtype,other.dtype) )
 
-  def _dot( self, other, naxes ):
-    shape = _jointshape( self.shape, other.shape )
-    return zeros( shape[:-naxes], dtype=_jointdtype(self.dtype,other.dtype) )
+  def _dot( self, other, axes ):
+    shape = [ sh for axis, sh in enumerate( _jointshape( self.shape, other.shape ) ) if axis not in axes ]
+    return zeros( shape, dtype=_jointdtype(self.dtype,other.dtype) )
 
   def _cross( self, other, axis ):
     shape = _jointshape( self.shape, other.shape )
@@ -2085,17 +2087,16 @@ class Inflate( Array ):
     assert axis != self.axis
     return inflate( get(self.func,axis,item), self.dofmap, self.length, self.axis-(axis<self.axis) )
 
-  def _dot( self, other, naxes ):
-    axes = range( self.ndim-naxes, self.ndim )
+  def _dot( self, other, axes ):
     if isinstance( other, Inflate ) and other.axis == self.axis:
       assert self.dofmap == other.dofmap
       other = other.func
     elif other.shape[self.axis] != 1:
       other = take( other, self.dofmap, self.axis )
     arr = dot( self.func, other, axes )
-    if self.axis >= self.ndim - naxes:
+    if self.axis in axes:
       return arr
-    return inflate( arr, self.dofmap, self.length, self.axis )
+    return inflate( arr, self.dofmap, self.length, self.axis - _sum( axis < self.axis for axis in axes ) )
 
   def _multiply( self, other ):
     if isinstance( other, Inflate ) and self.axis == other.axis:
@@ -2282,15 +2283,14 @@ class Repeat( Array ):
     if axis != self.axis:
       return aslength( cross( self.func, other, axis ), self.length, self.axis )
 
-  def _dot( self, other, naxes ):
-    axes = range( self.ndim-naxes, self.ndim )
+  def _dot( self, other, axes ):
     func = dot( self.func, other, axes )
     if other.shape[self.axis] != 1:
       assert other.shape[self.axis] == self.length
       return func
-    if self.axis >= self.ndim - naxes:
+    if self.axis in axes:
       return func * self.length
-    return aslength( func, self.length, self.axis )
+    return aslength( func, self.length, self.axis - _sum( axis < self.axis for axis in axes ) )
 
   def _edit( self, op ):
     return repeat( op(self.func), self.length, self.axis )
@@ -2333,8 +2333,8 @@ class TrigNormal( Array ):
   def evalf( self, angle ):
     return numpy.array([ numpy.cos(angle), numpy.sin(angle) ]).T
 
-  def _dot( self, other, naxes ):
-    assert naxes == 1
+  def _dot( self, other, axes ):
+    assert axes == (0,)
     if isinstance( other, (TrigTangent,TrigNormal) ) and self.angle == other.angle:
       return numpy.array( 1 if isinstance(other,TrigNormal) else 0 )
 
@@ -2358,8 +2358,8 @@ class TrigTangent( Array ):
   def evalf( self, angle ):
     return numpy.array([ -numpy.sin(angle), numpy.cos(angle) ]).T
 
-  def _dot( self, other, naxes ):
-    assert naxes == 1
+  def _dot( self, other, axes ):
+    assert axes == (0,)
     if isinstance( other, (TrigTangent,TrigNormal) ) and self.angle == other.angle:
       return numpy.array( 1 if isinstance(other,TrigTangent) else 0 )
 
@@ -2871,8 +2871,10 @@ def dot( arg1, arg2, axes ):
   axes = _norm_and_sort( len(shape), axes )
   assert numpy.all( numpy.diff(axes) > 0 ), 'duplicate axes in sum'
 
+  dotshape = tuple( s for i, s in enumerate(shape) if i not in axes )
+
   if iszero( arg1 ) or iszero( arg2 ):
-    return zeros([ s for i, s in enumerate(shape) if i not in axes ])
+    return zeros( dotshape )
 
   for i, axis in enumerate( axes ):
     if arg1.shape[axis] == 1 or arg2.shape[axis] == 1:
@@ -2881,28 +2883,22 @@ def dot( arg1, arg2, axes ):
       axes = axes[:i] + tuple( axis-1 for axis in axes[i+1:] )
       return dot( arg1, arg2, axes )
 
-  shuffle = list( range( len(shape) ) )
-  for ax in reversed( axes ):
-    shuffle.append( shuffle.pop(ax) )
-
-  arg1 = transpose( arg1, shuffle )
-  arg2 = transpose( arg2, shuffle )
-
-  naxes = len( axes )
-  dotshape = tuple( shape[i] for i in shuffle[:-naxes] )
-
-  retval = _call( arg1, '_dot', arg2, naxes )
+  retval = _call( arg1, '_dot', arg2, axes )
   if retval is not None:
     assert retval.shape == dotshape, 'bug in %s._dot' % arg1
     return retval
 
-  retval = _call( arg2, '_dot', arg1, naxes )
+  retval = _call( arg2, '_dot', arg1, axes )
   if retval is not None:
     assert retval.shape == dotshape, 'bug in %s._dot' % arg2
     return retval
 
-  a, b = _sorted( arg1, arg2 )
-  return Dot( a, b, naxes )
+  shuffle = list( range( len(shape) ) )
+  for ax in reversed( axes ):
+    shuffle.append( shuffle.pop(ax) )
+
+  a, b = _sorted( transpose(arg1,shuffle), transpose(arg2,shuffle) )
+  return Dot( a, b, len(axes) )
 
 def determinant( arg, axes=(-2,-1) ):
   'determinant'
