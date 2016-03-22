@@ -1122,8 +1122,9 @@ class Concatenate( Array ):
           fexp = expand( f, self.shape[:self.axis] + (f.shape[self.axis],) + self.shape[self.axis+1:] )
           return get( fexp, i, item )
         item -= f.shape[i]
+      raise Exception
     axis = self.axis - (self.axis > i)
-    return concatenate( [ get( f, i, item ) for f in self.funcs ], axis=axis )
+    return concatenate( [ get( aslength(f,self.shape[i],i), i, item ) for f in self.funcs ], axis=axis )
 
   def _derivative( self, var, axes, seen ):
     funcs = [ derivative( func, var, axes, seen ) for func in self.funcs ]
@@ -1406,9 +1407,10 @@ class Multiply( Array ):
     func1, func2 = self.funcs
     return dot( func1, func2, [axis] )
 
-  def _get( self, i, item ):
+  def _get( self, axis, item ):
     func1, func2 = self.funcs
-    return get( func1, i, item ) * get( func2, i, item )
+    return multiply( get( aslength(func1,self.shape[axis],axis), axis, item ),
+                     get( aslength(func2,self.shape[axis],axis), axis, item ) )
 
   def _add( self, other ):
     func1, func2 = self.funcs
@@ -1495,9 +1497,10 @@ class Add( Array ):
     func1, func2 = self.funcs
     return derivative( func1, var, axes, seen ) + derivative( func2, var, axes, seen )
 
-  def _get( self, i, item ):
+  def _get( self, axis, item ):
     func1, func2 = self.funcs
-    return get( func1, i, item ) + get( func2, i, item )
+    return add( get( aslength(func1,self.shape[axis],axis), axis, item ),
+                get( aslength(func2,self.shape[axis],axis), axis, item ) )
 
   def _takediag( self ):
     func1, func2 = self.funcs
@@ -1557,7 +1560,7 @@ class BlockAdd( Array ):
     return blockadd( *( derivative( func, var, axes, seen ) for func in self.funcs ) )
 
   def _get( self, i, item ):
-    return blockadd( *( get( func, i, item ) for func in self.funcs ) )
+    return blockadd( *( get( aslength(func,self.shape[i],i), i, item ) for func in self.funcs ) )
 
   def _takediag( self ):
     return blockadd( *( takediag( func ) for func in self.funcs ) )
@@ -1603,9 +1606,10 @@ class Dot( Array ):
   def axes( self ):
     return list( range( self.ndim, self.ndim + self.naxes ) )
 
-  def _get( self, i, item ):
+  def _get( self, axis, item ):
     func1, func2 = self.funcs
-    return dot( get( func1, i, item ), get( func2, i, item ), [ ax-1 for ax in self.axes ] )
+    return dot( get( aslength(func1,self.shape[axis],axis), axis, item ),
+                get( aslength(func2,self.shape[axis],axis), axis, item ), [ ax-1 for ax in self.axes ] )
 
   def _derivative( self, var, axes, seen ):
     func1, func2 = self.funcs
@@ -1812,8 +1816,9 @@ class Power( Array ):
       func = abs( func )
     return power( func, newpower )
 
-  def _get( self, i, item ):
-    return get( self.func, i, item )**get( self.power, i, item )
+  def _get( self, axis, item ):
+    return power( get( aslength(self.func, self.shape[axis],axis), axis, item ),
+                  get( aslength(self.power,self.shape[axis],axis), axis, item ) )
 
   def _sum( self, axis ):
     if self == (self.func**2):
@@ -2836,8 +2841,8 @@ def get( arg, iax, item ):
   sh = arg.shape[iax]
 
   if numeric.isint( sh ):
-    item = 0 if sh == 1 \
-      else numeric.normdim( sh, item )
+    item = numeric.normdim( sh, item )
+  assert item >= 0
 
   retval = _call( arg, '_get', iax, item )
   if retval is not None:
