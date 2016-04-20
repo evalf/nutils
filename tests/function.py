@@ -37,21 +37,23 @@ from . import register, unittest
 @register( 'inverse323', lambda a: function.inverse(a,(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(-3,-2)).swapaxes(-3,-2), [(3,2,3)] )
 @register( 'repeat', lambda a: function.repeat(a,3,1), lambda a: numpy.repeat(a,3,-2), [(2,1,2)] )
 @register( 'diagonalize', function.diagonalize, numeric.diagonalize, [(2,1,2)] )
-@register( 'multiply', lambda a,b: a * b, numpy.multiply, [(3,1),(1,3)] )
-@register( 'divide', lambda a,b: a / b, numpy.divide, [(3,1),(1,3)] )
-@register( 'add', lambda a,b: a + b, numpy.add, [(3,1),(1,3)] )
-@register( 'subtract', lambda a,b: a - b, numpy.subtract, [(3,1),(1,3)] )
-@register( 'product2', lambda a,b: (a*b).sum(-2), lambda a,b: (a*b).sum(-2), [(2,3,1),(1,3,2)] )
+@register( 'multiply', function.multiply, numpy.multiply, [(3,1),(1,3)] )
+@register( 'divide', function.divide, numpy.divide, [(3,1),(1,3)] )
+@register( 'add', function.add, numpy.add, [(3,1),(1,3)] )
+@register( 'subtract', function.subtract, numpy.subtract, [(3,1),(1,3)] )
+@register( 'product2', lambda a,b: function.multiply(a,b).sum(-2), lambda a,b: (a*b).sum(-2), [(2,3,1),(1,3,2)] )
 @register( 'cross', lambda a,b: function.cross(a,b,-2), lambda a,b: numpy.cross(a,b,axis=-2), [(2,3,1),(1,3,2)] )
 @register( 'min', lambda a,b: function.min(a,b), numpy.minimum, [(3,1),(1,3)] )
 @register( 'max', lambda a,b: function.max(a,b), numpy.maximum, [(3,1),(1,3)] )
+@register( 'equal', lambda a,b: function.equal(a,b), numpy.equal, [(3,1),(1,3)] )
 @register( 'greater', lambda a,b: function.greater(a,b), numpy.greater, [(3,1),(1,3)] )
 @register( 'less', lambda a,b: function.less(a,b), numpy.less, [(3,1),(1,3)] )
 @register( 'arctan2', function.arctan2, numpy.arctan2, [(3,1),(1,3)] )
 @register( 'stack', lambda a,b: function.stack([a,b]), lambda a,b: numpy.concatenate( [a[...,_,:],b[...,_,:]], axis=-2), [(3,),(3,)] )
-@register( 'eig', lambda a: function.eig(a,symmetric=False)[1], lambda a: numpy.array([ numpy.linalg.eig(ai)[1] for ai in a ]), [(3,3)], hasgrad=False )
+@register( 'eig', lambda a: function.eig(a,symmetric=False)[1], lambda a: numpy.linalg.eig(a)[1], [(3,3)], hasgrad=False )
 @register( 'trignormal', lambda a: function.trignormal(a), lambda a: numpy.array([ numpy.cos(a), numpy.sin(a) ]).T, [()] )
 @register( 'trigtangent', lambda a: function.trigtangent(a), lambda a: numpy.array([ -numpy.sin(a), numpy.cos(a) ]).T, [()] )
+@register( 'mod', lambda a,b: function.mod(a,b), lambda a,b: numpy.mod(a,b), [(3,),(3,)], hasgrad=False )
 def check( op, n_op, shapes, hasgrad=True ):
 
   anchor = transform.roottrans( 'test', (0,0) )
@@ -73,6 +75,11 @@ def check( op, n_op, shapes, hasgrad=True ):
 
   argsfun = function.Tuple( args )
   invroottransmatrix = roottrans.invlinear.astype( float )
+
+  @unittest
+  def evalconst():
+    constargs = [ numpy.random.uniform( size=shape ) for shape in shapes ]
+    numpy.all( n_op( *constargs ) == op( *constargs ).eval(elem,points) )
 
   @unittest
   def eval():

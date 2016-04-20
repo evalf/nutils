@@ -4,12 +4,12 @@ from . import \
   normals,    \
   mesh,       \
   ischeme,    \
-  finitecell, \
   pointdata,  \
   topology,   \
   doubleint,  \
   quadrature, \
   element,    \
+  finitecell, \
   runtests
 
 runtests()

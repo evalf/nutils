@@ -249,7 +249,7 @@ class Topology( object ):
     for ifunc, func in enumerate( funcs ):
       func = function.asarray( edit( func * iwscale ) )
       retval = parallel.shzeros( (npoints,)+func.shape, dtype=func.dtype )
-      if function._isfunc( func ):
+      if function.isarray( func ):
         for ind, f in function.blocks( func ):
           idata.append( function.Tuple([ ifunc, ind, f ]) )
       else:
@@ -262,7 +262,7 @@ class Topology( object ):
       ipoints, iweights = fcache[elem.reference.getischeme]( ischeme )
       s = slices[ielem],
       for ifunc, index, data in idata.eval( elem, ipoints, fcache ):
-        retvals[ifunc][s+numpy.ix_(*index)] += numeric.dot(iweights,data) if geometry else data
+        retvals[ifunc][s+numpy.ix_(*[ ind for (ind,) in index ])] += numeric.dot(iweights,data) if geometry else data
 
     log.debug( 'cache', fcache.stats )
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join( str(n) for n in retval.shape ) ) for retval in retvals ) )
@@ -317,9 +317,9 @@ class Topology( object ):
 
     for ielem, elem in enumerate( self ):
       for iblock, index in enumerate( indexfunc.eval( elem, None, fcache ) ):
-        n = util.product( len(ind) for ind in index ) if index else 1
+        n = util.product( len(ind) for (ind,) in index ) if index else 1
         offsets[iblock,ielem+1] = offsets[iblock,ielem] + n
-        indices[iblock].append( index )
+        indices[iblock].append([ ind for (ind,) in index ])
 
     # Since several blocks may belong to the same function, we post process the
     # offsets to form consecutive intervals in longer arrays. The length of
@@ -621,7 +621,8 @@ class Topology( object ):
     for axes, func in function.blocks( basis ):
       dofmap = axes[0]
       for elem in self:
-        used[ dofmap.dofmap[elem.transform] + dofmap.offset ] = True
+        dofs = dofmap.eval( elem )
+        used[dofs] = True
     return basis[used]
 
   def locate( self, geom, points, ischeme='vertex', scale=1, tol=1e-12, eps=0, maxiter=100 ):
@@ -1725,11 +1726,11 @@ class HierarchicalTopology( Topology ):
       myelems = [] # all top-level or parent elements in current level
 
       (axes,func), = function.blocks( funcsp )
-      dofmap = axes[0].dofmap
+      dofmap, = axes
       stdmap = func.stdmap
       for elem in topo:
         trans = elem.transform
-        idofs = dofmap[trans]
+        idofs, = dofmap.eval( elem )
         stds = stdmap[trans]
         mytrans = trans.lookup( self.edict )
         if mytrans == trans: # trans is in domain

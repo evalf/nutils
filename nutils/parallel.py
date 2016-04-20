@@ -160,6 +160,9 @@ def shzeros( shape, dtype=float ):
   elif dtype == int:
     typecode = 'i'
     dtype = numpy.int32
+  elif dtype == bool:
+    typecode = 'b'
+    dtype = numpy.int8
   else:
     raise Exception( 'invalid dtype: %r' % dtype )
   buf = multiprocessing.RawArray( typecode, int(size) )

@@ -10,14 +10,14 @@ import sys, collections, operator, numbers
 
 
 class IndexedArray:
-  '''wrapper of `ArrayFunc` with index notation and Einstein summation convention
+  '''wrapper of `Array` with index notation and Einstein summation convention
 
-  This wrapper adds indices to the axes of the wrapped `ArrayFunc` which is used
-  to align the `ArrayFunc` with other wrapped `ArrayFunc`s when doing simple
+  This wrapper adds indices to the axes of the wrapped `Array` which is used
+  to align the `Array` with other wrapped `Array`s when doing simple
   arithmetic operations.  In addition, repeated indices are summed (Einstein
   summation convention).
 
-  Passing an index string to `a[...]`, with `a` an `ArrayFunc`, wraps the array
+  Passing an index string to `a[...]`, with `a` an `Array`, wraps the array
   func.  The number of indices must match the number of axes of `a`.  The index
   string may contain only lower case latin characters.  A wrapped array can be
   unwrapped via the `unwrap` method.
@@ -27,7 +27,7 @@ class IndexedArray:
   respectively a gradient or surface gradient is computed with respect to the
   geometry specified in the `unwrap` method.
 
-  Examples.  Let `a` and `b` be `ArrayFunc`s with shape `(n,n)` and `(n,)`.  The
+  Examples.  Let `a` and `b` be `Array`s with shape `(n,n)` and `(n,)`.  The
   following pairs are equivalent when unwrapped with geometry `geom`:
 
       a['ij']*b['j']
@@ -71,23 +71,23 @@ class IndexedArray:
     return len( self.indices )
 
   def unwrap( self, geometry=None, indices=None ):
-    '''unwrap the `ArrayFunc` aligned according to `indices`
+    '''unwrap the `Array` aligned according to `indices`
 
     Parameters
     ----------
-    geometry : ArrayFunc, optional
+    geometry : Array, optional
         The geometry used when computing gradients.  This argument is mandatory
         when this `IndexedArray` contains gradients, otherwise this argument is
         ignored.
     indices : str, optional
-        This indicates the order of the axes of the unwrapped `ArrayFunc`.
+        This indicates the order of the axes of the unwrapped `Array`.
         `indices` must contain all indices of this `IndexedArray`, may not have
         repeated indices and may not have indices other than those of this
         `IndexedArray`.
 
     Returns
     -------
-    ArrayFunc
+    Array
     '''
 
     if indices is None:
@@ -240,7 +240,7 @@ def asindexedarray( arg ):
 
   if isinstance( arg, IndexedArray ):
     return arg
-  elif isinstance( arg, (function.ArrayFunc, numpy.ndarray) ) and len( arg.shape ) == 0:
+  elif isinstance( arg, (function.Array, numpy.ndarray) ) and len( arg.shape ) == 0:
     return IndexedArray( '', lambda geom: arg, () )
   elif isinstance( arg, (numbers.Number, numpy.generic) ):
     return IndexedArray( '', lambda geom: numpy.array( arg ), () )
@@ -248,11 +248,11 @@ def asindexedarray( arg ):
     raise ValueError( 'cannot convert {!r} to a `IndexedArray`'.format( arg ) )
 
 def wrap( array, indices ):
-  '''wrap a scalar, numpy array or `ArrayFunc` in an `IndexedArray`
+  '''wrap a scalar, numpy array or `Array` in an `IndexedArray`
 
   Parameters
   ----------
-  array : scalar, numpy.ndarray or function.ArrayFunc
+  array : scalar, numpy.ndarray or function.Array
   indices : str
 
   Returns

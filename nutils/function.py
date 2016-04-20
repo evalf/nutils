@@ -9,13 +9,13 @@
 """
 The function module defines the :class:`Evaluable` class and derived objects,
 commonly referred to as nutils functions. They represent mappings from a
-:mod:`nutils.topology` onto Python space. The notabe class of :class:`ArrayFunc`
+:mod:`nutils.topology` onto Python space. The notabe class of :class:`Array`
 objects map onto the space of Numpy arrays of predefined dimension and shape.
 Most functions used in nutils applicatons are of this latter type, including the
 geometry and function bases for analysis.
 
 Nutils functions are essentially postponed python functions, stored in a tree
-structure of input/output dependencies. Many :class:`ArrayFunc` objects have
+structure of input/output dependencies. Many :class:`Array` objects have
 directly recognizable numpy equivalents, such as :class:`Sin` or
 :class:`Inverse`. By not evaluating directly but merely stacking operations,
 complex operations can be defined prior to entering a quadrature loop, allowing
@@ -45,11 +45,15 @@ class Evaluable( cache.Immutable ):
   def __init__( self, args ):
     'constructor'
 
-    assert all( isinstance(arg,Evaluable) or arg in TOKENS for arg in args )
+    assert all( isevaluable(arg) or arg in TOKENS for arg in args )
     self.__args = tuple(args)
 
   def evalf( self, *args ):
     raise NotImplementedError( 'Evaluable derivatives should implement the evalf method' )
+
+  @property
+  def isconstant( self ):
+    return all( arg not in TOKENS and arg.isconstant for arg in self.__args )
 
   @cache.property
   def serialized( self ):
@@ -99,7 +103,7 @@ class Evaluable( cache.Immutable ):
       bridge = '| ', '  '
     for iarg, arg in enumerate( self.__args ):
       n = iarg >= len(self.__args) - 1
-      asciitree += '\n' + select[n] + ( ('\n' + bridge[n]).join( arg.asciitree( seen ).splitlines() ) if isinstance(arg,Evaluable) else '<{}>'.format(arg) )
+      asciitree += '\n' + select[n] + ( ('\n' + bridge[n]).join( arg.asciitree( seen ).splitlines() ) if isevaluable(arg) else '<{}>'.format(arg) )
     index = len(seen)
     seen.append( self )
     return '%{} = {}'.format( index, asciitree )
@@ -107,15 +111,19 @@ class Evaluable( cache.Immutable ):
   def __str__( self ):
     return self.__class__.__name__
 
-  def eval( self, elem, ischeme, fcache=cache.WrapperDummyCache() ):
+  def eval( self, elem=None, ischeme=None, fcache=cache.WrapperDummyCache() ):
     'evaluate'
     
-    if isinstance( elem, tuple ):
-      assert isinstance( ischeme, numpy.ndarray )
+    if elem is None:
+      assert self.isconstant
+      trans = None
+      points = None
+    elif isinstance( elem, transform.TransformChain ):
+      trans = elem, elem
       points = ischeme
-      transform, opposite = elem
-      assert points.shape[-1] == transform.fromdims == opposite.fromdims
+    elif isinstance( elem, tuple ):
       trans = elem
+      points = ischeme
     else:
       trans = elem.transform, elem.opposite
       if isinstance( ischeme, dict ):
@@ -134,7 +142,8 @@ class Evaluable( cache.Immutable ):
       else:
         raise Exception( 'invalid integration scheme of type %r' % type(ischeme) )
 
-    assert trans[0].fromdims == trans[1].fromdims
+    if trans is not None:
+      assert trans[0].fromdims == trans[1].fromdims
     if points is not None:
       assert points.ndim == 2 and points.shape[1] == trans[0].fromdims
 
@@ -169,21 +178,16 @@ class Evaluable( cache.Immutable ):
 
     ops, inds = self.serialized
 
-    try:
-      dot = subprocess.Popen( [dotpath,'-T'+imgtype], stdin=subprocess.PIPE, stdout=open(imgpath,'w') )
-    except OSError:
-      log.error( 'error: failed to execute', dotpath )
-      return False
+    lines = []
+    lines.append( 'digraph {' )
+    lines.append( 'graph [ dpi=72 ];' )
+    lines.extend( '%d [label="%d. %s"];' % (i,i,name) for i, name in enumerate( TOKENS + ops + (self,) ) )
+    lines.extend( '%d -> %d;' % (j,i) for i, indices in enumerate( ([],)*len(TOKENS) + inds ) for j in indices )
+    lines.append( '}' )
 
-    print >> dot.stdin, 'digraph {'
-    print >> dot.stdin, 'graph [ dpi=72 ];'
-    dot.stdin.writelines( '%d [label="%d. %s"];\n' % (i,i,name)
-      for i, name in enumerate( TOKENS + ops + (self,) ) )
-    dot.stdin.writelines( '%d -> %d;\n' % (j,i)
-      for i, indices in enumerate( ([],)*len(TOKENS) + inds )
-        for j in indices )
-    print >> dot.stdin, '}'
-    dot.stdin.close()
+    with open( imgpath, 'w' ) as img:
+      with subprocess.Popen( [dotpath,'-T'+imgtype], stdin=subprocess.PIPE, stdout=img ) as dot:
+        dot.communicate( '\n'.join(lines).encode() )
 
     log.path( os.path.basename(imgpath) )
 
@@ -241,7 +245,7 @@ class Tuple( Evaluable ):
     args = []
     indices = []
     for i, item in enumerate(self.items):
-      if isinstance( item, Evaluable ):
+      if isevaluable( item ):
         args.append( item )
         indices.append( i )
     self.indices = tuple( indices )
@@ -305,65 +309,21 @@ class TransformChain( Evaluable ):
     return trans[ self.side ].promote( self.promote )
 
 
-# INDEXVECTOR
-#
-# 1D int vector, used for indexing
-
-class IndexVector( Evaluable ):
-
-  __array_priority__ = 1. # http://stackoverflow.com/questions/7042496/numpy-coercion-problem-for-left-sided-binary-operator/7057530#7057530
-
-  def __init__( self, args, length ):
-    self.shape = length,
-    self.ndim = 1
-    Evaluable.__init__( self, args=args )
-
-  def __str__( self ):
-    return '%s<%s>' % ( self.__class__.__name__, ','.join( str(n) for n in self.shape ) )
-
-class DofMap( IndexVector ):
-  'dof axis'
-
-  def __init__( self, dofmap, axis, target, side=0, offset=0 ):
-    'new'
-
-    self.side = side
-    self.dofmap = dofmap
-    self.offset = offset
-    self.target = target
-    for trans in dofmap:
-      break
-
-    IndexVector.__init__( self, args=[TransformChain(side,trans.fromdims)], length=axis )
-
-  def __add__( self, offset ):
-    assert numeric.isint( offset )
-    return DofMap( self.dofmap, self.shape[0], self.target, self.side, self.offset+offset )
-
-  def evalf( self, trans ):
-    'evaluate'
-
-    return self.dofmap[ trans.lookup(self.dofmap) ] + self.offset
-
-  def _opposite( self ):
-    return DofMap( self.dofmap, self.shape[0], self.target, 1-self.side )
-
-
 # ARRAYFUNC
 #
 # The main evaluable. Closely mimics a numpy array.
 
-class ArrayFunc( Evaluable ):
+class Array( Evaluable ):
   'array function'
 
   __array_priority__ = 1. # http://stackoverflow.com/questions/7042496/numpy-coercion-problem-for-left-sided-binary-operator/7057530#7057530
 
-  def __init__( self, args, shape, dtype=float ):
+  def __init__( self, args, shape, dtype ):
     'constructor'
 
     self.shape = tuple(shape)
     self.ndim = len(self.shape)
-    assert dtype is int or dtype is float
+    assert dtype is float or dtype is int or dtype is bool, 'invalid dtype {!r}'.format(dtype)
     self.dtype = dtype
     Evaluable.__init__( self, args=args )
 
@@ -372,7 +332,7 @@ class ArrayFunc( Evaluable ):
   def _if_array_args( op ):
     @functools.wraps( op )
     def wrapper( self, other ):
-      if isinstance( other, ( numbers.Number, numpy.number, numpy.ndarray, ArrayFunc, tuple, list ) ):
+      if isinstance( other, ( numbers.Number, numpy.number, numpy.ndarray, Array, tuple, list ) ):
         return op( self, other )
       else:
         return NotImplemented
@@ -392,7 +352,8 @@ class ArrayFunc( Evaluable ):
   __pow__  = _if_array_args( lambda self, n: power( self, n ) )
   __abs__  = lambda self: abs( self )
   __len__  = lambda self: self.shape[0]
-  sum      = lambda self, axis=None: sum( self, axis )
+  __mod__  = lambda self, other: mod( self, other )
+  sum      = lambda self, axis: sum( self, axis )
   del _if_array_args
 
   @property
@@ -403,7 +364,7 @@ class ArrayFunc( Evaluable ):
 
   @property
   def blocks( self ):
-    return [( Tuple([ numpy.arange(n) if numeric.isint(n) else None for n in self.shape ]), self )]
+    return [( Tuple([ asarray(numpy.arange(n)) if numeric.isint(n) else None for n in self.shape ]), self )]
 
   def vector( self, ndims ):
     'vectorize'
@@ -430,29 +391,22 @@ class ArrayFunc( Evaluable ):
     arr = self
     while myitem:
       it = myitem.pop(0)
-      if isinstance(it,numpy.ndarray): # numpy first because of 'equals issues'
-        arr = take( arr, it, n )
-        n += 1
-      elif numeric.isint(it): # retrieve one item from axis
+      eqsafe = not isinstance( it, numpy.ndarray ) # it is not an array, safe to use == comparison
+      if numeric.isint(it): # retrieve one item from axis
         arr = get( arr, n, it )
-      elif it == _: # insert a singleton axis
+      elif eqsafe and it == _: # insert a singleton axis
         arr = insert( arr, n )
         n += 1
-      elif it == slice(None): # select entire axis
+      elif eqsafe and it == slice(None): # select entire axis
         n += 1
-      elif it == Ellipsis: # skip to end
+      elif eqsafe and it == Ellipsis: # skip to end
         remaining_items = len(myitem) - myitem.count(_)
         skip = arr.ndim - n - remaining_items
         assert skip >= 0, 'shape=%s, item=%s' % ( self.shape, _obj2str(item) )
         n += skip
-      elif isinstance(it,slice) and it.step in (1,None) and it.stop == ( it.start or 0 ) + 1: # special case: unit length slice
-        arr = insert( get( arr, n, it.start or 0 ), n )
-        n += 1
-      elif isinstance(it,(slice,list,tuple)): # modify axis (shorten, extend or renumber one axis)
+      else:
         arr = take( arr, it, n )
         n += 1
-      else:
-        raise NotImplementedError
       assert n <= arr.ndim
     return arr
 
@@ -602,26 +556,153 @@ class ArrayFunc( Evaluable ):
 
   __repr__ = __str__
 
-class ElementSize( ArrayFunc ):
+class ArrayFunc( Array ):
+  'deprecated ArrayFunc alias'
+
+  def __init__( self, args, shape ):
+    warnings.warn( 'function.ArrayFunc is deprecated; use function.Array instead', DeprecationWarning )
+    Array.__init__( self, args=args, shape=shape, dtype=float )
+
+class Constant( Array ):
+  'constant'
+
+  def __init__( self, value ):
+    assert isinstance( value, numpy.ndarray ) and value.dtype != object
+    self.value = value.copy()
+    Array.__init__( self, args=[], shape=value.shape, dtype=_jointdtype(value.dtype) )
+
+  def evalf( self ):
+    return self.value[_]
+
+  @cache.property
+  def _isunit( self ):
+    return numpy.all( self.value == 1 )
+
+  def _derivative( self, var, axes, seen ):
+    return zeros( self.shape + _taketuple(var.shape,axes) )
+
+  def _align( self, axes, ndim ):
+    return asarray( numeric.align( self.value, axes, ndim ) )
+
+  def _sum( self, axis ):
+    return asarray( numpy.sum( self.value, axis ) )
+
+  def _get( self, i, item ):
+    return asarray( numeric.get( self.value, i, item ) )
+
+  def _add( self, other ):
+    if isinstance( other, Constant ):
+      return asarray( numpy.add( self.value, other.value ) )
+
+  def _inverse( self ):
+    return asarray( numpy.linalg.inv( self.value ) )
+
+  def _product( self, axis ):
+    return asarray( self.value.prod(axis) )
+
+  def _multiply( self, other ):
+    if self._isunit:
+      shape = _jointshape( self.shape, other.shape )
+      return expand( other, shape )
+    if isinstance( other, Constant ):
+      return asarray( numpy.multiply( self.value, other.value ) )
+
+  def _takediag( self ):
+    return asarray( numeric.takediag( self.value ) )
+
+  def _take( self, index, axis ):
+    if isinstance( index, Constant ):
+      return asarray( self.value.take( index.value, axis ) )
+
+  def _power( self, n ):
+    if isinstance( n, Constant ):
+      return asarray( numpy.power( self.value, n.value ) )
+
+  def _edit( self, op ):
+    return asarray( op(self.value) )
+
+  def _dot( self, other, axes ):
+    if self._isunit:
+      shape = _jointshape( self.shape, other.shape )
+      return sum( expand( other, shape ), axes )
+    if isinstance( other, Constant ):
+      return asarray( numeric.contract( self.value, other.value, axes ) )
+
+  def _concatenate( self, other, axis ):
+    if isinstance( other, Constant ):
+      shape1 = list(self.shape)
+      shape2 = list(other.shape)
+      shape1[axis] = shape2[axis] = shape1[axis] + shape2[axis]
+      shape = _jointshape( shape1, shape2 )
+      retval = numpy.empty( shape, dtype=_jointdtype(self.dtype,other.dtype) )
+      retval[(slice(None),)*axis+(slice(None,self.shape[axis]),)] = self.value
+      retval[(slice(None),)*axis+(slice(self.shape[axis],None),)] = other.value
+      return asarray( retval )
+
+  def _cross( self, other, axis ):
+    if isinstance( other, Constant ):
+      return asarray( numeric.cross( self.value, other.value, axis ) )
+
+  def _pointwise( self, evalf, deriv, dtype ):
+    retval = evalf( *self.value )
+    assert retval.dtype == dtype
+    return asarray( retval )
+
+  def _eig( self, symmetric ):
+    eigval, eigvec = ( numpy.linalg.eigh if symmetric else numpy.linalg.eig )( self.value )
+    return asarray( eigval ), asarray( eigvec )
+
+  def _revolved( self ):
+    return self
+
+  def _sign( self ):
+    return asarray( numeric.sign( self.value ) )
+
+  def _choose( self, choices ):
+    if all( isinstance( choice, Constant ) for choice in choices ):
+      return asarray( numpy.choose( self.value, [ choice.value for choice in choices ] ) )
+
+class DofMap( Array ):
+  'dof axis'
+
+  def __init__( self, dofmap, length, side=0 ):
+    'new'
+
+    self.side = side
+    self.dofmap = dofmap
+    for trans in dofmap:
+      break
+
+    Array.__init__( self, args=[TransformChain(side,trans.fromdims)], shape=(length,), dtype=int )
+
+  def evalf( self, trans ):
+    'evaluate'
+
+    return self.dofmap[ trans.lookup(self.dofmap) ][_]
+
+  def _opposite( self ):
+    return DofMap( self.dofmap, self.shape[0], 1-self.side )
+
+class ElementSize( Array):
   'dimension of hypercube with same volume as element'
 
   def __init__( self, geometry, ndims=None ):
     assert geometry.ndim == 1
     self.ndims = len(geometry) if ndims is None else len(geometry)+ndims if ndims < 0 else ndims
     iwscale = jacobian( geometry, self.ndims ) * Iwscale(self.ndims)
-    ArrayFunc.__init__( self, args=[iwscale], shape=() )
+    Array.__init__( self, args=[iwscale], shape=(), dtype=float )
 
   def evalf( self, iwscale ):
     volume = iwscale.sum()
     return numpy.power( volume, 1/self.ndims )[_]
 
-class Orientation( ArrayFunc ):
+class Orientation( Array ):
   'sign'
 
   def __init__( self, ndims, side=0 ):
     'constructor'
 
-    ArrayFunc.__init__( self, args=[TransformChain(side,ndims)], shape=() )
+    Array.__init__( self, args=[TransformChain(side,ndims)], shape=(), dtype=float )
     self.side = side
     self.ndims = ndims
 
@@ -633,9 +714,9 @@ class Orientation( ArrayFunc ):
     return Orientation( self.ndims, 1-self.side )
 
   def _derivative( self, var, axes, seen ):
-    return _zeros( _taketuple(var.shape,axes) )
+    return zeros( _taketuple(var.shape,axes) )
 
-class Align( ArrayFunc ):
+class Align( Array ):
   'align axes'
 
   def __init__( self, func, axes, ndim ):
@@ -649,7 +730,7 @@ class Align( ArrayFunc ):
     for ax, sh in zip( self.axes, func.shape ):
       shape[ax] = sh
     self.negaxes = [ ax-ndim for ax in self.axes ]
-    ArrayFunc.__init__( self, args=[func], shape=shape )
+    Array.__init__( self, args=[func], shape=shape, dtype=func.dtype )
 
   def evalf( self, arr ):
     'align'
@@ -692,14 +773,18 @@ class Align( ArrayFunc ):
     return align( derivative( self.func, var, axes, seen ), self.axes+tuple(range(self.ndim, self.ndim+len(axes))), self.ndim+len(axes) )
 
   def _multiply( self, other ):
-    if not _isfunc(other) and len(self.axes) == other.ndim:
-      return align( self.func * transpose( other, self.axes ), self.axes, self.ndim )
+    if len(self.axes) == self.ndim:
+      other_trans = _call( other, '_align', _invtrans(self.axes), self.ndim )
+      if other_trans is not None:
+        return align( multiply( self.func, other_trans ), self.axes, self.ndim )
     if isinstance( other, Align ) and self.axes == other.axes:
       return align( self.func * other.func, self.axes, self.ndim )
 
   def _add( self, other ):
-    if not _isfunc(other) and len(self.axes) == self.ndim:
-      return align( self.func + transpose( other, self.axes ), self.axes, self.ndim )
+    if len(self.axes) == self.ndim:
+      other_trans = _call( other, '_align', _invtrans(self.axes), self.ndim )
+      if other_trans is not None:
+        return align( add( self.func, other_trans ), self.axes, self.ndim )
     if isinstance( other, Align ) and self.axes == other.axes:
       return align( self.func + other.func, self.axes, self.ndim )
 
@@ -707,14 +792,24 @@ class Align( ArrayFunc ):
     try:
       n = self.axes.index( axis )
     except ValueError:
-      assert isinstance( indices, DofMap )
-      return self
+      return
     return align( take( self.func, indices, n ), self.axes, self.ndim )
 
   def _edit( self, op ):
     return align( op(self.func), self.axes, self.ndim )
 
-class Get( ArrayFunc ):
+  def _dot( self, other, axes ):
+    if len(self.axes) == self.ndim:
+      funcaxes = tuple( self.axes.index(axis) for axis in axes )
+      trydot = _call( self.func, '_dot', transpose(other,self.axes), funcaxes )
+      if trydot is not None:
+        keep = numpy.ones( self.ndim, dtype=bool )
+        keep[list(axes)] = False
+        axes = [ _sum(keep[:axis]) for axis in self.axes if keep[axis] ]
+        assert len(axes) == trydot.ndim
+        return align( trydot, axes, len(axes) )
+
+class Get( Array ):
   'get'
 
   def __init__( self, func, axis, item ):
@@ -724,10 +819,12 @@ class Get( ArrayFunc ):
     self.axis = axis
     self.item = item
     assert 0 <= axis < func.ndim, 'axis is out of bounds'
-    assert 0 <= item < func.shape[axis], 'item is out of bounds'
+    assert 0 <= item
+    if numeric.isint( func.shape[axis] ):
+      assert item < func.shape[axis], 'item is out of bounds'
     self.item_shiftright = (Ellipsis,item) + (slice(None),)*(func.ndim-axis-1)
     shape = func.shape[:axis] + func.shape[axis+1:]
-    ArrayFunc.__init__( self, args=[func], shape=shape )
+    Array.__init__( self, args=[func], shape=shape, dtype=func.dtype )
 
   def evalf( self, arr ):
     assert arr.ndim == self.ndim+2
@@ -748,7 +845,7 @@ class Get( ArrayFunc ):
   def _edit( self, op ):
     return get( op(self.func), self.axis, self.item )
 
-class Product( ArrayFunc ):
+class Product( Array ):
   'product'
 
   def __init__( self, func ):
@@ -756,7 +853,7 @@ class Product( ArrayFunc ):
 
     assert func.shape[-1] > 1
     self.func = func
-    ArrayFunc.__init__( self, args=[func], shape=func.shape[:-1] )
+    Array.__init__( self, args=[func], shape=func.shape[:-1], dtype=func.dtype )
 
   def evalf( self, arr ):
     assert arr.ndim == self.ndim+2
@@ -778,22 +875,22 @@ class Product( ArrayFunc ):
   def _edit( self, op ):
     return product( op(self.func), -1 )
 
-class Iwscale( ArrayFunc ):
+class Iwscale( Array ):
   'integration weights'
 
   def __init__( self, ndims ):
     'constructor'
 
     self.fromdims = ndims
-    ArrayFunc.__init__( self, args=[TransformChain(0,ndims)], shape=() )
+    Array.__init__( self, args=[TransformChain(0,ndims)], shape=(), dtype=float )
 
   def evalf( self, trans ):
     'evaluate'
 
     assert trans.fromdims == self.fromdims
-    return abs( numpy.asarray( trans.split(self.fromdims)[1].det, dtype=float )[_] )
+    return _abs( numpy.asarray( trans.split(self.fromdims)[1].det, dtype=float )[_] )
 
-class Transform( ArrayFunc ):
+class Transform( Array ):
   'transform'
 
   def __init__( self, todims, fromdims, side ):
@@ -803,7 +900,7 @@ class Transform( ArrayFunc ):
     self.fromdims = fromdims
     self.todims = todims
     self.side = side
-    ArrayFunc.__init__( self, args=[TransformChain(side,fromdims)], shape=(todims,fromdims) )
+    Array.__init__( self, args=[TransformChain(side,fromdims)], shape=(todims,fromdims), dtype=float )
 
   def evalf( self, trans ):
     'transform'
@@ -814,15 +911,15 @@ class Transform( ArrayFunc ):
     return matrix.astype( float )[_]
 
   def _derivative( self, var, axes, seen ):
-    return _zeros( self.shape+_taketuple(var.shape,axes) )
+    return zeros( self.shape+_taketuple(var.shape,axes) )
 
   def _opposite( self ):
     return Transform( self.todims, self.fromdims, 1-self.side )
 
-class Function( ArrayFunc ):
+class Function( Array ):
   'function'
 
-  def __init__( self, ndims, stdmap, igrad, axis, side=0 ):
+  def __init__( self, ndims, stdmap, igrad, length, side=0 ):
     'constructor'
 
     self.side = side
@@ -832,7 +929,7 @@ class Function( ArrayFunc ):
     self.localcoords = LocalCoords( self.ndims, side=self.side ) # only an implicit dependency for now
     for trans in stdmap:
       break
-    ArrayFunc.__init__( self, args=(CACHE,POINTS,TransformChain(side,trans.fromdims)), shape=(axis,)+(ndims,)*igrad )
+    Array.__init__( self, args=(CACHE,POINTS,TransformChain(side,trans.fromdims)), shape=(length,)+(ndims,)*igrad, dtype=float )
 
   def evalf( self, cache, points, trans ):
     'evaluate'
@@ -867,11 +964,9 @@ class Function( ArrayFunc ):
   def _take( self, indices, axis ):
     if axis != 0:
       return
-    assert isinstance( indices, DofMap )
-    assert indices.shape[0] == self.shape[0]
     stdmap = {}
     for trans, stdkeep in self.stdmap.items():
-      ind = indices.dofmap[trans]
+      ind, = indices.eval( trans )
       assert all( numpy.diff( ind ) > 0 )
       nshapes = _sum( 0 if not std else std.nshapes if keep is None else keep.sum() for std, keep in stdkeep )
       where = numpy.zeros( nshapes, dtype=bool )
@@ -894,9 +989,9 @@ class Function( ArrayFunc ):
         newstdkeep.append(( std, keep ))
       assert not where.size
       stdmap[trans] = newstdkeep
-    return Function( self.ndims, stdmap, self.igrad, indices.target, side=self.side )
+    return Function( self.ndims, stdmap, self.igrad, indices.shape[0], side=self.side )
 
-class Choose( ArrayFunc ):
+class Choose( Array ):
   'piecewise function'
 
   def __init__( self, level, choices ):
@@ -905,9 +1000,10 @@ class Choose( ArrayFunc ):
     self.level = level
     self.choices = tuple( choices )
     shape = _jointshape( level.shape, *[ choice.shape for choice in choices ] )
+    dtype = _jointdtype( *[ choice.dtype for choice in choices ] )
     assert level.ndim == len( shape )
-    self.ivar = [ i for i, choice in enumerate(choices) if isinstance(choice,ArrayFunc) ]
-    ArrayFunc.__init__( self, args=[ level ] + [ choices[i] for i in self.ivar ], shape=shape )
+    self.ivar = [ i for i, choice in enumerate(choices) if isinstance(choice,Array) ]
+    Array.__init__( self, args=[ level ] + [ choices[i] for i in self.ivar ], shape=shape, dtype=dtype )
 
   def evalf( self, level, *varchoices ):
     'choose'
@@ -921,13 +1017,13 @@ class Choose( ArrayFunc ):
   def _derivative( self, var, axes, seen ):
     grads = [ derivative( choice, var, axes, seen ) for choice in self.choices ]
     if not any( grads ): # all-zero special case; better would be allow merging of intervals
-      return _zeros( self.shape + _taketuple(var.shape,axes) )
+      return zeros( self.shape + _taketuple(var.shape,axes) )
     return choose( self.level[(...,)+(_,)*len(axes)], grads )
 
   def _edit( self, op ):
     return choose( op(self.level), [ op(choice) for choice in self.choices ] )
 
-class Choose2D( ArrayFunc ):
+class Choose2D( Array ):
   'piecewise function'
 
   def __init__( self, coords, contour, fin, fout ):
@@ -935,7 +1031,7 @@ class Choose2D( ArrayFunc ):
 
     shape = _jointshape( fin.shape, fout.shape )
     self.contour = contour
-    ArrayFunc.__init__( self, args=(coords,contour,fin,fout), shape=shape )
+    Array.__init__( self, args=(coords,contour,fin,fout), shape=shape, dtype=_jointdtype(fin.dtype,fout.dtype) )
 
   @staticmethod
   def evalf( self, xy, fin, fout ):
@@ -943,12 +1039,12 @@ class Choose2D( ArrayFunc ):
 
     from matplotlib import nxutils
     mask = nxutils.points_inside_poly( xy.T, self.contour )
-    out = numpy.empty( fin.shape or fout.shape )
+    out = numpy.empty( fin.shape or fout.shape, dtype=self.dtype )
     out[...,mask] = fin[...,mask] if fin.shape else fin
     out[...,~mask] = fout[...,~mask] if fout.shape else fout
     return out
 
-class Inverse( ArrayFunc ):
+class Inverse( Array ):
   'inverse'
 
   def __init__( self, func ):
@@ -956,7 +1052,7 @@ class Inverse( ArrayFunc ):
 
     assert func.shape[-1] == func.shape[-2]
     self.func = func
-    ArrayFunc.__init__( self, args=[func], shape=func.shape )
+    Array.__init__( self, args=[func], shape=func.shape, dtype=float )
 
   def evalf( self, arr ):
     assert arr.ndim == self.ndim+1
@@ -981,7 +1077,7 @@ class Inverse( ArrayFunc ):
   def _edit( self, op ):
     return inverse( op(self.func) )
 
-class Concatenate( ArrayFunc ):
+class Concatenate( Array ):
   'concatenate'
 
   def __init__( self, funcs, axis=0 ):
@@ -998,11 +1094,12 @@ class Concatenate( ArrayFunc ):
     else:
       sh = _sum( lengths )
     shape = _jointshape( *[ func.shape[:axis] + (sh,) + func.shape[axis+1:] for func in funcs ] )
+    dtype = _jointdtype( *[ func.dtype for func in funcs ] )
     self.funcs = tuple(funcs)
-    self.ivar = [ i for i, func in enumerate(funcs) if isinstance(func,Evaluable) ]
+    self.ivar = [ i for i, func in enumerate(funcs) if isevaluable(func) ]
     self.axis = axis
     self.axis_shiftright = axis-ndim
-    ArrayFunc.__init__( self, args=[ funcs[i] for i in self.ivar ], shape=shape )
+    Array.__init__( self, args=[ funcs[i] for i in self.ivar ], shape=shape, dtype=dtype )
 
   def evalf( self, *varargs ):
     'evaluate'
@@ -1041,21 +1138,25 @@ class Concatenate( ArrayFunc ):
           fexp = expand( f, self.shape[:self.axis] + (f.shape[self.axis],) + self.shape[self.axis+1:] )
           return get( fexp, i, item )
         item -= f.shape[i]
+      raise Exception
     axis = self.axis - (self.axis > i)
-    return concatenate( [ get( f, i, item ) for f in self.funcs ], axis=axis )
+    return concatenate( [ get( aslength(f,self.shape[i],i), i, item ) for f in self.funcs ], axis=axis )
 
   def _derivative( self, var, axes, seen ):
     funcs = [ derivative( func, var, axes, seen ) for func in self.funcs ]
     return concatenate( funcs, axis=self.axis )
 
   def _multiply( self, other ):
-    funcs = []
-    n0 = 0
-    for func in self.funcs:
-      n1 = n0 + func.shape[ self.axis ]
-      funcs.append( func * take( other, slice(n0,n1), self.axis ) )
-      n0 = n1
-    assert n0 == self.shape[ self.axis ]
+    if other.shape[self.axis] == 1:
+      funcs = [ multiply( func, other ) for func in self.funcs ]
+    else:
+      funcs = []
+      n0 = 0
+      for func in self.funcs:
+        n1 = n0 + func.shape[ self.axis ]
+        funcs.append( multiply( func, take( other, slice(n0,n1), self.axis ) ) )
+        n0 = n1
+      assert n0 == self.shape[ self.axis ]
     return concatenate( funcs, self.axis )
 
   def _cross( self, other, axis ):
@@ -1063,13 +1164,16 @@ class Concatenate( ArrayFunc ):
       n = 1, 2, 0
       m = 2, 0, 1
       return take(self,n,axis) * take(other,m,axis) - take(self,m,axis) * take(other,n,axis)
-    funcs = []
-    n0 = 0
-    for func in self.funcs:
-      n1 = n0 + func.shape[ self.axis ]
-      funcs.append( cross( func, take( other, slice(n0,n1), self.axis ), axis ) )
-      n0 = n1
-    assert n0 == self.shape[ self.axis ]
+    if other.shape[self.axis] == 1:
+      funcs = [ cross( func, other, axis ) for func in self.funcs ]
+    else:
+      funcs = []
+      n0 = 0
+      for func in self.funcs:
+        n1 = n0 + func.shape[ self.axis ]
+        funcs.append( cross( func, take( other, slice(n0,n1), self.axis ), axis ) )
+        n0 = n1
+      assert n0 == self.shape[ self.axis ]
     return concatenate( funcs, self.axis )
 
   def _add( self, other ):
@@ -1080,7 +1184,7 @@ class Concatenate( ArrayFunc ):
       ifun1 = ifun2 = 0
       funcs = []
       while i < self.shape[self.axis]:
-        j = min( N1[ifun1+1], N2[ifun2+1] )
+        j = _min( N1[ifun1+1], N2[ifun2+1] )
         funcs.append( take( self.funcs[ifun1], slice(i-N1[ifun1],j-N1[ifun1]), self.axis )
                     + take( other.funcs[ifun2], slice(i-N2[ifun2],j-N2[ifun2]), self.axis ))
         i = j
@@ -1089,13 +1193,16 @@ class Concatenate( ArrayFunc ):
       assert ifun1 == len(self.funcs)
       assert ifun2 == len(other.funcs)
       return concatenate( funcs, axis=self.axis )
-    funcs = []
-    n0 = 0
-    for func in self.funcs:
-      n1 = n0 + func.shape[ self.axis ]
-      funcs.append( func + take( other, slice(n0,n1), self.axis ) )
-      n0 = n1
-    assert n0 == self.shape[ self.axis ]
+    if other.shape[self.axis] == 1:
+      funcs = [ add( func, other ) for func in self.funcs ]
+    else:
+      funcs = []
+      n0 = 0
+      for func in self.funcs:
+        n1 = n0 + func.shape[ self.axis ]
+        funcs.append( func + take( other, slice(n0,n1), self.axis ) )
+        n0 = n1
+      assert n0 == self.shape[ self.axis ]
     return concatenate( funcs, self.axis )
 
   def _sum( self, axis ):
@@ -1123,45 +1230,45 @@ class Concatenate( ArrayFunc ):
     assert n0 == self.shape[self.axis]
     return concatenate( funcs, axis=-1 )
 
-  def _inflate( self, dofmap, axis ):
+  def _inflate( self, dofmap, length, axis ):
     assert not isinstance( self.shape[axis], int )
-    return concatenate( [ inflate(func,dofmap,axis) for func in self.funcs ], self.axis )
+    return concatenate( [ inflate(func,dofmap,length,axis) for func in self.funcs ], self.axis )
 
   def _take( self, indices, axis ):
     if axis != self.axis:
-      return concatenate( [ take(func,indices,axis) for func in self.funcs ], self.axis )
+      return concatenate( [ take(aslength(func,self.shape[axis],axis),indices,axis) for func in self.funcs ], self.axis )
+    if not indices.isconstant:
+      raise NotImplementedError
+    indices, = indices.eval()
+    ifuncs = numpy.hstack([ numpy.repeat(ifunc,func.shape[axis]) for ifunc, func in enumerate(self.funcs) ])[indices]
+    splits, = numpy.nonzero( numpy.diff(ifuncs) != 0 )
     funcs = []
-    while len(indices):
-      n = 0
-      for func in self.funcs:
-        if n <= indices[0] < n + func.shape[axis]:
-          break
-        n += func.shape[axis]
-      else:
-        raise Exception( 'index out of bounds' )
-      length = 1
-      while length < len(indices) and n <= indices[length] < n + func.shape[axis]:
-        length += 1
-      funcs.append( take( func, indices[:length]-n, axis ) )
-      indices = indices[length:]
-    assert funcs, 'empty slice'
+    for i, j in zip( numpy.hstack([ 0, splits+1 ]), numpy.hstack([ splits+1, len(indices) ]) ):
+      ifunc = ifuncs[i]
+      assert numpy.all( ifuncs[i:j] == ifunc )
+      offset = _sum( func.shape[axis] for func in self.funcs[:ifunc] )
+      funcs.append( take( self.funcs[ifunc], indices[i:j] - offset, axis ) )
     if len( funcs ) == 1:
       return funcs[0]
     return concatenate( funcs, axis=axis )
 
-  def _dot( self, other, naxes ):
-    axes = range( self.ndim-naxes, self.ndim )
-    n0 = 0
-    funcs = []
-    for f in self.funcs:
-      n1 = n0 + f.shape[self.axis]
-      funcs.append( dot( f, take( other, slice(n0,n1), self.axis ), axes ) )
-      n0 = n1
-    if self.axis >= self.ndim - naxes:
+  def _dot( self, other, axes ):
+    if other.shape[self.axis] == 1:
+      funcs = [ dot( f, other, axes ) for f in self.funcs ]
+    else:
+      n0 = 0
+      funcs = []
+      for f in self.funcs:
+        n1 = n0 + f.shape[self.axis]
+        funcs.append( dot( f, take( other, slice(n0,n1), self.axis ), axes ) )
+        n0 = n1
+    if self.axis in axes:
       return util.sum( funcs )
-    return concatenate( funcs, self.axis )
+    return concatenate( funcs, self.axis - _sum( axis < self.axis for axis in axes ) )
 
   def _power( self, n ):
+    if n.shape[self.axis] != 1:
+      raise NotImplementedError
     return concatenate( [ power( func, n ) for func in self.funcs ], self.axis )
 
   def _diagonalize( self ):
@@ -1174,7 +1281,7 @@ class Concatenate( ArrayFunc ):
   def _edit( self, op ):
     return concatenate( [ op(func) for func in self.funcs ], self.axis )
 
-class Interpolate( ArrayFunc ):
+class Interpolate( Array ):
   'interpolate uniformly spaced data; stepwise for now'
 
   def __init__( self, x, xp, fp, left=None, right=None ):
@@ -1187,7 +1294,7 @@ class Interpolate( ArrayFunc ):
       warnings.warn( 'supplied x-values are non-increasing' )
 
     assert x.ndim == 0
-    ArrayFunc.__init__( self, args=[x], shape=() )
+    Array.__init__( self, args=[x], shape=(), dtype=float )
     self.xp = xp
     self.fp = fp
     self.left = left
@@ -1196,7 +1303,7 @@ class Interpolate( ArrayFunc ):
   def evalf( self, x ):
     return numpy.interp( x, self.xp, self.fp, self.left, self.right )
 
-class Cross( ArrayFunc ):
+class Cross( Array ):
   'cross product'
 
   def __init__( self, func1, func2, axis ):
@@ -1206,9 +1313,10 @@ class Cross( ArrayFunc ):
     self.func2 = func2
     self.axis = axis
     shape = _jointshape( func1.shape, func2.shape )
+    dtype = _jointdtype( func1.dtype, func2.dtype )
     assert 0 <= axis < len(shape), 'axis out of bounds: axis={0}, len(shape)={1}'.format( axis, len(shape) )
     self.axis_shiftright = axis-len(shape)
-    ArrayFunc.__init__( self, args=(func1,func2), shape=shape )
+    Array.__init__( self, args=(func1,func2), shape=shape, dtype=dtype )
 
   def evalf( self, a, b ):
     assert a.ndim == b.ndim == self.ndim+1
@@ -1221,19 +1329,19 @@ class Cross( ArrayFunc ):
 
   def _take( self, index, axis ):
     if axis != self.axis:
-      return cross( take(self.func1,index,axis), take(self.func2,index,axis), self.axis )
+      return cross( take(aslength(self.func1,self.shape[axis],axis),index,axis), take(aslength(self.func2,self.shape[axis],axis),index,axis), self.axis )
 
   def _edit( self, op ):
     return cross( op(self.func1), op(self.func2), self.axis )
 
-class Determinant( ArrayFunc ):
+class Determinant( Array ):
   'normal'
 
   def __init__( self, func ):
     'contructor'
 
     self.func = func
-    ArrayFunc.__init__( self, args=[func], shape=func.shape[:-2] )
+    Array.__init__( self, args=[func], shape=func.shape[:-2], dtype=func.dtype )
 
   def evalf( self, arr ):
     assert arr.ndim == self.ndim+3
@@ -1248,86 +1356,35 @@ class Determinant( ArrayFunc ):
   def _edit( self, op ):
     return determinant( op(self.func) )
 
-class DofIndex( ArrayFunc ):
-  'element-based indexing'
-
-  def __init__( self, array, iax, index ):
-    'constructor'
-
-    assert index.ndim >= 1
-    assert isinstance( array, numpy.ndarray )
-    self.array = array
-    assert 0 <= iax < self.array.ndim
-    self.iax = iax
-    self.index = index
-    shape = self.array.shape[:iax] + index.shape + self.array.shape[iax+1:]
-    ArrayFunc.__init__( self, args=[index], shape=shape )
-
-  def evalf( self, index ):
-    'evaluate'
-
-    item = [ slice(None) ] * self.array.ndim
-    item[self.iax] = index
-    return self.array[ tuple(item) ][_]
-
-  def _get( self, i, item ):
-    if self.iax <= i < self.iax + self.index.ndim:
-      index = get( self.index, i - self.iax, item )
-      return take( self.array, index, self.iax )
-    return take( get( self.array, i, item ), self.index, self.iax if i > self.iax else self.iax-1 )
-
-  def _add( self, other ):
-    if isinstance( other, DofIndex ) and self.iax == other.iax and self.index == other.index:
-      return take( self.array + other.array, self.index, self.iax )
-
-  def _multiply( self, other ):
-    if not _isfunc(other) and other.ndim == 0:
-      return take( self.array * other, self.index, self.iax )
-
-  def _derivative( self, var, axes, seen ):
-    return _zeros( self.shape + _taketuple(var.shape,axes) )
-
-  def _concatenate( self, other, axis ):
-    if isinstance( other, DofIndex ) and self.iax == other.iax and self.index == other.index:
-      array = numpy.concatenate( [ self.array, other.array ], axis )
-      return take( array, self.index, self.iax )
-
-  def _edit( self, op ):
-    return take( self.array, op(self.index), self.iax )
-
-class Multiply( ArrayFunc ):
+class Multiply( Array ):
   'multiply'
 
   def __init__( self, func1, func2 ):
     'constructor'
 
     assert _issorted( func1, func2 )
-    assert isinstance( func1, ArrayFunc )
+    assert isarray(func1) and isarray(func2)
     self.funcs = func1, func2
-    args = self.funcs[:1+isinstance( func2, ArrayFunc )]
     shape = _jointshape( func1.shape, func2.shape )
-    ArrayFunc.__init__( self, args=args, shape=shape )
+    Array.__init__( self, args=self.funcs, shape=shape, dtype=_jointdtype(func1.dtype,func2.dtype) )
 
-  def evalf( self, arr1, arr2=None ):
-    assert arr1.ndim == self.ndim+1
-    if arr2 is None:
-      return arr1 * self.funcs[1]
-    assert arr2.ndim == self.ndim+1
+  def evalf( self, arr1, arr2 ):
     return arr1 * arr2
 
   def _sum( self, axis ):
     func1, func2 = self.funcs
     return dot( func1, func2, [axis] )
 
-  def _get( self, i, item ):
+  def _get( self, axis, item ):
     func1, func2 = self.funcs
-    return get( func1, i, item ) * get( func2, i, item )
+    return multiply( get( aslength(func1,self.shape[axis],axis), axis, item ),
+                     get( aslength(func2,self.shape[axis],axis), axis, item ) )
 
   def _add( self, other ):
     func1, func2 = self.funcs
-    if _equal( other, func1 ):
+    if other == func1:
       return func1 * (func2+1)
-    if _equal( other, func2 ):
+    if other == func2:
       return func2 * (func1+1)
     if isinstance( other, Multiply ):
       common = _findcommon( self.funcs, other.funcs )
@@ -1347,8 +1404,6 @@ class Multiply( ArrayFunc ):
 
   def _multiply( self, other ):
     func1, func2 = self.funcs
-    if not _isfunc( other ) and not _isfunc( func2 ):
-      return multiply( func1, numpy.multiply( func2, other ) )
     func1_other = _call( func1, '_multiply', other )
     if func1_other is not None:
       return multiply( func1_other, func2 )
@@ -1368,40 +1423,44 @@ class Multiply( ArrayFunc ):
 
   def _take( self, index, axis ):
     func1, func2 = self.funcs
-    return take( func1, index, axis ) * take( func2, index, axis )
+    return take( aslength(func1,self.shape[axis],axis), index, axis ) * take( aslength(func2,self.shape[axis],axis), index, axis )
 
   def _power( self, n ):
     func1, func2 = self.funcs
-    if not _isfunc( func2 ):
-      return multiply( power(func1,n), numpy.power(func2,n) )
+    func1pow = _call( func1, '_power', n )
+    func2pow = _call( func2, '_power', n )
+    if func1pow is not None and func2pow is not None:
+      return multiply( func1pow, func2pow )
 
   def _edit( self, op ):
     func1, func2 = self.funcs
     return multiply( op(func1), op(func2) )
 
-  def _dot( self, other, naxes ):
+  def _dot( self, other, axes ):
     func1, func2 = self.funcs
-    if all( sh == 1 for sh in func1.shape[-naxes:] ):
-      return func1[(Ellipsis,)+(0,)*naxes] * dot( func2, other, list(range(self.ndim-naxes,self.ndim)) )
-    if all( sh == 1 for sh in func2.shape[-naxes:] ):
-      return func2[(Ellipsis,)+(0,)*naxes] * dot( func1, other, list(range(self.ndim-naxes,self.ndim)) )
+    s = [ slice(None) ] * self.ndim
+    for axis in axes:
+      s[axis] = 0
+    s = tuple(s)
+    if all( func1.shape[axis] == 1 for axis in axes ):
+      return func1[s] * dot( func2, other, axes )
+    if all( func2.shape[axis] == 1 for axis in axes ):
+      return func2[s] * dot( func1, other, axes )
 
-class Add( ArrayFunc ):
+class Add( Array ):
   'add'
 
   def __init__( self, func1, func2 ):
     'constructor'
 
     assert _issorted( func1, func2 )
-    assert isinstance( func1, ArrayFunc )
+    assert isarray(func1) and isarray(func2)
     self.funcs = func1, func2
-    args = self.funcs[:1+isinstance( func2, ArrayFunc )]
     shape = _jointshape( func1.shape, func2.shape )
-    ArrayFunc.__init__( self, args=args, shape=shape )
+    Array.__init__( self, args=self.funcs, shape=shape, dtype=_jointdtype(func1.dtype,func2.dtype) )
 
   def evalf( self, arr1, arr2=None ):
-    assert arr1.ndim == self.ndim+1
-    return arr1 + ( arr2 if arr2 is not None else self.funcs[1] )
+    return arr1 + arr2
 
   def _sum( self, axis ):
     return sum( self.funcs[0], axis ) + sum( self.funcs[1], axis )
@@ -1410,9 +1469,10 @@ class Add( ArrayFunc ):
     func1, func2 = self.funcs
     return derivative( func1, var, axes, seen ) + derivative( func2, var, axes, seen )
 
-  def _get( self, i, item ):
+  def _get( self, axis, item ):
     func1, func2 = self.funcs
-    return get( func1, i, item ) + get( func2, i, item )
+    return add( get( aslength(func1,self.shape[axis],axis), axis, item ),
+                get( aslength(func2,self.shape[axis],axis), axis, item ) )
 
   def _takediag( self ):
     func1, func2 = self.funcs
@@ -1420,12 +1480,10 @@ class Add( ArrayFunc ):
 
   def _take( self, index, axis ):
     func1, func2 = self.funcs
-    return take( func1, index, axis ) + take( func2, index, axis )
+    return take( aslength(func1,self.shape[axis],axis), index, axis ) + take( aslength(func2,self.shape[axis],axis), index, axis )
 
   def _add( self, other ):
     func1, func2 = self.funcs
-    if not _isfunc( other ) and not _isfunc( func2 ):
-      return add( func1, numpy.add( func2, other ) )
     func1_other = _call( func1, '_add', other )
     if func1_other is not None:
       return add( func1_other, func2 )
@@ -1437,7 +1495,7 @@ class Add( ArrayFunc ):
     func1, func2 = self.funcs
     return add( op(func1), op(func2) )
 
-class BlockAdd( ArrayFunc ):
+class BlockAdd( Array ):
   'block addition (used for DG)'
 
   def __init__( self, funcs ):
@@ -1445,12 +1503,13 @@ class BlockAdd( ArrayFunc ):
 
     self.funcs = tuple( funcs )
     shape = _jointshape( *( func.shape for func in self.funcs ) )
-    if not isinstance( funcs[-1], Evaluable ):
+    dtype = _jointdtype( *( func.dtype for func in self.funcs ) )
+    if not isevaluable( funcs[-1] ):
       self.const = funcs[-1]
       funcs = funcs[:-1]
     else:
       self.const = 0
-    ArrayFunc.__init__( self, args=funcs, shape=shape )
+    Array.__init__( self, args=funcs, shape=shape, dtype=dtype )
 
   def evalf( self, *args ):
     assert all( arg.ndim == self.ndim+1 for arg in args )
@@ -1459,9 +1518,8 @@ class BlockAdd( ArrayFunc ):
   def _add( self, other ):
     return blockadd( self, other )
 
-  def _dot( self, other, naxes ):
-    n = numpy.arange( self.ndim-naxes, self.ndim )
-    return blockadd( *( dot( func, other, n ) for func in self.funcs ) )
+  def _dot( self, other, axes ):
+    return blockadd( *( dot( func, other, axes ) for func in self.funcs ) )
 
   def _edit( self, op ):
     return blockadd( *map( op, self.funcs ) )
@@ -1473,13 +1531,13 @@ class BlockAdd( ArrayFunc ):
     return blockadd( *( derivative( func, var, axes, seen ) for func in self.funcs ) )
 
   def _get( self, i, item ):
-    return blockadd( *( get( func, i, item ) for func in self.funcs ) )
+    return blockadd( *( get( aslength(func,self.shape[i],i), i, item ) for func in self.funcs ) )
 
   def _takediag( self ):
     return blockadd( *( takediag( func ) for func in self.funcs ) )
 
   def _take( self, indices, axis ):
-    return blockadd( *( take( func, indices, axis ) for func in self.funcs ) )
+    return blockadd( *( take( aslength(func,self.shape[axis],axis), indices, axis ) for func in self.funcs ) )
 
   def _align( self, axes, ndim ):
     return blockadd( *( align( func, axes, ndim ) for func in self.funcs ) )
@@ -1487,8 +1545,8 @@ class BlockAdd( ArrayFunc ):
   def _multiply( self, other ):
     return blockadd( *( multiply( func, other ) for func in self.funcs ) )
 
-  def _inflate( self, dofmap, axis ):
-    return blockadd( *( inflate( func, dofmap, axis ) for func in self.funcs ) )
+  def _inflate( self, dofmap, length, axis ):
+    return blockadd( *( inflate( func, dofmap, length, axis ) for func in self.funcs ) )
 
   @property
   def blocks( self ):
@@ -1496,20 +1554,20 @@ class BlockAdd( ArrayFunc ):
       for ind, f in blocks( func ):
         yield ind, f
 
-class Dot( ArrayFunc ):
+class Dot( Array ):
   'dot'
 
   def __init__( self, func1, func2, naxes ):
     'constructor'
 
     assert _issorted( func1, func2 )
-    assert isinstance( func1, ArrayFunc )
+    assert isinstance( func1, Array )
     assert naxes > 0
     self.naxes = naxes
     self.funcs = func1, func2
-    args = self.funcs[:1+isinstance( func2, ArrayFunc )]
+    args = self.funcs[:1+isinstance( func2, Array )]
     shape = _jointshape( func1.shape, func2.shape )[:-naxes]
-    ArrayFunc.__init__( self, args=args, shape=shape )
+    Array.__init__( self, args=args, shape=shape, dtype=_jointdtype(func1.dtype,func2.dtype) )
 
   def evalf( self, arr1, arr2=None ):
     assert arr1.ndim == self.ndim+1+self.naxes
@@ -1519,29 +1577,16 @@ class Dot( ArrayFunc ):
   def axes( self ):
     return list( range( self.ndim, self.ndim + self.naxes ) )
 
-  def _get( self, i, item ):
+  def _get( self, axis, item ):
     func1, func2 = self.funcs
-    return dot( get( func1, i, item ), get( func2, i, item ), [ ax-1 for ax in self.axes ] )
+    return dot( get( aslength(func1,self.shape[axis],axis), axis, item ),
+                get( aslength(func2,self.shape[axis],axis), axis, item ), [ ax-1 for ax in self.axes ] )
 
   def _derivative( self, var, axes, seen ):
     func1, func2 = self.funcs
     ext = (...,)+(_,)*len(axes)
     return dot( derivative( func1, var, axes, seen ), func2[ext], self.axes ) \
          + dot( func1[ext], derivative( func2, var, axes, seen ), self.axes )
-
-  #def _multiply( self, other ):
-  #  func1, func2 = self.funcs
-  #  for ax in self.axes:
-  #    other = insert( other, ax )
-  #  assert other.ndim == func1.ndim == func2.ndim
-  #  if not _isfunc( other ) and not _isfunc( func2 ):
-  #    return dot( func1, numpy.multiply( func2, other ), self.axes )
-  #  func1_other = _call( func1, '_multiply', other )
-  #  if func1_other is not None:
-  #    return dot( func1_other, func2, self.axes )
-  #  func2_other = _call( func2, '_multiply', other )
-  #  if func2_other is not None:
-  #    return dot( func1, func2_other, self.axes )
 
   def _add( self, other ):
     if isinstance( other, Dot ) and self.axes == other.axes:
@@ -1561,7 +1606,7 @@ class Dot( ArrayFunc ):
 
   def _take( self, index, axis ):
     func1, func2 = self.funcs
-    return dot( take(func1,index,axis), take(func2,index,axis), self.axes )
+    return dot( take( aslength(func1,self.shape[axis],axis), index, axis ), take( aslength(func2,self.shape[axis],axis), index, axis ), self.axes )
 
   def _concatenate( self, other, axis ):
     if isinstance( other, Dot ) and other.axes == self.axes:
@@ -1576,7 +1621,7 @@ class Dot( ArrayFunc ):
     func1, func2 = self.funcs
     return dot( op(func1), op(func2), self.axes )
 
-class Sum( ArrayFunc ):
+class Sum( Array ):
   'sum'
 
   def __init__( self, func, axis ):
@@ -1587,7 +1632,7 @@ class Sum( ArrayFunc ):
     assert 0 <= axis < func.ndim, 'axis out of bounds'
     shape = func.shape[:axis] + func.shape[axis+1:]
     self.axis_shiftright = axis-func.ndim
-    ArrayFunc.__init__( self, args=[func], shape=shape )
+    Array.__init__( self, args=[func], shape=shape, dtype=func.dtype )
 
   def evalf( self, arr ):
     assert arr.ndim == self.ndim+2
@@ -1604,14 +1649,14 @@ class Sum( ArrayFunc ):
   def _edit( self, op ):
     return sum( op(self.func), axis=self.axis )
 
-class Debug( ArrayFunc ):
+class Debug( Array ):
   'debug'
 
   def __init__( self, func ):
     'constructor'
 
     self.func = func
-    ArrayFunc.__init__( self, args=[func], shape=func.shape )
+    Array.__init__( self, args=[func], shape=func.shape, dtype=func.dtype )
 
   def evalf( self, arr ):
     'debug'
@@ -1631,7 +1676,7 @@ class Debug( ArrayFunc ):
   def _edit( self, op ):
     return Debug( op(self.func) )
 
-class TakeDiag( ArrayFunc ):
+class TakeDiag( Array ):
   'extract diagonal'
 
   def __init__( self, func ):
@@ -1639,7 +1684,7 @@ class TakeDiag( ArrayFunc ):
 
     assert func.shape[-1] == func.shape[-2]
     self.func = func
-    ArrayFunc.__init__( self, args=[func], shape=func.shape[:-1] )
+    Array.__init__( self, args=[func], shape=func.shape[:-1], dtype=func.dtype )
 
   def evalf( self, arr ):
     assert arr.ndim == self.ndim+2
@@ -1656,51 +1701,34 @@ class TakeDiag( ArrayFunc ):
   def _edit( self, op ):
     return takediag( op(self.func) )
 
-class Take( ArrayFunc ):
+class Take( Array ):
   'generalization of numpy.take(), to accept lists, slices, arrays'
 
   def __init__( self, func, indices, axis ):
     'constructor'
 
-    assert func.shape[axis] != 1
+    assert isarray(func) and func.shape[axis] != 1
+    assert isarray(indices) and indices.ndim == 1 and indices.dtype == int
+    assert 0 <= axis < func.ndim
+
     self.func = func
     self.axis = axis
     self.indices = indices
 
-    args = [func]
-    s = [ slice(None) ] * func.ndim
+    shape = func.shape[:axis] + indices.shape + func.shape[axis+1:]
+    Array.__init__( self, args=[func,indices], shape=shape, dtype=func.dtype )
 
-    if _isevaluable(indices):
-      s[axis] = indices
-      newlen, = indices.shape
-      args.append( Tuple((Ellipsis,)+tuple(s)) )
-    else:
-      # try for regular slice
-      start = indices[0]
-      step = indices[1] - start
-      stop = start + step * len(indices)
-      s[axis] = slice( start, stop, step ) if numpy.all( numpy.diff(indices) == step ) else indices
-      newlen, = numpy.empty( func.shape[axis] )[ indices ].shape
-      assert newlen > 0
-      self.item = (Ellipsis,)+tuple(s)
-
-    shape = func.shape[:axis] + (newlen,) + func.shape[axis+1:]
-    ArrayFunc.__init__( self, args=args, shape=shape )
-
-  def evalf( self, arr, item=None ):
-    assert arr.ndim == self.ndim+1
-    return arr[ item or self.item ]
+  def evalf( self, arr, indices ):
+    if indices.shape[0] != 1:
+      raise NotImplementedError( 'non element-constant indexing not supported yet' )
+    return numpy.take( arr, indices[0], self.axis+1 )
 
   def _derivative( self, var, axes, seen ):
     return take( derivative( self.func, var, axes, seen ), self.indices, self.axis )
 
   def _take( self, index, axis ):
     if axis == self.axis:
-      if numpy.all( numpy.diff( self.indices ) == 1 ):
-        indices = index + self.indices[0]
-      else:
-        indices = self.indices[index]
-      return take( self.func, indices, axis )
+      return take( self.func, self.indices[index], axis )
     trytake = _call( self.func, '_take', index, axis )
     if trytake is not None:
       return take( trytake, self.indices, self.axis )
@@ -1708,7 +1736,10 @@ class Take( ArrayFunc ):
   def _edit( self, op ):
     return take( op(self.func), self.indices, self.axis )
 
-class Power( ArrayFunc ):
+  def _opposite( self ):
+    return Take( opposite(self.func), opposite(self.indices), self.axis )
+
+class Power( Array ):
   'power'
 
   def __init__( self, func, power ):
@@ -1717,15 +1748,10 @@ class Power( ArrayFunc ):
     self.func = func
     self.power = power
     shape = _jointshape( func.shape, power.shape )
-    self.varbase = isinstance( func, ArrayFunc )
-    self.varexp = isinstance( power, ArrayFunc )
-    assert self.varbase or self.varexp
-    args = ([func] if self.varbase else []) + ([power] if self.varexp else [])
-    ArrayFunc.__init__( self, args=args, shape=shape )
+    Array.__init__( self, args=[func,power], shape=shape, dtype=_jointdtype(func.dtype,power.dtype) )
 
-  def evalf( self, *args ):
-    return numpy.power( args[0] if self.varbase else self.func,
-                        args[-1] if self.varexp else self.power )
+  def evalf( self, base, exp ):
+    return numpy.power( base, exp )
 
   def _derivative( self, var, axes, seen ):
     # self = func**power
@@ -1733,29 +1759,30 @@ class Power( ArrayFunc ):
     # self` / self = power` * ln func + power * func` / func
     # self` = power` * ln func * self + power * func` * func**(power-1)
     ext = (...,)+(_,)*len(axes)
-    powerm1 = self.power-1 if _isfunc(self.power) else numpy.choose( self.power==0, [self.power-1,0] ) # avoid introducing negative powers where possible
+    powerm1 = choose( equal( self.power, 0 ), [ self.power-1, 0 ] ) # avoid introducing negative powers where possible
     return ( self.power * power( self.func, powerm1 ) )[ext] * derivative( self.func, var, axes, seen ) \
          + ( ln( self.func ) * self )[ext] * derivative( self.power, var, axes )
 
   def _power( self, n ):
     func = self.func
     newpower = n * self.power
-    if _iszero( self.power % 2 ) and not _iszero( newpower % 2 ):
+    if iszero( self.power % 2 ) and not iszero( newpower % 2 ):
       func = abs( func )
     return power( func, newpower )
 
-  def _get( self, i, item ):
-    return get( self.func, i, item )**get( self.power, i, item )
+  def _get( self, axis, item ):
+    return power( get( aslength(self.func, self.shape[axis],axis), axis, item ),
+                  get( aslength(self.power,self.shape[axis],axis), axis, item ) )
 
   def _sum( self, axis ):
-    if not _isfunc(self.power) and numpy.all( self.power == 2 ):
+    if self == (self.func**2):
       return dot( self.func, self.func, axis )
 
   def _takediag( self ):
     return power( takediag( self.func ), takediag( self.power ) )
 
   def _take( self, index, axis ):
-    return power( take( self.func, index, axis ), take( self.power, index, axis ) )
+    return power( take( aslength(self.func,self.shape[axis],axis), index, axis ), take( aslength(self.power,self.shape[axis],axis), index, axis ) )
 
   def _multiply( self, other ):
     if isinstance( other, Power ) and self.func == other.func:
@@ -1764,60 +1791,62 @@ class Power( ArrayFunc ):
       return power( self.func, self.power + 1 )
 
   def _sign( self ):
-    if _iszero( self.power % 2 ):
+    if iszero( self.power % 2 ):
       return expand( 1., self.shape )
 
   def _edit( self, op ):
     return power( op(self.func), op(self.power) )
 
-class Pointwise( ArrayFunc ):
+class Pointwise( Array ):
   'pointwise transformation'
 
-  def __init__( self, args, evalfun, deriv ):
+  def __init__( self, args, evalfun, deriv, dtype ):
     'constructor'
 
-    assert _isfunc( args )
+    assert isarray( args )
     shape = args.shape[1:]
     self.args = args
     self.evalfun = evalfun
     self.deriv = deriv
-    ArrayFunc.__init__( self, args=[args], shape=shape )
+    Array.__init__( self, args=[args], shape=shape, dtype=dtype )
 
   def evalf( self, args ):
     assert args.shape[1:] == self.args.shape
     return self.evalfun( *args.swapaxes(0,1) )
 
   def _derivative( self, var, axes, seen ):
+    if self.deriv is None:
+      raise NotImplementedError( 'derivative is not defined for this operator' )
     return ( self.deriv( self.args )[(...,)+(_,)*len(axes)] * derivative( self.args, var, axes, seen ) ).sum( 0 )
 
   def _takediag( self ):
-    return pointwise( takediag(self.args), self.evalfun, self.deriv )
+    return pointwise( takediag(self.args), self.evalfun, self.deriv, self.dtype )
 
   def _get( self, axis, item ):
-    return pointwise( get( self.args, axis+1, item ), self.evalfun, self.deriv )
+    return pointwise( get( self.args, axis+1, item ), self.evalfun, self.deriv, self.dtype )
 
   def _take( self, index, axis ):
-    return pointwise( take( self.args, index, axis+1 ), self.evalfun, self.deriv )
+    return pointwise( take( self.args, index, axis+1 ), self.evalfun, self.deriv, self.dtype )
 
   def _edit( self, op ):
-    return pointwise( op(self.args), self.evalfun, self.deriv )
+    return pointwise( op(self.args), self.evalfun, self.deriv, self.dtype )
 
-class Sign( ArrayFunc ):
+class Sign( Array ):
   'sign'
 
   def __init__( self, func ):
     'constructor'
 
-    assert _isfunc( func )
+    assert isarray( func )
     self.func = func
-    ArrayFunc.__init__( self, args=[func], shape=func.shape )
+    Array.__init__( self, args=[func], shape=func.shape, dtype=func.dtype )
 
   def evalf( self, arr ):
     assert arr.ndim == self.ndim+1
     return numpy.sign( arr )
 
   def _derivative( self, var, axes, seen ):
-    return _zeros( self.shape + _taketuple(var.shape,axes) )
+    return zeros( self.shape + _taketuple(var.shape,axes) )
 
   def _takediag( self ):
     return sign( takediag(self.func) )
@@ -1832,13 +1861,13 @@ class Sign( ArrayFunc ):
     return self
 
   def _power( self, n ):
-    if _iszero( n % 2 ):
+    if iszero( n % 2 ):
       return expand( 1., self.shape )
 
   def _edit( self, op ):
     return sign( op(self.func) )
 
-class Pointdata( ArrayFunc ):
+class Pointdata( Array ):
   'pointdata'
 
   def __init__ ( self, data, shape ):
@@ -1849,7 +1878,7 @@ class Pointdata( ArrayFunc ):
     self.data = data
     for trans in data:
       break
-    ArrayFunc.__init__( self, args=[TransformChain(0,trans.fromdims),POINTS], shape=shape )
+    Array.__init__( self, args=[TransformChain(0,trans.fromdims),POINTS], shape=shape, dtype=float )
 
   def evalf( self, trans, points ):
     head = trans.lookup( self.data )
@@ -1866,7 +1895,7 @@ class Pointdata( ArrayFunc ):
 
     return Pointdata( data, self.shape )
 
-class Sampled( ArrayFunc ):
+class Sampled( Array ):
   'sampled'
 
   def __init__ ( self, data ):
@@ -1877,7 +1906,7 @@ class Sampled( ArrayFunc ):
     fromdims = trans.fromdims
     shape = values.shape[1:]
     assert all( trans.fromdims == fromdims and values.shape == points.shape[:1]+shape for trans, (values,points) in items )
-    ArrayFunc.__init__( self, args=[TransformChain(0,fromdims),POINTS], shape=shape )
+    Array.__init__( self, args=[TransformChain(0,fromdims),POINTS], shape=shape, dtype=float )
 
   def evalf( self, trans, points ):
     head = trans.lookup( self.data )
@@ -1887,7 +1916,7 @@ class Sampled( ArrayFunc ):
     assert numpy.equal( mypoints, evalpoints ).all(), 'Illegal point set'
     return myvals
 
-class Elemwise( ArrayFunc ):
+class Elemwise( Array ):
   'elementwise constant data'
 
   def __init__( self, fmap, shape, default=None, side=0 ):
@@ -1896,7 +1925,7 @@ class Elemwise( ArrayFunc ):
     self.side = side
     for trans in fmap:
       break
-    ArrayFunc.__init__( self, args=[TransformChain(side,trans.fromdims)], shape=shape )
+    Array.__init__( self, args=[TransformChain(side,trans.fromdims)], shape=shape, dtype=float )
 
   def evalf( self, trans ):
     trans = trans.lookup( self.fmap )
@@ -1907,7 +1936,7 @@ class Elemwise( ArrayFunc ):
     return value[_]
 
   def _derivative( self, var, axes, seen ):
-    return _zeros( self.shape+_taketuple(var.shape,axes) )
+    return zeros( self.shape+_taketuple(var.shape,axes) )
 
   def _opposite( self ):
     return Elemwise( self.fmap, self.shape, self.default, 1-self.side )
@@ -1931,34 +1960,34 @@ class Eig( Evaluable ):
   def _edit( self, op ):
     return Eig( op(self.func), self.symmetric )
 
-class ArrayFromTuple( ArrayFunc ):
+class ArrayFromTuple( Array ):
   'array from tuple'
 
-  def __init__( self, arrays, index, shape ):
+  def __init__( self, arrays, index, shape, dtype ):
     self.arrays = arrays
     self.index = index
-    ArrayFunc.__init__( self, args=[arrays], shape=shape )
+    Array.__init__( self, args=[arrays], shape=shape, dtype=dtype )
 
   def evalf( self, arrays ):
     return arrays[ self.index ]
 
   def _edit( self, op ):
-    return array_from_tuple( op(self.arrays), self.index, self.shape )
+    return array_from_tuple( op(self.arrays), self.index, self.shape, self.dtype )
 
-class Zeros( ArrayFunc ):
+class Zeros( Array ):
   'zero'
 
-  def __init__( self, shape ):
+  def __init__( self, shape, dtype ):
     'constructor'
 
     shape = tuple( shape )
-    ArrayFunc.__init__( self, args=[], shape=shape )
+    Array.__init__( self, args=[], shape=shape, dtype=dtype )
 
   def evalf( self ):
     'prepend point axes'
 
     assert not any( sh is None for sh in self.shape ), 'cannot evaluate zeros for shape %s' % (self.shape,)
-    return numpy.zeros( (1,) + self.shape )
+    return numpy.zeros( (1,) + self.shape, dtype=self.dtype )
 
   @property
   def blocks( self ):
@@ -1966,10 +1995,10 @@ class Zeros( ArrayFunc ):
 
   def _repeat( self, length, axis ):
     assert self.shape[axis] == 1
-    return _zeros( self.shape[:axis] + (length,) + self.shape[axis+1:] )
+    return zeros( self.shape[:axis] + (length,) + self.shape[axis+1:], dtype=self.dtype )
 
   def _derivative( self, var, axes, seen ):
-    return _zeros( self.shape+_taketuple(var.shape,axes) )
+    return zeros( self.shape+_taketuple(var.shape,axes), dtype=self.dtype )
 
   def _add( self, other ):
     shape = _jointshape( self.shape, other.shape )
@@ -1977,72 +2006,82 @@ class Zeros( ArrayFunc ):
 
   def _multiply( self, other ):
     shape = _jointshape( self.shape, other.shape )
-    return _zeros( shape )
+    return zeros( shape, dtype=_jointdtype(self.dtype,other.dtype) )
 
-  def _dot( self, other, naxes ):
-    shape = _jointshape( self.shape, other.shape )
-    return _zeros( shape[:-naxes] )
+  def _dot( self, other, axes ):
+    shape = [ sh for axis, sh in enumerate( _jointshape( self.shape, other.shape ) ) if axis not in axes ]
+    return zeros( shape, dtype=_jointdtype(self.dtype,other.dtype) )
 
   def _cross( self, other, axis ):
     shape = _jointshape( self.shape, other.shape )
-    return _zeros( shape )
+    return zeros( shape, dtype=_jointdtype(self.dtype,other.dtype) )
 
   def _diagonalize( self ):
-    return _zeros( self.shape + (self.shape[-1],) )
+    return zeros( self.shape + (self.shape[-1],), dtype=self.dtype )
 
   def _sum( self, axis ):
-    return _zeros( self.shape[:axis] + self.shape[axis+1:] )
+    return zeros( self.shape[:axis] + self.shape[axis+1:], dtype=self.dtype )
 
   def _align( self, axes, ndim ):
     shape = [1] * ndim
     for ax, sh in zip( axes, self.shape ):
       shape[ax] = sh
-    return _zeros( shape )
+    return zeros( shape, dtype=self.dtype )
 
   def _get( self, i, item ):
-    return _zeros( self.shape[:i] + self.shape[i+1:] )
+    return zeros( self.shape[:i] + self.shape[i+1:], dtype=self.dtype )
 
   def _takediag( self ):
-    sh = max( self.shape[-2], self.shape[-1] )
-    return _zeros( self.shape[:-2] + (sh,) )
+    sh = _max( self.shape[-2], self.shape[-1] )
+    return zeros( self.shape[:-2] + (sh,), dtype=self.dtype )
 
   def _take( self, index, axis ):
-    return _zeros( self.shape[:axis] + index.shape + self.shape[axis+1:] )
+    return zeros( self.shape[:axis] + index.shape + self.shape[axis+1:], dtype=self.dtype )
 
-  def _inflate( self, dofmap, axis ):
+  def _inflate( self, dofmap, length, axis ):
     assert not isinstance( self.shape[axis], int )
-    return _zeros( self.shape[:axis] + (dofmap.target,) + self.shape[axis+1:] )
+    return zeros( self.shape[:axis] + (length,) + self.shape[axis+1:], dtype=self.dtype )
 
   def _power( self, n ):
     return self
 
-  def _pointwise( self, evalf, deriv ):
+  def _pointwise( self, evalf, deriv, dtype ):
     value = evalf( *numpy.zeros(self.shape[0]) )
+    assert value.dtype == dtype
     if value == 0:
-      return _zeros( self.shape[1:] )
+      return zeros( self.shape[1:], dtype=dtype )
     return expand( numpy.array(value)[(_,)*(self.ndim-1)], self.shape[1:] )
 
-class Inflate( ArrayFunc ):
+  def _revolved( self ):
+    return self
+
+class Inflate( Array ):
   'inflate'
 
-  def __init__( self, func, dofmap, axis ):
+  def __init__( self, func, dofmap, length, axis ):
     'constructor'
 
     self.func = func
     self.dofmap = dofmap
+    self.length = length
     self.axis = axis
-    shape = func.shape[:axis] + (dofmap.target,) + func.shape[axis+1:]
+    assert 0 <= axis < func.ndim
+    assert func.shape[axis] == dofmap.shape[0]
+    shape = func.shape[:axis] + (length,) + func.shape[axis+1:]
     self.axis_shiftright = axis-func.ndim
-    ArrayFunc.__init__( self, args=[func,dofmap], shape=shape )
+    Array.__init__( self, args=[func,dofmap], shape=shape, dtype=func.dtype )
 
   def evalf( self, array, indices ):
     'inflate'
 
+    if indices.shape[0] != 1:
+      raise NotImplementedError
+    indices, = indices
     assert array.ndim == self.ndim+1
     warnings.warn( 'using explicit inflation; this is usually a bug.' )
     shape = list( array.shape )
-    shape[self.axis_shiftright] = self.dofmap.target
-    inflated = numpy.zeros( shape )
+    shape[self.axis_shiftright] = self.length
+    inflated = numpy.zeros( shape, dtype=self.dtype )
     inflated[(Ellipsis,indices)+(slice(None),)*(-self.axis_shiftright-1)] = array
     return inflated
 
@@ -2052,45 +2091,46 @@ class Inflate( ArrayFunc ):
       assert ind[self.axis] == None
       yield Tuple( ind[:self.axis] + (self.dofmap,) + ind[self.axis+1:] ), f
 
-  def _inflate( self, dofmap, axis ):
+  def _inflate( self, dofmap, length, axis ):
     assert axis != self.axis
     if axis > self.axis:
       return
-    return inflate( inflate( self.func, dofmap, axis ), self.dofmap, self.axis )
+    return inflate( inflate( self.func, dofmap, length, axis ), self.dofmap, self.length, self.axis )
 
   def _derivative( self, var, axes, seen ):
-    return inflate( derivative(self.func,var,axes,seen), self.dofmap, self.axis )
+    return inflate( derivative(self.func,var,axes,seen), self.dofmap, self.length, self.axis )
 
   def _align( self, shuffle, ndims ):
-    return inflate( align(self.func,shuffle,ndims), self.dofmap, shuffle[self.axis] )
+    return inflate( align(self.func,shuffle,ndims), self.dofmap, self.length, shuffle[self.axis] )
 
   def _get( self, axis, item ):
     assert axis != self.axis
-    return inflate( get(self.func,axis,item), self.dofmap, self.axis-(axis<self.axis) )
+    return inflate( get(self.func,axis,item), self.dofmap, self.length, self.axis-(axis<self.axis) )
 
-  def _dot( self, other, naxes ):
-    axes = range( self.ndim-naxes, self.ndim )
+  def _dot( self, other, axes ):
     if isinstance( other, Inflate ) and other.axis == self.axis:
       assert self.dofmap == other.dofmap
       other = other.func
     elif other.shape[self.axis] != 1:
       other = take( other, self.dofmap, self.axis )
     arr = dot( self.func, other, axes )
-    if self.axis >= self.ndim - naxes:
+    if self.axis in axes:
       return arr
-    return inflate( arr, self.dofmap, self.axis )
+    return inflate( arr, self.dofmap, self.length, self.axis - _sum( axis < self.axis for axis in axes ) )
 
   def _multiply( self, other ):
     if isinstance( other, Inflate ) and self.axis == other.axis:
-      assert self.dofmap == other.dofmap
-      other = other.func
-    elif other.shape[self.axis] != 1:
-      other = take( other, self.dofmap, self.axis )
-    return inflate( multiply(self.func,other), self.dofmap, self.axis )
+      assert self.dofmap == other.dofmap and self.length == other.length
+      take_other = other.func
+    elif other.shape[self.axis] == 1:
+      take_other = other
+    else:
+      take_other = take( other, self.dofmap, self.axis )
+    return inflate( multiply(self.func,take_other), self.dofmap, self.length, self.axis )
 
   def _add( self, other ):
     if isinstance( other, Inflate ) and self.axis == other.axis and self.dofmap == other.dofmap:
-      return inflate( add(self.func,other.func), self.dofmap, self.axis )
+      return inflate( add(self.func,other.func), self.dofmap, self.length, self.axis )
     return blockadd( self, other )
 
   def _cross( self, other, axis ):
@@ -2099,60 +2139,50 @@ class Inflate( ArrayFunc ):
       other = other.func
     elif other.shape[self.axis] != 1:
       other = take( other, self.dofmap, self.axis )
-    return inflate( cross(self.func,other,axis), self.dofmap, self.axis )
+    return inflate( cross(self.func,other,axis), self.dofmap, self.length, self.axis )
 
   def _power( self, n ):
-    return inflate( power(self.func,n), self.dofmap, self.axis )
+    return inflate( power(self.func,n), self.dofmap, self.length, self.axis )
 
   def _takediag( self ):
     assert self.axis < self.ndim-2
-    return inflate( takediag(self.func), self.dofmap, self.axis )
+    return inflate( takediag(self.func), self.dofmap, self.length, self.axis )
 
   def _take( self, index, axis ):
-    if axis == self.axis:
-      if index == self.dofmap:
-        return self.func
-      assert numeric.isintarray(index) and index.ndim == 1
-      if self.dofmap.offset != 0:
-        raise NotImplementedError
-      reverse_index = numpy.empty( self.shape[axis], dtype=int )
-      reverse_index[:] = -1
-      reverse_index[index] = numpy.arange( len(index) )
-      globaldofs = {}
-      localdofs = {}
-      for trans, dofs in self.dofmap.dofmap.items():
-        newdofs = reverse_index[dofs]
-        keep = newdofs != -1
-        globaldofs[trans] = newdofs[keep]
-        localdofs[trans], = numpy.where(keep)
-      strlen = '~%d'%len(index)
-      dofmap = DofMap( globaldofs, axis=strlen, target=len(index), side=self.dofmap.side )
-      index = DofMap( localdofs, axis=self.dofmap.shape[0], target=strlen, side=self.dofmap.side )
-    else:
-      dofmap = self.dofmap
-    return inflate( take( self.func, index, axis ), dofmap, self.axis )
+    if axis != self.axis:
+      return inflate( take( self.func, index, axis ), self.dofmap, self.length, self.axis )
+    if index == self.dofmap:
+      return self.func
+    assert index.isconstant
+    index, = index.eval()
+    renumber = numpy.empty( self.shape[axis], dtype=int )
+    renumber[:] = -1
+    renumber[index] = numpy.arange( len(index) )
+    select = take( renumber != -1, self.dofmap, axis=0 )
+    dofmap = take( renumber, take( self.dofmap, select, axis=0 ), axis=0 )
+    return inflate( take( self.func, select, axis ), dofmap, len(index), self.axis )
 
   def _diagonalize( self ):
     assert self.axis < self.ndim-1
-    return inflate( diagonalize(self.func), self.dofmap, self.axis )
+    return inflate( diagonalize(self.func), self.dofmap, self.length, self.axis )
 
   def _sum( self, axis ):
     arr = sum( self.func, axis )
     if axis == self.axis:
       return arr
-    return inflate( arr, self.dofmap, self.axis-(axis<self.axis) )
+    return inflate( arr, self.dofmap, self.length, self.axis-(axis<self.axis) )
 
   def _repeat( self, length, axis ):
     if axis != self.axis:
-      return inflate( repeat(self.func,length,axis), self.dofmap, self.axis )
+      return inflate( repeat(self.func,length,axis), self.dofmap, self.length, self.axis )
 
   def _revolved( self ):
-    return inflate( revolved(self.func), self.dofmap, self.axis )
+    return inflate( revolved(self.func), self.dofmap, self.length, self.axis )
 
   def _edit( self, op ):
-    return inflate( op(self.func), op(self.dofmap), self.axis )
+    return inflate( op(self.func), op(self.dofmap), self.length, self.axis )
 
-class Diagonalize( ArrayFunc ):
+class Diagonalize( Array ):
   'diagonal matrix'
 
   def __init__( self, func ):
@@ -2162,7 +2192,7 @@ class Diagonalize( ArrayFunc ):
     assert n != 1
     shape = func.shape + (n,)
     self.func = func
-    ArrayFunc.__init__( self, args=[func] if isinstance(func,ArrayFunc) else [], shape=shape )
+    Array.__init__( self, args=[func] if isinstance(func,Array) else [], shape=shape, dtype=func.dtype )
 
   def evalf( self, arr=None ):
     assert arr is None or arr.ndim == self.ndim
@@ -2191,6 +2221,14 @@ class Diagonalize( ArrayFunc ):
   def _multiply( self, other ):
     return diagonalize( self.func * takediag( other ) )
 
+  def _dot( self, other, axes ):
+    faxes = [ axis for axis in axes if axis < self.ndim-2 ]
+    if len(faxes) < len(axes): # one of or both diagonalized axes are summed
+      if len(axes) - len(faxes) == 2:
+        faxes.append( self.func.ndim-1 )
+      return dot( self.func, takediag(other), faxes )
+    return diagonalize( dot( self.func, takediag(other), axes ) )
+
   def _add( self, other ):
     if isinstance( other, Diagonalize ):
       return diagonalize( self.func + other.func )
@@ -2210,7 +2248,13 @@ class Diagonalize( ArrayFunc ):
   def _takediag( self ):
     return self.func
 
-class Repeat( ArrayFunc ):
+  def _take( self, index, axis ):
+    if axis < self.ndim-2:
+      return diagonalize( take( self.func, index, axis ) )
+    diag = diagonalize( take( self.func, index, self.func.ndim-1 ) )
+    return inflate( diag, index, self.func.shape[-1], self.ndim-1 if axis == self.ndim-2 else self.ndim-2 )
+
+class Repeat( Array ):
   'repeat singleton axis'
 
   def __init__( self, func, length, axis ):
@@ -2223,7 +2267,7 @@ class Repeat( ArrayFunc ):
     self.length = length
     shape = func.shape[:axis] + (length,) + func.shape[axis+1:]
     self.axis_shiftright = axis-func.ndim
-    ArrayFunc.__init__( self, args=[func] if isinstance(func,ArrayFunc) else [], shape=shape )
+    Array.__init__( self, args=[func] if isinstance(func,Array) else [], shape=shape, dtype=func.dtype )
 
   def evalf( self, arr=None ):
     assert arr is None or arr.ndim == self.ndim+1
@@ -2234,7 +2278,9 @@ class Repeat( ArrayFunc ):
 
   def _get( self, axis, item ):
     if axis == self.axis:
-      assert 0 <= item < self.length
+      assert 0 <= item
+      if numeric.isint(self.length):
+        assert item < self.length
       return get( self.func, axis, 0 )
     return repeat( get( self.func, axis, item ), self.length, self.axis-(axis<self.axis) )
 
@@ -2273,15 +2319,14 @@ class Repeat( ArrayFunc ):
     if axis != self.axis:
       return aslength( cross( self.func, other, axis ), self.length, self.axis )
 
-  def _dot( self, other, naxes ):
-    axes = range( self.ndim-naxes, self.ndim )
+  def _dot( self, other, axes ):
     func = dot( self.func, other, axes )
     if other.shape[self.axis] != 1:
       assert other.shape[self.axis] == self.length
       return func
-    if self.axis >= self.ndim - naxes:
+    if self.axis in axes:
       return func * self.length
-    return aslength( func, self.length, self.axis )
+    return aslength( func, self.length, self.axis - _sum( axis < self.axis for axis in axes ) )
 
   def _edit( self, op ):
     return repeat( op(self.func), self.length, self.axis )
@@ -2293,12 +2338,12 @@ class Repeat( ArrayFunc ):
       return aslength( aslength( concatenate( [self.func,other.func], axis ), self.length, self.axis ), other.length, other.axis )
     return aslength( concatenate( [self.func,other], axis ), self.length, self.axis )
 
-class Guard( ArrayFunc ):
+class Guard( Array ):
   'bar all simplifications'
 
   def __init__( self, fun ):
     self.fun = fun
-    ArrayFunc.__init__( self, args=[fun], shape=fun.shape )
+    Array.__init__( self, args=[fun], shape=fun.shape, dtype=fun.dtype )
 
   @staticmethod
   def evalf( dat ):
@@ -2310,13 +2355,13 @@ class Guard( ArrayFunc ):
   def _derivative( self, var, axes, seen ):
     return Guard( derivative(self.fun,var,axes,seen) )
 
-class TrigNormal( ArrayFunc ):
+class TrigNormal( Array ):
   'cos, sin'
 
   def __init__( self, angle ):
     assert angle.ndim == 0
     self.angle = angle
-    ArrayFunc.__init__( self, args=[angle], shape=(2,) )
+    Array.__init__( self, args=[angle], shape=(2,), dtype=float )
 
   def _derivative( self, var, axes, seen ):
     return TrigTangent( self.angle )[(...,)+(_,)*len(axes)] * derivative( self.angle, var, axes, seen )
@@ -2324,8 +2369,8 @@ class TrigNormal( ArrayFunc ):
   def evalf( self, angle ):
     return numpy.array([ numpy.cos(angle), numpy.sin(angle) ]).T
 
-  def _dot( self, other, naxes ):
-    assert naxes == 1
+  def _dot( self, other, axes ):
+    assert axes == (0,)
     if isinstance( other, (TrigTangent,TrigNormal) ) and self.angle == other.angle:
       return numpy.array( 1 if isinstance(other,TrigNormal) else 0 )
 
@@ -2335,13 +2380,13 @@ class TrigNormal( ArrayFunc ):
   def _edit( self, op ):
     return TrigNormal( edit(self.angle,op) )
 
-class TrigTangent( ArrayFunc ):
+class TrigTangent( Array ):
   '-sin, cos'
 
   def __init__( self, angle ):
     assert angle.ndim == 0
     self.angle = angle
-    ArrayFunc.__init__( self, args=[angle], shape=(2,) )
+    Array.__init__( self, args=[angle], shape=(2,), dtype=float )
 
   def _derivative( self, var, axes, seen ):
     return -TrigNormal( self.angle )[(...,)+(_,)*len(axes)] * derivative( self.angle, var, axes, seen )
@@ -2349,8 +2394,8 @@ class TrigTangent( ArrayFunc ):
   def evalf( self, angle ):
     return numpy.array([ -numpy.sin(angle), numpy.cos(angle) ]).T
 
-  def _dot( self, other, naxes ):
-    assert naxes == 1
+  def _dot( self, other, axes ):
+    assert axes == (0,)
     if isinstance( other, (TrigTangent,TrigNormal) ) and self.angle == other.angle:
       return numpy.array( 1 if isinstance(other,TrigTangent) else 0 )
 
@@ -2360,7 +2405,20 @@ class TrigTangent( ArrayFunc ):
   def _edit( self, op ):
     return TrigTangent( edit(self.angle,op) )
 
-class DerivativeTargetBase( ArrayFunc ):
+class Find( Array ):
+  'indices of boolean index vector'
+
+  def __init__( self, where ):
+    assert isarray(where) and where.ndim == 1 and where.dtype == bool
+    Array.__init__( self, args=[where], shape=['~{}'.format(where.shape[0])], dtype=int )
+
+  def evalf( self, where ):
+    assert where.shape[0] == 1
+    where, = where
+    index, = where.nonzero()
+    return index[_]
+
+class DerivativeTargetBase( Array ):
   'base class for derivative targets'
 
   pass
@@ -2369,7 +2427,7 @@ class DerivativeTarget( DerivativeTargetBase ):
   'helper class for computing derivatives'
 
   def __init__( self, shape ):
-    DerivativeTargetBase.__init__( self, args=[], shape=shape )
+    DerivativeTargetBase.__init__( self, args=[], shape=shape, dtype=float )
 
   def evalf( self ):
     raise ValueError( 'unwrap {!r} before evaluation'.format( self ) )
@@ -2384,7 +2442,7 @@ class DerivativeTarget( DerivativeTargetBase ):
         result = result * align( eye( self.shape[axis] ), ( axis, self.ndim+i ), self.ndim+len(axes) )
       return result
     else:
-      return _zeros( self.shape+_taketuple(var.shape,axes) )
+      return zeros( self.shape+_taketuple(var.shape,axes) )
 
 class LocalCoords( DerivativeTargetBase ):
   'trivial func'
@@ -2393,7 +2451,7 @@ class LocalCoords( DerivativeTargetBase ):
     'constructor'
 
     self.side = side
-    DerivativeTargetBase.__init__( self, args=[POINTS,TransformChain(side,ndims)], shape=[ndims] )
+    DerivativeTargetBase.__init__( self, args=[POINTS,TransformChain(side,ndims)], shape=[ndims], dtype=float )
 
   def evalf( self, points, trans ):
     'evaluate'
@@ -2407,7 +2465,7 @@ class LocalCoords( DerivativeTargetBase ):
       return eye( ndims ) if self.shape[0] == ndims \
         else Transform( self.shape[0], ndims, self.side )
     else:
-      return _zeros( self.shape+_taketuple(var.shape,axes) )
+      return zeros( self.shape+_taketuple(var.shape,axes) )
 
   def _opposite( self ):
     ndims, = self.shape
@@ -2416,11 +2474,11 @@ class LocalCoords( DerivativeTargetBase ):
 
 # CIRCULAR SYMMETRY
 
-class RevolutionAngle( ArrayFunc ):
+class RevolutionAngle( Array ):
   'scalar with a 2pi gradient in highest local dimension'
 
   def __init__( self ):
-    ArrayFunc.__init__( self, args=[], shape=() )
+    Array.__init__( self, args=[], shape=(), dtype=float )
 
   def evalf( self ):
     return numpy.zeros( [1] )
@@ -2432,15 +2490,15 @@ class RevolutionAngle( ArrayFunc ):
       lgrad[-1] = 2*numpy.pi
       return lgrad
     else:
-      return _zeros( _taketuple(var.shape,axes) )
+      return zeros( _taketuple(var.shape,axes) )
 
-class Revolved( ArrayFunc ):
+class Revolved( Array ):
   'implement an extra local dimension with zero gradient'
 
   def __init__( self, func ):
-    assert _isfunc( func )
+    assert isarray( func )
     self.func = func
-    ArrayFunc.__init__( self, args=[func], shape=func.shape )
+    Array.__init__( self, args=[func], shape=func.shape, dtype=func.dtype )
 
   @property
   def blocks( self ):
@@ -2452,31 +2510,47 @@ class Revolved( ArrayFunc ):
   def _derivative( self, var, axes, seen ):
     if isinstance( var, LocalCoords ):
       newvar = LocalCoords( var.shape[0]-1 )
-      return revolved( concatenate( [ derivative(self.func,newvar,axes,seen), _zeros(self.func.shape+(1,)) ], axis=-1 ) )
+      return revolved( concatenate( [ derivative(self.func,newvar,axes,seen), zeros(self.func.shape+(1,)) ], axis=-1 ) )
     else:
       result = derivative( self.func, var, axes, seen )
-      assert _iszero( result )
+      assert iszero( result )
       return result
 
   def _edit( self, op ):
     return revolved( op(self.func) )
 
 
-# AUXILIARY FUNCTIONS
+# AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 
-def _jointshape( *shapes ):
+_max = max
+_min = min
+_sum = sum
+_abs = abs
+_ascending = lambda arg: ( numpy.diff(arg) > 0 ).all()
+_normdims = lambda ndim, shapes: tuple( numeric.normdim(ndim,sh) for sh in shapes )
+_taketuple = lambda values, index: tuple( values[i] for i in index )
+_issorted = lambda a, b: not isevaluable(b) or isevaluable(a) and id(a) <= id(b)
+_sorted = lambda a, b: (a,b) if _issorted(a,b) else (b,a)
+
+def _jointshape( shape, *shapes ):
   'determine shape after singleton expansion'
 
-  ndim = len(shapes[0])
-  combshape = [1] * ndim
-  for shape in shapes:
-    assert len(shape) == ndim
-    for i, sh in enumerate(shape):
-      if combshape[i] == 1:
-        combshape[i] = sh
-      else:
-        assert sh in ( combshape[i], 1 ), 'incompatible shapes: %s' % ', '.join( str(sh) for sh in shapes )
-  return tuple(combshape)
+  if not shapes:
+    return tuple(shape)
+  other_shape, *remaining_shapes = shapes
+  assert len(shape) == len(other_shape)
+  combined_shape = [ sh1 if sh2 == 1 else sh2 for sh1, sh2 in zip( shape, other_shape ) ]
+  assert all( shc == sh1 for shc, sh1 in zip( combined_shape, shape ) if sh1 != 1 )
+  return _jointshape( combined_shape, *remaining_shapes )
+
+def _jointdtype( *dtypes ):
+  'determine joint dtype'
+
+  type_order = bool, int, float
+  kind_order = 'bif'
+  itype = _max( kind_order.index(dtype.kind) if isinstance(dtype,numpy.dtype)
+           else type_order.index(dtype) for dtype in dtypes )
+  return type_order[itype]
 
 def _matchndim( *arrays ):
   'introduce singleton dimensions to match ndims'
@@ -2521,33 +2595,21 @@ def _findcommon( a, b ):
 
   a1, a2 = a
   b1, b2 = b
-  if _equal( a1, b1 ):
+  if a1 == b1:
     return a1, (a2,b2)
-  if _equal( a1, b2 ):
+  if a1 == b2:
     return a1, (a2,b1)
-  if _equal( a2, b1 ):
+  if a2 == b1:
     return a2, (a1,b2)
-  if _equal( a2, b2 ):
+  if a2 == b2:
     return a2, (a1,b1)
 
-_max = max
-_min = min
-_sum = sum
-_isfunc = lambda arg: isinstance( arg, ArrayFunc )
-_isevaluable = lambda arg: isinstance( arg, Evaluable )
-_isscalar = lambda arg: asarray(arg).ndim == 0
-_ascending = lambda arg: ( numpy.diff(arg) > 0 ).all()
-_iszero = lambda arg: isinstance( arg, Zeros ) or isinstance( arg, numpy.ndarray ) and numpy.all( arg == 0 )
-_isunit = lambda arg: not _isfunc(arg) and ( numpy.asarray(arg) == 1 ).all()
-_subsnonesh = lambda shape: tuple( 1 if sh is None else sh for sh in shape )
-_normdims = lambda ndim, shapes: tuple( numeric.normdim(ndim,sh) for sh in shapes )
-_zeros = lambda shape: Zeros( shape )
-_zeros_like = lambda arr: _zeros( arr.shape )
-_taketuple = lambda values, index: tuple( values[i] for i in index )
-
-# for consistency in Add and Multiply arguments: the smallest Evaluable first
-_issorted = lambda a, b: not isinstance(b,Evaluable) or isinstance(a,Evaluable) and id(a) <= id(b)
-_sorted = lambda a, b: (a,b) if _issorted(a,b) else (b,a)
+def _invtrans( trans ):
+  trans = numpy.asarray(trans)
+  assert trans.dtype == int
+  invtrans = numpy.empty( len(trans), dtype=int )
+  invtrans[trans] = numpy.arange(len(trans))
+  return invtrans
 
 def _call( obj, attr, *args ):
   'call method if it exists, return None otherwise'
@@ -2562,77 +2624,83 @@ def _norm_and_sort( ndim, args ):
   assert _ascending( normargs ) # strict
   return normargs
 
-def _jointdtype( *args ):
-  'determine joint dtype'
+def _unpack( funcsp ):
+  for axes, func in funcsp.blocks:
+    dofax = axes[0]
+    if isinstance( func, Align ):
+      func = func.func
+    for trans, std in func.stdmap.items():
+      dofs, = dofax.eval( trans )
+      yield trans, dofs, std
 
-  if any( asarray(arg).dtype == float for arg in args ):
-    return float
-  return int
+# FUNCTIONS
 
-def _dtypestr( arg ):
-  if arg.dtype == int:
-    return 'int'
-  if arg.dtype == float:
-    return 'double'
-  raise Exception( 'unknown dtype %s' % arg.dtype )
-
-def _equal( arg1, arg2 ):
-  'compare two objects'
-
-  if arg1 is arg2:
-    return True
-  if isinstance( arg1, dict ) or isinstance( arg2, dict ):
-    return False
-  if isinstance( arg1, (list,tuple) ):
-    if not isinstance( arg2, (list,tuple) ) or len(arg1) != len(arg2):
-      return False
-    return all( _equal(v1,v2) for v1, v2 in zip( arg1, arg2 ) )
-  if not isinstance( arg1, numpy.ndarray ) and not isinstance( arg2, numpy.ndarray ):
-    return arg1 == arg2
-  elif isinstance( arg1, numpy.ndarray ) and isinstance( arg2, numpy.ndarray ):
-    return arg1.shape == arg2.shape and numpy.all( arg1 == arg2 )
-  else:
-    return False
+isarray = lambda arg: isinstance( arg, Array )
+iszero = lambda arg: isinstance( arg, Zeros )
+isevaluable = lambda arg: isinstance( arg, Evaluable )
+zeros = lambda shape, dtype=float: Zeros( shape, dtype )
+zeros_like = lambda arr: zeros( arr.shape, _jointdtype(arr.dtype) )
+grad = lambda arg, coords, ndims=0: asarray( arg ).grad( coords, ndims )
+symgrad = lambda arg, coords, ndims=0: asarray( arg ).symgrad( coords, ndims )
+div = lambda arg, coords, ndims=0: asarray( arg ).div( coords, ndims )
+negative = lambda arg: multiply( arg, -1 )
+nsymgrad = lambda arg, coords: ( symgrad(arg,coords) * coords.normal() ).sum(-1)
+ngrad = lambda arg, coords: ( grad(arg,coords) * coords.normal() ).sum(-1)
+sin = lambda arg: pointwise( [arg], numpy.sin, cos )
+cos = lambda arg: pointwise( [arg], numpy.cos, lambda x: -sin(x) )
+trignormal = lambda angle: TrigNormal( asarray(angle) )
+trigtangent = lambda angle: TrigTangent( asarray(angle) )
+rotmat = lambda arg: asarray([ trignormal(arg), trigtangent(arg) ])
+tan = lambda arg: pointwise( [arg], numpy.tan, lambda x: cos(x)**-2 )
+arcsin = lambda arg: pointwise( [arg], numpy.arcsin, lambda x: reciprocal(sqrt(1-x**2)) )
+arccos = lambda arg: pointwise( [arg], numpy.arccos, lambda x: -reciprocal(sqrt(1-x**2)) )
+exp = lambda arg: pointwise( [arg], numpy.exp, exp )
+ln = lambda arg: pointwise( [arg], numpy.log, reciprocal )
+mod = lambda arg1, arg2: pointwise( [arg1,arg2], numpy.mod, dtype=_jointdtype(asarray(arg1).dtype,asarray(arg2).dtype) )
+log2 = lambda arg: ln(arg) / ln(2)
+log10 = lambda arg: ln(arg) / ln(10)
+sqrt = lambda arg: power( arg, .5 )
+reciprocal = lambda arg: power( arg, -1 )
+argmin = lambda arg, axis: pointwise( bringforward(arg,axis), lambda *x: numpy.argmin(numeric.stack(x),axis=0), zeros_like, dtype=int )
+argmax = lambda arg, axis: pointwise( bringforward(arg,axis), lambda *x: numpy.argmax(numeric.stack(x),axis=0), zeros_like, dtype=int )
+arctan2 = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.arctan2, lambda x: stack([x[1],-x[0]]) / sum(power(x,2),0) )
+greater = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.greater, zeros_like, dtype=bool )
+equal = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.equal, zeros_like, dtype=bool )
+less = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.less, zeros_like, dtype=bool )
+min = lambda arg1, *args: choose( argmin( arg1 if not args else (arg1,)+args, axis=0 ), arg1 if not args else (arg1,)+args )
+max = lambda arg1, *args: choose( argmax( arg1 if not args else (arg1,)+args, axis=0 ), arg1 if not args else (arg1,)+args )
+abs = lambda arg: arg * sign(arg)
+sinh = lambda arg: .5 * ( exp(arg) - exp(-arg) )
+cosh = lambda arg: .5 * ( exp(arg) + exp(-arg) )
+tanh = lambda arg: 1 - 2. / ( exp(2*arg) + 1 )
+arctanh = lambda arg: .5 * ( ln(1+arg) - ln(1-arg) )
+piecewise = lambda level, intervals, *funcs: choose( sum( greater( insert(level,-1), intervals ), -1 ), funcs )
+trace = lambda arg, n1=-2, n2=-1: sum( takediag( arg, n1, n2 ), -1 )
+eye = lambda n: diagonalize( expand( [1.], (n,) ) )
+norm2 = lambda arg, axis=-1: sqrt( sum( multiply( arg, arg ), axis ) )
+heaviside = lambda arg: choose( greater( arg, 0 ), [0.,1.] )
+divide = lambda arg1, arg2: multiply( arg1, reciprocal(arg2) )
+subtract = lambda arg1, arg2: add( arg1, negative(arg2) )
+mean = lambda arg: .5 * ( arg + opposite(arg) )
+jump = lambda arg: opposite(arg) - arg
+add_T = lambda arg, axes=(-2,-1): swapaxes( arg, axes ) + arg
+edit = lambda arg, f: arg._edit(f) if isevaluable(arg) else arg
+blocks = lambda arg: asarray(arg).blocks
 
 def asarray( arg ):
-  'convert to ArrayFunc or numpy.ndarray'
+  'convert to Array'
 
-  if _isfunc(arg):
+  if isarray(arg):
     return arg
 
   if isinstance( arg, numpy.ndarray ) or not util.isiterable( arg ):
     array = numpy.asarray( arg )
     assert array.dtype != object
     if numpy.all( array == 0 ):
-      return _zeros( array.shape )
-    return array
+      return zeros_like( array )
+    return Constant( array )
 
-  assert isinstance( arg, (list,tuple) ) # be strict to avoid infinite loops
-
-  args = [ asarray(a) for a in arg ]
-  ndim = _max( arg.ndim for arg in args )
-  args = [ arg[(_,)*(ndim-arg.ndim)] for arg in args ]
-
-  if all( isinstance( arg, numpy.ndarray ) for arg in args ):
-    array = numpy.array( args )
-    assert array.dtype != object
-    if numpy.all( array == 0 ):
-      return _zeros( array.shape )
-    return array
-
-  return stack( args, axis=0 )
-
-def asfunc( obj ):
-  'convert to Evaluable'
-  return obj if isinstance( obj, Evaluable ) \
-    else asarray( obj ) # TODO make asarray return ArrayFunc always
-
-def _asarray( arg ):
-  warnings.warn( '_asarray is deprecated, use asarray instead', DeprecationWarning )
-  return asarray( arg )
-
-
-# FUNCTIONS
+  return stack( arg, axis=0 )
 
 def insert( arg, n ):
   'insert axis'
@@ -2655,7 +2723,7 @@ def chain( funcs ):
 
   funcs = [ asarray(func) for func in funcs ]
   shapes = [ func.shape[0] for func in funcs ]
-  return [ concatenate( [ func if i==j else _zeros( (sh,) + func.shape[1:] )
+  return [ concatenate( [ func if i==j else zeros( (sh,) + func.shape[1:] )
              for j, sh in enumerate(shapes) ], axis=0 )
                for i, func in enumerate(funcs) ]
 
@@ -2745,11 +2813,8 @@ def get( arg, iax, item ):
   sh = arg.shape[iax]
 
   if numeric.isint( sh ):
-    item = 0 if sh == 1 \
-      else numeric.normdim( sh, item )
-
-  if not _isfunc( arg ):
-    return numeric.get( arg, iax, item )
+    item = numeric.normdim( sh, item )
+  assert item >= 0
 
   retval = _call( arg, '_get', iax, item )
   if retval is not None:
@@ -2770,9 +2835,6 @@ def align( arg, axes, ndim ):
 
   if util.allequal( axes, range(ndim) ):
     return arg
-
-  if not _isfunc( arg ):
-    return numeric.align( arg, axes, ndim )
 
   retval = _call( arg, '_align', axes, ndim )
   if retval is not None:
@@ -2804,42 +2866,10 @@ def jacobian( geom, ndims ):
     else abs( determinant( ( J[:,:,_] * J[:,_,:] ).sum(0) ) )**.5
   return detJ
 
-def grad( arg, coords, ndims=0 ):
-  'local derivative'
-
-  arg = asarray( arg )
-  if _isfunc( arg ):
-    return arg.grad( coords, ndims )
-  return _zeros( arg.shape + coords.shape )
-
-def symgrad( arg, coords, ndims=0 ):
-  'symmetric gradient'
-
-  if _isfunc( arg ):
-    return arg.symgrad( coords, ndims )
-  return _zeros( arg.shape + coords.shape )
-
-def div( arg, coords, ndims=0 ):
-  'gradient'
-
-  if _isfunc( arg ):
-    return arg.div( coords, ndims )
-  assert arg.shape[-1:] == coords.shape
-  return _zeros( arg.shape[:-1] )
-
-def sum( arg, axis=None, axes=None ):
+def sum( arg, axis=None ):
   'sum over one or multiply axes'
 
-  if axes is not None:
-    assert axis is None, 'axes and axis cannot be simultaneously specified'
-    warnings.warn( 'The axes argument is deprecated; please use axis instead', DeprecationWarning, stacklevel=2 )
-    axis = axes
-
-  if axis is None:
-    warnings.warn( '''Please specify sum(...,-1) explicitly for summing over
-  the last axis. Summation without an axis argument will be deprecated in
-  nutils 3.0, to transition to numpy consistent behaviour in nutils 4.0''', DeprecationWarning, stacklevel=2 )
-    axis = -1
+  assert axis is not None
 
   arg = asarray( arg )
 
@@ -2848,16 +2878,12 @@ def sum( arg, axis=None, axes=None ):
       return arg
     axis = _norm_and_sort( arg.ndim, axis )
     assert numpy.all( numpy.diff(axis) > 0 ), 'duplicate axes in sum'
-    arg = sum( arg, axis[1:] )
-    axis = axis[0]
-  else:
-    axis = numeric.normdim( arg.ndim, axis )
+    return sum( sum( arg, axis[1:] ), axis[0] )
+
+  axis = numeric.normdim( arg.ndim, axis )
 
   if arg.shape[axis] == 1:
     return get( arg, axis, 0 )
-
-  if not _isfunc( arg ):
-    return arg.sum( axis )
 
   retval = _call( arg, '_sum', axis )
   if retval is not None:
@@ -2872,55 +2898,49 @@ def dot( arg1, arg2, axes ):
   arg1, arg2 = _matchndim( arg1, arg2 )
   shape = _jointshape( arg1.shape, arg2.shape )
 
-  if util.isiterable(axes):
-    if len(axes) == 0:
-      return arg1 * arg2
-    axes = _norm_and_sort( len(shape), axes )
-    assert numpy.all( numpy.diff(axes) > 0 ), 'duplicate axes in sum'
-  else:
-    axes = numeric.normdim( len(shape), axes ),
+  if not util.isiterable(axes):
+    axes = axes,
 
-  if _iszero( arg1 ) or _iszero( arg2 ):
-    return _zeros([ s for i, s in enumerate(shape) if i not in axes ])
+  if len(axes) == 0:
+    return arg1 * arg2
 
-  if _isunit( arg1 ):
-    return sum( expand( arg2, shape ), axes )
+  axes = _norm_and_sort( len(shape), axes )
+  assert numpy.all( numpy.diff(axes) > 0 ), 'duplicate axes in sum'
 
-  if _isunit( arg2 ):
-    return sum( expand( arg1, shape ), axes )
+  dotshape = tuple( s for i, s in enumerate(shape) if i not in axes )
 
-  if not _isfunc(arg1) and not _isfunc(arg2):
-    return numeric.contract( arg1, arg2, axes )
+  if iszero( arg1 ) or iszero( arg2 ):
+    return zeros( dotshape )
 
   for i, axis in enumerate( axes ):
     if arg1.shape[axis] == 1 or arg2.shape[axis] == 1:
-      arg1 = sum( arg1, axis )
-      arg2 = sum( arg2, axis )
       axes = axes[:i] + tuple( axis-1 for axis in axes[i+1:] )
-      return dot( arg1, arg2, axes )
+      return dot( sum(arg1,axis), sum(arg2,axis), axes )
+
+  for axis, sh1 in enumerate(arg1.shape):
+    if sh1 == 1 and arg2.shape[axis] == 1:
+      assert axis not in axes
+      dotaxes = [ ax - (ax>axis) for ax in axes ]
+      dotargs = dot( sum(arg1,axis), sum(arg2,axis), dotaxes )
+      axis -= _sum( ax<axis for ax in axes )
+      return align( dotargs, [ ax + (ax>=axis) for ax in range(dotargs.ndim) ], dotargs.ndim+1 )
+
+  retval = _call( arg1, '_dot', arg2, axes )
+  if retval is not None:
+    assert retval.shape == dotshape, 'bug in %s._dot' % arg1
+    return retval
+
+  retval = _call( arg2, '_dot', arg1, axes )
+  if retval is not None:
+    assert retval.shape == dotshape, 'bug in %s._dot' % arg2
+    return retval
 
   shuffle = list( range( len(shape) ) )
   for ax in reversed( axes ):
     shuffle.append( shuffle.pop(ax) )
 
-  arg1 = transpose( arg1, shuffle )
-  arg2 = transpose( arg2, shuffle )
-
-  naxes = len( axes )
-  dotshape = tuple( shape[i] for i in shuffle[:-naxes] )
-
-  retval = _call( arg1, '_dot', arg2, naxes )
-  if retval is not None:
-    assert retval.shape == dotshape, 'bug in %s._dot' % arg1
-    return retval
-
-  retval = _call( arg2, '_dot', arg1, naxes )
-  if retval is not None:
-    assert retval.shape == dotshape, 'bug in %s._dot' % arg2
-    return retval
-
-  a, b = _sorted( arg1, arg2 )
-  return Dot( a, b, naxes )
+  a, b = _sorted( transpose(arg1,shuffle), transpose(arg2,shuffle) )
+  return Dot( a, b, len(axes) )
 
 def determinant( arg, axes=(-2,-1) ):
   'determinant'
@@ -2937,9 +2957,6 @@ def determinant( arg, axes=(-2,-1) ):
   trans = list(range(ax1)) + [-2] + list(range(ax1,ax2-1)) + [-1] + list(range(ax2-1,arg.ndim-2))
   arg = align( arg, trans, arg.ndim )
   shape = arg.shape[:-2]
-
-  if not _isfunc( arg ):
-    return numpy.linalg.det( arg )
 
   retval = _call( arg, '_determinant' )
   if retval is not None:
@@ -2962,9 +2979,6 @@ def inverse( arg, axes=(-2,-1) ):
 
   trans = list(range(ax1)) + [-2] + list(range(ax1,ax2-1)) + [-1] + list(range(ax2-1,arg.ndim-2))
   arg = align( arg, trans, arg.ndim )
-
-  if not _isfunc( arg ):
-    return numpy.linalg.inv( arg ).transpose( trans )
 
   retval = _call( arg, '_inverse' )
   if retval is not None:
@@ -2991,9 +3005,6 @@ def takediag( arg, ax1=-2, ax2=-1 ):
 
   assert arg.shape[-1] == arg.shape[-2]
   shape = arg.shape[:-1]
-
-  if not _isfunc( arg ):
-    return numeric.takediag( arg )
 
   retval = _call( arg, '_takediag' )
   if retval is not None:
@@ -3075,9 +3086,7 @@ def derivative( func, var, axes, seen=None ):
     seen = {}
   func = asarray( func )
   shape = _taketuple( var.shape, axes )
-  if not _isfunc( func ):
-    result = _zeros( func.shape + shape )
-  elif func in seen:
+  if func in seen:
     result = seen[func]
   else:
     result = func._derivative( var, axes, seen )
@@ -3100,7 +3109,7 @@ def kronecker( arg, axis, length, pos ):
 
   axis = numeric.normdim( arg.ndim+1, axis )
   arg = insert( arg, axis )
-  args = [ _zeros_like(arg) ] * length
+  args = [ zeros_like(arg) ] * length
   args[pos] = arg
   return concatenate( args, axis=axis )
 
@@ -3127,7 +3136,7 @@ def concatenate( args, axis=0 ):
   axis = numeric.normdim( args[0].ndim, axis )
   i = 0
 
-  if all( _iszero(arg) for arg in args ):
+  if all( iszero(arg) for arg in args ):
     shape = list( args[0].shape )
     axis = numeric.normdim( len(shape), axis )
     for arg in args[1:]:
@@ -3138,17 +3147,14 @@ def concatenate( args, axis=0 ):
           shape[i] = arg.shape[i]
         else:
           assert arg.shape[i] in (shape[i],1)
-    return _zeros( shape )
+    return zeros( shape, dtype=_jointdtype(*[arg.dtype for arg in args]) )
 
   while i+1 < len(args):
     arg1, arg2 = args[i:i+2]
-    if not _isfunc(arg1) and not _isfunc(arg2):
-      arg12 = numpy.concatenate( [ arg1, arg2 ], axis )
-    else:
-      arg12 = _call( arg1, '_concatenate', arg2, axis )
-      if arg12 is None:
-        i += 1
-        continue
+    arg12 = _call( arg1, '_concatenate', arg2, axis )
+    if arg12 is None:
+      i += 1
+      continue
     args = args[:i] + [arg12] + args[i+2:]
 
   if len(args) == 1:
@@ -3164,14 +3170,7 @@ def transpose( arg, trans=None ):
     assert not trans
     return arg
 
-  if trans is None:
-    invtrans = range( arg.ndim-1, -1, -1 )
-  else:
-    trans = _normdims( arg.ndim, trans )
-    assert util.allequal( sorted(trans), range(arg.ndim) )
-    invtrans = numpy.empty( arg.ndim, dtype=int )
-    invtrans[ numpy.asarray(trans) ] = numpy.arange( arg.ndim )
-
+  invtrans = range( arg.ndim-1, -1, -1 ) if trans is None else _invtrans( trans )
   return align( arg, invtrans, arg.ndim )
 
 def product( arg, axis ):
@@ -3183,9 +3182,6 @@ def product( arg, axis ):
 
   if arg.shape[axis] == 1:
     return get( arg, axis, 0 )
-
-  if not _isfunc( arg ):
-    return numpy.product( arg, axis )
 
   trans = list(range(axis)) + [-1] + list(range(axis,arg.ndim-1))
   aligned_arg = align( arg, trans, arg.ndim )
@@ -3200,13 +3196,15 @@ def product( arg, axis ):
 def choose( level, choices ):
   'choose'
 
-  if not _isfunc(level) and not any( _isfunc(choice) for choice in choices ):
-    return numpy.choose( level, choices )
-  level_choices = _matchndim( level, *choices )
-  if all( map( _iszero, level_choices[1:] ) ):
-    shape = _jointshape( *( a.shape for a in level_choices ) )
-    return _zeros( shape )
-  return Choose( level_choices[0], level_choices[1:] )
+  level, *choices = _matchndim( level, *choices )
+  shape = _jointshape( level.shape, *( choice.shape for choice in choices ) )
+  if all( map( iszero, choices ) ):
+    return zeros( shape )
+  retval = _call( level, '_choose', choices )
+  if retval is not None:
+    assert retval.shape == shape, 'bug in %s._choose' % level
+    return retval
+  return Choose( level, choices )
 
 def _condlist_to_level( *condlist ):
   level = 0
@@ -3220,9 +3218,9 @@ def _condlist_to_level( *condlist ):
 def select( condlist, choicelist, default=0 ):
   'select'
 
-  if not any(map(_isfunc, itertools.chain( condlist, choicelist, [default] ))):
-    return numpy.select( condlist, choicelist, default=default )
-  level = pointwise( condlist, _condlist_to_level, None )
+  if not any(map(isarray, itertools.chain( condlist, choicelist, [default] ))):
+    return asarray( numpy.select( condlist, choicelist, default=default ) )
+  level = pointwise( condlist, _condlist_to_level, dtype=int )
   return choose( level, (default,)+tuple(choicelist) )
 
 def cross( arg1, arg2, axis ):
@@ -3231,9 +3229,6 @@ def cross( arg1, arg2, axis ):
   arg1, arg2 = _matchndim( arg1, arg2 )
   shape = _jointshape( arg1.shape, arg2.shape )
   axis = numeric.normdim( len(shape), axis )
-
-  if not _isfunc(arg1) and not _isfunc(arg2):
-    return numeric.cross(arg1,arg2,axis)
 
   retval = _call( arg1, '_cross', arg2, axis )
   if retval is not None:
@@ -3256,16 +3251,14 @@ def outer( arg1, arg2=None, axis=0 ):
   axis = numeric.normdim( arg1.ndim, axis )
   return insert(arg1,axis+1) * insert(arg2,axis)
 
-def pointwise( args, evalf, deriv ):
+def pointwise( args, evalf, deriv=None, dtype=float ):
   'general pointwise operation'
 
   args = asarray( _matchndim(*args) )
-  if _isfunc(args):
-    retval = _call( args, '_pointwise', evalf, deriv )
-    if retval is not None:
-      return retval
-    return Pointwise( args, evalf, deriv )
-  return evalf( *args )
+  retval = _call( args, '_pointwise', evalf, deriv, dtype )
+  if retval is not None:
+    return retval
+  return Pointwise( args, evalf, deriv, dtype )
 
 def multiply( arg1, arg2 ):
   'multiply'
@@ -3273,16 +3266,7 @@ def multiply( arg1, arg2 ):
   arg1, arg2 = _matchndim( arg1, arg2 )
   shape = _jointshape( arg1.shape, arg2.shape )
 
-  if _isunit( arg1 ):
-    return expand( arg2, shape )
-
-  if _isunit( arg2 ):
-    return expand( arg1, shape )
-
-  if not _isfunc(arg1) and not _isfunc(arg2):
-    return numpy.multiply( arg1, arg2 )
-
-  if _equal( arg1, arg2 ):
+  if arg1 == arg2:
     return power( arg1, 2 )
 
   for idim, sh in enumerate( shape ):
@@ -3307,16 +3291,13 @@ def add( arg1, arg2 ):
   arg1, arg2 = _matchndim( arg1, arg2 )
   shape = _jointshape( arg1.shape, arg2.shape )
 
-  if _iszero( arg1 ):
+  if iszero( arg1 ):
     return expand( arg2, shape )
 
-  if _iszero( arg2 ):
+  if iszero( arg2 ):
     return expand( arg1, shape )
 
-  if not _isfunc(arg1) and not _isfunc(arg2):
-    return numpy.add( arg1, arg2 )
-
-  if _equal( arg1, arg2 ):
+  if arg1 == arg2:
     return arg1 * 2
 
   for idim, sh in enumerate( shape ):
@@ -3342,7 +3323,7 @@ def blockadd( *args ):
   for arg in args:
     key = []
     while isinstance( arg, Inflate ):
-      key.append( ( arg.dofmap, arg.axis ) )
+      key.append( ( arg.dofmap, arg.length, arg.axis ) )
       arg = arg.func
     inflates.setdefault( tuple(key), [] ).append( arg )
   # add inflate args with the same axis and dofmap, blockadd the remainder
@@ -3351,8 +3332,8 @@ def blockadd( *args ):
     if key is ():
       continue
     arg = functools.reduce( operator.add, values )
-    for dofmap, axis in reversed( key ):
-      arg = inflate( arg, dofmap, axis )
+    for dofmap, length, axis in reversed( key ):
+      arg = inflate( arg, dofmap, length, axis )
     args.append( arg )
   args.extend( inflates.get( (), () ) )
   if len( args ) == 1:
@@ -3366,14 +3347,8 @@ def power( arg, n ):
   arg, n = _matchndim( arg, n )
   shape = _jointshape( arg.shape, n.shape )
 
-  if not _isfunc( n ) and numpy.all( n == 1 ):
-    return expand( arg, shape )
-
-  if _iszero( n ):
+  if iszero( n ):
     return numpy.ones( shape )
-
-  if not _isfunc( arg ) and not _isfunc( n ):
-    return numpy.power( arg.astype(float), n )
 
   retval = _call( arg, '_power', n )
   if retval is not None:
@@ -3417,19 +3392,15 @@ def eig( arg, axes=(-2,-1), symmetric=False ):
   trans = list(range(ax1)) + [-2] + list(range(ax1,ax2-1)) + [-1] + list(range(ax2-1,arg.ndim-2))
   aligned_arg = align( arg, trans, arg.ndim )
 
-  # When it's an array calculate directly
-  if not _isfunc(aligned_arg):
-    eigval, eigvec = numpy.linalg.eigh( aligned_arg ) if symmetric else numpy.linalg.eig( aligned_arg )
+  # Use _call to see if the object has its own _eig function
+  ret = _call( aligned_arg, '_eig', symmetric )
+  if ret is not None:
+    # Check the shapes
+    eigval, eigvec = ret
   else:
-    # Use _call to see if the object has its own _eig function
-    ret = _call( aligned_arg, '_eig' )
-    if ret is not None:
-      # Check the shapes
-      eigval, eigvec = ret
-    else:
-      eig = Eig( aligned_arg, symmetric=symmetric )
-      eigval = array_from_tuple( eig, index=0, shape=aligned_arg.shape[:-1] )
-      eigvec = array_from_tuple( eig, index=1, shape=aligned_arg.shape )
+    eig = Eig( aligned_arg, symmetric=symmetric )
+    eigval = array_from_tuple( eig, index=0, shape=aligned_arg.shape[:-1], dtype=float )
+    eigvec = array_from_tuple( eig, index=1, shape=aligned_arg.shape, dtype=float )
 
   # Return the evaluable function objects in a tuple like numpy
   eigval = transpose( diagonalize( eigval ), trans )
@@ -3438,63 +3409,21 @@ def eig( arg, axes=(-2,-1), symmetric=False ):
   assert eigval.shape == arg.shape
   return eigval, eigvec
 
-def array_from_tuple( arrays, index, shape ):
+def array_from_tuple( arrays, index, shape, dtype ):
   if isinstance( arrays, Tuple ):
     array = arrays.items[index]
     assert array.shape == shape
+    assert array.dtype == dtype
     return array
   else:
-    return ArrayFromTuple( arrays, index, shape )
+    return ArrayFromTuple( arrays, index, shape, dtype )
 
 def revolved( arg ):
   arg = asarray( arg )
-  if not _isfunc( arg ) or _iszero( arg ):
-    return arg
   retval = _call( arg, '_revolved' )
   if retval is not None:
     return retval
   return Revolved( arg )
-
-negative = lambda arg: multiply( arg, -1 )
-nsymgrad = lambda arg, coords: ( symgrad(arg,coords) * coords.normal() ).sum(-1)
-ngrad = lambda arg, coords: ( grad(arg,coords) * coords.normal() ).sum(-1)
-sin = lambda arg: pointwise( [arg], numpy.sin, cos )
-cos = lambda arg: pointwise( [arg], numpy.cos, lambda x: -sin(x) )
-trignormal = lambda angle: TrigNormal( angle )
-trigtangent = lambda angle: TrigTangent( angle )
-rotmat = lambda arg: asarray([ trignormal(arg), trigtangent(arg) ])
-tan = lambda arg: pointwise( [arg], numpy.tan, lambda x: cos(x)**-2 )
-arcsin = lambda arg: pointwise( [arg], numpy.arcsin, lambda x: reciprocal(sqrt(1-x**2)) )
-arccos = lambda arg: pointwise( [arg], numpy.arccos, lambda x: -reciprocal(sqrt(1-x**2)) )
-exp = lambda arg: pointwise( [arg], numpy.exp, exp )
-ln = lambda arg: pointwise( [arg], numpy.log, reciprocal )
-log2 = lambda arg: ln(arg) / ln(2)
-log10 = lambda arg: ln(arg) / ln(10)
-sqrt = lambda arg: power( arg, .5 )
-reciprocal = lambda arg: power( arg, -1 )
-argmin = lambda arg, axis: pointwise( bringforward(arg,axis), lambda *x: numpy.argmin(numeric.stack(x),axis=0), _zeros_like )
-argmax = lambda arg, axis: pointwise( bringforward(arg,axis), lambda *x: numpy.argmax(numeric.stack(x),axis=0), _zeros_like )
-arctan2 = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.arctan2, lambda x: stack([x[1],-x[0]]) / sum(power(x,2),0) )
-greater = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.greater, _zeros_like )
-less = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.less, _zeros_like )
-min = lambda arg1, *args: choose( argmin( arg1 if not args else (arg1,)+args, axis=0 ), arg1 if not args else (arg1,)+args )
-max = lambda arg1, *args: choose( argmax( arg1 if not args else (arg1,)+args, axis=0 ), arg1 if not args else (arg1,)+args )
-abs = lambda arg: arg * sign(arg)
-sinh = lambda arg: .5 * ( exp(arg) - exp(-arg) )
-cosh = lambda arg: .5 * ( exp(arg) + exp(-arg) )
-tanh = lambda arg: 1 - 2. / ( exp(2*arg) + 1 )
-arctanh = lambda arg: .5 * ( ln(1+arg) - ln(1-arg) )
-piecewise = lambda level, intervals, *funcs: choose( sum( greater( insert(level,-1), intervals ), -1 ), funcs )
-trace = lambda arg, n1=-2, n2=-1: sum( takediag( arg, n1, n2 ), -1 )
-eye = lambda n: diagonalize( expand( [1.], (n,) ) )
-norm2 = lambda arg, axis=-1: sqrt( sum( multiply( arg, arg ), axis ) )
-heaviside = lambda arg: choose( greater( arg, 0 ), [0.,1.] )
-divide = lambda arg1, arg2: multiply( arg1, reciprocal(arg2) )
-subtract = lambda arg1, arg2: add( arg1, negative(arg2) )
-mean = lambda arg: .5 * ( arg + opposite(arg) )
-jump = lambda arg: opposite(arg) - arg
-add_T = lambda arg, axes=(-2,-1): swapaxes( arg, axes ) + arg
-edit = lambda arg, f: arg._edit(f) if _isevaluable(arg) else arg
 
 def swapaxes( arg, axes=(-2,-1) ):
   'swap axes'
@@ -3509,7 +3438,7 @@ def swapaxes( arg, axes=(-2,-1) ):
 def opposite( arg ):
   'evaluate jump over interface'
 
-  if not isinstance( arg, Evaluable ):
+  if not isevaluable( arg ):
     return arg
 
   retval = _call( arg, '_opposite' )
@@ -3521,10 +3450,10 @@ def opposite( arg ):
 def function( fmap, nmap, ndofs, ndims ):
   'create function on ndims-element'
 
-  axis = '~%d' % ndofs
-  func = Function( ndims, fmap, igrad=0, axis=axis )
-  dofmap = DofMap( nmap, axis=axis, target=ndofs )
-  return Inflate( func, dofmap, axis=0 )
+  length = '~%d' % ndofs
+  func = Function( ndims, fmap, igrad=0, length=length )
+  dofmap = DofMap( nmap, length=length )
+  return Inflate( func, dofmap, ndofs, axis=0 )
 
 def take( arg, index, axis ):
   'take index'
@@ -3532,67 +3461,61 @@ def take( arg, index, axis ):
   arg = asarray( arg )
   axis = numeric.normdim( arg.ndim, axis )
 
-  if isinstance( index, IndexVector ):
-    if index.shape[0] == 1:
-      return insert( get( arg, axis, index[0] ), axis )
-    retval = _call( arg, '_take', index, axis )
-    if retval is not None:
-      return retval
-    if arg.shape[axis] == 1:
-      return arg
-    return DofIndex( arg, axis, index ) if isinstance(arg,numpy.ndarray) else Take( arg, index, axis )
-
   if isinstance( index, slice ):
-    n = arg.shape[axis]
-    if n == 1:
-      assert index.stop != None and index.stop > 0
-      n = index.stop
-    index = numpy.arange( *index.indices(n) )
-  else:
-    index = numpy.asarray( index )
-    assert numpy.all( index >= 0 )
+    if numeric.isint( arg.shape[axis] ):
+      index = numpy.arange(arg.shape[axis])[index]
+    else:
+      assert index.start == None or index.start >= 0
+      assert index.step == None or index.step == 1
+      assert index.stop != None and index.stop >= 0
+      index = numpy.arange( index.start or 0, index.stop )
 
-  if numeric.isboolarray(index) and index.ndim == 1 and len(index) == arg.shape[axis]:
-    index, = numpy.where( index )
+  index = asarray( index )
+  assert index.ndim == 1
 
-  assert numeric.isintarray(index) and index.ndim == 1 and len(index) > 0
+  if index.dtype == bool:
+    assert index.shape[0] == arg.shape[axis]
+    index = find( index )
 
-  if len(index) == arg.shape[axis] and all( index == numpy.arange(arg.shape[axis]) ):
-    return arg
+  assert index.dtype == int
 
-  if arg.shape[axis] == 1:
-    return repeat( arg, index.shape[0], axis )
-
-  if len(index) == 1:
-    return insert( get( arg, axis, index[0] ), axis )
+  if index.isconstant:
+    index_, = index.eval()
+    if len(index_) == 1:
+      return insert( get( arg, axis, index_[0] ), axis )
+    if len(index_) == arg.shape[axis] and numpy.all(numpy.diff(index_) == 1):
+      return arg
 
   retval = _call( arg, '_take', index, axis )
   if retval is not None:
     return retval
 
-  if not _isfunc( arg ):
-    return numpy.take( arg, index, axis )
-
   return Take( arg, index, axis )
 
-def inflate( arg, dofmap, axis ):
+def find( arg ):
+  'find'
+
+  arg = asarray( arg )
+  assert arg.ndim == 1 and arg.dtype == bool
+
+  if arg.isconstant:
+    arg, = arg.eval()
+    index, = arg.nonzero()
+    return asarray( index )
+
+  return Find( arg )
+
+def inflate( arg, dofmap, length, axis ):
   'inflate'
 
   arg = asarray( arg )
   axis = numeric.normdim( arg.ndim, axis )
-  assert not isinstance( arg.shape[axis], int )
 
-  retval = _call( arg, '_inflate', dofmap, axis )
+  retval = _call( arg, '_inflate', dofmap, length, axis )
   if retval is not None:
     return retval
 
-  return Inflate( arg, dofmap, axis )
-
-def blocks( arg ):
-  arg = asarray( arg )
-  return arg.blocks if _isfunc( arg ) \
-    else [] if numpy.all( arg == 0 ) \
-    else [( Tuple( numpy.arange(n) for n in arg.shape ), arg )]
+  return Inflate( arg, dofmap, length, axis )
 
 def pointdata ( topo, ischeme, func=None, shape=None, value=None ):
   'point data'
@@ -3644,17 +3567,6 @@ def fdapprox( func, w, dofs, delta=1.e-5 ):
     dfunc_fd.append( (func( *x1 ) - func( *x0 ))/step )
   return dfunc_fd
 
-def _unpack( funcsp ):
-  for axes, func in funcsp.blocks:
-    dofax = axes[0]
-    assert isinstance( dofax, DofMap )
-    dofmap = dofax.dofmap
-    if isinstance( func, Align ):
-      func = func.func
-    stdmap = func.stdmap
-    for trans, dofs in dofmap.items():
-      yield trans, dofs + dofax.offset, stdmap[trans]
-  
 def supp( funcsp, indices ):
   'find support of selection of basis functions'
 
@@ -3678,5 +3590,6 @@ def J( geometry, ndims=None ):
   elif ndims < 0:
     ndims += len(geometry)
   return jacobian( geometry, ndims ) * Iwscale(ndims)
+
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
