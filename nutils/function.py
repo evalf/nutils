@@ -812,7 +812,9 @@ class Get( Array ):
     self.axis = axis
     self.item = item
     assert 0 <= axis < func.ndim, 'axis is out of bounds'
-    assert 0 <= item < func.shape[axis], 'item is out of bounds'
+    assert 0 <= item
+    if numeric.isint( func.shape[axis] ):
+      assert item < func.shape[axis], 'item is out of bounds'
     self.item_shiftright = (Ellipsis,item) + (slice(None),)*(func.ndim-axis-1)
     shape = func.shape[:axis] + func.shape[axis+1:]
     Array.__init__( self, args=[func], shape=shape, dtype=func.dtype )
@@ -2269,7 +2271,9 @@ class Repeat( Array ):
 
   def _get( self, axis, item ):
     if axis == self.axis:
-      assert 0 <= item < self.length
+      assert 0 <= item
+      if numeric.isint(self.length):
+        assert item < self.length
       return get( self.func, axis, 0 )
     return repeat( get( self.func, axis, item ), self.length, self.axis-(axis<self.axis) )
 
@@ -3451,7 +3455,13 @@ def take( arg, index, axis ):
   axis = numeric.normdim( arg.ndim, axis )
 
   if isinstance( index, slice ):
-    index = numpy.arange(arg.shape[axis])[index]
+    if numeric.isint( arg.shape[axis] ):
+      index = numpy.arange(arg.shape[axis])[index]
+    else:
+      assert index.start == None or index.start >= 0
+      assert index.step == None or index.step == 1
+      assert index.stop != None and index.stop >= 0
+      index = numpy.arange( index.start or 0, index.stop )
 
   index = asarray( index )
   assert index.ndim == 1
