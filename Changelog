@@ -6,6 +6,41 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+Changed: function.Inflate, function.DofMap; removed IntVector
+
+  The Inflate class takes a new length argument for the inflated shape.
+  The dofmap argument is now a generic int-array function, which removes
+  the need for a separate IntVector object; DofMap now derives directly
+  from Array.
+
+
+Changed: renamed ElemFunc to LocalCoords
+
+  Besides the name change the new object is derived from
+  DerivativeTargetBase so that it can be used as a derivate target,
+  removing the need for a 'localcoords' special token.
+
+
+Changed: function.asarray
+
+  Formerly asarray returned non-evaluable objects as numpy arrays. The
+  new implementation always returns a nutils Array, wrapping constant
+  objects in function.Constant.
+
+
+New: function.Constant
+
+  Wrapper object that returns a numpy array through evalf, introducing a
+  singleton point axis at location 0.
+
+
+New: function.Array with dtype; deprecates function.ArrayFunc
+
+  ArrayFunc is deprecated and will be removed. The new Array base class
+  is identical to ArrayFunc except for the mandatory argument 'dtype',
+  which takes a value of float, int, or bool.
+
+
 Release history
 ---------------
 
