@@ -556,6 +556,13 @@ class Array( Evaluable ):
 
   __repr__ = __str__
 
+class ArrayFunc( Array ):
+  'deprecated ArrayFunc alias'
+
+  def __init__( self, args, shape ):
+    warnings.warn( 'function.ArrayFunc is deprecated; use function.Array instead', DeprecationWarning )
+    Array.__init__( self, args=args, shape=shape, dtype=float )
+
 class Constant( Array ):
   'constant'
 
