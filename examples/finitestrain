@@ -23,7 +23,7 @@ def main( nelems=12, stress=library.Hooke(lmbda=1,mu=1), degree=2, angle=15, res
 
   if trim:
     levelset = function.norm2( geom0 - (.5,.5) ) - .2
-    domain, complement = domain.trim( levelset, maxrefine=2 )
+    domain = domain.trim( levelset, maxrefine=2 )
 
   dbasis = domain.basis( 'spline', degree=degree ).vector( 2 )
 
