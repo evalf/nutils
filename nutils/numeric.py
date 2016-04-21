@@ -551,5 +551,11 @@ def fhex( A ):
   h = '{:+x}'.format( mantissa << mod )[1:]
   return ( '-' if mantissa < 0 else '' ) + '0x' + ( h.ljust( len(h)+div, '0' ) if div >= 0 else ( h[:div] or '0' ) + '.' + h[div:].rjust( -div, '0' ) )
 
+def power( a, b ):
+  a = numpy.asarray( a )
+  b = numpy.asarray( b )
+  if a.dtype == int and b.dtype == int:
+    b = b.astype( float )
+  return numpy.power( a, b )
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
