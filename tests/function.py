@@ -39,6 +39,7 @@ from . import register, unittest
 @register( 'diagonalize', function.diagonalize, numeric.diagonalize, [(2,1,2)] )
 @register( 'multiply', function.multiply, numpy.multiply, [(3,1),(1,3)] )
 @register( 'divide', function.divide, numpy.divide, [(3,1),(1,3)] )
+@register( 'divide2', lambda a: function.asarray(a)/2, lambda a: a/2, [(3,1)] )
 @register( 'add', function.add, numpy.add, [(3,1),(1,3)] )
 @register( 'subtract', function.subtract, numpy.subtract, [(3,1),(1,3)] )
 @register( 'product2', lambda a,b: function.multiply(a,b).sum(-2), lambda a,b: (a*b).sum(-2), [(2,3,1),(1,3,2)] )

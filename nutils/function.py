@@ -616,7 +616,7 @@ class Constant( Array ):
 
   def _power( self, n ):
     if isinstance( n, Constant ):
-      return asarray( numpy.power( self.value, n.value ) )
+      return asarray( numeric.power( self.value, n.value ) )
 
   def _edit( self, op ):
     return asarray( op(self.value) )
@@ -694,7 +694,7 @@ class ElementSize( Array):
 
   def evalf( self, iwscale ):
     volume = iwscale.sum()
-    return numpy.power( volume, 1/self.ndims )[_]
+    return numeric.power( volume, 1/self.ndims )[_]
 
 class Orientation( Array ):
   'sign'
@@ -1748,10 +1748,10 @@ class Power( Array ):
     self.func = func
     self.power = power
     shape = _jointshape( func.shape, power.shape )
-    Array.__init__( self, args=[func,power], shape=shape, dtype=_jointdtype(func.dtype,power.dtype) )
+    Array.__init__( self, args=[func,power], shape=shape, dtype=float )
 
   def evalf( self, base, exp ):
-    return numpy.power( base, exp )
+    return numeric.power( base, exp )
 
   def _derivative( self, var, axes, seen ):
     # self = func**power
