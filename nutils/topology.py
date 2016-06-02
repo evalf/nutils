@@ -1543,14 +1543,12 @@ class SubsetTopology( Topology ):
     belems = [] # prior boundary elements (reduced)
     basebtopo = self.basetopo.boundary
     for belem in log.iter( 'element', basebtopo ):
-      head, tail = belem.transform.promote( self.ndims ).split( self.ndims-1, after=False )
-      try:
+      trans = belem.transform.promote( self.ndims )
+      head = trans.lookup( self.edict )
+      if head:
         ielem = self.edict[head]
-      except KeyError:
-        pass
-      else:
         ref = self.elements[ielem].reference
-        iedge = ref.edge_transforms.index(tail)
+        iedge = ref.edge_transforms.index( trans.slicefrom(len(head)) )
         edge = ref.edge_refs[iedge]
         if edge:
           belems.append( element.Element( edge, belem.transform, belem.opposite ) )
