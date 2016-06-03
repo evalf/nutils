@@ -191,3 +191,15 @@ def cutdomain( ndims, nelems, maxrefine, errtol ):
     assert trimerr < errtol, 'trim surface tolerance not met: {:.2e} > {:.2e}'.format( trimerr, errtol )
     assert totalerr < errtol, 'total surface tolerance not met: {:.2e} > {:.2e}'.format( totalerr, errtol )
 
+
+@register
+def multitrim():
+  domain, geom = mesh.rectilinear( [[-1,1],[-1,1]] )
+  geom_rel = ( function.rotmat(numpy.pi/6) * geom ).sum(-1)
+  for itrim in range(4):
+    domain = domain.trim( .7+(1-itrim%2*2)*geom_rel[itrim//2], maxrefine=1, name='trim{}'.format(itrim), ndivisions=16 )
+  for itrim in range(4):
+    L = domain.boundary['trim{}'.format(itrim)].integrate( 1, geometry=geom, ischeme='gauss1' )
+    numpy.testing.assert_almost_equal( L, 1.4, decimal=4 )
+  L = domain.boundary.integrate( 1, geometry=geom, ischeme='gauss1' )
+  numpy.testing.assert_almost_equal( L, 5.6, decimal=4 )

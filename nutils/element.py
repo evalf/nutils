@@ -1132,9 +1132,6 @@ class WithChildrenReference( Reference ):
   'base reference with explicit children'
 
   def __init__( self, baseref, child_refs ):
-    while isinstance( baseref, WithChildrenReference ):
-      # remove previous withchildren layer
-      baseref = baseref.baseref
     assert isinstance( child_refs, tuple ) and len(child_refs) == baseref.nchildren and any(child_refs) and child_refs != baseref.child_refs
     assert all( isinstance(child_ref,Reference) for child_ref in child_refs )
     assert all( child_ref.ndims == baseref.ndims for child_ref in child_refs )
@@ -1178,7 +1175,7 @@ class WithChildrenReference( Reference ):
 
   __sub__ = lambda self, other: self.empty if other in (self,self.baseref) else self.baseref.with_children( self_child-other_child for self_child, other_child in zip( self.child_refs, other.child_refs ) ) if isinstance( other, WithChildrenReference ) and other.baseref in (self,self.baseref) else NotImplemented
   __rsub__ = lambda self, other: self.baseref.with_children( other_child - self_child for self_child, other_child in zip( self.child_refs, other.child_refs ) ) if other == self.baseref else NotImplemented
-  __and__ = lambda self, other: self if other == self.baseref else self.baseref.with_children( self_child & other_child for self_child, other_child in zip( self.child_refs, other.child_refs ) ) if isinstance( other, WithChildrenReference ) and other.baseref == self.baseref else NotImplemented
+  __and__ = lambda self, other: self if other == self.baseref else other if isinstance(other,WithChildrenReference) and self == other.baseref else self.baseref.with_children( self_child & other_child for self_child, other_child in zip( self.child_refs, other.child_refs ) ) if isinstance( other, WithChildrenReference ) and other.baseref == self.baseref else NotImplemented
   __or__ = lambda self, other: other if other == self.baseref else self.baseref.with_children( self_child | other_child for self_child, other_child in zip( self.child_refs, other.child_refs ) ) if isinstance( other, WithChildrenReference ) and other.baseref == self.baseref else NotImplemented
 
   @cache.property
