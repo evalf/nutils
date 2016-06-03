@@ -37,9 +37,9 @@ def _runtests( pkg, whitelist ):
       log.stack( 'error: {}'.format(exc), frames )
       if core.getprop( 'tbexplore', False ):
         debug.explore( repr(exc), frames, '''Test package
-          {!r} failed. The traceback explorer allows you to examine the failure
+          failed. The traceback explorer allows you to examine the failure
           state. Closing the explorer will resume testing with the next
-          package.'''.format(__scope__) )
+          package.''' )
       __results__ = PKGERROR
     else:
       dt = time.time() - t0
