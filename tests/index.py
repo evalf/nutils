@@ -127,3 +127,31 @@ def indexedarray():
   @unittest
   def grad_number2():
     assert a['i,01'].unwrap(geom) == a.grad(geom).grad(geom)[:,0,1]
+
+  @unittest
+  def reindex():
+    assert a['j,i']['kj'].unwrap(geom) == a.grad(geom)
+
+  @unittest
+  def reindex_number():
+    assert a['i,j']['j0'].unwrap(geom) == a.grad(geom)[:,0]
+
+  @unittest
+  def reindex_repeated_indices():
+    assert a['i,j']['ii'].unwrap(geom) == function.trace( a.grad(geom) )
+
+  @unittest
+  def reindex_with_grad():
+    assert a['i,j']['ij,k'].unwrap(geom) == a.grad(geom).grad(geom)
+
+  @unittest( raises=ValueError )
+  def reindex_not_enough_indices():
+    a['i,j']['i']
+
+  @unittest( raises=ValueError )
+  def reindex_too_many_indices():
+    a['i,j']['ijk']
+
+  @unittest( raises=ValueError )
+  def reindex_triple_index():
+    a['i,j']['iii']

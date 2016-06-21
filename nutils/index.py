@@ -128,7 +128,8 @@ class IndexedArray:
     elif item.startswith( ';' ):
       grad = self._array_surfgrad
     else:
-      raise ValueError( 'additional indices are not allowed, only derivatives' )
+      # reindex, similar to `self.unwrap()[item]`, but without requiring a geometry
+      return wrap( self, item )
     if not all( 'a' <= index <= 'z' or '0' <= index <= '9' for index in item[1:] ):
       raise ValueError( 'invalid index, only lower case latin characters and numbers are allowed' )
     if not all( 1 <= c <= 2 for index, c in collections.Counter( self.indices + item[1:] ).items() if not ('0' <= index <= '9') ):
@@ -153,6 +154,25 @@ class IndexedArray:
         op = grad
       self = IndexedArray( indices, op, ( self, ) )
     return self
+
+  def _get_element( self, axis, index ):
+    '''get element `index` from axis `axis`'''
+
+    i = self.indices.index(axis)
+    return IndexedArray(
+      self.indices[:i] + self.indices[i+1:],
+      lambda geom, array: array[(slice(None),)*i + (index,)],
+      [self])
+
+  def _trace( self, axis1, axis2 ):
+    '''get the trace along `axis1` and `axis2`'''
+
+    i1 = self.indices.index(axis1)
+    i2 = self.indices.index(axis2)
+    return IndexedArray(
+      ''.join( index for index in self.indices if index not in (axis1, axis2) ),
+      lambda geom, array: function.trace( array, i1, i2 ),
+      [self])
 
   def __neg__( self ):
     return IndexedArray( self.indices, lambda *args: -self._op( *args ), self._args )
@@ -260,7 +280,8 @@ def wrap( array, indices ):
   IndexedArray
   '''
 
-  array = function.asarray( array )
+  if not isinstance( array, IndexedArray ):
+    array = function.asarray( array )
   if not isinstance( indices, str ):
     raise ValueError( 'expected a `str`, got {!r}'.format( indices ) )
   # separate gradient indices from array indices
@@ -272,8 +293,8 @@ def wrap( array, indices ):
     grad_indices = ';'+grad_indices
   else:
     grad_indices = ''
-  if len( indices ) != len( array.shape ):
-    raise ValueError( 'expected {} indices, got {}'.format( len( array.shape ), len( indices ) ) )
+  if len( indices ) != array.ndim:
+    raise ValueError( 'expected {} indices, got {}'.format( array.ndim, len( indices ) ) )
   if not all( 'a' <= index <= 'z' or '0' <= index <= '9' for index in indices + grad_indices[1:] ):
     raise ValueError( 'invalid index, only lower case latin characters and numbers are allowed' )
   if not all( 1 <= c <= 2 for index, c in collections.Counter( indices + grad_indices[1:] ).items() if not ('0' <= index <= '9') ):
@@ -282,7 +303,10 @@ def wrap( array, indices ):
   for i, index in reversed( tuple( enumerate( indices ) ) ):
     if '0' <= index <= '9':
       # get element `index` of axis `i` from `array`
-      array = array[(slice(None),)*i+(int(index),)+(slice(None),)*(len(indices)-i-1)]
+      if isinstance( array, IndexedArray ):
+        array = array._get_element( sorted(array.indices)[i], int(index) )
+      else:
+        array = array[(slice(None),)*i+(int(index),)+(slice(None),)*(len(indices)-i-1)]
       # remove this number from `indices`
       indices = indices[:i] + indices[i+1:]
   # sum repeated indices (skip gradient indices, will be processed in `self[grad_indices]` later)
@@ -290,8 +314,17 @@ def wrap( array, indices ):
     ax1 = indices.index( repeated )
     ax2 = indices.index( repeated, ax1+1 )
     indices = indices[:ax1] + indices[ax1+1:ax2] + indices[ax2+1:]
-    array = function.trace( array, ax1, ax2 )
-  self = IndexedArray( indices, lambda geom: array, () )
+    if isinstance( array, IndexedArray ):
+      sorted_array_indices = sorted( array.indices )
+      array = array._trace( sorted_array_indices[ax1], sorted_array_indices[ax2] )
+    else:
+      array = function.trace( array, ax1, ax2 )
+  if isinstance( array, IndexedArray ):
+    # sort `indices` such that the original order matches `array.indices` sorted alphabetically
+    indices = ''.join( indices[i] for i in sorted(range(array.ndim), key=lambda item: array.indices[item]) )
+    self = IndexedArray( indices, array._op, array._args )
+  else:
+    self = IndexedArray( indices, lambda geom: array, () )
   # apply gradients, if any
   if grad_indices:
     self = self[grad_indices]
