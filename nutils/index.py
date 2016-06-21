@@ -288,7 +288,7 @@ def wrap( array, indices ):
   # sum repeated indices (skip gradient indices, will be processed in `self[grad_indices]` later)
   for repeated in sorted( ( i for i, c in collections.Counter( indices ).items() if c == 2 ), key = indices.index ):
     ax1 = indices.index( repeated )
-    ax2 = indices.index( item[1], ax1+1 )
+    ax2 = indices.index( repeated, ax1+1 )
     indices = indices[:ax1] + indices[ax1+1:ax2] + indices[ax2+1:]
     array = function.trace( array, ax1, ax2 )
   self = IndexedArray( indices, lambda geom: array, () )

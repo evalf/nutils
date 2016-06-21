@@ -56,6 +56,10 @@ def indexedarray():
   def div_scalar():
     assert (a['i'] / 2).unwrap() == a / 2
 
+  @unittest
+  def repeated_indices():
+    assert ab_outer['ii'].unwrap() == function.trace( ab_outer )
+
   @unittest( raises=ValueError )
   def not_enough_indices():
     c['i']
