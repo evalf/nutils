@@ -133,26 +133,26 @@ class IndexedArray:
       raise ValueError( 'invalid index, only lower case latin characters and numbers are allowed' )
     if not all( 1 <= c <= 2 for index, c in collections.Counter( self.indices + item[1:] ).items() if not ('0' <= index <= '9') ):
       raise ValueError( 'indices may not be repeated more than once' )
-    indices = self.indices + item[1]
-    if '0' <= item[1] <= '9':
-      # `item[1]` is a number
-      # get element `item[1]` of the last axis
-      op = lambda geom, array: grad( geom, array )[..., int(item[1])]
-      # remove this number from `indices`
-      indices = self.indices
-    elif item[1] in self.indices:
-      # `item[1]` is a repeated index
-      ax1 = indices.index( item[1] )
-      ax2 = indices.index( item[1], ax1+1 )
-      indices = indices[:ax1] + indices[ax1+1:ax2] + indices[ax2+1:]
-      op = lambda geom, array: function.trace( grad( geom, array ), ax1, ax2 )
-    else:
-      op = grad
-    result = IndexedArray( indices, op, ( self, ) )
-    # apply remaining gradients
-    if len( item ) > 2:
-      result = result[item[0]+item[2:]]
-    return result
+    indices = self.indices
+    for index in item[1:]:
+      if '0' <= index <= '9':
+        # `index` is a number
+        # get element `index` of the last axis
+        op = lambda geom, array: grad( geom, array )[..., int(index)]
+      elif index in indices:
+        # `index` is a repeated index
+        # find positions of `index`
+        ax1 = indices.index( index )
+        ax2 = len( indices )
+        # drop `index` from indices
+        indices = indices[:ax1] + indices[ax1+1:]
+        op = lambda geom, array: function.trace( grad( geom, array ), ax1, ax2 )
+      else:
+        # `index` is 'new', append to indices
+        indices = indices + index
+        op = grad
+      self = IndexedArray( indices, op, ( self, ) )
+    return self
 
   def __neg__( self ):
     return IndexedArray( self.indices, lambda *args: -self._op( *args ), self._args )
