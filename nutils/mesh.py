@@ -237,7 +237,7 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
 
   topo = topology.UnstructuredTopology( ndims, elems.values() ).withsubs( subtopos )
   topo.boundary = topology.UnstructuredTopology( ndims-1, edges.values() ).withsubs( subbtopos )
-  topo.interfaces = topology.UnstructuredTopology( ndims-1, ifaces.values() ).withsubs( subitopos )
+  #topo.interfaces = topology.UnstructuredTopology( ndims-1, ifaces.values() ).withsubs( subitopos )
   topo.points = topology.UnstructuredTopology( 0, [vertex for vertexkeys in vertexgroups.values() for vertexkey in vertexkeys for vertex in vertices[vertexkey]] ).withsubs( subptopos )
 
   alltags = set(subtopos) | set(subbtopos) | set(subitopos) | set(subptopos)

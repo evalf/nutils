@@ -429,11 +429,25 @@ identity = CanonicalTransformChain()
 def solve( T1, T2 ): # T1 << x == T2
   assert isinstance( T1, TransformChain )
   assert isinstance( T2, TransformChain )
+  assert T1.fromdims == T2.fromdims and T1.todims == T2.todims
   while T1 and T2 and T1[0] == T2[0]:
     T1 = T1.slicefrom(1)
     T2 = T2.slicefrom(1)
   if not T1:
     return T2
+  if isinstance( T1[0], MapTrans ):
+    assert isinstance( T2[0], MapTrans )
+    if T1.fromdims != 1:
+      raise NotImplementedError
+    o1 = T1.slicefrom(1).offset
+    o2 = T2.slicefrom(1).offset
+    l1 = T1.slicefrom(1).linear
+    l2 = T2.slicefrom(1).linear
+    v1, = numpy.asarray( T1[0].vertices )[ numpy.all( T1[0].coords == o1, axis=1 ) ]
+    w1, = numpy.asarray( T2[0].vertices )[ numpy.all( T2[0].coords == o2, axis=1 ) ]
+    v2, = numpy.asarray( T1[0].vertices )[ numpy.all( T1[0].coords == o1 + l1[:,0], axis=1 ) ]
+    w2, = numpy.asarray( T2[0].vertices )[ numpy.all( T2[0].coords == o2 + l2[:,0], axis=1 ) ]
+    return affine( [[1]], [0] ) if v1 == w1 and v2 == w2 else affine( [[-1]], [1] )
   # A1 * ( Ax * xi + bx ) + b1 == A2 * xi + b2 => A1 * Ax = A2, A1 * bx + b1 = b2
   Ax, bx = numeric.solve_exact( T1.linear, T2.linear, T2.offset - T1.offset )
   return affine( Ax, bx )
