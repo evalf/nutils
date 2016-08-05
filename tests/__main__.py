@@ -10,6 +10,7 @@ from . import \
   quadrature, \
   element,    \
   numeric,    \
+  basis,      \
   finitecell, \
   runtests
 
