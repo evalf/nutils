@@ -9,6 +9,7 @@ from . import \
   doubleint,  \
   quadrature, \
   element,    \
+  numeric,    \
   finitecell, \
   runtests
 
