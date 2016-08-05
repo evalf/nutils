@@ -572,8 +572,6 @@ def run( *functions ):
   htmlfile.write( '\nstart {}\n\n'.format(ctime) )
   htmlfile.write( '</span>\n' )
 
-  warnings.resetwarnings()
-
   t0 = time.time()
 
   if core.getprop( 'profile' ):
