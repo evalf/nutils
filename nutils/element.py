@@ -1677,23 +1677,24 @@ class PolyTriangle( StdElem ):
   def __init__( self, order ):
     'constructor'
 
-    assert order == 1
-    StdElem.__init__( self, ndims=2, nshapes=3 )
+    self.order = order
+    assert order in (0,1)
+    StdElem.__init__( self, ndims=2, nshapes=3 if order else 1 )
 
   def __getnewargs__( self ):
-    return 1,
+    return self.order,
 
   def eval( self, points, grad=0 ):
     'eval'
 
-    npoints, ndim = points.shape
-    if grad == 0:
-      x, y = points.T
-      data = numpy.array( [ 1-x-y, x, y ] ).T
-    elif grad == 1:
-      data = numpy.array( [[[-1,-1],[1,0],[0,1]]], dtype=float )
+    if self.order == 0:
+      data = numpy.ones( (1,1) ) if grad == 0 \
+        else numpy.zeros( (1,1)+(2,)*grad )
     else:
-      data = numpy.zeros( (1,3)+(2,)*grad )
+      data = numpy.concatenate( [ 1-points.sum(1)[:,_], points ], axis=1 ) if grad == 0 \
+        else numpy.array( [[[-1,-1],[1,0],[0,1]]], dtype=float ) if grad == 1 \
+        else numpy.zeros( (1,3)+(2,)*grad )
+
     return data
 
   def __repr__( self ):
