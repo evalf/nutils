@@ -336,9 +336,14 @@ def ortho_complement( A ):
   '''return orthogonal complement to non-square matrix A'''
 
   m, n = A.shape
-  assert n < m
-  u, s, v = numpy.linalg.svd(A)
-  return u[:,n:]
+  assert n <= m
+  if n == 0:
+    return numpy.eye( m )
+  elif n == m:
+    return numpy.empty( (m,0) )
+  else:
+    u, s, v = numpy.linalg.svd(A)
+    return u[:,n:]
 
 asobjvector = lambda v: numpy.array( (None,)+tuple(v), dtype=object )[1:] # 'None' prevents interpretation of objects as axes
 
