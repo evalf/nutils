@@ -61,18 +61,17 @@ $EndElements'''
 def gmsh():
 
   domain, geom = mesh.gmesh( gmsh_physical.splitlines() )
-  exact_volume = 1
-  exact_length = 4
 
   @unittest
   def volume():
-    volume = domain.integrate( 1., geometry=geom, ischeme='gauss1' )
-    numpy.testing.assert_almost_equal( volume, exact_volume, decimal=10 )
+    volume = domain.integrate( 1, geometry=geom, ischeme='gauss1' )
+    numpy.testing.assert_almost_equal( volume, 1, decimal=10 )
 
-  @unittest
-  def length():
-    length = domain.boundary.integrate( 1., geometry=geom, ischeme='gauss1' )
-    numpy.testing.assert_almost_equal( length, exact_length, decimal=10 )
+  for group, exact_length in ('neumann',2), ('dirichlet',2), ((),4):
+    @unittest( name=group or 'all' )
+    def length():
+      length = domain.boundary[group].integrate( 1., geometry=geom, ischeme='gauss1' )
+      numpy.testing.assert_almost_equal( length, exact_length, decimal=10 )
 
   @unittest
   def divergence():
