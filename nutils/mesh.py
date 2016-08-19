@@ -10,7 +10,7 @@
 The mesh module provides mesh generators: methods that return a topology and an
 accompanying geometry function. Meshes can either be generated on the fly, e.g.
 :func:`rectilinear`, or read from external an externally prepared file,
-:func:`gmesh`, :func:`igatool`, and converted to nutils format. Note that no
+:func:`gmsh`, :func:`igatool`, and converted to nutils format. Note that no
 mesh writers are provided at this point; output is handled by the
 :mod:`nutils.plot` module.
 """
@@ -77,32 +77,28 @@ def rectilinear( richshape, periodic=(), name='rect', revolved=False ):
 
   return topo, geom
 
-def gmesh( fname, tags={}, name=None, use_elementary=False ):
-  """Gmesh parser
+def gmsh( fname, name=None ):
+  """Gmsh parser
 
-  Parser for Gmesh files in `.msh` format. See the `Gmesh manual <http://geuz.org/gmsh/doc/texinfo/gmsh.html>`_ for details.
+  Parser for Gmsh files in `.msh` format. Only files with physical groups are
+  supported. See the `Gmsh manual
+  <http://geuz.org/gmsh/doc/texinfo/gmsh.html>`_ for details.
 
   Args:
       fname (str): Path to mesh file
-      tags (dict, optional): Dictionary mapping gmesh group IDs to names
       name (str, optional): Name of parsed topology, defaults to None
-      use_elementary (bool, optional): Option to indicate whether Gmsh is used with elementary groups only (i.e. no physical groups are defined), defaults to False
 
   Returns:
-      topo (:class:`nutils.topology.Topology`): Topology of parsed Gmesh file
+      topo (:class:`nutils.topology.Topology`): Topology of parsed Gmsh file
       geom (:class:`nutils.function.Array`): Isoparametric map
 
   """
 
   ndims = 2
 
-  if isinstance( tags, str ):
-    warnings.warn('String format for groups is depricated, please use dictionary format instead with (key,value)=(physical ID,group name)',DeprecationWarning)
-    tags = { i+1: tag for i, tag in enumerate( tags.split(',') ) }
-
   #Parse the file
   sections = {}
-  lines = iter(open(fname,'r') if isinstance(fname,str) else fname)
+  lines = iter( open(fname,'r') if isinstance(fname,str) else fname )
   for line in lines:
     line = line.strip()
     assert line[0]=='$'
@@ -116,16 +112,14 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
     sections[sname] = slines  
 
   #PhysicalNames
+  tags = {}
   names = sections.pop( 'PhysicalNames', [0] )
   assert int(names.pop(0)) == len(names)
   for line in names:
     words = line.split()
     nid = int(words[1])
     name = words[2].strip( '"' )
-    if nid not in tags:
-      tags[nid] = name
-    else:
-      warnings.warn( 'renamed physical group name {!r} to {!r}'.format( name, tags[nid] ) )
+    tags[nid] = name
         
   #Nodes
   nodedata = sections.pop('Nodes')
@@ -163,11 +157,7 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
     words = line.split()
     etype = int(words[1])
     ntags = int(words[2])
-    if use_elementary:
-      assert words[3] == '0', 'option use_elementary=True conflicts with non-zero physical tag'
-      tag = tags.get( int( words[4] ), 'elementary' + words[4] )
-    else:
-      tag = tags.get( int( words[3] ), 'physical' + words[3] )
+    tag = tags.get( int( words[3] ), 'physical' + words[3] )
 
     nids = numpy.array([ nidmap[int(gmshid)] for gmshid in words[3+ntags:] ])
     elemkey = tuple(sorted(nids))
@@ -213,8 +203,7 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
 
       elemgroups.setdefault(tag,[]).append(elem)
     elif etype == 15:
-      if not use_elementary:
-        vertexgroups.setdefault(tag,[]).append(elemkey)
+      vertexgroups.setdefault(tag,[]).append(elemkey)
     else:
       raise NotImplementedError('Unknown GMSH element type %i' % etype)
 
@@ -254,6 +243,12 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
   linearfunc = function.function( fmap=fmap, nmap=nmap, ndofs=nnodes, ndims=topo.ndims )
   geom = ( linearfunc[:,_] * coords ).sum(0)
   return topo, geom
+
+def gmesh( fname, tags={}, name=None, use_elementary=False ):
+  warnings.warn( 'mesh.gmesh has been renamed to mesh.gmsh; please update your code', DeprecationWarning )
+  assert not use_elementary, 'support of non-physical gmsh files has been deprecated'
+  assert not tags, 'support of external group names has been deprecated; please provide physical names via gmsh'
+  return gmsh( fname, name )
 
 def triangulation( vertices, nvertices ):
   'triangulation'
