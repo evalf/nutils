@@ -162,6 +162,7 @@ def gmsh( fname, name=None ):
   velems = {}
   belems = {}
   ielems = {}
+  flip = transform.affine( -1, [1] )
   for inodes in elems[2]:
     trans = transform.maptrans( triref.vertices, inodes if not name else [name+str(inode) for inode in inodes] )
     elem = element.Element( triref, trans )
@@ -174,7 +175,10 @@ def gmsh( fname, name=None ):
       else:
         oppbelem = elem.edge(iedge)
         assert belem.reference == oppbelem.reference
-        ielems[binodes] = element.Element( belem.reference, belem.transform, oppbelem.transform ) # TODO flip
+        opptrans = oppbelem.transform
+        if belem.transform.isflipped == opptrans.isflipped:
+          opptrans <<= flip
+        ielems[binodes] = element.Element( belem.reference, belem.transform, opptrans ) # TODO flip
 
   # separate volume elements by tag
   tagsvelems = [ [] for tag in tags[2] ]

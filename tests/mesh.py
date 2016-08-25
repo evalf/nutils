@@ -78,7 +78,7 @@ $EndElements
 @register
 def gmsh():
 
-  domain, geom = mesh.gmesh( gmshdata.splitlines() )
+  domain, geom = mesh.gmsh( gmshdata.splitlines() )
 
   @unittest
   def volume():
@@ -90,6 +90,11 @@ def gmsh():
     def length():
       length = domain.boundary[group].integrate( 1., geometry=geom, ischeme='gauss1' )
       numpy.testing.assert_almost_equal( length, exact_length, decimal=10 )
+
+  @unittest
+  def interfaces():
+    err = domain.interfaces.elem_eval( geom - function.opposite(geom), ischeme='uniform2', separate=False )
+    numpy.testing.assert_almost_equal( err, 0, decimal=15 )
 
   @unittest
   def divergence():
