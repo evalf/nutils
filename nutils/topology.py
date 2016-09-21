@@ -1361,6 +1361,8 @@ class SubtractionTopology( Topology ):
     Topology.__init__( self, basetopo.ndims )
 
   def __getitem__( self, item ):
+    if item == ():
+      return self
     return self.basetopo[item] - self.subtopo
 
   def __or__( self, other ):
@@ -1460,6 +1462,8 @@ class SubsetTopology( Topology ):
     Topology.__init__( self, basetopo.ndims )
 
   def __getitem__( self, item ):
+    if item == ():
+      return self
     return self.basetopo[item].subset( self.allelements, self.boundaryname, precise=False )
 
   @cache.property
@@ -1635,6 +1639,8 @@ class HierarchicalTopology( Topology ):
     Topology.__init__( self, basetopo.ndims )
 
   def __getitem__( self, item ):
+    if item == ():
+      return self
     return self.basetopo[item].hierarchical( self.allelements, precise=False )
 
   def hierarchical( self, elements, precise=False ):
@@ -1802,6 +1808,8 @@ class RevolvedTopology( Topology ):
     return len( self.basetopo )
 
   def __getitem__( self, item ):
+    if item == ():
+      return self
     return RevolvedTopology( self.basetopo[item] )
 
   @property
