@@ -224,7 +224,7 @@ def gmsh( fname, name=None ):
   # separate boundary and interface elements by tag
   tagsbelems = {}
   tagsielems = {}
-  isflipped = set()
+  istagged = set()
   for inodes, tagnames in zip( inodesbydim[1], tagnamesbydim[1] ):
     inodes = tuple(inodes)
     try:
@@ -237,9 +237,9 @@ def gmsh( fname, name=None ):
       elem = ielems.get(inodes)
       if elem is None:
         elem = ielems.pop(inodes[::-1]).flipped
-        assert inodes[::-1] not in isflipped, 'opposing interface elements found in group {!r}'.format(','.join(tagnames))
-        isflipped.add( inodes ) # check for back/forth modification
+        assert inodes[::-1] not in istagged, 'opposing interface elements found in group {!r}'.format(','.join(tagnames))
         ielems[inodes] = elem # flip element to match interface group
+      istagged.add( inodes ) # check for back/forth modification
       tagselems = tagsielems
     for tagname in tagnames:
       tagselems.setdefault( tagname, [] ).append( elem )
