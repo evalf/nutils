@@ -10,7 +10,7 @@
 The mesh module provides mesh generators: methods that return a topology and an
 accompanying geometry function. Meshes can either be generated on the fly, e.g.
 :func:`rectilinear`, or read from external an externally prepared file,
-:func:`gmesh`, :func:`igatool`, and converted to nutils format. Note that no
+:func:`gmsh`, :func:`igatool`, and converted to nutils format. Note that no
 mesh writers are provided at this point; output is handled by the
 :mod:`nutils.plot` module.
 """
@@ -77,32 +77,28 @@ def rectilinear( richshape, periodic=(), name='rect', revolved=False ):
 
   return topo, geom
 
-def gmesh( fname, tags={}, name=None, use_elementary=False ):
-  """Gmesh parser
+def gmsh( fname, name=None ):
+  """Gmsh parser
 
-  Parser for Gmesh files in `.msh` format. See the `Gmesh manual <http://geuz.org/gmsh/doc/texinfo/gmsh.html>`_ for details.
+  Parser for Gmsh files in `.msh` format. Only files with physical groups are
+  supported. See the `Gmsh manual
+  <http://geuz.org/gmsh/doc/texinfo/gmsh.html>`_ for details.
 
   Args:
       fname (str): Path to mesh file
-      tags (dict, optional): Dictionary mapping gmesh group IDs to names
       name (str, optional): Name of parsed topology, defaults to None
-      use_elementary (bool, optional): Option to indicate whether Gmsh is used with elementary groups only (i.e. no physical groups are defined), defaults to False
 
   Returns:
-      topo (:class:`nutils.topology.Topology`): Topology of parsed Gmesh file
+      topo (:class:`nutils.topology.Topology`): Topology of parsed Gmsh file
       geom (:class:`nutils.function.Array`): Isoparametric map
 
   """
 
   ndims = 2
 
-  if isinstance( tags, str ):
-    warnings.warn('String format for groups is depricated, please use dictionary format instead with (key,value)=(physical ID,group name)',DeprecationWarning)
-    tags = { i+1: tag for i, tag in enumerate( tags.split(',') ) }
-
-  #Parse the file
+  # split sections
   sections = {}
-  lines = iter(open(fname,'r') if isinstance(fname,str) else fname)
+  lines = iter( open(fname,'r') if isinstance(fname,str) else fname )
   for line in lines:
     line = line.strip()
     assert line[0]=='$'
@@ -110,150 +106,199 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
     slines = []
     for sline in lines:
       sline = sline.strip()
-      if sline=='$End%s'%sname:
+      if sline=='$End'+sname:
         break
       slines.append( sline ) 
-    sections[sname] = slines  
+    sections[sname] = slines
 
-  #PhysicalNames
-  names = sections.pop( 'PhysicalNames', [0] )
-  assert int(names.pop(0)) == len(names)
-  for line in names:
-    words = line.split()
-    nid = int(words[1])
-    name = words[2].strip( '"' )
-    if nid not in tags:
-      tags[nid] = name
-    else:
-      warnings.warn( 'renamed physical group name {!r} to {!r}'.format( name, tags[nid] ) )
-        
-  #Nodes
-  nodedata = sections.pop('Nodes')
-  nnodes = int(nodedata.pop(0))
-  assert len(nodedata)==nnodes
-        
-  coords = numpy.empty((nnodes,3))
-  coords[:] = numpy.nan
-  nidmap = {}
-  for line in nodedata:
-    words = line.split()
-    nid = len(nidmap)
-    nidmap[int(words[0])] = nid
-    coords[nid] = [ float(n) for n in words[1:] ]
-  assert not numpy.isnan(coords).any()
-  assert numpy.all( coords[:,2] ) == 0, 'ndims=3 case not yet implemented.'
-  coords = coords[:,:2]
+  # discard section MeshFormat
+  sections.pop( 'MeshFormat', None )
 
-  #Elements
-  elemdata = sections.pop('Elements')
-  nelems = int(elemdata.pop(0))
-  assert len(elemdata)==nelems
-  flip = transform.affine( -1, [1] )
+  # parse section PhysicalNames
+  PhysicalNames = sections.pop( 'PhysicalNames', [0] )
+  assert int(PhysicalNames[0]) == len(PhysicalNames)-1
+  tagmapbydim = {}, {}, {}
+  for line in PhysicalNames[1:]:
+    nd, tagid, tagname = line.split( ' ', 2 )
+    nd = int(nd)
+    tagmapbydim[nd][int(tagid)] = tagname.strip( '"' )
 
-  elems = {}
-  elemgroups = {}
-  edges = {}
-  ifaces = {}
-  vertexgroups = {}
-  vertices = {}
-  edgegroups = {}
-  fmap = {}
-  nmap = {}
-  for line in elemdata:
+  # parse section Nodes
+  Nodes = sections.pop( 'Nodes' )
+  assert int(Nodes[0]) == len(Nodes)-1
+  nodes = numpy.empty((len(Nodes)-1,3))
+  nodemap = {}
+  for i, line in enumerate( Nodes[1:] ):
     words = line.split()
-    etype = int(words[1])
+    nodemap[int(words[0])] = i
+    nodes[i] = [ float(n) for n in words[1:] ]
+  assert not numpy.isnan(nodes).any()
+  assert numpy.all( nodes[:,2] ) == 0, 'ndims=3 case not yet implemented.'
+  nodes = nodes[:,:2]
+
+  # parse section Elements
+  Elements = sections.pop( 'Elements' )
+  assert int(Elements[0]) == len(Elements)-1
+  inodesbydim = [], [], []
+  tagnamesbydim = [], [], []
+  etype2nd = { 15:0, 1:1, 2:2 }
+  for line in Elements[1:]:
+    words = line.split()
+    nd = etype2nd[int(words[1])]
     ntags = int(words[2])
-    if use_elementary:
-      assert words[3] == '0', 'option use_elementary=True conflicts with non-zero physical tag'
-      tag = tags.get( int( words[4] ), 'elementary' + words[4] )
+    assert ntags >= 1
+    tagname = tagmapbydim[nd][int(words[3])]
+    inodes = tuple( nodemap[int(nodeid)] for nodeid in words[3+ntags:] )
+    if inodesbydim[nd] and inodesbydim[nd][-1] == inodes:
+      tagnamesbydim[nd][-1].append( tagname )
     else:
-      tag = tags.get( int( words[3] ), 'physical' + words[3] )
+      inodesbydim[nd].append( inodes )
+      tagnamesbydim[nd].append( [tagname] )
+  assert len(inodesbydim) == len(tagnamesbydim)
+  inodesbydim = [ numpy.array(e) if e else numpy.empty( (0,nd), dtype=int ) for nd, e in enumerate(inodesbydim) ]
 
-    nids = numpy.array([ nidmap[int(gmshid)] for gmshid in words[3+ntags:] ])
-    elemkey = tuple(sorted(nids))
-    if etype == 1: # Linear line
-      edgegroups.setdefault(tag,[]).append(elemkey)
-    elif etype == 2: # linear triangle
-      assert len(nids)==3
-      try:
-        elem = elems[elemkey]
-      except KeyError:
-        elemcoords = coords[nids]
-        if numpy.linalg.det( elemcoords[:2] - elemcoords[2] ) < 0:
-          nids[:2] = nids[1], nids[0]
-        ref = element.getsimplex(2)
-        maptrans = transform.maptrans(ref.vertices,nids if not name else [name+str(nid) for nid in nids])
-        elem = element.Element(ref,maptrans)
-        elems[elemkey] = elem
-        fmap[maptrans] = (ref.stdfunc(1),None),
-        nmap[maptrans] = nids
+  # check orientation
+  vinodes = inodesbydim[2] # save for geom
+  elemnodes = nodes[vinodes] # nelems x 3 x 2
+  elemareas = numpy.linalg.det( elemnodes[:,:2] - elemnodes[:,2:] )
+  assert numpy.all( elemareas > 0 )
 
-        #Extract the edges
-        for iedge, iverts in enumerate([[1,2],[0,2],[0,1]]):
-          edge = elem.edge(iedge)
-          key = tuple(sorted(nids[iverts]))
-          try:
-            opposite = edges.pop( key )
-          except KeyError:
-            edges[key] = edge
-          else:
-            assert edge.reference == opposite.reference
-            iface = element.Element( edge.reference, edge.transform, opposite.transform << flip )
-            #assert iface.transform.apply( iface.reference.vertices ) == iface.opposite.apply( iface.reference.vertices )
-            ifaces[key] = iface
-
-        #Extract the vertices
-        vref = element.getsimplex(0)
-        for ivertex in range(3): #GMSH and Nutils node ordering coincide
-          zeroD_to_twoD = transform.affine( linear=numpy.zeros(shape=(2,0),dtype=int), offset=ref.vertices[ivertex], isflipped=False )
-          vmaptrans = maptrans << zeroD_to_twoD
-          vertexkey = (nids[ivertex],)
-          velem = element.Element(vref,vmaptrans)
-          vertices.setdefault(vertexkey,[]).append(velem)
-
-      elemgroups.setdefault(tag,[]).append(elem)
-    elif etype == 15:
-      if not use_elementary:
-        vertexgroups.setdefault(tag,[]).append(elemkey)
+  # parse section Periodic
+  Periodic = sections.pop( 'Periodic', [0] )
+  nperiodic = int(Periodic[0])
+  renumber = numpy.arange( len(nodes) )
+  master = numpy.ones( len(nodes), dtype=bool )
+  n = 0
+  for line in Periodic[1:]:
+    words = line.split()
+    if len(words) == 1:
+      n = int(words[0]) # initialize for counting backwards
+    elif len(words) == 2:
+      islave = nodemap[int(words[0])]
+      imaster = nodemap[int(words[1])]
+      renumber[islave] = renumber[imaster]
+      master[islave] = False
+      n -= 1
     else:
-      raise NotImplementedError('Unknown GMSH element type %i' % etype)
+      assert len(words) == 3 # discard content
+      assert n == 0 # check if batch of slave/master nodes matches announcement
+      nperiodic -= 1
+  assert nperiodic == 0 # check if number of periodic blocks matches announcement
+  assert n == 0 # check if last batch of slave/master nodes matches announcement
+  renumber = master.cumsum()[renumber]-1
+  inodesbydim = [ renumber[e] for e in inodesbydim ]
 
-  subtopos = { name: topology.UnstructuredTopology( ndims, subtopo ).withsubs() for name, subtopo in elemgroups.items() }
-  subbtopos = {}
-  subitopos = {}
-  for name, keys in edgegroups.items():
-    bgrouptopo = []
-    igrouptopo = []
-    for key in keys:
+  # warn about unused sections
+  for section in sections:
+    warnings.warn('section {!r} defined but not used'.format(section) )
+
+  # create volume, boundary and interface elements
+  triref = element.getsimplex(2)
+  velems = [] # same order as inodesbydim[2]
+  belems = {}
+  ielems = {}
+  flip = transform.affine( -1, [1] )
+  for inodes in inodesbydim[2]:
+    trans = transform.maptrans( triref.vertices, inodes if not name else [name+str(inode) for inode in inodes] )
+    elem = element.Element( triref, trans )
+    velems.append( elem )
+    for iedge, binodes in enumerate([ inodes[1:], inodes[::-2], inodes[:2] ]):
       try:
-        bgrouptopo.append( edges[key] )
+        belem = belems.pop( tuple(binodes[::-1]) )
       except KeyError:
-        igrouptopo.append( ifaces[key] )
-    if bgrouptopo:
-      subbtopos[name] = topology.UnstructuredTopology( ndims-1, bgrouptopo ).withsubs()
-    if igrouptopo:
-      subitopos[name] = topology.UnstructuredTopology( ndims-1, igrouptopo ).withsubs()
-  subptopos = { name: topology.UnstructuredTopology( 0, [vertex for vertexkey in vertexkeys for vertex in vertices[vertexkey]] ).withsubs() for name, vertexkeys in vertexgroups.items() }
+        belems[tuple(binodes)] = elem.edge(iedge)
+      else:
+        oppbelem = elem.edge(iedge)
+        assert belem.reference == oppbelem.reference
+        opptrans = oppbelem.transform
+        if belem.transform.isflipped == opptrans.isflipped:
+          opptrans <<= flip
+        ielems[tuple(binodes)] = element.Element( belem.reference, belem.transform, opptrans )
 
-  topo = topology.UnstructuredTopology( ndims, elems.values() ).withsubs( subtopos )
-  topo.boundary = topology.UnstructuredTopology( ndims-1, edges.values() ).withsubs( subbtopos )
-  topo.interfaces = topology.UnstructuredTopology( ndims-1, ifaces.values() ).withsubs( subitopos )
-  topo.points = topology.UnstructuredTopology( 0, [vertex for vertexkeys in vertexgroups.values() for vertexkey in vertexkeys for vertex in vertices[vertexkey]] ).withsubs( subptopos )
+  # separate volume elements by tag
+  tagsvelems = {}
+  for elem, tagnames in zip( velems, tagnamesbydim[2] ):
+    for tagname in tagnames:
+      tagsvelems.setdefault( tagname, [] ).append( elem )
 
-  alltags = set(subtopos) | set(subbtopos) | set(subitopos) | set(subptopos)
-  for tag in set(tags.values()) - alltags:
-    warnings.warn('tag %r defined but not used' % tag )
+  # separate boundary and interface elements by tag
+  tagsbelems = {}
+  tagsielems = {}
+  istagged = set()
+  for inodes, tagnames in zip( inodesbydim[1], tagnamesbydim[1] ):
+    inodes = tuple(inodes)
+    try:
+      elem = belems.get(inodes)
+      if elem is None:
+        elem = belems[inodes[::-1]]
+        tagnames = [ '~'+tagname for tagname in tagnames ]
+      tagselems = tagsbelems
+    except KeyError:
+      elem = ielems.get(inodes)
+      if elem is None:
+        elem = ielems.pop(inodes[::-1]).flipped
+        assert inodes[::-1] not in istagged, 'opposing interface elements found in group {!r}'.format(','.join(tagnames))
+        ielems[inodes] = elem # flip element to match interface group
+      istagged.add( inodes ) # check for back/forth modification
+      tagselems = tagsielems
+    for tagname in tagnames:
+      tagselems.setdefault( tagname, [] ).append( elem )
 
-  log.info('parsed GMSH file:')
-  log.info('* nodes (#%d)' % nnodes)
-  log.info('* topology (#%d) with groups: %s' % (len(topo), ', '.join('%s (#%d)' % (name,len(topo[name])) for name in subtopos)))
-  log.info('* boundary (#%d) with groups: %s' % (len(topo.boundary), ', '.join('%s (#%d)' % (name,len(topo.boundary[name])) for name in subbtopos)))
-  log.info('* interfaces (#%d) with groups: %s' % (len(topo.interfaces), ', '.join('%s (#%d)' % (name,len(topo.interfaces[name])) for name in subitopos)))
-  log.info('* points (#%d) with groups: %s' % (len(topo.points), ', '.join('%s (#%d)' % (name,len(topo.points[name])) for name in subitopos)))
+  # create and separate point elements by tag
+  pelems = []
+  tagspelems = {}
+  pref = element.getsimplex(0)
+  for (pinode,), tagnames in zip( inodesbydim[0], tagnamesbydim[0] ):
+    pelem = []
+    for inodes, elem in zip( inodesbydim[2], velems ):
+      if pinode in inodes:
+        ivertex = tuple(inodes).index( pinode )
+        offset = elem.reference.vertices[ivertex]
+        trans = elem.transform << transform.affine( linear=numpy.zeros(shape=(ndims,0),dtype=int), offset=offset, isflipped=False )
+        pelem.append( element.Element( pref, trans ) )
+    pelems.extend( pelem )
+    for tagname in tagnames:
+      tagspelems.setdefault( tagname, [] ).extend( pelem )
 
-  linearfunc = function.function( fmap=fmap, nmap=nmap, ndofs=nnodes, ndims=topo.ndims )
-  geom = ( linearfunc[:,_] * coords ).sum(0)
+  # create volume topologies
+  basevtopo = topology.UnstructuredTopology( ndims, velems )
+  subvtopos = { tagname: topology.SubsetTopology( basevtopo, elements=tagvelems, boundaryname=None, precise=True ) for tagname, tagvelems in tagsvelems.items() }
+  log.info( '* topology (#{}) with groups: {}'.format( len(basevtopo), ', '.join('{} (#{})'.format(n,len(t)) for n, t in subvtopos.items()) ) )
+
+  # create boundary topologies
+  basebtopo = topology.UnstructuredTopology( ndims-1, belems.values() )
+  subbtopos = { tagname: topology.SubsetTopology( basebtopo, elements=tagbelems, boundaryname=None, precise=True ) for tagname, tagbelems in tagsbelems.items() }
+  log.info( '* boundary (#{}) with groups: {}'.format( len(basebtopo), ', '.join('{} (#{})'.format(n,len(t)) for n, t in subbtopos.items() ) ) )
+
+  # create interface topologies
+  baseitopo = topology.UnstructuredTopology( ndims-1, ielems.values() )
+  subitopos = { tagname: topology.SubsetTopology( baseitopo, elements=tagielems, boundaryname=None, precise=True ) for tagname, tagielems in tagsielems.items() }
+  log.info( '* interfaces (#{}) with groups: {}'.format( len(baseitopo), ', '.join('{} (#{})'.format(n,len(t)) for n, t in subitopos.items() ) ) )
+
+  # create point topologies
+  baseptopo = topology.UnstructuredTopology( 0, pelems )
+  subptopos = { tagname: topology.SubsetTopology( baseptopo, elements=tagpelems, boundaryname=None, precise=True ) for tagname, tagpelems in tagspelems.items() }
+  log.info( '* points (#{}) with groups: {}'.format( len(baseptopo), ', '.join('{} (#{})'.format(n,len(t)) for n, t in subptopos.items() ) ) )
+
+  # create topology
+  topo = basevtopo.withsubs( subvtopos )
+  topo.boundary = basebtopo.withsubs( subbtopos )
+  topo.interfaces = baseitopo.withsubs( subitopos )
+  topo.points = baseptopo.withsubs( subptopos )
+
+  # create geometry
+  nmap = { elem.transform: inodes for inodes, elem in zip( vinodes, velems ) }
+  fmap = dict.fromkeys( nmap, ((triref.stdfunc(1),None),) )
+  basis = function.function( fmap=fmap, nmap=nmap, ndofs=len(nodes), ndims=topo.ndims )
+  geom = ( basis[:,_] * nodes ).sum(0)
+
   return topo, geom
+
+def gmesh( fname, tags={}, name=None, use_elementary=False ):
+  warnings.warn( 'mesh.gmesh has been renamed to mesh.gmsh; please update your code', DeprecationWarning )
+  assert not use_elementary, 'support of non-physical gmsh files has been deprecated'
+  assert not tags, 'support of external group names has been deprecated; please provide physical names via gmsh'
+  return gmsh( fname, name )
 
 def triangulation( vertices, nvertices ):
   'triangulation'

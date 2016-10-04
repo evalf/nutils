@@ -724,7 +724,7 @@ class ItemTopology( Topology ):
     self.subtopos[item] = topo.withsubs()
 
   def __invert__( self ):
-    subtopos = { name[1:] if name[0] == '~' else '~'+name: ~topo for name, topo in self.subtopos.items() }
+    subtopos = { _flipname(name): ~topo for name, topo in self.subtopos.items() }
     return ( ~self.basetopo ).withsubs( subtopos )
 
   def __eq__( self, other ):
@@ -1361,6 +1361,8 @@ class SubtractionTopology( Topology ):
     Topology.__init__( self, basetopo.ndims )
 
   def __getitem__( self, item ):
+    if item == ():
+      return self
     return self.basetopo[item] - self.subtopo
 
   def __or__( self, other ):
@@ -1460,6 +1462,8 @@ class SubsetTopology( Topology ):
     Topology.__init__( self, basetopo.ndims )
 
   def __getitem__( self, item ):
+    if item == ():
+      return self
     return self.basetopo[item].subset( self.allelements, self.boundaryname, precise=False )
 
   @cache.property
@@ -1506,7 +1510,7 @@ class SubsetTopology( Topology ):
         tail2head = tail.lookup( ref.edge_transforms ) # strip optional adjustment transformation (temporary?)
         index = ref.edge_transforms.index( tail2head )
         oppedge = ref.edge_refs[ index ].transform( tail2head.slicefrom( len(tail2head) ) )
-      if iface.reference == edge == oppedge: # chortcut
+      if iface.reference == edge == oppedge: # shortcut
         ielems.append( iface )
       else:
         ifaceref = edge & oppedge
@@ -1532,13 +1536,24 @@ class SubsetTopology( Topology ):
     'boundary'
 
     belems, ielems = self.search_interfaces
+    subs = {}
+    if isinstance( self.basetopo.interfaces, ItemTopology ): # TODO fix ItemTopology situation
+      for name, itopo in self.basetopo.interfaces.subtopos.items():
+        isect = [ elem for elem in belems if elem.transform.lookup( itopo.basetopo.edict ) ]
+        if isect:
+          subs[name] = UnstructuredTopology( self.ndims-1, isect )
+        isect = [ elem for elem in belems if elem.opposite.lookup( itopo.basetopo.edict ) ]
+        if isect:
+          subs[_flipname(name)] = UnstructuredTopology( self.ndims-1, isect )
     trimmed = list( belems )
     for elem in self: # cheap search for intersected elements
       index = self.basetopo.edict[ elem.transform ]
       n = self.basetopo.elements[index].reference.nedges
       trimmed.extend( element.Element( edge, elem.transform<<trans, elem.transform<<trans.flipped ) for trans, edge in elem.reference.edges[n:] )
     trimboundarybase = UnstructuredTopology( self.ndims-1, trimmed )
-    trimboundary = trimboundarybase.withsubs( { self.boundaryname: trimboundarybase.withsubs() } if self.boundaryname else {} )
+    if self.boundaryname:
+      subs[ self.boundaryname ] = trimboundarybase.withsubs()
+    trimboundary = trimboundarybase.withsubs( subs )
 
     belems = [] # prior boundary elements (reduced)
     basebtopo = self.basetopo.boundary
@@ -1625,6 +1640,8 @@ class HierarchicalTopology( Topology ):
     Topology.__init__( self, basetopo.ndims )
 
   def __getitem__( self, item ):
+    if item == ():
+      return self
     return self.basetopo[item].hierarchical( self.allelements, precise=False )
 
   def hierarchical( self, elements, precise=False ):
@@ -1792,6 +1809,8 @@ class RevolvedTopology( Topology ):
     return len( self.basetopo )
 
   def __getitem__( self, item ):
+    if item == ():
+      return self
     return RevolvedTopology( self.basetopo[item] )
 
   @property
@@ -1839,5 +1858,7 @@ def common_refine( topo1, topo2 ):
       topo2trans[ head ] = None
   elements.extend( elem for elem in topo2trans.values() if elem is not None )
   return UnstructuredTopology( topo1.ndims, elements )
+
+_flipname = lambda s: s[1:] if s.startswith('~') else '~'+s
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

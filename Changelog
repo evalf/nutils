@@ -6,6 +6,16 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+Changed: renamed mesh.gmesh to mesh.gmsh; added support for periodicy
+
+  The gmsh importer was unintentionally misnamed as gmesh; this has been
+  fixed. With that the old name is deprecated and will be removed in
+  future. In addition, support for the non-physical mesh format and
+  externally supplied boundary labels has been removed (see the unit
+  test tests/mesh.py for examples of valid .geo format). Support is
+  added for periodicity and interface groups.
+
+
 Changed: function.Inflate, function.DofMap; removed IntVector
 
   The Inflate class takes a new length argument for the inflated shape.
