@@ -1537,13 +1537,14 @@ class SubsetTopology( Topology ):
 
     belems, ielems = self.search_interfaces
     subs = {}
-    for name, itopo in self.basetopo.interfaces.subtopos.items():
-      isect = [ elem for elem in belems if elem.transform.lookup( itopo.basetopo.edict ) ]
-      if isect:
-        subs[name] = UnstructuredTopology( self.ndims-1, isect )
-      isect = [ elem for elem in belems if elem.opposite.lookup( itopo.basetopo.edict ) ]
-      if isect:
-        subs[_flipname(name)] = UnstructuredTopology( self.ndims-1, isect )
+    if isinstance( self.basetopo.interfaces, ItemTopology ): # TODO fix ItemTopology situation
+      for name, itopo in self.basetopo.interfaces.subtopos.items():
+        isect = [ elem for elem in belems if elem.transform.lookup( itopo.basetopo.edict ) ]
+        if isect:
+          subs[name] = UnstructuredTopology( self.ndims-1, isect )
+        isect = [ elem for elem in belems if elem.opposite.lookup( itopo.basetopo.edict ) ]
+        if isect:
+          subs[_flipname(name)] = UnstructuredTopology( self.ndims-1, isect )
     trimmed = list( belems )
     for elem in self: # cheap search for intersected elements
       index = self.basetopo.edict[ elem.transform ]
