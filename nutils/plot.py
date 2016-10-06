@@ -13,7 +13,7 @@ backends. At this point `matplotlib <http://matplotlib.org/>`_ and `vtk
 """
 
 from . import numpy, log, core, cache, numeric, _
-import os, warnings, sys, subprocess
+import os, warnings, sys, subprocess, numbers
 
 
 class BasePlot( object ):
@@ -254,38 +254,44 @@ class PyPlot( BasePlot ):
 
     ax = self.gca()
 
-    if slope is None:
-      x_, x = x[-2:]
-      y_, y = y[-2:]
-      slope = numpy.log(y/y_) / numpy.log(x/x_)
-      slope = numpy.round( slope * 100 ) / 100.
+    islog = { 'log': True, 'linear': False }
+    xislog = islog[ ax.get_xscale() ]
+    yislog = islog[ ax.get_yscale() ]
+    xisnum = isinstance( x, numbers.Number )
+    yisnum = isinstance( y, numbers.Number )
 
-    if float(slope) > 0:
+    if slope is None:
+      assert not xisnum and not xisnum, 'need two points to compute a slope'
+      x__, x_ = numpy.log10(x[-2:]) if xislog else x[-2:]
+      y__, y_ = numpy.log10(y[-2:]) if yislog else y[-2:]
+      slope = (y_-y__) / (x_-x__)
+
+    if slope > 0:
       width = -width
 
-    xscale = ax.get_xscale()
+    if not xisnum:
+      x = x[-1]
+
+    if not yisnum:
+      y = y[-1]
+
     xmin, xmax = ax.get_xlim()
-    if xscale == 'linear':
-      W = ( xmax - xmin ) * width
-      x0 = x - W
-      xc = x - .5 * W
-    elif xscale == 'log':
+    if xislog:
       W = numpy.log10( xmax / xmin ) * width
       x0 = x * 10**-W
       xc = x * 10**(-.5*W)
     else:
-      raise Exception( 'unknown x-axis scale %r' % xscale )
+      W = ( xmax - xmin ) * width
+      x0 = x - W
+      xc = x - .5 * W
 
-    yscale = ax.get_yscale()
     H = W * float(slope)
-    if yscale == 'linear':
-      y0 = y - H
-      yc = y - .5 * H
-    elif yscale == 'log':
+    if yislog:
       y0 = y * 10**-H
       yc = y * 10**(-.5*H)
     else:
-      raise Exception( 'unknown x-axis scale %r' % xscale )
+      y0 = y - H
+      yc = y - .5 * H
 
     from matplotlib import transforms
     dpi = self.gcf().dpi_scale_trans
@@ -294,7 +300,7 @@ class PyPlot( BasePlot ):
     triangle = self.Polygon( [ (x0,y0), (x,y), (xc,y) ], closed=False, ec=color, fc='none', transform=shifttrans )
     ax.add_patch( triangle )
 
-    self.text( xc, yc, str(slope), color=color,
+    self.text( xc, yc, str(round(slope,3)), color=color,
       horizontalalignment = 'right' if W > 0 else 'left',
       verticalalignment = 'top' if H < 0 else 'bottom',
       transform = shifttrans + transforms.ScaledTranslation( numpy.sign(W) * -.05, numpy.sign(H) * .05, dpi ) )
