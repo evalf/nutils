@@ -629,14 +629,15 @@ class Constant( Array ):
       return asarray( numeric.contract( self.value, other.value, axes ) )
 
   def _concatenate( self, other, axis ):
-    if isinstance( other, Constant ):
+    if other.isconstant:
       shape1 = list(self.shape)
       shape2 = list(other.shape)
       shape1[axis] = shape2[axis] = shape1[axis] + shape2[axis]
       shape = _jointshape( shape1, shape2 )
       retval = numpy.empty( shape, dtype=_jointdtype(self.dtype,other.dtype) )
       retval[(slice(None),)*axis+(slice(None,self.shape[axis]),)] = self.value
-      retval[(slice(None),)*axis+(slice(self.shape[axis],None),)] = other.value
+      other_value, = other.eval()
+      retval[(slice(None),)*axis+(slice(self.shape[axis],None),)] = other_value
       return asarray( retval )
 
   def _cross( self, other, axis ):
@@ -2054,6 +2055,21 @@ class Zeros( Array ):
 
   def _revolved( self ):
     return self
+
+  def _concatenate( self, other, axis ):
+    if not other.isconstant:
+      return
+    shape1 = list(self.shape)
+    shape2 = list(other.shape)
+    shape1[axis] = shape2[axis] = shape1[axis] + shape2[axis]
+    shape = _jointshape( shape1, shape2 )
+    dtype=_jointdtype(self.dtype,other.dtype)
+    if isinstance( other, Zeros ):
+      return zeros( shape, dtype )
+    retval = numpy.zeros( shape, dtype=dtype )
+    other_value, = other.eval()
+    retval[(slice(None),)*axis+(slice(self.shape[axis],None),)] = other_value
+    return asarray( retval )
 
 class Inflate( Array ):
   'inflate'
