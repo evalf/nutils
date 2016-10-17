@@ -401,6 +401,11 @@ class Reference( cache.Immutable ):
       s.extend( '* {} {} -> {}'.format( subref, vtx2abc((etrans<<subtrans).apply(subref.vertices)), numeric.fhex((etrans<<subtrans).ext*subref.volume) ) for etrans, eref in self.edges for subtrans, subref in eref.simplices )
     except Exception as e:
       s.append( 'processing failed: {}'.format(e) )
+    ## useful code for the debugging of failed selfchecks
+    #if self.ndims == 2:
+    #  from . import plot
+    #  with plot.PyPlot( 'selfcheckfailed' ) as plt:
+    #    plt.segments( trans.apply(edge.getischeme('bezier2')[0]) for trans, edge in self.edges if edge )
     raise MyException( '\n'.join(s) )
 
   def __str__( self ):
@@ -1281,11 +1286,6 @@ class MosaicReference( Reference ):
 
   def __init__( self, baseref, edge_refs, midpoint ):
     assert len(edge_refs) == baseref.nedges
-    while isinstance( baseref, MosaicReference ) and not any( edge_refs[baseref.baseref.nedges:baseref.nedges] ):
-      # simplify baseref layering if possible
-      edge_refs = edge_refs[:baseref.baseref.nedges] + edge_refs[baseref.nedges:]
-      baseref = baseref.baseref
-
     self.baseref = baseref
     self._edge_refs = tuple( edge_refs )
     self._midpoint = midpoint
