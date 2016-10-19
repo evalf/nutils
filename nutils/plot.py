@@ -300,7 +300,7 @@ class PyPlot( BasePlot ):
     triangle = self.Polygon( [ (x0,y0), (x,y), (xc,y) ], closed=False, ec=color, fc='none', transform=shifttrans )
     ax.add_patch( triangle )
 
-    self.text( xc, yc, str(round(slope,3)), color=color,
+    self.text( xc, yc, str(round(float(slope),3)), color=color,
       horizontalalignment = 'right' if W > 0 else 'left',
       verticalalignment = 'top' if H < 0 else 'bottom',
       transform = shifttrans + transforms.ScaledTranslation( numpy.sign(W) * -.05, numpy.sign(H) * .05, dpi ) )
