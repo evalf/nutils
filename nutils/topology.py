@@ -286,7 +286,7 @@ class Topology( object ):
     retvals = self.elem_eval( (1,)+funcs, geometry=geometry, ischeme=ischeme )
     return [ v / retvals[0][(slice(None),)+(_,)*(v.ndim-1)] for v in retvals[1:] ]
 
-  def _integrate( self, funcs, ischeme ):
+  def _integrate( self, funcs, ischeme, fcache=None ):
 
     # Functions may consist of several blocks, such as originating from
     # chaining. Here we make a list of all blocks consisting of triplets of
@@ -306,7 +306,8 @@ class Topology( object ):
     if core.getprop( 'dot', False ):
       valuefunc.graphviz()
 
-    fcache = cache.WrapperCache()
+    if fcache is None:
+      fcache = cache.WrapperCache()
 
     # To allocate (shared) memory for all block data we evaluate indexfunc to
     # build an nblocks x nelems+1 offset array, and nblocks index lists of
@@ -363,18 +364,18 @@ class Topology( object ):
 
   @log.title
   @core.single_or_multiple
-  def integrate( self, funcs, ischeme, geometry=None, force_dense=False, edit=_identity ):
+  def integrate( self, funcs, ischeme, geometry=None, force_dense=False, fcache=None, edit=_identity ):
     'integrate'
 
     iwscale = function.J( geometry, self.ndims ) if geometry else 1
     funcs = [ func.unwrap( geometry ) if isinstance( func, IndexedArray ) else func for func in funcs ]
     integrands = [ function.asarray( edit( func * iwscale ) ) for func in funcs ]
-    data_index = self._integrate( integrands, ischeme )
+    data_index = self._integrate( integrands, ischeme, fcache )
     return [ matrix.assemble( data, index, integrand.shape, force_dense ) for integrand, (data,index) in zip( integrands, data_index ) ]
 
   @log.title
   @core.single_or_multiple
-  def integrate_symm( self, funcs, ischeme, geometry=None, force_dense=False, edit=_identity ):
+  def integrate_symm( self, funcs, ischeme, geometry=None, force_dense=False, fcache=None, edit=_identity ):
     'integrate a symmetric integrand on a product domain' # TODO: find a proper home for this
 
     iwscale = function.J( geometry, self.ndims ) if geometry else 1
@@ -390,8 +391,8 @@ class Topology( object ):
         diagelems.append( elem )
       elif head1 < head2:
         trielems.append( elem )
-    diag_data_index = UnstructuredTopology( self.ndims, diagelems )._integrate( integrands, ischeme )
-    tri_data_index = UnstructuredTopology( self.ndims, trielems )._integrate( integrands, ischeme )
+    diag_data_index = UnstructuredTopology( self.ndims, diagelems )._integrate( integrands, ischeme, fcache=fcache )
+    tri_data_index = UnstructuredTopology( self.ndims, trielems )._integrate( integrands, ischeme, fcache=fcache )
     retvals = []
     for integrand, (diagdata,diagindex), (tridata,triindex) in zip( integrands, diag_data_index, tri_data_index ):
       data = numpy.concatenate( [ diagdata, tridata, tridata ], axis=0 )
@@ -1823,11 +1824,11 @@ class RevolvedTopology( Topology ):
 
   @log.title
   @core.single_or_multiple
-  def integrate( self, funcs, ischeme, geometry, force_dense=False, edit=_identity ):
+  def integrate( self, funcs, ischeme, geometry, force_dense=False, fcache=None, edit=_identity ):
     iwscale = function.jacobian( geometry, self.ndims+1 ) * function.Iwscale(self.ndims)
     funcs = [ func.unwrap( geometry ) if isinstance( func, IndexedArray ) else func for func in funcs ]
     integrands = [ function.asarray( edit( func * iwscale ) ) for func in funcs ]
-    data_index = self._integrate( integrands, ischeme )
+    data_index = self._integrate( integrands, ischeme, fcache=fcache )
     return [ matrix.assemble( data, index, integrand.shape, force_dense ) for integrand, (data,index) in zip( integrands, data_index ) ]
 
   def basis( self, name, *args, **kwargs ):
