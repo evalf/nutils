@@ -73,21 +73,21 @@ class HashableArray( HashableBase ):
     # check full array only if we really must
     return isinstance(other,HashableArray) and ( self.array is other.array
       or self.quickdata == other.quickdata and numpy.all( self.array == other.array ) )
-  @property
+  @_property
   def _orig( self ):
     return self.array
   
 class HashableList( tuple, HashableBase ):
   def __new__( cls, L ):
     return tuple.__new__( cls, map( _hashable, L ) )
-  @property
+  @_property
   def _orig( self ):
     return list( self )
 
 class HashableDict( frozenset, HashableBase ):
   def __new__( cls, D ):
     return frozenset.__new__( cls, map( _hashable, D if isinstance( D, frozenset ) else dict( D ).items() ) )
-  @property
+  @_property
   def _orig( self ):
     return dict( self )
 
@@ -98,7 +98,7 @@ class HashableAny( HashableBase ):
     return hash( id(self.obj) )
   def __eq__( self, other ):
     return isinstance(other,HashableAny) and self.obj is other.obj
-  @property
+  @_property
   def _orig( self ):
     return self.obj
 
@@ -154,7 +154,7 @@ class Wrapper( object ):
       self.cache[ key ] = value
     return value
 
-  @property
+  @_property
   def hits( self ):
     return self.count - len(self.cache)
 
@@ -172,7 +172,7 @@ class WrapperCache( object ):
       self.cache[func] = wrapper
     return wrapper
 
-  @property
+  @_property
   def stats( self ):
     hits = count = 0
     for wrapper in self.cache.values():
