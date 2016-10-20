@@ -160,18 +160,16 @@ def _len( iterable ):
   except:
     return None
 
-def _logiter( text, iterator, length=None ):
+def _logiter( text, iterator, length=None, useitem=False ):
   dt = core.getprop( 'progress_interval', 1. )
   dtexp = core.getprop( 'progress_interval_scale', 2 )
   dtmax = core.getprop( 'progress_interval_max', 0 )
   tnext = time.time() + dt
   log = _getlog()
-  index = 0
-  for item in iterator:
-    title = '%s %d' % ( text, index )
+  for index, item in _enumerate(iterator):
+    title = '%s %d' % ( text, item if useitem else index )
     if length is not None:
-      title += '/%d (%d%%)' % ( length, (index-.5) * 100. / length )
-    index += 1
+      title += ' ({:.0f}%)'.format( (index+.5) * 100. / length )
     log.push( title )
     try:
       now = time.time()
@@ -221,27 +219,27 @@ def range( title, *args ):
   '''Progress logger identical to built in range'''
 
   items = _range( *args )
-  return _logiter( title, _iter(items), len(items) )
+  return _logiter( title, _iter(items), length=len(items), useitem=True )
 
 def iter( title, iterable, length=None ):
   '''Progress logger identical to built in iter'''
 
-  return _logiter( title, _iter(iterable), length or _len(iterable) )
+  return _logiter( title, _iter(iterable), length=length or _len(iterable) )
 
 def enumerate( title, iterable, length=None ):
   '''Progress logger identical to built in enumerate'''
 
-  return _logiter( title, _enumerate(iterable), length or _len(iterable) )
+  return _logiter( title, _enumerate(iterable), length=length or _len(iterable) )
 
 def zip( title, *iterables ):
   '''Progress logger identical to built in enumerate'''
 
-  return _logiter( title, _zip(*iterables), None )
+  return _logiter( title, _zip(*iterables), length=None )
 
 def count( title, start=0, step=1 ):
   '''Progress logger identical to itertools.count'''
 
-  return _logiter( title, itertools.count(start,step), None )
+  return _logiter( title, itertools.count(start,step), length=None, useitem=True )
     
 def stack( msg, frames ):
   '''Print stack trace'''
