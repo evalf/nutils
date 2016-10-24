@@ -587,7 +587,7 @@ class TriangleReference( SimplexReference ):
 
     icw = [
       ( I, [1/3], 1 )
-    ] if degree == 1 else [
+    ] if degree <= 1 else [
       ( J, [2/3,1/6], 1/3 )
     ] if degree == 2 else [
       ( I, [1/3], -9/16 ),
