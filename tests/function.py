@@ -88,9 +88,11 @@ def check( op, n_op, shapes, hasgrad=True ):
       n_op( *argsfun.eval(elem,points) ),
         op( *args ).eval(elem,points), decimal=15 )
 
+  shape = op( *args ).shape
+  shapearg = numpy.random.uniform( size=shape )
+
   @unittest
   def getitem():
-    shape = op( *args ).shape
     for idim in range( len(shape) ):
       s = (Ellipsis,) + (slice(None),)*idim + (shape[idim]//2,) + (slice(None),)*(len(shape)-idim-1)
       numpy.testing.assert_array_almost_equal(
@@ -98,8 +100,28 @@ def check( op, n_op, shapes, hasgrad=True ):
           op( *args )[s].eval(elem,points), decimal=15 )
 
   @unittest
+  def align():
+    ndim = len(shape)+1
+    axes = (numpy.arange(len(shape))+2) % ndim
+    numpy.testing.assert_array_almost_equal(
+      numeric.align( n_op( *argsfun.eval(elem,points) ), [0]+list(axes+1), ndim+1 ),
+     function.align( op( *args ), axes, ndim ).eval(elem,points), decimal=15 )
+
+  count = {}
+  for i, sh in enumerate(shape):
+    count.setdefault(sh,[]).append(i)
+  pairs = [ sorted(axes[:2]) for axes in count.values() if len(axes) > 1 ] # axis pairs with same length
+  if pairs:
+    @unittest
+    def takediag():
+      for ax1, ax2 in pairs:
+        alignaxes = list(range(ax1+1)) + [-2] + list(range(ax1+1,ax2)) + [-1] + list(range(ax2,len(shape)-1))
+        numpy.testing.assert_array_almost_equal(
+          numeric.takediag( numeric.align( n_op( *argsfun.eval(elem,points) ), alignaxes, len(shape)+1 ) ),
+         function.takediag( op( *args ), ax1, ax2 ).eval(elem,points), decimal=15 )
+
+  @unittest
   def getslice():
-    shape = op( *args ).shape
     for idim in range( len(shape) ):
       if shape[idim] == 1:
         continue
@@ -107,6 +129,25 @@ def check( op, n_op, shapes, hasgrad=True ):
       numpy.testing.assert_array_almost_equal(
         n_op( *argsfun.eval(elem,points) )[s],
           op( *args )[s].eval(elem,points), decimal=15 )
+
+  @unittest
+  def sumaxis():
+    for idim in range( len(shape) ):
+      numpy.testing.assert_array_almost_equal(
+        n_op( *argsfun.eval(elem,points) ).sum(1+idim),
+          op( *args ).sum(idim).eval(elem,points), decimal=15 )
+
+  @unittest
+  def add():
+    numpy.testing.assert_array_almost_equal(
+      n_op( *argsfun.eval(elem,points) ) + shapearg,
+      ( op( *args ) + shapearg ).eval(elem,points), decimal=15 )
+
+  @unittest
+  def multiply():
+    numpy.testing.assert_array_almost_equal(
+      n_op( *argsfun.eval(elem,points) ) * shapearg,
+      ( op( *args ) * shapearg ).eval(elem,points), decimal=15 )
 
   @unittest
   def edit():

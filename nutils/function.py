@@ -1464,7 +1464,11 @@ class Add( Array ):
     return arr1 + arr2
 
   def _sum( self, axis ):
-    return sum( self.funcs[0], axis ) + sum( self.funcs[1], axis )
+    sum1 = sum( self.funcs[0], axis )
+    sum2 = sum( self.funcs[1], axis )
+    n1 = self.funcs[0].shape[axis]
+    n2 = self.funcs[1].shape[axis]
+    return sum1 + sum2 if n1 == n2 else sum1 * n2 + sum2 * n1
 
   def _derivative( self, var, axes, seen ):
     func1, func2 = self.funcs
