@@ -55,6 +55,7 @@ from . import register, unittest
 @register( 'trignormal', lambda a: function.trignormal(a), lambda a: numpy.array([ numpy.cos(a), numpy.sin(a) ]).T, [()] )
 @register( 'trigtangent', lambda a: function.trigtangent(a), lambda a: numpy.array([ -numpy.sin(a), numpy.cos(a) ]).T, [()] )
 @register( 'mod', lambda a,b: function.mod(a,b), lambda a,b: numpy.mod(a,b), [(3,),(3,)], hasgrad=False )
+@register( 'kronecker', lambda f: function.kronecker(f,axis=-2,length=3,pos=1), lambda a: numeric.kronecker(a,axis=-2,length=3,pos=1), [(2,3,)] )
 def check( op, n_op, shapes, hasgrad=True ):
 
   anchor = transform.roottrans( 'test', (0,0) )

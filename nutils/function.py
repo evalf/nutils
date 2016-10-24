@@ -629,15 +629,14 @@ class Constant( Array ):
       return asarray( numeric.contract( self.value, other.value, axes ) )
 
   def _concatenate( self, other, axis ):
-    if other.isconstant:
+    if isinstance( other, Constant ):
       shape1 = list(self.shape)
       shape2 = list(other.shape)
       shape1[axis] = shape2[axis] = shape1[axis] + shape2[axis]
       shape = _jointshape( shape1, shape2 )
       retval = numpy.empty( shape, dtype=_jointdtype(self.dtype,other.dtype) )
       retval[(slice(None),)*axis+(slice(None,self.shape[axis]),)] = self.value
-      other_value, = other.eval()
-      retval[(slice(None),)*axis+(slice(self.shape[axis],None),)] = other_value
+      retval[(slice(None),)*axis+(slice(self.shape[axis],None),)] = other.value
       return asarray( retval )
 
   def _cross( self, other, axis ):
@@ -2060,20 +2059,8 @@ class Zeros( Array ):
   def _revolved( self ):
     return self
 
-  def _concatenate( self, other, axis ):
-    if not other.isconstant:
-      return
-    shape1 = list(self.shape)
-    shape2 = list(other.shape)
-    shape1[axis] = shape2[axis] = shape1[axis] + shape2[axis]
-    shape = _jointshape( shape1, shape2 )
-    dtype=_jointdtype(self.dtype,other.dtype)
-    if isinstance( other, Zeros ):
-      return zeros( shape, dtype )
-    retval = numpy.zeros( shape, dtype=dtype )
-    other_value, = other.eval()
-    retval[(slice(None),)*axis+(slice(self.shape[axis],None),)] = other_value
-    return asarray( retval )
+  def _kronecker( self, axis, length, pos ):
+    return zeros( self.shape[:axis]+(length,)+self.shape[axis:], dtype=self.dtype )
 
 class Inflate( Array ):
   'inflate'
@@ -2437,6 +2424,91 @@ class Find( Array ):
     where, = where
     index, = where.nonzero()
     return index[_]
+
+class Kronecker( Array ):
+  'kronecker'
+
+  def __init__( self, func, axis, length, pos ):
+    assert isarray( func )
+    assert 0 <= axis <= func.ndim
+    assert 0 <= pos < length
+    self.func = func
+    self.axis = axis
+    self.length = length
+    self.pos = pos
+    Array.__init__( self, args=[func], shape=func.shape[:axis]+(length,)+func.shape[axis:], dtype=func.dtype )
+
+  def evalf( self, func ):
+    return numeric.kronecker( func, self.axis+1, self.length, self.pos )
+
+  @property
+  def blocks( self ):
+    for ind, f in blocks( self.func ):
+      yield Tuple( ind[:self.axis] + (Constant(numpy.array([self.pos])),) + ind[self.axis:] ), insert( f, self.axis )
+
+  def _derivative( self, var, axes, seen ):
+    return kronecker( derivative( self.func, var, axes, seen ), self.axis, self.length, self.pos )
+
+  def _get( self, i, item ):
+    if i != self.axis:
+      return kronecker( get(self.func,i-(i>self.axis),item), self.axis-(i<self.axis), self.length, self.pos )
+    if item != self.pos:
+      return zeros( self.func.shape, self.dtype )
+    return self.func
+
+  def _add( self, other ):
+    if isinstance( other, Kronecker ) and other.axis == self.axis and self.length == other.length and self.pos == other.pos:
+      return kronecker( self.func + other.func, self.axis, self.length, self.pos )
+
+  def _multiply( self, other ):
+    getpos = 0 if other.shape[self.axis] == 1 else self.pos
+    return kronecker( self.func * get( other, self.axis, getpos ), self.axis, self.length, self.pos )
+
+  def _dot( self, other, axes ):
+    getpos = 0 if other.shape[self.axis] == 1 else self.pos
+    newother = get( other, self.axis, getpos )
+    newaxis = self.axis
+    newaxes = []
+    for ax in axes:
+      if ax < self.axis:
+        newaxis -= 1
+        newaxes.append( ax )
+      elif ax > self.axis:
+        newaxes.append( ax-1 )
+    dotfunc = dot( self.func, newother, newaxes )
+    return dotfunc if len(newaxes) < len(axes) else kronecker( dotfunc, newaxis, self.length, self.pos )
+
+  def _sum( self, axis ):
+    if axis == self.axis:
+      return self.func
+    return kronecker( sum( self.func, axis-(axis>self.axis) ), self.axis-(axis<self.axis), self.length, self.pos )
+
+  def _align( self, axes, ndim ):
+    newaxis = axes[self.axis]
+    newaxes = [ ax-(ax>newaxis) for ax in axes if ax != newaxis ]
+    return kronecker( align( self.func, newaxes, ndim-1 ), newaxis, self.length, self.pos )
+
+  def _takediag( self ):
+    if self.axis < self.ndim-2:
+      return kronecker( takediag(self.func), self.axis, self.length, self.pos )
+    return kronecker( get( self.func, self.func.ndim-1, self.pos ), self.func.ndim-1, self.length, self.pos )
+
+  def _take( self, index, axis ):
+    if axis != self.axis:
+      return kronecker( take( self.func, index, axis-(axis>self.axis) ), self.axis, self.length, self.pos )
+    # TODO select axis in index
+
+  def _power( self, n ):
+    return kronecker( power(self.func,n), self.axis, self.length, self.pos )
+
+  def _pointwise( self, evalf, deriv, dtype ):
+    value = evalf( *numpy.zeros(self.shape[0]) )
+    assert value.dtype == dtype
+    if value == 0:
+      return kronecker( pointwise( self.func, evalf, deriv, dtype ), self.axis, self.length, self.pos )
+
+  def _edit( self, op ):
+    return kronecker( op(self.func), self.axis, self.length, self.pos )
 
 class DerivativeTargetBase( Array ):
   'base class for derivative targets'
@@ -3127,11 +3199,14 @@ def dotnorm( arg, coords, ndims=0 ):
 def kronecker( arg, axis, length, pos ):
   'kronecker'
 
+  arg = asarray( arg )
   axis = numeric.normdim( arg.ndim+1, axis )
-  arg = insert( arg, axis )
-  args = [ zeros_like(arg) ] * length
-  args[pos] = arg
-  return concatenate( args, axis=axis )
+  assert 0 <= pos < length
+  retval = _call( arg, '_kronecker', axis, length, pos )
+  if retval is not None:
+    assert retval.shape == arg.shape[:axis]+(length,)+arg.shape[axis:], 'bug in %s._kronecker' % arg
+    return retval
+  return Kronecker( arg, axis, length, pos )
 
 def diagonalize( arg ):
   'diagonalize'

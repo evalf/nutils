@@ -392,6 +392,12 @@ def ix( args ):
   ndims = idims[-1]
   return [ arg.reshape((1,)*idim+(arg.size,)+(1,)*(ndims-idim-1)) for idim, arg in zip( idims, args ) ]
 
+def kronecker( arr, axis, length, pos ):
+  axis = normdim( arr.ndim+1, axis )
+  kron = numpy.zeros( arr.shape[:axis]+(length,)+arr.shape[axis:], arr.dtype )
+  kron[ (slice(None),)*axis + (pos,) ] = arr
+  return kron
+
 class Broadcast1D( object ):
   def __init__( self, arg ):
     self.arg = numpy.asarray( arg )
