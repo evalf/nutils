@@ -165,8 +165,11 @@ def shzeros( shape, dtype=float ):
     dtype = numpy.int8
   else:
     raise Exception( 'invalid dtype: %r' % dtype )
-  buf = multiprocessing.RawArray( typecode, int(size) )
-  return numpy.frombuffer( buf, dtype ).reshape( shape )
+  if core.getprop( 'nprocs', 1 ) == 1:
+    return numpy.zeros( shape=shape, dtype=dtype )
+  else:
+    buf = multiprocessing.RawArray( typecode, int(size) )
+    return numpy.frombuffer( buf, dtype ).reshape( shape )
 
 def pariter( iterable ):
   'iterate parallel'
