@@ -20,6 +20,7 @@ import os, warnings
 
 # MESH GENERATORS
 
+@log.title
 def rectilinear( richshape, periodic=(), name='rect', revolved=False ):
   'rectilinear mesh'
 
@@ -77,6 +78,7 @@ def rectilinear( richshape, periodic=(), name='rect', revolved=False ):
 
   return topo, geom
 
+@log.title
 def gmsh( fname, name=None ):
   """Gmsh parser
 
@@ -263,22 +265,22 @@ def gmsh( fname, name=None ):
   # create volume topologies
   basevtopo = topology.UnstructuredTopology( ndims, velems )
   subvtopos = { tagname: topology.SubsetTopology( basevtopo, elements=tagvelems, boundaryname=None, precise=True ) for tagname, tagvelems in tagsvelems.items() }
-  log.info( '* topology (#{}) with groups: {}'.format( len(basevtopo), ', '.join('{} (#{})'.format(n,len(t)) for n, t in subvtopos.items()) ) )
+  log.info( 'topology (#{}) with groups: {}'.format( len(basevtopo), ', '.join('{} (#{})'.format(n,len(t)) for n, t in subvtopos.items()) ) )
 
   # create boundary topologies
   basebtopo = topology.UnstructuredTopology( ndims-1, belems.values() )
   subbtopos = { tagname: topology.SubsetTopology( basebtopo, elements=tagbelems, boundaryname=None, precise=True ) for tagname, tagbelems in tagsbelems.items() }
-  log.info( '* boundary (#{}) with groups: {}'.format( len(basebtopo), ', '.join('{} (#{})'.format(n,len(t)) for n, t in subbtopos.items() ) ) )
+  log.info( 'boundary (#{}) with groups: {}'.format( len(basebtopo), ', '.join('{} (#{})'.format(n,len(t)) for n, t in subbtopos.items() ) ) )
 
   # create interface topologies
   baseitopo = topology.UnstructuredTopology( ndims-1, ielems.values() )
   subitopos = { tagname: topology.SubsetTopology( baseitopo, elements=tagielems, boundaryname=None, precise=True ) for tagname, tagielems in tagsielems.items() }
-  log.info( '* interfaces (#{}) with groups: {}'.format( len(baseitopo), ', '.join('{} (#{})'.format(n,len(t)) for n, t in subitopos.items() ) ) )
+  log.info( 'interfaces (#{}) with groups: {}'.format( len(baseitopo), ', '.join('{} (#{})'.format(n,len(t)) for n, t in subitopos.items() ) ) )
 
   # create point topologies
   baseptopo = topology.UnstructuredTopology( 0, pelems )
   subptopos = { tagname: topology.SubsetTopology( baseptopo, elements=tagpelems, boundaryname=None, precise=True ) for tagname, tagpelems in tagspelems.items() }
-  log.info( '* points (#{}) with groups: {}'.format( len(baseptopo), ', '.join('{} (#{})'.format(n,len(t)) for n, t in subptopos.items() ) ) )
+  log.info( 'points (#{}) with groups: {}'.format( len(baseptopo), ', '.join('{} (#{})'.format(n,len(t)) for n, t in subptopos.items() ) ) )
 
   # create topology
   topo = basevtopo.withsubs( subvtopos )
