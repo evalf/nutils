@@ -243,7 +243,7 @@ def gmshrect():
   @unittest
   def iface():
     ax, ay = domain.interfaces['iface'].elem_eval( geom, ischeme='uniform1', separate=False ).T
-    bx, by = domain['left'].boundary['~iface'].elem_eval( geom, ischeme='uniform1', separate=False ).T
+    bx, by = domain['left'].boundary['iface'].elem_eval( geom, ischeme='uniform1', separate=False ).T
     cx, cy = domain['right'].boundary['iface'].elem_eval( geom, ischeme='uniform1', separate=False ).T
     assert all( ax == 1 )
     assert all( bx == 1 )

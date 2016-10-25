@@ -816,6 +816,10 @@ class EmptyTopology( Topology ):
   def __len__( self ):
     return 0
 
+  def __or__( self, other ):
+    assert self.ndims == other.ndims
+    return other
+
   @property
   def elements( self ):
     return ()
@@ -936,7 +940,7 @@ class StructuredTopology( Topology ):
       if idim < len(subnames):
         subtopos.update( zip( subnames[idim], topos ) )
       dirtopos.append( UnionTopology(topos) )
-    return EmptyTopology() if len(dirtopos) == 0 else UnionTopology( dirtopos ).withsubs( subtopos )
+    return EmptyTopology( self.ndims-1 ) if len(dirtopos) == 0 else UnionTopology( dirtopos ).withsubs( subtopos )
 
   @cache.property
   def interfaces( self ):
@@ -1541,11 +1545,13 @@ class SubsetTopology( Topology ):
     if isinstance( self.basetopo.interfaces, ItemTopology ): # TODO fix ItemTopology situation
       for name, itopo in self.basetopo.interfaces.subtopos.items():
         isect = [ elem for elem in belems if elem.transform.lookup( itopo.basetopo.edict ) ]
+        nametopo = EmptyTopology( self.ndims-1 )
         if isect:
-          subs[name] = UnstructuredTopology( self.ndims-1, isect )
+          nametopo |= UnstructuredTopology( self.ndims-1, isect )
         isect = [ elem for elem in belems if elem.opposite.lookup( itopo.basetopo.edict ) ]
         if isect:
-          subs[_flipname(name)] = UnstructuredTopology( self.ndims-1, isect )
+          nametopo |= UnstructuredTopology( self.ndims-1, isect )
+        subs[name] = nametopo
     trimmed = list( belems )
     for elem in self: # cheap search for intersected elements
       index = self.basetopo.edict[ elem.transform ]
