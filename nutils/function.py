@@ -1281,6 +1281,9 @@ class Concatenate( Array ):
   def _edit( self, op ):
     return concatenate( [ op(func) for func in self.funcs ], self.axis )
 
+  def _kronecker( self, axis, length, pos ):
+    return concatenate( [ kronecker(func,axis,length,pos) for func in self.funcs ], self.axis+(axis<=self.axis) )
+
 class Interpolate( Array ):
   'interpolate uniformly spaced data; stepwise for now'
 
@@ -2246,6 +2249,7 @@ class Diagonalize( Array ):
     return diagonalize( sum( self.func, axis ) )
 
   def _align( self, axes, ndim ):
+    axes = tuple( axes )
     if axes[-2:] in [ (ndim-2,ndim-1), (ndim-1,ndim-2) ]:
       return diagonalize( align( self.func, axes[:-2] + (ndim-2,), ndim-1 ) )
 
@@ -2344,6 +2348,9 @@ class Repeat( Array ):
     if isinstance( other, Repeat ):
       return aslength( aslength( concatenate( [self.func,other.func], axis ), self.length, self.axis ), other.length, other.axis )
     return aslength( concatenate( [self.func,other], axis ), self.length, self.axis )
+
+  def _kronecker( self, axis, length, pos ):
+    return repeat( kronecker(self.func,axis,length,pos), self.length, self.axis+(axis<=self.axis) )
 
 class Guard( Array ):
   'bar all simplifications'
@@ -2805,10 +2812,12 @@ def insert( arg, n ):
 def stack( args, axis=0 ):
   'stack functions along new axis'
 
-  args = [ insert( arg, axis ) for arg in args ]
-  ndim = args[0].ndim
-  assert all( arg.ndim == ndim for arg in args[1:] ), 'arguments have non-matching shapes'
-  return concatenate( args, axis )
+  length = len(args)
+  assert length > 0
+  stack = 0
+  for iarg, arg in enumerate(args):
+    stack += kronecker( arg, axis=axis, length=length, pos=iarg )
+  return stack
 
 def chain( funcs ):
   'chain'
@@ -3202,6 +3211,8 @@ def kronecker( arg, axis, length, pos ):
   arg = asarray( arg )
   axis = numeric.normdim( arg.ndim+1, axis )
   assert 0 <= pos < length
+  if length == 1:
+    return insert( arg, axis )
   retval = _call( arg, '_kronecker', axis, length, pos )
   if retval is not None:
     assert retval.shape == arg.shape[:axis]+(length,)+arg.shape[axis:], 'bug in %s._kronecker' % arg
