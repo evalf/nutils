@@ -2192,6 +2192,9 @@ class Inflate( Array ):
   def _edit( self, op ):
     return inflate( op(self.func), op(self.dofmap), self.length, self.axis )
 
+  def _kronecker( self, axis, length, pos ):
+    return inflate( kronecker(self.func,axis,length,pos), self.dofmap, self.length, self.axis+(axis<=self.axis) )
+
 class Diagonalize( Array ):
   'diagonal matrix'
 
