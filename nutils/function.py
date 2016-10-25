@@ -2506,7 +2506,9 @@ class Kronecker( Array ):
     # TODO select axis in index
 
   def _power( self, n ):
-    return kronecker( power(self.func,n), self.axis, self.length, self.pos )
+    assert n.ndim == self.ndim
+    if n.shape[self.axis] == 1:
+      return kronecker( power(self.func,get(n,self.axis,0)), self.axis, self.length, self.pos )
 
   def _pointwise( self, evalf, deriv, dtype ):
     value = evalf( *numpy.zeros(self.shape[0]) )

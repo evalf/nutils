@@ -151,6 +151,12 @@ def check( op, n_op, shapes, hasgrad=True ):
       ( op( *args ) * shapearg ).eval(elem,points), decimal=15 )
 
   @unittest
+  def power():
+    numpy.testing.assert_array_almost_equal(
+      n_op( *argsfun.eval(elem,points) )**3,
+      ( op( *args )**3 ).eval(elem,points), decimal=14 )
+
+  @unittest
   def edit():
     identity = lambda arg: function.edit( arg, identity )
     func = op( *args )
