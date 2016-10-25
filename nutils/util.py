@@ -156,13 +156,13 @@ def getpath( pattern ):
 
   outdir = core.getprop( 'outdir', '.' )
   if pattern == pattern.format( 0 ):
-    return outdir + pattern
+    return os.path.join( outdir, pattern )
   prefix = pattern.split( '{' )[0]
   names = [ name for name in os.listdir( outdir ) if name.startswith(prefix) ]
   n = len(names)
   while True:
     n += 1
-    newname = outdir + pattern.format( n )
+    newname = os.path.join( outdir, pattern.format(n) )
     if not os.path.isfile( newname ):
       return newname
 
