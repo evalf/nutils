@@ -73,23 +73,14 @@ class HashableArray( HashableBase ):
     # check full array only if we really must
     return isinstance(other,HashableArray) and ( self.array is other.array
       or self.quickdata == other.quickdata and numpy.all( self.array == other.array ) )
-  @_property
-  def _orig( self ):
-    return self.array
   
 class HashableList( tuple, HashableBase ):
   def __new__( cls, L ):
     return tuple.__new__( cls, map( _hashable, L ) )
-  @_property
-  def _orig( self ):
-    return list( self )
 
 class HashableDict( frozenset, HashableBase ):
   def __new__( cls, D ):
     return frozenset.__new__( cls, map( _hashable, D if isinstance( D, frozenset ) else dict( D ).items() ) )
-  @_property
-  def _orig( self ):
-    return dict( self )
 
 class HashableAny( HashableBase ):
   def __init__( self, obj ):
@@ -98,9 +89,6 @@ class HashableAny( HashableBase ):
     return hash( id(self.obj) )
   def __eq__( self, other ):
     return isinstance(other,HashableAny) and self.obj is other.obj
-  @_property
-  def _orig( self ):
-    return self.obj
 
 def _hashable( obj ):
   try:
@@ -117,7 +105,7 @@ def _hashable( obj ):
     else HashableDict( obj ) if isinstance( obj, dict ) \
     else HashableAny( obj )
 
-def _keyfromargs( func, args, kwargs, offset=0 ):
+def _position_args( func, args, kwargs, offset=0 ):
   if getattr( func, '__self__', None ) is not None: # bound instancemethod
     offset += 1
   code = func.__code__
@@ -135,7 +123,7 @@ def _keyfromargs( func, args, kwargs, offset=0 ):
           raise TypeError( '%s missing mandatory argument %r' % ( func.__name__, name ) )
       args += val,
     assert not kwargs, '%s got invalid arguments: %s' % ( func.__name__, ', '.join(kwargs) )
-  return tuple( _hashable(arg) for arg in args )
+  return args
 
 class Wrapper( object ):
   'function decorator that caches results by arguments'
@@ -147,7 +135,7 @@ class Wrapper( object ):
 
   def __call__( self, *args, **kwargs ):
     self.count += 1
-    key = _keyfromargs( self.func, args, kwargs )
+    key = tuple( _hashable(arg) for arg in _position_args( self.func, args, kwargs ) )
     value = self.cache.get( key )
     if value is None:
       value = self.func( *args, **kwargs )
@@ -207,30 +195,29 @@ class ImmutableMeta( type ):
     type.__init__( cls, *args, **kwargs )
     cls.cache = weakref.WeakValueDictionary()
   def __call__( cls, *args, **kwargs ):
-    key = _keyfromargs( cls.__init__, args, kwargs, 1 )
+    _args = _position_args( cls.__init__, args, kwargs, 1 )
+    key = _hashable( _args )
     try:
       self = cls.cache[key]
     except KeyError:
-      self = type.__call__( cls, *args, **kwargs )
+      self = type.__call__( cls, *_args )
+      self._args = _args
       cls.cache[key] = self
     return self
 
 class Immutable( object, metaclass=ImmutableMeta ):
 
-  def __getnewargs__( self ):
-    for args, obj in self.__class__.cache.items():
-      if obj is self:
-        return tuple( arg._orig if isinstance( arg, HashableBase ) else arg for arg in args )
-    raise ValueError( 'object missing from cache' )
+  def __reduce__( self ):
+    return self.__class__.__call__, self._args
+
+  def __getstate__( self ):
+    raise Exception( 'getstate should never be called' )
+
+  def __setstate__( self, state ):
+    raise Exception( 'setstate should never be called' )
 
   def __str__( self ):
-    try:
-      args = findargs(self)
-    except ValueError:
-      s = str( type(self) )
-    else:
-      s = '{}({})'.format( self.__class__.__name__, ','.join( str(arg) for arg in args ) )
-    return s
+    return '{}({})'.format( self.__class__.__name__, ','.join( str(arg) for arg in self._args ) )
 
 class FileCache( object ):
   'cache'
