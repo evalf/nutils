@@ -11,7 +11,7 @@ The cache module.
 """
 
 from . import core, log, rational
-import os, sys, weakref, numpy, functools
+import os, sys, weakref, numpy, functools, inspect
 
 
 _property = property
@@ -105,25 +105,15 @@ def _hashable( obj ):
     else HashableDict( obj ) if isinstance( obj, dict ) \
     else HashableAny( obj )
 
-def _position_args( func, args, kwargs, offset=0 ):
-  if getattr( func, '__self__', None ) is not None: # bound instancemethod
-    offset += 1
-  code = func.__code__
-  names = code.co_varnames[offset+len(args):code.co_argcount]
-  if names:
-    kwargs = kwargs.copy()
-    for name in names:
-      try:
-        val = kwargs.pop(name)
-      except KeyError:
-        index = names.index(name)-len(names)
-        try:
-          val = func.__defaults__[index]
-        except Exception as e:
-          raise TypeError( '%s missing mandatory argument %r' % ( func.__name__, name ) )
-      args += val,
-    assert not kwargs, '%s got invalid arguments: %s' % ( func.__name__, ', '.join(kwargs) )
-  return args
+def _position_args( func, *args, **kwargs ):
+  sig = inspect.signature( func )
+  invalid_kinds = inspect.Parameter.KEYWORD_ONLY, inspect.Parameter.VAR_KEYWORD
+  params = tuple( sig.parameters.values() )
+  assert not any( param.kind in invalid_kinds for param in params )
+  bound = sig.bind( *args, **kwargs )
+  positional = tuple( bound.arguments.get( param.name, param.default ) for param in params )
+  assert not any( arg is inspect.Parameter.empty for arg in positional )
+  return positional
 
 class Wrapper( object ):
   'function decorator that caches results by arguments'
@@ -135,7 +125,7 @@ class Wrapper( object ):
 
   def __call__( self, *args, **kwargs ):
     self.count += 1
-    key = tuple( _hashable(arg) for arg in _position_args( self.func, args, kwargs ) )
+    key = _hashable( _position_args( self.func, *args, **kwargs ) )
     value = self.cache.get( key )
     if value is None:
       value = self.func( *args, **kwargs )
@@ -195,7 +185,7 @@ class ImmutableMeta( type ):
     type.__init__( cls, *args, **kwargs )
     cls.cache = weakref.WeakValueDictionary()
   def __call__( cls, *args, **kwargs ):
-    _args = _position_args( cls.__init__, args, kwargs, 1 )
+    _args = _position_args( cls.__init__, None, *args, **kwargs )[1:]
     key = _hashable( _args )
     try:
       self = cls.cache[key]
