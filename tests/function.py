@@ -251,3 +251,27 @@ def check( op, n_op, shapes, hasgrad=True ):
     numpy.testing.assert_array_almost_equal(
       n_op( *opposite_args.eval(iface,ifpoints) ),
         function.opposite( op( *args ) ).eval(iface,ifpoints), decimal=15 )
+
+
+@register
+def commutativity():
+
+  numpy.random.seed(0)
+  A = function.asarray( numpy.random.uniform( size=[2,3] ) )
+  B = function.asarray( numpy.random.uniform( size=[2,3] ) )
+
+  @unittest
+  def add():
+    assert function.add( A, B ) == function.add( B, A )
+
+  @unittest
+  def multiply():
+    assert function.multiply( A, B ) == function.multiply( B, A )
+
+  @unittest
+  def dot():
+    assert function.dot( A, B, axes=[0] ) == function.dot( B, A, axes=[0] )
+
+  @unittest
+  def combined():
+    assert function.add( A, B ) * function.dot( A, B, axes=[0] ) == function.dot( B, A, axes=[0] ) * function.add( B, A )
