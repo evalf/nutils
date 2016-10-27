@@ -1362,10 +1362,11 @@ class Determinant( Array ):
 class Multiply( Array ):
   'multiply'
 
-  def __init__( self, func1, func2 ):
+  def __init__( self, funcs ):
     'constructor'
 
-    assert _issorted( func1, func2 )
+    assert isinstance( funcs, Pair )
+    func1, func2 = funcs
     assert isarray(func1) and isarray(func2)
     self.funcs = func1, func2
     shape = _jointshape( func1.shape, func2.shape )
@@ -1453,10 +1454,11 @@ class Multiply( Array ):
 class Add( Array ):
   'add'
 
-  def __init__( self, func1, func2 ):
+  def __init__( self, funcs ):
     'constructor'
 
-    assert _issorted( func1, func2 )
+    assert isinstance( funcs, Pair )
+    func1, func2 = funcs
     assert isarray(func1) and isarray(func2)
     self.funcs = func1, func2
     shape = _jointshape( func1.shape, func2.shape )
@@ -1564,11 +1566,12 @@ class BlockAdd( Array ):
 class Dot( Array ):
   'dot'
 
-  def __init__( self, func1, func2, naxes ):
+  def __init__( self, funcs, naxes ):
     'constructor'
 
-    assert _issorted( func1, func2 )
-    assert isinstance( func1, Array )
+    assert isinstance( funcs, Pair )
+    func1, func2 = funcs
+    assert isarray( func1 )
     assert naxes > 0
     self.naxes = naxes
     self.funcs = func1, func2
@@ -2633,8 +2636,6 @@ _abs = abs
 _ascending = lambda arg: ( numpy.diff(arg) > 0 ).all()
 _normdims = lambda ndim, shapes: tuple( numeric.normdim(ndim,sh) for sh in shapes )
 _taketuple = lambda values, index: tuple( values[i] for i in index )
-_issorted = lambda a, b: not isevaluable(b) or isevaluable(a) and id(a) <= id(b)
-_sorted = lambda a, b: (a,b) if _issorted(a,b) else (b,a)
 
 def _jointshape( shape, *shapes ):
   'determine shape after singleton expansion'
@@ -3045,8 +3046,7 @@ def dot( arg1, arg2, axes ):
   for ax in reversed( axes ):
     shuffle.append( shuffle.pop(ax) )
 
-  a, b = _sorted( transpose(arg1,shuffle), transpose(arg2,shuffle) )
-  return Dot( a, b, len(axes) )
+  return Dot( Pair( transpose(arg1,shuffle), transpose(arg2,shuffle) ), len(axes) )
 
 def determinant( arg, axes=(-2,-1) ):
   'determinant'
@@ -3394,7 +3394,7 @@ def multiply( arg1, arg2 ):
     assert retval.shape == shape, 'bug in %s._multiply' % arg2
     return retval
 
-  return Multiply( *_sorted(arg1,arg2) )
+  return Multiply( Pair(arg1,arg2) )
 
 def add( arg1, arg2 ):
   'add'
@@ -3425,7 +3425,7 @@ def add( arg1, arg2 ):
     assert retval.shape == shape, 'bug in %s._add' % arg2
     return retval
 
-  return Add( *_sorted(arg1,arg2) )
+  return Add( Pair(arg1,arg2) )
 
 def blockadd( *args ):
   args = tuple( itertools.chain( *( arg.funcs if isinstance( arg, BlockAdd ) else [arg] for arg in args ) ) )
@@ -3702,5 +3702,15 @@ def J( geometry, ndims=None ):
     ndims += len(geometry)
   return jacobian( geometry, ndims ) * Iwscale(ndims)
 
+class Pair:
+  '''two-element container that is insensitive to order in equality testing'''
+  def __init__( self, a, b ):
+    self.items = a, b
+  def __iter__( self ):
+    return iter( self.items )
+  def __hash__( self ):
+    return hash( tuple( sorted( hash(item) for item in self.items ) ) )
+  def __eq__( self, other ):
+    return isinstance( other, Pair ) and self.items in ( other.items, other.items[::-1] )
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
