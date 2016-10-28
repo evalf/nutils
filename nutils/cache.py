@@ -192,6 +192,7 @@ class ImmutableMeta( type ):
     except KeyError:
       self = type.__call__( cls, *_args )
       self._args = _args
+      self._hash = hash(key)
       cls.cache[key] = self
     return self
 
@@ -199,6 +200,9 @@ class Immutable( object, metaclass=ImmutableMeta ):
 
   def __reduce__( self ):
     return self.__class__.__call__, self._args
+
+  def __hash__( self ):
+    return self._hash
 
   def __getstate__( self ):
     raise Exception( 'getstate should never be called' )
