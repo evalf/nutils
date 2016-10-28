@@ -884,6 +884,9 @@ class Iwscale( Array ):
     self.fromdims = ndims
     Array.__init__( self, args=[TransformChain(0,ndims)], shape=(), dtype=float )
 
+  def _derivative( self, var, axes, seen ):
+    return zeros( _taketuple(var.shape,axes), dtype=float )
+
   def evalf( self, trans ):
     'evaluate'
 
