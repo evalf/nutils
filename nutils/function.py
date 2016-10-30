@@ -884,6 +884,9 @@ class Iwscale( Array ):
     self.fromdims = ndims
     Array.__init__( self, args=[TransformChain(0,ndims)], shape=(), dtype=float )
 
+  def _derivative( self, var, axes, seen ):
+    return zeros( _taketuple(var.shape,axes), dtype=float )
+
   def evalf( self, trans ):
     'evaluate'
 
@@ -1283,6 +1286,10 @@ class Concatenate( Array ):
 
   def _kronecker( self, axis, length, pos ):
     return concatenate( [ kronecker(func,axis,length,pos) for func in self.funcs ], self.axis+(axis<=self.axis) )
+
+  def _concatenate( self, other, axis ):
+    if axis == self.axis:
+      return concatenate( self.funcs + ( other.funcs if isinstance( other, Concatenate ) and other.axis == axis else (other,) ), axis )
 
 class Interpolate( Array ):
   'interpolate uniformly spaced data; stepwise for now'
