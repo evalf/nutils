@@ -51,6 +51,7 @@ from . import register, unittest
 @register( 'less', lambda a,b: function.less(a,b), numpy.less, [(3,1),(1,3)] )
 @register( 'arctan2', function.arctan2, numpy.arctan2, [(3,1),(1,3)] )
 @register( 'stack', lambda a,b: function.stack([a,b]), lambda a,b: numpy.concatenate( [a[...,_,:],b[...,_,:]], axis=-2), [(3,),(3,)] )
+@register( 'concatenate', lambda a,b: function.concatenate([a,b],axis=0), lambda a,b: numpy.concatenate( [a,b], axis=-2), [(3,2),(2,2)] )
 @register( 'eig', lambda a: function.eig(a,symmetric=False)[1], lambda a: numpy.linalg.eig(a)[1], [(3,3)], hasgrad=False )
 @register( 'trignormal', lambda a: function.trignormal(a), lambda a: numpy.array([ numpy.cos(a), numpy.sin(a) ]).T, [()] )
 @register( 'trigtangent', lambda a: function.trigtangent(a), lambda a: numpy.array([ -numpy.sin(a), numpy.cos(a) ]).T, [()] )
@@ -120,6 +121,14 @@ def check( op, n_op, shapes, hasgrad=True ):
         numpy.testing.assert_array_almost_equal(
           numeric.takediag( numeric.align( n_op( *argsfun.eval(elem,points) ), alignaxes, len(shape)+1 ) ),
          function.takediag( op( *args ), ax1, ax2 ).eval(elem,points), decimal=15 )
+
+  @unittest
+  def concatenate():
+    for idim in range(len(shape)):
+      numpy.testing.assert_array_almost_equal(
+        numpy.concatenate( [ n_op( *argsfun.eval(elem,points) ), shapearg[_].repeat(len(points),0) ], axis=idim+1 ),
+       function.concatenate( [ op( *args ), shapearg ], axis=idim ).eval(elem,points), decimal=15 )
+
 
   @unittest
   def getslice():

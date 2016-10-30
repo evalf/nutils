@@ -1287,6 +1287,10 @@ class Concatenate( Array ):
   def _kronecker( self, axis, length, pos ):
     return concatenate( [ kronecker(func,axis,length,pos) for func in self.funcs ], self.axis+(axis<=self.axis) )
 
+  def _concatenate( self, other, axis ):
+    if axis == self.axis:
+      return concatenate( self.funcs + ( other.funcs if isinstance( other, Concatenate ) and other.axis == axis else (other,) ), axis )
+
 class Interpolate( Array ):
   'interpolate uniformly spaced data; stepwise for now'
 
