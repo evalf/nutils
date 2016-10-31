@@ -461,7 +461,7 @@ class Array( Evaluable ):
       normal = [1]
     else:
       raise NotImplementedError( 'cannot compute normal for %dx%d jacobian' % ( self.shape[0], ndims ) )
-    return normal * Orientation( ndims )
+    return normal * Orientation( ndims, TransformChain(promote=ndims,side=0) )
 
   def curvature( self, ndims=-1 ):
     'curvature'
@@ -699,19 +699,19 @@ class ElementSize( Array):
 class Orientation( Array ):
   'sign'
 
-  def __init__( self, ndims, side=0 ):
+  def __init__( self, ndims, transchain ):
     'constructor'
 
-    Array.__init__( self, args=[TransformChain(side,ndims)], shape=(), dtype=float )
-    self.side = side
+    Array.__init__( self, args=[transchain], shape=(), dtype=float )
+    self.transchain = transchain
     self.ndims = ndims
 
   def evalf( self, trans ):
     head, tail = trans.split( self.ndims )
     return numpy.array([ head.orientation ])
 
-  def _opposite( self ):
-    return Orientation( self.ndims, 1-self.side )
+  def _edit( self, op ):
+    return Orientation( self.ndims, op(self.transchain) )
 
   def _derivative( self, var, axes, seen ):
     return zeros( _taketuple(var.shape,axes) )
