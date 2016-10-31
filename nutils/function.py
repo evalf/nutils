@@ -1911,13 +1911,11 @@ class Sampled( Array ):
 class Elemwise( Array ):
   'elementwise constant data'
 
-  def __init__( self, fmap, shape, default=None, side=0 ):
+  def __init__( self, fmap, shape, transchain, default=None ):
     self.fmap = fmap
     self.default = default
-    self.side = side
-    for trans in fmap:
-      break
-    Array.__init__( self, args=[TransformChain(side,trans.fromdims)], shape=shape, dtype=float )
+    self.transchain = transchain
+    Array.__init__( self, args=[transchain], shape=shape, dtype=float )
 
   def evalf( self, trans ):
     trans = trans.lookup( self.fmap )
@@ -1930,8 +1928,8 @@ class Elemwise( Array ):
   def _derivative( self, var, axes, seen ):
     return zeros( self.shape+_taketuple(var.shape,axes) )
 
-  def _opposite( self ):
-    return Elemwise( self.fmap, self.shape, self.default, 1-self.side )
+  def _edit( self, op ):
+    return Elemwise( self.fmap, self.shape, op(self.transchain), self.default )
 
 class Eig( Evaluable ):
   'Eig'
@@ -3609,7 +3607,10 @@ def function( fmap, nmap, ndofs, ndims ):
   return Inflate( func, dofmap, ndofs, axis=0 )
 
 def elemwise( fmap, shape, default=None, side=0 ):
-  return Elemwise( fmap=fmap, shape=shape, default=default, side=side )
+  for trans in fmap:
+    break
+  transchain = TransformChain( promote=trans.fromdims, side=side )
+  return Elemwise( fmap=fmap, shape=shape, transchain=transchain, default=default )
 
 def take( arg, index, axis ):
   'take index'
