@@ -2769,6 +2769,7 @@ jump = lambda arg: opposite(arg) - arg
 add_T = lambda arg, axes=(-2,-1): swapaxes( arg, axes ) + arg
 edit = lambda arg, f: arg._edit(f) if isevaluable(arg) else arg
 blocks = lambda arg: asarray(arg).blocks
+localcoords = lambda ndims, side=0: LocalCoords( ndims, side=side )
 
 class _eye:
   'identity'
@@ -3598,6 +3599,9 @@ def function( fmap, nmap, ndofs, ndims ):
   func = Function( ndims, fmap, igrad=0, length=length )
   dofmap = DofMap( nmap, length=length )
   return Inflate( func, dofmap, ndofs, axis=0 )
+
+def elemwise( fmap, shape, default=None, side=0 ):
+  return Elemwise( fmap=fmap, shape=shape, default=default, side=side )
 
 def take( arg, index, axis ):
   'take index'

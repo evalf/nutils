@@ -271,7 +271,7 @@ class Topology( object ):
 
     if asfunction:
       if geometry:
-        retvals = [ function.Elemwise( { elem.transform: value for elem, value in zip( self, retval ) }, shape=retval.shape[1:] ) for retval in retvals ]
+        retvals = [ function.elemwise( { elem.transform: value for elem, value in zip( self, retval ) }, shape=retval.shape[1:] ) for retval in retvals ]
       else:
         tsp = [ ( elem.transform, s, fcache[elem.reference.getischeme](ischeme)[0] ) for elem, s in zip( self, slices ) ]
         retvals = [ function.Sampled({ trans: (retval[s],points) for trans, s, points in tsp }) for retval in retvals ]
@@ -617,7 +617,7 @@ class Topology( object ):
     return volume
 
   def indicator( self ):
-    return function.Elemwise( { elem.transform: 1. for elem in self }, (), default=0. )
+    return function.elemwise( { elem.transform: 1. for elem in self }, (), default=0. )
 
   def select( self, indicator, ischeme='bezier2' ):
     values = self.elem_eval( indicator, ischeme, separate=True )
