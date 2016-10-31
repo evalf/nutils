@@ -1750,10 +1750,7 @@ class Take( Array ):
       return take( trytake, self.indices, self.axis )
 
   def _edit( self, op ):
-    return take( op(self.func), self.indices, self.axis )
-
-  def _opposite( self ):
-    return Take( opposite(self.func), opposite(self.indices), self.axis )
+    return take( op(self.func), op(self.indices), self.axis )
 
 class Power( Array ):
   'power'
@@ -2374,11 +2371,8 @@ class TrigNormal( Array ):
     if isinstance( other, (TrigTangent,TrigNormal) ) and self.angle == other.angle:
       return numpy.array( 1 if isinstance(other,TrigNormal) else 0 )
 
-  def _opposite( self ):
-    return TrigNormal( opposite(self.angle) )
-
   def _edit( self, op ):
-    return TrigNormal( edit(self.angle,op) )
+    return TrigNormal( op(self.angle) )
 
 class TrigTangent( Array ):
   '-sin, cos'
@@ -2399,11 +2393,8 @@ class TrigTangent( Array ):
     if isinstance( other, (TrigTangent,TrigNormal) ) and self.angle == other.angle:
       return numpy.array( 1 if isinstance(other,TrigTangent) else 0 )
 
-  def _opposite( self ):
-    return TrigTangent( opposite(self.angle) )
-
   def _edit( self, op ):
-    return TrigTangent( edit(self.angle,op) )
+    return TrigTangent( op(self.angle) )
 
 class Find( Array ):
   'indices of boolean index vector'
