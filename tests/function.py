@@ -284,3 +284,26 @@ def commutativity():
   @unittest
   def combined():
     assert function.add( A, B ) * function.dot( A, B, axes=[0] ) == function.dot( B, A, axes=[0] ) * function.add( B, A )
+
+
+@register
+def sampled():
+
+  domain, geom = mesh.demo()
+  basis = domain.basis( 'std', degree=1 )
+  numpy.random.seed(0)
+  f = basis.dot( numpy.random.uniform(size=len(basis)) )
+  f_sampled = domain.elem_eval( f, ischeme='gauss2', asfunction=True )
+
+  @unittest
+  def isarray():
+    assert function.isarray( f_sampled )
+
+  @unittest
+  def values():
+    diff = domain.integrate( f - f_sampled, ischeme='gauss2' )
+    assert diff == 0
+
+  @unittest( raises=function.EvaluationError )
+  def pointset():
+    domain.integrate( f_sampled, ischeme='uniform2' )

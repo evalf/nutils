@@ -274,7 +274,7 @@ class Topology( object ):
         retvals = [ function.elemwise( { elem.transform: value for elem, value in zip( self, retval ) }, shape=retval.shape[1:] ) for retval in retvals ]
       else:
         tsp = [ ( elem.transform, s, fcache[elem.reference.getischeme](ischeme)[0] ) for elem, s in zip( self, slices ) ]
-        retvals = [ function.Sampled({ trans: (retval[s],points) for trans, s, points in tsp }) for retval in retvals ]
+        retvals = [ function.sampled( { trans: (retval[s],points) for trans, s, points in tsp }, self.ndims ) for retval in retvals ]
     elif separate:
       retvals = [ [ retval[s] for s in slices ] for retval in retvals ]
 

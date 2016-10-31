@@ -1886,23 +1886,27 @@ class Sign( Array ):
 class Sampled( Array ):
   'sampled'
 
-  def __init__ ( self, data ):
+  def __init__ ( self, data, transchain ):
     assert isinstance(data,dict)
     self.data = data.copy()
+    self.transchain = transchain
     items = iter(self.data.items())
     trans, (values,points) = next(items)
     fromdims = trans.fromdims
     shape = values.shape[1:]
     assert all( trans.fromdims == fromdims and values.shape == points.shape[:1]+shape for trans, (values,points) in items )
-    Array.__init__( self, args=[TransformChain(0,fromdims),POINTS], shape=shape, dtype=float )
+    Array.__init__( self, args=[transchain,POINTS], shape=shape, dtype=float )
 
   def evalf( self, trans, points ):
     head = trans.lookup( self.data )
     tail = trans.slicefrom( len(head) )
     evalpoints = tail.apply( points )
     myvals, mypoints = self.data[head]
-    assert numpy.equal( mypoints, evalpoints ).all(), 'Illegal point set'
+    assert mypoints.shape == evalpoints.shape and numpy.all( mypoints == evalpoints ), 'Illegal point set'
     return myvals
+
+  def _edit( self, op ):
+    return Sampled( self.data, op(self.transchain) )
 
 class Elemwise( Array ):
   'elementwise constant data'
@@ -2770,6 +2774,7 @@ add_T = lambda arg, axes=(-2,-1): swapaxes( arg, axes ) + arg
 edit = lambda arg, f: arg._edit(f) if isevaluable(arg) else arg
 blocks = lambda arg: asarray(arg).blocks
 localcoords = lambda ndims, side=0: LocalCoords( ndims, TransformChain(side=side,promote=ndims) )
+sampled = lambda data, ndims, side=0: Sampled( data, TransformChain(promote=ndims,side=side) )
 
 class _eye:
   'identity'
