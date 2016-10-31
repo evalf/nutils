@@ -308,6 +308,9 @@ class TransformChain( Evaluable ):
   def evalf( self, trans ):
     return trans[ self.side ].promote( self.promote )
 
+  def _opposite( self ):
+    return TransformChain( 1-self.side, self.promote )
+
 
 # ARRAYFUNC
 #
@@ -665,23 +668,20 @@ class Constant( Array ):
 class DofMap( Array ):
   'dof axis'
 
-  def __init__( self, dofmap, length, side=0 ):
+  def __init__( self, dofmap, length, transchain ):
     'new'
 
-    self.side = side
+    self.transchain = transchain
     self.dofmap = dofmap
-    for trans in dofmap:
-      break
-
-    Array.__init__( self, args=[TransformChain(side,trans.fromdims)], shape=(length,), dtype=int )
+    Array.__init__( self, args=[transchain], shape=(length,), dtype=int )
 
   def evalf( self, trans ):
     'evaluate'
 
     return self.dofmap[ trans.lookup(self.dofmap) ][_]
 
-  def _opposite( self ):
-    return DofMap( self.dofmap, self.shape[0], 1-self.side )
+  def _edit( self, op ):
+    return DofMap( self.dofmap, self.shape[0], op(self.transchain) )
 
 class ElementSize( Array):
   'dimension of hypercube with same volume as element'
@@ -3597,7 +3597,10 @@ def function( fmap, nmap, ndofs, ndims ):
 
   length = '~%d' % ndofs
   func = Function( ndims, fmap, igrad=0, length=length )
-  dofmap = DofMap( nmap, length=length )
+  for trans in nmap:
+    break
+  transchain = TransformChain( side=0, promote=trans.fromdims )
+  dofmap = DofMap( nmap, length=length, transchain=transchain )
   return Inflate( func, dofmap, ndofs, axis=0 )
 
 def elemwise( fmap, shape, default=None, side=0 ):
