@@ -896,14 +896,15 @@ class Iwscale( Array ):
 class Transform( Array ):
   'transform'
 
-  def __init__( self, todims, fromdims, side ):
+  def __init__( self, todims, fromdims, transchain ):
     'constructor'
 
     assert fromdims != todims
     self.fromdims = fromdims
     self.todims = todims
-    self.side = side
-    Array.__init__( self, args=[TransformChain(side,fromdims)], shape=(todims,fromdims), dtype=float )
+    self.transchain = transchain
+    assert transchain.promote == fromdims
+    Array.__init__( self, args=[transchain], shape=(todims,fromdims), dtype=float )
 
   def evalf( self, trans ):
     'transform'
@@ -916,23 +917,20 @@ class Transform( Array ):
   def _derivative( self, var, axes, seen ):
     return zeros( self.shape+_taketuple(var.shape,axes) )
 
-  def _opposite( self ):
-    return Transform( self.todims, self.fromdims, 1-self.side )
+  def _edit( self, op ):
+    return Transform( self.todims, self.fromdims, op(self.transchain) )
 
 class Function( Array ):
   'function'
 
-  def __init__( self, ndims, stdmap, igrad, length, side=0 ):
+  def __init__( self, ndims, stdmap, igrad, length, transchain ):
     'constructor'
 
-    self.side = side
+    self.transchain = transchain
     self.ndims = ndims
     self.stdmap = stdmap
     self.igrad = igrad
-    self.localcoords = LocalCoords( self.ndims, side=self.side ) # only an implicit dependency for now
-    for trans in stdmap:
-      break
-    Array.__init__( self, args=(CACHE,POINTS,TransformChain(side,trans.fromdims)), shape=(length,)+(ndims,)*igrad, dtype=float )
+    Array.__init__( self, args=(CACHE,POINTS,transchain), shape=(length,)+(ndims,)*igrad, dtype=float )
 
   def evalf( self, cache, points, trans ):
     'evaluate'
@@ -957,12 +955,13 @@ class Function( Array ):
       head = head.sliceto(-1)
     return fvals[0] if len(fvals) == 1 else numpy.concatenate( fvals, axis=-1-self.igrad )
 
-  def _opposite( self ):
-    return Function( self.ndims, self.stdmap, self.igrad, self.shape[0], 1-self.side )
+  def _edit( self, op ):
+    return Function( self.ndims, self.stdmap, self.igrad, self.shape[0], op(self.transchain) )
 
   def _derivative( self, var, axes, seen ):
-    grad = Function( self.ndims, self.stdmap, self.igrad+1, self.shape[0], self.side )
-    return ( grad[(...,)+(_,)*len(axes)] * derivative( self.localcoords, var, axes, seen ) ).sum( self.ndim )
+    grad = Function( self.ndims, self.stdmap, self.igrad+1, self.shape[0], self.transchain )
+    localcoords = LocalCoords( self.ndims, self.transchain )
+    return ( grad[(...,)+(_,)*len(axes)] * derivative( localcoords, var, axes, seen ) ).sum( self.ndim )
 
   def _take( self, indices, axis ):
     if axis != 0:
@@ -992,7 +991,7 @@ class Function( Array ):
         newstdkeep.append(( std, keep ))
       assert not where.size
       stdmap[trans] = newstdkeep
-    return Function( self.ndims, stdmap, self.igrad, indices.shape[0], side=self.side )
+    return Function( self.ndims, stdmap, self.igrad, indices.shape[0], self.transchain )
 
 class Choose( Array ):
   'piecewise function'
@@ -2533,11 +2532,12 @@ class DerivativeTarget( DerivativeTargetBase ):
 class LocalCoords( DerivativeTargetBase ):
   'trivial func'
 
-  def __init__( self, ndims, side=0 ):
+  def __init__( self, ndims, transchain ):
     'constructor'
 
-    self.side = side
-    DerivativeTargetBase.__init__( self, args=[POINTS,TransformChain(side,ndims)], shape=[ndims], dtype=float )
+    assert transchain.promote == ndims
+    self.transchain = transchain
+    DerivativeTargetBase.__init__( self, args=[POINTS,transchain], shape=[ndims], dtype=float )
 
   def evalf( self, points, trans ):
     'evaluate'
@@ -2549,13 +2549,13 @@ class LocalCoords( DerivativeTargetBase ):
     if isinstance( var, LocalCoords ):
       ndims, = var.shape
       return eye( ndims ) if self.shape[0] == ndims \
-        else Transform( self.shape[0], ndims, self.side )
+        else Transform( self.shape[0], ndims, var.transchain )
     else:
       return zeros( self.shape+_taketuple(var.shape,axes) )
 
-  def _opposite( self ):
+  def _edit( self, op ):
     ndims, = self.shape
-    return LocalCoords( ndims, 1-self.side )
+    return LocalCoords( ndims, op(self.transchain) )
 
 
 # CIRCULAR SYMMETRY
@@ -2595,7 +2595,7 @@ class Revolved( Array ):
 
   def _derivative( self, var, axes, seen ):
     if isinstance( var, LocalCoords ):
-      newvar = LocalCoords( var.shape[0]-1 )
+      newvar = LocalCoords( var.shape[0]-1, TransformChain(side=0,promote=var.shape[0]-1) ) # TODO check that this is correct
       return revolved( concatenate( [ derivative(self.func,newvar,axes,seen), zeros(self.func.shape+(1,)) ], axis=-1 ) )
     else:
       result = derivative( self.func, var, axes, seen )
@@ -2769,7 +2769,7 @@ jump = lambda arg: opposite(arg) - arg
 add_T = lambda arg, axes=(-2,-1): swapaxes( arg, axes ) + arg
 edit = lambda arg, f: arg._edit(f) if isevaluable(arg) else arg
 blocks = lambda arg: asarray(arg).blocks
-localcoords = lambda ndims, side=0: LocalCoords( ndims, side=side )
+localcoords = lambda ndims, side=0: LocalCoords( ndims, TransformChain(side=side,promote=ndims) )
 
 class _eye:
   'identity'
@@ -3206,10 +3206,10 @@ def derivative( func, var, axes, seen=None ):
   assert result.shape == func.shape+shape, 'bug in %s._derivative' % func
   return result
 
-def localgradient( arg, ndims ):
+def localgradient( arg, ndims, side=0 ):
   'local derivative'
 
-  return derivative( arg, LocalCoords(ndims), axes=(0,) )
+  return derivative( arg, localcoords(ndims,side), axes=(0,) )
 
 def dotnorm( arg, coords, ndims=0 ):
   'normal component'
@@ -3596,10 +3596,10 @@ def function( fmap, nmap, ndofs, ndims ):
   'create function on ndims-element'
 
   length = '~%d' % ndofs
-  func = Function( ndims, fmap, igrad=0, length=length )
   for trans in nmap:
     break
   transchain = TransformChain( side=0, promote=trans.fromdims )
+  func = Function( ndims, fmap, igrad=0, length=length, transchain=transchain )
   dofmap = DofMap( nmap, length=length, transchain=transchain )
   return Inflate( func, dofmap, ndofs, axis=0 )
 
