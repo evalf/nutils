@@ -214,7 +214,7 @@ class Evaluable( cache.Immutable ):
     return '\n'.join( lines )
 
   def _edit( self, op ):
-    return self
+    raise NotImplementedError( '{} does not define an _edit method'.format( type(self).__name__ ) )
 
 class EvaluationError( Exception ):
   'evaluation error'
@@ -311,6 +311,8 @@ class Promote( Evaluable ):
   def _opposite( self ):
     return Promote( 1-self.side, self.ndims )
 
+  def _edit( self, op ):
+    return self
 
 # ARRAYFUNC
 #
@@ -689,7 +691,7 @@ class ElementSize( Array):
   def __init__( self, geometry, ndims=None ):
     assert geometry.ndim == 1
     self.ndims = len(geometry) if ndims is None else len(geometry)+ndims if ndims < 0 else ndims
-    iwscale = jacobian( geometry, self.ndims ) * Iwscale(self.ndims)
+    iwscale = jacobian( geometry, self.ndims ) * iwscale(self.ndims)
     Array.__init__( self, args=[iwscale], shape=(), dtype=float )
 
   def evalf( self, iwscale ):
@@ -879,14 +881,18 @@ class Product( Array ):
 class Iwscale( Array ):
   'integration weights'
 
-  def __init__( self, ndims ):
+  def __init__( self, trans ):
     'constructor'
 
-    self.fromdims = ndims
-    Array.__init__( self, args=[Promote(0,ndims)], shape=(), dtype=float )
+    self.trans = trans
+    self.fromdims = trans.ndims
+    Array.__init__( self, args=[trans], shape=(), dtype=float )
 
   def _derivative( self, var, axes, seen ):
     return zeros( _taketuple(var.shape,axes), dtype=float )
+
+  def _edit( self, op ):
+    return Iwscale( op(self.trans) )
 
   def evalf( self, trans ):
     'evaluate'
@@ -2049,6 +2055,9 @@ class Zeros( Array ):
   def _kronecker( self, axis, length, pos ):
     return zeros( self.shape[:axis]+(length,)+self.shape[axis:], dtype=self.dtype )
 
+  def _edit( self, op ):
+    return self
+
 class Inflate( Array ):
   'inflate'
 
@@ -2769,6 +2778,7 @@ edit = lambda arg, f: arg._edit(f) if isevaluable(arg) else arg
 blocks = lambda arg: asarray(arg).blocks
 localcoords = lambda ndims, side=0: LocalCoords( Promote(side=side,ndims=ndims) )
 sampled = lambda data, ndims, side=0: Sampled( data, Promote(ndims=ndims,side=side) )
+iwscale = lambda ndims, side=0: Iwscale( Promote(ndims=ndims,side=side) )
 
 class _eye:
   'identity'
@@ -3713,7 +3723,7 @@ def J( geometry, ndims=None ):
     ndims = len(geometry)
   elif ndims < 0:
     ndims += len(geometry)
-  return jacobian( geometry, ndims ) * Iwscale(ndims)
+  return jacobian( geometry, ndims ) * iwscale(ndims)
 
 class Pair:
   '''two-element container that is insensitive to order in equality testing'''
