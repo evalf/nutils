@@ -141,24 +141,20 @@ def register( f, *args, **kwargs ):
 
 class _NoException( Exception ): pass
 
-def unittest( *args, name=None, raises=_NoException ):
-  if len(args) == 0:
+def unittest( func=None, *, name=None, raises=_NoException ):
+  if func is None:
     return functools.partial( unittest, name=name, raises=raises )
-  elif len(args) > 1:
-    raise TypeError('unittest() takes one positional argument but {} were given'.format( len(args ) ) )
-  arg, = args
-  if name is None:
-    name = arg.__name__
-  else:
-    name = str(name)
-  if core.getprop( 'filter', name ) != name:
+  fullname = func.__name__
+  if name is not None:
+    fullname += ':{}'.format(name)
+  if core.getprop( 'filter', fullname ) != fullname:
     return
   parentlog = log._getlog()
   __log__ = log.CaptureLog()
-  parentlog.push( name )
+  parentlog.push( fullname )
   try:
     parentlog.write( 'info', 'testing..', endl=False )
-    arg()
+    func()
     assert raises is _NoException, 'exception not raised, expected {!r}'.format( raises )
   except raises:
     status = OK
@@ -178,13 +174,13 @@ def unittest( *args, name=None, raises=_NoException ):
     print( ' OK' )
   finally:
     parentlog.pop()
-  core.getprop('results')[name] = status
+  core.getprop('results')[fullname] = status
   if status != OK:
     parentlog.write( 'info', 'captured output:\n-----\n{}\n-----'.format(__log__.captured) )
     if core.getprop( 'tbexplore', False ):
       debug.explore( repr(exc), frames, '''Unit test {!r} failed. The traceback
         explorer allows you to examine the failure state. Closing the explorer
-        will resume testing.'''.format( name ) )
+        will resume testing.'''.format( fullname ) )
 
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
