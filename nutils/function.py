@@ -35,9 +35,10 @@ import sys, warnings, itertools, functools, operator, inspect, numbers
 
 CACHE = 'Cache'
 TRANS = 'Trans'
+OPPTRANS = 'OppTrans'
 POINTS = 'Points'
 
-TOKENS = CACHE, TRANS, POINTS
+TOKENS = CACHE, TRANS, OPPTRANS, POINTS
 
 class Evaluable( cache.Immutable ):
   'Base class'
@@ -116,16 +117,17 @@ class Evaluable( cache.Immutable ):
     
     if elem is None:
       assert self.isconstant
-      trans = None
+      trans = opptrans = None
       points = None
     elif isinstance( elem, transform.TransformChain ):
-      trans = elem, elem
+      trans = opptrans = elem
       points = ischeme
     elif isinstance( elem, tuple ):
-      trans = elem
+      trans, opptrans = elem
       points = ischeme
     else:
-      trans = elem.transform, elem.opposite
+      trans = elem.transform
+      opptrans = elem.opposite
       if isinstance( ischeme, dict ):
         ischeme = ischeme[elem]
       if isinstance( ischeme, str ):
@@ -143,13 +145,14 @@ class Evaluable( cache.Immutable ):
         raise Exception( 'invalid integration scheme of type %r' % type(ischeme) )
 
     if trans is not None:
-      assert trans[0].fromdims == trans[1].fromdims
+      assert opptrans is not None
+      assert trans.fromdims == opptrans.fromdims
     if points is not None:
-      assert points.ndim == 2 and points.shape[1] == trans[0].fromdims
+      assert points.ndim == 2 and points.shape[1] == trans.fromdims
 
     ops, inds = self.serialized
-    assert TOKENS == ( CACHE, TRANS, POINTS )
-    values = [ fcache, trans, points ]
+    assert TOKENS == ( CACHE, TRANS, OPPTRANS, POINTS )
+    values = [ fcache, trans, opptrans, points ]
     for op, indices in zip( list(ops)+[self], inds ):
       args = [ values[i] for i in indices ]
       try:
@@ -300,19 +303,16 @@ class PointShape( Evaluable ):
 class Promote( Evaluable ):
   'transform'
 
-  def __init__( self, side, ndims ):
-    Evaluable.__init__( self, args=[TRANS] )
-    self.side = side
+  def __init__( self, ndims, trans=TRANS ):
     self.ndims = ndims
+    self.trans = trans
+    Evaluable.__init__( self, args=[trans] )
 
   def evalf( self, trans ):
-    return trans[ self.side ].promote( self.ndims )
-
-  def _opposite( self ):
-    return Promote( 1-self.side, self.ndims )
+    return trans.promote( self.ndims )
 
   def _edit( self, op ):
-    return self
+    return Promote( self.ndims, op(self.trans) )
 
 # ARRAYFUNC
 #
@@ -463,7 +463,7 @@ class Array( Evaluable ):
       normal = [1]
     else:
       raise NotImplementedError( 'cannot compute normal for %dx%d jacobian' % ( self.shape[0], ndims ) )
-    return normal * Orientation( Promote(ndims=ndims,side=0) )
+    return normal * Orientation( Promote(ndims) )
 
   def curvature( self, ndims=-1 ):
     'curvature'
@@ -2602,7 +2602,7 @@ class Revolved( Array ):
 
   def _derivative( self, var, axes, seen ):
     if isinstance( var, LocalCoords ):
-      newvar = localcoords( side=0, ndims=var.shape[0]-1 ) # TODO check that this is correct
+      newvar = localcoords( var.shape[0]-1 ) # TODO check that this is correct
       return revolved( concatenate( [ derivative(self.func,newvar,axes,seen), zeros(self.func.shape+(1,)) ], axis=-1 ) )
     else:
       result = derivative( self.func, var, axes, seen )
@@ -2776,9 +2776,9 @@ jump = lambda arg: opposite(arg) - arg
 add_T = lambda arg, axes=(-2,-1): swapaxes( arg, axes ) + arg
 edit = lambda arg, f: arg._edit(f) if isevaluable(arg) else arg
 blocks = lambda arg: asarray(arg).blocks
-localcoords = lambda ndims, side=0: LocalCoords( Promote(side=side,ndims=ndims) )
-sampled = lambda data, ndims, side=0: Sampled( data, Promote(ndims=ndims,side=side) )
-iwscale = lambda ndims, side=0: Iwscale( Promote(ndims=ndims,side=side) )
+localcoords = lambda ndims: LocalCoords( Promote(ndims) )
+sampled = lambda data, ndims: Sampled( data, Promote(ndims) )
+iwscale = lambda ndims: Iwscale( Promote(ndims) )
 
 class _eye:
   'identity'
@@ -3215,10 +3215,10 @@ def derivative( func, var, axes, seen=None ):
   assert result.shape == func.shape+shape, 'bug in %s._derivative' % func
   return result
 
-def localgradient( arg, ndims, side=0 ):
+def localgradient( arg, ndims ):
   'local derivative'
 
-  return derivative( arg, localcoords(ndims,side), axes=(0,) )
+  return derivative( arg, localcoords(ndims), axes=(0,) )
 
 def dotnorm( arg, coords, ndims=0 ):
   'normal component'
@@ -3585,21 +3585,14 @@ def opposite( arg ):
   'evaluate jump over interface'
 
   from . import index
-  if isinstance( arg, index.IndexedArray ):
-    return index.IndexedArray(
+  return OPPTRANS if arg is TRANS \
+    else TRANS if arg is OPPTRANS \
+    else index.IndexedArray(
       shape=arg._shape,
       linked_lengths=arg._linked_lengths,
       op=lambda geom, shape, arg_: opposite(arg_),
-      args=[arg] )
-
-  if not isevaluable( arg ):
-    return arg
-
-  retval = _call( arg, '_opposite' )
-  if retval is not None:
-    return retval
-
-  return arg._edit( opposite )
+      args=[arg] ) if isinstance( arg, index.IndexedArray ) \
+    else edit( arg, opposite )
 
 def function( fmap, nmap, ndofs, ndims ):
   'create function on ndims-element'
@@ -3607,15 +3600,15 @@ def function( fmap, nmap, ndofs, ndims ):
   length = '~%d' % ndofs
   for trans in nmap:
     break
-  trans = Promote( side=0, ndims=trans.fromdims )
+  trans = Promote( trans.fromdims )
   func = Function( ndims, fmap, igrad=0, length=length, trans=trans )
   dofmap = DofMap( nmap, length=length, trans=trans )
   return Inflate( func, dofmap, ndofs, axis=0 )
 
-def elemwise( fmap, shape, default=None, side=0 ):
+def elemwise( fmap, shape, default=None ):
   for trans in fmap:
     break
-  trans = Promote( ndims=trans.fromdims, side=side )
+  trans = Promote( trans.fromdims )
   return Elemwise( fmap=fmap, shape=shape, trans=trans, default=default )
 
 def take( arg, index, axis ):
