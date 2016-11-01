@@ -896,20 +896,24 @@ class Iwscale( Array ):
 class Transform( Array ):
   'transform'
 
-  def __init__( self, todims, fromdims, transchain ):
+  def __init__( self, todims, fromdims, tochain, fromchain ):
     'constructor'
 
     assert fromdims != todims
     self.fromdims = fromdims
     self.todims = todims
-    self.transchain = transchain
-    assert transchain.promote == fromdims
-    Array.__init__( self, args=[transchain], shape=(todims,fromdims), dtype=float )
+    self.fromchain = fromchain # only for sanity check
+    self.tochain = tochain
+    assert fromchain.promote == fromdims
+    assert tochain.promote == todims
+    Array.__init__( self, args=[fromchain,tochain], shape=(todims,fromdims), dtype=float )
 
-  def evalf( self, trans ):
+  def evalf( self, fromchain, tochain ):
     'transform'
 
-    trans = trans.split(self.fromdims)[0].split(self.todims)[1]
+    fromhead = fromchain.split(self.fromdims)[0]
+    tohead, trans = fromhead.split(self.todims)
+    assert tohead == tochain.split(self.todims)[0], 'failed to create transformation'
     matrix = trans.linear
     assert matrix.shape == (self.todims,self.fromdims)
     return matrix.astype( float )[_]
@@ -918,7 +922,7 @@ class Transform( Array ):
     return zeros( self.shape+_taketuple(var.shape,axes) )
 
   def _edit( self, op ):
-    return Transform( self.todims, self.fromdims, op(self.transchain) )
+    return Transform( self.todims, self.fromdims, op(self.tochain), op(self.fromchain) )
 
 class Function( Array ):
   'function'
@@ -2542,7 +2546,7 @@ class LocalCoords( DerivativeTargetBase ):
     if isinstance( var, LocalCoords ):
       ndims, = var.shape
       return eye( ndims ) if self.shape[0] == ndims \
-        else Transform( self.shape[0], ndims, var.transchain )
+        else Transform( self.shape[0], ndims, self.transchain, var.transchain )
     else:
       return zeros( self.shape+_taketuple(var.shape,axes) )
 
