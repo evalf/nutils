@@ -461,7 +461,7 @@ class Array( Evaluable ):
       normal = [1]
     else:
       raise NotImplementedError( 'cannot compute normal for %dx%d jacobian' % ( self.shape[0], ndims ) )
-    return normal * Orientation( ndims, TransformChain(promote=ndims,side=0) )
+    return normal * Orientation( TransformChain(promote=ndims,side=0) )
 
   def curvature( self, ndims=-1 ):
     'curvature'
@@ -699,19 +699,20 @@ class ElementSize( Array):
 class Orientation( Array ):
   'sign'
 
-  def __init__( self, ndims, transchain ):
+  def __init__( self, transchain ):
     'constructor'
 
+    assert isinstance( transchain, TransformChain )
     Array.__init__( self, args=[transchain], shape=(), dtype=float )
     self.transchain = transchain
-    self.ndims = ndims
+    self.ndims = transchain.promote
 
   def evalf( self, trans ):
     head, tail = trans.split( self.ndims )
     return numpy.array([ head.orientation ])
 
   def _edit( self, op ):
-    return Orientation( self.ndims, op(self.transchain) )
+    return Orientation( op(self.transchain) )
 
   def _derivative( self, var, axes, seen ):
     return zeros( _taketuple(var.shape,axes) )
@@ -964,7 +965,7 @@ class Function( Array ):
 
   def _derivative( self, var, axes, seen ):
     grad = Function( self.ndims, self.stdmap, self.igrad+1, self.shape[0], self.transchain )
-    localcoords = LocalCoords( self.ndims, self.transchain )
+    localcoords = LocalCoords( self.transchain )
     return ( grad[(...,)+(_,)*len(axes)] * derivative( localcoords, var, axes, seen ) ).sum( self.ndim )
 
   def _take( self, indices, axis ):
@@ -2529,10 +2530,11 @@ class DerivativeTarget( DerivativeTargetBase ):
 class LocalCoords( DerivativeTargetBase ):
   'trivial func'
 
-  def __init__( self, ndims, transchain ):
+  def __init__( self, transchain ):
     'constructor'
 
-    assert transchain.promote == ndims
+    assert isinstance( transchain, TransformChain )
+    ndims = transchain.promote
     self.transchain = transchain
     DerivativeTargetBase.__init__( self, args=[POINTS,transchain], shape=[ndims], dtype=float )
 
@@ -2552,7 +2554,7 @@ class LocalCoords( DerivativeTargetBase ):
 
   def _edit( self, op ):
     ndims, = self.shape
-    return LocalCoords( ndims, op(self.transchain) )
+    return LocalCoords( op(self.transchain) )
 
 
 # CIRCULAR SYMMETRY
@@ -2592,7 +2594,7 @@ class Revolved( Array ):
 
   def _derivative( self, var, axes, seen ):
     if isinstance( var, LocalCoords ):
-      newvar = LocalCoords( var.shape[0]-1, TransformChain(side=0,promote=var.shape[0]-1) ) # TODO check that this is correct
+      newvar = localcoords( side=0, ndims=var.shape[0]-1 ) # TODO check that this is correct
       return revolved( concatenate( [ derivative(self.func,newvar,axes,seen), zeros(self.func.shape+(1,)) ], axis=-1 ) )
     else:
       result = derivative( self.func, var, axes, seen )
@@ -2766,7 +2768,7 @@ jump = lambda arg: opposite(arg) - arg
 add_T = lambda arg, axes=(-2,-1): swapaxes( arg, axes ) + arg
 edit = lambda arg, f: arg._edit(f) if isevaluable(arg) else arg
 blocks = lambda arg: asarray(arg).blocks
-localcoords = lambda ndims, side=0: LocalCoords( ndims, TransformChain(side=side,promote=ndims) )
+localcoords = lambda ndims, side=0: LocalCoords( TransformChain(side=side,promote=ndims) )
 sampled = lambda data, ndims, side=0: Sampled( data, TransformChain(promote=ndims,side=side) )
 
 class _eye:
