@@ -4,7 +4,6 @@ from . import \
   normals,    \
   mesh,       \
   ischeme,    \
-  pointdata,  \
   topology,   \
   doubleint,  \
   quadrature, \

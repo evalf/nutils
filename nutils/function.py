@@ -1884,34 +1884,6 @@ class Sign( Array ):
   def _edit( self, op ):
     return sign( op(self.func) )
 
-class Pointdata( Array ):
-  'pointdata'
-
-  def __init__ ( self, data, shape ):
-    'constructor'
-
-    warnings.warn( 'Pointdata is deprecated; use Topology.elem_eval( ..., asfunction=True ) instead', DeprecationWarning )
-    assert isinstance(data,dict)
-    self.data = data
-    for trans in data:
-      break
-    Array.__init__( self, args=[TransformChain(0,trans.fromdims),POINTS], shape=shape, dtype=float )
-
-  def evalf( self, trans, points ):
-    head = trans.lookup( self.data )
-    tail = trans.slicefrom( len(head) )
-    evalpoints = tail.apply( points )
-    myvals, mypoints = self.data[head]
-    assert numpy.equal( mypoints, evalpoints ).all(), 'Illegal point set'
-    return myvals
-
-  def update_max( self, func ):
-    func = asarray(func)
-    assert func.shape == self.shape
-    data = dict( (trans,(numpy.maximum(func.eval((trans,trans),points),values),points)) for trans,(values,points) in self.data.items() )
-
-    return Pointdata( data, self.shape )
-
 class Sampled( Array ):
   'sampled'
 
@@ -3688,35 +3660,6 @@ def inflate( arg, dofmap, length, axis ):
     return retval
 
   return Inflate( arg, dofmap, length, axis )
-
-def pointdata ( topo, ischeme, func=None, shape=None, value=None ):
-  'point data'
-
-  from . import topology
-  assert isinstance(topo,topology.Topology)
-
-  if func is not None:
-    assert value is None
-    assert shape is None
-    shape = func.shape
-  else: # func is None
-    if value is not None:
-      assert shape is None
-      value = numpy.asarray( value )
-    else: # value is None
-      assert shape is not None
-      value = numpy.zeros( shape )
-    shape = value.shape
-
-  data = {}
-  for elem in topo:
-    # TODO use cache for getischeme
-    ipoints, iweights = elem.reference.getischeme( ischeme )
-    values = numpy.empty( ipoints.shape[:-1]+shape, dtype=float )
-    values[:] = func.eval(elem,ischeme) if func is not None else value
-    data[ elem.transform ] = values, ipoints
-
-  return Pointdata( data, shape )
 
 @log.title
 def fdapprox( func, w, dofs, delta=1.e-5 ):

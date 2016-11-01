@@ -6,6 +6,15 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+Removed: pointdata
+
+  The deprecated function.Pointdata is removed. The replacing
+  construction is Topology.elem_eval with the asfunction=True argument:
+
+  >>> f_pnt = domain.elem_eval( f, ischeme='gauss2', asfunction=True )
+  >>> domain.integrate( f - f_pnt, geometry=geom, ischeme='gauss2' ) == 0
+
+
 Changed: renamed mesh.gmesh to mesh.gmsh; added support for periodicy
 
   The gmsh importer was unintentionally misnamed as gmesh; this has been
