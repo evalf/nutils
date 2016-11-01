@@ -1838,7 +1838,7 @@ class RevolvedTopology( Topology ):
   @log.title
   @core.single_or_multiple
   def integrate( self, funcs, ischeme, geometry, force_dense=False, fcache=None, edit=_identity ):
-    iwscale = function.jacobian( geometry, self.ndims+1 ) * function.iwscale(self.ndims)
+    iwscale = function.jacobian( geometry, self.ndims+1 )
     funcs = [ func.unwrap( geometry ) if isinstance( func, IndexedArray ) else func for func in funcs ]
     integrands = [ function.asarray( edit( func * iwscale ) ) for func in funcs ]
     data_index = self._integrate( integrands, ischeme, fcache=fcache )

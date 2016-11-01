@@ -55,6 +55,14 @@ class TransformChain( tuple ):
       headtrans = headtrans.sliceto(-1)
     return None
 
+  def rsplit( self, ndims ):
+    if self.fromdims == ndims:
+      return self, CanonicalTransformChain()
+    for i in range( len(self)-1, -1, -1 ):
+      if self[i].todims == ndims:
+        return self.sliceto(i), self.slicefrom(i)
+    raise Exception( 'failed to split transformation' )
+
   def split( self, ndims, after=True ):
     # split before/after the first occurrence of .fromdims==ndims. For
     # after=True (default) the base part represents the coordinate system for

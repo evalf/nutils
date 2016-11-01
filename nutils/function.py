@@ -691,7 +691,7 @@ class ElementSize( Array):
   def __init__( self, geometry, ndims=None ):
     assert geometry.ndim == 1
     self.ndims = len(geometry) if ndims is None else len(geometry)+ndims if ndims < 0 else ndims
-    iwscale = jacobian( geometry, self.ndims ) * iwscale(self.ndims)
+    iwscale = jacobian( geometry, self.ndims )
     Array.__init__( self, args=[iwscale], shape=(), dtype=float )
 
   def evalf( self, iwscale ):
@@ -710,7 +710,7 @@ class Orientation( Array ):
     self.ndims = trans.ndims
 
   def evalf( self, trans ):
-    head, tail = trans.split( self.ndims )
+    head = trans.rsplit( self.ndims )[0]
     return numpy.array([ head.orientation ])
 
   def _edit( self, op ):
@@ -878,28 +878,6 @@ class Product( Array ):
   def _edit( self, op ):
     return product( op(self.func), -1 )
 
-class Iwscale( Array ):
-  'integration weights'
-
-  def __init__( self, trans ):
-    'constructor'
-
-    self.trans = trans
-    self.fromdims = trans.ndims
-    Array.__init__( self, args=[trans], shape=(), dtype=float )
-
-  def _derivative( self, var, axes, seen ):
-    return zeros( _taketuple(var.shape,axes), dtype=float )
-
-  def _edit( self, op ):
-    return Iwscale( op(self.trans) )
-
-  def evalf( self, trans ):
-    'evaluate'
-
-    assert trans.fromdims == self.fromdims
-    return _abs( numpy.asarray( trans.split(self.fromdims)[1].det, dtype=float )[_] )
-
 class Transform( Array ):
   'transform'
 
@@ -918,9 +896,7 @@ class Transform( Array ):
   def evalf( self, fromchain, tochain ):
     'transform'
 
-    fromhead = fromchain.split(self.fromdims)[0]
-    tohead, trans = fromhead.split(self.todims)
-    assert tohead == tochain.split(self.todims)[0], 'failed to create transformation'
+    trans = tochain.rsplit( self.fromdims )[0].rsplit( self.todims )[1]
     matrix = trans.linear
     assert matrix.shape == (self.todims,self.fromdims)
     return matrix.astype( float )[_]
@@ -934,45 +910,47 @@ class Transform( Array ):
 class Function( Array ):
   'function'
 
-  def __init__( self, ndims, stdmap, igrad, length, trans ):
+  def __init__( self, coords, stdmap, igrad, length, trans ):
     'constructor'
 
+    assert coords.ndim == 1
     self.trans = trans
-    self.ndims = ndims
+    self.coords = coords
     self.stdmap = stdmap
     self.igrad = igrad
-    Array.__init__( self, args=(CACHE,POINTS,trans), shape=(length,)+(ndims,)*igrad, dtype=float )
+    Array.__init__( self, args=(CACHE,coords,trans), shape=(length,)+coords.shape*igrad, dtype=float )
 
   def evalf( self, cache, points, trans ):
     'evaluate'
 
     fvals = []
+    trans = trans.rsplit( len(self.coords) )[0]
     head = trans.lookup( self.stdmap )
     for std, keep in self.stdmap[head]:
       if std:
-        transpoints = cache[trans.slicefrom(len(head)).apply]( points )
+        mytrans = trans.slicefrom(len(head))
+        transpoints = cache[mytrans.apply]( points )
         F = cache[std.eval]( transpoints, self.igrad )
         assert F.ndim == self.igrad+2
         if keep is not None:
           F = F[(Ellipsis,keep)+(slice(None),)*self.igrad]
         if self.igrad:
-          invlinear = head.split(head.fromdims)[1].invlinear
-          if invlinear.ndim:
+          linear = mytrans.linear
+          if linear.ndim:
             for axis in range(-self.igrad,0):
-              F = numeric.dot( F, invlinear, axis )
-          elif invlinear != 1:
-            F = F * (invlinear**self.igrad)
+              F = numeric.dot( F, linear, axis )
+          elif linear != 1:
+            F = F * (linear**self.igrad)
         fvals.append( F )
       head = head.sliceto(-1)
     return fvals[0] if len(fvals) == 1 else numpy.concatenate( fvals, axis=-1-self.igrad )
 
   def _edit( self, op ):
-    return Function( self.ndims, self.stdmap, self.igrad, self.shape[0], op(self.trans) )
+    return Function( op(self.coords), self.stdmap, self.igrad, self.shape[0], op(self.trans) )
 
   def _derivative( self, var, axes, seen ):
-    grad = Function( self.ndims, self.stdmap, self.igrad+1, self.shape[0], self.trans )
-    localcoords = LocalCoords( self.trans )
-    return ( grad[(...,)+(_,)*len(axes)] * derivative( localcoords, var, axes, seen ) ).sum( self.ndim )
+    grad = Function( self.coords, self.stdmap, self.igrad+1, self.shape[0], self.trans )
+    return ( grad[(...,)+(_,)*len(axes)] * derivative( self.coords, var, axes, seen ) ).sum( self.ndim )
 
   def _take( self, indices, axis ):
     if axis != 0:
@@ -1002,7 +980,7 @@ class Function( Array ):
         newstdkeep.append(( std, keep ))
       assert not where.size
       stdmap[trans] = newstdkeep
-    return Function( self.ndims, stdmap, self.igrad, indices.shape[0], self.trans )
+    return Function( self.coords, stdmap, self.igrad, indices.shape[0], self.trans )
 
 class Choose( Array ):
   'piecewise function'
@@ -2549,20 +2527,65 @@ class LocalCoords( DerivativeTargetBase ):
   def evalf( self, points, trans ):
     'evaluate'
 
-    ptrans = trans.split( self.shape[0] )[1]
-    return ptrans.apply( points ).astype( float )
+    ndims, = self.shape
+    return trans.rsplit(ndims)[1].apply(points)
 
   def _derivative( self, var, axes, seen ):
-    if isinstance( var, LocalCoords ):
-      ndims, = var.shape
-      return eye( ndims ) if self.shape[0] == ndims \
-        else Transform( self.shape[0], ndims, self.trans, var.trans )
-    else:
+    if not isinstance( var, LocalCoords ):
       return zeros( self.shape+_taketuple(var.shape,axes) )
+    ndims, = var.shape
+    return eye( ndims ) if self.shape[0] == ndims \
+      else Transform( self.shape[0], ndims, self.trans, var.trans )
 
   def _edit( self, op ):
     ndims, = self.shape
     return LocalCoords( op(self.trans) )
+
+class RootCoords( Array ):
+  'ground coords'
+
+  def __init__( self, trans ):
+    assert isinstance( trans, Promote )
+    ndims = trans.ndims
+    self.trans = trans
+    Array.__init__( self, args=[POINTS,trans], shape=[ndims], dtype=float )
+
+  def evalf( self, points, trans ):
+    ndims, = self.shape
+    return trans.split( ndims )[1].apply( points )
+
+  def _derivative( self, var, axes, seen ):
+    if not isinstance( var, LocalCoords ):
+      return zeros( self.shape+_taketuple(var.shape,axes) )
+    ndims, = var.shape
+    roottrans = RootTransform( self.trans )
+    return roottrans if self.shape[0] == ndims \
+      else ( roottrans[:,:,_] * Transform( self.shape[0], ndims, self.trans, var.trans )[_,:,:] ).sum(1)
+
+  def _edit( self, op ):
+    return RootCoords( op(self.trans) )
+
+class RootTransform( Array ):
+
+  def __init__( self, trans ):
+    self.trans = trans
+    ndims = trans.ndims
+    Array.__init__( self, args=[trans], shape=[ndims,ndims], dtype=float )
+
+  def evalf( self, trans ):
+    ndims = self.trans.ndims
+    trans = trans.rsplit(ndims)[0].split(ndims)[1]
+    linear = trans.linear
+    if isinstance( linear, (int,float) ):
+      linear = numpy.eye(ndims) * linear
+    assert linear.shape == self.shape
+    return linear[_]
+
+  def _derivative( self, var, axes, seen ):
+    return zeros( self.shape+_taketuple(var.shape,axes) )
+
+  def _edit( self, op ):
+    return RootTransform( op(self.trans) )
 
 
 # CIRCULAR SYMMETRY
@@ -2777,8 +2800,8 @@ add_T = lambda arg, axes=(-2,-1): swapaxes( arg, axes ) + arg
 edit = lambda arg, f: arg._edit(f) if isevaluable(arg) else arg
 blocks = lambda arg: asarray(arg).blocks
 localcoords = lambda ndims: LocalCoords( Promote(ndims) )
+rootcoords = lambda ndims: RootCoords( Promote(ndims) )
 sampled = lambda data, ndims: Sampled( data, Promote(ndims) )
-iwscale = lambda ndims: Iwscale( Promote(ndims) )
 
 class _eye:
   'identity'
@@ -3601,7 +3624,8 @@ def function( fmap, nmap, ndofs, ndims ):
   for trans in nmap:
     break
   trans = Promote( trans.fromdims )
-  func = Function( ndims, fmap, igrad=0, length=length, trans=trans )
+  coords = LocalCoords( trans )
+  func = Function( coords, fmap, igrad=0, length=length, trans=trans )
   dofmap = DofMap( nmap, length=length, trans=trans )
   return Inflate( func, dofmap, ndofs, axis=0 )
 
@@ -3716,7 +3740,7 @@ def J( geometry, ndims=None ):
     ndims = len(geometry)
   elif ndims < 0:
     ndims += len(geometry)
-  return jacobian( geometry, ndims ) * iwscale(ndims)
+  return jacobian( geometry, ndims )
 
 class Pair:
   '''two-element container that is insensitive to order in equality testing'''
