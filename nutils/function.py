@@ -297,19 +297,19 @@ class PointShape( Evaluable ):
 
     return points.shape[:-1]
 
-class TransformChain( Evaluable ):
+class Promote( Evaluable ):
   'transform'
 
-  def __init__( self, side, promote ):
+  def __init__( self, side, ndims ):
     Evaluable.__init__( self, args=[TRANS] )
     self.side = side
-    self.promote = promote
+    self.ndims = ndims
 
   def evalf( self, trans ):
-    return trans[ self.side ].promote( self.promote )
+    return trans[ self.side ].promote( self.ndims )
 
   def _opposite( self ):
-    return TransformChain( 1-self.side, self.promote )
+    return Promote( 1-self.side, self.ndims )
 
 
 # ARRAYFUNC
@@ -461,7 +461,7 @@ class Array( Evaluable ):
       normal = [1]
     else:
       raise NotImplementedError( 'cannot compute normal for %dx%d jacobian' % ( self.shape[0], ndims ) )
-    return normal * Orientation( TransformChain(promote=ndims,side=0) )
+    return normal * Orientation( Promote(ndims=ndims,side=0) )
 
   def curvature( self, ndims=-1 ):
     'curvature'
@@ -668,12 +668,12 @@ class Constant( Array ):
 class DofMap( Array ):
   'dof axis'
 
-  def __init__( self, dofmap, length, transchain ):
+  def __init__( self, dofmap, length, trans ):
     'new'
 
-    self.transchain = transchain
+    self.trans = trans
     self.dofmap = dofmap
-    Array.__init__( self, args=[transchain], shape=(length,), dtype=int )
+    Array.__init__( self, args=[trans], shape=(length,), dtype=int )
 
   def evalf( self, trans ):
     'evaluate'
@@ -681,7 +681,7 @@ class DofMap( Array ):
     return self.dofmap[ trans.lookup(self.dofmap) ][_]
 
   def _edit( self, op ):
-    return DofMap( self.dofmap, self.shape[0], op(self.transchain) )
+    return DofMap( self.dofmap, self.shape[0], op(self.trans) )
 
 class ElementSize( Array):
   'dimension of hypercube with same volume as element'
@@ -699,20 +699,20 @@ class ElementSize( Array):
 class Orientation( Array ):
   'sign'
 
-  def __init__( self, transchain ):
+  def __init__( self, trans ):
     'constructor'
 
-    assert isinstance( transchain, TransformChain )
-    Array.__init__( self, args=[transchain], shape=(), dtype=float )
-    self.transchain = transchain
-    self.ndims = transchain.promote
+    assert isinstance( trans, Promote )
+    Array.__init__( self, args=[trans], shape=(), dtype=float )
+    self.trans = trans
+    self.ndims = trans.ndims
 
   def evalf( self, trans ):
     head, tail = trans.split( self.ndims )
     return numpy.array([ head.orientation ])
 
   def _edit( self, op ):
-    return Orientation( op(self.transchain) )
+    return Orientation( op(self.trans) )
 
   def _derivative( self, var, axes, seen ):
     return zeros( _taketuple(var.shape,axes) )
@@ -883,7 +883,7 @@ class Iwscale( Array ):
     'constructor'
 
     self.fromdims = ndims
-    Array.__init__( self, args=[TransformChain(0,ndims)], shape=(), dtype=float )
+    Array.__init__( self, args=[Promote(0,ndims)], shape=(), dtype=float )
 
   def _derivative( self, var, axes, seen ):
     return zeros( _taketuple(var.shape,axes), dtype=float )
@@ -905,8 +905,8 @@ class Transform( Array ):
     self.todims = todims
     self.fromchain = fromchain # only for sanity check
     self.tochain = tochain
-    assert fromchain.promote == fromdims
-    assert tochain.promote == todims
+    assert fromchain.ndims == fromdims
+    assert tochain.ndims == todims
     Array.__init__( self, args=[fromchain,tochain], shape=(todims,fromdims), dtype=float )
 
   def evalf( self, fromchain, tochain ):
@@ -928,14 +928,14 @@ class Transform( Array ):
 class Function( Array ):
   'function'
 
-  def __init__( self, ndims, stdmap, igrad, length, transchain ):
+  def __init__( self, ndims, stdmap, igrad, length, trans ):
     'constructor'
 
-    self.transchain = transchain
+    self.trans = trans
     self.ndims = ndims
     self.stdmap = stdmap
     self.igrad = igrad
-    Array.__init__( self, args=(CACHE,POINTS,transchain), shape=(length,)+(ndims,)*igrad, dtype=float )
+    Array.__init__( self, args=(CACHE,POINTS,trans), shape=(length,)+(ndims,)*igrad, dtype=float )
 
   def evalf( self, cache, points, trans ):
     'evaluate'
@@ -961,11 +961,11 @@ class Function( Array ):
     return fvals[0] if len(fvals) == 1 else numpy.concatenate( fvals, axis=-1-self.igrad )
 
   def _edit( self, op ):
-    return Function( self.ndims, self.stdmap, self.igrad, self.shape[0], op(self.transchain) )
+    return Function( self.ndims, self.stdmap, self.igrad, self.shape[0], op(self.trans) )
 
   def _derivative( self, var, axes, seen ):
-    grad = Function( self.ndims, self.stdmap, self.igrad+1, self.shape[0], self.transchain )
-    localcoords = LocalCoords( self.transchain )
+    grad = Function( self.ndims, self.stdmap, self.igrad+1, self.shape[0], self.trans )
+    localcoords = LocalCoords( self.trans )
     return ( grad[(...,)+(_,)*len(axes)] * derivative( localcoords, var, axes, seen ) ).sum( self.ndim )
 
   def _take( self, indices, axis ):
@@ -996,7 +996,7 @@ class Function( Array ):
         newstdkeep.append(( std, keep ))
       assert not where.size
       stdmap[trans] = newstdkeep
-    return Function( self.ndims, stdmap, self.igrad, indices.shape[0], self.transchain )
+    return Function( self.ndims, stdmap, self.igrad, indices.shape[0], self.trans )
 
 class Choose( Array ):
   'piecewise function'
@@ -1888,16 +1888,15 @@ class Sign( Array ):
 class Sampled( Array ):
   'sampled'
 
-  def __init__ ( self, data, transchain ):
+  def __init__ ( self, data, trans ):
     assert isinstance(data,dict)
     self.data = data.copy()
-    self.transchain = transchain
+    self.trans = trans
     items = iter(self.data.items())
-    trans, (values,points) = next(items)
-    fromdims = trans.fromdims
-    shape = values.shape[1:]
-    assert all( trans.fromdims == fromdims and values.shape == points.shape[:1]+shape for trans, (values,points) in items )
-    Array.__init__( self, args=[transchain,POINTS], shape=shape, dtype=float )
+    trans0, (values0,points0) = next(items)
+    shape = values0.shape[1:]
+    assert all( transi.fromdims == trans0.fromdims and valuesi.shape == pointsi.shape[:1]+shape for transi, (valuesi,pointsi) in items )
+    Array.__init__( self, args=[trans,POINTS], shape=shape, dtype=float )
 
   def evalf( self, trans, points ):
     head = trans.lookup( self.data )
@@ -1908,16 +1907,16 @@ class Sampled( Array ):
     return myvals
 
   def _edit( self, op ):
-    return Sampled( self.data, op(self.transchain) )
+    return Sampled( self.data, op(self.trans) )
 
 class Elemwise( Array ):
   'elementwise constant data'
 
-  def __init__( self, fmap, shape, transchain, default=None ):
+  def __init__( self, fmap, shape, trans, default=None ):
     self.fmap = fmap
     self.default = default
-    self.transchain = transchain
-    Array.__init__( self, args=[transchain], shape=shape, dtype=float )
+    self.trans = trans
+    Array.__init__( self, args=[trans], shape=shape, dtype=float )
 
   def evalf( self, trans ):
     trans = trans.lookup( self.fmap )
@@ -1931,7 +1930,7 @@ class Elemwise( Array ):
     return zeros( self.shape+_taketuple(var.shape,axes) )
 
   def _edit( self, op ):
-    return Elemwise( self.fmap, self.shape, op(self.transchain), self.default )
+    return Elemwise( self.fmap, self.shape, op(self.trans), self.default )
 
 class Eig( Evaluable ):
   'Eig'
@@ -2530,13 +2529,13 @@ class DerivativeTarget( DerivativeTargetBase ):
 class LocalCoords( DerivativeTargetBase ):
   'trivial func'
 
-  def __init__( self, transchain ):
+  def __init__( self, trans ):
     'constructor'
 
-    assert isinstance( transchain, TransformChain )
-    ndims = transchain.promote
-    self.transchain = transchain
-    DerivativeTargetBase.__init__( self, args=[POINTS,transchain], shape=[ndims], dtype=float )
+    assert isinstance( trans, Promote )
+    ndims = trans.ndims
+    self.trans = trans
+    DerivativeTargetBase.__init__( self, args=[POINTS,trans], shape=[ndims], dtype=float )
 
   def evalf( self, points, trans ):
     'evaluate'
@@ -2548,13 +2547,13 @@ class LocalCoords( DerivativeTargetBase ):
     if isinstance( var, LocalCoords ):
       ndims, = var.shape
       return eye( ndims ) if self.shape[0] == ndims \
-        else Transform( self.shape[0], ndims, self.transchain, var.transchain )
+        else Transform( self.shape[0], ndims, self.trans, var.trans )
     else:
       return zeros( self.shape+_taketuple(var.shape,axes) )
 
   def _edit( self, op ):
     ndims, = self.shape
-    return LocalCoords( op(self.transchain) )
+    return LocalCoords( op(self.trans) )
 
 
 # CIRCULAR SYMMETRY
@@ -2768,8 +2767,8 @@ jump = lambda arg: opposite(arg) - arg
 add_T = lambda arg, axes=(-2,-1): swapaxes( arg, axes ) + arg
 edit = lambda arg, f: arg._edit(f) if isevaluable(arg) else arg
 blocks = lambda arg: asarray(arg).blocks
-localcoords = lambda ndims, side=0: LocalCoords( TransformChain(side=side,promote=ndims) )
-sampled = lambda data, ndims, side=0: Sampled( data, TransformChain(promote=ndims,side=side) )
+localcoords = lambda ndims, side=0: LocalCoords( Promote(side=side,ndims=ndims) )
+sampled = lambda data, ndims, side=0: Sampled( data, Promote(ndims=ndims,side=side) )
 
 class _eye:
   'identity'
@@ -3598,16 +3597,16 @@ def function( fmap, nmap, ndofs, ndims ):
   length = '~%d' % ndofs
   for trans in nmap:
     break
-  transchain = TransformChain( side=0, promote=trans.fromdims )
-  func = Function( ndims, fmap, igrad=0, length=length, transchain=transchain )
-  dofmap = DofMap( nmap, length=length, transchain=transchain )
+  trans = Promote( side=0, ndims=trans.fromdims )
+  func = Function( ndims, fmap, igrad=0, length=length, trans=trans )
+  dofmap = DofMap( nmap, length=length, trans=trans )
   return Inflate( func, dofmap, ndofs, axis=0 )
 
 def elemwise( fmap, shape, default=None, side=0 ):
   for trans in fmap:
     break
-  transchain = TransformChain( promote=trans.fromdims, side=side )
-  return Elemwise( fmap=fmap, shape=shape, transchain=transchain, default=default )
+  trans = Promote( ndims=trans.fromdims, side=side )
+  return Elemwise( fmap=fmap, shape=shape, trans=trans, default=default )
 
 def take( arg, index, axis ):
   'take index'
