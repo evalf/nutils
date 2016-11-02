@@ -1446,6 +1446,16 @@ class Multiply( Array ):
     if all( func2.shape[axis] == 1 for axis in axes ):
       return func2[s] * dot( func1, other, axes )
 
+  def _inverse( self ):
+    assert self.ndim >= 2 and self.shape != (1,1) # should have been handled at higher level
+    func1, func2 = self.funcs
+    if 1 in func1.shape[-2:]:
+      func1, func2 = func2, func1
+    if 1 in func1.shape[-2:]: # tensor product
+      raise Exception( 'singular matrix' )
+    if 1 in func2.shape[-2:]:
+      return inverse(func1) / swapaxes(func2)
+
 class Add( Array ):
   'add'
 
