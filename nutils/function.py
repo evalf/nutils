@@ -1395,10 +1395,16 @@ class Multiply( Array ):
         return f * add( g1, g2 )
 
   def _determinant( self ):
-    if self.funcs[0].shape[-2:] == (1,1):
-      return determinant( self.funcs[1] ) * (self.funcs[0][...,0,0]**self.shape[-1])
-    if self.funcs[1].shape[-2:] == (1,1):
-      return determinant( self.funcs[0] ) * (self.funcs[1][...,0,0]**self.shape[-1])
+    assert self.ndim >= 2 and self.shape != (1,1) # should have been handled at higher level
+    func1, func2 = self.funcs
+    if 1 in func1.shape[-2:]:
+      func1, func2 = func2, func1 # swap singleton-axis argument into func2
+    if 1 in func1.shape[-2:]: # tensor product
+      return zeros( () )
+    if 1 in func2.shape[-2:]:
+      det2 = power( func2[...,0,0], self.shape[-1] ) if func2.shape[-2:] == (1,1) \
+        else product( func2.sum( -1 if func2.shape[-1] == 1 else -2 ), axis=0 )
+      return determinant(func1) * det2
 
   def _product( self, axis ):
     func1, func2 = self.funcs
