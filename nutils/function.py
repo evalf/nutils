@@ -667,6 +667,9 @@ class Constant( Array ):
     if all( isinstance( choice, Constant ) for choice in choices ):
       return asarray( numpy.choose( self.value, [ choice.value for choice in choices ] ) )
 
+  def _kronecker( self, axis, length, pos ):
+    return asarray( numeric.kronecker( self.value, axis, length, pos ) )
+
 class DofMap( Array ):
   'dof axis'
 
