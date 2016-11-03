@@ -139,7 +139,7 @@ class Integral( dict ):
     values = [ domain.obj.integrate( integrand, ischeme='gauss{}'.format(degree) ) for domain, (integrand,degree) in self.items() ]
     return numpy.sum( values, axis=0 )
 
-  def solve( self, target, cons, **newtonargs ):
+  def solve( self, target, cons, lhs0, **newtonargs ):
 
     seen = {}
     res_jac = [ ( domain.obj, integrand, function.derivative( integrand, var=target, axes=[0], seen=seen ), 'gauss{}'.format(degree) )
@@ -151,13 +151,16 @@ class Integral( dict ):
 
     fcache = cache.WrapperCache()
     def eval_res_jac( lhs ):
+      lhs = function.asarray( lhs )
       edit = lambda f: lhs if f is target else function.edit( f, edit )
       values = [ domain.integrate( [res,jac], ischeme=ischeme, edit=edit, fcache=fcache ) for domain, res, jac, ischeme in res_jac ]
       return numpy.sum( values, dtype=object, axis=0 )
 
-    res, jac = eval_res_jac( function.zeros(target.shape) )
-    lhs = jac.solve( -res, constrain=cons )
-    return lhs if islinear else newton( lhs, numpy.isnan(cons), eval_res_jac, **newtonargs )
+    if islinear or lhs0 is None:
+      res, jac = eval_res_jac( function.zeros(target.shape) )
+      lhs0 = jac.solve( -res, constrain=cons )
+
+    return lhs0 if islinear else newton( lhs0, numpy.isnan(cons), eval_res_jac, **newtonargs )
 
 
 class Model:
@@ -199,8 +202,11 @@ class Model:
     ndofs = sum( len(basis) for name, basis in self.bases(domain) )
     target = function.DerivativeTarget( [ndofs] )
     namespace = self.namespace( domain, target )
-    integral, cons = self.evalres( domain, geom, namespace )
-    return integral.solve( target, cons=cons, **newtonargs )
+    res = self.evalres( domain, geom, namespace )
+    assert len(res) in (2,3)
+    integral, cons = res[-2:]
+    lhs0 = res[0].solve( target, cons=cons, lhs0=None, **newtonargs ) if len(res) == 3 else None
+    return integral.solve( target, cons=cons, lhs0=lhs0, **newtonargs )
 
   def solve_namespace( self, domain, geom, **newtonargs ):
     coeffs = self.solve( domain, geom, **newtonargs )
@@ -219,9 +225,16 @@ class ChainModel( Model ):
     yield from self.m2.bases( domain )
 
   def evalres( self, domain, geom, namespace ):
-    integral1, cons1 = self.m1.evalres( domain, geom, namespace )
-    integral2, cons2 = self.m2.evalres( domain, geom, namespace )
-    return Integral.concatenate([ integral1, integral2 ]), numpy.concatenate([ cons1, cons2 ])
+    res1 = self.m1.evalres( domain, geom, namespace )
+    res2 = self.m2.evalres( domain, geom, namespace )
+    assert len(res1) in (2,3) and len(res2) in (2,3)
+    integral1, cons1 = res1[-2:]
+    integral2, cons2 = res2[-2:]
+    integral12 = Integral.concatenate([ integral1, integral2 ])
+    cons12 = numpy.concatenate([ cons1, cons2 ])
+    if len(res1) == len(res2) == 2:
+      return integral12, cons12
+    return Integral.concatenate([ res1[0], res2[0] ]), integral12, cons12
 
 
 if __name__ == '__main__':
