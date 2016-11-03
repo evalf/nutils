@@ -2,17 +2,17 @@ from . import function, index, cache, log
 import numpy, itertools
 
 
-def newton( lhs0, isdof, eval_res_jac, tol=1e-10, nrelax=5, maxrelax=.9, emergencyrelax=.1 ):
+def newton( lhs0, isdof, eval_res_jac, tol=1e-10, nrelax=5, maxrelax=.9 ):
   '''iteratively solve nonlinear problem by gradient descent
 
   Newton procedure with line search based on a residual and tangent generating
   function. An optimal relaxation value is computed based on the following
   parabolic assumption:
 
-      | res( lhs + relax * dlhs ) |^2 = A + B * relax + C * relax^2
+      | res( lhs + r * dlhs ) |^2 = A + B * r + C * r^2 + D * r^3
 
-  where A, B and C are determined based on the current residual value, the
-  updated residual value, and the updated residual tangent.
+  where A, B, C and D are determined based on the current and updated residual
+  value and tangent.
 
   Parameters
   ----------
@@ -33,10 +33,6 @@ def newton( lhs0, isdof, eval_res_jac, tol=1e-10, nrelax=5, maxrelax=.9, emergen
   maxrelax : float
       Relaxation value below which relaxation continues, unless `nrelax' is
       reached; should be a value less than or equal to 1.
-  emergencyrelax : float
-      If the new residual is increased and decreasing then the local well is
-      missed; relaxing by this value is a last resort to try restore
-      convergence.
 
   Returns
   -------
@@ -47,31 +43,44 @@ def newton( lhs0, isdof, eval_res_jac, tol=1e-10, nrelax=5, maxrelax=.9, emergen
   zcons = numpy.zeros( lhs0.shape )
   zcons[isdof] = numpy.nan
   lhs = lhs0.copy()
-  b, A = eval_res_jac( lhs )
-  newresnorm = numpy.linalg.norm( b[isdof] )
+  res, jac = eval_res_jac( lhs )
+  newresnorm = numpy.linalg.norm( res[isdof] )
   for inewton in log.count( 'newton' ):
     resnorm = newresnorm
     log.user( 'residual:', resnorm )
     if resnorm < tol:
       break
-    dlhs = -A.solve( b, constrain=zcons )
+    dlhs = -jac.solve( res, constrain=zcons )
+    relax = 1
     for irelax in itertools.count():
-      b, A = eval_res_jac( lhs + dlhs )
-      newresnorm = numpy.linalg.norm( b[isdof] )
+      res, jac = eval_res_jac( lhs + relax * dlhs )
+      newresnorm = numpy.linalg.norm( res[isdof] )
       if irelax >= nrelax:
         assert newresnorm < resnorm, 'stuck in local minimum'
         break
-      alpha = newresnorm**2 - resnorm**2 # positive if residual is increased
-      beta = numpy.dot( A.matvec(dlhs)[isdof], b[isdof] ) # positive if residual is increasing
-      if alpha >= 0 and beta <= 0: # residual is increased and decreasing
-        relax = emergencyrelax # try to save convergence by very strong reduction
-      else:
-        relax = (alpha-beta) / (alpha-2*beta) # estimate minimum based on parabolic assumption
-        if relax > maxrelax:
-          break
-      log.info( 'relaxation {0:}: scaling by {1:.3f}'.format( irelax+1, relax ) )
-      dlhs *= relax
-    lhs += dlhs
+      # endpoint values, derivatives
+      r0 = resnorm**2
+      d0 = -2 * relax * resnorm**2
+      r1 = newresnorm**2
+      d1 = 2 * relax * numpy.dot( jac.matvec(dlhs)[isdof], res[isdof] )
+      # polynomial coefficients
+      A = r0
+      B = d0
+      C = 3*r1 - 3*r0 - 2*d0 - d1
+      D = d0 + d1 + 2*r0 - 2*r1
+      # optimization
+      discriminant = C**2 - 3*B*D
+      if discriminant < 0: # monotomously decreasing
+        break
+      malpha = -C / (3*D)
+      dalpha = numpy.sqrt(discriminant) / abs(3*D)
+      newrelax = malpha + dalpha if malpha < dalpha else malpha - dalpha # smallest positive root
+      if newrelax > maxrelax:
+        break
+      assert newrelax > 0, 'newrelax should be strictly positive, computed {!r}'.format(newrelax)
+      log.info( 'relaxation {0:}: scaling by {1:.3f}'.format( irelax+1, newrelax ) )
+      relax *= newrelax
+    lhs += relax * dlhs
   return lhs
 
 
@@ -146,8 +155,8 @@ class Integral( dict ):
       values = [ domain.integrate( [res,jac], ischeme=ischeme, edit=edit, fcache=fcache ) for domain, res, jac, ischeme in res_jac ]
       return numpy.sum( values, dtype=object, axis=0 )
 
-    b, A = eval_res_jac( function.zeros(target.shape) )
-    lhs = A.solve( -b, constrain=cons )
+    res, jac = eval_res_jac( function.zeros(target.shape) )
+    lhs = jac.solve( -res, constrain=cons )
     return lhs if islinear else newton( lhs, numpy.isnan(cons), eval_res_jac, **newtonargs )
 
 
