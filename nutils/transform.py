@@ -18,6 +18,10 @@ class TransformChain( tuple ):
 
   __slots__ = ()
 
+  @staticmethod
+  def new_like_self( items ):
+    return TransformChain( items )
+
   def startswith( self, other ):
     return self[:len(other)] == other
 
@@ -29,7 +33,7 @@ class TransformChain( tuple ):
     return self
 
   def slicefrom( self, i ):
-    return TransformChain( self[i:] )
+    return self.new_like_self( self[i:] )
 
   @property
   def todims( self ):
@@ -65,7 +69,7 @@ class TransformChain( tuple ):
   @property
   def flipped( self ):
     assert self.todims == self.fromdims+1
-    return TransformChain( trans.flipped if trans.todims == trans.fromdims+1 else trans for trans in self )
+    return self.new_like_self( trans.flipped if trans.todims == trans.fromdims+1 else trans for trans in self )
 
   @property
   def det( self ):
@@ -143,8 +147,9 @@ class CanonicalTransformChain( TransformChain ):
 
   __slots__ = ()
 
-  def slicefrom( self, i ):
-    return CanonicalTransformChain( TransformChain.slicefrom( self, i ) )
+  @staticmethod
+  def new_like_self( items ):
+    return CanonicalTransformChain( items )
 
   def __lshift__( self, other ):
     # self << other
@@ -154,34 +159,35 @@ class CanonicalTransformChain( TransformChain ):
     return joint
 
   @property
-  def flipped( self ):
-    return CanonicalTransformChain( TransformChain.flipped.fget( self ) )
-
-  @property
   def canonical( self ):
     return self
 
-  def promote_trim( self, ndims ):
-    if ndims == self.fromdims:
-      return self
+  def promote_helper( self ):
     index = core.index( trans.fromdims == self.fromdims for trans in self )
+    head = self[:index]
     uptrans = self[index]
     if index == len(self)-1 or not mayswap( self[index+1], uptrans ):
-      body = self[:index]
-      tail = self.slicefrom(index)
+      tail = self[index:]
     else:
-      body = list( self[:index] )
       for i in range( index+1, len(self) ):
         scale = self[i]
         if not mayswap( scale, uptrans ):
           break
-        newscale = Scale( scale.linear, uptrans.apply(scale.offset) - scale.linear * uptrans.offset )
-        body.append( newscale )
+        head += Scale( scale.linear, uptrans.apply(scale.offset) - scale.linear * uptrans.offset ),
       else:
         i = len(self)+1
-      assert equivalent( body[index:]+[uptrans], self[index:i] )
-      tail = CanonicalTransformChain( (uptrans,) + self[i:] )
-    return CanonicalTransformChainWithTail( body, tail ).promote_trim( ndims )
+      assert equivalent( head[index:]+(uptrans,), self[index:i] )
+      tail = (uptrans,) + self[i:]
+    return CanonicalTransformChain(head), self.new_like_self(tail)
+
+  def promote_trim( self, ndims ):
+    head = self
+    tail = self.new_like_self([])
+    while head.fromdims < ndims:
+      head, tmp = head.promote_helper()
+      tail = self.new_like_self( tmp + tail )
+    assert head.fromdims == ndims
+    return CanonicalTransformChainWithTail( head, tail )
 
   def lookup( self, transforms ):
     # to be replaced by bisection soon
@@ -200,12 +206,12 @@ class CanonicalTransformChainWithTail( CanonicalTransformChain ):
     self.tail = tail
     return self
 
+  def new_like_self( self, items ):
+    return CanonicalTransformChainWithTail( items, self.tail )
+
   @property
   def flattail( self ):
     return self.tail << self.tail.flattail
-
-  def slicefrom( self, i ):
-    return CanonicalTransformChainWithTail( self[i:], self.tail )
 
 mayswap = lambda trans1, trans2: isinstance( trans1, Scale ) and trans1.linear == .5 and trans2.todims == trans2.fromdims + 1 and trans2.fromdims > 0
 
