@@ -21,11 +21,15 @@ class TransformChain( tuple ):
   def startswith( self, other ):
     return self[:len(other)] == other
 
+  @property
+  def trimmed( self ):
+    for i in range( len(self)-1, -1, -1 ):
+      if self[i].todims != self.fromdims:
+        return self.slicefrom( i+1 )
+    return self
+
   def slicefrom( self, i ):
     return TransformChain( self[i:] )
-
-  def sliceto( self, j ):
-    return TransformChain( self[:j] )
 
   @property
   def todims( self ):
@@ -42,21 +46,6 @@ class TransformChain( tuple ):
   @property
   def orientation( self ):
     return -1 if self.isflipped else +1
-
-  def rsplit( self, ndims ):
-    if self.fromdims == ndims:
-      return self, CanonicalTransformChain()
-    for i in range( len(self)-1, -1, -1 ):
-      if self[i].todims == ndims:
-        return self.sliceto(i), self.slicefrom(i)
-    raise Exception( 'failed to split transformation' )
-
-  def split( self, ndims, after=True ):
-    # split before/after the first occurrence of .fromdims==ndims. For
-    # after=True (default) the base part represents the coordinate system for
-    # integration/gradients at the level specified.
-    i = core.index( trans.fromdims == ndims for trans in self ) + after
-    return self.sliceto(i), self.slicefrom(i)
 
   def __lshift__( self, other ):
     # self << other
@@ -105,14 +94,6 @@ class TransformChain( tuple ):
           else linear * trans.linear
     return linear
 
-  @property
-  def invlinear( self ):
-    invlinear = numpy.array( 1. )
-    for trans in self:
-      invlinear = numpy.dot( trans.invlinear, invlinear ) if invlinear.ndim and trans.linear.ndim \
-             else trans.invlinear * invlinear
-    return invlinear
-
   def apply( self, points ):
     for trans in reversed(self):
       points = trans.apply( points )
@@ -155,10 +136,6 @@ class TransformChain( tuple ):
     raise Exception( 'promotion only possible from canonical form' )
 
   @property
-  def withtail( self ):
-    return self
-
-  @property
   def flattail( self ):
     return CanonicalTransformChain()
 
@@ -168,9 +145,6 @@ class CanonicalTransformChain( TransformChain ):
 
   def slicefrom( self, i ):
     return CanonicalTransformChain( TransformChain.slicefrom( self, i ) )
-
-  def sliceto( self, j ):
-    return CanonicalTransformChain( TransformChain.sliceto( self, j ) )
 
   def __lshift__( self, other ):
     # self << other
@@ -193,8 +167,8 @@ class CanonicalTransformChain( TransformChain ):
     index = core.index( trans.fromdims == self.fromdims for trans in self )
     uptrans = self[index]
     if index == len(self)-1 or not mayswap( self[index+1], uptrans ):
-      A = self.sliceto(index)
-      B = self.slicefrom(index)
+      body = self[:index]
+      tail = self.slicefrom(index)
     else:
       body = list( self[:index] )
       for i in range( index+1, len(self) ):
@@ -206,9 +180,8 @@ class CanonicalTransformChain( TransformChain ):
       else:
         i = len(self)+1
       assert equivalent( body[index:]+[uptrans], self[index:i] )
-      A = CanonicalTransformChain( body )
-      B = CanonicalTransformChain( (uptrans,) + self[i:] )
-    return CanonicalTransformChainWithTail( A, B ).promote_trim( ndims )
+      tail = CanonicalTransformChain( (uptrans,) + self[i:] )
+    return CanonicalTransformChainWithTail( body, tail ).promote_trim( ndims )
 
   def lookup( self, transforms ):
     # to be replaced by bisection soon
@@ -216,7 +189,7 @@ class CanonicalTransformChain( TransformChain ):
     while headtrans:
       if headtrans in transforms:
         return CanonicalTransformChainWithTail( headtrans, self.slicefrom(len(headtrans)) )
-      headtrans = headtrans.sliceto(-1)
+      headtrans = headtrans[:-1]
     return None
 
 class CanonicalTransformChainWithTail( CanonicalTransformChain ):
@@ -231,15 +204,8 @@ class CanonicalTransformChainWithTail( CanonicalTransformChain ):
   def flattail( self ):
     return self.tail << self.tail.flattail
 
-  @property
-  def withtail( self ):
-    return self << self.flattail
-
   def slicefrom( self, i ):
     return CanonicalTransformChainWithTail( self[i:], self.tail )
-
-  def sliceto( self, i ):
-    return CanonicalTransformChainWithTail( self[:i], self.slicefrom(i) )
 
 mayswap = lambda trans1, trans2: isinstance( trans1, Scale ) and trans1.linear == .5 and trans2.todims == trans2.fromdims + 1 and trans2.fromdims > 0
 
@@ -263,7 +229,7 @@ class TransformItem( cache.Immutable ):
 class Shift( TransformItem ):
 
   def __init__( self, offset ):
-    self.linear = self.invlinear = self.det = numpy.array(1.)
+    self.linear = self.det = numpy.array(1.)
     self.offset = offset
     self.isflipped = False
     assert offset.ndim == 1
@@ -290,10 +256,6 @@ class Scale( TransformItem ):
   @property
   def det( self ):
     return self.linear**self.todims
-
-  @property
-  def invlinear( self ):
-    return 1 / self.linear
 
   def __str__( self ):
     return '{}+{}*x'.format( numeric.fstr(self.offset), numeric.fstr(self.linear) )
@@ -326,10 +288,6 @@ class Square( Matrix ):
   @cache.property
   def det( self ):
     return numeric.det_exact( self.linear )
-
-  @cache.property
-  def invlinear( self ):
-    return numpy.linalg.inv( self.linear )
 
 class Updim( Matrix ):
 

@@ -2576,7 +2576,7 @@ class RootCoords( Array ):
     Array.__init__( self, args=[POINTS,trans], shape=[ndims], dtype=float )
 
   def evalf( self, points, trans ):
-    return trans.split( trans.fromdims )[1].withtail.apply( points )
+    return ( trans.trimmed << trans.flattail ).apply( points )
 
   def _derivative( self, var, axes, seen ):
     if not isinstance( var, LocalCoords ):
@@ -2598,8 +2598,7 @@ class RootTransform( Array ):
 
   def evalf( self, trans ):
     ndims = self.trans.ndims
-    trans = trans.split(ndims)[1]
-    linear = trans.linear
+    linear = trans.trimmed.linear
     if isinstance( linear, (int,float) ):
       linear = numpy.eye(ndims) * linear
     assert linear.shape == self.shape
