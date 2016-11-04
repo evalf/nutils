@@ -912,46 +912,56 @@ class Transform( Array ):
 class Function( Array ):
   'function'
 
-  def __init__( self, coords, stdmap, igrad, length, trans ):
+  def __init__( self, stdmap, igrad, length, trans ):
     'constructor'
 
-    assert coords.ndim == 1
     self.trans = trans
-    self.coords = coords
     self.stdmap = stdmap
     self.igrad = igrad
-    Array.__init__( self, args=(CACHE,coords,trans), shape=(length,)+coords.shape*igrad, dtype=float )
+    Array.__init__( self, args=(CACHE,POINTS,trans), shape=(length,)+(trans.ndims,)*igrad, dtype=float )
 
   def evalf( self, cache, points, trans ):
     'evaluate'
 
     fvals = []
-    head = trans.lookup( self.stdmap )
-    for std, keep in self.stdmap[head]:
-      if std:
-        mytrans = trans.slicefrom(len(head))
-        transpoints = cache[mytrans.apply]( points )
-        F = cache[std.eval]( transpoints, self.igrad )
-        assert F.ndim == self.igrad+2
-        if keep is not None:
-          F = F[(Ellipsis,keep)+(slice(None),)*self.igrad]
-        if self.igrad:
-          linear = mytrans.linear
-          if linear.ndim:
-            for axis in range(-self.igrad,0):
-              F = numeric.dot( F, linear, axis )
-          elif linear != 1:
-            F = F * (linear**self.igrad)
-        fvals.append( F )
-      head = head.sliceto(-1)
-    return fvals[0] if len(fvals) == 1 else numpy.concatenate( fvals, axis=-1-self.igrad )
+    points = cache[transform.TransformChain.apply]( trans.flattail, points )
+    linear = numpy.array( 1. )
+    stds = None # indicating that function is not found yet in self.stdmap
+    while trans:
+      try:
+        if stds is None:
+          stds = self.stdmap[ tuple(trans) ]
+      except KeyError:
+        pass
+      else:
+        (std,keep), *stds = stds
+        if std:
+          F = cache[std.eval]( points, self.igrad )
+          assert F.ndim == self.igrad+2
+          if keep is not None:
+            F = F[(Ellipsis,keep)+(slice(None),)*self.igrad]
+          if self.igrad:
+            if linear.ndim:
+              for axis in range(-self.igrad,0):
+                F = numeric.dot( F, linear, axis )
+            elif linear != 1:
+              F = F * (linear**self.igrad)
+          fvals.append( F )
+        if not stds:
+          break
+      *trans, tr = trans
+      points = cache[tr.apply]( points )
+      linear = numpy.dot( linear, tr.linear ) if linear.ndim and tr.linear.ndim else linear * tr.linear
+    else:
+      raise Exception( 'failed to evaluate function' )
+    return fvals[0] if len(fvals) == 1 else numpy.concatenate( fvals, axis=1 )
 
   def _edit( self, op ):
-    return Function( op(self.coords), self.stdmap, self.igrad, self.shape[0], op(self.trans) )
+    return Function( self.stdmap, self.igrad, self.shape[0], op(self.trans) )
 
   def _derivative( self, var, axes, seen ):
-    grad = Function( self.coords, self.stdmap, self.igrad+1, self.shape[0], self.trans )
-    return ( grad[(...,)+(_,)*len(axes)] * derivative( self.coords, var, axes, seen ) ).sum( self.ndim )
+    grad = Function( self.stdmap, self.igrad+1, self.shape[0], self.trans )
+    return ( grad[(...,)+(_,)*len(axes)] * derivative( LocalCoords(self.trans), var, axes, seen ) ).sum( self.ndim )
 
   def _take( self, indices, axis ):
     if axis != 0:
@@ -981,7 +991,7 @@ class Function( Array ):
         newstdkeep.append(( std, keep ))
       assert not where.size
       stdmap[trans] = newstdkeep
-    return Function( self.coords, stdmap, self.igrad, indices.shape[0], self.trans )
+    return Function( stdmap, self.igrad, indices.shape[0], self.trans )
 
 class Choose( Array ):
   'piecewise function'
@@ -3639,8 +3649,7 @@ def function( fmap, nmap, ndofs, ndims ):
   for trans in nmap:
     break
   trans = Promote( trans.fromdims )
-  coords = LocalCoords( trans )
-  func = Function( coords, fmap, igrad=0, length=length, trans=trans )
+  func = Function( fmap, igrad=0, length=length, trans=trans )
   dofmap = DofMap( nmap, length=length, trans=trans )
   return Inflate( func, dofmap, ndofs, axis=0 )
 
