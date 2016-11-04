@@ -18,6 +18,9 @@ class TransformChain( tuple ):
 
   __slots__ = ()
 
+  def startswith( self, other ):
+    return self[:len(other)] == other
+
   def slicefrom( self, i ):
     return TransformChain( self[i:] )
 

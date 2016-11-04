@@ -652,7 +652,7 @@ class Topology( object ):
         elem = self.elements[ielem]
         xi, w = elem.reference.getischeme( 'gauss1' )
         xi = ( numpy.dot(w,xi) / w.sum() )[_] if len(xi) > 1 else xi.copy()
-        linear = function.TransformChain( True, self.ndims ).eval( elem, xi ).split(self.ndims)[1].linear
+        linear = function.Promote( self.ndims ).eval( elem, xi ).flattail.linear
         J = function.localgradient( geom, self.ndims )
         J = J * linear if numpy.ndim( linear ) == 0 else ( J[:,:,_] * linear[_,:,:] ).sum(1)
         geom_J = function.Tuple(( geom, J ))
@@ -1668,13 +1668,11 @@ class HierarchicalTopology( Topology ):
         continue
       itemelem = self.basetopo.elements[self.basetopo.edict[head]]
       ref = itemelem.reference
-      tail = elem.transform.slicefrom( len(head) )
-      while tail:
-        index = ref.child_transforms.index( tail.sliceto(1) )
+      for trans in head.tail:
+        index = ref.child_transforms.index((trans,))
         ref = ref.child_refs[ index ]
         if not ref:
           break
-        tail = tail.slicefrom(1)
       else:
         ref &= elem.reference
         if ref:
@@ -1713,9 +1711,10 @@ class HierarchicalTopology( Topology ):
         # self; this may happen for example when basetopo is a trimmed topology
         belems.append( belem )
       else:
-        elems = [ elem for elem in self if elem.transform.sliceto(len(trans)) == trans ]
-        belems.extend( element.Element( edge.reference, edge.transform, belem.opposite << edge.transform.slicefrom(len(belem.transform)) )
-          for elem in elems for edge in elem.edges if edge.transform.sliceto(len(belem.transform)) == belem.transform )
+        elems = [ elem for elem in self if elem.transform.startswith(trans) ]
+        belems.extend( element.Element( edge.reference, edge.transform,
+            transform.CanonicalTransformChain( belem.opposite + edge.transform[len(belem.transform):] ) )
+          for elem in elems for edge in elem.edges if edge.transform.startswith(belem.transform) )
     return basebtopo.hierarchical( belems, precise=True )
 
   @cache.property

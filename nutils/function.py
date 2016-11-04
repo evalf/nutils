@@ -1911,8 +1911,7 @@ class Sampled( Array ):
 
   def evalf( self, trans, points ):
     head = trans.lookup( self.data )
-    tail = trans.slicefrom( len(head) )
-    evalpoints = tail.apply( points )
+    evalpoints = trans.flattail.apply( points )
     myvals, mypoints = self.data[head]
     assert mypoints.shape == evalpoints.shape and numpy.all( mypoints == evalpoints ), 'Illegal point set'
     return myvals
