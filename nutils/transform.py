@@ -166,7 +166,13 @@ class TransformChain( tuple ):
   def promote( self, ndims ):
     raise Exception( 'promotion only possible from canonical form' )
 
+  @property
+  def totail( self ):
+    return self
+
 class CanonicalTransformChain( TransformChain ):
+
+  __slots__ = ()
 
   def slicefrom( self, i ):
     return CanonicalTransformChain( TransformChain.slicefrom( self, i ) )
@@ -190,6 +196,9 @@ class CanonicalTransformChain( TransformChain ):
     return self
 
   def promote( self, ndims ):
+    return self.promote_trim( ndims ).totail
+
+  def promote_trim( self, ndims ):
     if ndims == self.fromdims:
       return self
     index = core.index( trans.fromdims == self.fromdims for trans in self )
@@ -210,7 +219,19 @@ class CanonicalTransformChain( TransformChain ):
       assert equivalent( body[index:]+[uptrans], self[index:i] )
       A = CanonicalTransformChain( body )
       B = CanonicalTransformChain( (uptrans,) + self[i:] )
-    return A.promote(ndims) << B
+    return CanonicalTransformChainWithTail( A, B ).promote_trim( ndims )
+
+class CanonicalTransformChainWithTail( CanonicalTransformChain ):
+
+  def __new__( cls, items, tail ):
+    assert isinstance( tail, TransformChain )
+    self = CanonicalTransformChain.__new__( cls, items )
+    self.tail = tail
+    return self
+
+  @property
+  def totail( self ):
+    return self << self.tail.totail
 
 mayswap = lambda trans1, trans2: isinstance( trans1, Scale ) and trans1.linear == .5 and trans2.todims == trans2.fromdims + 1 and trans2.fromdims > 0
 
