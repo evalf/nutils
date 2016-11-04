@@ -518,7 +518,7 @@ class LineReference( SimplexReference ):
 
   @cache.property
   def rotations( self ):
-    return transform.identity, transform.affine( [[-1]], self.vertices[1] )
+    return transform.identity, transform.affine( [[-1]], self.vertices[1] ), transform.affine( [[1]], self.vertices[0] )
 
   def stdfunc( self, degree ):
     if len(self._bernsteincache) <= degree or self._bernsteincache[degree] is None:

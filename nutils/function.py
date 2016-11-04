@@ -309,7 +309,7 @@ class Promote( Evaluable ):
     Evaluable.__init__( self, args=[trans] )
 
   def evalf( self, trans ):
-    return trans.promote( self.ndims )
+    return trans.promote_trim( self.ndims )
 
   def _edit( self, op ):
     return Promote( self.ndims, op(self.trans) )
@@ -713,8 +713,7 @@ class Orientation( Array ):
     self.ndims = trans.ndims
 
   def evalf( self, trans ):
-    head = trans.rsplit( self.ndims )[0]
-    return numpy.array([ head.orientation ])
+    return numpy.array([ trans.orientation ])
 
   def _edit( self, op ):
     return Orientation( op(self.trans) )
@@ -899,8 +898,8 @@ class Transform( Array ):
   def evalf( self, fromchain, tochain ):
     'transform'
 
-    trans = tochain.rsplit( self.fromdims )[0].rsplit( self.todims )[1]
-    matrix = trans.linear
+    assert len(tochain) + len(tochain.tail) == len(fromchain)
+    matrix = tochain.tail.linear
     assert matrix.shape == (self.todims,self.fromdims)
     return matrix.astype( float )[_]
 
@@ -927,7 +926,6 @@ class Function( Array ):
     'evaluate'
 
     fvals = []
-    trans = trans.rsplit( len(self.coords) )[0]
     head = trans.lookup( self.stdmap )
     for std, keep in self.stdmap[head]:
       if std:
@@ -2546,8 +2544,7 @@ class LocalCoords( DerivativeTargetBase ):
   def evalf( self, points, trans ):
     'evaluate'
 
-    ndims, = self.shape
-    return trans.rsplit(ndims)[1].apply(points)
+    return trans.flattail.apply(points)
 
   def _derivative( self, var, axes, seen ):
     if not isinstance( var, LocalCoords ):
@@ -2570,8 +2567,7 @@ class RootCoords( Array ):
     Array.__init__( self, args=[POINTS,trans], shape=[ndims], dtype=float )
 
   def evalf( self, points, trans ):
-    ndims, = self.shape
-    return trans.split( ndims )[1].apply( points )
+    return trans.split( trans.fromdims )[1].withtail.apply( points )
 
   def _derivative( self, var, axes, seen ):
     if not isinstance( var, LocalCoords ):
@@ -2593,7 +2589,7 @@ class RootTransform( Array ):
 
   def evalf( self, trans ):
     ndims = self.trans.ndims
-    trans = trans.rsplit(ndims)[0].split(ndims)[1]
+    trans = trans.split(ndims)[1]
     linear = trans.linear
     if isinstance( linear, (int,float) ):
       linear = numpy.eye(ndims) * linear

@@ -24,12 +24,6 @@ class TransformChain( tuple ):
   def sliceto( self, j ):
     return TransformChain( self[:j] )
 
-  def fromtrans( self, trans ):
-    # assuming self and trans both canonical
-    mytrans = self.promote( trans.fromdims )
-    assert mytrans[:len(trans)] == trans
-    return mytrans[len(trans):]
-
   @property
   def todims( self ):
     return self[0].todims
@@ -45,15 +39,6 @@ class TransformChain( tuple ):
   @property
   def orientation( self ):
     return -1 if self.isflipped else +1
-
-  def lookup( self, transforms ):
-    # to be replaced by bisection soon
-    headtrans = self
-    while headtrans:
-      if headtrans in transforms:
-        return headtrans
-      headtrans = headtrans.sliceto(-1)
-    return None
 
   def rsplit( self, ndims ):
     if self.fromdims == ndims:
@@ -163,12 +148,16 @@ class TransformChain( tuple ):
           items[i:i+2] = trans21
     return CanonicalTransformChain( items )
 
-  def promote( self, ndims ):
+  def promote_trim( self, ndims ):
     raise Exception( 'promotion only possible from canonical form' )
 
   @property
-  def totail( self ):
+  def withtail( self ):
     return self
+
+  @property
+  def flattail( self ):
+    return CanonicalTransformChain()
 
 class CanonicalTransformChain( TransformChain ):
 
@@ -195,9 +184,6 @@ class CanonicalTransformChain( TransformChain ):
   def canonical( self ):
     return self
 
-  def promote( self, ndims ):
-    return self.promote_trim( ndims ).totail
-
   def promote_trim( self, ndims ):
     if ndims == self.fromdims:
       return self
@@ -221,6 +207,15 @@ class CanonicalTransformChain( TransformChain ):
       B = CanonicalTransformChain( (uptrans,) + self[i:] )
     return CanonicalTransformChainWithTail( A, B ).promote_trim( ndims )
 
+  def lookup( self, transforms ):
+    # to be replaced by bisection soon
+    headtrans = self
+    while headtrans:
+      if headtrans in transforms:
+        return CanonicalTransformChainWithTail( headtrans, self.slicefrom(len(headtrans)) )
+      headtrans = headtrans.sliceto(-1)
+    return None
+
 class CanonicalTransformChainWithTail( CanonicalTransformChain ):
 
   def __new__( cls, items, tail ):
@@ -230,8 +225,18 @@ class CanonicalTransformChainWithTail( CanonicalTransformChain ):
     return self
 
   @property
-  def totail( self ):
-    return self << self.tail.totail
+  def flattail( self ):
+    return self.tail << self.tail.flattail
+
+  @property
+  def withtail( self ):
+    return self << self.flattail
+
+  def slicefrom( self, i ):
+    return CanonicalTransformChainWithTail( self[i:], self.tail )
+
+  def sliceto( self, i ):
+    return CanonicalTransformChainWithTail( self[:i], self.slicefrom(i) )
 
 mayswap = lambda trans1, trans2: isinstance( trans1, Scale ) and trans1.linear == .5 and trans2.todims == trans2.fromdims + 1 and trans2.fromdims > 0
 

@@ -1410,12 +1410,11 @@ class SubtractionTopology( Topology ):
     for boundary in ~self.subtopo.boundary, self.basetopo.boundary:
       belems = [] # trimmed boundary elements
       for belem in boundary:
-        btrans = belem.transform.promote( self.ndims )
-        head = btrans.lookup( self.edict )
+        head = belem.transform.promote_trim( self.ndims ).lookup( self.edict )
         if head:
           ref = self.elements[self.edict[head]].reference
           try:
-            index = ref.edge_transforms.index( btrans.slicefrom(len(head)) )
+            index = ref.edge_transforms.index( head.flattail )
           except ValueError: # e.g. when belem is opposite side of intersected element
             pass
           else:
@@ -1503,25 +1502,25 @@ class SubsetTopology( Topology ):
     ielems = []
     belems = []
     for iface in log.iter( 'elem', self.basetopo.interfaces ):
-      head, tail = iface.transform.promote( self.ndims ).split( self.ndims-1, after=False )
+      trans = iface.transform.promote_trim( self.ndims )
       try:
-        ielem = edict[head]
+        ielem = edict[trans]
       except KeyError:
         edge = empty
       else:
         ref = self.elements[ielem].reference
-        index = ref.edge_transforms.index(tail)
+        index = ref.edge_transforms.index(trans.tail)
         edge = ref.edge_refs[ index ]
-      head, tail = iface.opposite.promote( self.ndims ).split( self.ndims-1, after=False )
+      trans = iface.opposite.promote_trim( self.ndims )
       try:
-        ielem = edict[head]
+        ielem = edict[trans]
       except KeyError:
         oppedge = empty
       else:
         ref = self.elements[ielem].reference
-        tail2head = tail.lookup( ref.edge_transforms ) # strip optional adjustment transformation (temporary?)
+        tail2head = trans.tail.lookup( ref.edge_transforms ) # strip optional adjustment transformation (temporary?)
         index = ref.edge_transforms.index( tail2head )
-        oppedge = ref.edge_refs[ index ].transform( tail2head.slicefrom( len(tail2head) ) )
+        oppedge = ref.edge_refs[ index ].transform( tail2head.tail )
       if iface.reference == edge == oppedge: # shortcut
         ielems.append( iface )
       else:
@@ -1572,12 +1571,11 @@ class SubsetTopology( Topology ):
     belems = [] # prior boundary elements (reduced)
     basebtopo = self.basetopo.boundary
     for belem in log.iter( 'element', basebtopo ):
-      trans = belem.transform.promote( self.ndims )
-      head = trans.lookup( self.edict )
-      if head:
-        ielem = self.edict[head]
+      trans = belem.transform.promote_trim( self.ndims ).lookup( self.edict )
+      if trans:
+        ielem = self.edict[trans]
         ref = self.elements[ielem].reference
-        iedge = ref.edge_transforms.index( trans.slicefrom(len(head)) )
+        iedge = ref.edge_transforms.index( trans.flattail )
         edge = ref.edge_refs[iedge]
         if edge:
           belems.append( element.Element( edge, belem.transform, belem.opposite ) )
@@ -1709,13 +1707,12 @@ class HierarchicalTopology( Topology ):
     basebtopo = self.basetopo.boundary
     belems = []
     for belem in log.iter( 'elem', basebtopo ):
-      transform = belem.transform.promote( self.ndims )
-      if transform.lookup( self.edict ):
+      trans = belem.transform.promote_trim( self.ndims )
+      if trans.lookup( self.edict ):
         # basetopo boundary element is as fine or finer than element found in
         # self; this may happen for example when basetopo is a trimmed topology
         belems.append( belem )
       else:
-        trans, updim = transform.split( self.ndims-1, after=False )
         elems = [ elem for elem in self if elem.transform.sliceto(len(trans)) == trans ]
         belems.extend( element.Element( edge.reference, edge.transform, belem.opposite << edge.transform.slicefrom(len(belem.transform)) )
           for elem in elems for edge in elem.edges if edge.transform.sliceto(len(belem.transform)) == belem.transform )
@@ -1726,8 +1723,8 @@ class HierarchicalTopology( Topology ):
     'interface elements'
 
     ielems = [ ielem for topo in log.iter( 'level', self.levels ) for ielem in topo.interfaces
-      if ielem.transform.promote( self.ndims ).sliceto(-1) in self.edict and ielem.opposite.promote( self.ndims ).lookup( self.edict )
-      or ielem.opposite.promote( self.ndims ).sliceto(-1) in self.edict and ielem.transform.promote( self.ndims ).lookup( self.edict ) ]
+      if ielem.transform.promote_trim( self.ndims ) in self.edict and ielem.opposite.promote_trim( self.ndims ).lookup( self.edict )
+      or ielem.opposite.promote_trim( self.ndims ) in self.edict and ielem.transform.promote_trim( self.ndims ).lookup( self.edict ) ]
     baseitopo = self.basetopo.interfaces
     return baseitopo.hierarchical( ielems, precise=True )
 
