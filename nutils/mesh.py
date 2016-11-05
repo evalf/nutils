@@ -58,7 +58,7 @@ def rectilinear( richshape, periodic=(), name='rect', revolved=False ):
       offset = offset[0]
     if all( s == scale[0] for s in scale[1:] ):
       scale = scale[0]
-    geom = function.rootcoords( ndims ) * scale + offset
+    geom = function.localcoords( ndims, root=True ) * scale + offset
   else:
     funcsp = topo.splinefunc( degree=1, periodic=() )
     coords = numeric.meshgrid( *richshape ).reshape( ndims, -1 )
@@ -484,7 +484,7 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   topo.boundary = topology.UnstructuredTopology( 1, belems ).withsubs( subbtopos )
 
   geom = [.5*(xmin+xmax),.5*(ymin+ymax)] \
-       + [.5*(xmax-xmin),.5*(ymax-ymin)] * function.rootcoords( 2 )
+       + [.5*(xmax-xmin),.5*(ymax-ymin)] * function.localcoords( 2, root=True )
 
   return topo, geom
 

@@ -92,16 +92,10 @@ class TransformChain( tuple ):
 
   @property
   def linear( self ):
-    linear = numpy.array( 1. )
-    for trans in self:
-      linear = numpy.dot( linear, trans.linear ) if linear.ndim and trans.linear.ndim \
-          else linear * trans.linear
-    return linear
+    return linear( self )
 
   def apply( self, points ):
-    for trans in reversed(self):
-      points = trans.apply( points )
-    return points
+    return apply( self, points )
 
   def solve( self, points ):
     return numeric.solve_exact( self.linear, (points - self.offset).T ).T
@@ -205,6 +199,14 @@ class CanonicalTransformChainWithTail( CanonicalTransformChain ):
     self = CanonicalTransformChain.__new__( cls, items )
     self.tail = tail
     return self
+
+  def __sub__( self, other ):
+    assert isinstance( other, CanonicalTransformChain )
+    A = self.flattail
+    B = other.flattail
+    n = len(A) - len(B)
+    assert A[n:] == B
+    return TransformChain( A[:n] )
 
   def new_like_self( self, items ):
     return CanonicalTransformChainWithTail( items, self.tail )
@@ -438,6 +440,18 @@ def solve( T1, T2 ): # T1 << x == T2
   # A1 * ( Ax * xi + bx ) + b1 == A2 * xi + b2 => A1 * Ax = A2, A1 * bx + b1 = b2
   Ax, bx = numeric.solve_exact( T1.linear, T2.linear, T2.offset - T1.offset )
   return affine( Ax, bx )
+
+def linear( chain ):
+  linear = numpy.array( 1. )
+  for trans in chain:
+    linear = numpy.dot( linear, trans.linear ) if linear.ndim and trans.linear.ndim \
+        else linear * trans.linear
+  return linear
+
+def apply( chain, points ):
+  for trans in reversed(chain):
+    points = trans.apply( points )
+  return points
 
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

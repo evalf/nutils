@@ -883,31 +883,36 @@ class Product( Array ):
 class Transform( Array ):
   'transform'
 
-  def __init__( self, todims, fromdims, tochain, fromchain ):
+  def __init__( self, tochain, fromchain, root ):
     'constructor'
 
-    assert fromdims != todims
-    self.fromdims = fromdims
-    self.todims = todims
-    self.fromchain = fromchain # only for sanity check
+    self.fromchain = fromchain
     self.tochain = tochain
-    assert fromchain.ndims == fromdims
-    assert tochain.ndims == todims
-    Array.__init__( self, args=[fromchain,tochain], shape=(todims,fromdims), dtype=float )
+    self.root = root
+    Array.__init__( self, args=[fromchain,tochain], shape=(tochain.ndims,fromchain.ndims), dtype=float )
 
   def evalf( self, fromchain, tochain ):
     'transform'
 
-    assert len(tochain) + len(tochain.tail) == len(fromchain)
-    matrix = tochain.tail.linear
-    assert matrix.shape == (self.todims,self.fromdims)
-    return matrix.astype( float )[_]
+    fromtail = fromchain.flattail
+    totail = tochain.flattail
+    n = len(totail) - len(fromtail)
+    assert totail[n:] == fromtail
+    trans = totail[:n]
+    if self.root:
+      trans = tochain.trimmed + trans
+    linear = transform.linear( trans )
+    if linear.ndim == 0:
+      assert fromchain.fromdims == tochain.fromdims
+      linear = linear * numpy.eye( fromchain.fromdims )
+    assert linear.ndim == 2
+    return linear[_]
 
   def _derivative( self, var, axes, seen ):
     return zeros( self.shape+_taketuple(var.shape,axes) )
 
   def _edit( self, op ):
-    return Transform( self.todims, self.fromdims, op(self.tochain), op(self.fromchain) )
+    return Transform( op(self.tochain), op(self.fromchain), self.root )
 
 class Function( Array ):
   'function'
@@ -924,7 +929,7 @@ class Function( Array ):
     'evaluate'
 
     fvals = []
-    points = cache[transform.TransformChain.apply]( trans.flattail, points )
+    points = cache[transform.apply]( trans.flattail, points )
     linear = numpy.array( 1. )
     stds = None # indicating that function is not found yet in self.stdmap
     while trans:
@@ -961,7 +966,7 @@ class Function( Array ):
 
   def _derivative( self, var, axes, seen ):
     grad = Function( self.stdmap, self.igrad+1, self.shape[0], self.trans )
-    return ( grad[(...,)+(_,)*len(axes)] * derivative( LocalCoords(self.trans), var, axes, seen ) ).sum( self.ndim )
+    return ( grad[(...,)+(_,)*len(axes)] * derivative( LocalCoords(self.trans,root=False), var, axes, seen ) ).sum( self.ndim )
 
   def _take( self, indices, axis ):
     if axis != 0:
@@ -2542,73 +2547,30 @@ class DerivativeTarget( DerivativeTargetBase ):
 class LocalCoords( DerivativeTargetBase ):
   'trivial func'
 
-  def __init__( self, trans ):
+  def __init__( self, trans, root ):
     'constructor'
 
     assert isinstance( trans, Promote )
     ndims = trans.ndims
     self.trans = trans
+    self.root = root
     DerivativeTargetBase.__init__( self, args=[POINTS,trans], shape=[ndims], dtype=float )
 
   def evalf( self, points, trans ):
     'evaluate'
 
-    return trans.flattail.apply(points)
+    return ( trans.trimmed << trans.flattail if self.root else trans.flattail ).apply(points)
 
   def _derivative( self, var, axes, seen ):
-    if not isinstance( var, LocalCoords ):
-      return zeros( self.shape+_taketuple(var.shape,axes) )
-    ndims, = var.shape
-    return eye( ndims ) if self.shape[0] == ndims \
-      else Transform( self.shape[0], ndims, self.trans, var.trans )
-
-  def _edit( self, op ):
-    ndims, = self.shape
-    return LocalCoords( op(self.trans) )
-
-class RootCoords( Array ):
-  'ground coords'
-
-  def __init__( self, trans ):
-    assert isinstance( trans, Promote )
-    ndims = trans.ndims
-    self.trans = trans
-    Array.__init__( self, args=[POINTS,trans], shape=[ndims], dtype=float )
-
-  def evalf( self, points, trans ):
-    return ( trans.trimmed << trans.flattail ).apply( points )
-
-  def _derivative( self, var, axes, seen ):
-    if not isinstance( var, LocalCoords ):
-      return zeros( self.shape+_taketuple(var.shape,axes) )
-    ndims, = var.shape
-    roottrans = RootTransform( self.trans )
-    return roottrans if self.shape[0] == ndims \
-      else ( roottrans[:,:,_] * Transform( self.shape[0], ndims, self.trans, var.trans )[_,:,:] ).sum(1)
-
-  def _edit( self, op ):
-    return RootCoords( op(self.trans) )
-
-class RootTransform( Array ):
-
-  def __init__( self, trans ):
-    self.trans = trans
-    ndims = trans.ndims
-    Array.__init__( self, args=[trans], shape=[ndims,ndims], dtype=float )
-
-  def evalf( self, trans ):
-    ndims = self.trans.ndims
-    linear = trans.trimmed.linear
-    if isinstance( linear, (int,float) ):
-      linear = numpy.eye(ndims) * linear
-    assert linear.shape == self.shape
-    return linear[_]
-
-  def _derivative( self, var, axes, seen ):
+    if var == self:
+      return eye( len(self) )
+    if isinstance( var, LocalCoords ):
+      assert not var.root
+      return Transform( self.trans, var.trans, self.root )
     return zeros( self.shape+_taketuple(var.shape,axes) )
 
   def _edit( self, op ):
-    return RootTransform( op(self.trans) )
+    return LocalCoords( op(self.trans), self.root )
 
 
 # CIRCULAR SYMMETRY
@@ -2822,8 +2784,7 @@ jump = lambda arg: opposite(arg) - arg
 add_T = lambda arg, axes=(-2,-1): swapaxes( arg, axes ) + arg
 edit = lambda arg, f: arg._edit(f) if isevaluable(arg) else arg
 blocks = lambda arg: asarray(arg).blocks
-localcoords = lambda ndims: LocalCoords( Promote(ndims) )
-rootcoords = lambda ndims: RootCoords( Promote(ndims) )
+localcoords = lambda ndims, root=False: LocalCoords( Promote(ndims), root )
 sampled = lambda data, ndims: Sampled( data, Promote(ndims) )
 
 class _eye:
