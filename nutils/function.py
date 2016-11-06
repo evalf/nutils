@@ -445,25 +445,11 @@ class Array( Evaluable ):
 
     return self / norm2( self, axis=-1 )
 
-  def normal( self, ndims=-1 ):
+  def normal( self ):
     'normal'
 
     assert len(self.shape) == 1
-    if ndims <= 0:
-      ndims += self.shape[0]
-
-    grad = localgradient( self, ndims )
-    if grad.shape == (2,1):
-      normal = concatenate([ grad[1,:], -grad[0,:] ]).normalized()
-    elif grad.shape == (3,2):
-      normal = cross( grad[:,0], grad[:,1], axis=0 ).normalized()
-    elif grad.shape == (3,1):
-      normal = cross( grad[:,0], self.normal(), axis=0 ).normalized()
-    elif grad.shape == (1,0):
-      normal = [1]
-    else:
-      raise NotImplementedError( 'cannot compute normal for %dx%d jacobian' % ( self.shape[0], ndims ) )
-    return normal * Orientation( Promote(ndims) )
+    return Normal( localgradient(self,len(self)-1) ) * Orientation( Promote(len(self)-1) )
 
   def curvature( self, ndims=-1 ):
     'curvature'
@@ -526,11 +512,11 @@ class Array( Evaluable ):
 
     return trace( self.grad( coords, ndims ), -1, -2 )
 
-  def dotnorm( self, coords, ndims=0, axis=-1 ):
+  def dotnorm( self, coords, axis=-1 ):
     'normal component'
 
     axis = numeric.normdim( self.ndim, axis )
-    normal = coords.normal( ndims-1 )
+    normal = coords.normal()
     assert normal.shape == (self.shape[axis],)
     return ( self * normal[(slice(None),)+(_,)*(self.ndim-axis-1)] ).sum( axis )
 
@@ -541,12 +527,12 @@ class Array( Evaluable ):
   def ngrad( self, coords, ndims=0 ):
     'normal gradient'
 
-    return dotnorm( self.grad( coords, ndims ), coords, ndims )
+    return dotnorm( self.grad( coords, ndims ), coords )
 
   def nsymgrad( self, coords, ndims=0 ):
     'normal gradient'
 
-    return dotnorm( self.symgrad( coords, ndims ), coords, ndims )
+    return dotnorm( self.symgrad( coords, ndims ), coords )
 
   @property
   def T( self ):
@@ -560,6 +546,45 @@ class Array( Evaluable ):
     return '%s<%s>' % ( self.__class__.__name__, ','.join( str(n) for n in self.shape ) )
 
   __repr__ = __str__
+
+class Orientation( Array ):
+  'sign'
+
+  def __init__( self, trans ):
+    'constructor'
+
+    assert isinstance( trans, Promote )
+    self.trans = trans
+    Array.__init__( self, args=[trans], shape=(), dtype=float )
+
+  def evalf( self, trans ):
+    return numpy.array([ trans.orientation ])
+
+  def _edit( self, op ):
+    return Orientation( op(self.trans) )
+
+  def _derivative( self, var, axes, seen ):
+    return zeros( _taketuple(var.shape,axes) )
+
+class Normal( Array ):
+  'normal'
+
+  def __init__( self, lgrad ):
+    assert lgrad.ndim == 2 and lgrad.shape[0] == lgrad.shape[1]+1
+    self.lgrad = lgrad
+    Array.__init__( self, args=[lgrad], shape=(len(lgrad),), dtype=float )
+
+  def evalf( self, lgrad ):
+    return numeric.normalize( numeric.ext(lgrad) )
+
+  def _derivative( self, var, axes, seen ):
+    GG = matmat( self.lgrad.T, self.lgrad )
+    Gder = derivative( self.lgrad, var, axes, seen )
+    nGder = matmat( self, Gder )
+    return -matmat( self.lgrad, inverse(GG), nGder )
+
+  def _edit( self, op ):
+    return Normal( op(self.lgrad) )
 
 class ArrayFunc( Array ):
   'deprecated ArrayFunc alias'
@@ -700,26 +725,6 @@ class ElementSize( Array):
   def evalf( self, iwscale ):
     volume = iwscale.sum()
     return numeric.power( volume, 1/self.ndims )[_]
-
-class Orientation( Array ):
-  'sign'
-
-  def __init__( self, trans ):
-    'constructor'
-
-    assert isinstance( trans, Promote )
-    Array.__init__( self, args=[trans], shape=(), dtype=float )
-    self.trans = trans
-    self.ndims = trans.ndims
-
-  def evalf( self, trans ):
-    return numpy.array([ trans.orientation ])
-
-  def _edit( self, op ):
-    return Orientation( op(self.trans) )
-
-  def _derivative( self, var, axes, seen ):
-    return zeros( _taketuple(var.shape,axes) )
 
 class Align( Array ):
   'align axes'
@@ -3070,6 +3075,15 @@ def dot( arg1, arg2, axes ):
 
   return Dot( Pair( transpose(arg1,shuffle), transpose(arg2,shuffle) ), len(axes) )
 
+def matmat( arg0, *args ):
+  'helper function, contracts last axis of arg0 with first axis of arg1, etc'
+  retval = asarray( arg0 )
+  for arg in args:
+    arg = asarray( arg )
+    assert retval.shape[-1] == arg.shape[0], 'incompatible shapes'
+    retval = dot( retval[(...,)+(_,)*(arg.ndim-1)], arg[(_,)*(retval.ndim-1)], retval.ndim-1 )
+  return retval
+
 def determinant( arg, axes=(-2,-1) ):
   'determinant'
 
@@ -3227,10 +3241,10 @@ def localgradient( arg, ndims ):
 
   return derivative( arg, localcoords(ndims), axes=(0,) )
 
-def dotnorm( arg, coords, ndims=0 ):
+def dotnorm( arg, coords ):
   'normal component'
 
-  return sum( arg * coords.normal( ndims-1 ), -1 )
+  return sum( arg * coords.normal(), -1 )
 
 class _normal:
   'normal'
