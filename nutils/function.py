@@ -448,8 +448,8 @@ class Array( Evaluable ):
   def normal( self ):
     'normal'
 
-    assert len(self.shape) == 1
-    return Normal( localgradient(self,len(self)-1) ) * Orientation( Promote(len(self)-1) )
+    assert self.ndim == 1
+    return Normal( self )
 
   def curvature( self, ndims=-1 ):
     'curvature'
@@ -547,44 +547,37 @@ class Array( Evaluable ):
 
   __repr__ = __str__
 
-class Orientation( Array ):
-  'sign'
-
-  def __init__( self, trans ):
-    'constructor'
-
-    assert isinstance( trans, Promote )
-    self.trans = trans
-    Array.__init__( self, args=[trans], shape=(), dtype=float )
-
-  def evalf( self, trans ):
-    return numpy.array([ trans.orientation ])
-
-  def _edit( self, op ):
-    return Orientation( op(self.trans) )
-
-  def _derivative( self, var, axes, seen ):
-    return zeros( _taketuple(var.shape,axes) )
-
 class Normal( Array ):
   'normal'
 
-  def __init__( self, lgrad ):
-    assert lgrad.ndim == 2 and lgrad.shape[0] == lgrad.shape[1]+1
-    self.lgrad = lgrad
-    Array.__init__( self, args=[lgrad], shape=(len(lgrad),), dtype=float )
+  def __init__( self, geom ):
+    self.geom = geom
+    trans = Promote( len(geom)-1 )
+    args = derivative( geom, NormalCoord(trans), axes=() ),
+    if len(geom) > 1:
+      self.G = derivative( geom, LocalCoords(trans,root=False), axes=(0,) )
+      self.invGG = inverse( matmat( self.G.T, self.G ) ) # explicit dependency for potential reuse
+      args += self.G, self.invGG
+    Array.__init__( self, args=args, shape=geom.shape, dtype=float )
 
-  def evalf( self, lgrad ):
-    return numeric.normalize( numeric.ext(lgrad) )
+  def evalf( self, n, G=None, invGG=None ):
+    if len(self) == 1: # geom is 1D
+      return numpy.sign(n)
+    # orthonormalize n to G
+    v1 = numeric.contract( G, n[:,:,_], axis=1 )
+    v2 = numeric.contract( invGG, v1[:,_,:], axis=2 )
+    v3 = numeric.contract( G, v2[:,_,:], axis=2 )
+    return numeric.normalize( n - v3 )
 
   def _derivative( self, var, axes, seen ):
-    GG = matmat( self.lgrad.T, self.lgrad )
-    Gder = derivative( self.lgrad, var, axes, seen )
+    if len(self) == 1:
+      return zeros( self.shape + _taketuple(var.shape,axes) )
+    Gder = derivative( self.G, var, axes, seen )
     nGder = matmat( self, Gder )
-    return -matmat( self.lgrad, inverse(GG), nGder )
+    return -matmat( self.G, self.invGG, nGder )
 
   def _edit( self, op ):
-    return Normal( op(self.lgrad) )
+    return Normal( op(self.geom) )
 
 class ArrayFunc( Array ):
   'deprecated ArrayFunc alias'
@@ -919,6 +912,41 @@ class Transform( Array ):
   def _edit( self, op ):
     return Transform( op(self.tochain), op(self.fromchain), self.root )
 
+class ExtVector( Array ):
+  'transform'
+
+  def __init__( self, tochain, fromchain, root ):
+    'constructor'
+
+    self.fromchain = fromchain
+    self.tochain = tochain
+    self.root = root
+    Array.__init__( self, args=[fromchain,tochain], shape=(tochain.ndims,), dtype=float )
+
+  def evalf( self, fromchain, tochain ):
+    'transform'
+
+    fromtail = fromchain.flattail
+    totail = tochain.flattail
+    n = len(totail) - len(fromtail)
+    assert totail[n:] == fromtail
+    chain = totail[:n]
+    if self.root:
+      chain = tochain.trimmed + chain
+    isflipped = False
+    for trans in chain:
+      isflipped ^= trans.isflipped
+      if trans.fromdims < trans.todims:
+        ext = numeric.ext( trans.linear )
+        return ( ext if not isflipped else -ext )[_]
+    return numpy.zeros( self.shape )[_]
+
+  def _derivative( self, var, axes, seen ):
+    return zeros( self.shape+_taketuple(var.shape,axes) )
+
+  def _edit( self, op ):
+    return ExtVector( op(self.tochain), op(self.fromchain), self.root )
+
 class Function( Array ):
   'function'
 
@@ -971,7 +999,7 @@ class Function( Array ):
 
   def _derivative( self, var, axes, seen ):
     grad = Function( self.stdmap, self.igrad+1, self.shape[0], self.trans )
-    return ( grad[(...,)+(_,)*len(axes)] * derivative( LocalCoords(self.trans,root=False), var, axes, seen ) ).sum( self.ndim )
+    return matmat( grad, derivative( LocalCoords(self.trans,root=False), var, axes, seen ) )
 
   def _take( self, indices, axis ):
     if axis != 0:
@@ -2549,6 +2577,19 @@ class DerivativeTarget( DerivativeTargetBase ):
     else:
       return zeros( self.shape+_taketuple(var.shape,axes) )
 
+class NormalCoord( DerivativeTargetBase ):
+  'derivative in out-of-plane direction'
+
+  def __init__( self, trans ):
+    self.trans = trans
+    DerivativeTargetBase.__init__( self, args=[], shape=(), dtype=float )
+
+  def evalf( self, trans ):
+    raise Exception( 'NormalCoord should only be used as derivative target' )
+
+  def _edit( self, op ):
+    return NormalCoord( op(self.trans) )
+
 class LocalCoords( DerivativeTargetBase ):
   'trivial func'
 
@@ -2569,6 +2610,8 @@ class LocalCoords( DerivativeTargetBase ):
   def _derivative( self, var, axes, seen ):
     if var == self:
       return eye( len(self) )
+    if isinstance( var, NormalCoord ):
+      return ExtVector( self.trans, var.trans, self.root )
     if isinstance( var, LocalCoords ):
       assert not var.root
       return Transform( self.trans, var.trans, self.root )
