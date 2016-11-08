@@ -22,8 +22,6 @@ def _runtests( pkg, whitelist ):
       __log__.push( key )
       try:
         __results__[key] = _runtests( pkg[key], whitelist[1:] )
-      except KeyboardInterrupt:
-        raise
       finally:
         __log__.pop()
   else:
