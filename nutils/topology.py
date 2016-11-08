@@ -247,6 +247,8 @@ class Topology( object ):
     retvals = []
     idata = []
     for ifunc, func in enumerate( funcs ):
+      if isinstance( func, IndexedArray ):
+        func = func.unwrap( geometry )
       func = function.asarray( edit( func * iwscale ) )
       retval = parallel.shzeros( (npoints,)+func.shape, dtype=func.dtype )
       if function.isarray( func ):
@@ -411,6 +413,11 @@ class Topology( object ):
     'L2 projection of function onto function space'
 
     log.debug( 'projection type:', ptype )
+
+    if isinstance( fun, IndexedArray ):
+      fun = fun.unwrap( geometry )
+    if isinstance( onto, IndexedArray ):
+      onto = onto.unwrap( geometry )
 
     if constrain is None:
       constrain = util.NanVec( onto.shape[0] )

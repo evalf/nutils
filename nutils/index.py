@@ -6,7 +6,7 @@
 
 from __future__ import print_function, division
 from . import function, numpy
-import sys, collections, operator, numbers
+import sys, collections, operator, numbers, itertools
 
 
 class IndexedArray:
@@ -55,20 +55,46 @@ class IndexedArray:
       a[:,0].grad(geom)[:,1]
   '''
 
-  def __init__( self, indices, op, args ):
+  def __init__( self, shape, linked_lengths, op, args ):
     'constructor'
 
-    self.indices = indices
+    self._shape = collections.OrderedDict( shape )
     self._op = op
     self._args = tuple( args )
 
+    # join overlapping sets in `linked_lengths`
+    linked_lengths = set( linked_lengths )
+    cache = { k: g for g in linked_lengths for k in g }
+    for g in linked_lengths:
+      linked = set( cache[k] for k in g )
+      if len( linked ) == 1:
+        continue
+      g = frozenset( itertools.chain( *linked ) )
+      cache.update( (k, g) for k in g )
+    # verify linked lengths
+    for g in linked_lengths:
+      if len( set(k for k in g if isinstance(g, int)) ) > 1:
+        raise ValueError( 'axes have different lengths' )
+    # update shape with numbers if possible
+    for k, v in self._shape.items():
+      if not isinstance( v, int ):
+        for i in cache.get( v, [] ):
+          if isinstance( i, int ):
+            self._shape[k] = i
+    self._linked_lengths = frozenset( cache.values() )
+
+    self.indices = ''.join( self._shape )
+
     assert all( 'a' <= index <= 'z' for index in self.indices ), 'invalid index'
-    assert len( set( self.indices ) ) == len( self.indices ), 'repeated index'
     assert all( isinstance( arg, IndexedArray ) for arg in self._args ), 'incompatible argument'
 
   @property
   def ndim( self ):
-    return len( self.indices )
+    return len( self._shape )
+
+  @property
+  def shape( self ):
+    return self._shape.keys()
 
   def unwrap( self, geometry=None, indices=None ):
     '''unwrap the `Array` aligned according to `indices`
@@ -100,22 +126,37 @@ class IndexedArray:
       if set( indices ) != set( self.indices ):
         raise ValueError( 'invalid indices: expected {!r} (any order), got {!r}'.format( self.indices, indices ) )
 
+    delayed_lengths = {}
+    for g in self._linked_lengths:
+      if geometry is not None:
+        g = frozenset( len(geometry) if i == 'geom' else i for i in g )
+      g_ints = set( i for i in g if isinstance(i, int) )
+      if len( g_ints ) > 1:
+        raise ValueError( 'axes have different lengths' )
+      if len( g_ints ) == 0:
+        continue
+      i = next( iter( g_ints ) )
+      for j in g:
+        if isinstance( j, int ):
+          continue
+        delayed_lengths[j] = i
+
     return function.align(
-      self._unwrap_tree( geometry ),
+      self._unwrap_tree( geometry, delayed_lengths ),
       tuple( map( indices.index, self.indices ) ),
       len( self.indices ) )
 
-  def _unwrap_tree( self, geom ):
-    return self._op( geom, *( arg._unwrap_tree( geom ) for arg in self._args ) )
+  def _unwrap_tree( self, geom, delayed_lengths ):
+    return self._op( geom, delayed_lengths, *( arg._unwrap_tree( geom, delayed_lengths ) for arg in self._args ) )
 
   @staticmethod
-  def _array_grad( geom, array ):
+  def _array_grad( geom, delayed_lengths, array ):
     if geom is None:
       raise ValueError( '`geom` is required for unwrapping this `IndexedArray`' )
     return array.grad( geom )
 
   @staticmethod
-  def _array_surfgrad( geom, array ):
+  def _array_surfgrad( geom, delayed_lengths, array ):
     if geom is None:
       raise ValueError( '`geom` is required for unwrapping this `IndexedArray`' )
     return array.grad( geom, -1 )
@@ -128,34 +169,60 @@ class IndexedArray:
     elif item.startswith( ';' ):
       grad = self._array_surfgrad
     else:
-      raise ValueError( 'additional indices are not allowed, only derivatives' )
+      # reindex, similar to `self.unwrap()[item]`, but without requiring a geometry
+      return wrap( self, item )
     if not all( 'a' <= index <= 'z' or '0' <= index <= '9' for index in item[1:] ):
       raise ValueError( 'invalid index, only lower case latin characters and numbers are allowed' )
     if not all( 1 <= c <= 2 for index, c in collections.Counter( self.indices + item[1:] ).items() if not ('0' <= index <= '9') ):
       raise ValueError( 'indices may not be repeated more than once' )
-    indices = self.indices + item[1]
-    if '0' <= item[1] <= '9':
-      # `item[1]` is a number
-      # get element `item[1]` of the last axis
-      op = lambda geom, array: grad( geom, array )[..., int(item[1])]
-      # remove this number from `indices`
-      indices = self.indices
-    elif item[1] in self.indices:
-      # `item[1]` is a repeated index
-      ax1 = indices.index( item[1] )
-      ax2 = indices.index( item[1], ax1+1 )
-      indices = indices[:ax1] + indices[ax1+1:ax2] + indices[ax2+1:]
-      op = lambda geom, array: function.trace( grad( geom, array ), ax1, ax2 )
-    else:
-      op = grad
-    result = IndexedArray( indices, op, ( self, ) )
-    # apply remaining gradients
-    if len( item ) > 2:
-      result = result[item[0]+item[2:]]
-    return result
+    shape = collections.OrderedDict( self._shape )
+    linked_lengths = set( self._linked_lengths )
+    for index in item[1:]:
+      if '0' <= index <= '9':
+        # `index` is a number
+        # get element `index` of the last axis
+        op = lambda geom, delayed_lengths, array: grad( geom, delayed_lengths, array )[..., int(index)]
+      elif index in shape:
+        # `index` is a repeated index
+        # find positions of `index`
+        indices = tuple( shape )
+        ax1 = indices.index( index )
+        ax2 = len( shape )
+        # link lengths of `ax1` and `ax2`
+        linked_lengths.add( frozenset([ shape[index], 'geom' ]) )
+        # drop `index` from shape
+        del shape[index]
+        op = lambda geom, delayed_lengths, array: function.trace( grad( geom, delayed_lengths, array ), ax1, ax2 )
+      else:
+        # `index` is 'new', append to shape
+        shape[index] = 'geom'
+        op = grad
+      self = IndexedArray( shape, linked_lengths, op, ( self, ) )
+    return self
+
+  def _get_element( self, axis, index ):
+    '''get element `index` from axis `axis`'''
+
+    i = self.indices.index(axis)
+    return IndexedArray(
+      ( (k, v) for k, v in self._shape.items() if k != axis ),
+      self._linked_lengths,
+      lambda geom, delayed_lengths, array: array[(slice(None),)*i + (index,)],
+      [self])
+
+  def _trace( self, axis1, axis2 ):
+    '''get the trace along `axis1` and `axis2`'''
+
+    i1 = self.indices.index(axis1)
+    i2 = self.indices.index(axis2)
+    return IndexedArray(
+      ( (k, v) for k, v in self._shape.items() if k not in (axis1, axis2) ),
+      self._linked_lengths | frozenset([ frozenset([ self._shape[axis1], self._shape[axis2] ]) ]),
+      lambda geom, delayed_lengths, array: function.trace( array, i1, i2 ),
+      [self])
 
   def __neg__( self ):
-    return IndexedArray( self.indices, lambda *args: -self._op( *args ), self._args )
+    return IndexedArray( self._shape, self._linked_lengths, lambda *args: -self._op( *args ), self._args )
 
   @classmethod
   def _apply_add_sub( cls, op, left, right ):
@@ -171,9 +238,10 @@ class IndexedArray:
     # apply `op`
     align_right = tuple( map( left.indices.index, right.indices ) )
     return IndexedArray(
-      left.indices,
-      lambda geom, left_array, right_array:
-        op( left_array, function.align( right_array, align_right, len( left.indices ) ) ),
+      left._shape,
+      left._linked_lengths | right._linked_lengths | frozenset([ frozenset([ left._shape[k], right._shape[k] ]) for k in left.indices ]),
+      lambda geom, delayed_lengths, left_array, right_array:
+        op( left_array, function.align( right_array, align_right, left.ndim ) ),
       ( left, right ) )
 
   def __add__( self, other ):
@@ -193,30 +261,32 @@ class IndexedArray:
       other = asindexedarray( other )
     except ValueError:
       return NotImplemented
+    common_indices = set( self.indices ) & set( other.indices )
     # collect all indices, common indices at the end, ordered on first appearance
-    indices = [ i for i in self.indices if i not in other.indices ]
-    indices.extend( i for i in other.indices if i not in self.indices )
-    n = len( indices )
-    indices.extend( i for i in self.indices if i in other.indices )
-    indices = ''.join( indices )
-    n_common = len( indices ) - n
+    indices = [ i for i in itertools.chain( self.indices, other.indices ) if i not in common_indices ]
+    n_remaining = len( indices )
+    for i in itertools.chain( self.indices, other.indices ):
+      if i not in indices:
+        indices.append( i )
     # alignment
     align_self = tuple( map( indices.index, self.indices ) )
     align_other = tuple( map( indices.index, other.indices ) )
-    if n_common > 0:
-      # dot last `n_common` axes
+    if common_indices:
+      # dot the common axes
       return IndexedArray(
-        indices[:n],
-        lambda geom, self_array, other_array: function.dot(
+        ( (k, self._shape.get(k, other._shape.get(k, None))) for k in indices[:n_remaining] ),
+        self._linked_lengths | other._linked_lengths | frozenset(frozenset([self._shape[k], other._shape[k]]) for k in common_indices),
+        lambda geom, delayed_lengths, self_array, other_array: function.dot(
           function.align( self_array, align_self, len( indices ) ),
           function.align( other_array, align_other, len( indices ) ),
-          range( -n_common, 0 ) ),
+          range( -len(common_indices), 0 ) ),
         ( self, other ) )
     else:
       # no common axes, multiply `self` and `other`
       return IndexedArray(
-        indices,
-        lambda geom, self_array, other_array:
+        itertools.chain( self._shape.items(), other._shape.items() ),
+        self._linked_lengths | other._linked_lengths,
+        lambda geom, delayed_lengths, self_array, other_array:
           function.align( self_array, align_self, len( indices ) )
           * function.align( other_array, align_other, len( indices ) ),
         ( self, other ) )
@@ -231,8 +301,9 @@ class IndexedArray:
     if len( other.indices ) != 0:
       raise ValueError( 'cannot divide by an array, only a scalar' )
     return IndexedArray(
-      self.indices,
-      lambda geom, self_array, other_array: operator.truediv( self_array, other_array ),
+      self._shape,
+      self._linked_lengths,
+      lambda geom, delayed_lengths, self_array, other_array: operator.truediv( self_array, other_array ),
       ( self, other ) )
 
 def asindexedarray( arg ):
@@ -241,9 +312,9 @@ def asindexedarray( arg ):
   if isinstance( arg, IndexedArray ):
     return arg
   elif isinstance( arg, (function.Array, numpy.ndarray) ) and len( arg.shape ) == 0:
-    return IndexedArray( '', lambda geom: arg, () )
+    return IndexedArray( (), (), lambda geom, delayed_lengths: arg, () )
   elif isinstance( arg, (numbers.Number, numpy.generic) ):
-    return IndexedArray( '', lambda geom: numpy.array( arg ), () )
+    return IndexedArray( (), (), lambda geom, delayed_lengths: numpy.array( arg ), () )
   else:
     raise ValueError( 'cannot convert {!r} to a `IndexedArray`'.format( arg ) )
 
@@ -260,7 +331,8 @@ def wrap( array, indices ):
   IndexedArray
   '''
 
-  array = function.asarray( array )
+  if not isinstance( array, IndexedArray ):
+    array = function.asarray( array )
   if not isinstance( indices, str ):
     raise ValueError( 'expected a `str`, got {!r}'.format( indices ) )
   # separate gradient indices from array indices
@@ -272,8 +344,8 @@ def wrap( array, indices ):
     grad_indices = ';'+grad_indices
   else:
     grad_indices = ''
-  if len( indices ) != len( array.shape ):
-    raise ValueError( 'expected {} indices, got {}'.format( len( array.shape ), len( indices ) ) )
+  if len( indices ) != array.ndim:
+    raise ValueError( 'expected {} indices, got {}'.format( array.ndim, len( indices ) ) )
   if not all( 'a' <= index <= 'z' or '0' <= index <= '9' for index in indices + grad_indices[1:] ):
     raise ValueError( 'invalid index, only lower case latin characters and numbers are allowed' )
   if not all( 1 <= c <= 2 for index, c in collections.Counter( indices + grad_indices[1:] ).items() if not ('0' <= index <= '9') ):
@@ -282,16 +354,28 @@ def wrap( array, indices ):
   for i, index in reversed( tuple( enumerate( indices ) ) ):
     if '0' <= index <= '9':
       # get element `index` of axis `i` from `array`
-      array = array[(slice(None),)*i+(int(index),)+(slice(None),)*(len(indices)-i-1)]
+      if isinstance( array, IndexedArray ):
+        array = array._get_element( sorted(array.indices)[i], int(index) )
+      else:
+        array = array[(slice(None),)*i+(int(index),)+(slice(None),)*(len(indices)-i-1)]
       # remove this number from `indices`
       indices = indices[:i] + indices[i+1:]
   # sum repeated indices (skip gradient indices, will be processed in `self[grad_indices]` later)
   for repeated in sorted( ( i for i, c in collections.Counter( indices ).items() if c == 2 ), key = indices.index ):
     ax1 = indices.index( repeated )
-    ax2 = indices.index( item[1], ax1+1 )
+    ax2 = indices.index( repeated, ax1+1 )
     indices = indices[:ax1] + indices[ax1+1:ax2] + indices[ax2+1:]
-    array = function.trace( array, ax1, ax2 )
-  self = IndexedArray( indices, lambda geom: array, () )
+    if isinstance( array, IndexedArray ):
+      sorted_array_indices = sorted( array.indices )
+      array = array._trace( sorted_array_indices[ax1], sorted_array_indices[ax2] )
+    else:
+      array = function.trace( array, ax1, ax2 )
+  if isinstance( array, IndexedArray ):
+    # sort `indices` such that the original order matches `array.indices` sorted alphabetically
+    shape = ( (indices[i], array._shape[array.indices[i]]) for i in sorted(range(array.ndim), key=lambda item: array.indices[item]) )
+    self = IndexedArray( shape, array._linked_lengths, array._op, array._args )
+  else:
+    self = IndexedArray( zip( indices, array.shape ), (), lambda geom, delayed_lengths: array, () )
   # apply gradients, if any
   if grad_indices:
     self = self[grad_indices]

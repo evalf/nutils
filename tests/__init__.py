@@ -143,12 +143,14 @@ class _NoException( Exception ): pass
 
 def unittest( *args, name=None, raises=_NoException ):
   if len(args) == 0:
-    return functools.partial( unittest, name=str(name), raises=raises )
+    return functools.partial( unittest, name=name, raises=raises )
   elif len(args) > 1:
     raise TypeError('unittest() takes one positional argument but {} were given'.format( len(args ) ) )
   arg, = args
   if name is None:
     name = arg.__name__
+  else:
+    name = str(name)
   if core.getprop( 'filter', name ) != name:
     return
   parentlog = log._getlog()

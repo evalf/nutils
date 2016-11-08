@@ -56,6 +56,10 @@ def indexedarray():
   def div_scalar():
     assert (a['i'] / 2).unwrap() == a / 2
 
+  @unittest
+  def repeated_indices():
+    assert ab_outer['ii'].unwrap() == function.trace( ab_outer )
+
   @unittest( raises=ValueError )
   def not_enough_indices():
     c['i']
@@ -123,3 +127,67 @@ def indexedarray():
   @unittest
   def grad_number2():
     assert a['i,01'].unwrap(geom) == a.grad(geom).grad(geom)[:,0,1]
+
+  @unittest
+  def reindex():
+    assert a['j,i']['kj'].unwrap(geom) == a.grad(geom)
+
+  @unittest
+  def reindex_number():
+    assert a['i,j']['j0'].unwrap(geom) == a.grad(geom)[:,0]
+
+  @unittest
+  def reindex_repeated_indices():
+    assert a['i,j']['ii'].unwrap(geom) == function.trace( a.grad(geom) )
+
+  @unittest
+  def reindex_with_grad():
+    assert a['i,j']['ij,k'].unwrap(geom) == a.grad(geom).grad(geom)
+
+  @unittest( raises=ValueError )
+  def reindex_not_enough_indices():
+    a['i,j']['i']
+
+  @unittest( raises=ValueError )
+  def reindex_too_many_indices():
+    a['i,j']['ijk']
+
+  @unittest( raises=ValueError )
+  def reindex_triple_index():
+    a['i,j']['iii']
+
+  @unittest
+  def shapes1():
+    (function.eye['ij']*a['i,j']).unwrap(geom) == function.trace( a.grad(geom) )
+
+  @unittest
+  def shapes2():
+    (a['i']*function.eye['ij']*function.eye['jk']*function.eye['kl']*function.normal['l']).unwrap(geom) == function.dot( a, geom.normal(), 0 )
+
+  @unittest
+  def shapes3():
+    (function.eye['ij'] + a['i']*a['j']).unwrap() == function.eye( len(geom) ) + function.outer( a )
+
+  @unittest( raises=ValueError )
+  def shape_mismatch():
+    # `d` and `normal` have different lengths
+    (d['i']*function.eye['ij']*function.normal['j']).unwrap(geom)
+
+  @unittest( raises=ValueError )
+  def undetermined_shape1():
+    # shape of `eye` cannot be determined
+    function.eye['ij'].unwrap(geom)
+
+  @unittest( raises=ValueError )
+  def undetermined_shape2():
+    # shape of `eye` cannot be determined
+    function.eye['ii'].unwrap(geom)
+
+  @unittest( raises=ValueError )
+  def undetermined_shape3():
+    # shape of product of `eye`s cannot be determined
+    (function.eye['ij'] * function.eye['jk']).unwrap(geom)
+
+  @unittest
+  def opposite():
+    function.opposite(d['i']).unwrap() == function.opposite(d)

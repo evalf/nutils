@@ -2788,7 +2788,6 @@ tanh = lambda arg: 1 - 2. / ( exp(2*arg) + 1 )
 arctanh = lambda arg: .5 * ( ln(1+arg) - ln(1-arg) )
 piecewise = lambda level, intervals, *funcs: choose( sum( greater( insert(level,-1), intervals ), -1 ), funcs )
 trace = lambda arg, n1=-2, n2=-1: sum( takediag( arg, n1, n2 ), -1 )
-eye = lambda n: diagonalize( expand( [1.], (n,) ) )
 norm2 = lambda arg, axis=-1: sqrt( sum( multiply( arg, arg ), axis ) )
 heaviside = lambda arg: choose( greater( arg, 0 ), [0.,1.] )
 divide = lambda arg1, arg2: multiply( arg1, reciprocal(arg2) )
@@ -2798,6 +2797,33 @@ jump = lambda arg: opposite(arg) - arg
 add_T = lambda arg, axes=(-2,-1): swapaxes( arg, axes ) + arg
 edit = lambda arg, f: arg._edit(f) if isevaluable(arg) else arg
 blocks = lambda arg: asarray(arg).blocks
+
+class _eye:
+  'identity'
+
+  def _eval( self, length, geom, shape ):
+    try:
+      n = shape[length]
+    except KeyError:
+      raise ValueError( 'Cannot determine the shape of eye.' )
+    return self( n )
+
+  def __getitem__( self, indices ):
+    from . import index
+    # create an IndexedArray of eye with indices 'ij'
+    length = object()
+    result = index.IndexedArray(
+      shape=( (k, length) for k in 'ij' ),
+      linked_lengths=(),
+      op=functools.partial( self._eval, length ),
+      args=() )
+    # reindex with `indices`
+    return index.wrap( result, indices )
+
+  def __call__(self, n):
+    return diagonalize( expand( [1.], (n,) ) )
+
+eye = _eye()
 
 def asarray( arg ):
   'convert to Array'
@@ -3217,6 +3243,26 @@ def dotnorm( arg, coords, ndims=0 ):
 
   return sum( arg * coords.normal( ndims-1 ), -1 )
 
+class _normal:
+  'normal'
+
+  def __getitem__( self, indices ):
+    from . import index
+    # create an IndexedArray of normal with index 'i'
+    length = object()
+    result = index.IndexedArray(
+      shape=[ ('i', 'geom') ],
+      linked_lengths=(),
+      op=lambda geom, shape: geom.normal(),
+      args=() )
+    # reindex with `indices`
+    return index.wrap( result, indices )
+
+  def __call__(self, geom):
+    return geom.normal()
+
+normal = _normal()
+
 def kronecker( arg, axis, length, pos ):
   'kronecker'
 
@@ -3555,6 +3601,14 @@ def swapaxes( arg, axes=(-2,-1) ):
 
 def opposite( arg ):
   'evaluate jump over interface'
+
+  from . import index
+  if isinstance( arg, index.IndexedArray ):
+    return index.IndexedArray(
+      shape=arg._shape,
+      linked_lengths=arg._linked_lengths,
+      op=lambda geom, shape, arg_: opposite(arg_),
+      args=[arg] )
 
   if not isevaluable( arg ):
     return arg
