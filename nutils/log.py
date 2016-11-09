@@ -210,11 +210,6 @@ def _print( level, *args ):
 
 locals().update({ name: functools.partial( _print, name ) for name in LEVELS })
 
-def close():
-  log = core.getprop( 'log', None )
-  if isinstance( log, Log ):
-    log.close()
-
 def range( title, *args ):
   '''Progress logger identical to built in range'''
 
