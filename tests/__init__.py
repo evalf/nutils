@@ -1,6 +1,6 @@
 # -*- coding: utf8 -*-
 
-from nutils import log, debug, core
+import nutils.log, nutils.debug, nutils.core
 import sys, time, collections, functools
 
 
@@ -13,7 +13,7 @@ OK, FAILED, ERROR, PKGERROR = range(4)
 ## INTERNAL METHODS
 
 def _runtests( pkg, whitelist ):
-  __log__ = log._getlog()
+  __log__ = nutils.log._getlog()
   __results__ = {}
   if isinstance( pkg, dict ):
     for key in pkg:
@@ -31,10 +31,10 @@ def _runtests( pkg, whitelist ):
     except KeyboardInterrupt:
       raise
     except:
-      exc, frames = debug.exc_info()
-      log.stack( 'error: {}'.format(exc), frames )
-      if core.getprop( 'tbexplore', False ):
-        debug.explore( repr(exc), frames, '''Test package
+      exc, frames = nutils.debug.exc_info()
+      nutils.log.stack( 'error: {}'.format(exc), frames )
+      if nutils.core.getprop( 'tbexplore', False ):
+        nutils.debug.explore( repr(exc), frames, '''Test package
           failed. The traceback explorer allows you to examine the failure
           state. Closing the explorer will resume testing with the next
           package.''' )
@@ -88,16 +88,16 @@ def runtests():
 
   __richoutput__ = True
   __selfcheck__ = True
-  __log__ = log._mklog()
+  __log__ = nutils.log._mklog()
   try:
     results = _runtests( PACKAGES, whitelist )
   except KeyboardInterrupt:
-    log.info( 'aborted.' )
+    nutils.log.info( 'aborted.' )
     sys.exit( -1 )
   except:
-    exc, frames = debug.exc_info()
-    log.stack( 'error in unit testing framework: {}'.format(exc), frames )
-    log.info( 'crashed.' )
+    exc, frames = nutils.debug.exc_info()
+    nutils.log.stack( 'error in unit testing framework: {}'.format(exc), frames )
+    nutils.log.info( 'crashed.' )
     sys.exit( -2 )
 
   summary = _summarize(results)
@@ -107,15 +107,15 @@ def runtests():
   error = summary.pop( ERROR, [] )
   pkgerror = summary.pop( PKGERROR, [] )
 
-  log.info( '{}/{} tests passed.'.format( len(passed), ntests ) )
+  nutils.log.info( '{}/{} tests passed.'.format( len(passed), ntests ) )
   if failed:
-    log.info( '* failures ({}):'.format(len(failed)), ', '.join( failed ) )
+    nutils.log.info( '* failures ({}):'.format(len(failed)), ', '.join( failed ) )
   if error:
-    log.info( '* errors ({}):'.format(len(error)), ', '.join( error ) )
+    nutils.log.info( '* errors ({}):'.format(len(error)), ', '.join( error ) )
   if pkgerror:
-    log.info( '* package failures ({}):'.format(len(pkgerror)), ', '.join( pkgerror ) )
+    nutils.log.info( '* package failures ({}):'.format(len(pkgerror)), ', '.join( pkgerror ) )
   if summary:
-    log.info( '* invalid status ({}) - this should not happen!'.format(len(summary)) )
+    nutils.log.info( '* invalid status ({}) - this should not happen!'.format(len(summary)) )
 
   sys.exit( ntests - len(passed) )
 
@@ -145,10 +145,10 @@ def unittest( func=None, *, name=None, raises=_NoException ):
   fullname = func.__name__
   if name is not None:
     fullname += ':{}'.format(name)
-  if core.getprop( 'filter', fullname ) != fullname:
+  if nutils.core.getprop( 'filter', fullname ) != fullname:
     return
-  parentlog = log._getlog()
-  __log__ = log.CaptureLog()
+  parentlog = nutils.log._getlog()
+  __log__ = nutils.log.CaptureLog()
   parentlog.push( fullname )
   try:
     parentlog.write( 'info', 'testing..', endl=False )
@@ -159,24 +159,24 @@ def unittest( func=None, *, name=None, raises=_NoException ):
     print( ' OK' )
   except AssertionError:
     status = FAILED
-    exc, frames = debug.exc_info()
+    exc, frames = nutils.debug.exc_info()
     print( ' FAILED:', str(exc).strip() )
   except KeyboardInterrupt:
     raise
   except:
     status = ERROR
-    exc, frames = debug.exc_info()
+    exc, frames = nutils.debug.exc_info()
     print( ' ERROR:', str(exc).strip() )
   else:
     status = OK
     print( ' OK' )
   finally:
     parentlog.pop()
-  core.getprop('results')[fullname] = status
+  nutils.core.getprop('results')[fullname] = status
   if status != OK:
     parentlog.write( 'info', 'captured output:\n-----\n{}\n-----'.format(__log__.captured) )
-    if core.getprop( 'tbexplore', False ):
-      debug.explore( repr(exc), frames, '''Unit test {!r} failed. The traceback
+    if nutils.core.getprop( 'tbexplore', False ):
+      nutils.debug.explore( repr(exc), frames, '''Unit test {!r} failed. The traceback
         explorer allows you to examine the failure state. Closing the explorer
         will resume testing.'''.format( fullname ) )
 
