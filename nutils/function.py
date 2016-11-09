@@ -287,19 +287,6 @@ class Tuple( Evaluable ):
 
     return Tuple( tuple(other) + self.items )
 
-class PointShape( Evaluable ):
-  'shape of integration points'
-
-  def __init__( self ):
-    'constructor'
-
-    return Evaluable.__init__( self, args=[POINTS] )
-
-  def evalf( self, points ):
-    'evaluate'
-
-    return points.shape[:-1]
-
 # ARRAYFUNC
 #
 # The main evaluable. Closely mimics a numpy array.

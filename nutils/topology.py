@@ -241,6 +241,8 @@ class Topology( object ):
   def elem_eval( self, funcs, ischeme, separate=False, geometry=None, asfunction=False, edit=_identity ):
     'element-wise evaluation'
 
+    fcache = cache.WrapperCache()
+
     assert not separate or not asfunction, '"separate" and "asfunction" are mutually exclusive'
     if geometry:
       iwscale = function.J( geometry, self.ndims )
@@ -249,10 +251,10 @@ class Topology( object ):
     else:
       iwscale = 1
       slices = []
-      pointshape = function.PointShape()
       npoints = 0
       for elem in log.iter( 'elem', self ):
-        np, = pointshape.eval( elem, ischeme )
+        ipoints, iweights = fcache[elem.reference.getischeme]( ischeme )
+        np = len( ipoints )
         slices.append( slice(npoints,npoints+np) )
         npoints += np
 
@@ -271,7 +273,6 @@ class Topology( object ):
       retvals.append( retval )
     idata = function.Tuple( idata )
 
-    fcache = cache.WrapperCache()
     for ielem, elem in parallel.pariter( log.enumerate( 'elem', self ) ):
       ipoints, iweights = fcache[elem.reference.getischeme]( ischeme )
       s = slices[ielem],
