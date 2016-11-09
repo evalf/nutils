@@ -12,7 +12,7 @@ The log module provides print methods ``debug``, ``info``, ``user``,
 stdout as well as to an html formatted log file if so configured.
 """
 
-import sys, time, warnings, functools, itertools, re
+import sys, time, warnings, functools, itertools, re, abc, contextlib
 from . import core
 
 warnings.showwarning = lambda message, category, filename, lineno, *args: \
@@ -23,26 +23,66 @@ LEVELS = 'path', 'error', 'warning', 'user', 'info', 'progress', 'debug'
 
 ## LOG
 
-class Log( object ):
-  '''The log object is what is stored in the __log__ property. It should define
-  a push function to add a contextual layer, a pop method to remove it, and a
-  write method.'''
+class Log( metaclass=abc.ABCMeta ):
+  '''The :class:`Log` object is what is stored in the ``__log__`` property. It
+  should define a ``context`` method that returns a context manager which adds
+  a contextual layer and a ``write`` method.'''
 
-class StdoutLog( Log ):
+  @abc.abstractmethod
+  def context( self, title ):
+    '''Return a context manager that adds a contextual layer named ``title``.
+
+    .. Note:: This function is abstract.
+    '''
+
+  @abc.abstractmethod
+  def write( self, level, text ):
+    '''Write ``text`` with log level ``level`` to the log.
+
+    .. Note:: This function is abstract.
+    '''
+
+class ContextLog( Log ):
+  '''Base class for loggers that keep track of the current list of contexts.
+
+  The base class implements :meth:`context` which keeps the attribute
+  :attr:`_context` up-to-date.
+
+  .. attribute:: _context
+
+     A :class:`list` of contexts (:class:`str`\\s) that are currently active.
+  '''
+
+  def __init__( self ):
+    self._context = []
+    super().__init__()
+
+  def _push_context( self, title ):
+    self._context.append( title )
+
+  def _pop_context( self ):
+    self._context.pop()
+
+  @contextlib.contextmanager
+  def context( self, title ):
+    '''Return a context manager that adds a contextual layer named ``title``.
+
+    The list of currently active contexts is stored in :attr:`_context`.'''
+    self._push_context( title )
+    try:
+      yield
+    finally:
+      self._pop_context()
+
+class StdoutLog( ContextLog ):
   '''Output plain text to stream.'''
 
   def __init__( self, stream=sys.stdout ):
     self.stream = stream
-    self.context = []
-
-  def push( self, title ):
-    self.context.append( title )
-
-  def pop( self ):
-    self.context.pop()
+    super().__init__()
 
   def _mkstr( self, level, text ):
-    return ' > '.join( self.context + [ text ] if text is not None else self.context )
+    return ' > '.join( self._context + ([ text ] if text is not None else []) )
 
   def write( self, level, text, endl=True ):
     verbose = core.getprop( 'verbose', len(LEVELS) )
@@ -59,10 +99,10 @@ class RichOutputLog( StdoutLog ):
 
   def _mkstr( self, level, text ):
     if text is not None:
-      string = ' · '.join( self.context + [text] )
+      string = ' · '.join( self._context + [text] )
       n = len(string) - len(text)
     else:
-      string = ' · '.join( self.context )
+      string = ' · '.join( self._context )
       n = len(string)
     try:
       colorid, boldid = self.cmap[level]
@@ -71,19 +111,12 @@ class RichOutputLog( StdoutLog ):
     else:
       return '\033[1;30m{}\033[{};3{}m{}\033[0m'.format( string[:n], boldid, colorid, string[n:] )
 
-class HtmlLog( Log ):
+class HtmlLog( ContextLog ):
   '''Output html nested lists.'''
 
   def __init__( self, htmlfile ):
     self.htmlfile = htmlfile
-    self.context = []
-
-  def push( self, title ):
-    self.context.append( title )
-
-  def pop( self ):
-    if self.context:
-      self.context.pop()
+    super().__init__()
 
   @staticmethod
   def _path2href( match ):
@@ -97,7 +130,7 @@ class HtmlLog( Log ):
       return
     if level == 'path':
       text = re.sub( r'\b\w+([.]\w+)\b', self._path2href, text )
-    line = ' &middot; '.join( self.context + ['<span class="{}">{}</span>'.format(level,text)] )
+    line = ' &middot; '.join( self._context + ['<span class="{}">{}</span>'.format(level,text)] )
     self.htmlfile.write( '<span class="line">{}</span>\n'.format(line) )
     self.htmlfile.flush()
 
@@ -107,35 +140,28 @@ class TeeLog( Log ):
   def __init__( self, *logs ):
     self.logs = logs
 
-  def push( self, title ):
-    for log in self.logs:
-      log.push(title)
-
-  def pop( self ):
-    for log in self.logs:
-      log.pop()
+  @contextlib.contextmanager
+  def context( self, title ):
+    with contextlib.ExitStack() as stack:
+      for log in self.logs:
+        stack.enter_context( log.context( title ) )
+      yield
 
   def write( self, level, text ):
     for log in self.logs:
       log.write( level, text )
     
-class CaptureLog( Log ):
+class CaptureLog( ContextLog ):
   '''Silently capture output to a string buffer while writing single character
   progress info to a secondary stream.'''
 
   def __init__( self, stream=sys.stdout ):
     self.stream = stream
-    self.context = []
     self.lines = []
-
-  def push( self, title ):
-    self.context.append( title )
-
-  def pop( self ):
-    self.context.pop()
+    super().__init__()
 
   def write( self, level, text ):
-    self.lines.append( ' > '.join( self.context + [ text ] if text is not None else self.context ) )
+    self.lines.append( ' > '.join( self._context + ([ text ] if text is not None else []) ) )
     self.stream.write( level[0] )
     self.stream.flush()
 
@@ -170,8 +196,7 @@ def _logiter( text, iterator, length=None, useitem=False ):
     title = '%s %d' % ( text, item if useitem else index )
     if length is not None:
       title += ' ({:.0f}%)'.format( (index+.5) * 100. / length )
-    log.push( title )
-    try:
+    with log.context( title ):
       now = time.time()
       if now > tnext:
         dt *= dtexp
@@ -180,8 +205,6 @@ def _logiter( text, iterator, length=None, useitem=False ):
         log.write( 'progress', None )
         tnext = now + dt
       yield item
-    finally:
-      log.pop()
 
 def _mklog():
   return RichOutputLog() if core.getprop( 'richoutput', False ) else StdoutLog()
@@ -259,12 +282,12 @@ def title( f ): # decorator
   @functools.wraps(f)
   def wrapped( *args, **kwargs ):
     __log__ = _getlog() # repeat as property for fast retrieval
-    __log__.push( gettitle(args,kwargs) )
-    try:
+    with __log__.context( gettitle(args,kwargs) ):
       return f( *args, **kwargs )
-    finally:
-      __log__.pop()
   return wrapped
+
+def context( title ):
+  return _getlog().context( title )
 
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

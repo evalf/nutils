@@ -59,26 +59,21 @@ log_html = '''\
 '''
 
 def generate_log():
-  log = nutils.log._getlog()
-  log.push( 'iterator' )
-  for i in nutils.log.iter( 'iter', 'abc' ):
-    nutils.log.info( i )
-  log.pop()
-  log.push( 'empty' )
-  log.push( 'empty' )
-  log.pop()
-  log.write( 'progress', None )
-  log.pop()
-  log.push( 'levels' )
-  for level in ( 'path', 'error', 'warning', 'user', 'info', 'progress' ):
-    getattr( nutils.log, level )( level )
-  log.pop()
-  log.push( 'exception' )
-  nutils.log.error(
-    "ValueError('test',)\n" \
-    '  File "??", line ??, in ??\n' \
-    "    raise ValueError( 'test' )")
-  log.pop()
+  with nutils.log.context( 'iterator' ):
+    for i in nutils.log.iter( 'iter', 'abc' ):
+      nutils.log.info( i )
+  with nutils.log.context( 'empty' ):
+    with nutils.log.context( 'empty' ):
+      pass
+    nutils.log._getlog().write( 'progress', None )
+  with nutils.log.context( 'levels' ):
+    for level in ( 'path', 'error', 'warning', 'user', 'info', 'progress' ):
+      getattr( nutils.log, level )( level )
+  with nutils.log.context( 'exception' ):
+    nutils.log.error(
+      "ValueError('test',)\n" \
+      '  File "??", line ??, in ??\n' \
+      "    raise ValueError( 'test' )")
 
 @register( 'stdout', nutils.log.StdoutLog, log_stdout )
 @register( 'stdout-verbose3', nutils.log.StdoutLog, log_stdout3, verbose=3 )

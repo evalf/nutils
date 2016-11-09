@@ -19,11 +19,8 @@ def _runtests( pkg, whitelist ):
     for key in pkg:
       if whitelist and key != whitelist[0]:
         continue
-      __log__.push( key )
-      try:
+      with __log__.context( key ):
         __results__[key] = _runtests( pkg[key], whitelist[1:] )
-      finally:
-        __log__.pop()
   else:
     t0 = time.time()
     try:
@@ -149,29 +146,27 @@ def unittest( func=None, *, name=None, raises=_NoException ):
     return
   parentlog = nutils.log._getlog()
   __log__ = nutils.log.CaptureLog()
-  parentlog.push( fullname )
-  try:
-    parentlog.write( 'info', 'testing..', endl=False )
-    func()
-    assert raises is _NoException, 'exception not raised, expected {!r}'.format( raises )
-  except raises:
-    status = OK
-    print( ' OK' )
-  except AssertionError:
-    status = FAILED
-    exc, frames = nutils.debug.exc_info()
-    print( ' FAILED:', str(exc).strip() )
-  except KeyboardInterrupt:
-    raise
-  except:
-    status = ERROR
-    exc, frames = nutils.debug.exc_info()
-    print( ' ERROR:', str(exc).strip() )
-  else:
-    status = OK
-    print( ' OK' )
-  finally:
-    parentlog.pop()
+  with parentlog.context( fullname ):
+    try:
+      parentlog.write( 'info', 'testing..', endl=False )
+      func()
+      assert raises is _NoException, 'exception not raised, expected {!r}'.format( raises )
+    except raises:
+      status = OK
+      print( ' OK' )
+    except AssertionError:
+      status = FAILED
+      exc, frames = nutils.debug.exc_info()
+      print( ' FAILED:', str(exc).strip() )
+    except KeyboardInterrupt:
+      raise
+    except:
+      status = ERROR
+      exc, frames = nutils.debug.exc_info()
+      print( ' ERROR:', str(exc).strip() )
+    else:
+      status = OK
+      print( ' OK' )
   nutils.core.getprop('results')[fullname] = status
   if status != OK:
     parentlog.write( 'info', 'captured output:\n-----\n{}\n-----'.format(__log__.captured) )
