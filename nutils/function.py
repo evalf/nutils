@@ -309,7 +309,7 @@ class Promote( Evaluable ):
     Evaluable.__init__( self, args=[trans] )
 
   def evalf( self, trans ):
-    return trans.promote_trim( self.ndims )
+    return trans.promote( self.ndims )
 
   def _edit( self, op ):
     return Promote( self.ndims, op(self.trans) )
@@ -449,7 +449,8 @@ class Array( Evaluable ):
     'normal'
 
     assert self.ndim == 1
-    return Normal( self )
+    lgrad = localgradient( self, len(self) )
+    return Normal( lgrad )
 
   def curvature( self, ndims=-1 ):
     'curvature'
@@ -550,34 +551,34 @@ class Array( Evaluable ):
 class Normal( Array ):
   'normal'
 
-  def __init__( self, geom ):
-    self.geom = geom
-    trans = Promote( len(geom)-1 )
-    args = derivative( geom, NormalCoord(trans), axes=() ),
-    if len(geom) > 1:
-      self.G = derivative( geom, LocalCoords(trans,root=False), axes=(0,) )
-      self.invGG = inverse( matmat( self.G.T, self.G ) ) # explicit dependency for potential reuse
-      args += self.G, self.invGG
-    Array.__init__( self, args=args, shape=geom.shape, dtype=float )
+  def __init__( self, lgrad ):
+    assert lgrad.ndim == 2 and lgrad.shape[0] == lgrad.shape[1]
+    self.lgrad = lgrad
+    Array.__init__( self, args=[lgrad], shape=(len(lgrad),), dtype=float )
 
-  def evalf( self, n, G=None, invGG=None ):
-    if len(self) == 1: # geom is 1D
+  def evalf( self, lgrad ):
+    n = lgrad[...,-1]
+    if n.shape[-1] == 1: # geom is 1D
       return numpy.sign(n)
     # orthonormalize n to G
+    G = lgrad[...,:-1]
+    GG = numeric.contract( G[:,:,_,:], G[:,:,:,_], axis=1 )
     v1 = numeric.contract( G, n[:,:,_], axis=1 )
-    v2 = numeric.contract( invGG, v1[:,_,:], axis=2 )
+    v2 = numpy.linalg.solve( GG, v1 )
     v3 = numeric.contract( G, v2[:,_,:], axis=2 )
     return numeric.normalize( n - v3 )
 
   def _derivative( self, var, axes, seen ):
     if len(self) == 1:
       return zeros( self.shape + _taketuple(var.shape,axes) )
-    Gder = derivative( self.G, var, axes, seen )
+    G = self.lgrad[...,:-1]
+    GG = matmat( G.T, G )
+    Gder = derivative( G, var, axes, seen )
     nGder = matmat( self, Gder )
-    return -matmat( self.G, self.invGG, nGder )
+    return -matmat( G, inverse(GG), nGder )
 
   def _edit( self, op ):
-    return Normal( op(self.geom) )
+    return Normal( op(self.lgrad) )
 
 class ArrayFunc( Array ):
   'deprecated ArrayFunc alias'
@@ -701,7 +702,8 @@ class DofMap( Array ):
   def evalf( self, trans ):
     'evaluate'
 
-    return self.dofmap[ trans.lookup(self.dofmap) ][_]
+    head, tail = trans.lookup_split( self.dofmap )
+    return self.dofmap[head][_]
 
   def _edit( self, op ):
     return DofMap( self.dofmap, self.shape[0], op(self.trans) )
@@ -878,74 +880,55 @@ class Product( Array ):
   def _edit( self, op ):
     return product( op(self.func), -1 )
 
-class Transform( Array ):
-  'transform'
+class RootCoords( Array ):
+  'root coords'
 
-  def __init__( self, tochain, fromchain, root ):
+  def __init__( self, trans ):
     'constructor'
 
-    self.fromchain = fromchain
-    self.tochain = tochain
-    self.root = root
-    Array.__init__( self, args=[fromchain,tochain], shape=(tochain.ndims,fromchain.ndims), dtype=float )
+    assert isinstance( trans, Promote )
+    ndims = trans.ndims
+    self.trans = trans
+    DerivativeTargetBase.__init__( self, args=[POINTS,trans], shape=[ndims], dtype=float )
 
-  def evalf( self, fromchain, tochain ):
+  def evalf( self, points, chain ):
+    'evaluate'
+
+    ndims = self.trans.ndims
+    while chain[0].todims != ndims:
+      chain = chain[1:]
+    return transform.apply( chain, points )
+
+  def _derivative( self, var, axes, seen ):
+    if isinstance( var, LocalCoords ) and len(var) > 0:
+      return RootTransform( self.trans )[...,:len(var)]
+    return zeros( self.shape+_taketuple(var.shape,axes) )
+
+  def _edit( self, op ):
+    return RootCoords( op(self.trans) )
+
+class RootTransform( Array ):
+  'root transform'
+
+  def __init__( self, trans ):
+    'constructor'
+
+    self.trans = trans
+    Array.__init__( self, args=[trans], shape=(trans.ndims,trans.ndims), dtype=float )
+
+  def evalf( self, trans ):
     'transform'
 
-    fromtail = fromchain.flattail
-    totail = tochain.flattail
-    n = len(totail) - len(fromtail)
-    assert totail[n:] == fromtail
-    trans = totail[:n]
-    if self.root:
-      trans = tochain.trimmed + trans
-    linear = transform.linear( trans )
-    if linear.ndim == 0:
-      assert fromchain.fromdims == tochain.fromdims
-      linear = linear * numpy.eye( fromchain.fromdims )
-    assert linear.ndim == 2
-    return linear[_]
+    ndims = self.trans.ndims
+    while trans[0].todims != ndims:
+      trans = trans[1:]
+    return transform.fulllinear( trans )[_]
 
   def _derivative( self, var, axes, seen ):
     return zeros( self.shape+_taketuple(var.shape,axes) )
 
   def _edit( self, op ):
-    return Transform( op(self.tochain), op(self.fromchain), self.root )
-
-class ExtVector( Array ):
-  'transform'
-
-  def __init__( self, tochain, fromchain, root ):
-    'constructor'
-
-    self.fromchain = fromchain
-    self.tochain = tochain
-    self.root = root
-    Array.__init__( self, args=[fromchain,tochain], shape=(tochain.ndims,), dtype=float )
-
-  def evalf( self, fromchain, tochain ):
-    'transform'
-
-    fromtail = fromchain.flattail
-    totail = tochain.flattail
-    n = len(totail) - len(fromtail)
-    assert totail[n:] == fromtail
-    chain = totail[:n]
-    if self.root:
-      chain = tochain.trimmed + chain
-    isflipped = False
-    for trans in chain:
-      isflipped ^= trans.isflipped
-      if trans.fromdims < trans.todims:
-        ext = numeric.ext( trans.linear )
-        return ( ext if not isflipped else -ext )[_]
-    return numpy.zeros( self.shape )[_]
-
-  def _derivative( self, var, axes, seen ):
-    return zeros( self.shape+_taketuple(var.shape,axes) )
-
-  def _edit( self, op ):
-    return ExtVector( op(self.tochain), op(self.fromchain), self.root )
+    return RootTransform( op(self.trans) )
 
 class Function( Array ):
   'function'
@@ -962,44 +945,29 @@ class Function( Array ):
     'evaluate'
 
     fvals = []
-    points = cache[transform.apply]( trans.flattail, points )
-    linear = numpy.array( 1. )
-    stds = None # indicating that function is not found yet in self.stdmap
-    while trans:
-      try:
-        if stds is None:
-          stds = self.stdmap[ tuple(trans) ]
-      except KeyError:
-        pass
-      else:
-        (std,keep), *stds = stds
-        if std:
-          F = cache[std.eval]( points, self.igrad )
-          assert F.ndim == self.igrad+2
-          if keep is not None:
-            F = F[(Ellipsis,keep)+(slice(None),)*self.igrad]
-          if self.igrad:
-            if linear.ndim:
-              for axis in range(-self.igrad,0):
-                F = numeric.dot( F, linear, axis )
-            elif linear != 1:
-              F = F * (linear**self.igrad)
-          fvals.append( F )
-        if not stds:
-          break
-      *trans, tr = trans
-      points = cache[tr.apply]( points )
-      linear = numpy.dot( linear, tr.linear ) if linear.ndim and tr.linear.ndim else linear * tr.linear
-    else:
-      raise Exception( 'failed to evaluate function' )
+    head, tail = trans.lookup_split( self.stdmap )
+    for std, keep in self.stdmap[head]:
+      if std:
+        stdpoints = cache[transform.apply]( tail, points )
+        F = cache[std.eval]( stdpoints, self.igrad )
+        assert F.ndim == self.igrad+2
+        if keep is not None:
+          F = F[(Ellipsis,keep)+(slice(None),)*self.igrad]
+        if tail:
+          for axis in range(-self.igrad,0):
+            F = numeric.dot( F, cache[transform.fulllinear](tail), axis )
+        fvals.append( F )
+      tail = head[-1:] + tail
+      head = head[:-1]
     return fvals[0] if len(fvals) == 1 else numpy.concatenate( fvals, axis=1 )
 
   def _edit( self, op ):
     return Function( self.stdmap, self.igrad, self.shape[0], op(self.trans) )
 
   def _derivative( self, var, axes, seen ):
-    grad = Function( self.stdmap, self.igrad+1, self.shape[0], self.trans )
-    return matmat( grad, derivative( LocalCoords(self.trans,root=False), var, axes, seen ) )
+    if isinstance( var, LocalCoords ):
+      return Function( self.stdmap, self.igrad+1, self.shape[0], self.trans )[...,:len(var)]
+    return zeros( self.shape+_taketuple(var.shape,axes), dtype=self.dtype )
 
   def _take( self, indices, axis ):
     if axis != 0:
@@ -1948,8 +1916,8 @@ class Sampled( Array ):
     Array.__init__( self, args=[trans,POINTS], shape=shape, dtype=float )
 
   def evalf( self, trans, points ):
-    head = trans.lookup( self.data )
-    evalpoints = trans.flattail.apply( points )
+    head, tail = trans.lookup_split( self.data )
+    evalpoints = tail.apply( points )
     myvals, mypoints = self.data[head]
     assert mypoints.shape == evalpoints.shape and numpy.all( mypoints == evalpoints ), 'Illegal point set'
     return myvals
@@ -1967,9 +1935,9 @@ class Elemwise( Array ):
     Array.__init__( self, args=[trans], shape=shape, dtype=float )
 
   def evalf( self, trans ):
-    trans = trans.lookup( self.fmap )
-    value = self.fmap.get( trans, self.default )
-    assert value is not None, 'transformation not found: {}'.format( trans )
+    head, tail = trans.lookup_split( self.fmap )
+    value = self.fmap.get( head, self.default )
+    assert value is not None, 'transformation not found: {}'.format( head )
     value = numpy.asarray( value )
     assert value.shape == self.shape, 'wrong shape: {} != {}'.format( value.shape, self.shape )
     return value[_]
@@ -2577,50 +2545,15 @@ class DerivativeTarget( DerivativeTargetBase ):
     else:
       return zeros( self.shape+_taketuple(var.shape,axes) )
 
-class NormalCoord( DerivativeTargetBase ):
-  'derivative in out-of-plane direction'
-
-  def __init__( self, trans ):
-    self.trans = trans
-    DerivativeTargetBase.__init__( self, args=[], shape=(), dtype=float )
-
-  def evalf( self, trans ):
-    raise Exception( 'NormalCoord should only be used as derivative target' )
-
-  def _edit( self, op ):
-    return NormalCoord( op(self.trans) )
-
 class LocalCoords( DerivativeTargetBase ):
-  'trivial func'
+  'local coords derivative target'
 
-  def __init__( self, trans, root ):
-    'constructor'
+  def __init__( self, ndims ):
+    DerivativeTargetBase.__init__( self, args=[], shape=[ndims], dtype=float )
 
-    assert isinstance( trans, Promote )
-    ndims = trans.ndims
-    self.trans = trans
-    self.root = root
-    DerivativeTargetBase.__init__( self, args=[POINTS,trans], shape=[ndims], dtype=float )
-
-  def evalf( self, points, trans ):
-    'evaluate'
-
-    return ( trans.trimmed << trans.flattail if self.root else trans.flattail ).apply(points)
-
-  def _derivative( self, var, axes, seen ):
-    if var == self:
-      return eye( len(self) )
-    if isinstance( var, NormalCoord ):
-      return ExtVector( self.trans, var.trans, self.root )
-    if isinstance( var, LocalCoords ):
-      assert not var.root
-      return Transform( self.trans, var.trans, self.root )
-    return zeros( self.shape+_taketuple(var.shape,axes) )
-
-  def _edit( self, op ):
-    return LocalCoords( op(self.trans), self.root )
-
-
+  def evalf( self ):
+    raise Exception( 'LocalCoords should not be evaluated' )
+    
 # CIRCULAR SYMMETRY
 
 class RevolutionAngle( Array ):
@@ -2658,7 +2591,7 @@ class Revolved( Array ):
 
   def _derivative( self, var, axes, seen ):
     if isinstance( var, LocalCoords ):
-      newvar = localcoords( var.shape[0]-1 ) # TODO check that this is correct
+      newvar = LocalCoords( len(var)-1 ) # TODO check that this is correct
       return revolved( concatenate( [ derivative(self.func,newvar,axes,seen), zeros(self.func.shape+(1,)) ], axis=-1 ) )
     else:
       result = derivative( self.func, var, axes, seen )
@@ -2832,7 +2765,7 @@ jump = lambda arg: opposite(arg) - arg
 add_T = lambda arg, axes=(-2,-1): swapaxes( arg, axes ) + arg
 edit = lambda arg, f: arg._edit(f) if isevaluable(arg) else arg
 blocks = lambda arg: asarray(arg).blocks
-localcoords = lambda ndims, root=False: LocalCoords( Promote(ndims), root )
+rootcoords = lambda ndims: RootCoords( Promote(ndims) )
 sampled = lambda data, ndims: Sampled( data, Promote(ndims) )
 
 class _eye:
@@ -3282,7 +3215,7 @@ def derivative( func, var, axes, seen=None ):
 def localgradient( arg, ndims ):
   'local derivative'
 
-  return derivative( arg, localcoords(ndims), axes=(0,) )
+  return derivative( arg, LocalCoords(ndims), axes=(0,) )
 
 def dotnorm( arg, coords ):
   'normal component'

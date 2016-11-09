@@ -10,17 +10,13 @@
 The transform module.
 """
 
-from . import cache, numeric, core
+from . import cache, numeric, core, _
 import numpy
 
 
 class TransformChain( tuple ):
 
   __slots__ = ()
-
-  @staticmethod
-  def new_like_self( items ):
-    return TransformChain( items )
 
   def startswith( self, other ):
     return self[:len(other)] == other
@@ -33,7 +29,7 @@ class TransformChain( tuple ):
     return self
 
   def slicefrom( self, i ):
-    return self.new_like_self( self[i:] )
+    return self.__class__( self[i:] )
 
   @property
   def todims( self ):
@@ -69,7 +65,7 @@ class TransformChain( tuple ):
   @property
   def flipped( self ):
     assert self.todims == self.fromdims+1
-    return self.new_like_self( trans.flipped if trans.todims == trans.fromdims+1 else trans for trans in self )
+    return self.__class__( trans.flipped if trans.todims == trans.fromdims+1 else trans for trans in self )
 
   @property
   def det( self ):
@@ -133,17 +129,48 @@ class TransformChain( tuple ):
   def promote_trim( self, ndims ):
     raise Exception( 'promotion only possible from canonical form' )
 
-  @property
-  def flattail( self ):
-    return CanonicalTransformChain()
+  def lookup_split( self, transforms ):
+    # to be replaced by bisection soon
+    head = self
+    while head:
+      if head in transforms:
+        return head, self.slicefrom(len(head))
+      head = head[:-1]
+    return CanonicalTransformChain(), self
+
+  def promote_and_lookup( self, transforms ):
+    if isinstance( transforms, (list,tuple) ):
+      transforms = dict( zip( transforms, range(len(transforms)) ) )
+    assert isinstance( transforms, dict )
+    for trans in transforms:
+      ndims = trans.fromdims
+      break
+    head, tail = self.canonical.promote_split( ndims )
+    while head and head[-1].fromdims == ndims:
+      try:
+        item = transforms[head]
+      except KeyError:
+        pass
+      else:
+        return item, TransformChain(tail)
+      tail = head[-1:] + tail
+      head = head[:-1]
+    raise KeyError( self )
+
+  def contained_in( self, transforms ):
+    for trans in transforms:
+      ndims = trans.fromdims
+      break
+    head, tail = self.canonical.promote_split( ndims )
+    while head and head[-1].fromdims == ndims:
+      if head in transforms:
+        return True
+      head = head[:-1]
+    return False
 
 class CanonicalTransformChain( TransformChain ):
 
   __slots__ = ()
-
-  @staticmethod
-  def new_like_self( items ):
-    return CanonicalTransformChain( items )
 
   def __lshift__( self, other ):
     # self << other
@@ -172,48 +199,29 @@ class CanonicalTransformChain( TransformChain ):
         i = len(self)+1
       assert equivalent( head[index:]+(uptrans,), self[index:i] )
       tail = (uptrans,) + self[i:]
-    return CanonicalTransformChain(head), self.new_like_self(tail)
+    return CanonicalTransformChain(head), CanonicalTransformChain(tail)
 
-  def promote_trim( self, ndims ):
+  def promote_split( self, ndims ):
     head = self
-    tail = self.new_like_self([])
+    tail = ()
     while head.fromdims < ndims:
       head, tmp = head.promote_helper()
-      tail = self.new_like_self( tmp + tail )
-    assert head.fromdims == ndims
-    return CanonicalTransformChainWithTail( head, tail )
+      tail = tmp + tail
+    return head, CanonicalTransformChain(tail)
+
+  def promote_trim( self, ndims ):
+    head, tail = self.promote_split( ndims )
+    return head
+
+  def promote( self, ndims ):
+    head, tail = self.promote_split( ndims )
+    return head << tail
 
   def lookup( self, transforms ):
     # to be replaced by bisection soon
-    headtrans = self
-    while headtrans:
-      if headtrans in transforms:
-        return CanonicalTransformChainWithTail( headtrans, self.slicefrom(len(headtrans)) )
-      headtrans = headtrans[:-1]
-    return None
-
-class CanonicalTransformChainWithTail( CanonicalTransformChain ):
-
-  def __new__( cls, items, tail ):
-    assert isinstance( tail, TransformChain )
-    self = CanonicalTransformChain.__new__( cls, items )
-    self.tail = tail
-    return self
-
-  def __sub__( self, other ):
-    assert isinstance( other, CanonicalTransformChain )
-    A = self.flattail
-    B = other.flattail
-    n = len(A) - len(B)
-    assert A[n:] == B
-    return TransformChain( A[:n] )
-
-  def new_like_self( self, items ):
-    return CanonicalTransformChainWithTail( items, self.tail )
-
-  @property
-  def flattail( self ):
-    return self.tail << self.tail.flattail
+    head, tail = self.lookup_split( transforms )
+    if head:
+      return CanonicalTransformChain( head )
 
 mayswap = lambda trans1, trans2: isinstance( trans1, Scale ) and trans1.linear == .5 and trans2.todims == trans2.fromdims + 1 and trans2.fromdims > 0
 
@@ -446,6 +454,20 @@ def linear( chain ):
   for trans in chain:
     linear = numpy.dot( linear, trans.linear ) if linear.ndim and trans.linear.ndim \
         else linear * trans.linear
+  return linear
+
+def fulllinear( chain ):
+  linear = numpy.eye( chain[-1].fromdims )
+  for trans in reversed(chain):
+    if trans.linear.ndim == 0:
+      linear = trans.linear * linear
+    else:
+      linear = numpy.dot( trans.linear, linear )
+      if linear.shape[0] != linear.shape[1]:
+        n = numeric.ext( linear )
+        if trans.isflipped:
+          n = -n
+        linear = numpy.concatenate( [ linear, n[:,_] ], axis=1 )
   return linear
 
 def apply( chain, points ):

@@ -133,16 +133,28 @@ class Topology( object ):
     '''transform -> ielement mapping'''
     return { elem.transform: ielem for ielem, elem in enumerate(self) }
 
+  @cache.property
+  def border_transforms( self ):
+    border_transforms = set()
+    for belem in self.boundary:
+      try:
+        ielem, tail = belem.transform.promote_and_lookup( self.edict )
+      except KeyError:
+        pass
+      else:
+        border_transforms.add( self.elements[ielem].transform )
+    return border_transforms
+
   def outward_from( self, outward, inward=None ):
     'direct interface elements to evaluate in topo first'
 
     directed = []
     for iface in self:
-      if not iface.transform.lookup( outward.edict ):
-        assert iface.opposite.lookup( outward.edict ), 'interface not adjacent to outward topo'
+      if not iface.transform.contained_in( outward.edict ):
+        assert iface.opposite.contained_in( outward.edict ), 'interface not adjacent to outward topo'
         iface = element.Element( iface.reference, iface.opposite, iface.transform )
       if inward:
-        assert iface.opposite.lookup( inward.edict ), 'interface no adjacent to inward topo'
+        assert iface.opposite.contained_in( inward.edict ), 'interface no adjacent to inward topo'
       directed.append( iface )
     return UnstructuredTopology( self.ndims, directed )
 
@@ -652,9 +664,7 @@ class Topology( object ):
         elem = self.elements[ielem]
         xi, w = elem.reference.getischeme( 'gauss1' )
         xi = ( numpy.dot(w,xi) / w.sum() )[_] if len(xi) > 1 else xi.copy()
-        linear = function.Promote( self.ndims ).eval( elem, xi ).flattail.linear
         J = function.localgradient( geom, self.ndims )
-        J = J * linear if numpy.ndim( linear ) == 0 else ( J[:,:,_] * linear[_,:,:] ).sum(1)
         geom_J = function.Tuple(( geom, J ))
         for iiter in range( maxiter ):
           point_xi, J_xi = geom_J.eval( elem, xi )
@@ -749,6 +759,10 @@ class ItemTopology( Topology ):
   @property
   def edict( self ):
     return self.basetopo.edict
+
+  @property
+  def border_transforms( self ):
+    return self.basetopo.border_transforms
 
   @property
   def elements( self ):
@@ -1321,8 +1335,21 @@ class UnionTopology( Topology ):
       item = item,
     if len(item) == 0:
       return self
-    if not isinstance( item[0], int ):
-      raise KeyError( item[0] )
+    if isinstance( item[0], str ):
+      names = item[0].split(',')
+      subtopos = []
+      for topo in self._topos:
+        for name in names:
+          try:
+            subtopo = topo[name]
+          except KeyError:
+            pass
+          else:
+            subtopos.append( subtopo )
+      if subtopos:
+        return UnionTopology( subtopos )
+      raise KeyError( item )
+    assert isinstance( item[0], int )
     return self._topos[ item[0] ][ item[1:] ]
 
   def __or__( self, other ):
@@ -1410,11 +1437,14 @@ class SubtractionTopology( Topology ):
     for boundary in ~self.subtopo.boundary, self.basetopo.boundary:
       belems = [] # trimmed boundary elements
       for belem in boundary:
-        head = belem.transform.promote_trim( self.ndims ).lookup( self.edict )
-        if head:
-          ref = self.elements[self.edict[head]].reference
+        try:
+          ielem, tail = belem.transform.promote_and_lookup( self.edict )
+        except KeyError:
+          pass
+        else:
+          ref = self.elements[ielem].reference
           try:
-            index = ref.edge_transforms.index( head.flattail )
+            index = ref.edge_transforms.index( tail )
           except ValueError: # e.g. when belem is opposite side of intersected element
             pass
           else:
@@ -1433,21 +1463,25 @@ class SubtractionTopology( Topology ):
     subinterfaces = self.subtopo.interfaces
     for ielem in self.basetopo.interfaces:
       ref = ielem.reference
-      head = ielem.transform.lookup( subinterfaces.edict )
-      if head:
-        if head != ielem.transform:
-          raise NotImplementedError # wait for unit test to implement this using ref.transform
-        subielem = subinterfaces.elements[subinterfaces.edict[head]]
-        assert subielem.opposite == ielem.opposite
-        ref -= subielem.reference
-      else:
-        head = ielem.opposite.lookup( subinterfaces.edict )
-        if head:
-          if head != ielem.opposite:
+      try:
+        index, tail = ielem.transform.promote_and_lookup( subinterfaces.edict )
+      except KeyError:
+        try:
+          index, tail = ielem.opposite.promote_and_lookup( subinterfaces.edict )
+        except KeyError:
+          pass
+        else:
+          if tail:
             raise NotImplementedError # wait for unit test to implement this using ref.transform
-          subielem = subinterfaces.elements[subinterfaces.edict[head]]
+          subielem = subinterfaces.elements[index]
           assert subielem.transform == ielem.opposite
           ref -= subielem.reference
+      else:
+        if tail:
+          raise NotImplementedError # wait for unit test to implement this using ref.transform
+        subielem = subinterfaces.elements[index]
+        assert subielem.opposite == ielem.opposite
+        ref -= subielem.reference
       if ref:
         ielems.append( element.Element( ref, ielem.transform, ielem.opposite ) )
     return UnstructuredTopology( self.ndims-1, ielems )
@@ -1497,30 +1531,26 @@ class SubsetTopology( Topology ):
   @cache.property
   @log.title
   def search_interfaces( self ):
-    edict = self.edict
     empty = element.EmptyReference( self.ndims-1 )
     ielems = []
     belems = []
     for iface in log.iter( 'elem', self.basetopo.interfaces ):
-      trans = iface.transform.promote_trim( self.ndims )
       try:
-        ielem = edict[trans]
+        ielem, tail = iface.transform.promote_and_lookup( self.edict )
       except KeyError:
         edge = empty
       else:
         ref = self.elements[ielem].reference
-        index = ref.edge_transforms.index(trans.tail)
+        index = ref.edge_transforms.index(tail)
         edge = ref.edge_refs[ index ]
-      trans = iface.opposite.promote_trim( self.ndims )
       try:
-        ielem = edict[trans]
+        ielem, tail = iface.opposite.promote_and_lookup( self.edict )
       except KeyError:
         oppedge = empty
       else:
         ref = self.elements[ielem].reference
-        tail2head = trans.tail.lookup( ref.edge_transforms ) # strip optional adjustment transformation (temporary?)
-        index = ref.edge_transforms.index( tail2head )
-        oppedge = ref.edge_refs[ index ].transform( tail2head.tail )
+        index, tail2tail = tail.promote_and_lookup( ref.edge_transforms ) # strip optional adjustment transformation (temporary?)
+        oppedge = ref.edge_refs[ index ].transform( tail2tail )
       if iface.reference == edge == oppedge: # shortcut
         ielems.append( iface )
       else:
@@ -1550,11 +1580,11 @@ class SubsetTopology( Topology ):
     subs = {}
     if isinstance( self.basetopo.interfaces, ItemTopology ): # TODO fix ItemTopology situation
       for name, itopo in self.basetopo.interfaces.subtopos.items():
-        isect = [ elem for elem in belems if elem.transform.lookup( itopo.basetopo.edict ) ]
+        isect = [ elem for elem in belems if elem.transform.contained_in( itopo.basetopo.edict ) ]
         nametopo = EmptyTopology( self.ndims-1 )
         if isect:
           nametopo |= UnstructuredTopology( self.ndims-1, isect )
-        isect = [ elem for elem in belems if elem.opposite.lookup( itopo.basetopo.edict ) ]
+        isect = [ elem for elem in belems if elem.opposite.contained_in( itopo.basetopo.edict ) ]
         if isect:
           nametopo |= UnstructuredTopology( self.ndims-1, isect )
         subs[name] = nametopo
@@ -1571,11 +1601,13 @@ class SubsetTopology( Topology ):
     belems = [] # prior boundary elements (reduced)
     basebtopo = self.basetopo.boundary
     for belem in log.iter( 'element', basebtopo ):
-      trans = belem.transform.promote_trim( self.ndims ).lookup( self.edict )
-      if trans:
-        ielem = self.edict[trans]
+      try:
+        ielem, tail = belem.transform.promote_and_lookup( self.edict )
+      except KeyError:
+        pass
+      else:
         ref = self.elements[ielem].reference
-        iedge = ref.edge_transforms.index( trans.flattail )
+        iedge = ref.edge_transforms.index( tail )
         edge = ref.edge_refs[iedge]
         if edge:
           belems.append( element.Element( edge, belem.transform, belem.opposite ) )
@@ -1663,12 +1695,13 @@ class HierarchicalTopology( Topology ):
   def elements( self ):
     itemelems = []
     for elem in self.allelements:
-      head = elem.transform.lookup(self.basetopo.edict)
-      if not head:
+      try:
+        ielem, tail = elem.transform.promote_and_lookup( self.basetopo.edict )
+      except KeyError:
         continue
-      itemelem = self.basetopo.elements[self.basetopo.edict[head]]
+      itemelem = self.basetopo.elements[ielem]
       ref = itemelem.reference
-      for trans in head.tail:
+      for trans in tail:
         index = ref.child_transforms.index((trans,))
         ref = ref.child_refs[ index ]
         if not ref:
@@ -1684,12 +1717,15 @@ class HierarchicalTopology( Topology ):
   def levels( self ):
     levels = [ self.basetopo ]
     for elem in self:
-      trans = elem.transform.lookup( self.basetopo.edict )
-      assert trans, 'element is not a refinement of basetopo'
-      nrefine = len(elem.transform) - len(trans)
-      while nrefine >= len(levels):
-        levels.append( levels[-1].refined )
-      assert elem.transform in levels[nrefine].edict, 'element is not a refinement of basetopo'
+      try:
+        ielem, tail = elem.transform.promote_and_lookup( self.basetopo.edict )
+      except KeyError:
+        raise Exception( 'element is not a refinement of basetopo' )
+      else:
+        nrefine = len(tail)
+        while nrefine >= len(levels):
+          levels.append( levels[-1].refined )
+        assert elem.transform in levels[nrefine].edict, 'element is not a refinement of basetopo'
     return tuple(levels)
 
   @cache.property
@@ -1703,29 +1739,17 @@ class HierarchicalTopology( Topology ):
     'boundary elements'
 
     basebtopo = self.basetopo.boundary
+    edgepool = itertools.chain.from_iterable( elem.edges for elem in self if elem.transform.contained_in( self.basetopo.border_transforms ) )
     belems = []
-    for belem in log.iter( 'elem', basebtopo ):
-      trans = belem.transform.promote_trim( self.ndims )
-      if trans.lookup( self.edict ):
-        # basetopo boundary element is as fine or finer than element found in
-        # self; this may happen for example when basetopo is a trimmed topology
-        belems.append( belem )
+    for edge in edgepool: # superset of boundary elements
+      try:
+        iedge, tail = edge.transform.promote_and_lookup( basebtopo.edict )
+      except KeyError:
+        pass
       else:
-        elems = [ elem for elem in self if elem.transform.startswith(trans) ]
-        belems.extend( element.Element( edge.reference, edge.transform,
-            transform.CanonicalTransformChain( belem.opposite + edge.transform[len(belem.transform):] ) )
-          for elem in elems for edge in elem.edges if edge.transform.startswith(belem.transform) )
+        opptrans = basebtopo.elements[iedge].opposite << tail
+        belems.append( element.Element( edge.reference, edge.transform, opptrans ) )
     return basebtopo.hierarchical( belems, precise=True )
-
-  @cache.property
-  def interfaces( self ):
-    'interface elements'
-
-    ielems = [ ielem for topo in log.iter( 'level', self.levels ) for ielem in topo.interfaces
-      if ielem.transform.promote_trim( self.ndims ) in self.edict and ielem.opposite.promote_trim( self.ndims ).lookup( self.edict )
-      or ielem.opposite.promote_trim( self.ndims ) in self.edict and ielem.transform.promote_trim( self.ndims ).lookup( self.edict ) ]
-    baseitopo = self.basetopo.interfaces
-    return baseitopo.hierarchical( ielems, precise=True )
 
   @log.title
   def basis( self, name, *args, **kwargs ):
@@ -1757,15 +1781,17 @@ class HierarchicalTopology( Topology ):
         trans = elem.transform
         idofs, = dofmap.eval( elem )
         stds = stdmap[trans]
-        mytrans = trans.lookup( self.edict )
-        if mytrans == trans: # trans is in domain
-          remaining -= 1
-          touchtopo[idofs] = True
+        try:
+          ielem, tail = trans.promote_and_lookup( self.edict )
+        except KeyError: # trans is coarser than domain
           myelems.append(( trans, idofs, stds ))
-        elif mytrans: # trans is finer than domain
-          supported[idofs] = False
-        else: # trans is coarser than domain
-          myelems.append(( trans, idofs, stds ))
+        else:
+          if tail: # trans is finer than domain
+            supported[idofs] = False
+          else: # trans is in domain
+            remaining -= 1
+            touchtopo[idofs] = True
+            myelems.append(( trans, idofs, stds ))
   
       keep = numpy.logical_and( supported, touchtopo ) # THE refinement law
       renumber = (ndofs-1) + keep.cumsum()
@@ -1860,13 +1886,16 @@ BndAxis.isdim = False
 def common_refine( topo1, topo2 ):
   assert topo1.ndims == topo2.ndims
   elements = []
-  topo2trans = { elem.transform: elem for elem in topo2 }
+  select2 = numpy.ones( len(topo2), dtype=bool )
   for elem1 in topo1:
-    head = elem1.transform.lookup( topo2trans )
-    if head:
+    try:
+      ielem2, tail = elem1.transform.promote_and_lookup( topo2.edict )
+    except KeyError:
+      pass
+    else:
       elements.append( elem1 )
-      topo2trans[ head ] = None
-  elements.extend( elem for elem in topo2trans.values() if elem is not None )
+      select2[ielem2] = False
+  elements.extend( elem for ielem, elem in enumerate(topo2) if select2[ielem] )
   return UnstructuredTopology( topo1.ndims, elements )
 
 _flipname = lambda s: s[1:] if s.startswith('~') else '~'+s
