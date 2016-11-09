@@ -309,7 +309,8 @@ class Promote( Evaluable ):
     Evaluable.__init__( self, args=[trans] )
 
   def evalf( self, trans ):
-    return trans.promote( self.ndims )
+    head, tail = trans.promote( self.ndims )
+    return head << tail
 
   def _edit( self, op ):
     return Promote( self.ndims, op(self.trans) )
@@ -702,7 +703,7 @@ class DofMap( Array ):
   def evalf( self, trans ):
     'evaluate'
 
-    head, tail = trans.lookup_split( self.dofmap )
+    head, tail = trans.lookup( self.dofmap )
     return self.dofmap[head][_]
 
   def _edit( self, op ):
@@ -945,7 +946,7 @@ class Function( Array ):
     'evaluate'
 
     fvals = []
-    head, tail = trans.lookup_split( self.stdmap )
+    head, tail = trans.lookup( self.stdmap )
     for std, keep in self.stdmap[head]:
       if std:
         stdpoints = cache[transform.apply]( tail, points )
@@ -1916,7 +1917,7 @@ class Sampled( Array ):
     Array.__init__( self, args=[trans,POINTS], shape=shape, dtype=float )
 
   def evalf( self, trans, points ):
-    head, tail = trans.lookup_split( self.data )
+    head, tail = trans.lookup( self.data )
     evalpoints = tail.apply( points )
     myvals, mypoints = self.data[head]
     assert mypoints.shape == evalpoints.shape and numpy.all( mypoints == evalpoints ), 'Illegal point set'
@@ -1935,7 +1936,7 @@ class Elemwise( Array ):
     Array.__init__( self, args=[trans], shape=shape, dtype=float )
 
   def evalf( self, trans ):
-    head, tail = trans.lookup_split( self.fmap )
+    head, tail = trans.lookup( self.fmap )
     value = self.fmap.get( head, self.default )
     assert value is not None, 'transformation not found: {}'.format( head )
     value = numpy.asarray( value )

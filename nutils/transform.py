@@ -18,19 +18,6 @@ class TransformChain( tuple ):
 
   __slots__ = ()
 
-  def startswith( self, other ):
-    return self[:len(other)] == other
-
-  @property
-  def trimmed( self ):
-    for i in range( len(self)-1, -1, -1 ):
-      if self[i].todims != self.fromdims:
-        return self.slicefrom( i+1 )
-    return self
-
-  def slicefrom( self, i ):
-    return self.__class__( self[i:] )
-
   @property
   def todims( self ):
     return self[0].todims
@@ -41,11 +28,7 @@ class TransformChain( tuple ):
 
   @property
   def isflipped( self ):
-    return sum( trans.isflipped for trans in self ) % 2 == 1
-
-  @property
-  def orientation( self ):
-    return -1 if self.isflipped else +1
+    return isflipped( self )
 
   def __lshift__( self, other ):
     # self << other
@@ -81,10 +64,7 @@ class TransformChain( tuple ):
 
   @property
   def offset( self ):
-    offset = self[-1].offset
-    for trans in self[-2::-1]:
-      offset = trans.apply( offset )
-    return offset
+    return offset( self )
 
   @property
   def linear( self ):
@@ -126,58 +106,37 @@ class TransformChain( tuple ):
           items[i:i+2] = trans21
     return CanonicalTransformChain( items )
 
-  def promote_trim( self, ndims ):
-    raise Exception( 'promotion only possible from canonical form' )
+  def promote( self, ndims ):
+    head = self.canonical
+    tail = ()
+    while head.fromdims < ndims:
+      head, tmp = head.promote_helper()
+      tail = tmp + tail
+    return head, CanonicalTransformChain(tail)
 
-  def lookup_split( self, transforms ):
-    # to be replaced by bisection soon
-    head = self
-    while head:
-      if head in transforms:
-        return head, self.slicefrom(len(head))
-      head = head[:-1]
-    return CanonicalTransformChain(), self
-
-  def promote_and_lookup( self, transforms ):
-    if isinstance( transforms, (list,tuple) ):
-      transforms = dict( zip( transforms, range(len(transforms)) ) )
-    assert isinstance( transforms, dict )
+  def lookup( self, transforms ):
     for trans in transforms:
       ndims = trans.fromdims
       break
-    head, tail = self.canonical.promote_split( ndims )
+    head, tail = self.canonical.promote( ndims )
     while head and head[-1].fromdims == ndims:
-      try:
-        item = transforms[head]
-      except KeyError:
-        pass
-      else:
-        return item, TransformChain(tail)
+      if head in transforms:
+        return CanonicalTransformChain(head), TransformChain(tail)
       tail = head[-1:] + tail
       head = head[:-1]
-    raise KeyError( self )
 
-  def contained_in( self, transforms ):
-    for trans in transforms:
-      ndims = trans.fromdims
-      break
-    head, tail = self.canonical.promote_split( ndims )
-    while head and head[-1].fromdims == ndims:
-      if head in transforms:
-        return True
-      head = head[:-1]
-    return False
+  def lookup_item( self, transforms ):
+    head_tail = self.lookup( transforms )
+    if not head_tail:
+      raise KeyError( self )
+    head, tail = head_tail
+    item = transforms[head] if isinstance( transforms, dict ) \
+      else transforms.index( head )
+    return item, tail
 
 class CanonicalTransformChain( TransformChain ):
 
   __slots__ = ()
-
-  def __lshift__( self, other ):
-    # self << other
-    joint = TransformChain.__lshift__( self, other )
-    if self and other and isinstance( other, CanonicalTransformChain ) and not mayswap( self[-1], other[0] ):
-      joint = CanonicalTransformChain( joint )
-    return joint
 
   @property
   def canonical( self ):
@@ -200,28 +159,6 @@ class CanonicalTransformChain( TransformChain ):
       assert equivalent( head[index:]+(uptrans,), self[index:i] )
       tail = (uptrans,) + self[i:]
     return CanonicalTransformChain(head), CanonicalTransformChain(tail)
-
-  def promote_split( self, ndims ):
-    head = self
-    tail = ()
-    while head.fromdims < ndims:
-      head, tmp = head.promote_helper()
-      tail = tmp + tail
-    return head, CanonicalTransformChain(tail)
-
-  def promote_trim( self, ndims ):
-    head, tail = self.promote_split( ndims )
-    return head
-
-  def promote( self, ndims ):
-    head, tail = self.promote_split( ndims )
-    return head << tail
-
-  def lookup( self, transforms ):
-    # to be replaced by bisection soon
-    head, tail = self.lookup_split( transforms )
-    if head:
-      return CanonicalTransformChain( head )
 
 mayswap = lambda trans1, trans2: isinstance( trans1, Scale ) and trans1.linear == .5 and trans2.todims == trans2.fromdims + 1 and trans2.fromdims > 0
 
@@ -428,9 +365,9 @@ def equivalent( trans1, trans2, flipped=False ):
   if trans1 == trans2:
     return not flipped
   while trans1 and trans2 and trans1[0] == trans2[0]:
-    trans1 = trans1.slicefrom(1)
-    trans2 = trans2.slicefrom(1)
-  return numpy.all( trans1.linear == trans2.linear ) and numpy.all( trans1.offset == trans2.offset ) and trans1.isflipped^trans2.isflipped == flipped
+    trans1 = trans1[1:]
+    trans2 = trans2[1:]
+  return numpy.all( linear(trans1) == linear(trans2) ) and numpy.all( offset(trans1) == offset(trans2) ) and isflipped(trans1)^isflipped(trans2) == flipped
 
 
 ## INSTANCES
@@ -441,13 +378,16 @@ def solve( T1, T2 ): # T1 << x == T2
   assert isinstance( T1, TransformChain )
   assert isinstance( T2, TransformChain )
   while T1 and T2 and T1[0] == T2[0]:
-    T1 = T1.slicefrom(1)
-    T2 = T2.slicefrom(1)
+    T1 = T1[1:]
+    T2 = T2[1:]
   if not T1:
-    return T2
+    return TransformChain(T2)
   # A1 * ( Ax * xi + bx ) + b1 == A2 * xi + b2 => A1 * Ax = A2, A1 * bx + b1 = b2
-  Ax, bx = numeric.solve_exact( T1.linear, T2.linear, T2.offset - T1.offset )
+  Ax, bx = numeric.solve_exact( linear(T1), linear(T2), offset(T2) - offset(T1) )
   return affine( Ax, bx )
+
+def isflipped( chain ):
+  return sum( trans.isflipped for trans in chain ) % 2 == 1
 
 def linear( chain ):
   linear = numpy.array( 1. )
@@ -475,5 +415,10 @@ def apply( chain, points ):
     points = trans.apply( points )
   return points
 
+def offset( chain ):
+  offset = chain[-1].offset
+  for trans in chain[-2::-1]:
+    offset = trans.apply( offset )
+  return offset
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
