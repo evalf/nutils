@@ -300,21 +300,6 @@ class PointShape( Evaluable ):
 
     return points.shape[:-1]
 
-class Promote( Evaluable ):
-  'transform'
-
-  def __init__( self, ndims, trans=TRANS ):
-    self.ndims = ndims
-    self.trans = trans
-    Evaluable.__init__( self, args=[trans] )
-
-  def evalf( self, trans ):
-    head, tail = trans.promote( self.ndims )
-    return head << tail
-
-  def _edit( self, op ):
-    return Promote( self.ndims, op(self.trans) )
-
 # ARRAYFUNC
 #
 # The main evaluable. Closely mimics a numpy array.
@@ -693,7 +678,7 @@ class Constant( Array ):
 class DofMap( Array ):
   'dof axis'
 
-  def __init__( self, dofmap, length, trans ):
+  def __init__( self, dofmap, length, trans=TRANS ):
     'new'
 
     self.trans = trans
@@ -884,63 +869,66 @@ class Product( Array ):
 class RootCoords( Array ):
   'root coords'
 
-  def __init__( self, trans ):
+  def __init__( self, ndims, trans=TRANS ):
     'constructor'
 
-    assert isinstance( trans, Promote )
-    ndims = trans.ndims
     self.trans = trans
     DerivativeTargetBase.__init__( self, args=[POINTS,trans], shape=[ndims], dtype=float )
 
   def evalf( self, points, chain ):
     'evaluate'
 
-    ndims = self.trans.ndims
-    while chain[0].todims != ndims:
-      chain = chain[1:]
-    return transform.apply( chain, points )
+    ndims = len(self)
+    head, tail = chain.promote( ndims )
+    while head and head[0].todims != ndims:
+      head = head[1:]
+    return transform.apply( head + tail, points )
 
   def _derivative( self, var, axes, seen ):
     if isinstance( var, LocalCoords ) and len(var) > 0:
-      return RootTransform( self.trans )[...,:len(var)]
+      return RootTransform( len(self), self.trans )[...,:len(var)]
     return zeros( self.shape+_taketuple(var.shape,axes) )
 
   def _edit( self, op ):
-    return RootCoords( op(self.trans) )
+    return RootCoords( len(self), op(self.trans) )
 
 class RootTransform( Array ):
   'root transform'
 
-  def __init__( self, trans ):
+  def __init__( self, ndims, trans ):
     'constructor'
 
     self.trans = trans
-    Array.__init__( self, args=[trans], shape=(trans.ndims,trans.ndims), dtype=float )
+    Array.__init__( self, args=[trans], shape=(ndims,ndims), dtype=float )
 
-  def evalf( self, trans ):
+  def evalf( self, chain ):
     'transform'
 
-    ndims = self.trans.ndims
-    while trans[0].todims != ndims:
-      trans = trans[1:]
-    return transform.fulllinear( trans )[_]
+    ndims = len(self)
+    head, tail = chain.promote( ndims )
+    while head and head[0].todims != ndims:
+      head = head[1:]
+    return transform.fulllinear( head + tail )[_]
 
   def _derivative( self, var, axes, seen ):
     return zeros( self.shape+_taketuple(var.shape,axes) )
 
   def _edit( self, op ):
-    return RootTransform( op(self.trans) )
+    return RootTransform( len(self), op(self.trans) )
 
 class Function( Array ):
   'function'
 
-  def __init__( self, stdmap, igrad, length, trans ):
+  def __init__( self, stdmap, igrad, length, trans=TRANS ):
     'constructor'
 
     self.trans = trans
     self.stdmap = stdmap
+    for tr in stdmap:
+      break
+    ndims = tr.fromdims
     self.igrad = igrad
-    Array.__init__( self, args=(CACHE,POINTS,trans), shape=(length,)+(trans.ndims,)*igrad, dtype=float )
+    Array.__init__( self, args=(CACHE,POINTS,trans), shape=(length,)+(ndims,)*igrad, dtype=float )
 
   def evalf( self, cache, points, trans ):
     'evaluate'
@@ -1906,7 +1894,7 @@ class Sign( Array ):
 class Sampled( Array ):
   'sampled'
 
-  def __init__ ( self, data, trans ):
+  def __init__ ( self, data, trans=TRANS ):
     assert isinstance(data,dict)
     self.data = data.copy()
     self.trans = trans
@@ -1917,9 +1905,8 @@ class Sampled( Array ):
     Array.__init__( self, args=[trans,POINTS], shape=shape, dtype=float )
 
   def evalf( self, trans, points ):
-    head, tail = trans.lookup( self.data )
+    (myvals,mypoints), tail = trans.lookup_item( self.data )
     evalpoints = tail.apply( points )
-    myvals, mypoints = self.data[head]
     assert mypoints.shape == evalpoints.shape and numpy.all( mypoints == evalpoints ), 'Illegal point set'
     return myvals
 
@@ -1929,16 +1916,19 @@ class Sampled( Array ):
 class Elemwise( Array ):
   'elementwise constant data'
 
-  def __init__( self, fmap, shape, trans, default=None ):
+  def __init__( self, fmap, shape, default=None, trans=TRANS ):
     self.fmap = fmap
     self.default = default
     self.trans = trans
     Array.__init__( self, args=[trans], shape=shape, dtype=float )
 
   def evalf( self, trans ):
-    head, tail = trans.lookup( self.fmap )
-    value = self.fmap.get( head, self.default )
-    assert value is not None, 'transformation not found: {}'.format( head )
+    try:
+      value, tail = trans.lookup_item( self.fmap )
+    except KeyError:
+      value = self.default
+      if value is None:
+        raise
     value = numpy.asarray( value )
     assert value.shape == self.shape, 'wrong shape: {} != {}'.format( value.shape, self.shape )
     return value[_]
@@ -1947,7 +1937,7 @@ class Elemwise( Array ):
     return zeros( self.shape+_taketuple(var.shape,axes) )
 
   def _edit( self, op ):
-    return Elemwise( self.fmap, self.shape, op(self.trans), self.default )
+    return Elemwise( self.fmap, self.shape, self.default, op(self.trans) )
 
 class Eig( Evaluable ):
   'Eig'
@@ -2766,8 +2756,8 @@ jump = lambda arg: opposite(arg) - arg
 add_T = lambda arg, axes=(-2,-1): swapaxes( arg, axes ) + arg
 edit = lambda arg, f: arg._edit(f) if isevaluable(arg) else arg
 blocks = lambda arg: asarray(arg).blocks
-rootcoords = lambda ndims: RootCoords( Promote(ndims) )
-sampled = lambda data, ndims: Sampled( data, Promote(ndims) )
+rootcoords = lambda ndims: RootCoords( ndims )
+sampled = lambda data, ndims: Sampled( data )
 
 class _eye:
   'identity'
@@ -3598,16 +3588,12 @@ def function( fmap, nmap, ndofs, ndims ):
   length = '~%d' % ndofs
   for trans in nmap:
     break
-  trans = Promote( trans.fromdims )
-  func = Function( fmap, igrad=0, length=length, trans=trans )
-  dofmap = DofMap( nmap, length=length, trans=trans )
+  func = Function( fmap, igrad=0, length=length )
+  dofmap = DofMap( nmap, length=length )
   return Inflate( func, dofmap, ndofs, axis=0 )
 
 def elemwise( fmap, shape, default=None ):
-  for trans in fmap:
-    break
-  trans = Promote( trans.fromdims )
-  return Elemwise( fmap=fmap, shape=shape, trans=trans, default=default )
+  return Elemwise( fmap=fmap, shape=shape, default=default )
 
 def take( arg, index, axis ):
   'take index'
