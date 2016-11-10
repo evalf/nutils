@@ -72,6 +72,28 @@ log_html = '''\
 </ul>
 '''
 
+log_indent = '''\
+c iterator
+ c iter 0 (17%)
+  i a
+ c iter 1 (50%)
+  i b
+ c iter 2 (83%)
+  i c
+c empty
+c levels
+ p path
+ e error
+ w warning
+ u user
+ i info
+ p progress
+c exception
+ e ValueError(&#x27;test&#x27;,)
+ |   File &quot;??&quot;, line ??, in ??
+ |     raise ValueError( &#x27;test&#x27; )
+'''
+
 def generate_log():
   with nutils.log.context( 'iterator' ):
     for i in nutils.log.iter( 'iter', 'abc' ):
@@ -93,6 +115,7 @@ def generate_log():
 @register( 'stdout-verbose3', nutils.log.StdoutLog, log_stdout3, verbose=3 )
 @register( 'rich_output', nutils.log.RichOutputLog, log_rich_output )
 @register( 'html', nutils.log.HtmlLog, log_html )
+@register( 'indent', nutils.log.IndentLog, log_indent )
 def logoutput( logcls, logout, verbose=len( nutils.log.LEVELS ) ):
 
   @unittest

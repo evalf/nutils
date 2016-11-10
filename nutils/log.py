@@ -215,6 +215,32 @@ class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
     self._print( '<li class="{}">{}</li>'.format( html.escape( level ), escaped_text ) )
     self._flush()
 
+class IndentLog( HtmlInsertAnchor, ContextTreeLog ):
+  '''Output indented html snippets.'''
+
+  def __init__( self, file ):
+    self._print = functools.partial( print, file=file )
+    self._flush = file.flush
+    self._prefix = ''
+    super().__init__()
+
+  def _print_push_context( self, title ):
+    title = title.replace( '\n', '' ).replace( '\r', '')
+    self._print( '{}c {}'.format( self._prefix, html.escape( title ) ) )
+    self._flush()
+    self._prefix += ' '
+
+  def _print_pop_context( self ):
+    self._prefix = self._prefix[:-1]
+
+  def _print_item( self, level, text ):
+    text = self._insert_anchors( level, html.escape( text ) )
+    level = html.escape( level[0] )
+    for line in text.splitlines():
+      self._print( '{}{} {}'.format( self._prefix, level, line ) )
+      level = '|'
+    self._flush()
+
 class TeeLog( Log ):
   '''Simultaneously interface multiple logs'''
 
