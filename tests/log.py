@@ -44,18 +44,32 @@ log_rich_output = '''\
 '''
 
 log_html = '''\
-<span class="line">iterator &middot; iter 0 (17%) &middot; <span class="info">a</span></span>
-<span class="line">iterator &middot; iter 1 (50%) &middot; <span class="info">b</span></span>
-<span class="line">iterator &middot; iter 2 (83%) &middot; <span class="info">c</span></span>
-<span class="line">levels &middot; <span class="path">path</span></span>
-<span class="line">levels &middot; <span class="error">error</span></span>
-<span class="line">levels &middot; <span class="warning">warning</span></span>
-<span class="line">levels &middot; <span class="user">user</span></span>
-<span class="line">levels &middot; <span class="info">info</span></span>
-<span class="line">levels &middot; <span class="progress">progress</span></span>
-<span class="line">exception &middot; <span class="error">ValueError(&#x27;test&#x27;,)
+<li class="context">iterator</li><ul>
+<li class="context">iter 0 (17%)</li><ul>
+<li class="info">a</li>
+</ul>
+<li class="context">iter 1 (50%)</li><ul>
+<li class="info">b</li>
+</ul>
+<li class="context">iter 2 (83%)</li><ul>
+<li class="info">c</li>
+</ul>
+</ul>
+<li class="context">empty</li><ul>
+</ul>
+<li class="context">levels</li><ul>
+<li class="path">path</li>
+<li class="error">error</li>
+<li class="warning">warning</li>
+<li class="user">user</li>
+<li class="info">info</li>
+<li class="progress">progress</li>
+</ul>
+<li class="context">exception</li><ul>
+<li class="error">ValueError(&#x27;test&#x27;,)
   File &quot;??&quot;, line ??, in ??
-    raise ValueError( &#x27;test&#x27; )</span></span>
+    raise ValueError( &#x27;test&#x27; )</li>
+</ul>
 '''
 
 def generate_log():

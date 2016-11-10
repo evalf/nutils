@@ -194,20 +194,26 @@ class HtmlInsertAnchor( Log ):
       escaped_text = re.sub( r'\b\w+([.]\w+)\b', cls._path2href, escaped_text )
     return escaped_text
 
-class HtmlLog( HtmlInsertAnchor, ContextLog ):
+class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
   '''Output html nested lists.'''
 
-  def __init__( self, htmlfile ):
-    self.htmlfile = htmlfile
+  def __init__( self, file ):
+    self._print = functools.partial( print, file=file )
+    self._flush = file.flush
     super().__init__()
 
-  def write( self, level, text ):
-    if text is None:
-      return
-    text = self._insert_anchors( level, html.escape( text ) )
-    line = ' &middot; '.join( self._context + ['<span class="{}">{}</span>'.format(level,text)] )
-    self.htmlfile.write( '<span class="line">{}</span>\n'.format(line) )
-    self.htmlfile.flush()
+  def _print_push_context( self, title ):
+    self._print( '<li class="context">{}</li><ul>'.format( html.escape( title ) ) )
+    self._flush()
+
+  def _print_pop_context( self ):
+    self._print( '</ul>' )
+    self._flush()
+
+  def _print_item( self, level, text ):
+    escaped_text = self._insert_anchors( level, html.escape( text ) )
+    self._print( '<li class="{}">{}</li>'.format( html.escape( level ), escaped_text ) )
+    self._flush()
 
 class TeeLog( Log ):
   '''Simultaneously interface multiple logs'''
