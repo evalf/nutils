@@ -12,7 +12,7 @@ The log module provides print methods ``debug``, ``info``, ``user``,
 stdout as well as to an html formatted log file if so configured.
 """
 
-import sys, time, warnings, functools, itertools, re, abc, contextlib
+import sys, time, warnings, functools, itertools, re, abc, contextlib, html, urllib.parse
 from . import core
 
 warnings.showwarning = lambda message, category, filename, lineno, *args: \
@@ -170,25 +170,41 @@ class RichOutputLog( StdoutLog ):
     else:
       return '\033[1;30m{}\033[{};3{}m{}\033[0m'.format( string[:n], boldid, colorid, string[n:] )
 
-class HtmlLog( ContextLog ):
+class HtmlInsertAnchor( Log ):
+  '''Mix-in class for HTML-based loggers that inserts anchor tags for paths.
+
+  .. automethod:: _insert_anchors
+  '''
+
+  @staticmethod
+  def _path2href( match ):
+    whitelist = ['.jpg','.png','.svg','.txt','.mp4','.webm'] + list( core.getprop( 'plot_extensions', [] ) )
+    filename = html.unescape( match.group(0) )
+    ext = html.unescape( match.group(1) )
+    fmt = '<a href="{href}"' + (' class="plot"' if ext in whitelist else '') + '>{name}</a>'
+    return fmt.format( href=urllib.parse.quote( filename ), name=html.escape( filename ) )
+
+  @classmethod
+  def _insert_anchors( cls, level, escaped_text ):
+    '''Insert anchors for all paths in ``escaped_text``.
+
+    .. Note:: ``escaped_text`` should be valid html (e.g. the result of ``html.escape(text)``).
+    '''
+    if level == 'path':
+      escaped_text = re.sub( r'\b\w+([.]\w+)\b', cls._path2href, escaped_text )
+    return escaped_text
+
+class HtmlLog( HtmlInsertAnchor, ContextLog ):
   '''Output html nested lists.'''
 
   def __init__( self, htmlfile ):
     self.htmlfile = htmlfile
     super().__init__()
 
-  @staticmethod
-  def _path2href( match ):
-    whitelist = ['.jpg','.png','.svg','.txt','.mp4','.webm'] + list( core.getprop( 'plot_extensions', [] ) )
-    filename = match.group(0)
-    ext = match.group(1)
-    return ( '<a href="{0}">{0}</a>' if ext not in whitelist else '<a href="{0}" name="{0}" class="plot">{0}</a>' ).format(filename)
-
   def write( self, level, text ):
     if text is None:
       return
-    if level == 'path':
-      text = re.sub( r'\b\w+([.]\w+)\b', self._path2href, text )
+    text = self._insert_anchors( level, html.escape( text ) )
     line = ' &middot; '.join( self._context + ['<span class="{}">{}</span>'.format(level,text)] )
     self.htmlfile.write( '<span class="line">{}</span>\n'.format(line) )
     self.htmlfile.flush()

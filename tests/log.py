@@ -53,9 +53,9 @@ log_html = '''\
 <span class="line">levels &middot; <span class="user">user</span></span>
 <span class="line">levels &middot; <span class="info">info</span></span>
 <span class="line">levels &middot; <span class="progress">progress</span></span>
-<span class="line">exception &middot; <span class="error">ValueError('test',)
-  File "??", line ??, in ??
-    raise ValueError( 'test' )</span></span>
+<span class="line">exception &middot; <span class="error">ValueError(&#x27;test&#x27;,)
+  File &quot;??&quot;, line ??, in ??
+    raise ValueError( &#x27;test&#x27; )</span></span>
 '''
 
 def generate_log():
