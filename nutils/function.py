@@ -873,7 +873,7 @@ class RootCoords( Array ):
 
   def _derivative( self, var, axes, seen ):
     if isinstance( var, LocalCoords ) and len(var) > 0:
-      return RootTransform( len(self), self.trans )[...,:len(var)]
+      return zeropad( RootTransform( len(self), self.trans ), axis=1, length=len(var) )
     return zeros( self.shape+_taketuple(var.shape,axes) )
 
   def _edit( self, op ):
@@ -886,7 +886,7 @@ class RootTransform( Array ):
     'constructor'
 
     self.trans = trans
-    Array.__init__( self, args=[trans], shape=(ndims,ndims), dtype=float )
+    Array.__init__( self, args=[trans], shape=(ndims,'nd'), dtype=float )
 
   def evalf( self, chain ):
     'transform'
@@ -903,6 +903,33 @@ class RootTransform( Array ):
   def _edit( self, op ):
     return RootTransform( len(self), op(self.trans) )
 
+class ZeroPad( Array ):
+  'zero pad to length'
+
+  def __init__( self, array, axis, length ):
+    self.array = array
+    self.axis = axis
+    self.length = length
+    shape = list(array.shape)
+    shape[axis] = length
+    Array.__init__( self, args=[array], shape=shape, dtype=array.dtype )
+
+  def evalf( self, array ):
+    if array.shape[self.axis+1] >= self.length:
+      z = array[ (slice(None),)*(self.axis+1)+(slice(self.length),) ]
+    else:
+      shape = list(array.shape)
+      shape[self.axis+1] = self.length
+      z = numpy.zeros( shape, dtype=array.dtype )
+      z[ (slice(None),)*(self.axis+1)+(slice(array.shape[self.axis+1]),) ] = array
+    return z
+
+  def _derivative( self, var, axes, seen ):
+    return zeropad( derivative(self.array,var,axes,seen), self.axis, self.length )
+
+  def _edit( self, op ):
+    return zeropad( op(self.array), self.axis, self.length )
+
 class Function( Array ):
   'function'
 
@@ -911,11 +938,8 @@ class Function( Array ):
 
     self.trans = trans
     self.stdmap = stdmap
-    for tr in stdmap:
-      break
-    ndims = tr.fromdims
     self.igrad = igrad
-    Array.__init__( self, args=(CACHE,POINTS,trans), shape=(length,)+(ndims,)*igrad, dtype=float )
+    Array.__init__( self, args=(CACHE,POINTS,trans), shape=(length,)+('nd',)*igrad, dtype=float )
 
   def evalf( self, cache, points, trans ):
     'evaluate'
@@ -942,7 +966,7 @@ class Function( Array ):
 
   def _derivative( self, var, axes, seen ):
     if isinstance( var, LocalCoords ):
-      return Function( self.stdmap, self.igrad+1, self.shape[0], self.trans )[...,:len(var)]
+      return zeropad( Function( self.stdmap, self.igrad+1, self.shape[0], self.trans ), axis=self.ndim, length=len(var) )
     return zeros( self.shape+_taketuple(var.shape,axes), dtype=self.dtype )
 
   def _take( self, indices, axis ):
@@ -2046,6 +2070,11 @@ class Zeros( Array ):
   def _edit( self, op ):
     return self
 
+  def _zeropad( self, length, axis ):
+    shape = list(self.shape)
+    shape[axis] = length
+    return zeros( shape, dtype=self.dtype )
+
 class Inflate( Array ):
   'inflate'
 
@@ -2787,6 +2816,20 @@ def asarray( arg ):
     return Constant( array )
 
   return stack( arg, axis=0 )
+
+def zeropad( arg, axis, length ):
+  'zero pad'
+
+  arg = asarray(arg)
+  axis = numeric.normdim( arg.ndim, axis )
+  retval = _call( arg, '_zeropad', length, axis )
+  if retval is not None:
+    shape = list(arg.shape)
+    shape[axis] = length
+    assert retval.shape == tuple(shape)
+    return retval
+
+  return ZeroPad( arg, axis=axis, length=length )
 
 def insert( arg, n ):
   'insert axis'
