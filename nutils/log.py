@@ -74,6 +74,65 @@ class ContextLog( Log ):
     finally:
       self._pop_context()
 
+class ContextTreeLog( ContextLog ):
+  '''Base class for loggers that display contexts as a tree.
+
+  .. automethod:: _print_push_context
+  .. automethod:: _print_pop_context
+  .. automethod:: _print_item
+  '''
+
+  def __init__( self ):
+    super().__init__()
+    self._printed_context = 0
+
+  def _pop_context( self ):
+    super()._pop_context()
+    if self._printed_context > len( self._context ):
+      self._printed_context -= 1
+      self._print_pop_context()
+
+  def write( self, level, text ):
+    '''Write ``text`` with log level ``level`` to the log.
+
+    This method makes sure the current context is printed and calls
+    :meth:`_print_item`.
+    '''
+    for title in self._context[self._printed_context:]:
+      self._print_push_context( title )
+      self._printed_context += 1
+    if text is not None:
+      self._print_item( level, text )
+
+  @abc.abstractmethod
+  def _print_push_context( self, title ):
+    '''Push a context to the log.
+
+    This method is called just before the first item of this context is added
+    to the log.  If no items are added to the log within this context or
+    children of this context this method nor :meth:`_print_pop_context` will be
+    called.
+
+    .. Note:: This function is abstract.
+    '''
+
+  @abc.abstractmethod
+  def _print_pop_context( self ):
+    '''Pop a context from the log.
+
+    This method is called whenever a context is exited, but only if
+    :meth:`_print_push_context` has been called before for the same context.
+
+    .. Note:: This function is abstract.
+    '''
+
+  @abc.abstractmethod
+  def _print_item( self, level, text ):
+    '''Add an item to the log.
+
+    .. Note:: This function is abstract.
+    '''
+
 class StdoutLog( ContextLog ):
   '''Output plain text to stream.'''
 
