@@ -482,19 +482,21 @@ def inv_exact( A ):
 
 def ext( A ):
   """Exterior
-  For array of shape (...,n,n-1) return n-vector ex such that ex.array = 0 and
+  For array of shape (n,n-1) return n-vector ex such that ex.array = 0 and
   det(arr;ex) = ex.ex"""
-  A = numpy.asarray( A )
-  assert A.ndim >= 2
-  if A.shape[-2:] == (1,0):
-    E = numpy.ones( A.shape[:-1] )
-  elif A.shape[-2:] == (2,1):
-    E = numpy.concatenate( [ A[...,1,:], -A[...,0,:] ], axis=-1 )
-  elif A.shape[-2:] == (3,2):
-    E = numpy.cross( A[...,:,0], A[...,:,1], axis=-1 )
+  A = numpy.asarray(A)
+  assert A.ndim == 2 and A.shape[0] == A.shape[1]+1
+  if len(A) == 1:
+    ext = numpy.ones( 1 )
+  elif len(A) == 2:
+    ((a,),(b,)) = A
+    ext = numpy.array((b,-a))
+  elif len(A) == 3:
+    ((a,b),(c,d),(e,f)) = A
+    ext = numpy.array((c*f-e*d,e*b-a*f,a*d-c*b))
   else:
     raise NotImplementedError( 'shape=%s' % (A.shape,) )
-  return E
+  return ext
 
 def fextract( A, single=False ):
   A = numpy.asarray( A, dtype=numpy.float64 )

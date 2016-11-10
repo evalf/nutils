@@ -119,7 +119,7 @@ class TransformChain( tuple ):
       ndims = trans.fromdims
       break
     head, tail = self.canonical.promote( ndims )
-    while head and head[-1].fromdims == ndims:
+    while head:
       if head in transforms:
         return CanonicalTransformChain(head), TransformChain(tail)
       tail = head[-1:] + tail
@@ -250,6 +250,11 @@ class Updim( Matrix ):
     Matrix.__init__( self, linear, offset )
     assert self.todims > self.fromdims
 
+  @cache.property
+  def ext( self ):
+    ext = numeric.ext( self.linear )
+    return -ext if self.isflipped else ext
+
   @property
   def flipped( self ):
     return Updim( self.linear, self.offset, not self.isflipped )
@@ -359,15 +364,15 @@ def roottransedges( name, shape ):
 def maptrans( coords, vertices ):
   return CanonicalTransformChain(( MapTrans( coords, vertices ), ))
 
-def equivalent( trans1, trans2, flipped=False ):
+def equivalent( trans1, trans2 ):
   trans1 = TransformChain( trans1 )
   trans2 = TransformChain( trans2 )
   if trans1 == trans2:
-    return not flipped
+    return True
   while trans1 and trans2 and trans1[0] == trans2[0]:
     trans1 = trans1[1:]
     trans2 = trans2[1:]
-  return numpy.all( linear(trans1) == linear(trans2) ) and numpy.all( offset(trans1) == offset(trans2) ) and isflipped(trans1)^isflipped(trans2) == flipped
+  return numpy.all( fulllinear(trans1) == fulllinear(trans2) ) and numpy.all( offset(trans1) == offset(trans2) )
 
 
 ## INSTANCES
@@ -397,18 +402,16 @@ def linear( chain ):
   return linear
 
 def fulllinear( chain ):
+  scale = 1
   linear = numpy.eye( chain[-1].fromdims )
   for trans in reversed(chain):
     if trans.linear.ndim == 0:
-      linear = trans.linear * linear
+      scale *= trans.linear
     else:
       linear = numpy.dot( trans.linear, linear )
-      if linear.shape[0] != linear.shape[1]:
-        n = numeric.ext( linear )
-        if trans.isflipped:
-          n = -n
-        linear = numpy.concatenate( [ linear, n[:,_] ], axis=1 )
-  return linear
+      if trans.todims > trans.fromdims:
+        linear = numpy.concatenate( [ linear, trans.ext[:,_] ], axis=1 )
+  return linear * scale
 
 def apply( chain, points ):
   for trans in reversed(chain):
