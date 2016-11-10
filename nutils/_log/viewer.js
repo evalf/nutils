@@ -240,7 +240,7 @@ function Nutils() {
 			this._links.each(function () {
         var $a = $(this);
         var url = $a.attr('href');
-        var hash = $a.attr('name');
+        var hash = url;
 
 				// Add gallery
         var gal = self.getGalleryName(url);
@@ -700,7 +700,7 @@ $(function (){
     // Focus on the hash element
     var hash = window.location.hash.substring(1);
     if( hash.length ) {
-      var $sel = $('a[name="' + hash + '"]');
+      var $sel = $('a[href="' + hash + '"]');
       nutils.__init__( $sel );
     } else {
       nutils.__init__();
