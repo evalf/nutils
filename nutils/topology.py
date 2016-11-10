@@ -77,56 +77,7 @@ class Topology( object ):
       else SubtractionTopology( self, other )
 
   def __mul__( self, other ):
-    'element products'
-
-    quad = element.getsimplex(1)**2
-    ndims = self.ndims + other.ndims
-    eye = numpy.eye( ndims, dtype=int )
-    self_trans = transform.affine(eye[:self.ndims], numpy.zeros(self.ndims), isflipped=False )
-    other_trans = transform.affine(eye[self.ndims:], numpy.zeros(other.ndims), isflipped=False )
-
-    if any( elem.reference != quad for elem in self ) or any( elem.reference != quad for elem in other ):
-      return UnstructuredTopology( self.ndims+other.ndims, [ element.Element( elem1.reference * elem2.reference, elem1.transform << self_trans, elem2.transform << other_trans )
-        for elem1 in self for elem2 in other ] )
-
-    elements = []
-    self_vertices = [ elem.vertices for elem in self ]
-    if self == other:
-      other_vertices = self_vertices
-      issym = False#True
-    else:
-      other_vertices = [ elem.vertices for elem in other ]
-      issym = False
-    for i, elemi in enumerate(self):
-      lookup = { v: n for n, v in enumerate(self_vertices[i]) }
-      for j, elemj in enumerate(other):
-        if issym and i == j:
-          reference = element.NeighborhoodTensorReference( elemi.reference, elemj.reference, 0, (0,0) )
-          elements.append( element.Element( reference, elemi.transform << self_trans, elemj.transform << other_trans ) )
-          break
-        common = [ (lookup[v],n) for n, v in enumerate(other_vertices[j]) if v in lookup ]
-        if not common:
-          neighborhood = -1
-          transf = 0, 0
-        elif len(common) == 4:
-          neighborhood = 0
-          assert elemi == elemj
-          transf = 0, 0
-        elif len(common) == 2:
-          neighborhood = 1
-          vertex = (0,2), (2,3), (3,1), (1,0), (2,0), (3,2), (1,3), (0,1)
-          transf = tuple( vertex.index(v) for v in zip(*common) )
-        elif len(common) == 1:
-          neighborhood = 2
-          transf = tuple( (0,3,1,2)[v] for v in common[0] )
-        else:
-          raise ValueError( 'Unknown neighbor type %i' % neighborhood )
-        reference = element.NeighborhoodTensorReference( elemi.reference, elemj.reference, neighborhood, transf )
-        elements.append( element.Element( reference, elemi.transform << self_trans, elemj.transform << other_trans ) )
-        if issym:
-          reference = element.NeighborhoodTensorReference( elemj.reference, elemi.reference, neighborhood, transf[::-1] )
-          elements.append( element.Element( reference, elemj.transform << self_trans, elemi.transform << other_trans ) )
-    return UnstructuredTopology( self.ndims+other.ndims, elements )
+    return ProductTopology( self, other )
 
   @cache.property
   def edict( self ):
@@ -759,7 +710,10 @@ class ItemTopology( Topology ):
       return self.basetopo.__getitem__( item )
     topo = EmptyTopology( self.ndims )
     for name in item[0].split( ',' ):
-      topo |= self.subtopos[name][item[1:]]
+      try:
+        topo |= self.subtopos[name][item[1:]]
+      except KeyError:
+        topo |= self.basetopo[name][item[1:]]
     return topo
 
   def __setitem__( self, item, topo ):
@@ -790,6 +744,10 @@ class ItemTopology( Topology ):
   @property
   def border_transforms( self ):
     return self.basetopo.border_transforms
+
+  @property
+  def structure( self ):
+    return self.basetopo.structure
 
   @property
   def elements( self ):
@@ -841,6 +799,11 @@ class OppositeTopology( Topology ):
   def __init__( self, basetopo ):
     self.basetopo = basetopo
     Topology.__init__( self, basetopo.ndims )
+
+  def __getitem__( self, item ):
+    if isinstance( item, str ):
+      return self.basetopo[_flipname(item)]
+    raise KeyError( item )
 
   def __iter__( self ):
     return ( element.Element( elem.reference, elem.opposite, elem.transform ) for elem in self.basetopo )
@@ -1833,6 +1796,71 @@ class RevolvedTopology( Topology ):
   def refined_by( self, refine ):
     return RevolvedTopology( self.basetopo.refined_by(refine) )
 
+class ProductTopology( Topology ):
+  'product topology'
+
+  def __init__( self, topo1, topo2 ):
+    self.topo1 = topo1
+    self.topo2 = topo2
+    Topology.__init__( self, topo1.ndims+topo2.ndims )
+
+  def __len__( self ):
+    return len(self.topo1) * len(self.topo2)
+
+  @property
+  def structure( self ):
+    return self.topo1.structure[(...,)+(_,)*self.topo2.ndims] * self.topo2.structure
+
+  @property
+  def elements( self ):
+    return ( numpy.array( self.topo1.elements, dtype=object )[:,_] * numpy.array( self.topo2.elements, dtype=object )[_,:] ).ravel()
+
+  def __iter__( self ):
+    return self.elements.flat
+
+  @property
+  def refined( self ):
+    return self.topo1.refined * self.topo2.refined
+
+  def __getitem__( self, item ):
+    if isinstance(item,tuple) and len(item) == self.ndims:
+      return self.topo1[item[:self.topo1.ndims]] * self.topo2[item[self.topo1.ndims:]]
+    try:
+      subtopo1 = self.topo1[item]
+    except KeyError:
+      subtopo1 = None
+    try:
+      subtopo2 = self.topo2[item]
+    except KeyError:
+      subtopo2 = None
+    if subtopo1 and subtopo2:
+      return subtopo1 * subtopo2
+    if subtopo1:
+      return subtopo1 * self.topo2
+    if subtopo2:
+      return self.topo1 * subtopo2
+    raise KeyError( item )
+
+  def basis( self, name, *args, **kwargs ):
+    def _split( arg ):
+      if isinstance( arg, (list,tuple) ):
+        assert len(arg) == self.ndims
+        return arg[:self.topo1.ndims], arg[self.topo1.ndims:]
+      else:
+        return arg, arg
+    splitargs = [ _split(arg) for arg in args ]
+    splitkwargs = [ (name,)+_split(arg) for name, arg in kwargs.items() ]
+    basis1 = function.bifurcate1( self.topo1.basis( name, *[ arg1 for arg1, arg2 in splitargs ], **{ name: arg1 for name, arg1, arg2 in splitkwargs } ) )
+    basis2 = function.bifurcate2( self.topo2.basis( name, *[ arg2 for arg1, arg2 in splitargs ], **{ name: arg2 for name, arg1, arg2 in splitkwargs } ) )
+    return function.Ravel( function.outer(basis1,basis2), axis=0 )
+
+  @cache.property
+  def boundary( self ):
+    return self.topo1 * self.topo2.boundary + self.topo1.boundary * self.topo2
+
+  @cache.property
+  def interfaces( self ):
+    return self.topo1 * self.topo2.interfaces + self.topo1.interfaces * self.topo2
 
 # UTILITY FUNCTIONS
 

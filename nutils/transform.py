@@ -259,6 +259,31 @@ class Updim( Matrix ):
   def flipped( self ):
     return Updim( self.linear, self.offset, not self.isflipped )
 
+class Bifurcate( TransformItem ):
+  'bifurcate'
+
+  def __init__( self, trans1, trans2 ):
+    assert trans1.fromdims == trans2.fromdims
+    self.trans1 = trans1
+    self.trans2 = trans2
+    TransformItem.__init__( self, todims=trans1.todims if trans1.todims == trans2.todims else None, fromdims=trans1.fromdims )
+
+  def apply( self, points ):
+    return [ self.trans1.apply(points), self.trans2.apply(points) ]
+
+class Slice( Matrix ):
+  'slice'
+
+  def __init__( self, i1, i2, fromdims ):
+    todims = i2-i1
+    assert 0 <= todims <= fromdims
+    self.s = slice(i1,i2)
+    self.isflipped = False
+    Matrix.__init__( self, numpy.eye(fromdims)[self.s], numpy.zeros(todims) )
+
+  def apply( self, points ):
+    return points[:,self.s]
+
 class VertexTransform( TransformItem ):
 
   def __init__( self, fromdims ):
@@ -423,5 +448,15 @@ def offset( chain ):
   for trans in chain[-2::-1]:
     offset = trans.apply( offset )
   return offset
+
+def slicetrans( i1, i2, n ):
+  return CanonicalTransformChain( [ Slice(i1,i2,n) ] )
+
+def stack( trans1, trans2 ):
+  fromdims = trans1.fromdims + trans2.fromdims
+  return bifurcate( trans1.canonical << slicetrans(0,trans1.fromdims,fromdims), trans2.canonical << slicetrans(trans1.fromdims,fromdims,fromdims) )
+
+def bifurcate( trans1, trans2 ):
+  return CanonicalTransformChain([ Bifurcate( trans1, trans2 ) ])
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

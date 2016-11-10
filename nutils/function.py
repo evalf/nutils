@@ -287,6 +287,21 @@ class Tuple( Evaluable ):
 
     return Tuple( tuple(other) + self.items )
 
+class SelectChain( Evaluable ):
+  def __init__( self, trans, first ):
+    assert isinstance( first, bool )
+    self.trans = trans
+    self.first = first
+    Evaluable.__init__( self, args=[trans] )
+  def evalf( self, trans ):
+    assert isinstance( trans, transform.TransformChain )
+    bf = trans[0]
+    assert isinstance( bf, transform.Bifurcate )
+    ftrans = bf.trans1 if self.first else bf.trans2
+    return transform.TransformChain( ftrans + trans[1:] )
+  def _edit( self, op ):
+    return SelectChain( op(self.trans), self.first )
+
 # ARRAYFUNC
 #
 # The main evaluable. Closely mimics a numpy array.
@@ -661,6 +676,10 @@ class Constant( Array ):
 
   def _kronecker( self, axis, length, pos ):
     return asarray( numeric.kronecker( self.value, axis, length, pos ) )
+
+  def _unravel( self, axis, shape ):
+    shape = self.value.shape[:axis] + shape + self.value.shape[axis+1:]
+    return asarray( self.value.reshape(shape) )
 
 class DofMap( Array ):
   'dof axis'
@@ -2526,6 +2545,103 @@ class LocalCoords( DerivativeTargetBase ):
 
   def evalf( self ):
     raise Exception( 'LocalCoords should not be evaluated' )
+
+class Ravel( Array ):
+  'ravel'
+
+  def __init__( self, func, axis ):
+    self.func = func
+    self.axis = axis
+    assert 0 <= axis < func.ndim-1
+    newlength = func.shape[axis] * func.shape[axis+1] if numeric.isint( func.shape[axis] ) and numeric.isint( func.shape[axis+1] ) \
+           else '{}x{}'.format( func.shape[axis], func.shape[axis+1] )
+    Array.__init__( self, args=[func], shape=func.shape[:axis]+(newlength,)+func.shape[axis+2:], dtype=func.dtype )
+
+  def evalf( self, f ):
+    return f.reshape( f.shape[:self.axis+1] + (f.shape[self.axis+1]*f.shape[self.axis+2],) + f.shape[self.axis+3:] )
+
+  def _multiply( self, other ):
+    if other.shape[self.axis] == 1:
+      return ravel( multiply( self.func, insert(other,self.axis) ), self.axis )
+    if isinstance( other, Ravel ) and other.axis == self.axis and other.func.shape[self.axis:self.axis+2] == self.func.shape[self.axis:self.axis+2]:
+      return ravel( multiply( self.func, other.func ), self.axis )
+
+  def _add( self, other ):
+    if other.shape[self.axis] == 1:
+      return ravel( add( self.func, insert(other,self.axis) ), self.axis )
+    if isinstance( other, Ravel ) and other.axis == self.axis and other.func.shape[self.axis:self.axis+2] == self.func.shape[self.axis:self.axis+2]:
+      return ravel( add( self.func, other.func ), self.axis )
+
+  def _get( self, i, item ):
+    if i != self.axis:
+      return ravel( get( self.func, i+(i>self.axis), item ), self.axis-(i<self.axis) )
+    if numeric.isint( self.func.shape[self.axis+1] ):
+      i, j = divmod( item, self.func.shape[self.axis+1] )
+      return get( get( self.func, self.axis, i ), self.axis, j )
+
+  def _dot( self, other, axes ):
+    if other.shape[self.axis] == 1:
+      assert self.axis not in axes # should have been handled at higher level
+      newaxes = [ ax+(ax>self.axis) for ax in axes ]
+      return ravel( dot( self.func, insert(other,self.axis), newaxes ), self.axis )
+    newaxes = [ ax+(ax>self.axis) for ax in axes if ax != self.axis ]
+    if len(newaxes) < len(axes): # self.axis in axes
+      newaxes.extend([self.axis,self.axis+1])
+    return dot( self.func, unravel( other, self.axis, self.func.shape[self.axis:self.axis+2] ), newaxes )
+
+  def _sum( self, axis ):
+    if axis == self.axis:
+      return sum( self.func, [axis,axis+1] )
+    return ravel( sum( self.func, axis+(axis>self.axis) ), self.axis-(axis<self.axis) )
+
+  def _derivative( self, var, axes, seen ):
+    return ravel( derivative( self.func, var, axes, seen ), axis=self.axis )
+
+  def _align( self, axes, ndim ):
+    ravelaxis = axes[self.axis]
+    funcaxes = [ ax+(ax>ravelaxis) for ax in axes ]
+    funcaxes = funcaxes[:self.axis+1] + [ravelaxis+1] + funcaxes[self.axis+1:]
+    return ravel( align( self.func, funcaxes, ndim+1 ), ravelaxis )
+
+  def _kronecker( self, axis, length, pos ):
+    return ravel( kronecker( self.func, axis+(axis>self.axis), length, pos ), self.axis+(axis<=self.axis) )
+
+  def _takediag( self ):
+    if self.axis < self.ndim-2:
+      return ravel( takediag( self.func ), self.axis )
+
+  def _unravel( self, axis, shape ):
+    if axis == self.axis and shape == self.func.shape[axis:axis+2]:
+      return self.func
+
+  @property
+  def blocks( self ):
+    for ind, f in blocks( self.func ):
+      newind = ravel( ind[self.axis][:,_] * self.func.shape[self.axis+1] + ind[self.axis+1][_,:], axis=0 )
+      yield Tuple( ind[:self.axis] + (newind,) + ind[self.axis+2:] ), ravel( f, axis=self.axis )
+
+  def _edit( self, op ):
+    return ravel( op(self.func), self.axis )
+
+class Unravel( Array ):
+  'unravel'
+
+  def __init__( self, func, axis, shape ):
+    shape = tuple(shape)
+    assert func.shape[axis] == numpy.product(shape)
+    self.func = func
+    self.axis = axis
+    self.unravelshape = shape
+    Array.__init__( self, args=[func], shape=func.shape[:axis]+shape+func.shape[axis+1:], dtype=func.dtype )
+
+  def _derivative( self, var, axes, seen ):
+    return unravel( derivative( self.func, var, axes, seen ), axis=self.axis, shape=self.unravelshape )
+
+  def evalf( self, f ):
+    return f.reshape( f.shape[0], *self.shape )
+
+  def _edit( self, op ):
+    return unravel( op(self.func), self.axis, self.shape )
     
 # CIRCULAR SYMMETRY
 
@@ -2838,6 +2954,8 @@ edit = lambda arg, f: arg._edit(f) if isevaluable(arg) else arg
 blocks = lambda arg: asarray(arg).blocks
 rootcoords = lambda ndims: RootCoords( ndims )
 sampled = lambda data, ndims: Sampled( data )
+bifurcate1 = lambda arg: SelectChain(arg,True ) if arg in (TRANS,OPPTRANS) else edit( arg, bifurcate1 )
+bifurcate2 = lambda arg: SelectChain(arg,False) if arg in (TRANS,OPPTRANS) else edit( arg, bifurcate2 )
 
 class _eye:
   'identity'
@@ -3812,5 +3930,27 @@ class Pair:
     return hash( tuple( sorted( hash(item) for item in self.items ) ) )
   def __eq__( self, other ):
     return isinstance( other, Pair ) and self.items in ( other.items, other.items[::-1] )
+
+def unravel( func, axis, shape ):
+  func = asarray( func )
+  axis = numeric.normdim( func.ndim, axis )
+  shape = tuple(shape)
+  assert func.shape[axis] == numpy.product(shape)
+
+  retval = _call( func, '_unravel', axis, shape )
+  if retval is not None:
+    return retval
+
+  return Unravel( func, axis, shape )
+
+def ravel( func, axis ):
+  func = asarray( func )
+  axis = numeric.normdim( func.ndim-1, axis )
+
+  retval = _call( func, '_ravel', axis )
+  if retval is not None:
+    return retval
+
+  return Ravel( func, axis )
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

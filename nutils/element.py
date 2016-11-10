@@ -39,6 +39,9 @@ class Element( object ):
         opposite = None
     self.__opposite = opposite
 
+  def __mul__( self, other ):
+    return Element( self.reference * other.reference, transform.stack(self.transform,other.transform), transform.stack(self.opposite,other.opposite) )
+
   def __getnewargs__( self ):
     return self.reference, self.transform, self.__opposite
 
