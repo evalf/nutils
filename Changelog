@@ -6,6 +6,19 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+Changed: supp
+
+  The function.supp convenience function to find the supporting elements
+  of certain basis vectors has been deprecated. In its place is the much
+  more robust Topology.supp method, which search for supporting elements
+  within a topology. In addition to this the selection can be made as an
+  index vector or boolean mask, as in the following typical example:
+
+  >> v = domain.integrate(basis*coeffs, geometry=geom, ischeme='gauss2')
+  >> supp = domain.supp( basis, abs(v) > threshold )
+  >> domain.refined_by( supp )
+
+
 Removed: pointdata
 
   The deprecated function.Pointdata is removed. The replacing

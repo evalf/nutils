@@ -3815,6 +3815,7 @@ def fdapprox( func, w, dofs, delta=1.e-5 ):
 def supp( funcsp, indices ):
   'find support of selection of basis functions'
 
+  warnings.warn( 'function.supp is deprecated; use domain.supp instead', DeprecationWarning )
   transforms = []
   def collect_transforms( f ):
     if isinstance( f, DofMap ):

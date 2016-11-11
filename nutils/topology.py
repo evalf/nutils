@@ -688,6 +688,29 @@ class Topology( object ):
       pelems.append( element.Element( vref, elem.transform << trans, elem.opposite << trans ) )
     return UnstructuredTopology( 0, pelems )
 
+  def supp( self, basis, mask=None ):
+    if mask is None:
+      mask = numpy.ones( len(basis), dtype=bool )
+    elif isinstance( mask, list ) or isinstance( mask, numpy.ndarray ) and mask.dtype == int:
+      tmp = numpy.zeros( len(basis), dtype=bool )
+      tmp[mask] = True
+      mask = tmp
+    else:
+      assert isinstance( mask, numpy.ndarray ) and mask.dtype == bool and mask.shape == basis.shape[:1]
+    indfunc = function.Tuple([ ind[0] for ind, f in basis.blocks ])
+    subset = []
+    for elem in self:
+      try:
+        ind, = numpy.concatenate( indfunc.eval(elem), axis=1 )
+      except function.EvaluationError:
+        pass
+      else:
+        if mask[ind].any():
+          subset.append( elem )
+    if not subset:
+      return EmptyTopology( self.ndims )
+    return SubsetTopology( self, elements=subset, boundaryname='supp', precise=True )
+
 class ItemTopology( Topology ):
   'item topology'
 

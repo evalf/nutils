@@ -99,8 +99,8 @@ def main( degree=1, solvetol=1e-10, circle=False, uniform=False, basistype='std'
     if uniform:
       domain = domain.refined
     else:
-      I, = numpy.where( error_est_w**2 > numpy.mean(error_est_w**2) )
-      domain = domain.refined_by( trans[:-1] for trans in function.supp( finebasis, indices=I ) )
+      mask = error_est_w**2 > numpy.mean(error_est_w**2)
+      domain = domain.refined_by( elem.transform[:-1] for elem in domain.refined.supp( finebasis, mask ) )
 
   return lhsprimal, error_est_w
 
