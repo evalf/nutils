@@ -273,6 +273,9 @@ class Topology( object ):
       retvals.append( retval )
     idata = function.Tuple( idata )
 
+    if core.getprop( 'dot', False ):
+      idata.graphviz()
+
     for ielem, elem in parallel.pariter( log.enumerate( 'elem', self ) ):
       ipoints, iweights = fcache[elem.reference.getischeme]( ischeme )
       s = slices[ielem],
@@ -644,7 +647,7 @@ class Topology( object ):
       for elem in self:
         dofs = dofmap.eval( elem )
         used[dofs] = True
-    return basis[used]
+    return function.mask( basis, used )
 
   def locate( self, geom, points, ischeme='vertex', scale=1, tol=1e-12, eps=0, maxiter=100 ):
     if geom.ndim == 0:

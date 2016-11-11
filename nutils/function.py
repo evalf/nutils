@@ -2173,14 +2173,6 @@ class Inflate( Array ):
       return inflate( take( self.func, index, axis ), self.dofmap, self.length, self.axis )
     if index == self.dofmap:
       return self.func
-    assert index.isconstant
-    index, = index.eval()
-    renumber = numpy.empty( self.shape[axis], dtype=int )
-    renumber[:] = -1
-    renumber[index] = numpy.arange( len(index) )
-    select = take( renumber != -1, self.dofmap, axis=0 )
-    dofmap = take( renumber, take( self.dofmap, select, axis=0 ), axis=0 )
-    return inflate( take( self.func, select, axis ), dofmap, len(index), self.axis )
 
   def _diagonalize( self ):
     assert self.axis < self.ndim-1
@@ -2431,6 +2423,7 @@ class Find( Array ):
 
   def __init__( self, where ):
     assert isarray(where) and where.ndim == 1 and where.dtype == bool
+    self.where = where
     Array.__init__( self, args=[where], shape=['~{}'.format(where.shape[0])], dtype=int )
 
   def evalf( self, where ):
@@ -2438,6 +2431,9 @@ class Find( Array ):
     where, = where
     index, = where.nonzero()
     return index[_]
+
+  def _edit( self, op ):
+    return Find( op(self.where) )
 
 class Kronecker( Array ):
   'kronecker'
@@ -2608,6 +2604,113 @@ class Revolved( Array ):
   def _edit( self, op ):
     return revolved( op(self.func) )
 
+class Mask( Array ):
+  'mask'
+
+  def __init__( self, func, mask, axis ):
+    assert len(mask) == func.shape[axis]
+    self.func = func
+    self.axis = axis
+    self.mask = mask
+    Array.__init__( self, args=[func], shape=func.shape[:axis]+(mask.sum(),)+func.shape[axis+1:], dtype=func.dtype )
+
+  @cache.property
+  def renumber( self ):
+    renumber = numpy.empty( len(self.mask), dtype=int )
+    renumber[:] = -1
+    renumber[self.mask] = numpy.arange( self.shape[self.axis] )
+    return renumber
+
+  @cache.property
+  def orignumber( self ):
+    return numpy.arange( len(self.mask) )[self.mask]
+
+  def _cexpand( self, c ):
+    expanded = numpy.zeros( c.shape[:self.axis]+(self.func.shape[self.axis],)+c.shape[self.axis+1:], dtype=c.dtype )
+    expanded[(slice(None),)*self.axis+(self.mask,)], = c.eval()
+    return expanded
+
+  @property
+  def blocks( self ):
+    for ind, f in blocks( self.func ):
+      mask = take( self.mask, ind[self.axis], axis=0 )
+      where = find( mask )
+      newi = take( self.renumber, take( ind[self.axis], where, axis=0 ), axis=0 )
+      newf = take( f, where, axis=self.axis )
+      yield Tuple( ind[:self.axis]+(newi,)+ind[self.axis+1:] ), newf
+
+  def evalf( self, func ):
+    return func[(slice(None),)*(self.axis+1)+(self.mask,)]
+
+  def _derivative( self, var, axes, seen ):
+    return mask( derivative( self.func, var, axes, seen ), self.mask, self.axis )
+
+  def _edit( self, op ):
+    return mask( op(self.func), self.mask, self.axis )
+
+  def _align( self, axes, ndim ):
+    return mask( align( self.func, axes, ndim ), self.mask, axes[self.axis] )
+
+  def _multiply( self, other ):
+    if other.shape[self.axis] == 1:
+      return mask( multiply( self.func, other ), self.mask, self.axis )
+    if isinstance( other, Mask ) and other.axis == self.axis:
+      if numpy.any( self.mask != other.mask ):
+        return
+      return mask( multiply( self.func, other.func ), self.mask, self.axis )
+    if other.isconstant:
+      return mask( multiply( self.func, self._cexpand(other) ), self.mask, self.axis )
+
+  def _add( self, other ):
+    if other.shape[self.axis] == 1:
+      return mask( add( self.func, other ), self.mask, self.axis )
+    if isinstance( other, Mask ) and other.axis == self.axis:
+      if numpy.any( self.mask != other.mask ):
+        return
+      return mask( add( self.func, other.func ), self.mask, self.axis )
+    if other.isconstant:
+      return mask( multiply( self.func, self._cexpand(other) ), self.mask, self.axis )
+
+  def _inflate( self, dofmap, length, axis ):
+    if axis != self.axis:
+      return mask( inflate( self.func, dofmap, length, axis ), self.mask, self.axis )
+
+  def _concatenate( self, other, axis ):
+    if axis != self.axis:
+      return mask( concatenate( [ self.func, other ], axis ), self.mask, self.axis )
+
+  def _sum( self, axis ):
+    if axis != self.axis:
+      return mask( sum( self.func, axis ), self.mask, self.axis-(axis<self.axis) )
+
+  def _get( self, i, item ):
+    if self.axis == i:
+      return get( self.func, i, self.orignumber[item] )
+    return mask( get( self.func, i, item ), self.mask, self.axis-(i<self.axis) )
+
+  def _kronecker( self, axis, length, pos ):
+    return mask( kronecker( self.func, axis, length, pos ), self.mask, self.axis+(axis<=self.axis) )
+
+  def _takediag( self ):
+    if self.axis < self.ndim-2:
+      return mask( takediag( self.func ), self.mask, self.axis )
+    if isinstance( self.func, Mask ) and self.other.axis + self.axis == (self.ndim-1) + (self.ndim-2) and numpy.all( self.func.mask == self.other.mask ):
+      return mask( takediag( self.func.func ), self.mask, self.axis )
+
+  def _dot( self, other, axes ):
+    if other.shape[self.axis] == 1:
+      return mask( dot( self.func, other, axes ), self.mask, self.axis-_sum(ax<self.axis for ax in axes) )
+    if isinstance( other, Mask ) and other.axis == self.axis:
+      if self.axis in axes:
+        return # dot should exclude the masked entries
+      if numpy.any( self.mask != other.mask ):
+        return
+      return mask( dot( self.func, other.func, axes ), self.mask, self.axis-_sum(ax<self.axis for ax in axes) )
+    if other.isconstant:
+      newdot = dot( self.func, self._cexpand(other), axes )
+      if self.axis not in axes:
+        newdot = mask( newdot, self.mask, self.axis-_sum(ax<self.axis for ax in axes) )
+      return newdot
 
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 
@@ -2710,15 +2813,6 @@ def _norm_and_sort( ndim, args ):
   normargs = tuple( sorted( numeric.normdim( ndim, arg ) for arg in args ) )
   assert _ascending( normargs ) # strict
   return normargs
-
-def _unpack( funcsp ):
-  for axes, func in funcsp.blocks:
-    dofax = axes[0]
-    if isinstance( func, Align ):
-      func = func.func
-    for trans, std in func.stdmap.items():
-      dofs, = dofax.eval( trans )
-      yield trans, dofs, std
 
 # FUNCTIONS
 
@@ -3687,6 +3781,16 @@ def inflate( arg, dofmap, length, axis ):
 
   return Inflate( arg, dofmap, length, axis )
 
+def mask( arg, mask, axis=0 ):
+  arg = asarray( arg )
+  axis = numeric.normdim( arg.ndim, axis )
+  assert isinstance(mask,numpy.ndarray) and mask.ndim == 1 and mask.dtype == bool
+  assert arg.shape[axis] == len(mask)
+  if mask.all():
+    return arg
+  assert mask.any()
+  return Mask( arg, mask, axis )
+
 @log.title
 def fdapprox( func, w, dofs, delta=1.e-5 ):
   '''Finite difference approximation of the variation of func in directions w
@@ -3711,19 +3815,14 @@ def fdapprox( func, w, dofs, delta=1.e-5 ):
 def supp( funcsp, indices ):
   'find support of selection of basis functions'
 
-  # FRAGILE! makes lots of assumptions on the nature of funcsp
-  supp = []
-  for trans, dofs, stds in _unpack( funcsp ):
-    for std, keep in stds:
-      nshapes = 0 if not std \
-           else keep.sum() if keep is not None \
-           else std.nshapes
-      if numpy.intersect1d( dofs[:nshapes], indices, assume_unique=True ).size:
-        supp.append( trans )
-      dofs = dofs[nshapes:]
-      trans = trans[:-1]
-    assert not dofs.size
-  return supp
+  transforms = []
+  def collect_transforms( f ):
+    if isinstance( f, DofMap ):
+      transforms.append( set(f.dofmap) )
+    return edit( f, collect_transforms )
+  ind_funcs = [ collect_transforms( ind[0] ) for ind, f in funcsp.blocks ]
+  common_transforms = functools.reduce( set.intersection, transforms )
+  return [ trans for trans in common_transforms if any( numpy.intersect1d( ind.eval(trans)[0], indices, assume_unique=True ).size for ind in ind_funcs ) ]
 
 def J( geometry, ndims=None ):
   if ndims is None:
