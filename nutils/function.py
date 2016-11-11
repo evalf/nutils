@@ -675,8 +675,11 @@ class DofMap( Array ):
   def evalf( self, trans ):
     'evaluate'
 
-    head, tail = trans.lookup( self.dofmap )
-    return self.dofmap[head][_]
+    try:
+      dofs, tail = trans.lookup_item( self.dofmap )
+    except KeyError:
+      dofs = numpy.empty( [0], dtype=int )
+    return dofs[_]
 
   def _edit( self, op ):
     return DofMap( self.dofmap, self.shape[0], op(self.trans) )
@@ -944,22 +947,19 @@ class Function( Array ):
   def evalf( self, cache, points, trans ):
     'evaluate'
 
-    fvals = []
-    head, tail = trans.lookup( self.stdmap )
-    for std, keep in self.stdmap[head]:
-      if std:
-        stdpoints = cache[transform.apply]( tail, points )
-        F = cache[std.eval]( stdpoints, self.igrad )
-        assert F.ndim == self.igrad+2
-        if keep is not None:
-          F = F[(Ellipsis,keep)+(slice(None),)*self.igrad]
-        if tail:
-          for axis in range(-self.igrad,0):
-            F = numeric.dot( F, cache[transform.fulllinear](tail), axis )
-        fvals.append( F )
-      tail = head[-1:] + tail
-      head = head[:-1]
-    return fvals[0] if len(fvals) == 1 else numpy.concatenate( fvals, axis=1 )
+    try:
+      std, tail = trans.lookup_item( self.stdmap )
+    except KeyError:
+      fvals = numpy.empty( (1,0)+(1,)*self.igrad )
+    else:
+      stdpoints = cache[ transform.apply ]( tail, points )
+      fvals = cache[ std.eval ]( stdpoints, self.igrad )
+      assert fvals.ndim == self.igrad+2
+      if self.igrad and tail:
+        linear = cache[ transform.fulllinear ]( tail )
+        for axis in range(-self.igrad,0):
+          fvals = numeric.dot( fvals, linear, axis )
+    return fvals
 
   def _edit( self, op ):
     return Function( self.stdmap, self.igrad, self.shape[0], op(self.trans) )
@@ -968,36 +968,6 @@ class Function( Array ):
     if isinstance( var, LocalCoords ):
       return zeropad( Function( self.stdmap, self.igrad+1, self.shape[0], self.trans ), axis=self.ndim, length=len(var) )
     return zeros( self.shape+_taketuple(var.shape,axes), dtype=self.dtype )
-
-  def _take( self, indices, axis ):
-    if axis != 0:
-      return
-    stdmap = {}
-    for trans, stdkeep in self.stdmap.items():
-      ind, = indices.eval( trans )
-      assert all( numpy.diff( ind ) > 0 )
-      nshapes = _sum( 0 if not std else std.nshapes if keep is None else keep.sum() for std, keep in stdkeep )
-      where = numpy.zeros( nshapes, dtype=bool )
-      where[ind] = True
-      newstdkeep = []
-      for std, keep in stdkeep:
-        if std:
-          if keep is None:
-            n = std.nshapes
-            keep = where[:n]
-          else:
-            n = keep.sum()
-            keep = keep.copy()
-            keep[keep] = where[:n]
-          if not keep.any():
-            std = None
-          elif keep.all():
-            keep = None
-          where = where[n:]
-        newstdkeep.append(( std, keep ))
-      assert not where.size
-      stdmap[trans] = newstdkeep
-    return Function( stdmap, self.igrad, indices.shape[0], self.trans )
 
 class Choose( Array ):
   'piecewise function'

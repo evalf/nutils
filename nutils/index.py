@@ -73,13 +73,13 @@ class IndexedArray:
       cache.update( (k, g) for k in g )
     # verify linked lengths
     for g in linked_lengths:
-      if len( set(k for k in g if isinstance(g, int)) ) > 1:
+      if len( set(k for k in g if isinstance(g, numbers.Integral)) ) > 1:
         raise ValueError( 'axes have different lengths' )
     # update shape with numbers if possible
     for k, v in self._shape.items():
-      if not isinstance( v, int ):
+      if not isinstance( v, numbers.Integral ):
         for i in cache.get( v, [] ):
-          if isinstance( i, int ):
+          if isinstance( i, numbers.Integral ):
             self._shape[k] = i
     self._linked_lengths = frozenset( cache.values() )
 
@@ -130,14 +130,14 @@ class IndexedArray:
     for g in self._linked_lengths:
       if geometry is not None:
         g = frozenset( len(geometry) if i == 'geom' else i for i in g )
-      g_ints = set( i for i in g if isinstance(i, int) )
+      g_ints = set( i for i in g if isinstance(i, numbers.Integral) )
       if len( g_ints ) > 1:
         raise ValueError( 'axes have different lengths' )
       if len( g_ints ) == 0:
         continue
       i = next( iter( g_ints ) )
       for j in g:
-        if isinstance( j, int ):
+        if isinstance( j, numbers.Integral ):
           continue
         delayed_lengths[j] = i
 

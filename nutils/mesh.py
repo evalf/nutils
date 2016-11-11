@@ -290,7 +290,7 @@ def gmsh( fname, name=None ):
 
   # create geometry
   nmap = { elem.transform: inodes for inodes, elem in zip( vinodes, velems ) }
-  fmap = dict.fromkeys( nmap, ((triref.stdfunc(1),None),) )
+  fmap = dict.fromkeys( nmap, triref.stdfunc(1) )
   basis = function.function( fmap=fmap, nmap=nmap, ndofs=len(nodes), ndims=topo.ndims )
   geom = ( basis[:,_] * nodes ).sum(0)
 

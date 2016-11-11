@@ -192,7 +192,7 @@ class Topology( object ):
         dofs[i] = dof
       stdfunc = elem.reference.stdfunc(1)
       assert stdfunc.nshapes == elem.nverts
-      fmap[elem.transform] = (stdfunc,None),
+      fmap[elem.transform] = stdfunc
       nmap[elem.transform] = dofs
     return function.function( fmap=fmap, nmap=nmap, ndofs=len(dofmap), ndims=self.ndims )
 
@@ -214,7 +214,7 @@ class Topology( object ):
           dofmap[v] = dof
         dofs[i] = dof
       dofs[ elem.nverts ] = ielem
-      fmap[elem.transform] = (stdfunc,None),
+      fmap[elem.transform] = stdfunc
       nmap[elem.transform] = dofs
     return function.function( fmap=fmap, nmap=nmap, ndofs=len(self)+len(dofmap), ndims=self.ndims )
 
@@ -231,7 +231,7 @@ class Topology( object ):
     ndofs = 0
     for elem in self:
       stdfunc = elem.reference.stdfunc(degree)
-      fmap[elem.transform] = (stdfunc,None),
+      fmap[elem.transform] = stdfunc
       nmap[elem.transform] = ndofs + numpy.arange(stdfunc.nshapes)
       ndofs += stdfunc.nshapes
     return function.function( fmap=fmap, nmap=nmap, ndofs=ndofs, ndims=self.ndims )
@@ -1022,16 +1022,13 @@ class StructuredTopology( Topology ):
     else:
       assert len(removedofs) == self.ndims
 
-    vertex_structure = numpy.array( 0 )
-    dofcount = 1
+    dofshape = []
     slices = []
-
+    vertex_structure = numpy.array( 0 )
     for idim in range( self.ndims ):
       periodic_i = idim in periodic
       n = self.shape[idim]
       p = degree[idim]
-      #k = knots[idim]
-
       if closed == False:
         neumann_i = (idim*2 in neumann and 1) | (idim*2+1 in neumann and 2)
         stdelems_i = element.PolyLine.spline( degree=p, nelems=n, periodic=periodic_i, neumann=neumann_i )
@@ -1039,9 +1036,7 @@ class StructuredTopology( Topology ):
         assert periodic==(), 'Periodic option not allowed for closed spline'
         assert neumann ==(), 'Neumann option not allowed for closed spline'
         stdelems_i = element.PolyLine.spline( degree=p, nelems=n, periodic=True )
-
       stdelems = stdelems[...,_] * stdelems_i if idim else stdelems_i
-
       nd = n + p
       numbers = numpy.arange( nd )
       if periodic_i and p > 0:
@@ -1049,36 +1044,26 @@ class StructuredTopology( Topology ):
         assert len(numbers) >= 2 * overlap
         numbers[ -overlap: ] = numbers[ :overlap ]
         nd -= overlap
-      remove = removedofs[idim]
-      if remove is None:
-        vertex_structure = vertex_structure[...,_] * nd + numbers
-      else:
-        mask = numpy.zeros( nd, dtype=bool )
-        mask[numpy.array(remove)] = True
-        nd -= mask.sum()
-        numbers -= mask.cumsum()
-        vertex_structure = vertex_structure[...,_] * nd + numbers
-        vertex_structure[...,mask] = -1
-      dofcount *= nd
+      vertex_structure = vertex_structure[...,_] * nd + numbers
+      dofshape.append( nd )
       slices.append( [ slice(i,i+p+1) for i in range(n) ] )
 
     dofmap = {}
     funcmap = {}
-    for item in numpy.broadcast( self._transform, stdelems, *numpy.ix_(*slices) ):
-      trans = item[0]
-      std = item[1]
-      S = item[2:]
-      dofs = vertex_structure[S].ravel()
-      mask = dofs >= 0
-      if mask.all():
-        dofmap[trans] = dofs
-        funcmap[trans] = (std,None),
-      else:
-        assert mask.any()
-        dofmap[trans] = dofs[mask]
-        funcmap[trans] = (std,mask),
+    for trans, std, *S in numpy.broadcast( self._transform, stdelems, *numpy.ix_(*slices) ):
+      dofmap[trans] = vertex_structure[S].ravel()
+      funcmap[trans] = std
+    func = function.function( funcmap, dofmap, numpy.product(dofshape), self.ndims )
+    if not any( removedofs ):
+      return func
 
-    return function.function( funcmap, dofmap, dofcount, self.ndims )
+    mask = numpy.ones( (), dtype=bool )
+    for idofs, ndofs in zip( removedofs, dofshape ):
+      mask = mask[...,_].repeat( ndofs, axis=-1 )
+      if idofs:
+        mask[...,[ numeric.normdim(ndofs,idof) for idof in idofs ]] = False
+    assert mask.shape == tuple(dofshape)
+    return function.mask( func, mask.ravel() )
 
   def basis_bspline( self, degree, knotvalues=None, knotmultiplicities=None, periodic=None ):
     'Bspline from vertices'
@@ -1182,7 +1167,7 @@ class StructuredTopology( Topology ):
       S = item[2:]
       dofs = vertex_structure[S].ravel()
       dofmap[trans] = dofs
-      funcmap[trans] = (std,None),
+      funcmap[trans] = std
 
     return function.function( funcmap, dofmap, dofcount, self.ndims )
 
@@ -1236,13 +1221,16 @@ class StructuredTopology( Topology ):
     nmap = {}
     ndofs = 0
     for elem in self:
-      fmap[elem.transform] = (stdfunc,None),
+      fmap[elem.transform] = stdfunc
       nmap[elem.transform] = ndofs + numpy.arange(stdfunc.nshapes)
       ndofs += stdfunc.nshapes
     return function.function( fmap=fmap, nmap=nmap, ndofs=ndofs, ndims=self.ndims )
 
-  def basis_std( self, degree, removedofs=None ):
+  def basis_std( self, degree, removedofs=None, periodic=None ):
     'spline from vertices'
+
+    if periodic is None:
+      periodic = self.periodic
 
     if numeric.isint( degree ):
       degree = ( degree, ) * self.ndims
@@ -1252,49 +1240,35 @@ class StructuredTopology( Topology ):
     else:
       assert len(removedofs) == self.ndims
 
-    vertex_structure = numpy.array( 0 )
-    dofcount = 1
+    dofshape = []
     slices = []
-
-    stdelem = util.product( element.PolyLine( element.PolyLine.bernstein_poly( d ) ) for d in degree )
-
+    vertex_structure = numpy.array( 0 )
     for idim in range( self.ndims ):
+      periodic_i = idim in periodic
       n = self.shape[idim]
       p = degree[idim]
-
       nd = n * p + 1
       numbers = numpy.arange( nd )
-      if idim in self.periodic and p > 0:
+      if periodic_i and p > 0:
         numbers[-1] = numbers[0]
         nd -= 1
-      remove = removedofs[idim]
-      if remove is None:
-        vertex_structure = vertex_structure[...,_] * nd + numbers
-      else:
-        mask = numpy.zeros( nd, dtype=bool )
-        mask[numpy.array(remove)] = True
-        nd -= mask.sum()
-        numbers -= mask.cumsum()
-        vertex_structure = vertex_structure[...,_] * nd + numbers
-        vertex_structure[...,mask] = -1
-      dofcount *= nd
+      vertex_structure = vertex_structure[...,_] * nd + numbers
+      dofshape.append( nd )
       slices.append( [ slice(p*i,p*i+p+1) for i in range(n) ] )
 
-    dofmap = {}
-    funcmap = {}
-    for item in numpy.broadcast( self._transform, *numpy.ix_(*slices) ):
-      trans = item[0]
-      S = item[1:]
-      dofs = vertex_structure[S].ravel()
-      mask = dofs >= 0
-      if mask.all():
-        dofmap[ trans ] = dofs
-        funcmap[ trans ] = (stdelem,None),
-      elif mask.any():
-        dofmap[ trans ] = dofs[mask]
-        funcmap[ trans ] = (stdelem,mask),
+    funcmap = dict.fromkeys( self._transform.flat, util.product( element.PolyLine( element.PolyLine.bernstein_poly(d) ) for d in degree ) )
+    dofmap = { trans: vertex_structure[S].ravel() for trans, *S in numpy.broadcast( self._transform, *numpy.ix_(*slices) ) }
+    func = function.function( funcmap, dofmap, numpy.product(dofshape), self.ndims )
+    if not any( removedofs ):
+      return func
 
-    return function.function( funcmap, dofmap, dofcount, self.ndims )
+    mask = numpy.ones( (), dtype=bool )
+    for idofs, ndofs in zip( removedofs, dofshape ):
+      mask = mask[...,_].repeat( ndofs, axis=-1 )
+      if idofs:
+        mask[...,[ numeric.normdim(ndofs,idof) for idof in idofs ]] = False
+    assert mask.shape == tuple(dofshape)
+    return function.mask( func, mask.ravel() )
 
   @property
   def refined( self ):
@@ -1790,73 +1764,30 @@ class HierarchicalTopology( Topology ):
     # least one supporting element coinsiding with self ('touched') and no
     # supporting element finer than self ('supported').
 
-    collect = {}
-    ndofs = 0 # total number of dofs of new function object
-    remaining = len(self) # element count down (know when to stop)
+    bases = []
+    masks = []
 
     for topo in log.iter( 'level', self.levels ):
 
-      funcsp = topo.basis( name, *args, **kwargs ) # shape functions for current level
-      supported = numpy.ones( funcsp.shape[0], dtype=bool ) # True if dof is fully contained in self or parents
-      touchtopo = numpy.zeros( funcsp.shape[0], dtype=bool ) # True if dof touches at least one elem in self
-      myelems = [] # all top-level or parent elements in current level
+      basis = topo.basis( name, *args, **kwargs ) # shape functions for current level
+      bases.append( basis )
 
-      (axes,func), = function.blocks( funcsp )
+      supported = numpy.ones( len(basis), dtype=bool ) # True if dof is fully contained in self or parents
+      touchtopo = numpy.zeros( len(basis), dtype=bool ) # True if dof touches at least one elem in self
+
+      (axes,func), = function.blocks( basis )
       dofmap, = axes
-      stdmap = func.stdmap
       for elem in topo:
         trans = elem.transform
         idofs, = dofmap.eval( elem )
-        stds = stdmap[trans]
-        try:
-          ielem, tail = trans.lookup_item( self.edict )
-        except KeyError: # trans is coarser than domain
-          myelems.append(( trans, idofs, stds ))
-        else:
-          if tail: # trans is finer than domain
-            supported[idofs] = False
-          else: # trans is in domain
-            remaining -= 1
-            touchtopo[idofs] = True
-            myelems.append(( trans, idofs, stds ))
+        if trans in self.edict:
+          touchtopo[idofs] = True
+        elif trans.lookup( self.edict ):
+          supported[idofs] = False
   
-      keep = numpy.logical_and( supported, touchtopo ) # THE refinement law
-      renumber = (ndofs-1) + keep.cumsum()
+      masks.append( supported & touchtopo ) # THE refinement law
 
-      for trans, idofs, stds in myelems: # loop over all top-level or parent elements in current level
-        (std,origkeep), = stds
-        assert origkeep is None
-        mykeep = keep[idofs]
-        if mykeep.all():
-          newstds = (std,None),
-          newdofs = renumber[idofs]
-        elif mykeep.any():
-          newstds = (std,mykeep),
-          newdofs = renumber[idofs[mykeep]]
-        else:
-          newstds = (None,None),
-          newdofs = numpy.zeros( [0], dtype=int )
-        if topo != self.basetopo:
-          olddofs, oldstds = collect[ trans[:-1] ] # dofs, stds of all underlying 'broader' shapes
-          newstds += oldstds
-          newdofs = numpy.hstack([ newdofs, olddofs ])
-        collect[ trans ] = newdofs, newstds # add result to IEN mapping of new function object
-  
-      ndofs += int( keep.sum() ) # update total number of dofs
-      if not remaining:
-        break
-
-    nmap = {}
-    fmap = {}
-    check = numpy.zeros( ndofs, dtype=bool )
-    for elem in self:
-      dofs, stds = collect[ elem.transform ]
-      nmap[ elem.transform ] = dofs
-      fmap[ elem.transform ] = stds
-      check[dofs] = True
-    assert check.all()
-
-    return function.function( fmap=fmap, nmap=nmap, ndofs=ndofs, ndims=self.ndims )
+    return function.mask( function.concatenate( bases, axis=0 ), numpy.concatenate(masks) )
 
 class RevolvedTopology( Topology ):
   'revolved'
