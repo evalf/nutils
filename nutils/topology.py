@@ -126,67 +126,6 @@ class Topology( object ):
     f = getattr( self, 'basis_' + name )
     return f( *args, **kwargs )
 
-  def basis_std( self, degree=1 ):
-    'std from vertices'
-
-    assert degree == 1 # for now!
-    dofmap = {}
-    fmap = {}
-    nmap = {}
-    for elem in self:
-      dofs = numpy.empty( elem.nverts, dtype=int )
-      for i, v in enumerate( elem.vertices ):
-        dof = dofmap.get(v)
-        if dof is None:
-          dof = len(dofmap)
-          dofmap[v] = dof
-        dofs[i] = dof
-      stdfunc = elem.reference.stdfunc(1)
-      assert stdfunc.nshapes == elem.nverts
-      fmap[elem.transform] = stdfunc
-      nmap[elem.transform] = dofs
-    return function.function( fmap=fmap, nmap=nmap, ndofs=len(dofmap), ndims=self.ndims )
-
-  def basis_bubble( self ):
-    'bubble from vertices'
-
-    assert self.ndims == 2
-    dofmap = {}
-    fmap = {}
-    nmap = {}
-    stdfunc = element.BubbleTriangle()
-    for ielem, elem in enumerate(self):
-      assert isinstance( elem.reference, element.TriangleReference )
-      dofs = numpy.empty( elem.nverts+1, dtype=int )
-      for i, v in enumerate( elem.vertices ):
-        dof = dofmap.get(v)
-        if dof is None:
-          dof = len(self) + len(dofmap)
-          dofmap[v] = dof
-        dofs[i] = dof
-      dofs[ elem.nverts ] = ielem
-      fmap[elem.transform] = stdfunc
-      nmap[elem.transform] = dofs
-    return function.function( fmap=fmap, nmap=nmap, ndofs=len(self)+len(dofmap), ndims=self.ndims )
-
-  def basis_spline( self, degree ):
-    assert degree == 1
-    return self.basis( 'std', degree )
-
-  def basis_discont( self, degree ):
-    'discontinuous shape functions'
-
-    assert numeric.isint( degree ) and degree >= 0
-    fmap = {}
-    nmap = {}
-    ndofs = 0
-    for elem in self:
-      stdfunc = elem.reference.stdfunc(degree)
-      fmap[elem.transform] = stdfunc
-      nmap[elem.transform] = ndofs + numpy.arange(stdfunc.nshapes)
-      ndofs += stdfunc.nshapes
-    return function.function( fmap=fmap, nmap=nmap, ndofs=ndofs, ndims=self.ndims )
-
   @log.title
   @core.single_or_multiple
   def elem_eval( self, funcs, ischeme, separate=False, geometry=None, asfunction=False, edit=_identity ):
@@ -661,6 +600,15 @@ class Topology( object ):
     if not subset:
       return EmptyTopology( self.ndims )
     return SubsetTopology( self, elements=subset, boundaryname='supp', precise=True )
+
+  def revolved( self, geom ):
+    assert geom.ndim == 1
+    revdomain = self * RevolutionTopology()
+    angle, = function.rootcoords(1)
+    geom, angle = function.bifurcate( geom, angle )
+    revgeom = function.concatenate([ geom[0] * function.trignormal(angle), geom[1:] ])
+    simplify = lambda arg: 0 if arg is angle else function.edit( arg, simplify )
+    return revdomain, revgeom, simplify
 
 class ItemTopology( Topology ):
   'item topology'
@@ -1285,6 +1233,67 @@ class UnstructuredTopology( Topology ):
       oppedge.transform << transform.solve( oppedge.transform, edge.transform ) )
         for edge, oppedge in interfaces ])
 
+  def basis_std( self, degree=1 ):
+    'std from vertices'
+
+    assert degree == 1 # for now!
+    dofmap = {}
+    fmap = {}
+    nmap = {}
+    for elem in self:
+      dofs = numpy.empty( elem.nverts, dtype=int )
+      for i, v in enumerate( elem.vertices ):
+        dof = dofmap.get(v)
+        if dof is None:
+          dof = len(dofmap)
+          dofmap[v] = dof
+        dofs[i] = dof
+      stdfunc = elem.reference.stdfunc(1)
+      assert stdfunc.nshapes == elem.nverts
+      fmap[elem.transform] = stdfunc
+      nmap[elem.transform] = dofs
+    return function.function( fmap=fmap, nmap=nmap, ndofs=len(dofmap), ndims=self.ndims )
+
+  def basis_bubble( self ):
+    'bubble from vertices'
+
+    assert self.ndims == 2
+    dofmap = {}
+    fmap = {}
+    nmap = {}
+    stdfunc = element.BubbleTriangle()
+    for ielem, elem in enumerate(self):
+      assert isinstance( elem.reference, element.TriangleReference )
+      dofs = numpy.empty( elem.nverts+1, dtype=int )
+      for i, v in enumerate( elem.vertices ):
+        dof = dofmap.get(v)
+        if dof is None:
+          dof = len(self) + len(dofmap)
+          dofmap[v] = dof
+        dofs[i] = dof
+      dofs[ elem.nverts ] = ielem
+      fmap[elem.transform] = stdfunc
+      nmap[elem.transform] = dofs
+    return function.function( fmap=fmap, nmap=nmap, ndofs=len(self)+len(dofmap), ndims=self.ndims )
+
+  def basis_spline( self, degree ):
+    assert degree == 1
+    return self.basis( 'std', degree )
+
+  def basis_discont( self, degree ):
+    'discontinuous shape functions'
+
+    assert numeric.isint( degree ) and degree >= 0
+    fmap = {}
+    nmap = {}
+    ndofs = 0
+    for elem in self:
+      stdfunc = elem.reference.stdfunc(degree)
+      fmap[elem.transform] = stdfunc
+      nmap[elem.transform] = ndofs + numpy.arange(stdfunc.nshapes)
+      ndofs += stdfunc.nshapes
+    return function.function( fmap=fmap, nmap=nmap, ndofs=ndofs, ndims=self.ndims )
+
 class UnionTopology( Topology ):
   'grouped topology'
 
@@ -1752,50 +1761,6 @@ class HierarchicalTopology( Topology ):
 
     return function.mask( function.concatenate( bases, axis=0 ), numpy.concatenate(masks) )
 
-class RevolvedTopology( Topology ):
-  'revolved'
-
-  def __init__( self, basetopo ):
-    self.basetopo = basetopo
-    Topology.__init__( self, basetopo.ndims )
-
-  def __iter__( self ):
-    return iter( self.basetopo )
-
-  def __len__( self ):
-    return len( self.basetopo )
-
-  def __getitem__( self, item ):
-    if item == ():
-      return self
-    return RevolvedTopology( self.basetopo[item] )
-
-  @property
-  def elements( self ):
-    return self.basetopo.elements
-
-  @cache.property
-  def boundary( self ):
-    return RevolvedTopology( self.basetopo.boundary )
-
-  @log.title
-  @core.single_or_multiple
-  def integrate( self, funcs, ischeme, geometry, force_dense=False, fcache=None, edit=_identity ):
-    iwscale = function.jacobian( geometry, self.ndims+1 )
-    funcs = [ func.unwrap( geometry ) if isinstance( func, IndexedArray ) else func for func in funcs ]
-    integrands = [ function.asarray( edit( func * iwscale ) ) for func in funcs ]
-    data_index = self._integrate( integrands, ischeme, fcache=fcache )
-    return [ matrix.assemble( data, index, integrand.shape, force_dense ) for integrand, (data,index) in zip( integrands, data_index ) ]
-
-  def basis( self, name, *args, **kwargs ):
-    return function.revolved( self.basetopo.basis( name, *args, **kwargs ) )
-
-  def elem_eval( self, *args, **kwargs ):
-    return self.basetopo.elem_eval( *args, **kwargs )
-
-  def refined_by( self, refine ):
-    return RevolvedTopology( self.basetopo.refined_by(refine) )
-
 class ProductTopology( Topology ):
   'product topology'
 
@@ -1850,9 +1815,10 @@ class ProductTopology( Topology ):
         return arg, arg
     splitargs = [ _split(arg) for arg in args ]
     splitkwargs = [ (name,)+_split(arg) for name, arg in kwargs.items() ]
-    basis1 = function.bifurcate1( self.topo1.basis( name, *[ arg1 for arg1, arg2 in splitargs ], **{ name: arg1 for name, arg1, arg2 in splitkwargs } ) )
-    basis2 = function.bifurcate2( self.topo2.basis( name, *[ arg2 for arg1, arg2 in splitargs ], **{ name: arg2 for name, arg1, arg2 in splitkwargs } ) )
-    return function.Ravel( function.outer(basis1,basis2), axis=0 )
+    basis1, basis2 = function.bifurcate(
+      self.topo1.basis( name, *[ arg1 for arg1, arg2 in splitargs ], **{ name: arg1 for name, arg1, arg2 in splitkwargs } ),
+      self.topo2.basis( name, *[ arg2 for arg1, arg2 in splitargs ], **{ name: arg2 for name, arg1, arg2 in splitkwargs } ) )
+    return function.ravel( function.outer(basis1,basis2), axis=0 )
 
   @cache.property
   def boundary( self ):
@@ -1861,6 +1827,17 @@ class ProductTopology( Topology ):
   @cache.property
   def interfaces( self ):
     return self.topo1 * self.topo2.interfaces + self.topo1.interfaces * self.topo2
+
+class RevolutionTopology( Topology ):
+  'topology consisting of a single revolution element'
+
+  def __init__( self ):
+    self.elements = element.Element( element.RevolutionReference(), transform.roottrans('angle',(1,)) ),
+    self.boundary = EmptyTopology( ndims=0 )
+    Topology.__init__( self, ndims=1 )
+
+  def basis( self, name, *args, **kwargs ):
+    return function.asarray( [1] )
 
 # UTILITY FUNCTIONS
 

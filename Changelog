@@ -6,6 +6,22 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+New: circular symmetry
+
+  Any topology can be revolved using the new .revolved method, which
+  interprets the first geometry dimension as a radius and replaces it by
+  two new dimensions, shifting the remaining axes backward. In addition
+  to the modified topology and geometry, simplifying function is
+  returned as the third return value which replaces all occurrences of
+  the revolution angle by zero. This should only be used after all
+  gradients have been computed, typically in integrate or elem_eval.
+
+  >> rdomain, rgeom, simplify = domain.revolved( geom )
+  >> basis = rdomain.basis( 'spline', degree=2 )
+  >> M = function.outer( basis.grad(rgeom) ).sum(-1)
+  >> rdomain.integrate(M, geometry=rgeom, ischeme='gauss2', edit=simplify)
+
+
 Changed: supp
 
   The function.supp convenience function to find the supporting elements

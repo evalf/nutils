@@ -664,9 +664,6 @@ class Constant( Array ):
     eigval, eigvec = ( numpy.linalg.eigh if symmetric else numpy.linalg.eig )( self.value )
     return asarray( eigval ), asarray( eigvec )
 
-  def _revolved( self ):
-    return self
-
   def _sign( self ):
     return asarray( numeric.sign( self.value ) )
 
@@ -1271,9 +1268,6 @@ class Concatenate( Array ):
   def _diagonalize( self ):
     if self.axis < self.ndim-1:
       return concatenate( [ diagonalize(func) for func in self.funcs ], self.axis )
-
-  def _revolved( self ):
-    return concatenate( [ revolved(func) for func in self.funcs ], self.axis )
 
   def _edit( self, op ):
     return concatenate( [ op(func) for func in self.funcs ], self.axis )
@@ -2050,9 +2044,6 @@ class Zeros( Array ):
       return zeros( self.shape[1:], dtype=dtype )
     return expand( numpy.array(value)[(_,)*(self.ndim-1)], self.shape[1:] )
 
-  def _revolved( self ):
-    return self
-
   def _kronecker( self, axis, length, pos ):
     return zeros( self.shape[:axis]+(length,)+self.shape[axis:], dtype=self.dtype )
 
@@ -2176,9 +2167,6 @@ class Inflate( Array ):
   def _repeat( self, length, axis ):
     if axis != self.axis:
       return inflate( repeat(self.func,length,axis), self.dofmap, self.length, self.axis )
-
-  def _revolved( self ):
-    return inflate( revolved(self.func), self.dofmap, self.length, self.axis )
 
   def _edit( self, op ):
     return inflate( op(self.func), op(self.dofmap), self.length, self.axis )
@@ -2372,7 +2360,7 @@ class TrigNormal( Array ):
     Array.__init__( self, args=[angle], shape=(2,), dtype=float )
 
   def _derivative( self, var, axes, seen ):
-    return TrigTangent( self.angle )[(...,)+(_,)*len(axes)] * derivative( self.angle, var, axes, seen )
+    return trigtangent( self.angle )[(...,)+(_,)*len(axes)] * derivative( self.angle, var, axes, seen )
 
   def evalf( self, angle ):
     return numpy.array([ numpy.cos(angle), numpy.sin(angle) ]).T
@@ -2383,7 +2371,7 @@ class TrigNormal( Array ):
       return numpy.array( 1 if isinstance(other,TrigNormal) else 0 )
 
   def _edit( self, op ):
-    return TrigNormal( op(self.angle) )
+    return trignormal( op(self.angle) )
 
 class TrigTangent( Array ):
   '-sin, cos'
@@ -2394,7 +2382,7 @@ class TrigTangent( Array ):
     Array.__init__( self, args=[angle], shape=(2,), dtype=float )
 
   def _derivative( self, var, axes, seen ):
-    return -TrigNormal( self.angle )[(...,)+(_,)*len(axes)] * derivative( self.angle, var, axes, seen )
+    return -trignormal( self.angle )[(...,)+(_,)*len(axes)] * derivative( self.angle, var, axes, seen )
 
   def evalf( self, angle ):
     return numpy.array([ -numpy.sin(angle), numpy.cos(angle) ]).T
@@ -2405,7 +2393,7 @@ class TrigTangent( Array ):
       return numpy.array( 1 if isinstance(other,TrigTangent) else 0 )
 
   def _edit( self, op ):
-    return TrigTangent( op(self.angle) )
+    return trigtangent( op(self.angle) )
 
 class Find( Array ):
   'indices of boolean index vector'
@@ -2643,53 +2631,6 @@ class Unravel( Array ):
   def _edit( self, op ):
     return unravel( op(self.func), self.axis, self.shape )
     
-# CIRCULAR SYMMETRY
-
-class RevolutionAngle( Array ):
-  'scalar with a 2pi gradient in highest local dimension'
-
-  def __init__( self ):
-    Array.__init__( self, args=[], shape=(), dtype=float )
-
-  def evalf( self ):
-    return numpy.zeros( [1] )
-
-  def _derivative( self, var, axes, seen ):
-    if isinstance( var, LocalCoords ):
-      ndims, = var.shape
-      lgrad = numpy.zeros( ndims )
-      lgrad[-1] = 2*numpy.pi
-      return lgrad
-    else:
-      return zeros( _taketuple(var.shape,axes) )
-
-class Revolved( Array ):
-  'implement an extra local dimension with zero gradient'
-
-  def __init__( self, func ):
-    assert isarray( func )
-    self.func = func
-    Array.__init__( self, args=[func], shape=func.shape, dtype=func.dtype )
-
-  @property
-  def blocks( self ):
-    return self.func.blocks
-
-  def evalf( self, func ):
-    return func
-
-  def _derivative( self, var, axes, seen ):
-    if isinstance( var, LocalCoords ):
-      newvar = LocalCoords( len(var)-1 ) # TODO check that this is correct
-      return revolved( concatenate( [ derivative(self.func,newvar,axes,seen), zeros(self.func.shape+(1,)) ], axis=-1 ) )
-    else:
-      result = derivative( self.func, var, axes, seen )
-      assert iszero( result )
-      return result
-
-  def _edit( self, op ):
-    return revolved( op(self.func) )
-
 class Mask( Array ):
   'mask'
 
@@ -2915,8 +2856,6 @@ nsymgrad = lambda arg, coords: ( symgrad(arg,coords) * coords.normal() ).sum(-1)
 ngrad = lambda arg, coords: ( grad(arg,coords) * coords.normal() ).sum(-1)
 sin = lambda arg: pointwise( [arg], numpy.sin, cos )
 cos = lambda arg: pointwise( [arg], numpy.cos, lambda x: -sin(x) )
-trignormal = lambda angle: TrigNormal( asarray(angle) )
-trigtangent = lambda angle: TrigTangent( asarray(angle) )
 rotmat = lambda arg: asarray([ trignormal(arg), trigtangent(arg) ])
 tan = lambda arg: pointwise( [arg], numpy.tan, lambda x: cos(x)**-2 )
 arcsin = lambda arg: pointwise( [arg], numpy.arcsin, lambda x: reciprocal(sqrt(1-x**2)) )
@@ -2954,8 +2893,23 @@ edit = lambda arg, f: arg._edit(f) if isevaluable(arg) else arg
 blocks = lambda arg: asarray(arg).blocks
 rootcoords = lambda ndims: RootCoords( ndims )
 sampled = lambda data, ndims: Sampled( data )
-bifurcate1 = lambda arg: SelectChain(arg,True ) if arg in (TRANS,OPPTRANS) else edit( arg, bifurcate1 )
-bifurcate2 = lambda arg: SelectChain(arg,False) if arg in (TRANS,OPPTRANS) else edit( arg, bifurcate2 )
+bifurcate1 = lambda arg: SelectChain(arg,True ) if arg is TRANS or arg is OPPTRANS else edit( arg, bifurcate1 )
+bifurcate2 = lambda arg: SelectChain(arg,False) if arg is TRANS or arg is OPPTRANS else edit( arg, bifurcate2 )
+bifurcate = lambda arg1, arg2: ( bifurcate1(arg1), bifurcate2(arg2) )
+
+def trignormal( angle ):
+  angle = asarray( angle )
+  assert angle.ndim == 0
+  if iszero( angle ):
+    return kronecker( 1, axis=0, length=2, pos=0 )
+  return TrigNormal( angle )
+
+def trigtangent( angle ):
+  angle = asarray( angle )
+  assert angle.ndim == 0
+  if iszero( angle ):
+    return kronecker( 1, axis=0, length=2, pos=1 )
+  return TrigTangent( angle )
 
 class _eye:
   'identity'
@@ -3480,7 +3434,7 @@ def concatenate( args, axis=0 ):
 
   args = _matchndim( *args )
   axis = numeric.normdim( args[0].ndim, axis )
-  i = 0
+  args = [ arg for arg in args if arg.shape[axis] != 0 ]
 
   if all( iszero(arg) for arg in args ):
     shape = list( args[0].shape )
@@ -3495,6 +3449,7 @@ def concatenate( args, axis=0 ):
           assert arg.shape[i] in (shape[i],1)
     return zeros( shape, dtype=_jointdtype(*[arg.dtype for arg in args]) )
 
+  i = 0
   while i+1 < len(args):
     arg1, arg2 = args[i:i+2]
     arg12 = _call( arg1, '_concatenate', arg2, axis )
@@ -3764,13 +3719,6 @@ def array_from_tuple( arrays, index, shape, dtype ):
   else:
     return ArrayFromTuple( arrays, index, shape, dtype )
 
-def revolved( arg ):
-  arg = asarray( arg )
-  retval = _call( arg, '_revolved' )
-  if retval is not None:
-    return retval
-  return Revolved( arg )
-
 def swapaxes( arg, axes=(-2,-1) ):
   'swap axes'
 
@@ -3831,6 +3779,12 @@ def take( arg, index, axis ):
 
   assert index.dtype == int
 
+  shape = list(arg.shape)
+  shape[axis] = index.shape[0]
+
+  if 0 in shape:
+    return zeros( shape, dtype=arg.dtype )
+
   if index.isconstant:
     index_, = index.eval()
     if len(index_) == 1:
@@ -3840,6 +3794,7 @@ def take( arg, index, axis ):
 
   retval = _call( arg, '_take', index, axis )
   if retval is not None:
+    assert retval.shape == tuple(shape)
     return retval
 
   return Take( arg, index, axis )
@@ -3937,6 +3892,15 @@ def unravel( func, axis, shape ):
   shape = tuple(shape)
   assert func.shape[axis] == numpy.product(shape)
 
+  if len(shape) == 1:
+    return func
+
+  if shape[0] == 1:
+    return insert( unravel( func, axis, shape[1:] ), axis )
+
+  if shape[-1] == 1:
+    return insert( unravel( func, axis, shape[:-1] ), axis+len(shape)-1 )
+
   retval = _call( func, '_unravel', axis, shape )
   if retval is not None:
     return retval
@@ -3946,6 +3910,10 @@ def unravel( func, axis, shape ):
 def ravel( func, axis ):
   func = asarray( func )
   axis = numeric.normdim( func.ndim-1, axis )
+
+  for i in axis, axis+1:
+    if func.shape[i] == 1:
+      return get( func, i, 0 )
 
   retval = _call( func, '_ravel', axis )
   if retval is not None:

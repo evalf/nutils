@@ -438,6 +438,28 @@ class EmptyReference( Reference ):
   __or__ = lambda self, other: other if other.ndims == self.ndims else NotImplemented
   __rsub__ = lambda self, other: other if other.ndims == self.ndims else NotImplemented
 
+class RevolutionReference( Reference ):
+  'modify gauss integration to always return a single point'
+
+  def __init__( self ):
+    self.volume = 2 * numpy.pi
+    Reference.__init__( self, numpy.zeros((1,1)) )
+
+  @property
+  def edge_transforms( self ): # only used in check_edges
+    return transform.affine( numpy.zeros((1,0)), [-numpy.pi], isflipped=True ), transform.affine( numpy.zeros((1,0)), [+numpy.pi], isflipped=False )
+
+  @property
+  def edge_refs( self ): # idem edge_transforms
+    return PointReference(), PointReference()
+
+  @property
+  def simplices( self ):
+    return [ (transform.identity,self) ]
+
+  def getischeme( self, ischeme ):
+    return numpy.zeros([1,1]), numpy.array([ self.volume ])
+
 class SimplexReference( Reference ):
   'simplex reference'
 
