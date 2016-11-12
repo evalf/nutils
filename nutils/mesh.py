@@ -66,6 +66,36 @@ def rectilinear( richshape, periodic=(), name='rect' ):
 
   return topo, geom
 
+def line( nodes, periodic=False, bnames=None ):
+  if isinstance( nodes, int ):
+    uniform = True
+    assert nodes > 0
+    nelems = nodes
+    scale = 1
+    offset = 0
+  else:
+    nelems = len(nodes)-1
+    scale = (nodes[-1]-nodes[0]) / nelems
+    offset = nodes[0]
+    uniform = numpy.equal( nodes, offset + numpy.arange(nelems+1) * scale ).all()
+  root = transform.roottrans( 'rect', shape=[ nelems if periodic else 0 ] )
+  domain = topology.StructuredLine( root, 0, nelems, periodic=periodic, bnames=bnames )
+  geom = function.rootcoords(1) * scale + offset if uniform else domain.basis( 'std', degree=1, periodic=False ).dot( nodes )
+  return domain, geom
+
+def newrectilinear( nodes, periodic=None, bnames=[['left','right'],['bottom','top'],['front','back']] ):
+  if periodic is None:
+    periodic = numpy.zeros( len(nodes), dtype=bool )
+  else:
+    periodic = numpy.asarray( periodic )
+    assert len(periodic) == len(nodes) and periodic.ndim == 1 and periodic.dtype == bool
+  dims = [ line( nodesi, periodici, bnamesi ) for nodesi, periodici, bnamesi in zip( nodes, periodic, tuple(bnames)+(None,)*len(nodes) ) ]
+  domain, geom = dims.pop(0)
+  for domaini, geomi in dims:
+    domain = domain * domaini
+    geom = function.concatenate( function.bifurcate(geom,geomi) )
+  return domain.withsubs(), geom
+
 @log.title
 def gmsh( fname, name=None ):
   """Gmsh parser
@@ -279,7 +309,7 @@ def gmsh( fname, name=None ):
   # create geometry
   nmap = { elem.transform: inodes for inodes, elem in zip( vinodes, velems ) }
   fmap = dict.fromkeys( nmap, triref.stdfunc(1) )
-  basis = function.function( fmap=fmap, nmap=nmap, ndofs=len(nodes), ndims=topo.ndims )
+  basis = function.function( fmap=fmap, nmap=nmap, ndofs=len(nodes) )
   geom = ( basis[:,_] * nodes ).sum(0)
 
   return topo, geom
@@ -383,7 +413,7 @@ def igatool( path, name=None ):
     fmap[ elem ] = element.ExtractionWrapper( poly, Ce.T )
     nmap[ elem ] = nids
 
-  splinefunc = function.function( fmap, nmap, NumberOfPoints, ndims )
+  splinefunc = function.function( fmap, nmap, NumberOfPoints )
 
   boundaries = {}
   elemgroups = {}

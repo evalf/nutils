@@ -783,6 +783,133 @@ class EmptyTopology( Topology ):
   def elements( self ):
     return ()
 
+class Point( Topology ):
+  'point'
+
+  def __init__( self, trans, opposite=None ):
+    assert isinstance( trans, transform.TransformChain ) and trans.fromdims == 0
+    self.elem = element.Element( element.getsimplex(0), trans, opposite )
+    Topology.__init__( self, ndims=0 )
+
+  def __iter__( self ):
+    yield self.elem
+
+  @property
+  def elements( self ):
+    return self.elem,
+
+class StructuredLine( Topology ):
+  'structured topology'
+
+  def __init__( self, root, i, j, periodic=False, bnames=None ):
+    'constructor'
+
+    assert isinstance(i,int) and isinstance(j,int) and j > i
+    assert not bnames or len(bnames) == 2 and all( isinstance(bname,str) for bname in bnames )
+    assert isinstance( root, transform.TransformChain )
+    self.root = root
+    self.i = i
+    self.j = j
+    self.periodic = periodic
+    self.bnames = bnames or ()
+    Topology.__init__( self, ndims=1 )
+
+  @cache.property
+  def _transforms( self ):
+    # one extra left and right for opposites, even if periodic=True
+    return tuple( self.root << transform.affine( linear=1, offset=[offset] ) for offset in range( self.i-1, self.j+1 ) )
+
+  def __iter__( self ):
+    reference = element.getsimplex(1)
+    return ( element.Element( reference, trans ) for trans in self._transforms[1:-1] )
+
+  def __len__( self ):
+    return self.j - self.i
+
+  @cache.property
+  def elements( self ):
+    return tuple( self )
+
+  @cache.property
+  def boundary( self ):
+    if self.periodic:
+      return EmptyTopology( ndims=0 )
+    transforms = self._transforms
+    left = transform.affine( numpy.zeros((1,0)), offset=[0], isflipped=True )
+    right = transform.affine( numpy.zeros((1,0)), offset=[1], isflipped=False )
+    bndi = Point( transforms[1] << left, transforms[0] << right )
+    bndj = Point( transforms[-2] << right, transforms[-1] << left )
+    return UnionTopology([ bndi, bndj ]).withsubs( dict( zip( self.bnames, (bndi,bndj) ) ) )
+
+  @cache.property
+  def interfaces( self ):
+    transforms = self._transforms
+    left = transform.affine( numpy.zeros((1,0)), offset=[0], isflipped=True )
+    right = transform.affine( numpy.zeros((1,0)), offset=[1], isflipped=False )
+    points = [ Point( trans << left, opp << right ) for trans, opp in zip( transforms[2:-1], transforms[1:-2] ) ]
+    if self.periodic:
+      points.append( Point( transforms[1] << left, transforms[-2] << right ) )
+    return UnionTopology( points )
+
+  def basis_spline( self, degree, periodic=None, removedofs=None ):
+    'spline from vertices'
+
+    if periodic is None:
+      periodic = self.periodic
+
+    ndofs = len(self) + degree
+    dofs = numpy.arange( ndofs )
+
+    if periodic and degree > 0:
+      assert ndofs >= 2 * degree
+      dofs[-degree:] = dofs[:degree]
+      ndofs -= overlap
+
+    fmap = dict( zip( self._transforms[1:-1], element.PolyLine.spline( degree=degree, nelems=len(self), periodic=periodic ) ) )
+    nmap = { trans: dofs[i:i+degree+1] for i, trans in enumerate(self._transforms[1:-1]) }
+    func = function.function( fmap, nmap, ndofs )
+    if not removedofs:
+      return func
+
+    mask = numpy.ones( ndofs, dtype=bool )
+    mask[list(removedofs)] = False
+    return function.mask( func, mask )
+
+  def basis_discont( self, degree ):
+    'discontinuous shape functions'
+
+    fmap = dict.fromkeys( self._transforms[1:-1], element.PolyLine( element.PolyLine.bernstein_poly(degree) ) )
+    nmap = dict( zip( self._transforms[1:-1], numpy.arange(len(self)*(degree+1)).reshape(len(self),degree+1) ) )
+    return function.function( fmap=fmap, nmap=nmap, ndofs=len(self)*(degree+1) )
+
+  def basis_std( self, degree, periodic=None, removedofs=None ):
+    'spline from vertices'
+
+    if periodic is None:
+      periodic = self.periodic
+
+    ndofs = len(self) * degree + 1
+    dofs = numpy.arange( ndofs )
+
+    if periodic and degree > 0:
+      dofs[-1] = dofs[0]
+      ndofs -= 1
+
+    fmap = dict.fromkeys( self._transforms[1:-1], element.PolyLine( element.PolyLine.bernstein_poly(degree) ) )
+    nmap = { trans: dofs[i*degree:(i+1)*degree+1] for i, trans in enumerate(self._transforms[1:-1]) }
+    func = function.function( fmap, nmap, ndofs )
+    if not removedofs:
+      return func
+
+    mask = numpy.ones( ndofs, dtype=bool )
+    mask[list(removedofs)] = False
+    return function.mask( func, mask )
+
+  def __str__( self ):
+    'string representation'
+
+    return '{}({}:{})'.format( self.__class__.__name__, self.i, self.j )
+
 class StructuredTopology( Topology ):
   'structured topology'
 
@@ -964,7 +1091,7 @@ class StructuredTopology( Topology ):
     for trans, std, *S in numpy.broadcast( self._transform, stdelems, *numpy.ix_(*slices) ):
       dofmap[trans] = vertex_structure[S].ravel()
       funcmap[trans] = std
-    func = function.function( funcmap, dofmap, numpy.product(dofshape), self.ndims )
+    func = function.function( funcmap, dofmap, numpy.product(dofshape) )
     if not any( removedofs ):
       return func
 
@@ -1080,7 +1207,7 @@ class StructuredTopology( Topology ):
       dofmap[trans] = dofs
       funcmap[trans] = std
 
-    return function.function( funcmap, dofmap, dofcount, self.ndims )
+    return function.function( funcmap, dofmap, dofcount )
 
   @staticmethod
   def _localsplinebasis ( lknots, p ):
@@ -1135,7 +1262,7 @@ class StructuredTopology( Topology ):
       fmap[elem.transform] = stdfunc
       nmap[elem.transform] = ndofs + numpy.arange(stdfunc.nshapes)
       ndofs += stdfunc.nshapes
-    return function.function( fmap=fmap, nmap=nmap, ndofs=ndofs, ndims=self.ndims )
+    return function.function( fmap=fmap, nmap=nmap, ndofs=ndofs )
 
   def basis_std( self, degree, removedofs=None, periodic=None ):
     'spline from vertices'
@@ -1169,7 +1296,7 @@ class StructuredTopology( Topology ):
 
     funcmap = dict.fromkeys( self._transform.flat, util.product( element.PolyLine( element.PolyLine.bernstein_poly(d) ) for d in degree ) )
     dofmap = { trans: vertex_structure[S].ravel() for trans, *S in numpy.broadcast( self._transform, *numpy.ix_(*slices) ) }
-    func = function.function( funcmap, dofmap, numpy.product(dofshape), self.ndims )
+    func = function.function( funcmap, dofmap, numpy.product(dofshape) )
     if not any( removedofs ):
       return func
 
@@ -1252,7 +1379,7 @@ class UnstructuredTopology( Topology ):
       assert stdfunc.nshapes == elem.nverts
       fmap[elem.transform] = stdfunc
       nmap[elem.transform] = dofs
-    return function.function( fmap=fmap, nmap=nmap, ndofs=len(dofmap), ndims=self.ndims )
+    return function.function( fmap=fmap, nmap=nmap, ndofs=len(dofmap) )
 
   def basis_bubble( self ):
     'bubble from vertices'
@@ -1274,7 +1401,7 @@ class UnstructuredTopology( Topology ):
       dofs[ elem.nverts ] = ielem
       fmap[elem.transform] = stdfunc
       nmap[elem.transform] = dofs
-    return function.function( fmap=fmap, nmap=nmap, ndofs=len(self)+len(dofmap), ndims=self.ndims )
+    return function.function( fmap=fmap, nmap=nmap, ndofs=len(self)+len(dofmap) )
 
   def basis_spline( self, degree ):
     assert degree == 1
@@ -1292,7 +1419,7 @@ class UnstructuredTopology( Topology ):
       fmap[elem.transform] = stdfunc
       nmap[elem.transform] = ndofs + numpy.arange(stdfunc.nshapes)
       ndofs += stdfunc.nshapes
-    return function.function( fmap=fmap, nmap=nmap, ndofs=ndofs, ndims=self.ndims )
+    return function.function( fmap=fmap, nmap=nmap, ndofs=ndofs )
 
 class UnionTopology( Topology ):
   'grouped topology'

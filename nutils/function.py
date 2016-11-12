@@ -3742,12 +3742,10 @@ def opposite( arg ):
       args=[arg] ) if isinstance( arg, index.IndexedArray ) \
     else edit( arg, opposite )
 
-def function( fmap, nmap, ndofs, ndims ):
+def function( fmap, nmap, ndofs ):
   'create function on ndims-element'
 
   length = '~%d' % ndofs
-  for trans in nmap:
-    break
   func = Function( fmap, igrad=0, length=length )
   dofmap = DofMap( nmap, length=length )
   return Inflate( func, dofmap, ndofs, axis=0 )

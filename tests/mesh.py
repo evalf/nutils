@@ -387,3 +387,39 @@ def gmshperiodic():
     basis = domain.basis( 'std', degree=1 )
     err = domain.interfaces.integrate( basis - function.opposite(basis), geometry=geom, ischeme='gauss1' )
     numpy.testing.assert_almost_equal( err, 0, decimal=15 )
+
+@register( 'new', mesh.newrectilinear )
+@register( 'old', mesh.rectilinear )
+def rectilinear( rectilinear ):
+
+  domain, geom = rectilinear( [4,5] )
+
+  @unittest
+  def volume():
+    volume = domain.integrate( 1, geometry=geom, ischeme='gauss1' )
+    numpy.testing.assert_almost_equal( volume, 20, decimal=15 )
+
+  @unittest
+  def divergence():
+    domain.volume_check( geom )
+
+  for group, exact_length in ('right',5), ('left',5), ('top',4), ('bottom',4), ((),18):
+    @unittest( name=group or 'all' )
+    def length():
+      length = domain.boundary[group].integrate( 1, geometry=geom, ischeme='gauss1' )
+      numpy.testing.assert_almost_equal( length, exact_length, decimal=10 )
+
+  @unittest
+  def interface():
+    geomerr = domain.interfaces.elem_eval( geom - function.opposite(geom), ischeme='uniform2', separate=False )
+    numpy.testing.assert_almost_equal( geomerr, 0, decimal=15 )
+    normalerr = domain.interfaces.elem_eval( geom.normal() + function.opposite(geom.normal()), ischeme='uniform2', separate=False )
+    numpy.testing.assert_almost_equal( normalerr, 0, decimal=15 )
+
+  for basistype in 'discont', 'std', 'spline':
+    for degree in 1, 2, 3:
+      @unittest( name=basistype+str(degree) )
+      def pum():
+        basis = domain.basis( basistype, degree=degree )
+        values = domain.interfaces.elem_eval( basis, geometry=geom, ischeme='uniform2', separate=False )
+        numpy.testing.assert_almost_equal( values.sum(1), 1 )
