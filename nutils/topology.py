@@ -619,6 +619,13 @@ class Topology( object ):
     simplify = lambda arg: 0 if arg is angle else function.edit( arg, simplify )
     return revdomain, revgeom, simplify
 
+  def extruded( self, geom, nelems, periodic=False, bnames=('front','back') ):
+    assert geom.ndim == 1
+    root = transform.roottrans( 'extrude', shape=[ nelems if periodic else 0 ] )
+    extopo = self * StructuredLine( root, i=0, j=nelems, periodic=periodic, bnames=bnames )
+    exgeom = function.concatenate( function.bifurcate( geom, function.rootcoords(1) ) )
+    return extopo, exgeom
+
 class WithGroupsTopology( Topology ):
   'item topology'
 

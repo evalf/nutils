@@ -688,7 +688,7 @@ class VTKFile( BasePlot ):
       npars = ndims
     assert npars in (2,3)
 
-    celltypemap = { 2: 3, 3: 5, 4: 9 if npars == 2 else 10, 5: 14, 8: 11 }
+    celltypemap = { 2: 3, 3: 5, 4: 9 if npars == 2 else 10, 5: 14, 6: 13, 8: 11 }
 
     ncells = len( cellpoints )
     cells = numpy.empty( npoints+ncells, dtype=numpy.int32 )

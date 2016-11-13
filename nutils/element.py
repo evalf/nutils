@@ -809,6 +809,8 @@ class TensorReference( Reference ):
       points = [[0,0],[1,0],[1,1],[0,1]]
     elif self == getsimplex(1)**3:
       points = [[0,0,0],[1,0,0],[0,1,0],[1,1,0],[0,0,1],[1,0,1],[0,1,1],[1,1,1]]
+    elif self == getsimplex(2)*getsimplex(1):
+      points = [[0,0,0],[1,0,0],[0,1,0],[0,0,1],[1,0,1],[0,1,1]]
     else:
       raise NotImplementedError
     return numpy.array(points,dtype=float), numpy.ones(self.nverts,dtype=float)
