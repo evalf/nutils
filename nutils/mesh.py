@@ -51,7 +51,7 @@ def rectilinear( richshape, periodic=(), name='rect' ):
     root = transform.roottransedges( name, shape )
 
   axes = [ topology.DimAxis(0,n,idim in periodic) for idim, n in enumerate(shape) ]
-  topo = topology.StructuredTopology( root, axes ).withsubs()
+  topo = topology.StructuredTopology( root, axes )
 
   if uniform:
     if all( o == offset[0] for o in offset[1:] ):
@@ -94,7 +94,7 @@ def newrectilinear( nodes, periodic=None, bnames=[['left','right'],['bottom','to
   for domaini, geomi in dims:
     domain = domain * domaini
     geom = function.concatenate( function.bifurcate(geom,geomi) )
-  return domain.withsubs(), geom
+  return domain, geom
 
 @log.title
 def gmsh( fname, name=None ):
@@ -281,30 +281,26 @@ def gmsh( fname, name=None ):
       tagspelems.setdefault( tagname, [] ).extend( pelem )
 
   # create volume topologies
-  basevtopo = topology.UnstructuredTopology( ndims, velems )
-  subvtopos = { tagname: topology.SubsetTopology( basevtopo, elements=tagvelems, boundaryname=None, precise=True ) for tagname, tagvelems in tagsvelems.items() }
-  log.info( 'topology (#{}) with groups: {}'.format( len(basevtopo), ', '.join('{} (#{})'.format(n,len(t)) for n, t in subvtopos.items()) ) )
+  basetopo = topology.UnstructuredTopology( ndims, velems )
+  basetopo.boundary = topology.UnstructuredTopology( ndims-1, belems.values() )
+  basetopo.interfaces = topology.UnstructuredTopology( ndims-1, ielems.values() )
+  basetopo.points = topology.UnstructuredTopology( 0, pelems )
 
-  # create boundary topologies
-  basebtopo = topology.UnstructuredTopology( ndims-1, belems.values() )
-  subbtopos = { tagname: topology.SubsetTopology( basebtopo, elements=tagbelems, boundaryname=None, precise=True ) for tagname, tagbelems in tagsbelems.items() }
-  log.info( 'boundary (#{}) with groups: {}'.format( len(basebtopo), ', '.join('{} (#{})'.format(n,len(t)) for n, t in subbtopos.items() ) ) )
+  # create boundary, interface, point subtopologies
+  bgroups = { tagname: topology.UnstructuredTopology( ndims-1, tagbelems ) for tagname, tagbelems in tagsbelems.items() }
+  log.info( 'boundary (#{}) with groups: {}'.format( len(basetopo.boundary), ', '.join('{} (#{})'.format(n,len(t)) for n, t in bgroups.items() ) ) )
 
-  # create interface topologies
-  baseitopo = topology.UnstructuredTopology( ndims-1, ielems.values() )
-  subitopos = { tagname: topology.SubsetTopology( baseitopo, elements=tagielems, boundaryname=None, precise=True ) for tagname, tagielems in tagsielems.items() }
-  log.info( 'interfaces (#{}) with groups: {}'.format( len(baseitopo), ', '.join('{} (#{})'.format(n,len(t)) for n, t in subitopos.items() ) ) )
+  igroups = { tagname: topology.UnstructuredTopology( ndims-1, tagielems ) for tagname, tagielems in tagsielems.items() }
+  log.info( 'interfaces (#{}) with groups: {}'.format( len(basetopo.interfaces), ', '.join('{} (#{})'.format(n,len(t)) for n, t in igroups.items() ) ) )
 
-  # create point topologies
-  baseptopo = topology.UnstructuredTopology( 0, pelems )
-  subptopos = { tagname: topology.SubsetTopology( baseptopo, elements=tagpelems, boundaryname=None, precise=True ) for tagname, tagpelems in tagspelems.items() }
-  log.info( 'points (#{}) with groups: {}'.format( len(baseptopo), ', '.join('{} (#{})'.format(n,len(t)) for n, t in subptopos.items() ) ) )
+  pgroups = { tagname: topology.UnstructuredTopology( 0, tagpelems ) for tagname, tagpelems in tagspelems.items() }
+  log.info( 'points (#{}) with groups: {}'.format( len(basetopo.points), ', '.join('{} (#{})'.format(n,len(t)) for n, t in pgroups.items() ) ) )
 
-  # create topology
-  topo = basevtopo.withsubs( subvtopos )
-  topo.boundary = basebtopo.withsubs( subbtopos )
-  topo.interfaces = baseitopo.withsubs( subitopos )
-  topo.points = baseptopo.withsubs( subptopos )
+  # add groups to basetopo, then create volume subtopologies
+  basetopo_bip = basetopo.withgroups( bgroups=bgroups, igroups=igroups, pgroups=pgroups )
+  vgroups = { tagname: basetopo_bip.subset( tagvelems, precise=True ) for tagname, tagvelems in tagsvelems.items() }
+  topo = basetopo_bip.withgroups( vgroups=vgroups )
+  log.info( 'topology (#{}) with groups: {}'.format( len(basetopo), ', '.join('{} (#{})'.format(n,len(t)) for n, t in vgroups.items()) ) )
 
   # create geometry
   nmap = { elem.transform: inodes for inodes, elem in zip( vinodes, velems ) }
@@ -352,7 +348,7 @@ def triangulation( vertices, nvertices ):
     elem, iedge = bedges[ n12 ]
     structure.append( elem.edge( iedge ) )
     
-  topo = topology.UnstructuredTopology( ndims, nmap ).withsubs()
+  topo = topology.UnstructuredTopology( ndims, nmap )
   topo.boundary = topology.StructuredTopology( structure, periodic=(1,) )
   return topo
 
@@ -493,13 +489,12 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   
   root = transform.roottrans( 'demo', shape=(0,0) )
   reference = element.getsimplex(2)
-  elements = [ element.Element( reference, root << transform.simplex(coords[iverts]) ) for iverts in vertices ]
-  belems = [ elem.edge(0) for elem in elements[:12] ]
-  bgroups = { 'top': belems[0:3], 'left': belems[3:6], 'bottom': belems[6:9], 'right': belems[9:12] }
+  elems = [ element.Element( reference, root << transform.simplex(coords[iverts]) ) for iverts in vertices ]
+  topo = topology.UnstructuredTopology( 2, elems )
 
-  topo = topology.UnstructuredTopology( 2, elements ).withsubs()
-  subbtopos = { name: topology.UnstructuredTopology( 1, subtopo ) for name, subtopo in bgroups.items() }
-  topo.boundary = topology.UnstructuredTopology( 1, belems ).withsubs( subbtopos )
+  belems = [ elem.edge(0) for elem in elems[:12] ]
+  btopos = [ topology.UnstructuredTopology( 1, subbelems ) for subbelems in (belems[0:3], belems[3:6], belems[6:9], belems[9:12]) ]
+  topo.boundary = topology.UnionTopology( btopos, ['top','left','bottom','right'] )
 
   geom = [.5*(xmin+xmax),.5*(ymin+ymax)] \
        + [.5*(xmax-xmin),.5*(ymax-ymin)] * function.rootcoords(2)

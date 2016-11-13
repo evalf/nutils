@@ -45,8 +45,9 @@ def main( degree=1, solvetol=1e-10, circle=False, uniform=False, basistype='std'
   # construct domain
   verts = numpy.linspace( -1, 1, 7 )
   basetopo, geom = mesh.rectilinear( [verts,verts] )
-  domain = basetopo - basetopo[3:,:3]
-  domain['aoi'] = domain.trim( .04 - ((geom+.5)**2).sum(-1), maxrefine=5 ) if circle else domain[1:2,1:2]
+  aoi = basetopo.trim( .04 - ((geom+.5)**2).sum(-1), maxrefine=5 ) if circle else basetopo[1:2,1:2]
+  domain = ( basetopo.withboundary( outside=... )
+           - basetopo[3:,:3].withboundary( inside=... ) ).withsubdomain( aoi=aoi )
 
   # construct exact sulution (used for boundary conditions and error evaluation)
   exact = ( geom**2 ).sum(-1)**(1./3) * function.sin( (2./3) * function.arctan2(-geom[1],-geom[0]) )
@@ -66,9 +67,9 @@ def main( degree=1, solvetol=1e-10, circle=False, uniform=False, basistype='std'
     basis = domain.basis( basistype, degree=degree )
     laplace = function.outer( basis.grad(geom) ).sum(-1)
     matrix = domain.integrate( laplace, geometry=geom, ischeme='gauss5' )
-    rhsprimal = domain.boundary['~left,~top'].integrate( basis * flux, geometry=geom, ischeme='gauss99' )
+    rhsprimal = domain.boundary['inside'].integrate( basis * flux, geometry=geom, ischeme='gauss99' )
     rhsdual = domain['aoi'].integrate( basis, geometry=geom, ischeme='gauss5' )
-    cons = domain.boundary['left,right,top,bottom'].project( exact, ischeme='gauss9', geometry=geom, onto=basis )
+    cons = domain.boundary['outside'].project( exact, ischeme='gauss9', geometry=geom, onto=basis )
     lhsprimal = matrix.solve( rhsprimal, constrain=cons, tol=solvetol, symmetric=True )
     lhsdual = matrix.solve( rhsdual, constrain=cons&0, tol=solvetol, symmetric=True )
     primal = basis.dot( lhsprimal )
@@ -80,13 +81,13 @@ def main( degree=1, solvetol=1e-10, circle=False, uniform=False, basistype='std'
     finelaplace = function.outer( finebasis.grad(geom) ).sum(-1)
     finematrix = finedomain.integrate( finelaplace, geometry=geom, ischeme='gauss5' )
     finerhsdual = finedomain['aoi'].integrate( finebasis, geometry=geom, ischeme='gauss5' )
-    finecons = finedomain.boundary['left,right,top,bottom'].project( 0, ischeme='gauss5', geometry=geom, onto=finebasis )
+    finecons = finedomain.boundary['outside'].project( 0, ischeme='gauss5', geometry=geom, onto=finebasis )
     finelhsdual = finematrix.solve( finerhsdual, constrain=finecons, tol=solvetol, symmetric=True )
 
     # evaluate error estimate
     dlhsdual = finelhsdual - finedomain.project( dual, onto=finebasis, geometry=geom, ischeme='gauss5' )
     ddualw = finebasis * dlhsdual
-    error_est_w = finedomain.boundary['~left,~top'].integrate( ddualw * flux, geometry=geom, ischeme='gauss99' )
+    error_est_w = finedomain.boundary['inside'].integrate( ddualw * flux, geometry=geom, ischeme='gauss99' )
     error_est_w -= finedomain.integrate( ( ddualw.grad(geom) * primal.grad(geom) ).sum(-1), geometry=geom, ischeme='gauss5' )
 
     # plot solution and error convergence

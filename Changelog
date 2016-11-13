@@ -6,6 +6,26 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+New: topology.with{subdomain,boundary,interfaces,points}
+
+  Topologies have been made fully immutable, which means that the old
+  setitem operation is no longer supported. Instead, to add a
+  subtopology to the domain, its boundary, its interfaces, or points,
+  any of the methods .withsubdomain, .withboundary, .withinterfaces, and
+  .withpoints, respectively, will return a copy of the topology with the
+  desired groups added.
+
+  Removed syntax:
+  >> domain.boundary['wall'] = domain.boundary['left,top']
+
+  New:
+  >> domain = domain.withboundary( wall=domain.boundary['left,top'] )
+  >> domain.boundary['wall'].integrate( ... )
+
+  Alternative:
+  >> domain = domain.withboundary( wall='left,top' )
+
+
 New: circular symmetry
 
   Any topology can be revolved using the new .revolved method, which

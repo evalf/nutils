@@ -40,6 +40,11 @@ class Topology( object ):
     assert numeric.isint( ndims ) and ndims >= 0
     self.ndims = ndims
 
+  def __str__( self ):
+    'string representation'
+
+    return '%s(#%s)' % ( self.__class__.__name__, len(self) )
+
   def __len__( self ):
     return len( self.elements )
 
@@ -58,7 +63,7 @@ class Topology( object ):
     assert isinstance( other, Topology ) and other.ndims == self.ndims
     return other if not self \
       else self if not other \
-      else NotImplemented if isinstance( other, (ItemTopology,UnionTopology,SubtractionTopology) ) \
+      else NotImplemented if isinstance( other, (UnionTopology,SubtractionTopology) ) \
       else UnionTopology( (self,other) )
 
   __ror__ = lambda self, other: self.__or__( other )
@@ -73,7 +78,6 @@ class Topology( object ):
   def __sub__( self, other ):
     assert isinstance( other, Topology ) and other.ndims == self.ndims
     return self if not other \
-      else NotImplemented if isinstance( other, ItemTopology ) \
       else SubtractionTopology( self, other )
 
   def __mul__( self, other ):
@@ -456,13 +460,18 @@ class Topology( object ):
       if ref:
         elements.append( element.Element( ref, elem.transform, elem.opposite ) )
     log.debug( 'cache', fcache.stats )
-    return self.subset( elements, name, precise=True )
+    return self.subset( elements, boundaryname=name, precise=True )
 
   def subset( self, elements, boundaryname=None, precise=False ):
     return SubsetTopology( self, elements, boundaryname, precise )
 
-  def withsubs( self, subtopos={} ):
-    return ItemTopology( self, subtopos )
+  def withgroups( self, vgroups={}, bgroups={}, igroups={}, pgroups={} ):
+    return WithGroupsTopology( self, vgroups, bgroups, igroups, pgroups ) if vgroups or bgroups or igroups or pgroups else self
+
+  withsubdomain  = lambda self, **kwargs: self.withgroups( vgroups=kwargs )
+  withboundary   = lambda self, **kwargs: self.withgroups( bgroups=kwargs )
+  withinterfaces = lambda self, **kwargs: self.withgroups( igroups=kwargs )
+  withpoints     = lambda self, **kwargs: self.withgroups( pgroups=kwargs )
 
   @log.title
   @core.single_or_multiple
@@ -610,42 +619,44 @@ class Topology( object ):
     simplify = lambda arg: 0 if arg is angle else function.edit( arg, simplify )
     return revdomain, revgeom, simplify
 
-class ItemTopology( Topology ):
+class WithGroupsTopology( Topology ):
   'item topology'
 
-  def __init__( self, basetopo, subtopos ):
-    Topology.__init__( self, basetopo.ndims )
+  def __init__( self, basetopo, vgroups={}, bgroups={}, igroups={}, pgroups={} ):
+    assert vgroups or bgroups or igroups or pgroups
     self.basetopo = basetopo
-    self.subtopos = {}
-    if subtopos and core.getprop( 'selfcheck', False ):
-      for name, subtopo in subtopos.items():
-        self[name] = subtopo
-    else:
-      self.subtopos = subtopos.copy()
+    self.vgroups = vgroups.copy()
+    self.bgroups = bgroups.copy()
+    self.igroups = igroups.copy()
+    self.pgroups = pgroups.copy()
+    if core.getprop( 'selfcheck', False ):
+      for i, groups in enumerate([ vgroups, bgroups, igroups, pgroups ]):
+        for name, topo in groups.items():
+          assert isinstance( name, str )
+          if isinstance( topo, Topology ):
+            base = basetopo if i == 0 \
+              else basetopo.boundary if i == 1 \
+              else basetopo.interfaces if i == 2 \
+              else basetopo.points
+            assert topo.ndims == base.ndims
+            assert set(base.edict).issuperset(topo.edict)
+          else:
+            assert topo is Ellipsis or isinstance( topo, str )
+    Topology.__init__( self, basetopo.ndims )
+
+  def withgroups( self, vgroups={}, bgroups={}, igroups={}, pgroups={} ):
+    args = []
+    for groups, newgroups in (self.vgroups,vgroups), (self.bgroups,bgroups), (self.igroups,igroups), (self.pgroups,pgroups):
+      groups = groups.copy()
+      groups.update( newgroups )
+      args.append( groups )
+    return WithGroupsTopology( self.basetopo, *args )
 
   def __iter__( self ):
     return iter( self.basetopo )
 
   def __len__( self ):
     return len( self.basetopo )
-
-  def __or__( self, other ):
-    other = other.withsubs()
-    subtopos = self.subtopos.copy()
-    for name, topo in other.subtopos.items():
-      if name in subtopos:
-        subtopos[name] |= topo
-      else:
-        subtopos[name] = topo
-    return ( self.basetopo | other.basetopo ).withsubs( subtopos )
-
-  def __sub__( self, other ):
-    othertopo = other.basetopo if isinstance( other, ItemTopology ) else other
-    subtopos = { name: topo - othertopo for name, topo in self.subtopos.items() }
-    return ( self.basetopo - othertopo ).withsubs( subtopos )
-
-  def __rsub__( self, other ):
-    return other - self.basetopo
 
   def __getitem__( self, item ):
     'subtopology'
@@ -655,35 +666,26 @@ class ItemTopology( Topology ):
     if len(item) == 0:
       return self
     if not isinstance( item[0], str ):
-      return self.basetopo.__getitem__( item )
-    topo = EmptyTopology( self.ndims )
-    for name in item[0].split( ',' ):
+      return self.basetopo[item]
+    itemtopo = EmptyTopology( self.ndims )
+    names, *remitem = item
+    for name in names.split( ',' ):
       try:
-        topo |= self.subtopos[name][item[1:]]
+        nametopo = self.vgroups[name]
       except KeyError:
-        topo |= self.basetopo[name][item[1:]]
-    return topo
-
-  def __setitem__( self, item, topo ):
-    assert isinstance( topo, Topology )
-    assert topo.ndims == self.ndims, 'wrong dimension: got %d, expected %d' % ( topo.ndims, self.ndims )
-    assert all( elem.transform in self.basetopo.edict for elem in topo ), 'group %r is not a subtopology' % item
-    self.subtopos[item] = topo.withsubs()
-
-  def __invert__( self ):
-    subtopos = { _flipname(name): ~topo for name, topo in self.subtopos.items() }
-    return ( ~self.basetopo ).withsubs( subtopos )
-
-  def __eq__( self, other ):
-    return isinstance( other, ItemTopology ) and self.basetopo == other.basetopo and self.subtopos == other.subtopos
-
-  def withsubs( self, subtopos={} ):
-    if subtopos and core.getprop( 'selfcheck', False ):
-      for name, topo in subtopos.items():
-        self[name] = topo
-    else:
-      self.subtopos.update( subtopos )
-    return self
+        nametopo = self.basetopo[name]
+      else:
+        if nametopo is Ellipsis:
+          nametopo = self.basetopo
+        elif isinstance( nametopo, str ):
+          nametopo = self.basetopo[nametopo]
+      assert isinstance( nametopo, Topology ) and nametopo.ndims == self.ndims
+      if remitem:
+        nametopo = nametopo[ tuple(remitem) ]
+      itemtopo |= nametopo
+    igroups = { name: itemtopo.interfaces.subset(topo,precise=True) if isinstance(topo,Topology) else topo for name, topo in self.igroups.items() }
+    bgroups = { name: itemtopo.boundary.subset(topo,precise=True) if isinstance(topo,Topology) else topo for name, topo in self.bgroups.items() }
+    return itemtopo.withgroups( bgroups=bgroups, igroups=igroups )
 
   @property
   def edict( self ):
@@ -703,43 +705,23 @@ class ItemTopology( Topology ):
 
   @property
   def boundary( self ):
-    return self.basetopo.boundary
-
-  @boundary.setter
-  def boundary( self, value ):
-    self.basetopo.boundary = value.withsubs()
+    return self.basetopo.boundary.withgroups( self.bgroups )
 
   @property
   def interfaces( self ):
-    return self.basetopo.interfaces
-
-  @interfaces.setter
-  def interfaces( self, value ):
-    self.basetopo.interfaces = value.withsubs()
+    return self.basetopo.interfaces.withgroups( self.igroups )
 
   @property
   def points( self ):
-    return self.basetopo.points
-
-  @points.setter
-  def points( self, value ):
-    self.basetopo.points = value.withsubs()
+    return self.basetopo.points.withgroups( self.pgroups )
 
   def basis( self, name, *args, **kwargs ):
     return self.basetopo.basis( name, *args, **kwargs )
 
   @cache.property
   def refined( self ):
-    subtopos = { name: topo.refined for name, topo in self.subtopos.items() }
-    return self.basetopo.refined.withsubs( subtopos )
-
-  def subset( self, elements, boundaryname=None, precise=False ):
-    subtopos = { name: topo.subset( elements, boundaryname, precise=False ) for name, topo in self.subtopos.items() }
-    return self.basetopo.subset( elements, boundaryname, precise ).withsubs( subtopos )
-
-  def hierarchical( self, elements, precise=False ):
-    subtopos = { name: topo.hierarchical( elements, precise=False ) for name, topo in self.subtopos.items() }
-    return self.basetopo.hierarchical( elements, precise ).withsubs( subtopos )
+    groups = [ { name: topo.refined if isinstance(topo,Topology) else topo for name, topo in groups.items() } for groups in (self.vgroups,self.bgroups,self.igroups,self.pgroups) ]
+    return self.basetopo.refined.withgroups( *groups )
 
 class OppositeTopology( Topology ):
   'opposite topology'
@@ -749,12 +731,10 @@ class OppositeTopology( Topology ):
     Topology.__init__( self, basetopo.ndims )
 
   def __getitem__( self, item ):
-    if isinstance( item, str ):
-      return self.basetopo[_flipname(item)]
-    raise KeyError( item )
+    return ~( self.basetopo[ item ] )
 
   def __iter__( self ):
-    return ( element.Element( elem.reference, elem.opposite, elem.transform ) for elem in self.basetopo )
+    return ( elem.flipped for elem in self.basetopo )
 
   def __len__( self ):
     return len( self.basetopo )
@@ -837,9 +817,8 @@ class StructuredLine( Topology ):
     transforms = self._transforms
     left = transform.affine( numpy.zeros((1,0)), offset=[0], isflipped=True )
     right = transform.affine( numpy.zeros((1,0)), offset=[1], isflipped=False )
-    bndi = Point( transforms[1] << left, transforms[0] << right )
-    bndj = Point( transforms[-2] << right, transforms[-1] << left )
-    return UnionTopology([ bndi, bndj ]).withsubs( dict( zip( self.bnames, (bndi,bndj) ) ) )
+    bnd = Point( transforms[1] << left, transforms[0] << right ), Point( transforms[-2] << right, transforms[-1] << left )
+    return UnionTopology( bnd, self.bnames )
 
   @cache.property
   def interfaces( self ):
@@ -1015,24 +994,21 @@ class StructuredTopology( Topology ):
     'boundary'
 
     nbounds = len(self.axes) - self.ndims
-    dirtopos = []
-    subnames = ('left','right'), ('bottom','top'), ('front','back')
-    subtopos = {}
+    subnames = 'left', 'right', 'bottom', 'top', 'front', 'back'
+    btopo = EmptyTopology( self.ndims-1 )
     for idim, axis in enumerate( self.axes ):
       if not axis.isdim or axis.isperiodic:
         continue
-      topos = [ StructuredTopology( self.root, self.axes[:idim] + (BndAxis(n,n if not axis.isperiodic else 0,nbounds,side),) + self.axes[idim+1:], self.nrefine )
+      btopos = [ StructuredTopology( self.root, self.axes[:idim] + (BndAxis(n,n if not axis.isperiodic else 0,nbounds,side),) + self.axes[idim+1:], self.nrefine )
         for side, n in enumerate((axis.i,axis.j)) ]
-      if idim < len(subnames):
-        subtopos.update( zip( subnames[idim], topos ) )
-      dirtopos.append( UnionTopology(topos) )
-    return EmptyTopology( self.ndims-1 ) if len(dirtopos) == 0 else UnionTopology( dirtopos ).withsubs( subtopos )
+      btopo |= UnionTopology( btopos, subnames[2*idim:] )
+    return btopo
 
   @cache.property
   def interfaces( self ):
     'interfaces'
 
-    topos = []
+    itopo = EmptyTopology( self.ndims-1 )
     nbounds = len(self.axes) - self.ndims
     for idim, axis in enumerate(self.axes):
       if not axis.isdim:
@@ -1041,10 +1017,9 @@ class StructuredTopology( Topology ):
       if axis.isperiodic:
         assert axis.i == 0
         bndprops.append( BndAxis( axis.j, 0, ibound=nbounds, side=True ) )
-      itopo = EmptyTopology( self.ndims-1 ) if not bndprops \
-         else UnionTopology( StructuredTopology( self.root, self.axes[:idim] + (axis,) + self.axes[idim+1:], self.nrefine ) for axis in bndprops )
-      topos.append( itopo )
-    return UnionTopology( topos ).withsubs({ 'dir{}'.format(idim): topo for idim, topo in enumerate(topos) })
+      if bndprops:
+        itopo |= UnionTopology( StructuredTopology( self.root, self.axes[:idim] + (axis,) + self.axes[idim+1:], self.nrefine ) for axis in bndprops )
+    return itopo
 
   def basis_spline( self, degree, neumann=(), knots=None, periodic=None, closed=False, removedofs=None ):
     'spline from vertices'
@@ -1335,17 +1310,24 @@ class UnstructuredTopology( Topology ):
     edges = {}
     ifaces = []
     for elem in log.iter( 'elem', self ):
-      elemcoords = elem.vertices
-      for iedge, iverts in enumerate( elem.reference.edge2vertex ):
-        edgekey = tuple( sorted( c for c, n in zip( elemcoords, iverts ) if n ) )
-        edge = elem.edge(iedge)
+      for edge in elem.edges:
+        edgecoords = edge.vertices
+        edgekey = tuple( sorted( edgecoords ) )
         try:
           oppedge = edges.pop( edgekey )
         except KeyError:
           edges[edgekey] = edge
         else:
           assert edge.reference == oppedge.reference
-          ifaces.append(( edge, oppedge ))
+          oppedgecoords = oppedge.vertices
+          opptrans = oppedge.transform
+          if oppedgecoords != edgecoords: # TODO leverage rotation information from element
+            if edge.reference.nverts == 2:
+              assert edgecoords == oppedgecoords[::-1]
+              opptrans <<= transform.affine( -1, [1] )
+            else:
+              raise NotImplementedError
+          ifaces.append( element.Element( edge.reference, edge.transform, opptrans ) )
     return tuple(edges.values()), tuple(ifaces)
 
   @cache.property
@@ -1356,9 +1338,7 @@ class UnstructuredTopology( Topology ):
   @cache.property
   def interfaces( self ):
     edges, interfaces = self.edge_search
-    return UnstructuredTopology( self.ndims-1, [ element.Element( edge.reference, edge.transform,
-      oppedge.transform << transform.solve( oppedge.transform, edge.transform ) )
-        for edge, oppedge in interfaces ])
+    return UnstructuredTopology( self.ndims-1, interfaces )
 
   def basis_std( self, degree=1 ):
     'std from vertices'
@@ -1424,8 +1404,13 @@ class UnstructuredTopology( Topology ):
 class UnionTopology( Topology ):
   'grouped topology'
 
-  def __init__( self, topos ):
+  def __init__( self, topos, names=() ):
     self._topos = tuple(topos)
+    assert all( isinstance( topo, Topology ) for topo in self._topos )
+    self._names = tuple(names)[:len(self._topos)]
+    assert all( isinstance(name,str) for name in self._names )
+    self._named = dict( zip( self._names, self._topos ) )
+    assert len(self._named) == len(self._names), 'duplicate name'
     ndims = self._topos[0].ndims
     assert all( topo.ndims == ndims for topo in self._topos )
     Topology.__init__( self, ndims )
@@ -1436,26 +1421,31 @@ class UnionTopology( Topology ):
     if len(item) == 0:
       return self
     if isinstance( item[0], str ):
-      names = item[0].split(',')
       subtopos = []
-      for topo in self._topos:
-        for name in names:
-          try:
-            subtopo = topo[name]
-          except KeyError:
-            pass
-          else:
-            subtopos.append( subtopo )
-      if subtopos:
-        return UnionTopology( subtopos )
-      raise KeyError( item )
+      for name in item[0].split(','):
+        subtopo = self._named.get( name )
+        if subtopo is not None:
+          subtopos.append( subtopo )
+        else:
+          for topo in self._topos:
+            try:
+              subtopo = topo[name]
+            except KeyError:
+              pass
+            else:
+              subtopos.append( subtopo )
+      if not subtopos:
+        raise KeyError( item )
+      if len(subtopos) == 1:
+        return subtopos[0]
+      return UnionTopology( subtopos )
     assert isinstance( item[0], int )
     return self._topos[ item[0] ][ item[1:] ]
 
   def __or__( self, other ):
-    if isinstance( other, UnionTopology ):
-      return UnionTopology( self._topos + other._topos )
-    return UnionTopology( self._topos + (other,) )
+    if not isinstance( other, UnionTopology ):
+      return UnionTopology( self._topos + (other,), self._names )
+    return UnionTopology( self._topos[:len(self._names)] + other._topos + self._topos[len(self._names):], self._names + other._names )
 
   @cache.property
   def elements( self ):
@@ -1551,7 +1541,7 @@ class SubtractionTopology( Topology ):
             edge = ref.edge_refs[index] & belem.reference
             if edge:
               belems.append( element.Element( edge, belem.transform, belem.opposite ) )
-      btopo |= boundary.subset( belems, boundaryname=None, precise=True )
+      btopo |= boundary.subset( belems, precise=True )
     return btopo
 
   @cache.property
@@ -1609,7 +1599,7 @@ class SubsetTopology( Topology ):
   def __getitem__( self, item ):
     if item == ():
       return self
-    return self.basetopo[item].subset( self.allelements, self.boundaryname, precise=False )
+    return self.basetopo[item].subset( self.allelements, boundaryname=self.boundaryname, precise=False )
 
   @cache.property
   def elements( self ):
@@ -1626,7 +1616,7 @@ class SubsetTopology( Topology ):
   @property
   def refined( self ):
     elems = [ child for elem in self for child in elem.children if child ]
-    return self.basetopo.refined.subset( elems, self.boundaryname, precise=True )
+    return self.basetopo.refined.subset( elems, boundaryname=self.boundaryname, precise=True )
 
   @cache.property
   @log.title
@@ -1634,6 +1624,7 @@ class SubsetTopology( Topology ):
     empty = element.EmptyReference( self.ndims-1 )
     ielems = []
     belems = []
+    oppbelems = []
     for iface in log.iter( 'elem', self.basetopo.interfaces ):
       try:
         ielem, tail = iface.transform.lookup_item( self.edict )
@@ -1662,41 +1653,31 @@ class SubsetTopology( Topology ):
           belems.append( element.Element( edgeref, iface.transform, iface.opposite ) )
         edgeref = oppedge - edge
         if edgeref:
-          belems.append( element.Element( edgeref, iface.opposite, iface.transform ) )
-    return tuple(belems), tuple(ielems)
+          oppbelems.append( element.Element( edgeref, iface.transform, iface.opposite ) )
+    return tuple(belems), tuple(oppbelems), tuple(ielems)
 
   @cache.property
   @log.title
   def interfaces( self ):
-    belems, ielems = self.search_interfaces
-    return self.basetopo.interfaces.subset( ielems, boundaryname=None, precise=True )
+    belems, oppbelems, ielems = self.search_interfaces
+    return self.basetopo.interfaces.subset( ielems, precise=True )
 
   @cache.property
   @log.title
   def boundary( self ):
     'boundary'
 
-    belems, ielems = self.search_interfaces
-    subs = {}
-    if isinstance( self.basetopo.interfaces, ItemTopology ): # TODO fix ItemTopology situation
-      for name, itopo in self.basetopo.interfaces.subtopos.items():
-        isect = [ elem for elem in belems if elem.transform.lookup( itopo.basetopo.edict ) ]
-        nametopo = EmptyTopology( self.ndims-1 )
-        if isect:
-          nametopo |= UnstructuredTopology( self.ndims-1, isect )
-        isect = [ elem for elem in belems if elem.opposite.lookup( itopo.basetopo.edict ) ]
-        if isect:
-          nametopo |= UnstructuredTopology( self.ndims-1, isect )
-        subs[name] = nametopo
-    trimmed = list( belems )
+    cut = []
     for elem in self: # cheap search for intersected elements
       index = self.basetopo.edict[ elem.transform ]
       n = self.basetopo.elements[index].reference.nedges
-      trimmed.extend( element.Element( edge, elem.transform<<trans, elem.transform<<trans.flipped ) for trans, edge in elem.reference.edges[n:] )
-    trimboundarybase = UnstructuredTopology( self.ndims-1, trimmed )
-    if self.boundaryname:
-      subs[ self.boundaryname ] = trimboundarybase.withsubs()
-    trimboundary = trimboundarybase.withsubs( subs )
+      cut.extend( element.Element( edge, elem.transform<<trans, elem.transform<<trans.flipped ) for trans, edge in elem.reference.edges[n:] )
+    trimboundary = UnstructuredTopology( self.ndims-1, cut ) if cut else EmptyTopology( self.ndims-1 )
+    belems, oppbelems, ielems = self.search_interfaces
+    if belems:
+      trimboundary |= self.basetopo.interfaces.subset( belems, precise=True )
+    if oppbelems:
+      trimboundary |= ~( self.basetopo.interfaces.subset( oppbelems, precise=True ) )
 
     belems = [] # prior boundary elements (reduced)
     basebtopo = self.basetopo.boundary
@@ -1711,9 +1692,9 @@ class SubsetTopology( Topology ):
         edge = ref.edge_refs[iedge]
         if edge:
           belems.append( element.Element( edge, belem.transform, belem.opposite ) )
-    origboundary = basebtopo.subset( belems, self.boundaryname, precise=True )
+    origboundary = basebtopo.subset( belems, precise=True )
 
-    return trimboundary | origboundary
+    return UnionTopology( [trimboundary,origboundary], [self.boundaryname] if self.boundaryname else [] )
 
   @log.title
   def basis( self, name, *args, **kwargs ):
@@ -1987,7 +1968,5 @@ def common_refine( topo1, topo2 ):
       select2[ielem2] = False
   elements.extend( elem for ielem, elem in enumerate(topo2) if select2[ielem] )
   return UnstructuredTopology( topo1.ndims, elements )
-
-_flipname = lambda s: s[1:] if s.startswith('~') else '~'+s
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
