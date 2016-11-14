@@ -1670,16 +1670,20 @@ class SubsetTopology( Topology ):
     return self.basetopo.interfaces.subset( ielems, precise=True )
 
   @cache.property
+  def quicktrimboundary( self ):
+    cut = []
+    for elem in self:
+      index = self.basetopo.edict[ elem.transform ]
+      n = self.basetopo.elements[index].reference.nedges
+      cut.extend( element.Element( edge, elem.transform<<trans, elem.transform<<trans.flipped ) for trans, edge in elem.reference.edges[n:] )
+    return UnstructuredTopology( self.ndims-1, cut ) if cut else EmptyTopology( self.ndims-1 )
+
+  @cache.property
   @log.title
   def boundary( self ):
     'boundary'
 
-    cut = []
-    for elem in self: # cheap search for intersected elements
-      index = self.basetopo.edict[ elem.transform ]
-      n = self.basetopo.elements[index].reference.nedges
-      cut.extend( element.Element( edge, elem.transform<<trans, elem.transform<<trans.flipped ) for trans, edge in elem.reference.edges[n:] )
-    trimboundary = UnstructuredTopology( self.ndims-1, cut ) if cut else EmptyTopology( self.ndims-1 )
+    trimboundary = self.quicktrimboundary
     belems, oppbelems, ielems = self.search_interfaces
     if belems:
       trimboundary |= self.basetopo.interfaces.subset( belems, precise=True )
@@ -1887,11 +1891,11 @@ class ProductTopology( Topology ):
   def __len__( self ):
     return len(self.topo1) * len(self.topo2)
 
-  @property
+  @cache.property
   def structure( self ):
     return self.topo1.structure[(...,)+(_,)*self.topo2.ndims] * self.topo2.structure
 
-  @property
+  @cache.property
   def elements( self ):
     return ( numpy.array( self.topo1.elements, dtype=object )[:,_] * numpy.array( self.topo2.elements, dtype=object )[_,:] ).ravel()
 
