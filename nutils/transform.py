@@ -438,6 +438,22 @@ def fulllinear( chain ):
         linear = numpy.concatenate( [ linear, trans.ext[:,_] ], axis=1 )
   return linear * scale
 
+def linearfrom( chain, ndims ):
+  if chain and ndims < chain[-1].fromdims:
+    for i in reversed(range(len(chain))):
+      if chain[i].todims == ndims:
+        chain = chain[:i]
+        break
+    else:
+      raise Exception( 'failed to find {}D coordinate system'.format(ndims) )
+  if not chain:
+    return numpy.eye( ndims )
+  linear = fulllinear( chain )
+  n, m = linear.shape
+  if m >= ndims:
+    return linear[:,:ndims]
+  return numpy.concatenate( [ linear, numpy.zeros((n,ndims-m)) ], axis=1 )
+
 def apply( chain, points ):
   for trans in reversed(chain):
     points = trans.apply( points )

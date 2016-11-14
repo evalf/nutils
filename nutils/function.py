@@ -892,7 +892,7 @@ class RootCoords( Array ):
 
   def _derivative( self, var, axes, seen ):
     if isinstance( var, LocalCoords ) and len(var) > 0:
-      return zeropad( RootTransform( len(self), self.trans ), axis=1, length=len(var) )
+      return RootTransform( len(self), len(var), self.trans )
     return zeros( self.shape+_taketuple(var.shape,axes) )
 
   def _edit( self, op ):
@@ -901,64 +901,36 @@ class RootCoords( Array ):
 class RootTransform( Array ):
   'root transform'
 
-  def __init__( self, ndims, trans ):
+  def __init__( self, ndims, nvars, trans ):
     'constructor'
 
     self.trans = trans
-    Array.__init__( self, args=[trans], shape=(ndims,'nd'), dtype=float )
+    Array.__init__( self, args=[trans], shape=(ndims,nvars), dtype=float )
 
   def evalf( self, chain ):
     'transform'
 
-    ndims = len(self)
-    head, tail = chain.promote( ndims )
-    while head and head[0].todims != ndims:
+    todims, fromdims = self.shape
+    head, tail = chain.promote( todims )
+    while head and head[0].todims != todims:
       head = head[1:]
-    return transform.fulllinear( head + tail )[_]
+    return transform.linearfrom( head+tail, fromdims )[_]
 
   def _derivative( self, var, axes, seen ):
     return zeros( self.shape+_taketuple(var.shape,axes) )
 
   def _edit( self, op ):
-    return RootTransform( len(self), op(self.trans) )
-
-class ZeroPad( Array ):
-  'zero pad to length'
-
-  def __init__( self, array, axis, length ):
-    self.array = array
-    self.axis = axis
-    self.length = length
-    shape = list(array.shape)
-    shape[axis] = length
-    Array.__init__( self, args=[array], shape=shape, dtype=array.dtype )
-
-  def evalf( self, array ):
-    if array.shape[self.axis+1] >= self.length:
-      z = array[ (slice(None),)*(self.axis+1)+(slice(self.length),) ]
-    else:
-      shape = list(array.shape)
-      shape[self.axis+1] = self.length
-      z = numpy.zeros( shape, dtype=array.dtype )
-      z[ (slice(None),)*(self.axis+1)+(slice(array.shape[self.axis+1]),) ] = array
-    return z
-
-  def _derivative( self, var, axes, seen ):
-    return zeropad( derivative(self.array,var,axes,seen), self.axis, self.length )
-
-  def _edit( self, op ):
-    return zeropad( op(self.array), self.axis, self.length )
+    return RootTransform( self.shape[0], self.shape[1], op(self.trans) )
 
 class Function( Array ):
   'function'
 
-  def __init__( self, stdmap, igrad, length, trans=TRANS ):
+  def __init__( self, stdmap, shape, trans=TRANS ):
     'constructor'
 
     self.trans = trans
     self.stdmap = stdmap
-    self.igrad = igrad
-    Array.__init__( self, args=(CACHE,POINTS,trans), shape=(length,)+('nd',)*igrad, dtype=float )
+    Array.__init__( self, args=(CACHE,POINTS,trans), shape=shape, dtype=float )
 
   def evalf( self, cache, points, trans ):
     'evaluate'
@@ -966,23 +938,23 @@ class Function( Array ):
     try:
       std, tail = trans.lookup_item( self.stdmap )
     except KeyError:
-      fvals = numpy.empty( (1,0)+(1,)*self.igrad )
+      fvals = numpy.empty( (1,0)+(1,)*(self.ndim-1) )
     else:
       stdpoints = cache[ transform.apply ]( tail, points )
-      fvals = cache[ std.eval ]( stdpoints, self.igrad )
-      assert fvals.ndim == self.igrad+2
-      if self.igrad and tail:
-        linear = cache[ transform.fulllinear ]( tail )
-        for axis in range(-self.igrad,0):
-          fvals = numeric.dot( fvals, linear, axis )
+      fvals = cache[ std.eval ]( stdpoints, self.ndim-1 )
+      assert fvals.ndim == self.ndim+1
+      if tail:
+        for i, ndims in enumerate(self.shape[1:]):
+          linear = cache[ transform.linearfrom ]( tail, ndims )
+          fvals = numeric.dot( fvals, linear, axis=i+2 )
     return fvals
 
   def _edit( self, op ):
-    return Function( self.stdmap, self.igrad, self.shape[0], op(self.trans) )
+    return Function( self.stdmap, self.shape, op(self.trans) )
 
   def _derivative( self, var, axes, seen ):
     if isinstance( var, LocalCoords ):
-      return zeropad( Function( self.stdmap, self.igrad+1, self.shape[0], self.trans ), axis=self.ndim, length=len(var) )
+      return Function( self.stdmap, self.shape+(len(var),), self.trans )
     return zeros( self.shape+_taketuple(var.shape,axes), dtype=self.dtype )
 
 class Choose( Array ):
@@ -2050,11 +2022,6 @@ class Zeros( Array ):
   def _edit( self, op ):
     return self
 
-  def _zeropad( self, length, axis ):
-    shape = list(self.shape)
-    shape[axis] = length
-    return zeros( shape, dtype=self.dtype )
-
 class Inflate( Array ):
   'inflate'
 
@@ -2953,20 +2920,6 @@ def asarray( arg ):
 
   return stack( arg, axis=0 )
 
-def zeropad( arg, axis, length ):
-  'zero pad'
-
-  arg = asarray(arg)
-  axis = numeric.normdim( arg.ndim, axis )
-  retval = _call( arg, '_zeropad', length, axis )
-  if retval is not None:
-    shape = list(arg.shape)
-    shape[axis] = length
-    assert retval.shape == tuple(shape)
-    return retval
-
-  return ZeroPad( arg, axis=axis, length=length )
-
 def insert( arg, n ):
   'insert axis'
 
@@ -3746,7 +3699,7 @@ def function( fmap, nmap, ndofs ):
   'create function on ndims-element'
 
   length = '~%d' % ndofs
-  func = Function( fmap, igrad=0, length=length )
+  func = Function( fmap, shape=(length,) )
   dofmap = DofMap( nmap, length=length )
   return Inflate( func, dofmap, ndofs, axis=0 )
 
