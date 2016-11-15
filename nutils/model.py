@@ -3,7 +3,7 @@ import numpy, itertools
 
 
 @log.title
-def newton( lhs0, isdof, eval_res_jac, tol=1e-10, nrelax=5, maxrelax=.9 ):
+def newton( lhs0, isdof, eval_res_jac, tol=1e-10, nrelax=5, maxrelax=.9, callback=None ):
   '''iteratively solve nonlinear problem by gradient descent
 
   Newton procedure with line search based on a residual and tangent generating
@@ -51,6 +51,8 @@ def newton( lhs0, isdof, eval_res_jac, tol=1e-10, nrelax=5, maxrelax=.9 ):
     if resnorm < tol:
       break
     with log.context( 'iter {0} ({1:.0f}%)'.format( inewton, 100 * numpy.log(resnorm0/resnorm) / numpy.log(resnorm0/tol) ) ):
+      if callback is not None:
+        callback( lhs )
       dlhs = -jac.solve( res, constrain=zcons )
       relax = 1
       for irelax in itertools.count():

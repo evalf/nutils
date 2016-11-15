@@ -28,17 +28,29 @@ class NavierStokes( model.Model ):
 def laplace():
   domain, geom = mesh.rectilinear( [8,8] )
   model = Laplace()
-  ns = model.solve_namespace( domain, geom )
-  integral, cons = model.evalres( domain, geom, ns )
-  res = numpy.linalg.norm( (cons&0) | integral.eval() )
-  assert res < 1e-13
+
+  @unittest
+  def res():
+    ns = model.solve_namespace( domain, geom )
+    integral, cons = model.evalres( domain, geom, ns )
+    res = numpy.linalg.norm( (cons&0) | integral.eval() )
+    assert res < 1e-13
 
 @register
 def navierstokes():
+  vecs = []
   domain, geom = mesh.rectilinear( [numpy.linspace(0,1,9)] * 2 )
   model = NavierStokes()
   tol = 1e-10
-  ns = model.solve_namespace( domain, geom, tol=tol )
-  integral, cons = model.evalres( domain, geom, ns )
-  res = numpy.linalg.norm( (cons&0) | integral.eval() )
-  assert res < tol
+
+  @unittest
+  def res():
+    ns = model.solve_namespace( domain, geom, tol=tol, callback=vecs.append )
+    integral, cons = model.evalres( domain, geom, ns )
+    res = numpy.linalg.norm( (cons&0) | integral.eval() )
+    assert res < tol
+
+  @unittest
+  def callback():
+    assert len(vecs) == 2, 'expected 2 iterations, found {}'.format( len(vecs) )
+    assert all( isinstance(vec,numpy.ndarray) and vec.ndim == 1 for vec in vecs )
