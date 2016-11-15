@@ -2,6 +2,7 @@ from . import function, index, cache, log
 import numpy, itertools
 
 
+@log.title
 def newton( lhs0, isdof, eval_res_jac, tol=1e-10, nrelax=5, maxrelax=.9 ):
   '''iteratively solve nonlinear problem by gradient descent
 
@@ -44,43 +45,44 @@ def newton( lhs0, isdof, eval_res_jac, tol=1e-10, nrelax=5, maxrelax=.9 ):
   zcons[isdof] = numpy.nan
   lhs = lhs0.copy()
   res, jac = eval_res_jac( lhs )
-  newresnorm = numpy.linalg.norm( res[isdof] )
-  for inewton in log.count( 'newton' ):
+  newresnorm = resnorm0 = numpy.linalg.norm( res[isdof] )
+  for inewton in itertools.count():
     resnorm = newresnorm
-    log.user( 'residual:', resnorm )
     if resnorm < tol:
       break
-    dlhs = -jac.solve( res, constrain=zcons )
-    relax = 1
-    for irelax in itertools.count():
-      res, jac = eval_res_jac( lhs + relax * dlhs )
-      newresnorm = numpy.linalg.norm( res[isdof] )
-      if irelax >= nrelax:
-        assert newresnorm < resnorm, 'stuck in local minimum'
-        break
-      # endpoint values, derivatives
-      r0 = resnorm**2
-      d0 = -2 * relax * resnorm**2
-      r1 = newresnorm**2
-      d1 = 2 * relax * numpy.dot( jac.matvec(dlhs)[isdof], res[isdof] )
-      # polynomial coefficients
-      A = r0
-      B = d0
-      C = 3*r1 - 3*r0 - 2*d0 - d1
-      D = d0 + d1 + 2*r0 - 2*r1
-      # optimization
-      discriminant = C**2 - 3*B*D
-      if discriminant < 0: # monotomously decreasing
-        break
-      malpha = -C / (3*D)
-      dalpha = numpy.sqrt(discriminant) / abs(3*D)
-      newrelax = malpha + dalpha if malpha < dalpha else malpha - dalpha # smallest positive root
-      if newrelax > maxrelax:
-        break
-      assert newrelax > 0, 'newrelax should be strictly positive, computed {!r}'.format(newrelax)
-      log.info( 'relaxation {0:}: scaling by {1:.3f}'.format( irelax+1, newrelax ) )
-      relax *= newrelax
-    lhs += relax * dlhs
+    with log.context( 'iter {0} ({1:.0f}%)'.format( inewton, 100 * numpy.log(resnorm0/resnorm) / numpy.log(resnorm0/tol) ) ):
+      dlhs = -jac.solve( res, constrain=zcons )
+      relax = 1
+      for irelax in itertools.count():
+        res, jac = eval_res_jac( lhs + relax * dlhs )
+        newresnorm = numpy.linalg.norm( res[isdof] )
+        if irelax >= nrelax:
+          assert newresnorm < resnorm, 'stuck in local minimum'
+          break
+        # endpoint values, derivatives
+        r0 = resnorm**2
+        d0 = -2 * relax * resnorm**2
+        r1 = newresnorm**2
+        d1 = 2 * relax * numpy.dot( jac.matvec(dlhs)[isdof], res[isdof] )
+        # polynomial coefficients
+        A = r0
+        B = d0
+        C = 3*r1 - 3*r0 - 2*d0 - d1
+        D = d0 + d1 + 2*r0 - 2*r1
+        # optimization
+        discriminant = C**2 - 3*B*D
+        if discriminant < 0: # monotomously decreasing
+          break
+        malpha = -C / (3*D)
+        dalpha = numpy.sqrt(discriminant) / abs(3*D)
+        newrelax = malpha + dalpha if malpha < dalpha else malpha - dalpha # smallest positive root
+        if newrelax > maxrelax:
+          break
+        assert newrelax > 0, 'newrelax should be strictly positive, computed {!r}'.format(newrelax)
+        log.info( 'relaxation {0:}: scaling by {1:.3f}'.format( irelax+1, newrelax ) )
+        relax *= newrelax
+      lhs += relax * dlhs
+
   return lhs
 
 
