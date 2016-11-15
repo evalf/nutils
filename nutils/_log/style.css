@@ -35,14 +35,15 @@ a.active { color: #eee; }
 
 /********** Syntax highliting **********/
 pre { color: gray; }
-span.path { color: green; }
-span.path a { color: green; text-decoration: none; }
-span.path a.plot { font-weight: bold; }
-span.info { color: black; }
-span.error { color: red; }
-span.user { color: blue; font-weight: bold; }
-span.warning { color: orange; }
-span.debug { color: cyan; }
+li.context { color: gray; }
+span.path, li.path { color: green; }
+span.path a, li.path a { color: green; text-decoration: none; }
+span.path a.plot, li.path a.plot { font-weight: bold; }
+span.info, li.info { color: black; }
+span.error, li.error { color: red; }
+span.user, li.user { color: blue; font-weight: bold; }
+span.warning, li.warning { color: orange; }
+span.debug, li.debug { color: cyan; }
 span.line-active { background: #E8F2FC; }
 
 /********** Layout **********/
@@ -71,6 +72,26 @@ span.line-active { background: #E8F2FC; }
 
 #media-img{ display: block; margin: 32px auto;  }
 #media-frame{ display: none; height: 100%; width: 100%; margin: 0; padding: 0; }
+
+body.newstyle pre {
+  white-space: normal;
+}
+
+body.newstyle ul {
+  margin: 0;
+  padding: 0;
+}
+
+body.newstyle ul ul {
+  margin-left: 1em;
+  padding-left: 1em;
+  border-left: 1px dashed gray;
+}
+
+body.newstyle li {
+  list-style-type: none;
+  white-space: pre;
+}
 
 /********** Views **********/
 /* Code view */

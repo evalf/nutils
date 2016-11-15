@@ -539,8 +539,9 @@ def run( *functions ):
   htmlfile.write( '<script type="text/javascript" src="../../../../../viewer.js" ></script>\n' )
   htmlfile.write( '<link rel="stylesheet" type="text/css" href="../../../../../style.css">\n' )
   htmlfile.write( '<link rel="stylesheet" type="text/css" href="../../../../../custom.css">\n' )
-  htmlfile.write( '</head><body><pre>\n' )
+  htmlfile.write( '</head><body class="newstyle"><pre>\n' )
   htmlfile.write( '<span id="navbar">goto: <a class="nav_latest" href="../../../../log.html?{1:}">latest {0:}</a> | <a class="nav_latestall" href="../../../../../log.html?{1:}">latest overall</a> | <a class="nav_index" href="../../../../../">index</a></span>\n'.format( scriptname, token ) )
+  htmlfile.write( '<ul>\n')
 
   textlog = log._mklog()
 
@@ -565,12 +566,12 @@ def run( *functions ):
   textlog.write( 'info', ' \\\n'.join( commandline ) + '\n' )
   textlog.write( 'info', 'start %s\n' % ctime )
 
-  htmlfile.write( '<span class="info">\n' )
+  htmlfile.write( '<li class="info">\n' )
   htmlfile.write( '{} {}\n'.format( scriptname, func.__name__ ) )
   for arg, value in kwargs.items():
     htmlfile.write( '  --{}={}\n'.format( arg, value ) )
   htmlfile.write( '\nstart {}\n\n'.format(ctime) )
-  htmlfile.write( '</span>\n' )
+  htmlfile.write( '</li>\n' )
 
   t0 = time.time()
 
@@ -607,9 +608,9 @@ def run( *functions ):
   textlog.write( 'info', 'finish %s' % time.ctime() )
   textlog.write( 'info', 'elapsed %02.0f:%02.0f:%02.0f' % ( hours, minutes, seconds ) )
 
-  htmlfile.write( '<span class="info">\n' )
+  htmlfile.write( '<li class="info">\n' )
   htmlfile.write( '\nfinish {}\nelapsed {:02.0f}:{:02.0f}:{:02.0f}\n\n'.format( time.ctime(), hours, minutes, seconds ) )
-  htmlfile.write( '</span>\n' )
+  htmlfile.write( '</li>\n' )
 
   if core.getprop( 'uncollected_summary', False ):
     debug.trace_uncollected()
@@ -629,7 +630,7 @@ def run( *functions ):
         examine its post-mortem state to figure out why this happened.
         Type 'help' for an overview of commands to get going.''' )
 
-  htmlfile.write( '</pre></body></html>\n' )
+  htmlfile.write( '</ul></pre></body></html>\n' )
   htmlfile.close()
   sys.exit( failed )
 

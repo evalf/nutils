@@ -12,6 +12,7 @@ from . import \
   basis,      \
   finitecell, \
   model,      \
+  log,        \
   runtests
 
 runtests()
