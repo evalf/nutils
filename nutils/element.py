@@ -39,6 +39,9 @@ class Element( object ):
         opposite = None
     self.__opposite = opposite
 
+  def __mul__( self, other ):
+    return Element( self.reference * other.reference, transform.stack(self.transform,other.transform), transform.stack(self.opposite,other.opposite) )
+
   def __getnewargs__( self ):
     return self.reference, self.transform, self.__opposite
 
@@ -435,6 +438,28 @@ class EmptyReference( Reference ):
   __or__ = lambda self, other: other if other.ndims == self.ndims else NotImplemented
   __rsub__ = lambda self, other: other if other.ndims == self.ndims else NotImplemented
 
+class RevolutionReference( Reference ):
+  'modify gauss integration to always return a single point'
+
+  def __init__( self ):
+    self.volume = 2 * numpy.pi
+    Reference.__init__( self, numpy.zeros((1,1)) )
+
+  @property
+  def edge_transforms( self ): # only used in check_edges
+    return transform.affine( numpy.zeros((1,0)), [-numpy.pi], isflipped=True ), transform.affine( numpy.zeros((1,0)), [+numpy.pi], isflipped=False )
+
+  @property
+  def edge_refs( self ): # idem edge_transforms
+    return PointReference(), PointReference()
+
+  @property
+  def simplices( self ):
+    return [ (transform.identity,self) ]
+
+  def getischeme( self, ischeme ):
+    return numpy.zeros([1,1]), numpy.array([ self.volume ])
+
 class SimplexReference( Reference ):
   'simplex reference'
 
@@ -518,7 +543,7 @@ class LineReference( SimplexReference ):
 
   @cache.property
   def rotations( self ):
-    return transform.identity, transform.affine( [[-1]], self.vertices[1] )
+    return transform.identity, transform.affine( [[-1]], self.vertices[1] ), transform.affine( [[1]], self.vertices[0] )
 
   def stdfunc( self, degree ):
     if len(self._bernsteincache) <= degree or self._bernsteincache[degree] is None:
@@ -784,6 +809,8 @@ class TensorReference( Reference ):
       points = [[0,0],[1,0],[1,1],[0,1]]
     elif self == getsimplex(1)**3:
       points = [[0,0,0],[1,0,0],[0,1,0],[1,1,0],[0,0,1],[1,0,1],[0,1,1],[1,1,1]]
+    elif self == getsimplex(2)*getsimplex(1):
+      points = [[0,0,0],[1,0,0],[0,1,0],[0,0,1],[1,0,1],[0,1,1]]
     else:
       raise NotImplementedError
     return numpy.array(points,dtype=float), numpy.ones(self.nverts,dtype=float)

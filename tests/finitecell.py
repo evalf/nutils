@@ -52,27 +52,27 @@ def hierarchical():
 def hierarchicalboundary():
 
   domain, geom = mesh.rectilinear( [[0,1,2],[0,1,2]] )
-  left = domain[:1]
+  left = domain[:1].withboundary( leftbnd=... )
   leftbasis = left.basis( 'std', degree=1 )
-  right = domain[1:]
+  right = domain[1:].withboundary( rightbnd=... )
   rightbasis = right.basis( 'std', degree=1 )
   trimmed = domain - right
-  assert trimmed.boundary.integrate( 1, geometry=geom, ischeme='gauss1' ) == 6
-  assert trimmed.boundary['~left'].integrate( 1, geometry=geom, ischeme='gauss1' ) == 2
-  trimmed.boundary['~left'].elem_eval( leftbasis, ischeme='gauss1', separate=False )
-  try:
-    trimmed.boundary['~left'].elem_eval( function.opposite(leftbasis), ischeme='gauss1', separate=False )
-  except:
-    pass
-  else:
-    raise Exception( 'basis evaluates where it is not supposed to' )
-  trimmed.boundary['~left'].elem_eval( function.opposite(rightbasis), ischeme='gauss1', separate=False )
-  try:
-    trimmed.boundary['~left'].elem_eval( rightbasis, ischeme='gauss1', separate=False )
-  except:
-    pass
-  else:
-    raise Exception( 'basis evaluates where it is not supposed to' )
+
+  @unittest
+  def volume():
+    assert trimmed.boundary.integrate( 1, geometry=geom, ischeme='gauss1' ) == 6
+
+  @unittest
+  def boundary():
+    assert trimmed.boundary['rightbnd'].integrate( 1, geometry=geom, ischeme='gauss1' ) == 2
+
+  @unittest
+  def left_boundary():
+    left = trimmed.boundary['rightbnd']
+    assert numpy.any( left.elem_eval( leftbasis, ischeme='gauss1', separate=False ) )
+    assert not numpy.any( left.elem_eval( function.opposite(leftbasis), ischeme='gauss1', separate=False ) )
+    assert numpy.any( left.elem_eval( function.opposite(rightbasis), ischeme='gauss1', separate=False ) )
+    assert not numpy.any( left.elem_eval( rightbasis, ischeme='gauss1', separate=False ) )
 
 
 @register
@@ -135,16 +135,16 @@ def setoperations():
       assert numpy.isclose( L, 1+numpy.sqrt(2)  ), 'full boundary: wrong length: {} != {}'.format( L, 1+numpy.sqrt(2) )
       L = dom.boundary[name].integrate( 1, geometry=geom, ischeme='gauss1' )
       assert numpy.isclose( L, 1  ), '{}: wrong length: {} != {}'.format( name, L, 1 )
-      L = dom.boundary['trim1' if name not in ('left','top') else '~trim1'].integrate( 1, geometry=geom, ischeme='gauss1' )
+      L = dom.boundary['trim1' if name not in ('left','top') else 'trim1'].integrate( 1, geometry=geom, ischeme='gauss1' )
       assert numpy.isclose( L, .5*numpy.sqrt(2)  ), 'trim1: wrong length: {} != {}'.format( L, .5*numpy.sqrt(2) )
-      L = dom.boundary['trim2' if name not in ('left','bottom') else '~trim2'].integrate( 1, geometry=geom, ischeme='gauss1' )
+      L = dom.boundary['trim2' if name not in ('left','bottom') else 'trim2'].integrate( 1, geometry=geom, ischeme='gauss1' )
       assert numpy.isclose( L, .5*numpy.sqrt(2)  ), 'trim2: wrong length: {} != {}'.format( L, .5*numpy.sqrt(2) )
 
   @unittest
   def union():
     assert (top|left) | (right|bottom) == domain
     union = (right|left) | (top|bottom)
-    assert isinstance( union.basetopo, topology.UnionTopology )
+    assert isinstance( union, topology.UnionTopology )
     assert set(union) == set(domain)
 
 

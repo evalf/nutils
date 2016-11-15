@@ -42,14 +42,15 @@ def main( nelems=12, viscosity=1e-2, density=1, tol=1e-12, rotation=0, timestep=
   rscale = numpy.pi / nelems
   melems = numpy.ceil( numpy.log(2*maxradius) / rscale ).astype( int )
   log.info( 'creating {}x{} mesh, outer radius {:.2f}'.format( melems, 2*nelems, .5*numpy.exp(rscale*melems) ) )
-  domain, (rho,phi) = mesh.rectilinear( [range(melems+1),numpy.linspace(0,2*numpy.pi,2*nelems+1)], periodic=(1,) )
+  domain, gridgeom = mesh.rectilinear( [range(melems+1),numpy.linspace(0,2*numpy.pi,2*nelems+1)], periodic=(1,) )
+  rho, phi = gridgeom
   phi += 1e-3 # tiny nudge (0.057 deg) to break element symmetry
   cylvelo = -.5 * rotation * function.trignormal(phi)
   radius = .5 * function.exp( rscale * rho )
   geom = radius * function.trigtangent(phi)
 
   # prepare bases
-  J = function.localgradient( geom, domain.ndims )
+  J = geom.grad( gridgeom )
   detJ = function.determinant( J )
   vnbasis, vtbasis, pbasis = function.chain([ # compatible spaces using piola transformation
     domain.basis( 'spline', degree=(3,2), removedofs=((0,),None) )[:,_] * J[:,0] / detJ,
@@ -113,23 +114,23 @@ def unittest():
 
   retvals = main( nelems=3, viscosity=1e-2, timestep=.1, tmax=.05, rotation=0, withplots=False )
   assert debug.checkdata( retvals, '''
-    eNo1ktmNxEAIRNOZkWyJs4GANv8Uli6YL0rFYfMafj72sH+fj2bU3+vPK0cVgs3OiFKkVNzGYEYmyv3v
-    tecNp7hCw8Y4yXlFKDMMO3lQ4dWGPq96FgSbTolE2XUkmW5kcQxlqR4qXSmpEFZnhjAdpJiSb+yvCFpV
-    bVqUpqVnrSNVaFFFFCdBZJoCIZ4WLYt1KKaE8RUNR+QIB4/Ks8jqAIxoyI3JRZPwQIX63e0SS4NQkiE2
-    WzcxFoB6VX251AJSysTaYoUmwbodNUFMaWmL8QLqf9z9BbhFZgYT2+x0H/lW+p1xAZ0B04ISa/rG9CFn
-    IVOQO9xaLSk/mEoHDH+JDjNcyniAxO/KAPN0qsHD6TUHq8ieZPTPQTid2tsk+RUPYcPpXaExxeL3XO0e
-    QeViiRgnS5Z6jaOHFp1KDGQpGjJ65IdoqR6LdXSOuB/aR1SgK3BmbQSN8XYPzjtNENUWZ801vUeGaz/N
-    nJvtQ/STgeb3H1Hjy18=''' )
+    eNo1kteNxDAMRNvZBWyAORR0/bdwTOsfjskhJT0Jn488qN/nww769+rzkqKMQA5cEUotGCE2AWYtXLOi
+    PK+jRQtW34QpYgvLmPiKuI5DKP9eft4SMQLZfCxkNhmykI5IAF1A4jJQOYl0hHhnuhdwSghMHWsV3FaX
+    a5EVJBq/DEwLeXYkzvknQFhDEo9gt7wM2lkmssashu6LLMN4weSCqR0PscAe3gX1cbAiLLGQEQyke/rY
+    iiMtQi7vVpJXMMQiI8lpKlI0kQO6wIDXIogLqPa459flTrQzityAIRRbp8ad3/iObTDIUC+GTgHFaQ1x
+    w6XUrgJ6pGwY/goVdjgF5AIx1RM9zapUW9oHmGIrZvMlLHjNEnJPkjl/5s2I8gmMZU7SHhnzMWZbUZZ7
+    c25H+2em+hYyxpFhOJgKeaJvs4X4gK/r7GssEWojLK9irtttGDM4QMbBDLxsltWrGcM3Hef9E9NeBLmO
+    4/sPCbTLPw==''' )
 
   retvals = main( nelems=3, viscosity=1e-2, timestep=.1, tmax=.05, rotation=1, withplots=False )
   assert debug.checkdata( retvals, '''
-    eNo1klmOBCAIRK/TnWjCjh5o7n+FgcL+smRTHvD62GL/rg/nsb/tawtJQLA+ITEuZzswnOv0t2OF33LY
-    2iHJLTTTYThM2eLECRgsEgYNrwhdWyMIgi0FIZL9ni5Jh4clbjtYsk6pSImEsNvPdS6Ni+l6nxZXkKpq
-    k6KkEOL5LHInRRWnOAlOpgkQ4knRa/kslBPC3Kem4+RraJ+N8NHKRI9iDAoqQvDHUHGLoVN+JNgrsC83
-    Ha8+mjSgTKmC0m8VcyXRdl0Sb/au+h6z23aPGcEWYOsa9a/5vw4VMR06ZNO63JkFew+24YTyCE+0zK7w
-    cA1y7kNr88k3i1KPkgeqUoDfz1EHvRmhExHz2a97Z52YBkf9eMBtPf1TX3EdzQrNfas0aiynztawP6jB
-    B3VPrSlY3lmfat9psGc3UcKxJv2O8asS8TYq+NHDUEvUYsgT9sPVe1iiyhyI9MTq5i/k8AtJIxQ+qhif
-    OtNQYmzsDk15eN4+RgzPG4j8/gMnvcmL''' )
+    eNo1ktltADEIRNtJJFuC4TAuKP23EHPsl2e5Fh7w+tHF9rt++JD8bVubr1gL+CkB83LpZS9DmD7hy3Ff
+    hK5tN24KcbIynKNIEbhtUHWviFfkb8vaT1gJVirPhmcHsuDwfBlcNRh4KciGmEro0dO5JGVhyoawVIM6
+    9eikaAuoxWfpFJybL+TWN2iK84WUkON3LOwTUq9YoErcLP4aVKrpn79wQLmGFoDK76e+H7WBwVYJOgX2
+    5VOomUIHSpfaOMbFXAhF5xIs2ZvI/Exv2s0Pdwb8dg3uSfcbEQVWpd5Hq0fHtwLTgeMyqC0beiOalIfD
+    +zVCB0QHvFmiBciGkhe/z/Geb0fIScA5dB0aRQvibp1pAIknIFvumeNJmoaCf8d50DkP4twg1XUGS8Vy
+    BA2Qoaxm0qEqfXKCvIqsYuEfihGiDQeUbZbQmOXcjnHnjjmQ2ptHL+nd/+0lHPJKOtfqZEVsbgd9mE5h
+    jcf6DtV6BQgUz99/q5rJZA==''' )
 
 
 util.run( main, unittest )

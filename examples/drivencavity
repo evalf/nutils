@@ -41,9 +41,10 @@ def main( nelems=12, viscosity=1e-3, density=1, degree=2, warp=False, withplots=
   if not warp:
     vbasis = function.stack( [ vxbasis, vybasis ], axis=1 )
   else:
-    x, y = geom
-    geom = (y+2) * function.rotmat(x*.4)[:,1] - (0,2) # slight downward bend
-    J = function.localgradient( geom, domain.ndims )
+    gridgeom = geom
+    xi, eta = gridgeom
+    geom = (eta+2) * function.rotmat(xi*.4)[:,1] - (0,2) # slight downward bend
+    J = geom.grad( gridgeom )
     detJ = function.determinant( J )
     vbasis = ( vxbasis[:,_] * J[:,0] + vybasis[:,_] * J[:,1] ) / detJ # piola transform
     pbasis /= detJ
@@ -104,11 +105,11 @@ def unittest():
 
   retvals = main( nelems=4, viscosity=1e-3, degree=1, warp=True, tol=0, maxiter=1, withplots=False )
   assert debug.checkdata( retvals, '''
-    eNrFUllqBDAIvc4MxOIWlwPN/a8wUTOFfhT6VwgY8hafEloPXbSf6/HArzVHGPEFtlhcXrDXN6AxgGzD
-    vwG/Wv37ORMDGXGlIkGtCmLZMVk0G7BsAigm1RxgZM0AU22NBUZTGQ9DFxBG7wDceC6S3G5bZwkkLEUl
-    2y0FVp02x8yuWZuT6mVOUMjcUjlMEn8ENKTdQFg7pJF3T5oeIrtx8itwZmsBTQU6w4/VyXm34dQeGd7a
-    T15p7bmQhc7QN2hwPfgKo6xKRDhS7va6o/cY231w5u7uVAZeMUbBjnaZUUAiD4EjJ7CxzEVs8qUPJQyH
-    KljuZerBVxPtFsxUdce0PT9Apusnr+37X5/r+Qavwqg/''' )
+    eNrFUltuxDAIvM6uZCremAPl/leogU2kflT9rGSJhBlgGJvWSxfZe71e+LXmbES8IJalyAW+HoC4AF87
+    J/4N/Nrq38/ZGFx1X2DLmKwikEZcoCslvRIevgdw6QSwuhUD2GLXBwdLRd3YEVSYmiqozQCy4KbSzorG
+    2VT3MuUw8x5zmvE0G0EWU3kLBcndzdnMG3gqFVsghzYgW3sTRu9ZJMqFB3lOwbmrLlDrCNa7F+KUo1t9
+    VpRsNY9e4qo9DA8ZN26hJNwySKLHUMTIsuz/EMEPzoOP0UCk05txMsfG/MFU1Sbo41rG7G796g6lTemS
+    2UR33ZrXssYzBvFDGYNTylg/Nm2dqdJ5dtfapx/K+xso/qhh''' )
 
 
 util.run( main, unittest )

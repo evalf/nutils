@@ -52,7 +52,7 @@ def connectivity( periodic ):
   @unittest
   def check1d():
     domain = mesh.rectilinear( 1*(grid,), periodic=[0] if periodic else [] )[0]
-    elem = domain.basetopo.structure
+    elem = domain.structure
     assert neighbor( elem[0], elem[0] ) ==  0, 'Failed to identify codim 0 neighbors'
     assert neighbor( elem[1], elem[2] ) ==  1, 'Failed to identify codim 1 neighbors'
     if periodic:
@@ -63,7 +63,7 @@ def connectivity( periodic ):
   @unittest
   def check2d():
     domain = mesh.rectilinear( 2*(grid,), periodic=[0] if periodic else [] )[0]
-    elem = domain.basetopo.structure
+    elem = domain.structure
     assert neighbor( elem[0,0], elem[0,0] ) ==  0, 'Failed to identify codim 0 neighbors'
     assert neighbor( elem[1,1], elem[1,2] ) ==  1, 'Failed to identify codim 1 neighbors'
     assert neighbor( elem[0,0], elem[1,1] ) ==  2, 'Failed to identify codim 2 neighbors'
@@ -77,7 +77,7 @@ def connectivity( periodic ):
   @unittest
   def check3d():
     domain = mesh.rectilinear( 3*(grid,), periodic=[0] if periodic else [] )[0]
-    elem = domain.basetopo.structure
+    elem = domain.structure
     assert neighbor( elem[1,1,1], elem[1,1,1] ) ==  0, 'Failed to identify codim 0 neighbors'
     assert neighbor( elem[1,1,1], elem[1,1,2] ) ==  1, 'Failed to identify codim 1 neighbors'
     assert neighbor( elem[1,1,1], elem[1,2,2] ) ==  2, 'Failed to identify codim 2 neighbors'
@@ -94,7 +94,7 @@ def structure2d():
   @unittest
   def domain():
     domain, geom = mesh.rectilinear( [[-1,0,1]]*2 )
-    verify_connectivity( domain.basetopo.structure, geom )
+    verify_connectivity( domain.structure, geom )
 
   @unittest
   def boundaries():
@@ -191,20 +191,65 @@ def common_refine():
 @register
 def revolved():
 
-  @unittest
-  def d1():
-    domain, geom = mesh.rectilinear( [[0,1,2]], revolved=True )
-    vol = domain.integrate( 1, geometry=geom, ischeme='gauss9' )
-    numpy.testing.assert_array_almost_equal( vol, 4*numpy.pi )
-    surf = domain.boundary.integrate( 1, geometry=geom, ischeme='gauss9' )
-    numpy.testing.assert_array_almost_equal( surf, 4*numpy.pi )
+  rdomain, rgeom = mesh.rectilinear( [2] )
+  domain, geom, simplify = rdomain.revolved( rgeom )
 
   @unittest
-  def d2():
-    domain, geom = mesh.rectilinear( [[0,1],[0,1,2]], revolved=True )
-    vol = domain.integrate( 1, geometry=geom, ischeme='gauss9' )
-    numpy.testing.assert_array_almost_equal( vol, 2*numpy.pi )
-    surf = domain.boundary.integrate( 1, geometry=geom, ischeme='gauss9' )
-    numpy.testing.assert_array_almost_equal( surf, 6*numpy.pi )
-    wall = domain.boundary['right'].integrate( 1, geometry=geom, ischeme='gauss9' )
-    numpy.testing.assert_array_almost_equal( wall, 4*numpy.pi )
+  def simplified():
+    integrand = function.norm2(geom) * function.jacobian( geom, ndims=1 )
+    assert integrand != simplify(integrand)
+    vals1, vals2 = domain.elem_eval( [ integrand, simplify(integrand) ], ischeme='uniform2' )
+    numpy.testing.assert_array_almost_equal( vals1, vals2 )
+
+  @unittest
+  def circle_area():
+    vol = domain.integrate( 1, geometry=geom, ischeme='gauss1', edit=simplify ) / numpy.pi
+    numpy.testing.assert_array_almost_equal( vol, 4 )
+
+  @unittest
+  def circle_circumference():
+    surf = domain.boundary.integrate( 1, geometry=geom, ischeme='gauss1', edit=simplify ) / numpy.pi
+    numpy.testing.assert_array_almost_equal( surf, 4 )
+
+  rzdomain, rzgeom = mesh.rectilinear( [1,2] )
+  domain, geom, simplify = rzdomain.revolved( rzgeom )
+
+  @unittest
+  def cylinder_volume():
+    vol = domain.integrate( 1, geometry=geom, ischeme='gauss1', edit=simplify ) / numpy.pi
+    numpy.testing.assert_array_almost_equal( vol, 2 )
+
+  for name, exact in ('full',6), ('right',4), ('left',0):
+    @unittest( name=name )
+    def cylinder_surface():
+      surf = domain.boundary[name if name != 'full' else ()].integrate( 1, geometry=geom, ischeme='gauss1', edit=simplify ) / numpy.pi
+      numpy.testing.assert_array_almost_equal( surf, exact )
+
+  rzdomain, rzgeom = mesh.rectilinear( [[.5,1],2] )
+  domain, geom, simplify = rzdomain.revolved( rzgeom )
+
+  @unittest
+  def hollowcylinder_volume():
+    v = domain.integrate( 1, geometry=geom, ischeme='gauss1', edit=simplify ) / numpy.pi
+    numpy.testing.assert_array_almost_equal( v, 1.5 )
+
+  @unittest
+  def hollowcylinder_volume2():
+    v = domain.boundary.integrate( geom.dotnorm(geom)/3, geometry=geom, ischeme='gauss1', edit=simplify ) / numpy.pi
+    numpy.testing.assert_array_almost_equal( v, 1.5 )
+
+  for name, exact in ('full',7.5), ('right',4), ('left',2):
+    @unittest
+    def hollowcylinder_surface():
+      surf = domain.boundary[name if name != 'full' else ()].integrate( 1, geometry=geom, ischeme='gauss9', edit=simplify ) / numpy.pi
+      numpy.testing.assert_array_almost_equal( surf, exact )
+
+  basis = domain.basis( 'std', degree=2 )
+
+  @unittest
+  def hollowcylinder_basistype():
+    assert isinstance( basis, function.Inflate )
+
+  @unittest
+  def hollowcylinder_dofcount():
+    assert len(basis) == 3*5

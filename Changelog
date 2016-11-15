@@ -6,6 +6,64 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+New: topology.with{subdomain,boundary,interfaces,points}
+
+  Topologies have been made fully immutable, which means that the old
+  setitem operation is no longer supported. Instead, to add a
+  subtopology to the domain, its boundary, its interfaces, or points,
+  any of the methods .withsubdomain, .withboundary, .withinterfaces, and
+  .withpoints, respectively, will return a copy of the topology with the
+  desired groups added.
+
+  Removed syntax:
+  >> domain.boundary['wall'] = domain.boundary['left,top']
+
+  New:
+  >> domain = domain.withboundary( wall=domain.boundary['left,top'] )
+  >> domain.boundary['wall'].integrate( ... )
+
+  Alternative:
+  >> domain = domain.withboundary( wall='left,top' )
+
+
+New: circular symmetry
+
+  Any topology can be revolved using the new .revolved method, which
+  interprets the first geometry dimension as a radius and replaces it by
+  two new dimensions, shifting the remaining axes backward. In addition
+  to the modified topology and geometry, simplifying function is
+  returned as the third return value which replaces all occurrences of
+  the revolution angle by zero. This should only be used after all
+  gradients have been computed, typically in integrate or elem_eval.
+
+  >> rdomain, rgeom, simplify = domain.revolved( geom )
+  >> basis = rdomain.basis( 'spline', degree=2 )
+  >> M = function.outer( basis.grad(rgeom) ).sum(-1)
+  >> rdomain.integrate(M, geometry=rgeom, ischeme='gauss2', edit=simplify)
+
+
+Changed: supp
+
+  The function.supp convenience function to find the supporting elements
+  of certain basis vectors has been deprecated. In its place is the much
+  more robust Topology.supp method, which search for supporting elements
+  within a topology. In addition to this the selection can be made as an
+  index vector or boolean mask, as in the following typical example:
+
+  >> v = domain.integrate(basis*coeffs, geometry=geom, ischeme='gauss2')
+  >> supp = domain.supp( basis, abs(v) > threshold )
+  >> domain.refined_by( supp )
+
+
+Removed: pointdata
+
+  The deprecated function.Pointdata is removed. The replacing
+  construction is Topology.elem_eval with the asfunction=True argument:
+
+  >>> f_pnt = domain.elem_eval( f, ischeme='gauss2', asfunction=True )
+  >>> domain.integrate( f - f_pnt, geometry=geom, ischeme='gauss2' ) == 0
+
+
 Changed: renamed mesh.gmesh to mesh.gmsh; added support for periodicy
 
   The gmsh importer was unintentionally misnamed as gmesh; this has been

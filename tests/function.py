@@ -67,7 +67,7 @@ def check( op, n_op, shapes, hasgrad=True ):
   iface = element.Element( elem.edge(0).reference, elem.edge(0).transform, elem.edge(1).transform )
   ifpoints, ifweights = iface.reference.getischeme('uniform2')
 
-  r, theta = function.LocalCoords( 2 ) # corners at (0,0), (0,1), (1,1), (1,0)
+  r, theta = function.rootcoords( 2 ) # corners at (0,0), (0,1), (1,1), (1,0)
   geom = r * function.stack([ function.cos(theta), function.sin(theta) ])
 
   basis = domain.basis( 'spline', degree=(1,2) )
@@ -77,7 +77,6 @@ def check( op, n_op, shapes, hasgrad=True ):
   points, weights = elem.reference.getischeme('uniform2')
 
   argsfun = function.Tuple( args )
-  invroottransmatrix = roottrans.invlinear.astype( float )
 
   @unittest
   def evalconst():
@@ -193,7 +192,7 @@ def check( op, n_op, shapes, hasgrad=True ):
         countdown -= 1
       dxi_root = ( Jinv.eval(elem,xi) * err[...,_,:] ).sum(-1)
       #xi = xi + numpy.dot( dxi_root, elem.inv_root_transform.T )
-      xi = xi + numpy.dot( dxi_root, invroottransmatrix.T )
+      xi = xi + dxi_root
       iiter += 1
       assert iiter < 100, 'failed to converge in 100 iterations'
     return xi.reshape( xi0.shape )
@@ -201,7 +200,7 @@ def check( op, n_op, shapes, hasgrad=True ):
   @unittest
   def localgradient():
     eps = 1e-6
-    D = numpy.array([-.5*eps,.5*eps])[:,_,_] * invroottransmatrix.T[_,:,:]
+    D = numpy.array([-.5*eps,.5*eps])[:,_,_] * numpy.eye(elem.ndims)
     fdpoints = points[_,_,:,:] + D[:,:,_,:]
     tmp = n_op( *argsfun.eval(elem,fdpoints.reshape(-1,fdpoints.shape[-1])) )
     F = tmp.reshape( fdpoints.shape[:-1] + tmp.shape[1:] )
@@ -229,7 +228,7 @@ def check( op, n_op, shapes, hasgrad=True ):
 
   @unittest
   def gradient( ):
-    eps = 1e-6
+    eps = 1e-7
     D = numpy.array([-.5*eps,.5*eps])[:,_,_] * numpy.eye(2)
     fdpoints = find( geom.eval(elem,points)[_,_,:,:] + D[:,:,_,:], points[_,_,:,:] )
     tmp = n_op( *argsfun.eval(elem,fdpoints.reshape(-1,fdpoints.shape[-1])) )
@@ -242,7 +241,7 @@ def check( op, n_op, shapes, hasgrad=True ):
 
   @unittest
   def doublegradient():
-    eps = .000022
+    eps = 1e-4
     D = numpy.array([-.5*eps,.5*eps])[:,_,_] * numpy.eye(2)
     DD = D[:,_,:,_,:] + D[_,:,_,:,:]
     fdpoints = find( geom.eval(elem,points)[_,_,_,_,:,:] + DD[:,:,:,:,_,:], points[_,_,_,_,:,:] )
@@ -252,7 +251,7 @@ def check( op, n_op, shapes, hasgrad=True ):
     G = op( *args ).grad(geom).grad(geom)
     exact = numpy.empty_like( fddgrad )
     exact[...] = G.eval(elem,points)
-    numpy.testing.assert_array_almost_equal( fddgrad, exact, decimal=2 )
+    numpy.testing.assert_allclose( fddgrad, exact, rtol=2e-4 )
 
   @unittest
   def opposite():
@@ -284,3 +283,26 @@ def commutativity():
   @unittest
   def combined():
     assert function.add( A, B ) * function.dot( A, B, axes=[0] ) == function.dot( B, A, axes=[0] ) * function.add( B, A )
+
+
+@register
+def sampled():
+
+  domain, geom = mesh.demo()
+  basis = domain.basis( 'std', degree=1 )
+  numpy.random.seed(0)
+  f = basis.dot( numpy.random.uniform(size=len(basis)) )
+  f_sampled = domain.elem_eval( f, ischeme='gauss2', asfunction=True )
+
+  @unittest
+  def isarray():
+    assert function.isarray( f_sampled )
+
+  @unittest
+  def values():
+    diff = domain.integrate( f - f_sampled, ischeme='gauss2' )
+    assert diff == 0
+
+  @unittest( raises=function.EvaluationError )
+  def pointset():
+    domain.integrate( f_sampled, ischeme='uniform2' )
