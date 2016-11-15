@@ -98,6 +98,9 @@ class ContextTreeLog( ContextLog ):
     This method makes sure the current context is printed and calls
     :meth:`_print_item`.
     '''
+    from . import parallel
+    if parallel.procid:
+      return
     for title in self._context[self._printed_context:]:
       self._print_push_context( title )
       self._printed_context += 1
@@ -146,6 +149,11 @@ class StdoutLog( ContextLog ):
   def write( self, level, text, endl=True ):
     verbose = core.getprop( 'verbose', len(LEVELS) )
     if level not in LEVELS[verbose:]:
+      from . import parallel
+      if text is None and parallel.procid:
+        return # log progress only on first process
+      if text is not None and parallel.procid is not None:
+        text = '[{}] {}'.format( parallel.procid, text )
       s = self._mkstr( level, text )
       self.stream.write( s + '\n' if endl else s )
 

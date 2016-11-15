@@ -16,8 +16,7 @@ will disable and a warning is printed.
 from . import core, log, numpy, debug, numeric
 import os, sys, multiprocessing
 
-Lock = multiprocessing.Lock
-cpu_count = multiprocessing.cpu_count
+procid = None # current process id, None for unforked
 
 class Fork( object ):
   'nested fork context, unwinds at exit'
@@ -30,28 +29,36 @@ class Fork( object ):
   def __enter__( self ):
     'fork and return iproc'
 
-    for self.iproc in range( self.nprocs-1 ):
+    global procid
+    if procid is not None:
+      self.child_pid = None
+      log.warning( 'ignoring fork for already forked process' )
+      return None
+    for procid in range( self.nprocs-1 ):
       self.child_pid = os.fork()
       if self.child_pid:
         break
     else:
-      self.child_pid = None
-      self.iproc = self.nprocs-1
-    return self.iproc
+      self.child_pid = 0
+      procid = self.nprocs-1
+    return procid
 
   def __exit__( self, exctype, excvalue, tb ):
     'kill all processes but first one'
 
+    if self.child_pid is None: # not forked
+      return
+    global procid
     status = 0
     try:
       if exctype == KeyboardInterrupt:
         status = 1
       elif exctype == GeneratorExit:
-        if self.iproc:
+        if procid:
           log.error( 'generator failed with unknown exception' )
         status = 1
       elif exctype:
-        if self.iproc:
+        if procid:
           log.stack( repr(excvalue), debug.frames_from_traceback(tb) )
         status = 1
       if self.child_pid:
@@ -63,8 +70,9 @@ class Fork( object ):
           status = 1
     except: # should not happen.. but just to be sure
       status = 1
-    if self.iproc:
+    if procid:
       os._exit( status )
+    procid = None
     if not exctype:
       assert status == 0, 'one or more subprocesses failed'
 
@@ -80,20 +88,25 @@ class AlternativeFork( object ):
   def __enter__( self ):
     'fork and return iproc'
 
+    global procid
+    if procid is not None:
+      log.warning( 'ignoring fork for already forked process' )
+      return None
     children = []
-    for self.iproc in range( 1, self.nprocs ):
+    for procid in range( 1, self.nprocs ):
       child_pid = os.fork()
       if not child_pid:
         break
       children.append( child_pid )
     else:
       self.children = children
-      self.iproc = 0
-    return self.iproc
+      procid = 0
+    return procid
 
   def __exit__( self, exctype, excvalue, tb ):
     'kill all processes but first one'
 
+    global procid
     status = 0
     try:
       if exctype:
@@ -106,8 +119,9 @@ class AlternativeFork( object ):
           status = 1
     except: # should not happen.. but just to be sure
       status = 1
-    if self.iproc:
+    if procid:
       os._exit( status )
+    procid = None
     if not exctype:
       assert status == 0, 'one or more subprocesses failed'
 
@@ -181,9 +195,9 @@ def _pariter( iterable, nprocs ):
   'iterate parallel, helper generator'
 
   shared_iter = multiprocessing.RawValue( 'i', nprocs )
-  lock = Lock()
-  with Fork( nprocs ) as iproc:
-    iiter = iproc
+  lock = multiprocessing.Lock()
+  with Fork( nprocs ):
+    iiter = procid
     for n, it in enumerate( iterable ):
       if n < iiter:
         continue
