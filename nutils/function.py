@@ -2677,7 +2677,10 @@ class Mask( Array ):
 
   def _concatenate( self, other, axis ):
     if axis != self.axis:
-      return mask( concatenate( [ self.func, other ], axis ), self.mask, self.axis )
+      if isinstance( other, Mask ) and self.axis == other.axis and numpy.all( self.mask == other.mask ):
+        return mask( concatenate( [ self.func, other.func ], axis ), self.mask, self.axis )
+      if other.shape[self.axis] == 1:
+        return mask( concatenate( [ self.func, other ], axis ), self.mask, self.axis )
 
   def _sum( self, axis ):
     if axis != self.axis:
