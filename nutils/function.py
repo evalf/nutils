@@ -2022,12 +2022,16 @@ class Zeros( Array ):
   def _edit( self, op ):
     return self
 
+  def _mask( self, mask, axis ):
+    return zeros( self.shape[:axis] + (mask.sum(),) + self.shape[axis+1:], dtype=self.dtype )
+
 class Inflate( Array ):
   'inflate'
 
   def __init__( self, func, dofmap, length, axis ):
     'constructor'
 
+    assert not dofmap.isconstant
     self.func = func
     self.dofmap = dofmap
     self.length = length
@@ -2469,7 +2473,9 @@ class Kronecker( Array ):
 class DerivativeTargetBase( Array ):
   'base class for derivative targets'
 
-  pass
+  @property
+  def isconstant( self ):
+    return False
 
 class DerivativeTarget( DerivativeTargetBase ):
   'helper class for computing derivatives'
@@ -2652,7 +2658,7 @@ class Mask( Array ):
       if numpy.any( self.mask != other.mask ):
         return
       return mask( multiply( self.func, other.func ), self.mask, self.axis )
-    if other.isconstant:
+    if isinstance( other, Constant ):
       return mask( multiply( self.func, self._cexpand(other) ), self.mask, self.axis )
 
   def _add( self, other ):
@@ -2662,7 +2668,7 @@ class Mask( Array ):
       if numpy.any( self.mask != other.mask ):
         return
       return mask( add( self.func, other.func ), self.mask, self.axis )
-    if other.isconstant:
+    if isinstance( other, Constant ):
       return mask( multiply( self.func, self._cexpand(other) ), self.mask, self.axis )
 
   def _inflate( self, dofmap, length, axis ):
@@ -2700,7 +2706,7 @@ class Mask( Array ):
       if numpy.any( self.mask != other.mask ):
         return
       return mask( dot( self.func, other.func, axes ), self.mask, self.axis-_sum(ax<self.axis for ax in axes) )
-    if other.isconstant:
+    if isinstance( other, Constant ):
       newdot = dot( self.func, self._cexpand(other), axes )
       if self.axis not in axes:
         newdot = mask( newdot, self.mask, self.axis-_sum(ax<self.axis for ax in axes) )
@@ -3767,10 +3773,33 @@ def inflate( arg, dofmap, length, axis ):
   'inflate'
 
   arg = asarray( arg )
+  dofmap = asarray( dofmap )
   axis = numeric.normdim( arg.ndim, axis )
+  shape = arg.shape[:axis] + (length,) + arg.shape[axis+1:]
+
+  if dofmap.isconstant:
+    n = arg.shape[axis]
+    assert numeric.isint(n), 'constant inflation only allowed over fixed-length axis'
+    index, = dofmap.eval()
+    assert len(index) == n
+    assert numpy.all( index >= 0 ) and numpy.all( index < length )
+    assert numpy.all( numpy.diff(index) == 1 ), 'constant inflation must be contiguous'
+    if n == length:
+      retval = arg
+    else:
+      parts = []
+      if index[0] > 0:
+        parts.append( zeros( arg.shape[:axis] + (index[0],) + arg.shape[axis+1:], dtype=arg.dtype ) )
+      parts.append( arg )
+      if index[0] + n < length:
+        parts.append( zeros( arg.shape[:axis] + (length-index[0]-n,) + arg.shape[axis+1:], dtype=arg.dtype ) )
+      retval = concatenate( parts, axis=axis )
+    assert retval.shape == tuple(shape)
+    return retval
 
   retval = _call( arg, '_inflate', dofmap, length, axis )
   if retval is not None:
+    assert retval.shape == tuple(shape)
     return retval
 
   return Inflate( arg, dofmap, length, axis )
@@ -3783,6 +3812,13 @@ def mask( arg, mask, axis=0 ):
   if mask.all():
     return arg
   assert mask.any()
+  shape = arg.shape[:axis] + (mask.sum(),) + arg.shape[axis+1:]
+
+  retval = _call( arg, '_mask', mask, axis )
+  if retval is not None:
+    assert retval.shape == shape
+    return retval
+
   return Mask( arg, mask, axis )
 
 @log.title
