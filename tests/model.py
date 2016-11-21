@@ -5,24 +5,30 @@ import numpy
 class Laplace( model.Model ):
   def bases( self, domain ):
     yield 'u', domain.basis( 'std', degree=1 )
+  def constraints( self, domain, geom ):
+    ubasis, = self.chained( domain )
+    return domain.boundary['left'].project( 0, onto=ubasis, geometry=geom, ischeme='gauss2' )
   def evalres( self, domain, geom, ns ):
     ubasis, = self.chained( domain )
-    integral = model.Integral( ( ubasis.grad(geom) * ns.u.grad(geom) ).sum(-1), domain=domain, geometry=geom, degree=2 )
-    integral += model.Integral( ubasis, domain=domain.boundary['top'], geometry=geom, degree=2 )
-    cons = domain.boundary['left'].project( 0, onto=ubasis, geometry=geom, ischeme='gauss2' )
-    return integral, cons
+    return model.Integral( ( ubasis.grad(geom) * ns.u.grad(geom) ).sum(-1), domain=domain, geometry=geom, degree=2 ) \
+         + model.Integral( ubasis, domain=domain.boundary['top'], geometry=geom, degree=2 )
 
 class NavierStokes( model.Model ):
+  def __init__( self ):
+    self.viscosity = 1
   def bases( self, domain ):
     yield 'u', domain.basis( 'std', degree=2 ).vector(2)
     yield 'p', domain.basis( 'std', degree=1 )
+  def constraints( self, domain, geom ):
+    ubasis, pbasis = self.chained( domain )
+    return domain.boundary['top,bottom'].project( [0,0], onto=ubasis, geometry=geom, ischeme='gauss2' ) \
+         | domain.boundary['left'].project( [geom[1]*(1-geom[1]),0], onto=ubasis, geometry=geom, ischeme='gauss2' )
+  def evalres0( self, domain, geom, ns ):
+    ubasis, pbasis = self.chained( domain )
+    return model.Integral( self.viscosity * ubasis['ni,j'] * (ns.u['i,j']+ns.u['j,i']) - ubasis['nk,k'] * ns.p + pbasis['n'] * ns.u['k,k'], domain=domain, geometry=geom, degree=5 )
   def evalres( self, domain, geom, ns ):
     ubasis, pbasis = self.chained( domain )
-    viscosity = 1.
-    integral = model.Integral( ubasis['ni'] * ns.u['i,j'] * ns.u['j'] + viscosity * ubasis['ni,j'] * (ns.u['i,j']+ns.u['j,i']) - ubasis['nk,k'] * ns.p + pbasis['n'] * ns.u['k,k'], domain=domain, geometry=geom, degree=5 )
-    cons = domain.boundary['top,bottom'].project( [0,0], onto=ubasis, geometry=geom, ischeme='gauss2' ) \
-         | domain.boundary['left'].project( [geom[1]*(1-geom[1]),0], onto=ubasis, geometry=geom, ischeme='gauss2' )
-    return integral, cons
+    return self.evalres0( domain, geom, ns ) + model.Integral( ubasis['ni'] * ns.u['i,j'] * ns.u['j'], domain=domain, geometry=geom, degree=5 )
 
 @register
 def laplace():
@@ -32,9 +38,10 @@ def laplace():
   @unittest
   def res():
     ns = model.solve_namespace( domain, geom )
-    integral, cons = model.evalres( domain, geom, ns )
-    res = numpy.linalg.norm( (cons&0) | integral.eval() )
-    assert res < 1e-13
+    cons = model.constraints( domain, geom )
+    res = model.evalres( domain, geom, ns )
+    resnorm = numpy.linalg.norm( (cons&0) | res.eval() )
+    assert resnorm < 1e-13
 
 @register
 def navierstokes():
@@ -46,9 +53,10 @@ def navierstokes():
   @unittest
   def res():
     ns = model.solve_namespace( domain, geom, tol=tol, callback=vecs.append )
-    integral, cons = model.evalres( domain, geom, ns )
-    res = numpy.linalg.norm( (cons&0) | integral.eval() )
-    assert res < tol
+    cons = model.constraints( domain, geom )
+    res = model.evalres( domain, geom, ns )
+    resnorm = numpy.linalg.norm( (cons&0) | res.eval() )
+    assert resnorm < tol
 
   @unittest
   def callback():

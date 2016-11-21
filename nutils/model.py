@@ -51,6 +51,7 @@ def newton( lhs0, isdof, eval_res_jac, tol=1e-10, nrelax=5, maxrelax=.9, callbac
     if resnorm < tol:
       break
     with log.context( 'iter {0} ({1:.0f}%)'.format( inewton, 100 * numpy.log(resnorm0/resnorm) / numpy.log(resnorm0/tol) ) ):
+      log.info( 'residual: {:.2e}'.format(resnorm) )
       if callback is not None:
         callback( lhs )
       dlhs = -jac.solve( res, constrain=zcons )
@@ -160,11 +161,14 @@ class Integral( dict ):
       values = [ domain.integrate( [res,jac], ischeme=ischeme, edit=edit, fcache=fcache ) for domain, res, jac, ischeme in res_jac ]
       return numpy.sum( values, dtype=object, axis=0 )
 
-    if islinear or lhs0 is None:
+    if islinear:
       res, jac = eval_res_jac( function.zeros(target.shape) )
-      lhs0 = jac.solve( -res, constrain=cons )
+      return jac.solve( -res, constrain=cons )
 
-    return lhs0 if islinear else newton( lhs0, numpy.isnan(cons), eval_res_jac, **newtonargs )
+    if lhs0 is None:
+      lhs0 = cons|0
+
+    return newton( lhs0, numpy.isnan(cons), eval_res_jac, **newtonargs )
 
 
 class Model:
@@ -185,6 +189,9 @@ class Model:
   def evalres( self, domain, geom, namespace ):
     raise NotImplementedError( 'Model subclass needs to implement evalres' )
 
+  def evalres0( self, domain, geom, namespace ):
+    return self.evalres( domain, geom, namespace )
+
   def __or__( self, other ):
     return ChainModel( self, other )
 
@@ -202,15 +209,18 @@ class Model:
     assert i == len(coeffs)
     return namespace
 
-  def solve( self, domain, geom, **newtonargs ):
+  @log.title
+  def solve( self, domain, geom, lhs0=None, **newtonargs ):
     ndofs = sum( len(basis) for name, basis in self.bases(domain) )
     target = function.DerivativeTarget( [ndofs] )
     namespace = self.namespace( domain, target )
+    cons = self.constraints( domain, geom )
+    res0 = self.evalres0( domain, geom, namespace )
     res = self.evalres( domain, geom, namespace )
-    assert len(res) in (2,3)
-    integral, cons = res[-2:]
-    lhs0 = res[0].solve( target, cons=cons, lhs0=None, **newtonargs ) if len(res) == 3 else None
-    return integral.solve( target, cons=cons, lhs0=lhs0, **newtonargs )
+    if lhs0 is None and res != res0:
+      with log.context( 'initial condition' ):
+        lhs0 = res0.solve( target, cons=cons, lhs0=None, **newtonargs )
+    return res.solve( target, cons=cons, lhs0=lhs0, **newtonargs )
 
   def solve_namespace( self, domain, geom, **newtonargs ):
     coeffs = self.solve( domain, geom, **newtonargs )
@@ -221,24 +231,20 @@ class ChainModel( Model ):
   '''Two models combined'''
 
   def __init__( self, m1, m2 ):
-    self.m1 = m1
-    self.m2 = m2
+    self.models = m1, m2
 
   def bases( self, domain ):
-    yield from self.m1.bases( domain )
-    yield from self.m2.bases( domain )
+    for m in self.models:
+      yield from m.bases( domain )
+
+  def constraints( self, domain, geom ):
+    return numpy.concatenate([ m.constraints(domain,geom) for m in self.models ])
+
+  def evalres0( self, domain, geom, namespace ):
+    return Integral.concatenate([ m.evalres0(domain,geom,namespace) for m in self.models ])
 
   def evalres( self, domain, geom, namespace ):
-    res1 = self.m1.evalres( domain, geom, namespace )
-    res2 = self.m2.evalres( domain, geom, namespace )
-    assert len(res1) in (2,3) and len(res2) in (2,3)
-    integral1, cons1 = res1[-2:]
-    integral2, cons2 = res2[-2:]
-    integral12 = Integral.concatenate([ integral1, integral2 ])
-    cons12 = numpy.concatenate([ cons1, cons2 ])
-    if len(res1) == len(res2) == 2:
-      return integral12, cons12
-    return Integral.concatenate([ res1[0], res2[0] ]), integral12, cons12
+    return Integral.concatenate([ m.evalres(domain,geom,namespace) for m in self.models ])
 
 
 if __name__ == '__main__':
@@ -246,12 +252,13 @@ if __name__ == '__main__':
   class Laplace( Model ):
     def bases( self, domain ):
       yield 'u', domain.basis( 'std', degree=1 )
+    def constraints( self, domain, geom ):
+      ubasis, = self.chained( domain )
+      return domain.boundary['left'].project( 0, onto=ubasis, geometry=geom, ischeme='gauss2' )
     def evalres( self, domain, geom, ns ):
       ubasis, = self.chained( domain )
-      integral = Integral( ( ubasis.grad(geom) * ns.u.grad(geom) ).sum(-1), domain=domain, geometry=geom, degree=2 )
-      integral += Integral( ubasis, domain=domain.boundary['top'], geometry=geom, degree=2 )
-      cons = domain.boundary['left'].project( 0, onto=ubasis, geometry=geom, ischeme='gauss2' )
-      return integral, cons
+      return Integral( ( ubasis.grad(geom) * ns.u.grad(geom) ).sum(-1), domain=domain, geometry=geom, degree=2 ) \
+           + Integral( ubasis, domain=domain.boundary['top'], geometry=geom, degree=2 )
 
   from nutils import mesh, plot
   domain, geom = mesh.rectilinear( [8,8] )
