@@ -183,25 +183,25 @@ class Model:
   Models can be combined using the or-operator.
   '''
 
-  def bases( self, domain ):
+  def bases( self ):
     raise NotImplementedError( 'Model subclass needs to implement bases' )
 
-  def evalres( self, domain, geom, namespace ):
+  def evalres( self, geom, namespace ):
     raise NotImplementedError( 'Model subclass needs to implement evalres' )
 
-  def evalres0( self, domain, geom, namespace ):
-    return self.evalres( domain, geom, namespace )
+  def evalres0( self, geom, namespace ):
+    return self.evalres( geom, namespace )
 
   def __or__( self, other ):
     return ChainModel( self, other )
 
-  def chained( self, domain ):
-    return function.chain( [ basis for name, basis in self.bases(domain) ] )
+  def chained( self ):
+    return function.chain( [ basis for name, basis in self.bases() ] )
 
-  def namespace( self, domain, coeffs ):
+  def namespace( self, coeffs ):
     namespace = AttrDict()
     i = 0
-    for name, basis in self.bases( domain ):
+    for name, basis in self.bases():
       j = i + len(basis)
       assert name not in namespace, 'duplicate variable name: {!r}'.format(name)
       namespace[name] = basis.dot( coeffs[i:j] )
@@ -210,21 +210,21 @@ class Model:
     return namespace
 
   @log.title
-  def solve( self, domain, geom, lhs0=None, **newtonargs ):
-    ndofs = sum( len(basis) for name, basis in self.bases(domain) )
+  def solve( self, geom, lhs0=None, **newtonargs ):
+    ndofs = sum( len(basis) for name, basis in self.bases() )
     target = function.DerivativeTarget( [ndofs] )
-    namespace = self.namespace( domain, target )
-    cons = self.constraints( domain, geom )
-    res0 = self.evalres0( domain, geom, namespace )
-    res = self.evalres( domain, geom, namespace )
+    namespace = self.namespace( target )
+    cons = self.constraints( geom )
+    res0 = self.evalres0( geom, namespace )
+    res = self.evalres( geom, namespace )
     if lhs0 is None and res != res0:
       with log.context( 'initial condition' ):
         lhs0 = res0.solve( target, cons=cons, lhs0=None, **newtonargs )
     return res.solve( target, cons=cons, lhs0=lhs0, **newtonargs )
 
-  def solve_namespace( self, domain, geom, **newtonargs ):
-    coeffs = self.solve( domain, geom, **newtonargs )
-    return self.namespace( domain, coeffs )
+  def solve_namespace( self, geom, **newtonargs ):
+    coeffs = self.solve( geom, **newtonargs )
+    return self.namespace( coeffs )
 
 
 class ChainModel( Model ):
@@ -233,32 +233,34 @@ class ChainModel( Model ):
   def __init__( self, m1, m2 ):
     self.models = m1, m2
 
-  def bases( self, domain ):
+  def bases( self ):
     for m in self.models:
-      yield from m.bases( domain )
+      yield from m.bases()
 
-  def constraints( self, domain, geom ):
-    return numpy.concatenate([ m.constraints(domain,geom) for m in self.models ])
+  def constraints( self, geom ):
+    return numpy.concatenate([ m.constraints(geom) for m in self.models ])
 
-  def evalres0( self, domain, geom, namespace ):
-    return Integral.concatenate([ m.evalres0(domain,geom,namespace) for m in self.models ])
+  def evalres0( self, geom, namespace ):
+    return Integral.concatenate([ m.evalres0(geom,namespace) for m in self.models ])
 
-  def evalres( self, domain, geom, namespace ):
-    return Integral.concatenate([ m.evalres(domain,geom,namespace) for m in self.models ])
+  def evalres( self, geom, namespace ):
+    return Integral.concatenate([ m.evalres(geom,namespace) for m in self.models ])
 
 
 if __name__ == '__main__':
 
   class Laplace( Model ):
-    def bases( self, domain ):
-      yield 'u', domain.basis( 'std', degree=1 )
-    def constraints( self, domain, geom ):
-      ubasis, = self.chained( domain )
-      return domain.boundary['left'].project( 0, onto=ubasis, geometry=geom, ischeme='gauss2' )
-    def evalres( self, domain, geom, ns ):
-      ubasis, = self.chained( domain )
-      return Integral( ( ubasis.grad(geom) * ns.u.grad(geom) ).sum(-1), domain=domain, geometry=geom, degree=2 ) \
-           + Integral( ubasis, domain=domain.boundary['top'], geometry=geom, degree=2 )
+    def __init__( self, domain ):
+      self.domain = domain
+    def bases( self ):
+      yield 'u', self.domain.basis( 'std', degree=1 )
+    def constraints( self, geom ):
+      ubasis, = self.chained()
+      return self.domain.boundary['left'].project( 0, onto=ubasis, geometry=geom, ischeme='gauss2' )
+    def evalres( self, geom, ns ):
+      ubasis, = self.chained()
+      return Integral( ( ubasis.grad(geom) * ns.u.grad(geom) ).sum(-1), domain=self.domain, geometry=geom, degree=2 ) \
+           + Integral( ubasis, domain=self.domain.boundary['top'], geometry=geom, degree=2 )
 
   from nutils import mesh, plot
   domain, geom = mesh.rectilinear( [8,8] )
