@@ -1,5 +1,5 @@
 from . import function, index, cache, log, util
-import numpy, itertools
+import numpy, itertools, numbers
 
 
 @log.title
@@ -145,6 +145,26 @@ class Integral( dict ):
         add[domain] = integrand_degree[0] + integrand, max( integrand_degree[1], degree )
     return add
 
+  def __sub__( self, other ):
+    return self + other * -1
+
+  def __mul__( self, other ):
+    if not isinstance( other, numbers.Number ):
+      return NotImplemented
+    mul = self.empty( self.shape )
+    mul.update({ domain: (integrand*other,degree) for domain, (integrand,degree) in self.items() })
+    return mul
+
+  def __rmul__( self, other ):
+    if not isinstance( other, numbers.Number ):
+      return NotImplemented
+    return self * other
+
+  def __truediv__( self, other ):
+    if not isinstance( other, numbers.Number ):
+      return NotImplemented
+    return self * (1/other)
+
   def eval( self ):
     values = [ domain.obj.integrate( integrand, ischeme='gauss{}'.format(degree) ) for domain, (integrand,degree) in self.items() ]
     return numpy.sum( values, axis=0 )
@@ -197,8 +217,14 @@ class Model:
   def namespace( self, coeffs ):
     raise NotImplementedError( 'Model subclass needs to implement namespace' )
 
+  def constraints( self, geom ):
+    return util.NanVec( self.ndofs )
+
   def evalres( self, geom, namespace ):
     raise NotImplementedError( 'Model subclass needs to implement evalres' )
+
+  def inertia( self, geom, namespace ):
+    raise NotImplementedError( 'Model subclass needs to implement inertia' )
 
   def evalres0( self, geom, namespace ):
     return self.evalres( geom, namespace )
@@ -206,19 +232,40 @@ class Model:
   @log.title
   def solve( self, geom, lhs0=None, **newtonargs ):
     target = function.DerivativeTarget( [self.ndofs] )
-    namespace = self.namespace( target )
+    ns = self.namespace( target )
     cons = self.constraints( geom )
-    res0 = self.evalres0( geom, namespace )
-    res = self.evalres( geom, namespace )
+    res0 = self.evalres0( geom, ns )
+    res = self.evalres( geom, ns )
     if lhs0 is None and res != res0:
       with log.context( 'initial condition' ):
         lhs0 = res0.solve( target, cons=cons, lhs0=None, **newtonargs )
     return res.solve( target, cons=cons, lhs0=lhs0, **newtonargs )
 
-  def solve_namespace( self, geom, **newtonargs ):
-    coeffs = self.solve( geom, **newtonargs )
+  def solve_namespace( self, *args, **kwargs ):
+    coeffs = self.solve( *args, **kwargs )
     return self.namespace( coeffs )
 
+  @log.title
+  def timestep( self, geom, timestep, lhs0=None, **newtonargs ):
+    target = function.DerivativeTarget( [self.ndofs] )
+    ns = self.namespace( target )
+    cons = self.constraints( geom )
+    if lhs0 is not None:
+      coeffs = lhs0
+    else:
+      res0 = self.evalres0( geom, ns )
+      with log.context( 'initial condition' ):
+        coeffs = res0.solve( target, cons=cons, lhs0=None, **newtonargs )
+    res = self.evalres( geom, ns ) + self.inertia( geom, ns) / timestep
+    while True:
+      yield coeffs
+      ns0 = self.namespace( coeffs )
+      res0 = self.inertia( geom, ns0 ) / timestep
+      coeffs = ( res - res0 ).solve( target, cons=cons, lhs0=lhs0, **newtonargs )
+
+  def timestep_namespace( self, *args, **kwargs ):
+    for coeffs in self.timestep( *args, **kwargs ):
+      yield self.namespace( coeffs )
 
 class MultiModel( Model ):
   '''Two models combined'''
@@ -240,6 +287,9 @@ class MultiModel( Model ):
 
   def evalres( self, geom, namespace ):
     return Integral.concatenate([ m.evalres(geom,namespace) for m in self.models ])
+
+  def inertia( self, geom, namespace ):
+    return Integral.concatenate([ m.inertia(geom,namespace) for m in self.models ])
 
 
 if __name__ == '__main__':
