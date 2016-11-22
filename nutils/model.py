@@ -1,4 +1,4 @@
-from . import function, index, cache, log
+from . import function, index, cache, log, util
 import numpy, itertools
 
 
@@ -89,18 +89,23 @@ def newton( lhs0, isdof, eval_res_jac, tol=1e-10, nrelax=5, maxrelax=.9, callbac
   return lhs
 
 
-class AttrDict:
-  '''Dictionary-like object which values can also be accessed as attributes'''
-  def __getitem__( self, key ):
-    return self.__dict__[key]
-  def __setitem__( self, key, value ):
-    self.__dict__[key] = value
-  def __contains__( self, key ):
-    return key in self.__dict__
-  def __iter__( self ):
-    return iter( self.__dict__ )
-  def __str__( self ):
-    return str( self.__dict__ )
+class AttrDict( dict ):
+  '''Container for key/value pairs. Items can be get/set as either dictonary
+  items or object attributes. Dictionary items cannot be accessed as attributes
+  and vice versa.'''
+  def __init__( self, *args, **kwargs ):
+    nitems = 0
+    nattrs = 0
+    for arg in args:
+      self.update( arg )
+      nitems += len(arg)
+      if isinstance( arg, AttrDict ):
+        self.__dict__.update( arg.__dict__ )
+        nattrs += len(arg.__dict__)
+    self.__dict__.update( kwargs )
+    nattrs += len(kwargs)
+    assert len(self) == nitems, 'duplicate items'
+    assert len(self.__dict__) == nattrs, 'duplicate attributes'
 
 
 class Integral( dict ):
@@ -183,8 +188,14 @@ class Model:
   Models can be combined using the or-operator.
   '''
 
-  def bases( self ):
-    raise NotImplementedError( 'Model subclass needs to implement bases' )
+  def __init__( self, ndofs ):
+    self.ndofs = ndofs
+
+  def __or__( self, other ):
+    return MultiModel( self, other )
+
+  def namespace( self, coeffs ):
+    raise NotImplementedError( 'Model subclass needs to implement namespace' )
 
   def evalres( self, geom, namespace ):
     raise NotImplementedError( 'Model subclass needs to implement evalres' )
@@ -192,27 +203,9 @@ class Model:
   def evalres0( self, geom, namespace ):
     return self.evalres( geom, namespace )
 
-  def __or__( self, other ):
-    return ChainModel( self, other )
-
-  def chained( self ):
-    return function.chain( [ basis for name, basis in self.bases() ] )
-
-  def namespace( self, coeffs ):
-    namespace = AttrDict()
-    i = 0
-    for name, basis in self.bases():
-      j = i + len(basis)
-      assert name not in namespace, 'duplicate variable name: {!r}'.format(name)
-      namespace[name] = basis.dot( coeffs[i:j] )
-      i = j
-    assert i == len(coeffs)
-    return namespace
-
   @log.title
   def solve( self, geom, lhs0=None, **newtonargs ):
-    ndofs = sum( len(basis) for name, basis in self.bases() )
-    target = function.DerivativeTarget( [ndofs] )
+    target = function.DerivativeTarget( [self.ndofs] )
     namespace = self.namespace( target )
     cons = self.constraints( geom )
     res0 = self.evalres0( geom, namespace )
@@ -227,18 +220,20 @@ class Model:
     return self.namespace( coeffs )
 
 
-class ChainModel( Model ):
+class MultiModel( Model ):
   '''Two models combined'''
 
   def __init__( self, m1, m2 ):
     self.models = m1, m2
+    Model.__init__( self, ndofs=m1.ndofs+m2.ndofs )
 
-  def bases( self ):
-    for m in self.models:
-      yield from m.bases()
+  def namespace( self, coeffs ):
+    assert len(coeffs) == self.ndofs
+    m1, m2 = self.models
+    return AttrDict( m1.namespace( coeffs[:m1.ndofs] ), m2.namespace( coeffs[m1.ndofs:] ) )
 
   def constraints( self, geom ):
-    return numpy.concatenate([ m.constraints(geom) for m in self.models ])
+    return numpy.concatenate([ m.constraints(geom) for m in self.models ]).view( util.NanVec )
 
   def evalres0( self, geom, namespace ):
     return Integral.concatenate([ m.evalres0(geom,namespace) for m in self.models ])
@@ -252,20 +247,20 @@ if __name__ == '__main__':
   class Laplace( Model ):
     def __init__( self, domain ):
       self.domain = domain
-    def bases( self ):
-      yield 'u', self.domain.basis( 'std', degree=1 )
+      self.basis = self.domain.basis( 'std', degree=1 )
+      Model.__init__( self, ndofs=len(self.basis) )
+    def namespace( self, coeffs ):
+      return AttrDict( u=self.basis.dot(coeffs) )
     def constraints( self, geom ):
-      ubasis, = self.chained()
-      return self.domain.boundary['left'].project( 0, onto=ubasis, geometry=geom, ischeme='gauss2' )
+      return self.domain.boundary['left'].project( 0, onto=self.basis, geometry=geom, ischeme='gauss2' )
     def evalres( self, geom, ns ):
-      ubasis, = self.chained()
-      return Integral( ( ubasis.grad(geom) * ns.u.grad(geom) ).sum(-1), domain=self.domain, geometry=geom, degree=2 ) \
-           + Integral( ubasis, domain=self.domain.boundary['top'], geometry=geom, degree=2 )
+      return Integral( ( self.basis.grad(geom) * ns.u.grad(geom) ).sum(-1), domain=self.domain, geometry=geom, degree=2 ) \
+           + Integral( self.basis, domain=self.domain.boundary['top'], geometry=geom, degree=2 )
 
   from nutils import mesh, plot
   domain, geom = mesh.rectilinear( [8,8] )
-  model = Laplace()
-  ns = model.solve_namespace( domain, geom )
+  model = Laplace( domain )
+  ns = model.solve_namespace( geom )
   geom_, u_ = domain.elem_eval( [ geom, ns.u ], ischeme='bezier2' )
   with plot.PyPlot( 'model_demo', ndigits=0 ) as plot:
     plot.mesh( geom_, u_ )
