@@ -90,9 +90,10 @@ class ScipyMatrix( Matrix ):
   matvec = lambda self, vec: self.core.dot( vec )
   toarray = lambda self: self.core.toarray()
   toscipy = lambda self: self.core
-  __add__ = lambda self, other: ScipyMatrix( self.core + other.toscipy() )
-  __sub__ = lambda self, other: ScipyMatrix( self.core - other.toscipy() )
+  __add__ = lambda self, other: ScipyMatrix( self.core + (other.toscipy() if isinstance(other,Matrix) else other) )
+  __sub__ = lambda self, other: ScipyMatrix( self.core - (other.toscipy() if isinstance(other,Matrix) else other) )
   __mul__ = lambda self, other: ScipyMatrix( self.core * (other.toscipy() if isinstance(other,Matrix) else other) )
+  __radd__ = __add__
   __rmul__ = __mul__
   __div__ = lambda self, other: ScipyMatrix( self.core / other )
   T = property( lambda self: ScipyMatrix( self.core.transpose() ) )

@@ -1,5 +1,5 @@
 from . import function, index, cache, log, util
-import numpy, itertools, numbers
+import numpy, itertools, functools, numbers
 
 
 @log.title
@@ -120,7 +120,7 @@ class Integral( dict ):
   @classmethod
   def empty( self, shape ):
     empty = dict.__new__( Integral )
-    empty.shape = shape
+    empty.shape = tuple(shape)
     return empty
 
   @classmethod
@@ -131,6 +131,43 @@ class Integral( dict ):
       integrands, degrees = zip( *[ integral.get(domain,(function.zeros(integral.shape),0)) for integral in integrals ] )
       concatenate[domain] = function.concatenate( integrands, axis=0 ), max(degrees)
     return concatenate
+
+  @classmethod
+  def multieval( cls, *integrals, fcache=None ):
+    if fcache is None:
+      fcache = cache.WrapperCache()
+    assert all( isinstance( integral, cls ) for integral in integrals )
+    domains = set( domain for integral in integrals for domain in integral )
+    retvals = []
+    for i, domain in enumerate(domains):
+      integrands, degrees = zip( *[ integral.get( domain, (function.zeros(integral.shape),0) ) for integral in integrals ] )
+      retvals.append( domain.obj.integrate( integrands, ischeme='gauss{}'.format(max(degrees)), fcache=fcache ) )
+    return numpy.sum( retvals, axis=0 )
+
+  def eval( self, fcache=None ):
+    if fcache is None:
+      fcache = cache.WrapperCache()
+    values = [ domain.obj.integrate( integrand, ischeme='gauss{}'.format(degree), fcache=fcache ) for domain, (integrand,degree) in self.items() ]
+    return numpy.sum( values, axis=0 )
+
+  def derivative( self, target ):
+    assert target.ndim == 1
+    seen = {}
+    derivative = self.empty( self.shape+target.shape )
+    for domain, (integrand,degree) in self.items():
+      derivative[domain] = function.derivative( integrand, var=target, axes=[0], seen=seen ), degree
+    return derivative
+
+  def replace( self, target, replacement ):
+    assert target.shape == replacement.shape
+    edit = lambda f: replacement if f is target else function.edit( f, edit )
+    replace = self.empty( self.shape )
+    for domain, (integrand,degree) in self.items():
+      replace[domain] = edit(integrand), degree
+    return replace
+
+  def contains( self, target ):
+    return any( target in integrand.serialized[0] for integrand, degree in self.values() )
 
   def __add__( self, other ):
     assert isinstance( other, Integral ) and self.shape == other.shape
@@ -165,45 +202,18 @@ class Integral( dict ):
       return NotImplemented
     return self * (1/other)
 
-  def eval( self ):
-    values = [ domain.obj.integrate( integrand, ischeme='gauss{}'.format(degree) ) for domain, (integrand,degree) in self.items() ]
-    return numpy.sum( values, axis=0 )
-
-  def solve( self, target, cons, lhs0, **newtonargs ):
-
-    seen = {}
-    res_jac = [ ( domain.obj, integrand, function.derivative( integrand, var=target, axes=[0], seen=seen ), 'gauss{}'.format(degree) )
-      for domain, (integrand,degree) in self.items() ]
-
-    islinear = all( target not in jac.serialized[0] for domain, res, jac, ischeme in res_jac )
-    if islinear:
-      log.user( 'problem is linear' )
-
-    fcache = cache.WrapperCache()
-    def eval_res_jac( lhs ):
-      lhs = function.asarray( lhs )
-      edit = lambda f: lhs if f is target else function.edit( f, edit )
-      values = [ domain.integrate( [res,jac], ischeme=ischeme, edit=edit, fcache=fcache ) for domain, res, jac, ischeme in res_jac ]
-      return numpy.sum( values, dtype=object, axis=0 )
-
-    if islinear:
-      res, jac = eval_res_jac( function.zeros(target.shape) )
-      return jac.solve( -res, constrain=cons )
-
-    if lhs0 is None:
-      lhs0 = cons|0
-
-    return newton( lhs0, numpy.isnan(cons), eval_res_jac, **newtonargs )
-
 
 class Model:
   '''Model base class
 
   Model classes define a discretized physical problem by implementing two
   member functions:
-    - bases, yields tuples of (name,basis) pairs that define the trial space
-    - evalres, returns an Integral object and constraint vector that are used
-      to construct the residual and tangent matrix
+    - namespace, returns a dictionary or AttrDict
+    - residual, returns an Integral object
+  and optionally
+    - residual0, returns an Integral object
+    - inertia, returns an Integral object
+    - constraints, returns a util.NanVec
 
   Models can be combined using the or-operator.
   '''
@@ -220,26 +230,51 @@ class Model:
   def constraints( self, geom ):
     return util.NanVec( self.ndofs )
 
-  def evalres( self, geom, namespace ):
-    raise NotImplementedError( 'Model subclass needs to implement evalres' )
+  def residual( self, geom, namespace ):
+    raise NotImplementedError( 'Model subclass needs to implement residual' )
+
+  def residual0( self, geom, namespace ):
+    return Integral.empty( [self.ndofs] )
 
   def inertia( self, geom, namespace ):
     raise NotImplementedError( 'Model subclass needs to implement inertia' )
 
-  def evalres0( self, geom, namespace ):
-    return self.evalres( geom, namespace )
+  def initial( self, geom, namespace ):
+    raise NotImplementedError( 'Model subclass needs to implement inertia' )
+
+  def get_initial_condition( self, geom, cons=None ):
+    target = function.DerivativeTarget( [self.ndofs] )
+    ns = self.namespace( target )
+    if cons is None:
+      cons = self.constraints( geom )
+    try:
+      init = self.initial( geom, ns )
+    except NotImplementedError:
+      lhs0 = cons|0
+    else:
+      with log.context( 'initial condition' ):
+        initjac = init.derivative( target )
+        assert not initjac.contains( target )
+        b, A = Integral.multieval( init.replace(target,function.zeros_like(target)), initjac )
+        lhs0 = A.solve( -b, constrain=cons )
+    return lhs0
 
   @log.title
   def solve( self, geom, lhs0=None, **newtonargs ):
     target = function.DerivativeTarget( [self.ndofs] )
     ns = self.namespace( target )
     cons = self.constraints( geom )
-    res0 = self.evalres0( geom, ns )
-    res = self.evalres( geom, ns )
-    if lhs0 is None and res != res0:
-      with log.context( 'initial condition' ):
-        lhs0 = res0.solve( target, cons=cons, lhs0=None, **newtonargs )
-    return res.solve( target, cons=cons, lhs0=lhs0, **newtonargs )
+    res = self.residual( geom, ns ) + self.residual0( geom, ns )
+    jac = res.derivative( target )
+    if not jac.contains( target ):
+      log.user( 'problem is linear' )
+      b, A = Integral.multieval( res.replace(target,function.zeros_like(target)), jac )
+      return A.solve( -b, constrain=cons )
+    if lhs0 is None:
+      lhs0 = self.get_initial_condition( geom, cons )
+    fcache = cache.WrapperCache()
+    eval_res_jac = lambda lhs: Integral.multieval( res.replace(target,lhs), jac.replace(target,lhs), fcache=fcache )
+    return newton( lhs0, numpy.isnan(cons), eval_res_jac, **newtonargs )
 
   def solve_namespace( self, *args, **kwargs ):
     coeffs = self.solve( *args, **kwargs )
@@ -250,22 +285,26 @@ class Model:
     target = function.DerivativeTarget( [self.ndofs] )
     ns = self.namespace( target )
     cons = self.constraints( geom )
-    if lhs0 is not None:
-      coeffs = lhs0
-    else:
-      res0 = self.evalres0( geom, ns )
-      with log.context( 'initial condition' ):
-        coeffs = res0.solve( target, cons=cons, lhs0=None, **newtonargs )
-    res = self.evalres( geom, ns ) + self.inertia( geom, ns) / timestep
+    coeffs = lhs0 if lhs0 is not None else self.get_initial_condition( geom, cons )
+    res = self.residual( geom, ns ) + self.inertia( geom, ns ) / timestep
+    jac = res.derivative( target )
+    fcache = cache.WrapperCache()
+    islinear = not jac.contains( target )
+    if islinear:
+      log.user( 'problem is linear' )
+      b, A = Integral.multieval( res.replace(target,function.zeros_like(target)), jac, fcache=fcache )
     while True:
       yield coeffs
       ns0 = self.namespace( coeffs )
-      res0 = self.inertia( geom, ns0 ) / timestep
-      coeffs = ( res - res0 ).solve( target, cons=cons, lhs0=lhs0, **newtonargs )
+      res0 = self.residual0( geom, ns0 ) - self.inertia( geom, ns0 ) / timestep
+      if islinear:
+        coeffs = -A.solve( b + res0.eval(fcache), constrain=cons )
+      else:
+        eval_res_jac = lambda lhs: Integral.multieval( res0 + res.replace(target,lhs), jac.replace(target,lhs), fcache=fcache )
+        coeffs = newton( coeffs, numpy.isnan(cons), eval_res_jac, **newtonargs )
 
   def timestep_namespace( self, *args, **kwargs ):
-    for coeffs in self.timestep( *args, **kwargs ):
-      yield self.namespace( coeffs )
+    return ( self.namespace( coeffs ) for coeffs in self.timestep( *args, **kwargs ) )
 
 class MultiModel( Model ):
   '''Two models combined'''
@@ -282,15 +321,24 @@ class MultiModel( Model ):
   def constraints( self, geom ):
     return numpy.concatenate([ m.constraints(geom) for m in self.models ]).view( util.NanVec )
 
-  def evalres0( self, geom, namespace ):
-    return Integral.concatenate([ m.evalres0(geom,namespace) for m in self.models ])
+  def initial( self, geom, namespace ):
+    return Integral.concatenate([ m.initial(geom,namespace) for m in self.models ])
 
-  def evalres( self, geom, namespace ):
-    return Integral.concatenate([ m.evalres(geom,namespace) for m in self.models ])
+  def residual0( self, geom, namespace ):
+    return Integral.concatenate([ m.residual0(geom,namespace) for m in self.models ])
+
+  def residual( self, geom, namespace ):
+    return Integral.concatenate([ m.residual(geom,namespace) for m in self.models ])
 
   def inertia( self, geom, namespace ):
     return Integral.concatenate([ m.inertia(geom,namespace) for m in self.models ])
 
+  def get_initial_condition( self, geom, cons=None ):
+    if cons is None:
+      cons = self.constraints( geom )
+    m1, m2 = self.models
+    return numpy.concatenate([ m1.get_initial_condition( geom, cons[:m1.ndofs] ),
+                               m2.get_initial_condition( geom, cons[m1.ndofs:] ) ])
 
 if __name__ == '__main__':
 
@@ -303,7 +351,7 @@ if __name__ == '__main__':
       return AttrDict( u=self.basis.dot(coeffs) )
     def constraints( self, geom ):
       return self.domain.boundary['left'].project( 0, onto=self.basis, geometry=geom, ischeme='gauss2' )
-    def evalres( self, geom, ns ):
+    def residual( self, geom, ns ):
       return Integral( ( self.basis.grad(geom) * ns.u.grad(geom) ).sum(-1), domain=self.domain, geometry=geom, degree=2 ) \
            + Integral( self.basis, domain=self.domain.boundary['top'], geometry=geom, degree=2 )
 

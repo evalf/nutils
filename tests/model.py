@@ -11,13 +11,13 @@ class Laplace( model.Model ):
     return { 'u': self.basis.dot(coeffs) }
   def constraints( self, geom ):
     return self.domain.boundary['left'].project( 0, onto=self.basis, geometry=geom, ischeme='gauss2' )
-  def evalres( self, geom, ns ):
+  def residual( self, geom, ns ):
     return model.Integral( ( self.basis.grad(geom) * ns['u'].grad(geom) ).sum(-1), domain=self.domain, geometry=geom, degree=2 ) \
          + model.Integral( self.basis, domain=self.domain.boundary['top'], geometry=geom, degree=2 )
 
 class ConvectionDiffusion( Laplace ):
-  def evalres( self, geom, ns ):
-    return super().evalres(geom,ns) + model.Integral( self.basis['n,k'] * ns.u['k'], domain=self.domain, geometry=geom, degree=2 )
+  def residual( self, geom, ns ):
+    return super().residual(geom,ns) + model.Integral( self.basis['n,k'] * ns.u['k'], domain=self.domain, geometry=geom, degree=2 )
 
 class NavierStokes( model.Model ):
   def __init__( self, domain ):
@@ -33,10 +33,10 @@ class NavierStokes( model.Model ):
   def constraints( self, geom ):
     return self.domain.boundary['top,bottom'].project( [0,0], onto=self.ubasis, geometry=geom, ischeme='gauss2' ) \
          | self.domain.boundary['left'].project( [geom[1]*(1-geom[1]),0], onto=self.ubasis, geometry=geom, ischeme='gauss2' )
-  def evalres0( self, geom, ns ):
+  def initial( self, geom, ns ):
     return model.Integral( self.viscosity * self.ubasis['ni,j'] * (ns.u['i,j']+ns.u['j,i']) - self.ubasis['nk,k'] * ns.p + self.pbasis['n'] * ns.u['k,k'], domain=self.domain, geometry=geom, degree=5 )
-  def evalres( self, geom, ns ):
-    return self.evalres0( geom, ns ) + model.Integral( self.ubasis['ni'] * ns.u['i,j'] * ns.u['j'], domain=self.domain, geometry=geom, degree=5 )
+  def residual( self, geom, ns ):
+    return self.initial( geom, ns ) + model.Integral( self.ubasis['ni'] * ns.u['i,j'] * ns.u['j'], domain=self.domain, geometry=geom, degree=5 )
 
 @register
 def laplace():
@@ -47,7 +47,7 @@ def laplace():
   def res():
     ns = model.solve_namespace( geom )
     cons = model.constraints( geom )
-    res = model.evalres( geom, ns )
+    res = model.residual( geom, ns )
     resnorm = numpy.linalg.norm( (cons&0) | res.eval() )
     assert resnorm < 1e-13
 
@@ -62,7 +62,7 @@ def navierstokes():
   def res():
     ns = model.solve_namespace( geom, tol=tol, callback=vecs.append )
     cons = model.constraints( geom )
-    res = model.evalres( geom, ns )
+    res = model.residual( geom, ns )
     resnorm = numpy.linalg.norm( (cons&0) | res.eval() )
     assert resnorm < tol
 
@@ -82,7 +82,7 @@ def coupled():
   def res():
     ns = model.solve_namespace( geom, tol=tol, callback=vecs.append )
     cons = model.constraints( geom )
-    res = model.evalres( geom, ns )
+    res = model.residual( geom, ns )
     resnorm = numpy.linalg.norm( (cons&0) | res.eval() )
     assert resnorm < tol
 
