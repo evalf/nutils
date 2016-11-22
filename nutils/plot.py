@@ -182,7 +182,9 @@ class PyPlot( BasePlot ):
     assert len(tri.x) == len(values)
     mask = ~numpy.isfinite( values )
     if mask.any():
-      tri = matplotlib.tri.Triangulation( tri.x, tri.y, tri.triangles, mask[tri.triangles].any(axis=1) )
+      tri.set_mask( mask[tri.triangles].any(axis=1) )
+      values = values.copy()
+      values[mask] = numpy.mean( values[~mask] ) #Set masked values to average to not affect color range
     return self._pyplot.tripcolor( tri, values, **kwargs )
 
   def tricontour( self, tri, values, every=None, levels=None, mergetol=0, **kwargs ):
