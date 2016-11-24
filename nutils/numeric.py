@@ -10,7 +10,7 @@
 The numeric module provides methods that are lacking from the numpy module.
 """
 
-import numpy
+import numpy, numbers
 
 _abc = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' # indices for einsum
 
@@ -327,7 +327,10 @@ def isboolarray( a ):
   return isinstance( a, numpy.ndarray ) and a.dtype == bool
 
 def isint( a ):
-  return isintarray( a ) and a.ndim == 0 or numpy.issubdtype( type(a), numpy.integer )
+  return isinstance( a, (numbers.Integral,numpy.integer) )
+
+def isnumber( a ):
+  return isinstance( a, (numbers.Number,numpy.generic) )
 
 def isintarray( a ):
   return isinstance( a, numpy.ndarray ) and numpy.issubdtype( a.dtype, numpy.integer )
