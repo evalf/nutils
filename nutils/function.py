@@ -1794,6 +1794,7 @@ class Pointwise( Array ):
     'constructor'
 
     assert isarray( args )
+    assert args.ndim >= 1 and args.shape[0] >= 1
     shape = args.shape[1:]
     self.args = args
     self.evalfun = evalfun
@@ -2462,10 +2463,12 @@ class Kronecker( Array ):
       return kronecker( power(self.func,get(n,self.axis,0)), self.axis, self.length, self.pos )
 
   def _pointwise( self, evalf, deriv, dtype ):
+    if self.axis == 0:
+      return
     value = evalf( *numpy.zeros(self.shape[0]) )
     assert value.dtype == dtype
     if value == 0:
-      return kronecker( pointwise( self.func, evalf, deriv, dtype ), self.axis, self.length, self.pos )
+      return kronecker( pointwise( self.func, evalf, deriv, dtype ), self.axis-1, self.length, self.pos )
 
   def _edit( self, op ):
     return kronecker( op(self.func), self.axis, self.length, self.pos )
