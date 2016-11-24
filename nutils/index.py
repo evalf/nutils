@@ -5,8 +5,8 @@
 # and others. More info at http://nutils.org <info@nutils.org>. (c) 2015
 
 from __future__ import print_function, division
-from . import function, numpy
-import sys, collections, operator, numbers, itertools
+from . import function, numpy, numeric
+import sys, collections, operator, itertools
 
 
 class IndexedArray:
@@ -73,13 +73,13 @@ class IndexedArray:
       cache.update( (k, g) for k in g )
     # verify linked lengths
     for g in linked_lengths:
-      if len( set(k for k in g if isinstance(g, numbers.Integral)) ) > 1:
+      if len( set(k for k in g if numeric.isint(g)) ) > 1:
         raise ValueError( 'axes have different lengths' )
     # update shape with numbers if possible
     for k, v in self._shape.items():
-      if not isinstance( v, numbers.Integral ):
+      if not numeric.isint(v):
         for i in cache.get( v, [] ):
-          if isinstance( i, numbers.Integral ):
+          if numeric.isint(i):
             self._shape[k] = i
     self._linked_lengths = frozenset( cache.values() )
 
@@ -130,14 +130,14 @@ class IndexedArray:
     for g in self._linked_lengths:
       if geometry is not None:
         g = frozenset( len(geometry) if i == 'geom' else i for i in g )
-      g_ints = set( i for i in g if isinstance(i, numbers.Integral) )
+      g_ints = set( i for i in g if numeric.isint(i) )
       if len( g_ints ) > 1:
         raise ValueError( 'axes have different lengths' )
       if len( g_ints ) == 0:
         continue
       i = next( iter( g_ints ) )
       for j in g:
-        if isinstance( j, numbers.Integral ):
+        if numeric.isint(j):
           continue
         delayed_lengths[j] = i
 
@@ -313,7 +313,7 @@ def asindexedarray( arg ):
     return arg
   elif isinstance( arg, (function.Array, numpy.ndarray) ) and len( arg.shape ) == 0:
     return IndexedArray( (), (), lambda geom, delayed_lengths: arg, () )
-  elif isinstance( arg, (numbers.Number, numpy.generic) ):
+  elif numeric.isnumber(arg):
     return IndexedArray( (), (), lambda geom, delayed_lengths: numpy.array( arg ), () )
   else:
     raise ValueError( 'cannot convert {!r} to a `IndexedArray`'.format( arg ) )

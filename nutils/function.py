@@ -325,7 +325,7 @@ class Array( Evaluable ):
   def _if_array_args( op ):
     @functools.wraps( op )
     def wrapper( self, other ):
-      if isinstance( other, ( numbers.Number, numpy.number, numpy.ndarray, Array, tuple, list ) ):
+      if isinstance( other, ( numbers.Number, numpy.generic, numpy.ndarray, Array, tuple, list ) ):
         return op( self, other )
       else:
         return NotImplemented

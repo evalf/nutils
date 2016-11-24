@@ -13,7 +13,7 @@ backends. At this point `matplotlib <http://matplotlib.org/>`_ and `vtk
 """
 
 from . import numpy, log, core, cache, numeric, _
-import os, warnings, sys, subprocess, numbers
+import os, warnings, sys, subprocess
 
 
 class BasePlot( object ):
@@ -259,8 +259,8 @@ class PyPlot( BasePlot ):
     islog = { 'log': True, 'linear': False }
     xislog = islog[ ax.get_xscale() ]
     yislog = islog[ ax.get_yscale() ]
-    xisnum = isinstance( x, numbers.Number )
-    yisnum = isinstance( y, numbers.Number )
+    xisnum = numeric.isnumber( x )
+    yisnum = numeric.isnumber( y )
 
     if slope is None:
       assert not xisnum and not xisnum, 'need two points to compute a slope'
