@@ -809,6 +809,10 @@ class Align( Array ):
         assert len(axes) == trydot.ndim
         return align( trydot, axes, len(axes) )
 
+  def _mask( self, maskvec, axis ):
+    funcaxis = self.axes.index( axis ) # must exist, otherwise situation should have been handled in def mask
+    return align( mask( self.func, maskvec, funcaxis ), self.axes, self.ndim )
+
 class Get( Array ):
   'get'
 
@@ -2240,6 +2244,21 @@ class Diagonalize( Array ):
     diag = diagonalize( take( self.func, index, self.func.ndim-1 ) )
     return inflate( diag, index, self.func.shape[-1], self.ndim-1 if axis == self.ndim-2 else self.ndim-2 )
 
+  def _mask( self, maskvec, axis ):
+    if axis < self.ndim-2:
+      return diagonalize( mask( self.func, maskvec, axis ) )
+    indices, = numpy.where( maskvec )
+    if not numpy.all( numpy.diff(indices) == 1 ):
+      return
+    # consecutive sub-block
+    rev = slice( None, None, 1 if axis == self.ndim-1 else -1 )
+    return concatenate([
+      zeros( self.func.shape[:-1] + (indices[0],len(indices))[rev] ),
+      diagonalize( mask( self.func, maskvec, self.func.ndim-1 ) ),
+      zeros( self.func.shape[:-1] + (self.shape[-1]-(indices[-1]+1),len(indices))[rev] ),
+    ], axis=2*self.ndim-axis-3 )
+
+
 class Repeat( Array ):
   'repeat singleton axis'
 
@@ -2326,6 +2345,11 @@ class Repeat( Array ):
 
   def _kronecker( self, axis, length, pos ):
     return repeat( kronecker(self.func,axis,length,pos), self.length, self.axis+(axis<=self.axis) )
+
+  def _mask( self, maskvec, axis ):
+    if axis == self.axis:
+      return repeat( self.func, maskvec.sum(), axis )
+    return repeat( mask( self.func, maskvec, axis ), self.length, self.axis )
 
 class Guard( Array ):
   'bar all simplifications'
