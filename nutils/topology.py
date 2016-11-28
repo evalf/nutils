@@ -52,7 +52,9 @@ class Topology( object ):
     return iter( self.elements )
 
   def __getitem__( self, item ):
-    if item == ():
+    if not isinstance( item, tuple ):
+      item = item,
+    if item == () or item == (slice(None),):
       return self
     raise KeyError( item )
 
