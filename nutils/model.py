@@ -111,10 +111,13 @@ class AttrDict( dict ):
 class Integral( dict ):
   '''Postponed integral, used for derivative purposes'''
 
-  def __init__( self, integrand, domain, geometry, degree ):
+  def __init__( self, integrand, domain, geometry, degree, edit=None ):
     if isinstance( integrand, index.IndexedArray ):
       integrand = integrand.unwrap( geometry )
-    self[ cache.HashableAny(domain) ] = integrand * function.J(geometry,domain.ndims), degree
+    integrand *= function.J( geometry, domain.ndims )
+    if edit is not None:
+      integrand = edit( integrand )
+    self[ cache.HashableAny(domain) ] = integrand, degree
     self.shape = integrand.shape
 
   @classmethod
@@ -159,8 +162,7 @@ class Integral( dict ):
     return derivative
 
   def replace( self, target, replacement ):
-    assert target.shape == replacement.shape
-    edit = lambda f: replacement if f is target else function.edit( f, edit )
+    edit = function.replace( target, replacement )
     replace = self.empty( self.shape )
     for domain, (integrand,degree) in self.items():
       replace[domain] = edit(integrand), degree

@@ -631,7 +631,7 @@ class Constant( Array ):
       return asarray( numeric.power( self.value, n.value ) )
 
   def _edit( self, op ):
-    return asarray( op(self.value) )
+    return self
 
   def _dot( self, other, axes ):
     if self._isunit:
@@ -3913,5 +3913,21 @@ def ravel( func, axis ):
     return retval
 
   return Ravel( func, axis )
+
+def replace( old, new ):
+  assert isarray( old )
+  new = asarray( new )
+  assert new.shape == old.shape
+  def do_replace( arg ):
+    d = { old: new }
+    def s( f ):
+      try:
+        v = d[f]
+      except KeyError:
+        v = edit( f, s )
+        d[f] = v
+      return v
+    return s( arg )
+  return do_replace
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
