@@ -678,6 +678,9 @@ class Constant( Array ):
     shape = self.value.shape[:axis] + shape + self.value.shape[axis+1:]
     return asarray( self.value.reshape(shape) )
 
+  def _mask( self, maskvec, axis ):
+    return asarray( self.value[(slice(None),)*axis+(maskvec,)] )
+
 class DofMap( Array ):
   'dof axis'
 
@@ -1250,6 +1253,13 @@ class Concatenate( Array ):
   def _concatenate( self, other, axis ):
     if axis == self.axis:
       return concatenate( self.funcs + ( other.funcs if isinstance( other, Concatenate ) and other.axis == axis else (other,) ), axis )
+
+  def _mask( self, maskvec, axis ):
+    if axis != self.axis:
+      return concatenate( [ mask(func,maskvec,axis) for func in self.funcs ], self.axis )
+    s = numpy.cumsum( [0] + [ func.shape[axis] for func in self.funcs ] )
+    assert s[-1] == self.shape[axis]
+    return concatenate( [ mask( func, maskvec[s1:s2], axis ) for func, s1, s2 in zip( self.funcs, s[:-1], s[1:] ) ], axis )
 
 class Interpolate( Array ):
   'interpolate uniformly spaced data; stepwise for now'
@@ -2022,8 +2032,8 @@ class Zeros( Array ):
   def _edit( self, op ):
     return self
 
-  def _mask( self, mask, axis ):
-    return zeros( self.shape[:axis] + (mask.sum(),) + self.shape[axis+1:], dtype=self.dtype )
+  def _mask( self, maskvec, axis ):
+    return zeros( self.shape[:axis] + (maskvec.sum(),) + self.shape[axis+1:], dtype=self.dtype )
 
 class Inflate( Array ):
   'inflate'
@@ -2061,6 +2071,18 @@ class Inflate( Array ):
     for ind, f in blocks( self.func ):
       assert ind[self.axis] == None
       yield Tuple( ind[:self.axis] + (self.dofmap,) + ind[self.axis+1:] ), f
+
+  def _mask( self, maskvec, axis ):
+    if axis != self.axis:
+      return inflate( mask( self.func, maskvec, axis ), self.dofmap, self.length, self.axis )
+    newlength = maskvec.sum()
+    selection = take( maskvec, self.dofmap, axis=0 )
+    renumber = numpy.empty( len(maskvec), dtype=int )
+    renumber[:] = newlength # out of bounds
+    renumber[maskvec] = numpy.arange( newlength )
+    newdofmap = take( renumber, take( self.dofmap, selection, axis=0 ), axis=0 )
+    newfunc = take( self.func, selection, axis=self.axis )
+    return inflate( newfunc, newdofmap, newlength, self.axis )
 
   def _inflate( self, dofmap, length, axis ):
     assert axis != self.axis
@@ -2616,31 +2638,6 @@ class Mask( Array ):
     self.mask = mask
     Array.__init__( self, args=[func], shape=func.shape[:axis]+(mask.sum(),)+func.shape[axis+1:], dtype=func.dtype )
 
-  @cache.property
-  def renumber( self ):
-    renumber = numpy.empty( len(self.mask), dtype=int )
-    renumber[:] = -1
-    renumber[self.mask] = numpy.arange( self.shape[self.axis] )
-    return renumber
-
-  @cache.property
-  def orignumber( self ):
-    return numpy.arange( len(self.mask) )[self.mask]
-
-  def _cexpand( self, c ):
-    expanded = numpy.zeros( c.shape[:self.axis]+(self.func.shape[self.axis],)+c.shape[self.axis+1:], dtype=c.dtype )
-    expanded[(slice(None),)*self.axis+(self.mask,)], = c.eval()
-    return expanded
-
-  @property
-  def blocks( self ):
-    for ind, f in blocks( self.func ):
-      mask = take( self.mask, ind[self.axis], axis=0 )
-      where = find( mask )
-      newi = take( self.renumber, take( ind[self.axis], where, axis=0 ), axis=0 )
-      newf = take( f, where, axis=self.axis )
-      yield Tuple( ind[:self.axis]+(newi,)+ind[self.axis+1:] ), newf
-
   def evalf( self, func ):
     return func[(slice(None),)*(self.axis+1)+(self.mask,)]
 
@@ -2649,73 +2646,6 @@ class Mask( Array ):
 
   def _edit( self, op ):
     return mask( op(self.func), self.mask, self.axis )
-
-  def _align( self, axes, ndim ):
-    return mask( align( self.func, axes, ndim ), self.mask, axes[self.axis] )
-
-  def _multiply( self, other ):
-    if other.shape[self.axis] == 1:
-      return mask( multiply( self.func, other ), self.mask, self.axis )
-    if isinstance( other, Mask ) and other.axis == self.axis:
-      if numpy.any( self.mask != other.mask ):
-        return
-      return mask( multiply( self.func, other.func ), self.mask, self.axis )
-    if isinstance( other, Constant ):
-      return mask( multiply( self.func, self._cexpand(other) ), self.mask, self.axis )
-
-  def _add( self, other ):
-    if other.shape[self.axis] == 1:
-      return mask( add( self.func, other ), self.mask, self.axis )
-    if isinstance( other, Mask ) and other.axis == self.axis:
-      if numpy.any( self.mask != other.mask ):
-        return
-      return mask( add( self.func, other.func ), self.mask, self.axis )
-    if isinstance( other, Constant ):
-      return mask( multiply( self.func, self._cexpand(other) ), self.mask, self.axis )
-
-  def _inflate( self, dofmap, length, axis ):
-    if axis != self.axis:
-      return mask( inflate( self.func, dofmap, length, axis ), self.mask, self.axis )
-
-  def _concatenate( self, other, axis ):
-    if axis != self.axis:
-      if isinstance( other, Mask ) and self.axis == other.axis and numpy.all( self.mask == other.mask ):
-        return mask( concatenate( [ self.func, other.func ], axis ), self.mask, self.axis )
-      if other.shape[self.axis] == 1:
-        return mask( concatenate( [ self.func, other ], axis ), self.mask, self.axis )
-
-  def _sum( self, axis ):
-    if axis != self.axis:
-      return mask( sum( self.func, axis ), self.mask, self.axis-(axis<self.axis) )
-
-  def _get( self, i, item ):
-    if self.axis == i:
-      return get( self.func, i, self.orignumber[item] )
-    return mask( get( self.func, i, item ), self.mask, self.axis-(i<self.axis) )
-
-  def _kronecker( self, axis, length, pos ):
-    return mask( kronecker( self.func, axis, length, pos ), self.mask, self.axis+(axis<=self.axis) )
-
-  def _takediag( self ):
-    if self.axis < self.ndim-2:
-      return mask( takediag( self.func ), self.mask, self.axis )
-    if isinstance( self.func, Mask ) and self.other.axis + self.axis == (self.ndim-1) + (self.ndim-2) and numpy.all( self.func.mask == self.other.mask ):
-      return mask( takediag( self.func.func ), self.mask, self.axis )
-
-  def _dot( self, other, axes ):
-    if other.shape[self.axis] == 1:
-      return mask( dot( self.func, other, axes ), self.mask, self.axis-_sum(ax<self.axis for ax in axes) )
-    if isinstance( other, Mask ) and other.axis == self.axis:
-      if self.axis in axes:
-        return # dot should exclude the masked entries
-      if numpy.any( self.mask != other.mask ):
-        return
-      return mask( dot( self.func, other.func, axes ), self.mask, self.axis-_sum(ax<self.axis for ax in axes) )
-    if isinstance( other, Constant ):
-      newdot = dot( self.func, self._cexpand(other), axes )
-      if self.axis not in axes:
-        newdot = mask( newdot, self.mask, self.axis-_sum(ax<self.axis for ax in axes) )
-      return newdot
 
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 
@@ -3534,10 +3464,6 @@ def multiply( arg1, arg2 ):
   if arg1 == arg2:
     return power( arg1, 2 )
 
-  for idim, sh in enumerate( shape ):
-    if sh == 1:
-      return insert( multiply( get(arg1,idim,0), get(arg2,idim,0) ), idim )
-
   retval = _call( arg1, '_multiply', arg2 )
   if retval is not None:
     assert retval.shape == shape, 'bug in %s._multiply' % arg1
@@ -3724,13 +3650,14 @@ def take( arg, index, axis ):
   axis = numeric.normdim( arg.ndim, axis )
 
   if isinstance( index, slice ):
+    assert index.step == None or index.step == 1
     if numeric.isint( arg.shape[axis] ):
-      index = numpy.arange(arg.shape[axis])[index]
-    else:
-      assert index.start == None or index.start >= 0
-      assert index.step == None or index.step == 1
-      assert index.stop != None and index.stop >= 0
-      index = numpy.arange( index.start or 0, index.stop )
+      indexmask = numpy.zeros( arg.shape[axis], dtype=bool )
+      indexmask[index] = True
+      return mask( arg, indexmask, axis=axis )
+    assert index.start == None or index.start >= 0
+    assert index.stop != None and index.stop >= 0
+    index = numpy.arange( index.start or 0, index.stop )
 
   index = asarray( index )
   assert index.ndim == 1
@@ -3816,8 +3743,9 @@ def mask( arg, mask, axis=0 ):
   assert arg.shape[axis] == len(mask)
   if mask.all():
     return arg
-  assert mask.any()
   shape = arg.shape[:axis] + (mask.sum(),) + arg.shape[axis+1:]
+  if not mask.any():
+    return zeros( shape )
 
   retval = _call( arg, '_mask', mask, axis )
   if retval is not None:
