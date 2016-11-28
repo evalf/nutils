@@ -1501,6 +1501,14 @@ class Add( Array ):
     func1, func2 = self.funcs
     return add( op(func1), op(func2) )
 
+  def _mask( self, maskvec, axis ):
+    func1, func2 = self.funcs
+    if func1.shape[axis] != 1:
+      func1 = mask( func1, maskvec, axis )
+    if func2.shape[axis] != 1:
+      func2 = mask( func2, maskvec, axis )
+    return add( func1, func2 )
+
 class BlockAdd( Array ):
   'block addition (used for DG)'
 
@@ -2517,6 +2525,15 @@ class Kronecker( Array ):
 
   def _edit( self, op ):
     return kronecker( op(self.func), self.axis, self.length, self.pos )
+
+  def _mask( self, maskvec, axis ):
+    if axis != self.axis:
+      return kronecker( mask( self.func, maskvec, axis-(axis>self.axis) ), self.axis, self.length, self.pos )
+    newlength = maskvec.sum()
+    if not maskvec[self.pos]:
+      return zeros( self.shape[:axis] + (newlength,) + self.shape[axis+1:], dtype=self.dtype )
+    newpos = maskvec[:self.pos].sum()
+    return kronecker( self.func, self.axis, newlength, newpos )
 
 class DerivativeTargetBase( Array ):
   'base class for derivative targets'
