@@ -165,6 +165,19 @@ def check( op, n_op, shapes, hasgrad=True ):
       ( op( *args )**3 ).eval(elem,points), decimal=14 )
 
   @unittest
+  def mask():
+    for idim in range(len(shape)):
+      if shape[idim] <= 1:
+        continue
+      mask = numpy.ones( shape[idim], dtype=bool )
+      mask[0] = False
+      if shape[idim] > 2:
+        mask[-1] = False
+      numpy.testing.assert_array_almost_equal(
+        n_op( *argsfun.eval(elem,points) )[ (slice(None,),)*(idim+1)+(mask,) ],
+        function.mask( op( *args ), mask, axis=idim ).eval(elem,points), decimal=15 )
+
+  @unittest
   def edit():
     identity = lambda arg: function.edit( arg, identity )
     func = op( *args )
