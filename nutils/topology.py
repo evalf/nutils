@@ -147,7 +147,7 @@ class Topology( object ):
       slices = []
       npoints = 0
       for elem in log.iter( 'elem', self ):
-        ipoints, iweights = fcache[elem.reference.getischeme]( ischeme )
+        ipoints, iweights = ischeme[elem] if isinstance(ischeme,dict) else fcache[elem.reference.getischeme]( ischeme )
         np = len( ipoints )
         slices.append( slice(npoints,npoints+np) )
         npoints += np
@@ -171,7 +171,7 @@ class Topology( object ):
       idata.graphviz()
 
     for ielem, elem in parallel.pariter( log.enumerate( 'elem', self ) ):
-      ipoints, iweights = fcache[elem.reference.getischeme]( ischeme )
+      ipoints, iweights = ischeme[elem] if isinstance(ischeme,dict) else fcache[elem.reference.getischeme]( ischeme )
       s = slices[ielem],
       for ifunc, index, data in idata.eval( elem, ipoints, fcache ):
         retvals[ifunc][s+numpy.ix_(*[ ind for (ind,) in index ])] += numeric.dot(iweights,data) if geometry else data
@@ -258,7 +258,7 @@ class Topology( object ):
     # benefits from parallel speedup.
 
     for ielem, elem in parallel.pariter( log.enumerate( 'elem', self ) ):
-      ipoints, iweights = fcache[elem.reference.getischeme]( ischeme[elem] if isinstance(ischeme,dict) else ischeme )
+      ipoints, iweights = ischeme[elem] if isinstance(ischeme,dict) else fcache[elem.reference.getischeme]( ischeme )
       assert iweights is not None, 'no integration weights found'
       for iblock, intdata in enumerate( valuefunc.eval( elem, ipoints, fcache ) ):
         s = slice(*offsets[iblock,ielem:ielem+2])
