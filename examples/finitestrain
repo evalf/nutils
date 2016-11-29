@@ -3,12 +3,10 @@
 from nutils import *
 
 
-def makeplots( name, domain, geom, sigma ):
-
-  sigma_dev = sigma - (function.trace(sigma)/domain.ndims) * function.eye(domain.ndims)
-  vonmises = function.sqrt( ( sigma_dev**2 ).sum([0,1]) * 3./2 ) # TODO check fix for 2D
-
-  points, colors = domain.simplex.elem_eval( [ geom, vonmises ], ischeme='bezier3', separate=True )
+def makeplots( name, domain, ns ):
+  sigma_dev = ns.stress - (function.trace(ns.stress)/domain.ndims) * function.eye(domain.ndims)
+  vonmises = function.sqrt( ( sigma_dev**2 ).sum([0,1]) * 1.5 ) # TODO check fix for 2D
+  points, colors = domain.simplex.elem_eval( [ ns.geom, vonmises ], ischeme='bezier3', separate=True )
   with plot.PyPlot( name ) as plt:
     plt.mesh( points, colors, triangulate='bezier' )
     plt.colorbar()
@@ -16,71 +14,64 @@ def makeplots( name, domain, geom, sigma ):
     plt.clim( 0, 1 )
 
 
-def main( nelems=12, stress=library.Hooke(lmbda=1,mu=1), degree=2, angle=15, restol=1e-8, trim=False, plots=True ):
+class Elasticity( model.Model ):
+  def __init__( self, domain, geom0, angle, lmbda, mu, linear ):
+    self.domain = domain
+    self.geom0 = geom0
+    self.basis = domain.basis( 'spline', degree=2 ).vector( domain.ndims )
+    self.lmbda = lmbda
+    self.mu = mu
+    self.linear = linear
+    phi = angle * numpy.pi / 180
+    a = numpy.cos(phi) - 1, -numpy.sin(phi)
+    b = numpy.sin(2*phi), numpy.cos(2*phi) - 1
+    x, y = geom0
+    cons = domain.boundary['left,right'].project( x*(a+y*b), onto=self.basis, ischeme='gauss6', geometry=geom0 )
+    super().__init__( cons )
+  def namespace( self, coeffs ):
+    disp = self.basis.dot( coeffs )
+    geom = self.geom0 + disp
+    eye = function.eye(len(geom))
+    strain = disp.symgrad( self.geom0 ) if self.linear else .5 * eye - .5 * ( self.geom0.grad(geom)[:,:,_] * self.geom0.grad(geom)[:,_,:] ).sum(0)
+    stress = self.lmbda * function.trace(strain) * eye + (2*self.mu) * strain
+    return model.AttrDict( disp=disp, geom=geom, strain=strain, stress=stress )
+  def residual( self, ns ):
+    geom = self.geom0 if self.linear else ns.geom
+    return model.Integral( self.basis['ni,j'] * ns.stress['ij'], domain=self.domain, geometry=geom, degree=7 )
+
+
+def main( nelems=12, lmbda=1, mu=1, angle=20, restol=1e-10, trim=False, plots=True ):
 
   verts = numpy.linspace( 0, 1, nelems+1 )
   domain, geom0 = mesh.rectilinear( [verts,verts] )
-
   if trim:
     levelset = function.norm2( geom0 - (.5,.5) ) - .2
     domain = domain.trim( levelset, maxrefine=2 )
 
-  dbasis = domain.basis( 'spline', degree=degree ).vector( 2 )
-
-  phi = angle * numpy.pi / 180.
-  a = numpy.cos(phi) - 1, -numpy.sin(phi)
-  b = numpy.sin(2*phi), numpy.cos(2*phi) - 1
-  x, y = geom0
-  cons = domain.boundary['left,right'].project( x*(a+y*b), onto=dbasis, ischeme='gauss6', geometry=geom0 )
-
-  E = dbasis.symgrad(geom0)
-  A = function.outer( dbasis.grad(geom0), stress(E) ).sum([-2,-1])
-  matrix = domain.integrate( A, geometry=geom0, ischeme='gauss6' )
-
-  lhs = matrix.solve( constrain=cons, tol=restol, precon='spilu' )
-  disp = dbasis.dot( lhs )
-  geom = geom0 + disp
-
+  model = Elasticity( domain, geom0, angle=angle, lmbda=lmbda, mu=mu, linear=True )
+  lhs0 = model.solve( tol=restol )
   if plots:
-    strain = disp.symgrad(geom0)
-    makeplots( 'linear', domain, geom, stress(strain) )
+    makeplots( 'linear', domain, model.namespace(lhs0) )
 
-  for istep in log.count( 'newton' ):
-
-    E = dbasis.symgrad(geom) - .5 * function.add_T( ( dbasis.grad(geom)[:,:,:,_] * disp.grad(geom)[_,:,_,:] ).sum(1) )
-    F = .5 * function.outer( disp.grad(geom), axis=1 ).sum(0)
-    A = function.outer( dbasis.grad(geom), stress(E) ).sum([-2,-1])
-    B = ( dbasis.grad(geom) * stress(-F) ).sum([-2,-1])
-    matrix, rhs = domain.integrate( [ A, B ], geometry=geom, ischeme='gauss6' )
-
-    lhs, info = matrix.solve( rhs, constrain=cons, lhs0=lhs, tol=restol, precon='spilu', info=True )
-    if not info.niter:
-      break
-
-    disp = dbasis.dot( lhs )
-    geom = geom0 + disp
-
+  model = Elasticity( domain, geom0, angle=angle, lmbda=lmbda, mu=mu, linear=False )
+  lhs1 = model.solve( tol=restol, lhs0=lhs0 )
   if plots:
-    strain = disp.symgrad(geom) - .5 * function.outer( disp.grad(geom), axis=1 ).sum(0)
-    makeplots( 'finite', domain, geom, stress(strain) )
+    makeplots( 'finite', domain, model.namespace(lhs1) )
 
-  return lhs
+  return lhs0, lhs1
 
 
 def unittest():
 
-  retvals = main( nelems=4, degree=1, angle=1, plots=False )
+  retvals = main( nelems=4, angle=10, plots=False )
   assert debug.checkdata( retvals, '''
-    eNpdkAtqhDEIhK+zC7E4vj3Qf/8r7JqkUAqB+UJGR4P1sgV/rxf/rL9HOfKhXMJRD8UywEYDkNFm3ndl
-    8EO1TGv7KnW/49vgIV9IrVGSLkzDCK9jUGxDd4+Kp20jXHSM5anbmMrbECyjaumj/wYWE58yAsNnIkrH
-    TiSBYDqR3WyS0D7QxeeJ+8A3ZS9AZWIXJnCgcMr7txzgPkNrnDWR5heCL2RcaByo8zfvD7CbUag=''' )
-
-  retvals = main( nelems=4, degree=2, angle=1, plots=False )
-  assert debug.checkdata( retvals, '''
-    eNplUdltxTAMW+c9wCp0HwNl/xVqyc5PCwQgLVOmxND66CL7rg/+rD+fZtoDsdQ5G0lJH/DFit4oZNxo
-    hDJ1FB2dO/VZo0YfWdZIZPiALRKWRiB16QYOxxaktNEWSh3hNNpiMp0GE8FukDQ5LzqPsGRe5OAYrJ6g
-    HYzHQZnGgbj0vOjeKCg5qDFO/0PIqlk+tajRkScUYLddyO0hOOvCmweY1gQBRldMHDVX7DWTg1aeLr+j
-    7QrGITcvsMAJEGL23KRmzk0Ig8+GTHGJ4CV+K6I3Bc1L/L0KtUvs/ovwvCTfStUhiRPW9xfS8neS''' )
+    eNqtU0luBDEI/M5EsiP25UHz/y/EBvqS5JZII1FjFxiKalwvWagf6/WCz/XttzGD39sWukdFZHhvXYQp
+    NzKQ36h4eXoSUPUCI/WbwGFFcBC6ERHwvc+LjHnjRseoC9YimF/C+U/cxAC5kZCsE4zraUyrxHTqBGcv
+    ot6CJyZQJ+h96vTsat3CVM6oihRS/5msEn/KwK41vSJVZO+4USAbEFf3mwm0haiqF1j2CZFYc9hKxK3q
+    DcxHPvPsOhbUwFlKwB0eUxAu+Q5GPeltAxtwwJzYXBlKg0BtkDrA2Z6rUSqtK9PRqAFZpxNLVT4++cUm
+    gnF08KUQtfWzzOqVqHvm81bZBGYG0+sjX2haSxTHEsmtCYhUz2EVkNLsVIiz3SwRPXVsQ9UpetRUBNyz
+    mGM5l6GlRbBsP/VopNLbd8V/sgkaQE2vUCpshvbNzpD2CUHieMCzXfGYgZTGHiJ9JeGPK6BPTmsyJ5N+
+    bhqEUI49ng+FaD4x5nEF5ayelZ+hxycOw0lqzjGy/cUnH19iCe5m''' )
 
 
 util.run( main, unittest )
