@@ -89,6 +89,25 @@ def newton( lhs0, isdof, eval_res_jac, tol=1e-10, nrelax=5, maxrelax=.9, callbac
   return lhs
 
 
+def pseudotime( lhs0, isdof, eval_res_jac, timestep, tol=1e-10 ):
+  zcons = numpy.zeros( lhs0.shape )
+  zcons[isdof] = numpy.nan
+  lhs = lhs0.copy()
+  with log.context( 'pseudotime' ):
+    b, A = eval_res_jac( lhs, timestep )
+    resnorm = resnorm0 = numpy.linalg.norm( b[isdof] )
+    for istep in itertools.count():
+      with log.context( 'iter {0} ({1:.0f}%)'.format( istep, 100 * numpy.log(resnorm0/resnorm) / numpy.log(resnorm0/tol) ) ):
+        thistimestep = timestep * (resnorm0/resnorm)
+        log.info( 'residual: {:.2e} (time step {:.0e})'.format(resnorm,thistimestep) )
+        yield lhs
+        if resnorm < tol:
+          break
+        lhs -= A.solve( b, constrain=zcons )
+        b, A = eval_res_jac( lhs, timestep * (resnorm0/resnorm) )
+        resnorm = numpy.linalg.norm( b[isdof] )
+
+
 class AttrDict( dict ):
   '''Container for key/value pairs. Items can be get/set as either dictonary
   items or object attributes. Dictionary items cannot be accessed as attributes
@@ -281,7 +300,6 @@ class Model:
     coeffs = self.solve( *args, **kwargs )
     return self.namespace( coeffs )
 
-  @log.title
   def timestep( self, timestep, lhs0=None, **newtonargs ):
     target = function.DerivativeTarget( [self.ndofs] )
     ns = self.namespace( target )
@@ -305,6 +323,22 @@ class Model:
 
   def timestep_namespace( self, *args, **kwargs ):
     return ( self.namespace( coeffs ) for coeffs in self.timestep( *args, **kwargs ) )
+
+  def pseudo_timestep( self, timestep, lhs0=None, tol=1e-10 ):
+    target = function.DerivativeTarget( [self.ndofs] )
+    ns = self.namespace( target )
+    res = self.residual0( ns ) + self.residual( ns )
+    jac0 = self.residual( ns ).derivative( target )
+    jact = self.inertia( ns ).derivative( target )
+    if lhs0 is None:
+      lhs0 = self.get_initial_condition()
+    fcache = cache.WrapperCache()
+    eval_res_jac = lambda lhs, dt: Integral.multieval( res.replace(target,lhs), (jac0+jact/dt).replace(target,lhs), fcache=fcache )
+    yield from pseudotime( lhs0, isdof=numpy.isnan(self.constraints), eval_res_jac=eval_res_jac, timestep=timestep, tol=tol )
+
+  def pseudo_timestep_namespace( self, *args, **kwargs ):
+    return ( self.namespace( coeffs ) for coeffs in self.pseudo_timestep( *args, **kwargs ) )
+
 
 class MultiModel( Model ):
   '''Two models combined'''

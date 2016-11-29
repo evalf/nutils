@@ -33,6 +33,8 @@ class NavierStokes( model.Model ):
     super().__init__( cons )
   def namespace( self, coeffs ):
     return model.AttrDict( u=self.ubasis.dot(coeffs), p=self.pbasis.dot(coeffs) )
+  def inertia( self, ns ):
+    return model.Integral( (self.ubasis * ns.u).sum(-1), domain=self.domain, geometry=self.geom, degree=5 )
   def initial( self, ns ):
     return model.Integral( self.viscosity * self.ubasis['ni,j'] * (ns.u['i,j']+ns.u['j,i']) - self.ubasis['nk,k'] * ns.p + self.pbasis['n'] * ns.u['k,k'], domain=self.domain, geometry=self.geom, degree=5 )
   def residual( self, ns ):
@@ -58,7 +60,7 @@ def navierstokes():
   tol = 1e-10
 
   @unittest
-  def res():
+  def res_newton():
     ns = model.solve_namespace( tol=tol, callback=vecs.append )
     res = model.residual( ns )
     resnorm = numpy.linalg.norm( (model.constraints&0) | res.eval() )
@@ -68,6 +70,14 @@ def navierstokes():
   def callback():
     assert len(vecs) == 2, 'expected 2 iterations, found {}'.format( len(vecs) )
     assert all( isinstance(vec,numpy.ndarray) and vec.ndim == 1 for vec in vecs )
+
+  @unittest
+  def res_pseudo():
+    for ns in model.pseudo_timestep_namespace( tol=tol, timestep=1 ):
+      pass
+    res = model.residual( ns )
+    resnorm = numpy.linalg.norm( (model.constraints&0) | res.eval() )
+    assert resnorm < tol
 
 @register
 def coupled():
