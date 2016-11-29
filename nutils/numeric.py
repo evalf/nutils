@@ -131,6 +131,8 @@ def contract_fast( A, B, naxes ):
   A = numpy.asarray( A )
   B = numpy.asarray( B )
 
+  assert all(A.shape[-naxes:]) and all(B.shape[-naxes:]), 'cannot sum axes of zero length'
+
   maxdim = max( A.ndim, B.ndim )
   m = _abc[maxdim-A.ndim:maxdim]
   n = _abc[maxdim-B.ndim:maxdim]

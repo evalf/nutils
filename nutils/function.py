@@ -1558,13 +1558,12 @@ class Dot( Array ):
     assert naxes > 0
     self.naxes = naxes
     self.funcs = func1, func2
-    args = self.funcs[:1+isinstance( func2, Array )]
     shape = _jointshape( func1.shape, func2.shape )[:-naxes]
-    Array.__init__( self, args=args, shape=shape, dtype=_jointdtype(func1.dtype,func2.dtype) )
+    Array.__init__( self, args=funcs, shape=shape, dtype=_jointdtype(func1.dtype,func2.dtype) )
 
-  def evalf( self, arr1, arr2=None ):
+  def evalf( self, arr1, arr2 ):
     assert arr1.ndim == self.ndim+1+self.naxes
-    return numeric.contract_fast( arr1, arr2 if arr2 is not None else self.funcs[1], self.naxes )
+    return numeric.contract_fast( arr1, arr2, self.naxes )
 
   @property
   def axes( self ):
