@@ -186,6 +186,13 @@ def check( op, n_op, shapes, hasgrad=True ):
       n_op( *argsfun.eval(elem,points) ) * shapearg,
       ( op( *args ) * shapearg ).eval(elem,points), decimal=15 )
 
+  @unittest
+  def dot():
+    for iax in range(len(shape)):
+      numpy.testing.assert_array_almost_equal(
+        numeric.contract( n_op( *argsfun.eval(elem,points) ), shapearg, axis=iax+1 ),
+        function.dot( op( *args ), shapearg, axes=iax ).eval(elem,points), decimal=15 )
+
   triaxes = [ iax for iax, sh in enumerate(shape) if sh == 3 ]
   if triaxes:
     @unittest
