@@ -51,7 +51,8 @@ from . import register, unittest
 @register( 'less', lambda a,b: function.less(a,b), numpy.less, [(3,1),(1,3)] )
 @register( 'arctan2', function.arctan2, numpy.arctan2, [(3,1),(1,3)] )
 @register( 'stack', lambda a,b: function.stack([a,b]), lambda a,b: numpy.concatenate( [a[...,_,:],b[...,_,:]], axis=-2), [(3,),(3,)] )
-@register( 'concatenate', lambda a,b: function.concatenate([a,b],axis=0), lambda a,b: numpy.concatenate( [a,b], axis=-2), [(3,2),(2,2)] )
+@register( 'concatenate1', lambda a,b: function.concatenate([a,b],axis=0), lambda a,b: numpy.concatenate( [a,b], axis=-2), [(3,2),(2,2)] )
+@register( 'concatenate2', lambda a,b: function.concatenate([a,b],axis=1), lambda a,b: numpy.concatenate( [a,b], axis=-1), [(3,2),(3,1)] )
 @register( 'eig', lambda a: function.eig(a,symmetric=False)[1], lambda a: numpy.linalg.eig(a)[1], [(3,3)], hasgrad=False )
 @register( 'trignormal', lambda a: function.trignormal(a), lambda a: numpy.array([ numpy.cos(a), numpy.sin(a) ]).T, [()] )
 @register( 'trigtangent', lambda a: function.trigtangent(a), lambda a: numpy.array([ -numpy.sin(a), numpy.cos(a) ]).T, [()] )
@@ -122,12 +123,39 @@ def check( op, n_op, shapes, hasgrad=True ):
          function.takediag( op( *args ), ax1, ax2 ).eval(elem,points), decimal=15 )
 
   @unittest
+  def take():
+    indices = [0,-1]
+    for iax, sh in enumerate(shape):
+      if sh >= 2:
+        numpy.testing.assert_array_almost_equal(
+          numpy.take( n_op( *argsfun.eval(elem,points) ), indices, axis=iax+1 ),
+       function.take( op( *args ), indices, axis=iax ).eval(elem,points), decimal=15 )
+
+  @unittest
+  def diagonalize():
+    numpy.testing.assert_array_almost_equal(
+      numeric.diagonalize( n_op( *argsfun.eval(elem,points) ) ),
+     function.diagonalize( op( *args ) ).eval(elem,points), decimal=15 )
+
+  @unittest
+  def product():
+    for iax in range(len(shape)):
+      numpy.testing.assert_array_almost_equal(
+          numpy.product( n_op( *argsfun.eval(elem,points) ), axis=iax+1 ),
+       function.product( op( *args ), axis=iax ).eval(elem,points), decimal=15 )
+
+  @unittest
+  def power():
+    numpy.testing.assert_array_almost_equal(
+        numpy.power( n_op( *argsfun.eval(elem,points) ), 3 ),
+     function.power( op( *args ), 3 ).eval(elem,points), decimal=13 )
+
+  @unittest
   def concatenate():
     for idim in range(len(shape)):
       numpy.testing.assert_array_almost_equal(
         numpy.concatenate( [ n_op( *argsfun.eval(elem,points) ), shapearg[_].repeat(len(points),0) ], axis=idim+1 ),
        function.concatenate( [ op( *args ), shapearg ], axis=idim ).eval(elem,points), decimal=15 )
-
 
   @unittest
   def getslice():
@@ -159,10 +187,45 @@ def check( op, n_op, shapes, hasgrad=True ):
       ( op( *args ) * shapearg ).eval(elem,points), decimal=15 )
 
   @unittest
+  def dot():
+    for iax in range(len(shape)):
+      numpy.testing.assert_array_almost_equal(
+        numeric.contract( n_op( *argsfun.eval(elem,points) ), shapearg, axis=iax+1 ),
+        function.dot( op( *args ), shapearg, axes=iax ).eval(elem,points), decimal=15 )
+
+  @unittest
+  def pointwise():
+    numpy.testing.assert_array_almost_equal(
+        numpy.sin( n_op( *argsfun.eval(elem,points) ) ),
+     function.sin( op( *args ) ).eval(elem,points), decimal=15 )
+
+  triaxes = [ iax for iax, sh in enumerate(shape) if sh == 3 ]
+  if triaxes:
+    @unittest
+    def cross():
+      for iax in triaxes:
+        numpy.testing.assert_array_almost_equal(
+          numeric.cross( n_op( *argsfun.eval(elem,points) ), shapearg, axis=iax+1 ),
+          function.cross( op( *args ), shapearg, axis=iax ).eval(elem,points), decimal=15 )
+
+  @unittest
   def power():
     numpy.testing.assert_array_almost_equal(
       n_op( *argsfun.eval(elem,points) )**3,
       ( op( *args )**3 ).eval(elem,points), decimal=14 )
+
+  @unittest
+  def mask():
+    for idim in range(len(shape)):
+      if shape[idim] <= 1:
+        continue
+      mask = numpy.ones( shape[idim], dtype=bool )
+      mask[0] = False
+      if shape[idim] > 2:
+        mask[-1] = False
+      numpy.testing.assert_array_almost_equal(
+        n_op( *argsfun.eval(elem,points) )[ (slice(None,),)*(idim+1)+(mask,) ],
+        function.mask( op( *args ), mask, axis=idim ).eval(elem,points), decimal=15 )
 
   @unittest
   def edit():

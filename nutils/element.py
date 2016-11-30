@@ -281,11 +281,9 @@ class Reference( cache.Immutable ):
     evaluated_levels = isinstance( levels, numpy.ndarray )
     if not evaluated_levels: # levelset is not evaluated
       trans, levelfun = levels
-      try:
-        levels = levelfun.eval( Element(self,trans), 'vertex%d' % maxrefine, fcache )
-      except function.EvaluationError:
-        pass
-      else:
+      trylevels = levelfun.eval( Element(self,trans), 'vertex%d' % maxrefine, fcache )
+      if trylevels.shape[0] > 1: # TODO replace with proper check for evaluation success
+        levels = trylevels
         evaluated_levels = True
 
     if evaluated_levels and ( levels > 0 ).all():

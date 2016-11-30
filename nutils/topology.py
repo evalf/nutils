@@ -52,7 +52,9 @@ class Topology( object ):
     return iter( self.elements )
 
   def __getitem__( self, item ):
-    if item == ():
+    if not isinstance( item, tuple ):
+      item = item,
+    if item == () or item == (slice(None),):
       return self
     raise KeyError( item )
 
@@ -1860,12 +1862,10 @@ class HierarchicalTopology( Topology ):
     # supporting element finer than self ('supported').
 
     bases = []
-    masks = []
 
     for topo in log.iter( 'level', self.levels ):
 
       basis = topo.basis( name, *args, **kwargs ) # shape functions for current level
-      bases.append( basis )
 
       supported = numpy.ones( len(basis), dtype=bool ) # True if dof is fully contained in self or parents
       touchtopo = numpy.zeros( len(basis), dtype=bool ) # True if dof touches at least one elem in self
@@ -1879,10 +1879,10 @@ class HierarchicalTopology( Topology ):
           touchtopo[idofs] = True
         elif trans.lookup( self.edict ):
           supported[idofs] = False
-  
-      masks.append( supported & touchtopo ) # THE refinement law
 
-    return function.mask( function.concatenate( bases, axis=0 ), numpy.concatenate(masks) )
+      bases.append( function.mask( basis, supported & touchtopo ) ) # THE refinement law
+
+    return function.concatenate( bases, axis=0 )
 
 class ProductTopology( Topology ):
   'product topology'
