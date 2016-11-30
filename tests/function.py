@@ -145,6 +145,12 @@ def check( op, n_op, shapes, hasgrad=True ):
        function.product( op( *args ), axis=iax ).eval(elem,points), decimal=15 )
 
   @unittest
+  def power():
+    numpy.testing.assert_array_almost_equal(
+        numpy.power( n_op( *argsfun.eval(elem,points) ), 3 ),
+     function.power( op( *args ), 3 ).eval(elem,points), decimal=13 )
+
+  @unittest
   def concatenate():
     for idim in range(len(shape)):
       numpy.testing.assert_array_almost_equal(
