@@ -1297,14 +1297,13 @@ class Cross( Array ):
     self.func2 = func2
     self.axis = axis
     shape = _jointshape( func1.shape, func2.shape )
+    assert shape[axis] == 3
     dtype = _jointdtype( func1.dtype, func2.dtype )
-    assert 0 <= axis < len(shape), 'axis out of bounds: axis={0}, len(shape)={1}'.format( axis, len(shape) )
-    self.axis_shiftright = axis-len(shape)
     Array.__init__( self, args=(func1,func2), shape=shape, dtype=dtype )
 
   def evalf( self, a, b ):
     assert a.ndim == b.ndim == self.ndim+1
-    return numeric.cross( a, b, self.axis_shiftright )
+    return numeric.cross( a, b, self.axis+1 )
 
   def _derivative( self, var, axes, seen ):
     ext = (...,)+(_,)*len(axes)
@@ -3465,6 +3464,7 @@ def cross( arg1, arg2, axis ):
   arg1, arg2 = _matchndim( arg1, arg2 )
   shape = _jointshape( arg1.shape, arg2.shape )
   axis = numeric.normdim( len(shape), axis )
+  assert shape[axis] == 3
 
   retval = _call( arg1, '_cross', arg2, axis )
   if retval is not None:

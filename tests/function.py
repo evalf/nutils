@@ -128,7 +128,6 @@ def check( op, n_op, shapes, hasgrad=True ):
         numpy.concatenate( [ n_op( *argsfun.eval(elem,points) ), shapearg[_].repeat(len(points),0) ], axis=idim+1 ),
        function.concatenate( [ op( *args ), shapearg ], axis=idim ).eval(elem,points), decimal=15 )
 
-
   @unittest
   def getslice():
     for idim in range( len(shape) ):
@@ -157,6 +156,15 @@ def check( op, n_op, shapes, hasgrad=True ):
     numpy.testing.assert_array_almost_equal(
       n_op( *argsfun.eval(elem,points) ) * shapearg,
       ( op( *args ) * shapearg ).eval(elem,points), decimal=15 )
+
+  triaxes = [ iax for iax, sh in enumerate(shape) if sh == 3 ]
+  if triaxes:
+    @unittest
+    def cross():
+      for iax in triaxes:
+        numpy.testing.assert_array_almost_equal(
+          numeric.cross( n_op( *argsfun.eval(elem,points) ), shapearg, axis=iax+1 ),
+          function.cross( op( *args ), shapearg, axis=iax ).eval(elem,points), decimal=15 )
 
   @unittest
   def power():
