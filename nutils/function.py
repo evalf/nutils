@@ -3707,12 +3707,10 @@ def take( arg, index, axis ):
     index = numpy.array( index )
     assert index.ndim == 1
     if index.dtype == bool:
-      assert len(index) == arg.shape[axis]
-      index, = numpy.where( index )
-    else:
-      assert index.dtype == int
-      index[ index < 0 ] += arg.shape[axis]
-      assert numpy.all( (index>=0) & (index<arg.shape[axis]) ), 'indices out of bounds'
+      return mask( arg, index, axis )
+    assert index.dtype == int
+    index[ index < 0 ] += arg.shape[axis]
+    assert numpy.all( (index>=0) & (index<arg.shape[axis]) ), 'indices out of bounds'
 
   index = asarray( index )
   assert index.ndim == 1
