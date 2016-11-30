@@ -138,6 +138,13 @@ def check( op, n_op, shapes, hasgrad=True ):
      function.diagonalize( op( *args ) ).eval(elem,points), decimal=15 )
 
   @unittest
+  def product():
+    for iax in range(len(shape)):
+      numpy.testing.assert_array_almost_equal(
+          numpy.product( n_op( *argsfun.eval(elem,points) ), axis=iax+1 ),
+       function.product( op( *args ), axis=iax ).eval(elem,points), decimal=15 )
+
+  @unittest
   def concatenate():
     for idim in range(len(shape)):
       numpy.testing.assert_array_almost_equal(

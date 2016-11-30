@@ -1391,7 +1391,9 @@ class Multiply( Array ):
 
   def _product( self, axis ):
     func1, func2 = self.funcs
-    return product( func1, axis ) * product( func2, axis )
+    prod1 = product( func1, axis ) if func1.shape[axis] != 1 else power( get(func1,axis,0), self.shape[axis] )
+    prod2 = product( func2, axis ) if func2.shape[axis] != 1 else power( get(func2,axis,0), self.shape[axis] )
+    return multiply( prod1, prod2 )
 
   def _multiply( self, other ):
     func1, func2 = self.funcs
