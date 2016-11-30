@@ -1213,6 +1213,7 @@ class Concatenate( Array ):
     if not indices.isconstant:
       raise NotImplementedError
     indices, = indices.eval()
+    assert numpy.all( (indices>=0) & (indices<self.shape[axis]) )
     ifuncs = numpy.hstack([ numpy.repeat(ifunc,func.shape[axis]) for ifunc, func in enumerate(self.funcs) ])[indices]
     splits, = numpy.nonzero( numpy.diff(ifuncs) != 0 )
     funcs = []
@@ -3700,14 +3701,24 @@ def take( arg, index, axis ):
     assert index.stop != None and index.stop >= 0
     index = numpy.arange( index.start or 0, index.stop )
 
+  if not isevaluable( index ):
+    index = numpy.array( index )
+    assert index.ndim == 1
+    if index.dtype == bool:
+      assert len(index) == arg.shape[axis]
+      index, = numpy.where( index )
+    else:
+      assert index.dtype == int
+      index[ index < 0 ] += arg.shape[axis]
+      assert numpy.all( (index>=0) & (index<arg.shape[axis]) ), 'indices out of bounds'
+
   index = asarray( index )
   assert index.ndim == 1
-
   if index.dtype == bool:
     assert index.shape[0] == arg.shape[axis]
     index = find( index )
-
-  assert index.dtype == int
+  else:
+    assert index.dtype == int
 
   shape = list(arg.shape)
   shape[axis] = index.shape[0]

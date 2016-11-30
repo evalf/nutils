@@ -123,6 +123,15 @@ def check( op, n_op, shapes, hasgrad=True ):
          function.takediag( op( *args ), ax1, ax2 ).eval(elem,points), decimal=15 )
 
   @unittest
+  def take():
+    indices = [0,-1]
+    for iax, sh in enumerate(shape):
+      if sh >= 2:
+        numpy.testing.assert_array_almost_equal(
+          numpy.take( n_op( *argsfun.eval(elem,points) ), indices, axis=iax+1 ),
+       function.take( op( *args ), indices, axis=iax ).eval(elem,points), decimal=15 )
+
+  @unittest
   def concatenate():
     for idim in range(len(shape)):
       numpy.testing.assert_array_almost_equal(
