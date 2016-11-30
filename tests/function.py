@@ -193,6 +193,12 @@ def check( op, n_op, shapes, hasgrad=True ):
         numeric.contract( n_op( *argsfun.eval(elem,points) ), shapearg, axis=iax+1 ),
         function.dot( op( *args ), shapearg, axes=iax ).eval(elem,points), decimal=15 )
 
+  @unittest
+  def pointwise():
+    numpy.testing.assert_array_almost_equal(
+        numpy.sin( n_op( *argsfun.eval(elem,points) ) ),
+     function.sin( op( *args ) ).eval(elem,points), decimal=15 )
+
   triaxes = [ iax for iax, sh in enumerate(shape) if sh == 3 ]
   if triaxes:
     @unittest
