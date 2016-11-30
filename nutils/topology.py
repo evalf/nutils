@@ -1493,6 +1493,10 @@ class UnionTopology( Topology ):
         elements.append( element.Element( unionref, trans, opposite ) )
     return elements
 
+  @property
+  def refined( self ):
+    return UnionTopology( [ topo.refined for topo in self._topos ], self._names )
+
 class SubtractionTopology( Topology ):
   'subtraction topology'
 
@@ -1726,6 +1730,9 @@ class RefinedTopology( Topology ):
   def __init__( self, basetopo ):
     self.basetopo = basetopo
     Topology.__init__( self, basetopo.ndims )
+
+  def __getitem__( self, item ):
+    return self.basetopo[item].refined
 
   @cache.property
   def elements( self ):
