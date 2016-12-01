@@ -1663,7 +1663,7 @@ class SubsetTopology( Topology ):
         ielems.append( iface )
       else:
         ifaceref = edge & oppedge
-        if iface:
+        if ifaceref:
           ielems.append( element.Element( ifaceref, iface.transform, iface.opposite ) )
         edgeref = edge - oppedge
         if edgeref:

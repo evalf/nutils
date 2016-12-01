@@ -203,3 +203,52 @@ def multitrim():
     numpy.testing.assert_almost_equal( L, 1.4, decimal=4 )
   L = domain.boundary.integrate( 1, geometry=geom, ischeme='gauss1' )
   numpy.testing.assert_almost_equal( L, 5.6, decimal=4 )
+
+
+@register
+def trim_conforming():
+
+  domain, geom = mesh.rectilinear( [4,4] )
+
+  @unittest
+  def untrimmed():
+    assert len(domain.interfaces) == 24
+    assert len(domain.boundary) == 16
+
+  domain1 = domain.trim( 3-geom[0], maxrefine=2, name='trimright' )
+
+  @unittest
+  def trimright():
+    assert len(domain1.interfaces) == 17
+    assert len(domain1.boundary) == 14
+    assert len(domain1.boundary['trimright']) == 4
+
+  domain2 = domain1.trim( 3-geom[1], maxrefine=2, name='trimtop' )
+
+  @unittest
+  def trimtop():
+    assert len(domain2.interfaces) == 12
+    assert len(domain2.boundary) == 12
+    assert len(domain2.boundary['trimright']) == 3
+    assert len(domain2.boundary['trimtop']) == 3
+
+  domain3 = domain2.trim( geom[0]-1, maxrefine=2, name='trimleft' )
+
+  @unittest
+  def trimleft():
+    assert len(domain3.interfaces) == 7
+    assert len(domain3.boundary) == 10
+    assert len(domain3.boundary['trimright']) == 3
+    assert len(domain3.boundary['trimtop']) == 2
+    assert len(domain3.boundary['trimleft']) == 3
+
+  domain4 = domain3.trim( geom[1]-1, maxrefine=2, name='trimbottom' )
+
+  @unittest
+  def trimbottom():
+    assert len(domain4.interfaces) == 4
+    assert len(domain4.boundary) == 8
+    assert len(domain4.boundary['trimright']) == 2
+    assert len(domain4.boundary['trimtop']) == 2
+    assert len(domain4.boundary['trimleft']) == 2
+    assert len(domain4.boundary['trimbottom']) == 2
