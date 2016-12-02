@@ -252,3 +252,11 @@ def trim_conforming():
     assert len(domain4.boundary['trimtop']) == 2
     assert len(domain4.boundary['trimleft']) == 2
     assert len(domain4.boundary['trimbottom']) == 2
+
+  domain5 = domain.trim( 3-geom[0], maxrefine=2, name='trimtopright' ).trim( 3-geom[1], maxrefine=2, name='trimtopright' )
+
+  @unittest
+  def trimtopright():
+    assert len(domain5.interfaces) == 12
+    assert len(domain5.boundary) == 12
+    assert len(domain5.boundary['trimtopright']) == 6

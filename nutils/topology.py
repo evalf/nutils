@@ -1442,14 +1442,13 @@ class UnionTopology( Topology ):
         subtopo = self._named.get( name )
         if subtopo is not None:
           subtopos.append( subtopo )
-        else:
-          for topo in self._topos:
-            try:
-              subtopo = topo[name]
-            except KeyError:
-              pass
-            else:
-              subtopos.append( subtopo )
+        for topo in self._topos[len(self._names):]:
+          try:
+            subtopo = topo[name]
+          except KeyError:
+            pass
+          else:
+            subtopos.append( subtopo )
       if not subtopos:
         raise KeyError( item )
       if len(subtopos) == 1:
