@@ -280,27 +280,24 @@ def gmsh( fname, name=None ):
     for tagname in tagnames:
       tagspelems.setdefault( tagname, [] ).extend( pelem )
 
-  # create volume topologies
+  # log statistics
+  log.info( 'topology (#{}) with groups: {}'.format( len(velems), ', '.join('{} (#{})'.format(n,len(e)) for n, e in tagsvelems.items()) ) )
+  log.info( 'boundary (#{}) with groups: {}'.format( len(belems), ', '.join('{} (#{})'.format(n,len(e)) for n, e in tagsbelems.items() ) ) )
+  log.info( 'interfaces (#{}) with groups: {}'.format( len(ielems), ', '.join('{} (#{})'.format(n,len(e)) for n, e in tagsielems.items() ) ) )
+  log.info( 'points (#{}) with groups: {}'.format( len(pelems), ', '.join('{} (#{})'.format(n,len(e)) for n, e in tagspelems.items() ) ) )
+
+  # create base topology
   basetopo = topology.UnstructuredTopology( ndims, velems )
   basetopo.boundary = topology.UnstructuredTopology( ndims-1, belems.values() )
   basetopo.interfaces = topology.UnstructuredTopology( ndims-1, ielems.values() )
   basetopo.points = topology.UnstructuredTopology( 0, pelems )
 
-  # create boundary, interface, point subtopologies
+  # create volume, boundary, interface, point subtopologies
+  vgroups = { tagname: topology.UnstructuredTopology( ndims, tagvelems ) for tagname, tagvelems in tagsvelems.items() }
   bgroups = { tagname: topology.UnstructuredTopology( ndims-1, tagbelems ) for tagname, tagbelems in tagsbelems.items() }
-  log.info( 'boundary (#{}) with groups: {}'.format( len(basetopo.boundary), ', '.join('{} (#{})'.format(n,len(t)) for n, t in bgroups.items() ) ) )
-
   igroups = { tagname: topology.UnstructuredTopology( ndims-1, tagielems ) for tagname, tagielems in tagsielems.items() }
-  log.info( 'interfaces (#{}) with groups: {}'.format( len(basetopo.interfaces), ', '.join('{} (#{})'.format(n,len(t)) for n, t in igroups.items() ) ) )
-
   pgroups = { tagname: topology.UnstructuredTopology( 0, tagpelems ) for tagname, tagpelems in tagspelems.items() }
-  log.info( 'points (#{}) with groups: {}'.format( len(basetopo.points), ', '.join('{} (#{})'.format(n,len(t)) for n, t in pgroups.items() ) ) )
-
-  # add groups to basetopo, then create volume subtopologies
-  basetopo_bip = basetopo.withgroups( bgroups=bgroups, igroups=igroups, pgroups=pgroups )
-  vgroups = { tagname: basetopo_bip.subset( tagvelems, precise=True ) for tagname, tagvelems in tagsvelems.items() }
-  topo = basetopo_bip.withgroups( vgroups=vgroups )
-  log.info( 'topology (#{}) with groups: {}'.format( len(basetopo), ', '.join('{} (#{})'.format(n,len(t)) for n, t in vgroups.items()) ) )
+  topo = basetopo.withgroups( vgroups=vgroups, bgroups=bgroups, igroups=igroups, pgroups=pgroups )
 
   # create geometry
   nmap = { elem.transform: inodes for inodes, elem in zip( vinodes, velems ) }

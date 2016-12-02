@@ -696,8 +696,11 @@ class WithGroupsTopology( Topology ):
       if remitem:
         nametopo = nametopo[ tuple(remitem) ]
       itemtopo |= nametopo
-    igroups = { name: itemtopo.interfaces.subset(topo,precise=True) if isinstance(topo,Topology) else topo for name, topo in self.igroups.items() }
-    bgroups = { name: itemtopo.boundary.subset(topo,precise=True) if isinstance(topo,Topology) else topo for name, topo in self.bgroups.items() }
+    igroups = { name: itemtopo.interfaces.subset( topo if isinstance(topo,Topology) else self.basetopo.interfaces[topo], precise=False ) for name, topo in self.igroups.items() }
+    bgroups = { name: itemtopo.boundary.subset( topo if isinstance(topo,Topology) else self.basetopo.boundary[topo], precise=False ) for name, topo in self.bgroups.items() }
+    for name, topo in self.igroups.items():
+      newtopo = itemtopo.boundary.subset( UnionTopology([ topo, ~topo ]) if isinstance(topo,Topology) else self.basetopo.interfaces[topo], precise=False )
+      bgroups[name] = newtopo if name not in bgroups else UnionTopology([ bgroups[name], newtopo ])
     return itemtopo.withgroups( bgroups=bgroups, igroups=igroups )
 
   @property
