@@ -696,8 +696,11 @@ class WithGroupsTopology( Topology ):
       if remitem:
         nametopo = nametopo[ tuple(remitem) ]
       itemtopo |= nametopo
-    igroups = { name: itemtopo.interfaces.subset(topo,precise=True) if isinstance(topo,Topology) else topo for name, topo in self.igroups.items() }
-    bgroups = { name: itemtopo.boundary.subset(topo,precise=True) if isinstance(topo,Topology) else topo for name, topo in self.bgroups.items() }
+    igroups = { name: itemtopo.interfaces.subset( topo if isinstance(topo,Topology) else self.basetopo.interfaces[topo], precise=False ) for name, topo in self.igroups.items() }
+    bgroups = { name: itemtopo.boundary.subset( topo if isinstance(topo,Topology) else self.basetopo.boundary[topo], precise=False ) for name, topo in self.bgroups.items() }
+    for name, topo in self.igroups.items():
+      newtopo = itemtopo.boundary.subset( UnionTopology([ topo, ~topo ]) if isinstance(topo,Topology) else self.basetopo.interfaces[topo], precise=False )
+      bgroups[name] = newtopo if name not in bgroups else UnionTopology([ bgroups[name], newtopo ])
     return itemtopo.withgroups( bgroups=bgroups, igroups=igroups )
 
   @property
@@ -1439,14 +1442,13 @@ class UnionTopology( Topology ):
         subtopo = self._named.get( name )
         if subtopo is not None:
           subtopos.append( subtopo )
-        else:
-          for topo in self._topos:
-            try:
-              subtopo = topo[name]
-            except KeyError:
-              pass
-            else:
-              subtopos.append( subtopo )
+        for topo in self._topos[len(self._names):]:
+          try:
+            subtopo = topo[name]
+          except KeyError:
+            pass
+          else:
+            subtopos.append( subtopo )
       if not subtopos:
         raise KeyError( item )
       if len(subtopos) == 1:
@@ -1663,7 +1665,7 @@ class SubsetTopology( Topology ):
         ielems.append( iface )
       else:
         ifaceref = edge & oppedge
-        if iface:
+        if ifaceref:
           ielems.append( element.Element( ifaceref, iface.transform, iface.opposite ) )
         edgeref = edge - oppedge
         if edgeref:
