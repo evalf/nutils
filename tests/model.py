@@ -35,10 +35,13 @@ class NavierStokes( model.Model ):
     return model.AttrDict( u=self.ubasis.dot(coeffs), p=self.pbasis.dot(coeffs) )
   def inertia( self, ns ):
     return model.Integral( (self.ubasis * ns.u).sum(-1), domain=self.domain, geometry=self.geom, degree=5 )
-  def initial( self, ns ):
+  def stokesres( self, ns ):
     return model.Integral( self.viscosity * self.ubasis['ni,j'] * (ns.u['i,j']+ns.u['j,i']) - self.ubasis['nk,k'] * ns.p + self.pbasis['n'] * ns.u['k,k'], domain=self.domain, geometry=self.geom, degree=5 )
+  @property
+  def initial( self ):
+    return self.solve( residual=self.stokesres )
   def residual( self, ns ):
-    return self.initial( ns ) + model.Integral( self.ubasis['ni'] * ns.u['i,j'] * ns.u['j'], domain=self.domain, geometry=self.geom, degree=5 )
+    return self.stokesres(ns) + model.Integral( self.ubasis['ni'] * ns.u['i,j'] * ns.u['j'], domain=self.domain, geometry=self.geom, degree=5 )
 
 @register
 def laplace():

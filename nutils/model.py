@@ -262,36 +262,25 @@ class Model:
   def inertia( self, namespace ):
     raise NotImplementedError( 'Model subclass needs to implement inertia' )
 
-  def initial( self, namespace ):
-    raise NotImplementedError( 'Model subclass needs to implement inertia' )
-
-  def get_initial_condition( self ):
-    target = function.DerivativeTarget( [self.ndofs] )
-    ns = self.namespace( target )
-    try:
-      init = self.initial( ns )
-    except NotImplementedError:
-      lhs0 = self.constraints|0
-    else:
-      with log.context( 'initial condition' ):
-        initjac = init.derivative( target )
-        assert not initjac.contains( target )
-        b, A = Integral.multieval( init.replace(target,function.zeros_like(target)), initjac )
-        lhs0 = A.solve( -b, constrain=self.constraints )
-    return lhs0
+  @property
+  def initial( self ):
+    return self.constraints | 0
 
   @log.title
-  def solve( self, lhs0=None, **newtonargs ):
+  def solve( self, residual=None, lhs0=None, **newtonargs ):
     target = function.DerivativeTarget( [self.ndofs] )
     ns = self.namespace( target )
-    res = self.residual( ns ) + self.residual0( ns )
+    if residual is None:
+      res = self.residual( ns ) + self.residual0( ns )
+    else:
+      res = residual( ns )
     jac = res.derivative( target )
     if not jac.contains( target ):
       log.user( 'problem is linear' )
       b, A = Integral.multieval( res.replace(target,function.zeros_like(target)), jac )
       return A.solve( -b, constrain=self.constraints )
     if lhs0 is None:
-      lhs0 = self.get_initial_condition()
+      lhs0 = self.initial
     fcache = cache.WrapperCache()
     eval_res_jac = lambda lhs: Integral.multieval( res.replace(target,lhs), jac.replace(target,lhs), fcache=fcache )
     return newton( lhs0, numpy.isnan(self.constraints), eval_res_jac, **newtonargs )
@@ -303,7 +292,7 @@ class Model:
   def timestep( self, timestep, lhs0=None, **newtonargs ):
     target = function.DerivativeTarget( [self.ndofs] )
     ns = self.namespace( target )
-    coeffs = lhs0 if lhs0 is not None else self.get_initial_condition()
+    coeffs = lhs0 if lhs0 is not None else self.initial
     res = self.residual( ns ) + self.inertia( ns ) / timestep
     jac = res.derivative( target )
     fcache = cache.WrapperCache()
@@ -331,7 +320,7 @@ class Model:
     jac0 = self.residual( ns ).derivative( target )
     jact = self.inertia( ns ).derivative( target )
     if lhs0 is None:
-      lhs0 = self.get_initial_condition()
+      lhs0 = self.initial
     fcache = cache.WrapperCache()
     eval_res_jac = lambda lhs, dt: Integral.multieval( res.replace(target,lhs), (jac0+jact/dt).replace(target,lhs), fcache=fcache )
     yield from pseudotime( lhs0, isdof=numpy.isnan(self.constraints), eval_res_jac=eval_res_jac, timestep=timestep, tol=tol )
@@ -352,8 +341,9 @@ class MultiModel( Model ):
     m1, m2 = self.models
     return AttrDict( m1.namespace( coeffs[:m1.ndofs] ), m2.namespace( coeffs[m1.ndofs:] ) )
 
-  def initial( self, namespace ):
-    return Integral.concatenate([ m.initial(namespace) for m in self.models ])
+  @cache.property
+  def initial( self ):
+    return numpy.concatenate([ m.initial for m in self.models ])
 
   def residual0( self, namespace ):
     return Integral.concatenate([ m.residual0(namespace) for m in self.models ])
@@ -363,9 +353,6 @@ class MultiModel( Model ):
 
   def inertia( self, namespace ):
     return Integral.concatenate([ m.inertia(namespace) for m in self.models ])
-
-  def get_initial_condition( self ):
-    return numpy.concatenate([ m.get_initial_condition() for m in self.models ])
 
 if __name__ == '__main__':
 
