@@ -1,4 +1,4 @@
-from . import function, index, cache, log, util
+from . import function, index, cache, log, util, numeric
 import numpy, itertools, functools, numbers
 
 
@@ -87,6 +87,25 @@ def newton( lhs0, isdof, eval_res_jac, tol=1e-10, nrelax=5, maxrelax=.9, callbac
       lhs += relax * dlhs
 
   return lhs
+
+
+def pseudotime( lhs0, isdof, eval_res_jac, timestep, tol=1e-10 ):
+  zcons = numpy.zeros( lhs0.shape )
+  zcons[isdof] = numpy.nan
+  lhs = lhs0.copy()
+  with log.context( 'pseudotime' ):
+    b, A = eval_res_jac( lhs, timestep )
+    resnorm = resnorm0 = numpy.linalg.norm( b[isdof] )
+    for istep in itertools.count():
+      with log.context( 'iter {0} ({1:.0f}%)'.format( istep, 100 * numpy.log(resnorm0/resnorm) / numpy.log(resnorm0/tol) ) ):
+        thistimestep = timestep * (resnorm0/resnorm)
+        log.info( 'residual: {:.2e} (time step {:.0e})'.format(resnorm,thistimestep) )
+        yield lhs
+        if resnorm < tol:
+          break
+        lhs -= A.solve( b, constrain=zcons )
+        b, A = eval_res_jac( lhs, timestep * (resnorm0/resnorm) )
+        resnorm = numpy.linalg.norm( b[isdof] )
 
 
 class AttrDict( dict ):
@@ -215,13 +234,18 @@ class Model:
   and optionally
     - residual0, returns an Integral object
     - inertia, returns an Integral object
-    - constraints, returns a util.NanVec
 
   Models can be combined using the or-operator.
   '''
 
   def __init__( self, ndofs ):
-    self.ndofs = ndofs
+    if numeric.isint( ndofs ):
+      self.ndofs = int(ndofs)
+      self.constraints = util.NanVec( self.ndofs )
+    else:
+      assert isinstance( ndofs, numpy.ndarray )
+      self.ndofs = len(ndofs)
+      self.constraints = ndofs.copy().view( util.NanVec )
 
   def __or__( self, other ):
     return MultiModel( self, other )
@@ -229,66 +253,47 @@ class Model:
   def namespace( self, coeffs ):
     raise NotImplementedError( 'Model subclass needs to implement namespace' )
 
-  def constraints( self, geom ):
-    return util.NanVec( self.ndofs )
-
-  def residual( self, geom, namespace ):
+  def residual( self, namespace ):
     raise NotImplementedError( 'Model subclass needs to implement residual' )
 
-  def residual0( self, geom, namespace ):
+  def residual0( self, namespace ):
     return Integral.empty( [self.ndofs] )
 
-  def inertia( self, geom, namespace ):
+  def inertia( self, namespace ):
     raise NotImplementedError( 'Model subclass needs to implement inertia' )
 
-  def initial( self, geom, namespace ):
-    raise NotImplementedError( 'Model subclass needs to implement inertia' )
-
-  def get_initial_condition( self, geom, cons=None ):
-    target = function.DerivativeTarget( [self.ndofs] )
-    ns = self.namespace( target )
-    if cons is None:
-      cons = self.constraints( geom )
-    try:
-      init = self.initial( geom, ns )
-    except NotImplementedError:
-      lhs0 = cons|0
-    else:
-      with log.context( 'initial condition' ):
-        initjac = init.derivative( target )
-        assert not initjac.contains( target )
-        b, A = Integral.multieval( init.replace(target,function.zeros_like(target)), initjac )
-        lhs0 = A.solve( -b, constrain=cons )
-    return lhs0
+  @property
+  def initial( self ):
+    return self.constraints | 0
 
   @log.title
-  def solve( self, geom, lhs0=None, **newtonargs ):
+  def solve( self, residual=None, lhs0=None, **newtonargs ):
     target = function.DerivativeTarget( [self.ndofs] )
     ns = self.namespace( target )
-    cons = self.constraints( geom )
-    res = self.residual( geom, ns ) + self.residual0( geom, ns )
+    if residual is None:
+      res = self.residual( ns ) + self.residual0( ns )
+    else:
+      res = residual( ns )
     jac = res.derivative( target )
     if not jac.contains( target ):
       log.user( 'problem is linear' )
       b, A = Integral.multieval( res.replace(target,function.zeros_like(target)), jac )
-      return A.solve( -b, constrain=cons )
+      return A.solve( -b, constrain=self.constraints )
     if lhs0 is None:
-      lhs0 = self.get_initial_condition( geom, cons )
+      lhs0 = self.initial
     fcache = cache.WrapperCache()
     eval_res_jac = lambda lhs: Integral.multieval( res.replace(target,lhs), jac.replace(target,lhs), fcache=fcache )
-    return newton( lhs0, numpy.isnan(cons), eval_res_jac, **newtonargs )
+    return newton( lhs0, numpy.isnan(self.constraints), eval_res_jac, **newtonargs )
 
   def solve_namespace( self, *args, **kwargs ):
     coeffs = self.solve( *args, **kwargs )
     return self.namespace( coeffs )
 
-  @log.title
-  def timestep( self, geom, timestep, lhs0=None, **newtonargs ):
+  def timestep( self, timestep, lhs0=None, **newtonargs ):
     target = function.DerivativeTarget( [self.ndofs] )
     ns = self.namespace( target )
-    cons = self.constraints( geom )
-    coeffs = lhs0 if lhs0 is not None else self.get_initial_condition( geom, cons )
-    res = self.residual( geom, ns ) + self.inertia( geom, ns ) / timestep
+    coeffs = lhs0 if lhs0 is not None else self.initial
+    res = self.residual( ns ) + self.inertia( ns ) / timestep
     jac = res.derivative( target )
     fcache = cache.WrapperCache()
     islinear = not jac.contains( target )
@@ -298,69 +303,53 @@ class Model:
     while True:
       yield coeffs
       ns0 = self.namespace( coeffs )
-      res0 = self.residual0( geom, ns0 ) - self.inertia( geom, ns0 ) / timestep
+      res0 = self.residual0( ns0 ) - self.inertia( ns0 ) / timestep
       if islinear:
-        coeffs = -A.solve( b + res0.eval(fcache), constrain=cons )
+        coeffs = -A.solve( b + res0.eval(fcache), constrain=self.constraints )
       else:
         eval_res_jac = lambda lhs: Integral.multieval( res0 + res.replace(target,lhs), jac.replace(target,lhs), fcache=fcache )
-        coeffs = newton( coeffs, numpy.isnan(cons), eval_res_jac, **newtonargs )
+        coeffs = newton( coeffs, numpy.isnan(self.constraints), eval_res_jac, **newtonargs )
 
   def timestep_namespace( self, *args, **kwargs ):
     return ( self.namespace( coeffs ) for coeffs in self.timestep( *args, **kwargs ) )
+
+  def pseudo_timestep( self, timestep, lhs0=None, tol=1e-10 ):
+    target = function.DerivativeTarget( [self.ndofs] )
+    ns = self.namespace( target )
+    res = self.residual0( ns ) + self.residual( ns )
+    jac0 = self.residual( ns ).derivative( target )
+    jact = self.inertia( ns ).derivative( target )
+    if lhs0 is None:
+      lhs0 = self.initial
+    fcache = cache.WrapperCache()
+    eval_res_jac = lambda lhs, dt: Integral.multieval( res.replace(target,lhs), (jac0+jact/dt).replace(target,lhs), fcache=fcache )
+    yield from pseudotime( lhs0, isdof=numpy.isnan(self.constraints), eval_res_jac=eval_res_jac, timestep=timestep, tol=tol )
+
+  def pseudo_timestep_namespace( self, *args, **kwargs ):
+    return ( self.namespace( coeffs ) for coeffs in self.pseudo_timestep( *args, **kwargs ) )
+
 
 class MultiModel( Model ):
   '''Two models combined'''
 
   def __init__( self, m1, m2 ):
     self.models = m1, m2
-    Model.__init__( self, ndofs=m1.ndofs+m2.ndofs )
+    Model.__init__( self, numpy.concatenate([ m1.constraints, m2.constraints ]) )
 
   def namespace( self, coeffs ):
     assert len(coeffs) == self.ndofs
     m1, m2 = self.models
     return AttrDict( m1.namespace( coeffs[:m1.ndofs] ), m2.namespace( coeffs[m1.ndofs:] ) )
 
-  def constraints( self, geom ):
-    return numpy.concatenate([ m.constraints(geom) for m in self.models ]).view( util.NanVec )
+  @cache.property
+  def initial( self ):
+    return numpy.concatenate([ m.initial for m in self.models ])
 
-  def initial( self, geom, namespace ):
-    return Integral.concatenate([ m.initial(geom,namespace) for m in self.models ])
+  def residual0( self, namespace ):
+    return Integral.concatenate([ m.residual0(namespace) for m in self.models ])
 
-  def residual0( self, geom, namespace ):
-    return Integral.concatenate([ m.residual0(geom,namespace) for m in self.models ])
+  def residual( self, namespace ):
+    return Integral.concatenate([ m.residual(namespace) for m in self.models ])
 
-  def residual( self, geom, namespace ):
-    return Integral.concatenate([ m.residual(geom,namespace) for m in self.models ])
-
-  def inertia( self, geom, namespace ):
-    return Integral.concatenate([ m.inertia(geom,namespace) for m in self.models ])
-
-  def get_initial_condition( self, geom, cons=None ):
-    if cons is None:
-      cons = self.constraints( geom )
-    m1, m2 = self.models
-    return numpy.concatenate([ m1.get_initial_condition( geom, cons[:m1.ndofs] ),
-                               m2.get_initial_condition( geom, cons[m1.ndofs:] ) ])
-
-if __name__ == '__main__':
-
-  class Laplace( Model ):
-    def __init__( self, domain ):
-      self.domain = domain
-      self.basis = self.domain.basis( 'std', degree=1 )
-      Model.__init__( self, ndofs=len(self.basis) )
-    def namespace( self, coeffs ):
-      return AttrDict( u=self.basis.dot(coeffs) )
-    def constraints( self, geom ):
-      return self.domain.boundary['left'].project( 0, onto=self.basis, geometry=geom, ischeme='gauss2' )
-    def residual( self, geom, ns ):
-      return Integral( ( self.basis.grad(geom) * ns.u.grad(geom) ).sum(-1), domain=self.domain, geometry=geom, degree=2 ) \
-           + Integral( self.basis, domain=self.domain.boundary['top'], geometry=geom, degree=2 )
-
-  from nutils import mesh, plot
-  domain, geom = mesh.rectilinear( [8,8] )
-  model = Laplace( domain )
-  ns = model.solve_namespace( geom )
-  geom_, u_ = domain.elem_eval( [ geom, ns.u ], ischeme='bezier2' )
-  with plot.PyPlot( 'model_demo', ndigits=0 ) as plot:
-    plot.mesh( geom_, u_ )
+  def inertia( self, namespace ):
+    return Integral.concatenate([ m.inertia(namespace) for m in self.models ])
