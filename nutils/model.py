@@ -353,26 +353,3 @@ class MultiModel( Model ):
 
   def inertia( self, namespace ):
     return Integral.concatenate([ m.inertia(namespace) for m in self.models ])
-
-if __name__ == '__main__':
-
-  class Laplace( Model ):
-    def __init__( self, domain, geom ):
-      self.domain = domain
-      self.geom = geom
-      self.basis = self.domain.basis( 'std', degree=1 )
-      cons = domain.boundary['left'].project( 0, onto=self.basis, geometry=geom, ischeme='gauss2' )
-      super().__init__( cons )
-    def namespace( self, coeffs ):
-      return AttrDict( u=self.basis.dot(coeffs) )
-    def residual( self, ns ):
-      return Integral( ( self.basis.grad(geom) * ns.u.grad(geom) ).sum(-1), domain=self.domain, geometry=geom, degree=2 ) \
-           + Integral( self.basis, domain=self.domain.boundary['top'], geometry=geom, degree=2 )
-
-  from nutils import mesh, plot
-  domain, geom = mesh.rectilinear( [8,8] )
-  model = Laplace( domain, geom )
-  ns = model.solve_namespace()
-  geom_, u_ = domain.elem_eval( [ geom, ns.u ], ischeme='bezier2' )
-  with plot.PyPlot( 'model_demo', ndigits=0 ) as plot:
-    plot.mesh( geom_, u_ )
