@@ -416,6 +416,12 @@ def solve( T1, T2 ): # T1 << x == T2
   Ax, bx = numeric.solve_exact( linear(T1), linear(T2), offset(T2) - offset(T1) )
   return affine( Ax, bx )
 
+def tensor( trans1, trans2 ):
+  if not trans1 and not trans2:
+    return identity
+  return affine( trans1.linear if trans1.linear.ndim == 0 and trans2.linear.ndim == 0 and trans1.linear == trans2.linear
+            else numeric.blockdiag([ trans1.linear, trans2.linear ]), numpy.concatenate([ trans1.offset, trans2.offset ]) )
+
 def isflipped( chain ):
   return sum( trans.isflipped for trans in chain ) % 2 == 1
 

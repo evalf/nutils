@@ -891,11 +891,7 @@ class TensorReference( Reference ):
 
   @cache.property
   def child_transforms( self ):
-    return [ transform.affine( trans1.linear if trans1.linear.ndim == 0 and trans2.linear.ndim == 0 and trans1.linear == trans2.linear
-                          else numeric.blockdiag([ trans1.linear, trans2.linear ]),
-                               numpy.concatenate([ trans1.offset, trans2.offset ]) )
-            for trans1 in self.ref1.child_transforms
-              for trans2 in self.ref2.child_transforms ]
+    return [ transform.tensor(trans1,trans2) for trans1 in self.ref1.child_transforms for trans2 in self.ref2.child_transforms ]
 
   @property
   def child_refs( self ):
@@ -908,7 +904,7 @@ class TensorReference( Reference ):
 
   @property
   def simplices( self ):
-    return [ (transform.identity,self) ]
+    return [ ( transform.tensor(trans1,trans2), TensorReference( simplex1, simplex2 ) ) for trans1, simplex1 in self.ref1.simplices for trans2, simplex2 in self.ref2.simplices ]
 
 class Cone( Reference ):
   'cone'
