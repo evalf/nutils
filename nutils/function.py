@@ -2669,7 +2669,7 @@ class Unravel( Array ):
     return f.reshape( f.shape[0], *self.shape )
 
   def _edit( self, op ):
-    return unravel( op(self.func), self.axis, self.shape )
+    return unravel( op(self.func), self.axis, self.unravelshape )
     
 class Mask( Array ):
   'mask'
