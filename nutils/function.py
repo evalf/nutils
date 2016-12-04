@@ -3289,8 +3289,7 @@ def partial_derivative( func, arg_key, arg_axes=None ):
     keyargs[arg_key] = var
 
     # compute derivative and replace derivative helper with original argument
-    replace = lambda f: orig if f is var else edit( f, replace )
-    return replace( derivative( func( *args, **kwargs ), var, orig_axes ) )
+    return replace( var, orig, derivative( func( *args, **kwargs ), var, orig_axes ) )
 
   return wrapper
 
