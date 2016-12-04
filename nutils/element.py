@@ -803,15 +803,22 @@ class TensorReference( Reference ):
     return self.ref1.stdfunc(degree) * self.ref2.stdfunc(degree)
 
   def getischeme_vtk( self ):
-    if self == getsimplex(1)**2:
-      points = [[0,0],[1,0],[1,1],[0,1]]
-    elif self == getsimplex(1)**3:
-      points = [[0,0,0],[1,0,0],[0,1,0],[1,1,0],[0,0,1],[1,0,1],[0,1,1],[1,1,1]]
-    elif self == getsimplex(2)*getsimplex(1):
-      points = [[0,0,0],[1,0,0],[0,1,0],[0,0,1],[1,0,1],[0,1,1]]
+    if self.ref1.ndims == self.ref2.ndims == 1:
+      points = numpy.empty([ 2, 2, 2 ])
+      points[...,:1] = self.ref1.vertices[:,_]
+      points[0,:,1:] = self.ref2.vertices
+      points[1,:,1:] = self.ref2.vertices[::-1]
+    elif self.ref1.ndims == 1 and self.ref2.ndims == 2:
+      points = numpy.empty([ 2, self.ref2.nverts, 3 ])
+      points[...,:1] = self.ref1.vertices[:,_]
+      points[...,1:] = self.ref2.vertices[_,:]
+    elif self.ref1.ndims == 2 and self.ref2.ndims == 1:
+      points = numpy.empty([ 2, self.ref1.nverts, 3 ])
+      points[...,:2] = self.ref1.vertices[_,:]
+      points[...,2:] = self.ref2.vertices[:,_]
     else:
       raise NotImplementedError
-    return numpy.array(points,dtype=float), numpy.ones(self.nverts,dtype=float)
+    return points.reshape( self.nverts, self.ndims ), None
 
   def getischeme_contour( self, n ):
     assert self == getsimplex(1)**2
