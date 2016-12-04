@@ -803,15 +803,22 @@ class TensorReference( Reference ):
     return self.ref1.stdfunc(degree) * self.ref2.stdfunc(degree)
 
   def getischeme_vtk( self ):
-    if self == getsimplex(1)**2:
-      points = [[0,0],[1,0],[1,1],[0,1]]
-    elif self == getsimplex(1)**3:
-      points = [[0,0,0],[1,0,0],[0,1,0],[1,1,0],[0,0,1],[1,0,1],[0,1,1],[1,1,1]]
-    elif self == getsimplex(2)*getsimplex(1):
-      points = [[0,0,0],[1,0,0],[0,1,0],[0,0,1],[1,0,1],[0,1,1]]
+    if self.ref1.ndims == self.ref2.ndims == 1:
+      points = numpy.empty([ 2, 2, 2 ])
+      points[...,:1] = self.ref1.vertices[:,_]
+      points[0,:,1:] = self.ref2.vertices
+      points[1,:,1:] = self.ref2.vertices[::-1]
+    elif self.ref1.ndims == 1 and self.ref2.ndims == 2:
+      points = numpy.empty([ 2, self.ref2.nverts, 3 ])
+      points[...,:1] = self.ref1.vertices[:,_]
+      points[...,1:] = self.ref2.vertices[_,:]
+    elif self.ref1.ndims == 2 and self.ref2.ndims == 1:
+      points = numpy.empty([ 2, self.ref1.nverts, 3 ])
+      points[...,:2] = self.ref1.vertices[_,:]
+      points[...,2:] = self.ref2.vertices[:,_]
     else:
       raise NotImplementedError
-    return numpy.array(points,dtype=float), numpy.ones(self.nverts,dtype=float)
+    return points.reshape( self.nverts, self.ndims ), None
 
   def getischeme_contour( self, n ):
     assert self == getsimplex(1)**2
@@ -884,11 +891,7 @@ class TensorReference( Reference ):
 
   @cache.property
   def child_transforms( self ):
-    return [ transform.affine( trans1.linear if trans1.linear.ndim == 0 and trans2.linear.ndim == 0 and trans1.linear == trans2.linear
-                          else numeric.blockdiag([ trans1.linear, trans2.linear ]),
-                               numpy.concatenate([ trans1.offset, trans2.offset ]) )
-            for trans1 in self.ref1.child_transforms
-              for trans2 in self.ref2.child_transforms ]
+    return [ transform.tensor(trans1,trans2) for trans1 in self.ref1.child_transforms for trans2 in self.ref2.child_transforms ]
 
   @property
   def child_refs( self ):
@@ -901,7 +904,7 @@ class TensorReference( Reference ):
 
   @property
   def simplices( self ):
-    return [ (transform.identity,self) ]
+    return [ ( transform.tensor(trans1,trans2), TensorReference( simplex1, simplex2 ) ) for trans1, simplex1 in self.ref1.simplices for trans2, simplex2 in self.ref2.simplices ]
 
 class Cone( Reference ):
   'cone'

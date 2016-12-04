@@ -181,7 +181,7 @@ class Integral( dict ):
     return derivative
 
   def replace( self, target, replacement ):
-    edit = function.replace( target, replacement )
+    edit = functools.partial( function.replace, target, replacement )
     replace = self.empty( self.shape )
     for domain, (integrand,degree) in self.items():
       replace[domain] = edit(integrand), degree

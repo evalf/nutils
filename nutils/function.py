@@ -433,12 +433,22 @@ class Array( Evaluable ):
 
     return self / norm2( self, axis=-1 )
 
-  def normal( self ):
+  def normal( self, exterior=False ):
     'normal'
 
     assert self.ndim == 1
-    lgrad = localgradient( self, len(self) )
-    return Normal( lgrad )
+
+    if not exterior:
+      lgrad = localgradient( self, len(self) )
+      return Normal( lgrad )
+
+    lgrad = localgradient( self, len(self)-1 )
+    if len(self) == 2:
+      return asarray([ lgrad[1,0], -lgrad[0,0] ]).normalized()
+    if len(self) == 3:
+      return cross( lgrad[:,0], lgrad[:,1], axis=0 ).normalized()
+
+    raise NotImplementedError
 
   def curvature( self, ndims=-1 ):
     'curvature'
@@ -2049,6 +2059,10 @@ class Zeros( Array ):
   def _mask( self, maskvec, axis ):
     return zeros( self.shape[:axis] + (maskvec.sum(),) + self.shape[axis+1:], dtype=self.dtype )
 
+  def _unravel( self, axis, shape ):
+    shape = self.shape[:axis] + shape + self.shape[axis+1:]
+    return zeros( shape, dtype=self.dtype )
+
 class Inflate( Array ):
   'inflate'
 
@@ -2669,7 +2683,7 @@ class Unravel( Array ):
     return f.reshape( f.shape[0], *self.shape )
 
   def _edit( self, op ):
-    return unravel( op(self.func), self.axis, self.shape )
+    return unravel( op(self.func), self.axis, self.unravelshape )
     
 class Mask( Array ):
   'mask'
@@ -3285,8 +3299,7 @@ def partial_derivative( func, arg_key, arg_axes=None ):
     keyargs[arg_key] = var
 
     # compute derivative and replace derivative helper with original argument
-    replace = lambda f: orig if f is var else edit( f, replace )
-    return replace( derivative( func( *args, **kwargs ), var, orig_axes ) )
+    return replace( var, orig, derivative( func( *args, **kwargs ), var, orig_axes ) )
 
   return wrapper
 
@@ -3893,20 +3906,20 @@ def ravel( func, axis ):
 
   return Ravel( func, axis )
 
-def replace( old, new ):
+def replace( old, new, arg ):
   assert isarray( old )
   new = asarray( new )
   assert new.shape == old.shape
-  def do_replace( arg ):
-    d = { old: new }
-    def s( f ):
-      try:
-        v = d[f]
-      except KeyError:
-        v = edit( f, s )
-        d[f] = v
-      return v
-    return s( arg )
-  return do_replace
+  d = { old: new }
+  def s( f ):
+    try:
+      v = d[f]
+    except KeyError:
+      v = edit( f, s )
+      if isarray( f ):
+        assert v.shape == f.shape
+      d[f] = v
+    return v
+  return s( arg )
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

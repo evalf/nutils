@@ -449,6 +449,10 @@ class Topology( object ):
   def refine( self, n ):
     'refine entire topology n times'
 
+    if numpy.iterable( n ):
+      assert len(n) == self.ndims
+      assert all( ni == n[0] for ni in n )
+      n = n[0]
     return self if n <= 0 else self.refined.refine( n-1 )
 
   @log.title
@@ -852,6 +856,12 @@ class StructuredLine( Topology ):
     if periodic is None:
       periodic = self.periodic
 
+    if numpy.iterable( degree ):
+      degree, = degree
+
+    if numpy.iterable( removedofs ):
+      removedofs, = removedofs
+
     ndofs = len(self) + degree
     dofs = numpy.arange( ndofs )
 
@@ -863,6 +873,7 @@ class StructuredLine( Topology ):
     fmap = dict( zip( self._transforms[1:-1], element.PolyLine.spline( degree=degree, nelems=len(self), periodic=periodic ) ) )
     nmap = { trans: dofs[i:i+degree+1] for i, trans in enumerate(self._transforms[1:-1]) }
     func = function.function( fmap, nmap, ndofs )
+
     if not removedofs:
       return func
 
@@ -1918,6 +1929,13 @@ class ProductTopology( Topology ):
   @property
   def refined( self ):
     return self.topo1.refined * self.topo2.refined
+
+  def refine( self, n ):
+    if numpy.iterable( n ):
+      assert len(n) == self.ndims
+    else:
+      n = (n,)*self.ndims
+    return self.topo1.refine( n[:self.topo1.ndims] ) * self.topo2.refine( n[self.topo1.ndims:] )
 
   def __getitem__( self, item ):
     if isinstance(item,tuple) and len(item) == self.ndims:
