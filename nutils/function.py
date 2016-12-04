@@ -3908,6 +3908,8 @@ def replace( old, new ):
         v = d[f]
       except KeyError:
         v = edit( f, s )
+        if isarray( f ):
+          assert v.shape == f.shape
         d[f] = v
       return v
     return s( arg )
