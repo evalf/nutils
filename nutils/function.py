@@ -433,12 +433,22 @@ class Array( Evaluable ):
 
     return self / norm2( self, axis=-1 )
 
-  def normal( self ):
+  def normal( self, exterior=False ):
     'normal'
 
     assert self.ndim == 1
-    lgrad = localgradient( self, len(self) )
-    return Normal( lgrad )
+
+    if not exterior:
+      lgrad = localgradient( self, len(self) )
+      return Normal( lgrad )
+
+    lgrad = localgradient( self, len(self)-1 )
+    if len(self) == 2:
+      return asarray([ lgrad[1,0], -lgrad[0,0] ]).normalized()
+    if len(self) == 3:
+      return cross( lgrad[:,0], lgrad[:,1], axis=0 ).normalized()
+
+    raise NotImplementedError
 
   def curvature( self, ndims=-1 ):
     'curvature'
