@@ -3897,22 +3897,20 @@ def ravel( func, axis ):
 
   return Ravel( func, axis )
 
-def replace( old, new ):
+def replace( old, new, arg ):
   assert isarray( old )
   new = asarray( new )
   assert new.shape == old.shape
-  def do_replace( arg ):
-    d = { old: new }
-    def s( f ):
-      try:
-        v = d[f]
-      except KeyError:
-        v = edit( f, s )
-        if isarray( f ):
-          assert v.shape == f.shape
-        d[f] = v
-      return v
-    return s( arg )
-  return do_replace
+  d = { old: new }
+  def s( f ):
+    try:
+      v = d[f]
+    except KeyError:
+      v = edit( f, s )
+      if isarray( f ):
+        assert v.shape == f.shape
+      d[f] = v
+    return v
+  return s( arg )
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
