@@ -2049,6 +2049,10 @@ class Zeros( Array ):
   def _mask( self, maskvec, axis ):
     return zeros( self.shape[:axis] + (maskvec.sum(),) + self.shape[axis+1:], dtype=self.dtype )
 
+  def _unravel( self, axis, shape ):
+    shape = self.shape[:axis] + shape + self.shape[axis+1:]
+    return zeros( shape, dtype=self.dtype )
+
 class Inflate( Array ):
   'inflate'
 
