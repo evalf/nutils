@@ -1,3 +1,41 @@
+# -*- coding: utf8 -*-
+#
+# Module MODEL
+#
+# Part of Nutils: open source numerical utilities for Python. Jointly developed
+# by HvZ Computational Engineering, TU/e Multiscale Engineering Fluid Dynamics,
+# and others. More info at http://nutils.org <info@nutils.org>. (c) 2014
+
+"""
+The model module defines the :class:`Integral` class, which represents an
+unevaluated integral. This is useful for fully automated solution procedures
+such as Newton, that require functional derivatives of an entire functional.
+
+To demonstrate this consider the following setup:
+
+>>> domain, geom = mesh.rectilinear( [4,4] )
+>>> basis = domain.basis( 'spline', degree=2 )
+>>> cons = domain.boundary['left,top'].project( 0, onto=basis, geometry=geom, ischeme='gauss4' )
+>>> target = function.DerivativeTarget( [len(basis)] )
+>>> u = basis.dot( target )
+
+Function ``u`` represents an element from the discrete space but cannot not
+evaluated yet as we did not yet establish values for ``target``. It can,
+however, be used to construct a residual functional ``res``. Aiming to solve
+the Poisson problem u_,kk = f we define the residual functional res = v,k u,k +
+v f and solve for res == 0 using ``solve_linear``:
+
+>>> res = model.Integral( basis['n,i']*u[',i']+basis['n'], domain=domain, geometry=geom, degree=2 )
+>>> lhs = model.solve_linear( target, residual=res, constrain=cons )
+>>> u = basis.dot( lhs )
+
+The new function ``u`` represents the solution to the Poisson problem.
+
+In addition to ``solve_linear`` the model module defines ``newton`` and
+``pseudotime`` for solving nonlinear problems, as well as ``impliciteuler`` for
+time dependent problems.
+"""
+
 from . import function, index, cache, log, util, numeric
 import numpy, itertools, functools, numbers
 
@@ -108,13 +146,16 @@ def solve_linear( target, residual, constrain ):
   Parameters
   ----------
   target : DerivativeTarget
+      Representation of coefficient vector
   residual : Integral
+      Residual integral, depends on ``target``
   constrain : util.NanVec
+      Defines the fixed entries of the coefficient vector
 
   Returns
   -------
   vector
-      Solution of residual(target) == 0'''
+      Array of ``target`` values for which ``residual == 0``'''
 
   jacobian = residual.derivative( target )
   assert not jacobian.contains( target ), 'problem is not linear'
@@ -141,7 +182,7 @@ def solve( gen_lhs_resnorm, tol=1e-10, maxiter=numpy.inf ):
   Returns
   -------
   vector
-      Coefficient vector that corresponds to a smaller than `tol` residual.
+      Coefficient vector that corresponds to a smaller than ``tol`` residual.
   '''
 
   try:
@@ -165,7 +206,8 @@ def newton( target, residual, lhs0=None, freezedofs=None, nrelax=5, maxrelax=.9 
   '''iteratively solve nonlinear problem by gradient descent
 
   Generates targets such that residual approaches 0 using Newton procedure with
-  line search based on a residual integral. Suitable to be used inside `solve`.
+  line search based on a residual integral. Suitable to be used inside
+  ``solve``.
 
   An optimal relaxation value is computed based on the following parabolic
   assumption:
@@ -183,13 +225,13 @@ def newton( target, residual, lhs0=None, freezedofs=None, nrelax=5, maxrelax=.9 
       Coefficient vector, starting point of the iterative procedure.
   freezedofs : boolean vector
       Equal length to lhs0, masks the non-free vector entries as True. In the
-      positions where `freezedofs' is True the values of `lhs0' are returned
+      positions where ``freezedofs`` is True the values of ``lhs0`` are returned
       unchanged.
   nrelax : int
       Maximum number of relaxation steps before proceding with the updated
       coefficient vector.
   maxrelax : float
-      Relaxation value below which relaxation continues, unless `nrelax' is
+      Relaxation value below which relaxation continues, unless ``nrelax`` is
       reached; should be a value less than or equal to 1.
 
   Yields
@@ -260,7 +302,7 @@ def pseudotime( target, residual, inertia, timestep, lhs0, residual0=None, freez
 
   Generates targets such that residual approaches 0 using hybrid of Newton and
   time stepping. Requires an inertia term and initial timestep. Suitable to be
-  used inside `solve`.
+  used inside ``solve``.
 
   Parameters
   ----------
@@ -273,7 +315,7 @@ def pseudotime( target, residual, inertia, timestep, lhs0, residual0=None, freez
       Coefficient vector, starting point of the iterative procedure.
   freezedofs : boolean vector
       Equal length to lhs0, masks the non-free vector entries as True. In the
-      positions where `freezedofs' is True the values of `lhs0' are returned
+      positions where ``freezedofs`` is True the values of ``lhs0`` are returned
       unchanged.
 
   Yields
@@ -319,7 +361,7 @@ def impliciteuler( target, residual, inertia, timestep, lhs0, residual0=None, fr
       Optional additional residual component evaluated in previous timestep
   freezedofs : boolean vector
       Equal length to lhs0, masks the non-free vector entries as True. In the
-      positions where `freezedofs' is True the values of `lhs0' are returned
+      positions where ``freezedofs`` is True the values of ``lhs0`` are returned
       unchanged.
   tol : float
       Residual tolerance of individual timesteps
