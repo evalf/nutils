@@ -12,7 +12,7 @@ The log module provides print methods ``debug``, ``info``, ``user``,
 stdout as well as to an html formatted log file if so configured.
 """
 
-import sys, time, warnings, functools, itertools, re, abc, contextlib, html, urllib.parse
+import sys, time, warnings, functools, itertools, re, abc, contextlib, html, urllib.parse, os
 from . import core
 
 warnings.showwarning = lambda message, category, filename, lineno, *args: \
@@ -184,31 +184,38 @@ class HtmlInsertAnchor( Log ):
   .. automethod:: _insert_anchors
   '''
 
-  @staticmethod
-  def _path2href( match ):
-    whitelist = ['.jpg','.png','.svg','.txt','.mp4','.webm'] + list( core.getprop( 'plot_extensions', [] ) )
+  def __init__( self, logdir ):
+    self._logdir = logdir
+    super().__init__()
+
+  def _path2href( self, match ):
+    if not os.path.exists( os.path.join( self._logdir, match.group(0) ) ):
+      return match.group(0)
     filename = html.unescape( match.group(0) )
     ext = html.unescape( match.group(1) )
+    whitelist = ['.jpg','.png','.svg','.txt','.mp4','.webm'] + list( core.getprop( 'plot_extensions', [] ) )
     fmt = '<a href="{href}"' + (' class="plot"' if ext in whitelist else '') + '>{name}</a>'
     return fmt.format( href=urllib.parse.quote( filename ), name=html.escape( filename ) )
 
-  @classmethod
-  def _insert_anchors( cls, level, escaped_text ):
+  def _insert_anchors( self, level, escaped_text ):
     '''Insert anchors for all paths in ``escaped_text``.
 
     .. Note:: ``escaped_text`` should be valid html (e.g. the result of ``html.escape(text)``).
     '''
-    if level == 'path':
-      escaped_text = re.sub( r'\b\w+([.]\w+)\b', cls._path2href, escaped_text )
-    return escaped_text
+    return re.sub( r'\b\w+([.]\w+)\b', self._path2href, escaped_text )
 
 class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
   '''Output html nested lists.'''
 
-  def __init__( self, file ):
+  def __init__( self, file, *, logdir=None ):
     self._print = functools.partial( print, file=file )
     self._flush = file.flush
-    super().__init__()
+    if logdir is None:
+      # Try to get the directory of `file`.
+      if not hasattr( file, 'name' ):
+        raise ValueError( 'Cannot autodetect the directory of the log file.  Please set the directory using the `logdir` argument of {!r}.'.format( type( self ) ) )
+      logdir = os.path.dirname( file.name )
+    super().__init__( logdir )
 
   def _print_push_context( self, title ):
     self._print( '<li class="context">{}</li><ul>'.format( html.escape( title ) ) )
@@ -226,11 +233,16 @@ class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
 class IndentLog( HtmlInsertAnchor, ContextTreeLog ):
   '''Output indented html snippets.'''
 
-  def __init__( self, file ):
+  def __init__( self, file, *, logdir=None ):
     self._print = functools.partial( print, file=file )
     self._flush = file.flush
     self._prefix = ''
-    super().__init__()
+    if logdir is None:
+      # Try to get the directory of `file`.
+      if not hasattr( file, 'name' ):
+        raise ValueError( 'Cannot autodetect the directory of the log file.  Please set the directory using the `logdir` argument of {!r}.'.format( type( self ) ) )
+      logdir = os.path.dirname( file.name )
+    super().__init__( logdir )
 
   def _print_push_context( self, title ):
     title = title.replace( '\n', '' ).replace( '\r', '')

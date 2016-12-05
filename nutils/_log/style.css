@@ -37,8 +37,8 @@ a.active { color: #eee; }
 pre { color: gray; }
 li.context { color: gray; }
 span.path, li.path { color: green; }
-span.path a, li.path a { color: green; text-decoration: none; }
-span.path a.plot, li.path a.plot { font-weight: bold; }
+span.path a, li.path a, li a, li a.active { color: green; text-decoration: none; }
+span.path a.plot, li.path a.plot, li a.plot { font-weight: bold; }
 span.info, li.info { color: black; }
 span.error, li.error { color: red; }
 span.user, li.user { color: blue; font-weight: bold; }

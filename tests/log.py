@@ -1,6 +1,6 @@
-import io
+import io, tempfile, os
 from . import register, unittest
-import nutils.log
+import nutils.log, nutils.core
 
 log_stdout = '''\
 iterator > iter 0 (17%) > a
@@ -16,6 +16,8 @@ levels > progress
 exception > ValueError('test',)
   File "??", line ??, in ??
     raise ValueError( 'test' )
+test.png
+nonexistent.png
 '''
 
 log_stdout3 = '''\
@@ -41,6 +43,8 @@ log_rich_output = '''\
 \033[1;30mexception · \033[1;31mValueError(\'test\',)
   File "??", line ??, in ??
     raise ValueError( \'test\' )\033[0m
+\033[1;30m\033[0mtest.png
+\033[1;30m\033[0mnonexistent.png
 '''
 
 log_html = '''\
@@ -70,6 +74,8 @@ log_html = '''\
   File &quot;??&quot;, line ??, in ??
     raise ValueError( &#x27;test&#x27; )</li>
 </ul>
+<li class="info"><a href="test.png" class="plot">test.png</a></li>
+<li class="info">nonexistent.png</li>
 '''
 
 log_indent = '''\
@@ -92,6 +98,8 @@ c exception
  e ValueError(&#x27;test&#x27;,)
  |   File &quot;??&quot;, line ??, in ??
  |     raise ValueError( &#x27;test&#x27; )
+i <a href="test.png" class="plot">test.png</a>
+i nonexistent.png
 '''
 
 def generate_log():
@@ -110,6 +118,10 @@ def generate_log():
       "ValueError('test',)\n" \
       '  File "??", line ??, in ??\n' \
       "    raise ValueError( 'test' )")
+  with open( os.path.join( nutils.core.getoutdir(), 'test.png' ), 'w' ) as f:
+    pass
+  nutils.log.info( 'test.png' )
+  nutils.log.info( 'nonexistent.png' )
 
 @register( 'stdout', nutils.log.StdoutLog, log_stdout )
 @register( 'stdout-verbose3', nutils.log.StdoutLog, log_stdout3, verbose=3 )
@@ -120,23 +132,28 @@ def logoutput( logcls, logout, verbose=len( nutils.log.LEVELS ) ):
 
   @unittest
   def test():
-    __verbose__ = verbose
-    stream = io.StringIO()
-    __log__ = logcls( stream )
-    generate_log()
-    assert stream.getvalue() == logout
+    with tempfile.TemporaryDirectory() as __outdir__:
+      __verbose__ = verbose
+      stream = io.StringIO()
+      if logcls in (nutils.log.HtmlLog, nutils.log.IndentLog):
+        __log__ = logcls( stream, logdir=__outdir__ )
+      else:
+        __log__ = logcls( stream )
+      generate_log()
+      assert stream.getvalue() == logout
 
 @register
 def tee_stdout_html():
 
   @unittest
   def test():
-    __verbose__ = len( nutils.log.LEVELS )
-    stream_stdout = io.StringIO()
-    stream_html = io.StringIO()
-    __log__ = nutils.log.TeeLog(
-      nutils.log.StdoutLog( stream_stdout ),
-      nutils.log.HtmlLog( stream_html ))
-    generate_log()
-    assert stream_stdout.getvalue() == log_stdout
-    assert stream_html.getvalue() == log_html
+    with tempfile.TemporaryDirectory() as __outdir__:
+      __verbose__ = len( nutils.log.LEVELS )
+      stream_stdout = io.StringIO()
+      stream_html = io.StringIO()
+      __log__ = nutils.log.TeeLog(
+        nutils.log.StdoutLog( stream_stdout ),
+        nutils.log.HtmlLog( stream_html, logdir=__outdir__ ))
+      generate_log()
+      assert stream_stdout.getvalue() == log_stdout
+      assert stream_html.getvalue() == log_html

@@ -499,6 +499,10 @@ class PyPlotVideo( PyPlot ):
     if videotype is None:
       videotype = core.getprop( 'videotype', 'webm' )
     path, relpath = self.getpath( name, None, videotype )
+    # Make sure `path` exists, otherwise the logger won't create an anchor.
+    # The empty file will be replaced by the video encoder.
+    with open( path, 'w' ) as f:
+      pass
     log.path( relpath )
     self._encoder = subprocess.Popen([
         core.getprop( 'videoencoder', 'ffmpeg' ),
