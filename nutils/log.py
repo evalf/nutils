@@ -18,7 +18,7 @@ from . import core
 warnings.showwarning = lambda message, category, filename, lineno, *args: \
   warning( '%s: %s\n  In %s:%d' % ( category.__name__, message, filename, lineno ) )
 
-LEVELS = 'path', 'error', 'warning', 'user', 'info', 'progress', 'debug'
+LEVELS = 'error', 'warning', 'user', 'info', 'progress', 'debug'
 
 
 ## LOG
@@ -352,6 +352,10 @@ def _print( level, *args ):
 ## MODULE-ONLY METHODS
 
 locals().update({ name: functools.partial( _print, name ) for name in LEVELS })
+
+def path( *args ):
+  warnings.warn( "log level 'path' will be removed in the future, please use any other log level instead", DeprecationWarning )
+  return _print( 'info', *args )
 
 def range( title, *args ):
   '''Progress logger identical to built in range'''

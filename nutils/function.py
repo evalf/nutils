@@ -192,7 +192,7 @@ class Evaluable( cache.Immutable ):
       with subprocess.Popen( [dotpath,'-T'+imgtype], stdin=subprocess.PIPE, stdout=img ) as dot:
         dot.communicate( '\n'.join(lines).encode() )
 
-    log.path( os.path.basename(imgpath) )
+    log.info( os.path.basename(imgpath) )
 
   def stackstr( self, nlines=-1 ):
     'print stack'
