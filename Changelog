@@ -6,6 +6,14 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+New: model
+
+  The model module provides infrastructure to facilitate formulating and
+  solving complicated nonlinear problems in a structured and largely
+  automated fashion. See that model documentation and the updated
+  finitestrain code for examples.
+
+
 Changed: pariter, parmap
 
   The parellel.pariter and parellel.parmap functions now require the

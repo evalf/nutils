@@ -1,130 +1,43 @@
+# -*- coding: utf8 -*-
+#
+# Module MODEL
+#
+# Part of Nutils: open source numerical utilities for Python. Jointly developed
+# by HvZ Computational Engineering, TU/e Multiscale Engineering Fluid Dynamics,
+# and others. More info at http://nutils.org <info@nutils.org>. (c) 2014
+
+"""
+The model module defines the :class:`Integral` class, which represents an
+unevaluated integral. This is useful for fully automated solution procedures
+such as Newton, that require functional derivatives of an entire functional.
+
+To demonstrate this consider the following setup:
+
+>>> domain, geom = mesh.rectilinear( [4,4] )
+>>> basis = domain.basis( 'spline', degree=2 )
+>>> cons = domain.boundary['left,top'].project( 0, onto=basis, geometry=geom, ischeme='gauss4' )
+>>> target = function.DerivativeTarget( [len(basis)] )
+>>> u = basis.dot( target )
+
+Function ``u`` represents an element from the discrete space but cannot not
+evaluated yet as we did not yet establish values for ``target``. It can,
+however, be used to construct a residual functional ``res``. Aiming to solve
+the Poisson problem u_,kk = f we define the residual functional res = v,k u,k +
+v f and solve for res == 0 using ``solve_linear``:
+
+>>> res = model.Integral( basis['n,i']*u[',i']+basis['n'], domain=domain, geometry=geom, degree=2 )
+>>> lhs = model.solve_linear( target, residual=res, constrain=cons )
+>>> u = basis.dot( lhs )
+
+The new function ``u`` represents the solution to the Poisson problem.
+
+In addition to ``solve_linear`` the model module defines ``newton`` and
+``pseudotime`` for solving nonlinear problems, as well as ``impliciteuler`` for
+time dependent problems.
+"""
+
 from . import function, index, cache, log, util, numeric
 import numpy, itertools, functools, numbers
-
-
-@log.title
-def newton( lhs0, isdof, eval_res_jac, tol=1e-10, nrelax=5, maxrelax=.9, callback=None ):
-  '''iteratively solve nonlinear problem by gradient descent
-
-  Newton procedure with line search based on a residual and tangent generating
-  function. An optimal relaxation value is computed based on the following
-  parabolic assumption:
-
-      | res( lhs + r * dlhs ) |^2 = A + B * r + C * r^2 + D * r^3
-
-  where A, B, C and D are determined based on the current and updated residual
-  value and tangent.
-
-  Parameters
-  ----------
-  lhs0 : vector
-      Coefficient vector, starting point of the iterative procedure.
-  isdof : boolean vector
-      Equal length to lhs0, masks the free vector entries as True. In the
-      positions where `isdof' is False the values of `lhs0' are returned
-      unchanged.
-  eval_res_jac : function
-      Takes as argument a coefficient vector, and returns the corresponding
-      residual vector and tangent matrix.
-  tol : float
-      The residual value at which iterations stop.
-  nrelax : int
-      Maximum number of relaxation steps before proceding with the updated
-      coefficient vector.
-  maxrelax : float
-      Relaxation value below which relaxation continues, unless `nrelax' is
-      reached; should be a value less than or equal to 1.
-
-  Returns
-  -------
-  vector
-      Coefficient vector that corresponds to a smaller than `tol` residual.
-  '''
-
-  zcons = numpy.zeros( lhs0.shape )
-  zcons[isdof] = numpy.nan
-  lhs = lhs0.copy()
-  res, jac = eval_res_jac( lhs )
-  newresnorm = resnorm0 = numpy.linalg.norm( res[isdof] )
-  for inewton in itertools.count():
-    resnorm = newresnorm
-    if resnorm < tol:
-      break
-    with log.context( 'iter {0} ({1:.0f}%)'.format( inewton, 100 * numpy.log(resnorm0/resnorm) / numpy.log(resnorm0/tol) ) ):
-      log.info( 'residual: {:.2e}'.format(resnorm) )
-      if callback is not None:
-        callback( lhs )
-      dlhs = -jac.solve( res, constrain=zcons )
-      relax = 1
-      for irelax in itertools.count():
-        res, jac = eval_res_jac( lhs + relax * dlhs )
-        newresnorm = numpy.linalg.norm( res[isdof] )
-        if irelax >= nrelax:
-          assert newresnorm < resnorm, 'stuck in local minimum'
-          break
-        # endpoint values, derivatives
-        r0 = resnorm**2
-        d0 = -2 * relax * resnorm**2
-        r1 = newresnorm**2
-        d1 = 2 * relax * numpy.dot( jac.matvec(dlhs)[isdof], res[isdof] )
-        # polynomial coefficients
-        A = r0
-        B = d0
-        C = 3*r1 - 3*r0 - 2*d0 - d1
-        D = d0 + d1 + 2*r0 - 2*r1
-        # optimization
-        discriminant = C**2 - 3*B*D
-        if discriminant < 0: # monotomously decreasing
-          break
-        malpha = -C / (3*D)
-        dalpha = numpy.sqrt(discriminant) / abs(3*D)
-        newrelax = malpha + dalpha if malpha < dalpha else malpha - dalpha # smallest positive root
-        if newrelax > maxrelax:
-          break
-        assert newrelax > 0, 'newrelax should be strictly positive, computed {!r}'.format(newrelax)
-        log.info( 'relaxation {0:}: scaling by {1:.3f}'.format( irelax+1, newrelax ) )
-        relax *= newrelax
-      lhs += relax * dlhs
-
-  return lhs
-
-
-def pseudotime( lhs0, isdof, eval_res_jac, timestep, tol=1e-10 ):
-  zcons = numpy.zeros( lhs0.shape )
-  zcons[isdof] = numpy.nan
-  lhs = lhs0.copy()
-  with log.context( 'pseudotime' ):
-    b, A = eval_res_jac( lhs, timestep )
-    resnorm = resnorm0 = numpy.linalg.norm( b[isdof] )
-    for istep in itertools.count():
-      with log.context( 'iter {0} ({1:.0f}%)'.format( istep, 100 * numpy.log(resnorm0/resnorm) / numpy.log(resnorm0/tol) ) ):
-        thistimestep = timestep * (resnorm0/resnorm)
-        log.info( 'residual: {:.2e} (time step {:.0e})'.format(resnorm,thistimestep) )
-        yield lhs
-        if resnorm < tol:
-          break
-        lhs -= A.solve( b, constrain=zcons )
-        b, A = eval_res_jac( lhs, timestep * (resnorm0/resnorm) )
-        resnorm = numpy.linalg.norm( b[isdof] )
-
-
-class AttrDict( dict ):
-  '''Container for key/value pairs. Items can be get/set as either dictonary
-  items or object attributes. Dictionary items cannot be accessed as attributes
-  and vice versa.'''
-  def __init__( self, *args, **kwargs ):
-    nitems = 0
-    nattrs = 0
-    for arg in args:
-      self.update( arg )
-      nitems += len(arg)
-      if isinstance( arg, AttrDict ):
-        self.__dict__.update( arg.__dict__ )
-        nattrs += len(arg.__dict__)
-    self.__dict__.update( kwargs )
-    nattrs += len(kwargs)
-    assert len(self) == nitems, 'duplicate items'
-    assert len(self.__dict__) == nattrs, 'duplicate attributes'
 
 
 class Integral( dict ):
@@ -203,8 +116,11 @@ class Integral( dict ):
         add[domain] = integrand_degree[0] + integrand, max( integrand_degree[1], degree )
     return add
 
+  def __neg__( self ):
+    return self * -1
+
   def __sub__( self, other ):
-    return self + other * -1
+    return self + (-other)
 
   def __mul__( self, other ):
     if not isinstance( other, numbers.Number ):
@@ -224,132 +140,247 @@ class Integral( dict ):
     return self * (1/other)
 
 
-class Model:
-  '''Model base class
+class ModelError( Exception ): pass
 
-  Model classes define a discretized physical problem by implementing two
-  member functions:
-    - namespace, returns a dictionary or AttrDict
-    - residual, returns an Integral object
-  and optionally
-    - residual0, returns an Integral object
-    - inertia, returns an Integral object
 
-  Models can be combined using the or-operator.
+def solve_linear( target, residual, constrain ):
+  '''solve linear problem
+
+  Parameters
+  ----------
+  target : DerivativeTarget
+      Representation of coefficient vector
+  residual : Integral
+      Residual integral, depends on ``target``
+  constrain : util.NanVec
+      Defines the fixed entries of the coefficient vector
+
+  Returns
+  -------
+  vector
+      Array of ``target`` values for which ``residual == 0``'''
+
+  jacobian = residual.derivative( target )
+  if jacobian.contains( target ):
+    raise ModelError( 'problem is not linear' )
+  res, jac = Integral.multieval( residual.replace(target,function.zeros_like(target)), jacobian )
+  return jac.solve( -res, constrain=constrain )
+
+
+def solve( gen_lhs_resnorm, tol=1e-10, maxiter=numpy.inf ):
+  '''execute nonlinear solver
+  
+  Iterates over nonlinear solver until tolerance is reached. Example:
+
+  >>> lhs = solve( newton( target, residual ), tol=1e-5 )
+  
+  Parameters
+  ----------
+  gen_lhs_resnorm : generator
+      Generates (lhs, resnorm) tuples
+  tol : float
+      Target residual norm
+  maxiter : int
+      Maximum number of iterations
+
+  Returns
+  -------
+  vector
+      Coefficient vector that corresponds to a smaller than ``tol`` residual.
   '''
 
-  def __init__( self, ndofs ):
-    if numeric.isint( ndofs ):
-      self.ndofs = int(ndofs)
-      self.constraints = util.NanVec( self.ndofs )
-    else:
-      assert isinstance( ndofs, numpy.ndarray )
-      self.ndofs = len(ndofs)
-      self.constraints = ndofs.copy().view( util.NanVec )
+  try:
+    lhs, resnorm = next(gen_lhs_resnorm)
+    resnorm0 = resnorm
+    inewton = 0
+    while resnorm > tol:
+      if inewton >= maxiter:
+        raise ModelError( 'tolerance not reached in {} iterations'.format(maxiter) )
+      with log.context( 'iter {0} ({1:.0f}%)'.format( inewton, 100 * numpy.log(resnorm0/resnorm) / numpy.log(resnorm0/tol) ) ):
+        log.info( 'residual: {:.2e}'.format(resnorm) )
+        lhs, resnorm = next(gen_lhs_resnorm)
+      inewton += 1
+  except StopIteration:
+    raise ModelError( 'generator stopped before reaching target tolerance' )
+  else:
+    return lhs
+  
 
-  def __or__( self, other ):
-    return MultiModel( self, other )
+def newton( target, residual, lhs0=None, freezedofs=None, nrelax=5, maxrelax=.9 ):
+  '''iteratively solve nonlinear problem by gradient descent
 
-  def namespace( self, coeffs ):
-    raise NotImplementedError( 'Model subclass needs to implement namespace' )
+  Generates targets such that residual approaches 0 using Newton procedure with
+  line search based on a residual integral. Suitable to be used inside
+  ``solve``.
 
-  def residual( self, namespace ):
-    raise NotImplementedError( 'Model subclass needs to implement residual' )
+  An optimal relaxation value is computed based on the following parabolic
+  assumption:
 
-  def residual0( self, namespace ):
-    return Integral.empty( [self.ndofs] )
+      | res( lhs + r * dlhs ) |^2 = A + B * r + C * r^2 + D * r^3
 
-  def inertia( self, namespace ):
-    raise NotImplementedError( 'Model subclass needs to implement inertia' )
+  where A, B, C and D are determined based on the current and updated residual
+  value and tangent.
 
-  @property
-  def initial( self ):
-    return self.constraints | 0
+  Parameters
+  ----------
+  target : DerivativeTarget
+  residual : Integral
+  lhs0 : vector
+      Coefficient vector, starting point of the iterative procedure.
+  freezedofs : boolean vector
+      Equal length to lhs0, masks the non-free vector entries as True. In the
+      positions where ``freezedofs`` is True the values of ``lhs0`` are returned
+      unchanged.
+  nrelax : int
+      Maximum number of relaxation steps before proceding with the updated
+      coefficient vector.
+  maxrelax : float
+      Relaxation value below which relaxation continues, unless ``nrelax`` is
+      reached; should be a value less than or equal to 1.
 
-  @log.title
-  def solve( self, residual=None, lhs0=None, **newtonargs ):
-    target = function.DerivativeTarget( [self.ndofs] )
-    ns = self.namespace( target )
-    if residual is None:
-      res = self.residual( ns ) + self.residual0( ns )
-    else:
-      res = residual( ns )
-    jac = res.derivative( target )
-    if not jac.contains( target ):
-      log.user( 'problem is linear' )
-      b, A = Integral.multieval( res.replace(target,function.zeros_like(target)), jac )
-      return A.solve( -b, constrain=self.constraints )
-    if lhs0 is None:
-      lhs0 = self.initial
-    fcache = cache.WrapperCache()
-    eval_res_jac = lambda lhs: Integral.multieval( res.replace(target,lhs), jac.replace(target,lhs), fcache=fcache )
-    return newton( lhs0, numpy.isnan(self.constraints), eval_res_jac, **newtonargs )
+  Yields
+  ------
+  vector
+      Coefficient vector that approximates residual==0 with increasing accuracy
+  '''
 
-  def solve_namespace( self, *args, **kwargs ):
-    coeffs = self.solve( *args, **kwargs )
-    return self.namespace( coeffs )
+  if freezedofs is None:
+    freezedofs = numpy.zeros( len(target), dtype=bool )
 
-  def timestep( self, timestep, lhs0=None, **newtonargs ):
-    target = function.DerivativeTarget( [self.ndofs] )
-    ns = self.namespace( target )
-    coeffs = lhs0 if lhs0 is not None else self.initial
-    res = self.residual( ns ) + self.inertia( ns ) / timestep
-    jac = res.derivative( target )
-    fcache = cache.WrapperCache()
-    islinear = not jac.contains( target )
-    if islinear:
-      log.user( 'problem is linear' )
-      b, A = Integral.multieval( res.replace(target,function.zeros_like(target)), jac, fcache=fcache )
-    while True:
-      yield coeffs
-      ns0 = self.namespace( coeffs )
-      res0 = self.residual0( ns0 ) - self.inertia( ns0 ) / timestep
-      if islinear:
-        coeffs = -A.solve( b + res0.eval(fcache), constrain=self.constraints )
-      else:
-        eval_res_jac = lambda lhs: Integral.multieval( res0 + res.replace(target,lhs), jac.replace(target,lhs), fcache=fcache )
-        coeffs = newton( coeffs, numpy.isnan(self.constraints), eval_res_jac, **newtonargs )
+  if lhs0 is None:
+    lhs0 = numpy.zeros( len(target) )
 
-  def timestep_namespace( self, *args, **kwargs ):
-    return ( self.namespace( coeffs ) for coeffs in self.timestep( *args, **kwargs ) )
+  jacobian = residual.derivative( target )
+  if not jacobian.contains( target ):
+    log.info( 'problem is linear' )
+    res, jac = Integral.multieval( residual.replace(target,function.zeros_like(target)), jacobian )
+    cons = lhs0.copy()
+    cons[~freezedofs] = numpy.nan
+    lhs = jac.solve( -res, constrain=cons )
+    yield lhs, 0
+    return
 
-  def pseudo_timestep( self, timestep, lhs0=None, tol=1e-10 ):
-    target = function.DerivativeTarget( [self.ndofs] )
-    ns = self.namespace( target )
-    res = self.residual0( ns ) + self.residual( ns )
-    jac0 = self.residual( ns ).derivative( target )
-    jact = self.inertia( ns ).derivative( target )
-    if lhs0 is None:
-      lhs0 = self.initial
-    fcache = cache.WrapperCache()
-    eval_res_jac = lambda lhs, dt: Integral.multieval( res.replace(target,lhs), (jac0+jact/dt).replace(target,lhs), fcache=fcache )
-    yield from pseudotime( lhs0, isdof=numpy.isnan(self.constraints), eval_res_jac=eval_res_jac, timestep=timestep, tol=tol )
+  lhs = lhs0.copy()
+  fcache = cache.WrapperCache()
+  res, jac = Integral.multieval( residual.replace(target,lhs), jacobian.replace(target,lhs), fcache=fcache )
+  zcons = numpy.zeros( len(target) )
+  zcons[~freezedofs] = numpy.nan
+  while True:
+    resnorm = numpy.linalg.norm( res[~freezedofs] )
+    yield lhs, resnorm
+    dlhs = -jac.solve( res, constrain=zcons )
+    relax = 1
+    for irelax in itertools.count():
+      res, jac = Integral.multieval( residual.replace(target,lhs+relax*dlhs), jacobian.replace(target,lhs+relax*dlhs), fcache=fcache )
+      newresnorm = numpy.linalg.norm( res[~freezedofs] )
+      if irelax >= nrelax:
+        assert newresnorm < resnorm, 'stuck in local minimum'
+        break
+      # endpoint values, derivatives
+      r0 = resnorm**2
+      d0 = -2 * relax * resnorm**2
+      r1 = newresnorm**2
+      d1 = 2 * relax * numpy.dot( jac.matvec(dlhs)[~freezedofs], res[~freezedofs] )
+      # polynomial coefficients
+      A = r0
+      B = d0
+      C = 3*r1 - 3*r0 - 2*d0 - d1
+      D = d0 + d1 + 2*r0 - 2*r1
+      # optimization
+      discriminant = C**2 - 3*B*D
+      if discriminant < 0: # monotomously decreasing
+        break
+      malpha = -C / (3*D)
+      dalpha = numpy.sqrt(discriminant) / abs(3*D)
+      newrelax = malpha + dalpha if malpha < dalpha else malpha - dalpha # smallest positive root
+      if newrelax > maxrelax:
+        break
+      assert newrelax > 0, 'newrelax should be strictly positive, computed {!r}'.format(newrelax)
+      log.info( 'relaxation {0:}: scaling by {1:.3f}'.format( irelax+1, newrelax ) )
+      relax *= newrelax
+    lhs += relax * dlhs
 
-  def pseudo_timestep_namespace( self, *args, **kwargs ):
-    return ( self.namespace( coeffs ) for coeffs in self.pseudo_timestep( *args, **kwargs ) )
+
+def pseudotime( target, residual, inertia, timestep, lhs0, residual0=None, freezedofs=None ):
+  '''iteratively solve nonlinear problem by pseudo time stepping
+
+  Generates targets such that residual approaches 0 using hybrid of Newton and
+  time stepping. Requires an inertia term and initial timestep. Suitable to be
+  used inside ``solve``.
+
+  Parameters
+  ----------
+  target : DerivativeTarget
+  residual : Integral
+  inertia : Integral
+  timestep : float
+      Initial time step, will scale up as residual decreases
+  lhs0 : vector
+      Coefficient vector, starting point of the iterative procedure.
+  freezedofs : boolean vector
+      Equal length to lhs0, masks the non-free vector entries as True. In the
+      positions where ``freezedofs`` is True the values of ``lhs0`` are returned
+      unchanged.
+
+  Yields
+  ------
+  vector, float
+      Tuple of coefficient vector and residual norm
+  '''
+
+  jacobian0 = residual.derivative( target )
+  jacobiant = inertia.derivative( target )
+  if residual0 is not None:
+    residual += residual0
+  if freezedofs is None:
+    freezedofs = numpy.zeros( len(target) )
+  zcons = util.NanVec( len(target) )
+  zcons[freezedofs] = 0
+  lhs = lhs0.copy()
+  fcache = cache.WrapperCache()
+  res, jac = Integral.multieval( residual.replace(target,lhs), (jacobian0+jacobiant/timestep).replace(target,lhs), fcache=fcache )
+  resnorm = resnorm0 = numpy.linalg.norm( res[~freezedofs] )
+  while True:
+    yield lhs, resnorm
+    lhs -= jac.solve( res, constrain=zcons )
+    thistimestep = timestep * (resnorm0/resnorm)
+    log.info( 'timestep: {:.0e}'.format(thistimestep) )
+    res, jac = Integral.multieval( residual.replace(target,lhs), (jacobian0+jacobiant/thistimestep).replace(target,lhs), fcache=fcache )
+    resnorm = numpy.linalg.norm( res[~freezedofs] )
 
 
-class MultiModel( Model ):
-  '''Two models combined'''
+def impliciteuler( target, residual, inertia, timestep, lhs0, residual0=None, freezedofs=None, tol=1e-10, **newtonargs ):
+  '''solve time dependent problem using implicit euler time stepping
 
-  def __init__( self, m1, m2 ):
-    self.models = m1, m2
-    Model.__init__( self, numpy.concatenate([ m1.constraints, m2.constraints ]) )
+  Parameters
+  ----------
+  target : DerivativeTarget
+  residual : Integral
+  inertia : Integral
+  timestep : float
+      Initial time step, will scale up as residual decreases
+  lhs0 : vector
+      Coefficient vector, starting point of the iterative procedure.
+  residual0 : Integral
+      Optional additional residual component evaluated in previous timestep
+  freezedofs : boolean vector
+      Equal length to lhs0, masks the non-free vector entries as True. In the
+      positions where ``freezedofs`` is True the values of ``lhs0`` are returned
+      unchanged.
+  tol : float
+      Residual tolerance of individual timesteps
 
-  def namespace( self, coeffs ):
-    assert len(coeffs) == self.ndofs
-    m1, m2 = self.models
-    return AttrDict( m1.namespace( coeffs[:m1.ndofs] ), m2.namespace( coeffs[m1.ndofs:] ) )
+  Yields
+  ------
+  vector
+      Coefficient vector that approximates residual==0 with increasing accuracy
+  '''
 
-  @cache.property
-  def initial( self ):
-    return numpy.concatenate([ m.initial for m in self.models ])
-
-  def residual0( self, namespace ):
-    return Integral.concatenate([ m.residual0(namespace) for m in self.models ])
-
-  def residual( self, namespace ):
-    return Integral.concatenate([ m.residual(namespace) for m in self.models ])
-
-  def inertia( self, namespace ):
-    return Integral.concatenate([ m.inertia(namespace) for m in self.models ])
+  res = residual + inertia / timestep
+  res0 = -inertia / timestep
+  if residual0 is not None:
+    res0 += residual0
+  lhs = lhs0
+  while True:
+    yield lhs
+    lhs = solve( newton( target, residual=res0.replace(target,lhs) + res, lhs0=lhs, freezedofs=freezedofs, **newtonargs ), tol=tol )

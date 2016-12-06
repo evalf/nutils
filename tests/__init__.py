@@ -136,7 +136,7 @@ def register( f, *args, **kwargs ):
 
 class _NoException( Exception ): pass
 
-def unittest( func=None, *, name=None, raises=_NoException ):
+def unittest( func=None, *, name=None, raises=None ):
   if func is None:
     return functools.partial( unittest, name=name, raises=raises )
   fullname = func.__name__
@@ -150,8 +150,8 @@ def unittest( func=None, *, name=None, raises=_NoException ):
     try:
       parentlog.write( 'info', 'testing..', endl=False )
       func()
-      assert raises is _NoException, 'exception not raised, expected {!r}'.format( raises )
-    except raises:
+      assert not raises, 'exception not raised, expected {!r}'.format( raises )
+    except raises or _NoException:
       status = OK
       print( ' OK' )
     except AssertionError:
