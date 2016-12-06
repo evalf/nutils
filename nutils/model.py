@@ -140,6 +140,9 @@ class Integral( dict ):
     return self * (1/other)
 
 
+class ModelError( Exception ): pass
+
+
 def solve_linear( target, residual, constrain ):
   '''solve linear problem
 
@@ -158,7 +161,8 @@ def solve_linear( target, residual, constrain ):
       Array of ``target`` values for which ``residual == 0``'''
 
   jacobian = residual.derivative( target )
-  assert not jacobian.contains( target ), 'problem is not linear'
+  if jacobian.contains( target ):
+    raise ModelError( 'problem is not linear' )
   res, jac = Integral.multieval( residual.replace(target,function.zeros_like(target)), jacobian )
   return jac.solve( -res, constrain=constrain )
 
@@ -191,13 +195,13 @@ def solve( gen_lhs_resnorm, tol=1e-10, maxiter=numpy.inf ):
     inewton = 0
     while resnorm > tol:
       if inewton >= maxiter:
-        raise Exception( 'tolerance not reached in {} iterations'.format(maxiter) )
+        raise ModelError( 'tolerance not reached in {} iterations'.format(maxiter) )
       with log.context( 'iter {0} ({1:.0f}%)'.format( inewton, 100 * numpy.log(resnorm0/resnorm) / numpy.log(resnorm0/tol) ) ):
         log.info( 'residual: {:.2e}'.format(resnorm) )
         lhs, resnorm = next(gen_lhs_resnorm)
       inewton += 1
   except StopIteration:
-    raise Exception( 'generator stopped before reaching target tolerance' )
+    raise ModelError( 'generator stopped before reaching target tolerance' )
   else:
     return lhs
   
