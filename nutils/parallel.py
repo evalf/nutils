@@ -37,13 +37,10 @@ def shzeros( shape, dtype=float ):
     dtype = numpy.int8
   else:
     raise Exception( 'invalid dtype: %r' % dtype )
-  if core.getprop( 'nprocs', 1 ) == 1:
-    return numpy.zeros( shape=shape, dtype=dtype )
-  else:
-    buf = multiprocessing.RawArray( typecode, int(size) )
-    return numpy.frombuffer( buf, dtype ).reshape( shape )
+  buf = multiprocessing.RawArray( typecode, int(size) )
+  return numpy.frombuffer( buf, dtype ).reshape( shape )
 
-def pariter( iterable, nprocs=None ):
+def pariter( iterable, nprocs ):
   '''iterate in parallel
 
   Fork into ``nprocs`` subprocesses, then yield items from iterable such that
@@ -66,7 +63,7 @@ def pariter( iterable, nprocs=None ):
   iterable : iterable
       The collection of items to be distributed over processors
   nprocs : int
-      Maximum number of processers to use, defaults to ``nprocs`` property.
+      Maximum number of processers to use
 
   Yields
   ------
@@ -80,8 +77,6 @@ def pariter( iterable, nprocs=None ):
     yield from iterable
     return
 
-  if nprocs is None:
-    nprocs = core.getprop( 'nprocs', 1 )
   try:
     nitems = len(iterable)
   except:
@@ -151,7 +146,7 @@ def pariter( iterable, nprocs=None ):
     elif totalfail: # failure in child process: raise exception
       raise Exception( 'pariter failed in {} out of {} processes'.format( totalfail, nprocs ) )
 
-def parmap( func, iterable, shape=(), dtype=float, nprocs=None ):
+def parmap( func, iterable, nprocs, shape=(), dtype=float ):
   '''parallel equivalent to builtin map function
 
   Produces an array of ``func(item)`` values for all items in ``iterable``.
@@ -164,12 +159,12 @@ def parmap( func, iterable, shape=(), dtype=float, nprocs=None ):
       Takes item from iterable, returns numpy array of ``shape`` and ``dtype``
   iterable : iterable
       Collection of items
+  nprocs : int
+      Maximum number of processers to use
   shape : tuple
       Return shape of ``func``, defaults to scalar
   dtype : tuple
       Return dtype of ``func``, defaults to float
-  nprocs : int
-      Maximum number of processers to use, defaults to ``nprocs`' property.
 
   Returns
   -------
@@ -179,7 +174,7 @@ def parmap( func, iterable, shape=(), dtype=float, nprocs=None ):
 
   n = len(iterable)
   out = shzeros( (n,)+shape, dtype=dtype )
-  for i, item in pariter( enumerate(iterable), nprocs=nprocs ):
+  for i, item in pariter( enumerate(iterable), nprocs=min(n,nprocs) ):
     out[i] = func( item )
   return out
 
