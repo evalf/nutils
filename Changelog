@@ -6,6 +6,15 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+Changed: pariter, parmap
+
+  The parellel.pariter and parellel.parmap functions now require the
+  desired number of processors to be explicitly requested through the
+  'nprocs' argument. The parallel.shzeros function always returns an
+  shared memory regardless of the value of the global nprocs property,
+  which is no longer referenced in the parallel module.
+
+
 New: topology.with{subdomain,boundary,interfaces,points}
 
   Topologies have been made fully immutable, which means that the old
