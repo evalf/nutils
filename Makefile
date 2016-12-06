@@ -21,7 +21,8 @@ test_unit:
 test_examples: $(EXAMPLES)
 
 $(EXAMPLES):
-	${PYTHON} $@ unittest --tbexplore=False --verbose=3
+	${PYTHON} $@ unittest --tbexplore=False --verbose=3 --nprocs=1
+	${PYTHON} $@ unittest --tbexplore=False --verbose=3 --nprocs=2
 
 coverage:
 	${COVERAGE} erase

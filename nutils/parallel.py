@@ -18,151 +18,9 @@ import os, sys, multiprocessing
 
 procid = None # current process id, None for unforked
 
-class Fork( object ):
-  'nested fork context, unwinds at exit'
-
-  def __init__( self, nprocs ):
-    'constructor'
-
-    self.nprocs = nprocs
-
-  def __enter__( self ):
-    'fork and return iproc'
-
-    global procid
-    if procid is not None:
-      self.child_pid = None
-      log.warning( 'ignoring fork for already forked process' )
-      return None
-    for procid in range( self.nprocs-1 ):
-      self.child_pid = os.fork()
-      if self.child_pid:
-        break
-    else:
-      self.child_pid = 0
-      procid = self.nprocs-1
-    return procid
-
-  def __exit__( self, exctype, excvalue, tb ):
-    'kill all processes but first one'
-
-    if self.child_pid is None: # not forked
-      return
-    global procid
-    status = 0
-    try:
-      if exctype == KeyboardInterrupt:
-        status = 1
-      elif exctype == GeneratorExit:
-        if procid:
-          log.error( 'generator failed with unknown exception' )
-        status = 1
-      elif exctype:
-        if procid:
-          log.stack( repr(excvalue), debug.frames_from_traceback(tb) )
-        status = 1
-      if self.child_pid:
-        child_pid, child_status = os.waitpid( self.child_pid, 0 )
-        if child_pid != self.child_pid:
-          log.error( 'pid failure! got %s, was waiting for %s' % (child_pid,self.child_pid) )
-          status = 1
-        elif child_status:
-          status = 1
-    except: # should not happen.. but just to be sure
-      status = 1
-    if procid:
-      os._exit( status )
-    procid = None
-    if not exctype:
-      assert status == 0, 'one or more subprocesses failed'
-
-class AlternativeFork( object ):
-  'single master, multiple slave fork context, unwinds at exit'
-
-  def __init__( self, nprocs ):
-    'constructor'
-
-    self.nprocs = nprocs
-    self.children = None
-
-  def __enter__( self ):
-    'fork and return iproc'
-
-    global procid
-    if procid is not None:
-      log.warning( 'ignoring fork for already forked process' )
-      return None
-    children = []
-    for procid in range( 1, self.nprocs ):
-      child_pid = os.fork()
-      if not child_pid:
-        break
-      children.append( child_pid )
-    else:
-      self.children = children
-      procid = 0
-    return procid
-
-  def __exit__( self, exctype, excvalue, tb ):
-    'kill all processes but first one'
-
-    global procid
-    status = 0
-    try:
-      if exctype:
-        log.stack( repr(excvalue), debug.frames_from_traceback(tb) )
-        status = 1
-      while self.children:
-        child_pid, child_status = os.wait()
-        self.children.remove( child_pid )
-        if child_status:
-          status = 1
-    except: # should not happen.. but just to be sure
-      status = 1
-    if procid:
-      os._exit( status )
-    procid = None
-    if not exctype:
-      assert status == 0, 'one or more subprocesses failed'
-
-def waitpid_noerr( pid ):
-  try:
-    os.waitpid( pid, 0 )
-  except:
-    pass
-
-def fork( func, nice=19 ):
-  'fork and run (return value is lost)'
-
-  if not hasattr( os, 'fork' ):
-    log.warning( 'fork does not exist on this platform; running %s in serial' % func.__name__ )
-    return func
-
-  import thread
-  def wrapped( *args, **kwargs ):
-    pid = os.fork()
-    if pid:
-      thread.start_new_thread( waitpid_noerr, (pid,) ) # kill the zombies
-      # see: http://stackoverflow.com/a/13331632/445031
-      # this didn't work: http://stackoverflow.com/a/6718735/445031
-      return pid
-    try:
-      os.nice( nice )
-      func( *args, **kwargs )
-    except KeyboardInterrupt:
-      pass
-    except:
-      exc, frames = debug.exc_info()
-      log.stack( repr(exc), frames )
-    finally:
-      os._exit( 0 )
-
-  return wrapped
-
 def shzeros( shape, dtype=float ):
-  'create zero-initialized array in shared memory'
+  '''create zero-initialized array in shared memory'''
 
-  # return numpy.zeros( shape, dtype=dtype ) # TODO: toggle to numpy for debugging
   if numeric.isint( shape ):
     shape = shape,
   else:
@@ -179,38 +37,144 @@ def shzeros( shape, dtype=float ):
     dtype = numpy.int8
   else:
     raise Exception( 'invalid dtype: %r' % dtype )
-  if core.getprop( 'nprocs', 1 ) == 1:
-    return numpy.zeros( shape=shape, dtype=dtype )
+  buf = multiprocessing.RawArray( typecode, int(size) )
+  return numpy.frombuffer( buf, dtype ).reshape( shape )
+
+def pariter( iterable, nprocs ):
+  '''iterate in parallel
+
+  Fork into ``nprocs`` subprocesses, then yield items from iterable such that
+  all processes receive a nonoverlapping subset of the total. It is up to the
+  user to prepare shared memory and/or locks for inter-process communication.
+  The following creates a data vector containing the first four quadratics.
+
+  >>> data = shzeros( shape=[4], dtype=int )
+  >>> for i in pariter( range(4) ):
+  >>>   data[i] = i**2
+  >>> data
+  [ 0, 1, 4, 9 ]
+
+  As a safety measure nested pariters are blocked by setting the global
+  ``procid`` variable; all secundary pariters will be treated like normal
+  serial iterators.
+  
+  Parameters
+  ----------
+  iterable : iterable
+      The collection of items to be distributed over processors
+  nprocs : int
+      Maximum number of processers to use
+
+  Yields
+  ------
+      Items from iterable, distributed over at most nprocs processors.
+  '''
+
+  global procid
+
+  if procid is not None:
+    log.warning( 'ignoring pariter for already forked process' )
+    yield from iterable
+    return
+
+  try:
+    nitems = len(iterable)
+  except:
+    pass
   else:
-    buf = multiprocessing.RawArray( typecode, int(size) )
-    return numpy.frombuffer( buf, dtype ).reshape( shape )
+    nprocs = min( nitems, nprocs )
 
-def pariter( iterable ):
-  'iterate parallel'
+  if nprocs <= 1:
+    yield from iterable
+    return
 
-  nprocs = core.getprop( 'nprocs', 1 )
-  return iterable if nprocs <= 1 else _pariter( iterable, nprocs )
+  shared_iter = multiprocessing.RawValue( 'i', nprocs ) # shared integer pointing at first unyielded item
+  lock = multiprocessing.Lock() # lock to avoid race conditions in incrementing shared_iter
+  children = [] # list of forked processes, non-empty only in primary process
 
-def _pariter( iterable, nprocs ):
-  'iterate parallel, helper generator'
+  try:
 
-  shared_iter = multiprocessing.RawValue( 'i', nprocs )
-  lock = multiprocessing.Lock()
-  with Fork( nprocs ):
-    iiter = procid
+    for procid in range( 1, nprocs ):
+      child_pid = os.fork()
+      if not child_pid:
+        break
+      children.append( child_pid )
+    else:
+      procid = 0
+
+    iiter = procid # first index is 0 .. nprocs-1, with shared_iter at nprocs
     for n, it in enumerate( iterable ):
-      if n < iiter:
+      if n < iiter: # fast forward to iiter
         continue
       assert n == iiter
       yield it
       with lock:
-        iiter = shared_iter.value
+        iiter = shared_iter.value # claim next value
         shared_iter.value = iiter + 1
 
-def parmap( func, iterable, shape=(), dtype=float ):
+  except:
+
+    fail = 1
+    if procid == 0:
+      raise # reraise in main process
+
+    # in child processes print traceback then exit
+    excval, tb = debug.exc_info()
+    if isinstance( excval, GeneratorExit ):
+      log.error( 'generator failed with unknown exception' )
+    elif not isinstance( excval, KeyboardInterrupt ):
+      log.stack( excval, tb )
+
+  else:
+
+    fail = 0
+
+  finally:
+
+    if procid != 0: # before anything else can fail:
+      os._exit( fail ) # cumminicate exit status to main process
+
+    procid = None # unset global variable
+    totalfail = fail
+    while children:
+      child_pid, child_status = os.wait()
+      children.remove( child_pid )
+      if child_status:
+        totalfail += 1
+    if fail: # failure in main process: exception has been reraised
+      log.error( 'pariter failed in {} out of {} processes; reraising exception for main process'.format( totalfail, nprocs ) )
+    elif totalfail: # failure in child process: raise exception
+      raise Exception( 'pariter failed in {} out of {} processes'.format( totalfail, nprocs ) )
+
+def parmap( func, iterable, nprocs, shape=(), dtype=float ):
+  '''parallel equivalent to builtin map function
+
+  Produces an array of ``func(item)`` values for all items in ``iterable``.
+  Because of shared memory restrictions ``func`` must yield numpy arrays of
+  predetermined shape and type.
+
+  Parameters
+  ----------
+  func : python function
+      Takes item from iterable, returns numpy array of ``shape`` and ``dtype``
+  iterable : iterable
+      Collection of items
+  nprocs : int
+      Maximum number of processers to use
+  shape : tuple
+      Return shape of ``func``, defaults to scalar
+  dtype : tuple
+      Return dtype of ``func``, defaults to float
+
+  Returns
+  -------
+      Array of shape ``len(iterable),+shape`` and dtype ``dtype``
+  '''
+
+
   n = len(iterable)
   out = shzeros( (n,)+shape, dtype=dtype )
-  for i, item in pariter( enumerate(iterable) ):
+  for i, item in pariter( enumerate(iterable), nprocs=min(n,nprocs) ):
     out[i] = func( item )
   return out
 

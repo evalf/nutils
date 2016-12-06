@@ -154,13 +154,20 @@ class Topology( object ):
         slices.append( slice(npoints,npoints+np) )
         npoints += np
 
+    enumelems = log.enumerate( 'elem', self )
+    zeros = numpy.zeros
+    nprocs = min( core.getprop( 'nprocs', 1 ), len(self) )
+    if nprocs > 1:
+      zeros = parallel.shzeros
+      enumelems = parallel.pariter( enumelems, nprocs=nprocs )
+
     retvals = []
     idata = []
     for ifunc, func in enumerate( funcs ):
       if isinstance( func, IndexedArray ):
         func = func.unwrap( geometry )
       func = function.asarray( edit( func * iwscale ) )
-      retval = parallel.shzeros( (npoints,)+func.shape, dtype=func.dtype )
+      retval = zeros( (npoints,)+func.shape, dtype=func.dtype )
       if function.isarray( func ):
         for ind, f in function.blocks( func ):
           idata.append( function.Tuple([ ifunc, ind, f ]) )
@@ -172,7 +179,7 @@ class Topology( object ):
     if core.getprop( 'dot', False ):
       idata.graphviz()
 
-    for ielem, elem in parallel.pariter( log.enumerate( 'elem', self ) ):
+    for ielem, elem in enumelems:
       ipoints, iweights = ischeme[elem] if isinstance(ischeme,dict) else fcache[elem.reference.getischeme]( ischeme )
       s = slices[ielem],
       for ifunc, index, data in idata.eval( elem, ipoints, fcache ):
@@ -245,12 +252,21 @@ class Topology( object ):
       offsets[iblock] += nvals[ifunc]
       nvals[ifunc] = offsets[iblock,-1]
 
+    # Select parallel/serial mode
+
+    enumelems = log.enumerate( 'elem', self )
+    zeros = numpy.zeros
+    nprocs = min( core.getprop( 'nprocs', 1 ), len(self) )
+    if nprocs > 1:
+      zeros = parallel.shzeros
+      enumelems = parallel.pariter( enumelems, nprocs=nprocs )
+
     # The data_index list contains shared memory index and value arrays for
     # each function argument.
 
     data_index = [
-      ( parallel.shzeros( n, dtype=float ),
-        parallel.shzeros( (funcs[ifunc].ndim,n), dtype=int ) )
+      ( zeros( n, dtype=float ),
+        zeros( (funcs[ifunc].ndim,n), dtype=int ) )
             for ifunc, n in enumerate(nvals) ]
 
     # In a second, parallel element loop, valuefunc is evaluated to fill the
@@ -259,7 +275,7 @@ class Topology( object ):
     # data_index is filled in the same loop. It does not use valuefunc data but
     # benefits from parallel speedup.
 
-    for ielem, elem in parallel.pariter( log.enumerate( 'elem', self ) ):
+    for ielem, elem in enumelems:
       ipoints, iweights = ischeme[elem] if isinstance(ischeme,dict) else fcache[elem.reference.getischeme]( ischeme )
       assert iweights is not None, 'no integration weights found'
       for iblock, intdata in enumerate( valuefunc.eval( elem, ipoints, fcache ) ):
