@@ -13,12 +13,16 @@ def laplace():
   residual = model.Integral( ( basis.grad(geom) * u.grad(geom) ).sum(-1), domain=domain, geometry=geom, degree=2 ) \
            + model.Integral( basis, domain=domain.boundary['top'], geometry=geom, degree=2 )
 
-  @unittest
-  def res():
-    lhs = model.solve_linear( dofs, residual=residual, constrain=cons )
-    res = residual.replace( dofs, lhs ).eval()
-    resnorm = numpy.linalg.norm( res[~cons.where] )
-    assert resnorm < 1e-13
+  for name in 'direct', 'newton':
+    @unittest( name=name )
+    def res():
+      if name == 'direct':
+        lhs = model.solve_linear( dofs, residual=residual, constrain=cons )
+      else:
+        lhs = model.solve( model.newton( dofs, residual=residual, lhs0=cons|0, freezedofs=cons.where ), tol=1e-10, maxiter=0 )
+      res = residual.replace( dofs, lhs ).eval()
+      resnorm = numpy.linalg.norm( res[~cons.where] )
+      assert resnorm < 1e-13
 
 
 @register
@@ -39,12 +43,16 @@ def navierstokes():
        | domain.boundary['left'].project( [geom[1]*(1-geom[1]),0], onto=ubasis, geometry=geom, ischeme='gauss2' )
   lhs0 = model.solve_linear( dofs, residual=stokesres, constrain=cons )
 
-  for solver in model.newton( dofs, residual=residual, lhs0=lhs0, freezedofs=cons.where ), \
-                model.pseudotime( dofs, residual=residual, lhs0=lhs0, freezedofs=cons.where, inertia=inertia, timestep=1 ):
-    @unittest( name=solver.__name__ )
+  for name in 'direct', 'newton', 'pseudotime':
+    @unittest( name=name, raises=name=='direct' and model.ModelError)
     def res():
       tol = 1e-10
-      lhs = model.solve( solver, tol=tol, maxiter=2 if solver.__name__=='newton' else 3 )
+      if name == 'direct':
+        lhs = model.solve_linear( dofs, residual=residual, constrain=cons )
+      elif name == 'newton':
+        lhs = model.solve( model.newton( dofs, residual=residual, lhs0=lhs0, freezedofs=cons.where ), tol=tol, maxiter=2 )
+      else:
+        lhs = model.solve( model.pseudotime( dofs, residual=residual, lhs0=lhs0, freezedofs=cons.where, inertia=inertia, timestep=1 ), tol=tol, maxiter=3 )
       res = residual.replace( dofs, lhs ).eval()
       resnorm = numpy.linalg.norm( res[~cons.where] )
       assert resnorm < tol
