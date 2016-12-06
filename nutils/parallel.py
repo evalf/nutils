@@ -18,40 +18,6 @@ import os, sys, multiprocessing
 
 procid = None # current process id, None for unforked
 
-def waitpid_noerr( pid ):
-  try:
-    os.waitpid( pid, 0 )
-  except:
-    pass
-
-def fork( func, nice=19 ):
-  'fork and run (return value is lost)'
-
-  if not hasattr( os, 'fork' ):
-    log.warning( 'fork does not exist on this platform; running %s in serial' % func.__name__ )
-    return func
-
-  import thread
-  def wrapped( *args, **kwargs ):
-    pid = os.fork()
-    if pid:
-      thread.start_new_thread( waitpid_noerr, (pid,) ) # kill the zombies
-      # see: http://stackoverflow.com/a/13331632/445031
-      # this didn't work: http://stackoverflow.com/a/6718735/445031
-      return pid
-    try:
-      os.nice( nice )
-      func( *args, **kwargs )
-    except KeyboardInterrupt:
-      pass
-    except:
-      exc, frames = debug.exc_info()
-      log.stack( repr(exc), frames )
-    finally:
-      os._exit( 0 )
-
-  return wrapped
-
 def shzeros( shape, dtype=float ):
   '''create zero-initialized array in shared memory'''
 
