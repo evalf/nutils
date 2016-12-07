@@ -333,13 +333,6 @@ def _getlog():
     log = _mklog()
   return log
 
-def _path2href( match ):
-  whitelist = ['.jpg','.png','.svg','.txt','.mp4','.webm'] + core.getprop( 'plot_extensions', [] )
-  filename = match.group(0)
-  ext = match.group(1)
-  return '<a href="%s">%s</a>' % (filename,filename) if ext not in whitelist \
-    else '<a href="%s" name="%s" class="plot">%s</a>' % (filename,filename,filename)
-
 def _print( level, *args ):
   return _getlog().write( level, ' '.join( str(arg) for arg in args ) )
 

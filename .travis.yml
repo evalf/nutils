@@ -10,7 +10,7 @@ install:
   - conda install --yes python=$TRAVIS_PYTHON_VERSION pip numpy scipy
   - pip install coverage coveralls
 script:
-  - PYTHONPATH="$PWD" COVERAGE=coverage make coverage
+  - PYTHONPATH="$PWD" make coverage
 after_success:
   - coveralls
 # vim: ts=2:sts=2:sw=2:et

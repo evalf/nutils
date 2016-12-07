@@ -473,6 +473,7 @@ def run( *functions ):
       val = True
     except (SyntaxError,NameError): # eval failed
       pass
+    arg = arg.replace( '-', '_' )
     if arg in kwargs:
       kwargs[ arg ] = val
     else:

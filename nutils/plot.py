@@ -37,8 +37,9 @@ class BasePlot( object ):
     if index is not None:
       name += str(index).rjust( self.ndigits, '0' )
     name += '.' + ext
-    log.path( name )
-    return os.path.join( self.path, name )
+    # Return the full path (w.r.t. the current working dir if `self.path` is
+    # relative) and the path relative to `self.path` (for logging).
+    return os.path.join( self.path, name ), name
 
   def __enter__( self ):
     'enter with block'
@@ -110,8 +111,12 @@ class PyPlot( BasePlot ):
     'save images'
 
     assert self._fig, 'figure is closed'
+    relpaths = []
     for ext in self.imgtype.split( ',' ):
-      self.savefig( self.getpath(name,index,ext) )
+      path, relpath = self.getpath(name,index,ext)
+      relpaths.append( relpath )
+      self.savefig( path )
+    log.path( ' '.join( relpaths ) )
 
   def segments( self, points, color='black', **kwargs ):
     'plot line'
@@ -493,6 +498,8 @@ class PyPlotVideo( PyPlot ):
     self._clearfigure = clearfigure
     if videotype is None:
       videotype = core.getprop( 'videotype', 'webm' )
+    path, relpath = self.getpath( name, None, videotype )
+    log.path( relpath )
     self._encoder = subprocess.Popen([
         core.getprop( 'videoencoder', 'ffmpeg' ),
         '-loglevel', 'quiet',
@@ -505,7 +512,7 @@ class PyPlotVideo( PyPlot ):
         '-i', '-',
         '-crf', '10', # constant quality (4-63, lower means better)
         '-b:v', '10M', # maximum allowed bitrate
-        self.getpath( name, None, videotype ),
+        path,
       ], stdin=subprocess.PIPE )
 
   def __enter__( self ):
@@ -550,8 +557,10 @@ class DataFile( BasePlot ):
     self.lines = []
 
   def save( self, name=None, index=None ):
-    with open( self.getpath(name,index,self.ext), 'w' ) as fout:
+    path, relpath = self.getpath(name,index,self.ext)
+    with open( path, 'w' ) as fout:
       fout.writelines( self.lines )
+    log.path( relpath )
 
   def printline( self, line ):
     self.lines.append( line+'\n' )
@@ -605,7 +614,8 @@ class VTKFile( BasePlot ):
 
   def save( self, name=None, index=None ):
     assert self._mesh is not None, 'Grid not specified'
-    with open( self.getpath(name,index,'vtk'), 'wb' ) as vtk:
+    path, relpath = self.getpath(name,index,'vtk')
+    with open( path, 'wb' ) as vtk:
       if sys.version_info.major == 2:
         write = vtk.write
       else:
@@ -660,6 +670,8 @@ class VTKFile( BasePlot ):
             raise Exception('Unsupported data dimension')
 
           self._writearray( vtk, data )
+
+    log.path( relpath )
 
   def rectilineargrid( self, coords ):
     """set rectilinear grid"""

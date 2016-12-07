@@ -1,5 +1,4 @@
 PYTHON?=python3
-COVERAGE?=python3-coverage
 
 EXAMPLES = $(wildcard examples/*)
 
@@ -25,8 +24,8 @@ $(EXAMPLES):
 	${PYTHON} $@ unittest --tbexplore=False --verbose=3 --nprocs=2
 
 coverage:
-	${COVERAGE} erase
-	$(MAKE) test "PYTHON=${COVERAGE} run -a"
+	${PYTHON} -m coverage erase
+	$(MAKE) test "PYTHON=${PYTHON} -m coverage run -a"
 
 htmlcov: coverage
 	rm -rf htmlcov
