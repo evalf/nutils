@@ -154,13 +154,8 @@ class Topology( object ):
         slices.append( slice(npoints,npoints+np) )
         npoints += np
 
-    enumelems = log.enumerate( 'elem', self )
-    zeros = numpy.zeros
     nprocs = min( core.getprop( 'nprocs', 1 ), len(self) )
-    if nprocs > 1:
-      zeros = parallel.shzeros
-      enumelems = parallel.pariter( enumelems, nprocs=nprocs )
-
+    zeros = parallel.shzeros if nprocs > 1 else numpy.zeros
     retvals = []
     idata = []
     for ifunc, func in enumerate( funcs ):
@@ -179,7 +174,7 @@ class Topology( object ):
     if core.getprop( 'dot', False ):
       idata.graphviz()
 
-    for ielem, elem in enumelems:
+    for ielem, elem in parallel.pariter( log.enumerate( 'elem', self ), nprocs=nprocs ):
       ipoints, iweights = ischeme[elem] if isinstance(ischeme,dict) else fcache[elem.reference.getischeme]( ischeme )
       s = slices[ielem],
       for ifunc, index, data in idata.eval( elem, ipoints, fcache ):
@@ -252,18 +247,11 @@ class Topology( object ):
       offsets[iblock] += nvals[ifunc]
       nvals[ifunc] = offsets[iblock,-1]
 
-    # Select parallel/serial mode
-
-    enumelems = log.enumerate( 'elem', self )
-    zeros = numpy.zeros
-    nprocs = min( core.getprop( 'nprocs', 1 ), len(self) )
-    if nprocs > 1:
-      zeros = parallel.shzeros
-      enumelems = parallel.pariter( enumelems, nprocs=nprocs )
-
     # The data_index list contains shared memory index and value arrays for
     # each function argument.
 
+    nprocs = min( core.getprop( 'nprocs', 1 ), len(self) )
+    zeros = parallel.shzeros if nprocs > 1 else numpy.zeros
     data_index = [
       ( zeros( n, dtype=float ),
         zeros( (funcs[ifunc].ndim,n), dtype=int ) )
@@ -275,7 +263,7 @@ class Topology( object ):
     # data_index is filled in the same loop. It does not use valuefunc data but
     # benefits from parallel speedup.
 
-    for ielem, elem in enumelems:
+    for ielem, elem in parallel.pariter( log.enumerate( 'elem', self ), nprocs=nprocs ):
       ipoints, iweights = ischeme[elem] if isinstance(ischeme,dict) else fcache[elem.reference.getischeme]( ischeme )
       assert iweights is not None, 'no integration weights found'
       for iblock, intdata in enumerate( valuefunc.eval( elem, ipoints, fcache ) ):
