@@ -251,10 +251,10 @@ class Topology( object ):
     # each function argument.
 
     nprocs = min( core.getprop( 'nprocs', 1 ), len(self) )
-    zeros = parallel.shzeros if nprocs > 1 else numpy.zeros
+    empty = parallel.shzeros if nprocs > 1 else numpy.empty
     data_index = [
-      ( zeros( n, dtype=float ),
-        zeros( (funcs[ifunc].ndim,n), dtype=int ) )
+      ( empty( n, dtype=float ),
+        empty( (funcs[ifunc].ndim,n), dtype=int ) )
             for ifunc, n in enumerate(nvals) ]
 
     # In a second, parallel element loop, valuefunc is evaluated to fill the
