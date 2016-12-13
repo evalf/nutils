@@ -212,60 +212,73 @@ def gmsh( fname, name=None ):
   for section in sections:
     warnings.warn('section {!r} defined but not used'.format(section) )
 
-  # create volume, boundary and interface elements
+  # create base topology
   triref = element.getsimplex(2)
-  velems = [] # same order as inodesbydim[2]
-  belems = {}
-  ielems = {}
-  flip = transform.affine( -1, [1] )
-  for inodes in inodesbydim[2]:
-    trans = transform.maptrans( triref.vertices, inodes if not name else [name+str(inode) for inode in inodes] )
-    elem = element.Element( triref, trans )
-    velems.append( elem )
+  elements = [ element.Element( triref, transform.maptrans( triref.vertices, inodes if not name else [name+str(inode) for inode in inodes] ) )
+    for ielem, inodes in log.enumerate( 'elem', inodesbydim[2] ) ]
+  basetopo = topology.UnstructuredTopology( ndims, elements )
+  log.info( 'created topology consisting of {} elements'.format(len(elements)) )
+
+  # create connectivity matrix
+  connectivity = -numpy.ones( (len(inodesbydim[2]),3), dtype=int )
+  edges = {}
+  for ielem, inodes in log.enumerate( 'elem', inodesbydim[2] ):
     for iedge, binodes in enumerate([ inodes[1:], inodes[::-2], inodes[:2] ]):
       try:
-        belem = belems.pop( tuple(binodes[::-1]) )
+        jelem, jedge = edges[ tuple(binodes[::-1]) ]
       except KeyError:
-        belems[tuple(binodes)] = elem.edge(iedge)
+        edges[ tuple(binodes) ] = ielem, iedge
       else:
-        ielems[tuple(binodes)] = belem.withopposite( elem.edge(iedge), oriented=False )
+        connectivity[ielem][iedge] = jelem
+        connectivity[jelem][jedge] = ielem
+
+  # insert connectivity in place of cached property
+  basetopo.connectivity = connectivity
 
   # separate volume elements by tag
   tagsvelems = {}
-  for elem, tagnames in zip( velems, tagnamesbydim[2] ):
+  for elem, tagnames in zip( elements, tagnamesbydim[2] ):
     for tagname in tagnames:
       tagsvelems.setdefault( tagname, [] ).append( elem )
+  if tagsvelems:
+    log.info( 'topology groups:', ', '.join('{} (#{})'.format(n,len(e)) for n, e in tagsvelems.items()) )
 
   # separate boundary and interface elements by tag
   tagsbelems = {}
   tagsielems = {}
-  istagged = set()
-  for inodes, tagnames in zip( inodesbydim[1], tagnamesbydim[1] ):
-    inodes = tuple(inodes)
+  for binodes, tagnames in zip( inodesbydim[1], tagnamesbydim[1] ):
     try:
-      elem = belems.get(inodes)
-      if elem is None:
-        elem = belems[inodes[::-1]]
-        tagnames = [ '~'+tagname for tagname in tagnames ]
-      tagselems = tagsbelems
+      ielem, iedge = edges[ tuple(binodes) ]
     except KeyError:
-      elem = ielems.get(inodes)
-      if elem is None:
-        elem = ielems.pop(inodes[::-1]).flipped
-        assert inodes[::-1] not in istagged, 'opposing interface elements found in group {!r}'.format(','.join(tagnames))
-        ielems[inodes] = elem # flip element to match interface group
-      istagged.add( inodes ) # check for back/forth modification
+      ielem, iedge = edges[ tuple(binodes)[::-1] ]
+      isflipped = True
+    else:
+      isflipped = False
+    elem = elements[ielem].edge(iedge)
+    ioppelem = connectivity[ielem][iedge]
+    if ioppelem == -1:
+      tagselems = tagsbelems
+      assert not isflipped
+    else:
+      ioppedge = tuple(connectivity[ioppelem]).index(ielem)
+      elem = elem.withopposite( elements[ioppelem].edge(ioppedge) )
+      if isflipped: # elem has reversed binodes
+        elem = elem.flipped
       tagselems = tagsielems
     for tagname in tagnames:
       tagselems.setdefault( tagname, [] ).append( elem )
+  if tagsbelems:
+    log.info( 'boundary groups:', ', '.join('{} (#{})'.format(n,len(e)) for n, e in tagsbelems.items() ) )
+  if tagsielems:
+    log.info( 'interface groups:', ', '.join('{} (#{})'.format(n,len(e)) for n, e in tagsielems.items() ) )
 
-  # create and separate point elements by tag
+  # create points topology and separate point elements by tag
   pelems = []
   tagspelems = {}
   pref = element.getsimplex(0)
   for (pinode,), tagnames in zip( inodesbydim[0], tagnamesbydim[0] ):
     pelem = []
-    for inodes, elem in zip( inodesbydim[2], velems ):
+    for inodes, elem in zip( inodesbydim[2], elements ):
       if pinode in inodes:
         ivertex = tuple(inodes).index( pinode )
         offset = elem.reference.vertices[ivertex]
@@ -274,28 +287,19 @@ def gmsh( fname, name=None ):
     pelems.extend( pelem )
     for tagname in tagnames:
       tagspelems.setdefault( tagname, [] ).extend( pelem )
-
-  # log statistics
-  log.info( 'topology (#{}) with groups: {}'.format( len(velems), ', '.join('{} (#{})'.format(n,len(e)) for n, e in tagsvelems.items()) ) )
-  log.info( 'boundary (#{}) with groups: {}'.format( len(belems), ', '.join('{} (#{})'.format(n,len(e)) for n, e in tagsbelems.items() ) ) )
-  log.info( 'interfaces (#{}) with groups: {}'.format( len(ielems), ', '.join('{} (#{})'.format(n,len(e)) for n, e in tagsielems.items() ) ) )
-  log.info( 'points (#{}) with groups: {}'.format( len(pelems), ', '.join('{} (#{})'.format(n,len(e)) for n, e in tagspelems.items() ) ) )
-
-  # create base topology
-  basetopo = topology.UnstructuredTopology( ndims, velems )
-  basetopo.boundary = topology.UnstructuredTopology( ndims-1, belems.values() )
-  basetopo.interfaces = topology.UnstructuredTopology( ndims-1, ielems.values() )
   basetopo.points = topology.UnstructuredTopology( 0, pelems )
+  if tagspelems:
+    log.info( 'points groups:', ', '.join('{} (#{})'.format(n,len(e)) for n, e in tagspelems.items() ) )
 
-  # create volume, boundary, interface, point subtopologies
-  vgroups = { tagname: topology.UnstructuredTopology( ndims, tagvelems ) for tagname, tagvelems in tagsvelems.items() }
-  bgroups = { tagname: topology.UnstructuredTopology( ndims-1, tagbelems ) for tagname, tagbelems in tagsbelems.items() }
-  igroups = { tagname: topology.UnstructuredTopology( ndims-1, tagielems ) for tagname, tagielems in tagsielems.items() }
-  pgroups = { tagname: topology.UnstructuredTopology( 0, tagpelems ) for tagname, tagpelems in tagspelems.items() }
-  topo = basetopo.withgroups( vgroups=vgroups, bgroups=bgroups, igroups=igroups, pgroups=pgroups )
+  # add volume, boundary, interface, point subtopologies
+  topo = basetopo.withgroups(
+    vgroups={ tagname: topology.UnstructuredTopology( ndims, tagvelems ) for tagname, tagvelems in tagsvelems.items() },
+    bgroups={ tagname: topology.UnstructuredTopology( ndims-1, tagbelems ) for tagname, tagbelems in tagsbelems.items() },
+    igroups={ tagname: topology.UnstructuredTopology( ndims-1, tagielems ) for tagname, tagielems in tagsielems.items() },
+    pgroups={ tagname: topology.UnstructuredTopology( 0, tagpelems ) for tagname, tagpelems in tagspelems.items() } )
 
   # create geometry
-  nmap = { elem.transform: inodes for inodes, elem in zip( vinodes, velems ) }
+  nmap = { elem.transform: inodes for inodes, elem in zip( vinodes, elements ) }
   fmap = dict.fromkeys( nmap, triref.stdfunc(1) )
   basis = function.function( fmap=fmap, nmap=nmap, ndofs=len(nodes) )
   geom = ( basis[:,_] * nodes ).sum(0)

@@ -379,7 +379,7 @@ def gmshperiodic():
 
   @unittest
   def interface():
-    err = domain.interfaces['periodic'].elem_eval( geom - function.opposite(geom), ischeme='uniform2', separate=False )
+    err = domain.interfaces['periodic'].elem_eval( function.opposite(geom) - geom, ischeme='uniform2', separate=False )
     numpy.testing.assert_almost_equal( err-[0,1], 0, decimal=15 )
 
   @unittest

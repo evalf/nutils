@@ -477,8 +477,8 @@ class Topology( object ):
   def subset( self, elements, boundaryname=None, precise=False ):
     return SubsetTopology( self, elements, boundaryname, precise )
 
-  def withgroups( self, vgroups={}, bgroups={}, igroups={}, pgroups={} ):
-    return WithGroupsTopology( self, vgroups, bgroups, igroups, pgroups ) if vgroups or bgroups or igroups or pgroups else self
+  def withgroups( self, vgroups={}, bgroups={}, igroups={}, pgroups={}, allowflips=False ):
+    return WithGroupsTopology( self, vgroups, bgroups, igroups, pgroups, allowflips ) if vgroups or bgroups or igroups or pgroups else self
 
   withsubdomain  = lambda self, **kwargs: self.withgroups( vgroups=kwargs )
   withboundary   = lambda self, **kwargs: self.withgroups( bgroups=kwargs )
@@ -647,27 +647,39 @@ class Topology( object ):
 class WithGroupsTopology( Topology ):
   'item topology'
 
-  def __init__( self, basetopo, vgroups={}, bgroups={}, igroups={}, pgroups={} ):
+  def __init__( self, basetopo, vgroups={}, bgroups={}, igroups={}, pgroups={}, allowflips=False ):
     assert vgroups or bgroups or igroups or pgroups
     self.basetopo = basetopo
     self.vgroups = vgroups.copy()
     self.bgroups = bgroups.copy()
     self.igroups = igroups.copy()
     self.pgroups = pgroups.copy()
-    if core.getprop( 'selfcheck', False ):
-      for i, groups in enumerate([ vgroups, bgroups, igroups, pgroups ]):
-        for name, topo in groups.items():
-          assert isinstance( name, str )
-          if isinstance( topo, Topology ):
-            base = basetopo if i == 0 \
-              else basetopo.boundary if i == 1 \
-              else basetopo.interfaces if i == 2 \
-              else basetopo.points
-            assert topo.ndims == base.ndims
-            assert set(base.edict).issuperset(topo.edict)
-          else:
-            assert topo is Ellipsis or isinstance( topo, str )
+    self.allowflips = allowflips # check for opposites if true
     Topology.__init__( self, basetopo.ndims )
+
+    if core.getprop( 'selfcheck', False ):
+      if self.vgroups:
+        for topo in self.vgroups.values():
+          if topo is Ellipsis or isinstance( topo, str ):
+            continue
+          assert isinstance( topo, Topology ) and topo.ndims == basetopo.ndims
+          if not allowflips:
+            assert set(self.basetopo.edict).issuperset(topo.edict)
+          else:
+            for elem in topo:
+              try:
+                ielem = self.basetopo.edict[ elem.transform ]
+              except KeyError:
+                ielem = self.basetopo.edict[ elem.opposite ]
+                assert self.basetopo.elements[ielem].opposite == elem.transform
+              else:
+                assert self.basetopo.elements[ielem].opposite == elem.opposite
+      if self.bgroups:
+        self.boundary
+      if self.igroups:
+        self.interfaces
+      if self.pgroups:
+        self.points
 
   def withgroups( self, vgroups={}, bgroups={}, igroups={}, pgroups={} ):
     args = []
@@ -737,7 +749,7 @@ class WithGroupsTopology( Topology ):
 
   @property
   def interfaces( self ):
-    return self.basetopo.interfaces.withgroups( self.igroups )
+    return self.basetopo.interfaces.withgroups( self.igroups, allowflips=True )
 
   @property
   def points( self ):
@@ -1343,30 +1355,47 @@ class UnstructuredTopology( Topology ):
 
   @cache.property
   @log.title
-  def edge_search( self ):
+  def connectivity( self ):
     edges = {}
-    ifaces = []
-    for elem in log.iter( 'elem', self ):
-      for edge in elem.edges:
-        edgecoords = edge.vertices
-        edgekey = tuple( sorted( edgecoords ) )
+    connectivity = []
+    for ielem, elem in log.enumerate( 'elem', self ):
+      connectivity.append( -numpy.ones( elem.nedges, dtype=int ) )
+      for iedge, belem in enumerate( elem.edges ):
+        belemcoords = belem.vertices
+        edgekey = tuple( sorted( belemcoords ) )
         try:
-          oppedge = edges.pop( edgekey )
+          jelem, jedge = edges.pop( edgekey )
         except KeyError:
-          edges[edgekey] = edge
+          edges[edgekey] = ielem, iedge
         else:
-          ifaces.append( edge.withopposite( oppedge, oriented=False ) )
-    return tuple(edges.values()), tuple(ifaces)
+          # TODO assert transformation equivalence
+          connectivity[ielem][iedge] = jelem
+          connectivity[jelem][jedge] = ielem
+    return tuple( connectivity )
 
   @cache.property
   def boundary( self ):
-    edges, interfaces = self.edge_search
-    return UnstructuredTopology( self.ndims-1, edges )
+    elements = [ elem.edge(iedge) for elem, ioppelems in zip( self, self.connectivity ) for iedge in numpy.where( ioppelems == -1 )[0] ]
+    return UnstructuredTopology( self.ndims-1, elements )
 
   @cache.property
   def interfaces( self ):
-    edges, interfaces = self.edge_search
-    return UnstructuredTopology( self.ndims-1, interfaces )
+    seen = set()
+    elements = []
+    for ielem, ioppelems in enumerate( self.connectivity ):
+      elem = self.elements[ielem]
+      for iedge, ioppelem in enumerate( ioppelems ):
+        if ioppelem == -1:
+          continue
+        try:
+          seen.remove(( ielem, iedge ))
+        except KeyError:
+          ioppedge = tuple(self.connectivity[ioppelem]).index(ielem)
+          oppelem = self.elements[ioppelem]
+          elements.append( elem.edge(iedge).withopposite( oppelem.edge(ioppedge), oriented=False ) )
+          seen.add(( ioppelem, ioppedge ))
+    assert not seen
+    return UnstructuredTopology( self.ndims-1, elements )
 
   def basis_std( self, degree=1 ):
     'std from vertices'
