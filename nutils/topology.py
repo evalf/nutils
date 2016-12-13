@@ -1037,6 +1037,22 @@ class StructuredTopology( Topology ):
     return numeric.asobjvector( element.Element( reference, trans, opp, oriented=True ) for trans, opp in numpy.broadcast( self._transform, self._opposite ) ).reshape( self.shape )
 
   @cache.property
+  def connectivity( self ):
+    connectivity = numpy.empty( self.shape+(self.ndims,2), dtype=int )
+    connectivity[...] = -1
+    ielems = numpy.arange( len(self) ).reshape( self.shape )
+    for idim in range( self.ndims ):
+      s = (slice(None),)*idim
+      s1 = s + (slice(1,None),)
+      s2 = s + (slice(0,-1),)
+      connectivity[s2+(...,idim,0)] = ielems[s1]
+      connectivity[s1+(...,idim,1)] = ielems[s2]
+      if idim in self.periodic:
+        connectivity[s+(-1,...,idim,0)] = ielems[s+(0,)]
+        connectivity[s+(0,...,idim,1)] = ielems[s+(-1,)]
+    return connectivity.reshape( len(self), self.ndims*2 )
+
+  @cache.property
   def boundary( self ):
     'boundary'
 
