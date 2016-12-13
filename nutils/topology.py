@@ -469,13 +469,10 @@ class Topology( object ):
     'trim element along levelset'
 
     fcache = cache.WrapperCache()
-    elements = []
-    for elem in log.iter( 'elem', self ):
-      ref = elem.trim( levelset=levelset, maxrefine=maxrefine, ndivisions=ndivisions, fcache=fcache )
-      if ref:
-        elements.append( element.Element( ref, elem.transform, elem.opposite, oriented=True ) )
+    ischeme = 'vertex{}'.format(maxrefine)
+    refs = [ elem.reference.trim( levelset.eval(elem,ischeme,fcache), maxrefine=maxrefine, ndivisions=ndivisions ) for elem in log.iter( 'elem', self ) ]
     log.debug( 'cache', fcache.stats )
-    return self.subset( elements, newboundary=name, strict=True )
+    return SubsetTopology( self, refs, newboundary=name )
 
   def subset( self, elements, newboundary=None, strict=False ):
     'intersection'

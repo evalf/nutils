@@ -105,11 +105,6 @@ class Element( object ):
     return [ Element( child, self.transform << trans, self.opposite and self.opposite << trans, oriented=True )
       for trans, child in self.reference.children if child ]
 
-  def trim( self, levelset, maxrefine, ndivisions, fcache ):
-    'trim element along levelset'
-
-    return self.reference.trim( (self.transform,levelset), maxrefine, ndivisions, fcache )
-
   @property
   def flipped( self ):
     assert self.opposite, 'element does not define an opposite'
@@ -286,49 +281,19 @@ class Reference( cache.Immutable ):
       return self
     return WithChildrenReference( self, child_refs )
 
-  def trim( self, levels, maxrefine, ndivisions, fcache ):
+  def trim( self, levels, maxrefine, ndivisions ):
     'trim element along levelset'
 
-    assert maxrefine >= 0
-    assert numeric.isint( ndivisions )
-
-    evaluated_levels = isinstance( levels, numpy.ndarray )
-    if not evaluated_levels: # levelset is not evaluated
-      trans, levelfun = levels
-      trylevels = levelfun.eval( Element(self,trans), 'vertex%d' % maxrefine, fcache )
-      if trylevels.shape[0] > 1: # TODO replace with proper check for evaluation success
-        levels = trylevels
-        evaluated_levels = True
-
-    if evaluated_levels and ( levels > 0 ).all():
-      trimmed = self
-    elif evaluated_levels and ( levels < 0 ).all():
-      trimmed = self.empty
-    elif maxrefine > 0:
-      childrefs = []
-      for ichild, (ctrans,child) in enumerate( self.children ):
-        if not child:
-          cref = child
-        else:
-          if evaluated_levels:
-            N, I = fcache[self.subvertex]( ichild, maxrefine )
-            assert len(levels) == N
-            childlevels = levels[I]
-          else:
-            trans, levelfun = levels
-            childlevels = trans << ctrans, levelfun
-          cref = child.trim( childlevels, maxrefine-1, ndivisions, fcache )
-        childrefs.append( cref )
-      trimmed = self.with_children( childrefs )
-    else:
-      assert evaluated_levels, 'failed to evaluate levelset up to level maxrefine'
-      trimmed = self.slice( levels, ndivisions )
-
-    return trimmed
+    return self if not self or ( levels >= 0 ).all() \
+      else self.empty if ( levels <= 0 ).all() \
+      else self.with_children( cref.trim( clevels, maxrefine-1, ndivisions )
+            for cref, clevels in zip( self.child_refs, self.child_divide(levels,maxrefine) ) ) if maxrefine > 0 \
+      else self.slice( numeric.dot( self.stdfunc(1).eval(self.vertices), levels ), ndivisions )
 
   def slice( self, levels, ndivisions ):
     # slice along levelset by recursing over dimensions
 
+    assert numeric.isint( ndivisions )
     assert len(levels) == self.nverts
     if numpy.all( levels >= 0 ):
       return self
@@ -573,13 +538,14 @@ class LineReference( SimplexReference ):
   def getischeme_bezier( self, np ):
     return numpy.linspace( 0, 1, np )[:,_], None
 
-  def subvertex( self, ichild, i ):
-    if i == 0:
-      assert ichild == 0
-      return self.nverts, numpy.arange(self.nverts)
-    assert 0 <= ichild < 2
-    n = 2**i+1
-    return n, numpy.arange(n//2+1) if ichild == 0 else numpy.arange(n//2,n)
+  def nvertices_by_level( self, n ):
+    return 2**n + 1
+
+  def child_divide( self, vals, n ):
+    assert n > 0
+    assert len(vals) == self.nvertices_by_level(n)
+    m = (len(vals)+1) // 2
+    return vals[:m], vals[m-1:]
 
   def inside( self, points, eps=0 ):
     points = numpy.asarray( points, dtype=float )
@@ -668,28 +634,19 @@ class TriangleReference( SimplexReference ):
     points = numpy.linspace( 0, 1, np )
     return numpy.array([ [x,y] for i, y in enumerate(points) for x in points[:np-i] ]), None
 
-  def subvertex( self, ichild, irefine ):
-    if irefine == 0:
-      assert ichild == 0
-      return self.nverts, numpy.arange(self.nverts)
+  def nvertices_by_level( self, n ):
+    m = 2**n + 1
+    return ((m+1)*m) // 2
 
-    N = 1 + 2**irefine # points along parent edge
-    n = 1 + 2**(irefine-1) # points along child edge
-
-    flatten_parent = lambda i, j: j + i*N - (i*(i-1))//2
-
-    if ichild == 0: # lower left
-      flatten_child = lambda i, j: flatten_parent( i, j )
-    elif ichild == 1: # upper left
-      flatten_child = lambda i, j: flatten_parent( n-1+i, j )
-    elif ichild == 2: # lower right
-      flatten_child = lambda i, j: flatten_parent( i, n-1+j )
-    elif ichild == 3: # inverted
-      flatten_child = lambda i, j: flatten_parent( i+j, n-1-j )
-    else:
-      raise Exception( 'invalid ichild: {}'.format( ichild ) )
-
-    return ((N+1)*N)//2, numpy.concatenate([ flatten_child(i,numpy.arange(n-i)) for i in range(n) ])
+  def child_divide( self, vals, n ):
+    assert len(vals) == self.nvertices_by_level(n)
+    np = 1 + 2**n # points along parent edge
+    mp = 1 + 2**(n-1) # points along child edge
+    cvals = []
+    for i in range(mp):
+      j = numpy.arange(mp-i)
+      cvals.append( [ vals[b+a*np-(a*(a-1))//2] for a, b in [(i,j),(mp-1+i,j),(i,mp-1+j),(i+j,mp-1-j)] ] )
+    return numpy.concatenate( cvals, axis=1 )
 
   def inside( self, points, eps=0 ):
     points = numpy.asarray( points, dtype=float )
@@ -786,11 +743,15 @@ class TensorReference( Reference ):
   def volume( self ):
     return self.ref1.volume * self.ref2.volume
 
-  def subvertex( self, ichild, i ):
-    ichild1, ichild2 = divmod( ichild, len(self.ref2.child_transforms) )
-    N1, I1 = self.ref1.subvertex( ichild1, i )
-    N2, I2 = self.ref2.subvertex( ichild2, i )
-    return N1 * N2, ( N2 * I1[:,_] + I2[_,:] ).ravel()
+  def nvertices_by_level( self, n ):
+    return self.ref1.nvertices_by_level(n) * self.ref2.nvertices_by_level(n)
+
+  def child_divide( self, vals, n ):
+    np1 = self.ref1.nvertices_by_level(n)
+    np2 = self.ref2.nvertices_by_level(n)
+    return [ v2.swapaxes(0,1).reshape((-1,)+vals.shape[1:])
+      for v1 in self.ref1.child_divide( vals.reshape((np1,np2)+vals.shape[1:]), n )
+        for v2 in self.ref2.child_divide( v1.swapaxes(0,1), n ) ]
 
   def stdfunc( self, degree, *n ):
     if n:
@@ -1219,6 +1180,12 @@ class WithChildrenReference( Reference ):
   def volume( self ):
     return sum( abs(trans.det) * ref.volume for trans, ref in self.children )
 
+  def nvertices_by_level( self, n ):
+    return self.baseref.nvertices_by_level(n)
+
+  def child_divide( self, vals, n ):
+    return self.baseref.child_divide( vals, n )
+
   __sub__ = lambda self, other: self.empty if other in (self,self.baseref) else self.baseref.with_children( self_child-other_child for self_child, other_child in zip( self.child_refs, other.child_refs ) ) if isinstance( other, WithChildrenReference ) and other.baseref in (self,self.baseref) else NotImplemented
   __rsub__ = lambda self, other: self.baseref.with_children( other_child - self_child for self_child, other_child in zip( self.child_refs, other.child_refs ) ) if other == self.baseref else NotImplemented
   __and__ = lambda self, other: self if other == self.baseref else other if isinstance(other,WithChildrenReference) and self == other.baseref else self.baseref.with_children( self_child & other_child for self_child, other_child in zip( self.child_refs, other.child_refs ) ) if isinstance( other, WithChildrenReference ) and other.baseref == self.baseref else NotImplemented
@@ -1260,7 +1227,7 @@ class WithChildrenReference( Reference ):
     'get integration scheme'
     
     if ischeme.startswith('vertex'):
-      ischeme = 'vertex%d' % (int(ischeme[6:])-1)
+      return self.baseref.getischeme( ischeme )
 
     allcoords = []
     allweights = []
@@ -1422,6 +1389,9 @@ class MosaicReference( Reference ):
       return MosaicReference( other, inv_edge_refs, self._midpoint )
     return NotImplemented
 
+  def nvertices_by_level( self, n ):
+    return self.baseref.nvertices_by_level( n )
+
   @cache.property
   def subrefs( self ):
     return [ ref.cone(trans,self._midpoint) for trans, ref in zip( self.baseref.edge_transforms, self._edge_refs ) if ref ]
@@ -1470,8 +1440,7 @@ class MosaicReference( Reference ):
     'get integration scheme'
     
     if ischeme.startswith('vertex'):
-      assert ischeme=='vertex' or ischeme=='vertex0'
-      return self.vertices, None
+      return self.baseref.getischeme( ischeme )
 
     allpoints, allweights = zip( *[ subvol.getischeme(ischeme) for subvol in self.subrefs ] )
     points = numpy.concatenate( allpoints, axis=0 )
@@ -1683,7 +1652,6 @@ class PolyLine( StdElem ):
     'evaluate'
 
     assert points.shape[-1] == 1
-    assert points.dtype == float
     x = points[...,0]
 
     if grad > self.degree:
