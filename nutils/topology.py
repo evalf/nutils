@@ -109,9 +109,9 @@ class Topology( object ):
     for iface in self:
       if not iface.transform.lookup( outward.edict ):
         assert iface.opposite.lookup( outward.edict ), 'interface not adjacent to outward topo'
-        iface = element.Element( iface.reference, iface.opposite, iface.transform )
+        iface = iface.flipped
       if inward:
-        assert iface.opposite.lookup( inward.edict ), 'interface no adjacent to inward topo'
+        assert iface.opposite.lookup( inward.edict ), 'interface not adjacent to inward topo'
       directed.append( iface )
     return UnstructuredTopology( self.ndims, directed )
 
