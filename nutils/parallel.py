@@ -14,7 +14,7 @@ will disable and a warning is printed.
 """
 
 from . import core, log, numpy, debug, numeric
-import os, sys, multiprocessing
+import os, sys, multiprocessing, tempfile, mmap
 
 procid = None # current process id, None for unforked
 
@@ -25,20 +25,31 @@ def shzeros( shape, dtype=float ):
     shape = shape,
   else:
     assert all( numeric.isint(sh) for sh in shape )
-  size = numpy.product( shape ) if shape else 1
-  if dtype == float:
-    typecode = 'd'
-    dtype = numpy.float64
-  elif dtype == int:
-    typecode = 'i'
-    dtype = numpy.int32
-  elif dtype == bool:
-    typecode = 'b'
-    dtype = numpy.int8
-  else:
-    raise Exception( 'invalid dtype: %r' % dtype )
-  buf = multiprocessing.RawArray( typecode, int(size) )
-  return numpy.frombuffer( buf, dtype ).reshape( shape )
+  dtype = numpy.dtype( dtype )
+  size = ( numpy.product( shape ) if shape else 1 ) * dtype.itemsize
+  if size == 0:
+    return numpy.zeros( shape, dtype )
+  fd, name = tempfile.mkstemp( dir=core.getprop( 'shmdir', default=None ) )
+  try:
+    os.unlink(name)
+    # Make sure the entire file is allocated by writing zeros.  If we omit
+    # this, writing to the mmap array will cause the process to be killed with
+    # SIGBUS if there is no memory available.
+    with open( fd, 'wb', closefd=False ) as f:
+      bs = 1024 * 1024
+      if size >= bs:
+        zeros = b'\0' * bs
+        for i in range( size // bs ):
+          f.write( zeros )
+        del zeros
+      f.write( b'\0' * (size % bs) )
+      assert f.tell() == size
+    buf = mmap.mmap( fd, size )
+  finally:
+    os.close(fd)
+  array = numpy.frombuffer( buf, dtype ).reshape( shape )
+  assert array.ravel()[0] == 0, '{!r} is not interpreted as 0 ({})'.format(b'\x00'*dtype.itemsize, dtype)
+  return array
 
 def pariter( iterable, nprocs ):
   '''iterate in parallel

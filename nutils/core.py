@@ -28,6 +28,9 @@ globalproperties = {
   'selfcheck': False,
 }
 
+if os.access( '/run/shm', os.W_OK ):
+  globalproperties['shmdir'] = '/run/shm'
+
 for nutilsrc in ['~/.config/nutils/config', '~/.nutilsrc']:
   nutilsrc = os.path.expanduser( nutilsrc )
   if not os.path.isfile( nutilsrc ):
