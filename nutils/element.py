@@ -1389,6 +1389,8 @@ class MosaicReference( Reference ):
   def __and__( self, other ):
     if other in (self,self.baseref):
       return self
+    if isinstance( other, MosaicReference ) and other.baseref == self:
+      return other
     if isinstance( other, MosaicReference ) and self.baseref == other.baseref and numpy.all( other._midpoint == self._midpoint ):
       isect_edge_refs = [ selfedge & otheredge for selfedge, otheredge in zip( self._edge_refs, other._edge_refs ) ]
       if not any(isect_edge_refs):
