@@ -228,12 +228,7 @@ def gmsh( fname, name=None ):
       except KeyError:
         belems[tuple(binodes)] = elem.edge(iedge)
       else:
-        oppbelem = elem.edge(iedge)
-        assert belem.reference == oppbelem.reference
-        opptrans = oppbelem.transform
-        if belem.transform.isflipped == opptrans.isflipped:
-          opptrans <<= flip
-        ielems[tuple(binodes)] = element.Element( belem.reference, belem.transform, opptrans )
+        ielems[tuple(binodes)] = belem.withopposite( elem.edge(iedge), oriented=False )
 
   # separate volume elements by tag
   tagsvelems = {}

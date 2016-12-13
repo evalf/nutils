@@ -25,38 +25,51 @@ import re, warnings, math
 class Element( object ):
   'element class'
 
-  __slots__ = 'transform', 'reference', '__opposite'
+  __slots__ = 'reference', 'transform', 'opposite'
 
-  def __init__( self, reference, trans, opposite=None ):
+  def __init__( self, reference, trans, opptrans=None, oriented=False ):
     assert isinstance( reference, Reference )
-    assert trans.fromdims == reference.ndims
-    assert trans.todims == None
+    assert isinstance( trans, transform.TransformChain ) and trans.fromdims == reference.ndims and trans.todims == None
+    trans = trans.canonical
+    if opptrans is not None:
+      assert isinstance( opptrans, transform.TransformChain ) and opptrans.fromdims == reference.ndims and opptrans.todims == None
+      opptrans = opptrans.canonical
+      if not oriented:
+        vtx1 = trans.apply( reference.vertices )
+        vtx2 = opptrans.apply( reference.vertices )
+        if vtx1 != vtx2:
+          assert reference.ndims == 1 # TODO leverage rotation information from element
+          assert vtx1 == vtx2[::-1]
+          opptrans <<= transform.affine( -1, [1] )
     self.reference = reference
-    self.transform = trans.canonical
-    if opposite is not None:
-      opposite = opposite.canonical
-      if opposite == self.transform:
-        opposite = None
-    self.__opposite = opposite
+    self.transform = trans
+    self.opposite = opptrans
+
+  def withopposite( self, opp, oriented=False ):
+    if isinstance( opp, transform.TransformChain ):
+      return Element( self.reference, self.transform, opp, oriented )
+    assert isinstance( opp, Element ) and opp.reference == self.reference
+    return Element( self.reference, self.transform, opp.transform, oriented or opp.opposite==self.transform )
 
   def __mul__( self, other ):
-    return Element( self.reference * other.reference, transform.stack(self.transform,other.transform), transform.stack(self.opposite,other.opposite) )
+    if self.opposite or other.opposite:
+      assert not self.opposite or not other.opposite, 'cannot multiply two interface elements'
+      opposite = transform.stack( self.opposite or self.transform, other.opposite or other.transform )
+    else:
+      opposite = None
+    return Element( self.reference * other.reference, transform.stack( self.transform, other.transform ), opposite, oriented=True )
 
   def __getnewargs__( self ):
-    return self.reference, self.transform, self.__opposite
-
-  @property
-  def opposite( self ):
-    return self.__opposite or self.transform
+    return self.reference, self.transform, self.opposite, True
 
   def __hash__( self ):
-    return hash(( self.reference, self.transform, self.__opposite ))
+    return hash(( self.reference, self.transform, self.opposite ))
 
   def __eq__( self, other ):
     return self is other or isinstance(other,Element) \
       and self.reference == other.reference \
       and self.transform == other.transform \
-      and self.__opposite == other.__opposite
+      and self.opposite == other.opposite
 
   @property
   def vertices( self ):
@@ -80,16 +93,16 @@ class Element( object ):
     
   def edge( self, iedge ):
     trans, edge = self.reference.edges[iedge]
-    return Element( edge, self.transform << trans, self.__opposite and self.__opposite << trans ) if edge else None
+    return Element( edge, self.transform << trans, self.opposite and self.opposite << trans, oriented=True ) if edge else None
 
   def getedge( self, trans ):
     iedge = self.reference.edge_transforms.index(trans)
     edge = self.reference.edge_refs[iedge]
-    return edge and Element( edge, self.transform << trans, self.__opposite and self.__opposite << trans )
+    return edge and Element( edge, self.transform << trans, self.opposite and self.opposite << trans, oriented=True )
 
   @property
   def children( self ):
-    return [ Element( child, self.transform << trans, self.__opposite and self.__opposite << trans )
+    return [ Element( child, self.transform << trans, self.opposite and self.opposite << trans, oriented=True )
       for trans, child in self.reference.children if child ]
 
   def trim( self, levelset, maxrefine, ndivisions, fcache ):
@@ -99,11 +112,12 @@ class Element( object ):
 
   @property
   def flipped( self ):
-    return Element( self.reference, self.__opposite, self.transform ) if self.__opposite else self
+    assert self.opposite, 'element does not define an opposite'
+    return Element( self.reference, self.opposite, self.transform, oriented=True )
 
   @property
   def simplices( self ):
-    return [ Element( reference, self.transform << trans, self.__opposite and self.__opposite << trans )
+    return [ Element( reference, self.transform << trans, self.opposite and self.opposite << trans, oriented=True )
       for trans, reference in self.reference.simplices ]
 
   def __str__( self ):

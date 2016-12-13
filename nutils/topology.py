@@ -470,7 +470,7 @@ class Topology( object ):
     for elem in log.iter( 'elem', self ):
       ref = elem.trim( levelset=levelset, maxrefine=maxrefine, ndivisions=ndivisions, fcache=fcache )
       if ref:
-        elements.append( element.Element( ref, elem.transform, elem.opposite ) )
+        elements.append( element.Element( ref, elem.transform, elem.opposite, oriented=True ) )
     log.debug( 'cache', fcache.stats )
     return self.subset( elements, boundaryname=name, precise=True )
 
@@ -602,7 +602,7 @@ class Topology( object ):
       trans = transform.affine( linear=1, offset=xi[0] )
       for idim in range(self.ndims,0,-1): # transcend dimensions one by one to produce valid transformation
         trans <<= transform.affine( linear=numpy.eye(idim)[:,:-1], offset=numpy.zeros(idim), isflipped=False )
-      pelems.append( element.Element( vref, elem.transform << trans, elem.opposite << trans ) )
+      pelems.append( element.Element( vref, elem.transform << trans, elem.opposite << trans, oriented=True ) )
     return UnstructuredTopology( 0, pelems )
 
   def supp( self, basis, mask=None ):
@@ -796,7 +796,7 @@ class Point( Topology ):
 
   def __init__( self, trans, opposite=None ):
     assert isinstance( trans, transform.TransformChain ) and trans.fromdims == 0
-    self.elem = element.Element( element.getsimplex(0), trans, opposite )
+    self.elem = element.Element( element.getsimplex(0), trans, opposite, oriented=True )
     Topology.__init__( self, ndims=0 )
 
   def __iter__( self ):
@@ -938,7 +938,7 @@ class StructuredTopology( Topology ):
 
   def __iter__( self ):
     reference = element.getsimplex(1)**self.ndims
-    return ( element.Element( reference, trans, opp ) for trans, opp in zip( self._transform.flat, self._opposite.flat ) )
+    return ( element.Element( reference, trans, opp, oriented=True ) for trans, opp in zip( self._transform.flat, self._opposite.flat ) )
 
   def __len__( self ):
     return numpy.prod( self.shape, dtype=int )
@@ -1022,7 +1022,7 @@ class StructuredTopology( Topology ):
   def structure( self ):
     warnings.warn( 'topology.structure will be removed in future', DeprecationWarning )
     reference = element.getsimplex(1)**self.ndims
-    return numeric.asobjvector( element.Element( reference, trans, opp ) for trans, opp in numpy.broadcast( self._transform, self._opposite ) ).reshape( self.shape )
+    return numeric.asobjvector( element.Element( reference, trans, opp, oriented=True ) for trans, opp in numpy.broadcast( self._transform, self._opposite ) ).reshape( self.shape )
 
   @cache.property
   def boundary( self ):
@@ -1355,16 +1355,7 @@ class UnstructuredTopology( Topology ):
         except KeyError:
           edges[edgekey] = edge
         else:
-          assert edge.reference == oppedge.reference
-          oppedgecoords = oppedge.vertices
-          opptrans = oppedge.transform
-          if oppedgecoords != edgecoords: # TODO leverage rotation information from element
-            if edge.reference.nverts == 2:
-              assert edgecoords == oppedgecoords[::-1]
-              opptrans <<= transform.affine( -1, [1] )
-            else:
-              raise NotImplementedError
-          ifaces.append( element.Element( edge.reference, edge.transform, opptrans ) )
+          ifaces.append( edge.withopposite( oppedge, oriented=False ) )
     return tuple(edges.values()), tuple(ifaces)
 
   @cache.property
@@ -1513,7 +1504,7 @@ class UnionTopology( Topology ):
         unionref, = refs
         opposite = elems[0].opposite
         assert all( elem.opposite == opposite for elem in elems[1:] )
-        elements.append( element.Element( unionref, trans, opposite ) )
+        elements.append( element.Element( unionref, trans, opposite, oriented=True ) )
     return elements
 
   @property
@@ -1551,7 +1542,7 @@ class SubtractionTopology( Topology ):
       else:
         ref = elem.reference - self.subtopo.elements[index].reference
         if ref:
-          elements.append( element.Element( ref, elem.transform, elem.opposite ) )
+          elements.append( element.Element( ref, elem.transform, elem.opposite, oriented=True ) )
     return elements
 
   @property
@@ -1580,7 +1571,7 @@ class SubtractionTopology( Topology ):
           else:
             edge = ref.edge_refs[index] & belem.reference
             if edge:
-              belems.append( element.Element( edge, belem.transform, belem.opposite ) )
+              belems.append( element.Element( edge, belem.transform, belem.opposite, oriented=True ) )
       btopo |= boundary.subset( belems, precise=True )
     return btopo
 
@@ -1613,7 +1604,7 @@ class SubtractionTopology( Topology ):
         assert subielem.opposite == ielem.opposite
         ref -= subielem.reference
       if ref:
-        ielems.append( element.Element( ref, ielem.transform, ielem.opposite ) )
+        ielems.append( element.Element( ref, ielem.transform, ielem.opposite, oriented=True ) )
     return UnstructuredTopology( self.ndims-1, ielems )
 
   @log.title
@@ -1650,7 +1641,7 @@ class SubsetTopology( Topology ):
       if index is not None:
         ref = self.basetopo.elements[index].reference & elem.reference
         if ref:
-          elements.append( element.Element( ref, elem.transform, elem.opposite ) )
+          elements.append( element.Element( ref, elem.transform, elem.opposite, oriented=True ) )
     return elements
 
   @property
@@ -1687,13 +1678,13 @@ class SubsetTopology( Topology ):
       else:
         ifaceref = edge & oppedge
         if ifaceref:
-          ielems.append( element.Element( ifaceref, iface.transform, iface.opposite ) )
+          ielems.append( element.Element( ifaceref, iface.transform, iface.opposite, oriented=True ) )
         edgeref = edge - oppedge
         if edgeref:
-          belems.append( element.Element( edgeref, iface.transform, iface.opposite ) )
+          belems.append( element.Element( edgeref, iface.transform, iface.opposite, oriented=True ) )
         edgeref = oppedge - edge
         if edgeref:
-          oppbelems.append( element.Element( edgeref, iface.transform, iface.opposite ) )
+          oppbelems.append( element.Element( edgeref, iface.transform, iface.opposite, oriented=True ) )
     return tuple(belems), tuple(oppbelems), tuple(ielems)
 
   @cache.property
@@ -1708,7 +1699,7 @@ class SubsetTopology( Topology ):
     for elem in self:
       index = self.basetopo.edict[ elem.transform ]
       n = self.basetopo.elements[index].reference.nedges
-      cut.extend( element.Element( edge, elem.transform<<trans, elem.transform<<trans.flipped ) for trans, edge in elem.reference.edges[n:] )
+      cut.extend( element.Element( edge, elem.transform<<trans, elem.transform<<trans.flipped, oriented=True ) for trans, edge in elem.reference.edges[n:] )
     return UnstructuredTopology( self.ndims-1, cut ) if cut else EmptyTopology( self.ndims-1 )
 
   @cache.property
@@ -1735,7 +1726,7 @@ class SubsetTopology( Topology ):
         iedge = ref.edge_transforms.index( tail )
         edge = ref.edge_refs[iedge]
         if edge:
-          belems.append( element.Element( edge, belem.transform, belem.opposite ) )
+          belems.append( element.Element( edge, belem.transform, belem.opposite, oriented=True ) )
     origboundary = basebtopo.subset( belems, precise=True )
 
     return UnionTopology( [trimboundary,origboundary], [self.boundaryname] if self.boundaryname else [] )
@@ -1779,7 +1770,7 @@ class TrimmedTopologyItem( Topology ):
     for elem in self.basetopo:
       ref = elem.reference & self.refdict[elem.transform]
       if ref:
-        elements.append( element.Element( ref, elem.transform, elem.opposite ) )
+        elements.append( element.Element( ref, elem.transform, elem.opposite, oriented=True ) )
     return elements
 
 class TrimmedTopologyBoundaryItem( Topology ):
@@ -1837,7 +1828,7 @@ class HierarchicalTopology( Topology ):
       else:
         ref &= elem.reference
         if ref:
-          itemelems.append( element.Element( ref, elem.transform, elem.opposite ) )
+          itemelems.append( element.Element( ref, elem.transform, elem.opposite, oriented=True ) )
     return itemelems
 
   @cache.property
@@ -1876,7 +1867,7 @@ class HierarchicalTopology( Topology ):
         pass
       else:
         opptrans = basebtopo.elements[iedge].opposite << tail
-        belems.append( element.Element( edge.reference, edge.transform, opptrans ) )
+        belems.append( element.Element( edge.reference, edge.transform, opptrans, oriented=True ) )
     return basebtopo.hierarchical( belems, precise=True )
 
   @log.title

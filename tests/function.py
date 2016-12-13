@@ -65,7 +65,7 @@ def check( op, n_op, shapes, hasgrad=True ):
   axes = topology.DimAxis(0,1,False), topology.DimAxis(0,1,False)
   domain = topology.StructuredTopology( root=anchor<<roottrans, axes=axes )
   elem, = domain
-  iface = element.Element( elem.edge(0).reference, elem.edge(0).transform, elem.edge(1).transform )
+  iface = element.Element( elem.edge(0).reference, elem.edge(0).transform, elem.edge(1).transform, oriented=True )
   ifpoints, ifweights = iface.reference.getischeme('uniform2')
 
   r, theta = function.rootcoords( 2 ) # corners at (0,0), (0,1), (1,1), (1,0)
