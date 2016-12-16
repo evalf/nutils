@@ -107,7 +107,7 @@ class PyPlot( BasePlot ):
       log.warning( 'failed to close figure: {}'.format(e) )
     self._fig = None
 
-  def save( self, name=None, index=None ):
+  def save( self, name=None, index=None, **kwargs ):
     'save images'
 
     assert self._fig, 'figure is closed'
@@ -115,7 +115,7 @@ class PyPlot( BasePlot ):
     for ext in self.imgtype.split( ',' ):
       path, relpath = self.getpath(name,index,ext)
       relpaths.append( relpath )
-      self.savefig( path )
+      self.savefig( path, **kwargs )
     log.path( ' '.join( relpaths ) )
 
   def segments( self, points, color='black', **kwargs ):
