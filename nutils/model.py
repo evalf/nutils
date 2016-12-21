@@ -206,7 +206,7 @@ def solve( gen_lhs_resnorm, tol=1e-10, maxiter=numpy.inf ):
     return lhs
   
 
-def newton( target, residual, lhs0=None, freezedofs=None, nrelax=5, maxrelax=.9 ):
+def newton( target, residual, lhs0=None, freezedofs=None, nrelax=5, minrelax=.01, maxrelax=.9, rebound=2**.5 ):
   '''iteratively solve nonlinear problem by gradient descent
 
   Generates targets such that residual approaches 0 using Newton procedure with
@@ -216,10 +216,10 @@ def newton( target, residual, lhs0=None, freezedofs=None, nrelax=5, maxrelax=.9 
   An optimal relaxation value is computed based on the following parabolic
   assumption:
 
-      | res( lhs + r * dlhs ) |^2 = A + B * r + C * r^2 + D * r^3
+      | res( lhs + r * dlhs ) |^2 = A + B * r + C * r^2
 
-  where A, B, C and D are determined based on the current and updated residual
-  value and tangent.
+  where A, B and C are determined based on the current residual and tangent and
+  the updated residual.
 
   Parameters
   ----------
@@ -234,9 +234,16 @@ def newton( target, residual, lhs0=None, freezedofs=None, nrelax=5, maxrelax=.9 
   nrelax : int
       Maximum number of relaxation steps before proceding with the updated
       coefficient vector.
+  minrelax : float
+      Lower bound for the relaxation value, to force re-evaluating the
+      functional in situation where the parabolic assumption would otherwise
+      result in unreasonably small steps.
   maxrelax : float
       Relaxation value below which relaxation continues, unless ``nrelax`` is
       reached; should be a value less than or equal to 1.
+  rebound : float
+      Factor by which the relaxation value grows after every update until it
+      reaches unity.
 
   Yields
   ------
@@ -265,39 +272,44 @@ def newton( target, residual, lhs0=None, freezedofs=None, nrelax=5, maxrelax=.9 
   res, jac = Integral.multieval( residual.replace(target,lhs), jacobian.replace(target,lhs), fcache=fcache )
   zcons = numpy.zeros( len(target) )
   zcons[~freezedofs] = numpy.nan
+  relax = 1
   while True:
     resnorm = numpy.linalg.norm( res[~freezedofs] )
     yield lhs, resnorm
     dlhs = -jac.solve( res, constrain=zcons )
-    relax = 1
+    relax *= rebound
+    if relax < 1:
+      log.info( 'continuing with relaxation {:.5f}'.format(relax) )
+    else:
+      relax = 1
     for irelax in itertools.count():
       res, jac = Integral.multieval( residual.replace(target,lhs+relax*dlhs), jacobian.replace(target,lhs+relax*dlhs), fcache=fcache )
       newresnorm = numpy.linalg.norm( res[~freezedofs] )
       if irelax >= nrelax:
-        assert newresnorm < resnorm, 'stuck in local minimum'
+        if newresnorm > resnorm:
+          log.warning( 'failed to decrease residual' )
+          return
         break
-      # endpoint values, derivatives
-      r0 = resnorm**2
-      d0 = -2 * relax * resnorm**2
-      r1 = newresnorm**2
-      d1 = 2 * relax * numpy.dot( jac.matvec(dlhs)[~freezedofs], res[~freezedofs] )
-      # polynomial coefficients
-      A = r0
-      B = d0
-      C = 3*r1 - 3*r0 - 2*d0 - d1
-      D = d0 + d1 + 2*r0 - 2*r1
-      # optimization
-      discriminant = C**2 - 3*B*D
-      if discriminant < 0: # monotomously decreasing
-        break
-      malpha = -C / (3*D)
-      dalpha = numpy.sqrt(discriminant) / abs(3*D)
-      newrelax = malpha + dalpha if malpha < dalpha else malpha - dalpha # smallest positive root
-      if newrelax > maxrelax:
-        break
-      assert newrelax > 0, 'newrelax should be strictly positive, computed {!r}'.format(newrelax)
-      log.info( 'relaxation {0:}: scaling by {1:.3f}'.format( irelax+1, newrelax ) )
-      relax *= newrelax
+      if not numpy.isfinite( newresnorm ):
+        log.info( 'failed to evaluate residual ({})'.format( newresnorm ) )
+        newrelax = 0 # replaced by minrelax later
+      else:
+        r0 = resnorm**2
+        d0 = -2 * r0
+        r1 = newresnorm**2
+        d1 = 2 * numpy.dot( jac.matvec(dlhs)[~freezedofs], res[~freezedofs] )
+        log.info( 'residual > 1-{}{:+.1f} > {}creased by {:.0f}%'.format( '--++' if d1 > 0 else '-++-' if r1 > r0 else '----', -d1/d0, 'in' if newresnorm > resnorm else 'de', 100*abs(newresnorm/resnorm-1) ) )
+        if r1 < r0 and d1 < 0:
+          break
+        newrelax = r0 / (r0+r1)
+        if newrelax > maxrelax:
+          break
+      if newrelax < minrelax:
+        log.info( 'relaxation {0:}: scaling by {1:} (truncated)'.format( irelax+1, minrelax ) )
+        relax *= minrelax
+      else:
+        log.info( 'relaxation {0:}: scaling by {1:.3f}'.format( irelax+1, newrelax ) )
+        relax *= newrelax
     lhs += relax * dlhs
 
 
