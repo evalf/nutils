@@ -373,7 +373,7 @@ def impliciteuler( target, residual, inertia, timestep, lhs0, residual0=None, fr
   Yields
   ------
   vector
-      Coefficient vector that approximates residual==0 with increasing accuracy
+      Coefficient vector for all timesteps after the initial condition.
   '''
 
   res = residual + inertia / timestep
@@ -382,5 +382,5 @@ def impliciteuler( target, residual, inertia, timestep, lhs0, residual0=None, fr
     res0 += residual0
   lhs = lhs0
   while True:
-    yield lhs
     lhs = solve( newton( target, residual=res0.replace(target,lhs) + res, lhs0=lhs, freezedofs=freezedofs, **newtonargs ), tol=tol )
+    yield lhs
