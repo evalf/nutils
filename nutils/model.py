@@ -206,20 +206,20 @@ def solve( gen_lhs_resnorm, tol=1e-10, maxiter=numpy.inf ):
     return lhs
   
 
-def newton( target, residual, lhs0=None, freezedofs=None, nrelax=5, minrelax=.01, maxrelax=.9, rebound=2**.5 ):
+def newton( target, residual, lhs0=None, freezedofs=None, nrelax=5, minrelax=.1, maxrelax=.9, rebound=2**.5 ):
   '''iteratively solve nonlinear problem by gradient descent
 
   Generates targets such that residual approaches 0 using Newton procedure with
   line search based on a residual integral. Suitable to be used inside
   ``solve``.
 
-  An optimal relaxation value is computed based on the following parabolic
+  An optimal relaxation value is computed based on the following cubic
   assumption:
 
-      | res( lhs + r * dlhs ) |^2 = A + B * r + C * r^2
+      | res( lhs + r * dlhs ) |^2 = A + B * r + C * r^2 + D * r^3
 
-  where A, B and C are determined based on the current residual and tangent and
-  the updated residual.
+  where A, B, C and D are determined based on the current and updated residual
+  and tangent.
 
   Parameters
   ----------
@@ -299,9 +299,19 @@ def newton( target, residual, lhs0=None, freezedofs=None, nrelax=5, minrelax=.01
         r1 = newresnorm**2
         d1 = 2 * numpy.dot( jac.matvec(dlhs)[~freezedofs], res[~freezedofs] )
         log.info( 'residual > 1-{}{:+.1f} > {}creased by {:.0f}%'.format( '--++' if d1 > 0 else '-++-' if r1 > r0 else '----', -d1/d0, 'in' if newresnorm > resnorm else 'de', 100*abs(newresnorm/resnorm-1) ) )
-        if r1 < r0 and d1 < 0:
+        if r1 <= r0 and d1 <= 0:
           break
-        newrelax = r0 / (r0+r1)
+        D = 2*r0 - 2*r1 + d0 + d1
+        if D > 0:
+          C = 3*r1 - 3*r0 - 2*d0 - d1
+          newrelax = ( numpy.sqrt(C**2-3*d0*D) - C ) / (3*D)
+          log.info( 'minimum based on 3rd order estimation: {:.3f}'.format(newrelax) )
+        else:
+          C = r1 - r0 - d0
+          # r1 > r0 => C > 0
+          # d1 > 0  => C = r1 - r0 - d0/2 - d0/2 > r1 - r0 - d0/2 - d1/2 = -D/2 > 0
+          newrelax = -.5 * d0 / C
+          log.info( 'minimum based on 2nd order estimation: {:.3f}'.format(newrelax) )
         if newrelax > maxrelax:
           break
       if newrelax < minrelax:
