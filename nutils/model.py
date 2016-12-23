@@ -277,11 +277,7 @@ def newton( target, residual, lhs0=None, freezedofs=None, nrelax=5, minrelax=.1,
     resnorm = numpy.linalg.norm( res[~freezedofs] )
     yield lhs, resnorm
     dlhs = -jac.solve( res, constrain=zcons )
-    relax *= rebound
-    if relax < 1:
-      log.info( 'continuing with relaxation {:.5f}'.format(relax) )
-    else:
-      relax = 1
+    relax = min( relax * rebound, 1 )
     for irelax in itertools.count():
       res, jac = Integral.multieval( residual.replace(target,lhs+relax*dlhs), jacobian.replace(target,lhs+relax*dlhs), fcache=fcache )
       newresnorm = numpy.linalg.norm( res[~freezedofs] )
@@ -298,7 +294,7 @@ def newton( target, residual, lhs0=None, freezedofs=None, nrelax=5, minrelax=.1,
         d0 = -2 * r0
         r1 = newresnorm**2
         d1 = 2 * numpy.dot( jac.matvec(dlhs)[~freezedofs], res[~freezedofs] )
-        log.info( 'residual > 1-{}{:+.1f} > {}creased by {:.0f}%'.format( '--++' if d1 > 0 else '-++-' if r1 > r0 else '----', -d1/d0, 'in' if newresnorm > resnorm else 'de', 100*abs(newresnorm/resnorm-1) ) )
+        log.info( 'line search: 0[{}]{} {}creased by {:.0f}%'.format( '---+++' if d1 > 0 else '--++--' if r1 > r0 else '------', round(relax,5), 'in' if newresnorm > resnorm else 'de', 100*abs(newresnorm/resnorm-1) ) )
         if r1 <= r0 and d1 <= 0:
           break
         D = 2*r0 - 2*r1 + d0 + d1
@@ -314,12 +310,7 @@ def newton( target, residual, lhs0=None, freezedofs=None, nrelax=5, minrelax=.1,
           log.info( 'minimum based on 2nd order estimation: {:.3f}'.format(newrelax) )
         if newrelax > maxrelax:
           break
-      if newrelax < minrelax:
-        log.info( 'relaxation {0:}: scaling by {1:} (truncated)'.format( irelax+1, minrelax ) )
-        relax *= minrelax
-      else:
-        log.info( 'relaxation {0:}: scaling by {1:.3f}'.format( irelax+1, newrelax ) )
-        relax *= newrelax
+      relax *= max( newrelax, minrelax )
     lhs += relax * dlhs
 
 
