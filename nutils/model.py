@@ -206,20 +206,20 @@ def solve( gen_lhs_resnorm, tol=1e-10, maxiter=numpy.inf ):
     return lhs
   
 
-def newton( target, residual, lhs0=None, freezedofs=None, nrelax=5, maxrelax=.9 ):
+def newton( target, residual, lhs0=None, freezedofs=None, nrelax=5, minrelax=.1, maxrelax=.9, rebound=2**.5 ):
   '''iteratively solve nonlinear problem by gradient descent
 
   Generates targets such that residual approaches 0 using Newton procedure with
   line search based on a residual integral. Suitable to be used inside
   ``solve``.
 
-  An optimal relaxation value is computed based on the following parabolic
+  An optimal relaxation value is computed based on the following cubic
   assumption:
 
       | res( lhs + r * dlhs ) |^2 = A + B * r + C * r^2 + D * r^3
 
   where A, B, C and D are determined based on the current and updated residual
-  value and tangent.
+  and tangent.
 
   Parameters
   ----------
@@ -234,9 +234,16 @@ def newton( target, residual, lhs0=None, freezedofs=None, nrelax=5, maxrelax=.9 
   nrelax : int
       Maximum number of relaxation steps before proceding with the updated
       coefficient vector.
+  minrelax : float
+      Lower bound for the relaxation value, to force re-evaluating the
+      functional in situation where the parabolic assumption would otherwise
+      result in unreasonably small steps.
   maxrelax : float
       Relaxation value below which relaxation continues, unless ``nrelax`` is
       reached; should be a value less than or equal to 1.
+  rebound : float
+      Factor by which the relaxation value grows after every update until it
+      reaches unity.
 
   Yields
   ------
@@ -265,39 +272,45 @@ def newton( target, residual, lhs0=None, freezedofs=None, nrelax=5, maxrelax=.9 
   res, jac = Integral.multieval( residual.replace(target,lhs), jacobian.replace(target,lhs), fcache=fcache )
   zcons = numpy.zeros( len(target) )
   zcons[~freezedofs] = numpy.nan
+  relax = 1
   while True:
     resnorm = numpy.linalg.norm( res[~freezedofs] )
     yield lhs, resnorm
     dlhs = -jac.solve( res, constrain=zcons )
-    relax = 1
+    relax = min( relax * rebound, 1 )
     for irelax in itertools.count():
       res, jac = Integral.multieval( residual.replace(target,lhs+relax*dlhs), jacobian.replace(target,lhs+relax*dlhs), fcache=fcache )
       newresnorm = numpy.linalg.norm( res[~freezedofs] )
       if irelax >= nrelax:
-        assert newresnorm < resnorm, 'stuck in local minimum'
+        if newresnorm > resnorm:
+          log.warning( 'failed to decrease residual' )
+          return
         break
-      # endpoint values, derivatives
-      r0 = resnorm**2
-      d0 = -2 * relax * resnorm**2
-      r1 = newresnorm**2
-      d1 = 2 * relax * numpy.dot( jac.matvec(dlhs)[~freezedofs], res[~freezedofs] )
-      # polynomial coefficients
-      A = r0
-      B = d0
-      C = 3*r1 - 3*r0 - 2*d0 - d1
-      D = d0 + d1 + 2*r0 - 2*r1
-      # optimization
-      discriminant = C**2 - 3*B*D
-      if discriminant < 0: # monotomously decreasing
-        break
-      malpha = -C / (3*D)
-      dalpha = numpy.sqrt(discriminant) / abs(3*D)
-      newrelax = malpha + dalpha if malpha < dalpha else malpha - dalpha # smallest positive root
-      if newrelax > maxrelax:
-        break
-      assert newrelax > 0, 'newrelax should be strictly positive, computed {!r}'.format(newrelax)
-      log.info( 'relaxation {0:}: scaling by {1:.3f}'.format( irelax+1, newrelax ) )
-      relax *= newrelax
+      if not numpy.isfinite( newresnorm ):
+        log.info( 'failed to evaluate residual ({})'.format( newresnorm ) )
+        newrelax = 0 # replaced by minrelax later
+      else:
+        r0 = resnorm**2
+        d0 = -2 * r0
+        r1 = newresnorm**2
+        d1 = 2 * numpy.dot( jac.matvec(dlhs)[~freezedofs], res[~freezedofs] )
+        log.info( 'line search: 0[{}]{} {}creased by {:.0f}%'.format( '---+++' if d1 > 0 else '--++--' if r1 > r0 else '------', round(relax,5), 'in' if newresnorm > resnorm else 'de', 100*abs(newresnorm/resnorm-1) ) )
+        if r1 <= r0 and d1 <= 0:
+          break
+        D = 2*r0 - 2*r1 + d0 + d1
+        if D > 0:
+          C = 3*r1 - 3*r0 - 2*d0 - d1
+          newrelax = ( numpy.sqrt(C**2-3*d0*D) - C ) / (3*D)
+          log.info( 'minimum based on 3rd order estimation: {:.3f}'.format(newrelax) )
+        else:
+          C = r1 - r0 - d0
+          # r1 > r0 => C > 0
+          # d1 > 0  => C = r1 - r0 - d0/2 - d0/2 > r1 - r0 - d0/2 - d1/2 = -D/2 > 0
+          newrelax = -.5 * d0 / C
+          log.info( 'minimum based on 2nd order estimation: {:.3f}'.format(newrelax) )
+        if newrelax > maxrelax:
+          break
+      relax *= max( newrelax, minrelax )
     lhs += relax * dlhs
 
 
@@ -373,7 +386,7 @@ def impliciteuler( target, residual, inertia, timestep, lhs0, residual0=None, fr
   Yields
   ------
   vector
-      Coefficient vector that approximates residual==0 with increasing accuracy
+      Coefficient vector for all timesteps after the initial condition.
   '''
 
   res = residual + inertia / timestep
@@ -382,5 +395,5 @@ def impliciteuler( target, residual, inertia, timestep, lhs0, residual0=None, fr
     res0 += residual0
   lhs = lhs0
   while True:
-    yield lhs
     lhs = solve( newton( target, residual=res0.replace(target,lhs) + res, lhs0=lhs, freezedofs=freezedofs, **newtonargs ), tol=tol )
+    yield lhs
