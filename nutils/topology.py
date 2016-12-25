@@ -465,12 +465,31 @@ class Topology( object ):
     return self if n <= 0 else self.refined.refine( n-1 )
 
   @log.title
-  def trim( self, levelset, maxrefine, ndivisions=8, name='trimmed' ):
+  def trim( self, levelset, maxrefine, ndivisions=8, name='trimmed', leveltopo=None ):
     'trim element along levelset'
 
     fcache = cache.WrapperCache()
-    ischeme = 'vertex{}'.format(maxrefine)
-    refs = [ elem.reference.trim( levelset.eval(elem,ischeme,fcache), maxrefine=maxrefine, ndivisions=ndivisions ) for elem in log.iter( 'elem', self ) ]
+    if leveltopo is None:
+      ischeme = 'vertex{}'.format(maxrefine)
+      refs = [ elem.reference.trim( levelset.eval(elem,ischeme,fcache), maxrefine=maxrefine, ndivisions=ndivisions ) for elem in log.iter( 'elem', self ) ]
+    else:
+      log.info( 'collecting leveltopo elements' )
+      bins = [ [] for ielem in range(len(self)) ]
+      for elem in leveltopo:
+        ielem, tail = elem.transform.lookup_item( self.edict )
+        bins[ielem].append( tail )
+      refs = []
+      for elem, ctransforms in log.zip( 'elem', self, bins ):
+        levels = numpy.empty( elem.reference.nvertices_by_level(maxrefine) )
+        cover = list( fcache[elem.reference.vertex_cover]( sorted(ctransforms), maxrefine ) )
+        # confirm cover and greedily optimize order
+        mask = numpy.ones( len(levels), dtype=bool )
+        while mask.any():
+          imax = numpy.argmax([ mask[indices].sum() for trans, points, indices in cover ])
+          trans, points, indices = cover.pop( imax )
+          levels[indices] = levelset.eval( elem.transform << trans, points, fcache )
+          mask[indices] = False
+        refs.append( elem.reference.trim( levels, maxrefine=maxrefine, ndivisions=ndivisions ) )
     log.debug( 'cache', fcache.stats )
     return SubsetTopology( self, refs, newboundary=name )
 

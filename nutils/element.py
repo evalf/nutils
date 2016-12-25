@@ -284,6 +284,7 @@ class Reference( cache.Immutable ):
   def trim( self, levels, maxrefine, ndivisions ):
     'trim element along levelset'
 
+    assert len(levels) == self.nvertices_by_level(maxrefine)
     return self if not self or ( levels >= 0 ).all() \
       else self.empty if ( levels <= 0 ).all() \
       else self.with_children( cref.trim( clevels, maxrefine-1, ndivisions )
@@ -386,6 +387,27 @@ class Reference( cache.Immutable ):
     #  with plot.PyPlot( 'selfcheckfailed' ) as plt:
     #    plt.segments( trans.apply(edge.getischeme('bezier2')[0]) for trans, edge in self.edges if edge )
     raise MyException( '\n'.join(s) )
+
+  def vertex_cover( self, ctransforms, maxrefine ):
+    if maxrefine < 0:
+      raise Exception( 'maxrefine is too low' )
+    npoints = self.nvertices_by_level(maxrefine)
+    allindices = numpy.arange(npoints)
+    if len(ctransforms) == 1:
+      assert ctransforms[0] == transform.identity
+      return ( transform.identity, self.getischeme('vertex{}'.format(maxrefine))[0], allindices ),
+    if maxrefine == 0:
+      raise Exception( 'maxrefine is too low' )
+    cbins = [ [] for ichild in range(self.nchildren) ]
+    for ctrans in ctransforms:
+      ichild = self.child_transforms.index( ctrans[:1] )
+      cbins[ichild].append( ctrans[1:] )
+    if not all( cbins ):
+      raise Exception( 'transformations to not form an element cover' )
+    fcache = cache.WrapperCache()
+    return tuple( ( ctrans << trans, points, cindices[indices] )
+      for ctrans, cref, cbin, cindices in zip( self.child_transforms, self.child_refs, cbins, self.child_divide(allindices,maxrefine) )
+        for trans, points, indices in fcache[cref.vertex_cover]( sorted(cbin), maxrefine-1 ) )
 
   def __str__( self ):
     return self.__class__.__name__
