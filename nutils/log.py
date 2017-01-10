@@ -162,19 +162,44 @@ class RichOutputLog( StdoutLog ):
 
   cmap = { 'path': (2,1), 'error': (1,1), 'warning': (1,0), 'user': (3,0) }
 
+  def __init__( self, stream=sys.stdout, *, progressinterval=None ):
+    super().__init__( stream=stream )
+    # Timestamp at which a new progress line may be written.
+    self._progressupdate = 0
+    # Progress update interval in seconds.
+    self._progressinterval = progressinterval or core.getprop( 'progressinterval', 0.1 )
+
+  def __del__( self ):
+    # Clear the progress line.
+    self.stream.write( '\033[K' )
+
   def _mkstr( self, level, text ):
     if text is not None:
       string = ' · '.join( self._context + [text] )
       n = len(string) - len(text)
+      # This is not a progress line.  Reset the update timestamp.
+      self._progressupdate = 0
     else:
       string = ' · '.join( self._context )
       n = len(string)
+      # Don't touch `self._progressupdate` here.  Will be done in
+      # `self._push_context`.
     try:
       colorid, boldid = self.cmap[level]
     except KeyError:
-      return '\033[1;30m{}\033[0m{}'.format( string[:n], string[n:] )
+      return '\033[K\033[1;30m{}\033[0m{}'.format( string[:n], string[n:] )
     else:
-      return '\033[1;30m{}\033[{};3{}m{}\033[0m'.format( string[:n], boldid, colorid, string[n:] )
+      return '\033[K\033[1;30m{}\033[{};3{}m{}\033[0m'.format( string[:n], boldid, colorid, string[n:] )
+
+  def _push_context( self, title ):
+    super()._push_context( title )
+    from . import parallel
+    if parallel.procid:
+      return
+    t = time.time()
+    if t >= self._progressupdate:
+      self._progressupdate = t + self._progressinterval
+      self.stream.write( self._mkstr( 'progress', None ) + '\r' )
 
 class HtmlInsertAnchor( Log ):
   '''Mix-in class for HTML-based loggers that inserts anchor tags for paths.

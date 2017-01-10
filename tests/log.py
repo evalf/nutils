@@ -1,6 +1,6 @@
 import io, tempfile, os
 from . import register, unittest
-import nutils.log, nutils.core
+import nutils.log, nutils.core, nutils.parallel
 
 log_stdout = '''\
 iterator > iter 0 (17%) > a
@@ -10,6 +10,10 @@ levels > error
 levels > warning
 levels > user
 levels > info
+forked > [1] error
+forked > [1] warning
+forked > [1] user
+forked > [1] info
 exception > ValueError('test',)
   File "??", line ??, in ??
     raise ValueError( 'test' )
@@ -21,24 +25,39 @@ log_stdout3 = '''\
 levels > error
 levels > warning
 levels > user
+forked > [1] error
+forked > [1] warning
+forked > [1] user
 exception > ValueError('test',)
   File "??", line ??, in ??
     raise ValueError( 'test' )
 '''
 
 log_rich_output = '''\
-\033[1;30miterator · iter 0 (17%) · \033[0ma
-\033[1;30miterator · iter 1 (50%) · \033[0mb
-\033[1;30miterator · iter 2 (83%) · \033[0mc
-\033[1;30mlevels · \033[1;31merror\033[0m
-\033[1;30mlevels · \033[0;31mwarning\033[0m
-\033[1;30mlevels · \033[0;33muser\033[0m
-\033[1;30mlevels · \033[0minfo
-\033[1;30mexception · \033[1;31mValueError(\'test\',)
+\033[K\033[1;30miterator\033[0m\r\
+\033[K\033[1;30miterator · iter 0 (17%)\033[0m\r\
+\033[K\033[1;30miterator · iter 0 (17%) · \033[0ma
+\033[K\033[1;30miterator · iter 1 (50%)\033[0m\r\
+\033[K\033[1;30miterator · iter 1 (50%) · \033[0mb
+\033[K\033[1;30miterator · iter 2 (83%)\033[0m\r\
+\033[K\033[1;30miterator · iter 2 (83%) · \033[0mc
+\033[K\033[1;30mempty\033[0m\r\
+\033[K\033[1;30mempty · empty\033[0m\r\
+\033[K\033[1;30mlevels\033[0m\r\
+\033[K\033[1;30mlevels · \033[1;31merror\033[0m
+\033[K\033[1;30mlevels · \033[0;31mwarning\033[0m
+\033[K\033[1;30mlevels · \033[0;33muser\033[0m
+\033[K\033[1;30mlevels · \033[0minfo
+\033[K\033[1;30mforked · \033[1;31m[1] error\033[0m
+\033[K\033[1;30mforked · \033[0;31m[1] warning\033[0m
+\033[K\033[1;30mforked · \033[0;33m[1] user\033[0m
+\033[K\033[1;30mforked · \033[0m[1] info
+\033[K\033[1;30mexception\033[0m\r\
+\033[K\033[1;30mexception · \033[1;31mValueError(\'test\',)
   File "??", line ??, in ??
     raise ValueError( \'test\' )\033[0m
-\033[1;30m\033[0mtest.png
-\033[1;30m\033[0mnonexistent.png
+\033[K\033[1;30m\033[0mtest.png
+\033[K\033[1;30m\033[0mnonexistent.png
 '''
 
 log_html = '''\
@@ -99,6 +118,11 @@ def generate_log():
   with nutils.log.context( 'levels' ):
     for level in ( 'error', 'warning', 'user', 'info' ):
       getattr( nutils.log, level )( level )
+  nutils.parallel.procid = 1
+  with nutils.log.context( 'forked' ):
+    for level in ( 'error', 'warning', 'user', 'info' ):
+      getattr( nutils.log, level )( level )
+  nutils.parallel.procid = None
   with nutils.log.context( 'exception' ):
     nutils.log.error(
       "ValueError('test',)\n" \
@@ -120,6 +144,9 @@ def logoutput( logcls, logout, verbose=len( nutils.log.LEVELS ) ):
   def test():
     with tempfile.TemporaryDirectory() as __outdir__:
       __verbose__ = verbose
+      # Make sure all progress information is written, regardless the speed of
+      # this computer.
+      __progressinterval__ = -1
       stream = io.StringIO()
       if logcls in (nutils.log.HtmlLog, nutils.log.IndentLog):
         __log__ = logcls( stream, logdir=__outdir__ )
