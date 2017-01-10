@@ -25,7 +25,6 @@ class SolverInfo ( object ):
     self.niter = 0
     self._res = numpy.empty( 16 )
     self._tol = tol
-    self._clock = util.Clock()
     self._callback = callback
 
   @property
@@ -44,8 +43,8 @@ class SolverInfo ( object ):
     self.niter += 1
     if self._callback:
       self._callback( res )
-    if self._clock.check():
-      log.progress( 'residual %.2e (%.0f%%)' % ( res, 100. * numpy.log10(res) / numpy.log10(self._tol) ) )
+    with log.context( 'residual %.2e (%.0f%%)' % ( res, 100. * numpy.log10(res) / numpy.log10(self._tol) ) ):
+      pass
 
 class Matrix( object ):
   'matrix base class'

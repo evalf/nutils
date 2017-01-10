@@ -18,7 +18,7 @@ from . import core
 warnings.showwarning = lambda message, category, filename, lineno, *args: \
   warning( '%s: %s\n  In %s:%d' % ( category.__name__, message, filename, lineno ) )
 
-LEVELS = 'error', 'warning', 'user', 'info', 'progress', 'debug'
+LEVELS = 'error', 'warning', 'user', 'info', 'debug'
 
 
 ## LOG
@@ -150,9 +150,7 @@ class StdoutLog( ContextLog ):
     verbose = core.getprop( 'verbose', len(LEVELS) )
     if level not in LEVELS[verbose:]:
       from . import parallel
-      if text is None and parallel.procid:
-        return # log progress only on first process
-      if text is not None and parallel.procid is not None:
+      if parallel.procid is not None:
         text = '[{}] {}'.format( parallel.procid, text )
       s = self._mkstr( level, text )
       self.stream.write( s + '\n' if endl else s )
@@ -314,23 +312,12 @@ def _len( iterable ):
     return None
 
 def _logiter( text, iterator, length=None, useitem=False ):
-  dt = core.getprop( 'progress_interval', 1. )
-  dtexp = core.getprop( 'progress_interval_scale', 2 )
-  dtmax = core.getprop( 'progress_interval_max', 0 )
-  tnext = time.time() + dt
   log = _getlog()
   for index, item in _enumerate(iterator):
     title = '%s %d' % ( text, item if useitem else index )
     if length is not None:
       title += ' ({:.0f}%)'.format( (index+.5) * 100. / length )
     with log.context( title ):
-      now = time.time()
-      if now > tnext:
-        dt *= dtexp
-        if dt > dtmax > 0:
-          dt = dtmax
-        log.write( 'progress', None )
-        tnext = now + dt
       yield item
 
 def _mklog():

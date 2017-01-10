@@ -17,7 +17,7 @@ globalproperties = {
   'nprocs': 1,
   'outrootdir': '~/public_html',
   'outdir': '.',
-  'verbose': 5,
+  'verbose': 4,
   'richoutput': None,
   'tbexplore': False,
   'imagetype': 'png',

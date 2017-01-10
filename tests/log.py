@@ -6,12 +6,10 @@ log_stdout = '''\
 iterator > iter 0 (17%) > a
 iterator > iter 1 (50%) > b
 iterator > iter 2 (83%) > c
-empty
 levels > error
 levels > warning
 levels > user
 levels > info
-levels > progress
 exception > ValueError('test',)
   File "??", line ??, in ??
     raise ValueError( 'test' )
@@ -32,12 +30,10 @@ log_rich_output = '''\
 \033[1;30miterator · iter 0 (17%) · \033[0ma
 \033[1;30miterator · iter 1 (50%) · \033[0mb
 \033[1;30miterator · iter 2 (83%) · \033[0mc
-\033[1;30mempty\033[0m
 \033[1;30mlevels · \033[1;31merror\033[0m
 \033[1;30mlevels · \033[0;31mwarning\033[0m
 \033[1;30mlevels · \033[0;33muser\033[0m
 \033[1;30mlevels · \033[0minfo
-\033[1;30mlevels · \033[0mprogress
 \033[1;30mexception · \033[1;31mValueError(\'test\',)
   File "??", line ??, in ??
     raise ValueError( \'test\' )\033[0m
@@ -57,14 +53,11 @@ log_html = '''\
 <li class="info">c</li>
 </ul>
 </ul>
-<li class="context">empty</li><ul>
-</ul>
 <li class="context">levels</li><ul>
 <li class="error">error</li>
 <li class="warning">warning</li>
 <li class="user">user</li>
 <li class="info">info</li>
-<li class="progress">progress</li>
 </ul>
 <li class="context">exception</li><ul>
 <li class="error">ValueError(&#x27;test&#x27;,)
@@ -83,13 +76,11 @@ c iterator
   i b
  c iter 2 (83%)
   i c
-c empty
 c levels
  e error
  w warning
  u user
  i info
- p progress
 c exception
  e ValueError(&#x27;test&#x27;,)
  |   File &quot;??&quot;, line ??, in ??
@@ -105,9 +96,8 @@ def generate_log():
   with nutils.log.context( 'empty' ):
     with nutils.log.context( 'empty' ):
       pass
-    nutils.log._getlog().write( 'progress', None )
   with nutils.log.context( 'levels' ):
-    for level in ( 'error', 'warning', 'user', 'info', 'progress' ):
+    for level in ( 'error', 'warning', 'user', 'info' ):
       getattr( nutils.log, level )( level )
   with nutils.log.context( 'exception' ):
     nutils.log.error(
