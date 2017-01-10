@@ -18,7 +18,7 @@ globalproperties = {
   'outrootdir': '~/public_html',
   'outdir': '.',
   'verbose': 5,
-  'richoutput': False,
+  'richoutput': None,
   'tbexplore': False,
   'imagetype': 'png',
   'symlink': False,

@@ -334,7 +334,12 @@ def _logiter( text, iterator, length=None, useitem=False ):
       yield item
 
 def _mklog():
-  return RichOutputLog() if core.getprop( 'richoutput', False ) else StdoutLog()
+  stream = sys.stdout
+  richoutput = core.getprop( 'richoutput' )
+  if richoutput is None and os.isatty( stream.fileno() ) or richoutput:
+    return RichOutputLog( stream )
+  else:
+    return StdoutLog( stream )
 
 def _getlog():
   log = core.getprop( 'log', None )
