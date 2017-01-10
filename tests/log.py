@@ -1,4 +1,4 @@
-import io, tempfile, os
+import io, tempfile, os, contextlib
 from . import register, unittest
 import nutils.log, nutils.core, nutils.parallel
 
@@ -138,20 +138,31 @@ def generate_log():
 @register( 'rich_output', nutils.log.RichOutputLog, log_rich_output )
 @register( 'html', nutils.log.HtmlLog, log_html )
 @register( 'indent', nutils.log.IndentLog, log_indent )
-def logoutput( logcls, logout, verbose=len( nutils.log.LEVELS ) ):
+@register( 'indent-progress-seekable', nutils.log.IndentLog, log_indent, progressfile='seekable' )
+@register( 'indent-progress-stream', nutils.log.IndentLog, log_indent, progressfile='stream' )
+def logoutput( logcls, logout, verbose=len( nutils.log.LEVELS ), progressfile=False ):
 
   @unittest
   def test():
-    with tempfile.TemporaryDirectory() as __outdir__:
+    with contextlib.ExitStack() as stack:
+      __outdir__ = stack.enter_context( tempfile.TemporaryDirectory() )
       __verbose__ = verbose
       # Make sure all progress information is written, regardless the speed of
       # this computer.
       __progressinterval__ = -1
       stream = io.StringIO()
+      kwargs = {}
       if logcls in (nutils.log.HtmlLog, nutils.log.IndentLog):
-        __log__ = logcls( stream, logdir=__outdir__ )
+        kwargs.update( logdir=__outdir__ )
+      if progressfile == 'seekable':
+        kwargs.update( progressfile=stack.enter_context( open( os.path.join( __outdir__, 'progress.json' ), 'w' ) ) )
+      elif progressfile == 'stream':
+        kwargs.update( progressfile=io.StringIO() )
+      elif progressfile is False:
+        pass
       else:
-        __log__ = logcls( stream )
+        raise ValueError
+      __log__ = logcls( stream, **kwargs )
       generate_log()
       assert stream.getvalue() == logout
 

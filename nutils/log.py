@@ -12,7 +12,7 @@ The log module provides print methods ``debug``, ``info``, ``user``,
 stdout as well as to an html formatted log file if so configured.
 """
 
-import sys, time, warnings, functools, itertools, re, abc, contextlib, html, urllib.parse, os
+import sys, time, warnings, functools, itertools, re, abc, contextlib, html, urllib.parse, os, json
 from . import core
 
 warnings.showwarning = lambda message, category, filename, lineno, *args: \
@@ -256,7 +256,8 @@ class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
 class IndentLog( HtmlInsertAnchor, ContextTreeLog ):
   '''Output indented html snippets.'''
 
-  def __init__( self, file, *, logdir=None ):
+  def __init__( self, file, *, logdir=None, progressfile=None, progressinterval=None ):
+    self._logfile = file
     self._print = functools.partial( print, file=file )
     self._flush = file.flush
     self._prefix = ''
@@ -265,6 +266,12 @@ class IndentLog( HtmlInsertAnchor, ContextTreeLog ):
       if not hasattr( file, 'name' ):
         raise ValueError( 'Cannot autodetect the directory of the log file.  Please set the directory using the `logdir` argument of {!r}.'.format( type( self ) ) )
       logdir = os.path.dirname( file.name )
+    self._progressfile = progressfile
+    if self._progressfile:
+      # Timestamp at which a new progress line may be written.
+      self._progressupdate = 0
+      # Progress update interval in seconds.
+      self._progressinterval = progressinterval or core.getprop( 'progressinterval', 1 )
     super().__init__( logdir )
 
   def _print_push_context( self, title ):
@@ -283,6 +290,30 @@ class IndentLog( HtmlInsertAnchor, ContextTreeLog ):
       self._print( '{}{} {}'.format( self._prefix, level, line ) )
       level = '|'
     self._flush()
+    if self._progressfile:
+      self._print_progress( level, text )
+      self._progressupdate = 0
+
+  def _push_context( self, title ):
+    super()._push_context( title )
+    if not self._progressfile:
+      return
+    from . import parallel
+    if parallel.procid:
+      return
+    t = time.time()
+    if t < self._progressupdate:
+      return
+    self._print_progress( None, None )
+    self._progressupdate = t + self._progressinterval
+
+  def _print_progress( self, level, text ):
+    if self._progressfile.seekable():
+      self._progressfile.seek( 0 )
+      self._progressfile.truncate( 0 )
+    json.dump( dict( logpos=self._logfile.tell(), context=self._context, text=text, level=level ), self._progressfile )
+    self._progressfile.write( '\n' )
+    self._progressfile.flush()
 
 class TeeLog( Log ):
   '''Simultaneously interface multiple logs'''
