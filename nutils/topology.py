@@ -1039,7 +1039,8 @@ class StructuredTopology( Topology ):
   def interfaces( self ):
     'interfaces'
 
-    itopo = EmptyTopology( self.ndims-1 )
+    assert self.ndims > 0, 'zero-D topology has no interfaces'
+    itopos = []
     nbounds = len(self.axes) - self.ndims
     for idim, axis in enumerate(self.axes):
       if not axis.isdim:
@@ -1048,9 +1049,10 @@ class StructuredTopology( Topology ):
       if axis.isperiodic:
         assert axis.i == 0
         bndprops.append( BndAxis( axis.j, 0, ibound=nbounds, side=True ) )
-      if bndprops:
-        itopo |= UnionTopology( StructuredTopology( self.root, self.axes[:idim] + (axis,) + self.axes[idim+1:], self.nrefine ) for axis in bndprops )
-    return itopo
+      itopos.append( EmptyTopology( self.ndims-1 ) if not bndprops
+                else UnionTopology( StructuredTopology( self.root, self.axes[:idim] + (axis,) + self.axes[idim+1:], self.nrefine ) for axis in bndprops ) )
+    assert len(itopos) == self.ndims
+    return UnionTopology( itopos, names=[ 'dir{}'.format(idim) for idim in range(self.ndims) ] )
 
   def basis_spline( self, degree, neumann=(), knots=None, periodic=None, closed=False, removedofs=None ):
     'spline from vertices'
