@@ -196,7 +196,7 @@ def check( op, n_op, shapes, hasgrad=True ):
   @unittest
   def pointwise():
     numpy.testing.assert_array_almost_equal(
-        numpy.sin( n_op( *argsfun.eval(elem,points) ) ),
+        numpy.sin( n_op( *argsfun.eval(elem,points) ) ).astype(float), # "astype" necessary for boolean operations (float16->float64)
      function.sin( op( *args ) ).eval(elem,points), decimal=15 )
 
   triaxes = [ iax for iax, sh in enumerate(shape) if sh == 3 ]
