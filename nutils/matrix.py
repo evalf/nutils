@@ -43,7 +43,11 @@ class SolverInfo ( object ):
     self.niter += 1
     if self._callback:
       self._callback( res )
-    with log.context( 'residual %.2e (%.0f%%)' % ( res, 100. * numpy.log10(res) / numpy.log10(self._tol) ) ):
+    if self._tol > 0:
+      info = 'residual {:.2e} ({:.0f}%)'.format( res, 100. * numpy.log10(res) / numpy.log10(self._tol) if res > 0 else 0 )
+    else:
+      info = 'residual {:.2e}'.format( res )
+    with log.context( info ):
       pass
 
 class Matrix( object ):
