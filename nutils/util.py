@@ -233,32 +233,6 @@ class NanVec( numpy.ndarray ):
     nanvec[numpy.isnan(self)] = 0
     return nanvec
 
-class Clock( object ):
-  'simple interval timer'
-
-  def __init__( self, dt=None, dtexp=None, dtmax=None ):
-    'constructor'
-
-    self.dt = core.getprop( 'progress_interval', 1. ) if dt is None else dt
-    self.dtexp = core.getprop( 'progress_interval_scale', 2 ) if dtexp is None else dtexp
-    self.dtmax = core.getprop( 'progress_interval_max', 0 ) if dtmax is None else dtmax
-    self.reset()
-
-  def reset( self ):
-    self.tnext = time.time() + self.dt
-
-  def check( self ):
-    'check time'
-
-    if time.time() < self.tnext:
-      return False
-    if self.dtexp != 1:
-      self.dt *= self.dtexp
-      if self.dt > self.dtmax > 0:
-        self.dt = self.dtmax
-    self.reset()
-    return True
-
 def tensorial( args ):
   'create n-dimensional array containing tensorial combinations of n args'
 
