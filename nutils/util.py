@@ -151,21 +151,6 @@ def profile( func ):
   raw_input( 'press enter to continue' )
   return retval
 
-def getpath( pattern ):
-  'create file in outdir'
-
-  outdir = core.getprop( 'outdir', '.' )
-  if pattern == pattern.format( 0 ):
-    return os.path.join( outdir, pattern )
-  prefix = pattern.split( '{' )[0]
-  names = [ name for name in os.listdir( outdir ) if name.startswith(prefix) ]
-  n = len(names)
-  while True:
-    n += 1
-    newname = os.path.join( outdir, pattern.format(n) )
-    if not os.path.isfile( newname ):
-      return newname
-
 _sum = sum
 def sum( seq ):
   'a better sum'
@@ -536,6 +521,11 @@ def run( *functions ):
   elif not os.path.isdir( outdir ):
     # use custom directory layout, skip creating symlinks, redirects
     os.makedirs( outdir )
+
+  # `chdir` to `outdir`.  Since this function raises `SystemExit` at the end
+  # don't bother restoring the current directory.
+  if outdir != '.':
+    os.chdir( outdir )
 
   if htmloutput:
     htmlfile = open( os.path.join( outdir, 'log.html' ), 'w' )

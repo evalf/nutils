@@ -108,7 +108,7 @@ i <a href="test.png" class="plot">test.png</a>
 i nonexistent.png
 '''
 
-def generate_log():
+def generate_log( logdir ):
   with nutils.log.context( 'iterator' ):
     for i in nutils.log.iter( 'iter', 'abc' ):
       nutils.log.info( i )
@@ -128,7 +128,7 @@ def generate_log():
       "ValueError('test',)\n" \
       '  File "??", line ??, in ??\n' \
       "    raise ValueError( 'test' )")
-  with open( os.path.join( nutils.core.getoutdir(), 'test.png' ), 'w' ) as f:
+  with open( os.path.join( logdir, 'test.png' ), 'w' ) as f:
     pass
   nutils.log.info( 'test.png' )
   nutils.log.info( 'nonexistent.png' )
@@ -145,7 +145,7 @@ def logoutput( logcls, logout, verbose=len( nutils.log.LEVELS ), progressfile=Fa
   @unittest
   def test():
     with contextlib.ExitStack() as stack:
-      __outdir__ = stack.enter_context( tempfile.TemporaryDirectory() )
+      logdir = stack.enter_context( tempfile.TemporaryDirectory() )
       __verbose__ = verbose
       # Make sure all progress information is written, regardless the speed of
       # this computer.
@@ -153,9 +153,9 @@ def logoutput( logcls, logout, verbose=len( nutils.log.LEVELS ), progressfile=Fa
       stream = io.StringIO()
       kwargs = {}
       if logcls in (nutils.log.HtmlLog, nutils.log.IndentLog):
-        kwargs.update( logdir=__outdir__ )
+        kwargs.update( logdir=logdir )
       if progressfile == 'seekable':
-        kwargs.update( progressfile=stack.enter_context( open( os.path.join( __outdir__, 'progress.json' ), 'w' ) ) )
+        kwargs.update( progressfile=stack.enter_context( open( os.path.join( logdir, 'progress.json' ), 'w' ) ) )
       elif progressfile == 'stream':
         kwargs.update( progressfile=io.StringIO() )
       elif progressfile is False:
@@ -163,7 +163,7 @@ def logoutput( logcls, logout, verbose=len( nutils.log.LEVELS ), progressfile=Fa
       else:
         raise ValueError
       __log__ = logcls( stream, **kwargs )
-      generate_log()
+      generate_log( logdir )
       assert stream.getvalue() == logout
 
 @register
@@ -171,13 +171,13 @@ def tee_stdout_html():
 
   @unittest
   def test():
-    with tempfile.TemporaryDirectory() as __outdir__:
+    with tempfile.TemporaryDirectory() as logdir:
       __verbose__ = len( nutils.log.LEVELS )
       stream_stdout = io.StringIO()
       stream_html = io.StringIO()
       __log__ = nutils.log.TeeLog(
         nutils.log.StdoutLog( stream_stdout ),
-        nutils.log.HtmlLog( stream_html, logdir=__outdir__ ))
-      generate_log()
+        nutils.log.HtmlLog( stream_html, logdir=logdir ))
+      generate_log( logdir )
       assert stream_stdout.getvalue() == log_stdout
       assert stream_html.getvalue() == log_html
