@@ -19,6 +19,7 @@ globalproperties = {
   'outdir': '.',
   'verbose': 4,
   'richoutput': None,
+  'htmloutput': True,
   'tbexplore': False,
   'imagetype': 'png',
   'symlink': False,

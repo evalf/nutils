@@ -440,6 +440,7 @@ def run( *functions ):
   --outdir=               Define custom directory for output
   --verbose=%(verbose)-13s Set verbosity level, 9=all
   --richoutput=%(richoutput)-10s Use rich output (colors, unicode)
+  --htmloutput=%(htmloutput)-10s Generate an HTML log
   --tbexplore=%(tbexplore)-11s Start traceback explorer on error
   --imagetype=%(imagetype)-11s Set image type
   --symlink=%(symlink)-13s Create symlink to latest results
@@ -489,6 +490,7 @@ def run( *functions ):
   timepath = time.strftime( '%Y/%m/%d/%H-%M-%S/', localtime )
   outdir = properties.get( 'outdir', None )
   token = '{:.0f}'.format( time.mktime(localtime) ) # added as argument to log.html as yet another non-caching measure
+  htmloutput = core.getprop( 'htmloutput', True )
 
   if outdir is None:
     # `outdir` not specified on the commandline, use default directory layout
@@ -510,39 +512,42 @@ def run( *functions ):
           os.remove( target )
         os.symlink( dest, target )
 
-    logpath = os.path.join( os.path.dirname( log.__file__ ), '_log' ) + os.sep
-    for filename in os.listdir( logpath ):
-      if filename[0] != '.' and ( not os.path.isfile( outrootdir + filename ) or os.path.getmtime( outrootdir + filename ) < os.path.getmtime( logpath + filename ) ):
-        print( 'updating', filename )
-        open( outrootdir + filename, 'w' ).write( open( logpath + filename, 'r' ).read() )
+    if htmloutput:
 
-    redirect = '<html>\n<head>\n<meta http-equiv="cache-control" content="max-age=0" />\n' \
-             + '<meta http-equiv="cache-control" content="no-cache" />\n' \
-             + '<meta http-equiv="expires" content="0" />\n' \
-             + '<meta http-equiv="expires" content="Tue, 01 Jan 1980 1:00:00 GMT" />\n' \
-             + '<meta http-equiv="pragma" content="no-cache" />\n' \
-             + '<meta http-equiv="refresh" content="0;URL=%slog.html" />\n</head>\n</html>\n'
+      logpath = os.path.join( os.path.dirname( log.__file__ ), '_log' ) + os.sep
+      for filename in os.listdir( logpath ):
+        if filename[0] != '.' and ( not os.path.isfile( outrootdir + filename ) or os.path.getmtime( outrootdir + filename ) < os.path.getmtime( logpath + filename ) ):
+          print( 'updating', filename )
+          open( outrootdir + filename, 'w' ).write( open( logpath + filename, 'r' ).read() )
 
-    with open( outrootdir+'log.html', 'w' ) as redirlog1:
-      print( redirect % ( scriptname + '/' + timepath ), file=redirlog1 )
+      redirect = '<html>\n<head>\n<meta http-equiv="cache-control" content="max-age=0" />\n' \
+               + '<meta http-equiv="cache-control" content="no-cache" />\n' \
+               + '<meta http-equiv="expires" content="0" />\n' \
+               + '<meta http-equiv="expires" content="Tue, 01 Jan 1980 1:00:00 GMT" />\n' \
+               + '<meta http-equiv="pragma" content="no-cache" />\n' \
+               + '<meta http-equiv="refresh" content="0;URL=%slog.html" />\n</head>\n</html>\n'
 
-    with open( basedir+'log.html', 'w' ) as redirlog2:
-      print( redirect % ( timepath ), file=redirlog2 )
+      with open( outrootdir+'log.html', 'w' ) as redirlog1:
+        print( redirect % ( scriptname + '/' + timepath ), file=redirlog1 )
+
+      with open( basedir+'log.html', 'w' ) as redirlog2:
+        print( redirect % ( timepath ), file=redirlog2 )
 
   elif not os.path.isdir( outdir ):
     # use custom directory layout, skip creating symlinks, redirects
     os.makedirs( outdir )
 
-  htmlfile = open( os.path.join( outdir, 'log.html' ), 'w' )
-  htmlfile.write( '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "DTD/xhtml1-strict.dtd">\n' )
-  htmlfile.write( '<html><head>\n' )
-  htmlfile.write( '<title>%s %s</title>\n' % ( scriptname, time.strftime( '%Y/%m/%d %H:%M:%S', localtime ) ) )
-  htmlfile.write( '<script type="text/javascript" src="../../../../../viewer.js" ></script>\n' )
-  htmlfile.write( '<link rel="stylesheet" type="text/css" href="../../../../../style.css">\n' )
-  htmlfile.write( '<link rel="stylesheet" type="text/css" href="../../../../../custom.css">\n' )
-  htmlfile.write( '</head><body class="newstyle"><pre>\n' )
-  htmlfile.write( '<span id="navbar">goto: <a class="nav_latest" href="../../../../log.html?{1:}">latest {0:}</a> | <a class="nav_latestall" href="../../../../../log.html?{1:}">latest overall</a> | <a class="nav_index" href="../../../../../">index</a></span>\n'.format( scriptname, token ) )
-  htmlfile.write( '<ul>\n')
+  if htmloutput:
+    htmlfile = open( os.path.join( outdir, 'log.html' ), 'w' )
+    htmlfile.write( '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "DTD/xhtml1-strict.dtd">\n' )
+    htmlfile.write( '<html><head>\n' )
+    htmlfile.write( '<title>%s %s</title>\n' % ( scriptname, time.strftime( '%Y/%m/%d %H:%M:%S', localtime ) ) )
+    htmlfile.write( '<script type="text/javascript" src="../../../../../viewer.js" ></script>\n' )
+    htmlfile.write( '<link rel="stylesheet" type="text/css" href="../../../../../style.css">\n' )
+    htmlfile.write( '<link rel="stylesheet" type="text/css" href="../../../../../custom.css">\n' )
+    htmlfile.write( '</head><body class="newstyle"><pre>\n' )
+    htmlfile.write( '<span id="navbar">goto: <a class="nav_latest" href="../../../../log.html?{1:}">latest {0:}</a> | <a class="nav_latestall" href="../../../../../log.html?{1:}">latest overall</a> | <a class="nav_index" href="../../../../../">index</a></span>\n'.format( scriptname, token ) )
+    htmlfile.write( '<ul>\n')
 
   textlog = log._mklog()
 
@@ -567,12 +572,13 @@ def run( *functions ):
   textlog.write( 'info', ' \\\n'.join( commandline ) + '\n' )
   textlog.write( 'info', 'start %s\n' % ctime )
 
-  htmlfile.write( '<li class="info">\n' )
-  htmlfile.write( '{} {}\n'.format( scriptname, func.__name__ ) )
-  for arg, value in kwargs.items():
-    htmlfile.write( '  --{}={}\n'.format( arg, value ) )
-  htmlfile.write( '\nstart {}\n\n'.format(ctime) )
-  htmlfile.write( '</li>\n' )
+  if htmloutput:
+    htmlfile.write( '<li class="info">\n' )
+    htmlfile.write( '{} {}\n'.format( scriptname, func.__name__ ) )
+    for arg, value in kwargs.items():
+      htmlfile.write( '  --{}={}\n'.format( arg, value ) )
+    htmlfile.write( '\nstart {}\n\n'.format(ctime) )
+    htmlfile.write( '</li>\n' )
 
   t0 = time.time()
 
@@ -583,8 +589,11 @@ def run( *functions ):
 
   failed = 1
   frames = None
-  htmlfile.flush()
-  __log__ = log.TeeLog( textlog, log.HtmlLog(htmlfile) )
+  if htmloutput:
+    htmlfile.flush()
+    __log__ = log.TeeLog( textlog, log.HtmlLog(htmlfile) )
+  else:
+    __log__ = textlog
   try:
     func( **kwargs )
   except KeyboardInterrupt:
@@ -609,9 +618,10 @@ def run( *functions ):
   textlog.write( 'info', 'finish %s' % time.ctime() )
   textlog.write( 'info', 'elapsed %02.0f:%02.0f:%02.0f' % ( hours, minutes, seconds ) )
 
-  htmlfile.write( '<li class="info">\n' )
-  htmlfile.write( '\nfinish {}\nelapsed {:02.0f}:{:02.0f}:{:02.0f}\n\n'.format( time.ctime(), hours, minutes, seconds ) )
-  htmlfile.write( '</li>\n' )
+  if htmloutput:
+    htmlfile.write( '<li class="info">\n' )
+    htmlfile.write( '\nfinish {}\nelapsed {:02.0f}:{:02.0f}:{:02.0f}\n\n'.format( time.ctime(), hours, minutes, seconds ) )
+    htmlfile.write( '</li>\n' )
 
   if core.getprop( 'uncollected_summary', False ):
     debug.trace_uncollected()
@@ -624,15 +634,17 @@ def run( *functions ):
     log.warning( str(stream) )
 
   if frames:
-    debug.write_html( htmlfile, repr(exc), frames )
+    if htmloutput:
+      debug.write_html( htmlfile, repr(exc), frames )
     if core.getprop( 'tbexplore', False ):
       debug.explore( repr(exc), frames, '''
         Your program has died. The traceback explorer allows you to
         examine its post-mortem state to figure out why this happened.
         Type 'help' for an overview of commands to get going.''' )
 
-  htmlfile.write( '</ul></pre></body></html>\n' )
-  htmlfile.close()
+  if htmloutput:
+    htmlfile.write( '</ul></pre></body></html>\n' )
+    htmlfile.close()
   sys.exit( failed )
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
