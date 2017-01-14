@@ -14,7 +14,7 @@ creation and initiation of a log file.
 """
 
 from . import log, debug, core, version, numeric
-import sys, os, time, numpy, hashlib, weakref, warnings, collections, inspect
+import sys, os, time, numpy, hashlib, weakref, warnings, collections, inspect, shutil
 
 def isiterable( obj ):
   'check for iterability'
@@ -501,9 +501,8 @@ def run( *functions ):
 
       logpath = os.path.join( os.path.dirname( log.__file__ ), '_log' ) + os.sep
       for filename in os.listdir( logpath ):
-        if filename[0] != '.' and ( not os.path.isfile( outrootdir + filename ) or os.path.getmtime( outrootdir + filename ) < os.path.getmtime( logpath + filename ) ):
-          print( 'updating', filename )
-          open( outrootdir + filename, 'w' ).write( open( logpath + filename, 'r' ).read() )
+        if not filename.startswith( '.' ):
+          shutil.copyfile( os.path.join( logpath, filename ), os.path.join( outdir, filename ) )
 
       redirect = '<html>\n<head>\n<meta http-equiv="cache-control" content="max-age=0" />\n' \
                + '<meta http-equiv="cache-control" content="no-cache" />\n' \
@@ -532,9 +531,8 @@ def run( *functions ):
     htmlfile.write( '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "DTD/xhtml1-strict.dtd">\n' )
     htmlfile.write( '<html><head>\n' )
     htmlfile.write( '<title>%s %s</title>\n' % ( scriptname, time.strftime( '%Y/%m/%d %H:%M:%S', localtime ) ) )
-    htmlfile.write( '<script type="text/javascript" src="../../../../../viewer.js" ></script>\n' )
-    htmlfile.write( '<link rel="stylesheet" type="text/css" href="../../../../../style.css">\n' )
-    htmlfile.write( '<link rel="stylesheet" type="text/css" href="../../../../../custom.css">\n' )
+    htmlfile.write( '<script type="text/javascript" src="viewer.js" ></script>\n' )
+    htmlfile.write( '<link rel="stylesheet" type="text/css" href="style.css">\n' )
     htmlfile.write( '</head><body class="newstyle"><pre>\n' )
     htmlfile.write( '<span id="navbar">goto: <a class="nav_latest" href="../../../../log.html?{1:}">latest {0:}</a> | <a class="nav_latestall" href="../../../../../log.html?{1:}">latest overall</a> | <a class="nav_index" href="../../../../../">index</a></span>\n'.format( scriptname, token ) )
     htmlfile.write( '<ul>\n')
