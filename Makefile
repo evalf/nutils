@@ -29,7 +29,7 @@ coverage:
 
 htmlcov: coverage
 	rm -rf htmlcov
-	${COVERAGE} html
+	${PYTHON} -m coverage html
 
 clean:
 	rm -fr build dist
