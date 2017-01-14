@@ -20,8 +20,8 @@ test_unit:
 test_examples: $(EXAMPLES)
 
 $(EXAMPLES):
-	${PYTHON} $@ unittest --tbexplore=False --verbose=3 --nprocs=1
-	${PYTHON} $@ unittest --tbexplore=False --verbose=3 --nprocs=2
+	${PYTHON} $@ unittest --tbexplore=False --verbose=3 --nprocs=1 --htmloutput=False --outdir=.
+	${PYTHON} $@ unittest --tbexplore=False --verbose=3 --nprocs=2 --htmloutput=False --outdir=.
 
 coverage:
 	${PYTHON} -m coverage erase
