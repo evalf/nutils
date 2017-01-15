@@ -14,7 +14,7 @@ creation and initiation of a log file.
 """
 
 from . import log, debug, core, version, numeric
-import sys, os, time, numpy, hashlib, weakref, warnings, collections, inspect, shutil
+import sys, os, time, numpy, hashlib, weakref, warnings, collections, inspect
 
 def isiterable( obj ):
   'check for iterability'
@@ -448,7 +448,6 @@ def run( *functions ):
   localtime = time.localtime()
   timepath = time.strftime( '%Y/%m/%d/%H-%M-%S/', localtime )
   outdir = properties.get( 'outdir', None )
-  token = '{:.0f}'.format( time.mktime(localtime) ) # added as argument to log.html as yet another non-caching measure
   htmloutput = core.getprop( 'htmloutput', True )
 
   if outdir is None:
@@ -473,11 +472,6 @@ def run( *functions ):
 
     if htmloutput:
 
-      logpath = os.path.join( os.path.dirname( log.__file__ ), '_log' ) + os.sep
-      for filename in os.listdir( logpath ):
-        if not filename.startswith( '.' ):
-          shutil.copyfile( os.path.join( logpath, filename ), os.path.join( outdir, filename ) )
-
       redirect = '<html>\n<head>\n<meta http-equiv="cache-control" content="max-age=0" />\n' \
                + '<meta http-equiv="cache-control" content="no-cache" />\n' \
                + '<meta http-equiv="expires" content="0" />\n' \
@@ -500,113 +494,97 @@ def run( *functions ):
   if outdir != '.':
     os.chdir( outdir )
 
-  if htmloutput:
-    htmlfile = open( os.path.join( outdir, 'log.html' ), 'w' )
-    htmlfile.write( '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "DTD/xhtml1-strict.dtd">\n' )
-    htmlfile.write( '<html><head>\n' )
-    htmlfile.write( '<title>%s %s</title>\n' % ( scriptname, time.strftime( '%Y/%m/%d %H:%M:%S', localtime ) ) )
-    htmlfile.write( '<script type="text/javascript" src="viewer.js" ></script>\n' )
-    htmlfile.write( '<link rel="stylesheet" type="text/css" href="style.css">\n' )
-    htmlfile.write( '</head><body class="newstyle"><pre>\n' )
-    htmlfile.write( '<span id="navbar">goto: <a class="nav_latest" href="../../../../log.html?{1:}">latest {0:}</a> | <a class="nav_latestall" href="../../../../../log.html?{1:}">latest overall</a> | <a class="nav_index" href="../../../../../">index</a></span>\n'.format( scriptname, token ) )
-    htmlfile.write( '<ul>\n')
-
   textlog = log._mklog()
+  if htmloutput:
+    title = '{} {}'.format( scriptname, time.strftime( '%Y/%m/%d %H:%M:%S', localtime ) )
+    htmllog = log.HtmlLog( os.path.join( outdir, 'log.html' ), title=title, scriptname=scriptname )
+    __log__ = log.TeeLog( textlog, htmllog )
+  else:
+    __log__ = textlog
 
   __outdir__ = outdir
   __cachedir__ = basedir + 'cache'
 
-  try:
-    import signal
-    signal.signal( signal.SIGTSTP, debug.signal_handler ) # start traceback explorer at ^Z
-  except Exception as e:
-    log.warning( 'failed to install signal handler:', e )
+  with __log__:
 
-  try:
-    gitversion = version + '.' + githash(__file__,2)[:8]
-  except:
-    gitversion = version
-  log.info( 'nutils v%s\n' % gitversion )
+    ctime = time.ctime()
 
-  commandline = [ ' '.join([ scriptname, func.__name__ ]) ] + [ '  --%s=%s' % item for item in kwargs.items() ]
-  ctime = time.ctime()
+    try:
+      import signal
+      signal.signal( signal.SIGTSTP, debug.signal_handler ) # start traceback explorer at ^Z
+    except Exception as e:
+      log.warning( 'failed to install signal handler:', e )
 
-  textlog.write( 'info', ' \\\n'.join( commandline ) + '\n' )
-  textlog.write( 'info', 'start %s\n' % ctime )
+    try:
+      gitversion = version + '.' + githash(__file__,2)[:8]
+    except:
+      gitversion = version
+    log.info( 'nutils v{}'.format( gitversion ) )
+    log.info( '' )
 
-  if htmloutput:
-    htmlfile.write( '<li class="info">\n' )
-    htmlfile.write( '{} {}\n'.format( scriptname, func.__name__ ) )
-    for arg, value in kwargs.items():
-      htmlfile.write( '  --{}={}\n'.format( arg, value ) )
-    htmlfile.write( '\nstart {}\n\n'.format(ctime) )
-    htmlfile.write( '</li>\n' )
+    textlog.write( 'info', ' \\\n'.join( [ ' '.join([ scriptname, func.__name__ ]) ] + [ '  --{}={}'.format( *item ) for item in kwargs.items() ] ) )
+    if htmloutput:
+      htmllog.write( 'info', '{} {}'.format( scriptname, func.__name__ ) )
+      for arg, value in kwargs.items():
+        htmllog.write( 'info', '  --{}={}'.format( arg, value ) )
 
-  t0 = time.time()
+    log.info( '' )
+    log.info( 'start {}'.format(ctime) )
+    log.info( '' )
 
-  if core.getprop( 'profile' ):
-    import cProfile
-    prof = cProfile.Profile()
-    prof.enable()
+    t0 = time.time()
 
-  failed = 1
-  frames = None
-  if htmloutput:
-    htmlfile.flush()
-    __log__ = log.TeeLog( textlog, log.HtmlLog(htmlfile) )
-  else:
-    __log__ = textlog
-  try:
-    func( **kwargs )
-  except KeyboardInterrupt:
-    log.error( 'killed by user' )
-  except Terminate as exc:
-    log.error( 'terminated:', exc )
-  except Exception:
-    exc, frames = debug.exc_info()
-    log.stack( repr(exc), frames )
-  else:
-    failed = 0
+    if core.getprop( 'profile' ):
+      import cProfile
+      prof = cProfile.Profile()
+      prof.enable()
 
-  if core.getprop( 'profile' ):
-    prof.disable()
+    failed = 1
+    frames = None
+    try:
+      func( **kwargs )
+    except KeyboardInterrupt:
+      log.error( 'killed by user' )
+    except Terminate as exc:
+      log.error( 'terminated:', exc )
+    except Exception:
+      exc, frames = debug.exc_info()
+      log.stack( repr(exc), frames )
+    else:
+      failed = 0
 
-  dt = time.time() - t0
-  hours = dt // 3600
-  minutes = dt // 60 - 60 * hours
-  seconds = dt // 1 - 60 * minutes - 3600 * hours
+    if core.getprop( 'profile' ):
+      prof.disable()
 
-  textlog.write( 'info', None )
-  textlog.write( 'info', 'finish %s' % time.ctime() )
-  textlog.write( 'info', 'elapsed %02.0f:%02.0f:%02.0f' % ( hours, minutes, seconds ) )
+    dt = time.time() - t0
+    hours = dt // 3600
+    minutes = dt // 60 - 60 * hours
+    seconds = dt // 1 - 60 * minutes - 3600 * hours
 
-  if htmloutput:
-    htmlfile.write( '<li class="info">\n' )
-    htmlfile.write( '\nfinish {}\nelapsed {:02.0f}:{:02.0f}:{:02.0f}\n\n'.format( time.ctime(), hours, minutes, seconds ) )
-    htmlfile.write( '</li>\n' )
+    log.info( '' )
+    log.info( 'finish {}'.format( time.ctime() ) )
+    log.info( 'elapsed %02.0f:%02.0f:%02.0f' % ( hours, minutes, seconds ) )
 
-  if core.getprop( 'uncollected_summary', False ):
-    debug.trace_uncollected()
+    if core.getprop( 'uncollected_summary', False ):
+      debug.trace_uncollected()
 
-  if core.getprop( 'profile' ):
-    import pstats
-    stream = BufferStream()
-    stream.write( 'profile results:\n' )
-    pstats.Stats( prof, stream=stream ).strip_dirs().sort_stats( 'time' ).print_stats()
-    log.warning( str(stream) )
+    if core.getprop( 'profile' ):
+      import pstats
+      stream = BufferStream()
+      stream.write( 'profile results:\n' )
+      pstats.Stats( prof, stream=stream ).strip_dirs().sort_stats( 'time' ).print_stats()
+      log.warning( str(stream) )
+
+    if frames and htmloutput:
+      htmllog.write_post_mortem( repr(exc), frames )
 
   if frames:
-    if htmloutput:
-      debug.write_html( htmlfile, repr(exc), frames )
     if core.getprop( 'tbexplore', False ):
       debug.explore( repr(exc), frames, '''
         Your program has died. The traceback explorer allows you to
         examine its post-mortem state to figure out why this happened.
         Type 'help' for an overview of commands to get going.''' )
 
-  if htmloutput:
-    htmlfile.write( '</ul></pre></body></html>\n' )
-    htmlfile.close()
   sys.exit( failed )
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

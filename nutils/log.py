@@ -12,7 +12,7 @@ The log module provides print methods ``debug``, ``info``, ``user``,
 stdout as well as to an html formatted log file if so configured.
 """
 
-import sys, time, warnings, functools, itertools, re, abc, contextlib, html, urllib.parse, os, json
+import sys, time, warnings, functools, itertools, re, abc, contextlib, html, urllib.parse, os, json, shutil
 from . import core
 
 warnings.showwarning = lambda message, category, filename, lineno, *args: \
@@ -27,6 +27,12 @@ class Log( metaclass=abc.ABCMeta ):
   '''The :class:`Log` object is what is stored in the ``__log__`` property. It
   should define a ``context`` method that returns a context manager which adds
   a contextual layer and a ``write`` method.'''
+
+  def __enter__( self ):
+    pass
+
+  def __exit__( self, *exc_info ):
+    pass
 
   @abc.abstractmethod
   def context( self, title ):
@@ -169,9 +175,13 @@ class RichOutputLog( StdoutLog ):
     # Progress update interval in seconds.
     self._progressinterval = progressinterval or core.getprop( 'progressinterval', 0.1 )
 
-  def __del__( self ):
-    # Clear the progress line.
-    self.stream.write( '\033[K' )
+  def __exit__( self, *exc_info ):
+    try:
+      # Clear the progress line.
+      self.stream.write( '\033[K' )
+    except IOError:
+      pass
+    super().__exit__( *exc_info )
 
   def _mkstr( self, level, text ):
     if text is not None:
@@ -230,7 +240,12 @@ class HtmlInsertAnchor( Log ):
 class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
   '''Output html nested lists.'''
 
-  def __init__( self, file, *, logdir=None ):
+  def __init__( self, file, *, title='nutils', scriptname=None, logdir=None ):
+    if isinstance( file, (str, bytes) ):
+      self._file = file = open( file, 'w' )
+      assert logdir is None, '`logdir` can only be used when passing a file object to `file`'
+    else:
+      self._file = None
     self._print = functools.partial( print, file=file )
     self._flush = file.flush
     if logdir is None:
@@ -238,7 +253,39 @@ class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
       if not hasattr( file, 'name' ):
         raise ValueError( 'Cannot autodetect the directory of the log file.  Please set the directory using the `logdir` argument of {!r}.'.format( type( self ) ) )
       logdir = os.path.dirname( file.name )
+    self._title = title
+    self._scriptname = scriptname
     super().__init__( logdir )
+
+  def __enter__( self ):
+    super().__enter__()
+    # Copy dependencies.
+    logpath = os.path.join( os.path.dirname( __file__ ), '_log' )
+    for filename in os.listdir( logpath ):
+      if not filename.startswith( '.' ):
+        shutil.copyfile( os.path.join( logpath, filename ), os.path.join( self._logdir, filename ) )
+    # Write header.
+    if self._file:
+      self._file.__enter__()
+    self._print( '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "DTD/xhtml1-strict.dtd">' )
+    self._print( '<html><head>' )
+    self._print( '<title>{}</title>'.format( html.escape( self._title ) ) )
+    self._print( '<script type="text/javascript" src="viewer.js" ></script>' )
+    self._print( '<link rel="stylesheet" type="text/css" href="style.css">' )
+    self._print( '</head><body class="newstyle"><pre>' )
+    if self._scriptname is not None:
+      self._print( '<span id="navbar">goto: <a class="nav_latest" href="../../../../log.html?{1:.0f}">latest {0:}</a> | <a class="nav_latestall" href="../../../../../log.html?{1:.0f}">latest overall</a> | <a class="nav_index" href="../../../../../">index</a></span>'.format( self._scriptname, time.mktime(time.localtime()) ) )
+    self._print( '<ul>' )
+
+  def __exit__( self, *exc_info ):
+    try:
+      # Write footer.
+      self._print( '</ul></pre></body></html>' )
+    except IOError:
+      pass
+    if self._file:
+      self._file.__exit__( *exc_info )
+    super().__exit__( *exc_info )
 
   def write( self, level, text ):
     '''Write ``text`` with log level ``level`` to the log.
@@ -260,6 +307,40 @@ class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
   def _print_item( self, level, text ):
     escaped_text = self._insert_anchors( level, html.escape( text ) )
     self._print( '<li class="{}">{}</li>'.format( html.escape( level ), escaped_text ) )
+    self._flush()
+
+  def write_post_mortem( self, msg, frames ):
+    'write exception nfo to html log'
+
+    self._print( '<span class="post-mortem">' )
+    self._print( '<hr/>' )
+    self._print( '<b>EXHAUSTIVE POST-MORTEM DUMP FOLLOWS</b>' )
+    self._print( html.escape(repr(msg)) )
+    for frame in frames:
+      self._print( html.escape(str(frame)) )
+    self._print( '<hr/>' )
+    for f in reversed(frames):
+      self._print( html.escape(f.context.splitlines()[0]) )
+      for line in f.source.splitlines():
+        if line.startswith( '>' ):
+          fmt = '<span class="error"> {}</span>'
+          line = line[1:]
+        else:
+          fmt = '{}'
+        line = re.sub( r'\b(def|if|elif|else|for|while|with|in|return)\b', r'<b>\1</b>', html.escape(line) )
+        self._print( fmt.format( line ) )
+      self._print()
+      self._print()
+      self._print( '<table border="1" style="border:none; margin:0px; padding:0px;">' )
+      for key, val in f.frame.f_locals.items():
+        try:
+          val = html.escape(str(val))
+        except:
+          val = 'ERROR'
+        self._print( '<tr><td>{}</td><td>{}</td></tr>'.format( html.escape(key), val ) )
+      self._print( '</table>' )
+      self._print( '<hr/>' )
+    self._print( '</span>' )
     self._flush()
 
 class IndentLog( HtmlInsertAnchor, ContextTreeLog ):
@@ -329,6 +410,15 @@ class TeeLog( Log ):
 
   def __init__( self, *logs ):
     self.logs = logs
+
+  def __enter__( self ):
+    self._stack = contextlib.ExitStack()
+    self._stack.__enter__()
+    for log in self.logs:
+      self._stack.enter_context( log )
+
+  def __exit__( self, *exc_info ):
+    self._stack.__exit__( *exc_info )
 
   @contextlib.contextmanager
   def context( self, title ):

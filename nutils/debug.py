@@ -250,37 +250,6 @@ def frames_from_callstack( depth=1 ):
   else:
     return frames_from_frame( frame )
 
-def write_html( out, msg, frames ):
-  'write exception info to html file'
-
-  out.write( '<span class="info">' )
-  out.write( '\n<hr/>' )
-  out.write( '<b>EXHAUSTIVE POST-MORTEM DUMP FOLLOWS</b>\n' )
-  out.write( '\n'.join( [ repr(msg) ] + [ str(f) for f in frames ] ) )
-  out.write( '<hr/>\n' )
-  for f in reversed(frames):
-    out.write( f.context.splitlines()[0] + '\n' )
-    for line in f.source.splitlines():
-      if line.startswith( '>' ):
-        fmt = '<span class="error"> %s</span>\n'
-        line = line[1:]
-      else:
-        fmt = '%s\n'
-      line = re.sub( r'\b(def|if|elif|else|for|while|with|in|return)\b', r'<b>\1</b>', line.replace('<','&lt;').replace('>','&gt;') )
-      out.write( fmt % line )
-    out.write( '\n\n' )
-    out.write( '<table border="1" style="border:none; margin:0px; padding:0px;">\n' )
-    for key, val in f.frame.f_locals.items():
-      try:
-        val = str(val).replace('<','&lt;').replace('>','&gt;')
-      except:
-        val = 'ERROR'
-      out.write( '<tr><td>%s</td><td>%s</td></tr>\n' % ( key, val ) )
-    out.write( '</table>\n' )
-    out.write( '<hr/>\n' )
-  out.write( '</span>' )
-  out.flush()
-
 def explore( msg, frames, intro ):
   Explorer( msg, frames, intro ).cmdloop()
 

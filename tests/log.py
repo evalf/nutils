@@ -1,6 +1,6 @@
 import io, tempfile, os, contextlib
 from . import register, unittest
-import nutils.log, nutils.core, nutils.parallel
+import nutils.log, nutils.core, nutils.parallel, nutils.debug
 
 log_stdout = '''\
 iterator > iter 0 (17%) > a
@@ -58,9 +58,16 @@ log_rich_output = '''\
     raise ValueError( \'test\' )\033[0m
 \033[K\033[1;30m\033[0mtest.png
 \033[K\033[1;30m\033[0mnonexistent.png
-'''
+\033[K'''
 
 log_html = '''\
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "DTD/xhtml1-strict.dtd">
+<html><head>
+<title>test</title>
+<script type="text/javascript" src="viewer.js" ></script>
+<link rel="stylesheet" type="text/css" href="style.css">
+</head><body class="newstyle"><pre>
+<ul>
 <li class="context">iterator</li><ul>
 <li class="context">iter 0 (17%)</li><ul>
 <li class="info">a</li>
@@ -85,6 +92,7 @@ log_html = '''\
 </ul>
 <li class="info"><a href="test.png" class="plot">test.png</a></li>
 <li class="info">nonexistent.png</li>
+</ul></pre></body></html>
 '''
 
 log_indent = '''\
@@ -106,6 +114,48 @@ c exception
  |     raise ValueError( &#x27;test&#x27; )
 i <a href="test.png" class="plot">test.png</a>
 i nonexistent.png
+'''
+
+log_html_post_mortem = '''\
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "DTD/xhtml1-strict.dtd">
+<html><head>
+<title>test</title>
+<script type="text/javascript" src="viewer.js" ></script>
+<link rel="stylesheet" type="text/css" href="style.css">
+</head><body class="newstyle"><pre>
+<ul>
+<li class="error">TestException()
+  File &quot;&lt;string&gt;&quot;, line 3, in generate_exception
+    \n\
+  File &quot;&lt;string&gt;&quot;, line 5, in generate_exception
+    </li>
+<span class="post-mortem">
+<hr/>
+<b>EXHAUSTIVE POST-MORTEM DUMP FOLLOWS</b>
+&#x27;TestException()&#x27;
+  File &quot;&lt;string&gt;&quot;, line 5, in generate_exception
+    \n\
+  File &quot;&lt;string&gt;&quot;, line 3, in generate_exception
+    \n\
+<hr/>
+  File &quot;&lt;string&gt;&quot;, line 3, in generate_exception
+&lt;not avaliable&gt;
+
+
+<table border="1" style="border:none; margin:0px; padding:0px;">
+<tr><td>level</td><td>1</td></tr>
+</table>
+<hr/>
+  File &quot;&lt;string&gt;&quot;, line 5, in generate_exception
+&lt;not avaliable&gt;
+
+
+<table border="1" style="border:none; margin:0px; padding:0px;">
+<tr><td>level</td><td>0</td></tr>
+</table>
+<hr/>
+</span>
+</ul></pre></body></html>
 '''
 
 def generate_log( logdir ):
@@ -136,11 +186,11 @@ def generate_log( logdir ):
 @register( 'stdout', nutils.log.StdoutLog, log_stdout )
 @register( 'stdout-verbose3', nutils.log.StdoutLog, log_stdout3, verbose=3 )
 @register( 'rich_output', nutils.log.RichOutputLog, log_rich_output )
-@register( 'html', nutils.log.HtmlLog, log_html )
+@register( 'html', nutils.log.HtmlLog, log_html, title='test' )
 @register( 'indent', nutils.log.IndentLog, log_indent )
 @register( 'indent-progress-seekable', nutils.log.IndentLog, log_indent, progressfile='seekable' )
 @register( 'indent-progress-stream', nutils.log.IndentLog, log_indent, progressfile='stream' )
-def logoutput( logcls, logout, verbose=len( nutils.log.LEVELS ), progressfile=False ):
+def logoutput( logcls, logout, verbose=len( nutils.log.LEVELS ), progressfile=False, **kwargs ):
 
   @unittest
   def test():
@@ -151,7 +201,6 @@ def logoutput( logcls, logout, verbose=len( nutils.log.LEVELS ), progressfile=Fa
       # this computer.
       __progressinterval__ = -1
       stream = io.StringIO()
-      kwargs = {}
       if logcls in (nutils.log.HtmlLog, nutils.log.IndentLog):
         kwargs.update( logdir=logdir )
       if progressfile == 'seekable':
@@ -163,7 +212,8 @@ def logoutput( logcls, logout, verbose=len( nutils.log.LEVELS ), progressfile=Fa
       else:
         raise ValueError
       __log__ = logcls( stream, **kwargs )
-      generate_log( logdir )
+      with __log__:
+        generate_log( logdir )
       assert stream.getvalue() == logout
 
 @register
@@ -177,7 +227,39 @@ def tee_stdout_html():
       stream_html = io.StringIO()
       __log__ = nutils.log.TeeLog(
         nutils.log.StdoutLog( stream_stdout ),
-        nutils.log.HtmlLog( stream_html, logdir=logdir ))
-      generate_log( logdir )
+        nutils.log.HtmlLog( stream_html, logdir=logdir, title='test' ))
+      with __log__:
+        generate_log( logdir )
       assert stream_stdout.getvalue() == log_stdout
       assert stream_html.getvalue() == log_html
+
+@register
+def html_post_mortem():
+
+  class TestException( Exception ): pass
+
+  virtual_module = dict( TestException=TestException )
+  exec( '''\
+def generate_exception( level=0 ):
+  if level == 1:
+    raise TestException
+  else:
+    generate_exception( level+1 )
+''', virtual_module )
+
+  @unittest
+  def test():
+    with tempfile.TemporaryDirectory() as logdir:
+      stream = io.StringIO()
+      __log__ = nutils.log.HtmlLog( stream, logdir=logdir, title='test' )
+      with __log__:
+        try:
+          virtual_module['generate_exception']()
+        except TestException:
+          exc, frames = nutils.debug.exc_info()
+          frames = frames[1:]
+        else:
+          raise ValueError( 'Expected a `ValueError` exception.' )
+        nutils.log.stack( repr(exc), frames )
+        __log__.write_post_mortem( repr(exc), frames )
+      assert stream.getvalue() == log_html_post_mortem

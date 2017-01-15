@@ -91,6 +91,11 @@ body.newstyle ul ul {
 body.newstyle li {
   list-style-type: none;
   white-space: pre;
+  min-height: 1em;
+}
+
+body.newstyle span.post-mortem {
+  white-space: pre;
 }
 
 /********** Views **********/
