@@ -83,7 +83,7 @@ class Topology( object ):
 
   def __rsub__( self, other ):
     assert isinstance( other, Topology ) and other.ndims == self.ndims
-    return other - other.subset( self, newboundary=self.boundary )
+    return other - other.subset( self, newboundary=getattr(self,'boundary',None) )
 
   def __mul__( self, other ):
     return ProductTopology( self, other )
