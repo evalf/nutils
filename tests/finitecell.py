@@ -178,7 +178,7 @@ def cutdomain( ndims, nelems, maxrefine, errtol ):
   for name, dom in ('pos',pos), ('neg',neg):
     @unittest( name=name )
     def div():
-      dom.volume_check( geom, decimal=15 )
+      dom.volume_check( geom, decimal=14 )
  
   @unittest
   def surface():

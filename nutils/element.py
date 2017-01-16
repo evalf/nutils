@@ -362,7 +362,6 @@ class Reference( cache.Immutable ):
         length += wtot
         midpoint += wtot * (trans<<trans2).apply( numeric.dot( weights, points )/weights.sum() )
       midpoint /= length
-      midpoint = numpy.round( midpoint * nbins ) / nbins
 
     mosaic = MosaicReference( self, refs, midpoint )
     return self.empty if mosaic.volume == 0 else mosaic if mosaic.volume < self.volume else self
