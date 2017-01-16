@@ -204,8 +204,34 @@ def solve( gen_lhs_resnorm, tol=1e-10, maxiter=numpy.inf ):
     raise ModelError( 'generator stopped before reaching target tolerance' )
   else:
     return lhs
-  
 
+
+def withsolve( f ):
+  '''add a .solve method to (lhs,resnorm) iterators
+
+  Introduces the convenient form:
+
+  >>> newton( target, residual ).solve( tol )
+
+  Shorthand for
+
+  >>> solve( newton( target, residual ), tol )
+  '''
+
+  @functools.wraps( f, updated=() )
+  class wrapper:
+    def __init__( self, *args, **kwargs ):
+      self.iter = f( *args, **kwargs )
+    def __next__( self ):
+      return next( self.iter )
+    def __iter__( self ):
+      return self.iter
+    def solve( self, *args, **kwargs ):
+      return solve( self.iter, *args, **kwargs )
+  return wrapper
+
+
+@withsolve
 def newton( target, residual, lhs0=None, freezedofs=None, nrelax=5, minrelax=.1, maxrelax=.9, rebound=2**.5 ):
   '''iteratively solve nonlinear problem by gradient descent
 
@@ -314,6 +340,7 @@ def newton( target, residual, lhs0=None, freezedofs=None, nrelax=5, minrelax=.1,
     lhs += relax * dlhs
 
 
+@withsolve
 def pseudotime( target, residual, inertia, timestep, lhs0, residual0=None, freezedofs=None ):
   '''iteratively solve nonlinear problem by pseudo time stepping
 
