@@ -111,4 +111,4 @@ def unittest():
 
 
 if __name__ == '__main__':
-  util.run( main, conv, unittest )
+  cli.run( main, conv, unittest )

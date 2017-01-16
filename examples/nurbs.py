@@ -9,7 +9,7 @@ geometry and mesh refinement', Computer Methods in Applied Mechanics and
 Engineering, Elsevier, 2005, 194, 4135-4195.
 """
 
-from nutils import util, mesh, function, plot, library, log, debug, _
+from nutils import cli, mesh, function, plot, library, log, debug, _
 import numpy
 
 
@@ -136,4 +136,4 @@ def exact_solution( geometry, T, R, E, nu ):
 
 
 if __name__ == '__main__':
-  util.run( main, convergence, unittest )
+  cli.run( main, convergence, unittest )

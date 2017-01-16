@@ -152,4 +152,4 @@ def unittest():
 
 
 if __name__ == '__main__':
-  util.run( main, unittest )
+  cli.run( main, unittest )

@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 
-from nutils import mesh, plot, util, log, library, function, debug
+from nutils import mesh, plot, cli, log, library, function, debug
 import numpy
 
 
@@ -60,4 +60,4 @@ def unittest():
 
 
 if __name__ == '__main__':
-  util.run( main, unittest )
+  cli.run( main, unittest )
