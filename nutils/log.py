@@ -12,13 +12,13 @@ The log module provides print methods ``debug``, ``info``, ``user``,
 stdout as well as to an html formatted log file if so configured.
 """
 
-import sys, time, warnings, functools, itertools, re, abc, contextlib, html, urllib.parse
+import sys, time, warnings, functools, itertools, re, abc, contextlib, html, urllib.parse, os, json, shutil
 from . import core
 
 warnings.showwarning = lambda message, category, filename, lineno, *args: \
   warning( '%s: %s\n  In %s:%d' % ( category.__name__, message, filename, lineno ) )
 
-LEVELS = 'path', 'error', 'warning', 'user', 'info', 'progress', 'debug'
+LEVELS = 'error', 'warning', 'user', 'info', 'debug'
 
 
 ## LOG
@@ -27,6 +27,12 @@ class Log( metaclass=abc.ABCMeta ):
   '''The :class:`Log` object is what is stored in the ``__log__`` property. It
   should define a ``context`` method that returns a context manager which adds
   a contextual layer and a ``write`` method.'''
+
+  def __enter__( self ):
+    pass
+
+  def __exit__( self, *exc_info ):
+    pass
 
   @abc.abstractmethod
   def context( self, title ):
@@ -150,9 +156,7 @@ class StdoutLog( ContextLog ):
     verbose = core.getprop( 'verbose', len(LEVELS) )
     if level not in LEVELS[verbose:]:
       from . import parallel
-      if text is None and parallel.procid:
-        return # log progress only on first process
-      if text is not None and parallel.procid is not None:
+      if parallel.procid is not None:
         text = '[{}] {}'.format( parallel.procid, text )
       s = self._mkstr( level, text )
       self.stream.write( s + '\n' if endl else s )
@@ -164,19 +168,48 @@ class RichOutputLog( StdoutLog ):
 
   cmap = { 'path': (2,1), 'error': (1,1), 'warning': (1,0), 'user': (3,0) }
 
+  def __init__( self, stream=sys.stdout, *, progressinterval=None ):
+    super().__init__( stream=stream )
+    # Timestamp at which a new progress line may be written.
+    self._progressupdate = 0
+    # Progress update interval in seconds.
+    self._progressinterval = progressinterval or core.getprop( 'progressinterval', 0.1 )
+
+  def __exit__( self, *exc_info ):
+    try:
+      # Clear the progress line.
+      self.stream.write( '\033[K' )
+    except IOError:
+      pass
+    super().__exit__( *exc_info )
+
   def _mkstr( self, level, text ):
     if text is not None:
       string = ' · '.join( self._context + [text] )
       n = len(string) - len(text)
+      # This is not a progress line.  Reset the update timestamp.
+      self._progressupdate = 0
     else:
       string = ' · '.join( self._context )
       n = len(string)
+      # Don't touch `self._progressupdate` here.  Will be done in
+      # `self._push_context`.
     try:
       colorid, boldid = self.cmap[level]
     except KeyError:
-      return '\033[1;30m{}\033[0m{}'.format( string[:n], string[n:] )
+      return '\033[K\033[1;30m{}\033[0m{}'.format( string[:n], string[n:] )
     else:
-      return '\033[1;30m{}\033[{};3{}m{}\033[0m'.format( string[:n], boldid, colorid, string[n:] )
+      return '\033[K\033[1;30m{}\033[{};3{}m{}\033[0m'.format( string[:n], boldid, colorid, string[n:] )
+
+  def _push_context( self, title ):
+    super()._push_context( title )
+    from . import parallel
+    if parallel.procid:
+      return
+    t = time.time()
+    if t >= self._progressupdate:
+      self._progressupdate = t + self._progressinterval
+      self.stream.write( self._mkstr( 'progress', None ) + '\r' )
 
 class HtmlInsertAnchor( Log ):
   '''Mix-in class for HTML-based loggers that inserts anchor tags for paths.
@@ -184,31 +217,84 @@ class HtmlInsertAnchor( Log ):
   .. automethod:: _insert_anchors
   '''
 
-  @staticmethod
-  def _path2href( match ):
-    whitelist = ['.jpg','.png','.svg','.txt','.mp4','.webm'] + list( core.getprop( 'plot_extensions', [] ) )
+  def __init__( self, logdir ):
+    self._logdir = logdir
+    super().__init__()
+
+  def _path2href( self, match ):
+    if not os.path.exists( os.path.join( self._logdir, match.group(0) ) ):
+      return match.group(0)
     filename = html.unescape( match.group(0) )
     ext = html.unescape( match.group(1) )
+    whitelist = ['.jpg','.png','.svg','.txt','.mp4','.webm'] + list( core.getprop( 'plot_extensions', [] ) )
     fmt = '<a href="{href}"' + (' class="plot"' if ext in whitelist else '') + '>{name}</a>'
     return fmt.format( href=urllib.parse.quote( filename ), name=html.escape( filename ) )
 
-  @classmethod
-  def _insert_anchors( cls, level, escaped_text ):
+  def _insert_anchors( self, level, escaped_text ):
     '''Insert anchors for all paths in ``escaped_text``.
 
     .. Note:: ``escaped_text`` should be valid html (e.g. the result of ``html.escape(text)``).
     '''
-    if level == 'path':
-      escaped_text = re.sub( r'\b\w+([.]\w+)\b', cls._path2href, escaped_text )
-    return escaped_text
+    return re.sub( r'\b\w+([.]\w+)\b', self._path2href, escaped_text )
 
 class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
   '''Output html nested lists.'''
 
-  def __init__( self, file ):
+  def __init__( self, file, *, title='nutils', scriptname=None, logdir=None ):
+    if isinstance( file, (str, bytes) ):
+      self._file = file = open( file, 'w' )
+      assert logdir is None, '`logdir` can only be used when passing a file object to `file`'
+    else:
+      self._file = None
     self._print = functools.partial( print, file=file )
     self._flush = file.flush
-    super().__init__()
+    if logdir is None:
+      # Try to get the directory of `file`.
+      if not hasattr( file, 'name' ):
+        raise ValueError( 'Cannot autodetect the directory of the log file.  Please set the directory using the `logdir` argument of {!r}.'.format( type( self ) ) )
+      logdir = os.path.dirname( file.name )
+    self._title = title
+    self._scriptname = scriptname
+    super().__init__( logdir )
+
+  def __enter__( self ):
+    super().__enter__()
+    # Copy dependencies.
+    logpath = os.path.join( os.path.dirname( __file__ ), '_log' )
+    for filename in os.listdir( logpath ):
+      if not filename.startswith( '.' ):
+        shutil.copyfile( os.path.join( logpath, filename ), os.path.join( self._logdir, filename ) )
+    # Write header.
+    if self._file:
+      self._file.__enter__()
+    self._print( '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "DTD/xhtml1-strict.dtd">' )
+    self._print( '<html><head>' )
+    self._print( '<title>{}</title>'.format( html.escape( self._title ) ) )
+    self._print( '<script type="text/javascript" src="viewer.js" ></script>' )
+    self._print( '<link rel="stylesheet" type="text/css" href="style.css">' )
+    self._print( '</head><body class="newstyle"><pre>' )
+    if self._scriptname is not None:
+      self._print( '<span id="navbar">goto: <a class="nav_latest" href="../../../../log.html?{1:.0f}">latest {0:}</a> | <a class="nav_latestall" href="../../../../../log.html?{1:.0f}">latest overall</a> | <a class="nav_index" href="../../../../../">index</a></span>'.format( self._scriptname, time.mktime(time.localtime()) ) )
+    self._print( '<ul>' )
+
+  def __exit__( self, *exc_info ):
+    try:
+      # Write footer.
+      self._print( '</ul></pre></body></html>' )
+    except IOError:
+      pass
+    if self._file:
+      self._file.__exit__( *exc_info )
+    super().__exit__( *exc_info )
+
+  def write( self, level, text ):
+    '''Write ``text`` with log level ``level`` to the log.
+
+    This method makes sure the current context is printed and calls
+    :meth:`_print_item`.
+    '''
+    if level not in LEVELS[core.getprop( 'verbose', len(LEVELS) ):]:
+      return super().write( level, text )
 
   def _print_push_context( self, title ):
     self._print( '<li class="context">{}</li><ul>'.format( html.escape( title ) ) )
@@ -223,14 +309,60 @@ class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
     self._print( '<li class="{}">{}</li>'.format( html.escape( level ), escaped_text ) )
     self._flush()
 
+  def write_post_mortem( self, msg, frames ):
+    'write exception nfo to html log'
+
+    self._print( '<span class="post-mortem">' )
+    self._print( '<hr/>' )
+    self._print( '<b>EXHAUSTIVE POST-MORTEM DUMP FOLLOWS</b>' )
+    self._print( html.escape(repr(msg)) )
+    for frame in frames:
+      self._print( html.escape(str(frame)) )
+    self._print( '<hr/>' )
+    for f in reversed(frames):
+      self._print( html.escape(f.context.splitlines()[0]) )
+      for line in f.source.splitlines():
+        if line.startswith( '>' ):
+          fmt = '<span class="error"> {}</span>'
+          line = line[1:]
+        else:
+          fmt = '{}'
+        line = re.sub( r'\b(def|if|elif|else|for|while|with|in|return)\b', r'<b>\1</b>', html.escape(line) )
+        self._print( fmt.format( line ) )
+      self._print()
+      self._print()
+      self._print( '<table border="1" style="border:none; margin:0px; padding:0px;">' )
+      for key, val in f.frame.f_locals.items():
+        try:
+          val = html.escape(str(val))
+        except:
+          val = 'ERROR'
+        self._print( '<tr><td>{}</td><td>{}</td></tr>'.format( html.escape(key), val ) )
+      self._print( '</table>' )
+      self._print( '<hr/>' )
+    self._print( '</span>' )
+    self._flush()
+
 class IndentLog( HtmlInsertAnchor, ContextTreeLog ):
   '''Output indented html snippets.'''
 
-  def __init__( self, file ):
+  def __init__( self, file, *, logdir=None, progressfile=None, progressinterval=None ):
+    self._logfile = file
     self._print = functools.partial( print, file=file )
     self._flush = file.flush
     self._prefix = ''
-    super().__init__()
+    if logdir is None:
+      # Try to get the directory of `file`.
+      if not hasattr( file, 'name' ):
+        raise ValueError( 'Cannot autodetect the directory of the log file.  Please set the directory using the `logdir` argument of {!r}.'.format( type( self ) ) )
+      logdir = os.path.dirname( file.name )
+    self._progressfile = progressfile
+    if self._progressfile:
+      # Timestamp at which a new progress line may be written.
+      self._progressupdate = 0
+      # Progress update interval in seconds.
+      self._progressinterval = progressinterval or core.getprop( 'progressinterval', 1 )
+    super().__init__( logdir )
 
   def _print_push_context( self, title ):
     title = title.replace( '\n', '' ).replace( '\r', '')
@@ -248,12 +380,45 @@ class IndentLog( HtmlInsertAnchor, ContextTreeLog ):
       self._print( '{}{} {}'.format( self._prefix, level, line ) )
       level = '|'
     self._flush()
+    if self._progressfile:
+      self._print_progress( level, text )
+      self._progressupdate = 0
+
+  def _push_context( self, title ):
+    super()._push_context( title )
+    if not self._progressfile:
+      return
+    from . import parallel
+    if parallel.procid:
+      return
+    t = time.time()
+    if t < self._progressupdate:
+      return
+    self._print_progress( None, None )
+    self._progressupdate = t + self._progressinterval
+
+  def _print_progress( self, level, text ):
+    if self._progressfile.seekable():
+      self._progressfile.seek( 0 )
+      self._progressfile.truncate( 0 )
+    json.dump( dict( logpos=self._logfile.tell(), context=self._context, text=text, level=level ), self._progressfile )
+    self._progressfile.write( '\n' )
+    self._progressfile.flush()
 
 class TeeLog( Log ):
   '''Simultaneously interface multiple logs'''
 
   def __init__( self, *logs ):
     self.logs = logs
+
+  def __enter__( self ):
+    self._stack = contextlib.ExitStack()
+    self._stack.__enter__()
+    for log in self.logs:
+      self._stack.enter_context( log )
+
+  def __exit__( self, *exc_info ):
+    self._stack.__exit__( *exc_info )
 
   @contextlib.contextmanager
   def context( self, title ):
@@ -302,27 +467,21 @@ def _len( iterable ):
     return None
 
 def _logiter( text, iterator, length=None, useitem=False ):
-  dt = core.getprop( 'progress_interval', 1. )
-  dtexp = core.getprop( 'progress_interval_scale', 2 )
-  dtmax = core.getprop( 'progress_interval_max', 0 )
-  tnext = time.time() + dt
   log = _getlog()
   for index, item in _enumerate(iterator):
     title = '%s %d' % ( text, item if useitem else index )
     if length is not None:
       title += ' ({:.0f}%)'.format( (index+.5) * 100. / length )
     with log.context( title ):
-      now = time.time()
-      if now > tnext:
-        dt *= dtexp
-        if dt > dtmax > 0:
-          dt = dtmax
-        log.write( 'progress', None )
-        tnext = now + dt
       yield item
 
 def _mklog():
-  return RichOutputLog() if core.getprop( 'richoutput', False ) else StdoutLog()
+  stream = sys.stdout
+  richoutput = core.getprop( 'richoutput' )
+  if richoutput is None and os.isatty( stream.fileno() ) or richoutput:
+    return RichOutputLog( stream )
+  else:
+    return StdoutLog( stream )
 
 def _getlog():
   log = core.getprop( 'log', None )
@@ -340,6 +499,10 @@ def _print( level, *args ):
 ## MODULE-ONLY METHODS
 
 locals().update({ name: functools.partial( _print, name ) for name in LEVELS })
+
+def path( *args ):
+  warnings.warn( "log level 'path' will be removed in the future, please use any other log level instead", DeprecationWarning )
+  return _print( 'info', *args )
 
 def range( title, *args ):
   '''Progress logger identical to built in range'''

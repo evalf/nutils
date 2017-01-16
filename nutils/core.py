@@ -17,8 +17,9 @@ globalproperties = {
   'nprocs': 1,
   'outrootdir': '~/public_html',
   'outdir': '.',
-  'verbose': 6,
-  'richoutput': False,
+  'verbose': 4,
+  'richoutput': None,
+  'htmloutput': True,
   'tbexplore': False,
   'imagetype': 'png',
   'symlink': False,
@@ -81,12 +82,6 @@ def getprop( name, default=_nodefault, frame=None ):
   if default is _nodefault:
     raise NameError( 'property %r is not defined' % name )
   return default
-
-def getoutdir():
-  outdir = getprop( 'outdir' )
-  if not os.path.isdir( outdir ):
-    os.makedirs( outdir )
-  return outdir
 
 def index( items ):
   """Index of the first nonzero item.

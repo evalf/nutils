@@ -22,7 +22,7 @@ class BasePlot( object ):
   def __init__ ( self, name=None, ndigits=0, index=None, outdir=None ):
     'constructor'
 
-    self.path = outdir or core.getoutdir()
+    self.path = outdir or '.'
     self.name = name
     self.index = index
     self.ndigits = ndigits
@@ -116,7 +116,7 @@ class PyPlot( BasePlot ):
       path, relpath = self.getpath(name,index,ext)
       relpaths.append( relpath )
       self.savefig( path, **kwargs )
-    log.path( ' '.join( relpaths ) )
+    log.info( ' '.join( relpaths ) )
 
   def segments( self, points, color='black', **kwargs ):
     'plot line'
@@ -499,7 +499,11 @@ class PyPlotVideo( PyPlot ):
     if videotype is None:
       videotype = core.getprop( 'videotype', 'webm' )
     path, relpath = self.getpath( name, None, videotype )
-    log.path( relpath )
+    # Make sure `path` exists, otherwise the logger won't create an anchor.
+    # The empty file will be replaced by the video encoder.
+    with open( path, 'w' ) as f:
+      pass
+    log.info( relpath )
     self._encoder = subprocess.Popen([
         core.getprop( 'videoencoder', 'ffmpeg' ),
         '-loglevel', 'quiet',
@@ -560,7 +564,7 @@ class DataFile( BasePlot ):
     path, relpath = self.getpath(name,index,self.ext)
     with open( path, 'w' ) as fout:
       fout.writelines( self.lines )
-    log.path( relpath )
+    log.info( relpath )
 
   def printline( self, line ):
     self.lines.append( line+'\n' )
@@ -671,7 +675,7 @@ class VTKFile( BasePlot ):
 
           self._writearray( vtk, data )
 
-    log.path( relpath )
+    log.info( relpath )
 
   def rectilineargrid( self, coords ):
     """set rectilinear grid"""
