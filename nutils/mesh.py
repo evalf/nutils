@@ -214,7 +214,7 @@ def gmsh( fname, name=None ):
 
   # create base topology
   triref = element.getsimplex(2)
-  elements = [ element.Element( triref, transform.maptrans( triref.vertices, inodes if not name else [name+str(inode) for inode in inodes] ) )
+  elements = [ element.Element( triref, transform.maptrans( linear=[[-1,-1],[1,0],[0,1]], offset=[1,0,0], vertices=inodes if not name else [name+str(inode) for inode in inodes] ) )
     for ielem, inodes in log.enumerate( 'elem', inodesbydim[2] ) ]
   basetopo = topology.UnstructuredTopology( ndims, elements )
   log.info( 'created topology consisting of {} elements'.format(len(elements)) )
