@@ -17,7 +17,16 @@ def makeplots( domain, geom, sigma, index ):
     plt.ylim( 0, 1.3 )
 
 
-def main( nelems=None, maxrefine=2, radius=.5, degree=1, stress=library.Hooke(lmbda=1,mu=1), plots=True, solvetol=1e-5 ):
+def main(
+    nelems: 'number of elements' = None,
+    maxrefine: 'maxrefine level for trimming' = 2,
+    radius: 'cut-out radius' = .5,
+    degree: 'polynomial degree' = 1,
+    lmbda: 'first lamé constant' = 1.,
+    mu: 'second lamé constant' = 1.,
+    solvetol: 'solver tolerance' = 1e-5,
+    plots: 'create plots' = True,
+  ):
 
   if nelems:
     verts = numpy.linspace( 0, 1, nelems+1 )
@@ -27,6 +36,8 @@ def main( nelems=None, maxrefine=2, radius=.5, degree=1, stress=library.Hooke(lm
     if degree != 1:
       log.warning( 'setting degree=1 for triangular mesh' )
       degree = 1
+
+  stress = library.Hooke( lmbda=lmbda, mu=mu )
 
   # plane strain case (see e.g. http://en.wikiversity.org/wiki/Introduction_to_Elasticity/Plate_with_hole_in_tension)
   x, y = geom / radius

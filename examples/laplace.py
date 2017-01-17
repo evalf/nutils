@@ -4,7 +4,13 @@ from nutils import mesh, plot, cli, function, log, debug
 import numpy
 
 
-def main( nelems=None, degree=1, basistype='spline', solvetol=1e-10, withplots=True ):
+def main(
+    nelems: 'number of elements' = None,
+    degree: 'polynomial degree' = 1,
+    basistype: 'basis function' = 'spline',
+    solvetol: 'solver tolerance' = 1e-10,
+    withplots: 'create plots' = True,
+  ):
 
   # construct mesh
   if nelems: # rectilinear

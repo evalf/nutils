@@ -13,7 +13,14 @@ def makeplots( domain, geom, stress ):
     plt.colorbar()
 
 
-def main( nelems=12, stress=library.Hooke(lmbda=1,mu=1), degree=2, withplots=True, solvetol=1e-10 ):
+def main(
+    nelems: 'number of elements' = 12,
+    lmbda: 'first lamé constant' = 1.,
+    mu: 'second lamé constant' = 1.,
+    degree: 'polynomial degree' = 2,
+    withplots: 'create plots' = True,
+    solvetol: 'solver tolerance' = 1e-10,
+  ):
 
   # construct mesh
   verts = numpy.linspace( 0, 1, nelems+1 )
@@ -23,6 +30,7 @@ def main( nelems=12, stress=library.Hooke(lmbda=1,mu=1), degree=2, withplots=Tru
   dbasis = domain.basis( 'spline', degree=degree ).vector( 2 )
 
   # construct matrix
+  stress = library.Hooke( lmbda=lmbda, mu=mu )
   elasticity = function.outer( dbasis.grad(geom), stress(dbasis.symgrad(geom)) ).sum([2,3])
   matrix = domain.integrate( elasticity, geometry=geom, ischeme='gauss2' )
 

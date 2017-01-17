@@ -13,7 +13,7 @@ python function based arguments specified on the command line.
 """
 
 from . import log, core, version, debug, util
-import sys, collections, inspect, os, time
+import sys, inspect, os, time, argparse
 
 def _githash( path, depth=0  ):
   abspath = os.path.abspath( path )
@@ -28,82 +28,59 @@ def _githash( path, depth=0  ):
     githash, = ref.read().split()
   return githash
 
-def getkwargdefaults( func ):
-  'helper for run'
+def _bool( s ):
+  if s in ('true','True'):
+    return True
+  if s in ('false','False'):
+    return False
+  raise argparse.ArgumentTypeError( 'invalid boolean value: {!r}'.format(s) )
 
-  kwargs = util.OrderedDict()
-  signature = inspect.signature( func )
-  for parameter in signature.parameters.values():
-    if parameter.kind in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD):
-      continue
-    if parameter.default is parameter.empty:
-      raise ValueError( 'Function cannot be called without arguments.' )
-    kwargs[parameter.name] = parameter.default
-  return kwargs
+def _parse_args( functions ):
+  parser = argparse.ArgumentParser()
+  parser.add_argument( '--nprocs', type=int, metavar='INT', default=core.globalproperties['nprocs'], help='number of processors' )
+  parser.add_argument( '--outrootdir', type=str, metavar='PATH', default=core.globalproperties['outrootdir'], help='root directory for output' )
+  parser.add_argument( '--outdir', type=str, metavar='PATH', default=None, help='custom directory for output' )
+  parser.add_argument( '--verbose', type=int, metavar='INT', default=core.globalproperties['verbose'], help='verbosity level' )
+  parser.add_argument( '--richoutput', type=_bool, nargs='?', const=True, metavar='BOOL', default=core.globalproperties['richoutput'], help='use rich output (colors, unicode)' )
+  parser.add_argument( '--htmloutput', type=_bool, nargs='?', const=True, metavar='BOOL', default=core.globalproperties['htmloutput'], help='generate a HTML log' )
+  parser.add_argument( '--tbexplore', type=_bool, nargs='?', const=True, metavar='BOOL', default=core.globalproperties['tbexplore'], help='start traceback explorer on error' )
+  parser.add_argument( '--imagetype', type=str, metavar='STR', default=core.globalproperties['imagetype'], help='default image type' )
+  parser.add_argument( '--symlink', type=str, metavar='STR', default=core.globalproperties['symlink'], help='create symlink to latest results' )
+  parser.add_argument( '--recache', type=_bool, nargs='?', const=True, metavar='BOOL', default=core.globalproperties['recache'], help='overwrite existing cache' )
+  parser.add_argument( '--dot', type=str, metavar='STR', default=core.globalproperties['dot'], help='graphviz executable' )
+  parser.add_argument( '--selfcheck', type=_bool, nargs='?', const=True, metavar='BOOL', default=core.globalproperties['selfcheck'], help='active self checks (slow!)' )
+  parser.add_argument( '--profile', type=_bool, nargs='?', const=True, metavar='BOOL', default=core.globalproperties['profile'], help='show profile summary at exit' )
+  subparsers = parser.add_subparsers( dest='command', help='command (add -h for command-specific help)' )
+  subparsers.required = True
+  for func in functions:
+    subparser = subparsers.add_parser( func.__name__, formatter_class=argparse.ArgumentDefaultsHelpFormatter )
+    for parameter in inspect.signature( func ).parameters.values():
+      subparser.add_argument( '--'+parameter.name,
+        dest='='+parameter.name, # prefix with '=' to distinguish nutils/func args
+        default=parameter.default,
+        metavar=parameter.name[0].upper(),
+        help=parameter.annotation if parameter.annotation is not inspect._empty else None,
+        type=str )
+  ns = parser.parse_args()
+  nutilsprops = { key: val for key, val in vars(ns).items() if key[0] != '=' }
+  func = { f.__name__: f for f in functions }[ ns.command ]
+  kwargs = { key[1:]: val for key, val in vars(ns).items() if key[0] == '=' }
+  return nutilsprops, func, kwargs
 
 def run( *functions ):
   'call function specified on command line'
 
   assert functions
+  nutilsprops, func, kwargs = _parse_args( functions )
 
-  if '-h' in sys.argv[1:] or '--help' in sys.argv[1:]:
-    print( 'Usage: %s [FUNC] [ARGS]' % sys.argv[0] )
-    print( '''
-  --help                  Display this help
-  --nprocs=%(nprocs)-14s Select number of processors
-  --outrootdir=%(outrootdir)-10s Define the root directory for output
-  --outdir=               Define custom directory for output
-  --verbose=%(verbose)-13s Set verbosity level, 9=all
-  --richoutput=%(richoutput)-10s Use rich output (colors, unicode)
-  --htmloutput=%(htmloutput)-10s Generate an HTML log
-  --tbexplore=%(tbexplore)-11s Start traceback explorer on error
-  --imagetype=%(imagetype)-11s Set image type
-  --symlink=%(symlink)-13s Create symlink to latest results
-  --recache=%(recache)-13s Overwrite existing cache
-  --dot=%(dot)-17s Set graphviz executable
-  --selfcheck=%(selfcheck)-11s Activate self checks (slow!)
-  --profile=%(profile)-13s Show profile summary at exit''' % core.globalproperties )
-    for i, func in enumerate( functions ):
-      print()
-      print( 'Arguments for %s%s' % ( func.__name__, '' if i else ' (default)' ) )
-      print()
-      for kwarg, default in getkwargdefaults( func ).items():
-        print( '  --%s=%s' % ( kwarg, default ) )
-    return
-
-  func = functions[0]
-  argv = sys.argv[1:]
-  funcbyname = { func.__name__: func for func in functions }
-  if argv and argv[0] in funcbyname:
-    func = funcbyname[argv[0]]
-    argv = argv[1:]
-
-  kwargs = getkwargdefaults( func )
-  properties = {}
-  for arg in argv:
-    arg = arg.lstrip('-')
-    try:
-      arg, val = arg.split( '=', 1 )
-      val = eval( val, sys._getframe(1).f_globals )
-    except ValueError: # split failed
-      val = True
-    except (SyntaxError,NameError): # eval failed
-      pass
-    arg = arg.replace( '-', '_' )
-    if arg in kwargs:
-      kwargs[ arg ] = val
-    else:
-      assert arg in core.globalproperties, 'invalid argument %r' % arg
-      properties[arg] = val
-
-  locals().update({ '__%s__' % name: value for name, value in properties.items() })
+  locals().update({ '__%s__' % name: value for name, value in nutilsprops.items() })
 
   scriptname = os.path.basename(sys.argv[0])
   outrootdir = os.path.expanduser( core.getprop( 'outrootdir' ) ).rstrip( os.sep ) + os.sep
   basedir = outrootdir + scriptname + os.sep
   localtime = time.localtime()
   timepath = time.strftime( '%Y/%m/%d/%H-%M-%S/', localtime )
-  outdir = properties.get( 'outdir', None )
+  outdir = core.getprop( 'outdir', None )
   htmloutput = core.getprop( 'htmloutput', True )
 
   if outdir is None:
@@ -158,7 +135,6 @@ def run( *functions ):
   else:
     __log__ = textlog
 
-  __outdir__ = outdir
   __cachedir__ = basedir + 'cache'
 
   with __log__:

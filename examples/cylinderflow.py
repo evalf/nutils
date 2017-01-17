@@ -33,7 +33,17 @@ class MakePlots( object ):
     self.xy = util.regularize( self.bbox, self.spacing, self.xy + uv * self.timestep )
 
 
-def main( nelems=12, viscosity=1e-2, density=1, tol=1e-12, rotation=0, timestep=1/24, maxradius=25, tmax=numpy.inf, withplots=True ):
+def main(
+    nelems: 'number of elements' = 12,
+    viscosity: 'fluid viscosity' = 1e-2,
+    density: 'fluid density' = 1,
+    tol: 'solver tolerance' = 1e-12,
+    rotation: 'cylinder rotation speed' = 0,
+    timestep: 'time step' = 1/24,
+    maxradius: 'approximate domain size' = 25,
+    tmax: 'end time' = numpy.inf,
+    withplots: 'create plots' = True,
+  ):
 
   uinf = numpy.array([ 1, 0 ])
   log.user( 'reynolds number:', density/viscosity )

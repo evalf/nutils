@@ -13,13 +13,15 @@ from nutils import cli, mesh, function, plot, library, log, debug, _
 import numpy
 
 
-def main ( L  = 4. , # Domain size
-           R  = 1. , # Hole radius
-           E  = 1e5, # Young's modulus
-           nu = 0.3, # Poisson's ratio
-           T  = 10 , # Far field traction
-           nr = 2  , # Number of h-refinements
-           withplots = True ):
+def main(
+    L: 'domain size' = 4.,
+    R: 'hole radius' = 1.,
+    E: "young's modulus" = 1e5,
+    nu: "poisson's ratio" = 0.3,
+    T: 'far field traction' = 10,
+    nr: 'number of h-refinements' = 2,
+    withplots: 'create plots' = True,
+  ):
 
   #Create the coarsest level parameter domain
   domain, geometry = mesh.rectilinear( [1,2] )

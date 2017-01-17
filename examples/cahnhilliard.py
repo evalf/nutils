@@ -34,10 +34,18 @@ class MakePlots( object ):
       plt.ylabel( 'energy' )
 
 
-def main( nelems=20, epsilon=None, timestep=.01, maxtime=1., theta=90, init='random', withplots=True ):
+def main(
+    nelems: 'number of elements' = 20,
+    epsilon: 'epsilon, 0 for automatic (based on nelems)' = 0,
+    timestep: 'time step' = .01,
+    maxtime: 'end time' = 1.,
+    theta: 'contact angle (degrees)' = 90,
+    init: 'initial condition (random/bubbles)' = 'random',
+    withplots: 'create plots' = True,
+  ):
 
   mineps = 1./nelems
-  if epsilon is None:
+  if not epsilon:
     log.info( 'setting epsilon=%f' % mineps )
     epsilon = mineps
   elif epsilon < mineps:

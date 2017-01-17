@@ -14,7 +14,15 @@ def makeplots( name, domain, geom, stress ):
     plt.clim( 0, 1 )
 
 
-def main( nelems=12, lmbda=1, mu=1, angle=20, restol=1e-10, trim=False, plots=True ):
+def main(
+    nelems: 'number of elements' = 12,
+    lmbda: 'first lamé constant' = 1.,
+    mu: 'second lamé constant' = 1.,
+    angle: 'bend angle (degrees)' = 20,
+    restol: 'residual tolerance' = 1e-10,
+    trim: 'create circular-shaped hole' = False,
+    plots: 'create plots' = True,
+  ):
 
   verts = numpy.linspace( 0, 1, nelems+1 )
   domain, geom0 = mesh.rectilinear( [verts,verts] )
