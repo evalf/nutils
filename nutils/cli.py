@@ -35,7 +35,19 @@ def _bool( s ):
     return False
   raise argparse.ArgumentTypeError( 'invalid boolean value: {!r}'.format(s) )
 
-def _parse_args( functions ):
+def _relative_paths( basepath, path ):
+  baseparts = basepath.rstrip( os.path.sep ).split( os.path.sep )
+  parts = path.rstrip( os.path.sep ).split( os.path.sep )
+  if parts[:len(baseparts)] == baseparts:
+    for i in range( len(baseparts), len(parts) ):
+      yield os.path.sep.join(parts[:i]), os.path.sep.join(parts[i:])
+
+def run( *functions ):
+  '''parse command line arguments and call function'''
+
+  assert functions
+
+  # parse command line arguments
   parser = argparse.ArgumentParser()
   parser.add_argument( '--nprocs', type=int, metavar='INT', default=core.globalproperties['nprocs'], help='number of processors' )
   parser.add_argument( '--outrootdir', type=str, metavar='PATH', default=core.globalproperties['outrootdir'], help='root directory for output' )
@@ -62,80 +74,70 @@ def _parse_args( functions ):
         help=parameter.annotation if parameter.annotation is not inspect._empty else None,
         type=str )
   ns = parser.parse_args()
-  nutilsprops = { key: val for key, val in vars(ns).items() if key[0] != '=' }
+
+  # set properties
+  __scriptname__ = os.path.basename(sys.argv[0])
+  __nprocs__ = ns.nprocs
+  __outrootdir__ = os.path.abspath(os.path.expanduser(ns.outrootdir))
+  __cachedir__ = os.path.join( __outrootdir__, __scriptname__, 'cache' )
+  __outdir__ = os.path.abspath(os.path.expanduser(ns.outdir)) if ns.outdir is not None \
+          else os.path.join( __outrootdir__, __scriptname__, time.strftime( '%Y/%m/%d/%H-%M-%S/', time.localtime() ) )
+  __verbose__ = ns.verbose
+  __richoutput__ = ns.richoutput
+  __htmloutput__ = ns.htmloutput
+  __tbexplore__ = ns.tbexplore
+  __imagetype__ = ns.imagetype
+  __symlink__ = ns.symlink
+  __recache__ = ns.recache
+  __dot__ = ns.dot
+  __selfcheck__ = ns.selfcheck
+  __profile__ = ns.profile
+
+  # call function
   func = { f.__name__: f for f in functions }[ ns.command ]
   kwargs = { key[1:]: val for key, val in vars(ns).items() if key[0] == '=' }
-  return nutilsprops, func, kwargs
+  status = call( func, **kwargs )
+  sys.exit( status )
 
-def run( *functions ):
-  'call function specified on command line'
+def call( func, **kwargs ):
+  '''set up compute environment and call function'''
 
-  assert functions
-  nutilsprops, func, kwargs = _parse_args( functions )
+  outdir = core.getprop( 'outdir' )
+  os.makedirs( outdir ) # asserts nonexistence
 
-  locals().update({ '__%s__' % name: value for name, value in nutilsprops.items() })
+  symlink = core.getprop( 'symlink', None )
+  if symlink:
+    for base, relpath in _relative_paths( core.getprop('outrootdir'), outdir ):
+      target = os.path.join( base, symlink )
+      if os.path.islink( target ):
+        os.remove( target )
+      os.symlink( relpath, target )
 
-  scriptname = os.path.basename(sys.argv[0])
-  outrootdir = os.path.expanduser( core.getprop( 'outrootdir' ) ).rstrip( os.sep ) + os.sep
-  basedir = outrootdir + scriptname + os.sep
-  localtime = time.localtime()
-  timepath = time.strftime( '%Y/%m/%d/%H-%M-%S/', localtime )
-  outdir = core.getprop( 'outdir', None )
   htmloutput = core.getprop( 'htmloutput', True )
-
-  if outdir is None:
-    # `outdir` not specified on the commandline, use default directory layout
-
-    outdir = basedir + timepath
-    os.makedirs( outdir ) # asserts nonexistence
-
-    if core.getprop( 'symlink' ):
-      for i in range(2): # make two links
-        target = outrootdir
-        dest = ''
-        if i: # global link
-          target += scriptname + os.sep
-        else: # script-local link
-          dest += scriptname + os.sep
-        target += core.getprop( 'symlink' )
-        dest += timepath
-        if os.path.islink( target ):
-          os.remove( target )
-        os.symlink( dest, target )
-
-    if htmloutput:
-
-      redirect = '<html>\n<head>\n<meta http-equiv="cache-control" content="max-age=0" />\n' \
-               + '<meta http-equiv="cache-control" content="no-cache" />\n' \
-               + '<meta http-equiv="expires" content="0" />\n' \
-               + '<meta http-equiv="expires" content="Tue, 01 Jan 1980 1:00:00 GMT" />\n' \
-               + '<meta http-equiv="pragma" content="no-cache" />\n' \
-               + '<meta http-equiv="refresh" content="0;URL=%slog.html" />\n</head>\n</html>\n'
-
-      with open( outrootdir+'log.html', 'w' ) as redirlog1:
-        print( redirect % ( scriptname + '/' + timepath ), file=redirlog1 )
-
-      with open( basedir+'log.html', 'w' ) as redirlog2:
-        print( redirect % ( timepath ), file=redirlog2 )
-
-  elif not os.path.isdir( outdir ):
-    # use custom directory layout, skip creating symlinks, redirects
-    os.makedirs( outdir )
+  if htmloutput:
+    redirect = '<html>\n<head>\n<meta http-equiv="cache-control" content="max-age=0" />\n' \
+             + '<meta http-equiv="cache-control" content="no-cache" />\n' \
+             + '<meta http-equiv="expires" content="0" />\n' \
+             + '<meta http-equiv="expires" content="Tue, 01 Jan 1980 1:00:00 GMT" />\n' \
+             + '<meta http-equiv="pragma" content="no-cache" />\n' \
+             + '<meta http-equiv="refresh" content="0;URL={}" />\n</head>\n</html>\n'
+    for base, relpath in _relative_paths( core.getprop('outrootdir'), outdir ):
+      with open( os.path.join( base, 'log.html' ), 'w' ) as redirlog:
+        print( redirect.format( os.path.join( relpath, 'log.html' ) ), file=redirlog )
 
   # `chdir` to `outdir`.  Since this function raises `SystemExit` at the end
   # don't bother restoring the current directory.
   if outdir != '.':
     os.chdir( outdir )
 
+  scriptname = core.getprop( 'scriptname' )
   textlog = log._mklog()
   if htmloutput:
-    title = '{} {}'.format( scriptname, time.strftime( '%Y/%m/%d %H:%M:%S', localtime ) )
+    title = '{} {}'.format( scriptname, time.strftime( '%Y/%m/%d %H:%M:%S', time.localtime() ) )
     htmllog = log.HtmlLog( os.path.join( outdir, 'log.html' ), title=title, scriptname=scriptname )
     __log__ = log.TeeLog( textlog, htmllog )
   else:
     __log__ = textlog
-
-  __cachedir__ = basedir + 'cache'
 
   with __log__:
 
@@ -215,6 +217,6 @@ def run( *functions ):
         examine its post-mortem state to figure out why this happened.
         Type 'help' for an overview of commands to get going.''' )
 
-  sys.exit( failed )
+  return failed
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
