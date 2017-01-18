@@ -14,7 +14,7 @@ will disable and a warning is printed.
 """
 
 from . import core, log, numpy, numeric
-import os, sys, multiprocessing, tempfile, mmap, traceback
+import os, sys, multiprocessing, tempfile, mmap, traceback, signal
 
 procid = None # current process id, None for unforked
 
@@ -108,6 +108,7 @@ def pariter( iterable, nprocs ):
     for procid in range( 1, nprocs ):
       child_pid = os.fork()
       if not child_pid:
+        signal.signal( signal.SIGINT, signal.SIG_IGN ) # disable sigint (ctrl+c) handler
         break
       children.append( child_pid )
     else:

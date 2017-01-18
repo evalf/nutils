@@ -12,7 +12,7 @@ The log module provides print methods ``debug``, ``info``, ``user``,
 stdout as well as to an html formatted log file if so configured.
 """
 
-import sys, time, warnings, functools, itertools, re, abc, contextlib, html, urllib.parse, os, json, shutil, traceback
+import sys, time, warnings, functools, itertools, re, abc, contextlib, html, urllib.parse, os, json, shutil, traceback, bdb
 from . import core
 
 warnings.showwarning = lambda message, category, filename, lineno, *args: \
@@ -32,7 +32,7 @@ class Log( metaclass=abc.ABCMeta ):
     pass
 
   def __exit__( self, etype, value, tb ):
-    if etype in (KeyboardInterrupt,SystemExit):
+    if etype in (KeyboardInterrupt,SystemExit,bdb.BdbQuit):
       self.write( 'error', 'killed by user' )
     elif etype is not None:
       self.write( 'error', ''.join( traceback.format_exception( etype, value, tb ) ) )
@@ -280,7 +280,7 @@ class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
   def __exit__( self, etype, value, tb ):
     super().__exit__( etype, value, tb )
     self._print( '</ul>' )
-    if etype not in (None,KeyboardInterrupt,SystemExit):
+    if etype not in (None,KeyboardInterrupt,SystemExit,bdb.BdbQuit):
       self.write_post_mortem( etype, value, tb )
     # Write footer.
     self._print( '</pre></body></html>' )

@@ -13,7 +13,7 @@ python function based arguments specified on the command line.
 """
 
 from . import log, core, version
-import sys, inspect, os, time, argparse, pdb
+import sys, inspect, os, time, argparse, pdb, signal
 
 def _githash( path, depth=0  ):
   abspath = os.path.abspath( path )
@@ -48,6 +48,28 @@ def _mkbox( *lines ):
   return '\n'.join( [ ul + hh * (width+2) + ur ]
                   + [ vv + (' '+line).ljust(width+2) + vv for line in lines ]
                   + [ ll + hh * (width+2) + lr ] )
+
+def _sigint_handler( mysignal, frame ):
+  _handler = signal.signal( mysignal, signal.SIG_IGN ) # temporarily disable handler
+  try:
+    while True:
+      answer = input( 'interrupted. quit, continue or start debugger? [q/c/d]' )
+      if answer == 'q':
+        raise KeyboardInterrupt
+      if answer == 'c' or answer == 'd':
+        break
+    if answer == 'd': # after break, to minimize code after set_trace
+      print( _mkbox(
+        'TRACING ACTIVATED. Use the Python debugger',
+        'to step through the code at source line',
+        'level, list source code, set breakpoints,',
+        'and evaluate arbitrary Python code in the',
+        'context of any stack frame. Type "h" for',
+        'an overview of commands to get going, or',
+        '"c" to continue uninterrupted execution.' ) )
+      pdb.set_trace()
+  finally:
+    signal.signal( mysignal, _handler )
 
 def run( *functions ):
   '''parse command line arguments and call function'''
@@ -131,6 +153,7 @@ def call( func, **kwargs ):
         print( redirect.format( os.path.join( relpath, 'log.html' ) ), file=redirlog )
 
   origdir = os.getcwd()
+  orighandler = signal.signal( signal.SIGINT, _sigint_handler )
   try:
     os.chdir( outdir )
 
@@ -175,7 +198,7 @@ def call( func, **kwargs ):
       log.info( 'finish {}'.format( time.ctime() ) )
       log.info( 'elapsed %02.0f:%02.0f:%02.0f' % ( hours, minutes, seconds ) )
 
-  except (KeyboardInterrupt,SystemExit):
+  except (KeyboardInterrupt,SystemExit,pdb.bdb.BdbQuit):
     return 1
   except:
     if core.getprop( 'pdb', False ):
@@ -189,6 +212,7 @@ def call( func, **kwargs ):
   else:
     return 0
   finally:
+    signal.signal( signal.SIGINT, orighandler )
     os.chdir( origdir )
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
