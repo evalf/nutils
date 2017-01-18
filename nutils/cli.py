@@ -12,8 +12,8 @@ can be used set up properties, initiate an output environment, and execute a
 python function based arguments specified on the command line.
 """
 
-from . import log, core, version, debug, util
-import sys, inspect, os, time, argparse, traceback
+from . import log, core, version
+import sys, inspect, os, time, argparse, pdb
 
 def _githash( path, depth=0  ):
   abspath = os.path.abspath( path )
@@ -42,6 +42,13 @@ def _relative_paths( basepath, path ):
     for i in range( len(baseparts), len(parts) ):
       yield os.path.sep.join(parts[:i]), os.path.sep.join(parts[i:])
 
+def _mkbox( *lines ):
+  width = max( len(line) for line in lines )
+  ul, ur, ll, lr, hh, vv = '┌┐└┘─│' if core.getprop('richoutput') else '++++-|'
+  return '\n'.join( [ ul + hh * (width+2) + ur ]
+                  + [ vv + (' '+line).ljust(width+2) + vv for line in lines ]
+                  + [ ll + hh * (width+2) + lr ] )
+
 def run( *functions ):
   '''parse command line arguments and call function'''
 
@@ -55,7 +62,7 @@ def run( *functions ):
   parser.add_argument( '--verbose', type=int, metavar='INT', default=core.globalproperties['verbose'], help='verbosity level' )
   parser.add_argument( '--richoutput', type=_bool, nargs='?', const=True, metavar='BOOL', default=core.globalproperties['richoutput'], help='use rich output (colors, unicode)' )
   parser.add_argument( '--htmloutput', type=_bool, nargs='?', const=True, metavar='BOOL', default=core.globalproperties['htmloutput'], help='generate a HTML log' )
-  parser.add_argument( '--tbexplore', type=_bool, nargs='?', const=True, metavar='BOOL', default=core.globalproperties['tbexplore'], help='start traceback explorer on error' )
+  parser.add_argument( '--pdb', type=_bool, nargs='?', const=True, metavar='BOOL', default=core.globalproperties['pdb'], help='start python debugger on error' )
   parser.add_argument( '--imagetype', type=str, metavar='STR', default=core.globalproperties['imagetype'], help='default image type' )
   parser.add_argument( '--symlink', type=str, metavar='STR', default=core.globalproperties['symlink'], help='create symlink to latest results' )
   parser.add_argument( '--recache', type=_bool, nargs='?', const=True, metavar='BOOL', default=core.globalproperties['recache'], help='overwrite existing cache' )
@@ -84,7 +91,7 @@ def run( *functions ):
   __verbose__ = ns.verbose
   __richoutput__ = ns.richoutput
   __htmloutput__ = ns.htmloutput
-  __tbexplore__ = ns.tbexplore
+  __pdb__ = ns.pdb
   __imagetype__ = ns.imagetype
   __symlink__ = ns.symlink
   __recache__ = ns.recache
@@ -128,78 +135,61 @@ def call( func, **kwargs ):
   if outdir != '.':
     os.chdir( outdir )
 
-  scriptname = core.getprop( 'scriptname' )
-  textlog = log._mklog()
-  if htmloutput:
-    title = '{} {}'.format( scriptname, time.strftime( '%Y/%m/%d %H:%M:%S', time.localtime() ) )
-    htmllog = log.HtmlLog( os.path.join( outdir, 'log.html' ), title=title, scriptname=scriptname )
-    __log__ = log.TeeLog( textlog, htmllog )
-  else:
-    __log__ = textlog
+  try:
 
-  with __log__:
-
-    ctime = time.ctime()
-
-    try:
-      import signal
-      signal.signal( signal.SIGTSTP, debug.signal_handler ) # start traceback explorer at ^Z
-    except Exception as e:
-      log.warning( 'failed to install signal handler:', e )
-
-    try:
-      gitversion = version + '.' + _githash(__file__,2)[:8]
-    except:
-      gitversion = version
-    log.info( 'nutils v{}'.format( gitversion ) )
-    log.info( '' )
-
-    textlog.write( 'info', ' \\\n'.join( [ ' '.join([ scriptname, func.__name__ ]) ] + [ '  --{}={}'.format( *item ) for item in kwargs.items() ] ) )
+    scriptname = core.getprop( 'scriptname' )
+    textlog = log._mklog()
     if htmloutput:
-      htmllog.write( 'info', '{} {}'.format( scriptname, func.__name__ ) )
-      for arg, value in kwargs.items():
-        htmllog.write( 'info', '  --{}={}'.format( arg, value ) )
-
-    log.info( '' )
-    log.info( 'start {}'.format(ctime) )
-    log.info( '' )
-
-    t0 = time.time()
-
-    failed = 1
-    frames = None
-    try:
-      func( **kwargs )
-    except KeyboardInterrupt:
-      log.error( 'killed by user' )
-    except Exception:
-      exc, frames = debug.exc_info()
-      log.error( traceback.format_exc() )
+      title = '{} {}'.format( scriptname, time.strftime( '%Y/%m/%d %H:%M:%S', time.localtime() ) )
+      htmllog = log.HtmlLog( 'log.html', title=title, scriptname=scriptname )
+      __log__ = log.TeeLog( textlog, htmllog )
     else:
-      failed = 0
+      __log__ = textlog
 
-    dt = time.time() - t0
-    hours = dt // 3600
-    minutes = dt // 60 - 60 * hours
-    seconds = dt // 1 - 60 * minutes - 3600 * hours
+    with __log__:
 
-    log.info( '' )
-    log.info( 'finish {}'.format( time.ctime() ) )
-    log.info( 'elapsed %02.0f:%02.0f:%02.0f' % ( hours, minutes, seconds ) )
+      try:
+        gitversion = version + '.' + _githash(__file__,2)[:8]
+      except:
+        gitversion = version
+      log.info( 'nutils v{}'.format( gitversion ) )
+      log.info( '' )
 
-    if core.getprop( 'uncollected_summary', False ):
-      debug.trace_uncollected()
+      textlog.write( 'info', ' \\\n'.join( [ ' '.join([ scriptname, func.__name__ ]) ] + [ '  --{}={}'.format( *item ) for item in kwargs.items() ] ) )
+      if htmloutput:
+        htmllog.write( 'info', '{} {}'.format( scriptname, func.__name__ ) )
+        for arg, value in kwargs.items():
+          htmllog.write( 'info', '  --{}={}'.format( arg, value ) )
 
-    if frames and htmloutput:
-      htmllog.write_post_mortem( repr(exc), frames )
+      log.info( '' )
+      log.info( 'start {}'.format( time.ctime() ) )
+      log.info( '' )
 
-  if frames:
-    if core.getprop( 'tbexplore', False ):
-      debug.explore( repr(exc), frames, '''
-        Your program has died. The traceback explorer allows you to
-        examine its post-mortem state to figure out why this happened.
-        Type 'help' for an overview of commands to get going.''' )
+      t0 = time.time()
 
-  return failed
+      func( **kwargs )
+
+      dt = time.time() - t0
+      hours = dt // 3600
+      minutes = dt // 60 - 60 * hours
+      seconds = dt // 1 - 60 * minutes - 3600 * hours
+
+      log.info( '' )
+      log.info( 'finish {}'.format( time.ctime() ) )
+      log.info( 'elapsed %02.0f:%02.0f:%02.0f' % ( hours, minutes, seconds ) )
+
+  except (KeyboardInterrupt,SystemExit):
+    return 1
+  except:
+    if core.getprop( 'pdb', False ):
+      print( _mkbox(
+        'YOUR PROGRAM HAS DIED. The Python debugger',
+        'allows you to examine its post-mortem state',
+        'to figure out why this happened. Type "h"',
+        'for an overview of commands to get going.' ) )
+      pdb.post_mortem()
+    return 2
+  else:
+    return 0
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

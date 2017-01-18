@@ -20,7 +20,7 @@ globalproperties = {
   'verbose': 4,
   'richoutput': os.isatty( sys.stdout.fileno() ),
   'htmloutput': True,
-  'tbexplore': False,
+  'pdb': False,
   'imagetype': 'png',
   'symlink': False,
   'recache': False,
