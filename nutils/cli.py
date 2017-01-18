@@ -61,7 +61,6 @@ def run( *functions ):
   parser.add_argument( '--recache', type=_bool, nargs='?', const=True, metavar='BOOL', default=core.globalproperties['recache'], help='overwrite existing cache' )
   parser.add_argument( '--dot', type=str, metavar='STR', default=core.globalproperties['dot'], help='graphviz executable' )
   parser.add_argument( '--selfcheck', type=_bool, nargs='?', const=True, metavar='BOOL', default=core.globalproperties['selfcheck'], help='active self checks (slow!)' )
-  parser.add_argument( '--profile', type=_bool, nargs='?', const=True, metavar='BOOL', default=core.globalproperties['profile'], help='show profile summary at exit' )
   subparsers = parser.add_subparsers( dest='command', help='command (add -h for command-specific help)' )
   subparsers.required = True
   for func in functions:
@@ -91,7 +90,6 @@ def run( *functions ):
   __recache__ = ns.recache
   __dot__ = ns.dot
   __selfcheck__ = ns.selfcheck
-  __profile__ = ns.profile
 
   # call function
   func = { f.__name__: f for f in functions }[ ns.command ]
@@ -168,11 +166,6 @@ def call( func, **kwargs ):
 
     t0 = time.time()
 
-    if core.getprop( 'profile' ):
-      import cProfile
-      prof = cProfile.Profile()
-      prof.enable()
-
     failed = 1
     frames = None
     try:
@@ -185,9 +178,6 @@ def call( func, **kwargs ):
     else:
       failed = 0
 
-    if core.getprop( 'profile' ):
-      prof.disable()
-
     dt = time.time() - t0
     hours = dt // 3600
     minutes = dt // 60 - 60 * hours
@@ -199,13 +189,6 @@ def call( func, **kwargs ):
 
     if core.getprop( 'uncollected_summary', False ):
       debug.trace_uncollected()
-
-    if core.getprop( 'profile' ):
-      import pstats
-      stream = BufferStream()
-      stream.write( 'profile results:\n' )
-      pstats.Stats( prof, stream=stream ).strip_dirs().sort_stats( 'time' ).print_stats()
-      log.warning( str(stream) )
 
     if frames and htmloutput:
       htmllog.write_post_mortem( repr(exc), frames )
