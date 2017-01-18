@@ -525,11 +525,6 @@ def count( title, start=0, step=1 ):
 
   return _logiter( title, itertools.count(start,step), length=None, useitem=True )
     
-def stack( msg, frames ):
-  '''Print stack trace'''
-
-  error( msg + '\n' + '\n'.join( str(f) for f in reversed(frames) ) )
-
 def title( f ): # decorator
   '''Decorator, adds title argument with default value equal to the name of the
   decorated function, unless argument already exists. The title value is used

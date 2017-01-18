@@ -13,7 +13,7 @@ python function based arguments specified on the command line.
 """
 
 from . import log, core, version, debug, util
-import sys, inspect, os, time, argparse
+import sys, inspect, os, time, argparse, traceback
 
 def _githash( path, depth=0  ):
   abspath = os.path.abspath( path )
@@ -181,7 +181,7 @@ def call( func, **kwargs ):
       log.error( 'killed by user' )
     except Exception:
       exc, frames = debug.exc_info()
-      log.stack( repr(exc), frames )
+      log.error( traceback.format_exc() )
     else:
       failed = 0
 

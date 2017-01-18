@@ -13,8 +13,8 @@ platforms, notably excluding Windows. On unsupported platforms parallel features
 will disable and a warning is printed.
 """
 
-from . import core, log, numpy, debug, numeric
-import os, sys, multiprocessing, tempfile, mmap
+from . import core, log, numpy, numeric
+import os, sys, multiprocessing, tempfile, mmap, traceback
 
 procid = None # current process id, None for unforked
 
@@ -130,11 +130,11 @@ def pariter( iterable, nprocs ):
       raise # reraise in main process
 
     # in child processes print traceback then exit
-    excval, tb = debug.exc_info()
+    excval = sys.exc_info()[1]
     if isinstance( excval, GeneratorExit ):
       log.error( 'generator failed with unknown exception' )
     elif not isinstance( excval, KeyboardInterrupt ):
-      log.stack( excval, tb )
+      log.error( traceback.format_exc() )
 
   else:
 
