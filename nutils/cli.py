@@ -142,15 +142,16 @@ def call( func, **kwargs ):
 
   htmloutput = core.getprop( 'htmloutput', True )
   if htmloutput:
-    redirect = '<html>\n<head>\n<meta http-equiv="cache-control" content="max-age=0" />\n' \
-             + '<meta http-equiv="cache-control" content="no-cache" />\n' \
-             + '<meta http-equiv="expires" content="0" />\n' \
-             + '<meta http-equiv="expires" content="Tue, 01 Jan 1980 1:00:00 GMT" />\n' \
-             + '<meta http-equiv="pragma" content="no-cache" />\n' \
-             + '<meta http-equiv="refresh" content="0;URL={}" />\n</head>\n</html>\n'
     for base, relpath in _relative_paths( core.getprop('outrootdir'), outdir ):
-      with open( os.path.join( base, 'log.html' ), 'w' ) as redirlog:
-        print( redirect.format( os.path.join( relpath, 'log.html' ) ), file=redirlog )
+      with open( os.path.join(base,'log.html'), 'w' ) as redirlog:
+        print( '<html><head>', file=redirlog )
+        print( '<meta http-equiv="cache-control" content="max-age=0" />', file=redirlog )
+        print( '<meta http-equiv="cache-control" content="no-cache" />', file=redirlog )
+        print( '<meta http-equiv="expires" content="0" />', file=redirlog )
+        print( '<meta http-equiv="expires" content="Tue, 01 Jan 1980 1:00:00 GMT" />', file=redirlog )
+        print( '<meta http-equiv="pragma" content="no-cache" />', file=redirlog )
+        print( '<meta http-equiv="refresh" content="0;URL={}" />'.format(os.path.join(relpath,'log.html')), file=redirlog )
+        print( '</head></html>', file=redirlog )
 
   origdir = os.getcwd()
   orighandler = signal.signal( signal.SIGINT, _sigint_handler )
