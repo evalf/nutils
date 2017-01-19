@@ -130,12 +130,9 @@ def call( func, **kwargs ):
       with open( os.path.join( base, 'log.html' ), 'w' ) as redirlog:
         print( redirect.format( os.path.join( relpath, 'log.html' ) ), file=redirlog )
 
-  # `chdir` to `outdir`.  Since this function raises `SystemExit` at the end
-  # don't bother restoring the current directory.
-  if outdir != '.':
-    os.chdir( outdir )
-
+  origdir = os.getcwd()
   try:
+    os.chdir( outdir )
 
     scriptname = core.getprop( 'scriptname' )
     textlog = log._mklog()
@@ -191,5 +188,7 @@ def call( func, **kwargs ):
     return 2
   else:
     return 0
+  finally:
+    os.chdir( origdir )
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
