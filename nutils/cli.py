@@ -13,20 +13,17 @@ python function based arguments specified on the command line.
 """
 
 from . import log, core, version
-import sys, inspect, os, datetime, argparse, pdb, signal
+import sys, inspect, os, datetime, argparse, pdb, signal, subprocess
 
-def _githash( path, depth=0  ):
-  abspath = os.path.abspath( path )
-  for i in range( depth ):
-    abspath = os.path.dirname( abspath )
-  git = os.path.join( abspath, '.git' )
-  with open( os.path.join( git, 'HEAD' ) ) as HEAD:
-    head = HEAD.read()
-  assert head.startswith( 'ref:' )
-  ref = head[4:].strip()
-  with open( os.path.join( git, ref ) ) as ref:
-    githash, = ref.read().split()
-  return githash
+def _version():
+  try:
+    githash = subprocess.check_output( ['git','rev-parse','--short','HEAD'], universal_newlines=True, cwd=os.path.dirname(__file__) ).strip()
+    if subprocess.check_output( ['git','status','--untracked-files=no','--porcelain'], cwd=os.path.dirname(__file__) ):
+      githash += '+'
+  except:
+    return version
+  else:
+    return '{} (git:{})'.format( version, githash )
 
 def _bool( s ):
   if s in ('true','True'):
@@ -165,11 +162,7 @@ def call( func, **kwargs ):
 
     with __log__:
 
-      try:
-        gitversion = version + '.' + _githash(__file__,2)[:8]
-      except:
-        gitversion = version
-      log.info( 'nutils v{}'.format( gitversion ) )
+      log.info( 'nutils v{}'.format( _version() ) )
       log.info( '' )
       log.info( '{} {}'.format( scriptname, func.__name__ ) )
       for arg, value in kwargs.items():
