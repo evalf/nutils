@@ -159,12 +159,9 @@ def call( func, **kwargs ):
     os.chdir( outdir )
 
     scriptname = core.getprop( 'scriptname' )
-    textlog = log._mklog()
-    if htmloutput:
-      htmllog = log.HtmlLog( 'log.html', title=scriptname, scriptname=scriptname )
-      __log__ = log.TeeLog( textlog, htmllog )
-    else:
-      __log__ = textlog
+
+    __log__ = log._mklog() if not htmloutput \
+         else log.TeeLog( log._mklog(), log.HtmlLog( 'log.html', title=scriptname, scriptname=scriptname ) )
 
     with __log__:
 
@@ -174,12 +171,9 @@ def call( func, **kwargs ):
         gitversion = version
       log.info( 'nutils v{}'.format( gitversion ) )
       log.info( '' )
-
-      textlog.write( 'info', ' \\\n'.join( [ ' '.join([ scriptname, func.__name__ ]) ] + [ '  --{}={}'.format( *item ) for item in kwargs.items() ] ) )
-      if htmloutput:
-        htmllog.write( 'info', '{} {}'.format( scriptname, func.__name__ ) )
-        for arg, value in kwargs.items():
-          htmllog.write( 'info', '  --{}={}'.format( arg, value ) )
+      log.info( '{} {}'.format( scriptname, func.__name__ ) )
+      for arg, value in kwargs.items():
+        log.info( '  --{}={}'.format( arg, value ) )
 
       starttime = datetime.datetime.now()
 
