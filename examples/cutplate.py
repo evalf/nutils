@@ -18,7 +18,7 @@ def makeplots( domain, geom, sigma, index ):
 
 
 def main(
-    nelems: 'number of elements' = None,
+    nelems: 'number of elements, -1 for triangulation' = -1,
     maxrefine: 'maxrefine level for trimming' = 2,
     radius: 'cut-out radius' = .5,
     degree: 'polynomial degree' = 1,
@@ -28,7 +28,7 @@ def main(
     plots: 'create plots' = True,
   ):
 
-  if nelems:
+  if nelems > 0:
     verts = numpy.linspace( 0, 1, nelems+1 )
     wholedomain, geom = mesh.rectilinear( [verts,verts] )
   else:
@@ -95,7 +95,7 @@ def conv( degree=1, nrefine=4 ):
 
 def unittest():
 
-  retvals = main( nelems=None, degree=1, maxrefine=2, plots=False, solvetol=0 )
+  retvals = main( degree=1, maxrefine=2, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
     eNplUEGOBCEI/E53IhtAQHnOHPo6/z+uiHZmehJJFcZCqqgcUkjPchzcrV9gRVHoAi3j7v16F2rGF4xH
     VCUw7oziqU6Of3EWC3gWS6MQMjfeA8jdNo8CJdKYCCaiezR0rn43bii7+azv3weA16rhZMrYCLdsWCLx

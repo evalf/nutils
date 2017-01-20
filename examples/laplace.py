@@ -5,7 +5,7 @@ import numpy
 
 
 def main(
-    nelems: 'number of elements' = None,
+    nelems: 'number of elements, -1 for triangulation' = -1,
     degree: 'polynomial degree' = 1,
     basistype: 'basis function' = 'spline',
     solvetol: 'solver tolerance' = 1e-10,
@@ -13,7 +13,7 @@ def main(
   ):
 
   # construct mesh
-  if nelems: # rectilinear
+  if nelems > 0: # rectilinear
     verts = numpy.linspace( 0, .5*numpy.pi, nelems+1 )
     domain, geom = mesh.rectilinear( [verts,verts] )
   else: # triangulated demo mesh

@@ -95,9 +95,9 @@ def run( *functions ):
       subparser.add_argument( '--'+parameter.name,
         dest='='+parameter.name, # prefix with '=' to distinguish nutils/func args
         default=parameter.default,
-        metavar=parameter.name[0].upper(),
+        metavar=type(parameter.default).__name__.upper(),
         help=parameter.annotation if parameter.annotation is not inspect._empty else None,
-        type=str )
+        **{'type':_bool,'nargs':'?','const':True} if isinstance( parameter.default, bool ) else {'type':type(parameter.default)} )
   ns = parser.parse_args()
 
   # set properties
