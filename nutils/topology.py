@@ -597,7 +597,9 @@ class Topology( object ):
           break
       else:
         raise Exception( 'failed to locate point', point )
-      trans = transform.affine( linear=numpy.zeros(shape=(self.ndims,0),dtype=int), offset=xi[0], isflipped=False )
+      trans = transform.affine( linear=1, offset=xi[0] )
+      for idim in range(self.ndims,0,-1): # transcend dimensions one by one to produce valid transformation
+        trans <<= transform.affine( linear=numpy.eye(idim)[:,:-1], offset=numpy.zeros(idim), isflipped=False )
       pelems.append( element.Element( vref, elem.transform << trans, elem.opposite << trans ) )
     return UnstructuredTopology( 0, pelems )
 

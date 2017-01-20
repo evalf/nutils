@@ -336,9 +336,9 @@ class Reference( cache.Immutable ):
     else:
 
       refs = [ edgeref.slice( levels[self.edgevertexmap[iedge]], ndivisions ) for iedge, edgeref in enumerate( self.edge_refs ) ]
-      if refs == list(self.edge_refs):
+      if sum( ref != baseref for ref, baseref in zip( refs, self.edge_refs ) ) <= 1:
         return self
-      if not any( refs ):
+      if sum( bool(ref) for ref in refs ) <= 1:
         return self.empty
 
       #TODO: Optimization possible for case in which no EmptyReferences are present
