@@ -84,7 +84,7 @@ def conv( degree=1, nrefine=4 ):
 
 def unittest():
 
-  retvals = main( nelems=None, degree=2, maxrefine=2, plots=False, solvetol=0 )
+  retvals = main( nelems=None, degree=1, maxrefine=2, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
     eNplUEGOBCEI/E53IhtAQHnOHPo6/z+uiHZmehJJFcZCqqgcUkjPchzcrV9gRVHoAi3j7v16F2rGF4xH
     VCUw7oziqU6Of3EWC3gWS6MQMjfeA8jdNo8CJdKYCCaiezR0rn43bii7+azv3weA16rhZMrYCLdsWCLx
