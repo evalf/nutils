@@ -357,8 +357,87 @@ def regularize( bbox, spacing, xy=numpy.empty((0,2)) ):
   return numpy.concatenate( [ newindex * spacing, xy[keep] ], axis=0 )
 
 def run( *functions ):
-  warnings.warn( 'util.run is deprecated, use cli.run instead', DeprecationWarning )
-  from . import cli
-  cli.run( *functions )
+  print( 'WARNING util.run is deprecated, please use cli.run instead' )
+  assert functions
+
+  import datetime, inspect
+  from . import cli, core
+
+  if '-h' in sys.argv[1:] or '--help' in sys.argv[1:]:
+    print( 'Usage: %s [FUNC] [ARGS]' % sys.argv[0] )
+    print( '''
+  --help                  Display this help
+  --nprocs=%(nprocs)-14s Select number of processors
+  --outrootdir=%(outrootdir)-10s Define the root directory for output
+  --outdir=               Define custom directory for output
+  --verbose=%(verbose)-13s Set verbosity level, 9=all
+  --richoutput=%(richoutput)-10s Use rich output (colors, unicode)
+  --htmloutput=%(htmloutput)-10s Generate an HTML log
+  --tbexplore=%(tbexplore)-11s Start traceback explorer on error
+  --imagetype=%(imagetype)-11s Set image type
+  --symlink=%(symlink)-13s Create symlink to latest results
+  --recache=%(recache)-13s Overwrite existing cache
+  --dot=%(dot)-17s Set graphviz executable
+  --selfcheck=%(selfcheck)-11s Activate self checks (slow!)
+  --profile=%(profile)-13s Show profile summary at exit''' % core.globalproperties )
+    for i, func in enumerate( functions ):
+      print()
+      print( 'Arguments for %s%s' % ( func.__name__, '' if i else ' (default)' ) )
+      print()
+      print( '\n'.join( '  --{}={}'.format( parameter.name, parameter.default )
+        for parameter in inspect.signature( func ).parameters.values()
+          if parameter.kind not in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD) ) )
+    sys.exit( 0 )
+
+  func = functions[0]
+  argv = sys.argv[1:]
+  funcbyname = { func.__name__: func for func in functions }
+  if argv and argv[0] in funcbyname:
+    func = funcbyname[argv[0]]
+    argv = argv[1:]
+
+  properties = core.globalproperties.copy()
+  kwargs = { parameter.name: parameter.default
+    for parameter in inspect.signature( func ).parameters.values()
+      if parameter.kind not in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD) }
+
+  for arg in argv:
+    arg = arg.lstrip('-')
+    try:
+      arg, val = arg.split( '=', 1 )
+      val = eval( val, sys._getframe(1).f_globals )
+    except ValueError: # split failed
+      val = True
+    except (SyntaxError,NameError): # eval failed
+      pass
+    arg = arg.replace( '-', '_' )
+    if arg in kwargs:
+      kwargs[ arg ] = val
+    else:
+      assert arg in properties, 'invalid argument %r' % arg
+      properties[arg] = val
+
+  missing = [ arg for arg, val in kwargs.items() if val is parameter.empty ]
+  assert not missing, 'missing mandatory arguments: {}'.format( ', '.join(missing) )
+
+  # set properties
+  __scriptname__ = os.path.basename(sys.argv[0])
+  __nprocs__ = properties['nprocs']
+  __outrootdir__ = os.path.abspath(os.path.expanduser(properties['outrootdir']))
+  __cachedir__ = os.path.join( __outrootdir__, __scriptname__, 'cache' )
+  __outdir__ = os.path.abspath(os.path.expanduser(properties['outdir'])) if properties['outdir'] != '.' \
+          else os.path.join( __outrootdir__, __scriptname__, datetime.datetime.now().strftime('%Y/%m/%d/%H-%M-%S/') )
+  __verbose__ = properties['verbose']
+  __richoutput__ = properties['richoutput']
+  __htmloutput__ = properties['htmloutput']
+  __pdb__ = properties.get( 'tbexplore', False )
+  __imagetype__ = properties['imagetype']
+  __symlink__ = properties['symlink']
+  __recache__ = properties['recache']
+  __dot__ = properties['dot']
+  __selfcheck__ = properties['selfcheck']
+
+  status = cli.call( func, **kwargs )
+  sys.exit( status )
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
