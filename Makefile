@@ -1,6 +1,6 @@
 PYTHON?=python3
 
-EXAMPLES = $(wildcard examples/*)
+EXAMPLES = $(wildcard examples/*.py)
 
 build:
 	${PYTHON} setup.py build clean
