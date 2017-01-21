@@ -119,4 +119,5 @@ def unittest():
     3jz318sHTDOUjJ/j+QdkFXSp''' )
 
 
-util.run( main, unittest )
+if __name__ == '__main__':
+  util.run( main, unittest )

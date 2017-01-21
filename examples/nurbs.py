@@ -135,4 +135,5 @@ def exact_solution( geometry, T, R, E, nu ):
   return T/(4*mu)*geometry*( [(k+1)/2,(k-3)/2] + [1+k,1-k]/r2 + (1-1/r2)*[x**2-3*y**2,3*x**2-y**2]/r2**2 )
 
 
-util.run( main, convergence, unittest )
+if __name__ == '__main__':
+  util.run( main, convergence, unittest )

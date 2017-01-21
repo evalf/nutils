@@ -100,4 +100,5 @@ def unittest():
     IdNqv4Cvwiv9tS70+m/6DVvn5ad/QddfE0m//PrXze+nH9u3j/0HiSeZcA==''' )
 
 
-util.run( main, conv, unittest )
+if __name__ == '__main__':
+  util.run( main, conv, unittest )

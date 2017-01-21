@@ -85,4 +85,5 @@ def unittest():
     YD7oyg==''' )
 
 
-util.run( main, unittest )
+if __name__ == '__main__':
+  util.run( main, unittest )

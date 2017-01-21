@@ -59,4 +59,5 @@ def unittest():
     k/25/3X9/tX+3eGntab1Bd2X0og=''' )
 
 
-util.run( main, unittest )
+if __name__ == '__main__':
+  util.run( main, unittest )
