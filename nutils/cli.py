@@ -13,7 +13,7 @@ python function based arguments specified on the command line.
 """
 
 from . import log, core, version
-import sys, inspect, os, datetime, argparse, pdb, signal, subprocess
+import sys, inspect, os, datetime, argparse, pdb, signal, subprocess, pathlib
 
 def _version():
   try:
@@ -67,6 +67,14 @@ def _sigint_handler( mysignal, frame ):
       pdb.set_trace()
   finally:
     signal.signal( mysignal, _handler )
+
+class Path:
+  def __init__( self, s=os.curdir ):
+    self.__path = pathlib.Path( s ).absolute()
+  def __getattr__( self, attr ):
+    return getattr( self.__path, attr )
+  def __str__( self ):
+    return str( self.__path )
 
 def run( *functions ):
   '''parse command line arguments and call function'''
