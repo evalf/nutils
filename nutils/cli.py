@@ -165,8 +165,11 @@ def call( func, **kwargs ):
       log.info( 'nutils v{}'.format( _version() ) )
       log.info( '' )
       log.info( '{} {}'.format( scriptname, func.__name__ ) )
-      for arg, value in kwargs.items():
-        log.info( '  --{}={}'.format( arg, value ) )
+      for parameter in inspect.signature( func ).parameters.values():
+        argstr = '  --{}={}'.format( parameter.name, kwargs.get(parameter.name,parameter.default) )
+        if parameter.annotation is not inspect._empty:
+          argstr += ' ({})'.format( parameter.annotation )
+        log.info( argstr )
 
       starttime = datetime.datetime.now()
 
