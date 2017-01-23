@@ -6,6 +6,33 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+New: cli module
+
+  The util.run function is deprecated and replaced by two new functions,
+  cli.choose and cli.run. The new functions are very similar to the
+  original, but have a few notable differences:
+
+    * cli.choose requires the name of the function to be executed
+      (typically 'main'), followed by any optional arguments
+    * cli.run does not require the name of the function to be executed,
+      but only a single one can be specified
+    * argument conversions follow the type of the argument's default
+      value, instead of the result of `eval`
+    * the --tbexplore option for post-mortem debugging is replaced by
+      --pdb, replacing Nutils' own traceback explorer by Python's
+      builtin debugger
+    * on-line debugging is provided via the ctrl+c signal handler
+    * function annotations can be used to describe arguments in both
+      help messages and logging output (see examples/*)
+    * path arguments can be made absolute and converted to a
+      pathlib.Path object by using the cli.Path wrapper class
+
+  For example, the new invocation for the Laplace example problem (which
+  uses cli.choose) on 4 elements with post-mortem debugging enabled, is:
+
+  $ examples/laplace.py --pdb main --nelems=4
+
+
 New: model
 
   The model module provides infrastructure to facilitate formulating and
