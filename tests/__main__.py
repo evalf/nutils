@@ -13,6 +13,7 @@ from . import \
   finitecell, \
   model,      \
   log,        \
+  cli,        \
   examples,   \
   runtests
 

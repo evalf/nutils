@@ -76,7 +76,7 @@ class Path:
   def __str__( self ):
     return str( self.__path )
 
-def run( *functions ):
+def run( *functions, args=None ):
   '''parse command line arguments and call function'''
 
   assert functions
@@ -106,7 +106,7 @@ def run( *functions ):
         metavar=type(parameter.default).__name__.upper(),
         help=parameter.annotation if parameter.annotation is not inspect._empty else None,
         **{'type':_bool,'nargs':'?','const':True} if isinstance( parameter.default, bool ) else {'type':type(parameter.default)} )
-  ns = parser.parse_args()
+  ns = parser.parse_args( args )
 
   # set properties
   __scriptname__ = os.path.basename(sys.argv[0])
