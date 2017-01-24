@@ -12,7 +12,7 @@ The log module provides print methods ``debug``, ``info``, ``user``,
 stdout as well as to an html formatted log file if so configured.
 """
 
-import sys, time, warnings, functools, itertools, re, abc, contextlib, html, urllib.parse, os, json, shutil, traceback, bdb
+import sys, time, warnings, functools, itertools, re, abc, contextlib, html, urllib.parse, os, json, shutil, traceback, bdb, inspect, textwrap
 from . import core
 
 warnings.showwarning = lambda message, category, filename, lineno, *args: \
@@ -312,8 +312,18 @@ class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
   def write_post_mortem( self, etype, value, tb ):
     'write exception nfo to html log'
 
+    _fmt = lambda obj: '=' + ''.join( s.strip() for s in repr(obj).split('\n') )
     self._print( '<span class="post-mortem">' )
-    self._print( '<!-- TODO: POST MORTEM -->' )
+    self._print( 'EXHAUSTIVE STACK TRACE' )
+    self._print()
+    for frame, filename, lineno, function, code_context, index in inspect.getinnerframes( tb ):
+      self._print( 'File "{}", line {}, in {}'.format( filename, lineno, function ) )
+      self._print( html.escape( textwrap.fill( inspect.formatargvalues(*inspect.getargvalues(frame),formatvalue=_fmt), initial_indent=' ', subsequent_indent='  ', width=80 ) ) )
+      if code_context:
+        self._print()
+        for line in code_context:
+          self._print( html.escape( textwrap.fill( line.strip(), initial_indent='>>> ', subsequent_indent='    ', width=80 ) ) )
+      self._print()
     self._print( '</span>' )
     self._flush()
 
