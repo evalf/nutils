@@ -138,4 +138,4 @@ def exact_solution( geometry, T, R, E, nu ):
 
 
 if __name__ == '__main__':
-  cli.run( main, convergence, unittest )
+  cli.choose( main, convergence, unittest )

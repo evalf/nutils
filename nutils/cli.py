@@ -76,13 +76,19 @@ class Path:
   def __str__( self ):
     return str( self.__path )
 
-def run( *functions, args=None ):
+def run( func, *, args=None ):
   '''parse command line arguments and call function'''
 
-  assert functions
+  return choose( func, cmd=False, args=args )
+
+def choose( *functions, cmd=True, args=None ):
+  '''parse command line arguments and call one of multiple functions'''
+
+  assert functions, 'no functions specified'
+  assert cmd or len(functions) == 1, 'multiple functions conflicting with cmd=False'
 
   # parse command line arguments
-  parser = argparse.ArgumentParser()
+  parser = argparse.ArgumentParser( formatter_class=argparse.ArgumentDefaultsHelpFormatter )
   parser.add_argument( '--nprocs', type=int, metavar='INT', default=core.globalproperties['nprocs'], help='number of processors' )
   parser.add_argument( '--outrootdir', type=str, metavar='PATH', default=core.globalproperties['outrootdir'], help='root directory for output' )
   parser.add_argument( '--outdir', type=str, metavar='PATH', default=None, help='custom directory for output' )
@@ -95,10 +101,12 @@ def run( *functions, args=None ):
   parser.add_argument( '--recache', type=_bool, nargs='?', const=True, metavar='BOOL', default=core.globalproperties['recache'], help='overwrite existing cache' )
   parser.add_argument( '--dot', type=str, metavar='STR', default=core.globalproperties['dot'], help='graphviz executable' )
   parser.add_argument( '--selfcheck', type=_bool, nargs='?', const=True, metavar='BOOL', default=core.globalproperties['selfcheck'], help='active self checks (slow!)' )
-  subparsers = parser.add_subparsers( dest='command', help='command (add -h for command-specific help)' )
-  subparsers.required = True
+  if cmd:
+    subparsers = parser.add_subparsers( dest='command', help='command (add -h for command-specific help)' )
+    subparsers.required = True
   for func in functions:
-    subparser = subparsers.add_parser( func.__name__, formatter_class=argparse.ArgumentDefaultsHelpFormatter )
+    subparser = subparsers.add_parser( func.__name__, formatter_class=argparse.ArgumentDefaultsHelpFormatter ) if cmd \
+           else parser.add_argument_group( 'optional arguments for {}'.format(func.__name__) )
     for parameter in inspect.signature( func ).parameters.values():
       subparser.add_argument( '--'+parameter.name,
         dest='='+parameter.name, # prefix with '=' to distinguish nutils/func args
@@ -126,7 +134,7 @@ def run( *functions, args=None ):
   __selfcheck__ = ns.selfcheck
 
   # call function
-  func = { f.__name__: f for f in functions }[ ns.command ]
+  func = { f.__name__: f for f in functions }[ ns.command ] if cmd else functions[0]
   kwargs = { key[1:]: val for key, val in vars(ns).items() if key[0] == '=' }
   status = call( func, **kwargs )
   sys.exit( status )

@@ -13,15 +13,19 @@ def main(
   assert isinstance( parg, nutils.cli.Path ), 'f should be Path, got {}'.format( type(parg) )
   print( 'all OK' )
 
-@register
-def good():
+@register( 'run', run=True )
+@register( 'choose', run=False )
+def good( run ):
 
   with tempfile.TemporaryDirectory() as outrootdir:
 
     _savestreams = sys.stdout, sys.stderr
     sys.stdout = sys.stderr = stringio = io.StringIO()
     try:
-      nutils.cli.run( main, args=['--outrootdir',outrootdir,'--pdb=false','--symlink=xyz','main','--iarg=1','--farg=1','--sarg=1','--parg=1'] )
+      if run:
+        nutils.cli.run( main, args=['--outrootdir',outrootdir,'--pdb=false','--symlink=xyz','--iarg=1','--farg=1','--sarg=1','--parg=1'] )
+      else:
+        nutils.cli.choose( main, args=['--outrootdir',outrootdir,'--pdb=false','--symlink=xyz','main','--iarg=1','--farg=1','--sarg=1','--parg=1'] )
     except SystemExit as e:
       status = e
     else:
@@ -48,15 +52,19 @@ def good():
     def exitstatus():
       assert status and status.code == 0, 'expected SystemExit 0, got {}'.format(status)
 
-@register
-def bad():
+@register( 'run', run=True )
+@register( 'choose', run=False )
+def bad( run ):
 
   with tempfile.TemporaryDirectory() as outrootdir:
 
     _savestreams = sys.stdout, sys.stderr
     sys.stdout = sys.stderr = stringio = io.StringIO()
     try:
-      nutils.cli.run( main, args=['--outrootdir',outrootdir,'--pdb=false','--symlink=xyz','main','--iarg=1','--farg=x','--sarg=1','--parg=1'] )
+      if run:
+        nutils.cli.run( main, args=['--outrootdir',outrootdir,'--pdb=false','--symlink=xyz','--iarg=1','--farg=x','--sarg=1','--parg=1'] )
+      else:
+        nutils.cli.choose( main, args=['--outrootdir',outrootdir,'--pdb=false','--symlink=xyz','main','--iarg=1','--farg=x','--sarg=1','--parg=1'] )
     except SystemExit as e:
       status = e
     else:

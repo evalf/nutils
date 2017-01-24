@@ -107,4 +107,4 @@ def unittest():
 
 
 if __name__ == '__main__':
-  cli.run( main, conv, unittest )
+  cli.choose( main, conv, unittest )

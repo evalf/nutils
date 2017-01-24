@@ -160,4 +160,4 @@ def unittest():
 
 
 if __name__ == '__main__':
-  cli.run( main, unittest )
+  cli.choose( main, unittest )
