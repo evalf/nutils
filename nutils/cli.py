@@ -207,6 +207,7 @@ def call( func, **kwargs ):
     return 1
   except:
     if core.getprop( 'pdb', False ):
+      del __log__
       print( _mkbox(
         'YOUR PROGRAM HAS DIED. The Python debugger',
         'allows you to examine its post-mortem state',
