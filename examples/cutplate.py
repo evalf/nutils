@@ -17,9 +17,18 @@ def makeplots( domain, geom, sigma, index ):
     plt.ylim( 0, 1.3 )
 
 
-def main( nelems=None, maxrefine=2, radius=.5, degree=1, stress=library.Hooke(lmbda=1,mu=1), plots=True, solvetol=1e-5 ):
+def main(
+    nelems: 'number of elements, -1 for triangulation' = -1,
+    maxrefine: 'maxrefine level for trimming' = 2,
+    radius: 'cut-out radius' = .5,
+    degree: 'polynomial degree' = 1,
+    lmbda: 'first lamé constant' = 1.,
+    mu: 'second lamé constant' = 1.,
+    solvetol: 'solver tolerance' = 1e-5,
+    plots: 'create plots' = True,
+  ):
 
-  if nelems:
+  if nelems > 0:
     verts = numpy.linspace( 0, 1, nelems+1 )
     wholedomain, geom = mesh.rectilinear( [verts,verts] )
   else:
@@ -27,6 +36,8 @@ def main( nelems=None, maxrefine=2, radius=.5, degree=1, stress=library.Hooke(lm
     if degree != 1:
       log.warning( 'setting degree=1 for triangular mesh' )
       degree = 1
+
+  stress = library.Hooke( lmbda=lmbda, mu=mu )
 
   # plane strain case (see e.g. http://en.wikiversity.org/wiki/Introduction_to_Elasticity/Plate_with_hole_in_tension)
   x, y = geom / radius
@@ -84,7 +95,7 @@ def conv( degree=1, nrefine=4 ):
 
 def unittest():
 
-  retvals = main( nelems=None, degree=2, maxrefine=2, plots=False, solvetol=0 )
+  retvals = main( degree=1, maxrefine=2, plots=False, solvetol=0 )
   assert debug.checkdata( retvals, '''
     eNplUEGOBCEI/E53IhtAQHnOHPo6/z+uiHZmehJJFcZCqqgcUkjPchzcrV9gRVHoAi3j7v16F2rGF4xH
     VCUw7oziqU6Of3EWC3gWS6MQMjfeA8jdNo8CJdKYCCaiezR0rn43bii7+azv3weA16rhZMrYCLdsWCLx
@@ -110,4 +121,5 @@ def unittest():
     wOeLcv0BRKniIA==''' )
 
 
-util.run( main, conv, unittest )
+if __name__ == '__main__':
+  cli.choose( main, conv, unittest )

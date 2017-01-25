@@ -40,7 +40,15 @@ class MakePlots( object ):
       plt.ylabel( 'error' )
 
 
-def main( degree=1, solvetol=1e-10, circle=False, uniform=False, basistype='std', nrefine=7, withplots=True ):
+def main(
+    degree: 'number of elements' = 1,
+    solvetol: 'solver tolerance' = 1e-10,
+    circle: 'use circular area of interest (default square)' = False,
+    uniform: 'use uniform refinement (default adaptive)' = False,
+    basistype: 'basis function' = 'std',
+    nrefine: 'maximum allowed number of refinements' = 7,
+    withplots: 'create plots' = True,
+  ):
 
   # construct domain
   verts = numpy.linspace( -1, 1, 7 )
@@ -151,4 +159,5 @@ def unittest():
     fu7Mv+f1vH4Dyjj09Q==''' )
 
 
-util.run( main, unittest )
+if __name__ == '__main__':
+  cli.choose( main, unittest )

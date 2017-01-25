@@ -1,13 +1,19 @@
 #! /usr/bin/env python3
 
-from nutils import mesh, plot, util, function, log, debug
+from nutils import mesh, plot, cli, function, log, debug
 import numpy
 
 
-def main( nelems=None, degree=1, basistype='spline', solvetol=1e-10, withplots=True ):
+def main(
+    nelems: 'number of elements, -1 for triangulation' = -1,
+    degree: 'polynomial degree' = 1,
+    basistype: 'basis function' = 'spline',
+    solvetol: 'solver tolerance' = 1e-10,
+    withplots: 'create plots' = True,
+  ):
 
   # construct mesh
-  if nelems: # rectilinear
+  if nelems > 0: # rectilinear
     verts = numpy.linspace( 0, .5*numpy.pi, nelems+1 )
     domain, geom = mesh.rectilinear( [verts,verts] )
   else: # triangulated demo mesh
@@ -100,4 +106,5 @@ def unittest():
     IdNqv4Cvwiv9tS70+m/6DVvn5ad/QddfE0m//PrXze+nH9u3j/0HiSeZcA==''' )
 
 
-util.run( main, conv, unittest )
+if __name__ == '__main__':
+  cli.choose( main, conv, unittest )

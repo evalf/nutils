@@ -1,7 +1,7 @@
 # -*- coding: utf8 -*-
 
-import nutils.log, nutils.debug, nutils.core
-import sys, time, collections, functools
+import nutils.log, nutils.core
+import sys, time, collections, functools, traceback, pdb
 
 
 ## INTERNAL VARIABLES
@@ -28,13 +28,10 @@ def _runtests( pkg, whitelist ):
     except KeyboardInterrupt:
       raise
     except:
-      exc, frames = nutils.debug.exc_info()
-      nutils.log.stack( 'error: {}'.format(exc), frames )
-      if nutils.core.getprop( 'tbexplore', False ):
-        nutils.debug.explore( repr(exc), frames, '''Test package
-          failed. The traceback explorer allows you to examine the failure
-          state. Closing the explorer will resume testing with the next
-          package.''' )
+      nutils.log.error( traceback.format_exc() )
+      if nutils.core.getprop( 'pdb', False ):
+        print( 'TEST PACKAGE FAILED' )
+        pdb.post_mortem()
       __results__ = PKGERROR
     else:
       dt = time.time() - t0
@@ -73,9 +70,9 @@ def runtests():
     assert args[m+1] == __name__
     args = args[m+2:]
 
-  __tbexplore__ = '--tbexplore' in args
-  if __tbexplore__:
-    args.remove( '--tbexplore' )
+  __pdb__ = '--pdb' in args
+  if __pdb__:
+    args.remove( '--pdb' )
   
   if args:
     assert len(args) == 1
@@ -92,8 +89,7 @@ def runtests():
     nutils.log.info( 'aborted.' )
     sys.exit( -1 )
   except:
-    exc, frames = nutils.debug.exc_info()
-    nutils.log.stack( 'error in unit testing framework: {}'.format(exc), frames )
+    nutils.log.error( 'error in unit testing framework:', traceback.format_exc() )
     nutils.log.info( 'crashed.' )
     sys.exit( -2 )
 
@@ -154,26 +150,24 @@ def unittest( func=None, *, name=None, raises=None ):
     except raises or _NoException:
       status = OK
       print( ' OK' )
-    except AssertionError:
+    except AssertionError as e:
       status = FAILED
-      exc, frames = nutils.debug.exc_info()
-      print( ' FAILED:', str(exc).strip() )
+      print( ' FAILED:', str(e).strip() )
+      if nutils.core.getprop( 'pdb', False ):
+        pdb.post_mortem()
     except KeyboardInterrupt:
       raise
-    except:
+    except Exception as e:
       status = ERROR
-      exc, frames = nutils.debug.exc_info()
-      print( ' ERROR:', str(exc).strip() )
+      print( ' ERROR:', str(e).strip() )
+      if nutils.core.getprop( 'pdb', False ):
+        pdb.post_mortem()
     else:
       status = OK
       print( ' OK' )
   nutils.core.getprop('results')[fullname] = status
   if status != OK:
     parentlog.write( 'info', 'captured output:\n-----\n{}\n-----'.format(__log__.captured) )
-    if nutils.core.getprop( 'tbexplore', False ):
-      nutils.debug.explore( repr(exc), frames, '''Unit test {!r} failed. The traceback
-        explorer allows you to examine the failure state. Closing the explorer
-        will resume testing.'''.format( fullname ) )
 
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

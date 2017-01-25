@@ -1,6 +1,6 @@
 #! /usr/bin/python3
 
-from nutils import mesh, util, log, function, plot, debug, _
+from nutils import mesh, cli, log, function, plot, debug, _
 import numpy
 
 
@@ -21,7 +21,15 @@ class MakePlots( object ):
       plt.colorbar()
 
 
-def main( nelems=20, degree=1, timescale=.5, tol=1e-5, ndims=1, endtime=0, withplots=True ):
+def main(
+    nelems: 'number of elements' = 20,
+    degree: 'polynomial degree' = 1,
+    timescale: 'time scale (timestep=timescale/nelems)' = .5,
+    tol: 'solver tolerance' = 1e-5,
+    ndims: 'spatial dimension' = 1,
+    endtime: 'end time, 0 for no end time' = 0,
+    withplots: 'create plots' = True,
+  ):
 
   # construct mesh
   domain, geom = mesh.rectilinear( [numpy.linspace(0,1,nelems+1)]*ndims, periodic=range(ndims) )
@@ -85,4 +93,5 @@ def unittest():
     YD7oyg==''' )
 
 
-util.run( main, unittest )
+if __name__ == '__main__':
+  cli.choose( main, unittest )

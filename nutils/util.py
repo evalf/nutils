@@ -13,8 +13,8 @@ point of a nutils application, taking care of command line parsing, output dir
 creation and initiation of a log file.
 """
 
-from . import log, debug, core, version, numeric
-import sys, os, time, numpy, hashlib, weakref, warnings, collections, inspect
+from . import numeric
+import sys, os, numpy, weakref, warnings, collections
 
 def isiterable( obj ):
   'check for iterability'
@@ -311,19 +311,6 @@ class OrderedDict( collections.MutableMapping, collections.Sequence ):
   def __len__( self ):
     return len( self._dict )
 
-def getkwargdefaults( func ):
-  'helper for run'
-
-  kwargs = OrderedDict()
-  signature = inspect.signature( func )
-  for parameter in signature.parameters.values():
-    if parameter.kind in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD):
-      continue
-    if parameter.default is parameter.empty:
-      raise ValueError( 'Function cannot be called without arguments.' )
-    kwargs[parameter.name] = parameter.default
-  return kwargs
-
 class Statm( object ):
   'memory statistics on systems that support it'
 
@@ -350,9 +337,6 @@ class Statm( object ):
     return '\n'.join( [ 'STATM:     G  M  k  b' ]
       + [ attr + ' ' + (' %s'%getattr(self,attr)).rjust(20-len(attr),'-') for attr in self.__slots__ ] )
 
-class Terminate( Exception ):
-  pass
-
 def regularize( bbox, spacing, xy=numpy.empty((0,2)) ):
   xy = numpy.asarray( xy )
   index0 = numeric.floor( bbox[:,0] / (2*spacing) ) * 2 - 1
@@ -372,23 +356,12 @@ def regularize( bbox, spacing, xy=numpy.empty((0,2)) ):
   newindex = numpy.array( numpy.unravel_index( vacant, coarsexy.shape ) ).T * 2 + index0 + 1
   return numpy.concatenate( [ newindex * spacing, xy[keep] ], axis=0 )
 
-def githash( path, depth=0  ):
-  abspath = os.path.abspath( path )
-  for i in range( depth ):
-    abspath = os.path.dirname( abspath )
-  git = os.path.join( abspath, '.git' )
-  with open( os.path.join( git, 'HEAD' ) ) as HEAD:
-    head = HEAD.read()
-  assert head.startswith( 'ref:' )
-  ref = head[4:].strip()
-  with open( os.path.join( git, ref ) ) as ref:
-    githash, = ref.read().split()
-  return githash
-
 def run( *functions ):
-  'call function specified on command line'
-
+  print( 'WARNING util.run is deprecated, please use cli.run instead' )
   assert functions
+
+  import datetime, inspect
+  from . import cli, core
 
   if '-h' in sys.argv[1:] or '--help' in sys.argv[1:]:
     print( 'Usage: %s [FUNC] [ARGS]' % sys.argv[0] )
@@ -411,9 +384,10 @@ def run( *functions ):
       print()
       print( 'Arguments for %s%s' % ( func.__name__, '' if i else ' (default)' ) )
       print()
-      for kwarg, default in getkwargdefaults( func ).items():
-        print( '  --%s=%s' % ( kwarg, default ) )
-    return
+      print( '\n'.join( '  --{}={}'.format( parameter.name, parameter.default )
+        for parameter in inspect.signature( func ).parameters.values()
+          if parameter.kind not in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD) ) )
+    sys.exit( 0 )
 
   func = functions[0]
   argv = sys.argv[1:]
@@ -422,8 +396,11 @@ def run( *functions ):
     func = funcbyname[argv[0]]
     argv = argv[1:]
 
-  kwargs = getkwargdefaults( func )
-  properties = {}
+  properties = core.globalproperties.copy()
+  kwargs = { parameter.name: parameter.default
+    for parameter in inspect.signature( func ).parameters.values()
+      if parameter.kind not in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD) }
+
   for arg in argv:
     arg = arg.lstrip('-')
     try:
@@ -437,154 +414,30 @@ def run( *functions ):
     if arg in kwargs:
       kwargs[ arg ] = val
     else:
-      assert arg in core.globalproperties, 'invalid argument %r' % arg
+      assert arg in properties, 'invalid argument %r' % arg
       properties[arg] = val
 
-  locals().update({ '__%s__' % name: value for name, value in properties.items() })
+  missing = [ arg for arg, val in kwargs.items() if val is parameter.empty ]
+  assert not missing, 'missing mandatory arguments: {}'.format( ', '.join(missing) )
 
-  scriptname = os.path.basename(sys.argv[0])
-  outrootdir = os.path.expanduser( core.getprop( 'outrootdir' ) ).rstrip( os.sep ) + os.sep
-  basedir = outrootdir + scriptname + os.sep
-  localtime = time.localtime()
-  timepath = time.strftime( '%Y/%m/%d/%H-%M-%S/', localtime )
-  outdir = properties.get( 'outdir', None )
-  htmloutput = core.getprop( 'htmloutput', True )
+  # set properties
+  __scriptname__ = os.path.basename(sys.argv[0])
+  __nprocs__ = properties['nprocs']
+  __outrootdir__ = os.path.abspath(os.path.expanduser(properties['outrootdir']))
+  __cachedir__ = os.path.join( __outrootdir__, __scriptname__, 'cache' )
+  __outdir__ = os.path.abspath(os.path.expanduser(properties['outdir'])) if properties['outdir'] != '.' \
+          else os.path.join( __outrootdir__, __scriptname__, datetime.datetime.now().strftime('%Y/%m/%d/%H-%M-%S/') )
+  __verbose__ = properties['verbose']
+  __richoutput__ = properties['richoutput']
+  __htmloutput__ = properties['htmloutput']
+  __pdb__ = properties.get( 'tbexplore', False )
+  __imagetype__ = properties['imagetype']
+  __symlink__ = properties['symlink']
+  __recache__ = properties['recache']
+  __dot__ = properties['dot']
+  __selfcheck__ = properties['selfcheck']
 
-  if outdir is None:
-    # `outdir` not specified on the commandline, use default directory layout
-
-    outdir = basedir + timepath
-    os.makedirs( outdir ) # asserts nonexistence
-
-    if core.getprop( 'symlink' ):
-      for i in range(2): # make two links
-        target = outrootdir
-        dest = ''
-        if i: # global link
-          target += scriptname + os.sep
-        else: # script-local link
-          dest += scriptname + os.sep
-        target += core.getprop( 'symlink' )
-        dest += timepath
-        if os.path.islink( target ):
-          os.remove( target )
-        os.symlink( dest, target )
-
-    if htmloutput:
-
-      redirect = '<html>\n<head>\n<meta http-equiv="cache-control" content="max-age=0" />\n' \
-               + '<meta http-equiv="cache-control" content="no-cache" />\n' \
-               + '<meta http-equiv="expires" content="0" />\n' \
-               + '<meta http-equiv="expires" content="Tue, 01 Jan 1980 1:00:00 GMT" />\n' \
-               + '<meta http-equiv="pragma" content="no-cache" />\n' \
-               + '<meta http-equiv="refresh" content="0;URL=%slog.html" />\n</head>\n</html>\n'
-
-      with open( outrootdir+'log.html', 'w' ) as redirlog1:
-        print( redirect % ( scriptname + '/' + timepath ), file=redirlog1 )
-
-      with open( basedir+'log.html', 'w' ) as redirlog2:
-        print( redirect % ( timepath ), file=redirlog2 )
-
-  elif not os.path.isdir( outdir ):
-    # use custom directory layout, skip creating symlinks, redirects
-    os.makedirs( outdir )
-
-  # `chdir` to `outdir`.  Since this function raises `SystemExit` at the end
-  # don't bother restoring the current directory.
-  if outdir != '.':
-    os.chdir( outdir )
-
-  textlog = log._mklog()
-  if htmloutput:
-    title = '{} {}'.format( scriptname, time.strftime( '%Y/%m/%d %H:%M:%S', localtime ) )
-    htmllog = log.HtmlLog( os.path.join( outdir, 'log.html' ), title=title, scriptname=scriptname )
-    __log__ = log.TeeLog( textlog, htmllog )
-  else:
-    __log__ = textlog
-
-  __outdir__ = outdir
-  __cachedir__ = basedir + 'cache'
-
-  with __log__:
-
-    ctime = time.ctime()
-
-    try:
-      import signal
-      signal.signal( signal.SIGTSTP, debug.signal_handler ) # start traceback explorer at ^Z
-    except Exception as e:
-      log.warning( 'failed to install signal handler:', e )
-
-    try:
-      gitversion = version + '.' + githash(__file__,2)[:8]
-    except:
-      gitversion = version
-    log.info( 'nutils v{}'.format( gitversion ) )
-    log.info( '' )
-
-    textlog.write( 'info', ' \\\n'.join( [ ' '.join([ scriptname, func.__name__ ]) ] + [ '  --{}={}'.format( *item ) for item in kwargs.items() ] ) )
-    if htmloutput:
-      htmllog.write( 'info', '{} {}'.format( scriptname, func.__name__ ) )
-      for arg, value in kwargs.items():
-        htmllog.write( 'info', '  --{}={}'.format( arg, value ) )
-
-    log.info( '' )
-    log.info( 'start {}'.format(ctime) )
-    log.info( '' )
-
-    t0 = time.time()
-
-    if core.getprop( 'profile' ):
-      import cProfile
-      prof = cProfile.Profile()
-      prof.enable()
-
-    failed = 1
-    frames = None
-    try:
-      func( **kwargs )
-    except KeyboardInterrupt:
-      log.error( 'killed by user' )
-    except Terminate as exc:
-      log.error( 'terminated:', exc )
-    except Exception:
-      exc, frames = debug.exc_info()
-      log.stack( repr(exc), frames )
-    else:
-      failed = 0
-
-    if core.getprop( 'profile' ):
-      prof.disable()
-
-    dt = time.time() - t0
-    hours = dt // 3600
-    minutes = dt // 60 - 60 * hours
-    seconds = dt // 1 - 60 * minutes - 3600 * hours
-
-    log.info( '' )
-    log.info( 'finish {}'.format( time.ctime() ) )
-    log.info( 'elapsed %02.0f:%02.0f:%02.0f' % ( hours, minutes, seconds ) )
-
-    if core.getprop( 'uncollected_summary', False ):
-      debug.trace_uncollected()
-
-    if core.getprop( 'profile' ):
-      import pstats
-      stream = BufferStream()
-      stream.write( 'profile results:\n' )
-      pstats.Stats( prof, stream=stream ).strip_dirs().sort_stats( 'time' ).print_stats()
-      log.warning( str(stream) )
-
-    if frames and htmloutput:
-      htmllog.write_post_mortem( repr(exc), frames )
-
-  if frames:
-    if core.getprop( 'tbexplore', False ):
-      debug.explore( repr(exc), frames, '''
-        Your program has died. The traceback explorer allows you to
-        examine its post-mortem state to figure out why this happened.
-        Type 'help' for an overview of commands to get going.''' )
-
-  sys.exit( failed )
+  status = cli.call( func, **kwargs )
+  sys.exit( status )
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

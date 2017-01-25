@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 
-from nutils import mesh, plot, util, log, function, debug, _
+from nutils import mesh, plot, cli, log, function, debug, _
 import numpy
 
 
@@ -22,7 +22,16 @@ class MakePlots( object ):
       plt.streamplot( tri, velo, spacing=.01, linewidth=-10, color='k', zorder=9 )
 
 
-def main( nelems=12, viscosity=1e-3, density=1, degree=2, warp=False, withplots=True, tol=1e-5, maxiter=numpy.inf ):
+def main(
+    nelems: 'number of elements' = 12,
+    viscosity: 'fluid viscosity' = 1e-3,
+    density: 'fluid density' = 1,
+    degree: 'polynomial degree' = 2,
+    warp: 'warp domain (downward bend)' = False,
+    tol: 'solver tolerance' = 1e-5,
+    maxiter: 'maximum number if iterations, 0 for unlimited' = 0,
+    withplots: 'create plots' = True,
+  ):
 
   Re = density / viscosity # based on unit length and velocity
   log.user( 'reynolds number: {:.1f}'.format(Re) )
@@ -112,4 +121,5 @@ def unittest():
     2UR33ZrXssYzBvFDGYNTylg/Nm2dqdJ5dtfapx/K+xso/qhh''' )
 
 
-util.run( main, unittest )
+if __name__ == '__main__':
+  cli.choose( main, unittest )

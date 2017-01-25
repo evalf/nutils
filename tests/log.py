@@ -92,7 +92,8 @@ log_html = '''\
 </ul>
 <li class="info"><a href="test.png" class="plot">test.png</a></li>
 <li class="info">nonexistent.png</li>
-</ul></pre></body></html>
+</ul>
+</pre></body></html>
 '''
 
 log_indent = '''\
@@ -114,48 +115,6 @@ c exception
  |     raise ValueError( &#x27;test&#x27; )
 i <a href="test.png" class="plot">test.png</a>
 i nonexistent.png
-'''
-
-log_html_post_mortem = '''\
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "DTD/xhtml1-strict.dtd">
-<html><head>
-<title>test</title>
-<script type="text/javascript" src="viewer.js" ></script>
-<link rel="stylesheet" type="text/css" href="style.css">
-</head><body class="newstyle"><pre>
-<ul>
-<li class="error">TestException()
-  File &quot;&lt;string&gt;&quot;, line 3, in generate_exception
-    \n\
-  File &quot;&lt;string&gt;&quot;, line 5, in generate_exception
-    </li>
-<span class="post-mortem">
-<hr/>
-<b>EXHAUSTIVE POST-MORTEM DUMP FOLLOWS</b>
-&#x27;TestException()&#x27;
-  File &quot;&lt;string&gt;&quot;, line 5, in generate_exception
-    \n\
-  File &quot;&lt;string&gt;&quot;, line 3, in generate_exception
-    \n\
-<hr/>
-  File &quot;&lt;string&gt;&quot;, line 3, in generate_exception
-&lt;not avaliable&gt;
-
-
-<table border="1" style="border:none; margin:0px; padding:0px;">
-<tr><td>level</td><td>1</td></tr>
-</table>
-<hr/>
-  File &quot;&lt;string&gt;&quot;, line 5, in generate_exception
-&lt;not avaliable&gt;
-
-
-<table border="1" style="border:none; margin:0px; padding:0px;">
-<tr><td>level</td><td>0</td></tr>
-</table>
-<hr/>
-</span>
-</ul></pre></body></html>
 '''
 
 def generate_log( logdir ):
@@ -252,14 +211,11 @@ def generate_exception( level=0 ):
     with tempfile.TemporaryDirectory() as logdir:
       stream = io.StringIO()
       __log__ = nutils.log.HtmlLog( stream, logdir=logdir, title='test' )
-      with __log__:
-        try:
+      try:
+        with __log__:
           virtual_module['generate_exception']()
-        except TestException:
-          exc, frames = nutils.debug.exc_info()
-          frames = frames[1:]
-        else:
-          raise ValueError( 'Expected a `ValueError` exception.' )
-        nutils.log.stack( repr(exc), frames )
-        __log__.write_post_mortem( repr(exc), frames )
-      assert stream.getvalue() == log_html_post_mortem
+      except TestException:
+        pass
+      else:
+        raise ValueError( 'Expected a `ValueError` exception.' )
+      assert '<span class="post-mortem">' in stream.getvalue()
