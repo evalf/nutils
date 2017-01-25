@@ -397,6 +397,8 @@ def run( *functions ):
     argv = argv[1:]
 
   properties = core.globalproperties.copy()
+  if 'tbexplore' not in properties:
+    properties['tbexplore'] = properties['pdb']
   kwargs = { parameter.name: parameter.default
     for parameter in inspect.signature( func ).parameters.values()
       if parameter.kind not in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD) }
