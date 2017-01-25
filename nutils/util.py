@@ -419,7 +419,7 @@ def run( *functions ):
       assert arg in properties, 'invalid argument %r' % arg
       properties[arg] = val
 
-  missing = [ arg for arg, val in kwargs.items() if val is parameter.empty ]
+  missing = [ arg for arg, val in kwargs.items() if val is inspect.Parameter.empty ]
   assert not missing, 'missing mandatory arguments: {}'.format( ', '.join(missing) )
 
   # set properties
