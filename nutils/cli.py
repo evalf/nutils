@@ -92,7 +92,7 @@ def choose( *functions, cmd=True, args=None ):
   assert cmd or len(functions) == 1, 'multiple functions conflicting with cmd=False'
 
   # parse command line arguments
-  parser = argparse.ArgumentParser( formatter_class=argparse.ArgumentDefaultsHelpFormatter )
+  parser = argparse.ArgumentParser()
   parser.add_argument( '--nprocs', type=int, metavar='INT', default=core.globalproperties['nprocs'], help='number of processors' )
   parser.add_argument( '--outrootdir', type=str, metavar='PATH', default=core.globalproperties['outrootdir'], help='root directory for output' )
   parser.add_argument( '--outdir', type=str, metavar='PATH', default=None, help='custom directory for output' )
@@ -109,14 +109,13 @@ def choose( *functions, cmd=True, args=None ):
     subparsers = parser.add_subparsers( dest='command', help='command (add -h for command-specific help)' )
     subparsers.required = True
   for func in functions:
-    subparser = subparsers.add_parser( func.__name__, formatter_class=argparse.ArgumentDefaultsHelpFormatter ) if cmd \
-           else parser.add_argument_group( 'optional arguments for {}'.format(func.__name__) )
+    subparser = subparsers.add_parser( func.__name__ ) if cmd else parser.add_argument_group( 'optional arguments for {}'.format(func.__name__) )
     for parameter in inspect.signature( func ).parameters.values():
       subparser.add_argument( '--'+parameter.name,
         dest='='+parameter.name, # prefix with '=' to distinguish nutils/func args
         default=parameter.default,
         metavar=type(parameter.default).__name__.upper(),
-        help=parameter.annotation if parameter.annotation is not inspect._empty else None,
+        help='{} (default: %(default)s)'.format(parameter.annotation) if parameter.annotation is not inspect._empty else 'default: %(default)s',
         **{'type':_bool,'nargs':'?','const':True} if isinstance( parameter.default, bool ) else {'type':type(parameter.default)} )
   ns = parser.parse_args( args )
 
