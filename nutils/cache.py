@@ -105,15 +105,11 @@ def _hashable( obj ):
     else HashableDict( obj ) if isinstance( obj, dict ) \
     else HashableAny( obj )
 
-def _position_args( func, *args, **kwargs ):
+def _position_args( func ):
   sig = inspect.signature( func )
-  invalid_kinds = inspect.Parameter.KEYWORD_ONLY, inspect.Parameter.VAR_KEYWORD
-  params = tuple( sig.parameters.values() )
-  assert not any( param.kind in invalid_kinds for param in params )
-  bound = sig.bind( *args, **kwargs )
-  positional = tuple( bound.arguments.get( param.name, param.default ) for param in params )
-  assert not any( arg is inspect.Parameter.empty for arg in positional )
-  return positional
+  var = inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD
+  assert not any( parameter.kind in var for parameter in sig.parameters.values() ), 'var-arguments not allowed in {}'.format(func)
+  return tuple( sig.parameters ), { parameter.name: parameter.default for parameter in sig.parameters.values() if parameter.default != sig.empty }
 
 class Wrapper( object ):
   'function decorator that caches results by arguments'
@@ -122,13 +118,22 @@ class Wrapper( object ):
     self.func = func
     self.cache = {}
     self.count = 0
+    self.argnames, self.defaults = _position_args( func )
 
   def __call__( self, *args, **kwargs ):
     self.count += 1
-    key = _hashable( _position_args( self.func, *args, **kwargs ) )
+    assert len(args) <= len(self.argnames), 'too many arguments for function {}'.format( self.func )
+    for name in self.argnames[len(args):]:
+      try:
+        val = kwargs.pop(name)
+      except KeyError:
+        val = self.defaults[name]
+      args += val,
+    assert not kwargs, 'invalid arguments for function {}: {}'.format( self.func, ', '.join(kwargs) )
+    key = tuple( _hashable(arg) for arg in args )
     value = self.cache.get( key )
     if value is None:
-      value = self.func( *args, **kwargs )
+      value = self.func( *args )
       self.cache[ key ] = value
     return value
 
@@ -183,20 +188,31 @@ class CallDict( object ):
 class ImmutableMeta( type ):
   def __init__( cls, *args, **kwargs ):
     type.__init__( cls, *args, **kwargs )
+    cls.argnames, cls.defaults = _position_args( cls.__init__ )
     cls.cache = weakref.WeakValueDictionary()
   def __call__( cls, *args, **kwargs ):
-    _args = _position_args( cls.__init__, None, *args, **kwargs )[1:]
-    key = _hashable( _args )
+    assert len(args) <= len(cls.argnames), 'too many arguments for construction of {}'.format( cls )
+    for name in cls.argnames[len(args)+1:]: # +1 to exclude 'self'
+      try:
+        val = kwargs.pop(name)
+      except KeyError:
+        val = cls.defaults[name]
+      args += val,
+    assert not kwargs, 'invalid arguments in construction of {}: {}'.format( cls, ', '.join(kwargs) )
+    key = tuple( _hashable(arg) for arg in args )
     try:
       self = cls.cache[key]
     except KeyError:
-      self = type.__call__( cls, *_args )
-      self._args = _args
+      self = type.__call__( cls, *args )
+      self._args = args
       self._hash = hash(key)
       cls.cache[key] = self
     return self
 
 class Immutable( object, metaclass=ImmutableMeta ):
+
+  def __init__( self ):
+    pass
 
   def __reduce__( self ):
     return self.__class__.__call__, self._args
