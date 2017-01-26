@@ -397,6 +397,8 @@ def run( *functions ):
     argv = argv[1:]
 
   properties = core.globalproperties.copy()
+  if 'tbexplore' not in properties:
+    properties['tbexplore'] = properties['pdb']
   kwargs = { parameter.name: parameter.default
     for parameter in inspect.signature( func ).parameters.values()
       if parameter.kind not in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD) }
@@ -417,7 +419,7 @@ def run( *functions ):
       assert arg in properties, 'invalid argument %r' % arg
       properties[arg] = val
 
-  missing = [ arg for arg, val in kwargs.items() if val is parameter.empty ]
+  missing = [ arg for arg, val in kwargs.items() if val is inspect.Parameter.empty ]
   assert not missing, 'missing mandatory arguments: {}'.format( ', '.join(missing) )
 
   # set properties

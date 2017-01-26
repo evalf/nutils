@@ -69,12 +69,16 @@ def _sigint_handler( mysignal, frame ):
     signal.signal( mysignal, _handler )
 
 class Path:
-  def __init__( self, s=os.curdir ):
-    self.__path = pathlib.Path( s ).absolute()
+  def __init__( self, path=os.curdir ):
+    self.__path = pathlib.Path( os.path.abspath(os.path.expanduser(path)) )
   def __getattr__( self, attr ):
     return getattr( self.__path, attr )
   def __str__( self ):
-    return str( self.__path )
+    try: # try to make relative to current working directory
+      path = self.__path.relative_to( os.getcwd() )
+    except ValueError: # leave absolute
+      path = self.__path
+    return str( path )
 
 def run( func, *, args=None ):
   '''parse command line arguments and call function'''
@@ -88,7 +92,7 @@ def choose( *functions, cmd=True, args=None ):
   assert cmd or len(functions) == 1, 'multiple functions conflicting with cmd=False'
 
   # parse command line arguments
-  parser = argparse.ArgumentParser( formatter_class=argparse.ArgumentDefaultsHelpFormatter )
+  parser = argparse.ArgumentParser()
   parser.add_argument( '--nprocs', type=int, metavar='INT', default=core.globalproperties['nprocs'], help='number of processors' )
   parser.add_argument( '--outrootdir', type=str, metavar='PATH', default=core.globalproperties['outrootdir'], help='root directory for output' )
   parser.add_argument( '--outdir', type=str, metavar='PATH', default=None, help='custom directory for output' )
@@ -105,14 +109,13 @@ def choose( *functions, cmd=True, args=None ):
     subparsers = parser.add_subparsers( dest='command', help='command (add -h for command-specific help)' )
     subparsers.required = True
   for func in functions:
-    subparser = subparsers.add_parser( func.__name__, formatter_class=argparse.ArgumentDefaultsHelpFormatter ) if cmd \
-           else parser.add_argument_group( 'optional arguments for {}'.format(func.__name__) )
+    subparser = subparsers.add_parser( func.__name__ ) if cmd else parser.add_argument_group( 'optional arguments for {}'.format(func.__name__) )
     for parameter in inspect.signature( func ).parameters.values():
       subparser.add_argument( '--'+parameter.name,
         dest='='+parameter.name, # prefix with '=' to distinguish nutils/func args
         default=parameter.default,
         metavar=type(parameter.default).__name__.upper(),
-        help=parameter.annotation if parameter.annotation is not inspect._empty else None,
+        help='{} (default: %(default)s)'.format(parameter.annotation) if parameter.annotation is not parameter.empty else 'default: %(default)s',
         **{'type':_bool,'nargs':'?','const':True} if isinstance( parameter.default, bool ) else {'type':type(parameter.default)} )
   ns = parser.parse_args( args )
 
@@ -183,7 +186,7 @@ def call( func, **kwargs ):
       log.info( '{} {}'.format( scriptname, func.__name__ ) )
       for parameter in inspect.signature( func ).parameters.values():
         argstr = '  --{}={}'.format( parameter.name, kwargs.get(parameter.name,parameter.default) )
-        if parameter.annotation is not inspect._empty:
+        if parameter.annotation is not parameter.empty:
           argstr += ' ({})'.format( parameter.annotation )
         log.info( argstr )
 
@@ -207,6 +210,7 @@ def call( func, **kwargs ):
     return 1
   except:
     if core.getprop( 'pdb', False ):
+      del __log__
       print( _mkbox(
         'YOUR PROGRAM HAS DIED. The Python debugger',
         'allows you to examine its post-mortem state',
