@@ -115,7 +115,7 @@ def choose( *functions, cmd=True, args=None ):
         dest='='+parameter.name, # prefix with '=' to distinguish nutils/func args
         default=parameter.default,
         metavar=type(parameter.default).__name__.upper(),
-        help='{} (default: %(default)s)'.format(parameter.annotation) if parameter.annotation is not inspect._empty else 'default: %(default)s',
+        help='{} (default: %(default)s)'.format(parameter.annotation) if parameter.annotation is not parameter.empty else 'default: %(default)s',
         **{'type':_bool,'nargs':'?','const':True} if isinstance( parameter.default, bool ) else {'type':type(parameter.default)} )
   ns = parser.parse_args( args )
 
@@ -186,7 +186,7 @@ def call( func, **kwargs ):
       log.info( '{} {}'.format( scriptname, func.__name__ ) )
       for parameter in inspect.signature( func ).parameters.values():
         argstr = '  --{}={}'.format( parameter.name, kwargs.get(parameter.name,parameter.default) )
-        if parameter.annotation is not inspect._empty:
+        if parameter.annotation is not parameter.empty:
           argstr += ' ({})'.format( parameter.annotation )
         log.info( argstr )
 
