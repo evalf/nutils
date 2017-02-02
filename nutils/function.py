@@ -3100,9 +3100,6 @@ def sum( arg, axis=None ):
 
   axis = numeric.normdim( arg.ndim, axis )
 
-  if arg.shape[axis] == 1:
-    return get( arg, axis, 0 )
-
   retval = _call( arg, '_sum', axis )
   if retval is not None:
     assert retval.shape == arg.shape[:axis] + arg.shape[axis+1:], 'bug in %s._sum' % arg
