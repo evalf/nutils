@@ -337,6 +337,8 @@ class Topology( object ):
 
     if constrain is None:
       constrain = util.NanVec( onto.shape[0] )
+    else:
+      constrain = constrain.copy()
     if exact_boundaries:
       constrain |= self.boundary.project( fun, onto, geometry, constrain=constrain, title='boundaries', ischeme=ischeme, tol=tol, droptol=droptol, ptype=ptype, edit=edit )
     assert isinstance( constrain, util.NanVec )

@@ -22,10 +22,11 @@ def property( f ):
     try:
       value = self.__dict__[name]
       assert value is not tmp, 'attribute requested during construction'
+      return value
     except KeyError:
-      self.__dict__[name] = tmp
-      value = f( self )
-      self.__dict__[name] = value
+      pass
+    self.__dict__[name] = tmp
+    value = self.__dict__[name] = f( self )
     return value
   def property_setter( self, value, name=name ):
     assert name not in self.__dict__, 'property can be set only once'
@@ -51,10 +52,10 @@ def argdict( f ):
   def f_wrapped( *args ):
     key = _hashable( args )
     try:
-      value = cache[key]
+      return cache[key]
     except KeyError:
-      value = f( *args )
-      cache[key] = value
+      pass
+    value = cache[key] = f( *args )
     return value
   return f_wrapped
 
@@ -149,10 +150,10 @@ class WrapperCache( object ):
 
   def __getitem__( self, func ):
     try:
-      wrapper = self.cache[func]
+      return self.cache[func]
     except KeyError:
-      wrapper = Wrapper( func )
-      self.cache[func] = wrapper
+      pass
+    wrapper = self.cache[func] = Wrapper( func )
     return wrapper
 
   @_property
@@ -201,12 +202,13 @@ class ImmutableMeta( type ):
     assert not kwargs, 'invalid arguments in construction of {}: {}'.format( cls, ', '.join(kwargs) )
     key = tuple( _hashable(arg) for arg in args )
     try:
-      self = cls.cache[key]
+      return cls.cache[key]
     except KeyError:
-      self = type.__call__( cls, *args )
-      self._args = args
-      self._hash = hash(key)
-      cls.cache[key] = self
+      pass
+    self = type.__call__( cls, *args )
+    self._args = args
+    self._hash = hash(key)
+    cls.cache[key] = self
     return self
 
 class Immutable( object, metaclass=ImmutableMeta ):

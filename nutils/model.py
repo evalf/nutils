@@ -203,6 +203,7 @@ def solve( gen_lhs_resnorm, tol=1e-10, maxiter=numpy.inf ):
   except StopIteration:
     raise ModelError( 'generator stopped before reaching target tolerance' )
   else:
+    log.info( 'tolerance reached in {} iterations with residual {:.2e}'.format(inewton, resnorm) )
     return lhs
 
 
