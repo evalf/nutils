@@ -5,7 +5,7 @@ import numpy
 
 
 def main(
-    nelems: 'number of elements, -1 for triangulation' = -1,
+    nelems: 'number of elements, 0 for triangulation' = 0,
     degree: 'polynomial degree' = 1,
     basistype: 'basis function' = 'spline',
     solvetol: 'solver tolerance' = 1e-10,

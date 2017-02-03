@@ -18,7 +18,7 @@ def makeplots( domain, geom, sigma, index ):
 
 
 def main(
-    nelems: 'number of elements, -1 for triangulation' = -1,
+    nelems: 'number of elements, 0 for triangulation' = 0,
     maxrefine: 'maxrefine level for trimming' = 2,
     radius: 'cut-out radius' = .5,
     degree: 'polynomial degree' = 1,

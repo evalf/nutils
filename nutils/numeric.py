@@ -411,6 +411,23 @@ class Broadcast1D( object ):
 
 broadcast = lambda *args: numpy.broadcast( *args ) if len(args) > 1 else Broadcast1D( args[0] )
 
+def searchsorted( items, item ):
+  '''Find indices where elements should be inserted to maintain order.
+
+  Find the index into a sorted array `items` such that, if `item` were inserted
+  before the index, the order of `items` would be preserved.'''
+
+  n = 1
+  while (n<<1) <= len(items):
+    n <<= 1
+  i = 0
+  while n:
+    j = i|n
+    if j <= len(items) and item > items[j-1]:
+      i = j
+    n >>= 1
+  return i
+
 # EXACT OPERATIONS ON FLOATS
 
 def solve_exact( A, *B ):

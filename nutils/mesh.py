@@ -30,7 +30,7 @@ def rectilinear( richshape, periodic=(), name='rect' ):
   scale = []
   uniform = True
   for v in richshape:
-    if isinstance( v, int ):
+    if numeric.isint( v ):
       assert v > 0
       shape.append( v )
       scale.append( 1 )
