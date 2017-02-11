@@ -450,15 +450,6 @@ def _len( iterable ):
   except:
     return None
 
-def _logiter( text, iterator, length=None, useitem=False ):
-  log = _getlog()
-  for index, item in _enumerate(iterator):
-    title = '%s %d' % ( text, item if useitem else index )
-    if length is not None:
-      title += ' ({:.0f}%)'.format( (index+.5) * 100. / length )
-    with log.context( title ):
-      yield item
-
 def _mklog():
   return ( RichOutputLog if core.getprop('richoutput') else StdoutLog )( sys.stdout )
 
@@ -487,27 +478,44 @@ def range( title, *args ):
   '''Progress logger identical to built in range'''
 
   items = _range( *args )
-  return _logiter( title, _iter(items), length=len(items), useitem=True )
+  log = _getlog()
+  for item in items:
+    with log.context( '{} {} ({:.0f}%)'.format( title, item, item * 100 / len(items) ) ):
+      yield item
 
 def iter( title, iterable, length=None ):
   '''Progress logger identical to built in iter'''
 
-  return _logiter( title, _iter(iterable), length=length or _len(iterable) )
+  if length is None:
+    length = _len(iterable)
+  log = _getlog()
+  index = 0
+  for item in iterable:
+    text = '{} {}'.format( title, index )
+    if length:
+      text += ' ({:.0f}%)'.format( (index+.5) * 100. / length )
+    with log.context( text ):
+      yield item
+    index += 1
 
-def enumerate( title, iterable, length=None ):
+def enumerate( title, iterable ):
   '''Progress logger identical to built in enumerate'''
 
-  return _logiter( title, _enumerate(iterable), length=length or _len(iterable) )
+  return iter( title, _enumerate(iterable), length=_len(iterable) )
 
 def zip( title, *iterables ):
   '''Progress logger identical to built in enumerate'''
 
-  return _logiter( title, _zip(*iterables), length=None )
+  lengths = [ _length(iterable) for iterable in iterables ]
+  return iter( title, _zip(*iterables), length=all(lengths) and min(lengths) )
 
 def count( title, start=0, step=1 ):
   '''Progress logger identical to itertools.count'''
 
-  return _logiter( title, itertools.count(start,step), length=None, useitem=True )
+  log = _getlog()
+  for item in itertools.count(start,step):
+    with log.context( '{} {}'.format( title, item ) ):
+      yield item
     
 def title( f ): # decorator
   '''Decorator, adds title argument with default value equal to the name of the
