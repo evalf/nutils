@@ -423,5 +423,5 @@ def impliciteuler( target, residual, inertia, timestep, lhs0, residual0=None, fr
     res0 += residual0
   lhs = lhs0
   while True:
-    lhs = solve( newton( target, residual=res0.replace(target,lhs) + res, lhs0=lhs, freezedofs=freezedofs, **newtonargs ), tol=tol )
     yield lhs
+    lhs = solve( newton( target, residual=res0.replace(target,lhs) + res, lhs0=lhs, freezedofs=freezedofs, **newtonargs ), tol=tol )
