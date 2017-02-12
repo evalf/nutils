@@ -489,14 +489,16 @@ def iter( title, iterable, length=None ):
   if length is None:
     length = _len(iterable)
   log = _getlog()
-  index = 0
-  for item in iterable:
+  it = _iter( iterable )
+  for index in itertools.count():
     text = '{} {}'.format( title, index )
     if length:
-      text += ' ({:.0f}%)'.format( (index+.5) * 100. / length )
+      text += ' ({:.0f}%)'.format( 100 * index / length )
     with log.context( text ):
-      yield item
-    index += 1
+      try:
+        yield next(it)
+      except StopIteration:
+        break
 
 def enumerate( title, iterable ):
   '''Progress logger identical to built in enumerate'''

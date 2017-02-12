@@ -3,9 +3,9 @@ from . import register, unittest
 import nutils.log, nutils.core, nutils.parallel, nutils.debug
 
 log_stdout = '''\
-iterator > iter 0 (17%) > a
-iterator > iter 1 (50%) > b
-iterator > iter 2 (83%) > c
+iterator > iter 0 (0%) > a
+iterator > iter 1 (33%) > b
+iterator > iter 2 (67%) > c
 levels > error
 levels > warning
 levels > user
@@ -35,12 +35,13 @@ exception > ValueError('test',)
 
 log_rich_output = '''\
 \033[K\033[1;30miterator\033[0m\r\
-\033[K\033[1;30miterator · iter 0 (17%)\033[0m\r\
-\033[K\033[1;30miterator · iter 0 (17%) · \033[0ma
-\033[K\033[1;30miterator · iter 1 (50%)\033[0m\r\
-\033[K\033[1;30miterator · iter 1 (50%) · \033[0mb
-\033[K\033[1;30miterator · iter 2 (83%)\033[0m\r\
-\033[K\033[1;30miterator · iter 2 (83%) · \033[0mc
+\033[K\033[1;30miterator · iter 0 (0%)\033[0m\r\
+\033[K\033[1;30miterator · iter 0 (0%) · \033[0ma
+\033[K\033[1;30miterator · iter 1 (33%)\033[0m\r\
+\033[K\033[1;30miterator · iter 1 (33%) · \033[0mb
+\033[K\033[1;30miterator · iter 2 (67%)\033[0m\r\
+\033[K\033[1;30miterator · iter 2 (67%) · \033[0mc
+\033[K\033[1;30miterator · iter 3 (100%)\033[0m\r\
 \033[K\033[1;30mempty\033[0m\r\
 \033[K\033[1;30mempty · empty\033[0m\r\
 \033[K\033[1;30mlevels\033[0m\r\
@@ -69,13 +70,13 @@ log_html = '''\
 </head><body class="newstyle"><pre>
 <ul>
 <li class="context">iterator</li><ul>
-<li class="context">iter 0 (17%)</li><ul>
+<li class="context">iter 0 (0%)</li><ul>
 <li class="info">a</li>
 </ul>
-<li class="context">iter 1 (50%)</li><ul>
+<li class="context">iter 1 (33%)</li><ul>
 <li class="info">b</li>
 </ul>
-<li class="context">iter 2 (83%)</li><ul>
+<li class="context">iter 2 (67%)</li><ul>
 <li class="info">c</li>
 </ul>
 </ul>
@@ -98,11 +99,11 @@ log_html = '''\
 
 log_indent = '''\
 c iterator
- c iter 0 (17%)
+ c iter 0 (0%)
   i a
- c iter 1 (50%)
+ c iter 1 (33%)
   i b
- c iter 2 (83%)
+ c iter 2 (67%)
   i c
 c levels
  e error
