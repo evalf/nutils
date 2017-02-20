@@ -170,14 +170,11 @@ class Evaluable( cache.Immutable ):
   def graphviz( self ):
     'create function graph'
 
-    import os, subprocess
+    import os, subprocess, hashlib
 
     dotpath = core.getprop( 'dot', True )
     if not isinstance( dotpath, str ):
       dotpath = 'dot'
-
-    imgtype = core.getprop( 'imagetype', 'png' )
-    imgpath = util.getpath( 'dot{0:03x}.' + imgtype )
 
     ops, inds = self.serialized
 
@@ -187,12 +184,16 @@ class Evaluable( cache.Immutable ):
     lines.extend( '%d [label="%d. %s"];' % (i,i,name) for i, name in enumerate( TOKENS + ops + (self,) ) )
     lines.extend( '%d -> %d;' % (j,i) for i, indices in enumerate( ([],)*len(TOKENS) + inds ) for j in indices )
     lines.append( '}' )
+    imgdata = '\n'.join(lines).encode()
 
-    with open( imgpath, 'w' ) as img:
-      with subprocess.Popen( [dotpath,'-T'+imgtype], stdin=subprocess.PIPE, stdout=img ) as dot:
-        dot.communicate( '\n'.join(lines).encode() )
+    imgtype = core.getprop( 'imagetype', 'png' )
+    imgpath = 'dot_{}.{}'.format(hashlib.sha1(imgdata).hexdigest(), imgtype)
+    if not os.path.exists( imgpath ):
+      with open( imgpath, 'w' ) as img:
+        with subprocess.Popen( [dotpath,'-T'+imgtype], stdin=subprocess.PIPE, stdout=img ) as dot:
+          dot.communicate( imgdata )
 
-    log.info( os.path.basename(imgpath) )
+    log.info( imgpath )
 
   def stackstr( self, nlines=-1 ):
     'print stack'
