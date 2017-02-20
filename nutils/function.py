@@ -1575,6 +1575,9 @@ class BlockAdd( Array ):
   def _inflate( self, dofmap, length, axis ):
     return blockadd( *( inflate( func, dofmap, length, axis ) for func in self.funcs ) )
 
+  def _kronecker( self, axis, length, pos ):
+    return blockadd( *( kronecker( func, axis, length, pos ) for func in self.funcs ) )
+
   @property
   def blocks( self ):
     for func in self.funcs:
