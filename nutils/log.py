@@ -508,7 +508,7 @@ def enumerate( title, iterable ):
 def zip( title, *iterables ):
   '''Progress logger identical to built in enumerate'''
 
-  lengths = [ _length(iterable) for iterable in iterables ]
+  lengths = [ _len(iterable) for iterable in iterables ]
   return iter( title, _zip(*iterables), length=all(lengths) and min(lengths) )
 
 def count( title, start=0, step=1 ):
