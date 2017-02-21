@@ -253,3 +253,65 @@ def revolved():
   @unittest
   def hollowcylinder_dofcount():
     assert len(basis) == 3*5
+
+
+@register( 'unstructured_periodic2', False, 2 )
+@register( 'unstructured_periodic1', False, 1 )
+@register( 'unstructured_periodic0', False, 0 )
+@register( 'unstructured', False, False )
+@register( 'structured_periodic2', True, 2 )
+@register( 'structured_periodic1', True, 1 )
+@register( 'structured_periodic0', True, 0 )
+@register( 'structured', True, False )
+def general( isstructured, periodic ):
+
+  domain, geom = mesh.rectilinear( [3,4,5], periodic=[] if periodic is False else [periodic] )
+  if not isstructured:
+    domain = topology.UnstructuredTopology( domain.ndims, tuple(domain) )
+
+  @unittest
+  def connectivity():
+    nboundaries = 0
+    ninterfaces = 0
+    for ielem, ioppelems in enumerate(domain.connectivity):
+      for iedge, ioppelem in enumerate(ioppelems):
+        if ioppelem == -1:
+          nboundaries += 1
+        else:
+          ioppedge = tuple( domain.connectivity[ioppelem] ).index( ielem )
+          edge = domain.elements[ielem].edge(iedge)
+          oppedge = domain.elements[ioppelem].edge(ioppedge)
+          assert sorted(edge.vertices) == sorted(oppedge.vertices), 'edges do not match: {}, {}'.format( edge, oppedge )
+          ninterfaces += .5
+    assert nboundaries == len(domain.boundary), 'incompatible number of boundaries'
+    assert ninterfaces == len(domain.interfaces), 'incompatible number of interfaces'
+
+  @unittest
+  def boundary():
+    for elem in domain.boundary:
+      ielem, tail = elem.transform.lookup_item( domain.edict )
+      iedge = domain.elements[ielem].reference.edge_transforms.index( tail )
+      assert domain.connectivity[ielem][iedge] == -1
+
+  @unittest
+  def interfaces():
+    for elem in domain.interfaces:
+      ielem, tail = elem.transform.lookup_item( domain.edict )
+      iedge = domain.elements[ielem].reference.edge_transforms.index( tail )
+      ioppelem, opptail = elem.opposite.lookup_item( domain.edict )
+      ioppedge = domain.elements[ioppelem].reference.edge_transforms.index( opptail )
+      assert domain.connectivity[ielem][iedge] == ioppelem
+      assert domain.connectivity[ioppelem][ioppedge] == ielem
+
+
+@register( 'structured', structured=True )
+@register( 'unstructured', structured=False )
+def locate( structured ):
+
+  @unittest
+  def test():
+    domain, geom = mesh.rectilinear( [numpy.linspace(0,1,3)]*2 ) if structured else mesh.demo()
+    target = numpy.array([ (.2,.3), (.1,.9), (0,1) ])
+    ltopo = domain.locate( geom, target )
+    located = ltopo.elem_eval( geom, ischeme='gauss1' )
+    numpy.testing.assert_array_almost_equal( located, target )

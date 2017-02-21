@@ -206,6 +206,42 @@ def multitrim():
 
 
 @register
+def leveltopo():
+  domain0, geom = mesh.rectilinear( [2,2] )
+  domain1 = domain0.refined
+
+  @unittest
+  def uniform():
+    domain2 = domain1.refined
+    basis = domain0.basis( 'std', degree=1 )
+    level = basis.dot( (numpy.arange(len(basis))%2)-.5 )
+    trimtopoA = domain0.trim( level, maxrefine=2 )
+    trimtopoB = domain0.trim( level, maxrefine=2, leveltopo=domain2 )
+    assert trimtopoA.elements == trimtopoB.elements
+
+  @unittest( raises=Exception )
+  def uniformfail():
+    domain2 = domain1.refined
+    basis = domain0.basis( 'std', degree=1 )
+    level = basis.dot( (numpy.arange(len(basis))%2)-.5 )
+    trimtopo = domain0.trim( level, maxrefine=1, leveltopo=domain2 )
+
+  @unittest
+  def hierarchical():
+    domain2 = domain1.refined_by( domain1.elements[:1] )
+    basis = domain2.basis( 'std', degree=1 )
+    level = basis.dot( (numpy.arange(len(basis))%2)-.5 )
+    trimtopo = domain0.trim( level, maxrefine=2, leveltopo=domain2 )
+
+  @unittest( raises=Exception )
+  def hierarchicalfail():
+    domain2 = domain1.refined_by( domain1.elements[:1] )
+    basis = domain2.basis( 'std', degree=1 )
+    level = basis.dot( (numpy.arange(len(basis))%2)-.5 )
+    trimtopo = domain0.trim( level, maxrefine=1, leveltopo=domain2 )
+
+
+@register
 def trim_conforming():
 
   domain, geom = mesh.rectilinear( [4,4] )

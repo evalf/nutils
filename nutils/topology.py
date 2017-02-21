@@ -65,7 +65,7 @@ class Topology( object ):
     assert isinstance( other, Topology ) and other.ndims == self.ndims
     return other if not self \
       else self if not other \
-      else NotImplemented if isinstance( other, (UnionTopology,SubtractionTopology) ) \
+      else NotImplemented if isinstance( other, UnionTopology ) \
       else UnionTopology( (self,other) )
 
   __ror__ = lambda self, other: self.__or__( other )
@@ -79,8 +79,11 @@ class Topology( object ):
 
   def __sub__( self, other ):
     assert isinstance( other, Topology ) and other.ndims == self.ndims
-    return self if not other \
-      else SubtractionTopology( self, other )
+    return other.__rsub__( self )
+
+  def __rsub__( self, other ):
+    assert isinstance( other, Topology ) and other.ndims == self.ndims
+    return other - other.subset( self, newboundary=getattr(self,'boundary',None) )
 
   def __mul__( self, other ):
     return ProductTopology( self, other )
@@ -109,9 +112,9 @@ class Topology( object ):
     for iface in self:
       if not iface.transform.lookup( outward.edict ):
         assert iface.opposite.lookup( outward.edict ), 'interface not adjacent to outward topo'
-        iface = element.Element( iface.reference, iface.opposite, iface.transform )
+        iface = iface.flipped
       if inward:
-        assert iface.opposite.lookup( inward.edict ), 'interface no adjacent to inward topo'
+        assert iface.opposite.lookup( inward.edict ), 'interface not adjacent to inward topo'
       directed.append( iface )
     return UnstructuredTopology( self.ndims, directed )
 
@@ -462,23 +465,53 @@ class Topology( object ):
     return self if n <= 0 else self.refined.refine( n-1 )
 
   @log.title
-  def trim( self, levelset, maxrefine, ndivisions=8, name='trimmed' ):
+  def trim( self, levelset, maxrefine, ndivisions=8, name='trimmed', leveltopo=None ):
     'trim element along levelset'
 
     fcache = cache.WrapperCache()
-    elements = []
-    for elem in log.iter( 'elem', self ):
-      ref = elem.trim( levelset=levelset, maxrefine=maxrefine, ndivisions=ndivisions, fcache=fcache )
-      if ref:
-        elements.append( element.Element( ref, elem.transform, elem.opposite ) )
+    if leveltopo is None:
+      ischeme = 'vertex{}'.format(maxrefine)
+      refs = [ elem.reference.trim( levelset.eval(elem,ischeme,fcache), maxrefine=maxrefine, ndivisions=ndivisions ) for elem in log.iter( 'elem', self ) ]
+    else:
+      log.info( 'collecting leveltopo elements' )
+      bins = [ [] for ielem in range(len(self)) ]
+      for elem in leveltopo:
+        ielem, tail = elem.transform.lookup_item( self.edict )
+        bins[ielem].append( tail )
+      refs = []
+      for elem, ctransforms in log.zip( 'elem', self, bins ):
+        levels = numpy.empty( elem.reference.nvertices_by_level(maxrefine) )
+        cover = list( fcache[elem.reference.vertex_cover]( sorted(ctransforms), maxrefine ) )
+        # confirm cover and greedily optimize order
+        mask = numpy.ones( len(levels), dtype=bool )
+        while mask.any():
+          imax = numpy.argmax([ mask[indices].sum() for trans, points, indices in cover ])
+          trans, points, indices = cover.pop( imax )
+          levels[indices] = levelset.eval( elem.transform << trans, points, fcache )
+          mask[indices] = False
+        refs.append( elem.reference.trim( levels, maxrefine=maxrefine, ndivisions=ndivisions ) )
     log.debug( 'cache', fcache.stats )
-    return self.subset( elements, boundaryname=name, precise=True )
+    return SubsetTopology( self, refs, newboundary=name )
 
-  def subset( self, elements, boundaryname=None, precise=False ):
-    return SubsetTopology( self, elements, boundaryname, precise )
+  def subset( self, elements, newboundary=None, strict=False ):
+    'intersection'
+    refs = [ element.EmptyReference(self.ndims) ] * len(self)
+    for elem in elements:
+      try:
+        ielem = self.edict[ elem.transform ]
+      except KeyError:
+        assert not strict, 'elements do not form a strict subset'
+      else:
+        ref = self.elements[ielem].reference & elem.reference
+        if strict:
+          assert ref == elem.reference, 'elements do not form a strict subset'
+        refs[ielem] = ref
+    if not any( refs ):
+      return EmptyTopology( self.ndims )
+    return SubsetTopology( self, refs, newboundary )
 
-  def withgroups( self, vgroups={}, bgroups={}, igroups={}, pgroups={} ):
-    return WithGroupsTopology( self, vgroups, bgroups, igroups, pgroups ) if vgroups or bgroups or igroups or pgroups else self
+  def withgroups( self, vgroups={}, bgroups={}, igroups={}, pgroups={}, allowflips=False ):
+    return WithGroupsTopology( self, vgroups, bgroups, igroups, pgroups, allowflips ) if vgroups or bgroups or igroups or pgroups else self
 
   withsubdomain  = lambda self, **kwargs: self.withgroups( vgroups=kwargs )
   withboundary   = lambda self, **kwargs: self.withgroups( bgroups=kwargs )
@@ -602,7 +635,7 @@ class Topology( object ):
       trans = transform.affine( linear=1, offset=xi[0] )
       for idim in range(self.ndims,0,-1): # transcend dimensions one by one to produce valid transformation
         trans <<= transform.affine( linear=numpy.eye(idim)[:,:-1], offset=numpy.zeros(idim), isflipped=False )
-      pelems.append( element.Element( vref, elem.transform << trans, elem.opposite << trans ) )
+      pelems.append( element.Element( vref, elem.transform << trans, elem.opposite and elem.opposite << trans, oriented=True ) )
     return UnstructuredTopology( 0, pelems )
 
   def supp( self, basis, mask=None ):
@@ -626,7 +659,7 @@ class Topology( object ):
           subset.append( elem )
     if not subset:
       return EmptyTopology( self.ndims )
-    return SubsetTopology( self, elements=subset, boundaryname='supp', precise=True )
+    return self.subset( subset, newboundary='supp', strict=True )
 
   def revolved( self, geom ):
     assert geom.ndim == 1
@@ -647,27 +680,39 @@ class Topology( object ):
 class WithGroupsTopology( Topology ):
   'item topology'
 
-  def __init__( self, basetopo, vgroups={}, bgroups={}, igroups={}, pgroups={} ):
+  def __init__( self, basetopo, vgroups={}, bgroups={}, igroups={}, pgroups={}, allowflips=False ):
     assert vgroups or bgroups or igroups or pgroups
     self.basetopo = basetopo
     self.vgroups = vgroups.copy()
     self.bgroups = bgroups.copy()
     self.igroups = igroups.copy()
     self.pgroups = pgroups.copy()
-    if core.getprop( 'selfcheck', False ):
-      for i, groups in enumerate([ vgroups, bgroups, igroups, pgroups ]):
-        for name, topo in groups.items():
-          assert isinstance( name, str )
-          if isinstance( topo, Topology ):
-            base = basetopo if i == 0 \
-              else basetopo.boundary if i == 1 \
-              else basetopo.interfaces if i == 2 \
-              else basetopo.points
-            assert topo.ndims == base.ndims
-            assert set(base.edict).issuperset(topo.edict)
-          else:
-            assert topo is Ellipsis or isinstance( topo, str )
+    self.allowflips = allowflips # check for opposites if true
     Topology.__init__( self, basetopo.ndims )
+
+    if core.getprop( 'selfcheck', False ):
+      if self.vgroups:
+        for topo in self.vgroups.values():
+          if topo is Ellipsis or isinstance( topo, str ):
+            continue
+          assert isinstance( topo, Topology ) and topo.ndims == basetopo.ndims
+          if not allowflips:
+            assert set(self.basetopo.edict).issuperset(topo.edict)
+          else:
+            for elem in topo:
+              try:
+                ielem = self.basetopo.edict[ elem.transform ]
+              except KeyError:
+                ielem = self.basetopo.edict[ elem.opposite ]
+                assert self.basetopo.elements[ielem].opposite == elem.transform
+              else:
+                assert self.basetopo.elements[ielem].opposite == elem.opposite
+      if self.bgroups:
+        self.boundary
+      if self.igroups:
+        self.interfaces
+      if self.pgroups:
+        self.points
 
   def withgroups( self, vgroups={}, bgroups={}, igroups={}, pgroups={} ):
     args = []
@@ -708,10 +753,10 @@ class WithGroupsTopology( Topology ):
       if remitem:
         nametopo = nametopo[ tuple(remitem) ]
       itemtopo |= nametopo
-    igroups = { name: itemtopo.interfaces.subset( topo if isinstance(topo,Topology) else self.basetopo.interfaces[topo], precise=False ) for name, topo in self.igroups.items() }
-    bgroups = { name: itemtopo.boundary.subset( topo if isinstance(topo,Topology) else self.basetopo.boundary[topo], precise=False ) for name, topo in self.bgroups.items() }
+    igroups = { name: itemtopo.interfaces.subset( topo if isinstance(topo,Topology) else self.basetopo.interfaces[topo], strict=False ) for name, topo in self.igroups.items() }
+    bgroups = { name: itemtopo.boundary.subset( topo if isinstance(topo,Topology) else self.basetopo.boundary[topo], strict=False ) for name, topo in self.bgroups.items() }
     for name, topo in self.igroups.items():
-      newtopo = itemtopo.boundary.subset( UnionTopology([ topo, ~topo ]) if isinstance(topo,Topology) else self.basetopo.interfaces[topo], precise=False )
+      newtopo = itemtopo.boundary.subset( UnionTopology([ topo, ~topo ]) if isinstance(topo,Topology) else self.basetopo.interfaces[topo], strict=False )
       bgroups[name] = newtopo if name not in bgroups else UnionTopology([ bgroups[name], newtopo ])
     return itemtopo.withgroups( bgroups=bgroups, igroups=igroups )
 
@@ -722,6 +767,10 @@ class WithGroupsTopology( Topology ):
   @property
   def border_transforms( self ):
     return self.basetopo.border_transforms
+
+  @property
+  def connectivity( self ):
+    return self.basetopo.connectivity
 
   @property
   def structure( self ):
@@ -737,7 +786,7 @@ class WithGroupsTopology( Topology ):
 
   @property
   def interfaces( self ):
-    return self.basetopo.interfaces.withgroups( self.igroups )
+    return self.basetopo.interfaces.withgroups( self.igroups, allowflips=True )
 
   @property
   def points( self ):
@@ -787,6 +836,9 @@ class EmptyTopology( Topology ):
     assert self.ndims == other.ndims
     return other
 
+  def __rsub__( self, other ):
+    return other
+
   @property
   def elements( self ):
     return ()
@@ -796,7 +848,7 @@ class Point( Topology ):
 
   def __init__( self, trans, opposite=None ):
     assert isinstance( trans, transform.TransformChain ) and trans.fromdims == 0
-    self.elem = element.Element( element.getsimplex(0), trans, opposite )
+    self.elem = element.Element( element.getsimplex(0), trans, opposite, oriented=True )
     Topology.__init__( self, ndims=0 )
 
   def __iter__( self ):
@@ -938,7 +990,7 @@ class StructuredTopology( Topology ):
 
   def __iter__( self ):
     reference = element.getsimplex(1)**self.ndims
-    return ( element.Element( reference, trans, opp ) for trans, opp in zip( self._transform.flat, self._opposite.flat ) )
+    return ( element.Element( reference, trans, opp, oriented=True ) for trans, opp in zip( self._transform.flat, self._opposite.flat ) )
 
   def __len__( self ):
     return numpy.prod( self.shape, dtype=int )
@@ -1022,7 +1074,23 @@ class StructuredTopology( Topology ):
   def structure( self ):
     warnings.warn( 'topology.structure will be removed in future', DeprecationWarning )
     reference = element.getsimplex(1)**self.ndims
-    return numeric.asobjvector( element.Element( reference, trans, opp ) for trans, opp in numpy.broadcast( self._transform, self._opposite ) ).reshape( self.shape )
+    return numeric.asobjvector( element.Element( reference, trans, opp, oriented=True ) for trans, opp in numpy.broadcast( self._transform, self._opposite ) ).reshape( self.shape )
+
+  @cache.property
+  def connectivity( self ):
+    connectivity = numpy.empty( self.shape+(self.ndims,2), dtype=int )
+    connectivity[...] = -1
+    ielems = numpy.arange( len(self) ).reshape( self.shape )
+    for idim in range( self.ndims ):
+      s = (slice(None),)*idim
+      s1 = s + (slice(1,None),)
+      s2 = s + (slice(0,-1),)
+      connectivity[s2+(...,idim,0)] = ielems[s1]
+      connectivity[s1+(...,idim,1)] = ielems[s2]
+      if idim in self.periodic:
+        connectivity[s+(-1,...,idim,0)] = ielems[s+(0,)]
+        connectivity[s+(0,...,idim,1)] = ielems[s+(-1,)]
+    return connectivity.reshape( len(self), self.ndims*2 )
 
   @cache.property
   def boundary( self ):
@@ -1343,39 +1411,47 @@ class UnstructuredTopology( Topology ):
 
   @cache.property
   @log.title
-  def edge_search( self ):
+  def connectivity( self ):
     edges = {}
-    ifaces = []
-    for elem in log.iter( 'elem', self ):
-      for edge in elem.edges:
-        edgecoords = edge.vertices
-        edgekey = tuple( sorted( edgecoords ) )
+    connectivity = []
+    for ielem, elem in log.enumerate( 'elem', self ):
+      connectivity.append( -numpy.ones( elem.nedges, dtype=int ) )
+      for iedge, belem in enumerate( elem.edges ):
+        belemcoords = belem.vertices
+        edgekey = tuple( sorted( belemcoords ) )
         try:
-          oppedge = edges.pop( edgekey )
+          jelem, jedge = edges.pop( edgekey )
         except KeyError:
-          edges[edgekey] = edge
+          edges[edgekey] = ielem, iedge
         else:
-          assert edge.reference == oppedge.reference
-          oppedgecoords = oppedge.vertices
-          opptrans = oppedge.transform
-          if oppedgecoords != edgecoords: # TODO leverage rotation information from element
-            if edge.reference.nverts == 2:
-              assert edgecoords == oppedgecoords[::-1]
-              opptrans <<= transform.affine( -1, [1] )
-            else:
-              raise NotImplementedError
-          ifaces.append( element.Element( edge.reference, edge.transform, opptrans ) )
-    return tuple(edges.values()), tuple(ifaces)
+          # TODO assert transformation equivalence
+          connectivity[ielem][iedge] = jelem
+          connectivity[jelem][jedge] = ielem
+    return tuple( connectivity )
 
   @cache.property
   def boundary( self ):
-    edges, interfaces = self.edge_search
-    return UnstructuredTopology( self.ndims-1, edges )
+    elements = [ elem.edge(iedge) for elem, ioppelems in zip( self, self.connectivity ) for iedge in numpy.where( ioppelems == -1 )[0] ]
+    return UnstructuredTopology( self.ndims-1, elements )
 
   @cache.property
   def interfaces( self ):
-    edges, interfaces = self.edge_search
-    return UnstructuredTopology( self.ndims-1, interfaces )
+    seen = set()
+    elements = []
+    for ielem, ioppelems in enumerate( self.connectivity ):
+      elem = self.elements[ielem]
+      for iedge, ioppelem in enumerate( ioppelems ):
+        if ioppelem == -1:
+          continue
+        try:
+          seen.remove(( ielem, iedge ))
+        except KeyError:
+          ioppedge = tuple(self.connectivity[ioppelem]).index(ielem)
+          oppelem = self.elements[ioppelem]
+          elements.append( elem.edge(iedge).withopposite( oppelem.edge(ioppedge), oriented=False ) )
+          seen.add(( ioppelem, ioppedge ))
+    assert not seen
+    return UnstructuredTopology( self.ndims-1, elements )
 
   def basis_std( self, degree=1 ):
     'std from vertices'
@@ -1513,232 +1589,118 @@ class UnionTopology( Topology ):
         unionref, = refs
         opposite = elems[0].opposite
         assert all( elem.opposite == opposite for elem in elems[1:] )
-        elements.append( element.Element( unionref, trans, opposite ) )
+        elements.append( element.Element( unionref, trans, opposite, oriented=True ) )
     return elements
 
   @property
   def refined( self ):
     return UnionTopology( [ topo.refined for topo in self._topos ], self._names )
 
-class SubtractionTopology( Topology ):
-  'subtraction topology'
-
-  def __init__( self, basetopo, subtopo ):
-    assert basetopo.ndims == subtopo.ndims
-    self.basetopo = basetopo
-    self.subtopo = subtopo
-    Topology.__init__( self, basetopo.ndims )
-
-  def __getitem__( self, item ):
-    if item == ():
-      return self
-    return self.basetopo[item] - self.subtopo
-
-  def __or__( self, other ):
-    if other == self.subtopo:
-      return self.basetopo
-    return Topology.__or__( self, other )
-
-  @cache.property
-  def elements( self ):
-    elements = []
-    edict = self.subtopo.edict
-    for elem in self.basetopo:
-      try:
-        index = edict[elem.transform]
-      except KeyError:
-        elements.append( elem )
-      else:
-        ref = elem.reference - self.subtopo.elements[index].reference
-        if ref:
-          elements.append( element.Element( ref, elem.transform, elem.opposite ) )
-    return elements
-
-  @property
-  def refined( self ):
-    return self.basetopo.refined - self.subtopo.refined
-
-  @cache.property
-  @log.title
-  def boundary( self ):
-    'boundary'
-
-    btopo = EmptyTopology( self.ndims-1 )
-    for boundary in ~self.subtopo.boundary, self.basetopo.boundary:
-      belems = [] # trimmed boundary elements
-      for belem in boundary:
-        try:
-          ielem, tail = belem.transform.lookup_item( self.edict )
-        except KeyError:
-          pass
-        else:
-          ref = self.elements[ielem].reference
-          try:
-            index = ref.edge_transforms.index( tail )
-          except ValueError: # e.g. when belem is opposite side of intersected element
-            pass
-          else:
-            edge = ref.edge_refs[index] & belem.reference
-            if edge:
-              belems.append( element.Element( edge, belem.transform, belem.opposite ) )
-      btopo |= boundary.subset( belems, precise=True )
-    return btopo
-
-  @cache.property
-  @log.title
-  def interfaces( self ):
-    'boundary'
-
-    ielems = []
-    subinterfaces = self.subtopo.interfaces
-    for ielem in self.basetopo.interfaces:
-      ref = ielem.reference
-      try:
-        index, tail = ielem.transform.lookup_item( subinterfaces.edict )
-      except KeyError:
-        try:
-          index, tail = ielem.opposite.lookup_item( subinterfaces.edict )
-        except KeyError:
-          pass
-        else:
-          if tail:
-            raise NotImplementedError # wait for unit test to implement this using ref.transform
-          subielem = subinterfaces.elements[index]
-          assert subielem.transform == ielem.opposite
-          ref -= subielem.reference
-      else:
-        if tail:
-          raise NotImplementedError # wait for unit test to implement this using ref.transform
-        subielem = subinterfaces.elements[index]
-        assert subielem.opposite == ielem.opposite
-        ref -= subielem.reference
-      if ref:
-        ielems.append( element.Element( ref, ielem.transform, ielem.opposite ) )
-    return UnstructuredTopology( self.ndims-1, ielems )
-
-  @log.title
-  def basis( self, name, *args, **kwargs ):
-    basis = self.basetopo.basis( name, *args, **kwargs )
-    return self.prune_basis( basis )
-    
 class SubsetTopology( Topology ):
   'trimmed'
 
-  def __init__( self, basetopo, elements, boundaryname, precise ):
-    # elements must all be at the same level of basetopo
-    # precise=True: all elements are in basetopo
-    # precise=False: not all elements are in basetopo, compute intersection
-    assert not boundaryname or isinstance( boundaryname, str )
-    self.allelements = tuple(elements)
-    if precise:
-      self.elements = self.allelements
+  def __init__( self, basetopo, refs, newboundary=None ):
+    if newboundary is not None:
+      assert isinstance( newboundary, str ) or isinstance( newboundary, Topology ) and newboundary.ndims == basetopo.ndims-1
+    assert len(refs) == len(basetopo)
+    self.refs = tuple(refs)
     self.basetopo = basetopo
-    self.boundaryname = boundaryname
+    self.newboundary = newboundary
     Topology.__init__( self, basetopo.ndims )
 
   def __getitem__( self, item ):
     if item == ():
       return self
-    return self.basetopo[item].subset( self.allelements, boundaryname=self.boundaryname, precise=False )
+    return self.basetopo[item].subset( self.elements, strict=False )
+
+  def __rsub__( self, other ):
+    assert self.basetopo == other
+    refs = [ elem.reference - ref for elem, ref in zip( self.basetopo, self.refs ) ]
+    return SubsetTopology( self.basetopo, refs, ~self.newboundary if isinstance(self.newboundary,Topology) else self.newboundary )
+
+  def __or__( self, other ):
+    if not isinstance( other, SubsetTopology ) or self.basetopo != other.basetopo:
+      return super().__or__( other )
+    refs = [ ref1 | ref2 for ref1, ref2 in zip( self.refs, other.refs ) ]
+    if all( elem.reference == ref for elem, ref in zip( self.basetopo, refs ) ):
+      return self.basetopo
+    return SubsetTopology( self.basetopo, refs ) # TODO boundary
+
+  @cache.property
+  def connectivity( self ):
+    mask = numpy.array([ bool(ref) for ref in self.refs ] + [False] ) # trailing false serves to map -1 to -1
+    renumber = numpy.cumsum(mask)-1
+    renumber[~mask] = -1
+    connectivity = tuple( numpy.concatenate([ renumber[ioppelems], -numpy.ones(ref.nedges-len(ioppelems),dtype=int) ])
+      for ref, ioppelems in zip( self.refs, self.basetopo.connectivity ) if ref )
+    return connectivity
 
   @cache.property
   def elements( self ):
-    edict = self.basetopo.edict
-    elements = []
-    for elem in self.allelements:
-      index = edict.get( elem.transform )
-      if index is not None:
-        ref = self.basetopo.elements[index].reference & elem.reference
-        if ref:
-          elements.append( element.Element( ref, elem.transform, elem.opposite ) )
-    return elements
+    return tuple( element.Element( ref, elem.transform, elem.opposite ) for elem, ref in zip( self.basetopo, self.refs ) if ref )
 
   @property
   def refined( self ):
     elems = [ child for elem in self for child in elem.children if child ]
-    return self.basetopo.refined.subset( elems, boundaryname=self.boundaryname, precise=True )
-
-  @cache.property
-  @log.title
-  def search_interfaces( self ):
-    empty = element.EmptyReference( self.ndims-1 )
-    ielems = []
-    belems = []
-    oppbelems = []
-    for iface in log.iter( 'elem', self.basetopo.interfaces ):
-      try:
-        ielem, tail = iface.transform.lookup_item( self.edict )
-      except KeyError:
-        edge = empty
-      else:
-        ref = self.elements[ielem].reference
-        index = ref.edge_transforms.index(tail)
-        edge = ref.edge_refs[ index ]
-      try:
-        ielem, tail = iface.opposite.lookup_item( self.edict )
-      except KeyError:
-        oppedge = empty
-      else:
-        ref = self.elements[ielem].reference
-        index, tail2tail = tail.lookup_item( ref.edge_transforms ) # strip optional adjustment transformation (temporary?)
-        oppedge = ref.edge_refs[ index ].transform( tail2tail )
-      if iface.reference == edge == oppedge: # shortcut
-        ielems.append( iface )
-      else:
-        ifaceref = edge & oppedge
-        if ifaceref:
-          ielems.append( element.Element( ifaceref, iface.transform, iface.opposite ) )
-        edgeref = edge - oppedge
-        if edgeref:
-          belems.append( element.Element( edgeref, iface.transform, iface.opposite ) )
-        edgeref = oppedge - edge
-        if edgeref:
-          oppbelems.append( element.Element( edgeref, iface.transform, iface.opposite ) )
-    return tuple(belems), tuple(oppbelems), tuple(ielems)
-
-  @cache.property
-  @log.title
-  def interfaces( self ):
-    belems, oppbelems, ielems = self.search_interfaces
-    return self.basetopo.interfaces.subset( ielems, precise=True )
-
-  @cache.property
-  def quicktrimboundary( self ):
-    cut = []
-    for elem in self:
-      index = self.basetopo.edict[ elem.transform ]
-      n = self.basetopo.elements[index].reference.nedges
-      cut.extend( element.Element( edge, elem.transform<<trans, elem.transform<<trans.flipped ) for trans, edge in elem.reference.edges[n:] )
-    return UnstructuredTopology( self.ndims-1, cut ) if cut else EmptyTopology( self.ndims-1 )
+    return self.basetopo.refined.subset( elems, self.newboundary.refined if isinstance(self.newboundary,Topology) else self.newboundary, strict=True )
 
   @cache.property
   @log.title
   def boundary( self ):
-    'boundary'
+    brefs = [ element.EmptyReference(self.ndims-1) ] * len(self.basetopo.boundary) # subset of original boundary
+    newbelems = [] # newly formed boundary elements
+    connectivity = self.basetopo.connectivity
+    elements = self.basetopo.elements
+    baseboundary = self.basetopo.boundary
+    for ielem, ioppelems in enumerate(connectivity):
+      ref = self.refs[ielem]
+      if not ref:
+        continue
+      elem = elements[ielem]
+      newbelems.extend( element.Element( edge, elem.transform << etrans, elem.transform << etrans.flipped ) for etrans, edge in ref.edges[elem.reference.nedges:] )
+      for iedge, ioppelem in enumerate( ioppelems ):
+        bref = ref.edge_refs[iedge]
+        if not bref:
+          continue
+        if ioppelem == -1:
+          index = baseboundary.edict[ (elem.transform<<ref.edge_transforms[iedge]).canonical ]
+          brefs[index] = bref # by construction, bref must be equal or subset of original
+        else:
+          ioppedge = tuple(connectivity[ioppelem]).index(ielem)
+          oppref = self.refs[ioppelem]
+          if oppref:
+            bref -= oppref.edge_refs[ioppedge]
+          if bref:
+            newbelems.append( element.Element( bref, elem.transform<<ref.edge_transforms[iedge], elements[ioppelem].edge(ioppedge).transform ) )
+    origboundary = SubsetTopology( baseboundary, brefs )
+    trimboundary = self.newboundary.subset( newbelems, strict=True ) if isinstance( self.newboundary, Topology ) \
+              else UnstructuredTopology( self.ndims-1, newbelems )
+    return UnionTopology([ trimboundary, origboundary ], names=[ self.newboundary ] if isinstance(self.newboundary,str) else [] )
 
-    trimboundary = self.quicktrimboundary
-    belems, oppbelems, ielems = self.search_interfaces
-    if belems:
-      trimboundary |= self.basetopo.interfaces.subset( belems, precise=True )
-    if oppbelems:
-      trimboundary |= ~( self.basetopo.interfaces.subset( oppbelems, precise=True ) )
-
-    belems = [] # prior boundary elements (reduced)
-    basebtopo = self.basetopo.boundary
-    for belem in log.iter( 'element', basebtopo ):
-      try:
-        ielem, tail = belem.transform.lookup_item( self.edict )
-      except KeyError:
-        pass
-      else:
-        ref = self.elements[ielem].reference
-        iedge = ref.edge_transforms.index( tail )
-        edge = ref.edge_refs[iedge]
-        if edge:
-          belems.append( element.Element( edge, belem.transform, belem.opposite ) )
-    origboundary = basebtopo.subset( belems, precise=True )
-
-    return UnionTopology( [trimboundary,origboundary], [self.boundaryname] if self.boundaryname else [] )
+  @cache.property
+  @log.title
+  def interfaces( self ):
+    irefs = [ element.EmptyReference(self.ndims-1) ] * len(self.basetopo.interfaces) # subset of original interfaces
+    connectivity = self.basetopo.connectivity
+    elements = self.basetopo.elements
+    baseinterfaces = self.basetopo.interfaces
+    for ielem, ioppelems in enumerate(connectivity):
+      ref = self.refs[ielem]
+      if not ref:
+        continue # edge is empty
+      elem = elements[ielem]
+      for iedge, ioppelem in enumerate( ioppelems ):
+        if ioppelem == -1:
+          continue # edge lies on the boundary
+        oppref = self.refs[ioppelem]
+        if not oppref:
+          continue # edge is empty
+        index = baseinterfaces.edict.get( (elem.transform<<ref.edge_transforms[iedge]).canonical )
+        if index is None:
+          continue # edge is not oriented with an interface; rely on connectivity to also yield flipped element
+        ioppedge = tuple( connectivity[ioppelem] ).index( ielem )
+        irefs[index] = ref.edge_refs[iedge] & oppref.edge_refs[ioppedge]
+    return SubsetTopology( baseinterfaces, irefs )
 
   @log.title
   def basis( self, name, *args, **kwargs ):
@@ -1779,7 +1741,7 @@ class TrimmedTopologyItem( Topology ):
     for elem in self.basetopo:
       ref = elem.reference & self.refdict[elem.transform]
       if ref:
-        elements.append( element.Element( ref, elem.transform, elem.opposite ) )
+        elements.append( element.Element( ref, elem.transform, elem.opposite, oriented=True ) )
     return elements
 
 class TrimmedTopologyBoundaryItem( Topology ):
@@ -1837,7 +1799,7 @@ class HierarchicalTopology( Topology ):
       else:
         ref &= elem.reference
         if ref:
-          itemelems.append( element.Element( ref, elem.transform, elem.opposite ) )
+          itemelems.append( element.Element( ref, elem.transform, elem.opposite, oriented=True ) )
     return itemelems
 
   @cache.property
@@ -1876,7 +1838,7 @@ class HierarchicalTopology( Topology ):
         pass
       else:
         opptrans = basebtopo.elements[iedge].opposite << tail
-        belems.append( element.Element( edge.reference, edge.transform, opptrans ) )
+        belems.append( element.Element( edge.reference, edge.transform, opptrans, oriented=True ) )
     return basebtopo.hierarchical( belems, precise=True )
 
   @log.title

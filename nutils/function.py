@@ -145,10 +145,10 @@ class Evaluable( cache.Immutable ):
         raise Exception( 'invalid integration scheme of type %r' % type(ischeme) )
 
     if trans is not None:
-      assert opptrans is not None
-      assert trans.fromdims == opptrans.fromdims
-    if points is not None:
-      assert points.ndim == 2 and points.shape[1] == trans.fromdims
+      if opptrans is not None:
+        assert trans.fromdims == opptrans.fromdims
+      if points is not None:
+        assert points.ndim == 2 and points.shape[1] == trans.fromdims
 
     ops, inds = self.serialized
     assert TOKENS == ( CACHE, TRANS, OPPTRANS, POINTS )

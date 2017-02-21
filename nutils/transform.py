@@ -292,19 +292,14 @@ class VertexTransform( TransformItem ):
 
 class MapTrans( VertexTransform ):
 
-  def __init__( self, coords, vertices ):
-    self.coords = numpy.asarray(coords)
-    assert numeric.isintarray( self.coords )
-    nverts, ndims = coords.shape
-    assert len(vertices) == nverts
-    self.vertices = tuple(vertices)
-    VertexTransform.__init__( self, ndims )
+  def __init__( self, linear, offset, vertices ):
+    assert len(linear) == len(offset) == len(vertices)
+    self.vertices, self.linear, self.offset = map( numpy.array, zip( *sorted( zip( vertices, linear, offset ) ) ) ) # sort vertices
+    VertexTransform.__init__( self, self.linear.shape[1] )
 
-  def apply( self, coords ):
-    assert coords.ndim == 2
-    coords = numpy.asarray( coords )
-    indices = map( self.coords.tolist().index, coords.tolist() )
-    return tuple( self.vertices[n] for n in indices )
+  def apply( self, points ):
+    barycentric = numpy.dot( points, self.linear.T ) + self.offset
+    return tuple( tuple( (v,float(c)) for v, c in zip( self.vertices, coord ) if c ) for coord in barycentric )
 
   def __str__( self ):
     return ','.join( str(v) for v in self.vertices )
@@ -386,8 +381,8 @@ def roottrans( name, shape ):
 def roottransedges( name, shape ):
   return CanonicalTransformChain(( RootTransEdges( name, shape ), ))
 
-def maptrans( coords, vertices ):
-  return CanonicalTransformChain(( MapTrans( coords, vertices ), ))
+def maptrans( linear, offset, vertices ):
+  return CanonicalTransformChain(( MapTrans( linear, offset, vertices ), ))
 
 def equivalent( trans1, trans2 ):
   trans1 = TransformChain( trans1 )
