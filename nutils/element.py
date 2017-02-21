@@ -468,10 +468,6 @@ class SimplexReference( Reference ):
     assert trans in self.rotations
     return self
 
-  @cache.property
-  def ribbon2vertices( self ):
-    return numpy.array([ (i,j) for i in range( self.ndims+1 ) for j in range( i+1, self.ndims+1 ) ])
-
   def getischeme_vtk( self ):
     return self.vertices, None
 
@@ -765,12 +761,6 @@ class TensorReference( Reference ):
       degree1 = degree2 = degree
     return self.ref1.stdfunc( degree1 ) \
          * self.ref2.stdfunc( degree2 )
-
-  @cache.property
-  def ribbon2vertices( self ):
-    r2v1 = self.ref1.ribbon2vertices[:,_,:] + self.ref1.nverts * numpy.arange(self.ref2.nverts)[_,:,_]
-    r2v2 = self.ref2.ribbon2vertices[:,_,:] * self.ref1.nverts + numpy.arange(self.ref1.nverts)[_,:,_]
-    return numpy.concatenate([ r2v1.reshape(-1,2), r2v2.reshape(-1,2), ], axis=0 )
 
   def __str__( self ):
     return '%s*%s' % ( self.ref1, self.ref2 )
