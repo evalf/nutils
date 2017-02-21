@@ -95,11 +95,6 @@ class Element( object ):
     trans, edge = self.reference.edges[iedge]
     return Element( edge, self.transform << trans, self.opposite and self.opposite << trans, oriented=True ) if edge else None
 
-  def getedge( self, trans ):
-    iedge = self.reference.edge_transforms.index(trans)
-    edge = self.reference.edge_refs[iedge]
-    return edge and Element( edge, self.transform << trans, self.opposite and self.opposite << trans, oriented=True )
-
   @property
   def children( self ):
     return [ Element( child, self.transform << trans, self.opposite and self.opposite << trans, oriented=True )
