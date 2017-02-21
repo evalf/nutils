@@ -1842,6 +1842,54 @@ class HierarchicalTopology( Topology ):
         belems.append( element.Element( edge.reference, edge.transform, opptrans, oriented=True ) )
     return basebtopo.hierarchical( belems, precise=True )
 
+  @cache.property
+  @log.title
+  def interfaces( self ):
+    'interfaces'
+
+    # Build a lookup table for level and element indices given elements in this
+    # topology.
+    elem_index_level = {
+      elem: (ielem, ilevel)
+      for ilevel, level in enumerate( self.levels )
+      for ielem, elem in enumerate( level )
+    }
+    oriented = isinstance( self.basetopo, StructuredTopology )
+    edict = self.edict
+    interfaces = []
+    for elem in log.iter( 'elem', self ):
+      # Get `level`, element number at `level` of `elem`.
+      ielem, ilevel = elem_index_level[elem]
+      level = self.levels[ilevel]
+      # Loop over neighbours of `elem`.
+      for ielemedge, ineighbor in enumerate( level.connectivity[ielem] ):
+        if ineighbor < 0:
+          # Not an interface.
+          continue
+        neighbor = level.elements[ineighbor]
+        # Lookup `neighbor` (from the same `level` as `elem`) in this topology.
+        head, tail = neighbor.transform.lookup( edict ) or (None, None)
+        if not head:
+          # `neighbor` not found, hence refinements of `neighbor` are present.
+          # The interface of this edge will be added when we encounter the
+          # refined elements.
+          continue
+        # Find the edge of `neighbor` between `neighbor` and `elem`.
+        ineighboredge = numpy.where( level.connectivity[ineighbor] == ielem )[0][0]
+        if not tail and (ielem, ielemedge) > (ineighbor, ineighboredge):
+          # `neighbor` itself, not a parent of, exists in this topology (`tail`
+          # is empty).  To make sure we add this interface only once we
+          # continue here if the current element has a higher index (in
+          # `level`) than the neighbor (or a higher edge number if the elements
+          # are equal, which might occur when there is only one element in a
+          # periodic dimension).
+          continue
+        # Create and add the interface between `elem` and `neighbor`.
+        elemedge = elem.edges[ielemedge]
+        neighboredge = neighbor.edges[ineighboredge]
+        interfaces.append( element.Element( elemedge.reference, elemedge.transform, neighboredge.transform, oriented=oriented ) )
+    return UnstructuredTopology( self.ndims-1, interfaces )
+
   @log.title
   def basis( self, name, *args, **kwargs ):
     'build hierarchical function space'
