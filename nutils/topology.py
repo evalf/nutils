@@ -635,7 +635,7 @@ class Topology( object ):
       trans = transform.affine( linear=1, offset=xi[0] )
       for idim in range(self.ndims,0,-1): # transcend dimensions one by one to produce valid transformation
         trans <<= transform.affine( linear=numpy.eye(idim)[:,:-1], offset=numpy.zeros(idim), isflipped=False )
-      pelems.append( element.Element( vref, elem.transform << trans, elem.opposite << trans, oriented=True ) )
+      pelems.append( element.Element( vref, elem.transform << trans, elem.opposite and elem.opposite << trans, oriented=True ) )
     return UnstructuredTopology( 0, pelems )
 
   def supp( self, basis, mask=None ):

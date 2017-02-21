@@ -302,3 +302,16 @@ def general( isstructured, periodic ):
       ioppedge = domain.elements[ioppelem].reference.edge_transforms.index( opptail )
       assert domain.connectivity[ielem][iedge] == ioppelem
       assert domain.connectivity[ioppelem][ioppedge] == ielem
+
+
+@register( 'structured', structured=True )
+@register( 'unstructured', structured=False )
+def locate( structured ):
+
+  @unittest
+  def test():
+    domain, geom = mesh.rectilinear( [numpy.linspace(0,1,3)]*2 ) if structured else mesh.demo()
+    target = numpy.array([ (.2,.3), (.1,.9), (0,1) ])
+    ltopo = domain.locate( geom, target )
+    located = ltopo.elem_eval( geom, ischeme='gauss1' )
+    numpy.testing.assert_array_almost_equal( located, target )
