@@ -18,7 +18,7 @@ globalproperties = {
   'outrootdir': '~/public_html',
   'outdir': '.',
   'verbose': 4,
-  'richoutput': os.isatty( sys.stdout.fileno() ),
+  'richoutput': sys.stdout.isatty(),
   'htmloutput': True,
   'pdb': False,
   'imagetype': 'png',
