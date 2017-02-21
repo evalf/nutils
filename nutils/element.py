@@ -556,11 +556,6 @@ class TriangleReference( SimplexReference ):
   def stdfunc( self, degree ):
     return PolyTriangle(degree)
 
-  def getischeme_contour( self, n ):
-    p = numpy.arange( n+1, dtype=float ) / (n+1)
-    z = numpy.zeros_like( p )
-    return numpy.hstack(( [1-p,p], [z,1-p], [p,z] )).T, None
-
   def getischeme_gauss( self, degree ):
     '''get integration scheme
     http://www.cs.rpi.edu/~flaherje/pdf/fea6.pdf'''
@@ -767,12 +762,6 @@ class TensorReference( Reference ):
     else:
       raise NotImplementedError
     return points.reshape( self.nverts, self.ndims ), None
-
-  def getischeme_contour( self, n ):
-    assert self == getsimplex(1)**2
-    p = numpy.arange( n+1, dtype=float ) / (n+1)
-    z = numpy.zeros_like( p )
-    return numpy.hstack(( [p,z], [1-z,p], [1-p,1-z], [z,1-p] )).T, None
 
   def getischeme( self, ischeme ):
     if '*' in ischeme:
