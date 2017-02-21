@@ -243,17 +243,6 @@ class Reference( cache.Immutable ):
     return tuple( edge2children )
 
   @cache.property
-  def edge2vertex( self ):
-    edge2vertex = []
-    for trans, edge in self.edges:
-      where = numpy.zeros( self.nverts, dtype=bool )
-      if edge:
-        for v in trans.apply( edge.vertices ):
-          where |= numpy.all( self.vertices == v, axis=1 )
-      edge2vertex.append( where )
-    return numpy.array( edge2vertex )
-
-  @cache.property
   def edgevertexmap( self ):
     return [ numpy.array( list( map( self.vertices.tolist().index, etrans.apply(edge.vertices).tolist() ) ), dtype=int ) for etrans, edge in self.edges ]
 
@@ -482,10 +471,6 @@ class SimplexReference( Reference ):
   @cache.property
   def ribbon2vertices( self ):
     return numpy.array([ (i,j) for i in range( self.ndims+1 ) for j in range( i+1, self.ndims+1 ) ])
-
-  @property
-  def edge2vertex( self ):
-    return ~numpy.eye( self.nverts, dtype=bool )
 
   def getischeme_vtk( self ):
     return self.vertices, None
