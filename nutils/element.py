@@ -413,9 +413,6 @@ class EmptyReference( Reference ):
   def __init__( self, ndims ):
     Reference.__init__( self, numpy.zeros((0,ndims)) )
 
-  def transform( self, trans ):
-    return self
-
   __and__ = __sub__ = lambda self, other: self if other.ndims == self.ndims else NotImplemented
   __or__ = lambda self, other: other if other.ndims == self.ndims else NotImplemented
   __rsub__ = lambda self, other: other if other.ndims == self.ndims else NotImplemented
@@ -464,10 +461,6 @@ class SimplexReference( Reference ):
   def _ribbons( self ):
     return [ ((iedge1,iedge2),(iedge2+1,iedge1)) for iedge1 in range(self.ndims+1) for iedge2 in range(iedge1,self.ndims) ]
 
-  def transform( self, trans ):
-    assert trans in self.rotations
-    return self
-
   def getischeme_vtk( self ):
     return self.vertices, None
 
@@ -484,7 +477,6 @@ class PointReference( SimplexReference ):
   '0D simplex'
 
   volume = 1
-  rotations = transform.identity,
 
   def __init__( self ):
     SimplexReference.__init__( self, ndims=0 )
@@ -514,10 +506,6 @@ class LineReference( SimplexReference ):
   @property
   def child_refs( self ):
     return self, self
-
-  @cache.property
-  def rotations( self ):
-    return transform.identity, transform.affine( [[-1]], self.vertices[1] ), transform.affine( [[1]], self.vertices[0] )
 
   def stdfunc( self, degree ):
     if len(self._bernsteincache) <= degree or self._bernsteincache[degree] is None:
@@ -720,8 +708,6 @@ class TensorReference( Reference ):
 
   _re_ischeme = re.compile( '([a-zA-Z]+)(.*)' )
 
-  rotations = transform.identity, # TODO extend
-
   def __init__( self, ref1, ref2 ):
     self.ref1 = ref1
     self.ref2 = ref2
@@ -732,10 +718,6 @@ class TensorReference( Reference ):
     Reference.__init__( self, vertices.reshape(-1,ndims) )
     if core.getprop( 'selfcheck', False ):
       self.check_edges()
-
-  def transform( self, trans ):
-    assert trans in self.rotations
-    return self
 
   @property
   def volume( self ):
@@ -1102,10 +1084,6 @@ class OwnChildReference( Reference ):
     Reference.__init__( self, baseref.vertices )
 
   @property
-  def rotations( self ):
-    return self.baseref.rotations
-
-  @property
   def edge_transforms( self ):
     return self.baseref.edge_transforms
 
@@ -1145,28 +1123,8 @@ class WithChildrenReference( Reference ):
     return self.baseref.stdfunc( degree )
 
   @property
-  def rotations( self ):
-    return self.baseref.rotations
-
-  @property
   def interfaces( self ):
     return self.baseref.interfaces
-
-  def transform( self, trans ):
-    baseref = self.baseref.transform(trans)
-    child_refs = []
-    for ctrans in baseref.child_transforms:
-      for rtrans in self.rotations: # TODO change to child rotations
-        try:
-          index = self.baseref.child_transforms.index( (trans << ctrans << rtrans).flat )
-        except ValueError:
-          pass
-        else:
-          break
-      else:
-        raise Exception( 'failed to transform element' )
-      child_refs.append( self.child_refs[index].transform( rtrans ) )
-    return WithChildrenReference( baseref, child_refs )
 
   @property
   def volume( self ):
@@ -1390,28 +1348,6 @@ class MosaicReference( Reference ):
 
   def stdfunc( self, degree ):
     return self.baseref.stdfunc( degree )
-
-  @property
-  def rotations( self ):
-    return self.baseref.rotations
-
-  def transform( self, trans ):
-    if trans == transform.identity:
-      return self
-    baseref = self.baseref.transform(trans)
-    edge_refs = []
-    for etrans, edgeref in baseref.edges:
-      for rtrans in edgeref.rotations:
-        try:
-          index = self.baseref.edge_transforms.index( (trans << etrans << rtrans).flat )
-        except ValueError:
-          pass
-        else:
-          break
-      else:
-        raise Exception( 'failed to transform element' )
-      edge_refs.append( self._edge_refs[index].transform( rtrans ) )
-    return MosaicReference( baseref, edge_refs, trans.apply(self._midpoint) )
 
   @property
   def edgevertexmap( self ):
