@@ -979,13 +979,15 @@ class StructuredLine( Topology ):
 class StructuredTopology( Topology ):
   'structured topology'
 
-  def __init__( self, root, axes, nrefine=0 ):
+  def __init__( self, root, axes, nrefine=0, bnames=None ):
     'constructor'
 
     self.root = root
     self.axes = tuple(axes)
     self.nrefine = nrefine
     self.shape = tuple( axis.j - axis.i for axis in self.axes if axis.isdim )
+    self._bnames = bnames or ('left', 'right', 'bottom', 'top', 'front', 'back')[:2*len(self.shape)]
+    assert len(self._bnames) == 2*len(self.shape) and all( isinstance(bname,str) for bname in self._bnames )
     Topology.__init__( self, len(self.shape) )
 
   def __iter__( self ):
@@ -1014,7 +1016,7 @@ class StructuredTopology( Topology ):
           axis = DimAxis( axis.i+start, axis.i+stop, isperiodic=False )
         idim += 1
       axes.append( axis )
-    return StructuredTopology( self.root, axes, self.nrefine )
+    return StructuredTopology( self.root, axes, self.nrefine, bnames=self._bnames )
 
   @cache.property
   def elements( self ):
@@ -1097,14 +1099,13 @@ class StructuredTopology( Topology ):
     'boundary'
 
     nbounds = len(self.axes) - self.ndims
-    subnames = 'left', 'right', 'bottom', 'top', 'front', 'back'
     btopo = EmptyTopology( self.ndims-1 )
     for idim, axis in enumerate( self.axes ):
       if not axis.isdim or axis.isperiodic:
         continue
       btopos = [ StructuredTopology( self.root, self.axes[:idim] + (BndAxis(n,n if not axis.isperiodic else 0,nbounds,side),) + self.axes[idim+1:], self.nrefine )
         for side, n in enumerate((axis.i,axis.j)) ]
-      btopo |= UnionTopology( btopos, subnames[2*idim:] )
+      btopo |= UnionTopology( btopos, self._bnames[2*idim:] )
     return btopo
 
   @cache.property
@@ -1394,7 +1395,7 @@ class StructuredTopology( Topology ):
 
     axes = [ DimAxis(i=axis.i*2,j=axis.j*2,isperiodic=axis.isperiodic) if axis.isdim
         else BndAxis(i=axis.i*2,j=axis.j*2,ibound=axis.ibound,side=axis.side) for axis in self.axes ]
-    return StructuredTopology( self.root, axes, self.nrefine+1 )
+    return StructuredTopology( self.root, axes, self.nrefine+1, bnames=self._bnames )
 
   def __str__( self ):
     'string representation'
