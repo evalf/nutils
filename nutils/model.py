@@ -233,7 +233,7 @@ def withsolve( f ):
 
 
 @withsolve
-def newton( target, residual, lhs0=None, freezedofs=None, nrelax=5, minrelax=.1, maxrelax=.9, rebound=2**.5 ):
+def newton( target, residual, lhs0=None, freezedofs=None, nrelax=numpy.inf, minrelax=.1, maxrelax=.9, rebound=2**.5 ):
   '''iteratively solve nonlinear problem by gradient descent
 
   Generates targets such that residual approaches 0 using Newton procedure with
@@ -260,7 +260,7 @@ def newton( target, residual, lhs0=None, freezedofs=None, nrelax=5, minrelax=.1,
       unchanged.
   nrelax : int
       Maximum number of relaxation steps before proceding with the updated
-      coefficient vector.
+      coefficient vector (by default unlimited).
   minrelax : float
       Lower bound for the relaxation value, to force re-evaluating the
       functional in situation where the parabolic assumption would otherwise
@@ -423,5 +423,5 @@ def impliciteuler( target, residual, inertia, timestep, lhs0, residual0=None, fr
     res0 += residual0
   lhs = lhs0
   while True:
-    lhs = solve( newton( target, residual=res0.replace(target,lhs) + res, lhs0=lhs, freezedofs=freezedofs, **newtonargs ), tol=tol )
     yield lhs
+    lhs = solve( newton( target, residual=res0.replace(target,lhs) + res, lhs0=lhs, freezedofs=freezedofs, **newtonargs ), tol=tol )
