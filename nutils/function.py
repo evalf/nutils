@@ -1810,6 +1810,10 @@ class ArcCos(Pointwise):
   evalf = numpy.arccos
   deriv = lambda x: -reciprocal(sqrt(1-x**2)),
 
+class ArcTan(Pointwise):
+  evalf = numpy.arctan
+  deriv = lambda x: reciprocal(1+x**2),
+
 class Exp(Pointwise):
   evalf = numpy.exp
   deriv = lambda x: Exp(x),
@@ -2927,6 +2931,7 @@ rotmat = lambda arg: Stack([trignormal(arg), trigtangent(arg)], 0)
 tan = lambda x: Tan(x)
 arcsin = lambda x: ArcSin(x)
 arccos = lambda x: ArcCos(x)
+arctan = lambda x: ArcTan(x)
 exp = lambda x: Exp(x)
 ln = lambda x: Log(x)
 mod = lambda arg1, arg2: Mod(*_numpy_align(arg1, arg2))
