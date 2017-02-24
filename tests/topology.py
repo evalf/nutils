@@ -45,6 +45,28 @@ def verify_connectivity( structure, geom ):
   numpy.testing.assert_array_almost_equal( x10, x11 )
   numpy.testing.assert_array_almost_equal( x00, x11 )
 
+def verify_boundaries( domain, geom ):
+  # Test ∫_Ω f_,i = ∫_∂Ω f n_i.
+  f = ((0.5 - geom)**2).sum(axis=0)
+  lhs = domain.integrate( f.grad(geom), ischeme='gauss2', geometry=geom )
+  rhs = domain.boundary.integrate( f*function.normal(geom), ischeme='gauss2', geometry=geom )
+  numpy.testing.assert_array_almost_equal( lhs, rhs )
+
+def verify_interfaces( domain, geom, periodic ):
+  x1, x2, n1, n2 = domain.interfaces.elem_eval( [ geom, function.opposite(geom), geom.normal(), function.opposite(geom.normal()) ], 'gauss2', separate=False )
+  if not periodic:
+    assert numpy.all( x1 == x2 )
+  assert numpy.all( n1 == -n2 )
+
+  # Test ∫_E f_,i = ∫_∂E f n_i ∀ E in `domain`.
+  f = ((0.5 - geom)**2).sum(axis=0)
+  elemindicator = domain.basis( 'discont', degree=0 ).vector( domain.ndims )
+  lhs = domain.integrate( (elemindicator*f.grad(geom)[None]).sum(axis=1), ischeme='gauss2', geometry=geom )
+  rhs = domain.interfaces.integrate( (-function.jump(elemindicator)*f*function.normal(geom)[None]).sum(axis=1), ischeme='gauss2', geometry=geom )
+  if not periodic:
+    rhs += domain.boundary.integrate( (elemindicator*f*function.normal(geom)[None]).sum(axis=1), ischeme='gauss2', geometry=geom )
+  numpy.testing.assert_array_almost_equal( lhs, rhs )
+
 @register( 'periodic', periodic=True )
 @register( 'nonperiodic', periodic=False )
 def connectivity( periodic ):
@@ -109,9 +131,7 @@ def structure2d():
   @unittest
   def interfaces():
     domain, geom = mesh.rectilinear( [[-1,0,1]]*3 )
-    x1, x2, n1, n2 = domain.interfaces.elem_eval( [ geom, function.opposite(geom), geom.normal(), function.opposite(geom.normal()) ], 'gauss2', separate=False )
-    assert numpy.all( x1 == x2 )
-    assert numpy.all( n1 == -n2 )
+    verify_interfaces( domain, geom, periodic=False )
 
 def _test_pickle_dump_load( data ):
   script = b'from nutils import *\nimport pickle, base64\npickle.loads( base64.decodebytes( b"""' \
@@ -315,3 +335,28 @@ def locate( structured ):
     ltopo = domain.locate( geom, target )
     located = ltopo.elem_eval( geom, ischeme='gauss1' )
     numpy.testing.assert_array_almost_equal( located, target )
+
+
+@register( '3d', ndims=3 )
+@register( '2d_periodic', ndims=2, periodic=True )
+@register( '2d', ndims=2 )
+@register( '1d_periodic', ndims=1, periodic=True )
+#@register( '1d', ndims=1 ) # disabled, see issue #193
+def hierarchical( ndims, periodic=False ):
+
+  domain, geom = mesh.rectilinear( [numpy.linspace(0, 1, 5)]*ndims, periodic=range(ndims) if periodic else [] )
+  # Refine `domain`.
+  indicator = 1
+  for dim in range( ndims ):
+      indicator = function.min( indicator, 1 - geom[dim] )
+  for threshold in 0.5, 0.75:
+      domain = domain.refined_by( elem for elem, value in zip( domain, domain.elem_mean( [indicator], ischeme='gauss1', geometry=geom )[0] ) if value >= threshold )
+
+  if not periodic:
+    @unittest
+    def boundaries():
+      verify_boundaries( domain, geom )
+
+  @unittest
+  def interfaces():
+    verify_interfaces( domain, geom, periodic )

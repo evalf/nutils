@@ -979,13 +979,15 @@ class StructuredLine( Topology ):
 class StructuredTopology( Topology ):
   'structured topology'
 
-  def __init__( self, root, axes, nrefine=0 ):
+  def __init__( self, root, axes, nrefine=0, bnames=None ):
     'constructor'
 
     self.root = root
     self.axes = tuple(axes)
     self.nrefine = nrefine
     self.shape = tuple( axis.j - axis.i for axis in self.axes if axis.isdim )
+    self._bnames = bnames or ('left', 'right', 'bottom', 'top', 'front', 'back')[:2*len(self.shape)]
+    assert len(self._bnames) == 2*len(self.shape) and all( isinstance(bname,str) for bname in self._bnames )
     Topology.__init__( self, len(self.shape) )
 
   def __iter__( self ):
@@ -1014,7 +1016,7 @@ class StructuredTopology( Topology ):
           axis = DimAxis( axis.i+start, axis.i+stop, isperiodic=False )
         idim += 1
       axes.append( axis )
-    return StructuredTopology( self.root, axes, self.nrefine )
+    return StructuredTopology( self.root, axes, self.nrefine, bnames=self._bnames )
 
   @cache.property
   def elements( self ):
@@ -1097,14 +1099,13 @@ class StructuredTopology( Topology ):
     'boundary'
 
     nbounds = len(self.axes) - self.ndims
-    subnames = 'left', 'right', 'bottom', 'top', 'front', 'back'
     btopo = EmptyTopology( self.ndims-1 )
     for idim, axis in enumerate( self.axes ):
       if not axis.isdim or axis.isperiodic:
         continue
       btopos = [ StructuredTopology( self.root, self.axes[:idim] + (BndAxis(n,n if not axis.isperiodic else 0,nbounds,side),) + self.axes[idim+1:], self.nrefine )
         for side, n in enumerate((axis.i,axis.j)) ]
-      btopo |= UnionTopology( btopos, subnames[2*idim:] )
+      btopo |= UnionTopology( btopos, self._bnames[2*idim:] )
     return btopo
 
   @cache.property
@@ -1394,7 +1395,7 @@ class StructuredTopology( Topology ):
 
     axes = [ DimAxis(i=axis.i*2,j=axis.j*2,isperiodic=axis.isperiodic) if axis.isdim
         else BndAxis(i=axis.i*2,j=axis.j*2,ibound=axis.ibound,side=axis.side) for axis in self.axes ]
-    return StructuredTopology( self.root, axes, self.nrefine+1 )
+    return StructuredTopology( self.root, axes, self.nrefine+1, bnames=self._bnames )
 
   def __str__( self ):
     'string representation'
@@ -1840,6 +1841,54 @@ class HierarchicalTopology( Topology ):
         opptrans = basebtopo.elements[iedge].opposite << tail
         belems.append( element.Element( edge.reference, edge.transform, opptrans, oriented=True ) )
     return basebtopo.hierarchical( belems, precise=True )
+
+  @cache.property
+  @log.title
+  def interfaces( self ):
+    'interfaces'
+
+    # Build a lookup table for level and element indices given elements in this
+    # topology.
+    elem_index_level = {
+      elem: (ielem, ilevel)
+      for ilevel, level in enumerate( self.levels )
+      for ielem, elem in enumerate( level )
+    }
+    oriented = isinstance( self.basetopo, StructuredTopology )
+    edict = self.edict
+    interfaces = []
+    for elem in log.iter( 'elem', self ):
+      # Get `level`, element number at `level` of `elem`.
+      ielem, ilevel = elem_index_level[elem]
+      level = self.levels[ilevel]
+      # Loop over neighbours of `elem`.
+      for ielemedge, ineighbor in enumerate( level.connectivity[ielem] ):
+        if ineighbor < 0:
+          # Not an interface.
+          continue
+        neighbor = level.elements[ineighbor]
+        # Lookup `neighbor` (from the same `level` as `elem`) in this topology.
+        head, tail = neighbor.transform.lookup( edict ) or (None, None)
+        if not head:
+          # `neighbor` not found, hence refinements of `neighbor` are present.
+          # The interface of this edge will be added when we encounter the
+          # refined elements.
+          continue
+        # Find the edge of `neighbor` between `neighbor` and `elem`.
+        ineighboredge = numpy.where( level.connectivity[ineighbor] == ielem )[0][0]
+        if not tail and (ielem, ielemedge) > (ineighbor, ineighboredge):
+          # `neighbor` itself, not a parent of, exists in this topology (`tail`
+          # is empty).  To make sure we add this interface only once we
+          # continue here if the current element has a higher index (in
+          # `level`) than the neighbor (or a higher edge number if the elements
+          # are equal, which might occur when there is only one element in a
+          # periodic dimension).
+          continue
+        # Create and add the interface between `elem` and `neighbor`.
+        elemedge = elem.edges[ielemedge]
+        neighboredge = neighbor.edges[ineighboredge]
+        interfaces.append( element.Element( elemedge.reference, elemedge.transform, neighboredge.transform, oriented=oriented ) )
+    return UnstructuredTopology( self.ndims-1, interfaces )
 
   @log.title
   def basis( self, name, *args, **kwargs ):
