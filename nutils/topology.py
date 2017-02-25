@@ -512,8 +512,8 @@ class Topology( object ):
       return EmptyTopology( self.ndims )
     return SubsetTopology( self, refs, newboundary )
 
-  def withgroups( self, vgroups={}, bgroups={}, igroups={}, pgroups={}, allowflips=False ):
-    return WithGroupsTopology( self, vgroups, bgroups, igroups, pgroups, allowflips ) if vgroups or bgroups or igroups or pgroups else self
+  def withgroups( self, vgroups={}, bgroups={}, igroups={}, pgroups={} ):
+    return WithGroupsTopology( self, vgroups, bgroups, igroups, pgroups ) if vgroups or bgroups or igroups or pgroups else self
 
   withsubdomain  = lambda self, **kwargs: self.withgroups( vgroups=kwargs )
   withboundary   = lambda self, **kwargs: self.withgroups( bgroups=kwargs )
@@ -682,33 +682,21 @@ class Topology( object ):
 class WithGroupsTopology( Topology ):
   'item topology'
 
-  def __init__( self, basetopo, vgroups={}, bgroups={}, igroups={}, pgroups={}, allowflips=False ):
+  def __init__( self, basetopo, vgroups={}, bgroups={}, igroups={}, pgroups={} ):
     assert vgroups or bgroups or igroups or pgroups
     self.basetopo = basetopo
     self.vgroups = vgroups.copy()
     self.bgroups = bgroups.copy()
     self.igroups = igroups.copy()
     self.pgroups = pgroups.copy()
-    self.allowflips = allowflips # check for opposites if true
     Topology.__init__( self, basetopo.ndims )
-
     if core.getprop( 'selfcheck', False ):
       if self.vgroups:
         for topo in self.vgroups.values():
-          if topo is Ellipsis or isinstance( topo, str ):
-            continue
-          assert isinstance( topo, Topology ) and topo.ndims == basetopo.ndims
-          if not allowflips:
+          if topo is not Ellipsis and not isinstance( topo, str ):
+            assert isinstance( topo, Topology )
+            assert topo.ndims == basetopo.ndims
             assert set(self.basetopo.edict).issuperset(topo.edict)
-          else:
-            for elem in topo:
-              try:
-                ielem = self.basetopo.edict[ elem.transform ]
-              except KeyError:
-                ielem = self.basetopo.edict[ elem.opposite ]
-                assert self.basetopo.elements[ielem].opposite == elem.transform
-              else:
-                assert self.basetopo.elements[ielem].opposite == elem.opposite
       if self.bgroups:
         self.boundary
       if self.igroups:
@@ -755,12 +743,7 @@ class WithGroupsTopology( Topology ):
       if remitem:
         nametopo = nametopo[ tuple(remitem) ]
       itemtopo |= nametopo
-    igroups = { name: itemtopo.interfaces.subset( topo if isinstance(topo,Topology) else self.basetopo.interfaces[topo], strict=False ) for name, topo in self.igroups.items() }
-    bgroups = { name: itemtopo.boundary.subset( topo if isinstance(topo,Topology) else self.basetopo.boundary[topo], strict=False ) for name, topo in self.bgroups.items() }
-    for name, topo in self.igroups.items():
-      newtopo = itemtopo.boundary.subset( UnionTopology([ topo, ~topo ]) if isinstance(topo,Topology) else self.basetopo.interfaces[topo], strict=False )
-      bgroups[name] = newtopo if name not in bgroups else UnionTopology([ bgroups[name], newtopo ])
-    return itemtopo.withgroups( bgroups=bgroups, igroups=igroups )
+    return self.subset( itemtopo, strict=True )
 
   @property
   def edict( self ):
@@ -788,7 +771,10 @@ class WithGroupsTopology( Topology ):
 
   @property
   def interfaces( self ):
-    return self.basetopo.interfaces.withgroups( self.igroups, allowflips=True )
+    baseitopo = self.basetopo.interfaces
+    # last minute orientation fix
+    igroups = { name: UnstructuredTopology( self.ndims-1, [ elem if elem.transform in baseitopo.edict else elem.flipped for elem in elems ] ) for name, elems in self.igroups.items() }
+    return baseitopo.withgroups( igroups )
 
   @property
   def points( self ):
@@ -1688,8 +1674,7 @@ class SubsetTopology( Topology ):
           if bref:
             newbelems.append( element.Element( bref, elem.transform<<ref.edge_transforms[iedge], elements[ioppelem].edge(ioppedge).transform ) )
     origboundary = SubsetTopology( baseboundary, brefs )
-    trimboundary = self.newboundary.subset( newbelems, strict=True ) if isinstance( self.newboundary, Topology ) \
-              else UnstructuredTopology( self.ndims-1, newbelems )
+    trimboundary = OrientedGroupsTopology( self.newboundary if isinstance(self.newboundary,Topology) else self.basetopo.interfaces, newbelems )
     return UnionTopology([ trimboundary, origboundary ], names=[ self.newboundary ] if isinstance(self.newboundary,str) else [] )
 
   @cache.property
@@ -1723,6 +1708,29 @@ class SubsetTopology( Topology ):
       warnings.warn( 'basis may be linearly dependent; a linearly indepent basis is obtained by trimming first, then creating hierarchical refinements' )
     basis = self.basetopo.basis( name, *args, **kwargs )
     return self.prune_basis( basis )
+
+class OrientedGroupsTopology( UnstructuredTopology ):
+  'unstructured topology with undirected semi-overlapping basetopology'
+
+  def __init__( self, basetopo, elems ):
+    self.basetopo = basetopo
+    super().__init__( basetopo.ndims, elems )
+
+  def __getitem__( self, item ):
+    itemtopo = self.basetopo[item]
+    elements = []
+    for elem in itemtopo:
+      try:
+        ielem = self.edict[elem.transform]
+      except KeyError:
+        elem = elem.flipped
+        try:
+          ielem = self.edict[elem.transform]
+        except KeyError:
+          continue
+      ref = self.elements[ielem].reference & elem.reference
+      elements.append( element.Element( ref, elem.transform, elem.opposite, oriented=True ) )
+    return UnstructuredTopology( self.ndims, elements )
 
 class RefinedTopology( Topology ):
   'refinement'
