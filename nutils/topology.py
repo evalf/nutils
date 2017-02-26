@@ -25,7 +25,7 @@ out in element loops. For lower level operations topologies can be used as
 
 from . import element, function, util, numpy, parallel, matrix, log, core, numeric, cache, rational, transform, _
 from .index import IndexedArray
-import warnings, functools, collections, itertools
+import warnings, functools, collections, itertools, functools, operator
 
 _identity = lambda x: x
 
@@ -51,12 +51,19 @@ class Topology( object ):
   def __iter__( self ):
     return iter( self.elements )
 
+  def getitem( self, item ):
+    return EmptyTopology( self.ndims )
+
   def __getitem__( self, item ):
     if not isinstance( item, tuple ):
       item = item,
-    if item == () or item == (slice(None),):
+    if all( it in (...,slice(None)) for it in item ):
       return self
-    raise KeyError( item )
+    topo = self.getitem(item) if len(item) != 1 or not isinstance(item[0],str) \
+       else functools.reduce( operator.or_, map( self.getitem, item[0].split(',') ), EmptyTopology(self.ndims) )
+    if not topo:
+      raise KeyError( item )
+    return topo
 
   def __invert__( self ):
     return OppositeTopology( self )
@@ -718,31 +725,18 @@ class WithGroupsTopology( Topology ):
   def __len__( self ):
     return len( self.basetopo )
 
-  def __getitem__( self, item ):
-    'subtopology'
-
-    if not isinstance( item, tuple ):
-      item = item,
-    if len(item) == 0:
-      return self
-    if not isinstance( item[0], str ):
-      return self.basetopo[item]
-    itemtopo = EmptyTopology( self.ndims )
-    names, *remitem = item
-    for name in names.split( ',' ):
-      try:
-        nametopo = self.vgroups[name]
-      except KeyError:
-        nametopo = self.basetopo[name]
-      else:
-        if nametopo is Ellipsis:
-          nametopo = self.basetopo
-        elif isinstance( nametopo, str ):
-          nametopo = self.basetopo[nametopo]
-      assert isinstance( nametopo, Topology ) and nametopo.ndims == self.ndims
-      if remitem:
-        nametopo = nametopo[ tuple(remitem) ]
-      itemtopo |= nametopo
+  def getitem( self, item ):
+    if not isinstance( item, str ):
+      itemtopo = self.basetopo.getitem(item)
+    elif item in self.vgroups:
+      itemtopo = self.vgroups[item]
+      if itemtopo is Ellipsis:
+        return self.basetopo
+      if not isinstance( itemtopo, Topology ):
+        itemtopo = self.basetopo[itemtopo]
+    else:
+      itemtopo = self.basetopo.getitem(item)
+    assert isinstance( itemtopo, Topology ) and itemtopo.ndims == self.ndims
     return self.subset( itemtopo, strict=True )
 
   @property
@@ -795,8 +789,8 @@ class OppositeTopology( Topology ):
     self.basetopo = basetopo
     Topology.__init__( self, basetopo.ndims )
 
-  def __getitem__( self, item ):
-    return ~( self.basetopo[ item ] )
+  def getitem( self, item ):
+    return ~( self.basetopo.getitem(item) )
 
   def __iter__( self ):
     return ( elem.flipped for elem in self.basetopo )
@@ -990,11 +984,10 @@ class StructuredTopology( Topology ):
   def __len__( self ):
     return numpy.prod( self.shape, dtype=int )
 
-  def __getitem__( self, item ):
+  def getitem( self, item ):
     if not isinstance( item, tuple ):
-      item = item,
-    if not all( isinstance(it,slice) for it in item ) or len(item) > self.ndims:
-      raise KeyError( item )
+      return EmptyTopology( self.ndims )
+    assert all( isinstance(it,slice) for it in item ) and len(item) <= self.ndims
     if all( it == slice(None) for it in item ): # shortcut
       return self
     axes = []
@@ -1523,37 +1516,14 @@ class UnionTopology( Topology ):
     assert all( isinstance( topo, Topology ) for topo in self._topos )
     self._names = tuple(names)[:len(self._topos)]
     assert all( isinstance(name,str) for name in self._names )
-    self._named = dict( zip( self._names, self._topos ) )
-    assert len(self._named) == len(self._names), 'duplicate name'
+    assert len(set(self._names)) == len(self._names), 'duplicate name'
     ndims = self._topos[0].ndims
     assert all( topo.ndims == ndims for topo in self._topos )
     Topology.__init__( self, ndims )
 
-  def __getitem__( self, item ):
-    if not isinstance( item, tuple ):
-      item = item,
-    if len(item) == 0:
-      return self
-    if isinstance( item[0], str ):
-      subtopos = []
-      for name in item[0].split(','):
-        subtopo = self._named.get( name )
-        if subtopo is not None:
-          subtopos.append( subtopo )
-        for topo in self._topos[len(self._names):]:
-          try:
-            subtopo = topo[name]
-          except KeyError:
-            pass
-          else:
-            subtopos.append( subtopo )
-      if not subtopos:
-        raise KeyError( item )
-      if len(subtopos) == 1:
-        return subtopos[0]
-      return UnionTopology( subtopos )
-    assert isinstance( item[0], int )
-    return self._topos[ item[0] ][ item[1:] ]
+  def getitem( self, item ):
+    topos = [ topo if name == item else topo.getitem(item) for topo, name in itertools.zip_longest( self._topos, self._names ) ]
+    return functools.reduce( operator.or_, topos, EmptyTopology(self.ndims) )
 
   def __or__( self, other ):
     if not isinstance( other, UnionTopology ):
@@ -1609,10 +1579,8 @@ class SubsetTopology( Topology ):
     self.newboundary = newboundary
     Topology.__init__( self, basetopo.ndims )
 
-  def __getitem__( self, item ):
-    if item == ():
-      return self
-    return self.basetopo[item].subset( self.elements, strict=False )
+  def getitem( self, item ):
+    return self.basetopo.getitem(item).subset( self.elements, strict=False )
 
   def __rsub__( self, other ):
     assert self.basetopo == other
@@ -1716,10 +1684,9 @@ class OrientedGroupsTopology( UnstructuredTopology ):
     self.basetopo = basetopo
     super().__init__( basetopo.ndims, elems )
 
-  def __getitem__( self, item ):
-    itemtopo = self.basetopo[item]
+  def getitem( self, item ):
     elements = []
-    for elem in itemtopo:
+    for elem in self.basetopo.getitem(item):
       try:
         ielem = self.edict[elem.transform]
       except KeyError:
@@ -1739,8 +1706,8 @@ class RefinedTopology( Topology ):
     self.basetopo = basetopo
     Topology.__init__( self, basetopo.ndims )
 
-  def __getitem__( self, item ):
-    return self.basetopo[item].refined
+  def getitem( self, item ):
+    return self.basetopo.getitem(item).refined
 
   @cache.property
   def elements( self ):
@@ -1796,10 +1763,8 @@ class HierarchicalTopology( Topology ):
       self.elements = self.allelements
     Topology.__init__( self, basetopo.ndims )
 
-  def __getitem__( self, item ):
-    if item == ():
-      return self
-    return self.basetopo[item].hierarchical( self.allelements, precise=False )
+  def getitem( self, item ):
+    return self.basetopo.getitem(item).hierarchical( self.allelements, precise=False )
 
   def hierarchical( self, elements, precise=False ):
     return self.basetopo.hierarchical( elements, precise )
@@ -1989,24 +1954,9 @@ class ProductTopology( Topology ):
       n = (n,)*self.ndims
     return self.topo1.refine( n[:self.topo1.ndims] ) * self.topo2.refine( n[self.topo1.ndims:] )
 
-  def __getitem__( self, item ):
-    if isinstance(item,tuple) and len(item) == self.ndims:
-      return self.topo1[item[:self.topo1.ndims]] * self.topo2[item[self.topo1.ndims:]]
-    try:
-      subtopo1 = self.topo1[item]
-    except KeyError:
-      subtopo1 = None
-    try:
-      subtopo2 = self.topo2[item]
-    except KeyError:
-      subtopo2 = None
-    if subtopo1 and subtopo2:
-      return subtopo1 * subtopo2
-    if subtopo1:
-      return subtopo1 * self.topo2
-    if subtopo2:
-      return self.topo1 * subtopo2
-    raise KeyError( item )
+  def getitem( self, item ):
+    return self.topo1.getitem(item) * self.topo2 | self.topo1 * self.topo2.getitem(item) if isinstance( item, str ) \
+      else self.topo1[item[:self.topo1.ndims]] * self.topo2[item[self.topo1.ndims:]]
 
   def basis( self, name, *args, **kwargs ):
     def _split( arg ):
