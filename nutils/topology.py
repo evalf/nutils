@@ -1587,7 +1587,7 @@ class SubsetTopology( Topology ):
     mask = numpy.array([ bool(ref) for ref in self.refs ] + [False] ) # trailing false serves to map -1 to -1
     renumber = numpy.cumsum(mask)-1
     renumber[~mask] = -1
-    connectivity = tuple( numpy.concatenate([ renumber[ioppelems], -numpy.ones(ref.nedges-len(ioppelems),dtype=int) ])
+    connectivity = tuple( tuple( renumber[ioppelems[iedge]] if edgeref and iedge < len(ioppelems) else -1 for iedge, edgeref in enumerate(ref.edge_refs) )
       for ref, ioppelems in zip( self.refs, self.basetopo.connectivity ) if ref )
     return connectivity
 
