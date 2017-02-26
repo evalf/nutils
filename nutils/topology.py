@@ -112,19 +112,6 @@ class Topology( object ):
         border_transforms.add( self.elements[ielem].transform )
     return border_transforms
 
-  def outward_from( self, outward, inward=None ):
-    'direct interface elements to evaluate in topo first'
-
-    directed = []
-    for iface in self:
-      if not iface.transform.lookup( outward.edict ):
-        assert iface.opposite.lookup( outward.edict ), 'interface not adjacent to outward topo'
-        iface = iface.flipped
-      if inward:
-        assert iface.opposite.lookup( inward.edict ), 'interface not adjacent to inward topo'
-      directed.append( iface )
-    return UnstructuredTopology( self.ndims, directed )
-
   @property
   def refine_iter( self ):
     topo = self
