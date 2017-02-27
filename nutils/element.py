@@ -417,6 +417,9 @@ class EmptyReference( Reference ):
   __or__ = lambda self, other: other if other.ndims == self.ndims else NotImplemented
   __rsub__ = lambda self, other: other if other.ndims == self.ndims else NotImplemented
 
+  def trim( self, levels, maxrefine, ndivisions ):
+    return self
+
 class RevolutionReference( Reference ):
   'modify gauss integration to always return a single point'
 
