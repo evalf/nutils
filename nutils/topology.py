@@ -714,17 +714,13 @@ class WithGroupsTopology( Topology ):
 
   def getitem( self, item ):
     if not isinstance( item, str ):
-      itemtopo = self.basetopo.getitem(item)
-    elif item in self.vgroups:
+      return self.basetopo.getitem(item)
+    try:
       itemtopo = self.vgroups[item]
-      if itemtopo is Ellipsis:
-        return self.basetopo
-      if not isinstance( itemtopo, Topology ):
-        itemtopo = self.basetopo[itemtopo]
+    except KeyError:
+      return self.basetopo.getitem(item)
     else:
-      itemtopo = self.basetopo.getitem(item)
-    assert isinstance( itemtopo, Topology ) and itemtopo.ndims == self.ndims
-    return self.subset( itemtopo, strict=True )
+      return itemtopo if isinstance( itemtopo, Topology ) else self.basetopo[itemtopo]
 
   @property
   def edict( self ):
