@@ -191,6 +191,20 @@ def cutdomain( ndims, nelems, maxrefine, errtol ):
     assert trimerr < errtol, 'trim surface tolerance not met: {:.2e} > {:.2e}'.format( trimerr, errtol )
     assert totalerr < errtol, 'total surface tolerance not met: {:.2e} > {:.2e}'.format( totalerr, errtol )
 
+  @unittest
+  def locate():
+    curvegeom = geom * ( 1 + .1 * function.sin(function.norm2(geom)*numpy.pi/radius) ) # interface preserving non-polynomial scaling
+    for p in numpy.linspace( .001, .999, 20 ):
+      point = p * .5**numpy.arange(domain.ndims)
+      r = numpy.linalg.norm( point )
+      try:
+        ptopo = pos.locate( curvegeom, points=[point] )
+      except topology.LocateError:
+        assert r > radius
+      else:
+        assert r <= radius
+        x, = ptopo.elem_eval( curvegeom, 'gauss1' )
+        numpy.testing.assert_almost_equal( x, point )
 
 @register
 def multitrim():

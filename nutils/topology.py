@@ -624,10 +624,10 @@ class Topology( object ):
             break
           prev_err = err
           xi += numpy.linalg.solve( J_xi, point - point_xi )
-        if converged and elem.reference.inside( xi, eps=eps ):
+        if converged and elem.reference.inside( xi[0], eps=eps ):
           break
       else:
-        raise Exception( 'failed to locate point', point )
+        raise LocateError( 'failed to locate point: {}'.format(point) )
       trans = transform.affine( linear=1, offset=xi[0] )
       for idim in range(self.ndims,0,-1): # transcend dimensions one by one to produce valid transformation
         trans <<= transform.affine( linear=numpy.eye(idim)[:,:-1], offset=numpy.zeros(idim), isflipped=False )
@@ -672,6 +672,9 @@ class Topology( object ):
     extopo = self * StructuredLine( root, i=0, j=nelems, periodic=periodic, bnames=bnames )
     exgeom = function.concatenate( function.bifurcate( geom, function.rootcoords(1) ) )
     return extopo, exgeom
+
+class LocateError( Exception ):
+  pass
 
 class WithGroupsTopology( Topology ):
   'item topology'

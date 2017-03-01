@@ -476,4 +476,9 @@ def stack( trans1, trans2 ):
 def bifurcate( trans1, trans2 ):
   return CanonicalTransformChain([ Bifurcate( trans1, trans2 ) ])
 
+def invapply( trans, points ):
+  A = linear(trans)
+  b = points - offset(trans)
+  return b / A if isinstance(A,float) else numpy.linalg.solve( A, b )
+
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

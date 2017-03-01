@@ -331,8 +331,9 @@ def locate( structured ):
   @unittest
   def test():
     domain, geom = mesh.rectilinear( [numpy.linspace(0,1,3)]*2 ) if structured else mesh.demo()
+    geom += .1 * function.sin( geom * numpy.pi ) # non-polynomial geometry
     target = numpy.array([ (.2,.3), (.1,.9), (0,1) ])
-    ltopo = domain.locate( geom, target )
+    ltopo = domain.locate( geom, target, eps=1e-15 )
     located = ltopo.elem_eval( geom, ischeme='gauss1' )
     numpy.testing.assert_array_almost_equal( located, target )
 
