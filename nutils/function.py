@@ -2577,6 +2577,8 @@ class DerivativeTarget( DerivativeTargetBase ):
   def _derivative( self, var, axes, seen ):
     if var is self:
       result = numpy.array(1)
+      for i, n in enumerate( var.shape ):
+        result = repeat( result[..., None], n, i )
       for i, axis in enumerate( axes ):
         result = result * align( eye( self.shape[axis] ), ( axis, self.ndim+i ), self.ndim+len(axes) )
       return result
