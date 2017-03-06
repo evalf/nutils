@@ -3241,26 +3241,27 @@ def takediag( arg, ax1=-2, ax2=-1 ):
 def partial_derivative( func, arg_key, arg_axes=None ):
   '''partial derivative of a function
 
-  Compute the partial derivative of `func` with respect to argument `arg_key`,
-  limited to the axes `arg_axes` of argument `arg_key`.
+  Compute the partial derivative of ``func`` with respect to argument
+  ``arg_key``, limited to the axes ``arg_axes`` of argument ``arg_key``.
 
   Parameters
   ----------
-  func : function
+  func : callable
   arg_key : int or str
-      Reference to an argument of `func`.  If `arg_key` is an `int`, `arg_key`
-      is the index of a positional argument of `func`.  If `arg_key` is a
-      `str`, `arg_key` is the name of an argument of `func`.
+      Reference to an argument of ``func``.  If ``arg_key`` is an :class:`int`,
+      ``arg_key`` is the index of a positional argument of ``func``.  If
+      ``arg_key`` is a :class:`str`, ``arg_key`` is the name of an argument of
+      ``func``.
   arg_axes : iterable of int, default all axes
-      List of axes, where each axis should be in `[0,arg.ndim)`, where `arg` is
-      the argument refered to by `arg_key`.
+      List of axes, where each axis should be in ``[0,arg.ndim)``, where
+      ``arg`` is the argument refered to by ``arg_key``.
 
   Returns
   -------
-  function
-      Partial derivative of `func`.  The shape of this function is the
-      concatenation of the shape of `func` and the shape of the `arg_axes` of
-      `arg`, where `arg` is the argument refered to by `arg_key`.
+  callable
+      Partial derivative of ``func``.  The shape of this function is the
+      concatenation of the shape of ``func`` and the shape of the ``arg_axes``
+      of ``arg``, where ``arg`` is the argument refered to by ``arg_key``.
   '''
 
   if not isinstance( arg_key, (int, str) ):
