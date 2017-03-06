@@ -1,0 +1,4 @@
+Cli
+===
+
+.. automodule:: nutils.cli

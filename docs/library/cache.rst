@@ -1,0 +1,4 @@
+Cache
+=====
+
+.. automodule:: nutils.cache
