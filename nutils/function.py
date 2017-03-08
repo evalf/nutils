@@ -1072,9 +1072,9 @@ class Concatenate( Array ):
     assert all( func.ndim == ndim for func in funcs )
     axis = numeric.normdim( ndim, axis )
     lengths = [ func.shape[axis] for func in funcs ]
-    if any( n == None for n in lengths ):
-      assert all( n == None for n in lengths )
-      sh = None
+    if any( isinstance( n, str ) for n in lengths ):
+      assert all( isinstance( n, str ) for n in lengths )
+      sh = ''.join(lengths)
     else:
       sh = _sum( lengths )
     shape = _jointshape( *[ func.shape[:axis] + (sh,) + func.shape[axis+1:] for func in funcs ] )
@@ -1214,15 +1214,11 @@ class Concatenate( Array ):
     assert n0 == self.shape[self.axis]
     return concatenate( funcs, axis=-1 )
 
-  def _inflate( self, dofmap, length, axis ):
-    assert not isinstance( self.shape[axis], int )
-    return concatenate( [ inflate(func,dofmap,length,axis) for func in self.funcs ], self.axis )
-
   def _take( self, indices, axis ):
     if axis != self.axis:
       return concatenate( [ take(aslength(func,self.shape[axis],axis),indices,axis) for func in self.funcs ], self.axis )
     if not indices.isconstant:
-      raise NotImplementedError
+      return
     indices, = indices.eval()
     assert numpy.all( (indices>=0) & (indices<self.shape[axis]) )
     ifuncs = numpy.hstack([ numpy.repeat(ifunc,func.shape[axis]) for ifunc, func in enumerate(self.funcs) ])[indices]
@@ -2577,6 +2573,8 @@ class DerivativeTarget( DerivativeTargetBase ):
   def _derivative( self, var, axes, seen ):
     if var is self:
       result = numpy.array(1)
+      for i, n in enumerate( var.shape ):
+        result = repeat( result[..., None], n, i )
       for i, axis in enumerate( axes ):
         result = result * align( eye( self.shape[axis] ), ( axis, self.ndim+i ), self.ndim+len(axes) )
       return result
@@ -3243,26 +3241,27 @@ def takediag( arg, ax1=-2, ax2=-1 ):
 def partial_derivative( func, arg_key, arg_axes=None ):
   '''partial derivative of a function
 
-  Compute the partial derivative of `func` with respect to argument `arg_key`,
-  limited to the axes `arg_axes` of argument `arg_key`.
+  Compute the partial derivative of ``func`` with respect to argument
+  ``arg_key``, limited to the axes ``arg_axes`` of argument ``arg_key``.
 
   Parameters
   ----------
-  func : function
+  func : callable
   arg_key : int or str
-      Reference to an argument of `func`.  If `arg_key` is an `int`, `arg_key`
-      is the index of a positional argument of `func`.  If `arg_key` is a
-      `str`, `arg_key` is the name of an argument of `func`.
+      Reference to an argument of ``func``.  If ``arg_key`` is an :class:`int`,
+      ``arg_key`` is the index of a positional argument of ``func``.  If
+      ``arg_key`` is a :class:`str`, ``arg_key`` is the name of an argument of
+      ``func``.
   arg_axes : iterable of int, default all axes
-      List of axes, where each axis should be in `[0,arg.ndim)`, where `arg` is
-      the argument refered to by `arg_key`.
+      List of axes, where each axis should be in ``[0,arg.ndim)``, where
+      ``arg`` is the argument refered to by ``arg_key``.
 
   Returns
   -------
-  function
-      Partial derivative of `func`.  The shape of this function is the
-      concatenation of the shape of `func` and the shape of the `arg_axes` of
-      `arg`, where `arg` is the argument refered to by `arg_key`.
+  callable
+      Partial derivative of ``func``.  The shape of this function is the
+      concatenation of the shape of ``func`` and the shape of the ``arg_axes``
+      of ``arg``, where ``arg`` is the argument refered to by ``arg_key``.
   '''
 
   if not isinstance( arg_key, (int, str) ):

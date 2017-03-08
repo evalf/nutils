@@ -28,3 +28,8 @@ What follows is an automatically generated API reference.
    library/util
    library/plot
    library/index
+   library/cache
+   library/cli
+   library/model
+   library/rational
+   library/transform

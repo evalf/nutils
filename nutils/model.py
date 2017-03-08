@@ -374,7 +374,7 @@ def pseudotime( target, residual, inertia, timestep, lhs0, residual0=None, freez
   if residual0 is not None:
     residual += residual0
   if freezedofs is None:
-    freezedofs = numpy.zeros( len(target) )
+    freezedofs = numpy.zeros( len(target), dtype=bool )
   zcons = util.NanVec( len(target) )
   zcons[freezedofs] = 0
   lhs = lhs0.copy()

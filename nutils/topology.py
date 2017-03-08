@@ -132,6 +132,8 @@ class Topology( object ):
   discontfunc = lambda self, *args, **kwargs: self.basis( 'discont', *args, **kwargs )
 
   def basis( self, name, *args, **kwargs ):
+    if self.ndims == 0:
+      return function.asarray( [1] )
     f = getattr( self, 'basis_' + name )
     return f( *args, **kwargs )
 
@@ -986,8 +988,13 @@ class StructuredTopology( Topology ):
     self.axes = tuple(axes)
     self.nrefine = nrefine
     self.shape = tuple( axis.j - axis.i for axis in self.axes if axis.isdim )
-    self._bnames = bnames or ('left', 'right', 'bottom', 'top', 'front', 'back')[:2*len(self.shape)]
-    assert len(self._bnames) == 2*len(self.shape) and all( isinstance(bname,str) for bname in self._bnames )
+    if bnames is None:
+      assert len(self.axes) <= 3
+      bnames = ('left', 'right'), ('bottom', 'top'), ('front', 'back')
+      bnames = itertools.chain.from_iterable( n for axis, n in zip( self.axes, bnames ) if axis.isdim and not axis.isperiodic )
+    self._bnames = tuple( bnames )
+    assert len(self._bnames) == sum( 2 for axis in self.axes if axis.isdim and not axis.isperiodic )
+    assert all( isinstance(bname,str) for bname in self._bnames )
     Topology.__init__( self, len(self.shape) )
 
   def __iter__( self ):
@@ -1100,12 +1107,19 @@ class StructuredTopology( Topology ):
 
     nbounds = len(self.axes) - self.ndims
     btopo = EmptyTopology( self.ndims-1 )
+    jdim = 0
     for idim, axis in enumerate( self.axes ):
       if not axis.isdim or axis.isperiodic:
         continue
-      btopos = [ StructuredTopology( self.root, self.axes[:idim] + (BndAxis(n,n if not axis.isperiodic else 0,nbounds,side),) + self.axes[idim+1:], self.nrefine )
+      btopos = [
+        StructuredTopology(
+          root=self.root,
+          axes=self.axes[:idim] + (BndAxis(n,n if not axis.isperiodic else 0,nbounds,side),) + self.axes[idim+1:],
+          nrefine=self.nrefine,
+          bnames=self._bnames[:jdim*2]+self._bnames[jdim*2+2:] )
         for side, n in enumerate((axis.i,axis.j)) ]
-      btopo |= UnionTopology( btopos, self._bnames[2*idim:] )
+      btopo |= UnionTopology( btopos, self._bnames[jdim*2:jdim*2+2] )
+      jdim += 1
     return btopo
 
   @cache.property
@@ -1902,7 +1916,10 @@ class HierarchicalTopology( Topology ):
     # least one supporting element coinsiding with self ('touched') and no
     # supporting element finer than self ('supported').
 
-    bases = []
+    funcs = []
+    dofmaps = []
+    supports = []
+    length = 0
 
     for topo in log.iter( 'level', self.levels ):
 
@@ -1921,9 +1938,15 @@ class HierarchicalTopology( Topology ):
         elif trans.lookup( self.edict ):
           supported[idofs] = False
 
-      bases.append( function.mask( basis, supported & touchtopo ) ) # THE refinement law
+      funcs.append( func )
+      dofmaps.append( dofmap + length )
+      supports.append( supported & touchtopo )
+      length += len( supported )
 
-    return function.concatenate( bases, axis=0 )
+    funcs = function.concatenate( funcs, axis=0 )
+    dofmaps = function.concatenate( dofmaps, axis=0 )
+    supports = numpy.concatenate( supports, axis=0 )
+    return function.mask( function.inflate( funcs, dofmaps, length, 0 ), supports )
 
 class ProductTopology( Topology ):
   'product topology'
