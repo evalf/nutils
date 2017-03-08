@@ -1214,10 +1214,6 @@ class Concatenate( Array ):
     assert n0 == self.shape[self.axis]
     return concatenate( funcs, axis=-1 )
 
-  def _inflate( self, dofmap, length, axis ):
-    assert not isinstance( self.shape[axis], int )
-    return concatenate( [ inflate(func,dofmap,length,axis) for func in self.funcs ], self.axis )
-
   def _take( self, indices, axis ):
     if axis != self.axis:
       return concatenate( [ take(aslength(func,self.shape[axis],axis),indices,axis) for func in self.funcs ], self.axis )
