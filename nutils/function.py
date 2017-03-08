@@ -1218,7 +1218,7 @@ class Concatenate( Array ):
     if axis != self.axis:
       return concatenate( [ take(aslength(func,self.shape[axis],axis),indices,axis) for func in self.funcs ], self.axis )
     if not indices.isconstant:
-      raise NotImplementedError
+      return
     indices, = indices.eval()
     assert numpy.all( (indices>=0) & (indices<self.shape[axis]) )
     ifuncs = numpy.hstack([ numpy.repeat(ifunc,func.shape[axis]) for ifunc, func in enumerate(self.funcs) ])[indices]
