@@ -1072,9 +1072,9 @@ class Concatenate( Array ):
     assert all( func.ndim == ndim for func in funcs )
     axis = numeric.normdim( ndim, axis )
     lengths = [ func.shape[axis] for func in funcs ]
-    if any( n == None for n in lengths ):
-      assert all( n == None for n in lengths )
-      sh = None
+    if any( isinstance( n, str ) for n in lengths ):
+      assert all( isinstance( n, str ) for n in lengths )
+      sh = ''.join(lengths)
     else:
       sh = _sum( lengths )
     shape = _jointshape( *[ func.shape[:axis] + (sh,) + func.shape[axis+1:] for func in funcs ] )
