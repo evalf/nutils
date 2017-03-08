@@ -132,6 +132,8 @@ class Topology( object ):
   discontfunc = lambda self, *args, **kwargs: self.basis( 'discont', *args, **kwargs )
 
   def basis( self, name, *args, **kwargs ):
+    if self.ndims == 0:
+      return function.asarray( [1] )
     f = getattr( self, 'basis_' + name )
     return f( *args, **kwargs )
 
