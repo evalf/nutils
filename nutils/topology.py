@@ -1916,7 +1916,10 @@ class HierarchicalTopology( Topology ):
     # least one supporting element coinsiding with self ('touched') and no
     # supporting element finer than self ('supported').
 
-    bases = []
+    funcs = []
+    dofmaps = []
+    supports = []
+    length = 0
 
     for topo in log.iter( 'level', self.levels ):
 
@@ -1935,9 +1938,15 @@ class HierarchicalTopology( Topology ):
         elif trans.lookup( self.edict ):
           supported[idofs] = False
 
-      bases.append( function.mask( basis, supported & touchtopo ) ) # THE refinement law
+      funcs.append( func )
+      dofmaps.append( dofmap + length )
+      supports.append( supported & touchtopo )
+      length += len( supported )
 
-    return function.concatenate( bases, axis=0 )
+    funcs = function.concatenate( funcs, axis=0 )
+    dofmaps = function.concatenate( dofmaps, axis=0 )
+    supports = numpy.concatenate( supports, axis=0 )
+    return function.mask( function.inflate( funcs, dofmaps, length, 0 ), supports )
 
 class ProductTopology( Topology ):
   'product topology'
