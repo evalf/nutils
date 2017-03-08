@@ -988,8 +988,13 @@ class StructuredTopology( Topology ):
     self.axes = tuple(axes)
     self.nrefine = nrefine
     self.shape = tuple( axis.j - axis.i for axis in self.axes if axis.isdim )
-    self._bnames = bnames or ('left', 'right', 'bottom', 'top', 'front', 'back')[:2*len(self.shape)]
-    assert len(self._bnames) == 2*len(self.shape) and all( isinstance(bname,str) for bname in self._bnames )
+    if bnames is None:
+      assert len(self.axes) <= 3
+      bnames = ('left', 'right'), ('bottom', 'top'), ('front', 'back')
+      bnames = itertools.chain.from_iterable( n for axis, n in zip( self.axes, bnames ) if axis.isdim and not axis.isperiodic )
+    self._bnames = tuple( bnames )
+    assert len(self._bnames) == sum( 2 for axis in self.axes if axis.isdim and not axis.isperiodic )
+    assert all( isinstance(bname,str) for bname in self._bnames )
     Topology.__init__( self, len(self.shape) )
 
   def __iter__( self ):
@@ -1102,12 +1107,19 @@ class StructuredTopology( Topology ):
 
     nbounds = len(self.axes) - self.ndims
     btopo = EmptyTopology( self.ndims-1 )
+    jdim = 0
     for idim, axis in enumerate( self.axes ):
       if not axis.isdim or axis.isperiodic:
         continue
-      btopos = [ StructuredTopology( self.root, self.axes[:idim] + (BndAxis(n,n if not axis.isperiodic else 0,nbounds,side),) + self.axes[idim+1:], self.nrefine )
+      btopos = [
+        StructuredTopology(
+          root=self.root,
+          axes=self.axes[:idim] + (BndAxis(n,n if not axis.isperiodic else 0,nbounds,side),) + self.axes[idim+1:],
+          nrefine=self.nrefine,
+          bnames=self._bnames[:jdim*2]+self._bnames[jdim*2+2:] )
         for side, n in enumerate((axis.i,axis.j)) ]
-      btopo |= UnionTopology( btopos, self._bnames[2*idim:] )
+      btopo |= UnionTopology( btopos, self._bnames[jdim*2:jdim*2+2] )
+      jdim += 1
     return btopo
 
   @cache.property
