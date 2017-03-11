@@ -1324,7 +1324,7 @@ class StructuredTopology( Topology ):
       ndofs += stdfunc.nshapes
     return function.function( fmap=fmap, nmap=nmap, ndofs=ndofs )
 
-  def basis_std( self, degree, removedofs=None, periodic=None ):
+  def basis_std( self, degree, removedofs=None, periodic=None, type='bernstein' ):
     'spline from vertices'
 
     if periodic is None:
@@ -1354,7 +1354,8 @@ class StructuredTopology( Topology ):
       dofshape.append( nd )
       slices.append( [ slice(p*i,p*i+p+1) for i in range(n) ] )
 
-    funcmap = dict.fromkeys( self._transform.flat, util.product( element.PolyLine( element.PolyLine.bernstein_poly(d) ) for d in degree ) )
+    poly = { 'bernstein': element.PolyLine.bernstein_poly, 'lagrange': element.PolyLine.lagrange_poly }[ type ]
+    funcmap = dict.fromkeys( self._transform.flat, util.product( element.PolyLine( poly(d) ) for d in degree ) )
     dofmap = { trans: vertex_structure[S].ravel() for trans, *S in numpy.broadcast( self._transform, *numpy.ix_(*slices) ) }
     func = function.function( funcmap, dofmap, numpy.product(dofshape) )
     if not any( removedofs ):

@@ -1482,6 +1482,16 @@ class PolyLine( StdElem ):
     return revpoly[::-1]
 
   @classmethod
+  def lagrange_poly( cls, degree ):
+    'lagrange polynomial coefficients'
+
+    X = numpy.arange(degree+1) / degree
+    P = [ numpy.ones(1) ] * (degree+1)
+    for i, xi in enumerate(X):
+      P = [ p if i == j else numpy.concatenate( [ p[:1]*-xi, p[1:]*-xi + p[:-1], p[-1:] ], axis=0 ) / (X[j]-xi) for j, p in enumerate(P) ]
+    return numpy.array( P ).T
+
+  @classmethod
   def spline_poly( cls, p, n ):
     'spline polynomial coefficients'
 
