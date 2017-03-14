@@ -417,6 +417,12 @@ class EmptyReference( Reference ):
   __or__ = lambda self, other: other if other.ndims == self.ndims else NotImplemented
   __rsub__ = lambda self, other: other if other.ndims == self.ndims else NotImplemented
 
+  def trim( self, levels, maxrefine, ndivisions ):
+    return self
+
+  def inside( self, point, eps=0 ):
+    return False
+
 class RevolutionReference( Reference ):
   'modify gauss integration to always return a single point'
 
@@ -492,6 +498,9 @@ class PointReference( SimplexReference ):
   def getischeme( self, ischeme ):
     return numpy.zeros((1,0)), numpy.ones(1)
 
+  def inside( self, point, eps=0 ):
+    return True
+
 class LineReference( SimplexReference ):
   '1D simplex'
 
@@ -533,11 +542,9 @@ class LineReference( SimplexReference ):
     m = (len(vals)+1) // 2
     return vals[:m], vals[m-1:]
 
-  def inside( self, points, eps=0 ):
-    points = numpy.asarray( points, dtype=float )
-    assert points.ndim == 2 and points.shape[1] == self.ndims
-    vmin, vmax = sorted( self.vertices[:,0] )
-    return ( (points >= vmin-eps) & (points <= vmax+eps) ).all( axis=1 )
+  def inside( self, point, eps=0 ):
+    x, = point
+    return -eps <= x <= 1+eps
 
 class TriangleReference( SimplexReference ):
   '2D simplex'
@@ -629,11 +636,9 @@ class TriangleReference( SimplexReference ):
       cvals.append( [ vals[b+a*np-(a*(a-1))//2] for a, b in [(i,j),(mp-1+i,j),(i,mp-1+j),(i+j,mp-1-j)] ] )
     return numpy.concatenate( cvals, axis=1 )
 
-  def inside( self, points, eps=0 ):
-    points = numpy.asarray( points, dtype=float )
-    assert points.ndim == 2 and points.shape[1] == self.ndims
-    baricentric = numpy.linalg.solve( self.vertices[1:]-self.vertices[0], (points-self.vertices[0]).T ).T
-    return (baricentric >= -eps).all() and (baricentric <= 1+eps).all() and (baricentric.sum(1) <= 1+eps).all()
+  def inside( self, point, eps=0 ):
+    x, y = point
+    return x >= -eps and y >= -eps and 1-x-y >= -eps
 
 class TetrahedronReference( SimplexReference ):
   '3D simplex'
@@ -834,10 +839,8 @@ class TensorReference( Reference ):
   def child_refs( self ):
     return tuple( child1 * child2 for child1 in self.ref1.child_refs for child2 in self.ref2.child_refs )
 
-  def inside( self, points, eps=0 ):
-    points = numpy.asarray( points, dtype=float )
-    assert points.ndim == 2 and points.shape[1] == self.ndims
-    return self.ref1.inside(points[:,:self.ref1.ndims],eps) & self.ref2.inside(points[:,self.ref1.ndims:],eps)
+  def inside( self, point, eps=0 ):
+    return self.ref1.inside(point[:self.ref1.ndims],eps) and self.ref2.inside(point[self.ref1.ndims:],eps)
 
   @property
   def simplices( self ):
@@ -929,6 +932,13 @@ class Cone( Reference ):
     if self.nverts == self.ndims+1 or self.edgeref.ndims == 2 and self.edgeref.nverts == 4: # simplices and square-based pyramids are ok
       return [ ( transform.identity, self ) ]
     return [ ( transform.identity, ref.cone(self.etrans<<trans,self.tip) ) for trans, ref in self.edgeref.simplices ]
+
+  def inside( self, point, eps=0 ):
+    # point = etrans.apply(epoint) * xi + tip * (1-xi) => etrans.apply(epoint) = tip + (point-tip) / xi
+    xi = numpy.dot( self.etrans.ext, point-self.tip ) / numpy.dot( self.etrans.ext, self.etrans.offset-self.tip )
+    return 0 < xi <= 1+eps and self.edgeref.inside( numpy.linalg.solve(
+      numpy.dot( self.etrans.linear.T, self.etrans.linear ),
+      numpy.dot( self.etrans.linear.T, self.tip + (point-self.tip)/xi - self.etrans.offset ) ), eps=eps )
 
 class NeighborhoodTensorReference( TensorReference ):
   'product reference element'
@@ -1228,6 +1238,9 @@ class WithChildrenReference( Reference ):
     edge2children.extend( [(ichild,iedge)] for ichild, iedge, trans, ref in self.__extra_edges )
     return tuple( edge2children )
 
+  def inside( self, point, eps=0 ):
+    return any( cref.inside( transform.invapply( ctrans, point ), eps=eps ) for ctrans, cref in self.children )
+
 class MosaicReference( Reference ):
   'triangulation'
 
@@ -1368,6 +1381,8 @@ class MosaicReference( Reference ):
       weights = numpy.concatenate( allweights, axis=0 )
     return points, weights
 
+  def inside( self, point, eps=0 ):
+    return any( subref.inside( point, eps=eps ) for subref in self.subrefs )
 
 # SHAPE FUNCTIONS
 
