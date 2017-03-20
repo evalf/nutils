@@ -17,7 +17,7 @@ purposes of integration and sampling.
 """
 
 from . import log, util, numpy, core, numeric, function, cache, transform, _
-import re, warnings, math
+import re, warnings, math, functools, operator
 
 
 ## ELEMENT
@@ -1490,6 +1490,15 @@ class PolyLine( StdElem ):
     for i, xi in enumerate(X):
       P = [ p if i == j else numpy.concatenate( [ p[:1]*-xi, p[1:]*-xi + p[:-1], p[-1:] ], axis=0 ) / (X[j]-xi) for j, p in enumerate(P) ]
     return numpy.array( P ).T
+
+  @classmethod
+  def legendre_poly( cls, degree ):
+    'normalized legendre polynomial coefficients'
+
+    prod = lambda *args: functools.reduce( operator.mul, range(*args), 1)
+    binom = lambda n, k: prod( n+1-k, n+1 ) // prod( 1, k+1 )
+    P = lambda n, k: (2*n+1)**0.5 * (-1)**n * binom(n,k) * binom(-n-1,k)
+    return numpy.array([[P(n,k) for n in range(degree+1)] for k in range(degree+1)])
 
   @classmethod
   def spline_poly( cls, p, n ):
