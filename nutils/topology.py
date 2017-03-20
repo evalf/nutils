@@ -909,10 +909,12 @@ class StructuredLine( Topology ):
     mask[list(removedofs)] = False
     return function.mask( func, mask )
 
-  def basis_discont( self, degree ):
+  def basis_discont( self, degree, type='bernstein' ):
     'discontinuous shape functions'
 
-    fmap = dict.fromkeys( self._transforms[1:-1], element.PolyLine( element.PolyLine.bernstein_poly(degree) ) )
+    assert type in {'bernstein', 'lagrange', 'legendre'}
+    poly = getattr( element.PolyLine, type + '_poly' )
+    fmap = dict.fromkeys( self._transforms[1:-1], element.PolyLine( poly(degree) ) )
     nmap = dict( zip( self._transforms[1:-1], numpy.arange(len(self)*(degree+1)).reshape(len(self),degree+1) ) )
     return function.function( fmap=fmap, nmap=nmap, ndofs=len(self)*(degree+1) )
 
@@ -1305,7 +1307,7 @@ class StructuredTopology( Topology ):
 
     return numpy.array([Ni.coeffs for Ni in N]).T[::-1]
 
-  def basis_discont( self, degree ):
+  def basis_discont( self, degree, type='bernstein' ):
     'discontinuous shape functions'
 
     if numeric.isint( degree ):
@@ -1313,7 +1315,9 @@ class StructuredTopology( Topology ):
     assert len(degree) == self.ndims
     assert all( p >= 0 for p in degree )
 
-    stdfunc = util.product( element.PolyLine( element.PolyLine.bernstein_poly(p) ) for p in degree )
+    assert type in {'bernstein', 'lagrange', 'legendre'}
+    poly = getattr( element.PolyLine, type + '_poly' )
+    stdfunc = util.product( element.PolyLine( poly(p) ) for p in degree )
       
     fmap = {}
     nmap = {}
@@ -1481,9 +1485,10 @@ class UnstructuredTopology( Topology ):
     assert degree == 1
     return self.basis( 'std', degree )
 
-  def basis_discont( self, degree ):
+  def basis_discont( self, degree, type='bernstein' ):
     'discontinuous shape functions'
 
+    assert type in {'bernstein'}
     assert numeric.isint( degree ) and degree >= 0
     fmap = {}
     nmap = {}

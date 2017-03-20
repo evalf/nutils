@@ -361,3 +361,38 @@ def hierarchical( ndims, periodic=False ):
   @unittest
   def interfaces():
     verify_interfaces( domain, geom, periodic )
+
+
+@register( 'bernstein', type='bernstein' )
+@register( 'lagrange', type='lagrange' )
+@register( 'legendre', type='legendre' )
+def structured_discont_basis( type ):
+
+  @unittest
+  def span():
+    extra = 2
+    domain, geom = mesh.rectilinear( [1] )
+    for degree in range(6):
+      # Create basis.
+      basis = domain.basis( 'discont', degree=degree, type=type )
+      M = domain.integrate( function.outer( basis ), ischeme='gauss{}'.format(2*degree), geometry=geom )
+      # Create legendre polynomials.
+      P = [1, 2*geom-1]
+      for k in range(1, degree+extra):
+        P.append(((2*k+1)*(2*geom-1)*P[-1]-k*P[-2])/(k+1))
+      P = P[:degree+extra+1]
+      # Test projections of legendre polynomials.
+      B = domain.integrate( [ basis * p for p in P ], ischeme='gauss{}'.format(2*degree+extra), geometry=geom )
+      for k, b in enumerate( B ):
+        # Assert the norm of the projection matches the norm of the original or
+        # zero if the original is outside the span.
+        numpy.testing.assert_array_almost_equal( 1/(2*k+1) if k <= degree else 0, numpy.dot( b, M.solve( b ) ) )
+
+  if type == 'legendre':
+    @unittest
+    def orthonormality():
+      degree = 9
+      domain, geom = mesh.rectilinear( [2] )
+      basis = domain.basis( 'discont', degree=degree, type=type )
+      M = domain.integrate( function.outer( basis ), ischeme='gauss{}'.format(2*degree), geometry=geom )
+      numpy.testing.assert_array_almost_equal( M.toarray(), numpy.eye( 2*degree+2 ) )
