@@ -12,7 +12,7 @@ The log module provides print methods ``debug``, ``info``, ``user``,
 stdout as well as to an html formatted log file if so configured.
 """
 
-import sys, time, warnings, functools, itertools, re, abc, contextlib, html, urllib.parse, os, json, shutil, traceback, bdb, inspect, textwrap
+import sys, time, warnings, functools, itertools, re, abc, contextlib, html, urllib.parse, os, json, traceback, bdb, inspect, textwrap
 from . import core
 
 warnings.showwarning = lambda message, category, filename, lineno, *args: \
@@ -263,7 +263,8 @@ class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
     logpath = os.path.join( os.path.dirname( __file__ ), '_log' )
     for filename in os.listdir( logpath ):
       if not filename.startswith( '.' ):
-        shutil.copyfile( os.path.join( logpath, filename ), os.path.join( self._logdir, filename ) )
+        with open( os.path.join( logpath, filename ), 'rb' ) as src,  open( os.path.join( self._logdir, filename ), 'wb' ) as dst:
+          dst.write( src.read() )
     # Write header.
     if self._file:
       self._file.__enter__()
