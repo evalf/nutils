@@ -169,8 +169,7 @@ def logoutput( logcls, logout, verbose=len( nutils.log.LEVELS ), progressfile=Fa
         pass
       else:
         raise ValueError
-      __log__ = logcls( stream, **kwargs )
-      with __log__:
+      with logcls( stream, **kwargs ) as __log__:
         generate_log()
       assert stream.getvalue() == logout
 
@@ -209,9 +208,8 @@ def generate_exception( level=0 ):
   def test():
     with tempfile.TemporaryDirectory() as __outdir__:
       stream = io.StringIO()
-      __log__ = nutils.log.HtmlLog( stream, title='test' )
       try:
-        with __log__:
+        with nutils.log.HtmlLog( stream, title='test' ) as __log__:
           virtual_module['generate_exception']()
       except TestException:
         pass

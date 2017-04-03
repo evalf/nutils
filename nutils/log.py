@@ -29,7 +29,7 @@ class Log( metaclass=abc.ABCMeta ):
   a contextual layer and a ``write`` method.'''
 
   def __enter__( self ):
-    pass
+    return self
 
   def __exit__( self, etype, value, tb ):
     if etype in (KeyboardInterrupt,SystemExit,bdb.BdbQuit):
@@ -267,6 +267,7 @@ class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
     if self._scriptname is not None:
       self._print( '<span id="navbar">goto: <a class="nav_latest" href="../../../../log.html?{1:.0f}">latest {0:}</a> | <a class="nav_latestall" href="../../../../../log.html?{1:.0f}">latest overall</a> | <a class="nav_index" href="../../../../../">index</a></span>'.format( self._scriptname, time.mktime(time.localtime()) ) )
     self._print( '<ul>' )
+    return self
 
   def __exit__( self, etype, value, tb ):
     super().__exit__( etype, value, tb )
@@ -386,6 +387,7 @@ class TeeLog( Log ):
     self._stack.__enter__()
     for log in self.logs:
       self._stack.enter_context( log )
+    return self
 
   def __exit__( self, *exc_info ):
     self._stack.__exit__( *exc_info )
