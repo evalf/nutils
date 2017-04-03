@@ -10,9 +10,8 @@
 The mesh module provides mesh generators: methods that return a topology and an
 accompanying geometry function. Meshes can either be generated on the fly, e.g.
 :func:`rectilinear`, or read from external an externally prepared file,
-:func:`gmsh`, :func:`igatool`, and converted to nutils format. Note that no
-mesh writers are provided at this point; output is handled by the
-:mod:`nutils.plot` module.
+:func:`gmsh`, and converted to nutils format. Note that no mesh writers are
+provided at this point; output is handled by the :mod:`nutils.plot` module.
 """
 
 from . import topology, function, util, element, numpy, numeric, transform, log, _
@@ -335,112 +334,6 @@ def triangulation( vertices, nvertices ):
   topo = topology.UnstructuredTopology( ndims, nmap )
   topo.boundary = topology.StructuredTopology( structure, periodic=(1,) )
   return topo
-
-def igatool( path, name=None ):
-  'igatool mesh'
-
-  if name is None:
-    name = os.path.basename(path)
-
-  import vtk
-
-  reader = vtk.vtkXMLUnstructuredGridReader()
-  reader.SetFileName( path )
-  reader.Update()
-
-  mesh = reader.GetOutput()
-
-  FieldData = mesh.GetFieldData()
-  CellData = mesh.GetCellData()
-
-  NumberOfPoints = int( mesh.GetNumberOfPoints() )
-  NumberOfElements = mesh.GetNumberOfCells()
-  NumberOfArrays = FieldData.GetNumberOfArrays()
-
-  points = util.arraymap( mesh.GetPoint, float, range(NumberOfPoints) )
-  Cij = FieldData.GetArray( 'Cij' )
-  Cv = FieldData.GetArray( 'Cv' )
-  Cindi = CellData.GetArray( 'Elem_extr_indi')
-
-  elements = []
-  degree = 3
-  ndims = 2
-  nmap = {}
-  fmap = {}
-
-  poly = element.PolyLine( element.PolyLine.bernstein_poly( degree ) )**ndims
-
-  for ielem in range(NumberOfElements):
-
-    cellpoints = vtk.vtkIdList()
-    mesh.GetCellPoints( ielem, cellpoints )
-    nids = util.arraymap( cellpoints.GetId, int, range(cellpoints.GetNumberOfIds()) )
-
-    assert mesh.GetCellType(ielem) == vtk.VTK_HIGHER_ORDER_QUAD
-    nb = (degree+1)**2
-    assert len(nids) == nb
-
-    n = range( *util.arraymap( Cindi.GetComponent, int, ielem, [0,1] ) )
-    I = util.arraymap( Cij.GetComponent, int, n, 0 )
-    J = util.arraymap( Cij.GetComponent, int, n, 1 )
-    Ce = numpy.zeros(( nb, nb ))
-    Ce[I,J] = util.arraymap( Cv.GetComponent, float, n, 0 )
-
-    vertices = [ element.PrimaryVertex( '%s(%d:%d)' % (name,ielem,ivertex) ) for ivertex in range(2**ndims) ]
-    elem = element.QuadElement( vertices=vertices, ndims=ndims )
-    elements.append( elem )
-
-    fmap[ elem ] = element.ExtractionWrapper( poly, Ce.T )
-    nmap[ elem ] = nids
-
-  splinefunc = function.function( fmap, nmap, NumberOfPoints )
-
-  boundaries = {}
-  elemgroups = {}
-  vertexgroups = {}
-  renumber   = (0,3,1,2)
-  for iarray in range( NumberOfArrays ):
-    name = FieldData.GetArrayName( iarray )
-    index = name.find( '_group_' )
-    if index == -1:
-      continue
-    grouptype = name[:index]
-    groupname = name[index+7:]
-    A = FieldData.GetArray( iarray )
-    I = util.arraymap( A.GetComponent, int, range(A.GetSize()), 0 )
-    if grouptype == 'edge':
-      belements = [ elements[i//4].edge( renumber[i%4] ) for i in I ]
-      boundaries[ groupname ] = topology.UnstructuredTopology( ndims-1, belements )
-    elif grouptype == 'vertex':
-      vertexgroups[ groupname ] = I
-    elif grouptype == 'element':
-      elemgroups[ groupname ] = topology.UnstructuredTopology( ndims, [ elements[i] for i in I ] )
-    else:
-      raise Exception( 'unknown group type: %r' % grouptype )
-
-  topo = topology.UnstructuredTopology( ndims, elements )
-  for groupname, grouptopo in elemgroups.items():
-    topo[groupname] = grouptopo
-
-  if boundaries:
-    topo.boundary = topology.UnstructuredTopology( ndims-1, [ elem for topo in boundaries.values() for elem in topo ] )
-    for groupname, grouptopo in boundaries.items():
-      topo.boundary[groupname] = grouptopo
-
-  for group in elemgroups.values():
-    myboundaries = {}
-    for name, boundary in boundaries.items():
-      belems = [ belem for belem in boundary.elements if belem.parent[0] in group ]
-      if belems:
-        myboundaries[ name ] = topology.UnstructuredTopology( ndims-1, belems )
-    if myboundaries:
-      group.boundary = topology.UnstructuredTopology( ndims-1, [ elem for topo in myboundaries.values() for elem in topo ] )
-      for groupname, grouptopo in myboundaries.items():
-        group.boundary[groupname] = grouptopo
-
-  funcsp = topo.splinefunc( degree=degree )
-  coords = ( funcsp[:,_] * points ).sum( 0 )
-  return topo, coords #, vertexgroups
 
 def fromfunc( func, nelems, ndims, degree=1 ):
   'piecewise'
