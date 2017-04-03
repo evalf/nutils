@@ -151,6 +151,9 @@ def call( func, **kwargs ):
 
     outdir = core.getprop( 'outdir' )
     os.makedirs( outdir ) # asserts nonexistence
+    if os.open in os.supports_dir_fd:
+      __outdirfd__ = os.open( outdir, flags=os.O_RDONLY )
+      stack.callback( os.close, __outdirfd__ )
 
     symlink = core.getprop( 'symlink', None )
     if symlink:
@@ -172,9 +175,6 @@ def call( func, **kwargs ):
           print( '<meta http-equiv="pragma" content="no-cache" />', file=redirlog )
           print( '<meta http-equiv="refresh" content="0;URL={}" />'.format(os.path.join(relpath,'log.html')), file=redirlog )
           print( '</head></html>', file=redirlog )
-
-    stack.callback( os.chdir, os.getcwd() )
-    os.chdir( outdir )
 
     scriptname = core.getprop( 'scriptname' )
 
