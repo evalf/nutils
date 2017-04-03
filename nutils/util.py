@@ -61,15 +61,6 @@ class BufferStream( object ):
   def writelines( self, lines ):
     self.buf.extend( lines )
 
-class Product( object ):
-  def __init__( self, iter1, iter2 ):
-    self.iter1 = iter1
-    self.iter2 = iter2
-  def __len__( self ):
-    return len( self.iter1 ) * len( self.iter2 )
-  def __iter__( self ):
-    return iter( item1 * item2 for item1 in self.iter1 for item2 in self.iter2 )
-
 class _Unit( object ):
   def __mul__( self, other ): return other
   def __rmul__( self, other ): return other
@@ -96,47 +87,6 @@ def delaunay( points, positive=False ):
       if numpy.linalg.det( points[tri[1:]] - points[tri[0]] ) < 0:
         tri[-2:] = tri[-1], tri[-2]
   return vertices
-
-def withrepr( f ):
-  'add string representation to generated function'
-
-  class function_wrapper( object ):
-    func = staticmethod( f )
-    argnames = f.__code__.co_varnames[:f.__code__.co_argcount]
-    defaults = dict( zip( reversed(argnames), reversed(f.__defaults__) ) ) if f.__defaults__ else {}
-    def __init__( self, *args, **kwargs ):
-      for name in self.__class__.argnames[len(args):]:
-        try:
-          arg = kwargs[name]
-        except KeyError:
-          arg = self.__class__.defaults[name]
-        args += arg,
-      self.__setstate__( args )
-    def __setstate__( self, state ):
-      assert len(state) == len(self.__class__.argnames)
-      self.__args = state
-      self.__func_instance = self.__class__.func( *state )
-    def __getstate__( self ):
-      return self.__args
-    def __getattr__( self, attr ):
-      try:
-        index = self.__class__.argnames.index( attr )
-      except ValueError:
-        raise AttributeError( attr )
-      return self.__args[index]
-    def __call__( self, *args, **kwargs ):
-      return self.__func_instance( *args, **kwargs )
-    def __eq__( self, other ):
-      return other.__class__ == self.__class__ \
-         and other.__class__.func == self.__class__.func \
-         and other.__args == self.__args
-    def __str__( self ):
-      argstr = ','.join( '%s=%s' % item for item in zip( self.__class__.argnames, self.__args ) )
-      return '%s(%s)' % ( f.__name__, argstr )
-
-  from functools import update_wrapper, WRAPPER_ASSIGNMENTS
-  assignments = list( WRAPPER_ASSIGNMENTS )
-  return update_wrapper( function_wrapper, f, assignments, [] )
 
 def profile( func ):
   import cProfile, pstats
@@ -176,13 +126,6 @@ def allequal( seq1, seq2 ):
   if list(seq1) or list(seq2):
     return False
   return True
-
-def clone( obj ):
-  'clone object'
-
-  clone = object.__new__( obj.__class__ )
-  clone.__dict__.update( obj.__dict__ )
-  return clone
 
 class NanVec( numpy.ndarray ):
   'nan-initialized vector'
@@ -247,34 +190,6 @@ def arraymap( f, dtype, *args ):
 
   return numpy.array( [ f( arg ) for arg in args[0] ] if len( args ) == 1
                  else [ f( *arg ) for arg in numpy.broadcast( *args ) ], dtype=dtype )
-
-def allunique( iterable ):
-  iterable = tuple( iterable )
-  return len(iterable) == len(set(iterable))
-
-def minmax( iterable ):
-  iterable = tuple( iterable )
-  return min(iterable), max(iterable)
-
-def objmap( func, *arrays ):
-  'map numpy arrays'
-
-  arrays = [ numpy.asarray( array, dtype=object ) for array in arrays ]
-  return numpy.frompyfunc( func, len(arrays), 1 )( *arrays )
-
-def fail( msg, *args ):
-  'generate exception'
-
-  raise Exception( msg % args )
-
-class Locals( object ):
-  'local namespace as object'
-
-  def __init__( self ):
-    'constructors'
-
-    frame = sys._getframe( 1 )
-    self.__dict__.update( frame.f_locals )
 
 class OrderedDict( collections.MutableMapping, collections.Sequence ):
   'Dictionary that remembers insertion order'
