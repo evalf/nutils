@@ -216,3 +216,21 @@ def generate_exception( level=0 ):
       else:
         raise ValueError( 'Expected a `ValueError` exception.' )
       assert '<span class="post-mortem">' in stream.getvalue()
+
+@register
+def move_outdir():
+
+  @unittest
+  def test():
+    with contextlib.ExitStack() as stack:
+      tmpdir = stack.enter_context( tempfile.TemporaryDirectory() )
+      outdir = os.path.join( tmpdir, 'a' )
+      os.mkdir( outdir )
+      __outdirfd__ = os.open( outdir, flags=os.O_RDONLY )
+      stack.callback( os.close, __outdirfd__ )
+      os.rename( outdir, os.path.join( tmpdir, 'b' ) )
+      __verbose__ = len( nutils.log.LEVELS )
+      stream = io.StringIO()
+      with nutils.log.HtmlLog( stream, title='test' ) as __log__:
+        generate_log()
+      assert stream.getvalue() == log_html
