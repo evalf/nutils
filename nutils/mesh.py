@@ -299,42 +299,6 @@ def gmesh( fname, tags={}, name=None, use_elementary=False ):
   assert not tags, 'support of external group names has been deprecated; please provide physical names via gmsh'
   return gmsh( fname, name )
 
-def triangulation( vertices, nvertices ):
-  'triangulation'
-
-  raise NotImplementedError
-
-  bedges = {}
-  nmap = {}
-  I = numpy.array( [[2,0],[0,1],[1,2]] )
-  for n123 in vertices:
-    elem = element.getsimplex(2)
-    nmap[ elem ] = n123
-    for iedge, (n1,n2) in enumerate( n123[I] ):
-      try:
-        del bedges[ (n2,n1) ]
-      except KeyError:
-        bedges[ (n1,n2) ] = elem, iedge
-
-  dofaxis = function.DofAxis( nvertices, nmap )
-  stdelem = element.PolyTriangle( 1 )
-  linearfunc = function.Function( dofaxis=dofaxis, stdmap=dict.fromkeys(nmap,stdelem) )
-
-  connectivity = dict( bedges.iterkeys() )
-  N = list( connectivity.popitem() )
-  while connectivity:
-    N.append( connectivity.pop( N[-1] ) )
-  assert N[0] == N[-1]
-
-  structure = []
-  for n12 in zip( N[:-1], N[1:] ):
-    elem, iedge = bedges[ n12 ]
-    structure.append( elem.edge( iedge ) )
-    
-  topo = topology.UnstructuredTopology( ndims, nmap )
-  topo.boundary = topology.StructuredTopology( structure, periodic=(1,) )
-  return topo
-
 def fromfunc( func, nelems, ndims, degree=1 ):
   'piecewise'
 
