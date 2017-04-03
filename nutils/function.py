@@ -30,7 +30,7 @@ possible only via inverting of the geometry function, which is a fundamentally
 expensive and currently unsupported operation.
 """
 
-from . import util, numpy, numeric, log, core, cache, transform, rational, _
+from . import util, numpy, numeric, log, core, cache, transform, _
 import sys, warnings, itertools, functools, operator, inspect, numbers
 
 CACHE = 'Cache'

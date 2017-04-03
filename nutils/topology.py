@@ -23,7 +23,7 @@ out in element loops. For lower level operations topologies can be used as
 :mod:`nutils.element` iterators.
 """
 
-from . import element, function, util, numpy, parallel, matrix, log, core, numeric, cache, rational, transform, _
+from . import element, function, util, numpy, parallel, matrix, log, core, numeric, cache, transform, _
 from .index import IndexedArray
 import warnings, functools, collections, itertools, functools, operator
 

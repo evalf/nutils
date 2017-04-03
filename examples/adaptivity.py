@@ -1,6 +1,7 @@
 #! /usr/bin/env python3
 
 from nutils import *
+import fractions
 
 
 class MakePlots( object ):
@@ -66,7 +67,7 @@ def main(
   log.info( 'exact solution lsqr harmonicity:', harmonicity )
 
   # prepare plotting
-  makeplots = MakePlots( geom, exact, rational.frac(2 if uniform else degree*3,3) ) if withplots else lambda *args, **kwargs: None
+  makeplots = MakePlots( geom, exact, fractions.Fraction(2 if uniform else degree*3,3) ) if withplots else lambda *args, **kwargs: None
 
   # start adaptive refinement
   for irefine in log.count( 'level', start=1 ):
