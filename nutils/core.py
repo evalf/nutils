@@ -132,5 +132,27 @@ def single_or_multiple( f ):
     return retvals
   return wrapped
 
+def open_in_outdir( file, *args, **kwargs ):
+  '''open a file relative to the ``outdir`` property
+
+  Wrapper around :func:`open` that opens a file relative to the ``outdir``
+  property.  Takes the same arguments as :func:`open`.
+  '''
+
+  assert 'opener' not in kwargs
+  outdir = getprop( 'outdir', None )
+  if outdir is not None:
+    file = os.path.join( outdir, file )
+  return open( file, *args, **kwargs )
+
+def listoutdir():
+  '''list files in ``outdir`` property'''
+
+  outdir = getprop( 'outdir', None )
+  if outdir is not None:
+    return os.listdir( outdir )
+  else:
+    return os.listdir()
+
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

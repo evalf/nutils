@@ -189,7 +189,7 @@ class Evaluable( cache.Immutable ):
     imgtype = core.getprop( 'imagetype', 'png' )
     imgpath = 'dot_{}.{}'.format(hashlib.sha1(imgdata).hexdigest(), imgtype)
     if not os.path.exists( imgpath ):
-      with open( imgpath, 'w' ) as img:
+      with core.open_in_outdir( imgpath, 'w' ) as img:
         with subprocess.Popen( [dotpath,'-T'+imgtype], stdin=subprocess.PIPE, stdout=img ) as dot:
           dot.communicate( imgdata )
 

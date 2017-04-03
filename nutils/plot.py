@@ -19,10 +19,9 @@ import os, warnings, sys, subprocess
 class BasePlot( object ):
   'base class for plotting objects'
 
-  def __init__ ( self, name=None, ndigits=0, index=None, outdir=None ):
+  def __init__ ( self, name=None, ndigits=0, index=None ):
     'constructor'
 
-    self.path = outdir or '.'
     self.name = name
     self.index = index
     self.ndigits = ndigits
@@ -33,13 +32,11 @@ class BasePlot( object ):
     if index is None:
       index = self.index
     if self.ndigits and index is None:
-      index = _getnextindex( self.path, name, ext )
+      index = _getnextindex( name, ext )
     if index is not None:
       name += str(index).rjust( self.ndigits, '0' )
     name += '.' + ext
-    # Return the full path (w.r.t. the current working dir if `self.path` is
-    # relative) and the path relative to `self.path` (for logging).
-    return os.path.join( self.path, name ), name
+    return name
 
   def __enter__( self ):
     'enter with block'
@@ -111,12 +108,13 @@ class PyPlot( BasePlot ):
     'save images'
 
     assert self._fig, 'figure is closed'
-    relpaths = []
+    paths = []
     for ext in self.imgtype.split( ',' ):
-      path, relpath = self.getpath(name,index,ext)
-      relpaths.append( relpath )
-      self.savefig( path, **kwargs )
-    log.user( ' '.join( relpaths ) )
+      path = self.getpath(name,index,ext)
+      paths.append( path )
+      with core.open_in_outdir( path, 'wb' ) as f:
+        self.savefig( f, **kwargs )
+    log.user( ' '.join( paths ) )
 
   def segments( self, points, color='black', **kwargs ):
     'plot line'
@@ -498,26 +496,24 @@ class PyPlotVideo( PyPlot ):
     self._clearfigure = clearfigure
     if videotype is None:
       videotype = core.getprop( 'videotype', 'webm' )
-    path, relpath = self.getpath( name, None, videotype )
-    # Make sure `path` exists, otherwise the logger won't create an anchor.
-    # The empty file will be replaced by the video encoder.
-    with open( path, 'w' ) as f:
-      pass
-    log.user( relpath )
-    self._encoder = subprocess.Popen([
-        core.getprop( 'videoencoder', 'ffmpeg' ),
-        '-loglevel', 'quiet',
-        '-probesize', '1k',
-        '-analyzeduration', '1',
-        '-y',
-        '-f', 'image2pipe',
-        '-vcodec', 'png',
-        '-r', str(framerate),
-        '-i', '-',
-        '-crf', '10', # constant quality (4-63, lower means better)
-        '-b:v', '10M', # maximum allowed bitrate
-        path,
-      ], stdin=subprocess.PIPE )
+    path = self.getpath( name, None, videotype )
+    with core.open_in_outdir( path, 'wb' ) as f:
+      log.user( path )
+      self._encoder = subprocess.Popen([
+          core.getprop( 'videoencoder', 'ffmpeg' ),
+          '-loglevel', 'quiet',
+          '-probesize', '1k',
+          '-analyzeduration', '1',
+          '-y',
+          '-f', 'image2pipe',
+          '-vcodec', 'png',
+          '-r', str(framerate),
+          '-i', '-',
+          '-crf', '10', # constant quality (4-63, lower means better)
+          '-b:v', '10M', # maximum allowed bitrate
+          '-f', videotype,
+          '-',
+        ], stdin=subprocess.PIPE, stdout=f )
 
   def __enter__( self ):
     'enter with block'
@@ -561,10 +557,10 @@ class DataFile( BasePlot ):
     self.lines = []
 
   def save( self, name=None, index=None ):
-    path, relpath = self.getpath(name,index,self.ext)
-    with open( path, 'w' ) as fout:
+    path = self.getpath(name,index,self.ext)
+    with core.open_in_outdir( path, 'w' ) as fout:
       fout.writelines( self.lines )
-    log.user( relpath )
+    log.user( path )
 
   def printline( self, line ):
     self.lines.append( line+'\n' )
@@ -618,8 +614,8 @@ class VTKFile( BasePlot ):
 
   def save( self, name=None, index=None ):
     assert self._mesh is not None, 'Grid not specified'
-    path, relpath = self.getpath(name,index,'vtk')
-    with open( path, 'wb' ) as vtk:
+    path = self.getpath(name,index,'vtk')
+    with core.open_in_outdir( path, 'wb' ) as vtk:
       if sys.version_info.major == 2:
         write = vtk.write
       else:
@@ -675,7 +671,7 @@ class VTKFile( BasePlot ):
 
           self._writearray( vtk, data )
 
-    log.user( relpath )
+    log.user( path )
 
   def rectilineargrid( self, coords ):
     """set rectilinear grid"""
@@ -756,9 +752,9 @@ class VTKFile( BasePlot ):
 
 ## INTERNAL HELPER FUNCTIONS
 
-def _getnextindex( path, name, ext ):
+def _getnextindex( name, ext ):
   index = 0
-  for filename in os.listdir( path ):
+  for filename in core.listoutdir():
     if filename.startswith(name) and filename.endswith('.'+ext):
       num = filename[len(name):-len(ext)-1]
       if num.isdigit():

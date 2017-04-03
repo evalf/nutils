@@ -217,12 +217,8 @@ class HtmlInsertAnchor( Log ):
   .. automethod:: _insert_anchors
   '''
 
-  def __init__( self, logdir ):
-    self._logdir = logdir
-    super().__init__()
-
   def _path2href( self, match ):
-    if not os.path.exists( os.path.join( self._logdir, match.group(0) ) ):
+    if match.group(0) not in core.listoutdir():
       return match.group(0)
     filename = html.unescape( match.group(0) )
     ext = html.unescape( match.group(1) )
@@ -240,22 +236,16 @@ class HtmlInsertAnchor( Log ):
 class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
   '''Output html nested lists.'''
 
-  def __init__( self, file, *, title='nutils', scriptname=None, logdir=None ):
+  def __init__( self, file, *, title='nutils', scriptname=None ):
     if isinstance( file, (str, bytes) ):
-      self._file = file = open( file, 'w' )
-      assert logdir is None, '`logdir` can only be used when passing a file object to `file`'
+      self._file = file = core.open_in_outdir( file, 'w' )
     else:
       self._file = None
     self._print = functools.partial( print, file=file )
     self._flush = file.flush
-    if logdir is None:
-      # Try to get the directory of `file`.
-      if not hasattr( file, 'name' ):
-        raise ValueError( 'Cannot autodetect the directory of the log file.  Please set the directory using the `logdir` argument of {!r}.'.format( type( self ) ) )
-      logdir = os.path.dirname( file.name )
     self._title = title
     self._scriptname = scriptname
-    super().__init__( logdir )
+    super().__init__()
 
   def __enter__( self ):
     super().__enter__()
@@ -263,7 +253,7 @@ class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
     logpath = os.path.join( os.path.dirname( __file__ ), '_log' )
     for filename in os.listdir( logpath ):
       if not filename.startswith( '.' ):
-        with open( os.path.join( logpath, filename ), 'rb' ) as src,  open( os.path.join( self._logdir, filename ), 'wb' ) as dst:
+        with open( os.path.join( logpath, filename ), 'rb' ) as src, core.open_in_outdir( filename, 'wb' ) as dst:
           dst.write( src.read() )
     # Write header.
     if self._file:
@@ -331,23 +321,18 @@ class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
 class IndentLog( HtmlInsertAnchor, ContextTreeLog ):
   '''Output indented html snippets.'''
 
-  def __init__( self, file, *, logdir=None, progressfile=None, progressinterval=None ):
+  def __init__( self, file, *, progressfile=None, progressinterval=None ):
     self._logfile = file
     self._print = functools.partial( print, file=file )
     self._flush = file.flush
     self._prefix = ''
-    if logdir is None:
-      # Try to get the directory of `file`.
-      if not hasattr( file, 'name' ):
-        raise ValueError( 'Cannot autodetect the directory of the log file.  Please set the directory using the `logdir` argument of {!r}.'.format( type( self ) ) )
-      logdir = os.path.dirname( file.name )
     self._progressfile = progressfile
     if self._progressfile:
       # Timestamp at which a new progress line may be written.
       self._progressupdate = 0
       # Progress update interval in seconds.
       self._progressinterval = progressinterval or core.getprop( 'progressinterval', 1 )
-    super().__init__( logdir )
+    super().__init__()
 
   def _print_push_context( self, title ):
     title = title.replace( '\n', '' ).replace( '\r', '')
