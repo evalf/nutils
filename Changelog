@@ -6,6 +6,10 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+Deprecated: cli.Path
+
+  The cli.Path wrapper is deprecated in favor of pathlib.Path.
+
 New: cli module
 
   The util.run function is deprecated and replaced by two new functions,

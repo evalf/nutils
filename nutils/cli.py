@@ -68,17 +68,7 @@ def _sigint_handler( mysignal, frame ):
   finally:
     signal.signal( mysignal, _handler )
 
-class Path:
-  def __init__( self, path=os.curdir ):
-    self.__path = pathlib.Path( os.path.abspath(os.path.expanduser(path)) )
-  def __getattr__( self, attr ):
-    return getattr( self.__path, attr )
-  def __str__( self ):
-    try: # try to make relative to current working directory
-      path = self.__path.relative_to( os.getcwd() )
-    except ValueError: # leave absolute
-      path = self.__path
-    return str( path )
+Path = pathlib.Path
 
 def run( func, *, args=None ):
   '''parse command line arguments and call function'''
