@@ -53,17 +53,20 @@ def verify_boundaries( domain, geom ):
   numpy.testing.assert_array_almost_equal( lhs, rhs )
 
 def verify_interfaces( domain, geom, periodic ):
+  # If `periodic` is true, the domain should be a unit hypercube or this test
+  # might fail.  The function `f` defined below is C0 continuous on a periodic
+  # hypercube and Cinf continuous inside the hypercube.
   x1, x2, n1, n2 = domain.interfaces.elem_eval( [ geom, function.opposite(geom), geom.normal(), function.opposite(geom.normal()) ], 'gauss2', separate=False )
   if not periodic:
-    assert numpy.all( x1 == x2 )
-  assert numpy.all( n1 == -n2 )
+    numpy.testing.assert_array_almost_equal( x1, x2 )
+  numpy.testing.assert_array_almost_equal( n1, -n2 )
 
   # Test ∫_E f_,i = ∫_∂E f n_i ∀ E in `domain`.
   f = ((0.5 - geom)**2).sum(axis=0)
   elemindicator = domain.basis( 'discont', degree=0 ).vector( domain.ndims )
   lhs = domain.integrate( (elemindicator*f.grad(geom)[None]).sum(axis=1), ischeme='gauss2', geometry=geom )
   rhs = domain.interfaces.integrate( (-function.jump(elemindicator)*f*function.normal(geom)[None]).sum(axis=1), ischeme='gauss2', geometry=geom )
-  if not periodic:
+  if len( domain.boundary ):
     rhs += domain.boundary.integrate( (elemindicator*f*function.normal(geom)[None]).sum(axis=1), ischeme='gauss2', geometry=geom )
   numpy.testing.assert_array_almost_equal( lhs, rhs )
 
@@ -338,20 +341,23 @@ def locate( structured ):
     numpy.testing.assert_array_almost_equal( located, target )
 
 
-@register( '3d', ndims=3 )
-@register( '2d_periodic', ndims=2, periodic=True )
-@register( '2d', ndims=2 )
-@register( '1d_periodic', ndims=1, periodic=True )
-#@register( '1d', ndims=1 ) # disabled, see issue #193
-def hierarchical( ndims, periodic=False ):
+@register( '3d_l_rrr', pos=0, ndims=3 )
+@register( '3d_l_rpr', pos=0, ndims=3, periodic=[1] )
+@register( '2d_l_pp', pos=0, ndims=2, periodic=[0,1] )
+@register( '2d_l_pr', pos=0, ndims=2, periodic=[0] )
+@register( '2d_c_pr', pos=0.5, ndims=2, periodic=[0] )
+@register( '2d_r_pr', pos=1, ndims=2, periodic=[0] )
+@register( '2d_l_rr', pos=0, ndims=2 )
+@register( '1d_l_p', pos=0, ndims=1, periodic=[0] )
+@register( '1d_c_p', pos=0.5, ndims=1, periodic=[0] )
+#@register( '1d_l_r', pos=0, ndims=1 ) # disabled, see issue #193
+def hierarchical( ndims, pos, periodic=() ):
 
-  domain, geom = mesh.rectilinear( [numpy.linspace(0, 1, 5)]*ndims, periodic=range(ndims) if periodic else [] )
-  # Refine `domain`.
-  indicator = 1
-  for dim in range( ndims ):
-      indicator = function.min( indicator, 1 - geom[dim] )
-  for threshold in 0.5, 0.75:
-      domain = domain.refined_by( elem for elem, value in zip( domain, domain.elem_mean( [indicator], ischeme='gauss1', geometry=geom )[0] ) if value >= threshold )
+  domain, geom = mesh.rectilinear( [numpy.linspace(0, 1, 7)]*ndims, periodic=periodic )
+  # Refine `domain` near `pos`.
+  distance = ((geom-pos)**2).sum(0)**0.5
+  for threshold in 0.3, 0.15:
+      domain = domain.refined_by( elem for elem, value in zip( domain, domain.elem_mean( [distance], ischeme='gauss1', geometry=geom )[0] ) if value <= threshold )
 
   if not periodic:
     @unittest
