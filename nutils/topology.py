@@ -1163,7 +1163,7 @@ class StructuredTopology( Topology ):
     assert mask.shape == tuple(dofshape)
     return function.mask( func, mask.ravel() )
 
-  def basis_bspline( self, degree, knotvalues=None, knotmultiplicities=None, periodic=None ):
+  def basis_bspline( self, degree, knotvalues=None, knotmultiplicities=None, periodic=None, removedofs=None ):
     'Bspline from vertices'
     
     if periodic is None:
@@ -1180,8 +1180,13 @@ class StructuredTopology( Topology ):
     if knotmultiplicities is None:
       knotmultiplicities = [None]*self.ndims
 
+    if removedofs == None:
+      removedofs = [None] * self.ndims
+    else:
+      assert len(removedofs) == self.ndims
+
     vertex_structure = numpy.array( 0 )
-    dofcount = 1
+    dofshape = []
     slices = []
     cache = {}
     for idim in range( self.ndims ):
@@ -1251,7 +1256,7 @@ class StructuredTopology( Topology ):
       if isperiodic:
         numbers = numpy.concatenate([numbers,numbers[:p]])
       vertex_structure = vertex_structure[...,_]*nd+numbers
-      dofcount*=nd
+      dofshape.append( nd )
       slices.append(slices_i)
 
     #Cache effectivity
@@ -1267,7 +1272,17 @@ class StructuredTopology( Topology ):
       dofmap[trans] = dofs
       funcmap[trans] = std
 
-    return function.function( funcmap, dofmap, dofcount )
+    func = function.function( funcmap, dofmap, numpy.product(dofshape) )
+    if not any( removedofs ):
+      return func
+
+    mask = numpy.ones( (), dtype=bool )
+    for idofs, ndofs in zip( removedofs, dofshape ):
+      mask = mask[...,_].repeat( ndofs, axis=-1 )
+      if idofs:
+        mask[...,[ numeric.normdim(ndofs,idof) for idof in idofs ]] = False
+    assert mask.shape == tuple(dofshape)
+    return function.mask( func, mask.ravel() )
 
   @staticmethod
   def _localsplinebasis ( lknots, p ):
