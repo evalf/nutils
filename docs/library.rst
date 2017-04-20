@@ -31,5 +31,4 @@ What follows is an automatically generated API reference.
    library/cache
    library/cli
    library/model
-   library/rational
    library/transform

@@ -23,7 +23,7 @@ out in element loops. For lower level operations topologies can be used as
 :mod:`nutils.element` iterators.
 """
 
-from . import element, function, util, numpy, parallel, matrix, log, core, numeric, cache, rational, transform, _
+from . import element, function, util, numpy, parallel, matrix, log, core, numeric, cache, transform, _
 from .index import IndexedArray
 import warnings, functools, collections, itertools, functools, operator
 
@@ -289,33 +289,6 @@ class Topology( object ):
     integrands = [ function.asarray( edit( func * iwscale ) ) for func in funcs ]
     data_index = self._integrate( integrands, ischeme, fcache )
     return [ matrix.assemble( data, index, integrand.shape, force_dense ) for integrand, (data,index) in zip( integrands, data_index ) ]
-
-  @log.title
-  @core.single_or_multiple
-  def integrate_symm( self, funcs, ischeme, geometry=None, force_dense=False, fcache=None, edit=_identity ):
-    'integrate a symmetric integrand on a product domain' # TODO: find a proper home for this
-
-    iwscale = function.J( geometry, self.ndims ) if geometry else 1
-    funcs = [ func.unwrap( geometry ) if isinstance( func, IndexedArray ) else func for func in funcs ]
-    integrands = [ function.asarray( edit( func * iwscale ) ) for func in funcs ]
-    assert all( integrand.ndim == 2 for integrand in integrands )
-    diagelems = []
-    trielems = []
-    for elem in self:
-      head1 = elem.transform[:-1]
-      head2 = elem.opposite[:-1]
-      if head1 == head2:
-        diagelems.append( elem )
-      elif head1 < head2:
-        trielems.append( elem )
-    diag_data_index = UnstructuredTopology( self.ndims, diagelems )._integrate( integrands, ischeme, fcache=fcache )
-    tri_data_index = UnstructuredTopology( self.ndims, trielems )._integrate( integrands, ischeme, fcache=fcache )
-    retvals = []
-    for integrand, (diagdata,diagindex), (tridata,triindex) in zip( integrands, diag_data_index, tri_data_index ):
-      data = numpy.concatenate( [ diagdata, tridata, tridata ], axis=0 )
-      index = numpy.concatenate( [ diagindex, triindex, triindex[::-1] ], axis=1 )
-      retvals.append( matrix.assemble( data, index, integrand.shape, force_dense ) )
-    return retvals
 
   def projection( self, fun, onto, geometry, **kwargs ):
     'project and return as function'

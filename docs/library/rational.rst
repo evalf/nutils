@@ -1,4 +1,0 @@
-Rational
-========
-
-.. automodule:: nutils.rational
