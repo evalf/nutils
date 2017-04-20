@@ -1106,65 +1106,8 @@ class StructuredTopology( Topology ):
     assert len(itopos) == self.ndims
     return UnionTopology( itopos, names=[ 'dir{}'.format(idim) for idim in range(self.ndims) ] )
 
-  def basis_spline( self, degree, neumann=(), knots=None, periodic=None, closed=False, removedofs=None ):
-    'spline from vertices'
-
-    if periodic is None:
-      periodic = self.periodic
-
-    if numeric.isint( degree ):
-      degree = ( degree, ) * self.ndims
-
-    if removedofs == None:
-      removedofs = [None] * self.ndims
-    else:
-      assert len(removedofs) == self.ndims
-
-    dofshape = []
-    slices = []
-    vertex_structure = numpy.array( 0 )
-    for idim in range( self.ndims ):
-      periodic_i = idim in periodic
-      n = self.shape[idim]
-      p = degree[idim]
-      if closed == False:
-        neumann_i = (idim*2 in neumann and 1) | (idim*2+1 in neumann and 2)
-        stdelems_i = element.PolyLine.spline( degree=p, nelems=n, periodic=periodic_i, neumann=neumann_i )
-      elif closed == True:
-        assert periodic==(), 'Periodic option not allowed for closed spline'
-        assert neumann ==(), 'Neumann option not allowed for closed spline'
-        stdelems_i = element.PolyLine.spline( degree=p, nelems=n, periodic=True )
-      stdelems = stdelems[...,_] * stdelems_i if idim else stdelems_i
-      nd = n + p
-      numbers = numpy.arange( nd )
-      if periodic_i and p > 0:
-        overlap = p
-        assert len(numbers) >= 2 * overlap
-        numbers[ -overlap: ] = numbers[ :overlap ]
-        nd -= overlap
-      vertex_structure = vertex_structure[...,_] * nd + numbers
-      dofshape.append( nd )
-      slices.append( [ slice(i,i+p+1) for i in range(n) ] )
-
-    dofmap = {}
-    funcmap = {}
-    for trans, std, *S in numpy.broadcast( self._transform, stdelems, *numpy.ix_(*slices) ):
-      dofmap[trans] = vertex_structure[S].ravel()
-      funcmap[trans] = std
-    func = function.function( funcmap, dofmap, numpy.product(dofshape) )
-    if not any( removedofs ):
-      return func
-
-    mask = numpy.ones( (), dtype=bool )
-    for idofs, ndofs in zip( removedofs, dofshape ):
-      mask = mask[...,_].repeat( ndofs, axis=-1 )
-      if idofs:
-        mask[...,[ numeric.normdim(ndofs,idof) for idof in idofs ]] = False
-    assert mask.shape == tuple(dofshape)
-    return function.mask( func, mask.ravel() )
-
-  def basis_bspline( self, degree, knotvalues=None, knotmultiplicities=None, periodic=None, removedofs=None ):
-    'Bspline from vertices'
+  def basis_spline( self, degree, knotvalues=None, knotmultiplicities=None, periodic=None, removedofs=None ):
+    'spline basis'
     
     if periodic is None:
       periodic = self.periodic
@@ -1283,6 +1226,10 @@ class StructuredTopology( Topology ):
         mask[...,[ numeric.normdim(ndofs,idof) for idof in idofs ]] = False
     assert mask.shape == tuple(dofshape)
     return function.mask( func, mask.ravel() )
+
+  def basis_bspline( self, *args, **kwargs ):
+    warnings.warn( 'basis "bspline" has been merged with "spline"', DeprecationWarning )
+    return self.basis_spline( *args, **kwargs )
 
   @staticmethod
   def _localsplinebasis ( lknots, p ):
