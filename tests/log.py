@@ -118,7 +118,7 @@ i <a href="test.png" class="plot">test.png</a>
 i nonexistent.png
 '''
 
-def generate_log( logdir ):
+def generate_log():
   with nutils.log.context( 'iterator' ):
     for i in nutils.log.iter( 'iter', 'abc' ):
       nutils.log.info( i )
@@ -138,7 +138,7 @@ def generate_log( logdir ):
       "ValueError('test',)\n" \
       '  File "??", line ??, in ??\n' \
       "    raise ValueError( 'test' )")
-  with open( os.path.join( logdir, 'test.png' ), 'w' ) as f:
+  with nutils.core.open_in_outdir( 'test.png', 'w' ) as f:
     pass
   nutils.log.info( 'test.png' )
   nutils.log.info( 'nonexistent.png' )
@@ -155,25 +155,22 @@ def logoutput( logcls, logout, verbose=len( nutils.log.LEVELS ), progressfile=Fa
   @unittest
   def test():
     with contextlib.ExitStack() as stack:
-      logdir = stack.enter_context( tempfile.TemporaryDirectory() )
+      __outdir__ = stack.enter_context( tempfile.TemporaryDirectory() )
       __verbose__ = verbose
       # Make sure all progress information is written, regardless the speed of
       # this computer.
       __progressinterval__ = -1
       stream = io.StringIO()
-      if logcls in (nutils.log.HtmlLog, nutils.log.IndentLog):
-        kwargs.update( logdir=logdir )
       if progressfile == 'seekable':
-        kwargs.update( progressfile=stack.enter_context( open( os.path.join( logdir, 'progress.json' ), 'w' ) ) )
+        kwargs.update( progressfile=stack.enter_context( open( os.path.join( __outdir__, 'progress.json' ), 'w' ) ) )
       elif progressfile == 'stream':
         kwargs.update( progressfile=io.StringIO() )
       elif progressfile is False:
         pass
       else:
         raise ValueError
-      __log__ = logcls( stream, **kwargs )
-      with __log__:
-        generate_log( logdir )
+      with logcls( stream, **kwargs ) as __log__:
+        generate_log()
       assert stream.getvalue() == logout
 
 @register
@@ -181,15 +178,15 @@ def tee_stdout_html():
 
   @unittest
   def test():
-    with tempfile.TemporaryDirectory() as logdir:
+    with tempfile.TemporaryDirectory() as __outdir__:
       __verbose__ = len( nutils.log.LEVELS )
       stream_stdout = io.StringIO()
       stream_html = io.StringIO()
       __log__ = nutils.log.TeeLog(
         nutils.log.StdoutLog( stream_stdout ),
-        nutils.log.HtmlLog( stream_html, logdir=logdir, title='test' ))
+        nutils.log.HtmlLog( stream_html, title='test' ))
       with __log__:
-        generate_log( logdir )
+        generate_log()
       assert stream_stdout.getvalue() == log_stdout
       assert stream_html.getvalue() == log_html
 
@@ -209,14 +206,31 @@ def generate_exception( level=0 ):
 
   @unittest
   def test():
-    with tempfile.TemporaryDirectory() as logdir:
+    with tempfile.TemporaryDirectory() as __outdir__:
       stream = io.StringIO()
-      __log__ = nutils.log.HtmlLog( stream, logdir=logdir, title='test' )
       try:
-        with __log__:
+        with nutils.log.HtmlLog( stream, title='test' ) as __log__:
           virtual_module['generate_exception']()
       except TestException:
         pass
       else:
         raise ValueError( 'Expected a `ValueError` exception.' )
       assert '<span class="post-mortem">' in stream.getvalue()
+
+@register
+def move_outdir():
+
+  @unittest
+  def test():
+    with contextlib.ExitStack() as stack:
+      tmpdir = stack.enter_context( tempfile.TemporaryDirectory() )
+      outdir = os.path.join( tmpdir, 'a' )
+      os.mkdir( outdir )
+      __outdirfd__ = os.open( outdir, flags=os.O_RDONLY )
+      stack.callback( os.close, __outdirfd__ )
+      os.rename( outdir, os.path.join( tmpdir, 'b' ) )
+      __verbose__ = len( nutils.log.LEVELS )
+      stream = io.StringIO()
+      with nutils.log.HtmlLog( stream, title='test' ) as __log__:
+        generate_log()
+      assert stream.getvalue() == log_html

@@ -13,7 +13,7 @@ python function based arguments specified on the command line.
 """
 
 from . import log, core, version
-import sys, inspect, os, datetime, argparse, pdb, signal, subprocess, pathlib
+import sys, inspect, os, datetime, argparse, pdb, signal, subprocess, pathlib, contextlib
 
 def _version():
   try:
@@ -68,17 +68,7 @@ def _sigint_handler( mysignal, frame ):
   finally:
     signal.signal( mysignal, _handler )
 
-class Path:
-  def __init__( self, path=os.curdir ):
-    self.__path = pathlib.Path( os.path.abspath(os.path.expanduser(path)) )
-  def __getattr__( self, attr ):
-    return getattr( self.__path, attr )
-  def __str__( self ):
-    try: # try to make relative to current working directory
-      path = self.__path.relative_to( os.getcwd() )
-    except ValueError: # leave absolute
-      path = self.__path
-    return str( path )
+Path = pathlib.Path
 
 def run( func, *, args=None ):
   '''parse command line arguments and call function'''
@@ -145,83 +135,85 @@ def choose( *functions, cmd=True, args=None ):
 def call( func, **kwargs ):
   '''set up compute environment and call function'''
 
-  outdir = core.getprop( 'outdir' )
-  os.makedirs( outdir ) # asserts nonexistence
+  with contextlib.ExitStack() as stack:
 
-  symlink = core.getprop( 'symlink', None )
-  if symlink:
-    for base, relpath in _relative_paths( core.getprop('outrootdir'), outdir ):
-      target = os.path.join( base, symlink )
-      if os.path.islink( target ):
-        os.remove( target )
-      os.symlink( relpath, target )
+    stack.callback( signal.signal, signal.SIGINT, signal.signal( signal.SIGINT, _sigint_handler ) )
 
-  htmloutput = core.getprop( 'htmloutput', True )
-  if htmloutput:
-    for base, relpath in _relative_paths( core.getprop('outrootdir'), outdir ):
-      with open( os.path.join(base,'log.html'), 'w' ) as redirlog:
-        print( '<html><head>', file=redirlog )
-        print( '<meta http-equiv="cache-control" content="max-age=0" />', file=redirlog )
-        print( '<meta http-equiv="cache-control" content="no-cache" />', file=redirlog )
-        print( '<meta http-equiv="expires" content="0" />', file=redirlog )
-        print( '<meta http-equiv="expires" content="Tue, 01 Jan 1980 1:00:00 GMT" />', file=redirlog )
-        print( '<meta http-equiv="pragma" content="no-cache" />', file=redirlog )
-        print( '<meta http-equiv="refresh" content="0;URL={}" />'.format(os.path.join(relpath,'log.html')), file=redirlog )
-        print( '</head></html>', file=redirlog )
+    outdir = core.getprop( 'outdir' )
+    os.makedirs( outdir ) # asserts nonexistence
+    if os.open in os.supports_dir_fd:
+      __outdirfd__ = os.open( outdir, flags=os.O_RDONLY )
+      stack.callback( os.close, __outdirfd__ )
 
-  origdir = os.getcwd()
-  orighandler = signal.signal( signal.SIGINT, _sigint_handler )
-  try:
-    os.chdir( outdir )
+    symlink = core.getprop( 'symlink', None )
+    if symlink:
+      for base, relpath in _relative_paths( core.getprop('outrootdir'), outdir ):
+        target = os.path.join( base, symlink )
+        if os.path.islink( target ):
+          os.remove( target )
+        os.symlink( relpath, target )
+
+    htmloutput = core.getprop( 'htmloutput', True )
+    if htmloutput:
+      for base, relpath in _relative_paths( core.getprop('outrootdir'), outdir ):
+        with open( os.path.join(base,'log.html'), 'w' ) as redirlog:
+          print( '<html><head>', file=redirlog )
+          print( '<meta http-equiv="cache-control" content="max-age=0" />', file=redirlog )
+          print( '<meta http-equiv="cache-control" content="no-cache" />', file=redirlog )
+          print( '<meta http-equiv="expires" content="0" />', file=redirlog )
+          print( '<meta http-equiv="expires" content="Tue, 01 Jan 1980 1:00:00 GMT" />', file=redirlog )
+          print( '<meta http-equiv="pragma" content="no-cache" />', file=redirlog )
+          print( '<meta http-equiv="refresh" content="0;URL={}" />'.format(os.path.join(relpath,'log.html')), file=redirlog )
+          print( '</head></html>', file=redirlog )
 
     scriptname = core.getprop( 'scriptname' )
 
     __log__ = log._mklog() if not htmloutput \
          else log.TeeLog( log._mklog(), log.HtmlLog( 'log.html', title=scriptname, scriptname=scriptname ) )
+    try:
+      with __log__:
 
-    with __log__:
+        log.info( 'nutils v{}'.format( _version() ) )
+        log.info( '' )
+        log.info( '{} {}'.format( scriptname, func.__name__ ) )
+        for parameter in inspect.signature( func ).parameters.values():
+          argstr = '  --{}={}'.format( parameter.name, kwargs.get(parameter.name,parameter.default) )
+          if parameter.annotation is not parameter.empty:
+            argstr += ' ({})'.format( parameter.annotation )
+          log.info( argstr )
 
-      log.info( 'nutils v{}'.format( _version() ) )
-      log.info( '' )
-      log.info( '{} {}'.format( scriptname, func.__name__ ) )
-      for parameter in inspect.signature( func ).parameters.values():
-        argstr = '  --{}={}'.format( parameter.name, kwargs.get(parameter.name,parameter.default) )
-        if parameter.annotation is not parameter.empty:
-          argstr += ' ({})'.format( parameter.annotation )
-        log.info( argstr )
+        starttime = datetime.datetime.now()
 
-      starttime = datetime.datetime.now()
+        log.info( '' )
+        log.info( 'start {}'.format( starttime.ctime() ) )
+        log.info( '' )
 
-      log.info( '' )
-      log.info( 'start {}'.format( starttime.ctime() ) )
-      log.info( '' )
+        func( **kwargs )
 
-      func( **kwargs )
+        endtime = datetime.datetime.now()
+        minutes, seconds = divmod( (endtime-starttime).seconds, 60 )
+        hours, minutes = divmod( minutes, 60 )
 
-      endtime = datetime.datetime.now()
-      minutes, seconds = divmod( (endtime-starttime).seconds, 60 )
-      hours, minutes = divmod( minutes, 60 )
+        log.info( '' )
+        log.info( 'finish {}'.format( endtime.ctime() ) )
+        log.info( 'elapsed {:.0f}:{:02.0f}:{:02.0f}'.format( hours, minutes, seconds ) )
 
-      log.info( '' )
-      log.info( 'finish {}'.format( endtime.ctime() ) )
-      log.info( 'elapsed {:.0f}:{:02.0f}:{:02.0f}'.format( hours, minutes, seconds ) )
-
-  except (KeyboardInterrupt,SystemExit,pdb.bdb.BdbQuit):
-    return 1
-  except:
-    if core.getprop( 'pdb', False ):
-      del __log__
-      print( _mkbox(
-        'YOUR PROGRAM HAS DIED. The Python debugger',
-        'allows you to examine its post-mortem state',
-        'to figure out why this happened. Type "h"',
-        'for an overview of commands to get going.' ) )
-      pdb.post_mortem()
-    return 2
-  else:
-    return 0
-  finally:
-    signal.signal( signal.SIGINT, orighandler )
-    os.chdir( origdir )
+    except (KeyboardInterrupt,SystemExit,pdb.bdb.BdbQuit):
+      return 1
+    except:
+      if core.getprop( 'pdb', False ):
+        try:
+          del __log__
+        except NameError:
+          pass
+        print( _mkbox(
+          'YOUR PROGRAM HAS DIED. The Python debugger',
+          'allows you to examine its post-mortem state',
+          'to figure out why this happened. Type "h"',
+          'for an overview of commands to get going.' ) )
+        pdb.post_mortem()
+      return 2
+    else:
+      return 0
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

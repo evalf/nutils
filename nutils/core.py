@@ -132,5 +132,34 @@ def single_or_multiple( f ):
     return retvals
   return wrapped
 
+def open_in_outdir( file, *args, **kwargs ):
+  '''open a file relative to the ``outdirfd`` or ``outdir`` property
+
+  Wrapper around :func:`open` that opens a file relative to either the
+  ``outdirfd`` property (if supported, see :func:`os.supports_dir_fd`) or
+  ``outdir``.  Takes the same arguments as :func:`open`.
+  '''
+
+  assert 'opener' not in kwargs
+  outdirfd = getprop( 'outdirfd', None )
+  outdir = getprop( 'outdir', None )
+  if outdirfd is not None and os.open in os.supports_dir_fd:
+    kwargs['opener'] = functools.partial( os.open, dir_fd=outdirfd )
+  elif outdir is not None:
+    file = os.path.join( outdir, file )
+  return open( file, *args, **kwargs )
+
+def listoutdir():
+  '''list files in ``outdirfd`` or ``outdir`` property'''
+
+  outdirfd = getprop( 'outdirfd', None )
+  outdir = getprop( 'outdir', None )
+  if outdirfd is not None:
+    return os.listdir( outdirfd )
+  elif outdir is not None:
+    return os.listdir( outdir )
+  else:
+    return os.listdir()
+
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
