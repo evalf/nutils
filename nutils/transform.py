@@ -115,6 +115,8 @@ class TransformChain( tuple ):
     return head, CanonicalTransformChain(tail)
 
   def lookup( self, transforms ):
+    if not transforms:
+      return
     for trans in transforms:
       ndims = trans.fromdims
       break
