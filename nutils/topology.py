@@ -2009,7 +2009,7 @@ class MultipatchTopology( Topology ):
     else:
       return UnionTopology( patch.topo.getitem(key) for patch in self.patches )
 
-  def basis_spline( self, degree, patchcontinuous=True ):
+  def basis_spline( self, degree, patchcontinuous=True, knotvalues=None, knotmultiplicities=None ):
     '''spline from vertices
 
     Create a spline basis with degree ``degree`` per patch.  If
@@ -2017,13 +2017,75 @@ class MultipatchTopology( Topology ):
     interfaces.
     '''
 
+    if knotvalues is None:
+      knotvalues = {None: None}
+    else:
+      knotvalues, _knotvalues = {}, knotvalues
+      for edge, k in _knotvalues.items():
+        if k is None:
+          rk = None
+        else:
+          k = tuple(k)
+          rk = k[::-1]
+        if edge is None:
+          knotvalues[edge] = k
+        else:
+          l, r = edge
+          assert (l,r) not in knotvalues
+          assert (r,l) not in knotvalues
+          knotvalues[(l,r)] = k
+          knotvalues[(r,l)] = rk
+
+    if knotmultiplicities is None:
+      knotmultiplicities = {None: None}
+    else:
+      knotmultiplicities, _knotmultiplicities = {}, knotmultiplicities
+      for edge, k in _knotmultiplicities.items():
+        if k is None:
+          rk = None
+        else:
+          k = tuple(k)
+          rk = k[::-1]
+        if edge is None:
+          knotmultiplicities[edge] = k
+        else:
+          l, r = edge
+          assert (l,r) not in knotmultiplicities
+          assert (r,l) not in knotmultiplicities
+          knotmultiplicities[(l,r)] = k
+          knotmultiplicities[(r,l)] = rk
+
+    missing = object()
+
     funcmap = {}
     dofmap = {}
     dofcount = 0
     commonboundarydofs = {}
-    for patch in self.patches:
+    for ipatch, patch in enumerate( self.patches ):
       # build structured spline basis on patch `patch.topo`
-      patchfuncmap, patchdofmap, patchdofcount = patch.topo._basis_spline( degree )
+      patchknotvalues = []
+      patchknotmultiplicities = []
+      for idim in range( self.ndims ):
+        left = tuple( 0 if j == idim else slice(None) for j in range( self.ndims ) )
+        right = tuple( 1 if j == idim else slice(None) for j in range( self.ndims ) )
+        dimknotvalues = set()
+        dimknotmultiplicities = set()
+        for edge in zip( patch.verts[left].flat, patch.verts[right].flat ):
+          v = knotvalues.get( edge, knotvalues.get( None, missing ) )
+          m = knotmultiplicities.get( edge, knotmultiplicities.get( None, missing ) )
+          if v is missing:
+            raise 'missing edge'
+          dimknotvalues.add(v)
+          if m is missing:
+            raise 'missing edge'
+          dimknotmultiplicities.add(m)
+        if len(dimknotvalues) != 1:
+          raise 'ambiguous knot values for patch {}, dimension {}'.format( ipatch, idim )
+        if len(dimknotmultiplicities) != 1:
+          raise 'ambiguous knot multiplicities for patch {}, dimension {}'.format( ipatch, idim )
+        patchknotvalues.append(next(iter(dimknotvalues)))
+        patchknotmultiplicities.append(next(iter(dimknotmultiplicities)))
+      patchfuncmap, patchdofmap, patchdofcount = patch.topo._basis_spline( degree, knotvalues=patchknotvalues, knotmultiplicities=patchknotmultiplicities )
       funcmap.update( patchfuncmap )
       # renumber dofs
       dofmap.update( (trans, numeric.const(dofs+dofcount, copy=False)) for trans, dofs in patchdofmap.items() )
