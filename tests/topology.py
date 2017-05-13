@@ -140,6 +140,19 @@ def structure2d():
     domain, geom = mesh.rectilinear( [[-1,0,1]]*3 )
     verify_interfaces( domain, geom, periodic=False )
 
+@register('2d_1_0', 2, [1], 0)
+@register('2d_0_1', 2, [0], 1)
+@register('3d_0,2_1', 3, [0,2], 1)
+def structured_prop_periodic(ndim, periodic, sdim):
+
+  bnames = 'left', 'top', 'front'
+  side = bnames[sdim]
+
+  @unittest
+  def test():
+    domain, geom = mesh.rectilinear( [2]*ndim, periodic=periodic )
+    assert list( domain.boundary[side].periodic ) == [ i if i < sdim else i-1 for i in periodic if i != sdim ]
+
 def _test_pickle_dump_load( data ):
   script = b'from nutils import *\nimport pickle, base64\npickle.loads( base64.decodebytes( b"""' \
     + base64.encodebytes( pickle.dumps( data ) ) \
