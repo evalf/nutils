@@ -969,7 +969,8 @@ class StructuredTopology( Topology ):
 
   @property
   def periodic( self ):
-    return tuple( idim for idim, axis in enumerate(self.axes) if axis.isdim and axis.isperiodic )
+    dimaxes = ( axis for axis in self.axes if axis.isdim )
+    return tuple( idim for idim, axis in enumerate(dimaxes) if axis.isdim and axis.isperiodic )
 
   @staticmethod
   def mktransforms( axes, root, nrefine ):
