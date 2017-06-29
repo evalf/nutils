@@ -217,7 +217,9 @@ def multipatch( patches, nelems, patchverts=None, name='multipatch' ):
   patches = numpy.array( patches )
   if patches.dtype != int:
     raise ValueError( '`patches` should be an array of ints.' )
-  if len( patches.shape ) != 2 or patches.ndim > 2 and patches.shape[1:] != (2,)*(patches.ndim-1):
+  if patches.ndim < 2 or patches.ndim == 2 and patches.shape[-1] % 2 != 0:
+    raise ValueError( '`patches` should be an array with shape (npatches,2,...,2) or (npatches,2*ndims).' )
+  elif patches.ndim > 2 and patches.shape[1:] != (2,) * (patches.ndim - 1):
     raise ValueError( '`patches` should be an array with shape (npatches,2,...,2) or (npatches,2*ndims).' )
   patches = patches.reshape(patches.shape[0], -1)
 
