@@ -267,7 +267,8 @@ def check( op, n_op, shapes, hasgrad=True ):
     fdpoints = points[_,_,:,:] + D[:,:,_,:]
     tmp = n_op( *argsfun.eval(elem,fdpoints.reshape(-1,fdpoints.shape[-1])) )
     F = tmp.reshape( fdpoints.shape[:-1] + tmp.shape[1:] )
-    fdgrad = ((F[1]-F[0])/eps).transpose( numpy.roll(numpy.arange(F.ndim-1),-1) )
+    fdgrad = numpy.zeros( F.shape[1:], bool ) if F.dtype.kind == 'b' else (F[1]-F[0])/eps
+    fdgrad = fdgrad.transpose( numpy.roll(numpy.arange(F.ndim-1),-1) )
     G = function.localgradient( op( *args ), ndims=elem.ndims )
     exact = numpy.empty_like( fdgrad )
     exact[...] = G.eval(elem,points)
@@ -296,7 +297,8 @@ def check( op, n_op, shapes, hasgrad=True ):
     fdpoints = find( geom.eval(elem,points)[_,_,:,:] + D[:,:,_,:], points[_,_,:,:] )
     tmp = n_op( *argsfun.eval(elem,fdpoints.reshape(-1,fdpoints.shape[-1])) )
     F = tmp.reshape( fdpoints.shape[:-1] + tmp.shape[1:] )
-    fdgrad = ((F[1]-F[0])/eps).transpose( numpy.roll(numpy.arange(F.ndim-1),-1) )
+    fdgrad = numpy.zeros( F.shape[1:], bool ) if F.dtype.kind == 'b' else (F[1]-F[0])/eps
+    fdgrad = fdgrad.transpose( numpy.roll(numpy.arange(F.ndim-1),-1) )
     G = op( *args ).grad(geom)
     exact = numpy.empty_like( fdgrad )
     exact[...] = G.eval(elem,points)
@@ -310,7 +312,8 @@ def check( op, n_op, shapes, hasgrad=True ):
     fdpoints = find( geom.eval(elem,points)[_,_,_,_,:,:] + DD[:,:,:,:,_,:], points[_,_,_,_,:,:] )
     tmp = n_op( *argsfun.eval(elem,fdpoints.reshape(-1,fdpoints.shape[-1])) )
     F = tmp.reshape( fdpoints.shape[:-1] + tmp.shape[1:] )
-    fddgrad = (((F[1,1]-F[1,0])-(F[0,1]-F[0,0]))/(eps**2)).transpose( numpy.roll(numpy.arange(F.ndim-2),-2) )
+    fddgrad = numpy.zeros( F.shape[2:], bool ) if F.dtype.kind == 'b' else ((F[1,1]-F[1,0])-(F[0,1]-F[0,0]))/(eps**2)
+    fddgrad = fddgrad.transpose( numpy.roll(numpy.arange(F.ndim-2),-2) )
     G = op( *args ).grad(geom).grad(geom)
     exact = numpy.empty_like( fddgrad )
     exact[...] = G.eval(elem,points)
