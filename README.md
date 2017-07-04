@@ -20,3 +20,8 @@ are:
 
 The Nutils are under active development, and are presently in use for
 academic research by Phd and MSc students.
+
+If you are using Nutils in academic research, please consider
+[citing Nutils][DOI:Nutils-latest].
+
+[DOI:Nutils-latest]: https://doi.org/10.5281/zenodo.822369
