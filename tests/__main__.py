@@ -1,6 +1,5 @@
 from . import \
   function,   \
-  index,      \
   normals,    \
   mesh,       \
   ischeme,    \

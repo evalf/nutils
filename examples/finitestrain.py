@@ -44,7 +44,7 @@ def main(
 
   strain = disp.symgrad( geom0 )
   stress = lmbda * function.trace(strain) * eye + (2*mu) * strain
-  residual = model.Integral( basis['ni,j'] * stress['ij'], domain=domain, geometry=geom0, degree=7 )
+  residual = model.Integral( (basis.grad(geom0) * stress).sum([-1,-2]), domain=domain, geometry=geom0, degree=7 )
 
   lhs0 = model.solve_linear( dofs, residual=residual, constrain=cons )
   if plots:
@@ -52,7 +52,7 @@ def main(
 
   strain = .5 * eye - .5 * ( geom0.grad(geom)[:,:,_] * geom0.grad(geom)[:,_,:] ).sum(0)
   stress = lmbda * function.trace(strain) * eye + (2*mu) * strain
-  residual = model.Integral( basis['ni,j'] * stress['ij'], domain=domain, geometry=geom, degree=7 )
+  residual = model.Integral( (basis.grad(geom) * stress).sum([-1,-2]), domain=domain, geometry=geom, degree=7 )
 
   lhs1 = model.newton( dofs, residual=residual, lhs0=lhs0, freezedofs=cons.where ).solve( tol=restol )
   if plots:
