@@ -38,7 +38,7 @@ In addition to ``solve_linear`` the model module defines ``newton`` and
 time dependent problems.
 """
 
-from . import function, index, cache, log, util, numeric
+from . import function, cache, log, util, numeric
 import numpy, itertools, functools, numbers, collections
 
 

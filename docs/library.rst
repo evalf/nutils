@@ -28,7 +28,6 @@ What follows is an automatically generated API reference.
    library/parallel
    library/util
    library/plot
-   library/index
    library/cache
    library/cli
    library/model

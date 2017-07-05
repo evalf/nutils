@@ -1,7 +1,6 @@
 from . import \
   function,   \
   expression, \
-  index,      \
   normals,    \
   mesh,       \
   ischeme,    \

@@ -37,8 +37,8 @@ def navierstokes():
   p = pbasis.dot( dofs )
   viscosity = 1
   inertia = domain.integral( (ubasis * u).sum(-1), geometry=geom, degree=5 )
-  stokesres = domain.integral( viscosity * ubasis['ni,j'] * (u['i,j']+u['j,i']) - ubasis['nk,k'] * p + pbasis['n'] * u['k,k'], geometry=geom, degree=5 )
-  residual = stokesres + domain.integral( ubasis['ni'] * u['i,j'] * u['j'], geometry=geom, degree=5 )
+  stokesres = domain.integral( viscosity * (ubasis.grad(geom) * (u.grad(geom)+u.grad(geom).T)).sum([-1,-2]) - ubasis.div(geom) * p + pbasis * u.div(geom), geometry=geom, degree=5 )
+  residual = stokesres + domain.integral( (ubasis * (u.grad(geom) * u).sum(-1) * u).sum(-1), geometry=geom, degree=5 )
   cons = domain.boundary['top,bottom'].project( [0,0], onto=ubasis, geometry=geom, ischeme='gauss2' ) \
        | domain.boundary['left'].project( [geom[1]*(1-geom[1]),0], onto=ubasis, geometry=geom, ischeme='gauss2' )
   lhs0 = model.solve_linear( 'dofs', residual=stokesres, constrain=cons )

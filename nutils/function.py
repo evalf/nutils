@@ -384,9 +384,6 @@ class Array( Evaluable ):
   def __getitem__( self, item ):
     'get item, general function which can eliminate, add or modify axes.'
 
-    if isinstance( item, str ):
-      from . import index
-      return index.wrap( self, item )
     myitem = list( item if isinstance( item, tuple ) else [item] )
     n = 0
     arr = self
@@ -2940,32 +2937,7 @@ def trigtangent( angle ):
     return kronecker( 1, axis=0, length=2, pos=1 )
   return TrigTangent( angle )
 
-class _eye:
-  'identity'
-
-  def _eval( self, length, geom, shape ):
-    try:
-      n = shape[length]
-    except KeyError:
-      raise ValueError( 'Cannot determine the shape of eye.' )
-    return self( n )
-
-  def __getitem__( self, indices ):
-    from . import index
-    # create an IndexedArray of eye with indices 'ij'
-    length = object()
-    result = index.IndexedArray(
-      shape=( (k, length) for k in 'ij' ),
-      linked_lengths=(),
-      op=functools.partial( self._eval, length ),
-      args=() )
-    # reindex with `indices`
-    return index.wrap( result, indices )
-
-  def __call__(self, n):
-    return diagonalize( expand( [1.], (n,) ) )
-
-eye = _eye()
+eye = lambda n: diagonalize( expand( [1.], (n,) ) )
 
 def asarray( arg ):
   'convert to Array'
@@ -3325,25 +3297,7 @@ def dotnorm( arg, coords ):
 
   return sum( arg * coords.normal(), -1 )
 
-class _normal:
-  'normal'
-
-  def __getitem__( self, indices ):
-    from . import index
-    # create an IndexedArray of normal with index 'i'
-    length = object()
-    result = index.IndexedArray(
-      shape=[ ('i', 'geom') ],
-      linked_lengths=(),
-      op=lambda geom, shape: geom.normal(),
-      args=() )
-    # reindex with `indices`
-    return index.wrap( result, indices )
-
-  def __call__(self, geom):
-    return geom.normal()
-
-normal = _normal()
+normal = lambda geom: geom.normal()
 
 def kronecker( arg, axis, length, pos ):
   'kronecker'
@@ -3675,14 +3629,8 @@ def swapaxes( arg, axes=(-2,-1) ):
 def opposite( arg ):
   'evaluate jump over interface'
 
-  from . import index
   return OPPTRANS if arg is TRANS \
     else TRANS if arg is OPPTRANS \
-    else index.IndexedArray(
-      shape=arg._shape,
-      linked_lengths=arg._linked_lengths,
-      op=lambda geom, shape, arg_: opposite(arg_),
-      args=[arg] ) if isinstance( arg, index.IndexedArray ) \
     else edit( arg, opposite )
 
 def function( fmap, nmap, ndofs ):
