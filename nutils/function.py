@@ -31,7 +31,7 @@ expensive and currently unsupported operation.
 """
 
 from . import util, numpy, numeric, log, core, cache, transform, expression, _
-import sys, warnings, itertools, functools, operator, inspect, numbers, re, types, collections.abc
+import sys, warnings, itertools, functools, operator, inspect, numbers, builtins, re, types, collections.abc
 
 CACHE = 'Cache'
 TRANS = 'Trans'
@@ -835,7 +835,7 @@ class Align( Array ):
       if trydot is not None:
         keep = numpy.ones( self.ndim, dtype=bool )
         keep[list(axes)] = False
-        axes = [ _sum(keep[:axis]) for axis in self.axes if keep[axis] ]
+        axes = [ builtins.sum(keep[:axis]) for axis in self.axes if keep[axis] ]
         assert len(axes) == trydot.ndim
         return align( trydot, axes, len(axes) )
 
@@ -1095,7 +1095,7 @@ class Concatenate( Array ):
       assert all( isinstance( n, str ) for n in lengths )
       sh = ''.join(lengths)
     else:
-      sh = _sum( lengths )
+      sh = builtins.sum( lengths )
     shape = _jointshape( *[ func.shape[:axis] + (sh,) + func.shape[axis+1:] for func in funcs ] )
     dtype = _jointdtype( *[ func.dtype for func in funcs ] )
     self.funcs = tuple(funcs)
@@ -1187,7 +1187,7 @@ class Concatenate( Array ):
       ifun1 = ifun2 = 0
       funcs = []
       while i < self.shape[self.axis]:
-        j = _min( N1[ifun1+1], N2[ifun2+1] )
+        j = builtins.min( N1[ifun1+1], N2[ifun2+1] )
         funcs.append( take( self.funcs[ifun1], slice(i-N1[ifun1],j-N1[ifun1]), self.axis )
                     + take( other.funcs[ifun2], slice(i-N2[ifun2],j-N2[ifun2]), self.axis ))
         i = j
@@ -1246,7 +1246,7 @@ class Concatenate( Array ):
     for i, j in zip( numpy.hstack([ 0, splits+1 ]), numpy.hstack([ splits+1, len(indices) ]) ):
       ifunc = ifuncs[i]
       assert numpy.all( ifuncs[i:j] == ifunc )
-      offset = _sum( func.shape[axis] for func in self.funcs[:ifunc] )
+      offset = builtins.sum( func.shape[axis] for func in self.funcs[:ifunc] )
       funcs.append( take( self.funcs[ifunc], indices[i:j] - offset, axis ) )
     if len( funcs ) == 1:
       return funcs[0]
@@ -1264,7 +1264,7 @@ class Concatenate( Array ):
         n0 = n1
     if self.axis in axes:
       return util.sum( funcs )
-    return concatenate( funcs, self.axis - _sum( axis < self.axis for axis in axes ) )
+    return concatenate( funcs, self.axis - builtins.sum( axis < self.axis for axis in axes ) )
 
   def _power( self, n ):
     if n.shape[self.axis] != 1:
@@ -2056,7 +2056,7 @@ class Zeros( Array ):
     return zeros( self.shape[:i] + self.shape[i+1:], dtype=self.dtype )
 
   def _takediag( self ):
-    sh = _max( self.shape[-2], self.shape[-1] )
+    sh = builtins.max( self.shape[-2], self.shape[-1] )
     return zeros( self.shape[:-2] + (sh,), dtype=self.dtype )
 
   def _take( self, index, axis ):
@@ -2163,7 +2163,7 @@ class Inflate( Array ):
     arr = dot( self.func, other, axes )
     if self.axis in axes:
       return arr
-    return inflate( arr, self.dofmap, self.length, self.axis - _sum( axis < self.axis for axis in axes ) )
+    return inflate( arr, self.dofmap, self.length, self.axis - builtins.sum( axis < self.axis for axis in axes ) )
 
   def _multiply( self, other ):
     if isinstance( other, Inflate ) and self.axis == other.axis:
@@ -2381,7 +2381,7 @@ class Repeat( Array ):
       return func
     if self.axis in axes:
       return func * self.length
-    return aslength( func, self.length, self.axis - _sum( axis < self.axis for axis in axes ) )
+    return aslength( func, self.length, self.axis - builtins.sum( axis < self.axis for axis in axes ) )
 
   def _edit( self, op ):
     return repeat( op(self.func), self.length, self.axis )
@@ -2783,10 +2783,6 @@ class Mask( Array ):
 
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 
-_max = max
-_min = min
-_sum = sum
-_abs = abs
 _ascending = lambda arg: ( numpy.diff(arg) > 0 ).all()
 _normdims = lambda ndim, shapes: tuple( numeric.normdim(ndim,sh) for sh in shapes )
 
@@ -2806,7 +2802,7 @@ def _jointdtype( *dtypes ):
 
   type_order = bool, int, float
   kind_order = 'bif'
-  itype = _max( kind_order.index(dtype.kind) if isinstance(dtype,numpy.dtype)
+  itype = builtins.max( kind_order.index(dtype.kind) if isinstance(dtype,numpy.dtype)
            else type_order.index(dtype) for dtype in dtypes )
   return type_order[itype]
 
@@ -2814,7 +2810,7 @@ def _matchndim( *arrays ):
   'introduce singleton dimensions to match ndims'
 
   arrays = [ asarray(array) for array in arrays ]
-  ndim = _max( array.ndim for array in arrays )
+  ndim = builtins.max( array.ndim for array in arrays )
   return [ array[(_,)*(ndim-array.ndim)] for array in arrays ]
 
 def _obj2str( obj ):
@@ -3000,7 +2996,7 @@ def merge( funcs ):
   'Combines unchained funcs into one function object.'
 
   cascade = fmap = nmap = None
-  offset = 0 # ndofs = _sum( f.shape[0] for f in funcs )
+  offset = 0 # ndofs = builtins.sum( f.shape[0] for f in funcs )
 
   for inflated_func in funcs:
     (func, (dofmap,)), = inflated_func.blocks # Returns one scalar function.
@@ -3188,7 +3184,7 @@ def dot( arg1, arg2, axes ):
       assert axis not in axes
       dotaxes = [ ax - (ax>axis) for ax in axes ]
       dotargs = dot( sum(arg1,axis), sum(arg2,axis), dotaxes )
-      axis -= _sum( ax<axis for ax in axes )
+      axis -= builtins.sum( ax<axis for ax in axes )
       return align( dotargs, [ ax + (ax>=axis) for ax in range(dotargs.ndim) ], dotargs.ndim+1 )
 
   retval = _call( arg1, '_dot', arg2, axes )
