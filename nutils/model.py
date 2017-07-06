@@ -85,12 +85,12 @@ class Integral( dict ):
     values = [ domain.obj.integrate( integrand, ischeme='gauss{}'.format(degree), fcache=fcache ) for domain, (integrand,degree) in self.items() ]
     return numpy.sum( values, axis=0 )
 
-  def derivative( self, target ):
+  def derivative(self, target):
     assert target.ndim == 1
     seen = {}
     derivative = self.empty( self.shape+target.shape )
     for domain, (integrand,degree) in self.items():
-      derivative[domain] = function.derivative( integrand, var=target, axes=[0], seen=seen ), degree
+      derivative[domain] = function.derivative(integrand, var=target, seen=seen), degree
     return derivative
 
   def replace( self, target, replacement ):
