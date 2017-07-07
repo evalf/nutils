@@ -408,6 +408,33 @@ class Array( Evaluable ):
   def _asciitree_str(self):
     return '{}<{}>'.format(type(self).__name__, ','.join(map(str, self.shape)))
 
+  # simplifications
+  _multiply = lambda self, other: None
+  _align = lambda self, axes, ndim: None
+  _dot = lambda self, other, axes: None
+  _get = lambda self, i, item: None
+  _power = lambda self, n: None
+  _add = lambda self, other: None
+  _concatenate = lambda self, other, axis: None
+  _sum = lambda self, axis: None
+  _take = lambda self, index, axis: None
+  _repeat = lambda self, length, axis: None
+  _determinant = lambda self: None
+  _inverse = lambda self: None
+  _takediag = lambda self: None
+  _kronecker = lambda self, axis, length, pos: None
+  _diagonalize = lambda self: None
+  _product = lambda self, axis: None
+  _choose = lambda self, choices: None
+  _cross = lambda self, other, axis: None
+  _pointwise = lambda self, evalf, deriv, dtype: None
+  _sign = lambda self: None
+  _eig = lambda self, symmetric: None
+  _inflate = lambda self, dofmap, length, axis: None
+  _mask = lambda self, maskvec, axis: None
+  _unravel = lambda self, axis, shape: None
+  _ravel = lambda self, axis: None
+
 class Normal( Array ):
   'normal'
 
@@ -646,7 +673,7 @@ class Align( Array ):
 
   def _multiply( self, other ):
     if len(self.axes) == self.ndim:
-      other_trans = _call( other, '_align', _invtrans(self.axes), self.ndim )
+      other_trans = other._align(_invtrans(self.axes), self.ndim)
       if other_trans is not None:
         return align( multiply( self.func, other_trans ), self.axes, self.ndim )
     if isinstance( other, Align ) and self.axes == other.axes:
@@ -654,7 +681,7 @@ class Align( Array ):
 
   def _add( self, other ):
     if len(self.axes) == self.ndim:
-      other_trans = _call( other, '_align', _invtrans(self.axes), self.ndim )
+      other_trans = other._align(_invtrans(self.axes), self.ndim)
       if other_trans is not None:
         return align( add( self.func, other_trans ), self.axes, self.ndim )
     if isinstance( other, Align ) and self.axes == other.axes:
@@ -673,7 +700,7 @@ class Align( Array ):
   def _dot( self, other, axes ):
     if len(self.axes) == self.ndim:
       funcaxes = tuple( self.axes.index(axis) for axis in axes )
-      trydot = _call( self.func, '_dot', transpose(other,self.axes), funcaxes )
+      trydot = self.func._dot(transpose(other,self.axes), funcaxes)
       if trydot is not None:
         keep = numpy.ones( self.ndim, dtype=bool )
         keep[list(axes)] = False
@@ -711,7 +738,7 @@ class Get( Array ):
     return get(f, self.axis, self.item)
 
   def _get( self, i, item ):
-    tryget = _call( self.func, '_get', i+(i>=self.axis), item )
+    tryget = self.func._get(i+(i>=self.axis), item)
     if tryget is not None:
       return get( tryget, self.axis, self.item )
 
@@ -1265,10 +1292,10 @@ class Multiply( Array ):
 
   def _multiply( self, other ):
     func1, func2 = self.funcs
-    func1_other = _call( func1, '_multiply', other )
+    func1_other = func1._multiply(other)
     if func1_other is not None:
       return multiply( func1_other, func2 )
-    func2_other = _call( func2, '_multiply', other )
+    func2_other = func2._multiply(other)
     if func2_other is not None:
       return multiply( func1, func2_other )
 
@@ -1288,8 +1315,8 @@ class Multiply( Array ):
 
   def _power( self, n ):
     func1, func2 = self.funcs
-    func1pow = _call( func1, '_power', n )
-    func2pow = _call( func2, '_power', n )
+    func1pow = func1._power(n)
+    func2pow = func2._power(n)
     if func1pow is not None and func2pow is not None:
       return multiply( func1pow, func2pow )
 
@@ -1360,10 +1387,10 @@ class Add( Array ):
 
   def _add( self, other ):
     func1, func2 = self.funcs
-    func1_other = _call( func1, '_add', other )
+    func1_other = func1._add(other)
     if func1_other is not None:
       return add( func1_other, func2 )
-    func2_other = _call( func2, '_add', other )
+    func2_other = func2._add(other)
     if func2_other is not None:
       return add( func1, func2_other )
 
@@ -1502,8 +1529,8 @@ class Dot( Array ):
     if isinstance( other, Dot ) and other.axes == self.axes:
       common = _findcommon( self.funcs, other.funcs )
       if common:
-        f, g12 = common
-        tryconcat = _call( g12, '_concatenate', axis )
+        f, (g1,g2) = common
+        tryconcat = g1._concatenate(g2, axis)
         if tryconcat is not None:
           return dot( f, tryconcat, self.axes )
 
@@ -1529,7 +1556,7 @@ class Sum( Array ):
     return numpy.sum( arr, self.axis_shiftright )
 
   def _sum( self, axis ):
-    trysum = _call( self.func, '_sum', axis+(axis>=self.axis) )
+    trysum = self.func._sum(axis+(axis>=self.axis))
     if trysum is not None:
       return sum( trysum, self.axis )
 
@@ -1619,7 +1646,7 @@ class Take( Array ):
   def _take( self, index, axis ):
     if axis == self.axis:
       return take( self.func, self.indices[index], axis )
-    trytake = _call( self.func, '_take', index, axis )
+    trytake = self.func._take(index, axis)
     if trytake is not None:
       return take( trytake, self.indices, self.axis )
 
@@ -2707,12 +2734,6 @@ def _invtrans( trans ):
   invtrans[trans] = numpy.arange(len(trans))
   return invtrans
 
-def _call( obj, attr, *args ):
-  'call method if it exists, return None otherwise'
-
-  f = getattr( obj, attr, None )
-  return f and f( *args )
-
 def _norm_and_sort( ndim, args ):
   'norm axes, sort, and assert unique'
 
@@ -2910,7 +2931,7 @@ def repeat( arg, length, axis ):
   if length == 1:
     return arg
 
-  retval = _call( arg, '_repeat', length, axis )
+  retval = arg._repeat(length, axis)
   if retval is not None:
     shape = arg.shape[:axis] + (length,) + arg.shape[axis+1:]
     assert retval.shape == shape, 'bug in %s._repeat' % arg
@@ -2931,7 +2952,7 @@ def get( arg, iax, item ):
     item = numeric.normdim( sh, item )
   assert item >= 0
 
-  retval = _call( arg, '_get', iax, item )
+  retval = arg._get(iax, item)
   if retval is not None:
     assert retval.shape == arg.shape[:iax] + arg.shape[iax+1:], 'bug in %s._get' % arg
     return retval
@@ -2951,7 +2972,7 @@ def align( arg, axes, ndim ):
   if util.allequal( axes, range(ndim) ):
     return arg
 
-  retval = _call( arg, '_align', axes, ndim )
+  retval = arg._align(axes, ndim)
   if retval is not None:
     shape = [1] * ndim
     for i, axis in enumerate( axes ):
@@ -2997,7 +3018,7 @@ def sum( arg, axis=None ):
 
   axis = numeric.normdim( arg.ndim, axis )
 
-  retval = _call( arg, '_sum', axis )
+  retval = arg._sum(axis)
   if retval is not None:
     assert retval.shape == arg.shape[:axis] + arg.shape[axis+1:], 'bug in %s._sum' % arg
     return retval
@@ -3045,12 +3066,12 @@ def dot( arg1, arg2, axes=None ):
       axis -= builtins.sum( ax<axis for ax in axes )
       return align( dotargs, [ ax + (ax>=axis) for ax in range(dotargs.ndim) ], dotargs.ndim+1 )
 
-  retval = _call( arg1, '_dot', arg2, axes )
+  retval = arg1._dot(arg2, axes)
   if retval is not None:
     assert retval.shape == dotshape, 'bug in %s._dot' % arg1
     return retval
 
-  retval = _call( arg2, '_dot', arg1, axes )
+  retval = arg2._dot(arg1, axes)
   if retval is not None:
     assert retval.shape == dotshape, 'bug in %s._dot' % arg2
     return retval
@@ -3086,7 +3107,7 @@ def determinant( arg, axes=(-2,-1) ):
   arg = align( arg, trans, arg.ndim )
   shape = arg.shape[:-2]
 
-  retval = _call( arg, '_determinant' )
+  retval = arg._determinant()
   if retval is not None:
     assert retval.shape == shape, 'bug in %s._determinant' % arg
     return retval
@@ -3108,7 +3129,7 @@ def inverse( arg, axes=(-2,-1) ):
   trans = list(range(ax1)) + [-2] + list(range(ax1,ax2-1)) + [-1] + list(range(ax2-1,arg.ndim-2))
   arg = align( arg, trans, arg.ndim )
 
-  retval = _call( arg, '_inverse' )
+  retval = arg._inverse()
   if retval is not None:
     assert retval.shape == arg.shape, 'bug in %s._inverse' % arg
     return transpose( retval, trans )
@@ -3134,7 +3155,7 @@ def takediag( arg, ax1=-2, ax2=-1 ):
   assert arg.shape[-1] == arg.shape[-2]
   shape = arg.shape[:-1]
 
-  retval = _call( arg, '_takediag' )
+  retval = arg._takediag()
   if retval is not None:
     assert retval.shape == shape, 'bug in %s._takediag' % arg
     return retval
@@ -3176,7 +3197,7 @@ def kronecker( arg, axis, length, pos ):
   assert 0 <= pos < length
   if length == 1:
     return insert( arg, axis )
-  retval = _call( arg, '_kronecker', axis, length, pos )
+  retval = arg._kronecker(axis, length, pos)
   if retval is not None:
     assert retval.shape == arg.shape[:axis]+(length,)+arg.shape[axis:], 'bug in %s._kronecker' % arg
     return retval
@@ -3191,7 +3212,7 @@ def diagonalize( arg ):
   if arg.shape[-1] == 1:
     return arg[...,_]
 
-  retval = _call( arg, '_diagonalize' )
+  retval = arg._diagonalize()
   if retval is not None:
     assert retval.shape == shape, 'bug in %s._diagonalize' % arg
     return retval
@@ -3221,7 +3242,7 @@ def concatenate( args, axis=0 ):
   i = 0
   while i+1 < len(args):
     arg1, arg2 = args[i:i+2]
-    arg12 = _call( arg1, '_concatenate', arg2, axis )
+    arg12 = arg1._concatenate(arg2, axis)
     if arg12 is None:
       i += 1
       continue
@@ -3256,7 +3277,7 @@ def product( arg, axis ):
   trans = list(range(axis)) + [-1] + list(range(axis,arg.ndim-1))
   aligned_arg = align( arg, trans, arg.ndim )
 
-  retval = _call( aligned_arg, '_product', arg.ndim-1 )
+  retval = aligned_arg._product(arg.ndim-1)
   if retval is not None:
     assert retval.shape == shape, 'bug in %s._product' % aligned_arg
     return retval
@@ -3270,7 +3291,7 @@ def choose( level, choices ):
   shape = _jointshape( level.shape, *( choice.shape for choice in choices ) )
   if all( map( iszero, choices ) ):
     return zeros( shape )
-  retval = _call( level, '_choose', choices )
+  retval = level._choose(choices)
   if retval is not None:
     assert retval.shape == shape, 'bug in %s._choose' % level
     return retval
@@ -3301,12 +3322,12 @@ def cross( arg1, arg2, axis ):
   axis = numeric.normdim( len(shape), axis )
   assert shape[axis] == 3
 
-  retval = _call( arg1, '_cross', arg2, axis )
+  retval = arg1._cross(arg2, axis)
   if retval is not None:
     assert retval.shape == shape, 'bug in %s._cross' % arg1
     return retval
 
-  retval = _call( arg2, '_cross', arg1, axis )
+  retval = arg2._cross(arg1, axis)
   if retval is not None:
     assert retval.shape == shape, 'bug in %s._cross' % arg2
     return -retval
@@ -3326,7 +3347,7 @@ def pointwise( args, evalf, deriv=None, dtype=float ):
   'general pointwise operation'
 
   args = asarray( _matchndim(*args) )
-  retval = _call( args, '_pointwise', evalf, deriv, dtype )
+  retval = args._pointwise(evalf, deriv, dtype)
   if retval is not None:
     return retval
   return Pointwise( args, evalf, deriv, dtype )
@@ -3340,12 +3361,12 @@ def multiply( arg1, arg2 ):
   if arg1 == arg2:
     return power( arg1, 2 )
 
-  retval = _call( arg1, '_multiply', arg2 )
+  retval = arg1._multiply(arg2)
   if retval is not None:
     assert retval.shape == shape, 'bug in %s._multiply' % arg1
     return retval
 
-  retval = _call( arg2, '_multiply', arg1 )
+  retval = arg2._multiply(arg1)
   if retval is not None:
     assert retval.shape == shape, 'bug in %s._multiply' % arg2
     return retval
@@ -3371,12 +3392,12 @@ def add( arg1, arg2 ):
     if sh == 1:
       return insert( add( get(arg1,idim,0), get(arg2,idim,0) ), idim )
 
-  retval = _call( arg1, '_add', arg2 )
+  retval = arg1._add(arg2)
   if retval is not None:
     assert retval.shape == shape, 'bug in %s._add' % arg1
     return retval
 
-  retval = _call( arg2, '_add', arg1 )
+  retval = arg2._add(arg1)
   if retval is not None:
     assert retval.shape == shape, 'bug in %s._add' % arg2
     return retval
@@ -3417,7 +3438,7 @@ def power( arg, n ):
   if iszero( n ):
     return numpy.ones( shape )
 
-  retval = _call( arg, '_power', n )
+  retval = arg._power(n)
   if retval is not None:
     assert retval.shape == arg.shape, 'bug in %s._power' % arg
     return retval
@@ -3432,7 +3453,7 @@ def sign( arg ):
   if isinstance( arg, numpy.ndarray ):
     return numpy.sign( arg )
 
-  retval = _call( arg, '_sign' )
+  retval = arg._sign()
   if retval is not None:
     assert retval.shape == arg.shape, 'bug in %s._sign' % arg
     return retval
@@ -3459,8 +3480,7 @@ def eig( arg, axes=(-2,-1), symmetric=False ):
   trans = list(range(ax1)) + [-2] + list(range(ax1,ax2-1)) + [-1] + list(range(ax2-1,arg.ndim-2))
   aligned_arg = align( arg, trans, arg.ndim )
 
-  # Use _call to see if the object has its own _eig function
-  ret = _call( aligned_arg, '_eig', symmetric )
+  ret = aligned_arg._eig(symmetric)
   if ret is not None:
     # Check the shapes
     eigval, eigvec = ret
@@ -3561,7 +3581,7 @@ def take( arg, index, axis ):
     if len(index_) == arg.shape[axis] and numpy.all(numpy.diff(index_) == 1):
       return arg
 
-  retval = _call( arg, '_take', index, axis )
+  retval = arg._take(index, axis)
   if retval is not None:
     assert retval.shape == tuple(shape)
     return retval
@@ -3609,7 +3629,7 @@ def inflate( arg, dofmap, length, axis ):
     assert retval.shape == tuple(shape)
     return retval
 
-  retval = _call( arg, '_inflate', dofmap, length, axis )
+  retval = arg._inflate(dofmap, length, axis)
   if retval is not None:
     assert retval.shape == tuple(shape)
     return retval
@@ -3627,7 +3647,7 @@ def mask( arg, mask, axis=0 ):
   if not mask.any():
     return zeros( shape )
 
-  retval = _call( arg, '_mask', mask, axis )
+  retval = arg._mask(mask, axis)
   if retval is not None:
     assert retval.shape == shape
     return retval
@@ -3690,7 +3710,7 @@ def unravel( func, axis, shape ):
   if shape[-1] == 1:
     return insert( unravel( func, axis, shape[:-1] ), axis+len(shape)-1 )
 
-  retval = _call( func, '_unravel', axis, shape )
+  retval = func._unravel(axis, shape)
   if retval is not None:
     return retval
 
@@ -3704,7 +3724,7 @@ def ravel( func, axis ):
     if func.shape[i] == 1:
       return get( func, i, 0 )
 
-  retval = _call( func, '_ravel', axis )
+  retval = func._ravel(axis)
   if retval is not None:
     return retval
 
