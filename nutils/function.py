@@ -334,6 +334,10 @@ def add(a, b):
   a, b = _matchndim(a, b)
   return Add(orderedset([a, b])).simplified
 
+def multiply(a, b):
+  a, b = _matchndim(a, b)
+  return Multiply(orderedset([a, b])).simplified
+
 class Array( Evaluable ):
   'array function'
 
@@ -382,7 +386,7 @@ class Array( Evaluable ):
   __add__ = __radd__ = add
   __sub__ = lambda self, other: subtract(self, other)
   __rsub__ = lambda self, other: subtract(other, self)
-  __mul__ = __rmul__ = lambda self, other: multiply(self, other)
+  __mul__ = __rmul__ = multiply
   __truediv__ = lambda self, other: divide(self, other)
   __rtruediv__ = lambda self, other: divide(other, self)
   __neg__ = lambda self: negative(self)
@@ -1240,18 +1244,30 @@ class Determinant( Array ):
   def _edit( self, op ):
     return determinant( op(self.func) )
 
-class Multiply( Array ):
-  'multiply'
+class Multiply(Array):
 
-  def __init__( self, funcs ):
-    'constructor'
-
+  def __init__(self, funcs):
     assert isinstance(funcs, orderedset)
     func1, func2 = funcs
     assert isarray(func1) and isarray(func2)
     self.funcs = func1, func2
-    shape = _jointshape( func1.shape, func2.shape )
-    Array.__init__( self, args=self.funcs, shape=shape, dtype=_jointdtype(func1.dtype,func2.dtype) )
+    super().__init__(args=self.funcs, shape=_jointshape(func1.shape, func2.shape), dtype=_jointdtype(func1.dtype,func2.dtype))
+
+  @cache.property
+  def simplified(self):
+    func1 = self.funcs[0].simplified
+    func2 = self.funcs[1].simplified
+    if func1 == func2:
+      return power(func1, 2).simplified
+    retval = func1._multiply(func2)
+    if retval is not None:
+      assert retval.shape == self.shape
+      return retval.simplified
+    retval = func2._multiply(func1)
+    if retval is not None:
+      assert retval.shape == self.shape
+      return retval.simplified
+    return Multiply(orderedset([func1, func2]))
 
   def evalf( self, arr1, arr2 ):
     return arr1 * arr2
@@ -3351,27 +3367,6 @@ def pointwise( args, evalf, deriv=None, dtype=float ):
   if retval is not None:
     return retval
   return Pointwise( args, evalf, deriv, dtype )
-
-def multiply( arg1, arg2 ):
-  'multiply'
-
-  arg1, arg2 = _matchndim( arg1, arg2 )
-  shape = _jointshape( arg1.shape, arg2.shape )
-
-  if arg1 == arg2:
-    return power( arg1, 2 )
-
-  retval = arg1._multiply(arg2)
-  if retval is not None:
-    assert retval.shape == shape, 'bug in %s._multiply' % arg1
-    return retval
-
-  retval = arg2._multiply(arg1)
-  if retval is not None:
-    assert retval.shape == shape, 'bug in %s._multiply' % arg2
-    return retval
-
-  return Multiply(orderedset([arg1, arg2]))
 
 def blockadd( *args ):
   args = tuple( itertools.chain( *( arg.funcs if isinstance( arg, BlockAdd ) else [arg] for arg in args ) ) )
