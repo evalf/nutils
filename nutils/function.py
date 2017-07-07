@@ -936,50 +936,51 @@ class Inverse( Array ):
   def _edit( self, op ):
     return inverse( op(self.func) )
 
-class Concatenate( Array ):
-  'concatenate'
+class Concatenate(Array):
 
-  def __init__( self, funcs, axis=0 ):
-    'constructor'
-
-    funcs = [ asarray(func) for func in funcs ]
+  def __init__(self, funcs, axis=0):
     ndim = funcs[0].ndim
-    assert all( func.ndim == ndim for func in funcs )
-    axis = numeric.normdim( ndim, axis )
-    lengths = [ func.shape[axis] for func in funcs ]
-    if any( isinstance( n, str ) for n in lengths ):
-      assert all( isinstance( n, str ) for n in lengths )
+    assert isinstance(funcs, tuple)
+    assert all(isarray(func) and func.ndim == ndim for func in funcs)
+    assert 0 <= axis < ndim
+    lengths = [func.shape[axis] for func in funcs]
+    if any(isinstance(n, str) for n in lengths):
+      assert all(isinstance(n, str) for n in lengths)
       sh = ''.join(lengths)
     else:
-      sh = builtins.sum( lengths )
-    shape = _jointshape( *[ func.shape[:axis] + (sh,) + func.shape[axis+1:] for func in funcs ] )
-    dtype = _jointdtype( *[ func.dtype for func in funcs ] )
-    self.funcs = tuple(funcs)
-    self.ivar = [ i for i, func in enumerate(funcs) if isevaluable(func) ]
+      sh = builtins.sum(lengths)
+    shape = _jointshape(*[func.shape[:axis] + (sh,) + func.shape[axis+1:] for func in funcs])
+    dtype = _jointdtype(*[func.dtype for func in funcs])
+    self.funcs = funcs
     self.axis = axis
-    self.axis_shiftright = axis-ndim
-    Array.__init__( self, args=[ funcs[i] for i in self.ivar ], shape=shape, dtype=dtype )
+    super().__init__(args=funcs, shape=shape, dtype=dtype)
 
-  def evalf( self, *varargs ):
-    'evaluate'
+  @cache.property
+  def simplified(self):
+    funcs = tuple(func.simplified for func in self.funcs if func.shape[self.axis] != 0)
+    if all(iszero(func) for func in funcs):
+      return zeros(self.shape, dtype=self.dtype)
+    i = 0
+    while i < len(funcs)-1:
+      retval = funcs[i]._concatenate(funcs[i+1], self.axis)
+      if retval is not None:
+        funcs = funcs[:i] + (retval.simplified,) + funcs[i+2:]
+      else:
+        i += 1
+    if len(funcs) == 1:
+      return funcs[0]
+    return Concatenate(funcs, self.axis)
 
-    arrays = [ func[_] for func in self.funcs ]
-    for i, arg in zip( self.ivar, varargs ):
-      arrays[i] = arg
-    assert all( arr.ndim == self.ndim+1 for arr in arrays )
-
-    iax = self.axis_shiftright
-    ndim = numpy.max([ array.ndim for array in arrays ])
-    axlen = util.sum( array.shape[iax] for array in arrays )
-    shape = _jointshape( *[ (1,)*(ndim-array.ndim) + array.shape[:iax] + (axlen,) + ( array.shape[iax+1:] if iax != -1 else () ) for array in arrays ] )
-    dtype = float if any( array.dtype == float for array in arrays ) else int
-    retval = numpy.empty( shape, dtype=dtype )
+  def evalf(self, *arrays):
+    length = builtins.sum(array.shape[self.axis+1] for array in arrays)
+    shape = _jointshape(*[array.shape[:self.axis+1] + (length,) + array.shape[self.axis+2:] for array in arrays])
+    retval = numpy.empty(shape, dtype=self.dtype)
     n0 = 0
     for array in arrays:
-      n1 = n0 + array.shape[iax]
-      retval[(slice(None),)*( iax if iax >= 0 else iax + ndim )+(slice(n0,n1),)] = array
+      n1 = n0 + array.shape[self.axis+1]
+      retval[(slice(None),)*(self.axis+1)+(slice(n0,n1),)] = array
       n0 = n1
-    assert n0 == axlen
+    assert n0 == retval.shape[self.axis+1]
     return retval
 
   @property
@@ -2673,7 +2674,7 @@ def _matchndim( *arrays ):
 
   arrays = [ asarray(array) for array in arrays ]
   ndim = builtins.max( array.ndim for array in arrays )
-  return [ array[(_,)*(ndim-array.ndim)] for array in arrays ]
+  return tuple(array[(_,)*(ndim-array.ndim)] for array in arrays)
 
 def _obj2str( obj ):
   'convert object to string'
@@ -3200,39 +3201,10 @@ def diagonalize( arg ):
 
   return Diagonalize( arg )
 
-def concatenate( args, axis=0 ):
-  'concatenate'
-
-  args = _matchndim( *args )
-  axis = numeric.normdim( args[0].ndim, axis )
-  args = [ arg for arg in args if arg.shape[axis] != 0 ]
-
-  if all( iszero(arg) for arg in args ):
-    shape = list( args[0].shape )
-    axis = numeric.normdim( len(shape), axis )
-    for arg in args[1:]:
-      for i in range( len(shape) ):
-        if i == axis:
-          shape[i] += arg.shape[i]
-        elif shape[i] == 1:
-          shape[i] = arg.shape[i]
-        else:
-          assert arg.shape[i] in (shape[i],1)
-    return zeros( shape, dtype=_jointdtype(*[arg.dtype for arg in args]) )
-
-  i = 0
-  while i+1 < len(args):
-    arg1, arg2 = args[i:i+2]
-    arg12 = arg1._concatenate(arg2, axis)
-    if arg12 is None:
-      i += 1
-      continue
-    args = args[:i] + [arg12] + args[i+2:]
-
-  if len(args) == 1:
-    return args[0]
-
-  return Concatenate( args, axis )
+def concatenate(args, axis=0):
+  args = _matchndim(*args)
+  axis = numeric.normdim(args[0].ndim, axis)
+  return Concatenate(args, axis).simplified
 
 def transpose( arg, trans=None ):
   'transpose'
