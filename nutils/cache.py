@@ -11,10 +11,8 @@ The cache module.
 """
 
 from . import core, log
-import os, sys, weakref, numpy, functools, inspect
+import os, sys, weakref, numpy, functools, inspect, builtins
 
-
-_property = property
 
 def property( f ):
   name = f.__name__
@@ -32,7 +30,7 @@ def property( f ):
     assert name not in self.__dict__, 'property can be set only once'
     self.__dict__[name] = value
   assert not property_getter.__closure__ and not property_setter.__closure__
-  return _property( fget=property_getter, fset=property_setter )
+  return builtins.property( fget=property_getter, fset=property_setter )
 
 def weakproperty( f ):
   def cache_property_wrapper( self, f=f ):
@@ -44,7 +42,7 @@ def weakproperty( f ):
       self.__dict__[f.__name__] = weakref.ref(value)
     return value
   assert not cache_property_wrapper.__closure__
-  return _property(cache_property_wrapper)
+  return builtins.property(cache_property_wrapper)
 
 def argdict( f ):
   cache = {}
@@ -137,7 +135,7 @@ class Wrapper( object ):
       self.cache[ key ] = value
     return value
 
-  @_property
+  @builtins.property
   def hits( self ):
     return self.count - len(self.cache)
 
@@ -155,7 +153,7 @@ class WrapperCache( object ):
     wrapper = self.cache[func] = Wrapper( func )
     return wrapper
 
-  @_property
+  @builtins.property
   def stats( self ):
     hits = count = 0
     for wrapper in self.cache.values():
