@@ -627,28 +627,32 @@ class ElementSize( Array):
     volume = iwscale.sum()
     return numeric.power( volume, 1/self.ndims )[_]
 
-class Align( Array ):
-  'align axes'
+class Align(Array):
 
-  def __init__( self, func, axes, ndim ):
-    'constructor'
-
+  def __init__(self, func, axes, ndim):
     assert func.ndim == len(axes)
     self.func = func
-    assert all( 0 <= ax < ndim for ax in axes )
+    assert all(0 <= ax < ndim for ax in axes)
     self.axes = tuple(axes)
-    shape = [ 1 ] * ndim
+    shape = [1] * ndim
     for ax, sh in zip( self.axes, func.shape ):
       shape[ax] = sh
     self.negaxes = [ ax-ndim for ax in self.axes ]
-    Array.__init__( self, args=[func], shape=shape, dtype=func.dtype )
+    super().__init__(args=[func], shape=shape, dtype=func.dtype)
 
-  def evalf( self, arr ):
-    'align'
+  @cache.property
+  def simplified(self):
+    func = self.func.simplified
+    if self.axes == tuple(range(self.ndim)):
+      return func
+    retval = func._align(self.axes, self.ndim)
+    if retval is not None:
+      assert retval.shape == self.shape
+      return retval.simplified
+    return Align(func, self.axes, self.ndim)
 
-    assert arr.ndim == len(self.axes)+1
-    extra = arr.ndim - len(self.negaxes)
-    return numeric.align( arr, list(range(extra))+self.negaxes, self.ndim+extra )
+  def evalf(self, arr):
+    return numeric.align(arr, [0]+[ax+1 for ax in self.axes], self.ndim+1)
 
   def _align( self, axes, ndim ):
     newaxes = [ axes[i] for i in self.axes ]
@@ -2975,28 +2979,10 @@ def get( arg, iax, item ):
 
   return Get( arg, iax, item )
 
-def align( arg, axes, ndim ):
-  'align'
-
-  arg = asarray( arg )
-
-  assert ndim >= len(axes)
-  assert len(axes) == arg.ndim
-  axes = _normdims( ndim, axes )
-  assert len(set(axes)) == len(axes), 'duplicate axes in align'
-
-  if util.allequal( axes, range(ndim) ):
-    return arg
-
-  retval = arg._align(axes, ndim)
-  if retval is not None:
-    shape = [1] * ndim
-    for i, axis in enumerate( axes ):
-      shape[axis] = arg.shape[i]
-    assert retval.shape == tuple(shape), 'bug in %s._align' % arg
-    return retval
-
-  return Align( arg, axes, ndim )
+def align(arg, axes, ndim):
+  arg = asarray(arg)
+  axes = _normdims(ndim, axes)
+  return Align(arg, axes, ndim).simplified
 
 def bringforward( arg, axis ):
   'bring axis forward'
