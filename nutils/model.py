@@ -36,7 +36,7 @@ In addition to ``solve_linear`` the model module defines ``newton`` and
 time dependent problems.
 """
 
-from . import function, index, cache, log, util, numeric
+from . import function, cache, log, util, numeric
 import numpy, itertools, functools, numbers
 
 
@@ -44,8 +44,6 @@ class Integral( dict ):
   '''Postponed integral, used for derivative purposes'''
 
   def __init__( self, integrand, domain, geometry, degree, edit=None ):
-    if isinstance( integrand, index.IndexedArray ):
-      integrand = integrand.unwrap( geometry )
     integrand *= function.J( geometry, domain.ndims )
     if edit is not None:
       integrand = edit( integrand )
@@ -85,12 +83,12 @@ class Integral( dict ):
     values = [ domain.obj.integrate( integrand, ischeme='gauss{}'.format(degree), fcache=fcache ) for domain, (integrand,degree) in self.items() ]
     return numpy.sum( values, axis=0 )
 
-  def derivative( self, target ):
+  def derivative(self, target):
     assert target.ndim == 1
     seen = {}
-    derivative = self.empty( self.shape+target.shape )
-    for domain, (integrand,degree) in self.items():
-      derivative[domain] = function.derivative( integrand, var=target, axes=[0], seen=seen ), degree
+    derivative = self.empty(self.shape+target.shape)
+    for domain, (integrand, degree) in self.items():
+      derivative[domain] = function.derivative(integrand, var=target, seen=seen), degree
     return derivative
 
   def replace( self, target, replacement ):

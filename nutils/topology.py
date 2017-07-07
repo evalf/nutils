@@ -24,7 +24,6 @@ out in element loops. For lower level operations topologies can be used as
 """
 
 from . import element, function, util, numpy, parallel, matrix, log, core, numeric, cache, transform, _
-from .index import IndexedArray
 import warnings, functools, collections, itertools, functools, operator
 
 _identity = lambda x: x
@@ -158,15 +157,9 @@ class Topology( object ):
     retvals = []
     idata = []
     for ifunc, func in enumerate( funcs ):
-      if isinstance( func, IndexedArray ):
-        func = func.unwrap( geometry )
       func = function.asarray( edit( func * iwscale ) )
       retval = zeros( (npoints,)+func.shape, dtype=func.dtype )
-      if function.isarray( func ):
-        for ind, f in function.blocks( func ):
-          idata.append( function.Tuple([ ifunc, ind, f ]) )
-      else:
-        idata.append( function.Tuple([ ifunc, (), func ]) )
+      idata.extend( function.Tuple([ ifunc, ind, f ]) for ind, f in function.blocks(func) )
       retvals.append( retval )
     idata = function.Tuple( idata )
 
@@ -285,7 +278,6 @@ class Topology( object ):
     'integrate'
 
     iwscale = function.J( geometry, self.ndims ) if geometry else 1
-    funcs = [ func.unwrap( geometry ) if isinstance( func, IndexedArray ) else func for func in funcs ]
     integrands = [ function.asarray( edit( func * iwscale ) ) for func in funcs ]
     data_index = self._integrate( integrands, ischeme, fcache )
     return [ matrix.assemble( data, index, integrand.shape, force_dense ) for integrand, (data,index) in zip( integrands, data_index ) ]
@@ -301,11 +293,6 @@ class Topology( object ):
     'L2 projection of function onto function space'
 
     log.debug( 'projection type:', ptype )
-
-    if isinstance( fun, IndexedArray ):
-      fun = fun.unwrap( geometry )
-    if isinstance( onto, IndexedArray ):
-      onto = onto.unwrap( geometry )
 
     if constrain is None:
       constrain = util.NanVec( onto.shape[0] )
