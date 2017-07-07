@@ -13,24 +13,25 @@ The cache module.
 from . import core, log
 import os, sys, weakref, numpy, functools, inspect, builtins
 
-
-def property( f ):
-  name = f.__name__
-  def property_getter( self, name=name, f=f, tmp=object() ):
+def property(f):
+  _self = object()
+  _temp = object()
+  _name = f.__name__
+  def property_getter(self):
     try:
-      value = self.__dict__[name]
-      assert value is not tmp, 'attribute requested during construction'
-      return value
+      dictvalue = self.__dict__[_name]
+      assert dictvalue is not _temp, 'attribute requested during construction'
     except KeyError:
-      pass
-    self.__dict__[name] = tmp
-    value = self.__dict__[name] = f( self )
+      self.__dict__[_name] = _temp # placeholder for detection of cyclic dependencies
+      value = f(self)
+      self.__dict__[_name] = value if value is not self else _self
+    else:
+      value = dictvalue if dictvalue is not _self else self
     return value
-  def property_setter( self, value, name=name ):
-    assert name not in self.__dict__, 'property can be set only once'
-    self.__dict__[name] = value
-  assert not property_getter.__closure__ and not property_setter.__closure__
-  return builtins.property( fget=property_getter, fset=property_setter )
+  def property_setter(self, value):
+    assert _name not in self.__dict__, 'property can be set only once'
+    self.__dict__[_name] = value if value is not self else _self
+  return builtins.property(fget=property_getter, fset=property_setter)
 
 def weakproperty( f ):
   def cache_property_wrapper( self, f=f ):
