@@ -743,26 +743,29 @@ class Align(Array):
     funcaxis = self.axes.index( axis ) # must exist, otherwise situation should have been handled in def mask
     return align( mask( self.func, maskvec, funcaxis ), self.axes, self.ndim )
 
-class Get( Array ):
-  'get'
+class Get(Array):
 
-  def __init__( self, func, axis, item ):
-    'constructor'
-
+  def __init__(self, func, axis, item):
     self.func = func
     self.axis = axis
     self.item = item
     assert 0 <= axis < func.ndim, 'axis is out of bounds'
     assert 0 <= item
-    if numeric.isint( func.shape[axis] ):
+    if numeric.isint(func.shape[axis]):
       assert item < func.shape[axis], 'item is out of bounds'
-    self.item_shiftright = (Ellipsis,item) + (slice(None),)*(func.ndim-axis-1)
-    shape = func.shape[:axis] + func.shape[axis+1:]
-    Array.__init__( self, args=[func], shape=shape, dtype=func.dtype )
+    super().__init__(args=[func], shape=func.shape[:axis]+func.shape[axis+1:], dtype=func.dtype)
 
-  def evalf( self, arr ):
-    assert arr.ndim == self.ndim+2
-    return arr[ self.item_shiftright ]
+  @cache.property
+  def simplified(self):
+    func = self.func.simplified
+    retval = func._get(self.axis, self.item)
+    if retval is not None:
+      assert retval.shape == self.shape
+      return retval.simplified
+    return Get(func, self.axis, self.item)
+
+  def evalf(self, arr):
+    return arr[(slice(None),)*(self.axis+1)+(self.item,)]
 
   def _derivative(self, var, seen):
     f = derivative(self.func, var, seen)
@@ -3002,25 +3005,14 @@ def repeat( arg, length, axis ):
 
   return Repeat( arg, length, axis )
 
-def get( arg, iax, item ):
-  'get item'
-
-  assert numeric.isint( item )
-
-  arg = asarray( arg )
-  iax = numeric.normdim( arg.ndim, iax )
+def get(arg, iax, item):
+  assert numeric.isint(item)
+  arg = asarray(arg)
+  iax = numeric.normdim(arg.ndim, iax)
   sh = arg.shape[iax]
-
-  if numeric.isint( sh ):
-    item = numeric.normdim( sh, item )
-  assert item >= 0
-
-  retval = arg._get(iax, item)
-  if retval is not None:
-    assert retval.shape == arg.shape[:iax] + arg.shape[iax+1:], 'bug in %s._get' % arg
-    return retval
-
-  return Get( arg, iax, item )
+  if numeric.isint(sh):
+    item = numeric.normdim(sh, item)
+  return Get(arg, iax, item).simplified
 
 def align(arg, axes, ndim):
   arg = asarray(arg)
