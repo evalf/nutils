@@ -1686,16 +1686,24 @@ class Take( Array ):
   def _edit( self, op ):
     return take( op(self.func), op(self.indices), self.axis )
 
-class Power( Array ):
-  'power'
+class Power(Array):
 
-  def __init__( self, func, power ):
-    'constructor'
-
+  def __init__(self, func, power):
     self.func = func
     self.power = power
-    shape = _jointshape( func.shape, power.shape )
-    Array.__init__( self, args=[func,power], shape=shape, dtype=float )
+    super().__init__(args=[func,power], shape=_jointshape(func.shape, power.shape), dtype=float)
+
+  @cache.property
+  def simplified(self):
+    func = self.func.simplified
+    power = self.power.simplified
+    if iszero(power):
+      return numpy.ones(self.shape)
+    retval = func._power(power)
+    if retval is not None:
+      assert retval.shape == self.shape, 'bug in {}._power'.format(func)
+      return retval.simplified
+    return Power(func, power)
 
   def evalf( self, base, exp ):
     return numeric.power( base, exp )
@@ -3358,21 +3366,9 @@ def blockadd( *args ):
   else:
     return BlockAdd( args )
 
-def power( arg, n ):
-  'power'
-
-  arg, n = _matchndim( arg, n )
-  shape = _jointshape( arg.shape, n.shape )
-
-  if iszero( n ):
-    return numpy.ones( shape )
-
-  retval = arg._power(n)
-  if retval is not None:
-    assert retval.shape == arg.shape, 'bug in %s._power' % arg
-    return retval
-
-  return Power( arg, n )
+def power(arg, n):
+  arg, n = _matchndim(arg, n)
+  return Power(arg, n).simplified
 
 def sign( arg ):
   'sign'
