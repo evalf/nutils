@@ -312,237 +312,79 @@ class Array( Evaluable ):
 
   __array_priority__ = 1. # http://stackoverflow.com/questions/7042496/numpy-coercion-problem-for-left-sided-binary-operator/7057530#7057530
 
-  def __init__( self, args, shape, dtype ):
-    'constructor'
-
+  def __init__(self, args, shape, dtype):
     self.shape = tuple(shape)
     self.ndim = len(self.shape)
     assert dtype is float or dtype is int or dtype is bool, 'invalid dtype {!r}'.format(dtype)
     self.dtype = dtype
-    Evaluable.__init__( self, args=args )
+    super().__init__(args=args)
 
-  # mathematical operators
-
-  def _if_array_args( op ):
-    @functools.wraps( op )
-    def wrapper( self, other ):
-      if isinstance( other, ( numbers.Number, numpy.generic, numpy.ndarray, Array, tuple, list ) ):
-        return op( self, other )
+  def __getitem__(self, item):
+    if not isinstance(item, tuple):
+      item = item,
+    c = item.count(...)
+    assert c <= 1, 'at most one ellipsis allowed'
+    n = item.index(...) if c else len(item)
+    array = self
+    axis = 0
+    for it in item[:n] + (slice(None),)*(self.ndim+item.count(_)+c-len(item)) + item[n+1:]:
+      if numeric.isint(it):
+        array = get(array, axis, item=it)
+      elif it is _:
+        array = insert(array, axis)
+        axis += 1
       else:
-        return NotImplemented
-    return wrapper
+        array = take(array, index=it, axis=axis)
+        axis += 1
+    assert axis == array.ndim
+    return array
 
-  __mul__  = _if_array_args( lambda self, other: multiply( self, other ) )
-  __rmul__ = _if_array_args( lambda self, other: multiply( other, self ) )
-  __div__  = _if_array_args( lambda self, other: divide( self, other ) )
-  __truediv__ = __div__
-  __rdiv__ = _if_array_args( lambda self, other: divide( other, self ) )
-  __rtruediv__ = __rdiv__
-  __add__  = _if_array_args( lambda self, other: add( self, other ) )
-  __radd__ = _if_array_args( lambda self, other: add( other, self ) )
-  __sub__  = _if_array_args( lambda self, other: subtract( self, other ) )
-  __rsub__ = _if_array_args( lambda self, other: subtract( other, self ) )
-  __neg__  = lambda self: negative( self )
-  __pow__  = _if_array_args( lambda self, n: power( self, n ) )
-  __abs__  = lambda self: abs( self )
-  __len__  = lambda self: self.shape[0]
-  __mod__  = lambda self, other: mod( self, other )
-  sum      = lambda self, axis: sum( self, axis )
-  del _if_array_args
+  def __len__(self):
+    if self.ndim == 0:
+      raise TypeError('len() of unsized object')
+    return self.shape[0]
 
-  @property
-  def size( self ):
-    return numpy.prod( self.shape, dtype=int )
+  def __iter__(self):
+    if not self.shape:
+      raise TypeError('iteration over a 0-d array')
+    return ( self[i,...] for i in range(self.shape[0]) )
 
-  # standalone methods
+  size = property(lambda self: numpy.prod(self.shape, dtype=int))
+  T = property(lambda self: transpose(self))
+
+  __add__ = __radd__ = lambda self, other: add(self, other)
+  __sub__ = lambda self, other: subtract(self, other)
+  __rsub__ = lambda self, other: subtract(other, self)
+  __mul__ = __rmul__ = lambda self, other: multiply(self, other)
+  __truediv__ = lambda self, other: divide(self, other)
+  __rtruediv__ = lambda self, other: divide(other, self)
+  __neg__ = lambda self: negative(self)
+  __pow__ = lambda self, n: power(self, n)
+  __abs__ = lambda self: abs(self)
+  __mod__  = lambda self, other: mod(self, other)
+  __str__ = __repr__ = lambda self: '{}{}'.format(self.__class__.__name__, getattr(self, 'shape', '(uninitialized)'))
+
+  sum = lambda self, axis: sum(self, axis)
+  vector = lambda self, ndims: vectorize([self] * ndims)
+  dot = lambda self, other, axes=None: dot(self, other, axes)
+  normalized = lambda self, axis=-1: normalized(self, axis)
+  normal = lambda self, exterior=False: normal(self, exterior)
+  curvature = lambda self, ndims=-1: curvature(self, ndims)
+  swapaxes = lambda self, axis1, axis2: swapaxes(self, axis1, axis2)
+  transpose = lambda self, trans=None: transpose(self, trans)
+  grad = lambda self, geom, ndims=0: grad(self, geom, ndims)
+  laplace = lambda self, geom, ndims=0: grad(self, geom, ndims).div(geom, ndims)
+  add_T = lambda self, axes=(-2,-1): add_T(self, axes)
+  symgrad = lambda self, geom, ndims=0: symgrad(self, geom, ndims)
+  div = lambda self, geom, ndims=0: div(self, geom, ndims)
+  dotnorm = lambda self, geom, axis=-1: dotnorm(self, geom, axis)
+  tangent = lambda self, vec: tangent(self, vec)
+  ngrad = lambda self, geom, ndims=0: ngrad(self, geom, ndims)
+  nsymgrad = lambda self, geom, ndims=0: nsymgrad(self, geom, ndims)
 
   @property
   def blocks( self ):
     return [( Tuple([ asarray(numpy.arange(n)) if numeric.isint(n) else None for n in self.shape ]), self )]
-
-  def vector( self, ndims ):
-    'vectorize'
-
-    return vectorize( [self] * ndims )
-
-  def dot( self, weights, axis=0 ):
-    'array contraction'
-
-    weights = asarray( weights )#, dtype=float )
-    assert weights.ndim == 1
-    s = [ numpy.newaxis ] * self.ndim
-    s[axis] = slice(None)
-    return dot( self, weights[tuple(s)], axes=axis )
-
-  def __getitem__( self, item ):
-    'get item, general function which can eliminate, add or modify axes.'
-
-    myitem = list( item if isinstance( item, tuple ) else [item] )
-    n = 0
-    arr = self
-    while myitem:
-      it = myitem.pop(0)
-      eqsafe = not isinstance( it, numpy.ndarray ) # it is not an array, safe to use == comparison
-      if numeric.isint(it): # retrieve one item from axis
-        arr = get( arr, n, it )
-      elif eqsafe and it == _: # insert a singleton axis
-        arr = insert( arr, n )
-        n += 1
-      elif eqsafe and it == slice(None): # select entire axis
-        n += 1
-      elif eqsafe and it == Ellipsis: # skip to end
-        remaining_items = len(myitem) - myitem.count(_)
-        skip = arr.ndim - n - remaining_items
-        assert skip >= 0, 'shape=%s, item=%s' % ( self.shape, _obj2str(item) )
-        n += skip
-      else:
-        arr = take( arr, it, n )
-        n += 1
-      assert n <= arr.ndim
-    return arr
-
-  def __iter__( self ):
-    'split first axis'
-
-    if not self.shape:
-      raise TypeError( 'scalar function is not iterable' )
-
-    return ( self[i,...] for i in range(self.shape[0]) )
-
-  def find( self, elem, C ):#target, start, tol=1e-10, maxiter=999 ):
-    'iteratively find x for f(x) = target, starting at x=start'
-
-    raise NotImplementedError
-    assert self.ndim == 1
-    points = start
-    Jinv = inverse( localgradient( self, elem.ndims ) )
-    r = target - self( elem, points )
-    niter = 0
-    while numpy.any( numeric.contract( r, r, axis=-1 ) > tol ):
-      niter += 1
-      if niter >= maxiter:
-        raise Exception( 'failed to converge in %d iterations' % maxiter )
-      points = points.offset( numeric.contract( Jinv( elem, points ), r[:,_,:], axis=-1 ) )
-      r = target - self( elem, points )
-    return points
-
-  def normalized( self ):
-    'normalize last axis'
-
-    return self / norm2( self, axis=-1 )
-
-  def normal( self, exterior=False ):
-    'normal'
-
-    assert self.ndim == 1
-
-    if not exterior:
-      lgrad = localgradient( self, len(self) )
-      return Normal( lgrad )
-
-    lgrad = localgradient( self, len(self)-1 )
-    if len(self) == 2:
-      return asarray([ lgrad[1,0], -lgrad[0,0] ]).normalized()
-    if len(self) == 3:
-      return cross( lgrad[:,0], lgrad[:,1], axis=0 ).normalized()
-
-    raise NotImplementedError
-
-  def curvature( self, ndims=-1 ):
-    'curvature'
-
-    return self.normal().div( self, ndims=ndims )
-
-    #if ndims <= 0:
-    #  ndims += self.shape[0]
-    #assert ndims == 1 and self.shape == (2,)
-    #J = localgradient( self, ndims )
-    #H = localgradient( J, ndims )
-    #dx, dy = J[:,0]
-    #ddx, ddy = H[:,0,0]
-    #return ( dx * ddy - dy * ddx ) / norm2( J[:,0], axis=0 )**3
-
-  def swapaxes( self, n1, n2 ):
-    'swap axes'
-
-    return swapaxes( self, (n1,n2) )
-
-  def transpose( self, trans=None ):
-    'transpose'
-
-    return transpose( self, trans )
-
-  def grad( self, coords, ndims=0 ):
-    'gradient'
-
-    assert coords.ndim == 1
-    if ndims <= 0:
-      ndims += coords.shape[0]
-    J = localgradient( coords, ndims )
-    if J.shape[0] == J.shape[1]:
-      Jinv = inverse( J )
-    elif J.shape[0] == J.shape[1] + 1: # gamma gradient
-      G = ( J[:,:,_] * J[:,_,:] ).sum( 0 )
-      Ginv = inverse( G )
-      Jinv = ( J[_,:,:] * Ginv[:,_,:] ).sum( -1 )
-    else:
-      raise Exception( 'cannot invert %sx%s jacobian' % J.shape )
-    return sum( localgradient( self, ndims )[...,_] * Jinv, axis=-2 )
-
-  def laplace( self, coords, ndims=0 ):
-    'laplacian'
-
-    return self.grad(coords,ndims).div(coords,ndims)
-
-  def add_T( self, axes=(-2,-1) ):
-    'add transposed'
-
-    return add_T( self, axes )
-
-  def symgrad( self, coords, ndims=0 ):
-    'gradient'
-
-    return .5 * add_T( self.grad( coords, ndims ) )
-
-  def div( self, coords, ndims=0 ):
-    'gradient'
-
-    return trace( self.grad( coords, ndims ), -1, -2 )
-
-  def dotnorm( self, coords, axis=-1 ):
-    'normal component'
-
-    axis = numeric.normdim( self.ndim, axis )
-    normal = coords.normal()
-    assert normal.shape == (self.shape[axis],)
-    return ( self * normal[(slice(None),)+(_,)*(self.ndim-axis-1)] ).sum( axis )
-
-  def tangent( self, vec ):
-    normal = self.normal()
-    return vec - ( vec * normal ).sum(-1)[...,_] * normal
-
-  def ngrad( self, coords, ndims=0 ):
-    'normal gradient'
-
-    return dotnorm( self.grad( coords, ndims ), coords )
-
-  def nsymgrad( self, coords, ndims=0 ):
-    'normal gradient'
-
-    return dotnorm( self.symgrad( coords, ndims ), coords )
-
-  @property
-  def T( self ):
-    'transpose'
-
-    return transpose( self )
-
-  def __str__( self ):
-    'string representation'
-
-    return '%s<%s>' % ( self.__class__.__name__, ','.join( str(n) for n in self.shape ) )
-
-  __repr__ = __str__
 
 class Normal( Array ):
   'normal'
@@ -2841,6 +2683,7 @@ tanh = lambda arg: 1 - 2. / ( exp(2*arg) + 1 )
 arctanh = lambda arg: .5 * ( ln(1+arg) - ln(1-arg) )
 piecewise = lambda level, intervals, *funcs: choose( sum( greater( insert(level,-1), intervals ), -1 ), funcs )
 trace = lambda arg, n1=-2, n2=-1: sum( takediag( arg, n1, n2 ), -1 )
+normalized = lambda arg, axis=-1: divide(arg, insert(norm2(arg, axis=axis), axis))
 norm2 = lambda arg, axis=-1: sqrt( sum( multiply( arg, arg ), axis ) )
 heaviside = lambda arg: choose( greater( arg, 0 ), [0.,1.] )
 divide = lambda arg1, arg2: multiply( arg1, reciprocal(arg2) )
@@ -2855,6 +2698,13 @@ sampled = lambda data, ndims: Sampled( data )
 bifurcate1 = lambda arg: SelectChain(arg,True ) if arg is TRANS or arg is OPPTRANS else edit( arg, bifurcate1 )
 bifurcate2 = lambda arg: SelectChain(arg,False) if arg is TRANS or arg is OPPTRANS else edit( arg, bifurcate2 )
 bifurcate = lambda arg1, arg2: ( bifurcate1(arg1), bifurcate2(arg2) )
+curvature = lambda geom, ndims=-1: geom.normal().div(geom, ndims=ndims)
+laplace = lambda arg, geom, ndims=0: arg.grad(geom, ndims).div(geom, ndims)
+symgrad = lambda arg, geom, ndims=0: multiply(.5, add_T(arg.grad(geom, ndims)))
+div = lambda arg, geom, ndims=0: trace(arg.grad(geom, ndims), -1, -2)
+tangent = lambda geom, vec: subtract(vec, multiply(dot(vec, normal(geom), -1)[...,_], normal(geom)))
+ngrad = lambda arg, geom, ndims=0: dotnorm(grad(arg, geom, ndims), geom)
+nsymgrad = lambda arg, geom, ndims=0: dotnorm(symgrad(arg, geom, ndims), geom)
 
 def trignormal( angle ):
   angle = asarray( angle )
@@ -3076,11 +2926,18 @@ def sum( arg, axis=None ):
 
   return Sum( arg, axis )
 
-def dot( arg1, arg2, axes ):
+def dot( arg1, arg2, axes=None ):
   'dot product'
 
-  arg1, arg2 = _matchndim( arg1, arg2 )
-  shape = _jointshape( arg1.shape, arg2.shape )
+  if axes is None:
+    arg1 = asarray(arg1)
+    arg2 = asarray(arg2)
+    assert arg2.ndim == 1 and arg2.shape[0] == arg1.shape[0]
+    while arg2.ndim < arg1.ndim:
+      arg2 = insert(arg2, arg2.ndim)
+    axes = 0,
+  else:
+    arg1, arg2 = _matchndim( arg1, arg2 )
 
   if not util.isiterable(axes):
     axes = axes,
@@ -3088,6 +2945,7 @@ def dot( arg1, arg2, axes ):
   if len(axes) == 0:
     return arg1 * arg2
 
+  shape = _jointshape( arg1.shape, arg2.shape )
   axes = _norm_and_sort( len(shape), axes )
   assert numpy.all( numpy.diff(axes) > 0 ), 'duplicate axes in sum'
 
@@ -3608,15 +3466,15 @@ def array_from_tuple( arrays, index, shape, dtype ):
   else:
     return ArrayFromTuple( arrays, index, shape, dtype )
 
-def swapaxes( arg, axes=(-2,-1) ):
-  'swap axes'
-
-  arg = asarray( arg )
-  n1, n2 = axes
-  trans = numpy.arange( arg.ndim )
-  trans[n1] = numeric.normdim( arg.ndim, n2 )
-  trans[n2] = numeric.normdim( arg.ndim, n1 )
-  return align( arg, trans, arg.ndim )
+def swapaxes( arg, axis1=(-2,-1), axis2=None):
+  if axis2 is None:
+    axis1, axis2 = axis1
+    warnings.warn('swapaxes(a,(axis1,axis2)) is deprecated; use swapaxes(a,axis1,axis2) instead', DeprecationWarning)
+  arg = asarray(arg)
+  trans = numpy.arange(arg.ndim)
+  trans[axis1] = numeric.normdim(arg.ndim, axis2)
+  trans[axis2] = numeric.normdim(arg.ndim, axis1)
+  return align(arg, trans, arg.ndim)
 
 def opposite( arg ):
   'evaluate jump over interface'
@@ -3643,6 +3501,8 @@ def take( arg, index, axis ):
   axis = numeric.normdim( arg.ndim, axis )
 
   if isinstance( index, slice ):
+    if index == slice(None):
+      return arg
     assert index.step == None or index.step == 1
     if numeric.isint( arg.shape[axis] ):
       indexmask = numpy.zeros( arg.shape[axis], dtype=bool )
@@ -3857,5 +3717,37 @@ def replace( old, new, arg ):
       d[f] = v
     return v
   return s( arg )
+
+def normal(arg, exterior=False):
+  assert arg.ndim == 1
+  if not exterior:
+    lgrad = localgradient(arg, len(arg))
+    return Normal(lgrad)
+  lgrad = localgradient(arg, len(arg)-1)
+  if len(arg) == 2:
+    return asarray([lgrad[1,0], -lgrad[0,0]]).normalized()
+  if len(arg) == 3:
+    return cross(lgrad[:,0], lgrad[:,1], axis=0).normalized()
+  raise NotImplementedError
+
+def grad(self, geom, ndims=0):
+  assert geom.ndim == 1
+  if ndims <= 0:
+    ndims += geom.shape[0]
+  J = localgradient(geom, ndims)
+  if J.shape[0] == J.shape[1]:
+    Jinv = inverse(J)
+  elif J.shape[0] == J.shape[1] + 1: # gamma gradient
+    G = dot(J[:,:,_], J[:,_,:], 0)
+    Ginv = inverse(G)
+    Jinv = dot(J[_,:,:], Ginv[:,_,:], -1)
+  else:
+    raise Exception( 'cannot invert %sx%s jacobian' % J.shape )
+  return dot(localgradient(self, ndims)[...,_], Jinv, -2)
+
+def dotnorm(arg, geom, axis=-1):
+  axis = numeric.normdim(arg.ndim, axis)
+  assert geom.ndim == 1 and geom.shape[0] == arg.shape[axis]
+  return dot(arg, normal(geom)[(slice(None),)+(_,)*(arg.ndim-axis-1)], axis)
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
