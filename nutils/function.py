@@ -338,6 +338,10 @@ def multiply(a, b):
   a, b = _matchndim(a, b)
   return Multiply(orderedset([a, b])).simplified
 
+def power(arg, n):
+  arg, n = _matchndim(arg, n)
+  return Power(arg, n).simplified
+
 def dot(a, b, axes=None):
   if axes is None:
     a = asarray(a)
@@ -405,7 +409,7 @@ class Array( Evaluable ):
   __truediv__ = lambda self, other: divide(self, other)
   __rtruediv__ = lambda self, other: divide(other, self)
   __neg__ = lambda self: negative(self)
-  __pow__ = lambda self, n: power(self, n)
+  __pow__ = power
   __abs__ = lambda self: abs(self)
   __mod__  = lambda self, other: mod(self, other)
   __str__ = __repr__ = lambda self: 'Array<{}>'.format(','.join(map(str, self.shape)) if hasattr(self, 'shape') else '?')
@@ -1737,16 +1741,24 @@ class Take( Array ):
   def _edit( self, op ):
     return take( op(self.func), op(self.indices), self.axis )
 
-class Power( Array ):
-  'power'
+class Power(Array):
 
-  def __init__( self, func, power ):
-    'constructor'
-
+  def __init__(self, func, power):
     self.func = func
     self.power = power
-    shape = _jointshape( func.shape, power.shape )
-    Array.__init__( self, args=[func,power], shape=shape, dtype=float )
+    super().__init__(args=[func,power], shape=_jointshape(func.shape, power.shape), dtype=float)
+
+  @cache.property
+  def simplified(self):
+    func = self.func.simplified
+    power = self.power.simplified
+    if iszero(power):
+      return expand(numpy.ones([1]*self.ndim, dtype=float), self.shape)
+    retval = func._power(power)
+    if retval is not None:
+      assert retval.shape == self.shape
+      return retval.simplified
+    return Power(func, power)
 
   def evalf( self, base, exp ):
     return numeric.power( base, exp )
@@ -3356,22 +3368,6 @@ def blockadd( *args ):
     return args[0]
   else:
     return BlockAdd( args )
-
-def power( arg, n ):
-  'power'
-
-  arg, n = _matchndim( arg, n )
-  shape = _jointshape( arg.shape, n.shape )
-
-  if iszero( n ):
-    return numpy.ones( shape )
-
-  retval = arg._power(n)
-  if retval is not None:
-    assert retval.shape == arg.shape, 'bug in %s._power' % arg
-    return retval
-
-  return Power( arg, n )
 
 def sign( arg ):
   'sign'
