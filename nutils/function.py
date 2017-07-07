@@ -1325,18 +1325,34 @@ class Multiply( Array ):
     if 1 in func2.shape[-2:]:
       return inverse(func1) / swapaxes(func2)
 
-class Add( Array ):
-  'add'
+class Add(Array):
 
-  def __init__( self, funcs ):
-    'constructor'
-
-    assert isinstance( funcs, Pair )
+  def __init__(self, funcs):
+    assert isinstance(funcs, Pair)
     func1, func2 = funcs
     assert isarray(func1) and isarray(func2)
     self.funcs = func1, func2
-    shape = _jointshape( func1.shape, func2.shape )
-    Array.__init__( self, args=self.funcs, shape=shape, dtype=_jointdtype(func1.dtype,func2.dtype) )
+    super().__init__(args=self.funcs, shape=_jointshape(func1.shape, func2.shape), dtype=_jointdtype(func1.dtype,func2.dtype))
+
+  @cache.property
+  def simplified(self):
+    func1 = self.funcs[0].simplified
+    func2 = self.funcs[1].simplified
+    if iszero(func1):
+      return expand(func2, self.shape).simplified
+    if iszero(func2):
+      return expand(func1, self.shape).simplified
+    if func1 == func2:
+      return multiply(func1, 2).simplified
+    retval = func1._add(func2)
+    if retval is not None:
+      assert retval.shape == self.shape, 'bug in {}._add'.format(func1)
+      return retval.simplified
+    retval = func2._add(func1)
+    if retval is not None:
+      assert retval.shape == self.shape, 'bug in {}._add'.format(func2)
+      return retval.simplified
+    return Add(Pair(func1, func2))
 
   def evalf( self, arr1, arr2=None ):
     return arr1 + arr2
@@ -3356,36 +3372,9 @@ def multiply( arg1, arg2 ):
 
   return Multiply( Pair(arg1,arg2) )
 
-def add( arg1, arg2 ):
-  'add'
-
-  arg1, arg2 = _matchndim( arg1, arg2 )
-  shape = _jointshape( arg1.shape, arg2.shape )
-
-  if iszero( arg1 ):
-    return expand( arg2, shape )
-
-  if iszero( arg2 ):
-    return expand( arg1, shape )
-
-  if arg1 == arg2:
-    return arg1 * 2
-
-  for idim, sh in enumerate( shape ):
-    if sh == 1:
-      return insert( add( get(arg1,idim,0), get(arg2,idim,0) ), idim )
-
-  retval = arg1._add(arg2)
-  if retval is not None:
-    assert retval.shape == shape, 'bug in %s._add' % arg1
-    return retval
-
-  retval = arg2._add(arg1)
-  if retval is not None:
-    assert retval.shape == shape, 'bug in %s._add' % arg2
-    return retval
-
-  return Add( Pair(arg1,arg2) )
+def add(a, b):
+  a, b = _matchndim(a, b)
+  return Add(Pair(a, b)).simplified
 
 def blockadd( *args ):
   args = tuple( itertools.chain( *( arg.funcs if isinstance( arg, BlockAdd ) else [arg] for arg in args ) ) )
