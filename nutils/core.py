@@ -54,11 +54,11 @@ def getprop( name, default=_nodefault, frame=None ):
   (read only) from nested scopes, but not from the encompassing scope.
 
   >>> def f():
-  >>>   print getprop('myval')
-  >>> 
+  ...   print(getprop('myval'))
+  ...
   >>> def main():
-  >>>   __myval__ = 2
-  >>>   f()
+  ...   __myval__ = 2
+  ...   f()
 
   Args:
       name (str): Property name, corresponds to __name__ local variable.
@@ -106,13 +106,15 @@ def single_or_multiple( f ):
   if the original argument was not a tuple/list.
 
   >>> class Test:
-  >>>   @single_or_multiple
-  >>>   def square( args ):
-  >>>     return [ v**2 for v in args ]
-  >>>
+  ...   @single_or_multiple
+  ...   def square(self, args):
+  ...     return [v**2 for v in args]
+  ...
   >>> T = Test()
-  >>> a = T.square( 2 ) # 4
-  >>> a, b = T.square( [2,3] ) # (4,9)
+  >>> T.square(2)
+  4
+  >>> T.square([2,3])
+  [4, 9]
 
   Args:
       f: Method that expects a tuple as first positional argument, and that

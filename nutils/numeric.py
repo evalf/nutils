@@ -388,7 +388,7 @@ def broadcasted( f ):
   return wrapped
 
 def ix( args ):
-  'version of ix_ that allows for scalars'
+  'version of :func:`numpy.ix_` that allows for scalars'
   args = tuple( numpy.asarray(arg) for arg in args )
   assert all( 0 <= arg.ndim <= 1 for arg in args )
   idims = numpy.cumsum( [0] + [ arg.ndim for arg in args ] )

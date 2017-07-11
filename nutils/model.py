@@ -13,20 +13,23 @@ such as Newton, that require functional derivatives of an entire functional.
 
 To demonstrate this consider the following setup:
 
+>>> from nutils import mesh, function, model
 >>> domain, geom = mesh.rectilinear( [4,4] )
 >>> basis = domain.basis( 'spline', degree=2 )
 >>> cons = domain.boundary['left,top'].project( 0, onto=basis, geometry=geom, ischeme='gauss4' )
+project > constrained 11/36 dofs, error 0.00e+00/area
 >>> target = function.DerivativeTarget( [len(basis)] )
 >>> u = basis.dot( target )
 
 Function ``u`` represents an element from the discrete space but cannot not
 evaluated yet as we did not yet establish values for ``target``. It can,
 however, be used to construct a residual functional ``res``. Aiming to solve
-the Poisson problem u_,kk = f we define the residual functional res = v,k u,k +
-v f and solve for res == 0 using ``solve_linear``:
+the Poisson problem ``u_,kk = f`` we define the residual functional ``res = v,k
+u,k + v f`` and solve for ``res == 0`` using ``solve_linear``:
 
 >>> res = model.Integral( basis['n,i']*u[',i']+basis['n'], domain=domain, geometry=geom, degree=2 )
 >>> lhs = model.solve_linear( target, residual=res, constrain=cons )
+solving system > solving system using sparse direct solver
 >>> u = basis.dot( lhs )
 
 The new function ``u`` represents the solution to the Poisson problem.
@@ -169,11 +172,11 @@ def solve_linear( target, residual, constrain ):
 
 def solve( gen_lhs_resnorm, tol=1e-10, maxiter=numpy.inf ):
   '''execute nonlinear solver
-  
-  Iterates over nonlinear solver until tolerance is reached. Example:
 
-  >>> lhs = solve( newton( target, residual ), tol=1e-5 )
-  
+  Iterates over nonlinear solver until tolerance is reached. Example::
+
+      lhs = solve( newton( target, residual ), tol=1e-5 )
+
   Parameters
   ----------
   gen_lhs_resnorm : generator
@@ -210,13 +213,13 @@ def solve( gen_lhs_resnorm, tol=1e-10, maxiter=numpy.inf ):
 def withsolve( f ):
   '''add a .solve method to (lhs,resnorm) iterators
 
-  Introduces the convenient form:
+  Introduces the convenient form::
 
-  >>> newton( target, residual ).solve( tol )
+      newton( target, residual ).solve( tol )
 
-  Shorthand for
+  Shorthand for::
 
-  >>> solve( newton( target, residual ), tol )
+      solve( newton( target, residual ), tol )
   '''
 
   @functools.wraps( f, updated=() )
@@ -241,12 +244,12 @@ def newton( target, residual, lhs0=None, freezedofs=None, nrelax=numpy.inf, minr
   ``solve``.
 
   An optimal relaxation value is computed based on the following cubic
-  assumption:
+  assumption::
 
       | res( lhs + r * dlhs ) |^2 = A + B * r + C * r^2 + D * r^3
 
-  where A, B, C and D are determined based on the current and updated residual
-  and tangent.
+  where ``A``, ``B``, ``C`` and ``D`` are determined based on the current and
+  updated residual and tangent.
 
   Parameters
   ----------
@@ -255,9 +258,9 @@ def newton( target, residual, lhs0=None, freezedofs=None, nrelax=numpy.inf, minr
   lhs0 : vector
       Coefficient vector, starting point of the iterative procedure.
   freezedofs : boolean vector
-      Equal length to lhs0, masks the non-free vector entries as True. In the
-      positions where ``freezedofs`` is True the values of ``lhs0`` are returned
-      unchanged.
+      Equal length to ``lhs0``, masks the non-free vector entries as ``True``.
+      In the positions where ``freezedofs`` is True the values of ``lhs0`` are
+      returned unchanged.
   nrelax : int
       Maximum number of relaxation steps before proceding with the updated
       coefficient vector (by default unlimited).
@@ -359,9 +362,9 @@ def pseudotime( target, residual, inertia, timestep, lhs0, residual0=None, freez
   lhs0 : vector
       Coefficient vector, starting point of the iterative procedure.
   freezedofs : boolean vector
-      Equal length to lhs0, masks the non-free vector entries as True. In the
-      positions where ``freezedofs`` is True the values of ``lhs0`` are returned
-      unchanged.
+      Equal length to ``lhs0``, masks the non-free vector entries as ``True``.
+      In the positions where ``freezedofs`` is True the values of ``lhs0`` are
+      returned unchanged.
 
   Yields
   ------
@@ -405,9 +408,9 @@ def impliciteuler( target, residual, inertia, timestep, lhs0, residual0=None, fr
   residual0 : Integral
       Optional additional residual component evaluated in previous timestep
   freezedofs : boolean vector
-      Equal length to lhs0, masks the non-free vector entries as True. In the
-      positions where ``freezedofs`` is True the values of ``lhs0`` are returned
-      unchanged.
+      Equal length to ``lhs0``, masks the non-free vector entries as ``True``.
+      In the positions where ``freezedofs`` is True the values of ``lhs0`` are
+      returned unchanged.
   tol : float
       Residual tolerance of individual timesteps
 

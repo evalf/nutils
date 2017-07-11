@@ -59,11 +59,11 @@ def pariter( iterable, nprocs ):
   user to prepare shared memory and/or locks for inter-process communication.
   The following creates a data vector containing the first four quadratics.
 
-  >>> data = shzeros( shape=[4], dtype=int )
-  >>> for i in pariter( range(4) ):
-  >>>   data[i] = i**2
+  >>> data = shzeros(shape=[4], dtype=int)
+  >>> for i in pariter(range(4), 2):
+  ...   data[i] = i**2
   >>> data
-  [ 0, 1, 4, 9 ]
+  array([0, 1, 4, 9])
 
   As a safety measure nested pariters are blocked by setting the global
   ``procid`` variable; all secundary pariters will be treated like normal

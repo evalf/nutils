@@ -10,25 +10,25 @@ import sys, collections, operator, itertools
 
 
 class IndexedArray:
-  '''wrapper of `Array` with index notation and Einstein summation convention
+  '''wrapper of ``Array`` with index notation and Einstein summation convention
 
-  This wrapper adds indices to the axes of the wrapped `Array` which is used
-  to align the `Array` with other wrapped `Array`s when doing simple
+  This wrapper adds indices to the axes of the wrapped ``Array`` which is used
+  to align the ``Array`` with other wrapped ``Array``\\s when doing simple
   arithmetic operations.  In addition, repeated indices are summed (Einstein
   summation convention).
 
-  Passing an index string to `a[...]`, with `a` an `Array`, wraps the array
-  func.  The number of indices must match the number of axes of `a`.  The index
+  Passing an index string to ``a[...]``, with ``a`` an ``Array``, wraps the array
+  func.  The number of indices must match the number of axes of ``a``.  The index
   string may contain only lower case latin characters.  A wrapped array can be
-  unwrapped via the `unwrap` method.
+  unwrapped via the ``unwrap`` method.
 
-  The index string may contain a `,` or `;` followed by any strict positive
+  The index string may contain a ``,`` or ``;`` followed by any strict positive
   number of indices.  For all indices following the comma or semicolon
   respectively a gradient or surface gradient is computed with respect to the
-  geometry specified in the `unwrap` method.
+  geometry specified in the ``unwrap`` method.
 
-  Examples.  Let `a` and `b` be `Array`s with shape `(n,n)` and `(n,)`.  The
-  following pairs are equivalent when unwrapped with geometry `geom`:
+  Examples.  Let ``a`` and ``b`` be ``Array``s with shape ``(n,n)`` and ``(n,)``.  The
+  following pairs are equivalent when unwrapped with geometry ``geom``:
 
       a['ij']*b['j']
       (a*b[_,:]).sum(1)
@@ -97,19 +97,19 @@ class IndexedArray:
     return self._shape.keys()
 
   def unwrap( self, geometry=None, indices=None ):
-    '''unwrap the `Array` aligned according to `indices`
+    '''unwrap the ``Array`` aligned according to ``indices``
 
     Parameters
     ----------
     geometry : Array, optional
         The geometry used when computing gradients.  This argument is mandatory
-        when this `IndexedArray` contains gradients, otherwise this argument is
+        when this ``IndexedArray`` contains gradients, otherwise this argument is
         ignored.
     indices : str, optional
-        This indicates the order of the axes of the unwrapped `Array`.
-        `indices` must contain all indices of this `IndexedArray`, may not have
+        This indicates the order of the axes of the unwrapped ``Array``.
+        ``indices`` must contain all indices of this ``IndexedArray``, may not have
         repeated indices and may not have indices other than those of this
-        `IndexedArray`.
+        ``IndexedArray``.
 
     Returns
     -------
@@ -201,7 +201,7 @@ class IndexedArray:
     return self
 
   def _get_element( self, axis, index ):
-    '''get element `index` from axis `axis`'''
+    '''get element ``index`` from axis ``axis``'''
 
     i = self.indices.index(axis)
     return IndexedArray(
@@ -211,7 +211,7 @@ class IndexedArray:
       [self])
 
   def _trace( self, axis1, axis2 ):
-    '''get the trace along `axis1` and `axis2`'''
+    '''get the trace along ``axis1`` and ``axis2``'''
 
     i1 = self.indices.index(axis1)
     i2 = self.indices.index(axis2)
@@ -307,7 +307,7 @@ class IndexedArray:
       ( self, other ) )
 
 def asindexedarray( arg ):
-  'convert `arg` to an `IndexedArray` if possible'
+  'convert ``arg`` to an ``IndexedArray`` if possible'
 
   if isinstance( arg, IndexedArray ):
     return arg
@@ -319,7 +319,7 @@ def asindexedarray( arg ):
     raise ValueError( 'cannot convert {!r} to a `IndexedArray`'.format( arg ) )
 
 def wrap( array, indices ):
-  '''wrap a scalar, numpy array or `Array` in an `IndexedArray`
+  '''wrap a scalar, numpy array or ``Array`` in an ``IndexedArray``
 
   Parameters
   ----------
