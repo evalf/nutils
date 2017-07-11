@@ -15,6 +15,7 @@ from . import \
   log,        \
   cli,        \
   examples,   \
+  docs,       \
   runtests
 
 runtests()

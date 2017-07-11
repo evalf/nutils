@@ -8,7 +8,7 @@ install:
   - bash miniconda.sh -b -p $HOME/miniconda
   - export PATH="$HOME/miniconda/bin:$PATH"
   - conda install --yes python=$TRAVIS_PYTHON_VERSION pip numpy scipy
-  - pip install coverage coveralls
+  - pip install coverage coveralls sphinx
 script:
   - PYTHONPATH="$PWD" make coverage
 after_success:
