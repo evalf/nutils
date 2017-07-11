@@ -291,6 +291,22 @@ class Topology( object ):
     data_index = self._integrate( integrands, ischeme, fcache, arguments )
     return [ matrix.assemble( data, index, integrand.shape, force_dense ) for integrand, (data,index) in zip( integrands, data_index ) ]
 
+  @log.title
+  @core.single_or_multiple
+  def integral(self, funcs, degree=None, ischeme=None, geometry=None, edit=None):
+    'integral'
+
+    assert (degree is None) != (ischeme is None), 'either degree or ischeme must be specified'
+    if ischeme is None:
+      assert isinstance(degree, int) and degree >= 0, 'degree must be a positive integer'
+    else:
+      assert isinstance(ischeme, str), 'ischeme must be a string'
+      if not ischeme.startswith('gauss'):
+        raise NotImplementedError
+      degree = int(ischeme[5:])
+    from . import model
+    return [model.Integral(func, domain=self, geometry=geometry, degree=degree, edit=edit) for func in funcs]
+
   def projection( self, fun, onto, geometry, **kwargs ):
     'project and return as function'
 
