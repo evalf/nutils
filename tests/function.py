@@ -279,16 +279,13 @@ def check( op, n_op, shapes, hasgrad=True ):
     eps = 1e-8
     numpy.random.seed(0)
     for iarg in range(len(args)):
-      def f(x):
-        myargs = list(args)
-        myargs[iarg] = ( x * basis ).sum(-1)
-        return op( *myargs )
-      J = function.partial_derivative( f, 0 )
-      x0 = numpy.random.uniform( size=shapes[iarg]+basis.shape )
-      dx = numpy.random.normal( size=x0.shape ) * eps
-      fx0, fx1, Jx0 = domain.elem_eval( [ f(x0), f(x0+dx), J(x0) ], ischeme='gauss1' )
-      fx1approx = (fx0 + numeric.contract_fast( Jx0, dx, naxes=dx.ndim ))
-      numpy.testing.assert_array_almost_equal( fx1approx, fx1, decimal=12 )
+      x0 = numpy.random.uniform(size=shapes[iarg]+basis.shape )
+      dx = numpy.random.normal(size=x0.shape) * eps
+      x = function.Argument('x', x0.shape)
+      f = op(*(*args[:iarg], (x*basis).sum(-1), *args[iarg+1:]))
+      fx0, fx1, Jx0 = domain.elem_eval([f, function.replace_arguments(f, dict(x=x+dx)),function.derivative(f, x)], ischeme='gauss1', arguments=dict(x=x0))
+      fx1approx = fx0 + numeric.contract_fast(Jx0, dx, naxes=dx.ndim)
+      numpy.testing.assert_array_almost_equal(fx1approx, fx1, decimal=12)
 
   @unittest
   def gradient( ):
