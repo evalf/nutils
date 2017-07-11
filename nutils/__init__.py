@@ -7,6 +7,6 @@ assert LooseVersion(numpy.version.version) >= LooseVersion('1.8'), 'nutils requi
 version = '3beta'
 
 _ = numpy.newaxis
-__all__ = [ '_', 'numpy', 'core', 'numeric', 'element', 'function',
+__all__ = [ '_', 'numpy', 'core', 'numeric', 'element', 'function', 'expression',
   'mesh', 'plot', 'library', 'topology', 'util', 'matrix', 'parallel', 'log',
   'debug', 'cache', 'transform', 'index', 'model', 'cli' ]

@@ -16,6 +16,7 @@ What follows is an automatically generated API reference.
 
    library/topology
    library/function
+   library/expression
    library/core
    library/debug
    library/element
