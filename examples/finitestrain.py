@@ -37,7 +37,7 @@ def main(
   x, y = geom0
   cons = domain.boundary['left,right'].project( x*(a+y*b), onto=basis, ischeme='gauss6', geometry=geom0 )
 
-  dofs = function.DerivativeTarget( [len(basis)] )
+  dofs = function.Argument( 'lhs', [len(basis)] )
   disp = basis.dot( dofs )
   geom = geom0 + disp
   eye = function.eye(len(geom))
@@ -46,17 +46,17 @@ def main(
   stress = lmbda * function.trace(strain) * eye + (2*mu) * strain
   residual = model.Integral( basis['ni,j'] * stress['ij'], domain=domain, geometry=geom0, degree=7 )
 
-  lhs0 = model.solve_linear( dofs, residual=residual, constrain=cons )
+  lhs0 = model.solve_linear( 'lhs', residual=residual, constrain=cons )
   if plots:
-    makeplots( 'linear', domain, function.replace(dofs,lhs0,geom), function.replace(dofs,lhs0,stress) )
+    makeplots( 'linear', domain, function.replace_arguments(geom, dict(lhs=lhs0)), function.replace_arguments(stress, dict(lhs=lhs0)) )
 
   strain = .5 * eye - .5 * ( geom0.grad(geom)[:,:,_] * geom0.grad(geom)[:,_,:] ).sum(0)
   stress = lmbda * function.trace(strain) * eye + (2*mu) * strain
   residual = model.Integral( basis['ni,j'] * stress['ij'], domain=domain, geometry=geom, degree=7 )
 
-  lhs1 = model.newton( dofs, residual=residual, lhs0=lhs0, freezedofs=cons.where ).solve( tol=restol )
+  lhs1 = model.newton( 'lhs', residual=residual, lhs0=lhs0, freezedofs=cons.where ).solve( tol=restol )
   if plots:
-    makeplots( 'linear', domain, function.replace(dofs,lhs1,geom), function.replace(dofs,lhs1,stress) )
+    makeplots( 'linear', domain, function.replace_arguments(geom, dict(lhs=lhs1)), function.replace_arguments(stress, dict(lhs=lhs1)) )
 
   return lhs0, lhs1
 

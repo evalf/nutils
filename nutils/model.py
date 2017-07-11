@@ -14,25 +14,24 @@ such as Newton, that require functional derivatives of an entire functional.
 To demonstrate this consider the following setup:
 
 >>> from nutils import mesh, function, model
->>> domain, geom = mesh.rectilinear( [4,4] )
->>> basis = domain.basis( 'spline', degree=2 )
->>> cons = domain.boundary['left,top'].project( 0, onto=basis, geometry=geom, ischeme='gauss4' )
+>>> ns = function.Namespace()
+>>> domain, ns.x = mesh.rectilinear( [4,4] )
+>>> ns.basis = domain.basis( 'spline', degree=2 )
+>>> cons = domain.boundary['left,top'].project( 0, onto=ns.basis, geometry=ns.x, ischeme='gauss4' )
 project > constrained 11/36 dofs, error 0.00e+00/area
->>> target = function.DerivativeTarget( [len(basis)] )
->>> u = basis.dot( target )
+>>> ns.u = 'basis_n ?lhs_n'
 
 Function ``u`` represents an element from the discrete space but cannot not
-evaluated yet as we did not yet establish values for ``target``. It can,
+evaluated yet as we did not yet establish values for ``?lhs``. It can,
 however, be used to construct a residual functional ``res``. Aiming to solve
 the Poisson problem ``u_,kk = f`` we define the residual functional ``res = v,k
 u,k + v f`` and solve for ``res == 0`` using ``solve_linear``:
 
->>> res = model.Integral( basis['n,i']*u[',i']+basis['n'], domain=domain, geometry=geom, degree=2 )
->>> lhs = model.solve_linear( target, residual=res, constrain=cons )
+>>> res = model.Integral( 'basis_n,i u_,i + basis_n' @ ns, domain=domain, geometry=ns.x, degree=2 )
+>>> lhs = model.solve_linear( 'lhs', residual=res, constrain=cons )
 solving system > solving system using sparse direct solver
->>> u = basis.dot( lhs )
 
-The new function ``u`` represents the solution to the Poisson problem.
+The coefficients ``lhs`` represent the solution to the Poisson problem.
 
 In addition to ``solve_linear`` the model module defines ``newton`` and
 ``pseudotime`` for solving nonlinear problems, as well as ``impliciteuler`` for
@@ -40,7 +39,36 @@ time dependent problems.
 """
 
 from . import function, index, cache, log, util, numeric
-import numpy, itertools, functools, numbers
+import numpy, itertools, functools, numbers, collections
+
+
+def _find_argument( name, *funcs ):
+  '''find and return a :class:`nutils.function.Argument` with ``name`` in ``funcs``'''
+
+  class Found( Exception ):
+    def __init__( self, target ):
+      self.target = target
+      super().__init__( 'found' )
+
+  def find( value ):
+    if isinstance( value, function.Argument ) and value._name == name:
+      raise Found( value )
+    return function.edit( value, find )
+
+  funcs_ = []
+  for func in funcs:
+    if isinstance( func, Integral ):
+      for integrand, degree in func.values():
+        funcs_.append( integrand )
+    else:
+      funcs_.append( func )
+
+  try:
+    for func in funcs_:
+      function.edit( func, find )
+  except Found as e:
+    return e.target
+  raise ValueError( 'target {!r} not found'.format( name ) )
 
 
 class Integral( dict ):
@@ -71,7 +99,7 @@ class Integral( dict ):
     return concatenate
 
   @classmethod
-  def multieval( cls, *integrals, fcache=None ):
+  def multieval( cls, *integrals, fcache=None, arguments=None ):
     if fcache is None:
       fcache = cache.WrapperCache()
     assert all( isinstance( integral, cls ) for integral in integrals )
@@ -79,16 +107,17 @@ class Integral( dict ):
     retvals = []
     for i, domain in enumerate(domains):
       integrands, degrees = zip( *[ integral.get( domain, (function.zeros(integral.shape),0) ) for integral in integrals ] )
-      retvals.append( domain.obj.integrate( integrands, ischeme='gauss{}'.format(max(degrees)), fcache=fcache ) )
+      retvals.append( domain.obj.integrate( integrands, ischeme='gauss{}'.format(max(degrees)), fcache=fcache, arguments=arguments ) )
     return numpy.sum( retvals, axis=0 )
 
-  def eval( self, fcache=None ):
+  def eval( self, *, fcache=None, arguments=None ):
     if fcache is None:
       fcache = cache.WrapperCache()
-    values = [ domain.obj.integrate( integrand, ischeme='gauss{}'.format(degree), fcache=fcache ) for domain, (integrand,degree) in self.items() ]
+    values = [ domain.obj.integrate( integrand, ischeme='gauss{}'.format(degree), fcache=fcache, arguments=arguments ) for domain, (integrand,degree) in self.items() ]
     return numpy.sum( values, axis=0 )
 
   def derivative(self, target):
+    target = _find_argument(target, self)
     assert target.ndim == 1
     seen = {}
     derivative = self.empty( self.shape+target.shape )
@@ -96,11 +125,10 @@ class Integral( dict ):
       derivative[domain] = function.derivative(integrand, var=target, seen=seen), degree
     return derivative
 
-  def replace( self, target, replacement ):
-    edit = functools.partial( function.replace, target, replacement )
+  def replace( self, arguments ):
     replace = self.empty( self.shape )
     for domain, (integrand,degree) in self.items():
-      replace[domain] = edit(integrand), degree
+      replace[domain] = function.replace_arguments(integrand, arguments), degree
     return replace
 
   def contains( self, target ):
@@ -146,17 +174,21 @@ class Integral( dict ):
 class ModelError( Exception ): pass
 
 
-def solve_linear( target, residual, constrain ):
+def solve_linear(target, residual, constrain, *, arguments=None):
   '''solve linear problem
 
   Parameters
   ----------
-  target : DerivativeTarget
-      Representation of coefficient vector
+  target : :class:`str`
+      Name of the target: a :class:`nutils.function.Argument` in ``residual``.
   residual : Integral
       Residual integral, depends on ``target``
   constrain : util.NanVec
       Defines the fixed entries of the coefficient vector
+  arguments : :class:`collections.abc.Mapping`
+      Defines the values for :class:`nutils.function.Argument` objects in
+      `residual`.  The ``target`` should not be present in ``arguments``.
+      Optional.
 
   Returns
   -------
@@ -164,9 +196,11 @@ def solve_linear( target, residual, constrain ):
       Array of ``target`` values for which ``residual == 0``'''
 
   jacobian = residual.derivative( target )
-  if jacobian.contains( target ):
+  if jacobian.contains( _find_argument( target, residual ) ):
     raise ModelError( 'problem is not linear' )
-  res, jac = Integral.multieval( residual.replace(target,function.zeros_like(target)), jacobian )
+  assert target not in (arguments or {}), '`target` should not be defined in `arguments`'
+  arguments = collections.ChainMap(arguments or {}, {target: numpy.zeros(_find_argument(target, residual).shape)})
+  res, jac = Integral.multieval(residual, jacobian, arguments=arguments)
   return jac.solve( -res, constrain=constrain )
 
 
@@ -236,7 +270,7 @@ def withsolve( f ):
 
 
 @withsolve
-def newton( target, residual, lhs0=None, freezedofs=None, nrelax=numpy.inf, minrelax=.1, maxrelax=.9, rebound=2**.5 ):
+def newton(target, residual, lhs0=None, freezedofs=None, nrelax=numpy.inf, minrelax=.1, maxrelax=.9, rebound=2**.5, *, arguments=None):
   '''iteratively solve nonlinear problem by gradient descent
 
   Generates targets such that residual approaches 0 using Newton procedure with
@@ -253,7 +287,8 @@ def newton( target, residual, lhs0=None, freezedofs=None, nrelax=numpy.inf, minr
 
   Parameters
   ----------
-  target : DerivativeTarget
+  target : :class:`str`
+      Name of the target: a :class:`nutils.function.Argument` in ``residual``.
   residual : Integral
   lhs0 : vector
       Coefficient vector, starting point of the iterative procedure.
@@ -274,6 +309,10 @@ def newton( target, residual, lhs0=None, freezedofs=None, nrelax=numpy.inf, minr
   rebound : float
       Factor by which the relaxation value grows after every update until it
       reaches unity.
+  arguments : :class:`collections.abc.Mapping`
+      Defines the values for :class:`nutils.function.Argument` objects in
+      `residual`.  The ``target`` should not be present in ``arguments``.
+      Optional.
 
   Yields
   ------
@@ -281,16 +320,21 @@ def newton( target, residual, lhs0=None, freezedofs=None, nrelax=numpy.inf, minr
       Coefficient vector that approximates residual==0 with increasing accuracy
   '''
 
+  assert target not in (arguments or {}), '`target` should not be defined in `arguments`'
+  resolved_target = _find_argument( target, residual )
+
   if freezedofs is None:
-    freezedofs = numpy.zeros( len(target), dtype=bool )
+    freezedofs = numpy.zeros( len(resolved_target), dtype=bool )
 
   if lhs0 is None:
-    lhs0 = numpy.zeros( len(target) )
+    lhs0 = numpy.zeros(residual.shape)
+  else:
+    assert isinstance(lhs0, numpy.ndarray) and lhs0.dtype == float and lhs0.shape == residual.shape, 'invalid lhs0 argument'
 
   jacobian = residual.derivative( target )
-  if not jacobian.contains( target ):
+  if not jacobian.contains( resolved_target ):
     log.info( 'problem is linear' )
-    res, jac = Integral.multieval( residual.replace(target,function.zeros_like(target)), jacobian )
+    res, jac = Integral.multieval(residual, jacobian, arguments=collections.ChainMap(arguments or {}, {target: numpy.zeros(resolved_target.shape)}))
     cons = lhs0.copy()
     cons[~freezedofs] = numpy.nan
     lhs = jac.solve( -res, constrain=cons )
@@ -299,8 +343,8 @@ def newton( target, residual, lhs0=None, freezedofs=None, nrelax=numpy.inf, minr
 
   lhs = lhs0.copy()
   fcache = cache.WrapperCache()
-  res, jac = Integral.multieval( residual.replace(target,lhs), jacobian.replace(target,lhs), fcache=fcache )
-  zcons = numpy.zeros( len(target) )
+  res, jac = Integral.multieval(residual, jacobian, fcache=fcache, arguments=collections.ChainMap(arguments or {}, {target: lhs}))
+  zcons = numpy.zeros( len(resolved_target) )
   zcons[~freezedofs] = numpy.nan
   relax = 1
   while True:
@@ -309,7 +353,7 @@ def newton( target, residual, lhs0=None, freezedofs=None, nrelax=numpy.inf, minr
     dlhs = -jac.solve( res, constrain=zcons )
     relax = min( relax * rebound, 1 )
     for irelax in itertools.count():
-      res, jac = Integral.multieval( residual.replace(target,lhs+relax*dlhs), jacobian.replace(target,lhs+relax*dlhs), fcache=fcache )
+      res, jac = Integral.multieval(residual, jacobian, fcache=fcache, arguments=collections.ChainMap(arguments or {}, {target: lhs+relax*dlhs}))
       newresnorm = numpy.linalg.norm( res[~freezedofs] )
       if irelax >= nrelax:
         if newresnorm > resnorm:
@@ -345,7 +389,7 @@ def newton( target, residual, lhs0=None, freezedofs=None, nrelax=numpy.inf, minr
 
 
 @withsolve
-def pseudotime( target, residual, inertia, timestep, lhs0, residual0=None, freezedofs=None ):
+def pseudotime(target, residual, inertia, timestep, lhs0, residual0=None, freezedofs=None, *, arguments=None):
   '''iteratively solve nonlinear problem by pseudo time stepping
 
   Generates targets such that residual approaches 0 using hybrid of Newton and
@@ -354,7 +398,8 @@ def pseudotime( target, residual, inertia, timestep, lhs0, residual0=None, freez
 
   Parameters
   ----------
-  target : DerivativeTarget
+  target : :class:`str`
+      Name of the target: a :class:`nutils.function.Argument` in ``residual``.
   residual : Integral
   inertia : Integral
   timestep : float
@@ -365,6 +410,10 @@ def pseudotime( target, residual, inertia, timestep, lhs0, residual0=None, freez
       Equal length to ``lhs0``, masks the non-free vector entries as ``True``.
       In the positions where ``freezedofs`` is True the values of ``lhs0`` are
       returned unchanged.
+  arguments : :class:`collections.abc.Mapping`
+      Defines the values for :class:`nutils.function.Argument` objects in
+      `residual`.  The ``target`` should not be present in ``arguments``.
+      Optional.
 
   Yields
   ------
@@ -372,33 +421,36 @@ def pseudotime( target, residual, inertia, timestep, lhs0, residual0=None, freez
       Tuple of coefficient vector and residual norm
   '''
 
+  assert target not in (arguments or {}), '`target` should not be defined in `arguments`'
+
   jacobian0 = residual.derivative( target )
   jacobiant = inertia.derivative( target )
   if residual0 is not None:
     residual += residual0
   if freezedofs is None:
-    freezedofs = numpy.zeros( len(target), dtype=bool )
-  zcons = util.NanVec( len(target) )
+    freezedofs = numpy.zeros( len(_find_argument(target, residual, residual0)), dtype=bool )
+  zcons = util.NanVec( len(_find_argument(target, residual, residual0)) )
   zcons[freezedofs] = 0
   lhs = lhs0.copy()
   fcache = cache.WrapperCache()
-  res, jac = Integral.multieval( residual.replace(target,lhs), (jacobian0+jacobiant/timestep).replace(target,lhs), fcache=fcache )
+  res, jac = Integral.multieval(residual, jacobian0+jacobiant/timestep, fcache=fcache, arguments=collections.ChainMap(arguments or {}, {target: lhs}))
   resnorm = resnorm0 = numpy.linalg.norm( res[~freezedofs] )
   while True:
     yield lhs, resnorm
     lhs -= jac.solve( res, constrain=zcons )
     thistimestep = timestep * (resnorm0/resnorm)
     log.info( 'timestep: {:.0e}'.format(thistimestep) )
-    res, jac = Integral.multieval( residual.replace(target,lhs), (jacobian0+jacobiant/thistimestep).replace(target,lhs), fcache=fcache )
+    res, jac = Integral.multieval(residual, jacobian0+jacobiant/thistimestep, fcache=fcache, arguments=collections.ChainMap(arguments or {}, {target: lhs}))
     resnorm = numpy.linalg.norm( res[~freezedofs] )
 
 
-def impliciteuler( target, residual, inertia, timestep, lhs0, residual0=None, freezedofs=None, tol=1e-10, **newtonargs ):
+def impliciteuler(target, residual, inertia, timestep, lhs0, residual0=None, freezedofs=None, tol=1e-10, *, arguments=None, **newtonargs):
   '''solve time dependent problem using implicit euler time stepping
 
   Parameters
   ----------
-  target : DerivativeTarget
+  target : :class:`str`
+      Name of the target: a :class:`nutils.function.Argument` in ``residual``.
   residual : Integral
   inertia : Integral
   timestep : float
@@ -413,6 +465,10 @@ def impliciteuler( target, residual, inertia, timestep, lhs0, residual0=None, fr
       returned unchanged.
   tol : float
       Residual tolerance of individual timesteps
+  arguments : :class:`collections.abc.Mapping`
+      Defines the values for :class:`nutils.function.Argument` objects in
+      `residual`.  The ``target`` should not be present in ``arguments``.
+      Optional.
 
   Yields
   ------
@@ -420,6 +476,7 @@ def impliciteuler( target, residual, inertia, timestep, lhs0, residual0=None, fr
       Coefficient vector for all timesteps after the initial condition.
   '''
 
+  assert target not in (arguments or {}), '`target` should not be defined in `arguments`'
   res = residual + inertia / timestep
   res0 = -inertia / timestep
   if residual0 is not None:
@@ -427,4 +484,4 @@ def impliciteuler( target, residual, inertia, timestep, lhs0, residual0=None, fr
   lhs = lhs0
   while True:
     yield lhs
-    lhs = solve( newton( target, residual=res0.replace(target,lhs) + res, lhs0=lhs, freezedofs=freezedofs, **newtonargs ), tol=tol )
+    lhs = solve( newton( target, residual=res0.replace(**{target:lhs}) + res, lhs0=lhs, freezedofs=freezedofs, arguments=arguments, **newtonargs ), tol=tol )
