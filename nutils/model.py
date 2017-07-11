@@ -477,3 +477,66 @@ def impliciteuler(target, residual, inertia, timestep, lhs0, residual0=None, fre
   while True:
     yield lhs
     lhs = solve( newton( target, residual=res0.replace(**{target:lhs}) + res, lhs0=lhs, freezedofs=freezedofs, arguments=arguments, **newtonargs ), tol=tol )
+
+
+@log.title
+def optimize(target, functional, droptol=None, lhs0=None, constrain=None, newtontol=None, *, arguments=None):
+  '''find the minimizer of a given functional
+
+  Parameters
+  ----------
+  target : :class:`str`
+      Name of the target: a :class:`nutils.function.Argument` in ``residual``.
+  functional : scalar Integral
+      The functional the should be minimized by varying target
+  droptol : :class:`float`
+      Threshold for leaving entries in the return value at NaN if they do not
+      contribute to the value of the functional.
+  lhs0 : vector
+      Coefficient vector, starting point of the iterative procedure (if
+      applicable).
+  constrain : boolean or float vector
+      Equal length to ``lhs0``, masks the free vector entries as ``False``
+      (boolean) or NaN (float). In the remaining positions the values of
+      ``lhs0`` are returned unchanged (boolean) or overruled by the values in
+      `constrain` (float).
+  newtontol : float
+      Residual tolerance of Newton procedure (if applicable)
+
+  Yields
+  ------
+  vector
+      Coefficient vector corresponding to the functional optimum
+  '''
+
+  assert target not in (arguments or {}), '`target` should not be defined in `arguments`'
+  assert len(functional.shape) == 0, 'functional should be scalar'
+  arg = _find_argument(target, functional)
+  if lhs0 is None:
+    lhs0 = numpy.zeros(arg.shape)
+  else:
+    assert isinstance(lhs0, numpy.ndarray) and lhs0.dtype == float and lhs0.shape == arg.shape, 'invalid lhs0 argument'
+  if constrain is None:
+    constrain = numpy.zeros(arg.shape, dtype=bool)
+  else:
+    assert isinstance(constrain, numpy.ndarray) and constrain.dtype in (bool,float) and constrain.shape == arg.shape, 'invalid constrain argument'
+    if constrain.dtype == float:
+      lhs0 = numpy.choose(numpy.isnan(constrain), [constrain, lhs0])
+      constrain = ~numpy.isnan(constrain)
+  residual = functional.derivative(target)
+  jacobian = residual.derivative(target)
+  f0, res, jac = Integral.multieval(functional, residual, jacobian, arguments=collections.ChainMap(arguments or {}, {target: lhs0}))
+  nandofs = numpy.zeros(residual.shape, dtype=bool) if droptol is None else ~jac.rowsupp(droptol)
+  cons = numpy.zeros(residual.shape)
+  cons[~(constrain|nandofs)] = numpy.nan
+  lhs = lhs0 - jac.solve(res, constrain=cons) # residual(lhs0) + jacobian(lhs0) dlhs = 0
+  if not jacobian.contains(arg): # linear: functional(lhs0+dlhs) = functional(lhs0) + residual(lhs0) dlhs + .5 dlhs jacobian(lhs0) dlhs
+    value = f0 + .5 * res.dot(lhs-lhs0)
+  else: # nonlinear
+    assert newtontol is not None, 'newton tolerance `newtontol` must be specified for nonlinear problems'
+    lhs = newton(target, residual, lhs0=lhs, freezedofs=constrain|nandofs, arguments=arguments).solve(newtontol)
+    value = functional.eval(arguments=collections.ChainMap(arguments or {}, {target: lhs}))
+  assert not numpy.isnan(lhs[~(constrain|nandofs)]).any(), 'optimization failed (forgot droptol?)'
+  log.info('optimum: {:.2e}'.format(value))
+  lhs[nandofs] = numpy.nan
+  return lhs

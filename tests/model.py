@@ -56,3 +56,37 @@ def navierstokes():
       res = residual.eval(arguments=dict(dofs=lhs))
       resnorm = numpy.linalg.norm( res[~cons.where] )
       assert resnorm < tol
+
+
+@register
+def optimize():
+  ns = function.Namespace()
+  domain, ns.geom = mesh.rectilinear([2,2])
+  ns.ubasis = domain.basis('std', degree=1)
+
+  @unittest
+  def linear():
+    ns.u = 'ubasis_n ?dofs_n'
+    err = domain.boundary['bottom'].integral(ns.eval_('(u - 1)^2'), geometry=ns.geom, degree=2)
+    cons = model.optimize('dofs', err, droptol=1e-15)
+    isnan = numpy.isnan(cons)
+    assert numpy.equal(isnan, [0,1,1,0,1,1,0,1,1]).all()
+    numpy.testing.assert_almost_equal(cons[~isnan], 1, decimal=15)
+
+  @unittest
+  def nonlinear():
+    ns.fu = 'u + u^3'
+    err = domain.boundary['bottom'].integral(ns.eval_('(fu - 2)^2'), geometry=ns.geom, degree=2)
+    cons = model.optimize('dofs', err, droptol=1e-15, newtontol=1e-10)
+    isnan = numpy.isnan(cons)
+    assert numpy.equal(isnan, [0,1,1,0,1,1,0,1,1]).all()
+    numpy.testing.assert_almost_equal(cons[~isnan], 1, decimal=15)
+
+  @unittest
+  def nonlinear_multipleroots():
+    ns.gu = 'u + u^2'
+    err = domain.boundary['bottom'].integral(ns.eval_('(gu - .75)^2'), geometry=ns.geom, degree=2)
+    cons = model.optimize('dofs', err, droptol=1e-15, lhs0=numpy.ones(len(ns.ubasis)), newtontol=1e-10)
+    isnan = numpy.isnan(cons)
+    assert numpy.equal(isnan, [0,1,1,0,1,1,0,1,1]).all()
+    numpy.testing.assert_almost_equal(cons[~isnan], .5, decimal=15)
