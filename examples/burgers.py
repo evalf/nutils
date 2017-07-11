@@ -1,23 +1,22 @@
 #! /usr/bin/python3
 
-from nutils import mesh, cli, log, function, plot, debug, _
+from nutils import mesh, cli, log, function, plot, debug, model, _
 import numpy
 
 
-class MakePlots( object ):
+class MakePlots:
 
-  def __init__( self, domain, geom, video ):
+  def __init__(self, domain, video):
     self.domain = domain
-    self.geom = geom
-    self.plt = video and plot.PyPlotVideo( 'solution' )
+    self.plt = video and plot.PyPlotVideo('solution')
     self.index = 0
 
-  def __call__( self, u ):
+  def __call__(self, ns):
     self.index += 1
-    xp, up = self.domain.elem_eval( [ self.geom, u ], ischeme='bezier7', separate=True )
-    with self.plt if self.plt else plot.PyPlot( 'solution', index=self.index ) as plt:
-      plt.mesh( xp, up )
-      plt.clim( 0, 1 )
+    xp, up = self.domain.elem_eval([ns.x, ns.u], ischeme='bezier7', separate=True)
+    with self.plt if self.plt else plot.PyPlot('solution', index=self.index) as plt:
+      plt.mesh(xp, up)
+      plt.clim(0, 1)
       plt.colorbar()
 
 
@@ -29,69 +28,62 @@ def main(
     ndims: 'spatial dimension' = 1,
     endtime: 'end time, 0 for no end time' = 0,
     withplots: 'create plots' = True,
-  ):
+ ):
 
-  # construct mesh
-  domain, geom = mesh.rectilinear( [numpy.linspace(0,1,nelems+1)]*ndims, periodic=range(ndims) )
-  basis = domain.basis( 'discont', degree=degree )
+  # construct mesh, basis
+  ns = function.Namespace()
+  domain, ns.x = mesh.rectilinear([numpy.linspace(0,1,nelems+1)]*ndims, periodic=range(ndims))
+  ns.basis = domain.basis('discont', degree=degree)
+  ns.u = 'basis_n ?lhs_n'
 
   # construct initial condition (centered gaussian)
-  u = function.exp( -( ((geom-.5)*5)**2 ).sum(-1) )
-  lhs = domain.project( u, onto=basis, geometry=geom, ischeme='gauss5' )
+  lhs0 = domain.project('exp(-?y_i ?y_i) | ?y_i = 5 (x_i - 0.5_i)' @ ns, onto=ns.basis, geometry=ns.x, degree=5)
 
-  # prepare matrix
-  timestep = timescale/nelems
-  At = (1/timestep) * function.outer( basis )
-  matrix0 = domain.integrate( At, geometry=geom, ischeme='gauss5' )
+  # prepare residual
+  ns.f = '.5 u^2'
+  ns.C = 1
+  res = domain.integral('-basis_n,0 f' @ ns, geometry=ns.x, degree=5)
+  res += domain.interfaces.integral('-[basis_n] n_0 ({f} - .5 C [u] n_0)' @ ns, geometry=ns.x, degree=5)
+  inertia = domain.integral('basis_n u' @ ns, geometry=ns.x, degree=5)
 
   # prepare plotting
-  makeplots = MakePlots( domain, geom, video=withplots=='video' ) if withplots else lambda *args: None
+  makeplots = MakePlots(domain, video=withplots=='video') if withplots else lambda ns: None
 
   # start time stepping
-  for itime in log.count( 'timestep' ):
-    makeplots( u )
+  timestep = timescale/nelems
+  for itime, lhs in log.enumerate('timestep', model.impliciteuler('lhs', res, inertia, timestep, lhs0, tol=tol)):
+    makeplots(ns | dict(lhs=lhs))
     if endtime and itime * timestep >= endtime:
       break
-    rhs = matrix0.matvec(lhs)
-    for ipicard in log.count( 'picard' ):
-      u = basis.dot( lhs )
-      beta = function.repeat( u[_], ndims, axis=0 )
-      Am = -function.outer( ( basis[:,_] * beta ).div(geom), basis )
-      dmatrix = domain.integrate( Am, geometry=geom, ischeme='gauss5' )
-      alpha = .5 * function.sign( function.mean(beta).dotnorm(geom) )
-      Ai = function.outer( function.jump(basis), ( alpha * function.jump(basis[:,_]*beta) - function.mean(basis[:,_]*beta) ).dotnorm(geom) )
-      dmatrix += domain.interfaces.integrate( Ai, geometry=geom, ischeme='gauss5' )
-      lhs, info = ( matrix0 + dmatrix ).solve( rhs, lhs0=lhs, tol=tol, restart=999, precon='spilu', info=True )
-      if info.niter == 0:
-        break
 
-  return rhs, lhs
+  return res.eval(arguments=dict(lhs=lhs)), lhs
 
 
 def unittest():
 
-  retvals = main( ndims=1, nelems=10, timescale=.1, degree=1, endtime=.01, withplots=False )
-  assert debug.checkdata( retvals, '''
-    eNpVjssNwzAMQ9dJAAXQ39JA3X+F2kx16OnBhEw+octJ4qbrUm/5PEHBqw6lar+dTLsOawUfiol+HiMN
-    rkNTtkN3dbBY//jL527+Tc/0zs7sjsd4bcdHmnfX2saGrDV3R1Kb47bivTXnRqcnOveEgSsUGywNB3aG
-    gwU2S/11WZFgWiAvZex5Ghi9zu72QP5Iah6xm+4vsgVJqA==''' )
+  retvals = main(ndims=1, nelems=10, timescale=.1, degree=1, endtime=.01, withplots=False)
+  assert debug.checkdata(retvals, '''
+    eNotkNsNRCEIBdvxJpDwBguy/xZWcL/GCHgGGZYB+wdrqbkcLBAyOhiAVhIHE1wq+oIr6qCDMlHzYh+8
+    48L2mDpkliamdcEBt8dMIAdNC96WmUXzeiWJzHcw5o5FdfHJ3awjpJbchtdWSL2beKTbxbW5hcaxot+/
+    rvZc1GKC059rFsW4Et9UvbRolkr2ff130nQfxvOtzaO79f0FU8yK1yOaQl7t9cH3A58wSvg=''')
 
-  retvals = main( ndims=1, nelems=10, timescale=.1, degree=2, endtime=.01, withplots=False )
-  assert debug.checkdata( retvals, '''
-    eNpVkcsNxDAIBdtJJFsyYH4Fuf8W1kA47Gkk5DzeEBjPHsDveB4goDN5ILEFydyDsBjOvK+EPYhbLMgg
-    ElSQnDtTzoFZz6QBvjCIyEVTDtJySyLTH795v+vvOqdze0/v7R7dq3t27/Zor/a8znh3nSkDBZKgKvnE
-    oU4AUSVOgF8kFdUxo5mlSLmKN62sdjslt2GdxnfSq6q7UuVBqtmynBtg5XipkbqWQuWBaf2KpViUUoRQ
-    jd5bk9nvKvP29Lu3Db7j/QGOWGzS''' )
+  retvals = main(ndims=1, nelems=10, timescale=.1, degree=2, endtime=.01, withplots=False)
+  assert debug.checkdata(retvals, '''
+    eNotkdkNxDAIRNtJJCxxHwWl/xbWwH49AnhgCMGjQPbC8xSpf6dATew7CYcr6zsBhEnf8dum1mQ3nO9b
+    +I4BpVSTi61pQdQMwclnhgwLffM1eUOP5mEVnsCSp/Nk0JYqIjfjvJnA2EDYdZ+TbECUuCVL7Q0PucQE
+    7C0Yd4T9A3XUsVmc1r7vDViJxyGbjMMkXoc1ewnlTCKUO0ibPox2pCBmuOxlFUy3HtY6l+rZLEcZVlto
+    Rq5e9wkk5ugl6ehZ2fRLoi5p+++d9l389/GZIxRzCCqy3X+Px4zzJ1l5fL7w/gDuxG+1''')
 
-  retvals = main( ndims=2, nelems=4, timescale=.1, degree=1, endtime=.01, withplots=False )
-  assert debug.checkdata( retvals, '''
-    eNplUllywyAMvU4yAzNoRT5Q7n+FGuRHU/VLWMhvE9Re2sje7fUSV/302YhnfLqfqhq86nS5sk/06dbY
-    57Wqsvqq6GMOfcwBDzzARR///c4n3sH3cX9rY5P4rjpYvr8xV/vArfrAU/mqnspX9fzjq3oKX9VT8677
-    qHnXffzPu+yj5F33cb8BEh6r1Y3d/hyYxgbr0+ZG6xKXrI4MTjozXTa7XD5yNIZvIouxboSI94UJz30h
-    6gnO+lx48oMF4IcNLOoxt1niDPupNOzWK0tvcoakOlrLuPthc8/PDKu7yDZIM1K+RqQY+ID84wc+wAFs
-    cIHjdsW7P3Q/gFP1eXChe64bjfxxzkzOOYM5SSEhJHaSgo8jH36OD7AccLAdFibxJ/58EedAYhvs3d4/
-    YD7oyg==''' )
+  retvals = main(ndims=2, nelems=4, timescale=.1, degree=1, endtime=.01, withplots=False)
+  assert debug.checkdata(retvals, '''
+    eNpNktkNAzEIRNtJJFviMIcLSv8txOCF5AsvMzsPHzhea6C8x+uFgvqZe4gKRJ3KiJ/pYxJu/0wb6MZR
+    F4NEnQ6wc7HR9F8pZwttrfSidXjjkGVllm+M6q4r+syQfd96snXghlNlIIZfBqllrX75uv/4Krc4nftw
+    pitDLpjQQiHzeyICsa2z2Lolss/0CyJ0GnPSJjom/ie1uaU2F+HHLEQzzVjuLRjdw0Zhv+MY33FIxTJP
+    SOHOBXqDl9s93p9U5pba3IiGNqKg56Xgcrq0jQ9WPBdEjLlBF9mXwcGQwUk/l6B8hPUT2lpKOTu9cB1e
+    tGno+Su5USq8PRcoGyJroe18GrAsvmlBVkQ8fe5++br/+Dq4SBXcpLlg3VeocbdHsRUHdYbaKsmmeN+H
+    SaqRzUq3b8D//fJVv3wdXKQKbtKU50aJosb240UfQQEwFgzP/pzXHXLrc3MA/q+Us4W2VnjTOr1w7/H+
+    Aj2F8Gw=''')
 
 
 if __name__ == '__main__':
-  cli.choose( main, unittest )
+  cli.choose(main, unittest)
