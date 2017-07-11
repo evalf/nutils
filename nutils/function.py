@@ -1777,11 +1777,15 @@ class Power( Array ):
     return numeric.power( base, exp )
 
   def _derivative(self, var, seen):
+    ext = (...,)+(_,)*var.ndim
+    if self.power.isconstant:
+      p, = self.power.eval()
+      return zeros(self.shape + var.shape) if p == 0 \
+        else p * power(self.func, p-1)[ext] * derivative(self.func, var, seen)
     # self = func**power
     # ln self = power * ln func
     # self` / self = power` * ln func + power * func` / func
     # self` = power` * ln func * self + power * func` * func**(power-1)
-    ext = (...,)+(_,)*var.ndim
     powerm1 = choose(equal(self.power, 0), [self.power-1, 0]) # avoid introducing negative powers where possible
     return (self.power * power(self.func, powerm1))[ext] * derivative(self.func, var, seen) \
          + (ln(self.func) * self)[ext] * derivative(self.power, var, seen)
