@@ -143,7 +143,9 @@ class ScipyMatrix( Matrix ):
       solver = 'cg' if symmetric else 'gmres'
 
     solverfun = getattr( scipy.sparse.linalg, solver )
-    if solver == 'spsolve':
+    if not numpy.any(b):
+      x = numpy.zeros_like(x0)
+    elif solver == 'spsolve':
       log.info( 'solving system using sparse direct solver' )
       x = solverfun( A, b )
       solverinfo( A, b, x )
