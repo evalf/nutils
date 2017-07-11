@@ -2572,29 +2572,6 @@ class DerivativeTargetBase( Array ):
   def isconstant( self ):
     return False
 
-class DerivativeTarget( DerivativeTargetBase ):
-  'helper class for computing derivatives'
-
-  def __init__( self, shape ):
-    DerivativeTargetBase.__init__( self, args=[], shape=shape, dtype=float )
-
-  def evalf( self ):
-    raise ValueError( 'unwrap {!r} before evaluation'.format( self ) )
-
-  def _edit( self, op ):
-    return self
-
-  def _derivative(self, var, seen):
-    if var is self:
-      result = numpy.array(1)
-      for i, n in enumerate( var.shape ):
-        result = repeat(result[..., None], n, i)
-      for i, sh in enumerate(self.shape):
-        result = result * align(eye(sh), (i, self.ndim+i), self.ndim*2)
-      return result
-    else:
-      return zeros(self.shape+var.shape)
-
 class Argument(DerivativeTargetBase):
   '''Array argument, to be substituted before evaluation.
 
@@ -3323,65 +3300,6 @@ def takediag( arg, ax1=-2, ax2=-1 ):
 
   return TakeDiag( arg )
 
-def partial_derivative(func, arg_key):
-  '''partial derivative of a function
-
-  Compute the partial derivative of ``func`` with respect to argument
-  ``arg_key``.
-
-  Parameters
-  ----------
-  func : callable
-  arg_key : int or str
-      Reference to an argument of ``func``.  If ``arg_key`` is an :class:`int`,
-      ``arg_key`` is the index of a positional argument of ``func``.  If
-      ``arg_key`` is a :class:`str`, ``arg_key`` is the name of an argument of
-      ``func``.
-
-  Returns
-  -------
-  callable
-      Partial derivative of ``func``.  The shape of this function is the
-      concatenation of the shape of ``func`` and the shape of ``arg``,
-      where ``arg`` is the argument refered to by ``arg_key``.
-  '''
-
-  if not isinstance(arg_key, (int, str)):
-    raise ValueError('arg_key: expected an int or str, got {!r}'.format(arg_key))
-
-  sig = inspect.signature(func)
-  if isinstance(arg_key, str) and arg_key in sig.parameters:
-    # convert `arg_key` to index if possible
-    param = sig.parameters[arg_key]
-    if param.kind in (param.POSITIONAL_ONLY, param.POSITIONAL_OR_KEYWORD):
-      for i, (n, p) in enumerate(self._signature.parameters.items()):
-        if p.kind not in (p.POSITIONAL, p.POSITIONAL_OR_KEYWORD):
-          break
-        if n == arg_key:
-          arg_key = i
-          break
-
-  @functools.wraps(func)
-  def wrapper(*args, **kwargs):
-    ba = sig.bind(*args, **kwargs)
-    # add default arguments
-    for param in sig.parameters.values():
-      if (param.name not in ba.arguments and param.default is not param.empty):
-        ba.arguments[param.name] = param.default
-
-    # replace argument `arg_key` with a derivative helper
-    args = list(ba.args)
-    kwargs = dict(ba.kwargs)
-    keyargs = args if isinstance(arg_key,int) else kwargs
-    orig = keyargs[arg_key]
-    var = DerivativeTarget(orig.shape)
-    keyargs[arg_key] = var
-
-    # compute derivative and replace derivative helper with original argument
-    return replace(var, orig, derivative(func(*args, **kwargs), var))
-
-  return wrapper
-
 def derivative(func, var, seen=None):
   'derivative'
 
@@ -3983,22 +3901,6 @@ def ravel( func, axis ):
     return retval
 
   return Ravel( func, axis )
-
-def replace( old, new, arg ):
-  assert isarray( old )
-  new = asarray( new )
-  assert new.shape == old.shape
-  d = { old: new }
-  def s( f ):
-    try:
-      v = d[f]
-    except KeyError:
-      v = edit( f, s )
-      if isarray( f ):
-        assert v.shape == f.shape
-      d[f] = v
-    return v
-  return s( arg )
 
 def replace_arguments(value, arguments):
   '''Replace :class:`Argument` objects in ``value``.
