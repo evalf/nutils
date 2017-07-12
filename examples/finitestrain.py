@@ -3,15 +3,13 @@
 from nutils import *
 
 
-def makeplots( name, domain, geom, stress ):
-  sigma_dev = stress - (function.trace(stress)/domain.ndims) * function.eye(domain.ndims)
-  vonmises = function.sqrt( ( sigma_dev**2 ).sum([0,1]) * 1.5 ) # TODO check fix for 2D
-  points, colors = domain.simplex.elem_eval( [ geom, vonmises ], ischeme='bezier3', separate=True )
-  with plot.PyPlot( name ) as plt:
-    plt.mesh( points, colors, triangulate='bezier' )
+def makeplots(name, domain, ns):
+  from matplotlib import colors
+  X, energy = domain.simplex.elem_eval([ns.X, ns.energy], ischeme='bezier3', separate=True)
+  with plot.PyPlot(name, ndigits=0) as plt:
+    plt.mesh(X, energy, triangulate='bezier', cmap='jet', norm=colors.LogNorm())
     plt.colorbar()
-    plt.axis( 'equal' )
-    plt.clim( 0, 1 )
+    plt.axis('equal')
 
 
 def main(
@@ -22,57 +20,58 @@ def main(
     restol: 'residual tolerance' = 1e-10,
     trim: 'create circular-shaped hole' = False,
     plots: 'create plots' = True,
-  ):
+ ):
 
-  verts = numpy.linspace( 0, 1, nelems+1 )
-  domain, geom0 = mesh.rectilinear( [verts,verts] )
+  ns = function.Namespace()
+  ns.angle = angle * numpy.pi / 180
+  ns.lmbda = lmbda
+  ns.mu = mu
+
+  verts = numpy.linspace(0, 1, nelems+1)
+  domain, ns.x = mesh.rectilinear([verts,verts])
   if trim:
-    levelset = function.norm2( geom0 - (.5,.5) ) - .2
-    domain = domain.trim( levelset, maxrefine=2 )
+    levelset = function.norm2(ns.x - (.5,.5)) - .2
+    domain = domain.trim(levelset, maxrefine=2)
 
-  basis = domain.basis( 'spline', degree=2 ).vector( domain.ndims )
-  phi = angle * numpy.pi / 180
-  a = numpy.cos(phi) - 1, -numpy.sin(phi)
-  b = numpy.sin(2*phi), numpy.cos(2*phi) - 1
-  x, y = geom0
-  cons = domain.boundary['left,right'].project( x*(a+y*b), onto=basis, ischeme='gauss6', geometry=geom0 )
+  ns.ubasis = domain.basis('spline', degree=2).vector(domain.ndims)
+  ns.u_i = 'ubasis_ki ?lhs_k'
+  ns.X_i = 'x_i + u_i'
 
-  dofs = function.Argument( 'lhs', [len(basis)] )
-  disp = basis.dot( dofs )
-  geom = geom0 + disp
-  eye = function.eye(len(geom))
+  sqr = domain.boundary['left'].integral('u_0^2 + u_1^2' @ ns, geometry=ns.x, degree=6)
+  sqr += domain.boundary['right'].integral('(u_0 - x_1 sin(2 angle) - cos(angle) + 1)^2 + (u_1 - x_1 (cos(2 angle) - 1) + sin(angle))^2' @ ns, geometry=ns.x, degree=6)
+  cons = model.optimize('lhs', sqr, droptol=1e-15)
 
-  strain = disp.symgrad( geom0 )
-  stress = lmbda * function.trace(strain) * eye + (2*mu) * strain
-  residual = domain.integral( basis['ni,j'] * stress['ij'], geometry=geom0, degree=7 )
+  ns.strain_ij = '.5 (u_i,j + u_j,i)'
+  ns.energy = 'lmbda strain_ii strain_jj + 2 mu strain_ij strain_ij'
 
-  lhs0 = model.solve_linear( 'lhs', residual=residual, constrain=cons )
+  energy = domain.integral('energy' @ ns, geometry=ns.x, degree=7)
+  lhs0 = model.optimize('lhs', energy, constrain=cons)
   if plots:
-    makeplots( 'linear', domain, function.replace_arguments(geom, dict(lhs=lhs0)), function.replace_arguments(stress, dict(lhs=lhs0)) )
+    makeplots('linear', domain, ns | dict(lhs=lhs0))
 
-  strain = .5 * eye - .5 * ( geom0.grad(geom)[:,:,_] * geom0.grad(geom)[:,_,:] ).sum(0)
-  stress = lmbda * function.trace(strain) * eye + (2*mu) * strain
-  residual = domain.integral( basis['ni,j'] * stress['ij'], geometry=geom, degree=7 )
+  ns.strain_ij = '.5 (u_i,j + u_j,i + u_k,i u_k,j)'
+  ns.energy = 'lmbda strain_ii strain_jj + 2 mu strain_ij strain_ij'
 
-  lhs1 = model.newton( 'lhs', residual=residual, lhs0=lhs0, constrain=cons.where ).solve( tol=restol )
+  energy = domain.integral('energy' @ ns, geometry=ns.x, degree=7)
+  lhs1 = model.optimize('lhs', energy, lhs0=lhs0, constrain=cons, newtontol=restol)
   if plots:
-    makeplots( 'linear', domain, function.replace_arguments(geom, dict(lhs=lhs1)), function.replace_arguments(stress, dict(lhs=lhs1)) )
+    makeplots('nonlinear', domain, ns | dict(lhs=lhs1))
 
   return lhs0, lhs1
 
 
 def unittest():
 
-  retvals = main( nelems=4, angle=10, plots=False )
-  assert debug.checkdata( retvals, '''
-    eNqtU0luBDEI/M5EsiP25UHz/y/EBvqS5JZII1FjFxiKalwvWagf6/WCz/XttzGD39sWukdFZHhvXYQp
-    NzKQ36h4eXoSUPUCI/WbwGFFcBC6ERHwvc+LjHnjRseoC9YimF/C+U/cxAC5kZCsE4zraUyrxHTqBGcv
-    ot6CJyZQJ+h96vTsat3CVM6oihRS/5msEn/KwK41vSJVZO+4USAbEFf3mwm0haiqF1j2CZFYc9hKxK3q
-    DcxHPvPsOhbUwFlKwB0eUxAu+Q5GPeltAxtwwJzYXBlKg0BtkDrA2Z6rUSqtK9PRqAFZpxNLVT4++cUm
-    gnF08KUQtfWzzOqVqHvm81bZBGYG0+sjX2haSxTHEsmtCYhUz2EVkNLsVIiz3SwRPXVsQ9UpetRUBNyz
-    mGM5l6GlRbBsP/VopNLbd8V/sgkaQE2vUCpshvbNzpD2CUHieMCzXfGYgZTGHiJ9JeGPK6BPTmsyJ5N+
-    bhqEUI49ng+FaD4x5nEF5ayelZ+hxycOw0lqzjGy/cUnH19iCe5m''' )
+  retvals = main(nelems=4, angle=10, plots=False)
+  assert debug.checkdata(retvals, '''
+    eNqtU1tu5DAMu84UiAu9Hwea+1+htuj5aT93gQBiHEmWSIaflz3sX8/rRd/Pr2dxl75XPJxZE1npvfwR
+    bjtRSfJE55Pnu4DdDwjxPAVaMQlJJicyE7/XvlG5T1ycXPNBfRIiT8J+F0VikZ0oLIGC0LmaO6awU1CQ
+    mpPop+GOTYICP1ftmdMDI9zOXdNRyuZdJabwLw2aPts7y0RNxMVGDSA60y8VchAxXQ+IxomIBXI0hsTl
+    ngCRl77IRp8oAUi1IXBV1m1IJ/ksJtj0jMEAWnRP4n4KNoBiB2i/IDU+ny5THegsmyMACZSL2nTePvnL
+    jxBc4m4+LjGILtazsTLP6FYCBSr9uipwnkNRpg0Ne8MZiMXnduujXB0Fp0+Roo9eJbMNijZMVZSjizLs
+    yQQ6tpkIHsGikpb/ySNm+EOMdIy/JM4MtRUsuybJhKbGV2WOj0nSGib5qGzW8EY6AfRocbxBDEuECqoy
+    r0m6Eid7/iuuXU72/3O9oXKXtrpOiPyYpPMawPhfTPL1Ayv17i8=''')
 
 
 if __name__ == '__main__':
-  cli.choose( main, unittest )
+  cli.choose(main, unittest)
