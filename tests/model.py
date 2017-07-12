@@ -10,8 +10,8 @@ def laplace():
   cons = domain.boundary['left'].project( 0, onto=basis, geometry=geom, ischeme='gauss2' )
   dofs = function.Argument( 'dofs', [len(basis)] )
   u = basis.dot( dofs )
-  residual = model.Integral( ( basis.grad(geom) * u.grad(geom) ).sum(-1), domain=domain, geometry=geom, degree=2 ) \
-           + model.Integral( basis, domain=domain.boundary['top'], geometry=geom, degree=2 )
+  residual = domain.integral( ( basis.grad(geom) * u.grad(geom) ).sum(-1), geometry=geom, degree=2 ) \
+           + domain.boundary['top'].integral( basis, geometry=geom, degree=2 )
 
   for name in 'direct', 'newton':
     @unittest( name=name )
@@ -36,9 +36,9 @@ def navierstokes():
   u = ubasis.dot( dofs )
   p = pbasis.dot( dofs )
   viscosity = 1
-  inertia = model.Integral( (ubasis * u).sum(-1), domain=domain, geometry=geom, degree=5 )
-  stokesres = model.Integral( viscosity * ubasis['ni,j'] * (u['i,j']+u['j,i']) - ubasis['nk,k'] * p + pbasis['n'] * u['k,k'], domain=domain, geometry=geom, degree=5 )
-  residual = stokesres + model.Integral( ubasis['ni'] * u['i,j'] * u['j'], domain=domain, geometry=geom, degree=5 )
+  inertia = domain.integral( (ubasis * u).sum(-1), geometry=geom, degree=5 )
+  stokesres = domain.integral( viscosity * ubasis['ni,j'] * (u['i,j']+u['j,i']) - ubasis['nk,k'] * p + pbasis['n'] * u['k,k'], geometry=geom, degree=5 )
+  residual = stokesres + domain.integral( ubasis['ni'] * u['i,j'] * u['j'], geometry=geom, degree=5 )
   cons = domain.boundary['top,bottom'].project( [0,0], onto=ubasis, geometry=geom, ischeme='gauss2' ) \
        | domain.boundary['left'].project( [geom[1]*(1-geom[1]),0], onto=ubasis, geometry=geom, ischeme='gauss2' )
   lhs0 = model.solve_linear( 'dofs', residual=stokesres, constrain=cons )
