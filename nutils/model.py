@@ -27,7 +27,7 @@ however, be used to construct a residual functional ``res``. Aiming to solve
 the Poisson problem ``u_,kk = f`` we define the residual functional ``res = v,k
 u,k + v f`` and solve for ``res == 0`` using ``solve_linear``:
 
->>> res = model.Integral( 'basis_n,i u_,i + basis_n' @ ns, domain=domain, geometry=ns.x, degree=2 )
+>>> res = domain.integral('basis_n,i u_,i + basis_n' @ ns, geometry=ns.x, degree=2)
 >>> lhs = model.solve_linear( 'lhs', residual=res, constrain=cons )
 solving system > solving system using sparse direct solver
 
@@ -58,8 +58,7 @@ def _find_argument( name, *funcs ):
   funcs_ = []
   for func in funcs:
     if isinstance( func, Integral ):
-      for integrand, degree in func.values():
-        funcs_.append( integrand )
+      funcs_.extend(func.values())
     else:
       funcs_.append( func )
 
@@ -74,13 +73,8 @@ def _find_argument( name, *funcs ):
 class Integral( dict ):
   '''Postponed integral, used for derivative purposes'''
 
-  def __init__( self, integrand, domain, geometry, degree, edit=None ):
-    if isinstance( integrand, index.IndexedArray ):
-      integrand = integrand.unwrap( geometry )
-    integrand *= function.J( geometry, domain.ndims )
-    if edit is not None:
-      integrand = edit( integrand )
-    self[ cache.HashableAny(domain) ] = integrand, degree
+  def __init__(self, integrand, domain, ischeme):
+    self[cache.HashableAny(domain), ischeme] = integrand
     self.shape = integrand.shape
 
   @classmethod
@@ -93,9 +87,9 @@ class Integral( dict ):
   def concatenate( cls, integrals ):
     assert all( integral.shape[1:] == integrals[0].shape[1:] for integral in integrals[1:] )
     concatenate = cls.empty( ( sum( integral.shape[0] for integral in integrals ), ) + integrals[0].shape[1:] )
-    for domain in set.union( *[ set(integral) for integral in integrals ] ):
-      integrands, degrees = zip( *[ integral.get(domain,(function.zeros(integral.shape),0)) for integral in integrals ] )
-      concatenate[domain] = function.concatenate( integrands, axis=0 ), max(degrees)
+    for domain_ischeme in {di for integral in integrals for di in integral}:
+      integrands = [ integral.get(domain_ischeme, function.zeros(integral.shape)) for integral in integrals ]
+      concatenate[domain_ischeme] = function.concatenate( integrands, axis=0 )
     return concatenate
 
   @classmethod
@@ -103,48 +97,46 @@ class Integral( dict ):
     if fcache is None:
       fcache = cache.WrapperCache()
     assert all( isinstance( integral, cls ) for integral in integrals )
-    domains = set( domain for integral in integrals for domain in integral )
     retvals = []
-    for i, domain in enumerate(domains):
-      integrands, degrees = zip( *[ integral.get( domain, (function.zeros(integral.shape),0) ) for integral in integrals ] )
-      retvals.append( domain.obj.integrate( integrands, ischeme='gauss{}'.format(max(degrees)), fcache=fcache, arguments=arguments ) )
+    for domain_ischeme in {di for integral in integrals for di in integral}:
+      integrands = [ integral.get(domain_ischeme, function.zeros(integral.shape)) for integral in integrals ]
+      domain, ischeme = domain_ischeme
+      retvals.append( domain.obj.integrate( integrands, ischeme=ischeme, fcache=fcache, arguments=arguments ) )
     return numpy.sum( retvals, axis=0 )
 
   def eval( self, *, fcache=None, arguments=None ):
     if fcache is None:
       fcache = cache.WrapperCache()
-    values = [ domain.obj.integrate( integrand, ischeme='gauss{}'.format(degree), fcache=fcache, arguments=arguments ) for domain, (integrand,degree) in self.items() ]
+    values = [ domain.obj.integrate( integrand, ischeme=ischeme, fcache=fcache, arguments=arguments ) for (domain, ischeme), integrand in self.items() ]
     return numpy.sum( values, axis=0 )
 
   def derivative(self, target):
     target = _find_argument(target, self)
     assert target.ndim == 1
     seen = {}
-    derivative = self.empty( self.shape+target.shape )
-    for domain, (integrand,degree) in self.items():
-      derivative[domain] = function.derivative(integrand, var=target, seen=seen), degree
+    derivative = self.empty(self.shape+target.shape)
+    for domain_ischeme, integrand in self.items():
+      derivative[domain_ischeme] = function.derivative(integrand, var=target, seen=seen)
     return derivative
 
   def replace( self, arguments ):
     replace = self.empty( self.shape )
-    for domain, (integrand,degree) in self.items():
-      replace[domain] = function.replace_arguments(integrand, arguments), degree
+    for domain_ischeme, integrand in self.items():
+      replace[domain_ischeme] = function.replace_arguments(integrand, arguments)
     return replace
 
   def contains( self, target ):
-    return any( target in integrand.serialized[0] for integrand, degree in self.values() )
+    return any( target in integrand.serialized[0] for integrand in self.values() )
 
   def __add__( self, other ):
     assert isinstance( other, Integral ) and self.shape == other.shape
     add = self.empty( self.shape )
     add.update( self )
-    for domain, integrand_degree in other.items():
+    for domain_ischeme, integrand in other.items():
       try:
-        integrand, degree = add.pop(domain)
+        add[domain_ischeme] += integrand
       except KeyError:
-        add[domain] = integrand_degree
-      else:
-        add[domain] = integrand_degree[0] + integrand, max( integrand_degree[1], degree )
+        add[domain_ischeme] = integrand
     return add
 
   def __neg__( self ):
@@ -157,7 +149,7 @@ class Integral( dict ):
     if not isinstance( other, numbers.Number ):
       return NotImplemented
     mul = self.empty( self.shape )
-    mul.update({ domain: (integrand*other,degree) for domain, (integrand,degree) in self.items() })
+    mul.update({ domain_ischeme: integrand*other for domain_ischeme, integrand in self.items() })
     return mul
 
   def __rmul__( self, other ):

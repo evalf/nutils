@@ -282,9 +282,11 @@ class Topology( object ):
 
   @log.title
   @core.single_or_multiple
-  def integrate( self, funcs, ischeme, geometry=None, force_dense=False, fcache=None, edit=_identity, *, arguments=None ):
+  def integrate( self, funcs, ischeme='gauss', degree=None, geometry=None, force_dense=False, fcache=None, edit=_identity, *, arguments=None ):
     'integrate'
 
+    if degree is not None:
+      ischeme += str(degree)
     iwscale = function.J( geometry, self.ndims ) if geometry else 1
     funcs = [ func.unwrap( geometry ) if isinstance( func, IndexedArray ) else func for func in funcs ]
     integrands = [ function.asarray( edit( func * iwscale ) ) for func in funcs ]
@@ -292,20 +294,17 @@ class Topology( object ):
     return [ matrix.assemble( data, index, integrand.shape, force_dense ) for integrand, (data,index) in zip( integrands, data_index ) ]
 
   @log.title
-  @core.single_or_multiple
-  def integral(self, funcs, degree=None, ischeme=None, geometry=None, edit=None):
+  def integral(self, func, ischeme='gauss', degree=None, geometry=None, edit=_identity):
     'integral'
 
-    assert (degree is None) != (ischeme is None), 'either degree or ischeme must be specified'
-    if ischeme is None:
-      assert isinstance(degree, int) and degree >= 0, 'degree must be a positive integer'
-    else:
-      assert isinstance(ischeme, str), 'ischeme must be a string'
-      if not ischeme.startswith('gauss'):
-        raise NotImplementedError
-      degree = int(ischeme[5:])
+    if degree is not None:
+      ischeme += str(degree)
+    if isinstance(func, IndexedArray):
+      func = func.unwrap(geometry)
+    iwscale = function.J(geometry, self.ndims) if geometry else 1
+    integrand = edit(func * iwscale)
     from . import model
-    return [model.Integral(func, domain=self, geometry=geometry, degree=degree, edit=edit) for func in funcs]
+    return model.Integral(integrand, domain=self, ischeme=ischeme)
 
   def projection( self, fun, onto, geometry, **kwargs ):
     'project and return as function'
@@ -314,11 +313,13 @@ class Topology( object ):
     return onto.dot( weights )
 
   @log.title
-  def project( self, fun, onto, geometry, tol=0, ischeme=None, droptol=1e-12, exact_boundaries=False, constrain=None, verify=None, ptype='lsqr', precon='diag', edit=_identity, *, arguments=None, **solverargs ):
+  def project( self, fun, onto, geometry, tol=0, ischeme='gauss', degree=None, droptol=1e-12, exact_boundaries=False, constrain=None, verify=None, ptype='lsqr', precon='diag', edit=_identity, *, arguments=None, **solverargs ):
     'L2 projection of function onto function space'
 
     log.debug( 'projection type:', ptype )
 
+    if degree is not None:
+      ischeme += str(degree)
     if isinstance( fun, IndexedArray ):
       fun = fun.unwrap( geometry )
     if isinstance( onto, IndexedArray ):
