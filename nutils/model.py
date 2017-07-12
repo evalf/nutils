@@ -166,7 +166,7 @@ class Integral( dict ):
 class ModelError( Exception ): pass
 
 
-def solve_linear(target, residual, constrain, *, arguments=None):
+def solve_linear(target, residual, constrain=None, *, arguments=None):
   '''solve linear problem
 
   Parameters
