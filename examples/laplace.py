@@ -1,11 +1,11 @@
 #! /usr/bin/env python3
 
-from nutils import mesh, plot, cli, function, log, debug
+from nutils import mesh, plot, cli, function, log, debug, model
 import numpy
 
 
 def main(
-    nelems: 'number of elements, 0 for triangulation' = 0,
+    nelems: 'number of elements' = 10,
     degree: 'polynomial degree' = 1,
     basistype: 'basis function' = 'spline',
     solvetol: 'solver tolerance' = 1e-10,
@@ -13,98 +13,59 @@ def main(
   ):
 
   # construct mesh
-  if nelems > 0: # rectilinear
-    verts = numpy.linspace( 0, .5*numpy.pi, nelems+1 )
-    domain, geom = mesh.rectilinear( [verts,verts] )
-  else: # triangulated demo mesh
-    domain, geom = mesh.demo( xmax=.5*numpy.pi, ymax=.5*numpy.pi )
-    assert degree == 1, 'degree={} unsupported for triangular mesh'.format( degree )
+  verts = numpy.linspace(0, numpy.pi/2, nelems+1)
+  domain, geom = mesh.rectilinear([verts, verts])
 
-  # construct target solution
-  x, y = geom
-  exact = function.sin(x) * function.exp(y)
-  flux = exact.ngrad( geom )
+  # create namespace
+  ns = function.Namespace()
+  ns.x = geom
+  ns.basis = domain.basis(basistype, degree=degree)
+  ns.u = 'basis_n ?lhs_n'
+  ns.fx = 'sin(x_0)'
+  ns.fy = 'exp(x_1)'
 
-  # prepare basis
-  basis = domain.basis( basistype, degree=degree )
+  # construct residual
+  res = domain.integral('-basis_n,i u_,i' @ ns, geometry=ns.x, degree=degree*2)
+  res += domain.boundary['top'].integral('basis_n fx fy' @ ns, geometry=ns.x, degree=degree*2)
 
-  # construct matrix
-  laplace = function.outer( basis.grad(geom) ).sum(-1)
-  matrix = domain.integrate( laplace, geometry=geom, ischeme='gauss4' )
+  # construct dirichlet constraints
+  sqr = domain.boundary['left'].integral('u^2' @ ns, geometry=ns.x, degree=degree*2)
+  sqr += domain.boundary['bottom'].integral('(u - fx)^2' @ ns, geometry=ns.x, degree=degree*2)
+  cons = model.optimize('lhs', sqr, droptol=1e-15)
 
-  # construct right hand side vector from neumann boundary
-  rhs = domain.boundary['right,top'].integrate( basis * flux, geometry=geom, ischeme='gauss7' )
-
-  # construct dirichlet boundary constraints
-  cons = domain.boundary['left,bottom'].project( exact, ischeme='gauss7', geometry=geom, onto=basis )
-
-  # solve system
-  lhs = matrix.solve( rhs, constrain=cons, tol=solvetol, solver='cg' )
-
-  # construct solution function
-  sol = basis.dot(lhs)
+  # find lhs such that res == 0 and substitute this lhs in the namespace
+  lhs = model.solve_linear('lhs', res, constrain=cons)
+  ns |= dict(lhs=lhs)
 
   # plot solution
   if withplots:
-    points, colors = domain.elem_eval( [ geom, sol ], ischeme='bezier9', separate=True )
-    with plot.PyPlot( 'solution', index=nelems ) as plt:
-      plt.mesh( points, colors )
+    points, colors = domain.elem_eval([ns.x, ns.u], ischeme='bezier9', separate=True)
+    with plot.PyPlot('solution', index=nelems) as plt:
+      plt.mesh(points, colors, cmap='jet')
       plt.colorbar()
 
-  # evaluate approximation error
-  error = sol - exact
-  err = numpy.sqrt( domain.integrate( [ error**2, ( error.grad(geom)**2 ).sum(-1) ], geometry=geom, ischeme='gauss7' ) )
-  log.user( 'errors: l2={}, h1={}'.format(*err) )
+  # evaluate error against exact solution fx fy
+  err = domain.integrate('(u - fx fy)^2' @ ns, geometry=ns.x, degree=degree*2)**.5
+  log.user('L2 error: {:.2e}'.format(err))
 
-  return err, rhs, cons, lhs
-
-
-def conv( degree=1, nrefine=4 ):
-
-  l2err = []
-  h1err = []
-
-  for irefine in log.range( 'refine', nrefine ):
-    err, rhs, cons, lhs = main( nelems=2**irefine, degree=degree )
-    l2err.append( err[0] )
-    h1err.append( err[1] )
-
-  h = (.25*numpy.pi) * .5**numpy.arange(nrefine)
-
-  with plot.PyPlot( 'convergence' ) as plt:
-    plt.subplot( 211 )
-    plt.loglog( h, l2err, 'k*--' )
-    plt.slope_triangle( h, l2err )
-    plt.ylabel( 'L2 error' )
-    plt.grid( True )
-    plt.subplot( 212 )
-    plt.loglog( h, h1err, 'k*--' )
-    plt.slope_triangle( h, h1err )
-    plt.ylabel( 'H1 error' )
-    plt.grid( True )
+  return cons, lhs, err
 
 
 def unittest():
 
-  retvals = main( degree=1, withplots=False, solvetol=0 )
-  assert debug.checkdata( retvals, '''
-    eNqNkEEOAyEIRa8zk2AjHxA9Thdu5/7LChm7aLtoonnwRfjKdCixnXQcTbrNYtQrdBalpdUHsQCzCKFa
-    MiSOwgxhnLUr/HOtrtfzol+7rMZtFieII5jiwOCdCMNnaWSqNcaG1pu0HXPFCGefnddQDNU4Uo/yxapJ
-    qOQVGDJnWA9+mWld8qlvQ6Y+Qvg0NRwS3MZYPL9rm+PbAWrjZLvPTTx40vkCzKNdVA==''' )
+  retvals = main(nelems=4, degree=1, withplots=False, solvetol=0)
+  assert debug.checkdata(retvals, '''
+    eNqVjjsKAzEMRK+zCzJ49LHk46Rwu/cvYylsICRNCjHijTUe0KEEO+k4dJqv5tQgPHMR8w1ig86ciwFY
+    bZKE22pK1+P6GMeQX3yKxS+Ojv1evvhu838ZG47UENdUsHKGI3Sk3uXQNYqbeirztFTRzJN3WciY5dd/
+    W+esO1WrvLs8NF4+onxhrbyNyz9phPXVBp1PMQRX2g==''')
 
-  retvals = main( nelems=4, degree=1, withplots=False, solvetol=0 )
-  assert debug.checkdata( retvals, '''
-    eNqdkM1uAzEIhF9nV2IjDz8GHqeHveb9jzWkWzVpTpFsDfoww8igTQm207ax5jgPI3VdqrTYuNHvAbMX
-    /ssc8o9BkOchz8xZXlkK288aS5nn4XTAElUox3ofCzBrFRNlmiThPXT/uj9dx5R3PMXiHcdAB3rlH4Wx
-    6SgN8Q4BVi5zhM7SKxyGRnNTL2VOKxUFSq+wkNk/yIPbhzN7TtXa7woPjUcf0X1hbb+Fu7/T/g3BeW4p''' )
-
-  retvals = main( nelems=4, degree=2, withplots=False, solvetol=0 )
-  assert debug.checkdata( retvals, '''
-    eNqlUUtuhTAMvA5ISeW/4+N0wfbdf1nbFKni8VaVQBNmxsFj49hkoO5j21DCjmmDhPyYOpKDr/H3MVQo
-    5UZz8seUO41AcUx+o1XwicbgB9pIou7OZiYFZ6UPZI7CqQh5WNnxiRNNuA6unhFiYARU9ev79faqGX/S
-    llT9sxYR65OGAFAhnrT/JSD27pYVrVAJukN3xMJQ6+8rlbk1nx31tFFWj5ewlpzopIVXUgSk0xe9NEpj
-    IdNqv4Cvwiv9tS70+m/6DVvn5ad/QddfE0m//PrXze+nH9u3j/0HiSeZcA==''' )
+  retvals = main(nelems=4, degree=2, withplots=False, solvetol=0)
+  assert debug.checkdata(retvals, '''
+    eNqlkDtuxDAMRK9jAxSgISV+jpNi271/uSQdp0jgKgaEJ2lmbI5BxyLsk45jcAi/hhFEojg2Zm6ceF0c
+    0CW1sW15EYSI+RqL3l/vP2urypPmy+xJiwh/0jDzeRKzwz8qsFiPKxta3Dx7RDOgGFv7fNdS077PkZJC
+    WC5FRmjTeBfvqpjgyxfRehqLwt7+Nc2Ld30g+n2w+m76Fa2L2+X32fmfX5KB9R3wXwG7ApjFk8DlUDo/
+    ykV8bg==''')
 
 
 if __name__ == '__main__':
-  cli.choose( main, conv, unittest )
+  cli.choose(main, unittest)
