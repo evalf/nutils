@@ -3,123 +3,115 @@
 from nutils import *
 
 
-@log.title
-def makeplots( domain, geom, sigma, index ):
-
-  sigma_dev = sigma - (function.trace(sigma)/domain.ndims) * function.eye(domain.ndims)
-  vonmises = function.sqrt( ( sigma_dev**2 ).sum([0,1]) * 3./2 ) # TODO check fix for 2D
-
-  points, colors = domain.simplex.elem_eval( [ geom, vonmises ], ischeme='bezier5', separate=True )
-  with plot.PyPlot( 'solution', index=index ) as plt:
-    plt.mesh( points, colors )
-    plt.colorbar()
-    plt.xlim( 0, 1.3 )
-    plt.ylim( 0, 1.3 )
-
-
 def main(
     nelems: 'number of elements, 0 for triangulation' = 0,
     maxrefine: 'maxrefine level for trimming' = 2,
     radius: 'cut-out radius' = .5,
     degree: 'polynomial degree' = 1,
-    lmbda: 'first lamé constant' = 1.,
-    mu: 'second lamé constant' = 1.,
-    solvetol: 'solver tolerance' = 1e-5,
-    plots: 'create plots' = True,
+    poisson: 'poisson ratio' = .25,
+    withplots: 'create plots' = True,
   ):
 
+  ns = function.Namespace(default_geometry_name='x0')
+  ns.lmbda = poisson / (1+poisson) / (1-2*poisson)
+  ns.mu = .5 / (1+poisson)
+
+  # construct domain and basis
   if nelems > 0:
-    verts = numpy.linspace( 0, 1, nelems+1 )
-    wholedomain, geom = mesh.rectilinear( [verts,verts] )
+    verts = numpy.linspace(0, 1, nelems+1)
+    domain0, ns.x0 = mesh.rectilinear([verts, verts])
   else:
-    wholedomain, geom = mesh.demo()
-    if degree != 1:
-      log.warning( 'setting degree=1 for triangular mesh' )
-      degree = 1
+    assert degree == 1, 'degree must be 1 for triangular mesh'
+    domain0, ns.x0 = mesh.demo()
+  domain = domain0.trim(function.norm2(ns.x0) - radius, maxrefine=maxrefine)
+  ns.ubasis = domain.basis('spline', degree=degree).vector(2)
 
-  stress = library.Hooke( lmbda=lmbda, mu=mu )
+  # populate namespace
+  ns.u_i = 'ubasis_ni ?lhs_n'
+  ns.x_i = 'x0_i + u_i'
+  ns.strain_ij = '(u_i,j + u_j,i) / 2'
+  ns.stress_ij = 'lmbda strain_kk δ_ij + 2 mu strain_ij'
+  ns.R2 = radius**2
+  ns.r2 = 'x0_k x0_k'
+  ns.k = 3 - 4 * poisson # plane strain parameter
+  ns.uexact_i = '''.1 <x0_0 ((k + 1) / 2 + (1 + k) R2 / r2 + (1 - R2 / r2) (x0_0^2 - 3 x0_1^2) R2 / r2^2),
+                       x0_1 ((k - 3) / 2 + (1 - k) R2 / r2 + (1 - R2 / r2) (3 x0_0^2 - x0_1^2) R2 / r2^2)>_i'''
+  ns.uerr_i = 'u_i - uexact_i'
 
-  # plane strain case (see e.g. http://en.wikiversity.org/wiki/Introduction_to_Elasticity/Plate_with_hole_in_tension)
-  x, y = geom / radius
-  r2 = x**2 + y**2
-  uexact = .2 * geom * ( [1-stress.nu,-stress.nu] + [2-2*stress.nu,2*stress.nu-1]/r2 + (.5-.5/r2)*[x**2-3*y**2,3*x**2-y**2]/r2**2 )
+  # construct dirichlet boundary constraints
+  sqr = domain.boundary['left'].integral('u_0^2' @ ns, geometry=ns.x0, degree=degree*2)
+  sqr += domain.boundary['bottom'].integral('u_1^2' @ ns, geometry=ns.x0, degree=degree*2)
+  sqr += domain.boundary['top,right'].integral('uerr_k uerr_k' @ ns, geometry=ns.x0, degree=max(degree,3)*2)
+  cons = model.optimize('lhs', sqr, droptol=1e-15)
 
-  levelset = function.norm2( geom ) - radius
-  domain = wholedomain.trim( levelset, maxrefine=maxrefine )
-  complement = wholedomain - domain
-  dbasis = domain.basis( 'spline', degree=degree ).vector( 2 )
+  # construct residual
+  res = domain.integral('ubasis_ni,j stress_ij' @ ns, geometry=ns.x0, degree=degree*2)
 
-  cons = domain.boundary['left'].project( 0, geometry=geom, ischeme='gauss6', onto=dbasis[:,0] )
-  cons |= domain.boundary['bottom'].project( 0, geometry=geom, ischeme='gauss6', onto=dbasis[:,1] )
-  cons |= domain.boundary['top,right'].project( uexact, geometry=geom, ischeme='gauss6', onto=dbasis )
+  # solve system
+  lhs = model.solve_linear('lhs', res, constrain=cons)
 
-  elasticity = function.outer( dbasis.grad(geom), stress(dbasis.symgrad(geom)) ).sum([2,3])
-  matrix = domain.integrate( elasticity, geometry=geom, ischeme='gauss6' )
-  lhs = matrix.solve( constrain=cons, tol=solvetol, symmetric=True, precon='diag' )
-  disp = dbasis.dot( lhs )
+  # vizualize result
+  ns = ns | dict(lhs=lhs)
+  if withplots:
+    vonmises = 'sqrt(stress_ij stress_ij - stress_ii stress_jj / 2)' @ ns
+    x, colors = domain.simplex.elem_eval([ns.x, vonmises], ischeme='bezier5', separate=True)
+    with plot.PyPlot('solution') as plt:
+      plt.mesh(x, colors, cmap='jet')
+      plt.colorbar()
 
-  if plots:
-    makeplots( domain, geom+disp, stress(disp.symgrad(geom)), index=nelems )
-
-  error = disp - uexact
-  err = numpy.sqrt( domain.integrate( [ (error**2).sum(-1), ( error.grad(geom)**2 ).sum([-2,-1]) ], geometry=geom, ischeme='gauss7' ) )
-  log.user( 'errors: l2={}, h1={}'.format(*err) )
+  # evaluate error
+  err = numpy.sqrt(domain.integrate(['uerr_k uerr_k' @ ns, 'uerr_i,j uerr_i,j' @ ns], geometry=ns.x0, degree=max(degree,3)*2))
+  log.user('errors: L2={:.2e}, H1={:.2e}'.format(*err))
 
   return err, cons, lhs
 
 
-def conv( degree=1, nrefine=4 ):
+def conv(degree=1, nrefine=4):
 
-  l2err = []
-  h1err = []
-
-  for irefine in log.range( 'refine', nrefine ):
-    err, cons, lhs = main( nelems=2**(1+irefine), degree=degree )
-    l2err.append( err[0] )
-    h1err.append( err[1] )
-
+  l2err, h1err = numpy.array([main(nelems=2**(1+irefine), degree=degree)[0] for irefine in log.range('refine', nrefine)]).T
   h = .5**numpy.arange(nrefine)
 
-  with plot.PyPlot( 'convergence' ) as plt:
-    plt.subplot( 211 )
-    plt.loglog( h, l2err, 'k*--' )
-    plt.slope_triangle( h, l2err )
-    plt.ylabel( 'L2 error' )
-    plt.grid( True )
-    plt.subplot( 212 )
-    plt.loglog( h, h1err, 'k*--' )
-    plt.slope_triangle( h, h1err )
-    plt.ylabel( 'H1 error' )
-    plt.grid( True )
+  with plot.PyPlot('convergence') as plt:
+    plt.subplot(211)
+    plt.loglog(h, l2err, 'k*--')
+    plt.slope_triangle(h, l2err)
+    plt.ylabel('L2 error')
+    plt.grid(True)
+    plt.subplot(212)
+    plt.loglog(h, h1err, 'k*--')
+    plt.slope_triangle(h, h1err)
+    plt.ylabel('H1 error')
+    plt.grid(True)
 
 
 def unittest():
 
-  retvals = main( degree=1, maxrefine=2, plots=False, solvetol=0 )
+  retvals = main(degree=1, maxrefine=2, withplots=False)
   assert debug.checkdata( retvals, '''
-    eNplUEGOBCEI/E53IhtAQHnOHPo6/z+uiHZmehJJFcZCqqgcUkjPchzcrV9gRVHoAi3j7v16F2rGF4xH
-    VCUw7oziqU6Of3EWC3gWS6MQMjfeA8jdNo8CJdKYCCaiezR0rn43bii7+azv3weA16rhZMrYCLdsWCLx
-    tPOw5b1yPNvWFJsFpr1W1VdHplPIhG0iUiJr2lwDn7apx1JyW6dqNRCEcP78mwHo8DzJDgKaZwh3GtAF
-    LVUuPVXMvojsrYEx1k1ukvl8ZgW8jN+BQbWUnOX8B+7/gYY=''' )
+    eNplUkuuxDAIu86MFCRMgITjvEW3c//lhHwqvc6iinEJ2FZQXlpg7/J6Sfd2kRdj9YusDO7z9yloLheN
+    JlTNMzmHa7YkJqiNohVzxEV9k5BJZvH8RBtykkiTMxERfvAcYIDlCnJVu3d1qXEX4Xyr+Dc/pJ7dQ13K
+    X0VtHYkpRCKtzg5xyBkzPENj+X34jl6Rbce7cVsCn/5btVg/dgZwm5MEPD0Koy3/h18bnrmgL/5kg+o1
+    T1LwVPwbEllYn+AkRS1284mLunJbt0JXjw0pGxgnOBGSMPftcuU4VoEzu58wSeDz4dyJUnXeT+n9BWsz
+    kUM=''')
 
-  retvals = main( nelems=4, degree=2, maxrefine=2, plots=False, solvetol=0 )
+  retvals = main(nelems=4, degree=2, maxrefine=2, withplots=False)
   assert debug.checkdata( retvals, '''
-    eNqdUkluwzAM/E4CmAU54iI9p4dc8/9jZVJO2sK+BLDBZUSKmqFsN93E7tvtZgJ+UGzCzR9k28w9v58b
-    f72/Pf7/g4fsx88wV7MrTOY9D9JzzCwxaOvLWlqYpGXJWDoSl3A/60WjRVwNMEEbO3jyMOo8cIW5WVxh
-    pn7UkQzM/j4d5kwStHM6ikjSyKR6TbJFdObaH8IpmmF/mbaRLxy6s2YbAlkHRMVLBaBYBVyTGe0Zd4++
-    49PkBIcyQB/rPBejXHWtJ9OS8+lLLTTlZXMeiGApUYq4ZP5TBUX2udskJkYOTIM1loPi7BCVBL0OH9NQ
-    SBTB3UtbGgJdVS+1SVkL1ZUkGyiJwtSrw3sDDG127fNC5bq5mS/9Qqru11IQJEr44fB04FjCm5Xz+aLc
-    fwA+deIa''' )
+    eNqlUktqBUEIvM4LtKC23+NkMdt3/2W6tRPIYwIhWQzaVumoJY2HDNK38XgoUV7gg3DaBTpW7Pn+HECK
+    ckEMT5sX5ApM9h1g8bKb9foxJu8id5iJ6k8Yrb9fIPeYamEsM47VsqxUFqneFFw4udldLci5G79vYIGa
+    G5yUeTcdxBkNyHLeMky16nMw3xJUrEsoW2wGUOqK2HIQqSCWaEfY21HqsksYIln0+QtxwOf+lwyZWdtJ
+    2RmrOedukn2WPWMxtwLMJrVFiXqHee3FPLDsUZE58vCxt4+dN6NUoepavpTlKXhsqcNEfFRr9Ywq/le1
+    iUxrNeoZtbdE+XQY2zkHAMTR5NVNVQMnb06YnixiPVnfLwMEtblyENDkFtZVrMu8XssCjuSC3cRUOwI7
+    Nff1gIAppM5jyYzlsJ1Zlgwn+59H9fYBrtX3Zw==''')
 
-  retvals = main( nelems=4, degree=2, maxrefine=3, plots=False, solvetol=0 )
+  retvals = main(nelems=4, degree=2, maxrefine=3, withplots=False)
   assert debug.checkdata( retvals, '''
-    eNqdU0luwzAM/E4CmAWH4iI9p4dc8/9jJVJp0iK+BLBBisPFmqFxXPSAXY/LxVjlRnGApd/Ijhm7f98P
-    /no+6/z/FR5Y6e8wV7MzDOB2I32PmSUm2vq2llYMaRl5RpfEEe7vetFoEWcfMEEbC3xzMeo85AxzszjD
-    TP1RRxgy+/t0mDNIop3TUYkkjQzVa5INrFj7QziF97yxquSNhyI7SLSWdjpptwoixapIMQLtWde9Z55H
-    z7yHMiKDdz6KUS5mW81Ffp/+qiVNsW32F0C2ElXnqLkfKgiMWCSQRaQ4NFh1O1KcPUQltEXwTJbmuqop
-    UPRTd/NKhuzyp9qk7NVBm9cUG5J8UJhW4csGNLQZ63Ogcv4a1My3foEa+LIUJFiiTOGHI9KZ7NacSXtt
-    wOeLcv0BRKniIA==''' )
+    eNqlU8tuAzEI/J1EWiTzhs/pYa/5/2NtcCo13UpVeohgmQEDQ/C4yYF6P243HYIn+IGD4gQ9Zuzx8TgA
+    J3BCHJ7GJ+QMMPkKkHjZxXr90UhaRa4wE9XfMMQxH5FrTLUwEo5ttSwplh1Y3xhUOLrZVS1IXo1fNzBB
+    zQUyZl5NB7FHA7TkS4apVn0KokuCinUJJYvFAEydEZvOGFgQSbQj5O0odtkpDOKK8R/EAbfItQURqu2k
+    4KjmnLnsdMrusYhaAaLeHkpUXlgUz7z7eqpIlGPzsbc/WgWO/q6u5UtZYhnbVn1CpK1a5xn2u2+qjZhe
+    q1H3EhJyiGyHepPPA1jbyiITm6xscLQaE8LUmoykO+v7ZYAM6zLC1k9pbq6rdPaPa2GOzkYZ9T8DVtsC
+    Ozb39YCA0KPOI22NMJ257X5yyjA6+59Hdf8EpD73dg==''')
 
 
 if __name__ == '__main__':
-  cli.choose( main, conv, unittest )
+  cli.choose(main, conv, unittest)
