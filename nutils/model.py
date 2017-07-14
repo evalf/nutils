@@ -436,8 +436,8 @@ def pseudotime(target, residual, inertia, timestep, lhs0, residual0=None, freeze
     resnorm = numpy.linalg.norm( res[~freezedofs] )
 
 
-def impliciteuler(target, residual, inertia, timestep, lhs0, residual0=None, freezedofs=None, tol=1e-10, *, arguments=None, **newtonargs):
-  '''solve time dependent problem using implicit euler time stepping
+def thetamethod(target, residual, inertia, timestep, lhs0, theta, target0=None, freezedofs=None, tol=1e-10, *, arguments=None, **newtonargs):
+  '''solve time dependent problem using the theta method
 
   Parameters
   ----------
@@ -449,6 +449,8 @@ def impliciteuler(target, residual, inertia, timestep, lhs0, residual0=None, fre
       Initial time step, will scale up as residual decreases
   lhs0 : vector
       Coefficient vector, starting point of the iterative procedure.
+  theta : float
+      Theta value (theta=1 for implicit Euler, theta=0.5 for Crank-Nicolson)
   residual0 : Integral
       Optional additional residual component evaluated in previous timestep
   freezedofs : boolean vector
@@ -469,14 +471,21 @@ def impliciteuler(target, residual, inertia, timestep, lhs0, residual0=None, fre
   '''
 
   assert target not in (arguments or {}), '`target` should not be defined in `arguments`'
-  res = residual + inertia / timestep
-  res0 = -inertia / timestep
-  if residual0 is not None:
-    res0 += residual0
+  if target0:
+    assert target0 not in (arguments or {}), '`target0` should not be defined in `arguments`'
+  else:
+    target0 = object()
   lhs = lhs0
+  res0 = residual * theta + inertia / timestep
+  res1 = residual * (1-theta) - inertia / timestep
+  res = res0 + res1.replace({target: function.Argument(target0, lhs.shape)})
   while True:
     yield lhs
-    lhs = solve( newton( target, residual=res0.replace(**{target:lhs}) + res, lhs0=lhs, freezedofs=freezedofs, arguments=arguments, **newtonargs ), tol=tol )
+    lhs = newton(target, residual=res, lhs0=lhs, freezedofs=freezedofs, arguments=collections.ChainMap(arguments or {}, {target0: lhs}), **newtonargs).solve(tol=tol)
+
+
+impliciteuler = functools.partial(thetamethod, theta=1)
+cranknicolson = functools.partial(thetamethod, theta=0.5)
 
 
 @log.title
