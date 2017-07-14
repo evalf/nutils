@@ -8,5 +8,5 @@ version = '3beta'
 
 _ = numpy.newaxis
 __all__ = [ '_', 'numpy', 'core', 'numeric', 'element', 'function', 'expression',
-  'mesh', 'plot', 'library', 'topology', 'util', 'matrix', 'parallel', 'log',
+  'mesh', 'plot', 'topology', 'util', 'matrix', 'parallel', 'log',
   'debug', 'cache', 'transform', 'model', 'cli' ]

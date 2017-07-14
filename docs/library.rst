@@ -20,7 +20,6 @@ What follows is an automatically generated API reference.
    library/core
    library/debug
    library/element
-   library/library
    library/log
    library/matrix
    library/mesh
