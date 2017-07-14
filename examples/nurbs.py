@@ -9,7 +9,7 @@ geometry and mesh refinement', Computer Methods in Applied Mechanics and
 Engineering, Elsevier, 2005, 194, 4135-4195.
 """
 
-from nutils import cli, mesh, function, plot, library, log, debug, _
+from nutils import cli, mesh, function, plot, log, debug, model
 import numpy
 
 
@@ -23,118 +23,97 @@ def main(
     withplots: 'create plots' = True,
   ):
 
-  #Create the coarsest level parameter domain
-  domain, geometry = mesh.rectilinear( [1,2] )
+  ns = function.Namespace()
+  ns.lmbda = E*nu/(1-nu**2)
+  ns.mu = .5*E/(1+nu)
 
-  #Define the control points and control point weights
-  controlpoints = numpy.array([[0,R],[R*(1-2**.5),R],[-R,R*(2**.5-1)],[-R,0],[0,.5*(R+L)],[-.15*(R+L),.5*(R+L)],[-.5*(R+L),.15*(R*L)],[-.5*(R+L),0],[0,L],[-L,L],[-L,L],[-L,0]])
-  weights       = numpy.array([1,.5+.5/2**.5,.5+.5/2**.5,1,1,1,1,1,1,1,1,1])
+  # create the coarsest level parameter domain
+  domain0, geometry = mesh.rectilinear( [1,2] )
 
-  #Create the second-order B-spline basis over the coarsest domain
-  bsplinebasis = domain.basis( 'spline', degree=2 )
+  # create the second-order B-spline basis over the coarsest domain
+  ns.bsplinebasis = domain0.basis('spline', degree=2)
+  ns.controlweights = 1,.5+.5/2**.5,.5+.5/2**.5,1,1,1,1,1,1,1,1,1
+  ns.weightfunc = 'bsplinebasis_n controlweights_n'
+  ns.nurbsbasis = ns.bsplinebasis * ns.controlweights / ns.weightfunc
 
-  #Create the NURBS basis
-  weightfunc = bsplinebasis.dot(weights)
-  nurbsbasis = (bsplinebasis*weights)/weightfunc
+  # create the isogeometric map
+  ns.controlpoints = [0,R],[R*(1-2**.5),R],[-R,R*(2**.5-1)],[-R,0],[0,.5*(R+L)],[-.15*(R+L),.5*(R+L)],[-.5*(R+L),.15*(R*L)],[-.5*(R+L),0],[0,L],[-L,L],[-L,L],[-L,0]
+  ns.x_i = 'nurbsbasis_n controlpoints_ni'
 
-  #Create the isogeometric map
-  geometry = (nurbsbasis[:,_]*controlpoints).sum(0)
+  # create the computational domain by h-refinement
+  domain = domain0.refine(nr)
 
-  #Create the computational domain by h-refinement
-  domain = domain.refine( nr )
+  # create the second-order B-spline basis over the refined domain
+  ns.bsplinebasis = domain.basis('spline', degree=2)
+  sqr = domain.integral('(bsplinebasis_n ?lhs_n - weightfunc)^2' @ ns, geometry=ns.x, degree=9)
+  ns.controlweights = model.optimize('lhs', sqr)
+  ns.nurbsbasis = ns.bsplinebasis * ns.controlweights / ns.weightfunc
 
-  #Create the B-spline basis
-  bsplinebasis = domain.basis( 'spline', degree=2 )
+  # prepare the displacement field
+  ns.ubasis = ns.nurbsbasis.vector(2)
+  ns.u_i = 'ubasis_ni ?lhs_n'
+  ns.strain_ij = '(u_i,j + u_j,i) / 2'
+  ns.stress_ij = 'lmbda strain_kk δ_ij + 2 mu strain_ij'
 
-  #Create the NURBS basis
-  weights    = domain.project( weightfunc, onto=bsplinebasis, geometry=geometry, ischeme='gauss9' )
-  nurbsbasis = (bsplinebasis*weights)/weightfunc
+  # construct the exact solution
+  ns.r2 = 'x_k x_k'
+  ns.R2 = R**2
+  ns.T = T
+  ns.k = (3-nu) / (1+nu) # plane stress parameter
+  ns.uexact_i = '''(T / 4 mu) <x_0 ((k + 1) / 2 + (1 + k) R2 / r2 + (1 - R2 / r2) (x_0^2 - 3 x_1^2) R2 / r2^2),
+                               x_1 ((k - 3) / 2 + (1 - k) R2 / r2 + (1 - R2 / r2) (3 x_0^2 - x_1^2) R2 / r2^2)>_i'''
+  ns.strainexact_ij = '(uexact_i,j + uexact_j,i) / 2'
+  ns.stressexact_ij = 'lmbda strainexact_kk δ_ij + 2 mu strainexact_ij'
 
-  #Create the displacement field basis
-  ubasis = nurbsbasis.vector(2)
+  # define the linear and bilinear forms
+  res = domain.integral('ubasis_ni,j stress_ij' @ ns, geometry=ns.x, degree=9)
+  res -= domain.boundary['right'].integral('ubasis_ni stressexact_ij n_j' @ ns, geometry=ns.x, degree=9)
 
-  #Define the plane stress function
-  stress = library.Hooke( lmbda=E*nu/(1-nu**2), mu=.5*E/(1+nu) )
+  # compute the constraints vector for the symmetry conditions
+  sqr = domain.boundary['top,bottom'].integral('(u_i n_i)^2' @ ns, degree=9)
+  cons = model.optimize('lhs', sqr, droptol=1e-15)
 
-  #Get the exact solution
-  uexact     = exact_solution( geometry, T, R, E, nu )
-  sigmaexact = stress( uexact.symgrad(geometry) )
+  # solve the system of equations
+  lhs = model.solve_linear('lhs', res, constrain=cons)
+  ns |= dict(lhs=lhs)
 
-  #Define the linear and bilinear forms
-  mat_func = function.outer( ubasis.symgrad(geometry), stress(ubasis.symgrad(geometry)) ).sum([2,3])
-  rhs_func = ( ubasis*sigmaexact.dotnorm(geometry) ).sum(-1)
-
-  #Compute the matrix and rhs
-  mat = domain.integrate( mat_func, geometry=geometry, ischeme='gauss9' )
-  rhs = domain.boundary['right'].integrate( rhs_func, geometry=geometry, ischeme='gauss9' )
-
-  #Compute the constraints vector for the symmetry conditions
-  cons = domain.boundary['top,bottom'].project( 0, onto=ubasis.dotnorm(geometry), geometry=geometry, ischeme='gauss9' )
-
-  #Solve the system of equations
-  sol = mat.solve( rhs=rhs, constrain=cons )
-
-  #Compute the approximate displacement and stress functions
-  u     = ubasis.dot( sol )
-  sigma = stress( u.symgrad(geometry) )
-
-  #Post-processing
+  # post-processing
   if withplots:
-    points, colors = domain.simplex.elem_eval( [ geometry, sigma[0,0] ], ischeme='bezier8', separate=True )
+    geom, stressxx = domain.simplex.elem_eval([ns.x, 'stress_00' @ ns], ischeme='bezier8', separate=True)
     with plot.PyPlot( 'solution', index=nr ) as plt:
-      plt.mesh( points, colors )
+      plt.mesh( geom, stressxx )
       plt.colorbar()
 
-  #Compute the L2-norm of the error in the stress
-  err  = numpy.sqrt( domain.integrate( ((sigma-sigmaexact)*(sigma-sigmaexact)).sum([0,1]), geometry=geometry, ischeme='gauss9' ) )
+  # compute the L2-norm of the error in the stress
+  err = domain.integrate('?dstress_ij ?dstress_ij | ?dstress_ij = stress_ij - stressexact_ij' @ ns, geometry=ns.x, ischeme='gauss9')**.5
 
-  #Compute the mesh parameter (maximum physical distance between diagonally opposite knot locations)
-  hmax = numpy.max([max( numpy.linalg.norm(verts[0]-verts[3]), numpy.linalg.norm(verts[1]-verts[2]) ) for verts in domain.elem_eval( geometry, ischeme='bezier2', separate=True )])
+  # compute the mesh parameter (maximum physical distance between knots)
+  hmax = max(numpy.linalg.norm(v[:,numpy.newaxis]-v, axis=2).max() for v in domain.elem_eval(ns.x, ischeme='bezier2', separate=True))
 
   return err, hmax
 
 
-def convergence( nrefine=5 ):
-
-  err = []
-  h   = []
-
-  for irefine in log.range( 'refine', nrefine ):
-    serr, hmax = main( nr=irefine )
-    err.append( serr )
-    h.append( hmax )
-
+def convergence(nrefine=5):
+  err, h = numpy.array([main(nr=irefine) for irefine in log.range('refine', nrefine)]).T
   with plot.PyPlot( 'convergence' ) as plt:
-    plt.loglog( h, err, 'k*--' )
-    plt.slope_triangle( h, err )
-    plt.ylabel( 'L2 error of stress' )
-    plt.grid( True )
+    plt.loglog(h, err, 'k*--')
+    plt.slope_triangle(h, err)
+    plt.ylabel('L2 error of stress')
+    plt.grid(True)
 
 
 def unittest():
+  retvals = main(nr=0, withplots=False)
+  assert debug.checkdata(retvals, '''
+    eNoz1NEw0TE01dTRMLY0tEjVNdYxNTAwANGaAEntBW4=''')
 
-  retvals = main( nr=0, withplots=False )
-  assert debug.checkdata( retvals, '''
-    eNoz1NEw0TE01dTRMLY0tEjVNdYxNTAwANGaAEntBW4=''' )
+  retvals = main(nr=2, withplots=False)
+  assert debug.checkdata(retvals, '''
+    eNoz1NEw0TE01dTRMDQxN0vVNdYxMjCyBNGaAEniBXM=''')
 
-  retvals = main( nr=2, withplots=False )
-  assert debug.checkdata( retvals, '''
-    eNoz1NEw0TE01dTRMDQxN0vVNdYxMjCyBNGaAEniBXM=''' )
-
-  retvals = main( L=3, R=1.5, E=1e6, nu=0.4, T=15, nr=3, withplots=False )
-  assert debug.checkdata( retvals, '''
-    eNoz1NEw0TE01dTRMDI1MUrVNdExN7MwA9GaAEohBX4=''' )
-
-
-def exact_solution( geometry, T, R, E, nu ):
-
-  mu = .5*E/(1+nu)
-  k  = (3-nu)/(1+nu) #Plane stress parameter
-
-  x, y = geometry/R #Dimensionless coordinates
-  r2 = x**2 + y**2
-
-  return T/(4*mu)*geometry*( [(k+1)/2,(k-3)/2] + [1+k,1-k]/r2 + (1-1/r2)*[x**2-3*y**2,3*x**2-y**2]/r2**2 )
+  retvals = main(L=3, R=1.5, E=1e6, nu=0.4, T=15, nr=3, withplots=False)
+  assert debug.checkdata(retvals, '''
+    eNoz1NEw0TE01dTRMDI1MUrVNdExN7MwA9GaAEohBX4=''')
 
 
 if __name__ == '__main__':
