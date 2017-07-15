@@ -2591,6 +2591,74 @@ class DerivativeTarget( DerivativeTargetBase ):
     else:
       return zeros(self.shape+var.shape)
 
+class Argument(DerivativeTargetBase):
+  '''Array argument, to be substituted before evaluation.
+
+  The :class:`Argument` is an :class:`Array` with a known shape, but whose
+  values are to be defined later, before evaluation, e.g. using
+  :func:`replace_arguments`.
+
+  It is possible to take the derivative of an :class:`Array` to an
+  :class:`Argument`:
+
+  >>> from nutils import function
+  >>> a = function.Argument('x', [])
+  >>> b = function.Argument('y', [])
+  >>> f = a**3 + b**2
+  >>> function.derivative(f, a) == 3*a**2
+  True
+
+  Furthermore, derivatives to the local cooardinates are remembered and applied
+  to the replacement when using :func:`replace_arguments`:
+
+  >>> from nutils import mesh
+  >>> domain, x = mesh.rectilinear([2,2])
+  >>> basis = domain.basis('spline', degree=2)
+  >>> c = function.Argument('c', basis.shape)
+  >>> replace_arguments(c.grad(x), dict(c=basis)) == basis.grad(x)
+  True
+
+  Args
+  ----
+  name : :class:`str`
+      The Identifier of this argument.
+  shape : :class:`tuple` of :class:`int`\\s
+      The shape of this argument.
+  nderiv : :class:`int`, non-negative
+      Number of times a derivative to the local coordinates is taken.  Default:
+      ``0``.
+  '''
+
+  def __init__(self, name, shape, nderiv=0):
+    self._name = name
+    self._nderiv = nderiv
+    DerivativeTargetBase.__init__(self, args=[], shape=shape, dtype=float)
+
+  def evalf(self):
+    raise ValueError('argument {!r} missing'.format(self._name))
+
+  def _edit( self, op ):
+    return self
+
+  def _derivative(self, var, seen):
+    if isinstance(var, Argument) and var._name == self._name:
+      assert var._nderiv == 0 and self.shape[:self.ndim-self._nderiv] == var.shape
+      if self._nderiv:
+        return zeros(self.shape+var.shape)
+      result = numpy.array(1)
+      for i, n in enumerate( var.shape ):
+        result = repeat(result[..., None], n, i)
+      for i, sh in enumerate(self.shape):
+        result = result * align(eye(sh), (i, self.ndim+i), self.ndim*2)
+      return result
+    elif isinstance(var, LocalCoords):
+      return Argument(self._name, self.shape+var.shape, self._nderiv+1)
+    else:
+      return zeros(self.shape+var.shape)
+
+  def __str__(self):
+    return '{} {!r} <{}>'.format(self.__class__.__name__, self._name, ','.join(map(str, self.shape)))
+
 class LocalCoords( DerivativeTargetBase ):
   'local coords derivative target'
 
@@ -3923,5 +3991,42 @@ def replace( old, new, arg ):
       d[f] = v
     return v
   return s( arg )
+
+def replace_arguments(value, arguments):
+  '''Replace :class:`Argument` objects in ``value``.
+
+  Replace :class:`Argument` objects in ``value`` according to the ``arguments``
+  map, taking into account derivatives to the local coordinates.
+
+  Args
+  ----
+  value : :class:`Array`
+      Array to be edited.
+  arguments : :class:`collections.abc.Mapping` with :class:`Array`\\s as values
+      :class:`Argument`\\s replacements.  The key correspond to the ``name``
+      passed to an :class:`Argument` and the value is the replacement.
+
+  Returns
+  -------
+  :class:`Array`
+      The edited ``value``.
+  '''
+  d = {}
+  def s(f):
+    try:
+      v = d[f]
+    except KeyError:
+      if isinstance(f, Argument) and f._name in arguments:
+        v = arguments[f._name]
+        assert f.shape[:f.ndim-f._nderiv] == v.shape
+        for ndims in f.shape[f.ndim-f._nderiv:]:
+          v = localgradient(v, ndims)
+      else:
+        v = edit(f, s)
+      if isarray(f):
+        assert v.shape == f.shape
+      d[f] = v
+    return v
+  return s(value)
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
