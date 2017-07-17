@@ -54,7 +54,7 @@ def main(
   stress = lmbda * function.trace(strain) * eye + (2*mu) * strain
   residual = domain.integral( basis['ni,j'] * stress['ij'], geometry=geom, degree=7 )
 
-  lhs1 = model.newton( 'lhs', residual=residual, lhs0=lhs0, freezedofs=cons.where ).solve( tol=restol )
+  lhs1 = model.newton( 'lhs', residual=residual, lhs0=lhs0, constrain=cons.where ).solve( tol=restol )
   if plots:
     makeplots( 'linear', domain, function.replace_arguments(geom, dict(lhs=lhs1)), function.replace_arguments(stress, dict(lhs=lhs1)) )
 

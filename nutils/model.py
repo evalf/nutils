@@ -175,7 +175,7 @@ def solve_linear(target, residual, constrain=None, *, arguments=None):
       Name of the target: a :class:`nutils.function.Argument` in ``residual``.
   residual : Integral
       Residual integral, depends on ``target``
-  constrain : util.NanVec
+  constrain : float vector
       Defines the fixed entries of the coefficient vector
   arguments : :class:`collections.abc.Mapping`
       Defines the values for :class:`nutils.function.Argument` objects in
@@ -262,7 +262,7 @@ def withsolve( f ):
 
 
 @withsolve
-def newton(target, residual, lhs0=None, freezedofs=None, nrelax=numpy.inf, minrelax=.1, maxrelax=.9, rebound=2**.5, *, arguments=None):
+def newton(target, residual, lhs0=None, constrain=None, nrelax=numpy.inf, minrelax=.1, maxrelax=.9, rebound=2**.5, *, arguments=None):
   '''iteratively solve nonlinear problem by gradient descent
 
   Generates targets such that residual approaches 0 using Newton procedure with
@@ -284,10 +284,11 @@ def newton(target, residual, lhs0=None, freezedofs=None, nrelax=numpy.inf, minre
   residual : Integral
   lhs0 : vector
       Coefficient vector, starting point of the iterative procedure.
-  freezedofs : boolean vector
-      Equal length to ``lhs0``, masks the non-free vector entries as ``True``.
-      In the positions where ``freezedofs`` is True the values of ``lhs0`` are
-      returned unchanged.
+  constrain : boolean or float vector
+      Equal length to ``lhs0``, masks the free vector entries as ``False``
+      (boolean) or NaN (float). In the remaining positions the values of
+      ``lhs0`` are returned unchanged (boolean) or overruled by the values in
+      `constrain` (float).
   nrelax : int
       Maximum number of relaxation steps before proceding with the updated
       coefficient vector (by default unlimited).
@@ -315,20 +316,25 @@ def newton(target, residual, lhs0=None, freezedofs=None, nrelax=numpy.inf, minre
   assert target not in (arguments or {}), '`target` should not be defined in `arguments`'
   resolved_target = _find_argument( target, residual )
 
-  if freezedofs is None:
-    freezedofs = numpy.zeros( len(resolved_target), dtype=bool )
-
   if lhs0 is None:
     lhs0 = numpy.zeros(residual.shape)
   else:
     assert isinstance(lhs0, numpy.ndarray) and lhs0.dtype == float and lhs0.shape == residual.shape, 'invalid lhs0 argument'
+
+  if constrain is None:
+    constrain = numpy.zeros(residual.shape, dtype=bool)
+  else:
+    assert isinstance(constrain, numpy.ndarray) and constrain.dtype in (bool,float) and constrain.shape == residual.shape, 'invalid constrain argument'
+    if constrain.dtype == float:
+      lhs0 = numpy.choose(numpy.isnan(constrain), [constrain, lhs0])
+      constrain = ~numpy.isnan(constrain)
 
   jacobian = residual.derivative( target )
   if not jacobian.contains( resolved_target ):
     log.info( 'problem is linear' )
     res, jac = Integral.multieval(residual, jacobian, arguments=collections.ChainMap(arguments or {}, {target: numpy.zeros(resolved_target.shape)}))
     cons = lhs0.copy()
-    cons[~freezedofs] = numpy.nan
+    cons[~constrain] = numpy.nan
     lhs = jac.solve( -res, constrain=cons )
     yield lhs, 0
     return
@@ -337,16 +343,16 @@ def newton(target, residual, lhs0=None, freezedofs=None, nrelax=numpy.inf, minre
   fcache = cache.WrapperCache()
   res, jac = Integral.multieval(residual, jacobian, fcache=fcache, arguments=collections.ChainMap(arguments or {}, {target: lhs}))
   zcons = numpy.zeros( len(resolved_target) )
-  zcons[~freezedofs] = numpy.nan
+  zcons[~constrain] = numpy.nan
   relax = 1
   while True:
-    resnorm = numpy.linalg.norm( res[~freezedofs] )
+    resnorm = numpy.linalg.norm( res[~constrain] )
     yield lhs, resnorm
     dlhs = -jac.solve( res, constrain=zcons )
     relax = min( relax * rebound, 1 )
     for irelax in itertools.count():
       res, jac = Integral.multieval(residual, jacobian, fcache=fcache, arguments=collections.ChainMap(arguments or {}, {target: lhs+relax*dlhs}))
-      newresnorm = numpy.linalg.norm( res[~freezedofs] )
+      newresnorm = numpy.linalg.norm( res[~constrain] )
       if irelax >= nrelax:
         if newresnorm > resnorm:
           log.warning( 'failed to decrease residual' )
@@ -359,7 +365,7 @@ def newton(target, residual, lhs0=None, freezedofs=None, nrelax=numpy.inf, minre
         r0 = resnorm**2
         d0 = -2 * r0
         r1 = newresnorm**2
-        d1 = 2 * numpy.dot( jac.matvec(dlhs)[~freezedofs], res[~freezedofs] )
+        d1 = 2 * numpy.dot( jac.matvec(dlhs)[~constrain], res[~constrain] )
         log.info( 'line search: 0[{}]{} {}creased by {:.0f}%'.format( '---+++' if d1 > 0 else '--++--' if r1 > r0 else '------', round(relax,5), 'in' if newresnorm > resnorm else 'de', 100*abs(newresnorm/resnorm-1) ) )
         if r1 <= r0 and d1 <= 0:
           break
@@ -381,7 +387,7 @@ def newton(target, residual, lhs0=None, freezedofs=None, nrelax=numpy.inf, minre
 
 
 @withsolve
-def pseudotime(target, residual, inertia, timestep, lhs0, residual0=None, freezedofs=None, *, arguments=None):
+def pseudotime(target, residual, inertia, timestep, lhs0, residual0=None, constrain=None, *, arguments=None):
   '''iteratively solve nonlinear problem by pseudo time stepping
 
   Generates targets such that residual approaches 0 using hybrid of Newton and
@@ -398,10 +404,11 @@ def pseudotime(target, residual, inertia, timestep, lhs0, residual0=None, freeze
       Initial time step, will scale up as residual decreases
   lhs0 : vector
       Coefficient vector, starting point of the iterative procedure.
-  freezedofs : boolean vector
-      Equal length to ``lhs0``, masks the non-free vector entries as ``True``.
-      In the positions where ``freezedofs`` is True the values of ``lhs0`` are
-      returned unchanged.
+  constrain : boolean or float vector
+      Equal length to ``lhs0``, masks the free vector entries as ``False``
+      (boolean) or NaN (float). In the remaining positions the values of
+      ``lhs0`` are returned unchanged (boolean) or overruled by the values in
+      `constrain` (float).
   arguments : :class:`collections.abc.Mapping`
       Defines the values for :class:`nutils.function.Argument` objects in
       `residual`.  The ``target`` should not be present in ``arguments``.
@@ -419,24 +426,31 @@ def pseudotime(target, residual, inertia, timestep, lhs0, residual0=None, freeze
   jacobiant = inertia.derivative( target )
   if residual0 is not None:
     residual += residual0
-  if freezedofs is None:
-    freezedofs = numpy.zeros( len(_find_argument(target, residual, residual0)), dtype=bool )
+
+  if constrain is None:
+    constrain = numpy.zeros(residual.shape, dtype=bool)
+  else:
+    assert isinstance(constrain, numpy.ndarray) and constrain.dtype in (bool,float) and constrain.shape == residual.shape, 'invalid constrain argument'
+    if constrain.dtype == float:
+      lhs0 = numpy.choose(numpy.isnan(constrain), [constrain, lhs0])
+      constrain = ~numpy.isnan(constrain)
+
   zcons = util.NanVec( len(_find_argument(target, residual, residual0)) )
-  zcons[freezedofs] = 0
+  zcons[constrain] = 0
   lhs = lhs0.copy()
   fcache = cache.WrapperCache()
   res, jac = Integral.multieval(residual, jacobian0+jacobiant/timestep, fcache=fcache, arguments=collections.ChainMap(arguments or {}, {target: lhs}))
-  resnorm = resnorm0 = numpy.linalg.norm( res[~freezedofs] )
+  resnorm = resnorm0 = numpy.linalg.norm( res[~constrain] )
   while True:
     yield lhs, resnorm
     lhs -= jac.solve( res, constrain=zcons )
     thistimestep = timestep * (resnorm0/resnorm)
     log.info( 'timestep: {:.0e}'.format(thistimestep) )
     res, jac = Integral.multieval(residual, jacobian0+jacobiant/thistimestep, fcache=fcache, arguments=collections.ChainMap(arguments or {}, {target: lhs}))
-    resnorm = numpy.linalg.norm( res[~freezedofs] )
+    resnorm = numpy.linalg.norm( res[~constrain] )
 
 
-def thetamethod(target, residual, inertia, timestep, lhs0, theta, target0=None, freezedofs=None, tol=1e-10, *, arguments=None, **newtonargs):
+def thetamethod(target, residual, inertia, timestep, lhs0, theta, target0=None, constrain=None, tol=1e-10, *, arguments=None, **newtonargs):
   '''solve time dependent problem using the theta method
 
   Parameters
@@ -453,10 +467,11 @@ def thetamethod(target, residual, inertia, timestep, lhs0, theta, target0=None, 
       Theta value (theta=1 for implicit Euler, theta=0.5 for Crank-Nicolson)
   residual0 : Integral
       Optional additional residual component evaluated in previous timestep
-  freezedofs : boolean vector
-      Equal length to ``lhs0``, masks the non-free vector entries as ``True``.
-      In the positions where ``freezedofs`` is True the values of ``lhs0`` are
-      returned unchanged.
+  constrain : boolean or float vector
+      Equal length to ``lhs0``, masks the free vector entries as ``False``
+      (boolean) or NaN (float). In the remaining positions the values of
+      ``lhs0`` are returned unchanged (boolean) or overruled by the values in
+      `constrain` (float).
   tol : float
       Residual tolerance of individual timesteps
   arguments : :class:`collections.abc.Mapping`
@@ -481,7 +496,7 @@ def thetamethod(target, residual, inertia, timestep, lhs0, theta, target0=None, 
   res = res0 + res1.replace({target: function.Argument(target0, lhs.shape)})
   while True:
     yield lhs
-    lhs = newton(target, residual=res, lhs0=lhs, freezedofs=freezedofs, arguments=collections.ChainMap(arguments or {}, {target0: lhs}), **newtonargs).solve(tol=tol)
+    lhs = newton(target, residual=res, lhs0=lhs, constrain=constrain, arguments=collections.ChainMap(arguments or {}, {target0: lhs}), **newtonargs).solve(tol=tol)
 
 
 impliciteuler = functools.partial(thetamethod, theta=1)
@@ -543,7 +558,7 @@ def optimize(target, functional, droptol=None, lhs0=None, constrain=None, newton
     value = f0 + .5 * res.dot(lhs-lhs0)
   else: # nonlinear
     assert newtontol is not None, 'newton tolerance `newtontol` must be specified for nonlinear problems'
-    lhs = newton(target, residual, lhs0=lhs, freezedofs=constrain|nandofs, arguments=arguments).solve(newtontol)
+    lhs = newton(target, residual, lhs0=lhs, constrain=constrain|nandofs, arguments=arguments).solve(newtontol)
     value = functional.eval(arguments=collections.ChainMap(arguments or {}, {target: lhs}))
   assert not numpy.isnan(lhs[~(constrain|nandofs)]).any(), 'optimization failed (forgot droptol?)'
   log.info('optimum: {:.2e}'.format(value))

@@ -19,7 +19,7 @@ def laplace():
       if name == 'direct':
         lhs = model.solve_linear( 'dofs', residual=residual, constrain=cons )
       else:
-        lhs = model.newton( 'dofs', residual=residual, lhs0=cons|0, freezedofs=cons.where ).solve( tol=1e-10, maxiter=0 )
+        lhs = model.newton('dofs', residual=residual, constrain=cons).solve( tol=1e-10, maxiter=0 )
       res = residual.eval(arguments=dict(dofs=lhs))
       resnorm = numpy.linalg.norm( res[~cons.where] )
       assert resnorm < 1e-13
@@ -50,9 +50,9 @@ def navierstokes():
       if name == 'direct':
         lhs = model.solve_linear( 'dofs', residual=residual, constrain=cons )
       elif name == 'newton':
-        lhs = model.newton( 'dofs', residual=residual, lhs0=lhs0, freezedofs=cons.where ).solve( tol=tol, maxiter=2 )
+        lhs = model.newton('dofs', residual=residual, lhs0=lhs0, constrain=cons).solve( tol=tol, maxiter=2 )
       else:
-        lhs = model.pseudotime( 'dofs', residual=residual, lhs0=lhs0, freezedofs=cons.where, inertia=inertia, timestep=1 ).solve( tol=tol, maxiter=3 )
+        lhs = model.pseudotime( 'dofs', residual=residual, lhs0=lhs0, constrain=cons, inertia=inertia, timestep=1 ).solve( tol=tol, maxiter=3 )
       res = residual.eval(arguments=dict(dofs=lhs))
       resnorm = numpy.linalg.norm( res[~cons.where] )
       assert resnorm < tol
