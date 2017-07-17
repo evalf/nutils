@@ -131,21 +131,17 @@ class NanVec( numpy.ndarray ):
   'nan-initialized vector'
 
   def __new__( cls, length ):
-    'new'
-
-    vec = numpy.empty( length ).view( cls )
+    vec = numpy.empty(length, dtype=float).view(cls)
     vec[:] = numpy.nan
     return vec
 
   @property
   def where( self ):
-    'find non-nan items'
-
-    return ~numpy.isnan( self.view(numpy.ndarray) )
+    return ~numpy.isnan(self.view(numpy.ndarray))
 
   def __iand__( self, other ):
-    'combine'
-
+    if self.dtype != float:
+      return self.view(numpy.ndarray).__iand__(other)
     where = self.where
     if numpy.isscalar( other ):
       self[ where ] = other
@@ -155,23 +151,25 @@ class NanVec( numpy.ndarray ):
     return self
 
   def __and__( self, other ):
-    'combine'
-
+    if self.dtype != float:
+      return self.view(numpy.ndarray).__and__(other)
     return self.copy().__iand__( other )
 
   def __ior__( self, other ):
-    'combine'
-
+    if self.dtype != float:
+      return self.view(numpy.ndarray).__ior__(other)
     wherenot = ~self.where
     self[ wherenot ] = other if numpy.isscalar( other ) else other[ wherenot ]
     return self
 
   def __or__( self, other ):
-    'combine'
-
+    if self.dtype != float:
+      return self.view(numpy.ndarray).__or__(other)
     return self.copy().__ior__( other )
 
   def __invert__( self ):
+    if self.dtype != float:
+      return self.view(numpy.ndarray).__invert__()
     nanvec = NanVec( len(self) )
     nanvec[numpy.isnan(self)] = 0
     return nanvec
