@@ -338,6 +338,20 @@ def multiply(a, b):
   a, b = _matchndim(a, b)
   return Multiply(orderedset([a, b])).simplified
 
+def sum(arg, axis=None):
+  arg = asarray(arg)
+  if axis is None:
+    axis = numpy.arange(arg.ndim)
+  elif not util.isiterable(axis):
+    axis = numeric.normdim(arg.ndim, axis),
+  else:
+    axis = _norm_and_sort(arg.ndim, axis)
+    assert numpy.all(numpy.diff(axis) > 0), 'duplicate axes in sum'
+  summed = arg
+  for ax in reversed(axis):
+    summed = Sum(summed, ax).simplified
+  return summed
+
 def power(arg, n):
   arg, n = _matchndim(arg, n)
   return Power(arg, n).simplified
@@ -414,7 +428,7 @@ class Array( Evaluable ):
   __mod__  = lambda self, other: mod(self, other)
   __str__ = __repr__ = lambda self: 'Array<{}>'.format(','.join(map(str, self.shape)) if hasattr(self, 'shape') else '?')
 
-  sum = lambda self, axis: sum(self, axis)
+  sum = sum
   vector = lambda self, ndims: vectorize([self] * ndims)
   dot = dot
   normalized = lambda self, axis=-1: normalized(self, axis)
@@ -1627,26 +1641,31 @@ class Dot(Array):
     return dot( op(func1), op(func2), self.axes )
 
 class Sum( Array ):
-  'sum'
 
-  def __init__( self, func, axis ):
-    'constructor'
-
+  def __init__(self, func, axis):
     self.axis = axis
     self.func = func
     assert 0 <= axis < func.ndim, 'axis out of bounds'
     shape = func.shape[:axis] + func.shape[axis+1:]
-    self.axis_shiftright = axis-func.ndim
-    Array.__init__( self, args=[func], shape=shape, dtype=func.dtype )
+    super().__init__(args=[func], shape=shape, dtype=int if func.dtype == bool else func.dtype)
+
+  @cache.property
+  def simplified(self):
+    func = self.func.simplified
+    retval = func._sum(self.axis)
+    if retval is not None:
+      assert retval.shape == self.shape
+      return retval.simplified
+    return Sum(func, self.axis)
 
   def evalf( self, arr ):
     assert arr.ndim == self.ndim+2
-    return numpy.sum( arr, self.axis_shiftright )
+    return numpy.sum(arr, self.axis+1)
 
   def _sum( self, axis ):
     trysum = self.func._sum(axis+(axis>=self.axis))
     if trysum is not None:
-      return sum( trysum, self.axis )
+      return sum(trysum, self.axis-(axis<self.axis))
 
   def _derivative(self, var, seen):
     return sum(derivative(self.func, var, seen), self.axis)
@@ -3050,29 +3069,6 @@ def jacobian( geom, ndims ):
     else 1. if ndims == 0 \
     else abs( determinant( ( J[:,:,_] * J[:,_,:] ).sum(0) ) )**.5
   return detJ
-
-def sum( arg, axis=None ):
-  'sum over one or multiply axes'
-
-  assert axis is not None
-
-  arg = asarray( arg )
-
-  if util.isiterable(axis):
-    if len(axis) == 0:
-      return arg
-    axis = _norm_and_sort( arg.ndim, axis )
-    assert numpy.all( numpy.diff(axis) > 0 ), 'duplicate axes in sum'
-    return sum( sum( arg, axis[1:] ), axis[0] )
-
-  axis = numeric.normdim( arg.ndim, axis )
-
-  retval = arg._sum(axis)
-  if retval is not None:
-    assert retval.shape == arg.shape[:axis] + arg.shape[axis+1:], 'bug in %s._sum' % arg
-    return retval
-
-  return Sum( arg, axis )
 
 def matmat( arg0, *args ):
   'helper function, contracts last axis of arg0 with first axis of arg1, etc'
