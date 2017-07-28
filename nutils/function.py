@@ -1263,13 +1263,20 @@ class Cross( Array ):
     return cross( op(self.func1), op(self.func2), self.axis )
 
 class Determinant( Array ):
-  'normal'
 
-  def __init__( self, func ):
-    'contructor'
-
+  def __init__(self, func):
+    assert isarray(func) and func.ndim >= 2 and func.shape[-1] == func.shape[-2]
     self.func = func
-    Array.__init__( self, args=[func], shape=func.shape[:-2], dtype=func.dtype )
+    super().__init__(args=[func], shape=func.shape[:-2], dtype=func.dtype)
+
+  @cache.property
+  def simplified(self):
+    func = self.func.simplified
+    retval = func._determinant()
+    if retval is not None:
+      assert retval.shape == self.shape
+      return retval.simplified
+    return Determinant(func)
 
   def evalf( self, arr ):
     assert arr.ndim == self.ndim+3
@@ -1334,16 +1341,17 @@ class Multiply(Array):
         return f * add( g1, g2 )
 
   def _determinant( self ):
-    assert self.ndim >= 2 and self.shape != (1,1) # should have been handled at higher level
     func1, func2 = self.funcs
+    if self.shape[-2:] == (1,1):
+      return multiply(determinant(func1), determinant(func2))
     if 1 in func1.shape[-2:]:
       func1, func2 = func2, func1 # swap singleton-axis argument into func2
     if 1 in func1.shape[-2:]: # tensor product
-      return zeros( () )
+      return zeros(())
     if 1 in func2.shape[-2:]:
-      det2 = power( func2[...,0,0], self.shape[-1] ) if func2.shape[-2:] == (1,1) \
-        else product( func2.sum( -1 if func2.shape[-1] == 1 else -2 ), axis=0 )
-      return determinant(func1) * det2
+      det2 = power(func2[...,0,0], self.shape[-1]) if func2.shape[-2:] == (1,1) \
+        else product(func2.sum( -1 if func2.shape[-1] == 1 else -2 ), axis=0)
+      return multiply(determinant(func1), det2)
 
   def _product( self, axis ):
     func1, func2 = self.funcs
@@ -3086,28 +3094,13 @@ def matmat( arg0, *args ):
     retval = dot( retval[(...,)+(_,)*(arg.ndim-1)], arg[(_,)*(retval.ndim-1)], retval.ndim-1 )
   return retval
 
-def determinant( arg, axes=(-2,-1) ):
-  'determinant'
-
-  arg = asarray( arg )
-  ax1, ax2 = _norm_and_sort( arg.ndim, axes )
+def determinant(arg, axes=(-2,-1)):
+  arg = asarray(arg)
+  ax1, ax2 = _norm_and_sort(arg.ndim, axes)
   assert ax2 > ax1 # strict
-
-  n = arg.shape[ax1]
-  assert n == arg.shape[ax2]
-  if n == 1:
-    return get( get( arg, ax2, 0 ), ax1, 0 )
-
   trans = list(range(ax1)) + [-2] + list(range(ax1,ax2-1)) + [-1] + list(range(ax2-1,arg.ndim-2))
-  arg = align( arg, trans, arg.ndim )
-  shape = arg.shape[:-2]
-
-  retval = arg._determinant()
-  if retval is not None:
-    assert retval.shape == shape, 'bug in %s._determinant' % arg
-    return retval
-
-  return Determinant( arg )
+  arg = align(arg, trans, arg.ndim)
+  return Determinant(arg)
 
 def inverse( arg, axes=(-2,-1) ):
   'inverse'
