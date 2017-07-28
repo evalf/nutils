@@ -95,7 +95,7 @@ class Evaluable( cache.Immutable ):
       pass
     else:
       return '%{}'.format( index )
-    asciitree = str(self)
+    asciitree = self._asciitree_str()
     if core.getprop( 'richoutput', False ):
       select = '├ ', '└ '
       bridge = '│ ', '  '
@@ -108,6 +108,9 @@ class Evaluable( cache.Immutable ):
     index = len(seen)
     seen.append( self )
     return '%{} = {}'.format( index, asciitree )
+
+  def _asciitree_str(self):
+    return str(self)
 
   def __str__( self ):
     return self.__class__.__name__
@@ -543,9 +546,12 @@ class Array( Evaluable ):
   def __str__( self ):
     'string representation'
 
-    return '%s<%s>' % ( self.__class__.__name__, ','.join( str(n) for n in self.shape ) )
+    return 'Array<{}>'.format(','.join(map(str, self.shape)))
 
   __repr__ = __str__
+
+  def _asciitree_str(self):
+    return '{}<{}>'.format(type(self).__name__, ','.join(map(str, self.shape)))
 
 class Normal( Array ):
   'normal'
