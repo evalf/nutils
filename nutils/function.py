@@ -1716,14 +1716,20 @@ class Debug( Array ):
     return Debug( op(self.func) )
 
 class TakeDiag( Array ):
-  'extract diagonal'
 
-  def __init__( self, func ):
-    'constructor'
-
+  def __init__(self, func):
     assert func.shape[-1] == func.shape[-2]
     self.func = func
-    Array.__init__( self, args=[func], shape=func.shape[:-1], dtype=func.dtype )
+    super().__init__(args=[func], shape=func.shape[:-1], dtype=func.dtype)
+
+  @cache.property
+  def simplified(self):
+    func = self.func.simplified
+    retval = func._takediag()
+    if retval is not None:
+      assert retval.shape == self.shape
+      return retval.simplified
+    return TakeDiag(func)
 
   def evalf( self, arr ):
     assert arr.ndim == self.ndim+2
@@ -3117,31 +3123,17 @@ def inverse(arg, axes=(-2,-1)):
   arg = align(arg, trans, arg.ndim)
   return transpose(Inverse(arg), trans).simplified
 
-def takediag( arg, ax1=-2, ax2=-1 ):
-  'takediag'
-
-  arg = asarray( arg )
+def takediag(arg, ax1=-2, ax2=-1):
+  arg = asarray(arg)
   ax1, ax2 = _norm_and_sort( arg.ndim, (ax1,ax2) )
   assert ax2 > ax1 # strict
-
   axes = list(range(ax1)) + [-2] + list(range(ax1,ax2-1)) + [-1] + list(range(ax2-1,arg.ndim-2))
-  arg = align( arg, axes, arg.ndim )
-
+  arg = align(arg, axes, arg.ndim)
   if arg.shape[-1] == 1:
-    return get( arg, -1, 0 )
-
+    return get(arg, -1, 0)
   if arg.shape[-2] == 1:
-    return get( arg, -2, 0 )
-
-  assert arg.shape[-1] == arg.shape[-2]
-  shape = arg.shape[:-1]
-
-  retval = arg._takediag()
-  if retval is not None:
-    assert retval.shape == shape, 'bug in %s._takediag' % arg
-    return retval
-
-  return TakeDiag( arg )
+    return get(arg, -2, 0)
+  return TakeDiag(arg).simplified
 
 def derivative(func, var, seen=None):
   'derivative'
