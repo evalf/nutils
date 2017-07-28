@@ -352,6 +352,14 @@ def sum(arg, axis=None):
     summed = Sum(summed, ax).simplified
   return summed
 
+def product(arg, axis):
+  arg = asarray(arg)
+  axis = numeric.normdim(arg.ndim, axis)
+  shape = arg.shape[:axis] + arg.shape[axis+1:]
+  trans = list(range(axis)) + [-1] + list(range(axis,arg.ndim-1))
+  aligned_arg = align(arg, trans, arg.ndim)
+  return Product(aligned_arg).simplified
+
 def power(arg, n):
   arg, n = _matchndim(arg, n)
   return Power(arg, n).simplified
@@ -429,6 +437,7 @@ class Array( Evaluable ):
   __str__ = __repr__ = lambda self: 'Array<{}>'.format(','.join(map(str, self.shape)) if hasattr(self, 'shape') else '?')
 
   sum = sum
+  prod = product
   vector = lambda self, ndims: vectorize([self] * ndims)
   dot = dot
   normalized = lambda self, axis=-1: normalized(self, axis)
@@ -469,7 +478,7 @@ class Array( Evaluable ):
   _takediag = lambda self: None
   _kronecker = lambda self, axis, length, pos: None
   _diagonalize = lambda self: None
-  _product = lambda self, axis: None
+  _product = lambda self: None
   _choose = lambda self, choices: None
   _cross = lambda self, other, axis: None
   _pointwise = lambda self, evalf, deriv, dtype: None
@@ -553,8 +562,8 @@ class Constant( Array ):
   def _inverse( self ):
     return asarray( numpy.linalg.inv( self.value ) )
 
-  def _product( self, axis ):
-    return asarray( self.value.prod(axis) )
+  def _product(self):
+    return asarray(self.value.prod(-1))
 
   def _multiply( self, other ):
     if self._isunit:
@@ -801,14 +810,20 @@ class Get(Array):
     return get( op(self.func), self.axis, self.item )
 
 class Product( Array ):
-  'product'
 
-  def __init__( self, func ):
-    'constructor'
-
-    assert func.shape[-1] > 1
+  def __init__(self, func):
+    assert isarray(func)
     self.func = func
-    Array.__init__( self, args=[func], shape=func.shape[:-1], dtype=func.dtype )
+    super().__init__(args=[func], shape=func.shape[:-1], dtype=func.dtype)
+
+  @cache.property
+  def simplified(self):
+    func = self.func.simplified
+    retval = func._product()
+    if retval is not None:
+      assert retval.shape == self.shape
+      return retval.simplified
+    return Product(func)
 
   def evalf( self, arr ):
     assert arr.ndim == self.ndim+2
@@ -1359,11 +1374,11 @@ class Multiply(Array):
         else product(func2.sum( -1 if func2.shape[-1] == 1 else -2 ), axis=0)
       return multiply(determinant(func1), det2)
 
-  def _product( self, axis ):
+  def _product(self):
     func1, func2 = self.funcs
-    prod1 = product( func1, axis ) if func1.shape[axis] != 1 else power( get(func1,axis,0), self.shape[axis] )
-    prod2 = product( func2, axis ) if func2.shape[axis] != 1 else power( get(func2,axis,0), self.shape[axis] )
-    return multiply( prod1, prod2 )
+    prod1 = product(func1, -1) if func1.shape[-1] != 1 else power(get(func1, -1, 0), self.shape[-1])
+    prod2 = product(func2, -1) if func2.shape[-1] != 1 else power(get(func2, -1, 0), self.shape[-1])
+    return multiply(prod1, prod2)
 
   def _multiply( self, other ):
     func1, func2 = self.funcs
@@ -2375,10 +2390,10 @@ class Repeat( Array ):
       return get( self.func, axis, 0 ) * self.length
     return repeat( sum( self.func, axis ), self.length, self.axis-(axis<self.axis) )
 
-  def _product( self, axis ):
-    if axis == self.axis:
-      return get( self.func, axis, 0 )**self.length
-    return repeat( product( self.func, axis ), self.length, self.axis-(axis<self.axis) )
+  def _product(self):
+    if self.axis == self.ndim-1:
+      return get(self.func, -1, 0)**self.length
+    return repeat(product(self.func, -1), self.length, self.axis)
 
   def _power( self, n ):
     return aslength( power( self.func, n ), self.length, self.axis )
@@ -3230,26 +3245,6 @@ def transpose( arg, trans=None ):
 
   invtrans = range( arg.ndim-1, -1, -1 ) if trans is None else _invtrans( trans )
   return align( arg, invtrans, arg.ndim )
-
-def product( arg, axis ):
-  'product'
-
-  arg = asarray( arg )
-  axis = numeric.normdim( arg.ndim, axis )
-  shape = arg.shape[:axis] + arg.shape[axis+1:]
-
-  if arg.shape[axis] == 1:
-    return get( arg, axis, 0 )
-
-  trans = list(range(axis)) + [-1] + list(range(axis,arg.ndim-1))
-  aligned_arg = align( arg, trans, arg.ndim )
-
-  retval = aligned_arg._product(arg.ndim-1)
-  if retval is not None:
-    assert retval.shape == shape, 'bug in %s._product' % aligned_arg
-    return retval
-
-  return Product( aligned_arg )
 
 def choose( level, choices ):
   'choose'
