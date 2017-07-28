@@ -2310,23 +2310,30 @@ class Diagonalize( Array ):
 
 
 class Repeat( Array ):
-  'repeat singleton axis'
 
-  def __init__( self, func, length, axis ):
-    'constructor'
-
-    assert length != 1
-    assert func.shape[axis] == 1
+  def __init__(self, func, length, axis):
+    assert isarray(func) and func.shape[axis] == 1
+    assert 0 <= axis < func.ndim
     self.func = func
     self.axis = axis
     self.length = length
     shape = func.shape[:axis] + (length,) + func.shape[axis+1:]
-    self.axis_shiftright = axis-func.ndim
-    Array.__init__( self, args=[func] if isinstance(func,Array) else [], shape=shape, dtype=func.dtype )
+    super().__init__(args=[func], shape=shape, dtype=func.dtype)
+
+  @cache.property
+  def simplified(self):
+    func = self.func.simplified
+    if self.length == 1:
+      return func
+    retval = func._repeat(self.length, self.axis)
+    if retval is not None:
+      assert retval.shape == self.shape
+      return retval.simplified
+    return Repeat(func, self.length, self.axis)
 
   def evalf( self, arr=None ):
     assert arr is None or arr.ndim == self.ndim+1
-    return numeric.fastrepeat( arr if arr is not None else self.func[_], self.length, self.axis_shiftright )
+    return numeric.fastrepeat( arr if arr is not None else self.func[_], self.length, self.axis+1 )
 
   def _derivative(self, var, seen):
     return repeat(derivative(self.func, var, seen), self.length, self.axis)
@@ -3030,22 +3037,11 @@ def aslength( arg, length, axis ):
 
   return repeat( arg, length, axis )
 
-def repeat( arg, length, axis ):
-  'repeat'
-
-  arg = asarray( arg )
-  axis = numeric.normdim( arg.ndim, axis )
+def repeat(arg, length, axis):
+  arg = asarray(arg)
+  axis = numeric.normdim(arg.ndim, axis)
   assert arg.shape[axis] == 1
-  if length == 1:
-    return arg
-
-  retval = arg._repeat(length, axis)
-  if retval is not None:
-    shape = arg.shape[:axis] + (length,) + arg.shape[axis+1:]
-    assert retval.shape == shape, 'bug in %s._repeat' % arg
-    return retval
-
-  return Repeat( arg, length, axis )
+  return Repeat(arg, length, axis).simplified
 
 def get(arg, iax, item):
   assert numeric.isint(item)
