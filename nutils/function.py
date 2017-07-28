@@ -969,14 +969,20 @@ class Choose2D( Array ):
     return out
 
 class Inverse( Array ):
-  'inverse'
 
-  def __init__( self, func ):
-    'constructor'
-
-    assert func.shape[-1] == func.shape[-2]
+  def __init__(self, func):
+    assert func.ndim >= 2 and func.shape[-1] == func.shape[-2]
     self.func = func
-    Array.__init__( self, args=[func], shape=func.shape, dtype=float )
+    super().__init__(args=[func], shape=func.shape, dtype=float)
+
+  @cache.property
+  def simplified(self):
+    func = self.func.simplified
+    retval = func._inverse()
+    if retval is not None:
+      assert retval.shape == self.shape
+      return retval.simplified
+    return Inverse(func)
 
   def evalf( self, arr ):
     assert arr.ndim == self.ndim+1
@@ -1405,14 +1411,15 @@ class Multiply(Array):
       return func2[s] * dot( func1, other, axes )
 
   def _inverse( self ):
-    assert self.ndim >= 2 and self.shape != (1,1) # should have been handled at higher level
     func1, func2 = self.funcs
+    if self.shape[-2:] == (1,1):
+      return multiply(inverse(func1), inverse(func2))
     if 1 in func1.shape[-2:]:
       func1, func2 = func2, func1
     if 1 in func1.shape[-2:]: # tensor product
       raise Exception( 'singular matrix' )
     if 1 in func2.shape[-2:]:
-      return inverse(func1) / swapaxes(func2)
+      return divide(inverse(func1), swapaxes(func2))
 
 class Add(Array):
 
@@ -3102,27 +3109,13 @@ def determinant(arg, axes=(-2,-1)):
   arg = align(arg, trans, arg.ndim)
   return Determinant(arg)
 
-def inverse( arg, axes=(-2,-1) ):
-  'inverse'
-
+def inverse(arg, axes=(-2,-1)):
   arg = asarray( arg )
-  ax1, ax2 = _norm_and_sort( arg.ndim, axes )
+  ax1, ax2 = _norm_and_sort(arg.ndim, axes)
   assert ax2 > ax1 # strict
-
-  n = arg.shape[ax1]
-  assert arg.shape[ax2] == n
-  if n == 1:
-    return reciprocal( arg )
-
   trans = list(range(ax1)) + [-2] + list(range(ax1,ax2-1)) + [-1] + list(range(ax2-1,arg.ndim-2))
-  arg = align( arg, trans, arg.ndim )
-
-  retval = arg._inverse()
-  if retval is not None:
-    assert retval.shape == arg.shape, 'bug in %s._inverse' % arg
-    return transpose( retval, trans )
-
-  return transpose( Inverse(arg), trans )
+  arg = align(arg, trans, arg.ndim)
+  return transpose(Inverse(arg), trans).simplified
 
 def takediag( arg, ax1=-2, ax2=-1 ):
   'takediag'
