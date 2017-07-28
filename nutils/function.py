@@ -2508,17 +2508,28 @@ class Find( Array ):
     return Find( op(self.where) )
 
 class Kronecker( Array ):
-  'kronecker'
 
-  def __init__( self, func, axis, length, pos ):
-    assert isarray( func )
+  def __init__(self, func, axis, length, pos):
+    assert isarray(func)
     assert 0 <= axis <= func.ndim
     assert 0 <= pos < length
     self.func = func
     self.axis = axis
     self.length = length
     self.pos = pos
-    Array.__init__( self, args=[func], shape=func.shape[:axis]+(length,)+func.shape[axis:], dtype=func.dtype )
+    super().__init__(args=[func], shape=func.shape[:axis]+(length,)+func.shape[axis:], dtype=func.dtype)
+
+  @cache.property
+  def simplified(self):
+    func = self.func.simplified
+    if self.length == 1:
+      assert self.pos == 0
+      return insert(func, self.axis).simplified
+    retval = func._kronecker(self.axis, self.length, self.pos)
+    if retval is not None:
+      assert retval.shape == self.shape
+      return retval.simplified
+    return Kronecker(func, self.axis, self.length, self.pos)
 
   def evalf( self, func ):
     return numeric.kronecker( func, self.axis+1, self.length, self.pos )
@@ -3162,19 +3173,11 @@ def dotnorm( arg, coords ):
 
 normal = lambda geom: geom.normal()
 
-def kronecker( arg, axis, length, pos ):
-  'kronecker'
-
-  arg = asarray( arg )
-  axis = numeric.normdim( arg.ndim+1, axis )
+def kronecker(arg, axis, length, pos):
+  arg = asarray(arg)
+  axis = numeric.normdim(arg.ndim+1, axis)
   assert 0 <= pos < length
-  if length == 1:
-    return insert( arg, axis )
-  retval = arg._kronecker(axis, length, pos)
-  if retval is not None:
-    assert retval.shape == arg.shape[:axis]+(length,)+arg.shape[axis:], 'bug in %s._kronecker' % arg
-    return retval
-  return Kronecker( arg, axis, length, pos )
+  return Kronecker(arg, axis, length, pos).simplified
 
 def diagonalize( arg ):
   'diagonalize'
