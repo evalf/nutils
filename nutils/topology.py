@@ -133,7 +133,7 @@ class Topology( object ):
 
   @log.title
   @core.single_or_multiple
-  def elem_eval( self, funcs, ischeme, separate=False, geometry=None, asfunction=False, edit=_identity ):
+  def elem_eval( self, funcs, ischeme, separate=False, geometry=None, asfunction=False, edit=_identity, *, arguments=None ):
     'element-wise evaluation'
 
     fcache = cache.WrapperCache()
@@ -161,6 +161,7 @@ class Topology( object ):
       if isinstance( func, IndexedArray ):
         func = func.unwrap( geometry )
       func = function.asarray( edit( func * iwscale ) )
+      func = function.zero_argument_derivatives(func)
       retval = zeros( (npoints,)+func.shape, dtype=func.dtype )
       if function.isarray( func ):
         for ind, f in function.blocks( func ):
@@ -176,7 +177,7 @@ class Topology( object ):
     for ielem, elem in parallel.pariter( log.enumerate( 'elem', self ), nprocs=nprocs ):
       ipoints, iweights = ischeme[elem] if isinstance(ischeme,dict) else fcache[elem.reference.getischeme]( ischeme )
       s = slices[ielem],
-      for ifunc, index, data in idata.eval( elem, ipoints, fcache ):
+      for ifunc, index, data in idata.eval( elem, ipoints, fcache, arguments ):
         retvals[ifunc][s+numpy.ix_(*[ ind for (ind,) in index ])] += numeric.dot(iweights,data) if geometry else data
 
     log.debug( 'cache', fcache.stats )
@@ -195,13 +196,13 @@ class Topology( object ):
 
   @log.title
   @core.single_or_multiple
-  def elem_mean( self, funcs, geometry, ischeme ):
+  def elem_mean( self, funcs, geometry, ischeme, *, arguments=None ):
     'element-wise average'
 
-    retvals = self.elem_eval( (1,)+funcs, geometry=geometry, ischeme=ischeme )
+    retvals = self.elem_eval( (1,)+funcs, geometry=geometry, ischeme=ischeme, arguments=arguments )
     return [ v / retvals[0][(slice(None),)+(_,)*(v.ndim-1)] for v in retvals[1:] ]
 
-  def _integrate( self, funcs, ischeme, fcache=None ):
+  def _integrate( self, funcs, ischeme, fcache=None, arguments=None ):
 
     # Functions may consist of several blocks, such as originating from
     # chaining. Here we make a list of all blocks consisting of triplets of
@@ -209,7 +210,7 @@ class Topology( object ):
 
     blocks = [ ( ifunc, ind, f )
       for ifunc, func in enumerate( funcs )
-        for ind, f in function.blocks( func ) ]
+        for ind, f in function.blocks( function.zero_argument_derivatives(func) ) ]
 
     block2func, indices, values = zip( *blocks ) if blocks else ([],[],[])
     indexfunc = function.Tuple( indices )
@@ -232,7 +233,7 @@ class Topology( object ):
     indices = [ [] for i in range( len(blocks) ) ]
 
     for ielem, elem in enumerate( self ):
-      for iblock, index in enumerate( indexfunc.eval( elem, None, fcache ) ):
+      for iblock, index in enumerate( indexfunc.eval( elem, None, fcache, arguments ) ):
         n = util.product( len(ind) for (ind,) in index ) if index else 1
         offsets[iblock,ielem+1] = offsets[iblock,ielem] + n
         indices[iblock].append([ ind for (ind,) in index ])
@@ -265,7 +266,7 @@ class Topology( object ):
     for ielem, elem in parallel.pariter( log.enumerate( 'elem', self ), nprocs=nprocs ):
       ipoints, iweights = ischeme[elem] if isinstance(ischeme,dict) else fcache[elem.reference.getischeme]( ischeme )
       assert iweights is not None, 'no integration weights found'
-      for iblock, intdata in enumerate( valuefunc.eval( elem, ipoints, fcache ) ):
+      for iblock, intdata in enumerate( valuefunc.eval( elem, ipoints, fcache, arguments ) ):
         s = slice(*offsets[iblock,ielem:ielem+2])
         data, index = data_index[ block2func[iblock] ]
         w_intdata = numeric.dot( iweights, intdata )
@@ -281,13 +282,13 @@ class Topology( object ):
 
   @log.title
   @core.single_or_multiple
-  def integrate( self, funcs, ischeme, geometry=None, force_dense=False, fcache=None, edit=_identity ):
+  def integrate( self, funcs, ischeme, geometry=None, force_dense=False, fcache=None, edit=_identity, *, arguments=None ):
     'integrate'
 
     iwscale = function.J( geometry, self.ndims ) if geometry else 1
     funcs = [ func.unwrap( geometry ) if isinstance( func, IndexedArray ) else func for func in funcs ]
     integrands = [ function.asarray( edit( func * iwscale ) ) for func in funcs ]
-    data_index = self._integrate( integrands, ischeme, fcache )
+    data_index = self._integrate( integrands, ischeme, fcache, arguments )
     return [ matrix.assemble( data, index, integrand.shape, force_dense ) for integrand, (data,index) in zip( integrands, data_index ) ]
 
   def projection( self, fun, onto, geometry, **kwargs ):
@@ -297,7 +298,7 @@ class Topology( object ):
     return onto.dot( weights )
 
   @log.title
-  def project( self, fun, onto, geometry, tol=0, ischeme=None, droptol=1e-12, exact_boundaries=False, constrain=None, verify=None, ptype='lsqr', precon='diag', edit=_identity, **solverargs ):
+  def project( self, fun, onto, geometry, tol=0, ischeme=None, droptol=1e-12, exact_boundaries=False, constrain=None, verify=None, ptype='lsqr', precon='diag', edit=_identity, *, arguments=None, **solverargs ):
     'L2 projection of function onto function space'
 
     log.debug( 'projection type:', ptype )
@@ -312,7 +313,7 @@ class Topology( object ):
     else:
       constrain = constrain.copy()
     if exact_boundaries:
-      constrain |= self.boundary.project( fun, onto, geometry, constrain=constrain, title='boundaries', ischeme=ischeme, tol=tol, droptol=droptol, ptype=ptype, edit=edit )
+      constrain |= self.boundary.project( fun, onto, geometry, constrain=constrain, title='boundaries', ischeme=ischeme, tol=tol, droptol=droptol, ptype=ptype, edit=edit, arguments=arguments )
     assert isinstance( constrain, util.NanVec )
     assert constrain.shape == onto.shape[:1]
 
@@ -332,7 +333,7 @@ class Topology( object ):
       else:
         raise Exception
       assert fun2.ndim == 0
-      A, b, f2, area = self.integrate( [Afun,bfun,fun2,1], geometry=geometry, ischeme=ischeme, edit=edit, title='building system' )
+      A, b, f2, area = self.integrate( [Afun,bfun,fun2,1], geometry=geometry, ischeme=ischeme, edit=edit, arguments=arguments, title='building system' )
       N = A.rowsupp(droptol)
       if numpy.all( b == 0 ):
         constrain[~constrain.where&N] = 0
@@ -355,7 +356,7 @@ class Topology( object ):
         afun = function.norm2( onto )
       else:
         raise Exception
-      u, scale = self.integrate( [ ufun, afun ], geometry=geometry, ischeme=ischeme, edit=edit )
+      u, scale = self.integrate( [ ufun, afun ], geometry=geometry, ischeme=ischeme, edit=edit, arguments=arguments )
       N = ~constrain.where & ( scale > droptol )
       constrain[N] = u[N] / scale[N]
 
@@ -372,10 +373,10 @@ class Topology( object ):
       F = numpy.zeros( onto.shape[0] )
       W = numpy.zeros( onto.shape[0] )
       I = numpy.zeros( onto.shape[0], dtype=bool )
-      fun = function.asarray( fun )
-      data = function.Tuple( function.Tuple([ fun, onto_f, onto_ind ]) for onto_ind, onto_f in function.blocks( onto ) )
+      fun = function.zero_argument_derivatives(function.asarray( fun ))
+      data = function.Tuple( function.Tuple([ fun, onto_f, onto_ind ]) for onto_ind, onto_f in function.blocks( function.zero_argument_derivatives(onto) ) )
       for elem in self:
-        for fun_, onto_f_, onto_ind_ in data.eval( elem, 'bezier2' ):
+        for fun_, onto_f_, onto_ind_ in data.eval( elem, 'bezier2', arguments=arguments ):
           onto_f_ = onto_f_.swapaxes(0,1) # -> dof axis, point axis, ...
           indfun_ = fun_[ (slice(None),)+numpy.ix_(*onto_ind_[1:]) ]
           assert onto_f_.shape[0] == len(onto_ind_[0])
@@ -434,13 +435,14 @@ class Topology( object ):
     return self if n <= 0 else self.refined.refine( n-1 )
 
   @log.title
-  def trim( self, levelset, maxrefine, ndivisions=8, name='trimmed', leveltopo=None ):
+  def trim( self, levelset, maxrefine, ndivisions=8, name='trimmed', leveltopo=None, *, arguments=None ):
     'trim element along levelset'
 
     fcache = cache.WrapperCache()
+    levelset = function.zero_argument_derivatives(levelset)
     if leveltopo is None:
       ischeme = 'vertex{}'.format(maxrefine)
-      refs = [ elem.reference.trim( levelset.eval(elem,ischeme,fcache), maxrefine=maxrefine, ndivisions=ndivisions ) for elem in log.iter( 'elem', self ) ]
+      refs = [ elem.reference.trim( levelset.eval(elem,ischeme,fcache,arguments), maxrefine=maxrefine, ndivisions=ndivisions ) for elem in log.iter( 'elem', self ) ]
     else:
       log.info( 'collecting leveltopo elements' )
       bins = [ [] for ielem in range(len(self)) ]
@@ -456,7 +458,7 @@ class Topology( object ):
         while mask.any():
           imax = numpy.argmax([ mask[indices].sum() for trans, points, indices in cover ])
           trans, points, indices = cover.pop( imax )
-          levels[indices] = levelset.eval( elem.transform << trans, points, fcache )
+          levels[indices] = levelset.eval( elem.transform << trans, points, fcache, arguments )
           mask[indices] = False
         refs.append( elem.reference.trim( levels, maxrefine=maxrefine, ndivisions=ndivisions ) )
     log.debug( 'cache', fcache.stats )
@@ -489,13 +491,13 @@ class Topology( object ):
 
   @log.title
   @core.single_or_multiple
-  def elem_project( self, funcs, degree, ischeme=None, check_exact=False ):
+  def elem_project( self, funcs, degree, ischeme=None, check_exact=False, *, arguments=None ):
 
     if ischeme is None:
       ischeme = 'gauss%d' % (degree*2)
 
     blocks = function.Tuple([ function.Tuple([ function.Tuple( ind_f )
-      for ind_f in function.blocks( func ) ])
+      for ind_f in function.blocks( function.zero_argument_derivatives(func) ) ])
         for func in funcs ])
 
     bases = {}
@@ -513,7 +515,7 @@ class Topology( object ):
         projector = numpy.linalg.solve( A, basis.T * weights )
         bases[ elem.reference ] = points, projector, basis
 
-      for ifunc, ind_val in enumerate( blocks.eval( elem, points ) ):
+      for ifunc, ind_val in enumerate( blocks.eval( elem, points, arguments=arguments ) ):
 
         if len(ind_val) == 1:
           (allind, sumval), = ind_val
@@ -534,13 +536,13 @@ class Topology( object ):
     return extractions
 
   @log.title
-  def volume( self, geometry, ischeme='gauss1' ):
-    return self.integrate( 1, geometry=geometry, ischeme=ischeme )
+  def volume( self, geometry, ischeme='gauss1', *, arguments=None ):
+    return self.integrate( 1, geometry=geometry, ischeme=ischeme, arguments=arguments )
 
   @log.title
-  def volume_check( self, geometry, ischeme='gauss1', decimal=15 ):
-    volume = self.volume( geometry, ischeme )
-    zeros, volumes = self.boundary.integrate( [ geometry.normal(), geometry * geometry.normal() ], geometry=geometry, ischeme=ischeme )
+  def volume_check( self, geometry, ischeme='gauss1', decimal=15, *, arguments=None ):
+    volume = self.volume( geometry, ischeme, arguments=arguments )
+    zeros, volumes = self.boundary.integrate( [ geometry.normal(), geometry * geometry.normal() ], geometry=geometry, ischeme=ischeme, arguments=arguments )
     numpy.testing.assert_almost_equal( zeros, 0., decimal=decimal )
     numpy.testing.assert_almost_equal( volumes, volume, decimal=decimal )
     return volume
@@ -548,8 +550,8 @@ class Topology( object ):
   def indicator( self ):
     return function.elemwise( { elem.transform: 1. for elem in self }, (), default=0. )
 
-  def select( self, indicator, ischeme='bezier2' ):
-    values = self.elem_eval( indicator, ischeme, separate=True )
+  def select( self, indicator, ischeme='bezier2', *, arguments=None ):
+    values = self.elem_eval( indicator, ischeme, separate=True, arguments=arguments )
     selected = [ elem for elem, value in zip( self, values ) if numpy.any( value > 0 ) ]
     return UnstructuredTopology( self.ndims, selected )
 
@@ -566,14 +568,14 @@ class Topology( object ):
       return function.function( fmap=basis.func.stdmap, nmap=nmap, ndofs=used.sum() )
     return function.mask( basis, used )
 
-  def locate( self, geom, points, ischeme='vertex', scale=1, tol=1e-12, eps=0, maxiter=100 ):
+  def locate( self, geom, points, ischeme='vertex', scale=1, tol=1e-12, eps=0, maxiter=100, *, arguments=None ):
     if geom.ndim == 0:
       geom = geom[_]
       points = points[...,_]
     assert geom.shape == (self.ndims,)
     points = numpy.asarray( points, dtype=float )
     assert points.ndim == 2 and points.shape[1] == self.ndims
-    vertices = self.elem_eval( geom, ischeme=ischeme, separate=True )
+    vertices = self.elem_eval( geom, ischeme=ischeme, separate=True, arguments=arguments )
     bboxes = numpy.array([ numpy.mean(v,axis=0) * (1-scale) + numpy.array([ numpy.min(v,axis=0), numpy.max(v,axis=0) ]) * scale
       for v in vertices ]) # nelems x {min,max} x ndims
     vref = element.getsimplex(0)
@@ -586,9 +588,9 @@ class Topology( object ):
         xi, w = elem.reference.getischeme( 'gauss1' )
         xi = ( numpy.dot(w,xi) / w.sum() )[_] if len(xi) > 1 else xi.copy()
         J = function.localgradient( geom, self.ndims )
-        geom_J = function.Tuple(( geom, J ))
+        geom_J = function.Tuple(( function.zero_argument_derivatives(geom), function.zero_argument_derivatives(J) ))
         for iiter in range( maxiter ):
-          point_xi, J_xi = geom_J.eval( elem, xi )
+          point_xi, J_xi = geom_J.eval( elem, xi, arguments=arguments )
           err = numpy.linalg.norm( point - point_xi )
           if err < tol:
             converged = True
