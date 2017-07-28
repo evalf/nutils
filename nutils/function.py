@@ -37,8 +37,9 @@ CACHE = 'Cache'
 TRANS = 'Trans'
 OPPTRANS = 'OppTrans'
 POINTS = 'Points'
+ARGUMENTS = 'Arguments'
 
-TOKENS = CACHE, TRANS, OPPTRANS, POINTS
+TOKENS = CACHE, TRANS, OPPTRANS, POINTS, ARGUMENTS
 
 class Evaluable( cache.Immutable ):
   'Base class'
@@ -115,7 +116,7 @@ class Evaluable( cache.Immutable ):
   def __str__( self ):
     return self.__class__.__name__
 
-  def eval( self, elem=None, ischeme=None, fcache=cache.WrapperDummyCache() ):
+  def eval( self, elem=None, ischeme=None, fcache=cache.WrapperDummyCache(), arguments=None ):
     'evaluate'
     
     if elem is None:
@@ -153,9 +154,12 @@ class Evaluable( cache.Immutable ):
       if points is not None:
         assert points.ndim == 2 and points.shape[1] == trans.fromdims
 
+    if arguments is not None:
+      assert all(isinstance(value, numpy.ndarray) and value.dtype.kind in 'bif' for value in arguments.values())
+
     ops, inds = self.serialized
-    assert TOKENS == ( CACHE, TRANS, OPPTRANS, POINTS )
-    values = [ fcache, trans, opptrans, points ]
+    assert TOKENS == ( CACHE, TRANS, OPPTRANS, POINTS, ARGUMENTS )
+    values = [ fcache, trans, opptrans, points, arguments or {} ]
     for op, indices in zip( list(ops)+[self], inds ):
       args = [ values[i] for i in indices ]
       try:
@@ -2632,10 +2636,14 @@ class Argument(DerivativeTargetBase):
   def __init__(self, name, shape, nderiv=0):
     self._name = name
     self._nderiv = nderiv
-    DerivativeTargetBase.__init__(self, args=[], shape=shape, dtype=float)
+    DerivativeTargetBase.__init__(self, args=[ARGUMENTS], shape=shape, dtype=float)
 
-  def evalf(self):
-    raise ValueError('argument {!r} missing'.format(self._name))
+  def evalf(self, args):
+    assert self._nderiv == 0
+    try:
+      return args[self._name][_]
+    except KeyError:
+      raise ValueError('argument {!r} missing'.format(self._name))
 
   def _edit( self, op ):
     return self
@@ -4028,5 +4036,11 @@ def replace_arguments(value, arguments):
       d[f] = v
     return v
   return s(value)
+
+def zero_argument_derivatives(fun):
+  if isinstance(fun, Argument) and fun._nderiv > 0:
+    return zeros_like(fun)
+  else:
+    return edit(fun, zero_argument_derivatives)
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
