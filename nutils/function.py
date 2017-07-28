@@ -1726,21 +1726,32 @@ class TakeDiag( Array ):
     return takediag( op(self.func) )
 
 class Take( Array ):
-  'generalization of numpy.take(), to accept lists, slices, arrays'
 
-  def __init__( self, func, indices, axis ):
-    'constructor'
-
-    assert isarray(func) and func.shape[axis] != 1
+  def __init__(self, func, indices, axis):
+    assert isarray(func)
     assert isarray(indices) and indices.ndim == 1 and indices.dtype == int
     assert 0 <= axis < func.ndim
-
     self.func = func
     self.axis = axis
     self.indices = indices
-
     shape = func.shape[:axis] + indices.shape + func.shape[axis+1:]
-    Array.__init__( self, args=[func,indices], shape=shape, dtype=func.dtype )
+    super().__init__(args=[func,indices], shape=shape, dtype=func.dtype)
+
+  @cache.property
+  def simplified(self):
+    func = self.func.simplified
+    indices = self.indices.simplified
+    if self.shape[self.axis] == 0:
+      return zeros(self.shape, dtype=self.dtype)
+    if indices.isconstant:
+      index_, = indices.eval()
+      if len(index_) == func.shape[self.axis] and numpy.all(numpy.diff(index_) == 1):
+        return func
+    retval = func._take(indices, self.axis)
+    if retval is not None:
+      assert retval.shape == self.shape
+      return retval.simplified
+    return Take(func, indices, self.axis)
 
   def evalf( self, arr, indices ):
     if indices.shape[0] != 1:
@@ -3453,60 +3464,40 @@ def function( fmap, nmap, ndofs ):
 def elemwise( fmap, shape, default=None ):
   return Elemwise( fmap=fmap, shape=shape, default=default )
 
-def take( arg, index, axis ):
-  'take index'
+def take(arg, index, axis):
+  arg = asarray(arg)
+  axis = numeric.normdim(arg.ndim, axis)
 
-  arg = asarray( arg )
-  axis = numeric.normdim( arg.ndim, axis )
-
-  if isinstance( index, slice ):
+  if isinstance(index, slice):
     if index == slice(None):
       return arg
     assert index.step == None or index.step == 1
-    if numeric.isint( arg.shape[axis] ):
-      indexmask = numpy.zeros( arg.shape[axis], dtype=bool )
+    if numeric.isint(arg.shape[axis]):
+      indexmask = numpy.zeros(arg.shape[axis], dtype=bool)
       indexmask[index] = True
-      return mask( arg, indexmask, axis=axis )
+      return mask(arg, indexmask, axis=axis)
     assert index.start == None or index.start >= 0
     assert index.stop != None and index.stop >= 0
-    index = numpy.arange( index.start or 0, index.stop )
+    index = numpy.arange(index.start or 0, index.stop)
 
-  if not isevaluable( index ):
-    index = numpy.array( index )
+  if not isevaluable(index):
+    index = numpy.array(index)
     assert index.ndim == 1
     if index.dtype == bool:
-      return mask( arg, index, axis )
+      return mask(arg, index, axis)
     assert index.dtype == int
-    index[ index < 0 ] += arg.shape[axis]
-    assert numpy.all( (index>=0) & (index<arg.shape[axis]) ), 'indices out of bounds'
+    index[index < 0] += arg.shape[axis]
+    assert numpy.all((index>=0) & (index<arg.shape[axis])), 'indices out of bounds'
 
-  index = asarray( index )
+  index = asarray(index)
   assert index.ndim == 1
   if index.dtype == bool:
     assert index.shape[0] == arg.shape[axis]
-    index = find( index )
+    index = find(index)
   else:
     assert index.dtype == int
 
-  shape = list(arg.shape)
-  shape[axis] = index.shape[0]
-
-  if 0 in shape:
-    return zeros( shape, dtype=arg.dtype )
-
-  if index.isconstant:
-    index_, = index.eval()
-    if len(index_) == 1:
-      return insert( get( arg, axis, index_[0] ), axis )
-    if len(index_) == arg.shape[axis] and numpy.all(numpy.diff(index_) == 1):
-      return arg
-
-  retval = arg._take(index, axis)
-  if retval is not None:
-    assert retval.shape == tuple(shape)
-    return retval
-
-  return Take( arg, index, axis )
+  return Take(arg, index, axis).simplified
 
 def find( arg ):
   'find'
