@@ -2238,20 +2238,23 @@ class Inflate( Array ):
     return inflate( kronecker(self.func,axis,length,pos), self.dofmap, self.length, self.axis+(axis<=self.axis) )
 
 class Diagonalize( Array ):
-  'diagonal matrix'
 
-  def __init__( self, func ):
-    'constructor'
-
-    n = func.shape[-1]
-    assert n != 1
-    shape = func.shape + (n,)
+  def __init__(self, func):
     self.func = func
-    Array.__init__( self, args=[func] if isinstance(func,Array) else [], shape=shape, dtype=func.dtype )
+    super().__init__(args=[func], shape=func.shape + func.shape[-1:], dtype=func.dtype)
 
-  def evalf( self, arr=None ):
-    assert arr is None or arr.ndim == self.ndim
-    return numeric.diagonalize( arr if arr is not None else self.func[_] )
+  @cache.property
+  def simplified(self):
+    func = self.func.simplified
+    retval = func._diagonalize()
+    if retval is not None:
+      assert retval.shape == self.shape
+      return retval.simplified
+    return Diagonalize(func)
+
+  def evalf( self, arr):
+    assert arr.ndim == self.ndim
+    return numeric.diagonalize(arr)
 
   def _derivative(self, var, seen):
     result = derivative(self.func, var, seen)
@@ -2274,7 +2277,8 @@ class Diagonalize( Array ):
     return product( self.func, -1 )
 
   def _multiply( self, other ):
-    return diagonalize( self.func * takediag( other ) )
+    if self.shape[-1] != 1:
+      return diagonalize(multiply(self.func, takediag(other)))
 
   def _dot( self, other, axes ):
     faxes = [ axis for axis in axes if axis < self.ndim-2 ]
@@ -2328,7 +2332,6 @@ class Diagonalize( Array ):
       diagonalize( mask( self.func, maskvec, self.func.ndim-1 ) ),
       zeros( self.func.shape[:-1] + (self.shape[-1]-(indices[-1]+1),len(indices))[rev] ),
     ], axis=2*self.ndim-axis-3 )
-
 
 class Repeat( Array ):
 
@@ -3179,21 +3182,9 @@ def kronecker(arg, axis, length, pos):
   assert 0 <= pos < length
   return Kronecker(arg, axis, length, pos).simplified
 
-def diagonalize( arg ):
-  'diagonalize'
-
-  arg = asarray( arg )
-  shape = arg.shape + (arg.shape[-1],)
-
-  if arg.shape[-1] == 1:
-    return arg[...,_]
-
-  retval = arg._diagonalize()
-  if retval is not None:
-    assert retval.shape == shape, 'bug in %s._diagonalize' % arg
-    return retval
-
-  return Diagonalize( arg )
+def diagonalize(arg):
+  arg = asarray(arg)
+  return Diagonalize(arg).simplified
 
 def concatenate( args, axis=0 ):
   'concatenate'
