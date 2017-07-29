@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 
-from nutils import mesh, plot, cli, log, function, numeric, debug, model
+from nutils import mesh, plot, cli, log, function, numeric, debug, solver
 import numpy
 
 
@@ -82,7 +82,7 @@ def main(
     ns.cbubble1 = function.tanh((R1-function.norm2(ns.x-(.5+R2/numpy.sqrt(2)+.8*ns.epsilon)))/ns.epsilon)
     ns.cbubble2 = function.tanh((R2-function.norm2(ns.x-(.5-R1/numpy.sqrt(2)-.8*ns.epsilon)))/ns.epsilon)
     sqr = domain.integral('(c - cbubble1 - cbubble2 - 1)^2 + mu^2' @ ns, geometry=ns.x, degree=4)
-    lhs0 = model.optimize('lhs', sqr)
+    lhs0 = solver.optimize('lhs', sqr)
   else:
     raise Exception( 'unknown init %r' % init )
 
@@ -94,7 +94,7 @@ def main(
   # solve time dependent problem
   nsteps = numeric.round(maxtime/timestep)
   makeplots = MakePlots(domain, nsteps, ns) if withplots else lambda *args: None
-  for istep, lhs in log.enumerate('timestep', model.impliciteuler('lhs', target0='lhs0', residual=res, inertia=inertia, timestep=timestep, lhs0=lhs0)):
+  for istep, lhs in log.enumerate('timestep', solver.impliciteuler('lhs', target0='lhs0', residual=res, inertia=inertia, timestep=timestep, lhs0=lhs0)):
     makeplots(lhs)
     if istep == nsteps:
       break

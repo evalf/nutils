@@ -11,7 +11,7 @@ from . import \
   numeric,    \
   basis,      \
   finitecell, \
-  model,      \
+  solver,     \
   log,        \
   cli,        \
   examples,   \

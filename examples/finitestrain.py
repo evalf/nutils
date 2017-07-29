@@ -39,13 +39,13 @@ def main(
 
   sqr = domain.boundary['left'].integral('u_0^2 + u_1^2' @ ns, geometry=ns.x, degree=6)
   sqr += domain.boundary['right'].integral('(u_0 - x_1 sin(2 angle) - cos(angle) + 1)^2 + (u_1 - x_1 (cos(2 angle) - 1) + sin(angle))^2' @ ns, geometry=ns.x, degree=6)
-  cons = model.optimize('lhs', sqr, droptol=1e-15)
+  cons = solver.optimize('lhs', sqr, droptol=1e-15)
 
   ns.strain_ij = '.5 (u_i,j + u_j,i)'
   ns.energy = 'lmbda strain_ii strain_jj + 2 mu strain_ij strain_ij'
 
   energy = domain.integral('energy' @ ns, geometry=ns.x, degree=7)
-  lhs0 = model.optimize('lhs', energy, constrain=cons)
+  lhs0 = solver.optimize('lhs', energy, constrain=cons)
   if plots:
     makeplots('linear', domain, ns | dict(lhs=lhs0))
 
@@ -53,7 +53,7 @@ def main(
   ns.energy = 'lmbda strain_ii strain_jj + 2 mu strain_ij strain_ij'
 
   energy = domain.integral('energy' @ ns, geometry=ns.x, degree=7)
-  lhs1 = model.optimize('lhs', energy, lhs0=lhs0, constrain=cons, newtontol=restol)
+  lhs1 = solver.optimize('lhs', energy, lhs0=lhs0, constrain=cons, newtontol=restol)
   if plots:
     makeplots('nonlinear', domain, ns | dict(lhs=lhs1))
 

@@ -29,5 +29,5 @@ What follows is an automatically generated API reference.
    library/plot
    library/cache
    library/cli
-   library/model
+   library/solver
    library/transform

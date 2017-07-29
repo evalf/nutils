@@ -7,13 +7,13 @@
 # and others. More info at http://nutils.org <info@nutils.org>. (c) 2014
 
 """
-The model module defines the :class:`Integral` class, which represents an
+The solver module defines the :class:`Integral` class, which represents an
 unevaluated integral. This is useful for fully automated solution procedures
 such as Newton, that require functional derivatives of an entire functional.
 
 To demonstrate this consider the following setup:
 
->>> from nutils import mesh, function, model
+>>> from nutils import mesh, function, solver
 >>> ns = function.Namespace()
 >>> domain, ns.x = mesh.rectilinear( [4,4] )
 >>> ns.basis = domain.basis( 'spline', degree=2 )
@@ -28,12 +28,12 @@ the Poisson problem ``u_,kk = f`` we define the residual functional ``res = v,k
 u,k + v f`` and solve for ``res == 0`` using ``solve_linear``:
 
 >>> res = domain.integral('basis_n,i u_,i + basis_n' @ ns, geometry=ns.x, degree=2)
->>> lhs = model.solve_linear( 'lhs', residual=res, constrain=cons )
+>>> lhs = solver.solve_linear( 'lhs', residual=res, constrain=cons )
 solving system > solving system using sparse direct solver
 
 The coefficients ``lhs`` represent the solution to the Poisson problem.
 
-In addition to ``solve_linear`` the model module defines ``newton`` and
+In addition to ``solve_linear`` the solver module defines ``newton`` and
 ``pseudotime`` for solving nonlinear problems, as well as ``impliciteuler`` for
 time dependent problems.
 """

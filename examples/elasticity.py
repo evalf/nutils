@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 
-from nutils import mesh, plot, cli, log, function, debug, model
+from nutils import mesh, plot, cli, log, function, debug, solver
 import numpy
 
 
@@ -31,13 +31,13 @@ def main(
   # construct dirichlet boundary constraints
   sqr = domain.boundary['left'].integral('u_k u_k' @ ns, geometry=ns.x0, degree=2)
   sqr += domain.boundary['right'].integral('(u_0 - .5)^2' @ ns, geometry=ns.x0, degree=2)
-  cons = model.optimize('lhs', sqr, droptol=1e-15)
+  cons = solver.optimize('lhs', sqr, droptol=1e-15)
 
   # construct residual
   res = domain.integral('basis_ni,j stress_ij' @ ns, geometry=ns.x0, degree=2)
 
   # solve system and substitute the solution in the namespace
-  lhs = model.solve_linear('lhs', res, constrain=cons)
+  lhs = solver.solve_linear('lhs', res, constrain=cons)
   ns |= dict(lhs=lhs)
 
   # plot solution

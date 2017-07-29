@@ -1,6 +1,6 @@
 #! /usr/bin/python3
 
-from nutils import mesh, cli, log, function, plot, debug, model, _
+from nutils import mesh, cli, log, function, plot, debug, solver, _
 import numpy
 
 
@@ -51,7 +51,7 @@ def main(
 
   # start time stepping
   timestep = timescale/nelems
-  for itime, lhs in log.enumerate('timestep', model.impliciteuler('lhs', res, inertia, timestep, lhs0, tol=tol)):
+  for itime, lhs in log.enumerate('timestep', solver.impliciteuler('lhs', res, inertia, timestep, lhs0, tol=tol)):
     makeplots(ns | dict(lhs=lhs))
     if endtime and itime * timestep >= endtime:
       break

@@ -1,4 +1,4 @@
-from nutils import model, mesh, function
+from nutils import solver, mesh, function
 from . import register, unittest
 import numpy
 
@@ -17,9 +17,9 @@ def laplace():
     @unittest( name=name )
     def res():
       if name == 'direct':
-        lhs = model.solve_linear( 'dofs', residual=residual, constrain=cons )
+        lhs = solver.solve_linear( 'dofs', residual=residual, constrain=cons )
       else:
-        lhs = model.newton('dofs', residual=residual, constrain=cons).solve( tol=1e-10, maxiter=0 )
+        lhs = solver.newton('dofs', residual=residual, constrain=cons).solve( tol=1e-10, maxiter=0 )
       res = residual.eval(arguments=dict(dofs=lhs))
       resnorm = numpy.linalg.norm( res[~cons.where] )
       assert resnorm < 1e-13
@@ -41,18 +41,18 @@ def navierstokes():
   residual = stokesres + domain.integral( (ubasis * (u.grad(geom) * u).sum(-1) * u).sum(-1), geometry=geom, degree=5 )
   cons = domain.boundary['top,bottom'].project( [0,0], onto=ubasis, geometry=geom, ischeme='gauss2' ) \
        | domain.boundary['left'].project( [geom[1]*(1-geom[1]),0], onto=ubasis, geometry=geom, ischeme='gauss2' )
-  lhs0 = model.solve_linear( 'dofs', residual=stokesres, constrain=cons )
+  lhs0 = solver.solve_linear( 'dofs', residual=stokesres, constrain=cons )
 
   for name in 'direct', 'newton', 'pseudotime':
-    @unittest( name=name, raises=name=='direct' and model.ModelError)
+    @unittest( name=name, raises=name=='direct' and solver.ModelError)
     def res():
       tol = 1e-10
       if name == 'direct':
-        lhs = model.solve_linear( 'dofs', residual=residual, constrain=cons )
+        lhs = solver.solve_linear( 'dofs', residual=residual, constrain=cons )
       elif name == 'newton':
-        lhs = model.newton('dofs', residual=residual, lhs0=lhs0, constrain=cons).solve( tol=tol, maxiter=2 )
+        lhs = solver.newton('dofs', residual=residual, lhs0=lhs0, constrain=cons).solve( tol=tol, maxiter=2 )
       else:
-        lhs = model.pseudotime( 'dofs', residual=residual, lhs0=lhs0, constrain=cons, inertia=inertia, timestep=1 ).solve( tol=tol, maxiter=3 )
+        lhs = solver.pseudotime( 'dofs', residual=residual, lhs0=lhs0, constrain=cons, inertia=inertia, timestep=1 ).solve( tol=tol, maxiter=3 )
       res = residual.eval(arguments=dict(dofs=lhs))
       resnorm = numpy.linalg.norm( res[~cons.where] )
       assert resnorm < tol
@@ -68,7 +68,7 @@ def optimize():
   def linear():
     ns.u = 'ubasis_n ?dofs_n'
     err = domain.boundary['bottom'].integral(ns.eval_('(u - 1)^2'), geometry=ns.geom, degree=2)
-    cons = model.optimize('dofs', err, droptol=1e-15)
+    cons = solver.optimize('dofs', err, droptol=1e-15)
     isnan = numpy.isnan(cons)
     assert numpy.equal(isnan, [0,1,1,0,1,1,0,1,1]).all()
     numpy.testing.assert_almost_equal(cons[~isnan], 1, decimal=15)
@@ -77,7 +77,7 @@ def optimize():
   def nonlinear():
     ns.fu = 'u + u^3'
     err = domain.boundary['bottom'].integral(ns.eval_('(fu - 2)^2'), geometry=ns.geom, degree=2)
-    cons = model.optimize('dofs', err, droptol=1e-15, newtontol=1e-10)
+    cons = solver.optimize('dofs', err, droptol=1e-15, newtontol=1e-10)
     isnan = numpy.isnan(cons)
     assert numpy.equal(isnan, [0,1,1,0,1,1,0,1,1]).all()
     numpy.testing.assert_almost_equal(cons[~isnan], 1, decimal=15)
@@ -86,7 +86,7 @@ def optimize():
   def nonlinear_multipleroots():
     ns.gu = 'u + u^2'
     err = domain.boundary['bottom'].integral(ns.eval_('(gu - .75)^2'), geometry=ns.geom, degree=2)
-    cons = model.optimize('dofs', err, droptol=1e-15, lhs0=numpy.ones(len(ns.ubasis)), newtontol=1e-10)
+    cons = solver.optimize('dofs', err, droptol=1e-15, lhs0=numpy.ones(len(ns.ubasis)), newtontol=1e-10)
     isnan = numpy.isnan(cons)
     assert numpy.equal(isnan, [0,1,1,0,1,1,0,1,1]).all()
     numpy.testing.assert_almost_equal(cons[~isnan], .5, decimal=15)

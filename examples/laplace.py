@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 
-from nutils import mesh, plot, cli, function, log, debug, model
+from nutils import mesh, plot, cli, function, log, debug, solver
 import numpy
 
 
@@ -31,10 +31,10 @@ def main(
   # construct dirichlet constraints
   sqr = domain.boundary['left'].integral('u^2' @ ns, geometry=ns.x, degree=degree*2)
   sqr += domain.boundary['bottom'].integral('(u - fx)^2' @ ns, geometry=ns.x, degree=degree*2)
-  cons = model.optimize('lhs', sqr, droptol=1e-15)
+  cons = solver.optimize('lhs', sqr, droptol=1e-15)
 
   # find lhs such that res == 0 and substitute this lhs in the namespace
-  lhs = model.solve_linear('lhs', res, constrain=cons)
+  lhs = solver.solve_linear('lhs', res, constrain=cons)
   ns |= dict(lhs=lhs)
 
   # plot solution

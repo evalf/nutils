@@ -293,8 +293,8 @@ class Topology( object ):
       ischeme += str(degree)
     iwscale = function.J(geometry, self.ndims) if geometry else 1
     integrand = edit(func * iwscale)
-    from . import model
-    return model.Integral(integrand, domain=self, ischeme=ischeme)
+    from . import solver
+    return solver.Integral(integrand, domain=self, ischeme=ischeme)
 
   def projection( self, fun, onto, geometry, **kwargs ):
     'project and return as function'

@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 
-from nutils import mesh, plot, cli, log, function, debug, model, _
+from nutils import mesh, plot, cli, log, function, debug, solver, _
 import numpy
 
 
@@ -73,13 +73,13 @@ def main(
   # solve stokes flow
   res = domain.integral('ubasis_ni,j sigma_ij + pbasis_n (u_k,k + l) + lbasis_n p' @ ns, geometry=ns.x, degree=2*(degree+1))
   res += domain.boundary.integral('nietzsche_ni (u_i - utop_i)' @ ns, geometry=ns.x, degree=2*(degree+1))
-  lhs0 = model.solve_linear('lhs', res)
+  lhs0 = solver.solve_linear('lhs', res)
   if withplots:
     postprocess(domain, ns | dict(lhs=lhs0))
 
   # solve navier-stokes flow
   res += domain.integral('density ubasis_ni u_i,j u_j' @ ns, geometry=ns.x, degree=3*(degree+1))
-  lhs1 = model.newton('lhs', res, lhs0=lhs0).solve(tol=1e-10)
+  lhs1 = solver.newton('lhs', res, lhs0=lhs0).solve(tol=1e-10)
   if withplots:
     postprocess(domain, ns | dict(lhs=lhs1))
 

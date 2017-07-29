@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 
-from nutils import mesh, util, cli, log, function, plot, debug, model, _
+from nutils import mesh, util, cli, log, function, plot, debug, solver, _
 import numpy
 
 
@@ -101,12 +101,12 @@ def main(
 
   # constrain full velocity vector at inflow
   sqr = domain.boundary['inflow'].integral('(u_i - uinf_i) (u_i - uinf_i)' @ ns, geometry=ns.x, degree=9)
-  cons = model.optimize('lhs', sqr, droptol=1e-15)
+  cons = solver.optimize('lhs', sqr, droptol=1e-15)
 
   # solve unsteady navier-stokes equations, starting from stationary oseen flow
-  lhs0 = model.solve_linear('lhs', res+oseen, constrain=cons)
+  lhs0 = solver.solve_linear('lhs', res+oseen, constrain=cons)
   makeplots = MakePlots(domain, ns, timestep=timestep, rotation=rotation) if withplots else lambda *args: None
-  for istep, lhs in log.enumerate('timestep', model.impliciteuler('lhs', residual=res+convec, inertia=inertia, lhs0=lhs0, timestep=timestep, constrain=cons, tol=1e-10)):
+  for istep, lhs in log.enumerate('timestep', solver.impliciteuler('lhs', residual=res+convec, inertia=inertia, lhs0=lhs0, timestep=timestep, constrain=cons, tol=1e-10)):
     makeplots(lhs)
     if istep * timestep >= tmax:
       break

@@ -1,0 +1,4 @@
+Solver
+======
+
+.. automodule:: nutils.solver

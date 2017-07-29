@@ -9,7 +9,7 @@ geometry and mesh refinement', Computer Methods in Applied Mechanics and
 Engineering, Elsevier, 2005, 194, 4135-4195.
 """
 
-from nutils import cli, mesh, function, plot, log, debug, model
+from nutils import cli, mesh, function, plot, log, debug, solver
 import numpy
 
 
@@ -46,7 +46,7 @@ def main(
   # create the second-order B-spline basis over the refined domain
   ns.bsplinebasis = domain.basis('spline', degree=2)
   sqr = domain.integral('(bsplinebasis_n ?lhs_n - weightfunc)^2' @ ns, geometry=ns.x, degree=9)
-  ns.controlweights = model.optimize('lhs', sqr)
+  ns.controlweights = solver.optimize('lhs', sqr)
   ns.nurbsbasis = ns.bsplinebasis * ns.controlweights / ns.weightfunc
 
   # prepare the displacement field
@@ -71,10 +71,10 @@ def main(
 
   # compute the constraints vector for the symmetry conditions
   sqr = domain.boundary['top,bottom'].integral('(u_i n_i)^2' @ ns, degree=9)
-  cons = model.optimize('lhs', sqr, droptol=1e-15)
+  cons = solver.optimize('lhs', sqr, droptol=1e-15)
 
   # solve the system of equations
-  lhs = model.solve_linear('lhs', res, constrain=cons)
+  lhs = solver.solve_linear('lhs', res, constrain=cons)
   ns |= dict(lhs=lhs)
 
   # post-processing
