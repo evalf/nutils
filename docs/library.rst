@@ -16,10 +16,10 @@ What follows is an automatically generated API reference.
 
    library/topology
    library/function
+   library/expression
    library/core
    library/debug
    library/element
-   library/library
    library/log
    library/matrix
    library/mesh
@@ -27,8 +27,7 @@ What follows is an automatically generated API reference.
    library/parallel
    library/util
    library/plot
-   library/index
    library/cache
    library/cli
-   library/model
+   library/solver
    library/transform

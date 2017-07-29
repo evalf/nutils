@@ -1,25 +1,23 @@
 #! /usr/bin/env python3
 
-from nutils import mesh, plot, cli, log, function, debug, _
+from nutils import mesh, plot, cli, log, function, debug, solver, _
 import numpy
 
 
-class MakePlots( object ):
+@log.title
+def postprocess(domain, ns):
 
-  def __init__( self, domain, geom, dpres=.01 ):
-    self.domain = domain
-    self.geom = geom
-    self.dpres = dpres
-    self.index = 0
+  # confirm that velocity is pointwise divergence-free
+  div = domain.integrate('(u_k,k)^2' @ ns, geometry=ns.x, degree=9)**.5
+  log.info('velocity divergence: {:.2e}'.format(div))
 
-  def __call__( self, velo, pres ):
-    self.index += 1
-    points, velo, pres = self.domain.elem_eval( [ self.geom, velo, pres ], ischeme='bezier9', separate=True )
-    with plot.PyPlot( 'flow', index=self.index, ndigits=4 ) as plt:
-      tri = plt.mesh( points, mergetol=1e-5 )
-      plt.tricontour( tri, pres, every=self.dpres, linestyles='solid', alpha=.333 )
-      plt.colorbar()
-      plt.streamplot( tri, velo, spacing=.01, linewidth=-10, color='k', zorder=9 )
+  # plot velocity field as streamlines, pressure field as contours
+  x, u, p = domain.elem_eval([ ns.x, ns.u, ns.p ], ischeme='bezier9', separate=True)
+  with plot.PyPlot('flow') as plt:
+    tri = plt.mesh(x, mergetol=1e-5)
+    plt.tricontour(tri, p, every=.01, linestyles='solid', alpha=.333)
+    plt.colorbar()
+    plt.streamplot(tri, u, spacing=.01, linewidth=-10, color='k', zorder=9)
 
 
 def main(
@@ -28,98 +26,94 @@ def main(
     density: 'fluid density' = 1,
     degree: 'polynomial degree' = 2,
     warp: 'warp domain (downward bend)' = False,
-    tol: 'solver tolerance' = 1e-5,
-    maxiter: 'maximum number if iterations, 0 for unlimited' = 0,
     withplots: 'create plots' = True,
   ):
 
-  Re = density / viscosity # based on unit length and velocity
-  log.user( 'reynolds number: {:.1f}'.format(Re) )
+  log.user( 'reynolds number: {:.1f}'.format(density / viscosity) ) # based on unit length and velocity
+
+  # create namespace
+  ns = function.Namespace()
+  ns.viscosity = viscosity
+  ns.density = density
 
   # construct mesh
   verts = numpy.linspace( 0, 1, nelems+1 )
-  domain, geom = mesh.rectilinear( [verts,verts] )
+  domain, ns.x0 = mesh.rectilinear( [verts,verts] )
 
   # construct bases
-  vxbasis, vybasis, pbasis, lbasis = function.chain([
+  ns.uxbasis, ns.uybasis, ns.pbasis, ns.lbasis = function.chain([
     domain.basis( 'spline', degree=(degree+1,degree), removedofs=((0,-1),None) ),
     domain.basis( 'spline', degree=(degree,degree+1), removedofs=(None,(0,-1)) ),
     domain.basis( 'spline', degree=degree ),
     [1], # lagrange multiplier
   ])
+  ns.ubasis_ni = '<uxbasis_n, uybasis_n>_i'
+
+  # construct geometry
   if not warp:
-    vbasis = function.stack( [ vxbasis, vybasis ], axis=1 )
+    ns.x = ns.x0
   else:
-    gridgeom = geom
-    xi, eta = gridgeom
-    geom = (eta+2) * function.rotmat(xi*.4)[:,1] - (0,2) # slight downward bend
-    J = geom.grad( gridgeom )
-    detJ = function.determinant( J )
-    vbasis = ( vxbasis[:,_] * J[:,0] + vybasis[:,_] * J[:,1] ) / detJ # piola transform
-    pbasis /= detJ
-  stressbasis = (2*viscosity) * vbasis.symgrad(geom) - (pbasis)[:,_,_] * function.eye( domain.ndims )
+    xi, eta = ns.x0
+    ns.x = (eta+2) * function.rotmat(xi*.4)[:,1] - (0,2) # slight downward bend
+    ns.J_ij = 'x_i,x0_j'
+    ns.detJ = function.determinant(ns.J)
+    ns.ubasis_ni = 'ubasis_nj J_ij / detJ' # piola transform
+    ns.pbasis_n = 'pbasis_n / detJ'
 
-  # construct matrices
-  A = function.outer( vbasis.grad(geom), stressbasis ).sum([2,3]) \
-    + function.outer( pbasis, vbasis.div(geom)+lbasis ) \
-    + function.outer( lbasis, pbasis )
-  Ad = function.outer( vbasis.div(geom) )
-  stokesmat, divmat = domain.integrate( [ A, Ad ], geometry=geom, ischeme='gauss9' )
+  # populate namespace
+  ns.u_i = 'ubasis_ni ?lhs_n'
+  ns.p = 'pbasis_n ?lhs_n'
+  ns.l = 'lbasis_n ?lhs_n'
+  ns.sigma_ij = 'viscosity (u_i,j + u_j,i) - p δ_ij'
+  ns.c = 5 * (degree+1) / domain.boundary.elem_eval(1, geometry=ns.x, ischeme='gauss2', asfunction=True)
+  ns.nietzsche_ni = 'viscosity (c ubasis_ni - (ubasis_ni,j + ubasis_nj,i) n_j)'
+  ns.top = domain.boundary['top'].indicator()
+  ns.utop_i = 'top <n_1, -n_0>_i'
 
-  # define boundary conditions
-  normal = geom.normal()
-  utop = function.asarray([ normal[1], -normal[0] ])
-  h = domain.boundary.elem_eval( 1, geometry=geom, ischeme='gauss9', asfunction=True )
-  nietzsche = (2*viscosity) * ( ((degree+1)*2.5/h) * vbasis - vbasis.symgrad(geom).dotnorm(geom) )
-  stokesmat += domain.boundary.integrate( function.outer( nietzsche, vbasis ).sum(-1), geometry=geom, ischeme='gauss9' )
-  rhs = domain.boundary['top'].integrate( ( nietzsche * utop ).sum(-1), geometry=geom, ischeme='gauss9' )
+  # solve stokes flow
+  res = domain.integral('ubasis_ni,j sigma_ij + pbasis_n (u_k,k + l) + lbasis_n p' @ ns, geometry=ns.x, degree=2*(degree+1))
+  res += domain.boundary.integral('nietzsche_ni (u_i - utop_i)' @ ns, geometry=ns.x, degree=2*(degree+1))
+  lhs0 = solver.solve_linear('lhs', res)
+  if withplots:
+    postprocess(domain, ns | dict(lhs=lhs0))
 
-  # prepare plotting
-  makeplots = MakePlots( domain, geom ) if withplots else lambda *args: None
+  # solve navier-stokes flow
+  res += domain.integral('density ubasis_ni u_i,j u_j' @ ns, geometry=ns.x, degree=3*(degree+1))
+  lhs1 = solver.newton('lhs', res, lhs0=lhs0).solve(tol=1e-10)
+  if withplots:
+    postprocess(domain, ns | dict(lhs=lhs1))
 
-  # start picard iterations
-  lhs = stokesmat.solve( rhs, tol=tol, solver='cg', precon='spilu' )
-  for iiter in log.count( 'picard' ):
-    log.info( 'velocity divergence:', divmat.matvec(lhs).dot(lhs) )
-    makeplots( vbasis.dot(lhs), pbasis.dot(lhs) )
-    ugradu = ( vbasis.grad(geom) * vbasis.dot(lhs) ).sum(-1)
-    convection = density * function.outer( vbasis, ugradu ).sum(-1)
-    matrix = stokesmat + domain.integrate( convection, ischeme='gauss9', geometry=geom )
-    lhs, info = matrix.solve( rhs, lhs0=lhs, tol=tol, info=True, precon='spilu', restart=999 )
-    if iiter == maxiter-1 or info.niter == 0:
-      break
-
-  return rhs, lhs
+  return lhs0, lhs1
 
 
 def unittest():
 
-  retvals = main( nelems=4, viscosity=1e-3, degree=1, warp=False, tol=0, maxiter=1, withplots=False )
+  retvals = main(nelems=3, viscosity=1e-2, degree=1, warp=False, withplots=False)
   assert debug.checkdata( retvals, '''
-    eNrFkl1uxCAMhK+zK0Hl8S8+UO5/hYKdbJ8q9a0SEpE9DJ+HYLx0wN7j9aKv0cvd45oxnIiu6ePTwF3I
-    Pzd+tfr3tSeexsuuaUOD5OwTknxNHa4SpwA6Ah2T8/BvBUO0K2vR+eAgnF0TqxrKmi3NbCk8S4q0ktiK
-    cnWgTW0BfWS5n46YF5BZlPkDOhVcSpYo0A8gcMh3Q7sgGdp3ohw9FPVC7Ded94gaKxoC8XAL2jPsHsBQ
-    rR9gQwfmvFrykMI7qL2XAqFaXORVd0rvvkXXubhnhPABnDu+ukxcVjtA+0Q77QyiiVOWNwWoUtnD5i2V
-    O0/SMpU7npmJ+hH3m7QrtHmygxUW6oCtAq4/5f0NMWaoJA==''' )
+    eNqFUltuBDEIu86uNFS8Ew7U+1+hBMKq/eoXCHtsYoaelz6k7+f1AmZc32APM8WpwAuz0cco9FQWT4In
+    IMhnkI3SaYL9Dv7VuIRkCp5mACBmrk8VS5NRCpg5DACD/HJrLfiIreA4q/q2qkC0rCji6CW78T5GPT9e
+    iahHLxBS1KEMYwgwjHGBsRmXMcGvJ6MF9VV7moe3gJAdXMIqHTGSXgYVb7KtsN2sE5ZdDKkjHI3Y+yBJ
+    qDom4It6iSsObKT1MGlmXm03sM/ZTjpLOlpCjT92tola9dpkKtGp4Koqn/vc8ElxnwEpdY5Lo/zzL6lX
+    LuQSJ5cigqI2M3bUIWVvLPtEiqqIxTDr01ew7x/oQZfn''')
 
-  retvals = main( nelems=4, viscosity=1e-3, degree=2, warp=False, tol=0, maxiter=1, withplots=False )
+  retvals = main(nelems=3, viscosity=1e-2, degree=2, warp=False, withplots=False)
   assert debug.checkdata( retvals, '''
-    eNrVU1mK3UAMvM4bsIP25UBz/yvEUvUbmAmE/AYMaloqqark5utlF/vH9XrRr+vrYyL6vOMKR/yWO3ed
-    /kdODo51ov8z7m/z/uvvMfa2SBkzspIn3sxen/fju6ROvDk75yBsMvFBnEolQYUjc5szzaHMfKIaORJm
-    b0zFHoo4JhVysNzAdOvOjYwat29t7YXoMwfd1JZic220ct5E0ZTGpct9IFHAsmdjjNm2L3Y9auToJsjU
-    yFOJirfuL6s4RJDo7clUD0KvUM7JK+nG21JWdRCBnyWICmccbwl2mI9T9RwqtrmnFEqiV3Ua2foRdvy3
-    ErhbDXEcP3zwNPjgKucggbZv/SKyDnHLipOGiHFsL6JlX4tRE9QxAIa8xuxt6HDpDM0SxTPDf8P57lwM
-    +xSLTTukgmaPw87rkMH+pA4kCxD8WE9lkmFt0aAhrnFobS8V3kpmBhuH03UevzAHcLSjHgvXMtmd1dWk
-    i9es9Wmfy8dvwCb0Ug==''' )
+    eNqVU22O7DAIu86s1DzFfOdAc/8rvATC7uzPrSo1IsYYQ/G85IF8Pa8XO+t76DOWxToHEMt7yDMEMc/B
+    iDgDFOQJZZ2rDjzzKkB0Aots/RH6h/oNhVohCOyfCKZAclGs5DKFngtoAea/n3c0usGj0aPh39q6Yhcc
+    XZFkZp/Yz3vYrmwcJ8DL/JI6X1KXjLhDDpb99LdzAMlGIzQRnyr324mdNzqx80YnjpYzWk/LGa2n5Wze
+    PX1ZqGtwUcEMZf6MOAflGsJujMolmEd5oMwVIc5ITNWLZUtX2EqXIijtWppDX4bMoHk9UfPkcuUKiMzk
+    cnErQVcqoYQN8mWfCtmvTbAcq1wguNQRnRJx5KISGClGaZYJxJrjFotc0RFyVxHT8UvvIqfqkGu6rVPs
+    Vp/Q21lt2ZbVXsz0QjxynJjCtUJes9vjluLW2kI5W5izvNu4/B5E77SSc5tjc9Y3LheOPt8mmdXy8f1F
+    WJSS9e4O9PyfW05UZ4th34vy9R8GDefR''')
 
-  retvals = main( nelems=4, viscosity=1e-3, degree=1, warp=True, tol=0, maxiter=1, withplots=False )
+  retvals = main(nelems=3, viscosity=1e-2, degree=1, warp=True, withplots=False)
   assert debug.checkdata( retvals, '''
-    eNrFUltuxDAIvM6uZCremAPl/leogU2kflT9rGSJhBlgGJvWSxfZe71e+LXmbES8IJalyAW+HoC4AF87
-    J/4N/Nrq38/ZGFx1X2DLmKwikEZcoCslvRIevgdw6QSwuhUD2GLXBwdLRd3YEVSYmiqozQCy4KbSzorG
-    2VT3MuUw8x5zmvE0G0EWU3kLBcndzdnMG3gqFVsghzYgW3sTRu9ZJMqFB3lOwbmrLlDrCNa7F+KUo1t9
-    VpRsNY9e4qo9DA8ZN26hJNwySKLHUMTIsuz/EMEPzoOP0UCk05txMsfG/MFU1Sbo41rG7G796g6lTemS
-    2UR33ZrXssYzBvFDGYNTylg/Nm2dqdJ5dtfapx/K+xso/qhh''' )
+    eNqFUstxBTEIa2ffjMkYzM8Fvf5bCAazOeYEg1gJyYvj4YH8Gc8DhIhfkBFlnwpkKwY8hHmfupztCxqA
+    FgC4zU+z0WvwL0cvAAZyyBqIAftBSDEH6KpZ7xwagEb+1C4XvGTRzDPRtbhO5lm6a1PRm2IiLBKNBaJG
+    eYBr3d4rvdEL0ButAi3TKi0yf0ZEC6yUFtitjiDaifN0O1VllYEA9CZL2fiqhJFw5aesImUEV35r0zm5
+    rggIYm40eQTHKUuC9w1YCrCjpidRSRVQLmevnM9t2bRMsOnKvBinnoaIrqvFKYgRXJLMWUHakiQhUq94
+    Kq542vLCNEsF80XDlNtOEdu+8zdBSU6N499kP7+4m5gf''')
 
 
 if __name__ == '__main__':
-  cli.choose( main, unittest )
+  cli.choose(main, unittest)

@@ -1,4 +1,0 @@
-Library
-=======
-
-.. automodule:: nutils.library

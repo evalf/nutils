@@ -1,4 +1,0 @@
-Model
-=====
-
-.. automodule:: nutils.model

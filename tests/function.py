@@ -279,16 +279,13 @@ def check( op, n_op, shapes, hasgrad=True ):
     eps = 1e-8
     numpy.random.seed(0)
     for iarg in range(len(args)):
-      def f(x):
-        myargs = list(args)
-        myargs[iarg] = ( x * basis ).sum(-1)
-        return op( *myargs )
-      J = function.partial_derivative( f, 0 )
-      x0 = numpy.random.uniform( size=shapes[iarg]+basis.shape )
-      dx = numpy.random.normal( size=x0.shape ) * eps
-      fx0, fx1, Jx0 = domain.elem_eval( [ f(x0), f(x0+dx), J(x0) ], ischeme='gauss1' )
-      fx1approx = (fx0 + numeric.contract_fast( Jx0, dx, naxes=dx.ndim ))
-      numpy.testing.assert_array_almost_equal( fx1approx, fx1, decimal=12 )
+      x0 = numpy.random.uniform(size=shapes[iarg]+basis.shape )
+      dx = numpy.random.normal(size=x0.shape) * eps
+      x = function.Argument('x', x0.shape)
+      f = op(*(*args[:iarg], (x*basis).sum(-1), *args[iarg+1:]))
+      fx0, fx1, Jx0 = domain.elem_eval([f, function.replace_arguments(f, dict(x=x+dx)),function.derivative(f, x)], ischeme='gauss1', arguments=dict(x=x0))
+      fx1approx = fx0 + numeric.contract_fast(Jx0, dx, naxes=dx.ndim)
+      numpy.testing.assert_array_almost_equal(fx1approx, fx1, decimal=12)
 
   @unittest
   def gradient( ):
@@ -372,3 +369,196 @@ def sampled():
   @unittest( raises=function.EvaluationError )
   def pointset():
     domain.integrate( f_sampled, ischeme='uniform2' )
+
+
+@register
+def namespace():
+
+  @unittest
+  def set_scalar():
+    ns = function.Namespace()
+    ns.scalar = 1
+
+  @unittest
+  def set_array():
+    ns = function.Namespace()
+    ns.array = function.zeros([2,3])
+
+  @unittest
+  def set_scalar_expression():
+    ns = function.Namespace()
+    ns.scalar = '1'
+
+  @unittest
+  def set_array_expression():
+    ns = function.Namespace()
+    ns.foo = function.zeros([3,3])
+    ns.array_ij = 'foo_ij + foo_ji'
+
+  @unittest(raises=AttributeError)
+  def set_readonly():
+    ns = function.Namespace()
+    ns._foo = None
+
+  @unittest(raises=AttributeError)
+  def set_readonly_internal():
+    ns = function.Namespace()
+    ns._attributes = None
+
+  @unittest
+  def del_existing():
+    ns = function.Namespace()
+    ns.foo = function.zeros([2,3])
+    del ns.foo
+
+  @unittest(raises=AttributeError)
+  def del_readonly_internal():
+    ns = function.Namespace()
+    del ns._attributes
+
+  @unittest(raises=AttributeError)
+  def del_nonexisting():
+    ns = function.Namespace()
+    del ns.foo
+
+  @unittest(raises=AttributeError)
+  def get_nonexisting():
+    ns = function.Namespace()
+    ns.foo
+
+  @unittest(raises=ValueError)
+  def invalid_default_geometry_no_str():
+    function.Namespace(default_geometry_name=None)
+
+  @unittest(raises=ValueError)
+  def invalid_default_geometry_no_variable():
+    function.Namespace(default_geometry_name='foo_bar')
+
+  @unittest
+  def default_geometry_property():
+    ns = function.Namespace()
+    ns.x = 1
+    assert ns.default_geometry == ns.x
+    ns = function.Namespace(default_geometry_name='y')
+    ns.y = 2
+    assert ns.default_geometry == ns.y
+
+  @unittest
+  def copy():
+    ns = function.Namespace()
+    ns.foo = function.zeros([2,3])
+    ns = ns.copy_()
+    assert hasattr(ns, 'foo')
+
+  @unittest
+  def copy_change_geom():
+    ns1 = function.Namespace()
+    domain, ns1.y = mesh.rectilinear([2,2])
+    ns1.basis = domain.basis('spline', degree=2)
+    ns2 = ns1.copy_(default_geometry_name='y')
+    assert ns2.default_geometry_name == 'y'
+    assert ns2.eval_ni('basis_n,i') == ns2.basis.grad(ns2.y)
+
+  @unittest
+  def copy_preserve_geom():
+    ns1 = function.Namespace(default_geometry_name='y')
+    domain, ns1.y = mesh.rectilinear([2,2])
+    ns1.basis = domain.basis('spline', degree=2)
+    ns2 = ns1.copy_()
+    assert ns2.default_geometry_name == 'y'
+    assert ns2.eval_ni('basis_n,i') == ns2.basis.grad(ns2.y)
+
+  @unittest
+  def eval():
+    ns = function.Namespace()
+    ns.foo = function.zeros([3,3])
+    ns.eval_ij('foo_ij + foo_ji')
+
+  @unittest
+  def matmul_0d():
+    ns = function.Namespace()
+    ns.foo = 2
+    assert 'foo' @ ns == ns.foo
+
+  @unittest
+  def matmul_1d():
+    ns = function.Namespace()
+    ns.foo = function.zeros([2])
+    assert 'foo_i' @ ns == ns.foo
+
+  @unittest(raises=ValueError)
+  def matmul_2d():
+    ns = function.Namespace()
+    ns.foo = function.zeros([2, 3])
+    'foo_ij' @ ns
+
+  @unittest(raises=TypeError)
+  def matmul_nostr():
+    ns = function.Namespace()
+    1 @ ns
+
+  @unittest
+  def replace():
+    ns = function.Namespace(default_geometry_name='y')
+    ns.foo = function.Argument('arg', [2,3])
+    ns.bar_ij = 'sin(foo_ij) + cos(2 foo_ij)'
+    ns = ns | dict(arg=function.zeros([2,3]))
+    assert ns.foo == function.zeros([2,3])
+    assert ns.default_geometry_name == 'y'
+
+  @unittest(raises=TypeError)
+  def replace_no_mapping():
+    ns = function.Namespace()
+    ns.foo = function.Argument('arg', [2,3])
+    ns.bar_ij = 'sin(foo_ij) + cos(2 foo_ij)'
+    ns | 2
+
+
+@register
+def eval_ast():
+
+  domain, x = mesh.rectilinear([2,2])
+  ns = function.Namespace()
+  ns.x = x
+  ns.altgeom_i = '<x_i, 0>_i'
+  ns.basis = domain.basis('spline', degree=2)
+  ns.a = 2
+  ns.a2 = numpy.array([1,2])
+  ns.a3 = numpy.array([1,2,3])
+  ns.a22 = numpy.array([[1,2],[3,4]])
+  ns.a32 = numpy.array([[1,2],[3,4],[5,6]])
+  x = function.Argument('x',())
+
+  def assert_(name, expr, value):
+    def f():
+      assert expr @ ns == value
+    f.__name__ = name
+    unittest(f)
+
+  assert_('group', '(a)', ns.a)
+  assert_('arg', 'a2_i ?x_i', function.dot(ns.a2, function.Argument('x', [2]), axes=[0]))
+  assert_('substitute', '?x_i^2 | ?x_i = a2_i', ns.a2**2)
+  assert_('call', 'sin(a)', function.sin(ns.a))
+  assert_('eye', 'δ_ij a2_i', function.dot(function.eye(2), ns.a2, axes=[0]))
+  assert_('normal', 'n_i', ns.x.normal())
+  assert_('getitem', 'a2_0', ns.a2[0])
+  assert_('trace', 'a22_ii', function.trace(ns.a22, 0, 1))
+  assert_('sum', 'a2_i a2_i', function.sum(ns.a2 * ns.a2, axis=0))
+  assert_('concatenate', '<a, a2_i>_i', function.concatenate([ns.a[None],ns.a2], axis=0))
+  assert_('grad', 'basis_n,0', ns.basis.grad(ns.x)[:,0])
+  assert_('surfgrad', 'basis_n;altgeom_0', function.grad(ns.basis, ns.altgeom, len(ns.altgeom)-1)[:,0])
+  assert_('derivative', 'exp(?x)_,?x', function.derivative(function.exp(x), x))
+  assert_('append_axis', 'a a2_i', ns.a[None]*ns.a2)
+  assert_('transpose', 'a22_ij a22_ji', function.dot(ns.a22, ns.a22.T, axes=[0,1]))
+  assert_('jump', '[a]', function.jump(ns.a))
+  assert_('mean', '{a}', function.mean(ns.a))
+  assert_('neg', '-a', -ns.a)
+  assert_('add', 'a + ?x', ns.a + x)
+  assert_('sub', 'a - ?x', ns.a - x)
+  assert_('mul', 'a ?x', ns.a * x)
+  assert_('truediv', 'a / ?x', ns.a / x)
+  assert_('pow', 'a^2', ns.a**2)
+
+  @unittest(raises=ValueError)
+  def unknown_opcode():
+    function._eval_ast(('invalid-opcode',), {})

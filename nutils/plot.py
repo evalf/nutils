@@ -438,53 +438,51 @@ class PyPlotVideo( PyPlot ):
   '''matplotlib based video generator
 
   Video generator based on matplotlib figures.  Follows the same syntax as
-  `PyPlot`.
+  PyPlot.
 
   Parameters
   ----------
-
   clearfigure: bool, default: True
-    If True clears the matplotlib figure after writing each frame.
+      If True clears the matplotlib figure after writing each frame.
 
   framerate: int, float, default: 24
-    Framerate in frames per second of the generated video.
+      Framerate in frames per second of the generated video.
 
   videotype: str, default: 'webm' unless overriden by property ``videotype``
-    Video type of the generated video.  Note that not every video type supports
-    playback before the video has been finalized, i.e. before ``close`` has
-    been called.
+      Video type of the generated video.  Note that not every video type
+      supports playback before the video has been finalized, i.e. before
+      ``close`` has been called.
 
   Nutils properties
   -----------------
-
-  videotype: see parameter with the same name
-
+  videotype
+      see parameter with the same name
   videoencoder: str, default: 'ffmpeg'
-    Name or path of the video encoder.  The video encoder should take the same
-    arguments as 'ffmpeg'.
+      Name or path of the video encoder.  The video encoder should take the
+      same arguments as 'ffmpeg'.
 
   Examples
   --------
 
-  Using a ``with``-statement:
+  Using a ``with``-statement::
 
-    video = PyPlotVideo('video')
-    for timestep in timesteps:
-      ...
-      with video:
+      video = PyPlotVideo('video')
+      for timestep in timesteps:
+        ...
+        with video:
+          video.plot(...)
+          video.title('frame {:04d}'.format(video.frame))
+      video.close()
+
+  Using ``saveframe``::
+
+      video = PyPlotVideo('video')
+      for timestep in timesteps:
+        ...
         video.plot(...)
         video.title('frame {:04d}'.format(video.frame))
-    video.close()
-
-  Using ``saveframe``:
-
-    video = PyPlotVideo('video')
-    for timestep in timesteps:
-      ...
-      video.plot(...)
-      video.title('frame {:04d}'.format(video.frame))
-      video.saveframe()
-    video.close()
+        video.saveframe()
+      video.close()
   '''
 
   def __init__(self, name, videotype=None, clearfigure=True, framerate=24):

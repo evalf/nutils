@@ -1,6 +1,6 @@
 from . import \
   function,   \
-  index,      \
+  expression, \
   normals,    \
   mesh,       \
   ischeme,    \
@@ -11,10 +11,11 @@ from . import \
   numeric,    \
   basis,      \
   finitecell, \
-  model,      \
+  solver,     \
   log,        \
   cli,        \
   examples,   \
+  docs,       \
   runtests
 
 runtests()
