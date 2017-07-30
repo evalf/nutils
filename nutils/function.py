@@ -931,27 +931,30 @@ class Function( Array ):
     return zeros(self.shape+var.shape, dtype=self.dtype)
 
 class Choose( Array ):
-  'piecewise function'
 
-  def __init__( self, level, choices ):
-    'constructor'
-
+  def __init__(self, level, choices):
     self.level = level
-    self.choices = tuple( choices )
-    shape = _jointshape( level.shape, *[ choice.shape for choice in choices ] )
-    dtype = _jointdtype( *[ choice.dtype for choice in choices ] )
-    assert level.ndim == len( shape )
-    self.ivar = [ i for i, choice in enumerate(choices) if isinstance(choice,Array) ]
-    Array.__init__( self, args=[ level ] + [ choices[i] for i in self.ivar ], shape=shape, dtype=dtype )
+    assert isinstance(choices, tuple) and all(isarray(choice) for choice in choices)
+    self.choices = choices
+    shape = _jointshape(level.shape, *[choice.shape for choice in choices])
+    dtype = _jointdtype(*[choice.dtype for choice in choices])
+    assert level.ndim == len(shape)
+    super().__init__(args=(level,)+choices, shape=shape, dtype=dtype)
 
-  def evalf( self, level, *varchoices ):
-    'choose'
+  @cache.property
+  def simplified(self):
+    level = self.level.simplified
+    choices = tuple(choice.simplified for choice in self.choices)
+    if all(iszero(choice) for choice in choices):
+      return zeros(self.shape)
+    retval = level._choose(choices)
+    if retval is not None:
+      assert retval.shape == self.shape
+      return retval.simplified
+    return Choose(level, choices)
 
-    choices = [ choice[_] for choice in self.choices ]
-    for i, choice in zip( self.ivar, varchoices ):
-      choices[i] = choice
-    assert all( choice.ndim == self.ndim+1 for choice in choices )
-    return numpy.choose( level, choices )
+  def evalf(self, level, *choices):
+    return numpy.choose(level, choices)
 
   def _derivative(self, var, seen):
     grads = [derivative(choice, var, seen) for choice in self.choices]
@@ -3246,18 +3249,9 @@ def transpose( arg, trans=None ):
   invtrans = range( arg.ndim-1, -1, -1 ) if trans is None else _invtrans( trans )
   return align( arg, invtrans, arg.ndim )
 
-def choose( level, choices ):
-  'choose'
-
-  level, *choices = _matchndim( level, *choices )
-  shape = _jointshape( level.shape, *( choice.shape for choice in choices ) )
-  if all( map( iszero, choices ) ):
-    return zeros( shape )
-  retval = level._choose(choices)
-  if retval is not None:
-    assert retval.shape == shape, 'bug in %s._choose' % level
-    return retval
-  return Choose( level, choices )
+def choose(level, choices):
+  level, *choices = _matchndim(level, *choices)
+  return Choose(level, tuple(choices)).simplified
 
 def _condlist_to_level( *condlist ):
   level = 0
