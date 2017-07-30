@@ -1935,14 +1935,20 @@ class Pointwise( Array ):
     return pointwise( op(self.args), self.evalfun, self.deriv, self.dtype )
 
 class Sign( Array ):
-  'sign'
 
-  def __init__( self, func ):
-    'constructor'
-
-    assert isarray( func )
+  def __init__(self, func):
+    assert isarray(func)
     self.func = func
-    Array.__init__( self, args=[func], shape=func.shape, dtype=func.dtype )
+    super().__init__(args=[func], shape=func.shape, dtype=func.dtype)
+
+  @cache.property
+  def simplified(self):
+    func = self.func.simplified
+    retval = func._sign()
+    if retval is not None:
+      assert retval.shape == self.shape
+      return retval.simplified
+    return Sign(func)
 
   def evalf( self, arr ):
     assert arr.ndim == self.ndim+1
@@ -3334,20 +3340,9 @@ def blockadd( *args ):
   else:
     return BlockAdd( args )
 
-def sign( arg ):
-  'sign'
-
-  arg = asarray( arg )
-
-  if isinstance( arg, numpy.ndarray ):
-    return numpy.sign( arg )
-
-  retval = arg._sign()
-  if retval is not None:
-    assert retval.shape == arg.shape, 'bug in %s._sign' % arg
-    return retval
-
-  return Sign( arg )
+def sign(arg):
+  arg = asarray(arg)
+  return Sign(arg).simplified
 
 def eig( arg, axes=(-2,-1), symmetric=False ):
   '''eig( arg, axes [ symmetric ] )
