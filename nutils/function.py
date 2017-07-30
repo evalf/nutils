@@ -1257,18 +1257,31 @@ class Interpolate( Array ):
     return numpy.interp( x, self.xp, self.fp, self.left, self.right )
 
 class Cross( Array ):
-  'cross product'
 
-  def __init__( self, func1, func2, axis ):
-    'contructor'
-
+  def __init__(self, func1, func2, axis):
+    assert func1.ndim == func2.ndim
+    assert 0 <= axis < func1.ndim
     self.func1 = func1
     self.func2 = func2
     self.axis = axis
-    shape = _jointshape( func1.shape, func2.shape )
+    shape = _jointshape(func1.shape, func2.shape)
     assert shape[axis] == 3
-    dtype = _jointdtype( func1.dtype, func2.dtype )
-    Array.__init__( self, args=(func1,func2), shape=shape, dtype=dtype )
+    dtype = _jointdtype(func1.dtype, func2.dtype)
+    super().__init__(args=(func1,func2), shape=shape, dtype=dtype)
+
+  @cache.property
+  def simplified(self):
+    func1 = self.func1.simplified
+    func2 = self.func2.simplified
+    retval = func1._cross(func2, self.axis)
+    if retval is not None:
+      assert retval.shape == self.shape
+      return retval.simplified
+    retval = func2._cross(func1, self.axis)
+    if retval is not None:
+      assert retval.shape == self.shape
+      return negative(retval).simplified
+    return Cross(func1, func2, self.axis)
 
   def evalf( self, a, b ):
     assert a.ndim == b.ndim == self.ndim+1
@@ -3270,25 +3283,12 @@ def select( condlist, choicelist, default=0 ):
   level = pointwise( condlist, _condlist_to_level, dtype=int )
   return choose( level, (default,)+tuple(choicelist) )
 
-def cross( arg1, arg2, axis ):
-  'cross product'
-
-  arg1, arg2 = _matchndim( arg1, arg2 )
-  shape = _jointshape( arg1.shape, arg2.shape )
-  axis = numeric.normdim( len(shape), axis )
+def cross(arg1, arg2, axis):
+  arg1, arg2 = _matchndim(arg1, arg2)
+  shape = _jointshape(arg1.shape, arg2.shape)
+  axis = numeric.normdim(len(shape), axis)
   assert shape[axis] == 3
-
-  retval = arg1._cross(arg2, axis)
-  if retval is not None:
-    assert retval.shape == shape, 'bug in %s._cross' % arg1
-    return retval
-
-  retval = arg2._cross(arg1, axis)
-  if retval is not None:
-    assert retval.shape == shape, 'bug in %s._cross' % arg2
-    return -retval
-
-  return Cross( arg1, arg2, axis )
+  return Cross(arg1, arg2, axis).simplified
 
 def outer( arg1, arg2=None, axis=0 ):
   'outer product'
