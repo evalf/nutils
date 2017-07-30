@@ -1894,18 +1894,24 @@ class Power(Array):
     return power( op(self.func), op(self.power) )
 
 class Pointwise( Array ):
-  'pointwise transformation'
 
-  def __init__( self, args, evalfun, deriv, dtype ):
-    'constructor'
-
-    assert isarray( args )
+  def __init__(self, args, evalfun, deriv, dtype):
+    assert isarray(args)
     assert args.ndim >= 1 and args.shape[0] >= 1
     shape = args.shape[1:]
     self.args = args
     self.evalfun = evalfun
     self.deriv = deriv
-    Array.__init__( self, args=[args], shape=shape, dtype=dtype )
+    super().__init__(args=[args], shape=shape, dtype=dtype)
+
+  @cache.property
+  def simplified(self):
+    args = self.args.simplified
+    retval = args._pointwise(self.evalfun, self.deriv, self.dtype)
+    if retval is not None:
+      assert retval.shape == self.shape
+      return retval.simplified
+    return Pointwise(args, self.evalfun, self.deriv, self.dtype)
 
   def evalf( self, args ):
     assert args.shape[1:] == self.args.shape
@@ -3299,14 +3305,9 @@ def outer( arg1, arg2=None, axis=0 ):
   axis = numeric.normdim( arg1.ndim, axis )
   return insert(arg1,axis+1) * insert(arg2,axis)
 
-def pointwise( args, evalf, deriv=None, dtype=float ):
-  'general pointwise operation'
-
-  args = asarray( _matchndim(*args) )
-  retval = args._pointwise(evalf, deriv, dtype)
-  if retval is not None:
-    return retval
-  return Pointwise( args, evalf, deriv, dtype )
+def pointwise(args, evalf, deriv=None, dtype=float):
+  args = asarray(args)
+  return Pointwise(args, evalf, deriv, dtype).simplified
 
 def blockadd( *args ):
   args = tuple( itertools.chain( *( arg.funcs if isinstance( arg, BlockAdd ) else [arg] for arg in args ) ) )
