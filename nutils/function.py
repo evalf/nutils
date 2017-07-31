@@ -239,6 +239,10 @@ class Evaluable( cache.Immutable ):
   def _edit( self, op ):
     raise NotImplementedError( '{} does not define an _edit method'.format( type(self).__name__ ) )
 
+  @cache.property
+  def simplified(self):
+    return self.edit(lambda arg: arg.simplified if isevaluable(arg) else arg)
+
 class EvaluationError( Exception ):
   'evaluation error'
 
