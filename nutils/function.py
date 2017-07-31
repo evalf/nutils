@@ -2765,15 +2765,28 @@ class LocalCoords( DerivativeTargetBase ):
     raise Exception( 'LocalCoords should not be evaluated' )
 
 class Ravel( Array ):
-  'ravel'
 
-  def __init__( self, func, axis ):
+  def __init__(self, func, axis):
+    assert isarray(func)
+    assert 0 <= axis < func.ndim-1
     self.func = func
     self.axis = axis
-    assert 0 <= axis < func.ndim-1
     newlength = func.shape[axis] * func.shape[axis+1] if numeric.isint( func.shape[axis] ) and numeric.isint( func.shape[axis+1] ) \
            else '{}x{}'.format( func.shape[axis], func.shape[axis+1] )
-    Array.__init__( self, args=[func], shape=func.shape[:axis]+(newlength,)+func.shape[axis+2:], dtype=func.dtype )
+    super().__init__(args=[func], shape=func.shape[:axis]+(newlength,)+func.shape[axis+2:], dtype=func.dtype)
+
+  @cache.property
+  def simplified(self):
+    func = self.func.simplified
+    if func.shape[self.axis] == 1:
+      return get(func, self.axis, 0 ).simplified
+    if func.shape[self.axis+1] == 1:
+      return get(func, self.axis+1, 0 ).simplified
+    retval = func._ravel(self.axis)
+    if retval is not None:
+      assert retval.shape == self.shape
+      return retval.simplified
+    return Ravel(func, self.axis)
 
   def evalf( self, f ):
     return f.reshape( f.shape[:self.axis+1] + (f.shape[self.axis+1]*f.shape[self.axis+2],) + f.shape[self.axis+3:] )
@@ -3519,19 +3532,10 @@ def unravel(func, axis, shape):
   assert func.shape[axis] == numpy.product(shape)
   return Unravel(func, axis, tuple(shape)).simplified
 
-def ravel( func, axis ):
-  func = asarray( func )
+def ravel(func, axis):
+  func = asarray(func)
   axis = numeric.normdim( func.ndim-1, axis )
-
-  for i in axis, axis+1:
-    if func.shape[i] == 1:
-      return get( func, i, 0 )
-
-  retval = func._ravel(axis)
-  if retval is not None:
-    return retval
-
-  return Ravel( func, axis )
+  return Ravel(func, axis).simplified
 
 def replace_arguments(value, arguments):
   '''Replace :class:`Argument` objects in ``value``.
