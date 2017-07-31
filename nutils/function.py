@@ -2842,15 +2842,27 @@ class Ravel( Array ):
     return ravel( op(self.func), self.axis )
 
 class Unravel( Array ):
-  'unravel'
 
-  def __init__( self, func, axis, shape ):
-    shape = tuple(shape)
+  def __init__(self, func, axis, shape):
+    assert isarray(func)
+    assert 0 <= axis < func.ndim
+    assert isinstance(shape, tuple)
     assert func.shape[axis] == numpy.product(shape)
     self.func = func
     self.axis = axis
     self.unravelshape = shape
-    Array.__init__( self, args=[func], shape=func.shape[:axis]+shape+func.shape[axis+1:], dtype=func.dtype )
+    super().__init__(args=[func], shape=func.shape[:axis]+shape+func.shape[axis+1:], dtype=func.dtype)
+
+  @cache.property
+  def simplified(self):
+    func = self.func.simplified
+    if len(self.unravelshape) == 1:
+      return func
+    retval = func._unravel(self.axis, self.unravelshape)
+    if retval is not None:
+      assert retval.shape == self.shape
+      return retval.simplified
+    return Unravel(func, self.axis, self.unravelshape)
 
   def _derivative(self, var, seen):
     return unravel(derivative(self.func, var, seen), axis=self.axis, shape=self.unravelshape)
@@ -3500,26 +3512,12 @@ def J( geometry, ndims=None ):
     ndims += len(geometry)
   return jacobian( geometry, ndims )
 
-def unravel( func, axis, shape ):
-  func = asarray( func )
-  axis = numeric.normdim( func.ndim, axis )
+def unravel(func, axis, shape):
+  func = asarray(func)
+  axis = numeric.normdim(func.ndim, axis)
   shape = tuple(shape)
   assert func.shape[axis] == numpy.product(shape)
-
-  if len(shape) == 1:
-    return func
-
-  if shape[0] == 1:
-    return insert( unravel( func, axis, shape[1:] ), axis )
-
-  if shape[-1] == 1:
-    return insert( unravel( func, axis, shape[:-1] ), axis+len(shape)-1 )
-
-  retval = func._unravel(axis, shape)
-  if retval is not None:
-    return retval
-
-  return Unravel( func, axis, shape )
+  return Unravel(func, axis, tuple(shape)).simplified
 
 def ravel( func, axis ):
   func = asarray( func )
