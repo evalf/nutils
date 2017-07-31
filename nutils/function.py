@@ -613,9 +613,9 @@ class Constant( Array ):
     assert retval.dtype == dtype
     return asarray( retval )
 
-  def _eig( self, symmetric ):
-    eigval, eigvec = ( numpy.linalg.eigh if symmetric else numpy.linalg.eig )( self.value )
-    return asarray( eigval ), asarray( eigvec )
+  def _eig(self, symmetric):
+    eigval, eigvec = (numpy.linalg.eigh if symmetric else numpy.linalg.eig)(self.value)
+    return Tuple((asarray(eigval), asarray(eigvec)))
 
   def _sign( self ):
     return asarray( numeric.sign( self.value ) )
@@ -1025,8 +1025,11 @@ class Inverse( Array ):
   def _edit( self, op ):
     return inverse( op(self.func) )
 
+  def _eig(self, symmetric):
+    eigval, eigvec = Eig(self.func, symmetric)
+    return Tuple((reciprocal(eigval), eigvec))
+
 class Concatenate( Array ):
-  'concatenate'
 
   def __init__( self, funcs, axis=0 ):
     'constructor'
@@ -2025,37 +2028,50 @@ class Elemwise( Array ):
     return Elemwise( self.fmap, self.shape, self.default, op(self.trans) )
 
 class Eig( Evaluable ):
-  'Eig'
 
-  def __init__( self, func, symmetric=False, sort=False ):
-    'contructor'
-
-    Evaluable.__init__( self, args=[func] )
+  def __init__(self, func, symmetric=False):
+    assert isarray(func) and func.ndim >= 2 and func.shape[-1] == func.shape[-2]
     self.symmetric = symmetric
     self.func = func
-    self.shape = func.shape
-    self.eig = numpy.linalg.eigh if symmetric else numeric.eig
+    super().__init__(args=[func])
 
-  def evalf( self, arr ):
-    assert arr.ndim == len(self.shape)+1
-    return self.eig( arr )
+  def __len__(self):
+    return 2
+
+  def __iter__(self):
+    yield ArrayFromTuple(self, index=0, shape=self.func.shape[:-1], dtype=float)
+    yield ArrayFromTuple(self, index=1, shape=self.func.shape, dtype=float)
+
+  @cache.property
+  def simplified(self):
+    func = self.func.simplified
+    retval = func._eig(self.symmetric)
+    if retval is not None:
+      assert len(retval) == 2
+      return retval.simplified
+    return Eig(func, self.symmetric)
+
+  def evalf(self, arr):
+    return (numpy.linalg.eigh if self.symmetric else numeric.eig)(arr)
 
   def _edit( self, op ):
-    return Eig( op(self.func), self.symmetric )
+    return Eig(op(self.func), self.symmetric)
 
-class ArrayFromTuple( Array ):
-  'array from tuple'
+class ArrayFromTuple(Array):
 
-  def __init__( self, arrays, index, shape, dtype ):
+  def __init__(self, arrays, index, shape, dtype):
+    assert isevaluable(arrays)
+    assert 0 <= index < len(arrays)
     self.arrays = arrays
     self.index = index
-    Array.__init__( self, args=[arrays], shape=shape, dtype=dtype )
+    super().__init__(args=[arrays], shape=shape, dtype=dtype)
 
-  def evalf( self, arrays ):
-    return arrays[ self.index ]
+  def evalf(self, arrays):
+    assert isinstance(arrays, tuple)
+    return arrays[self.index]
 
-  def _edit( self, op ):
-    return array_from_tuple( op(self.arrays), self.index, self.shape, self.dtype )
+  def _edit(self, op):
+    return ArrayFromTuple(op(self.arrays), self.index, self.shape, self.dtype)
 
 class Zeros( Array ):
   'zero'
@@ -3344,50 +3360,14 @@ def sign(arg):
   arg = asarray(arg)
   return Sign(arg).simplified
 
-def eig( arg, axes=(-2,-1), symmetric=False ):
-  '''eig( arg, axes [ symmetric ] )
-  Compute the eigenvalues and vectors of a matrix. The eigenvalues and vectors
-  are positioned on the last axes.
-
-  * tuple axes       The axis on which the eigenvalues and vectors are calculated
-  * bool  symmetric  Is the matrix symmetric'''
-
-  # Sort axis
-  arg = asarray( arg )
+def eig(arg, axes=(-2,-1), symmetric=False):
+  arg = asarray(arg)
   ax1, ax2 = _norm_and_sort( arg.ndim, axes )
   assert ax2 > ax1 # strict
-
-  # Check if the matrix is square
-  assert arg.shape[ax1] == arg.shape[ax2]
-
-  # Move the axis with matrices
   trans = list(range(ax1)) + [-2] + list(range(ax1,ax2-1)) + [-1] + list(range(ax2-1,arg.ndim-2))
   aligned_arg = align( arg, trans, arg.ndim )
-
-  ret = aligned_arg._eig(symmetric)
-  if ret is not None:
-    # Check the shapes
-    eigval, eigvec = ret
-  else:
-    eig = Eig( aligned_arg, symmetric=symmetric )
-    eigval = array_from_tuple( eig, index=0, shape=aligned_arg.shape[:-1], dtype=float )
-    eigvec = array_from_tuple( eig, index=1, shape=aligned_arg.shape, dtype=float )
-
-  # Return the evaluable function objects in a tuple like numpy
-  eigval = transpose( diagonalize( eigval ), trans )
-  eigvec = transpose( eigvec, trans )
-  assert eigvec.shape == arg.shape
-  assert eigval.shape == arg.shape
-  return eigval, eigvec
-
-def array_from_tuple( arrays, index, shape, dtype ):
-  if isinstance( arrays, Tuple ):
-    array = arrays.items[index]
-    assert array.shape == shape
-    assert array.dtype == dtype
-    return array
-  else:
-    return ArrayFromTuple( arrays, index, shape, dtype )
+  eigval, eigvec = Eig(aligned_arg, symmetric).simplified
+  return Tuple([transpose(diagonalize(eigval), trans).simplified, transpose(eigvec, trans).simplified])
 
 def swapaxes( arg, axis1=(-2,-1), axis2=None):
   if axis2 is None:

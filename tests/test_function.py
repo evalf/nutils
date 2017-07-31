@@ -66,6 +66,19 @@ class check(TestCase):
           numeric.takediag(numeric.align(self.n_op(*self.argsfun.eval(self.elem,self.points)), alignaxes, len(self.shape)+1)),
          function.takediag(self.op(*self.args), ax1, ax2).eval(self.elem,self.points), decimal=15)
 
+  def test_eig(self):
+    count = {}
+    for i, sh in enumerate(self.shape):
+      count.setdefault(sh,[]).append(i)
+    pairs = [sorted(axes[:2]) for axes in count.values() if len(axes) > 1] # axis pairs with same length
+    if pairs and self.op(*self.args).dtype == float:
+      for ax1, ax2 in pairs:
+        A = self.op(*self.args).eval(self.elem,self.points)
+        L, V = function.eig(self.op(*self.args), axes=(ax1,ax2)).eval(self.elem,self.points)
+        M1 = (numpy.expand_dims(A,ax2+1) * numpy.expand_dims(V,ax2+2).swapaxes(ax1+1,ax2+2)).sum(ax2+2)
+        M2 = (numpy.expand_dims(V,ax2+1) * numpy.expand_dims(L,ax2+2).swapaxes(ax1+1,ax2+2)).sum(ax2+2)
+        numpy.testing.assert_array_almost_equal(M1, M2, decimal=12)
+
   def test_take(self):
     indices = [0,-1]
     for iax, sh in enumerate(self.shape):
