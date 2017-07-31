@@ -2165,11 +2165,8 @@ class Zeros( Array ):
     return zeros( shape, dtype=self.dtype )
 
 class Inflate( Array ):
-  'inflate'
 
-  def __init__( self, func, dofmap, length, axis ):
-    'constructor'
-
+  def __init__(self, func, dofmap, length, axis):
     assert not dofmap.isconstant
     self.func = func
     self.dofmap = dofmap
@@ -2178,21 +2175,27 @@ class Inflate( Array ):
     assert 0 <= axis < func.ndim
     assert func.shape[axis] == dofmap.shape[0]
     shape = func.shape[:axis] + (length,) + func.shape[axis+1:]
-    self.axis_shiftright = axis-func.ndim
-    Array.__init__( self, args=[func,dofmap], shape=shape, dtype=func.dtype )
+    super().__init__(args=[func,dofmap], shape=shape, dtype=func.dtype)
 
-  def evalf( self, array, indices ):
-    'inflate'
+  @cache.property
+  def simplified(self):
+    func = self.func.simplified
+    dofmap = self.dofmap.simplified
+    retval = func._inflate(dofmap, self.length, self.axis)
+    if retval is not None:
+      assert retval.shape == self.shape
+      return retval.simplified
+    return Inflate(func, dofmap, self.length, self.axis)
 
-    if indices.shape[0] != 1:
-      raise NotImplementedError
+  def evalf(self, array, indices):
+    assert indices.shape[0] == 1
     indices, = indices
     assert array.ndim == self.ndim+1
     warnings.warn( 'using explicit inflation; this is usually a bug.' )
-    shape = list( array.shape )
-    shape[self.axis_shiftright] = self.length
-    inflated = numpy.zeros( shape, dtype=self.dtype )
-    inflated[(Ellipsis,indices)+(slice(None),)*(-self.axis_shiftright-1)] = array
+    shape = list(array.shape)
+    shape[self.axis+1] = self.length
+    inflated = numpy.zeros(shape, dtype=self.dtype)
+    inflated[(slice(None),)*(self.axis+1)+(indices,)] = array
     return inflated
 
   @property
@@ -3445,14 +3448,11 @@ def find( arg ):
 
   return Find( arg )
 
-def inflate( arg, dofmap, length, axis ):
-  'inflate'
-
-  arg = asarray( arg )
-  dofmap = asarray( dofmap )
-  axis = numeric.normdim( arg.ndim, axis )
+def inflate(arg, dofmap, length, axis):
+  arg = asarray(arg)
+  dofmap = asarray(dofmap)
+  axis = numeric.normdim(arg.ndim, axis)
   shape = arg.shape[:axis] + (length,) + arg.shape[axis+1:]
-
   if dofmap.isconstant:
     n = arg.shape[axis]
     assert numeric.isint(n), 'constant inflation only allowed over fixed-length axis'
@@ -3472,13 +3472,7 @@ def inflate( arg, dofmap, length, axis ):
       retval = concatenate( parts, axis=axis )
     assert retval.shape == tuple(shape)
     return retval
-
-  retval = arg._inflate(dofmap, length, axis)
-  if retval is not None:
-    assert retval.shape == tuple(shape)
-    return retval
-
-  return Inflate( arg, dofmap, length, axis )
+  return Inflate(arg, dofmap, length, axis).simplified
 
 def mask( arg, mask, axis=0 ):
   arg = asarray( arg )
