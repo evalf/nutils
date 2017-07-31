@@ -217,6 +217,9 @@ class Immutable( object, metaclass=ImmutableMeta ):
   def __str__( self ):
     return '{}({})'.format( self.__class__.__name__, ','.join( str(arg) for arg in self._args ) )
 
+  def edit(self, op, *args, **kwargs):
+    return self.__class__(*[op(arg, *args, **kwargs) for arg in self._args])
+
 class FileCache( object ):
   'cache'
 
