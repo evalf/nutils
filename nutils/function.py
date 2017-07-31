@@ -2862,14 +2862,26 @@ class Unravel( Array ):
     return unravel( op(self.func), self.axis, self.unravelshape )
     
 class Mask( Array ):
-  'mask'
 
-  def __init__( self, func, mask, axis ):
+  def __init__(self, func, mask, axis):
     assert len(mask) == func.shape[axis]
     self.func = func
     self.axis = axis
     self.mask = mask
-    Array.__init__( self, args=[func], shape=func.shape[:axis]+(mask.sum(),)+func.shape[axis+1:], dtype=func.dtype )
+    super().__init__(args=[func], shape=func.shape[:axis]+(mask.sum(),)+func.shape[axis+1:], dtype=func.dtype)
+
+  @cache.property
+  def simplified(self):
+    func = self.func.simplified
+    if self.mask.all():
+      return func
+    if not self.mask.any():
+      return zeros_like(self)
+    retval = func._mask(self.mask, self.axis)
+    if retval is not None:
+      assert retval.shape == self.shape
+      return retval.simplified
+    return Mask(func, self.mask, self.axis)
 
   def evalf( self, func ):
     return func[(slice(None),)*(self.axis+1)+(self.mask,)]
@@ -3474,23 +3486,12 @@ def inflate(arg, dofmap, length, axis):
     return retval
   return Inflate(arg, dofmap, length, axis).simplified
 
-def mask( arg, mask, axis=0 ):
-  arg = asarray( arg )
-  axis = numeric.normdim( arg.ndim, axis )
+def mask(arg, mask, axis=0):
+  arg = asarray(arg)
+  axis = numeric.normdim(arg.ndim, axis)
   assert isinstance(mask,numpy.ndarray) and mask.ndim == 1 and mask.dtype == bool
   assert arg.shape[axis] == len(mask)
-  if mask.all():
-    return arg
-  shape = arg.shape[:axis] + (mask.sum(),) + arg.shape[axis+1:]
-  if not mask.any():
-    return zeros( shape )
-
-  retval = arg._mask(mask, axis)
-  if retval is not None:
-    assert retval.shape == shape
-    return retval
-
-  return Mask( arg, mask, axis )
+  return Mask(arg, mask, axis).simplified
 
 def J( geometry, ndims=None ):
   if ndims is None:
