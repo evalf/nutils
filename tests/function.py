@@ -229,9 +229,11 @@ def check( op, n_op, shapes, hasgrad=True ):
 
   @unittest
   def edit():
-    identity = lambda arg: function.edit( arg, identity )
-    func = op( *args )
-    assert identity(func) == func
+    def check_identity(arg):
+      newarg = function.edit(arg, check_identity)
+      assert arg == newarg
+      return arg
+    check_identity(op(*args))
 
   if not hasgrad:
     return
