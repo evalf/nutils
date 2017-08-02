@@ -263,20 +263,21 @@ class EvaluationError( Exception ):
     return '\n%s --> %s: %s' % ( self.evaluable.stackstr( nlines=len(self.values) ), self.etype.__name__, self.evalue )
 
 class Tuple( Evaluable ):
-  'combine'
 
-  def __init__( self, items ):
-    'constructor'
-
-    self.items = tuple( items )
+  def __init__(self, items):
+    self.items = tuple(items)
     args = []
     indices = []
     for i, item in enumerate(self.items):
-      if isevaluable( item ):
-        args.append( item )
-        indices.append( i )
-    self.indices = tuple( indices )
-    Evaluable.__init__( self, args )
+      if isevaluable(item):
+        args.append(item)
+        indices.append(i)
+    self.indices = tuple(indices)
+    super().__init__(args)
+
+  @cache.property
+  def simplified(self):
+    return Tuple([item.simplified if isevaluable(item) else item for item in self.items])
 
   def evalf( self, *items ):
     'evaluate'
