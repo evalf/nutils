@@ -123,7 +123,7 @@ class Integral:
   def _argshape(self, name):
     assert isinstance(name, str)
     shapes = {func.shape[:func.ndim-func._nderiv]
-      for func in function.Tuple(self._integrands.values()).serialized[0]
+      for func in function.Tuple(self._integrands.values()).simplified.serialized[0]
         if isinstance(func, function.Argument) and func._name == name}
     if not shapes:
       raise KeyError(name)

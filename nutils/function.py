@@ -169,10 +169,11 @@ class Evaluable( cache.Immutable ):
     if arguments is not None:
       assert all(isinstance(value, numpy.ndarray) and value.dtype.kind in 'bif' for value in arguments.values())
 
-    ops, inds = self.serialized
+    simple = self.simplified
+    ops, inds = simple.serialized
     assert TOKENS == ( CACHE, TRANS, OPPTRANS, POINTS, ARGUMENTS )
     values = [ fcache, trans, opptrans, points, arguments or {} ]
-    for op, indices in zip( list(ops)+[self], inds ):
+    for op, indices in zip( list(ops)+[simple], inds ):
       args = [ values[i] for i in indices ]
       try:
         retval = op.evalf( *args )
@@ -180,7 +181,7 @@ class Evaluable( cache.Immutable ):
         raise
       except:
         etype, evalue, traceback = sys.exc_info()
-        excargs = etype, evalue, self, values
+        excargs = etype, evalue, simple, values
         raise EvaluationError(*excargs).with_traceback( traceback )
       values.append( retval )
     return values[-1]
@@ -333,11 +334,11 @@ class SelectChain( Evaluable ):
 
 def add(a, b):
   a, b = _matchndim(a, b)
-  return Add(orderedset([a, b])).simplified
+  return Add(orderedset([a, b]))
 
 def multiply(a, b):
   a, b = _matchndim(a, b)
-  return Multiply(orderedset([a, b])).simplified
+  return Multiply(orderedset([a, b]))
 
 def sum(arg, axis=None):
   arg = asarray(arg)
@@ -350,7 +351,7 @@ def sum(arg, axis=None):
     assert numpy.all(numpy.diff(axis) > 0), 'duplicate axes in sum'
   summed = arg
   for ax in reversed(axis):
-    summed = Sum(summed, ax).simplified
+    summed = Sum(summed, ax)
   return summed
 
 def product(arg, axis):
@@ -359,11 +360,11 @@ def product(arg, axis):
   shape = arg.shape[:axis] + arg.shape[axis+1:]
   trans = list(range(axis)) + [-1] + list(range(axis,arg.ndim-1))
   aligned_arg = align(arg, trans, arg.ndim)
-  return Product(aligned_arg).simplified
+  return Product(aligned_arg)
 
 def power(arg, n):
   arg, n = _matchndim(arg, n)
-  return Power(arg, n).simplified
+  return Power(arg, n)
 
 def dot(a, b, axes=None):
   if axes is None:
@@ -378,7 +379,7 @@ def dot(a, b, axes=None):
   if not util.isiterable(axes):
     axes = axes,
   axes = _norm_and_sort(a.ndim, axes)
-  return Dot(orderedset([a, b]), axes).simplified
+  return Dot(orderedset([a, b]), axes)
 
 class Array( Evaluable ):
   'array function'
@@ -2671,7 +2672,7 @@ class Argument(DerivativeTargetBase):
   >>> a = function.Argument('x', [])
   >>> b = function.Argument('y', [])
   >>> f = a**3 + b**2
-  >>> function.derivative(f, a) == 3*a**2
+  >>> function.derivative(f, a).simplified == (3*a**2).simplified
   True
 
   Furthermore, derivatives to the local cooardinates are remembered and applied
@@ -3046,7 +3047,7 @@ mean = lambda arg: .5 * ( arg + opposite(arg) )
 jump = lambda arg: opposite(arg) - arg
 add_T = lambda arg, axes=(-2,-1): swapaxes( arg, axes ) + arg
 edit = lambda arg, f: arg._edit(f) if isevaluable(arg) else arg
-blocks = lambda arg: asarray(arg).blocks
+blocks = lambda arg: asarray(arg).simplified.blocks
 rootcoords = lambda ndims: RootCoords( ndims )
 sampled = lambda data, ndims: Sampled( data )
 bifurcate1 = lambda arg: SelectChain(arg,True ) if arg is TRANS or arg is OPPTRANS else edit( arg, bifurcate1 )
@@ -3083,7 +3084,7 @@ def asarray(arg):
     return stack(arg, axis=0)
   array = numpy.asarray(arg)
   assert array.dtype != object
-  return Constant(array).simplified
+  return Constant(array)
 
 def insert( arg, n ):
   'insert axis'
@@ -3143,7 +3144,7 @@ def repeat(arg, length, axis):
   arg = asarray(arg)
   axis = numeric.normdim(arg.ndim, axis)
   assert arg.shape[axis] == 1
-  return Repeat(arg, length, axis).simplified
+  return Repeat(arg, length, axis)
 
 def get(arg, iax, item):
   assert numeric.isint(item)
@@ -3152,12 +3153,14 @@ def get(arg, iax, item):
   sh = arg.shape[iax]
   if numeric.isint(sh):
     item = numeric.normdim(sh, item)
-  return Get(arg, iax, item).simplified
+  return Get(arg, iax, item)
 
 def align(arg, axes, ndim):
   arg = asarray(arg)
   axes = _normdims(ndim, axes)
-  return Align(arg, axes, ndim).simplified
+  if axes == tuple(range(ndim)):
+    return arg
+  return Align(arg, axes, ndim)
 
 def bringforward( arg, axis ):
   'bring axis forward'
@@ -3202,7 +3205,7 @@ def inverse(arg, axes=(-2,-1)):
   assert ax2 > ax1 # strict
   trans = list(range(ax1)) + [-2] + list(range(ax1,ax2-1)) + [-1] + list(range(ax2-1,arg.ndim-2))
   arg = align(arg, trans, arg.ndim)
-  return transpose(Inverse(arg), trans).simplified
+  return transpose(Inverse(arg), trans)
 
 def takediag(arg, ax1=-2, ax2=-1):
   arg = asarray(arg)
@@ -3214,7 +3217,7 @@ def takediag(arg, ax1=-2, ax2=-1):
     return get(arg, -1, 0)
   if arg.shape[-2] == 1:
     return get(arg, -2, 0)
-  return TakeDiag(arg).simplified
+  return TakeDiag(arg)
 
 def derivative(func, var, seen=None):
   'derivative'
@@ -3247,16 +3250,16 @@ def kronecker(arg, axis, length, pos):
   arg = asarray(arg)
   axis = numeric.normdim(arg.ndim+1, axis)
   assert 0 <= pos < length
-  return Kronecker(arg, axis, length, pos).simplified
+  return Kronecker(arg, axis, length, pos)
 
 def diagonalize(arg):
   arg = asarray(arg)
-  return Diagonalize(arg).simplified
+  return Diagonalize(arg)
 
 def concatenate(args, axis=0):
   args = _matchndim(*args)
   axis = numeric.normdim(args[0].ndim, axis)
-  return Concatenate(args, axis).simplified
+  return Concatenate(args, axis)
 
 def transpose( arg, trans=None ):
   'transpose'
@@ -3271,7 +3274,7 @@ def transpose( arg, trans=None ):
 
 def choose(level, choices):
   level, *choices = _matchndim(level, *choices)
-  return Choose(level, tuple(choices)).simplified
+  return Choose(level, tuple(choices))
 
 def _condlist_to_level( *condlist ):
   level = 0
@@ -3295,7 +3298,7 @@ def cross(arg1, arg2, axis):
   shape = _jointshape(arg1.shape, arg2.shape)
   axis = numeric.normdim(len(shape), axis)
   assert shape[axis] == 3
-  return Cross(arg1, arg2, axis).simplified
+  return Cross(arg1, arg2, axis)
 
 def outer( arg1, arg2=None, axis=0 ):
   'outer product'
@@ -3308,11 +3311,11 @@ def outer( arg1, arg2=None, axis=0 ):
 
 def pointwise(args, evalf, deriv=None, dtype=float):
   args = asarray(args)
-  return Pointwise(args, evalf, deriv, dtype).simplified
+  return Pointwise(args, evalf, deriv, dtype)
 
 def sign(arg):
   arg = asarray(arg)
-  return Sign(arg).simplified
+  return Sign(arg)
 
 def eig(arg, axes=(-2,-1), symmetric=False):
   arg = asarray(arg)
@@ -3320,8 +3323,8 @@ def eig(arg, axes=(-2,-1), symmetric=False):
   assert ax2 > ax1 # strict
   trans = list(range(ax1)) + [-2] + list(range(ax1,ax2-1)) + [-1] + list(range(ax2-1,arg.ndim-2))
   aligned_arg = align( arg, trans, arg.ndim )
-  eigval, eigvec = Eig(aligned_arg, symmetric).simplified
-  return Tuple([transpose(diagonalize(eigval), trans).simplified, transpose(eigvec, trans).simplified])
+  eigval, eigvec = Eig(aligned_arg, symmetric)
+  return Tuple([transpose(diagonalize(eigval), trans), transpose(eigvec, trans)])
 
 def swapaxes( arg, axis1=(-2,-1), axis2=None):
   if axis2 is None:
@@ -3384,7 +3387,7 @@ def take(arg, index, axis):
   else:
     assert index.dtype == int
 
-  return Take(arg, index, axis).simplified
+  return Take(arg, index, axis)
 
 def find( arg ):
   'find'
@@ -3423,14 +3426,14 @@ def inflate(arg, dofmap, length, axis):
       retval = concatenate( parts, axis=axis )
     assert retval.shape == tuple(shape)
     return retval
-  return Inflate(arg, dofmap, length, axis).simplified
+  return Inflate(arg, dofmap, length, axis)
 
 def mask(arg, mask, axis=0):
   arg = asarray(arg)
   axis = numeric.normdim(arg.ndim, axis)
   assert isinstance(mask,numpy.ndarray) and mask.ndim == 1 and mask.dtype == bool
   assert arg.shape[axis] == len(mask)
-  return Mask(arg, mask, axis).simplified
+  return Mask(arg, mask, axis)
 
 def J( geometry, ndims=None ):
   if ndims is None:
@@ -3444,12 +3447,12 @@ def unravel(func, axis, shape):
   axis = numeric.normdim(func.ndim, axis)
   shape = tuple(shape)
   assert func.shape[axis] == numpy.product(shape)
-  return Unravel(func, axis, tuple(shape)).simplified
+  return Unravel(func, axis, tuple(shape))
 
 def ravel(func, axis):
   func = asarray(func)
   axis = numeric.normdim( func.ndim-1, axis )
-  return Ravel(func, axis).simplified
+  return Ravel(func, axis)
 
 def replace_arguments(value, arguments):
   '''Replace :class:`Argument` objects in ``value``.

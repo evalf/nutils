@@ -297,7 +297,7 @@ class revolved_hollowcylinder(TestCase):
         numpy.testing.assert_array_almost_equal(surf, exact)
 
   def test_basistype(self):
-    self.assertIsInstance(self.basis, function.Inflate)
+    self.assertIsInstance(self.basis.simplified, function.Inflate)
 
   def test_dofcount(self):
     self.assertEqual(len(self.basis), 3*5)
