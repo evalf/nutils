@@ -529,12 +529,17 @@ class ArrayFunc( Array ):
     Array.__init__( self, args=args, shape=shape, dtype=float )
 
 class Constant( Array ):
-  'constant'
 
-  def __init__( self, value ):
-    assert isinstance( value, numpy.ndarray ) and value.dtype != object
+  def __init__(self, value):
+    assert isinstance(value, numpy.ndarray) and value.dtype != object
     self.value = value.copy()
-    Array.__init__( self, args=[], shape=value.shape, dtype=_jointdtype(value.dtype) )
+    super().__init__(args=[], shape=value.shape, dtype=_jointdtype(value.dtype))
+
+  @cache.property
+  def simplified(self):
+    if not self.value.any():
+      return zeros_like(self)
+    return self
 
   def evalf( self ):
     return self.value[_]
@@ -3102,20 +3107,14 @@ def trigtangent( angle ):
 
 eye = lambda n: diagonalize( expand( [1.], (n,) ) )
 
-def asarray( arg ):
-  'convert to Array'
-
+def asarray(arg):
   if isarray(arg):
     return arg
-
-  if isinstance( arg, numpy.ndarray ) or not util.isiterable( arg ):
-    array = numpy.asarray( arg )
-    assert array.dtype != object
-    if numpy.all( array == 0 ):
-      return zeros_like( array )
-    return Constant( array )
-
-  return stack( arg, axis=0 )
+  if isinstance(arg, (list,tuple)):
+    return stack(arg, axis=0)
+  array = numpy.asarray(arg)
+  assert array.dtype != object
+  return Constant(array).simplified
 
 def insert( arg, n ):
   'insert axis'
