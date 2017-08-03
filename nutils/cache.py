@@ -217,8 +217,8 @@ class Immutable( object, metaclass=ImmutableMeta ):
   def __str__( self ):
     return '{}({})'.format( self.__class__.__name__, ','.join( str(arg) for arg in self._args ) )
 
-  def edit(self, op, *args, **kwargs):
-    return self.__class__(*[op(arg, *args, **kwargs) for arg in self._args])
+  def edit(self, op):
+    return self.__class__(*[op(arg) for arg in self._args])
 
 class FileCache( object ):
   'cache'
@@ -305,5 +305,43 @@ class Tuple( object ):
     if item is self.unknown:
       self.__items[i] = item = self.__getitem( self.__start + i * self.__stride )
     return item
+
+def replace(func=None, initcache={}):
+  '''decorator for deep object replacement
+
+  Generates a replacement method for Immutable objects. Replacements can be
+  implement via the callable `func`, and/or by pre-populating a replacement
+  dictionary `initcache`.
+
+  Args
+  ----
+  func : callable which maps (obj, ...) onto replaced_obj, or None in case no
+         replacement is made.
+  initcache : :class:`dict` defining a obj->replaced_obj mapping.
+
+  Returns
+  -------
+  callable
+      The method that searches the object to perform the replacements.
+  '''
+
+  def wrapped(target, *funcargs, **funckwargs):
+    cache = dict(initcache)
+    def op(obj):
+      try:
+        replaced = cache[obj]
+      except TypeError: # unhashable
+        replaced = obj
+      except KeyError:
+        replaced = func and func(obj, *funcargs, **funckwargs)
+        if replaced is None:
+          if isinstance(obj, Immutable):
+            replaced = obj.edit(op)
+          else:
+            replaced = obj
+        cache[obj] = replaced
+      return replaced
+    return op(target)
+  return wrapped
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

@@ -237,9 +237,6 @@ class Evaluable( cache.Immutable ):
         break
     return '\n'.join( lines )
 
-  def _edit( self, op ):
-    raise NotImplementedError( '{} does not define an _edit method'.format( type(self).__name__ ) )
-
   @cache.property
   def simplified(self):
     return self.edit(lambda arg: arg.simplified if isevaluable(arg) else arg)
@@ -279,6 +276,9 @@ class Tuple( Evaluable ):
   @cache.property
   def simplified(self):
     return Tuple([item.simplified if isevaluable(item) else item for item in self.items])
+
+  def edit(self, op):
+    return Tuple([op(item) for item in self.items])
 
   def evalf( self, *items ):
     'evaluate'
@@ -325,8 +325,6 @@ class SelectChain( Evaluable ):
     assert isinstance( bf, transform.Bifurcate )
     ftrans = bf.trans1 if self.first else bf.trans2
     return transform.TransformChain( ftrans + trans[1:] )
-  def _edit( self, op ):
-    return SelectChain( op(self.trans), self.first )
 
 # ARRAYFUNC
 #
@@ -519,9 +517,6 @@ class Normal( Array ):
     nGder = matmat(self, Gder)
     return -matmat(G, inverse(GG), nGder)
 
-  def _edit( self, op ):
-    return Normal( op(self.lgrad) )
-
 class ArrayFunc( Array ):
   'deprecated ArrayFunc alias'
 
@@ -589,9 +584,6 @@ class Constant( Array ):
     if isinstance( n, Constant ):
       return asarray( numeric.power( self.value, n.value ) )
 
-  def _edit( self, op ):
-    return self
-
   def _dot( self, other, axes ):
     if self._isunit:
       shape = _jointshape( self.shape, other.shape )
@@ -647,9 +639,6 @@ class DofMap( Array ):
     except KeyError:
       dofs = numpy.empty( [0], dtype=int )
     return dofs[_]
-
-  def _edit( self, op ):
-    return DofMap( self.dofmap, self.shape[0], op(self.trans) )
 
 class ElementSize( Array):
   'dimension of hypercube with same volume as element'
@@ -747,9 +736,6 @@ class Align(Array):
       return
     return align( take( self.func, indices, n ), self.axes, self.ndim )
 
-  def _edit( self, op ):
-    return align( op(self.func), self.axes, self.ndim )
-
   def _dot( self, other, axes ):
     if len(self.axes) == self.ndim:
       funcaxes = tuple( self.axes.index(axis) for axis in axes )
@@ -801,9 +787,6 @@ class Get(Array):
   def _take( self, indices, axis ):
     return get( take( self.func, indices, axis+(axis>=self.axis) ), self.axis, self.item )
 
-  def _edit( self, op ):
-    return get( op(self.func), self.axis, self.item )
-
 class Product( Array ):
 
   def __init__(self, func):
@@ -837,9 +820,6 @@ class Product( Array ):
     func = get( self.func, i, item )
     return product( func, -1 )
 
-  def _edit( self, op ):
-    return product( op(self.func), -1 )
-
 class RootCoords( Array ):
   'root coords'
 
@@ -863,9 +843,6 @@ class RootCoords( Array ):
       return RootTransform(len(self), len(var), self.trans)
     return zeros(self.shape+var.shape)
 
-  def _edit( self, op ):
-    return RootCoords( len(self), op(self.trans) )
-
 class RootTransform( Array ):
   'root transform'
 
@@ -886,9 +863,6 @@ class RootTransform( Array ):
 
   def _derivative(self, var, seen):
     return zeros(self.shape+var.shape)
-
-  def _edit( self, op ):
-    return RootTransform( self.shape[0], self.shape[1], op(self.trans) )
 
 class Function( Array ):
   'function'
@@ -917,9 +891,6 @@ class Function( Array ):
           fvals = numeric.dot( fvals, linear, axis=i+2 )
     return fvals
 
-  def _edit( self, op ):
-    return Function( self.stdmap, self.shape, op(self.trans) )
-
   def _derivative(self, var, seen):
     if isinstance(var, LocalCoords):
       return Function(self.stdmap, self.shape+(len(var),), self.trans)
@@ -935,6 +906,9 @@ class Choose( Array ):
     dtype = _jointdtype(*[choice.dtype for choice in choices])
     assert level.ndim == len(shape)
     super().__init__(args=(level,)+choices, shape=shape, dtype=dtype)
+
+  def edit(self, op):
+    return Choose(op(self.level), tuple(op(func) for func in self.choices))
 
   @cache.property
   def simplified(self):
@@ -956,9 +930,6 @@ class Choose( Array ):
     if not any(grads): # all-zero special case; better would be allow merging of intervals
       return zeros(self.shape + var.shape)
     return choose(self.level[(...,)+(_,)*var.ndim], grads)
-
-  def _edit( self, op ):
-    return choose( op(self.level), [ op(choice) for choice in self.choices ] )
 
 class Choose2D( Array ):
   'piecewise function'
@@ -1017,9 +988,6 @@ class Inverse( Array ):
     a = slice(None)
     return -sum(self[(...,a,a,_,_)+(_,)*n] * G[(...,_,a,a,_)+(a,)*n] * self[(...,_,_,a,a)+(_,)*n], [-2-n, -3-n])
 
-  def _edit( self, op ):
-    return inverse( op(self.func) )
-
   def _eig(self, symmetric):
     eigval, eigvec = Eig(self.func, symmetric)
     return Tuple((reciprocal(eigval), eigvec))
@@ -1041,6 +1009,9 @@ class Concatenate(Array):
     self.funcs = funcs
     self.axis = axis
     super().__init__(args=funcs, shape=shape, dtype=dtype)
+
+  def edit(self, op):
+    return Concatenate(tuple(op(func) for func in self.funcs), self.axis)
 
   @cache.property
   def simplified(self):
@@ -1213,9 +1184,6 @@ class Concatenate(Array):
     if self.axis < self.ndim-1:
       return concatenate( [ diagonalize(func) for func in self.funcs ], self.axis )
 
-  def _edit( self, op ):
-    return concatenate( [ op(func) for func in self.funcs ], self.axis )
-
   def _kronecker( self, axis, length, pos ):
     return concatenate( [ kronecker(func,axis,length,pos) for func in self.funcs ], self.axis+(axis<=self.axis) )
 
@@ -1288,9 +1256,6 @@ class Cross( Array ):
     if axis != self.axis:
       return cross( take(aslength(self.func1,self.shape[axis],axis),index,axis), take(aslength(self.func2,self.shape[axis],axis),index,axis), self.axis )
 
-  def _edit( self, op ):
-    return cross( op(self.func1), op(self.func2), self.axis )
-
 class Determinant( Array ):
 
   def __init__(self, func):
@@ -1317,9 +1282,6 @@ class Determinant( Array ):
     ext = (...,)+(_,)*var.ndim
     return self[ext] * sum(Finv[ext] * G, axis=[-2-var.ndim,-1-var.ndim])
 
-  def _edit( self, op ):
-    return determinant( op(self.func) )
-
 class Multiply(Array):
 
   def __init__(self, funcs):
@@ -1328,6 +1290,9 @@ class Multiply(Array):
     assert isarray(func1) and isarray(func2)
     self.funcs = func1, func2
     super().__init__(args=self.funcs, shape=_jointshape(func1.shape, func2.shape), dtype=_jointdtype(func1.dtype,func2.dtype))
+
+  def edit(self, op):
+    return Multiply(orderedset([op(func) for func in self.funcs]))
 
   @cache.property
   def simplified(self):
@@ -1418,10 +1383,6 @@ class Multiply(Array):
     if func1pow is not None and func2pow is not None:
       return multiply( func1pow, func2pow )
 
-  def _edit( self, op ):
-    func1, func2 = self.funcs
-    return multiply( op(func1), op(func2) )
-
   def _dot( self, other, axes ):
     func1, func2 = self.funcs
     s = [ slice(None) ] * self.ndim
@@ -1452,6 +1413,9 @@ class Add(Array):
     assert isarray(func1) and isarray(func2)
     self.funcs = func1, func2
     super().__init__(args=self.funcs, shape=_jointshape(func1.shape, func2.shape), dtype=_jointdtype(func1.dtype,func2.dtype))
+
+  def edit(self, op):
+    return Add(orderedset([op(func) for func in self.funcs]))
 
   @cache.property
   def simplified(self):
@@ -1509,10 +1473,6 @@ class Add(Array):
     if func2_other is not None:
       return add( func1, func2_other )
 
-  def _edit( self, op ):
-    func1, func2 = self.funcs
-    return add( op(func1), op(func2) )
-
   def _mask( self, maskvec, axis ):
     func1, func2 = self.funcs
     if func1.shape[axis] != 1:
@@ -1531,6 +1491,9 @@ class BlockAdd( Array ):
     shape = _jointshape( *( func.shape for func in self.funcs ) )
     dtype = _jointdtype( *( func.dtype for func in self.funcs ) )
     super().__init__(args=funcs, shape=shape, dtype=dtype)
+
+  def edit(self, op):
+    return BlockAdd([op(func) for func in self.funcs])
 
   @cache.property
   def simplified(self):
@@ -1551,9 +1514,6 @@ class BlockAdd( Array ):
 
   def _dot( self, other, axes ):
     return BlockAdd([dot(func, other, axes) for func in self.funcs])
-
-  def _edit( self, op ):
-    return BlockAdd([op(func) for func in self.funcs])
 
   def _sum( self, axis ):
     return BlockAdd([sum(func, axis) for func in self.funcs])
@@ -1608,6 +1568,9 @@ class Dot(Array):
     _abc = numeric._abc[:func1.ndim+1]
     self._einsumfmt = '{0},{0}->{1}'.format(_abc, ''.join(a for i, a in enumerate(_abc) if i-1 not in axes))
     super().__init__(args=funcs, shape=shape, dtype=_jointdtype(func1.dtype,func2.dtype))
+
+  def edit(self, op):
+    return Dot(orderedset([op(func) for func in self.funcs]), self.axes)
 
   @cache.property
   def simplified(self):
@@ -1667,10 +1630,6 @@ class Dot(Array):
     funcaxis = self.axes_complement[axis]
     return dot( take( aslength(func1,self.shape[axis],funcaxis), index, funcaxis ), take( aslength(func2,self.shape[axis],funcaxis), index, funcaxis ), self.axes )
 
-  def _edit( self, op ):
-    func1, func2 = self.funcs
-    return dot( op(func1), op(func2), self.axes )
-
 class Sum( Array ):
 
   def __init__(self, func, axis):
@@ -1701,9 +1660,6 @@ class Sum( Array ):
   def _derivative(self, var, seen):
     return sum(derivative(self.func, var, seen), self.axis)
 
-  def _edit( self, op ):
-    return sum( op(self.func), axis=self.axis )
-
 class Debug( Array ):
   'debug'
 
@@ -1727,9 +1683,6 @@ class Debug( Array ):
 
   def _derivative(self, var, seen):
     return Debug(derivative(self.func, var, seen))
-
-  def _edit( self, op ):
-    return Debug( op(self.func) )
 
 class TakeDiag( Array ):
 
@@ -1758,9 +1711,6 @@ class TakeDiag( Array ):
   def _sum( self, axis ):
     if axis != self.ndim-1:
       return takediag( sum( self.func, axis ) )
-
-  def _edit( self, op ):
-    return takediag( op(self.func) )
 
 class Take( Array ):
 
@@ -1804,9 +1754,6 @@ class Take( Array ):
     trytake = self.func._take(index, axis)
     if trytake is not None:
       return take( trytake, self.indices, self.axis )
-
-  def _edit( self, op ):
-    return take( op(self.func), op(self.indices), self.axis )
 
 class Power(Array):
 
@@ -1875,9 +1822,6 @@ class Power(Array):
     if iszero( self.power % 2 ):
       return expand( 1., self.shape )
 
-  def _edit( self, op ):
-    return power( op(self.func), op(self.power) )
-
 class Pointwise( Array ):
 
   def __init__(self, args, evalfun, deriv, dtype):
@@ -1915,9 +1859,6 @@ class Pointwise( Array ):
 
   def _take( self, index, axis ):
     return pointwise( take( self.args, index, axis+1 ), self.evalfun, self.deriv, self.dtype )
-
-  def _edit( self, op ):
-    return pointwise( op(self.args), self.evalfun, self.deriv, self.dtype )
 
 class Sign( Array ):
 
@@ -1958,9 +1899,6 @@ class Sign( Array ):
     if iszero( n % 2 ):
       return expand( 1., self.shape )
 
-  def _edit( self, op ):
-    return sign( op(self.func) )
-
 class Sampled( Array ):
   'sampled'
 
@@ -1979,9 +1917,6 @@ class Sampled( Array ):
     evalpoints = tail.apply( points )
     assert mypoints.shape == evalpoints.shape and numpy.all( mypoints == evalpoints ), 'Illegal point set'
     return myvals
-
-  def _edit( self, op ):
-    return Sampled( self.data, op(self.trans) )
 
 class Elemwise( Array ):
   'elementwise constant data'
@@ -2005,9 +1940,6 @@ class Elemwise( Array ):
 
   def _derivative(self, var, seen):
     return zeros(self.shape+var.shape)
-
-  def _edit( self, op ):
-    return Elemwise( self.fmap, self.shape, self.default, op(self.trans) )
 
 class Eig( Evaluable ):
 
@@ -2036,9 +1968,6 @@ class Eig( Evaluable ):
   def evalf(self, arr):
     return (numpy.linalg.eigh if self.symmetric else numeric.eig)(arr)
 
-  def _edit( self, op ):
-    return Eig(op(self.func), self.symmetric)
-
 class ArrayFromTuple(Array):
 
   def __init__(self, arrays, index, shape, dtype):
@@ -2051,9 +1980,6 @@ class ArrayFromTuple(Array):
   def evalf(self, arrays):
     assert isinstance(arrays, tuple)
     return arrays[self.index]
-
-  def _edit(self, op):
-    return ArrayFromTuple(op(self.arrays), self.index, self.shape, self.dtype)
 
 class Zeros( Array ):
   'zero'
@@ -2135,9 +2061,6 @@ class Zeros( Array ):
 
   def _kronecker( self, axis, length, pos ):
     return zeros( self.shape[:axis]+(length,)+self.shape[axis:], dtype=self.dtype )
-
-  def _edit( self, op ):
-    return self
 
   def _mask( self, maskvec, axis ):
     return zeros( self.shape[:axis] + (maskvec.sum(),) + self.shape[axis+1:], dtype=self.dtype )
@@ -2275,9 +2198,6 @@ class Inflate( Array ):
     if axis != self.axis:
       return inflate( repeat(self.func,length,axis), self.dofmap, self.length, self.axis )
 
-  def _edit( self, op ):
-    return inflate( op(self.func), op(self.dofmap), self.length, self.axis )
-
   def _kronecker( self, axis, length, pos ):
     return inflate( kronecker(self.func,axis,length,pos), self.dofmap, self.length, self.axis+(axis<=self.axis) )
 
@@ -2350,9 +2270,6 @@ class Diagonalize( Array ):
       newaxes = axes[:self.ndim-2] + tuple(ax for ax in range(ndim) if ax not in axes) + axes[self.ndim-2:]
       assert len(newaxes) == ndim
       return align(newself, newaxes, ndim)
-
-  def _edit( self, op ):
-    return diagonalize( op(self.func) )
 
   def _takediag( self ):
     return self.func
@@ -2458,9 +2375,6 @@ class Repeat( Array ):
       return func * self.length
     return aslength( func, self.length, self.axis - builtins.sum( axis < self.axis for axis in axes ) )
 
-  def _edit( self, op ):
-    return repeat( op(self.func), self.length, self.axis )
-
   def _kronecker( self, axis, length, pos ):
     return repeat( kronecker(self.func,axis,length,pos), self.length, self.axis+(axis<=self.axis) )
 
@@ -2479,9 +2393,6 @@ class Guard( Array ):
   @staticmethod
   def evalf( dat ):
     return dat
-
-  def _edit( self, op ):
-    return Guard( op(self.fun) )
 
   def _derivative(self, var, seen):
     return Guard(derivative(self.fun, var, seen))
@@ -2505,9 +2416,6 @@ class TrigNormal( Array ):
     if isinstance( other, (TrigTangent,TrigNormal) ) and self.angle == other.angle:
       return asarray( 1 if isinstance(other,TrigNormal) else 0 )
 
-  def _edit( self, op ):
-    return trignormal( op(self.angle) )
-
 class TrigTangent( Array ):
   '-sin, cos'
 
@@ -2527,9 +2435,6 @@ class TrigTangent( Array ):
     if isinstance( other, (TrigTangent,TrigNormal) ) and self.angle == other.angle:
       return asarray( 1 if isinstance(other,TrigTangent) else 0 )
 
-  def _edit( self, op ):
-    return trigtangent( op(self.angle) )
-
 class Find( Array ):
   'indices of boolean index vector'
 
@@ -2543,9 +2448,6 @@ class Find( Array ):
     where, = where
     index, = where.nonzero()
     return index[_]
-
-  def _edit( self, op ):
-    return Find( op(self.where) )
 
 class Kronecker( Array ):
 
@@ -2639,9 +2541,6 @@ class Kronecker( Array ):
     if value == 0:
       return kronecker( pointwise( self.func, evalf, deriv, dtype ), self.axis-1, self.length, self.pos )
 
-  def _edit( self, op ):
-    return kronecker( op(self.func), self.axis, self.length, self.pos )
-
   def _mask( self, maskvec, axis ):
     if axis != self.axis:
       return kronecker( mask( self.func, maskvec, axis-(axis>self.axis) ), self.axis, self.length, self.pos )
@@ -2707,9 +2606,6 @@ class Argument(DerivativeTargetBase):
       return args[self._name][_]
     except KeyError:
       raise ValueError('argument {!r} missing'.format(self._name))
-
-  def _edit( self, op ):
-    return self
 
   def _derivative(self, var, seen):
     if isinstance(var, Argument) and var._name == self._name:
@@ -2826,9 +2722,6 @@ class Ravel( Array ):
       newind = ravel(ind[self.axis][:,_] * self.func.shape[self.axis+1] + ind[self.axis+1][_,:], axis=0)
       yield (ind[:self.axis] + (newind,) + ind[self.axis+2:]), ravel(f, axis=self.axis)
 
-  def _edit( self, op ):
-    return ravel( op(self.func), self.axis )
-
 class Unravel( Array ):
 
   def __init__(self, func, axis, shape):
@@ -2858,9 +2751,6 @@ class Unravel( Array ):
   def evalf( self, f ):
     return f.reshape( f.shape[0], *self.shape )
 
-  def _edit( self, op ):
-    return unravel( op(self.func), self.axis, self.unravelshape )
-    
 class Mask( Array ):
 
   def __init__(self, func, mask, axis):
@@ -2888,9 +2778,6 @@ class Mask( Array ):
 
   def _derivative(self, var, seen):
     return mask(derivative(self.func, var, seen), self.mask, self.axis)
-
-  def _edit( self, op ):
-    return mask( op(self.func), self.mask, self.axis )
 
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 
@@ -3046,12 +2933,12 @@ subtract = lambda arg1, arg2: add( arg1, negative(arg2) )
 mean = lambda arg: .5 * ( arg + opposite(arg) )
 jump = lambda arg: opposite(arg) - arg
 add_T = lambda arg, axes=(-2,-1): swapaxes( arg, axes ) + arg
-edit = lambda arg, f: arg._edit(f) if isevaluable(arg) else arg
 blocks = lambda arg: asarray(arg).simplified.blocks
 rootcoords = lambda ndims: RootCoords( ndims )
 sampled = lambda data, ndims: Sampled( data )
-bifurcate1 = lambda arg: SelectChain(arg,True ) if arg is TRANS or arg is OPPTRANS else edit( arg, bifurcate1 )
-bifurcate2 = lambda arg: SelectChain(arg,False) if arg is TRANS or arg is OPPTRANS else edit( arg, bifurcate2 )
+opposite = cache.replace(initcache={TRANS: OPPTRANS, OPPTRANS: TRANS})
+bifurcate1 = cache.replace(initcache={TRANS: SelectChain(TRANS, True), OPPTRANS: SelectChain(OPPTRANS, True)})
+bifurcate2 = cache.replace(initcache={TRANS: SelectChain(TRANS, False), OPPTRANS: SelectChain(OPPTRANS, False)})
 bifurcate = lambda arg1, arg2: ( bifurcate1(arg1), bifurcate2(arg2) )
 curvature = lambda geom, ndims=-1: geom.normal().div(geom, ndims=ndims)
 laplace = lambda arg, geom, ndims=0: arg.grad(geom, ndims).div(geom, ndims)
@@ -3336,13 +3223,6 @@ def swapaxes( arg, axis1=(-2,-1), axis2=None):
   trans[axis2] = numeric.normdim(arg.ndim, axis1)
   return align(arg, trans, arg.ndim)
 
-def opposite( arg ):
-  'evaluate jump over interface'
-
-  return OPPTRANS if arg is TRANS \
-    else TRANS if arg is OPPTRANS \
-    else edit( arg, opposite )
-
 def function( fmap, nmap, ndofs ):
   'create function on ndims-element'
 
@@ -3454,6 +3334,7 @@ def ravel(func, axis):
   axis = numeric.normdim( func.ndim-1, axis )
   return Ravel(func, axis)
 
+@cache.replace
 def replace_arguments(value, arguments):
   '''Replace :class:`Argument` objects in ``value``.
 
@@ -3473,39 +3354,17 @@ def replace_arguments(value, arguments):
   :class:`Array`
       The edited ``value``.
   '''
-  d = {}
-  def s(f):
-    try:
-      v = d[f]
-    except KeyError:
-      if isinstance(f, Argument) and f._name in arguments:
-        v = arguments[f._name]
-        assert f.shape[:f.ndim-f._nderiv] == v.shape
-        for ndims in f.shape[f.ndim-f._nderiv:]:
-          v = localgradient(v, ndims)
-      else:
-        v = edit(f, s)
-      if isarray(f):
-        assert v.shape == f.shape
-      d[f] = v
+  if isinstance(value, Argument) and value._name in arguments:
+    v = asarray(arguments[value._name])
+    assert value.shape[:value.ndim-value._nderiv] == v.shape
+    for ndims in value.shape[value.ndim-value._nderiv:]:
+      v = localgradient(v, ndims)
     return v
-  return s(value)
 
-def zero_argument_derivatives(fun):
-  d = {}
-  def s(f):
-    try:
-      v = d[f]
-    except KeyError:
-      if isinstance(f, Argument) and f._nderiv > 0:
-        v = zeros_like(f)
-      else:
-        v = edit(f, s)
-      if isarray(f):
-        assert v.shape == f.shape
-      d[f] = v
-    return v
-  return s(fun)
+@cache.replace
+def zero_argument_derivatives(arg):
+  if isinstance(arg, Argument) and arg._nderiv > 0:
+    return zeros_like(arg)
 
 def _eval_ast(ast, functions):
   '''evaluate ``ast`` generated by :func:`nutils.expression.parse`'''

@@ -649,7 +649,7 @@ class Topology( object ):
     angle, = function.rootcoords(1)
     geom, angle = function.bifurcate( geom, angle )
     revgeom = function.concatenate([ geom[0] * function.trignormal(angle), geom[1:] ])
-    simplify = lambda arg: 0 if arg is angle else function.edit( arg, simplify )
+    simplify = cache.replace(initcache={angle: function.zeros(())})
     return revdomain, revgeom, simplify
 
   def extruded( self, geom, nelems, periodic=False, bnames=('front','back') ):

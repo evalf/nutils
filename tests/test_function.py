@@ -172,8 +172,9 @@ class check(TestCase):
 
   def test_edit(self):
     def check_identity(arg):
-      newarg = function.edit(arg, check_identity)
-      self.assertEqual(arg, newarg)
+      if function.isevaluable(arg):
+        newarg = arg.edit(check_identity)
+        self.assertEqual(arg, newarg)
       return arg
     check_identity(self.op(*self.args))
 
