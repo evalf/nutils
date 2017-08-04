@@ -261,7 +261,7 @@ def regularize( bbox, spacing, xy=numpy.empty((0,2)) ):
   index0 = numeric.floor( bbox[:,0] / (2*spacing) ) * 2 - 1
   shape = numeric.ceil( bbox[:,1] / (2*spacing) ) * 2 + 2 - index0
   index = numeric.round( xy / spacing ) - index0
-  keep = numpy.all( (index >= 0) & (index < shape), axis=1 )
+  keep = numpy.logical_and(numpy.greater_equal(index, 0), numpy.less(index, shape)).all(axis=1)
   mask = numpy.zeros( shape, dtype=bool )
   for i, ind in enumerate(index):
     if keep[i]:

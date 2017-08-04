@@ -193,7 +193,7 @@ class check(TestCase):
     xi = xi0.reshape(-1, xi0.shape[-1])
     while countdown:
       err = target - self.geom.eval(self.elem,xi)
-      if numpy.all(numpy.abs(err) < 1e-12):
+      if numpy.less(numpy.abs(err), 1e-12).all():
         countdown -= 1
       dxi_root = (Jinv.eval(self.elem,xi) * err[...,_,:]).sum(-1)
       #xi = xi + numpy.dot(dxi_root, self.elem.inv_root_transform.T)

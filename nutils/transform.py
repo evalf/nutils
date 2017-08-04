@@ -361,7 +361,7 @@ def affine( linear, offset, denom=1, isflipped=None ):
       trans = Updim( r_linear, r_offset, isflipped )
     elif n == 0:
       trans = Shift( r_offset )
-    elif n == 1 or r_linear[0,-1] == 0 and numpy.all( r_linear == r_linear[0,0] * numpy.eye(n) ):
+    elif n == 1 or r_linear[0,-1] == 0 and numpy.equal(r_linear, r_linear[0,0] * numpy.eye(n)).all():
       trans = Scale( r_linear[0,0], r_offset ) if r_linear[0,0] != 1 else Shift( r_offset )
     else:
       trans = Square( r_linear, r_offset )
@@ -394,7 +394,7 @@ def equivalent( trans1, trans2 ):
   while trans1 and trans2 and trans1[0] == trans2[0]:
     trans1 = trans1[1:]
     trans2 = trans2[1:]
-  return numpy.all( fulllinear(trans1) == fulllinear(trans2) ) and numpy.all( offset(trans1) == offset(trans2) )
+  return numpy.equal(fulllinear(trans1), fulllinear(trans2)).all() and numpy.equal(offset(trans1), offset(trans2)).all()
 
 
 ## INSTANCES

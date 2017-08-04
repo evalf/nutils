@@ -59,8 +59,8 @@ class HashableArray( HashableBase ):
     return hash( self.quickdata )
   def __eq__( self, other ):
     # check full array only if we really must
-    return isinstance(other,HashableArray) and ( self.array is other.array
-      or self.quickdata == other.quickdata and numpy.all( self.array == other.array ) )
+    return isinstance(other,HashableArray) and (self.array is other.array
+      or self.quickdata == other.quickdata and numpy.equal(self.array, other.array).all())
   
 class HashableList( tuple, HashableBase ):
   def __new__( cls, L ):

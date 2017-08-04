@@ -337,7 +337,7 @@ class Topology( object ):
       assert fun2.ndim == 0
       A, b, f2, area = self.integrate( [Afun,bfun,fun2,1], geometry=geometry, ischeme=ischeme, edit=edit, arguments=arguments, title='building system' )
       N = A.rowsupp(droptol)
-      if numpy.all( b == 0 ):
+      if numpy.equal(b, 0).all():
         constrain[~constrain.where&N] = 0
         avg_error = 0.
       else:
@@ -554,7 +554,7 @@ class Topology( object ):
 
   def select( self, indicator, ischeme='bezier2', *, arguments=None ):
     values = self.elem_eval( indicator, ischeme, separate=True, arguments=arguments )
-    selected = [ elem for elem, value in zip( self, values ) if numpy.any( value > 0 ) ]
+    selected = [elem for elem, value in zip( self, values ) if numpy.greater(value, 0).any()]
     return UnstructuredTopology( self.ndims, selected )
 
   def prune_basis( self, basis ):
@@ -582,11 +582,10 @@ class Topology( object ):
     bboxes = numpy.array([ numpy.mean(v,axis=0) * (1-scale) + numpy.array([ numpy.min(v,axis=0), numpy.max(v,axis=0) ]) * scale
       for v in vertices ]) # nelems x {min,max} x ndims
     vref = element.getsimplex(0)
-
     ielems = parallel.shzeros(len(points), dtype=int)
     xis = parallel.shzeros((len(points),len(geom)), dtype=float)
     for ipoint, point in parallel.pariter(log.enumerate('point', points), nprocs=nprocs):
-      ielemcandidates, = ((point >= bboxes[:,0,:]) & (point <= bboxes[:,1,:])).all(axis=-1).nonzero()
+      ielemcandidates, = numpy.logical_and(numpy.greater_equal(point, bboxes[:,0,:]), numpy.less_equal(point, bboxes[:,1,:])).all(axis=-1).nonzero()
       for ielem in sorted( ielemcandidates, key=lambda i: numpy.linalg.norm(bboxes[i].mean(0)-point) ):
         converged = False
         elem = self.elements[ielem]
@@ -1235,7 +1234,7 @@ class StructuredTopology( Topology ):
   
     if p > 0:
   
-      assert (lknots[:-1]-lknots[1:]<numpy.spacing(1)).all(), 'Local knot vector should be non-decreasing'
+      assert numpy.less(lknots[:-1]-lknots[1:], numpy.spacing(1)).all(), 'Local knot vector should be non-decreasing'
       assert lknots[p]-lknots[p-1]>numpy.spacing(1), 'Element size should be positive'
       
       lknots = lknots.astype(float)

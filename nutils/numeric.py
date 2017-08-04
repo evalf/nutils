@@ -450,7 +450,7 @@ def solve_exact( A, *B ):
   except:
     raise numpy.linalg.LinAlgError( 'linear system has no base2 solution' )
   X = [ Y[:,s] for s in S ]
-  assert all( numpy.all( dot(A,x) == b ) for (x,b) in zip(X,B) )
+  assert all(numpy.equal(dot(A,x), b).all() for (x,b) in zip(X,B))
   if len(B) == 1:
     X, = X
   return X

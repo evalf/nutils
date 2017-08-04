@@ -200,7 +200,7 @@ class Reference( cache.Immutable ):
       for (iedge1,iedge2), (jedge1,jedge2) in ribbons:
         itrans = self.edge_transforms[iedge1] << self.edge_refs[iedge1].edge_transforms[iedge2]
         jtrans = self.edge_transforms[jedge1] << self.edge_refs[jedge1].edge_transforms[jedge2]
-        assert ( itrans.linear == jtrans.linear ).all() and ( itrans.offset == jtrans.offset ).all()
+        assert numpy.equal(itrans.linear, jtrans.linear).all() and numpy.equal(itrans.offset, jtrans.offset).all()
         iref = self.edge_refs[iedge1].edge_refs[iedge2]
         jref = self.edge_refs[jedge1].edge_refs[jedge2]
         assert iref == jref
@@ -276,8 +276,8 @@ class Reference( cache.Immutable ):
     'trim element along levelset'
 
     assert len(levels) == self.nvertices_by_level(maxrefine)
-    return self if not self or ( levels >= 0 ).all() \
-      else self.empty if ( levels <= 0 ).all() \
+    return self if not self or numpy.greater_equal(levels, 0).all() \
+      else self.empty if numpy.less_equal(levels, 0).all() \
       else self.with_children( cref.trim( clevels, maxrefine-1, ndivisions )
             for cref, clevels in zip( self.child_refs, self.child_divide(levels,maxrefine) ) ) if maxrefine > 0 \
       else self.slice( lambda vertices: numeric.dot( self.stdfunc(1).eval(vertices), levels ), ndivisions )
@@ -289,9 +289,9 @@ class Reference( cache.Immutable ):
 
     assert numeric.isint( ndivisions )
     assert len(levels) == self.nverts
-    if numpy.all( levels >= 0 ):
+    if numpy.greater_equal(levels, 0).all():
       return self
-    if numpy.all( levels <= 0 ):
+    if numpy.less_equal(levels, 0).all():
       return self.empty
 
     nbins = 2**ndivisions
@@ -345,8 +345,8 @@ class Reference( cache.Immutable ):
       w_normal = we[:,_] * trans.ext
       check_zero += w_normal.sum(0)
       check_volume += numeric.contract( trans.apply(xe), w_normal, axis=0 )
-    zero_ok = numpy.all( abs(check_zero) < tol )
-    volume_ok = numpy.all( abs(check_volume-volume) < tol )
+    zero_ok = numpy.less(abs(check_zero), tol).all()
+    volume_ok = numpy.less(abs(check_volume-volume), tol).all()
     if zero_ok and volume_ok:
       return
     s = [ 'divergence check failed: ' + ', '.join( name for (name,ok) in (('zero',zero_ok),('volume',volume_ok)) if not ok ) ]
@@ -1383,7 +1383,7 @@ class MosaicReference( Reference ):
       return self
     if isinstance( other, MosaicReference ) and other.baseref == self:
       return other
-    if isinstance( other, MosaicReference ) and self.baseref == other.baseref and numpy.all( other._midpoint == self._midpoint ):
+    if isinstance( other, MosaicReference ) and self.baseref == other.baseref and numpy.equal(other._midpoint, self._midpoint).all():
       isect_edge_refs = [ selfedge & otheredge for selfedge, otheredge in zip( self._edge_refs, other._edge_refs ) ]
       if not any(isect_edge_refs):
         return self.empty
@@ -1393,7 +1393,7 @@ class MosaicReference( Reference ):
   def __or__( self, other ):
     if other in (self,self.baseref):
       return other
-    if isinstance( other, MosaicReference ) and self.baseref == other.baseref and numpy.all( other._midpoint == self._midpoint ):
+    if isinstance( other, MosaicReference ) and self.baseref == other.baseref and numpy.equal(other._midpoint, self._midpoint).all():
       union_edge_refs = [ selfedge | otheredge for selfedge, otheredge in zip( self._edge_refs, other._edge_refs ) ]
       if tuple(union_edge_refs) == tuple(self.baseref.edge_refs):
         return self.baseref

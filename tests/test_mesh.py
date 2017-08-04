@@ -29,7 +29,7 @@ class gmsh(TestCase):
   def test_pointeval(self):
     xy = self.domain.points.elem_eval(self.geom, ischeme='gauss1')
     self.assertEqual(xy.shape, (2, 2) if self.domain.ndims==2 else (4, 3))
-    self.assertTrue(numpy.all(xy == ([1,0] if self.domain.ndims==2 else [1,0,0])))
+    self.assertTrue(numpy.equal(xy, ([1,0] if self.domain.ndims==2 else [1,0,0])).all())
 
 # gmsh geo 2D:
 #
@@ -264,9 +264,9 @@ class gmshrect(TestCase):
     ax, ay = self.domain.interfaces['iface'].elem_eval(self.geom, ischeme='uniform1', separate=False).T
     bx, by = self.domain['left'].boundary['iface'].elem_eval(self.geom, ischeme='uniform1', separate=False).T
     cx, cy = self.domain['right'].boundary['iface'].elem_eval(self.geom, ischeme='uniform1', separate=False).T
-    self.assertTrue(all(ax == 1))
-    self.assertTrue(all(bx == 1))
-    self.assertTrue(all(cx == 1))
+    self.assertTrue(numpy.equal(ax, 1).all())
+    self.assertTrue(numpy.equal(bx, 1).all())
+    self.assertTrue(numpy.equal(cx, 1).all())
     self.assertTrue(min(ay) == min(by) == min(cy))
     self.assertTrue(max(ay) == max(by) == max(cy))
 

@@ -346,7 +346,7 @@ def sum(arg, axis=None):
     axis = numeric.normdim(arg.ndim, axis),
   else:
     axis = _norm_and_sort(arg.ndim, axis)
-    assert numpy.all(numpy.diff(axis) > 0), 'duplicate axes in sum'
+    assert numpy.greater(numpy.diff(axis), 0).all(), 'duplicate axes in sum'
   summed = arg
   for ax in reversed(axis):
     summed = Sum(summed, ax)
@@ -542,7 +542,7 @@ class Constant( Array ):
 
   @cache.property
   def _isunit( self ):
-    return numpy.all( self.value == 1 )
+    return numpy.equal(self.value, 1).all()
 
   def _derivative(self, var, seen):
     return zeros(self.shape + var.shape)
@@ -1148,13 +1148,13 @@ class Concatenate(Array):
     if not indices.isconstant:
       return
     indices, = indices.eval()
-    assert numpy.all( (indices>=0) & (indices<self.shape[axis]) )
+    assert numpy.logical_and(numpy.greater_equal(indices, 0), numpy.less(indices, self.shape[axis])).all()
     ifuncs = numpy.hstack([ numpy.repeat(ifunc,func.shape[axis]) for ifunc, func in enumerate(self.funcs) ])[indices]
     splits, = numpy.nonzero( numpy.diff(ifuncs) != 0 )
     funcs = []
     for i, j in zip( numpy.hstack([ 0, splits+1 ]), numpy.hstack([ splits+1, len(indices) ]) ):
       ifunc = ifuncs[i]
-      assert numpy.all( ifuncs[i:j] == ifunc )
+      assert numpy.equal(ifuncs[i:j], ifunc).all()
       offset = builtins.sum( func.shape[axis] for func in self.funcs[:ifunc] )
       funcs.append( take( self.funcs[ifunc], indices[i:j] - offset, axis ) )
     if len( funcs ) == 1:
@@ -1203,7 +1203,7 @@ class Interpolate( Array ):
     xp = numpy.array( xp )
     fp = numpy.array( fp )
     assert xp.ndim == fp.ndim == 1
-    if not numpy.all( numpy.diff(xp) > 0 ):
+    if not numpy.greater(numpy.diff(xp), 0).all():
       warnings.warn( 'supplied x-values are non-increasing' )
 
     assert x.ndim == 0
@@ -1732,7 +1732,7 @@ class Take( Array ):
       return zeros(self.shape, dtype=self.dtype)
     if indices.isconstant:
       index_, = indices.eval()
-      if len(index_) == func.shape[self.axis] and numpy.all(numpy.diff(index_) == 1):
+      if len(index_) == func.shape[self.axis] and numpy.equal(numpy.diff(index_), 1).all():
         return func
     retval = func._take(indices, self.axis)
     if retval is not None:
@@ -1915,7 +1915,7 @@ class Sampled( Array ):
   def evalf( self, trans, points ):
     (myvals,mypoints), tail = trans.lookup_item( self.data )
     evalpoints = tail.apply( points )
-    assert mypoints.shape == evalpoints.shape and numpy.all( mypoints == evalpoints ), 'Illegal point set'
+    assert mypoints.shape == evalpoints.shape and numpy.equal(mypoints, evalpoints).all(), 'Illegal point set'
     return myvals
 
 class Elemwise( Array ):
@@ -2284,7 +2284,7 @@ class Diagonalize( Array ):
     if axis < self.ndim-2:
       return diagonalize( mask( self.func, maskvec, axis ) )
     indices, = numpy.where( maskvec )
-    if not numpy.all( numpy.diff(indices) == 1 ):
+    if not numpy.equal(numpy.diff(indices), 1).all():
       return
     # consecutive sub-block
     rev = slice( None, None, 1 if axis == self.ndim-1 else -1 )
@@ -2781,7 +2781,7 @@ class Mask( Array ):
 
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 
-_ascending = lambda arg: ( numpy.diff(arg) > 0 ).all()
+_ascending = lambda arg: numpy.greater(numpy.diff(arg), 0).all()
 _normdims = lambda ndim, shapes: tuple( numeric.normdim(ndim,sh) for sh in shapes )
 
 def _jointshape( shape, *shapes ):
@@ -3257,7 +3257,7 @@ def take(arg, index, axis):
       return mask(arg, index, axis)
     assert index.dtype == int
     index[index < 0] += arg.shape[axis]
-    assert numpy.all((index>=0) & (index<arg.shape[axis])), 'indices out of bounds'
+    assert numpy.logical_and(numpy.greater_equal(index, 0), numpy.less(index, arg.shape[axis])).all(), 'indices out of bounds'
 
   index = asarray(index)
   assert index.ndim == 1
@@ -3292,8 +3292,8 @@ def inflate(arg, dofmap, length, axis):
     assert numeric.isint(n), 'constant inflation only allowed over fixed-length axis'
     index, = dofmap.eval()
     assert len(index) == n
-    assert numpy.all( index >= 0 ) and numpy.all( index < length )
-    assert numpy.all( numpy.diff(index) == 1 ), 'constant inflation must be contiguous'
+    assert numpy.greater_equal(index, 0).all() and numpy.less(index, length).all()
+    assert numpy.equal(numpy.diff(index), 1).all(), 'constant inflation must be contiguous'
     if n == length:
       retval = arg
     else:
