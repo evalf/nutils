@@ -54,9 +54,11 @@ class Element( object ):
     return Element( self.reference, self.transform, opp.transform, oriented or opp.opposite==self.transform )
 
   def __mul__( self, other ):
-    if self.opposite or other.opposite:
-      assert not self.opposite or not other.opposite, 'cannot multiply two interface elements'
-      opposite = transform.stack( self.opposite or self.transform, other.opposite or other.transform )
+    self_is_iface = self.opposite != self.transform
+    other_is_iface = other.opposite != other.transform
+    if self_is_iface or other_is_iface:
+      assert not self_is_iface or not other_is_iface, 'cannot multiply two interface elements'
+      opposite = transform.stack( self.opposite, other.opposite )
     else:
       opposite = None
     return Element( self.reference * other.reference, transform.stack( self.transform, other.transform ), opposite, oriented=True )
