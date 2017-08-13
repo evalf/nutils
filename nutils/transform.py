@@ -11,7 +11,7 @@ The transform module.
 """
 
 from . import cache, numeric, core, _
-import numpy
+import numpy, collections
 
 
 class TransformChain( tuple ):
@@ -132,7 +132,7 @@ class TransformChain( tuple ):
     if not head_tail:
       raise KeyError( self )
     head, tail = head_tail
-    item = transforms[head] if isinstance( transforms, dict ) \
+    item = transforms[head] if isinstance(transforms, collections.Mapping) \
       else transforms.index( head )
     return item, tail
 

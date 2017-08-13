@@ -144,7 +144,7 @@ class Evaluable( cache.Immutable ):
     else:
       trans = elem.transform
       opptrans = elem.opposite
-      if isinstance( ischeme, dict ):
+      if isinstance(ischeme, collections.abc.Mapping):
         ischeme = ischeme[elem]
       if isinstance( ischeme, str ):
         points, weights = fcache[elem.reference.getischeme]( ischeme )
@@ -2826,7 +2826,7 @@ def _obj2str( obj ):
     if len(obj) < 6:
       return '(%s)' % ','.join( _obj2str(o) for o in obj )
     return '(#%d)' % len(obj)
-  if isinstance( obj, dict ):
+  if isinstance(obj, collections.abc.Mapping):
     return '{#%d}' % len(obj)
   if isinstance( obj, slice ):
     I = ''

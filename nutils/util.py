@@ -14,7 +14,7 @@ creation and initiation of a log file.
 """
 
 from . import numeric
-import sys, os, numpy, weakref, warnings, collections, functools, operator
+import sys, os, numpy, weakref, warnings, collections.abc, functools, operator
 
 def isiterable( obj ):
   'check for iterability'
@@ -195,7 +195,7 @@ def arraymap( f, dtype, *args ):
   return numpy.array( [ f( arg ) for arg in args[0] ] if len( args ) == 1
                  else [ f( *arg ) for arg in numpy.broadcast( *args ) ], dtype=dtype )
 
-class OrderedDict( collections.MutableMapping, collections.Sequence ):
+class OrderedDict( collections.abc.MutableMapping, collections.abc.Sequence ):
   'Dictionary that remembers insertion order'
 
   # implementation without circular references
@@ -203,7 +203,7 @@ class OrderedDict( collections.MutableMapping, collections.Sequence ):
   def __init__( self, items=() ):
     self._keys = []
     self._dict = {}
-    if isinstance(items, collections.Mapping):
+    if isinstance(items, collections.abc.Mapping):
       items = items.items()
     for key, value in items:
       self._dict[key] = value

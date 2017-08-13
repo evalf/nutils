@@ -24,7 +24,7 @@ out in element loops. For lower level operations topologies can be used as
 """
 
 from . import element, function, util, numpy, parallel, matrix, log, core, numeric, cache, transform, _
-import warnings, functools, collections, itertools, functools, operator
+import warnings, functools, collections.abc, itertools, functools, operator
 
 _identity = lambda x: x
 
@@ -147,7 +147,7 @@ class Topology( object ):
       slices = []
       npoints = 0
       for elem in log.iter( 'elem', self ):
-        ipoints, iweights = ischeme[elem] if isinstance(ischeme,dict) else fcache[elem.reference.getischeme]( ischeme )
+        ipoints, iweights = ischeme[elem] if isinstance(ischeme,collections.abc.Mapping) else fcache[elem.reference.getischeme]( ischeme )
         np = len( ipoints )
         slices.append( slice(npoints,npoints+np) )
         npoints += np
@@ -168,7 +168,7 @@ class Topology( object ):
       idata.graphviz()
 
     for ielem, elem in parallel.pariter( log.enumerate( 'elem', self ), nprocs=nprocs ):
-      ipoints, iweights = ischeme[elem] if isinstance(ischeme,dict) else fcache[elem.reference.getischeme]( ischeme )
+      ipoints, iweights = ischeme[elem] if isinstance(ischeme,collections.abc.Mapping) else fcache[elem.reference.getischeme]( ischeme )
       s = slices[ielem],
       for ifunc, index, data in idata.eval( elem, ipoints, fcache, arguments ):
         retvals[ifunc][s+numpy.ix_(*[ ind for (ind,) in index ])] += numeric.dot(iweights,data) if geometry else data
@@ -257,7 +257,7 @@ class Topology( object ):
     # benefits from parallel speedup.
 
     for ielem, elem in parallel.pariter( log.enumerate( 'elem', self ), nprocs=nprocs ):
-      ipoints, iweights = ischeme[elem] if isinstance(ischeme,dict) else fcache[elem.reference.getischeme]( ischeme )
+      ipoints, iweights = ischeme[elem] if isinstance(ischeme,collections.abc.Mapping) else fcache[elem.reference.getischeme]( ischeme )
       assert iweights is not None, 'no integration weights found'
       for iblock, intdata in enumerate( valuefunc.eval( elem, ipoints, fcache, arguments ) ):
         s = slice(*offsets[iblock,ielem:ielem+2])
