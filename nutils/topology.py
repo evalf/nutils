@@ -181,7 +181,7 @@ class Topology( object ):
         retvals = [ function.elemwise( { elem.transform: value for elem, value in zip( self, retval ) }, shape=retval.shape[1:] ) for retval in retvals ]
       else:
         tsp = [ ( elem.transform, s, fcache[elem.reference.getischeme](ischeme)[0] ) for elem, s in zip( self, slices ) ]
-        retvals = [ function.sampled( { trans: (retval[s],points) for trans, s, points in tsp }, self.ndims ) for retval in retvals ]
+        retvals = [ function.sampled( { trans: (numeric.const(retval[s], copy=False), points) for trans, s, points in tsp }, self.ndims ) for retval in retvals ]
     elif separate:
       retvals = [ [ retval[s] for s in slices ] for retval in retvals ]
 
@@ -454,7 +454,7 @@ class Topology( object ):
       refs = []
       for elem, ctransforms in log.zip( 'elem', self, bins ):
         levels = numpy.empty( elem.reference.nvertices_by_level(maxrefine) )
-        cover = list( fcache[elem.reference.vertex_cover]( sorted(ctransforms), maxrefine ) )
+        cover = list(fcache[elem.reference.vertex_cover](tuple(sorted(ctransforms)), maxrefine))
         # confirm cover and greedily optimize order
         mask = numpy.ones( len(levels), dtype=bool )
         while mask.any():
@@ -566,7 +566,7 @@ class Topology( object ):
         used[dofs] = True
     if isinstance( basis, function.Inflate ) and isinstance( basis.func, function.Function ) and isinstance( basis.dofmap, function.DofMap ):
       renumber = used.cumsum()-1
-      nmap = { trans: renumber[dofs[used[dofs]]] for trans, dofs in basis.dofmap.dofmap.items() }
+      nmap = { trans: numeric.const(renumber[dofs[used[dofs]]], copy=False) for trans, dofs in basis.dofmap.dofmap.items() }
       return function.function( fmap=basis.func.stdmap, nmap=nmap, ndofs=used.sum() )
     return function.mask( basis, used )
 
@@ -884,7 +884,7 @@ class StructuredLine( Topology ):
       ndofs -= overlap
 
     fmap = dict( zip( self._transforms[1:-1], element.PolyLine.spline( degree=degree, nelems=len(self), periodic=periodic ) ) )
-    nmap = { trans: dofs[i:i+degree+1] for i, trans in enumerate(self._transforms[1:-1]) }
+    nmap = { trans: numeric.const(dofs[i:i+degree+1], copy=False) for i, trans in enumerate(self._transforms[1:-1]) }
     func = function.function( fmap, nmap, ndofs )
 
     if not removedofs:
@@ -898,7 +898,7 @@ class StructuredLine( Topology ):
     'discontinuous shape functions'
 
     fmap = dict.fromkeys( self._transforms[1:-1], element.PolyLine( element.PolyLine.bernstein_poly(degree) ) )
-    nmap = dict( zip( self._transforms[1:-1], numpy.arange(len(self)*(degree+1)).reshape(len(self),degree+1) ) )
+    nmap = dict( zip( self._transforms[1:-1], numeric.const(numpy.arange(len(self)*(degree+1)).reshape(len(self),degree+1), copy=False) ) )
     return function.function( fmap=fmap, nmap=nmap, ndofs=len(self)*(degree+1) )
 
   def basis_std( self, degree, periodic=None, removedofs=None ):
@@ -915,7 +915,7 @@ class StructuredLine( Topology ):
       ndofs -= 1
 
     fmap = dict.fromkeys( self._transforms[1:-1], element.PolyLine( element.PolyLine.bernstein_poly(degree) ) )
-    nmap = { trans: dofs[i*degree:(i+1)*degree+1] for i, trans in enumerate(self._transforms[1:-1]) }
+    nmap = { trans: numeric.const(dofs[i*degree:(i+1)*degree+1], copy=False) for i, trans in enumerate(self._transforms[1:-1]) }
     func = function.function( fmap, nmap, ndofs )
     if not removedofs:
       return func
@@ -1193,7 +1193,7 @@ class StructuredTopology( Topology ):
       std = item[1]
       S = item[2:]
       dofs = vertex_structure[S].ravel()
-      dofmap[trans] = dofs
+      dofmap[trans] = numeric.const(dofs, copy=False)
       funcmap[trans] = std
     return funcmap, dofmap, dofshape
 
@@ -1256,7 +1256,7 @@ class StructuredTopology( Topology ):
 
     assert all(Ni.order==p for Ni in N)
 
-    return numpy.array([Ni.coeffs for Ni in N]).T[::-1]
+    return numeric.const([Ni.coeffs for Ni in N]).T[::-1]
 
   def basis_discont( self, degree ):
     'discontinuous shape functions'
@@ -1273,7 +1273,7 @@ class StructuredTopology( Topology ):
     ndofs = 0
     for elem in self:
       fmap[elem.transform] = stdfunc
-      nmap[elem.transform] = ndofs + numpy.arange(stdfunc.nshapes)
+      nmap[elem.transform] = numeric.const(numpy.arange(ndofs, ndofs+stdfunc.nshapes), copy=False)
       ndofs += stdfunc.nshapes
     return function.function( fmap=fmap, nmap=nmap, ndofs=ndofs )
 
@@ -1308,7 +1308,7 @@ class StructuredTopology( Topology ):
       slices.append( [ slice(p*i,p*i+p+1) for i in range(n) ] )
 
     funcmap = dict.fromkeys( self._transform.flat, util.product( element.PolyLine( element.PolyLine.bernstein_poly(d) ) for d in degree ) )
-    dofmap = { trans: vertex_structure[S].ravel() for trans, *S in numpy.broadcast( self._transform, *numpy.ix_(*slices) ) }
+    dofmap = { trans: numeric.const(vertex_structure[S].ravel(), copy=False) for trans, *S in numpy.broadcast( self._transform, *numpy.ix_(*slices) ) }
     func = function.function( funcmap, dofmap, numpy.product(dofshape) )
     if not any( removedofs ):
       return func
@@ -1404,7 +1404,7 @@ class UnstructuredTopology( Topology ):
       stdfunc = elem.reference.stdfunc(1)
       assert stdfunc.nshapes == elem.nverts
       fmap[elem.transform] = stdfunc
-      nmap[elem.transform] = dofs
+      nmap[elem.transform] = numeric.const(dofs, copy=False)
     return function.function( fmap=fmap, nmap=nmap, ndofs=len(dofmap) )
 
   def basis_bubble( self ):
@@ -1426,7 +1426,7 @@ class UnstructuredTopology( Topology ):
         dofs[i] = dof
       dofs[ elem.nverts ] = ielem
       fmap[elem.transform] = stdfunc
-      nmap[elem.transform] = dofs
+      nmap[elem.transform] = numeric.const(dofs, copy=False)
     return function.function( fmap=fmap, nmap=nmap, ndofs=len(self)+len(dofmap) )
 
   def basis_spline( self, degree ):
@@ -1443,7 +1443,7 @@ class UnstructuredTopology( Topology ):
     for elem in self:
       stdfunc = elem.reference.stdfunc(degree)
       fmap[elem.transform] = stdfunc
-      nmap[elem.transform] = ndofs + numpy.arange(stdfunc.nshapes)
+      nmap[elem.transform] = numeric.const(numpy.arange(ndofs, ndofs+stdfunc.nshapes), copy=False)
       ndofs += stdfunc.nshapes
     return function.function( fmap=fmap, nmap=nmap, ndofs=ndofs )
 
@@ -2012,7 +2012,7 @@ class MultipatchTopology( Topology ):
       patchfuncmap, patchdofmap, patchdofcount = topo._basis_spline( degree )
       funcmap.update( patchfuncmap )
       # renumber dofs
-      dofmap.update( (trans,dofs+dofcount) for trans, dofs in patchdofmap.items() )
+      dofmap.update( (trans, numeric.const(dofs+dofcount, copy=False)) for trans, dofs in patchdofmap.items() )
       if patchcontinuous:
         # reconstruct multidimensional dof structure
         dofs = dofcount + numpy.arange( numpy.prod( patchdofcount ), dtype=int ).reshape( patchdofcount )
@@ -2035,9 +2035,7 @@ class MultipatchTopology( Topology ):
       remainder = set( merge.get( dof, dof ) for dof in range( dofcount ) )
       renumber = dict( zip( sorted( remainder ), range( len( remainder ) ) ) )
       # apply mappings
-      dofmap = dict(
-        (k, numpy.array( tuple( renumber[merge.get( dof, dof )] for dof in v.flat ), dtype=int ).reshape( v.shape ))
-        for k, v in dofmap.items() )
+      dofmap = {k: numeric.const([renumber[merge.get( dof, dof )] for dof in v.flat], dtype=int).reshape(v.shape) for k, v in dofmap.items()}
       dofcount = len( remainder )
 
     return function.function( funcmap, dofmap, dofcount )
@@ -2051,7 +2049,7 @@ class MultipatchTopology( Topology ):
     for topo, boundaries in self.patches:
       pbasis = topo.basis( 'discont', degree=degree )
       funcmap.update( pbasis.func.stdmap )
-      dofmap.update( (trans,dofs+dofcount) for trans, dofs in pbasis.dofmap.dofmap.items() )
+      dofmap.update({trans: numeric.const(dofs+dofcount, copy=False) for trans, dofs in pbasis.dofmap.dofmap.items()})
       dofcount += len( pbasis )
     return function.function( funcmap, dofmap, dofcount )
 
@@ -2062,7 +2060,7 @@ class MultipatchTopology( Topology ):
     nmap = {}
     for ipatch, ( topo, boundaries ) in enumerate( self.patches ):
       fmap[ topo.root ] = util.product( element.PolyLine( element.PolyLine.bernstein_poly(0) ) for i in range( self.ndims ) )
-      nmap[ topo.root ] = numpy.array([ ipatch ])
+      nmap[ topo.root ] = numeric.const([ ipatch ])
     return function.function( fmap, nmap, len( self.patches ) )
 
   @cache.property

@@ -14,7 +14,7 @@ creation and initiation of a log file.
 """
 
 from . import numeric
-import sys, os, numpy, weakref, warnings, collections.abc, functools, operator
+import sys, os, numpy, weakref, warnings, collections.abc, inspect, functools, operator
 
 def isiterable( obj ):
   'check for iterability'
@@ -152,7 +152,7 @@ class NanVec( numpy.ndarray ):
     if numpy.isscalar( other ):
       self[ where ] = other
     else:
-      assert isinstance( other, numpy.ndarray ) and other.shape == self.shape
+      assert numeric.isarray(other) and other.shape == self.shape
       self[ where ] = other[ where ]
     return self
 
@@ -435,5 +435,55 @@ class hashlessdict(collections.abc.MutableMapping):
 
   def copy(self):
     return hashlessdict(self)
+
+class frozendict(collections.abc.Mapping):
+  __slots__ = '__base', '__hash'
+
+  def __new__(cls, base):
+    if isinstance(base, frozendict):
+      return base
+    self = object.__new__(cls)
+    self.__base = dict(base)
+    self.__hash = hash(frozenset(self.__base.items())) # check immutability and precompute hash
+    return self
+
+  def __reduce__(self):
+    return frozendict, (self.__base,)
+
+  def __eq__(self, other):
+    if self is other:
+      return True
+    if not isinstance(other, frozendict):
+      return False
+    if self.__base is other.__base:
+      return True
+    if self.__hash != other.__hash or self.__base != other.__base:
+      return False
+    # deduplicate
+    self.__base = other.__base
+    return True
+
+  __getitem__ = lambda self, item: self.__base.__getitem__(item)
+  __iter__ = lambda self: self.__base.__iter__()
+  __len__ = lambda self: self.__base.__len__()
+  __hash__ = lambda self: self.__hash
+  __contains__ = lambda self, key: self.__base.__contains__(key)
+
+  copy = lambda self: self.__base.copy()
+
+def enforcetypes(f, signature=None):
+  if signature is None:
+    signature = inspect.signature(f)
+  annotations = [(param.name, param.annotation) for param in signature.parameters.values() if param.annotation != param.empty]
+  if not annotations:
+    return f
+  @functools.wraps(f)
+  def wrapped(*args, **kwargs):
+    bound = signature.bind(*args, **kwargs)
+    bound.apply_defaults()
+    for name, op in annotations:
+      bound.arguments[name] = op(bound.arguments[name])
+    return f(*bound.args, **bound.kwargs)
+  return wrapped
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

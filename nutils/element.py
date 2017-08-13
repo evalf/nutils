@@ -121,8 +121,8 @@ class Element( object ):
 class Reference( cache.Immutable ):
   'reference element'
 
-  def __init__( self, vertices ):
-    self.vertices = numpy.asarray( vertices )
+  def __init__(self, vertices:numeric.const):
+    self.vertices = vertices
     self.nverts, self.ndims = self.vertices.shape
 
   __and__ = lambda self, other: self if self == other else NotImplemented
@@ -253,7 +253,8 @@ class Reference( cache.Immutable ):
     assert match, 'cannot parse integration scheme %r' % ischeme
     ptype, args = match.groups()
     get = getattr( self, 'getischeme_'+ptype )
-    return get( eval(args) ) if args else get()
+    ipoints, iweights = get( eval(args) ) if args else get()
+    return numeric.const(ipoints, copy=False), numeric.const(iweights, copy=False) if iweights is not None else None
 
   @classmethod
   def register( cls, ptype, func ):
@@ -387,7 +388,7 @@ class Reference( cache.Immutable ):
     fcache = cache.WrapperCache()
     return tuple( ( ctrans << trans, points, cindices[indices] )
       for ctrans, cref, cbin, cindices in zip( self.child_transforms, self.child_refs, cbins, self.child_divide(allindices,maxrefine) )
-        for trans, points, indices in fcache[cref.vertex_cover]( sorted(cbin), maxrefine-1 ) )
+        for trans, points, indices in fcache[cref.vertex_cover](tuple(sorted(cbin)), maxrefine-1))
 
   def __str__( self ):
     return self.__class__.__name__
@@ -406,8 +407,8 @@ class EmptyReference( Reference ):
   edge_transforms = ()
   edge_refs = ()
 
-  def __init__( self, ndims ):
-    Reference.__init__( self, numpy.zeros((0,ndims)) )
+  def __init__(self, ndims:int):
+    super().__init__(numpy.zeros((0,ndims)))
 
   __and__ = __sub__ = lambda self, other: self if other.ndims == self.ndims else NotImplemented
   __or__ = lambda self, other: other if other.ndims == self.ndims else NotImplemented
@@ -422,9 +423,9 @@ class EmptyReference( Reference ):
 class RevolutionReference( Reference ):
   'modify gauss integration to always return a single point'
 
-  def __init__( self ):
+  def __init__(self):
     self.volume = 2 * numpy.pi
-    Reference.__init__( self, numpy.zeros((1,1)) )
+    super().__init__(numpy.zeros((1,1)))
 
   @property
   def edge_transforms( self ): # only used in check_edges
@@ -439,13 +440,13 @@ class RevolutionReference( Reference ):
     return [ (transform.identity,self) ]
 
   def getischeme( self, ischeme ):
-    return numpy.zeros([1,1]), numpy.array([ self.volume ])
+    return numeric.const([[0.]]), numeric.const([self.volume])
 
 class SimplexReference( Reference ):
   'simplex reference'
 
-  def __init__( self, ndims ):
-    Reference.__init__( self, numpy.concatenate( [ numpy.zeros(ndims,dtype=int)[_,:], numpy.eye(ndims,dtype=int) ], axis=0 ) )
+  def __init__(self, ndims:int):
+    super().__init__(numpy.concatenate([numpy.zeros(ndims,dtype=int)[_,:], numpy.eye(ndims,dtype=int)], axis=0))
     self.volume = 1. / math.factorial(ndims)
     if self.ndims > 0 and core.getprop( 'selfcheck', False ):
       self.check_edges()
@@ -490,8 +491,8 @@ class PointReference( SimplexReference ):
 
   volume = 1
 
-  def __init__( self ):
-    SimplexReference.__init__( self, ndims=0 )
+  def __init__(self):
+    super().__init__(ndims=0)
 
   @property
   def child_transforms( self ):
@@ -502,7 +503,7 @@ class PointReference( SimplexReference ):
     return self,
 
   def getischeme( self, ischeme ):
-    return numpy.zeros((1,0)), numpy.ones(1)
+    return numeric.const(numpy.empty([1,0])), numeric.const([1.])
 
   def inside( self, point, eps=0 ):
     return True
@@ -510,9 +511,9 @@ class PointReference( SimplexReference ):
 class LineReference( SimplexReference ):
   '1D simplex'
 
-  def __init__( self ):
+  def __init__(self):
     self._bernsteincache = [] # TEMPORARY
-    SimplexReference.__init__( self, ndims=1 )
+    super().__init__(ndims=1)
 
   @cache.property
   def child_transforms( self ):
@@ -535,7 +536,7 @@ class LineReference( SimplexReference ):
     return x[:,_], w * self.volume
 
   def getischeme_uniform( self, n ):
-    return ( numpy.arange(.5,n) / n )[:,_], numeric.appendaxes( self.volume/n, n )
+    return ( numpy.arange(.5,n) / n )[:,_], numeric.const.full([n], self.volume/n)
 
   def getischeme_bezier( self, np ):
     return numpy.linspace( 0, 1, np )[:,_], None
@@ -556,8 +557,8 @@ class LineReference( SimplexReference ):
 class TriangleReference( SimplexReference ):
   '2D simplex'
 
-  def __init__( self ):
-    SimplexReference.__init__( self, ndims=2 )
+  def __init__(self):
+    super().__init__(ndims=2)
 
   @cache.property
   def child_transforms( self ):
@@ -622,7 +623,7 @@ class TriangleReference( SimplexReference ):
     coords = C.reshape( 2, nn )
     flip = coords.sum(0) > 1
     coords[:,flip] = 1 - coords[::-1,flip]
-    weights = numeric.appendaxes( self.volume/nn, nn )
+    weights = numeric.const.full([nn], self.volume/nn)
     return coords.T, weights
 
   def getischeme_bezier( self, np ):
@@ -650,7 +651,7 @@ class TriangleReference( SimplexReference ):
 class TetrahedronReference( SimplexReference ):
   '3D simplex'
 
-  def __init__( self ):
+  def __init__(self):
     self._children_vertices = numpy.array([[0,1,3,6],
                                            [1,2,4,7],
                                            [3,4,5,8],
@@ -660,7 +661,7 @@ class TetrahedronReference( SimplexReference ):
                                            [7,1,8,4],
                                            [3,1,4,8]])
 
-    SimplexReference.__init__( self, ndims=3 )
+    super().__init__(ndims=3)
 
   @cache.property
   def child_transforms( self ):
@@ -776,14 +777,14 @@ class TensorReference( Reference ):
 
   _re_ischeme = re.compile( '([a-zA-Z]+)(.*)' )
 
-  def __init__( self, ref1, ref2 ):
+  def __init__(self, ref1, ref2):
     self.ref1 = ref1
     self.ref2 = ref2
     ndims = ref1.ndims + ref2.ndims
     vertices = numpy.empty( ( ref1.nverts, ref2.nverts, ndims ), dtype=int )
     vertices[:,:,:ref1.ndims] = ref1.vertices[:,_]
     vertices[:,:,ref1.ndims:] = ref2.vertices[_,:]
-    Reference.__init__( self, vertices.reshape(-1,ndims) )
+    super().__init__(vertices.reshape(-1,ndims))
     if core.getprop( 'selfcheck', False ):
       self.check_edges()
 
@@ -862,8 +863,8 @@ class TensorReference( Reference ):
     ipoints = numpy.empty( (ipoints1.shape[0],ipoints2.shape[0],self.ndims) )
     ipoints[:,:,0:self.ref1.ndims] = ipoints1[:,_,:self.ref1.ndims]
     ipoints[:,:,self.ref1.ndims:self.ndims] = ipoints2[_,:,:self.ref2.ndims]
-    iweights = ( iweights1[:,_] * iweights2[_,:] ).ravel() if iweights1 is not None and iweights2 is not None else None
-    return ipoints.reshape( -1, self.ndims ), iweights
+    iweights = numeric.const((iweights1[:,_] * iweights2[_,:] ).ravel(), copy=False) if iweights1 is not None and iweights2 is not None else None
+    return numeric.const(ipoints.reshape(-1, self.ndims), copy=False), iweights
 
   @cache.property
   def edge_transforms( self ):
@@ -921,11 +922,11 @@ class TensorReference( Reference ):
 class Cone( Reference ):
   'cone'
 
-  def __init__( self, edgeref, etrans, tip ):
+  def __init__(self, edgeref, etrans, tip:numeric.const):
     assert etrans.fromdims == edgeref.ndims
     assert etrans.todims == len(tip)
     vertices = numpy.vstack([ [tip], etrans.apply( edgeref.vertices ) ])
-    Reference.__init__( self, vertices )
+    super().__init__(vertices)
     self.edgeref = edgeref
     self.etrans = etrans
     self.tip = tip
@@ -1015,14 +1016,14 @@ class Cone( Reference ):
 class NeighborhoodTensorReference( TensorReference ):
   'product reference element'
 
-  def __init__( self, ref1, ref2, neighborhood, transf ):
+  def __init__(self, ref1, ref2, neighborhood, transf):
     '''Neighborhood of elem1 and elem2 and transformations to get mutual
     overlap in right location. Returns 3-element tuple:
     * neighborhood, as given by Element.neighbor(),
     * transf1, required rotation of elem1 map: {0:0, 1:pi/2, 2:pi, 3:3*pi/2},
     * transf2, required rotation of elem2 map (is indep of transf1 in Topology.'''
 
-    TensorReference.__init__( self, ref1, ref2 )
+    super().__init__(ref1, ref2)
     self.neighborhood = neighborhood
     self.transf = transf
 
@@ -1147,12 +1148,12 @@ class NeighborhoodTensorReference( TensorReference ):
 class OwnChildReference( Reference ):
   'forward self as child'
 
-  def __init__( self, baseref ):
+  def __init__(self, baseref):
     self.baseref = baseref
     self.child_refs = baseref,
     self.child_transforms = transform.identity,
     self.interfaces = ()
-    Reference.__init__( self, baseref.vertices )
+    super().__init__(baseref.vertices)
 
   @property
   def edge_transforms( self ):
@@ -1179,14 +1180,14 @@ class OwnChildReference( Reference ):
 class WithChildrenReference( Reference ):
   'base reference with explicit children'
 
-  def __init__( self, baseref, child_refs ):
-    assert isinstance( child_refs, tuple ) and len(child_refs) == baseref.nchildren and any(child_refs) and child_refs != baseref.child_refs
+  def __init__(self, baseref, child_refs:tuple):
+    assert len(child_refs) == baseref.nchildren and any(child_refs) and child_refs != baseref.child_refs
     assert all( isinstance(child_ref,Reference) for child_ref in child_refs )
     assert all( child_ref.ndims == baseref.ndims for child_ref in child_refs )
     self.baseref = baseref
     self.child_transforms = baseref.child_transforms
     self.child_refs = child_refs
-    Reference.__init__( self, baseref.vertices )
+    super().__init__(baseref.vertices)
     if core.getprop( 'selfcheck', False ):
       self.check_edges()
 
@@ -1320,7 +1321,7 @@ class WithChildrenReference( Reference ):
 class MosaicReference( Reference ):
   'triangulation'
 
-  def __init__( self, baseref, edge_refs, midpoint ):
+  def __init__(self, baseref, edge_refs:tuple, midpoint:numeric.const):
     assert len(edge_refs) == baseref.nedges
     self.baseref = baseref
     self._edge_refs = tuple( edge_refs )
@@ -1373,7 +1374,7 @@ class MosaicReference( Reference ):
           vertices.append( vertex )
         indices.append( index )
 
-    Reference.__init__( self, vertices )
+    super().__init__(vertices)
 
     if core.getprop( 'selfcheck', False ):
       self.check_edges()
@@ -1458,7 +1459,7 @@ class MosaicReference( Reference ):
 class StdElem( cache.Immutable ):
   'stdelem base class'
 
-  def __init__( self, ndims, nshapes ):
+  def __init__(self, ndims:int, nshapes:int):
     self.ndims = ndims
     self.nshapes = nshapes
 
@@ -1483,15 +1484,10 @@ class PolyProduct( StdElem ):
 
   __slots__ = 'std1', 'std2'
 
-  def __init__( self, std1, std2 ):
-    'constructor'
-
+  def __init__(self, std1, std2):
     self.std1 = std1
     self.std2 = std2
-    StdElem.__init__( self, std1.ndims+std2.ndims, std1.nshapes*std2.nshapes )
-
-  def __getnewargs__( self ):
-    return self.std1, self.std2
+    super().__init__(std1.ndims+std2.ndims, std1.nshapes*std2.nshapes)
 
   def eval( self, points, grad=0 ):
     'evaluate'
@@ -1548,7 +1544,7 @@ class PolyLine( StdElem ):
       revpoly[k,k] = root = (-1)**degree if k == 0 else ( revpoly[k-1,k] * (k*2-1-degree) ) / k
       for i in range(k+1,degree+1-k):
         revpoly[i,k] = revpoly[k,i] = root = ( root * (k+i-degree-1) ) / i
-    return revpoly[::-1]
+    return numeric.const(revpoly[::-1].astype(float), copy=False)
 
   @classmethod
   def spline_poly( cls, p, n ):
@@ -1571,7 +1567,7 @@ class PolyLine( StdElem ):
         extractions[i,-j-1:-1,-j-1] = extractions[i-1,-j:,-1]
 
     poly = cls.bernstein_poly( p )
-    return numeric.contract( extractions[:,_,:,:], poly[_,:,_,:], axis=-1 )
+    return numeric.const(numeric.contract(extractions[:,_,:,:], poly[_,:,_,:], axis=-1), copy=False)
 
   @classmethod
   def spline_elems( cls, p, n ):
@@ -1637,17 +1633,15 @@ class PolyLine( StdElem ):
 
     return numpy.array( elems )
 
-  def __init__( self, poly ):
+  def __init__(self, poly:numeric.const):
     '''Create polynomial from order x nfuncs array of coefficients 'poly'.
        Evaluates to sum_i poly[i,:] x**i.'''
 
-    self.poly = numpy.asarray( poly, dtype=float )
+    assert poly.dtype == float
+    self.poly = poly
     order, nshapes = self.poly.shape
     self.degree = order - 1
-    StdElem.__init__( self, ndims=1, nshapes=nshapes )
-
-  def __getnewargs__( self ):
-    return self.poly,
+    super().__init__(ndims=1, nshapes=nshapes)
 
   def eval( self, points, grad=0 ):
     'evaluate'
@@ -1656,7 +1650,7 @@ class PolyLine( StdElem ):
     x = points[...,0]
 
     if grad > self.degree:
-      return numeric.appendaxes( 0., x.shape+(self.nshapes,)+(1,)*grad )
+      return numeric.const.full(x.shape+(self.nshapes,)+(1,)*grad, 0.)
 
     poly = self.poly
     for n in range(grad):
@@ -1686,15 +1680,10 @@ class PolyTriangle( StdElem ):
 
   __slots__ = ()
 
-  def __init__( self, order ):
-    'constructor'
-
+  def __init__(self, order:int):
     self.order = order
     assert order in (0,1)
-    StdElem.__init__( self, ndims=2, nshapes=3 if order else 1 )
-
-  def __getnewargs__( self ):
-    return self.order,
+    super().__init__(ndims=2, nshapes=3 if order else 1)
 
   def eval( self, points, grad=0 ):
     'eval'
@@ -1754,11 +1743,8 @@ class BubbleTriangle( StdElem ):
 
   __slots__ = ()
 
-  def __init__( self ):
-    StdElem.__init__( self, ndims=2, nshapes=4 )
-
-  def __getnewargs__( self ):
-    return ()
+  def __init__(self):
+    super().__init__(ndims=2, nshapes=4)
 
   def eval( self, points, grad=0 ):
     'eval'
@@ -1794,17 +1780,12 @@ class ExtractionWrapper( StdElem ):
 
   __slots__ = 'stdelem', 'extraction'
 
-  def __init__( self, stdelem, extraction ):
-    'constructor'
-
+  def __init__(self, stdelem, extraction:numeric.const):
     assert extraction.ndim == 2
     assert stdelem.nshapes == extraction.shape[0]
     self.stdelem = stdelem
     self.extraction = extraction
-    StdElem.__init__( self, stdelem.ndims, extraction.shape[1] )
-
-  def __getnewargs__( self ):
-    return self.stdelem, self.extraction
+    super().__init__(stdelem.ndims, extraction.shape[1])
 
   def extract( self, extraction ):
     return ExtractionWrapper( self.stdelem, numpy.dot( self.extraction, extraction ) )
@@ -1832,7 +1813,7 @@ def gauss( degree ):
     k = numpy.arange(n) + 1
     d = k / numpy.sqrt( 4*k**2-1 )
     x, w = numpy.linalg.eigh( numpy.diagflat(d,-1) ) # eigh operates (by default) on lower triangle
-    _gauss[n] = gaussn = (x+1) * .5, w[0]**2
+    _gauss[n] = gaussn = numeric.const((x+1) * .5, copy=False), numeric.const(w[0]**2, copy=False)
   return gaussn
 
 def getsimplex( ndims ):

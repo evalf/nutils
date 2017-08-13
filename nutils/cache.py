@@ -10,7 +10,7 @@
 The cache module.
 """
 
-from . import core, log, numeric
+from . import core, log, numeric, util
 import os, sys, weakref, numpy, functools, inspect, builtins
 
 def property(f):
@@ -33,102 +33,33 @@ def property(f):
     self.__dict__[_name] = value if value is not self else _self
   return builtins.property(fget=property_getter, fset=property_setter)
 
-def argdict( f ):
-  cache = {}
-  @functools.wraps( f )
-  def f_wrapped( *args ):
-    key = _hashable( args )
-    try:
-      return cache[key]
-    except KeyError:
-      pass
-    value = cache[key] = f( *args )
-    return value
-  return f_wrapped
-
-class HashableBase( object ):
-
-  pass
-
-class HashableArray( HashableBase ):
-  # FRAGILE: assumes contents are not going to be changed
-  def __init__( self, array ):
-    self.array = array
-    self.quickdata = array.shape, array.dtype.kind, tuple( array.flat[::array.size//32+1] ) if array.size else None # required to prevent segfault
-  def __hash__( self ):
-    return hash( self.quickdata )
-  def __eq__( self, other ):
-    # check full array only if we really must
-    return isinstance(other,HashableArray) and (self.array is other.array
-      or self.quickdata == other.quickdata and numpy.equal(self.array, other.array).all())
-  
-class HashableList( tuple, HashableBase ):
-  def __new__( cls, L ):
-    return tuple.__new__( cls, map( _hashable, L ) )
-
-class HashableDict( frozenset, HashableBase ):
-  def __new__( cls, D ):
-    return frozenset.__new__( cls, map( _hashable, D if isinstance( D, frozenset ) else dict( D ).items() ) )
-
-class HashableAny( HashableBase ):
-  def __init__( self, obj ):
-    self.obj = obj
-  def __hash__( self ):
-    return hash( id(self.obj) )
-  def __eq__( self, other ):
-    return isinstance(other,HashableAny) and self.obj is other.obj
-
-def _hashable( obj ):
-  try:
-    hash(obj)
-  except:
-    pass
-  else:
-    return obj
-  return tuple( _hashable(o) for o in obj ) if isinstance( obj, tuple ) \
-    else frozenset( _hashable(o) for o in obj ) if isinstance( obj, (set,frozenset) ) \
-    else HashableArray( obj ) if numeric.isarray(obj) \
-    else HashableList( obj ) if isinstance( obj, list ) \
-    else HashableDict( obj ) if isinstance( obj, dict ) \
-    else HashableAny( obj )
-
-def _position_args( func ):
-  sig = inspect.signature( func )
-  var = inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD
-  assert not any( parameter.kind in var for parameter in sig.parameters.values() ), 'var-arguments not allowed in {}'.format(func)
-  return tuple( sig.parameters ), { parameter.name: parameter.default for parameter in sig.parameters.values() if parameter.default != sig.empty }
-
-class Wrapper( object ):
+class Wrapper:
   'function decorator that caches results by arguments'
 
   def __init__( self, func ):
     self.func = func
     self.cache = {}
     self.count = 0
-    self.argnames, self.defaults = _position_args( func )
+    self.signature = inspect.signature(func)
 
   def __call__( self, *args, **kwargs ):
     self.count += 1
-    assert len(args) <= len(self.argnames), 'too many arguments for function {}'.format( self.func )
-    for name in self.argnames[len(args):]:
-      try:
-        val = kwargs.pop(name)
-      except KeyError:
-        val = self.defaults[name]
-      args += val,
-    assert not kwargs, 'invalid arguments for function {}: {}'.format( self.func, ', '.join(kwargs) )
-    key = tuple( _hashable(arg) for arg in args )
-    value = self.cache.get( key )
-    if value is None:
-      value = self.func( *args )
-      self.cache[ key ] = value
+    bound = self.signature.bind(*args, **kwargs)
+    bound.apply_defaults()
+    args = bound.args
+    assert not bound.kwargs
+    try:
+      value = self.cache[args]
+    except KeyError:
+      value = self.func(*args)
+      self.cache[args] = value
     return value
 
   @builtins.property
   def hits( self ):
     return self.count - len(self.cache)
 
-class WrapperCache( object ):
+class WrapperCache:
   'maintains a cache for Wrapper instances'
 
   def __init__( self ):
@@ -136,10 +67,10 @@ class WrapperCache( object ):
 
   def __getitem__( self, func ):
     try:
-      return self.cache[func]
+      wrapper = self.cache[func]
     except KeyError:
-      pass
-    wrapper = self.cache[func] = Wrapper( func )
+      wrapper = Wrapper(func)
+      self.cache[func] = wrapper
     return wrapper
 
   @builtins.property
@@ -159,51 +90,45 @@ class WrapperDummyCache( object ):
   def __getitem__( self, func ):
     return func
 
-class CallDict( object ):
-  'deprecated object'
+class ImmutableMeta(type):
 
-  def __init__( self ):
-    warnings.warn( 'CallDict will be removed in future, please use WrapperCache instead', DeprecationWarning, stacklevel=2 )
-    self.wrappercache = WrapperCache()
+  def __init__(cls, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    signature = inspect.signature(cls.__init__)
+    param0, *params = signature.parameters.values()
+    cls._signature = inspect.Signature(params)
+    cls._annotations = [(param.name, param.annotation) for param in params if param.annotation != param.empty]
+    cls._cache = weakref.WeakValueDictionary()
+    cls._init = cls.__init__
+    if cls._annotations:
+      cls.__init__ = util.enforcetypes(cls.__init__, signature)
 
-  def __call__( self, func, *args, **kwargs ):
-    return self.wrappercache[func]( *args, **kwargs )
+  def __call__(cls, *args, **kwargs):
+    bound = cls._signature.bind(*args, **kwargs)
+    bound.apply_defaults()
+    for name, op in cls._annotations:
+      bound.arguments[name] = op(bound.arguments[name])
+    assert not bound.kwargs
+    return cls._new(*bound.args)
 
-  def summary( self ):
-    return self.wrappercache.stats
-
-class ImmutableMeta( type ):
-  def __init__( cls, *args, **kwargs ):
-    type.__init__( cls, *args, **kwargs )
-    cls.argnames, cls.defaults = _position_args( cls.__init__ )
-    cls.cache = weakref.WeakValueDictionary()
-  def __call__( cls, *args, **kwargs ):
-    assert len(args) <= len(cls.argnames), 'too many arguments for construction of {}'.format( cls )
-    for name in cls.argnames[len(args)+1:]: # +1 to exclude 'self'
-      try:
-        val = kwargs.pop(name)
-      except KeyError:
-        val = cls.defaults[name]
-      args += val,
-    assert not kwargs, 'invalid arguments in construction of {}: {}'.format( cls, ', '.join(kwargs) )
-    key = tuple( _hashable(arg) for arg in args )
+  def _new(cls, *args):
     try:
-      return cls.cache[key]
+      self = cls._cache[args]
     except KeyError:
-      pass
-    self = type.__call__( cls, *args )
-    self._args = args
-    self._hash = hash(key)
-    cls.cache[key] = self
+      self = cls.__new__(cls)
+      self._args = args
+      self._hash = hash(args)
+      self._init(*args)
+      cls._cache[args] = self
     return self
 
-class Immutable( object, metaclass=ImmutableMeta ):
+class Immutable(metaclass=ImmutableMeta):
 
   def __init__( self ):
     pass
 
   def __reduce__( self ):
-    return self.__class__.__call__, self._args
+    return self.__class__._new, self._args
 
   def __hash__( self ):
     return self._hash

@@ -162,14 +162,14 @@ class CanonicalTransformChain( TransformChain ):
       tail = (uptrans,) + self[i:]
     return CanonicalTransformChain(head), CanonicalTransformChain(tail)
 
-mayswap = lambda trans1, trans2: isinstance( trans1, Scale ) and trans1.linear == .5 and trans2.todims == trans2.fromdims + 1 and trans2.fromdims > 0
+mayswap = lambda trans1, trans2: isinstance( trans1, Scale ) and trans1.scale == .5 and trans2.todims == trans2.fromdims + 1 and trans2.fromdims > 0
 
 
 ## TRANSFORM ITEMS
 
 class TransformItem( cache.Immutable ):
 
-  def __init__( self, todims, fromdims ):
+  def __init__(self, todims, fromdims:int):
     self.todims = todims
     self.fromdims = fromdims
 
@@ -183,30 +183,32 @@ class TransformItem( cache.Immutable ):
 
 class Shift( TransformItem ):
 
-  def __init__( self, offset ):
+  def __init__(self, offset:numeric.const):
     self.linear = self.det = numpy.array(1.)
     self.offset = offset
     self.isflipped = False
     assert offset.ndim == 1
-    TransformItem.__init__( self, offset.shape[0], offset.shape[0] )
+    super().__init__(offset.shape[0], offset.shape[0])
 
   def apply( self, points ):
-    return points + self.offset
+    return numeric.const(points + self.offset, copy=False)
 
   def __str__( self ):
     return '{}+x'.format( numeric.fstr(self.offset) )
 
 class Scale( TransformItem ):
 
-  def __init__( self, linear, offset ):
-    assert linear.ndim == 0 and offset.ndim == 1
-    self.linear = linear
+  def __init__(self, scale:float, offset:numeric.const):
+    assert offset.ndim == 1
+    assert scale != 1
+    self.scale = scale
+    self.linear = numpy.array(scale)
     self.offset = offset
-    self.isflipped = linear < 0 and len(offset)%2 == 1
-    TransformItem.__init__( self, offset.shape[0], offset.shape[0] )
+    self.isflipped = scale < 0 and len(offset)%2 == 1
+    super().__init__(offset.shape[0], offset.shape[0])
 
   def apply( self, points ):
-    return self.linear * points + self.offset
+    return numeric.const(self.scale * points + self.offset, copy=False)
 
   @property
   def det( self ):
@@ -217,24 +219,24 @@ class Scale( TransformItem ):
 
 class Matrix( TransformItem ):
 
-  def __init__( self, linear, offset ):
+  def __init__(self, linear:numeric.const, offset:numeric.const):
     self.linear = linear
     self.offset = offset
     assert linear.ndim == 2 and offset.shape == linear.shape[:1]
-    TransformItem.__init__( self, linear.shape[0], linear.shape[1] )
+    super().__init__(linear.shape[0], linear.shape[1])
 
   def apply( self, points ):
     assert points.shape[-1] == self.fromdims
-    return numpy.dot( points, self.linear.T ) + self.offset
+    return numeric.const(numpy.dot( points, self.linear.T ) + self.offset, copy=False)
 
   def __str__( self ):
     return '{}{}{}'.format( '~' if self.isflipped else '', numeric.fstr(self.offset), ''.join( '+{}*x{}'.format( numeric.fstr(v), i ) for i, v in enumerate(self.linear.T) ) )
 
 class Square( Matrix ):
 
-  def __init__( self, linear, offset ):
-    Matrix.__init__( self, linear, offset )
-    assert self.fromdims == self.todims
+  def __init__(self, linear:numeric.const, offset:numeric.const):
+    assert linear.shape[0] == linear.shape[1]
+    super().__init__(linear, offset)
 
   @property
   def isflipped( self ):
@@ -246,11 +248,10 @@ class Square( Matrix ):
 
 class Updim( Matrix ):
 
-  def __init__( self, linear, offset, isflipped ):
-    assert isflipped in (True,False)
+  def __init__(self, linear:numeric.const, offset:numeric.const, isflipped:bool):
+    assert linear.shape[0] > linear.shape[1]
     self.isflipped = isflipped
-    Matrix.__init__( self, linear, offset )
-    assert self.todims > self.fromdims
+    super().__init__(linear, offset)
 
   @cache.property
   def ext( self ):
@@ -264,40 +265,40 @@ class Updim( Matrix ):
 class Bifurcate( TransformItem ):
   'bifurcate'
 
-  def __init__( self, trans1, trans2 ):
+  def __init__(self, trans1, trans2):
     assert trans1.fromdims == trans2.fromdims
     self.trans1 = trans1
     self.trans2 = trans2
-    TransformItem.__init__( self, todims=trans1.todims if trans1.todims == trans2.todims else None, fromdims=trans1.fromdims )
+    super().__init__(todims=trans1.todims if trans1.todims == trans2.todims else None, fromdims=trans1.fromdims)
 
   def apply( self, points ):
-    return [ self.trans1.apply(points), self.trans2.apply(points) ]
+    return (self.trans1.apply(points), self.trans2.apply(points))
 
 class Slice( Matrix ):
   'slice'
 
-  def __init__( self, i1, i2, fromdims ):
+  def __init__(self, i1:int, i2:int, fromdims:int):
     todims = i2-i1
     assert 0 <= todims <= fromdims
     self.s = slice(i1,i2)
     self.isflipped = False
-    Matrix.__init__( self, numpy.eye(fromdims)[self.s], numpy.zeros(todims) )
+    super().__init__(numpy.eye(fromdims)[self.s], numpy.zeros(todims))
 
   def apply( self, points ):
-    return points[:,self.s]
+    return numeric.const(points[:,self.s])
 
 class VertexTransform( TransformItem ):
 
-  def __init__( self, fromdims ):
-    TransformItem.__init__( self, None, fromdims )
+  def __init__(self, fromdims:int):
     self.isflipped = False
+    super().__init__(None, fromdims)
 
 class MapTrans( VertexTransform ):
 
-  def __init__( self, linear, offset, vertices ):
+  def __init__(self, linear:numeric.const, offset:numeric.const, vertices:numeric.const):
     assert len(linear) == len(offset) == len(vertices)
     self.vertices, self.linear, self.offset = map( numpy.array, zip( *sorted( zip( vertices, linear, offset ) ) ) ) # sort vertices
-    VertexTransform.__init__( self, self.linear.shape[1] )
+    super().__init__(self.linear.shape[1])
 
   def apply( self, points ):
     barycentric = numpy.dot( points, self.linear.T ) + self.offset
@@ -308,11 +309,11 @@ class MapTrans( VertexTransform ):
 
 class RootTrans( VertexTransform ):
 
-  def __init__( self, name, shape ):
-    VertexTransform.__init__( self, len(shape) )
+  def __init__(self, name, shape:tuple):
     self.I, = numpy.where( shape )
     self.w = numpy.take( shape, self.I )
     self.name = name
+    super().__init__(len(shape))
 
   def apply( self, coords ):
     coords = numpy.asarray(coords)
@@ -327,12 +328,12 @@ class RootTrans( VertexTransform ):
 
 class RootTransEdges( VertexTransform ):
 
-  def __init__( self, name, shape ):
-    VertexTransform.__init__( self, len(shape) )
+  def __init__(self, name, shape:tuple):
     self.shape = shape
     assert numeric.isarray(name)
     assert name.shape == (3,)*len(shape)
     self.name = name.copy()
+    super().__init__(len(shape))
 
   def apply( self, coords ):
     assert coords.ndim == 2
