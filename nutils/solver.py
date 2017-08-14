@@ -58,7 +58,7 @@ def _find_argument( name, *funcs ):
   funcs_ = []
   for func in funcs:
     if isinstance( func, Integral ):
-      funcs_.extend(func.values())
+      funcs_.extend(func._integrands.values())
     else:
       funcs_.append( func )
 
@@ -70,97 +70,78 @@ def _find_argument( name, *funcs ):
   raise ValueError( 'target {!r} not found'.format( name ) )
 
 
-class Integral( dict ):
+class Integral:
   '''Postponed integral, used for derivative purposes'''
 
-  def __init__(self, integrand, domain, ischeme):
-    self[cache.HashableAny(domain), ischeme] = integrand
-    self.shape = integrand.shape
+  def __init__(self, integrands):
+    self._integrands = util.hashlessdict(integrands)
+    shapes = {integrand.shape for integrand in self._integrands.values()}
+    assert len(shapes) == 1, 'incompatible shapes: {}'.format(' != '.join(str(shape) for shape in shapes))
+    self.shape, = shapes
 
   @classmethod
-  def empty( self, shape ):
-    empty = dict.__new__( Integral )
-    empty.shape = tuple(shape)
-    return empty
-
-  @classmethod
-  def concatenate( cls, integrals ):
-    assert all( integral.shape[1:] == integrals[0].shape[1:] for integral in integrals[1:] )
-    concatenate = cls.empty( ( sum( integral.shape[0] for integral in integrals ), ) + integrals[0].shape[1:] )
-    for domain_ischeme in {di for integral in integrals for di in integral}:
-      integrands = [ integral.get(domain_ischeme, function.zeros(integral.shape)) for integral in integrals ]
-      concatenate[domain_ischeme] = function.concatenate( integrands, axis=0 )
-    return concatenate
-
-  @classmethod
-  def multieval( cls, *integrals, fcache=None, arguments=None ):
+  def multieval(cls, *integrals, fcache=None, arguments=None):
+    assert all(isinstance(integral, cls) for integral in integrals)
     if fcache is None:
       fcache = cache.WrapperCache()
-    assert all( isinstance( integral, cls ) for integral in integrals )
-    retvals = []
-    for domain_ischeme in {di for integral in integrals for di in integral}:
-      integrands = [ integral.get(domain_ischeme, function.zeros(integral.shape)) for integral in integrals ]
-      domain, ischeme = domain_ischeme
-      retvals.append( domain.obj.integrate( integrands, ischeme=ischeme, fcache=fcache, arguments=arguments ) )
-    return numpy.sum( retvals, axis=0 )
+    gather = util.hashlessdict()
+    for iint, integral in enumerate(integrals):
+      for di in integral._integrands:
+        gather.setdefault(di, []).append(iint)
+    retvals = [None] * len(integrals)
+    for (domain, ischeme), iints in gather.items():
+      for iint, retval in zip(iints, domain.integrate([integrals[iint]._integrands[domain, ischeme] for iint in iints], ischeme=ischeme, fcache=fcache, arguments=arguments)):
+        if retvals[iint] is None:
+          retvals[iint] = retval
+        else:
+          retvals[iint] += retval
+    return retvals
 
-  def eval( self, *, fcache=None, arguments=None ):
-    if fcache is None:
-      fcache = cache.WrapperCache()
-    values = [ domain.obj.integrate( integrand, ischeme=ischeme, fcache=fcache, arguments=arguments ) for (domain, ischeme), integrand in self.items() ]
-    return numpy.sum( values, axis=0 )
+  def eval(self, **kwargs):
+    retval, = self.multieval(self, **kwargs)
+    return retval
 
   def derivative(self, target):
     target = _find_argument(target, self)
     assert target.ndim == 1
     seen = {}
-    derivative = self.empty(self.shape+target.shape)
-    for domain_ischeme, integrand in self.items():
-      derivative[domain_ischeme] = function.derivative(integrand, var=target, seen=seen)
-    return derivative
+    return Integral([di, function.derivative(integrand, var=target, seen=seen)] for di, integrand in self._integrands.items())
 
-  def replace( self, arguments ):
-    replace = self.empty( self.shape )
-    for domain_ischeme, integrand in self.items():
-      replace[domain_ischeme] = function.replace_arguments(integrand, arguments)
-    return replace
+  def replace(self, arguments):
+    return Integral([di, function.replace_arguments(integrand, arguments)] for di, integrand in self._integrands.items())
 
-  def contains( self, target ):
-    return any( target in integrand.serialized[0] for integrand in self.values() )
+  def contains(self, target):
+    return any(target in integrand.serialized[0] for integrand in self._integrands.values())
 
-  def __add__( self, other ):
-    assert isinstance( other, Integral ) and self.shape == other.shape
-    add = self.empty( self.shape )
-    add.update( self )
-    for domain_ischeme, integrand in other.items():
+  def __add__(self, other):
+    if not isinstance(other, Integral):
+      return NotImplemented
+    assert self.shape == other.shape
+    integrands = self._integrands.copy()
+    for di, integrand in other._integrands.items():
       try:
-        add[domain_ischeme] += integrand
+        integrands[di] += integrand
       except KeyError:
-        add[domain_ischeme] = integrand
-    return add
+        integrands[di] = integrand
+    return Integral(integrands)
 
-  def __neg__( self ):
-    return self * -1
+  def __neg__(self):
+    return Integral([di, -integrand] for di, integrand in self._integrands.items())
 
   def __sub__( self, other ):
     return self + (-other)
 
   def __mul__( self, other ):
-    if not isinstance( other, numbers.Number ):
+    if not isinstance(other, numbers.Number):
       return NotImplemented
-    mul = self.empty( self.shape )
-    mul.update({ domain_ischeme: integrand*other for domain_ischeme, integrand in self.items() })
-    return mul
+    return Integral([di, integrand * other] for di, integrand in self._integrands.items())
 
-  def __rmul__( self, other ):
-    if not isinstance( other, numbers.Number ):
-      return NotImplemented
-    return self * other
+  __rmul__ = __mul__
 
-  def __truediv__( self, other ):
-    if not isinstance( other, numbers.Number ):
+  def __truediv__(self, other):
+    if not isinstance(other, numbers.Number):
       return NotImplemented
-    return self * (1/other)
+    return self.__mul__(1/other)
 
 
 class ModelError( Exception ): pass

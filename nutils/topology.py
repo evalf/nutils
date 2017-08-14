@@ -294,7 +294,7 @@ class Topology( object ):
     iwscale = function.J(geometry, self.ndims) if geometry else 1
     integrand = edit(func * iwscale)
     from . import solver
-    return solver.Integral(integrand, domain=self, ischeme=ischeme)
+    return solver.Integral([((self, ischeme), integrand)])
 
   def projection( self, fun, onto, geometry, **kwargs ):
     'project and return as function'
