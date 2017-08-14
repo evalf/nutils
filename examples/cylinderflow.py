@@ -106,7 +106,7 @@ def main(
   # solve unsteady navier-stokes equations, starting from stationary oseen flow
   lhs0 = solver.solve_linear('lhs', res+oseen, constrain=cons)
   makeplots = MakePlots(domain, ns, timestep=timestep, rotation=rotation) if withplots else lambda *args: None
-  for istep, lhs in log.enumerate('timestep', solver.impliciteuler('lhs', residual=res+convec, inertia=inertia, lhs0=lhs0, timestep=timestep, constrain=cons, tol=1e-10)):
+  for istep, lhs in log.enumerate('timestep', solver.impliciteuler('lhs', residual=res+convec, inertia=inertia, lhs0=lhs0, timestep=timestep, constrain=cons, newtontol=1e-10)):
     makeplots(lhs)
     if istep * timestep >= tmax:
       break

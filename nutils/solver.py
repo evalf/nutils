@@ -166,7 +166,7 @@ class Integral( dict ):
 class ModelError( Exception ): pass
 
 
-def solve_linear(target, residual, constrain=None, *, arguments=None):
+def solve_linear(target, residual, constrain=None, *, arguments=None, **solveargs):
   '''solve linear problem
 
   Parameters
@@ -193,7 +193,7 @@ def solve_linear(target, residual, constrain=None, *, arguments=None):
   assert target not in (arguments or {}), '`target` should not be defined in `arguments`'
   arguments = collections.ChainMap(arguments or {}, {target: numpy.zeros(_find_argument(target, residual).shape)})
   res, jac = Integral.multieval(residual, jacobian, arguments=arguments)
-  return jac.solve( -res, constrain=constrain )
+  return jac.solve( -res, constrain=constrain, **solveargs )
 
 
 def solve( gen_lhs_resnorm, tol=1e-10, maxiter=numpy.inf ):
@@ -262,7 +262,7 @@ def withsolve( f ):
 
 
 @withsolve
-def newton(target, residual, lhs0=None, constrain=None, nrelax=numpy.inf, minrelax=.1, maxrelax=.9, rebound=2**.5, *, arguments=None):
+def newton(target, residual, lhs0=None, constrain=None, nrelax=numpy.inf, minrelax=.1, maxrelax=.9, rebound=2**.5, *, arguments=None, **solveargs):
   '''iteratively solve nonlinear problem by gradient descent
 
   Generates targets such that residual approaches 0 using Newton procedure with
@@ -335,7 +335,7 @@ def newton(target, residual, lhs0=None, constrain=None, nrelax=numpy.inf, minrel
     res, jac = Integral.multieval(residual, jacobian, arguments=collections.ChainMap(arguments or {}, {target: numpy.zeros(resolved_target.shape)}))
     cons = lhs0.copy()
     cons[~constrain] = numpy.nan
-    lhs = jac.solve( -res, constrain=cons )
+    lhs = jac.solve( -res, constrain=cons, **solveargs )
     yield lhs, 0
     return
 
@@ -348,7 +348,7 @@ def newton(target, residual, lhs0=None, constrain=None, nrelax=numpy.inf, minrel
   while True:
     resnorm = numpy.linalg.norm( res[~constrain] )
     yield lhs, resnorm
-    dlhs = -jac.solve( res, constrain=zcons )
+    dlhs = -jac.solve( res, constrain=zcons, **solveargs )
     relax = min( relax * rebound, 1 )
     for irelax in itertools.count():
       res, jac = Integral.multieval(residual, jacobian, fcache=fcache, arguments=collections.ChainMap(arguments or {}, {target: lhs+relax*dlhs}))
@@ -387,7 +387,7 @@ def newton(target, residual, lhs0=None, constrain=None, nrelax=numpy.inf, minrel
 
 
 @withsolve
-def pseudotime(target, residual, inertia, timestep, lhs0, residual0=None, constrain=None, *, arguments=None):
+def pseudotime(target, residual, inertia, timestep, lhs0, residual0=None, constrain=None, *, arguments=None, **solveargs):
   '''iteratively solve nonlinear problem by pseudo time stepping
 
   Generates targets such that residual approaches 0 using hybrid of Newton and
@@ -443,14 +443,14 @@ def pseudotime(target, residual, inertia, timestep, lhs0, residual0=None, constr
   resnorm = resnorm0 = numpy.linalg.norm( res[~constrain] )
   while True:
     yield lhs, resnorm
-    lhs -= jac.solve( res, constrain=zcons )
+    lhs -= jac.solve( res, constrain=zcons, **solveargs )
     thistimestep = timestep * (resnorm0/resnorm)
     log.info( 'timestep: {:.0e}'.format(thistimestep) )
     res, jac = Integral.multieval(residual, jacobian0+jacobiant/thistimestep, fcache=fcache, arguments=collections.ChainMap(arguments or {}, {target: lhs}))
     resnorm = numpy.linalg.norm( res[~constrain] )
 
 
-def thetamethod(target, residual, inertia, timestep, lhs0, theta, target0=None, constrain=None, tol=1e-10, *, arguments=None, **newtonargs):
+def thetamethod(target, residual, inertia, timestep, lhs0, theta, target0=None, constrain=None, newtontol=1e-10, *, arguments=None, **newtonargs):
   '''solve time dependent problem using the theta method
 
   Parameters
@@ -472,7 +472,7 @@ def thetamethod(target, residual, inertia, timestep, lhs0, theta, target0=None, 
       (boolean) or NaN (float). In the remaining positions the values of
       ``lhs0`` are returned unchanged (boolean) or overruled by the values in
       `constrain` (float).
-  tol : float
+  newtontol : float
       Residual tolerance of individual timesteps
   arguments : :class:`collections.abc.Mapping`
       Defines the values for :class:`nutils.function.Argument` objects in
@@ -496,7 +496,7 @@ def thetamethod(target, residual, inertia, timestep, lhs0, theta, target0=None, 
   res = res0 + res1.replace({target: function.Argument(target0, lhs.shape)})
   while True:
     yield lhs
-    lhs = newton(target, residual=res, lhs0=lhs, constrain=constrain, arguments=collections.ChainMap(arguments or {}, {target0: lhs}), **newtonargs).solve(tol=tol)
+    lhs = newton(target, residual=res, lhs0=lhs, constrain=constrain, arguments=collections.ChainMap(arguments or {}, {target0: lhs}), **newtonargs).solve(tol=newtontol)
 
 
 impliciteuler = functools.partial(thetamethod, theta=1)
