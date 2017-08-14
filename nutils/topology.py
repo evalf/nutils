@@ -1514,9 +1514,10 @@ class SubsetTopology( Topology ):
     return self.basetopo.getitem(item).subset( self.elements, strict=False )
 
   def __rsub__( self, other ):
-    assert self.basetopo == other
-    refs = [ elem.reference - ref for elem, ref in zip( self.basetopo, self.refs ) ]
-    return SubsetTopology( self.basetopo, refs, ~self.newboundary if isinstance(self.newboundary,Topology) else self.newboundary )
+    if self.basetopo == other:
+      refs = [ elem.reference - ref for elem, ref in zip( self.basetopo, self.refs ) ]
+      return SubsetTopology( self.basetopo, refs, ~self.newboundary if isinstance(self.newboundary,Topology) else self.newboundary )
+    return super().__rsub__(other)
 
   def __or__( self, other ):
     if not isinstance( other, SubsetTopology ) or self.basetopo != other.basetopo:
