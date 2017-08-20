@@ -41,6 +41,18 @@ ARGUMENTS = 'Arguments'
 
 TOKENS = CACHE, TRANS, OPPTRANS, POINTS, ARGUMENTS
 
+class orderedset(frozenset):
+  __slots__ = '_items',
+
+  def __init__(self, items):
+    self._items = tuple(items)
+
+  def __iter__(self):
+    return iter(self._items)
+
+  def __len__(self):
+    return len(self._items)
+
 class Evaluable( cache.Immutable ):
   'Base class'
 
@@ -1360,7 +1372,7 @@ class Multiply( Array ):
   def __init__( self, funcs ):
     'constructor'
 
-    assert isinstance( funcs, Pair )
+    assert isinstance(funcs, orderedset)
     func1, func2 = funcs
     assert isarray(func1) and isarray(func2)
     self.funcs = func1, func2
@@ -1470,7 +1482,7 @@ class Add( Array ):
   def __init__( self, funcs ):
     'constructor'
 
-    assert isinstance( funcs, Pair )
+    assert isinstance(funcs, orderedset)
     func1, func2 = funcs
     assert isarray(func1) and isarray(func2)
     self.funcs = func1, func2
@@ -1596,7 +1608,7 @@ class Dot( Array ):
   def __init__( self, funcs, naxes ):
     'constructor'
 
-    assert isinstance( funcs, Pair )
+    assert isinstance(funcs, orderedset)
     func1, func2 = funcs
     assert isarray( func1 )
     assert naxes > 0
@@ -3193,7 +3205,7 @@ def dot( arg1, arg2, axes ):
   for ax in reversed( axes ):
     shuffle.append( shuffle.pop(ax) )
 
-  return Dot( Pair( transpose(arg1,shuffle), transpose(arg2,shuffle) ), len(axes) )
+  return Dot(orderedset([transpose(arg1,shuffle), transpose(arg2,shuffle)]), len(axes))
 
 def matmat( arg0, *args ):
   'helper function, contracts last axis of arg0 with first axis of arg1, etc'
@@ -3484,7 +3496,7 @@ def multiply( arg1, arg2 ):
     assert retval.shape == shape, 'bug in %s._multiply' % arg2
     return retval
 
-  return Multiply( Pair(arg1,arg2) )
+  return Multiply(orderedset([arg1, arg2]))
 
 def add( arg1, arg2 ):
   'add'
@@ -3515,7 +3527,7 @@ def add( arg1, arg2 ):
     assert retval.shape == shape, 'bug in %s._add' % arg2
     return retval
 
-  return Add( Pair(arg1,arg2) )
+  return Add(orderedset([arg1, arg2]))
 
 def blockadd( *args ):
   args = tuple( itertools.chain( *( arg.funcs if isinstance( arg, BlockAdd ) else [arg] for arg in args ) ) )
@@ -3806,17 +3818,6 @@ def J( geometry, ndims=None ):
   elif ndims < 0:
     ndims += len(geometry)
   return jacobian( geometry, ndims )
-
-class Pair:
-  '''two-element container that is insensitive to order in equality testing'''
-  def __init__( self, a, b ):
-    self.items = a, b
-  def __iter__( self ):
-    return iter( self.items )
-  def __hash__( self ):
-    return hash( tuple( sorted( hash(item) for item in self.items ) ) )
-  def __eq__( self, other ):
-    return isinstance( other, Pair ) and self.items in ( other.items, other.items[::-1] )
 
 def unravel( func, axis, shape ):
   func = asarray( func )
