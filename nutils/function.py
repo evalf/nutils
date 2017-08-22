@@ -1581,6 +1581,9 @@ class BlockAdd( Array ):
   def _kronecker( self, axis, length, pos ):
     return blockadd( *( kronecker( func, axis, length, pos ) for func in self.funcs ) )
 
+  def _mask(self, maskvec, axis):
+    return blockadd(*(mask(func, maskvec, axis) for func in self.funcs))
+
   @property
   def blocks( self ):
     for func in self.funcs:
