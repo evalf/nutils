@@ -261,6 +261,11 @@ class Reference( cache.Immutable ):
       return self
     return WithChildrenReference( self, child_refs )
 
+  @cache.property
+  def centroid( self ):
+    ipoints, iweights = self.getischeme('gauss{}'.format(1))
+    return ipoints.T.dot( iweights )/iweights.sum()
+
   def trim( self, levels, maxrefine, ndivisions ):
     'trim element along levelset'
 
@@ -719,6 +724,10 @@ class TensorReference( Reference ):
   @property
   def volume( self ):
     return self.ref1.volume * self.ref2.volume
+
+  @property
+  def centroid( self ):
+    return numpy.concatenate( [self.ref1.centroid, self.ref2.centroid] )
 
   def nvertices_by_level( self, n ):
     return self.ref1.nvertices_by_level(n) * self.ref2.nvertices_by_level(n)
