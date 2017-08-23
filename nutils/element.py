@@ -242,10 +242,6 @@ class Reference( cache.Immutable ):
     assert all( all(items) for items in edge2children )
     return tuple( edge2children )
 
-  @cache.property
-  def edgevertexmap( self ):
-    return [ numpy.array( list( map( self.vertices.tolist().index, etrans.apply(edge.vertices).tolist() ) ), dtype=int ) for etrans, edge in self.edges ]
-
   def getischeme( self, ischeme ):
     match = re.match( '([a-zA-Z]+)(.*)', ischeme )
     assert match, 'cannot parse integration scheme %r' % ischeme
@@ -273,10 +269,12 @@ class Reference( cache.Immutable ):
       else self.empty if ( levels <= 0 ).all() \
       else self.with_children( cref.trim( clevels, maxrefine-1, ndivisions )
             for cref, clevels in zip( self.child_refs, self.child_divide(levels,maxrefine) ) ) if maxrefine > 0 \
-      else self.slice( numeric.dot( self.stdfunc(1).eval(self.vertices), levels ), ndivisions )
+      else self.slice( lambda vertices: numeric.dot( self.stdfunc(1).eval(vertices), levels ), ndivisions )
 
-  def slice( self, levels, ndivisions ):
+  def slice( self, levelfunc, ndivisions ):
     # slice along levelset by recursing over dimensions
+
+    levels = levelfunc( self.vertices )
 
     assert numeric.isint( ndivisions )
     assert len(levels) == self.nverts
@@ -295,11 +293,11 @@ class Reference( cache.Immutable ):
         return self.empty if xi == 0 and l1 < 0 or xi == nbins and l0 < 0 else self
       v0, v1 = self.vertices
       midpoint = v0 + (xi/nbins) * (v1-v0)
-      refs = [ edgeref if levels[self.edgevertexmap[iedge]] > 0 else edgeref.empty for iedge, edgeref in enumerate( self.edge_refs ) ]
+      refs = [ edgeref if levelfunc(edgetrans.apply(numpy.zeros((1,0)))) > 0 else edgeref.empty for edgetrans, edgeref in self.edges ]
 
     else:
 
-      refs = [ edgeref.slice( levels[self.edgevertexmap[iedge]], ndivisions ) for iedge, edgeref in enumerate( self.edge_refs ) ]
+      refs = [ edgeref.slice( lambda vertices: levelfunc(edgetrans.apply(vertices)), ndivisions ) for edgetrans, edgeref in self.edges ]
       if sum( ref != baseref for ref, baseref in zip( refs, self.edge_refs ) ) <= 1:
         return self
       if sum( bool(ref) for ref in refs ) <= 1:
@@ -309,10 +307,9 @@ class Reference( cache.Immutable ):
       keep = {}
       for trans, ref in zip(self.edge_transforms,refs):
         if ref:
-          vertices = trans.apply( ref.vertices )
-          for (trans2, edge2), indices in zip(ref.edges,ref.edgevertexmap):
+          for trans2, edge2 in ref.edges:
             if edge2:
-              key = tuple(sorted(tuple(v) for v in vertices[indices]))
+              key = tuple(sorted(tuple(v) for v in trans.apply(trans2.apply(edge2.vertices))))
               try:
                 keep.pop( key )
               except KeyError:
@@ -1287,7 +1284,6 @@ class MosaicReference( Reference ):
         self.edge_refs.append( edge.cone( extrudetrans, tip ) )
 
     vertices = []
-    edgevertexmap = []
     for etrans, eref in self.edges:
       indices = []
       for vertex in etrans.apply( eref.vertices ).tolist():
@@ -1297,8 +1293,6 @@ class MosaicReference( Reference ):
           index = len(vertices)
           vertices.append( vertex )
         indices.append( index )
-      edgevertexmap.append( numpy.array(indices,dtype=int) )
-    self._edgevertexmap = edgevertexmap
 
     Reference.__init__( self, vertices )
 
@@ -1350,10 +1344,6 @@ class MosaicReference( Reference ):
 
   def stdfunc( self, degree ):
     return self.baseref.stdfunc( degree )
-
-  @property
-  def edgevertexmap( self ):
-    return self._edgevertexmap
 
   def stdfunc( self, degree ):
     return self.baseref.stdfunc( degree )
