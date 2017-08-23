@@ -20,11 +20,19 @@ def elem( ndims, exactcentroid ):
   def centroid():
     numpy.testing.assert_almost_equal(ref.centroid, exactcentroid, decimal=15)
 
-  if ref.ndims >= 1 and not isinstance( ref, element.TetrahedronReference ):
+  if ref.ndims >= 1:
     @unittest
     def children():
       childvol = sum( abs(trans.det) * child.volume for trans, child in ref.children )
       numpy.testing.assert_almost_equal( childvol, ref.volume )
+
+    for n in 1, 2, 3:
+      @unittest( name='n'+str(n) )
+      def  childdivide():
+        points, weights = ref.getischeme('vertex{}'.format(n))
+        for (ctrans, cref), vals in zip( ref.children, ref.child_divide( points, n ) ):
+          cpoints, cweights = cref.getischeme('vertex{}'.format(n-1) )
+          numpy.testing.assert_equal( ctrans.apply( cpoints ), vals )
 
   if ref.ndims >= 2:
     @unittest

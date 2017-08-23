@@ -634,7 +634,68 @@ class TetrahedronReference( SimplexReference ):
   '3D simplex'
 
   def __init__( self ):
+    self._children_vertices = numpy.array([[0,1,3,6],
+                                           [1,2,4,7],
+                                           [3,4,5,8],
+                                           [6,7,8,9],
+                                           [7,1,6,8],
+                                           [3,1,8,6],
+                                           [7,1,8,4],
+                                           [3,1,4,8]])
+
     SimplexReference.__init__( self, ndims=3 )
+
+  @cache.property
+  def child_transforms( self ):
+    offset = numpy.array([1,0,0,0])
+    linear = numpy.array([[-1,-1,-1],[1,0,0],[0,1,0],[0,0,1]])
+
+    points, weights = self.getischeme_vertex(1)
+
+    return tuple(transform.affine(points[child_vertices].T.dot(linear),points[child_vertices].T.dot(offset)) for child_vertices in self._children_vertices)
+
+  @property
+  def child_refs( self ):
+    return (self,)*self.nchildren
+
+  def getindices_vertex( self, n ):
+    m = 2**n+1
+    indis = numpy.arange(m)
+    return numpy.array([ [i,j,k] for k in indis for j in indis[:m-k] for i in indis[:m-j-k] ])
+
+  def getischeme_vertex( self, n ):
+    return self.getindices_vertex(n)/(2**n), None
+
+  def nvertices_by_level( self, n ):
+    m = 2**n+1
+    return ((m+2)*(m+1)*m)//6
+
+  def child_divide( self, vals, n ):
+    assert len(vals) == self.nvertices_by_level(n)
+
+    child_indices =  self.getindices_vertex(1)
+
+    offset = numpy.array([1,0,0,0])
+    linear = numpy.array([[-1,-1,-1],[1,0,0],[0,1,0],[0,0,1]])
+
+    m = 2**n+1
+    cvals = []
+    for child_ref, child_vertices in zip(self.child_refs,self._children_vertices):
+      V = child_indices[child_vertices]
+
+      child_offset = (2**(n-1))*V.T.dot( offset )
+      child_linear = V.T.dot( linear )
+
+      original    = child_ref.getindices_vertex(n-1)
+      transformed = original.dot( child_linear.T ) + child_offset
+
+      i, j, k = transformed.T
+      cvals.append( vals[( (k-1)*k*(2*k-1)//6 - (1+2*m)*(k-1)*k//2 + m*(m+1)*k )//2 + ( (2*(m-k)+1)*j-j**2 )//2 + i] )
+
+    return numpy.array(cvals)
+
+  def stdfunc( self, degree ):
+    return PolyTetrahedron(degree)
 
   def getischeme_gauss( self, degree ):
     '''get integration scheme
@@ -1624,6 +1685,40 @@ class PolyTriangle( StdElem ):
       data = numpy.concatenate( [ 1-points.sum(1)[:,_], points ], axis=1 ) if grad == 0 \
         else numpy.array( [[[-1,-1],[1,0],[0,1]]], dtype=float ) if grad == 1 \
         else numpy.zeros( (1,3)+(2,)*grad )
+
+    return data
+
+  def __repr__( self ):
+    'string representation'
+
+    return '%s#%x' % ( self.__class__.__name__, id(self) )
+
+class PolyTetrahedron( StdElem ):
+  '''poly tetrahedron (linear for now)
+     conventions: dof numbering as vertices, see TetrahedronReference docstring.'''
+
+  __slots__ = ()
+
+  def __init__( self, order ):
+    'constructor'
+
+    self.order = order
+    assert order in (0,1)
+    StdElem.__init__( self, ndims=2, nshapes=4 if order else 1 )
+
+  def __getnewargs__( self ):
+    return self.order,
+
+  def eval( self, points, grad=0 ):
+    'eval'
+
+    if self.order == 0:
+      data = numpy.ones( (1,1) ) if grad == 0 \
+        else numpy.zeros( (1,1)+(3,)*grad )
+    else:
+      data = numpy.concatenate( [ 1-points.sum(1)[:,_], points ], axis=1 ) if grad == 0 \
+        else numpy.array( [[[-1,-1,-1],[1,0,0],[0,1,0],[0,0,1]]], dtype=float ) if grad == 1 \
+        else numpy.zeros( (1,4)+(3,)*grad )
 
     return data
 
