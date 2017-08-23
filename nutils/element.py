@@ -308,26 +308,14 @@ class Reference( cache.Immutable ):
       if sum( bool(ref) for ref in refs ) <= 1:
         return self.empty
 
-      #TODO: Optimization possible for case in which no EmptyReferences are present
-      keep = {}
-      for trans, ref in zip(self.edge_transforms,refs):
-        if ref:
-          for trans2, edge2 in ref.edges:
-            if edge2:
-              key = tuple(sorted(tuple(v) for v in trans.apply(trans2.apply(edge2.vertices))))
-              try:
-                keep.pop( key )
-              except KeyError:
-                keep[key] = trans, trans2, edge2
+      clevel = levelfunc( self.centroid[_] )[0]
 
-      length = 0.
-      midpoint = 0.
-      for  trans, trans2, edge2 in keep.values():
-        points, weights = edge2.getischeme( 'gauss1' )
-        wtot = weights.sum()*numpy.linalg.norm(trans2.ext)*numpy.linalg.norm(trans.ext)
-        length += wtot
-        midpoint += wtot * (trans<<trans2).apply( numeric.dot( weights, points )/weights.sum() )
-      midpoint /= length
+      select   = clevel*levels<=0 if clevel!=0 else levels!=0
+      levels   = levels[select]
+      vertices = self.vertices[select]
+
+      xi = numpy.round( levels/(levels-clevel) * nbins )
+      midpoint = numpy.mean( vertices + (self.centroid-vertices)*(xi/nbins)[:,_], axis=0 )
 
     mosaic = MosaicReference( self, refs, midpoint )
     return self.empty if mosaic.volume == 0 else mosaic if mosaic.volume < self.volume else self
