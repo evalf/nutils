@@ -219,7 +219,7 @@ class Evaluable( cache.Immutable ):
         args = [ '%s=%s' % item for item in zip( names, args ) ]
       except:
         pass
-      lines.append( '  %%%d = %s( %s )' % ( len(lines), op, ', '.join( args ) ) )
+      lines.append( '  %%%d = %s( %s )' % ( len(lines), op._asciitree_str() if isarray(op) else op, ', '.join( args ) ) )
       if len(lines) == nlines+1:
         break
     return '\n'.join( lines )
