@@ -1620,13 +1620,15 @@ class OrientedGroupsTopology( UnstructuredTopology ):
     elements = []
     for elem in self.basetopo.getitem(item):
       try:
-        ielem = self.edict[elem.transform]
+        ielem, tail = elem.transform.lookup_item( self.edict )
       except KeyError:
         elem = elem.flipped
         try:
-          ielem = self.edict[elem.transform]
+          ielem, tail = elem.transform.lookup_item( self.edict )
         except KeyError:
           continue
+      if not tail.canonical in ( transform.identity, transform.affine(1,[0]) ):
+        raise NotImplementedError
       ref = self.elements[ielem].reference & elem.reference
       elements.append( element.Element( ref, elem.transform, elem.opposite, oriented=True ) )
     return UnstructuredTopology( self.ndims, elements )

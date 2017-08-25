@@ -36,11 +36,13 @@ class Element( object ):
       opptrans = opptrans.canonical
       if not oriented:
         vtx1 = trans.apply( reference.vertices )
-        vtx2 = opptrans.apply( reference.vertices )
-        if vtx1 != vtx2:
-          assert reference.ndims == 1 # TODO leverage rotation information from element
-          assert vtx1 == vtx2[::-1]
-          opptrans <<= transform.affine( -1, [1] )
+        for ptrans in reference.permutation_transforms:
+          vtx2 = (opptrans<<ptrans).apply( reference.vertices )
+          if vtx1 == vtx2:
+            opptrans <<= ptrans
+            break
+        else:
+          raise Exception('Did not find a conforming permutation for the opposing transformation')
     self.reference = reference
     self.transform = trans
     self.opposite = opptrans
@@ -226,6 +228,10 @@ class Reference( cache.Immutable ):
     return tuple( ribbons )
 
   @cache.property
+  def permutation_transforms( self ):
+    return (transform.identity,)
+
+  @cache.property
   def interfaces( self ):
     return [ ((ichild,iedge),(jchild,jedge))
       for ichild, tmp in enumerate( self.childedgemap )
@@ -241,10 +247,6 @@ class Reference( cache.Immutable ):
           edge2children[jedge][jchild] = ichild, iedge
     assert all( all(items) for items in edge2children )
     return tuple( edge2children )
-
-  @cache.property
-  def edgevertexmap( self ):
-    return [ numpy.array( list( map( self.vertices.tolist().index, etrans.apply(edge.vertices).tolist() ) ), dtype=int ) for etrans, edge in self.edges ]
 
   def getischeme( self, ischeme ):
     match = re.match( '([a-zA-Z]+)(.*)', ischeme )
@@ -265,6 +267,11 @@ class Reference( cache.Immutable ):
       return self
     return WithChildrenReference( self, child_refs )
 
+  @cache.property
+  def centroid( self ):
+    ipoints, iweights = self.getischeme('gauss{}'.format(1))
+    return ipoints.T.dot( iweights )/iweights.sum()
+
   def trim( self, levels, maxrefine, ndivisions ):
     'trim element along levelset'
 
@@ -273,10 +280,12 @@ class Reference( cache.Immutable ):
       else self.empty if ( levels <= 0 ).all() \
       else self.with_children( cref.trim( clevels, maxrefine-1, ndivisions )
             for cref, clevels in zip( self.child_refs, self.child_divide(levels,maxrefine) ) ) if maxrefine > 0 \
-      else self.slice( numeric.dot( self.stdfunc(1).eval(self.vertices), levels ), ndivisions )
+      else self.slice( lambda vertices: numeric.dot( self.stdfunc(1).eval(vertices), levels ), ndivisions )
 
-  def slice( self, levels, ndivisions ):
+  def slice( self, levelfunc, ndivisions ):
     # slice along levelset by recursing over dimensions
+
+    levels = levelfunc( self.vertices )
 
     assert numeric.isint( ndivisions )
     assert len(levels) == self.nverts
@@ -295,37 +304,24 @@ class Reference( cache.Immutable ):
         return self.empty if xi == 0 and l1 < 0 or xi == nbins and l0 < 0 else self
       v0, v1 = self.vertices
       midpoint = v0 + (xi/nbins) * (v1-v0)
-      refs = [ edgeref if levels[self.edgevertexmap[iedge]] > 0 else edgeref.empty for iedge, edgeref in enumerate( self.edge_refs ) ]
+      refs = [ edgeref if levelfunc(edgetrans.apply(numpy.zeros((1,0)))) > 0 else edgeref.empty for edgetrans, edgeref in self.edges ]
 
     else:
 
-      refs = [ edgeref.slice( levels[self.edgevertexmap[iedge]], ndivisions ) for iedge, edgeref in enumerate( self.edge_refs ) ]
+      refs = [ edgeref.slice( lambda vertices: levelfunc(edgetrans.apply(vertices)), ndivisions ) for edgetrans, edgeref in self.edges ]
       if sum( ref != baseref for ref, baseref in zip( refs, self.edge_refs ) ) <= 1:
         return self
       if sum( bool(ref) for ref in refs ) <= 1:
         return self.empty
 
-      #TODO: Optimization possible for case in which no EmptyReferences are present
-      keep = {}
-      for trans, ref in zip(self.edge_transforms,refs):
-        if ref:
-          vertices = trans.apply( ref.vertices )
-          for (trans2, edge2), indices in zip(ref.edges,ref.edgevertexmap):
-            if edge2:
-              key = tuple(sorted(tuple(v) for v in vertices[indices]))
-              try:
-                keep.pop( key )
-              except KeyError:
-                keep[key] = trans, trans2, edge2
+      clevel = levelfunc( self.centroid[_] )[0]
 
-      length = 0.
-      midpoint = 0.
-      for  trans, trans2, edge2 in keep.values():
-        points, weights = edge2.getischeme( 'gauss1' )
-        wtot = weights.sum()*numpy.linalg.norm(trans2.ext)*numpy.linalg.norm(trans.ext)
-        length += wtot
-        midpoint += wtot * (trans<<trans2).apply( numeric.dot( weights, points )/weights.sum() )
-      midpoint /= length
+      select   = clevel*levels<=0 if clevel!=0 else levels!=0
+      levels   = levels[select]
+      vertices = self.vertices[select]
+
+      xi = numpy.round( levels/(levels-clevel) * nbins )
+      midpoint = numpy.mean( vertices + (self.centroid-vertices)*(xi/nbins)[:,_], axis=0 )
 
     mosaic = MosaicReference( self, refs, midpoint )
     return self.empty if mosaic.volume == 0 else mosaic if mosaic.volume < self.volume else self
@@ -462,6 +458,16 @@ class SimplexReference( Reference ):
   def edge_transforms( self ):
     assert self.ndims > 0
     return tuple( transform.simplex( self.vertices[list(range(i))+list(range(i+1,self.ndims+1))], isflipped=i%2==1 ) for i in range(self.ndims+1) )
+
+  @cache.property
+  def permutation_transforms( self ):
+    import itertools
+    transforms = []
+    for verts in itertools.permutations( tuple(v for v in self.vertices) ):
+      offset = verts[0]
+      linear = verts[1:]-verts[0]
+      transforms.append( transform.affine( linear.T, offset ) )
+    return tuple(transforms)
 
   @property
   def _ribbons( self ):
@@ -644,7 +650,68 @@ class TetrahedronReference( SimplexReference ):
   '3D simplex'
 
   def __init__( self ):
+    self._children_vertices = numpy.array([[0,1,3,6],
+                                           [1,2,4,7],
+                                           [3,4,5,8],
+                                           [6,7,8,9],
+                                           [7,1,6,8],
+                                           [3,1,8,6],
+                                           [7,1,8,4],
+                                           [3,1,4,8]])
+
     SimplexReference.__init__( self, ndims=3 )
+
+  @cache.property
+  def child_transforms( self ):
+    offset = numpy.array([1,0,0,0])
+    linear = numpy.array([[-1,-1,-1],[1,0,0],[0,1,0],[0,0,1]])
+
+    points, weights = self.getischeme_vertex(1)
+
+    return tuple(transform.affine(points[child_vertices].T.dot(linear),points[child_vertices].T.dot(offset)) for child_vertices in self._children_vertices)
+
+  @property
+  def child_refs( self ):
+    return (self,)*self.nchildren
+
+  def getindices_vertex( self, n ):
+    m = 2**n+1
+    indis = numpy.arange(m)
+    return numpy.array([ [i,j,k] for k in indis for j in indis[:m-k] for i in indis[:m-j-k] ])
+
+  def getischeme_vertex( self, n ):
+    return self.getindices_vertex(n)/(2**n), None
+
+  def nvertices_by_level( self, n ):
+    m = 2**n+1
+    return ((m+2)*(m+1)*m)//6
+
+  def child_divide( self, vals, n ):
+    assert len(vals) == self.nvertices_by_level(n)
+
+    child_indices =  self.getindices_vertex(1)
+
+    offset = numpy.array([1,0,0,0])
+    linear = numpy.array([[-1,-1,-1],[1,0,0],[0,1,0],[0,0,1]])
+
+    m = 2**n+1
+    cvals = []
+    for child_ref, child_vertices in zip(self.child_refs,self._children_vertices):
+      V = child_indices[child_vertices]
+
+      child_offset = (2**(n-1))*V.T.dot( offset )
+      child_linear = V.T.dot( linear )
+
+      original    = child_ref.getindices_vertex(n-1)
+      transformed = original.dot( child_linear.T ) + child_offset
+
+      i, j, k = transformed.T
+      cvals.append( vals[( (k-1)*k*(2*k-1)//6 - (1+2*m)*(k-1)*k//2 + m*(m+1)*k )//2 + ( (2*(m-k)+1)*j-j**2 )//2 + i] )
+
+    return numpy.array(cvals)
+
+  def stdfunc( self, degree ):
+    return PolyTetrahedron(degree)
 
   def getischeme_gauss( self, degree ):
     '''get integration scheme
@@ -722,6 +789,10 @@ class TensorReference( Reference ):
   @property
   def volume( self ):
     return self.ref1.volume * self.ref2.volume
+
+  @property
+  def centroid( self ):
+    return numpy.concatenate( [self.ref1.centroid, self.ref2.centroid] )
 
   def nvertices_by_level( self, n ):
     return self.ref1.nvertices_by_level(n) * self.ref2.nvertices_by_level(n)
@@ -1126,6 +1197,10 @@ class WithChildrenReference( Reference ):
     return self.baseref.interfaces
 
   @property
+  def permutation_transforms( self ):
+    return self.baseref.permutation_transforms
+
+  @property
   def volume( self ):
     return sum( abs(trans.det) * ref.volume for trans, ref in self.children )
 
@@ -1287,7 +1362,6 @@ class MosaicReference( Reference ):
         self.edge_refs.append( edge.cone( extrudetrans, tip ) )
 
     vertices = []
-    edgevertexmap = []
     for etrans, eref in self.edges:
       indices = []
       for vertex in etrans.apply( eref.vertices ).tolist():
@@ -1297,8 +1371,6 @@ class MosaicReference( Reference ):
           index = len(vertices)
           vertices.append( vertex )
         indices.append( index )
-      edgevertexmap.append( numpy.array(indices,dtype=int) )
-    self._edgevertexmap = edgevertexmap
 
     Reference.__init__( self, vertices )
 
@@ -1350,10 +1422,6 @@ class MosaicReference( Reference ):
 
   def stdfunc( self, degree ):
     return self.baseref.stdfunc( degree )
-
-  @property
-  def edgevertexmap( self ):
-    return self._edgevertexmap
 
   def stdfunc( self, degree ):
     return self.baseref.stdfunc( degree )
@@ -1637,6 +1705,40 @@ class PolyTriangle( StdElem ):
       data = numpy.concatenate( [ 1-points.sum(1)[:,_], points ], axis=1 ) if grad == 0 \
         else numpy.array( [[[-1,-1],[1,0],[0,1]]], dtype=float ) if grad == 1 \
         else numpy.zeros( (1,3)+(2,)*grad )
+
+    return data
+
+  def __repr__( self ):
+    'string representation'
+
+    return '%s#%x' % ( self.__class__.__name__, id(self) )
+
+class PolyTetrahedron( StdElem ):
+  '''poly tetrahedron (linear for now)
+     conventions: dof numbering as vertices, see TetrahedronReference docstring.'''
+
+  __slots__ = ()
+
+  def __init__( self, order ):
+    'constructor'
+
+    self.order = order
+    assert order in (0,1)
+    StdElem.__init__( self, ndims=2, nshapes=4 if order else 1 )
+
+  def __getnewargs__( self ):
+    return self.order,
+
+  def eval( self, points, grad=0 ):
+    'eval'
+
+    if self.order == 0:
+      data = numpy.ones( (1,1) ) if grad == 0 \
+        else numpy.zeros( (1,1)+(3,)*grad )
+    else:
+      data = numpy.concatenate( [ 1-points.sum(1)[:,_], points ], axis=1 ) if grad == 0 \
+        else numpy.array( [[[-1,-1,-1],[1,0,0],[0,1,0],[0,0,1]]], dtype=float ) if grad == 1 \
+        else numpy.zeros( (1,4)+(3,)*grad )
 
     return data
 

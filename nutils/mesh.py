@@ -317,8 +317,6 @@ def gmsh( fname, name=None ):
 
   """
 
-  ndims = 2
-
   # split sections
   sections = {}
   lines = iter( open(fname,'r') if isinstance(fname,str) else fname )
@@ -340,11 +338,16 @@ def gmsh( fname, name=None ):
   # parse section PhysicalNames
   PhysicalNames = sections.pop( 'PhysicalNames', [0] )
   assert int(PhysicalNames[0]) == len(PhysicalNames)-1
-  tagmapbydim = {}, {}, {} # tagid->tagname dictionary
+  tagmapbydim = {}, {}, {}, {} # tagid->tagname dictionary
   for line in PhysicalNames[1:]:
     nd, tagid, tagname = line.split( ' ', 2 )
     nd = int(nd)
     tagmapbydim[nd][int(tagid)] = tagname.strip( '"' )
+
+  # determine the dimension of the mesh
+  ndims = 2 if len(tagmapbydim[3])==0 else 3
+  if ndims==3 and len(tagmapbydim[1])>0:
+    raise NotImplementedError('Physical line groups are not supported in volumetric meshes')
 
   # parse section Nodes
   Nodes = sections.pop( 'Nodes' )
@@ -356,15 +359,16 @@ def gmsh( fname, name=None ):
     nodemap[int(words[0])] = i
     nodes[i] = [ float(n) for n in words[1:] ]
   assert not numpy.isnan(nodes).any()
-  assert numpy.all( nodes[:,2] ) == 0, 'ndims=3 case not yet implemented.'
-  nodes = nodes[:,:2]
+  if ndims==2:
+    assert numpy.all( nodes[:,2] ) == 0, 'Non-zero z-coordinates found in 2D mesh.'
+    nodes = nodes[:,:2]
 
   # parse section Elements
   Elements = sections.pop( 'Elements' )
   assert int(Elements[0]) == len(Elements)-1
-  inodesbydim = [], [], [] # nelems-list of 3-tuples of node numbers
-  tagnamesbydim = {}, {}, {} # tag->ielems dictionary
-  etype2nd = { 15:0, 1:1, 2:2 }
+  inodesbydim = [],[],[],[] # nelems-list of 4-tuples of node numbers
+  tagnamesbydim = {},{},{},{} # tag->ielems dictionary
+  etype2nd = { 15:0, 1:1, 2:2, 4:3 }
   for line in Elements[1:]:
     words = line.split()
     nd = etype2nd[int(words[1])]
@@ -376,13 +380,13 @@ def gmsh( fname, name=None ):
       inodesbydim[nd].append( inodes )
     tagnamesbydim[nd].setdefault( tagname, [] ).append( len(inodesbydim[nd])-1 )
   inodesbydim = [ numpy.array(e) if e else numpy.empty( (0,nd), dtype=int ) for nd, e in enumerate(inodesbydim) ]
-  if tagnamesbydim[2]:
-    log.info( 'topology groups:', ', '.join('{} (#{})'.format(n,len(e)) for n, e in tagnamesbydim[2].items()) )
+  if tagnamesbydim[ndims]:
+    log.info( 'topology groups:', ', '.join('{} (#{})'.format(n,len(e)) for n, e in tagnamesbydim[ndims].items()) )
 
   # check orientation
-  vinodes = inodesbydim[2] # save for geom
-  elemnodes = nodes[vinodes] # nelems x 3 x 2
-  elemareas = numpy.linalg.det( elemnodes[:,:2] - elemnodes[:,2:] )
+  vinodes = inodesbydim[ndims] # save for geom
+  elemnodes = nodes[vinodes] # nelems x ndims+1 x ndims
+  elemareas = numpy.linalg.det( elemnodes[:,1:] - elemnodes[:,:1] )
   assert numpy.all( elemareas > 0 )
 
   # parse section Periodic
@@ -415,17 +419,18 @@ def gmsh( fname, name=None ):
     warnings.warn('section {!r} defined but not used'.format(section) )
 
   # create base topology
-  triref = element.getsimplex(2)
-  elements = [ element.Element( triref, transform.maptrans( linear=[[-1,-1],[1,0],[0,1]], offset=[1,0,0], vertices=inodes if not name else [name+str(inode) for inode in inodes] ) )
-    for ielem, inodes in log.enumerate( 'elem', inodesbydim[2] ) ]
+  simplexref = element.getsimplex(ndims)
+  elements = [ element.Element( simplexref, transform.maptrans( linear=[[-1,-1],[1,0],[0,1]] if ndims==2 else [[-1,-1,-1],[1,0,0],[0,1,0],[0,0,1]], offset=[1,0,0] if ndims==2 else [1,0,0,0], vertices=inodes if not name else [name+str(inode) for inode in inodes] ) )
+    for ielem, inodes in log.enumerate( 'elem', inodesbydim[ndims] ) ]
   basetopo = topology.UnstructuredTopology( ndims, elements )
   log.info( 'created topology consisting of {} elements'.format(len(elements)) )
 
   # create connectivity matrix
-  connectivity = -numpy.ones( (len(inodesbydim[2]),3), dtype=int )
+  connectivity = -numpy.ones( (len(inodesbydim[ndims]),ndims+1), dtype=int )
   edges = {} # binodes->(ielem,iedge) dictionary
-  for ielem, inodes in log.enumerate( 'elem', inodesbydim[2] ):
-    for iedge, binodes in enumerate([ inodes[1:], inodes[::-2], inodes[:2] ]):
+  econn = [[1,2],[2,0],[0,1]] if ndims==2 else [[1,2,3],[0,3,2],[0,1,3],[0,2,1]] # consistent with simplex.edge_transforms
+  for ielem, inodes in log.enumerate( 'elem', inodesbydim[ndims] ):
+    for iedge, binodes in enumerate([ inodes[ec] for ec in econn ]):
       key = tuple(sorted(binodes))
       try:
         jelem, jedge = edges[key]
@@ -441,10 +446,10 @@ def gmsh( fname, name=None ):
   # separate boundary and interface elements by tag
   tagsbelems = {}
   tagsielems = {}
-  for name, ibelems in tagnamesbydim[1].items():
+  for name, ibelems in tagnamesbydim[ndims-1].items():
     for ibelem in ibelems:
-      binodes = inodesbydim[1][ibelem]
-      ielem, iedge = edges[ min(binodes), max(binodes) ]
+      binodes = inodesbydim[ndims-1][ibelem]
+      ielem, iedge = edges[ tuple(sorted(binodes)) ]
       elem = elements[ielem].edge(iedge)
       ioppelem = connectivity[ielem][iedge]
       if ioppelem == -1:
@@ -462,7 +467,7 @@ def gmsh( fname, name=None ):
   if tagnamesbydim[0]: # point gorups defined
     pelems = { inodes[0]: [] for inodes in inodesbydim[0] }
     pref = element.getsimplex(0)
-    for inodes, elem in zip( inodesbydim[2], elements ):
+    for inodes, elem in zip( inodesbydim[ndims], elements ):
       for ivertex, inode in enumerate(inodes):
         if inode in pelems:
           offset = elem.reference.vertices[ivertex]
@@ -481,17 +486,17 @@ def gmsh( fname, name=None ):
 
   # create vgroups
   vgroups = {}
-  for name, ielems in tagnamesbydim[2].items():
+  for name, ielems in tagnamesbydim[ndims].items():
     if len(ielems) == len(elements):
       vgroups[name] = ...
     elif ielems:
       refs = numpy.array( [None] * len(elements), dtype=object )
-      refs[ielems] = triref
+      refs[ielems] = simplexref
       vgroups[name] = topology.SubsetTopology( topo, refs )
 
   # create geometry
   nmap = { elem.transform: inodes for inodes, elem in zip( vinodes, elements ) }
-  fmap = dict.fromkeys( nmap, triref.stdfunc(1) )
+  fmap = dict.fromkeys( nmap, simplexref.stdfunc(1) )
   basis = function.function( fmap=fmap, nmap=nmap, ndofs=len(nodes) )
   geom = ( basis[:,_] * nodes ).sum(0)
 
