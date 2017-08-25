@@ -289,12 +289,12 @@ def newton(target, residual, lhs0=None, constrain=None, nrelax=numpy.inf, minrel
   if lhs0 is None:
     lhs0 = numpy.zeros(residual.shape)
   else:
-    assert isinstance(lhs0, numpy.ndarray) and lhs0.dtype == float and lhs0.shape == residual.shape, 'invalid lhs0 argument'
+    assert numeric.isarray(lhs0) and lhs0.dtype == float and lhs0.shape == residual.shape, 'invalid lhs0 argument'
 
   if constrain is None:
     constrain = numpy.zeros(residual.shape, dtype=bool)
   else:
-    assert isinstance(constrain, numpy.ndarray) and constrain.dtype in (bool,float) and constrain.shape == residual.shape, 'invalid constrain argument'
+    assert numeric.isarray(constrain) and constrain.dtype in (bool,float) and constrain.shape == residual.shape, 'invalid constrain argument'
     if constrain.dtype == float:
       lhs0 = numpy.choose(numpy.isnan(constrain), [constrain, lhs0])
       constrain = ~numpy.isnan(constrain)
@@ -400,7 +400,7 @@ def pseudotime(target, residual, inertia, timestep, lhs0, residual0=None, constr
   if constrain is None:
     constrain = numpy.zeros(residual.shape, dtype=bool)
   else:
-    assert isinstance(constrain, numpy.ndarray) and constrain.dtype in (bool,float) and constrain.shape == residual.shape, 'invalid constrain argument'
+    assert numeric.isarray(constrain) and constrain.dtype in (bool,float) and constrain.shape == residual.shape, 'invalid constrain argument'
     if constrain.dtype == float:
       lhs0 = numpy.choose(numpy.isnan(constrain), [constrain, lhs0])
       constrain = ~numpy.isnan(constrain)
@@ -511,11 +511,11 @@ def optimize(target, functional, droptol=None, lhs0=None, constrain=None, newton
   if lhs0 is None:
     lhs0 = numpy.zeros(argshape)
   else:
-    assert isinstance(lhs0, numpy.ndarray) and lhs0.dtype == float and lhs0.shape == argshape, 'invalid lhs0 argument'
+    assert numeric.isarray(lhs0) and lhs0.dtype == float and lhs0.shape == argshape, 'invalid lhs0 argument'
   if constrain is None:
     constrain = numpy.zeros(argshape, dtype=bool)
   else:
-    assert isinstance(constrain, numpy.ndarray) and constrain.dtype in (bool,float) and constrain.shape == argshape, 'invalid constrain argument'
+    assert numeric.isarray(constrain) and constrain.dtype in (bool,float) and constrain.shape == argshape, 'invalid constrain argument'
     if constrain.dtype == float:
       lhs0 = numpy.choose(numpy.isnan(constrain), [constrain, lhs0])
       constrain = ~numpy.isnan(constrain)

@@ -137,12 +137,12 @@ class PyPlot( BasePlot ):
 
     kwargs.pop( 'triangulate', None ) # ignore deprecated argument
 
-    if not isinstance( points, numpy.ndarray ) and points[0].shape[1] == 1: # line plot
+    if not numeric.isarray(points) and points[0].shape[1] == 1: # line plot
       if values is not None:
         self.segments( [ numpy.concatenate( [x,y[:,_]], axis=1 ) for x, y in zip( points, values ) ], values )
       return
 
-    if isinstance( points, numpy.ndarray ): # bulk data
+    if numeric.isarray(points): # bulk data
       assert points.shape[-1] == 2
       import matplotlib.tri
       tri = matplotlib.tri.Triangulation( *points.reshape(-1,2).T )
@@ -171,7 +171,7 @@ class PyPlot( BasePlot ):
   def tripcolor( self, *args, **kwargs ):
     import matplotlib.tri
     assert len(args) >= 2
-    if isinstance( args[0], numpy.ndarray ) and isinstance( args[1], numpy.ndarray ):
+    if numeric.isarray(args[0]) and numeric.isarray(args[1]):
       # args = x, y[, triangles[, mask]], values
       tri = matplotlib.tri.Triangulation( *args[:-1] )
       values = args[-1]
@@ -180,7 +180,7 @@ class PyPlot( BasePlot ):
       tri, values = args
       if not isinstance( tri, matplotlib.tri.Triangulation ):
         tri, edges = triangulate( tri, mergetol )
-      if not isinstance( values, numpy.ndarray ):
+      if not numeric.isarray(values):
         values = numpy.concatenate( values, axis=0 )
     assert len(tri.x) == len(values)
     mask = ~numpy.isfinite( values )
@@ -195,7 +195,7 @@ class PyPlot( BasePlot ):
     import matplotlib.tri
     if not isinstance( tri, matplotlib.tri.Triangulation ):
       tri, edges = triangulate( tri, mergetol )
-    if not isinstance( values, numpy.ndarray ):
+    if not numeric.isarray(values):
       values = numpy.concatenate( values, axis=0 )
     assert len(tri.x) == len(values)
     if every:
@@ -203,7 +203,7 @@ class PyPlot( BasePlot ):
     return self._pyplot.tricontour( tri, values, levels=levels, **kwargs )
 
   def streamplot( self, tri, velo, spacing, bbox=None, mergetol=1e-5, linewidth=None, color=None, **kwargs ):
-    if isinstance( spacing, numpy.ndarray ):
+    if numeric.isarray(spacing):
       # compatibility with original streamplot function definition
       x = tri
       y = velo
@@ -213,7 +213,7 @@ class PyPlot( BasePlot ):
       import matplotlib.tri
       if not isinstance( tri, matplotlib.tri.Triangulation ):
         tri, edges = triangulate( tri, mergetol=mergetol )
-      if not isinstance( velo, numpy.ndarray ):
+      if not numeric.isarray(velo):
         velo = numpy.concatenate( velo, axis=0 )
       assert len(tri.x) == len(velo)
       if bbox is None:
@@ -229,10 +229,10 @@ class PyPlot( BasePlot ):
       uv = interpolate( tri, numeric.meshgrid(x,y).T, velo, mergetol=mergetol )
       u = uv[...,0]
       v = uv[...,1]
-    assert isinstance( x, numpy.ndarray ) and x.ndim == 1
-    assert isinstance( y, numpy.ndarray ) and y.ndim == 1
-    assert isinstance( u, numpy.ndarray ) and u.shape == (len(y),len(x))
-    assert isinstance( v, numpy.ndarray ) and v.shape == (len(y),len(x))
+    assert numeric.isarray(x) and x.ndim == 1
+    assert numeric.isarray(y) and y.ndim == 1
+    assert numeric.isarray(u) and u.shape == (len(y),len(x))
+    assert numeric.isarray(v) and v.shape == (len(y),len(x))
     if linewidth is not None and linewidth < 0: # convention: negative linewidth is scaled with velocity magnitude
       linewidth = -linewidth * numpy.sqrt( u**2 + v**2 )
     if color is None: # default: color mapped to velocity magnitude
@@ -244,7 +244,7 @@ class PyPlot( BasePlot ):
   
     from matplotlib import collections
     if facecolors != 'none':
-      assert isinstance(facecolors,numpy.ndarray) and facecolors.shape == (len(verts),)
+      assert numeric.isarray(facecolors) and facecolors.shape == (len(verts),)
       array = facecolors
       facecolors = None
     polycol = collections.PolyCollection( verts, facecolors=facecolors, **kwargs )
@@ -392,7 +392,7 @@ class PyPlot( BasePlot ):
 
   def cspy( self, A, **kwargs ): 
     'Like pyplot.spy, but coloring acc to 10^log of absolute values, where [0, inf, nan] show up in blue.'
-    if not isinstance( A, numpy.ndarray ):
+    if not numeric.isarray(A):
       A = A.toarray()
     if A.size < 2: # trivial case of 1x1 matrix
       A = A.reshape( 1, 1 )
@@ -852,7 +852,7 @@ def interpolate( tri, xy, values, mergetol=1e-5 ):
   import matplotlib.tri
   if not isinstance( tri, matplotlib.tri.Triangulation ):
     tri, edges = triangulate( tri, mergetol=mergetol )
-  if not isinstance( values, numpy.ndarray ):
+  if not numeric.isarray(values):
     values = numpy.concatenate( values, axis=0 )
   assert len(tri.x) == len(values)
   itri = tri.get_trifinder()( xy[...,0].ravel(), xy[...,1].ravel() )

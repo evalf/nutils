@@ -152,7 +152,7 @@ class Evaluable( cache.Immutable ):
         points, weights = ischeme
         assert points.shape[-1] == elem.ndims
         assert points.shape[:-1] == weights.shape, 'non matching shapes: points.shape=%s, weights.shape=%s' % ( points.shape, weights.shape )
-      elif isinstance( ischeme, numpy.ndarray ):
+      elif numeric.isarray(ischeme):
         points = ischeme.astype( float )
         assert points.shape[-1] == elem.ndims
       elif ischeme is None:
@@ -167,7 +167,7 @@ class Evaluable( cache.Immutable ):
         assert points.ndim == 2 and points.shape[1] == trans.fromdims
 
     if arguments is not None:
-      assert all(isinstance(value, numpy.ndarray) and value.dtype.kind in 'bif' for value in arguments.values())
+      assert all(numeric.isarray(value) and value.dtype.kind in 'bif' for value in arguments.values())
 
     simple = self.simplified
     ops, inds = simple.serialized
@@ -527,7 +527,7 @@ class ArrayFunc( Array ):
 class Constant( Array ):
 
   def __init__(self, value):
-    assert isinstance(value, numpy.ndarray) and value.dtype != object
+    assert numeric.isarray(value) and value.dtype != object
     self.value = value.copy()
     super().__init__(args=[], shape=value.shape, dtype=_jointdtype(value.dtype))
 
@@ -2814,7 +2814,7 @@ def _matchndim( *arrays ):
 def _obj2str( obj ):
   'convert object to string'
 
-  if isinstance( obj, numpy.ndarray ):
+  if numeric.isarray(obj):
     if obj.size < 6:
       return _obj2str(obj.tolist())
     return 'array<%s>' % 'x'.join( str(n) for n in obj.shape )
@@ -3311,7 +3311,7 @@ def inflate(arg, dofmap, length, axis):
 def mask(arg, mask, axis=0):
   arg = asarray(arg)
   axis = numeric.normdim(arg.ndim, axis)
-  assert isinstance(mask,numpy.ndarray) and mask.ndim == 1 and mask.dtype == bool
+  assert numeric.isarray(mask) and mask.ndim == 1 and mask.dtype == bool
   assert arg.shape[axis] == len(mask)
   return Mask(arg, mask, axis)
 

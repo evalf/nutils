@@ -320,20 +320,12 @@ def eig( A ):
 
   return L, V
 
-def isbool( a ):
-  return isboolarray( a ) and a.ndim == 0 or type(a) == bool
-
-def isboolarray( a ):
-  return isinstance( a, numpy.ndarray ) and a.dtype == bool
-
-def isint( a ):
-  return isinstance( a, (numbers.Integral,numpy.integer) )
-
-def isnumber( a ):
-  return isinstance( a, (numbers.Number,numpy.generic) )
-
-def isintarray( a ):
-  return isinstance( a, numpy.ndarray ) and numpy.issubdtype( a.dtype, numpy.integer )
+isarray = lambda a: isinstance(a, numpy.ndarray)
+isboolarray = lambda a: isarray(a) and a.dtype == bool
+isbool = lambda a: isboolarray(a) and a.ndim == 0 or type(a) == bool
+isint = lambda a: isinstance(a, (numbers.Integral,numpy.integer))
+isnumber = lambda a: isinstance(a, (numbers.Number,numpy.generic))
+isintarray = lambda a: isarray(a) and numpy.issubdtype(a.dtype, numpy.integer)
 
 def ortho_complement( A ):
   '''return orthogonal complement to non-square matrix A'''

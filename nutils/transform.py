@@ -330,7 +330,7 @@ class RootTransEdges( VertexTransform ):
   def __init__( self, name, shape ):
     VertexTransform.__init__( self, len(shape) )
     self.shape = shape
-    assert isinstance( name, numpy.ndarray )
+    assert numeric.isarray(name)
     assert name.shape == (3,)*len(shape)
     self.name = name.copy()
 

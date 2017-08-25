@@ -10,7 +10,7 @@
 The cache module.
 """
 
-from . import core, log
+from . import core, log, numeric
 import os, sys, weakref, numpy, functools, inspect, builtins
 
 def property(f):
@@ -87,7 +87,7 @@ def _hashable( obj ):
     return obj
   return tuple( _hashable(o) for o in obj ) if isinstance( obj, tuple ) \
     else frozenset( _hashable(o) for o in obj ) if isinstance( obj, (set,frozenset) ) \
-    else HashableArray( obj ) if isinstance( obj, numpy.ndarray ) \
+    else HashableArray( obj ) if numeric.isarray(obj) \
     else HashableList( obj ) if isinstance( obj, list ) \
     else HashableDict( obj ) if isinstance( obj, dict ) \
     else HashableAny( obj )

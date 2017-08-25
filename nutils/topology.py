@@ -622,12 +622,12 @@ class Topology( object ):
   def supp( self, basis, mask=None ):
     if mask is None:
       mask = numpy.ones( len(basis), dtype=bool )
-    elif isinstance( mask, list ) or isinstance( mask, numpy.ndarray ) and mask.dtype == int:
+    elif isinstance(mask, list) or numeric.isarray(mask) and mask.dtype == int:
       tmp = numpy.zeros( len(basis), dtype=bool )
       tmp[mask] = True
       mask = tmp
     else:
-      assert isinstance( mask, numpy.ndarray ) and mask.dtype == bool and mask.shape == basis.shape[:1]
+      assert numeric.isarray(mask) and mask.dtype == bool and mask.shape == basis.shape[:1]
     indfunc = function.Tuple([ ind[0] for ind, f in basis.blocks ])
     subset = []
     for elem in self:
@@ -1225,7 +1225,7 @@ class StructuredTopology( Topology ):
   @staticmethod
   def _localsplinebasis ( lknots, p ):
   
-    assert isinstance(lknots,numpy.ndarray), 'Local knot vector should be numpy array'
+    assert numeric.isarray(lknots), 'Local knot vector should be numpy array'
     assert len(lknots)==2*p, 'Expected 2*p local knots'
   
     #Based on Algorithm A2.2 Piegl and Tiller
