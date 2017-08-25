@@ -1547,55 +1547,57 @@ class BlockAdd( Array ):
     self.funcs = tuple( funcs )
     shape = _jointshape( *( func.shape for func in self.funcs ) )
     dtype = _jointdtype( *( func.dtype for func in self.funcs ) )
-    if not isevaluable( funcs[-1] ):
-      self.const = funcs[-1]
-      funcs = funcs[:-1]
-    else:
-      self.const = 0
-    Array.__init__( self, args=funcs, shape=shape, dtype=dtype )
+    super().__init__(args=funcs, shape=shape, dtype=dtype)
 
-  def evalf( self, *args ):
-    assert all( arg.ndim == self.ndim+1 for arg in args )
-    return functools.reduce( operator.add, args ) + self.const
+  @cache.property
+  def simplified(self):
+    funcs = []
+    for func in self.funcs:
+      func = func.simplified
+      if isinstance(func, BlockAdd):
+        funcs.extend(func.funcs)
+      elif not iszero(func):
+        funcs.append(func)
+    return BlockAdd(funcs) if len(funcs) > 1 else funcs[0] if funcs else zeros_like(self)
+
+  def evalf(self, *args):
+    return util.sum(args)
 
   def _add( self, other ):
-    return blockadd( self, other )
+    return BlockAdd(self.funcs + (other.funcs if isinstance(other, BlockAdd) else (other,)))
 
   def _dot( self, other, axes ):
-    return blockadd( *( dot( func, other, axes ) for func in self.funcs ) )
+    return BlockAdd([dot(func, other, axes) for func in self.funcs])
 
   def _edit( self, op ):
-    return blockadd( *map( op, self.funcs ) )
+    return BlockAdd([op(func) for func in self.funcs])
 
   def _sum( self, axis ):
-    return blockadd( *( sum( func, axis ) for func in self.funcs ) )
+    return BlockAdd([sum(func, axis) for func in self.funcs])
 
   def _derivative(self, var, seen):
-    return blockadd(*(derivative(func, var, seen) for func in self.funcs))
+    return BlockAdd([derivative(func, var, seen) for func in self.funcs])
 
   def _get( self, i, item ):
-    return blockadd( *( get( aslength(func,self.shape[i],i), i, item ) for func in self.funcs ) )
+    return BlockAdd([get(aslength(func,self.shape[i],i), i, item) for func in self.funcs])
 
   def _takediag( self ):
-    return blockadd( *( takediag( func ) for func in self.funcs ) )
+    return BlockAdd([takediag(func) for func in self.funcs])
 
   def _take( self, indices, axis ):
-    return blockadd( *( take( aslength(func,self.shape[axis],axis), indices, axis ) for func in self.funcs ) )
+    return BlockAdd([take(aslength(func,self.shape[axis],axis), indices, axis) for func in self.funcs])
 
   def _align( self, axes, ndim ):
-    return blockadd( *( align( func, axes, ndim ) for func in self.funcs ) )
+    return BlockAdd([align(func, axes, ndim) for func in self.funcs])
 
   def _multiply( self, other ):
-    return blockadd( *( multiply( func, other ) for func in self.funcs ) )
-
-  def _inflate( self, dofmap, length, axis ):
-    return blockadd( *( inflate( func, dofmap, length, axis ) for func in self.funcs ) )
+    return BlockAdd([multiply(func, other) for func in self.funcs])
 
   def _kronecker( self, axis, length, pos ):
-    return blockadd( *( kronecker( func, axis, length, pos ) for func in self.funcs ) )
+    return BlockAdd([kronecker(func, axis, length, pos) for func in self.funcs])
 
   def _mask(self, maskvec, axis):
-    return blockadd(*(mask(func, maskvec, axis) for func in self.funcs))
+    return BlockAdd([mask(func, maskvec, axis) for func in self.funcs])
 
   @cache.property
   def blocks(self):
@@ -2260,9 +2262,9 @@ class Inflate( Array ):
     return inflate( multiply(self.func,take_other), self.dofmap, self.length, self.axis )
 
   def _add( self, other ):
-    if isinstance( other, Inflate ) and self.axis == other.axis and self.dofmap == other.dofmap:
-      return inflate( add(self.func,other.func), self.dofmap, self.length, self.axis )
-    return blockadd( self, other )
+    if isinstance(other, Inflate) and self.axis == other.axis and self.dofmap == other.dofmap:
+      return inflate(add(self.func, other.func), self.dofmap, self.length, self.axis)
+    return BlockAdd([self, other])
 
   def _cross( self, other, axis ):
     if isinstance( other, Inflate ) and self.axis == other.axis:
@@ -3370,31 +3372,6 @@ def outer( arg1, arg2=None, axis=0 ):
 def pointwise(args, evalf, deriv=None, dtype=float):
   args = asarray(args)
   return Pointwise(args, evalf, deriv, dtype).simplified
-
-def blockadd( *args ):
-  args = tuple( itertools.chain( *( arg.funcs if isinstance( arg, BlockAdd ) else [arg] for arg in args ) ) )
-  # group all `Inflate` objects with the same axis and dofmap
-  inflates = util.OrderedDict()
-  for arg in args:
-    key = []
-    while isinstance( arg, Inflate ):
-      key.append( ( arg.dofmap, arg.length, arg.axis ) )
-      arg = arg.func
-    inflates.setdefault( tuple(key), [] ).append( arg )
-  # add inflate args with the same axis and dofmap, blockadd the remainder
-  args = []
-  for key, values in inflates.items():
-    if key is ():
-      continue
-    arg = functools.reduce( operator.add, values )
-    for dofmap, length, axis in reversed( key ):
-      arg = inflate( arg, dofmap, length, axis )
-    args.append( arg )
-  args.extend( inflates.get( (), () ) )
-  if len( args ) == 1:
-    return args[0]
-  else:
-    return BlockAdd( args )
 
 def sign(arg):
   arg = asarray(arg)
