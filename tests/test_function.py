@@ -47,12 +47,18 @@ class check(TestCase):
         self.n_op(*self.argsfun.eval(self.elem,self.points))[s],
           self.op(*self.args)[s].eval(self.elem,self.points), decimal=15)
 
-  def test_align(self):
-    ndim = len(self.shape)+1
-    axes = (numpy.arange(len(self.shape))+2) % ndim
+  def test_transpose(self):
+    ndim = len(self.shape)
+    trans = numpy.arange(ndim,0,-1) % ndim
     numpy.testing.assert_array_almost_equal(
-      numeric.align(self.n_op(*self.argsfun.eval(self.elem,self.points)), [0]+list(axes+1), ndim+1),
-     function.align(self.op(*self.args), axes, ndim).eval(self.elem,self.points), decimal=15)
+        numpy.transpose(self.n_op(*self.argsfun.eval(self.elem,self.points)), [0]+list(trans+1)),
+     function.transpose(self.op(*self.args), trans).eval(self.elem,self.points), decimal=15)
+
+  def test_expand_dims(self):
+    axis = (len(self.shape)+1) // 2
+    numpy.testing.assert_array_almost_equal(
+        numpy.expand_dims(self.n_op(*self.argsfun.eval(self.elem,self.points)), axis+1),
+     function.expand_dims(self.op(*self.args), axis).eval(self.elem,self.points), decimal=15)
 
   def test_takediag(self):
     count = {}
@@ -288,7 +294,8 @@ _check('ln', function.ln, numpy.log, [(3,)])
 _check('product', lambda a: function.product(a,1), lambda a: numpy.product(a,-2), [(2,3,2)])
 _check('norm2', lambda a: function.norm2(a,1), lambda a: (a**2).sum(-2)**.5, [(2,3,2)])
 _check('sum', lambda a: function.sum(a,1), lambda a: a.sum(-2), [(2,3,2)])
-_check('align', lambda a: function.align(a,[0,2],3), lambda a: a[...,:,_,:], [(2,3)])
+_check('transpose', lambda a: function.transpose(a,[0,2,1]), lambda a: a.transpose([0,1,3,2]), [(2,3,2)])
+_check('expand_dims', lambda a: function.expand_dims(a,1), lambda a: numpy.expand_dims(a,2), [(2,3)])
 _check('get', lambda a: function.get(a,1,1), lambda a: a[...,1,:], [(2,3,2)])
 _check('takediag121', lambda a: function.takediag(a,0,2), lambda a: numeric.takediag(a.swapaxes(-3,-2)), [(1,2,1)])
 _check('takediag232', lambda a: function.takediag(a,0,2), lambda a: numeric.takediag(a.swapaxes(-3,-2)), [(2,3,2)])
