@@ -1,7 +1,7 @@
 from nutils import *
 from . import unittest, register
 
-# gmsh geo:
+# gmsh geo 2D:
 #
 # Point(1) = {0,0,0,.5};
 # Point(2) = {1,0,0,.5};
@@ -18,7 +18,7 @@ from . import unittest, register
 # Physical Line("dirichlet") = {6,7,8};
 # Physical Surface("interior") = {10};
 
-gmshdata = '''\
+gmshdata2d = '''\
 $MeshFormat
 2.2 0 8
 $EndMeshFormat
@@ -75,8 +75,124 @@ $Elements
 $EndElements
 '''
 
-@register
-def gmsh():
+# gmsh geo 3D:
+#
+# Point(1) = {0,0,0,1.};
+# Point(2) = {1,0,0,1.};
+# Point(3) = {1,1,0,1.};
+# Point(4) = {0,1,0,1.};
+# Point(5) = {0,0,1,1.};
+# Point(6) = {1,0,1,1.};
+# Point(7) = {1,1,1,1.};
+# Point(8) = {0,1,1,1.};
+# Line(9) = {1,2};
+# Line(10) = {2,3};
+# Line(11) = {3,4};
+# Line(12) = {4,1};
+# Line(13) = {5,6};
+# Line(14) = {6,7};
+# Line(15) = {7,8};
+# Line(16) = {8,5};
+# Line(17) = {1,5};
+# Line(18) = {2,6};
+# Line(19) = {3,7};
+# Line(20) = {4,8};
+# Line Loop(21) = {9, 18, -13, -17};
+# Line Loop(22) = {10, 19, -14, -18};
+# Line Loop(23) = {11, 12, 9, 10};
+# Line Loop(24) = {17, -16, -20, 12};
+# Line Loop(25) = {15, 16, 13, 14};
+# Line Loop(26) = {20, -15, -19, 11};
+# Plane Surface(27) = {21};
+# Plane Surface(28) = {22};
+# Plane Surface(29) = {23};
+# Plane Surface(30) = {24};
+# Plane Surface(31) = {25};
+# Plane Surface(32) = {26};
+# Surface Loop(33) = {32, 30, 27, 29, 28, 31};
+# Volume(34) = {33};
+# Physical Point("corner") = {2};
+# Physical Surface("neumann") = {32};
+# Physical Surface("dirichlet") = {27,28,29};
+# Physical Volume("interior") = {34};
+
+gmshdata3d = '''\
+$MeshFormat
+2.2 0 8
+$EndMeshFormat
+$PhysicalNames
+4
+0 1 "corner"
+2 2 "neumann"
+2 3 "dirichlet"
+3 4 "interior"
+$EndPhysicalNames
+$Nodes
+14
+1 0 0 0
+2 1 0 0
+3 1 1 0
+4 0 1 0
+5 0 0 1
+6 1 0 1
+7 1 1 1
+8 0 1 1
+9 0.5 0 0.5
+10 1 0.5 0.5
+11 0.5 0.5 0
+12 0 0.5 0.5
+13 0.5 0.5 1
+14 0.5 1 0.5
+$EndNodes
+$Elements
+41
+1 15 2 1 2 2
+2 2 2 3 27 2 9 1
+3 2 2 3 27 9 5 1
+4 2 2 3 27 6 9 2
+5 2 2 3 27 9 6 5
+6 2 2 3 28 3 10 2
+7 2 2 3 28 10 6 2
+8 2 2 3 28 7 10 3
+9 2 2 3 28 10 7 6
+10 2 2 3 29 1 2 11
+11 2 2 3 29 1 11 4
+12 2 2 3 29 2 3 11
+13 2 2 3 29 3 4 11
+14 2 2 2 32 4 14 3
+15 2 2 2 32 14 7 3
+16 2 2 2 32 8 14 4
+17 2 2 2 32 14 8 7
+18 4 2 4 34 12 13 9 10
+19 4 2 4 34 13 12 14 10
+20 4 2 4 34 14 12 11 10
+21 4 2 4 34 11 12 9 10
+22 4 2 4 34 3 11 2 10
+23 4 2 4 34 12 8 5 13
+24 4 2 4 34 6 5 13 9
+25 4 2 4 34 7 6 13 10
+26 4 2 4 34 14 4 3 11
+27 4 2 4 34 8 7 13 14
+28 4 2 4 34 4 8 12 14
+29 4 2 4 34 11 1 2 9
+30 4 2 4 34 1 12 5 9
+31 4 2 4 34 1 4 12 11
+32 4 2 4 34 7 14 3 10
+33 4 2 4 34 6 2 9 10
+34 4 2 4 34 3 14 11 10
+35 4 2 4 34 12 8 13 14
+36 4 2 4 34 7 13 14 10
+37 4 2 4 34 12 4 14 11
+38 4 2 4 34 5 12 13 9
+39 4 2 4 34 12 1 11 9
+40 4 2 4 34 13 6 9 10
+41 4 2 4 34 2 11 9 10
+$EndElements
+'''
+
+@register( '2d', gmshdata=gmshdata2d )
+@register( '3d', gmshdata=gmshdata3d )
+def gmsh( gmshdata ):
 
   domain, geom = mesh.gmsh( gmshdata.splitlines() )
 
@@ -85,7 +201,7 @@ def gmsh():
     volume = domain.integrate( 1, geometry=geom, ischeme='gauss1' )
     numpy.testing.assert_almost_equal( volume, 1, decimal=10 )
 
-  for group, exact_length in ('neumann',1), ('dirichlet',3), ((),4):
+  for group, exact_length in ('neumann',1), ('dirichlet',3), ((),2*domain.ndims):
     @unittest( name=group or 'all' )
     def length():
       length = domain.boundary[group].integrate( 1, geometry=geom, ischeme='gauss1' )
@@ -104,8 +220,8 @@ def gmsh():
   @unittest
   def pointeval():
     xy = domain.points.elem_eval( geom, ischeme='gauss1' )
-    assert xy.shape == ( 2, 2 )
-    assert numpy.all( xy == [1,0] )
+    assert xy.shape == ( 2, 2 ) if domain.ndims==2 else ( 4, 3 )
+    assert numpy.all( xy == ([1,0] if domain.ndims==2 else [1,0,0]) )
 
 # gmshrect geo:
 #

@@ -36,11 +36,13 @@ class Element( object ):
       opptrans = opptrans.canonical
       if not oriented:
         vtx1 = trans.apply( reference.vertices )
-        vtx2 = opptrans.apply( reference.vertices )
-        if vtx1 != vtx2:
-          assert reference.ndims == 1 # TODO leverage rotation information from element
-          assert vtx1 == vtx2[::-1]
-          opptrans <<= transform.affine( -1, [1] )
+        for ptrans in reference.permutation_transforms:
+          vtx2 = (opptrans<<ptrans).apply( reference.vertices )
+          if vtx1 == vtx2:
+            opptrans <<= ptrans
+            break
+        else:
+          raise Exception('Did not find a conforming permutation for the opposing transformation')
     self.reference = reference
     self.transform = trans
     self.opposite = opptrans
@@ -224,6 +226,10 @@ class Reference( cache.Immutable ):
               ribbons.append(( (iedge1,iedge2), (jedge1,jedge2) ))
     assert not transforms
     return tuple( ribbons )
+
+  @cache.property
+  def permutation_transforms( self ):
+    return (transform.identity,)
 
   @cache.property
   def interfaces( self ):
@@ -452,6 +458,16 @@ class SimplexReference( Reference ):
   def edge_transforms( self ):
     assert self.ndims > 0
     return tuple( transform.simplex( self.vertices[list(range(i))+list(range(i+1,self.ndims+1))], isflipped=i%2==1 ) for i in range(self.ndims+1) )
+
+  @cache.property
+  def permutation_transforms( self ):
+    import itertools
+    transforms = []
+    for verts in itertools.permutations( tuple(v for v in self.vertices) ):
+      offset = verts[0]
+      linear = verts[1:]-verts[0]
+      transforms.append( transform.affine( linear.T, offset ) )
+    return tuple(transforms)
 
   @property
   def _ribbons( self ):
@@ -1179,6 +1195,10 @@ class WithChildrenReference( Reference ):
   @property
   def interfaces( self ):
     return self.baseref.interfaces
+
+  @property
+  def permutation_transforms( self ):
+    return self.baseref.permutation_transforms
 
   @property
   def volume( self ):
