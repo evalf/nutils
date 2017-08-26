@@ -678,4 +678,10 @@ class const:
   cumsum = lambda self, *args, **kwargs: const(self.__base.cumsum(*args, **kwargs), copy=False)
   nonzero = lambda self, *args, **kwargs: const(self.__base.nonzero(*args, **kwargs), copy=False)
 
+  def insertaxis(self, axis, length):
+    base = self.__base
+    return const(numpy.lib.stride_tricks.as_strided(base,
+      shape=base.shape[:axis]+(length,)+base.shape[axis:],
+      strides=base.strides[:axis]+(0,)+base.strides[axis:]))
+
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
