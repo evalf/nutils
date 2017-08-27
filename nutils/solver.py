@@ -42,34 +42,6 @@ from . import function, cache, log, util, numeric
 import numpy, itertools, functools, numbers, collections
 
 
-def _find_argument( name, *funcs ):
-  '''find and return a :class:`nutils.function.Argument` with ``name`` in ``funcs``'''
-
-  class Found( Exception ):
-    def __init__( self, target ):
-      self.target = target
-      super().__init__( 'found' )
-
-  def find( value ):
-    if isinstance( value, function.Argument ) and value._name == name:
-      raise Found( value )
-    return function.edit( value, find )
-
-  funcs_ = []
-  for func in funcs:
-    if isinstance( func, Integral ):
-      funcs_.extend(func._integrands.values())
-    else:
-      funcs_.append( func )
-
-  try:
-    for func in funcs_:
-      function.edit( func, find )
-  except Found as e:
-    return e.target
-  raise ValueError( 'target {!r} not found'.format( name ) )
-
-
 class Integral:
   '''Postponed integral, used for derivative purposes'''
 
@@ -102,16 +74,21 @@ class Integral:
     return retval
 
   def derivative(self, target):
-    target = _find_argument(target, self)
-    assert target.ndim == 1
+    argshape = self._argshape(target)
+    arg = function.Argument(target, argshape)
     seen = {}
-    return Integral([di, function.derivative(integrand, var=target, seen=seen)] for di, integrand in self._integrands.items())
+    return Integral([di, function.derivative(integrand, var=arg, seen=seen)] for di, integrand in self._integrands.items())
 
   def replace(self, arguments):
     return Integral([di, function.replace_arguments(integrand, arguments)] for di, integrand in self._integrands.items())
 
-  def contains(self, target):
-    return any(target in integrand.serialized[0] for integrand in self._integrands.values())
+  def contains(self, name):
+    try:
+      self._argshape(name)
+    except KeyError:
+      return False
+    else:
+      return True
 
   def __add__(self, other):
     if not isinstance(other, Integral):
@@ -143,6 +120,17 @@ class Integral:
       return NotImplemented
     return self.__mul__(1/other)
 
+  def _argshape(self, name):
+    assert isinstance(name, str)
+    shapes = {func.shape[:func.ndim-func._nderiv]
+      for func in function.Tuple(self._integrands.values()).serialized[0]
+        if isinstance(func, function.Argument) and func._name == name}
+    if not shapes:
+      raise KeyError(name)
+    assert len(shapes) == 1, 'inconsistent shapes for argument {!r}'.format(name)
+    shape, = shapes
+    return shape
+
 
 class ModelError( Exception ): pass
 
@@ -169,10 +157,11 @@ def solve_linear(target, residual, constrain=None, *, arguments=None, **solvearg
       Array of ``target`` values for which ``residual == 0``'''
 
   jacobian = residual.derivative( target )
-  if jacobian.contains( _find_argument( target, residual ) ):
+  if jacobian.contains(target):
     raise ModelError( 'problem is not linear' )
   assert target not in (arguments or {}), '`target` should not be defined in `arguments`'
-  arguments = collections.ChainMap(arguments or {}, {target: numpy.zeros(_find_argument(target, residual).shape)})
+  argshape = residual._argshape(target)
+  arguments = collections.ChainMap(arguments or {}, {target: numpy.zeros(argshape)})
   res, jac = Integral.multieval(residual, jacobian, arguments=arguments)
   return jac.solve( -res, constrain=constrain, **solveargs )
 
@@ -295,7 +284,7 @@ def newton(target, residual, lhs0=None, constrain=None, nrelax=numpy.inf, minrel
   '''
 
   assert target not in (arguments or {}), '`target` should not be defined in `arguments`'
-  resolved_target = _find_argument( target, residual )
+  argshape = residual._argshape(target)
 
   if lhs0 is None:
     lhs0 = numpy.zeros(residual.shape)
@@ -311,9 +300,9 @@ def newton(target, residual, lhs0=None, constrain=None, nrelax=numpy.inf, minrel
       constrain = ~numpy.isnan(constrain)
 
   jacobian = residual.derivative( target )
-  if not jacobian.contains( resolved_target ):
+  if not jacobian.contains(target):
     log.info( 'problem is linear' )
-    res, jac = Integral.multieval(residual, jacobian, arguments=collections.ChainMap(arguments or {}, {target: numpy.zeros(resolved_target.shape)}))
+    res, jac = Integral.multieval(residual, jacobian, arguments=collections.ChainMap(arguments or {}, {target: numpy.zeros(argshape)}))
     cons = lhs0.copy()
     cons[~constrain] = numpy.nan
     lhs = jac.solve( -res, constrain=cons, **solveargs )
@@ -323,7 +312,7 @@ def newton(target, residual, lhs0=None, constrain=None, nrelax=numpy.inf, minrel
   lhs = lhs0.copy()
   fcache = cache.WrapperCache()
   res, jac = Integral.multieval(residual, jacobian, fcache=fcache, arguments=collections.ChainMap(arguments or {}, {target: lhs}))
-  zcons = numpy.zeros( len(resolved_target) )
+  zcons = numpy.zeros(argshape)
   zcons[~constrain] = numpy.nan
   relax = 1
   while True:
@@ -416,7 +405,9 @@ def pseudotime(target, residual, inertia, timestep, lhs0, residual0=None, constr
       lhs0 = numpy.choose(numpy.isnan(constrain), [constrain, lhs0])
       constrain = ~numpy.isnan(constrain)
 
-  zcons = util.NanVec( len(_find_argument(target, residual, residual0)) )
+  argshape = residual._argshape(target)
+  assert len(argshape) == 1
+  zcons = util.NanVec(argshape[0])
   zcons[constrain] = 0
   lhs = lhs0.copy()
   fcache = cache.WrapperCache()
@@ -516,15 +507,15 @@ def optimize(target, functional, droptol=None, lhs0=None, constrain=None, newton
 
   assert target not in (arguments or {}), '`target` should not be defined in `arguments`'
   assert len(functional.shape) == 0, 'functional should be scalar'
-  arg = _find_argument(target, functional)
+  argshape = functional._argshape(target)
   if lhs0 is None:
-    lhs0 = numpy.zeros(arg.shape)
+    lhs0 = numpy.zeros(argshape)
   else:
-    assert isinstance(lhs0, numpy.ndarray) and lhs0.dtype == float and lhs0.shape == arg.shape, 'invalid lhs0 argument'
+    assert isinstance(lhs0, numpy.ndarray) and lhs0.dtype == float and lhs0.shape == argshape, 'invalid lhs0 argument'
   if constrain is None:
-    constrain = numpy.zeros(arg.shape, dtype=bool)
+    constrain = numpy.zeros(argshape, dtype=bool)
   else:
-    assert isinstance(constrain, numpy.ndarray) and constrain.dtype in (bool,float) and constrain.shape == arg.shape, 'invalid constrain argument'
+    assert isinstance(constrain, numpy.ndarray) and constrain.dtype in (bool,float) and constrain.shape == argshape, 'invalid constrain argument'
     if constrain.dtype == float:
       lhs0 = numpy.choose(numpy.isnan(constrain), [constrain, lhs0])
       constrain = ~numpy.isnan(constrain)
@@ -535,7 +526,7 @@ def optimize(target, functional, droptol=None, lhs0=None, constrain=None, newton
   cons = numpy.zeros(residual.shape)
   cons[~(constrain|nandofs)] = numpy.nan
   lhs = lhs0 - jac.solve(res, constrain=cons) # residual(lhs0) + jacobian(lhs0) dlhs = 0
-  if not jacobian.contains(arg): # linear: functional(lhs0+dlhs) = functional(lhs0) + residual(lhs0) dlhs + .5 dlhs jacobian(lhs0) dlhs
+  if not jacobian.contains(target): # linear: functional(lhs0+dlhs) = functional(lhs0) + residual(lhs0) dlhs + .5 dlhs jacobian(lhs0) dlhs
     value = f0 + .5 * res.dot(lhs-lhs0)
   else: # nonlinear
     assert newtontol is not None, 'newton tolerance `newtontol` must be specified for nonlinear problems'
