@@ -285,7 +285,7 @@ def bringforward( arg, axis ):
 def diagonalize( arg ):
   'append axis, place last axis on diagonal of self and new'
 
-  diagonalized = numpy.zeros( arg.shape + (arg.shape[-1],) )
+  diagonalized = numpy.zeros(arg.shape + (arg.shape[-1],), arg.dtype)
   diag = numpy.einsum( '...ii->...i', diagonalized )
   assert diag.base is diagonalized
   diag.flags.writeable = True

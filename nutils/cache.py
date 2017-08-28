@@ -11,40 +11,39 @@ The cache module.
 """
 
 from . import core, log
-import os, sys, weakref, numpy, functools, inspect
+import os, sys, weakref, numpy, functools, inspect, builtins
 
-
-_property = property
-
-def property( f ):
-  name = f.__name__
-  def property_getter( self, name=name, f=f, tmp=object() ):
+def property(f):
+  _self = object()
+  _temp = object()
+  _name = f.__name__
+  def property_getter(self):
     try:
-      value = self.__dict__[name]
-      assert value is not tmp, 'attribute requested during construction'
-      return value
+      dictvalue = self.__dict__[_name]
+      assert dictvalue is not _temp, 'attribute requested during construction'
     except KeyError:
-      pass
-    self.__dict__[name] = tmp
-    value = self.__dict__[name] = f( self )
+      self.__dict__[_name] = _temp # placeholder for detection of cyclic dependencies
+      value = f(self)
+      self.__dict__[_name] = value if value is not self else _self
+    else:
+      value = dictvalue if dictvalue is not _self else self
     return value
-  def property_setter( self, value, name=name ):
-    assert name not in self.__dict__, 'property can be set only once'
-    self.__dict__[name] = value
-  assert not property_getter.__closure__ and not property_setter.__closure__
-  return _property( fget=property_getter, fset=property_setter )
+  def property_setter(self, value):
+    assert _name not in self.__dict__, 'property can be set only once'
+    self.__dict__[_name] = value if value is not self else _self
+  return builtins.property(fget=property_getter, fset=property_setter)
 
-def weakproperty( f ):
-  def cache_property_wrapper( self, f=f ):
-    value = self.__dict__.get( f.__name__ )
-    if value:
-      value = value()
-    if not value:
-      value = f( self )
-      self.__dict__[f.__name__] = weakref.ref(value)
+def weakproperty(f):
+  _name = f.__name__
+  def cache_property_wrapper(self):
+    ref = self.__dict__.get(_name)
+    if ref:
+      value = ref()
+    else:
+      value = f(self)
+      self.__dict__[_name] = weakref.ref(value)
     return value
-  assert not cache_property_wrapper.__closure__
-  return _property(cache_property_wrapper)
+  return builtins.property(cache_property_wrapper)
 
 def argdict( f ):
   cache = {}
@@ -137,7 +136,7 @@ class Wrapper( object ):
       self.cache[ key ] = value
     return value
 
-  @_property
+  @builtins.property
   def hits( self ):
     return self.count - len(self.cache)
 
@@ -155,7 +154,7 @@ class WrapperCache( object ):
     wrapper = self.cache[func] = Wrapper( func )
     return wrapper
 
-  @_property
+  @builtins.property
   def stats( self ):
     hits = count = 0
     for wrapper in self.cache.values():
