@@ -348,15 +348,16 @@ def general( isstructured, periodic ):
 @register( 'unstructured', structured=False )
 def locate( structured ):
 
-  @unittest
-  def test():
-    domain, geom = mesh.rectilinear( [numpy.linspace(0,1,3)]*2 ) if structured else mesh.demo()
-    geom += .1 * function.sin( geom * numpy.pi ) # non-polynomial geometry
-    target = numpy.array([ (.2,.3), (.1,.9), (0,1) ])
-    ltopo = domain.locate( geom, target, eps=1e-15 )
-    located = ltopo.elem_eval( geom, ischeme='gauss1' )
-    numpy.testing.assert_array_almost_equal( located, target )
-
+  for __nprocs__ in [1,2]:
+    @unittest(name='nprocs{}'.format(__nprocs__))
+    def test():
+      domain, geom = mesh.rectilinear( [numpy.linspace(0,1,3)]*2 ) if structured else mesh.demo()
+      geom += .1 * function.sin( geom * numpy.pi ) # non-polynomial geometry
+      target = numpy.array([ (.2,.3), (.1,.9), (0,1) ])
+      ltopo = domain.locate( geom, target, eps=1e-15 )
+      located = ltopo.elem_eval( geom, ischeme='gauss1' )
+      numpy.testing.assert_array_almost_equal( located, target )
+  
 
 @register( '3d_l_rrr', pos=0, ndims=3 )
 @register( '3d_l_rpr', pos=0, ndims=3, periodic=[1] )

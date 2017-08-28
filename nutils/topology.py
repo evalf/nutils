@@ -571,6 +571,7 @@ class Topology( object ):
     return function.mask( basis, used )
 
   def locate( self, geom, points, ischeme='vertex', scale=1, tol=1e-12, eps=0, maxiter=100, *, arguments=None ):
+    nprocs = min( core.getprop( 'nprocs', 1 ), len(self) )
     if geom.ndim == 0:
       geom = geom[_]
       points = points[...,_]
@@ -581,10 +582,12 @@ class Topology( object ):
     bboxes = numpy.array([ numpy.mean(v,axis=0) * (1-scale) + numpy.array([ numpy.min(v,axis=0), numpy.max(v,axis=0) ]) * scale
       for v in vertices ]) # nelems x {min,max} x ndims
     vref = element.getsimplex(0)
-    pelems = []
-    for point in points:
-      ielems, = ((point >= bboxes[:,0,:]) & (point <= bboxes[:,1,:])).all(axis=-1).nonzero()
-      for ielem in sorted( ielems, key=lambda i: numpy.linalg.norm(bboxes[i].mean(0)-point) ):
+
+    ielems = parallel.shzeros(len(points), dtype=int)
+    xis = parallel.shzeros((len(points),len(geom)), dtype=float)
+    for ipoint, point in parallel.pariter(log.enumerate('point', points), nprocs=nprocs):
+      ielemcandidates, = ((point >= bboxes[:,0,:]) & (point <= bboxes[:,1,:])).all(axis=-1).nonzero()
+      for ielem in sorted( ielemcandidates, key=lambda i: numpy.linalg.norm(bboxes[i].mean(0)-point) ):
         converged = False
         elem = self.elements[ielem]
         xi, w = elem.reference.getischeme( 'gauss1' )
@@ -602,14 +605,20 @@ class Topology( object ):
           prev_err = err
           xi += numpy.linalg.solve( J_xi, point - point_xi )
         if converged and elem.reference.inside( xi[0], eps=eps ):
+          ielems[ipoint] = ielem
+          xis[ipoint], = xi
           break
       else:
         raise LocateError( 'failed to locate point: {}'.format(point) )
-      trans = transform.affine( linear=1, offset=xi[0] )
+    
+    pelems = []
+    for ielem, xi in zip(ielems, xis):
+      elem = self.elements[ielem]
+      trans = transform.affine( linear=1, offset=xi )
       for idim in range(self.ndims,0,-1): # transcend dimensions one by one to produce valid transformation
         trans <<= transform.affine( linear=numpy.eye(idim)[:,:-1], offset=numpy.zeros(idim), isflipped=False )
       pelems.append( element.Element( vref, elem.transform << trans, elem.opposite and elem.opposite << trans, oriented=True ) )
-    return UnstructuredTopology( 0, pelems )
+    return UnstructuredTopology(0, pelems)
 
   def supp( self, basis, mask=None ):
     if mask is None:
