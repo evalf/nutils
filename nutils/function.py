@@ -407,12 +407,17 @@ class Array( Evaluable ):
   def __getitem__(self, item):
     if not isinstance(item, tuple):
       item = item,
-    c = item.count(...)
-    assert c <= 1, 'at most one ellipsis allowed'
-    n = item.index(...) if c else len(item)
+    iell = None
+    nx = self.ndim - len(item)
+    for i, it in enumerate(item):
+      if it is ...:
+        assert iell is None, 'at most one ellipsis allowed'
+        iell = i
+      elif it is _:
+        nx += 1
     array = self
     axis = 0
-    for it in item[:n] + (slice(None),)*(self.ndim+item.count(_)+c-len(item)) + item[n+1:]:
+    for it in item + (slice(None),)*nx if iell is None else item[:iell] + (slice(None),)*(nx+1) + item[iell+1:]:
       if numeric.isint(it):
         array = get(array, axis, item=it)
       elif it is _:
