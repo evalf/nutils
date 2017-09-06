@@ -45,7 +45,7 @@ class Element( object ):
           raise Exception('Did not find a conforming permutation for the opposing transformation')
     self.reference = reference
     self.transform = trans
-    self.opposite = opptrans
+    self.opposite = opptrans or trans
 
   def withopposite( self, opp, oriented=False ):
     if isinstance( opp, transform.TransformChain ):
