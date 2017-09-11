@@ -200,7 +200,7 @@ class Evaluable( cache.Immutable ):
     lines = []
     lines.append( 'digraph {' )
     lines.append( 'graph [ dpi=72 ];' )
-    lines.extend( '%d [label="%d. %s"];' % (i,i,name) for i, name in enumerate( TOKENS + ops + (self,) ) )
+    lines.extend( '%d [label="%d. %s"];' % (i, i, name._asciitree_str() if isinstance(name, Array) else name) for i, name in enumerate( TOKENS + ops + (self,) ) )
     lines.extend( '%d -> %d;' % (j,i) for i, indices in enumerate( ([],)*len(TOKENS) + inds ) for j in indices )
     lines.append( '}' )
     imgdata = '\n'.join(lines).encode()
