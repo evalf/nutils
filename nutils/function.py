@@ -323,6 +323,14 @@ class SelectChain( Evaluable ):
     ftrans = bf.trans1 if self.first else bf.trans2
     return transform.TransformChain( ftrans + trans[1:] )
 
+class Promote(Evaluable):
+  def __init__(self, ndims:int, trans):
+    self.ndims = ndims
+    super().__init__(args=[trans])
+  def evalf(self, trans):
+    head, tail = trans.canonical.promote(self.ndims)
+    return transform.TransformChain(head + tail)
+
 # ARRAYFUNC
 #
 # The main evaluable. Closely mimics a numpy array.
@@ -399,7 +407,8 @@ class Array( Evaluable ):
   __array_priority__ = 1. # http://stackoverflow.com/questions/7042496/numpy-coercion-problem-for-left-sided-binary-operator/7057530#7057530
 
   def __init__(self, args:tuple, shape:tuple, dtype:asdtype):
-    self.shape = shape
+    assert all(numeric.isint(sh) or isarray(sh) and sh.ndim == 0 and sh.dtype == int for sh in shape)
+    self.shape = tuple(sh if not isarray(sh) else sh.eval()[0] if sh.isconstant else sh.simplified for sh in shape)
     self.ndim = len(shape)
     self.dtype = dtype
     super().__init__(args=args)
@@ -439,7 +448,7 @@ class Array( Evaluable ):
       raise TypeError('iteration over a 0-d array')
     return ( self[i,...] for i in range(self.shape[0]) )
 
-  size = property(lambda self: numpy.prod(self.shape, dtype=int))
+  size = property(lambda self: util.product(self.shape) if self.ndim else 1)
   T = property(lambda self: transpose(self))
 
   __add__ = __radd__ = add
@@ -475,10 +484,10 @@ class Array( Evaluable ):
 
   @property
   def blocks(self):
-    return (tuple(asarray(numpy.arange(n)) if numeric.isint(n) else None for n in self.shape), self),
+    return [(tuple(Range(n) for n in self.shape), self)]
 
   def _asciitree_str(self):
-    return '{}<{}>'.format(type(self).__name__, ','.join(map(str, self.shape)))
+    return '{}({})'.format(type(self).__name__, ','.join(['?' if isarray(sh) else str(sh) for sh in self.shape]))
 
   # simplifications
   _multiply = lambda self, other: None
@@ -642,19 +651,20 @@ class Constant( Array ):
 
 class DofMap(Array):
 
-  def __init__(self, dofmap:util.frozendict, length, trans=TRANS):
-    self.trans = trans
-    self.dofmap = dofmap
-    super().__init__(args=[trans], shape=(length,), dtype=int)
+  def __init__(self, dofs:tuple, index:asarray):
+    assert index.ndim == 0 and index.dtype == int
+    self.dofs = dofs
+    self.index = index
+    length = get([len(d) for d in dofs] + [0], iax=0, item=index)
+    super().__init__(args=[index], shape=(length,), dtype=int)
 
-  def evalf( self, trans ):
-    'evaluate'
+  @property
+  def dofmap(self):
+    return self.index.asdict(self.dofs)
 
-    try:
-      dofs, tail = trans.lookup_item( self.dofmap )
-    except KeyError:
-      dofs = numpy.empty( [0], dtype=int )
-    return dofs[_]
+  def evalf(self, index):
+    index, = index
+    return (self.dofs[index] if index < len(self.dofs) else numpy.empty([0], dtype=int))[_]
 
 class ElementSize( Array):
   'dimension of hypercube with same volume as element'
@@ -927,48 +937,50 @@ class RootCoords( Array ):
 class RootTransform( Array ):
 
   def __init__(self, ndims:int, nvars:int, trans):
-    self.trans = trans
-    super().__init__(args=[trans], shape=(ndims,nvars), dtype=float)
+    super().__init__(args=[Promote(ndims, trans)], shape=(ndims,nvars), dtype=float)
 
-  def evalf( self, chain ):
-    'transform'
-
+  def evalf(self, chain):
     todims, fromdims = self.shape
-    head, tail = chain.promote( todims )
-    while head and head[0].todims != todims:
-      head = head[1:]
-    return transform.linearfrom( head+tail, fromdims )[_]
+    while chain and chain[0].todims != todims:
+      chain = chain[1:]
+    return transform.linearfrom(chain, fromdims)[_]
 
   def _derivative(self, var, seen):
     return zeros(self.shape+var.shape)
 
 class Function( Array ):
 
-  def __init__(self, stdmap:util.frozendict, shape, trans=TRANS):
+  def __init__(self, stds:tuple, depth:int, trans, index:asarray, derivs:tuple=()):
+    assert index.ndim == 0 and index.dtype == int
+    self.stds = stds
+    self.depth = depth
     self.trans = trans
-    self.stdmap = stdmap
-    super().__init__(args=(CACHE,POINTS,trans), shape=shape, dtype=float)
+    self.index = index
+    nshapes = get([std.nshapes for std in stds] + [0], iax=0, item=index)
+    super().__init__(args=(CACHE,POINTS,trans,index), shape=(nshapes,)+derivs, dtype=float)
 
-  def evalf( self, cache, points, trans ):
-    'evaluate'
+  @property
+  def stdmap(self):
+    return self.index.asdict(self.stds)
 
-    try:
-      std, tail = trans.lookup_item( self.stdmap )
-    except KeyError:
-      fvals = numpy.empty( (1,0)+(1,)*(self.ndim-1) )
-    else:
-      stdpoints = cache[ transform.apply ]( tail, points )
-      fvals = cache[ std.eval ]( stdpoints, self.ndim-1 )
-      assert fvals.ndim == self.ndim+1
-      if tail:
-        for i, ndims in enumerate(self.shape[1:]):
-          linear = cache[ transform.linearfrom ]( tail, ndims )
-          fvals = numeric.dot( fvals, linear, axis=i+2 )
+  def evalf(self, cache, points, trans, index):
+    index, = index
+    if index == len(self.stds):
+      return numpy.empty((1,0)+self.shape[1:])
+    tail = trans[self.depth:]
+    if tail:
+      points = cache[transform.apply](tail, points)
+    fvals = cache[self.stds[index].eval](points, self.ndim-1)
+    assert fvals.ndim == self.ndim+1
+    if tail:
+      for i, ndims in enumerate(self.shape[1:]):
+        linear = cache[transform.linearfrom](tail, ndims)
+        fvals = numeric.dot(fvals, linear, axis=i+2)
     return fvals
 
   def _derivative(self, var, seen):
     if isinstance(var, LocalCoords):
-      return Function(self.stdmap, self.shape+(len(var),), self.trans)
+      return Function(self.stds, self.depth, self.trans, self.index, self.shape[1:]+var.shape)
     return zeros(self.shape+var.shape, dtype=self.dtype)
 
 class Choose( Array ):
@@ -1071,12 +1083,8 @@ class Concatenate(Array):
     ndim = funcs[0].ndim
     assert all(isarray(func) and func.ndim == ndim for func in funcs)
     assert 0 <= axis < ndim
-    lengths = [func.shape[axis] for func in funcs]
-    if any(isinstance(n, str) for n in lengths):
-      sh = '+'.join(str(n) for n in lengths)
-    else:
-      sh = builtins.sum(lengths)
-    shape = _jointshape(*[func.shape[:axis] + (sh,) + func.shape[axis+1:] for func in funcs])
+    length = util.sum(func.shape[axis] for func in funcs)
+    shape = _jointshape(*[func.shape[:axis] + (length,) + func.shape[axis+1:] for func in funcs])
     dtype = _jointdtype(*[func.dtype for func in funcs])
     self.funcs = funcs
     self.axis = axis
@@ -2163,7 +2171,7 @@ class Inflate( Array ):
   @property
   def blocks(self):
     for ind, f in self.func.blocks:
-      assert ind[self.axis] == None
+      assert ind[self.axis] == Range(self.func.shape[self.axis])
       yield (ind[:self.axis] + (self.dofmap,) + ind[self.axis+1:]), f
 
   def _mask( self, maskvec, axis ):
@@ -2335,8 +2343,9 @@ class Diagonalize( Array ):
   def _take( self, index, axis ):
     if axis < self.ndim-2:
       return diagonalize( take( self.func, index, axis ) )
-    diag = diagonalize( take( self.func, index, self.func.ndim-1 ) )
-    return inflate( diag, index, self.func.shape[-1], self.ndim-1 if axis == self.ndim-2 else self.ndim-2 )
+    if numeric.isint(self.func.shape[-1]):
+      diag = diagonalize(take(self.func, index, self.func.ndim-1))
+      return inflate(diag, index, self.func.shape[-1], self.ndim-1 if axis == self.ndim-2 else self.ndim-2)
 
   def _mask( self, maskvec, axis ):
     if axis < self.ndim-2:
@@ -2410,7 +2419,7 @@ class Find( Array ):
   def __init__(self, where:asarray):
     assert isarray(where) and where.ndim == 1 and where.dtype == bool
     self.where = where
-    super().__init__(args=[where], shape=['~{}'.format(where.shape[0])], dtype=int)
+    super().__init__(args=[where], shape=[where.sum()], dtype=int)
 
   def evalf( self, where ):
     assert where.shape[0] == 1
@@ -2612,9 +2621,7 @@ class Ravel( Array ):
     assert 0 <= axis < func.ndim-1
     self.func = func
     self.axis = axis
-    newlength = func.shape[axis] * func.shape[axis+1] if numeric.isint( func.shape[axis] ) and numeric.isint( func.shape[axis+1] ) \
-           else '{}x{}'.format( func.shape[axis], func.shape[axis+1] )
-    super().__init__(args=[func], shape=func.shape[:axis]+(newlength,)+func.shape[axis+2:], dtype=func.dtype)
+    super().__init__(args=[func], shape=func.shape[:axis]+(func.shape[axis]*func.shape[axis+1],)+func.shape[axis+2:], dtype=func.dtype)
 
   @cache.property
   def simplified(self):
@@ -2746,6 +2753,48 @@ class Mask( Array ):
 
   def _derivative(self, var, seen):
     return mask(derivative(self.func, var, seen), self.mask, self.axis)
+
+class FindTransform(Array):
+
+  def __init__(self, transforms:tuple, trans):
+    self.transforms = transforms
+    bits = []
+    bit = 1
+    while bit <= len(transforms):
+      bits.append(bit)
+      bit <<= 1
+    self.bits = numpy.array(bits[::-1])
+    super().__init__(args=[trans], shape=(), dtype=int)
+
+  def asdict(self, values):
+    assert len(self.transforms) == len(values)
+    return dict(zip(self.transforms, values))
+
+  def evalf(self, trans):
+    n = len(self.transforms)
+    index = 0
+    for bit in self.bits:
+      i = index|bit
+      if i <= n and trans >= self.transforms[i-1]:
+        index = i
+    index -= 1
+    if index < 0 or trans[:len(self.transforms[index])] != self.transforms[index]:
+      index = len(self.transforms)
+    return numpy.array(index)[_]
+
+class Range(Array):
+
+  def __init__(self, length:asarray, offset:asarray=Zeros((), int)):
+    assert length.ndim == 0 and length.dtype == int
+    assert offset.ndim == 0 and offset.dtype == int
+    self.length = length
+    self.offset = offset
+    super().__init__(args=[length, offset], shape=[length], dtype=int)
+
+  def evalf(self, length, offset):
+    length, = length
+    offset, = offset
+    return numpy.arange(offset, offset+length)[_]
 
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 
@@ -3165,13 +3214,15 @@ def eig(arg, axes=(-2,-1), symmetric=False):
   eigval, eigvec = Eig(transposed, symmetric)
   return Tuple([transpose(diagonalize(eigval), _invtrans(trans)), transpose(eigvec, _invtrans(trans))])
 
-def function( fmap, nmap, ndofs ):
-  'create function on ndims-element'
-
-  length = '~%d' % ndofs
-  func = Function( fmap, shape=(length,) )
-  dofmap = DofMap( nmap, length=length )
-  return Inflate( func, dofmap, ndofs, axis=0 )
+def function(fmap, nmap, ndofs):
+  transforms = sorted(fmap)
+  depth, = set(len(transform) for transform in transforms)
+  fromdims, = set(transform.fromdims for transform in transforms)
+  promote = Promote(fromdims, trans=TRANS)
+  index = FindTransform(transforms, promote)
+  dofmap = DofMap([nmap[trans] for trans in transforms], index=index)
+  func = Function(stds=[fmap[trans] for trans in transforms], depth=depth, trans=promote, index=index)
+  return Inflate(func, dofmap, ndofs, axis=0)
 
 def elemwise( fmap, shape, default=None ):
   return Elemwise( fmap=fmap, shape=shape, default=default )

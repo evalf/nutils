@@ -566,8 +566,8 @@ class Topology( object ):
         used[dofs] = True
     if isinstance( basis, function.Inflate ) and isinstance( basis.func, function.Function ) and isinstance( basis.dofmap, function.DofMap ):
       renumber = used.cumsum()-1
-      nmap = { trans: numeric.const(renumber[dofs[used[dofs]]], copy=False) for trans, dofs in basis.dofmap.dofmap.items() }
-      return function.function( fmap=basis.func.stdmap, nmap=nmap, ndofs=used.sum() )
+      dofmap = function.DofMap([numeric.const(renumber[dofs], copy=False) for dofs in basis.dofmap.dofs], index=basis.dofmap.index)
+      return function.Inflate(basis.func, dofmap=dofmap, length=used.sum(), axis=basis.axis)
     return function.mask( basis, used )
 
   def locate( self, geom, points, ischeme='vertex', scale=1, tol=1e-12, eps=0, maxiter=100, *, arguments=None ):
