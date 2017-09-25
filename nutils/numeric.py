@@ -188,10 +188,12 @@ def meshgrid( *args ):
   assert n == 0
   return grid
 
-def takediag( A ):
-  return A[...,0] if A.shape[-1] == 1 \
-    else A[...,0,:] if A.shape[-2] == 1 \
-    else numpy.einsum( '...ii->...i', A )
+def takediag( A, axis=-2, rmaxis=-1 ):
+  axis = normdim(A.ndim, axis)
+  rmaxis = normdim(A.ndim, rmaxis)
+  assert axis < rmaxis
+  fmt = _abc[:rmaxis] + _abc[axis] + _abc[rmaxis:A.ndim-1] + '->' + _abc[:A.ndim-1]
+  return numpy.einsum(fmt, A)
 
 def reshape( A, *shape ):
   'more useful reshape'
@@ -273,11 +275,13 @@ def bringforward( arg, axis ):
     return arg
   return arg.transpose( [axis] + range(axis) + range(axis+1,arg.ndim) )
 
-def diagonalize( arg ):
-  'append axis, place last axis on diagonal of self and new'
-
-  diagonalized = numpy.zeros(arg.shape + (arg.shape[-1],), arg.dtype)
-  diag = numpy.einsum( '...ii->...i', diagonalized )
+def diagonalize(arg, axis=-1, newaxis=-1):
+  'insert newaxis, place axis on diagonal of axis and newaxis'
+  axis = normdim(arg.ndim, axis)
+  newaxis = normdim(arg.ndim+1, newaxis)
+  assert 0 <= axis < newaxis <= arg.ndim
+  diagonalized = numpy.zeros(arg.shape[:newaxis]+(arg.shape[axis],)+arg.shape[newaxis:], arg.dtype)
+  diag = takediag(diagonalized, axis, newaxis)
   assert diag.base is diagonalized
   diag.flags.writeable = True
   diag[:] = arg

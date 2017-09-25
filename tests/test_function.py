@@ -67,9 +67,8 @@ class check(TestCase):
     pairs = [sorted(axes[:2]) for axes in count.values() if len(axes) > 1] # axis pairs with same length
     if pairs:
       for ax1, ax2 in pairs:
-        alignaxes = list(range(ax1+1)) + [-2] + list(range(ax1+1,ax2)) + [-1] + list(range(ax2,len(self.shape)-1))
         numpy.testing.assert_array_almost_equal(
-          numeric.takediag(numeric.align(self.n_op(*self.argsfun.eval(self.elem,self.points)), alignaxes, len(self.shape)+1)),
+          numeric.takediag(self.n_op(*self.argsfun.eval(self.elem,self.points)), ax1+1, ax2+1),
          function.takediag(self.op(*self.args), ax1, ax2).eval(self.elem,self.points), decimal=15)
 
   def test_eig(self):
@@ -94,9 +93,11 @@ class check(TestCase):
        function.take(self.op(*self.args), indices, axis=iax).eval(self.elem,self.points), decimal=15)
 
   def test_diagonalize(self):
-    numpy.testing.assert_array_almost_equal(
-      numeric.diagonalize(self.n_op(*self.argsfun.eval(self.elem,self.points))),
-     function.diagonalize(self.op(*self.args)).eval(self.elem,self.points), decimal=15)
+    for axis in range(len(self.shape)):
+      for newaxis in range(axis+1, len(self.shape)+1):
+        numpy.testing.assert_array_almost_equal(
+          numeric.diagonalize(self.n_op(*self.argsfun.eval(self.elem,self.points)), axis+1, newaxis+1),
+         function.diagonalize(self.op(*self.args), axis, newaxis).eval(self.elem,self.points), decimal=15)
 
   def test_product(self):
     for iax in range(len(self.shape)):
@@ -297,9 +298,9 @@ _check('sum', lambda a: function.sum(a,1), lambda a: a.sum(-2), [(2,3,2)])
 _check('transpose', lambda a: function.transpose(a,[0,2,1]), lambda a: a.transpose([0,1,3,2]), [(2,3,2)])
 _check('expand_dims', lambda a: function.expand_dims(a,1), lambda a: numpy.expand_dims(a,2), [(2,3)])
 _check('get', lambda a: function.get(a,1,1), lambda a: a[...,1,:], [(2,3,2)])
-_check('takediag121', lambda a: function.takediag(a,0,2), lambda a: numeric.takediag(a.swapaxes(-3,-2)), [(1,2,1)])
-_check('takediag232', lambda a: function.takediag(a,0,2), lambda a: numeric.takediag(a.swapaxes(-3,-2)), [(2,3,2)])
-_check('takediag323', lambda a: function.takediag(a,0,2), lambda a: numeric.takediag(a.swapaxes(-3,-2)), [(3,2,3)])
+_check('takediag121', lambda a: function.takediag(a,0,2), lambda a: numeric.takediag(a,1,3), [(1,2,1)])
+_check('takediag232', lambda a: function.takediag(a,0,2), lambda a: numeric.takediag(a,1,3), [(2,3,2)])
+_check('takediag323', lambda a: function.takediag(a,0,2), lambda a: numeric.takediag(a,1,3), [(3,2,3)])
 _check('determinant131', lambda a: function.determinant(a,(0,2)), lambda a: numpy.linalg.det(a.swapaxes(-3,-2)), [(1,3,1)])
 _check('determinant232', lambda a: function.determinant(a,(0,2)), lambda a: numpy.linalg.det(a.swapaxes(-3,-2)), [(2,3,2)])
 _check('determinant323', lambda a: function.determinant(a,(0,2)), lambda a: numpy.linalg.det(a.swapaxes(-3,-2)), [(3,2,3)])
@@ -307,7 +308,7 @@ _check('inverse131', lambda a: function.inverse(a,(0,2)), lambda a: numpy.linalg
 _check('inverse232', lambda a: function.inverse(a,(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(-3,-2)).swapaxes(-3,-2), [(2,3,2)])
 _check('inverse323', lambda a: function.inverse(a,(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(-3,-2)).swapaxes(-3,-2), [(3,2,3)])
 _check('repeat', lambda a: function.repeat(a,3,1), lambda a: numpy.repeat(a,3,-2), [(2,1,2)])
-_check('diagonalize', function.diagonalize, numeric.diagonalize, [(2,1,2)])
+_check('diagonalize', lambda a: function.diagonalize(a,0,2), lambda a: numeric.diagonalize(a,1,3), [(2,1,2)])
 _check('multiply', function.multiply, numpy.multiply, [(3,1),(1,3)])
 _check('divide', function.divide, numpy.divide, [(3,1),(1,3)])
 _check('divide2', lambda a: function.asarray(a)/2, lambda a: a/2, [(3,1)])

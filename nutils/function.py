@@ -503,7 +503,7 @@ class Array( Evaluable ):
   _inverse = lambda self: None
   _takediag = lambda self: None
   _kronecker = lambda self, axis, length, pos: None
-  _diagonalize = lambda self: None
+  _diagonalize = lambda self, axis, newaxis: None
   _product = lambda self: None
   _choose = lambda self, choices: None
   _cross = lambda self, other, axis: None
@@ -1217,9 +1217,9 @@ class Concatenate(Array):
   def _power( self, n ):
     return concatenate([power(func, take(n, s, self.axis)) for s, func in self._withslices], self.axis)
 
-  def _diagonalize( self ):
-    if self.axis < self.ndim-1:
-      return concatenate( [ diagonalize(func) for func in self.funcs ], self.axis )
+  def _diagonalize(self, axis, newaxis):
+    if self.axis != axis:
+      return concatenate([diagonalize(func, axis, newaxis) for func in self.funcs], self.axis+(newaxis<=self.axis))
 
   def _kronecker( self, axis, length, pos ):
     return concatenate( [ kronecker(func,axis,length,pos) for func in self.funcs ], self.axis+(axis<=self.axis) )
@@ -1697,6 +1697,8 @@ class TakeDiag( Array ):
   @cache.property
   def simplified(self):
     func = self.func.simplified
+    if self.shape[-1] == 1:
+      return get(func, -1, 0).simplified
     retval = func._takediag()
     if retval is not None:
       assert retval.shape == self.shape
@@ -1708,8 +1710,7 @@ class TakeDiag( Array ):
     return numeric.takediag( arr )
 
   def _derivative(self, var, seen):
-    fder = derivative(self.func, var, seen)
-    return transpose(takediag(fder, self.func.ndim-2, self.func.ndim-1), tuple(range(self.func.ndim-2))+(-1,)+tuple(range(self.func.ndim-2,fder.ndim-2)))
+    return takediag(derivative(self.func, var, seen), self.func.ndim-2, self.func.ndim-1)
 
   def _sum( self, axis ):
     if axis != self.ndim-1:
@@ -2011,8 +2012,8 @@ class Zeros( Array ):
   def _cross(self, other, axis):
     return self
 
-  def _diagonalize( self ):
-    return zeros( self.shape + (self.shape[-1],), dtype=self.dtype )
+  def _diagonalize(self, axis, newaxis):
+    return zeros(self.shape[:newaxis]+(self.shape[axis],)+self.shape[newaxis:], dtype=self.dtype)
 
   def _sum( self, axis ):
     return zeros( self.shape[:axis] + self.shape[axis+1:], dtype=self.dtype )
@@ -2175,9 +2176,9 @@ class Inflate( Array ):
     if index == self.dofmap:
       return self.func
 
-  def _diagonalize( self ):
-    assert self.axis < self.ndim-1
-    return inflate( diagonalize(self.func), self.dofmap, self.length, self.axis )
+  def _diagonalize(self, axis, newaxis):
+    if self.axis != axis:
+      return inflate(diagonalize(self.func, axis, newaxis), self.dofmap, self.length, self.axis+(newaxis<=self.axis))
 
   def _sum( self, axis ):
     arr = sum( self.func, axis )
@@ -2190,99 +2191,109 @@ class Inflate( Array ):
 
 class Diagonalize( Array ):
 
-  def __init__(self, func:asarray):
+  def __init__(self, func:asarray, axis=int, newaxis=int):
+    assert 0 <= axis < newaxis <= func.ndim
     self.func = func
-    super().__init__(args=[func], shape=func.shape + func.shape[-1:], dtype=func.dtype)
+    self.axis = axis
+    self.newaxis = newaxis
+    super().__init__(args=[func], shape=func.shape[:newaxis]+(func.shape[axis],)+func.shape[newaxis:], dtype=func.dtype)
 
   @cache.property
   def simplified(self):
     func = self.func.simplified
-    if func.shape[-1] == 1:
-      return insertaxis(func, func.ndim, 1).simplified
-    retval = func._diagonalize()
+    if func.shape[self.axis] == 1:
+      return insertaxis(func, self.newaxis, 1).simplified
+    retval = func._diagonalize(self.axis, self.newaxis)
     if retval is not None:
       assert retval.shape == self.shape
       return retval.simplified
-    return Diagonalize(func)
+    return Diagonalize(func, self.axis, self.newaxis)
 
   def evalf( self, arr):
     assert arr.ndim == self.ndim
-    return numeric.diagonalize(arr)
+    return numeric.diagonalize(arr, self.axis+1, self.newaxis+1)
 
   def _derivative(self, var, seen):
-    result = derivative(self.func, var, seen)
-    # move axis `self.ndim-1` to the end
-    result = transpose(result, [i for i in range(result.ndim) if i != self.func.ndim-1] + [self.func.ndim-1])
-    # diagonalize last axis
-    result = diagonalize(result)
-    # move diagonalized axes left of the derivatives axes
-    return transpose(result, tuple(range(self.func.ndim-1)) + (result.ndim-2,result.ndim-1) + tuple(range(self.func.ndim-1,result.ndim-2)))
+    return diagonalize(derivative(self.func, var, seen), self.axis, self.newaxis)
 
   def _get( self, i, item ):
-    if i < self.ndim-2:
-      return diagonalize(get(self.func, i, item))
+    if i != self.axis and i != self.newaxis:
+      return diagonalize(get(self.func, i-(i>self.newaxis), item), self.axis-(i<self.axis), self.newaxis-(i<self.newaxis))
     if item.isconstant:
       pos, = item.eval()
-      return kronecker(get(self.func, -1, item), axis=-1, pos=pos, length=self.func.shape[-1])
+      return kronecker(get(self.func, self.axis, item), axis=self.axis if i == self.newaxis else self.newaxis-1, pos=pos, length=self.func.shape[self.axis])
 
   def _inverse( self ):
-    return diagonalize( reciprocal( self.func ) )
+    if self.axis == self.func.ndim-1 and self.newaxis == self.ndim-1:
+      return diagonalize(reciprocal(self.func), self.axis, self.newaxis)
 
   def _determinant( self ):
-    return product( self.func, -1 )
+    if self.axis == self.func.ndim-1 and self.newaxis == self.ndim-1:
+      return product(self.func, self.axis)
 
   def _multiply( self, other ):
-    return diagonalize(multiply(self.func, takediag(other)))
+    return diagonalize(multiply(self.func, takediag(other, self.axis, self.newaxis)), self.axis, self.newaxis)
 
   def _dot( self, other, axes ):
-    faxes = [ axis for axis in axes if axis < self.ndim-2 ]
+    faxes = [axis-(axis>self.newaxis) for axis in axes if axis not in (self.axis, self.newaxis)]
+    assert self.axis not in faxes
     if len(faxes) < len(axes): # one of or both diagonalized axes are summed
-      if len(axes) - len(faxes) == 2:
-        faxes.append( self.func.ndim-1 )
-      return dot( self.func, takediag(other), faxes )
-    return diagonalize( dot( self.func, takediag(other), axes ) )
+      if len(faxes) == len(axes) - 2:
+        faxes.append(self.axis)
+      retval = dot(self.func, takediag(other, self.axis, self.newaxis), faxes)
+      if len(faxes) == len(axes) - 1 and self.axis in axes:
+        axis = self.axis-builtins.sum(ax<self.axis for ax in faxes)
+        newaxis = self.newaxis-builtins.sum(ax<self.newaxis for ax in faxes)
+        retval = transpose(retval, list(range(axis))+list(range(axis+1,newaxis))+[axis]+list(range(newaxis,retval.ndim)))
+      return retval
+    return diagonalize(dot(self.func, takediag(other, self.axis, self.newaxis), faxes), self.axis-builtins.sum(ax<self.axis for ax in faxes), self.newaxis-builtins.sum(ax<self.newaxis for ax in faxes))
 
   def _add( self, other ):
-    if isinstance( other, Diagonalize ):
-      return diagonalize( self.func + other.func )
+    if isinstance(other, Diagonalize) and other.axis == self.axis and other.newaxis == self.newaxis:
+      return diagonalize(add(self.func, other.func), self.axis, self.newaxis)
 
   def _sum( self, axis ):
-    if axis >= self.ndim-2:
+    if axis == self.newaxis:
       return self.func
-    return diagonalize( sum( self.func, axis ) )
+    if axis == self.axis:
+      return transpose(self.func, list(range(self.axis))+list(range(self.axis+1,self.newaxis))+[self.axis]+list(range(self.newaxis,self.func.ndim)))
+    return diagonalize(sum(self.func, axis-(axis>self.newaxis)), self.axis-(axis<self.axis), self.newaxis-(axis<self.newaxis))
 
   def _transpose(self, axes):
-    if axes[-2:] in [(self.ndim-2,self.ndim-1), (self.ndim-1,self.ndim-2)]:
-      return diagonalize(transpose(self.func, axes[:-2]+(self.ndim-2,)))
+    axis = axes.index(self.axis)
+    newaxis = axes.index(self.newaxis)
+    if newaxis < axis:
+      axes = list(axes)
+      axes[axis] = self.newaxis
+      axes[newaxis] = self.axis
+      axis, newaxis = newaxis, axis
+    newaxes = [ax-(ax>self.newaxis) for ax in axes[:newaxis]+axes[newaxis+1:]]
+    return diagonalize(transpose(self.func, newaxes), axis, newaxis)
 
   def _insertaxis(self, axis, length):
-    if axis >= self.func.ndim-1:
-      return diagonalize(insertaxis(self.func, self.func.ndim-1, length)).swapaxes(self.func.ndim-1, axis)
-    return diagonalize(insertaxis(self.func, axis, length))
+    return diagonalize(insertaxis(self.func, axis-(axis>self.newaxis), length), self.axis+(axis<=self.axis), self.newaxis+(axis<=self.newaxis))
 
   def _takediag( self ):
-    return self.func
+    if self.axis == self.func.ndim-1 and self.newaxis == self.ndim-1:
+      return self.func
 
   def _take( self, index, axis ):
-    if axis < self.ndim-2:
-      return diagonalize( take( self.func, index, axis ) )
-    if numeric.isint(self.func.shape[-1]):
-      diag = diagonalize(take(self.func, index, self.func.ndim-1))
-      return inflate(diag, index, self.func.shape[-1], self.ndim-1 if axis == self.ndim-2 else self.ndim-2)
+    if axis not in (self.axis, self.newaxis):
+      return diagonalize(take(self.func, index, axis-(axis>self.newaxis)), self.axis, self.newaxis)
+    if numeric.isint(self.func.shape[self.axis]):
+      diag = diagonalize(take(self.func, index, self.axis), self.axis, self.newaxis)
+      return inflate(diag, index, self.func.shape[self.axis], self.newaxis if axis == self.axis else self.axis)
 
   def _mask( self, maskvec, axis ):
-    if axis < self.ndim-2:
-      return diagonalize( mask( self.func, maskvec, axis ) )
-    indices, = numpy.where( maskvec )
+    if axis not in (self.axis, self.newaxis):
+      return diagonalize(mask(self.func, maskvec, axis-(axis>self.newaxis)), self.axis, self.newaxis)
+    indices, = numpy.where(maskvec)
     if not numpy.equal(numpy.diff(indices), 1).all():
       return
     # consecutive sub-block
-    rev = slice( None, None, 1 if axis == self.ndim-1 else -1 )
-    return concatenate([
-      zeros( self.func.shape[:-1] + (indices[0],len(indices))[rev] ),
-      diagonalize( mask( self.func, maskvec, self.func.ndim-1 ) ),
-      zeros( self.func.shape[:-1] + (self.shape[-1]-(indices[-1]+1),len(indices))[rev] ),
-    ], axis=2*self.ndim-axis-3 )
+    ax = self.axis if axis == self.newaxis else self.newaxis
+    masked = diagonalize(mask(self.func, maskvec, self.axis), self.axis, self.newaxis)
+    return concatenate([zeros(masked.shape[:ax] + (indices[0],) + masked.shape[ax+1:]), masked, zeros(masked.shape[:ax] + (self.shape[ax]-(indices[-1]+1),) + masked.shape[ax+1:])], axis=ax)
 
 class Guard( Array ):
   'bar all simplifications'
@@ -2469,7 +2480,7 @@ class Argument(DerivativeTargetBase):
   >>> a = function.Argument('x', [])
   >>> b = function.Argument('y', [])
   >>> f = a**3 + b**2
-  >>> function.derivative(f, a).simplified == (3*a**2).simplified
+  >>> function.derivative(f, a).simplified == (3.*a**2).simplified
   True
 
   Furthermore, derivatives to the local cooardinates are remembered and applied
@@ -2510,11 +2521,9 @@ class Argument(DerivativeTargetBase):
       assert var._nderiv == 0 and self.shape[:self.ndim-self._nderiv] == var.shape
       if self._nderiv:
         return zeros(self.shape+var.shape)
-      result = numpy.array(1)
+      result = _inflate_scalar(1., self.shape)
       for i, sh in enumerate(self.shape):
-        s = [numpy.newaxis] * self.ndim
-        s[i] = slice(None)
-        result = result * eye(sh)[tuple(s*2)]
+        result = diagonalize(result, i, i+self.ndim)
       return result
     elif isinstance(var, LocalCoords):
       return Argument(self._name, self.shape+var.shape, self._nderiv+1)
@@ -2865,7 +2874,7 @@ cosh = lambda arg: .5 * ( exp(arg) + exp(-arg) )
 tanh = lambda arg: 1 - 2. / ( exp(2*arg) + 1 )
 arctanh = lambda arg: .5 * ( ln(1+arg) - ln(1-arg) )
 piecewise = lambda level, intervals, *funcs: choose( sum( greater( expand_dims(level,-1), intervals ), -1 ), funcs )
-trace = lambda arg, n1=-2, n2=-1: sum( takediag( arg, n1, n2 ), -1 )
+trace = lambda arg, n1=-2, n2=-1: sum(takediag(arg, n1, n2), numeric.normdim(arg.ndim, n1))
 normalized = lambda arg, axis=-1: divide(arg, expand_dims(norm2(arg, axis=axis), axis))
 norm2 = lambda arg, axis=-1: sqrt( sum( multiply( arg, arg ), axis ) )
 heaviside = lambda arg: choose( greater( arg, 0 ), [0.,1.] )
@@ -2884,7 +2893,7 @@ bifurcate = lambda arg1, arg2: ( bifurcate1(arg1), bifurcate2(arg2) )
 curvature = lambda geom, ndims=-1: geom.normal().div(geom, ndims=ndims)
 laplace = lambda arg, geom, ndims=0: arg.grad(geom, ndims).div(geom, ndims)
 symgrad = lambda arg, geom, ndims=0: multiply(.5, add_T(arg.grad(geom, ndims)))
-div = lambda arg, geom, ndims=0: trace(arg.grad(geom, ndims), -1, -2)
+div = lambda arg, geom, ndims=0: trace(arg.grad(geom, ndims))
 tangent = lambda geom, vec: subtract(vec, multiply(dot(vec, normal(geom), -1)[...,_], normal(geom)))
 ngrad = lambda arg, geom, ndims=0: dotnorm(grad(arg, geom, ndims), geom)
 nsymgrad = lambda arg, geom, ndims=0: dotnorm(symgrad(arg, geom, ndims), geom)
@@ -3001,17 +3010,17 @@ def inverse(arg, axes=(-2,-1)):
   arg = transpose(arg, trans)
   return transpose(Inverse(arg), _invtrans(trans))
 
-def takediag(arg, ax1=-2, ax2=-1):
+def takediag(arg, axis=-2, rmaxis=-1):
   arg = asarray(arg)
-  ax1, ax2 = _norm_and_sort( arg.ndim, (ax1,ax2) )
-  assert ax2 > ax1 # strict
-  trans = [i for i in range(arg.ndim) if i not in (ax1, ax2)] + [ax1, ax2]
+  axis = numeric.normdim(arg.ndim, axis)
+  rmaxis = numeric.normdim(arg.ndim, rmaxis)
+  assert axis < rmaxis
+  if axis == arg.ndim-2:
+    return TakeDiag(arg)
+  trans = [i for i in range(arg.ndim) if i not in (axis, rmaxis)] + [axis, rmaxis]
   arg = transpose(arg, trans)
-  if arg.shape[-1] == 1:
-    return get(arg, -1, 0)
-  if arg.shape[-2] == 1:
-    return get(arg, -2, 0)
-  return TakeDiag(arg)
+  diag = TakeDiag(arg)
+  return transpose(diag, list(range(axis))+[diag.ndim-1]+list(range(axis,diag.ndim-1)))
 
 def derivative(func, var, seen=None):
   'derivative'
@@ -3046,9 +3055,12 @@ def kronecker(arg, axis, length, pos):
   assert 0 <= pos < length
   return Kronecker(arg, axis, length, pos)
 
-def diagonalize(arg):
+def diagonalize(arg, axis=-1, newaxis=-1):
   arg = asarray(arg)
-  return Diagonalize(arg)
+  axis = numeric.normdim(arg.ndim, axis)
+  newaxis = numeric.normdim(arg.ndim+1, newaxis)
+  assert axis < newaxis
+  return Diagonalize(arg, axis, newaxis)
 
 def concatenate(args, axis=0):
   args = _matchndim(*args)
