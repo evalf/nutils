@@ -681,12 +681,13 @@ class ElementSize( Array):
 
 class InsertAxis(Array):
 
-  def __init__(self, func:asarray, axis:int, length):
+  def __init__(self, func:asarray, axis:int, length:asarray):
+    assert length.ndim == 0 and length.dtype == int
     assert 0 <= axis <= func.ndim
     self.func = func
     self.axis = axis
     self.length = length
-    super().__init__(args=[func], shape=func.shape[:axis]+(length,)+func.shape[axis:], dtype=func.dtype)
+    super().__init__(args=[func, length], shape=func.shape[:axis]+(length,)+func.shape[axis:], dtype=func.dtype)
 
   @cache.property
   def simplified(self):
@@ -697,16 +698,17 @@ class InsertAxis(Array):
       return retval.simplified
     return InsertAxis(func, self.axis, self.length)
 
-  def evalf(self, func):
-    return numeric.const(func).insertaxis(self.axis+1, self.length if numeric.isint(self.length) else 1)
+  def evalf(self, func, length):
+    length, = length
+    return numeric.const(func).insertaxis(self.axis+1, length)
 
   def _derivative(self, var, seen):
     return insertaxis(derivative(self.func, var, seen), self.axis, self.length)
 
   def _get(self, i, item):
     if i == self.axis:
-      if item.isconstant:
-        assert item.eval()[0] < self.length
+      if item.isconstant and self.length.isconstant:
+        assert item.eval()[0] < self.length.eval()[0]
       return self.func
     return insertaxis(get(self.func, i-(i>self.axis), item), self.axis-(i<self.axis), self.length)
 
@@ -727,20 +729,20 @@ class InsertAxis(Array):
 
   def _add(self, other):
     if isinstance(other, InsertAxis) and self.axis == other.axis:
-      assert self.length == other.length or self.length == 1 or other.length == 1
-      return insertaxis(add(self.func, other.func), self.axis, self.length if other.length == 1 else other.length)
-    if self.length == 1 and other.shape[self.axis] != 1:
+      assert self.length == other.length or self.shape[self.axis] == 1 or other.shape[self.axis] == 1
+      return insertaxis(add(self.func, other.func), self.axis, self.length if other.shape[self.axis] == 1 else other.length)
+    if self.shape[self.axis] == 1 and other.shape[self.axis] != 1:
       return add(insertaxis(self.func, self.axis, other.shape[self.axis]), other)
 
   def _multiply(self, other):
     if isinstance(other, InsertAxis) and self.axis == other.axis:
-      assert self.length == other.length or self.length == 1 or other.length == 1
-      return insertaxis(multiply(self.func, other.func), self.axis, self.length if other.length == 1 else other.length)
-    if self.length == 1 and other.shape[self.axis] != 1:
+      assert self.length == other.length or self.shape[self.axis] == 1 or other.shape[self.axis] == 1
+      return insertaxis(multiply(self.func, other.func), self.axis, self.length if other.shape[self.axis] == 1 else other.length)
+    if self.shape[self.axis] == 1 and other.shape[self.axis] != 1:
       return multiply(insertaxis(self.func, self.axis, other.shape[self.axis]), other)
 
   def _insertaxis(self, axis, length):
-    if (not numeric.isint(length), axis) < (not numeric.isint(self.length), self.axis):
+    if (not length.isconstant, axis) < (not self.length.isconstant, self.axis):
       return insertaxis(insertaxis(self.func, axis-(axis>self.axis), length), self.axis+(axis<=self.axis), self.length)
 
   def _take(self, index, axis):
@@ -750,23 +752,23 @@ class InsertAxis(Array):
 
   def _takediag(self):
     if self.axis >= self.ndim-2:
-      assert self.func.shape[-1] == self.length
+      assert self.func.shape[-1] == self.shape[self.axis]
       return self.func
     return insertaxis(takediag(self.func), self.axis, self.length)
 
   def _dot(self, other, axes):
     if self.axis in axes:
       sumother = sum(other, self.axis)
-      if other.shape[self.axis] != self.length:
+      if other.shape[self.axis] != self.shape[self.axis]:
         if other.shape[self.axis] == 1:
           sumother *= self.length
         else:
-          assert self.length == 1
+          assert self.shape[self.axis] == 1
       return dot(self.func, sumother, [ax-(ax>self.axis) for ax in axes if ax != self.axis])
 
   def _mask(self, maskvec, axis):
     if axis == self.axis:
-      assert len(maskvec) == self.length
+      assert len(maskvec) == self.shape[self.axis]
       return insertaxis(self.func, self.axis, maskvec.sum())
     return insertaxis(mask(self.func, maskvec, axis-(self.axis<axis)), self.axis, self.length)
 
@@ -2056,13 +2058,12 @@ class Zeros( Array ):
   'zero'
 
   def __init__(self, shape:tuple, dtype:asdtype):
-    super().__init__(args=[], shape=shape, dtype=dtype)
+    super().__init__(args=[asarray(sh) for sh in shape], shape=shape, dtype=dtype)
 
-  def evalf( self ):
-    'prepend point axes'
-
-    assert not any( sh is None for sh in self.shape ), 'cannot evaluate zeros for shape %s' % (self.shape,)
-    return numpy.zeros( (1,) + self.shape, dtype=self.dtype )
+  def evalf(self, *shape):
+    if shape:
+      shape, = zip(*shape)
+    return numpy.zeros((1,)+shape, dtype=self.dtype)
 
   @property
   def blocks(self):
