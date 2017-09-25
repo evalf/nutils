@@ -571,7 +571,9 @@ class Constant( Array ):
     return asarray( numpy.sum( self.value, axis ) )
 
   def _get( self, i, item ):
-    return asarray( numeric.get( self.value, i, item ) )
+    if item.isconstant:
+      item, = item.eval()
+      return asarray(numeric.get(self.value, i, item))
 
   def _add( self, other ):
     if isinstance( other, Constant ):
@@ -693,7 +695,8 @@ class InsertAxis(Array):
 
   def _get(self, i, item):
     if i == self.axis:
-      assert item < self.length
+      if item.isconstant:
+        assert item.eval()[0] < self.length
       return self.func
     return insertaxis(get(self.func, i-(i>self.axis), item), self.axis-(i<self.axis), self.length)
 
@@ -833,27 +836,29 @@ class Transpose(Array):
 
 class Get(Array):
 
-  def __init__(self, func:asarray, axis:int, item:int):
+  def __init__(self, func:asarray, axis:int, item:asarray):
+    assert item.ndim == 0 and item.dtype == int
     self.func = func
     self.axis = axis
     self.item = item
     assert 0 <= axis < func.ndim, 'axis is out of bounds'
-    assert 0 <= item
-    if numeric.isint(func.shape[axis]):
-      assert item < func.shape[axis], 'item is out of bounds'
-    super().__init__(args=[func], shape=func.shape[:axis]+func.shape[axis+1:], dtype=func.dtype)
+    if item.isconstant and numeric.isint(func.shape[axis]):
+      assert 0 <= item.eval()[0] < func.shape[axis], 'item is out of bounds'
+    super().__init__(args=[func, item], shape=func.shape[:axis]+func.shape[axis+1:], dtype=func.dtype)
 
   @cache.property
   def simplified(self):
     func = self.func.simplified
-    retval = func._get(self.axis, self.item)
+    item = self.item.simplified
+    retval = func._get(self.axis, item)
     if retval is not None:
       assert retval.shape == self.shape
       return retval.simplified
-    return Get(func, self.axis, self.item)
+    return Get(func, self.axis, item)
 
-  def evalf(self, arr):
-    return arr[(slice(None),)*(self.axis+1)+(self.item,)]
+  def evalf(self, arr, item):
+    item, = item
+    return arr[(slice(None),)*(self.axis+1)+(item,)]
 
   def _derivative(self, var, seen):
     f = derivative(self.func, var, seen)
@@ -1108,15 +1113,17 @@ class Concatenate(Array):
         for ind, f in func.blocks)
 
   def _get( self, i, item ):
-    if i == self.axis:
+    if i != self.axis:
+      axis = self.axis - (self.axis > i)
+      return concatenate([get(f, i, item) for f in self.funcs], axis=axis)
+    if item.isconstant:
+      item, = item.eval()
       for f in self.funcs:
         if item < f.shape[i]:
           fexp = expand( f, self.shape[:self.axis] + (f.shape[self.axis],) + self.shape[self.axis+1:] )
           return get( fexp, i, item )
         item -= f.shape[i]
       raise Exception
-    axis = self.axis - (self.axis > i)
-    return concatenate( [ get( aslength(f,self.shape[i],i), i, item ) for f in self.funcs ], axis=axis )
 
   def _derivative(self, var, seen):
     funcs = [derivative(func, var, seen) for func in self.funcs]
@@ -2280,9 +2287,11 @@ class Diagonalize( Array ):
     return transpose(result, tuple(range(self.func.ndim-1)) + (result.ndim-2,result.ndim-1) + tuple(range(self.func.ndim-1,result.ndim-2)))
 
   def _get( self, i, item ):
-    if i >= self.ndim-2:
-      return kronecker( get( self.func, -1, item ), axis=-1, pos=item, length=self.func.shape[-1] )
-    return diagonalize( get( self.func, i, item ) )
+    if i < self.ndim-2:
+      return diagonalize(get(self.func, i, item))
+    if item.isconstant:
+      pos, = item.eval()
+      return kronecker(get(self.func, -1, item), axis=-1, pos=pos, length=self.func.shape[-1])
 
   def _inverse( self ):
     return diagonalize( reciprocal( self.func ) )
@@ -2441,9 +2450,9 @@ class Kronecker( Array ):
   def _get( self, i, item ):
     if i != self.axis:
       return kronecker( get(self.func,i-(i>self.axis),item), self.axis-(i<self.axis), self.length, self.pos )
-    if item != self.pos:
-      return zeros( self.func.shape, self.dtype )
-    return self.func
+    if item.isconstant:
+      item, = item.eval()
+      return self.func if item == self.pos else zeros(self.func.shape, self.dtype)
 
   def _add( self, other ):
     if isinstance( other, Kronecker ) and other.axis == self.axis and self.length == other.length and self.pos == other.pos:
@@ -2983,12 +2992,12 @@ def repeat(arg, length, axis):
   return insertaxis(get(arg, axis, 0), axis, length)
 
 def get(arg, iax, item):
-  assert numeric.isint(item)
   arg = asarray(arg)
+  item = asarray(item)
   iax = numeric.normdim(arg.ndim, iax)
   sh = arg.shape[iax]
-  if numeric.isint(sh):
-    item = numeric.normdim(sh, item)
+  if numeric.isint(sh) and item.isconstant:
+    item = numeric.normdim(sh, item.eval()[0])
   return Get(arg, iax, item)
 
 def align(arg, axes, ndim):
