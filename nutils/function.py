@@ -2863,38 +2863,6 @@ def chain( funcs ):
              for j, sh in enumerate(shapes) ], axis=0 )
                for i, func in enumerate(funcs) ]
 
-def merge( funcs ):
-  'Combines unchained funcs into one function object.'
-
-  cascade = fmap = nmap = None
-  offset = 0 # ndofs = builtins.sum( f.shape[0] for f in funcs )
-
-  for inflated_func in funcs:
-    (func, (dofmap,)), = inflated_func.blocks # Returns one scalar function.
-
-    if fmap is None:
-      fmap = func.stdmap.copy()
-    else:
-      targetlen = len( fmap ) + len( func.stdmap )
-      fmap.update( func.stdmap )
-      assert len( fmap ) == targetlen, 'Don`t allow overlap.'
-
-    if nmap is None:
-      nmap = dofmap.dofmap.copy()
-    else:
-      targetlen = len( nmap ) + len( dofmap.dofmap )
-      nmap.update( dict( (key, val+offset) for key, val in dofmap.dofmap.items() ) )
-      assert len( nmap ) == targetlen, 'Don`t allow overlap.'
-
-    if cascade is None:
-      cascade = func.cascade
-    else:
-      assert func.cascade == cascade, 'Functions have to be defined on domains of same dimension.'
-
-    offset += inflated_func.shape[0]
-
-  return function( fmap, nmap, offset, cascade.ndims )
-
 def vectorize( args ):
   'vectorize'
 
@@ -3653,40 +3621,6 @@ def mask( arg, mask, axis=0 ):
     return retval
 
   return Mask( arg, mask, axis )
-
-@log.title
-def fdapprox( func, w, dofs, delta=1.e-5 ):
-  '''Finite difference approximation of the variation of func in directions w
-  around dofs. Input arguments:
-  * func,  the functional to differentiate
-  * dofs,  DOF vector of linearization point
-  * w,     the function space or a tuple of chained spaces
-  * delta, finite difference step scaling of ||dofs||_inf'''
-
-  if not isinstance( w, tuple ): w = w,
-  x0 = tuple( wi.dot( dofs ) for wi in w )
-  step = numpy.linalg.norm( dofs, numpy.inf )*delta
-  ndofs = len( dofs )
-  dfunc_fd = []
-  for i in log.range( 'dof', ndofs ):
-    pert = dofs.copy()
-    pert[i] += step
-    x1 = tuple( wi.dot( pert ) for wi in w )
-    dfunc_fd.append( (func( *x1 ) - func( *x0 ))/step )
-  return dfunc_fd
-
-def supp( funcsp, indices ):
-  'find support of selection of basis functions'
-
-  warnings.warn( 'function.supp is deprecated; use domain.supp instead', DeprecationWarning )
-  transforms = []
-  def collect_transforms( f ):
-    if isinstance( f, DofMap ):
-      transforms.append( set(f.dofmap) )
-    return edit( f, collect_transforms )
-  ind_funcs = [ collect_transforms( ind[0] ) for ind, f in funcsp.blocks ]
-  common_transforms = functools.reduce( set.intersection, transforms )
-  return [ trans for trans in common_transforms if any( numpy.intersect1d( ind.eval(trans)[0], indices, assume_unique=True ).size for ind in ind_funcs ) ]
 
 def J( geometry, ndims=None ):
   if ndims is None:
