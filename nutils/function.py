@@ -761,6 +761,10 @@ class InsertAxis(Array):
       return insertaxis(self.func, self.axis, maskvec.sum())
     return insertaxis(mask(self.func, maskvec, axis-(self.axis<axis)), self.axis, self.length)
 
+  def _transpose(self, axes):
+    i = axes.index(self.axis)
+    return insertaxis(self.func.transpose([ax-(ax>self.axis) for ax in axes[:i]+axes[i+1:]]), i, self.length)
+
 class Transpose(Array):
 
   def __init__(self, func:asarray, axes:tuple):
@@ -786,9 +790,6 @@ class Transpose(Array):
   def _transpose(self, axes):
     newaxes = [self.axes[i] for i in axes]
     return transpose(self.func, newaxes)
-
-  def _insertaxis(self, axis, length):
-    return transpose(insertaxis(self.func, self.func.ndim, length), self.axes[:axis]+(self.func.ndim,)+self.axes[axis:])
 
   def _takediag( self ):
     if self.axes[-2:] in [(self.ndim-2,self.ndim-1), (self.ndim-1,self.ndim-2)]:
