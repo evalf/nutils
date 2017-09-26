@@ -206,14 +206,12 @@ class Topology( object ):
         for ind, f in function.blocks(function.zero_argument_derivatives(func))]
 
     block2func, indices, values = zip( *blocks ) if blocks else ([],[],[])
-    indexfunc = function.Tuple( indices )
-    valuefunc = function.Tuple( values )
 
     log.debug( 'integrating %s distinct blocks' % '+'.join(
       str(block2func.count(ifunc)) for ifunc in range(len(funcs)) ) )
 
     if core.getprop( 'dot', False ):
-      valuefunc.graphviz()
+      function.Tuple(values).graphviz()
 
     if fcache is None:
       fcache = cache.WrapperCache()
@@ -222,14 +220,12 @@ class Topology( object ):
     # build an nblocks x nelems+1 offset array, and nblocks index lists of
     # length nelems.
 
-    offsets = numpy.zeros( ( len(blocks), len(self)+1 ), dtype=int )
-    indices = [ [] for i in range( len(blocks) ) ]
-
-    for ielem, elem in enumerate( self ):
-      for iblock, index in enumerate( indexfunc.eval( elem, None, fcache, arguments ) ):
-        n = util.product( len(ind) for (ind,) in index ) if index else 1
-        offsets[iblock,ielem+1] = offsets[iblock,ielem] + n
-        indices[iblock].append([ ind for (ind,) in index ])
+    offsets = numpy.zeros((len(blocks), len(self)+1), dtype=int)
+    if blocks:
+      sizefunc = function.stack([f.size for ifunc, ind, f in blocks]).simplified
+      for ielem, elem in enumerate(self):
+        n, = sizefunc.eval(elem, None, fcache, arguments)
+        offsets[:,ielem+1] = offsets[:,ielem] + n
 
     # Since several blocks may belong to the same function, we post process the
     # offsets to form consecutive intervals in longer arrays. The length of
@@ -256,16 +252,17 @@ class Topology( object ):
     # data_index is filled in the same loop. It does not use valuefunc data but
     # benefits from parallel speedup.
 
+    valueindexfunc = function.Tuple(function.Tuple([value]+list(index)) for value, index in zip(values, indices))
     for ielem, elem in parallel.pariter( log.enumerate( 'elem', self ), nprocs=nprocs ):
       ipoints, iweights = ischeme[elem] if isinstance(ischeme,collections.abc.Mapping) else fcache[elem.reference.getischeme]( ischeme )
       assert iweights is not None, 'no integration weights found'
-      for iblock, intdata in enumerate( valuefunc.eval( elem, ipoints, fcache, arguments ) ):
+      for iblock, (intdata, *indices) in enumerate( valueindexfunc.eval( elem, ipoints, fcache, arguments ) ):
         s = slice(*offsets[iblock,ielem:ielem+2])
         data, index = data_index[ block2func[iblock] ]
         w_intdata = numeric.dot( iweights, intdata )
         data[s] = w_intdata.ravel()
         si = (slice(None),) + (_,) * (w_intdata.ndim-1)
-        for idim, ii in enumerate( indices[iblock][ielem] ):
+        for idim, (ii,) in enumerate(indices):
           index[idim,s].reshape(w_intdata.shape)[...] = ii[si]
           si = si[:-1]
 
