@@ -177,6 +177,22 @@ class check(TestCase):
         self.n_op(*self.argsfun.eval(self.elem,self.points))[(slice(None,),)*(idim+1)+(mask,)],
         function.mask(self.op(*self.args), mask, axis=idim).eval(self.elem,self.points), decimal=15)
 
+  def test_ravel(self):
+    for idim in range(len(self.shape)-1):
+      A = self.n_op(*self.argsfun.eval(self.elem,self.points))
+      numpy.testing.assert_array_almost_equal(
+        A.reshape(A.shape[:idim+1]+(-1,)+A.shape[idim+3:]),
+        function.ravel(self.op(*self.args), axis=idim).eval(self.elem,self.points), decimal=15)
+
+  def test_unravel(self):
+    for idim in range(len(self.shape)):
+      A = self.n_op(*self.argsfun.eval(self.elem,self.points))
+      length = A.shape[idim+1]
+      unravelshape = (length//3,3) if (length%3==0) else (length//2,2) if (length%2==0) else (length,1)
+      numpy.testing.assert_array_almost_equal(
+        A.reshape(A.shape[:idim+1]+unravelshape+A.shape[idim+2:]),
+        function.unravel(self.op(*self.args), axis=idim, shape=unravelshape).eval(self.elem,self.points), decimal=15)
+
   def test_edit(self):
     def check_identity(arg):
       if function.isevaluable(arg):
@@ -331,6 +347,8 @@ _check('trigtangent', lambda a: function.trigtangent(a), lambda a: numpy.array([
 _check('mod', lambda a,b: function.mod(a,b), lambda a,b: numpy.mod(a,b), [(3,),(3,)], hasgrad=False)
 _check('kronecker', lambda f: function.kronecker(f,axis=-2,length=3,pos=1), lambda a: numeric.kronecker(a,axis=-2,length=3,pos=1), [(2,3,)])
 _check('mask', lambda f: function.mask(f,numpy.array([True,False,True]),axis=1), lambda a: a[:,:,[True,False,True]], [(2,3,4)])
+_check('ravel', lambda f: function.ravel(f,axis=1), lambda a: a.reshape(-1,2,6), [(2,3,2)])
+_check('unravel', lambda f: function.unravel(f,axis=0,shape=[2,3]), lambda a: a.reshape(-1,2,3,2), [(6,2)])
 
 
 class commutativity(TestCase):

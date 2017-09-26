@@ -767,6 +767,12 @@ class InsertAxis(Array):
     i = axes.index(self.axis)
     return insertaxis(self.func.transpose([ax-(ax>self.axis) for ax in axes[:i]+axes[i+1:]]), i, self.length)
 
+  def _unravel( self, axis, shape ):
+    if axis == self.axis:
+      return insertaxis(insertaxis(self.func, self.axis, shape[1]), self.axis, shape[0])
+    else:
+      return insertaxis(unravel(self.func, axis-(axis>self.axis), shape), self.axis+(axis<self.axis), self.length)
+
 class Transpose(Array):
 
   def __init__(self, func:asarray, axes:tuple):
@@ -1239,6 +1245,10 @@ class Concatenate(Array):
     if all(s.isconstant for s, func in self._withslices):
       return concatenate([mask(func, maskvec[s.eval()[0]], axis) for s, func in self._withslices], axis)
 
+  def _unravel(self, axis, shape):
+    if axis != self.axis:
+      return concatenate([unravel(func, axis, shape) for func in self.funcs], self.axis+(self.axis>axis))
+
 class Interpolate( Array ):
   'interpolate uniformly spaced data; stepwise for now'
 
@@ -1557,6 +1567,9 @@ class BlockAdd( Array ):
 
   def _mask(self, maskvec, axis):
     return BlockAdd([mask(func, maskvec, axis) for func in self.funcs])
+
+  def _unravel(self, axis, shape):
+    return blockadd(*(unravel(func, axis, shape) for func in self.funcs))
 
   @cache.property
   def blocks(self):
@@ -2071,6 +2084,9 @@ class Zeros( Array ):
     shape = self.shape[:axis] + shape + self.shape[axis+1:]
     return zeros( shape, dtype=self.dtype )
 
+  def _ravel(self, axis):
+    return zeros(self.shape[:axis] + (self.shape[axis]*self.shape[axis+1],) + self.shape[axis+2:], self.dtype)
+
 class Inflate( Array ):
 
   def __init__(self, func:asarray, dofmap:asarray, length:int, axis:int):
@@ -2205,6 +2221,10 @@ class Inflate( Array ):
   def _kronecker( self, axis, length, pos ):
     return inflate( kronecker(self.func,axis,length,pos), self.dofmap, self.length, self.axis+(axis<=self.axis) )
 
+  def _unravel(self, axis, shape):
+    if axis != self.axis:
+      return inflate(unravel(self.func, axis, shape), self.dofmap, self.length, self.axis+(self.axis>axis))
+
 class Diagonalize( Array ):
 
   def __init__(self, func:asarray, axis=int, newaxis=int):
@@ -2310,6 +2330,10 @@ class Diagonalize( Array ):
     ax = self.axis if axis == self.newaxis else self.newaxis
     masked = diagonalize(mask(self.func, maskvec, self.axis), self.axis, self.newaxis)
     return concatenate([zeros(masked.shape[:ax] + (indices[0],) + masked.shape[ax+1:]), masked, zeros(masked.shape[:ax] + (self.shape[ax]-(indices[-1]+1),) + masked.shape[ax+1:])], axis=ax)
+
+  def _unravel(self, axis, shape):
+    if axis == self.axis:
+      return ravel(diagonalize(diagonalize(unravel(self.func, self.axis, shape), self.axis, self.newaxis+1), self.axis+1, self.newaxis+2), self.newaxis+1)
 
 class Guard( Array ):
   'bar all simplifications'
@@ -2586,25 +2610,29 @@ class Ravel( Array ):
     return f.reshape( f.shape[:self.axis+1] + (f.shape[self.axis+1]*f.shape[self.axis+2],) + f.shape[self.axis+3:] )
 
   def _multiply( self, other ):
-    if isinstance( other, Ravel ) and other.axis == self.axis and other.func.shape[self.axis:self.axis+2] == self.func.shape[self.axis:self.axis+2]:
-      return ravel( multiply( self.func, other.func ), self.axis )
+    if isinstance(other, Ravel) and other.axis == self.axis and other.func.shape[self.axis:self.axis+2] == self.func.shape[self.axis:self.axis+2]:
+      return ravel(multiply(self.func, other.func), self.axis)
+    return ravel(multiply(self.func, unravel(other, self.axis, self.func.shape[self.axis:self.axis+2])), self.axis)
 
   def _add( self, other ):
-    if isinstance( other, Ravel ) and other.axis == self.axis and other.func.shape[self.axis:self.axis+2] == self.func.shape[self.axis:self.axis+2]:
+    if isinstance(other, Ravel) and other.axis == self.axis and other.func.shape[self.axis:self.axis+2] == self.func.shape[self.axis:self.axis+2]:
       return ravel( add( self.func, other.func ), self.axis )
+    return ravel(add(self.func, unravel(other, self.axis, self.func.shape[self.axis:self.axis+2])), self.axis)
 
   def _get( self, i, item ):
     if i != self.axis:
       return ravel( get( self.func, i+(i>self.axis), item ), self.axis-(i<self.axis) )
-    if numeric.isint( self.func.shape[self.axis+1] ):
+    if item.isconstant and numeric.isint( self.func.shape[self.axis+1] ):
+      item, = item.eval()
       i, j = divmod( item, self.func.shape[self.axis+1] )
       return get( get( self.func, self.axis, i ), self.axis, j )
 
   def _dot( self, other, axes ):
-    newaxes = [ ax+(ax>self.axis) for ax in axes if ax != self.axis ]
-    if len(newaxes) < len(axes): # self.axis in axes
-      newaxes.extend([self.axis,self.axis+1])
-    return dot( self.func, unravel( other, self.axis, self.func.shape[self.axis:self.axis+2] ), newaxes )
+    newaxes = [ax+(ax>=self.axis) for ax in axes]
+    if self.axis in axes:
+      return dot(self.func, unravel(other, self.axis, self.func.shape[self.axis:self.axis+2]), newaxes+[self.axis])
+    else:
+      return ravel(dot(self.func, unravel(other, self.axis, self.func.shape[self.axis:self.axis+2]), newaxes), self.axis-builtins.sum(ax<self.axis for ax in axes))
 
   def _sum( self, axis ):
     if axis == self.axis:
@@ -2627,9 +2655,26 @@ class Ravel( Array ):
     if not {self.axis, self.axis+1} & {axis, rmaxis}:
       return ravel(takediag(self.func, axis+(axis>self.axis), rmaxis+(rmaxis>self.axis)), self.axis-(self.axis>rmaxis))
 
+  def _diagonalize(self, axis, newaxis):
+    if axis != self.axis:
+      return ravel(diagonalize(self.func, axis+(axis>self.axis), newaxis+(newaxis>self.axis)), self.axis+(self.axis>=newaxis))
+
+  def _take(self, index, axis):
+    if axis not in (self.axis, self.axis+1):
+      return ravel(take(self.func, index, axis+(axis>self.axis)), self.axis)
+
   def _unravel( self, axis, shape ):
-    if axis == self.axis and shape == self.func.shape[axis:axis+2]:
+    if axis != self.axis:
+      return ravel(unravel(self.func, axis+(axis>self.axis), shape), self.axis+(self.axis>axis))
+    elif shape == self.func.shape[axis:axis+2]:
       return self.func
+
+  def _insertaxis(self, axis, length):
+    return ravel(insertaxis(self.func, axis+(axis>self.axis), length), self.axis+(axis<=self.axis))
+
+  def _mask(self, maskvec, axis):
+    if axis != self.axis:
+      return ravel(mask(self.func, maskvec, axis+(axis>self.axis)), self.axis)
 
   @property
   def blocks(self):
@@ -2642,16 +2687,19 @@ class Unravel( Array ):
   def __init__(self, func:asarray, axis:int, shape:tuple):
     assert 0 <= axis < func.ndim
     assert func.shape[axis] == numpy.product(shape)
+    assert len(shape) == 2
     self.func = func
     self.axis = axis
     self.unravelshape = shape
-    super().__init__(args=[func], shape=func.shape[:axis]+shape+func.shape[axis+1:], dtype=func.dtype)
+    super().__init__(args=[func]+[asarray(sh) for sh in shape], shape=func.shape[:axis]+shape+func.shape[axis+1:], dtype=func.dtype)
 
   @cache.property
   def simplified(self):
     func = self.func.simplified
-    if len(self.unravelshape) == 1:
-      return func
+    if self.shape[self.axis] == 1:
+      return InsertAxis(func, self.axis, 1).simplified
+    if self.shape[self.axis+1] == 1:
+      return InsertAxis(func, self.axis+1, 1).simplified
     retval = func._unravel(self.axis, self.unravelshape)
     if retval is not None:
       assert retval.shape == self.shape
@@ -2661,8 +2709,14 @@ class Unravel( Array ):
   def _derivative(self, var, seen):
     return unravel(derivative(self.func, var, seen), axis=self.axis, shape=self.unravelshape)
 
-  def evalf( self, f ):
-    return f.reshape( f.shape[0], *self.shape )
+  def evalf(self, f, sh1, sh2):
+    sh1, = sh1
+    sh2, = sh2
+    return f.reshape(f.shape[:self.axis+1]+(sh1, sh2)+f.shape[self.axis+2:])
+
+  def _ravel(self, axis):
+    if axis == self.axis:
+      return self.func
 
 class Mask( Array ):
 
