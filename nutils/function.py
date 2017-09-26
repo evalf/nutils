@@ -2692,6 +2692,38 @@ class Mask( Array ):
   def _derivative(self, var, seen):
     return mask(derivative(self.func, var, seen), self.mask, self.axis)
 
+  def _get(self, i, item):
+    if i != self.axis:
+      return mask(get(self.func, i, item), self.mask, self.axis-(i<self.axis))
+    if item.isconstant:
+      item, = item.eval()
+      return get(self.func, i, numpy.arange(len(self.mask))[self.mask][item])
+
+  def _sum(self, axis):
+    if axis != self.axis:
+      return mask(sum(self.func, axis), self.mask, self.axis-(axis<self.axis))
+    if self.shape[axis] == 1:
+      (item,), = self.mask.nonzero()
+      return get(self.func, axis, item)
+
+  def _take(self, index, axis):
+    if axis != self.axis:
+      return mask(take(self.func, index, axis), self.mask, self.axis)
+
+  def _product(self):
+    if self.axis != self.ndim-1:
+      return mask(product(self.func, -1), self.mask, self.axis)
+
+  def _mask(self, maskvec, axis):
+    if axis == self.axis:
+      newmask = numpy.zeros(len(self.mask), dtype=bool)
+      newmask[self.mask] = maskvec
+      return mask(self.func, newmask, self.axis)
+
+  def _takediag(self, axis, rmaxis):
+    if self.axis not in (axis, rmaxis):
+      return mask(takediag(self.func, axis, rmaxis), self.mask, self.axis-(rmaxis<self.axis))
+
 class FindTransform(Array):
 
   def __init__(self, transforms:tuple, trans):
