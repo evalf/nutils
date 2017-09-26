@@ -94,21 +94,6 @@ def getprop( name, default=_nodefault, frame=None ):
     raise NameError( 'property %r is not defined' % name )
   return default
 
-def index( items ):
-  """Index of the first nonzero item.
-
-  Args:
-      items: Any iterable object
-
-  Returns:
-      The index of the first item for which bool(item) returns True.
-  """
-
-  for i, item in enumerate(items):
-    if item:
-      return i
-  raise ValueError
-
 def single_or_multiple( f ):
   """
   Method wrapper, converts first positional argument to tuple: tuples/lists
