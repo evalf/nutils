@@ -163,7 +163,7 @@ class Topology( object ):
     return f( *args, **kwargs )
 
   @log.title
-  @core.single_or_multiple
+  @util.single_or_multiple
   def elem_eval( self, funcs, ischeme, separate=False, geometry=None, asfunction=False, edit=_identity, *, arguments=None ):
     'element-wise evaluation'
 
@@ -234,7 +234,7 @@ class Topology( object ):
     return retvals
 
   @log.title
-  @core.single_or_multiple
+  @util.single_or_multiple
   def elem_mean( self, funcs, geometry, ischeme, *, arguments=None ):
     'element-wise average'
 
@@ -320,7 +320,7 @@ class Topology( object ):
     return data_index
 
   @log.title
-  @core.single_or_multiple
+  @util.single_or_multiple
   def integrate( self, funcs, ischeme='gauss', degree=None, geometry=None, force_dense=False, fcache=None, edit=_identity, *, arguments=None ):
     'integrate'
 
@@ -542,7 +542,7 @@ class Topology( object ):
   withpoints     = lambda self, **kwargs: self.withgroups( pgroups=kwargs )
 
   @log.title
-  @core.single_or_multiple
+  @util.single_or_multiple
   def elem_project( self, funcs, degree, ischeme=None, check_exact=False, *, arguments=None ):
 
     if arguments is None:

@@ -94,42 +94,6 @@ def getprop( name, default=_nodefault, frame=None ):
     raise NameError( 'property %r is not defined' % name )
   return default
 
-def single_or_multiple( f ):
-  """
-  Method wrapper, converts first positional argument to tuple: tuples/lists
-  are passed on as tuples, other objects are turned into tuple singleton.
-  Return values should match the length of the argument list, and are unpacked
-  if the original argument was not a tuple/list.
-
-  >>> class Test:
-  ...   @single_or_multiple
-  ...   def square(self, args):
-  ...     return [v**2 for v in args]
-  ...
-  >>> T = Test()
-  >>> T.square(2)
-  4
-  >>> T.square([2,3])
-  [4, 9]
-
-  Args:
-      f: Method that expects a tuple as first positional argument, and that
-      returns a list/tuple of the same length.
-
-  Returns:
-      Wrapped method.
-  """
-
-  @functools.wraps( f )
-  def wrapped( self, arg0, *args, **kwargs ):
-    ismultiple = isinstance( arg0, (list,tuple) )
-    arg0mod = tuple(arg0) if ismultiple else (arg0,)
-    retvals = f( self, arg0mod, *args, **kwargs )
-    if not ismultiple:
-      retvals, = retvals
-    return retvals
-  return wrapped
-
 supports_outdirfd = os.open in os.supports_dir_fd and os.listdir in os.supports_fd
 
 def open_in_outdir( file, *args, **kwargs ):
