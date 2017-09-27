@@ -3052,10 +3052,7 @@ def chain( funcs ):
              for j, sh in enumerate(shapes) ], axis=0 )
                for i, func in enumerate(funcs) ]
 
-def vectorize( args ):
-  'vectorize'
-
-  return stack( chain(args), axis=-1 )
+vectorize = lambda args: concatenate([kronecker(arg, axis=-1, length=len(args), pos=iarg) for iarg, arg in enumerate(args)])
 
 def repeat(arg, length, axis):
   arg = asarray(arg)
