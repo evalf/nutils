@@ -645,9 +645,6 @@ class Constant( Array ):
     if all( isinstance( choice, Constant ) for choice in choices ):
       return asarray( numpy.choose( self.value, [ choice.value for choice in choices ] ) )
 
-  def _kronecker( self, axis, length, pos ):
-    return asarray( numeric.kronecker( self.value, axis, length, pos ) )
-
   def _unravel( self, axis, shape ):
     shape = self.value.shape[:axis] + shape + self.value.shape[axis+1:]
     return asarray( self.value.reshape(shape) )
@@ -915,7 +912,7 @@ class Product( Array ):
 
   def _derivative(self, var, seen):
     grad = derivative(self.func, var, seen)
-    funcs = stack([util.product(self.func[...,j] for j in range(self.func.shape[-1]) if i != j) for i in range(self.func.shape[-1])], axis=-1)
+    funcs = Stack([util.product(self.func[...,j] for j in range(self.func.shape[-1]) if i != j) for i in range(self.func.shape[-1])], axis=self.ndim)
     return (grad * funcs[(...,)+(_,)*var.ndim]).sum(self.ndim)
 
     ## this is a cleaner form, but is invalid if self.func contains zero values:
@@ -2414,50 +2411,72 @@ class Find( Array ):
     index, = where.nonzero()
     return index[_]
 
-class Kronecker( Array ):
+class Stack( Array ):
 
-  def __init__(self, func:asarray, axis:int, length:int, pos:int):
-    assert 0 <= axis <= func.ndim
-    assert 0 <= pos < length
-    self.func = func
+  def __init__(self, funcs:tuple, axis:int):
+    shapes = set(func.shape for func in funcs if func is not None)
+    assert shapes, 'cannot determine shape of stack'
+    assert len(shapes) == 1, 'multiple shapes in stack'
+    shape, = shapes
+    dtype = _jointdtype(*[func.dtype for func in funcs if func is not None])
+    assert 0 <= axis <= len(shape)
+    self.funcs = funcs
     self.axis = axis
-    self.length = length
-    self.pos = pos
-    super().__init__(args=[func], shape=func.shape[:axis]+(length,)+func.shape[axis:], dtype=func.dtype)
+    self.nz = tuple(ifunc for ifunc, func in enumerate(funcs) if func is not None)
+    super().__init__(args=[funcs[i] for i in self.nz], shape=shape[:axis]+(len(funcs),)+shape[axis:], dtype=dtype)
+
+  def edit(self, op):
+    return Stack([op(func) if func is not None else None for func in self.funcs], self.axis)
 
   @cache.property
   def simplified(self):
-    func = self.func.simplified
-    if self.length == 1:
-      assert self.pos == 0
-      return InsertAxis(func, axis=self.axis, length=1).simplified
-    retval = func._kronecker(self.axis, self.length, self.pos)
-    if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
-    return Kronecker(func, self.axis, self.length, self.pos)
+    if len(self.funcs) == 1:
+      return InsertAxis(self.funcs[0], axis=self.axis, length=1).simplified
+    krons = Zeros(self.shape, self.dtype)
+    funcs = [None] * len(self.funcs)
+    for ifunc in self.nz:
+      func = self.funcs[ifunc].simplified
+      kron = func._kronecker(self.axis, len(self.funcs), ifunc)
+      if kron is not None:
+        assert kron.shape == self.shape
+        krons = Add([krons, kron]).simplified
+      elif not iszero(func):
+        funcs[ifunc] = func
+    if tuple(funcs) == self.funcs: # avoid recursion
+      assert iszero(krons)
+      return self
+    if all(func is None for func in funcs):
+      return krons
+    return Add([Stack(funcs, self.axis), krons]).simplified
 
-  def evalf( self, func ):
-    return numeric.kronecker( func, self.axis+1, self.length, self.pos )
+  def evalf(self, *funcs):
+    shape = builtins.max(funcs, key=len).shape
+    array = numpy.zeros(shape[:self.axis+1] + (len(self.funcs),) + shape[self.axis+1:], dtype=self.dtype)
+    for i, func in zip(self.nz, funcs):
+      array[(slice(None),)*(self.axis+1)+(i,)] = func
+    return array
 
   def _derivative(self, var, seen):
-    return kronecker(derivative(self.func, var, seen), self.axis, self.length, self.pos)
+    return Stack([derivative(func, var, seen) if func is not None else None for func in self.funcs], self.axis)
 
-  def _get( self, i, item ):
+  def _get(self, i, item):
     if i != self.axis:
-      return kronecker( get(self.func,i-(i>self.axis),item), self.axis-(i<self.axis), self.length, self.pos )
+      return Stack([get(func,i-(i>self.axis),item) if func is not None else None for func in self.funcs], self.axis-(i<self.axis))
     if item.isconstant:
       item, = item.eval()
-      return self.func if item == self.pos else zeros(self.func.shape, self.dtype)
+      func = self.funcs[item]
+      if func is None:
+        return Zeros(self.shape[:self.axis]+self.shape[self.axis+1:], dtype=self.dtype)
+      return func
 
-  def _add( self, other ):
-    if isinstance( other, Kronecker ) and other.axis == self.axis and self.length == other.length and self.pos == other.pos:
-      return kronecker( self.func + other.func, self.axis, self.length, self.pos )
+  def _add(self, other):
+    if isinstance(other, Stack) and other.axis == self.axis:
+      return Stack([func1 if func2 is None else func2 if func1 is None else Add([func1, func2]) for func1, func2 in zip(self.funcs, other.funcs)], self.axis)
 
   def _multiply(self, other):
-    return kronecker(multiply(self.func, get(other, self.axis, self.pos)), self.axis, self.length, self.pos)
+    return Stack([multiply(func, get(other, self.axis, ifunc)) if func is not None else None for ifunc, func in enumerate(self.funcs)], self.axis)
 
-  def _dot( self, other, axes ):
+  def _dot(self, other, axes):
     newaxis = self.axis
     newaxes = []
     for ax in axes:
@@ -2466,54 +2485,60 @@ class Kronecker( Array ):
         newaxes.append( ax )
       elif ax > self.axis:
         newaxes.append( ax-1 )
-    dotfunc = dot(self.func, get(other, self.axis, self.pos), newaxes )
-    return dotfunc if len(newaxes) < len(axes) else kronecker( dotfunc, newaxis, self.length, self.pos )
+    return util.sum(dot(self.funcs[ifunc], get(other, self.axis, ifunc), newaxes) for ifunc in self.nz) if len(newaxes) < len(axes) \
+      else Stack([dot(func, get(other, self.axis, ifunc), newaxes) if func is not None else None for ifunc, func in enumerate(self.funcs)], newaxis)
 
-  def _sum( self, axis ):
+  def _sum(self, axis):
     if axis == self.axis:
-      return self.func
-    return kronecker( sum( self.func, axis-(axis>self.axis) ), self.axis-(axis<self.axis), self.length, self.pos )
+      return util.sum(func for func in self.funcs if func is not None)
+    return Stack([sum(func, axis-(axis>self.axis)) if func is not None else None for func in self.funcs], self.axis-(axis<self.axis))
 
   def _transpose(self, axes):
     newaxis = axes.index(self.axis)
     newaxes = [ax-(ax>self.axis) for ax in axes if ax != self.axis]
-    return kronecker(transpose(self.func, newaxes), newaxis, self.length, self.pos)
+    return Stack([transpose(func, newaxes) if func is not None else None for func in self.funcs], newaxis)
 
   def _takediag(self, axis, rmaxis):
     if self.axis == rmaxis:
-      return kronecker(get(self.func, axis, self.pos), axis, self.length, self.pos)
+      return Stack([get(func, axis, ifunc) if func is not None else None for ifunc, func in enumerate(self.funcs)], axis)
     elif self.axis == axis:
-      return kronecker(get(self.func, rmaxis-1, self.pos), axis, self.length, self.pos)
+      return Stack([get(func, rmaxis-1, ifunc) if func is not None else None for ifunc, func in enumerate(self.funcs)], axis)
     else:
-      return kronecker(takediag(self.func, axis-(self.axis<axis), rmaxis-(self.axis<rmaxis)), self.axis-(rmaxis<self.axis), self.length, self.pos)
+      return Stack([takediag(func, axis-(self.axis<axis), rmaxis-(self.axis<rmaxis)) if func is not None else None for func in self.funcs], self.axis-(rmaxis<self.axis))
 
-  def _take( self, index, axis ):
+  def _take(self, index, axis):
     if axis != self.axis:
-      return kronecker( take( self.func, index, axis-(axis>self.axis) ), self.axis, self.length, self.pos )
+      return Stack([take(func, index, axis-(axis>self.axis)) if func is not None else None for func in self.funcs], self.axis)
     # TODO select axis in index
 
-  def _power( self, n ):
-    return kronecker(power(self.func, get(n, self.axis, self.pos)), self.axis, self.length, self.pos)
+  def _power(self, n):
+    return Stack([power(func, get(n, self.axis, ifunc)) if func is not None else None for ifunc, func in enumerate(self.funcs)], self.axis)
 
-  def _pointwise( self, evalf, deriv, dtype ):
+  def _pointwise(self, evalf, deriv, dtype):
     if self.axis == 0:
       return
     value = evalf( *numpy.zeros(self.shape[0]) )
     assert value.dtype == dtype
     if value == 0:
-      return kronecker( pointwise( self.func, evalf, deriv, dtype ), self.axis-1, self.length, self.pos )
+      return Stack([pointwise(func, evalf, deriv, dtype) if func is not None else None for func in self.funcs], self.axis-1)
 
-  def _mask( self, maskvec, axis ):
+  def _mask(self, maskvec, axis):
     if axis != self.axis:
-      return kronecker( mask( self.func, maskvec, axis-(axis>self.axis) ), self.axis, self.length, self.pos )
+      return Stack([mask(func, maskvec, axis-(axis>self.axis)) if func is not None else None for func in self.funcs], self.axis)
     newlength = maskvec.sum()
-    if not maskvec[self.pos]:
-      return zeros( self.shape[:axis] + (newlength,) + self.shape[axis+1:], dtype=self.dtype )
-    newpos = maskvec[:self.pos].sum()
-    return kronecker( self.func, self.axis, newlength, newpos )
+    funcs = [func for ifunc, func in enumerate(self.funcs) if maskvec[ifunc]]
+    if all(func is None for func in funcs):
+      return Zeros(self.shape[:axis]+(len(funcs),)+self.shape[axis+1:], self.dtype)
+    return Stack(funcs, self.axis)
 
   def _insertaxis(self, axis, length):
-    return kronecker(insertaxis(self.func, axis-(axis>self.axis), length), self.axis+(self.axis>=axis), self.length, self.pos)
+    return Stack([insertaxis(func, axis-(axis>self.axis), length) if func is not None else None for func in self.funcs], self.axis+(self.axis>=axis))
+
+  def _product(self):
+    if self.axis == self.ndim-1:
+      if len(self.nz) < len(self.funcs):
+        return Zeros(self.shape[:-1], self.dtype)
+      return util.product(self.funcs)
 
 class DerivativeTargetBase( Array ):
   'base class for derivative targets'
@@ -3038,10 +3063,7 @@ def insertaxis(arg, n, length):
   n = numeric.normdim(arg.ndim+1, n)
   return InsertAxis(arg, n, length)
 
-def stack(args, axis=0):
-  assert len(args) > 0
-  return insertaxis(args[0], axis, length=1) if len(args) == 1 \
-    else builtins.sum(kronecker(arg, axis=axis, length=len(args), pos=iarg) for iarg, arg in enumerate(_numpy_align(*args)))
+stack = lambda args, axis=0: Stack(_numpy_align(*args), axis)
 
 def chain( funcs ):
   'chain'
@@ -3162,8 +3184,9 @@ normal = lambda geom: geom.normal()
 def kronecker(arg, axis, length, pos):
   arg = asarray(arg)
   axis = numeric.normdim(arg.ndim+1, axis)
-  assert 0 <= pos < length
-  return Kronecker(arg, axis, length, pos)
+  funcs = [None] * length
+  funcs[pos] = arg
+  return Stack(funcs, axis)
 
 def diagonalize(arg, axis=-1, newaxis=-1):
   arg = asarray(arg)
