@@ -29,34 +29,40 @@ class check(TestCase):
     self.shape = self.op(*self.args).shape
     self.shapearg = numpy.random.uniform(size=self.shape)
 
+  def assertArrayAlmostEqual(self, actual, desired, decimal):
+    assert actual.shape == desired.shape or (actual.shape[0] == 1 or desired.shape[0] == 1) and actual.shape[1:] == desired.shape[1:], 'shapes {}, {} mismatch'.format(actual.shape, desired.shape)
+    error = abs(actual - desired)
+    fail = numpy.greater_equal(error, 1.5 * 10**-decimal)
+    self.assertEqual(fail.sum(), 0)
+
   def test_evalconst(self):
     constargs = [numpy.random.uniform(size=shape) for shape in self.shapes]
-    numpy.testing.assert_array_almost_equal(
+    self.assertArrayAlmostEqual(
       self.n_op(*[arg[_] for arg in constargs]),
       self.op(*constargs).eval(self.elem,self.points), decimal=15)
 
   def test_eval(self):
-    numpy.testing.assert_array_almost_equal(
+    self.assertArrayAlmostEqual(
       self.n_op(*self.argsfun.eval(self.elem,self.points)),
         self.op(*self.args).eval(self.elem,self.points), decimal=15)
 
   def test_getitem(self):
     for idim in range(len(self.shape)):
       s = (Ellipsis,) + (slice(None),)*idim + (self.shape[idim]//2,) + (slice(None),)*(len(self.shape)-idim-1)
-      numpy.testing.assert_array_almost_equal(
+      self.assertArrayAlmostEqual(
         self.n_op(*self.argsfun.eval(self.elem,self.points))[s],
           self.op(*self.args)[s].eval(self.elem,self.points), decimal=15)
 
   def test_transpose(self):
     ndim = len(self.shape)
     trans = numpy.arange(ndim,0,-1) % ndim
-    numpy.testing.assert_array_almost_equal(
+    self.assertArrayAlmostEqual(
         numpy.transpose(self.n_op(*self.argsfun.eval(self.elem,self.points)), [0]+list(trans+1)),
      function.transpose(self.op(*self.args), trans).eval(self.elem,self.points), decimal=15)
 
   def test_expand_dims(self):
     axis = (len(self.shape)+1) // 2
-    numpy.testing.assert_array_almost_equal(
+    self.assertArrayAlmostEqual(
         numpy.expand_dims(self.n_op(*self.argsfun.eval(self.elem,self.points)), axis+1),
      function.expand_dims(self.op(*self.args), axis).eval(self.elem,self.points), decimal=15)
 
@@ -67,7 +73,7 @@ class check(TestCase):
     pairs = [sorted(axes[:2]) for axes in count.values() if len(axes) > 1] # axis pairs with same length
     if pairs:
       for ax1, ax2 in pairs:
-        numpy.testing.assert_array_almost_equal(
+        self.assertArrayAlmostEqual(
           numeric.takediag(self.n_op(*self.argsfun.eval(self.elem,self.points)), ax1+1, ax2+1),
          function.takediag(self.op(*self.args), ax1, ax2).eval(self.elem,self.points), decimal=15)
 
@@ -82,37 +88,37 @@ class check(TestCase):
         L, V = function.eig(self.op(*self.args), axes=(ax1,ax2)).eval(self.elem,self.points)
         M1 = (numpy.expand_dims(A,ax2+1) * numpy.expand_dims(V,ax2+2).swapaxes(ax1+1,ax2+2)).sum(ax2+2)
         M2 = (numpy.expand_dims(V,ax2+1) * numpy.expand_dims(L,ax2+2).swapaxes(ax1+1,ax2+2)).sum(ax2+2)
-        numpy.testing.assert_array_almost_equal(M1, M2, decimal=12)
+        self.assertArrayAlmostEqual(M1, M2, decimal=12)
 
   def test_take(self):
     indices = [0,-1]
     for iax, sh in enumerate(self.shape):
       if sh >= 2:
-        numpy.testing.assert_array_almost_equal(
+        self.assertArrayAlmostEqual(
           numpy.take(self.n_op(*self.argsfun.eval(self.elem,self.points)), indices, axis=iax+1),
        function.take(self.op(*self.args), indices, axis=iax).eval(self.elem,self.points), decimal=15)
 
   def test_diagonalize(self):
     for axis in range(len(self.shape)):
       for newaxis in range(axis+1, len(self.shape)+1):
-        numpy.testing.assert_array_almost_equal(
+        self.assertArrayAlmostEqual(
           numeric.diagonalize(self.n_op(*self.argsfun.eval(self.elem,self.points)), axis+1, newaxis+1),
          function.diagonalize(self.op(*self.args), axis, newaxis).eval(self.elem,self.points), decimal=15)
 
   def test_product(self):
     for iax in range(len(self.shape)):
-      numpy.testing.assert_array_almost_equal(
+      self.assertArrayAlmostEqual(
           numpy.product(self.n_op(*self.argsfun.eval(self.elem,self.points)), axis=iax+1),
        function.product(self.op(*self.args), axis=iax).eval(self.elem,self.points), decimal=15)
 
   def test_power(self):
-    numpy.testing.assert_array_almost_equal(
+    self.assertArrayAlmostEqual(
         numpy.power(self.n_op(*self.argsfun.eval(self.elem,self.points)), 3),
      function.power(self.op(*self.args), 3).eval(self.elem,self.points), decimal=13)
 
   def test_concatenate(self):
     for idim in range(len(self.shape)):
-      numpy.testing.assert_array_almost_equal(
+      self.assertArrayAlmostEqual(
         numpy.concatenate([self.n_op(*self.argsfun.eval(self.elem,self.points)), self.shapearg[_].repeat(len(self.points),0)], axis=idim+1),
        function.concatenate([self.op(*self.args), self.shapearg], axis=idim).eval(self.elem,self.points), decimal=15)
 
@@ -121,34 +127,34 @@ class check(TestCase):
       if self.shape[idim] == 1:
         continue
       s = (Ellipsis,) + (slice(None),)*idim + (slice(0,self.shape[idim]-1),) + (slice(None),)*(len(self.shape)-idim-1)
-      numpy.testing.assert_array_almost_equal(
+      self.assertArrayAlmostEqual(
         self.n_op(*self.argsfun.eval(self.elem,self.points))[s],
           self.op(*self.args)[s].eval(self.elem,self.points), decimal=15)
 
   def test_sumaxis(self):
     for idim in range(len(self.shape)):
-      numpy.testing.assert_array_almost_equal(
+      self.assertArrayAlmostEqual(
         self.n_op(*self.argsfun.eval(self.elem,self.points)).sum(1+idim),
           self.op(*self.args).sum(idim).eval(self.elem,self.points), decimal=15)
 
   def test_add(self):
-    numpy.testing.assert_array_almost_equal(
+    self.assertArrayAlmostEqual(
       self.n_op(*self.argsfun.eval(self.elem,self.points)) + self.shapearg,
       (self.op(*self.args) + self.shapearg).eval(self.elem,self.points), decimal=15)
 
   def test_multiply(self):
-    numpy.testing.assert_array_almost_equal(
+    self.assertArrayAlmostEqual(
       self.n_op(*self.argsfun.eval(self.elem,self.points)) * self.shapearg,
       (self.op(*self.args) * self.shapearg).eval(self.elem,self.points), decimal=15)
 
   def test_dot(self):
     for iax in range(len(self.shape)):
-      numpy.testing.assert_array_almost_equal(
+      self.assertArrayAlmostEqual(
         numeric.contract(self.n_op(*self.argsfun.eval(self.elem,self.points)), self.shapearg, axis=iax+1),
         function.dot(self.op(*self.args), self.shapearg, axes=iax).eval(self.elem,self.points), decimal=15)
 
   def test_pointwise(self):
-    numpy.testing.assert_array_almost_equal(
+    self.assertArrayAlmostEqual(
         numpy.sin(self.n_op(*self.argsfun.eval(self.elem,self.points))).astype(float), # "astype" necessary for boolean operations (float16->float64)
      function.sin(self.op(*self.args)).eval(self.elem,self.points), decimal=15)
 
@@ -156,12 +162,12 @@ class check(TestCase):
     triaxes = [iax for iax, sh in enumerate(self.shape) if sh == 3]
     if triaxes:
       for iax in triaxes:
-        numpy.testing.assert_array_almost_equal(
+        self.assertArrayAlmostEqual(
           numeric.cross(self.n_op(*self.argsfun.eval(self.elem,self.points)), self.shapearg, axis=iax+1),
           function.cross(self.op(*self.args), self.shapearg, axis=iax).eval(self.elem,self.points), decimal=15)
 
   def test_power(self):
-    numpy.testing.assert_array_almost_equal(
+    self.assertArrayAlmostEqual(
       self.n_op(*self.argsfun.eval(self.elem,self.points))**3,
       (self.op(*self.args)**3).eval(self.elem,self.points), decimal=14)
 
@@ -173,14 +179,14 @@ class check(TestCase):
       mask[0] = False
       if self.shape[idim] > 2:
         mask[-1] = False
-      numpy.testing.assert_array_almost_equal(
+      self.assertArrayAlmostEqual(
         self.n_op(*self.argsfun.eval(self.elem,self.points))[(slice(None,),)*(idim+1)+(mask,)],
         function.mask(self.op(*self.args), mask, axis=idim).eval(self.elem,self.points), decimal=15)
 
   def test_ravel(self):
     for idim in range(len(self.shape)-1):
       A = self.n_op(*self.argsfun.eval(self.elem,self.points))
-      numpy.testing.assert_array_almost_equal(
+      self.assertArrayAlmostEqual(
         A.reshape(A.shape[:idim+1]+(-1,)+A.shape[idim+3:]),
         function.ravel(self.op(*self.args), axis=idim).eval(self.elem,self.points), decimal=15)
 
@@ -189,7 +195,7 @@ class check(TestCase):
       A = self.n_op(*self.argsfun.eval(self.elem,self.points))
       length = A.shape[idim+1]
       unravelshape = (length//3,3) if (length%3==0) else (length//2,2) if (length%2==0) else (length,1)
-      numpy.testing.assert_array_almost_equal(
+      self.assertArrayAlmostEqual(
         A.reshape(A.shape[:idim+1]+unravelshape+A.shape[idim+2:]),
         function.unravel(self.op(*self.args), axis=idim, shape=unravelshape).eval(self.elem,self.points), decimal=15)
 
@@ -237,7 +243,7 @@ class check(TestCase):
     G = function.localgradient(self.op(*self.args), ndims=self.elem.ndims)
     exact = numpy.empty_like(fdgrad)
     exact[...] = G.eval(self.elem,self.points)
-    numpy.testing.assert_array_almost_equal(fdgrad, exact, decimal=5)
+    self.assertArrayAlmostEqual(fdgrad, exact, decimal=5)
 
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_jacobian(self):
@@ -250,7 +256,7 @@ class check(TestCase):
       f = self.op(*(*self.args[:iarg], (x*self.basis).sum(-1), *self.args[iarg+1:]))
       fx0, fx1, Jx0 = self.domain.elem_eval([f, function.replace_arguments(f, dict(x=x+dx)),function.derivative(f, x)], ischeme='gauss1', arguments=dict(x=x0))
       fx1approx = fx0 + numeric.contract_fast(Jx0, dx, naxes=dx.ndim)
-      numpy.testing.assert_array_almost_equal(fx1approx, fx1, decimal=12)
+      self.assertArrayAlmostEqual(fx1approx, fx1, decimal=12)
 
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_gradient(self):
@@ -264,7 +270,7 @@ class check(TestCase):
     G = self.op(*self.args).grad(self.geom)
     exact = numpy.empty_like(fdgrad)
     exact[...] = G.eval(self.elem,self.points)
-    numpy.testing.assert_array_almost_equal(fdgrad, exact, decimal=5)
+    self.assertArrayAlmostEqual(fdgrad, exact, decimal=5)
 
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_doublegradient(self):
@@ -284,7 +290,7 @@ class check(TestCase):
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_opposite(self):
     opposite_args = function.Tuple([function.opposite(arg) for arg in self.args])
-    numpy.testing.assert_array_almost_equal(
+    self.assertArrayAlmostEqual(
       self.n_op(*opposite_args.eval(self.iface,self.ifpoints)),
         function.opposite(self.op(*self.args)).eval(self.iface,self.ifpoints), decimal=15)
 
