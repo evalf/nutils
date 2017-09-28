@@ -1458,7 +1458,7 @@ class Add(Array):
 class BlockAdd( Array ):
   'block addition (used for DG)'
 
-  def __init__(self, funcs:tuple):
+  def __init__(self, funcs:orderedset):
     self.funcs = funcs
     shape = _jointshape( *( func.shape for func in self.funcs ) )
     dtype = _jointdtype( *( func.dtype for func in self.funcs ) )
@@ -1482,7 +1482,7 @@ class BlockAdd( Array ):
     return util.sum(args)
 
   def _add( self, other ):
-    return BlockAdd(self.funcs + (other.funcs if isinstance(other, BlockAdd) else (other,)))
+    return BlockAdd(tuple(self.funcs) + tuple(other.funcs if isinstance(other, BlockAdd) else [other]))
 
   def _dot( self, other, axes ):
     return BlockAdd([dot(func, other, axes) for func in self.funcs])
