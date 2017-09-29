@@ -14,7 +14,7 @@ creation and initiation of a log file.
 """
 
 from . import numeric
-import sys, os, numpy, weakref, warnings, collections
+import sys, os, numpy, weakref, warnings, collections, functools, operator
 
 def isiterable( obj ):
   'check for iterability'
@@ -101,21 +101,8 @@ def profile( func ):
   raw_input( 'press enter to continue' )
   return retval
 
-_sum = sum
-def sum( seq ):
-  'a better sum'
-
-  seq = iter(seq)
-  return _sum( seq, next(seq) )
-
-def product( seq ):
-  'multiply items in sequence'
-
-  seq = iter(seq)
-  prod = next(seq)
-  for item in seq:
-    prod = prod * item
-  return prod
+sum = functools.partial(functools.reduce, operator.add)
+product = functools.partial(functools.reduce, operator.mul)
 
 def allequal( seq1, seq2 ):
   seq1 = iter(seq1)
