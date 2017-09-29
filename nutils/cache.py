@@ -33,18 +33,6 @@ def property(f):
     self.__dict__[_name] = value if value is not self else _self
   return builtins.property(fget=property_getter, fset=property_setter)
 
-def weakproperty(f):
-  _name = f.__name__
-  def cache_property_wrapper(self):
-    ref = self.__dict__.get(_name)
-    if ref:
-      value = ref()
-    else:
-      value = f(self)
-      self.__dict__[_name] = weakref.ref(value)
-    return value
-  return builtins.property(cache_property_wrapper)
-
 def argdict( f ):
   cache = {}
   @functools.wraps( f )
