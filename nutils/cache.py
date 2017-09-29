@@ -11,7 +11,7 @@ The cache module.
 """
 
 from . import core, log, numeric, util
-import os, sys, weakref, numpy, functools, inspect, builtins
+import os, sys, numpy, functools, inspect, builtins
 
 def property(f):
   _self = object()
@@ -92,13 +92,15 @@ class WrapperDummyCache( object ):
 
 class ImmutableMeta(type):
 
+  _cleanup_threshold = 1000 # number of new instances until next cleanup
+
   def __init__(cls, *args, **kwargs):
     super().__init__(*args, **kwargs)
     signature = inspect.signature(cls.__init__)
     param0, *params = signature.parameters.values()
     cls._signature = inspect.Signature(params)
     cls._annotations = [(param.name, param.annotation) for param in params if param.annotation != param.empty]
-    cls._cache = weakref.WeakValueDictionary()
+    cls._cache = {}
     cls._init = cls.__init__
     if cls._annotations:
       cls.__init__ = util.enforcetypes(cls.__init__, signature)
@@ -120,6 +122,9 @@ class ImmutableMeta(type):
       self._hash = hash(args)
       self._init(*args)
       cls._cache[args] = self
+      if len(cls._cache) > cls._cleanup_threshold:
+        cls._cache = {key: value for key, value in cls._cache.items() if sys.getrefcount(value) > 4}
+        cls._cleanup_threshold = ImmutableMeta._cleanup_threshold + len(cls._cache)
     return self
 
 class Immutable(metaclass=ImmutableMeta):
