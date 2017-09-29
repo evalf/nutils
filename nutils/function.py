@@ -432,6 +432,14 @@ class Array( Evaluable ):
       elif it is _:
         array = expand_dims(array, axis)
         axis += 1
+      elif it is slice(None):
+        axis += 1
+      elif isinstance(it, slice):
+        assert it.step == None or it.step == 1
+        start = 0 if it.start is None else it.start if it.start >= 0 else it.start + array.shape[axis]
+        stop = array.shape[axis] if it.stop is None else it.stop if it.stop >= 0 else it.stop + array.shape[axis]
+        array = take(array, index=Range(stop-start, start), axis=axis)
+        axis += 1
       else:
         array = take(array, index=it, axis=axis)
         axis += 1
@@ -1755,14 +1763,19 @@ class Take( Array ):
 
   @cache.property
   def simplified(self):
-    func = self.func.simplified
-    indices = self.indices.simplified
     if self.shape[self.axis] == 0:
       return zeros(self.shape, dtype=self.dtype)
-    if indices.isconstant:
-      index_, = indices.eval()
-      if len(index_) == func.shape[self.axis] and numpy.equal(numpy.diff(index_), 1).all():
-        return func
+    func = self.func.simplified
+    indices = self.indices.simplified
+    length = self.func.shape[self.axis]
+    if indices == Range(length):
+      return func
+    if indices.isconstant and numeric.isint(length):
+      indices_, = indices.eval()
+      if numpy.greater(numpy.diff(numpy.mod(indices_, length)), 0).all():
+        mask = numpy.zeros(length, dtype=bool)
+        mask[indices_] = True # note: includes proper bounds check
+        return Mask(func, mask, self.axis).simplified
     retval = func._take(indices, self.axis)
     if retval is not None:
       assert retval.shape == self.shape
@@ -3236,36 +3249,14 @@ def elemwise( fmap, shape, default=None ):
 def take(arg, index, axis):
   arg = asarray(arg)
   axis = numeric.normdim(arg.ndim, axis)
-
-  if isinstance(index, slice):
-    if index == slice(None):
-      return arg
-    assert index.step == None or index.step == 1
-    if numeric.isint(arg.shape[axis]):
-      indexmask = numpy.zeros(arg.shape[axis], dtype=bool)
-      indexmask[index] = True
-      return mask(arg, indexmask, axis=axis)
-    assert index.start == None or index.start >= 0
-    assert index.stop != None and index.stop >= 0
-    index = numpy.arange(index.start or 0, index.stop)
-
-  if not isevaluable(index):
-    index = numpy.array(index)
-    assert index.ndim == 1
-    if index.dtype == bool:
-      return mask(arg, index, axis)
-    assert index.dtype == int
-    index[index < 0] += arg.shape[axis]
-    assert numpy.logical_and(numpy.greater_equal(index, 0), numpy.less(index, arg.shape[axis])).all(), 'indices out of bounds'
-
   index = asarray(index)
   assert index.ndim == 1
   if index.dtype == bool:
     assert index.shape[0] == arg.shape[axis]
+    if index.isconstant:
+      mask, = index.eval()
+      return Mask(arg, mask, axis)
     index = find(index)
-  else:
-    assert index.dtype == int
-
   return Take(arg, index, axis)
 
 def find( arg ):
