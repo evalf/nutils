@@ -104,6 +104,25 @@ def profile( func ):
 sum = functools.partial(functools.reduce, operator.add)
 product = functools.partial(functools.reduce, operator.mul)
 
+def cumsum(seq):
+  offset = 0
+  for i in seq:
+    yield offset
+    offset += i
+
+def gather(items):
+  keys = []
+  values = []
+  for key, value in items:
+    try:
+      index = keys.index(key)
+    except ValueError:
+      keys.append(key)
+      values.append([value])
+    else:
+      values[index].append(value)
+  return tuple(zip(keys, values))
+
 def allequal( seq1, seq2 ):
   seq1 = iter(seq1)
   seq2 = iter(seq2)

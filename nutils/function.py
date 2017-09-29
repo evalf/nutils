@@ -402,8 +402,8 @@ class Array( Evaluable ):
   nsymgrad = lambda self, geom, ndims=0: nsymgrad(self, geom, ndims)
 
   @property
-  def blocks( self ):
-    return [( Tuple([ asarray(numpy.arange(n)) if numeric.isint(n) else None for n in self.shape ]), self )]
+  def blocks(self):
+    return (tuple(asarray(numpy.arange(n)) if numeric.isint(n) else None for n in self.shape), self),
 
   def _asciitree_str(self):
     return '{}<{}>'.format(type(self).__name__, ','.join(map(str, self.shape)))
@@ -961,8 +961,7 @@ class Concatenate( Array ):
     axis = numeric.normdim( ndim, axis )
     lengths = [ func.shape[axis] for func in funcs ]
     if any( isinstance( n, str ) for n in lengths ):
-      assert all( isinstance( n, str ) for n in lengths )
-      sh = ''.join(lengths)
+      sh = '+'.join(str(n) for n in lengths)
     else:
       sh = builtins.sum( lengths )
     shape = _jointshape( *[ func.shape[:axis] + (sh,) + func.shape[axis+1:] for func in funcs ] )
@@ -995,13 +994,11 @@ class Concatenate( Array ):
     assert n0 == axlen
     return retval
 
-  @property
-  def blocks( self ):
-    n = 0
-    for func in self.funcs:
-      for ind, f in blocks( func ):
-        yield Tuple( ind[:self.axis] + (ind[self.axis]+n,) + ind[self.axis+1:] ), f
-      n += func.shape[self.axis]
+  @cache.property
+  def blocks(self):
+    return _concatblocks(((ind[:self.axis], ind[self.axis+1:]), (ind[self.axis]+n, f))
+      for n, func in zip(util.cumsum(func.shape[self.axis] for func in self.funcs), self.funcs)
+        for ind, f in func.blocks)
 
   def _get( self, i, item ):
     if i == self.axis:
@@ -1465,11 +1462,13 @@ class BlockAdd( Array ):
   def _mask(self, maskvec, axis):
     return blockadd(*(mask(func, maskvec, axis) for func in self.funcs))
 
-  @property
-  def blocks( self ):
-    for func in self.funcs:
-      for ind, f in blocks( func ):
-        yield ind, f
+  @cache.property
+  def blocks(self):
+    gathered = tuple((ind, util.sum(f)) for ind, f in util.gather(block for func in self.funcs for block in func.blocks))
+    if len(gathered) > 1:
+      for idim in range(self.ndim):
+        gathered = _concatblocks(((ind[:idim], ind[idim+1:]), (ind[idim], f)) for ind, f in gathered)
+    return gathered
 
 class Dot( Array ):
   'dot'
@@ -1883,7 +1882,7 @@ class Zeros( Array ):
     return numpy.zeros( (1,) + self.shape, dtype=self.dtype )
 
   @property
-  def blocks( self ):
+  def blocks(self):
     return ()
 
   def _repeat( self, length, axis ):
@@ -1990,10 +1989,10 @@ class Inflate( Array ):
     return inflated
 
   @property
-  def blocks( self ):
-    for ind, f in blocks( self.func ):
+  def blocks(self):
+    for ind, f in self.func.blocks:
       assert ind[self.axis] == None
-      yield Tuple( ind[:self.axis] + (self.dofmap,) + ind[self.axis+1:] ), f
+      yield (ind[:self.axis] + (self.dofmap,) + ind[self.axis+1:]), f
 
   def _mask( self, maskvec, axis ):
     if axis != self.axis:
@@ -2364,11 +2363,6 @@ class Kronecker( Array ):
   def evalf( self, func ):
     return numeric.kronecker( func, self.axis+1, self.length, self.pos )
 
-  @property
-  def blocks( self ):
-    for ind, f in blocks( self.func ):
-      yield Tuple( ind[:self.axis] + (Constant(numpy.array([self.pos])),) + ind[self.axis:] ), insert( f, self.axis )
-
   def _derivative(self, var, seen):
     return kronecker(derivative(self.func, var, seen), self.axis, self.length, self.pos)
 
@@ -2603,10 +2597,10 @@ class Ravel( Array ):
       return self.func
 
   @property
-  def blocks( self ):
-    for ind, f in blocks( self.func ):
-      newind = ravel( ind[self.axis][:,_] * self.func.shape[self.axis+1] + ind[self.axis+1][_,:], axis=0 )
-      yield Tuple( ind[:self.axis] + (newind,) + ind[self.axis+2:] ), ravel( f, axis=self.axis )
+  def blocks(self):
+    for ind, f in self.func.blocks:
+      newind = ravel(ind[self.axis][:,_] * self.func.shape[self.axis+1] + ind[self.axis+1][_,:], axis=0)
+      yield (ind[:self.axis] + (newind,) + ind[self.axis+2:]), ravel(f, axis=self.axis)
 
   def _edit( self, op ):
     return ravel( op(self.func), self.axis )
@@ -2740,6 +2734,20 @@ def _norm_and_sort( ndim, args ):
   normargs = tuple( sorted( numeric.normdim( ndim, arg ) for arg in args ) )
   assert _ascending( normargs ) # strict
   return normargs
+
+def _concatblocks(items):
+  gathered = util.gather(items)
+  order = [ind for ind12, ind_f in gathered for ind, f in ind_f]
+  blocks = []
+  for (ind1, ind2), ind_f in gathered:
+    if len(ind_f) == 1:
+      ind, f = ind_f[0]
+    else:
+      inds, fs = zip(*sorted(ind_f, key=lambda item: order.index(item[0])))
+      ind = Concatenate(inds, axis=0)
+      f = Concatenate(fs, axis=len(ind1))
+    blocks.append(((ind1+(ind,)+ind2), f))
+  return tuple(blocks)
 
 # FUNCTIONS
 

@@ -160,7 +160,7 @@ class Topology( object ):
       func = function.asarray( edit( func * iwscale ) )
       func = function.zero_argument_derivatives(func)
       retval = zeros( (npoints,)+func.shape, dtype=func.dtype )
-      idata.extend( function.Tuple([ ifunc, ind, f ]) for ind, f in function.blocks(func) )
+      idata.extend( function.Tuple([ifunc, function.Tuple(ind), f]) for ind, f in function.blocks(func) )
       retvals.append( retval )
     idata = function.Tuple( idata )
 
@@ -201,9 +201,9 @@ class Topology( object ):
     # chaining. Here we make a list of all blocks consisting of triplets of
     # argument id, evaluable index, and evaluable values.
 
-    blocks = [ ( ifunc, ind, f )
-      for ifunc, func in enumerate( funcs )
-        for ind, f in function.blocks( function.zero_argument_derivatives(func) ) ]
+    blocks = [(ifunc, function.Tuple(ind), f)
+      for ifunc, func in enumerate(funcs)
+        for ind, f in function.blocks(function.zero_argument_derivatives(func))]
 
     block2func, indices, values = zip( *blocks ) if blocks else ([],[],[])
     indexfunc = function.Tuple( indices )
@@ -376,7 +376,7 @@ class Topology( object ):
       W = numpy.zeros( onto.shape[0] )
       I = numpy.zeros( onto.shape[0], dtype=bool )
       fun = function.zero_argument_derivatives(function.asarray( fun ))
-      data = function.Tuple( function.Tuple([ fun, onto_f, onto_ind ]) for onto_ind, onto_f in function.blocks( function.zero_argument_derivatives(onto) ) )
+      data = function.Tuple(function.Tuple([fun, onto_f, function.Tuple(onto_ind)]) for onto_ind, onto_f in function.blocks(function.zero_argument_derivatives(onto)))
       for elem in self:
         for fun_, onto_f_, onto_ind_ in data.eval( elem, 'bezier2', arguments=arguments ):
           onto_f_ = onto_f_.swapaxes(0,1) # -> dof axis, point axis, ...
@@ -498,9 +498,9 @@ class Topology( object ):
     if ischeme is None:
       ischeme = 'gauss%d' % (degree*2)
 
-    blocks = function.Tuple([ function.Tuple([ function.Tuple( ind_f )
-      for ind_f in function.blocks( function.zero_argument_derivatives(func) ) ])
-        for func in funcs ])
+    blocks = function.Tuple([function.Tuple([function.Tuple((function.Tuple(ind), f))
+      for ind, f in function.blocks(function.zero_argument_derivatives(func))])
+        for func in funcs])
 
     bases = {}
     extractions = [ [] for ifunc in range(len(funcs) ) ]
