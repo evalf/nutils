@@ -167,11 +167,10 @@ class Evaluable( cache.Immutable ):
     if arguments is not None:
       assert all(numeric.isarray(value) and value.dtype.kind in 'bif' for value in arguments.values())
 
-    simple = self.simplified
-    ops, inds = simple.serialized
+    ops, inds = self.serialized
     assert TOKENS == ( CACHE, TRANS, OPPTRANS, POINTS, ARGUMENTS )
     values = [ fcache, trans, opptrans, points, arguments or {} ]
-    for op, indices in zip( list(ops)+[simple], inds ):
+    for op, indices in zip( list(ops)+[self], inds ):
       args = [ values[i] for i in indices ]
       try:
         retval = op.evalf( *args )
@@ -179,7 +178,7 @@ class Evaluable( cache.Immutable ):
         raise
       except:
         etype, evalue, traceback = sys.exc_info()
-        excargs = etype, evalue, simple, values
+        excargs = etype, evalue, self, values
         raise EvaluationError(*excargs).with_traceback( traceback )
       values.append( retval )
     return values[-1]

@@ -23,11 +23,15 @@ class check(TestCase):
     numpy.random.seed(0)
     self.args = [(numpy.random.uniform(size=shape+self.basis.shape) * self.basis).sum(-1) for shape in self.shapes]
     self.points, weights = self.elem.reference.getischeme('uniform2')
-
     self.argsfun = function.Tuple(self.args)
+    self.n_op_argsfun = self.n_op(*self.argsfun.simplified.eval(self.elem, self.points))
+    self.op_args = self.op(*self.args)
+    self.shapearg = numpy.random.uniform(size=self.op_args.shape)
 
-    self.shape = self.op(*self.args).shape
-    self.shapearg = numpy.random.uniform(size=self.shape)
+    count = {}
+    for i, sh in enumerate(self.op_args.shape):
+      count.setdefault(sh,[]).append(i)
+    self.pairs = [sorted(axes[:2]) for axes in count.values() if len(axes) > 1] # axis pairs with same length
 
   def assertArrayAlmostEqual(self, actual, desired, decimal):
     assert actual.shape == desired.shape or (actual.shape[0] == 1 or desired.shape[0] == 1) and actual.shape[1:] == desired.shape[1:], 'shapes {}, {} mismatch'.format(actual.shape, desired.shape)
@@ -37,167 +41,160 @@ class check(TestCase):
 
   def test_evalconst(self):
     constargs = [numpy.random.uniform(size=shape) for shape in self.shapes]
-    self.assertArrayAlmostEqual(
-      self.n_op(*[arg[_] for arg in constargs]),
-      self.op(*constargs).eval(self.elem,self.points), decimal=15)
+    self.assertArrayAlmostEqual(decimal=15,
+      desired=self.n_op(*[constarg[_] for constarg in constargs]),
+      actual=self.op(*constargs).eval(self.elem, self.points))
 
   def test_eval(self):
-    self.assertArrayAlmostEqual(
-      self.n_op(*self.argsfun.eval(self.elem,self.points)),
-        self.op(*self.args).eval(self.elem,self.points), decimal=15)
+    self.assertArrayAlmostEqual(decimal=15,
+      actual=self.op_args.eval(self.elem, self.points),
+      desired=self.n_op_argsfun)
+
+  def test_simplified(self):
+    self.assertArrayAlmostEqual(decimal=15,
+      actual=self.op_args.simplified.eval(self.elem, self.points),
+      desired=self.n_op_argsfun)
 
   def test_getitem(self):
-    for idim in range(len(self.shape)):
-      s = (Ellipsis,) + (slice(None),)*idim + (self.shape[idim]//2,) + (slice(None),)*(len(self.shape)-idim-1)
-      self.assertArrayAlmostEqual(
-        self.n_op(*self.argsfun.eval(self.elem,self.points))[s],
-          self.op(*self.args)[s].eval(self.elem,self.points), decimal=15)
+    for idim in range(self.op_args.ndim):
+      s = (Ellipsis,) + (slice(None),)*idim + (self.op_args.shape[idim]//2,) + (slice(None),)*(self.op_args.ndim-idim-1)
+      self.assertArrayAlmostEqual(decimal=15,
+        desired=self.n_op_argsfun[s],
+        actual=self.op_args[s].simplified.eval(self.elem, self.points))
 
   def test_transpose(self):
-    ndim = len(self.shape)
-    trans = numpy.arange(ndim,0,-1) % ndim
-    self.assertArrayAlmostEqual(
-        numpy.transpose(self.n_op(*self.argsfun.eval(self.elem,self.points)), [0]+list(trans+1)),
-     function.transpose(self.op(*self.args), trans).eval(self.elem,self.points), decimal=15)
+    trans = numpy.arange(self.op_args.ndim,0,-1) % self.op_args.ndim
+    self.assertArrayAlmostEqual(decimal=15,
+      desired=numpy.transpose(self.n_op_argsfun, [0]+list(trans+1)),
+      actual=function.transpose(self.op_args, trans).simplified.eval(self.elem, self.points))
 
   def test_expand_dims(self):
-    axis = (len(self.shape)+1) // 2
-    self.assertArrayAlmostEqual(
-        numpy.expand_dims(self.n_op(*self.argsfun.eval(self.elem,self.points)), axis+1),
-     function.expand_dims(self.op(*self.args), axis).eval(self.elem,self.points), decimal=15)
+    axis = (self.op_args.ndim+1) // 2
+    self.assertArrayAlmostEqual(decimal=15,
+      desired=numpy.expand_dims(self.n_op_argsfun, axis+1),
+      actual=function.expand_dims(self.op_args, axis).simplified.eval(self.elem, self.points))
 
   def test_takediag(self):
-    count = {}
-    for i, sh in enumerate(self.shape):
-      count.setdefault(sh,[]).append(i)
-    pairs = [sorted(axes[:2]) for axes in count.values() if len(axes) > 1] # axis pairs with same length
-    if pairs:
-      for ax1, ax2 in pairs:
-        self.assertArrayAlmostEqual(
-          numeric.takediag(self.n_op(*self.argsfun.eval(self.elem,self.points)), ax1+1, ax2+1),
-         function.takediag(self.op(*self.args), ax1, ax2).eval(self.elem,self.points), decimal=15)
+    for ax1, ax2 in self.pairs:
+      self.assertArrayAlmostEqual(decimal=15,
+        desired=numeric.takediag(self.n_op_argsfun, ax1+1, ax2+1),
+        actual=function.takediag(self.op_args, ax1, ax2 ).simplified.eval(self.elem, self.points))
 
   def test_eig(self):
-    count = {}
-    for i, sh in enumerate(self.shape):
-      count.setdefault(sh,[]).append(i)
-    pairs = [sorted(axes[:2]) for axes in count.values() if len(axes) > 1] # axis pairs with same length
-    if pairs and self.op(*self.args).dtype == float:
-      for ax1, ax2 in pairs:
-        A = self.op(*self.args).eval(self.elem,self.points)
-        L, V = function.eig(self.op(*self.args), axes=(ax1,ax2)).eval(self.elem,self.points)
-        M1 = (numpy.expand_dims(A,ax2+1) * numpy.expand_dims(V,ax2+2).swapaxes(ax1+1,ax2+2)).sum(ax2+2)
-        M2 = (numpy.expand_dims(V,ax2+1) * numpy.expand_dims(L,ax2+2).swapaxes(ax1+1,ax2+2)).sum(ax2+2)
-        self.assertArrayAlmostEqual(M1, M2, decimal=12)
+    if self.op_args.dtype == float:
+      for ax1, ax2 in self.pairs:
+        A = self.op_args.simplified.eval(self.elem, self.points)
+        L, V = function.eig(self.op_args, axes=(ax1,ax2)).simplified.eval(self.elem, self.points)
+        self.assertArrayAlmostEqual(decimal=12,
+          actual=(numpy.expand_dims(V,ax2+1) * numpy.expand_dims(L,ax2+2).swapaxes(ax1+1,ax2+2)).sum(ax2+2),
+          desired=(numpy.expand_dims(A,ax2+1) * numpy.expand_dims(V,ax2+2).swapaxes(ax1+1,ax2+2)).sum(ax2+2))
 
   def test_take(self):
     indices = [0,-1]
-    for iax, sh in enumerate(self.shape):
+    for iax, sh in enumerate(self.op_args.shape):
       if sh >= 2:
-        self.assertArrayAlmostEqual(
-          numpy.take(self.n_op(*self.argsfun.eval(self.elem,self.points)), indices, axis=iax+1),
-       function.take(self.op(*self.args), indices, axis=iax).eval(self.elem,self.points), decimal=15)
+        self.assertArrayAlmostEqual(decimal=15,
+          desired=numpy.take(self.n_op_argsfun, indices, axis=iax+1),
+          actual=function.take(self.op_args, indices, axis=iax).simplified.eval(self.elem, self.points))
 
   def test_diagonalize(self):
-    for axis in range(len(self.shape)):
-      for newaxis in range(axis+1, len(self.shape)+1):
-        self.assertArrayAlmostEqual(
-          numeric.diagonalize(self.n_op(*self.argsfun.eval(self.elem,self.points)), axis+1, newaxis+1),
-         function.diagonalize(self.op(*self.args), axis, newaxis).eval(self.elem,self.points), decimal=15)
+    for axis in range(self.op_args.ndim):
+      for newaxis in range(axis+1, self.op_args.ndim+1):
+        self.assertArrayAlmostEqual(decimal=15,
+          desired=numeric.diagonalize(self.n_op_argsfun, axis+1, newaxis+1),
+          actual=function.diagonalize(self.op_args, axis, newaxis).simplified.eval(self.elem, self.points))
 
   def test_product(self):
-    for iax in range(len(self.shape)):
-      self.assertArrayAlmostEqual(
-          numpy.product(self.n_op(*self.argsfun.eval(self.elem,self.points)), axis=iax+1),
-       function.product(self.op(*self.args), axis=iax).eval(self.elem,self.points), decimal=15)
+    for iax in range(self.op_args.ndim):
+      self.assertArrayAlmostEqual(decimal=15,
+        desired=numpy.product(self.n_op_argsfun, axis=iax+1),
+        actual=function.product(self.op_args, axis=iax).simplified.eval(self.elem, self.points))
 
   def test_power(self):
-    self.assertArrayAlmostEqual(
-        numpy.power(self.n_op(*self.argsfun.eval(self.elem,self.points)), 3),
-     function.power(self.op(*self.args), 3).eval(self.elem,self.points), decimal=13)
+    self.assertArrayAlmostEqual(decimal=13,
+      desired=numpy.power(self.n_op_argsfun, 3),
+      actual=function.power(self.op_args, 3).simplified.eval(self.elem, self.points))
 
   def test_concatenate(self):
-    for idim in range(len(self.shape)):
-      self.assertArrayAlmostEqual(
-        numpy.concatenate([self.n_op(*self.argsfun.eval(self.elem,self.points)), self.shapearg[_].repeat(len(self.points),0)], axis=idim+1),
-       function.concatenate([self.op(*self.args), self.shapearg], axis=idim).eval(self.elem,self.points), decimal=15)
+    for idim in range(self.op_args.ndim):
+      self.assertArrayAlmostEqual(decimal=15,
+        desired=numpy.concatenate([self.n_op_argsfun, self.shapearg[_].repeat(len(self.points),0)], axis=idim+1),
+        actual=function.concatenate([self.op_args, self.shapearg], axis=idim).simplified.eval(self.elem, self.points))
 
   def test_getslice(self):
-    for idim in range(len(self.shape)):
-      if self.shape[idim] == 1:
+    for idim in range(self.op_args.ndim):
+      if self.op_args.shape[idim] == 1:
         continue
-      s = (Ellipsis,) + (slice(None),)*idim + (slice(0,self.shape[idim]-1),) + (slice(None),)*(len(self.shape)-idim-1)
-      self.assertArrayAlmostEqual(
-        self.n_op(*self.argsfun.eval(self.elem,self.points))[s],
-          self.op(*self.args)[s].eval(self.elem,self.points), decimal=15)
+      s = (Ellipsis,) + (slice(None),)*idim + (slice(0,self.op_args.shape[idim]-1),) + (slice(None),)*(self.op_args.ndim-idim-1)
+      self.assertArrayAlmostEqual(decimal=15,
+        desired=self.n_op_argsfun[s],
+        actual=self.op_args[s].simplified.eval(self.elem, self.points))
 
   def test_sumaxis(self):
-    for idim in range(len(self.shape)):
-      self.assertArrayAlmostEqual(
-        self.n_op(*self.argsfun.eval(self.elem,self.points)).sum(1+idim),
-          self.op(*self.args).sum(idim).eval(self.elem,self.points), decimal=15)
+    for idim in range(self.op_args.ndim):
+      self.assertArrayAlmostEqual(decimal=15,
+        desired=self.n_op_argsfun.sum(1+idim),
+        actual=self.op_args.sum(idim).simplified.eval(self.elem, self.points))
 
   def test_add(self):
-    self.assertArrayAlmostEqual(
-      self.n_op(*self.argsfun.eval(self.elem,self.points)) + self.shapearg,
-      (self.op(*self.args) + self.shapearg).eval(self.elem,self.points), decimal=15)
+    self.assertArrayAlmostEqual(decimal=15,
+      desired=self.n_op_argsfun + self.shapearg,
+      actual=(self.op_args + self.shapearg).simplified.eval(self.elem, self.points))
 
   def test_multiply(self):
-    self.assertArrayAlmostEqual(
-      self.n_op(*self.argsfun.eval(self.elem,self.points)) * self.shapearg,
-      (self.op(*self.args) * self.shapearg).eval(self.elem,self.points), decimal=15)
+    self.assertArrayAlmostEqual(decimal=15,
+      desired=self.n_op_argsfun * self.shapearg,
+      actual=(self.op_args * self.shapearg).simplified.eval(self.elem, self.points))
 
   def test_dot(self):
-    for iax in range(len(self.shape)):
-      self.assertArrayAlmostEqual(
-        numeric.contract(self.n_op(*self.argsfun.eval(self.elem,self.points)), self.shapearg, axis=iax+1),
-        function.dot(self.op(*self.args), self.shapearg, axes=iax).eval(self.elem,self.points), decimal=15)
+    for iax in range(self.op_args.ndim):
+      self.assertArrayAlmostEqual(decimal=15,
+        desired=numeric.contract(self.n_op_argsfun, self.shapearg, axis=iax+1),
+        actual=function.dot(self.op_args, self.shapearg, axes=iax).simplified.eval(self.elem, self.points))
 
   def test_pointwise(self):
-    self.assertArrayAlmostEqual(
-        numpy.sin(self.n_op(*self.argsfun.eval(self.elem,self.points))).astype(float), # "astype" necessary for boolean operations (float16->float64)
-     function.sin(self.op(*self.args)).eval(self.elem,self.points), decimal=15)
+    self.assertArrayAlmostEqual(decimal=15,
+      desired=numpy.sin(self.n_op_argsfun).astype(float), # "astype" necessary for boolean operations (float16->float64)
+      actual=function.sin(self.op_args).simplified.eval(self.elem, self.points))
 
   def test_cross(self):
-    triaxes = [iax for iax, sh in enumerate(self.shape) if sh == 3]
+    triaxes = [iax for iax, sh in enumerate(self.op_args.shape) if sh == 3]
     if triaxes:
       for iax in triaxes:
-        self.assertArrayAlmostEqual(
-          numeric.cross(self.n_op(*self.argsfun.eval(self.elem,self.points)), self.shapearg, axis=iax+1),
-          function.cross(self.op(*self.args), self.shapearg, axis=iax).eval(self.elem,self.points), decimal=15)
+        self.assertArrayAlmostEqual(decimal=15,
+          desired=numeric.cross(self.n_op_argsfun, self.shapearg, axis=iax+1),
+          actual=function.cross(self.op_args, self.shapearg, axis=iax).simplified.eval(self.elem, self.points))
 
   def test_power(self):
-    self.assertArrayAlmostEqual(
-      self.n_op(*self.argsfun.eval(self.elem,self.points))**3,
-      (self.op(*self.args)**3).eval(self.elem,self.points), decimal=14)
+    self.assertArrayAlmostEqual(decimal=14,
+      desired=self.n_op_argsfun**3,
+      actual=(self.op_args**3).simplified.eval(self.elem, self.points))
 
   def test_mask(self):
-    for idim in range(len(self.shape)):
-      if self.shape[idim] <= 1:
+    for idim in range(self.op_args.ndim):
+      if self.op_args.shape[idim] <= 1:
         continue
-      mask = numpy.ones(self.shape[idim], dtype=bool)
+      mask = numpy.ones(self.op_args.shape[idim], dtype=bool)
       mask[0] = False
-      if self.shape[idim] > 2:
+      if self.op_args.shape[idim] > 2:
         mask[-1] = False
-      self.assertArrayAlmostEqual(
-        self.n_op(*self.argsfun.eval(self.elem,self.points))[(slice(None,),)*(idim+1)+(mask,)],
-        function.mask(self.op(*self.args), mask, axis=idim).eval(self.elem,self.points), decimal=15)
+      self.assertArrayAlmostEqual(decimal=15,
+        desired=self.n_op_argsfun[(slice(None,),)*(idim+1)+(mask,)],
+        actual=function.mask(self.op_args, mask, axis=idim).simplified.eval(self.elem, self.points))
 
   def test_ravel(self):
-    for idim in range(len(self.shape)-1):
-      A = self.n_op(*self.argsfun.eval(self.elem,self.points))
-      self.assertArrayAlmostEqual(
-        A.reshape(A.shape[:idim+1]+(-1,)+A.shape[idim+3:]),
-        function.ravel(self.op(*self.args), axis=idim).eval(self.elem,self.points), decimal=15)
+    for idim in range(self.op_args.ndim-1):
+      self.assertArrayAlmostEqual(decimal=15,
+        desired=self.n_op_argsfun.reshape(self.n_op_argsfun.shape[:idim+1]+(-1,)+self.n_op_argsfun.shape[idim+3:]),
+        actual=function.ravel(self.op_args, axis=idim).simplified.eval(self.elem, self.points))
 
   def test_unravel(self):
-    for idim in range(len(self.shape)):
-      A = self.n_op(*self.argsfun.eval(self.elem,self.points))
-      length = A.shape[idim+1]
+    for idim in range(self.op_args.ndim):
+      length = self.n_op_argsfun.shape[idim+1]
       unravelshape = (length//3,3) if (length%3==0) else (length//2,2) if (length%2==0) else (length,1)
-      self.assertArrayAlmostEqual(
-        A.reshape(A.shape[:idim+1]+unravelshape+A.shape[idim+2:]),
-        function.unravel(self.op(*self.args), axis=idim, shape=unravelshape).eval(self.elem,self.points), decimal=15)
+      self.assertArrayAlmostEqual(decimal=15,
+        desired=self.n_op_argsfun.reshape(self.n_op_argsfun.shape[:idim+1]+unravelshape+self.n_op_argsfun.shape[idim+2:]),
+        actual=function.unravel(self.op_args, axis=idim, shape=unravelshape).simplified.eval(self.elem, self.points))
 
   def test_edit(self):
     def check_identity(arg):
@@ -205,12 +202,12 @@ class check(TestCase):
         newarg = arg.edit(check_identity)
         self.assertEqual(arg, newarg)
       return arg
-    check_identity(self.op(*self.args))
+    check_identity(self.op_args)
 
   def find(self, target, xi0):
     ndim, = self.geom.shape
     J = function.localgradient(self.geom, ndim)
-    Jinv = function.inverse(J)
+    Jinv = function.inverse(J).simplified
     countdown = 5
     iiter = 0
     self.assertEqual(target.shape[-1:], self.geom.shape)
@@ -236,13 +233,13 @@ class check(TestCase):
     eps = 1e-6
     D = numpy.array([-.5*eps,.5*eps])[:,_,_] * numpy.eye(self.elem.ndims)
     fdpoints = self.points[_,_,:,:] + D[:,:,_,:]
-    tmp = self.n_op(*self.argsfun.eval(self.elem,fdpoints.reshape(-1,fdpoints.shape[-1])))
+    tmp = self.n_op(*self.argsfun.simplified.eval(self.elem,fdpoints.reshape(-1,fdpoints.shape[-1])))
     F = tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:])
     fdgrad = numpy.zeros(F.shape[1:], bool) if F.dtype.kind == 'b' else (F[1]-F[0])/eps
     fdgrad = fdgrad.transpose(numpy.roll(numpy.arange(F.ndim-1),-1))
-    G = function.localgradient(self.op(*self.args), ndims=self.elem.ndims)
+    G = function.localgradient(self.op_args, ndims=self.elem.ndims)
     exact = numpy.empty_like(fdgrad)
-    exact[...] = G.eval(self.elem,self.points)
+    exact[...] = G.simplified.eval(self.elem, self.points)
     self.assertArrayAlmostEqual(fdgrad, exact, decimal=5)
 
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
@@ -263,13 +260,13 @@ class check(TestCase):
     eps = 1e-7
     D = numpy.array([-.5*eps,.5*eps])[:,_,_] * numpy.eye(2)
     fdpoints = self.find(self.geom.eval(self.elem,self.points)[_,_,:,:] + D[:,:,_,:], self.points[_,_,:,:])
-    tmp = self.n_op(*self.argsfun.eval(self.elem,fdpoints.reshape(-1,fdpoints.shape[-1])))
+    tmp = self.n_op(*self.argsfun.simplified.eval(self.elem,fdpoints.reshape(-1,fdpoints.shape[-1])))
     F = tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:])
     fdgrad = numpy.zeros(F.shape[1:], bool) if F.dtype.kind == 'b' else (F[1]-F[0])/eps
     fdgrad = fdgrad.transpose(numpy.roll(numpy.arange(F.ndim-1),-1))
-    G = self.op(*self.args).grad(self.geom)
+    G = self.op_args.grad(self.geom)
     exact = numpy.empty_like(fdgrad)
-    exact[...] = G.eval(self.elem,self.points)
+    exact[...] = G.simplified.eval(self.elem, self.points)
     self.assertArrayAlmostEqual(fdgrad, exact, decimal=5)
 
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
@@ -278,21 +275,21 @@ class check(TestCase):
     D = numpy.array([-.5*eps,.5*eps])[:,_,_] * numpy.eye(2)
     DD = D[:,_,:,_,:] + D[_,:,_,:,:]
     fdpoints = self.find(self.geom.eval(self.elem,self.points)[_,_,_,_,:,:] + DD[:,:,:,:,_,:], self.points[_,_,_,_,:,:])
-    tmp = self.n_op(*self.argsfun.eval(self.elem,fdpoints.reshape(-1,fdpoints.shape[-1])))
+    tmp = self.n_op(*self.argsfun.simplified.eval(self.elem,fdpoints.reshape(-1,fdpoints.shape[-1])))
     F = tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:])
     fddgrad = numpy.zeros(F.shape[2:], bool) if F.dtype.kind == 'b' else ((F[1,1]-F[1,0])-(F[0,1]-F[0,0]))/(eps**2)
     fddgrad = fddgrad.transpose(numpy.roll(numpy.arange(F.ndim-2),-2))
-    G = self.op(*self.args).grad(self.geom).grad(self.geom)
+    G = self.op_args.grad(self.geom).grad(self.geom)
     exact = numpy.empty_like(fddgrad)
-    exact[...] = G.eval(self.elem,self.points)
+    exact[...] = G.simplified.eval(self.elem, self.points)
     numpy.testing.assert_allclose(fddgrad, exact, rtol=2e-4)
 
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_opposite(self):
     opposite_args = function.Tuple([function.opposite(arg) for arg in self.args])
-    self.assertArrayAlmostEqual(
-      self.n_op(*opposite_args.eval(self.iface,self.ifpoints)),
-        function.opposite(self.op(*self.args)).eval(self.iface,self.ifpoints), decimal=15)
+    self.assertArrayAlmostEqual(decimal=15,
+      desired=self.n_op(*opposite_args.simplified.eval(self.iface, self.ifpoints)),
+      actual=function.opposite(self.op_args).simplified.eval(self.iface, self.ifpoints))
 
 _check = lambda name, op, n_op, shapes, hasgrad=True: check(name, op=op, n_op=n_op, shapes=shapes, hasgrad=hasgrad)
 _check('sin', function.sin, numpy.sin, [(3,)])
