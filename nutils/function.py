@@ -33,61 +33,55 @@ expensive and currently unsupported operation.
 from . import util, numpy, numeric, log, core, cache, transform, expression, _
 import sys, warnings, itertools, functools, operator, inspect, numbers, builtins, re, types, collections.abc
 
-CACHE = 'Cache'
-TRANS = 'Trans'
-OPPTRANS = 'OppTrans'
-POINTS = 'Points'
-ARGUMENTS = 'Arguments'
-
-TOKENS = CACHE, TRANS, OPPTRANS, POINTS, ARGUMENTS
+isevaluable = lambda arg: isinstance(arg, Evaluable)
 
 class Evaluable( cache.Immutable ):
   'Base class'
 
   def __init__(self, args:tuple):
-    assert all(isevaluable(arg) or arg in TOKENS for arg in args)
+    assert all(isevaluable(arg) for arg in args)
     self.__args = args
 
   def evalf( self, *args ):
     raise NotImplementedError( 'Evaluable derivatives should implement the evalf method' )
 
+  @cache.property
+  def dependencies(self):
+    '''collection of all function arguments'''
+    args = set()
+    for func in self.__args:
+      if func not in args:
+        args |= func.dependencies
+        args.add(func)
+    return args
+
   @property
-  def isconstant( self ):
-    return all( arg not in TOKENS and arg.isconstant for arg in self.__args )
+  def isconstant(self):
+    return EVALARGS not in self.dependencies
 
   @cache.property
-  def serialized( self ):
-    '''returns (ops,inds), where len(ops) = len(inds)-1'''
+  def ordereddeps(self):
+    '''collection of all function arguments such that the arguments to
+    dependencies[i] can be found in dependencies[:i]'''
+    return tuple([EVALARGS] + sorted(self.dependencies - {EVALARGS}, key=lambda f: len(f.dependencies)))
 
-    myops = list( TOKENS )
-    myinds = []
-    indices = []
-    for arg in self.__args:
-      try:
-        index = myops.index( arg )
-      except ValueError:
-        argops, arginds = arg.serialized
-        renumber = list( range( len(TOKENS) ) )
-        for op, ind in zip( argops, arginds ):
-          try:
-            n = myops.index( op )
-          except ValueError:
-            n = len(myops)
-            myops.append( op )
-            myinds.append( numpy.take(renumber,ind) )
-          renumber.append( n )
-        index = len(myops)
-        myops.append( arg )
-        myinds.append( numpy.take(renumber,arginds[-1]) )
-      indices.append( index )
-    myinds.append( indices )
-    return tuple(myops[len(TOKENS):]), tuple(myinds)
+  @cache.property
+  def dependencytree(self):
+    '''lookup table of function arguments into ordereddeps, such that
+    ordereddeps[i].__args[j] == ordereddeps[dependencytree[i][j]], and
+    self.__args[j] == ordereddeps[dependencytree[-1][j]]'''
+    args = self.ordereddeps
+    return tuple(tuple(map(args.index, func.__args)) for func in args+(self,))
+
+  @property
+  def serialized(self):
+    return zip(self.ordereddeps[1:]+(self,), self.dependencytree[1:])
 
   def asciitree( self, seen=None ):
     'string representation'
 
     if seen is None:
-      seen = [ None ] * len(TOKENS)
+      seen = []
     try:
       index = seen.index( self )
     except ValueError:
@@ -114,61 +108,57 @@ class Evaluable( cache.Immutable ):
   def __str__( self ):
     return self.__class__.__name__
 
-  def eval( self, elem=None, ischeme=None, fcache=cache.WrapperDummyCache(), arguments=None ):
+  def eval(self, elem=None, ischeme=None, fcache=None, arguments=None):
     'evaluate'
     
+    evalargs = {}
+
+    if fcache is not None:
+      evalargs['_cache'] = fcache
+
     if elem is None:
       assert self.isconstant
-      trans = opptrans = None
-      points = None
     elif isinstance( elem, transform.TransformChain ):
-      trans = opptrans = elem
-      points = ischeme
+      evalargs['_transforms'] = elem, elem
+      evalargs['_points'] = ischeme
     elif isinstance( elem, tuple ):
-      trans, opptrans = elem
-      points = ischeme
+      evalargs['_transforms'] = elem
+      evalargs['_points'] = ischeme
     else:
-      trans = elem.transform
-      opptrans = elem.opposite
+      evalargs['_transforms'] = elem.transform, elem.opposite
       if isinstance(ischeme, collections.abc.Mapping):
         ischeme = ischeme[elem]
       if isinstance( ischeme, str ):
         points, weights = fcache[elem.reference.getischeme]( ischeme )
+        evalargs['_points'] = points
       elif isinstance( ischeme, tuple ):
         points, weights = ischeme
         assert points.shape[-1] == elem.ndims
         assert points.shape[:-1] == weights.shape, 'non matching shapes: points.shape=%s, weights.shape=%s' % ( points.shape, weights.shape )
+        evalargs['_points'] = points
       elif numeric.isarray(ischeme):
         points = numeric.const(ischeme, dtype=float)
         assert points.shape[-1] == elem.ndims
-      elif ischeme is None:
-        points = None
-      else:
+        evalargs['_points'] = points
+      elif ischeme is not None:
         raise Exception( 'invalid integration scheme of type %r' % type(ischeme) )
-
-    if trans is not None:
-      if opptrans is not None:
-        assert trans.fromdims == opptrans.fromdims
-      if points is not None:
-        assert points.ndim == 2 and points.shape[1] == trans.fromdims
 
     if arguments is not None:
       assert all(numeric.isarray(value) and value.dtype.kind in 'bif' for value in arguments.values())
+      evalargs.update(arguments)
 
-    ops, inds = self.serialized
-    assert TOKENS == ( CACHE, TRANS, OPPTRANS, POINTS, ARGUMENTS )
-    values = [ fcache, trans, opptrans, points, arguments or {} ]
-    for op, indices in zip( list(ops)+[self], inds ):
-      args = [ values[i] for i in indices ]
+    values = [evalargs]
+    for op, indices in self.serialized:
       try:
-        retval = op.evalf( *args )
+        args = [values[i] for i in indices]
+        retval = op.evalf(*args)
       except KeyboardInterrupt:
         raise
       except:
         etype, evalue, traceback = sys.exc_info()
         excargs = etype, evalue, self, values
-        raise EvaluationError(*excargs).with_traceback( traceback )
-      values.append( retval )
+        raise EvaluationError(*excargs).with_traceback(traceback)
+      values.append(retval)
     return values[-1]
 
   @log.title
@@ -181,13 +171,11 @@ class Evaluable( cache.Immutable ):
     if not isinstance( dotpath, str ):
       dotpath = 'dot'
 
-    ops, inds = self.serialized
-
     lines = []
     lines.append( 'digraph {' )
     lines.append( 'graph [ dpi=72 ];' )
-    lines.extend( '%d [label="%d. %s"];' % (i, i, name._asciitree_str() if isinstance(name, Array) else name) for i, name in enumerate( TOKENS + ops + (self,) ) )
-    lines.extend( '%d -> %d;' % (j,i) for i, indices in enumerate( ([],)*len(TOKENS) + inds ) for j in indices )
+    lines.extend( '%d [label="%d. %s"];' % (i, i, name._asciitree_str()) for i, name in enumerate(self.ordereddeps+(self,)) )
+    lines.extend( '%d -> %d;' % (j,i) for i, indices in enumerate(self.dependencytree) for j in indices )
     lines.append( '}' )
     imgdata = '\n'.join(lines).encode()
 
@@ -203,11 +191,8 @@ class Evaluable( cache.Immutable ):
   def stackstr( self, nlines=-1 ):
     'print stack'
 
-    ops, inds = self.serialized
-    lines = []
-    for name in TOKENS:
-      lines.append( '  %%%d = %s' % ( len(lines), name ) )
-    for op, indices in zip( list(ops)+[self], inds ):
+    lines = ['  %0 = EVALARGS']
+    for op, indices in self.serialized:
       args = [ '%%%d' % idx for idx in indices ]
       try:
         code = op.evalf.__code__
@@ -217,7 +202,7 @@ class Evaluable( cache.Immutable ):
         args = [ '%s=%s' % item for item in zip( names, args ) ]
       except:
         pass
-      lines.append( '  %%%d = %s( %s )' % ( len(lines), op._asciitree_str() if isarray(op) else op, ', '.join( args ) ) )
+      lines.append( '  %%%d = %s( %s )' % (len(lines), op._asciitree_str(), ', '.join(args)) )
       if len(lines) == nlines+1:
         break
     return '\n'.join( lines )
@@ -244,6 +229,37 @@ class EvaluationError( Exception ):
     'string representation'
 
     return '\n%s --> %s: %s' % ( self.evaluable.stackstr( nlines=len(self.values) ), self.etype.__name__, self.evalue )
+
+EVALARGS = Evaluable(args=())
+
+class Cache(Evaluable):
+  def __init__(self):
+    super().__init__(args=[EVALARGS])
+  def evalf(self, evalargs):
+    try:
+      return evalargs['_cache']
+    except:
+      return cache.WrapperDummyCache()
+
+CACHE = Cache()
+
+class Trans(Evaluable):
+  def __init__(self, n):
+    self.n = n
+    super().__init__(args=[EVALARGS])
+  def evalf(self, evalargs):
+    return evalargs['_transforms'][self.n]
+
+TRANS = Trans(0)
+OPPTRANS = Trans(1)
+
+class Points(Evaluable):
+  def __init__(self, opposite=False):
+    super().__init__(args=[EVALARGS])
+  def evalf(self, evalargs):
+    return evalargs['_points']
+
+POINTS = Points()
 
 class Tuple( Evaluable ):
 
@@ -2570,14 +2586,16 @@ class Argument(DerivativeTargetBase):
   def __init__(self, name, shape:tuple, nderiv:int=0):
     self._name = name
     self._nderiv = nderiv
-    super().__init__(args=[ARGUMENTS], shape=shape, dtype=float)
+    super().__init__(args=[EVALARGS], shape=shape, dtype=float)
 
-  def evalf(self, args):
+  def evalf(self, evalargs):
     assert self._nderiv == 0
     try:
-      return args[self._name][_]
+      value = evalargs[self._name]
     except KeyError:
       raise ValueError('argument {!r} missing'.format(self._name))
+    else:
+      return value[_]
 
   def _derivative(self, var, seen):
     if isinstance(var, Argument) and var._name == self._name:
@@ -2947,7 +2965,6 @@ def _inflate_scalar(arg, shape):
 
 isarray = lambda arg: isinstance( arg, Array )
 iszero = lambda arg: isinstance( arg, Zeros )
-isevaluable = lambda arg: isinstance( arg, Evaluable )
 zeros = lambda shape, dtype=float: Zeros( shape, dtype )
 zeros_like = lambda arr: zeros(arr.shape, arr.dtype)
 ones = lambda shape, dtype=float: _inflate_scalar(numpy.ones((), dtype=dtype), shape)
