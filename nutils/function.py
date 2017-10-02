@@ -551,75 +551,78 @@ class Constant( Array ):
     return zeros(self.shape + var.shape)
 
   def _transpose(self, axes):
-    return asarray(self.value.transpose(axes))
+    return Constant(self.value.transpose(axes))
 
-  def _sum( self, axis ):
-    return asarray( numpy.sum( self.value, axis ) )
+  def _sum(self, axis):
+    return Constant(numpy.sum(self.value, axis))
 
-  def _get( self, i, item ):
+  def _get(self, i, item):
     if item.isconstant:
       item, = item.eval()
-      return asarray(numeric.get(self.value, i, item))
+      return Constant(numeric.get(self.value, i, item))
 
-  def _add( self, other ):
-    if isinstance( other, Constant ):
-      return asarray( numpy.add( self.value, other.value ) )
+  def _add(self, other):
+    if isinstance(other, Constant):
+      return Constant(numpy.add(self.value, other.value))
 
-  def _inverse( self ):
-    return asarray( numpy.linalg.inv( self.value ) )
+  def _inverse(self):
+    return Constant(numpy.linalg.inv(self.value))
 
   def _product(self):
-    return asarray(self.value.prod(-1))
+    return Constant(self.value.prod(-1))
 
-  def _multiply( self, other ):
+  def _multiply(self, other):
     if self._isunit:
       return other
-    if isinstance( other, Constant ):
-      return asarray( numpy.multiply( self.value, other.value ) )
+    if isinstance(other, Constant):
+      return Constant(numpy.multiply(self.value, other.value))
 
   def _takediag(self, axis, rmaxis):
-    return asarray(numeric.takediag(self.value, axis, rmaxis))
+    return Constant(numeric.takediag(self.value, axis, rmaxis))
 
   def _take( self, index, axis ):
-    if isinstance( index, Constant ):
-      return asarray( self.value.take( index.value, axis ) )
+    if isinstance(index, Constant):
+      return Constant(self.value.take(index.value, axis))
 
-  def _power( self, n ):
-    if isinstance( n, Constant ):
-      return asarray( numeric.power( self.value, n.value ) )
+  def _power(self, n):
+    if isinstance(n, Constant):
+      return Constant(numeric.power(self.value, n.value))
 
   def _dot( self, other, axes ):
+    if isinstance(other, Constant):
+      return Constant(numeric.contract(self.value, other.value, axes))
     if self._isunit:
-      return sum(other, axes)
-    if isinstance( other, Constant ):
-      return asarray( numeric.contract( self.value, other.value, axes ) )
+      summed = other
+      for axis in reversed(sorted(axes)):
+        summed = Sum(summed, axis)
+      return summed
 
-  def _cross( self, other, axis ):
-    if isinstance( other, Constant ):
-      return asarray( numeric.cross( self.value, other.value, axis ) )
+  def _cross(self, other, axis):
+    if isinstance(other, Constant):
+      return Constant(numeric.cross(self.value, other.value, axis))
 
-  def _pointwise( self, evalf, deriv, dtype ):
-    retval = evalf( *self.value )
+  def _pointwise(self, evalf, deriv, dtype):
+    retval = evalf(*self.value)
     assert retval.dtype == dtype
-    return asarray( retval )
+    return Constant(retval)
 
   def _eig(self, symmetric):
     eigval, eigvec = (numpy.linalg.eigh if symmetric else numpy.linalg.eig)(self.value)
-    return Tuple((asarray(eigval), asarray(eigvec)))
+    return Tuple((Constant(eigval), Constant(eigvec)))
 
-  def _sign( self ):
-    return asarray( numeric.sign( self.value ) )
+  def _sign(self):
+    return Constant(numeric.sign(self.value))
 
-  def _choose( self, choices ):
-    if all( isinstance( choice, Constant ) for choice in choices ):
-      return asarray( numpy.choose( self.value, [ choice.value for choice in choices ] ) )
+  def _choose(self, choices):
+    if all(isinstance(choice, Constant) for choice in choices):
+      return Constant(numpy.choose(self.value, [choice.value for choice in choices]))
 
-  def _unravel( self, axis, shape ):
+  def _unravel(self, axis, shape):
     shape = self.value.shape[:axis] + shape + self.value.shape[axis+1:]
-    return asarray( self.value.reshape(shape) )
+    return Constant(self.value.reshape(shape))
 
-  def _mask( self, maskvec, axis ):
-    return asarray( self.value[(slice(None),)*axis+(maskvec,)] )
+  def _mask(self, maskvec, axis):
+    return Constant(self.value[(slice(None),)*axis+(maskvec,)])
 
 class DofMap(Array):
 
@@ -682,70 +685,70 @@ class InsertAxis(Array):
       if item.isconstant and self.length.isconstant:
         assert item.eval()[0] < self.length.eval()[0]
       return self.func
-    return insertaxis(get(self.func, i-(i>self.axis), item), self.axis-(i<self.axis), self.length)
+    return InsertAxis(Get(self.func, i-(i>self.axis), item), self.axis-(i<self.axis), self.length)
 
   def _sum(self, i):
     if i == self.axis:
-      return multiply(self.func, self.length)
-    return insertaxis(sum(self.func, i-(i>self.axis)), self.axis-(i<self.axis), self.length)
+      return Multiply([self.func, _inflate_scalar(self.length, self.func.shape)])
+    return InsertAxis(Sum(self.func, i-(i>self.axis)), self.axis-(i<self.axis), self.length)
 
   def _product(self):
     if self.axis == self.ndim-1:
-      return power(self.func, self.length)
-    return insertaxis(product(self.func, -1), self.axis, self.length)
+      return Power(self.func, _inflate_scalar(self.length, self.func.shape))
+    return InsertAxis(Product(self.func), self.axis, self.length)
 
   def _power(self, n):
     if isinstance(n, InsertAxis) and self.axis == n.axis:
       assert n.length == self.length
-      return insertaxis(power(self.func, n.func), self.axis, self.length)
+      return InsertAxis(Power(self.func, n.func), self.axis, self.length)
 
   def _add(self, other):
     if isinstance(other, InsertAxis) and self.axis == other.axis:
       assert self.length == other.length
-      return insertaxis(add(self.func, other.func), self.axis, self.length)
+      return InsertAxis(Add([self.func, other.func]), self.axis, self.length)
 
   def _multiply(self, other):
     if isinstance(other, InsertAxis) and self.axis == other.axis:
       assert self.length == other.length
-      return insertaxis(multiply(self.func, other.func), self.axis, self.length)
+      return InsertAxis(Multiply([self.func, other.func]), self.axis, self.length)
 
   def _insertaxis(self, axis, length):
     if (not length.isconstant, axis) < (not self.length.isconstant, self.axis):
-      return insertaxis(insertaxis(self.func, axis-(axis>self.axis), length), self.axis+(axis<=self.axis), self.length)
+      return InsertAxis(InsertAxis(self.func, axis-(axis>self.axis), length), self.axis+(axis<=self.axis), self.length)
 
   def _take(self, index, axis):
     if axis == self.axis:
-      return insertaxis(self.func, self.axis, index.shape[0])
-    return insertaxis(take(self.func, index, axis-(axis>self.axis)), self.axis, self.length)
+      return InsertAxis(self.func, self.axis, index.shape[0])
+    return InsertAxis(Take(self.func, index, axis-(axis>self.axis)), self.axis, self.length)
 
   def _takediag(self, axis, rmaxis):
     if self.axis == rmaxis:
       return self.func
     elif self.axis == axis:
-      return transpose(self.func, list(range(axis))+[rmaxis-1]+list(range(axis, rmaxis-1))+list(range(rmaxis, self.func.ndim)))
+      return Transpose(self.func, list(range(axis))+[rmaxis-1]+list(range(axis, rmaxis-1))+list(range(rmaxis, self.func.ndim)))
     else:
-      return insertaxis(takediag(self.func, axis-(self.axis<axis), rmaxis-(self.axis<rmaxis)), self.axis-(self.axis>rmaxis), self.length)
+      return InsertAxis(TakeDiag(self.func, axis-(self.axis<axis), rmaxis-(self.axis<rmaxis)), self.axis-(self.axis>rmaxis), self.length)
 
   def _dot(self, other, axes):
     if self.axis in axes:
       assert other.shape[self.axis] == self.shape[self.axis]
-      return dot(self.func, sum(other, self.axis), [ax-(ax>self.axis) for ax in axes if ax != self.axis])
+      return Dot([self.func, Sum(other, self.axis)], [ax-(ax>self.axis) for ax in axes if ax != self.axis])
 
   def _mask(self, maskvec, axis):
     if axis == self.axis:
       assert len(maskvec) == self.shape[self.axis]
-      return insertaxis(self.func, self.axis, maskvec.sum())
-    return insertaxis(mask(self.func, maskvec, axis-(self.axis<axis)), self.axis, self.length)
+      return InsertAxis(self.func, self.axis, maskvec.sum())
+    return InsertAxis(Mask(self.func, maskvec, axis-(self.axis<axis)), self.axis, self.length)
 
   def _transpose(self, axes):
     i = axes.index(self.axis)
-    return insertaxis(self.func.transpose([ax-(ax>self.axis) for ax in axes[:i]+axes[i+1:]]), i, self.length)
+    return InsertAxis(Transpose(self.func, [ax-(ax>self.axis) for ax in axes[:i]+axes[i+1:]]), i, self.length)
 
-  def _unravel( self, axis, shape ):
+  def _unravel(self, axis, shape):
     if axis == self.axis:
-      return insertaxis(insertaxis(self.func, self.axis, shape[1]), self.axis, shape[0])
+      return InsertAxis(InsertAxis(self.func, self.axis, shape[1]), self.axis, shape[0])
     else:
-      return insertaxis(unravel(self.func, axis-(axis>self.axis), shape), self.axis+(axis<self.axis), self.length)
+      return InsertAxis(Unravel(self.func, axis-(axis>self.axis), shape), self.axis+(axis<self.axis), self.length)
 
 class Transpose(Array):
 
@@ -771,7 +774,7 @@ class Transpose(Array):
 
   def _transpose(self, axes):
     newaxes = [self.axes[i] for i in axes]
-    return transpose(self.func, newaxes)
+    return Transpose(self.func, newaxes)
 
   def _takediag(self, axis, rmaxis):
     if self.axes[axis] < self.axes[rmaxis]:
@@ -780,47 +783,47 @@ class Transpose(Array):
       axes = list(self.axes)
       axes[axis], axes[rmaxis] = axes[rmaxis], axes[axis]
     assert axes[axis] < axes[rmaxis]
-    return transpose(takediag(self.func, axes[axis], axes[rmaxis]), [ax-(ax>axes[rmaxis]) for ax in axes[:rmaxis]+axes[rmaxis+1:]])
+    return Transpose(TakeDiag(self.func, axes[axis], axes[rmaxis]), [ax-(ax>axes[rmaxis]) for ax in axes[:rmaxis]+axes[rmaxis+1:]])
 
   def _get(self, i, item):
     axis = self.axes[i]
     axes = [ax-(ax>axis) for ax in self.axes if ax != axis]
-    return transpose(get(self.func, axis, item), axes)
+    return Transpose(Get(self.func, axis, item), axes)
 
   def _sum(self, i):
     axis = self.axes[i]
     axes = [ax-(ax>axis) for ax in self.axes if ax != axis]
-    return transpose(sum(self.func, axis), axes)
+    return Transpose(Sum(self.func, axis), axes)
 
   def _derivative(self, var, seen):
     return transpose(derivative(self.func, var, seen), self.axes+tuple(range(self.ndim, self.ndim+var.ndim)))
 
   def _multiply(self, other):
     if isinstance(other, Transpose) and self.axes == other.axes:
-      return transpose(multiply(self.func, other.func), self.axes)
+      return Transpose(Multiply([self.func, other.func]), self.axes)
     other_trans = other._transpose(_invtrans(self.axes))
     if other_trans is not None:
-      return transpose(multiply(self.func, other_trans), self.axes)
+      return Transpose(Multiply([self.func, other_trans]), self.axes)
 
   def _add(self, other):
     if isinstance(other, Transpose) and self.axes == other.axes:
-      return transpose(add(self.func, other.func), self.axes)
+      return Transpose(Add([self.func, other.func]), self.axes)
     other_trans = other._transpose(_invtrans(self.axes))
     if other_trans is not None:
-      return transpose(add(self.func, other_trans), self.axes)
+      return Transpose(Add([self.func, other_trans]), self.axes)
 
   def _take(self, indices, axis):
-    return transpose(take(self.func, indices, self.axes[axis]), self.axes)
+    return Transpose(Take(self.func, indices, self.axes[axis]), self.axes)
 
   def _dot(self, other, axes):
     sumaxes = [self.axes[axis] for axis in axes]
     trydot = self.func._dot(transpose(other, _invtrans(self.axes)), sumaxes)
     if trydot is not None:
       trans = [axis - builtins.sum(ax<axis for ax in sumaxes) for axis in self.axes if axis not in sumaxes]
-      return transpose(trydot, trans)
+      return Transpose(trydot, trans)
 
   def _mask(self, maskvec, axis):
-    return transpose(mask(self.func, maskvec, self.axes[axis]), self.axes)
+    return Transpose(Mask(self.func, maskvec, self.axes[axis]), self.axes)
 
 class Get(Array):
 
@@ -852,13 +855,13 @@ class Get(Array):
     f = derivative(self.func, var, seen)
     return get(f, self.axis, self.item)
 
-  def _get( self, i, item ):
+  def _get(self, i, item):
     tryget = self.func._get(i+(i>=self.axis), item)
     if tryget is not None:
-      return get( tryget, self.axis, self.item )
+      return Get(tryget, self.axis, self.item)
 
-  def _take( self, indices, axis ):
-    return get( take( self.func, indices, axis+(axis>=self.axis) ), self.axis, self.item )
+  def _take(self, indices, axis):
+    return Get(Take(self.func, indices, axis+(axis>=self.axis) ), self.axis, self.item)
 
 class Product( Array ):
 
@@ -888,9 +891,9 @@ class Product( Array ):
     #ext = (...,)+(_,)*len(shape)
     #return self[ext] * ( derivative(self.func,var,shape,seen) / self.func[ext] ).sum( self.ndim )
 
-  def _get( self, i, item ):
-    func = get( self.func, i, item )
-    return product( func, -1 )
+  def _get(self, i, item):
+    func = Get(self.func, i, item)
+    return Product(func)
 
 class RootCoords( Array ):
 
@@ -1100,15 +1103,15 @@ class Concatenate(Array):
       for n, func in zip(util.cumsum(func.shape[self.axis] for func in self.funcs), self.funcs)
         for ind, f in func.blocks)
 
-  def _get( self, i, item ):
+  def _get(self, i, item):
     if i != self.axis:
       axis = self.axis - (self.axis > i)
-      return concatenate([get(f, i, item) for f in self.funcs], axis=axis)
+      return Concatenate([Get(f, i, item) for f in self.funcs], axis=axis)
     if item.isconstant:
       item, = item.eval()
       for f in self.funcs:
         if item < f.shape[i]:
-          return get(f, i, item)
+          return Get(f, i, item)
         item -= f.shape[i]
       raise Exception
 
@@ -1116,19 +1119,16 @@ class Concatenate(Array):
     funcs = [derivative(func, var, seen) for func in self.funcs]
     return concatenate(funcs, axis=self.axis)
 
-  def _multiply( self, other ):
-    funcs = [multiply(func, take(other, s, self.axis)) for s, func in self._withslices]
-    return concatenate(funcs, self.axis)
+  def _multiply(self, other):
+    funcs = [Multiply([func, Take(other, s, self.axis)]) for s, func in self._withslices]
+    return Concatenate(funcs, self.axis)
 
-  def _cross( self, other, axis ):
-    if axis == self.axis:
-      n = 1, 2, 0
-      m = 2, 0, 1
-      return take(self,n,axis) * take(other,m,axis) - take(self,m,axis) * take(other,n,axis)
-    funcs = [cross(func, take(other, s, self.axis), axis) for s, func in self._withslices]
-    return concatenate(funcs, self.axis)
+  def _cross(self, other, axis):
+    if axis != self.axis:
+      funcs = [Cross(func, Take(other, s, self.axis), axis) for s, func in self._withslices]
+      return Concatenate(funcs, self.axis)
 
-  def _add( self, other ):
+  def _add(self, other):
     if isinstance(other, Concatenate) and self.axis == other.axis:
       if [f1.shape[self.axis] for f1 in self.funcs] == [f2.shape[self.axis] for f2 in other.funcs]:
         funcs = [add(f1, f2) for f1, f2 in zip(self.funcs, other.funcs)]
@@ -1145,42 +1145,43 @@ class Concatenate(Array):
             if end1 > beg2 and end2 > beg1:
               mask = numpy.zeros(self.shape[self.axis], dtype=bool)
               mask[builtins.max(beg1, beg2):builtins.min(end1, end2)] = True
-              funcs.append(add(Mask(func1, mask[beg1:end1], self.axis), Mask(func2, mask[beg2:end2], self.axis)))
+              funcs.append(Add([Mask(func1, mask[beg1:end1], self.axis), Mask(func2, mask[beg2:end2], self.axis)]))
             beg2 = end2
           beg1 = end1
     else:
-      funcs = [add(func, take(other, s, self.axis)) for s, func in self._withslices]
-    return concatenate( funcs, self.axis )
+      funcs = [Add([func, Take(other, s, self.axis)]) for s, func in self._withslices]
+    return Concatenate(funcs, self.axis)
 
-  def _sum( self, axis ):
+  def _sum(self, axis):
+    funcs = [Sum(func, axis) for func in self.funcs]
     if axis == self.axis:
-      return util.sum( sum( func, axis ) for func in self.funcs )
-    funcs = [ sum( func, axis ) for func in self.funcs ]
-    axis = self.axis - (axis<self.axis)
-    return concatenate( funcs, axis )
+      while len(funcs) > 1:
+        funcs[-2:] = Add(funcs[-2:]),
+      return funcs[0]
+    return Concatenate(funcs, self.axis - (axis<self.axis))
 
   def _transpose(self, axes):
-    funcs = [transpose(func, axes) for func in self.funcs]
+    funcs = [Transpose(func, axes) for func in self.funcs]
     axis = axes.index(self.axis)
-    return concatenate(funcs, axis)
+    return Concatenate(funcs, axis)
 
   def _insertaxis(self, axis, length):
-    funcs = [insertaxis(func, axis, length) for func in self.funcs]
-    return concatenate(funcs, self.axis+(axis<=self.axis))
+    funcs = [InsertAxis(func, axis, length) for func in self.funcs]
+    return Concatenate(funcs, self.axis+(axis<=self.axis))
 
   def _takediag(self, axis, rmaxis):
     if self.axis == axis:
-      funcs = [takediag(take(func, s, rmaxis), axis, rmaxis) for s, func in self._withslices]
-      return concatenate(funcs, axis=axis)
+      funcs = [TakeDiag(Take(func, s, rmaxis), axis, rmaxis) for s, func in self._withslices]
+      return Concatenate(funcs, axis=axis)
     elif self.axis == rmaxis:
-      funcs = [takediag(take(func, s, axis), axis, rmaxis) for s, func in self._withslices]
-      return concatenate(funcs, axis=axis)
+      funcs = [TakeDiag(Take(func, s, axis), axis, rmaxis) for s, func in self._withslices]
+      return Concatenate(funcs, axis=axis)
     else:
-      return concatenate([takediag(f, axis, rmaxis) for f in self.funcs], axis=self.axis-(self.axis>rmaxis))
+      return Concatenate([TakeDiag(f, axis, rmaxis) for f in self.funcs], axis=self.axis-(self.axis>rmaxis))
 
-  def _take( self, indices, axis ):
+  def _take(self, indices, axis):
     if axis != self.axis:
-      return concatenate([take(func, indices, axis) for func in self.funcs], self.axis)
+      return Concatenate([Take(func, indices, axis) for func in self.funcs], self.axis)
     if not indices.isconstant:
       return
     indices, = indices.eval()
@@ -1191,37 +1192,39 @@ class Concatenate(Array):
     for i, j in zip( numpy.hstack([ 0, splits+1 ]), numpy.hstack([ splits+1, len(indices) ]) ):
       ifunc = ifuncs[i]
       assert numpy.equal(ifuncs[i:j], ifunc).all()
-      offset = builtins.sum( func.shape[axis] for func in self.funcs[:ifunc] )
-      funcs.append( take( self.funcs[ifunc], indices[i:j] - offset, axis ) )
-    if len( funcs ) == 1:
+      offset = builtins.sum(func.shape[axis] for func in self.funcs[:ifunc])
+      funcs.append(Take(self.funcs[ifunc], indices[i:j] - offset, axis))
+    if len(funcs) == 1:
       return funcs[0]
-    return concatenate( funcs, axis=axis )
+    return Concatenate(funcs, axis=axis)
 
-  def _dot( self, other, axes ):
-    funcs = [dot(func, take(other, s, self.axis), axes) for s, func in self._withslices]
+  def _dot(self, other, axes):
+    funcs = [Dot([func, Take(other, s, self.axis)], axes) for s, func in self._withslices]
     if self.axis in axes:
-      return util.sum(funcs)
-    return concatenate(funcs, self.axis - builtins.sum(axis < self.axis for axis in axes))
+      while len(funcs) > 1:
+        funcs[-2:] = Add(funcs[-2:]),
+      return funcs[0]
+    return Concatenate(funcs, self.axis - builtins.sum(axis < self.axis for axis in axes))
 
-  def _power( self, n ):
-    return concatenate([power(func, take(n, s, self.axis)) for s, func in self._withslices], self.axis)
+  def _power(self, n):
+    return Concatenate([Power(func, Take(n, s, self.axis)) for s, func in self._withslices], self.axis)
 
   def _diagonalize(self, axis, newaxis):
     if self.axis != axis:
-      return concatenate([diagonalize(func, axis, newaxis) for func in self.funcs], self.axis+(newaxis<=self.axis))
+      return Concatenate([Diagonalize(func, axis, newaxis) for func in self.funcs], self.axis+(newaxis<=self.axis))
 
-  def _kronecker( self, axis, length, pos ):
-    return concatenate( [ kronecker(func,axis,length,pos) for func in self.funcs ], self.axis+(axis<=self.axis) )
+  def _kronecker(self, axis, length, pos):
+    return Concatenate([kronecker(func,axis,length,pos) for func in self.funcs], self.axis+(axis<=self.axis))
 
   def _mask( self, maskvec, axis ):
     if axis != self.axis:
-      return concatenate([mask(func,maskvec,axis) for func in self.funcs], self.axis)
+      return Concatenate([Mask(func,maskvec,axis) for func in self.funcs], self.axis)
     if all(s.isconstant for s, func in self._withslices):
-      return concatenate([mask(func, maskvec[s.eval()[0]], axis) for s, func in self._withslices], axis)
+      return Concatenate([Mask(func, maskvec[s.eval()[0]], axis) for s, func in self._withslices], axis)
 
   def _unravel(self, axis, shape):
     if axis != self.axis:
-      return concatenate([unravel(func, axis, shape) for func in self.funcs], self.axis+(self.axis>axis))
+      return Concatenate([Unravel(func, axis, shape) for func in self.funcs], self.axis+(self.axis>axis))
 
 class Interpolate( Array ):
   'interpolate uniformly spaced data; stepwise for now'
@@ -1273,9 +1276,9 @@ class Cross( Array ):
     return cross(self.func1[ext], derivative(self.func2, var, seen), axis=self.axis) \
          - cross(self.func2[ext], derivative(self.func1, var, seen), axis=self.axis)
 
-  def _take( self, index, axis ):
+  def _take(self, index, axis):
     if axis != self.axis:
-      return cross(take(self.func1, index, axis), take(self.func2, index, axis), self.axis)
+      return Cross(Take(self.func1, index, axis), Take(self.func2, index, axis), self.axis)
 
 class Determinant( Array ):
 
@@ -1332,51 +1335,41 @@ class Multiply(Array):
   def evalf( self, arr1, arr2 ):
     return arr1 * arr2
 
-  def _sum( self, axis ):
+  def _sum(self, axis):
     func1, func2 = self.funcs
-    return dot( func1, func2, [axis] )
+    return Dot([func1, func2], [axis])
 
-  def _get( self, axis, item ):
+  def _get(self, axis, item):
     func1, func2 = self.funcs
-    return multiply(get(func1, axis, item), get(func2, axis, item))
+    return Multiply([Get(func1, axis, item), Get(func2, axis, item)])
 
-  def _add( self, other ):
+  def _add(self, other):
     func1, func2 = self.funcs
     if other == func1:
-      return func1 * (func2+1)
+      return Multiply([func1, Add([func2, ones_like(func2)])])
     if other == func2:
-      return func2 * (func1+1)
+      return Multiply([func2, Add([func1, ones_like(func1)])])
     if isinstance(other, Multiply) and not self.funcs.isdisjoint(other.funcs):
       f = next(iter(self.funcs & other.funcs))
-      g1, = self.funcs - [f]
-      g2, = other.funcs - [f]
-      return f * add( g1, g2 )
+      return Multiply([f, Add(self.funcs + other.funcs - [f,f])])
 
   def _determinant( self ):
     func1, func2 = self.funcs
     if self.shape[-2:] == (1,1):
-      return multiply(determinant(func1), determinant(func2))
-    if 1 in func1.shape[-2:]:
-      func1, func2 = func2, func1 # swap singleton-axis argument into func2
-    if 1 in func1.shape[-2:]: # tensor product
-      return zeros(())
-    if 1 in func2.shape[-2:]:
-      det2 = power(func2[...,0,0], self.shape[-1]) if func2.shape[-2:] == (1,1) \
-        else product(func2.sum( -1 if func2.shape[-1] == 1 else -2 ), axis=0)
-      return multiply(determinant(func1), det2)
+      return Multiply([Determinant(func1), Determinant(func2)])
 
   def _product(self):
     func1, func2 = self.funcs
-    return multiply(product(func1, -1), product(func2, -1))
+    return Multiply([Product(func1), Product(func2)])
 
-  def _multiply( self, other ):
+  def _multiply(self, other):
     func1, func2 = self.funcs
     func1_other = func1._multiply(other)
     if func1_other is not None:
-      return multiply( func1_other, func2 )
+      return Multiply([func1_other, func2])
     func2_other = func2._multiply(other)
     if func2_other is not None:
-      return multiply( func1, func2_other )
+      return Multiply([func1, func2_other])
 
   def _derivative(self, var, seen):
     func1, func2 = self.funcs
@@ -1386,25 +1379,25 @@ class Multiply(Array):
 
   def _takediag(self, axis, rmaxis):
     func1, func2 = self.funcs
-    return multiply(takediag(func1, axis, rmaxis), takediag(func2, axis, rmaxis))
+    return Multiply([TakeDiag(func1, axis, rmaxis), TakeDiag(func2, axis, rmaxis)])
 
-  def _take( self, index, axis ):
+  def _take(self, index, axis):
     func1, func2 = self.funcs
-    return multiply(take(func1, index, axis), take(func2, index, axis))
+    return Multiply([Take(func1, index, axis), Take(func2, index, axis)])
 
-  def _power( self, n ):
+  def _power(self, n):
     func1, func2 = self.funcs
     func1pow = func1._power(n)
     func2pow = func2._power(n)
     if func1pow is not None and func2pow is not None:
-      return multiply( func1pow, func2pow )
+      return Multiply([func1pow, func2pow])
 
   def _dot(self, other, axes):
     func1, func2 = self.funcs
-    trydot1 = func1._dot(multiply(func2, other), axes)
+    trydot1 = func1._dot(Multiply([func2, other]), axes)
     if trydot1 is not None:
       return trydot1
-    trydot2 = func2._dot(multiply(func1, other), axes)
+    trydot2 = func2._dot(Multiply([func1, other]), axes)
     if trydot2 is not None:
       return trydot2
 
@@ -1441,39 +1434,37 @@ class Add(Array):
   def evalf( self, arr1, arr2=None ):
     return arr1 + arr2
 
-  def _sum( self, axis ):
-    sum1, sum2 = [sum(func, axis) for func in self.funcs]
-    n1, n2 = [func.shape[axis] for func in self.funcs]
-    return sum1 + sum2 if n1 == n2 else sum1 * n2 + sum2 * n1
+  def _sum(self, axis):
+    return Add([Sum(func, axis) for func in self.funcs])
 
   def _derivative(self, var, seen):
     func1, func2 = self.funcs
     return derivative(func1, var, seen) + derivative(func2, var, seen)
 
-  def _get( self, axis, item ):
+  def _get(self, axis, item):
     func1, func2 = self.funcs
-    return add(get(func1, axis, item), get(func2, axis, item))
+    return Add([Get(func1, axis, item), Get(func2, axis, item)])
 
   def _takediag(self, axis, rmaxis):
     func1, func2 = self.funcs
-    return add(takediag(func1, axis, rmaxis), takediag(func2, axis, rmaxis))
+    return Add([TakeDiag(func1, axis, rmaxis), TakeDiag(func2, axis, rmaxis)])
 
-  def _take( self, index, axis ):
+  def _take(self, index, axis):
     func1, func2 = self.funcs
-    return add(take(func1, index, axis), take(func2, index, axis))
+    return Add([Take(func1, index, axis), Take(func2, index, axis)])
 
-  def _add( self, other ):
+  def _add(self, other):
     func1, func2 = self.funcs
     func1_other = func1._add(other)
     if func1_other is not None:
-      return add( func1_other, func2 )
+      return Add([func1_other, func2])
     func2_other = func2._add(other)
     if func2_other is not None:
-      return add( func1, func2_other )
+      return Add([func1, func2_other])
 
   def _mask(self, maskvec, axis):
     func1, func2 = self.funcs
-    return add(mask(func1, maskvec, axis), mask(func2, maskvec, axis))
+    return Add([Mask(func1, maskvec, axis), Mask(func2, maskvec, axis)])
 
 class BlockAdd( Array ):
   'block addition (used for DG)'
@@ -1502,44 +1493,44 @@ class BlockAdd( Array ):
   def evalf(self, *args):
     return util.sum(args)
 
-  def _add( self, other ):
+  def _add(self, other):
     return BlockAdd(tuple(self.funcs) + tuple(other.funcs if isinstance(other, BlockAdd) else [other]))
 
   def _dot( self, other, axes ):
-    return BlockAdd([dot(func, other, axes) for func in self.funcs])
+    return BlockAdd([Dot([func, other], axes) for func in self.funcs])
 
-  def _sum( self, axis ):
+  def _sum(self, axis):
     return BlockAdd([sum(func, axis) for func in self.funcs])
 
   def _derivative(self, var, seen):
     return BlockAdd([derivative(func, var, seen) for func in self.funcs])
 
-  def _get( self, i, item ):
-    return BlockAdd([get(func, i, item) for func in self.funcs])
+  def _get(self, i, item):
+    return BlockAdd([Get(func, i, item) for func in self.funcs])
 
   def _takediag(self, axis, rmaxis):
-    return BlockAdd([takediag(func, axis, rmaxis) for func in self.funcs])
+    return BlockAdd([TakeDiag(func, axis, rmaxis) for func in self.funcs])
 
-  def _take( self, indices, axis ):
+  def _take(self, indices, axis):
     return BlockAdd([take(func, indices, axis) for func in self.funcs])
 
   def _transpose(self, axes):
-    return BlockAdd([transpose(func, axes) for func in self.funcs])
+    return BlockAdd([Transpose(func, axes) for func in self.funcs])
 
   def _insertaxis(self, axis, length):
-    return BlockAdd([insertaxis(func, axis, length) for func in self.funcs])
+    return BlockAdd([InsertAxis(func, axis, length) for func in self.funcs])
 
-  def _multiply( self, other ):
+  def _multiply(self, other):
     return BlockAdd([multiply(func, other) for func in self.funcs])
 
-  def _kronecker( self, axis, length, pos ):
+  def _kronecker(self, axis, length, pos):
     return BlockAdd([kronecker(func, axis, length, pos) for func in self.funcs])
 
   def _mask(self, maskvec, axis):
-    return BlockAdd([mask(func, maskvec, axis) for func in self.funcs])
+    return BlockAdd([Mask(func, maskvec, axis) for func in self.funcs])
 
   def _unravel(self, axis, shape):
-    return blockadd(*(unravel(func, axis, shape) for func in self.funcs))
+    return BlockAdd([unravel(func, axis, shape) for func in self.funcs])
 
   @cache.property
   def blocks(self):
@@ -1593,10 +1584,10 @@ class Dot(Array):
   def evalf( self, arr1, arr2 ):
     return numpy.einsum(self._einsumfmt, arr1, arr2)
 
-  def _get( self, axis, item ):
+  def _get(self, axis, item):
     func1, func2 = self.funcs
     funcaxis = self.axes_complement[axis]
-    return dot(get(func1, funcaxis, item), get(func2, funcaxis, item), [ax-(ax>=funcaxis) for ax in self.axes])
+    return Dot([Get(func1, funcaxis, item), Get(func2, funcaxis, item)], [ax-(ax>=funcaxis) for ax in self.axes])
 
   def _derivative(self, var, seen):
     func1, func2 = self.funcs
@@ -1604,28 +1595,26 @@ class Dot(Array):
     return dot(derivative(func1, var, seen), func2[ext], self.axes) \
          + dot(func1[ext], derivative(func2, var, seen), self.axes)
 
-  def _add( self, other ):
+  def _add(self, other):
     if isinstance(other, Dot) and self.axes == other.axes and not self.funcs.isdisjoint(other.funcs):
       f = next(iter(self.funcs & other.funcs))
-      g1, = self.funcs - [f]
-      g2, = other.funcs - [f]
-      return dot(f, g1 + g2, self.axes)
+      return Dot([f, Add(self.funcs + other.funcs - [f,f])], self.axes)
 
   def _takediag(self, axis, rmaxis):
     func1, func2 = self.funcs
     faxis = self.axes_complement[axis]
     frmaxis = self.axes_complement[rmaxis]
-    return dot(takediag(func1, faxis, frmaxis), takediag(func2, faxis, frmaxis), [ax-(ax>frmaxis) for ax in self.axes])
+    return Dot([TakeDiag(func1, faxis, frmaxis), TakeDiag(func2, faxis, frmaxis)], [ax-(ax>frmaxis) for ax in self.axes])
 
-  def _sum( self, axis ):
+  def _sum(self, axis):
     funcaxis = self.axes_complement[axis]
     func1, func2 = self.funcs
-    return dot( func1, func2, self.axes + (funcaxis,) )
+    return Dot([func1, func2], sorted(self.axes + (funcaxis,)))
 
-  def _take( self, index, axis ):
+  def _take(self, index, axis):
     func1, func2 = self.funcs
     funcaxis = self.axes_complement[axis]
-    return dot(take(func1, index, funcaxis), take(func2, index, funcaxis), self.axes)
+    return Dot([Take(func1, index, funcaxis), Take(func2, index, funcaxis)], self.axes)
 
 class Sum( Array ):
 
@@ -1649,10 +1638,10 @@ class Sum( Array ):
     assert arr.ndim == self.ndim+2
     return numpy.sum(arr, self.axis+1)
 
-  def _sum( self, axis ):
+  def _sum(self, axis):
     trysum = self.func._sum(axis+(axis>=self.axis))
     if trysum is not None:
-      return sum(trysum, self.axis-(axis<self.axis))
+      return Sum(trysum, self.axis-(axis<self.axis))
 
   def _derivative(self, var, seen):
     return sum(derivative(self.func, var, seen), self.axis)
@@ -1707,9 +1696,9 @@ class TakeDiag( Array ):
   def _derivative(self, var, seen):
     return TakeDiag(derivative(self.func, var, seen), self.axis, self.rmaxis)
 
-  def _sum( self, axis ):
+  def _sum(self, axis):
     if axis != self.axis:
-      return takediag(sum(self.func, axis+(axis>=self.rmaxis)), self.axis-(axis<self.axis), self.rmaxis-(axis<self.rmaxis))
+      return TakeDiag(Sum(self.func, axis+(axis>=self.rmaxis)), self.axis-(axis<self.axis), self.rmaxis-(axis<self.rmaxis))
 
 class Take( Array ):
 
@@ -1751,12 +1740,12 @@ class Take( Array ):
   def _derivative(self, var, seen):
     return take(derivative(self.func, var, seen), self.indices, self.axis)
 
-  def _take( self, index, axis ):
+  def _take(self, index, axis):
     if axis == self.axis:
-      return take( self.func, self.indices[index], axis )
+      return Take(self.func, self.indices[index], axis)
     trytake = self.func._take(index, axis)
     if trytake is not None:
-      return take( trytake, self.indices, self.axis )
+      return Take(trytake, self.indices, self.axis)
 
 class Power(Array):
 
@@ -1795,34 +1784,34 @@ class Power(Array):
     return (self.power * power(self.func, powerm1))[ext] * derivative(self.func, var, seen) \
          + (ln(self.func) * self)[ext] * derivative(self.power, var, seen)
 
-  def _power( self, n ):
+  def _power(self, n):
     func = self.func
-    newpower = n * self.power
-    if iszero( self.power % 2 ) and not iszero( newpower % 2 ):
-      func = abs( func )
-    return power( func, newpower )
+    newpower = Multiply([self.power, n])
+    if iszero(self.power % 2) and not iszero(newpower % 2):
+      func = abs(func)
+    return Power(func, newpower)
 
-  def _get( self, axis, item ):
-    return power(get(self.func, axis, item), get(self.power, axis, item))
+  def _get(self, axis, item):
+    return Power(Get(self.func, axis, item), Get(self.power, axis, item))
 
-  def _sum( self, axis ):
+  def _sum(self, axis):
     if self == (self.func**2):
-      return dot( self.func, self.func, axis )
+      return Dot([self.func, self.func], [axis])
 
   def _takediag(self, axis, rmaxis):
-    return power(takediag(self.func, axis, rmaxis), takediag(self.power, axis, rmaxis))
+    return Power(TakeDiag(self.func, axis, rmaxis), TakeDiag(self.power, axis, rmaxis))
 
-  def _take( self, index, axis ):
-    return power(take(self.func, index, axis), take(self.power, index, axis))
+  def _take(self, index, axis):
+    return Power(Take(self.func, index, axis), Take(self.power, index, axis))
 
-  def _multiply( self, other ):
-    if isinstance( other, Power ) and self.func == other.func:
-      return power( self.func, self.power + other.power )
+  def _multiply(self, other):
+    if isinstance(other, Power) and self.func == other.func:
+      return Power(self.func, Add([self.power, other.power]))
     if other == self.func:
-      return power( self.func, self.power + 1 )
+      return Power(self.func, Add([self.power, ones_like(self.power)]))
 
   def _sign( self ):
-    if iszero( self.power % 2 ):
+    if iszero(self.power % 2):
       return ones_like(self)
 
 class Pointwise( Array ):
@@ -1854,13 +1843,13 @@ class Pointwise( Array ):
     return (self.deriv(self.args)[(...,)+(_,)*var.ndim] * derivative(self.args, var, seen)).sum( 0 )
 
   def _takediag(self, axis, rmaxis):
-    return pointwise(takediag(self.args, axis+1, rmaxis+1), self.evalfun, self.deriv, self.dtype)
+    return Pointwise(TakeDiag(self.args, axis+1, rmaxis+1), self.evalfun, self.deriv, self.dtype)
 
-  def _get( self, axis, item ):
-    return pointwise( get( self.args, axis+1, item ), self.evalfun, self.deriv, self.dtype )
+  def _get(self, axis, item):
+    return Pointwise(Get(self.args, axis+1, item), self.evalfun, self.deriv, self.dtype)
 
-  def _take( self, index, axis ):
-    return pointwise( take( self.args, index, axis+1 ), self.evalfun, self.deriv, self.dtype )
+  def _take(self, index, axis):
+    return Pointwise(Take(self.args, index, axis+1), self.evalfun, self.deriv, self.dtype)
 
 class Sign( Array ):
 
@@ -1885,19 +1874,19 @@ class Sign( Array ):
     return zeros(self.shape + var.shape)
 
   def _takediag(self, axis, rmaxis):
-    return sign(takediag(self.func, axis, rmaxis))
+    return Sign(TakeDiag(self.func, axis, rmaxis))
 
-  def _get( self, axis, item ):
-    return sign( get( self.func, axis, item ) )
+  def _get(self, axis, item):
+    return Sign(Get(self.func, axis, item))
 
-  def _take( self, index, axis ):
-    return sign( take( self.func, index, axis ) )
+  def _take(self, index, axis):
+    return Sign(Take(self.func, index, axis))
 
   def _sign( self ):
     return self
 
-  def _power( self, n ):
-    if iszero( n % 2 ):
+  def _power(self, n):
+    if iszero(n % 2):
       return ones_like(self)
 
 class Sampled( Array ):
@@ -2007,59 +1996,59 @@ class Zeros( Array ):
 
   def _dot(self, other, axes):
     shape = [sh for axis, sh in enumerate(self.shape) if axis not in axes]
-    return zeros(shape, dtype=_jointdtype(self.dtype,other.dtype))
+    return Zeros(shape, dtype=_jointdtype(self.dtype,other.dtype))
 
   def _cross(self, other, axis):
     return self
 
   def _diagonalize(self, axis, newaxis):
-    return zeros(self.shape[:newaxis]+(self.shape[axis],)+self.shape[newaxis:], dtype=self.dtype)
+    return Zeros(self.shape[:newaxis]+(self.shape[axis],)+self.shape[newaxis:], dtype=self.dtype)
 
-  def _sum( self, axis ):
-    return zeros( self.shape[:axis] + self.shape[axis+1:], dtype=self.dtype )
+  def _sum(self, axis):
+    return Zeros(self.shape[:axis] + self.shape[axis+1:], dtype=self.dtype)
 
   def _transpose(self, axes):
     shape = [self.shape[n] for n in axes]
-    return zeros(shape, dtype=self.dtype)
+    return Zeros(shape, dtype=self.dtype)
 
   def _insertaxis(self, axis, length):
-    return zeros(self.shape[:axis]+(length,)+self.shape[axis:], self.dtype)
+    return Zeros(self.shape[:axis]+(length,)+self.shape[axis:], self.dtype)
 
-  def _get( self, i, item ):
-    return zeros( self.shape[:i] + self.shape[i+1:], dtype=self.dtype )
+  def _get(self, i, item):
+    return Zeros(self.shape[:i] + self.shape[i+1:], dtype=self.dtype)
 
   def _takediag(self, axis, rmaxis):
-    return zeros(self.shape[:rmaxis]+self.shape[rmaxis+1:], dtype=self.dtype)
+    return Zeros(self.shape[:rmaxis]+self.shape[rmaxis+1:], dtype=self.dtype)
 
-  def _take( self, index, axis ):
-    return zeros( self.shape[:axis] + index.shape + self.shape[axis+1:], dtype=self.dtype )
+  def _take(self, index, axis):
+    return Zeros(self.shape[:axis] + index.shape + self.shape[axis+1:], dtype=self.dtype)
 
-  def _inflate( self, dofmap, length, axis ):
+  def _inflate(self, dofmap, length, axis):
     assert not isinstance( self.shape[axis], int )
-    return zeros( self.shape[:axis] + (length,) + self.shape[axis+1:], dtype=self.dtype )
+    return Zeros(self.shape[:axis] + (length,) + self.shape[axis+1:], dtype=self.dtype)
 
-  def _power( self, n ):
+  def _power(self, n):
     return self
 
-  def _pointwise( self, evalf, deriv, dtype ):
-    value = evalf( *numpy.zeros(self.shape[0]) )
+  def _pointwise(self, evalf, deriv, dtype):
+    value = evalf(*numpy.zeros(self.shape[0]))
     assert value.dtype == dtype
     if value == 0:
-      return zeros( self.shape[1:], dtype=dtype )
+      return Zeros(self.shape[1:], dtype=dtype)
     return _inflate_scalar(value, self.shape[1:])
 
-  def _kronecker( self, axis, length, pos ):
-    return zeros( self.shape[:axis]+(length,)+self.shape[axis:], dtype=self.dtype )
+  def _kronecker(self, axis, length, pos):
+    return Zeros(self.shape[:axis]+(length,)+self.shape[axis:], dtype=self.dtype)
 
-  def _mask( self, maskvec, axis ):
-    return zeros( self.shape[:axis] + (maskvec.sum(),) + self.shape[axis+1:], dtype=self.dtype )
+  def _mask(self, maskvec, axis):
+    return Zeros(self.shape[:axis] + (maskvec.sum(),) + self.shape[axis+1:], dtype=self.dtype)
 
   def _unravel( self, axis, shape ):
     shape = self.shape[:axis] + shape + self.shape[axis+1:]
-    return zeros( shape, dtype=self.dtype )
+    return Zeros(shape, dtype=self.dtype)
 
   def _ravel(self, axis):
-    return zeros(self.shape[:axis] + (self.shape[axis]*self.shape[axis+1],) + self.shape[axis+2:], self.dtype)
+    return Zeros(self.shape[:axis] + (self.shape[axis]*self.shape[axis+1],) + self.shape[axis+2:], self.dtype)
 
 class Inflate( Array ):
 
@@ -2101,103 +2090,103 @@ class Inflate( Array ):
       assert ind[self.axis] == Range(self.func.shape[self.axis])
       yield (ind[:self.axis] + (self.dofmap,) + ind[self.axis+1:]), f
 
-  def _mask( self, maskvec, axis ):
+  def _mask(self, maskvec, axis):
     if axis != self.axis:
-      return inflate( mask( self.func, maskvec, axis ), self.dofmap, self.length, self.axis )
+      return Inflate(Mask(self.func, maskvec, axis), self.dofmap, self.length, self.axis)
     newlength = maskvec.sum()
-    selection = take( maskvec, self.dofmap, axis=0 )
+    selection = Take(maskvec, self.dofmap, axis=0)
     renumber = numpy.empty( len(maskvec), dtype=int )
     renumber[:] = newlength # out of bounds
-    renumber[maskvec] = numpy.arange( newlength )
-    newdofmap = take( renumber, take( self.dofmap, selection, axis=0 ), axis=0 )
-    newfunc = take( self.func, selection, axis=self.axis )
-    return inflate( newfunc, newdofmap, newlength, self.axis )
+    renumber[maskvec] = numpy.arange(newlength)
+    newdofmap = Take(renumber, Take(self.dofmap, Find(selection), axis=0 ), axis=0)
+    newfunc = Take(self.func, Find(selection), axis=self.axis)
+    return Inflate(newfunc, newdofmap, newlength, self.axis)
 
   def _inflate( self, dofmap, length, axis ):
     assert axis != self.axis
     if axis > self.axis:
       return
-    return inflate( inflate( self.func, dofmap, length, axis ), self.dofmap, self.length, self.axis )
+    return Inflate(Inflate(self.func, dofmap, length, axis), self.dofmap, self.length, self.axis)
 
   def _derivative(self, var, seen):
     return inflate(derivative(self.func, var, seen), self.dofmap, self.length, self.axis)
 
   def _transpose(self, axes):
     axis = axes.index(self.axis)
-    return inflate(transpose(self.func, axes), self.dofmap, self.length, axis)
+    return Inflate(Transpose(self.func, axes), self.dofmap, self.length, axis)
 
   def _insertaxis(self, axis, length):
-    return inflate(insertaxis(self.func, axis, length), self.dofmap, self.length, self.axis+(axis<=self.axis))
+    return Inflate(InsertAxis(self.func, axis, length), self.dofmap, self.length, self.axis+(axis<=self.axis))
 
-  def _get( self, axis, item ):
+  def _get(self, axis, item):
     assert axis != self.axis
-    return inflate( get(self.func,axis,item), self.dofmap, self.length, self.axis-(axis<self.axis) )
+    return Inflate(Get(self.func,axis,item), self.dofmap, self.length, self.axis-(axis<self.axis))
 
-  def _dot( self, other, axes ):
-    if isinstance( other, Inflate ) and other.axis == self.axis:
+  def _dot(self, other, axes):
+    if isinstance(other, Inflate) and other.axis == self.axis:
       assert self.dofmap == other.dofmap
       other = other.func
     else:
-      other = take( other, self.dofmap, self.axis )
-    arr = dot( self.func, other, axes )
+      other = Take(other, self.dofmap, self.axis)
+    arr = Dot([self.func, other], axes )
     if self.axis in axes:
       return arr
-    return inflate( arr, self.dofmap, self.length, self.axis - builtins.sum( axis < self.axis for axis in axes ) )
+    return Inflate(arr, self.dofmap, self.length, self.axis - builtins.sum(axis < self.axis for axis in axes))
 
-  def _multiply( self, other ):
-    if isinstance( other, Inflate ) and self.axis == other.axis:
+  def _multiply(self, other):
+    if isinstance(other, Inflate) and self.axis == other.axis:
       assert self.dofmap == other.dofmap and self.length == other.length
       take_other = other.func
     else:
-      take_other = take( other, self.dofmap, self.axis )
-    return inflate( multiply(self.func,take_other), self.dofmap, self.length, self.axis )
+      take_other = Take(other, self.dofmap, self.axis)
+    return Inflate(Multiply([self.func, take_other]), self.dofmap, self.length, self.axis)
 
-  def _add( self, other ):
+  def _add(self, other):
     if isinstance(other, Inflate) and self.axis == other.axis and self.dofmap == other.dofmap:
-      return inflate(add(self.func, other.func), self.dofmap, self.length, self.axis)
+      return Inflate(Add([self.func, other.func]), self.dofmap, self.length, self.axis)
     return BlockAdd([self, other])
 
-  def _cross( self, other, axis ):
-    if isinstance( other, Inflate ) and self.axis == other.axis:
+  def _cross(self, other, axis):
+    if isinstance(other, Inflate) and self.axis == other.axis:
       assert self.dofmap == other.dofmap
       other = other.func
     else:
-      other = take( other, self.dofmap, self.axis )
-    return inflate( cross(self.func,other,axis), self.dofmap, self.length, self.axis )
+      other = Take(other, self.dofmap, self.axis)
+    return Inflate(Cross(self.func,other,axis), self.dofmap, self.length, self.axis)
 
-  def _power( self, n ):
-    return inflate( power(self.func,n), self.dofmap, self.length, self.axis )
+  def _power(self, n):
+    return Inflate(Power(self.func, n), self.dofmap, self.length, self.axis)
 
   def _takediag(self, axis, rmaxis):
     if self.axis == axis:
-      return inflate(takediag(take(self.func, self.dofmap, rmaxis), axis, rmaxis), self.dofmap, self.length, axis)
+      return Inflate(TakeDiag(take(self.func, self.dofmap, rmaxis), axis, rmaxis), self.dofmap, self.length, axis)
     elif self.axis == rmaxis:
-      return inflate(takediag(take(self.func, self.dofmap, axis), axis, rmaxis), self.dofmap, self.length, axis)
+      return Inflate(TakeDiag(take(self.func, self.dofmap, axis), axis, rmaxis), self.dofmap, self.length, axis)
     else:
-      return inflate(takediag(self.func, axis, rmaxis), self.dofmap, self.length, self.axis-(self.axis>rmaxis))
+      return Inflate(TakeDiag(self.func, axis, rmaxis), self.dofmap, self.length, self.axis-(self.axis>rmaxis))
 
-  def _take( self, index, axis ):
+  def _take(self, index, axis):
     if axis != self.axis:
-      return inflate( take( self.func, index, axis ), self.dofmap, self.length, self.axis )
+      return Inflate(Take(self.func, index, axis), self.dofmap, self.length, self.axis)
     if index == self.dofmap:
       return self.func
 
   def _diagonalize(self, axis, newaxis):
     if self.axis != axis:
-      return inflate(diagonalize(self.func, axis, newaxis), self.dofmap, self.length, self.axis+(newaxis<=self.axis))
+      return Inflate(Diagonalize(self.func, axis, newaxis), self.dofmap, self.length, self.axis+(newaxis<=self.axis))
 
-  def _sum( self, axis ):
-    arr = sum( self.func, axis )
+  def _sum(self, axis):
+    arr = Sum(self.func, axis)
     if axis == self.axis:
       return arr
-    return inflate( arr, self.dofmap, self.length, self.axis-(axis<self.axis) )
+    return Inflate(arr, self.dofmap, self.length, self.axis-(axis<self.axis))
 
-  def _kronecker( self, axis, length, pos ):
-    return inflate( kronecker(self.func,axis,length,pos), self.dofmap, self.length, self.axis+(axis<=self.axis) )
+  def _kronecker(self, axis, length, pos):
+    return Inflate(kronecker(self.func,axis,length,pos), self.dofmap, self.length, self.axis+(axis<=self.axis))
 
   def _unravel(self, axis, shape):
     if axis != self.axis:
-      return inflate(unravel(self.func, axis, shape), self.dofmap, self.length, self.axis+(self.axis>axis))
+      return Inflate(Unravel(self.func, axis, shape), self.dofmap, self.length, self.axis+(self.axis>axis))
 
 class Diagonalize( Array ):
 
@@ -2226,48 +2215,50 @@ class Diagonalize( Array ):
   def _derivative(self, var, seen):
     return diagonalize(derivative(self.func, var, seen), self.axis, self.newaxis)
 
-  def _get( self, i, item ):
+  def _get(self, i, item):
     if i != self.axis and i != self.newaxis:
-      return diagonalize(get(self.func, i-(i>self.newaxis), item), self.axis-(i<self.axis), self.newaxis-(i<self.newaxis))
+      return Diagonalize(Get(self.func, i-(i>self.newaxis), item), self.axis-(i<self.axis), self.newaxis-(i<self.newaxis))
     if item.isconstant:
       pos, = item.eval()
-      return kronecker(get(self.func, self.axis, item), axis=self.axis if i == self.newaxis else self.newaxis-1, pos=pos, length=self.func.shape[self.axis])
+      funcs = [Zeros(self.func.shape[:self.axis]+self.func.shape[self.axis+1:], dtype=self.func.dtype)] * self.func.shape[self.axis]
+      funcs[pos] = Get(self.func, self.axis, item)
+      return Stack(funcs, axis=self.axis if i == self.newaxis else self.newaxis-1)
 
-  def _inverse( self ):
+  def _inverse(self):
     if self.axis == self.func.ndim-1 and self.newaxis == self.ndim-1:
-      return diagonalize(reciprocal(self.func), self.axis, self.newaxis)
+      return Diagonalize(reciprocal(self.func), self.axis, self.newaxis)
 
-  def _determinant( self ):
+  def _determinant(self):
     if self.axis == self.func.ndim-1 and self.newaxis == self.ndim-1:
-      return product(self.func, self.axis)
+      return Product(Transpose(self.func, list(range(self.axis))+list(range(self.axis+1,self.func.ndim))+[self.axis]))
 
-  def _multiply( self, other ):
-    return diagonalize(multiply(self.func, takediag(other, self.axis, self.newaxis)), self.axis, self.newaxis)
+  def _multiply(self, other):
+    return Diagonalize(Multiply([self.func, TakeDiag(other, self.axis, self.newaxis)]), self.axis, self.newaxis)
 
-  def _dot( self, other, axes ):
+  def _dot(self, other, axes):
     faxes = [axis-(axis>self.newaxis) for axis in axes if axis not in (self.axis, self.newaxis)]
     assert self.axis not in faxes
     if len(faxes) < len(axes): # one of or both diagonalized axes are summed
       if len(faxes) == len(axes) - 2:
         faxes.append(self.axis)
-      retval = dot(self.func, takediag(other, self.axis, self.newaxis), faxes)
+      retval = Dot([self.func, TakeDiag(other, self.axis, self.newaxis)], faxes)
       if len(faxes) == len(axes) - 1 and self.axis in axes:
         axis = self.axis-builtins.sum(ax<self.axis for ax in faxes)
         newaxis = self.newaxis-builtins.sum(ax<self.newaxis for ax in faxes)
-        retval = transpose(retval, list(range(axis))+list(range(axis+1,newaxis))+[axis]+list(range(newaxis,retval.ndim)))
+        retval = Transpose(retval, list(range(axis))+list(range(axis+1,newaxis))+[axis]+list(range(newaxis,retval.ndim)))
       return retval
-    return diagonalize(dot(self.func, takediag(other, self.axis, self.newaxis), faxes), self.axis-builtins.sum(ax<self.axis for ax in faxes), self.newaxis-builtins.sum(ax<self.newaxis for ax in faxes))
+    return Diagonalize(Dot([self.func, TakeDiag(other, self.axis, self.newaxis)], faxes), self.axis-builtins.sum(ax<self.axis for ax in faxes), self.newaxis-builtins.sum(ax<self.newaxis for ax in faxes))
 
-  def _add( self, other ):
+  def _add(self, other):
     if isinstance(other, Diagonalize) and other.axis == self.axis and other.newaxis == self.newaxis:
-      return diagonalize(add(self.func, other.func), self.axis, self.newaxis)
+      return Diagonalize(Add([self.func, other.func]), self.axis, self.newaxis)
 
-  def _sum( self, axis ):
+  def _sum(self, axis):
     if axis == self.newaxis:
       return self.func
     if axis == self.axis:
-      return transpose(self.func, list(range(self.axis))+list(range(self.axis+1,self.newaxis))+[self.axis]+list(range(self.newaxis,self.func.ndim)))
-    return diagonalize(sum(self.func, axis-(axis>self.newaxis)), self.axis-(axis<self.axis), self.newaxis-(axis<self.newaxis))
+      return Transpose(self.func, list(range(self.axis))+list(range(self.axis+1,self.newaxis))+[self.axis]+list(range(self.newaxis,self.func.ndim)))
+    return Diagonalize(Sum(self.func, axis-(axis>self.newaxis)), self.axis-(axis<self.axis), self.newaxis-(axis<self.newaxis))
 
   def _transpose(self, axes):
     axis = axes.index(self.axis)
@@ -2278,36 +2269,36 @@ class Diagonalize( Array ):
       axes[newaxis] = self.axis
       axis, newaxis = newaxis, axis
     newaxes = [ax-(ax>self.newaxis) for ax in axes[:newaxis]+axes[newaxis+1:]]
-    return diagonalize(transpose(self.func, newaxes), axis, newaxis)
+    return Diagonalize(Transpose(self.func, newaxes), axis, newaxis)
 
   def _insertaxis(self, axis, length):
-    return diagonalize(insertaxis(self.func, axis-(axis>self.newaxis), length), self.axis+(axis<=self.axis), self.newaxis+(axis<=self.newaxis))
+    return Diagonalize(InsertAxis(self.func, axis-(axis>self.newaxis), length), self.axis+(axis<=self.axis), self.newaxis+(axis<=self.newaxis))
 
   def _takediag(self, axis, rmaxis):
     if self.axis == axis and self.newaxis == rmaxis:
       return self.func
 
-  def _take( self, index, axis ):
+  def _take(self, index, axis):
     if axis not in (self.axis, self.newaxis):
-      return diagonalize(take(self.func, index, axis-(axis>self.newaxis)), self.axis, self.newaxis)
+      return Diagonalize(Take(self.func, index, axis-(axis>self.newaxis)), self.axis, self.newaxis)
     if numeric.isint(self.func.shape[self.axis]):
-      diag = diagonalize(take(self.func, index, self.axis), self.axis, self.newaxis)
-      return inflate(diag, index, self.func.shape[self.axis], self.newaxis if axis == self.axis else self.axis)
+      diag = Diagonalize(Take(self.func, index, self.axis), self.axis, self.newaxis)
+      return Inflate(diag, index, self.func.shape[self.axis], self.newaxis if axis == self.axis else self.axis)
 
-  def _mask( self, maskvec, axis ):
+  def _mask(self, maskvec, axis):
     if axis not in (self.axis, self.newaxis):
-      return diagonalize(mask(self.func, maskvec, axis-(axis>self.newaxis)), self.axis, self.newaxis)
+      return Diagonalize(Mask(self.func, maskvec, axis-(axis>self.newaxis)), self.axis, self.newaxis)
     indices, = numpy.where(maskvec)
     if not numpy.equal(numpy.diff(indices), 1).all():
       return
     # consecutive sub-block
     ax = self.axis if axis == self.newaxis else self.newaxis
-    masked = diagonalize(mask(self.func, maskvec, self.axis), self.axis, self.newaxis)
-    return concatenate([zeros(masked.shape[:ax] + (indices[0],) + masked.shape[ax+1:]), masked, zeros(masked.shape[:ax] + (self.shape[ax]-(indices[-1]+1),) + masked.shape[ax+1:])], axis=ax)
+    masked = Diagonalize(Mask(self.func, maskvec, self.axis), self.axis, self.newaxis)
+    return Concatenate([Zeros(masked.shape[:ax] + (indices[0],) + masked.shape[ax+1:], dtype=self.dtype), masked, Zeros(masked.shape[:ax] + (self.shape[ax]-(indices[-1]+1),) + masked.shape[ax+1:], dtype=self.dtype)], axis=ax)
 
   def _unravel(self, axis, shape):
     if axis == self.axis:
-      return ravel(diagonalize(diagonalize(unravel(self.func, self.axis, shape), self.axis, self.newaxis+1), self.axis+1, self.newaxis+2), self.newaxis+1)
+      return Ravel(Diagonalize(Diagonalize(Unravel(self.func, self.axis, shape), self.axis, self.newaxis+1), self.axis+1, self.newaxis+2), self.newaxis+1)
 
 class Guard( Array ):
   'bar all simplifications'
@@ -2340,7 +2331,7 @@ class TrigNormal( Array ):
   def _dot( self, other, axes ):
     assert axes == (0,)
     if isinstance( other, (TrigTangent,TrigNormal) ) and self.angle == other.angle:
-      return asarray( 1 if isinstance(other,TrigNormal) else 0 )
+      return Constant(1. if isinstance(other,TrigNormal) else 0.)
 
 class TrigTangent( Array ):
   '-sin, cos'
@@ -2356,10 +2347,10 @@ class TrigTangent( Array ):
   def evalf( self, angle ):
     return numpy.array([ -numpy.sin(angle), numpy.cos(angle) ]).T
 
-  def _dot( self, other, axes ):
+  def _dot(self, other, axes):
     assert axes == (0,)
     if isinstance( other, (TrigTangent,TrigNormal) ) and self.angle == other.angle:
-      return asarray( 1 if isinstance(other,TrigTangent) else 0 )
+      return Constant(1. if isinstance(other,TrigTangent) else 0.)
 
 class Find( Array ):
   'indices of boolean index vector'
@@ -2425,7 +2416,7 @@ class Stack( Array ):
 
   def _get(self, i, item):
     if i != self.axis:
-      return Stack([get(func,i-(i>self.axis),item) if func is not None else None for func in self.funcs], self.axis-(i<self.axis))
+      return Stack([Get(func,i-(i>self.axis),item) if func is not None else None for func in self.funcs], self.axis-(i<self.axis))
     if item.isconstant:
       item, = item.eval()
       func = self.funcs[item]
@@ -2438,7 +2429,7 @@ class Stack( Array ):
       return Stack([func1 if func2 is None else func2 if func1 is None else Add([func1, func2]) for func1, func2 in zip(self.funcs, other.funcs)], self.axis)
 
   def _multiply(self, other):
-    return Stack([multiply(func, get(other, self.axis, ifunc)) if func is not None else None for ifunc, func in enumerate(self.funcs)], self.axis)
+    return Stack([Multiply([func, Get(other, self.axis, ifunc)]) if func is not None else None for ifunc, func in enumerate(self.funcs)], self.axis)
 
   def _dot(self, other, axes):
     newaxis = self.axis
@@ -2449,46 +2440,46 @@ class Stack( Array ):
         newaxes.append( ax )
       elif ax > self.axis:
         newaxes.append( ax-1 )
-    return util.sum(dot(self.funcs[ifunc], get(other, self.axis, ifunc), newaxes) for ifunc in self.nz) if len(newaxes) < len(axes) \
-      else Stack([dot(func, get(other, self.axis, ifunc), newaxes) if func is not None else None for ifunc, func in enumerate(self.funcs)], newaxis)
+    return util.sum(Dot([self.funcs[ifunc], Get(other, self.axis, ifunc)], newaxes) for ifunc in self.nz) if len(newaxes) < len(axes) \
+      else Stack([Dot([func, Get(other, self.axis, ifunc)], newaxes) if func is not None else None for ifunc, func in enumerate(self.funcs)], newaxis)
 
   def _sum(self, axis):
     if axis == self.axis:
       return util.sum(func for func in self.funcs if func is not None)
-    return Stack([sum(func, axis-(axis>self.axis)) if func is not None else None for func in self.funcs], self.axis-(axis<self.axis))
+    return Stack([Sum(func, axis-(axis>self.axis)) if func is not None else None for func in self.funcs], self.axis-(axis<self.axis))
 
   def _transpose(self, axes):
     newaxis = axes.index(self.axis)
     newaxes = [ax-(ax>self.axis) for ax in axes if ax != self.axis]
-    return Stack([transpose(func, newaxes) if func is not None else None for func in self.funcs], newaxis)
+    return Stack([Transpose(func, newaxes) if func is not None else None for func in self.funcs], newaxis)
 
   def _takediag(self, axis, rmaxis):
     if self.axis == rmaxis:
-      return Stack([get(func, axis, ifunc) if func is not None else None for ifunc, func in enumerate(self.funcs)], axis)
+      return Stack([Get(func, axis, ifunc) if func is not None else None for ifunc, func in enumerate(self.funcs)], axis)
     elif self.axis == axis:
-      return Stack([get(func, rmaxis-1, ifunc) if func is not None else None for ifunc, func in enumerate(self.funcs)], axis)
+      return Stack([Get(func, rmaxis-1, ifunc) if func is not None else None for ifunc, func in enumerate(self.funcs)], axis)
     else:
-      return Stack([takediag(func, axis-(self.axis<axis), rmaxis-(self.axis<rmaxis)) if func is not None else None for func in self.funcs], self.axis-(rmaxis<self.axis))
+      return Stack([TakeDiag(func, axis-(self.axis<axis), rmaxis-(self.axis<rmaxis)) if func is not None else None for func in self.funcs], self.axis-(rmaxis<self.axis))
 
   def _take(self, index, axis):
     if axis != self.axis:
-      return Stack([take(func, index, axis-(axis>self.axis)) if func is not None else None for func in self.funcs], self.axis)
+      return Stack([Take(func, index, axis-(axis>self.axis)) if func is not None else None for func in self.funcs], self.axis)
     # TODO select axis in index
 
   def _power(self, n):
-    return Stack([power(func, get(n, self.axis, ifunc)) if func is not None else None for ifunc, func in enumerate(self.funcs)], self.axis)
+    return Stack([Power(func, Get(n, self.axis, ifunc)) if func is not None else None for ifunc, func in enumerate(self.funcs)], self.axis)
 
   def _pointwise(self, evalf, deriv, dtype):
     if self.axis == 0:
       return
-    value = evalf( *numpy.zeros(self.shape[0]) )
+    value = evalf(*numpy.zeros(self.shape[0]))
     assert value.dtype == dtype
     if value == 0:
       return Stack([pointwise(func, evalf, deriv, dtype) if func is not None else None for func in self.funcs], self.axis-1)
 
   def _mask(self, maskvec, axis):
     if axis != self.axis:
-      return Stack([mask(func, maskvec, axis-(axis>self.axis)) if func is not None else None for func in self.funcs], self.axis)
+      return Stack([Mask(func, maskvec, axis-(axis>self.axis)) if func is not None else None for func in self.funcs], self.axis)
     newlength = maskvec.sum()
     funcs = [func for ifunc, func in enumerate(self.funcs) if maskvec[ifunc]]
     if all(func is None for func in funcs):
@@ -2496,7 +2487,7 @@ class Stack( Array ):
     return Stack(funcs, self.axis)
 
   def _insertaxis(self, axis, length):
-    return Stack([insertaxis(func, axis-(axis>self.axis), length) if func is not None else None for func in self.funcs], self.axis+(self.axis>=axis))
+    return Stack([InsertAxis(func, axis-(axis>self.axis), length) if func is not None else None for func in self.funcs], self.axis+(self.axis>=axis))
 
   def _product(self):
     if self.axis == self.ndim-1:
@@ -2614,35 +2605,35 @@ class Ravel( Array ):
   def evalf( self, f ):
     return f.reshape( f.shape[:self.axis+1] + (f.shape[self.axis+1]*f.shape[self.axis+2],) + f.shape[self.axis+3:] )
 
-  def _multiply( self, other ):
+  def _multiply(self, other):
     if isinstance(other, Ravel) and other.axis == self.axis and other.func.shape[self.axis:self.axis+2] == self.func.shape[self.axis:self.axis+2]:
-      return ravel(multiply(self.func, other.func), self.axis)
-    return ravel(multiply(self.func, unravel(other, self.axis, self.func.shape[self.axis:self.axis+2])), self.axis)
+      return Ravel(Multiply([self.func, other.func]), self.axis)
+    return Ravel(Multiply([self.func, Unravel(other, self.axis, self.func.shape[self.axis:self.axis+2])]), self.axis)
 
-  def _add( self, other ):
+  def _add(self, other):
     if isinstance(other, Ravel) and other.axis == self.axis and other.func.shape[self.axis:self.axis+2] == self.func.shape[self.axis:self.axis+2]:
-      return ravel( add( self.func, other.func ), self.axis )
-    return ravel(add(self.func, unravel(other, self.axis, self.func.shape[self.axis:self.axis+2])), self.axis)
+      return Ravel(Add([self.func, other.func]), self.axis)
+    return Ravel(Add([self.func, Unravel(other, self.axis, self.func.shape[self.axis:self.axis+2])]), self.axis)
 
-  def _get( self, i, item ):
+  def _get(self, i, item):
     if i != self.axis:
-      return ravel( get( self.func, i+(i>self.axis), item ), self.axis-(i<self.axis) )
-    if item.isconstant and numeric.isint( self.func.shape[self.axis+1] ):
+      return Ravel(Get(self.func, i+(i>self.axis), item), self.axis-(i<self.axis))
+    if item.isconstant and numeric.isint(self.func.shape[self.axis+1]):
       item, = item.eval()
-      i, j = divmod( item, self.func.shape[self.axis+1] )
-      return get( get( self.func, self.axis, i ), self.axis, j )
+      i, j = divmod(item, self.func.shape[self.axis+1])
+      return Get(Get(self.func, self.axis, i), self.axis, j)
 
   def _dot( self, other, axes ):
     newaxes = [ax+(ax>=self.axis) for ax in axes]
     if self.axis in axes:
-      return dot(self.func, unravel(other, self.axis, self.func.shape[self.axis:self.axis+2]), newaxes+[self.axis])
+      return Dot([self.func, Unravel(other, self.axis, self.func.shape[self.axis:self.axis+2])], sorted(newaxes+[self.axis]))
     else:
-      return ravel(dot(self.func, unravel(other, self.axis, self.func.shape[self.axis:self.axis+2]), newaxes), self.axis-builtins.sum(ax<self.axis for ax in axes))
+      return Ravel(Dot([self.func, Unravel(other, self.axis, self.func.shape[self.axis:self.axis+2])], newaxes), self.axis-builtins.sum(ax<self.axis for ax in axes))
 
-  def _sum( self, axis ):
+  def _sum(self, axis):
     if axis == self.axis:
-      return sum( self.func, [axis,axis+1] )
-    return ravel( sum( self.func, axis+(axis>self.axis) ), self.axis-(axis<self.axis) )
+      return Sum(Sum(self.func, axis), axis)
+    return Ravel(Sum(self.func, axis+(axis>self.axis) ), self.axis-(axis<self.axis))
 
   def _derivative(self, var, seen):
     return ravel(derivative(self.func, var, seen), axis=self.axis)
@@ -2651,35 +2642,35 @@ class Ravel( Array ):
     ravelaxis = axes.index(self.axis)
     funcaxes = [ax+(ax>self.axis) for ax in axes]
     funcaxes = funcaxes[:ravelaxis+1] + [self.axis+1] + funcaxes[ravelaxis+1:]
-    return ravel(transpose(self.func, funcaxes), ravelaxis)
+    return Ravel(Transpose(self.func, funcaxes), ravelaxis)
 
-  def _kronecker( self, axis, length, pos ):
-    return ravel( kronecker( self.func, axis+(axis>self.axis), length, pos ), self.axis+(axis<=self.axis) )
+  def _kronecker(self, axis, length, pos):
+    return Ravel(kronecker(self.func, axis+(axis>self.axis), length, pos), self.axis+(axis<=self.axis))
 
   def _takediag(self, axis, rmaxis):
     if not {self.axis, self.axis+1} & {axis, rmaxis}:
-      return ravel(takediag(self.func, axis+(axis>self.axis), rmaxis+(rmaxis>self.axis)), self.axis-(self.axis>rmaxis))
+      return Ravel(TakeDiag(self.func, axis+(axis>self.axis), rmaxis+(rmaxis>self.axis)), self.axis-(self.axis>rmaxis))
 
   def _diagonalize(self, axis, newaxis):
     if axis != self.axis:
-      return ravel(diagonalize(self.func, axis+(axis>self.axis), newaxis+(newaxis>self.axis)), self.axis+(self.axis>=newaxis))
+      return Ravel(Diagonalize(self.func, axis+(axis>self.axis), newaxis+(newaxis>self.axis)), self.axis+(self.axis>=newaxis))
 
   def _take(self, index, axis):
     if axis not in (self.axis, self.axis+1):
-      return ravel(take(self.func, index, axis+(axis>self.axis)), self.axis)
+      return Ravel(Take(self.func, index, axis+(axis>self.axis)), self.axis)
 
   def _unravel( self, axis, shape ):
     if axis != self.axis:
-      return ravel(unravel(self.func, axis+(axis>self.axis), shape), self.axis+(self.axis>axis))
+      return Ravel(Unravel(self.func, axis+(axis>self.axis), shape), self.axis+(self.axis>axis))
     elif shape == self.func.shape[axis:axis+2]:
       return self.func
 
   def _insertaxis(self, axis, length):
-    return ravel(insertaxis(self.func, axis+(axis>self.axis), length), self.axis+(axis<=self.axis))
+    return Ravel(InsertAxis(self.func, axis+(axis>self.axis), length), self.axis+(axis<=self.axis))
 
   def _mask(self, maskvec, axis):
     if axis != self.axis:
-      return ravel(mask(self.func, maskvec, axis+(axis>self.axis)), self.axis)
+      return Ravel(Mask(self.func, maskvec, axis+(axis>self.axis)), self.axis)
 
   @property
   def blocks(self):
@@ -2753,35 +2744,35 @@ class Mask( Array ):
 
   def _get(self, i, item):
     if i != self.axis:
-      return mask(get(self.func, i, item), self.mask, self.axis-(i<self.axis))
+      return Mask(Get(self.func, i, item), self.mask, self.axis-(i<self.axis))
     if item.isconstant:
       item, = item.eval()
-      return get(self.func, i, numpy.arange(len(self.mask))[self.mask][item])
+      return Get(self.func, i, numpy.arange(len(self.mask))[self.mask][item])
 
   def _sum(self, axis):
     if axis != self.axis:
-      return mask(sum(self.func, axis), self.mask, self.axis-(axis<self.axis))
+      return Mask(sum(self.func, axis), self.mask, self.axis-(axis<self.axis))
     if self.shape[axis] == 1:
       (item,), = self.mask.nonzero()
-      return get(self.func, axis, item)
+      return Get(self.func, axis, item)
 
   def _take(self, index, axis):
     if axis != self.axis:
-      return mask(take(self.func, index, axis), self.mask, self.axis)
+      return Mask(Take(self.func, index, axis), self.mask, self.axis)
 
   def _product(self):
     if self.axis != self.ndim-1:
-      return mask(product(self.func, -1), self.mask, self.axis)
+      return Mask(Product(self.func), self.mask, self.axis)
 
   def _mask(self, maskvec, axis):
     if axis == self.axis:
       newmask = numpy.zeros(len(self.mask), dtype=bool)
       newmask[self.mask] = maskvec
-      return mask(self.func, newmask, self.axis)
+      return Mask(self.func, newmask, self.axis)
 
   def _takediag(self, axis, rmaxis):
     if self.axis not in (axis, rmaxis):
-      return mask(takediag(self.func, axis, rmaxis), self.mask, self.axis-(rmaxis<self.axis))
+      return Mask(TakeDiag(self.func, axis, rmaxis), self.mask, self.axis-(rmaxis<self.axis))
 
 class FindTransform(Array):
 
