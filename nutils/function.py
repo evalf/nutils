@@ -41,18 +41,6 @@ ARGUMENTS = 'Arguments'
 
 TOKENS = CACHE, TRANS, OPPTRANS, POINTS, ARGUMENTS
 
-class orderedset(frozenset):
-  __slots__ = '_items',
-
-  def __init__(self, items):
-    self._items = tuple(items)
-
-  def __iter__(self):
-    return iter(self._items)
-
-  def __len__(self):
-    return len(self._items)
-
 class Evaluable( cache.Immutable ):
   'Base class'
 
@@ -1335,10 +1323,10 @@ class Determinant( Array ):
 
 class Multiply(Array):
 
-  def __init__(self, funcs:orderedset):
+  def __init__(self, funcs:util.frozenmultiset):
+    self.funcs = funcs
     func1, func2 = funcs
     assert isarray(func1) and isarray(func2) and func1.shape == func2.shape
-    self.funcs = func1, func2
     super().__init__(args=self.funcs, shape=func1.shape, dtype=_jointdtype(func1.dtype,func2.dtype))
 
   def edit(self, op):
@@ -1346,8 +1334,7 @@ class Multiply(Array):
 
   @cache.property
   def simplified(self):
-    func1 = self.funcs[0].simplified
-    func2 = self.funcs[1].simplified
+    func1, func2 = [func.simplified for func in self.funcs]
     if func1 == func2:
       return power(func1, 2).simplified
     retval = func1._multiply(func2)
@@ -1377,11 +1364,11 @@ class Multiply(Array):
       return func1 * (func2+1)
     if other == func2:
       return func2 * (func1+1)
-    if isinstance( other, Multiply ):
-      common = _findcommon( self.funcs, other.funcs )
-      if common:
-        f, (g1,g2) = common
-        return f * add( g1, g2 )
+    if isinstance(other, Multiply) and not self.funcs.isdisjoint(other.funcs):
+      f = next(iter(self.funcs & other.funcs))
+      g1, = self.funcs - [f]
+      g2, = other.funcs - [f]
+      return f * add( g1, g2 )
 
   def _determinant( self ):
     func1, func2 = self.funcs
@@ -1441,10 +1428,10 @@ class Multiply(Array):
 
 class Add(Array):
 
-  def __init__(self, funcs:orderedset):
+  def __init__(self, funcs:util.frozenmultiset):
+    self.funcs = funcs
     func1, func2 = funcs
     assert isarray(func1) and isarray(func2) and func1.shape == func2.shape
-    self.funcs = func1, func2
     super().__init__(args=self.funcs, shape=func1.shape, dtype=_jointdtype(func1.dtype,func2.dtype))
 
   def edit(self, op):
@@ -1452,8 +1439,7 @@ class Add(Array):
 
   @cache.property
   def simplified(self):
-    func1 = self.funcs[0].simplified
-    func2 = self.funcs[1].simplified
+    func1, func2 = [func.simplified for func in self.funcs]
     if iszero(func1):
       return func2
     if iszero(func2):
@@ -1474,10 +1460,8 @@ class Add(Array):
     return arr1 + arr2
 
   def _sum( self, axis ):
-    sum1 = sum( self.funcs[0], axis )
-    sum2 = sum( self.funcs[1], axis )
-    n1 = self.funcs[0].shape[axis]
-    n2 = self.funcs[1].shape[axis]
+    sum1, sum2 = [sum(func, axis) for func in self.funcs]
+    n1, n2 = [func.shape[axis] for func in self.funcs]
     return sum1 + sum2 if n1 == n2 else sum1 * n2 + sum2 * n1
 
   def _derivative(self, var, seen):
@@ -1512,7 +1496,7 @@ class Add(Array):
 class BlockAdd( Array ):
   'block addition (used for DG)'
 
-  def __init__(self, funcs:orderedset):
+  def __init__(self, funcs:util.frozenmultiset):
     self.funcs = funcs
     shapes = set(func.shape for func in funcs)
     assert len(shapes) == 1, 'multiple shapes in BlockAdd'
@@ -1585,10 +1569,10 @@ class BlockAdd( Array ):
 
 class Dot(Array):
 
-  def __init__(self, funcs:orderedset, axes:tuple):
+  def __init__(self, funcs:util.frozenmultiset, axes:tuple):
+    self.funcs = funcs
     func1, func2 = funcs
     assert isarray(func1) and isarray(func2) and func1.shape == func2.shape
-    self.funcs = func1, func2
     self.axes = axes
     assert all(0 <= ax < func1.ndim for ax in axes)
     assert all(ax1 < ax2 for ax1, ax2 in zip(axes[:-1], axes[1:]))
@@ -1606,8 +1590,7 @@ class Dot(Array):
 
   @cache.property
   def simplified(self):
-    func1 = self.funcs[0].simplified
-    func2 = self.funcs[1].simplified
+    func1, func2 = [func.simplified for func in self.funcs]
     if len(self.axes) == 0:
       return multiply(func1, func2).simplified
     if iszero(func1) or iszero(func2):
@@ -1640,11 +1623,11 @@ class Dot(Array):
          + dot(func1[ext], derivative(func2, var, seen), self.axes)
 
   def _add( self, other ):
-    if isinstance( other, Dot ) and self.axes == other.axes:
-      common = _findcommon( self.funcs, other.funcs )
-      if common:
-        f, (g1,g2) = common
-        return dot( f, g1 + g2, self.axes )
+    if isinstance(other, Dot) and self.axes == other.axes and not self.funcs.isdisjoint(other.funcs):
+      f = next(iter(self.funcs & other.funcs))
+      g1, = self.funcs - [f]
+      g2, = other.funcs - [f]
+      return dot(f, g1 + g2, self.axes)
 
   def _takediag(self, axis, rmaxis):
     func1, func2 = self.funcs
@@ -2908,20 +2891,6 @@ def _obj2str( obj ):
   if obj is Ellipsis:
     return '...'
   return str(obj)
-
-def _findcommon( a, b ):
-  'find common item in 2x2 data'
-
-  a1, a2 = a
-  b1, b2 = b
-  if a1 == b1:
-    return a1, (a2,b2)
-  if a1 == b2:
-    return a1, (a2,b1)
-  if a2 == b1:
-    return a2, (a1,b2)
-  if a2 == b2:
-    return a2, (a1,b1)
 
 def _invtrans(trans):
   trans = numpy.asarray(trans)

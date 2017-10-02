@@ -471,6 +471,45 @@ class frozendict(collections.abc.Mapping):
 
   copy = lambda self: self.__base.copy()
 
+class frozenmultiset(collections.abc.Container):
+  __slots__ = '__items', '__key'
+
+  def __new__(cls, items):
+    if isinstance(items, frozenmultiset):
+      return items
+    self = object.__new__(cls)
+    self.__items = tuple(items)
+    self.__key = frozenset((item, self.__items.count(item)) for item in self.__items)
+    return self
+
+  def __and__(self, other):
+    items = list(self.__items)
+    isect = []
+    for item in other:
+      try:
+        items.remove(item)
+      except ValueError:
+        pass
+      else:
+        isect.append(item)
+    return frozenmultiset(isect)
+
+  def __sub__(self, other):
+    items = list(self.__items)
+    for item in other:
+      items.remove(item)
+    return frozenmultiset(items)
+
+  __reduce__ = lambda self: (frozenmultiset, (self.__items,))
+  __hash__ = lambda self: hash(self.__key)
+  __eq__ = lambda self, other: isinstance(other, frozenmultiset) and self.__key == other.__key
+  __contains__ = lambda self, item: item in self.__items
+  __iter__ = lambda self: iter(self.__items)
+  __len__ = lambda self: len(self.__items)
+  __bool__ = lambda self: bool(self.__items)
+
+  isdisjoint = lambda self, other: not any(item in self.__items for item in other)
+
 def enforcetypes(f, signature=None):
   if signature is None:
     signature = inspect.signature(f)
