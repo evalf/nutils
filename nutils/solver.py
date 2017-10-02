@@ -422,7 +422,7 @@ def pseudotime(target, residual, inertia, timestep, lhs0, residual0=None, constr
     resnorm = numpy.linalg.norm( res[~constrain] )
 
 
-def thetamethod(target, residual, inertia, timestep, lhs0, theta, target0=None, constrain=None, newtontol=1e-10, *, arguments=None, **newtonargs):
+def thetamethod(target, residual, inertia, timestep, lhs0, theta, target0='_thetamethod_target0', constrain=None, newtontol=1e-10, *, arguments=None, **newtonargs):
   '''solve time dependent problem using the theta method
 
   Parameters
@@ -457,11 +457,9 @@ def thetamethod(target, residual, inertia, timestep, lhs0, theta, target0=None, 
       Coefficient vector for all timesteps after the initial condition.
   '''
 
+  assert target != target0, '`target` should not be equal to `target0`'
   assert target not in (arguments or {}), '`target` should not be defined in `arguments`'
-  if target0:
-    assert target0 not in (arguments or {}), '`target0` should not be defined in `arguments`'
-  else:
-    target0 = object()
+  assert target0 not in (arguments or {}), '`target0` should not be defined in `arguments`'
   lhs = lhs0
   res0 = residual * theta + inertia / timestep
   res1 = residual * (1-theta) - inertia / timestep

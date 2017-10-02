@@ -23,8 +23,9 @@ class check(TestCase):
     numpy.random.seed(0)
     self.args = [(numpy.random.uniform(size=shape+self.basis.shape) * self.basis).sum(-1) for shape in self.shapes]
     self.points, weights = self.elem.reference.getischeme('uniform2')
+    self.evalargs = {'_transforms': (self.elem.transform,), '_points': self.points}
     self.argsfun = function.Tuple(self.args)
-    self.n_op_argsfun = self.n_op(*self.argsfun.simplified.eval(self.elem, self.points))
+    self.n_op_argsfun = self.n_op(*self.argsfun.simplified.eval(**self.evalargs))
     self.op_args = self.op(*self.args)
     self.shapearg = numpy.random.uniform(size=self.op_args.shape)
 
@@ -43,16 +44,16 @@ class check(TestCase):
     constargs = [numpy.random.uniform(size=shape) for shape in self.shapes]
     self.assertArrayAlmostEqual(decimal=15,
       desired=self.n_op(*[constarg[_] for constarg in constargs]),
-      actual=self.op(*constargs).eval(self.elem, self.points))
+      actual=self.op(*constargs).eval(**self.evalargs))
 
   def test_eval(self):
     self.assertArrayAlmostEqual(decimal=15,
-      actual=self.op_args.eval(self.elem, self.points),
+      actual=self.op_args.eval(**self.evalargs),
       desired=self.n_op_argsfun)
 
   def test_simplified(self):
     self.assertArrayAlmostEqual(decimal=15,
-      actual=self.op_args.simplified.eval(self.elem, self.points),
+      actual=self.op_args.simplified.eval(**self.evalargs),
       desired=self.n_op_argsfun)
 
   def test_getitem(self):
@@ -60,31 +61,31 @@ class check(TestCase):
       s = (Ellipsis,) + (slice(None),)*idim + (self.op_args.shape[idim]//2,) + (slice(None),)*(self.op_args.ndim-idim-1)
       self.assertArrayAlmostEqual(decimal=15,
         desired=self.n_op_argsfun[s],
-        actual=self.op_args[s].simplified.eval(self.elem, self.points))
+        actual=self.op_args[s].simplified.eval(**self.evalargs))
 
   def test_transpose(self):
     trans = numpy.arange(self.op_args.ndim,0,-1) % self.op_args.ndim
     self.assertArrayAlmostEqual(decimal=15,
       desired=numpy.transpose(self.n_op_argsfun, [0]+list(trans+1)),
-      actual=function.transpose(self.op_args, trans).simplified.eval(self.elem, self.points))
+      actual=function.transpose(self.op_args, trans).simplified.eval(**self.evalargs))
 
   def test_expand_dims(self):
     axis = (self.op_args.ndim+1) // 2
     self.assertArrayAlmostEqual(decimal=15,
       desired=numpy.expand_dims(self.n_op_argsfun, axis+1),
-      actual=function.expand_dims(self.op_args, axis).simplified.eval(self.elem, self.points))
+      actual=function.expand_dims(self.op_args, axis).simplified.eval(**self.evalargs))
 
   def test_takediag(self):
     for ax1, ax2 in self.pairs:
       self.assertArrayAlmostEqual(decimal=15,
         desired=numeric.takediag(self.n_op_argsfun, ax1+1, ax2+1),
-        actual=function.takediag(self.op_args, ax1, ax2 ).simplified.eval(self.elem, self.points))
+        actual=function.takediag(self.op_args, ax1, ax2 ).simplified.eval(**self.evalargs))
 
   def test_eig(self):
     if self.op_args.dtype == float:
       for ax1, ax2 in self.pairs:
-        A = self.op_args.simplified.eval(self.elem, self.points)
-        L, V = function.eig(self.op_args, axes=(ax1,ax2)).simplified.eval(self.elem, self.points)
+        A = self.op_args.simplified.eval(**self.evalargs)
+        L, V = function.eig(self.op_args, axes=(ax1,ax2)).simplified.eval(**self.evalargs)
         self.assertArrayAlmostEqual(decimal=12,
           actual=(numpy.expand_dims(V,ax2+1) * numpy.expand_dims(L,ax2+2).swapaxes(ax1+1,ax2+2)).sum(ax2+2),
           desired=(numpy.expand_dims(A,ax2+1) * numpy.expand_dims(V,ax2+2).swapaxes(ax1+1,ax2+2)).sum(ax2+2))
@@ -95,31 +96,31 @@ class check(TestCase):
       if sh >= 2:
         self.assertArrayAlmostEqual(decimal=15,
           desired=numpy.take(self.n_op_argsfun, indices, axis=iax+1),
-          actual=function.take(self.op_args, indices, axis=iax).simplified.eval(self.elem, self.points))
+          actual=function.take(self.op_args, indices, axis=iax).simplified.eval(**self.evalargs))
 
   def test_diagonalize(self):
     for axis in range(self.op_args.ndim):
       for newaxis in range(axis+1, self.op_args.ndim+1):
         self.assertArrayAlmostEqual(decimal=15,
           desired=numeric.diagonalize(self.n_op_argsfun, axis+1, newaxis+1),
-          actual=function.diagonalize(self.op_args, axis, newaxis).simplified.eval(self.elem, self.points))
+          actual=function.diagonalize(self.op_args, axis, newaxis).simplified.eval(**self.evalargs))
 
   def test_product(self):
     for iax in range(self.op_args.ndim):
       self.assertArrayAlmostEqual(decimal=15,
         desired=numpy.product(self.n_op_argsfun, axis=iax+1),
-        actual=function.product(self.op_args, axis=iax).simplified.eval(self.elem, self.points))
+        actual=function.product(self.op_args, axis=iax).simplified.eval(**self.evalargs))
 
   def test_power(self):
     self.assertArrayAlmostEqual(decimal=13,
       desired=numpy.power(self.n_op_argsfun, 3),
-      actual=function.power(self.op_args, 3).simplified.eval(self.elem, self.points))
+      actual=function.power(self.op_args, 3).simplified.eval(**self.evalargs))
 
   def test_concatenate(self):
     for idim in range(self.op_args.ndim):
       self.assertArrayAlmostEqual(decimal=15,
         desired=numpy.concatenate([self.n_op_argsfun, self.shapearg[_].repeat(len(self.points),0)], axis=idim+1),
-        actual=function.concatenate([self.op_args, self.shapearg], axis=idim).simplified.eval(self.elem, self.points))
+        actual=function.concatenate([self.op_args, self.shapearg], axis=idim).simplified.eval(**self.evalargs))
 
   def test_getslice(self):
     for idim in range(self.op_args.ndim):
@@ -128,34 +129,34 @@ class check(TestCase):
       s = (Ellipsis,) + (slice(None),)*idim + (slice(0,self.op_args.shape[idim]-1),) + (slice(None),)*(self.op_args.ndim-idim-1)
       self.assertArrayAlmostEqual(decimal=15,
         desired=self.n_op_argsfun[s],
-        actual=self.op_args[s].simplified.eval(self.elem, self.points))
+        actual=self.op_args[s].simplified.eval(**self.evalargs))
 
   def test_sumaxis(self):
     for idim in range(self.op_args.ndim):
       self.assertArrayAlmostEqual(decimal=15,
         desired=self.n_op_argsfun.sum(1+idim),
-        actual=self.op_args.sum(idim).simplified.eval(self.elem, self.points))
+        actual=self.op_args.sum(idim).simplified.eval(**self.evalargs))
 
   def test_add(self):
     self.assertArrayAlmostEqual(decimal=15,
       desired=self.n_op_argsfun + self.shapearg,
-      actual=(self.op_args + self.shapearg).simplified.eval(self.elem, self.points))
+      actual=(self.op_args + self.shapearg).simplified.eval(**self.evalargs))
 
   def test_multiply(self):
     self.assertArrayAlmostEqual(decimal=15,
       desired=self.n_op_argsfun * self.shapearg,
-      actual=(self.op_args * self.shapearg).simplified.eval(self.elem, self.points))
+      actual=(self.op_args * self.shapearg).simplified.eval(**self.evalargs))
 
   def test_dot(self):
     for iax in range(self.op_args.ndim):
       self.assertArrayAlmostEqual(decimal=15,
         desired=numeric.contract(self.n_op_argsfun, self.shapearg, axis=iax+1),
-        actual=function.dot(self.op_args, self.shapearg, axes=iax).simplified.eval(self.elem, self.points))
+        actual=function.dot(self.op_args, self.shapearg, axes=iax).simplified.eval(**self.evalargs))
 
   def test_pointwise(self):
     self.assertArrayAlmostEqual(decimal=15,
       desired=numpy.sin(self.n_op_argsfun).astype(float), # "astype" necessary for boolean operations (float16->float64)
-      actual=function.sin(self.op_args).simplified.eval(self.elem, self.points))
+      actual=function.sin(self.op_args).simplified.eval(**self.evalargs))
 
   def test_cross(self):
     triaxes = [iax for iax, sh in enumerate(self.op_args.shape) if sh == 3]
@@ -163,12 +164,12 @@ class check(TestCase):
       for iax in triaxes:
         self.assertArrayAlmostEqual(decimal=15,
           desired=numeric.cross(self.n_op_argsfun, self.shapearg, axis=iax+1),
-          actual=function.cross(self.op_args, self.shapearg, axis=iax).simplified.eval(self.elem, self.points))
+          actual=function.cross(self.op_args, self.shapearg, axis=iax).simplified.eval(**self.evalargs))
 
   def test_power(self):
     self.assertArrayAlmostEqual(decimal=14,
       desired=self.n_op_argsfun**3,
-      actual=(self.op_args**3).simplified.eval(self.elem, self.points))
+      actual=(self.op_args**3).simplified.eval(**self.evalargs))
 
   def test_mask(self):
     for idim in range(self.op_args.ndim):
@@ -180,13 +181,13 @@ class check(TestCase):
         mask[-1] = False
       self.assertArrayAlmostEqual(decimal=15,
         desired=self.n_op_argsfun[(slice(None,),)*(idim+1)+(mask,)],
-        actual=function.mask(self.op_args, mask, axis=idim).simplified.eval(self.elem, self.points))
+        actual=function.mask(self.op_args, mask, axis=idim).simplified.eval(**self.evalargs))
 
   def test_ravel(self):
     for idim in range(self.op_args.ndim-1):
       self.assertArrayAlmostEqual(decimal=15,
         desired=self.n_op_argsfun.reshape(self.n_op_argsfun.shape[:idim+1]+(-1,)+self.n_op_argsfun.shape[idim+3:]),
-        actual=function.ravel(self.op_args, axis=idim).simplified.eval(self.elem, self.points))
+        actual=function.ravel(self.op_args, axis=idim).simplified.eval(**self.evalargs))
 
   def test_unravel(self):
     for idim in range(self.op_args.ndim):
@@ -194,7 +195,7 @@ class check(TestCase):
       unravelshape = (length//3,3) if (length%3==0) else (length//2,2) if (length%2==0) else (length,1)
       self.assertArrayAlmostEqual(decimal=15,
         desired=self.n_op_argsfun.reshape(self.n_op_argsfun.shape[:idim+1]+unravelshape+self.n_op_argsfun.shape[idim+2:]),
-        actual=function.unravel(self.op_args, axis=idim, shape=unravelshape).simplified.eval(self.elem, self.points))
+        actual=function.unravel(self.op_args, axis=idim, shape=unravelshape).simplified.eval(**self.evalargs))
 
   def test_edit(self):
     def check_identity(arg):
@@ -218,10 +219,10 @@ class check(TestCase):
     target = target.reshape(-1, target.shape[-1])
     xi = xi0.reshape(-1, xi0.shape[-1])
     while countdown:
-      err = target - self.geom.eval(self.elem,xi)
+      err = target - self.geom.eval(_transforms=[self.elem.transform], _points=xi)
       if numpy.less(numpy.abs(err), 1e-12).all():
         countdown -= 1
-      dxi_root = (Jinv.eval(self.elem,xi) * err[...,_,:]).sum(-1)
+      dxi_root = (Jinv.eval(_transforms=[self.elem.transform], _points=xi) * err[...,_,:]).sum(-1)
       #xi = xi + numpy.dot(dxi_root, self.elem.inv_root_transform.T)
       xi = xi + dxi_root
       iiter += 1
@@ -233,13 +234,13 @@ class check(TestCase):
     eps = 1e-6
     D = numpy.array([-.5*eps,.5*eps])[:,_,_] * numpy.eye(self.elem.ndims)
     fdpoints = self.points[_,_,:,:] + D[:,:,_,:]
-    tmp = self.n_op(*self.argsfun.simplified.eval(self.elem,fdpoints.reshape(-1,fdpoints.shape[-1])))
+    tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
     F = tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:])
     fdgrad = numpy.zeros(F.shape[1:], bool) if F.dtype.kind == 'b' else (F[1]-F[0])/eps
     fdgrad = fdgrad.transpose(numpy.roll(numpy.arange(F.ndim-1),-1))
     G = function.localgradient(self.op_args, ndims=self.elem.ndims)
     exact = numpy.empty_like(fdgrad)
-    exact[...] = G.simplified.eval(self.elem, self.points)
+    exact[...] = G.simplified.eval(**self.evalargs)
     self.assertArrayAlmostEqual(fdgrad, exact, decimal=5)
 
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
@@ -259,14 +260,14 @@ class check(TestCase):
   def test_gradient(self):
     eps = 1e-7
     D = numpy.array([-.5*eps,.5*eps])[:,_,_] * numpy.eye(2)
-    fdpoints = self.find(self.geom.eval(self.elem,self.points)[_,_,:,:] + D[:,:,_,:], self.points[_,_,:,:])
-    tmp = self.n_op(*self.argsfun.simplified.eval(self.elem,fdpoints.reshape(-1,fdpoints.shape[-1])))
+    fdpoints = self.find(self.geom.eval(**self.evalargs)[_,_,:,:] + D[:,:,_,:], self.points[_,_,:,:])
+    tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
     F = tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:])
     fdgrad = numpy.zeros(F.shape[1:], bool) if F.dtype.kind == 'b' else (F[1]-F[0])/eps
     fdgrad = fdgrad.transpose(numpy.roll(numpy.arange(F.ndim-1),-1))
     G = self.op_args.grad(self.geom)
     exact = numpy.empty_like(fdgrad)
-    exact[...] = G.simplified.eval(self.elem, self.points)
+    exact[...] = G.simplified.eval(**self.evalargs)
     self.assertArrayAlmostEqual(fdgrad, exact, decimal=5)
 
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
@@ -274,22 +275,22 @@ class check(TestCase):
     eps = 1e-4
     D = numpy.array([-.5*eps,.5*eps])[:,_,_] * numpy.eye(2)
     DD = D[:,_,:,_,:] + D[_,:,_,:,:]
-    fdpoints = self.find(self.geom.eval(self.elem,self.points)[_,_,_,_,:,:] + DD[:,:,:,:,_,:], self.points[_,_,_,_,:,:])
-    tmp = self.n_op(*self.argsfun.simplified.eval(self.elem,fdpoints.reshape(-1,fdpoints.shape[-1])))
+    fdpoints = self.find(self.geom.eval(**self.evalargs)[_,_,_,_,:,:] + DD[:,:,:,:,_,:], self.points[_,_,_,_,:,:])
+    tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
     F = tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:])
     fddgrad = numpy.zeros(F.shape[2:], bool) if F.dtype.kind == 'b' else ((F[1,1]-F[1,0])-(F[0,1]-F[0,0]))/(eps**2)
     fddgrad = fddgrad.transpose(numpy.roll(numpy.arange(F.ndim-2),-2))
     G = self.op_args.grad(self.geom).grad(self.geom)
     exact = numpy.empty_like(fddgrad)
-    exact[...] = G.simplified.eval(self.elem, self.points)
+    exact[...] = G.simplified.eval(**self.evalargs)
     numpy.testing.assert_allclose(fddgrad, exact, rtol=2e-4)
 
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_opposite(self):
     opposite_args = function.Tuple([function.opposite(arg) for arg in self.args])
     self.assertArrayAlmostEqual(decimal=15,
-      desired=self.n_op(*opposite_args.simplified.eval(self.iface, self.ifpoints)),
-      actual=function.opposite(self.op_args).simplified.eval(self.iface, self.ifpoints))
+      desired=self.n_op(*opposite_args.simplified.eval(_transforms=[self.iface.transform, self.iface.opposite], _points=self.ifpoints)),
+      actual=function.opposite(self.op_args).simplified.eval(_transforms=[self.iface.transform, self.iface.opposite], _points=self.ifpoints))
 
 _check = lambda name, op, n_op, shapes, hasgrad=True: check(name, op=op, n_op=n_op, shapes=shapes, hasgrad=hasgrad)
 _check('sin', function.sin, numpy.sin, [(3,)])

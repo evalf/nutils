@@ -167,10 +167,13 @@ class Topology( object ):
     if core.getprop( 'dot', False ):
       idata.graphviz()
 
+    if arguments is None:
+      arguments = {}
+
     for ielem, elem in parallel.pariter( log.enumerate( 'elem', self ), nprocs=nprocs ):
       ipoints, iweights = ischeme[elem] if isinstance(ischeme,collections.abc.Mapping) else fcache[elem.reference.getischeme]( ischeme )
       s = slices[ielem],
-      for ifunc, index, data in idata.eval( elem, ipoints, fcache, arguments ):
+      for ifunc, index, data in idata.eval(_transforms=(elem.transform, elem.opposite), _points=ipoints, _cache=fcache, **arguments):
         retvals[ifunc][s+numpy.ix_(*[ ind for (ind,) in index ])] += numeric.dot(iweights,data) if geometry else data
 
     log.debug( 'cache', fcache.stats )
@@ -196,6 +199,9 @@ class Topology( object ):
     return [ v / retvals[0][(slice(None),)+(_,)*(v.ndim-1)] for v in retvals[1:] ]
 
   def _integrate( self, funcs, ischeme, fcache=None, arguments=None ):
+
+    if arguments is None:
+      arguments = {}
 
     # Functions may consist of several blocks, such as originating from
     # chaining. Here we make a list of all blocks consisting of triplets of
@@ -224,7 +230,7 @@ class Topology( object ):
     if blocks:
       sizefunc = function.stack([f.size for ifunc, ind, f in blocks]).simplified
       for ielem, elem in enumerate(self):
-        n, = sizefunc.eval(elem, None, fcache, arguments)
+        n, = sizefunc.eval(_transforms=(elem.transform, elem.opposite), _cache=fcache, **arguments)
         offsets[:,ielem+1] = offsets[:,ielem] + n
 
     # Since several blocks may belong to the same function, we post process the
@@ -256,7 +262,7 @@ class Topology( object ):
     for ielem, elem in parallel.pariter( log.enumerate( 'elem', self ), nprocs=nprocs ):
       ipoints, iweights = ischeme[elem] if isinstance(ischeme,collections.abc.Mapping) else fcache[elem.reference.getischeme]( ischeme )
       assert iweights is not None, 'no integration weights found'
-      for iblock, (intdata, *indices) in enumerate( valueindexfunc.eval( elem, ipoints, fcache, arguments ) ):
+      for iblock, (intdata, *indices) in enumerate(valueindexfunc.eval(_transforms=(elem.transform, elem.opposite), _points=ipoints, _cache=fcache, **arguments)):
         s = slice(*offsets[iblock,ielem:ielem+2])
         data, index = data_index[ block2func[iblock] ]
         w_intdata = numeric.dot( iweights, intdata )
@@ -375,7 +381,8 @@ class Topology( object ):
       fun = function.zero_argument_derivatives(function.asarray( fun ))
       data = function.Tuple(function.Tuple([fun, onto_f.simplified, function.Tuple(onto_ind)]) for onto_ind, onto_f in function.blocks(function.zero_argument_derivatives(onto)))
       for elem in self:
-        for fun_, onto_f_, onto_ind_ in data.eval( elem, 'bezier2', arguments=arguments ):
+        ipoints, iweights = elem.getischeme('bezier2')
+        for fun_, onto_f_, onto_ind_ in data.eval(_transforms=(elem.transform, elem.opposite), _points=ipoints, **arguments or {}):
           onto_f_ = onto_f_.swapaxes(0,1) # -> dof axis, point axis, ...
           indfun_ = fun_[ (slice(None),)+numpy.ix_(*onto_ind_[1:]) ]
           assert onto_f_.shape[0] == len(onto_ind_[0])
@@ -437,11 +444,14 @@ class Topology( object ):
   def trim( self, levelset, maxrefine, ndivisions=8, name='trimmed', leveltopo=None, *, arguments=None ):
     'trim element along levelset'
 
+    if arguments is None:
+      arguments = {}
+
     fcache = cache.WrapperCache()
     levelset = function.zero_argument_derivatives(levelset).simplified
     if leveltopo is None:
       ischeme = 'vertex{}'.format(maxrefine)
-      refs = [ elem.reference.trim( levelset.eval(elem,ischeme,fcache,arguments), maxrefine=maxrefine, ndivisions=ndivisions ) for elem in log.iter( 'elem', self ) ]
+      refs = [elem.reference.trim(levelset.eval(_transforms=(elem.transform, elem.opposite), _points=fcache[elem.reference.getischeme](ischeme)[0], _cache=fcache, **arguments), maxrefine=maxrefine, ndivisions=ndivisions) for elem in log.iter('elem', self)]
     else:
       log.info( 'collecting leveltopo elements' )
       bins = [ [] for ielem in range(len(self)) ]
@@ -457,7 +467,7 @@ class Topology( object ):
         while mask.any():
           imax = numpy.argmax([ mask[indices].sum() for trans, points, indices in cover ])
           trans, points, indices = cover.pop( imax )
-          levels[indices] = levelset.eval( elem.transform << trans, points, fcache, arguments )
+          levels[indices] = levelset.eval(_transforms=(elem.transform<<trans,), _points=points, _cache=fcache, **arguments)
           mask[indices] = False
         refs.append( elem.reference.trim( levels, maxrefine=maxrefine, ndivisions=ndivisions ) )
     log.debug( 'cache', fcache.stats )
@@ -492,6 +502,9 @@ class Topology( object ):
   @core.single_or_multiple
   def elem_project( self, funcs, degree, ischeme=None, check_exact=False, *, arguments=None ):
 
+    if arguments is None:
+      arguments = {}
+
     if ischeme is None:
       ischeme = 'gauss%d' % (degree*2)
 
@@ -514,7 +527,7 @@ class Topology( object ):
         projector = numpy.linalg.solve( A, basis.T * weights )
         bases[ elem.reference ] = points, projector, basis
 
-      for ifunc, ind_val in enumerate( blocks.eval( elem, points, arguments=arguments ) ):
+      for ifunc, ind_val in enumerate(blocks.eval(_transforms=(elem.transform, elem.opposite), _points=points, **arguments)):
 
         if len(ind_val) == 1:
           (allind, sumval), = ind_val
@@ -559,7 +572,7 @@ class Topology( object ):
     for axes, func in function.blocks( basis ):
       dofmap = axes[0]
       for elem in self:
-        dofs = dofmap.eval( elem )
+        dofs = dofmap.eval(_transforms=(elem.transform, elem.opposite))
         used[dofs] = True
     if isinstance( basis, function.Inflate ) and isinstance( basis.func, function.Function ) and isinstance( basis.dofmap, function.DofMap ):
       renumber = used.cumsum()-1
@@ -569,6 +582,8 @@ class Topology( object ):
 
   def locate( self, geom, points, ischeme='vertex', scale=1, tol=1e-12, eps=0, maxiter=100, *, arguments=None ):
     nprocs = min( core.getprop( 'nprocs', 1 ), len(self) )
+    if arguments is None:
+      arguments = {}
     if geom.ndim == 0:
       geom = geom[_]
       points = points[...,_]
@@ -591,7 +606,7 @@ class Topology( object ):
         J = function.localgradient( geom, self.ndims )
         geom_J = function.Tuple(( function.zero_argument_derivatives(geom), function.zero_argument_derivatives(J) ))
         for iiter in range( maxiter ):
-          point_xi, J_xi = geom_J.eval( elem, xi, arguments=arguments )
+          point_xi, J_xi = geom_J.eval(_transforms=(elem.transform, elem.opposite), _points=xi, **arguments)
           err = numpy.linalg.norm( point - point_xi )
           if err < tol:
             converged = True
@@ -629,7 +644,7 @@ class Topology( object ):
     subset = []
     for elem in self:
       try:
-        ind, = numpy.concatenate( indfunc.eval(elem), axis=1 )
+        ind, = numpy.concatenate(indfunc.eval(_transforms=(elem.transform, elem.opposite)), axis=1)
       except function.EvaluationError:
         pass
       else:
@@ -1844,7 +1859,7 @@ class HierarchicalTopology( Topology ):
       dofmap, = axes
       for elem in topo:
         trans = elem.transform
-        idofs, = dofmap.eval( elem )
+        idofs, = dofmap.eval(_transforms=(elem.transform, elem.opposite))
         if trans in self.edict:
           touchtopo[idofs] = True
         elif trans.lookup( self.edict ):

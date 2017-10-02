@@ -108,45 +108,7 @@ class Evaluable( cache.Immutable ):
   def __str__( self ):
     return self.__class__.__name__
 
-  def eval(self, elem=None, ischeme=None, fcache=None, arguments=None):
-    'evaluate'
-    
-    evalargs = {}
-
-    if fcache is not None:
-      evalargs['_cache'] = fcache
-
-    if elem is None:
-      assert self.isconstant
-    elif isinstance( elem, transform.TransformChain ):
-      evalargs['_transforms'] = elem, elem
-      evalargs['_points'] = ischeme
-    elif isinstance( elem, tuple ):
-      evalargs['_transforms'] = elem
-      evalargs['_points'] = ischeme
-    else:
-      evalargs['_transforms'] = elem.transform, elem.opposite
-      if isinstance(ischeme, collections.abc.Mapping):
-        ischeme = ischeme[elem]
-      if isinstance( ischeme, str ):
-        points, weights = fcache[elem.reference.getischeme]( ischeme )
-        evalargs['_points'] = points
-      elif isinstance( ischeme, tuple ):
-        points, weights = ischeme
-        assert points.shape[-1] == elem.ndims
-        assert points.shape[:-1] == weights.shape, 'non matching shapes: points.shape=%s, weights.shape=%s' % ( points.shape, weights.shape )
-        evalargs['_points'] = points
-      elif numeric.isarray(ischeme):
-        points = numeric.const(ischeme, dtype=float)
-        assert points.shape[-1] == elem.ndims
-        evalargs['_points'] = points
-      elif ischeme is not None:
-        raise Exception( 'invalid integration scheme of type %r' % type(ischeme) )
-
-    if arguments is not None:
-      assert all(numeric.isarray(value) and value.dtype.kind in 'bif' for value in arguments.values())
-      evalargs.update(arguments)
-
+  def eval(self, **evalargs):
     values = [evalargs]
     for op, indices in self.serialized:
       try:
@@ -248,7 +210,9 @@ class Trans(Evaluable):
     self.n = n
     super().__init__(args=[EVALARGS])
   def evalf(self, evalargs):
-    return evalargs['_transforms'][self.n]
+    trans = evalargs['_transforms'][self.n]
+    assert isinstance(trans, transform.TransformChain)
+    return trans
 
 TRANS = Trans(0)
 OPPTRANS = Trans(1)
@@ -257,7 +221,9 @@ class Points(Evaluable):
   def __init__(self, opposite=False):
     super().__init__(args=[EVALARGS])
   def evalf(self, evalargs):
-    return evalargs['_points']
+    points = evalargs['_points']
+    assert numeric.isarray(points) and points.ndim == 2
+    return numeric.const(points)
 
 POINTS = Points()
 
@@ -2595,6 +2561,7 @@ class Argument(DerivativeTargetBase):
     except KeyError:
       raise ValueError('argument {!r} missing'.format(self._name))
     else:
+      assert numeric.isarray(value) and value.shape == self.shape
       return value[_]
 
   def _derivative(self, var, seen):
