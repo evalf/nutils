@@ -232,7 +232,7 @@ def withsolve( f ):
 
 
 @withsolve
-def newton(target, residual, lhs0=None, constrain=None, nrelax=numpy.inf, minrelax=.1, maxrelax=.9, rebound=2**.5, *, arguments=None, **solveargs):
+def newton(target, residual, jacobian=None, lhs0=None, constrain=None, nrelax=numpy.inf, minrelax=.1, maxrelax=.9, rebound=2**.5, *, arguments=None, **solveargs):
   '''iteratively solve nonlinear problem by gradient descent
 
   Generates targets such that residual approaches 0 using Newton procedure with
@@ -299,7 +299,9 @@ def newton(target, residual, lhs0=None, constrain=None, nrelax=numpy.inf, minrel
       lhs0 = numpy.choose(numpy.isnan(constrain), [constrain, lhs0])
       constrain = ~numpy.isnan(constrain)
 
-  jacobian = residual.derivative( target )
+  if jacobian is None:
+    jacobian = residual.derivative(target)
+
   if not jacobian.contains(target):
     log.info( 'problem is linear' )
     res, jac = Integral.multieval(residual, jacobian, arguments=collections.ChainMap(arguments or {}, {target: numpy.zeros(argshape)}))
@@ -464,9 +466,10 @@ def thetamethod(target, residual, inertia, timestep, lhs0, theta, target0='_thet
   res0 = residual * theta + inertia / timestep
   res1 = residual * (1-theta) - inertia / timestep
   res = res0 + res1.replace({target: function.Argument(target0, lhs.shape)})
+  jac = res.derivative(target)
   while True:
     yield lhs
-    lhs = newton(target, residual=res, lhs0=lhs, constrain=constrain, arguments=collections.ChainMap(arguments or {}, {target0: lhs}), **newtonargs).solve(tol=newtontol)
+    lhs = newton(target, residual=res, jacobian=jac, lhs0=lhs, constrain=constrain, arguments=collections.ChainMap(arguments or {}, {target0: lhs}), **newtonargs).solve(tol=newtontol)
 
 
 impliciteuler = functools.partial(thetamethod, theta=1)
