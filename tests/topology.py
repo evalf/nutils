@@ -74,6 +74,31 @@ def verify_interfaces( domain, geom, periodic, interfaces=None, elemindicator=No
     rhs += domain.boundary.integrate( (elemindicator*f*function.normal(geom)[None]).sum(axis=1), ischeme='gauss2', geometry=geom )
   numpy.testing.assert_array_almost_equal( lhs, rhs )
 
+@register( 'd1p1', ndims=1, degree=1 )
+@register( 'd1p2', ndims=1, degree=2 )
+@register( 'd1p3', ndims=1, degree=3 )
+@register( 'd2p1', ndims=2, degree=1 )
+@register( 'd2p2', ndims=2, degree=2 )
+@register( 'd2p3', ndims=2, degree=3 )
+@register( 'd3p2', ndims=3, degree=2 )
+def elem_project( ndims, degree ):
+
+  @unittest
+  def extraction():
+    topo, geom = mesh.rectilinear([numpy.linspace(-1,1,4)]*ndims)
+
+    splinebasis = topo.basis('spline', degree=degree )
+    bezierbasis = topo.basis('spline', degree=degree, knotmultiplicities= [numpy.array([degree+1]+[degree]*(n-1)+[degree+1]) for n in topo.shape] )
+
+    splinevals, beziervals = topo.elem_eval( [splinebasis,bezierbasis], ischeme='uniform2', separate=True )
+    sextraction = topo.elem_project( splinebasis, degree=degree, check_exact=True )
+    bextraction = topo.elem_project( bezierbasis, degree=degree, check_exact=True )
+    for svals, (sien,sext), bvals, (bien,bext) in zip(splinevals,sextraction,beziervals,bextraction):
+      sien, bien = sien[0][0], bien[0][0]
+      assert len(sien)==len(bien)==sext.shape[0]==sext.shape[1]==bext.shape[0]==bext.shape[1]==(degree+1)**ndims
+      numpy.testing.assert_array_almost_equal( bext, numpy.eye((degree+1)**ndims) )
+      numpy.testing.assert_array_almost_equal( svals[:,sien], bvals[:,bien].dot( sext ) )
+
 @register( 'periodic', periodic=True )
 @register( 'nonperiodic', periodic=False )
 def connectivity( periodic ):
