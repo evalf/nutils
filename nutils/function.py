@@ -1780,8 +1780,7 @@ class Power(Array):
     # ln self = power * ln func
     # self` / self = power` * ln func + power * func` / func
     # self` = power` * ln func * self + power * func` * func**(power-1)
-    powerm1 = choose(equal(self.power, 0), [self.power-1, 0]) # avoid introducing negative powers where possible
-    return (self.power * power(self.func, powerm1))[ext] * derivative(self.func, var, seen) \
+    return (self.power * power(self.func, self.power - 1))[ext] * derivative(self.func, var, seen) \
          + (ln(self.func) * self)[ext] * derivative(self.power, var, seen)
 
   def _power(self, n):
