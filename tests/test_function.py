@@ -398,6 +398,22 @@ class sampled(TestCase):
       self.domain.integrate(self.f_sampled, ischeme='uniform2')
 
 
+class piecewise(TestCase):
+
+  def setUp(self):
+    self.domain, self.geom = mesh.rectilinear([1])
+    x, = self.geom
+    self.f = function.piecewise(x, [.2,.8], 1, function.sin(x), x**2)
+
+  def test_evalf(self):
+    f_ = self.domain.elem_eval(self.f, ischeme='uniform4', separate=False) # x=.125, .375, .625, .875
+    assert numpy.equal(f_, [1, numpy.sin(.375), numpy.sin(.625), .875**2]).all()
+
+  def test_deriv(self):
+    g_ = self.domain.elem_eval(function.grad(self.f, self.geom), ischeme='uniform4', separate=False) # x=.125, .375, .625, .875
+    assert numpy.equal(g_, [[0], [numpy.cos(.375)], [numpy.cos(.625)], [2*.875]]).all()
+
+
 class namespace(TestCase):
 
   def test_set_scalar(self):

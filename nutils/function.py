@@ -483,7 +483,6 @@ class Array( Evaluable ):
   _kronecker = lambda self, axis, length, pos: None
   _diagonalize = lambda self, axis, newaxis: None
   _product = lambda self: None
-  _choose = lambda self, choices: None
   _cross = lambda self, other, axis: None
   _sign = lambda self: None
   _eig = lambda self, symmetric: None
@@ -607,10 +606,6 @@ class Constant( Array ):
 
   def _sign(self):
     return Constant(numeric.sign(self.value))
-
-  def _choose(self, choices):
-    if all(isinstance(choice, Constant) for choice in choices):
-      return Constant(numpy.choose(self.value, [choice.value for choice in choices]))
 
   def _unravel(self, axis, shape):
     shape = self.value.shape[:axis] + shape + self.value.shape[axis+1:]
@@ -843,8 +838,12 @@ class Get(Array):
     return Get(func, self.axis, item)
 
   def evalf(self, arr, item):
-    item, = item
-    return arr[(slice(None),)*(self.axis+1)+(item,)]
+    if len(item) == 1:
+      item, = item
+      p = slice(None)
+    else:
+      p = numpy.arange(len(item))
+    return arr[(p,)+(slice(None),)*self.axis+(item,)]
 
   def _derivative(self, var, seen):
     f = derivative(self.func, var, seen)
@@ -958,57 +957,6 @@ class Function( Array ):
     if isinstance(var, LocalCoords):
       return Function(self.stds, self.depth, self.trans, self.index, self.shape[1:]+var.shape)
     return zeros(self.shape+var.shape, dtype=self.dtype)
-
-class Choose( Array ):
-
-  def __init__(self, level:asarray, choices:tuple):
-    assert all(isarray(choice) and choice.shape == level.shape for choice in choices)
-    self.level = level
-    self.choices = choices
-    super().__init__(args=(level,)+choices, shape=level.shape, dtype=_jointdtype(*[choice.dtype for choice in choices]))
-
-  def edit(self, op):
-    return Choose(op(self.level), [op(func) for func in self.choices])
-
-  @cache.property
-  def simplified(self):
-    level = self.level.simplified
-    choices = tuple(choice.simplified for choice in self.choices)
-    if all(iszero(choice) for choice in choices):
-      return zeros(self.shape)
-    retval = level._choose(choices)
-    if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
-    return Choose(level, choices)
-
-  def evalf(self, level, *choices):
-    return numpy.choose(level, choices)
-
-  def _derivative(self, var, seen):
-    grads = [derivative(choice, var, seen) for choice in self.choices]
-    if not any(grads): # all-zero special case; better would be allow merging of intervals
-      return zeros(self.shape + var.shape)
-    return choose(self.level[(...,)+(_,)*var.ndim], grads)
-
-class Choose2D( Array ):
-  'piecewise function'
-
-  def __init__(self, coords:asarray, contour:asarray, fin:asarray, fout:asarray):
-    assert fin.shape == fout.shape
-    self.contour = contour
-    super().__init__(args=(coords,contour,fin,fout), shape=fin.shape, dtype=_jointdtype(fin.dtype,fout.dtype))
-
-  @staticmethod
-  def evalf( self, xy, fin, fout ):
-    'evaluate'
-
-    from matplotlib import nxutils
-    mask = nxutils.points_inside_poly( xy.T, self.contour )
-    out = numpy.empty( fin.shape or fout.shape, dtype=self.dtype )
-    out[...,mask] = fin[...,mask] if fin.shape else fin
-    out[...,~mask] = fout[...,~mask] if fout.shape else fout
-    return out
 
 class Inverse( Array ):
 
@@ -1897,6 +1845,10 @@ class Maximum(Pointwise):
   evalf = numpy.maximum
   deriv = lambda x, y: 1 - Less(x, y), Less
 
+class Int(Pointwise):
+  evalf = staticmethod(lambda a: a.astype(int))
+  deriv = lambda a: Zeros(a.shape, int),
+
 class Sign( Array ):
 
   def __init__(self, func:asarray):
@@ -2484,6 +2436,8 @@ class Stack( Array ):
 
   def _sum(self, axis):
     if axis == self.axis:
+      if any(func is not None and func.dtype == bool for func in self.funcs):
+        raise NotImplementedError
       return util.sum(func for func in self.funcs if func is not None)
     return Stack([Sum(func, axis-(axis>self.axis)) if func is not None else None for func in self.funcs], self.axis-(axis<self.axis))
 
@@ -2988,11 +2942,11 @@ sinh = lambda arg: .5 * ( exp(arg) - exp(-arg) )
 cosh = lambda arg: .5 * ( exp(arg) + exp(-arg) )
 tanh = lambda arg: 1 - 2. / ( exp(2*arg) + 1 )
 arctanh = lambda arg: .5 * ( ln(1+arg) - ln(1-arg) )
-piecewise = lambda level, intervals, *funcs: choose( sum( greater( expand_dims(level,-1), intervals ), -1 ), funcs )
+piecewise = lambda level, intervals, *funcs: Get(Stack(asarrays(funcs), axis=0), axis=0, item=util.sum(Int(greater(level, interval)) for interval in intervals))
 trace = lambda arg, n1=-2, n2=-1: sum(takediag(arg, n1, n2), numeric.normdim(arg.ndim, n1))
 normalized = lambda arg, axis=-1: divide(arg, expand_dims(norm2(arg, axis=axis), axis))
 norm2 = lambda arg, axis=-1: sqrt( sum( multiply( arg, arg ), axis ) )
-heaviside = lambda arg: choose( greater( arg, 0 ), [0.,1.] )
+heaviside = lambda arg: Int(greater(arg, 0))
 divide = lambda arg1, arg2: multiply( arg1, reciprocal(arg2) )
 subtract = lambda arg1, arg2: add( arg1, negative(arg2) )
 mean = lambda arg: .5 * ( arg + opposite(arg) )
@@ -3171,10 +3125,6 @@ def concatenate(args, axis=0):
   args = _matchndim(*args)
   axis = numeric.normdim(args[0].ndim, axis)
   return Concatenate(args, axis)
-
-def choose(level, choices):
-  level, *choices = _numpy_align(level, *choices)
-  return Choose(level, tuple(choices))
 
 def cross(arg1, arg2, axis):
   arg1, arg2 = _numpy_align(arg1, arg2)
