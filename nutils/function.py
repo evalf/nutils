@@ -369,6 +369,7 @@ def swapaxes(arg, axis1, axis2):
 
 asdtype = lambda arg: arg if arg in (bool, int, float) else {'f': float, 'i': int, 'b': bool}[numpy.dtype(arg).kind]
 asarray = lambda arg: arg if isarray(arg) else Constant(arg) if numeric.isarray(arg) or numpy.asarray(arg).dtype != object else stack(arg, axis=0)
+asarrays = lambda args: tuple(asarray(arg) for arg in args)
 
 class Array( Evaluable ):
   'array function'
@@ -484,7 +485,6 @@ class Array( Evaluable ):
   _product = lambda self: None
   _choose = lambda self, choices: None
   _cross = lambda self, other, axis: None
-  _pointwise = lambda self, evalf, deriv, dtype: None
   _sign = lambda self: None
   _eig = lambda self, symmetric: None
   _inflate = lambda self, dofmap, length, axis: None
@@ -600,11 +600,6 @@ class Constant( Array ):
   def _cross(self, other, axis):
     if isinstance(other, Constant):
       return Constant(numeric.cross(self.value, other.value, axis))
-
-  def _pointwise(self, evalf, deriv, dtype):
-    retval = evalf(*self.value)
-    assert retval.dtype == dtype
-    return Constant(retval)
 
   def _eig(self, symmetric):
     eigval, eigvec = (numpy.linalg.eigh if symmetric else numpy.linalg.eig)(self.value)
@@ -1815,40 +1810,92 @@ class Power(Array):
 
 class Pointwise( Array ):
 
-  def __init__(self, args:asarray, evalfun, deriv, dtype:asdtype):
-    assert args.ndim >= 1 and args.shape[0] >= 1
-    shape = args.shape[1:]
+  deriv = None
+
+  def __init__(self, *args:asarrays):
+    retval = self.evalf(*[numpy.ones((), dtype=arg.dtype) for arg in args])
+    shapes = set(arg.shape for arg in args)
+    assert len(shapes) == 1, 'pointwise arguments have inconsistent shapes'
+    shape, = shapes
     self.args = args
-    self.evalfun = evalfun
-    self.deriv = deriv
-    super().__init__(args=[args], shape=shape, dtype=dtype)
+    super().__init__(args=args, shape=shape, dtype=retval.dtype)
 
   @cache.property
   def simplified(self):
-    args = self.args.simplified
-    retval = args._pointwise(self.evalfun, self.deriv, self.dtype)
-    if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
-    return Pointwise(args, self.evalfun, self.deriv, self.dtype)
-
-  def evalf( self, args ):
-    assert args.shape[1:] == self.args.shape
-    return self.evalfun( *args.swapaxes(0,1) )
+    args = [arg.simplified for arg in self.args]
+    if all(arg.isconstant for arg in args):
+      retval, = self.evalf(*[arg.eval() for arg in args])
+      return Constant(retval).simplified
+    return self.__class__(*args)
 
   def _derivative(self, var, seen):
     if self.deriv is None:
       raise NotImplementedError('derivative is not defined for this operator')
-    return (self.deriv(self.args)[(...,)+(_,)*var.ndim] * derivative(self.args, var, seen)).sum( 0 )
+    return util.sum(deriv(*self.args)[(...,)+(_,)*var.ndim] * derivative(arg, var, seen) for arg, deriv in zip(self.args, self.deriv))
 
   def _takediag(self, axis, rmaxis):
-    return Pointwise(TakeDiag(self.args, axis+1, rmaxis+1), self.evalfun, self.deriv, self.dtype)
+    return self.__class__(*[TakeDiag(arg, axis, rmaxis) for arg in self.args])
 
   def _get(self, axis, item):
-    return Pointwise(Get(self.args, axis+1, item), self.evalfun, self.deriv, self.dtype)
+    return self.__class__(*[Get(arg, axis, item) for arg in self.args])
 
   def _take(self, index, axis):
-    return Pointwise(Take(self.args, index, axis+1), self.evalfun, self.deriv, self.dtype)
+    return self.__class__(*[Take(arg, index, axis) for arg in self.args])
+
+class Cos(Pointwise):
+  evalf = numpy.cos
+  deriv = lambda x: -Sin(x),
+
+class Sin(Pointwise):
+  evalf = numpy.sin
+  deriv = Cos,
+
+class Tan(Pointwise):
+  evalf = numpy.tan
+  deriv = lambda x: Cos(x)**-2,
+
+class ArcSin(Pointwise):
+  evalf = numpy.arcsin
+  deriv = lambda x: reciprocal(sqrt(1-x**2)),
+
+class ArcCos(Pointwise):
+  evalf = numpy.arccos
+  deriv = lambda x: -reciprocal(sqrt(1-x**2)),
+
+class Exp(Pointwise):
+  evalf = numpy.exp
+  deriv = lambda x: Exp(x),
+
+class Log(Pointwise):
+  evalf = numpy.log
+  deriv = lambda x: reciprocal(x),
+
+class Mod(Pointwise):
+  evalf = numpy.mod
+
+class ArcTan2(Pointwise):
+  evalf = numpy.arctan2
+  deriv = lambda x, y: y / (x**2 + y**2), lambda x, y: -x / (x**2 + y**2)
+
+class Greater(Pointwise):
+  evalf = numpy.greater
+  deriv = (lambda a, b: Zeros(a.shape, dtype=int),) * 2
+
+class Equal(Pointwise):
+  evalf = numpy.equal
+  deriv = (lambda a, b: Zeros(a.shape, dtype=int),) * 2
+
+class Less(Pointwise):
+  evalf = numpy.less
+  deriv = (lambda a, b: Zeros(a.shape, dtype=int),) * 2
+
+class Minimum(Pointwise):
+  evalf = numpy.minimum
+  deriv = Less, lambda x, y: 1 - Less(x, y)
+
+class Maximum(Pointwise):
+  evalf = numpy.maximum
+  deriv = lambda x, y: 1 - Less(x, y), Less
 
 class Sign( Array ):
 
@@ -2028,13 +2075,6 @@ class Zeros( Array ):
 
   def _power(self, n):
     return self
-
-  def _pointwise(self, evalf, deriv, dtype):
-    value = evalf(*numpy.zeros(self.shape[0]))
-    assert value.dtype == dtype
-    if value == 0:
-      return Zeros(self.shape[1:], dtype=dtype)
-    return _inflate_scalar(value, self.shape[1:])
 
   def _kronecker(self, axis, length, pos):
     return Zeros(self.shape[:axis]+(length,)+self.shape[axis:], dtype=self.dtype)
@@ -2467,14 +2507,6 @@ class Stack( Array ):
 
   def _power(self, n):
     return Stack([Power(func, Get(n, self.axis, ifunc)) if func is not None else None for ifunc, func in enumerate(self.funcs)], self.axis)
-
-  def _pointwise(self, evalf, deriv, dtype):
-    if self.axis == 0:
-      return
-    value = evalf(*numpy.zeros(self.shape[0]))
-    assert value.dtype == dtype
-    if value == 0:
-      return Stack([pointwise(func, evalf, deriv, dtype) if func is not None else None for func in self.funcs], self.axis-1)
 
   def _mask(self, maskvec, axis):
     if axis != self.axis:
@@ -2926,33 +2958,31 @@ zeros = lambda shape, dtype=float: Zeros( shape, dtype )
 zeros_like = lambda arr: zeros(arr.shape, arr.dtype)
 ones = lambda shape, dtype=float: _inflate_scalar(numpy.ones((), dtype=dtype), shape)
 ones_like = lambda arr: ones(arr.shape, arr.dtype)
+reciprocal = lambda arg: power( arg, -1 )
 grad = lambda arg, coords, ndims=0: asarray( arg ).grad( coords, ndims )
 symgrad = lambda arg, coords, ndims=0: asarray( arg ).symgrad( coords, ndims )
 div = lambda arg, coords, ndims=0: asarray( arg ).div( coords, ndims )
 negative = lambda arg: multiply( arg, -1 )
 nsymgrad = lambda arg, coords: ( symgrad(arg,coords) * coords.normal() ).sum(-1)
 ngrad = lambda arg, coords: ( grad(arg,coords) * coords.normal() ).sum(-1)
-sin = lambda arg: pointwise( [arg], numpy.sin, cos )
-cos = lambda arg: pointwise( [arg], numpy.cos, lambda x: -sin(x) )
-rotmat = lambda arg: asarray([ trignormal(arg), trigtangent(arg) ])
-tan = lambda arg: pointwise( [arg], numpy.tan, lambda x: cos(x)**-2 )
-arcsin = lambda arg: pointwise( [arg], numpy.arcsin, lambda x: reciprocal(sqrt(1-x**2)) )
-arccos = lambda arg: pointwise( [arg], numpy.arccos, lambda x: -reciprocal(sqrt(1-x**2)) )
-exp = lambda arg: pointwise( [arg], numpy.exp, exp )
-ln = lambda arg: pointwise( [arg], numpy.log, reciprocal )
-mod = lambda arg1, arg2: pointwise( [arg1,arg2], numpy.mod, dtype=_jointdtype(asarray(arg1).dtype,asarray(arg2).dtype) )
+sin = lambda x: Sin(x)
+cos = lambda x: Cos(x)
+rotmat = lambda arg: Stack([trignormal(arg), trigtangent(arg)], 0)
+tan = lambda x: Tan(x)
+arcsin = lambda x: ArcSin(x)
+arccos = lambda x: ArcCos(x)
+exp = lambda x: Exp(x)
+ln = lambda x: Log(x)
+mod = lambda arg1, arg2: Mod(*_numpy_align(arg1, arg2))
 log2 = lambda arg: ln(arg) / ln(2)
 log10 = lambda arg: ln(arg) / ln(10)
 sqrt = lambda arg: power( arg, .5 )
-reciprocal = lambda arg: power( arg, -1 )
-argmin = lambda arg, axis: pointwise( bringforward(arg,axis), lambda *x: numpy.argmin(numeric.stack(x),axis=0), zeros_like, dtype=int )
-argmax = lambda arg, axis: pointwise( bringforward(arg,axis), lambda *x: numpy.argmax(numeric.stack(x),axis=0), zeros_like, dtype=int )
-arctan2 = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.arctan2, lambda x: stack([x[1],-x[0]]) / sum(power(x,2),0) )
-greater = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.greater, zeros_like, dtype=bool )
-equal = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.equal, zeros_like, dtype=bool )
-less = lambda arg1, arg2=None: pointwise( arg1 if arg2 is None else [arg1,arg2], numpy.less, zeros_like, dtype=bool )
-min = lambda arg1, *args: choose( argmin( arg1 if not args else (arg1,)+args, axis=0 ), arg1 if not args else (arg1,)+args )
-max = lambda arg1, *args: choose( argmax( arg1 if not args else (arg1,)+args, axis=0 ), arg1 if not args else (arg1,)+args )
+arctan2 = lambda arg1, arg2: ArcTan2(*_numpy_align(arg1, arg2))
+greater = lambda arg1, arg2: Greater(*_numpy_align(arg1, arg2))
+equal = lambda arg1, arg2: Equal(*_numpy_align(arg1, arg2))
+less = lambda arg1, arg2: Less(*_numpy_align(arg1, arg2))
+min = lambda a, b: Minimum(*_numpy_align(a, b))
+max = lambda a, b: Maximum(*_numpy_align(a, b))
 abs = lambda arg: arg * sign(arg)
 sinh = lambda arg: .5 * ( exp(arg) - exp(-arg) )
 cosh = lambda arg: .5 * ( exp(arg) + exp(-arg) )
@@ -3146,23 +3176,6 @@ def choose(level, choices):
   level, *choices = _numpy_align(level, *choices)
   return Choose(level, tuple(choices))
 
-def _condlist_to_level( *condlist ):
-  level = 0
-  mask = 1
-  for i, condition in enumerate(condlist):
-    condition = numpy.asarray(condition, bool)
-    level += (i+1)*mask*condition
-    mask *= 1-condition
-  return level
-
-def select( condlist, choicelist, default=0 ):
-  'select'
-
-  if not any(map(isarray, itertools.chain( condlist, choicelist, [default] ))):
-    return asarray( numpy.select( condlist, choicelist, default=default ) )
-  level = pointwise( condlist, _condlist_to_level, dtype=int )
-  return choose( level, (default,)+tuple(choicelist) )
-
 def cross(arg1, arg2, axis):
   arg1, arg2 = _numpy_align(arg1, arg2)
   axis = numeric.normdim(arg1.ndim, axis)
@@ -3177,10 +3190,6 @@ def outer( arg1, arg2=None, axis=0 ):
   arg1, arg2 = _matchndim( arg1, arg2 if arg2 is not None else arg1 )
   axis = numeric.normdim( arg1.ndim, axis )
   return expand_dims(arg1,axis+1) * expand_dims(arg2,axis)
-
-def pointwise(args, evalf, deriv=None, dtype=float):
-  args = asarray(args)
-  return Pointwise(args, evalf, deriv, dtype)
 
 def sign(arg):
   arg = asarray(arg)
