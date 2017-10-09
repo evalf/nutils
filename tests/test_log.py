@@ -1,6 +1,6 @@
 import io, tempfile, os
 from . import *
-import nutils.log, nutils.core, nutils.parallel
+import nutils.log, nutils.core, nutils.util, nutils.parallel
 
 log_stdout = '''\
 iterator > iter 0 (0%) > a
@@ -157,13 +157,15 @@ class logoutput(ContextTestCase):
       self.progressfileobj = progressfile=io.StringIO()
     else:
       self.progressfileobj = None
+    stack.enter_context(nutils.config(
+      outdir=self.outdir,
+      verbose=self.verbose,
+      # Make sure all progress information is written, regardless the speed of
+      # this computer.
+      progressinterval=-1,
+    ))
 
   def test(self):
-    __outdir__ = self.outdir
-    __verbose__ = self.verbose
-    # Make sure all progress information is written, regardless the speed of
-    # this computer.
-    __progressinterval__ = -1
     stream = io.StringIO()
     kwargs = dict(title='test') if self.logcls == nutils.log.HtmlLog else {}
     if self.progressfileobj is not None:
@@ -186,10 +188,12 @@ class tee_stdout_html(ContextTestCase):
   def setUpContext(self, stack):
     super().setUpContext(stack)
     self.outdir = stack.enter_context(tempfile.TemporaryDirectory())
+    stack.enter_context(nutils.config(
+      outdir=self.outdir,
+      verbose=len(nutils.log.LEVELS),
+    ))
 
   def test(self):
-    __outdir__ = self.outdir
-    __verbose__ = len(nutils.log.LEVELS)
     stream_stdout = io.StringIO()
     stream_html = io.StringIO()
     with nutils.log.TeeLog(nutils.log.StdoutLog(stream_stdout), nutils.log.HtmlLog(stream_html, title='test')):
@@ -202,6 +206,10 @@ class html_post_mortem(ContextTestCase):
   def setUpContext(self, stack):
     super().setUpContext(stack)
     self.outdir = stack.enter_context(tempfile.TemporaryDirectory())
+    stack.enter_context(nutils.config(
+      outdir=self.outdir,
+      verbose=len(nutils.log.LEVELS),
+    ))
 
   def test(self):
     class TestException(Exception): pass
@@ -214,7 +222,6 @@ def generate_exception(level=0):
   else:
     generate_exception(level+1)
 ''', virtual_module)
-    __outdir__ = self.outdir
     stream = io.StringIO()
     with self.assertRaises(TestException):
       with nutils.log.HtmlLog(stream, title='test'):
@@ -231,12 +238,14 @@ class move_outdir(ContextTestCase):
     os.mkdir(self.outdira)
     self.outdirfd = os.open(self.outdira, flags=os.O_RDONLY)
     stack.callback(os.close, self.outdirfd)
+    stack.enter_context(nutils.config(
+      outdirfd=self.outdirfd,
+      verbose=len(nutils.log.LEVELS),
+    ))
 
-  @unittest.skipIf(not nutils.core.supports_outdirfd, 'outdirfd is not supported on this platform')
+  @unittest.skipIf(not nutils.util.supports_outdirfd, 'outdirfd is not supported on this platform')
   def test(self):
-    __outdirfd__ = self.outdirfd
     os.rename(self.outdira, self.outdirb)
-    __verbose__ = len(nutils.log.LEVELS)
     stream = io.StringIO()
     with nutils.log.HtmlLog(stream, title='test'):
       generate_log()

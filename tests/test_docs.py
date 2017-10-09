@@ -1,5 +1,5 @@
 import doctest as _doctest, importlib, os, tempfile, pathlib, functools, warnings, subprocess, sys
-import nutils.log, nutils.core
+import nutils.log
 from . import *
 
 
@@ -10,7 +10,7 @@ class DocTestLog(nutils.log.ContextLog):
     return ' > '.join(self._context + ([text] if text is not None else []))
 
   def write(self, level, text, endl=True):
-    verbose = nutils.core.getprop( 'verbose', len(nutils.log.LEVELS) )
+    verbose = nutils.config.verbose
     if level not in nutils.log.LEVELS[verbose:]:
       s = self._mkstr(level, text)
       print(s, end='\n' if endl else '')
@@ -23,6 +23,7 @@ class module(ContextTestCase):
     super().setUpContext(stack)
     stack.enter_context(warnings.catch_warnings())
     warnings.simplefilter('ignore')
+    stack.enter_context(nutils.config(log=stack.enter_context(DocTestLog())))
 
   def test(self):
     with DocTestLog():
@@ -36,6 +37,7 @@ class file(ContextTestCase):
     super().setUpContext(stack)
     stack.enter_context(warnings.catch_warnings())
     warnings.simplefilter('ignore')
+    stack.enter_context(nutils.config(log=stack.enter_context(DocTestLog())))
 
   def test(self):
     with DocTestLog():
@@ -45,6 +47,8 @@ class file(ContextTestCase):
 root = pathlib.Path(__file__).parent.parent
 for path in sorted((root / 'nutils').glob('**/*.py')):
   name = '.'.join(path.relative_to(root).parts)[:-3]
+  if name.endswith('.__init__'):
+    name = name[:-9]
   module(name.replace('.', '/'), name=name)
 
 for path in sorted((root / 'docs').glob('**/*.rst')):

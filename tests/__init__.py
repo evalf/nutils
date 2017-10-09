@@ -1,5 +1,4 @@
 import unittest, sys, types, operator, contextlib
-import nutils.core
 
 
 class _ParametrizedCollection(type):

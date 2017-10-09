@@ -42,7 +42,7 @@ possible only via inverting of the geometry function, which is a fundamentally
 expensive and currently unsupported operation.
 """
 
-from . import util, numpy, numeric, log, core, cache, transform, expression, _
+from . import util, numpy, numeric, log, config, core, cache, transform, expression, _
 import sys, warnings, itertools, functools, operator, inspect, numbers, builtins, re, types, collections.abc, math
 
 isevaluable = lambda arg: isinstance(arg, Evaluable)
@@ -101,7 +101,7 @@ class Evaluable( cache.Immutable ):
     else:
       return '%{}'.format( index )
     asciitree = self._asciitree_str()
-    if core.getprop( 'richoutput', False ):
+    if config.richoutput:
       select = '├ ', '└ '
       bridge = '│ ', '  '
     else:
@@ -141,7 +141,7 @@ class Evaluable( cache.Immutable ):
 
     import os, subprocess, hashlib
 
-    dotpath = core.getprop( 'dot', True )
+    dotpath = config.dot
     if not isinstance( dotpath, str ):
       dotpath = 'dot'
 
@@ -153,7 +153,7 @@ class Evaluable( cache.Immutable ):
     lines.append( '}' )
     imgdata = '\n'.join(lines).encode()
 
-    imgtype = core.getprop( 'imagetype', 'png' )
+    imgtype = config.imagetype
     imgpath = 'dot_{}.{}'.format(hashlib.sha1(imgdata).hexdigest(), imgtype)
     if not os.path.exists( imgpath ):
       with core.open_in_outdir( imgpath, 'w' ) as img:

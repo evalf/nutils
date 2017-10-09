@@ -28,7 +28,7 @@ have a well defined reference coordinate system, and provide pointsets for
 purposes of integration and sampling.
 """
 
-from . import log, util, numpy, core, numeric, function, cache, transform, _
+from . import log, util, numpy, config, numeric, function, cache, transform, _
 import re, warnings, math, itertools, operator, functools
 
 

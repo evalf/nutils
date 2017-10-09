@@ -35,7 +35,7 @@ out in element loops. For lower level operations topologies can be used as
 :mod:`nutils.element` iterators.
 """
 
-from . import element, function, util, numpy, parallel, matrix, log, core, numeric, cache, transform, _
+from . import element, function, util, numpy, parallel, matrix, log, config, numeric, cache, transform, _
 import warnings, functools, collections.abc, itertools, functools, operator
 
 _identity = lambda x: x
@@ -184,7 +184,7 @@ class Topology( object ):
         slices.append( slice(npoints,npoints+np) )
         npoints += np
 
-    nprocs = min( core.getprop( 'nprocs', 1 ), len(self) )
+    nprocs = min(config.nprocs, len(self))
     zeros = parallel.shzeros if nprocs > 1 else numpy.zeros
     retvals = []
     idata = []
@@ -196,7 +196,7 @@ class Topology( object ):
       retvals.append( retval )
     idata = function.Tuple( idata )
 
-    if core.getprop( 'dot', False ):
+    if config.dot:
       idata.graphviz()
 
     if arguments is None:
@@ -259,7 +259,7 @@ class Topology( object ):
     log.debug( 'integrating %s distinct blocks' % '+'.join(
       str(block2func.count(ifunc)) for ifunc in range(len(funcs)) ) )
 
-    if core.getprop( 'dot', False ):
+    if config.dot:
       function.Tuple(values).graphviz()
 
     if fcache is None:
@@ -288,7 +288,7 @@ class Topology( object ):
     # The data_index list contains shared memory index and value arrays for
     # each function argument.
 
-    nprocs = min( core.getprop( 'nprocs', 1 ), len(self) )
+    nprocs = min(config.nprocs, len(self))
     empty = parallel.shempty if nprocs > 1 else numpy.empty
     data_index = [
       ( empty( n, dtype=float ),
@@ -634,7 +634,7 @@ class Topology( object ):
     return function.mask( basis, used )
 
   def locate( self, geom, points, ischeme='vertex', scale=1, tol=1e-12, eps=0, maxiter=100, *, arguments=None ):
-    nprocs = min( core.getprop( 'nprocs', 1 ), len(self) )
+    nprocs = min(config.nprocs, len(self))
     if arguments is None:
       arguments = {}
     if geom.ndim == 0:

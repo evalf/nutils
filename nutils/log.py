@@ -25,7 +25,7 @@ stdout as well as to an html formatted log file if so configured.
 """
 
 import sys, time, warnings, functools, itertools, re, abc, contextlib, html, urllib.parse, os, json, traceback, bdb, inspect, textwrap, builtins
-from . import core
+from . import core, config
 
 warnings.showwarning = lambda message, category, filename, lineno, *args: \
   warning( '%s: %s\n  In %s:%d' % ( category.__name__, message, filename, lineno ) )
@@ -187,7 +187,7 @@ class StdoutLog( ContextLog ):
     return ' > '.join( self._context + ([ text ] if text is not None else []) )
 
   def write( self, level, text, endl=True ):
-    verbose = core.getprop( 'verbose', len(LEVELS) )
+    verbose = config.verbose
     if level not in LEVELS[verbose:]:
       from . import parallel
       if parallel.procid is not None:
@@ -207,7 +207,7 @@ class RichOutputLog( StdoutLog ):
     # Timestamp at which a new progress line may be written.
     self._progressupdate = 0
     # Progress update interval in seconds.
-    self._progressinterval = progressinterval or core.getprop( 'progressinterval', 0.1 )
+    self._progressinterval = progressinterval or getattr(config, 'progressinterval', 0.1)
 
   def __exit__( self, *exc_info ):
     # Clear the progress line.
@@ -253,7 +253,7 @@ class HtmlInsertAnchor( Log ):
       return match.group(0)
     filename = html.unescape( match.group(0) )
     ext = html.unescape( match.group(1) )
-    whitelist = ['.jpg','.png','.svg','.txt','.mp4','.webm'] + list( core.getprop( 'plot_extensions', [] ) )
+    whitelist = ['.jpg','.png','.svg','.txt','.mp4','.webm'] + list(getattr(config, 'plot_extensions', []))
     fmt = '<a href="{href}"' + (' class="plot"' if ext in whitelist else '') + '>{name}</a>'
     return fmt.format( href=urllib.parse.quote( filename ), name=html.escape( filename ) )
 
@@ -329,7 +329,7 @@ class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
     This method makes sure the current context is printed and calls
     :meth:`_print_item`.
     '''
-    if level not in LEVELS[core.getprop( 'verbose', len(LEVELS) ):]:
+    if level not in LEVELS[config.verbose:]:
       return super().write( level, text )
 
   def _print_push_context( self, title ):
@@ -376,7 +376,7 @@ class IndentLog( HtmlInsertAnchor, ContextTreeLog ):
       # Timestamp at which a new progress line may be written.
       self._progressupdate = 0
       # Progress update interval in seconds.
-      self._progressinterval = progressinterval or core.getprop( 'progressinterval', 1 )
+      self._progressinterval = progressinterval or getattr(config, 'progressinterval', 1)
     super().__init__()
 
   def _print_push_context( self, title ):

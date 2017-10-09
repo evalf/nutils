@@ -24,8 +24,8 @@ can be used set up properties, initiate an output environment, and execute a
 python function based arguments specified on the command line.
 """
 
-from . import log, core, version
-import sys, inspect, os, datetime, pdb, signal, subprocess, contextlib
+from . import log, util, config, version
+import sys, inspect, os, datetime, pdb, signal, subprocess, contextlib, pathlib
 
 def _version():
   try:
@@ -39,7 +39,7 @@ def _version():
 
 def _mkbox( *lines ):
   width = max( len(line) for line in lines )
-  ul, ur, ll, lr, hh, vv = '┌┐└┘─│' if core.getprop('richoutput') else '++++-|'
+  ul, ur, ll, lr, hh, vv = '┌┐└┘─│' if config.richoutput else '++++-|'
   return '\n'.join( [ ul + hh * (width+2) + ur ]
                   + [ vv + (' '+line).ljust(width+2) + vv for line in lines ]
                   + [ ll + hh * (width+2) + lr ] )
@@ -66,53 +66,59 @@ def _sigint_handler( mysignal, frame ):
   finally:
     signal.signal( mysignal, _handler )
 
-def run(func, *, skip=1):
+def run(func, *, skip=1, loaduserconfig=True):
   '''parse command line arguments and call function'''
 
-  params = inspect.signature(func).parameters.values()
+  with contextlib.ExitStack() as stack:
 
-  if '-h' in sys.argv[skip:] or '--help' in sys.argv[skip:]:
-    print('usage: {} (...)'.format(' '.join(sys.argv[:skip])))
-    print()
-    for param in params:
-      cls = param.default.__class__
-      print('  --{:<20}'.format(param.name + '=' + cls.__name__.upper() if cls != bool else '(no)' + param.name), end=' ')
-      if param.annotation != param.empty:
-        print(param.annotation, end=' ')
-      print('[{}]'.format(param.default))
-    sys.exit(1)
+    if loaduserconfig:
+      stack.enter_context(util.userconfig())
 
-  kwargs = {param.name: param.default for param in params}
+    params = inspect.signature(func).parameters.values()
 
-  for arg in sys.argv[skip:]:
-    name, sep, value = arg.lstrip('-').partition('=')
-    if not sep:
-      value = not name.startswith('no')
-      if not value:
-        name = name[2:]
-    if name in kwargs:
-      default = kwargs[name]
-      args = kwargs
-    else:
+    if '-h' in sys.argv[skip:] or '--help' in sys.argv[skip:]:
+      print('usage: {} (...)'.format(' '.join(sys.argv[:skip])))
+      print()
+      for param in params:
+        cls = param.default.__class__
+        print('  --{:<20}'.format(param.name + '=' + cls.__name__.upper() if cls != bool else '(no)' + param.name), end=' ')
+        if param.annotation != param.empty:
+          print(param.annotation, end=' ')
+        print('[{}]'.format(param.default))
+      sys.exit(1)
+
+    kwargs = {param.name: param.default for param in params}
+    cli_config = {}
+
+    for arg in sys.argv[skip:]:
+      name, sep, value = arg.lstrip('-').partition('=')
+      if not sep:
+        value = not name.startswith('no')
+        if not value:
+          name = name[2:]
+      if name in kwargs:
+        default = kwargs[name]
+        args = kwargs
+      else:
+        try:
+          default = getattr(config, name)
+        except AttributeError:
+          print('invalid argument {!r}'.format(arg))
+          sys.exit(2)
+        args = cli_config
       try:
-        default = core.getprop(name)
-      except NameError:
-        print('invalid argument {!r}'.format(arg))
+        if isinstance(default, bool) and not isinstance(value, bool):
+          raise Exception('boolean value should be specifiec as --{0}/--no{0}'.format(name))
+        args[name] = default.__class__(value)
+      except Exception as e:
+        print('invalid argument for {!r}: {}'.format(name, e))
         sys.exit(2)
-      name = '__{}__'.format(name)
-      args = locals()
-    try:
-      if isinstance(default, bool) and not isinstance(value, bool):
-        raise Exception('boolean value should be specifiec as --{0}/--no{0}'.format(name))
-      args[name] = default.__class__(value)
-    except Exception as e:
-      print('invalid argument for {!r}: {}'.format(name, e))
-      sys.exit(2)
 
-  status = call(func, kwargs, scriptname=os.path.basename(sys.argv[0]), funcname=None if skip==1 else func.__name__)
-  sys.exit(status)
+    stack.enter_context(config(**cli_config))
+    status = call(func, kwargs, scriptname=os.path.basename(sys.argv[0]), funcname=None if skip==1 else func.__name__)
+    sys.exit(status)
 
-def choose(*functions):
+def choose(*functions, loaduserconfig=True):
   '''parse command line arguments and call one of multiple functions'''
 
   assert functions, 'no functions specified'
@@ -128,7 +134,7 @@ def choose(*functions):
     print('invalid argument {!r}; choose from {}'.format(sys.argv[1], ', '.join(funcnames)))
     sys.exit(2)
 
-  run(functions[ifunc], skip=2)
+  run(functions[ifunc], skip=2, loaduserconfig=loaduserconfig)
 
 def call(func, kwargs, scriptname, funcname=None):
   '''set up compute environment and call function'''
@@ -139,23 +145,22 @@ def call(func, kwargs, scriptname, funcname=None):
 
     stack.callback( signal.signal, signal.SIGINT, signal.signal( signal.SIGINT, _sigint_handler ) )
 
-    outdir = os.path.expanduser(core.getprop('outdir'))
+    outdir = os.path.expanduser(config.outdir)
     if outdir:
       relpaths = ()
     else:
-      outrootdir = os.path.expanduser(core.getprop('outrootdir'))
+      outrootdir = os.path.expanduser(config.outrootdir)
       ymdt = starttime.strftime('%Y/%m/%d/%H-%M-%S/')
       outdir = os.path.join(outrootdir, scriptname, ymdt)
-      __outdir__ = outdir # set property
-      __cachedir__ = os.path.join(outrootdir, scriptname, 'cache')
+      stack.enter_context(config(outdir=outdir, cachedir=os.path.join(outrootdir, scriptname, 'cache')))
       relpaths = (outrootdir, os.path.join(scriptname, ymdt)), (os.path.join(outrootdir, scriptname), ymdt)
     os.makedirs(outdir) # asserts nonexistence
 
-    if core.supports_outdirfd:
-      __outdirfd__ = os.open( outdir, flags=os.O_RDONLY )
-      stack.callback( os.close, __outdirfd__ )
+    if util.supports_outdirfd:
+      stack.enter_context(config(outdirfd=os.open(outdir, flags=os.O_RDONLY)))
+      stack.callback(os.close, config.outdirfd)
 
-    symlink = core.getprop( 'symlink', None )
+    symlink = config.symlink
     if symlink:
       for base, relpath in relpaths:
         target = os.path.join( base, symlink )
@@ -163,10 +168,9 @@ def call(func, kwargs, scriptname, funcname=None):
           os.remove( target )
         os.symlink( relpath, target )
 
-    log_ = (log.RichOutputLog if core.getprop('richoutput') else log.StdoutLog)(sys.stdout)
+    log_ = (log.RichOutputLog if config.richoutput else log.StdoutLog)(sys.stdout)
 
-    htmloutput = core.getprop( 'htmloutput', True )
-    if htmloutput:
+    if config.htmloutput:
       for base, relpath in relpaths:
         with open( os.path.join(base,'log.html'), 'w' ) as redirlog:
           print( '<html><head>', file=redirlog )
@@ -199,7 +203,7 @@ def call(func, kwargs, scriptname, funcname=None):
     except (KeyboardInterrupt,SystemExit,pdb.bdb.BdbQuit):
       return 1
     except:
-      if core.getprop( 'pdb', False ):
+      if config.pdb:
         try:
           del log_
         except NameError:

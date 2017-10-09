@@ -24,77 +24,7 @@ dependencies on other nutils modules. Primarily for internal use.
 """
 
 import sys, functools, os
-
-globalproperties = {
-  'nprocs': 1,
-  'outrootdir': '~/public_html',
-  'outdir': '',
-  'verbose': 4,
-  'richoutput': sys.stdout.isatty(),
-  'htmloutput': True,
-  'pdb': False,
-  'imagetype': 'png',
-  'symlink': '',
-  'recache': False,
-  'dot': False,
-  'profile': False,
-}
-
-if os.access( '/run/shm', os.W_OK ):
-  globalproperties['shmdir'] = '/run/shm'
-
-for nutilsrc in ['~/.config/nutils/config', '~/.nutilsrc']:
-  nutilsrc = os.path.expanduser( nutilsrc )
-  if not os.path.isfile( nutilsrc ):
-    continue
-  try:
-    with open(nutilsrc) as rc:
-      exec( rc.read(), {}, globalproperties )
-  except:
-    exc_value, frames = sys.exc_info()
-    exc_str = '\n'.join( [ repr(exc_value) ] + [ str(f) for f in frames ] )
-    print( 'Skipping .nutilsrc: {}'.format(exc_str) )
-  break
-
-_nodefault = object()
-def getprop( name, default=_nodefault, frame=None ):
-  """Access a semi-global property.
-
-  The use of global variables is discouraged, as changes can go unnoticed and
-  lead to abscure failure. The getprop mechanism makes local variables accesible
-  (read only) from nested scopes, but not from the encompassing scope.
-
-  >>> def f():
-  ...   print(getprop('myval'))
-  ...
-  >>> def main():
-  ...   __myval__ = 2
-  ...   f()
-
-  Args:
-      name (str): Property name, corresponds to __name__ local variable.
-      default: Optional default value.
-
-  Returns:
-      The object corresponding to the first __name__ encountered in a higher
-      scope. If none found, return default. If no default specified, raise
-      NameError.
-  """
-
-  key = '__%s__' % name
-  if frame is None:
-    frame = sys._getframe(1)
-  while frame:
-    if key in frame.f_locals:
-      return frame.f_locals[key]
-    frame = frame.f_back
-  if name in globalproperties:
-    return globalproperties[name]
-  if default is _nodefault:
-    raise NameError( 'property %r is not defined' % name )
-  return default
-
-supports_outdirfd = os.open in os.supports_dir_fd and os.listdir in os.supports_fd
+from . import config
 
 def open_in_outdir( file, *args, **kwargs ):
   '''open a file relative to the ``outdirfd`` or ``outdir`` property
@@ -105,23 +35,19 @@ def open_in_outdir( file, *args, **kwargs ):
   '''
 
   assert 'opener' not in kwargs
-  outdirfd = getprop( 'outdirfd', None )
-  outdir = getprop( 'outdir', None )
-  if outdirfd is not None and supports_outdirfd:
-    kwargs['opener'] = functools.partial( os.open, dir_fd=outdirfd )
-  elif outdir:
-    file = os.path.join(os.path.expanduser(outdir), file)
+  if config.outdirfd is not None:
+    kwargs['opener'] = functools.partial(os.open, dir_fd=config.outdirfd)
+  elif config.outdir:
+    file = os.path.join(os.path.expanduser(config.outdir), file)
   return open( file, *args, **kwargs )
 
 def listoutdir():
   '''list files in ``outdirfd`` or ``outdir`` property'''
 
-  outdirfd = getprop( 'outdirfd', None )
-  outdir = getprop( 'outdir', None )
-  if outdirfd is not None and supports_outdirfd:
-    return os.listdir( outdirfd )
-  elif outdir:
-    return os.listdir(os.path.expanduser(outdir))
+  if config.outdirfd is not None:
+    return os.listdir(config.outdirfd)
+  elif config.outdir:
+    return os.listdir(os.path.expanduser(config.outdir))
   else:
     return os.listdir()
 
