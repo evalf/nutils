@@ -6,9 +6,101 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+Changed: Evaluable.eval
+
+  The `eval` method accepts a flexible number of keyword arguments,
+  which are accessible to `evalf` by depending on the `EVALARGS` token.
+  Standard keywords are `_transforms` for transformation chains,
+  `_points` for integration points, and `_cache` for the cache object.
+
+  Old:
+  >>> f.eval(elem, 'gauss2')
+
+  New:
+  >>> ipoints, iweights = elem.getischeme('gauss2')
+  >>> f.eval(_transforms=[elem.transform, elem.opposite], _points=ipoints)
+
+
+New: numeric.const
+
+  The `numeric.const` array represents an immutable, hashable array.
+
+  >>> A = numeric.const([[1,2],[3,4]])
+  >>> d = {A: 1}
+
+  Existing arrays can be wrapped into a `const` object by adding
+  `copy=False`. The `writeable` flag of the original array is set to
+  False to prevent subsequent modification.
+
+  >> A = numpy.array([1,2,3])
+  >> Aconst = numeric.const(A, copy=False)
+  >> A[1] = 4
+  ValueError: assignment destination is read-only
+
+
+New: function annotations
+
+  The `util.enforcetypes` decorator applies conversion methods to
+  annotated arguments:
+
+  >>> @util.enforcetypes
+  >>> def f(a:float, b:tuple)
+  >>>   print(type(a), type(b))
+  >>> f(1, [2])
+  <class 'float'> <class 'tuple'>
+
+  The decorator is by default active to constructors of cache.Immutable
+  derived objects, such as function.Evaluable.
+
+
+Changed: Evaluable._edit
+
+  Evaluable objects have a default edit implementation that
+  re-instantiates the object with the operand applied to all constructor
+  arguments.
+
+  Old:
+  >>> class A(function.Evaluable):
+  >>>   def __init__(self, a, b):
+  >>>     self.a = a
+  >>>     self.b = b
+  >>>   def _edit(self, op):
+  >>>     return A(op(self.a), op(self.b))
+
+  New:
+  >>> class A(function.Evaluable):
+  >>>   def __init__(self, a, b):
+  >>>     self.a = a
+  >>>     self.b = b
+
+  In situations where the default implementation is not sufficient it
+  can be overridden by implementing the `edit` method (note: without the
+  underscore):
+
+  >>> class B(function.Evaluable):
+  >>>   def __init__(self, d):
+  >>>     assert isinstance(d, dict)
+  >>>     self.d = d
+  >>>   def edit(self, op):
+  >>>     return B({key: op(value) for key, value in self.d.items()})
+
+
+Changed: function.derivative, Array._derivative
+
+  The `axes` argument has been removed; `derivative(func, var)` now
+  takes the derivative of `func` to all the axes in `var`.
+
+  Old:
+  >>> der = function.derivative(func, var, axes=numpy.arange(var.ndim))
+
+  New:
+  >>> der = function.derivative(func, var)
+
+
 Deprecated: cli.Path
 
   The cli.Path wrapper is deprecated in favor of pathlib.Path.
+
 
 New: cli module
 
