@@ -1,5 +1,35 @@
 from nutils import *
-from . import unittest, register
+from . import *
+
+@parametrize
+class gmsh(TestCase):
+
+  def setUp(self):
+    super().setUp()
+    self.domain, self.geom = mesh.gmsh(self.gmshdata.splitlines())
+
+  def test_volume(self):
+    volume = self.domain.integrate(1, geometry=self.geom, ischeme='gauss1')
+    numpy.testing.assert_almost_equal(volume, 1, decimal=10)
+
+  def test_length(self):
+    for group, exact_length in ('neumann',1), ('dirichlet',3), ((),2*self.domain.ndims):
+      with self.subTest(group or 'all'):
+        length = self.domain.boundary[group].integrate(1, geometry=self.geom, ischeme='gauss1')
+        numpy.testing.assert_almost_equal(length, exact_length, decimal=10)
+
+  def test_interfaces(self):
+    err = self.domain.interfaces.elem_eval(self.geom - function.opposite(self.geom), ischeme='uniform2', separate=False)
+    numpy.testing.assert_almost_equal(err, 0, decimal=15)
+
+  def test_divergence(self):
+    volumes = self.domain.boundary.integrate(self.geom*self.geom.normal(), geometry=self.geom, ischeme='gauss1')
+    numpy.testing.assert_almost_equal(volumes, 1, decimal=10)
+
+  def test_pointeval(self):
+    xy = self.domain.points.elem_eval(self.geom, ischeme='gauss1')
+    self.assertEqual(xy.shape, (2, 2) if self.domain.ndims==2 else (4, 3))
+    self.assertTrue(numpy.all(xy == ([1,0] if self.domain.ndims==2 else [1,0,0])))
 
 # gmsh geo 2D:
 #
@@ -18,7 +48,7 @@ from . import unittest, register
 # Physical Line("dirichlet") = {6,7,8};
 # Physical Surface("interior") = {10};
 
-gmshdata2d = '''\
+gmsh('2d', gmshdata='''\
 $MeshFormat
 2.2 0 8
 $EndMeshFormat
@@ -73,7 +103,7 @@ $Elements
 24 2 2 4 10 4 8 10
 25 2 2 4 10 3 7 11
 $EndElements
-'''
+''')
 
 # gmsh geo 3D:
 #
@@ -116,7 +146,7 @@ $EndElements
 # Physical Surface("dirichlet") = {27,28,29};
 # Physical Volume("interior") = {34};
 
-gmshdata3d = '''\
+gmsh('3d', gmshdata='''\
 $MeshFormat
 2.2 0 8
 $EndMeshFormat
@@ -188,40 +218,57 @@ $Elements
 40 4 2 4 34 13 6 9 10
 41 4 2 4 34 2 11 9 10
 $EndElements
-'''
+''')
 
-@register( '2d', gmshdata=gmshdata2d )
-@register( '3d', gmshdata=gmshdata3d )
-def gmsh( gmshdata ):
+@parametrize
+class gmshrect(TestCase):
 
-  domain, geom = mesh.gmsh( gmshdata.splitlines() )
+  def setUp(self):
+    super().setUp()
+    self.domain, self.geom = mesh.gmsh(self.gmshrectdata.splitlines())
 
-  @unittest
-  def volume():
-    volume = domain.integrate( 1, geometry=geom, ischeme='gauss1' )
-    numpy.testing.assert_almost_equal( volume, 1, decimal=10 )
+  def test_volume(self):
+    volume = self.domain.integrate(1, geometry=self.geom, ischeme='gauss1')
+    numpy.testing.assert_almost_equal(volume, 2, decimal=10)
 
-  for group, exact_length in ('neumann',1), ('dirichlet',3), ((),2*domain.ndims):
-    @unittest( name=group or 'all' )
-    def length():
-      length = domain.boundary[group].integrate( 1, geometry=geom, ischeme='gauss1' )
-      numpy.testing.assert_almost_equal( length, exact_length, decimal=10 )
+  def test_length(self):
+    length = self.domain.boundary.integrate( 1, geometry=self.geom, ischeme='gauss1')
+    numpy.testing.assert_almost_equal(length, 6, decimal=10)
 
-  @unittest
-  def interfaces():
-    err = domain.interfaces.elem_eval( geom - function.opposite(geom), ischeme='uniform2', separate=False )
-    numpy.testing.assert_almost_equal( err, 0, decimal=15 )
+  def test_divergence(self):
+    volumes = self.domain.boundary.integrate(self.geom*self.geom.normal(), geometry=self.geom, ischeme='gauss1')
+    numpy.testing.assert_almost_equal(volumes, 2, decimal=10)
 
-  @unittest
-  def divergence():
-    volumes = domain.boundary.integrate( geom*geom.normal(), geometry=geom, ischeme='gauss1' )
-    numpy.testing.assert_almost_equal( volumes, 1, decimal=10 )
+  def test_subvolume(self):
+    for group in 'left', 'right':
+      with self.subTest(group):
+        subdom = self.domain[group]
+        volume = subdom.integrate( 1, geometry=self.geom, ischeme='gauss1')
+        numpy.testing.assert_almost_equal(volume, 1, decimal=10)
 
-  @unittest
-  def pointeval():
-    xy = domain.points.elem_eval( geom, ischeme='gauss1' )
-    assert xy.shape == ( 2, 2 ) if domain.ndims==2 else ( 4, 3 )
-    assert numpy.all( xy == ([1,0] if domain.ndims==2 else [1,0,0]) )
+  def test_sublength(self):
+    for group in 'left', 'right':
+      with self.subTest(group):
+        subdom = self.domain[group]
+        length = subdom.boundary.integrate(1, geometry=self.geom, ischeme='gauss1')
+        numpy.testing.assert_almost_equal(length, 4, decimal=10)
+
+  def test_subdivergence(self):
+    for group in 'left', 'right':
+      with self.subTest(group):
+        subdom = self.domain[group]
+        volumes = subdom.boundary.integrate(self.geom*self.geom.normal(), geometry=self.geom, ischeme='gauss1')
+        numpy.testing.assert_almost_equal(volumes, 1, decimal=10)
+
+  def test_iface(self):
+    ax, ay = self.domain.interfaces['iface'].elem_eval(self.geom, ischeme='uniform1', separate=False).T
+    bx, by = self.domain['left'].boundary['iface'].elem_eval(self.geom, ischeme='uniform1', separate=False).T
+    cx, cy = self.domain['right'].boundary['iface'].elem_eval(self.geom, ischeme='uniform1', separate=False).T
+    self.assertTrue(all(ax == 1))
+    self.assertTrue(all(bx == 1))
+    self.assertTrue(all(cx == 1))
+    self.assertTrue(min(ay) == min(by) == min(cy))
+    self.assertTrue(max(ay) == max(by) == max(cy))
 
 # gmshrect geo:
 #
@@ -246,7 +293,7 @@ def gmsh( gmshdata ):
 # Physical Surface("left") = {16};
 # Physical Surface("right") = {17};
 
-gmshrectdata = '''\
+gmshrect('2d', gmshrectdata='''\
 $MeshFormat
 2.2 0 8
 $EndMeshFormat
@@ -319,53 +366,33 @@ $Elements
 33 2 2 3 17 2 21 13
 34 2 2 3 17 3 9 20
 $EndElements
-'''
+''')
 
-@register
-def gmshrect():
+@parametrize
+class gmshperiodic(TestCase):
 
-  domain, geom = mesh.gmsh( gmshrectdata.splitlines() )
+  def setUp(self):
+    super().setUp()
+    self.domain, self.geom = mesh.gmsh(self.gmshperiodicdata.splitlines())
 
-  @unittest
-  def volume():
-    volume = domain.integrate( 1, geometry=geom, ischeme='gauss1' )
-    numpy.testing.assert_almost_equal( volume, 2, decimal=10 )
+  def test_volume(self):
+    volume = self.domain.integrate( 1, geometry=self.geom, ischeme='gauss1' )
+    numpy.testing.assert_almost_equal( volume, 1, decimal=10 )
 
-  @unittest
-  def length():
-    length = domain.boundary.integrate( 1, geometry=geom, ischeme='gauss1' )
-    numpy.testing.assert_almost_equal( length, 6, decimal=10 )
+  def test_length(self):
+    for group, exact_length in ('right',1), ('left',1), ((),2):
+      with self.subTest(group or 'all'):
+        length = self.domain.boundary[group].integrate(1, geometry=self.geom, ischeme='gauss1')
+        numpy.testing.assert_almost_equal(length, exact_length, decimal=10)
 
-  @unittest
-  def divergence():
-    volumes = domain.boundary.integrate( geom*geom.normal(), geometry=geom, ischeme='gauss1' )
-    numpy.testing.assert_almost_equal( volumes, 2, decimal=10 )
+  def test_interface(self):
+    err = self.domain.interfaces['periodic'].elem_eval(function.opposite(self.geom) - self.geom, ischeme='uniform2', separate=False)
+    numpy.testing.assert_almost_equal(abs(err)-[0,1], 0, decimal=15)
 
-  for group in 'left', 'right':
-    subdom = domain[group]
-    @unittest( name=group )
-    def subvolume():
-      volume = subdom.integrate( 1, geometry=geom, ischeme='gauss1' )
-      numpy.testing.assert_almost_equal( volume, 1, decimal=10 )
-    @unittest( name=group )
-    def sublength():
-      length = subdom.boundary.integrate( 1, geometry=geom, ischeme='gauss1' )
-      numpy.testing.assert_almost_equal( length, 4, decimal=10 )
-    @unittest( name=group )
-    def subdivergence():
-      volumes = subdom.boundary.integrate( geom*geom.normal(), geometry=geom, ischeme='gauss1' )
-      numpy.testing.assert_almost_equal( volumes, 1, decimal=10 )
-
-  @unittest
-  def iface():
-    ax, ay = domain.interfaces['iface'].elem_eval( geom, ischeme='uniform1', separate=False ).T
-    bx, by = domain['left'].boundary['iface'].elem_eval( geom, ischeme='uniform1', separate=False ).T
-    cx, cy = domain['right'].boundary['iface'].elem_eval( geom, ischeme='uniform1', separate=False ).T
-    assert all( ax == 1 )
-    assert all( bx == 1 )
-    assert all( cx == 1 )
-    assert min(ay) == min(by) == min(cy)
-    assert max(ay) == max(by) == max(cy)
+  def test_basis(self):
+    basis = self.domain.basis('std', degree=1)
+    err = self.domain.interfaces.integrate(basis - function.opposite(basis), geometry=self.geom, ischeme='gauss1')
+    numpy.testing.assert_almost_equal(err, 0, decimal=15)
 
 # gmshperiodic geo:
 #
@@ -385,7 +412,7 @@ def gmshrect():
 # Physical Line("periodic") = {5};
 # Periodic Line { 5 } = { -7 };
 
-gmshperiodicdata = '''\
+gmshperiodic('2d', gmshperiodicdata='''\
 $MeshFormat
 2.2 0 8
 $EndMeshFormat
@@ -475,67 +502,41 @@ $Periodic
 5 10
 6 9
 $EndPeriodic
-'''
+''')
 
-@register
-def gmshperiodic():
+@parametrize
+class rectilinear(TestCase):
 
-  domain, geom = mesh.gmsh( gmshperiodicdata.splitlines() )
+  def setUp(self):
+    super().setUp()
+    self.domain, self.geom = getattr(mesh, self.method)([4,5])
 
-  @unittest
-  def volume():
-    volume = domain.integrate( 1, geometry=geom, ischeme='gauss1' )
-    numpy.testing.assert_almost_equal( volume, 1, decimal=10 )
+  def test_volume(self):
+    volume = self.domain.integrate(1, geometry=self.geom, ischeme='gauss1')
+    numpy.testing.assert_almost_equal(volume, 20, decimal=15)
 
-  for group, exact_length in ('right',1), ('left',1), ((),2):
-    @unittest( name=group or 'all' )
-    def length():
-      length = domain.boundary[group].integrate( 1, geometry=geom, ischeme='gauss1' )
-      numpy.testing.assert_almost_equal( length, exact_length, decimal=10 )
+  def divergence(self):
+    self.domain.volume_check(self.geom)
 
-  @unittest
-  def interface():
-    err = domain.interfaces['periodic'].elem_eval( function.opposite(geom) - geom, ischeme='uniform2', separate=False )
-    numpy.testing.assert_almost_equal( abs(err)-[0,1], 0, decimal=15 )
+  def test_length(self):
+    for group, exact_length in ('right',5), ('left',5), ('top',4), ('bottom',4), ((),18):
+      with self.subTest(group or 'all'):
+        length = self.domain.boundary[group].integrate(1, geometry=self.geom, ischeme='gauss1')
+        numpy.testing.assert_almost_equal(length, exact_length, decimal=10)
 
-  @unittest
-  def basis():
-    basis = domain.basis( 'std', degree=1 )
-    err = domain.interfaces.integrate( basis - function.opposite(basis), geometry=geom, ischeme='gauss1' )
-    numpy.testing.assert_almost_equal( err, 0, decimal=15 )
+  def test_interface(self):
+    geomerr = self.domain.interfaces.elem_eval(self.geom - function.opposite(self.geom), ischeme='uniform2', separate=False)
+    numpy.testing.assert_almost_equal(geomerr, 0, decimal=15)
+    normalerr = self.domain.interfaces.elem_eval(self.geom.normal() + function.opposite(self.geom.normal()), ischeme='uniform2', separate=False)
+    numpy.testing.assert_almost_equal(normalerr, 0, decimal=15)
 
-@register( 'new', mesh.newrectilinear )
-@register( 'old', mesh.rectilinear )
-def rectilinear( rectilinear ):
+  def test_pum(self):
+    for basistype in 'discont', 'std', 'spline':
+      for degree in 1, 2, 3:
+        with self.subTest(basistype+str(degree)):
+          basis = self.domain.basis(basistype, degree=degree)
+          values = self.domain.interfaces.elem_eval(basis, geometry=self.geom, ischeme='uniform2', separate=False)
+          numpy.testing.assert_almost_equal(values.sum(1), 1)
 
-  domain, geom = rectilinear( [4,5] )
-
-  @unittest
-  def volume():
-    volume = domain.integrate( 1, geometry=geom, ischeme='gauss1' )
-    numpy.testing.assert_almost_equal( volume, 20, decimal=15 )
-
-  @unittest
-  def divergence():
-    domain.volume_check( geom )
-
-  for group, exact_length in ('right',5), ('left',5), ('top',4), ('bottom',4), ((),18):
-    @unittest( name=group or 'all' )
-    def length():
-      length = domain.boundary[group].integrate( 1, geometry=geom, ischeme='gauss1' )
-      numpy.testing.assert_almost_equal( length, exact_length, decimal=10 )
-
-  @unittest
-  def interface():
-    geomerr = domain.interfaces.elem_eval( geom - function.opposite(geom), ischeme='uniform2', separate=False )
-    numpy.testing.assert_almost_equal( geomerr, 0, decimal=15 )
-    normalerr = domain.interfaces.elem_eval( geom.normal() + function.opposite(geom.normal()), ischeme='uniform2', separate=False )
-    numpy.testing.assert_almost_equal( normalerr, 0, decimal=15 )
-
-  for basistype in 'discont', 'std', 'spline':
-    for degree in 1, 2, 3:
-      @unittest( name=basistype+str(degree) )
-      def pum():
-        basis = domain.basis( basistype, degree=degree )
-        values = domain.interfaces.elem_eval( basis, geometry=geom, ischeme='uniform2', separate=False )
-        numpy.testing.assert_almost_equal( values.sum(1), 1 )
+rectilinear('new', method='newrectilinear')
+rectilinear('old', method='rectilinear')

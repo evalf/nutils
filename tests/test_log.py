@@ -1,5 +1,5 @@
-import io, tempfile, os, contextlib
-from . import register, unittest
+import io, tempfile, os
+from . import *
 import nutils.log, nutils.core, nutils.parallel, nutils.debug
 
 log_stdout = '''\
@@ -143,94 +143,101 @@ def generate_log():
   nutils.log.info( 'test.png' )
   nutils.log.info( 'nonexistent.png' )
 
-@register( 'stdout', nutils.log.StdoutLog, log_stdout )
-@register( 'stdout-verbose3', nutils.log.StdoutLog, log_stdout3, verbose=3 )
-@register( 'rich_output', nutils.log.RichOutputLog, log_rich_output )
-@register( 'html', nutils.log.HtmlLog, log_html, title='test' )
-@register( 'indent', nutils.log.IndentLog, log_indent )
-@register( 'indent-progress-seekable', nutils.log.IndentLog, log_indent, progressfile='seekable' )
-@register( 'indent-progress-stream', nutils.log.IndentLog, log_indent, progressfile='stream' )
-def logoutput( logcls, logout, verbose=len( nutils.log.LEVELS ), progressfile=False, **kwargs ):
+@parametrize
+class logoutput(ContextTestCase):
 
-  @unittest
-  def test():
-    with contextlib.ExitStack() as stack:
-      __outdir__ = stack.enter_context( tempfile.TemporaryDirectory() )
-      __verbose__ = verbose
-      # Make sure all progress information is written, regardless the speed of
-      # this computer.
-      __progressinterval__ = -1
-      stream = io.StringIO()
-      if progressfile == 'seekable':
-        kwargs.update( progressfile=stack.enter_context( open( os.path.join( __outdir__, 'progress.json' ), 'w' ) ) )
-      elif progressfile == 'stream':
-        kwargs.update( progressfile=io.StringIO() )
-      elif progressfile is False:
-        pass
-      else:
-        raise ValueError
-      with logcls( stream, **kwargs ) as __log__:
-        generate_log()
-      assert stream.getvalue() == logout
+  def setUpContext(self, stack):
+    super().setUpContext(stack)
+    self.outdir = stack.enter_context(tempfile.TemporaryDirectory())
+    if self.progressfile == 'seekable':
+      self.progressfileobj = stack.enter_context(open(os.path.join(self.outdir, 'progress.json'), 'w' ))
+    elif self.progressfile == 'stream':
+      self.progressfileobj = progressfile=io.StringIO()
+    else:
+      self.progressfileobj = None
 
-@register
-def tee_stdout_html():
+  def test(self):
+    __outdir__ = self.outdir
+    __verbose__ = self.verbose
+    # Make sure all progress information is written, regardless the speed of
+    # this computer.
+    __progressinterval__ = -1
+    stream = io.StringIO()
+    kwargs = dict(title='test') if self.logcls == nutils.log.HtmlLog else {}
+    if self.progressfileobj is not None:
+      kwargs.update(progressfile=self.progressfileobj)
+    with self.logcls(stream, **kwargs) as __log__:
+      generate_log()
+    self.assertEqual(stream.getvalue(), self.logout)
 
-  @unittest
-  def test():
-    with tempfile.TemporaryDirectory() as __outdir__:
-      __verbose__ = len( nutils.log.LEVELS )
-      stream_stdout = io.StringIO()
-      stream_html = io.StringIO()
-      __log__ = nutils.log.TeeLog(
-        nutils.log.StdoutLog( stream_stdout ),
-        nutils.log.HtmlLog( stream_html, title='test' ))
-      with __log__:
-        generate_log()
-      assert stream_stdout.getvalue() == log_stdout
-      assert stream_html.getvalue() == log_html
+_logoutput = lambda name, logcls, logout, verbose=len(nutils.log.LEVELS), progressfile=False: logoutput(name, logcls=logcls, logout=logout, verbose=verbose, progressfile=progressfile)
+_logoutput('stdout', nutils.log.StdoutLog, log_stdout)
+_logoutput('stdout-verbose3', nutils.log.StdoutLog, log_stdout3, verbose=3)
+_logoutput('rich_output', nutils.log.RichOutputLog, log_rich_output)
+_logoutput('html', nutils.log.HtmlLog, log_html)
+_logoutput('indent', nutils.log.IndentLog, log_indent)
+_logoutput('indent-progress-seekable', nutils.log.IndentLog, log_indent, progressfile='seekable')
+_logoutput('indent-progress-stream', nutils.log.IndentLog, log_indent, progressfile='stream')
 
-@register
-def html_post_mortem():
+class tee_stdout_html(ContextTestCase):
 
-  class TestException( Exception ): pass
+  def setUpContext(self, stack):
+    super().setUpContext(stack)
+    self.outdir = stack.enter_context(tempfile.TemporaryDirectory())
 
-  virtual_module = dict( TestException=TestException )
-  exec( '''\
-def generate_exception( level=0 ):
+  def test(self):
+    __outdir__ = self.outdir
+    __verbose__ = len(nutils.log.LEVELS)
+    stream_stdout = io.StringIO()
+    stream_html = io.StringIO()
+    __log__ = nutils.log.TeeLog(
+      nutils.log.StdoutLog(stream_stdout),
+      nutils.log.HtmlLog(stream_html, title='test'))
+    with __log__:
+      generate_log()
+    self.assertEqual(stream_stdout.getvalue(), log_stdout)
+    self.assertEqual(stream_html.getvalue(), log_html)
+
+class html_post_mortem(ContextTestCase):
+
+  def setUpContext(self, stack):
+    super().setUpContext(stack)
+    self.outdir = stack.enter_context(tempfile.TemporaryDirectory())
+
+  def test(self):
+    class TestException(Exception): pass
+
+    virtual_module = dict(TestException=TestException)
+    exec('''\
+def generate_exception(level=0):
   if level == 1:
     raise TestException
   else:
-    generate_exception( level+1 )
-''', virtual_module )
+    generate_exception(level+1)
+''', virtual_module)
+    __outdir__ = self.outdir
+    stream = io.StringIO()
+    with self.assertRaises(TestException):
+      with nutils.log.HtmlLog(stream, title='test') as __log__:
+        virtual_module['generate_exception']()
+    self.assertIn('<span class="post-mortem">', stream.getvalue())
 
-  @unittest
-  def test():
-    with tempfile.TemporaryDirectory() as __outdir__:
-      stream = io.StringIO()
-      try:
-        with nutils.log.HtmlLog( stream, title='test' ) as __log__:
-          virtual_module['generate_exception']()
-      except TestException:
-        pass
-      else:
-        raise ValueError( 'Expected a `ValueError` exception.' )
-      assert '<span class="post-mortem">' in stream.getvalue()
+class move_outdir(ContextTestCase):
 
-@register
-def move_outdir():
+  def setUpContext(self, stack):
+    super().setUpContext(stack)
+    tmpdir = stack.enter_context(tempfile.TemporaryDirectory())
+    self.outdira = os.path.join(tmpdir, 'a')
+    self.outdirb = os.path.join(tmpdir, 'b')
+    os.mkdir(self.outdira)
+    self.outdirfd = os.open(self.outdira, flags=os.O_RDONLY)
+    stack.callback(os.close, self.outdirfd)
 
-  @unittest
-  def test():
-    with contextlib.ExitStack() as stack:
-      tmpdir = stack.enter_context( tempfile.TemporaryDirectory() )
-      outdir = os.path.join( tmpdir, 'a' )
-      os.mkdir( outdir )
-      __outdirfd__ = os.open( outdir, flags=os.O_RDONLY )
-      stack.callback( os.close, __outdirfd__ )
-      os.rename( outdir, os.path.join( tmpdir, 'b' ) )
-      __verbose__ = len( nutils.log.LEVELS )
-      stream = io.StringIO()
-      with nutils.log.HtmlLog( stream, title='test' ) as __log__:
-        generate_log()
-      assert stream.getvalue() == log_html
+  def test(self):
+    __outdirfd__ = self.outdirfd
+    os.rename(self.outdira, self.outdirb)
+    __verbose__ = len(nutils.log.LEVELS)
+    stream = io.StringIO()
+    with nutils.log.HtmlLog(stream, title='test') as __log__:
+      generate_log()
+    self.assertEqual(stream.getvalue(), log_html)

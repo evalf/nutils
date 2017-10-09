@@ -1,7 +1,7 @@
 #! /usr/bin/python3
 
 from nutils import mesh, cli, log, function, plot, debug, solver, _
-import numpy
+import numpy, unittest
 
 
 class MakePlots:
@@ -59,31 +59,34 @@ def main(
   return res.eval(arguments=dict(lhs=lhs)), lhs
 
 
-def unittest():
+class test(unittest.TestCase):
 
-  retvals = main(ndims=1, nelems=10, timescale=.1, degree=1, endtime=.01, withplots=False)
-  assert debug.checkdata(retvals, '''
-    eNotkNsNRCEIBdvxJpDwBguy/xZWcL/GCHgGGZYB+wdrqbkcLBAyOhiAVhIHE1wq+oIr6qCDMlHzYh+8
-    48L2mDpkliamdcEBt8dMIAdNC96WmUXzeiWJzHcw5o5FdfHJ3awjpJbchtdWSL2beKTbxbW5hcaxot+/
-    rvZc1GKC059rFsW4Et9UvbRolkr2ff130nQfxvOtzaO79f0FU8yK1yOaQl7t9cH3A58wSvg=''')
+  def test_1d_p1(self):
+    retvals = main(ndims=1, nelems=10, timescale=.1, degree=1, endtime=.01, withplots=False)
+    self.assertTrue(debug.checkdata(retvals, '''
+      eNotkNsNRCEIBdvxJpDwBguy/xZWcL/GCHgGGZYB+wdrqbkcLBAyOhiAVhIHE1wq+oIr6qCDMlHzYh+8
+      48L2mDpkliamdcEBt8dMIAdNC96WmUXzeiWJzHcw5o5FdfHJ3awjpJbchtdWSL2beKTbxbW5hcaxot+/
+      rvZc1GKC059rFsW4Et9UvbRolkr2ff130nQfxvOtzaO79f0FU8yK1yOaQl7t9cH3A58wSvg='''))
 
-  retvals = main(ndims=1, nelems=10, timescale=.1, degree=2, endtime=.01, withplots=False)
-  assert debug.checkdata(retvals, '''
-    eNotkdkNxDAIRNtJJCxxHwWl/xbWwH49AnhgCMGjQPbC8xSpf6dATew7CYcr6zsBhEnf8dum1mQ3nO9b
-    +I4BpVSTi61pQdQMwclnhgwLffM1eUOP5mEVnsCSp/Nk0JYqIjfjvJnA2EDYdZ+TbECUuCVL7Q0PucQE
-    7C0Yd4T9A3XUsVmc1r7vDViJxyGbjMMkXoc1ewnlTCKUO0ibPox2pCBmuOxlFUy3HtY6l+rZLEcZVlto
-    Rq5e9wkk5ugl6ehZ2fRLoi5p+++d9l389/GZIxRzCCqy3X+Px4zzJ1l5fL7w/gDuxG+1''')
+  def test_1d_p2(self):
+    retvals = main(ndims=1, nelems=10, timescale=.1, degree=2, endtime=.01, withplots=False)
+    self.assertTrue(debug.checkdata(retvals, '''
+      eNotkdkNxDAIRNtJJCxxHwWl/xbWwH49AnhgCMGjQPbC8xSpf6dATew7CYcr6zsBhEnf8dum1mQ3nO9b
+      +I4BpVSTi61pQdQMwclnhgwLffM1eUOP5mEVnsCSp/Nk0JYqIjfjvJnA2EDYdZ+TbECUuCVL7Q0PucQE
+      7C0Yd4T9A3XUsVmc1r7vDViJxyGbjMMkXoc1ewnlTCKUO0ibPox2pCBmuOxlFUy3HtY6l+rZLEcZVlto
+      Rq5e9wkk5ugl6ehZ2fRLoi5p+++d9l389/GZIxRzCCqy3X+Px4zzJ1l5fL7w/gDuxG+1'''))
 
-  retvals = main(ndims=2, nelems=4, timescale=.1, degree=1, endtime=.01, withplots=False)
-  assert debug.checkdata(retvals, '''
-    eNpNktkNAzEIRNtJJFviMIcLSv8txOCF5AsvMzsPHzhea6C8x+uFgvqZe4gKRJ3KiJ/pYxJu/0wb6MZR
-    F4NEnQ6wc7HR9F8pZwttrfSidXjjkGVllm+M6q4r+syQfd96snXghlNlIIZfBqllrX75uv/4Krc4nftw
-    pitDLpjQQiHzeyICsa2z2Lolss/0CyJ0GnPSJjom/ie1uaU2F+HHLEQzzVjuLRjdw0Zhv+MY33FIxTJP
-    SOHOBXqDl9s93p9U5pba3IiGNqKg56Xgcrq0jQ9WPBdEjLlBF9mXwcGQwUk/l6B8hPUT2lpKOTu9cB1e
-    tGno+Su5USq8PRcoGyJroe18GrAsvmlBVkQ8fe5++br/+Dq4SBXcpLlg3VeocbdHsRUHdYbaKsmmeN+H
-    SaqRzUq3b8D//fJVv3wdXKQKbtKU50aJosb240UfQQEwFgzP/pzXHXLrc3MA/q+Us4W2VnjTOr1w7/H+
-    Aj2F8Gw=''')
+  def test_2d_p1(self):
+    retvals = main(ndims=2, nelems=4, timescale=.1, degree=1, endtime=.01, withplots=False)
+    self.assertTrue(debug.checkdata(retvals, '''
+      eNpNktkNAzEIRNtJJFviMIcLSv8txOCF5AsvMzsPHzhea6C8x+uFgvqZe4gKRJ3KiJ/pYxJu/0wb6MZR
+      F4NEnQ6wc7HR9F8pZwttrfSidXjjkGVllm+M6q4r+syQfd96snXghlNlIIZfBqllrX75uv/4Krc4nftw
+      pitDLpjQQiHzeyICsa2z2Lolss/0CyJ0GnPSJjom/ie1uaU2F+HHLEQzzVjuLRjdw0Zhv+MY33FIxTJP
+      SOHOBXqDl9s93p9U5pba3IiGNqKg56Xgcrq0jQ9WPBdEjLlBF9mXwcGQwUk/l6B8hPUT2lpKOTu9cB1e
+      tGno+Su5USq8PRcoGyJroe18GrAsvmlBVkQ8fe5++br/+Dq4SBXcpLlg3VeocbdHsRUHdYbaKsmmeN+H
+      SaqRzUq3b8D//fJVv3wdXKQKbtKU50aJosb240UfQQEwFgzP/pzXHXLrc3MA/q+Us4W2VnjTOr1w7/H+
+      Aj2F8Gw='''))
 
 
 if __name__ == '__main__':
-  cli.choose(main, unittest)
+  cli.run(main)

@@ -1,6 +1,7 @@
 #! /usr/bin/env python3
 
 from nutils import *
+import unittest
 
 
 def makeplots(name, domain, ns):
@@ -60,18 +61,19 @@ def main(
   return lhs0, lhs1
 
 
-def unittest():
+class test(unittest.TestCase):
 
-  retvals = main(nelems=4, angle=10, plots=False)
-  assert debug.checkdata(retvals, '''
-    eNqtU1tu5DAMu84UiAu9Hwea+1+htuj5aT93gQBiHEmWSIaflz3sX8/rRd/Pr2dxl75XPJxZE1npvfwR
-    bjtRSfJE55Pnu4DdDwjxPAVaMQlJJicyE7/XvlG5T1ycXPNBfRIiT8J+F0VikZ0oLIGC0LmaO6awU1CQ
-    mpPop+GOTYICP1ftmdMDI9zOXdNRyuZdJabwLw2aPts7y0RNxMVGDSA60y8VchAxXQ+IxomIBXI0hsTl
-    ngCRl77IRp8oAUi1IXBV1m1IJ/ksJtj0jMEAWnRP4n4KNoBiB2i/IDU+ny5THegsmyMACZSL2nTePvnL
-    jxBc4m4+LjGILtazsTLP6FYCBSr9uipwnkNRpg0Ne8MZiMXnduujXB0Fp0+Roo9eJbMNijZMVZSjizLs
-    yQQ6tpkIHsGikpb/ySNm+EOMdIy/JM4MtRUsuybJhKbGV2WOj0nSGib5qGzW8EY6AfRocbxBDEuECqoy
-    r0m6Eid7/iuuXU72/3O9oXKXtrpOiPyYpPMawPhfTPL1Ayv17i8=''')
+  def test(self):
+    retvals = main(nelems=4, angle=10, plots=False)
+    self.assertTrue(debug.checkdata(retvals, '''
+      eNqtU1tu5DAMu84UiAu9Hwea+1+htuj5aT93gQBiHEmWSIaflz3sX8/rRd/Pr2dxl75XPJxZE1npvfwR
+      bjtRSfJE55Pnu4DdDwjxPAVaMQlJJicyE7/XvlG5T1ycXPNBfRIiT8J+F0VikZ0oLIGC0LmaO6awU1CQ
+      mpPop+GOTYICP1ftmdMDI9zOXdNRyuZdJabwLw2aPts7y0RNxMVGDSA60y8VchAxXQ+IxomIBXI0hsTl
+      ngCRl77IRp8oAUi1IXBV1m1IJ/ksJtj0jMEAWnRP4n4KNoBiB2i/IDU+ny5THegsmyMACZSL2nTePvnL
+      jxBc4m4+LjGILtazsTLP6FYCBSr9uipwnkNRpg0Ne8MZiMXnduujXB0Fp0+Roo9eJbMNijZMVZSjizLs
+      yQQ6tpkIHsGikpb/ySNm+EOMdIy/JM4MtRUsuybJhKbGV2WOj0nSGib5qGzW8EY6AfRocbxBDEuECqoy
+      r0m6Eid7/iuuXU72/3O9oXKXtrpOiPyYpPMawPhfTPL1Ayv17i8='''))
 
 
 if __name__ == '__main__':
-  cli.choose(main, unittest)
+  cli.run(main)

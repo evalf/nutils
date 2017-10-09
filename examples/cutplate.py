@@ -1,6 +1,7 @@
 #! /usr/bin/env python3
 
 from nutils import *
+import unittest
 
 
 def main(
@@ -84,34 +85,36 @@ def conv(degree=1, nrefine=4):
     plt.grid(True)
 
 
-def unittest():
+class test(unittest.TestCase):
 
-  retvals = main(degree=1, maxrefine=2, withplots=False)
-  assert debug.checkdata( retvals, '''
-    eNplUkuuwzAIvE4rGYnBgM1x3iLb3n9Z40+kly4iwwQzHxnlpQX2Lq+XdO8XeTFWv8jKwD5/n4LmctEY
-    QtU8E3O45kjWBLXRtGKOuKhvEDLBbJ6faENuEmlyNiLCTz0XGGBJQa5qN1eXGncTzreKf/tD6uEe6lL+
-    amrryJpCJNLqnBCHnDXDMzSW34fv6BU5drwbtyXw6b9V6+vHzgBuc5OAp0dhtOX/4IvhmQv6wk82qF7z
-    JAVPxb8hkcUmP0lRiz184qKu3Nat0DVsQ8oujLM4EZIwbzM7x0EFzux+wiSBz4dzJ0rVeT+l9xdsEpFC''')
+  def test_tri_p1_refine2(self):
+    retvals = main(degree=1, maxrefine=2, withplots=False)
+    self.assertTrue(debug.checkdata(retvals, '''
+      eNplUkuuwzAIvE4rGYnBgM1x3iLb3n9Z40+kly4iwwQzHxnlpQX2Lq+XdO8XeTFWv8jKwD5/n4LmctEY
+      QtU8E3O45kjWBLXRtGKOuKhvEDLBbJ6faENuEmlyNiLCTz0XGGBJQa5qN1eXGncTzreKf/tD6uEe6lL+
+      amrryJpCJNLqnBCHnDXDMzSW34fv6BU5drwbtyXw6b9V6+vHzgBuc5OAp0dhtOX/4IvhmQv6wk82qF7z
+      JAVPxb8hkcUmP0lRiz184qKu3Nat0DVsQ8oujLM4EZIwbzM7x0EFzux+wiSBz4dzJ0rVeT+l9xdsEpFC'''))
 
+  def test_quad_p2_refine2(self):
+    retvals = main(nelems=4, degree=2, maxrefine=2, withplots=False)
+    self.assertTrue(debug.checkdata(retvals, '''
+      eNqlUkFuxDAI/M6uFCQzBmye00Ou+/9jMTg9bFOpag8RBMYwMPDxkIP1eTwe2iafNA5uvZ+kR8ReH6+D
+      WJucNI/hFnGPQMdYAchIu1DvH5pjFbnLmaj+lOPofpLc51QzB+lzW00L5bSN858nMs/D7K4WeV/E7wlE
+      Un0lO7vfTUdzj0Zs3m8Rppr1MYFbgIpVCYXNhSB2jYiF0xpnCjLLEYxylKtsCMPM0br/QhwaIrkdkebL
+      ei/6GMg5gZFyX4oBpQBgtU2Z+T9tzJUPk3QuFYHpG99q+4tR2D6zLydr+VIWXdq2qQ6YsVWrfsYZ/6va
+      zGvwWI0Ol9ybN7kctHL2ARBjkQwwuiYLGmw5Fk1TKzBjP3+7DJKmJaP0S0/f2KFSr79di2LxXpJLK0hX
+      2wIPLuz7ARFiyjwPtyVvOLA9S8hQzn+P6vkJim73Tw=='''))
 
-  retvals = main(nelems=4, degree=2, maxrefine=2, withplots=False)
-  assert debug.checkdata( retvals, '''
-    eNqlUkFuxDAI/M6uFCQzBmye00Ou+/9jMTg9bFOpag8RBMYwMPDxkIP1eTwe2iafNA5uvZ+kR8ReH6+D
-    WJucNI/hFnGPQMdYAchIu1DvH5pjFbnLmaj+lOPofpLc51QzB+lzW00L5bSN858nMs/D7K4WeV/E7wlE
-    Un0lO7vfTUdzj0Zs3m8Rppr1MYFbgIpVCYXNhSB2jYiF0xpnCjLLEYxylKtsCMPM0br/QhwaIrkdkebL
-    ei/6GMg5gZFyX4oBpQBgtU2Z+T9tzJUPk3QuFYHpG99q+4tR2D6zLydr+VIWXdq2qQ6YsVWrfsYZ/6va
-    zGvwWI0Ol9ybN7kctHL2ARBjkQwwuiYLGmw5Fk1TKzBjP3+7DJKmJaP0S0/f2KFSr79di2LxXpJLK0hX
-    2wIPLuz7ARFiyjwPtyVvOLA9S8hQzn+P6vkJim73Tw==''')
-
-  retvals = main(nelems=4, degree=2, maxrefine=3, withplots=False)
-  assert debug.checkdata( retvals, '''
-    eNqlUklqBDEM/M4M2KB9eU4Oc53/H2NLnkCGDoTk0EhtlbYq4bjJQL2P202B5TF9IJA/po719vx4jokK
-    6z2Gp/Fj5nrgDYhB4mU36v0jSNpFrmImqj/FEGE1keuYasVIOI7VsqRYFrD+Maji6GZXtWay+08DrKDm
-    DjJmXm0346w20ZIvEaZa9SmILgEq1iWULDZiYup6seUAYIVIoh0hb0dRX8Ig2nL5F+JMdyg2RJqVFOjh
-    nLnscsqetYhaAaJmDyWK1bAonHnP9VKRKOHgsdmHVoGj/2tq+VKWWODYqk+IdFTrPMPu+0e1sXRb1Kh7
-    FG8JwsehZvJ1AJutKDCxVbXpaI0J6/1mIsnJ+n4ZU8C6g7BDS5TUSa57O724FmZpYVCgs1lPS3Vs7PsB
-    TcI98DqPNIJyFtvZvVVP738e1f0TqD33ag==''')
+  def test_quad_p2_refine3(self):
+    retvals = main(nelems=4, degree=2, maxrefine=3, withplots=False)
+    self.assertTrue(debug.checkdata(retvals, '''
+      eNqlUklqBDEM/M4M2KB9eU4Oc53/H2NLnkCGDoTk0EhtlbYq4bjJQL2P202B5TF9IJA/po719vx4jokK
+      6z2Gp/Fj5nrgDYhB4mU36v0jSNpFrmImqj/FEGE1keuYasVIOI7VsqRYFrD+Maji6GZXtWay+08DrKDm
+      DjJmXm0346w20ZIvEaZa9SmILgEq1iWULDZiYup6seUAYIVIoh0hb0dRX8Ig2nL5F+JMdyg2RJqVFOjh
+      nLnscsqetYhaAaJmDyWK1bAonHnP9VKRKOHgsdmHVoGj/2tq+VKWWODYqk+IdFTrPMPu+0e1sXRb1Kh7
+      FG8JwsehZvJ1AJutKDCxVbXpaI0J6/1mIsnJ+n4ZU8C6g7BDS5TUSa57O724FmZpYVCgs1lPS3Vs7PsB
+      TcI98DqPNIJyFtvZvVVP738e1f0TqD33ag=='''))
 
 
 if __name__ == '__main__':
-  cli.choose(main, conv, unittest)
+  cli.choose(main, conv)

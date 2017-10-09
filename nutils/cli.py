@@ -70,12 +70,12 @@ def _sigint_handler( mysignal, frame ):
 
 Path = pathlib.Path
 
-def run( func, *, args=None ):
+def run(func, *, args=None, scriptname=None):
   '''parse command line arguments and call function'''
 
-  return choose( func, cmd=False, args=args )
+  return choose(func, cmd=False, args=args, scriptname=scriptname)
 
-def choose( *functions, cmd=True, args=None ):
+def choose(*functions, cmd=True, args=None, scriptname=None):
   '''parse command line arguments and call one of multiple functions'''
 
   assert functions, 'no functions specified'
@@ -110,7 +110,7 @@ def choose( *functions, cmd=True, args=None ):
   ns = parser.parse_args( args )
 
   # set properties
-  __scriptname__ = os.path.basename(sys.argv[0])
+  __scriptname__ = scriptname or os.path.basename(sys.argv[0])
   __nprocs__ = ns.nprocs
   __outrootdir__ = os.path.abspath(os.path.expanduser(ns.outrootdir))
   __cachedir__ = os.path.join( __outrootdir__, __scriptname__, 'cache' )

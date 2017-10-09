@@ -10,7 +10,7 @@ Engineering, Elsevier, 2005, 194, 4135-4195.
 """
 
 from nutils import cli, mesh, function, plot, log, debug, solver
-import numpy
+import numpy, unittest
 
 
 def main(
@@ -102,19 +102,23 @@ def convergence(nrefine=5):
     plt.grid(True)
 
 
-def unittest():
-  retvals = main(nr=0, withplots=False)
-  assert debug.checkdata(retvals, '''
-    eNoz1NEw0TE01dTRMLY0tEjVNdYxNTAwANGaAEntBW4=''')
+class test(unittest.TestCase):
 
-  retvals = main(nr=2, withplots=False)
-  assert debug.checkdata(retvals, '''
-    eNoz1NEw0TE01dTRMDQxN0vVNdYxMjCyBNGaAEniBXM=''')
+  def test0(self):
+    retvals = main(nr=0, withplots=False)
+    self.assertTrue(debug.checkdata(retvals, '''
+      eNoz1NEw0TE01dTRMLY0tEjVNdYxNTAwANGaAEntBW4='''))
 
-  retvals = main(L=3, R=1.5, E=1e6, nu=0.4, T=15, nr=3, withplots=False)
-  assert debug.checkdata(retvals, '''
-    eNoz1NEw0TE01dTRMDI1MUrVNdExN7MwA9GaAEohBX4=''')
+  def test1(self):
+    retvals = main(nr=2, withplots=False)
+    self.assertTrue(debug.checkdata(retvals, '''
+      eNoz1NEw0TE01dTRMDQxN0vVNdYxMjCyBNGaAEniBXM='''))
+
+  def test2(self):
+    retvals = main(L=3, R=1.5, E=1e6, nu=0.4, T=15, nr=3, withplots=False)
+    self.assertTrue(debug.checkdata(retvals, '''
+      eNoz1NEw0TE01dTRMDI1MUrVNdExN7MwA9GaAEohBX4='''))
 
 
 if __name__ == '__main__':
-  cli.choose( main, convergence, unittest )
+  cli.choose(main, convergence)

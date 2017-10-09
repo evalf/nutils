@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 
 from nutils import mesh, plot, cli, function, log, debug, solver
-import numpy
+import numpy, unittest
 
 
 def main(
@@ -51,21 +51,23 @@ def main(
   return cons, lhs, err
 
 
-def unittest():
+class test(unittest.TestCase):
 
-  retvals = main(nelems=4, degree=1, withplots=False, solvetol=0)
-  assert debug.checkdata(retvals, '''
-    eNqVjjsKAzEMRK+zCzJ49LHk46Rwu/cvYylsICRNCjHijTUe0KEEO+k4dJqv5tQgPHMR8w1ig86ciwFY
-    bZKE22pK1+P6GMeQX3yKxS+Ojv1evvhu838ZG47UENdUsHKGI3Sk3uXQNYqbeirztFTRzJN3WciY5dd/
-    W+esO1WrvLs8NF4+onxhrbyNyz9phPXVBp1PMQRX2g==''')
+  def test_p1(self):
+    retvals = main(nelems=4, degree=1, withplots=False, solvetol=0)
+    self.assertTrue(debug.checkdata(retvals, '''
+      eNqVjjsKAzEMRK+zCzJ49LHk46Rwu/cvYylsICRNCjHijTUe0KEEO+k4dJqv5tQgPHMR8w1ig86ciwFY
+      bZKE22pK1+P6GMeQX3yKxS+Ojv1evvhu838ZG47UENdUsHKGI3Sk3uXQNYqbeirztFTRzJN3WciY5dd/
+      W+esO1WrvLs8NF4+onxhrbyNyz9phPXVBp1PMQRX2g=='''))
 
-  retvals = main(nelems=4, degree=2, withplots=False, solvetol=0)
-  assert debug.checkdata(retvals, '''
-    eNqlkDtuxDAMRK9jAxSgISV+jpNi271/uSQdp0jgKgaEJ2lmbI5BxyLsk45jcAi/hhFEojg2Zm6ceF0c
-    0CW1sW15EYSI+RqL3l/vP2urypPmy+xJiwh/0jDzeRKzwz8qsFiPKxta3Dx7RDOgGFv7fNdS077PkZJC
-    WC5FRmjTeBfvqpjgyxfRehqLwt7+Nc2Ld30g+n2w+m76Fa2L2+X32fmfX5KB9R3wXwG7ApjFk8DlUDo/
-    ykV8bg==''')
+  def test_p2(self):
+    retvals = main(nelems=4, degree=2, withplots=False, solvetol=0)
+    self.assertTrue(debug.checkdata(retvals, '''
+      eNqlkDtuxDAMRK9jAxSgISV+jpNi271/uSQdp0jgKgaEJ2lmbI5BxyLsk45jcAi/hhFEojg2Zm6ceF0c
+      0CW1sW15EYSI+RqL3l/vP2urypPmy+xJiwh/0jDzeRKzwz8qsFiPKxta3Dx7RDOgGFv7fNdS077PkZJC
+      WC5FRmjTeBfvqpjgyxfRehqLwt7+Nc2Ld30g+n2w+m76Fa2L2+X32fmfX5KB9R3wXwG7ApjFk8DlUDo/
+      ykV8bg=='''))
 
 
 if __name__ == '__main__':
-  cli.choose(main, unittest)
+  cli.run(main)

@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 
 from nutils import *
-import fractions
+import fractions, unittest
 
 
 class MakePlots( object ):
@@ -115,50 +115,53 @@ def main(
   return lhsprimal, error_est_w
 
 
-def unittest():
+class test(unittest.TestCase):
 
-  retvals = main( degree=1, solvetol=0, circle=False, uniform=False, basistype='std', nrefine=2, withplots=False )
-  assert debug.checkdata( retvals, '''
-    eNqNVVmuJDkIvM57UuaIfTlQ3/8KjcF21fy1VJIpzBJAmMTnRx7U3+fnxyjzzyuPMNM6iRD6P0Gd8byl
-    6Iu3LLiF42LhrRBPb9cS2gBZ9M9r5Ssp4+vj8lrYCOqGbcOAOhqlMXaTSSRIMV4GDeoNkw0GcYw1Y2wC
-    tk2GTkDTHONKPjap2xiRypg7IP/f614hWQviVOX5I8mwTi7FQs6BuDyYoksixw5V/eoTRRqii5adPm5q
-    3TajBqq6O80w7UvvE1VaH7t6R+gybBdYvey4LNz3GDDIyZZjtTTTbAmxM97MGp1BZRCeJpLGrj3YFtRX
-    e7RLYJUW0Lg1xRn47/nHnzeZ8mE2XmepItYsEJeMXcGoUQoawsf3dVh1Z82aWNqFEKONXva0vlOLCUcc
-    naJqMGmjmqO3hg1tbCjjJOEM2Lkt16BapB13Q5DmfjlkUu7oG8K8l3xEVpYKrsk3eITeiAr8iYiM7aXp
-    g9adx71IdhvwEtx+1VTXsG5n0P0A2NhCYAoOW2+rBBPXDsphdAsGOqWhkNzwot/h3yCfhuJ0thIljuYN
-    V2jpk8ADzjTZ6SYTWW9l5OKSHZt/+RmvNbJjytokFUcJhgPMYCcyOh3+CJouMcHsIMOvSRbD73ReMT9+
-    dZGHB69sxjX7lOy7L4RxuEe7+JfUh2E2nKspIo4mYHO2nsAwRz1ku7k2VppScDEU4jsZgsUHlF9QAaIX
-    eE97DxGVvoqlJN0cWasCaS0z6jLD17IojSl1qCI0NYhI2c8tCDdQ4LZh1F2xJdMXUDKW87d4ekhlgqf3
-    kp9We++SOzq8BOn391V9rKfcvVsLvMAiAM5zoV2QyGm9+7TVbAZesg5GUdepqDfpml3t5Hl/Mwwomkh3
-    UZn21vDUTyvjG7LpYUotJLjE49P6etNHRLvsM94U3u8XfHj1ijSj+DHf8DAFp96QvcxYZj1QcuNkAN67
-    zBtCpe8L0sWz/l5vdrmOAm0mXdMcjx50dKtrMfslFOxl8Wp9ylqi/TgsaDYLYp7FVF+lw7/f5/cvNmnD
-    XQ==''' )
+  def test_p1_std(self):
+    retvals = main(degree=1, solvetol=0, circle=False, uniform=False, basistype='std', nrefine=2, withplots=False)
+    self.assertTrue(debug.checkdata(retvals, '''
+      eNqNVVmuJDkIvM57UuaIfTlQ3/8KjcF21fy1VJIpzBJAmMTnRx7U3+fnxyjzzyuPMNM6iRD6P0Gd8byl
+      6Iu3LLiF42LhrRBPb9cS2gBZ9M9r5Ssp4+vj8lrYCOqGbcOAOhqlMXaTSSRIMV4GDeoNkw0GcYw1Y2wC
+      tk2GTkDTHONKPjap2xiRypg7IP/f614hWQviVOX5I8mwTi7FQs6BuDyYoksixw5V/eoTRRqii5adPm5q
+      3TajBqq6O80w7UvvE1VaH7t6R+gybBdYvey4LNz3GDDIyZZjtTTTbAmxM97MGp1BZRCeJpLGrj3YFtRX
+      e7RLYJUW0Lg1xRn47/nHnzeZ8mE2XmepItYsEJeMXcGoUQoawsf3dVh1Z82aWNqFEKONXva0vlOLCUcc
+      naJqMGmjmqO3hg1tbCjjJOEM2Lkt16BapB13Q5DmfjlkUu7oG8K8l3xEVpYKrsk3eITeiAr8iYiM7aXp
+      g9adx71IdhvwEtx+1VTXsG5n0P0A2NhCYAoOW2+rBBPXDsphdAsGOqWhkNzwot/h3yCfhuJ0thIljuYN
+      V2jpk8ADzjTZ6SYTWW9l5OKSHZt/+RmvNbJjytokFUcJhgPMYCcyOh3+CJouMcHsIMOvSRbD73ReMT9+
+      dZGHB69sxjX7lOy7L4RxuEe7+JfUh2E2nKspIo4mYHO2nsAwRz1ku7k2VppScDEU4jsZgsUHlF9QAaIX
+      eE97DxGVvoqlJN0cWasCaS0z6jLD17IojSl1qCI0NYhI2c8tCDdQ4LZh1F2xJdMXUDKW87d4ekhlgqf3
+      kp9We++SOzq8BOn391V9rKfcvVsLvMAiAM5zoV2QyGm9+7TVbAZesg5GUdepqDfpml3t5Hl/Mwwomkh3
+      UZn21vDUTyvjG7LpYUotJLjE49P6etNHRLvsM94U3u8XfHj1ijSj+DHf8DAFp96QvcxYZj1QcuNkAN67
+      zBtCpe8L0sWz/l5vdrmOAm0mXdMcjx50dKtrMfslFOxl8Wp9ylqi/TgsaDYLYp7FVF+lw7/f5/cvNmnD
+      XQ=='''))
 
-  retvals = main( degree=2, solvetol=0, circle=False, uniform=False, basistype='spline', nrefine=1, withplots=False )
-  assert debug.checkdata( retvals, '''
-    eNqNVFmuHDEIvM4bqR2ZzcCBcv8rhM2tiZSPSCOZwVBQBW54fvgB+Tw/P4f2/r34EWLOk9ApTwA4ea7X
-    uDfrhq6be0TKIWJeGAxYGNj3gWGDwccaQ7Q9N1cRK+dAR5D3CeBdDJgHw0+jHsT23FyDXR3qYLCc5uLW
-    VcEmg42hU7c1/M11hOKgviviGEhhHIEpv4f97ptl1OXXzV3iLGPsvlLniTnYMbATkAKH9eKoTszghPZa
-    MaHCLiPa3H/XenHeGMBTRox3/3r+/wdsIQHs51C2D/i4ZUfhIZc2onxfAXpo6nEa1M1Cs4yBZE2nghaR
-    a4fraWNB8C2ri+LOsWYWkY0F27sR0LpMcJjekM5gI9LueK75hkWEMN3lVoVBNUag2OvzXRa27Ww/1Pdm
-    Fgu2i9HiUj1dpELpOgx9hdFaXykVMDwoBkMb2cs6ijJkcfNX1dBo8oGVp0a9prAYsVksu5oKwLhAdZSg
-    Qz4+VyxLuapALDpQF5ZILd5dWIHeckQjaS2Op9ykbUBqZPFlSHHsQeNh2xPxRxineL/k5F/fh+oHcpHD
-    GrIG0zMCXpx6DyVkr88RlzxVNnUPyNWVW04jlUI/b3LLyoRNU3or3qEyFijj9A1ARWSRzfoA5SJrDLlW
-    Kwpv5Nrjelj2iOJouaFbJYGm5VbqFr/eYg2plKoCIhcO6q1Nh0feuykkb/6KOja0zKsTPjXO8DDdzY4m
-    hnzo0attjOdyVlGv5muoUdzmv+2ZSdPM4jwurs0fFjZNoNrdCrzrTLKbtxzBQdt+H5/k/Hq/YsxFADw/
-    QPVGZdCO5qcoJ6V6Za27eJDq3w/yn7/P8/kDV7pq1w==''' )
+  def test_p2_spline(self):
+    retvals = main(degree=2, solvetol=0, circle=False, uniform=False, basistype='spline', nrefine=1, withplots=False)
+    self.assertTrue(debug.checkdata(retvals, '''
+      eNqNVFmuHDEIvM4bqR2ZzcCBcv8rhM2tiZSPSCOZwVBQBW54fvgB+Tw/P4f2/r34EWLOk9ApTwA4ea7X
+      uDfrhq6be0TKIWJeGAxYGNj3gWGDwccaQ7Q9N1cRK+dAR5D3CeBdDJgHw0+jHsT23FyDXR3qYLCc5uLW
+      VcEmg42hU7c1/M11hOKgviviGEhhHIEpv4f97ptl1OXXzV3iLGPsvlLniTnYMbATkAKH9eKoTszghPZa
+      MaHCLiPa3H/XenHeGMBTRox3/3r+/wdsIQHs51C2D/i4ZUfhIZc2onxfAXpo6nEa1M1Cs4yBZE2nghaR
+      a4fraWNB8C2ri+LOsWYWkY0F27sR0LpMcJjekM5gI9LueK75hkWEMN3lVoVBNUag2OvzXRa27Ww/1Pdm
+      Fgu2i9HiUj1dpELpOgx9hdFaXykVMDwoBkMb2cs6ijJkcfNX1dBo8oGVp0a9prAYsVksu5oKwLhAdZSg
+      Qz4+VyxLuapALDpQF5ZILd5dWIHeckQjaS2Op9ykbUBqZPFlSHHsQeNh2xPxRxineL/k5F/fh+oHcpHD
+      GrIG0zMCXpx6DyVkr88RlzxVNnUPyNWVW04jlUI/b3LLyoRNU3or3qEyFijj9A1ARWSRzfoA5SJrDLlW
+      Kwpv5Nrjelj2iOJouaFbJYGm5VbqFr/eYg2plKoCIhcO6q1Nh0feuykkb/6KOja0zKsTPjXO8DDdzY4m
+      hnzo0attjOdyVlGv5muoUdzmv+2ZSdPM4jwurs0fFjZNoNrdCrzrTLKbtxzBQdt+H5/k/Hq/YsxFADw/
+      QPVGZdCO5qcoJ6V6Za27eJDq3w/yn7/P8/kDV7pq1w=='''))
 
-  retvals = main( degree=1, solvetol=0, circle=True, uniform=False, basistype='std', nrefine=1, withplots=False )
-  assert debug.checkdata( retvals, '''
-    eNqNU1tuAzEIvE4irSvejwP1/leoAW/atD+NLJkMDAyYxeshF+rzejyMMj+XXMLMdRMh1b0UTT4X4rVe
-    0B2zbpKFDdldmiyKHUAmO9K2ITkU8bThHo6bNEdlHBQhEwCOw83DVaXheqeVK0y6jql510eOU7e4usuh
-    52TTHPGbc7qAEb804aTNHNkZqodlelwB49JpcU+ENsKdkN9ZLxeStbEHDB/X/w+Kbo1RZnC1lI2qbJ0I
-    bVsJazgJ5YbnLHTy4i8M8AozRB5g/wpYHpFlEGT08+5Qag8xRudD0K6xjNE6hoR/lwrxOFLXHoQf29L4
-    jnTKWysT5zFvqQqtjKFmlhc6b4G+HTCJ99rZGOI01RElBwkYRLWWKK8UzVZq/l1/jnB10+IQ3atGjdfx
-    1oascgL2pvubzAiznpbopGWUEeUSPVCk2ovSbdpDQLABRIgrQjM76VKJGefeEzllzBzuMYbArWklUPzo
-    Yz+oTRKSaK5F9s1m87DINltiVMqGyjzemgPmbdYn9p5dRPv/cochL/U83z9D1d4YgdrZkHztgwPht+0v
-    G+n3zvw9z+v5Bcg79PQ=''' )
+  def test_p1_std_circle(self):
+    retvals = main(degree=1, solvetol=0, circle=True, uniform=False, basistype='std', nrefine=1, withplots=False)
+    self.assertTrue(debug.checkdata(retvals, '''
+      eNqNU1tuAzEIvE4irSvejwP1/leoAW/atD+NLJkMDAyYxeshF+rzejyMMj+XXMLMdRMh1b0UTT4X4rVe
+      0B2zbpKFDdldmiyKHUAmO9K2ITkU8bThHo6bNEdlHBQhEwCOw83DVaXheqeVK0y6jql510eOU7e4usuh
+      52TTHPGbc7qAEb804aTNHNkZqodlelwB49JpcU+ENsKdkN9ZLxeStbEHDB/X/w+Kbo1RZnC1lI2qbJ0I
+      bVsJazgJ5YbnLHTy4i8M8AozRB5g/wpYHpFlEGT08+5Qag8xRudD0K6xjNE6hoR/lwrxOFLXHoQf29L4
+      jnTKWysT5zFvqQqtjKFmlhc6b4G+HTCJ99rZGOI01RElBwkYRLWWKK8UzVZq/l1/jnB10+IQ3atGjdfx
+      1oascgL2pvubzAiznpbopGWUEeUSPVCk2ovSbdpDQLABRIgrQjM76VKJGefeEzllzBzuMYbArWklUPzo
+      Yz+oTRKSaK5F9s1m87DINltiVMqGyjzemgPmbdYn9p5dRPv/cochL/U83z9D1d4YgdrZkHztgwPht+0v
+      G+n3zvw9z+v5Bcg79PQ='''))
 
 
 if __name__ == '__main__':
-  cli.choose( main, unittest )
+  cli.run(main)

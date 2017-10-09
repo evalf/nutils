@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 
 from nutils import mesh, plot, cli, log, function, debug, solver, _
-import numpy
+import numpy, unittest
 
 
 @log.title
@@ -86,34 +86,37 @@ def main(
   return lhs0, lhs1
 
 
-def unittest():
+class test(unittest.TestCase):
 
-  retvals = main(nelems=3, viscosity=1e-2, degree=1, warp=False, withplots=False)
-  assert debug.checkdata( retvals, '''
-    eNqFUltuBDEIu86uNFS8Ew7U+1+hBMKq/eoXCHtsYoaelz6k7+f1AmZc32APM8WpwAuz0cco9FQWT4In
-    IMhnkI3SaYL9Dv7VuIRkCp5mACBmrk8VS5NRCpg5DACD/HJrLfiIreA4q/q2qkC0rCji6CW78T5GPT9e
-    iahHLxBS1KEMYwgwjHGBsRmXMcGvJ6MF9VV7moe3gJAdXMIqHTGSXgYVb7KtsN2sE5ZdDKkjHI3Y+yBJ
-    qDom4It6iSsObKT1MGlmXm03sM/ZTjpLOlpCjT92tola9dpkKtGp4Koqn/vc8ElxnwEpdY5Lo/zzL6lX
-    LuQSJ5cigqI2M3bUIWVvLPtEiqqIxTDr01ew7x/oQZfn''')
+  def test_p1(self):
+    retvals = main(nelems=3, viscosity=1e-2, degree=1, warp=False, withplots=False)
+    self.assertTrue(debug.checkdata(retvals, '''
+      eNqFUltuBDEIu86uNFS8Ew7U+1+hBMKq/eoXCHtsYoaelz6k7+f1AmZc32APM8WpwAuz0cco9FQWT4In
+      IMhnkI3SaYL9Dv7VuIRkCp5mACBmrk8VS5NRCpg5DACD/HJrLfiIreA4q/q2qkC0rCji6CW78T5GPT9e
+      iahHLxBS1KEMYwgwjHGBsRmXMcGvJ6MF9VV7moe3gJAdXMIqHTGSXgYVb7KtsN2sE5ZdDKkjHI3Y+yBJ
+      qDom4It6iSsObKT1MGlmXm03sM/ZTjpLOlpCjT92tola9dpkKtGp4Koqn/vc8ElxnwEpdY5Lo/zzL6lX
+      LuQSJ5cigqI2M3bUIWVvLPtEiqqIxTDr01ew7x/oQZfn'''))
 
-  retvals = main(nelems=3, viscosity=1e-2, degree=2, warp=False, withplots=False)
-  assert debug.checkdata( retvals, '''
-    eNqVU22O7DAIu86s1DzFfOdAc/8rvATC7uzPrSo1IsYYQ/G85IF8Pa8XO+t76DOWxToHEMt7yDMEMc/B
-    iDgDFOQJZZ2rDjzzKkB0Aots/RH6h/oNhVohCOyfCKZAclGs5DKFngtoAea/n3c0usGj0aPh39q6Yhcc
-    XZFkZp/Yz3vYrmwcJ8DL/JI6X1KXjLhDDpb99LdzAMlGIzQRnyr324mdNzqx80YnjpYzWk/LGa2n5Wze
-    PX1ZqGtwUcEMZf6MOAflGsJujMolmEd5oMwVIc5ITNWLZUtX2EqXIijtWppDX4bMoHk9UfPkcuUKiMzk
-    cnErQVcqoYQN8mWfCtmvTbAcq1wguNQRnRJx5KISGClGaZYJxJrjFotc0RFyVxHT8UvvIqfqkGu6rVPs
-    Vp/Q21lt2ZbVXsz0QjxynJjCtUJes9vjluLW2kI5W5izvNu4/B5E77SSc5tjc9Y3LheOPt8mmdXy8f1F
-    WJSS9e4O9PyfW05UZ4th34vy9R8GDefR''')
+  def test_p2(self):
+    retvals = main(nelems=3, viscosity=1e-2, degree=2, warp=False, withplots=False)
+    self.assertTrue(debug.checkdata(retvals, '''
+      eNqVU22O7DAIu86s1DzFfOdAc/8rvATC7uzPrSo1IsYYQ/G85IF8Pa8XO+t76DOWxToHEMt7yDMEMc/B
+      iDgDFOQJZZ2rDjzzKkB0Aots/RH6h/oNhVohCOyfCKZAclGs5DKFngtoAea/n3c0usGj0aPh39q6Yhcc
+      XZFkZp/Yz3vYrmwcJ8DL/JI6X1KXjLhDDpb99LdzAMlGIzQRnyr324mdNzqx80YnjpYzWk/LGa2n5Wze
+      PX1ZqGtwUcEMZf6MOAflGsJujMolmEd5oMwVIc5ITNWLZUtX2EqXIijtWppDX4bMoHk9UfPkcuUKiMzk
+      cnErQVcqoYQN8mWfCtmvTbAcq1wguNQRnRJx5KISGClGaZYJxJrjFotc0RFyVxHT8UvvIqfqkGu6rVPs
+      Vp/Q21lt2ZbVXsz0QjxynJjCtUJes9vjluLW2kI5W5izvNu4/B5E77SSc5tjc9Y3LheOPt8mmdXy8f1F
+      WJSS9e4O9PyfW05UZ4th34vy9R8GDefR'''))
 
-  retvals = main(nelems=3, viscosity=1e-2, degree=1, warp=True, withplots=False)
-  assert debug.checkdata( retvals, '''
-    eNqFUstxBTEIa2ffjMkYzM8Fvf5bCAazOeYEg1gJyYvj4YH8Gc8DhIhfkBFlnwpkKwY8hHmfupztCxqA
-    FgC4zU+z0WvwL0cvAAZyyBqIAftBSDEH6KpZ7xwagEb+1C4XvGTRzDPRtbhO5lm6a1PRm2IiLBKNBaJG
-    eYBr3d4rvdEL0ButAi3TKi0yf0ZEC6yUFtitjiDaifN0O1VllYEA9CZL2fiqhJFw5aesImUEV35r0zm5
-    rggIYm40eQTHKUuC9w1YCrCjpidRSRVQLmevnM9t2bRMsOnKvBinnoaIrqvFKYgRXJLMWUHakiQhUq94
-    Kq542vLCNEsF80XDlNtOEdu+8zdBSU6N499kP7+4m5gf''')
+  def test_p1_warped(self):
+    retvals = main(nelems=3, viscosity=1e-2, degree=1, warp=True, withplots=False)
+    self.assertTrue(debug.checkdata(retvals, '''
+      eNqFUstxBTEIa2ffjMkYzM8Fvf5bCAazOeYEg1gJyYvj4YH8Gc8DhIhfkBFlnwpkKwY8hHmfupztCxqA
+      FgC4zU+z0WvwL0cvAAZyyBqIAftBSDEH6KpZ7xwagEb+1C4XvGTRzDPRtbhO5lm6a1PRm2IiLBKNBaJG
+      eYBr3d4rvdEL0ButAi3TKi0yf0ZEC6yUFtitjiDaifN0O1VllYEA9CZL2fiqhJFw5aesImUEV35r0zm5
+      rggIYm40eQTHKUuC9w1YCrCjpidRSRVQLmevnM9t2bRMsOnKvBinnoaIrqvFKYgRXJLMWUHakiQhUq94
+      Kq542vLCNEsF80XDlNtOEdu+8zdBSU6N499kP7+4m5gf'''))
 
 
 if __name__ == '__main__':
-  cli.choose(main, unittest)
+  cli.run(main)

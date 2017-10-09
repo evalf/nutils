@@ -1,173 +1,110 @@
-# -*- coding: utf8 -*-
-
-import nutils.log, nutils.core
-import sys, time, collections, functools, traceback, pdb
+import unittest, sys, types, operator, contextlib
+import nutils.core
 
 
-## INTERNAL VARIABLES
+class _ParametrizedCollection(type):
 
-PACKAGES = collections.OrderedDict()
-OK, FAILED, ERROR, PKGERROR = range(4)
+  def __new__(mcls, name, bases, namespace, base):
+    return super().__new__(mcls, name, bases, namespace)
+
+  def __init__(cls, name, bases, namespace, base):
+    super().__init__(name, bases, namespace)
+    cls.__base = base
+    cls.__test_cases = []
+    for attr in '__module__', '__qualname__', '__doc__':
+      if hasattr(base, attr):
+        setattr(cls, attr, getattr(base, attr))
+
+  def __call__(*args, **params):
+    assert 1 <= len(args) <= 2
+    cls = args[0]
+
+    if len(args) == 1 and not params:
+      loader = unittest.defaultTestLoader
+      ts = unittest.TestSuite()
+      for test_case in sorted(cls.__test_cases, key=operator.attrgetter('__name__')):
+        ts.addTest(loader.loadTestsFromTestCase(test_case))
+      return ts
+
+    name = args[1] if len(args) == 2 else None
+    if name is None:
+      name = ','.join('{}={}'.format(k, v) for k, v in sorted(params.items()))
+      name = name.replace('%', '%{}'.format(ord('%'))).replace('.', '%{}'.format(ord('.')))
+    assert '.' not in name
+    assert not hasattr(cls, name), 'duplicate test name'
+
+    def setUp(self):
+      for k, v in params.items():
+        setattr(self, k, v)
+      return cls.__base.setUp(self)
+    def populate(ns):
+      for k, v in vars(cls.__base).items():
+        enable_if = getattr(v, '_parametrize_enable_if', None)
+        if enable_if and not enable_if(**params):
+          ns[k] = None
+      ns.update(setUp=setUp, __qualname__=cls.__qualname__+':'+name, __module__=cls.__module__, __doc__=cls.__doc__)
+      return ns
+    TestCase = types.new_class(name, (cls.__base,), exec_body=populate)
+
+    cls.__test_cases.append(TestCase)
+    # Add `TestCase` as `name` to this collection.
+    setattr(cls, name, TestCase)
+    # Trick `unittest.loader.TestLoader.loadTestsFromModule` into finding
+    # this test case.
+    setattr(sys.modules[cls.__module__], cls.__qualname__+':'+name, TestCase)
 
 
-## INTERNAL METHODS
+def parametrize(TestCase):
+  '''Parametrize a :class:`unittest.TestCase`.
 
-def _runtests( pkg, whitelist ):
-  __log__ = nutils.log._getlog()
-  __results__ = {}
-  if isinstance( pkg, dict ):
-    for key in pkg:
-      if whitelist and key != whitelist[0]:
-        continue
-      with __log__.context( key ):
-        __results__[key] = _runtests( pkg[key], whitelist[1:] )
-  else:
-    t0 = time.time()
+  >>> @parametrize
+  ... class TestSomething(unittest.TestCase):
+  ...   def test_equality(self):
+  ...     self.assertEqual(self.x, self.y)
+  >>> TestSomething(x=1, y=1)
+  >>> TestSomething(x=2, y=2)
+  '''
+  return types.new_class(TestCase.__name__, (), dict(metaclass=_ParametrizedCollection, base=TestCase))
+
+def _parametrize_enable_if(test):
+  def wrapper(func):
+    func._parametrize_enable_if = test
+    return func
+  return wrapper
+
+parametrize.enable_if = _parametrize_enable_if
+
+
+class TestCase(unittest.TestCase):
+
+  def setUp(self):
+    super().setUp()
+    empty = object()
+    selfcheck = nutils.core.globalproperties.get('selfcheck', empty)
+    if not selfcheck or selfcheck is empty:
+      nutils.core.globalproperties['selfcheck'] = True
+      if selfcheck is empty:
+        self.addCleanup(nutils.core.globalproperties.__delitem__, 'selfcheck')
+      else:
+        self.addCleanup(nutils.core.globalproperties.__setitem__, 'selfcheck', selfcheck)
+
+
+class ContextTestCase(TestCase):
+
+  def setUpContext(self, stack):
+    pass
+
+  def setUp(self):
+    super().setUp()
+    stack = contextlib.ExitStack()
+    stack.__enter__()
     try:
-      pkg()
-    except KeyboardInterrupt:
-      raise
+      self.setUpContext(stack)
     except:
-      nutils.log.error( traceback.format_exc() )
-      if nutils.core.getprop( 'pdb', False ):
-        print( 'TEST PACKAGE FAILED' )
-        pdb.post_mortem()
-      __results__ = PKGERROR
-    else:
-      dt = time.time() - t0
-      npassed = sum( status == OK for name, status in __results__.items() )
-      __log__.write( 'info', 'passed {}/{} tests in {:.2f} seconds'.format( npassed, len(__results__), dt ) )
-  return __results__
-
-def _withattrs( f, **attrs ):
-  wrapped = lambda *args, **kwargs: f( *args, **kwargs )
-  wrapped.__name__ = f.__name__
-  wrapped.__module__ = f.__module__
-  for attr, value in attrs.items():
-    setattr( wrapped, attr, value )
-  return wrapped
-
-def _summarize( pkg, name=() ):
-  if not isinstance( pkg, dict ):
-    return { pkg: ['.'.join(name)] }
-  summary = {}
-  for key, val in pkg.items():
-    for status, tests in _summarize( val, name+(key,) ).items():
-      summary.setdefault( status, [] ).extend( tests )
-  return summary
-
-
-## EXPOSED MODULE METHODS
-
-def runtests():
-
-  args = sys.argv[1:] # command line arguments
-
-  if 'coverage' in sys.argv[0]:
-    # coverage passes the complete commandline to `sys.argv`
-    # find '-m tests' and keep the tail
-    m = args.index( '-m' )
-    assert args[m+1] == __name__
-    args = args[m+2:]
-
-  __pdb__ = '--pdb' in args
-  if __pdb__:
-    args.remove( '--pdb' )
-  
-  if args:
-    assert len(args) == 1
-    whitelist = args[0].split( '.' )
-  else:
-    whitelist = []
-
-  __richoutput__ = True
-  __selfcheck__ = True
-  __log__ = nutils.log._mklog()
-  try:
-    results = _runtests( PACKAGES, whitelist )
-  except KeyboardInterrupt:
-    nutils.log.info( 'aborted.' )
-    sys.exit( -1 )
-  except:
-    nutils.log.error( 'error in unit testing framework:', traceback.format_exc() )
-    nutils.log.info( 'crashed.' )
-    sys.exit( -2 )
-
-  summary = _summarize(results)
-  ntests = sum( len(tests) for tests in summary.values() )
-  passed = summary.pop( OK, [] )
-  failed = summary.pop( FAILED, [] )
-  error = summary.pop( ERROR, [] )
-  pkgerror = summary.pop( PKGERROR, [] )
-
-  nutils.log.info( '{}/{} tests passed.'.format( len(passed), ntests ) )
-  if failed:
-    nutils.log.info( '* failures ({}):'.format(len(failed)), ', '.join( failed ) )
-  if error:
-    nutils.log.info( '* errors ({}):'.format(len(error)), ', '.join( error ) )
-  if pkgerror:
-    nutils.log.info( '* package failures ({}):'.format(len(pkgerror)), ', '.join( pkgerror ) )
-  if summary:
-    nutils.log.info( '* invalid status ({}) - this should not happen!'.format(len(summary)) )
-
-  sys.exit( ntests - len(passed) )
-
-def register( f, *args, **kwargs ):
-  if not callable( f ):
-    return functools.partial( register, name_suffix=':'+str(f), f_args=args, f_kwargs=kwargs )
-  assert not args
-  name = f.__name__ + kwargs.pop( 'name_suffix', '' )
-  f_args = kwargs.pop( 'f_args', () )
-  f_kwargs = kwargs.pop( 'f_kwargs', {} )
-  assert not kwargs
-  pkgname, scope = f.__module__.split( '.', 1 )
-  assert pkgname == __name__
-  pkg = PACKAGES
-  for item in scope.split( '.' ):
-    pkg = pkg.setdefault( item, collections.OrderedDict() )
-    assert isinstance( pkg, dict )
-  assert name not in pkg
-  pkg[name] = lambda: f(*f_args, **f_kwargs)
-  return f
-
-class _NoException( Exception ): pass
-
-def unittest( func=None, *, name=None, raises=None ):
-  if func is None:
-    return functools.partial( unittest, name=name, raises=raises )
-  fullname = func.__name__
-  if name is not None:
-    fullname += ':{}'.format(name)
-  if nutils.core.getprop( 'filter', fullname ) != fullname:
-    return
-  parentlog = nutils.log._getlog()
-  __log__ = nutils.log.CaptureLog()
-  with parentlog.context( fullname ):
-    try:
-      parentlog.write( 'info', 'testing..', endl=False )
-      func()
-      assert not raises, 'exception not raised, expected {!r}'.format( raises )
-    except raises or _NoException:
-      status = OK
-      print( ' OK' )
-    except AssertionError as e:
-      status = FAILED
-      print( ' FAILED:', str(e).strip() )
-      if nutils.core.getprop( 'pdb', False ):
-        pdb.post_mortem()
-    except KeyboardInterrupt:
+      stack.__exit__(None, None, None)
       raise
-    except Exception as e:
-      status = ERROR
-      print( ' ERROR:', str(e).strip() )
-      if nutils.core.getprop( 'pdb', False ):
-        pdb.post_mortem()
     else:
-      status = OK
-      print( ' OK' )
-  nutils.core.getprop('results')[fullname] = status
-  if status != OK:
-    parentlog.write( 'info', 'captured output:\n-----\n{}\n-----'.format(__log__.captured) )
+      self.addCleanup(stack.__exit__, None, None, None)
 
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

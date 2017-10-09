@@ -11,7 +11,7 @@ docs:
 	${MAKE} -C docs html
 
 test:
-	${PYTHON} -m tests
+	${PYTHON} -m unittest -b
 
 coverage:
 	${PYTHON} -m coverage erase
