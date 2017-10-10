@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 
-from nutils import mesh, plot, cli, log, function, numeric, debug, solver
-import numpy
+from nutils import mesh, plot, cli, log, function, numeric, numeric, solver
+import numpy, unittest
 
 
 class MakePlots( object ):
@@ -102,24 +102,27 @@ def main(
   return lhs0, lhs
 
 
-def unittest():
+class test(unittest.TestCase):
 
-  retvals = main(nelems=8, init='bubbles', timestep=.01, maxtime=.05, withplots=False)
-  assert debug.checkdata( retvals, '''
-    eNrtVkGSGzEI/M5ulSclhBDwoP3/FyIJmrEnOeQB2XIV7FjT6m5AMr2+xovk+/X1dVmT9nON1zWtRcKs
-    epIhPk5iZHQSn2yRmHEkLj0TdyTjAejtfNVnxMEyfy5ZK9wTbnC9HE+otYXC+4nWBvzBD3BrKe+lRj33
-    az3RemrzARBjoBGSaR9qwQ5w67HEgp4umGo8cbLEZ8sn0kK8K89P70ps0StAZY/XJ42ea2zkmgRUm7m7
-    THkUo9yD3mIIwK5+omo/cUpu5LQNWbWQbn+UtqoD96AX9ADn088XqxlOHCM9o9vv7JO7sPUVzINWkAOa
-    t9h/GRfbd3N6Np0+6ypP4yAV5AqOV7GyY4U+e7iartrkLizqUM6V2OJXgNbGeav9+v/51886npSFd8m8
-    s+7Iw8/o03SOE0QsLDdDJ7A4GiBLJziiMgEarb/TCBqtwsx5LskwoCYGY+SFCrUhOU/ADWhieUxpzMYl
-    aBjTaIY1rw0T1kGR5COBUnADWlceMbfesx/71IS3dKDlFK59kmvP6SjfSmqxK8CpCTgpLwTBySWeNHVk
-    y+vIYapClHcltxgCkGTPyZrIGWx4tlMQmXsgdU2U9KjzXdUqBLwruWAHNBvxvxEdarPHUE9KgW8dgqJW
-    HWAdlIIawDQvH6Hc1Hv7o9vao6YoA1yDTjADGI9dC9k3G4X8N1B+gtKjAjANOkGt0KhpJrbNXGcx6b7z
-    +CUtIpGt2F809nY7Njmxi55IFLGxZBw7FtBFkw+0dErE3RYbabZE1ES0RLQH4olgdOPk+5qMlANHWrzf
-    LZ5T6zv6qR/vSB/KwCdx1tVzFJDHe6s1Qznv9zafcfBt+uFh0wKvHAKv5AMcS57iETl0e9tX6dKl/fx4
-    kcLL9fAHusAHOENCR9P27tNFnEPWh8WQoWZwGg5BWTIC0jrGDrOrNzrU9uWVCW1IvsuPoqXZMKnEgVRB
-    USOJRpmOjml/LTwKB8Nh1C2waBVW55C2knQr+/INlN6rB9fLrJJYvAprrWnHoO/X9298ambu''')
+  def test(self):
+    lhs0, lhs = main(nelems=8, init='bubbles', timestep=.01, maxtime=.05, withplots=False)
+    numeric.assert_allclose64(lhs0,
+      'eNrdktuthDAMRBsCyYnftazu5+2/hQ3xA0EJCx9YxDmZ8YSOwcfnNGD4P+k4xWDsAlFtF8TOu7BhseSC'
+      'seRmGIVzFANgcfD6k7tuoINfxRTYuwl5dfDqWL1BIYLE5Z+Fo8RpneT00Fe41TqvVhszIAiYtJnenHSm'
+      'bizaqEKebktd4dgp/NC0gJiqxN5hyUeLHmcIkUu1PmfXZlteAxU9gDJoZo9R9iRQTfJ0FnmF0dMrv62w'
+      'gFN9f1Xn/gpTJjqugawseJq/o+10anrlt+QVzsX3gnPMjNYTMd7zvu9JBttLNbzyWuKK5hDnI2TAS+p4'
+      'Xzp958rvwZXVEtc4dKW8sTzLOj8vXV+TO9jKoSfXZltfAw1oN8NvvH9fWJHkhw==')
+    numeric.assert_allclose64(lhs,
+      'eNptlFuy4zAIRDdkV/EQINYyNZ93/1u4kng4zswXJJaPuhuScaFcf4yFf265nNh25eH6c48L1c/3t8qk'
+      '/cU9HeA0zpqNwMhmQz6aoiHiOcoWJ5lZkzo8qNOTwabJwKbii1raiibTbFeyGTARlaDaSBhBPPJBVHip'
+      '5uW0tBWNjCMBcbKgkmZjngnAc09qJYx7Ore22uoaqJZAxXByC1Ae9lB322DKhuA9iM6u7bbCAqJspXIN'
+      'nUffGt2porbM2XWjULh8ptqDqOzabqkr2hzxeWKcVPIzKEXS7w2pofYcKrpyWtIKZgrzSEU6dTj6P9uG'
+      'XzOtMVRq5bOUFYzHnsVaUAAI+98r3PvxjLQnUKGVz5LWNASjaKate3g1JrobgaiIcz2gC8e+bleIz7Sf'
+      '0/7l2KnA47M26EblgxZCCaJ7ErOCJdG+iPJJLEUPJ98/v7JdOd6T4qVy3FnT5R7vrQovZ6UnOQQjnHq8'
+      't66hUxnjM4y561Q/vKkzeJ1Q6Uo9xZmpUzzuZTgJOpgfX7Y3btWztPwkXfmUr9JTnJGTAIPMKUfJenbo'
+      'pjFP0zOrpCuhcpaKirT+xo6ye23rOM082ewGN5KfYXWFV0htrkQ1ah3UWBT12hiYX6skn4OrwCuox2DL'
+      'ahZxWFuN8//2s7agplepd1htsXU1a505Lv/+AgpBcDw=')
 
 
 if __name__ == '__main__':
-  cli.choose( main, unittest )
+  cli.run(main)

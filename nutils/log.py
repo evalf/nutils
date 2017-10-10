@@ -402,24 +402,6 @@ class TeeLog( Log ):
   def write( self, level, text ):
     for log in self.logs:
       log.write( level, text )
-    
-class CaptureLog( ContextLog ):
-  '''Silently capture output to a string buffer while writing single character
-  progress info to a secondary stream.'''
-
-  def __init__( self, stream=sys.stdout ):
-    self.stream = stream
-    self.lines = []
-    super().__init__()
-
-  def write( self, level, text ):
-    self.lines.append( ' > '.join( self._context + ([ text ] if text is not None else []) ) )
-    self.stream.write( level[0] )
-    self.stream.flush()
-
-  @property
-  def captured( self ):
-    return '\n'.join( self.lines )
 
 
 ## INTERNAL FUNCTIONS

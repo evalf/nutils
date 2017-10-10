@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 
-from nutils import mesh, plot, cli, log, function, debug, solver, _
-import numpy
+from nutils import mesh, plot, cli, log, function, numeric, solver, _
+import numpy, unittest
 
 
 @log.title
@@ -86,34 +86,43 @@ def main(
   return lhs0, lhs1
 
 
-def unittest():
+class test(unittest.TestCase):
 
-  retvals = main(nelems=3, viscosity=1e-2, degree=1, warp=False, withplots=False)
-  assert debug.checkdata( retvals, '''
-    eNqFUltuBDEIu86uNFS8Ew7U+1+hBMKq/eoXCHtsYoaelz6k7+f1AmZc32APM8WpwAuz0cco9FQWT4In
-    IMhnkI3SaYL9Dv7VuIRkCp5mACBmrk8VS5NRCpg5DACD/HJrLfiIreA4q/q2qkC0rCji6CW78T5GPT9e
-    iahHLxBS1KEMYwgwjHGBsRmXMcGvJ6MF9VV7moe3gJAdXMIqHTGSXgYVb7KtsN2sE5ZdDKkjHI3Y+yBJ
-    qDom4It6iSsObKT1MGlmXm03sM/ZTjpLOlpCjT92tola9dpkKtGp4Koqn/vc8ElxnwEpdY5Lo/zzL6lX
-    LuQSJ5cigqI2M3bUIWVvLPtEiqqIxTDr01ew7x/oQZfn''')
+  def test_p1(self):
+    lhs0, lhs1 = main(nelems=3, viscosity=1e-2, degree=1, warp=False, withplots=False)
+    numeric.assert_allclose64(lhs0,
+      'eNqFTzkSAzEI+5A9A+KweUsm5f7/Cwt4t0mTCg0SktDBNj4ToH1NGwD3nFgU19RhHFoT4n5NT0IItUig'
+      'DQLOZ/HXA7QOAeECLzEZQJ8qtRdIpGbu+Vzom0qiP2lCLUkza2ZFbXz4tt2VmZe3RLwKpO2m5xn1lK5k'
+      '1OMUiC4yU7JKArUoRQqepzSkwApEe2RMg0yxIjLEK4S+N1c4S6w=')
+    numeric.assert_allclose64(lhs1,
+      'eNpVT7ltBEEMa2gH0P/UYjjc/lvwiPIFF1EQKZKyh/35ORZZ7/HHo33wiHK8xx5tb6CzvCcuQUazuAqC'
+      'osJ9sEUTCtWo9ejC7RXk4A1JEJGMlI/5Ed+F6CpFLZeoUJhyqmDDZP0V5zXNxtW9VlJdQwllDKrIKoQb'
+      'VdkIDdn+T9P27ZaNSxI4cOg2NjLDcF8iVK8ixF8GUiOCl7vaZNDvH5IHS/I=')
 
-  retvals = main(nelems=3, viscosity=1e-2, degree=2, warp=False, withplots=False)
-  assert debug.checkdata( retvals, '''
-    eNqVU22O7DAIu86s1DzFfOdAc/8rvATC7uzPrSo1IsYYQ/G85IF8Pa8XO+t76DOWxToHEMt7yDMEMc/B
-    iDgDFOQJZZ2rDjzzKkB0Aots/RH6h/oNhVohCOyfCKZAclGs5DKFngtoAea/n3c0usGj0aPh39q6Yhcc
-    XZFkZp/Yz3vYrmwcJ8DL/JI6X1KXjLhDDpb99LdzAMlGIzQRnyr324mdNzqx80YnjpYzWk/LGa2n5Wze
-    PX1ZqGtwUcEMZf6MOAflGsJujMolmEd5oMwVIc5ITNWLZUtX2EqXIijtWppDX4bMoHk9UfPkcuUKiMzk
-    cnErQVcqoYQN8mWfCtmvTbAcq1wguNQRnRJx5KISGClGaZYJxJrjFotc0RFyVxHT8UvvIqfqkGu6rVPs
-    Vp/Q21lt2ZbVXsz0QjxynJjCtUJes9vjluLW2kI5W5izvNu4/B5E77SSc5tjc9Y3LheOPt8mmdXy8f1F
-    WJSS9e4O9PyfW05UZ4th34vy9R8GDefR''')
+  def test_p2(self):
+    lhs0, lhs1 = main(nelems=3, viscosity=1e-2, degree=2, warp=False, withplots=False)
+    numeric.assert_allclose64(lhs0,
+      'eNqVkcsNAyEMRBtaJGzjD7VEOab/FjIeVlFyjLggeJ43y65L/HpY2noNv8aO2r0RNXuNdY0lNXsTqsoD'
+      'LS2i5nOfjU2yJSp9sDXqT/QPP1An4bGORSy/CdOe8NZvZoULSfEDTC74pRtpsQng0xW0Mxe4/XSDkTcQ'
+      'BgkYSeiawUoiMAfMYTTbjrxD0+7QZPuR2ZpAem7OiCx+aJVbE/OzMMMCGFlELYsekdYgFTOnIpocIapI'
+      'I2hy/4IddR4jzyM837kcbbo=')
+    numeric.assert_allclose64(lhs1,
+      'eNpVkUtuBDEIRC/klijzP0uU5dz/CmPALSUru6FcvKJlQdePJOLz6HrAQp9HFsxQ5yMUURfl6MazjWmk'
+      '5tkVU5apbG5tkOqrteqAbRSK2NXZqa1Mg/c3OY/A5uKvpwi1l4vbACWyOhvhM8TT/hKyXwtYg8oVgnlm'
+      'bT8MUbiYB4yJuGmWsLn4z0sr2lMI4QkEcvzjzTarhMytOJw9RXqBx4OgN1ngYr27oH4iHqdgCyTtCbiN'
+      'wEXGW1vITWHrbHUskVcJ0fu3QI2zjWjOyt7Dis/PkmzeOt9sLLrbNXTGa2EdnPDmTUZnp98vZe15Gw==')
 
-  retvals = main(nelems=3, viscosity=1e-2, degree=1, warp=True, withplots=False)
-  assert debug.checkdata( retvals, '''
-    eNqFUstxBTEIa2ffjMkYzM8Fvf5bCAazOeYEg1gJyYvj4YH8Gc8DhIhfkBFlnwpkKwY8hHmfupztCxqA
-    FgC4zU+z0WvwL0cvAAZyyBqIAftBSDEH6KpZ7xwagEb+1C4XvGTRzDPRtbhO5lm6a1PRm2IiLBKNBaJG
-    eYBr3d4rvdEL0ButAi3TKi0yf0ZEC6yUFtitjiDaifN0O1VllYEA9CZL2fiqhJFw5aesImUEV35r0zm5
-    rggIYm40eQTHKUuC9w1YCrCjpidRSRVQLmevnM9t2bRMsOnKvBinnoaIrqvFKYgRXJLMWUHakiQhUq94
-    Kq542vLCNEsF80XDlNtOEdu+8zdBSU6N499kP7+4m5gf''')
+  def test_p1_warped(self):
+    lhs0, lhs1 = main(nelems=3, viscosity=1e-2, degree=1, warp=True, withplots=False)
+    numeric.assert_allclose64(lhs0,
+      'eNqFjrutQzEMQxeyAFN/z/Lwyrv/CpHkpEiVSgIPQVIXbP0RA/yQLQCnL3EIHtJlqqevpPpDXsCFWyCc'
+      'GHKQe4SfGWXAABTpsA8oQbMJO7IFpNtc1rhRjrcz3b/bOHiGmdrdUaloxUX0TtZ9e+XIWBA+DlKzeqKI'
+      'x6Rx+t1eloktx25HGW4GZ+x+qmVPRtVYP9UyQA7P1P3/AnrIS7Y=')
+    numeric.assert_allclose64(lhs1,
+      'eNo9T8utBDEIayiRMH9qWe1x+m9hA5n3TljY2FgXbH22OuezbWkGem4WomfrUsro6SbybD8El/dio3hA'
+      'SowCDJ5TdbMBAslmglLGyzmGMMAn7TXf7DqxbJgLhtolomJikVazcfVq6X9cUl3XE6Ovm5+8OJ+AogEz'
+      '/7XS8QdiXgRR3luxAcw+ZlK3Llj1luJXCXTuKZWRExJV1FLDre3n+RbQ9welMUvq')
 
 
 if __name__ == '__main__':
-  cli.choose(main, unittest)
+  cli.run(main)

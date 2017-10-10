@@ -1,6 +1,7 @@
 #! /usr/bin/env python3
 
 from nutils import *
+import unittest
 
 
 def main(
@@ -84,34 +85,51 @@ def conv(degree=1, nrefine=4):
     plt.grid(True)
 
 
-def unittest():
+class test(unittest.TestCase):
 
-  retvals = main(degree=1, maxrefine=2, withplots=False)
-  assert debug.checkdata( retvals, '''
-    eNplUkuuwzAIvE4rGYnBgM1x3iLb3n9Z40+kly4iwwQzHxnlpQX2Lq+XdO8XeTFWv8jKwD5/n4LmctEY
-    QtU8E3O45kjWBLXRtGKOuKhvEDLBbJ6faENuEmlyNiLCTz0XGGBJQa5qN1eXGncTzreKf/tD6uEe6lL+
-    amrryJpCJNLqnBCHnDXDMzSW34fv6BU5drwbtyXw6b9V6+vHzgBuc5OAp0dhtOX/4IvhmQv6wk82qF7z
-    JAVPxb8hkcUmP0lRiz184qKu3Nat0DVsQ8oujLM4EZIwbzM7x0EFzux+wiSBz4dzJ0rVeT+l9xdsEpFC''')
+  def test_tri_p1_refine2(self):
+    err, cons, lhs = main(degree=1, maxrefine=2, withplots=False)
+    numeric.assert_allclose64(err,
+      'eNoz0TE01Yk2sjAzT9U10zE1MDFN1TWNBQA3pQUL')
+    numeric.assert_allclose64(cons,
+      'eNpdT0EOwyAM+xCRapME8pZphx249v/HEjoqbQcU20G2owVWXufnLGjOIVqAqjlTc3gdYgsL1OaiFXPE'
+      'kP4VwSUm+X/UdqQT2bgdEeEbLwMDLCPEVe3J6tTjIeGHbvLjH6w7e7bL+jeprSOxBDmr+v2Djn3M+wKf'
+      'VEHS')
+    numeric.assert_allclose64(lhs,
+      'eNo1UMmNBEEIS6iQMGcRy2ienX8KO0Dvy5Y5bLADPx9Y4SE7yJBBqDXWVX7ITyC00TmtkWD+I3k8UA/d'
+      'k+p3C5ApIHw2CjgGGTko/7rqoCWvnut81xlVMwfdRGRgGQcHfEiYLfHyGnLFJi5lvc0VvIGvce5U2Ta7'
+      'SLykI/mREu3oJMz1Xtnm2Vb4tcTRvBihRKoFEsRukcC8iDT6Yv/+AR6yS2Q=')
 
+  def test_quad_p2_refine2(self):
+    err, cons, lhs = main(nelems=4, degree=2, maxrefine=2, withplots=False)
+    numeric.assert_allclose64(err,
+      'eNoz0TE01Yk2NbAwSNU11zE0MDZK1TWNBQA28wT6')
+    numeric.assert_allclose64(cons,
+      'eNp1kLEOwzAIRH8oSIA5DN9SdeiQNf8/1pBOlTNYh+6dT9h2CI7X9bkOEjBOimOm60m5jKFRhtqcpZX6'
+      'P8q5wtgyN9gTE+F1z/YMaKY25k/RquBWFiuV0OYyHbsuyjHjaYEFkQWHZOxeR8E5KkDiaduEA92voboN'
+      'wPyugHpWgiSxHF8Dc38cqYX0YDpvB9K17y/9CXCk')
+    numeric.assert_allclose64(lhs,
+      'eNotUcmRBDEIS6hdxSUwsWzts/NPYWzUL2GQLI54FM+fqvq7/FkKwbv2U532rj4Jt30TFlUXV0Xou+KJ'
+      'kH2xvc8bj5X1oJUPShvf4pdnlnFRY897Z+1bPyCDgSB/98eX4W+hzvf4qiKJYsPzkA8nb2cW6oy6VAwC'
+      '5IfXh6APqBeNTzd1raTuBLMaVOM2uFoivsCUgXOWpbZtyOaYKVdpUrUTRbLaJ3fMxlx7VrxCMKtb4ckA'
+      'bVQX7nT3G2mWNDuuCqZzsaUhNHCkUV3KIIHp73RnwzW9R8jTQ97znsDShN4AhzqOXxOWTYcGVSrCjy02'
+      'yXHOT7KO1f8Pzy6Cyw==')
 
-  retvals = main(nelems=4, degree=2, maxrefine=2, withplots=False)
-  assert debug.checkdata( retvals, '''
-    eNqlUkFuxDAI/M6uFCQzBmye00Ou+/9jMTg9bFOpag8RBMYwMPDxkIP1eTwe2iafNA5uvZ+kR8ReH6+D
-    WJucNI/hFnGPQMdYAchIu1DvH5pjFbnLmaj+lOPofpLc51QzB+lzW00L5bSN858nMs/D7K4WeV/E7wlE
-    Un0lO7vfTUdzj0Zs3m8Rppr1MYFbgIpVCYXNhSB2jYiF0xpnCjLLEYxylKtsCMPM0br/QhwaIrkdkebL
-    ei/6GMg5gZFyX4oBpQBgtU2Z+T9tzJUPk3QuFYHpG99q+4tR2D6zLydr+VIWXdq2qQ6YsVWrfsYZ/6va
-    zGvwWI0Ol9ybN7kctHL2ARBjkQwwuiYLGmw5Fk1TKzBjP3+7DJKmJaP0S0/f2KFSr79di2LxXpJLK0hX
-    2wIPLuz7ARFiyjwPtyVvOLA9S8hQzn+P6vkJim73Tw==''')
-
-  retvals = main(nelems=4, degree=2, maxrefine=3, withplots=False)
-  assert debug.checkdata( retvals, '''
-    eNqlUklqBDEM/M4M2KB9eU4Oc53/H2NLnkCGDoTk0EhtlbYq4bjJQL2P202B5TF9IJA/po719vx4jokK
-    6z2Gp/Fj5nrgDYhB4mU36v0jSNpFrmImqj/FEGE1keuYasVIOI7VsqRYFrD+Maji6GZXtWay+08DrKDm
-    DjJmXm0346w20ZIvEaZa9SmILgEq1iWULDZiYup6seUAYIVIoh0hb0dRX8Ig2nL5F+JMdyg2RJqVFOjh
-    nLnscsqetYhaAaJmDyWK1bAonHnP9VKRKOHgsdmHVoGj/2tq+VKWWODYqk+IdFTrPMPu+0e1sXRb1Kh7
-    FG8JwsehZvJ1AJutKDCxVbXpaI0J6/1mIsnJ+n4ZU8C6g7BDS5TUSa57O724FmZpYVCgs1lPS3Vs7PsB
-    TcI98DqPNIJyFtvZvVVP738e1f0TqD33ag==''')
+  def test_quad_p2_refine3(self):
+    err, cons, lhs = main(nelems=4, degree=2, maxrefine=3, withplots=False)
+    numeric.assert_allclose64(err,
+      'eNoz0TE01Yk2NTA2TtU11zE0MDJL1TWNBQA24gT7')
+    numeric.assert_allclose64(cons,
+      'eNp1kLEOwzAIRH8oSIA5DN9SdeiQNf8/1pBOlTNYh+6dT9h2CI7X9bkOEjBOimOm60m5jKFRhtqcpZX6'
+      'P8q5wtgyN9gTE+F1z/YMaKY25k/RquBWFiuV0OYyHbsuyjHjaYEFkQWHZOxeR8E5KkDiaduEA92voboN'
+      'wPyugHpWgiSxHF8Dc38cqYX0YDpvB9K17y/9CXCk')
+    numeric.assert_allclose64(lhs,
+      'eNotUsuRxTAIa8jM8BOYWnb2mP5beDb4JAISAhxfgvUnEvmRLRIwPtorK/SjOgnTfRPqmRcpk+sjX+6a'
+      'F8s5PsLSNGs8QSOXzjfr5akGLopvv7hjdz1yS6PDh1/8+I2yuflil3dQEIOvrzk/7LyKDG/r6ELGFxi+'
+      'Wz7E+GD0LP50XZd880pVnwaZdQekYrcXqExguTs41xqy2qgpj3+XdiCGLIqnQjc0qT4xnUtOmzPiiFA6'
+      'ooRPsLnGXKL8qqz3PmpxHrXhWSKlT0wBdEm3anNV7sBxZoi7wgk0ZLZz4Kk9xgkaNQ4Fa7IwT2P1eTw6'
+      'P8NkIG31/wPhOYLe')
 
 
 if __name__ == '__main__':
-  cli.choose(main, conv, unittest)
+  cli.choose(main, conv)

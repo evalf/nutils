@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 
-from nutils import mesh, plot, cli, function, log, debug, solver
-import numpy
+from nutils import mesh, plot, cli, function, log, numeric, solver
+import numpy, unittest
 
 
 def main(
@@ -51,21 +51,29 @@ def main(
   return cons, lhs, err
 
 
-def unittest():
+class test(unittest.TestCase):
 
-  retvals = main(nelems=4, degree=1, withplots=False, solvetol=0)
-  assert debug.checkdata(retvals, '''
-    eNqVjjsKAzEMRK+zCzJ49LHk46Rwu/cvYylsICRNCjHijTUe0KEEO+k4dJqv5tQgPHMR8w1ig86ciwFY
-    bZKE22pK1+P6GMeQX3yKxS+Ojv1evvhu838ZG47UENdUsHKGI3Sk3uXQNYqbeirztFTRzJN3WciY5dd/
-    W+esO1WrvLs8NF4+onxhrbyNyz9phPXVBp1PMQRX2g==''')
+  def test_p1(self):
+    cons, lhs, err = main(nelems=4, degree=1, withplots=False, solvetol=0)
+    numeric.assert_allclose64(cons,
+      'eNptyjkKwDAMRNELSeDREklnCSlSuPX9S9tlgouBz2OM4HRbeXQOYqjUDvVYkAua6A4HWucizbDORuMd'
+      'nwUuOXmp58nRsP7692cCdHUoSw==')
+    numeric.assert_allclose64(lhs,
+      'eNoljkESBUEEQy+kq5pE4yy//rLvf4UZZvVICBR1+bE87gpZCqsu4PEK+Qrb0IWr7rtKkMG7KH5iNxOB'
+      'phr1LogmvRl6bPTNGN0/mhWbYOdBCp4zh5Pjb5scq5qe9DP7W23I/HzN8WHfPWb/if8DoOMtyg==')
+    numpy.testing.assert_almost_equal(err, 6.850e-3, decimal=6)
 
-  retvals = main(nelems=4, degree=2, withplots=False, solvetol=0)
-  assert debug.checkdata(retvals, '''
-    eNqlkDtuxDAMRK9jAxSgISV+jpNi271/uSQdp0jgKgaEJ2lmbI5BxyLsk45jcAi/hhFEojg2Zm6ceF0c
-    0CW1sW15EYSI+RqL3l/vP2urypPmy+xJiwh/0jDzeRKzwz8qsFiPKxta3Dx7RDOgGFv7fNdS077PkZJC
-    WC5FRmjTeBfvqpjgyxfRehqLwt7+Nc2Ld30g+n2w+m76Fa2L2+X32fmfX5KB9R3wXwG7ApjFk8DlUDo/
-    ykV8bg==''')
+  def test_p2(self):
+    cons, lhs, err = main(nelems=4, degree=2, withplots=False, solvetol=0)
+    numeric.assert_allclose64(cons,
+      'eNp9yjEOwDAIA8APgRQCBPyWqkMH1vx/TDNX6WDZ0tlInC7u0F4cJKrYzS7SipO6NexmGWZ7hEcWgwR4'
+      'D0bzmZ/4GHqytIiTAcgfw8HuBTunOOw=')
+    numeric.assert_allclose64(lhs,
+      'eNp1z7sRAzEIRdGG0Iwef2rxOFT/LezCbuLA0UVwEinB6LO4hM8Kgkh1lwH7rCTWXd0FV+0hLPKsIlTd'
+      'QIklpCsG7xrv6EZg7mU+b3Mf5+Gzx944Swia3GWUTYO1mxrxOLyucu437Aqnd3W3E6rq++1RMj589uyY'
+      'Ssbjc9fr64/PX9//kO8F+0tBmQ==')
+    numpy.testing.assert_almost_equal(err, 1.268e-3, decimal=6)
 
 
 if __name__ == '__main__':
-  cli.choose(main, unittest)
+  cli.run(main)

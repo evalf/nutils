@@ -523,9 +523,10 @@ class LineReference( SimplexReference ):
     return self, self
 
   def stdfunc( self, degree ):
-    if len(self._bernsteincache) <= degree or self._bernsteincache[degree] is None:
-      self._bernsteincache += [None] * (degree-len(self._bernsteincache))
-      self._bernsteincache.append( PolyLine( PolyLine.bernstein_poly(degree) ) )
+    while len(self._bernsteincache) <= degree:
+      self._bernsteincache.append(None)
+    if self._bernsteincache[degree] is None:
+      self._bernsteincache[degree] = PolyLine(PolyLine.bernstein_poly(degree))
     return self._bernsteincache[degree]
 
   def getischeme_gauss( self, degree ):

@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 
 from nutils import *
-import fractions
+import fractions, unittest
 
 
 class MakePlots( object ):
@@ -115,50 +115,58 @@ def main(
   return lhsprimal, error_est_w
 
 
-def unittest():
+class test(unittest.TestCase):
 
-  retvals = main( degree=1, solvetol=0, circle=False, uniform=False, basistype='std', nrefine=2, withplots=False )
-  assert debug.checkdata( retvals, '''
-    eNqNVVmuJDkIvM57UuaIfTlQ3/8KjcF21fy1VJIpzBJAmMTnRx7U3+fnxyjzzyuPMNM6iRD6P0Gd8byl
-    6Iu3LLiF42LhrRBPb9cS2gBZ9M9r5Ssp4+vj8lrYCOqGbcOAOhqlMXaTSSRIMV4GDeoNkw0GcYw1Y2wC
-    tk2GTkDTHONKPjap2xiRypg7IP/f614hWQviVOX5I8mwTi7FQs6BuDyYoksixw5V/eoTRRqii5adPm5q
-    3TajBqq6O80w7UvvE1VaH7t6R+gybBdYvey4LNz3GDDIyZZjtTTTbAmxM97MGp1BZRCeJpLGrj3YFtRX
-    e7RLYJUW0Lg1xRn47/nHnzeZ8mE2XmepItYsEJeMXcGoUQoawsf3dVh1Z82aWNqFEKONXva0vlOLCUcc
-    naJqMGmjmqO3hg1tbCjjJOEM2Lkt16BapB13Q5DmfjlkUu7oG8K8l3xEVpYKrsk3eITeiAr8iYiM7aXp
-    g9adx71IdhvwEtx+1VTXsG5n0P0A2NhCYAoOW2+rBBPXDsphdAsGOqWhkNzwot/h3yCfhuJ0thIljuYN
-    V2jpk8ADzjTZ6SYTWW9l5OKSHZt/+RmvNbJjytokFUcJhgPMYCcyOh3+CJouMcHsIMOvSRbD73ReMT9+
-    dZGHB69sxjX7lOy7L4RxuEe7+JfUh2E2nKspIo4mYHO2nsAwRz1ku7k2VppScDEU4jsZgsUHlF9QAaIX
-    eE97DxGVvoqlJN0cWasCaS0z6jLD17IojSl1qCI0NYhI2c8tCDdQ4LZh1F2xJdMXUDKW87d4ekhlgqf3
-    kp9We++SOzq8BOn391V9rKfcvVsLvMAiAM5zoV2QyGm9+7TVbAZesg5GUdepqDfpml3t5Hl/Mwwomkh3
-    UZn21vDUTyvjG7LpYUotJLjE49P6etNHRLvsM94U3u8XfHj1ijSj+DHf8DAFp96QvcxYZj1QcuNkAN67
-    zBtCpe8L0sWz/l5vdrmOAm0mXdMcjx50dKtrMfslFOxl8Wp9ylqi/TgsaDYLYp7FVF+lw7/f5/cvNmnD
-    XQ==''' )
+  def test_p1_std(self):
+    lhsprimal, error_est_w = main(degree=1, solvetol=0, circle=False, uniform=False, basistype='std', nrefine=2, withplots=False)
+    numeric.assert_allclose64(lhsprimal,
+      'eNpVkckNQzEIRBuyJfallijH9N9CbOYrUk5glgeMbbGvV0jXZ9syVb5WhGneQsfW2iegN7BPhY0TSlMS'
+      'lTKl2TmtloParBafHafX2tGb3eitnN7tGTI1ShyIuICfYXCMBcAITNwV9izDDLJ3gVxEc8DucgDDWwBs'
+      '3Ljb69mQ5RTrAO2/65diCbqOpZxMLmula9WS7+ZaUEoFUEmeccIyO7IBneanzlcGJkTI9Lk/SitBvs7J'
+      's+tcVCwTT8Zh3tDwaDlcNZ08F0EKCaORtDvyOhU+md9kr7Fugo9jfK14gcB1kX5UrVQ4ehHH4dAbeX8B'
+      'W2l7pA==')
+    numeric.assert_allclose64(error_est_w,
+      'eNp1VMmRGzEMTGhYhfuIxeWn80/BJADO7GdLD0EQzu4G5UF9/sDz+8cJ4d/Kh9nofMMTkfFvIW4ThX2c'
+      'KNvCm7UcoMKXEEtFE2JUxGLPylpqkf0fR0djmFYQEnQMG1rHUN4OnAHd1lKkLfLUtuA0Ra7YTMopjFke'
+      'Ya5WIqfBrqvJt26E8lRT4FsNGStD08u33LkBcHKb1EVgk7HISF4s0N2nMWIZIdDDhVnPZOJaBTkOyL0j'
+      'kHU9FJJbWZTfyivIew60aGglsZda4YplfbX9gFa0sdNtI0I5psZE/i4GY7/Us0gzpVTr7AYMFw3cyPTI'
+      'glbDJ9jPMYYnDY0LoNipne3OiVkyOjqSUrJvecK4cmoW9tKk3qKxmG6OWCiugJHh1nO0+Dxk0lwriHoB'
+      'PKKD/FohWLzj+GU5QPTOW0Q2Q6ivcBYl6XCfByPatYhqtXDQ8phSldkCbcIiBftygnAGBK4YRp2RLfkT'
+      'Atn7o6VXlyE4GEq6XwhZ9aMIL/EpP1S1ceVBKrFGRICeaHt6aJELtI9mzJrWbY9ERV16DxyJLdxqq0vy'
+      '6Bh2KWSVqR3oKRe+4FfsW0QD8H5N7lrIo4x9l2PtQ8BZn0W/G4S50yVSquHHSqGnY56CZ8uQeYNY+ogo'
+      'uabj0mA9QV7Nd+f6g/Q8KrEJIi2CtpLagdasbuY6o0iNg+9+SC8dCnPuS8mbDRrpW1DLGzHvctBd4e9/'
+      'Be02XA==')
 
-  retvals = main( degree=2, solvetol=0, circle=False, uniform=False, basistype='spline', nrefine=1, withplots=False )
-  assert debug.checkdata( retvals, '''
-    eNqNVFmuHDEIvM4bqR2ZzcCBcv8rhM2tiZSPSCOZwVBQBW54fvgB+Tw/P4f2/r34EWLOk9ApTwA4ea7X
-    uDfrhq6be0TKIWJeGAxYGNj3gWGDwccaQ7Q9N1cRK+dAR5D3CeBdDJgHw0+jHsT23FyDXR3qYLCc5uLW
-    VcEmg42hU7c1/M11hOKgviviGEhhHIEpv4f97ptl1OXXzV3iLGPsvlLniTnYMbATkAKH9eKoTszghPZa
-    MaHCLiPa3H/XenHeGMBTRox3/3r+/wdsIQHs51C2D/i4ZUfhIZc2onxfAXpo6nEa1M1Cs4yBZE2nghaR
-    a4fraWNB8C2ri+LOsWYWkY0F27sR0LpMcJjekM5gI9LueK75hkWEMN3lVoVBNUag2OvzXRa27Ww/1Pdm
-    Fgu2i9HiUj1dpELpOgx9hdFaXykVMDwoBkMb2cs6ijJkcfNX1dBo8oGVp0a9prAYsVksu5oKwLhAdZSg
-    Qz4+VyxLuapALDpQF5ZILd5dWIHeckQjaS2Op9ykbUBqZPFlSHHsQeNh2xPxRxineL/k5F/fh+oHcpHD
-    GrIG0zMCXpx6DyVkr88RlzxVNnUPyNWVW04jlUI/b3LLyoRNU3or3qEyFijj9A1ARWSRzfoA5SJrDLlW
-    Kwpv5Nrjelj2iOJouaFbJYGm5VbqFr/eYg2plKoCIhcO6q1Nh0feuykkb/6KOja0zKsTPjXO8DDdzY4m
-    hnzo0attjOdyVlGv5muoUdzmv+2ZSdPM4jwurs0fFjZNoNrdCrzrTLKbtxzBQdt+H5/k/Hq/YsxFADw/
-    QPVGZdCO5qcoJ6V6Za27eJDq3w/yn7/P8/kDV7pq1w==''' )
+  def test_p2_spline(self):
+    lhsprimal, error_est_w = main(degree=2, solvetol=0, circle=False, uniform=False, basistype='spline', nrefine=1, withplots=False)
+    numeric.assert_allclose64(lhsprimal,
+      'eNpVkFEOg0EEhC/0b4LFcpamj73/FWqNNOkTiZkPow/b83LJ/Cx9bOu+dUvKrcxst65qvJuatGKVVLvx'
+      'TXQbN+uJWUQzlMEQzIsRw1APMOwcMMwadkS4WQzFTj+4I7GMVYeRDqqLgFHe3hdMXQ/Dq+Z9F2dAyDEO'
+      'DWVYKYAvb2tTuPefnN+CW8BuNOtpvqcJJjbWr/Imvku1aUBdJxHvygoct5CVaxdHjw1nMkkfTmUfrakU'
+      'qJs6k2eX0D/np2G5Ae33F29saGg=')
+    numeric.assert_allclose64(error_est_w,
+      'eNp9U0lu7TAMu5ADaB7OUnTZ+1/hy5Lyir8psgghDxRJWQ7q+YLz14cS/PMgHGORAnQy3LrCqd4AAbSX'
+      'kLIqWf/AXnkoIgrheTTZe9PDnIPQzaaEJlO6lARic4Y5FiHktIEuuldjSCNiG/qHiGH2Sy4vM8H2ptM/'
+      'J9wKHyb7JUXwvK0/VkeHAAWiS4K4JXblWzLBWSJEmCVnwGYkjW1CSQeZ03aIJe7DWe5AjipxWYaxGY4Q'
+      'rXPxuqmIvna4++43zq2lcyOX5sCDiTy0Wkdb86V1ZH7JeGkJFFsQAvsAtOKPGpErJw6FvL50FnlUaKlZ'
+      'bFDZ8QaGPqiFBm6/hPTeksBrYbbzpin37wo0HZA0yICdM0r7HJ7JESZqoBj8G6ZQxyMk6y/eVqM6jR1n'
+      'ZK0bvML1O21FC9T9lLreqk5jJwKONayoXclAXm0zuF4uOTUBkbQK8rUL2WSdvbquSazv8aeO5UqKeTti'
+      'vm9HmPGdfty4y4vRG0K2el291Vas7RfFjDIGbBij8VILjIQabXglxEZCvt6UiKBNVvcONd1mBPb5PqT9'
+      'VO5UVdranJmwj1JpLjM3nIjcdy6hDagX6Gmf0P77vv8BTa37JQ==')
 
-  retvals = main( degree=1, solvetol=0, circle=True, uniform=False, basistype='std', nrefine=1, withplots=False )
-  assert debug.checkdata( retvals, '''
-    eNqNU1tuAzEIvE4irSvejwP1/leoAW/atD+NLJkMDAyYxeshF+rzejyMMj+XXMLMdRMh1b0UTT4X4rVe
-    0B2zbpKFDdldmiyKHUAmO9K2ITkU8bThHo6bNEdlHBQhEwCOw83DVaXheqeVK0y6jql510eOU7e4usuh
-    52TTHPGbc7qAEb804aTNHNkZqodlelwB49JpcU+ENsKdkN9ZLxeStbEHDB/X/w+Kbo1RZnC1lI2qbJ0I
-    bVsJazgJ5YbnLHTy4i8M8AozRB5g/wpYHpFlEGT08+5Qag8xRudD0K6xjNE6hoR/lwrxOFLXHoQf29L4
-    jnTKWysT5zFvqQqtjKFmlhc6b4G+HTCJ99rZGOI01RElBwkYRLWWKK8UzVZq/l1/jnB10+IQ3atGjdfx
-    1oascgL2pvubzAiznpbopGWUEeUSPVCk2ovSbdpDQLABRIgrQjM76VKJGefeEzllzBzuMYbArWklUPzo
-    Yz+oTRKSaK5F9s1m87DINltiVMqGyjzemgPmbdYn9p5dRPv/cochL/U83z9D1d4YgdrZkHztgwPht+0v
-    G+n3zvw9z+v5Bcg79PQ=''' )
+  def test_p1_std_circle(self):
+    lhsprimal, error_est_w = main(degree=1, solvetol=0, circle=True, uniform=False, basistype='std', nrefine=1, withplots=False)
+    numeric.assert_allclose64(lhsprimal,
+      'eNpVj9sNQzEIQxdKpPAyMEvVz+6/QrkQVeoXCHNs0EW2XuDMz9alIvJUZuKnbiPoZxOtXaOWdu1oN5Bz'
+      'ngaBgd0HVqNeYGgNUI3mIOrpw4Y3672iyzSt2YhJwXEaNnMmZjxsMe0W0Mk3oPNJ/OZ6XW8VR3HGza5J'
+      '3LyS5vhteTC2mfNzhuFSsCtdnzSfR4i4zpM21H/qJxGjKHl/Aa51TUM=')
+    numeric.assert_allclose64(error_est_w,
+      'eNp9ksltRTEIRRt6SMxDLVGWv/8WYsD5STYRGwQXfADrQ/Z84POfkRq9II+XIvGC6pipv4Am7W4bLCa5'
+      'wTag4OxCoMSpcyLewDj1QGRWO4x1pETPkdJkWKimGaFNf3ChGA2r/HknNXIBwbUJ2/VyvqLguoTCkust'
+      'oKG0WpCxwxRyHo+TwKgBZfYdQYNtcUg3pYkbMVPt6lKr4fPw33wqpstEFN79zyaDLhKJyWaZyX/gMnet'
+      'rLbNhHRGg9CcFRGHLK3bQBL6BlRZWmFV0xFM03e9tJmzHw+8S0vFCwOFXG/0czfPPYbmKDxrysV9r0TH'
+      'G71zQ02hyCbP5FR4Gzv2jd6NVXd3EIFbBxZ9pcMIgr5aRvP7B0q/j4lMb7dH2E/If77EL/v8AhMYnBA=')
 
 
 if __name__ == '__main__':
-  cli.choose( main, unittest )
+  cli.run(main)
