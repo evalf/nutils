@@ -1,6 +1,6 @@
 import io, tempfile, os
 from . import *
-import nutils.log, nutils.core, nutils.parallel, nutils.debug
+import nutils.log, nutils.core, nutils.parallel
 
 log_stdout = '''\
 iterator > iter 0 (0%) > a
