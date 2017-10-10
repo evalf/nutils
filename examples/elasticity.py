@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 
-from nutils import mesh, plot, cli, log, function, debug, solver
+from nutils import mesh, plot, cli, log, function, numeric, solver
 import numpy, unittest
 
 
@@ -53,19 +53,23 @@ def main(
 class test(unittest.TestCase):
 
   def test_p1(self):
-    retvals = main(nelems=4, degree=1, withplots=False, solvetol=0)
-    self.assertTrue(debug.checkdata(retvals, '''
-      eNqlkEsKwzAMRK8Tg1ysnz/H6aLb3H9Zx7LaOhQKKVjMSG/AQgibAEqAbUs3+HzInB+xQxQxZVn6yUmZ
-      hgrrUG649JNz0anYTFNae+OabP5LT+vmKn2sQKXUQ/souo8OKyc8VIjUQ+6jw5pLGyGh9gpNHx3WkthC
-      zO+Q+eiwX/W05X7fL9fFw/zz5bcKEJ7x0YpY'''))
+    lhs, cons = main(nelems=4, degree=1, withplots=False, solvetol=0)
+    numeric.assert_allclose64(cons,
+      'eNoz0TE01Yk20IHBvMQ8srGpgYFBqq4JQZo6tmHBsQB8/T8F')
+    numeric.assert_allclose64(lhs,
+      'eNqNkEsOQyEIRTeECZ8L6lqaDrv/LVRB07xZ4+AA90iMIHF6Md0jZvFpIBGgaPboT65umoR50iY/+pNb'
+      'dynKTMacj/7kzsz/8PfSGLY2OGnvY5OprTJHLQZ4F8M4CVUcZ5WezsoknahLgM7rwLicGLWns5azf+M6'
+      'KKfznr2/xYZHGg==')
 
   def test_p2(self):
-    retvals = main(nelems=4, degree=2, withplots=False, solvetol=0)
-    self.assertTrue(debug.checkdata(retvals, '''
-      eNq1ksEOwyAIhl+nTXQRENDH2aHXvv9xFqRJ1+ywLEtqvr/wi0gLaakJ6pqWpTzS29NA+5Y5cSlqpE4X
-      znj4oGPd8qjXjvdBZb4w4tNHQMUJziJyYcSnr5LSJDpZroy4+0Z/5RveJ8C92M1QBe2mDKOypHyKyOSw
-      aod2UKhWG4oqmOEUkclhbQLoW6TYaQRuOEVkclgbixUTISMCiW8JEZkc1ibkjdVmROR5SojI5LCO3+I+
-      k/25/3X9/tX+3eGntab1Bd2X0og='''))
+    lhs, cons = main(nelems=4, degree=2, withplots=False, solvetol=0)
+    numeric.assert_allclose64(lhs,
+      'eNqVkEsSAyEIRC+kVbb89CypLOf+VwiCVuIyNYuH0EAzXCDl1cr3G7DxVCnSmgVp9os7f3SYnZ/KBWO9'
+      'nSZ88eS3jtBnEi3YVC6e/NYxGW0iKXLz5FPn/to//L1dZpvrpm4atw6BU0v1gCLwCq1KlblsSrGJ+A1K'
+      'HAXYsuMCD2JG9QpH4NKYPhTIFslthBR4ILtFY3h16TaSCVWK1g7SbAFZtijlOpcit1Aa4xGK3iWde5Dr'
+      'vDL2FlpG3h+923IP')
+    numeric.assert_allclose64(cons,
+      'eNoz0TE01Yk20EHAvMQ8mmJTAwODVF0Toml6ug0HjgUAg5ZcPw==')
 
 
 if __name__ == '__main__':

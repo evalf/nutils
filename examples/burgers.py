@@ -1,6 +1,6 @@
 #! /usr/bin/python3
 
-from nutils import mesh, cli, log, function, plot, debug, solver, _
+from nutils import mesh, cli, log, function, plot, numeric, solver, _
 import numpy, unittest
 
 
@@ -62,30 +62,36 @@ def main(
 class test(unittest.TestCase):
 
   def test_1d_p1(self):
-    retvals = main(ndims=1, nelems=10, timescale=.1, degree=1, endtime=.01, withplots=False)
-    self.assertTrue(debug.checkdata(retvals, '''
-      eNotkNsNRCEIBdvxJpDwBguy/xZWcL/GCHgGGZYB+wdrqbkcLBAyOhiAVhIHE1wq+oIr6qCDMlHzYh+8
-      48L2mDpkliamdcEBt8dMIAdNC96WmUXzeiWJzHcw5o5FdfHJ3awjpJbchtdWSL2beKTbxbW5hcaxot+/
-      rvZc1GKC059rFsW4Et9UvbRolkr2ff130nQfxvOtzaO79f0FU8yK1yOaQl7t9cH3A58wSvg='''))
+    res, lhs = main(ndims=1, nelems=10, timescale=.1, degree=1, endtime=.01, withplots=False)
+    numeric.assert_allclose64(res,
+      'eNoljskNRDEIQxvCUiBsqWU0R/pv4QdyepaxhZXY6LfVpJAkS1fBCZrihSCTtDY4PQpGm9dqXmRBiYX1'
+      'MWTIPEQoWwdxzKcB9jVR3MgZoZbvJB7xhHY9CNvk/T1t3EFbg+/C/wc4pyZV')
+    numeric.assert_allclose64(lhs,
+      'eNolzsENwDAIA8CFEgkDJnSWqs/uv0KBvk4yFuALXLeK8d1nwanv5oLQ2ksl2wwdzVFzL8PaQ/iYEi0E'
+      'pZU+punkqZi+HU7fZl/lF2TuWOR/N3x0slXhqb+eD+HPJKs=')
 
   def test_1d_p2(self):
-    retvals = main(ndims=1, nelems=10, timescale=.1, degree=2, endtime=.01, withplots=False)
-    self.assertTrue(debug.checkdata(retvals, '''
-      eNotkdkNxDAIRNtJJCxxHwWl/xbWwH49AnhgCMGjQPbC8xSpf6dATew7CYcr6zsBhEnf8dum1mQ3nO9b
-      +I4BpVSTi61pQdQMwclnhgwLffM1eUOP5mEVnsCSp/Nk0JYqIjfjvJnA2EDYdZ+TbECUuCVL7Q0PucQE
-      7C0Yd4T9A3XUsVmc1r7vDViJxyGbjMMkXoc1ewnlTCKUO0ibPox2pCBmuOxlFUy3HtY6l+rZLEcZVlto
-      Rq5e9wkk5ugl6ehZ2fRLoi5p+++d9l389/GZIxRzCCqy3X+Px4zzJ1l5fL7w/gDuxG+1'''))
+    res, lhs = main(ndims=1, nelems=10, timescale=.1, degree=2, endtime=.01, withplots=False)
+    numeric.assert_allclose64(res,
+      'eNotj8mNBDAIBBMyEs1NLKN5Ov8UZsH7qqKNLbcd+Pk0LC71MVe7VIekmy/lARcuxd+S+VDCemdwXvKD'
+      '0h5Kiw89gWEq17AqZdkcL+/dd46dSUx1xUtspRL7NHVmvyTkJcn5RCX8XYc+AYrfkZfNDwmhtSKBmi7k'
+      '/i8W7Fuzpab39weWJTmO')
+    numeric.assert_allclose64(lhs,
+      'eNotz8kNxDAMA8CGHED3Uctin+m/hZiyXwMLAkXbYl8/Meb3iSXiCrnw9m0rVK6RSel9DPqY3VDd6SgJ'
+      '3TRgOnK2FgU7SMcOO2aePOzpKqrJK9bR22dfi648OVx5e0Rf544y5rtns53+ElCEzv9M4P8DFyQ2QQ==')
 
   def test_2d_p1(self):
-    retvals = main(ndims=2, nelems=4, timescale=.1, degree=1, endtime=.01, withplots=False)
-    self.assertTrue(debug.checkdata(retvals, '''
-      eNpNktkNAzEIRNtJJFviMIcLSv8txOCF5AsvMzsPHzhea6C8x+uFgvqZe4gKRJ3KiJ/pYxJu/0wb6MZR
-      F4NEnQ6wc7HR9F8pZwttrfSidXjjkGVllm+M6q4r+syQfd96snXghlNlIIZfBqllrX75uv/4Krc4nftw
-      pitDLpjQQiHzeyICsa2z2Lolss/0CyJ0GnPSJjom/ie1uaU2F+HHLEQzzVjuLRjdw0Zhv+MY33FIxTJP
-      SOHOBXqDl9s93p9U5pba3IiGNqKg56Xgcrq0jQ9WPBdEjLlBF9mXwcGQwUk/l6B8hPUT2lpKOTu9cB1e
-      tGno+Su5USq8PRcoGyJroe18GrAsvmlBVkQ8fe5++br/+Dq4SBXcpLlg3VeocbdHsRUHdYbaKsmmeN+H
-      SaqRzUq3b8D//fJVv3wdXKQKbtKU50aJosb240UfQQEwFgzP/pzXHXLrc3MA/q+Us4W2VnjTOr1w7/H+
-      Aj2F8Gw='''))
+    res, lhs = main(ndims=2, nelems=4, timescale=.1, degree=1, endtime=.01, withplots=False)
+    numeric.assert_allclose64(res,
+      'eNpNkUsSwzAIQy9kZsCY31k6Xeb+V2iMA+lKBGn0SLIGyfiQkFwQQ1RwKygTXeADJkVcYIPceOtilK3g'
+      'SJhDkNm/U8k2OlrtRevyxhHLoXjQVndde8+MK59Db18HBc4LZBDJ2jrVUmtfud4/ueotTvc+HHBlzIEn'
+      '5fHTLPJWwf1a9xAasrvv6xftUjDmlRtySsxrdbitDhfhZRaimWas5y8Yn49Nwn7OuXvON1Sx7JOpeO5C'
+      '9QwvtzO8VoXb6nAjGtqIB/r9AX6LebM=')
+    numeric.assert_allclose64(lhs,
+      'eNpVkcsRwyAMRBuCGf0RtWRyTP8tJBJISU6Wdtf7wJaBOh4ojq9pY+pGP4N6DkQMr6ljuhqkI7w8FCZL'
+      'B40/u3yNjpZTyW4vXJcXbS7c+Sr5onR4OydFw5AhuHbsBLJiJwGLJ2JUc+uVa/3murhIVdykKSAHaUjp'
+      'LOGdh9qmyaad90Iyi242OvoC/tUrV3rlurhIVdykqab386ud64OkYQAUA8O9n7OcQ267fw7gz6lkGx2t'
+      '8qZ1+8U936ubdqU=')
 
 
 if __name__ == '__main__':

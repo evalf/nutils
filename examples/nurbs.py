@@ -9,7 +9,7 @@ geometry and mesh refinement', Computer Methods in Applied Mechanics and
 Engineering, Elsevier, 2005, 194, 4135-4195.
 """
 
-from nutils import cli, mesh, function, plot, log, debug, solver
+from nutils import cli, mesh, function, plot, log, solver
 import numpy, unittest
 
 
@@ -105,19 +105,19 @@ def convergence(nrefine=5):
 class test(unittest.TestCase):
 
   def test0(self):
-    retvals = main(nr=0, withplots=False)
-    self.assertTrue(debug.checkdata(retvals, '''
-      eNoz1NEw0TE01dTRMLY0tEjVNdYxNTAwANGaAEntBW4='''))
+    err, hmax = main(nr=0, withplots=False)
+    numpy.testing.assert_almost_equal(err, 3.917807, decimal=6)
+    numpy.testing.assert_almost_equal(hmax, 5.0, decimal=6)
 
   def test1(self):
-    retvals = main(nr=2, withplots=False)
-    self.assertTrue(debug.checkdata(retvals, '''
-      eNoz1NEw0TE01dTRMDQxN0vVNdYxMjCyBNGaAEniBXM='''))
+    err, hmax = main(nr=2, withplots=False)
+    numpy.testing.assert_almost_equal(err, 1.476470, decimal=6)
+    numpy.testing.assert_almost_equal(hmax, 2.028562, decimal=6)
 
   def test2(self):
-    retvals = main(L=3, R=1.5, E=1e6, nu=0.4, T=15, nr=3, withplots=False)
-    self.assertTrue(debug.checkdata(retvals, '''
-      eNoz1NEw0TE01dTRMDI1MUrVNdExN7MwA9GaAEohBX4='''))
+    err, hmax = main(L=3, R=1.5, E=1e6, nu=0.4, T=15, nr=3, withplots=False)
+    numpy.testing.assert_almost_equal(err, 0.254238, decimal=6)
+    numpy.testing.assert_almost_equal(hmax, 0.768562, decimal=6)
 
 
 if __name__ == '__main__':

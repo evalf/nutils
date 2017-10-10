@@ -10,7 +10,7 @@
 The numeric module provides methods that are lacking from the numpy module.
 """
 
-import numpy, numbers
+import numpy, numbers, builtins
 
 _abc = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' # indices for einsum
 
@@ -568,5 +568,45 @@ def power( a, b ):
   if a.dtype == int and b.dtype == int:
     b = b.astype( float )
   return numpy.power( a, b )
+
+def serialized(array, nsig, ndec):
+  if array.ndim > 0:
+    return '[{}]'.format(','.join(serialized(a, nsig, ndec) for a in array))
+  if not numpy.isfinite(array): # nan, inf
+    return str(array)
+  a = builtins.round(float(array) * 10**ndec)
+  if a == 0:
+    return '0'
+  while abs(a) >= 10**nsig:
+    a //= 10
+    ndec -= 1
+  return '{}e{}'.format(a, -ndec)
+
+def encode64(array, nsig, ndec):
+  import zlib, binascii
+  assert isinstance(array, numpy.ndarray) and array.dtype == float
+  binary = zlib.compress('{},{},{}'.format(nsig, ndec, serialized(array, nsig, ndec)).encode(), 9)
+  data = binascii.b2a_base64(binary).decode().rstrip()
+  assert_allclose64(array, data)
+  return data
+
+def decode64(data):
+  import zlib, binascii
+  serialized = zlib.decompress(binascii.a2b_base64(data))
+  nsig, ndec, array = eval(serialized, numpy.__dict__)
+  return nsig, ndec, numpy.array(array, dtype=float)
+
+def assert_allclose64(actual, data=None):
+  if data is not None:
+    nsig, ndec, desired = decode64(data)
+    numpy.testing.assert_allclose(actual, desired, atol=10**-ndec, rtol=10**(1-nsig))
+  else:
+    nsig = 4
+    ndec = 15
+    data = encode64(actual, nsig=nsig, ndec=ndec)
+    print('use the following base64 string to test up to nsig={}, ndec={}:'.format(nsig, ndec))
+    while data:
+      print("'{}'".format(data[:80]))
+      data = data[80:]
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
