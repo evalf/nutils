@@ -31,7 +31,9 @@ class check(TestCase):
 
   def test_evalconst(self):
     constargs = [numpy.random.uniform(size=shape) for shape in self.shapes]
-    numpy.all(self.n_op(*constargs) == self.op(*constargs).eval(self.elem,self.points))
+    numpy.testing.assert_array_almost_equal(
+      self.n_op(*[arg[_] for arg in constargs]),
+      self.op(*constargs).eval(self.elem,self.points), decimal=15)
 
   def test_eval(self):
     numpy.testing.assert_array_almost_equal(
