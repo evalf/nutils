@@ -123,7 +123,7 @@ class Integral:
   def _argshape(self, name):
     assert isinstance(name, str)
     shapes = {func.shape[:func.ndim-func._nderiv]
-      for func in function.Tuple(self._integrands.values()).serialized[0]
+      for func in function.Tuple(self._integrands.values()).simplified.dependencies
         if isinstance(func, function.Argument) and func._name == name}
     if not shapes:
       raise KeyError(name)
@@ -232,7 +232,7 @@ def withsolve( f ):
 
 
 @withsolve
-def newton(target, residual, lhs0=None, constrain=None, nrelax=numpy.inf, minrelax=.1, maxrelax=.9, rebound=2**.5, *, arguments=None, **solveargs):
+def newton(target, residual, jacobian=None, lhs0=None, constrain=None, nrelax=numpy.inf, minrelax=.1, maxrelax=.9, rebound=2**.5, *, arguments=None, **solveargs):
   '''iteratively solve nonlinear problem by gradient descent
 
   Generates targets such that residual approaches 0 using Newton procedure with
@@ -289,17 +289,19 @@ def newton(target, residual, lhs0=None, constrain=None, nrelax=numpy.inf, minrel
   if lhs0 is None:
     lhs0 = numpy.zeros(residual.shape)
   else:
-    assert isinstance(lhs0, numpy.ndarray) and lhs0.dtype == float and lhs0.shape == residual.shape, 'invalid lhs0 argument'
+    assert numeric.isarray(lhs0) and lhs0.dtype == float and lhs0.shape == residual.shape, 'invalid lhs0 argument'
 
   if constrain is None:
     constrain = numpy.zeros(residual.shape, dtype=bool)
   else:
-    assert isinstance(constrain, numpy.ndarray) and constrain.dtype in (bool,float) and constrain.shape == residual.shape, 'invalid constrain argument'
+    assert numeric.isarray(constrain) and constrain.dtype in (bool,float) and constrain.shape == residual.shape, 'invalid constrain argument'
     if constrain.dtype == float:
       lhs0 = numpy.choose(numpy.isnan(constrain), [constrain, lhs0])
       constrain = ~numpy.isnan(constrain)
 
-  jacobian = residual.derivative( target )
+  if jacobian is None:
+    jacobian = residual.derivative(target)
+
   if not jacobian.contains(target):
     log.info( 'problem is linear' )
     res, jac = Integral.multieval(residual, jacobian, arguments=collections.ChainMap(arguments or {}, {target: numpy.zeros(argshape)}))
@@ -400,7 +402,7 @@ def pseudotime(target, residual, inertia, timestep, lhs0, residual0=None, constr
   if constrain is None:
     constrain = numpy.zeros(residual.shape, dtype=bool)
   else:
-    assert isinstance(constrain, numpy.ndarray) and constrain.dtype in (bool,float) and constrain.shape == residual.shape, 'invalid constrain argument'
+    assert numeric.isarray(constrain) and constrain.dtype in (bool,float) and constrain.shape == residual.shape, 'invalid constrain argument'
     if constrain.dtype == float:
       lhs0 = numpy.choose(numpy.isnan(constrain), [constrain, lhs0])
       constrain = ~numpy.isnan(constrain)
@@ -422,7 +424,7 @@ def pseudotime(target, residual, inertia, timestep, lhs0, residual0=None, constr
     resnorm = numpy.linalg.norm( res[~constrain] )
 
 
-def thetamethod(target, residual, inertia, timestep, lhs0, theta, target0=None, constrain=None, newtontol=1e-10, *, arguments=None, **newtonargs):
+def thetamethod(target, residual, inertia, timestep, lhs0, theta, target0='_thetamethod_target0', constrain=None, newtontol=1e-10, *, arguments=None, **newtonargs):
   '''solve time dependent problem using the theta method
 
   Parameters
@@ -457,18 +459,17 @@ def thetamethod(target, residual, inertia, timestep, lhs0, theta, target0=None, 
       Coefficient vector for all timesteps after the initial condition.
   '''
 
+  assert target != target0, '`target` should not be equal to `target0`'
   assert target not in (arguments or {}), '`target` should not be defined in `arguments`'
-  if target0:
-    assert target0 not in (arguments or {}), '`target0` should not be defined in `arguments`'
-  else:
-    target0 = object()
+  assert target0 not in (arguments or {}), '`target0` should not be defined in `arguments`'
   lhs = lhs0
   res0 = residual * theta + inertia / timestep
   res1 = residual * (1-theta) - inertia / timestep
   res = res0 + res1.replace({target: function.Argument(target0, lhs.shape)})
+  jac = res.derivative(target)
   while True:
     yield lhs
-    lhs = newton(target, residual=res, lhs0=lhs, constrain=constrain, arguments=collections.ChainMap(arguments or {}, {target0: lhs}), **newtonargs).solve(tol=newtontol)
+    lhs = newton(target, residual=res, jacobian=jac, lhs0=lhs, constrain=constrain, arguments=collections.ChainMap(arguments or {}, {target0: lhs}), **newtonargs).solve(tol=newtontol)
 
 
 impliciteuler = functools.partial(thetamethod, theta=1)
@@ -511,11 +512,11 @@ def optimize(target, functional, droptol=None, lhs0=None, constrain=None, newton
   if lhs0 is None:
     lhs0 = numpy.zeros(argshape)
   else:
-    assert isinstance(lhs0, numpy.ndarray) and lhs0.dtype == float and lhs0.shape == argshape, 'invalid lhs0 argument'
+    assert numeric.isarray(lhs0) and lhs0.dtype == float and lhs0.shape == argshape, 'invalid lhs0 argument'
   if constrain is None:
     constrain = numpy.zeros(argshape, dtype=bool)
   else:
-    assert isinstance(constrain, numpy.ndarray) and constrain.dtype in (bool,float) and constrain.shape == argshape, 'invalid constrain argument'
+    assert numeric.isarray(constrain) and constrain.dtype in (bool,float) and constrain.shape == argshape, 'invalid constrain argument'
     if constrain.dtype == float:
       lhs0 = numpy.choose(numpy.isnan(constrain), [constrain, lhs0])
       constrain = ~numpy.isnan(constrain)

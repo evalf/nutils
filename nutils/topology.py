@@ -24,7 +24,7 @@ out in element loops. For lower level operations topologies can be used as
 """
 
 from . import element, function, util, numpy, parallel, matrix, log, core, numeric, cache, transform, _
-import warnings, functools, collections, itertools, functools, operator
+import warnings, functools, collections.abc, itertools, functools, operator
 
 _identity = lambda x: x
 
@@ -147,7 +147,7 @@ class Topology( object ):
       slices = []
       npoints = 0
       for elem in log.iter( 'elem', self ):
-        ipoints, iweights = ischeme[elem] if isinstance(ischeme,dict) else fcache[elem.reference.getischeme]( ischeme )
+        ipoints, iweights = ischeme[elem] if isinstance(ischeme,collections.abc.Mapping) else fcache[elem.reference.getischeme]( ischeme )
         np = len( ipoints )
         slices.append( slice(npoints,npoints+np) )
         npoints += np
@@ -160,17 +160,20 @@ class Topology( object ):
       func = function.asarray( edit( func * iwscale ) )
       func = function.zero_argument_derivatives(func)
       retval = zeros( (npoints,)+func.shape, dtype=func.dtype )
-      idata.extend( function.Tuple([ ifunc, ind, f ]) for ind, f in function.blocks(func) )
+      idata.extend( function.Tuple([ifunc, function.Tuple(ind), f.simplified]) for ind, f in function.blocks(func) )
       retvals.append( retval )
     idata = function.Tuple( idata )
 
     if core.getprop( 'dot', False ):
       idata.graphviz()
 
+    if arguments is None:
+      arguments = {}
+
     for ielem, elem in parallel.pariter( log.enumerate( 'elem', self ), nprocs=nprocs ):
-      ipoints, iweights = ischeme[elem] if isinstance(ischeme,dict) else fcache[elem.reference.getischeme]( ischeme )
+      ipoints, iweights = ischeme[elem] if isinstance(ischeme,collections.abc.Mapping) else fcache[elem.reference.getischeme]( ischeme )
       s = slices[ielem],
-      for ifunc, index, data in idata.eval( elem, ipoints, fcache, arguments ):
+      for ifunc, index, data in idata.eval(_transforms=(elem.transform, elem.opposite), _points=ipoints, _cache=fcache, **arguments):
         retvals[ifunc][s+numpy.ix_(*[ ind for (ind,) in index ])] += numeric.dot(iweights,data) if geometry else data
 
     log.debug( 'cache', fcache.stats )
@@ -181,7 +184,7 @@ class Topology( object ):
         retvals = [ function.elemwise( { elem.transform: value for elem, value in zip( self, retval ) }, shape=retval.shape[1:] ) for retval in retvals ]
       else:
         tsp = [ ( elem.transform, s, fcache[elem.reference.getischeme](ischeme)[0] ) for elem, s in zip( self, slices ) ]
-        retvals = [ function.sampled( { trans: (retval[s],points) for trans, s, points in tsp }, self.ndims ) for retval in retvals ]
+        retvals = [ function.sampled( { trans: (numeric.const(retval[s], copy=False), points) for trans, s, points in tsp }, self.ndims ) for retval in retvals ]
     elif separate:
       retvals = [ [ retval[s] for s in slices ] for retval in retvals ]
 
@@ -197,23 +200,24 @@ class Topology( object ):
 
   def _integrate( self, funcs, ischeme, fcache=None, arguments=None ):
 
+    if arguments is None:
+      arguments = {}
+
     # Functions may consist of several blocks, such as originating from
     # chaining. Here we make a list of all blocks consisting of triplets of
     # argument id, evaluable index, and evaluable values.
 
-    blocks = [ ( ifunc, ind, f )
-      for ifunc, func in enumerate( funcs )
-        for ind, f in function.blocks( function.zero_argument_derivatives(func) ) ]
+    blocks = [(ifunc, function.Tuple(ind), f.simplified)
+      for ifunc, func in enumerate(funcs)
+        for ind, f in function.blocks(function.zero_argument_derivatives(func))]
 
     block2func, indices, values = zip( *blocks ) if blocks else ([],[],[])
-    indexfunc = function.Tuple( indices )
-    valuefunc = function.Tuple( values )
 
     log.debug( 'integrating %s distinct blocks' % '+'.join(
       str(block2func.count(ifunc)) for ifunc in range(len(funcs)) ) )
 
     if core.getprop( 'dot', False ):
-      valuefunc.graphviz()
+      function.Tuple(values).graphviz()
 
     if fcache is None:
       fcache = cache.WrapperCache()
@@ -222,14 +226,12 @@ class Topology( object ):
     # build an nblocks x nelems+1 offset array, and nblocks index lists of
     # length nelems.
 
-    offsets = numpy.zeros( ( len(blocks), len(self)+1 ), dtype=int )
-    indices = [ [] for i in range( len(blocks) ) ]
-
-    for ielem, elem in enumerate( self ):
-      for iblock, index in enumerate( indexfunc.eval( elem, None, fcache, arguments ) ):
-        n = util.product( len(ind) for (ind,) in index ) if index else 1
-        offsets[iblock,ielem+1] = offsets[iblock,ielem] + n
-        indices[iblock].append([ ind for (ind,) in index ])
+    offsets = numpy.zeros((len(blocks), len(self)+1), dtype=int)
+    if blocks:
+      sizefunc = function.stack([f.size for ifunc, ind, f in blocks]).simplified
+      for ielem, elem in enumerate(self):
+        n, = sizefunc.eval(_transforms=(elem.transform, elem.opposite), _cache=fcache, **arguments)
+        offsets[:,ielem+1] = offsets[:,ielem] + n
 
     # Since several blocks may belong to the same function, we post process the
     # offsets to form consecutive intervals in longer arrays. The length of
@@ -256,16 +258,17 @@ class Topology( object ):
     # data_index is filled in the same loop. It does not use valuefunc data but
     # benefits from parallel speedup.
 
+    valueindexfunc = function.Tuple(function.Tuple([value]+list(index)) for value, index in zip(values, indices))
     for ielem, elem in parallel.pariter( log.enumerate( 'elem', self ), nprocs=nprocs ):
-      ipoints, iweights = ischeme[elem] if isinstance(ischeme,dict) else fcache[elem.reference.getischeme]( ischeme )
+      ipoints, iweights = ischeme[elem] if isinstance(ischeme,collections.abc.Mapping) else fcache[elem.reference.getischeme]( ischeme )
       assert iweights is not None, 'no integration weights found'
-      for iblock, intdata in enumerate( valuefunc.eval( elem, ipoints, fcache, arguments ) ):
+      for iblock, (intdata, *indices) in enumerate(valueindexfunc.eval(_transforms=(elem.transform, elem.opposite), _points=ipoints, _cache=fcache, **arguments)):
         s = slice(*offsets[iblock,ielem:ielem+2])
         data, index = data_index[ block2func[iblock] ]
         w_intdata = numeric.dot( iweights, intdata )
         data[s] = w_intdata.ravel()
         si = (slice(None),) + (_,) * (w_intdata.ndim-1)
-        for idim, ii in enumerate( indices[iblock][ielem] ):
+        for idim, (ii,) in enumerate(indices):
           index[idim,s].reshape(w_intdata.shape)[...] = ii[si]
           si = si[:-1]
 
@@ -337,7 +340,7 @@ class Topology( object ):
       assert fun2.ndim == 0
       A, b, f2, area = self.integrate( [Afun,bfun,fun2,1], geometry=geometry, ischeme=ischeme, edit=edit, arguments=arguments, title='building system' )
       N = A.rowsupp(droptol)
-      if numpy.all( b == 0 ):
+      if numpy.equal(b, 0).all():
         constrain[~constrain.where&N] = 0
         avg_error = 0.
       else:
@@ -376,9 +379,10 @@ class Topology( object ):
       W = numpy.zeros( onto.shape[0] )
       I = numpy.zeros( onto.shape[0], dtype=bool )
       fun = function.zero_argument_derivatives(function.asarray( fun ))
-      data = function.Tuple( function.Tuple([ fun, onto_f, onto_ind ]) for onto_ind, onto_f in function.blocks( function.zero_argument_derivatives(onto) ) )
+      data = function.Tuple(function.Tuple([fun, onto_f.simplified, function.Tuple(onto_ind)]) for onto_ind, onto_f in function.blocks(function.zero_argument_derivatives(onto)))
       for elem in self:
-        for fun_, onto_f_, onto_ind_ in data.eval( elem, 'bezier2', arguments=arguments ):
+        ipoints, iweights = elem.getischeme('bezier2')
+        for fun_, onto_f_, onto_ind_ in data.eval(_transforms=(elem.transform, elem.opposite), _points=ipoints, **arguments or {}):
           onto_f_ = onto_f_.swapaxes(0,1) # -> dof axis, point axis, ...
           indfun_ = fun_[ (slice(None),)+numpy.ix_(*onto_ind_[1:]) ]
           assert onto_f_.shape[0] == len(onto_ind_[0])
@@ -440,11 +444,14 @@ class Topology( object ):
   def trim( self, levelset, maxrefine, ndivisions=8, name='trimmed', leveltopo=None, *, arguments=None ):
     'trim element along levelset'
 
+    if arguments is None:
+      arguments = {}
+
     fcache = cache.WrapperCache()
-    levelset = function.zero_argument_derivatives(levelset)
+    levelset = function.zero_argument_derivatives(levelset).simplified
     if leveltopo is None:
       ischeme = 'vertex{}'.format(maxrefine)
-      refs = [ elem.reference.trim( levelset.eval(elem,ischeme,fcache,arguments), maxrefine=maxrefine, ndivisions=ndivisions ) for elem in log.iter( 'elem', self ) ]
+      refs = [elem.reference.trim(levelset.eval(_transforms=(elem.transform, elem.opposite), _points=fcache[elem.reference.getischeme](ischeme)[0], _cache=fcache, **arguments), maxrefine=maxrefine, ndivisions=ndivisions) for elem in log.iter('elem', self)]
     else:
       log.info( 'collecting leveltopo elements' )
       bins = [ [] for ielem in range(len(self)) ]
@@ -454,13 +461,13 @@ class Topology( object ):
       refs = []
       for elem, ctransforms in log.zip( 'elem', self, bins ):
         levels = numpy.empty( elem.reference.nvertices_by_level(maxrefine) )
-        cover = list( fcache[elem.reference.vertex_cover]( sorted(ctransforms), maxrefine ) )
+        cover = list(fcache[elem.reference.vertex_cover](tuple(sorted(ctransforms)), maxrefine))
         # confirm cover and greedily optimize order
         mask = numpy.ones( len(levels), dtype=bool )
         while mask.any():
           imax = numpy.argmax([ mask[indices].sum() for trans, points, indices in cover ])
           trans, points, indices = cover.pop( imax )
-          levels[indices] = levelset.eval( elem.transform << trans, points, fcache, arguments )
+          levels[indices] = levelset.eval(_transforms=(elem.transform<<trans,), _points=points, _cache=fcache, **arguments)
           mask[indices] = False
         refs.append( elem.reference.trim( levels, maxrefine=maxrefine, ndivisions=ndivisions ) )
     log.debug( 'cache', fcache.stats )
@@ -495,12 +502,15 @@ class Topology( object ):
   @core.single_or_multiple
   def elem_project( self, funcs, degree, ischeme=None, check_exact=False, *, arguments=None ):
 
+    if arguments is None:
+      arguments = {}
+
     if ischeme is None:
       ischeme = 'gauss%d' % (degree*2)
 
-    blocks = function.Tuple([ function.Tuple([ function.Tuple( ind_f )
-      for ind_f in function.blocks( function.zero_argument_derivatives(func) ) ])
-        for func in funcs ])
+    blocks = function.Tuple([function.Tuple([function.Tuple((function.Tuple(ind), f.simplified))
+      for ind, f in function.blocks(function.zero_argument_derivatives(func))])
+        for func in funcs])
 
     bases = {}
     extractions = [ [] for ifunc in range(len(funcs) ) ]
@@ -517,7 +527,7 @@ class Topology( object ):
         projector = numpy.linalg.solve( A, basis.T * weights )
         bases[ elem.reference ] = points, projector, basis
 
-      for ifunc, ind_val in enumerate( blocks.eval( elem, points, arguments=arguments ) ):
+      for ifunc, ind_val in enumerate(blocks.eval(_transforms=(elem.transform, elem.opposite), _points=points, **arguments)):
 
         if len(ind_val) == 1:
           (allind, sumval), = ind_val
@@ -554,7 +564,7 @@ class Topology( object ):
 
   def select( self, indicator, ischeme='bezier2', *, arguments=None ):
     values = self.elem_eval( indicator, ischeme, separate=True, arguments=arguments )
-    selected = [ elem for elem, value in zip( self, values ) if numpy.any( value > 0 ) ]
+    selected = [elem for elem, value in zip( self, values ) if numpy.greater(value, 0).any()]
     return UnstructuredTopology( self.ndims, selected )
 
   def prune_basis( self, basis ):
@@ -562,16 +572,18 @@ class Topology( object ):
     for axes, func in function.blocks( basis ):
       dofmap = axes[0]
       for elem in self:
-        dofs = dofmap.eval( elem )
+        dofs = dofmap.eval(_transforms=(elem.transform, elem.opposite))
         used[dofs] = True
     if isinstance( basis, function.Inflate ) and isinstance( basis.func, function.Function ) and isinstance( basis.dofmap, function.DofMap ):
       renumber = used.cumsum()-1
-      nmap = { trans: renumber[dofs[used[dofs]]] for trans, dofs in basis.dofmap.dofmap.items() }
-      return function.function( fmap=basis.func.stdmap, nmap=nmap, ndofs=used.sum() )
+      dofmap = function.DofMap([numeric.const(renumber[dofs], copy=False) for dofs in basis.dofmap.dofs], index=basis.dofmap.index)
+      return function.Inflate(basis.func, dofmap=dofmap, length=used.sum(), axis=basis.axis)
     return function.mask( basis, used )
 
   def locate( self, geom, points, ischeme='vertex', scale=1, tol=1e-12, eps=0, maxiter=100, *, arguments=None ):
     nprocs = min( core.getprop( 'nprocs', 1 ), len(self) )
+    if arguments is None:
+      arguments = {}
     if geom.ndim == 0:
       geom = geom[_]
       points = points[...,_]
@@ -582,11 +594,10 @@ class Topology( object ):
     bboxes = numpy.array([ numpy.mean(v,axis=0) * (1-scale) + numpy.array([ numpy.min(v,axis=0), numpy.max(v,axis=0) ]) * scale
       for v in vertices ]) # nelems x {min,max} x ndims
     vref = element.getsimplex(0)
-
     ielems = parallel.shzeros(len(points), dtype=int)
     xis = parallel.shzeros((len(points),len(geom)), dtype=float)
     for ipoint, point in parallel.pariter(log.enumerate('point', points), nprocs=nprocs):
-      ielemcandidates, = ((point >= bboxes[:,0,:]) & (point <= bboxes[:,1,:])).all(axis=-1).nonzero()
+      ielemcandidates, = numpy.logical_and(numpy.greater_equal(point, bboxes[:,0,:]), numpy.less_equal(point, bboxes[:,1,:])).all(axis=-1).nonzero()
       for ielem in sorted( ielemcandidates, key=lambda i: numpy.linalg.norm(bboxes[i].mean(0)-point) ):
         converged = False
         elem = self.elements[ielem]
@@ -595,7 +606,7 @@ class Topology( object ):
         J = function.localgradient( geom, self.ndims )
         geom_J = function.Tuple(( function.zero_argument_derivatives(geom), function.zero_argument_derivatives(J) ))
         for iiter in range( maxiter ):
-          point_xi, J_xi = geom_J.eval( elem, xi, arguments=arguments )
+          point_xi, J_xi = geom_J.eval(_transforms=(elem.transform, elem.opposite), _points=xi, **arguments)
           err = numpy.linalg.norm( point - point_xi )
           if err < tol:
             converged = True
@@ -623,17 +634,17 @@ class Topology( object ):
   def supp( self, basis, mask=None ):
     if mask is None:
       mask = numpy.ones( len(basis), dtype=bool )
-    elif isinstance( mask, list ) or isinstance( mask, numpy.ndarray ) and mask.dtype == int:
+    elif isinstance(mask, list) or numeric.isarray(mask) and mask.dtype == int:
       tmp = numpy.zeros( len(basis), dtype=bool )
       tmp[mask] = True
       mask = tmp
     else:
-      assert isinstance( mask, numpy.ndarray ) and mask.dtype == bool and mask.shape == basis.shape[:1]
+      assert numeric.isarray(mask) and mask.dtype == bool and mask.shape == basis.shape[:1]
     indfunc = function.Tuple([ ind[0] for ind, f in basis.blocks ])
     subset = []
     for elem in self:
       try:
-        ind, = numpy.concatenate( indfunc.eval(elem), axis=1 )
+        ind, = numpy.concatenate(indfunc.eval(_transforms=(elem.transform, elem.opposite)), axis=1)
       except function.EvaluationError:
         pass
       else:
@@ -649,7 +660,7 @@ class Topology( object ):
     angle, = function.rootcoords(1)
     geom, angle = function.bifurcate( geom, angle )
     revgeom = function.concatenate([ geom[0] * function.trignormal(angle), geom[1:] ])
-    simplify = lambda arg: 0 if arg is angle else function.edit( arg, simplify )
+    simplify = cache.replace(initcache={angle: function.zeros(())})
     return revdomain, revgeom, simplify
 
   def extruded( self, geom, nelems, periodic=False, bnames=('front','back') ):
@@ -885,7 +896,7 @@ class StructuredLine( Topology ):
       ndofs -= overlap
 
     fmap = dict( zip( self._transforms[1:-1], element.PolyLine.spline( degree=degree, nelems=len(self), periodic=periodic ) ) )
-    nmap = { trans: dofs[i:i+degree+1] for i, trans in enumerate(self._transforms[1:-1]) }
+    nmap = { trans: numeric.const(dofs[i:i+degree+1], copy=False) for i, trans in enumerate(self._transforms[1:-1]) }
     func = function.function( fmap, nmap, ndofs )
 
     if not removedofs:
@@ -899,7 +910,7 @@ class StructuredLine( Topology ):
     'discontinuous shape functions'
 
     fmap = dict.fromkeys( self._transforms[1:-1], element.PolyLine( element.PolyLine.bernstein_poly(degree) ) )
-    nmap = dict( zip( self._transforms[1:-1], numpy.arange(len(self)*(degree+1)).reshape(len(self),degree+1) ) )
+    nmap = dict( zip( self._transforms[1:-1], numeric.const(numpy.arange(len(self)*(degree+1)).reshape(len(self),degree+1), copy=False) ) )
     return function.function( fmap=fmap, nmap=nmap, ndofs=len(self)*(degree+1) )
 
   def basis_std( self, degree, periodic=None, removedofs=None ):
@@ -916,7 +927,7 @@ class StructuredLine( Topology ):
       ndofs -= 1
 
     fmap = dict.fromkeys( self._transforms[1:-1], element.PolyLine( element.PolyLine.bernstein_poly(degree) ) )
-    nmap = { trans: dofs[i*degree:(i+1)*degree+1] for i, trans in enumerate(self._transforms[1:-1]) }
+    nmap = { trans: numeric.const(dofs[i*degree:(i+1)*degree+1], copy=False) for i, trans in enumerate(self._transforms[1:-1]) }
     func = function.function( fmap, nmap, ndofs )
     if not removedofs:
       return func
@@ -1194,7 +1205,7 @@ class StructuredTopology( Topology ):
       std = item[1]
       S = item[2:]
       dofs = vertex_structure[S].ravel()
-      dofmap[trans] = dofs
+      dofmap[trans] = numeric.const(dofs, copy=False)
       funcmap[trans] = std
     return funcmap, dofmap, dofshape
 
@@ -1226,7 +1237,7 @@ class StructuredTopology( Topology ):
   @staticmethod
   def _localsplinebasis ( lknots, p ):
   
-    assert isinstance(lknots,numpy.ndarray), 'Local knot vector should be numpy array'
+    assert numeric.isarray(lknots), 'Local knot vector should be numpy array'
     assert len(lknots)==2*p, 'Expected 2*p local knots'
   
     #Based on Algorithm A2.2 Piegl and Tiller
@@ -1235,7 +1246,7 @@ class StructuredTopology( Topology ):
   
     if p > 0:
   
-      assert (lknots[:-1]-lknots[1:]<numpy.spacing(1)).all(), 'Local knot vector should be non-decreasing'
+      assert numpy.less(lknots[:-1]-lknots[1:], numpy.spacing(1)).all(), 'Local knot vector should be non-decreasing'
       assert lknots[p]-lknots[p-1]>numpy.spacing(1), 'Element size should be positive'
       
       lknots = lknots.astype(float)
@@ -1257,7 +1268,7 @@ class StructuredTopology( Topology ):
 
     assert all(Ni.order==p for Ni in N)
 
-    return numpy.array([Ni.coeffs for Ni in N]).T[::-1]
+    return numeric.const([Ni.coeffs for Ni in N]).T[::-1]
 
   def basis_discont( self, degree ):
     'discontinuous shape functions'
@@ -1274,7 +1285,7 @@ class StructuredTopology( Topology ):
     ndofs = 0
     for elem in self:
       fmap[elem.transform] = stdfunc
-      nmap[elem.transform] = ndofs + numpy.arange(stdfunc.nshapes)
+      nmap[elem.transform] = numeric.const(numpy.arange(ndofs, ndofs+stdfunc.nshapes), copy=False)
       ndofs += stdfunc.nshapes
     return function.function( fmap=fmap, nmap=nmap, ndofs=ndofs )
 
@@ -1309,7 +1320,7 @@ class StructuredTopology( Topology ):
       slices.append( [ slice(p*i,p*i+p+1) for i in range(n) ] )
 
     funcmap = dict.fromkeys( self._transform.flat, util.product( element.PolyLine( element.PolyLine.bernstein_poly(d) ) for d in degree ) )
-    dofmap = { trans: vertex_structure[S].ravel() for trans, *S in numpy.broadcast( self._transform, *numpy.ix_(*slices) ) }
+    dofmap = { trans: numeric.const(vertex_structure[S].ravel(), copy=False) for trans, *S in numpy.broadcast( self._transform, *numpy.ix_(*slices) ) }
     func = function.function( funcmap, dofmap, numpy.product(dofshape) )
     if not any( removedofs ):
       return func
@@ -1405,7 +1416,7 @@ class UnstructuredTopology( Topology ):
       stdfunc = elem.reference.stdfunc(1)
       assert stdfunc.nshapes == elem.nverts
       fmap[elem.transform] = stdfunc
-      nmap[elem.transform] = dofs
+      nmap[elem.transform] = numeric.const(dofs, copy=False)
     return function.function( fmap=fmap, nmap=nmap, ndofs=len(dofmap) )
 
   def basis_bubble( self ):
@@ -1427,7 +1438,7 @@ class UnstructuredTopology( Topology ):
         dofs[i] = dof
       dofs[ elem.nverts ] = ielem
       fmap[elem.transform] = stdfunc
-      nmap[elem.transform] = dofs
+      nmap[elem.transform] = numeric.const(dofs, copy=False)
     return function.function( fmap=fmap, nmap=nmap, ndofs=len(self)+len(dofmap) )
 
   def basis_spline( self, degree ):
@@ -1444,7 +1455,7 @@ class UnstructuredTopology( Topology ):
     for elem in self:
       stdfunc = elem.reference.stdfunc(degree)
       fmap[elem.transform] = stdfunc
-      nmap[elem.transform] = ndofs + numpy.arange(stdfunc.nshapes)
+      nmap[elem.transform] = numeric.const(numpy.arange(ndofs, ndofs+stdfunc.nshapes), copy=False)
       ndofs += stdfunc.nshapes
     return function.function( fmap=fmap, nmap=nmap, ndofs=ndofs )
 
@@ -1848,7 +1859,7 @@ class HierarchicalTopology( Topology ):
       dofmap, = axes
       for elem in topo:
         trans = elem.transform
-        idofs, = dofmap.eval( elem )
+        idofs, = dofmap.eval(_transforms=(elem.transform, elem.opposite))
         if trans in self.edict:
           touchtopo[idofs] = True
         elif trans.lookup( self.edict ):
@@ -2013,7 +2024,7 @@ class MultipatchTopology( Topology ):
       patchfuncmap, patchdofmap, patchdofcount = topo._basis_spline( degree )
       funcmap.update( patchfuncmap )
       # renumber dofs
-      dofmap.update( (trans,dofs+dofcount) for trans, dofs in patchdofmap.items() )
+      dofmap.update( (trans, numeric.const(dofs+dofcount, copy=False)) for trans, dofs in patchdofmap.items() )
       if patchcontinuous:
         # reconstruct multidimensional dof structure
         dofs = dofcount + numpy.arange( numpy.prod( patchdofcount ), dtype=int ).reshape( patchdofcount )
@@ -2036,9 +2047,7 @@ class MultipatchTopology( Topology ):
       remainder = set( merge.get( dof, dof ) for dof in range( dofcount ) )
       renumber = dict( zip( sorted( remainder ), range( len( remainder ) ) ) )
       # apply mappings
-      dofmap = dict(
-        (k, numpy.array( tuple( renumber[merge.get( dof, dof )] for dof in v.flat ), dtype=int ).reshape( v.shape ))
-        for k, v in dofmap.items() )
+      dofmap = {k: numeric.const([renumber[merge.get( dof, dof )] for dof in v.flat], dtype=int).reshape(v.shape) for k, v in dofmap.items()}
       dofcount = len( remainder )
 
     return function.function( funcmap, dofmap, dofcount )
@@ -2052,7 +2061,7 @@ class MultipatchTopology( Topology ):
     for topo, boundaries in self.patches:
       pbasis = topo.basis( 'discont', degree=degree )
       funcmap.update( pbasis.func.stdmap )
-      dofmap.update( (trans,dofs+dofcount) for trans, dofs in pbasis.dofmap.dofmap.items() )
+      dofmap.update({trans: numeric.const(dofs+dofcount, copy=False) for trans, dofs in pbasis.dofmap.dofmap.items()})
       dofcount += len( pbasis )
     return function.function( funcmap, dofmap, dofcount )
 
@@ -2063,7 +2072,7 @@ class MultipatchTopology( Topology ):
     nmap = {}
     for ipatch, ( topo, boundaries ) in enumerate( self.patches ):
       fmap[ topo.root ] = util.product( element.PolyLine( element.PolyLine.bernstein_poly(0) ) for i in range( self.ndims ) )
-      nmap[ topo.root ] = numpy.array([ ipatch ])
+      nmap[ topo.root ] = numeric.const([ ipatch ])
     return function.function( fmap, nmap, len( self.patches ) )
 
   @cache.property

@@ -35,7 +35,11 @@ class Log( metaclass=abc.ABCMeta ):
     if etype in (KeyboardInterrupt,SystemExit,bdb.BdbQuit):
       self.write( 'error', 'killed by user' )
     elif etype is not None:
-      self.write( 'error', ''.join( traceback.format_exception( etype, value, tb ) ) )
+      try:
+        msg = ''.join(traceback.format_exception(etype, value, tb))
+      except Exception as e:
+        msg = '{} (traceback failed: {})'.format(value, e)
+      self.write('error', msg)
 
   @abc.abstractmethod
   def context( self, title ):

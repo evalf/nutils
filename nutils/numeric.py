@@ -188,19 +188,12 @@ def meshgrid( *args ):
   assert n == 0
   return grid
 
-def appendaxes( A, shape ):
-  'append axes by 0stride'
-
-  shape = (shape,) if isinstance(shape,int) else tuple(shape)
-  A = numpy.asarray( A )
-  return numpy.lib.stride_tricks.as_strided( A, A.shape + shape, A.strides + (0,)*len(shape) )
-
-def takediag( A ):
-  diag = A[...,0] if A.shape[-1] == 1 \
-    else A[...,0,:] if A.shape[-2] == 1 \
-    else numpy.einsum( '...ii->...i', A )
-  diag.flags.writeable = False
-  return diag
+def takediag( A, axis=-2, rmaxis=-1 ):
+  axis = normdim(A.ndim, axis)
+  rmaxis = normdim(A.ndim, rmaxis)
+  assert axis < rmaxis
+  fmt = _abc[:rmaxis] + _abc[axis] + _abc[rmaxis:A.ndim-1] + '->' + _abc[:A.ndim-1]
+  return numpy.einsum(fmt, A)
 
 def reshape( A, *shape ):
   'more useful reshape'
@@ -282,11 +275,13 @@ def bringforward( arg, axis ):
     return arg
   return arg.transpose( [axis] + range(axis) + range(axis+1,arg.ndim) )
 
-def diagonalize( arg ):
-  'append axis, place last axis on diagonal of self and new'
-
-  diagonalized = numpy.zeros(arg.shape + (arg.shape[-1],), arg.dtype)
-  diag = numpy.einsum( '...ii->...i', diagonalized )
+def diagonalize(arg, axis=-1, newaxis=-1):
+  'insert newaxis, place axis on diagonal of axis and newaxis'
+  axis = normdim(arg.ndim, axis)
+  newaxis = normdim(arg.ndim+1, newaxis)
+  assert 0 <= axis < newaxis <= arg.ndim
+  diagonalized = numpy.zeros(arg.shape[:newaxis]+(arg.shape[axis],)+arg.shape[newaxis:], arg.dtype)
+  diag = takediag(diagonalized, axis, newaxis)
   assert diag.base is diagonalized
   diag.flags.writeable = True
   diag[:] = arg
@@ -320,20 +315,12 @@ def eig( A ):
 
   return L, V
 
-def isbool( a ):
-  return isboolarray( a ) and a.ndim == 0 or type(a) == bool
-
-def isboolarray( a ):
-  return isinstance( a, numpy.ndarray ) and a.dtype == bool
-
-def isint( a ):
-  return isinstance( a, (numbers.Integral,numpy.integer) )
-
-def isnumber( a ):
-  return isinstance( a, (numbers.Number,numpy.generic) )
-
-def isintarray( a ):
-  return isinstance( a, numpy.ndarray ) and numpy.issubdtype( a.dtype, numpy.integer )
+isarray = lambda a: isinstance(a, (numpy.ndarray, const))
+isboolarray = lambda a: isarray(a) and a.dtype == bool
+isbool = lambda a: isboolarray(a) and a.ndim == 0 or type(a) == bool
+isint = lambda a: isinstance(a, (numbers.Integral,numpy.integer))
+isnumber = lambda a: isinstance(a, (numbers.Number,numpy.generic))
+isintarray = lambda a: isarray(a) and numpy.issubdtype(a.dtype, numpy.integer)
 
 def ortho_complement( A ):
   '''return orthogonal complement to non-square matrix A'''
@@ -450,7 +437,7 @@ def solve_exact( A, *B ):
   except:
     raise numpy.linalg.LinAlgError( 'linear system has no base2 solution' )
   X = [ Y[:,s] for s in S ]
-  assert all( numpy.all( dot(A,x) == b ) for (x,b) in zip(X,B) )
+  assert all(numpy.equal(dot(A,x), b).all() for (x,b) in zip(X,B))
   if len(B) == 1:
     X, = X
   return X
@@ -597,16 +584,108 @@ def decode64(data):
   return nsig, ndec, numpy.array(array, dtype=float)
 
 def assert_allclose64(actual, data=None):
-  if data is not None:
+  try:
     nsig, ndec, desired = decode64(data)
-    numpy.testing.assert_allclose(actual, desired, atol=10**-ndec, rtol=10**(1-nsig))
-  else:
+  except Exception as e:
+    status = str(e)
     nsig = 4
     ndec = 15
-    data = encode64(actual, nsig=nsig, ndec=ndec)
-    print('use the following base64 string to test up to nsig={}, ndec={}:'.format(nsig, ndec))
-    while data:
-      print("'{}'".format(data[:80]))
-      data = data[80:]
+  else:
+    try:
+      numpy.testing.assert_allclose(actual, desired, atol=1.5*10**-ndec, rtol=10**(1-nsig))
+    except Exception as e:
+      status = str(e)
+    else:
+      return
+  status += '\n\nIf this is expected, use the following base64 string to test up to nsig={}, ndec={}:'.format(nsig, ndec)
+  data = encode64(actual, nsig=nsig, ndec=ndec)
+  while data:
+    status += '\n{!r}'.format(data[:80])
+    data = data[80:]
+  raise Exception(status)
+
+class const:
+  __slots__ = '__base', '__hash', '__array_struct__'
+
+  @staticmethod
+  def full(shape, fill_value):
+    return const(numpy.lib.stride_tricks.as_strided(fill_value, shape, [0]*len(shape)), copy=False)
+
+  def __new__(cls, base, copy=True, dtype=None):
+    if isinstance(base, const):
+      return base
+    self = object.__new__(cls)
+    self.__base = numpy.array(base, dtype=dtype) if copy or not isinstance(base, numpy.ndarray) or dtype and dtype != base.dtype else base
+    self.__base.flags.writeable = False
+    self.__array_struct__ = self.__base.__array_struct__
+    self.__hash = hash((self.__base.shape, self.__base.dtype, tuple(self.__base.flat[::self.__base.size//32+1])))
+    return self
+
+  def __reduce__(self):
+    return const, (self.__base, False)
+
+  def __eq__(self, other):
+    if self is other:
+      return True
+    if not isinstance(other, const):
+      return False
+    if self.__base is other.__base:
+      return True
+    if self.__hash != other.__hash or self.__base.dtype != other.__base.dtype or self.__base.shape != other.__base.shape or numpy.not_equal(self.__base, other.__base).any():
+      return False
+    # deduplicate
+    self.__base = other.__base
+    return True
+
+  def __getitem__(self, item):
+    retval = self.__base.__getitem__(item)
+    return const(retval, copy=False) if isinstance(retval, numpy.ndarray) else retval
+
+  dtype = property(lambda self: self.__base.dtype)
+  shape = property(lambda self: self.__base.shape)
+  size = property(lambda self: self.__base.size)
+  ndim = property(lambda self: self.__base.ndim)
+  flat = property(lambda self: self.__base.flat)
+  T = property(lambda self: const(self.__base.T, copy=False))
+
+  __len__ = lambda self: self.__base.__len__()
+  __repr__ = lambda self: 'const'+self.__base.__repr__()[5:]
+  __str__ = lambda self: self.__base.__str__()
+  __add__ = lambda self, other: self.__base.__add__(other)
+  __radd__ = lambda self, other: self.__base.__radd__(other)
+  __sub__ = lambda self, other: self.__base.__sub__(other)
+  __rsub__ = lambda self, other: self.__base.__rsub__(other)
+  __mul__ = lambda self, other: self.__base.__mul__(other)
+  __rmul__ = lambda self, other: self.__base.__rmul__(other)
+  __div__ = lambda self, other: self.__base.__div__(other)
+  __rdiv__ = lambda self, other: self.__base.__rdiv__(other)
+  __pow__ = lambda self, other: self.__base.__pow__(other)
+  __hash__ = lambda self: self.__hash
+  __int__ = lambda self: self.__base.__int__()
+  __float__ = lambda self: self.__base.__float__()
+
+  tolist = lambda self, *args, **kwargs: self.__base.tolist(*args, **kwargs)
+  copy = lambda self, *args, **kwargs: self.__base.copy(*args, **kwargs)
+  astype = lambda self, *args, **kwargs: self.__base.astype(*args, **kwargs)
+  take = lambda self, *args, **kwargs: self.__base.take(*args, **kwargs)
+  any = lambda self, *args, **kwargs: self.__base.any(*args, **kwargs)
+  all = lambda self, *args, **kwargs: self.__base.all(*args, **kwargs)
+  sum = lambda self, *args, **kwargs: self.__base.sum(*args, **kwargs)
+  min = lambda self, *args, **kwargs: self.__base.min(*args, **kwargs)
+  max = lambda self, *args, **kwargs: self.__base.max(*args, **kwargs)
+  prod = lambda self, *args, **kwargs: self.__base.prod(*args, **kwargs)
+  dot = lambda self, *args, **kwargs: self.__base.dot(*args, **kwargs)
+  swapaxes = lambda self, *args, **kwargs: const(self.__base.swapaxes(*args, **kwargs), copy=False)
+  ravel = lambda self, *args, **kwargs: const(self.__base.ravel(*args, **kwargs), copy=False)
+  reshape = lambda self, *args, **kwargs: const(self.__base.reshape(*args, **kwargs), copy=False)
+  transpose = lambda self, *args, **kwargs: const(self.__base.transpose(*args, **kwargs), copy=False)
+  cumsum = lambda self, *args, **kwargs: const(self.__base.cumsum(*args, **kwargs), copy=False)
+  nonzero = lambda self, *args, **kwargs: const(self.__base.nonzero(*args, **kwargs), copy=False)
+
+  def insertaxis(self, axis, length):
+    base = self.__base
+    return const(numpy.lib.stride_tricks.as_strided(base,
+      shape=base.shape[:axis]+(length,)+base.shape[axis:],
+      strides=base.strides[:axis]+(0,)+base.strides[axis:]))
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

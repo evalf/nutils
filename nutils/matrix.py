@@ -14,7 +14,7 @@ solving linear systems. Matrices can be converted to numpy arrays via
 ``toarray`` or scipy matrices via ``toscipy``.
 """
 
-from . import util, numpy, log
+from . import util, numpy, log, numeric
 import functools
 
 
@@ -188,7 +188,7 @@ class NumpyMatrix( Matrix ):
   '''matrix based on numpy array'''
 
   def __init__( self, core ):
-    assert isinstance( core, numpy.ndarray )
+    assert numeric.isarray(core)
     self.core = core
     Matrix.__init__( self, core.shape )
 
@@ -250,14 +250,14 @@ def parsecons( constrain, lconstrain, rconstrain, shape ):
   if constrain is not None:
     assert lconstrain is None
     assert rconstrain is None
-    assert isinstance( constrain, numpy.ndarray )
+    assert numeric.isarray(constrain)
     I[:] = numpy.isnan( constrain )
     x[:] = constrain
   if lconstrain is not None:
-    assert isinstance( lconstrain, numpy.ndarray )
+    assert numeric.isarray(lconstrain)
     x[:] = lconstrain
   if rconstrain is not None:
-    assert isinstance( rconstrain, numpy.ndarray )
+    assert numeric.isarray(rconstrain)
     I[:] = rconstrain
   J = numpy.isnan(x)
   assert numpy.sum(I) == numpy.sum(J), 'constrained matrix is not square: %dx%d' % ( numpy.sum(I), numpy.sum(J) )
