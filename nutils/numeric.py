@@ -597,16 +597,24 @@ def decode64(data):
   return nsig, ndec, numpy.array(array, dtype=float)
 
 def assert_allclose64(actual, data=None):
-  if data is not None:
+  try:
     nsig, ndec, desired = decode64(data)
-    numpy.testing.assert_allclose(actual, desired, atol=10**-ndec, rtol=10**(1-nsig))
-  else:
+  except Exception as e:
+    status = str(e)
     nsig = 4
     ndec = 15
-    data = encode64(actual, nsig=nsig, ndec=ndec)
-    print('use the following base64 string to test up to nsig={}, ndec={}:'.format(nsig, ndec))
-    while data:
-      print("'{}'".format(data[:80]))
-      data = data[80:]
+  else:
+    try:
+      numpy.testing.assert_allclose(actual, desired, atol=1.5*10**-ndec, rtol=10**(1-nsig))
+    except Exception as e:
+      status = str(e)
+    else:
+      return
+  status += '\n\nIf this is expected, use the following base64 string to test up to nsig={}, ndec={}:'.format(nsig, ndec)
+  data = encode64(actual, nsig=nsig, ndec=ndec)
+  while data:
+    status += '\n{!r}'.format(data[:80])
+    data = data[80:]
+  raise Exception(status)
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
