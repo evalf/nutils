@@ -411,12 +411,12 @@ class multipatch_hyperrect(TestCase):
 
   def test_spline_basis(self):
     basis = self.domain.basis('spline', degree=2)
-    coeffs = self.domain.project(1, onto=basis, geometry=self.geom, ischeme='gauss4')
+    coeffs = self.domain.elem_eval(basis.sum(0), ischeme='gauss4', separate=False)
     numpy.testing.assert_array_almost_equal(coeffs, numpy.ones(coeffs.shape))
 
   def test_discont_basis(self):
     basis = self.domain.basis('discont', degree=2)
-    coeffs = self.domain.project(1, onto=basis, geometry=self.geom, ischeme='gauss4')
+    coeffs = self.domain.elem_eval(basis.sum(0), ischeme='gauss4', separate=False)
     numpy.testing.assert_array_almost_equal(coeffs, numpy.ones(coeffs.shape))
 
   def test_boundaries(self):
@@ -451,7 +451,7 @@ class multipatch_L(TestCase):
 
   def test_spline_basis(self):
     basis = self.domain.basis('spline', degree=2)
-    coeffs = self.domain.project(1, onto=basis, geometry=self.geom, ischeme='gauss4')
+    coeffs = self.domain.elem_eval(basis.sum(0), ischeme='gauss4', separate=False)
     numpy.testing.assert_array_almost_equal(coeffs, numpy.ones(coeffs.shape))
 
   def test_nonuniform_spline_basis(self):
@@ -466,7 +466,7 @@ class multipatch_L(TestCase):
 
   def test_discont_basis(self):
     basis = self.domain.basis('discont', degree=2)
-    coeffs = self.domain.project(1, onto=basis, geometry=self.geom, ischeme='gauss4')
+    coeffs = self.domain.elem_eval(basis.sum(0), ischeme='gauss4', separate=False)
     numpy.testing.assert_array_almost_equal(coeffs, numpy.ones(coeffs.shape))
 
   def test_patch_basis(self):
