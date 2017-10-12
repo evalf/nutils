@@ -471,7 +471,6 @@ class Array( Evaluable ):
   _multiply = lambda self, other: None
   _transpose = lambda self, axes: None
   _insertaxis = lambda self, axis, length: None
-  _dot = lambda self, other, axes: None
   _get = lambda self, i, item: None
   _power = lambda self, n: None
   _add = lambda self, other: None
@@ -586,15 +585,6 @@ class Constant( Array ):
   def _power(self, n):
     if isinstance(n, Constant):
       return Constant(numeric.power(self.value, n.value))
-
-  def _dot( self, other, axes ):
-    if isinstance(other, Constant):
-      return Constant(numeric.contract(self.value, other.value, axes))
-    if self._isunit:
-      summed = other
-      for axis in reversed(sorted(axes)):
-        summed = Sum(summed, axis)
-      return summed
 
   def _cross(self, other, axis):
     if isinstance(other, Constant):
@@ -719,11 +709,6 @@ class InsertAxis(Array):
     else:
       return InsertAxis(TakeDiag(self.func, axis-(self.axis<axis), rmaxis-(self.axis<rmaxis)), self.axis-(self.axis>rmaxis), self.length)
 
-  def _dot(self, other, axes):
-    if self.axis in axes:
-      assert other.shape[self.axis] == self.shape[self.axis]
-      return Dot([self.func, Sum(other, self.axis)], [ax-(ax>self.axis) for ax in axes if ax != self.axis])
-
   def _mask(self, maskvec, axis):
     if axis == self.axis:
       assert len(maskvec) == self.shape[self.axis]
@@ -804,13 +789,6 @@ class Transpose(Array):
 
   def _take(self, indices, axis):
     return Transpose(Take(self.func, indices, self.axes[axis]), self.axes)
-
-  def _dot(self, other, axes):
-    sumaxes = [self.axes[axis] for axis in axes]
-    trydot = self.func._dot(transpose(other, _invtrans(self.axes)), sumaxes)
-    if trydot is not None:
-      trans = [axis - builtins.sum(ax<axis for ax in sumaxes) for axis in self.axes if axis not in sumaxes]
-      return Transpose(trydot, trans)
 
   def _mask(self, maskvec, axis):
     return Transpose(Mask(self.func, maskvec, self.axes[axis]), self.axes)
@@ -1142,14 +1120,6 @@ class Concatenate(Array):
       return funcs[0]
     return Concatenate(funcs, axis=axis)
 
-  def _dot(self, other, axes):
-    funcs = [Dot([func, Take(other, s, self.axis)], axes) for s, func in self._withslices]
-    if self.axis in axes:
-      while len(funcs) > 1:
-        funcs[-2:] = Add(funcs[-2:]),
-      return funcs[0]
-    return Concatenate(funcs, self.axis - builtins.sum(axis < self.axis for axis in axes))
-
   def _power(self, n):
     return Concatenate([Power(func, Take(n, s, self.axis)) for s, func in self._withslices], self.axis)
 
@@ -1336,15 +1306,6 @@ class Multiply(Array):
     if func1pow is not None and func2pow is not None:
       return Multiply([func1pow, func2pow])
 
-  def _dot(self, other, axes):
-    func1, func2 = self.funcs
-    trydot1 = func1._dot(Multiply([func2, other]), axes)
-    if trydot1 is not None:
-      return trydot1
-    trydot2 = func2._dot(Multiply([func1, other]), axes)
-    if trydot2 is not None:
-      return trydot2
-
 class Add(Array):
 
   def __init__(self, funcs:util.frozenmultiset):
@@ -1447,9 +1408,6 @@ class BlockAdd( Array ):
   def _add(self, other):
     return BlockAdd(tuple(self.funcs) + tuple(other.funcs if isinstance(other, BlockAdd) else [other]))
 
-  def _dot( self, other, axes ):
-    return BlockAdd([Dot([func, other], axes) for func in self.funcs])
-
   def _sum(self, axis):
     return BlockAdd([sum(func, axis) for func in self.funcs])
 
@@ -1522,14 +1480,14 @@ class Dot(Array):
     for i, axis in enumerate(self.axes):
       if func1.shape[axis] == 1:
         return dot(sum(func1,axis), sum(func2,axis), self.axes[:i] + tuple(axis-1 for axis in self.axes[i+1:])).simplified
-    retval = func1._dot(func2, self.axes)
+    retval = func1._multiply(func2)
     if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
-    retval = func2._dot(func1, self.axes)
+      assert retval.shape == func1.shape
+      return sum(retval, self.axes).simplified
+    retval = func2._multiply(func1)
     if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
+      assert retval.shape == func1.shape
+      return sum(retval, self.axes).simplified
     return Dot([func1, func2], self.axes)
 
   def evalf( self, arr1, arr2 ):
@@ -2004,10 +1962,6 @@ class Zeros( Array ):
   def _multiply(self, other):
     return self
 
-  def _dot(self, other, axes):
-    shape = [sh for axis, sh in enumerate(self.shape) if axis not in axes]
-    return Zeros(shape, dtype=_jointdtype(self.dtype,other.dtype))
-
   def _cross(self, other, axis):
     return self
 
@@ -2122,17 +2076,6 @@ class Inflate( Array ):
     assert axis != self.axis
     return Inflate(Get(self.func,axis,item), self.dofmap, self.length, self.axis-(axis<self.axis))
 
-  def _dot(self, other, axes):
-    if isinstance(other, Inflate) and other.axis == self.axis:
-      assert self.dofmap == other.dofmap
-      other = other.func
-    else:
-      other = Take(other, self.dofmap, self.axis)
-    arr = Dot([self.func, other], axes )
-    if self.axis in axes:
-      return arr
-    return Inflate(arr, self.dofmap, self.length, self.axis - builtins.sum(axis < self.axis for axis in axes))
-
   def _multiply(self, other):
     if isinstance(other, Inflate) and self.axis == other.axis:
       assert self.dofmap == other.dofmap and self.length == other.length
@@ -2235,20 +2178,6 @@ class Diagonalize( Array ):
   def _multiply(self, other):
     return Diagonalize(Multiply([self.func, TakeDiag(other, self.axis, self.newaxis)]), self.axis, self.newaxis)
 
-  def _dot(self, other, axes):
-    faxes = [axis-(axis>self.newaxis) for axis in axes if axis not in (self.axis, self.newaxis)]
-    assert self.axis not in faxes
-    if len(faxes) < len(axes): # one of or both diagonalized axes are summed
-      if len(faxes) == len(axes) - 2:
-        faxes.append(self.axis)
-      retval = Dot([self.func, TakeDiag(other, self.axis, self.newaxis)], faxes)
-      if len(faxes) == len(axes) - 1 and self.axis in axes:
-        axis = self.axis-builtins.sum(ax<self.axis for ax in faxes)
-        newaxis = self.newaxis-builtins.sum(ax<self.newaxis for ax in faxes)
-        retval = Transpose(retval, list(range(axis))+list(range(axis+1,newaxis))+[axis]+list(range(newaxis,retval.ndim)))
-      return retval
-    return Diagonalize(Dot([self.func, TakeDiag(other, self.axis, self.newaxis)], faxes), self.axis-builtins.sum(ax<self.axis for ax in faxes), self.newaxis-builtins.sum(ax<self.newaxis for ax in faxes))
-
   def _add(self, other):
     if isinstance(other, Diagonalize) and other.axis == self.axis and other.newaxis == self.newaxis:
       return Diagonalize(Add([self.func, other.func]), self.axis, self.newaxis)
@@ -2345,11 +2274,6 @@ class TrigNormal( Array ):
   def evalf( self, angle ):
     return numpy.array([ numpy.cos(angle), numpy.sin(angle) ]).T
 
-  def _dot( self, other, axes ):
-    assert axes == (0,)
-    if isinstance( other, (TrigTangent,TrigNormal) ) and self.angle == other.angle:
-      return Constant(1. if isinstance(other,TrigNormal) else 0.)
-
 class TrigTangent( Array ):
   '-sin, cos'
 
@@ -2363,11 +2287,6 @@ class TrigTangent( Array ):
 
   def evalf( self, angle ):
     return numpy.array([ -numpy.sin(angle), numpy.cos(angle) ]).T
-
-  def _dot(self, other, axes):
-    assert axes == (0,)
-    if isinstance( other, (TrigTangent,TrigNormal) ) and self.angle == other.angle:
-      return Constant(1. if isinstance(other,TrigTangent) else 0.)
 
 class Find( Array ):
   'indices of boolean index vector'
@@ -2447,18 +2366,6 @@ class Stack( Array ):
 
   def _multiply(self, other):
     return Stack([Multiply([func, Get(other, self.axis, ifunc)]) if func is not None else None for ifunc, func in enumerate(self.funcs)], self.axis)
-
-  def _dot(self, other, axes):
-    newaxis = self.axis
-    newaxes = []
-    for ax in axes:
-      if ax < self.axis:
-        newaxis -= 1
-        newaxes.append( ax )
-      elif ax > self.axis:
-        newaxes.append( ax-1 )
-    return util.sum(Dot([self.funcs[ifunc], Get(other, self.axis, ifunc)], newaxes) for ifunc in self.nz) if len(newaxes) < len(axes) \
-      else Stack([Dot([func, Get(other, self.axis, ifunc)], newaxes) if func is not None else None for ifunc, func in enumerate(self.funcs)], newaxis)
 
   def _sum(self, axis):
     if axis == self.axis:
@@ -2633,13 +2540,6 @@ class Ravel( Array ):
       item, = item.eval()
       i, j = divmod(item, self.func.shape[self.axis+1])
       return Get(Get(self.func, self.axis, i), self.axis, j)
-
-  def _dot( self, other, axes ):
-    newaxes = [ax+(ax>=self.axis) for ax in axes]
-    if self.axis in axes:
-      return Dot([self.func, Unravel(other, self.axis, self.func.shape[self.axis:self.axis+2])], sorted(newaxes+[self.axis]))
-    else:
-      return Ravel(Dot([self.func, Unravel(other, self.axis, self.func.shape[self.axis:self.axis+2])], newaxes), self.axis-builtins.sum(ax<self.axis for ax in axes))
 
   def _sum(self, axis):
     if axis == self.axis:
