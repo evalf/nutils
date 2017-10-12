@@ -482,7 +482,6 @@ class Array( Evaluable ):
   _kronecker = lambda self, axis, length, pos: None
   _diagonalize = lambda self, axis, newaxis: None
   _product = lambda self: None
-  _cross = lambda self, other, axis: None
   _sign = lambda self: None
   _eig = lambda self, symmetric: None
   _inflate = lambda self, dofmap, length, axis: None
@@ -585,10 +584,6 @@ class Constant( Array ):
   def _power(self, n):
     if isinstance(n, Constant):
       return Constant(numeric.power(self.value, n.value))
-
-  def _cross(self, other, axis):
-    if isinstance(other, Constant):
-      return Constant(numeric.cross(self.value, other.value, axis))
 
   def _eig(self, symmetric):
     eigval, eigvec = (numpy.linalg.eigh if symmetric else numpy.linalg.eig)(self.value)
@@ -1044,11 +1039,6 @@ class Concatenate(Array):
     funcs = [Multiply([func, Take(other, s, self.axis)]) for s, func in self._withslices]
     return Concatenate(funcs, self.axis)
 
-  def _cross(self, other, axis):
-    if axis != self.axis:
-      funcs = [Cross(func, Take(other, s, self.axis), axis) for s, func in self._withslices]
-      return Concatenate(funcs, self.axis)
-
   def _add(self, other):
     if isinstance(other, Concatenate) and self.axis == other.axis:
       if [f1.shape[self.axis] for f1 in self.funcs] == [f2.shape[self.axis] for f2 in other.funcs]:
@@ -1166,20 +1156,6 @@ class Cross( Array ):
     self.func2 = func2
     self.axis = axis
     super().__init__(args=(func1,func2), shape=func1.shape, dtype=_jointdtype(func1.dtype, func2.dtype))
-
-  @cache.property
-  def simplified(self):
-    func1 = self.func1.simplified
-    func2 = self.func2.simplified
-    retval = func1._cross(func2, self.axis)
-    if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
-    retval = func2._cross(func1, self.axis)
-    if retval is not None:
-      assert retval.shape == self.shape
-      return negative(retval).simplified
-    return Cross(func1, func2, self.axis)
 
   def evalf( self, a, b ):
     assert a.ndim == b.ndim == self.ndim+1
@@ -1962,9 +1938,6 @@ class Zeros( Array ):
   def _multiply(self, other):
     return self
 
-  def _cross(self, other, axis):
-    return self
-
   def _diagonalize(self, axis, newaxis):
     return Zeros(self.shape[:newaxis]+(self.shape[axis],)+self.shape[newaxis:], dtype=self.dtype)
 
@@ -2088,14 +2061,6 @@ class Inflate( Array ):
     if isinstance(other, Inflate) and self.axis == other.axis and self.dofmap == other.dofmap:
       return Inflate(Add([self.func, other.func]), self.dofmap, self.length, self.axis)
     return BlockAdd([self, other])
-
-  def _cross(self, other, axis):
-    if isinstance(other, Inflate) and self.axis == other.axis:
-      assert self.dofmap == other.dofmap
-      other = other.func
-    else:
-      other = Take(other, self.dofmap, self.axis)
-    return Inflate(Cross(self.func,other,axis), self.dofmap, self.length, self.axis)
 
   def _power(self, n):
     return Inflate(Power(self.func, n), self.dofmap, self.length, self.axis)
