@@ -157,7 +157,7 @@ class PyPlot( BasePlot ):
     if values is not None:
       self.tripcolor( tri, values, shading='gouraud', **kwargs )
     if edgecolors != 'none':
-      self.segments( edges, linewidth=edgewidth )
+      self.segments( edges, linewidth=edgewidth, color=edgecolors )
     if aspect:
       ( self.aspect if tight else self.axis )( aspect )
     if setxylim:
