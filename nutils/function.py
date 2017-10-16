@@ -881,35 +881,52 @@ class Product( Array ):
     func = Get(self.func, i, item)
     return Product(func)
 
-class RootCoords( Array ):
+class PopHead(Evaluable):
 
-  def __init__(self, ndims:int, trans=TRANS):
+  def __init__(self, trans=TRANS):
     self.trans = trans
-    super().__init__(args=[POINTS,trans], shape=[ndims], dtype=float)
+    super().__init__(args=[self.trans])
 
-  def evalf( self, points, chain ):
+  def evalf(self, trans):
+    return trans[1:]
+
+class TailOfTransform(Evaluable):
+
+  def __init__(self, trans, depth:asarray):
+    assert depth.ndim == 0 and depth.dtype == int
+    super().__init__(args=[trans, depth])
+
+  def evalf(self, trans, depth):
+    depth, = depth
+    return trans[depth:]
+
+class RootCoords(Array):
+
+  def __init__(self, ndims:int, trans, points=POINTS):
+    self.trans = trans
+    super().__init__(args=[points,trans], shape=[ndims], dtype=float)
+
+  def evalf(self, points, chain):
     'evaluate'
 
-    ndims = len(self)
-    head, tail = chain.promote( ndims )
-    while head and head[0].todims != ndims:
-      head = head[1:]
-    return transform.apply( head + tail, points )
+    value = transform.apply(chain, points)
+    if not chain and value.shape[1] != self.shape[0]:
+      return numpy.empty((points.shape[0], 0), dtype=self.dtype)
+    return value
 
   def _derivative(self, var, seen):
     if isinstance(var, LocalCoords) and len(var) > 0:
       return RootTransform(len(self), len(var), self.trans)
     return zeros(self.shape+var.shape)
 
-class RootTransform( Array ):
+class RootTransform(Array):
 
   def __init__(self, ndims:int, nvars:int, trans):
-    super().__init__(args=[Promote(ndims, trans)], shape=(ndims,nvars), dtype=float)
+    super().__init__(args=[trans], shape=(ndims,nvars), dtype=float)
 
   def evalf(self, chain):
     todims, fromdims = self.shape
-    while chain and chain[0].todims != todims:
-      chain = chain[1:]
+    assert not chain or chain[0].todims == todims
     return transform.linearfrom(chain, fromdims)[_]
 
   def _derivative(self, var, seen):
@@ -2836,7 +2853,7 @@ mean = lambda arg: .5 * ( arg + opposite(arg) )
 jump = lambda arg: opposite(arg) - arg
 add_T = lambda arg, axes=(-2,-1): swapaxes( arg, *axes ) + arg
 blocks = lambda arg: asarray(arg).simplified.blocks
-rootcoords = lambda ndims: RootCoords( ndims )
+rootcoords = lambda ndims: RootCoords(ndims, trans=PopHead(Promote(ndims, trans=TRANS)))
 sampled = lambda data, ndims: Sampled( data )
 opposite = cache.replace(initcache={TRANS: OPPTRANS, OPPTRANS: TRANS})
 bifurcate1 = cache.replace(initcache={TRANS: SelectChain(TRANS, True), OPPTRANS: SelectChain(OPPTRANS, True)})
