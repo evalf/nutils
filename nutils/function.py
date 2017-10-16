@@ -31,7 +31,7 @@ expensive and currently unsupported operation.
 """
 
 from . import util, numpy, numeric, log, core, cache, transform, expression, _
-import sys, warnings, itertools, functools, operator, inspect, numbers, builtins, re, types, collections.abc
+import sys, warnings, itertools, functools, operator, inspect, numbers, builtins, re, types, collections.abc, math
 
 isevaluable = lambda arg: isinstance(arg, Evaluable)
 
@@ -2699,6 +2699,96 @@ class Range(Array):
     length, = length
     offset, = offset
     return numpy.arange(offset, offset+length)[_]
+
+class Polyval(Array):
+  '''
+  Computes the :math:`k`-dimensional array
+
+  .. math:: j_0,\\dots,j_{k-1} \\mapsto \\sum_{\substack{i_0,\\dots,i_{n-1}\\in\mathbb{N}\\\\i_0+\\cdots+i_{n-1}\\le d}} p_0^{i_0} \\cdots p_{n-1}^{i_{n-1}} c_{j_0,\\dots,j_{k-1},i_0,\\dots,i_{n-1}},
+
+  where :math:`p` are the :math:`n`-dimensional local coordinates and :math:`c`
+  is the argument ``coeffs`` and :math:`d` is the degree of the polynomial,
+  where :math:`d` is the length of the last :math:`n` axes of ``coeffs``.
+
+  .. warning::
+
+     All coefficients with a (combined) degree larger than :math:`d` should be
+     zero.  Failing to do so won't raise an :class:`Exception`, but might give
+     incorrect results.
+  '''
+
+  def __init__(self, coeffs:asarray, points, ndim, ngrad:int=0):
+    self.points_ndim = ndim
+    ndim = coeffs.ndim - self.points_ndim
+    if coeffs.ndim < ndim:
+      raise ValueError('invalid `coeffs` argument, should have at least one axis per spatial dimension')
+    self.coeffs = coeffs
+    self.points = points
+    self.ngrad = ngrad
+    super().__init__(args=[points, coeffs], shape=coeffs.shape[:ndim]+(self.points_ndim,)*ngrad, dtype=float)
+
+  def evalf(self, points, coeffs):
+    if points.size == 0:
+      return numpy.zeros((points.shape[0],)+coeffs.shape[1:coeffs.ndim-self.points_ndim]+(self.points_ndim,)*self.ngrad, dtype=self.dtype)
+    assert points.shape[1] == self.points_ndim
+    for i in range(self.ngrad):
+      coeffs = self._grad_coeffs(coeffs)
+    if coeffs.shape[-1] == 0:
+      return numpy.zeros((points.shape[0],)+coeffs.shape[1:coeffs.ndim-self.points_ndim])
+    for dim in reversed(range(self.points_ndim)):
+      result = numpy.empty((points.shape[0], *coeffs.shape[1:-1]), dtype=float)
+      result[:] = coeffs[...,-1]
+      points_dim = points[(slice(None),dim,*(_,)*(result.ndim-1))]
+      for j in reversed(range(coeffs.shape[-1]-1)):
+        result *= points_dim
+        result += coeffs[...,j]
+      coeffs = result
+    return coeffs
+
+  def _grad_coeffs(self, coeffs):
+    I = range(self.points_ndim)
+    dcoeffs = [coeffs[(...,*(slice(1,None) if i==j else slice(0,-1) for j in I))] for i in I]
+    if coeffs.shape[-1] > 2:
+      a = numpy.arange(1, coeffs.shape[-1])
+      dcoeffs = [a[tuple(slice(None) if i==j else _ for j in I)] * c for i, c in enumerate(dcoeffs)]
+    dcoeffs = numpy.stack(dcoeffs, axis=coeffs.ndim-self.points_ndim)
+    return dcoeffs
+
+  def _derivative(self, var, seen):
+    # Derivative to argument `points`.
+    dpoints = Dot(_numpy_align(Polyval(self.coeffs, self.points, self.points_ndim, self.ngrad+1)[(...,*(_,)*var.ndim)], derivative(self.points, var, seen)), [self.ndim])
+    # Derivative to argument `coeffs`.  `trans` shuffles the coefficient axes
+    # of `derivative(self.coeffs)` after the derivative axes.
+    shuffle = lambda a, b, c: (*range(0,a), *range(a+b,a+b+c), *range(a,a+b))
+    pretrans = shuffle(self.coeffs.ndim-self.points_ndim, self.points_ndim, var.ndim)
+    posttrans = shuffle(self.coeffs.ndim-self.points_ndim, var.ndim, self.ngrad)
+    dcoeffs = Transpose(Polyval(Transpose(derivative(self.coeffs, var, seen), pretrans), self.points, self.points_ndim, self.ngrad), posttrans)
+    return dpoints + dcoeffs
+
+  def _take(self, index, axis):
+    if axis < self.coeffs.ndim - self.points_ndim:
+      return Polyval(take(self.coeffs, index, axis), self.points, self.points_ndim, self.ngrad)
+
+  def _const_helper(self, *j):
+    if len(j) == self.ngrad:
+      coeffs = self.coeffs
+      for i in reversed(range(self.points_ndim)):
+        p = builtins.sum(k==i for k in j)
+        coeffs = math.factorial(p)*Get(coeffs, axis=i+self.coeffs.ndim-self.points_ndim, item=p)
+      return coeffs
+    else:
+      return Stack([self._const_helper(*j, k) for k in range(self.points_ndim)], axis=self.coeffs.ndim-self.points_ndim+self.ngrad-len(j)-1)
+
+  @cache.property
+  def simplified(self):
+    self = self.edit(lambda arg: arg.simplified if isevaluable(arg) else arg)
+    degree = 0 if self.points_ndim == 0 else self.coeffs.shape[-1]-1 if isinstance(self.coeffs.shape[-1], int) else float('inf')
+    if iszero(self.coeffs) or self.ngrad > degree:
+      return zeros_like(self)
+    elif self.ngrad == degree:
+      return self._const_helper().simplified
+    else:
+      return self
 
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 

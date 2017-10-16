@@ -1,3 +1,4 @@
+import itertools
 from nutils import *
 from . import *
 
@@ -7,21 +8,27 @@ class check(TestCase):
 
   def setUp(self):
     super().setUp()
-    anchor = transform.roottrans('test', (0,0))
-    roottrans = transform.affine([[0,1],[-1,0]], [1,0]) >> transform.affine([[2,1],[-1,3]], [1,0])
-    axes = topology.DimAxis(0,1,False), topology.DimAxis(0,1,False)
-    self.domain = topology.StructuredTopology(root=anchor<<roottrans, axes=axes)
+    if self.ndim == 2:
+      anchor = transform.roottrans('test', (0,0))
+      roottrans = transform.affine([[0,1],[-1,0]], [1,0]) >> transform.affine([[2,1],[-1,3]], [1,0])
+      axes = topology.DimAxis(0,1,False), topology.DimAxis(0,1,False)
+      self.domain = topology.StructuredTopology(root=anchor<<roottrans, axes=axes)
+
+      r, theta = function.rootcoords(2) # corners at (0,0), (0,1), (1,1), (1,0)
+      self.geom = r * function.stack([function.cos(theta), function.sin(theta)])
+    elif self.ndim == 1:
+      self.domain, self.geom = mesh.rectilinear([1])
+      self.geom = self.geom**2
+
     self.elem, = self.domain
     self.iface = element.Element(self.elem.edge(0).reference, self.elem.edge(0).transform, self.elem.edge(1).transform, oriented=True)
     self.ifpoints, ifweights = self.iface.reference.getischeme('uniform2')
-
-    r, theta = function.rootcoords(2) # corners at (0,0), (0,1), (1,1), (1,0)
-    self.geom = r * function.stack([function.cos(theta), function.sin(theta)])
-
-    self.basis = self.domain.basis('spline', degree=(1,2))
+    self.basis = self.domain.basis('spline', degree=(1,2)[:self.ndim])
 
     numpy.random.seed(0)
     self.args = [(numpy.random.uniform(size=shape+self.basis.shape) * self.basis).sum(-1) for shape in self.shapes]
+    if self.pass_geom:
+        self.args += [self.geom]
     self.points, weights = self.elem.reference.getischeme('uniform2')
     self.evalargs = {'_transforms': (self.elem.transform,), '_points': self.points}
     self.argsfun = function.Tuple(self.args)
@@ -38,6 +45,8 @@ class check(TestCase):
 
   def test_evalconst(self):
     constargs = [numpy.random.uniform(size=shape) for shape in self.shapes]
+    if self.pass_geom:
+      constargs += [numpy.random.uniform(size=self.geom.shape)]
     self.assertArrayAlmostEqual(decimal=15,
       desired=self.n_op(*[constarg[_] for constarg in constargs]),
       actual=self.op(*constargs).eval(**self.evalargs))
@@ -159,7 +168,7 @@ class check(TestCase):
           actual=function.cross(self.op_args, self.shapearg, axis=iax).simplified.eval(**self.evalargs))
 
   def test_power(self):
-    self.assertArrayAlmostEqual(decimal=14,
+    self.assertArrayAlmostEqual(decimal=13,
       desired=self.n_op_argsfun**3,
       actual=(self.op_args**3).simplified.eval(**self.evalargs))
 
@@ -198,7 +207,7 @@ class check(TestCase):
     check_identity(self.op_args)
 
   def test_opposite(self):
-    self.assertArrayAlmostEqual(decimal=15,
+    self.assertArrayAlmostEqual(decimal=14,
       desired=self.n_op(*function.opposite(self.argsfun).simplified.eval(_transforms=[self.iface.transform, self.iface.opposite], _points=self.ifpoints)),
       actual=function.opposite(self.op_args).simplified.eval(_transforms=[self.iface.transform, self.iface.opposite], _points=self.ifpoints))
 
@@ -246,7 +255,7 @@ class check(TestCase):
   def test_jacobian(self):
     eps = 1e-8
     numpy.random.seed(0)
-    for iarg in range(len(self.args)):
+    for iarg in range(len(self.shapes)):
       x0 = numpy.random.uniform(size=self.shapes[iarg]+self.basis.shape)
       dx = numpy.random.normal(size=x0.shape) * eps
       x = function.Argument('x', x0.shape)
@@ -258,7 +267,7 @@ class check(TestCase):
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_gradient(self):
     eps = 1e-7
-    D = numpy.array([-.5*eps,.5*eps])[:,_,_] * numpy.eye(2)
+    D = numpy.array([-.5*eps,.5*eps])[:,_,_] * numpy.eye(self.geom.shape[-1])
     fdpoints = self.find(self.geom.eval(**self.evalargs)[_,_,:,:] + D[:,:,_,:], self.points[_,_,:,:])
     tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
     F = tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:])
@@ -274,7 +283,7 @@ class check(TestCase):
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_doublegradient(self):
     eps = 1e-4
-    D = numpy.array([-.5*eps,.5*eps])[:,_,_] * numpy.eye(2)
+    D = numpy.array([-.5*eps,.5*eps])[:,_,_] * numpy.eye(self.geom.shape[-1])
     DD = D[:,_,:,_,:] + D[_,:,_,:,:]
     fdpoints = self.find(self.geom.eval(**self.evalargs)[_,_,_,_,:,:] + DD[:,:,:,:,_,:], self.points[_,_,_,_,:,:])
     tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
@@ -288,7 +297,7 @@ class check(TestCase):
         exact[...] = (G.simplified if simplified else G).eval(**self.evalargs)
         numpy.testing.assert_allclose(fddgrad, exact, rtol=2e-4)
 
-_check = lambda name, op, n_op, shapes, hasgrad=True: check(name, op=op, n_op=n_op, shapes=shapes, hasgrad=hasgrad)
+_check = lambda name, op, n_op, shapes, hasgrad=True, pass_geom=False, ndim=2: check(name, op=op, n_op=n_op, shapes=shapes, hasgrad=hasgrad, pass_geom=pass_geom, ndim=ndim)
 _check('const', lambda f: function.asarray(f), lambda a: a, [(2,3,2)])
 _check('sin', function.sin, numpy.sin, [(3,)])
 _check('cos', function.cos, numpy.cos, [(3,)])
@@ -354,6 +363,16 @@ _check('mask', lambda f: function.mask(f,numpy.array([True,False,True]),axis=1),
 _check('ravel', lambda f: function.ravel(f,axis=1), lambda a: a.reshape(-1,2,6), [(2,3,2)])
 _check('unravel', lambda f: function.unravel(f,axis=0,shape=[2,3]), lambda a: a.reshape(-1,2,3,2), [(6,2)])
 _check('inflate', lambda f: function.Inflate(f,dofmap=[0,2],length=3,axis=1), lambda a: numpy.concatenate([a[:,:,:1], numpy.zeros_like(a)[:,:,:1], a[:,:,1:]], axis=2), [(3,2,3)])
+
+_polyval_mask = lambda shape, ndim: 1 if ndim == 0 else numpy.array([sum(i[-ndim:]) < shape[-1] for i in numpy.ndindex(shape)], dtype=int).reshape(shape)
+_polyval_desired = lambda c, x: sum(c[(...,*i)]*(x[(slice(None),*[None]*(c.ndim-1-x.shape[1]))]**i).prod(-1) for i in itertools.product(*[range(c.shape[-1])]*x.shape[1]) if sum(i) < c.shape[-1])
+_check('polyval_1d_p0', lambda c, x: function.Polyval(c*_polyval_mask(c.shape,2), function.asarray(x), 1), _polyval_desired, [(1,)], pass_geom=True, ndim=1)
+_check('polyval_1d_p1', lambda c, x: function.Polyval(c*_polyval_mask(c.shape,2), function.asarray(x), 1), _polyval_desired, [(2,)], pass_geom=True, ndim=1)
+_check('polyval_1d_p2', lambda c, x: function.Polyval(c*_polyval_mask(c.shape,2), function.asarray(x), 1), _polyval_desired, [(3,)], pass_geom=True, ndim=1)
+_check('polyval_2d_p0', lambda c, x: function.Polyval(c*_polyval_mask(c.shape,2), function.asarray(x), 2), _polyval_desired, [(1,1)], pass_geom=True, ndim=2)
+_check('polyval_2d_p1', lambda c, x: function.Polyval(c*_polyval_mask(c.shape,2), function.asarray(x), 2), _polyval_desired, [(2,2)], pass_geom=True, ndim=2)
+_check('polyval_2d_p2', lambda c, x: function.Polyval(c*_polyval_mask(c.shape,2), function.asarray(x), 2), _polyval_desired, [(3,3)], pass_geom=True, ndim=2)
+_check('polyval_2d_p1_23', lambda c, x: function.Polyval(c*_polyval_mask(c.shape,2), function.asarray(x), 2), _polyval_desired, [(2,3,2,2)], pass_geom=True, ndim=2)
 
 
 class commutativity(TestCase):
