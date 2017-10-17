@@ -194,9 +194,10 @@ class NumpyMatrix( Matrix ):
 
   matvec = lambda self, vec: numpy.dot( self.core, vec )
   toarray = lambda self: self.core
-  __add__ = lambda self, other: NumpyMatrix( self.core + other.toarray() )
-  __sub__ = lambda self, other: NumpyMatrix( self.core - other.toarray() )
+  __add__ = lambda self, other: NumpyMatrix( self.core + (other.toarray() if isinstance(other, Matrix) else other) )
+  __sub__ = lambda self, other: NumpyMatrix( self.core - (other.toarray() if isinstance(other, Matrix) else other) )
   __mul__ = lambda self, other: NumpyMatrix( self.core * other )
+  __radd__ = __add__
   __rmul__ = __mul__
   __div__ = lambda self, other: NumpyMatrix( self.core / other )
   T = property( lambda self: NumpyMatrix( self.core.T ) )
