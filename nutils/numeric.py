@@ -727,4 +727,13 @@ def binom(n, k):
     b *= i
   return a // b
 
+def poly_outer_product(left, right):
+  left, right = numpy.asarray(left), numpy.asarray(right)
+  nleft, nright = left.ndim-1, right.ndim-1
+  P = (max(left.shape[1:])-1)+(max(right.shape[1:])-1)
+  outer = numpy.zeros((left.shape[0], right.shape[0], *(P+1,)*(nleft+nright)), dtype=numpy.common_type(left, right))
+  a = slice(None)
+  outer[(a,a,*(map(slice, left.shape[1:]+right.shape[1:])))] = left[(a,None)+(a,)*nleft+(None,)*nright]*right[(None,a)+(None,)*nleft+(a,)*nright]
+  return const(outer.reshape(left.shape[0]*right.shape[0], *(P+1,)*(nleft+nright)), copy=False)
+
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
