@@ -1192,6 +1192,7 @@ class StructuredTopology( Topology ):
       knotmultiplicities = [None]*self.ndims
 
     vertex_structure = numpy.array( 0 )
+    stdelems = []
     dofshape = []
     slices = []
     cache = {}
@@ -1252,11 +1253,10 @@ class StructuredTopology( Topology ):
         try:
           coeffs = cache[key]
         except KeyError:
-          coeffs = self._localsplinebasis( lknots, p )
+          coeffs = numeric.const(self._localsplinebasis(lknots, p).T, copy=False)
           cache[key] = coeffs
-        poly = element.PolyLine( coeffs[:,start:stop] )
-        stdelems_i.append( poly )
-      stdelems = stdelems[...,_]*stdelems_i if idim else numpy.array(stdelems_i)
+        stdelems_i.append(coeffs[start:stop])
+      stdelems.append(stdelems_i)
 
       numbers = numpy.arange(nd)
       if isperiodic:
@@ -1268,16 +1268,13 @@ class StructuredTopology( Topology ):
     #Cache effectivity
     log.debug( 'Local knot vector cache effectivity: %d' % (100*(1.-len(cache)/float(sum(self.shape)))) )
 
-    dofmap = {}
-    funcmap = {}
-    for item in numpy.broadcast( self._transform, stdelems, *numpy.ix_(*slices) ):
-      trans = item[0]
-      std = item[1]
-      S = item[2:]
+    dofmap = []
+    coeffs = []
+    for std, S in zip(itertools.product(*stdelems), itertools.product(*slices)):
       dofs = vertex_structure[S].ravel()
-      dofmap[trans] = numeric.const(dofs, copy=False)
-      funcmap[trans] = std
-    return funcmap, dofmap, dofshape
+      dofmap.append(numeric.const(dofs, copy=False))
+      coeffs.append(functools.reduce(numeric.poly_outer_product, std))
+    return coeffs, dofmap, dofshape
 
   def basis_spline( self, degree, knotvalues=None, knotmultiplicities=None, periodic=None, removedofs=None ):
     'spline basis'
@@ -1287,8 +1284,8 @@ class StructuredTopology( Topology ):
     else:
       assert len(removedofs) == self.ndims
 
-    funcmap, dofmap, dofshape = self._basis_spline( degree=degree, knotvalues=knotvalues, knotmultiplicities=knotmultiplicities, periodic=periodic )
-    func = function.function( funcmap, dofmap, numpy.product(dofshape) )
+    coeffs, dofmap, dofshape = self._basis_spline(degree=degree, knotvalues=knotvalues, knotmultiplicities=knotmultiplicities, periodic=periodic)
+    func = function.polyfunc(coeffs, dofmap, util.product(dofshape), (elem.transform for elem in self), issorted=False)
     if not any( removedofs ):
       return func
 
@@ -2128,11 +2125,13 @@ class MultipatchTopology( Topology ):
 
     missing = object()
 
-    funcmap = {}
-    dofmap = {}
+    coeffs = []
+    dofmap = []
+    transforms = []
     dofcount = 0
     commonboundarydofs = {}
     for ipatch, patch in enumerate( self.patches ):
+      transforms.extend(elem.transform for elem in patch.topo)
       # build structured spline basis on patch `patch.topo`
       patchknotvalues = []
       patchknotmultiplicities = []
@@ -2156,10 +2155,9 @@ class MultipatchTopology( Topology ):
           raise 'ambiguous knot multiplicities for patch {}, dimension {}'.format( ipatch, idim )
         patchknotvalues.append(next(iter(dimknotvalues)))
         patchknotmultiplicities.append(next(iter(dimknotmultiplicities)))
-      patchfuncmap, patchdofmap, patchdofcount = patch.topo._basis_spline( degree, knotvalues=patchknotvalues, knotmultiplicities=patchknotmultiplicities )
-      funcmap.update( patchfuncmap )
-      # renumber dofs
-      dofmap.update( (trans, numeric.const(dofs+dofcount, copy=False)) for trans, dofs in patchdofmap.items() )
+      patchcoeffs, patchdofmap, patchdofcount = patch.topo._basis_spline(degree, knotvalues=patchknotvalues, knotmultiplicities=patchknotmultiplicities)
+      coeffs.extend(patchcoeffs)
+      dofmap.extend(numeric.const(dofs+dofcount, copy=False) for dofs in patchdofmap)
       if patchcontinuous:
         # reconstruct multidimensional dof structure
         dofs = dofcount + numpy.arange( numpy.prod( patchdofcount ), dtype=int ).reshape( patchdofcount )
@@ -2182,10 +2180,10 @@ class MultipatchTopology( Topology ):
       remainder = set( merge.get( dof, dof ) for dof in range( dofcount ) )
       renumber = dict( zip( sorted( remainder ), range( len( remainder ) ) ) )
       # apply mappings
-      dofmap = {k: numeric.const([renumber[merge.get( dof, dof )] for dof in v.flat], dtype=int).reshape(v.shape) for k, v in dofmap.items()}
-      dofcount = len( remainder )
+      dofmap = tuple(numeric.const(tuple(renumber[merge.get(dof, dof)] for dof in v.flat), dtype=int).reshape(v.shape) for v in dofmap)
+      dofcount = len(remainder)
 
-    return function.function( funcmap, dofmap, dofcount )
+    return function.polyfunc(coeffs, dofmap, dofcount, transforms, issorted=False)
 
   def basis_discont( self, degree ):
     'discontinuous shape functions'
