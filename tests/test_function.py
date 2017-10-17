@@ -293,6 +293,7 @@ class check(TestCase):
       actual=function.opposite(self.op_args).simplified.eval(_transforms=[self.iface.transform, self.iface.opposite], _points=self.ifpoints))
 
 _check = lambda name, op, n_op, shapes, hasgrad=True: check(name, op=op, n_op=n_op, shapes=shapes, hasgrad=hasgrad)
+_check('const', lambda f: function.asarray(f), lambda a: a, [(2,3,2)])
 _check('sin', function.sin, numpy.sin, [(3,)])
 _check('cos', function.cos, numpy.cos, [(3,)])
 _check('tan', function.tan, numpy.tan, [(3,)])
