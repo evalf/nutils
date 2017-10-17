@@ -2277,6 +2277,20 @@ class Diagonalize( Array ):
   def _takediag(self, axis, rmaxis):
     if self.axis == axis and self.newaxis == rmaxis:
       return self.func
+    if self.newaxis == axis: # self.axis < self.newaxis = axis < rmaxis
+      takeaxes = diagaxes = self.axis, rmaxis-1
+    elif self.newaxis == rmaxis:
+      takeaxes = diagaxes = sorted([axis, self.axis])
+    elif self.axis == rmaxis: # axis < rmaxis = self.axis < self.newaxis
+      takeaxes = axis, rmaxis
+      diagaxes = axis, self.newaxis-1
+    elif self.newaxis > rmaxis: # axis < rmaxis < self.newaxis
+      takeaxes = axis, rmaxis
+      diagaxes = self.axis-(self.axis>=rmaxis), self.newaxis-1
+    else: # self.axis < self.newaxis < rmaxis
+      takeaxes = axis-(axis>self.newaxis), rmaxis-1
+      diagaxes = self.axis, self.newaxis
+    return Diagonalize(TakeDiag(self.func, *takeaxes), *diagaxes)
 
   def _take(self, index, axis):
     if axis not in (self.axis, self.newaxis):
@@ -2297,8 +2311,11 @@ class Diagonalize( Array ):
     return Concatenate([Zeros(masked.shape[:ax] + (indices[0],) + masked.shape[ax+1:], dtype=self.dtype), masked, Zeros(masked.shape[:ax] + (self.shape[ax]-(indices[-1]+1),) + masked.shape[ax+1:], dtype=self.dtype)], axis=ax)
 
   def _unravel(self, axis, shape):
-    if axis == self.axis:
-      return Ravel(Diagonalize(Diagonalize(Unravel(self.func, self.axis, shape), self.axis, self.newaxis+1), self.axis+1, self.newaxis+2), self.newaxis+1)
+    if axis == self.axis or axis == self.newaxis:
+      diag = Diagonalize(Diagonalize(Unravel(self.func, self.axis, shape), self.axis, self.newaxis+1), self.axis+1, self.newaxis+2)
+      return Ravel(diag, self.newaxis+1 if axis == self.axis else self.axis)
+    else:
+      return Diagonalize(Unravel(self.func, axis-(axis>self.newaxis), shape), self.axis+(axis<self.axis), self.newaxis+(axis<self.newaxis))
 
 class Guard( Array ):
   'bar all simplifications'

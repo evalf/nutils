@@ -28,11 +28,7 @@ class check(TestCase):
     self.n_op_argsfun = self.n_op(*self.argsfun.simplified.eval(**self.evalargs))
     self.op_args = self.op(*self.args)
     self.shapearg = numpy.random.uniform(size=self.op_args.shape)
-
-    count = {}
-    for i, sh in enumerate(self.op_args.shape):
-      count.setdefault(sh,[]).append(i)
-    self.pairs = [sorted(axes[:2]) for axes in count.values() if len(axes) > 1] # axis pairs with same length
+    self.pairs = [(i, j) for i in range(self.op_args.ndim-1) for j in range(i+1, self.op_args.ndim) if self.op_args.shape[i] == self.op_args.shape[j]]
 
   def assertArrayAlmostEqual(self, actual, desired, decimal):
     assert actual.shape == desired.shape or (actual.shape[0] == 1 or desired.shape[0] == 1) and actual.shape[1:] == desired.shape[1:], 'shapes {}, {} mismatch'.format(actual.shape, desired.shape)
@@ -331,7 +327,7 @@ _check('inverse131', lambda a: function.inverse(a,(0,2)), lambda a: numpy.linalg
 _check('inverse232', lambda a: function.inverse(a,(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(-3,-2)).swapaxes(-3,-2), [(2,3,2)])
 _check('inverse323', lambda a: function.inverse(a,(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(-3,-2)).swapaxes(-3,-2), [(3,2,3)])
 _check('repeat', lambda a: function.repeat(a,3,1), lambda a: numpy.repeat(a,3,-2), [(2,1,2)])
-_check('diagonalize', lambda a: function.diagonalize(a,0,2), lambda a: numeric.diagonalize(a,1,3), [(2,1,2)])
+_check('diagonalize', lambda a: function.diagonalize(a,1,3), lambda a: numeric.diagonalize(a,2,4), [(2,2,2,2)])
 _check('multiply', function.multiply, numpy.multiply, [(3,1),(1,3)])
 _check('divide', function.divide, numpy.divide, [(3,1),(1,3)])
 _check('divide2', lambda a: function.asarray(a)/2, lambda a: a/2, [(3,1)])
