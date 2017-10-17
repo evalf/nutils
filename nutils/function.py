@@ -3154,6 +3154,34 @@ def function(fmap, nmap, ndofs):
   func = Function(stds=[fmap[trans] for trans in transforms], depth=depth, trans=promote, index=index)
   return Inflate(func, dofmap, ndofs, axis=0)
 
+def polyfunc(coeffs, dofs, ndofs, transforms, *, issorted=True):
+  '''
+  Create an inflated :class:`Polyval` with coefficients ``coeffs`` and
+  corresponding dofs ``dofs``.  The arguments ``coeffs``, ``dofs`` and
+  ``transforms`` are assumed to have matching order.  In addition, if
+  ``issorted`` is true, the ``transforms`` argument is assumed to be sorted.
+  '''
+
+  transforms = tuple(transforms)
+  if issorted:
+    dofs = tuple(dofs)
+    coeffs = tuple(coeffs)
+  else:
+    dofsmap = dict(zip(transforms, dofs))
+    coeffsmap = dict(zip(transforms, coeffs))
+    transforms = tuple(sorted(transforms))
+    dofs = tuple(dofsmap[trans] for trans in transforms)
+    coeffs = tuple(coeffsmap[trans] for trans in transforms)
+  fromdims, = set(transform.fromdims for transform in transforms)
+  promote = Promote(fromdims, trans=TRANS)
+  index = FindTransform(transforms, promote)
+  dofmap = DofMap(dofs, index=index)
+  depth = Get([len(trans) for trans in transforms]+[builtins.min(map(len, transforms))], axis=0, item=index)
+  points = RootCoords(fromdims, TailOfTransform(promote, depth))
+  z = numeric.const(numpy.zeros((0,)+coeffs[0].shape[1:]))
+  func = Polyval(Elemwise(coeffs+(z,), index, dtype=float), points, fromdims)
+  return Inflate(func, dofmap, ndofs, axis=0)
+
 def elemwise( fmap, shape, default=None ):
   if default is not None:
     raise NotImplemented('default is not supported anymore')
