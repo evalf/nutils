@@ -1531,28 +1531,6 @@ class Sum( Array ):
   def _derivative(self, var, seen):
     return sum(derivative(self.func, var, seen), self.axis)
 
-class Debug( Array ):
-  'debug'
-
-  def __init__(self, func:asarray):
-    self.func = func
-    super().__init__(args=[func], shape=func.shape, dtype=func.dtype)
-
-  def evalf( self, arr ):
-    'debug'
-
-    assert arr.ndim == self.ndim+1
-    log.debug( 'debug output:\n%s' % arr )
-    return arr
-
-  def __str__( self ):
-    'string representation'
-
-    return '{DEBUG}'
-
-  def _derivative(self, var, seen):
-    return Debug(derivative(self.func, var, seen))
-
 class TakeDiag( Array ):
 
   def __init__(self, func:asarray, axis:int, rmaxis:int):
