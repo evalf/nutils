@@ -91,7 +91,7 @@ class check(TestCase):
           desired=(numpy.expand_dims(A,ax2+1) * numpy.expand_dims(V,ax2+2).swapaxes(ax1+1,ax2+2)).sum(ax2+2))
 
   def test_take(self):
-    indices = [0,-1]
+    indices = [-1,0]
     for iax, sh in enumerate(self.op_args.shape):
       if sh >= 2:
         self.assertArrayAlmostEqual(decimal=15,

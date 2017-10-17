@@ -1128,7 +1128,8 @@ class Concatenate(Array):
     if not indices.isconstant:
       return
     indices, = indices.eval()
-    assert numpy.logical_and(numpy.greater_equal(indices, 0), numpy.less(indices, self.shape[axis])).all()
+    if not numpy.logical_and(numpy.greater_equal(indices, 0), numpy.less(indices, self.shape[axis])).all():
+      return
     ifuncs = numpy.hstack([ numpy.repeat(ifunc,func.shape[axis]) for ifunc, func in enumerate(self.funcs) ])[indices]
     splits, = numpy.nonzero( numpy.diff(ifuncs) != 0 )
     funcs = []
