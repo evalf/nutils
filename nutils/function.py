@@ -947,19 +947,8 @@ class Inverse( Array ):
       return retval.simplified
     return Inverse(func)
 
-  def evalf( self, arr ):
-    assert arr.ndim == self.ndim+1
-    try:
-      inv = numpy.linalg.inv( arr )
-    except numpy.linalg.LinAlgError:
-      inv = numpy.empty_like( arr )
-      flat = (-1,) + arr.shape[-2:]
-      for arri, invi in zip( arr.reshape(flat), inv.reshape(flat) ):
-        try:
-          invi[...] = numpy.linalg.inv(arri)
-        except numpy.linalg.LinAlgError:
-          invi[...] = numpy.nan
-    return inv
+  def evalf(self, arr):
+    return numpy.linalg.inv(arr)
 
   def _derivative(self, var, seen):
     G = derivative(self.func, var, seen)
