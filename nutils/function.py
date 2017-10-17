@@ -1898,6 +1898,9 @@ class Zeros( Array ):
   def blocks(self):
     return ()
 
+  def edit(self, op):
+    return Zeros(tuple(map(op, self.shape)), self.dtype)
+
   def _derivative(self, var, seen):
     return zeros(self.shape+var.shape, dtype=self.dtype)
 
