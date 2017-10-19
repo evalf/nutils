@@ -612,7 +612,7 @@ class Constant( Array ):
     return Constant(self.value.reshape(shape))
 
   def _mask(self, maskvec, axis):
-    return Constant(self.value[(slice(None),)*axis+(maskvec,)])
+    return Constant(self.value[(slice(None),)*axis+(numpy.asarray(maskvec),)])
 
 class DofMap(Array):
 
@@ -2088,7 +2088,7 @@ class Inflate( Array ):
     selection = Take(maskvec, self.dofmap, axis=0)
     renumber = numpy.empty( len(maskvec), dtype=int )
     renumber[:] = newlength # out of bounds
-    renumber[maskvec] = numpy.arange(newlength)
+    renumber[numpy.asarray(maskvec)] = numpy.arange(newlength)
     newdofmap = Take(renumber, Take(self.dofmap, Find(selection), axis=0 ), axis=0)
     newfunc = Take(self.func, Find(selection), axis=self.axis)
     return Inflate(newfunc, newdofmap, newlength, self.axis)
@@ -2722,7 +2722,7 @@ class Mask( Array ):
     return Mask(func, self.mask, self.axis)
 
   def evalf( self, func ):
-    return func[(slice(None),)*(self.axis+1)+(self.mask,)]
+    return func[(slice(None),)*(self.axis+1)+(numpy.asarray(self.mask),)]
 
   def _derivative(self, var, seen):
     return mask(derivative(self.func, var, seen), self.mask, self.axis)
@@ -2732,7 +2732,8 @@ class Mask( Array ):
       return Mask(Get(self.func, i, item), self.mask, self.axis-(i<self.axis))
     if item.isconstant:
       item, = item.eval()
-      return Get(self.func, i, numpy.arange(len(self.mask))[self.mask][item])
+      where, = self.mask.nonzero()
+      return Get(self.func, i, where[item])
 
   def _sum(self, axis):
     if axis != self.axis:
@@ -2752,7 +2753,8 @@ class Mask( Array ):
   def _mask(self, maskvec, axis):
     if axis == self.axis:
       newmask = numpy.zeros(len(self.mask), dtype=bool)
-      newmask[self.mask] = maskvec
+      newmask[numpy.asarray(self.mask)] = maskvec
+      assert maskvec.sum() == newmask.sum()
       return Mask(self.func, newmask, self.axis)
 
   def _takediag(self, axis, rmaxis):
