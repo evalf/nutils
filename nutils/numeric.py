@@ -637,6 +637,34 @@ class const:
     self.__base = other.__base
     return True
 
+  def __lt__(self, other):
+    if not isinstance(other, const):
+      return NotImplemented
+    return self != other and (self.dtype < other.dtype
+      or self.dtype == other.dtype and (self.shape < other.shape
+        or self.shape == other.shape and self.__base.tolist() < other.__base.tolist()))
+
+  def __le__(self, other):
+    if not isinstance(other, const):
+      return NotImplemented
+    return self == other or (self.dtype < other.dtype
+      or self.dtype == other.dtype and (self.shape < other.shape
+        or self.shape == other.shape and self.__base.tolist() < other.__base.tolist()))
+
+  def __gt__(self, other):
+    if not isinstance(other, const):
+      return NotImplemented
+    return self != other and (self.dtype > other.dtype
+      or self.dtype == other.dtype and (self.shape > other.shape
+        or self.shape == other.shape and self.__base.tolist() > other.__base.tolist()))
+
+  def __ge__(self, other):
+    if not isinstance(other, const):
+      return NotImplemented
+    return self == other or (self.dtype > other.dtype
+      or self.dtype == other.dtype and (self.shape > other.shape
+        or self.shape == other.shape and self.__base.tolist() > other.__base.tolist()))
+
   def __getitem__(self, item):
     retval = self.__base.__getitem__(item)
     return const(retval, copy=False) if isinstance(retval, numpy.ndarray) else retval

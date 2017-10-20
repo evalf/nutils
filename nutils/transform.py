@@ -173,11 +173,6 @@ class TransformItem( cache.Immutable ):
     self.todims = todims
     self.fromdims = fromdims
 
-  __lt__ = lambda self, other: id(self) <  id(other)
-  __gt__ = lambda self, other: id(self) >  id(other)
-  __le__ = lambda self, other: id(self) <= id(other)
-  __ge__ = lambda self, other: id(self) >= id(other)
-
   def __repr__( self ):
     return '{}( {} )'.format( self.__class__.__name__, self )
 
