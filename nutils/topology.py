@@ -937,16 +937,18 @@ class StructuredLine( Topology ):
     if periodic is None:
       periodic = self.periodic
 
-    ndofs = len(self) * degree + 1
-    dofs = numpy.arange( ndofs )
-
+    strides = max(1, degree), 1
+    shape = len(self), degree+1
+    ndofs = sum(s*(n-1) for s, n in zip(strides, shape))+1
+    dofs = numpy.arange(ndofs)
     if periodic and degree > 0:
       dofs[-1] = dofs[0]
       ndofs -= 1
+    dofs = numpy.lib.stride_tricks.as_strided(dofs, shape=shape, strides=tuple(s*dofs.strides[0] for s in strides))
+    dofs = numeric.const(dofs, copy=False)
 
-    fmap = dict.fromkeys( self._transforms[1:-1], element.PolyLine( element.PolyLine.bernstein_poly(degree) ) )
-    nmap = { trans: numeric.const(dofs[i*degree:(i+1)*degree+1], copy=False) for i, trans in enumerate(self._transforms[1:-1]) }
-    func = function.function( fmap, nmap, ndofs )
+    coeffs = [element.LineReference().get_poly_coeffs('bernstein', degree=degree)]*len(self)
+    func = function.polyfunc(coeffs, dofs, ndofs, self._transforms[1:-1], issorted=False)
     if not removedofs:
       return func
 
