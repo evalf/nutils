@@ -618,7 +618,7 @@ class const:
     self.__base = numpy.array(base, dtype=dtype) if copy or not isinstance(base, numpy.ndarray) or dtype and dtype != base.dtype else base
     self.__base.flags.writeable = False
     self.__array_struct__ = self.__base.__array_struct__
-    self.__hash = hash((self.__base.shape, self.__base.dtype, tuple(self.__base.flat[::self.__base.size//32+1])))
+    self.__hash = hash((self.__base.shape, self.__base.dtype, tuple(self.__base.flat[::self.__base.size//32+1]) if self.__base.size else ())) # NOTE special case self.__base.size == 0 necessary for numpy<1.12
     return self
 
   def __reduce__(self):
@@ -636,6 +636,34 @@ class const:
     # deduplicate
     self.__base = other.__base
     return True
+
+  def __lt__(self, other):
+    if not isinstance(other, const):
+      return NotImplemented
+    return self != other and (self.dtype < other.dtype
+      or self.dtype == other.dtype and (self.shape < other.shape
+        or self.shape == other.shape and self.__base.tolist() < other.__base.tolist()))
+
+  def __le__(self, other):
+    if not isinstance(other, const):
+      return NotImplemented
+    return self == other or (self.dtype < other.dtype
+      or self.dtype == other.dtype and (self.shape < other.shape
+        or self.shape == other.shape and self.__base.tolist() < other.__base.tolist()))
+
+  def __gt__(self, other):
+    if not isinstance(other, const):
+      return NotImplemented
+    return self != other and (self.dtype > other.dtype
+      or self.dtype == other.dtype and (self.shape > other.shape
+        or self.shape == other.shape and self.__base.tolist() > other.__base.tolist()))
+
+  def __ge__(self, other):
+    if not isinstance(other, const):
+      return NotImplemented
+    return self == other or (self.dtype > other.dtype
+      or self.dtype == other.dtype and (self.shape > other.shape
+        or self.shape == other.shape and self.__base.tolist() > other.__base.tolist()))
 
   def __getitem__(self, item):
     retval = self.__base.__getitem__(item)
@@ -663,6 +691,7 @@ class const:
   __hash__ = lambda self: self.__hash
   __int__ = lambda self: self.__base.__int__()
   __float__ = lambda self: self.__base.__float__()
+  __abs__ = lambda self: self.__base.__abs__()
 
   tolist = lambda self, *args, **kwargs: self.__base.tolist(*args, **kwargs)
   copy = lambda self, *args, **kwargs: self.__base.copy(*args, **kwargs)

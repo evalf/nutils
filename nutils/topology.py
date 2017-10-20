@@ -174,7 +174,7 @@ class Topology( object ):
       ipoints, iweights = ischeme[elem] if isinstance(ischeme,collections.abc.Mapping) else fcache[elem.reference.getischeme]( ischeme )
       s = slices[ielem],
       for ifunc, index, data in idata.eval(_transforms=(elem.transform, elem.opposite), _points=ipoints, _cache=fcache, **arguments):
-        retvals[ifunc][s+numpy.ix_(*[ ind for (ind,) in index ])] += numeric.dot(iweights,data) if geometry else data
+        numpy.add.at(retvals[ifunc], s+numpy.ix_(*[ ind for (ind,) in index ]), numeric.dot(iweights,data) if geometry else data)
 
     log.debug( 'cache', fcache.stats )
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join( str(n) for n in retval.shape ) ) for retval in retvals ) )
@@ -536,7 +536,7 @@ class Topology( object ):
           sumval = numpy.zeros( [ len(n) for n in (points,) + allind ] )
           for ind, val in ind_val:
             I, where = zip( *[ ( w[:len(n)], w[len(n):] ) for w, n in zip( where, ind ) ] )
-            sumval[ numpy.ix_( range(len(points)), *I ) ] += val
+            numpy.add.at(sumval, numpy.ix_(range(len(points)), *I), val)
           assert not any( where )
 
         ex = numeric.dot( projector, sumval )

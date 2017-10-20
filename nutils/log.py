@@ -267,6 +267,7 @@ class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
     self._print( '<title>{}</title>'.format( html.escape( self._title ) ) )
     self._print( '<script type="text/javascript" src="viewer.js" ></script>' )
     self._print( '<link rel="stylesheet" type="text/css" href="style.css">' )
+    self._print( '<meta charset="UTF-8" />' )
     self._print( '</head><body class="newstyle"><pre>' )
     if self._scriptname is not None:
       self._print( '<span id="navbar">goto: <a class="nav_latest" href="../../../../log.html?{1:.0f}">latest {0:}</a> | <a class="nav_latestall" href="../../../../../log.html?{1:.0f}">latest overall</a> | <a class="nav_index" href="../../../../../">index</a></span>'.format( self._scriptname, time.mktime(time.localtime()) ) )

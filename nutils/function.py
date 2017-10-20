@@ -471,7 +471,6 @@ class Array( Evaluable ):
   _multiply = lambda self, other: None
   _transpose = lambda self, axes: None
   _insertaxis = lambda self, axis, length: None
-  _dot = lambda self, other, axes: None
   _get = lambda self, i, item: None
   _power = lambda self, n: None
   _add = lambda self, other: None
@@ -483,7 +482,6 @@ class Array( Evaluable ):
   _kronecker = lambda self, axis, length, pos: None
   _diagonalize = lambda self, axis, newaxis: None
   _product = lambda self: None
-  _cross = lambda self, other, axis: None
   _sign = lambda self: None
   _eig = lambda self, symmetric: None
   _inflate = lambda self, dofmap, length, axis: None
@@ -587,19 +585,6 @@ class Constant( Array ):
     if isinstance(n, Constant):
       return Constant(numeric.power(self.value, n.value))
 
-  def _dot( self, other, axes ):
-    if isinstance(other, Constant):
-      return Constant(numeric.contract(self.value, other.value, axes))
-    if self._isunit:
-      summed = other
-      for axis in reversed(sorted(axes)):
-        summed = Sum(summed, axis)
-      return summed
-
-  def _cross(self, other, axis):
-    if isinstance(other, Constant):
-      return Constant(numeric.cross(self.value, other.value, axis))
-
   def _eig(self, symmetric):
     eigval, eigvec = (numpy.linalg.eigh if symmetric else numpy.linalg.eig)(self.value)
     return Tuple((Constant(eigval), Constant(eigvec)))
@@ -612,7 +597,7 @@ class Constant( Array ):
     return Constant(self.value.reshape(shape))
 
   def _mask(self, maskvec, axis):
-    return Constant(self.value[(slice(None),)*axis+(maskvec,)])
+    return Constant(self.value[(slice(None),)*axis+(numpy.asarray(maskvec),)])
 
 class DofMap(Array):
 
@@ -719,11 +704,6 @@ class InsertAxis(Array):
     else:
       return InsertAxis(TakeDiag(self.func, axis-(self.axis<axis), rmaxis-(self.axis<rmaxis)), self.axis-(self.axis>rmaxis), self.length)
 
-  def _dot(self, other, axes):
-    if self.axis in axes:
-      assert other.shape[self.axis] == self.shape[self.axis]
-      return Dot([self.func, Sum(other, self.axis)], [ax-(ax>self.axis) for ax in axes if ax != self.axis])
-
   def _mask(self, maskvec, axis):
     if axis == self.axis:
       assert len(maskvec) == self.shape[self.axis]
@@ -804,13 +784,6 @@ class Transpose(Array):
 
   def _take(self, indices, axis):
     return Transpose(Take(self.func, indices, self.axes[axis]), self.axes)
-
-  def _dot(self, other, axes):
-    sumaxes = [self.axes[axis] for axis in axes]
-    trydot = self.func._dot(transpose(other, _invtrans(self.axes)), sumaxes)
-    if trydot is not None:
-      trans = [axis - builtins.sum(ax<axis for ax in sumaxes) for axis in self.axes if axis not in sumaxes]
-      return Transpose(trydot, trans)
 
   def _mask(self, maskvec, axis):
     return Transpose(Mask(self.func, maskvec, self.axes[axis]), self.axes)
@@ -974,19 +947,8 @@ class Inverse( Array ):
       return retval.simplified
     return Inverse(func)
 
-  def evalf( self, arr ):
-    assert arr.ndim == self.ndim+1
-    try:
-      inv = numpy.linalg.inv( arr )
-    except numpy.linalg.LinAlgError:
-      inv = numpy.empty_like( arr )
-      flat = (-1,) + arr.shape[-2:]
-      for arri, invi in zip( arr.reshape(flat), inv.reshape(flat) ):
-        try:
-          invi[...] = numpy.linalg.inv(arri)
-        except numpy.linalg.LinAlgError:
-          invi[...] = numpy.nan
-    return inv
+  def evalf(self, arr):
+    return numpy.linalg.inv(arr)
 
   def _derivative(self, var, seen):
     G = derivative(self.func, var, seen)
@@ -1066,11 +1028,6 @@ class Concatenate(Array):
     funcs = [Multiply([func, Take(other, s, self.axis)]) for s, func in self._withslices]
     return Concatenate(funcs, self.axis)
 
-  def _cross(self, other, axis):
-    if axis != self.axis:
-      funcs = [Cross(func, Take(other, s, self.axis), axis) for s, func in self._withslices]
-      return Concatenate(funcs, self.axis)
-
   def _add(self, other):
     if isinstance(other, Concatenate) and self.axis == other.axis:
       if [f1.shape[self.axis] for f1 in self.funcs] == [f2.shape[self.axis] for f2 in other.funcs]:
@@ -1128,7 +1085,8 @@ class Concatenate(Array):
     if not indices.isconstant:
       return
     indices, = indices.eval()
-    assert numpy.logical_and(numpy.greater_equal(indices, 0), numpy.less(indices, self.shape[axis])).all()
+    if not numpy.logical_and(numpy.greater_equal(indices, 0), numpy.less(indices, self.shape[axis])).all():
+      return
     ifuncs = numpy.hstack([ numpy.repeat(ifunc,func.shape[axis]) for ifunc, func in enumerate(self.funcs) ])[indices]
     splits, = numpy.nonzero( numpy.diff(ifuncs) != 0 )
     funcs = []
@@ -1140,14 +1098,6 @@ class Concatenate(Array):
     if len(funcs) == 1:
       return funcs[0]
     return Concatenate(funcs, axis=axis)
-
-  def _dot(self, other, axes):
-    funcs = [Dot([func, Take(other, s, self.axis)], axes) for s, func in self._withslices]
-    if self.axis in axes:
-      while len(funcs) > 1:
-        funcs[-2:] = Add(funcs[-2:]),
-      return funcs[0]
-    return Concatenate(funcs, self.axis - builtins.sum(axis < self.axis for axis in axes))
 
   def _power(self, n):
     return Concatenate([Power(func, Take(n, s, self.axis)) for s, func in self._withslices], self.axis)
@@ -1195,20 +1145,6 @@ class Cross( Array ):
     self.func2 = func2
     self.axis = axis
     super().__init__(args=(func1,func2), shape=func1.shape, dtype=_jointdtype(func1.dtype, func2.dtype))
-
-  @cache.property
-  def simplified(self):
-    func1 = self.func1.simplified
-    func2 = self.func2.simplified
-    retval = func1._cross(func2, self.axis)
-    if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
-    retval = func2._cross(func1, self.axis)
-    if retval is not None:
-      assert retval.shape == self.shape
-      return negative(retval).simplified
-    return Cross(func1, func2, self.axis)
 
   def evalf( self, a, b ):
     assert a.ndim == b.ndim == self.ndim+1
@@ -1335,15 +1271,6 @@ class Multiply(Array):
     if func1pow is not None and func2pow is not None:
       return Multiply([func1pow, func2pow])
 
-  def _dot(self, other, axes):
-    func1, func2 = self.funcs
-    trydot1 = func1._dot(Multiply([func2, other]), axes)
-    if trydot1 is not None:
-      return trydot1
-    trydot2 = func2._dot(Multiply([func1, other]), axes)
-    if trydot2 is not None:
-      return trydot2
-
 class Add(Array):
 
   def __init__(self, funcs:util.frozenmultiset):
@@ -1409,6 +1336,13 @@ class Add(Array):
     func1, func2 = self.funcs
     return Add([Mask(func1, maskvec, axis), Mask(func2, maskvec, axis)])
 
+  def _multiply(self, other):
+    func1, func2 = self.funcs
+    try1 = func1._multiply(other)
+    try2 = func2._multiply(other)
+    if try1 is not None and try2 is not None:
+      return Add([try1, try2])
+
 class BlockAdd( Array ):
   'block addition (used for DG)'
 
@@ -1438,9 +1372,6 @@ class BlockAdd( Array ):
 
   def _add(self, other):
     return BlockAdd(tuple(self.funcs) + tuple(other.funcs if isinstance(other, BlockAdd) else [other]))
-
-  def _dot( self, other, axes ):
-    return BlockAdd([Dot([func, other], axes) for func in self.funcs])
 
   def _sum(self, axis):
     return BlockAdd([sum(func, axis) for func in self.funcs])
@@ -1514,14 +1445,14 @@ class Dot(Array):
     for i, axis in enumerate(self.axes):
       if func1.shape[axis] == 1:
         return dot(sum(func1,axis), sum(func2,axis), self.axes[:i] + tuple(axis-1 for axis in self.axes[i+1:])).simplified
-    retval = func1._dot(func2, self.axes)
+    retval = func1._multiply(func2)
     if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
-    retval = func2._dot(func1, self.axes)
+      assert retval.shape == func1.shape
+      return sum(retval, self.axes).simplified
+    retval = func2._multiply(func1)
     if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
+      assert retval.shape == func1.shape
+      return sum(retval, self.axes).simplified
     return Dot([func1, func2], self.axes)
 
   def evalf( self, arr1, arr2 ):
@@ -1588,28 +1519,6 @@ class Sum( Array ):
 
   def _derivative(self, var, seen):
     return sum(derivative(self.func, var, seen), self.axis)
-
-class Debug( Array ):
-  'debug'
-
-  def __init__(self, func:asarray):
-    self.func = func
-    super().__init__(args=[func], shape=func.shape, dtype=func.dtype)
-
-  def evalf( self, arr ):
-    'debug'
-
-    assert arr.ndim == self.ndim+1
-    log.debug( 'debug output:\n%s' % arr )
-    return arr
-
-  def __str__( self ):
-    'string representation'
-
-    return '{DEBUG}'
-
-  def _derivative(self, var, seen):
-    return Debug(derivative(self.func, var, seen))
 
 class TakeDiag( Array ):
 
@@ -1810,6 +1719,10 @@ class ArcCos(Pointwise):
   evalf = numpy.arccos
   deriv = lambda x: -reciprocal(sqrt(1-x**2)),
 
+class ArcTan(Pointwise):
+  evalf = numpy.arctan
+  deriv = lambda x: reciprocal(1+x**2),
+
 class Exp(Pointwise):
   evalf = numpy.exp
   deriv = lambda x: Exp(x),
@@ -1992,13 +1905,6 @@ class Zeros( Array ):
   def _multiply(self, other):
     return self
 
-  def _dot(self, other, axes):
-    shape = [sh for axis, sh in enumerate(self.shape) if axis not in axes]
-    return Zeros(shape, dtype=_jointdtype(self.dtype,other.dtype))
-
-  def _cross(self, other, axis):
-    return self
-
   def _diagonalize(self, axis, newaxis):
     return Zeros(self.shape[:newaxis]+(self.shape[axis],)+self.shape[newaxis:], dtype=self.dtype)
 
@@ -2044,7 +1950,6 @@ class Zeros( Array ):
 class Inflate( Array ):
 
   def __init__(self, func:asarray, dofmap:asarray, length:int, axis:int):
-    assert not dofmap.isconstant
     self.func = func
     self.dofmap = dofmap
     self.length = length
@@ -2077,9 +1982,7 @@ class Inflate( Array ):
 
   @property
   def blocks(self):
-    for ind, f in self.func.blocks:
-      assert ind[self.axis] == Range(self.func.shape[self.axis])
-      yield (ind[:self.axis] + (self.dofmap,) + ind[self.axis+1:]), f
+    return ((ind[:self.axis] + (Take(self.dofmap, ind[self.axis], axis=0).simplified,) + ind[self.axis+1:], f) for ind, f in self.func.blocks)
 
   def _mask(self, maskvec, axis):
     if axis != self.axis:
@@ -2088,7 +1991,7 @@ class Inflate( Array ):
     selection = Take(maskvec, self.dofmap, axis=0)
     renumber = numpy.empty( len(maskvec), dtype=int )
     renumber[:] = newlength # out of bounds
-    renumber[maskvec] = numpy.arange(newlength)
+    renumber[numpy.asarray(maskvec)] = numpy.arange(newlength)
     newdofmap = Take(renumber, Take(self.dofmap, Find(selection), axis=0 ), axis=0)
     newfunc = Take(self.func, Find(selection), axis=self.axis)
     return Inflate(newfunc, newdofmap, newlength, self.axis)
@@ -2113,17 +2016,6 @@ class Inflate( Array ):
     assert axis != self.axis
     return Inflate(Get(self.func,axis,item), self.dofmap, self.length, self.axis-(axis<self.axis))
 
-  def _dot(self, other, axes):
-    if isinstance(other, Inflate) and other.axis == self.axis:
-      assert self.dofmap == other.dofmap
-      other = other.func
-    else:
-      other = Take(other, self.dofmap, self.axis)
-    arr = Dot([self.func, other], axes )
-    if self.axis in axes:
-      return arr
-    return Inflate(arr, self.dofmap, self.length, self.axis - builtins.sum(axis < self.axis for axis in axes))
-
   def _multiply(self, other):
     if isinstance(other, Inflate) and self.axis == other.axis:
       assert self.dofmap == other.dofmap and self.length == other.length
@@ -2136,14 +2028,6 @@ class Inflate( Array ):
     if isinstance(other, Inflate) and self.axis == other.axis and self.dofmap == other.dofmap:
       return Inflate(Add([self.func, other.func]), self.dofmap, self.length, self.axis)
     return BlockAdd([self, other])
-
-  def _cross(self, other, axis):
-    if isinstance(other, Inflate) and self.axis == other.axis:
-      assert self.dofmap == other.dofmap
-      other = other.func
-    else:
-      other = Take(other, self.dofmap, self.axis)
-    return Inflate(Cross(self.func,other,axis), self.dofmap, self.length, self.axis)
 
   def _power(self, n):
     return Inflate(Power(self.func, n), self.dofmap, self.length, self.axis)
@@ -2226,20 +2110,6 @@ class Diagonalize( Array ):
   def _multiply(self, other):
     return Diagonalize(Multiply([self.func, TakeDiag(other, self.axis, self.newaxis)]), self.axis, self.newaxis)
 
-  def _dot(self, other, axes):
-    faxes = [axis-(axis>self.newaxis) for axis in axes if axis not in (self.axis, self.newaxis)]
-    assert self.axis not in faxes
-    if len(faxes) < len(axes): # one of or both diagonalized axes are summed
-      if len(faxes) == len(axes) - 2:
-        faxes.append(self.axis)
-      retval = Dot([self.func, TakeDiag(other, self.axis, self.newaxis)], faxes)
-      if len(faxes) == len(axes) - 1 and self.axis in axes:
-        axis = self.axis-builtins.sum(ax<self.axis for ax in faxes)
-        newaxis = self.newaxis-builtins.sum(ax<self.newaxis for ax in faxes)
-        retval = Transpose(retval, list(range(axis))+list(range(axis+1,newaxis))+[axis]+list(range(newaxis,retval.ndim)))
-      return retval
-    return Diagonalize(Dot([self.func, TakeDiag(other, self.axis, self.newaxis)], faxes), self.axis-builtins.sum(ax<self.axis for ax in faxes), self.newaxis-builtins.sum(ax<self.newaxis for ax in faxes))
-
   def _add(self, other):
     if isinstance(other, Diagonalize) and other.axis == self.axis and other.newaxis == self.newaxis:
       return Diagonalize(Add([self.func, other.func]), self.axis, self.newaxis)
@@ -2268,6 +2138,20 @@ class Diagonalize( Array ):
   def _takediag(self, axis, rmaxis):
     if self.axis == axis and self.newaxis == rmaxis:
       return self.func
+    if self.newaxis == axis: # self.axis < self.newaxis = axis < rmaxis
+      takeaxes = diagaxes = self.axis, rmaxis-1
+    elif self.newaxis == rmaxis:
+      takeaxes = diagaxes = sorted([axis, self.axis])
+    elif self.axis == rmaxis: # axis < rmaxis = self.axis < self.newaxis
+      takeaxes = axis, rmaxis
+      diagaxes = axis, self.newaxis-1
+    elif self.newaxis > rmaxis: # axis < rmaxis < self.newaxis
+      takeaxes = axis, rmaxis
+      diagaxes = self.axis-(self.axis>=rmaxis), self.newaxis-1
+    else: # self.axis < self.newaxis < rmaxis
+      takeaxes = axis-(axis>self.newaxis), rmaxis-1
+      diagaxes = self.axis, self.newaxis
+    return Diagonalize(TakeDiag(self.func, *takeaxes), *diagaxes)
 
   def _take(self, index, axis):
     if axis not in (self.axis, self.newaxis):
@@ -2288,8 +2172,11 @@ class Diagonalize( Array ):
     return Concatenate([Zeros(masked.shape[:ax] + (indices[0],) + masked.shape[ax+1:], dtype=self.dtype), masked, Zeros(masked.shape[:ax] + (self.shape[ax]-(indices[-1]+1),) + masked.shape[ax+1:], dtype=self.dtype)], axis=ax)
 
   def _unravel(self, axis, shape):
-    if axis == self.axis:
-      return Ravel(Diagonalize(Diagonalize(Unravel(self.func, self.axis, shape), self.axis, self.newaxis+1), self.axis+1, self.newaxis+2), self.newaxis+1)
+    if axis == self.axis or axis == self.newaxis:
+      diag = Diagonalize(Diagonalize(Unravel(self.func, self.axis, shape), self.axis, self.newaxis+1), self.axis+1, self.newaxis+2)
+      return Ravel(diag, self.newaxis+1 if axis == self.axis else self.axis)
+    else:
+      return Diagonalize(Unravel(self.func, axis-(axis>self.newaxis), shape), self.axis+(axis<self.axis), self.newaxis+(axis<self.newaxis))
 
 class Guard( Array ):
   'bar all simplifications'
@@ -2319,11 +2206,6 @@ class TrigNormal( Array ):
   def evalf( self, angle ):
     return numpy.array([ numpy.cos(angle), numpy.sin(angle) ]).T
 
-  def _dot( self, other, axes ):
-    assert axes == (0,)
-    if isinstance( other, (TrigTangent,TrigNormal) ) and self.angle == other.angle:
-      return Constant(1. if isinstance(other,TrigNormal) else 0.)
-
 class TrigTangent( Array ):
   '-sin, cos'
 
@@ -2337,11 +2219,6 @@ class TrigTangent( Array ):
 
   def evalf( self, angle ):
     return numpy.array([ -numpy.sin(angle), numpy.cos(angle) ]).T
-
-  def _dot(self, other, axes):
-    assert axes == (0,)
-    if isinstance( other, (TrigTangent,TrigNormal) ) and self.angle == other.angle:
-      return Constant(1. if isinstance(other,TrigTangent) else 0.)
 
 class Find( Array ):
   'indices of boolean index vector'
@@ -2421,18 +2298,6 @@ class Stack( Array ):
 
   def _multiply(self, other):
     return Stack([Multiply([func, Get(other, self.axis, ifunc)]) if func is not None else None for ifunc, func in enumerate(self.funcs)], self.axis)
-
-  def _dot(self, other, axes):
-    newaxis = self.axis
-    newaxes = []
-    for ax in axes:
-      if ax < self.axis:
-        newaxis -= 1
-        newaxes.append( ax )
-      elif ax > self.axis:
-        newaxes.append( ax-1 )
-    return util.sum(Dot([self.funcs[ifunc], Get(other, self.axis, ifunc)], newaxes) for ifunc in self.nz) if len(newaxes) < len(axes) \
-      else Stack([Dot([func, Get(other, self.axis, ifunc)], newaxes) if func is not None else None for ifunc, func in enumerate(self.funcs)], newaxis)
 
   def _sum(self, axis):
     if axis == self.axis:
@@ -2608,13 +2473,6 @@ class Ravel( Array ):
       i, j = divmod(item, self.func.shape[self.axis+1])
       return Get(Get(self.func, self.axis, i), self.axis, j)
 
-  def _dot( self, other, axes ):
-    newaxes = [ax+(ax>=self.axis) for ax in axes]
-    if self.axis in axes:
-      return Dot([self.func, Unravel(other, self.axis, self.func.shape[self.axis:self.axis+2])], sorted(newaxes+[self.axis]))
-    else:
-      return Ravel(Dot([self.func, Unravel(other, self.axis, self.func.shape[self.axis:self.axis+2])], newaxes), self.axis-builtins.sum(ax<self.axis for ax in axes))
-
   def _sum(self, axis):
     if axis == self.axis:
       return Sum(Sum(self.func, axis), axis)
@@ -2722,7 +2580,7 @@ class Mask( Array ):
     return Mask(func, self.mask, self.axis)
 
   def evalf( self, func ):
-    return func[(slice(None),)*(self.axis+1)+(self.mask,)]
+    return func[(slice(None),)*(self.axis+1)+(numpy.asarray(self.mask),)]
 
   def _derivative(self, var, seen):
     return mask(derivative(self.func, var, seen), self.mask, self.axis)
@@ -2732,7 +2590,8 @@ class Mask( Array ):
       return Mask(Get(self.func, i, item), self.mask, self.axis-(i<self.axis))
     if item.isconstant:
       item, = item.eval()
-      return Get(self.func, i, numpy.arange(len(self.mask))[self.mask][item])
+      where, = self.mask.nonzero()
+      return Get(self.func, i, where[item])
 
   def _sum(self, axis):
     if axis != self.axis:
@@ -2752,7 +2611,8 @@ class Mask( Array ):
   def _mask(self, maskvec, axis):
     if axis == self.axis:
       newmask = numpy.zeros(len(self.mask), dtype=bool)
-      newmask[self.mask] = maskvec
+      newmask[numpy.asarray(self.mask)] = maskvec
+      assert maskvec.sum() == newmask.sum()
       return Mask(self.func, newmask, self.axis)
 
   def _takediag(self, axis, rmaxis):
@@ -2795,6 +2655,9 @@ class Range(Array):
     self.length = length
     self.offset = offset
     super().__init__(args=[length, offset], shape=[length], dtype=int)
+
+  def _take(self, index, axis):
+    return add(index, self.offset)
 
   def evalf(self, length, offset):
     length, = length
@@ -2925,6 +2788,7 @@ rotmat = lambda arg: Stack([trignormal(arg), trigtangent(arg)], 0)
 tan = lambda x: Tan(x)
 arcsin = lambda x: ArcSin(x)
 arccos = lambda x: ArcCos(x)
+arctan = lambda x: ArcTan(x)
 exp = lambda x: Exp(x)
 ln = lambda x: Log(x)
 mod = lambda arg1, arg2: Mod(*_numpy_align(arg1, arg2))

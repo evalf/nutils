@@ -67,6 +67,7 @@ log_html = '''\
 <title>test</title>
 <script type="text/javascript" src="viewer.js" ></script>
 <link rel="stylesheet" type="text/css" href="style.css">
+<meta charset="UTF-8" />
 </head><body class="newstyle"><pre>
 <ul>
 <li class="context">iterator</li><ul>

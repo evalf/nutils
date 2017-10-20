@@ -28,11 +28,7 @@ class check(TestCase):
     self.n_op_argsfun = self.n_op(*self.argsfun.simplified.eval(**self.evalargs))
     self.op_args = self.op(*self.args)
     self.shapearg = numpy.random.uniform(size=self.op_args.shape)
-
-    count = {}
-    for i, sh in enumerate(self.op_args.shape):
-      count.setdefault(sh,[]).append(i)
-    self.pairs = [sorted(axes[:2]) for axes in count.values() if len(axes) > 1] # axis pairs with same length
+    self.pairs = [(i, j) for i in range(self.op_args.ndim-1) for j in range(i+1, self.op_args.ndim) if self.op_args.shape[i] == self.op_args.shape[j]]
 
   def assertArrayAlmostEqual(self, actual, desired, decimal):
     assert actual.shape == desired.shape or (actual.shape[0] == 1 or desired.shape[0] == 1) and actual.shape[1:] == desired.shape[1:], 'shapes {}, {} mismatch'.format(actual.shape, desired.shape)
@@ -91,7 +87,7 @@ class check(TestCase):
           desired=(numpy.expand_dims(A,ax2+1) * numpy.expand_dims(V,ax2+2).swapaxes(ax1+1,ax2+2)).sum(ax2+2))
 
   def test_take(self):
-    indices = [0,-1]
+    indices = [-1,0]
     for iax, sh in enumerate(self.op_args.shape):
       if sh >= 2:
         self.assertArrayAlmostEqual(decimal=15,
@@ -293,6 +289,7 @@ class check(TestCase):
       actual=function.opposite(self.op_args).simplified.eval(_transforms=[self.iface.transform, self.iface.opposite], _points=self.ifpoints))
 
 _check = lambda name, op, n_op, shapes, hasgrad=True: check(name, op=op, n_op=n_op, shapes=shapes, hasgrad=hasgrad)
+_check('const', lambda f: function.asarray(f), lambda a: a, [(2,3,2)])
 _check('sin', function.sin, numpy.sin, [(3,)])
 _check('cos', function.cos, numpy.cos, [(3,)])
 _check('tan', function.tan, numpy.tan, [(3,)])
@@ -311,6 +308,8 @@ _check('power', function.power, numpy.power, [(3,1),(1,3)])
 _check('negative', function.negative, numpy.negative, [(3,)])
 _check('reciprocal', function.reciprocal, numpy.reciprocal, [(3,)])
 _check('arcsin', function.arcsin, numpy.arcsin, [(3,)])
+_check('arccos', function.arccos, numpy.arccos, [(3,)])
+_check('arctan', function.arctan, numpy.arctan, [(3,)])
 _check('ln', function.ln, numpy.log, [(3,)])
 _check('product', lambda a: function.product(a,1), lambda a: numpy.product(a,-2), [(2,3,2)])
 _check('norm2', lambda a: function.norm2(a,1), lambda a: (a**2).sum(-2)**.5, [(2,3,2)])
@@ -328,7 +327,7 @@ _check('inverse131', lambda a: function.inverse(a,(0,2)), lambda a: numpy.linalg
 _check('inverse232', lambda a: function.inverse(a,(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(-3,-2)).swapaxes(-3,-2), [(2,3,2)])
 _check('inverse323', lambda a: function.inverse(a,(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(-3,-2)).swapaxes(-3,-2), [(3,2,3)])
 _check('repeat', lambda a: function.repeat(a,3,1), lambda a: numpy.repeat(a,3,-2), [(2,1,2)])
-_check('diagonalize', lambda a: function.diagonalize(a,0,2), lambda a: numeric.diagonalize(a,1,3), [(2,1,2)])
+_check('diagonalize', lambda a: function.diagonalize(a,1,3), lambda a: numeric.diagonalize(a,2,4), [(2,2,2,2)])
 _check('multiply', function.multiply, numpy.multiply, [(3,1),(1,3)])
 _check('divide', function.divide, numpy.divide, [(3,1),(1,3)])
 _check('divide2', lambda a: function.asarray(a)/2, lambda a: a/2, [(3,1)])
@@ -350,7 +349,7 @@ _check('trignormal', lambda a: function.trignormal(a), lambda a: numpy.array([nu
 _check('trigtangent', lambda a: function.trigtangent(a), lambda a: numpy.array([-numpy.sin(a), numpy.cos(a)]).T, [()])
 _check('mod', lambda a,b: function.mod(a,b), lambda a,b: numpy.mod(a,b), [(3,),(3,)], hasgrad=False)
 _check('kronecker', lambda f: function.kronecker(f,axis=-2,length=3,pos=1), lambda a: numeric.kronecker(a,axis=-2,length=3,pos=1), [(2,3,)])
-_check('mask', lambda f: function.mask(f,numpy.array([True,False,True]),axis=1), lambda a: a[:,:,[True,False,True]], [(2,3,4)])
+_check('mask', lambda f: function.mask(f,numpy.array([True,False,True]),axis=1), lambda a: a[:,:,numpy.array([True,False,True])], [(2,3,4)])
 _check('ravel', lambda f: function.ravel(f,axis=1), lambda a: a.reshape(-1,2,6), [(2,3,2)])
 _check('unravel', lambda f: function.unravel(f,axis=0,shape=[2,3]), lambda a: a.reshape(-1,2,3,2), [(6,2)])
 
