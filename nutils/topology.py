@@ -2203,15 +2203,13 @@ class MultipatchTopology( Topology ):
       ndofs += len(basis)
     return function.polyfunc(coeffs, dofs, ndofs, (elem.transform for patch in self.patches for elem in patch.topo), issorted=False)
 
-  def basis_patch( self ):
+  def basis_patch(self):
     'degree zero patchwise discontinuous basis'
 
-    fmap = {}
-    nmap = {}
-    for ipatch, patch in enumerate( self.patches ):
-      fmap[ patch.topo.root ] = util.product( element.PolyLine( element.PolyLine.bernstein_poly(0) ) for i in range( self.ndims ) )
-      nmap[ patch.topo.root ] = numeric.const([ ipatch ])
-    return function.function( fmap, nmap, len( self.patches ) )
+    npatches = len(self.patches)
+    coeffs = [numeric.const(1, dtype=int).reshape(1, *(1,)*self.ndims)]*npatches
+    dofs = numeric.const(range(npatches), dtype=int)[:,_]
+    return function.polyfunc(coeffs, dofs, npatches, (patch.topo.root for patch in self.patches), issorted=False)
 
   @cache.property
   def boundary( self ):
