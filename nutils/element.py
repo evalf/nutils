@@ -45,7 +45,7 @@ class Element( object ):
           raise Exception('Did not find a conforming permutation for the opposing transformation')
     self.reference = reference
     self.transform = trans
-    self.opposite = opptrans
+    self.opposite = opptrans or trans
 
   def withopposite( self, opp, oriented=False ):
     if isinstance( opp, transform.TransformChain ):
@@ -54,9 +54,10 @@ class Element( object ):
     return Element( self.reference, self.transform, opp.transform, oriented or opp.opposite==self.transform )
 
   def __mul__( self, other ):
-    if self.opposite or other.opposite:
-      assert not self.opposite or not other.opposite, 'cannot multiply two interface elements'
-      opposite = transform.stack( self.opposite or self.transform, other.opposite or other.transform )
+    self_is_iface = self.opposite != self.transform
+    other_is_iface = other.opposite != other.transform
+    if self_is_iface != other_is_iface:
+      opposite = transform.stack( self.opposite, other.opposite )
     else:
       opposite = None
     return Element( self.reference * other.reference, transform.stack( self.transform, other.transform ), opposite, oriented=True )

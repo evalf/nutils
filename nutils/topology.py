@@ -1948,6 +1948,8 @@ class RevolutionTopology( Topology ):
 class MultipatchTopology( Topology ):
   'multipatch topology'
 
+  Patch = collections.namedtuple( 'patch', [ 'topo', 'verts', 'boundaries'] )
+
   @staticmethod
   def build_boundarydata( connectivity ):
     'build boundary data based on connectivity'
@@ -1982,32 +1984,32 @@ class MultipatchTopology( Topology ):
   def __init__( self, patches ):
     'constructor'
 
-    self.patches = tuple( patches )
+    self.patches = tuple( self.Patch(*patch) for patch in patches )
 
     self._patchinterfaces = {}
-    for topo, boundaries in self.patches:
-      for boundaryid, dim, side, reverse, transpose in boundaries:
-        self._patchinterfaces.setdefault( boundaryid, [] ).append(( topo, dim, side, reverse, transpose ))
+    for patch in self.patches:
+      for boundaryid, dim, side, reverse, transpose in patch.boundaries:
+        self._patchinterfaces.setdefault( boundaryid, [] ).append(( patch.topo, dim, side, reverse, transpose ))
     self._patchinterfaces = {
       boundaryid: tuple( data )
       for boundaryid, data in self._patchinterfaces.items()
       if len( data ) > 1
     }
 
-    super().__init__( self.patches[0][0].ndims )
+    super().__init__( self.patches[0].topo.ndims )
 
   @cache.property
   def elements( self ):
-    return tuple( itertools.chain.from_iterable( topo for topo, boundaries in self.patches ) )
+    return tuple( itertools.chain.from_iterable( patch.topo for patch in self.patches ) )
 
   def getitem( self, key ):
     for i in range( len( self.patches ) ):
       if key == 'patch{}'.format(i):
-        return self.patches[i][0]
+        return self.patches[i].topo
     else:
-      return UnionTopology( patch.getitem(key) for patch, boundaries in self.patches )
+      return UnionTopology( patch.topo.getitem(key) for patch in self.patches )
 
-  def basis_spline( self, degree, patchcontinuous=True ):
+  def basis_spline( self, degree, patchcontinuous=True, knotvalues=None, knotmultiplicities=None ):
     '''spline from vertices
 
     Create a spline basis with degree ``degree`` per patch.  If
@@ -2015,20 +2017,82 @@ class MultipatchTopology( Topology ):
     interfaces.
     '''
 
+    if knotvalues is None:
+      knotvalues = {None: None}
+    else:
+      knotvalues, _knotvalues = {}, knotvalues
+      for edge, k in _knotvalues.items():
+        if k is None:
+          rk = None
+        else:
+          k = tuple(k)
+          rk = k[::-1]
+        if edge is None:
+          knotvalues[edge] = k
+        else:
+          l, r = edge
+          assert (l,r) not in knotvalues
+          assert (r,l) not in knotvalues
+          knotvalues[(l,r)] = k
+          knotvalues[(r,l)] = rk
+
+    if knotmultiplicities is None:
+      knotmultiplicities = {None: None}
+    else:
+      knotmultiplicities, _knotmultiplicities = {}, knotmultiplicities
+      for edge, k in _knotmultiplicities.items():
+        if k is None:
+          rk = None
+        else:
+          k = tuple(k)
+          rk = k[::-1]
+        if edge is None:
+          knotmultiplicities[edge] = k
+        else:
+          l, r = edge
+          assert (l,r) not in knotmultiplicities
+          assert (r,l) not in knotmultiplicities
+          knotmultiplicities[(l,r)] = k
+          knotmultiplicities[(r,l)] = rk
+
+    missing = object()
+
     funcmap = {}
     dofmap = {}
     dofcount = 0
     commonboundarydofs = {}
-    for topo, boundaries in self.patches:
-      # build structured spline basis on patch `topo`
-      patchfuncmap, patchdofmap, patchdofcount = topo._basis_spline( degree )
+    for ipatch, patch in enumerate( self.patches ):
+      # build structured spline basis on patch `patch.topo`
+      patchknotvalues = []
+      patchknotmultiplicities = []
+      for idim in range( self.ndims ):
+        left = tuple( 0 if j == idim else slice(None) for j in range( self.ndims ) )
+        right = tuple( 1 if j == idim else slice(None) for j in range( self.ndims ) )
+        dimknotvalues = set()
+        dimknotmultiplicities = set()
+        for edge in zip( patch.verts[left].flat, patch.verts[right].flat ):
+          v = knotvalues.get( edge, knotvalues.get( None, missing ) )
+          m = knotmultiplicities.get( edge, knotmultiplicities.get( None, missing ) )
+          if v is missing:
+            raise 'missing edge'
+          dimknotvalues.add(v)
+          if m is missing:
+            raise 'missing edge'
+          dimknotmultiplicities.add(m)
+        if len(dimknotvalues) != 1:
+          raise 'ambiguous knot values for patch {}, dimension {}'.format( ipatch, idim )
+        if len(dimknotmultiplicities) != 1:
+          raise 'ambiguous knot multiplicities for patch {}, dimension {}'.format( ipatch, idim )
+        patchknotvalues.append(next(iter(dimknotvalues)))
+        patchknotmultiplicities.append(next(iter(dimknotmultiplicities)))
+      patchfuncmap, patchdofmap, patchdofcount = patch.topo._basis_spline( degree, knotvalues=patchknotvalues, knotmultiplicities=patchknotmultiplicities )
       funcmap.update( patchfuncmap )
       # renumber dofs
       dofmap.update( (trans, numeric.const(dofs+dofcount, copy=False)) for trans, dofs in patchdofmap.items() )
       if patchcontinuous:
         # reconstruct multidimensional dof structure
         dofs = dofcount + numpy.arange( numpy.prod( patchdofcount ), dtype=int ).reshape( patchdofcount )
-        for boundaryid, dim, side, reverse, transpose in boundaries:
+        for boundaryid, dim, side, reverse, transpose in patch.boundaries:
           # get patch boundary dofs and reorder to canonical form
           boundarydofs = dofs[reverse].transpose(transpose)[...,0].ravel()
           # append boundary dofs to list (in increasing order, automatic by outer loop and dof increment)
@@ -2058,8 +2122,8 @@ class MultipatchTopology( Topology ):
     funcmap = {}
     dofmap = {}
     dofcount = 0
-    for topo, boundaries in self.patches:
-      pbasis = topo.basis( 'discont', degree=degree )
+    for patch in self.patches:
+      pbasis = patch.topo.basis( 'discont', degree=degree )
       funcmap.update( pbasis.func.stdmap )
       dofmap.update({trans: numeric.const(dofs+dofcount, copy=False) for trans, dofs in pbasis.dofmap.dofmap.items()})
       dofcount += len( pbasis )
@@ -2070,9 +2134,9 @@ class MultipatchTopology( Topology ):
 
     fmap = {}
     nmap = {}
-    for ipatch, ( topo, boundaries ) in enumerate( self.patches ):
-      fmap[ topo.root ] = util.product( element.PolyLine( element.PolyLine.bernstein_poly(0) ) for i in range( self.ndims ) )
-      nmap[ topo.root ] = numeric.const([ ipatch ])
+    for ipatch, patch in enumerate( self.patches ):
+      fmap[ patch.topo.root ] = util.product( element.PolyLine( element.PolyLine.bernstein_poly(0) ) for i in range( self.ndims ) )
+      nmap[ patch.topo.root ] = numeric.const([ ipatch ])
     return function.function( fmap, nmap, len( self.patches ) )
 
   @cache.property
@@ -2081,12 +2145,12 @@ class MultipatchTopology( Topology ):
 
     subtopos = []
     subnames = []
-    for i, (topo, boundaries) in enumerate( self.patches ):
-      names = dict( zip( itertools.product( range( self.ndims ), [0,-1] ), topo._bnames ) )
-      for boundaryid, dim, side, reverse, transpose in boundaries:
+    for i, patch in enumerate( self.patches ):
+      names = dict( zip( itertools.product( range( self.ndims ), [0,-1] ), patch.topo._bnames ) )
+      for boundaryid, dim, side, reverse, transpose in patch.boundaries:
         if boundaryid in self._patchinterfaces:
           continue
-        subtopos.append( topo.boundary[names[dim,side]] )
+        subtopos.append( patch.topo.boundary[names[dim,side]] )
         subnames.append( 'patch{}-{}'.format( i, names[dim,side] ) )
     if len( subtopos ) == 0:
       return EmptyTopology( self.ndims-1 )
@@ -2103,7 +2167,7 @@ class MultipatchTopology( Topology ):
     '''
 
     intrapatchtopo = EmptyTopology( self.ndims-1 ) if not self.patches else \
-      UnionTopology( topo.interfaces for topo, boundaries in self.patches )
+      UnionTopology( patch.topo.interfaces for patch in self.patches )
 
     btopos = []
     bconnectivity = []
@@ -2132,7 +2196,7 @@ class MultipatchTopology( Topology ):
       btopos.append( UnstructuredTopology( self.ndims-1, elems ) )
       bconnectivity.append( bpatch )
     # create multipatch topology of interpatch boundaries
-    interpatchtopo = MultipatchTopology( zip( btopos, self.build_boundarydata( bconnectivity ) ) )
+    interpatchtopo = MultipatchTopology( zip( btopos, bconnectivity, self.build_boundarydata( bconnectivity ) ) )
 
     return UnionTopology( (intrapatchtopo, interpatchtopo), ('intrapatch', 'interpatch') )
 
@@ -2140,7 +2204,7 @@ class MultipatchTopology( Topology ):
   def refined( self ):
     'refine'
 
-    return MultipatchTopology( (topo.refined, boundaries) for topo, boundaries in self.patches )
+    return MultipatchTopology( (patch.topo.refined, patch.verts, patch.boundaries) for patch in self.patches )
 
 # UTILITY FUNCTIONS
 

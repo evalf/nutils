@@ -231,6 +231,7 @@ def multipatch( patches, nelems, patchverts=None, name='multipatch' ):
   if 2**ndims > patches.shape[1]:
     raise ValueError( 'Only hyperrectangular patches are supported: ' \
       'number of patch vertices should be a power of two.' )
+  patches = patches.reshape( [patches.shape[0]] + [2]*ndims )
 
   # group all common patch edges (and/or boundaries?)
 
@@ -257,14 +258,13 @@ def multipatch( patches, nelems, patchverts=None, name='multipatch' ):
   coords = []
   for i, patch in enumerate( patches ):
     # find shape of patch and local patch coordinates
-    shaped_patch = patch.reshape( [2]*ndims )
     shape = []
     for dim in range( ndims ):
       nelems_sides = []
       sides = [(0,1)]*ndims
       sides[dim] = slice(None),
       for side in itertools.product(*sides):
-        sideverts = frozenset(shaped_patch[side])
+        sideverts = frozenset(patch[side])
         if sideverts in nelems:
           nelems_sides.append(nelems[sideverts])
         else:
@@ -281,7 +281,7 @@ def multipatch( patches, nelems, patchverts=None, name='multipatch' ):
       patchcoords = numpy.array([
         sum(
           patchverts[j]*util.product(c if s else 1-c for c, s in zip(coord, side))
-          for j, side in zip(patch, itertools.product(*[[0,1]]*ndims))
+          for j, side in zip(patch.flat, itertools.product(*[[0,1]]*ndims))
         )
         for coord in patchcoords.T
       ]).T
@@ -289,11 +289,11 @@ def multipatch( patches, nelems, patchverts=None, name='multipatch' ):
 
   # build patch boundary data
 
-  boundarydata = topology.MultipatchTopology.build_boundarydata( patch.reshape( (2,)*ndims ) for patch in patches )
+  boundarydata = topology.MultipatchTopology.build_boundarydata( patches )
 
   # join patch topologies, geometries
 
-  topo = topology.MultipatchTopology( zip( topos, boundarydata ) )
+  topo = topology.MultipatchTopology( zip( topos, patches, boundarydata ) )
   funcsp = topo.splinefunc( degree=1, patchcontinuous=False )
   geom = ( funcsp * numpy.concatenate( coords, axis=1 ) ).sum( -1 )
 
