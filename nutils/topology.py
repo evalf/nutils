@@ -925,9 +925,11 @@ class StructuredLine( Topology ):
   def basis_discont( self, degree ):
     'discontinuous shape functions'
 
-    fmap = dict.fromkeys( self._transforms[1:-1], element.PolyLine( element.PolyLine.bernstein_poly(degree) ) )
-    nmap = dict( zip( self._transforms[1:-1], numeric.const(numpy.arange(len(self)*(degree+1)).reshape(len(self),degree+1), copy=False) ) )
-    return function.function( fmap=fmap, nmap=nmap, ndofs=len(self)*(degree+1) )
+    ref = element.LineReference()
+    coeffs = [ref.get_poly_coeffs('bernstein', degree=degree)]*len(self)
+    ndofs = ref.get_ndofs(degree)
+    dofs = numeric.const(numpy.arange(ndofs*len(self), dtype=int).reshape(len(self), ndofs), copy=False)
+    return function.polyfunc(coeffs, dofs, ndofs*len(self), self._transforms[1:-1], issorted=False)
 
   def basis_std( self, degree, periodic=None, removedofs=None ):
     'spline from vertices'
