@@ -891,7 +891,42 @@ class StructuredLine( Topology ):
       points.append( Point( transforms[1] << left, transforms[-2] << right ) )
     return UnionTopology( points )
 
-  def basis_spline( self, degree, periodic=None, removedofs=None ):
+  @classmethod
+  def _bernstein_poly(cls, degree):
+    'bernstein polynomial coefficients'
+
+
+  @classmethod
+  def _spline_coeffs(cls, p, n):
+    'spline polynomial coefficients'
+
+    assert p >= 0, 'invalid polynomial degree %d' % p
+    if p == 0:
+      assert n == -1
+      return numpy.array([[[1.]]])
+
+    assert 1 <= n < 2*p
+    extractions = numpy.empty((n, p+1, p+1))
+    extractions[0] = numpy.eye(p+1)
+    for i in range(1, n):
+      extractions[i] = numpy.eye(p+1)
+      for j in range(2, p+1):
+        for k in reversed(range(j, p+1)):
+          alpha = 1. / min(2+k-j, n-i+1)
+          extractions[i-1,:,k] = alpha * extractions[i-1,:,k] + (1-alpha) * extractions[i-1,:,k-1]
+        extractions[i,-j-1:-1,-j-1] = extractions[i-1,-j:,-1]
+
+    # magic bernstein triangle
+    poly = numpy.zeros([p+1,p+1], dtype=int)
+    for k in range(p//2+1):
+      poly[k,k] = root = (-1)**p if k == 0 else (poly[k-1,k] * (k*2-1-p)) / k
+      for i in range(k+1,p+1-k):
+        poly[i,k] = poly[k,i] = root = (root * (k+i-p-1)) / i
+    poly = poly[::-1].astype(float)
+
+    return numeric.const(numeric.contract(extractions[:,_,:,:], poly[_,:,_,:], axis=-1).transpose(0,2,1), copy=False)
+
+  def basis_spline(self, degree, periodic=None, removedofs=None):
     'spline from vertices'
 
     if periodic is None:
@@ -903,18 +938,33 @@ class StructuredLine( Topology ):
     if numpy.iterable( removedofs ):
       removedofs, = removedofs
 
-    ndofs = len(self) + degree
-    dofs = numpy.arange( ndofs )
-
+    strides = 1, 1
+    shape = len(self), degree+1
+    ndofs = sum(s*(n-1) for s, n in zip(strides, shape))+1
+    dofs = numpy.arange(ndofs)
     if periodic and degree > 0:
       assert ndofs >= 2 * degree
       dofs[-degree:] = dofs[:degree]
       ndofs -= degree
+    dofs = numpy.lib.stride_tricks.as_strided(dofs, shape=shape, strides=tuple(s*dofs.strides[0] for s in strides))
+    dofs = numeric.const(dofs, copy=False)
 
-    fmap = dict( zip( self._transforms[1:-1], element.PolyLine.spline( degree=degree, nelems=len(self), periodic=periodic ) ) )
-    nmap = { trans: numeric.const(dofs[i:i+degree+1], copy=False) for i, trans in enumerate(self._transforms[1:-1]) }
-    func = function.function( fmap, nmap, ndofs )
+    p = degree
+    n = 2*p-1
+    nelems = len(self)
+    if periodic:
+      if nelems == 1: # periodicity on one element can only mean a constant
+        coeffs = [self._spline_coeffs(0, n)]
+        dofs = numeric.const([[0]], copy=False)
+      else:
+        coeffs = list(self._spline_coeffs(p, n)[p-1:p]) * nelems
+    else:
+      coeffs = list(self._spline_coeffs(p, min(nelems,n)))
+      if len(coeffs) < nelems:
+        coeffs = coeffs[:p-1] + coeffs[p-1:p] * (nelems-2*(p-1)) + coeffs[p:]
+    coeffs = numeric.const(coeffs, copy=False)
 
+    func = function.polyfunc(coeffs, dofs, ndofs, self._transforms[1:-1], issorted=False)
     if not removedofs:
       return func
 
