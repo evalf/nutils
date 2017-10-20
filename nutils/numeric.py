@@ -691,6 +691,7 @@ class const:
   __hash__ = lambda self: self.__hash
   __int__ = lambda self: self.__base.__int__()
   __float__ = lambda self: self.__base.__float__()
+  __abs__ = lambda self: self.__base.__abs__()
 
   tolist = lambda self, *args, **kwargs: self.__base.tolist(*args, **kwargs)
   copy = lambda self, *args, **kwargs: self.__base.copy(*args, **kwargs)
