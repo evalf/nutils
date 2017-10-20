@@ -909,7 +909,7 @@ class StructuredLine( Topology ):
     if periodic and degree > 0:
       assert ndofs >= 2 * degree
       dofs[-degree:] = dofs[:degree]
-      ndofs -= overlap
+      ndofs -= degree
 
     fmap = dict( zip( self._transforms[1:-1], element.PolyLine.spline( degree=degree, nelems=len(self), periodic=periodic ) ) )
     nmap = { trans: numeric.const(dofs[i:i+degree+1], copy=False) for i, trans in enumerate(self._transforms[1:-1]) }
