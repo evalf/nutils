@@ -2044,7 +2044,6 @@ class Zeros( Array ):
 class Inflate( Array ):
 
   def __init__(self, func:asarray, dofmap:asarray, length:int, axis:int):
-    assert not dofmap.isconstant
     self.func = func
     self.dofmap = dofmap
     self.length = length
@@ -2077,9 +2076,7 @@ class Inflate( Array ):
 
   @property
   def blocks(self):
-    for ind, f in self.func.blocks:
-      assert ind[self.axis] == Range(self.func.shape[self.axis])
-      yield (ind[:self.axis] + (self.dofmap,) + ind[self.axis+1:]), f
+    return ((ind[:self.axis] + (Take(self.dofmap, ind[self.axis], axis=0).simplified,) + ind[self.axis+1:], f) for ind, f in self.func.blocks)
 
   def _mask(self, maskvec, axis):
     if axis != self.axis:
@@ -2797,6 +2794,9 @@ class Range(Array):
     self.length = length
     self.offset = offset
     super().__init__(args=[length, offset], shape=[length], dtype=int)
+
+  def _take(self, index, axis):
+    return add(index, self.offset)
 
   def evalf(self, length, offset):
     length, = length
