@@ -17,7 +17,7 @@ purposes of integration and sampling.
 """
 
 from . import log, util, numpy, core, numeric, function, cache, transform, _
-import re, warnings, math
+import re, warnings, math, itertools, operator, functools
 
 
 ## ELEMENT
@@ -396,6 +396,18 @@ class Reference( cache.Immutable ):
 
   __repr__ = __str__
 
+  def get_ndofs(self, degree):
+    raise NotImplementedError
+
+  def get_poly_coeffs(self, basis, **kwargs):
+    raise NotImplementedError
+
+  def get_edge_dofs(self, degree, iedge):
+    raise NotImplementedError
+
+  def get_dof_transpose_map(self, degree, vertex_transpose_map):
+    raise NotImplementedError
+
 class MyException( Exception ):
   def __repr__( self ):
     return str(self)
@@ -463,7 +475,6 @@ class SimplexReference( Reference ):
 
   @cache.property
   def permutation_transforms( self ):
-    import itertools
     transforms = []
     for verts in itertools.permutations( tuple(v for v in self.vertices) ):
       offset = verts[0]
@@ -486,6 +497,56 @@ class SimplexReference( Reference ):
   @property
   def simplices( self ):
     return [ (transform.identity,self) ]
+
+  def get_ndofs(self, degree):
+    prod = lambda start, stop: functools.reduce(operator.mul, range(start, stop), 1)
+    return prod(degree+1, degree+1+self.ndims) // prod(1, self.ndims+1)
+
+  def get_poly_coeffs(self, basis, **kwargs):
+    f = getattr(self, '_get_poly_coeffs_{}'.format(basis), None)
+    if f:
+      return f(**kwargs)
+    else:
+      raise ValueError('basis {!r} undefined on {}'.format(basis, type(self).__qualname__))
+
+  def _integer_barycentric_coordinates(self, degree):
+    return (
+      (degree-sum(i),*i[::-1])
+      for i in itertools.product(*[range(degree+1)]*self.ndims)
+      if sum(i) <= degree)
+
+  def _get_poly_coeffs_bernstein(self, degree):
+    ndofs = self.get_ndofs(degree)
+    coeffs = numpy.zeros((ndofs,)+(degree+1,)*self.ndims, dtype=int)
+    for i, p in enumerate(self._integer_barycentric_coordinates(degree)):
+      p = p[1:]
+      for q in itertools.product(*[range(degree+1)]*self.ndims):
+        if sum(p+q) <= degree:
+          coeffs[(i,)+tuple(map(operator.add, p, q))] = (-1)**sum(q)*math.factorial(degree)//(math.factorial(degree-sum(p+q))*util.product(map(math.factorial, p+q)))
+    assert i == ndofs - 1
+    return numeric.const(coeffs, copy=False)
+
+  def _get_poly_coeffs_lagrange(self, degree):
+    if self.ndims == 0:
+      coeffs = numpy.ones((1,))
+    elif degree == 0:
+      coeffs = numpy.ones((1,*[1]*self.ndims))
+    else:
+      P = numpy.array(tuple(self._integer_barycentric_coordinates(degree)), dtype=int)[:,1:]
+      coeffs_ = numpy.linalg.inv(((P[:,_,:]/degree)**P[_,:,:]).prod(-1))
+      coeffs = numpy.zeros((len(P),*[degree+1]*self.ndims), dtype=float)
+      for i, p in enumerate(P):
+        coeffs[(slice(None),*p)] = coeffs_[i]
+    return numeric.const(coeffs, copy=False)
+
+  def get_edge_dofs(self, degree, iedge):
+    return numeric.const(tuple(i for i, j in enumerate(self._integer_barycentric_coordinates(degree)) if j[iedge] == 0), dtype=int)
+
+  def get_dof_transpose_map(self, degree, vertex_transpose_map):
+    vertex_transpose_map = tuple(vertex_transpose_map)
+    if len(vertex_transpose_map) != self.nverts or set(vertex_transpose_map) != set(range(self.nverts)):
+      raise ValueError('invalid vertex indices: {!r}'.format(vertex_transpose_map))
+    return numeric.const(tuple(i for i, j in sorted(enumerate(self._integer_barycentric_coordinates(degree)), key=lambda ij: tuple(map(ij[1].__getitem__, vertex_transpose_map[::-1])))), dtype=int)
 
 class PointReference( SimplexReference ):
   '0D simplex'
@@ -920,6 +981,42 @@ class TensorReference( Reference ):
   def simplices( self ):
     return [ ( transform.tensor(trans1,trans2), TensorReference( simplex1, simplex2 ) ) for trans1, simplex1 in self.ref1.simplices for trans2, simplex2 in self.ref2.simplices ]
 
+  def get_ndofs(self, degree):
+    return self.ref1.get_ndofs(degree)*self.ref2.get_ndofs(degree)
+
+  def get_poly_coeffs(self, basis, **kwargs):
+    return numeric.poly_outer_product(self.ref1.get_poly_coeffs(basis, **kwargs), self.ref2.get_poly_coeffs(basis, **kwargs))
+
+  def get_edge_dofs(self, degree, iedge):
+    if not numeric.isint(iedge) or iedge < 0 or iedge >= self.nedges:
+      raise IndexError('edge index out of range')
+    nd2 = self.ref2.get_ndofs(degree)
+    if iedge < self.ref1.nedges:
+      dofs1 = self.ref1.get_edge_dofs(degree, iedge)
+      dofs2 = range(self.ref2.get_ndofs(degree))
+    else:
+      dofs1 = range(self.ref1.get_ndofs(degree))
+      dofs2 = self.ref2.get_edge_dofs(degree, iedge-self.ref1.nedges)
+    return numeric.const(tuple(d1*nd2+d2 for d1, d2 in itertools.product(dofs1, dofs2)), dtype=int)
+
+  def get_dof_transpose_map(self, degree, vertex_transpose_map):
+    vertex_transpose_map = tuple(vertex_transpose_map)
+    nd2 = self.ref2.get_ndofs(degree)
+    if len(vertex_transpose_map) != self.nverts or set(vertex_transpose_map) != set(range(self.nverts)):
+      raise ValueError('invalid vertex indices: {!r}'.format(vertex_transpose_map))
+    elif all(i < self.ref1.nverts for i in vertex_transpose_map[:self.ref1.nverts]):
+      # Normal.
+      indices1 = self.ref1.get_dof_transpose_map(degree, vertex_transpose_map[:self.ref1.nverts])
+      indices2 = self.ref2.get_dof_transpose_map(degree, tuple(i-self.ref1.nverts for i in vertex_transpose_map[self.ref1.nverts:]))
+      return numeric.const(tuple(i1*nd2+i2 for i1, i2 in itertools.product(indices1, indices2)), dtype=int)
+    elif all(i < self.ref1.nverts for i in vertex_transpose_map[self.ref2.nverts:]):
+      # `ref1` and `ref2` are swapped.
+      indices1 = self.ref1.get_dof_transpose_map(degree, vertex_transpose_map[self.ref2.nverts:])
+      indices2 = self.ref2.get_dof_transpose_map(degree, tuple(i-self.ref1.nverts for i in vertex_transpose_map[:self.ref2.nverts]))
+      return numeric.const(tuple(i1*nd2+i2 for i2, i1 in itertools.product(indices2, indices1)), dtype=int)
+    else:
+      raise ValueError('invalid transformation: {!r}'.format(vertex_transpose_map))
+
 class Cone( Reference ):
   'cone'
 
@@ -1178,6 +1275,18 @@ class OwnChildReference( Reference ):
   def simplices( self ):
     return self.baseref.simplices
 
+  def get_ndofs(self, degree):
+    return self.baseref.get_ndofs(degree)
+
+  def get_poly_coeffs(self, basis, **kwargs):
+    return self.baseref.get_poly_coeffs(basis, **kwargs)
+
+  def get_edge_dofs(self, degree, iedge):
+    return self.baseref.get_edge_dofs(degree, iedge)
+
+  def get_dof_transpose_map(self, degree, vertex_transpose_map):
+    return self.baseref.get_dof_transpose_map(degree, vertex_transpose_map)
+
 class WithChildrenReference( Reference ):
   'base reference with explicit children'
 
@@ -1319,6 +1428,18 @@ class WithChildrenReference( Reference ):
   def inside( self, point, eps=0 ):
     return any( cref.inside( transform.invapply( ctrans, point ), eps=eps ) for ctrans, cref in self.children )
 
+  def get_ndofs(self, degree):
+    return self.baseref.get_ndofs(degree)
+
+  def get_poly_coeffs(self, basis, **kwargs):
+    return self.baseref.get_poly_coeffs(basis, **kwargs)
+
+  def get_edge_dofs(self, degree, iedge):
+    return self.baseref.get_edge_dofs(degree, iedge)
+
+  def get_dof_transpose_map(self, degree, vertex_transpose_map):
+    return self.baseref.get_dof_transpose_map(degree, vertex_transpose_map)
+
 class MosaicReference( Reference ):
   'triangulation'
 
@@ -1454,6 +1575,18 @@ class MosaicReference( Reference ):
 
   def inside( self, point, eps=0 ):
     return any( subref.inside( point, eps=eps ) for subref in self.subrefs )
+
+  def get_ndofs(self, degree):
+    return self.baseref.get_ndofs(degree)
+
+  def get_poly_coeffs(self, basis, **kwargs):
+    return self.baseref.get_poly_coeffs(basis, **kwargs)
+
+  def get_edge_dofs(self, degree, iedge):
+    return self.baseref.get_edge_dofs(degree, iedge)
+
+  def get_dof_transpose_map(self, degree, vertex_transpose_map):
+    return self.baseref.get_dof_transpose_map(degree, vertex_transpose_map)
 
 # SHAPE FUNCTIONS
 
