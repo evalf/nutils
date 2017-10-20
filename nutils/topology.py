@@ -651,7 +651,7 @@ class Topology( object ):
       mask = tmp
     else:
       assert numeric.isarray(mask) and mask.dtype == bool and mask.shape == basis.shape[:1]
-    indfunc = function.Tuple([ ind[0] for ind, f in basis.blocks ])
+    indfunc = function.Tuple([ind[0] for ind, f in function.blocks(basis)])
     subset = []
     for elem in self:
       try:
