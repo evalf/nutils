@@ -21,9 +21,6 @@ class basis(TestCase):
     error = numpy.sqrt(self.domain.integrate((target-projection)**2, geometry=self.geom, ischeme=self.gauss))
     numpy.testing.assert_almost_equal(error, 0, decimal=12)
 
-basis('tri:discont0', btype='discont', degree=0, ndims=None)
-basis('tri:discont1', btype='discont', degree=1, ndims=None)
-basis('tri:std1', btype='std', degree=1, ndims=None)
 for ndims in range(1, 4):
   for btype in 'discont', 'std', 'spline':
     for degree in range(0 if btype == 'discont' else 1, 4):
@@ -78,3 +75,83 @@ for btype in ['discont', 'spline', 'std']:
           continue
         structured_line(variant=variant, btype=btype, degree=degree, nelems=nelems)
 structured_line(variant='periodic', btype='spline', degree=0, nelems=1)
+
+
+@parametrize
+class unstructured_topology(TestCase):
+
+  def as_simplices(self, elem):
+    '''convert rectangular or cubic ``elem`` to simplices'''
+    root, offset = transform.TransformChain(elem.transform[:-1]), transform.TransformChain(elem.transform[-1:])
+    coords = transform.apply(offset, elem.reference.vertices)
+    if self.ndims == 1:
+      return [elem]
+    elif self.ndims == 2:
+      indices = [[0,1,2],[1,3,2]]
+      ref = element.TriangleReference()
+    elif self.ndims == 3:
+      indices = [[0,1,2,8], [1,3,2,8], [4,5,6,8], [5,7,6,8],
+                 [0,1,4,8], [1,5,4,8], [2,3,6,8], [3,7,6,8],
+                 [0,2,4,8], [2,6,4,8], [1,3,5,8], [3,7,5,8]]
+      coords = numpy.concatenate([coords, transform.apply(offset, numpy.mean(elem.reference.vertices, 0)[_])], axis=0)
+      ref = element.TetrahedronReference()
+    for i in indices:
+      random.shuffle(i)
+    random.shuffle(indices)
+    return [element.Element(ref, root << transform.simplex(tuple(coords[j] for j in i))) for i in indices]
+
+  def setUp(self):
+    random.seed(0, version=2)
+
+    domain, geom = mesh.rectilinear([numpy.linspace(0, 1, 3 if self.ndims == 3 else 5)]*self.ndims)
+    if self.variant == 'tensor':
+      domain = topology.UnstructuredTopology(domain.ndims, domain)
+    elif self.variant == 'simplex':
+      domain = topology.UnstructuredTopology(domain.ndims, itertools.chain.from_iterable(map(self.as_simplices, domain)))
+    elif self.variant == 'mixed':
+      domain = topology.UnstructuredTopology(domain.ndims, itertools.chain.from_iterable([elem] if i % 2 else self.as_simplices(elem) for i, elem in enumerate(domain)))
+    elif self.variant == 'demo':
+      domain, geom = mesh.demo()
+      assert self.ndims == domain.ndims
+    else:
+      raise ValueError('variant: {!r}'.format(self.variant))
+
+    if self.btype == 'bubble':
+      basis = domain.basis(self.btype)
+    else:
+      basis = domain.basis(self.btype, degree=self.degree)
+
+    self.domain = domain
+    self.basis = basis
+    self.geom = geom
+
+  @parametrize.enable_if(lambda btype, **params: btype not in {'bubble', 'discont'} and degree == 1)
+  def test_ndofs(self):
+    self.assertEqual(len(self.basis), len(set(v for elem in self.domain for v in elem.vertices)))
+
+  @parametrize.enable_if(lambda btype, **params: btype not in {'bubble'})
+  def test_pum_sum(self):
+    # Note that this test holds for btype 'lagrange' as well, although the
+    # basis functions are not confined to range [0,1].
+    error = numpy.sqrt(self.domain.integrate((1-self.basis.sum(0))**2, geometry=self.geom, ischeme='gauss', degree=2*self.degree))
+    numpy.testing.assert_almost_equal(error, 0, decimal=12)
+
+  @parametrize.enable_if(lambda btype, **params: btype not in {'lagrange', 'bubble'})
+  def test_pum_range(self):
+    values = self.domain.elem_eval(self.basis, geometry=self.geom, ischeme='gauss{}'.format(2*self.degree), separate=False)
+    self.assertTrue((values > 0-1e-10).all())
+    self.assertTrue((values < 1+1e-10).all())
+
+  def test_poly(self):
+    target = (self.geom**self.degree).sum(-1)
+    if self.btype == 'discont':
+      target += function.FindTransform(tuple(sorted(elem.transform for elem in self.domain)), function.TRANS)
+    projection = self.domain.projection(target, onto=self.basis, geometry=self.geom, ischeme='gauss', degree=2*self.degree, droptol=0)
+    error = numpy.sqrt(self.domain.integrate((target-projection)**2, geometry=self.geom, ischeme='gauss', degree=2*self.degree))
+    numpy.testing.assert_almost_equal(error, 0, decimal=12)
+
+for ndims in range(1,4):
+  for btype in ['discont', 'bernstein', 'lagrange', 'std']:
+    for degree in range(0 if btype == 'discont' else 1, 4):
+      for variant in {1: ['simplex'], 2: ['simplex', 'tensor', 'mixed', 'demo'], 3: ['simplex', 'tensor']}[ndims]:
+        unstructured_topology(ndims=ndims, btype=btype, degree=degree, variant=variant)

@@ -1456,48 +1456,32 @@ class UnstructuredTopology( Topology ):
     assert not seen
     return UnstructuredTopology( self.ndims-1, elements )
 
-  def basis_std( self, degree=1 ):
-    'std from vertices'
-
-    assert degree == 1 # for now!
-    dofmap = {}
-    fmap = {}
-    nmap = {}
-    for elem in self:
-      dofs = numpy.empty( elem.nverts, dtype=int )
-      for i, v in enumerate( elem.vertices ):
-        dof = dofmap.get(v)
-        if dof is None:
-          dof = len(dofmap)
-          dofmap[v] = dof
-        dofs[i] = dof
-      stdfunc = elem.reference.stdfunc(1)
-      assert stdfunc.nshapes == elem.nverts
-      fmap[elem.transform] = stdfunc
-      nmap[elem.transform] = numeric.const(dofs, copy=False)
-    return function.function( fmap=fmap, nmap=nmap, ndofs=len(dofmap) )
-
   def basis_bubble( self ):
     'bubble from vertices'
 
     assert self.ndims == 2
+    coeffs = numeric.const([[[  1, -1,  0,  0], [ -1,  0,  0,  0], [  0,  0,  0,  0], [  0,  0,  0,  0]],
+                            [[  0,  0,  0,  0], [  1,  0,  0,  0], [  0,  0,  0,  0], [  0,  0,  0,  0]],
+                            [[  0,  1,  0,  0], [  0,  0,  0,  0], [  0,  0,  0,  0], [  0,  0,  0,  0]],
+                            [[  0,  0,  0,  0], [  0, 27,-27,  0], [  0,-27,  0,  0], [  0,  0,  0,  0]]])
+
+    nmap = []
     dofmap = {}
-    fmap = {}
-    nmap = {}
-    stdfunc = element.BubbleTriangle()
     for ielem, elem in enumerate(self):
       assert isinstance( elem.reference, element.TriangleReference )
-      dofs = numpy.empty( elem.nverts+1, dtype=int )
+      assert elem.nverts == 3
+      dofs = numpy.empty(4, dtype=int)
       for i, v in enumerate( elem.vertices ):
         dof = dofmap.get(v)
         if dof is None:
           dof = len(self) + len(dofmap)
           dofmap[v] = dof
         dofs[i] = dof
-      dofs[ elem.nverts ] = ielem
-      fmap[elem.transform] = stdfunc
-      nmap[elem.transform] = numeric.const(dofs, copy=False)
-    return function.function( fmap=fmap, nmap=nmap, ndofs=len(self)+len(dofmap) )
+      dofs[3] = ielem
+      nmap.append(numeric.const(dofs, copy=False))
+    ndofs = len(self)+len(dofmap)
+
+    return function.polyfunc([coeffs]*len(self), nmap, ndofs, (elem.transform for elem in self), issorted=False)
 
   def basis_spline( self, degree ):
     assert degree == 1
@@ -1506,16 +1490,85 @@ class UnstructuredTopology( Topology ):
   def basis_discont( self, degree ):
     'discontinuous shape functions'
 
-    assert numeric.isint( degree ) and degree >= 0
-    fmap = {}
-    nmap = {}
+    assert numeric.isint(degree) and degree >= 0
+    coeffs = []
+    nmap = []
     ndofs = 0
     for elem in self:
-      stdfunc = elem.reference.stdfunc(degree)
-      fmap[elem.transform] = stdfunc
-      nmap[elem.transform] = numeric.const(numpy.arange(ndofs, ndofs+stdfunc.nshapes), copy=False)
-      ndofs += stdfunc.nshapes
-    return function.function( fmap=fmap, nmap=nmap, ndofs=ndofs )
+      elemcoeffs = elem.reference.get_poly_coeffs('bernstein', degree=degree)
+      coeffs.append(elemcoeffs)
+      nmap.append(numeric.const(ndofs + numpy.arange(len(elemcoeffs)), copy=False))
+      ndofs += len(elemcoeffs)
+    degrees = set(n-1 for c in coeffs for n in c.shape[1:])
+    return function.polyfunc(coeffs, nmap, ndofs, (elem.transform for elem in self), issorted=False)
+
+  def _basis_c0_structured(self, name, degree):
+    'C^0-continuous shape functions with lagrange stucture'
+
+    assert numeric.isint(degree) and degree >= 0
+
+    if degree == 0:
+      raise ValueError('Cannot build a C^0-continuous basis of degree 0.  Use basis \'discont\' instead.')
+
+    nlocaldofs = 0
+    elem_slices = []
+    coeffs = []
+    for elem in self:
+      elem_coeffs = elem.reference.get_poly_coeffs(name, degree=degree)
+      coeffs.append(elem_coeffs)
+      elem_slices.append(slice(nlocaldofs, nlocaldofs+len(elem_coeffs)))
+      nlocaldofs += len(elem_coeffs)
+    dofmap = -numpy.ones([nlocaldofs], dtype=int)
+
+    for ielem, elem in enumerate(self):
+      # Loop over all neighbors of elem and merge dofs.
+      for iedge, jelem in enumerate(self.connectivity[ielem]):
+        if jelem < 0:
+          continue
+        jedge = self.connectivity[jelem].tolist().index(ielem)
+        #if ielem < jelem or ielem == jelem and iedge < jedge:
+        #  continue
+        idofs = elem.reference.get_edge_dofs(degree, iedge)
+        verts = tuple(elem.edge(iedge).vertices)
+        neighbor = self.elements[jelem]
+        neighbor_verts = tuple(neighbor.edge(jedge).vertices)
+        jdofs = neighbor.reference.get_edge_dofs(degree, jedge)
+        #jdofs = jdofs[neighbor.reference.edges[jedge][1].get_dof_transpose_map(degree, tuple(map(neighbor_verts.index, verts)))]
+        foo = neighbor.reference.edges[jedge][1].get_dof_transpose_map(degree, tuple(map(neighbor_verts.index, verts)))
+        for idof, j in zip(idofs, foo):
+          ridof = idof = elem_slices[ielem].start+idof
+          # Resolve idof.
+          while dofmap[ridof] >= 0:
+            ridof = dofmap[ridof]
+          # Resolve jdof.
+          rjdof = jdof = elem_slices[jelem].start+jdofs[j]
+          while dofmap[rjdof] >= 0:
+            rjdof = dofmap[rjdof]
+          if ridof != rjdof:
+            dofmap[max(ridof,rjdof)] = min(ridof,rjdof)
+          if ridof != idof:
+            dofmap[idof] = min(ridof,rjdof)
+    # Assign dof numbers.
+    ndofs = 0
+    for i in range(len(dofmap)):
+      if dofmap[i] < 0:
+        dofmap[i] = ndofs
+        ndofs += 1
+      else:
+        dofmap[i] = dofmap[dofmap[i]]
+
+    dofs = tuple(numeric.const(dofmap[s]) for s in elem_slices)
+    return function.polyfunc(coeffs, dofs, ndofs, (elem.transform for elem in self), issorted=False)
+
+  def basis_lagrange(self, degree):
+    'lagrange shape functions'
+    return self._basis_c0_structured('lagrange', degree)
+
+  def basis_bernstein(self, degree):
+    'bernstein shape functions'
+    return self._basis_c0_structured('bernstein', degree)
+
+  basis_std = basis_bernstein
 
 class UnionTopology( Topology ):
   'grouped topology'
