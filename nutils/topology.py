@@ -1376,9 +1376,10 @@ class StructuredTopology( Topology ):
       dofshape.append( nd )
       slices.append( [ slice(p*i,p*i+p+1) for i in range(n) ] )
 
-    funcmap = dict.fromkeys( self._transform.flat, util.product( element.PolyLine( element.PolyLine.bernstein_poly(d) ) for d in degree ) )
-    dofmap = { trans: numeric.const(vertex_structure[S].ravel(), copy=False) for trans, *S in numpy.broadcast( self._transform, *numpy.ix_(*slices) ) }
-    func = function.function( funcmap, dofmap, numpy.product(dofshape) )
+    lineref = element.LineReference()
+    coeffs = [functools.reduce(numeric.poly_outer_product, (lineref.get_poly_coeffs('bernstein', degree=p) for p in degree))]*len(self)
+    dofs = [numeric.const(vertex_structure[S].ravel(), copy=False) for S in numpy.broadcast(*numpy.ix_(*slices))]
+    func = function.polyfunc(coeffs, dofs, numpy.product(dofshape), self._transform.ravel(), issorted=False)
     if not any( removedofs ):
       return func
 
