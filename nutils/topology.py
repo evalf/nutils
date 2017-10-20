@@ -1337,24 +1337,14 @@ class StructuredTopology( Topology ):
 
     return numeric.const([Ni.coeffs for Ni in N]).T[::-1]
 
-  def basis_discont( self, degree ):
+  def basis_discont(self, degree):
     'discontinuous shape functions'
 
-    if numeric.isint( degree ):
-      degree = (degree,) * self.ndims
-    assert len(degree) == self.ndims
-    assert all( p >= 0 for p in degree )
-
-    stdfunc = util.product( element.PolyLine( element.PolyLine.bernstein_poly(p) ) for p in degree )
-      
-    fmap = {}
-    nmap = {}
-    ndofs = 0
-    for elem in self:
-      fmap[elem.transform] = stdfunc
-      nmap[elem.transform] = numeric.const(numpy.arange(ndofs, ndofs+stdfunc.nshapes), copy=False)
-      ndofs += stdfunc.nshapes
-    return function.function( fmap=fmap, nmap=nmap, ndofs=ndofs )
+    ref = util.product([element.LineReference()]*self.ndims)
+    coeffs = [ref.get_poly_coeffs('bernstein', degree=degree)]*len(self)
+    ndofs = ref.get_ndofs(degree)
+    dofs = numeric.const(numpy.arange(ndofs*len(self), dtype=int).reshape(len(self), ndofs), copy=False)
+    return function.polyfunc(coeffs, dofs, ndofs*len(self), (elem.transform for elem in self), issorted=False)
 
   def basis_std( self, degree, removedofs=None, periodic=None ):
     'spline from vertices'
@@ -2185,18 +2175,32 @@ class MultipatchTopology( Topology ):
 
     return function.polyfunc(coeffs, dofmap, dofcount, transforms, issorted=False)
 
-  def basis_discont( self, degree ):
+  def basis_discont(self, degree):
     'discontinuous shape functions'
 
-    funcmap = {}
-    dofmap = {}
-    dofcount = 0
+    bases = [patch.topo.basis('discont', degree=degree) for patch in self.patches]
+    coeffs = []
+    dofs = []
+    ndofs = 0
     for patch in self.patches:
-      pbasis = patch.topo.basis( 'discont', degree=degree )
-      funcmap.update( pbasis.func.stdmap )
-      dofmap.update({trans: numeric.const(dofs+dofcount, copy=False) for trans, dofs in pbasis.dofmap.dofmap.items()})
-      dofcount += len( pbasis )
-    return function.function( funcmap, dofmap, dofcount )
+      basis = patch.topo.basis('discont', degree=degree)
+      (axes,func), = function.blocks(basis)
+      patch_dofmap, = axes
+      if isinstance(func, function.Polyval):
+        patch_coeffs = func.coeffs
+        assert patch_coeffs.ndim == 1+self.ndims
+      elif func.isconstant:
+        assert func.ndim == 1
+        patch_coeffs = func[(slice(None),*(_,)*self.ndims)]
+      else:
+        raise ValueError
+      patch_coeffs_dofs = function.Tuple((patch_coeffs, patch_dofmap))
+      for elem in patch.topo:
+        (elem_coeffs,), (elem_dofs,) = patch_coeffs_dofs.eval(_transforms=(elem.transform,))
+        coeffs.append(elem_coeffs)
+        dofs.append(numeric.const(ndofs+elem_dofs, copy=False))
+      ndofs += len(basis)
+    return function.polyfunc(coeffs, dofs, ndofs, (elem.transform for patch in self.patches for elem in patch.topo), issorted=False)
 
   def basis_patch( self ):
     'degree zero patchwise discontinuous basis'
