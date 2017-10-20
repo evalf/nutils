@@ -2951,7 +2951,7 @@ divide = lambda arg1, arg2: multiply( arg1, reciprocal(arg2) )
 subtract = lambda arg1, arg2: add( arg1, negative(arg2) )
 mean = lambda arg: .5 * ( arg + opposite(arg) )
 jump = lambda arg: opposite(arg) - arg
-add_T = lambda arg, axes=(-2,-1): swapaxes( arg, axes ) + arg
+add_T = lambda arg, axes=(-2,-1): swapaxes( arg, *axes ) + arg
 blocks = lambda arg: asarray(arg).simplified.blocks
 rootcoords = lambda ndims: RootCoords( ndims )
 sampled = lambda data, ndims: Sampled( data )
