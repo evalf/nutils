@@ -532,7 +532,8 @@ class Topology( object ):
         points, projector, basis = bases[ elem.reference ]
       except KeyError:
         points, weights = elem.reference.getischeme( ischeme )
-        basis = elem.reference.stdfunc(degree).eval( points )
+        coeffs = elem.reference.get_poly_coeffs('bernstein', degree=degree)
+        basis = function.Polyval(coeffs, function.POINTS, points.shape[1]).eval(_points=points)
         npoints, nfuncs = basis.shape
         A = numeric.dot( weights, basis[:,:,_] * basis[:,_,:] )
         projector = numpy.linalg.solve( A, basis.T * weights )
