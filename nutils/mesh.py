@@ -495,9 +495,9 @@ def gmsh( fname, name=None ):
       vgroups[name] = topology.SubsetTopology( topo, refs )
 
   # create geometry
-  nmap = { elem.transform: numeric.const(inodes) for inodes, elem in zip( vinodes, elements ) }
-  fmap = dict.fromkeys( nmap, simplexref.stdfunc(1) )
-  basis = function.function( fmap=fmap, nmap=nmap, ndofs=len(nodes) )
+  dofs = tuple(map(numeric.const, vinodes))
+  coeffs = [simplexref.get_poly_coeffs('bernstein', degree=1)] * len(dofs)
+  basis = function.polyfunc(coeffs, dofs, len(nodes), (elem.transform for elem in elements), issorted=False)
   geom = ( basis[:,_] * nodes ).sum(0)
 
   return topo.withgroups( vgroups=vgroups ), geom
