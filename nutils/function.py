@@ -932,41 +932,6 @@ class RootTransform(Array):
   def _derivative(self, var, seen):
     return zeros(self.shape+var.shape)
 
-class Function( Array ):
-
-  def __init__(self, stds:tuple, depth:int, trans, index:asarray, derivs:tuple=()):
-    assert index.ndim == 0 and index.dtype == int
-    self.stds = stds
-    self.depth = depth
-    self.trans = trans
-    self.index = index
-    nshapes = get([std.nshapes for std in stds] + [0], iax=0, item=index)
-    super().__init__(args=(CACHE,POINTS,trans,index), shape=(nshapes,)+derivs, dtype=float)
-
-  @property
-  def stdmap(self):
-    return self.index.asdict(self.stds)
-
-  def evalf(self, cache, points, trans, index):
-    index, = index
-    if index == len(self.stds):
-      return numpy.empty((1,0)+self.shape[1:])
-    tail = trans[self.depth:]
-    if tail:
-      points = cache[transform.apply](tail, points)
-    fvals = cache[self.stds[index].eval](points, self.ndim-1)
-    assert fvals.ndim == self.ndim+1
-    if tail:
-      for i, ndims in enumerate(self.shape[1:]):
-        linear = cache[transform.linearfrom](tail, ndims)
-        fvals = numeric.dot(fvals, linear, axis=i+2)
-    return fvals
-
-  def _derivative(self, var, seen):
-    if isinstance(var, LocalCoords):
-      return Function(self.stds, self.depth, self.trans, self.index, self.shape[1:]+var.shape)
-    return zeros(self.shape+var.shape, dtype=self.dtype)
-
 class Inverse( Array ):
 
   def __init__(self, func:asarray):
@@ -3143,16 +3108,6 @@ def eig(arg, axes=(-2,-1), symmetric=False):
   transposed = transpose(arg, trans)
   eigval, eigvec = Eig(transposed, symmetric)
   return Tuple([transpose(diagonalize(eigval), _invtrans(trans)), transpose(eigvec, _invtrans(trans))])
-
-def function(fmap, nmap, ndofs):
-  transforms = sorted(fmap)
-  depth, = set(len(transform) for transform in transforms)
-  fromdims, = set(transform.fromdims for transform in transforms)
-  promote = Promote(fromdims, trans=TRANS)
-  index = FindTransform(transforms, promote)
-  dofmap = DofMap([nmap[trans] for trans in transforms], index=index)
-  func = Function(stds=[fmap[trans] for trans in transforms], depth=depth, trans=promote, index=index)
-  return Inflate(func, dofmap, ndofs, axis=0)
 
 def polyfunc(coeffs, dofs, ndofs, transforms, *, issorted=True):
   '''

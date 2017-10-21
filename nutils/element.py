@@ -589,13 +589,6 @@ class LineReference( SimplexReference ):
   def child_refs( self ):
     return self, self
 
-  def stdfunc( self, degree ):
-    while len(self._bernsteincache) <= degree:
-      self._bernsteincache.append(None)
-    if self._bernsteincache[degree] is None:
-      self._bernsteincache[degree] = PolyLine(PolyLine.bernstein_poly(degree))
-    return self._bernsteincache[degree]
-
   def getischeme_gauss( self, degree ):
     assert isinstance( degree, int ) and degree >= 0
     x, w = gauss( degree )
@@ -633,9 +626,6 @@ class TriangleReference( SimplexReference ):
   @property
   def child_refs( self ):
     return self, self, self, self
-
-  def stdfunc( self, degree ):
-    return PolyTriangle(degree)
 
   def getischeme_gauss( self, degree ):
     '''get integration scheme
@@ -778,9 +768,6 @@ class TetrahedronReference( SimplexReference ):
 
     return numpy.array(cvals)
 
-  def stdfunc( self, degree ):
-    return PolyTetrahedron(degree)
-
   def getischeme_gauss( self, degree ):
     '''get integration scheme
     http://www.cs.rpi.edu/~flaherje/pdf/fea6.pdf'''
@@ -872,22 +859,8 @@ class TensorReference( Reference ):
       for v1 in self.ref1.child_divide( vals.reshape((np1,np2)+vals.shape[1:]), n )
         for v2 in self.ref2.child_divide( v1.swapaxes(0,1), n ) ]
 
-  def stdfunc( self, degree, *n ):
-    if n:
-      degree = (degree,)+n
-      assert len(degree) == self.ndims
-      degree1 = degree[:self.ref1.ndims]
-      degree2 = degree[self.ref1.ndims:]
-    else:
-      degree1 = degree2 = degree
-    return self.ref1.stdfunc( degree1 ) \
-         * self.ref2.stdfunc( degree2 )
-
   def __str__( self ):
     return '%s*%s' % ( self.ref1, self.ref2 )
-
-  def stdfunc( self, degree ):
-    return self.ref1.stdfunc(degree) * self.ref2.stdfunc(degree)
 
   def getischeme_vtk( self ):
     if self.ref1.ndims == self.ref2.ndims == 1:
@@ -1265,9 +1238,6 @@ class OwnChildReference( Reference ):
   def edge_refs( self ):
     return [ OwnChildReference(edge) for edge in self.baseref.edge_refs ]
 
-  def stdfunc( self, degree ):
-    return self.baseref.stdfunc( degree )
-
   @property
   def volume( self ):
     return self.baseref.volume
@@ -1304,9 +1274,6 @@ class WithChildrenReference( Reference ):
     super().__init__(baseref.vertices)
     if core.getprop( 'selfcheck', False ):
       self.check_edges()
-
-  def stdfunc( self, degree ):
-    return self.baseref.stdfunc( degree )
 
   @property
   def interfaces( self ):
@@ -1548,12 +1515,6 @@ class MosaicReference( Reference ):
   def subrefs( self ):
     return [ ref.cone(trans,self._midpoint) for trans, ref in zip( self.baseref.edge_transforms, self._edge_refs ) if ref ]
 
-  def stdfunc( self, degree ):
-    return self.baseref.stdfunc( degree )
-
-  def stdfunc( self, degree ):
-    return self.baseref.stdfunc( degree )
-
   @property
   def volume( self ):
     return sum( subref.volume for subref in self.subrefs )
@@ -1591,352 +1552,6 @@ class MosaicReference( Reference ):
 
   def get_dof_transpose_map(self, degree, vertex_transpose_map):
     return self.baseref.get_dof_transpose_map(degree, vertex_transpose_map)
-
-# SHAPE FUNCTIONS
-
-class StdElem( cache.Immutable ):
-  'stdelem base class'
-
-  def __init__(self, ndims:int, nshapes:int):
-    self.ndims = ndims
-    self.nshapes = nshapes
-
-  def __mul__( self, other ):
-    'multiply elements'
-
-    return PolyProduct( self, other )
-
-  def __pow__( self, n ):
-    'repeated multiplication'
-
-    assert n >= 1
-    return self if n == 1 else self * self**(n-1)
-
-  def extract( self, extraction ):
-    'apply extraction matrix'
-
-    return ExtractionWrapper( self, extraction )
-
-class PolyProduct( StdElem ):
-  'multiply standard elements'
-
-  __slots__ = 'std1', 'std2'
-
-  def __init__(self, std1, std2):
-    self.std1 = std1
-    self.std2 = std2
-    super().__init__(std1.ndims+std2.ndims, std1.nshapes*std2.nshapes)
-
-  def eval( self, points, grad=0 ):
-    'evaluate'
-    # log.debug( '@ PolyProduct.eval: ', id(self), id(points), id(grad) )
-
-    assert isinstance( grad, int ) and grad >= 0
-
-    assert points.shape[-1] == self.ndims
-
-    s1 = slice(0,self.std1.ndims)
-    p1 = points[...,s1]
-    s2 = slice(self.std1.ndims,None)
-    p2 = points[...,s2]
-
-    E = Ellipsis,
-    S = slice(None),
-    N = numpy.newaxis,
-
-    shape = points.shape[:-1] + (self.std1.nshapes * self.std2.nshapes,)
-    G12 = [ ( self.std1.eval( p1, grad=i )[E+S+N+S*i+N*j]
-            * self.std2.eval( p2, grad=j )[E+N+S+N*i+S*j] ).reshape( shape + (self.std1.ndims,) * i + (self.std2.ndims,) * j )
-            for i,j in zip( range(grad,-1,-1), range(grad+1) ) ]
-
-    data = numpy.empty( shape + (self.ndims,) * grad )
-
-    s = (s1,)*grad + (s2,)*grad
-    R = numpy.arange(grad)
-    for n in range(2**grad):
-      index = n>>R&1
-      n = index.argsort() # index[s] = [0,...,1]
-      shuffle = list( range(points.ndim) ) + list( points.ndim + n )
-      iprod = index.sum()
-      data.transpose(shuffle)[E+s[iprod:iprod+grad]] = G12[iprod]
-
-    return data
-
-  def __str__( self ):
-    'string representation'
-
-    return '%s*%s' % ( self.std1, self.std2 )
-
-class PolyLine( StdElem ):
-  'polynomial on a line'
-
-  __slots__ = 'degree', 'poly'
-
-  @classmethod
-  def bernstein_poly( cls, degree ):
-    'bernstein polynomial coefficients'
-
-    # magic bernstein triangle
-    revpoly = numpy.zeros( [degree+1,degree+1], dtype=int )
-    for k in range(degree//2+1):
-      revpoly[k,k] = root = (-1)**degree if k == 0 else ( revpoly[k-1,k] * (k*2-1-degree) ) / k
-      for i in range(k+1,degree+1-k):
-        revpoly[i,k] = revpoly[k,i] = root = ( root * (k+i-degree-1) ) / i
-    return numeric.const(revpoly[::-1].astype(float), copy=False)
-
-  @classmethod
-  def spline_poly( cls, p, n ):
-    'spline polynomial coefficients'
-
-    assert p >= 0, 'invalid polynomial degree %d' % p
-    if p == 0:
-      assert n == -1
-      return numpy.array( [[[1.]]] )
-
-    assert 1 <= n < 2*p
-    extractions = numpy.empty(( n, p+1, p+1 ))
-    extractions[0] = numpy.eye( p+1 )
-    for i in range( 1, n ):
-      extractions[i] = numpy.eye( p+1 )
-      for j in range( 2, p+1 ):
-        for k in reversed( range( j, p+1 ) ):
-          alpha = 1. / min( 2+k-j, n-i+1 )
-          extractions[i-1,:,k] = alpha * extractions[i-1,:,k] + (1-alpha) * extractions[i-1,:,k-1]
-        extractions[i,-j-1:-1,-j-1] = extractions[i-1,-j:,-1]
-
-    poly = cls.bernstein_poly( p )
-    return numeric.const(numeric.contract(extractions[:,_,:,:], poly[_,:,_,:], axis=-1), copy=False)
-
-  @classmethod
-  def spline_elems( cls, p, n ):
-    'spline elements, minimum amount (just for caching)'
-
-    return [ cls(c) for c in cls.spline_poly(p,n) ]
-
-  @classmethod
-  def spline_elems_neumann( cls, p, n ):
-    'spline elements, neumann endings (just for caching)'
-
-    polys = cls.spline_poly(p,n)
-    poly_0 = polys[0].copy()
-    poly_0[:,1] += poly_0[:,0]
-    poly_e = polys[-1].copy()
-    poly_e[:,-2] += poly_e[:,-1]
-    return cls(poly_0), cls(poly_e)
-
-  @classmethod
-  def spline_elems_curvature( cls ):
-    'spline elements, curve free endings (just for caching)'
-
-    polys = cls.spline_poly(1,1)
-    poly_0 = polys[0].copy()
-    poly_0[:,0] += 0.5*(polys[0][:,0]+polys[0][:,1])
-    poly_0[:,1] -= 0.5*(polys[0][:,0]+polys[0][:,1])
-
-    poly_e = polys[-1].copy()
-    poly_e[:,-2] -= 0.5*(polys[-1][:,-1]+polys[-1][:,-2])
-    poly_e[:,-1] += 0.5*(polys[-1][:,-1]+polys[-1][:,-2])
-
-    return cls(poly_0), cls(poly_e)
-
-  @classmethod
-  def spline( cls, degree, nelems, periodic=False, neumann=0, curvature=False ):
-    'spline elements, any amount'
-
-    p = degree
-    n = 2*p-1
-    if periodic:
-      assert not neumann, 'periodic domains have no boundary'
-      assert not curvature, 'curvature free option not possible for periodic domains'
-      if nelems == 1: # periodicity on one element can only mean a constant
-        elems = cls.spline_elems( 0, n )
-      else:
-        elems = cls.spline_elems( p, n )[p-1:p] * nelems
-    else:
-      elems = cls.spline_elems( p, min(nelems,n) )
-      if len(elems) < nelems:
-        elems = elems[:p-1] + elems[p-1:p] * (nelems-2*(p-1)) + elems[p:]
-      if neumann:
-        elem_0, elem_e = cls.spline_elems_neumann( p, min(nelems,n) )
-        if neumann & 1:
-          elems[0] = elem_0
-        if neumann & 2:
-          elems[-1] = elem_e
-      if curvature:
-        assert neumann==0, 'Curvature free not allowed in combindation with Neumann'
-        assert degree==2, 'Curvature free only allowed for quadratic splines'  
-        elem_0, elem_e = cls.spline_elems_curvature()
-        elems[0] = elem_0
-        elems[-1] = elem_e
-
-    return numpy.array( elems )
-
-  def __init__(self, poly:numeric.const):
-    '''Create polynomial from order x nfuncs array of coefficients 'poly'.
-       Evaluates to sum_i poly[i,:] x**i.'''
-
-    assert poly.dtype == float
-    self.poly = poly
-    order, nshapes = self.poly.shape
-    self.degree = order - 1
-    super().__init__(ndims=1, nshapes=nshapes)
-
-  def eval( self, points, grad=0 ):
-    'evaluate'
-
-    assert points.shape[-1] == 1
-    x = points[...,0]
-
-    if grad > self.degree:
-      return numeric.const.full(x.shape+(self.nshapes,)+(1,)*grad, 0.)
-
-    poly = self.poly
-    for n in range(grad):
-      poly = poly[1:] * numpy.arange( 1, poly.shape[0] )[:,_]
-
-    polyval = numpy.empty( x.shape+(self.nshapes,) )
-    polyval[:] = poly[-1]
-    for p in poly[-2::-1]:
-      polyval *= x[...,_]
-      polyval += p
-
-    return polyval[(Ellipsis,)+(_,)*grad]
-
-  def extract( self, extraction ):
-    'apply extraction'
-
-    return PolyLine( numpy.dot( self.poly, extraction ) )
-
-  def __repr__( self ):
-    'string representation'
-
-    return 'PolyLine#%x' % id(self)
-
-class PolyTriangle( StdElem ):
-  '''poly triangle (linear for now)
-     conventions: dof numbering as vertices, see TriangularElement docstring.'''
-
-  __slots__ = ()
-
-  def __init__(self, order:int):
-    self.order = order
-    assert order in (0,1)
-    super().__init__(ndims=2, nshapes=3 if order else 1)
-
-  def eval( self, points, grad=0 ):
-    'eval'
-
-    if self.order == 0:
-      data = numpy.ones( (1,1) ) if grad == 0 \
-        else numpy.zeros( (1,1)+(2,)*grad )
-    else:
-      data = numpy.concatenate( [ 1-points.sum(1)[:,_], points ], axis=1 ) if grad == 0 \
-        else numpy.array( [[[-1,-1],[1,0],[0,1]]], dtype=float ) if grad == 1 \
-        else numpy.zeros( (1,3)+(2,)*grad )
-
-    return data
-
-  def __repr__( self ):
-    'string representation'
-
-    return '%s#%x' % ( self.__class__.__name__, id(self) )
-
-class PolyTetrahedron( StdElem ):
-  '''poly tetrahedron (linear for now)
-     conventions: dof numbering as vertices, see TetrahedronReference docstring.'''
-
-  __slots__ = ()
-
-  def __init__( self, order ):
-    'constructor'
-
-    self.order = order
-    assert order in (0,1)
-    StdElem.__init__( self, ndims=2, nshapes=4 if order else 1 )
-
-  def __getnewargs__( self ):
-    return self.order,
-
-  def eval( self, points, grad=0 ):
-    'eval'
-
-    if self.order == 0:
-      data = numpy.ones( (1,1) ) if grad == 0 \
-        else numpy.zeros( (1,1)+(3,)*grad )
-    else:
-      data = numpy.concatenate( [ 1-points.sum(1)[:,_], points ], axis=1 ) if grad == 0 \
-        else numpy.array( [[[-1,-1,-1],[1,0,0],[0,1,0],[0,0,1]]], dtype=float ) if grad == 1 \
-        else numpy.zeros( (1,4)+(3,)*grad )
-
-    return data
-
-  def __repr__( self ):
-    'string representation'
-
-    return '%s#%x' % ( self.__class__.__name__, id(self) )
-
-class BubbleTriangle( StdElem ):
-  '''linear triangle + bubble function
-     conventions: dof numbering as vertices (see TriangularElement docstring), then barycenter.'''
-
-  __slots__ = ()
-
-  def __init__(self):
-    super().__init__(ndims=2, nshapes=4)
-
-  def eval( self, points, grad=0 ):
-    'eval'
-
-    npoints, ndims = points.shape
-    assert ndims == 2, 'Triangle takes 2D coordinates'
-    x, y = points.T
-    if grad == 0:
-      data = numpy.array( [ 1-x-y, x, y, 27*x*y*(1-x-y) ] ).T
-    elif grad == 1:
-      data = numpy.empty( (npoints,4,2) )
-      data[:,:3] = numpy.array( [[[-1,-1], [1,0], [0,1]]] )
-      data[:,3] = numpy.array( [27*y*(1-2*x-y),27*x*(1-x-2*y)] ).T
-    elif grad == 2:
-      data = numpy.zeros( (npoints,4,2,2) )
-      data[:,3] = [-27*2*y,27*(1-2*x-2*y)], [27*(1-2*x-2*y),-27*2*x]
-    elif grad == 3:
-      data = numpy.zeros( (1,4,2,2,2) )
-      data[:,3] = -2
-      data[:,3,0,0,0] = 0
-      data[:,3,1,1,1] = 0
-    else:
-      data = numpy.zeros( (1,4)+(2,)*grad )
-    return data
-
-  def __repr__( self ):
-    'string representation'
-
-    return '%s#%x' % ( self.__class__.__name__, id(self) )
-
-class ExtractionWrapper( StdElem ):
-  'extraction wrapper'
-
-  __slots__ = 'stdelem', 'extraction'
-
-  def __init__(self, stdelem, extraction:numeric.const):
-    assert extraction.ndim == 2
-    assert stdelem.nshapes == extraction.shape[0]
-    self.stdelem = stdelem
-    self.extraction = extraction
-    super().__init__(stdelem.ndims, extraction.shape[1])
-
-  def extract( self, extraction ):
-    return ExtractionWrapper( self.stdelem, numpy.dot( self.extraction, extraction ) )
-
-  def eval( self, points, grad=0 ):
-    'call'
-
-    return numeric.dot( self.stdelem.eval( points, grad ), self.extraction, axis=1 )
-
-  def __repr__( self ):
-    'string representation'
-
-    return '%s#%x:%s' % ( self.__class__.__name__, id(self), self.stdelem )
 
 
 # UTILITY FUNCTIONS
