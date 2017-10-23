@@ -736,4 +736,13 @@ def poly_outer_product(left, right):
   outer[(a,a,*(map(slice, left.shape[1:]+right.shape[1:])))] = left[(a,None)+(a,)*nleft+(None,)*nright]*right[(None,a)+(None,)*nleft+(a,)*nright]
   return const(outer.reshape(left.shape[0]*right.shape[0], *(P+1,)*(nleft+nright)), copy=False)
 
+def poly_stack(coeffs):
+  coeffs = tuple(coeffs)
+  n = max(icoeffs.shape[0] for icoeffs in coeffs)
+  ndim = coeffs[0].ndim
+  dest = numpy.zeros((len(coeffs),)+(n,)*ndim, dtype=float)
+  for i, j in enumerate(coeffs):
+    dest[(i,*map(slice, j.shape))] = j
+  return const(dest, copy=False)
+
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

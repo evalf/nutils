@@ -1951,8 +1951,8 @@ class HierarchicalTopology( Topology ):
     # least one supporting element coinsiding with self ('touched') and no
     # supporting element finer than self ('supported').
 
-    funcs = []
-    dofmaps = []
+    dofs_coeffs = []
+    renumber = []
     supports = []
     length = 0
 
@@ -1965,6 +1965,15 @@ class HierarchicalTopology( Topology ):
 
       (axes,func), = function.blocks( basis )
       dofmap, = axes
+      if isinstance(func, function.Polyval):
+        coeffs = func.coeffs
+        assert coeffs.ndim == 1+self.ndims
+      elif func.isconstant:
+        assert func.ndim == 1
+        coeffs = func[(slice(None),*(_,)*self.ndims)]
+      else:
+        raise ValueError
+
       for elem in topo:
         trans = elem.transform
         idofs, = dofmap.eval(_transforms=(elem.transform, elem.opposite))
@@ -1973,15 +1982,31 @@ class HierarchicalTopology( Topology ):
         elif trans.lookup( self.edict ):
           supported[idofs] = False
 
-      funcs.append( func )
-      dofmaps.append( dofmap + length )
-      supports.append( supported & touchtopo )
-      length += len( supported )
+      support = supported & touchtopo
+      supports.append(support)
+      cumsum_support = numpy.cumsum(support)
+      renumber.append(cumsum_support+(length-1))
+      length += cumsum_support[-1]
+      dofs_coeffs.append(function.Tuple((dofmap, coeffs)))
 
-    funcs = function.concatenate( funcs, axis=0 )
-    dofmaps = function.concatenate( dofmaps, axis=0 )
-    supports = numpy.concatenate( supports, axis=0 )
-    return function.mask( function.inflate( funcs, dofmaps, length, 0 ), supports )
+    dofs = []
+    coeffs = []
+    transforms = tuple(sorted(elem.transform for elem in self))
+    for trans in transforms:
+      hcoeffs = []
+      hdofs = []
+      ibase, tail = trans.lookup_item(self.basetopo.edict)
+      for ilevel in range(len(tail)+1):
+        (idofs,), (icoeffs,) = dofs_coeffs[ilevel].eval(_transforms=(trans,))
+        isupport = supports[ilevel][idofs]
+        if not isupport.any():
+          continue
+        hdofs.extend(map(renumber[ilevel].__getitem__, idofs[isupport]))
+        hcoeffs.extend(transform.transform_poly(tail[ilevel:], icoeffs[isupport]))
+      dofs.append(numeric.const(hdofs))
+      coeffs.append(numeric.poly_stack(hcoeffs))
+
+    return function.polyfunc(coeffs, dofs, length, transforms, issorted=True)
 
 class ProductTopology( Topology ):
   'product topology'
