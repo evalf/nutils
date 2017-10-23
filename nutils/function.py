@@ -622,7 +622,7 @@ class DofMap(Array):
     assert index.ndim == 0 and index.dtype == int
     self.dofs = dofs
     self.index = index
-    length = get([len(d) for d in dofs] + [0], iax=0, item=index)
+    length = get([len(d) for d in dofs], iax=0, item=index)
     super().__init__(args=[index], shape=(length,), dtype=int)
 
   @property
@@ -631,7 +631,7 @@ class DofMap(Array):
 
   def evalf(self, index):
     index, = index
-    return (self.dofs[index] if index < len(self.dofs) else numpy.empty([0], dtype=int))[_]
+    return self.dofs[index][_]
 
 class ElementSize( Array):
   'dimension of hypercube with same volume as element'
@@ -909,10 +909,7 @@ class RootCoords(Array):
   def evalf(self, points, chain):
     'evaluate'
 
-    value = transform.apply(chain, points)
-    if not chain and value.shape[1] != self.shape[0]:
-      return numpy.empty((points.shape[0], 0), dtype=self.dtype)
-    return value
+    return transform.apply(chain, points)
 
   def _derivative(self, var, seen):
     if isinstance(var, LocalCoords) and len(var) > 0:
@@ -2645,7 +2642,7 @@ class FindTransform(Array):
         index = i
     index -= 1
     if index < 0 or trans[:len(self.transforms[index])] != self.transforms[index]:
-      index = len(self.transforms)
+      raise IndexError('trans not found')
     return numpy.array(index)[_]
 
 class Range(Array):
@@ -2693,8 +2690,6 @@ class Polyval(Array):
     super().__init__(args=[points, coeffs], shape=coeffs.shape[:ndim]+(self.points_ndim,)*ngrad, dtype=float)
 
   def evalf(self, points, coeffs):
-    if points.size == 0:
-      return numpy.zeros((points.shape[0],)+coeffs.shape[1:coeffs.ndim-self.points_ndim]+(self.points_ndim,)*self.ngrad, dtype=self.dtype)
     assert points.shape[1] == self.points_ndim
     for i in range(self.ngrad):
       coeffs = self._grad_coeffs(coeffs)
@@ -3131,10 +3126,9 @@ def polyfunc(coeffs, dofs, ndofs, transforms, *, issorted=True):
   promote = Promote(fromdims, trans=TRANS)
   index = FindTransform(transforms, promote)
   dofmap = DofMap(dofs, index=index)
-  depth = Get([len(trans) for trans in transforms]+[builtins.min(map(len, transforms))], axis=0, item=index)
+  depth = Get([len(trans) for trans in transforms], axis=0, item=index)
   points = RootCoords(fromdims, TailOfTransform(promote, depth))
-  z = numeric.const(numpy.zeros((0,)+coeffs[0].shape[1:]))
-  func = Polyval(Elemwise(coeffs+(z,), index, dtype=float), points, fromdims)
+  func = Polyval(Elemwise(coeffs, index, dtype=float), points, fromdims)
   return Inflate(func, dofmap, ndofs, axis=0)
 
 def elemwise( fmap, shape, default=None ):
