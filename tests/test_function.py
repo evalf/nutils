@@ -415,6 +415,39 @@ class piecewise(TestCase):
     assert numpy.equal(g_, [[0], [numpy.cos(.375)], [numpy.cos(.625)], [2*.875]]).all()
 
 
+class elemwise(TestCase):
+
+  def setUp(self):
+    super().setUp()
+    self.domain, geom = mesh.rectilinear([5])
+    self.transforms = tuple(sorted(elem.transform for elem in self.domain))
+    self.index = function.FindTransform(self.transforms, function.TRANS)
+    self.data = tuple(map(numeric.const, (
+      numpy.arange(1, dtype=float).reshape(1,1),
+      numpy.arange(2, dtype=float).reshape(1,2),
+      numpy.arange(3, dtype=float).reshape(3,1),
+      numpy.arange(4, dtype=float).reshape(2,2),
+      numpy.arange(6, dtype=float).reshape(3,2),
+    )))
+    self.func = function.Elemwise(self.data, self.index, float)
+
+  def test_evalf(self):
+    for i, trans in enumerate(self.transforms):
+      with self.subTest(i=i):
+        numpy.testing.assert_array_almost_equal(self.func.eval(_transforms=(trans,)), self.data[i][_])
+
+  def test_shape(self):
+    for i, trans in enumerate(self.transforms):
+      with self.subTest(i=i):
+        self.assertEqual(self.func.size.eval(_transforms=(trans,))[0], self.data[i].size)
+
+  def test_derivative(self):
+    self.assertTrue(function.iszero(function.localgradient(self.func, self.domain.ndims)))
+
+  def test_shape_derivative(self):
+    self.assertEqual(function.localgradient(self.func, self.domain.ndims).shape, self.func.shape+(self.domain.ndims,))
+
+
 class namespace(TestCase):
 
   def test_set_scalar(self):

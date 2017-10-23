@@ -1821,28 +1821,26 @@ class Sampled( Array ):
     assert mypoints.shape == evalpoints.shape and numpy.equal(mypoints, evalpoints).all(), 'Illegal point set'
     return myvals
 
-class Elemwise( Array ):
-  'elementwise constant data'
+class Elemwise(Array):
 
-  def __init__(self, fmap:util.frozendict, shape:tuple, default=None, trans=TRANS):
-    self.fmap = fmap
-    self.default = default
-    self.trans = trans
-    super().__init__(args=[trans], shape=shape, dtype=float)
+  def __init__(self, data:tuple, index:asarray, dtype:asdtype):
+    self.data = data
+    ndim = self.data[0].ndim
+    shape = tuple(get([d.shape[i] for d in self.data], iax=0, item=index) for i in range(ndim))
+    super().__init__(args=[index], shape=shape, dtype=dtype)
 
-  def evalf( self, trans ):
-    try:
-      value, tail = trans.lookup_item( self.fmap )
-    except KeyError:
-      value = self.default
-      if value is None:
-        raise
-    value = numpy.asarray( value )
-    assert value.shape == self.shape, 'wrong shape: {} != {}'.format( value.shape, self.shape )
-    return value[_]
+  def evalf(self, index):
+    index, = index
+    return self.data[index][_]
 
   def _derivative(self, var, seen):
-    return zeros(self.shape+var.shape)
+    return Zeros(self.shape+var.shape, self.dtype)
+
+  @cache.property
+  def simplified(self):
+    if all(map(numeric.isint, self.shape)) and all(numpy.equal(self.data[0], self.data[i]).all() for i in range(1, len(self.data))):
+      return Constant(self.data[0])
+    return self
 
 class Eig( Evaluable ):
 
@@ -3034,7 +3032,14 @@ def function(fmap, nmap, ndofs):
   return Inflate(func, dofmap, ndofs, axis=0)
 
 def elemwise( fmap, shape, default=None ):
-  return Elemwise( fmap=fmap, shape=shape, default=default )
+  if default is not None:
+    raise NotImplemented('default is not supported anymore')
+  transforms = tuple(sorted(fmap))
+  values = tuple(fmap[trans] for trans in transforms)
+  fromdims, = set(transform.fromdims for transform in transforms)
+  promote = Promote(fromdims, trans=TRANS)
+  index = FindTransform(transforms, promote)
+  return Elemwise(values, index, dtype=float)
 
 def take(arg, index, axis):
   arg = asarray(arg)
