@@ -67,7 +67,7 @@ def main(
   ns.sigma_ij = 'viscosity (u_i,j + u_j,i) - p δ_ij'
   ns.c = 5 * (degree+1) / domain.boundary.elem_eval(1, geometry=ns.x, ischeme='gauss2', asfunction=True)
   ns.nietzsche_ni = 'viscosity (c ubasis_ni - (ubasis_ni,j + ubasis_nj,i) n_j)'
-  ns.top = domain.boundary['top'].indicator()
+  ns.top = domain.boundary.indicator('top')
   ns.utop_i = 'top <n_1, -n_0>_i'
 
   # solve stokes flow

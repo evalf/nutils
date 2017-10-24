@@ -6,6 +6,21 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+Changed: Topology.indicator
+
+  The `indicator` method is moved from subtopology to parent topology,
+  i.e. the topology you want to evaluate the indicator on, and now takes
+  the subtopology is an argument.
+
+  Old:
+  >>> ind = domain.boundary['top'].indicator()
+
+  New:
+  >>> ind = domain.boundary.indicator(domain.boundary['top'])
+  Or equivalently:
+  >>> ind = domain.boundary.indicator('top')
+
+
 Changed: Evaluable.eval
 
   The `eval` method accepts a flexible number of keyword arguments,

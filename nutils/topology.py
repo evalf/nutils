@@ -570,8 +570,13 @@ class Topology( object ):
     numpy.testing.assert_almost_equal( volumes, volume, decimal=decimal )
     return volume
 
-  def indicator( self ):
-    return function.elemwise( { elem.transform: 1. for elem in self }, (), default=0. )
+  def indicator(self, subtopo):
+    if isinstance(subtopo, str):
+      subtopo = self[subtopo]
+    transforms = tuple(sorted(elem.transform for elem in self))
+    values = numeric.const([int(trans in subtopo.edict) for trans in transforms])
+    assert len(subtopo) == values.sum(0), '{} is not a proper subtopology of {}'.format(subtopo, self)
+    return function.Get(values, axis=0, item=function.FindTransform(transforms, function.Promote(self.ndims, trans=function.TRANS)))
 
   def select( self, indicator, ischeme='bezier2', *, arguments=None ):
     values = self.elem_eval( indicator, ischeme, separate=True, arguments=arguments )
