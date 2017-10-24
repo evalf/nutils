@@ -65,11 +65,12 @@ class check(TestCase):
       desired=numpy.transpose(self.n_op_argsfun, [0]+list(trans+1)),
       actual=function.transpose(self.op_args, trans).simplified.eval(**self.evalargs))
 
-  def test_expand_dims(self):
-    axis = (self.op_args.ndim+1) // 2
-    self.assertArrayAlmostEqual(decimal=15,
-      desired=numpy.expand_dims(self.n_op_argsfun, axis+1),
-      actual=function.expand_dims(self.op_args, axis).simplified.eval(**self.evalargs))
+  def test_insertaxis(self):
+    for axis in range(self.op_args.ndim+1):
+      with self.subTest(axis=axis):
+        self.assertArrayAlmostEqual(decimal=15,
+          desired=numpy.repeat(numpy.expand_dims(self.n_op_argsfun, axis+1), 2, axis+1),
+          actual=function.InsertAxis(self.op_args, axis=axis, length=2).simplified.eval(**self.evalargs))
 
   def test_takediag(self):
     for ax1, ax2 in self.pairs:
