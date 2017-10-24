@@ -720,4 +720,11 @@ class const:
       shape=base.shape[:axis]+(length,)+base.shape[axis:],
       strides=base.strides[:axis]+(0,)+base.strides[axis:]))
 
+def binom(n, k):
+  a = b = 1
+  for i in range(1, k+1):
+    a *= n+1-i
+    b *= i
+  return a // b
+
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
