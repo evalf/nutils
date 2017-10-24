@@ -1928,7 +1928,6 @@ class Zeros( Array ):
     return Zeros(self.shape[:axis] + index.shape + self.shape[axis+1:], dtype=self.dtype)
 
   def _inflate(self, dofmap, length, axis):
-    assert not isinstance( self.shape[axis], int )
     return Zeros(self.shape[:axis] + (length,) + self.shape[axis+1:], dtype=self.dtype)
 
   def _power(self, n):
@@ -1977,7 +1976,7 @@ class Inflate( Array ):
     shape = list(array.shape)
     shape[self.axis+1] = self.length
     inflated = numpy.zeros(shape, dtype=self.dtype)
-    inflated[(slice(None),)*(self.axis+1)+(indices,)] = array
+    numpy.add.at(inflated, (slice(None),)*(self.axis+1)+(indices,), array)
     return inflated
 
   @property
@@ -1997,13 +1996,13 @@ class Inflate( Array ):
     return Inflate(newfunc, newdofmap, newlength, self.axis)
 
   def _inflate( self, dofmap, length, axis ):
-    assert axis != self.axis
-    if axis > self.axis:
-      return
-    return Inflate(Inflate(self.func, dofmap, length, axis), self.dofmap, self.length, self.axis)
+    if axis == self.axis:
+      return Inflate(self.func, Take(dofmap, self.dofmap, 0), length, axis)
+    if axis < self.axis:
+      return Inflate(Inflate(self.func, dofmap, length, axis), self.dofmap, self.length, self.axis)
 
   def _derivative(self, var, seen):
-    return inflate(derivative(self.func, var, seen), self.dofmap, self.length, self.axis)
+    return Inflate(derivative(self.func, var, seen), self.dofmap, self.length, self.axis)
 
   def _transpose(self, axes):
     axis = axes.index(self.axis)
@@ -2013,8 +2012,8 @@ class Inflate( Array ):
     return Inflate(InsertAxis(self.func, axis, length), self.dofmap, self.length, self.axis+(axis<=self.axis))
 
   def _get(self, axis, item):
-    assert axis != self.axis
-    return Inflate(Get(self.func,axis,item), self.dofmap, self.length, self.axis-(axis<self.axis))
+    if axis != self.axis:
+      return Inflate(Get(self.func,axis,item), self.dofmap, self.length, self.axis-(axis<self.axis))
 
   def _multiply(self, other):
     if isinstance(other, Inflate) and self.axis == other.axis:
@@ -2030,7 +2029,7 @@ class Inflate( Array ):
     return BlockAdd([self, other])
 
   def _power(self, n):
-    return Inflate(Power(self.func, n), self.dofmap, self.length, self.axis)
+    return Inflate(Power(self.func, Take(n, indices=self.dofmap, axis=self.axis)), self.dofmap, self.length, self.axis)
 
   def _takediag(self, axis, rmaxis):
     if self.axis == axis:
