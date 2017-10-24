@@ -378,7 +378,8 @@ class Array( Evaluable ):
 
   def __init__(self, args:tuple, shape:tuple, dtype:asdtype):
     assert all(numeric.isint(sh) or isarray(sh) and sh.ndim == 0 and sh.dtype == int for sh in shape)
-    self.shape = tuple(sh if not isarray(sh) else sh.eval()[0] if sh.isconstant else sh.simplified for sh in shape)
+    shape = tuple(sh.simplified if isarray(sh) else sh for sh in shape)
+    self.shape = tuple(sh.eval()[0] if isarray(sh) and sh.isconstant else sh for sh in shape)
     self.ndim = len(shape)
     self.dtype = dtype
     super().__init__(args=args)
