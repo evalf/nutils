@@ -615,7 +615,7 @@ class Topology( object ):
         xi, w = elem.reference.getischeme( 'gauss1' )
         xi = ( numpy.dot(w,xi) / w.sum() )[_] if len(xi) > 1 else xi.copy()
         J = function.localgradient( geom, self.ndims )
-        geom_J = function.Tuple(( function.zero_argument_derivatives(geom), function.zero_argument_derivatives(J) ))
+        geom_J = function.Tuple(( function.zero_argument_derivatives(geom), function.zero_argument_derivatives(J) )).simplified
         for iiter in range( maxiter ):
           point_xi, J_xi = geom_J.eval(_transforms=(elem.transform, elem.opposite), _points=xi, **arguments)
           err = numpy.linalg.norm( point - point_xi )
