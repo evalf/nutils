@@ -1948,7 +1948,8 @@ class RevolutionTopology( Topology ):
 class MultipatchTopology( Topology ):
   'multipatch topology'
 
-  Patch = collections.namedtuple( 'patch', [ 'topo', 'verts', 'boundaries'] )
+  Patch = collections.namedtuple( 'Patch', [ 'topo', 'verts', 'boundaries'] )
+  Patch.__qualname__ = 'MultipatchTopology.Patch'
 
   @staticmethod
   def build_boundarydata( connectivity ):
