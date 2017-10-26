@@ -814,6 +814,8 @@ class Get(Array):
     if len(item) == 1:
       item, = item
       p = slice(None)
+    elif len(arr) == 1:
+      p = numpy.zeros(len(item), dtype=int)
     else:
       p = numpy.arange(len(item))
     return arr[(p,)+(slice(None),)*self.axis+(item,)]
@@ -825,7 +827,7 @@ class Get(Array):
   def _get(self, i, item):
     tryget = self.func._get(i+(i>=self.axis), item)
     if tryget is not None:
-      return Get(tryget, self.axis, self.item)
+      return Get(tryget, self.axis-(i<self.axis), self.item)
 
   def _take(self, indices, axis):
     return Get(Take(self.func, indices, axis+(axis>=self.axis) ), self.axis, self.item)
