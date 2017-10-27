@@ -108,11 +108,6 @@ class check(TestCase):
         desired=numpy.product(self.n_op_argsfun, axis=iax+1),
         actual=function.product(self.op_args, axis=iax).simplified.eval(**self.evalargs))
 
-  def test_power(self):
-    self.assertArrayAlmostEqual(decimal=13,
-      desired=numpy.power(self.n_op_argsfun, 3),
-      actual=function.power(self.op_args, 3).simplified.eval(**self.evalargs))
-
   def test_concatenate(self):
     for idim in range(self.op_args.ndim):
       self.assertArrayAlmostEqual(decimal=15,
