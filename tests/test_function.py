@@ -65,11 +65,12 @@ class check(TestCase):
       desired=numpy.transpose(self.n_op_argsfun, [0]+list(trans+1)),
       actual=function.transpose(self.op_args, trans).simplified.eval(**self.evalargs))
 
-  def test_expand_dims(self):
-    axis = (self.op_args.ndim+1) // 2
-    self.assertArrayAlmostEqual(decimal=15,
-      desired=numpy.expand_dims(self.n_op_argsfun, axis+1),
-      actual=function.expand_dims(self.op_args, axis).simplified.eval(**self.evalargs))
+  def test_insertaxis(self):
+    for axis in range(self.op_args.ndim+1):
+      with self.subTest(axis=axis):
+        self.assertArrayAlmostEqual(decimal=15,
+          desired=numpy.repeat(numpy.expand_dims(self.n_op_argsfun, axis+1), 2, axis+1),
+          actual=function.InsertAxis(self.op_args, axis=axis, length=2).simplified.eval(**self.evalargs))
 
   def test_takediag(self):
     for ax1, ax2 in self.pairs:
@@ -317,6 +318,7 @@ _check('sum', lambda a: function.sum(a,1), lambda a: a.sum(-2), [(2,3,2)])
 _check('transpose', lambda a: function.transpose(a,[0,2,1]), lambda a: a.transpose([0,1,3,2]), [(2,3,2)])
 _check('expand_dims', lambda a: function.expand_dims(a,1), lambda a: numpy.expand_dims(a,2), [(2,3)])
 _check('get', lambda a: function.get(a,1,1), lambda a: a[...,1,:], [(2,3,2)])
+_check('getvar', lambda a: function.get(function.Constant([[1,2],[3,4]]),1,function.Int(a)%2), lambda a: numpy.array([[1,2],[3,4]])[:,a.astype(int)%2].T, [()])
 _check('takediag121', lambda a: function.takediag(a,0,2), lambda a: numeric.takediag(a,1,3), [(1,2,1)])
 _check('takediag232', lambda a: function.takediag(a,0,2), lambda a: numeric.takediag(a,1,3), [(2,3,2)])
 _check('takediag323', lambda a: function.takediag(a,0,2), lambda a: numeric.takediag(a,1,3), [(3,2,3)])
@@ -352,6 +354,7 @@ _check('kronecker', lambda f: function.kronecker(f,axis=-2,length=3,pos=1), lamb
 _check('mask', lambda f: function.mask(f,numpy.array([True,False,True]),axis=1), lambda a: a[:,:,numpy.array([True,False,True])], [(2,3,4)])
 _check('ravel', lambda f: function.ravel(f,axis=1), lambda a: a.reshape(-1,2,6), [(2,3,2)])
 _check('unravel', lambda f: function.unravel(f,axis=0,shape=[2,3]), lambda a: a.reshape(-1,2,3,2), [(6,2)])
+_check('inflate', lambda f: function.Inflate(f,dofmap=[0,2],length=3,axis=1), lambda a: numpy.concatenate([a[:,:,:1], numpy.zeros_like(a)[:,:,:1], a[:,:,1:]], axis=2), [(3,2,3)])
 
 
 class commutativity(TestCase):

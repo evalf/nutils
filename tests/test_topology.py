@@ -474,3 +474,44 @@ class multipatch_L(TestCase):
     for ipatch in range(3):
       vals = self.domain['patch{}'.format(ipatch)].elem_eval(patch_index, ischeme='gauss1')
       numpy.testing.assert_array_almost_equal(vals, ipatch)
+
+
+class elem_eval(TestCase):
+
+  def setUp(self):
+    self.domain, self.geom = mesh.rectilinear([[0,1,2],[0,1,2]])
+
+  def test_separate(self):
+    retvals = self.domain.elem_eval([self.geom[0], self.geom[1]], ischeme='bezier3', separate=True)
+    self.assertEqual(len(retvals), 2)
+    for arrays in retvals:
+      self.assertIsInstance(arrays, list)
+      self.assertEqual(len(arrays), 4)
+      for array in arrays:
+        self.assertTrue(numeric.isarray(array))
+        self.assertEqual(array.shape, (9,))
+
+  def test_noseparate(self):
+    retvals = self.domain.elem_eval([self.geom[0], self.geom[1]], ischeme='bezier3', separate=False)
+    self.assertEqual(len(retvals), 2)
+    for array in retvals:
+      self.assertTrue(numeric.isarray(array))
+      self.assertEqual(array.shape, (36,))
+
+  def test_asfunction(self):
+    x, y = self.domain.elem_eval([self.geom[0], self.geom[1]], ischeme='gauss3', asfunction=True)
+    err = self.domain.integrate((x-self.geom[0])**2+(y-self.geom[1])**2, ischeme='gauss3')
+    self.assertEqual(err, 0)
+    with self.assertRaises(function.EvaluationError):
+      self.domain.integrate(x, ischeme='gauss4')
+
+  def test_failures(self):
+    f = function.inverse(function.Guard(function.diagonalize(self.geom))) # fails at x=0 and y=0
+    arrays = self.domain.elem_eval(f, ischeme='bezier3', separate=True)
+    self.assertIsInstance(arrays, list)
+    self.assertTrue(len(arrays), 4)
+    for i, array in enumerate(arrays):
+      if i < 3:
+        self.assertTrue(numpy.isnan(array).all())
+      else:
+        self.assertFalse(numpy.isnan(array).any())
