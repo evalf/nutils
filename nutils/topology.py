@@ -173,8 +173,19 @@ class Topology( object ):
     for ielem, elem in parallel.pariter( log.enumerate( 'elem', self ), nprocs=nprocs ):
       ipoints, iweights = ischeme[elem] if isinstance(ischeme,collections.abc.Mapping) else fcache[elem.reference.getischeme]( ischeme )
       s = slices[ielem],
-      for ifunc, index, data in idata.eval(_transforms=(elem.transform, elem.opposite), _points=ipoints, _cache=fcache, **arguments):
-        numpy.add.at(retvals[ifunc], s+numpy.ix_(*[ ind for (ind,) in index ]), numeric.dot(iweights,data) if geometry else data)
+      try:
+        for ifunc, index, data in idata.eval(_transforms=(elem.transform, elem.opposite), _points=ipoints, _cache=fcache, **arguments):
+          numpy.add.at(retvals[ifunc], s+numpy.ix_(*[ ind for (ind,) in index ]), numeric.dot(iweights,data) if geometry else data)
+      except function.EvaluationError:
+        warnings.warn('not all functions evaluated successfully')
+        for ifunc, indexfunc, datafunc in idata:
+          index = indexfunc.eval(_transforms=(elem.transform, elem.opposite), _points=ipoints, _cache=fcache, **arguments)
+          try:
+            data = datafunc.eval(_transforms=(elem.transform, elem.opposite), _points=ipoints, _cache=fcache, **arguments)
+          except function.EvaluationError:
+            retvals[ifunc][s+numpy.ix_(*[ ind for (ind,) in index ])] = numpy.nan
+          else:
+            numpy.add.at(retvals[ifunc], s+numpy.ix_(*[ ind for (ind,) in index ]), numeric.dot(iweights,data) if geometry else data)
 
     log.debug( 'cache', fcache.stats )
     log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join( str(n) for n in retval.shape ) ) for retval in retvals ) )
