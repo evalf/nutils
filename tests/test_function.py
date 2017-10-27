@@ -236,9 +236,11 @@ class check(TestCase):
     fdgrad = numpy.zeros(F.shape[1:], bool) if F.dtype.kind == 'b' else (F[1]-F[0])/eps
     fdgrad = fdgrad.transpose(numpy.roll(numpy.arange(F.ndim-1),-1))
     G = function.localgradient(self.op_args, ndims=self.elem.ndims)
-    exact = numpy.empty_like(fdgrad)
-    exact[...] = G.simplified.eval(**self.evalargs)
-    self.assertArrayAlmostEqual(fdgrad, exact, decimal=5)
+    for simplified in True, False:
+      with self.subTest(simplified=simplified):
+        exact = numpy.empty_like(fdgrad)
+        exact[...] = (G.simplified if simplified else G).eval(**self.evalargs)
+        self.assertArrayAlmostEqual(fdgrad, exact, decimal=5)
 
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_jacobian(self):
@@ -263,9 +265,11 @@ class check(TestCase):
     fdgrad = numpy.zeros(F.shape[1:], bool) if F.dtype.kind == 'b' else (F[1]-F[0])/eps
     fdgrad = fdgrad.transpose(numpy.roll(numpy.arange(F.ndim-1),-1))
     G = self.op_args.grad(self.geom)
-    exact = numpy.empty_like(fdgrad)
-    exact[...] = G.simplified.eval(**self.evalargs)
-    self.assertArrayAlmostEqual(fdgrad, exact, decimal=5)
+    for simplified in True, False:
+      with self.subTest(simplified=simplified):
+        exact = numpy.empty_like(fdgrad)
+        exact[...] = (G.simplified if simplified else G).eval(**self.evalargs)
+        self.assertArrayAlmostEqual(fdgrad, exact, decimal=5)
 
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_doublegradient(self):
@@ -278,9 +282,11 @@ class check(TestCase):
     fddgrad = numpy.zeros(F.shape[2:], bool) if F.dtype.kind == 'b' else ((F[1,1]-F[1,0])-(F[0,1]-F[0,0]))/(eps**2)
     fddgrad = fddgrad.transpose(numpy.roll(numpy.arange(F.ndim-2),-2))
     G = self.op_args.grad(self.geom).grad(self.geom)
-    exact = numpy.empty_like(fddgrad)
-    exact[...] = G.simplified.eval(**self.evalargs)
-    numpy.testing.assert_allclose(fddgrad, exact, rtol=2e-4)
+    for simplified in True, False:
+      with self.subTest(simplified=simplified):
+        exact = numpy.empty_like(fddgrad)
+        exact[...] = (G.simplified if simplified else G).eval(**self.evalargs)
+        numpy.testing.assert_allclose(fddgrad, exact, rtol=2e-4)
 
 _check = lambda name, op, n_op, shapes, hasgrad=True: check(name, op=op, n_op=n_op, shapes=shapes, hasgrad=hasgrad)
 _check('const', lambda f: function.asarray(f), lambda a: a, [(2,3,2)])
