@@ -197,6 +197,11 @@ class check(TestCase):
       return arg
     check_identity(self.op_args)
 
+  def test_opposite(self):
+    self.assertArrayAlmostEqual(decimal=15,
+      desired=self.n_op(*function.opposite(self.argsfun).simplified.eval(_transforms=[self.iface.transform, self.iface.opposite], _points=self.ifpoints)),
+      actual=function.opposite(self.op_args).simplified.eval(_transforms=[self.iface.transform, self.iface.opposite], _points=self.ifpoints))
+
   def find(self, target, xi0):
     ndim, = self.geom.shape
     J = function.localgradient(self.geom, ndim)
@@ -276,13 +281,6 @@ class check(TestCase):
     exact = numpy.empty_like(fddgrad)
     exact[...] = G.simplified.eval(**self.evalargs)
     numpy.testing.assert_allclose(fddgrad, exact, rtol=2e-4)
-
-  @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
-  def test_opposite(self):
-    opposite_args = function.Tuple([function.opposite(arg) for arg in self.args])
-    self.assertArrayAlmostEqual(decimal=15,
-      desired=self.n_op(*opposite_args.simplified.eval(_transforms=[self.iface.transform, self.iface.opposite], _points=self.ifpoints)),
-      actual=function.opposite(self.op_args).simplified.eval(_transforms=[self.iface.transform, self.iface.opposite], _points=self.ifpoints))
 
 _check = lambda name, op, n_op, shapes, hasgrad=True: check(name, op=op, n_op=n_op, shapes=shapes, hasgrad=hasgrad)
 _check('const', lambda f: function.asarray(f), lambda a: a, [(2,3,2)])
