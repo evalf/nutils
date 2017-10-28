@@ -1914,7 +1914,7 @@ class Zeros( Array ):
     return Zeros(self.shape[:newaxis]+(self.shape[axis],)+self.shape[newaxis:], dtype=self.dtype)
 
   def _sum(self, axis):
-    return Zeros(self.shape[:axis] + self.shape[axis+1:], dtype=self.dtype)
+    return Zeros(self.shape[:axis] + self.shape[axis+1:], dtype=int if self.dtype == bool else self.dtype)
 
   def _transpose(self, axes):
     shape = [self.shape[n] for n in axes]
