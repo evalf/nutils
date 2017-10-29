@@ -685,8 +685,10 @@ class const:
   __rsub__ = lambda self, other: self.__base.__rsub__(other)
   __mul__ = lambda self, other: self.__base.__mul__(other)
   __rmul__ = lambda self, other: self.__base.__rmul__(other)
-  __div__ = lambda self, other: self.__base.__div__(other)
-  __rdiv__ = lambda self, other: self.__base.__rdiv__(other)
+  __truediv__ = lambda self, other: self.__base.__truediv__(other)
+  __rtruediv__ = lambda self, other: self.__base.__rtruediv__(other)
+  __floordiv__ = lambda self, other: self.__base.__floordiv__(other)
+  __rfloordiv__ = lambda self, other: self.__base.__rfloordiv__(other)
   __pow__ = lambda self, other: self.__base.__pow__(other)
   __hash__ = lambda self: self.__hash
   __int__ = lambda self: self.__base.__int__()
