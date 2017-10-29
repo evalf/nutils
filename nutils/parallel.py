@@ -33,11 +33,6 @@ procid = None # current process id, None for unforked
 def shempty(shape, dtype=float):
   '''create uninitialized array in shared memory'''
 
-  return shzeros(shape, dtype=dtype)
-
-def shzeros( shape, dtype=float ):
-  '''create zero-initialized array in shared memory'''
-
   if numeric.isint( shape ):
     shape = shape,
   else:
@@ -45,27 +40,18 @@ def shzeros( shape, dtype=float ):
   dtype = numpy.dtype( dtype )
   size = ( numpy.product( shape ) if shape else 1 ) * dtype.itemsize
   if size == 0:
-    return numpy.zeros( shape, dtype )
-  fd, name = tempfile.mkstemp( dir=core.getprop( 'shmdir', default=None ) )
-  try:
-    os.unlink(name)
-    # Make sure the entire file is allocated by writing zeros.  If we omit
-    # this, writing to the mmap array will cause the process to be killed with
-    # SIGBUS if there is no memory available.
-    with open( fd, 'wb', closefd=False ) as f:
-      bs = 1024 * 1024
-      if size >= bs:
-        zeros = b'\0' * bs
-        for i in range( size // bs ):
-          f.write( zeros )
-        del zeros
-      f.write( b'\0' * (size % bs) )
-      assert f.tell() == size
-    buf = mmap.mmap( fd, size )
-  finally:
-    os.close(fd)
-  array = numpy.frombuffer( buf, dtype ).reshape( shape )
-  assert array.ravel()[0] == 0, '{!r} is not interpreted as 0 ({})'.format(b'\x00'*dtype.itemsize, dtype)
+    return numpy.empty(shape, dtype)
+  # `mmap(-1,...)` will allocate *anonymous* memory.  Although linux' man page
+  # mmap(2) states that anonymous memory is initialized to zero, we can't rely
+  # on this to be true for all platforms (see [SO-mmap]).  [SO-mmap]:
+  # https://stackoverflow.com/a/17896084
+  return numpy.frombuffer(mmap.mmap(-1, size), dtype).reshape(shape)
+
+def shzeros(shape, dtype=float):
+  '''create zero-initialized array in shared memory'''
+
+  array = shempty(shape, dtype=dtype)
+  array.fill(0)
   return array
 
 def pariter( iterable, nprocs ):
