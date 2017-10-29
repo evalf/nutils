@@ -536,6 +536,22 @@ class Constant( Array ):
   def simplified(self):
     if not self.value.any():
       return zeros_like(self)
+    # Find and replace invariant axes with InsertAxis.
+    value = self.value
+    invariant = []
+    for i in reversed(range(self.ndim)):
+      # Since `self.value.any()` is False for arrays with a zero-length axis,
+      # we can arrive here only if all axes have at least length one, hence the
+      # following statement should work.
+      first = numeric.get(value, i, 0)
+      if all(numpy.equal(first, numeric.get(value, i, j)).all() for j in range(1, value.shape[i])):
+        invariant.append(i)
+        value = first
+    if invariant:
+      value = Constant(value)
+      for i in reversed(invariant):
+        value = InsertAxis(value, i, self.shape[i])
+      return value.simplified
     return self
 
   def evalf( self ):
