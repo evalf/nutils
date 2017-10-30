@@ -76,6 +76,26 @@ class Topology( object ):
 
   __ror__ = lambda self, other: self.__or__( other )
 
+  def __and__(self, other):
+    # Strategy: loop over combined elements sorted by .transform while keeping
+    # track of the origin (mine=True for self, mine=False for other), and
+    # select an element if it is equal to or a refinement of the previous
+    # (hold) element and it originates from the other topology (mine == need).
+    # Hold is not updated in case of a match because it might match multiple
+    # children.
+    elems = []
+    need = None
+    for elem, mine in sorted([(elem, True) for elem in self] + [(elem, False) for elem in other], key=lambda v: v[0].transform):
+      if mine == need and elem.transform[:len(hold.transform)] == hold.transform:
+        assert elem.opposite[:len(hold.opposite)] == hold.opposite
+        elems.append(elem)
+      else:
+        hold = elem
+        need = not mine
+    return UnstructuredTopology(self.ndims, elems)
+
+  __rand__ = lambda self, other: self.__and__(other)
+
   def __add__( self, other ):
     return self | other
 
@@ -2360,19 +2380,8 @@ DimAxis.isdim = True
 BndAxis = collections.namedtuple( 'BndAxis', ['i','j','ibound','side'] )
 BndAxis.isdim = False
 
-def common_refine( topo1, topo2 ):
-  assert topo1.ndims == topo2.ndims
-  elements = []
-  select2 = numpy.ones( len(topo2), dtype=bool )
-  for elem1 in topo1:
-    try:
-      ielem2, tail = elem1.transform.lookup_item( topo2.edict )
-    except KeyError:
-      pass
-    else:
-      elements.append( elem1 )
-      select2[ielem2] = False
-  elements.extend( elem for ielem, elem in enumerate(topo2) if select2[ielem] )
-  return UnstructuredTopology( topo1.ndims, elements )
+def common_refine(topo1, topo2):
+  warnings.warn('common_refine(a, b) will be removed in future; use a & b instead', DeprecationWarning)
+  return topo1 & topo2
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
