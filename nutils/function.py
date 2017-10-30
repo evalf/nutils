@@ -3167,32 +3167,6 @@ def find( arg ):
 
   return Find( arg )
 
-def inflate(arg, dofmap, length, axis):
-  arg = asarray(arg)
-  dofmap = asarray(dofmap)
-  axis = numeric.normdim(arg.ndim, axis)
-  shape = arg.shape[:axis] + (length,) + arg.shape[axis+1:]
-  if dofmap.isconstant:
-    n = arg.shape[axis]
-    assert numeric.isint(n), 'constant inflation only allowed over fixed-length axis'
-    index, = dofmap.eval()
-    assert len(index) == n
-    assert numpy.greater_equal(index, 0).all() and numpy.less(index, length).all()
-    assert numpy.equal(numpy.diff(index), 1).all(), 'constant inflation must be contiguous'
-    if n == length:
-      retval = arg
-    else:
-      parts = []
-      if index[0] > 0:
-        parts.append( zeros( arg.shape[:axis] + (index[0],) + arg.shape[axis+1:], dtype=arg.dtype ) )
-      parts.append( arg )
-      if index[0] + n < length:
-        parts.append( zeros( arg.shape[:axis] + (length-index[0]-n,) + arg.shape[axis+1:], dtype=arg.dtype ) )
-      retval = concatenate( parts, axis=axis )
-    assert retval.shape == tuple(shape)
-    return retval
-  return Inflate(arg, dofmap, length, axis)
-
 def mask(arg, mask, axis=0):
   arg = asarray(arg)
   axis = numeric.normdim(arg.ndim, axis)
