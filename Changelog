@@ -6,6 +6,19 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+New: Topology intersections (deprecates common_refinement)
+
+  Intersections between topologies can be made using the `&` operator.
+  In case the operands have different refinement patterns, the resulting
+  topology will consist of the common refinements of the intersection.
+
+  New:
+  >>> intersection = domainA & domainB
+
+  Note that this operation can also be used to construct interfaces:
+  >>> interface = domain['fluid'].boundary & ~domain['solid'].boundary
+
+
 Changed: Topology.indicator
 
   The `indicator` method is moved from subtopology to parent topology,
