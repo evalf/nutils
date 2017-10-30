@@ -633,19 +633,6 @@ class DofMap(Array):
     index, = index
     return self.dofs[index][_]
 
-class ElementSize( Array):
-  'dimension of hypercube with same volume as element'
-
-  def __init__(self, geometry:asarray, ndims:int=0):
-    assert geometry.ndim == 1
-    self.ndims = len(geometry)+ndims if ndims <= 0 else ndims
-    iwscale = jacobian( geometry, self.ndims )
-    super().__init__(args=[iwscale], shape=(), dtype=float)
-
-  def evalf( self, iwscale ):
-    volume = iwscale.sum()
-    return numeric.power( volume, 1/self.ndims )[_]
-
 class InsertAxis(Array):
 
   def __init__(self, func:asarray, axis:int, length:asarray):
