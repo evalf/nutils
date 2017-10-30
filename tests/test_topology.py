@@ -227,7 +227,7 @@ class common_refine(TestCase):
 
     for a, b, n in ('1', '234', 16), ('1', '4', 10), ('123', '234', 16):
       with self.subTest('ref{}vs{}'.format(a, b)):
-        common = topology.common_refine(doms[a], doms[b])
+        common = doms[a] & doms[b]
         self.assertEqual(len(common), n)
         for c in a, b:
           testvals = common.integrate(funs[c], geometry=geom, ischeme='gauss1')
