@@ -59,6 +59,6 @@ class sphinx(ContextTestCase):
     self.tmpdir = stack.enter_context(tempfile.TemporaryDirectory(prefix='nutils'))
 
   def test(self):
-    process = subprocess.run([sys.executable, '-m', 'sphinx', '-W', '-b', 'html', 'docs', self.tmpdir], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, check=True)
+    process = subprocess.run([sys.executable, '-m', 'sphinx', '-W', '-b', 'html', 'docs', self.tmpdir], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
     print(process.stdout)
     self.assertEqual(process.returncode, 0)

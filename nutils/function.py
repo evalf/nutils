@@ -633,19 +633,6 @@ class DofMap(Array):
     index, = index
     return self.dofs[index][_]
 
-class ElementSize( Array):
-  'dimension of hypercube with same volume as element'
-
-  def __init__(self, geometry:asarray, ndims:int=0):
-    assert geometry.ndim == 1
-    self.ndims = len(geometry)+ndims if ndims <= 0 else ndims
-    iwscale = jacobian( geometry, self.ndims )
-    super().__init__(args=[iwscale], shape=(), dtype=float)
-
-  def evalf( self, iwscale ):
-    volume = iwscale.sum()
-    return numeric.power( volume, 1/self.ndims )[_]
-
 class InsertAxis(Array):
 
   def __init__(self, func:asarray, axis:int, length:asarray):
@@ -3166,32 +3153,6 @@ def find( arg ):
     return asarray( index )
 
   return Find( arg )
-
-def inflate(arg, dofmap, length, axis):
-  arg = asarray(arg)
-  dofmap = asarray(dofmap)
-  axis = numeric.normdim(arg.ndim, axis)
-  shape = arg.shape[:axis] + (length,) + arg.shape[axis+1:]
-  if dofmap.isconstant:
-    n = arg.shape[axis]
-    assert numeric.isint(n), 'constant inflation only allowed over fixed-length axis'
-    index, = dofmap.eval()
-    assert len(index) == n
-    assert numpy.greater_equal(index, 0).all() and numpy.less(index, length).all()
-    assert numpy.equal(numpy.diff(index), 1).all(), 'constant inflation must be contiguous'
-    if n == length:
-      retval = arg
-    else:
-      parts = []
-      if index[0] > 0:
-        parts.append( zeros( arg.shape[:axis] + (index[0],) + arg.shape[axis+1:], dtype=arg.dtype ) )
-      parts.append( arg )
-      if index[0] + n < length:
-        parts.append( zeros( arg.shape[:axis] + (length-index[0]-n,) + arg.shape[axis+1:], dtype=arg.dtype ) )
-      retval = concatenate( parts, axis=axis )
-    assert retval.shape == tuple(shape)
-    return retval
-  return Inflate(arg, dofmap, length, axis)
 
 def mask(arg, mask, axis=0):
   arg = asarray(arg)
