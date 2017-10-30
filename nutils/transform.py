@@ -11,7 +11,7 @@ The transform module.
 """
 
 from . import cache, numeric, core, _
-import numpy, collections
+import numpy, collections, itertools, functools, operator
 
 
 class TransformChain( tuple ):
@@ -200,6 +200,7 @@ class Scale( TransformItem ):
     self.linear = numpy.array(scale)
     self.offset = offset
     self.isflipped = scale < 0 and len(offset)%2 == 1
+    self._transform_matrix = {}
     super().__init__(offset.shape[0], offset.shape[0])
 
   def apply( self, points ):
@@ -211,6 +212,22 @@ class Scale( TransformItem ):
 
   def __str__( self ):
     return '{}+{}*x'.format( numeric.fstr(self.offset), numeric.fstr(self.linear) )
+
+  def transform_poly(self, coeffs):
+    n, *p = coeffs.shape
+    ndim = coeffs.ndim-1
+    p, = set(p)
+    p -= 1
+    try:
+      M = self._transform_matrix[p,ndim]
+    except KeyError:
+      M = numpy.zeros((p+1,)*(2*ndim), dtype=float)
+      for i in itertools.product(*[range(p+1)]*ndim):
+        if sum(i) <= p:
+          for j in itertools.product(*(range(k+1) for k in i)):
+            M[j+i] = functools.reduce(operator.mul, (numeric.binom(i[k], j[k])*self.offset[k]**(i[k]-j[k]) for k in range(ndim)), self.scale**sum(j))
+      M = self._transform_matrix[p,ndim] = M.reshape([(p+1)**ndim]*2)
+    return numpy.einsum('jk,ik', self._transform_matrix[p,ndim], coeffs.reshape(n,-1)).reshape(coeffs.shape)
 
 class Matrix( TransformItem ):
 
@@ -478,5 +495,10 @@ def invapply( trans, points ):
   A = linear(trans)
   b = points - offset(trans)
   return b / A if isinstance(A,float) else numpy.linalg.solve( A, b )
+
+def transform_poly(trans, coeffs):
+  for item in trans:
+    coeffs = item.transform_poly(coeffs)
+  return coeffs
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

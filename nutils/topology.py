@@ -532,7 +532,8 @@ class Topology( object ):
         points, projector, basis = bases[ elem.reference ]
       except KeyError:
         points, weights = elem.reference.getischeme( ischeme )
-        basis = elem.reference.stdfunc(degree).eval( points )
+        coeffs = elem.reference.get_poly_coeffs('bernstein', degree=degree)
+        basis = function.Polyval(coeffs, function.POINTS, points.shape[1]).eval(_points=points)
         npoints, nfuncs = basis.shape
         A = numeric.dot( weights, basis[:,:,_] * basis[:,_,:] )
         projector = numpy.linalg.solve( A, basis.T * weights )
@@ -570,8 +571,13 @@ class Topology( object ):
     numpy.testing.assert_almost_equal( volumes, volume, decimal=decimal )
     return volume
 
-  def indicator( self ):
-    return function.elemwise( { elem.transform: 1. for elem in self }, (), default=0. )
+  def indicator(self, subtopo):
+    if isinstance(subtopo, str):
+      subtopo = self[subtopo]
+    transforms = tuple(sorted(elem.transform for elem in self))
+    values = numeric.const([int(trans in subtopo.edict) for trans in transforms])
+    assert len(subtopo) == values.sum(0), '{} is not a proper subtopology of {}'.format(subtopo, self)
+    return function.Get(values, axis=0, item=function.FindTransform(transforms, function.Promote(self.ndims, trans=function.TRANS)))
 
   def select( self, indicator, ischeme='bezier2', *, arguments=None ):
     values = self.elem_eval( indicator, ischeme, separate=True, arguments=arguments )
@@ -585,10 +591,6 @@ class Topology( object ):
       for elem in self:
         dofs = dofmap.eval(_transforms=(elem.transform, elem.opposite))
         used[dofs] = True
-    if isinstance( basis, function.Inflate ) and isinstance( basis.func, function.Function ) and isinstance( basis.dofmap, function.DofMap ):
-      renumber = used.cumsum()-1
-      dofmap = function.DofMap([numeric.const(renumber[dofs], copy=False) for dofs in basis.dofmap.dofs], index=basis.dofmap.index)
-      return function.Inflate(basis.func, dofmap=dofmap, length=used.sum(), axis=basis.axis)
     return function.mask( basis, used )
 
   def locate( self, geom, points, ischeme='vertex', scale=1, tol=1e-12, eps=0, maxiter=100, *, arguments=None ):
@@ -651,7 +653,7 @@ class Topology( object ):
       mask = tmp
     else:
       assert numeric.isarray(mask) and mask.dtype == bool and mask.shape == basis.shape[:1]
-    indfunc = function.Tuple([ ind[0] for ind, f in basis.blocks ])
+    indfunc = function.Tuple([ind[0] for ind, f in function.blocks(basis)])
     subset = []
     for elem in self:
       try:
@@ -886,7 +888,42 @@ class StructuredLine( Topology ):
       points.append( Point( transforms[1] << left, transforms[-2] << right ) )
     return UnionTopology( points )
 
-  def basis_spline( self, degree, periodic=None, removedofs=None ):
+  @classmethod
+  def _bernstein_poly(cls, degree):
+    'bernstein polynomial coefficients'
+
+
+  @classmethod
+  def _spline_coeffs(cls, p, n):
+    'spline polynomial coefficients'
+
+    assert p >= 0, 'invalid polynomial degree %d' % p
+    if p == 0:
+      assert n == -1
+      return numpy.array([[[1.]]])
+
+    assert 1 <= n < 2*p
+    extractions = numpy.empty((n, p+1, p+1))
+    extractions[0] = numpy.eye(p+1)
+    for i in range(1, n):
+      extractions[i] = numpy.eye(p+1)
+      for j in range(2, p+1):
+        for k in reversed(range(j, p+1)):
+          alpha = 1. / min(2+k-j, n-i+1)
+          extractions[i-1,:,k] = alpha * extractions[i-1,:,k] + (1-alpha) * extractions[i-1,:,k-1]
+        extractions[i,-j-1:-1,-j-1] = extractions[i-1,-j:,-1]
+
+    # magic bernstein triangle
+    poly = numpy.zeros([p+1,p+1], dtype=int)
+    for k in range(p//2+1):
+      poly[k,k] = root = (-1)**p if k == 0 else (poly[k-1,k] * (k*2-1-p)) / k
+      for i in range(k+1,p+1-k):
+        poly[i,k] = poly[k,i] = root = (root * (k+i-p-1)) / i
+    poly = poly[::-1].astype(float)
+
+    return numeric.const(numeric.contract(extractions[:,_,:,:], poly[_,:,_,:], axis=-1).transpose(0,2,1), copy=False)
+
+  def basis_spline(self, degree, periodic=None, removedofs=None):
     'spline from vertices'
 
     if periodic is None:
@@ -898,18 +935,33 @@ class StructuredLine( Topology ):
     if numpy.iterable( removedofs ):
       removedofs, = removedofs
 
-    ndofs = len(self) + degree
-    dofs = numpy.arange( ndofs )
-
+    strides = 1, 1
+    shape = len(self), degree+1
+    ndofs = sum(s*(n-1) for s, n in zip(strides, shape))+1
+    dofs = numpy.arange(ndofs)
     if periodic and degree > 0:
       assert ndofs >= 2 * degree
       dofs[-degree:] = dofs[:degree]
-      ndofs -= overlap
+      ndofs -= degree
+    dofs = numpy.lib.stride_tricks.as_strided(dofs, shape=shape, strides=tuple(s*dofs.strides[0] for s in strides))
+    dofs = numeric.const(dofs, copy=False)
 
-    fmap = dict( zip( self._transforms[1:-1], element.PolyLine.spline( degree=degree, nelems=len(self), periodic=periodic ) ) )
-    nmap = { trans: numeric.const(dofs[i:i+degree+1], copy=False) for i, trans in enumerate(self._transforms[1:-1]) }
-    func = function.function( fmap, nmap, ndofs )
+    p = degree
+    n = 2*p-1
+    nelems = len(self)
+    if periodic:
+      if nelems == 1: # periodicity on one element can only mean a constant
+        coeffs = [self._spline_coeffs(0, n)]
+        dofs = numeric.const([[0]], copy=False)
+      else:
+        coeffs = list(self._spline_coeffs(p, n)[p-1:p]) * nelems
+    else:
+      coeffs = list(self._spline_coeffs(p, min(nelems,n)))
+      if len(coeffs) < nelems:
+        coeffs = coeffs[:p-1] + coeffs[p-1:p] * (nelems-2*(p-1)) + coeffs[p:]
+    coeffs = numeric.const(coeffs, copy=False)
 
+    func = function.polyfunc(coeffs, dofs, ndofs, self._transforms[1:-1], issorted=False)
     if not removedofs:
       return func
 
@@ -920,9 +972,11 @@ class StructuredLine( Topology ):
   def basis_discont( self, degree ):
     'discontinuous shape functions'
 
-    fmap = dict.fromkeys( self._transforms[1:-1], element.PolyLine( element.PolyLine.bernstein_poly(degree) ) )
-    nmap = dict( zip( self._transforms[1:-1], numeric.const(numpy.arange(len(self)*(degree+1)).reshape(len(self),degree+1), copy=False) ) )
-    return function.function( fmap=fmap, nmap=nmap, ndofs=len(self)*(degree+1) )
+    ref = element.LineReference()
+    coeffs = [ref.get_poly_coeffs('bernstein', degree=degree)]*len(self)
+    ndofs = ref.get_ndofs(degree)
+    dofs = numeric.const(numpy.arange(ndofs*len(self), dtype=int).reshape(len(self), ndofs), copy=False)
+    return function.polyfunc(coeffs, dofs, ndofs*len(self), self._transforms[1:-1], issorted=False)
 
   def basis_std( self, degree, periodic=None, removedofs=None ):
     'spline from vertices'
@@ -930,16 +984,18 @@ class StructuredLine( Topology ):
     if periodic is None:
       periodic = self.periodic
 
-    ndofs = len(self) * degree + 1
-    dofs = numpy.arange( ndofs )
-
+    strides = max(1, degree), 1
+    shape = len(self), degree+1
+    ndofs = sum(s*(n-1) for s, n in zip(strides, shape))+1
+    dofs = numpy.arange(ndofs)
     if periodic and degree > 0:
       dofs[-1] = dofs[0]
       ndofs -= 1
+    dofs = numpy.lib.stride_tricks.as_strided(dofs, shape=shape, strides=tuple(s*dofs.strides[0] for s in strides))
+    dofs = numeric.const(dofs, copy=False)
 
-    fmap = dict.fromkeys( self._transforms[1:-1], element.PolyLine( element.PolyLine.bernstein_poly(degree) ) )
-    nmap = { trans: numeric.const(dofs[i*degree:(i+1)*degree+1], copy=False) for i, trans in enumerate(self._transforms[1:-1]) }
-    func = function.function( fmap, nmap, ndofs )
+    coeffs = [element.LineReference().get_poly_coeffs('bernstein', degree=degree)]*len(self)
+    func = function.polyfunc(coeffs, dofs, ndofs, self._transforms[1:-1], issorted=False)
     if not removedofs:
       return func
 
@@ -1133,6 +1189,7 @@ class StructuredTopology( Topology ):
       knotmultiplicities = [None]*self.ndims
 
     vertex_structure = numpy.array( 0 )
+    stdelems = []
     dofshape = []
     slices = []
     cache = {}
@@ -1193,11 +1250,10 @@ class StructuredTopology( Topology ):
         try:
           coeffs = cache[key]
         except KeyError:
-          coeffs = self._localsplinebasis( lknots, p )
+          coeffs = numeric.const(self._localsplinebasis(lknots, p).T, copy=False)
           cache[key] = coeffs
-        poly = element.PolyLine( coeffs[:,start:stop] )
-        stdelems_i.append( poly )
-      stdelems = stdelems[...,_]*stdelems_i if idim else numpy.array(stdelems_i)
+        stdelems_i.append(coeffs[start:stop])
+      stdelems.append(stdelems_i)
 
       numbers = numpy.arange(nd)
       if isperiodic:
@@ -1209,16 +1265,13 @@ class StructuredTopology( Topology ):
     #Cache effectivity
     log.debug( 'Local knot vector cache effectivity: %d' % (100*(1.-len(cache)/float(sum(self.shape)))) )
 
-    dofmap = {}
-    funcmap = {}
-    for item in numpy.broadcast( self._transform, stdelems, *numpy.ix_(*slices) ):
-      trans = item[0]
-      std = item[1]
-      S = item[2:]
+    dofmap = []
+    coeffs = []
+    for std, S in zip(itertools.product(*stdelems), itertools.product(*slices)):
       dofs = vertex_structure[S].ravel()
-      dofmap[trans] = numeric.const(dofs, copy=False)
-      funcmap[trans] = std
-    return funcmap, dofmap, dofshape
+      dofmap.append(numeric.const(dofs, copy=False))
+      coeffs.append(functools.reduce(numeric.poly_outer_product, std))
+    return coeffs, dofmap, dofshape
 
   def basis_spline( self, degree, knotvalues=None, knotmultiplicities=None, periodic=None, removedofs=None ):
     'spline basis'
@@ -1228,8 +1281,8 @@ class StructuredTopology( Topology ):
     else:
       assert len(removedofs) == self.ndims
 
-    funcmap, dofmap, dofshape = self._basis_spline( degree=degree, knotvalues=knotvalues, knotmultiplicities=knotmultiplicities, periodic=periodic )
-    func = function.function( funcmap, dofmap, numpy.product(dofshape) )
+    coeffs, dofmap, dofshape = self._basis_spline(degree=degree, knotvalues=knotvalues, knotmultiplicities=knotmultiplicities, periodic=periodic)
+    func = function.polyfunc(coeffs, dofmap, util.product(dofshape), (elem.transform for elem in self), issorted=False)
     if not any( removedofs ):
       return func
 
@@ -1281,24 +1334,14 @@ class StructuredTopology( Topology ):
 
     return numeric.const([Ni.coeffs for Ni in N]).T[::-1]
 
-  def basis_discont( self, degree ):
+  def basis_discont(self, degree):
     'discontinuous shape functions'
 
-    if numeric.isint( degree ):
-      degree = (degree,) * self.ndims
-    assert len(degree) == self.ndims
-    assert all( p >= 0 for p in degree )
-
-    stdfunc = util.product( element.PolyLine( element.PolyLine.bernstein_poly(p) ) for p in degree )
-      
-    fmap = {}
-    nmap = {}
-    ndofs = 0
-    for elem in self:
-      fmap[elem.transform] = stdfunc
-      nmap[elem.transform] = numeric.const(numpy.arange(ndofs, ndofs+stdfunc.nshapes), copy=False)
-      ndofs += stdfunc.nshapes
-    return function.function( fmap=fmap, nmap=nmap, ndofs=ndofs )
+    ref = util.product([element.LineReference()]*self.ndims)
+    coeffs = [ref.get_poly_coeffs('bernstein', degree=degree)]*len(self)
+    ndofs = ref.get_ndofs(degree)
+    dofs = numeric.const(numpy.arange(ndofs*len(self), dtype=int).reshape(len(self), ndofs), copy=False)
+    return function.polyfunc(coeffs, dofs, ndofs*len(self), (elem.transform for elem in self), issorted=False)
 
   def basis_std( self, degree, removedofs=None, periodic=None ):
     'spline from vertices'
@@ -1330,9 +1373,10 @@ class StructuredTopology( Topology ):
       dofshape.append( nd )
       slices.append( [ slice(p*i,p*i+p+1) for i in range(n) ] )
 
-    funcmap = dict.fromkeys( self._transform.flat, util.product( element.PolyLine( element.PolyLine.bernstein_poly(d) ) for d in degree ) )
-    dofmap = { trans: numeric.const(vertex_structure[S].ravel(), copy=False) for trans, *S in numpy.broadcast( self._transform, *numpy.ix_(*slices) ) }
-    func = function.function( funcmap, dofmap, numpy.product(dofshape) )
+    lineref = element.LineReference()
+    coeffs = [functools.reduce(numeric.poly_outer_product, (lineref.get_poly_coeffs('bernstein', degree=p) for p in degree))]*len(self)
+    dofs = [numeric.const(vertex_structure[S].ravel(), copy=False) for S in numpy.broadcast(*numpy.ix_(*slices))]
+    func = function.polyfunc(coeffs, dofs, numpy.product(dofshape), self._transform.ravel(), issorted=False)
     if not any( removedofs ):
       return func
 
@@ -1409,48 +1453,32 @@ class UnstructuredTopology( Topology ):
     assert not seen
     return UnstructuredTopology( self.ndims-1, elements )
 
-  def basis_std( self, degree=1 ):
-    'std from vertices'
-
-    assert degree == 1 # for now!
-    dofmap = {}
-    fmap = {}
-    nmap = {}
-    for elem in self:
-      dofs = numpy.empty( elem.nverts, dtype=int )
-      for i, v in enumerate( elem.vertices ):
-        dof = dofmap.get(v)
-        if dof is None:
-          dof = len(dofmap)
-          dofmap[v] = dof
-        dofs[i] = dof
-      stdfunc = elem.reference.stdfunc(1)
-      assert stdfunc.nshapes == elem.nverts
-      fmap[elem.transform] = stdfunc
-      nmap[elem.transform] = numeric.const(dofs, copy=False)
-    return function.function( fmap=fmap, nmap=nmap, ndofs=len(dofmap) )
-
   def basis_bubble( self ):
     'bubble from vertices'
 
     assert self.ndims == 2
+    coeffs = numeric.const([[[  1, -1,  0,  0], [ -1,  0,  0,  0], [  0,  0,  0,  0], [  0,  0,  0,  0]],
+                            [[  0,  0,  0,  0], [  1,  0,  0,  0], [  0,  0,  0,  0], [  0,  0,  0,  0]],
+                            [[  0,  1,  0,  0], [  0,  0,  0,  0], [  0,  0,  0,  0], [  0,  0,  0,  0]],
+                            [[  0,  0,  0,  0], [  0, 27,-27,  0], [  0,-27,  0,  0], [  0,  0,  0,  0]]])
+
+    nmap = []
     dofmap = {}
-    fmap = {}
-    nmap = {}
-    stdfunc = element.BubbleTriangle()
     for ielem, elem in enumerate(self):
       assert isinstance( elem.reference, element.TriangleReference )
-      dofs = numpy.empty( elem.nverts+1, dtype=int )
+      assert elem.nverts == 3
+      dofs = numpy.empty(4, dtype=int)
       for i, v in enumerate( elem.vertices ):
         dof = dofmap.get(v)
         if dof is None:
           dof = len(self) + len(dofmap)
           dofmap[v] = dof
         dofs[i] = dof
-      dofs[ elem.nverts ] = ielem
-      fmap[elem.transform] = stdfunc
-      nmap[elem.transform] = numeric.const(dofs, copy=False)
-    return function.function( fmap=fmap, nmap=nmap, ndofs=len(self)+len(dofmap) )
+      dofs[3] = ielem
+      nmap.append(numeric.const(dofs, copy=False))
+    ndofs = len(self)+len(dofmap)
+
+    return function.polyfunc([coeffs]*len(self), nmap, ndofs, (elem.transform for elem in self), issorted=False)
 
   def basis_spline( self, degree ):
     assert degree == 1
@@ -1459,16 +1487,85 @@ class UnstructuredTopology( Topology ):
   def basis_discont( self, degree ):
     'discontinuous shape functions'
 
-    assert numeric.isint( degree ) and degree >= 0
-    fmap = {}
-    nmap = {}
+    assert numeric.isint(degree) and degree >= 0
+    coeffs = []
+    nmap = []
     ndofs = 0
     for elem in self:
-      stdfunc = elem.reference.stdfunc(degree)
-      fmap[elem.transform] = stdfunc
-      nmap[elem.transform] = numeric.const(numpy.arange(ndofs, ndofs+stdfunc.nshapes), copy=False)
-      ndofs += stdfunc.nshapes
-    return function.function( fmap=fmap, nmap=nmap, ndofs=ndofs )
+      elemcoeffs = elem.reference.get_poly_coeffs('bernstein', degree=degree)
+      coeffs.append(elemcoeffs)
+      nmap.append(numeric.const(ndofs + numpy.arange(len(elemcoeffs)), copy=False))
+      ndofs += len(elemcoeffs)
+    degrees = set(n-1 for c in coeffs for n in c.shape[1:])
+    return function.polyfunc(coeffs, nmap, ndofs, (elem.transform for elem in self), issorted=False)
+
+  def _basis_c0_structured(self, name, degree):
+    'C^0-continuous shape functions with lagrange stucture'
+
+    assert numeric.isint(degree) and degree >= 0
+
+    if degree == 0:
+      raise ValueError('Cannot build a C^0-continuous basis of degree 0.  Use basis \'discont\' instead.')
+
+    nlocaldofs = 0
+    elem_slices = []
+    coeffs = []
+    for elem in self:
+      elem_coeffs = elem.reference.get_poly_coeffs(name, degree=degree)
+      coeffs.append(elem_coeffs)
+      elem_slices.append(slice(nlocaldofs, nlocaldofs+len(elem_coeffs)))
+      nlocaldofs += len(elem_coeffs)
+    dofmap = -numpy.ones([nlocaldofs], dtype=int)
+
+    for ielem, elem in enumerate(self):
+      # Loop over all neighbors of elem and merge dofs.
+      for iedge, jelem in enumerate(self.connectivity[ielem]):
+        if jelem < 0:
+          continue
+        jedge = self.connectivity[jelem].tolist().index(ielem)
+        #if ielem < jelem or ielem == jelem and iedge < jedge:
+        #  continue
+        idofs = elem.reference.get_edge_dofs(degree, iedge)
+        verts = tuple(elem.edge(iedge).vertices)
+        neighbor = self.elements[jelem]
+        neighbor_verts = tuple(neighbor.edge(jedge).vertices)
+        jdofs = neighbor.reference.get_edge_dofs(degree, jedge)
+        #jdofs = jdofs[neighbor.reference.edges[jedge][1].get_dof_transpose_map(degree, tuple(map(neighbor_verts.index, verts)))]
+        foo = neighbor.reference.edges[jedge][1].get_dof_transpose_map(degree, tuple(map(neighbor_verts.index, verts)))
+        for idof, j in zip(idofs, foo):
+          ridof = idof = elem_slices[ielem].start+idof
+          # Resolve idof.
+          while dofmap[ridof] >= 0:
+            ridof = dofmap[ridof]
+          # Resolve jdof.
+          rjdof = jdof = elem_slices[jelem].start+jdofs[j]
+          while dofmap[rjdof] >= 0:
+            rjdof = dofmap[rjdof]
+          if ridof != rjdof:
+            dofmap[max(ridof,rjdof)] = min(ridof,rjdof)
+          if ridof != idof:
+            dofmap[idof] = min(ridof,rjdof)
+    # Assign dof numbers.
+    ndofs = 0
+    for i in range(len(dofmap)):
+      if dofmap[i] < 0:
+        dofmap[i] = ndofs
+        ndofs += 1
+      else:
+        dofmap[i] = dofmap[dofmap[i]]
+
+    dofs = tuple(numeric.const(dofmap[s]) for s in elem_slices)
+    return function.polyfunc(coeffs, dofs, ndofs, (elem.transform for elem in self), issorted=False)
+
+  def basis_lagrange(self, degree):
+    'lagrange shape functions'
+    return self._basis_c0_structured('lagrange', degree)
+
+  def basis_bernstein(self, degree):
+    'bernstein shape functions'
+    return self._basis_c0_structured('bernstein', degree)
+
+  basis_std = basis_bernstein
 
 class UnionTopology( Topology ):
   'grouped topology'
@@ -1854,8 +1951,8 @@ class HierarchicalTopology( Topology ):
     # least one supporting element coinsiding with self ('touched') and no
     # supporting element finer than self ('supported').
 
-    funcs = []
-    dofmaps = []
+    dofs_coeffs = []
+    renumber = []
     supports = []
     length = 0
 
@@ -1868,6 +1965,15 @@ class HierarchicalTopology( Topology ):
 
       (axes,func), = function.blocks( basis )
       dofmap, = axes
+      if isinstance(func, function.Polyval):
+        coeffs = func.coeffs
+        assert coeffs.ndim == 1+self.ndims
+      elif func.isconstant:
+        assert func.ndim == 1
+        coeffs = func[(slice(None),*(_,)*self.ndims)]
+      else:
+        raise ValueError
+
       for elem in topo:
         trans = elem.transform
         idofs, = dofmap.eval(_transforms=(elem.transform, elem.opposite))
@@ -1876,15 +1982,31 @@ class HierarchicalTopology( Topology ):
         elif trans.lookup( self.edict ):
           supported[idofs] = False
 
-      funcs.append( func )
-      dofmaps.append( dofmap + length )
-      supports.append( supported & touchtopo )
-      length += len( supported )
+      support = supported & touchtopo
+      supports.append(support)
+      cumsum_support = numpy.cumsum(support)
+      renumber.append(cumsum_support+(length-1))
+      length += cumsum_support[-1]
+      dofs_coeffs.append(function.Tuple((dofmap, coeffs)))
 
-    funcs = function.concatenate( funcs, axis=0 )
-    dofmaps = function.concatenate( dofmaps, axis=0 )
-    supports = numpy.concatenate( supports, axis=0 )
-    return function.mask( function.inflate( funcs, dofmaps, length, 0 ), supports )
+    dofs = []
+    coeffs = []
+    transforms = tuple(sorted(elem.transform for elem in self))
+    for trans in transforms:
+      hcoeffs = []
+      hdofs = []
+      ibase, tail = trans.lookup_item(self.basetopo.edict)
+      for ilevel in range(len(tail)+1):
+        (idofs,), (icoeffs,) = dofs_coeffs[ilevel].eval(_transforms=(trans,))
+        isupport = supports[ilevel][idofs]
+        if not isupport.any():
+          continue
+        hdofs.extend(map(renumber[ilevel].__getitem__, idofs[isupport]))
+        hcoeffs.extend(transform.transform_poly(tail[ilevel:], icoeffs[isupport]))
+      dofs.append(numeric.const(hdofs))
+      coeffs.append(numeric.poly_stack(hcoeffs))
+
+    return function.polyfunc(coeffs, dofs, length, transforms, issorted=True)
 
 class ProductTopology( Topology ):
   'product topology'
@@ -2069,11 +2191,13 @@ class MultipatchTopology( Topology ):
 
     missing = object()
 
-    funcmap = {}
-    dofmap = {}
+    coeffs = []
+    dofmap = []
+    transforms = []
     dofcount = 0
     commonboundarydofs = {}
     for ipatch, patch in enumerate( self.patches ):
+      transforms.extend(elem.transform for elem in patch.topo)
       # build structured spline basis on patch `patch.topo`
       patchknotvalues = []
       patchknotmultiplicities = []
@@ -2097,10 +2221,9 @@ class MultipatchTopology( Topology ):
           raise 'ambiguous knot multiplicities for patch {}, dimension {}'.format( ipatch, idim )
         patchknotvalues.append(next(iter(dimknotvalues)))
         patchknotmultiplicities.append(next(iter(dimknotmultiplicities)))
-      patchfuncmap, patchdofmap, patchdofcount = patch.topo._basis_spline( degree, knotvalues=patchknotvalues, knotmultiplicities=patchknotmultiplicities )
-      funcmap.update( patchfuncmap )
-      # renumber dofs
-      dofmap.update( (trans, numeric.const(dofs+dofcount, copy=False)) for trans, dofs in patchdofmap.items() )
+      patchcoeffs, patchdofmap, patchdofcount = patch.topo._basis_spline(degree, knotvalues=patchknotvalues, knotmultiplicities=patchknotmultiplicities)
+      coeffs.extend(patchcoeffs)
+      dofmap.extend(numeric.const(dofs+dofcount, copy=False) for dofs in patchdofmap)
       if patchcontinuous:
         # reconstruct multidimensional dof structure
         dofs = dofcount + numpy.arange( numpy.prod( patchdofcount ), dtype=int ).reshape( patchdofcount )
@@ -2123,33 +2246,45 @@ class MultipatchTopology( Topology ):
       remainder = set( merge.get( dof, dof ) for dof in range( dofcount ) )
       renumber = dict( zip( sorted( remainder ), range( len( remainder ) ) ) )
       # apply mappings
-      dofmap = {k: numeric.const([renumber[merge.get( dof, dof )] for dof in v.flat], dtype=int).reshape(v.shape) for k, v in dofmap.items()}
-      dofcount = len( remainder )
+      dofmap = tuple(numeric.const(tuple(renumber[merge.get(dof, dof)] for dof in v.flat), dtype=int).reshape(v.shape) for v in dofmap)
+      dofcount = len(remainder)
 
-    return function.function( funcmap, dofmap, dofcount )
+    return function.polyfunc(coeffs, dofmap, dofcount, transforms, issorted=False)
 
-  def basis_discont( self, degree ):
+  def basis_discont(self, degree):
     'discontinuous shape functions'
 
-    funcmap = {}
-    dofmap = {}
-    dofcount = 0
+    bases = [patch.topo.basis('discont', degree=degree) for patch in self.patches]
+    coeffs = []
+    dofs = []
+    ndofs = 0
     for patch in self.patches:
-      pbasis = patch.topo.basis( 'discont', degree=degree )
-      funcmap.update( pbasis.func.stdmap )
-      dofmap.update({trans: numeric.const(dofs+dofcount, copy=False) for trans, dofs in pbasis.dofmap.dofmap.items()})
-      dofcount += len( pbasis )
-    return function.function( funcmap, dofmap, dofcount )
+      basis = patch.topo.basis('discont', degree=degree)
+      (axes,func), = function.blocks(basis)
+      patch_dofmap, = axes
+      if isinstance(func, function.Polyval):
+        patch_coeffs = func.coeffs
+        assert patch_coeffs.ndim == 1+self.ndims
+      elif func.isconstant:
+        assert func.ndim == 1
+        patch_coeffs = func[(slice(None),*(_,)*self.ndims)]
+      else:
+        raise ValueError
+      patch_coeffs_dofs = function.Tuple((patch_coeffs, patch_dofmap))
+      for elem in patch.topo:
+        (elem_coeffs,), (elem_dofs,) = patch_coeffs_dofs.eval(_transforms=(elem.transform,))
+        coeffs.append(elem_coeffs)
+        dofs.append(numeric.const(ndofs+elem_dofs, copy=False))
+      ndofs += len(basis)
+    return function.polyfunc(coeffs, dofs, ndofs, (elem.transform for patch in self.patches for elem in patch.topo), issorted=False)
 
-  def basis_patch( self ):
+  def basis_patch(self):
     'degree zero patchwise discontinuous basis'
 
-    fmap = {}
-    nmap = {}
-    for ipatch, patch in enumerate( self.patches ):
-      fmap[ patch.topo.root ] = util.product( element.PolyLine( element.PolyLine.bernstein_poly(0) ) for i in range( self.ndims ) )
-      nmap[ patch.topo.root ] = numeric.const([ ipatch ])
-    return function.function( fmap, nmap, len( self.patches ) )
+    npatches = len(self.patches)
+    coeffs = [numeric.const(1, dtype=int).reshape(1, *(1,)*self.ndims)]*npatches
+    dofs = numeric.const(range(npatches), dtype=int)[:,_]
+    return function.polyfunc(coeffs, dofs, npatches, (patch.topo.root for patch in self.patches), issorted=False)
 
   @cache.property
   def boundary( self ):

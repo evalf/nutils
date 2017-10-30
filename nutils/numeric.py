@@ -685,8 +685,10 @@ class const:
   __rsub__ = lambda self, other: self.__base.__rsub__(other)
   __mul__ = lambda self, other: self.__base.__mul__(other)
   __rmul__ = lambda self, other: self.__base.__rmul__(other)
-  __div__ = lambda self, other: self.__base.__div__(other)
-  __rdiv__ = lambda self, other: self.__base.__rdiv__(other)
+  __truediv__ = lambda self, other: self.__base.__truediv__(other)
+  __rtruediv__ = lambda self, other: self.__base.__rtruediv__(other)
+  __floordiv__ = lambda self, other: self.__base.__floordiv__(other)
+  __rfloordiv__ = lambda self, other: self.__base.__rfloordiv__(other)
   __pow__ = lambda self, other: self.__base.__pow__(other)
   __hash__ = lambda self: self.__hash
   __int__ = lambda self: self.__base.__int__()
@@ -717,5 +719,30 @@ class const:
     return const(numpy.lib.stride_tricks.as_strided(base,
       shape=base.shape[:axis]+(length,)+base.shape[axis:],
       strides=base.strides[:axis]+(0,)+base.strides[axis:]))
+
+def binom(n, k):
+  a = b = 1
+  for i in range(1, k+1):
+    a *= n+1-i
+    b *= i
+  return a // b
+
+def poly_outer_product(left, right):
+  left, right = numpy.asarray(left), numpy.asarray(right)
+  nleft, nright = left.ndim-1, right.ndim-1
+  P = (max(left.shape[1:])-1)+(max(right.shape[1:])-1)
+  outer = numpy.zeros((left.shape[0], right.shape[0], *(P+1,)*(nleft+nright)), dtype=numpy.common_type(left, right))
+  a = slice(None)
+  outer[(a,a,*(map(slice, left.shape[1:]+right.shape[1:])))] = left[(a,None)+(a,)*nleft+(None,)*nright]*right[(None,a)+(None,)*nleft+(a,)*nright]
+  return const(outer.reshape(left.shape[0]*right.shape[0], *(P+1,)*(nleft+nright)), copy=False)
+
+def poly_stack(coeffs):
+  coeffs = tuple(coeffs)
+  n = max(icoeffs.shape[0] for icoeffs in coeffs)
+  ndim = coeffs[0].ndim
+  dest = numpy.zeros((len(coeffs),)+(n,)*ndim, dtype=float)
+  for i, j in enumerate(coeffs):
+    dest[(i,*map(slice, j.shape))] = j
+  return const(dest, copy=False)
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

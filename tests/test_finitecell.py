@@ -46,7 +46,7 @@ class hierarchical(TestCase):
         plt.plot( x, y )
 
 
-class hierarchicalboundary(TestCase):
+class trimmedboundary(TestCase):
 
   def setUp(self):
     super().setUp()
@@ -57,18 +57,20 @@ class hierarchicalboundary(TestCase):
     self.rightbasis = self.right.basis('std', degree=1)
     self.trimmed = self.domain - self.right
 
-  def test_volume(self):
+  def test_boundary_length(self):
     self.assertEqual(self.trimmed.boundary.integrate(1, geometry=self.geom, ischeme='gauss1'), 6)
 
-  def test_boundary(self):
+  def test_trimmed_boundary_length(self):
     self.assertEqual(self.trimmed.boundary['rightbnd'].integrate(1, geometry=self.geom, ischeme='gauss1'), 2)
 
-  def test_left_boundary(self):
+  def test_trimmed_boundary(self):
     left = self.trimmed.boundary['rightbnd']
     self.assertTrue(numpy.any(left.elem_eval(self.leftbasis, ischeme='gauss1', separate=False)))
-    self.assertFalse(numpy.any(left.elem_eval(function.opposite(self.leftbasis), ischeme='gauss1', separate=False)))
+    with self.assertRaises(nutils.function.EvaluationError):
+      left.elem_eval(function.opposite(self.leftbasis), ischeme='gauss1', separate=False)
     self.assertTrue(numpy.any(left.elem_eval(function.opposite(self.rightbasis), ischeme='gauss1', separate=False)))
-    self.assertFalse(numpy.any(left.elem_eval(self.rightbasis, ischeme='gauss1', separate=False)))
+    with self.assertRaises(nutils.function.EvaluationError):
+      left.elem_eval(self.rightbasis, ischeme='gauss1', separate=False)
 
 
 class specialcases_2d(TestCase):

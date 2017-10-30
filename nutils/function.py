@@ -31,7 +31,7 @@ expensive and currently unsupported operation.
 """
 
 from . import util, numpy, numeric, log, core, cache, transform, expression, _
-import sys, warnings, itertools, functools, operator, inspect, numbers, builtins, re, types, collections.abc
+import sys, warnings, itertools, functools, operator, inspect, numbers, builtins, re, types, collections.abc, math
 
 isevaluable = lambda arg: isinstance(arg, Evaluable)
 
@@ -378,7 +378,8 @@ class Array( Evaluable ):
 
   def __init__(self, args:tuple, shape:tuple, dtype:asdtype):
     assert all(numeric.isint(sh) or isarray(sh) and sh.ndim == 0 and sh.dtype == int for sh in shape)
-    self.shape = tuple(sh if not isarray(sh) else sh.eval()[0] if sh.isconstant else sh.simplified for sh in shape)
+    shape = tuple(sh.simplified if isarray(sh) else sh for sh in shape)
+    self.shape = tuple(sh.eval()[0] if isarray(sh) and sh.isconstant else sh for sh in shape)
     self.ndim = len(shape)
     self.dtype = dtype
     super().__init__(args=args)
@@ -535,6 +536,22 @@ class Constant( Array ):
   def simplified(self):
     if not self.value.any():
       return zeros_like(self)
+    # Find and replace invariant axes with InsertAxis.
+    value = self.value
+    invariant = []
+    for i in reversed(range(self.ndim)):
+      # Since `self.value.any()` is False for arrays with a zero-length axis,
+      # we can arrive here only if all axes have at least length one, hence the
+      # following statement should work.
+      first = numeric.get(value, i, 0)
+      if all(numpy.equal(first, numeric.get(value, i, j)).all() for j in range(1, value.shape[i])):
+        invariant.append(i)
+        value = first
+    if invariant:
+      value = Constant(value)
+      for i in reversed(invariant):
+        value = InsertAxis(value, i, self.shape[i])
+      return value.simplified
     return self
 
   def evalf( self ):
@@ -605,7 +622,7 @@ class DofMap(Array):
     assert index.ndim == 0 and index.dtype == int
     self.dofs = dofs
     self.index = index
-    length = get([len(d) for d in dofs] + [0], iax=0, item=index)
+    length = get([len(d) for d in dofs], iax=0, item=index)
     super().__init__(args=[index], shape=(length,), dtype=int)
 
   @property
@@ -614,7 +631,7 @@ class DofMap(Array):
 
   def evalf(self, index):
     index, = index
-    return (self.dofs[index] if index < len(self.dofs) else numpy.empty([0], dtype=int))[_]
+    return self.dofs[index][_]
 
 class ElementSize( Array):
   'dimension of hypercube with same volume as element'
@@ -864,74 +881,53 @@ class Product( Array ):
     func = Get(self.func, i, item)
     return Product(func)
 
-class RootCoords( Array ):
+class PopHead(Evaluable):
 
-  def __init__(self, ndims:int, trans=TRANS):
+  def __init__(self, trans=TRANS):
     self.trans = trans
-    super().__init__(args=[POINTS,trans], shape=[ndims], dtype=float)
+    super().__init__(args=[self.trans])
 
-  def evalf( self, points, chain ):
+  def evalf(self, trans):
+    return trans[1:]
+
+class TailOfTransform(Evaluable):
+
+  def __init__(self, trans, depth:asarray):
+    assert depth.ndim == 0 and depth.dtype == int
+    super().__init__(args=[trans, depth])
+
+  def evalf(self, trans, depth):
+    depth, = depth
+    return trans[depth:]
+
+class RootCoords(Array):
+
+  def __init__(self, ndims:int, trans, points=POINTS):
+    self.trans = trans
+    super().__init__(args=[points,trans], shape=[ndims], dtype=float)
+
+  def evalf(self, points, chain):
     'evaluate'
 
-    ndims = len(self)
-    head, tail = chain.promote( ndims )
-    while head and head[0].todims != ndims:
-      head = head[1:]
-    return transform.apply( head + tail, points )
+    return transform.apply(chain, points)
 
   def _derivative(self, var, seen):
     if isinstance(var, LocalCoords) and len(var) > 0:
       return RootTransform(len(self), len(var), self.trans)
     return zeros(self.shape+var.shape)
 
-class RootTransform( Array ):
+class RootTransform(Array):
 
   def __init__(self, ndims:int, nvars:int, trans):
-    super().__init__(args=[Promote(ndims, trans)], shape=(ndims,nvars), dtype=float)
+    super().__init__(args=[trans], shape=(ndims,nvars), dtype=float)
 
   def evalf(self, chain):
     todims, fromdims = self.shape
-    while chain and chain[0].todims != todims:
-      chain = chain[1:]
+    assert not chain or chain[0].todims == todims
     return transform.linearfrom(chain, fromdims)[_]
 
   def _derivative(self, var, seen):
     return zeros(self.shape+var.shape)
-
-class Function( Array ):
-
-  def __init__(self, stds:tuple, depth:int, trans, index:asarray, derivs:tuple=()):
-    assert index.ndim == 0 and index.dtype == int
-    self.stds = stds
-    self.depth = depth
-    self.trans = trans
-    self.index = index
-    nshapes = get([std.nshapes for std in stds] + [0], iax=0, item=index)
-    super().__init__(args=(CACHE,POINTS,trans,index), shape=(nshapes,)+derivs, dtype=float)
-
-  @property
-  def stdmap(self):
-    return self.index.asdict(self.stds)
-
-  def evalf(self, cache, points, trans, index):
-    index, = index
-    if index == len(self.stds):
-      return numpy.empty((1,0)+self.shape[1:])
-    tail = trans[self.depth:]
-    if tail:
-      points = cache[transform.apply](tail, points)
-    fvals = cache[self.stds[index].eval](points, self.ndim-1)
-    assert fvals.ndim == self.ndim+1
-    if tail:
-      for i, ndims in enumerate(self.shape[1:]):
-        linear = cache[transform.linearfrom](tail, ndims)
-        fvals = numeric.dot(fvals, linear, axis=i+2)
-    return fvals
-
-  def _derivative(self, var, seen):
-    if isinstance(var, LocalCoords):
-      return Function(self.stds, self.depth, self.trans, self.index, self.shape[1:]+var.shape)
-    return zeros(self.shape+var.shape, dtype=self.dtype)
 
 class Inverse( Array ):
 
@@ -1820,28 +1816,26 @@ class Sampled( Array ):
     assert mypoints.shape == evalpoints.shape and numpy.equal(mypoints, evalpoints).all(), 'Illegal point set'
     return myvals
 
-class Elemwise( Array ):
-  'elementwise constant data'
+class Elemwise(Array):
 
-  def __init__(self, fmap:util.frozendict, shape:tuple, default=None, trans=TRANS):
-    self.fmap = fmap
-    self.default = default
-    self.trans = trans
-    super().__init__(args=[trans], shape=shape, dtype=float)
+  def __init__(self, data:tuple, index:asarray, dtype:asdtype):
+    self.data = data
+    ndim = self.data[0].ndim
+    shape = tuple(get([d.shape[i] for d in self.data], iax=0, item=index) for i in range(ndim))
+    super().__init__(args=[index], shape=shape, dtype=dtype)
 
-  def evalf( self, trans ):
-    try:
-      value, tail = trans.lookup_item( self.fmap )
-    except KeyError:
-      value = self.default
-      if value is None:
-        raise
-    value = numpy.asarray( value )
-    assert value.shape == self.shape, 'wrong shape: {} != {}'.format( value.shape, self.shape )
-    return value[_]
+  def evalf(self, index):
+    index, = index
+    return self.data[index][_]
 
   def _derivative(self, var, seen):
-    return zeros(self.shape+var.shape)
+    return Zeros(self.shape+var.shape, self.dtype)
+
+  @cache.property
+  def simplified(self):
+    if all(map(numeric.isint, self.shape)) and all(numpy.equal(self.data[0], self.data[i]).all() for i in range(1, len(self.data))):
+      return Constant(self.data[0])
+    return self
 
 class Eig( Evaluable ):
 
@@ -1898,6 +1892,9 @@ class Zeros( Array ):
   def blocks(self):
     return ()
 
+  def edit(self, op):
+    return Zeros(tuple(map(op, self.shape)), self.dtype)
+
   def _derivative(self, var, seen):
     return zeros(self.shape+var.shape, dtype=self.dtype)
 
@@ -1911,7 +1908,7 @@ class Zeros( Array ):
     return Zeros(self.shape[:newaxis]+(self.shape[axis],)+self.shape[newaxis:], dtype=self.dtype)
 
   def _sum(self, axis):
-    return Zeros(self.shape[:axis] + self.shape[axis+1:], dtype=self.dtype)
+    return Zeros(self.shape[:axis] + self.shape[axis+1:], dtype=int if self.dtype == bool else self.dtype)
 
   def _transpose(self, axes):
     shape = [self.shape[n] for n in axes]
@@ -2645,7 +2642,7 @@ class FindTransform(Array):
         index = i
     index -= 1
     if index < 0 or trans[:len(self.transforms[index])] != self.transforms[index]:
-      index = len(self.transforms)
+      raise IndexError('trans not found')
     return numpy.array(index)[_]
 
 class Range(Array):
@@ -2664,6 +2661,94 @@ class Range(Array):
     length, = length
     offset, = offset
     return numpy.arange(offset, offset+length)[_]
+
+class Polyval(Array):
+  '''
+  Computes the :math:`k`-dimensional array
+
+  .. math:: j_0,\\dots,j_{k-1} \\mapsto \\sum_{\substack{i_0,\\dots,i_{n-1}\\in\mathbb{N}\\\\i_0+\\cdots+i_{n-1}\\le d}} p_0^{i_0} \\cdots p_{n-1}^{i_{n-1}} c_{j_0,\\dots,j_{k-1},i_0,\\dots,i_{n-1}},
+
+  where :math:`p` are the :math:`n`-dimensional local coordinates and :math:`c`
+  is the argument ``coeffs`` and :math:`d` is the degree of the polynomial,
+  where :math:`d` is the length of the last :math:`n` axes of ``coeffs``.
+
+  .. warning::
+
+     All coefficients with a (combined) degree larger than :math:`d` should be
+     zero.  Failing to do so won't raise an :class:`Exception`, but might give
+     incorrect results.
+  '''
+
+  def __init__(self, coeffs:asarray, points, ndim, ngrad:int=0):
+    self.points_ndim = ndim
+    ndim = coeffs.ndim - self.points_ndim
+    if coeffs.ndim < ndim:
+      raise ValueError('invalid `coeffs` argument, should have at least one axis per spatial dimension')
+    self.coeffs = coeffs
+    self.points = points
+    self.ngrad = ngrad
+    super().__init__(args=[points, coeffs], shape=coeffs.shape[:ndim]+(self.points_ndim,)*ngrad, dtype=float)
+
+  def evalf(self, points, coeffs):
+    assert points.shape[1] == self.points_ndim
+    for i in range(self.ngrad):
+      coeffs = self._grad_coeffs(coeffs)
+    if coeffs.shape[-1] == 0:
+      return numpy.zeros((points.shape[0],)+coeffs.shape[1:coeffs.ndim-self.points_ndim])
+    for dim in reversed(range(self.points_ndim)):
+      result = numpy.empty((points.shape[0], *coeffs.shape[1:-1]), dtype=float)
+      result[:] = coeffs[...,-1]
+      points_dim = points[(slice(None),dim,*(_,)*(result.ndim-1))]
+      for j in reversed(range(coeffs.shape[-1]-1)):
+        result *= points_dim
+        result += coeffs[...,j]
+      coeffs = result
+    return coeffs
+
+  def _grad_coeffs(self, coeffs):
+    I = range(self.points_ndim)
+    dcoeffs = [coeffs[(...,*(slice(1,None) if i==j else slice(0,-1) for j in I))] for i in I]
+    if coeffs.shape[-1] > 2:
+      a = numpy.arange(1, coeffs.shape[-1])
+      dcoeffs = [a[tuple(slice(None) if i==j else _ for j in I)] * c for i, c in enumerate(dcoeffs)]
+    dcoeffs = numpy.stack(dcoeffs, axis=coeffs.ndim-self.points_ndim)
+    return dcoeffs
+
+  def _derivative(self, var, seen):
+    # Derivative to argument `points`.
+    dpoints = Dot(_numpy_align(Polyval(self.coeffs, self.points, self.points_ndim, self.ngrad+1)[(...,*(_,)*var.ndim)], derivative(self.points, var, seen)), [self.ndim])
+    # Derivative to argument `coeffs`.  `trans` shuffles the coefficient axes
+    # of `derivative(self.coeffs)` after the derivative axes.
+    shuffle = lambda a, b, c: (*range(0,a), *range(a+b,a+b+c), *range(a,a+b))
+    pretrans = shuffle(self.coeffs.ndim-self.points_ndim, self.points_ndim, var.ndim)
+    posttrans = shuffle(self.coeffs.ndim-self.points_ndim, var.ndim, self.ngrad)
+    dcoeffs = Transpose(Polyval(Transpose(derivative(self.coeffs, var, seen), pretrans), self.points, self.points_ndim, self.ngrad), posttrans)
+    return dpoints + dcoeffs
+
+  def _take(self, index, axis):
+    if axis < self.coeffs.ndim - self.points_ndim:
+      return Polyval(take(self.coeffs, index, axis), self.points, self.points_ndim, self.ngrad)
+
+  def _const_helper(self, *j):
+    if len(j) == self.ngrad:
+      coeffs = self.coeffs
+      for i in reversed(range(self.points_ndim)):
+        p = builtins.sum(k==i for k in j)
+        coeffs = math.factorial(p)*Get(coeffs, axis=i+self.coeffs.ndim-self.points_ndim, item=p)
+      return coeffs
+    else:
+      return Stack([self._const_helper(*j, k) for k in range(self.points_ndim)], axis=self.coeffs.ndim-self.points_ndim+self.ngrad-len(j)-1)
+
+  @cache.property
+  def simplified(self):
+    self = self.edit(lambda arg: arg.simplified if isevaluable(arg) else arg)
+    degree = 0 if self.points_ndim == 0 else self.coeffs.shape[-1]-1 if isinstance(self.coeffs.shape[-1], int) else float('inf')
+    if iszero(self.coeffs) or self.ngrad > degree:
+      return zeros_like(self)
+    elif self.ngrad == degree:
+      return self._const_helper().simplified
+    else:
+      return self
 
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 
@@ -2818,7 +2903,7 @@ mean = lambda arg: .5 * ( arg + opposite(arg) )
 jump = lambda arg: opposite(arg) - arg
 add_T = lambda arg, axes=(-2,-1): swapaxes( arg, *axes ) + arg
 blocks = lambda arg: asarray(arg).simplified.blocks
-rootcoords = lambda ndims: RootCoords( ndims )
+rootcoords = lambda ndims: RootCoords(ndims, trans=PopHead(Promote(ndims, trans=TRANS)))
 sampled = lambda data, ndims: Sampled( data )
 opposite = cache.replace(initcache={TRANS: OPPTRANS, OPPTRANS: TRANS})
 bifurcate1 = cache.replace(initcache={TRANS: SelectChain(TRANS, True), OPPTRANS: SelectChain(OPPTRANS, True)})
@@ -3019,18 +3104,42 @@ def eig(arg, axes=(-2,-1), symmetric=False):
   eigval, eigvec = Eig(transposed, symmetric)
   return Tuple([transpose(diagonalize(eigval), _invtrans(trans)), transpose(eigvec, _invtrans(trans))])
 
-def function(fmap, nmap, ndofs):
-  transforms = sorted(fmap)
-  depth, = set(len(transform) for transform in transforms)
+def polyfunc(coeffs, dofs, ndofs, transforms, *, issorted=True):
+  '''
+  Create an inflated :class:`Polyval` with coefficients ``coeffs`` and
+  corresponding dofs ``dofs``.  The arguments ``coeffs``, ``dofs`` and
+  ``transforms`` are assumed to have matching order.  In addition, if
+  ``issorted`` is true, the ``transforms`` argument is assumed to be sorted.
+  '''
+
+  transforms = tuple(transforms)
+  if issorted:
+    dofs = tuple(dofs)
+    coeffs = tuple(coeffs)
+  else:
+    dofsmap = dict(zip(transforms, dofs))
+    coeffsmap = dict(zip(transforms, coeffs))
+    transforms = tuple(sorted(transforms))
+    dofs = tuple(dofsmap[trans] for trans in transforms)
+    coeffs = tuple(coeffsmap[trans] for trans in transforms)
   fromdims, = set(transform.fromdims for transform in transforms)
   promote = Promote(fromdims, trans=TRANS)
   index = FindTransform(transforms, promote)
-  dofmap = DofMap([nmap[trans] for trans in transforms], index=index)
-  func = Function(stds=[fmap[trans] for trans in transforms], depth=depth, trans=promote, index=index)
+  dofmap = DofMap(dofs, index=index)
+  depth = Get([len(trans) for trans in transforms], axis=0, item=index)
+  points = RootCoords(fromdims, TailOfTransform(promote, depth))
+  func = Polyval(Elemwise(coeffs, index, dtype=float), points, fromdims)
   return Inflate(func, dofmap, ndofs, axis=0)
 
 def elemwise( fmap, shape, default=None ):
-  return Elemwise( fmap=fmap, shape=shape, default=default )
+  if default is not None:
+    raise NotImplemented('default is not supported anymore')
+  transforms = tuple(sorted(fmap))
+  values = tuple(fmap[trans] for trans in transforms)
+  fromdims, = set(transform.fromdims for transform in transforms)
+  promote = Promote(fromdims, trans=TRANS)
+  index = FindTransform(transforms, promote)
+  return Elemwise(values, index, dtype=float)
 
 def take(arg, index, axis):
   arg = asarray(arg)
