@@ -30,6 +30,7 @@ from . import core
 warnings.showwarning = lambda message, category, filename, lineno, *args: \
   warning( '%s: %s\n  In %s:%d' % ( category.__name__, message, filename, lineno ) )
 
+# NOTE: This should match the log levels defined in `nutils/_log/viewer.js`.
 LEVELS = 'error', 'warning', 'user', 'info', 'debug'
 
 
@@ -276,31 +277,35 @@ class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
     # Write header.
     if self._file:
       self._file.__enter__()
-    self._print( '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "DTD/xhtml1-strict.dtd">' )
-    self._print( '<html><head>' )
-    self._print( '<title>{}</title>'.format( html.escape( self._title ) ) )
-    self._print( '<script type="text/javascript" src="viewer.js" ></script>' )
-    self._print( '<link rel="stylesheet" type="text/css" href="style.css">' )
-    self._print( '<meta charset="UTF-8" />' )
-    self._print( '</head><body class="newstyle"><pre>' )
-    if self._scriptname is not None:
-      self._print( '<span id="navbar">goto: <a class="nav_latest" href="../../../../log.html?{1:.0f}">latest {0:}</a> | <a class="nav_latestall" href="../../../../../log.html?{1:.0f}">latest overall</a> | <a class="nav_index" href="../../../../../">index</a></span>'.format( self._scriptname, time.mktime(time.localtime()) ) )
-    self._print('<ul>' )
+    self._print('<!DOCTYPE html>')
+    self._print('<html><head>')
+    self._print('<meta charset="UTF-8"/>')
+    self._print('<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no"/>')
+    self._print('<title>{}</title>'.format(html.escape(self._title)))
+    self._print('<script src="viewer.js"></script>')
+    self._print('<link rel="stylesheet" type="text/css" href="viewer.css"/>')
+    body_attrs = ['body']
     if self._scriptname:
-      self._print('<li class="info">{} {}</li>'.format(html.escape(self._scriptname), html.escape(self._funcname or '')))
+      body_attrs.append('data-scriptname="{}"'.format(html.escape(self._scriptname)))
+      body_attrs.append('data-latest="../../../../log.html"')
+    if self._funcname:
+      body_attrs.append('data-funcname="{}"'.format(html.escape(self._funcname)))
+    self._print('</head><{}>'.format(' '.join(body_attrs)))
+    self._print('<div id="log">')
     if self._funcargs:
+      self._print('<ul class="cmdline">')
       for name, value, annotation in self._funcargs:
-        self._print(('  <li class="info">  --{}={} ({})</li>' if annotation else '<li class="info">{}={}</li>').format(*(html.escape(str(v)) for v in (name, value, annotation))))
-
+        self._print(('  <li>{}={}<span class="annotation">{}</span></li>' if annotation else '<li>{}={}</li>').format(*(html.escape(str(v)) for v in (name, value, annotation))))
+      self._print('</ul>')
     return self
 
   def __exit__( self, etype, value, tb ):
     super().__exit__( etype, value, tb )
-    self._print( '</ul>' )
     if etype not in (None,KeyboardInterrupt,SystemExit,bdb.BdbQuit):
       self.write_post_mortem( etype, value, tb )
+    self._print('</div>') # id="log"
     # Write footer.
-    self._print( '</pre></body></html>' )
+    self._print('</body></html>')
     if self._file:
       self._file.__exit__( etype, value, tb )
 
@@ -314,23 +319,23 @@ class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
       return super().write( level, text )
 
   def _print_push_context( self, title ):
-    self._print( '<li class="context">{}</li><ul>'.format( html.escape( title ) ) )
+    self._print('<div class="context"><div class="title">{}</div><div class="children">'.format(html.escape(title)))
     self._flush()
 
   def _print_pop_context( self ):
-    self._print( '</ul>' )
+    self._print('</div><div class="end"></div></div>')
     self._flush()
 
   def _print_item( self, level, text ):
     escaped_text = self._insert_anchors( level, html.escape( text ) )
-    self._print( '<li class="{}">{}</li>'.format( html.escape( level ), escaped_text ) )
+    self._print('<div class="item" data-loglevel="{}">{}</div>'.format(LEVELS.index(level), escaped_text))
     self._flush()
 
   def write_post_mortem( self, etype, value, tb ):
     'write exception nfo to html log'
 
     _fmt = lambda obj: '=' + ''.join( s.strip() for s in repr(obj).split('\n') )
-    self._print( '<span class="post-mortem">' )
+    self._print('<div class="post-mortem">')
     self._print( 'EXHAUSTIVE STACK TRACE' )
     self._print()
     for frame, filename, lineno, function, code_context, index in inspect.getinnerframes( tb ):
@@ -341,7 +346,7 @@ class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
         for line in code_context:
           self._print( html.escape( textwrap.fill( line.strip(), initial_indent='>>> ', subsequent_indent='    ', width=80 ) ) )
       self._print()
-    self._print( '</span>' )
+    self._print('</div>')
     self._flush()
 
 class IndentLog( HtmlInsertAnchor, ContextTreeLog ):
