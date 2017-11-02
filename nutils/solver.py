@@ -523,17 +523,20 @@ def optimize(target, functional, droptol=None, lhs0=None, constrain=None, newton
   residual = functional.derivative(target)
   jacobian = residual.derivative(target)
   f0, res, jac = Integral.multieval(functional, residual, jacobian, arguments=collections.ChainMap(arguments or {}, {target: lhs0}))
-  nandofs = numpy.zeros(residual.shape, dtype=bool) if droptol is None else ~jac.rowsupp(droptol)
+  usedofs = ~constrain
+  if droptol is not None:
+    usedofs &= jac.rowsupp(droptol)
+  log.info('optimizing for {}/{} degrees of freedom'.format(usedofs.sum(), len(usedofs)))
   cons = numpy.zeros(residual.shape)
-  cons[~(constrain|nandofs)] = numpy.nan
+  cons[usedofs] = numpy.nan
   lhs = lhs0 - jac.solve(res, constrain=cons) # residual(lhs0) + jacobian(lhs0) dlhs = 0
   if not jacobian.contains(target): # linear: functional(lhs0+dlhs) = functional(lhs0) + residual(lhs0) dlhs + .5 dlhs jacobian(lhs0) dlhs
     value = f0 + .5 * res.dot(lhs-lhs0)
   else: # nonlinear
     assert newtontol is not None, 'newton tolerance `newtontol` must be specified for nonlinear problems'
-    lhs = newton(target, residual, lhs0=lhs, constrain=constrain|nandofs, arguments=arguments).solve(newtontol)
+    lhs = newton(target, residual, lhs0=lhs, constrain=~usedofs, arguments=arguments).solve(newtontol)
     value = functional.eval(arguments=collections.ChainMap(arguments or {}, {target: lhs}))
-  assert not numpy.isnan(lhs[~(constrain|nandofs)]).any(), 'optimization failed (forgot droptol?)'
+  assert not numpy.isnan(lhs[usedofs]).any(), 'optimization failed (forgot droptol?)'
   log.info('optimum: {:.2e}'.format(value))
-  lhs[nandofs] = numpy.nan
+  lhs[~(usedofs|constrain)] = numpy.nan
   return lhs
