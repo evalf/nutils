@@ -5,12 +5,10 @@ from . import *
 def main(
   iarg: 'integer' = 1,
   farg: 'float' = 1.,
-  sarg: 'string' = 'foo',
-  parg: 'path' = nutils.cli.Path() ):
+  sarg: 'string' = 'foo'):
   assert isinstance( iarg, int ), 'n should be int, got {}'.format( type(iarg) )
   assert isinstance( farg, float ), 'f should be float, got {}'.format( type(farg) )
   assert isinstance( sarg, str ), 'f should be str, got {}'.format( type(sarg) )
-  assert isinstance( parg, nutils.cli.Path ), 'f should be Path, got {}'.format( type(parg) )
   print( 'all OK' )
 
 @parametrize
@@ -24,18 +22,22 @@ class run(ContextTestCase):
 
   def test_good(self):
     _savestreams = sys.stdout, sys.stderr
-    sys.stdout = sys.stderr = stringio = io.StringIO()
+    _saveargs = tuple(sys.argv)
     try:
+      sys.stdout = sys.stderr = stringio = io.StringIO()
+      sys.argv[:] = self.scriptname, '--outrootdir='+self.outrootdir, '--nopdb', '--symlink=xyz', '--iarg=1', '--farg=1', '--sarg=1'
       if self.method == 'run':
-        nutils.cli.run(main, args=['--outrootdir',self.outrootdir,'--pdb=false','--symlink=xyz','--iarg=1','--farg=1','--sarg=1','--parg=1'], scriptname=self.scriptname)
+        nutils.cli.run(main)
       else:
-        nutils.cli.choose(main, args=['--outrootdir',self.outrootdir,'--pdb=false','--symlink=xyz','main','--iarg=1','--farg=1','--sarg=1','--parg=1'], scriptname=self.scriptname)
+        sys.argv.insert(1, 'main')
+        nutils.cli.choose(main)
     except SystemExit as e:
       status = e
     else:
       status = None
     finally:
       sys.stdout, sys.stderr = _savestreams
+      sys.argv[:] = _saveargs
 
     with self.subTest('outdir'):
       print(os.listdir(self.outrootdir))
@@ -57,18 +59,22 @@ class run(ContextTestCase):
 
   def test_bad(self):
     _savestreams = sys.stdout, sys.stderr
-    sys.stdout = sys.stderr = stringio = io.StringIO()
+    _saveargs = tuple(sys.argv)
     try:
+      sys.stdout = sys.stderr = stringio = io.StringIO()
+      sys.argv[:] = self.scriptname, '--outrootdir='+self.outrootdir, '--nopdb', '--symlink=xyz', '--iarg=1', '--farg=x', '--sarg=1'
       if self.method == 'run':
-        nutils.cli.run(main, args=['--outrootdir',self.outrootdir,'--pdb=false','--symlink=xyz','--iarg=1','--farg=x','--sarg=1','--parg=1'])
+        nutils.cli.run(main)
       else:
-        nutils.cli.choose(main, args=['--outrootdir',self.outrootdir,'--pdb=false','--symlink=xyz','main','--iarg=1','--farg=x','--sarg=1','--parg=1'])
+        sys.argv.insert(1, 'main')
+        nutils.cli.choose(main)
     except SystemExit as e:
       status = e
     else:
       status = None
     finally:
       sys.stdout, sys.stderr = _savestreams
+      sys.argv[:] = _saveargs
 
     with self.subTest('outdir'):
       self.assertFalse(os.path.isdir(os.path.join(self.outrootdir,self.scriptname)), 'outdir directory found')
@@ -80,7 +86,7 @@ class run(ContextTestCase):
 
     with self.subTest('exitstatus'):
       self.assertIsNotNone(status)
-      self.assertEquals(status.code, 2)
+      self.assertEqual(status.code, 2)
 
 run(method='run')
 run(method='choose')

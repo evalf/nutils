@@ -22,7 +22,7 @@ globalproperties = {
   'htmloutput': True,
   'pdb': False,
   'imagetype': 'png',
-  'symlink': False,
+  'symlink': '',
   'recache': False,
   'dot': False,
   'profile': False,

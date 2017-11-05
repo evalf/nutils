@@ -13,7 +13,7 @@ python function based arguments specified on the command line.
 """
 
 from . import log, core, version
-import sys, inspect, os, datetime, argparse, pdb, signal, subprocess, pathlib, contextlib
+import sys, inspect, os, datetime, pdb, signal, subprocess, contextlib
 
 def _version():
   try:
@@ -24,13 +24,6 @@ def _version():
     return version
   else:
     return '{} (git:{})'.format( version, githash )
-
-def _bool( s ):
-  if s in ('true','True'):
-    return True
-  if s in ('false','False'):
-    return False
-  raise argparse.ArgumentTypeError( 'invalid boolean value: {!r}'.format(s) )
 
 def _mkbox( *lines ):
   width = max( len(line) for line in lines )
@@ -61,73 +54,73 @@ def _sigint_handler( mysignal, frame ):
   finally:
     signal.signal( mysignal, _handler )
 
-Path = pathlib.Path
-
-def run(func, *, args=None, scriptname=None):
+def run(func, *, skip=1):
   '''parse command line arguments and call function'''
 
-  return choose(func, cmd=False, args=args, scriptname=scriptname)
+  params = inspect.signature(func).parameters.values()
 
-def choose(*functions, cmd=True, args=None, scriptname=None):
+  if '-h' in sys.argv[skip:] or '--help' in sys.argv[skip:]:
+    print('usage: {} (...)'.format(' '.join(sys.argv[:skip])))
+    print()
+    for param in params:
+      cls = param.default.__class__
+      arg = param.name + '=' + cls.__name__.upper() if cls != bool else '(no)' + param.name
+      print('  --{:<16} {} [{}]'.format(arg, param.annotation, param.default))
+    sys.exit(1)
+
+  kwargs = {param.name: param.default for param in params}
+
+  for arg in sys.argv[skip:]:
+    name, sep, value = arg.lstrip('-').partition('=')
+    if not sep:
+      value = not name.startswith('no')
+      if not value:
+        name = name[2:]
+    if name in kwargs:
+      default = kwargs[name]
+      args = kwargs
+    else:
+      try:
+        default = core.getprop(name)
+      except NameError:
+        print('invalid argument {!r}'.format(arg))
+        sys.exit(2)
+      name = '__{}__'.format(name)
+      args = locals()
+    try:
+      if isinstance(default, bool) and not isinstance(value, bool):
+        raise Exception('boolean value should be specifiec as --{0}/--no{0}'.format(name))
+      args[name] = default.__class__(value)
+    except Exception as e:
+      print('invalid argument for {!r}: {}'.format(name, e))
+      sys.exit(2)
+
+  status = call(func, **kwargs)
+  sys.exit(status)
+
+def choose(*functions):
   '''parse command line arguments and call one of multiple functions'''
 
   assert functions, 'no functions specified'
-  assert cmd or len(functions) == 1, 'multiple functions conflicting with cmd=False'
 
-  # parse command line arguments
-  parser = argparse.ArgumentParser()
-  parser.add_argument( '--nprocs', type=int, metavar='INT', default=core.globalproperties['nprocs'], help='number of processors' )
-  parser.add_argument( '--outrootdir', type=str, metavar='PATH', default=core.globalproperties['outrootdir'], help='root directory for output' )
-  parser.add_argument( '--outdir', type=str, metavar='PATH', default=core.globalproperties['outdir'], help='custom directory for output' )
-  parser.add_argument( '--verbose', type=int, metavar='INT', default=core.globalproperties['verbose'], help='verbosity level' )
-  parser.add_argument( '--richoutput', type=_bool, nargs='?', const=True, metavar='BOOL', default=core.globalproperties['richoutput'], help='use rich output (colors, unicode)' )
-  parser.add_argument( '--htmloutput', type=_bool, nargs='?', const=True, metavar='BOOL', default=core.globalproperties['htmloutput'], help='generate a HTML log' )
-  parser.add_argument( '--pdb', type=_bool, nargs='?', const=True, metavar='BOOL', default=core.globalproperties['pdb'], help='start python debugger on error' )
-  parser.add_argument( '--imagetype', type=str, metavar='STR', default=core.globalproperties['imagetype'], help='default image type' )
-  parser.add_argument( '--symlink', type=str, metavar='STR', default=core.globalproperties['symlink'], help='create symlink to latest results' )
-  parser.add_argument( '--recache', type=_bool, nargs='?', const=True, metavar='BOOL', default=core.globalproperties['recache'], help='overwrite existing cache' )
-  parser.add_argument( '--dot', type=str, metavar='STR', default=core.globalproperties['dot'], help='graphviz executable' )
-  parser.add_argument( '--selfcheck', type=_bool, nargs='?', const=True, metavar='BOOL', default=core.globalproperties['selfcheck'], help='active self checks (slow!)' )
-  if cmd:
-    subparsers = parser.add_subparsers( dest='command', help='command (add -h for command-specific help)' )
-    subparsers.required = True
-  for func in functions:
-    subparser = subparsers.add_parser( func.__name__ ) if cmd else parser.add_argument_group( 'optional arguments for {}'.format(func.__name__) )
-    for parameter in inspect.signature( func ).parameters.values():
-      subparser.add_argument( '--'+parameter.name,
-        dest='='+parameter.name, # prefix with '=' to distinguish nutils/func args
-        default=parameter.default,
-        metavar=type(parameter.default).__name__.upper(),
-        help='{} (default: %(default)s)'.format(parameter.annotation) if parameter.annotation is not parameter.empty else 'default: %(default)s',
-        **{'type':_bool,'nargs':'?','const':True} if isinstance( parameter.default, bool ) else {'type':type(parameter.default)} )
-  ns = parser.parse_args( args )
+  funcnames = [func.__name__ for func in functions]
+  if len(sys.argv) == 1 or sys.argv[1] in ('-h', '--help'):
+    print('usage: {} [{}] (...)'.format(sys.argv[0], '|'.join(funcnames)))
+    sys.exit(1)
 
-  # set properties
-  __scriptname__ = scriptname or os.path.basename(sys.argv[0])
-  __nprocs__ = ns.nprocs
-  __outrootdir__ = ns.outrootdir
-  __outdir__ = ns.outdir
-  __verbose__ = ns.verbose
-  __richoutput__ = ns.richoutput
-  __htmloutput__ = ns.htmloutput
-  __pdb__ = ns.pdb
-  __imagetype__ = ns.imagetype
-  __symlink__ = ns.symlink
-  __recache__ = ns.recache
-  __dot__ = ns.dot
-  __selfcheck__ = ns.selfcheck
+  try:
+    ifunc = funcnames.index(sys.argv[1])
+  except ValueError:
+    print('invalid argument {!r}; choose from {}'.format(sys.argv[1], ', '.join(funcnames)))
+    sys.exit(2)
 
-  # call function
-  func = { f.__name__: f for f in functions }[ ns.command ] if cmd else functions[0]
-  kwargs = { key[1:]: val for key, val in vars(ns).items() if key[0] == '=' }
-  status = call( func, **kwargs )
-  sys.exit( status )
+  run(functions[ifunc], skip=2)
 
 def call( func, **kwargs ):
   '''set up compute environment and call function'''
 
   starttime = datetime.datetime.now()
-  scriptname = core.getprop('scriptname')
+  scriptname = os.path.basename(sys.argv[0])
 
   with contextlib.ExitStack() as stack:
 

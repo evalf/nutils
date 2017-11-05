@@ -342,7 +342,6 @@ def run( *functions ):
   assert not missing, 'missing mandatory arguments: {}'.format( ', '.join(missing) )
 
   # set properties
-  __scriptname__ = os.path.basename(sys.argv[0])
   __nprocs__ = properties['nprocs']
   __outrootdir__ = properties['outrootdir']
   __outdir__ = properties['outdir']
