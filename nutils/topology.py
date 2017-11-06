@@ -1285,12 +1285,17 @@ class StructuredTopology( Topology ):
     #Cache effectivity
     log.debug( 'Local knot vector cache effectivity: %d' % (100*(1.-len(cache)/float(sum(self.shape)))) )
 
-    dofmap = []
-    coeffs = []
-    for std, S in zip(itertools.product(*stdelems), itertools.product(*slices)):
-      dofs = vertex_structure[S].ravel()
-      dofmap.append(numeric.const(dofs, copy=False))
-      coeffs.append(functools.reduce(numeric.poly_outer_product, std))
+    # deduplicate stdelems and compute tensorial products `unique` with indices `index`
+    # such that unique[index[i,j]] == poly_outer_product(stdelems[0][i], stdelems[1][j])
+    index = numpy.array(0)
+    for stdelems_i in stdelems:
+      unique_i = tuple(set(stdelems_i))
+      unique = unique_i if not index.ndim \
+        else [numeric.poly_outer_product(a, b) for a in unique for b in unique_i]
+      index = index[...,_] * len(unique_i) + tuple(map(unique_i.index, stdelems_i))
+
+    coeffs = [unique[i] for i in index.flat]
+    dofmap = [numeric.const(vertex_structure[S].ravel(), copy=False) for S in itertools.product(*slices)]
     return coeffs, dofmap, dofshape
 
   def basis_spline( self, degree, knotvalues=None, knotmultiplicities=None, periodic=None, removedofs=None ):
