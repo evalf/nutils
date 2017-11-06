@@ -283,7 +283,9 @@ def replace(func=lambda obj: None, initcache={}):
             replaced = obj
         cache[obj] = replaced
       return replaced
-    return op(target)
+    retval = op(target)
+    del op
+    return retval
   return wrapper
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
