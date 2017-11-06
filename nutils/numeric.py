@@ -605,7 +605,7 @@ def assert_allclose64(actual, data=None):
   raise Exception(status)
 
 class const:
-  __slots__ = '__base', '__hash', '__array_struct__'
+  __slots__ = '__base', '__hash'
 
   @staticmethod
   def full(shape, fill_value):
@@ -617,9 +617,12 @@ class const:
     self = object.__new__(cls)
     self.__base = numpy.array(base, dtype=dtype) if copy or not isinstance(base, numpy.ndarray) or dtype and dtype != base.dtype else base
     self.__base.flags.writeable = False
-    self.__array_struct__ = self.__base.__array_struct__
     self.__hash = hash((self.__base.shape, self.__base.dtype, tuple(self.__base.flat[::self.__base.size//32+1]) if self.__base.size else ())) # NOTE special case self.__base.size == 0 necessary for numpy<1.12
     return self
+
+  @property
+  def __array_struct__(self):
+    return self.__base.__array_struct__
 
   def __reduce__(self):
     return const, (self.__base, False)
