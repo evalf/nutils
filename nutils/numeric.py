@@ -748,4 +748,27 @@ def poly_stack(coeffs):
     dest[(i,*map(slice, j.shape))] = j
   return const(dest, copy=False)
 
+def poly_grad(coeffs, ndim):
+  I = range(ndim)
+  dcoeffs = [coeffs[(...,*(slice(1,None) if i==j else slice(0,-1) for j in I))] for i in I]
+  if coeffs.shape[-1] > 2:
+    a = numpy.arange(1, coeffs.shape[-1])
+    dcoeffs = [a[tuple(slice(None) if i==j else numpy.newaxis for j in I)] * c for i, c in enumerate(dcoeffs)]
+  dcoeffs = numpy.stack(dcoeffs, axis=coeffs.ndim-ndim)
+  return const(dcoeffs, copy=False)
+
+def poly_eval(coeffs, points):
+  assert points.ndim == 2
+  if coeffs.shape[-1] == 0:
+    return const.full((points.shape[0],)+coeffs.shape[1:coeffs.ndim-points.shape[-1]], 0.)
+  for dim in reversed(range(points.shape[-1])):
+    result = numpy.empty((points.shape[0], *coeffs.shape[1:-1]), dtype=float)
+    result[:] = coeffs[...,-1]
+    points_dim = points[(slice(None),dim,*(numpy.newaxis,)*(result.ndim-1))]
+    for j in reversed(range(coeffs.shape[-1]-1)):
+      result *= points_dim
+      result += coeffs[...,j]
+    coeffs = result
+  return const(coeffs, copy=False)
+
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

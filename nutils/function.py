@@ -1572,7 +1572,7 @@ class Take( Array ):
   def evalf( self, arr, indices ):
     if indices.shape[0] != 1:
       raise NotImplementedError( 'non element-constant indexing not supported yet' )
-    return numpy.take( arr, indices[0], self.axis+1 )
+    return numeric.const(numpy.take(arr, indices[0], self.axis+1), copy=False)
 
   def _derivative(self, var, seen):
     return take(derivative(self.func, var, seen), self.indices, self.axis)
@@ -2674,32 +2674,13 @@ class Polyval(Array):
     self.coeffs = coeffs
     self.points = points
     self.ngrad = ngrad
-    super().__init__(args=[points, coeffs], shape=coeffs.shape[:ndim]+(self.points_ndim,)*ngrad, dtype=float)
+    super().__init__(args=[CACHE, points, coeffs], shape=coeffs.shape[:ndim]+(self.points_ndim,)*ngrad, dtype=float)
 
-  def evalf(self, points, coeffs):
+  def evalf(self, cache, points, coeffs):
     assert points.shape[1] == self.points_ndim
-    for i in range(self.ngrad):
-      coeffs = self._grad_coeffs(coeffs)
-    if coeffs.shape[-1] == 0:
-      return numpy.zeros((points.shape[0],)+coeffs.shape[1:coeffs.ndim-self.points_ndim])
-    for dim in reversed(range(self.points_ndim)):
-      result = numpy.empty((points.shape[0], *coeffs.shape[1:-1]), dtype=float)
-      result[:] = coeffs[...,-1]
-      points_dim = points[(slice(None),dim,*(_,)*(result.ndim-1))]
-      for j in reversed(range(coeffs.shape[-1]-1)):
-        result *= points_dim
-        result += coeffs[...,j]
-      coeffs = result
-    return coeffs
-
-  def _grad_coeffs(self, coeffs):
-    I = range(self.points_ndim)
-    dcoeffs = [coeffs[(...,*(slice(1,None) if i==j else slice(0,-1) for j in I))] for i in I]
-    if coeffs.shape[-1] > 2:
-      a = numpy.arange(1, coeffs.shape[-1])
-      dcoeffs = [a[tuple(slice(None) if i==j else _ for j in I)] * c for i, c in enumerate(dcoeffs)]
-    dcoeffs = numpy.stack(dcoeffs, axis=coeffs.ndim-self.points_ndim)
-    return dcoeffs
+    for igrad in range(self.ngrad):
+      coeffs = cache[numeric.poly_grad](coeffs, self.points_ndim)
+    return cache[numeric.poly_eval](coeffs, points)
 
   def _derivative(self, var, seen):
     # Derivative to argument `points`.
