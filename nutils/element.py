@@ -178,31 +178,31 @@ class Reference( cache.Immutable ):
     return list( zip( self.child_transforms, self.child_refs ) )
 
   @cache.property
-  def childedgemap( self ):
-    # ichild>iedge --> jchild>jedge, isouter=False (corresponding edge)
-    # ichild>iedge --> jchild<jedge, isouter=True (coinciding interface)
-
+  def connectivity(self):
+    # Two nested tuples (`childmap` and `edgemap`) that provide information
+    # about how edges of children and children of edges are related:
+    # 1. childmap[ichild][iedge] = ioppchild (interface) or -1 (boundary)
+    # 2. edgemap[iedge][ichild] = (jchild, jedge)
+    # Note that the second structure relates only to external boundary
+    # segments. The reason to generate both structures simultaneously is that
+    # they are efficiently generated together, and because it allows a
+    # consistency check to be performed: after separating elements in
+    # interfaces and external boundaries none should remain.
+    childmap = [[-1] * child.nedges for child in self.child_refs]
     vmap = {}
-    childedgemap = tuple( [None] * child.nedges for child in self.child_refs )
-
-    for ichild, (ctrans,child) in enumerate(self.children):
-      for iedge, (etrans,edge) in enumerate(child.edges):
+    for ichild, (ctrans, cref) in enumerate(self.children):
+      for iedge, etrans in enumerate(cref.edge_transforms):
         v = (ctrans<<etrans).flat
         try:
           jchild, jedge = vmap.pop(v.flipped)
         except KeyError:
           vmap[v] = ichild, iedge
         else:
-          childedgemap[jchild][jedge] = ichild, iedge, False
-          childedgemap[ichild][iedge] = jchild, jedge, False
-
-    for iedge, (etrans,edge) in enumerate(self.edges):
-      for ichild, (ctrans,child) in enumerate(edge.children):
-        jchild, jedge = vmap.pop( (etrans<<ctrans).flat )
-        childedgemap[jchild][jedge] = ichild, iedge, True
-
-    assert not vmap, 'boundaries and edges do not commute'
-    return childedgemap
+          childmap[jchild][jedge] = ichild
+          childmap[ichild][iedge] = jchild
+    edgemap = [[vmap.pop((etrans << ctrans).flat) for ctrans in eref.child_transforms] for etrans, eref in self.edges]
+    assert not any(self.child_refs[ichild].edge_refs[iedge] for ichild, iedge in vmap.values()), 'not all boundary elements recovered'
+    return tuple(map(tuple, childmap)), tuple(map(tuple, edgemap))
 
   @cache.property
   def ribbons( self ):
@@ -243,23 +243,6 @@ class Reference( cache.Immutable ):
   @cache.property
   def permutation_transforms( self ):
     return (transform.identity,)
-
-  @cache.property
-  def interfaces( self ):
-    return [ ((ichild,iedge),(jchild,jedge))
-      for ichild, tmp in enumerate( self.childedgemap )
-        for iedge, (jchild,jedge,isouter) in enumerate( tmp )
-          if not isouter and ichild < jchild ]
-
-  @cache.property
-  def edge2children( self ):
-    edge2children = [ [ None ] * edge.nchildren for edge in self.edge_refs ]
-    for ichild, row in enumerate(self.childedgemap):
-      for iedge, (jchild,jedge,isouter) in enumerate( row ):
-        if isouter:
-          edge2children[jedge][jchild] = ichild, iedge
-    assert all( all(items) for items in edge2children )
-    return tuple( edge2children )
 
   def getischeme( self, ischeme ):
     match = re.match( '([a-zA-Z]+)(.*)', ischeme )
@@ -435,6 +418,8 @@ class EmptyReference( Reference ):
 
   edge_transforms = ()
   edge_refs = ()
+  child_transforms = ()
+  child_refs = ()
 
   def __init__(self, ndims:int):
     super().__init__(numpy.zeros((0,ndims)))
@@ -1270,7 +1255,6 @@ class OwnChildReference( Reference ):
     self.baseref = baseref
     self.child_refs = baseref,
     self.child_transforms = transform.identity,
-    self.interfaces = ()
     super().__init__(baseref.vertices)
 
   @property
@@ -1319,10 +1303,6 @@ class WithChildrenReference( Reference ):
       self.check_edges()
 
   @property
-  def interfaces( self ):
-    return self.baseref.interfaces
-
-  @property
   def permutation_transforms( self ):
     return self.baseref.permutation_transforms
 
@@ -1344,19 +1324,24 @@ class WithChildrenReference( Reference ):
   @cache.property
   def __extra_edges( self ):
     interfaces = []
-    for (ichild,iedge), (jchild,jedge) in self.interfaces:
-      child1 = self.child_refs[ichild]
-      child2 = self.child_refs[jchild]
-      edge1 = child1.edge_refs[iedge] if child1 else EmptyReference(self.ndims-1)
-      edge2 = child2.edge_refs[jedge] if child2 else EmptyReference(self.ndims-1)
-      if edge1 - edge2:
-        trans = self.child_transforms[ichild] << child1.edge_transforms[iedge]
-        if trans not in self.baseref.edge_transforms:
-          interfaces.append(( ichild, iedge, trans, edge1-edge2 ))
-      if edge2 - edge1:
-        trans = self.child_transforms[jchild] << child2.edge_transforms[jedge]
-        if trans not in self.baseref.edge_transforms:
-          interfaces.append(( jchild, jedge, trans, edge2-edge1 ))
+    childmap = self.baseref.connectivity[0]
+    for ichild, edges in enumerate(childmap):
+      cref = self.child_refs[ichild]
+      if not cref:
+        continue # new child is empty
+      for iedge, jchild in enumerate(edges):
+        if jchild == -1:
+          continue # iedge already is an external boundary
+        coppref = self.child_refs[jchild]
+        if coppref == self.baseref.child_refs[jchild]:
+          continue # opposite is complete, so iedge cannot form a new external boundary
+        eref = cref.edge_refs[iedge]
+        if coppref: # opposite new child is not empty
+          eref -= coppref.edge_refs[childmap[jchild].index(ichild)]
+        if eref:
+          trans = self.child_transforms[ichild] << cref.edge_transforms[iedge]
+          assert trans not in self.baseref.edge_transforms
+          interfaces.append((ichild, iedge, trans, eref))
     return interfaces
 
   def subvertex( self, ichild, i ):
@@ -1409,32 +1394,14 @@ class WithChildrenReference( Reference ):
 
   @cache.property
   def edge_refs( self ):
-    items = [baseedge and baseedge.with_children(self.child_refs[jchild].edge_refs[jedge] if self.child_refs[jchild] else EmptyReference(self.ndims-1) for jchild, jedge in self.edge2children[iedge])
+    edgemap = self.baseref.connectivity[1]
+    edge_refs = [baseedge and baseedge.with_children(self.child_refs[jchild].edge_refs[jedge] if self.child_refs[jchild] else EmptyReference(self.ndims-1) for jchild, jedge in edgemap[iedge])
       for iedge, baseedge in enumerate(self.baseref.edge_refs)]
     for mychild, basechild in zip( self.child_refs, self.baseref.child_refs ):
       if mychild:
-        items.extend( OwnChildReference(edge) for edge in mychild.edge_refs[basechild.nedges:] )
-    items.extend( OwnChildReference(ref) for ichild, iedge, trans, ref in self.__extra_edges )
-    return tuple(items)
-
-  @property
-  def childedgemap( self ):
-    childedgemap = tuple( list(row) for row in self.baseref.childedgemap )
-    for ichild, mychild in enumerate( self.child_refs ):
-      if mychild:
-        basechild = self.baseref.child_refs[ichild]
-        childedgemap[ichild].extend( (ichild,iedge,False) for iedge in range(basechild.nedges,mychild.nedges) )
-    return childedgemap
-
-  @cache.property
-  def edge2children( self ):
-    edge2children = list( self.baseref.edge2children )
-    for ichild, mychild in enumerate( self.child_refs ):
-      if mychild:
-        basechild = self.baseref.child_refs[ichild]
-        edge2children.extend( [(ichild,iedge)] for iedge in range(basechild.nedges,mychild.nedges) )
-    edge2children.extend( [(ichild,iedge)] for ichild, iedge, trans, ref in self.__extra_edges )
-    return tuple( edge2children )
+        edge_refs.extend( OwnChildReference(edge) for edge in mychild.edge_refs[basechild.nedges:] )
+    edge_refs.extend( OwnChildReference(ref) for ichild, iedge, trans, ref in self.__extra_edges )
+    return tuple(edge_refs)
 
   def inside( self, point, eps=0 ):
     return any( cref.inside( transform.invapply( ctrans, point ), eps=eps ) for ctrans, cref in self.children )
