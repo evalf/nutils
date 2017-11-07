@@ -1409,16 +1409,13 @@ class WithChildrenReference( Reference ):
 
   @cache.property
   def edge_refs( self ):
-    # to avoid circular references we cannot mention 'self' inside getedgeref
-    def getedgeref( iedge, baseref=self.baseref, child_refs=self.child_refs, edge2children=self.edge2children ):
-      baseedge = baseref.edge_refs[iedge]
-      return baseedge and baseedge.with_children( child_refs[jchild].edge_refs[jedge] if child_refs[jchild] else EmptyReference(baseref.ndims-1) for jchild, jedge in edge2children[iedge] )
-    items = [ cache.Tuple.unknown ] * self.baseref.nedges
+    items = [baseedge and baseedge.with_children(self.child_refs[jchild].edge_refs[jedge] if self.child_refs[jchild] else EmptyReference(self.ndims-1) for jchild, jedge in self.edge2children[iedge])
+      for iedge, baseedge in enumerate(self.baseref.edge_refs)]
     for mychild, basechild in zip( self.child_refs, self.baseref.child_refs ):
       if mychild:
         items.extend( OwnChildReference(edge) for edge in mychild.edge_refs[basechild.nedges:] )
     items.extend( OwnChildReference(ref) for ichild, iedge, trans, ref in self.__extra_edges )
-    return cache.Tuple( items, getedgeref )
+    return tuple(items)
 
   @property
   def childedgemap( self ):
