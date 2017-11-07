@@ -134,9 +134,12 @@ class Element( object ):
 class Reference( cache.Immutable ):
   'reference element'
 
-  def __init__(self, vertices:numeric.const):
-    self.vertices = vertices
-    self.nverts, self.ndims = self.vertices.shape
+  def __init__(self, ndims:int):
+    self.ndims = ndims
+
+  @property
+  def nverts(self):
+    return len(self.vertices)
 
   __and__ = lambda self, other: self if self == other else NotImplemented
   __or__ = lambda self, other: self if self == other else NotImplemented
@@ -421,8 +424,9 @@ class EmptyReference( Reference ):
   child_transforms = ()
   child_refs = ()
 
-  def __init__(self, ndims:int):
-    super().__init__(numpy.zeros((0,ndims)))
+  @property
+  def vertices(self):
+    return numeric.const(numpy.zeros((0, self.ndims)), copy=False)
 
   __and__ = __sub__ = lambda self, other: self if other.ndims == self.ndims else NotImplemented
   __or__ = lambda self, other: other if other.ndims == self.ndims else NotImplemented
@@ -437,9 +441,13 @@ class EmptyReference( Reference ):
 class RevolutionReference( Reference ):
   'modify gauss integration to always return a single point'
 
+  volume = 2 * numpy.pi
+
   def __init__(self):
-    self.volume = 2 * numpy.pi
-    super().__init__(numpy.zeros((1,1)))
+    super().__init__(ndims=1)
+
+  def vertices(self):
+    return numeric.const([[0.]]) # NOTE unclear if this is the desired outcome
 
   @property
   def edge_transforms( self ): # only used in check_edges
@@ -463,10 +471,14 @@ class SimplexReference( Reference ):
   'simplex reference'
 
   def __init__(self, ndims:int):
-    super().__init__(numpy.concatenate([numpy.zeros(ndims,dtype=int)[_,:], numpy.eye(ndims,dtype=int)], axis=0))
+    super().__init__(ndims)
     self.volume = 1. / math.factorial(ndims)
     if self.ndims > 0 and core.getprop( 'selfcheck', False ):
       self.check_edges()
+
+  @property
+  def vertices(self):
+    return numeric.const(numpy.concatenate([numpy.zeros(self.ndims, dtype=int)[_,:], numpy.eye(self.ndims, dtype=int)], axis=0), copy=False)
 
   @cache.property
   def edge_refs( self ):
@@ -848,13 +860,16 @@ class TensorReference( Reference ):
   def __init__(self, ref1, ref2):
     self.ref1 = ref1
     self.ref2 = ref2
-    ndims = ref1.ndims + ref2.ndims
-    vertices = numpy.empty( ( ref1.nverts, ref2.nverts, ndims ), dtype=int )
-    vertices[:,:,:ref1.ndims] = ref1.vertices[:,_]
-    vertices[:,:,ref1.ndims:] = ref2.vertices[_,:]
-    super().__init__(vertices.reshape((ref1.nverts*ref2.nverts),ndims))
+    super().__init__(ref1.ndims + ref2.ndims)
     if core.getprop( 'selfcheck', False ):
       self.check_edges()
+
+  @cache.property
+  def vertices(self):
+    vertices = numpy.empty((self.ref1.nverts, self.ref2.nverts, self.ndims), dtype=int)
+    vertices[:,:,:self.ref1.ndims] = self.ref1.vertices[:,_]
+    vertices[:,:,self.ref1.ndims:] = self.ref2.vertices[_,:]
+    return numeric.const(vertices.reshape(self.ref1.nverts*self.ref2.nverts, self.ndims), copy=False)
 
   @property
   def volume( self ):
@@ -1043,8 +1058,7 @@ class Cone( Reference ):
   def __init__(self, edgeref, etrans, tip:numeric.const):
     assert etrans.fromdims == edgeref.ndims
     assert etrans.todims == len(tip)
-    vertices = numpy.vstack([ [tip], etrans.apply( edgeref.vertices ) ])
-    super().__init__(vertices)
+    super().__init__(len(tip))
     self.edgeref = edgeref
     self.etrans = etrans
     self.tip = tip
@@ -1054,6 +1068,10 @@ class Cone( Reference ):
     assert self.height >= 0, 'tip is positioned at the negative side of edge'
     if core.getprop( 'selfcheck', False ):
       self.check_edges()
+
+  @cache.property
+  def vertices(self):
+    return numeric.const(numpy.vstack([[self.tip], self.etrans.apply(self.edgeref.vertices)]), copy=False)
 
   @property
   def volume( self ):
@@ -1270,7 +1288,11 @@ class OwnChildReference( Reference ):
     self.baseref = baseref
     self.child_refs = baseref,
     self.child_transforms = transform.identity,
-    super().__init__(baseref.vertices)
+    super().__init__(baseref.ndims)
+
+  @property
+  def vertices(self):
+    return self.baseref.vertices
 
   @property
   def edge_transforms( self ):
@@ -1313,9 +1335,13 @@ class WithChildrenReference( Reference ):
     self.baseref = baseref
     self.child_transforms = baseref.child_transforms
     self.child_refs = child_refs
-    super().__init__(baseref.vertices)
+    super().__init__(baseref.ndims)
     if core.getprop( 'selfcheck', False ):
       self.check_edges()
+
+  @property
+  def vertices(self):
+    return self.baseref.vertices
 
   @property
   def permutation_transforms( self ):
@@ -1478,6 +1504,13 @@ class MosaicReference( Reference ):
         self.edge_transforms.append( newtrans )
         self.edge_refs.append( edge.cone( extrudetrans, tip ) )
 
+    super().__init__(baseref.ndims)
+
+    if core.getprop( 'selfcheck', False ):
+      self.check_edges()
+
+  @cache.property
+  def vertices(self):
     vertices = []
     for etrans, eref in self.edges:
       indices = []
@@ -1488,11 +1521,7 @@ class MosaicReference( Reference ):
           index = len(vertices)
           vertices.append( vertex )
         indices.append( index )
-
-    super().__init__(vertices)
-
-    if core.getprop( 'selfcheck', False ):
-      self.check_edges()
+    return numeric.const(vertices)
 
   def __and__( self, other ):
     if other in (self,self.baseref):
