@@ -459,6 +459,9 @@ class RevolutionReference( Reference ):
   def getischeme( self, ischeme ):
     return numeric.const([[0.]]), numeric.const([self.volume])
 
+  def inside(self, point, eps=0):
+    return True
+
 class SimplexReference( Reference ):
   'simplex reference'
 
