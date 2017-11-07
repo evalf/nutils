@@ -1916,7 +1916,7 @@ class HierarchicalTopology( Topology ):
     'boundary elements'
 
     basebtopo = self.basetopo.boundary
-    edgepool = itertools.chain.from_iterable( elem.edges for elem in self if elem.transform.lookup( self.basetopo.border_transforms ) )
+    edgepool = [edge for elem in self if elem.transform.lookup(self.basetopo.border_transforms) for edge in elem.edges if edge is not None]
     belems = []
     for edge in edgepool: # superset of boundary elements
       try:
