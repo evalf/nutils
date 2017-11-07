@@ -869,11 +869,11 @@ class TensorReference( Reference ):
       points[0,:,1:] = self.ref2.vertices
       points[1,:,1:] = self.ref2.vertices[::-1]
     elif self.ref1.ndims == 1 and self.ref2.ndims == 2:
-      points = numpy.empty([ 2, self.ref2.nverts, 3 ])
+      points = numpy.empty([self.ref1.nverts, self.ref2.nverts, 3])
       points[...,:1] = self.ref1.vertices[:,_]
       points[...,1:] = self.ref2.vertices[_,:]
     elif self.ref1.ndims == 2 and self.ref2.ndims == 1:
-      points = numpy.empty([ 2, self.ref1.nverts, 3 ])
+      points = numpy.empty([self.ref2.nverts, self.ref1.nverts, 3])
       points[...,:2] = self.ref1.vertices[_,:]
       points[...,2:] = self.ref2.vertices[:,_]
     else:
