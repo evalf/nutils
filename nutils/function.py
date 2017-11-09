@@ -2823,68 +2823,187 @@ def _inflate_scalar(arg, shape):
 
 # FUNCTIONS
 
-isarray = lambda arg: isinstance( arg, Array )
-iszero = lambda arg: isinstance( arg, Zeros )
-zeros = lambda shape, dtype=float: Zeros( shape, dtype )
-zeros_like = lambda arr: zeros(arr.shape, arr.dtype)
-ones = lambda shape, dtype=float: _inflate_scalar(numpy.ones((), dtype=dtype), shape)
-ones_like = lambda arr: ones(arr.shape, arr.dtype)
-reciprocal = lambda arg: power( arg, -1 )
-grad = lambda arg, coords, ndims=0: asarray( arg ).grad( coords, ndims )
-symgrad = lambda arg, coords, ndims=0: asarray( arg ).symgrad( coords, ndims )
-div = lambda arg, coords, ndims=0: asarray( arg ).div( coords, ndims )
-negative = lambda arg: multiply( arg, -1 )
-nsymgrad = lambda arg, coords: ( symgrad(arg,coords) * coords.normal() ).sum(-1)
-ngrad = lambda arg, coords: ( grad(arg,coords) * coords.normal() ).sum(-1)
-sin = lambda x: Sin(x)
-cos = lambda x: Cos(x)
-rotmat = lambda arg: Stack([trignormal(arg), trigtangent(arg)], 0)
-tan = lambda x: Tan(x)
-arcsin = lambda x: ArcSin(x)
-arccos = lambda x: ArcCos(x)
-arctan = lambda x: ArcTan(x)
-exp = lambda x: Exp(x)
-ln = lambda x: Log(x)
-mod = lambda arg1, arg2: Mod(*_numpy_align(arg1, arg2))
-log2 = lambda arg: ln(arg) / ln(2)
-log10 = lambda arg: ln(arg) / ln(10)
-sqrt = lambda arg: power( arg, .5 )
-arctan2 = lambda arg1, arg2: ArcTan2(*_numpy_align(arg1, arg2))
-greater = lambda arg1, arg2: Greater(*_numpy_align(arg1, arg2))
-equal = lambda arg1, arg2: Equal(*_numpy_align(arg1, arg2))
-less = lambda arg1, arg2: Less(*_numpy_align(arg1, arg2))
-min = lambda a, b: Minimum(*_numpy_align(a, b))
-max = lambda a, b: Maximum(*_numpy_align(a, b))
-abs = lambda arg: arg * sign(arg)
-sinh = lambda arg: .5 * ( exp(arg) - exp(-arg) )
-cosh = lambda arg: .5 * ( exp(arg) + exp(-arg) )
-tanh = lambda arg: 1 - 2. / ( exp(2*arg) + 1 )
-arctanh = lambda arg: .5 * ( ln(1+arg) - ln(1-arg) )
-piecewise = lambda level, intervals, *funcs: Get(Stack(asarrays(funcs), axis=0), axis=0, item=util.sum(Int(greater(level, interval)) for interval in intervals))
-trace = lambda arg, n1=-2, n2=-1: sum(takediag(arg, n1, n2), numeric.normdim(arg.ndim, n1))
-normalized = lambda arg, axis=-1: divide(arg, expand_dims(norm2(arg, axis=axis), axis))
-norm2 = lambda arg, axis=-1: sqrt( sum( multiply( arg, arg ), axis ) )
-heaviside = lambda arg: Int(greater(arg, 0))
-divide = lambda arg1, arg2: multiply( arg1, reciprocal(arg2) )
-subtract = lambda arg1, arg2: add( arg1, negative(arg2) )
-mean = lambda arg: .5 * ( arg + opposite(arg) )
-jump = lambda arg: opposite(arg) - arg
-add_T = lambda arg, axes=(-2,-1): swapaxes( arg, *axes ) + arg
-blocks = lambda arg: asarray(arg).simplified.blocks
-rootcoords = lambda ndims: RootCoords(ndims, trans=PopHead(Promote(ndims, trans=TRANS)))
-sampled = lambda data, ndims: Sampled( data )
+def isarray(arg):
+  return isinstance( arg, Array )
+
+def iszero(arg):
+  return isinstance( arg, Zeros )
+
+def zeros(shape, dtype=float):
+  return Zeros( shape, dtype )
+
+def zeros_like(arr):
+  return zeros(arr.shape, arr.dtype)
+
+def ones(shape, dtype=float):
+  return _inflate_scalar(numpy.ones((), dtype=dtype), shape)
+
+def ones_like(arr):
+  return ones(arr.shape, arr.dtype)
+
+def reciprocal(arg):
+  return power( arg, -1 )
+
+def grad(arg, coords, ndims=0):
+  return asarray( arg ).grad( coords, ndims )
+
+def symgrad(arg, coords, ndims=0):
+  return asarray( arg ).symgrad( coords, ndims )
+
+def div(arg, coords, ndims=0):
+  return asarray( arg ).div( coords, ndims )
+
+def negative(arg):
+  return multiply( arg, -1 )
+
+def nsymgrad(arg, coords):
+  return ( symgrad(arg,coords) * coords.normal() ).sum(-1)
+
+def ngrad(arg, coords):
+  return ( grad(arg,coords) * coords.normal() ).sum(-1)
+
+def sin(x):
+  return Sin(x)
+
+def cos(x):
+  return Cos(x)
+
+def rotmat(arg):
+  return Stack([trignormal(arg), trigtangent(arg)], 0)
+
+def tan(x):
+  return Tan(x)
+
+def arcsin(x):
+  return ArcSin(x)
+
+def arccos(x):
+  return ArcCos(x)
+
+def arctan(x):
+  return ArcTan(x)
+
+def exp(x):
+  return Exp(x)
+
+def ln(x):
+  return Log(x)
+
+def mod(arg1, arg2):
+  return Mod(*_numpy_align(arg1, arg2))
+
+def log2(arg):
+  return ln(arg) / ln(2)
+
+def log10(arg):
+  return ln(arg) / ln(10)
+
+def sqrt(arg):
+  return power( arg, .5 )
+
+def arctan2(arg1, arg2):
+  return ArcTan2(*_numpy_align(arg1, arg2))
+
+def greater(arg1, arg2):
+  return Greater(*_numpy_align(arg1, arg2))
+
+def equal(arg1, arg2):
+  return Equal(*_numpy_align(arg1, arg2))
+
+def less(arg1, arg2):
+  return Less(*_numpy_align(arg1, arg2))
+
+def min(a, b):
+  return Minimum(*_numpy_align(a, b))
+
+def max(a, b):
+  return Maximum(*_numpy_align(a, b))
+
+def abs(arg):
+  return arg * sign(arg)
+
+def sinh(arg):
+  return .5 * (exp(arg) - exp(-arg))
+
+def cosh(arg):
+  return .5 * (exp(arg) + exp(-arg))
+
+def tanh(arg):
+  return 1 - 2. / ( exp(2*arg) + 1 )
+
+def arctanh(arg):
+  return .5 * (ln(1+arg) - ln(1-arg))
+
+def piecewise(level, intervals, *funcs):
+  return Get(Stack(asarrays(funcs), axis=0), axis=0,
+             item=util.sum(Int(greater(level, interval)) for interval in intervals))
+
+def trace(arg, n1=-2, n2=-1):
+  return sum(takediag(arg, n1, n2), numeric.normdim(arg.ndim, n1))
+
+def normalized(arg, axis=-1):
+  return divide(arg, expand_dims(norm2(arg, axis=axis), axis))
+
+def norm2(arg, axis=-1):
+  return sqrt(sum(multiply(arg, arg), axis))
+
+def heaviside(arg):
+  return Int(greater(arg, 0))
+
+def divide(arg1, arg2):
+  return multiply(arg1, reciprocal(arg2))
+
+def subtract(arg1, arg2):
+  return add(arg1, negative(arg2))
+
+def mean(arg):
+  return .5 * (arg + opposite(arg))
+
+def jump(arg):
+  return opposite(arg) - arg
+
+def add_T(arg, axes=(-2,-1)):
+  return swapaxes(arg, *axes) + arg
+
+def blocks(arg):
+  return asarray(arg).simplified.blocks
+
+def rootcoords(ndims):
+  return RootCoords(ndims, trans=PopHead(Promote(ndims, trans=TRANS)))
+
+def sampled(data, ndims):
+  return Sampled(data)
+
 opposite = cache.replace(initcache={TRANS: OPPTRANS, OPPTRANS: TRANS})
 bifurcate1 = cache.replace(initcache={TRANS: SelectChain(TRANS, True), OPPTRANS: SelectChain(OPPTRANS, True)})
 bifurcate2 = cache.replace(initcache={TRANS: SelectChain(TRANS, False), OPPTRANS: SelectChain(OPPTRANS, False)})
-bifurcate = lambda arg1, arg2: ( bifurcate1(arg1), bifurcate2(arg2) )
-curvature = lambda geom, ndims=-1: geom.normal().div(geom, ndims=ndims)
-laplace = lambda arg, geom, ndims=0: arg.grad(geom, ndims).div(geom, ndims)
-symgrad = lambda arg, geom, ndims=0: multiply(.5, add_T(arg.grad(geom, ndims)))
-div = lambda arg, geom, ndims=0: trace(arg.grad(geom, ndims))
-tangent = lambda geom, vec: subtract(vec, multiply(dot(vec, normal(geom), -1)[...,_], normal(geom)))
-ngrad = lambda arg, geom, ndims=0: dotnorm(grad(arg, geom, ndims), geom)
-nsymgrad = lambda arg, geom, ndims=0: dotnorm(symgrad(arg, geom, ndims), geom)
-expand_dims = lambda arg, n: InsertAxis(arg, n, 1)
+
+def bifurcate(arg1, arg2):
+  return (bifurcate1(arg1), bifurcate2(arg2))
+
+def curvature(geom, ndims=-1):
+  return geom.normal().div(geom, ndims=ndims)
+
+def laplace(arg, geom, ndims=0):
+  return arg.grad(geom, ndims).div(geom, ndims)
+
+def symgrad(arg, geom, ndims=0):
+  return multiply(.5, add_T(arg.grad(geom, ndims)))
+
+def div(arg, geom, ndims=0):
+  return trace(arg.grad(geom, ndims))
+
+def tangent(geom, vec):
+  return subtract(vec, multiply(dot(vec, normal(geom), -1)[...,_], normal(geom)))
+
+def ngrad(arg, geom, ndims=0):
+  return dotnorm(grad(arg, geom, ndims), geom)
+
+def nsymgrad(arg, geom, ndims=0):
+  return dotnorm(symgrad(arg, geom, ndims), geom)
+
+def expand_dims(arg, n):
+  return InsertAxis(arg, n, 1)
 
 def trignormal( angle ):
   angle = asarray( angle )
@@ -2900,14 +3019,16 @@ def trigtangent( angle ):
     return kronecker( 1, axis=0, length=2, pos=1 )
   return TrigTangent( angle )
 
-eye = lambda n, dtype=float: diagonalize(ones([n], dtype=dtype))
+def eye(n, dtype=float):
+  return diagonalize(ones([n], dtype=dtype))
 
 def insertaxis(arg, n, length):
   arg = asarray(arg)
   n = numeric.normdim(arg.ndim+1, n)
   return InsertAxis(arg, n, length)
 
-stack = lambda args, axis=0: Stack(_numpy_align(*args), axis)
+def stack(args, axis=0):
+  return Stack(_numpy_align(*args), axis)
 
 def chain( funcs ):
   'chain'
@@ -2918,7 +3039,8 @@ def chain( funcs ):
              for j, sh in enumerate(shapes) ], axis=0 )
                for i, func in enumerate(funcs) ]
 
-vectorize = lambda args: concatenate([kronecker(arg, axis=-1, length=len(args), pos=iarg) for iarg, arg in enumerate(args)])
+def vectorize(args):
+  return concatenate([kronecker(arg, axis=-1, length=len(args), pos=iarg) for iarg, arg in enumerate(args)])
 
 def repeat(arg, length, axis):
   arg = asarray(arg)
@@ -3023,7 +3145,8 @@ def dotnorm( arg, coords ):
 
   return sum( arg * coords.normal(), -1 )
 
-normal = lambda geom: geom.normal()
+def normal(geom):
+  return geom.normal()
 
 def kronecker(arg, axis, length, pos):
   arg = asarray(arg)
