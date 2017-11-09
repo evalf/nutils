@@ -248,7 +248,7 @@ class Tuple( object ):
       self.__items[i] = item = self.__getitem( self.__start + i * self.__stride )
     return item
 
-def replace(func=lambda obj: None, initcache={}):
+def replace(func=None, initcache={}):
   '''decorator for deep object replacement
 
   Generates a replacement method for Immutable objects. Replacements can be
@@ -266,17 +266,18 @@ def replace(func=lambda obj: None, initcache={}):
       The method that searches the object to perform the replacements.
   '''
 
-  @functools.wraps(func)
   def wrapper(target, *funcargs, **funckwargs):
     cache = dict(initcache)
     def op(obj):
+      replaced = None
       try:
         replaced = cache[obj]
       except TypeError: # unhashable
         replaced = obj
       except KeyError:
-        replaced = func(obj, *funcargs, **funckwargs)
-        if replaced is None:
+        if func is not None:
+          replaced = func(obj, *funcargs, **funckwargs)
+        if replaced is None or func is None:
           if isinstance(obj, Immutable):
             replaced = obj.edit(op)
           else:
@@ -286,6 +287,9 @@ def replace(func=lambda obj: None, initcache={}):
     retval = op(target)
     del op
     return retval
+
+  if func:
+    return functools.wraps(func)(wrapper)
   return wrapper
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
