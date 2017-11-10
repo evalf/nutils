@@ -1409,6 +1409,15 @@ class WithChildrenReference( Reference ):
     return tuple([baseedge and baseedge.with_children(self.child_refs[jchild].edge_refs[jedge] if self.child_refs[jchild] else EmptyReference(self.ndims-1) for jchild, jedge in edgemap[iedge]) for iedge, baseedge in enumerate(self.baseref.edge_refs)]
                + [OwnChildReference(ref) for ichild, iedge, ref in self.__extra_edges])
 
+  @cache.property
+  def connectivity(self):
+    # constructs the same childmap, edgemap as the base implementation, but cheaper
+    basechildmap, baseedgemap = self.baseref.connectivity
+    childmap = tuple(basechildmap[ichild] + (-1,) * (cref.nedges - self.baseref.child_refs[ichild].nedges) if cref else () for ichild, cref in enumerate(self.child_refs))
+    edgemap = tuple([baseedgemap[iedge] if eref else () for iedge, eref in enumerate(self.baseref.edge_refs)]
+                  + [((ichild, iedge),) for ichild, iedge, eref in self.__extra_edges])
+    return childmap, edgemap
+
   def inside( self, point, eps=0 ):
     return any( cref.inside( transform.invapply( ctrans, point ), eps=eps ) for ctrans, cref in self.children )
 
