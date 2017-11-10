@@ -1338,7 +1338,9 @@ class WithChildrenReference( Reference ):
 
   @cache.property
   def __extra_edges( self ):
-    interfaces = []
+    extra_edges = [(ichild, iedge, cref.edge_refs[iedge])
+      for ichild, cref in enumerate(self.child_refs) if cref
+        for iedge in range(self.baseref.child_refs[ichild].nedges, cref.nedges)]
     childmap = self.baseref.connectivity[0]
     for ichild, edges in enumerate(childmap):
       cref = self.child_refs[ichild]
@@ -1354,10 +1356,8 @@ class WithChildrenReference( Reference ):
         if coppref: # opposite new child is not empty
           eref -= coppref.edge_refs[childmap[jchild].index(ichild)]
         if eref:
-          trans = self.child_transforms[ichild] << cref.edge_transforms[iedge]
-          assert trans not in self.baseref.edge_transforms
-          interfaces.append((ichild, iedge, trans, eref))
-    return interfaces
+          extra_edges.append((ichild, iedge, eref))
+    return extra_edges
 
   def subvertex( self, ichild, i ):
     assert 0<=ichild<self.nchildren
@@ -1400,23 +1400,14 @@ class WithChildrenReference( Reference ):
 
   @cache.property
   def edge_transforms( self ):
-    edge_transforms = list( self.baseref.edge_transforms )
-    for trans, mychild, basechild in zip( self.child_transforms, self.child_refs, self.baseref.child_refs ):
-      if mychild:
-        edge_transforms.extend( trans << etrans for etrans in mychild.edge_transforms[basechild.nedges:] )
-    edge_transforms.extend( trans for ichild, iedge, trans, ref in self.__extra_edges )
-    return tuple(edge_transforms)
+    return tuple(self.baseref.edge_transforms) \
+         + tuple(self.child_transforms[ichild] << self.child_refs[ichild].edge_transforms[iedge] for ichild, iedge, ref in self.__extra_edges)
 
   @cache.property
   def edge_refs( self ):
     edgemap = self.baseref.connectivity[1]
-    edge_refs = [baseedge and baseedge.with_children(self.child_refs[jchild].edge_refs[jedge] if self.child_refs[jchild] else EmptyReference(self.ndims-1) for jchild, jedge in edgemap[iedge])
-      for iedge, baseedge in enumerate(self.baseref.edge_refs)]
-    for mychild, basechild in zip( self.child_refs, self.baseref.child_refs ):
-      if mychild:
-        edge_refs.extend( OwnChildReference(edge) for edge in mychild.edge_refs[basechild.nedges:] )
-    edge_refs.extend( OwnChildReference(ref) for ichild, iedge, trans, ref in self.__extra_edges )
-    return tuple(edge_refs)
+    return tuple([baseedge and baseedge.with_children(self.child_refs[jchild].edge_refs[jedge] if self.child_refs[jchild] else EmptyReference(self.ndims-1) for jchild, jedge in edgemap[iedge]) for iedge, baseedge in enumerate(self.baseref.edge_refs)]
+               + [OwnChildReference(ref) for ichild, iedge, ref in self.__extra_edges])
 
   def inside( self, point, eps=0 ):
     return any( cref.inside( transform.invapply( ctrans, point ), eps=eps ) for ctrans, cref in self.children )
