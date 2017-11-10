@@ -1961,7 +1961,7 @@ class HierarchicalTopology( Topology ):
           # refined elements.
           continue
         # Find the edge of `neighbor` between `neighbor` and `elem`.
-        ineighboredge = numpy.where( level.connectivity[ineighbor] == ielem )[0][0]
+        ineighboredge = tuple(level.connectivity[ineighbor]).index(ielem)
         if not tail and (ielem, ielemedge) > (ineighbor, ineighboredge):
           # `neighbor` itself, not a parent of, exists in this topology (`tail`
           # is empty).  To make sure we add this interface only once we
