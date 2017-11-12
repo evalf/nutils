@@ -100,31 +100,50 @@ class TransformChain( tuple ):
       else affine( self.linear, self.offset, isflipped=self.isflipped )
 
   @property
-  def canonical( self ):
-    # Keep at lowest ndims possible. The reason is that in this form we can do
-    # lookups of embedded elements.
-    items = list( self )
-    for i in range(len(items)-1)[::-1]:
-      trans1, trans2 = items[i:i+2]
-      if mayswap( trans1, trans2 ):
-        trans12 = TransformChain(( trans1, trans2 )).flat
-        try:
-          newlinear, newoffset = numeric.solve_exact( trans2.linear, trans12.linear, trans12.offset - trans2.offset )
-        except numpy.linalg.LinAlgError:
-          pass
-        else:
-          trans21 = TransformChain( (trans2,) + affine( newlinear, newoffset ) )
-          assert trans21.flat == trans12
-          items[i:i+2] = trans21
-    return CanonicalTransformChain( items )
+  def n_ascending(self):
+    # number of ascending transform items counting from root (0). this is a
+    # temporary hack required to deal with Bifurcate/Slice; as soon as we have
+    # proper tensorial topologies we can switch back to strictly ascending
+    # transformation chains.
+    for n, trans in enumerate(self):
+      if trans.todims is not None and trans.todims < trans.fromdims:
+        return n
+    return len(self)
 
-  def promote( self, ndims ):
-    head = self.canonical
-    tail = ()
-    while head.fromdims < ndims:
-      head, tmp = head.promote_helper()
-      tail = tmp + tail
-    return head, CanonicalTransformChain(tail)
+  @property
+  def canonical( self ):
+    # keep at lowest ndims possible; this is the required form for bisection
+    n = self.n_ascending
+    if n < 2:
+      return CanonicalTransformChain(self)
+    items = list(self)
+    i = 0
+    while items[i].fromdims > items[n-1].fromdims:
+      swapped = items[i+1].swapdown(items[i])
+      if swapped:
+        items[i:i+2] = swapped
+        i -= i > 0
+      else:
+        i += 1
+    return CanonicalTransformChain(items)
+
+  def promote(self, ndims):
+    # split self into chain1 and chain2 such that self == chain1 << chain2 and
+    # chain1.fromdims == chain2.todims == ndims, where chain1 is canonical and
+    # chain2 climbs to ndims as fast as possible.
+    n = self.n_ascending
+    assert ndims >= self[n-1].fromdims
+    items = list(self)
+    i = n
+    while items[i-1].fromdims < ndims:
+      swapped = items[i-2].swapup(items[i-1])
+      if swapped:
+        items[i-2:i] = swapped
+        i += i < n
+      else:
+        i -= 1
+    assert items[i-1].fromdims == ndims
+    return TransformChain(items[:i]).canonical, TransformChain(items[i:])
 
   def lookup( self, transforms ):
     if not transforms:
@@ -156,26 +175,6 @@ class CanonicalTransformChain( TransformChain ):
   def canonical( self ):
     return self
 
-  def promote_helper( self ):
-    index = core.index( trans.fromdims == self.fromdims for trans in self )
-    head = self[:index]
-    uptrans = self[index]
-    if index == len(self)-1 or not mayswap( self[index+1], uptrans ):
-      tail = self[index:]
-    else:
-      for i in range( index+1, len(self) ):
-        scale = self[i]
-        if not mayswap( scale, uptrans ):
-          break
-        head += Scale( scale.linear, uptrans.apply(scale.offset) - scale.linear * uptrans.offset ),
-      else:
-        i = len(self)+1
-      assert equivalent( head[index:]+(uptrans,), self[index:i] )
-      tail = (uptrans,) + self[i:]
-    return CanonicalTransformChain(head), CanonicalTransformChain(tail)
-
-mayswap = lambda trans1, trans2: isinstance( trans1, Scale ) and trans1.scale == .5 and trans2.todims == trans2.fromdims + 1 and trans2.fromdims > 0
-
 
 ## TRANSFORM ITEMS
 
@@ -187,6 +186,12 @@ class TransformItem( cache.Immutable ):
 
   def __repr__( self ):
     return '{}( {} )'.format( self.__class__.__name__, self )
+
+  def swapup(self, other):
+    return None
+
+  def swapdown(self, other):
+    return None
 
 class Shift( TransformItem ):
 
@@ -285,6 +290,24 @@ class Updim( Matrix ):
   @property
   def flipped( self ):
     return Updim( self.linear, self.offset, not self.isflipped )
+
+  def swapup(self, other):
+    # prioritize ascending transformations, i.e. change updim << scale to scale << updim
+    if self.todims == self.fromdims + 1 and isinstance(other, Scale) and other.scale == .5:
+      return Scale(other.linear, self.apply(other.offset) - other.linear * self.offset), self
+
+  def swapdown(self, other):
+    # prioritize decending transformations, i.e. change scale << updim to updim << scale
+    if isinstance(other, Scale) and other.scale == .5 and self.todims == self.fromdims + 1 and self.fromdims > 0:
+      trans12 = TransformChain((other, self)).flat
+      try:
+        newlinear, newoffset = numeric.solve_exact(self.linear, trans12.linear, trans12.offset - self.offset)
+      except numpy.linalg.LinAlgError:
+        pass
+      else:
+        trans21 = TransformChain((self,) + affine(newlinear, newoffset))
+        assert trans21.flat == trans12
+        return trans21
 
 class Bifurcate( TransformItem ):
   'bifurcate'
