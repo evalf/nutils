@@ -291,22 +291,34 @@ class Updim( Matrix ):
   def flipped( self ):
     return Updim( self.linear, self.offset, not self.isflipped )
 
+  @cache.property
+  def orthoaxes(self):
+    # returns a tuple of indices such that eye(todims).take(orthoaxes,
+    # axis=0).dot(self.linear) == eye(fromdims), if such a set exists; this
+    # coincides with all the simplex and tensor element edges for which edge
+    # and child transforms can be swapped. used in swapdown.
+    if self.fromdims == 0 or self.todims != self.fromdims + 1:
+      return
+    orthoaxes = []
+    for e in numpy.eye(self.fromdims):
+      i, = numpy.equal(self.linear, e).all(axis=1).nonzero()
+      if len(i) != 1:
+        return
+      orthoaxes.append(i[0])
+    return tuple(orthoaxes)
+
   def swapup(self, other):
     # prioritize ascending transformations, i.e. change updim << scale to scale << updim
-    if self.todims == self.fromdims + 1 and isinstance(other, Scale) and other.scale == .5:
-      return Scale(other.linear, self.apply(other.offset) - other.linear * self.offset), self
+    if self.orthoaxes and isinstance(other, Scale) and other.scale == .5:
+      return Scale(.5, self.apply(other.offset) - .5 * self.offset), self
 
   def swapdown(self, other):
     # prioritize decending transformations, i.e. change scale << updim to updim << scale
-    if isinstance(other, Scale) and other.scale == .5 and self.todims == self.fromdims + 1 and self.fromdims > 0:
-      trans12 = TransformChain((other, self)).flat
-      try:
-        newlinear, newoffset = numeric.solve_exact(self.linear, trans12.linear, trans12.offset - self.offset)
-      except numpy.linalg.LinAlgError:
-        pass
-      else:
-        trans21 = TransformChain((self,) + affine(newlinear, newoffset))
-        assert trans21.flat == trans12
+    if self.orthoaxes and isinstance(other, Scale) and other.scale == .5:
+      newlinear = .5 * self.linear.take(self.orthoaxes, axis=0)
+      newoffset = (other.apply(self.offset) - self.offset).take(self.orthoaxes, axis=0)
+      trans21 = TransformChain((self,) + affine(newlinear, newoffset))
+      if trans21.flat == TransformChain([other, self]).flat:
         return trans21
 
 class Bifurcate( TransformItem ):
