@@ -1287,7 +1287,7 @@ class OwnChildReference( Reference ):
   def __init__(self, baseref):
     self.baseref = baseref
     self.child_refs = baseref,
-    self.child_transforms = transform.identity,
+    self.child_transforms = transform.CanonicalTransformChain([transform.Identity(baseref.ndims)]),
     super().__init__(baseref.ndims)
 
   @property
@@ -1427,7 +1427,7 @@ class WithChildrenReference( Reference ):
   @cache.property
   def edge_transforms( self ):
     return tuple(self.baseref.edge_transforms) \
-         + tuple(self.child_transforms[ichild] << self.child_refs[ichild].edge_transforms[iedge] for ichild, iedge, ref in self.__extra_edges)
+         + tuple(transform.scaledupdim(self.child_transforms[ichild], self.child_refs[ichild].edge_transforms[iedge]) for ichild, iedge, ref in self.__extra_edges)
 
   @cache.property
   def edge_refs( self ):

@@ -208,6 +208,17 @@ class Shift( TransformItem ):
   def __str__( self ):
     return '{}+x'.format( numeric.fstr(self.offset) )
 
+class Identity(Shift):
+
+  def __init__(self, ndims):
+    super().__init__(numpy.zeros(ndims))
+
+  def apply(self, points):
+    return points
+
+  def __str__( self ):
+    return 'x'
+
 class Scale( TransformItem ):
 
   def __init__(self, scale:float, offset:numeric.const):
@@ -314,12 +325,15 @@ class Updim( Matrix ):
 
   def swapdown(self, other):
     # prioritize decending transformations, i.e. change scale << updim to updim << scale
-    if self.orthoaxes and isinstance(other, Scale) and other.scale == .5:
-      newlinear = .5 * self.linear.take(self.orthoaxes, axis=0)
-      newoffset = (other.apply(self.offset) - self.offset).take(self.orthoaxes, axis=0)
-      trans21 = TransformChain((self,) + affine(newlinear, newoffset))
-      if trans21.flat == TransformChain([other, self]).flat:
-        return trans21
+    if isinstance(other, Scale) and other.scale == .5:
+      orthoaxes = self.orthoaxes
+      if orthoaxes:
+        newlinear = .5 * self.linear.take(orthoaxes, axis=0)
+        newoffset = (other.apply(self.offset) - self.offset).take(orthoaxes, axis=0)
+        trans21 = TransformChain((self,) + affine(newlinear, newoffset))
+        if trans21.flat == TransformChain([other, self]).flat:
+          return trans21
+      return ScaledUpdim(other, self), Identity(self.fromdims)
 
 class Bifurcate( TransformItem ):
   'bifurcate'
@@ -345,6 +359,18 @@ class Slice( Matrix ):
 
   def apply( self, points ):
     return numeric.const(points[:,self.s])
+
+class ScaledUpdim(Updim):
+
+  def __init__(self, trans1, trans2):
+    assert trans1.todims == trans1.fromdims == trans2.todims == trans2.fromdims + 1
+    self.trans1 = trans1
+    self.trans2 = trans2
+    super().__init__(numpy.dot(trans1.linear, trans2.linear), trans1.apply(trans2.offset), trans2.isflipped)
+
+  def swapup(self, other):
+    if isinstance(other, Identity):
+      return self.trans1, self.trans2
 
 class VertexTransform( TransformItem ):
 
@@ -431,6 +457,11 @@ def affine( linear, offset, denom=1, isflipped=None ):
   if isflipped is not None:
     assert trans.isflipped == isflipped
   return CanonicalTransformChain( [trans] )
+
+def scaledupdim(trans1, trans2):
+  trans1, = trans1
+  trans2, = trans2
+  return CanonicalTransformChain([ScaledUpdim(trans1, trans2)])
 
 def simplex( coords, isflipped=None ):
   coords = numpy.asarray(coords)
