@@ -193,6 +193,11 @@ class TransformItem( cache.Immutable ):
   def swapdown(self, other):
     return None
 
+  def __mul__(self, other):
+    assert isinstance(other, TransformItem)
+    trans, = affine(linear=numpy.dot(self.linear, other.linear), offset=self.apply(other.offset), isflipped=self.isflipped^other.isflipped)
+    return trans
+
 class Shift( TransformItem ):
 
   def __init__(self, offset:numeric.const):
@@ -342,9 +347,9 @@ class Updim( Matrix ):
       if orthoaxes:
         newlinear = .5 * self.linear.take(orthoaxes, axis=0)
         newoffset = (other.apply(self.offset) - self.offset).take(orthoaxes, axis=0)
-        trans21 = TransformChain((self,) + affine(newlinear, newoffset))
-        if trans21.flat == TransformChain([other, self]).flat:
-          return trans21
+        newtrans, = affine(newlinear, newoffset)
+        if self * newtrans == other * self:
+          return self, newtrans
       return ScaledUpdim(other, self), Identity(self.fromdims)
 
 class Bifurcate( TransformItem ):
