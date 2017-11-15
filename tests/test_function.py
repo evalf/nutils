@@ -8,18 +8,14 @@ class check(TestCase):
 
   def setUp(self):
     super().setUp()
-    if self.ndim == 2:
-      anchor = transform.roottrans('test', (0,0))
-      roottrans = transform.affine([[0,1],[-1,0]], [1,0]) >> transform.affine([[2,1],[-1,3]], [1,0])
-      axes = topology.DimAxis(0,1,False), topology.DimAxis(0,1,False)
-      self.domain = topology.StructuredTopology(root=anchor<<roottrans, axes=axes)
-
-      r, theta = function.rootcoords(2) # corners at (0,0), (0,1), (1,1), (1,0)
+    self.domain, param = mesh.rectilinear([1]*self.ndim)
+    if self.ndim == 1:
+      self.geom = param**2
+    elif self.ndim == 2:
+      r, theta = param
       self.geom = r * function.stack([function.cos(theta), function.sin(theta)])
-    elif self.ndim == 1:
-      self.domain, self.geom = mesh.rectilinear([1])
-      self.geom = self.geom**2
-
+    else:
+      raise Exception('invalid ndim {!r}'.format(self.ndim))
     self.elem, = self.domain
     self.iface = element.Element(self.elem.edge(0).reference, self.elem.edge(0).transform, self.elem.edge(1).transform, oriented=True)
     self.ifpoints, ifweights = self.iface.reference.getischeme('uniform2')
@@ -240,7 +236,8 @@ class check(TestCase):
     exact = function.localgradient(self.op_args, ndims=self.elem.ndims).simplified.eval(**self.evalargs)
     D = numpy.array([-.5,.5])[:,_,_] * numpy.eye(self.elem.ndims)
     good = False
-    for eps in .7**numpy.arange(31, 41): # 2e-5..6e-7
+    eps = 1e-5
+    while not numpy.all(good):
       fdpoints = self.points[_,_,:,:] + D[:,:,_,:] * eps
       tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
       F = tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:])
@@ -249,10 +246,9 @@ class check(TestCase):
       error = fdgrad - exact
       good |= numpy.less(abs(error / exact), 1e-8)
       good |= numpy.less(abs(error), 1e-14)
-      if good.all():
-        break
-    else:
-      self.fail('gradient failed to reach tolerance ({}/{})'.format((~good).sum(), good.size))
+      eps *= .8
+      if eps < 1e-10:
+        self.fail('local gradient failed to reach tolerance ({}/{})'.format((~good).sum(), good.size))
 
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_jacobian(self):
@@ -272,7 +268,8 @@ class check(TestCase):
     exact = self.op_args.grad(self.geom).simplified.eval(**self.evalargs)
     D = numpy.array([-.5,.5])[:,_,_] * numpy.eye(self.geom.shape[-1])
     good = False
-    for eps in .7**numpy.arange(32, 34): # 1e-5..8e-6
+    eps = 1e-5
+    while not numpy.all(good):
       fdpoints = self.find(self.geom.eval(**self.evalargs)[_,_,:,:] + D[:,:,_,:] * eps, self.points[_,_,:,:])
       tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
       F = tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:])
@@ -281,10 +278,9 @@ class check(TestCase):
       error = fdgrad - exact
       good |= numpy.less(abs(error / exact), 1e-8)
       good |= numpy.less(abs(error), 1e-14)
-      if good.all():
-        break
-    else:
-      self.fail('gradient failed to reach tolerance ({}/{})'.format((~good).sum(), good.size))
+      eps *= .8
+      if eps < 1e-10:
+        self.fail('gradient failed to reach tolerance ({}/{})'.format((~good).sum(), good.size))
 
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_doublegradient(self):
@@ -292,7 +288,8 @@ class check(TestCase):
     D = numpy.array([-.5,.5])[:,_,_] * numpy.eye(self.geom.shape[-1])
     DD = D[:,_,:,_,:] + D[_,:,_,:,:]
     good = False
-    for eps in .7**numpy.arange(23, 26): # 3e-4..1e-4
+    eps = 1e-4
+    while not numpy.all(good):
       fdpoints = self.find(self.geom.eval(**self.evalargs)[_,_,_,_,:,:] + DD[:,:,:,:,_,:] * eps, self.points[_,_,_,_,:,:])
       tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
       F = tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:])
@@ -301,10 +298,9 @@ class check(TestCase):
       error = fddgrad - exact
       good |= numpy.less(abs(error / exact), 1e-4)
       good |= numpy.less(abs(error), 1e-14)
-      if good.all():
-        break
-    else:
-      self.fail('double gradient failed to reach tolerance ({}/{})'.format((~good).sum(), good.size))
+      eps *= .8
+      if eps < 1e-10:
+        self.fail('double gradient failed to reach tolerance ({}/{})'.format((~good).sum(), good.size))
 
 _check = lambda name, op, n_op, shapes, hasgrad=True, pass_geom=False, ndim=2, low=-1, high=1: check(name, op=op, n_op=n_op, shapes=shapes, hasgrad=hasgrad, pass_geom=pass_geom, ndim=ndim, low=low, high=high)
 _check('const', lambda f: function.asarray(f), lambda a: a, [(2,3,2)])
