@@ -205,6 +205,9 @@ class Shift( TransformItem ):
   def apply( self, points ):
     return numeric.const(points + self.offset, copy=False)
 
+  def invapply(self, points):
+    return numeric.const(points - self.offset, copy=False)
+
   def __str__( self ):
     return '{}+x'.format( numeric.fstr(self.offset) )
 
@@ -214,6 +217,9 @@ class Identity(Shift):
     super().__init__(numpy.zeros(ndims))
 
   def apply(self, points):
+    return points
+
+  def invapply(self, points):
     return points
 
   def __str__( self ):
@@ -233,6 +239,9 @@ class Scale( TransformItem ):
 
   def apply( self, points ):
     return numeric.const(self.scale * points + self.offset, copy=False)
+
+  def invapply(self, points):
+    return numeric.const((points - self.offset) / self.scale, copy=False)
 
   @property
   def det( self ):
@@ -277,6 +286,9 @@ class Square( Matrix ):
   def __init__(self, linear:numeric.const, offset:numeric.const):
     assert linear.shape[0] == linear.shape[1]
     super().__init__(linear, offset)
+
+  def invapply(self, points):
+    return numeric.const(numpy.linalg.solve(self.linear, points - self.offset), copy=False)
 
   @property
   def isflipped( self ):
@@ -569,10 +581,10 @@ def stack( trans1, trans2 ):
 def bifurcate( trans1, trans2 ):
   return CanonicalTransformChain([ Bifurcate( trans1, trans2 ) ])
 
-def invapply( trans, points ):
-  A = linear(trans)
-  b = points - offset(trans)
-  return b / A if isinstance(A,float) else numpy.linalg.solve( A, b )
+def invapply(chain, points):
+  for trans in chain:
+    points = trans.invapply(points)
+  return points
 
 def transform_poly(trans, coeffs):
   for item in trans:
