@@ -41,20 +41,20 @@ class Element( object ):
 
   def __init__( self, reference, trans, opptrans=None, oriented=False ):
     assert isinstance( reference, Reference )
-    assert isinstance( trans, transform.TransformChain ) and trans.fromdims == reference.ndims and trans.todims == None
-    trans = trans.canonical
+    trans = transform.canonical(trans)
+    assert trans.fromdims == reference.ndims and trans.todims == None
     if opptrans is not None:
-      assert isinstance( opptrans, transform.TransformChain ) and opptrans.fromdims == reference.ndims and opptrans.todims == None
-      opptrans = opptrans.canonical
+      opptrans = transform.canonical(opptrans)
+      assert opptrans.fromdims == reference.ndims and opptrans.todims == None
       if not oriented:
-        vtx1 = trans.apply( reference.vertices )
-        for ptrans in reference.permutation_transforms:
-          vtx2 = (opptrans<<ptrans).apply( reference.vertices )
-          if vtx1 == vtx2:
-            opptrans <<= ptrans
-            break
-        else:
-          raise Exception('Did not find a conforming permutation for the opposing transformation')
+        vtx1 = trans.apply(reference.vertices)
+        if vtx1 != opptrans.apply(reference.vertices):
+          for ptrans in reference.permutation_transforms:
+            if vtx1 == opptrans.apply(ptrans.apply(reference.vertices)):
+              opptrans <<= transform.TransformChain([ptrans])
+              break
+          else:
+            raise Exception('Did not find a conforming permutation for the opposing transformation')
     self.reference = reference
     self.transform = trans
     self.opposite = opptrans or trans
@@ -108,12 +108,12 @@ class Element( object ):
     
   def edge( self, iedge ):
     trans, edge = self.reference.edges[iedge]
-    return Element( edge, self.transform << trans, self.opposite and self.opposite << trans, oriented=True ) if edge else None
+    return Element(edge, self.transform + (trans,), self.opposite and self.opposite + (trans,), oriented=True) if edge else None
 
   @property
   def children( self ):
-    return [ Element( child, self.transform << trans, self.opposite and self.opposite << trans, oriented=True )
-      for trans, child in self.reference.children if child ]
+    return [Element(child, self.transform + (trans,), self.opposite and self.opposite + (trans,), oriented=True)
+      for trans, child in self.reference.children if child]
 
   @property
   def flipped( self ):
@@ -122,8 +122,8 @@ class Element( object ):
 
   @property
   def simplices( self ):
-    return [ Element( reference, self.transform << trans, self.opposite and self.opposite << trans, oriented=True )
-      for trans, reference in self.reference.simplices ]
+    return [Element(reference, self.transform + (trans,), self.opposite and self.opposite + (trans,), oriented=True)
+      for trans, reference in self.reference.simplices]
 
   def __str__( self ):
     return 'Element({})'.format( self.vertices )
@@ -195,7 +195,7 @@ class Reference( cache.Immutable ):
     vmap = {}
     for ichild, (ctrans, cref) in enumerate(self.children):
       for iedge, etrans in enumerate(cref.edge_transforms):
-        v = (ctrans<<etrans).flat
+        v = ctrans * etrans
         try:
           jchild, jedge = vmap.pop(v.flipped)
         except KeyError:
@@ -203,7 +203,7 @@ class Reference( cache.Immutable ):
         else:
           childmap[jchild][jedge] = ichild
           childmap[ichild][iedge] = jchild
-    edgemap = [[vmap.pop((etrans << ctrans).flat) for ctrans in eref.child_transforms] for etrans, eref in self.edges]
+    edgemap = [[vmap.pop(etrans * ctrans) for ctrans in eref.child_transforms] for etrans, eref in self.edges]
     assert not any(self.child_refs[ichild].edge_refs[iedge] for ichild, iedge in vmap.values()), 'not all boundary elements recovered'
     return tuple(map(tuple, childmap)), tuple(map(tuple, edgemap))
 
@@ -214,9 +214,9 @@ class Reference( cache.Immutable ):
     ribbons = tuple( self._ribbons )
     if core.getprop( 'selfcheck', False ):
       for (iedge1,iedge2), (jedge1,jedge2) in ribbons:
-        itrans = self.edge_transforms[iedge1] << self.edge_refs[iedge1].edge_transforms[iedge2]
-        jtrans = self.edge_transforms[jedge1] << self.edge_refs[jedge1].edge_transforms[jedge2]
-        assert numpy.equal(itrans.linear, jtrans.linear).all() and numpy.equal(itrans.offset, jtrans.offset).all()
+        itrans = self.edge_transforms[iedge1] * self.edge_refs[iedge1].edge_transforms[iedge2]
+        jtrans = self.edge_transforms[jedge1] * self.edge_refs[jedge1].edge_transforms[jedge2]
+        assert itrans.linear == jtrans.linear and itrans.offset == jtrans.offset # ignore isflipped
         iref = self.edge_refs[iedge1].edge_refs[iedge2]
         jref = self.edge_refs[jedge1].edge_refs[jedge2]
         assert iref == jref
@@ -232,7 +232,7 @@ class Reference( cache.Immutable ):
       if edge1:
         for iedge2, (etrans2,edge2) in enumerate( edge1.edges ):
           if edge2:
-            key = tuple( sorted( tuple(p) for p in (etrans1 << etrans2).apply( edge2.vertices ) ) )
+            key = tuple(sorted(tuple(p) for p in (etrans1 * etrans2).apply(edge2.vertices)))
             try:
               jedge1, jedge2 = transforms.pop(key)
             except KeyError:
@@ -243,9 +243,7 @@ class Reference( cache.Immutable ):
     assert not transforms
     return tuple( ribbons )
 
-  @cache.property
-  def permutation_transforms( self ):
-    return (transform.identity,)
+  permutation_transforms = ()
 
   def getischeme( self, ischeme ):
     match = re.match( '([a-zA-Z]+)(.*)', ischeme )
@@ -362,7 +360,7 @@ class Reference( cache.Immutable ):
       s.append( 'Volume:' )
       s.extend( '* {} {} -> {}'.format( ref, vtx2abc(trans.apply(ref.vertices)), trans.det*ref.volume ) for trans, ref in self.simplices )
       s.append( 'Edges:' )
-      s.extend( '* {} {} -> {}'.format( subref, vtx2abc((etrans<<subtrans).apply(subref.vertices)), numeric.fhex((etrans<<subtrans).ext*subref.volume) ) for etrans, eref in self.edges for subtrans, subref in eref.simplices )
+      s.extend( '* {} {} -> {}'.format( subref, vtx2abc((etrans*subtrans).apply(subref.vertices)), numeric.fhex((etrans*subtrans).ext*subref.volume) ) for etrans, eref in self.edges for subtrans, subref in eref.simplices )
     except Exception as e:
       s.append( 'processing failed: {}'.format(e) )
     ## useful code for the debugging of failed selfchecks
@@ -384,12 +382,12 @@ class Reference( cache.Immutable ):
       raise Exception( 'maxrefine is too low' )
     cbins = [ [] for ichild in range(self.nchildren) ]
     for ctrans in ctransforms:
-      ichild = self.child_transforms.index( ctrans[:1] )
+      ichild = self.child_transforms.index(ctrans[0])
       cbins[ichild].append( ctrans[1:] )
     if not all( cbins ):
       raise Exception( 'transformations to not form an element cover' )
     fcache = cache.WrapperCache()
-    return tuple( ( ctrans << trans, points, cindices[indices] )
+    return tuple((transform.TransformChain([ctrans]) << trans, points, cindices[indices])
       for ctrans, cref, cbin, cindices in zip( self.child_transforms, self.child_refs, cbins, self.child_divide(allindices,maxrefine) )
         for trans, points, indices in fcache[cref.vertex_cover](tuple(sorted(cbin)), maxrefine-1))
 
@@ -459,7 +457,7 @@ class RevolutionReference( Reference ):
 
   @property
   def simplices( self ):
-    return [ (transform.identity,self) ]
+    return (transform.Identity(self.ndims), self),
 
   def getischeme( self, ischeme ):
     return numeric.const([[0.]]), numeric.const([self.volume])
@@ -512,7 +510,7 @@ class SimplexReference( Reference ):
 
   @property
   def simplices( self ):
-    return [ (transform.identity,self) ]
+    return (transform.Identity(self.ndims), self),
 
   def get_ndofs(self, degree):
     prod = lambda start, stop: functools.reduce(operator.mul, range(start, stop), 1)
@@ -574,7 +572,7 @@ class PointReference( SimplexReference ):
 
   @property
   def child_transforms( self ):
-    return transform.identity,
+    return transform.Identity(0),
 
   @property
   def child_refs( self ):
@@ -1139,8 +1137,8 @@ class Cone( Reference ):
   @property
   def simplices( self ):
     if self.nverts == self.ndims+1 or self.edgeref.ndims == 2 and self.edgeref.nverts == 4: # simplices and square-based pyramids are ok
-      return [ ( transform.identity, self ) ]
-    return [ ( transform.identity, ref.cone(self.etrans<<trans,self.tip) ) for trans, ref in self.edgeref.simplices ]
+      return [(transform.Identity(self.ndims), self)]
+    return tuple((transform.Identity(self.ndims), ref.cone(self.etrans*trans,self.tip)) for trans, ref in self.edgeref.simplices)
 
   def inside( self, point, eps=0 ):
     # point = etrans.apply(epoint) * xi + tip * (1-xi) => etrans.apply(epoint) = tip + (point-tip) / xi
@@ -1287,7 +1285,7 @@ class OwnChildReference( Reference ):
   def __init__(self, baseref):
     self.baseref = baseref
     self.child_refs = baseref,
-    self.child_transforms = transform.CanonicalTransformChain([transform.Identity(baseref.ndims)]),
+    self.child_transforms = transform.Identity(baseref.ndims),
     super().__init__(baseref.ndims)
 
   @property
@@ -1422,12 +1420,12 @@ class WithChildrenReference( Reference ):
 
   @property
   def simplices( self ):
-    return [ (trans2<<trans1, simplex) for trans2, child in self.children for trans1, simplex in (child.simplices if child else []) ]
+    return [(trans2*trans1, simplex) for trans2, child in self.children for trans1, simplex in (child.simplices if child else [])]
 
   @cache.property
   def edge_transforms( self ):
     return tuple(self.baseref.edge_transforms) \
-         + tuple(transform.scaledupdim(self.child_transforms[ichild], self.child_refs[ichild].edge_transforms[iedge]) for ichild, iedge, ref in self.__extra_edges)
+         + tuple(transform.ScaledUpdim(self.child_transforms[ichild], self.child_refs[ichild].edge_transforms[iedge]) for ichild, iedge, ref in self.__extra_edges)
 
   @cache.property
   def edge_refs( self ):
@@ -1445,7 +1443,7 @@ class WithChildrenReference( Reference ):
     return childmap, edgemap
 
   def inside( self, point, eps=0 ):
-    return any( cref.inside( transform.invapply( ctrans, point ), eps=eps ) for ctrans, cref in self.children )
+    return any(cref.inside(ctrans.invapply(point), eps=eps) for ctrans, cref in self.children)
 
   def get_ndofs(self, degree):
     return self.baseref.get_ndofs(degree)

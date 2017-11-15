@@ -43,13 +43,13 @@ class elem(TestCase):
         if ioppchild != -1:
           ioppedge = childmap[ioppchild].index(ichild)
           self.assertEqual(
-            (self.ref.child_transforms[ichild] << self.ref.child_refs[ichild].edge_transforms[iedge]).flat,
-            (self.ref.child_transforms[ioppchild] << self.ref.child_refs[ioppchild].edge_transforms[ioppedge]).flat.flipped)
+            self.ref.child_transforms[ichild] * self.ref.child_refs[ichild].edge_transforms[iedge],
+            (self.ref.child_transforms[ioppchild] * self.ref.child_refs[ioppchild].edge_transforms[ioppedge]).flipped)
     for iedge, children in enumerate(edgemap):
       for ichild, (jchild, jedge) in enumerate(children):
         self.assertEqual(
-          (self.ref.edge_transforms[iedge] << self.ref.edge_refs[iedge].child_transforms[ichild]).flat,
-          (self.ref.child_transforms[jchild] << self.ref.child_refs[jchild].edge_transforms[jedge]).flat)
+          self.ref.edge_transforms[iedge] * self.ref.edge_refs[iedge].child_transforms[ichild],
+          self.ref.child_transforms[jchild] * self.ref.child_refs[jchild].edge_transforms[jedge])
 
   def test_dof_transpose_map(self):
     nverts = tuple(element.getsimplex(ndim).nverts for ndim in self.ndims)

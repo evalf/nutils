@@ -56,10 +56,10 @@ def rectilinear( richshape, periodic=(), name='rect' ):
 
   if isinstance( name, str ):
     wrap = tuple( sh if i in periodic else 0 for i, sh in enumerate(shape) )
-    root = transform.roottrans( name, wrap )
+    root = transform.RootTrans( name, wrap )
   else:
     assert all( ( name.take(0,i) == name.take(2,i) ).all() for i in periodic )
-    root = transform.roottransedges( name, shape )
+    root = transform.RootTransEdges( name, shape )
 
   axes = [ topology.DimAxis(0,n,idim in periodic) for idim, n in enumerate(shape) ]
   topo = topology.StructuredTopology( root, axes )
@@ -89,7 +89,7 @@ def line( nodes, periodic=False, bnames=None ):
     scale = (nodes[-1]-nodes[0]) / nelems
     offset = nodes[0]
     uniform = numpy.equal( nodes, offset + numpy.arange(nelems+1) * scale ).all()
-  root = transform.roottrans( 'rect', shape=[ nelems if periodic else 0 ] )
+  root = transform.RootTrans( 'rect', shape=[ nelems if periodic else 0 ] )
   domain = topology.StructuredLine( root, 0, nelems, periodic=periodic, bnames=bnames )
   geom = function.rootcoords(1) * scale + offset if uniform else domain.basis( 'std', degree=1, periodic=False ).dot( nodes )
   return domain, geom
@@ -432,8 +432,8 @@ def gmsh( fname, name=None ):
 
   # create base topology
   simplexref = element.getsimplex(ndims)
-  elements = [ element.Element( simplexref, transform.maptrans( linear=[[-1,-1],[1,0],[0,1]] if ndims==2 else [[-1,-1,-1],[1,0,0],[0,1,0],[0,0,1]], offset=[1,0,0] if ndims==2 else [1,0,0,0], vertices=inodes if not name else [name+str(inode) for inode in inodes] ) )
-    for ielem, inodes in log.enumerate( 'elem', inodesbydim[ndims] ) ]
+  elements = [element.Element(simplexref, [transform.MapTrans(linear=[[-1,-1],[1,0],[0,1]] if ndims==2 else [[-1,-1,-1],[1,0,0],[0,1,0],[0,0,1]], offset=[1,0,0] if ndims==2 else [1,0,0,0], vertices=inodes if not name else [name+str(inode) for inode in inodes])])
+    for ielem, inodes in log.enumerate('elem', inodesbydim[ndims])]
   basetopo = topology.UnstructuredTopology( ndims, elements )
   log.info( 'created topology consisting of {} elements'.format(len(elements)) )
 
@@ -483,7 +483,7 @@ def gmsh( fname, name=None ):
       for ivertex, inode in enumerate(inodes):
         if inode in pelems:
           offset = elem.reference.vertices[ivertex]
-          trans = elem.transform << transform.affine( linear=numpy.zeros(shape=(ndims,0),dtype=int), offset=offset, isflipped=False )
+          trans = elem.transform << transform.TransformChain([transform.affine(linear=numpy.zeros(shape=(ndims,0),dtype=int), offset=offset, isflipped=False)])
           pelems[inode].append( element.Element( pref, trans ) )
     for name, ipelems in tagnamesbydim[0].items():
       tagspelems[name] = [ pelem for ipelem in ipelems for inode in inodesbydim[0][ipelem] for pelem in pelems[inode] ]
@@ -549,9 +549,9 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   + [ [ i+1+(i//2), 12+(i+1)%8, 12+i ] for i in range(8) ]
   + [ [ 20, 12+i, 12+(i+1)%8 ] for i in range(8) ] )
   
-  root = transform.roottrans( 'demo', shape=(0,0) )
+  root = transform.RootTrans( 'demo', shape=(0,0) )
   reference = element.getsimplex(2)
-  elems = [ element.Element( reference, root << transform.simplex(coords[iverts]) ) for iverts in vertices ]
+  elems = [element.Element(reference, transform.TransformChain([root, transform.simplex(coords[iverts])])) for iverts in vertices]
   topo = topology.UnstructuredTopology( 2, elems )
 
   belems = [ elem.edge(0) for elem in elems[:12] ]

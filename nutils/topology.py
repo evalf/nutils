@@ -670,10 +670,10 @@ class Topology( object ):
     pelems = []
     for ielem, xi in zip(ielems, xis):
       elem = self.elements[ielem]
-      trans = transform.affine( linear=1, offset=xi )
+      trans = transform.affine( linear=1, offset=xi ),
       for idim in range(self.ndims,0,-1): # transcend dimensions one by one to produce valid transformation
-        trans <<= transform.affine( linear=numpy.eye(idim)[:,:-1], offset=numpy.zeros(idim), isflipped=False )
-      pelems.append( element.Element( vref, elem.transform << trans, elem.opposite and elem.opposite << trans, oriented=True ) )
+        trans += transform.affine( linear=numpy.eye(idim)[:,:-1], offset=numpy.zeros(idim), isflipped=False ),
+      pelems.append( element.Element( vref, elem.transform + trans, elem.opposite and elem.opposite + trans, oriented=True ) )
     return UnstructuredTopology(0, pelems)
 
   def supp( self, basis, mask=None ):
@@ -710,7 +710,7 @@ class Topology( object ):
 
   def extruded( self, geom, nelems, periodic=False, bnames=('front','back') ):
     assert geom.ndim == 1
-    root = transform.roottrans( 'extrude', shape=[ nelems if periodic else 0 ] )
+    root = transform.RootTrans( 'extrude', shape=[ nelems if periodic else 0 ] )
     extopo = self * StructuredLine( root, i=0, j=nelems, periodic=periodic, bnames=bnames )
     exgeom = function.concatenate( function.bifurcate( geom, function.rootcoords(1) ) )
     return extopo, exgeom
@@ -876,7 +876,7 @@ class StructuredLine( Topology ):
 
     assert isinstance(i,int) and isinstance(j,int) and j > i
     assert not bnames or len(bnames) == 2 and all( isinstance(bname,str) for bname in bnames )
-    assert isinstance( root, transform.TransformChain )
+    assert isinstance( root, transform.TransformItem )
     self.root = root
     self.i = i
     self.j = j
@@ -887,7 +887,7 @@ class StructuredLine( Topology ):
   @cache.property
   def _transforms( self ):
     # one extra left and right for opposites, even if periodic=True
-    return tuple( self.root << transform.affine( linear=1, offset=[offset] ) for offset in range( self.i-1, self.j+1 ) )
+    return tuple(transform.TransformChain([self.root, transform.affine(linear=1, offset=[offset])]) for offset in range( self.i-1, self.j+1 ) )
 
   def __iter__( self ):
     reference = element.getsimplex(1)
@@ -905,16 +905,16 @@ class StructuredLine( Topology ):
     if self.periodic:
       return EmptyTopology( ndims=0 )
     transforms = self._transforms
-    left = transform.affine( numpy.zeros((1,0)), offset=[0], isflipped=True )
-    right = transform.affine( numpy.zeros((1,0)), offset=[1], isflipped=False )
+    left = transform.TransformChain([transform.affine(numpy.zeros((1,0)), offset=[0], isflipped=True)])
+    right = transform.TransformChain([transform.affine( numpy.zeros((1,0)), offset=[1], isflipped=False)])
     bnd = Point( transforms[1] << left, transforms[0] << right ), Point( transforms[-2] << right, transforms[-1] << left )
     return UnionTopology( bnd, self.bnames )
 
   @cache.property
   def interfaces( self ):
     transforms = self._transforms
-    left = transform.affine( numpy.zeros((1,0)), offset=[0], isflipped=True )
-    right = transform.affine( numpy.zeros((1,0)), offset=[1], isflipped=False )
+    left = transform.TransformChain([transform.affine(numpy.zeros((1,0)), offset=[0], isflipped=True)])
+    right = transform.TransformChain([transform.affine( numpy.zeros((1,0)), offset=[1], isflipped=False)])
     points = [ Point( trans << left, opp << right ) for trans, opp in zip( transforms[2:-1], transforms[1:-2] ) ]
     if self.periodic:
       points.append( Point( transforms[1] << left, transforms[-2] << right ) )
@@ -1099,33 +1099,33 @@ class StructuredTopology( Topology ):
   def mktransforms( axes, root, nrefine ):
     assert nrefine >= 0
 
-    updim = transform.identity
+    updim = []
     ndims = len(axes)
     active = numpy.ones( ndims, dtype=bool )
     for order, side, idim in sorted( (axis.ibound,axis.side,idim) for idim, axis in enumerate(axes) if not axis.isdim ):
       where = (numpy.arange(len(active))[active]==idim)
       matrix = numpy.eye(ndims)[:,~where]
       offset = where.astype(float) if side else numpy.zeros(ndims)
-      updim <<= transform.affine(matrix,offset,isflipped=(idim%2==1)==side)
+      updim.append(transform.affine(matrix,offset,isflipped=(idim%2==1)==side))
       ndims -= 1
       active[idim] = False
 
     grid = [ numpy.arange(axis.i>>nrefine,((axis.j-1)>>nrefine)+1) if axis.isdim else numpy.array([(axis.i-1 if axis.side else axis.j)>>nrefine]) for axis in axes ]
     indices = numeric.broadcast( *numeric.ix(grid) )
-    transforms = numeric.asobjvector( transform.affine(1,index) for index in log.iter( 'elem', indices, indices.size ) ).reshape( indices.shape )
+    transforms = numeric.asobjvector( [transform.affine(1,index)] for index in log.iter( 'elem', indices, indices.size ) ).reshape( indices.shape )
 
     if nrefine:
       shifts = numeric.broadcast( *numeric.ix( [0,.5] for axis in axes ) )
-      scales = numeric.asobjvector( transform.affine( .5, shift ) for shift in shifts ).reshape( shifts.shape )
+      scales = numeric.asobjvector( [transform.affine( .5, shift )] for shift in shifts ).reshape( shifts.shape )
       for irefine in log.range( 'level', nrefine-1, -1, -1 ):
         offsets = numpy.array([ r[0] for r in grid ])
         grid = [ numpy.arange(axis.i>>irefine,((axis.j-1)>>irefine)+1) if axis.isdim else numpy.array([(axis.i-1 if axis.side else axis.j)>>irefine]) for axis in axes ]
         A = transforms[ numpy.broadcast_arrays( *numeric.ix( r//2-o for r, o in zip( grid, offsets ) ) ) ]
         B = scales[ numpy.broadcast_arrays( *numeric.ix( r%2 for r in grid ) ) ]
-        transforms = A << B
+        transforms = A + B
       
     shape = tuple( axis.j - axis.i for axis in axes if axis.isdim )
-    return numeric.asobjvector( ( root << trans << updim ).canonical for trans in log.iter( 'canonical', transforms.flat ) ).reshape( shape )
+    return numeric.asobjvector(transform.TransformChain([root] + trans + updim).canonical for trans in log.iter('canonical', transforms.flat)).reshape(shape)
 
   @cache.property
   @log.title
@@ -1723,13 +1723,13 @@ class SubsetTopology( Topology ):
       if not ref:
         continue
       elem = elements[ielem]
-      newbelems.extend( element.Element( edge, elem.transform << etrans, elem.transform << etrans.flipped ) for etrans, edge in ref.edges[elem.reference.nedges:] )
+      newbelems.extend( element.Element( edge, elem.transform << transform.TransformChain([etrans]), elem.transform << transform.TransformChain([etrans.flipped]) ) for etrans, edge in ref.edges[elem.reference.nedges:] )
       for iedge, ioppelem in enumerate( ioppelems ):
         bref = ref.edge_refs[iedge]
         if not bref:
           continue
         if ioppelem == -1:
-          index = baseboundary.edict[ (elem.transform<<ref.edge_transforms[iedge]).canonical ]
+          index = baseboundary.edict[ (elem.transform<<transform.TransformChain([ref.edge_transforms[iedge]])).canonical ]
           brefs[index] = bref # by construction, bref must be equal or subset of original
         else:
           ioppedge = tuple(connectivity[ioppelem]).index(ielem)
@@ -1737,7 +1737,7 @@ class SubsetTopology( Topology ):
           if oppref:
             bref -= oppref.edge_refs[ioppedge]
           if bref:
-            newbelems.append( element.Element( bref, elem.transform<<ref.edge_transforms[iedge], elements[ioppelem].edge(ioppedge).transform ) )
+            newbelems.append( element.Element( bref, elem.transform<<transform.TransformChain([ref.edge_transforms[iedge]]), elements[ioppelem].edge(ioppedge).transform ) )
     origboundary = SubsetTopology( baseboundary, brefs )
     trimboundary = OrientedGroupsTopology( self.newboundary if isinstance(self.newboundary,Topology) else self.basetopo.interfaces, newbelems )
     return UnionTopology([ trimboundary, origboundary ], names=[ self.newboundary ] if isinstance(self.newboundary,str) else [] )
@@ -1760,7 +1760,7 @@ class SubsetTopology( Topology ):
         oppref = self.refs[ioppelem]
         if not oppref:
           continue # edge is empty
-        index = baseinterfaces.edict.get( (elem.transform<<ref.edge_transforms[iedge]).canonical )
+        index = baseinterfaces.edict.get( (elem.transform<<transform.TransformChain([ref.edge_transforms[iedge]])).canonical )
         if index is None:
           continue # edge is not oriented with an interface; rely on connectivity to also yield flipped element
         ioppedge = tuple( connectivity[ioppelem] ).index( ielem )
@@ -1879,7 +1879,7 @@ class HierarchicalTopology( Topology ):
       itemelem = self.basetopo.elements[ielem]
       ref = itemelem.reference
       for trans in tail:
-        index = ref.child_transforms.index((trans,))
+        index = ref.child_transforms.index(trans)
         ref = ref.child_refs[ index ]
         if not ref:
           break
@@ -2108,7 +2108,7 @@ class RevolutionTopology( Topology ):
   'topology consisting of a single revolution element'
 
   def __init__( self ):
-    self.elements = element.Element( element.RevolutionReference(), transform.roottrans('angle',(1,)) ),
+    self.elements = element.Element(element.RevolutionReference(), [transform.RootTrans('angle',(1,))]),
     self.boundary = EmptyTopology( ndims=0 )
     Topology.__init__( self, ndims=1 )
 
@@ -2321,7 +2321,7 @@ class MultipatchTopology( Topology ):
     npatches = len(self.patches)
     coeffs = [numeric.const(1, dtype=int).reshape(1, *(1,)*self.ndims)]*npatches
     dofs = numeric.const(range(npatches), dtype=int)[:,_]
-    return function.polyfunc(coeffs, dofs, npatches, (patch.topo.root for patch in self.patches), issorted=False)
+    return function.polyfunc(coeffs, dofs, npatches, (transform.TransformChain([patch.topo.root]) for patch in self.patches), issorted=False)
 
   @cache.property
   def boundary( self ):

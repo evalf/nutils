@@ -95,11 +95,6 @@ class TransformChain( tuple ):
     return '{}( {} )'.format( self.__class__.__name__, self )
 
   @property
-  def flat( self ):
-    return self if len(self) == 1 \
-      else affine( self.linear, self.offset, isflipped=self.isflipped )
-
-  @property
   def n_ascending(self):
     # number of ascending transform items counting from root (0). this is a
     # temporary hack required to deal with Bifurcate/Slice; as soon as we have
@@ -195,8 +190,7 @@ class TransformItem( cache.Immutable ):
 
   def __mul__(self, other):
     assert isinstance(other, TransformItem)
-    trans, = affine(linear=numpy.dot(self.linear, other.linear), offset=self.apply(other.offset), isflipped=self.isflipped^other.isflipped)
-    return trans
+    return affine(linear=numpy.dot(self.linear, other.linear), offset=self.apply(other.offset), isflipped=self.isflipped^other.isflipped)
 
 class Shift( TransformItem ):
 
@@ -347,7 +341,7 @@ class Updim( Matrix ):
       if orthoaxes:
         newlinear = .5 * self.linear.take(orthoaxes, axis=0)
         newoffset = (other.apply(self.offset) - self.offset).take(orthoaxes, axis=0)
-        newtrans, = affine(newlinear, newoffset)
+        newtrans = affine(newlinear, newoffset)
         if self * newtrans == other * self:
           return self, newtrans
       return ScaledUpdim(other, self), Identity(self.fromdims)
@@ -473,26 +467,12 @@ def affine( linear, offset, denom=1, isflipped=None ):
     trans = Scale( r_linear, r_offset ) if r_linear != 1 else Shift( r_offset )
   if isflipped is not None:
     assert trans.isflipped == isflipped
-  return CanonicalTransformChain( [trans] )
-
-def scaledupdim(trans1, trans2):
-  trans1, = trans1
-  trans2, = trans2
-  return CanonicalTransformChain([ScaledUpdim(trans1, trans2)])
+  return trans
 
 def simplex( coords, isflipped=None ):
   coords = numpy.asarray(coords)
   offset = coords[0]
   return affine( (coords[1:]-offset).T, offset, isflipped=isflipped )
-
-def roottrans( name, shape ):
-  return CanonicalTransformChain(( RootTrans( name, shape ), ))
-
-def roottransedges( name, shape ):
-  return CanonicalTransformChain(( RootTransEdges( name, shape ), ))
-
-def maptrans( linear, offset, vertices ):
-  return CanonicalTransformChain(( MapTrans( linear, offset, vertices ), ))
 
 def equivalent( trans1, trans2 ):
   trans1 = TransformChain( trans1 )
@@ -586,14 +566,13 @@ def stack( trans1, trans2 ):
 def bifurcate( trans1, trans2 ):
   return CanonicalTransformChain([ Bifurcate( trans1, trans2 ) ])
 
-def invapply(chain, points):
-  for trans in chain:
-    points = trans.invapply(points)
-  return points
-
 def transform_poly(trans, coeffs):
   for item in trans:
     coeffs = item.transform_poly(coeffs)
   return coeffs
+
+def canonical(chain):
+  assert all(isinstance(item, TransformItem) for item in chain)
+  return TransformChain(chain).canonical
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

@@ -98,7 +98,7 @@ class unstructured_topology(TestCase):
     for i in indices:
       random.shuffle(i)
     random.shuffle(indices)
-    return [element.Element(ref, root << transform.simplex(tuple(coords[j] for j in i))) for i in indices]
+    return [element.Element(ref, root << transform.TransformChain([transform.simplex(tuple(coords[j] for j in i))])) for i in indices]
 
   def setUp(self):
     random.seed(0, version=2)

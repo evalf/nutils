@@ -331,15 +331,18 @@ class general(TestCase):
   def test_boundary(self):
     for elem in self.domain.boundary:
       ielem, tail = elem.transform.lookup_item(self.domain.edict)
-      iedge = self.domain.elements[ielem].reference.edge_transforms.index(tail)
+      etrans, = tail
+      iedge = self.domain.elements[ielem].reference.edge_transforms.index(etrans)
       self.assertEqual(self.domain.connectivity[ielem][iedge], -1)
 
   def test_interfaces(self):
     for elem in self.domain.interfaces:
       ielem, tail = elem.transform.lookup_item(self.domain.edict)
-      iedge = self.domain.elements[ielem].reference.edge_transforms.index(tail)
+      etrans, = tail
+      iedge = self.domain.elements[ielem].reference.edge_transforms.index(etrans)
       ioppelem, opptail = elem.opposite.lookup_item(self.domain.edict)
-      ioppedge = self.domain.elements[ioppelem].reference.edge_transforms.index(opptail)
+      eopptrans, = opptail
+      ioppedge = self.domain.elements[ioppelem].reference.edge_transforms.index(eopptrans)
       self.assertEqual(self.domain.connectivity[ielem][iedge], ioppelem)
       self.assertEqual(self.domain.connectivity[ioppelem][ioppedge], ielem)
 
