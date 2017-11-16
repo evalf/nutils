@@ -160,7 +160,7 @@ class check(TestCase):
     if triaxes:
       for iax in triaxes:
         self.assertArrayAlmostEqual(decimal=15,
-          desired=numeric.cross(self.n_op_argsfun, self.shapearg, axis=iax+1),
+          desired=numpy.cross(self.n_op_argsfun, self.shapearg[_], axis=iax+1),
           actual=function.cross(self.op_args, self.shapearg, axis=iax).simplified.eval(**self.evalargs))
 
   def test_power(self):
@@ -260,7 +260,7 @@ class check(TestCase):
       x = function.Argument('x', x0.shape)
       f = self.op(*(*self.args[:iarg], (x*self.basis).sum(-1), *self.args[iarg+1:]))
       fx0, fx1, Jx0 = self.domain.elem_eval([f, function.replace_arguments(f, dict(x=x+dx)),function.derivative(f, x)], ischeme='gauss1', arguments=dict(x=x0))
-      fx1approx = fx0 + numeric.contract_fast(Jx0, dx, naxes=dx.ndim)
+      fx1approx = fx0 + numeric.contract(Jx0, dx, range(Jx0.ndim-dx.ndim, Jx0.ndim))
       self.assertArrayAlmostEqual(fx1approx, fx1, decimal=12)
 
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)

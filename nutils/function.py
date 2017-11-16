@@ -1160,7 +1160,7 @@ class Cross( Array ):
 
   def evalf( self, a, b ):
     assert a.ndim == b.ndim == self.ndim+1
-    return numeric.cross( a, b, self.axis+1 )
+    return numpy.cross(a, b, axis=self.axis+1)
 
   def _derivative(self, var, seen):
     ext = (...,)+(_,)*var.ndim

@@ -26,13 +26,6 @@ import numpy, numbers, builtins, collections.abc
 
 _abc = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' # indices for einsum
 
-def grid( shape ):
-  shape = tuple(shape)
-  grid = numpy.empty( (len(shape),)+shape, dtype=int )
-  for i, sh in enumerate( shape ):
-    grid[i] = numpy.arange(sh)[(slice(None),)+(numpy.newaxis,)*(len(shape)-i-1)]
-  return grid
-
 def round( arr ):
   return numpy.round( arr ).astype( int )
 
@@ -67,58 +60,12 @@ def normdim( ndim, n ):
   assert 0 <= n < ndim, 'argument out of bounds: %s not in [0,%s)' % (n,ndim)
   return n
 
-def align( arr, trans, ndim ):
-  '''create new array of ndim from arr with axes moved accordin
-  to trans'''
-
-  arr = numpy.asarray( arr )
-  assert arr.ndim == len(trans)
-  if not len(trans):
-    return arr[(numpy.newaxis,)*ndim]
-  transpose = numpy.empty( ndim, dtype=int )
-  trans = numpy.asarray( trans )
-  nnew = ndim - len(trans)
-  if nnew > 0:
-    remaining = numpy.ones( ndim, dtype=bool )
-    remaining[trans] = False
-    inew, = remaining.nonzero()
-    trans = numpy.hstack([ inew, trans ])
-    arr = arr[(numpy.newaxis,)*nnew]
-  transpose[trans] = numpy.arange(ndim)
-  return arr.transpose( transpose )
-
 def get( arr, axis, item ):
   'take single item from array axis'
 
   arr = numpy.asarray( arr )
   axis = normdim( arr.ndim, axis )
   return arr[ (slice(None),) * axis + (item,) ]
-
-def expand( arr, *shape ):
-  'expand'
-
-  newshape = list( arr.shape )
-  for i, sh in enumerate( shape ):
-    if sh != None:
-      if newshape[i-len(shape)] == 1:
-        newshape[i-len(shape)] = sh
-      else:
-        assert newshape[i-len(shape)] == sh
-  expanded = numpy.empty( newshape )
-  expanded[:] = arr
-  return expanded
-
-def linspace2d( start, stop, steps ):
-  'linspace & meshgrid combined'
-
-  start = tuple(start) if isinstance(start,(list,tuple)) else (start,start)
-  stop  = tuple(stop ) if isinstance(stop, (list,tuple)) else (stop, stop )
-  steps = tuple(steps) if isinstance(steps,(list,tuple)) else (steps,steps)
-  assert len(start) == len(stop) == len(steps) == 2
-  values = numpy.empty( (2,)+steps )
-  values[0] = numpy.linspace( start[0], stop[0], steps[0] )[:,numpy.newaxis]
-  values[1] = numpy.linspace( start[1], stop[1], steps[1] )[numpy.newaxis,:]
-  return values
 
 def contract( A, B, axis=-1 ):
   'contract'
@@ -133,20 +80,6 @@ def contract( A, B, axis=-1 ):
   axes = sorted( [ normdim(maxdim,axis) ] if isinstance(axis,int) else [ normdim(maxdim,ax) for ax in axis ] )
   o = _abc[:maxdim-len(axes)] if axes == range( maxdim-len(axes), maxdim ) \
     else ''.join( _abc[a+1:b] for a, b in zip( [-1]+axes, axes+[maxdim] ) if a+1 != b )
-
-  return numpy.einsum( '%s,%s->%s' % (m,n,o), A, B )
-
-def contract_fast( A, B, naxes ):
-  'contract last n axes'
-
-  assert naxes >= 0
-  A = numpy.asarray( A )
-  B = numpy.asarray( B )
-
-  maxdim = max( A.ndim, B.ndim )
-  m = _abc[maxdim-A.ndim:maxdim]
-  n = _abc[maxdim-B.ndim:maxdim]
-  o = _abc[:maxdim-naxes]
 
   return numpy.einsum( '%s,%s->%s' % (m,n,o), A, B )
 
@@ -166,22 +99,6 @@ def dot( A, B, axis=-1 ):
     o += m[axis+1:]
 
   return numpy.einsum( '%s,%s->%s' % (m,n,o), A, B )
-
-def fastrepeat( A, nrepeat, axis=-1 ):
-  'repeat axis by 0stride'
-
-  A = numpy.asarray( A )
-  assert A.shape[axis] == 1
-  shape = list( A.shape )
-  shape[axis] = nrepeat
-  strides = list( A.strides )
-  strides[axis] = 0
-  return numpy.lib.stride_tricks.as_strided( A, shape, strides )
-
-def fastmeshgrid( X, Y ):
-  'mesh grid based on fastrepeat'
-
-  return fastrepeat(X[numpy.newaxis,:],len(Y),axis=0), fastrepeat(Y[:,numpy.newaxis],len(X),axis=1)
 
 def meshgrid( *args ):
   'multi-dimensional meshgrid generalisation'
@@ -207,85 +124,12 @@ def takediag( A, axis=-2, rmaxis=-1 ):
   fmt = _abc[:rmaxis] + _abc[axis] + _abc[rmaxis:A.ndim-1] + '->' + _abc[:A.ndim-1]
   return numpy.einsum(fmt, A)
 
-def reshape( A, *shape ):
-  'more useful reshape'
-
-  newshape = []
-  i = 0
-  for s in shape:
-    if isinstance( s, (tuple,list) ):
-      assert numpy.product( s ) == A.shape[i]
-      newshape.extend( s )
-      i += 1
-    elif s == 1:
-      newshape.append( A.shape[i] )
-      i += 1
-    else:
-      assert s > 1
-      newshape.append( numpy.product( A.shape[i:i+s] ) )
-      i += s
-  assert i <= A.ndim
-  newshape.extend( A.shape[i:] )
-  return A.reshape( newshape )
-
-def mean( A, weights=None, axis=-1 ):
-  'generalized mean'
-
-  return A.mean( axis ) if weights is None else dot( A, weights / weights.sum(), axis )
-
 def normalize( A, axis=-1 ):
   'devide by normal'
 
   s = [ slice(None) ] * A.ndim
   s[axis] = numpy.newaxis
   return A / numpy.linalg.norm( A, axis=axis )[ tuple(s) ]
-
-def cross( v1, v2, axis ):
-  'cross product'
-
-  if v1.ndim < v2.ndim:
-    v1 = v1[ (numpy.newaxis,)*(v2.ndim-v1.ndim) ]
-  elif v2.ndim < v1.ndim:
-    v2 = v2[ (numpy.newaxis,)*(v1.ndim-v2.ndim) ]
-  return numpy.cross( v1, v2, axis=axis )
-
-def times( A, B ):
-  """Times
-  Multiply such that shapes are concatenated."""
-  A = numpy.asarray( A )
-  B = numpy.asarray( B )
-
-  o = _abs[:A.ndim+B.ndim]
-  m = o[:A.ndim]
-  n = o[A.ndim:]
-
-  return numpy.einsum( '%s,%s->%s' % (m,n,o), A, B )
-
-def stack( arrays, axis=0 ):
-  'powerful array stacker with singleton expansion'
-
-  arrays = [ numpy.asarray(array,dtype=float) for array in arrays ]
-  shape = [1] * max( array.ndim for array in arrays )
-  axis = normdim( len(shape)+1, axis )
-  for array in arrays:
-    for i in range(-array.ndim,0):
-      if shape[i] == 1:
-        shape[i] = array.shape[i]
-      else:
-        assert array.shape[i] in ( shape[i], 1 )
-  stacked = numpy.empty( shape[:axis]+[len(arrays)]+shape[axis:], dtype=float )
-  for i, arr in enumerate( arrays ):
-    stacked[(slice(None),)*axis+(i,)] = arr
-  return stacked
-
-def bringforward( arg, axis ):
-  'bring axis forward'
-
-  arg = numpy.asarray(arg)
-  axis = normdim(arg.ndim,axis)
-  if axis == 0:
-    return arg
-  return arg.transpose( [axis] + range(axis) + range(axis+1,arg.ndim) )
 
 def diagonalize(arg, axis=-1, newaxis=-1):
   'insert newaxis, place axis on diagonal of axis and newaxis'
@@ -333,27 +177,7 @@ isbool = lambda a: isboolarray(a) and a.ndim == 0 or type(a) == bool
 isint = lambda a: isinstance(a, (numbers.Integral,numpy.integer))
 isnumber = lambda a: isinstance(a, (numbers.Number,numpy.generic))
 isintarray = lambda a: isarray(a) and numpy.issubdtype(a.dtype, numpy.integer)
-
-def ortho_complement( A ):
-  '''return orthogonal complement to non-square matrix A'''
-
-  m, n = A.shape
-  assert n <= m
-  if n == 0:
-    return numpy.eye( m )
-  elif n == m:
-    return numpy.empty( (m,0) )
-  else:
-    u, s, v = numpy.linalg.svd(A)
-    return u[:,n:]
-
-asobjvector = lambda v: numpy.array( (None,)+tuple(v), dtype=object )[1:] # 'None' prevents interpretation of objects as axes
-
-def invorder( n ):
-  assert n.dtype == int and n.ndim == 1
-  ninv = numpy.empty( len(n), dtype=int )
-  ninv[n] = numpy.arange( len(n) )
-  return ninv
+asobjvector = lambda v: numpy.array((None,)+tuple(v), dtype=object)[1:] # 'None' prevents interpretation of objects as axes
 
 def blockdiag( args ):
   args = [ numpy.asarray(arg) for arg in args ]
@@ -380,12 +204,6 @@ def nanjoin( args, axis=0 ):
     i = j + 1
   return concat
 
-def broadcasted( f ):
-  def wrapped( *args, **kwargs ):
-    bcast = broadcast( *args )
-    return asobjvector( f(*_args,**kwargs) for _args in bcast ).reshape( bcast.shape )
-  return wrapped
-
 def ix( args ):
   'version of :func:`numpy.ix_` that allows for scalars'
   args = tuple( numpy.asarray(arg) for arg in args )
@@ -410,66 +228,6 @@ class Broadcast1D( object ):
 
 broadcast = lambda *args: numpy.broadcast( *args ) if len(args) > 1 else Broadcast1D( args[0] )
 
-def searchsorted( items, item ):
-  '''Find indices where elements should be inserted to maintain order.
-
-  Find the index into a sorted array `items` such that, if `item` were inserted
-  before the index, the order of `items` would be preserved.'''
-
-  n = 1
-  while (n<<1) <= len(items):
-    n <<= 1
-  i = 0
-  while n:
-    j = i|n
-    if j <= len(items) and item > items[j-1]:
-      i = j
-    n >>= 1
-  return i
-
-# EXACT OPERATIONS ON FLOATS
-
-def solve_exact( A, *B ):
-  A = numpy.asarray( A )
-  assert A.ndim == 2
-  B = [ numpy.asarray(b) for b in B ]
-  assert all( b.shape[0] == A.shape[0] and b.ndim in (1,2) for b in B )
-  n = A.shape[1]
-  S = [ slice(i,i+b.shape[1]) if b.ndim == 2 else i for b, i in zip( B, numpy.cumsum([0]+[ b[0].size for b in B[:-1] ]) ) ]
-  Ab = numpy.concatenate( [ A ] + [ b.reshape(len(b),-1) for b in B ], axis=1 )
-  for icol in range(n):
-    if not Ab[icol,icol]:
-      Ab[icol:] = Ab[icol+numpy.argsort([ abs(v) if v else numpy.inf for v in Ab[icol:,icol] ])]
-    Ab[:icol] = Ab[:icol] * Ab[icol,icol] - Ab[:icol,icol,numpy.newaxis] * Ab[icol,:]
-    Ab[icol+1:] = Ab[icol+1:] * Ab[icol,icol] - Ab[icol+1:,icol,numpy.newaxis] * Ab[icol,:]
-  if Ab[n:].any():
-    raise numpy.linalg.LinAlgError( 'linear system has no solution' )
-  try:
-    Y = div_exact( Ab[:n,n:], numpy.diag( Ab[:n,:n] )[:,numpy.newaxis] )
-  except:
-    raise numpy.linalg.LinAlgError( 'linear system has no base2 solution' )
-  X = [ Y[:,s] for s in S ]
-  assert all(numpy.equal(dot(A,x), b).all() for (x,b) in zip(X,B))
-  if len(B) == 1:
-    X, = X
-  return X
-
-def adj_exact( A ):
-  '''adj(A) = inv(A) * det(A)'''
-  A = numpy.asarray(A)
-  assert A.ndim == 2 and A.shape[0] == A.shape[1]
-  if len(A) == 1:
-    adj = numpy.ones( (1,1) )
-  elif len(A) == 2:
-    ((a,b),(c,d)) = A
-    adj = numpy.array(((d,-b),(-c,a)))
-  elif len(A) == 3:
-    ((a,b,c),(d,e,f),(g,h,i)) = A
-    adj = numpy.array(((e*i-f*h,c*h-b*i,b*f-c*e),(f*g-d*i,a*i-c*g,c*d-a*f),(d*h-e*g,b*g-a*h,a*e-b*d)))
-  else:
-    raise NotImplementedError( 'shape={}'.format(A.shape) )
-  return adj
-
 def det_exact( A ):
   # for some reason, numpy.linalg.det suffers from rounding errors
   A = numpy.asarray( A )
@@ -487,19 +245,6 @@ def det_exact( A ):
   else:
     raise NotImplementedError( 'shape=' + str(A.shape) )
   return det
-
-def div_exact( A, B ):
-  Am, Ae = fextract( A )
-  Bm, Be = fextract( B )
-  assert Bm.all(), 'division by zero'
-  Cm, rem = divmod( Am, Bm )
-  assert not rem.any(), 'indivisible arguments'
-  Ce = Ae - Be
-  return fconstruct( Cm, Ce )
-
-def inv_exact( A ):
-  A = numpy.asarray( A )
-  return div_exact( adj_exact(A), det_exact(A) )
 
 def ext( A ):
   """Exterior
