@@ -217,18 +217,6 @@ class Cache(Evaluable):
 
 CACHE = Cache()
 
-class Trans(Evaluable):
-  def __init__(self, n):
-    self.n = n
-    super().__init__(args=[EVALARGS])
-  def evalf(self, evalargs):
-    trans = evalargs['_transforms'][self.n]
-    assert isinstance(trans, tuple)
-    return trans
-
-TRANS = Trans(0)
-OPPTRANS = Trans(1)
-
 class Points(Evaluable):
   def __init__(self, opposite=False):
     super().__init__(args=[EVALARGS])
@@ -292,24 +280,72 @@ class Tuple( Evaluable ):
 
     return Tuple( tuple(other) + self.items )
 
-class SelectChain( Evaluable ):
-  def __init__(self, trans, first:bool):
+# TRANSFORMCHAIN
+
+class TransformChain(Evaluable):
+
+  def __init__(self, args:tuple, todims):
+    self.todims = todims
+    super().__init__(args)
+
+class SelectChain(TransformChain):
+  def __init__(self, n, todims=None):
+    self.n = n
+    super().__init__(args=[EVALARGS], todims=todims)
+  def evalf(self, evalargs):
+    trans = evalargs['_transforms'][self.n]
+    assert isinstance(trans, tuple) and trans[0].todims == self.todims
+    return trans
+
+TRANS = SelectChain(0)
+OPPTRANS = SelectChain(1)
+
+class PopHead(TransformChain):
+
+  def __init__(self, todims:int, trans=TRANS):
+    self.trans = trans
+    super().__init__(args=[self.trans], todims=todims)
+
+  def evalf(self, trans):
+    assert trans[0].todims == None and trans[0].fromdims == self.todims
+    return trans[1:]
+
+class SelectBifurcation(TransformChain):
+
+  def __init__(self, trans, first:bool, todims=None):
     self.trans = trans
     self.first = first
-    super().__init__(args=[trans])
+    super().__init__(args=[trans], todims=todims)
+
   def evalf(self, trans):
     assert isinstance(trans, tuple)
     bf = trans[0]
     assert isinstance(bf, transform.Bifurcate)
-    return (bf.trans1 if self.first else bf.trans2) + trans[1:]
+    selected = bf.trans1 if self.first else bf.trans2
+    assert selected[0].todims == self.todims
+    return selected + trans[1:]
 
-class Promote(Evaluable):
+class Promote(TransformChain):
+
   def __init__(self, ndims:int, trans):
     self.ndims = ndims
-    super().__init__(args=[trans])
+    super().__init__(args=[trans], todims=trans.todims)
+
   def evalf(self, trans):
     head, tail = transform.promote(trans, self.ndims)
     return head + tail
+
+class TailOfTransform(TransformChain):
+
+  def __init__(self, trans, depth, todims:int):
+    assert isarray(depth)
+    assert depth.ndim == 0 and depth.dtype == int
+    super().__init__(args=[trans, depth], todims=todims)
+
+  def evalf(self, trans, depth):
+    depth, = depth
+    assert trans[depth-1].fromdims == self.todims
+    return trans[depth:]
 
 # ARRAYFUNC
 #
@@ -880,45 +916,24 @@ class Product( Array ):
     func = Get(self.func, i, item)
     return Product(func)
 
-class PopHead(Evaluable):
+class ApplyTransforms(Array):
 
-  def __init__(self, trans=TRANS):
+  def __init__(self, trans, points=POINTS):
     self.trans = trans
-    super().__init__(args=[self.trans])
-
-  def evalf(self, trans):
-    return trans[1:]
-
-class TailOfTransform(Evaluable):
-
-  def __init__(self, trans, depth:asarray):
-    assert depth.ndim == 0 and depth.dtype == int
-    super().__init__(args=[trans, depth])
-
-  def evalf(self, trans, depth):
-    depth, = depth
-    return trans[depth:]
-
-class RootCoords(Array):
-
-  def __init__(self, ndims:int, trans, points=POINTS):
-    self.trans = trans
-    super().__init__(args=[points,trans], shape=[ndims], dtype=float)
+    super().__init__(args=[points, trans], shape=[trans.todims], dtype=float)
 
   def evalf(self, points, chain):
-    'evaluate'
-
     return transform.apply(chain, points)
 
   def _derivative(self, var, seen):
     if isinstance(var, LocalCoords) and len(var) > 0:
-      return RootTransform(len(self), len(var), self.trans)
+      return LinearFrom(self.trans, len(var))
     return zeros(self.shape+var.shape)
 
-class RootTransform(Array):
+class LinearFrom(Array):
 
-  def __init__(self, ndims:int, nvars:int, trans):
-    super().__init__(args=[trans], shape=(ndims,nvars), dtype=float)
+  def __init__(self, trans, fromdims:int):
+    super().__init__(args=[trans], shape=(trans.todims, fromdims), dtype=float)
 
   def evalf(self, chain):
     todims, fromdims = self.shape
@@ -2981,7 +2996,7 @@ def blocks(arg):
   return asarray(arg).simplified.blocks
 
 def rootcoords(ndims):
-  return RootCoords(ndims, trans=PopHead(Promote(ndims, trans=TRANS)))
+  return ApplyTransforms(PopHead(ndims))
 
 def sampled(data, ndims):
   return Sampled(data)
@@ -2996,7 +3011,7 @@ def opposite(arg):
 @cache.replace
 def _bifurcate(arg, side):
   if arg in (TRANS, OPPTRANS):
-    return SelectChain(arg, side)
+    return SelectBifurcation(arg, side)
 
 bifurcate1 = functools.partial(_bifurcate, side=True)
 bifurcate2 = functools.partial(_bifurcate, side=False)
@@ -3241,7 +3256,7 @@ def polyfunc(coeffs, dofs, ndofs, transforms, *, issorted=True):
   index = FindTransform(transforms, promote)
   dofmap = DofMap(dofs, index=index)
   depth = Get([len(trans) for trans in transforms], axis=0, item=index)
-  points = RootCoords(fromdims, TailOfTransform(promote, depth))
+  points = ApplyTransforms(TailOfTransform(promote, depth, fromdims))
   func = Polyval(Elemwise(coeffs, index, dtype=float), points, fromdims)
   return Inflate(func, dofmap, ndofs, axis=0)
 
