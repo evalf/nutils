@@ -82,8 +82,9 @@ class unstructured_topology(TestCase):
 
   def as_simplices(self, elem):
     '''convert rectangular or cubic ``elem`` to simplices'''
-    root, offset = transform.TransformChain(elem.transform[:-1]), transform.TransformChain(elem.transform[-1:])
-    coords = transform.apply(offset, elem.reference.vertices)
+    offset = elem.transform[-1]
+    root = elem.transform[:-1]
+    coords = offset.apply(elem.reference.vertices)
     if self.ndims == 1:
       return [elem]
     elif self.ndims == 2:
@@ -93,12 +94,12 @@ class unstructured_topology(TestCase):
       indices = [[0,1,2,8], [1,3,2,8], [4,5,6,8], [5,7,6,8],
                  [0,1,4,8], [1,5,4,8], [2,3,6,8], [3,7,6,8],
                  [0,2,4,8], [2,6,4,8], [1,3,5,8], [3,7,5,8]]
-      coords = numpy.concatenate([coords, transform.apply(offset, numpy.mean(elem.reference.vertices, 0)[_])], axis=0)
+      coords = numpy.concatenate([coords, offset.apply(numpy.mean(elem.reference.vertices, 0)[_])], axis=0)
       ref = element.TetrahedronReference()
     for i in indices:
       random.shuffle(i)
     random.shuffle(indices)
-    return [element.Element(ref, root << transform.TransformChain([transform.simplex(tuple(coords[j] for j in i))])) for i in indices]
+    return [element.Element(ref, root + (transform.simplex(tuple(coords[j] for j in i)),)) for i in indices]
 
   def setUp(self):
     random.seed(0, version=2)

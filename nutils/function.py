@@ -223,7 +223,7 @@ class Trans(Evaluable):
     super().__init__(args=[EVALARGS])
   def evalf(self, evalargs):
     trans = evalargs['_transforms'][self.n]
-    assert isinstance(trans, transform.TransformChain)
+    assert isinstance(trans, tuple)
     return trans
 
 TRANS = Trans(0)
@@ -297,20 +297,19 @@ class SelectChain( Evaluable ):
     self.trans = trans
     self.first = first
     super().__init__(args=[trans])
-  def evalf( self, trans ):
-    assert isinstance( trans, transform.TransformChain )
+  def evalf(self, trans):
+    assert isinstance(trans, tuple)
     bf = trans[0]
-    assert isinstance( bf, transform.Bifurcate )
-    ftrans = bf.trans1 if self.first else bf.trans2
-    return transform.TransformChain( ftrans + trans[1:] )
+    assert isinstance(bf, transform.Bifurcate)
+    return (bf.trans1 if self.first else bf.trans2) + trans[1:]
 
 class Promote(Evaluable):
   def __init__(self, ndims:int, trans):
     self.ndims = ndims
     super().__init__(args=[trans])
   def evalf(self, trans):
-    head, tail = trans.canonical.promote(self.ndims)
-    return transform.TransformChain(head + tail)
+    head, tail = transform.promote(trans, self.ndims)
+    return head + tail
 
 # ARRAYFUNC
 #
@@ -1807,12 +1806,12 @@ class Sampled( Array ):
     items = iter(self.data.items())
     trans0, (values0,points0) = next(items)
     shape = values0.shape[1:]
-    assert all( transi.fromdims == trans0.fromdims and valuesi.shape == pointsi.shape[:1]+shape for transi, (valuesi,pointsi) in items )
+    assert all(transi[-1].fromdims == trans0[-1].fromdims and valuesi.shape == pointsi.shape[:1]+shape for transi, (valuesi, pointsi) in items)
     super().__init__(args=[trans,POINTS], shape=shape, dtype=float)
 
   def evalf( self, trans, points ):
-    (myvals,mypoints), tail = trans.lookup_item( self.data )
-    evalpoints = tail.apply( points )
+    (myvals, mypoints), tail = transform.lookup_item(trans, self.data)
+    evalpoints = transform.apply(tail, points)
     assert mypoints.shape == evalpoints.shape and numpy.equal(mypoints, evalpoints).all(), 'Illegal point set'
     return myvals
 
@@ -3237,7 +3236,7 @@ def polyfunc(coeffs, dofs, ndofs, transforms, *, issorted=True):
     transforms = tuple(sorted(transforms))
     dofs = tuple(dofsmap[trans] for trans in transforms)
     coeffs = tuple(coeffsmap[trans] for trans in transforms)
-  fromdims, = set(transform.fromdims for transform in transforms)
+  fromdims, = set(transform[-1].fromdims for transform in transforms)
   promote = Promote(fromdims, trans=TRANS)
   index = FindTransform(transforms, promote)
   dofmap = DofMap(dofs, index=index)
@@ -3251,7 +3250,7 @@ def elemwise( fmap, shape, default=None ):
     raise NotImplemented('default is not supported anymore')
   transforms = tuple(sorted(fmap))
   values = tuple(fmap[trans] for trans in transforms)
-  fromdims, = set(transform.fromdims for transform in transforms)
+  fromdims, = set(transform[-1].fromdims for transform in transforms)
   promote = Promote(fromdims, trans=TRANS)
   index = FindTransform(transforms, promote)
   return Elemwise(values, index, dtype=float)

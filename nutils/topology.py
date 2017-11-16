@@ -136,7 +136,7 @@ class Topology( object ):
     border_transforms = set()
     for belem in self.boundary:
       try:
-        ielem, tail = belem.transform.lookup_item( self.edict )
+        ielem, tail = transform.lookup_item(belem.transform, self.edict)
       except KeyError:
         pass
       else:
@@ -499,7 +499,7 @@ class Topology( object ):
       log.info( 'collecting leveltopo elements' )
       bins = [ [] for ielem in range(len(self)) ]
       for elem in leveltopo:
-        ielem, tail = elem.transform.lookup_item( self.edict )
+        ielem, tail = transform.lookup_item(elem.transform, self.edict)
         bins[ielem].append( tail )
       refs = []
       for elem, ctransforms in log.zip( 'elem', self, bins ):
@@ -510,7 +510,7 @@ class Topology( object ):
         while mask.any():
           imax = numpy.argmax([ mask[indices].sum() for trans, points, indices in cover ])
           trans, points, indices = cover.pop( imax )
-          levels[indices] = levelset.eval(_transforms=(elem.transform<<trans,), _points=points, _cache=fcache, **arguments)
+          levels[indices] = levelset.eval(_transforms=(elem.transform + trans,), _points=points, _cache=fcache, **arguments)
           mask[indices] = False
         refs.append( elem.reference.trim( levels, maxrefine=maxrefine, ndivisions=ndivisions ) )
     log.debug( 'cache', fcache.stats )
@@ -857,7 +857,7 @@ class Point( Topology ):
   'point'
 
   def __init__( self, trans, opposite=None ):
-    assert isinstance( trans, transform.TransformChain ) and trans.fromdims == 0
+    assert trans[-1].fromdims == 0
     self.elem = element.Element( element.getsimplex(0), trans, opposite, oriented=True )
     Topology.__init__( self, ndims=0 )
 
@@ -887,7 +887,7 @@ class StructuredLine( Topology ):
   @cache.property
   def _transforms( self ):
     # one extra left and right for opposites, even if periodic=True
-    return tuple(transform.TransformChain([self.root, transform.affine(linear=1, offset=[offset])]) for offset in range( self.i-1, self.j+1 ) )
+    return tuple((self.root, transform.affine(linear=1, offset=[offset])) for offset in range(self.i-1, self.j+1))
 
   def __iter__( self ):
     reference = element.getsimplex(1)
@@ -905,19 +905,19 @@ class StructuredLine( Topology ):
     if self.periodic:
       return EmptyTopology( ndims=0 )
     transforms = self._transforms
-    left = transform.TransformChain([transform.affine(numpy.zeros((1,0)), offset=[0], isflipped=True)])
-    right = transform.TransformChain([transform.affine( numpy.zeros((1,0)), offset=[1], isflipped=False)])
-    bnd = Point( transforms[1] << left, transforms[0] << right ), Point( transforms[-2] << right, transforms[-1] << left )
+    left = transform.affine(numpy.zeros((1,0)), offset=[0], isflipped=True),
+    right = transform.affine( numpy.zeros((1,0)), offset=[1], isflipped=False),
+    bnd = Point( transforms[1] + left, transforms[0] + right ), Point( transforms[-2] + right, transforms[-1] + left )
     return UnionTopology( bnd, self.bnames )
 
   @cache.property
   def interfaces( self ):
     transforms = self._transforms
-    left = transform.TransformChain([transform.affine(numpy.zeros((1,0)), offset=[0], isflipped=True)])
-    right = transform.TransformChain([transform.affine( numpy.zeros((1,0)), offset=[1], isflipped=False)])
-    points = [ Point( trans << left, opp << right ) for trans, opp in zip( transforms[2:-1], transforms[1:-2] ) ]
+    left = transform.affine(numpy.zeros((1,0)), offset=[0], isflipped=True),
+    right = transform.affine( numpy.zeros((1,0)), offset=[1], isflipped=False),
+    points = [ Point( trans + left, opp + right ) for trans, opp in zip( transforms[2:-1], transforms[1:-2] ) ]
     if self.periodic:
-      points.append( Point( transforms[1] << left, transforms[-2] << right ) )
+      points.append( Point( transforms[1] + left, transforms[-2] + right ) )
     return UnionTopology( points )
 
   @classmethod
@@ -1125,7 +1125,7 @@ class StructuredTopology( Topology ):
         transforms = A + B
       
     shape = tuple( axis.j - axis.i for axis in axes if axis.isdim )
-    return numeric.asobjvector(transform.TransformChain([root] + trans + updim).canonical for trans in log.iter('canonical', transforms.flat)).reshape(shape)
+    return numeric.asobjvector(transform.canonical([root] + trans + updim) for trans in log.iter('canonical', transforms.flat)).reshape(shape)
 
   @cache.property
   @log.title
@@ -1723,13 +1723,13 @@ class SubsetTopology( Topology ):
       if not ref:
         continue
       elem = elements[ielem]
-      newbelems.extend( element.Element( edge, elem.transform << transform.TransformChain([etrans]), elem.transform << transform.TransformChain([etrans.flipped]) ) for etrans, edge in ref.edges[elem.reference.nedges:] )
+      newbelems.extend( element.Element(edge, elem.transform + (etrans,), elem.transform + (etrans.flipped,)) for etrans, edge in ref.edges[elem.reference.nedges:] )
       for iedge, ioppelem in enumerate( ioppelems ):
         bref = ref.edge_refs[iedge]
         if not bref:
           continue
         if ioppelem == -1:
-          index = baseboundary.edict[ (elem.transform<<transform.TransformChain([ref.edge_transforms[iedge]])).canonical ]
+          index = baseboundary.edict[transform.canonical(elem.transform + (ref.edge_transforms[iedge],))]
           brefs[index] = bref # by construction, bref must be equal or subset of original
         else:
           ioppedge = tuple(connectivity[ioppelem]).index(ielem)
@@ -1737,7 +1737,7 @@ class SubsetTopology( Topology ):
           if oppref:
             bref -= oppref.edge_refs[ioppedge]
           if bref:
-            newbelems.append( element.Element( bref, elem.transform<<transform.TransformChain([ref.edge_transforms[iedge]]), elements[ioppelem].edge(ioppedge).transform ) )
+            newbelems.append(element.Element(bref, elem.transform + (ref.edge_transforms[iedge],), elements[ioppelem].edge(ioppedge).transform))
     origboundary = SubsetTopology( baseboundary, brefs )
     trimboundary = OrientedGroupsTopology( self.newboundary if isinstance(self.newboundary,Topology) else self.basetopo.interfaces, newbelems )
     return UnionTopology([ trimboundary, origboundary ], names=[ self.newboundary ] if isinstance(self.newboundary,str) else [] )
@@ -1760,7 +1760,7 @@ class SubsetTopology( Topology ):
         oppref = self.refs[ioppelem]
         if not oppref:
           continue # edge is empty
-        index = baseinterfaces.edict.get( (elem.transform<<transform.TransformChain([ref.edge_transforms[iedge]])).canonical )
+        index = baseinterfaces.edict.get(transform.canonical(elem.transform + (ref.edge_transforms[iedge],)))
         if index is None:
           continue # edge is not oriented with an interface; rely on connectivity to also yield flipped element
         ioppedge = tuple( connectivity[ioppelem] ).index( ielem )
@@ -1785,14 +1785,14 @@ class OrientedGroupsTopology( UnstructuredTopology ):
     elements = []
     for elem in self.basetopo.getitem(item):
       try:
-        ielem, tail = elem.transform.lookup_item( self.edict )
+        ielem, tail = transform.lookup_item(elem.transform, self.edict)
       except KeyError:
         elem = elem.flipped
         try:
-          ielem, tail = elem.transform.lookup_item( self.edict )
+          ielem, tail = transform.lookup_item(elem.transform, self.edict)
         except KeyError:
           continue
-      if not tail.canonical in ( transform.identity, transform.affine(1,[0]) ):
+      if tail:
         raise NotImplementedError
       ref = self.elements[ielem].reference & elem.reference
       elements.append( element.Element( ref, elem.transform, elem.opposite, oriented=True ) )
@@ -1873,7 +1873,7 @@ class HierarchicalTopology( Topology ):
     itemelems = []
     for elem in self.allelements:
       try:
-        ielem, tail = elem.transform.lookup_item( self.basetopo.edict )
+        ielem, tail = transform.lookup_item(elem.transform, self.basetopo.edict)
       except KeyError:
         continue
       itemelem = self.basetopo.elements[ielem]
@@ -1895,7 +1895,7 @@ class HierarchicalTopology( Topology ):
     levels = [ self.basetopo ]
     for elem in self:
       try:
-        ielem, tail = elem.transform.lookup_item( self.basetopo.edict )
+        ielem, tail = transform.lookup_item(elem.transform, self.basetopo.edict)
       except KeyError:
         raise Exception( 'element is not a refinement of basetopo' )
       else:
@@ -1916,15 +1916,15 @@ class HierarchicalTopology( Topology ):
     'boundary elements'
 
     basebtopo = self.basetopo.boundary
-    edgepool = [edge for elem in self if elem.transform.lookup(self.basetopo.border_transforms) for edge in elem.edges if edge is not None]
+    edgepool = [edge for elem in self if transform.lookup(elem.transform, self.basetopo.border_transforms) for edge in elem.edges if edge is not None]
     belems = []
     for edge in edgepool: # superset of boundary elements
       try:
-        iedge, tail = edge.transform.lookup_item( basebtopo.edict )
+        iedge, tail = transform.lookup_item(edge.transform, basebtopo.edict)
       except KeyError:
         pass
       else:
-        opptrans = basebtopo.elements[iedge].opposite << tail
+        opptrans = basebtopo.elements[iedge].opposite + tail
         belems.append( element.Element( edge.reference, edge.transform, opptrans, oriented=True ) )
     return basebtopo.hierarchical( belems, precise=True )
 
@@ -1954,7 +1954,7 @@ class HierarchicalTopology( Topology ):
           continue
         neighbor = level.elements[ineighbor]
         # Lookup `neighbor` (from the same `level` as `elem`) in this topology.
-        head, tail = neighbor.transform.lookup( edict ) or (None, None)
+        head, tail = transform.lookup(neighbor.transform, edict) or (None, None)
         if not head:
           # `neighbor` not found, hence refinements of `neighbor` are present.
           # The interface of this edge will be added when we encounter the
@@ -2016,7 +2016,7 @@ class HierarchicalTopology( Topology ):
         idofs, = dofmap.eval(_transforms=(elem.transform, elem.opposite))
         if trans in self.edict:
           touchtopo[idofs] = True
-        elif trans.lookup( self.edict ):
+        elif transform.lookup(trans, self.edict):
           supported[idofs] = False
 
       support = supported & touchtopo
@@ -2032,7 +2032,7 @@ class HierarchicalTopology( Topology ):
     for trans in transforms:
       hcoeffs = []
       hdofs = []
-      ibase, tail = trans.lookup_item(self.basetopo.edict)
+      ibase, tail = transform.lookup_item(trans, self.basetopo.edict)
       for ilevel in range(len(tail)+1):
         (idofs,), (icoeffs,) = dofs_coeffs[ilevel].eval(_transforms=(trans,))
         isupport = supports[ilevel][idofs]
@@ -2321,7 +2321,7 @@ class MultipatchTopology( Topology ):
     npatches = len(self.patches)
     coeffs = [numeric.const(1, dtype=int).reshape(1, *(1,)*self.ndims)]*npatches
     dofs = numeric.const(range(npatches), dtype=int)[:,_]
-    return function.polyfunc(coeffs, dofs, npatches, (transform.TransformChain([patch.topo.root]) for patch in self.patches), issorted=False)
+    return function.polyfunc(coeffs, dofs, npatches, ((patch.topo.root,) for patch in self.patches), issorted=False)
 
   @cache.property
   def boundary( self ):

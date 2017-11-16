@@ -42,16 +42,16 @@ class Element( object ):
   def __init__( self, reference, trans, opptrans=None, oriented=False ):
     assert isinstance( reference, Reference )
     trans = transform.canonical(trans)
-    assert trans.fromdims == reference.ndims and trans.todims == None
+    assert trans[-1].fromdims == reference.ndims and trans[0].todims == None
     if opptrans is not None:
       opptrans = transform.canonical(opptrans)
-      assert opptrans.fromdims == reference.ndims and opptrans.todims == None
+      assert opptrans[-1].fromdims == reference.ndims and opptrans[0].todims == None
       if not oriented:
-        vtx1 = trans.apply(reference.vertices)
-        if vtx1 != opptrans.apply(reference.vertices):
+        vtx1 = transform.apply(trans, reference.vertices)
+        if vtx1 != transform.apply(opptrans, reference.vertices):
           for ptrans in reference.permutation_transforms:
-            if vtx1 == opptrans.apply(ptrans.apply(reference.vertices)):
-              opptrans <<= transform.TransformChain([ptrans])
+            if vtx1 == transform.apply(opptrans + (ptrans,), reference.vertices):
+              opptrans += ptrans,
               break
           else:
             raise Exception('Did not find a conforming permutation for the opposing transformation')
@@ -60,7 +60,7 @@ class Element( object ):
     self.opposite = opptrans or trans
 
   def withopposite( self, opp, oriented=False ):
-    if isinstance( opp, transform.TransformChain ):
+    if isinstance(opp, tuple):
       return Element( self.reference, self.transform, opp, oriented )
     assert isinstance( opp, Element ) and opp.reference == self.reference
     return Element( self.reference, self.transform, opp.transform, oriented or opp.opposite==self.transform )
@@ -68,11 +68,12 @@ class Element( object ):
   def __mul__( self, other ):
     self_is_iface = self.opposite != self.transform
     other_is_iface = other.opposite != other.transform
+    trans = transform.Bifurcate(self.transform, other.transform),
     if self_is_iface != other_is_iface:
-      opposite = transform.stack( self.opposite, other.opposite )
+      opptrans = transform.Bifurcate(self.opposite, other.opposite),
     else:
-      opposite = None
-    return Element( self.reference * other.reference, transform.stack( self.transform, other.transform ), opposite, oriented=True )
+      opptrans = None
+    return Element(self.reference * other.reference, trans, opptrans, oriented=True)
 
   def __getnewargs__( self ):
     return self.reference, self.transform, self.opposite, True
@@ -88,7 +89,7 @@ class Element( object ):
 
   @property
   def vertices( self ):
-    return self.transform.apply( self.reference.vertices )
+    return transform.apply(self.transform, self.reference.vertices)
 
   @property
   def ndims( self ):
@@ -376,8 +377,8 @@ class Reference( cache.Immutable ):
     npoints = self.nvertices_by_level(maxrefine)
     allindices = numpy.arange(npoints)
     if len(ctransforms) == 1:
-      assert ctransforms[0] == transform.identity
-      return ( transform.identity, self.getischeme('vertex{}'.format(maxrefine))[0], allindices ),
+      assert not ctransforms[0]
+      return ((), self.getischeme('vertex{}'.format(maxrefine))[0], allindices),
     if maxrefine == 0:
       raise Exception( 'maxrefine is too low' )
     cbins = [ [] for ichild in range(self.nchildren) ]
@@ -387,7 +388,7 @@ class Reference( cache.Immutable ):
     if not all( cbins ):
       raise Exception( 'transformations to not form an element cover' )
     fcache = cache.WrapperCache()
-    return tuple((transform.TransformChain([ctrans]) << trans, points, cindices[indices])
+    return tuple(((ctrans,) + trans, points, cindices[indices])
       for ctrans, cref, cbin, cindices in zip( self.child_transforms, self.child_refs, cbins, self.child_divide(allindices,maxrefine) )
         for trans, points, indices in fcache[cref.vertex_cover](tuple(sorted(cbin)), maxrefine-1))
 

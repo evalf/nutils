@@ -26,149 +26,139 @@ from . import cache, numeric, core, _
 import numpy, collections, itertools, functools, operator
 
 
-class TransformChain( tuple ):
+## TRANSFORM CHAIN OPERATIONS
 
-  __slots__ = ()
+def apply(chain, points):
+  for trans in reversed(chain):
+    points = trans.apply(points)
+  return points
 
-  @property
-  def todims( self ):
-    return self[0].todims
+def linear(chain):
+  linear = numpy.array(1.)
+  for trans in chain:
+    linear = numpy.dot(linear, trans.linear) if linear.ndim and trans.linear.ndim else linear * trans.linear
+  return linear
 
-  @property
-  def fromdims( self ):
-    return self[-1].fromdims
+def fulllinear(chain):
+  scale = 1.
+  linear = numpy.eye(chain[-1].fromdims)
+  for trans in reversed(chain):
+    if trans.linear.ndim == 0:
+      scale *= trans.linear
+    else:
+      linear = numpy.dot(trans.linear, linear)
+      if trans.todims > trans.fromdims:
+        linear = numpy.concatenate([linear, trans.ext[:,_]], axis=1)
+  return linear * scale
 
-  @property
-  def isflipped( self ):
-    return isflipped( self )
+def offset(chain):
+  offset = chain[-1].offset
+  for trans in chain[-2::-1]:
+    offset = trans.apply(offset)
+  return offset
 
-  def __lshift__( self, other ):
-    # self << other
-    assert isinstance( other, TransformChain )
-    if not self:
-      return other
-    if not other:
-      return self
-    assert self.fromdims == other.todims
-    return TransformChain( self + other )
+def transform_poly(trans, coeffs):
+  for item in trans:
+    coeffs = item.transform_poly(coeffs)
+  return coeffs
 
-  def __rshift__( self, other ):
-    # self >> other
-    assert isinstance( other, TransformChain )
-    return other << self
+def flipped(chain):
+  assert chain[0].todims == chain[-1].fromdims+1
+  return tuple(trans.flipped if trans.todims == trans.fromdims+1 else trans for trans in chain)
 
-  @property
-  def flipped( self ):
-    assert self.todims == self.fromdims+1
-    return self.__class__( trans.flipped if trans.todims == trans.fromdims+1 else trans for trans in self )
+def det(chain):
+  det = 1
+  for trans in chain:
+    det *= trans.det
+  return det
 
-  @property
-  def det( self ):
-    det = 1
-    for trans in self:
-      det *= trans.det
-    return det
+def ext(chain):
+  ext = numeric.ext(linear(chain))
+  for trans in chain:
+    if trans.isflipped:
+      ext = -ext
+  return ext
 
-  @property
-  def ext( self ):
-    ext = numeric.ext( self.linear )
-    return ext if not self.isflipped else -ext
+def n_ascending(chain):
+  # number of ascending transform items counting from root (0). this is a
+  # temporary hack required to deal with Bifurcate/Slice; as soon as we have
+  # proper tensorial topologies we can switch back to strictly ascending
+  # transformation chains.
+  for n, trans in enumerate(chain):
+    if trans.todims is not None and trans.todims < trans.fromdims:
+      return n
+  return len(chain)
 
-  @property
-  def offset( self ):
-    return offset( self )
+def canonical(chain):
+  # keep at lowest ndims possible; this is the required form for bisection
+  n = n_ascending(chain)
+  if n < 2:
+    return tuple(chain)
+  items = list(chain)
+  i = 0
+  while items[i].fromdims > items[n-1].fromdims:
+    swapped = items[i+1].swapdown(items[i])
+    if swapped:
+      items[i:i+2] = swapped
+      i -= i > 0
+    else:
+      i += 1
+  return tuple(items)
 
-  @property
-  def linear( self ):
-    return linear( self )
+def promote(chain, ndims):
+  # split chain into chain1 and chain2 such that chain == chain1 << chain2 and
+  # chain1.fromdims == chain2.todims == ndims, where chain1 is canonical and
+  # chain2 climbs to ndims as fast as possible.
+  n = n_ascending(chain)
+  assert ndims >= chain[n-1].fromdims
+  items = list(chain)
+  i = n
+  while items[i-1].fromdims < ndims:
+    swapped = items[i-2].swapup(items[i-1])
+    if swapped:
+      items[i-2:i] = swapped
+      i += i < n
+    else:
+      i -= 1
+  assert items[i-1].fromdims == ndims
+  return canonical(items[:i]), tuple(items[i:])
 
-  def apply( self, points ):
-    return apply( self, points )
+def lookup(chain, transforms):
+  if not transforms:
+    return
+  for trans in transforms:
+    ndims = trans[-1].fromdims
+    break
+  head, tail = promote(chain, ndims)
+  while head:
+    if head in transforms:
+      return head, tail
+    tail = head[-1:] + tail
+    head = head[:-1]
 
-  def solve( self, points ):
-    return numeric.solve_exact( self.linear, (points - self.offset).T ).T
+def lookup_item(chain, transforms):
+  head_tail = lookup(chain, transforms)
+  if not head_tail:
+    raise KeyError(chain)
+  head, tail = head_tail
+  item = transforms[head] if isinstance(transforms, collections.Mapping) else transforms.index(head)
+  return item, tail
 
-  def __str__( self ):
-    return ' << '.join( str(trans) for trans in self ) if self else '='
-
-  def __repr__( self ):
-    return '{}( {} )'.format( self.__class__.__name__, self )
-
-  @property
-  def n_ascending(self):
-    # number of ascending transform items counting from root (0). this is a
-    # temporary hack required to deal with Bifurcate/Slice; as soon as we have
-    # proper tensorial topologies we can switch back to strictly ascending
-    # transformation chains.
-    for n, trans in enumerate(self):
-      if trans.todims is not None and trans.todims < trans.fromdims:
-        return n
-    return len(self)
-
-  @property
-  def canonical( self ):
-    # keep at lowest ndims possible; this is the required form for bisection
-    n = self.n_ascending
-    if n < 2:
-      return CanonicalTransformChain(self)
-    items = list(self)
-    i = 0
-    while items[i].fromdims > items[n-1].fromdims:
-      swapped = items[i+1].swapdown(items[i])
-      if swapped:
-        items[i:i+2] = swapped
-        i -= i > 0
-      else:
-        i += 1
-    return CanonicalTransformChain(items)
-
-  def promote(self, ndims):
-    # split self into chain1 and chain2 such that self == chain1 << chain2 and
-    # chain1.fromdims == chain2.todims == ndims, where chain1 is canonical and
-    # chain2 climbs to ndims as fast as possible.
-    n = self.n_ascending
-    assert ndims >= self[n-1].fromdims
-    items = list(self)
-    i = n
-    while items[i-1].fromdims < ndims:
-      swapped = items[i-2].swapup(items[i-1])
-      if swapped:
-        items[i-2:i] = swapped
-        i += i < n
-      else:
-        i -= 1
-    assert items[i-1].fromdims == ndims
-    return TransformChain(items[:i]).canonical, TransformChain(items[i:])
-
-  def lookup( self, transforms ):
-    if not transforms:
-      return
-    for trans in transforms:
-      ndims = trans.fromdims
-      break
-    head, tail = self.canonical.promote( ndims )
-    while head:
-      if head in transforms:
-        return CanonicalTransformChain(head), TransformChain(tail)
-      tail = head[-1:] + tail
-      head = head[:-1]
-
-  def lookup_item( self, transforms ):
-    head_tail = self.lookup( transforms )
-    if not head_tail:
-      raise KeyError( self )
-    head, tail = head_tail
-    item = transforms[head] if isinstance(transforms, collections.Mapping) \
-      else transforms.index( head )
-    return item, tail
-
-class CanonicalTransformChain( TransformChain ):
-
-  __slots__ = ()
-
-  @property
-  def canonical( self ):
-    return self
+def linearfrom(chain, ndims):
+  if chain and ndims < chain[-1].fromdims:
+    for i in reversed(range(len(chain))):
+      if chain[i].todims == ndims:
+        chain = chain[:i]
+        break
+    else:
+      raise Exception( 'failed to find {}D coordinate system'.format(ndims) )
+  if not chain:
+    return numpy.eye(ndims)
+  linear = fulllinear(chain)
+  n, m = linear.shape
+  if m >= ndims:
+    return linear[:,:ndims]
+  return numpy.concatenate([linear, numpy.zeros((n,ndims-m))], axis=1)
 
 
 ## TRANSFORM ITEMS
@@ -349,14 +339,14 @@ class Updim( Matrix ):
 class Bifurcate( TransformItem ):
   'bifurcate'
 
-  def __init__(self, trans1, trans2):
-    assert trans1.fromdims == trans2.fromdims
-    self.trans1 = trans1
-    self.trans2 = trans2
-    super().__init__(todims=trans1.todims if trans1.todims == trans2.todims else None, fromdims=trans1.fromdims)
+  def __init__(self, trans1:canonical, trans2:canonical):
+    fromdims = trans1[-1].fromdims + trans2[-1].fromdims
+    self.trans1 = trans1 + (Slice(0, trans1[-1].fromdims, fromdims),)
+    self.trans2 = trans2 + (Slice(trans1[-1].fromdims, fromdims, fromdims),)
+    super().__init__(todims=trans1[0].todims if trans1[0].todims == trans2[0].todims else None, fromdims=fromdims)
 
-  def apply( self, points ):
-    return (self.trans1.apply(points), self.trans2.apply(points))
+  def apply(self, points):
+    return apply(self.trans1, points), apply(self.trans2, points)
 
 class Slice( Matrix ):
   'slice'
@@ -474,105 +464,8 @@ def simplex( coords, isflipped=None ):
   offset = coords[0]
   return affine( (coords[1:]-offset).T, offset, isflipped=isflipped )
 
-def equivalent( trans1, trans2 ):
-  trans1 = TransformChain( trans1 )
-  trans2 = TransformChain( trans2 )
-  if trans1 == trans2:
-    return True
-  while trans1 and trans2 and trans1[0] == trans2[0]:
-    trans1 = trans1[1:]
-    trans2 = trans2[1:]
-  return numpy.equal(fulllinear(trans1), fulllinear(trans2)).all() and numpy.equal(offset(trans1), offset(trans2)).all()
-
-
-## INSTANCES
-
-identity = CanonicalTransformChain()
-
-def solve( T1, T2 ): # T1 << x == T2
-  assert isinstance( T1, TransformChain )
-  assert isinstance( T2, TransformChain )
-  while T1 and T2 and T1[0] == T2[0]:
-    T1 = T1[1:]
-    T2 = T2[1:]
-  if not T1:
-    return TransformChain(T2)
-  # A1 * ( Ax * xi + bx ) + b1 == A2 * xi + b2 => A1 * Ax = A2, A1 * bx + b1 = b2
-  Ax, bx = numeric.solve_exact( linear(T1), linear(T2), offset(T2) - offset(T1) )
-  return affine( Ax, bx )
-
 def tensor( trans1, trans2 ):
-  if not trans1 and not trans2:
-    return identity
   return affine( trans1.linear if trans1.linear.ndim == 0 and trans2.linear.ndim == 0 and trans1.linear == trans2.linear
             else numeric.blockdiag([ trans1.linear, trans2.linear ]), numpy.concatenate([ trans1.offset, trans2.offset ]) )
-
-def isflipped( chain ):
-  return sum( trans.isflipped for trans in chain ) % 2 == 1
-
-def linear( chain ):
-  linear = numpy.array( 1. )
-  for trans in chain:
-    linear = numpy.dot( linear, trans.linear ) if linear.ndim and trans.linear.ndim \
-        else linear * trans.linear
-  return linear
-
-def fulllinear( chain ):
-  scale = 1
-  linear = numpy.eye( chain[-1].fromdims )
-  for trans in reversed(chain):
-    if trans.linear.ndim == 0:
-      scale *= trans.linear
-    else:
-      linear = numpy.dot( trans.linear, linear )
-      if trans.todims > trans.fromdims:
-        linear = numpy.concatenate( [ linear, trans.ext[:,_] ], axis=1 )
-  return linear * scale
-
-def linearfrom( chain, ndims ):
-  if chain and ndims < chain[-1].fromdims:
-    for i in reversed(range(len(chain))):
-      if chain[i].todims == ndims:
-        chain = chain[:i]
-        break
-    else:
-      raise Exception( 'failed to find {}D coordinate system'.format(ndims) )
-  if not chain:
-    return numpy.eye( ndims )
-  linear = fulllinear( chain )
-  n, m = linear.shape
-  if m >= ndims:
-    return linear[:,:ndims]
-  return numpy.concatenate( [ linear, numpy.zeros((n,ndims-m)) ], axis=1 )
-
-def apply( chain, points ):
-  for trans in reversed(chain):
-    points = trans.apply( points )
-  return points
-
-def offset( chain ):
-  offset = chain[-1].offset
-  for trans in chain[-2::-1]:
-    offset = trans.apply( offset )
-  return offset
-
-def slicetrans( i1, i2, n ):
-  return CanonicalTransformChain( [ Slice(i1,i2,n) ] )
-
-def stack( trans1, trans2 ):
-  fromdims = trans1.fromdims + trans2.fromdims
-  return bifurcate( trans1.canonical << slicetrans(0,trans1.fromdims,fromdims), trans2.canonical << slicetrans(trans1.fromdims,fromdims,fromdims) )
-
-def bifurcate( trans1, trans2 ):
-  return CanonicalTransformChain([ Bifurcate( trans1, trans2 ) ])
-
-def transform_poly(trans, coeffs):
-  for item in trans:
-    coeffs = item.transform_poly(coeffs)
-  return coeffs
-
-def canonical(chain):
-  assert all(isinstance(item, TransformItem) for item in chain)
-  return TransformChain(chain).canonical
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
