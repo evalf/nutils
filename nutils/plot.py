@@ -190,7 +190,7 @@ class PyPlot( BasePlot ):
       values[mask] = numpy.mean( values[~mask] ) #Set masked values to average to not affect color range
     return self._pyplot.tripcolor( tri, values, **kwargs )
 
-  def tricontour( self, tri, values, every=None, levels=None, mergetol=0, **kwargs ):
+  def _tricontour( self, backend, tri, values, every=None, levels=None, mergetol=0, **kwargs ):
     assert not every or levels is None, '"every" and "levels" arguments are mutually exclusive'
     import matplotlib.tri
     if not isinstance( tri, matplotlib.tri.Triangulation ):
@@ -200,7 +200,13 @@ class PyPlot( BasePlot ):
     assert len(tri.x) == len(values)
     if every:
       levels = numpy.arange( int(min(values)/every), int(max(values)/every)+1 ) * every
-    return self._pyplot.tricontour( tri, values, levels=levels, **kwargs )
+    return backend( tri, values, levels=levels, **kwargs )
+
+  def tricontour(self, *args, **kwargs):
+    return self._tricontour(self._pyplot.tricontour, *args, **kwargs)
+
+  def tricontourf(self, *args, **kwargs):
+    return self._tricontour(self._pyplot.tricontourf, *args, **kwargs)
 
   def streamplot( self, tri, velo, spacing, bbox=None, mergetol=1e-5, linewidth=None, color=None, **kwargs ):
     if numeric.isarray(spacing):
