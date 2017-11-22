@@ -436,6 +436,7 @@ class Array( Evaluable ):
   __mul__ = __rmul__ = multiply
   __truediv__ = lambda self, other: divide(self, other)
   __rtruediv__ = lambda self, other: divide(other, self)
+  __pos__ = lambda self: self
   __neg__ = lambda self: negative(self)
   __pow__ = power
   __abs__ = lambda self: abs(self)
