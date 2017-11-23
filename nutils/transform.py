@@ -180,15 +180,19 @@ class TransformItem( cache.Immutable ):
 
   def __mul__(self, other):
     assert isinstance(other, TransformItem)
-    return affine(linear=numpy.dot(self.linear, other.linear), offset=self.apply(other.offset), isflipped=self.isflipped^other.isflipped)
+    linear = numpy.dot(self.linear, other.linear)
+    offset = self.apply(other.offset)
+    return Updim(linear, offset, self.isflipped^other.isflipped) if self.todims == other.fromdims+1 \
+      else Scale(linear, offset) if linear.ndim == 0 \
+      else Matrix(linear, offset)
 
 class Shift( TransformItem ):
 
   def __init__(self, offset:numeric.const):
+    assert offset.ndim == 1 and offset.dtype == float
     self.linear = self.det = numpy.array(1.)
     self.offset = offset
     self.isflipped = False
-    assert offset.ndim == 1
     super().__init__(offset.shape[0], offset.shape[0])
 
   def apply( self, points ):
@@ -217,7 +221,7 @@ class Identity(Shift):
 class Scale( TransformItem ):
 
   def __init__(self, scale:float, offset:numeric.const):
-    assert offset.ndim == 1
+    assert offset.ndim == 1 and offset.dtype == float
     assert scale != 1
     self.scale = scale
     self.linear = numpy.array(scale)
@@ -258,9 +262,11 @@ class Scale( TransformItem ):
 class Matrix( TransformItem ):
 
   def __init__(self, linear:numeric.const, offset:numeric.const):
+    assert linear.ndim == 2 and linear.dtype == float
+    assert offset.ndim == 1 and offset.dtype == float
+    assert len(offset) == len(linear)
     self.linear = linear
     self.offset = offset
-    assert linear.ndim == 2 and offset.shape == linear.shape[:1]
     super().__init__(linear.shape[0], linear.shape[1])
 
   def apply( self, points ):
@@ -331,7 +337,10 @@ class Updim( Matrix ):
       if orthoaxes:
         newlinear = .5 * self.linear.take(orthoaxes, axis=0)
         newoffset = (other.apply(self.offset) - self.offset).take(orthoaxes, axis=0)
-        newtrans = affine(newlinear, newoffset)
+        if numpy.equal(newlinear, numpy.eye(len(newlinear)) * .5).all():
+          newtrans = Scale(.5, newoffset)
+        else:
+          newtrans = Square(newlinear, newoffset)
         if self * newtrans == other * self:
           return self, newtrans
       return ScaledUpdim(other, self), Identity(self.fromdims)
@@ -438,34 +447,14 @@ class RootTransEdges( VertexTransform ):
 
 ## CONSTRUCTORS
 
-def affine( linear, offset, denom=1, isflipped=None ):
-  r_offset = numpy.asarray( offset, dtype=float ) / denom
-  r_linear = numpy.asarray( linear, dtype=float ) / denom
-  n, = r_offset.shape
-  if r_linear.ndim == 2:
-    assert r_linear.shape[0] == n
-    if r_linear.shape[1] != n:
-      trans = Updim( r_linear, r_offset, isflipped )
-    elif n == 0:
-      trans = Shift( r_offset )
-    elif n == 1 or r_linear[0,-1] == 0 and numpy.equal(r_linear, r_linear[0,0] * numpy.eye(n)).all():
-      trans = Scale( r_linear[0,0], r_offset ) if r_linear[0,0] != 1 else Shift( r_offset )
-    else:
-      trans = Square( r_linear, r_offset )
-  else:
-    assert r_linear.ndim == 0
-    trans = Scale( r_linear, r_offset ) if r_linear != 1 else Shift( r_offset )
-  if isflipped is not None:
-    assert trans.isflipped == isflipped
-  return trans
-
-def simplex( coords, isflipped=None ):
+def simplex(coords, isflipped):
   coords = numpy.asarray(coords)
   offset = coords[0]
-  return affine( (coords[1:]-offset).T, offset, isflipped=isflipped )
+  return Updim((coords[1:]-offset).T, offset, isflipped=isflipped)
 
-def tensor( trans1, trans2 ):
-  return affine( trans1.linear if trans1.linear.ndim == 0 and trans2.linear.ndim == 0 and trans1.linear == trans2.linear
-            else numeric.blockdiag([ trans1.linear, trans2.linear ]), numpy.concatenate([ trans1.offset, trans2.offset ]) )
+def tensor(trans1, trans2):
+  offset = numpy.concatenate([trans1.offset, trans2.offset])
+  return Scale(trans1.linear, offset) if trans1.linear.ndim == 0 and trans2.linear.ndim == 0 and trans1.linear == trans2.linear \
+    else Square(numeric.blockdiag([trans1.linear, trans2.linear]), offset)
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

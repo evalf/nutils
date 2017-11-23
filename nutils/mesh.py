@@ -483,7 +483,7 @@ def gmsh( fname, name=None ):
       for ivertex, inode in enumerate(inodes):
         if inode in pelems:
           offset = elem.reference.vertices[ivertex]
-          trans = elem.transform + (transform.affine(linear=numpy.zeros(shape=(ndims,0),dtype=int), offset=offset, isflipped=False),)
+          trans = elem.transform + (transform.Matrix(linear=numpy.zeros(shape=(ndims,0)), offset=offset),)
           pelems[inode].append( element.Element( pref, trans ) )
     for name, ipelems in tagnamesbydim[0].items():
       tagspelems[name] = [ pelem for ipelem in ipelems for inode in inodesbydim[0][ipelem] for pelem in pelems[inode] ]
@@ -551,7 +551,7 @@ def demo( xmin=0, xmax=1, ymin=0, ymax=1 ):
   
   root = transform.RootTrans( 'demo', shape=(0,0) )
   reference = element.getsimplex(2)
-  elems = [element.Element(reference, (root, transform.simplex(coords[iverts]))) for iverts in vertices]
+  elems = [element.Element(reference, (root, transform.Square((coords[iverts[1:]]-coords[iverts[0]]).T, coords[iverts[0]]))) for iverts in vertices]
   topo = topology.UnstructuredTopology( 2, elems )
 
   belems = [ elem.edge(0) for elem in elems[:12] ]

@@ -670,9 +670,9 @@ class Topology( object ):
     pelems = []
     for ielem, xi in zip(ielems, xis):
       elem = self.elements[ielem]
-      trans = transform.affine( linear=1, offset=xi ),
+      trans = transform.Shift(xi),
       for idim in range(self.ndims,0,-1): # transcend dimensions one by one to produce valid transformation
-        trans += transform.affine( linear=numpy.eye(idim)[:,:-1], offset=numpy.zeros(idim), isflipped=False ),
+        trans += transform.Updim(linear=numpy.eye(idim)[:,:-1], offset=numpy.zeros(idim), isflipped=False),
       pelems.append( element.Element( vref, elem.transform + trans, elem.opposite and elem.opposite + trans, oriented=True ) )
     return UnstructuredTopology(0, pelems)
 
@@ -887,7 +887,7 @@ class StructuredLine( Topology ):
   @cache.property
   def _transforms( self ):
     # one extra left and right for opposites, even if periodic=True
-    return tuple((self.root, transform.affine(linear=1, offset=[offset])) for offset in range(self.i-1, self.j+1))
+    return tuple((self.root, transform.Shift([float(offset)])) for offset in range(self.i-1, self.j+1))
 
   def __iter__( self ):
     reference = element.getsimplex(1)
@@ -905,16 +905,16 @@ class StructuredLine( Topology ):
     if self.periodic:
       return EmptyTopology( ndims=0 )
     transforms = self._transforms
-    left = transform.affine(numpy.zeros((1,0)), offset=[0], isflipped=True),
-    right = transform.affine( numpy.zeros((1,0)), offset=[1], isflipped=False),
+    left = transform.Updim(numpy.zeros((1,0)), offset=[0.], isflipped=True),
+    right = transform.Updim(numpy.zeros((1,0)), offset=[1.], isflipped=False),
     bnd = Point( transforms[1] + left, transforms[0] + right ), Point( transforms[-2] + right, transforms[-1] + left )
     return UnionTopology( bnd, self.bnames )
 
   @cache.property
   def interfaces( self ):
     transforms = self._transforms
-    left = transform.affine(numpy.zeros((1,0)), offset=[0], isflipped=True),
-    right = transform.affine( numpy.zeros((1,0)), offset=[1], isflipped=False),
+    left = transform.Updim(numpy.zeros((1,0)), offset=[0.], isflipped=True),
+    right = transform.Updim(numpy.zeros((1,0)), offset=[1.], isflipped=False),
     points = [ Point( trans + left, opp + right ) for trans, opp in zip( transforms[2:-1], transforms[1:-2] ) ]
     if self.periodic:
       points.append( Point( transforms[1] + left, transforms[-2] + right ) )
@@ -1106,17 +1106,17 @@ class StructuredTopology( Topology ):
       where = (numpy.arange(len(active))[active]==idim)
       matrix = numpy.eye(ndims)[:,~where]
       offset = where.astype(float) if side else numpy.zeros(ndims)
-      updim.append(transform.affine(matrix,offset,isflipped=(idim%2==1)==side))
+      updim.append(transform.Updim(matrix, offset, isflipped=(idim%2==1)==side))
       ndims -= 1
       active[idim] = False
 
-    grid = [ numpy.arange(axis.i>>nrefine,((axis.j-1)>>nrefine)+1) if axis.isdim else numpy.array([(axis.i-1 if axis.side else axis.j)>>nrefine]) for axis in axes ]
+    grid = [ numpy.arange(axis.i>>nrefine, ((axis.j-1)>>nrefine)+1) if axis.isdim else numpy.array([(axis.i-1 if axis.side else axis.j)>>nrefine]) for axis in axes ]
     indices = numeric.broadcast( *numeric.ix(grid) )
-    transforms = numeric.asobjvector( [transform.affine(1,index)] for index in log.iter( 'elem', indices, indices.size ) ).reshape( indices.shape )
+    transforms = numeric.asobjvector([transform.Shift(numpy.array(index, dtype=float))] for index in log.iter('elem', indices, indices.size)).reshape( indices.shape)
 
     if nrefine:
       shifts = numeric.broadcast( *numeric.ix( [0,.5] for axis in axes ) )
-      scales = numeric.asobjvector( [transform.affine( .5, shift )] for shift in shifts ).reshape( shifts.shape )
+      scales = numeric.asobjvector( [transform.Scale(.5, shift)] for shift in shifts ).reshape( shifts.shape )
       for irefine in log.range( 'level', nrefine-1, -1, -1 ):
         offsets = numpy.array([ r[0] for r in grid ])
         grid = [ numpy.arange(axis.i>>irefine,((axis.j-1)>>irefine)+1) if axis.isdim else numpy.array([(axis.i-1 if axis.side else axis.j)>>irefine]) for axis in axes ]

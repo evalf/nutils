@@ -450,7 +450,7 @@ class RevolutionReference( Reference ):
 
   @property
   def edge_transforms( self ): # only used in check_edges
-    return transform.affine( numpy.zeros((1,0)), [-numpy.pi], isflipped=True ), transform.affine( numpy.zeros((1,0)), [+numpy.pi], isflipped=False )
+    return transform.Updim(numpy.zeros((1,0)), [-numpy.pi], isflipped=True), transform.Updim(numpy.zeros((1,0)), [+numpy.pi], isflipped=False)
 
   @property
   def edge_refs( self ): # idem edge_transforms
@@ -477,7 +477,7 @@ class SimplexReference( Reference ):
 
   @property
   def vertices(self):
-    return numeric.const(numpy.concatenate([numpy.zeros(self.ndims, dtype=int)[_,:], numpy.eye(self.ndims, dtype=int)], axis=0), copy=False)
+    return numeric.const(numpy.concatenate([numpy.zeros(self.ndims)[_,:], numpy.eye(self.ndims)], axis=0), copy=False)
 
   @cache.property
   def edge_refs( self ):
@@ -494,7 +494,7 @@ class SimplexReference( Reference ):
     for verts in itertools.permutations( tuple(v for v in self.vertices) ):
       offset = verts[0]
       linear = verts[1:]-verts[0]
-      transforms.append( transform.affine( linear.T, offset ) )
+      transforms.append(transform.Square(linear.T, offset))
     return tuple(transforms)
 
   @property
@@ -594,7 +594,7 @@ class LineReference( SimplexReference ):
 
   @cache.property
   def child_transforms( self ):
-    return transform.affine(1,[0],2), transform.affine(1,[1],2)
+    return transform.Scale(.5, [0.]), transform.Scale(.5, [.5])
 
   @property
   def child_refs( self ):
@@ -632,7 +632,7 @@ class TriangleReference( SimplexReference ):
 
   @cache.property
   def child_transforms( self ):
-    return transform.affine(1,[0,0],2), transform.affine(1,[0,1],2), transform.affine(1,[1,0],2), transform.affine([[-1,0],[1,1]],[1,0],2)
+    return transform.Scale(.5, [0.,0.]), transform.Scale(.5, [0,.5]), transform.Scale(.5, [.5,0]), transform.Square([[-.5,0],[.5,.5]], [.5,0])
 
   @property
   def child_refs( self ):
@@ -749,10 +749,8 @@ class TetrahedronReference( SimplexReference ):
   def child_transforms( self ):
     offset = numpy.array([1,0,0,0])
     linear = numpy.array([[-1,-1,-1],[1,0,0],[0,1,0],[0,0,1]])
-
     points, weights = self.getischeme_vertex(1)
-
-    return tuple(transform.affine(points[child_vertices].T.dot(linear),points[child_vertices].T.dot(offset)) for child_vertices in self._children_vertices)
+    return tuple(transform.Square(points[child_vertices].T.dot(linear), points[child_vertices].T.dot(offset)) for child_vertices in self._children_vertices)
 
   @property
   def child_refs( self ):
@@ -937,12 +935,12 @@ class TensorReference( Reference ):
   @cache.property
   def edge_transforms( self ):
     return tuple(
-      [ transform.affine(
+      [ transform.Updim(
         numeric.blockdiag([ trans1.linear, numpy.eye(self.ref2.ndims) ]),
         numpy.concatenate([ trans1.offset, numpy.zeros(self.ref2.ndims) ]),
         isflipped=trans1.isflipped )
           for trans1 in self.ref1.edge_transforms ]
-   + [ transform.affine(
+   + [ transform.Updim(
         numeric.blockdiag([ numpy.eye(self.ref1.ndims), trans2.linear ]),
         numpy.concatenate([ numpy.zeros(self.ref1.ndims), trans2.offset ]),
         isflipped=trans2.isflipped if self.ref1.ndims%2==0 else not trans2.isflipped )
@@ -1084,17 +1082,17 @@ class Cone( Reference ):
         if edge:
           b = self.etrans.apply( trans.offset )
           A = numpy.hstack([ numpy.dot( self.etrans.linear, trans.linear ), (self.tip-b)[:,_] ])
-          newtrans = transform.affine( A, b, isflipped=self.etrans.isflipped^trans.isflipped^(self.ndims%2==1) ) # isflipped logic tested up to 3D
+          newtrans = transform.Updim(A, b, isflipped=self.etrans.isflipped^trans.isflipped^(self.ndims%2==1)) # isflipped logic tested up to 3D
           edge_transforms.append( newtrans )
     else:
-      edge_transforms.append( transform.affine( numpy.zeros((1,0)), self.tip, isflipped=not self.etrans.isflipped ) )
+      edge_transforms.append(transform.Updim(numpy.zeros((1,0)), self.tip, isflipped=not self.etrans.isflipped))
     return edge_transforms
 
   @cache.property
   def edge_refs( self ):
     edge_refs = [ self.edgeref ]
     if self.edgeref.ndims > 0:
-      extrudetrans = transform.affine( numpy.eye(self.ndims-1)[:,:-1], numpy.zeros(self.ndims-1), isflipped=self.ndims%2==0 )
+      extrudetrans = transform.Updim(numpy.eye(self.ndims-1)[:,:-1], numpy.zeros(self.ndims-1), isflipped=self.ndims%2==0)
       tip = numpy.array( [0]*(self.ndims-2)+[1], dtype=float )
       edge_refs.extend( edge.cone( extrudetrans, tip ) for edge in self.edgeref.edge_refs if edge )
     else:
@@ -1475,7 +1473,7 @@ class MosaicReference( Reference ):
       nz = [ i for i, edge in enumerate(edge_refs) if edge ]
       if len(nz) == 1:
         self.edge_refs.append( getsimplex(0) )
-        self.edge_transforms.append( transform.affine( linear=numpy.zeros((1,0)), offset=midpoint, isflipped=not baseref.edge_transforms[nz[0]].isflipped ) )
+        self.edge_transforms.append(transform.Updim(linear=numpy.zeros((1,0)), offset=midpoint, isflipped=not baseref.edge_transforms[nz[0]].isflipped))
       else:
         assert len(nz) == 2
 
@@ -1494,12 +1492,12 @@ class MosaicReference( Reference ):
         if eisubj:
           newedges.append(( self.edge_transforms[iedge1], Ei.edge_transforms[iedge2], eisubj ))
 
-      extrudetrans = transform.affine( numpy.eye(baseref.ndims-1)[:,:-1], numpy.zeros(baseref.ndims-1), isflipped=baseref.ndims%2==0 )
+      extrudetrans = transform.Updim(numpy.eye(baseref.ndims-1)[:,:-1], numpy.zeros(baseref.ndims-1), isflipped=baseref.ndims%2==0)
       tip = numpy.array( [0]*(baseref.ndims-2)+[1], dtype=float )
       for etrans, trans, edge in newedges:
         b = etrans.apply( trans.offset )
         A = numpy.hstack([ numpy.dot( etrans.linear, trans.linear ), (midpoint-b)[:,_] ])
-        newtrans = transform.affine( A, b, isflipped=etrans.isflipped^trans.isflipped^(baseref.ndims%2==1) ) # isflipped logic tested up to 3D
+        newtrans = transform.Updim(A, b, isflipped=etrans.isflipped^trans.isflipped^(baseref.ndims%2==1)) # isflipped logic tested up to 3D
         self.edge_transforms.append( newtrans )
         self.edge_refs.append( edge.cone( extrudetrans, tip ) )
 
