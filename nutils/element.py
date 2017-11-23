@@ -573,7 +573,7 @@ class PointReference( SimplexReference ):
 
   @property
   def child_transforms( self ):
-    return transform.Identity(0),
+    return transform.Scale(.5, numpy.zeros(0)),
 
   @property
   def child_refs( self ):
