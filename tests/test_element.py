@@ -35,6 +35,22 @@ class elem(TestCase):
   def test_ribbons(self):
     self.ref.ribbons
 
+  @parametrize.enable_if(lambda ndims, **kwargs: sum(ndims) >= 1)
+  def test_connectivity(self):
+    childmap, edgemap = self.ref.connectivity
+    for ichild, edges in enumerate(childmap):
+      for iedge, ioppchild in enumerate(edges):
+        if ioppchild != -1:
+          ioppedge = childmap[ioppchild].index(ichild)
+          self.assertEqual(
+            (self.ref.child_transforms[ichild] << self.ref.child_refs[ichild].edge_transforms[iedge]).flat,
+            (self.ref.child_transforms[ioppchild] << self.ref.child_refs[ioppchild].edge_transforms[ioppedge]).flat.flipped)
+    for iedge, children in enumerate(edgemap):
+      for ichild, (jchild, jedge) in enumerate(children):
+        self.assertEqual(
+          (self.ref.edge_transforms[iedge] << self.ref.edge_refs[iedge].child_transforms[ichild]).flat,
+          (self.ref.child_transforms[jchild] << self.ref.child_refs[jchild].edge_transforms[jedge]).flat)
+
   def test_dof_transpose_map(self):
     nverts = tuple(element.getsimplex(ndim).nverts for ndim in self.ndims)
     i = numpy.arange(util.product(nverts)).reshape(nverts)

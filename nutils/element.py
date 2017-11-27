@@ -707,16 +707,31 @@ class TriangleReference( SimplexReference ):
 class TetrahedronReference( SimplexReference ):
   '3D simplex'
 
-  def __init__(self):
-    self._children_vertices = numpy.array([[0,1,3,6],
-                                           [1,2,4,7],
-                                           [3,4,5,8],
-                                           [6,7,8,9],
-                                           [7,1,6,8],
-                                           [3,1,8,6],
-                                           [7,1,8,4],
-                                           [3,1,4,8]])
+  # TETRAHEDRON:
+  # c\d
+  # a-b
+  #
+  # EDGES:
+  # d\  d\  d\  c\
+  # b-c a-c a-b a-b
 
+  # SUBDIVIDED TETRAHEDRON:
+  # f\  i\j
+  # d-e\g-h
+  # a-b-c
+  #
+  # SUBDIVIDED EDGES:
+  # j\    j\    j\    f\
+  # h-i\  g-i\  g-h\  d-e\
+  # c-e-f a-d-f a-b-c a-b-c
+  #
+  # CHILDREN:
+  # d\g e\h f\i i\j e\g g\h g\i h\i
+  # a-b b-c d-e g-h b-d b-e d-e e-g
+
+  _children_vertices = [0,1,3,6], [1,2,4,7], [3,4,5,8], [6,7,8,9], [1,3,4,6], [1,4,6,7], [3,4,6,8], [4,6,7,8]
+
+  def __init__(self):
     super().__init__(ndims=3)
 
   @cache.property
