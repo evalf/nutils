@@ -184,6 +184,10 @@ class Matrix(TransformItem):
 
 class Square(Matrix):
 
+  def __init__(self, linear:numeric.const, offset:numeric.const):
+    self._transform_matrix = {}
+    super().__init__(linear, offset)
+
   def invapply(self, points):
     return numeric.const(numpy.linalg.solve(self.linear, points - self.offset), copy=False)
 
@@ -194,6 +198,30 @@ class Square(Matrix):
   @property
   def isflipped(self):
     return self.det < 0
+
+  def transform_poly(self, coeffs):
+    assert coeffs.ndim == self.fromdims + 1
+    degree = coeffs.shape[1] - 1
+    assert all(n == degree+1 for n in coeffs.shape[2:])
+    try:
+      M = self._transform_matrix[degree]
+    except KeyError:
+      eye = numpy.eye(self.fromdims, dtype=int)
+      # construct polynomials for affine transforms of individual dimensions
+      polys = numpy.zeros((self.fromdims,)+(2,)*self.fromdims)
+      polys[(slice(None),)+(0,)*self.fromdims] = self.offset
+      for idim, e in enumerate(eye):
+        polys[(slice(None),)+tuple(e)] = self.linear[:,idim]
+      # reduces polynomials to smallest nonzero power
+      polys = [poly[tuple(slice(None if p else 1) for p in poly[tuple(eye)])] for poly in polys]
+      # construct transform poly by transforming all monomials separately and summing
+      M = numpy.zeros((degree+1,)*(2*self.fromdims), dtype=float)
+      for powers in numpy.ndindex(*[degree+1]*self.fromdims):
+        if sum(powers) <= degree:
+          M_power = functools.reduce(numeric.poly_mul, [numeric.poly_pow(poly, power) for poly, power in zip(polys, powers)])
+          M[tuple(slice(n) for n in M_power.shape)+powers] += M_power
+      self._transform_matrix[degree] = M
+    return numpy.einsum('jk,ik', M.reshape([(degree+1)**self.fromdims]*2), coeffs.reshape(coeffs.shape[0],-1)).reshape(coeffs.shape)
 
 class Shift(Square):
 
@@ -231,7 +259,6 @@ class Scale(Square):
   def __init__(self, scale:float, offset:numeric.const):
     assert offset.ndim == 1 and offset.dtype == float
     self.scale = scale
-    self._transform_matrix = {}
     super().__init__(numpy.eye(len(offset)) * scale, offset)
 
   def apply(self, points):
@@ -252,22 +279,6 @@ class Scale(Square):
     if isinstance(other, Scale):
       return Scale(self.scale * other.scale, self.apply(other.offset))
     return super().__mul__(other)
-
-  def transform_poly(self, coeffs):
-    n, *p = coeffs.shape
-    ndim = coeffs.ndim-1
-    p, = set(p)
-    p -= 1
-    try:
-      M = self._transform_matrix[p,ndim]
-    except KeyError:
-      M = numpy.zeros((p+1,)*(2*ndim), dtype=float)
-      for i in itertools.product(*[range(p+1)]*ndim):
-        if sum(i) <= p:
-          for j in itertools.product(*(range(k+1) for k in i)):
-            M[j+i] = functools.reduce(operator.mul, (numeric.binom(i[k], j[k])*self.offset[k]**(i[k]-j[k]) for k in range(ndim)), self.scale**sum(j))
-      M = self._transform_matrix[p,ndim] = M.reshape([(p+1)**ndim]*2)
-    return numpy.einsum('jk,ik', self._transform_matrix[p,ndim], coeffs.reshape(n,-1)).reshape(coeffs.shape)
 
 class Updim(Matrix):
 

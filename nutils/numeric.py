@@ -783,4 +783,25 @@ def poly_eval(coeffs, points):
     coeffs = result
   return const(coeffs, copy=False)
 
+def poly_mul(p, q):
+  assert p.ndim == q.ndim
+  pq = numpy.zeros([n+m-1 for n, m in zip(p.shape, q.shape)])
+  if q.size < p.size:
+    p, q = q, p # loop over the smallest of the two arrays
+  for i, pi in numpy.ndenumerate(p):
+    if pi:
+      pq[tuple(slice(o, o+m) for o, m in zip(i, q.shape))] += pi * q
+  return pq
+
+def poly_pow(p, n):
+  assert isint(n) and n >= 0
+  if n == 0:
+    return numpy.ones((1,)*p.ndim)
+  if n == 1:
+    return p
+  q = poly_pow(poly_mul(p, p), n//2)
+  if n%2:
+    return poly_mul(q, p)
+  return q
+
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
