@@ -31,6 +31,17 @@ class elem(TestCase):
           cpoints, cweights = cref.getischeme('vertex{}'.format(n-1))
           numpy.testing.assert_equal(ctrans.apply(cpoints), vals)
 
+  @parametrize.enable_if(lambda ndims, **kwargs: sum(ndims) >= 1)
+  def test_swap(self):
+    for iedge, (etrans, eref) in enumerate(self.ref.edges):
+      for ichild, (ctrans, cref) in enumerate(eref.children):
+        swapped_up = etrans.swapup(ctrans)
+        self.assertNotEqual(swapped_up, None)
+        ctrans_, etrans_ = swapped_up
+        self.assertEqual(etrans * ctrans, ctrans_ * etrans_)
+        swapped_down = etrans_.swapdown(ctrans_)
+        self.assertEqual(swapped_down, (etrans, ctrans))
+
   @parametrize.enable_if(lambda ndims, **kwargs: sum(ndims) >= 2)
   def test_ribbons(self):
     self.ref.ribbons

@@ -9,11 +9,11 @@ def neighbor( elem1, elem2 ):
   ncommon = sum( v in elem1_vertices for v in elem2.vertices )
   if not ncommon:
     return -1
-  if elem1.reference == elem2.reference == element.getsimplex(1):
+  if elem1.ndims == elem2.ndims == 1:
     return {2:0,1:1}[ncommon]
-  if elem1.reference == elem2.reference == element.getsimplex(1)**2:
+  if elem1.ndims == elem2.ndims == 2:
     return {4:0,2:1,1:2}[ncommon]
-  if elem1.reference == elem2.reference == element.getsimplex(1)**3:
+  if elem1.ndims == elem2.ndims == 3:
     return {8:0,4:1,2:2,1:3}[ncommon]
   raise NotImplementedError( '%s, %s' % ( elem1.reference, elem2.reference ) )
 

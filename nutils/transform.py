@@ -113,16 +113,11 @@ def linearfrom(chain, ndims):
       raise Exception( 'failed to find {}D coordinate system'.format(ndims) )
   if not chain:
     return numpy.eye(ndims)
-  scale = 1.
   linear = numpy.eye(chain[-1].fromdims)
   for trans in reversed(chain):
-    if isinstance(trans, Scale):
-      scale *= trans.scale
-    else:
-      linear = numpy.dot(trans.linear, linear)
-      if isinstance(trans, Updim):
-        linear = numpy.concatenate([linear, trans.ext[:,_]], axis=1)
-  linear *= scale
+    linear = numpy.dot(trans.linear, linear)
+    if trans.todims == trans.fromdims + 1:
+      linear = numpy.concatenate([linear, trans.ext[:,_]], axis=1)
   n, m = linear.shape
   if m >= ndims:
     return linear[:,:ndims]
@@ -185,6 +180,7 @@ class Matrix(TransformItem):
 class Square(Matrix):
 
   def __init__(self, linear:numeric.const, offset:numeric.const):
+    assert linear.shape[0] == linear.shape[1]
     self._transform_matrix = {}
     super().__init__(linear, offset)
 
@@ -197,7 +193,7 @@ class Square(Matrix):
 
   @property
   def isflipped(self):
-    return self.det < 0
+    return self.fromdims > 0 and self.det < 0
 
   def transform_poly(self, coeffs):
     assert coeffs.ndim == self.fromdims + 1
@@ -283,52 +279,78 @@ class Scale(Square):
 class Updim(Matrix):
 
   def __init__(self, linear:numeric.const, offset:numeric.const, isflipped:bool):
-    assert linear.shape[0] > linear.shape[1]
+    assert linear.shape[0] == linear.shape[1] + 1
     self.isflipped = isflipped
     super().__init__(linear, offset)
 
   @cache.property
   def ext(self):
-    ext = numeric.ext( self.linear )
-    return -ext if self.isflipped else ext
+    ext = numeric.ext(self.linear)
+    return numeric.const(-ext if self.isflipped else ext, copy=False)
 
   @property
   def flipped(self):
     return Updim(self.linear, self.offset, not self.isflipped)
 
-  @cache.property
-  def orthoaxes(self):
-    # returns a tuple of indices such that eye(todims).take(orthoaxes,
-    # axis=0).dot(self.linear) == eye(fromdims), if such a set exists; this
-    # coincides with all the simplex and tensor element edges for which edge
-    # and child transforms can be swapped. used in swapdown.
-    orthoaxes = []
-    for e in numpy.eye(self.fromdims):
-      i, = numpy.equal(self.linear, e).all(axis=1).nonzero()
-      if len(i) != 1:
-        return
-      orthoaxes.append(i[0])
-    return tuple(orthoaxes)
+class SimplexEdge(Updim):
+
+  swap = (
+    ((1,0), (2,0), (3,0), (7,1)),
+    ((0,1), (2,1), (3,1), (6,1)),
+    ((0,2), (1,2), (3,2), (5,1)),
+    ((0,3), (1,3), (2,3), (4,3)),
+  )
+
+  def __init__(self, ndims, iedge):
+    assert ndims >= iedge >= 0
+    self.iedge = iedge
+    vertices = numpy.concatenate([numpy.zeros(ndims)[_,:], numpy.eye(ndims)], axis=0)
+    coords = vertices[list(range(iedge))+list(range(iedge+1,ndims+1))]
+    super().__init__((coords[1:]-coords[0]).T, coords[0], iedge%2)
 
   def swapup(self, other):
     # prioritize ascending transformations, i.e. change updim << scale to scale << updim
-    if self.orthoaxes is not None and isinstance(other, Scale) and other.scale == .5:
-      return Scale(.5, self.apply(other.offset) - .5 * self.offset), self
+    if isinstance(other, SimplexChild):
+      ichild, iedge = self.swap[self.iedge][other.ichild]
+      return SimplexChild(self.todims, ichild), SimplexEdge(self.todims, iedge)
 
   def swapdown(self, other):
     # prioritize decending transformations, i.e. change scale << updim to updim << scale
-    if isinstance(other, Scale) and other.scale == .5:
-      orthoaxes = self.orthoaxes
-      if orthoaxes is not None:
-        newlinear = .5 * self.linear.take(orthoaxes, axis=0)
-        newoffset = (other.apply(self.offset) - self.offset).take(orthoaxes, axis=0)
-        if numpy.equal(newlinear, numpy.eye(len(newlinear)) * .5).all():
-          newtrans = Scale(.5, newoffset)
+    if isinstance(other, SimplexChild):
+      key = other.ichild, self.iedge
+      for iedge, children in enumerate(self.swap):
+        try:
+          ichild = children.index(key)
+        except ValueError:
+          pass
         else:
-          newtrans = Matrix(newlinear, newoffset)
-        if self * newtrans == other * self:
-          return self, newtrans
-      return ScaledUpdim(other, self), Identity(self.fromdims)
+          return SimplexEdge(self.todims, iedge), SimplexChild(self.fromdims, ichild)
+
+class SimplexChild(Square):
+
+  def __init__(self, ndims, ichild):
+    self.ichild = ichild
+    if ichild <= ndims:
+      linear = numpy.eye(ndims) * .5
+      offset = linear[ichild-1] if ichild else numpy.zeros(ndims)
+    elif ndims == 2 and ichild == 3:
+      linear = (-.5,0), (.5,.5)
+      offset = .5, 0
+    elif ndims == 3 and ichild == 4:
+      linear = (-.5,0,-.5), (.5,.5,0), (0,0,.5)
+      offset = .5, 0, 0
+    elif ndims == 3 and ichild == 5:
+      linear = (0,-.5,0), (.5,0,0), (0,.5,.5)
+      offset = .5, 0, 0
+    elif ndims == 3 and ichild == 6:
+      linear = (.5,0,0), (0,-.5,0), (0,.5,.5)
+      offset = 0, .5, 0
+    elif ndims == 3 and ichild == 7:
+      linear = (-.5,0,-.5), (-.5,-.5,0), (.5,.5,.5)
+      offset = .5, .5, 0
+    else:
+      raise NotImplementedError
+    super().__init__(linear, offset)
 
 class Slice(Matrix):
 
@@ -352,6 +374,59 @@ class ScaledUpdim(Updim):
   def swapup(self, other):
     if isinstance(other, Identity):
       return self.trans1, self.trans2
+
+class TensorEdge1(Updim):
+
+  def __init__(self, trans1, ndims2):
+    self.trans = trans1
+    super().__init__(linear=numeric.blockdiag([trans1.linear, numpy.eye(ndims2)]), offset=numpy.concatenate([trans1.offset, numpy.zeros(ndims2)]), isflipped=trans1.isflipped)
+
+  def swapup(self, other):
+    # prioritize ascending transformations, i.e. change updim << scale to scale << updim
+    if isinstance(other, TensorChild) and self.trans.fromdims == other.trans1.todims:
+      child, edge = self.trans.swapup(other.trans1)
+      return TensorChild(child, other.trans2), TensorEdge1(edge, other.trans2.fromdims)
+
+  def swapdown(self, other):
+    # prioritize ascending transformations, i.e. change scale << updim to updim << scale
+    if isinstance(other, TensorChild) and other.trans1.fromdims == self.trans.todims:
+      swapped = self.trans.swapdown(other.trans1)
+      if swapped:
+        edge, child = swapped
+        return TensorEdge1(edge, other.trans2.todims), TensorChild(child, other.trans2)
+
+class TensorEdge2(Updim):
+
+  def __init__(self, ndims1, trans2):
+    self.trans = trans2
+    super().__init__(linear=numeric.blockdiag([numpy.eye(ndims1), trans2.linear]), offset=numpy.concatenate([numpy.zeros(ndims1), trans2.offset]), isflipped=trans2.isflipped^(ndims1%2))
+
+  def swapup(self, other):
+    # prioritize ascending transformations, i.e. change updim << scale to scale << updim
+    if isinstance(other, TensorChild) and self.trans.fromdims == other.trans2.todims:
+      child, edge = self.trans.swapup(other.trans2)
+      return TensorChild(other.trans1, child), TensorEdge2(other.trans1.fromdims, edge)
+
+  def swapdown(self, other):
+    # prioritize ascending transformations, i.e. change scale << updim to updim << scale
+    if isinstance(other, TensorChild) and other.trans2.fromdims == self.trans.todims:
+      swapped = self.trans.swapdown(other.trans2)
+      if swapped:
+        edge, child = swapped
+        return TensorEdge2(other.trans1.todims, edge), TensorChild(other.trans1, child)
+
+class TensorChild(Square):
+
+  def __init__(self, trans1, trans2):
+    self.trans1 = trans1
+    self.trans2 = trans2
+    linear = numeric.blockdiag([trans1.linear, trans2.linear])
+    offset = numpy.concatenate([trans1.offset, trans2.offset])
+    super().__init__(linear, offset)
+
+  @cache.property
+  def det(self):
+    return self.trans1.det * self.trans2.det
 
 class VertexTransform(TransformItem):
 
@@ -414,17 +489,5 @@ class RootTransEdges(VertexTransform):
   def __str__(self):
     return repr(','.join(self.name.flat)+'*')
 
-
-## CONSTRUCTORS
-
-def simplex(coords, isflipped):
-  coords = numpy.asarray(coords)
-  offset = coords[0]
-  return Updim((coords[1:]-offset).T, offset, isflipped=isflipped)
-
-def tensor(trans1, trans2):
-  offset = numpy.concatenate([trans1.offset, trans2.offset])
-  return Scale(trans1.scale, offset) if isinstance(trans1, Scale) and isinstance(trans2, Scale) and trans1.scale == trans2.scale \
-    else Square(numeric.blockdiag([trans1.linear, trans2.linear]), offset)
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

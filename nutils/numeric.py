@@ -474,7 +474,9 @@ def det_exact( A ):
   # for some reason, numpy.linalg.det suffers from rounding errors
   A = numpy.asarray( A )
   assert A.ndim == 2 and A.shape[0] == A.shape[1]
-  if len(A) == 1:
+  if len(A) == 0:
+    det = 1.
+  elif len(A) == 1:
     det = A[0,0]
   elif len(A) == 2:
     ((a,b),(c,d)) = A

@@ -479,12 +479,21 @@ class SimplexReference( Reference ):
 
   @cache.property
   def edge_refs( self ):
+    assert self.ndims > 0
     return (getsimplex(self.ndims-1),) * (self.ndims+1)
 
   @cache.property
   def edge_transforms( self ):
     assert self.ndims > 0
-    return tuple( transform.simplex( self.vertices[list(range(i))+list(range(i+1,self.ndims+1))], isflipped=i%2==1 ) for i in range(self.ndims+1) )
+    return tuple(transform.SimplexEdge(self.ndims, i) for i in range(self.ndims+1))
+
+  @property
+  def child_refs( self ):
+    return tuple([self] * (2**self.ndims))
+
+  @property
+  def child_transforms( self ):
+    return tuple(transform.SimplexChild(self.ndims, ichild) for ichild in range(2**self.ndims))
 
   @cache.property
   def permutation_transforms( self ):
@@ -569,14 +578,6 @@ class PointReference( SimplexReference ):
   def __init__(self):
     super().__init__(ndims=0)
 
-  @property
-  def child_transforms( self ):
-    return transform.Scale(.5, numpy.zeros(0)),
-
-  @property
-  def child_refs( self ):
-    return self,
-
   def getischeme( self, ischeme ):
     return numeric.const(numpy.empty([1,0])), numeric.const([1.])
 
@@ -589,14 +590,6 @@ class LineReference( SimplexReference ):
   def __init__(self):
     self._bernsteincache = [] # TEMPORARY
     super().__init__(ndims=1)
-
-  @cache.property
-  def child_transforms( self ):
-    return transform.Scale(.5, [0.]), transform.Scale(.5, [.5])
-
-  @property
-  def child_refs( self ):
-    return self, self
 
   def getischeme_gauss( self, degree ):
     assert isinstance( degree, int ) and degree >= 0
@@ -627,14 +620,6 @@ class TriangleReference( SimplexReference ):
 
   def __init__(self):
     super().__init__(ndims=2)
-
-  @cache.property
-  def child_transforms( self ):
-    return transform.Scale(.5, [0.,0.]), transform.Scale(.5, [0,.5]), transform.Scale(.5, [.5,0]), transform.Square([[-.5,0],[.5,.5]], [.5,0])
-
-  @property
-  def child_refs( self ):
-    return self, self, self, self
 
   def getischeme_gauss( self, degree ):
     '''get integration scheme
@@ -706,7 +691,7 @@ class TriangleReference( SimplexReference ):
     cvals = []
     for i in range(mp):
       j = numpy.arange(mp-i)
-      cvals.append( [ vals[b+a*np-(a*(a-1))//2] for a, b in [(i,j),(mp-1+i,j),(i,mp-1+j),(i+j,mp-1-j)] ] )
+      cvals.append( [ vals[b+a*np-(a*(a-1))//2] for a, b in [(i,j),(i,mp-1+j),(mp-1+i,j),(i+j,mp-1-j)] ] )
     return numpy.concatenate( cvals, axis=1 )
 
   def inside( self, point, eps=0 ):
@@ -742,17 +727,6 @@ class TetrahedronReference( SimplexReference ):
 
   def __init__(self):
     super().__init__(ndims=3)
-
-  @cache.property
-  def child_transforms( self ):
-    offset = numpy.array([1,0,0,0])
-    linear = numpy.array([[-1,-1,-1],[1,0,0],[0,1,0],[0,0,1]])
-    points, weights = self.getischeme_vertex(1)
-    return tuple(transform.Square(points[child_vertices].T.dot(linear), points[child_vertices].T.dot(offset)) for child_vertices in self._children_vertices)
-
-  @property
-  def child_refs( self ):
-    return (self,)*self.nchildren
 
   def getindices_vertex( self, n ):
     m = 2**n+1
@@ -939,9 +913,9 @@ class TensorReference( Reference ):
   def edge_transforms( self ):
     edge_transforms = []
     if self.ref1.ndims:
-      edge_transforms.extend(transform.Updim(numeric.blockdiag([trans1.linear, numpy.eye(self.ref2.ndims)]), numpy.concatenate([trans1.offset, numpy.zeros(self.ref2.ndims)]), isflipped=trans1.isflipped) for trans1 in self.ref1.edge_transforms)
+      edge_transforms.extend(transform.TensorEdge1(trans1, self.ref2.ndims) for trans1 in self.ref1.edge_transforms)
     if self.ref2.ndims:
-      edge_transforms.extend(transform.Updim(numeric.blockdiag([numpy.eye(self.ref1.ndims), trans2.linear]), numpy.concatenate([numpy.zeros(self.ref1.ndims), trans2.offset]), isflipped=trans2.isflipped if self.ref1.ndims%2==0 else not trans2.isflipped) for trans2 in self.ref2.edge_transforms)
+      edge_transforms.extend(transform.TensorEdge2(self.ref1.ndims, trans2) for trans2 in self.ref2.edge_transforms)
     return tuple(edge_transforms)
 
   @property
@@ -977,8 +951,8 @@ class TensorReference( Reference ):
     return ribbons
 
   @cache.property
-  def child_transforms( self ):
-    return [ transform.tensor(trans1,trans2) for trans1 in self.ref1.child_transforms for trans2 in self.ref2.child_transforms ]
+  def child_transforms(self):
+    return tuple(transform.TensorChild(trans1, trans2) for trans1 in self.ref1.child_transforms for trans2 in self.ref2.child_transforms)
 
   @property
   def child_refs( self ):
@@ -989,7 +963,7 @@ class TensorReference( Reference ):
 
   @property
   def simplices( self ):
-    return [ ( transform.tensor(trans1,trans2), TensorReference( simplex1, simplex2 ) ) for trans1, simplex1 in self.ref1.simplices for trans2, simplex2 in self.ref2.simplices ]
+    return tuple((transform.TensorChild(trans1, trans2), TensorReference(simplex1, simplex2)) for trans1, simplex1 in self.ref1.simplices for trans2, simplex2 in self.ref2.simplices)
 
   def get_ndofs(self, degree):
     return self.ref1.get_ndofs(degree)*self.ref2.get_ndofs(degree)
