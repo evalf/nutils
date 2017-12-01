@@ -852,7 +852,7 @@ class TensorReference( Reference ):
     vertices = numpy.empty( ( ref1.nverts, ref2.nverts, ndims ), dtype=int )
     vertices[:,:,:ref1.ndims] = ref1.vertices[:,_]
     vertices[:,:,ref1.ndims:] = ref2.vertices[_,:]
-    super().__init__(vertices.reshape(-1,ndims))
+    super().__init__(vertices.reshape((ref1.nverts*ref2.nverts),ndims))
     if core.getprop( 'selfcheck', False ):
       self.check_edges()
 
