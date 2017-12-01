@@ -991,23 +991,51 @@ class TensorReference( Reference ):
       dofs2 = self.ref2.get_edge_dofs(degree, iedge-self.ref1.nedges)
     return numeric.const(tuple(d1*nd2+d2 for d1, d2 in itertools.product(dofs1, dofs2)), dtype=int)
 
+  @property
+  def _flat_refs(self):
+    for ref in self.ref1, self.ref2:
+      if isinstance(ref, TensorReference):
+        yield from ref._flat_refs
+      else:
+        yield ref
+
   def get_dof_transpose_map(self, degree, vertex_transpose_map):
     vertex_transpose_map = tuple(vertex_transpose_map)
-    nd2 = self.ref2.get_ndofs(degree)
-    if len(vertex_transpose_map) != self.nverts or set(vertex_transpose_map) != set(range(self.nverts)):
+    if len(vertex_transpose_map) != self.nverts:
       raise ValueError('invalid vertex indices: {!r}'.format(vertex_transpose_map))
-    elif all(i < self.ref1.nverts for i in vertex_transpose_map[:self.ref1.nverts]):
-      # Normal.
-      indices1 = self.ref1.get_dof_transpose_map(degree, vertex_transpose_map[:self.ref1.nverts])
-      indices2 = self.ref2.get_dof_transpose_map(degree, tuple(i-self.ref1.nverts for i in vertex_transpose_map[self.ref1.nverts:]))
-      return numeric.const(tuple(i1*nd2+i2 for i1, i2 in itertools.product(indices1, indices2)), dtype=int)
-    elif all(i < self.ref1.nverts for i in vertex_transpose_map[self.ref2.nverts:]):
-      # `ref1` and `ref2` are swapped.
-      indices1 = self.ref1.get_dof_transpose_map(degree, vertex_transpose_map[self.ref2.nverts:])
-      indices2 = self.ref2.get_dof_transpose_map(degree, tuple(i-self.ref1.nverts for i in vertex_transpose_map[:self.ref2.nverts]))
-      return numeric.const(tuple(i1*nd2+i2 for i2, i1 in itertools.product(indices2, indices1)), dtype=int)
-    else:
+    refs = tuple(ref for ref in self._flat_refs if ref.nverts > 1)
+
+    # Let `ref_verts[i]` be a permutation of `range(refs[i].nverts)`.  The
+    # `vertex_transpose_map` should be the tensor product of the
+    # `ref_verts[i]*vertex_strides[i]` for all `i`, permuted by `perm` and
+    # flattened.  The `ref_strides` recovers the original structure from the
+    # permuted and flattened `vertex_transpose_map`.  We reverse engineer the
+    # per ref vertices, `ref_verts`, and permutation of the references, `perm`,
+    # and apply the same permutation and flattening to the tensor product of
+    # the dofs.
+
+    stride = 1
+    vertex_strides = []
+    for ref in refs[::-1]:
+      vertex_strides.insert(0, stride)
+      stride *= ref.nverts
+
+    verts = numpy.array(0, dtype=int)
+    dofs = numpy.array(0, dtype=int)
+    ref_strides = []
+    for ref, stride in zip(refs, vertex_strides):
+      ref_idx = [vertex_transpose_map.index(i*stride) for i in range(ref.nverts)]
+      ref_verts = numpy.argsort(ref_idx)
+      verts = verts[...,None]*len(ref_verts)+ref_verts
+      ref_dofs = ref.get_dof_transpose_map(degree, ref_verts)
+      dofs = dofs[...,None]*len(ref_dofs)+ref_dofs
+      ref_strides.append(ref_idx[ref_verts[1]]-ref_idx[ref_verts[0]])
+    perm = numpy.argsort(ref_strides)[::-1]
+    # Verify that `vertex_transpose_map` is in fact a tensor product of the
+    # `ref_verts`.
+    if not numpy.all(numpy.equal(numpy.transpose(verts, perm).ravel(), vertex_transpose_map)):
       raise ValueError('invalid transformation: {!r}'.format(vertex_transpose_map))
+    return numeric.const(numpy.transpose(dofs, perm).ravel())
 
 class Cone( Reference ):
   'cone'

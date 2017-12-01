@@ -1,5 +1,6 @@
 from nutils import *
 from . import *
+import itertools
 
 @parametrize
 class elem(TestCase):
@@ -34,7 +35,19 @@ class elem(TestCase):
   def test_ribbons(self):
     self.ref.ribbons
 
+  def test_dof_transpose_map(self):
+    nverts = tuple(element.getsimplex(ndim).nverts for ndim in self.ndims)
+    i = numpy.arange(util.product(nverts)).reshape(nverts)
+    for perm_ref_order, *perms_refs in itertools.product(*(itertools.permutations(range(n)) for n in (len(self.ndims),)+nverts)):
+        j = i
+        for k, perm in enumerate(perms_refs):
+          j = numpy.take(j, perm, axis=k)
+        j = tuple(numpy.transpose(j, perm_ref_order).ravel())
+        with self.subTest(perm_ref_order=perm_ref_order, perms_refs=perms_refs):
+          self.assertEqual(j, tuple(self.ref.get_dof_transpose_map(1, j)))
+
 elem('point', ndims=[0], exactcentroid=numpy.zeros((0,)))
+elem('point2', ndims=[0,0], exactcentroid=numpy.zeros((0,)))
 elem('line', ndims=[1], exactcentroid=[.5])
 elem('triangle', ndims=[2], exactcentroid=[1/3]*2)
 elem('tetrahedron', ndims=[3], exactcentroid=[1/4]*3)
