@@ -2766,37 +2766,6 @@ def _matchndim( *arrays ):
   ndim = builtins.max( array.ndim for array in arrays )
   return tuple(array[(_,)*(ndim-array.ndim)] for array in arrays)
 
-def _obj2str( obj ):
-  'convert object to string'
-
-  if numeric.isarray(obj):
-    if obj.size < 6:
-      return _obj2str(obj.tolist())
-    return 'array<%s>' % 'x'.join( str(n) for n in obj.shape )
-  if isinstance( obj, list ):
-    if len(obj) < 6:
-      return '[%s]' % ','.join( _obj2str(o) for o in obj )
-    return '[#%d]' % len(obj)
-  if isinstance( obj, (tuple,set) ):
-    if len(obj) < 6:
-      return '(%s)' % ','.join( _obj2str(o) for o in obj )
-    return '(#%d)' % len(obj)
-  if isinstance(obj, collections.abc.Mapping):
-    return '{#%d}' % len(obj)
-  if isinstance( obj, slice ):
-    I = ''
-    if obj.start is not None:
-      I += str(obj.start)
-    if obj.step is not None:
-      I += ':' + str(obj.step)
-    I += ':'
-    if obj.stop is not None:
-      I += str(obj.stop)
-    return I
-  if obj is Ellipsis:
-    return '...'
-  return str(obj)
-
 def _invtrans(trans):
   trans = numpy.asarray(trans)
   assert trans.dtype == int

@@ -22,7 +22,7 @@
 The transform module.
 """
 
-from . import cache, numeric, _
+from . import cache, numeric, util, _
 import numpy, collections, itertools, functools, operator
 
 
@@ -149,6 +149,9 @@ class Bifurcate(TransformItem):
     self.trans2 = trans2 + (Slice(trans1[-1].fromdims, fromdims, fromdims),)
     super().__init__(todims=trans1[0].todims if trans1[0].todims == trans2[0].todims else None, fromdims=fromdims)
 
+  def __str__(self):
+    return '{}<>{}'.format(self.trans1, self.trans2)
+
   def apply(self, points):
     return apply(self.trans1, points), apply(self.trans2, points)
 
@@ -175,7 +178,7 @@ class Matrix(TransformItem):
       else Matrix(linear, offset)
 
   def __str__( self ):
-    return numeric.fstr(self.offset) + ''.join('+{}*x{}'.format(numeric.fstr(v), i) for i, v in enumerate(self.linear.T))
+    return util.obj2str(self.offset) + ''.join('+{}*x{}'.format(util.obj2str(v), i) for i, v in enumerate(self.linear.T))
 
 class Square(Matrix):
 
@@ -234,7 +237,7 @@ class Shift(Square):
     return numeric.const(points - self.offset, copy=False)
 
   def __str__(self):
-    return '{}+x'.format(numeric.fstr(self.offset))
+    return '{}+x'.format(util.obj2str(self.offset))
 
 class Identity(Shift):
 
@@ -268,7 +271,7 @@ class Scale(Square):
     return self.scale**self.todims
 
   def __str__(self):
-    return '{}+{}*x'.format( numeric.fstr(self.offset), numeric.fstr(self.linear) )
+    return '{}+{}*x'.format(util.obj2str(self.offset), self.scale)
 
   def __mul__(self, other):
     assert isinstance(other, Matrix) and self.fromdims == other.todims

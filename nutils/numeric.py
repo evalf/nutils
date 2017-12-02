@@ -519,50 +519,6 @@ def ext( A ):
     raise NotImplementedError( 'shape=%s' % (A.shape,) )
   return ext
 
-def fextract( A, single=False ):
-  A = numpy.asarray( A, dtype=numpy.float64 )
-  bits = A.view( numpy.int64 ).ravel()
-  nz = ( bits & 0x7fffffffffffffff ).astype(bool)
-  if not nz.any():
-    return ( numpy.zeros( A.shape, dtype=int ), 0 ) if single else numpy.zeros( (2,)+A.shape, dtype=int )
-  bits = bits[nz]
-  sign = numpy.sign( bits )
-  exponent = ( (bits>>52) & 0x7ff ) - 1075
-  mantissa = 0x10000000000000 | ( bits & 0xfffffffffffff )
-  # from here on A.flat[nz] == sign * mantissa * 2**exponent
-  for shift in 32, 16, 8, 4, 2, 1:
-    I = mantissa & ((1<<shift)-1) == 0
-    if I.any():
-      mantissa[I] >>= shift
-      exponent[I] += shift
-  if not single:
-    retval = numpy.zeros( (2,)+A.shape, dtype=int )
-    retval.reshape(2,-1)[:,nz] = sign * mantissa, exponent
-    return retval
-  minexp = numpy.min( exponent )
-  shift = exponent - minexp
-  assert not numpy.any( mantissa >> (63-shift) )
-  fullmantissa = numpy.zeros( A.shape, dtype=int )
-  fullmantissa.flat[nz] = sign * (mantissa << shift)
-  return fullmantissa, minexp
-
-def fconstruct( m, e ):
-  return numpy.asarray( m ) * numpy.power( 2., e )
-
-def fstr( A ):
-  if A.ndim:
-    return '[{}]'.format( ','.join( fstr(a) for a in A ) )
-  mantissa, exp = fextract( A )
-  return str( mantissa << exp ) if exp >= 0 else '{}/{}'.format( mantissa, 1<<(-exp) )
-
-def fhex( A ):
-  if A.ndim:
-    return '[{}]'.format( ','.join( fhex(a) for a in A ) )
-  mantissa, exp = fextract( A )
-  div, mod = divmod( exp, 4 )
-  h = '{:+x}'.format( mantissa << mod )[1:]
-  return ( '-' if mantissa < 0 else '' ) + '0x' + ( h.ljust( len(h)+div, '0' ) if div >= 0 else ( h[:div] or '0' ) + '.' + h[div:].rjust( -div, '0' ) )
-
 def power( a, b ):
   a = numpy.asarray( a )
   b = numpy.asarray( b )

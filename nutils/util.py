@@ -26,7 +26,7 @@ creation and initiation of a log file.
 """
 
 from . import numeric
-import sys, os, numpy, weakref, warnings, collections.abc, inspect, functools, operator
+import sys, os, numpy, weakref, warnings, collections.abc, inspect, functools, operator, numbers
 
 def isiterable( obj ):
   'check for iterability'
@@ -534,5 +534,11 @@ def enforcetypes(f, signature=None):
       bound.arguments[name] = op(bound.arguments[name])
     return f(*bound.args, **bound.kwargs)
   return wrapped
+
+def obj2str(obj):
+  '''compact, lossy string representation of arbitrary object'''
+  return '['+','.join(obj2str(item) for item in obj)+']' if isinstance(obj, collections.abc.Iterable) \
+    else str(obj).strip('0').rstrip('.') or '0' if isinstance(obj, numbers.Real) \
+    else str(obj)
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
