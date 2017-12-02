@@ -1056,7 +1056,7 @@ class StructuredTopology( Topology ):
     Topology.__init__( self, len(self.shape) )
 
   def __iter__( self ):
-    reference = element.getsimplex(1)**self.ndims
+    reference = util.product(element.getsimplex(1 if axis.isdim else 0) for axis in self.axes)
     return ( element.Element( reference, trans, opp, oriented=True ) for trans, opp in zip( self._transform.flat, self._opposite.flat ) )
 
   def __len__( self ):
@@ -1096,9 +1096,12 @@ class StructuredTopology( Topology ):
     assert nrefine >= 0
 
     updim = []
-    for order, side, idim in sorted( (axis.ibound,axis.side,idim) for idim, axis in enumerate(axes) if not axis.isdim ):
-      ref = element.LineReference()**(len(axes)-len(updim))
-      updim.append(ref.edge_transforms[idim*2+1-side])
+    rmdims = numpy.zeros(len(axes), dtype=bool)
+    for order, side, idim in sorted((axis.ibound, axis.side, idim) for idim, axis in enumerate(axes) if not axis.isdim):
+      ref = util.product(element.getsimplex(0 if rmdim else 1) for rmdim in rmdims)
+      iedge = (idim - rmdims[:idim].sum()) * 2 + 1 - side
+      updim.append(ref.edge_transforms[iedge])
+      rmdims[idim] = True
 
     grid = [ numpy.arange(axis.i>>nrefine, ((axis.j-1)>>nrefine)+1) if axis.isdim else numpy.array([(axis.i-1 if axis.side else axis.j)>>nrefine]) for axis in axes ]
     indices = numeric.broadcast( *numeric.ix(grid) )
@@ -1133,7 +1136,7 @@ class StructuredTopology( Topology ):
   @property
   def structure( self ):
     warnings.warn( 'topology.structure will be removed in future', DeprecationWarning )
-    reference = element.getsimplex(1)**self.ndims
+    reference = util.product(element.getsimplex(1 if axis.isdim else 0) for axis in self.axes)
     return numeric.asobjvector( element.Element( reference, trans, opp, oriented=True ) for trans, opp in numpy.broadcast( self._transform, self._opposite ) ).reshape( self.shape )
 
   @cache.property

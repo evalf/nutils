@@ -153,11 +153,9 @@ class Reference( cache.Immutable ):
   def empty( self ):
     return EmptyReference( self.ndims )
 
-  def __mul__( self, other ):
-    assert isinstance( other, Reference )
-    return other if self.ndims == 0 \
-      else self if other.ndims == 0 \
-      else TensorReference( self, other )
+  def __mul__(self, other):
+    assert isinstance(other, Reference)
+    return TensorReference(self, other)
 
   def __pow__( self, n ):
     assert numeric.isint( n ) and n >= 0
@@ -333,7 +331,7 @@ class Reference( cache.Immutable ):
     return Cone( self, trans, tip )
 
   def check_edges( self, tol=1e-10 ):
-    if not self:
+    if not self.ndims or not self:
       return
     x, w = self.getischeme( 'gauss1' )
     volume = w.sum()
@@ -855,15 +853,20 @@ class TensorReference( Reference ):
   _re_ischeme = re.compile( '([a-zA-Z]+)(.*)' )
 
   def __init__(self, ref1, ref2):
+    assert not isinstance(ref1, TensorReference)
     self.ref1 = ref1
     self.ref2 = ref2
     super().__init__(ref1.ndims + ref2.ndims)
     if core.getprop( 'selfcheck', False ):
       self.check_edges()
 
+  def __mul__(self, other):
+    assert isinstance(other, Reference)
+    return TensorReference(self.ref1, self.ref2 * other)
+
   @cache.property
   def vertices(self):
-    vertices = numpy.empty((self.ref1.nverts, self.ref2.nverts, self.ndims), dtype=int)
+    vertices = numpy.empty((self.ref1.nverts, self.ref2.nverts, self.ndims), dtype=float)
     vertices[:,:,:self.ref1.ndims] = self.ref1.vertices[:,_]
     vertices[:,:,self.ref1.ndims:] = self.ref2.vertices[_,:]
     return numeric.const(vertices.reshape(self.ref1.nverts*self.ref2.nverts, self.ndims), copy=False)
@@ -926,33 +929,36 @@ class TensorReference( Reference ):
         ischeme1 = ischeme2 = ischeme
     ipoints1, iweights1 = self.ref1.getischeme( ischeme1 )
     ipoints2, iweights2 = self.ref2.getischeme( ischeme2 )
-    ipoints = numpy.empty( (ipoints1.shape[0],ipoints2.shape[0],self.ndims) )
+    ipoints = numpy.empty((len(ipoints1), len(ipoints2), self.ndims))
     ipoints[:,:,0:self.ref1.ndims] = ipoints1[:,_,:self.ref1.ndims]
     ipoints[:,:,self.ref1.ndims:self.ndims] = ipoints2[_,:,:self.ref2.ndims]
     iweights = numeric.const((iweights1[:,_] * iweights2[_,:] ).ravel(), copy=False) if iweights1 is not None and iweights2 is not None else None
-    return numeric.const(ipoints.reshape(-1, self.ndims), copy=False), iweights
+    return numeric.const(ipoints.reshape(len(ipoints1) * len(ipoints2), self.ndims), copy=False), iweights
 
   @cache.property
   def edge_transforms( self ):
-    return tuple(
-      [ transform.Updim(
-        numeric.blockdiag([ trans1.linear, numpy.eye(self.ref2.ndims) ]),
-        numpy.concatenate([ trans1.offset, numpy.zeros(self.ref2.ndims) ]),
-        isflipped=trans1.isflipped )
-          for trans1 in self.ref1.edge_transforms ]
-   + [ transform.Updim(
-        numeric.blockdiag([ numpy.eye(self.ref1.ndims), trans2.linear ]),
-        numpy.concatenate([ numpy.zeros(self.ref1.ndims), trans2.offset ]),
-        isflipped=trans2.isflipped if self.ref1.ndims%2==0 else not trans2.isflipped )
-          for trans2 in self.ref2.edge_transforms ])
+    edge_transforms = []
+    if self.ref1.ndims:
+      edge_transforms.extend(transform.Updim(numeric.blockdiag([trans1.linear, numpy.eye(self.ref2.ndims)]), numpy.concatenate([trans1.offset, numpy.zeros(self.ref2.ndims)]), isflipped=trans1.isflipped) for trans1 in self.ref1.edge_transforms)
+    if self.ref2.ndims:
+      edge_transforms.extend(transform.Updim(numeric.blockdiag([numpy.eye(self.ref1.ndims), trans2.linear]), numpy.concatenate([numpy.zeros(self.ref1.ndims), trans2.offset]), isflipped=trans2.isflipped if self.ref1.ndims%2==0 else not trans2.isflipped) for trans2 in self.ref2.edge_transforms)
+    return tuple(edge_transforms)
 
   @property
   def edge_refs( self ):
-    return tuple([ edge1 * self.ref2 for edge1 in self.ref1.edge_refs ]
-               + [ self.ref1 * edge2 for edge2 in self.ref2.edge_refs ])
+    edge_refs = []
+    if self.ref1.ndims:
+      edge_refs.extend(edge1 * self.ref2 for edge1 in self.ref1.edge_refs)
+    if self.ref2.ndims:
+      edge_refs.extend(self.ref1 * edge2 for edge2 in self.ref2.edge_refs)
+    return tuple(edge_refs)
 
   @property
   def _ribbons( self ):
+    if self.ref1.ndims == 0:
+      return self.ref2.ribbons
+    if self.ref2.ndims == 0:
+      return self.ref1.ribbons
     ribbons = []
     for iedge1 in range( self.ref1.nedges ):
       #iedge = self.ref1.edge_refs[iedge] * self.ref2
