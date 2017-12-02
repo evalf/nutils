@@ -22,7 +22,7 @@
 The numeric module provides methods that are lacking from the numpy module.
 """
 
-import numpy, numbers, builtins
+import numpy, numbers, builtins, collections.abc
 
 _abc = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' # indices for einsum
 
@@ -618,7 +618,7 @@ def assert_allclose64(actual, data=None):
     data = data[80:]
   raise Exception(status)
 
-class const:
+class const(collections.abc.Sequence):
   __slots__ = '__base', '__hash'
 
   @staticmethod
