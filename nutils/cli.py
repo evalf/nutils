@@ -32,13 +32,6 @@ def _bool( s ):
     return False
   raise argparse.ArgumentTypeError( 'invalid boolean value: {!r}'.format(s) )
 
-def _relative_paths( basepath, path ):
-  baseparts = basepath.rstrip( os.path.sep ).split( os.path.sep )
-  parts = path.rstrip( os.path.sep ).split( os.path.sep )
-  if parts[:len(baseparts)] == baseparts:
-    for i in range( len(baseparts), len(parts) ):
-      yield os.path.sep.join(parts[:i]), os.path.sep.join(parts[i:])
-
 def _mkbox( *lines ):
   width = max( len(line) for line in lines )
   ul, ur, ll, lr, hh, vv = '┌┐└┘─│' if core.getprop('richoutput') else '++++-|'
@@ -112,10 +105,8 @@ def choose(*functions, cmd=True, args=None, scriptname=None):
   # set properties
   __scriptname__ = scriptname or os.path.basename(sys.argv[0])
   __nprocs__ = ns.nprocs
-  __outrootdir__ = os.path.abspath(os.path.expanduser(ns.outrootdir))
-  __cachedir__ = os.path.join( __outrootdir__, __scriptname__, 'cache' )
-  __outdir__ = os.path.abspath(os.path.expanduser(ns.outdir)) if ns.outdir \
-          else os.path.join( __outrootdir__, __scriptname__, datetime.datetime.now().strftime('%Y/%m/%d/%H-%M-%S/') )
+  __outrootdir__ = ns.outrootdir
+  __outdir__ = ns.outdir
   __verbose__ = ns.verbose
   __richoutput__ = ns.richoutput
   __htmloutput__ = ns.htmloutput
@@ -135,19 +126,32 @@ def choose(*functions, cmd=True, args=None, scriptname=None):
 def call( func, **kwargs ):
   '''set up compute environment and call function'''
 
+  starttime = datetime.datetime.now()
+  scriptname = core.getprop('scriptname')
+
   with contextlib.ExitStack() as stack:
 
     stack.callback( signal.signal, signal.SIGINT, signal.signal( signal.SIGINT, _sigint_handler ) )
 
-    outdir = core.getprop( 'outdir' )
-    os.makedirs( outdir ) # asserts nonexistence
+    outdir = os.path.expanduser(core.getprop('outdir'))
+    if outdir:
+      relpaths = ()
+    else:
+      outrootdir = os.path.expanduser(core.getprop('outrootdir'))
+      ymdt = starttime.strftime('%Y/%m/%d/%H-%M-%S/')
+      outdir = os.path.join(outrootdir, scriptname, ymdt)
+      __outdir__ = outdir # set property
+      __cachedir__ = os.path.join(outrootdir, scriptname, 'cache')
+      relpaths = (outrootdir, os.path.join(scriptname, ymdt)), (os.path.join(outrootdir, scriptname), ymdt)
+    os.makedirs(outdir) # asserts nonexistence
+
     if os.open in os.supports_dir_fd:
       __outdirfd__ = os.open( outdir, flags=os.O_RDONLY )
       stack.callback( os.close, __outdirfd__ )
 
     symlink = core.getprop( 'symlink', None )
     if symlink:
-      for base, relpath in _relative_paths( core.getprop('outrootdir'), outdir ):
+      for base, relpath in relpaths:
         target = os.path.join( base, symlink )
         if os.path.islink( target ):
           os.remove( target )
@@ -155,7 +159,7 @@ def call( func, **kwargs ):
 
     htmloutput = core.getprop( 'htmloutput', True )
     if htmloutput:
-      for base, relpath in _relative_paths( core.getprop('outrootdir'), outdir ):
+      for base, relpath in relpaths:
         with open( os.path.join(base,'log.html'), 'w' ) as redirlog:
           print( '<html><head>', file=redirlog )
           print( '<meta http-equiv="cache-control" content="max-age=0" />', file=redirlog )
@@ -165,8 +169,6 @@ def call( func, **kwargs ):
           print( '<meta http-equiv="pragma" content="no-cache" />', file=redirlog )
           print( '<meta http-equiv="refresh" content="0;URL={}" />'.format(os.path.join(relpath,'log.html')), file=redirlog )
           print( '</head></html>', file=redirlog )
-
-    scriptname = core.getprop( 'scriptname' )
 
     __log__ = log._mklog() if not htmloutput \
          else log.TeeLog( log._mklog(), log.HtmlLog( 'log.html', title=scriptname, scriptname=scriptname ) )
@@ -181,8 +183,6 @@ def call( func, **kwargs ):
           if parameter.annotation is not parameter.empty:
             argstr += ' ({})'.format( parameter.annotation )
           log.info( argstr )
-
-        starttime = datetime.datetime.now()
 
         log.info( '' )
         log.info( 'start {}'.format( starttime.ctime() ) )
