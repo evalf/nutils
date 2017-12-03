@@ -6,6 +6,24 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+Changed: command line interface
+
+  Command line parsers `cli.run` or `cli.choose` dropped support for
+  space separated arguments (--arg value), requiring argument and value
+  to be joined by an equals sign instead:
+
+  $ python script.py --arg=value
+
+  Boolean arguments are specified by omitting the value and prepending
+  'no' to the argument name for negation:
+
+  $ python script.py --pdb --norichoutput
+
+  For convenience, leading dashes have been made optional:
+
+  $ python script.py arg=value pdb norichoutput
+
+
 New: Topology intersections (deprecates common_refinement)
 
   Intersections between topologies can be made using the `&` operator.
