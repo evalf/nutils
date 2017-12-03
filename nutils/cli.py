@@ -85,7 +85,7 @@ def choose(*functions, cmd=True, args=None, scriptname=None):
   parser = argparse.ArgumentParser()
   parser.add_argument( '--nprocs', type=int, metavar='INT', default=core.globalproperties['nprocs'], help='number of processors' )
   parser.add_argument( '--outrootdir', type=str, metavar='PATH', default=core.globalproperties['outrootdir'], help='root directory for output' )
-  parser.add_argument( '--outdir', type=str, metavar='PATH', default=None, help='custom directory for output' )
+  parser.add_argument( '--outdir', type=str, metavar='PATH', default=core.globalproperties['outdir'], help='custom directory for output' )
   parser.add_argument( '--verbose', type=int, metavar='INT', default=core.globalproperties['verbose'], help='verbosity level' )
   parser.add_argument( '--richoutput', type=_bool, nargs='?', const=True, metavar='BOOL', default=core.globalproperties['richoutput'], help='use rich output (colors, unicode)' )
   parser.add_argument( '--htmloutput', type=_bool, nargs='?', const=True, metavar='BOOL', default=core.globalproperties['htmloutput'], help='generate a HTML log' )
@@ -114,7 +114,7 @@ def choose(*functions, cmd=True, args=None, scriptname=None):
   __nprocs__ = ns.nprocs
   __outrootdir__ = os.path.abspath(os.path.expanduser(ns.outrootdir))
   __cachedir__ = os.path.join( __outrootdir__, __scriptname__, 'cache' )
-  __outdir__ = os.path.abspath(os.path.expanduser(ns.outdir)) if ns.outdir is not None \
+  __outdir__ = os.path.abspath(os.path.expanduser(ns.outdir)) if ns.outdir \
           else os.path.join( __outrootdir__, __scriptname__, datetime.datetime.now().strftime('%Y/%m/%d/%H-%M-%S/') )
   __verbose__ = ns.verbose
   __richoutput__ = ns.richoutput

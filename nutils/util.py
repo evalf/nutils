@@ -346,7 +346,7 @@ def run( *functions ):
   __nprocs__ = properties['nprocs']
   __outrootdir__ = os.path.abspath(os.path.expanduser(properties['outrootdir']))
   __cachedir__ = os.path.join( __outrootdir__, __scriptname__, 'cache' )
-  __outdir__ = os.path.abspath(os.path.expanduser(properties['outdir'])) if properties['outdir'] != '.' \
+  __outdir__ = os.path.abspath(os.path.expanduser(properties['outdir'])) if properties['outdir'] \
           else os.path.join( __outrootdir__, __scriptname__, datetime.datetime.now().strftime('%Y/%m/%d/%H-%M-%S/') )
   __verbose__ = properties['verbose']
   __richoutput__ = properties['richoutput']
