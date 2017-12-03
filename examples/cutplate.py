@@ -10,7 +10,7 @@ def main(
     radius: 'cut-out radius' = .5,
     degree: 'polynomial degree' = 1,
     poisson: 'poisson ratio' = .25,
-    withplots: 'create plots' = True,
+    figures: 'create figures' = True,
   ):
 
   ns = function.Namespace(default_geometry_name='x0')
@@ -53,7 +53,7 @@ def main(
 
   # vizualize result
   ns = ns | dict(lhs=lhs)
-  if withplots:
+  if figures:
     vonmises = 'sqrt(stress_ij stress_ij - stress_ii stress_jj / 2)' @ ns
     x, colors = domain.simplex.elem_eval([ns.x, vonmises], ischeme='bezier5', separate=True)
     with plot.PyPlot('solution') as plt:
@@ -88,7 +88,7 @@ def conv(degree=1, nrefine=4):
 class test(unittest.TestCase):
 
   def test_tri_p1_refine2(self):
-    err, cons, lhs = main(degree=1, maxrefine=2, withplots=False)
+    err, cons, lhs = main(degree=1, maxrefine=2, figures=False)
     numeric.assert_allclose64(err,
       'eNoz0TE01Yk2sjAzT9U10zE1MDFN1TWNBQA3pQUL')
     numeric.assert_allclose64(cons,
@@ -101,7 +101,7 @@ class test(unittest.TestCase):
       'SLykI/mREu3oJMz1Xtnm2Vb4tcTRvBihRKoFEsRukcC8iDT6Yv/+AR6yS2Q=')
 
   def test_quad_p2_refine2(self):
-    err, cons, lhs = main(nelems=4, degree=2, maxrefine=2, withplots=False)
+    err, cons, lhs = main(nelems=4, degree=2, maxrefine=2, figures=False)
     numeric.assert_allclose64(err,
       'eNoz0TE01Yk2NbAwSNU11zE0MDZK1TWNBQA28wT6')
     numeric.assert_allclose64(cons,
@@ -116,7 +116,7 @@ class test(unittest.TestCase):
       'yXHOT7KO1f8Pzy6Cyw==')
 
   def test_quad_p2_refine3(self):
-    err, cons, lhs = main(nelems=4, degree=2, maxrefine=3, withplots=False)
+    err, cons, lhs = main(nelems=4, degree=2, maxrefine=3, figures=False)
     numeric.assert_allclose64(err,
       'eNoz0TE01Yk2NTA2TtU11zE0MDJL1TWNBQA24gT7')
     numeric.assert_allclose64(cons,

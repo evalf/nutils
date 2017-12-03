@@ -48,7 +48,7 @@ def main(
     uniform: 'use uniform refinement (default adaptive)' = False,
     basistype: 'basis function' = 'std',
     nrefine: 'maximum allowed number of refinements' = 7,
-    withplots: 'create plots' = True,
+    figures: 'create figures' = True,
   ):
 
   # construct domain
@@ -67,7 +67,7 @@ def main(
   log.info( 'exact solution lsqr harmonicity:', harmonicity )
 
   # prepare plotting
-  makeplots = MakePlots( geom, exact, fractions.Fraction(2 if uniform else degree*3,3) ) if withplots else lambda *args, **kwargs: None
+  makeplots = MakePlots( geom, exact, fractions.Fraction(2 if uniform else degree*3,3) ) if figures else lambda *args, **kwargs: None
 
   # start adaptive refinement
   for irefine in log.count( 'level', start=1 ):
@@ -118,7 +118,7 @@ def main(
 class test(unittest.TestCase):
 
   def test_p1_std(self):
-    lhsprimal, error_est_w = main(degree=1, solvetol=0, circle=False, uniform=False, basistype='std', nrefine=2, withplots=False)
+    lhsprimal, error_est_w = main(degree=1, solvetol=0, circle=False, uniform=False, basistype='std', nrefine=2, figures=False)
     numeric.assert_allclose64(lhsprimal,
       'eNpVkckNQzEIRBuyJfallijH9N9CbOYrUk5glgeMbbGvV0jXZ9syVb5WhGneQsfW2iegN7BPhY0TSlMS'
       'lTKl2TmtloParBafHafX2tGb3eitnN7tGTI1ShyIuICfYXCMBcAITNwV9izDDLJ3gVxEc8DucgDDWwBs'
@@ -138,7 +138,7 @@ class test(unittest.TestCase):
       'Be02XA==')
 
   def test_p2_spline(self):
-    lhsprimal, error_est_w = main(degree=2, solvetol=0, circle=False, uniform=False, basistype='spline', nrefine=1, withplots=False)
+    lhsprimal, error_est_w = main(degree=2, solvetol=0, circle=False, uniform=False, basistype='spline', nrefine=1, figures=False)
     numeric.assert_allclose64(lhsprimal,
       'eNpVkFEOg0EEhC/0b4LFcpamj73/FWqNNOkTiZkPow/b83LJ/Cx9bOu+dUvKrcxst65qvJuatGKVVLvx'
       'TXQbN+uJWUQzlMEQzIsRw1APMOwcMMwadkS4WQzFTj+4I7GMVYeRDqqLgFHe3hdMXQ/Dq+Z9F2dAyDEO'
@@ -155,7 +155,7 @@ class test(unittest.TestCase):
       'VO5UVdranJmwj1JpLjM3nIjcdy6hDagX6Gmf0P77vv8BTa37JQ==')
 
   def test_p1_std_circle(self):
-    lhsprimal, error_est_w = main(degree=1, solvetol=0, circle=True, uniform=False, basistype='std', nrefine=1, withplots=False)
+    lhsprimal, error_est_w = main(degree=1, solvetol=0, circle=True, uniform=False, basistype='std', nrefine=1, figures=False)
     numeric.assert_allclose64(lhsprimal,
       'eNpVj9sNQzEIQxdKpPAyMEvVz+6/QrkQVeoXCHNs0EW2XuDMz9alIvJUZuKnbiPoZxOtXaOWdu1oN5Bz'
       'ngaBgd0HVqNeYGgNUI3mIOrpw4Y3672iyzSt2YhJwXEaNnMmZjxsMe0W0Mk3oPNJ/OZ6XW8VR3HGza5J'

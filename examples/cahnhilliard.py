@@ -41,7 +41,7 @@ def main(
     maxtime: 'end time' = 1.,
     theta: 'contact angle (degrees)' = 90,
     init: 'initial condition (random/bubbles)' = 'random',
-    withplots: 'create plots' = True,
+    figures: 'create figures' = True,
   ):
 
   mineps = 1./nelems
@@ -93,7 +93,7 @@ def main(
 
   # solve time dependent problem
   nsteps = numeric.round(maxtime/timestep)
-  makeplots = MakePlots(domain, nsteps, ns) if withplots else lambda *args: None
+  makeplots = MakePlots(domain, nsteps, ns) if figures else lambda *args: None
   for istep, lhs in log.enumerate('timestep', solver.impliciteuler('lhs', target0='lhs0', residual=res, inertia=inertia, timestep=timestep, lhs0=lhs0)):
     makeplots(lhs)
     if istep == nsteps:
@@ -105,7 +105,7 @@ def main(
 class test(unittest.TestCase):
 
   def test(self):
-    lhs0, lhs = main(nelems=8, init='bubbles', timestep=.01, maxtime=.05, withplots=False)
+    lhs0, lhs = main(nelems=8, init='bubbles', timestep=.01, maxtime=.05, figures=False)
     numeric.assert_allclose64(lhs0,
       'eNrdktuthDAMRBsCyYnftazu5+2/hQ3xA0EJCx9YxDmZ8YSOwcfnNGD4P+k4xWDsAlFtF8TOu7BhseSC'
       'seRmGIVzFANgcfD6k7tuoINfxRTYuwl5dfDqWL1BIYLE5Z+Fo8RpneT00Fe41TqvVhszIAiYtJnenHSm'

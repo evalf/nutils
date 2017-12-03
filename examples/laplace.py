@@ -9,7 +9,7 @@ def main(
     degree: 'polynomial degree' = 1,
     basistype: 'basis function' = 'spline',
     solvetol: 'solver tolerance' = 1e-10,
-    withplots: 'create plots' = True,
+    figures: 'create figures' = True,
   ):
 
   # construct mesh
@@ -38,7 +38,7 @@ def main(
   ns |= dict(lhs=lhs)
 
   # plot solution
-  if withplots:
+  if figures:
     points, colors = domain.elem_eval([ns.x, ns.u], ischeme='bezier9', separate=True)
     with plot.PyPlot('solution', index=nelems) as plt:
       plt.mesh(points, colors, cmap='jet')
@@ -54,7 +54,7 @@ def main(
 class test(unittest.TestCase):
 
   def test_p1(self):
-    cons, lhs, err = main(nelems=4, degree=1, withplots=False, solvetol=0)
+    cons, lhs, err = main(nelems=4, degree=1, figures=False, solvetol=0)
     numeric.assert_allclose64(cons,
       'eNptyjkKwDAMRNELSeDREklnCSlSuPX9S9tlgouBz2OM4HRbeXQOYqjUDvVYkAua6A4HWucizbDORuMd'
       'nwUuOXmp58nRsP7692cCdHUoSw==')
@@ -64,7 +64,7 @@ class test(unittest.TestCase):
     numpy.testing.assert_almost_equal(err, 6.850e-3, decimal=6)
 
   def test_p2(self):
-    cons, lhs, err = main(nelems=4, degree=2, withplots=False, solvetol=0)
+    cons, lhs, err = main(nelems=4, degree=2, figures=False, solvetol=0)
     numeric.assert_allclose64(cons,
       'eNp9yjEOwDAIA8APgRQCBPyWqkMH1vx/TDNX6WDZ0tlInC7u0F4cJKrYzS7SipO6NexmGWZ7hEcWgwR4'
       'D0bzmZ/4GHqytIiTAcgfw8HuBTunOOw=')

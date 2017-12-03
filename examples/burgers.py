@@ -6,15 +6,14 @@ import numpy, unittest
 
 class MakePlots:
 
-  def __init__(self, domain, video):
+  def __init__(self, domain):
     self.domain = domain
-    self.plt = video and plot.PyPlotVideo('solution')
     self.index = 0
 
   def __call__(self, ns):
     self.index += 1
     xp, up = self.domain.elem_eval([ns.x, ns.u], ischeme='bezier7', separate=True)
-    with self.plt if self.plt else plot.PyPlot('solution', index=self.index) as plt:
+    with plot.PyPlot('solution', index=self.index) as plt:
       plt.mesh(xp, up)
       plt.clim(0, 1)
       plt.colorbar()
@@ -27,7 +26,7 @@ def main(
     tol: 'solver tolerance' = 1e-5,
     ndims: 'spatial dimension' = 1,
     endtime: 'end time, 0 for no end time' = 0,
-    withplots: 'create plots' = True,
+    figures: 'create figures' = True,
  ):
 
   # construct mesh, basis
@@ -47,7 +46,7 @@ def main(
   inertia = domain.integral('basis_n u' @ ns, geometry=ns.x, degree=5)
 
   # prepare plotting
-  makeplots = MakePlots(domain, video=withplots=='video') if withplots else lambda ns: None
+  makeplots = MakePlots(domain) if figures else lambda ns: None
 
   # start time stepping
   timestep = timescale/nelems
@@ -62,7 +61,7 @@ def main(
 class test(unittest.TestCase):
 
   def test_1d_p1(self):
-    res, lhs = main(ndims=1, nelems=10, timescale=.1, degree=1, endtime=.01, withplots=False)
+    res, lhs = main(ndims=1, nelems=10, timescale=.1, degree=1, endtime=.01, figures=False)
     numeric.assert_allclose64(res,
       'eNoljskNRDEIQxvCUiBsqWU0R/pv4QdyepaxhZXY6LfVpJAkS1fBCZrihSCTtDY4PQpGm9dqXmRBiYX1'
       'MWTIPEQoWwdxzKcB9jVR3MgZoZbvJB7xhHY9CNvk/T1t3EFbg+/C/wc4pyZV')
@@ -71,7 +70,7 @@ class test(unittest.TestCase):
       'pZU+punkqZi+HU7fZl/lF2TuWOR/N3x0slXhqb+eD+HPJKs=')
 
   def test_1d_p2(self):
-    res, lhs = main(ndims=1, nelems=10, timescale=.1, degree=2, endtime=.01, withplots=False)
+    res, lhs = main(ndims=1, nelems=10, timescale=.1, degree=2, endtime=.01, figures=False)
     numeric.assert_allclose64(res,
       'eNotj8mNBDAIBBMyEs1NLKN5Ov8UZsH7qqKNLbcd+Pk0LC71MVe7VIekmy/lARcuxd+S+VDCemdwXvKD'
       '0h5Kiw89gWEq17AqZdkcL+/dd46dSUx1xUtspRL7NHVmvyTkJcn5RCX8XYc+AYrfkZfNDwmhtSKBmi7k'
@@ -81,7 +80,7 @@ class test(unittest.TestCase):
       '3TRgOnK2FgU7SMcOO2aePOzpKqrJK9bR22dfi648OVx5e0Rf544y5rtns53+ElCEzv9M4P8DFyQ2QQ==')
 
   def test_2d_p1(self):
-    res, lhs = main(ndims=2, nelems=4, timescale=.1, degree=1, endtime=.01, withplots=False)
+    res, lhs = main(ndims=2, nelems=4, timescale=.1, degree=1, endtime=.01, figures=False)
     numeric.assert_allclose64(res,
       'eNpNkUsSwzAIQy9kZsCY31k6Xeb+V2iMA+lKBGn0SLIGyfiQkFwQQ1RwKygTXeADJkVcYIPceOtilK3g'
       'SJhDkNm/U8k2OlrtRevyxhHLoXjQVndde8+MK59Db18HBc4LZBDJ2jrVUmtfud4/ueotTvc+HHBlzIEn'

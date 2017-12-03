@@ -26,7 +26,7 @@ def main(
     density: 'fluid density' = 1,
     degree: 'polynomial degree' = 2,
     warp: 'warp domain (downward bend)' = False,
-    withplots: 'create plots' = True,
+    figures: 'create figures' = True,
   ):
 
   log.user( 'reynolds number: {:.1f}'.format(density / viscosity) ) # based on unit length and velocity
@@ -74,13 +74,13 @@ def main(
   res = domain.integral('ubasis_ni,j sigma_ij + pbasis_n (u_k,k + l) + lbasis_n p' @ ns, geometry=ns.x, degree=2*(degree+1))
   res += domain.boundary.integral('nietzsche_ni (u_i - utop_i)' @ ns, geometry=ns.x, degree=2*(degree+1))
   lhs0 = solver.solve_linear('lhs', res)
-  if withplots:
+  if figures:
     postprocess(domain, ns | dict(lhs=lhs0))
 
   # solve navier-stokes flow
   res += domain.integral('density ubasis_ni u_i,j u_j' @ ns, geometry=ns.x, degree=3*(degree+1))
   lhs1 = solver.newton('lhs', res, lhs0=lhs0).solve(tol=1e-10)
-  if withplots:
+  if figures:
     postprocess(domain, ns | dict(lhs=lhs1))
 
   return lhs0, lhs1
@@ -89,7 +89,7 @@ def main(
 class test(unittest.TestCase):
 
   def test_p1(self):
-    lhs0, lhs1 = main(nelems=3, viscosity=1e-2, degree=1, warp=False, withplots=False)
+    lhs0, lhs1 = main(nelems=3, viscosity=1e-2, degree=1, warp=False, figures=False)
     numeric.assert_allclose64(lhs0,
       'eNqFTzkSAzEI+5A9A+KweUsm5f7/Cwt4t0mTCg0SktDBNj4ToH1NGwD3nFgU19RhHFoT4n5NT0IItUig'
       'DQLOZ/HXA7QOAeECLzEZQJ8qtRdIpGbu+Vzom0qiP2lCLUkza2ZFbXz4tt2VmZe3RLwKpO2m5xn1lK5k'
@@ -100,7 +100,7 @@ class test(unittest.TestCase):
       'VdkIDdn+T9P27ZaNSxI4cOg2NjLDcF8iVK8ixF8GUiOCl7vaZNDvH5IHS/I=')
 
   def test_p2(self):
-    lhs0, lhs1 = main(nelems=3, viscosity=1e-2, degree=2, warp=False, withplots=False)
+    lhs0, lhs1 = main(nelems=3, viscosity=1e-2, degree=2, warp=False, figures=False)
     numeric.assert_allclose64(lhs0,
       'eNqVkcsNAyEMRBtaJGzjD7VEOab/FjIeVlFyjLggeJ43y65L/HpY2noNv8aO2r0RNXuNdY0lNXsTqsoD'
       'LS2i5nOfjU2yJSp9sDXqT/QPP1An4bGORSy/CdOe8NZvZoULSfEDTC74pRtpsQng0xW0Mxe4/XSDkTcQ'
@@ -113,7 +113,7 @@ class test(unittest.TestCase):
       'wEXGW1vITWHrbHUskVcJ0fu3QI2zjWjOyt7Dis/PkmzeOt9sLLrbNXTGa2EdnPDmTUZnp98vZe15Gw==')
 
   def test_p1_warped(self):
-    lhs0, lhs1 = main(nelems=3, viscosity=1e-2, degree=1, warp=True, withplots=False)
+    lhs0, lhs1 = main(nelems=3, viscosity=1e-2, degree=1, warp=True, figures=False)
     numeric.assert_allclose64(lhs0,
       'eNqFjrutQzEMQxeyAFN/z/Lwyrv/CpHkpEiVSgIPQVIXbP0RA/yQLQCnL3EIHtJlqqevpPpDXsCFWyCc'
       'GHKQe4SfGWXAABTpsA8oQbMJO7IFpNtc1rhRjrcz3b/bOHiGmdrdUaloxUX0TtZ9e+XIWBA+DlKzeqKI'
