@@ -3454,7 +3454,7 @@ class Namespace:
     exp=exp, abs=abs, ln=ln, log=ln, log2=log2, log10=log10, sqrt=sqrt,
     sign=sign,
   )
-  _functions_nargs = {k: len(inspect.signature(v).parameters) for k, v in _functions.items()}
+  _functions_nargs = {k: builtins.sum(param.kind in (param.POSITIONAL_ONLY, param.POSITIONAL_OR_KEYWORD) for param in inspect.signature(v).parameters.values()) for k, v in _functions.items()}
 
   def __init__(self, *, default_geometry_name='x'):
     if not isinstance(default_geometry_name, str):
