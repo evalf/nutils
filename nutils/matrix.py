@@ -144,13 +144,17 @@ class ScipyMatrix( Matrix ):
       solverfun = getattr(scipy.sparse.linalg, solver)
       # keep scipy from making things circular by shielding the nature of A
       A = scipy.sparse.linalg.LinearOperator( A.shape, A.__mul__, dtype=float )
-      if isinstance( precon, str ):
-        precon = self.getprecon( precon, constrain, lconstrain, rconstrain )
-      elif not precon:
-        # identity operator, because scipy's native identity operator has circular references
-        precon = scipy.sparse.linalg.LinearOperator( A.shape, matvec=lambda x:x, rmatvec=lambda x:x, matmat=lambda x:x, dtype=float )
+      if isinstance(precon, str):
+        M = self.getprecon(precon, constrain, lconstrain, rconstrain)
+      elif callable(precon):
+        M = precon(A)
+      elif precon is None: # create identity operator, because scipy's native identity operator has circular references
+        M = scipy.sparse.linalg.LinearOperator(A.shape, matvec=lambda x:x, rmatvec=lambda x:x, matmat=lambda x:x, dtype=float)
+      else:
+        M = precon
+      assert isinstance(M, scipy.sparse.linalg.LinearOperator)
       mycallback = MyCallback(matrix=A, rhs=b, tol=tol, callback=callback)
-      x, status = solverfun( A, b, M=precon, tol=tol, x0=x0, callback=mycallback, **solverargs )
+      x, status = solverfun(A, b, M=M, tol=tol, x0=x0, callback=mycallback, **solverargs)
       assert status == 0, '{} solver failed with status {}'.format(solver, status)
       res = numpy.linalg.norm(b - A * x) / mycallback.norm
       log.info('solver converged in {} iterations to residual {:.1e}'.format(mycallback.niter, res))
