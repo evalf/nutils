@@ -110,7 +110,7 @@ class ScipyMatrix( Matrix ):
     return supp
 
   @log.title
-  def solve(self, rhs=None, constrain=None, lconstrain=None, rconstrain=None, tol=0, lhs0=None, solver=None, symmetric=False, title='solving system', callback=None, precon=None, **solverargs):
+  def solve(self, rhs=None, constrain=None, lconstrain=None, rconstrain=None, tol=0, lhs0=None, solver=None, symmetric=False, callback=None, precon=None, **solverargs):
     'solve'
 
     import scipy.sparse.linalg
@@ -199,7 +199,7 @@ class NumpyMatrix( Matrix ):
   T = property( lambda self: NumpyMatrix( self.core.T ) )
 
   @log.title
-  def solve( self, b=None, constrain=None, lconstrain=None, rconstrain=None, tol=0, title='solving system' ):
+  def solve(self, b=None, constrain=None, lconstrain=None, rconstrain=None, tol=0):
     'solve'
 
     if b is None:
