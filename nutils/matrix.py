@@ -123,11 +123,10 @@ class ScipyMatrix( Matrix ):
     return supp
 
   @log.title
-  def solve( self, rhs=None, constrain=None, lconstrain=None, rconstrain=None, tol=0, lhs0=None, solver=None, symmetric=False, title='solving system', callback=None, precon=None, info=False, **solverargs ):
+  def solve(self, rhs=None, constrain=None, lconstrain=None, rconstrain=None, tol=0, lhs0=None, solver=None, symmetric=False, title='solving system', callback=None, precon=None, **solverargs):
     'solve'
 
     import scipy.sparse.linalg
-    solverinfo = SolverInfo( tol, callback=callback )
 
     lhs, I, J = parsecons( constrain, lconstrain, rconstrain, self.shape )
     A = self.core
@@ -147,7 +146,7 @@ class ScipyMatrix( Matrix ):
         res0 /= bnorm
       log.info( 'residual:', res0 )
       if res0 < tol:
-        return (lhs0,solverinfo) if info else lhs0
+        return lhs0
 
     if tol == 0:
       solver = 'spsolve'
@@ -160,7 +159,6 @@ class ScipyMatrix( Matrix ):
     elif solver == 'spsolve':
       log.info( 'solving system using sparse direct solver' )
       x = solverfun( A, b )
-      solverinfo( A, b, x )
     else:
       # keep scipy from making things circular by shielding the nature of A
       A = scipy.sparse.linalg.LinearOperator( A.shape, A.__mul__, dtype=float )
@@ -169,13 +167,14 @@ class ScipyMatrix( Matrix ):
       elif not precon:
         # identity operator, because scipy's native identity operator has circular references
         precon = scipy.sparse.linalg.LinearOperator( A.shape, matvec=lambda x:x, rmatvec=lambda x:x, matmat=lambda x:x, dtype=float )
+      solverinfo = SolverInfo( tol, callback=callback )
       mycallback = solverinfo if solver != 'cg' else functools.partial( solverinfo, A, b )
       x, status = solverfun( A, b, M=precon, tol=tol, x0=x0, callback=mycallback, **solverargs )
       assert status == 0, '%s solver failed with status %d' % (solver, status)
       log.info( '%s solver converged in %d iterations' % (solver.upper(), solverinfo.niter) )
     lhs[J] = x
 
-    return (lhs,solverinfo) if info else lhs
+    return lhs
 
   def getprecon( self, name='SPLU', constrain=None, lconstrain=None, rconstrain=None ):
 
