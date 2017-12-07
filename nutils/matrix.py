@@ -123,30 +123,25 @@ class ScipyMatrix( Matrix ):
     if not J.all():
       A = A[:,J]
 
-    if lhs0 is None:
-      x0 = None
-    else:
-      x0 = lhs0[J]
-      res0 = numpy.linalg.norm(b-A*x0)
-      bnorm = numpy.linalg.norm(b)
-      if bnorm:
-        res0 /= bnorm
-      log.info( 'residual:', res0 )
-      if res0 < tol:
-        return lhs0
+    if not b.any():
+      log.info('right hand side is zero')
+      return lhs
 
-    if tol == 0:
-      solver = 'spsolve'
-    elif not solver:
-      solver = 'cg' if symmetric else 'gmres'
+    if solver is None:
+      solver = 'spsolve' if tol == 0 else 'cg' if symmetric else 'gmres'
 
-    solverfun = getattr( scipy.sparse.linalg, solver )
-    if not numpy.any(b):
-      x = numpy.zeros_like(x0)
+    x0 = lhs0[J] if lhs0 is not None else numpy.zeros(A.shape[0])
+    res0 = numpy.linalg.norm(b - A * x0) / numpy.linalg.norm(b)
+    if res0 < tol:
+      log.info('initial residual is below tolerance')
+      x = x0
     elif solver == 'spsolve':
-      log.info( 'solving system using sparse direct solver' )
-      x = solverfun( A, b )
+      log.info('solving system using sparse direct solver')
+      x = scipy.sparse.linalg.spsolve(A, b)
     else:
+      assert tol, 'tolerance must be specified for iterative solver'
+      log.info('solving system using {} iterative solver'.format(solver))
+      solverfun = getattr(scipy.sparse.linalg, solver)
       # keep scipy from making things circular by shielding the nature of A
       A = scipy.sparse.linalg.LinearOperator( A.shape, A.__mul__, dtype=float )
       if isinstance( precon, str ):
@@ -156,10 +151,11 @@ class ScipyMatrix( Matrix ):
         precon = scipy.sparse.linalg.LinearOperator( A.shape, matvec=lambda x:x, rmatvec=lambda x:x, matmat=lambda x:x, dtype=float )
       mycallback = MyCallback(matrix=A, rhs=b, tol=tol, callback=callback)
       x, status = solverfun( A, b, M=precon, tol=tol, x0=x0, callback=mycallback, **solverargs )
-      assert status == 0, '%s solver failed with status %d' % (solver, status)
-      log.info('solver converged in {} iterations'.format(mycallback.niter))
-    lhs[J] = x
+      assert status == 0, '{} solver failed with status {}'.format(solver, status)
+      res = numpy.linalg.norm(b - A * x) / mycallback.norm
+      log.info('solver converged in {} iterations to residual {:.1e}'.format(mycallback.niter, res))
 
+    lhs[J] = x
     return lhs
 
   def getprecon( self, name='SPLU', constrain=None, lconstrain=None, rconstrain=None ):
