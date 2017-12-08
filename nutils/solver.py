@@ -41,7 +41,7 @@ u,k + v f`` and solve for ``res == 0`` using ``solve_linear``:
 
 >>> res = domain.integral('basis_n,i u_,i + basis_n' @ ns, geometry=ns.x, degree=2)
 >>> lhs = solver.solve_linear( 'lhs', residual=res, constrain=cons )
-solving system > solving system using sparse direct solver
+solve > solving system using sparse direct solver
 
 The coefficients ``lhs`` represent the solution to the Poisson problem.
 

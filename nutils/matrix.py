@@ -30,36 +30,23 @@ from . import util, numpy, log, numeric
 import functools
 
 
-class SolverInfo ( object ):
-  'solver info'
+class MyCallback:
 
-  def __init__ ( self, tol, callback=None ):
+  def __init__ (self, matrix, rhs, tol, callback):
+    self.matrix = matrix
+    self.rhs = rhs
+    self.norm = max(numpy.linalg.norm(rhs), 1) # scipy terminates on minimum of relative and absolute residual
     self.niter = 0
-    self._res = numpy.empty( 16 )
-    self._tol = tol
-    self._callback = callback
+    self.tol = tol
+    self.callback = callback
 
-  @property
-  def res( self ):
-    return self._res[:self.niter]
-
-  def __call__ ( self, *args ):
-    if len( args ) == 1:
-      res, = args
-    else:
-      A, b, x = args
-      res = numpy.linalg.norm(b-A*x) / numpy.linalg.norm(b)
-    if self.niter == len(self._res):
-      self._res.resize( 2*self.niter )
-    self._res[self.niter] = res
+  def __call__(self, arg):
     self.niter += 1
-    if self._callback:
-      self._callback( res )
-    if self._tol > 0:
-      info = 'residual {:.2e} ({:.0f}%)'.format( res, 100. * numpy.log10(res) / numpy.log10(self._tol) if res > 0 else 0 )
-    else:
-      info = 'residual {:.2e}'.format( res )
-    with log.context( info ):
+    # some solvers provide the residual, others the left hand side vector
+    res = float(numpy.linalg.norm(self.rhs - self.matrix * arg) / self.norm if numpy.ndim(arg) == 1 else arg)
+    if self.callback:
+      self.callback(res)
+    with log.context('residual {:.2e} ({:.0f}%)'.format(res, 100. * numpy.log10(res) / numpy.log10(self.tol) if res > 0 else 0)):
       pass
 
 class Matrix( object ):
@@ -123,11 +110,10 @@ class ScipyMatrix( Matrix ):
     return supp
 
   @log.title
-  def solve( self, rhs=None, constrain=None, lconstrain=None, rconstrain=None, tol=0, lhs0=None, solver=None, symmetric=False, title='solving system', callback=None, precon=None, info=False, **solverargs ):
+  def solve(self, rhs=None, constrain=None, lconstrain=None, rconstrain=None, tol=0, lhs0=None, solver=None, symmetric=False, callback=None, precon=None, **solverargs):
     'solve'
 
     import scipy.sparse.linalg
-    solverinfo = SolverInfo( tol, callback=callback )
 
     lhs, I, J = parsecons( constrain, lconstrain, rconstrain, self.shape )
     A = self.core
@@ -137,45 +123,44 @@ class ScipyMatrix( Matrix ):
     if not J.all():
       A = A[:,J]
 
-    if lhs0 is None:
-      x0 = None
-    else:
-      x0 = lhs0[J]
-      res0 = numpy.linalg.norm(b-A*x0)
-      bnorm = numpy.linalg.norm(b)
-      if bnorm:
-        res0 /= bnorm
-      log.info( 'residual:', res0 )
-      if res0 < tol:
-        return (lhs0,solverinfo) if info else lhs0
+    if not b.any():
+      log.info('right hand side is zero')
+      return lhs
 
-    if tol == 0:
-      solver = 'spsolve'
-    elif not solver:
-      solver = 'cg' if symmetric else 'gmres'
+    if solver is None:
+      solver = 'spsolve' if tol == 0 else 'cg' if symmetric else 'gmres'
 
-    solverfun = getattr( scipy.sparse.linalg, solver )
-    if not numpy.any(b):
-      x = numpy.zeros_like(x0)
+    x0 = lhs0[J] if lhs0 is not None else numpy.zeros(A.shape[0])
+    res0 = numpy.linalg.norm(b - A * x0) / numpy.linalg.norm(b)
+    if res0 < tol:
+      log.info('initial residual is below tolerance')
+      x = x0
     elif solver == 'spsolve':
-      log.info( 'solving system using sparse direct solver' )
-      x = solverfun( A, b )
-      solverinfo( A, b, x )
+      log.info('solving system using sparse direct solver')
+      x = scipy.sparse.linalg.spsolve(A, b)
     else:
+      assert tol, 'tolerance must be specified for iterative solver'
+      log.info('solving system using {} iterative solver'.format(solver))
+      solverfun = getattr(scipy.sparse.linalg, solver)
       # keep scipy from making things circular by shielding the nature of A
       A = scipy.sparse.linalg.LinearOperator( A.shape, A.__mul__, dtype=float )
-      if isinstance( precon, str ):
-        precon = self.getprecon( precon, constrain, lconstrain, rconstrain )
-      elif not precon:
-        # identity operator, because scipy's native identity operator has circular references
-        precon = scipy.sparse.linalg.LinearOperator( A.shape, matvec=lambda x:x, rmatvec=lambda x:x, matmat=lambda x:x, dtype=float )
-      mycallback = solverinfo if solver != 'cg' else functools.partial( solverinfo, A, b )
-      x, status = solverfun( A, b, M=precon, tol=tol, x0=x0, callback=mycallback, **solverargs )
-      assert status == 0, '%s solver failed with status %d' % (solver, status)
-      log.info( '%s solver converged in %d iterations' % (solver.upper(), solverinfo.niter) )
-    lhs[J] = x
+      if isinstance(precon, str):
+        M = self.getprecon(precon, constrain, lconstrain, rconstrain)
+      elif callable(precon):
+        M = precon(A)
+      elif precon is None: # create identity operator, because scipy's native identity operator has circular references
+        M = scipy.sparse.linalg.LinearOperator(A.shape, matvec=lambda x:x, rmatvec=lambda x:x, matmat=lambda x:x, dtype=float)
+      else:
+        M = precon
+      assert isinstance(M, scipy.sparse.linalg.LinearOperator)
+      mycallback = MyCallback(matrix=A, rhs=b, tol=tol, callback=callback)
+      x, status = solverfun(A, b, M=M, tol=tol, x0=x0, callback=mycallback, **solverargs)
+      assert status == 0, '{} solver failed with status {}'.format(solver, status)
+      res = numpy.linalg.norm(b - A * x) / mycallback.norm
+      log.info('solver converged in {} iterations to residual {:.1e}'.format(mycallback.niter, res))
 
-    return (lhs,solverinfo) if info else lhs
+    lhs[J] = x
+    return lhs
 
   def getprecon( self, name='SPLU', constrain=None, lconstrain=None, rconstrain=None ):
 
@@ -214,7 +199,7 @@ class NumpyMatrix( Matrix ):
   T = property( lambda self: NumpyMatrix( self.core.T ) )
 
   @log.title
-  def solve( self, b=None, constrain=None, lconstrain=None, rconstrain=None, tol=0, title='solving system' ):
+  def solve(self, b=None, constrain=None, lconstrain=None, rconstrain=None, tol=0):
     'solve'
 
     if b is None:
