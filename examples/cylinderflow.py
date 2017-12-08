@@ -51,7 +51,7 @@ def main(
     maxradius: 'approximate domain size' = 25,
     tmax: 'end time' = numpy.inf,
     degree: 'polynomial degree' = 2,
-    withplots: 'create plots' = True,
+    figures: 'create figures' = True,
   ):
 
   log.user('reynolds number: {:.1f}'.format(density / viscosity)) # based on unit length and velocity
@@ -105,7 +105,7 @@ def main(
 
   # solve unsteady navier-stokes equations, starting from stationary oseen flow
   lhs0 = solver.solve_linear('lhs', res+oseen, constrain=cons)
-  makeplots = MakePlots(domain, ns, timestep=timestep, rotation=rotation) if withplots else lambda *args: None
+  makeplots = MakePlots(domain, ns, timestep=timestep, rotation=rotation) if figures else lambda *args: None
   for istep, lhs in log.enumerate('timestep', solver.impliciteuler('lhs', residual=res+convec, inertia=inertia, lhs0=lhs0, timestep=timestep, constrain=cons, newtontol=1e-10)):
     makeplots(lhs)
     if istep * timestep >= tmax:
@@ -117,7 +117,7 @@ def main(
 class test(unittest.TestCase):
 
   def test_rot0(self):
-    lhs0, lhs = main(nelems=3, viscosity=1e-2, timestep=.1, tmax=.05, rotation=0, withplots=False)
+    lhs0, lhs = main(nelems=3, viscosity=1e-2, timestep=.1, tmax=.05, rotation=0, figures=False)
     numeric.assert_allclose64(lhs0,
       'eNo1k8ltwEAIRRuyJfallijH9N9CZj74BIIPHh7YHvbn52Uu+nv1YdK49mWn3kBN4FNkMwJNrX+vPV1S'
       '175cpVNCOgpxvxlORalpGhKmJdO0fCPUDgkTun8JtRilau3DUCun5LwEJdLIsAYSLPcrR8BiDufY+iK8'
@@ -136,7 +136,7 @@ class test(unittest.TestCase):
       'raTtbXk0KlZ2vP39B5jEykU=')
 
   def test_rot1(self):
-    lhs0, lhs = main(nelems=3, viscosity=1e-2, timestep=.1, tmax=.05, rotation=1, withplots=False)
+    lhs0, lhs = main(nelems=3, viscosity=1e-2, timestep=.1, tmax=.05, rotation=1, figures=False)
     numeric.assert_allclose64(lhs0,
       'eNo9UkluBEEI+1C3xL68Jcox///CFKYmfQGBy40N9rA/P2+m5N9rT0Qjvux8En3YuCe+HCQoFBEKbkF4'
       'wiH7pBod1tJ9osQopMZESwPna+myiIpNNPd3mrIcFXiqFXQBxZd02GUqYQvZDmugwZIGAIs5khPrW+EL'

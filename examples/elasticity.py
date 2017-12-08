@@ -9,7 +9,7 @@ def main(
     lmbda: 'first lamé constant' = 1.,
     mu: 'second lamé constant' = 1.,
     degree: 'polynomial degree' = 2,
-    withplots: 'create plots' = True,
+    figures: 'create figures' = True,
     solvetol: 'solver tolerance' = 1e-10,
  ):
 
@@ -41,7 +41,7 @@ def main(
   ns |= dict(lhs=lhs)
 
   # plot solution
-  if withplots:
+  if figures:
     points, colors = domain.elem_eval([ns.x, ns.stress[0,1]], ischeme='bezier3', separate=True)
     with plot.PyPlot('stress', ndigits=0) as plt:
       plt.mesh(points, colors, tight=False)
@@ -53,7 +53,7 @@ def main(
 class test(unittest.TestCase):
 
   def test_p1(self):
-    lhs, cons = main(nelems=4, degree=1, withplots=False, solvetol=0)
+    lhs, cons = main(nelems=4, degree=1, figures=False, solvetol=0)
     numeric.assert_allclose64(cons,
       'eNoz0TE01Yk20IHBvMQ8srGpgYFBqq4JQZo6tmHBsQB8/T8F')
     numeric.assert_allclose64(lhs,
@@ -62,7 +62,7 @@ class test(unittest.TestCase):
       'KKfznr2/xYZHGg==')
 
   def test_p2(self):
-    lhs, cons = main(nelems=4, degree=2, withplots=False, solvetol=0)
+    lhs, cons = main(nelems=4, degree=2, figures=False, solvetol=0)
     numeric.assert_allclose64(lhs,
       'eNqVkEsSAyEIRC+kVbb89CypLOf+VwiCVuIyNYuH0EAzXCDl1cr3G7DxVCnSmgVp9os7f3SYnZ/KBWO9'
       'nSZ88eS3jtBnEi3YVC6e/NYxGW0iKXLz5FPn/to//L1dZpvrpm4atw6BU0v1gCLwCq1KlblsSrGJ+A1K'

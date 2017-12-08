@@ -16,13 +16,13 @@ import sys, functools, os
 globalproperties = {
   'nprocs': 1,
   'outrootdir': '~/public_html',
-  'outdir': '.',
+  'outdir': '',
   'verbose': 4,
   'richoutput': sys.stdout.isatty(),
   'htmloutput': True,
   'pdb': False,
   'imagetype': 'png',
-  'symlink': False,
+  'symlink': '',
   'recache': False,
   'dot': False,
   'profile': False,
@@ -147,8 +147,8 @@ def open_in_outdir( file, *args, **kwargs ):
   outdir = getprop( 'outdir', None )
   if outdirfd is not None and os.open in os.supports_dir_fd:
     kwargs['opener'] = functools.partial( os.open, dir_fd=outdirfd )
-  elif outdir is not None:
-    file = os.path.join( outdir, file )
+  elif outdir:
+    file = os.path.join(os.path.expanduser(outdir), file)
   return open( file, *args, **kwargs )
 
 def listoutdir():
@@ -158,8 +158,8 @@ def listoutdir():
   outdir = getprop( 'outdir', None )
   if outdirfd is not None:
     return os.listdir( outdirfd )
-  elif outdir is not None:
-    return os.listdir( outdir )
+  elif outdir:
+    return os.listdir(os.path.expanduser(outdir))
   else:
     return os.listdir()
 

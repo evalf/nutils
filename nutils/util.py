@@ -342,12 +342,9 @@ def run( *functions ):
   assert not missing, 'missing mandatory arguments: {}'.format( ', '.join(missing) )
 
   # set properties
-  __scriptname__ = os.path.basename(sys.argv[0])
   __nprocs__ = properties['nprocs']
-  __outrootdir__ = os.path.abspath(os.path.expanduser(properties['outrootdir']))
-  __cachedir__ = os.path.join( __outrootdir__, __scriptname__, 'cache' )
-  __outdir__ = os.path.abspath(os.path.expanduser(properties['outdir'])) if properties['outdir'] != '.' \
-          else os.path.join( __outrootdir__, __scriptname__, datetime.datetime.now().strftime('%Y/%m/%d/%H-%M-%S/') )
+  __outrootdir__ = properties['outrootdir']
+  __outdir__ = properties['outdir']
   __verbose__ = properties['verbose']
   __richoutput__ = properties['richoutput']
   __htmloutput__ = properties['htmloutput']

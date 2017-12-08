@@ -20,7 +20,7 @@ def main(
     nu: "poisson's ratio" = 0.3,
     T: 'far field traction' = 10,
     nr: 'number of h-refinements' = 2,
-    withplots: 'create plots' = True,
+    figures: 'create figures' = True,
   ):
 
   ns = function.Namespace()
@@ -78,7 +78,7 @@ def main(
   ns |= dict(lhs=lhs)
 
   # post-processing
-  if withplots:
+  if figures:
     geom, stressxx = domain.simplex.elem_eval([ns.x, 'stress_00' @ ns], ischeme='bezier8', separate=True)
     with plot.PyPlot( 'solution', index=nr ) as plt:
       plt.mesh( geom, stressxx )
@@ -105,17 +105,17 @@ def convergence(nrefine=5):
 class test(unittest.TestCase):
 
   def test0(self):
-    err, hmax = main(nr=0, withplots=False)
+    err, hmax = main(nr=0, figures=False)
     numpy.testing.assert_almost_equal(err, 3.917807, decimal=6)
     numpy.testing.assert_almost_equal(hmax, 5.0, decimal=6)
 
   def test1(self):
-    err, hmax = main(nr=2, withplots=False)
+    err, hmax = main(nr=2, figures=False)
     numpy.testing.assert_almost_equal(err, 1.476470, decimal=6)
     numpy.testing.assert_almost_equal(hmax, 2.028562, decimal=6)
 
   def test2(self):
-    err, hmax = main(L=3, R=1.5, E=1e6, nu=0.4, T=15, nr=3, withplots=False)
+    err, hmax = main(L=3, R=1.5, E=1e6, nu=0.4, T=15, nr=3, figures=False)
     numpy.testing.assert_almost_equal(err, 0.254238, decimal=6)
     numpy.testing.assert_almost_equal(hmax, 0.768562, decimal=6)
 
