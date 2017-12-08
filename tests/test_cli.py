@@ -88,5 +88,33 @@ class run(ContextTestCase):
       self.assertIsNotNone(status)
       self.assertEqual(status.code, 2)
 
+  def test_help(self):
+    args = '-h', '--help'
+    if self.method == 'run':
+      method = nutils.cli.run
+    else:
+      method = nutils.cli.choose
+      args += tuple('main ' + arg for arg in args)
+    for arg in args:
+      _savestreams = sys.stdout, sys.stderr
+      _saveargs = tuple(sys.argv)
+      try:
+        sys.argv[:] = [self.scriptname] + arg.split()
+        sys.stdout = sys.stderr = stringio = io.StringIO()
+        method(main)
+      except SystemExit as e:
+        status = e
+      else:
+        status = None
+      finally:
+        sys.stdout, sys.stderr = _savestreams
+        sys.argv[:] = _saveargs
+      with self.subTest(arg=arg, test='argparse'):
+        output = stringio.getvalue()
+        self.assertEqual(output[:6], 'usage:')
+      with self.subTest(arg=arg, test='exitstatus'):
+        self.assertIsNotNone(status)
+        self.assertEqual(status.code, 1)
+
 run(method='run')
 run(method='choose')
