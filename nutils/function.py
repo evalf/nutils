@@ -2975,12 +2975,23 @@ def rootcoords(ndims):
 def sampled(data, ndims):
   return Sampled(data)
 
-opposite = cache.replace(initcache={TRANS: OPPTRANS, OPPTRANS: TRANS})
-bifurcate1 = cache.replace(initcache={TRANS: SelectChain(TRANS, True), OPPTRANS: SelectChain(OPPTRANS, True)})
-bifurcate2 = cache.replace(initcache={TRANS: SelectChain(TRANS, False), OPPTRANS: SelectChain(OPPTRANS, False)})
+@cache.replace
+def opposite(arg):
+  if arg is TRANS:
+    return OPPTRANS
+  if arg is OPPTRANS:
+    return TRANS
+
+@cache.replace
+def _bifurcate(arg, side):
+  if arg in (TRANS, OPPTRANS):
+    return SelectChain(arg, side)
+
+bifurcate1 = functools.partial(_bifurcate, side=True)
+bifurcate2 = functools.partial(_bifurcate, side=False)
 
 def bifurcate(arg1, arg2):
-  return (bifurcate1(arg1), bifurcate2(arg2))
+  return bifurcate1(arg1), bifurcate2(arg2)
 
 def curvature(geom, ndims=-1):
   return geom.normal().div(geom, ndims=ndims)

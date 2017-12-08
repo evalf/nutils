@@ -248,17 +248,15 @@ class Tuple( object ):
       self.__items[i] = item = self.__getitem( self.__start + i * self.__stride )
     return item
 
-def replace(func=None, initcache={}):
+def replace(func):
   '''decorator for deep object replacement
 
-  Generates a replacement method for Immutable objects. Replacements can be
-  implement via the callable `func`, and/or by pre-populating a replacement
-  dictionary `initcache`.
+  Generates a deep replacement method for Immutable objects based on a callable
+  that is applied (recursively) on individual constructor arguments.
 
   Args
   ----
   func : callable which maps (obj, ...) onto replaced_obj
-  initcache : :class:`dict` defining a obj->replaced_obj mapping.
 
   Returns
   -------
@@ -266,15 +264,16 @@ def replace(func=None, initcache={}):
       The method that searches the object to perform the replacements.
   '''
 
+  @functools.wraps(func)
   def wrapped(target, *funcargs, **funckwargs):
-    cache = dict(initcache)
+    cache = {}
     def op(obj):
       try:
         replaced = cache[obj]
       except TypeError: # unhashable
         replaced = obj
       except KeyError:
-        replaced = func and func(obj, *funcargs, **funckwargs)
+        replaced = func(obj, *funcargs, **funckwargs)
         if replaced is None:
           replaced = obj.edit(op) if isinstance(obj, Immutable) else obj
         cache[obj] = replaced
@@ -283,8 +282,6 @@ def replace(func=None, initcache={}):
     del op
     return retval
 
-  if func:
-    functools.update_wrapper(func, wrapped)
   return wrapped
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
