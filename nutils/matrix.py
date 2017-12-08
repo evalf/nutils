@@ -30,36 +30,23 @@ from . import util, numpy, log, numeric
 import functools
 
 
-class SolverInfo ( object ):
-  'solver info'
+class MyCallback:
 
-  def __init__ ( self, tol, callback=None ):
+  def __init__ (self, matrix, rhs, tol, callback):
+    self.matrix = matrix
+    self.rhs = rhs
+    self.norm = max(numpy.linalg.norm(rhs), 1) # scipy terminates on minimum of relative and absolute residual
     self.niter = 0
-    self._res = numpy.empty( 16 )
-    self._tol = tol
-    self._callback = callback
+    self.tol = tol
+    self.callback = callback
 
-  @property
-  def res( self ):
-    return self._res[:self.niter]
-
-  def __call__ ( self, *args ):
-    if len( args ) == 1:
-      res, = args
-    else:
-      A, b, x = args
-      res = numpy.linalg.norm(b-A*x) / numpy.linalg.norm(b)
-    if self.niter == len(self._res):
-      self._res.resize( 2*self.niter )
-    self._res[self.niter] = res
+  def __call__(self, arg):
     self.niter += 1
-    if self._callback:
-      self._callback( res )
-    if self._tol > 0:
-      info = 'residual {:.2e} ({:.0f}%)'.format( res, 100. * numpy.log10(res) / numpy.log10(self._tol) if res > 0 else 0 )
-    else:
-      info = 'residual {:.2e}'.format( res )
-    with log.context( info ):
+    # some solvers provide the residual, others the left hand side vector
+    res = float(numpy.linalg.norm(self.rhs - self.matrix * arg) / self.norm if numpy.ndim(arg) == 1 else arg)
+    if self.callback:
+      self.callback(res)
+    with log.context('residual {:.2e} ({:.0f}%)'.format(res, 100. * numpy.log10(res) / numpy.log10(self.tol) if res > 0 else 0)):
       pass
 
 class Matrix( object ):
@@ -167,11 +154,10 @@ class ScipyMatrix( Matrix ):
       elif not precon:
         # identity operator, because scipy's native identity operator has circular references
         precon = scipy.sparse.linalg.LinearOperator( A.shape, matvec=lambda x:x, rmatvec=lambda x:x, matmat=lambda x:x, dtype=float )
-      solverinfo = SolverInfo( tol, callback=callback )
-      mycallback = solverinfo if solver != 'cg' else functools.partial( solverinfo, A, b )
+      mycallback = MyCallback(matrix=A, rhs=b, tol=tol, callback=callback)
       x, status = solverfun( A, b, M=precon, tol=tol, x0=x0, callback=mycallback, **solverargs )
       assert status == 0, '%s solver failed with status %d' % (solver, status)
-      log.info( '%s solver converged in %d iterations' % (solver.upper(), solverinfo.niter) )
+      log.info('solver converged in {} iterations'.format(mycallback.niter))
     lhs[J] = x
 
     return lhs
