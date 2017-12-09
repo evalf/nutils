@@ -76,8 +76,10 @@ def run(func, *, skip=1):
     print()
     for param in params:
       cls = param.default.__class__
-      arg = param.name + '=' + cls.__name__.upper() if cls != bool else '(no)' + param.name
-      print('  --{:<16} {} [{}]'.format(arg, param.annotation, param.default))
+      print('  --{:<20}'.format(param.name + '=' + cls.__name__.upper() if cls != bool else '(no)' + param.name), end=' ')
+      if param.annotation != param.empty:
+        print(param.annotation, end=' ')
+      print('[{}]'.format(param.default))
     sys.exit(1)
 
   kwargs = {param.name: param.default for param in params}
