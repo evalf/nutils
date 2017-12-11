@@ -2840,7 +2840,7 @@ def isarray(arg):
   return isinstance( arg, Array )
 
 def iszero(arg):
-  return isinstance( arg, Zeros )
+  return isinstance( arg.simplified, Zeros )
 
 def zeros(shape, dtype=float):
   return Zeros( shape, dtype )
