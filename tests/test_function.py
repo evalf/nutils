@@ -26,7 +26,7 @@ class check(TestCase):
     self.basis = self.domain.basis('spline', degree=(1,2)[:self.ndim])
 
     numpy.random.seed(0)
-    self.args = [(numpy.random.uniform(size=shape+self.basis.shape) * self.basis).sum(-1) for shape in self.shapes]
+    self.args = [(numpy.random.uniform(size=shape+self.basis.shape, low=self.low, high=self.high) * self.basis).sum(-1) for shape in self.shapes]
     if self.pass_geom:
         self.args += [self.geom]
     self.points, weights = self.elem.reference.getischeme('uniform2')
@@ -34,7 +34,7 @@ class check(TestCase):
     self.argsfun = function.Tuple(self.args)
     self.n_op_argsfun = self.n_op(*self.argsfun.simplified.eval(**self.evalargs))
     self.op_args = self.op(*self.args)
-    self.shapearg = numpy.random.uniform(size=self.op_args.shape)
+    self.shapearg = numpy.random.uniform(size=self.op_args.shape, low=self.low, high=self.high)
     self.pairs = [(i, j) for i in range(self.op_args.ndim-1) for j in range(i+1, self.op_args.ndim) if self.op_args.shape[i] == self.op_args.shape[j]]
 
   def assertArrayAlmostEqual(self, actual, desired, decimal):
@@ -237,19 +237,22 @@ class check(TestCase):
 
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_localgradient(self):
-    eps = 1e-6
-    D = numpy.array([-.5*eps,.5*eps])[:,_,_] * numpy.eye(self.elem.ndims)
-    fdpoints = self.points[_,_,:,:] + D[:,:,_,:]
-    tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
-    F = tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:])
-    fdgrad = numpy.zeros(F.shape[1:], bool) if F.dtype.kind == 'b' else (F[1]-F[0])/eps
-    fdgrad = fdgrad.transpose(numpy.roll(numpy.arange(F.ndim-1),-1))
-    G = function.localgradient(self.op_args, ndims=self.elem.ndims)
-    for simplified in True, False:
-      with self.subTest(simplified=simplified):
-        exact = numpy.empty_like(fdgrad)
-        exact[...] = (G.simplified if simplified else G).eval(**self.evalargs)
-        self.assertArrayAlmostEqual(fdgrad, exact, decimal=5)
+    exact = function.localgradient(self.op_args, ndims=self.elem.ndims).simplified.eval(**self.evalargs)
+    D = numpy.array([-.5,.5])[:,_,_] * numpy.eye(self.elem.ndims)
+    good = False
+    for eps in .7**numpy.arange(31, 41): # 2e-5..6e-7
+      fdpoints = self.points[_,_,:,:] + D[:,:,_,:] * eps
+      tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
+      F = tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:])
+      fdgrad = numpy.zeros(F.shape[1:], bool) if F.dtype.kind == 'b' else (F[1]-F[0])/eps
+      fdgrad = fdgrad.transpose(numpy.roll(numpy.arange(F.ndim-1),-1))
+      error = fdgrad - exact
+      good |= numpy.less(abs(error / exact), 1e-8)
+      good |= numpy.less(abs(error), 1e-14)
+      if good.all():
+        break
+    else:
+      self.fail('gradient failed to reach tolerance ({}/{})'.format((~good).sum(), good.size))
 
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_jacobian(self):
@@ -266,46 +269,52 @@ class check(TestCase):
 
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_gradient(self):
-    eps = 1e-7
-    D = numpy.array([-.5*eps,.5*eps])[:,_,_] * numpy.eye(self.geom.shape[-1])
-    fdpoints = self.find(self.geom.eval(**self.evalargs)[_,_,:,:] + D[:,:,_,:], self.points[_,_,:,:])
-    tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
-    F = tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:])
-    fdgrad = numpy.zeros(F.shape[1:], bool) if F.dtype.kind == 'b' else (F[1]-F[0])/eps
-    fdgrad = fdgrad.transpose(numpy.roll(numpy.arange(F.ndim-1),-1))
-    G = self.op_args.grad(self.geom)
-    for simplified in True, False:
-      with self.subTest(simplified=simplified):
-        exact = numpy.empty_like(fdgrad)
-        exact[...] = (G.simplified if simplified else G).eval(**self.evalargs)
-        self.assertArrayAlmostEqual(fdgrad, exact, decimal=5)
+    exact = self.op_args.grad(self.geom).simplified.eval(**self.evalargs)
+    D = numpy.array([-.5,.5])[:,_,_] * numpy.eye(self.geom.shape[-1])
+    good = False
+    for eps in .7**numpy.arange(32, 34): # 1e-5..8e-6
+      fdpoints = self.find(self.geom.eval(**self.evalargs)[_,_,:,:] + D[:,:,_,:] * eps, self.points[_,_,:,:])
+      tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
+      F = tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:])
+      fdgrad = numpy.zeros(F.shape[1:], bool) if F.dtype.kind == 'b' else (F[1]-F[0])/eps
+      fdgrad = fdgrad.transpose(numpy.roll(numpy.arange(F.ndim-1),-1))
+      error = fdgrad - exact
+      good |= numpy.less(abs(error / exact), 1e-8)
+      good |= numpy.less(abs(error), 1e-14)
+      if good.all():
+        break
+    else:
+      self.fail('gradient failed to reach tolerance ({}/{})'.format((~good).sum(), good.size))
 
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_doublegradient(self):
-    eps = 1e-4
-    D = numpy.array([-.5*eps,.5*eps])[:,_,_] * numpy.eye(self.geom.shape[-1])
+    exact = self.op_args.grad(self.geom).grad(self.geom).simplified.eval(**self.evalargs)
+    D = numpy.array([-.5,.5])[:,_,_] * numpy.eye(self.geom.shape[-1])
     DD = D[:,_,:,_,:] + D[_,:,_,:,:]
-    fdpoints = self.find(self.geom.eval(**self.evalargs)[_,_,_,_,:,:] + DD[:,:,:,:,_,:], self.points[_,_,_,_,:,:])
-    tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
-    F = tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:])
-    fddgrad = numpy.zeros(F.shape[2:], bool) if F.dtype.kind == 'b' else ((F[1,1]-F[1,0])-(F[0,1]-F[0,0]))/(eps**2)
-    fddgrad = fddgrad.transpose(numpy.roll(numpy.arange(F.ndim-2),-2))
-    G = self.op_args.grad(self.geom).grad(self.geom)
-    for simplified in True, False:
-      with self.subTest(simplified=simplified):
-        exact = numpy.empty_like(fddgrad)
-        exact[...] = (G.simplified if simplified else G).eval(**self.evalargs)
-        numpy.testing.assert_allclose(fddgrad, exact, rtol=2e-4)
+    good = False
+    for eps in .7**numpy.arange(23, 26): # 3e-4..1e-4
+      fdpoints = self.find(self.geom.eval(**self.evalargs)[_,_,_,_,:,:] + DD[:,:,:,:,_,:] * eps, self.points[_,_,_,_,:,:])
+      tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
+      F = tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:])
+      fddgrad = numpy.zeros(F.shape[2:], bool) if F.dtype.kind == 'b' else ((F[1,1]-F[1,0])-(F[0,1]-F[0,0]))/(eps**2)
+      fddgrad = fddgrad.transpose(numpy.roll(numpy.arange(F.ndim-2),-2))
+      error = fddgrad - exact
+      good |= numpy.less(abs(error / exact), 1e-4)
+      good |= numpy.less(abs(error), 1e-14)
+      if good.all():
+        break
+    else:
+      self.fail('double gradient failed to reach tolerance ({}/{})'.format((~good).sum(), good.size))
 
-_check = lambda name, op, n_op, shapes, hasgrad=True, pass_geom=False, ndim=2: check(name, op=op, n_op=n_op, shapes=shapes, hasgrad=hasgrad, pass_geom=pass_geom, ndim=ndim)
+_check = lambda name, op, n_op, shapes, hasgrad=True, pass_geom=False, ndim=2, low=-1, high=1: check(name, op=op, n_op=n_op, shapes=shapes, hasgrad=hasgrad, pass_geom=pass_geom, ndim=ndim, low=low, high=high)
 _check('const', lambda f: function.asarray(f), lambda a: a, [(2,3,2)])
 _check('sin', function.sin, numpy.sin, [(3,)])
 _check('cos', function.cos, numpy.cos, [(3,)])
 _check('tan', function.tan, numpy.tan, [(3,)])
-_check('sqrt', function.sqrt, numpy.sqrt, [(3,)])
-_check('log', function.ln, numpy.log, [(3,)])
-_check('log2', function.log2, numpy.log2, [(3,)])
-_check('log10', function.log10, numpy.log10, [(3,)])
+_check('sqrt', function.sqrt, numpy.sqrt, [(3,)], low=0)
+_check('log', function.ln, numpy.log, [(3,)], low=0)
+_check('log2', function.log2, numpy.log2, [(3,)], low=0)
+_check('log10', function.log10, numpy.log10, [(3,)], low=0)
 _check('exp', function.exp, numpy.exp, [(3,)])
 _check('arctanh', function.arctanh, numpy.arctanh, [(3,)])
 _check('tanh', function.tanh, numpy.tanh, [(3,)])
@@ -313,15 +322,16 @@ _check('cosh', function.cosh, numpy.cosh, [(3,)])
 _check('sinh', function.sinh, numpy.sinh, [(3,)])
 _check('abs', function.abs, numpy.abs, [(3,)])
 _check('sign', function.sign, numpy.sign, [(3,)])
-_check('power', function.power, numpy.power, [(3,1),(1,3)])
+_check('power', function.power, numpy.power, [(3,1),(1,3)], low=0)
 _check('negative', function.negative, numpy.negative, [(3,)])
-_check('reciprocal', function.reciprocal, numpy.reciprocal, [(3,)])
+_check('reciprocal', function.reciprocal, numpy.reciprocal, [(3,)], low=-2, high=-1)
 _check('arcsin', function.arcsin, numpy.arcsin, [(3,)])
 _check('arccos', function.arccos, numpy.arccos, [(3,)])
 _check('arctan', function.arctan, numpy.arctan, [(3,)])
-_check('ln', function.ln, numpy.log, [(3,)])
+_check('ln', function.ln, numpy.log, [(3,)], low=0)
 _check('product', lambda a: function.product(a,1), lambda a: numpy.product(a,-2), [(2,3,2)])
 _check('norm2', lambda a: function.norm2(a,1), lambda a: (a**2).sum(-2)**.5, [(2,3,2)])
+_check('norm2scalar', lambda a: function.norm2(a,1), lambda a: abs(a.sum(-2)), [(3,1,3)])
 _check('sum', lambda a: function.sum(a,1), lambda a: a.sum(-2), [(2,3,2)])
 _check('transpose', lambda a: function.transpose(a,[0,2,1]), lambda a: a.transpose([0,1,3,2]), [(2,3,2)])
 _check('expand_dims', lambda a: function.expand_dims(a,1), lambda a: numpy.expand_dims(a,2), [(2,3)])
@@ -339,7 +349,7 @@ _check('inverse323', lambda a: function.inverse(a,(0,2)), lambda a: numpy.linalg
 _check('repeat', lambda a: function.repeat(a,3,1), lambda a: numpy.repeat(a,3,-2), [(2,1,2)])
 _check('diagonalize', lambda a: function.diagonalize(a,1,3), lambda a: numeric.diagonalize(a,2,4), [(2,2,2,2)])
 _check('multiply', function.multiply, numpy.multiply, [(3,1),(1,3)])
-_check('divide', function.divide, numpy.divide, [(3,1),(1,3)])
+_check('divide', function.divide, numpy.divide, [(3,1),(1,3)], low=-2, high=-1)
 _check('divide2', lambda a: function.asarray(a)/2, lambda a: a/2, [(3,1)])
 _check('add', function.add, numpy.add, [(3,1),(1,3)])
 _check('subtract', function.subtract, numpy.subtract, [(3,1),(1,3)])
@@ -354,7 +364,7 @@ _check('arctan2', function.arctan2, numpy.arctan2, [(3,1),(1,3)])
 _check('stack', lambda a,b: function.stack([a,b]), lambda a,b: numpy.concatenate([a[...,_,:],b[...,_,:]], axis=-2), [(3,),(3,)])
 _check('concatenate1', lambda a,b: function.concatenate([a,b],axis=0), lambda a,b: numpy.concatenate([a,b], axis=-2), [(3,2),(2,2)])
 _check('concatenate2', lambda a,b: function.concatenate([a,b],axis=1), lambda a,b: numpy.concatenate([a,b], axis=-1), [(3,2),(3,1)])
-_check('eig', lambda a: function.eig(a,symmetric=False)[1], lambda a: numpy.linalg.eig(a)[1], [(3,3)], hasgrad=False)
+_check('eig', lambda a: function.eig(a+a.T,symmetric=True)[1], lambda a: numpy.linalg.eigh(a+a.swapaxes(1,2))[1], [(3,3)], hasgrad=False)
 _check('trignormal', lambda a: function.trignormal(a), lambda a: numpy.array([numpy.cos(a), numpy.sin(a)]).T, [()])
 _check('trigtangent', lambda a: function.trigtangent(a), lambda a: numpy.array([-numpy.sin(a), numpy.cos(a)]).T, [()])
 _check('mod', lambda a,b: function.mod(a,b), lambda a,b: numpy.mod(a,b), [(3,),(3,)], hasgrad=False)
