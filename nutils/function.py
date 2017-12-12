@@ -217,18 +217,6 @@ class Cache(Evaluable):
 
 CACHE = Cache()
 
-class Trans(Evaluable):
-  def __init__(self, n):
-    self.n = n
-    super().__init__(args=[EVALARGS])
-  def evalf(self, evalargs):
-    trans = evalargs['_transforms'][self.n]
-    assert isinstance(trans, transform.TransformChain)
-    return trans
-
-TRANS = Trans(0)
-OPPTRANS = Trans(1)
-
 class Points(Evaluable):
   def __init__(self, opposite=False):
     super().__init__(args=[EVALARGS])
@@ -292,25 +280,72 @@ class Tuple( Evaluable ):
 
     return Tuple( tuple(other) + self.items )
 
-class SelectChain( Evaluable ):
-  def __init__(self, trans, first:bool):
+# TRANSFORMCHAIN
+
+class TransformChain(Evaluable):
+
+  def __init__(self, args:tuple, todims):
+    self.todims = todims
+    super().__init__(args)
+
+class SelectChain(TransformChain):
+  def __init__(self, n, todims=None):
+    self.n = n
+    super().__init__(args=[EVALARGS], todims=todims)
+  def evalf(self, evalargs):
+    trans = evalargs['_transforms'][self.n]
+    assert isinstance(trans, tuple) and trans[0].todims == self.todims
+    return trans
+
+TRANS = SelectChain(0)
+OPPTRANS = SelectChain(1)
+
+class PopHead(TransformChain):
+
+  def __init__(self, todims:int, trans=TRANS):
+    self.trans = trans
+    super().__init__(args=[self.trans], todims=todims)
+
+  def evalf(self, trans):
+    assert trans[0].todims == None and trans[0].fromdims == self.todims
+    return trans[1:]
+
+class SelectBifurcation(TransformChain):
+
+  def __init__(self, trans, first:bool, todims=None):
     self.trans = trans
     self.first = first
-    super().__init__(args=[trans])
-  def evalf( self, trans ):
-    assert isinstance( trans, transform.TransformChain )
-    bf = trans[0]
-    assert isinstance( bf, transform.Bifurcate )
-    ftrans = bf.trans1 if self.first else bf.trans2
-    return transform.TransformChain( ftrans + trans[1:] )
+    super().__init__(args=[trans], todims=todims)
 
-class Promote(Evaluable):
+  def evalf(self, trans):
+    assert isinstance(trans, tuple)
+    bf = trans[0]
+    assert isinstance(bf, transform.Bifurcate)
+    selected = bf.trans1 if self.first else bf.trans2
+    assert selected[0].todims == self.todims
+    return selected + trans[1:]
+
+class Promote(TransformChain):
+
   def __init__(self, ndims:int, trans):
     self.ndims = ndims
-    super().__init__(args=[trans])
+    super().__init__(args=[trans], todims=trans.todims)
+
   def evalf(self, trans):
-    head, tail = trans.canonical.promote(self.ndims)
-    return transform.TransformChain(head + tail)
+    head, tail = transform.promote(trans, self.ndims)
+    return head + tail
+
+class TailOfTransform(TransformChain):
+
+  def __init__(self, trans, depth, todims:int):
+    assert isarray(depth)
+    assert depth.ndim == 0 and depth.dtype == int
+    super().__init__(args=[trans, depth], todims=todims)
+
+  def evalf(self, trans, depth):
+    depth, = depth
+    assert trans[depth-1].fromdims == self.todims
+    return trans[depth:]
 
 # ARRAYFUNC
 #
@@ -881,45 +916,24 @@ class Product( Array ):
     func = Get(self.func, i, item)
     return Product(func)
 
-class PopHead(Evaluable):
+class ApplyTransforms(Array):
 
-  def __init__(self, trans=TRANS):
+  def __init__(self, trans, points=POINTS):
     self.trans = trans
-    super().__init__(args=[self.trans])
-
-  def evalf(self, trans):
-    return trans[1:]
-
-class TailOfTransform(Evaluable):
-
-  def __init__(self, trans, depth:asarray):
-    assert depth.ndim == 0 and depth.dtype == int
-    super().__init__(args=[trans, depth])
-
-  def evalf(self, trans, depth):
-    depth, = depth
-    return trans[depth:]
-
-class RootCoords(Array):
-
-  def __init__(self, ndims:int, trans, points=POINTS):
-    self.trans = trans
-    super().__init__(args=[points,trans], shape=[ndims], dtype=float)
+    super().__init__(args=[points, trans], shape=[trans.todims], dtype=float)
 
   def evalf(self, points, chain):
-    'evaluate'
-
     return transform.apply(chain, points)
 
   def _derivative(self, var, seen):
     if isinstance(var, LocalCoords) and len(var) > 0:
-      return RootTransform(len(self), len(var), self.trans)
+      return LinearFrom(self.trans, len(var))
     return zeros(self.shape+var.shape)
 
-class RootTransform(Array):
+class LinearFrom(Array):
 
-  def __init__(self, ndims:int, nvars:int, trans):
-    super().__init__(args=[trans], shape=(ndims,nvars), dtype=float)
+  def __init__(self, trans, fromdims:int):
+    super().__init__(args=[trans], shape=(trans.todims, fromdims), dtype=float)
 
   def evalf(self, chain):
     todims, fromdims = self.shape
@@ -1146,7 +1160,7 @@ class Cross( Array ):
 
   def evalf( self, a, b ):
     assert a.ndim == b.ndim == self.ndim+1
-    return numeric.cross( a, b, self.axis+1 )
+    return numpy.cross(a, b, axis=self.axis+1)
 
   def _derivative(self, var, seen):
     ext = (...,)+(_,)*var.ndim
@@ -1807,12 +1821,12 @@ class Sampled( Array ):
     items = iter(self.data.items())
     trans0, (values0,points0) = next(items)
     shape = values0.shape[1:]
-    assert all( transi.fromdims == trans0.fromdims and valuesi.shape == pointsi.shape[:1]+shape for transi, (valuesi,pointsi) in items )
+    assert all(transi[-1].fromdims == trans0[-1].fromdims and valuesi.shape == pointsi.shape[:1]+shape for transi, (valuesi, pointsi) in items)
     super().__init__(args=[trans,POINTS], shape=shape, dtype=float)
 
   def evalf( self, trans, points ):
-    (myvals,mypoints), tail = trans.lookup_item( self.data )
-    evalpoints = tail.apply( points )
+    (myvals, mypoints), tail = transform.lookup_item(trans, self.data)
+    evalpoints = transform.apply(tail, points)
     assert mypoints.shape == evalpoints.shape and numpy.equal(mypoints, evalpoints).all(), 'Illegal point set'
     return myvals
 
@@ -2752,37 +2766,6 @@ def _matchndim( *arrays ):
   ndim = builtins.max( array.ndim for array in arrays )
   return tuple(array[(_,)*(ndim-array.ndim)] for array in arrays)
 
-def _obj2str( obj ):
-  'convert object to string'
-
-  if numeric.isarray(obj):
-    if obj.size < 6:
-      return _obj2str(obj.tolist())
-    return 'array<%s>' % 'x'.join( str(n) for n in obj.shape )
-  if isinstance( obj, list ):
-    if len(obj) < 6:
-      return '[%s]' % ','.join( _obj2str(o) for o in obj )
-    return '[#%d]' % len(obj)
-  if isinstance( obj, (tuple,set) ):
-    if len(obj) < 6:
-      return '(%s)' % ','.join( _obj2str(o) for o in obj )
-    return '(#%d)' % len(obj)
-  if isinstance(obj, collections.abc.Mapping):
-    return '{#%d}' % len(obj)
-  if isinstance( obj, slice ):
-    I = ''
-    if obj.start is not None:
-      I += str(obj.start)
-    if obj.step is not None:
-      I += ':' + str(obj.step)
-    I += ':'
-    if obj.stop is not None:
-      I += str(obj.stop)
-    return I
-  if obj is Ellipsis:
-    return '...'
-  return str(obj)
-
 def _invtrans(trans):
   trans = numpy.asarray(trans)
   assert trans.dtype == int
@@ -2982,7 +2965,7 @@ def blocks(arg):
   return asarray(arg).simplified.blocks
 
 def rootcoords(ndims):
-  return RootCoords(ndims, trans=PopHead(Promote(ndims, trans=TRANS)))
+  return ApplyTransforms(PopHead(ndims))
 
 def sampled(data, ndims):
   return Sampled(data)
@@ -2997,7 +2980,7 @@ def opposite(arg):
 @cache.replace
 def _bifurcate(arg, side):
   if arg in (TRANS, OPPTRANS):
-    return SelectChain(arg, side)
+    return SelectBifurcation(arg, side)
 
 bifurcate1 = functools.partial(_bifurcate, side=True)
 bifurcate2 = functools.partial(_bifurcate, side=False)
@@ -3237,12 +3220,12 @@ def polyfunc(coeffs, dofs, ndofs, transforms, *, issorted=True):
     transforms = tuple(sorted(transforms))
     dofs = tuple(dofsmap[trans] for trans in transforms)
     coeffs = tuple(coeffsmap[trans] for trans in transforms)
-  fromdims, = set(transform.fromdims for transform in transforms)
+  fromdims, = set(transform[-1].fromdims for transform in transforms)
   promote = Promote(fromdims, trans=TRANS)
   index = FindTransform(transforms, promote)
   dofmap = DofMap(dofs, index=index)
   depth = Get([len(trans) for trans in transforms], axis=0, item=index)
-  points = RootCoords(fromdims, TailOfTransform(promote, depth))
+  points = ApplyTransforms(TailOfTransform(promote, depth, fromdims))
   func = Polyval(Elemwise(coeffs, index, dtype=float), points, fromdims)
   return Inflate(func, dofmap, ndofs, axis=0)
 
@@ -3251,7 +3234,7 @@ def elemwise( fmap, shape, default=None ):
     raise NotImplemented('default is not supported anymore')
   transforms = tuple(sorted(fmap))
   values = tuple(fmap[trans] for trans in transforms)
-  fromdims, = set(transform.fromdims for transform in transforms)
+  fromdims, = set(transform[-1].fromdims for transform in transforms)
   promote = Promote(fromdims, trans=TRANS)
   index = FindTransform(transforms, promote)
   return Elemwise(values, index, dtype=float)

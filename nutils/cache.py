@@ -230,36 +230,6 @@ class FileCache( object ):
   def __hash__( self ):
     return self.myhash
 
-class Tuple( object ):
-  unknown = object()
-  def __init__( self, items, getitem, start=0, stride=1 ):
-    if isinstance( items, int ):
-      assert items > 0
-      items = numpy.array( [ self.unknown ] * items, dtype=object )
-    self.__items = numpy.asarray( items, dtype=object )
-    self.__getitem = getitem
-    self.__start = start
-    self.__stride = stride
-  def __len__( self ):
-    return len(self.__items)
-  def __iter__( self ):
-    for i, item in enumerate( self.__items ):
-      if item is self.unknown:
-        self.__items[i] = item = self.__getitem( self.__start + i * self.__stride )
-      yield item
-  def __getitem__( self, i ):
-    if isinstance( i, slice ):
-      items = self.__items[i]
-      if self.unknown not in items:
-        return tuple(items)
-      start, stop, stride = i.indices( len(self) )
-      return Tuple( items, self.__getitem, self.__start + start * self.__stride, stride * self.__stride )
-    assert isinstance( i, int )
-    item = self.__items[i]
-    if item is self.unknown:
-      self.__items[i] = item = self.__getitem( self.__start + i * self.__stride )
-    return item
-
 def replace(func):
   '''decorator for deep object replacement
 

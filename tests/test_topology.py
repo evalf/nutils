@@ -9,11 +9,11 @@ def neighbor( elem1, elem2 ):
   ncommon = sum( v in elem1_vertices for v in elem2.vertices )
   if not ncommon:
     return -1
-  if elem1.reference == elem2.reference == element.getsimplex(1):
+  if elem1.ndims == elem2.ndims == 1:
     return {2:0,1:1}[ncommon]
-  if elem1.reference == elem2.reference == element.getsimplex(1)**2:
+  if elem1.ndims == elem2.ndims == 2:
     return {4:0,2:1,1:2}[ncommon]
-  if elem1.reference == elem2.reference == element.getsimplex(1)**3:
+  if elem1.ndims == elem2.ndims == 3:
     return {8:0,4:1,2:2,1:3}[ncommon]
   raise NotImplementedError( '%s, %s' % ( elem1.reference, elem2.reference ) )
 
@@ -330,16 +330,19 @@ class general(TestCase):
 
   def test_boundary(self):
     for elem in self.domain.boundary:
-      ielem, tail = elem.transform.lookup_item(self.domain.edict)
-      iedge = self.domain.elements[ielem].reference.edge_transforms.index(tail)
+      ielem, tail = transform.lookup_item(elem.transform, self.domain.edict)
+      etrans, = tail
+      iedge = self.domain.elements[ielem].reference.edge_transforms.index(etrans)
       self.assertEqual(self.domain.connectivity[ielem][iedge], -1)
 
   def test_interfaces(self):
     for elem in self.domain.interfaces:
-      ielem, tail = elem.transform.lookup_item(self.domain.edict)
-      iedge = self.domain.elements[ielem].reference.edge_transforms.index(tail)
-      ioppelem, opptail = elem.opposite.lookup_item(self.domain.edict)
-      ioppedge = self.domain.elements[ioppelem].reference.edge_transforms.index(opptail)
+      ielem, tail = transform.lookup_item(elem.transform, self.domain.edict)
+      etrans, = tail
+      iedge = self.domain.elements[ielem].reference.edge_transforms.index(etrans)
+      ioppelem, opptail = transform.lookup_item(elem.opposite, self.domain.edict)
+      eopptrans, = opptail
+      ioppedge = self.domain.elements[ioppelem].reference.edge_transforms.index(eopptrans)
       self.assertEqual(self.domain.connectivity[ielem][iedge], ioppelem)
       self.assertEqual(self.domain.connectivity[ioppelem][ioppedge], ielem)
 

@@ -6,6 +6,23 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+Removed: TransformChain, CanonicalTransformChain
+
+  Transformation chains (sequences of TransformItems) are stored as
+  standard tuples. Former methods of (Canonical)TransformChain are
+  replaced by module methods:
+
+  Old:
+  >>> elem.transform.promote(ndims)
+
+  New:
+  >>> transform.promote(elem.transform, ndims)
+
+  In addition, every edge_transform and child_transform of Reference
+  objects is changed from (typically unit-length) TransformChain to
+  TransformItem.
+
+
 Changed: command line interface
 
   Command line parsers `cli.run` or `cli.choose` dropped support for
