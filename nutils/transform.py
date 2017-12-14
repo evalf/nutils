@@ -387,8 +387,10 @@ class TensorEdge1(Updim):
   def swapup(self, other):
     # prioritize ascending transformations, i.e. change updim << scale to scale << updim
     if isinstance(other, TensorChild) and self.trans.fromdims == other.trans1.todims:
-      child, edge = self.trans.swapup(other.trans1)
-      return TensorChild(child, other.trans2), TensorEdge1(edge, other.trans2.fromdims)
+      swapped = self.trans.swapup(other.trans1)
+      if swapped:
+        child, edge = swapped
+        return TensorChild(child, other.trans2), TensorEdge1(edge, other.trans2.fromdims)
 
   def swapdown(self, other):
     # prioritize ascending transformations, i.e. change scale << updim to updim << scale
@@ -407,8 +409,10 @@ class TensorEdge2(Updim):
   def swapup(self, other):
     # prioritize ascending transformations, i.e. change updim << scale to scale << updim
     if isinstance(other, TensorChild) and self.trans.fromdims == other.trans2.todims:
-      child, edge = self.trans.swapup(other.trans2)
-      return TensorChild(other.trans1, child), TensorEdge2(other.trans1.fromdims, edge)
+      swapped = self.trans.swapup(other.trans2)
+      if swapped:
+        child, edge = swapped
+        return TensorChild(other.trans1, child), TensorEdge2(other.trans1.fromdims, edge)
 
   def swapdown(self, other):
     # prioritize ascending transformations, i.e. change scale << updim to updim << scale
