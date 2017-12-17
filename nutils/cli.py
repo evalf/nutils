@@ -109,7 +109,7 @@ def run(func, *, skip=1):
       print('invalid argument for {!r}: {}'.format(name, e))
       sys.exit(2)
 
-  status = call(func, **kwargs)
+  status = call(func, kwargs, scriptname=os.path.basename(sys.argv[0]), funcname=None if skip==1 else func.__name__)
   sys.exit(status)
 
 def choose(*functions):
@@ -130,11 +130,10 @@ def choose(*functions):
 
   run(functions[ifunc], skip=2)
 
-def call( func, **kwargs ):
+def call(func, kwargs, scriptname, funcname=None):
   '''set up compute environment and call function'''
 
   starttime = datetime.datetime.now()
-  scriptname = os.path.basename(sys.argv[0])
 
   with contextlib.ExitStack() as stack:
 
@@ -164,6 +163,8 @@ def call( func, **kwargs ):
           os.remove( target )
         os.symlink( relpath, target )
 
+    __log__ = log._mklog()
+
     htmloutput = core.getprop( 'htmloutput', True )
     if htmloutput:
       for base, relpath in relpaths:
@@ -177,23 +178,14 @@ def call( func, **kwargs ):
           print( '<meta http-equiv="refresh" content="0;URL={}" />'.format(os.path.join(relpath,'log.html')), file=redirlog )
           print( '</head></html>', file=redirlog )
 
-    __log__ = log._mklog() if not htmloutput \
-         else log.TeeLog( log._mklog(), log.HtmlLog( 'log.html', title=scriptname, scriptname=scriptname ) )
+      funcargs = [(parameter.name, kwargs.get(parameter.name,parameter.default), parameter.annotation) for parameter in inspect.signature(func).parameters.values()]
+      __log__ = log.TeeLog(__log__, log.HtmlLog('log.html', title=scriptname, scriptname=scriptname, funcname=funcname, funcargs=funcargs))
+
     try:
       with __log__:
 
         log.info( 'nutils v{}'.format( _version() ) )
-        log.info( '' )
-        log.info( '{} {}'.format( scriptname, func.__name__ ) )
-        for parameter in inspect.signature( func ).parameters.values():
-          argstr = '  --{}={}'.format( parameter.name, kwargs.get(parameter.name,parameter.default) )
-          if parameter.annotation is not parameter.empty:
-            argstr += ' ({})'.format( parameter.annotation )
-          log.info( argstr )
-
-        log.info( '' )
         log.info( 'start {}'.format( starttime.ctime() ) )
-        log.info( '' )
 
         func( **kwargs )
 
@@ -201,7 +193,6 @@ def call( func, **kwargs ):
         minutes, seconds = divmod( (endtime-starttime).seconds, 60 )
         hours, minutes = divmod( minutes, 60 )
 
-        log.info( '' )
         log.info( 'finish {}'.format( endtime.ctime() ) )
         log.info( 'elapsed {:.0f}:{:02.0f}:{:02.0f}'.format( hours, minutes, seconds ) )
 

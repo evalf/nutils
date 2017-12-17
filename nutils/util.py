@@ -367,7 +367,7 @@ def run( *functions ):
   __dot__ = properties['dot']
   __selfcheck__ = properties['selfcheck']
 
-  status = cli.call( func, **kwargs )
+  status = cli.call(func, kwargs, scriptname=os.path.basename(sys.argv[0]), funcname=func.__name__)
   sys.exit( status )
 
 class hashlessdict(collections.abc.MutableMapping):

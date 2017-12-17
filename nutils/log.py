@@ -252,7 +252,7 @@ class HtmlInsertAnchor( Log ):
 class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
   '''Output html nested lists.'''
 
-  def __init__( self, file, *, title='nutils', scriptname=None ):
+  def __init__(self, file, *, title='nutils', scriptname=None, funcname=None, funcargs=None):
     if isinstance( file, (str, bytes) ):
       self._file = file = core.open_in_outdir( file, 'w' )
     else:
@@ -261,6 +261,8 @@ class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
     self._flush = file.flush
     self._title = title
     self._scriptname = scriptname
+    self._funcname = funcname
+    self._funcargs = funcargs
     super().__init__()
 
   def __enter__( self ):
@@ -283,7 +285,13 @@ class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
     self._print( '</head><body class="newstyle"><pre>' )
     if self._scriptname is not None:
       self._print( '<span id="navbar">goto: <a class="nav_latest" href="../../../../log.html?{1:.0f}">latest {0:}</a> | <a class="nav_latestall" href="../../../../../log.html?{1:.0f}">latest overall</a> | <a class="nav_index" href="../../../../../">index</a></span>'.format( self._scriptname, time.mktime(time.localtime()) ) )
-    self._print( '<ul>' )
+    self._print('<ul>' )
+    if self._scriptname:
+      self._print('<li class="info">{} {}</li>'.format(html.escape(self._scriptname), html.escape(self._funcname or '')))
+    if self._funcargs:
+      for name, value, annotation in self._funcargs:
+        self._print(('  <li class="info">  --{}={} ({})</li>' if annotation else '<li class="info">{}={}</li>').format(*(html.escape(str(v)) for v in (name, value, annotation))))
+
     return self
 
   def __exit__( self, etype, value, tb ):
