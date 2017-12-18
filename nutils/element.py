@@ -260,6 +260,11 @@ class Reference( cache.Immutable ):
     return WithChildrenReference( self, child_refs )
 
   @cache.property
+  def volume( self ):
+    ipoints, iweights = self.getischeme('gauss{}'.format(1))
+    return iweights.sum()
+
+  @cache.property
   def centroid( self ):
     ipoints, iweights = self.getischeme('gauss{}'.format(1))
     return ipoints.T.dot( iweights )/iweights.sum()
@@ -404,8 +409,6 @@ class EmptyReference( Reference ):
 class RevolutionReference( Reference ):
   'modify gauss integration to always return a single point'
 
-  volume = 2 * numpy.pi
-
   def __init__(self):
     super().__init__(ndims=1)
 
@@ -425,17 +428,13 @@ class RevolutionReference( Reference ):
     return (transform.Identity(self.ndims), self),
 
   def getischeme( self, ischeme ):
-    return numeric.const([[0.]]), numeric.const([self.volume])
+    return numeric.const([[0.]]), numeric.const([2 * numpy.pi])
 
   def inside(self, point, eps=0):
     return True
 
 class SimplexReference( Reference ):
   'simplex reference'
-
-  def __init__(self, ndims:int):
-    super().__init__(ndims)
-    self.volume = 1. / math.factorial(ndims)
 
   @property
   def vertices(self):
@@ -537,8 +536,6 @@ class SimplexReference( Reference ):
 class PointReference( SimplexReference ):
   '0D simplex'
 
-  volume = 1
-
   def __init__(self):
     super().__init__(ndims=0)
 
@@ -558,10 +555,10 @@ class LineReference( SimplexReference ):
   def getischeme_gauss( self, degree ):
     assert isinstance( degree, int ) and degree >= 0
     x, w = gauss( degree )
-    return x[:,_], w * self.volume
+    return x[:,_], w
 
   def getischeme_uniform( self, n ):
-    return ( numpy.arange(.5,n) / n )[:,_], numeric.const.full([n], self.volume/n)
+    return ( numpy.arange(.5,n) / n )[:,_], numeric.const.full([n], 1/n)
 
   def getischeme_bezier( self, np ):
     return numpy.linspace( 0, 1, np )[:,_], None
@@ -626,7 +623,7 @@ class TriangleReference( SimplexReference ):
       warnings.warn( 'inexact integration for polynomial of degree %i'.format(degree) )
 
     return numpy.concatenate( [ numpy.take(c,i) for i, c, w in icw ], axis=0 ), \
-           numpy.concatenate( [ [w*self.volume] * len(i) for i, c, w in icw ] )
+           numpy.concatenate( [ [w*.5] * len(i) for i, c, w in icw ] )
 
   def getischeme_uniform( self, n ):
     points = numpy.arange( 1./3, n ) / n
@@ -637,7 +634,7 @@ class TriangleReference( SimplexReference ):
     coords = C.reshape( 2, nn )
     flip = coords.sum(0) > 1
     coords[:,flip] = 1 - coords[::-1,flip]
-    weights = numeric.const.full([nn], self.volume/nn)
+    weights = numeric.const.full([nn], .5/nn)
     return coords.T, weights
 
   def getischeme_bezier( self, np ):
@@ -783,7 +780,7 @@ class TetrahedronReference( SimplexReference ):
       warnings.warn( 'inexact integration for polynomial of degree %i'.format(degree) )
 
     return numpy.concatenate( [ numpy.take(c,i) for i, c, w in icw ], axis=0 ), \
-           numpy.concatenate( [ [w*self.volume] * len(i) for i, c, w in icw ] )
+           numpy.concatenate( [ [w/6] * len(i) for i, c, w in icw ] )
 
 class TensorReference( Reference ):
   'tensor reference'
@@ -806,10 +803,6 @@ class TensorReference( Reference ):
     vertices[:,:,:self.ref1.ndims] = self.ref1.vertices[:,_]
     vertices[:,:,self.ref1.ndims:] = self.ref2.vertices[_,:]
     return numeric.const(vertices.reshape(self.ref1.nverts*self.ref2.nverts, self.ndims), copy=False)
-
-  @property
-  def volume( self ):
-    return self.ref1.volume * self.ref2.volume
 
   @property
   def centroid( self ):
@@ -1009,10 +1002,6 @@ class Cone( Reference ):
   @cache.property
   def vertices(self):
     return numeric.const(numpy.vstack([[self.tip], self.etrans.apply(self.edgeref.vertices)]), copy=False)
-
-  @property
-  def volume( self ):
-    return self.edgeref.volume * self.extnorm * self.height / self.ndims
 
   @cache.property
   def edge_transforms( self ):
@@ -1239,10 +1228,6 @@ class OwnChildReference( Reference ):
   def edge_refs( self ):
     return [ OwnChildReference(edge) for edge in self.baseref.edge_refs ]
 
-  @property
-  def volume( self ):
-    return self.baseref.volume
-
   def getischeme( self, ischeme ):
     return self.baseref.getischeme( ischeme )
 
@@ -1286,10 +1271,6 @@ class WithChildrenReference( Reference ):
   @property
   def permutation_transforms( self ):
     return self.baseref.permutation_transforms
-
-  @property
-  def volume( self ):
-    return sum( abs(trans.det) * ref.volume for trans, ref in self.children )
 
   def nvertices_by_level( self, n ):
     return self.baseref.nvertices_by_level(n)
@@ -1508,10 +1489,6 @@ class MosaicReference( Reference ):
   @cache.property
   def subrefs( self ):
     return [ ref.cone(trans,self._midpoint) for trans, ref in zip( self.baseref.edge_transforms, self._edge_refs ) if ref ]
-
-  @property
-  def volume( self ):
-    return sum( subref.volume for subref in self.subrefs )
 
   @property
   def simplices( self ):
