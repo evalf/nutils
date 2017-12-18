@@ -62,40 +62,41 @@ log_rich_output = '''\
 \033[K'''
 
 log_html = '''\
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "DTD/xhtml1-strict.dtd">
+<!DOCTYPE html>
 <html><head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no"/>
 <title>test</title>
-<script type="text/javascript" src="viewer.js" ></script>
-<link rel="stylesheet" type="text/css" href="style.css">
-<meta charset="UTF-8" />
-</head><body class="newstyle"><pre>
-<ul>
-<li class="context">iterator</li><ul>
-<li class="context">iter 0 (0%)</li><ul>
-<li class="info">a</li>
-</ul>
-<li class="context">iter 1 (33%)</li><ul>
-<li class="info">b</li>
-</ul>
-<li class="context">iter 2 (67%)</li><ul>
-<li class="info">c</li>
-</ul>
-</ul>
-<li class="context">levels</li><ul>
-<li class="error">error</li>
-<li class="warning">warning</li>
-<li class="user">user</li>
-<li class="info">info</li>
-</ul>
-<li class="context">exception</li><ul>
-<li class="error">ValueError(&#x27;test&#x27;,)
+<script src="viewer.js"></script>
+<link rel="stylesheet" type="text/css" href="viewer.css"/>
+</head><body>
+<div id="log">
+<div class="context"><div class="title">iterator</div><div class="children">
+<div class="context"><div class="title">iter 0 (0%)</div><div class="children">
+<div class="item" data-loglevel="3">a</div>
+</div><div class="end"></div></div>
+<div class="context"><div class="title">iter 1 (33%)</div><div class="children">
+<div class="item" data-loglevel="3">b</div>
+</div><div class="end"></div></div>
+<div class="context"><div class="title">iter 2 (67%)</div><div class="children">
+<div class="item" data-loglevel="3">c</div>
+</div><div class="end"></div></div>
+</div><div class="end"></div></div>
+<div class="context"><div class="title">levels</div><div class="children">
+<div class="item" data-loglevel="0">error</div>
+<div class="item" data-loglevel="1">warning</div>
+<div class="item" data-loglevel="2">user</div>
+<div class="item" data-loglevel="3">info</div>
+</div><div class="end"></div></div>
+<div class="context"><div class="title">exception</div><div class="children">
+<div class="item" data-loglevel="0">ValueError(&#x27;test&#x27;,)
   File &quot;??&quot;, line ??, in ??
-    raise ValueError( &#x27;test&#x27; )</li>
-</ul>
-<li class="info"><a href="test.png" class="plot">test.png</a></li>
-<li class="info">nonexistent.png</li>
-</ul>
-</pre></body></html>
+    raise ValueError( &#x27;test&#x27; )</div>
+</div><div class="end"></div></div>
+<div class="item" data-loglevel="3"><a href="test.png" class="plot">test.png</a></div>
+<div class="item" data-loglevel="3">nonexistent.png</div>
+</div>
+</body></html>
 '''
 
 log_indent = '''\
@@ -221,7 +222,7 @@ def generate_exception(level=0):
     with self.assertRaises(TestException):
       with nutils.log.HtmlLog(stream, title='test') as __log__:
         virtual_module['generate_exception']()
-    self.assertIn('<span class="post-mortem">', stream.getvalue())
+    self.assertIn('<div class="post-mortem">', stream.getvalue())
 
 class move_outdir(ContextTestCase):
 
