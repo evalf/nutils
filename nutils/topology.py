@@ -735,19 +735,7 @@ class WithGroupsTopology( Topology ):
     self.igroups = igroups.copy()
     self.pgroups = pgroups.copy()
     Topology.__init__( self, basetopo.ndims )
-    if core.getprop( 'selfcheck', False ):
-      if self.vgroups:
-        for topo in self.vgroups.values():
-          if topo is not Ellipsis and not isinstance( topo, str ):
-            assert isinstance( topo, Topology )
-            assert topo.ndims == basetopo.ndims
-            assert set(self.basetopo.edict).issuperset(topo.edict)
-      if self.bgroups:
-        self.boundary
-      if self.igroups:
-        self.interfaces
-      if self.pgroups:
-        self.points
+    assert all(topo is Ellipsis or isinstance(topo, str) or isinstance(topo, Topology) and topo.ndims == basetopo.ndims and set(self.basetopo.edict).issuperset(topo.edict) for topo in self.vgroups.values())
 
   def withgroups( self, vgroups={}, bgroups={}, igroups={}, pgroups={} ):
     args = []
