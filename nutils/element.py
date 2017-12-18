@@ -202,22 +202,7 @@ class Reference( cache.Immutable ):
     return tuple(map(tuple, childmap))
 
   @cache.property
-  def ribbons( self ):
-    # tuples of (iedge1,jedge1), (iedge2,jedge2) pairs
-    assert self.ndims >= 2
-    ribbons = tuple( self._ribbons )
-    if core.getprop( 'selfcheck', False ):
-      for (iedge1,iedge2), (jedge1,jedge2) in ribbons:
-        itrans = self.edge_transforms[iedge1] * self.edge_refs[iedge1].edge_transforms[iedge2]
-        jtrans = self.edge_transforms[jedge1] * self.edge_refs[jedge1].edge_transforms[jedge2]
-        assert itrans.linear == jtrans.linear and itrans.offset == jtrans.offset # ignore isflipped
-        iref = self.edge_refs[iedge1].edge_refs[iedge2]
-        jref = self.edge_refs[jedge1].edge_refs[jedge2]
-        assert iref == jref
-    return ribbons
-
-  @property
-  def _ribbons( self ):
+  def ribbons(self):
     # tuples of (iedge1,jedge1), (iedge2,jedge2) pairs
     assert self.ndims >= 2
     transforms = {}
@@ -235,7 +220,7 @@ class Reference( cache.Immutable ):
               assert self.edge_refs[jedge1].edge_refs[jedge2] == edge2
               ribbons.append(( (iedge1,iedge2), (jedge1,jedge2) ))
     assert not transforms
-    return tuple( ribbons )
+    return tuple(ribbons)
 
   permutation_transforms = ()
 
@@ -467,9 +452,9 @@ class SimplexReference( Reference ):
       transforms.append(transform.Square(linear.T, offset))
     return tuple(transforms)
 
-  @property
-  def _ribbons( self ):
-    return [ ((iedge1,iedge2),(iedge2+1,iedge1)) for iedge1 in range(self.ndims+1) for iedge2 in range(iedge1,self.ndims) ]
+  @cache.property
+  def ribbons(self):
+    return tuple(((iedge1,iedge2),(iedge2+1,iedge1)) for iedge1 in range(self.ndims+1) for iedge2 in range(iedge1,self.ndims))
 
   def getischeme_vtk( self ):
     return self.vertices, None
@@ -882,8 +867,8 @@ class TensorReference( Reference ):
       edge_refs.extend(self.ref1 * edge2 for edge2 in self.ref2.edge_refs)
     return tuple(edge_refs)
 
-  @property
-  def _ribbons( self ):
+  @cache.property
+  def ribbons(self):
     if self.ref1.ndims == 0:
       return self.ref2.ribbons
     if self.ref2.ndims == 0:
@@ -903,7 +888,7 @@ class TensorReference( Reference ):
     if self.ref2.ndims >= 2:
       ribbons.extend( ((iedge1+self.ref1.nedges,iedge2+self.ref1.nedges),
                        (jedge1+self.ref1.nedges,jedge2+self.ref1.nedges)) for (iedge1,iedge2), (jedge1,jedge2) in self.ref2.ribbons )
-    return ribbons
+    return tuple(ribbons)
 
   @cache.property
   def child_transforms(self):
