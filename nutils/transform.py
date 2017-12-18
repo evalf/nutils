@@ -295,6 +295,10 @@ class Updim(Matrix):
   def flipped(self):
     return Updim(self.linear, self.offset, not self.isflipped)
 
+  def swapup(self, other):
+    if isinstance(other, Identity):
+      return Identity(self.todims), self
+
 class SimplexEdge(Updim):
 
   swap = (
@@ -399,6 +403,7 @@ class TensorEdge1(Updim):
       if swapped:
         edge, child = swapped
         return TensorEdge1(edge, other.trans2.todims), TensorChild(child, other.trans2)
+      return ScaledUpdim(other, self), Identity(self.fromdims)
 
 class TensorEdge2(Updim):
 
@@ -421,6 +426,7 @@ class TensorEdge2(Updim):
       if swapped:
         edge, child = swapped
         return TensorEdge2(other.trans1.todims, edge), TensorChild(other.trans1, child)
+      return ScaledUpdim(other, self), Identity(self.fromdims)
 
 class TensorChild(Square):
 
