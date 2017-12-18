@@ -42,19 +42,13 @@ class elem(TestCase):
 
   @parametrize.enable_if(lambda ref, **kwargs: ref.ndims >= 1)
   def test_connectivity(self):
-    childmap, edgemap = self.ref.connectivity
-    for ichild, edges in enumerate(childmap):
+    for ichild, edges in enumerate(self.ref.connectivity):
       for iedge, ioppchild in enumerate(edges):
         if ioppchild != -1:
-          ioppedge = childmap[ioppchild].index(ichild)
+          ioppedge = self.ref.connectivity[ioppchild].index(ichild)
           self.assertEqual(
             self.ref.child_transforms[ichild] * self.ref.child_refs[ichild].edge_transforms[iedge],
             (self.ref.child_transforms[ioppchild] * self.ref.child_refs[ioppchild].edge_transforms[ioppedge]).flipped)
-    for iedge, children in enumerate(edgemap):
-      for ichild, (jchild, jedge) in enumerate(children):
-        self.assertEqual(
-          self.ref.edge_transforms[iedge] * self.ref.edge_refs[iedge].child_transforms[ichild],
-          self.ref.child_transforms[jchild] * self.ref.child_refs[jchild].edge_transforms[jedge])
 
   def test_dof_transpose_map(self):
     nverts = []

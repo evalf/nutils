@@ -181,15 +181,8 @@ class Reference( cache.Immutable ):
 
   @cache.property
   def connectivity(self):
-    # Two nested tuples (`childmap` and `edgemap`) that provide information
-    # about how edges of children and children of edges are related:
-    # 1. childmap[ichild][iedge] = ioppchild (interface) or -1 (boundary)
-    # 2. edgemap[iedge][ichild] = (jchild, jedge)
-    # Note that the second structure relates only to external boundary
-    # segments. The reason to generate both structures simultaneously is that
-    # they are efficiently generated together, and because it allows a
-    # consistency check to be performed: after separating elements in
-    # interfaces and external boundaries none should remain.
+    # Nested tuple with connectivity information about edges of children:
+    # connectivity[ichild][iedge] = ioppchild (interface) or -1 (boundary).
     childmap = [[-1] * child.nedges for child in self.child_refs]
     vmap = {}
     for ichild, (ctrans, cref) in enumerate(self.children):
@@ -202,9 +195,11 @@ class Reference( cache.Immutable ):
         else:
           childmap[jchild][jedge] = ichild
           childmap[ichild][iedge] = jchild
-    edgemap = [[vmap.pop(etrans * ctrans) for ctrans in eref.child_transforms] for etrans, eref in self.edges]
+    for etrans, eref in self.edges:
+      for ctrans in eref.child_transforms:
+        vmap.pop(etrans * ctrans, None)
     assert not any(self.child_refs[ichild].edge_refs[iedge] for ichild, iedge in vmap.values()), 'not all boundary elements recovered'
-    return tuple(map(tuple, childmap)), tuple(map(tuple, edgemap))
+    return tuple(map(tuple, childmap))
 
   @cache.property
   def ribbons( self ):
@@ -1344,8 +1339,7 @@ class WithChildrenReference( Reference ):
     extra_edges = [(ichild, iedge, cref.edge_refs[iedge])
       for ichild, cref in enumerate(self.child_refs) if cref
         for iedge in range(self.baseref.child_refs[ichild].nedges, cref.nedges)]
-    childmap = self.baseref.connectivity[0]
-    for ichild, edges in enumerate(childmap):
+    for ichild, edges in enumerate(self.baseref.connectivity):
       cref = self.child_refs[ichild]
       if not cref:
         continue # new child is empty
@@ -1357,7 +1351,7 @@ class WithChildrenReference( Reference ):
           continue # opposite is complete, so iedge cannot form a new external boundary
         eref = cref.edge_refs[iedge]
         if coppref: # opposite new child is not empty
-          eref -= coppref.edge_refs[childmap[jchild].index(ichild)]
+          eref -= coppref.edge_refs[self.baseref.connectivity[jchild].index(ichild)]
         if eref:
           extra_edges.append((ichild, iedge, eref))
     return extra_edges
@@ -1408,18 +1402,25 @@ class WithChildrenReference( Reference ):
 
   @cache.property
   def edge_refs( self ):
-    edgemap = self.baseref.connectivity[1]
-    return tuple([baseedge and baseedge.with_children(self.child_refs[jchild].edge_refs[jedge] if self.child_refs[jchild] else EmptyReference(self.ndims-1) for jchild, jedge in edgemap[iedge]) for iedge, baseedge in enumerate(self.baseref.edge_refs)]
-               + [OwnChildReference(ref) for ichild, iedge, ref in self.__extra_edges])
+    refs = []
+    for etrans, eref in self.baseref.edges:
+      children = []
+      if eref:
+        for ctrans, cref in eref.children:
+          ctrans_, etrans_ = etrans.swapup(ctrans)
+          ichild = self.baseref.child_transforms.index(ctrans_)
+          cref = self.child_refs[ichild]
+          children.append(cref.edge_refs[cref.edge_transforms.index(etrans_)] if cref else EmptyReference(self.ndims-1))
+      refs.append(eref.with_children(children))
+    for ichild, iedge, ref in self.__extra_edges:
+      refs.append(OwnChildReference(ref))
+    return tuple(refs)
 
   @cache.property
   def connectivity(self):
-    # constructs the same childmap, edgemap as the base implementation, but cheaper
-    basechildmap, baseedgemap = self.baseref.connectivity
-    childmap = tuple(basechildmap[ichild] + (-1,) * (cref.nedges - self.baseref.child_refs[ichild].nedges) if cref else () for ichild, cref in enumerate(self.child_refs))
-    edgemap = tuple([baseedgemap[iedge] if eref else () for iedge, eref in enumerate(self.baseref.edge_refs)]
-                  + [((ichild, iedge),) for ichild, iedge, eref in self.__extra_edges])
-    return childmap, edgemap
+    # same as base implementation but cheaper
+    return tuple(tuple(edges[iedge] if iedge < len(edges) and edges[iedge] != -1 and self.child_refs[edges[iedge]] else -1 for iedge in range(self.child_refs[ichild].nedges))
+      for ichild, edges in enumerate(self.baseref.connectivity))
 
   def inside( self, point, eps=0 ):
     return any(cref.inside(ctrans.invapply(point), eps=eps) for ctrans, cref in self.children)
