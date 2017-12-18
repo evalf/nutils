@@ -22,8 +22,9 @@ class elem(TestCase):
       with self.subTest(n=n):
         points, weights = self.ref.getischeme('vertex{}'.format(n))
         for (ctrans, cref), vals in zip(self.ref.children, self.ref.child_divide(points, n)):
-          cpoints, cweights = cref.getischeme('vertex{}'.format(n-1))
-          numpy.testing.assert_equal(ctrans.apply(cpoints), vals)
+          if cref:
+            cpoints, cweights = cref.getischeme('vertex{}'.format(n-1))
+            numpy.testing.assert_equal(ctrans.apply(cpoints), vals)
 
   @parametrize.enable_if(lambda ref, **kwargs: ref.ndims >= 1)
   def test_swap(self):
@@ -50,6 +51,7 @@ class elem(TestCase):
             self.ref.child_transforms[ichild] * self.ref.child_refs[ichild].edge_transforms[iedge],
             (self.ref.child_transforms[ioppchild] * self.ref.child_refs[ioppchild].edge_transforms[ioppedge]).flipped)
 
+  @parametrize.enable_if(lambda ref, **kwargs: isinstance(ref, (element.SimplexReference, element.TensorReference)))
   def test_dof_transpose_map(self):
     nverts = []
     ref = self.ref
@@ -74,3 +76,5 @@ elem('square', ref=element.LineReference()**2, exactcentroid=[.5]*2)
 elem('hexagon', ref=element.LineReference()**3, exactcentroid=[.5]*3)
 elem('prism1', ref=element.TriangleReference()*element.LineReference(), exactcentroid=[1/3,1/3,1/2])
 elem('prism2', ref=element.LineReference()*element.TriangleReference(), exactcentroid=[1/2,1/3,1/3])
+elem('withchildren1', ref=element.WithChildrenReference(element.LineReference()**2, [element.LineReference()**2,element.EmptyReference(2),element.EmptyReference(2),element.EmptyReference(2)]), exactcentroid=[1/4,1/4])
+elem('withchildren2', ref=element.WithChildrenReference(element.LineReference()**2, [element.LineReference()**2,element.LineReference()**2,element.EmptyReference(2),element.EmptyReference(2)]), exactcentroid=[1/4,1/2])
