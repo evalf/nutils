@@ -17,6 +17,10 @@ class elem(TestCase):
     numpy.testing.assert_almost_equal(childvol, self.ref.volume)
 
   @parametrize.enable_if(lambda ref, **kwargs: ref.ndims >= 1)
+  def test_edges(self):
+    self.ref.check_edges(print=self.fail)
+
+  @parametrize.enable_if(lambda ref, **kwargs: ref.ndims >= 1)
   def test_childdivide(self):
     for n in 1, 2, 3:
       with self.subTest(n=n):

@@ -592,16 +592,24 @@ class Topology( object ):
     return extractions
 
   @log.title
-  def volume( self, geometry, ischeme='gauss1', *, arguments=None ):
-    return self.integrate( 1, geometry=geometry, ischeme=ischeme, arguments=arguments )
+  def volume(self, geometry, ischeme='gauss', degree=1, *, arguments=None):
+    return self.integrate(1, geometry=geometry, ischeme=ischeme, degree=degree, arguments=arguments)
 
   @log.title
-  def volume_check( self, geometry, ischeme='gauss1', decimal=15, *, arguments=None ):
-    volume = self.volume( geometry, ischeme, arguments=arguments )
-    zeros, volumes = self.boundary.integrate( [ geometry.normal(), geometry * geometry.normal() ], geometry=geometry, ischeme=ischeme, arguments=arguments )
-    numpy.testing.assert_almost_equal( zeros, 0., decimal=decimal )
-    numpy.testing.assert_almost_equal( volumes, volume, decimal=decimal )
-    return volume
+  def check_boundary(self, geometry, elemwise=False, ischeme='gauss', degree=1, tol=1e-15, print=print, *, arguments=None):
+    if elemwise:
+      for elem in self:
+        elem.reference.check_edges(tol=tol, print=print)
+    volume = self.volume(geometry, ischeme=ischeme, degree=degree, arguments=arguments)
+    zeros, volumes = self.boundary.integrate([geometry.normal(), geometry * geometry.normal()], geometry=geometry, ischeme=ischeme, degree=degree, arguments=arguments)
+    if numpy.greater(abs(zeros), tol).any():
+      print('divergence check failed: {} != 0'.format(zeros))
+    if numpy.greater(abs(volumes - volume), tol).any():
+      print('divergence check failed: {} != {}'.format(volumes, volume))
+
+  def volume_check(self, geometry, ischeme='gauss', degree=1, decimal=15, *, arguments=None):
+    warnings.warn('volume_check will be removed in future, us check_boundary instead', DeprecationWarning)
+    self.check_boundary(geometry=geometry, ischeme=ischeme, degree=degree, tol=10**-decimal, arguments=arguments)
 
   def indicator(self, subtopo):
     if isinstance(subtopo, str):

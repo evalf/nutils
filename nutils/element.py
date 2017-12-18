@@ -325,44 +325,19 @@ class Reference( cache.Immutable ):
   def cone( self, trans, tip ):
     return Cone( self, trans, tip )
 
-  def check_edges( self, tol=1e-10 ):
-    if not self.ndims or not self:
-      return
-    x, w = self.getischeme( 'gauss1' )
-    volume = w.sum()
-    assert abs( volume - self.volume ) < tol
-    assert volume > 0
-    check_volume = 0
-    check_zero = 0
+  def check_edges(self, tol=1e-15, print=print):
+    volume = 0
+    zero = 0
     for trans, edge in self.edges:
-      if not edge:
-        continue
-      xe, we = edge.getischeme( 'gauss1' )
-      w_normal = we[:,_] * trans.ext
-      check_zero += w_normal.sum(0)
-      check_volume += numeric.contract( trans.apply(xe), w_normal, axis=0 )
-    zero_ok = numpy.less(abs(check_zero), tol).all()
-    volume_ok = numpy.less(abs(check_volume-volume), tol).all()
-    if zero_ok and volume_ok:
-      return
-    s = [ 'divergence check failed: ' + ', '.join( name for (name,ok) in (('zero',zero_ok),('volume',volume_ok)) if not ok ) ]
-    try:
-      s.append( 'Vertices:' )
-      s.extend( '{} {}'.format( chr(ord('A')+i), numeric.fhex(v) ) for i, v in enumerate( self.vertices ) )
-      index = self.vertices.tolist().index
-      vtx2abc = lambda vertices: '[' + ','.join( chr(ord('A')+index(v)) for v in vertices.tolist() ) + ']'
-      s.append( 'Volume:' )
-      s.extend( '* {} {} -> {}'.format( ref, vtx2abc(trans.apply(ref.vertices)), trans.det*ref.volume ) for trans, ref in self.simplices )
-      s.append( 'Edges:' )
-      s.extend( '* {} {} -> {}'.format( subref, vtx2abc((etrans*subtrans).apply(subref.vertices)), numeric.fhex((etrans*subtrans).ext*subref.volume) ) for etrans, eref in self.edges for subtrans, subref in eref.simplices )
-    except Exception as e:
-      s.append( 'processing failed: {}'.format(e) )
-    ## useful code for the debugging of failed selfchecks
-    #if self.ndims == 2:
-    #  from . import plot
-    #  with plot.PyPlot( 'selfcheckfailed' ) as plt:
-    #    plt.segments( trans.apply(edge.getischeme('bezier2')[0]) for trans, edge in self.edges if edge )
-    raise MyException( '\n'.join(s) )
+      if edge:
+        xe, we = edge.getischeme('gauss1')
+        w_normal = we[:,_] * trans.ext
+        zero += w_normal.sum(0)
+        volume += numeric.contract(trans.apply(xe), w_normal, axis=0)
+    if numpy.greater(abs(zero), tol).any():
+      print('divergence check failed: {} != 0'.format(zero))
+    if numpy.greater(abs(volume - self.volume), tol).any():
+      print('divergence check failed: {} != {}'.format(volume, self.volume))
 
   def vertex_cover( self, ctransforms, maxrefine ):
     if maxrefine < 0:
@@ -401,10 +376,6 @@ class Reference( cache.Immutable ):
 
   def get_dof_transpose_map(self, degree, vertex_transpose_map):
     raise NotImplementedError
-
-class MyException( Exception ):
-  def __repr__( self ):
-    return str(self)
 
 class EmptyReference( Reference ):
   'inverse reference element'
@@ -465,8 +436,6 @@ class SimplexReference( Reference ):
   def __init__(self, ndims:int):
     super().__init__(ndims)
     self.volume = 1. / math.factorial(ndims)
-    if self.ndims > 0 and core.getprop( 'selfcheck', False ):
-      self.check_edges()
 
   @property
   def vertices(self):
@@ -826,8 +795,6 @@ class TensorReference( Reference ):
     self.ref1 = ref1
     self.ref2 = ref2
     super().__init__(ref1.ndims + ref2.ndims)
-    if core.getprop( 'selfcheck', False ):
-      self.check_edges()
 
   def __mul__(self, other):
     assert isinstance(other, Reference)
@@ -1038,8 +1005,6 @@ class Cone( Reference ):
     self.extnorm = numpy.linalg.norm( ext )
     self.height = numpy.dot( etrans.offset - tip, ext ) / self.extnorm
     assert self.height >= 0, 'tip is positioned at the negative side of edge'
-    if core.getprop( 'selfcheck', False ):
-      self.check_edges()
 
   @cache.property
   def vertices(self):
@@ -1308,8 +1273,11 @@ class WithChildrenReference( Reference ):
     self.child_transforms = baseref.child_transforms
     self.child_refs = child_refs
     super().__init__(baseref.ndims)
-    if core.getprop( 'selfcheck', False ):
-      self.check_edges()
+
+  def check_edges(self, tol=1e-15, print=print):
+    super().check_edges(tol=tol, print=print)
+    for cref in self.child_refs:
+      cref.check_edges(tol=tol, print=print)
 
   @property
   def vertices(self):
@@ -1483,9 +1451,6 @@ class MosaicReference( Reference ):
         self.edge_refs.append( edge.cone( extrudetrans, tip ) )
 
     super().__init__(baseref.ndims)
-
-    if core.getprop( 'selfcheck', False ):
-      self.check_edges()
 
   @cache.property
   def vertices(self):

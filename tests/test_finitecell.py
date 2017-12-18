@@ -91,7 +91,7 @@ class specialcases_2d(TestCase):
       for perturb, how in (0,'mid'), (1,'pos'), (-1,'neg'), (xi-.5,'ramp'), (xi-eta,'tilt'):
         for maxrefine in 0, 1, 2:
           with self.subTest(direction=direction, how=how, maxrefine=maxrefine):
-            self.domain.trim(eta-.75+self.eps*perturb, maxrefine=maxrefine)
+            self.domain.trim(eta-.75+self.eps*perturb, maxrefine=maxrefine).check_boundary(self.geom, elemwise=True, print=self.fail)
 
   def test_intra_elem(self):
     x, y = self.geom
@@ -100,9 +100,9 @@ class specialcases_2d(TestCase):
         for maxrefine in 0, 1:
           with self.subTest(direction=('x' if xi is x else 'y'), how=how, maxrefine=maxrefine):
             pos = self.domain.trim(eta-.5+self.eps*perturb, maxrefine=maxrefine)
-            pos.volume_check(self.geom)
+            pos.check_boundary(self.geom, elemwise=True, print=self.fail)
             neg = self.domain - pos
-            neg.volume_check(self.geom)
+            neg.check_boundary(self.geom, elemwise=True, print=self.fail)
 
 class specialcases_3d(TestCase):
 
@@ -117,7 +117,7 @@ class specialcases_3d(TestCase):
     for perturb, how in (0,'mid'), (1,'pos'), (-1,'neg'), (x-.5,'ramp'), (x-y,'tilt'):
       for maxrefine in 0, 1, 2:
         with self.subTest(how=how, maxrefine=maxrefine):
-          self.domain.trim(z-.75+self.eps*perturb, maxrefine=maxrefine)
+          self.domain.trim(z-.75+self.eps*perturb, maxrefine=maxrefine).check_boundary(self.geom, elemwise=True, print=self.fail)
 
 
 class setoperations(TestCase):
@@ -182,7 +182,7 @@ class cutdomain(TestCase):
   def test_div(self):
     for name, dom in ('pos',self.pos), ('neg',self.neg):
       with self.subTest(name):
-        dom.volume_check( self.geom, decimal=14 )
+        dom.check_boundary(self.geom, elemwise=True, print=self.fail)
 
   def test_surface(self):
     trimsurface = self.pos.boundary['trimmed'].volume(self.geom)
@@ -219,6 +219,7 @@ class multitrim(TestCase):
     geom_rel = ( function.rotmat(numpy.pi/6) * geom ).sum(-1)
     for itrim in range(4):
       domain = domain.trim( .7+(1-itrim%2*2)*geom_rel[itrim//2], maxrefine=1, name='trim{}'.format(itrim), ndivisions=16 )
+    domain.check_boundary(geom, elemwise=True, print=self.fail)
     for itrim in range(4):
       L = domain.boundary['trim{}'.format(itrim)].integrate( 1, geometry=geom, ischeme='gauss1' )
       numpy.testing.assert_almost_equal( L, 1.4, decimal=4 )
