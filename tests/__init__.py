@@ -88,20 +88,7 @@ def _parametrize_skip_if(test, reason):
 parametrize.enable_if = _parametrize_enable_if
 parametrize.skip_if = _parametrize_skip_if
 
-
-class TestCase(unittest.TestCase):
-
-  def setUp(self):
-    super().setUp()
-    empty = object()
-    selfcheck = nutils.core.globalproperties.get('selfcheck', empty)
-    if not selfcheck or selfcheck is empty:
-      nutils.core.globalproperties['selfcheck'] = True
-      if selfcheck is empty:
-        self.addCleanup(nutils.core.globalproperties.__delitem__, 'selfcheck')
-      else:
-        self.addCleanup(nutils.core.globalproperties.__setitem__, 'selfcheck', selfcheck)
-
+TestCase = unittest.TestCase
 
 class ContextTestCase(TestCase):
 

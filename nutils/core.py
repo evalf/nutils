@@ -38,7 +38,6 @@ globalproperties = {
   'recache': False,
   'dot': False,
   'profile': False,
-  'selfcheck': False,
 }
 
 if os.access( '/run/shm', os.W_OK ):

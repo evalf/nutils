@@ -147,7 +147,6 @@ def run( *functions ):
   --symlink=%(symlink)-13s Create symlink to latest results
   --recache=%(recache)-13s Overwrite existing cache
   --dot=%(dot)-17s Set graphviz executable
-  --selfcheck=%(selfcheck)-11s Activate self checks (slow!)
   --profile=%(profile)-13s Show profile summary at exit''' % core.globalproperties )
     for i, func in enumerate( functions ):
       print()
@@ -203,7 +202,6 @@ def run( *functions ):
   __symlink__ = properties['symlink']
   __recache__ = properties['recache']
   __dot__ = properties['dot']
-  __selfcheck__ = properties['selfcheck']
 
   status = cli.call(func, kwargs, scriptname=os.path.basename(sys.argv[0]), funcname=func.__name__)
   sys.exit( status )
