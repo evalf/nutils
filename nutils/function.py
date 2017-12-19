@@ -363,7 +363,7 @@ def sum(arg, axis=None):
   arg = asarray(arg)
   if axis is None:
     axis = numpy.arange(arg.ndim)
-  elif not util.isiterable(axis):
+  elif numeric.isint(axis):
     axis = numeric.normdim(arg.ndim, axis),
   else:
     axis = _norm_and_sort(arg.ndim, axis)
@@ -394,7 +394,7 @@ def dot(a, b, axes=None):
     axes = 0,
   else:
     a, b = _numpy_align(a, b)
-  if not util.isiterable(axes):
+  if numeric.isint(axes):
     axes = axes,
   axes = _norm_and_sort(a.ndim, axes)
   return Dot([a, b], axes)
