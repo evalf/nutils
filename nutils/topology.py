@@ -1620,12 +1620,8 @@ class UnionTopology( Topology ):
 
   @cache.property
   def elements( self ):
-    topos = util.OrderedDict()
-    for itopo, topo in enumerate(self._topos):
-      for elem in topo:
-        topos.setdefault( elem.transform, [] ).append( elem )
     elements = []
-    for trans, elems in topos.items():
+    for trans, elems in util.gather((elem.transform, elem) for topo in self._topos for elem in topo):
       if len(elems) == 1:
         elements.append( elems[0] )
       else:
