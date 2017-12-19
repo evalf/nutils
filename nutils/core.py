@@ -146,6 +146,8 @@ def single_or_multiple( f ):
     return retvals
   return wrapped
 
+supports_outdirfd = os.open in os.supports_dir_fd and os.listdir in os.supports_fd
+
 def open_in_outdir( file, *args, **kwargs ):
   '''open a file relative to the ``outdirfd`` or ``outdir`` property
 
@@ -157,7 +159,7 @@ def open_in_outdir( file, *args, **kwargs ):
   assert 'opener' not in kwargs
   outdirfd = getprop( 'outdirfd', None )
   outdir = getprop( 'outdir', None )
-  if outdirfd is not None and os.open in os.supports_dir_fd:
+  if outdirfd is not None and supports_outdirfd:
     kwargs['opener'] = functools.partial( os.open, dir_fd=outdirfd )
   elif outdir:
     file = os.path.join(os.path.expanduser(outdir), file)
@@ -168,7 +170,7 @@ def listoutdir():
 
   outdirfd = getprop( 'outdirfd', None )
   outdir = getprop( 'outdir', None )
-  if outdirfd is not None:
+  if outdirfd is not None and supports_outdirfd:
     return os.listdir( outdirfd )
   elif outdir:
     return os.listdir(os.path.expanduser(outdir))

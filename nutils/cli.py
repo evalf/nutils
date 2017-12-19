@@ -151,7 +151,7 @@ def call(func, kwargs, scriptname, funcname=None):
       relpaths = (outrootdir, os.path.join(scriptname, ymdt)), (os.path.join(outrootdir, scriptname), ymdt)
     os.makedirs(outdir) # asserts nonexistence
 
-    if os.open in os.supports_dir_fd:
+    if core.supports_outdirfd:
       __outdirfd__ = os.open( outdir, flags=os.O_RDONLY )
       stack.callback( os.close, __outdirfd__ )
 
