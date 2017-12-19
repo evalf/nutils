@@ -123,17 +123,16 @@ def cumsum(seq):
     offset += i
 
 def gather(items):
-  keys = []
-  values = []
+  gathered = []
+  d = {}
   for key, value in items:
     try:
-      index = keys.index(key)
-    except ValueError:
-      keys.append(key)
-      values.append([value])
-    else:
-      values[index].append(value)
-  return tuple(zip(keys, values))
+      values = d[key]
+    except KeyError:
+      d[key] = values = []
+      gathered.append((key, values))
+    values.append(value)
+  return gathered
 
 def allequal( seq1, seq2 ):
   seq1 = iter(seq1)
