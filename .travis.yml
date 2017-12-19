@@ -1,8 +1,17 @@
 language: python
 sudo: false
-python:
-  - "3.5"
-  - "3.6"
+matrix:
+  include:
+    - os: linux
+      python: "3.5"
+    - os: linux
+      python: "3.6"
+    - os: osx
+      language: generic
+      env: PYTHON_PKG_URL=https://www.python.org/ftp/python/3.6.4/python-3.6.4-macosx10.6.pkg
+before_install:
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then wget -O python.pkg "$PYTHON_PKG_URL"; sudo installer -pkg python.pkg -target /; rm python.pkg; fi
+  - python3 --version
 install:
   - python3 -m pip install --upgrade . coverage coveralls
 script:
