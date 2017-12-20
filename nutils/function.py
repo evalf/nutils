@@ -2705,6 +2705,8 @@ class Polyval(Array):
 
   def evalf(self, cache, points, coeffs):
     assert points.shape[1] == self.points_ndim
+    points = numeric.const(points)
+    coeffs = numeric.const(coeffs)
     for igrad in range(self.ngrad):
       coeffs = cache[numeric.poly_grad](coeffs, self.points_ndim)
     return cache[numeric.poly_eval](coeffs, points)
