@@ -60,13 +60,12 @@ def pariter( iterable, nprocs ):
   Fork into ``nprocs`` subprocesses, then yield items from iterable such that
   all processes receive a nonoverlapping subset of the total. It is up to the
   user to prepare shared memory and/or locks for inter-process communication.
-  The following creates a data vector containing the first four quadratics.
+  The following creates a data vector containing the first four quadratics::
 
-  >>> data = shzeros(shape=[4], dtype=int)
-  >>> for i in pariter(range(4), 2):
-  ...   data[i] = i**2
-  >>> data
-  array([0, 1, 4, 9])
+     data = shzeros(shape=[4], dtype=int)
+     for i in pariter(range(4), 2):
+       data[i] = i**2
+     data
 
   As a safety measure nested pariters are blocked by setting the global
   ``procid`` variable; all secundary pariters will be treated like normal
@@ -101,6 +100,9 @@ def pariter( iterable, nprocs ):
   if nprocs <= 1:
     yield from iterable
     return
+
+  if not hasattr(os, 'fork'):
+    raise NotImplementedError('pariter requires os.fork, which is unavailable on this platform')
 
   shared_iter = multiprocessing.RawValue( 'i', nprocs ) # shared integer pointing at first unyielded item
   lock = multiprocessing.Lock() # lock to avoid race conditions in incrementing shared_iter
