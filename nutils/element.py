@@ -309,6 +309,11 @@ class Reference( cache.Immutable ):
       xi = numpy.round( levels/(levels-clevel) * nbins )
       midpoint = numpy.mean( vertices + (self.centroid-vertices)*(xi/nbins)[:,_], axis=0 )
 
+    if tuple(refs) == tuple(self.edge_refs):
+      return self
+    if not any(refs):
+      return self.empty
+
     mosaic = MosaicReference( self, refs, midpoint )
     return self.empty if mosaic.volume == 0 else mosaic if mosaic.volume < self.volume else self
 
@@ -1376,21 +1381,20 @@ class MosaicReference( Reference ):
 
   def __init__(self, baseref, edge_refs:tuple, midpoint:numeric.const):
     assert len(edge_refs) == baseref.nedges
-    self.baseref = baseref
-    self._edge_refs = tuple( edge_refs )
-    self._midpoint = midpoint
+    assert edge_refs != tuple(baseref.edge_refs)
 
+    self.baseref = baseref
+    self._edge_refs = edge_refs
+    self._midpoint = midpoint
     self.edge_refs = list( edge_refs )
     self.edge_transforms = list( baseref.edge_transforms )
 
     if baseref.ndims == 1:
 
-      nz = [ i for i, edge in enumerate(edge_refs) if edge ]
-      if len(nz) == 1:
-        self.edge_refs.append( getsimplex(0) )
-        self.edge_transforms.append(transform.Updim(linear=numpy.zeros((1,0)), offset=midpoint, isflipped=not baseref.edge_transforms[nz[0]].isflipped))
-      else:
-        assert len(nz) == 2
+      assert any(edge_refs) and not all(edge_refs), 'invalid 1D mosaic: exactly one edge should be non-empty'
+      iedge, = [i for i, edge in enumerate(edge_refs) if edge]
+      self.edge_refs.append(getsimplex(0))
+      self.edge_transforms.append(transform.Updim(linear=numpy.zeros((1,0)), offset=midpoint, isflipped=not baseref.edge_transforms[iedge].isflipped))
 
     else:
 
