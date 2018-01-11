@@ -379,17 +379,21 @@ def gmsh( fname, name=None ):
   Elements = sections.pop( 'Elements' )
   assert int(Elements[0]) == len(Elements)-1
   inodesbydim = [],[],[],[] # nelems-list of 4-tuples of node numbers
+  etypesbydim = [],[],[],[]
   tagnamesbydim = {},{},{},{} # tag->ielems dictionary
-  etype2nd = { 15:0, 1:1, 2:2, 4:3 }
+  etype2nd = { 15:0, 1:1, 2:2, 4:3, 8:1, 9:2 }
+  etype2indices = { 15:[0], 1:[0,1], 2:[0,1,2], 4:[0,1,2,3], 8:[0,2,1], 9:[0,3,1,5,4,2] }
   for line in Elements[1:]:
     words = line.split()
-    nd = etype2nd[int(words[1])]
+    etype = int(words[1])
+    nd = etype2nd[etype]
     ntags = int(words[2])
     assert ntags >= 1
     tagname = tagmapbydim[nd][int(words[3])]
     inodes = tuple( nodemap[int(nodeid)] for nodeid in words[3+ntags:] )
     if not inodesbydim[nd] or inodesbydim[nd][-1] != inodes: # multiple tags are repeated in consecutive lines
       inodesbydim[nd].append( inodes )
+      etypesbydim[nd].append( etype  )
     tagnamesbydim[nd].setdefault( tagname, [] ).append( len(inodesbydim[nd])-1 )
   inodesbydim = [ numpy.array(e) if e else numpy.empty( (0,nd), dtype=int ) for nd, e in enumerate(inodesbydim) ]
   if tagnamesbydim[ndims]:
@@ -398,8 +402,11 @@ def gmsh( fname, name=None ):
   # check orientation
   vinodes = inodesbydim[ndims] # save for geom
   elemnodes = nodes[vinodes] # nelems x ndims+1 x ndims
-  elemareas = numpy.linalg.det( elemnodes[:,1:] - elemnodes[:,:1] )
+  elemareas = numpy.linalg.det( elemnodes[:,1:ndims+1] - elemnodes[:,:1] )
   assert numpy.all( elemareas > 0 )
+
+  vetype = etypesbydim[ndims][0]
+  assert all(etype==vetype for etype in etypesbydim[ndims]), 'all interior elements should be of the same element type'
 
   # parse section Periodic
   Periodic = sections.pop( 'Periodic', [0] )
@@ -432,8 +439,10 @@ def gmsh( fname, name=None ):
 
   # create base topology
   simplexref = element.getsimplex(ndims)
-  elements = [element.Element(simplexref, [transform.MapTrans(linear=[[-1,-1],[1,0],[0,1]] if ndims==2 else [[-1,-1,-1],[1,0,0],[0,1,0],[0,0,1]], offset=[1,0,0] if ndims==2 else [1,0,0,0], vertices=inodes if not name else [name+str(inode) for inode in inodes])])
+
+  elements = [element.Element(simplexref, [transform.MapTrans(linear=[[-1,-1],[1,0],[0,1]] if ndims==2 else [[-1,-1,-1],[1,0,0],[0,1,0],[0,0,1]], offset=[1,0,0] if ndims==2 else [1,0,0,0], vertices=inodes[:ndims+1] if not name else [name+str(inode) for inode in inodes[:ndims+1]])])
     for ielem, inodes in log.enumerate('elem', inodesbydim[ndims])]
+
   basetopo = topology.UnstructuredTopology( ndims, elements )
   log.info( 'created topology consisting of {} elements'.format(len(elements)) )
 
@@ -460,7 +469,7 @@ def gmsh( fname, name=None ):
   tagsielems = {}
   for name, ibelems in tagnamesbydim[ndims-1].items():
     for ibelem in ibelems:
-      binodes = inodesbydim[ndims-1][ibelem]
+      binodes = inodesbydim[ndims-1][ibelem][:ndims]
       ielem, iedge = edges[ tuple(sorted(binodes)) ]
       elem = elements[ielem].edge(iedge)
       ioppelem = connectivity[ielem][iedge]
@@ -507,8 +516,8 @@ def gmsh( fname, name=None ):
       vgroups[name] = topology.SubsetTopology( topo, refs )
 
   # create geometry
-  dofs = tuple(map(numeric.const, vinodes))
-  coeffs = [simplexref.get_poly_coeffs('bernstein', degree=1)] * len(dofs)
+  dofs = tuple(map(numeric.const, vinodes[:,etype2indices[vetype]]))
+  coeffs = [simplexref.get_poly_coeffs('lagrange', degree=2 if vetype in (8,9) else 1)] * len(dofs)
   basis = function.polyfunc(coeffs, dofs, len(nodes), (elem.transform for elem in elements), issorted=False)
   geom = ( basis[:,_] * nodes ).sum(0)
 
