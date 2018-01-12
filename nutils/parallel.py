@@ -26,7 +26,7 @@ will disable and a warning is printed.
 """
 
 from . import core, log, numpy, numeric
-import os, sys, multiprocessing, tempfile, mmap, traceback, signal
+import os, sys, multiprocessing, tempfile, mmap, traceback, signal, collections.abc
 
 procid = None # current process id, None for unforked
 
@@ -90,12 +90,8 @@ def pariter( iterable, nprocs ):
     yield from iterable
     return
 
-  try:
-    nitems = len(iterable)
-  except:
-    pass
-  else:
-    nprocs = min( nitems, nprocs )
+  if isinstance(iterable, collections.abc.Sized):
+    nprocs = min(nprocs, len(iterable))
 
   if nprocs <= 1:
     yield from iterable
