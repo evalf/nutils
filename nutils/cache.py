@@ -32,16 +32,16 @@ def property(f):
   def property_getter(self):
     try:
       dictvalue = self.__dict__[_name]
-      assert dictvalue is not _temp, 'attribute requested during construction'
     except KeyError:
       self.__dict__[_name] = _temp # placeholder for detection of cyclic dependencies
       value = f(self)
       self.__dict__[_name] = value if value is not self else _self
     else:
+      assert dictvalue is not _temp, 'attribute {!r} requested during construction'.format(_name)
       value = dictvalue if dictvalue is not _self else self
     return value
   def property_setter(self, value):
-    assert _name not in self.__dict__, 'property can be set only once'
+    assert _name not in self.__dict__, 'attempting to set attribute {!r} twice'.format(_name)
     self.__dict__[_name] = value if value is not self else _self
   return builtins.property(fget=property_getter, fset=property_setter)
 
