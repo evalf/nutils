@@ -212,7 +212,7 @@ class Cache(Evaluable):
   def evalf(self, evalargs):
     try:
       return evalargs['_cache']
-    except:
+    except KeyError:
       return cache.WrapperDummyCache()
 
 CACHE = Cache()
