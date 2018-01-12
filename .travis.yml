@@ -4,9 +4,9 @@ python:
   - "3.5"
   - "3.6"
 install:
-  - pip install --upgrade --only-binary numpy,scipy numpy scipy coveralls sphinx
+  - python3 -m pip install --upgrade . coverage coveralls
 script:
-  - PYTHONPATH="$PWD" make coverage
+  - python3 -m coverage run -m unittest -b
 after_success:
   - coveralls
 # vim: ts=2:sts=2:sw=2:et

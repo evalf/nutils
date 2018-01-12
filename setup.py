@@ -1,12 +1,10 @@
-import numpy, nutils
-
 extra = {}
 try:
   from setuptools import setup, Extension
 except:
   from distutils.core import setup, Extension
 else:
-  extra['install_requires'] = [ 'numpy>=1.8', 'matplotlib>=1.3', 'scipy>=0.13' ]
+  extra['install_requires'] = ['numpy>=1.8', 'matplotlib>=1.3', 'scipy>=0.13', 'sphinx']
 
 long_description = """
 The nutils project is a collaborative programming effort aimed at the creation
@@ -29,9 +27,13 @@ The nutils are under active development, and are presently in use for academic
 research by Phd and MSc students.
 """
 
+import os, re
+with open(os.path.join('nutils', '__init__.py')) as f:
+  version = next(filter(None, map(re.compile("^version = '([a-zA-Z0-9.]+)'$").match, f))).group(1)
+
 setup(
   name = 'nutils',
-  version = nutils.version,
+  version = version,
   description = 'Numerical Utilities',
   author = 'Gertjan van Zwieten and others',
   author_email = 'info@nutils.org',
