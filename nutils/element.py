@@ -1490,12 +1490,8 @@ class MosaicReference( Reference ):
       return self.baseref.getischeme( ischeme )
 
     allpoints, allweights = zip( *[ subvol.getischeme(ischeme) for subvol in self.subrefs ] )
-    points = numpy.concatenate( allpoints, axis=0 )
-    if allweights[0] is None:
-      assert not any( allweights )
-      weights = None
-    else:
-      weights = numpy.concatenate( allweights, axis=0 )
+    points = numpy.concatenate(allpoints, axis=0)
+    weights = None if any(w is None for w in allweights) else numpy.concatenate(allweights, axis=0)
     return points, weights
 
   def inside( self, point, eps=0 ):
