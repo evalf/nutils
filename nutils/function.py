@@ -1468,7 +1468,7 @@ class Dot(Array):
     return Dot([func1, func2], self.axes)
 
   def evalf( self, arr1, arr2 ):
-    return numpy.einsum(self._einsumfmt, arr1, arr2)
+    return numpy.einsum(self._einsumfmt, arr1, arr2, optimize=False)
 
   def _get(self, axis, item):
     func1, func2 = self.funcs

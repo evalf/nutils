@@ -81,7 +81,7 @@ def contract( A, B, axis=-1 ):
   o = _abc[:maxdim-len(axes)] if axes == range( maxdim-len(axes), maxdim ) \
     else ''.join( _abc[a+1:b] for a, b in zip( [-1]+axes, axes+[maxdim] ) if a+1 != b )
 
-  return numpy.einsum( '%s,%s->%s' % (m,n,o), A, B )
+  return numpy.einsum('{},{}->{}'.format(m,n,o), A, B, optimize=False)
 
 def dot( A, B, axis=-1 ):
   '''Transform axis of A by contraction with first axis of B and inserting
@@ -98,7 +98,7 @@ def dot( A, B, axis=-1 ):
   if axis != -1:
     o += m[axis+1:]
 
-  return numpy.einsum( '%s,%s->%s' % (m,n,o), A, B )
+  return numpy.einsum('{},{}->{}'.format(m,n,o), A, B, optimize=False)
 
 def meshgrid( *args ):
   'multi-dimensional meshgrid generalisation'
@@ -122,7 +122,7 @@ def takediag( A, axis=-2, rmaxis=-1 ):
   rmaxis = normdim(A.ndim, rmaxis)
   assert axis < rmaxis
   fmt = _abc[:rmaxis] + _abc[axis] + _abc[rmaxis:A.ndim-1] + '->' + _abc[:A.ndim-1]
-  return numpy.einsum(fmt, A)
+  return numpy.einsum(fmt, A, optimize=False)
 
 def normalize( A, axis=-1 ):
   'devide by normal'
