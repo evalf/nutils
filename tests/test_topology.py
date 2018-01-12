@@ -1,6 +1,6 @@
 from nutils import *
 from . import *
-import numpy, copy, sys, pickle, subprocess, base64, itertools
+import numpy, copy, sys, pickle, subprocess, base64, itertools, os
 
 grid = numpy.linspace( 0., 1., 4 )
 
@@ -354,18 +354,19 @@ for isstructured in True, False:
 @parametrize
 class locate(TestCase):
 
+  @parametrize.skip_if(lambda nprocs, **kwargs: nprocs > 1 and not hasattr(os, 'fork'), 'nprocs > 1 not supported on this platform')
   def test(self):
-    for __nprocs__ in 1, 2:
-      with self.subTest(nprocs=__nprocs__):
-        domain, geom = mesh.rectilinear([numpy.linspace(0,1,3)]*2) if self.structured else mesh.demo()
-        geom += .1 * function.sin(geom * numpy.pi) # non-polynomial geometry
-        target = numpy.array([(.2,.3), (.1,.9), (0,1)])
-        ltopo = domain.locate(geom, target, eps=1e-15)
-        located = ltopo.elem_eval(geom, ischeme='gauss1')
-        numpy.testing.assert_array_almost_equal(located, target)
+    __nprocs__ = self.nprocs
+    domain, geom = mesh.rectilinear([numpy.linspace(0,1,3)]*2) if self.structured else mesh.demo()
+    geom += .1 * function.sin(geom * numpy.pi) # non-polynomial geometry
+    target = numpy.array([(.2,.3), (.1,.9), (0,1)])
+    ltopo = domain.locate(geom, target, eps=1e-15)
+    located = ltopo.elem_eval(geom, ischeme='gauss1')
+    numpy.testing.assert_array_almost_equal(located, target)
 
-locate(structured=True)
-locate(structured=False)
+for nprocs in 1, 2:
+  locate(structured=True, nprocs=nprocs)
+  locate(structured=False, nprocs=nprocs)
 
 
 @parametrize

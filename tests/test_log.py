@@ -235,6 +235,7 @@ class move_outdir(ContextTestCase):
     self.outdirfd = os.open(self.outdira, flags=os.O_RDONLY)
     stack.callback(os.close, self.outdirfd)
 
+  @unittest.skipIf(not nutils.core.supports_outdirfd, 'outdirfd is not supported on this platform')
   def test(self):
     __outdirfd__ = self.outdirfd
     os.rename(self.outdira, self.outdirb)

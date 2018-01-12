@@ -42,6 +42,11 @@ class _ParametrizedCollection(type):
         enable_if = getattr(v, '_parametrize_enable_if', None)
         if enable_if and not enable_if(**params):
           ns[k] = None
+        else:
+          for skip_if, reason in getattr(v, '_parametrize_skip_if', []):
+            if skip_if(**params):
+              ns[k] = unittest.skip(reason)(v)
+              break
       ns.update(setUp=setUp, __qualname__=cls.__qualname__+':'+name, __module__=cls.__module__, __doc__=cls.__doc__)
       return ns
     TestCase = types.new_class(name, (cls.__base,), exec_body=populate)
@@ -72,7 +77,16 @@ def _parametrize_enable_if(test):
     return func
   return wrapper
 
+def _parametrize_skip_if(test, reason):
+  def wrapper(func):
+    if not hasattr(func, '_parametrize_skip_if'):
+      func._parametrize_skip_if = []
+    func._parametrize_skip_if.append((test, reason))
+    return func
+  return wrapper
+
 parametrize.enable_if = _parametrize_enable_if
+parametrize.skip_if = _parametrize_skip_if
 
 
 class TestCase(unittest.TestCase):

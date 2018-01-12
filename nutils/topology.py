@@ -289,7 +289,7 @@ class Topology( object ):
     # each function argument.
 
     nprocs = min( core.getprop( 'nprocs', 1 ), len(self) )
-    empty = parallel.shzeros if nprocs > 1 else numpy.empty
+    empty = parallel.shempty if nprocs > 1 else numpy.empty
     data_index = [
       ( empty( n, dtype=float ),
         empty( (funcs[ifunc].ndim,n), dtype=int ) )
@@ -639,8 +639,8 @@ class Topology( object ):
     bboxes = numpy.array([ numpy.mean(v,axis=0) * (1-scale) + numpy.array([ numpy.min(v,axis=0), numpy.max(v,axis=0) ]) * scale
       for v in vertices ]) # nelems x {min,max} x ndims
     vref = element.getsimplex(0)
-    ielems = parallel.shzeros(len(points), dtype=int)
-    xis = parallel.shzeros((len(points),len(geom)), dtype=float)
+    ielems = parallel.shempty(len(points), dtype=int)
+    xis = parallel.shempty((len(points),len(geom)), dtype=float)
     for ipoint, point in parallel.pariter(log.enumerate('point', points), nprocs=nprocs):
       ielemcandidates, = numpy.logical_and(numpy.greater_equal(point, bboxes[:,0,:]), numpy.less_equal(point, bboxes[:,1,:])).all(axis=-1).nonzero()
       for ielem in sorted( ielemcandidates, key=lambda i: numpy.linalg.norm(bboxes[i].mean(0)-point) ):
