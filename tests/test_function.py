@@ -34,10 +34,18 @@ class check(TestCase):
     self.pairs = [(i, j) for i in range(self.op_args.ndim-1) for j in range(i+1, self.op_args.ndim) if self.op_args.shape[i] == self.op_args.shape[j]]
 
   def assertArrayAlmostEqual(self, actual, desired, decimal):
-    assert actual.shape == desired.shape or (actual.shape[0] == 1 or desired.shape[0] == 1) and actual.shape[1:] == desired.shape[1:], 'shapes {}, {} mismatch'.format(actual.shape, desired.shape)
-    error = abs(actual - desired)
-    fail = numpy.greater_equal(error, 1.5 * 10**-decimal)
-    self.assertEqual(fail.sum(), 0)
+    if actual.shape[1:] != desired.shape[1:] or len({actual.shape[0],desired.shape[0]}-{1}) == 2:
+      self.fail('Shapes of actual {} and desired {} are incompatible.'.format(actual.shape, desired.shape))
+    if actual.dtype != bool and desired.dtype != bool:
+      error = abs(actual - desired)
+      if numpy.greater_equal(error, 1.5 * 10**-decimal).any():
+        self.fail('Arrays are not equal up to {} decimals.\nACTUAL : {}\nDESIRED: {}\nDIFF   : {}'.format(decimal, *(numpy.array2string(a, prefix='ACTUAL : ') for a in (actual, desired, error))))
+    elif actual.dtype == bool and desired.dtype == bool:
+      error = numpy.logical_xor(actual,desired)
+      if error.any():
+        self.fail('Boolean arrays are not equal.\nACTUAL : {}\nDESIRED: {}\nDIFF   : {}'.format(*(numpy.array2string(a, prefix='ACTUAL : ') for a in (actual, desired, error))))
+    else:
+      self.fail('Cannot compare boolean array with non-boolean array.')
 
   def test_evalconst(self):
     constargs = [numpy.random.uniform(size=shape) for shape in self.shapes]
