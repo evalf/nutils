@@ -17,5 +17,5 @@ install:
 script:
   - python3 -m coverage run -m unittest -b
 after_success:
-  - coveralls
+  - python3 -c 'import coveralls.cli; coveralls.cli.main()'
 # vim: ts=2:sts=2:sw=2:et
