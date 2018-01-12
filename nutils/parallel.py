@@ -30,6 +30,11 @@ import os, sys, multiprocessing, tempfile, mmap, traceback, signal
 
 procid = None # current process id, None for unforked
 
+def shempty(shape, dtype=float):
+  '''create uninitialized array in shared memory'''
+
+  return shzeros(shape, dtype=dtype)
+
 def shzeros( shape, dtype=float ):
   '''create zero-initialized array in shared memory'''
 
