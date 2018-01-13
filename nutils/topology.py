@@ -592,16 +592,24 @@ class Topology( object ):
     return extractions
 
   @log.title
-  def volume( self, geometry, ischeme='gauss1', *, arguments=None ):
-    return self.integrate( 1, geometry=geometry, ischeme=ischeme, arguments=arguments )
+  def volume(self, geometry, ischeme='gauss', degree=1, *, arguments=None):
+    return self.integrate(1, geometry=geometry, ischeme=ischeme, degree=degree, arguments=arguments)
 
   @log.title
-  def volume_check( self, geometry, ischeme='gauss1', decimal=15, *, arguments=None ):
-    volume = self.volume( geometry, ischeme, arguments=arguments )
-    zeros, volumes = self.boundary.integrate( [ geometry.normal(), geometry * geometry.normal() ], geometry=geometry, ischeme=ischeme, arguments=arguments )
-    numpy.testing.assert_almost_equal( zeros, 0., decimal=decimal )
-    numpy.testing.assert_almost_equal( volumes, volume, decimal=decimal )
-    return volume
+  def check_boundary(self, geometry, elemwise=False, ischeme='gauss', degree=1, tol=1e-15, print=print, *, arguments=None):
+    if elemwise:
+      for elem in self:
+        elem.reference.check_edges(tol=tol, print=print)
+    volume = self.volume(geometry, ischeme=ischeme, degree=degree, arguments=arguments)
+    zeros, volumes = self.boundary.integrate([geometry.normal(), geometry * geometry.normal()], geometry=geometry, ischeme=ischeme, degree=degree, arguments=arguments)
+    if numpy.greater(abs(zeros), tol).any():
+      print('divergence check failed: {} != 0'.format(zeros))
+    if numpy.greater(abs(volumes - volume), tol).any():
+      print('divergence check failed: {} != {}'.format(volumes, volume))
+
+  def volume_check(self, geometry, ischeme='gauss', degree=1, decimal=15, *, arguments=None):
+    warnings.warn('volume_check will be removed in future, us check_boundary instead', DeprecationWarning)
+    self.check_boundary(geometry=geometry, ischeme=ischeme, degree=degree, tol=10**-decimal, arguments=arguments)
 
   def indicator(self, subtopo):
     if isinstance(subtopo, str):
@@ -727,19 +735,7 @@ class WithGroupsTopology( Topology ):
     self.igroups = igroups.copy()
     self.pgroups = pgroups.copy()
     Topology.__init__( self, basetopo.ndims )
-    if core.getprop( 'selfcheck', False ):
-      if self.vgroups:
-        for topo in self.vgroups.values():
-          if topo is not Ellipsis and not isinstance( topo, str ):
-            assert isinstance( topo, Topology )
-            assert topo.ndims == basetopo.ndims
-            assert set(self.basetopo.edict).issuperset(topo.edict)
-      if self.bgroups:
-        self.boundary
-      if self.igroups:
-        self.interfaces
-      if self.pgroups:
-        self.points
+    assert all(topo is Ellipsis or isinstance(topo, str) or isinstance(topo, Topology) and topo.ndims == basetopo.ndims and set(self.basetopo.edict).issuperset(topo.edict) for topo in self.vgroups.values())
 
   def withgroups( self, vgroups={}, bgroups={}, igroups={}, pgroups={} ):
     args = []
@@ -1620,12 +1616,8 @@ class UnionTopology( Topology ):
 
   @cache.property
   def elements( self ):
-    topos = util.OrderedDict()
-    for itopo, topo in enumerate(self._topos):
-      for elem in topo:
-        topos.setdefault( elem.transform, [] ).append( elem )
     elements = []
-    for trans, elems in topos.items():
+    for trans, elems in util.gather((elem.transform, elem) for topo in self._topos for elem in topo):
       if len(elems) == 1:
         elements.append( elems[0] )
       else:
