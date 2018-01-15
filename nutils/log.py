@@ -37,14 +37,24 @@ LEVELS = 'error', 'warning', 'user', 'info', 'debug'
 ## LOG
 
 class Log( metaclass=abc.ABCMeta ):
-  '''The :class:`Log` object is what is stored in the ``__log__`` property. It
-  should define a ``context`` method that returns a context manager which adds
-  a contextual layer and a ``write`` method.'''
+  '''
+  Base class for log objects.  A subclass should define a :meth:`context`
+  method that returns a context manager which adds a contextual layer and a
+  :meth:`write` method.
+  '''
 
   def __enter__( self ):
+    if hasattr(self, '_old_log'):
+      raise RuntimeError('This context manager is not reentrant.')
+    # Replace the current log object with `self` and remember the old instance.
+    global _current_log
+    self._old_log = _current_log
+    _current_log = self
     return self
 
   def __exit__( self, etype, value, tb ):
+    if not hasattr(self, '_old_log'):
+      raise RuntimeError('This context manager is not yet entered.')
     if etype in (KeyboardInterrupt,SystemExit,bdb.BdbQuit):
       self.write( 'error', 'killed by user' )
     elif etype is not None:
@@ -53,6 +63,10 @@ class Log( metaclass=abc.ABCMeta ):
       except Exception as e:
         msg = '{} (traceback failed: {})'.format(value, e)
       self.write('error', msg)
+    # Restore the old log instance.
+    global _current_log
+    _current_log = self._old_log
+    del self._old_log
 
   @abc.abstractmethod
   def context( self, title ):
@@ -267,7 +281,6 @@ class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
     super().__init__()
 
   def __enter__( self ):
-    super().__enter__()
     # Copy dependencies.
     logpath = os.path.join( os.path.dirname( __file__ ), '_log' )
     for filename in os.listdir( logpath ):
@@ -297,6 +310,7 @@ class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
       for name, value, annotation in self._funcargs:
         self._print(('  <li>{}={}<span class="annotation">{}</span></li>' if annotation else '<li>{}={}</li>').format(*(html.escape(str(v)) for v in (name, value, annotation))))
       self._print('</ul>')
+    super().__enter__()
     return self
 
   def __exit__( self, etype, value, tb ):
@@ -417,9 +431,11 @@ class TeeLog( Log ):
     self._stack.__enter__()
     for log in self.logs:
       self._stack.enter_context( log )
+    super().__enter__()
     return self
 
   def __exit__( self, *exc_info ):
+    super().__exit__(*exc_info)
     self._stack.__exit__( *exc_info )
 
   @contextlib.contextmanager
@@ -436,6 +452,13 @@ class TeeLog( Log ):
 
 ## INTERNAL FUNCTIONS
 
+# Reference to the current log instance.  This is updated by the `Log`'s
+# context manager, see `Log` base class.
+_current_log = None
+
+# Set a default log instance.
+StdoutLog().__enter__()
+
 # references to objects that are going to be redefined
 _range = range
 _iter = iter
@@ -450,20 +473,8 @@ def _len( iterable ):
   except:
     return None
 
-def _mklog():
-  return ( RichOutputLog if core.getprop('richoutput') else StdoutLog )( sys.stdout )
-
-def _getlog():
-  log = core.getprop( 'log', None )
-  if not isinstance( log, Log ):
-    if log is not None:
-      warnings.warn( '''Invalid logger object found: {!r}
-        This is usually caused by manually setting the __log__ variable.'''.format(log), stacklevel=2 )
-    log = _mklog()
-  return log
-
 def _print( level, *args ):
-  return _getlog().write( level, ' '.join( str(arg) for arg in args ) )
+  return _current_log.write( level, ' '.join( str(arg) for arg in args ) )
 
 
 ## MODULE-ONLY METHODS
@@ -478,9 +489,8 @@ def range( title, *args ):
   '''Progress logger identical to built in range'''
 
   items = _range( *args )
-  log = _getlog()
   for item in items:
-    with log.context( '{} {} ({:.0f}%)'.format( title, item, item * 100 / len(items) ) ):
+    with _current_log.context( '{} {} ({:.0f}%)'.format( title, item, item * 100 / len(items) ) ):
       yield item
 
 def iter( title, iterable, length=None ):
@@ -488,13 +498,12 @@ def iter( title, iterable, length=None ):
 
   if length is None:
     length = _len(iterable)
-  log = _getlog()
   it = _iter( iterable )
   for index in itertools.count():
     text = '{} {}'.format( title, index )
     if length:
       text += ' ({:.0f}%)'.format( 100 * index / length )
-    with log.context( text ):
+    with _current_log.context( text ):
       try:
         yield next(it)
       except StopIteration:
@@ -514,9 +523,8 @@ def zip( title, *iterables ):
 def count( title, start=0, step=1 ):
   '''Progress logger identical to itertools.count'''
 
-  log = _getlog()
   for item in itertools.count(start,step):
-    with log.context( '{} {}'.format( title, item ) ):
+    with _current_log.context( '{} {}'.format( title, item ) ):
       yield item
     
 def title( f ): # decorator
@@ -536,13 +544,12 @@ def title( f ): # decorator
     gettitle = lambda args, kwargs: kwargs.pop('title',default)
   @functools.wraps(f)
   def wrapped( *args, **kwargs ):
-    __log__ = _getlog() # repeat as property for fast retrieval
-    with __log__.context( gettitle(args,kwargs) ):
+    with _current_log.context( gettitle(args,kwargs) ):
       return f( *args, **kwargs )
   return wrapped
 
 def context( title ):
-  return _getlog().context( title )
+  return _current_log.context( title )
 
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

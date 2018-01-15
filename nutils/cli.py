@@ -163,7 +163,7 @@ def call(func, kwargs, scriptname, funcname=None):
           os.remove( target )
         os.symlink( relpath, target )
 
-    __log__ = log._mklog()
+    log_ = (log.RichOutputLog if core.getprop('richoutput') else log.StdoutLog)(sys.stdout)
 
     htmloutput = core.getprop( 'htmloutput', True )
     if htmloutput:
@@ -179,10 +179,10 @@ def call(func, kwargs, scriptname, funcname=None):
           print( '</head></html>', file=redirlog )
 
       funcargs = [(parameter.name, kwargs.get(parameter.name,parameter.default), parameter.annotation) for parameter in inspect.signature(func).parameters.values()]
-      __log__ = log.TeeLog(__log__, log.HtmlLog('log.html', title=scriptname, scriptname=scriptname, funcname=funcname, funcargs=funcargs))
+      log_ = log.TeeLog(log_, log.HtmlLog('log.html', title=scriptname, scriptname=scriptname, funcname=funcname, funcargs=funcargs))
 
     try:
-      with __log__:
+      with log_:
 
         log.info( 'nutils v{}'.format( _version() ) )
         log.info( 'start {}'.format( starttime.ctime() ) )
@@ -201,7 +201,7 @@ def call(func, kwargs, scriptname, funcname=None):
     except:
       if core.getprop( 'pdb', False ):
         try:
-          del __log__
+          del log_
         except NameError:
           pass
         print( _mkbox(

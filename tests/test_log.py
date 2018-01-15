@@ -168,7 +168,7 @@ class logoutput(ContextTestCase):
     kwargs = dict(title='test') if self.logcls == nutils.log.HtmlLog else {}
     if self.progressfileobj is not None:
       kwargs.update(progressfile=self.progressfileobj)
-    with self.logcls(stream, **kwargs) as __log__:
+    with self.logcls(stream, **kwargs):
       generate_log()
     self.assertEqual(stream.getvalue(), self.logout)
 
@@ -192,10 +192,7 @@ class tee_stdout_html(ContextTestCase):
     __verbose__ = len(nutils.log.LEVELS)
     stream_stdout = io.StringIO()
     stream_html = io.StringIO()
-    __log__ = nutils.log.TeeLog(
-      nutils.log.StdoutLog(stream_stdout),
-      nutils.log.HtmlLog(stream_html, title='test'))
-    with __log__:
+    with nutils.log.TeeLog(nutils.log.StdoutLog(stream_stdout), nutils.log.HtmlLog(stream_html, title='test')):
       generate_log()
     self.assertEqual(stream_stdout.getvalue(), log_stdout)
     self.assertEqual(stream_html.getvalue(), log_html)
@@ -220,7 +217,7 @@ def generate_exception(level=0):
     __outdir__ = self.outdir
     stream = io.StringIO()
     with self.assertRaises(TestException):
-      with nutils.log.HtmlLog(stream, title='test') as __log__:
+      with nutils.log.HtmlLog(stream, title='test'):
         virtual_module['generate_exception']()
     self.assertIn('<div class="post-mortem">', stream.getvalue())
 
@@ -241,6 +238,20 @@ class move_outdir(ContextTestCase):
     os.rename(self.outdira, self.outdirb)
     __verbose__ = len(nutils.log.LEVELS)
     stream = io.StringIO()
-    with nutils.log.HtmlLog(stream, title='test') as __log__:
+    with nutils.log.HtmlLog(stream, title='test'):
       generate_log()
     self.assertEqual(stream.getvalue(), log_html)
+
+class log_context_manager(TestCase):
+
+  def test_reenter(self):
+    log = nutils.log.StdoutLog()
+    with log:
+      with self.assertRaises(RuntimeError):
+        with log:
+          pass
+
+  def test_exit_before_enter(self):
+    log = nutils.log.StdoutLog()
+    with self.assertRaises(RuntimeError):
+      log.__exit__(None, None, None)

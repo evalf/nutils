@@ -25,9 +25,9 @@ class module(ContextTestCase):
     warnings.simplefilter('ignore')
 
   def test(self):
-    __log__ = DocTestLog()
-    failcnt, testcnt = _doctest.testmod(importlib.import_module(self.name))
-    self.assertEqual(failcnt, 0)
+    with DocTestLog():
+      failcnt, testcnt = _doctest.testmod(importlib.import_module(self.name))
+      self.assertEqual(failcnt, 0)
 
 @parametrize
 class file(ContextTestCase):
@@ -38,9 +38,9 @@ class file(ContextTestCase):
     warnings.simplefilter('ignore')
 
   def test(self):
-    __log__ = DocTestLog()
-    failcnt, testcnt = _doctest.testfile(str(self.path), module_relative=False)
-    self.assertEqual(failcnt, 0)
+    with DocTestLog():
+      failcnt, testcnt = _doctest.testfile(str(self.path), module_relative=False)
+      self.assertEqual(failcnt, 0)
 
 root = pathlib.Path(__file__).parent.parent
 for path in sorted((root / 'nutils').glob('**/*.py')):
