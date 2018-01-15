@@ -29,8 +29,8 @@ import sys, inspect, os, datetime, pdb, signal, subprocess, contextlib
 
 def _version():
   try:
-    githash = subprocess.check_output( ['git','rev-parse','--short','HEAD'], universal_newlines=True, cwd=os.path.dirname(__file__) ).strip()
-    if subprocess.check_output( ['git','status','--untracked-files=no','--porcelain'], cwd=os.path.dirname(__file__) ):
+    githash = subprocess.check_output( ['git','rev-parse','--short','HEAD'], universal_newlines=True, stderr=subprocess.DEVNULL, cwd=os.path.dirname(__file__) ).strip()
+    if subprocess.check_output( ['git','status','--untracked-files=no','--porcelain'], stderr=subprocess.DEVNULL, cwd=os.path.dirname(__file__) ):
       githash += '+'
   except:
     return version

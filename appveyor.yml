@@ -1,0 +1,11 @@
+shallow_clone: true
+environment:
+  matrix:
+    - PYTHON: "C:\\Python35-x64"
+    - PYTHON: "C:\\Python36-x64"
+install:
+  - "%PYTHON%\\python.exe -m pip install --upgrade ."
+build: off
+test_script:
+  - "%PYTHON%\\python.exe -m unittest -b"
+# vim: ts=2:sts=2:sw=2:et
