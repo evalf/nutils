@@ -57,8 +57,9 @@ class parse(TestCase):
     self.assertEqual(nutils.expression.parse(expression, v, functions, indices, **parse_kwargs)[0], ast)
 
   def assert_syntax_error(self, msg, expression, indices, highlight, arg_shapes={}, exccls=nutils.expression.ExpressionSyntaxError):
-    with self.assertRaises(exccls, msg=msg + '\n' + expression + '\n' + highlight):
+    with self.assertRaises(exccls) as cm:
       nutils.expression.parse(expression, v, functions, indices, arg_shapes)
+    self.assertEqual(str(cm.exception), msg + '\n' + expression + '\n' + highlight)
 
   # OTHER
 
@@ -646,7 +647,7 @@ class parse(TestCase):
       "1_ij + func2(a23_ij, a33_ij) + 1_ij", "ij",
       "       ^^^^^^^^^^^^^^^^^^^^^")
 
-  def test_function_unmatched_shape(self):
+  def test_function_unknown(self):
     self.assert_syntax_error(
       "Unknown function 'funcX'.",
       "1_ij + funcX(a23_ij) + 1_ij", "ij",
