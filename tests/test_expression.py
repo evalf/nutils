@@ -23,19 +23,23 @@ class Variables:
     self.altgeom = altgeom
     self._lengths = {str(i): i for i in range(10)}
   def __getitem__(self, name):
-    if name == 'x':
-      return self.x
-    elif name == 'altgeom':
-      return self.altgeom
-    elif name.startswith('a'):
-      return Array(name, tuple(self._lengths.setdefault(i, nutils.expression._Length(0)) for i in name[1:]))
-    else:
-      raise KeyError(name)
+    if not name.startswith('_'):
+      try:
+        return getattr(self, name)
+      except AttributeError:
+        pass
+    raise KeyError(name)
+  def __contains__(self, name):
+    try:
+      self[name]
+      return True
+    except KeyError:
+      return False
   def __getattr__(self, name):
     if name.startswith('_'):
       return _(getattr(self, name[1:]))
     elif name.startswith('a'):
-      return Array(name, tuple(self._lengths.setdefault(i, nutils.expression._Length(0)) for i in name[1:]))
+      return Array(name, tuple(self._lengths.get(i, nutils.expression._Length(ord(i))) for i in name[1:]))
     else:
       raise AttributeError(name)
   def get(self, name, default):
