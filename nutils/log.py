@@ -24,7 +24,7 @@ The log module provides print methods ``debug``, ``info``, ``user``,
 stdout as well as to an html formatted log file if so configured.
 """
 
-import sys, time, warnings, functools, itertools, re, abc, contextlib, html, urllib.parse, os, json, traceback, bdb, inspect, textwrap
+import sys, time, warnings, functools, itertools, re, abc, contextlib, html, urllib.parse, os, json, traceback, bdb, inspect, textwrap, builtins
 from . import core
 
 warnings.showwarning = lambda message, category, filename, lineno, *args: \
@@ -459,12 +459,6 @@ _current_log = None
 # Set a default log instance.
 StdoutLog().__enter__()
 
-# references to objects that are going to be redefined
-_range = range
-_iter = iter
-_zip = zip
-_enumerate = enumerate
-
 def _len( iterable ):
   '''Return length if available, otherwise None'''
 
@@ -488,7 +482,7 @@ def path( *args ):
 def range( title, *args ):
   '''Progress logger identical to built in range'''
 
-  items = _range( *args )
+  items = builtins.range(*args)
   for item in items:
     with _current_log.context( '{} {} ({:.0f}%)'.format( title, item, item * 100 / len(items) ) ):
       yield item
@@ -498,7 +492,7 @@ def iter( title, iterable, length=None ):
 
   if length is None:
     length = _len(iterable)
-  it = _iter( iterable )
+  it = builtins.iter(iterable)
   for index in itertools.count():
     text = '{} {}'.format( title, index )
     if length:
@@ -512,13 +506,13 @@ def iter( title, iterable, length=None ):
 def enumerate( title, iterable ):
   '''Progress logger identical to built in enumerate'''
 
-  return iter( title, _enumerate(iterable), length=_len(iterable) )
+  return iter(title, builtins.enumerate(iterable), length=_len(iterable))
 
 def zip( title, *iterables ):
   '''Progress logger identical to built in enumerate'''
 
   lengths = [ _len(iterable) for iterable in iterables ]
-  return iter( title, _zip(*iterables), length=all(lengths) and min(lengths) )
+  return iter(title, builtins.zip(*iterables), length=all(lengths) and min(lengths))
 
 def count( title, start=0, step=1 ):
   '''Progress logger identical to itertools.count'''
