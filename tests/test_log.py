@@ -279,3 +279,78 @@ class log_module_funcs(TestCase):
     with self.assertLogs('x 5 (0%) > 5\nx 3 (50%) > 3\n'):
       for item in nutils.log.range('x', 5, 1, -2):
         nutils.log.user(str(item))
+
+  def test_iter_known_length(self):
+    with self.assertLogs('x 0 (0%) > 0\nx 1 (50%) > 1\n'):
+      for item in nutils.log.iter('x', [0, 1]):
+        nutils.log.user(str(item))
+
+  def test_iter_unknown_length(self):
+    def items():
+      yield 0
+      yield 1
+    with self.assertLogs('x 0 > 0\nx 1 > 1\n'):
+      for item in nutils.log.iter('x', items()):
+        nutils.log.user(str(item))
+
+  def test_enumerate(self):
+    with self.assertLogs('x 0 (0%) > a\nx 1 (50%) > b\n'):
+      for i, v in nutils.log.enumerate('x', 'ab'):
+        nutils.log.user(v)
+
+  def test_zip_known_length(self):
+    with self.assertLogs('x 0 (0%) > ax\nx 1 (50%) > by\n'):
+      for v0, v1 in nutils.log.zip('x', 'ab', 'xyz'):
+        nutils.log.user(v0+v1)
+
+  def test_zip_unknown_length(self):
+    def items():
+      yield 'x'
+      yield 'y'
+      yield 'z'
+    with self.assertLogs('x 0 > ax\nx 1 > by\n'):
+      for v0, v1 in nutils.log.zip('x', 'ab', items()):
+        nutils.log.user(v0+v1)
+
+  def test_count(self):
+    with self.assertLogs('x 0 > 0\nx 1 > 1\n'):
+      count = nutils.log.count('x')
+      j = 0
+      for i in nutils.log.count('x'):
+        nutils.log.user(str(i))
+        if j == 1:
+          break
+        j += 1
+
+  def test_title_noarg(self):
+    @nutils.log.title
+    def x():
+      nutils.log.user('y')
+    with self.assertLogs('x > y\n'):
+      x()
+
+  def test_title_arg_default(self):
+    @nutils.log.title
+    def x(title='default'):
+      nutils.log.user('y')
+    with self.assertLogs('default > y\n'):
+      x()
+
+  def test_title_arg_nodefault(self):
+    @nutils.log.title
+    def x(title):
+      nutils.log.user('y')
+    with self.assertLogs('arg > y\n'):
+      x('arg')
+
+  def test_title_varkw(self):
+    @nutils.log.title
+    def x(**kwargs):
+      nutils.log.user('y')
+    with self.assertLogs('arg > y\n'):
+      x(title='arg')
+
+  def test_context(self):
+    with self.assertLogs('x > y\n'):
+      with nutils.log.context('x'):
+        nutils.log.user('y')
