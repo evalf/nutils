@@ -483,8 +483,8 @@ def range( title, *args ):
   '''Progress logger identical to built in range'''
 
   items = builtins.range(*args)
-  for item in items:
-    with _current_log.context( '{} {} ({:.0f}%)'.format( title, item, item * 100 / len(items) ) ):
+  for index, item in builtins.enumerate(items):
+    with _current_log.context('{} {} ({:.0f}%)'.format(title, item, index*100/len(items))):
       yield item
 
 def iter( title, iterable, length=None ):

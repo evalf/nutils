@@ -255,3 +255,27 @@ class log_context_manager(TestCase):
     log = nutils.log.StdoutLog()
     with self.assertRaises(RuntimeError):
       log.__exit__(None, None, None)
+
+class log_module_funcs(TestCase):
+
+  @contextlib.contextmanager
+  def assertLogs(self, desired):
+    stream = io.StringIO()
+    with nutils.log.StdoutLog(stream):
+      yield
+    self.assertEqual(stream.getvalue(), desired)
+
+  def test_range_1(self):
+    with self.assertLogs('x 0 (0%) > 0\nx 1 (50%) > 1\n'):
+      for item in nutils.log.range('x', 2):
+        nutils.log.user(str(item))
+
+  def test_range_2(self):
+    with self.assertLogs('x 1 (0%) > 1\nx 2 (50%) > 2\n'):
+      for item in nutils.log.range('x', 1, 3):
+        nutils.log.user(str(item))
+
+  def test_range_3(self):
+    with self.assertLogs('x 5 (0%) > 5\nx 3 (50%) > 3\n'):
+      for item in nutils.log.range('x', 5, 1, -2):
+        nutils.log.user(str(item))
