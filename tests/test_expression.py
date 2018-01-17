@@ -616,6 +616,10 @@ class parse(TestCase):
       "1_i + <a, 1_i>_i + 1_i", "i",
       "            ^")
 
+  def test_stack_whitespace_left(self): self.assert_ast('< a, a>_i', 'i', ('concatenate', ('append_axis', v._a, _(1)), ('append_axis', v._a, _(1))))
+  def test_stack_whitespace_right(self): self.assert_ast('<a, a >_i', 'i', ('concatenate', ('append_axis', v._a, _(1)), ('append_axis', v._a, _(1))))
+  def test_stack_whitespace_before_comma(self): self.assert_ast('<a , a>_i', 'i', ('concatenate', ('append_axis', v._a, _(1)), ('append_axis', v._a, _(1))))
+
   # FIXME: the following should work
   # 'a2_j a2_i + <0j, δ_ij>_i'
 

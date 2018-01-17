@@ -639,7 +639,7 @@ class _ExpressionParser:
       args = []
       while self._next_non_whitespace.type != '>':
         if args:
-          self._consume()
+          self._consume_non_whitespace() # Consume ',' optionally preceeded by whitespace.
           self._consume_assert_whitespace()
         args.append(self.parse_scope('>', ','))
       self._consume_non_whitespace()
