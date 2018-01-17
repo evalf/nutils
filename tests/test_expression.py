@@ -258,19 +258,19 @@ class parse(TestCase):
     self.assert_syntax_error(
       "Expected ')'.",
       "1 + (2 + 3] + 4", "",
-      "     ^^^^^")
+      "          ^")
 
   def test_invalid_group_end_wrong_bracket_whitespace(self):
     self.assert_syntax_error(
       "Expected ')'.",
       "1 + (2 + 3 ] + 4", "",
-      "     ^^^^^")
+      "           ^")
 
   def test_invalid_group_end_eof(self):
     self.assert_syntax_error(
       "Expected ')'.",
       "1 + (2 + 3", "",
-      "     ^^^^^")
+      "          ^")
 
   def test_shape_mismatch(self):
     self.assert_syntax_error(

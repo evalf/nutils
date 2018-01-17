@@ -871,7 +871,7 @@ class _ExpressionParser:
       value = self.parse_substitution(value, until + ('|',))
 
     if self._next_non_whitespace.type not in until:
-      raise _IntermediateError('Expected {}.'.format(until_str))
+      raise _IntermediateError('Expected {}.'.format(until_str), at=self._next_non_whitespace.pos)
     if consume_end:
       self._consume_if_whitespace()
       self._consume()
