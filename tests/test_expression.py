@@ -272,6 +272,12 @@ class parse(TestCase):
       "1 + (2 + 3", "",
       "          ^")
 
+  def test_expected_EOF(self):
+    self.assert_syntax_error(
+      "Unexpected symbol at end of expression.",
+      "1 ) 1", "",
+      "  ^")
+
   def test_shape_mismatch(self):
     self.assert_syntax_error(
       "Shapes at index 'i' differ: 2, 4.",

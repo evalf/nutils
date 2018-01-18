@@ -502,6 +502,26 @@ class _ExpressionParser:
     self.arg_shapes = dict(arg_shapes)
     self.default_geometry_name = default_geometry_name
 
+  def highlight(f):
+    'wrap ``f`` in a function that converts ``_IntermediateError`` objects'
+
+    def wrapper(self, *args, **kwargs):
+      if hasattr(self, '_tokens'):
+        pos = self._next.pos
+      else:
+        pos = 0
+      try:
+        return f(self, *args, **kwargs)
+      except _IntermediateError as e:
+        if e.at is None:
+          at = pos
+          count = self._next.pos - pos if self._next.pos > pos else len(self._next.data)
+        else:
+          at = e.at
+          count = 1 if e.count is None else e.count
+        raise ExpressionSyntaxError(e.msg + '\n' + self.expression + '\n' + ' '*at + '^'*count)
+    return wrapper
+
   def _consume(self):
     'advance to next token'
 
@@ -516,17 +536,23 @@ class _ExpressionParser:
     if self._next.type == 'whitespace':
       self._consume()
 
-  def _consume_non_whitespace(self):
-    'ignore whitespace and advance to next token'
-
-    self._consume_if_whitespace()
-    return self._consume()
-
+  @highlight
   def _consume_assert_whitespace(self):
     'assert the next token is whitespace, skip it, and advance to next token'
 
     if self._consume().type != 'whitespace':
       raise _IntermediateError('Missing whitespace.', at=self._current.pos)
+
+  @highlight
+  def _consume_assert_equal(self, value, msg=None):
+    'assert the next token is equal to ``value``'
+
+    token = self._consume()
+    if token.type != value:
+      if msg is None:
+        msg = 'Expected {!r}.'.format(value)
+      raise _IntermediateError(msg, at=token.pos)
+    return token
 
   @property
   def _current(self):
@@ -574,26 +600,6 @@ class _ExpressionParser:
       self.arg_shapes[name] = shape
     return _Array.wrap(('arg', _(name)) + tuple(map(_, shape)), indices, shape)
 
-  def highlight(f):
-    'wrap ``f`` in a function that converts ``_IntermediateError`` objects'
-
-    def wrapper(self, *args, **kwargs):
-      if hasattr(self, '_tokens'):
-        pos = self._next.pos
-      else:
-        pos = 0
-      try:
-        return f(self, *args, **kwargs)
-      except _IntermediateError as e:
-        if e.at is None:
-          at = pos
-          count = self._next.pos - pos if self._next.pos > pos else len(self._next.data)
-        else:
-          at = e.at
-          count = 1 if e.count is None else e.count
-        raise ExpressionSyntaxError(e.msg + '\n' + self.expression + '\n' + ' '*at + '^'*count)
-    return wrapper
-
   @highlight
   def parse_lhs_arg(self):
     'parse lhs arg, e.g. the "?x_ij" in "|" in "?x_kk | ?x_ij = a_ij"'
@@ -616,11 +622,13 @@ class _ExpressionParser:
 
     if self._next.type == '(':
       self._consume()
-      value = self.parse_scope(')', consume_end=True, allow_substitutions=True)
+      value = self.parse_subexpression(allow_substitutions=True)
+      self._consume_assert_equal(')')
       value = value.replace(ast=('group', value.ast))
     elif self._next.type == '[':
       self._consume()
-      value = self.parse_scope(']', consume_end=True)
+      value = self.parse_subexpression()
+      self._consume_assert_equal(']')
       value = value.replace(ast=('jump', value.ast))
       if self._next.type == 'geometry':
         geometry_name = self._consume().data
@@ -632,17 +640,12 @@ class _ExpressionParser:
         value *= _Array.wrap(('normal', _(geom)), indices, geom.shape)
     elif self._next.type == '{':
       self._consume()
-      value = self.parse_scope('}', consume_end=True)
+      value = self.parse_subexpression()
+      self._consume_assert_equal('}')
       value = value.replace(ast=('mean', value.ast))
     elif self._next.type == '<':
       self._consume()
-      args = []
-      while self._next_non_whitespace.type != '>':
-        if args:
-          self._consume_non_whitespace() # Consume ',' optionally preceeded by whitespace.
-          self._consume_assert_whitespace()
-        args.append(self.parse_scope('>', ','))
-      self._consume_non_whitespace()
+      args = self.parse_comma_separated(end='>', parse_item=self.parse_subexpression)
       indices = self._consume()
       if indices.type != 'indices':
         raise _IntermediateError('Expected 1 index.', at=indices.pos, count=len(indices.data))
@@ -678,14 +681,8 @@ class _ExpressionParser:
         if name not in self.functions:
           raise _IntermediateError('Unknown function {!r}.'.format(name))
         self._consume()
+        args = self.parse_comma_separated(end=')', parse_item=self.parse_subexpression)
         nargs = self.functions[name]
-        assert nargs > 0
-        args = []
-        while True:
-          args.append(self.parse_scope(')', ','))
-          if self._consume_non_whitespace().type == ')':
-            break
-          self._consume_assert_whitespace()
         if len(args) != nargs:
           raise _IntermediateError('Function {!r} takes {}, got {}.'.format(name, _sp(nargs, 'argument', 'arguments'), len(args)))
         args = _Array.align(*args)
@@ -727,7 +724,8 @@ class _ExpressionParser:
       token = self._consume()
       if self._next.type == '(':
         self._consume()
-        exponent = self.parse_scope(')', consume_end=True)
+        exponent = self.parse_subexpression()
+        self._consume_assert_equal(')')
       else:
         if self._next.type == '-':
           self._consume()
@@ -804,8 +802,24 @@ class _ExpressionParser:
       raise _IntermediateError('A denominator must have dimension 0.')
     return value
 
+  def parse_comma_separated(self, end, parse_item):
+    'parse comma separated values until end token, e.g. "1, 2 (a_ij b_j + 3))" with end token ")"'
+
+    items = []
+    self._consume_if_whitespace()
+    if self._next.type != end:
+      while True:
+        items.append(parse_item())
+        self._consume_if_whitespace()
+        if self._next.type != ',':
+          break
+        self._consume_assert_equal(',')
+        self._consume_assert_whitespace()
+    self._consume_assert_equal(end)
+    return items
+
   @highlight
-  def parse_substitution(self, value, until):
+  def parse_substitution(self, value):
     'parse a substitution, e.g. "?x_ij = a_ij" in "?x_kk | ?x_ij = a_ij"'
 
     lhs = self.parse_lhs_arg()
@@ -814,7 +828,7 @@ class _ExpressionParser:
     self._consume_if_whitespace()
     assert self._consume().type == '='
     self._consume_if_whitespace()
-    rhs = self.parse_scope(*until)
+    rhs = self.parse_subexpression(gobble_whitespace=False)
     if set(lhs.indices) != set(rhs.indices):
       raise _IntermediateError('Left and right hand side should have the same indices, got {!r} and {!r}.'.format(lhs.indices, rhs.indices))
     rhs = rhs.transpose(lhs.indices)
@@ -836,16 +850,11 @@ class _ExpressionParser:
     return value
 
   @highlight
-  def parse_scope(self, *until, consume_end=False, allow_substitutions=False):
+  def parse_subexpression(self, allow_substitutions=False, gobble_whitespace=True):
     'parse a scope: the entire expression or a subexpression between parentheses'
 
-    assert until
-    if len(until) == 1:
-      until_str = repr(until[0])
-    else:
-      until_str = '{} or {!r}'.format(', '.join(map(repr, until[:-1])), until[-1])
-
-    self._consume_if_whitespace()
+    if gobble_whitespace:
+      self._consume_if_whitespace()
     negate = self._next.type == '-'
     if negate:
       self._consume()
@@ -854,7 +863,7 @@ class _ExpressionParser:
     if negate:
       value = -value
 
-    while self._next_non_whitespace.type not in until + ('|', 'EOF', '_', ')', ']', '}', '>'):
+    while self._next_non_whitespace.type not in ('|', 'EOF', '_', ')', ']', '}', '>', ','):
       self._consume_assert_whitespace()
       op_token = self._consume()
       if op_token.type not in '+-':
@@ -868,13 +877,10 @@ class _ExpressionParser:
       token = self._consume()
       assert token.type == '|'
       self._consume_assert_whitespace()
-      value = self.parse_substitution(value, until + ('|',))
+      value = self.parse_substitution(value)
 
-    if self._next_non_whitespace.type not in until:
-      raise _IntermediateError('Expected {}.'.format(until_str), at=self._next_non_whitespace.pos)
-    if consume_end:
+    if gobble_whitespace:
       self._consume_if_whitespace()
-      self._consume()
     return value
 
   @highlight
@@ -1180,7 +1186,8 @@ def parse(expression, variables, functions, indices, arg_shapes={}, default_geom
 
   parser = _ExpressionParser(expression, variables, functions, arg_shapes, default_geometry_name)
   parser.tokenize()
-  value = parser.parse_scope('EOF', allow_substitutions=True)
+  value = parser.parse_subexpression(allow_substitutions=True)
+  parser._consume_assert_equal('EOF', msg='Unexpected symbol at end of expression.')
   if indices is None:
     if value.ndim > 1:
       raise AmbiguousAlignmentError(
