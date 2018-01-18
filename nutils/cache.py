@@ -22,7 +22,7 @@
 The cache module.
 """
 
-from . import core, log, numeric, util
+from . import config, log, numeric, util
 import os, sys, numpy, functools, inspect, builtins
 
 def property(f):
@@ -184,11 +184,11 @@ class FileCache( object ):
     serial = pickle.dumps( args, -1 )
     self.myhash = hash( serial )
     hexhash = hashlib.md5(serial).hexdigest()
-    cachedir = core.getprop( 'cachedir', 'cache' )
+    cachedir = config.cachedir
     if not os.path.exists( cachedir ):
       os.makedirs( cachedir )
     path = os.path.join( cachedir, hexhash )
-    if not os.path.isfile( path ) or core.getprop( 'recache', False ):
+    if not os.path.isfile( path ) or config.recache:
       log.info( 'starting new cache:', hexhash )
       data = open( path, 'wb+' )
       data.write( serial )

@@ -66,10 +66,10 @@ class trimmedboundary(TestCase):
   def test_trimmed_boundary(self):
     left = self.trimmed.boundary['rightbnd']
     self.assertTrue(numpy.any(left.elem_eval(self.leftbasis, ischeme='gauss1', separate=False)))
-    with self.assertRaises(nutils.function.EvaluationError):
+    with self.assertRaises(function.EvaluationError):
       left.elem_eval(function.opposite(self.leftbasis), ischeme='gauss1', separate=False)
     self.assertTrue(numpy.any(left.elem_eval(function.opposite(self.rightbasis), ischeme='gauss1', separate=False)))
-    with self.assertRaises(nutils.function.EvaluationError):
+    with self.assertRaises(function.EvaluationError):
       left.elem_eval(self.rightbasis, ischeme='gauss1', separate=False)
 
 

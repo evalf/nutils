@@ -356,13 +356,13 @@ class locate(TestCase):
 
   @parametrize.skip_if(lambda nprocs, **kwargs: nprocs > 1 and not hasattr(os, 'fork'), 'nprocs > 1 not supported on this platform')
   def test(self):
-    __nprocs__ = self.nprocs
-    domain, geom = mesh.rectilinear([numpy.linspace(0,1,3)]*2) if self.structured else mesh.demo()
-    geom += .1 * function.sin(geom * numpy.pi) # non-polynomial geometry
-    target = numpy.array([(.2,.3), (.1,.9), (0,1)])
-    ltopo = domain.locate(geom, target, eps=1e-15)
-    located = ltopo.elem_eval(geom, ischeme='gauss1')
-    numpy.testing.assert_array_almost_equal(located, target)
+    with config(nprocs=self.nprocs):
+      domain, geom = mesh.rectilinear([numpy.linspace(0,1,3)]*2) if self.structured else mesh.demo()
+      geom += .1 * function.sin(geom * numpy.pi) # non-polynomial geometry
+      target = numpy.array([(.2,.3), (.1,.9), (0,1)])
+      ltopo = domain.locate(geom, target, eps=1e-15)
+      located = ltopo.elem_eval(geom, ischeme='gauss1')
+      numpy.testing.assert_array_almost_equal(located, target)
 
 for nprocs in 1, 2:
   locate(structured=True, nprocs=nprocs)

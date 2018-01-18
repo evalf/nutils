@@ -24,7 +24,7 @@ backends. At this point `matplotlib <http://matplotlib.org/>`_ and `vtk
 <http://vtk.org>`_ are supported.
 """
 
-from . import numpy, log, core, cache, numeric, _
+from . import numpy, log, config, core, cache, numeric, _
 import os, warnings, sys, subprocess
 
 
@@ -89,7 +89,7 @@ class PyPlot( BasePlot ):
     from matplotlib import pyplot
 
     BasePlot.__init__( self, name, ndigits=ndigits, index=index )
-    self.imgtype = imgtype or core.getprop( 'imagetype', 'png' )
+    self.imgtype = imgtype or config.imagetype
     self._fig = pyplot.figure( **kwargs )
     self._pyplot = pyplot
 
@@ -511,12 +511,12 @@ class PyPlotVideo( PyPlot ):
     self.frame = 0
     self._clearfigure = clearfigure
     if videotype is None:
-      videotype = core.getprop( 'videotype', 'webm' )
+      videotype = getattr(config, 'videotype', 'webm')
     path = self.getpath( name, None, videotype )
     with core.open_in_outdir( path, 'wb' ) as f:
       log.user( path )
       self._encoder = subprocess.Popen([
-          core.getprop( 'videoencoder', 'ffmpeg' ),
+          getattr(config, 'videoencoder', 'ffmpeg'),
           '-loglevel', 'quiet',
           '-probesize', '1k',
           '-analyzeduration', '1',

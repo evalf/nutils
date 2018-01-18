@@ -18,6 +18,7 @@ What follows is an automatically generated API reference.
    library/function
    library/expression
    library/core
+   library/config
    library/element
    library/log
    library/matrix

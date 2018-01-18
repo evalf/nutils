@@ -25,7 +25,7 @@ platforms, notably excluding Windows. On unsupported platforms parallel features
 will disable and a warning is printed.
 """
 
-from . import core, log, numpy, numeric
+from . import log, numpy, numeric
 import os, sys, multiprocessing, tempfile, mmap, traceback, signal, collections.abc
 
 procid = None # current process id, None for unforked

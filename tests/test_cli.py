@@ -29,7 +29,7 @@ class run(ContextTestCase):
       if self.method == 'choose' and funcname:
         sys.argv.append(funcname)
       sys.argv.extend(args)
-      getattr(nutils.cli, self.method)(main)
+      getattr(nutils.cli, self.method)(main, loaduserconfig=False)
     except SystemExit as e:
       status = e
     else:
