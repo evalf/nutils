@@ -468,6 +468,9 @@ const Theater = class {
     if (ev.pointerType != 'touch' || !ev.isPrimary)
       return;
     this._touch_scroll_pos = ev.screenY;
+    // NOTE: This introduces a cyclic reference.
+    this._pointer_move_handler = this.pointermove.bind(this);
+    this.root.addEventListener('pointermove', this._pointer_move_handler);
   }
   pointermove(ev) {
     if (ev.pointerType != 'touch' || !ev.isPrimary)
@@ -492,6 +495,7 @@ const Theater = class {
     if (ev.pointerType != 'touch' || !ev.isPrimary)
       return;
     this._touch_scroll_pos = undefined;
+    this.root.removeEventListener('pointermove', this._pointer_move_handler);
   }
 };
 
