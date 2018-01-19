@@ -24,7 +24,7 @@ The log module provides print methods ``debug``, ``info``, ``user``,
 stdout as well as to an html formatted log file if so configured.
 """
 
-import sys, time, warnings, functools, itertools, re, abc, contextlib, html, urllib.parse, os, json, traceback, bdb, inspect, textwrap, builtins
+import time, warnings, functools, itertools, re, abc, contextlib, html, urllib.parse, os, json, traceback, bdb, inspect, textwrap, builtins
 from . import core, config
 
 warnings.showwarning = lambda message, category, filename, lineno, *args: \
@@ -179,7 +179,7 @@ class ContextTreeLog( ContextLog ):
 class StdoutLog( ContextLog ):
   '''Output plain text to stream.'''
 
-  def __init__( self, stream=sys.stdout ):
+  def __init__(self, stream=None):
     self.stream = stream
     super().__init__()
 
@@ -193,7 +193,7 @@ class StdoutLog( ContextLog ):
       if parallel.procid is not None:
         text = '[{}] {}'.format( parallel.procid, text )
       s = self._mkstr( level, text )
-      self.stream.write( s + '\n' if endl else s )
+      print(s, end='\n' if endl else '', file=self.stream)
 
 class RichOutputLog( StdoutLog ):
   '''Output rich (colored,unicode) text to stream.'''
@@ -202,8 +202,8 @@ class RichOutputLog( StdoutLog ):
 
   cmap = { 'path': (2,1), 'error': (1,1), 'warning': (1,0), 'user': (3,0) }
 
-  def __init__( self, stream=sys.stdout, *, progressinterval=None ):
-    super().__init__( stream=stream )
+  def __init__(self, stream=None, *, progressinterval=None):
+    super().__init__(stream=stream)
     # Timestamp at which a new progress line may be written.
     self._progressupdate = 0
     # Progress update interval in seconds.
@@ -211,7 +211,7 @@ class RichOutputLog( StdoutLog ):
 
   def __exit__( self, *exc_info ):
     # Clear the progress line.
-    self.stream.write( '\033[K' )
+    print(end='\033[K', file=self.stream)
     super().__exit__( *exc_info )
 
   def _mkstr( self, level, text ):
@@ -240,7 +240,7 @@ class RichOutputLog( StdoutLog ):
     t = time.time()
     if t >= self._progressupdate:
       self._progressupdate = t + self._progressinterval
-      self.stream.write( self._mkstr( 'progress', None ) + '\r' )
+      print(self._mkstr('progress', None), end='\r', file=self.stream)
 
 class HtmlInsertAnchor( Log ):
   '''Mix-in class for HTML-based loggers that inserts anchor tags for paths.

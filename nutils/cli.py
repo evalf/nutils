@@ -168,7 +168,7 @@ def call(func, kwargs, scriptname, funcname=None):
           os.remove( target )
         os.symlink( relpath, target )
 
-    log_ = (log.RichOutputLog if config.richoutput else log.StdoutLog)(sys.stdout)
+    log_ = log.RichOutputLog() if config.richoutput else log.StdoutLog()
 
     if config.htmloutput:
       for base, relpath in relpaths:
