@@ -160,11 +160,6 @@ Changed: function.derivative, Array._derivative
   >>> der = function.derivative(func, var)
 
 
-Deprecated: cli.Path
-
-  The cli.Path wrapper is deprecated in favor of pathlib.Path.
-
-
 New: cli module
 
   The util.run function is deprecated and replaced by two new functions,
@@ -183,20 +178,13 @@ New: cli module
     * on-line debugging is provided via the ctrl+c signal handler
     * function annotations can be used to describe arguments in both
       help messages and logging output (see examples/*)
-    * path arguments can be made absolute and converted to a
-      pathlib.Path object by using the cli.Path wrapper class
-
-  For example, the new invocation for the Laplace example problem (which
-  uses cli.choose) on 4 elements with post-mortem debugging enabled, is:
-
-  $ examples/laplace.py --pdb main --nelems=4
 
 
-New: model
+New: solver
 
-  The model module provides infrastructure to facilitate formulating and
-  solving complicated nonlinear problems in a structured and largely
-  automated fashion. See that model documentation and the updated
+  The solver module provides infrastructure to facilitate formulating
+  and solving complicated nonlinear problems in a structured and largely
+  automated fashion. See that solver documentation and the updated
   finitestrain code for examples.
 
 
