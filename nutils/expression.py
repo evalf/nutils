@@ -590,7 +590,7 @@ class _ExpressionParser:
       raise _IntermediateError('Invalid geometry: expected 1 dimension, but {!r} has {}.'.format(name, geom.ndim))
     return geom
 
-  def _get_arg(self, name, indices):
+  def _get_arg(self, name, indices, indices_start):
     'get arg by ``name`` or raise an error'
 
     if name in self.arg_shapes:
@@ -598,7 +598,7 @@ class _ExpressionParser:
       if len(shape) != len(indices):
         raise _IntermediateError('Argument {!r} previously defined with {} instead of {}.'.format(name, _sp(len(shape), 'axis', 'axes'), len(indices)))
     else:
-      shape = tuple(_Length(self._next.pos+i) for i, j in enumerate(indices))
+      shape = tuple(_Length(indices_start+i) for i, j in enumerate(indices))
       self.arg_shapes[name] = shape
     return _Array.wrap(('arg', _(name)) + tuple(map(_, shape)), indices, shape)
 
@@ -621,7 +621,7 @@ class _ExpressionParser:
         raise _IntermediateError('Repeated indices are not allowed on the left hand side.')
       elif '0' <= index <= '9':
         raise _IntermediateError('Numeric indices are not allowed on the left hand side.')
-    return self._get_arg(name, indices)
+    return self._get_arg(name, indices, self._current.pos)
 
   @highlight
   def parse_var(self):
@@ -694,7 +694,7 @@ class _ExpressionParser:
         value = args[0].replace(ast=('call', _(name))+tuple(arg.ast for arg in args))
       elif name.startswith('?'):
         indices = self._consume().data if self._next.type == 'indices' else ''
-        value = self._get_arg(name[1:], indices)
+        value = self._get_arg(name[1:], indices, self._current.pos)
       else:
         raw = self._get_variable(name)
         indices = self._consume().data if self._next.type == 'indices' else ''
@@ -708,9 +708,11 @@ class _ExpressionParser:
         name = token.data[2:]
         if '_' in name:
           name, indices = name.split('_', 1)
+          indices_start = token.pos+3+len(name)
         else:
           indices = ''
-        arg = self._get_arg(name, indices)
+          indices_start = 0
+        arg = self._get_arg(name, indices, indices_start)
         value = value.derivative(arg, indices)
       else:
         gradtype = {',': 'grad', ';': 'surfgrad'}[token.data[0]]
