@@ -103,12 +103,9 @@ const Log = class {
     return {collapsed: this.collapsed, loglevel: this.loglevel};
   }
   set state(state) {
-    if (state === undefined)
-      return;
-    if (state.loglevel !== undefined)
-      this.loglevel = state.loglevel;
-    // We deliberately ignore collapsed state, except during reloads (handled
-    // by `init_elements`).
+    // We deliberately ignore state changes, except during reloads (handled by
+    // `init_elements` and `set loglevel` in the `window`s load event handler,
+    // respectively).
   }
   get collapsed() {
     const collapsed = {};
@@ -150,9 +147,11 @@ const Log = class {
     }
     else if (ev.key == '+' || ev.key == '=') { // Increase loglevel.
       this.loglevel = this.loglevel+1;
+      update_state();
     }
     else if (ev.key == '-') { // Decrease loglevel.
       this.loglevel = this.loglevel-1;
+      update_state();
     }
     else
       return false;
@@ -468,6 +467,9 @@ const Theater = class {
     if (ev.pointerType != 'touch' || !ev.isPrimary)
       return;
     this._touch_scroll_pos = ev.screenY;
+    // NOTE: This introduces a cyclic reference.
+    this._pointer_move_handler = this.pointermove.bind(this);
+    this.root.addEventListener('pointermove', this._pointer_move_handler);
   }
   pointermove(ev) {
     if (ev.pointerType != 'touch' || !ev.isPrimary)
@@ -492,6 +494,7 @@ const Theater = class {
     if (ev.pointerType != 'touch' || !ev.isPrimary)
       return;
     this._touch_scroll_pos = undefined;
+    this.root.removeEventListener('pointermove', this._pointer_move_handler);
   }
 };
 
@@ -502,11 +505,8 @@ const Theater = class {
 let state_control = 'disabled';
 
 const update_state = function(push) {
-  if (state_control == 'disabled') {
-    console.log('DBG: update_state() ignored');
-    console.trace();
+  if (state_control == 'disabled')
     return;
-  }
   let state;
   if (document.body.dataset.show == 'theater')
     state = {show: 'theater', theater: theater.state};
@@ -563,22 +563,13 @@ window.addEventListener('load', function() {
   window.log = new Log();
 
   const state = window.history.state || {};
-  Object.assign(log.state, state.log || {});
 
   window.log.init_elements((state.log || {}).collapsed || {});
 
-  function get_initial_loglevel(state) {
-    if (Number.isInteger(state.loglevel))
-      return state.loglevel;
-    try {
-      let loglevel = parseInt(window.localStorage.getItem('loglevel'));
-      if (Number.isInteger(loglevel))
-        return loglevel;
-    } catch (e) {}
-    return LEVELS.indexOf('user');
-  }
-
-  log.loglevel = get_initial_loglevel(log.state);
+  if (state.log && Number.isInteger(state.log.loglevel))
+    log.loglevel = state.log.loglevel;
+  else
+    log.loglevel = LEVELS.indexOf('user');
 
   const grid = create_element('div', {'class': 'key_description'});
   const _add_key_description = function(cls, keys, description, _key) {
@@ -624,7 +615,6 @@ window.addEventListener('load', function() {
   window.addEventListener('popstate', ev => apply_state(ev.state || {}));
   window.addEventListener('resize', ev => window.requestAnimationFrame(theater._update_overview_layout.bind(theater)));
 
-  log.loglevel = get_initial_loglevel(log.state);
   apply_state(state);
   state_control = 'enabled';
 });
