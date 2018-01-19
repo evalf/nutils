@@ -88,7 +88,7 @@ class PyPlot( BasePlot ):
     matplotlib.use( 'Agg', warn=False )
     from matplotlib import pyplot
 
-    BasePlot.__init__( self, name, ndigits=ndigits, index=index )
+    super().__init__(name, ndigits=ndigits, index=index)
     self.imgtype = imgtype or config.imagetype
     self._fig = pyplot.figure( **kwargs )
     self._pyplot = pyplot
@@ -99,7 +99,7 @@ class PyPlot( BasePlot ):
     # make this figure active
     self._pyplot.figure(self._fig.number)
 
-    return super( PyPlot, self ).__enter__()
+    return super().__enter__()
 
   def __getattr__( self, attr ):
     pyplot = self.__dict__['_pyplot'] # avoid recursion
@@ -506,7 +506,7 @@ class PyPlotVideo( PyPlot ):
   def __init__(self, name, videotype=None, clearfigure=True, framerate=24):
     'constructor'
 
-    PyPlot.__init__( self, ndigits=0 )
+    super().__init__(ndigits=0)
 
     self.frame = 0
     self._clearfigure = clearfigure
@@ -568,7 +568,7 @@ class DataFile( BasePlot ):
   def __init__( self, name=None, index=None, ext='txt', ndigits=0 ):
     'constructor'
 
-    BasePlot.__init__( self, name, ndigits=ndigits, index=index )
+    super().__init__(name, ndigits=ndigits, index=index)
     self.ext = ext
     self.lines = []
 
@@ -601,7 +601,7 @@ class VTKFile( BasePlot ):
   def __init__( self, name=None, index=None, ndigits=0, ascii=False ):
     'constructor'
 
-    BasePlot.__init__( self, name, ndigits=ndigits, index=index )
+    super().__init__(name, ndigits=ndigits, index=index)
 
     if ascii is True or ascii == 'ascii':
       self.ascii = True

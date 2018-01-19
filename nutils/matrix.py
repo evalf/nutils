@@ -87,7 +87,7 @@ class ScipyMatrix( Matrix ):
 
   def __init__( self, core ):
     self.core = core
-    Matrix.__init__( self, core.shape )
+    super().__init__(core.shape)
 
   matvec = lambda self, vec: self.core.dot( vec )
   toarray = lambda self: self.core.toarray()
@@ -187,7 +187,7 @@ class NumpyMatrix( Matrix ):
   def __init__( self, core ):
     assert numeric.isarray(core)
     self.core = core
-    Matrix.__init__( self, core.shape )
+    super().__init__(core.shape)
 
   matvec = lambda self, vec: numpy.dot( self.core, vec )
   toarray = lambda self: self.core

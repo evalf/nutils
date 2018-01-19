@@ -734,7 +734,7 @@ class WithGroupsTopology( Topology ):
     self.bgroups = bgroups.copy()
     self.igroups = igroups.copy()
     self.pgroups = pgroups.copy()
-    Topology.__init__( self, basetopo.ndims )
+    super().__init__(basetopo.ndims)
     assert all(topo is Ellipsis or isinstance(topo, str) or isinstance(topo, Topology) and topo.ndims == basetopo.ndims and set(self.basetopo.edict).issuperset(topo.edict) for topo in self.vgroups.values())
 
   def withgroups( self, vgroups={}, bgroups={}, igroups={}, pgroups={} ):
@@ -809,7 +809,7 @@ class OppositeTopology( Topology ):
 
   def __init__( self, basetopo ):
     self.basetopo = basetopo
-    Topology.__init__( self, basetopo.ndims )
+    super().__init__(basetopo.ndims)
 
   def getitem( self, item ):
     return ~( self.basetopo.getitem(item) )
@@ -853,7 +853,7 @@ class Point( Topology ):
   def __init__( self, trans, opposite=None ):
     assert trans[-1].fromdims == 0
     self.elem = element.Element( element.getsimplex(0), trans, opposite, oriented=True )
-    Topology.__init__( self, ndims=0 )
+    super().__init__(ndims=0)
 
   def __iter__( self ):
     yield self.elem
@@ -876,7 +876,7 @@ class StructuredLine( Topology ):
     self.j = j
     self.periodic = periodic
     self.bnames = bnames or ()
-    Topology.__init__( self, ndims=1 )
+    super().__init__(ndims=1)
 
   @cache.property
   def _transforms( self ):
@@ -1049,7 +1049,7 @@ class StructuredTopology( Topology ):
     self._bnames = tuple( bnames )
     assert len(self._bnames) == sum( 2 for axis in self.axes if axis.isdim and not axis.isperiodic )
     assert all( isinstance(bname,str) for bname in self._bnames )
-    Topology.__init__( self, len(self.shape) )
+    super().__init__(len(self.shape))
 
   def __iter__( self ):
     reference = util.product(element.getsimplex(1 if axis.isdim else 0) for axis in self.axes)
@@ -1432,7 +1432,7 @@ class UnstructuredTopology( Topology ):
   def __init__( self, ndims, elements ):
     self.elements = tuple(elements)
     assert all( elem.ndims == ndims for elem in self.elements )
-    Topology.__init__( self, ndims )
+    super().__init__(ndims)
 
   @cache.property
   @log.title
@@ -1603,7 +1603,7 @@ class UnionTopology( Topology ):
     assert len(set(self._names)) == len(self._names), 'duplicate name'
     ndims = self._topos[0].ndims
     assert all( topo.ndims == ndims for topo in self._topos )
-    Topology.__init__( self, ndims )
+    super().__init__(ndims)
 
   def getitem( self, item ):
     topos = [ topo if name == item else topo.getitem(item) for topo, name in itertools.zip_longest( self._topos, self._names ) ]
@@ -1657,7 +1657,7 @@ class SubsetTopology( Topology ):
     self.refs = tuple(refs)
     self.basetopo = basetopo
     self.newboundary = newboundary
-    Topology.__init__( self, basetopo.ndims )
+    super().__init__(basetopo.ndims)
 
   def getitem( self, item ):
     return self.basetopo.getitem(item).subset( self.elements, strict=False )
@@ -1787,7 +1787,7 @@ class RefinedTopology( Topology ):
 
   def __init__( self, basetopo ):
     self.basetopo = basetopo
-    Topology.__init__( self, basetopo.ndims )
+    super().__init__(basetopo.ndims)
 
   def getitem( self, item ):
     return self.basetopo.getitem(item).refined
@@ -1806,7 +1806,7 @@ class TrimmedTopologyItem( Topology ):
   def __init__( self, basetopo, refdict ):
     self.basetopo = basetopo
     self.refdict = refdict
-    Topology.__init__( self, basetopo.ndims )
+    super().__init__(basetopo.ndims)
 
   @cache.property
   def elements( self ):
@@ -1824,7 +1824,7 @@ class TrimmedTopologyBoundaryItem( Topology ):
     self.btopo = btopo
     self.trimmed = trimmed
     self.othertopo = othertopo
-    Topology.__init__( self, btopo.ndims )
+    super().__init__(btopo.ndims)
 
   @cache.property
   def elements( self ):
@@ -1844,7 +1844,7 @@ class HierarchicalTopology( Topology ):
     self.allelements = tuple(allelements)
     if precise:
       self.elements = self.allelements
-    Topology.__init__( self, basetopo.ndims )
+    super().__init__(basetopo.ndims)
 
   def getitem( self, item ):
     return self.basetopo.getitem(item).hierarchical( self.allelements, precise=False )
@@ -2035,7 +2035,7 @@ class ProductTopology( Topology ):
   def __init__( self, topo1, topo2 ):
     self.topo1 = topo1
     self.topo2 = topo2
-    Topology.__init__( self, topo1.ndims+topo2.ndims )
+    super().__init__(topo1.ndims+topo2.ndims)
 
   def __len__( self ):
     return len(self.topo1) * len(self.topo2)
@@ -2094,7 +2094,7 @@ class RevolutionTopology( Topology ):
   def __init__( self ):
     self.elements = element.Element(element.RevolutionReference(), [transform.RootTrans('angle',(1,))]),
     self.boundary = EmptyTopology( ndims=0 )
-    Topology.__init__( self, ndims=1 )
+    super().__init__(ndims=1)
 
   def basis( self, name, *args, **kwargs ):
     return function.asarray( [1] )
