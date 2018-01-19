@@ -105,4 +105,4 @@ class config(metaclass=_Config):
 _ = numpy.newaxis
 __all__ = ['_', 'numpy', 'core', 'numeric', 'element', 'function', 'expression',
   'mesh', 'plot', 'topology', 'util', 'matrix', 'parallel', 'log',
-  'cache', 'transform', 'solver', 'cli', 'config']
+  'cache', 'transform', 'solver', 'cli', 'warnings', 'config']
