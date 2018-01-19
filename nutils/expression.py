@@ -318,10 +318,12 @@ class _Array:
       shape.append(length)
     return shape
 
-  def _join_lengths(self, other, additional=frozenset()):
+  def _join_lengths(*args):
     '''Return updated linked lengths resulting from ``self + other``.'''
 
-    groups = set(self.linked_lengths) | set(other.linked_lengths) | set(additional)
+    groups = set()
+    for arg in args:
+      groups |= arg.linked_lengths if isinstance(arg, _Array) else arg
     cache = {}
     for g in groups:
       # g = frozenset(itertools.chain.from_iterable(map(linked_lenghts.get, g)))
