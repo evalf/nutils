@@ -424,12 +424,24 @@ class Array( Evaluable ):
   __array_priority__ = 1. # http://stackoverflow.com/questions/7042496/numpy-coercion-problem-for-left-sided-binary-operator/7057530#7057530
 
   def __init__(self, args:tuple, shape:tuple, dtype:asdtype):
-    assert all(numeric.isint(sh) or isarray(sh) and sh.ndim == 0 and sh.dtype == int for sh in shape)
-    shape = tuple(sh.simplified if isarray(sh) else sh for sh in shape)
-    self.shape = tuple(sh.eval()[0] if isarray(sh) and sh.isconstant else sh for sh in shape)
+    self.shape = tuple(map(self._canonicalize_length, shape))
     self.ndim = len(shape)
     self.dtype = dtype
     super().__init__(args=args)
+
+  @staticmethod
+  def _canonicalize_length(value):
+    if isarray(value):
+      if value.ndim != 0 or value.dtype != int:
+        raise ValueError('length should be an `int` or `Array` with zero dimensions and dtype `int`, got {!r}'.format(value))
+      value = value.simplified
+      if value.isconstant:
+        value = int(value.eval()) # Ensure this is an `int`, not `numpy.int64`.
+    elif numeric.isint(value):
+      value = int(value) # Ensure this is an `int`, not `numpy.int64`.
+    else:
+      raise ValueError('length should be an `int` or `Array` with zero dimensions and dtype `int`, got {!r}'.format(value))
+    return value
 
   def __getitem__(self, item):
     if not isinstance(item, tuple):
