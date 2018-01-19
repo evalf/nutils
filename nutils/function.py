@@ -42,8 +42,8 @@ possible only via inverting of the geometry function, which is a fundamentally
 expensive and currently unsupported operation.
 """
 
-from . import util, numpy, numeric, log, config, core, cache, transform, expression, _
-import sys, warnings, itertools, functools, operator, inspect, numbers, builtins, re, types, collections.abc, math
+from . import util, numpy, numeric, log, config, core, cache, transform, expression, warnings, _
+import sys, itertools, functools, operator, inspect, numbers, builtins, re, types, collections.abc, math
 
 isevaluable = lambda arg: isinstance(arg, Evaluable)
 
@@ -583,7 +583,7 @@ class ArrayFunc( Array ):
   'deprecated ArrayFunc alias'
 
   def __init__(self, args:tuple, shape:tuple):
-    warnings.warn( 'function.ArrayFunc is deprecated; use function.Array instead', DeprecationWarning )
+    warnings.deprecation('function.ArrayFunc is deprecated; use function.Array instead')
     super().__init__(args=args, shape=shape, dtype=float)
 
 class Constant( Array ):
@@ -3202,7 +3202,7 @@ def outer( arg1, arg2=None, axis=0 ):
   'outer product'
 
   if arg2 is not None and arg1.ndim != arg2.ndim:
-    warnings.warn( 'varying ndims in function.outer; this will be forbidden in future', DeprecationWarning )
+    warnings.deprecation('varying ndims in function.outer; this will be forbidden in future')
   arg1, arg2 = _matchndim( arg1, arg2 if arg2 is not None else arg1 )
   axis = numeric.normdim( arg1.ndim, axis )
   return expand_dims(arg1,axis+1) * expand_dims(arg2,axis)
@@ -3527,7 +3527,7 @@ class Namespace:
     return ns
 
   def __or__(self, subs):
-    warnings.warn('ns | dict(x=y) is deprecated; use ns(x=y) instead', DeprecationWarning)
+    warnings.deprecation('ns | dict(x=y) is deprecated; use ns(x=y) instead')
     return self(**subs)
 
   def copy_(self, *, default_geometry_name=None):

@@ -24,8 +24,8 @@ The log module provides print methods ``debug``, ``info``, ``user``,
 stdout as well as to an html formatted log file if so configured.
 """
 
-import time, warnings, functools, itertools, re, abc, contextlib, html, urllib.parse, os, json, traceback, bdb, inspect, textwrap, builtins
-from . import core, config
+import time, functools, itertools, re, abc, contextlib, html, urllib.parse, os, json, traceback, bdb, inspect, textwrap, builtins
+from . import core, config, warnings
 
 # NOTE: This should match the log levels defined in `nutils/_log/viewer.js`.
 LEVELS = 'error', 'warning', 'user', 'info', 'debug'
@@ -473,7 +473,7 @@ def _print( level, *args ):
 locals().update({ name: functools.partial( _print, name ) for name in LEVELS })
 
 def path( *args ):
-  warnings.warn( "log level 'path' will be removed in the future, please use any other log level instead", DeprecationWarning )
+  warnings.deprecation("log level 'path' will be removed in the future, please use any other log level instead")
   return _print( 'info', *args )
 
 def range( title, *args ):

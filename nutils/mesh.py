@@ -26,8 +26,8 @@ accompanying geometry function. Meshes can either be generated on the fly, e.g.
 provided at this point; output is handled by the :mod:`nutils.plot` module.
 """
 
-from . import topology, function, util, element, numpy, numeric, transform, log, _
-import os, warnings, itertools
+from . import topology, function, util, element, numpy, numeric, transform, log, warnings, _
+import os, itertools
 
 # MESH GENERATORS
 
@@ -524,7 +524,7 @@ def gmsh( fname, name=None ):
   return topo.withgroups( vgroups=vgroups ), geom
 
 def gmesh( fname, tags={}, name=None, use_elementary=False ):
-  warnings.warn( 'mesh.gmesh has been renamed to mesh.gmsh; please update your code', DeprecationWarning )
+  warnings.deprecation('mesh.gmesh has been renamed to mesh.gmsh; please update your code')
   assert not use_elementary, 'support of non-physical gmsh files has been deprecated'
   assert not tags, 'support of external group names has been deprecated; please provide physical names via gmsh'
   return gmsh( fname, name )

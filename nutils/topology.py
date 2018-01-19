@@ -35,8 +35,8 @@ out in element loops. For lower level operations topologies can be used as
 :mod:`nutils.element` iterators.
 """
 
-from . import element, function, util, numpy, parallel, matrix, log, config, numeric, cache, transform, _
-import warnings, functools, collections.abc, itertools, functools, operator
+from . import element, function, util, numpy, parallel, matrix, log, config, numeric, cache, transform, warnings, _
+import functools, collections.abc, itertools, functools, operator
 
 _identity = lambda x: x
 
@@ -608,7 +608,7 @@ class Topology( object ):
       print('divergence check failed: {} != {}'.format(volumes, volume))
 
   def volume_check(self, geometry, ischeme='gauss', degree=1, decimal=15, *, arguments=None):
-    warnings.warn('volume_check will be removed in future, us check_boundary instead', DeprecationWarning)
+    warnings.deprecation('volume_check will be removed in future, us check_boundary instead')
     self.check_boundary(geometry=geometry, ischeme=ischeme, degree=degree, tol=10**-decimal, arguments=arguments)
 
   def indicator(self, subtopo):
@@ -1131,7 +1131,7 @@ class StructuredTopology( Topology ):
 
   @property
   def structure( self ):
-    warnings.warn( 'topology.structure will be removed in future', DeprecationWarning )
+    warnings.deprecation('topology.structure will be removed in future')
     reference = util.product(element.getsimplex(1 if axis.isdim else 0) for axis in self.axes)
     return numeric.asobjvector( element.Element( reference, trans, opp, oriented=True ) for trans, opp in numpy.broadcast( self._transform, self._opposite ) ).reshape( self.shape )
 
@@ -1320,7 +1320,7 @@ class StructuredTopology( Topology ):
     return function.mask( func, mask.ravel() )
 
   def basis_bspline( self, *args, **kwargs ):
-    warnings.warn( 'basis "bspline" has been merged with "spline"', DeprecationWarning )
+    warnings.deprecation('basis "bspline" has been merged with "spline"')
     return self.basis_spline( *args, **kwargs )
 
   @staticmethod
@@ -2382,7 +2382,7 @@ BndAxis = collections.namedtuple( 'BndAxis', ['i','j','ibound','side'] )
 BndAxis.isdim = False
 
 def common_refine(topo1, topo2):
-  warnings.warn('common_refine(a, b) will be removed in future; use a & b instead', DeprecationWarning)
+  warnings.deprecation('common_refine(a, b) will be removed in future; use a & b instead')
   return topo1 & topo2
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
