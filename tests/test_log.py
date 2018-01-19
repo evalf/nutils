@@ -1,4 +1,4 @@
-import io, tempfile, os
+import io, tempfile, os, contextlib
 from . import *
 import nutils.log, nutils.core, nutils.util, nutils.parallel
 
@@ -170,12 +170,20 @@ class logoutput(ContextTestCase):
     kwargs = dict(title='test') if self.logcls == nutils.log.HtmlLog else {}
     if self.progressfileobj is not None:
       kwargs.update(progressfile=self.progressfileobj)
-    with self.logcls(stream, **kwargs):
+    with contextlib.ExitStack() as stack:
+      if self.replace_sys_stdout:
+        stack.callback(setattr, sys, 'stdout', sys.stdout)
+        sys.stdout = stream
+        log_ = self.logcls(**kwargs)
+      else:
+        log_ = self.logcls(stream, **kwargs)
+      stack.enter_context(log_)
       generate_log()
     self.assertEqual(stream.getvalue(), self.logout)
 
-_logoutput = lambda name, logcls, logout, verbose=len(nutils.log.LEVELS), progressfile=False: logoutput(name, logcls=logcls, logout=logout, verbose=verbose, progressfile=progressfile)
+_logoutput = lambda name, logcls, logout, verbose=len(nutils.log.LEVELS), progressfile=False, replace_sys_stdout=False: logoutput(name, logcls=logcls, logout=logout, verbose=verbose, progressfile=progressfile, replace_sys_stdout=replace_sys_stdout)
 _logoutput('stdout', nutils.log.StdoutLog, log_stdout)
+_logoutput('stdout-replace-sys-stdout', nutils.log.StdoutLog, log_stdout, replace_sys_stdout=True)
 _logoutput('stdout-verbose3', nutils.log.StdoutLog, log_stdout3, verbose=3)
 _logoutput('rich_output', nutils.log.RichOutputLog, log_rich_output)
 _logoutput('html', nutils.log.HtmlLog, log_html)
