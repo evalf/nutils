@@ -521,7 +521,7 @@ class _ExpressionParser:
         else:
           at = e.at
           count = 1 if e.count is None else e.count
-        raise ExpressionSyntaxError(e.msg + '\n' + self.expression + '\n' + ' '*at + '^'*count)
+        raise ExpressionSyntaxError(e.msg + '\n' + self.expression + '\n' + ' '*at + '^'*count) from e
     return wrapper
 
   def _consume(self):
@@ -1201,7 +1201,7 @@ def parse(expression, variables, functions, indices, arg_shapes={}, default_geom
     try:
       ast = value.transpose(indices).ast
     except _IntermediateError as e:
-      raise ExpressionSyntaxError(e.msg + '\n' + expression + '\n' + '^'*len(expression))
+      raise ExpressionSyntaxError(e.msg + '\n' + expression + '\n' + '^'*len(expression)) from e
   lengths = {}
   undetermined = set()
   for group in value.linked_lengths:
