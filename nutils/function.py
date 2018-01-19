@@ -2693,11 +2693,15 @@ class Polyval(Array):
      incorrect results.
   '''
 
-  def __init__(self, coeffs:asarray, points, ndim, ngrad:int=0):
-    self.points_ndim = ndim
+  def __init__(self, coeffs:asarray, points:asarray, ngrad:int=0):
+    if points.ndim != 1:
+      raise ValueError('argument `points` should have exactly one dimension')
+    if not numeric.isint(points.shape[0]):
+      raise ValueError('the shape of argument `points` should have be known, i.e. an `int`')
+    self.points_ndim = points.shape[0]
     ndim = coeffs.ndim - self.points_ndim
     if coeffs.ndim < ndim:
-      raise ValueError('invalid `coeffs` argument, should have at least one axis per spatial dimension')
+      raise ValueError('argument `coeffs` should have at least one axis per spatial dimension')
     self.coeffs = coeffs
     self.points = points
     self.ngrad = ngrad
@@ -2713,18 +2717,18 @@ class Polyval(Array):
 
   def _derivative(self, var, seen):
     # Derivative to argument `points`.
-    dpoints = Dot(_numpy_align(Polyval(self.coeffs, self.points, self.points_ndim, self.ngrad+1)[(...,*(_,)*var.ndim)], derivative(self.points, var, seen)), [self.ndim])
+    dpoints = Dot(_numpy_align(Polyval(self.coeffs, self.points, self.ngrad+1)[(...,*(_,)*var.ndim)], derivative(self.points, var, seen)), [self.ndim])
     # Derivative to argument `coeffs`.  `trans` shuffles the coefficient axes
     # of `derivative(self.coeffs)` after the derivative axes.
     shuffle = lambda a, b, c: (*range(0,a), *range(a+b,a+b+c), *range(a,a+b))
     pretrans = shuffle(self.coeffs.ndim-self.points_ndim, self.points_ndim, var.ndim)
     posttrans = shuffle(self.coeffs.ndim-self.points_ndim, var.ndim, self.ngrad)
-    dcoeffs = Transpose(Polyval(Transpose(derivative(self.coeffs, var, seen), pretrans), self.points, self.points_ndim, self.ngrad), posttrans)
+    dcoeffs = Transpose(Polyval(Transpose(derivative(self.coeffs, var, seen), pretrans), self.points, self.ngrad), posttrans)
     return dpoints + dcoeffs
 
   def _take(self, index, axis):
     if axis < self.coeffs.ndim - self.points_ndim:
-      return Polyval(take(self.coeffs, index, axis), self.points, self.points_ndim, self.ngrad)
+      return Polyval(take(self.coeffs, index, axis), self.points, self.ngrad)
 
   def _const_helper(self, *j):
     if len(j) == self.ngrad:
@@ -3228,7 +3232,7 @@ def polyfunc(coeffs, dofs, ndofs, transforms, *, issorted=True):
   dofmap = DofMap(dofs, index=index)
   depth = Get([len(trans) for trans in transforms], axis=0, item=index)
   points = ApplyTransforms(TailOfTransform(promote, depth, fromdims))
-  func = Polyval(Elemwise(coeffs, index, dtype=float), points, fromdims)
+  func = Polyval(Elemwise(coeffs, index, dtype=float), points)
   return Inflate(func, dofmap, ndofs, axis=0)
 
 def elemwise( fmap, shape, default=None ):
