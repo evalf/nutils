@@ -679,10 +679,8 @@ class _ExpressionParser:
     elif self._next.type == 'variable':
       token = self._consume()
       name = token.data
-      if self._next.type == '(': # function
-        if name not in self.functions:
-          raise _IntermediateError('Unknown function {!r}.'.format(name))
-        self._consume()
+      if name in self.functions and name not in self.variables: # function (and not overriden as variable)
+        self._consume_assert_equal('(', msg="Expected '(' for function {}.".format(name))
         args = self.parse_comma_separated(end=')', parse_item=self.parse_subexpression)
         nargs = self.functions[name]
         if len(args) != nargs:
@@ -1108,9 +1106,9 @@ def parse(expression, variables, functions, indices, arg_shapes={}, default_geom
       and at least one space.  The function is applied pointwise to the
       arguments and all arguments should have the same shape.  Example:
       ``f(x_i, y_i)``.denotes the call to function ``f`` with arguments ``x_i``
-      and ``y_i``.  Functions and variables have different namespaces; it is
-      not prohibited to define functions and variables with the same name.
-      Note that ``f(x_i)`` and ``f (x_i)`` have different meanings.
+      and ``y_i``.  Functions and variables share a namespace: defining a
+      variable with the same name as a function renders the function
+      inaccessible.
 
   *   A **stack** of two or more arrays along an axis is denoted by a ``<``
       followed by comma and space separated arrays followed by ``>`` and an

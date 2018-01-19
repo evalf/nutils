@@ -18,9 +18,10 @@ class Array:
     return hash(self.text)
 
 class Variables:
-  def __init__(self, x, altgeom):
+  def __init__(self, x, altgeom, funcoverride):
     self.x = x
     self.altgeom = altgeom
+    self.funcoverride = funcoverride
     self._lengths = {str(i): i for i in range(10)}
   def __getitem__(self, name):
     if not name.startswith('_'):
@@ -48,8 +49,8 @@ class Variables:
     except KeyError:
       return default
 
-v = Variables(x=Array('x', [2]), altgeom=Array('altgeom', [3]))
-functions = dict(func1=1, func2=2, func3=3)
+v = Variables(x=Array('x', [2]), altgeom=Array('altgeom', [3]), funcoverride=Array('funcoverride', []))
+functions = dict(func1=1, func2=2, func3=3, funcoverride=1)
 
 class parse(TestCase):
 
@@ -659,8 +660,14 @@ class parse(TestCase):
 
   def test_function_unknown(self):
     self.assert_syntax_error(
-      "Unknown function 'funcX'.",
+      "Unknown variable: 'funcX'.",
       "1_ij + funcX(a23_ij) + 1_ij", "ij",
       "       ^^^^^")
+
+  def test_function_override(self):
+    self.assert_syntax_error(
+      "Missing whitespace.",
+      "1_ij + funcoverride(a23_ij) + 1_ij", "ij",
+      "                   ^")
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
