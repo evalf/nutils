@@ -92,7 +92,7 @@ class WrapperCache:
       hits += wrapper.hits
       count += wrapper.count
     return 'not used' if not count \
-      else 'effectivity %d%% (hit %d/%d calls over %d functions)' % ( 100*hits/count, hits, count, len(self.cache) )
+      else 'effectivity {}% (hit {}/{} calls over {} functions)'.format(100*hits/count, hits, count, len(self.cache))
 
 class WrapperDummyCache:
   'placeholder object'
@@ -208,7 +208,7 @@ class FileCache:
       import cPickle as pickle
     except ImportError:
       import pickle
-    name = func.__name__ + ''.join( ' %s' % arg for arg in args ) + ''.join( ' %s=%s' % item for item in kwargs.items() )
+    name = func.__name__ + ''.join( ' {}'.format(arg) for arg in args ) + ''.join( ' {}={}'.format(*item) for item in kwargs.items() )
     pos = self.data.tell()
     try:
       data = pickle.load( self.data )
@@ -220,7 +220,7 @@ class FileCache:
       msg = 'written to'
     else:
       msg = 'loaded from'
-    log.info( msg, 'cache:', name, '[%db]' % (self.data.tell()-pos) )
+    log.info( msg, 'cache:', name, '[{}b]'.format(self.data.tell()-pos) )
     return data
 
   def truncate( self ):

@@ -226,7 +226,7 @@ class Reference( cache.Immutable ):
 
   def getischeme( self, ischeme ):
     match = re.match( '([a-zA-Z]+)(.*)', ischeme )
-    assert match, 'cannot parse integration scheme %r' % ischeme
+    assert match, 'cannot parse integration scheme {!r}'.format(ischeme)
     ptype, args = match.groups()
     get = getattr( self, 'getischeme_'+ptype )
     ipoints, iweights = get( eval(args) ) if args else get()
@@ -234,7 +234,7 @@ class Reference( cache.Immutable ):
 
   @classmethod
   def register( cls, ptype, func ):
-    setattr( cls, 'getischeme_%s' % ptype, func )
+    setattr( cls, 'getischeme_{}'.format(ptype), func )
 
   def with_children( self, child_refs ):
     child_refs = tuple(child_refs)
@@ -610,7 +610,7 @@ class TriangleReference( SimplexReference ):
     ]
 
     if degree > 7:
-      warnings.warn( 'inexact integration for polynomial of degree %i'.format(degree) )
+      warnings.warn( 'inexact integration for polynomial of degree {}'.format(degree) )
 
     return numpy.concatenate( [ numpy.take(c,i) for i, c, w in icw ], axis=0 ), \
            numpy.concatenate( [ [w*.5] * len(i) for i, c, w in icw ] )
@@ -767,7 +767,7 @@ class TetrahedronReference( SimplexReference ):
     ]
 
     if degree > 8:
-      warnings.warn( 'inexact integration for polynomial of degree %i'.format(degree) )
+      warnings.warn( 'inexact integration for polynomial of degree {}'.format(degree) )
 
     return numpy.concatenate( [ numpy.take(c,i) for i, c, w in icw ], axis=0 ), \
            numpy.concatenate( [ [w/6] * len(i) for i, c, w in icw ] )
@@ -809,7 +809,7 @@ class TensorReference( Reference ):
         for v2 in self.ref2.child_divide( v1.swapaxes(0,1), n ) ]
 
   def __str__( self ):
-    return '%s*%s' % ( self.ref1, self.ref2 )
+    return '{}*{}'.format(self.ref1, self.ref2)
 
   def getischeme_vtk( self ):
     if self.ref1.ndims == self.ref2.ndims == 1:
@@ -834,7 +834,7 @@ class TensorReference( Reference ):
       ischeme1, ischeme2 = ischeme.split( '*', 1 )
     else:
       match = self._re_ischeme.match( ischeme )
-      assert match, 'cannot parse integration scheme %r' % ischeme
+      assert match, 'cannot parse integration scheme {!r}'.format(ischeme)
       ptype, args = match.groups()
       get = getattr( self, 'getischeme_'+ptype, None )
       if get:
@@ -1138,7 +1138,7 @@ class NeighborhoodTensorReference( TensorReference ):
          [B,  C ]] ).reshape( 4, -1 ).T
       weights = numpy.concatenate( 2*[xi**2*A*weights] )
     else:
-      assert self.neighborhood == -1, 'invalid neighborhood %r' % self.neighborhood
+      assert self.neighborhood == -1, 'invalid neighborhood {!r}'.format(self.neighborhood)
       points = numpy.array([ eta1*eta2, 1-eta2, eta3*xi, 1-xi ]).T
       weights = eta2*xi*weights
     return points, weights
@@ -1186,13 +1186,13 @@ class NeighborhoodTensorReference( TensorReference ):
          [C,  C,  C,  xi]]).reshape( 4, -1 ).T
       weights = numpy.concatenate( 4*[xi**3*weights] )
     else:
-      assert self.neighborhood == -1, 'invalid neighborhood %r' % self.neighborhood
+      assert self.neighborhood == -1, 'invalid neighborhood {!r}'.format(self.neighborhood)
     return points, weights
 
   def getischeme_singular( self, n ):
     'get integration scheme'
     
-    gauss = 'gauss%d'% (n*2-2)
+    gauss = 'gauss{}'.format(n*2-2)
     assert self.ref1 == self.ref2 == getsimplex(1)**2
     points, weights = self.get_quad_bem_ischeme( gauss )
     return self.singular_ischeme_quad( points ), weights
@@ -1300,7 +1300,7 @@ class WithChildrenReference( Reference ):
     npoints = 0
     for childindex, child in enumerate(self.child_refs):
       if child:
-        points, weights = child.getischeme( 'vertex%d' % (i-1) )
+        points, weights = child.getischeme( 'vertex{}'.format(i-1) )
         assert weights is None
         if childindex == ichild:
           rng = numpy.arange( npoints, npoints+len(points) )

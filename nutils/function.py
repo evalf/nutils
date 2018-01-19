@@ -148,8 +148,8 @@ class Evaluable( cache.Immutable ):
     lines = []
     lines.append( 'digraph {' )
     lines.append( 'graph [ dpi=72 ];' )
-    lines.extend( '%d [label="%d. %s"];' % (i, i, name._asciitree_str()) for i, name in enumerate(self.ordereddeps+(self,)) )
-    lines.extend( '%d -> %d;' % (j,i) for i, indices in enumerate(self.dependencytree) for j in indices )
+    lines.extend( '{0:} [label="{0:}. {1:}"];'.format(i, name._asciitree_str()) for i, name in enumerate(self.ordereddeps+(self,)) )
+    lines.extend( '{} -> {};'.format(j, i) for i, indices in enumerate(self.dependencytree) for j in indices )
     lines.append( '}' )
     imgdata = '\n'.join(lines).encode()
 
@@ -167,16 +167,16 @@ class Evaluable( cache.Immutable ):
 
     lines = ['  %0 = EVALARGS']
     for op, indices in self.serialized:
-      args = [ '%%%d' % idx for idx in indices ]
+      args = [ '%{}'.format(idx) for idx in indices ]
       try:
         code = op.evalf.__code__
         offset = 1 if getattr( op.evalf, '__self__', None ) is not None else 0
         names = code.co_varnames[ offset:code.co_argcount ]
-        names += tuple( '%s[%d]' % ( code.co_varnames[ code.co_argcount ], n ) for n in range( len(indices) - len(names) ) )
-        args = [ '%s=%s' % item for item in zip( names, args ) ]
+        names += tuple( '{}[{}]'.format(code.co_varnames[code.co_argcount], n) for n in range(len(indices) - len(names)) )
+        args = [ '{}={}'.format(*item) for item in zip(names, args) ]
       except:
         pass
-      lines.append( '  %%%d = %s( %s )' % (len(lines), op._asciitree_str(), ', '.join(args)) )
+      lines.append( '  %{} = {}({})'.format(len(lines), op._asciitree_str(), ', '.join(args)) )
       if len(lines) == nlines+1:
         break
     return '\n'.join( lines )
@@ -197,12 +197,12 @@ class EvaluationError( Exception ):
     self.values = values
 
   def __repr__( self ):
-    return 'EvaluationError%s' % self
+    return 'EvaluationError{}'.format(self)
 
   def __str__( self ):
     'string representation'
 
-    return '\n%s --> %s: %s' % ( self.evaluable.stackstr( nlines=len(self.values) ), self.etype.__name__, self.evalue )
+    return '\n{} --> {}: {}'.format(self.evaluable.stackstr(nlines=len(self.values)), self.etype.__name__, self.evalue)
 
 EVALARGS = Evaluable(args=())
 
@@ -3106,7 +3106,7 @@ def jacobian( geom, ndims ):
   assert geom.ndim == 1
   J = localgradient( geom, ndims )
   cndims, = geom.shape
-  assert J.shape == (cndims,ndims), 'wrong jacobian shape: got %s, expected %s' % ( J.shape, (cndims, ndims) )
+  assert J.shape == (cndims,ndims), 'wrong jacobian shape: got {}, expected {}'.format(J.shape, (cndims, ndims))
   assert cndims >= ndims, 'geometry dimension < topology dimension'
   detJ = abs( determinant( J ) ) if cndims == ndims \
     else 1. if ndims == 0 \
@@ -3615,7 +3615,7 @@ def grad(self, geom, ndims=0):
     Ginv = inverse(G)
     Jinv = dot(J[_,:,:], Ginv[:,_,:], -1)
   else:
-    raise Exception( 'cannot invert %sx%s jacobian' % J.shape )
+    raise Exception( 'cannot invert {}x{} jacobian'.format(J.shape) )
   return dot(localgradient(self, ndims)[...,_], Jinv, -2)
 
 def dotnorm(arg, geom, axis=-1):

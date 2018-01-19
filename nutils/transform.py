@@ -495,7 +495,7 @@ class RootTransEdges(VertexTransform):
       right = (coord[:,1]==1) & (coord[:,0]==self.shape)
       left = coord[:,0]==0
       where = (1+right)-left
-      s = self.name[tuple(where)] + '[%s]' % ','.join(str(n) if d == 1 else '%d/%d' % (n,d) for n, d in coord[where==1])
+      s = '{}[{}]'.format(self.name[tuple(where)], ','.join(str(n) if d == 1 else '{}/{}'.format(n, d) for n, d in coord[where==1]))
       labels.append(s)
     return labels
 

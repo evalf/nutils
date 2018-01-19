@@ -54,7 +54,7 @@ class Topology:
   def __str__( self ):
     'string representation'
 
-    return '%s(#%s)' % ( self.__class__.__name__, len(self) )
+    return '{}(#{})'.format(self.__class__.__name__, len(self))
 
   def __len__( self ):
     return len( self.elements )
@@ -220,7 +220,7 @@ class Topology:
             numpy.add.at(retvals[ifunc], s+numpy.ix_(*[ ind for (ind,) in index ]), numeric.dot(iweights,data) if geometry else data)
 
     log.debug( 'cache', fcache.stats )
-    log.info( 'created', ', '.join( '%s(%s)' % ( retval.__class__.__name__, ','.join( str(n) for n in retval.shape ) ) for retval in retvals ) )
+    log.info('created', ', '.join('{}({})'.format(retval.__class__.__name__, ','.join(str(n) for n in retval.shape)) for retval in retvals))
 
     if asfunction:
       if geometry:
@@ -256,8 +256,8 @@ class Topology:
 
     block2func, indices, values = zip( *blocks ) if blocks else ([],[],[])
 
-    log.debug( 'integrating %s distinct blocks' % '+'.join(
-      str(block2func.count(ifunc)) for ifunc in range(len(funcs)) ) )
+    log.debug('integrating {} distinct blocks'.format('+'.join(
+      str(block2func.count(ifunc)) for ifunc in range(len(funcs)))))
 
     if config.dot:
       function.Tuple(values).graphviz()
@@ -438,7 +438,7 @@ class Topology:
       constrain[I] = F[I] / W[I]
 
     else:
-      raise Exception( 'invalid projection %r' % ptype )
+      raise Exception('invalid projection {!r}'.format(ptype))
 
     numcons = constrain.where.sum()
     info = 'constrained {}/{} dofs'.format( numcons, constrain.size )
@@ -446,7 +446,7 @@ class Topology:
       info += ', error {:.2e}/area'.format( avg_error )
     log.info( info )
     if verify is not None:
-      assert numcons == verify, 'number of constraints does not meet expectation: %d != %d' % ( numcons, verify )
+      assert numcons == verify, 'number of constraints does not meet expectation: {} != {}'.format(numcons, verify)
 
     return constrain
 
@@ -549,7 +549,7 @@ class Topology:
       arguments = {}
 
     if ischeme is None:
-      ischeme = 'gauss%d' % (degree*2)
+      ischeme = 'gauss{}'.format(degree*2)
 
     blocks = function.Tuple([function.Tuple([function.Tuple((function.Tuple(ind), f.simplified))
       for ind, f in function.blocks(function.zero_argument_derivatives(func))])
@@ -921,7 +921,7 @@ class StructuredLine( Topology ):
   def _spline_coeffs(cls, p, n):
     'spline polynomial coefficients'
 
-    assert p >= 0, 'invalid polynomial degree %d' % p
+    assert p >= 0, 'invalid polynomial degree {}'.format(p)
     if p == 0:
       assert n == -1
       return numpy.array([[[1.]]])
@@ -1283,7 +1283,7 @@ class StructuredTopology( Topology ):
       slices.append(slices_i)
 
     #Cache effectivity
-    log.debug( 'Local knot vector cache effectivity: %d' % (100*(1.-len(cache)/float(sum(self.shape)))) )
+    log.debug('Local knot vector cache effectivity: {}'.format(100*(1.-len(cache)/float(sum(self.shape)))))
 
     # deduplicate stdelems and compute tensorial products `unique` with indices `index`
     # such that unique[index[i,j]] == poly_outer_product(stdelems[0][i], stdelems[1][j])
@@ -1424,7 +1424,7 @@ class StructuredTopology( Topology ):
   def __str__( self ):
     'string representation'
 
-    return '%s(%s)' % ( self.__class__.__name__, 'x'.join( str(n) for n in self.shape ) )
+    return '{}({})'.format(self.__class__.__name__, 'x'.join(str(n) for n in self.shape))
 
 class UnstructuredTopology( Topology ):
   'unstructured topology'

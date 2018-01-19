@@ -54,10 +54,10 @@ def overlapping( arr, axis=-1, n=2 ):
 def normdim( ndim, n ):
   'check bounds and make positive'
 
-  assert isint(ndim) and ndim >= 0, 'ndim must be positive integer, got %s' % ndim
+  assert isint(ndim) and ndim >= 0, 'ndim must be positive integer, got {}'.format(ndim)
   if n < 0:
     n += ndim
-  assert 0 <= n < ndim, 'argument out of bounds: %s not in [0,%s)' % (n,ndim)
+  assert 0 <= n < ndim, 'argument out of bounds: {} not in [0,{})'.format(n, ndim)
   return n
 
 def get( arr, axis, item ):
@@ -261,7 +261,7 @@ def ext( A ):
     ((a,b),(c,d),(e,f)) = A
     ext = numpy.array((c*f-e*d,e*b-a*f,a*d-c*b))
   else:
-    raise NotImplementedError( 'shape=%s' % (A.shape,) )
+    raise NotImplementedError('shape={}'.format(A.shape))
   return ext
 
 def power( a, b ):

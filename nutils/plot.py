@@ -349,7 +349,7 @@ class PyPlot( BasePlot ):
     delta = lambda a, b, scale: numpy.log10(float(a)/b) if scale=='log' else float(a-b) if scale=='linear' else None
     slope = delta( y[-2], y[-1], yscale ) / delta( x[-2], x[-1], xscale )
     if slope in (numpy.nan, numpy.inf, -numpy.inf):
-      warnings.warn( 'Cannot draw slope triangle with slope: %s, drawing nothing' % str( slope ) )
+      warnings.warn( 'Cannot draw slope triangle with slope: {}, drawing nothing'.format(str(slope)) )
       return slope
 
     # handle positive and negative slopes correctly

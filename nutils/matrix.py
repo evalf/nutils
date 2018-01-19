@@ -170,7 +170,7 @@ class ScipyMatrix( Matrix ):
     x, I, J = parsecons( constrain, lconstrain, rconstrain, self.shape )
     A = self.core[I,:][:,J]
     assert A.shape[0] == A.shape[1], 'constrained matrix must be square'
-    log.info( 'building %s preconditioner' % name )
+    log.info( 'building {} preconditioner'.format(name) )
     if name == 'splu':
       precon = scipy.sparse.linalg.splu( A.tocsc() ).solve
     elif name == 'spilu':
@@ -178,7 +178,7 @@ class ScipyMatrix( Matrix ):
     elif name == 'diag':
       precon = numpy.reciprocal( A.diagonal() ).__mul__
     else:
-      raise Exception( 'invalid preconditioner %r' % name )
+      raise Exception( 'invalid preconditioner {!r}'.format(name) )
     return scipy.sparse.linalg.LinearOperator( A.shape, precon, dtype=float )
 
 class NumpyMatrix( Matrix ):
@@ -206,7 +206,7 @@ class NumpyMatrix( Matrix ):
       b = numpy.zeros( self.shape[0] )
     else:
       b = numpy.asarray( b, dtype=float )
-      assert b.ndim == 1, 'right-hand-side has shape %s, expected a vector' % (b.shape,)
+      assert b.ndim == 1, 'right-hand-side has shape {}, expected a vector'.format(b.shape)
       assert b.shape == self.shape[:1]
 
     x, I, J = parsecons( constrain, lconstrain, rconstrain, self.shape )
@@ -235,7 +235,7 @@ def assemble( data, index, shape, force_dense=False ):
     if retval.ndim == 2:
       retval = NumpyMatrix( retval )
   assert retval.shape == shape
-  log.debug( 'assembled', '%s(%s)' % ( retval.__class__.__name__, ','.join( str(n) for n in shape ) ) )
+  log.debug( 'assembled {}({})'.format(retval.__class__.__name__, ','.join(str(n) for n in shape)) )
   return retval
 
 def parsecons( constrain, lconstrain, rconstrain, shape ):
@@ -257,7 +257,7 @@ def parsecons( constrain, lconstrain, rconstrain, shape ):
     assert numeric.isarray(rconstrain)
     I[:] = rconstrain
   J = numpy.isnan(x)
-  assert numpy.sum(I) == numpy.sum(J), 'constrained matrix is not square: %dx%d' % ( numpy.sum(I), numpy.sum(J) )
+  assert numpy.sum(I) == numpy.sum(J), 'constrained matrix is not square: {}x{}'.format(numpy.sum(I), numpy.sum(J))
   x[J] = 0
   return x, I, J
 
