@@ -6,6 +6,44 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+New: function.Namespace
+
+  The `function.Namespace` object represents a container of
+  `function.Array` instances.
+
+  >>> ns = function.Namespace()
+  >>> ns.x = geom
+  >>> ns.basis = domain.basis('std', degree=1).vector(2)
+
+  In addition to bundling arrays, arrays can be manipulated using index
+  notation via string expressions:
+
+  >>> ns.sol_i = 'basis_ni ?dofs_n'
+  >>> f = ns.eval_i('sol_i,j n_j')
+
+  For full details of this string syntax see the `function.Namespace`
+  documentation.
+
+
+New: Topology.integral
+
+  Analogous to `Topology.integrate`, which integrates a function and
+  returns the result as a (sparse) array, the new method
+  `Topology.integral` with identical arguments results in an `Integral`
+  object for postponed evaluation.
+
+  Direct:
+  >>> x = domain.integrate(f, geometry=geom, degree=2)
+
+  Indirect:
+  >>> integ = domain.integral(f, geometry=geom, degree=2)
+  >>> x = integ.eval()
+
+  Integral objects support linear transformations, derivatives and
+  substitutions. Their main use is in combination with the `solver`
+  module (as demonstrated in examples/laplace o.a.).
+
+
 Removed: TransformChain, CanonicalTransformChain
 
   Transformation chains (sequences of TransformItems) are stored as
@@ -160,11 +198,6 @@ Changed: function.derivative, Array._derivative
   >>> der = function.derivative(func, var)
 
 
-Deprecated: cli.Path
-
-  The cli.Path wrapper is deprecated in favor of pathlib.Path.
-
-
 New: cli module
 
   The util.run function is deprecated and replaced by two new functions,
@@ -183,20 +216,13 @@ New: cli module
     * on-line debugging is provided via the ctrl+c signal handler
     * function annotations can be used to describe arguments in both
       help messages and logging output (see examples/*)
-    * path arguments can be made absolute and converted to a
-      pathlib.Path object by using the cli.Path wrapper class
-
-  For example, the new invocation for the Laplace example problem (which
-  uses cli.choose) on 4 elements with post-mortem debugging enabled, is:
-
-  $ examples/laplace.py --pdb main --nelems=4
 
 
-New: model
+New: solver
 
-  The model module provides infrastructure to facilitate formulating and
-  solving complicated nonlinear problems in a structured and largely
-  automated fashion. See that model documentation and the updated
+  The solver module provides infrastructure to facilitate formulating
+  and solving complicated nonlinear problems in a structured and largely
+  automated fashion. See that solver documentation and the updated
   finitestrain code for examples.
 
 
