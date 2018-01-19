@@ -505,11 +505,8 @@ const Theater = class {
 let state_control = 'disabled';
 
 const update_state = function(push) {
-  if (state_control == 'disabled') {
-    console.log('DBG: update_state() ignored');
-    console.trace();
+  if (state_control == 'disabled')
     return;
-  }
   let state;
   if (document.body.dataset.show == 'theater')
     state = {show: 'theater', theater: theater.state};
