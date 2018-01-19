@@ -3510,6 +3510,10 @@ class Namespace:
       setattr(ns, k, replace_arguments(v, subs))
     return ns
 
+  def __or__(self, subs):
+    warnings.warn('ns | dict(x=y) is deprecated; use ns(x=y) instead', DeprecationWarning)
+    return self(**subs)
+
   def copy_(self, *, default_geometry_name=None):
     '''Return a copy of this namespace.'''
 
