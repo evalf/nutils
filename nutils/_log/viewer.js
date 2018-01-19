@@ -103,12 +103,9 @@ const Log = class {
     return {collapsed: this.collapsed, loglevel: this.loglevel};
   }
   set state(state) {
-    if (state === undefined)
-      return;
-    if (state.loglevel !== undefined)
-      this.loglevel = state.loglevel;
-    // We deliberately ignore collapsed state, except during reloads (handled
-    // by `init_elements`).
+    // We deliberately ignore state changes, except during reloads (handled by
+    // `init_elements` and `set loglevel` in the `window`s load event handler,
+    // respectively).
   }
   get collapsed() {
     const collapsed = {};
@@ -150,9 +147,11 @@ const Log = class {
     }
     else if (ev.key == '+' || ev.key == '=') { // Increase loglevel.
       this.loglevel = this.loglevel+1;
+      update_state();
     }
     else if (ev.key == '-') { // Decrease loglevel.
       this.loglevel = this.loglevel-1;
+      update_state();
     }
     else
       return false;
@@ -567,22 +566,13 @@ window.addEventListener('load', function() {
   window.log = new Log();
 
   const state = window.history.state || {};
-  Object.assign(log.state, state.log || {});
 
   window.log.init_elements((state.log || {}).collapsed || {});
 
-  function get_initial_loglevel(state) {
-    if (Number.isInteger(state.loglevel))
-      return state.loglevel;
-    try {
-      let loglevel = parseInt(window.localStorage.getItem('loglevel'));
-      if (Number.isInteger(loglevel))
-        return loglevel;
-    } catch (e) {}
-    return LEVELS.indexOf('user');
-  }
-
-  log.loglevel = get_initial_loglevel(log.state);
+  if (state.log && Number.isInteger(state.log.loglevel))
+    log.loglevel = state.log.loglevel;
+  else
+    log.loglevel = LEVELS.indexOf('user');
 
   const grid = create_element('div', {'class': 'key_description'});
   const _add_key_description = function(cls, keys, description, _key) {
@@ -628,7 +618,6 @@ window.addEventListener('load', function() {
   window.addEventListener('popstate', ev => apply_state(ev.state || {}));
   window.addEventListener('resize', ev => window.requestAnimationFrame(theater._update_overview_layout.bind(theater)));
 
-  log.loglevel = get_initial_loglevel(log.state);
   apply_state(state);
   state_control = 'enabled';
 });
