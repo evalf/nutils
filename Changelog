@@ -6,6 +6,25 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+New: Topology.integral
+
+  Analogous to `Topology.integrate`, which integrates a function and
+  returns the result as a (sparse) array, the new method
+  `Topology.integral` with identical arguments results in an `Integral`
+  object for postponed evaluation.
+
+  Direct:
+  >>> x = domain.integrate(f, geometry=geom, degree=2)
+
+  Indirect:
+  >>> integ = domain.integral(f, geometry=geom, degree=2)
+  >>> x = integ.eval()
+
+  Integral objects support linear transformations, derivatives and
+  substitutions. Their main use is in combination with the `solver`
+  module (as demonstrated in examples/laplace o.a.).
+
+
 Removed: TransformChain, CanonicalTransformChain
 
   Transformation chains (sequences of TransformItems) are stored as
