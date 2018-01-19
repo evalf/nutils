@@ -35,7 +35,7 @@ def main(
 
   # find lhs such that res == 0 and substitute this lhs in the namespace
   lhs = solver.solve_linear('lhs', res, constrain=cons)
-  ns |= dict(lhs=lhs)
+  ns = ns(lhs=lhs)
 
   # plot solution
   if figures:

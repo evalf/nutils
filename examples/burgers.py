@@ -36,7 +36,7 @@ def main(
   ns.u = 'basis_n ?lhs_n'
 
   # construct initial condition (centered gaussian)
-  lhs0 = domain.project('exp(-?y_i ?y_i) | ?y_i = 5 (x_i - 0.5_i)' @ ns, onto=ns.basis, geometry=ns.x, degree=5)
+  lhs0 = domain.project('exp(-?y_i ?y_i)(y_i = 5 (x_i - 0.5_i))' @ ns, onto=ns.basis, geometry=ns.x, degree=5)
 
   # prepare residual
   ns.f = '.5 u^2'
@@ -51,7 +51,7 @@ def main(
   # start time stepping
   timestep = timescale/nelems
   for itime, lhs in log.enumerate('timestep', solver.impliciteuler('lhs', res, inertia, timestep, lhs0, newtontol=tol)):
-    makeplots(ns | dict(lhs=lhs))
+    makeplots(ns(lhs=lhs))
     if endtime and itime * timestep >= endtime:
       break
 

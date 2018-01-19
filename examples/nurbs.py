@@ -75,7 +75,7 @@ def main(
 
   # solve the system of equations
   lhs = solver.solve_linear('lhs', res, constrain=cons)
-  ns |= dict(lhs=lhs)
+  ns = ns(lhs=lhs)
 
   # post-processing
   if figures:
@@ -85,7 +85,7 @@ def main(
       plt.colorbar()
 
   # compute the L2-norm of the error in the stress
-  err = domain.integrate('?dstress_ij ?dstress_ij | ?dstress_ij = stress_ij - stressexact_ij' @ ns, geometry=ns.x, ischeme='gauss9')**.5
+  err = domain.integrate('(?dstress_ij ?dstress_ij)(dstress_ij = stress_ij - stressexact_ij)' @ ns, geometry=ns.x, ischeme='gauss9')**.5
 
   # compute the mesh parameter (maximum physical distance between knots)
   hmax = max(numpy.linalg.norm(v[:,numpy.newaxis]-v, axis=2).max() for v in domain.elem_eval(ns.x, ischeme='bezier2', separate=True))

@@ -52,7 +52,7 @@ def main(
   lhs = solver.solve_linear('lhs', res, constrain=cons)
 
   # vizualize result
-  ns = ns | dict(lhs=lhs)
+  ns = ns(lhs=lhs)
   if figures:
     vonmises = 'sqrt(stress_ij stress_ij - stress_ii stress_jj / 2)' @ ns
     x, colors = domain.simplex.elem_eval([ns.x, vonmises], ischeme='bezier5', separate=True)

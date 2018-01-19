@@ -23,7 +23,7 @@ This module defines the function :func:`parse`, which parses a tensor
 expression.
 '''
 
-import re, collections
+import re, collections, functools
 
 
 # Convenience function to create a constant in ExpressionAST (details in
@@ -268,7 +268,7 @@ class _Array:
   def __init__(self, ast, indices, shape, summed, linked_lengths):
     assert isinstance(indices, str)
 
-    self.ast = ast
+    self.ast = tuple(ast)
     self.indices = indices
     self.shape = tuple(shape)
     self.summed = frozenset(summed)
@@ -318,10 +318,12 @@ class _Array:
       shape.append(length)
     return shape
 
-  def _join_lengths(self, other, additional=frozenset()):
+  def _join_lengths(*args):
     '''Return updated linked lengths resulting from ``self + other``.'''
 
-    groups = set(self.linked_lengths) | set(other.linked_lengths) | set(additional)
+    groups = set()
+    for arg in args:
+      groups |= arg.linked_lengths if isinstance(arg, _Array) else arg
     cache = {}
     for g in groups:
       # g = frozenset(itertools.chain.from_iterable(map(linked_lenghts.get, g)))
@@ -502,6 +504,26 @@ class _ExpressionParser:
     self.arg_shapes = dict(arg_shapes)
     self.default_geometry_name = default_geometry_name
 
+  def highlight(f):
+    'wrap ``f`` in a function that converts ``_IntermediateError`` objects'
+
+    def wrapper(self, *args, **kwargs):
+      if hasattr(self, '_tokens'):
+        pos = self._next.pos
+      else:
+        pos = 0
+      try:
+        return f(self, *args, **kwargs)
+      except _IntermediateError as e:
+        if e.at is None:
+          at = pos
+          count = self._next.pos - pos if self._next.pos > pos else len(self._next.data)
+        else:
+          at = e.at
+          count = 1 if e.count is None else e.count
+        raise ExpressionSyntaxError(e.msg + '\n' + self.expression + '\n' + ' '*at + '^'*count) from e
+    return wrapper
+
   def _consume(self):
     'advance to next token'
 
@@ -516,17 +538,23 @@ class _ExpressionParser:
     if self._next.type == 'whitespace':
       self._consume()
 
-  def _consume_non_whitespace(self):
-    'ignore whitespace and advance to next token'
-
-    self._consume_if_whitespace()
-    return self._consume()
-
+  @highlight
   def _consume_assert_whitespace(self):
     'assert the next token is whitespace, skip it, and advance to next token'
 
     if self._consume().type != 'whitespace':
       raise _IntermediateError('Missing whitespace.', at=self._current.pos)
+
+  @highlight
+  def _consume_assert_equal(self, value, msg=None):
+    'assert the next token is equal to ``value``'
+
+    token = self._consume()
+    if token.type != value:
+      if msg is None:
+        msg = 'Expected {!r}.'.format(value)
+      raise _IntermediateError(msg, at=token.pos)
+    return token
 
   @property
   def _current(self):
@@ -574,41 +602,26 @@ class _ExpressionParser:
       self.arg_shapes[name] = shape
     return _Array.wrap(('arg', _(name)) + tuple(map(_, shape)), indices, shape)
 
-  def highlight(f):
-    'wrap ``f`` in a function that converts ``_IntermediateError`` objects'
-
-    def wrapper(self, *args, **kwargs):
-      if hasattr(self, '_tokens'):
-        pos = self._next.pos
-      else:
-        pos = 0
-      try:
-        return f(self, *args, **kwargs)
-      except _IntermediateError as e:
-        if e.at is None:
-          at = pos
-          count = self._next.pos - pos if self._next.pos > pos else len(self._next.data)
-        else:
-          at = e.at
-          count = 1 if e.count is None else e.count
-        raise ExpressionSyntaxError(e.msg + '\n' + self.expression + '\n' + ' '*at + '^'*count)
-    return wrapper
-
   @highlight
-  def parse_lhs_arg(self):
-    'parse lhs arg, e.g. the "?x_ij" in "|" in "?x_kk | ?x_ij = a_ij"'
+  def parse_lhs_arg(self, seen_lhs):
+    'parse lhs arg, e.g. the "x_ij" in "x_kk(x_ij=a_ij)"'
 
     token = self._consume()
-    if token.type != 'variable' or not token.data.startswith('?'):
-      raise _IntermediateError("Expected an argument, e.g. '?argname'.")
+    if token.type != 'variable':
+      raise _IntermediateError("Expected an argument, e.g. 'argname'.")
+    if token.data.startswith('?'):
+      raise _IntermediateError("The argument name at the left hand side of a substitution must not be prefixed by a '?'.")
     name = token.data
+    if name in seen_lhs:
+      raise _IntermediateError("Argument {!r} occurs more than once.".format(name))
+    seen_lhs[name] = token
     indices = self._consume().data if self._next.type == 'indices' else ''
     for i, index in enumerate(indices):
       if index in indices[i+1:]:
         raise _IntermediateError('Repeated indices are not allowed on the left hand side.')
       elif '0' <= index <= '9':
         raise _IntermediateError('Numeric indices are not allowed on the left hand side.')
-    return self._get_arg(name[1:], indices)
+    return self._get_arg(name, indices)
 
   @highlight
   def parse_var(self):
@@ -616,11 +629,13 @@ class _ExpressionParser:
 
     if self._next.type == '(':
       self._consume()
-      value = self.parse_scope(')', consume_end=True, allow_substitutions=True)
+      value = self.parse_subexpression()
+      self._consume_assert_equal(')')
       value = value.replace(ast=('group', value.ast))
     elif self._next.type == '[':
       self._consume()
-      value = self.parse_scope(']', consume_end=True)
+      value = self.parse_subexpression()
+      self._consume_assert_equal(']')
       value = value.replace(ast=('jump', value.ast))
       if self._next.type == 'geometry':
         geometry_name = self._consume().data
@@ -632,17 +647,12 @@ class _ExpressionParser:
         value *= _Array.wrap(('normal', _(geom)), indices, geom.shape)
     elif self._next.type == '{':
       self._consume()
-      value = self.parse_scope('}', consume_end=True)
+      value = self.parse_subexpression()
+      self._consume_assert_equal('}')
       value = value.replace(ast=('mean', value.ast))
     elif self._next.type == '<':
       self._consume()
-      args = []
-      while self._next_non_whitespace.type != '>':
-        if args:
-          self._consume()
-          self._consume_assert_whitespace()
-        args.append(self.parse_scope('>', ','))
-      self._consume_non_whitespace()
+      args = self.parse_comma_separated(end='>', parse_item=self.parse_subexpression)
       indices = self._consume()
       if indices.type != 'indices':
         raise _IntermediateError('Expected 1 index.', at=indices.pos, count=len(indices.data))
@@ -674,18 +684,10 @@ class _ExpressionParser:
     elif self._next.type == 'variable':
       token = self._consume()
       name = token.data
-      if self._next.type == '(': # function
-        if name not in self.functions:
-          raise _IntermediateError('Unknown function {!r}.'.format(name))
-        self._consume()
+      if name in self.functions and name not in self.variables: # function (and not overriden as variable)
+        self._consume_assert_equal('(', msg="Expected '(' for function {}.".format(name))
+        args = self.parse_comma_separated(end=')', parse_item=self.parse_subexpression)
         nargs = self.functions[name]
-        assert nargs > 0
-        args = []
-        while True:
-          args.append(self.parse_scope(')', ','))
-          if self._consume_non_whitespace().type == ')':
-            break
-          self._consume_assert_whitespace()
         if len(args) != nargs:
           raise _IntermediateError('Function {!r} takes {}, got {}.'.format(name, _sp(nargs, 'argument', 'arguments'), len(args)))
         args = _Array.align(*args)
@@ -723,11 +725,24 @@ class _ExpressionParser:
     elif self._next.type == 'indices':
       raise _IntermediateError("Indices can only be specified for variables, e.g. 'a_ij', not for groups, e.g. '(a+b)_ij'.", at=self._next.pos, count=len(self._next.data))
 
+    if self._next.type == '(':
+      self._consume()
+      subs = self.parse_comma_separated(end=')', parse_item=functools.partial(self.parse_substitution, seen_lhs={}))
+      if not subs:
+        raise _IntermediateError("Zero substitutions are not allowed.")
+      ast = ['substitute', value.ast]
+      links = []
+      for lhs, rhs in subs:
+        ast += [lhs.ast, rhs.ast]
+        links += [rhs.linked_lengths, frozenset(zip(lhs.shape, rhs.shape))]
+      value = value.replace(ast=ast, linked_lengths=value._join_lengths(*links))
+
     if self._next.type == '^':
       token = self._consume()
       if self._next.type == '(':
         self._consume()
-        exponent = self.parse_scope(')', consume_end=True)
+        exponent = self.parse_subexpression()
+        self._consume_assert_equal(')')
       else:
         if self._next.type == '-':
           self._consume()
@@ -804,22 +819,35 @@ class _ExpressionParser:
       raise _IntermediateError('A denominator must have dimension 0.')
     return value
 
-  @highlight
-  def parse_substitution(self, value, until):
-    'parse a substitution, e.g. "?x_ij = a_ij" in "?x_kk | ?x_ij = a_ij"'
+  def parse_comma_separated(self, end, parse_item):
+    'parse comma separated values until end token, e.g. "1, 2 (a_ij b_j + 3))" with end token ")"'
 
-    lhs = self.parse_lhs_arg()
-    if self._next_non_whitespace.type != '=':
-      raise _IntermediateError("Expected a '='.", at=self._next.pos)
+    items = []
     self._consume_if_whitespace()
-    assert self._consume().type == '='
+    if self._next.type != end:
+      while True:
+        items.append(parse_item())
+        self._consume_if_whitespace()
+        if self._next.type != ',':
+          break
+        self._consume_assert_equal(',')
+        self._consume_assert_whitespace()
+    self._consume_assert_equal(end)
+    return items
+
+  @highlight
+  def parse_substitution(self, seen_lhs):
+    'parse a substitution, e.g. "x_ij=a_ij" in "?x_kk(x_ij=a_ij)"'
+
+    lhs = self.parse_lhs_arg(seen_lhs)
     self._consume_if_whitespace()
-    rhs = self.parse_scope(*until)
+    self._consume_assert_equal('=')
+    self._consume_if_whitespace()
+    rhs = self.parse_subexpression()
     if set(lhs.indices) != set(rhs.indices):
       raise _IntermediateError('Left and right hand side should have the same indices, got {!r} and {!r}.'.format(lhs.indices, rhs.indices))
     rhs = rhs.transpose(lhs.indices)
-    links = frozenset(zip(lhs.shape, rhs.shape))
-    return value.replace(ast=('substitute', value.ast, lhs.ast, rhs.ast), linked_lengths=value._join_lengths(rhs, links))
+    return lhs, rhs
 
   @highlight
   def parse_term(self):
@@ -836,14 +864,8 @@ class _ExpressionParser:
     return value
 
   @highlight
-  def parse_scope(self, *until, consume_end=False, allow_substitutions=False):
+  def parse_subexpression(self):
     'parse a scope: the entire expression or a subexpression between parentheses'
-
-    assert until
-    if len(until) == 1:
-      until_str = repr(until[0])
-    else:
-      until_str = '{} or {!r}'.format(', '.join(map(repr, until[:-1])), until[-1])
 
     self._consume_if_whitespace()
     negate = self._next.type == '-'
@@ -854,7 +876,7 @@ class _ExpressionParser:
     if negate:
       value = -value
 
-    while self._next_non_whitespace.type not in until + ('|', 'EOF', '_', ')', ']', '}', '>'):
+    while self._next_non_whitespace.type not in ('|', 'EOF', '_', ')', ']', '}', '>', ','):
       self._consume_assert_whitespace()
       op_token = self._consume()
       if op_token.type not in '+-':
@@ -863,18 +885,7 @@ class _ExpressionParser:
       r_value = self.parse_term()
       value = {'+': value.__add__, '-': value.__sub__}[op_token.type](r_value)
 
-    while allow_substitutions and self._next_non_whitespace.type == '|':
-      self._consume_assert_whitespace()
-      token = self._consume()
-      assert token.type == '|'
-      self._consume_assert_whitespace()
-      value = self.parse_substitution(value, until + ('|',))
-
-    if self._next_non_whitespace.type not in until:
-      raise _IntermediateError('Expected {}.'.format(until_str))
-    if consume_end:
-      self._consume_if_whitespace()
-      self._consume()
+    self._consume_if_whitespace()
     return value
 
   @highlight
@@ -1044,16 +1055,14 @@ def parse(expression, variables, functions, indices, arg_shapes={}, default_geom
       Arguments and variables live in separate namespaces: ``?x`` and ``x`` are
       different entities.
 
-  *   An argument may be **substituted** in the expression by appending
-      ``| ?arg = value``, where ``?arg`` is an argument and ``value`` the
-      substitution.   The substitution is the last component of an expression
-      and applies to the entire preceeding expression.  If the substitution is
-      placed in a compound expression, the substitution applies only to the
-      compound.  The value may be an expression.  Example: ``2 ?x | ?x = 3 +
-      y`` is equivalent to ``2 (3 + y)`` and ``2 (?x | ?x = y) + 3`` is
-      equivalent to ``2 (y) + 3``.  It is possible to apply multiple
-      substitutions.  Example: ``?x + ?y | ?x = 1 | ?y = 2`` is equivalent to
-      ``1 + 2``.
+  *   An argument may be **substituted** by appending without whitespace
+      ``(arg = value)`` to a variable of compound expression, where ``arg`` is
+      an argument and ``value`` the substitution.  The substitution applies to
+      the variable of compound expression only.  The value may be an
+      expression.  Example: ``2 ?x(x = 3 + y)`` is equivalent to ``2 (3 + y)``
+      and ``2 ?x(x=y) + 3`` is equivalent to ``2 (y) + 3``.  It is possible to
+      apply multiple substitutions.  Example: ``(?x + ?y)(x = 1, y = )2`` is
+      equivalent to ``1 + 2``.
 
   *   The **gradient** of a variable to the default geometry — the default
       geometry is variable ``x`` unless overriden by the argument
@@ -1100,9 +1109,9 @@ def parse(expression, variables, functions, indices, arg_shapes={}, default_geom
       and at least one space.  The function is applied pointwise to the
       arguments and all arguments should have the same shape.  Example:
       ``f(x_i, y_i)``.denotes the call to function ``f`` with arguments ``x_i``
-      and ``y_i``.  Functions and variables have different namespaces; it is
-      not prohibited to define functions and variables with the same name.
-      Note that ``f(x_i)`` and ``f (x_i)`` have different meanings.
+      and ``y_i``.  Functions and variables share a namespace: defining a
+      variable with the same name as a function renders the function
+      inaccessible.
 
   *   A **stack** of two or more arrays along an axis is denoted by a ``<``
       followed by comma and space separated arrays followed by ``>`` and an
@@ -1180,7 +1189,8 @@ def parse(expression, variables, functions, indices, arg_shapes={}, default_geom
 
   parser = _ExpressionParser(expression, variables, functions, arg_shapes, default_geometry_name)
   parser.tokenize()
-  value = parser.parse_scope('EOF', allow_substitutions=True)
+  value = parser.parse_subexpression()
+  parser._consume_assert_equal('EOF', msg='Unexpected symbol at end of expression.')
   if indices is None:
     if value.ndim > 1:
       raise AmbiguousAlignmentError(
@@ -1192,7 +1202,7 @@ def parse(expression, variables, functions, indices, arg_shapes={}, default_geom
     try:
       ast = value.transpose(indices).ast
     except _IntermediateError as e:
-      raise ExpressionSyntaxError(e.msg + '\n' + expression + '\n' + '^'*len(expression))
+      raise ExpressionSyntaxError(e.msg + '\n' + expression + '\n' + '^'*len(expression)) from e
   lengths = {}
   undetermined = set()
   for group in value.linked_lengths:

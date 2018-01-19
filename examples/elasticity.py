@@ -38,7 +38,7 @@ def main(
 
   # solve system and substitute the solution in the namespace
   lhs = solver.solve_linear('lhs', res, constrain=cons)
-  ns |= dict(lhs=lhs)
+  ns = ns(lhs=lhs)
 
   # plot solution
   if figures:
