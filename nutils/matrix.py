@@ -49,7 +49,7 @@ class MyCallback:
     with log.context('residual {:.2e} ({:.0f}%)'.format(res, 100. * numpy.log10(res) / numpy.log10(self.tol) if res > 0 else 0)):
       pass
 
-class Matrix( object ):
+class Matrix:
   'matrix base class'
 
   def __init__( self, shape ):

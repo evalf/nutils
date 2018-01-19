@@ -40,7 +40,7 @@ import functools, collections.abc, itertools, functools, operator
 
 _identity = lambda x: x
 
-class Topology( object ):
+class Topology:
   'topology base class'
 
   # subclass needs to implement: .elements

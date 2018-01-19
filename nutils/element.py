@@ -34,7 +34,7 @@ import re, math, itertools, operator, functools
 
 ## ELEMENT
 
-class Element( object ):
+class Element:
   'element class'
 
   __slots__ = 'reference', 'transform', 'opposite'

@@ -94,7 +94,7 @@ class WrapperCache:
     return 'not used' if not count \
       else 'effectivity %d%% (hit %d/%d calls over %d functions)' % ( 100*hits/count, hits, count, len(self.cache) )
 
-class WrapperDummyCache( object ):
+class WrapperDummyCache:
   'placeholder object'
 
   stats = 'caching disabled'
@@ -174,7 +174,7 @@ class Immutable(metaclass=ImmutableMeta):
   def edit(self, op):
     return self.__class__(*[op(arg) for arg in self._args])
 
-class FileCache( object ):
+class FileCache:
   'cache'
 
   def __init__( self, *args ):

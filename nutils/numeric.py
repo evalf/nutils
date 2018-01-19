@@ -218,7 +218,7 @@ def kronecker( arr, axis, length, pos ):
   kron[ (slice(None),)*axis + (pos,) ] = arr
   return kron
 
-class Broadcast1D( object ):
+class Broadcast1D:
   def __init__( self, arg ):
     self.arg = numpy.asarray( arg )
     self.shape = self.arg.shape

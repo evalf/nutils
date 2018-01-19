@@ -28,7 +28,7 @@ from . import numpy, log, config, core, cache, numeric, warnings, _
 import os, sys, subprocess
 
 
-class BasePlot( object ):
+class BasePlot:
   'base class for plotting objects'
 
   def __init__ ( self, name=None, ndigits=0, index=None ):
