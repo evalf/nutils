@@ -48,7 +48,7 @@ def main(
   energy = domain.integral('energy' @ ns, geometry=ns.x, degree=7)
   lhs0 = solver.optimize('lhs', energy, constrain=cons)
   if figures:
-    makeplots('linear', domain, ns | dict(lhs=lhs0))
+    makeplots('linear', domain, ns(lhs=lhs0))
 
   ns.strain_ij = '.5 (u_i,j + u_j,i + u_k,i u_k,j)'
   ns.energy = 'lmbda strain_ii strain_jj + 2 mu strain_ij strain_ij'
@@ -56,7 +56,7 @@ def main(
   energy = domain.integral('energy' @ ns, geometry=ns.x, degree=7)
   lhs1 = solver.optimize('lhs', energy, lhs0=lhs0, constrain=cons, newtontol=restol)
   if figures:
-    makeplots('nonlinear', domain, ns | dict(lhs=lhs1))
+    makeplots('nonlinear', domain, ns(lhs=lhs1))
 
   return lhs0, lhs1
 

@@ -75,13 +75,13 @@ def main(
   res += domain.boundary.integral('nietzsche_ni (u_i - utop_i)' @ ns, geometry=ns.x, degree=2*(degree+1))
   lhs0 = solver.solve_linear('lhs', res)
   if figures:
-    postprocess(domain, ns | dict(lhs=lhs0))
+    postprocess(domain, ns(lhs=lhs0))
 
   # solve navier-stokes flow
   res += domain.integral('density ubasis_ni u_i,j u_j' @ ns, geometry=ns.x, degree=3*(degree+1))
   lhs1 = solver.newton('lhs', res, lhs0=lhs0).solve(tol=1e-10)
   if figures:
-    postprocess(domain, ns | dict(lhs=lhs1))
+    postprocess(domain, ns(lhs=lhs1))
 
   return lhs0, lhs1
 

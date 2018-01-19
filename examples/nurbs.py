@@ -75,7 +75,7 @@ def main(
 
   # solve the system of equations
   lhs = solver.solve_linear('lhs', res, constrain=cons)
-  ns |= dict(lhs=lhs)
+  ns = ns(lhs=lhs)
 
   # post-processing
   if figures:

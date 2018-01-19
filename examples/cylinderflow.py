@@ -25,7 +25,7 @@ class MakePlots:
 
   def __call__(self, lhs):
     angle = self.index * self.timestep * self.rotation
-    ns = self.ns | dict(lhs=lhs)
+    ns = self.ns(lhs=lhs)
     x, u, normu, p = self.plotdomain.elem_eval([ns.x, ns.u, function.norm2(ns.u), ns.p], ischeme='bezier9', separate=True)
     with plot.PyPlot('flow', index=self.index) as plt:
       plt.axes([0,0,1,1], yticks=[], xticks=[], frame_on=False)

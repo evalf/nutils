@@ -13,7 +13,7 @@ class MakePlots( object ):
     self.index = 0
 
   def __call__(self, lhs):
-    ns = self.namespace | dict(lhs=lhs)
+    ns = self.namespace(lhs=lhs)
     self.energies[self.index,:2] = self.domain.integrate(['(c^2 - 1)^2 / 2 epsilon^2' @ ns, '.5 c_,k c_,k' @ ns], geometry=ns.x, degree=4)
     self.energies[self.index,2] = self.domain.boundary.integrate('abs(ewall) + ewall c' @ ns, geometry=ns.x, degree=4)
     self.energies[self.index,3] = self.energies[self.index,:3].sum()

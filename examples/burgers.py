@@ -51,7 +51,7 @@ def main(
   # start time stepping
   timestep = timescale/nelems
   for itime, lhs in log.enumerate('timestep', solver.impliciteuler('lhs', res, inertia, timestep, lhs0, newtontol=tol)):
-    makeplots(ns | dict(lhs=lhs))
+    makeplots(ns(lhs=lhs))
     if endtime and itime * timestep >= endtime:
       break
 

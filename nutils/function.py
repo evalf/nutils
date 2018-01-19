@@ -3485,7 +3485,7 @@ class Namespace:
     ''':class:`nutils.function.Array`: The default geometry, shorthand for ``getattr(ns, ns.default_geometry_name)``.'''
     return getattr(self, self.default_geometry_name)
 
-  def __or__(self, subs):
+  def __call__(*args, **subs):
     '''Return a copy with arguments replaced by ``subs``.
 
     Return a copy of this namespace with :class:`Argument` objects replaced
@@ -3493,7 +3493,7 @@ class Namespace:
 
     Args
     ----
-    subs : :class:`dict` of :class:`str` and :class:`nutils.function.Array` objects
+    **subs : :class:`dict` of :class:`str` and :class:`nutils.function.Array` objects
         Replacements of the :class:`Argument` objects, identified by their names.
 
     Returns
@@ -3502,8 +3502,9 @@ class Namespace:
         The copy of this namespace with replaced :class:`Argument` objects.
     '''
 
-    if not isinstance(subs, collections.abc.Mapping):
-      return NotImplemented
+    if len(args) != 1:
+      raise TypeError('{} instance takes 1 positional argument but {} were given'.format(type(self).__name__, len(args)))
+    self, = args
     ns = Namespace(default_geometry_name=self.default_geometry_name)
     for k, v in self._attributes.items():
       setattr(ns, k, replace_arguments(v, subs))
