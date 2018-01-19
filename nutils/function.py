@@ -3341,9 +3341,14 @@ def _eval_ast(ast, functions):
     name, *shape = args
     return Argument(name, shape)
   elif op == 'substitute':
-    array, arg, value = args
-    assert isinstance(arg, Argument) and arg._nderiv == 0
-    return replace_arguments(array, {arg._name: value})
+    array, *arg_value_pairs = args
+    subs = {}
+    assert len(arg_value_pairs) % 2 == 0
+    for arg, value in zip(arg_value_pairs[0::2], arg_value_pairs[1::2]):
+      assert isinstance(arg, Argument) and arg._nderiv == 0
+      assert arg._name not in subs
+      subs[arg._name] = value
+    return replace_arguments(array, subs)
   elif op == 'call':
     func, arg = args
     return functions[func](arg)

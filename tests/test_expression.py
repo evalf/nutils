@@ -528,42 +528,59 @@ class parse(TestCase):
 
   # SUBSTITUTE
 
-  def test_arg_subs_0d_const(self): self.assert_ast('?arg_,?arg | ?arg = 1', '', ('substitute', ('derivative', ('arg', _('arg')), ('arg', _('arg'))), ('arg', _('arg')), _(1)))
-  def test_arg_subs_0d_var(self): self.assert_ast('?arg_,?arg | ?arg = a', '', ('substitute', ('derivative', ('arg', _('arg')), ('arg', _('arg'))), ('arg', _('arg')), v._a))
-  def test_arg_subs_1d_var(self): self.assert_ast('?arg_i,?arg_j | ?arg_i = a2_i', 'ij', ('substitute', ('derivative', ('arg', _('arg'), _(2)), ('arg', _('arg'), _(2))), ('arg', _('arg'), _(2)), v._a2))
-  def test_arg_subs_2d_var(self): self.assert_ast('?arg_ij,?arg_kl | ?arg_ij = a23_ji', 'ijkl', ('substitute', ('derivative', ('arg', _('arg'), _(3), _(2)), ('arg', _('arg'), _(3), _(2))), ('arg', _('arg'), _(3), _(2)), ('transpose', v._a23, _((1,0)))))
-  def test_arg_multisubs(self): self.assert_ast('1 + ?x + ?y | ?x = 1 + a | ?y = 2', '', ('substitute', ('substitute', ('add', ('add', _(1), ('arg', _('x'))), ('arg', _('y'))), ('arg', _('x')), ('add', _(1), v._a)), ('arg', _('y')), _(2)))
-  def test_arg_multisubs(self): self.assert_ast('1 + ?x + ?y | ?x = 1 + a | ?y = 2', '', ('substitute', ('substitute', ('add', ('add', _(1), ('arg', _('x'))), ('arg', _('y'))), ('arg', _('x')), ('add', _(1), v._a)), ('arg', _('y')), _(2)))
+  def test_arg_subs_0d_const(self): self.assert_ast('?arg_,?arg(arg=1)', '', ('substitute', ('derivative', ('arg', _('arg')), ('arg', _('arg'))), ('arg', _('arg')), _(1)))
+  def test_arg_subs_0d_var(self): self.assert_ast('?arg_,?arg(arg=a )', '', ('substitute', ('derivative', ('arg', _('arg')), ('arg', _('arg'))), ('arg', _('arg')), v._a))
+  def test_arg_subs_1d_var(self): self.assert_ast('?arg_i,?arg_j(arg_i = a2_i)', 'ij', ('substitute', ('derivative', ('arg', _('arg'), _(2)), ('arg', _('arg'), _(2))), ('arg', _('arg'), _(2)), v._a2))
+  def test_arg_subs_2d_var(self): self.assert_ast('?arg_ij,?arg_kl( arg_ij =a23_ji)', 'ijkl', ('substitute', ('derivative', ('arg', _('arg'), _(3), _(2)), ('arg', _('arg'), _(3), _(2))), ('arg', _('arg'), _(3), _(2)), ('transpose', v._a23, _((1,0)))))
+  def test_arg_multisubs(self): self.assert_ast('(1 + ?x + ?y)(x=1 + a, y=2)', '', ('substitute', ('group', ('add', ('add', _(1), ('arg', _('x'))), ('arg', _('y')))), ('arg', _('x')), ('add', _(1), v._a), ('arg', _('y')), _(2)))
 
   def test_arg_subs_missing_equals(self):
     self.assert_syntax_error(
-      "Expected a '='.",
-      "1 + ?x | ?x + 2", "",
+      "Expected '='.",
+      "(1 + ?x)(x + 2)", "",
       "           ^")
 
   def test_arg_subs_unmatched_indices(self):
     self.assert_syntax_error(
       "Left and right hand side should have the same indices, got 'kl' and 'jk'.",
-      "a23_ij + (?x_ij | ?x_kl = a23_jk) + a23_ij", "ij",
-      "                  ^^^^^^^^^^^^^^")
+      "a23_ij + ?x_ij(x_kl=a23_jk) + a23_ij", "ij",
+      "               ^^^^^^^^^^^")
 
   def test_arg_subs_lhs_repeated_index(self):
     self.assert_syntax_error(
       "Repeated indices are not allowed on the left hand side.",
-      "a23_ij + (?x_ij | ?x_kk = a23_jk) + 2", "ij",
-      "                  ^^^^^")
+      "a23_ij + ?x_ij(x_kk=a23_jk) + 2", "ij",
+      "               ^^^^")
 
   def test_arg_subs_lhs_numeric_index(self):
     self.assert_syntax_error(
       "Numeric indices are not allowed on the left hand side.",
-      "a23_ij + (?x_ij | ?x_k0 = a23_0k) + 2", "ij",
-      "                  ^^^^^")
+      "a23_ij + ?x_ij(x_k0=a23_0k) + 2", "ij",
+      "               ^^^^")
 
-  def test_arg_subs_not_an_argument(self):
+  def test_arg_subs_lhs_with_questionmark(self):
     self.assert_syntax_error(
-      "Expected an argument, e.g. '?argname'.",
-      "?x_ij | x_ij = 1_ij", "ij",
-      "        ^^")
+      "The argument name at the left hand side of a substitution must not be prefixed by a '?'.",
+      "?x_ij(?x_ij=1_ij)", "ij",
+      "      ^^^")
+
+  def test_arg_subs_lhs_not_an_argument(self):
+    self.assert_syntax_error(
+      "Expected an argument, e.g. 'argname'.",
+      "?x(1=2)", "",
+      "   ^")
+
+  def test_arg_subs_double_occurence(self):
+    self.assert_syntax_error(
+      "Argument 'x' occurs more than once.",
+      "?x(x=1, x=2)", "",
+      "        ^")
+
+  def test_arg_subs_zero(self):
+    self.assert_syntax_error(
+      "Zero substitutions are not allowed.",
+      "?x_ij()", "ij",
+      "^^^^^^^")
 
   # TRANSPOSE
 
@@ -666,8 +683,8 @@ class parse(TestCase):
 
   def test_function_override(self):
     self.assert_syntax_error(
-      "Missing whitespace.",
+      "Expected '='.",
       "1_ij + funcoverride(a23_ij) + 1_ij", "ij",
-      "                   ^")
+      "                          ^")
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

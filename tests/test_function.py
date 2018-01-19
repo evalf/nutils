@@ -631,7 +631,8 @@ class eval_ast(TestCase):
 
   def test_group(self): self.assertIdentical('(a)', self.ns.a)
   def test_arg(self): self.assertIdentical('a2_i ?x_i', function.dot(self.ns.a2, function.Argument('x', [2]), axes=[0]))
-  def test_substitute(self): self.assertIdentical('?x_i^2 | ?x_i = a2_i', self.ns.a2**2)
+  def test_substitute(self): self.assertIdentical('(?x_i^2)(x_i=a2_i)', self.ns.a2**2)
+  def test_multisubstitute(self): self.assertIdentical('(a2_i + ?x_i + ?y_i)(x_i=?y_i, y_i=?x_i)', self.ns.a2 + function.Argument('y', [2]) + function.Argument('x', [2]))
   def test_call(self): self.assertIdentical('sin(a)', function.sin(self.ns.a))
   def test_eye(self): self.assertIdentical('δ_ij a2_i', function.dot(function.eye(2), self.ns.a2, axes=[0]))
   def test_normal(self): self.assertIdentical('n_i', self.ns.x.normal())
