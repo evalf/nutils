@@ -6,6 +6,25 @@ users are advised to keep an eye on this file to stay up to date with
 the most prominent user-facing changes.
 
 
+New: function.Namespace
+
+  The `function.Namespace` object represents a container of
+  `function.Array` instances.
+
+  >>> ns = function.Namespace()
+  >>> ns.x = geom
+  >>> ns.basis = domain.basis('std', degree=1).vector(2)
+
+  In addition to bundling arrays, arrays can be manipulated using index
+  notation via string expressions:
+
+  >>> ns.sol_i = 'basis_ni ?dofs_n'
+  >>> f = ns.eval_i('sol_i,j n_j')
+
+  For full details of this string syntax see the `function.Namespace`
+  documentation.
+
+
 New: Topology.integral
 
   Analogous to `Topology.integrate`, which integrates a function and
