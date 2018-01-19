@@ -18,7 +18,7 @@ class check(TestCase):
 
   def zero(self):
     zero = self.domain.boundary.integrate(self.geom.normal(), geometry=self.geom, ischeme='gauss9')
-    numpy.testing.assert_almost_equal( zero, 0 )
+    numpy.testing.assert_almost_equal(zero, 0)
 
   def volume(self):
     volume = self.domain.integrate(1, geometry=self.geom, ischeme='gauss9')
@@ -28,7 +28,7 @@ class check(TestCase):
   def interfaces(self):
     funcsp = self.domain.discontfunc(degree=2)
     f = (funcsp[:,_] * numpy.arange(funcsp.shape[0]*self.ndims).reshape(-1,self.ndims)).sum(0)
-    g = funcsp.dot( numpy.arange(funcsp.shape[0]) )
+    g = funcsp.dot(numpy.arange(funcsp.shape[0]))
 
     fg1 = self.domain.integrate((f * g.grad(self.geom)).sum(-1), geometry=self.geom, ischeme='gauss9')
     fg2 = self.domain.boundary.integrate((f*g).dotnorm(self.geom), geometry=self.geom, ischeme='gauss9') \
@@ -46,9 +46,9 @@ class check(TestCase):
     normal = self.geom.normal()
     boundary = self.domain.boundary
     for name, n in zip(['right','top','back'][:self.ndims], numpy.eye(self.ndims)):
-      numpy.testing.assert_almost_equal(boundary[name].elem_eval( normal, ischeme='gauss9', separate=False )-n, 0)
+      numpy.testing.assert_almost_equal(boundary[name].elem_eval(normal, ischeme='gauss9', separate=False)-n, 0)
     for name, n in zip(['left','bottom','front'][:self.ndims], -numpy.eye(self.ndims)):
-      numpy.testing.assert_almost_equal(boundary[name].elem_eval( normal, ischeme='gauss9', separate=False )-n, 0)
+      numpy.testing.assert_almost_equal(boundary[name].elem_eval(normal, ischeme='gauss9', separate=False)-n, 0)
 
 check('2d', ndims=2, curved=False)
 check('2dcurved', ndims=2, curved=True)

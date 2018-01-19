@@ -12,7 +12,7 @@ class basis(TestCase):
     self.gauss = 'gauss{}'.format(2*self.degree)
 
   def test_pum(self):
-    error = numpy.sqrt(self.domain.integrate( (1-self.basis.sum(0))**2, geometry=self.geom, ischeme=self.gauss))
+    error = numpy.sqrt(self.domain.integrate((1-self.basis.sum(0))**2, geometry=self.geom, ischeme=self.gauss))
     numpy.testing.assert_almost_equal(error, 0, decimal=14)
 
   def test_poly(self):

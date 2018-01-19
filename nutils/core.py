@@ -26,7 +26,7 @@ dependencies on other nutils modules. Primarily for internal use.
 import sys, functools, os
 from . import config
 
-def open_in_outdir( file, *args, **kwargs ):
+def open_in_outdir(file, *args, **kwargs):
   '''open a file relative to the ``outdirfd`` or ``outdir`` property
 
   Wrapper around :func:`open` that opens a file relative to either the
@@ -39,7 +39,7 @@ def open_in_outdir( file, *args, **kwargs ):
     kwargs['opener'] = functools.partial(os.open, dir_fd=config.outdirfd)
   elif config.outdir:
     file = os.path.join(os.path.expanduser(config.outdir), file)
-  return open( file, *args, **kwargs )
+  return open(file, *args, **kwargs)
 
 def listoutdir():
   '''list files in ``outdirfd`` or ``outdir`` property'''

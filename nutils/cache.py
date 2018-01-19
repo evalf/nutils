@@ -48,13 +48,13 @@ def property(f):
 class Wrapper:
   'function decorator that caches results by arguments'
 
-  def __init__( self, func ):
+  def __init__(self, func):
     self.func = func
     self.cache = {}
     self.count = 0
     self.signature = inspect.signature(func)
 
-  def __call__( self, *args, **kwargs ):
+  def __call__(self, *args, **kwargs):
     self.count += 1
     bound = self.signature.bind(*args, **kwargs)
     bound.apply_defaults()
@@ -68,16 +68,16 @@ class Wrapper:
     return value
 
   @builtins.property
-  def hits( self ):
+  def hits(self):
     return self.count - len(self.cache)
 
 class WrapperCache:
   'maintains a cache for Wrapper instances'
 
-  def __init__( self ):
+  def __init__(self):
     self.cache = {}
 
-  def __getitem__( self, func ):
+  def __getitem__(self, func):
     try:
       wrapper = self.cache[func]
     except KeyError:
@@ -86,7 +86,7 @@ class WrapperCache:
     return wrapper
 
   @builtins.property
-  def stats( self ):
+  def stats(self):
     hits = count = 0
     for wrapper in self.cache.values():
       hits += wrapper.hits
@@ -99,7 +99,7 @@ class WrapperDummyCache:
 
   stats = 'caching disabled'
 
-  def __getitem__( self, func ):
+  def __getitem__(self, func):
     return func
 
 class ImmutableMeta(type):
@@ -141,13 +141,13 @@ class ImmutableMeta(type):
 
 class Immutable(metaclass=ImmutableMeta):
 
-  def __init__( self ):
+  def __init__(self):
     pass
 
-  def __reduce__( self ):
+  def __reduce__(self):
     return self.__class__._new, self._args
 
-  def __hash__( self ):
+  def __hash__(self):
     return self._hash
 
   def __lt__(self, other):
@@ -162,14 +162,14 @@ class Immutable(metaclass=ImmutableMeta):
   def __ge__(self, other):
     return self is other or (self.__class__.__name__,)+self._args > (other.__class__.__name__,)+other._args
 
-  def __getstate__( self ):
-    raise Exception( 'getstate should never be called' )
+  def __getstate__(self):
+    raise Exception('getstate should never be called')
 
-  def __setstate__( self, state ):
-    raise Exception( 'setstate should never be called' )
+  def __setstate__(self, state):
+    raise Exception('setstate should never be called')
 
-  def __str__( self ):
-    return '{}({})'.format( self.__class__.__name__, ','.join( str(arg) for arg in self._args ) )
+  def __str__(self):
+    return '{}({})'.format(self.__class__.__name__, ','.join(str(arg) for arg in self._args))
 
   def edit(self, op):
     return self.__class__(*[op(arg) for arg in self._args])
@@ -177,57 +177,57 @@ class Immutable(metaclass=ImmutableMeta):
 class FileCache:
   'cache'
 
-  def __init__( self, *args ):
+  def __init__(self, *args):
     'constructor'
 
     import os, numpy, hashlib, pickle
-    serial = pickle.dumps( args, -1 )
-    self.myhash = hash( serial )
+    serial = pickle.dumps(args, -1)
+    self.myhash = hash(serial)
     hexhash = hashlib.md5(serial).hexdigest()
     cachedir = config.cachedir
-    if not os.path.exists( cachedir ):
-      os.makedirs( cachedir )
-    path = os.path.join( cachedir, hexhash )
-    if not os.path.isfile( path ) or config.recache:
-      log.info( 'starting new cache:', hexhash )
-      data = open( path, 'wb+' )
-      data.write( serial )
+    if not os.path.exists(cachedir):
+      os.makedirs(cachedir)
+    path = os.path.join(cachedir, hexhash)
+    if not os.path.isfile(path) or config.recache:
+      log.info('starting new cache:', hexhash)
+      data = open(path, 'wb+')
+      data.write(serial)
       data.flush()
     else:
-      log.info( 'continuing from cache:', hexhash )
-      data = open( path, 'ab+' )
+      log.info('continuing from cache:', hexhash)
+      data = open(path, 'ab+')
       data.seek(0)
-      recovered_args = pickle.load( data )
+      recovered_args = pickle.load(data)
       assert recovered_args == args, 'hash clash'
     self.data = data
 
-  def __call__( self, func, *args, **kwargs ):
+  def __call__(self, func, *args, **kwargs):
     'call'
 
     try:
       import cPickle as pickle
     except ImportError:
       import pickle
-    name = func.__name__ + ''.join( ' {}'.format(arg) for arg in args ) + ''.join( ' {}={}'.format(*item) for item in kwargs.items() )
+    name = func.__name__ + ''.join(' {}'.format(arg) for arg in args) + ''.join(' {}={}'.format(*item) for item in kwargs.items())
     pos = self.data.tell()
     try:
-      data = pickle.load( self.data )
+      data = pickle.load(self.data)
     except EOFError:
-      data = func( *args, **kwargs)
-      self.data.seek( pos )
-      pickle.dump( data, self.data, -1 )
+      data = func(*args, **kwargs)
+      self.data.seek(pos)
+      pickle.dump(data, self.data, -1)
       self.data.flush()
       msg = 'written to'
     else:
       msg = 'loaded from'
-    log.info( msg, 'cache:', name, '[{}b]'.format(self.data.tell()-pos) )
+    log.info(msg, 'cache:', name, '[{}b]'.format(self.data.tell()-pos))
     return data
 
-  def truncate( self ):
-    log.info( 'truncating cache' )
+  def truncate(self):
+    log.info('truncating cache')
     self.data.truncate()
 
-  def __hash__( self ):
+  def __hash__(self):
     return self.myhash
 
 def replace(func):

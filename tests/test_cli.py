@@ -6,10 +6,10 @@ def main(
   iarg: 'integer' = 1,
   farg: 'float' = 1.,
   sarg: 'string' = 'foo'):
-  assert isinstance( iarg, int ), 'n should be int, got {}'.format( type(iarg) )
-  assert isinstance( farg, float ), 'f should be float, got {}'.format( type(farg) )
-  assert isinstance( sarg, str ), 'f should be str, got {}'.format( type(sarg) )
-  print( 'all OK' )
+  assert isinstance(iarg, int), 'n should be int, got {}'.format(type(iarg))
+  assert isinstance(farg, float), 'f should be float, got {}'.format(type(farg))
+  assert isinstance(sarg, str), 'f should be str, got {}'.format(type(sarg))
+  print('all OK')
 
 @parametrize
 class run(ContextTestCase):
@@ -53,7 +53,7 @@ class run(ContextTestCase):
       with self.subTest('second-symlink'):
         self.assertTrue(os.path.islink(os.path.join(self.outrootdir,self.scriptname,'xyz')), 'second symlink not found')
     with self.subTest('argparse'):
-      nutils.log.info( output )
+      nutils.log.info(output)
       self.assertIn('all OK', output)
     with self.subTest('exitstatus'):
       self.assertIsNotNone(status)
@@ -62,7 +62,7 @@ class run(ContextTestCase):
   def test_badarg(self):
     status, output = self._cli('--bla') if self.method == 'run' else self._cli(funcname='bla')
     with self.subTest('argparse'):
-      nutils.log.info( output )
+      nutils.log.info(output)
       self.assertNotIn('all OK', output)
     with self.subTest('exitstatus'):
       self.assertIsNotNone(status)
@@ -73,7 +73,7 @@ class run(ContextTestCase):
     with self.subTest('outdir'):
       self.assertFalse(os.path.isdir(os.path.join(self.outrootdir,self.scriptname)), 'outdir directory found')
     with self.subTest('argparse'):
-      nutils.log.info( output )
+      nutils.log.info(output)
       self.assertNotIn('all OK', output)
     with self.subTest('exitstatus'):
       self.assertIsNotNone(status)

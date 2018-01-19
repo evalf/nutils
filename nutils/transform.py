@@ -110,7 +110,7 @@ def linearfrom(chain, ndims):
         chain = chain[:i]
         break
     else:
-      raise Exception( 'failed to find {}D coordinate system'.format(ndims) )
+      raise Exception('failed to find {}D coordinate system'.format(ndims))
   if not chain:
     return numpy.eye(ndims)
   linear = numpy.eye(chain[-1].fromdims)
@@ -167,7 +167,7 @@ class Matrix(TransformItem):
 
   def apply(self, points):
     assert points.shape[-1] == self.fromdims
-    return numeric.const(numpy.dot( points, self.linear.T ) + self.offset, copy=False)
+    return numeric.const(numpy.dot(points, self.linear.T) + self.offset, copy=False)
 
   def __mul__(self, other):
     assert isinstance(other, Matrix) and self.fromdims == other.todims
@@ -177,7 +177,7 @@ class Matrix(TransformItem):
       else Updim(linear, offset, self.isflipped^other.isflipped) if self.todims == other.fromdims+1 \
       else Matrix(linear, offset)
 
-  def __str__( self ):
+  def __str__(self):
     return util.obj2str(self.offset) + ''.join('+{}*x{}'.format(util.obj2str(v), i) for i, v in enumerate(self.linear.T))
 
 class Square(Matrix):
@@ -450,21 +450,21 @@ class MapTrans(VertexTransform):
 
   def __init__(self, linear:numeric.const, offset:numeric.const, vertices:numeric.const):
     assert len(linear) == len(offset) == len(vertices)
-    self.vertices, self.linear, self.offset = map( numpy.array, zip( *sorted( zip( vertices, linear, offset ) ) ) ) # sort vertices
+    self.vertices, self.linear, self.offset = map(numpy.array, zip(*sorted(zip(vertices, linear, offset)))) # sort vertices
     super().__init__(self.linear.shape[1])
 
   def apply(self, points):
-    barycentric = numpy.dot( points, self.linear.T ) + self.offset
-    return tuple( tuple( (v,float(c)) for v, c in zip( self.vertices, coord ) if c ) for coord in barycentric )
+    barycentric = numpy.dot(points, self.linear.T) + self.offset
+    return tuple(tuple((v,float(c)) for v, c in zip(self.vertices, coord) if c) for coord in barycentric)
 
   def __str__(self):
-    return ','.join( str(v) for v in self.vertices )
+    return ','.join(str(v) for v in self.vertices)
 
 class RootTrans(VertexTransform):
 
   def __init__(self, name, shape:tuple):
-    self.I, = numpy.where( shape )
-    self.w = numpy.take( shape, self.I )
+    self.I, = numpy.where(shape)
+    self.w = numpy.take(shape, self.I)
     self.name = name
     super().__init__(len(shape))
 

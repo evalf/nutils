@@ -29,8 +29,8 @@ class hierarchical(TestCase):
        [0,2,4,0,0],
        [0,0,0,4,0]])[[0,1,1,2,2,3,3,4]]).all())
     if makeplots:
-      with plot.PyPlot( 'basis' ) as plt:
-        plt.plot( x, y )
+      with plot.PyPlot('basis') as plt:
+        plt.plot(x, y)
 
   def test_trimmed(self, makeplots=False):
     levelset = 1.125 - self.geom[0]
@@ -40,10 +40,10 @@ class hierarchical(TestCase):
     self.assertTrue(numpy.equal(y, .125 * numpy.array(
       [[8,0,0],
        [0,8,0],
-       [0,7,4]] )[[0,1,1,2]]).all())
+       [0,7,4]])[[0,1,1,2]]).all())
     if makeplots:
-      with plot.PyPlot( 'basis' ) as plt:
-        plt.plot( x, y )
+      with plot.PyPlot('basis') as plt:
+        plt.plot(x, y)
 
 
 class trimmedboundary(TestCase):
@@ -124,7 +124,7 @@ class setoperations(TestCase):
 
   def setUp(self):
     super().setUp()
-    self.domain, self.geom = mesh.rectilinear( [[-.5,-1./6,1./6,.5]]*2 ) # unit square
+    self.domain, self.geom = mesh.rectilinear([[-.5,-1./6,1./6,.5]]*2) # unit square
     x, y = self.geom
     bottomright = self.domain.trim(x-y, maxrefine=0, name='trim1')
     self.right = bottomright.trim(x+y, maxrefine=0, name='trim2')
@@ -138,12 +138,12 @@ class setoperations(TestCase):
     for name, dom in ('left',self.left), ('top',self.top), ('right',self.right), ('bottom',self.bottom):
       with self.subTest(name):
         L = dom.boundary.integrate(1, geometry=self.geom, ischeme='gauss1')
-        self.assertTrue(numpy.isclose(L, 1+numpy.sqrt(2) ), 'full boundary: wrong length: {} != {}'.format( L, 1+numpy.sqrt(2)))
-        L = dom.boundary[name].integrate( 1, geometry=self.geom, ischeme='gauss1' )
-        self.assertTrue(numpy.isclose(L, 1 ), '{}: wrong length: {} != {}'.format(name, L, 1))
-        L = dom.boundary['trim1' if name not in ('left','top') else 'trim1'].integrate( 1, geometry=self.geom, ischeme='gauss1' )
+        self.assertTrue(numpy.isclose(L, 1+numpy.sqrt(2)), 'full boundary: wrong length: {} != {}'.format(L, 1+numpy.sqrt(2)))
+        L = dom.boundary[name].integrate(1, geometry=self.geom, ischeme='gauss1')
+        self.assertTrue(numpy.isclose(L, 1), '{}: wrong length: {} != {}'.format(name, L, 1))
+        L = dom.boundary['trim1' if name not in ('left','top') else 'trim1'].integrate(1, geometry=self.geom, ischeme='gauss1')
         self.assertTrue(numpy.isclose(L, .5*numpy.sqrt(2)), 'trim1: wrong length: {} != {}'.format(L, .5*numpy.sqrt(2)))
-        L = dom.boundary['trim2' if name not in ('left','bottom') else 'trim2'].integrate( 1, geometry=self.geom, ischeme='gauss1' )
+        L = dom.boundary['trim2' if name not in ('left','bottom') else 'trim2'].integrate(1, geometry=self.geom, ischeme='gauss1')
         self.assertTrue(numpy.isclose(L, .5*numpy.sqrt(2)), 'trim2: wrong length: {} != {}'.format(L, .5*numpy.sqrt(2)))
 
   def test_union(self):
@@ -196,7 +196,7 @@ class cutdomain(TestCase):
 
   def test_locate(self):
     curvegeom = self.geom * (1 + .1 * function.sin(function.norm2(self.geom)*numpy.pi/self.radius)) # interface preserving non-polynomial scaling
-    for p in numpy.linspace( .001, .999, 20 ):
+    for p in numpy.linspace(.001, .999, 20):
       with self.subTest(p=p):
         point = p * .5**numpy.arange(self.domain.ndims)
         r = numpy.linalg.norm(point)
@@ -215,16 +215,16 @@ cutdomain('circle', ndims=2, nelems=2, maxrefine=5, errtol=2.1e-4)
 class multitrim(TestCase):
 
   def test(self):
-    domain, geom = mesh.rectilinear( [[-1,1],[-1,1]] )
-    geom_rel = ( function.rotmat(numpy.pi/6) * geom ).sum(-1)
+    domain, geom = mesh.rectilinear([[-1,1],[-1,1]])
+    geom_rel = (function.rotmat(numpy.pi/6) * geom).sum(-1)
     for itrim in range(4):
-      domain = domain.trim( .7+(1-itrim%2*2)*geom_rel[itrim//2], maxrefine=1, name='trim{}'.format(itrim), ndivisions=16 )
+      domain = domain.trim(.7+(1-itrim%2*2)*geom_rel[itrim//2], maxrefine=1, name='trim{}'.format(itrim), ndivisions=16)
     domain.check_boundary(geom, elemwise=True, print=self.fail)
     for itrim in range(4):
-      L = domain.boundary['trim{}'.format(itrim)].integrate( 1, geometry=geom, ischeme='gauss1' )
-      numpy.testing.assert_almost_equal( L, 1.4, decimal=4 )
-    L = domain.boundary.integrate( 1, geometry=geom, ischeme='gauss1' )
-    numpy.testing.assert_almost_equal( L, 5.6, decimal=4 )
+      L = domain.boundary['trim{}'.format(itrim)].integrate(1, geometry=geom, ischeme='gauss1')
+      numpy.testing.assert_almost_equal(L, 1.4, decimal=4)
+    L = domain.boundary.integrate(1, geometry=geom, ischeme='gauss1')
+    numpy.testing.assert_almost_equal(L, 5.6, decimal=4)
 
 
 class leveltopo(TestCase):

@@ -29,42 +29,42 @@ import sys, inspect, os, datetime, pdb, signal, subprocess, contextlib
 
 def _version():
   try:
-    githash = subprocess.check_output( ['git','rev-parse','--short','HEAD'], universal_newlines=True, stderr=subprocess.DEVNULL, cwd=os.path.dirname(__file__) ).strip()
-    if subprocess.check_output( ['git','status','--untracked-files=no','--porcelain'], stderr=subprocess.DEVNULL, cwd=os.path.dirname(__file__) ):
+    githash = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'], universal_newlines=True, stderr=subprocess.DEVNULL, cwd=os.path.dirname(__file__)).strip()
+    if subprocess.check_output(['git', 'status', '--untracked-files=no', '--porcelain'], stderr=subprocess.DEVNULL, cwd=os.path.dirname(__file__)):
       githash += '+'
   except:
     return version
   else:
-    return '{} (git:{})'.format( version, githash )
+    return '{} (git:{})'.format(version, githash)
 
-def _mkbox( *lines ):
-  width = max( len(line) for line in lines )
+def _mkbox(*lines):
+  width = max(len(line) for line in lines)
   ul, ur, ll, lr, hh, vv = '┌┐└┘─│' if config.richoutput else '++++-|'
-  return '\n'.join( [ ul + hh * (width+2) + ur ]
-                  + [ vv + (' '+line).ljust(width+2) + vv for line in lines ]
-                  + [ ll + hh * (width+2) + lr ] )
+  return '\n'.join([ul + hh * (width+2) + ur]
+                 + [vv + (' '+line).ljust(width+2) + vv for line in lines]
+                 + [ll + hh * (width+2) + lr])
 
-def _sigint_handler( mysignal, frame ):
-  _handler = signal.signal( mysignal, signal.SIG_IGN ) # temporarily disable handler
+def _sigint_handler(mysignal, frame):
+  _handler = signal.signal(mysignal, signal.SIG_IGN) # temporarily disable handler
   try:
     while True:
-      answer = input( 'interrupted. quit, continue or start debugger? [q/c/d]' )
+      answer = input('interrupted. quit, continue or start debugger? [q/c/d]')
       if answer == 'q':
         raise KeyboardInterrupt
       if answer == 'c' or answer == 'd':
         break
     if answer == 'd': # after break, to minimize code after set_trace
-      print( _mkbox(
+      print(_mkbox(
         'TRACING ACTIVATED. Use the Python debugger',
         'to step through the code at source line',
         'level, list source code, set breakpoints,',
         'and evaluate arbitrary Python code in the',
         'context of any stack frame. Type "h" for',
         'an overview of commands to get going, or',
-        '"c" to continue uninterrupted execution.' ) )
+        '"c" to continue uninterrupted execution.'))
       pdb.set_trace()
   finally:
-    signal.signal( mysignal, _handler )
+    signal.signal(mysignal, _handler)
 
 def run(func, *, skip=1, loaduserconfig=True):
   '''parse command line arguments and call function'''
@@ -145,7 +145,7 @@ def call(func, kwargs, scriptname, funcname=None):
 
   with contextlib.ExitStack() as stack:
 
-    stack.callback( signal.signal, signal.SIGINT, signal.signal( signal.SIGINT, _sigint_handler ) )
+    stack.callback(signal.signal, signal.SIGINT, signal.signal(signal.SIGINT, _sigint_handler))
 
     outdir = os.path.expanduser(config.outdir)
     if outdir:
@@ -165,24 +165,24 @@ def call(func, kwargs, scriptname, funcname=None):
     symlink = config.symlink
     if symlink:
       for base, relpath in relpaths:
-        target = os.path.join( base, symlink )
-        if os.path.islink( target ):
-          os.remove( target )
-        os.symlink( relpath, target )
+        target = os.path.join(base, symlink)
+        if os.path.islink(target):
+          os.remove(target)
+        os.symlink(relpath, target)
 
     log_ = log.RichOutputLog() if config.richoutput else log.StdoutLog()
 
     if config.htmloutput:
       for base, relpath in relpaths:
-        with open( os.path.join(base,'log.html'), 'w' ) as redirlog:
-          print( '<html><head>', file=redirlog )
-          print( '<meta http-equiv="cache-control" content="max-age=0" />', file=redirlog )
-          print( '<meta http-equiv="cache-control" content="no-cache" />', file=redirlog )
-          print( '<meta http-equiv="expires" content="0" />', file=redirlog )
-          print( '<meta http-equiv="expires" content="Tue, 01 Jan 1980 1:00:00 GMT" />', file=redirlog )
-          print( '<meta http-equiv="pragma" content="no-cache" />', file=redirlog )
-          print( '<meta http-equiv="refresh" content="0;URL={}" />'.format(os.path.join(relpath,'log.html')), file=redirlog )
-          print( '</head></html>', file=redirlog )
+        with open(os.path.join(base,'log.html'), 'w') as redirlog:
+          print('<html><head>', file=redirlog)
+          print('<meta http-equiv="cache-control" content="max-age=0" />', file=redirlog)
+          print('<meta http-equiv="cache-control" content="no-cache" />', file=redirlog)
+          print('<meta http-equiv="expires" content="0" />', file=redirlog)
+          print('<meta http-equiv="expires" content="Tue, 01 Jan 1980 1:00:00 GMT" />', file=redirlog)
+          print('<meta http-equiv="pragma" content="no-cache" />', file=redirlog)
+          print('<meta http-equiv="refresh" content="0;URL={}" />'.format(os.path.join(relpath,'log.html')), file=redirlog)
+          print('</head></html>', file=redirlog)
 
       funcargs = [(parameter.name, kwargs.get(parameter.name,parameter.default), parameter.annotation) for parameter in inspect.signature(func).parameters.values()]
       log_ = log.TeeLog(log_, log.HtmlLog('log.html', title=scriptname, scriptname=scriptname, funcname=funcname, funcargs=funcargs))
@@ -190,17 +190,17 @@ def call(func, kwargs, scriptname, funcname=None):
     try:
       with log_, warnings.via(log.warning):
 
-        log.info( 'nutils v{}'.format( _version() ) )
-        log.info( 'start {}'.format( starttime.ctime() ) )
+        log.info('nutils v{}'.format(_version()))
+        log.info('start {}'.format(starttime.ctime()))
 
-        func( **kwargs )
+        func(**kwargs)
 
         endtime = datetime.datetime.now()
-        minutes, seconds = divmod( (endtime-starttime).seconds, 60 )
-        hours, minutes = divmod( minutes, 60 )
+        minutes, seconds = divmod((endtime-starttime).seconds, 60)
+        hours, minutes = divmod(minutes, 60)
 
-        log.info( 'finish {}'.format( endtime.ctime() ) )
-        log.info( 'elapsed {:.0f}:{:02.0f}:{:02.0f}'.format( hours, minutes, seconds ) )
+        log.info('finish {}'.format(endtime.ctime()))
+        log.info('elapsed {:.0f}:{:02.0f}:{:02.0f}'.format(hours, minutes, seconds))
 
     except (KeyboardInterrupt,SystemExit,pdb.bdb.BdbQuit):
       return 1
@@ -210,11 +210,11 @@ def call(func, kwargs, scriptname, funcname=None):
           del log_
         except NameError:
           pass
-        print( _mkbox(
+        print(_mkbox(
           'YOUR PROGRAM HAS DIED. The Python debugger',
           'allows you to examine its post-mortem state',
           'to figure out why this happened. Type "h"',
-          'for an overview of commands to get going.' ) )
+          'for an overview of commands to get going.'))
         pdb.post_mortem()
       return 2
     else:

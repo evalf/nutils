@@ -2,11 +2,11 @@ from nutils import *
 from . import *
 import numpy, copy, sys, pickle, subprocess, base64, itertools, os
 
-grid = numpy.linspace( 0., 1., 4 )
+grid = numpy.linspace(0., 1., 4)
 
-def neighbor( elem1, elem2 ):
+def neighbor(elem1, elem2):
   elem1_vertices = set(elem1.vertices)
-  ncommon = sum( v in elem1_vertices for v in elem2.vertices )
+  ncommon = sum(v in elem1_vertices for v in elem2.vertices)
   if not ncommon:
     return -1
   if elem1.ndims == elem2.ndims == 1:
@@ -15,9 +15,9 @@ def neighbor( elem1, elem2 ):
     return {4:0,2:1,1:2}[ncommon]
   if elem1.ndims == elem2.ndims == 3:
     return {8:0,4:1,2:2,1:3}[ncommon]
-  raise NotImplementedError( '%s, %s' % ( elem1.reference, elem2.reference ) )
+  raise NotImplementedError('%s, %s' % (elem1.reference, elem2.reference))
 
-def verify_connectivity( structure, geom ):
+def verify_connectivity(structure, geom):
   (e00,e01), (e10,e11) = structure
 
   a0 = geom.eval(_transforms=[e00.transform], _points=numpy.array([[0,1]]))
@@ -44,34 +44,34 @@ def verify_connectivity( structure, geom ):
   numpy.testing.assert_array_almost_equal(x10, x11)
   numpy.testing.assert_array_almost_equal(x00, x11)
 
-def verify_boundaries( domain, geom ):
+def verify_boundaries(domain, geom):
   # Test ∫_Ω f_,i = ∫_∂Ω f n_i.
   f = ((0.5 - geom)**2).sum(axis=0)
-  lhs = domain.integrate( f.grad(geom), ischeme='gauss2', geometry=geom )
-  rhs = domain.boundary.integrate( f*function.normal(geom), ischeme='gauss2', geometry=geom )
-  numpy.testing.assert_array_almost_equal( lhs, rhs )
+  lhs = domain.integrate(f.grad(geom), ischeme='gauss2', geometry=geom)
+  rhs = domain.boundary.integrate(f*function.normal(geom), ischeme='gauss2', geometry=geom)
+  numpy.testing.assert_array_almost_equal(lhs, rhs)
 
-def verify_interfaces( domain, geom, periodic, interfaces=None, elemindicator=None ):
+def verify_interfaces(domain, geom, periodic, interfaces=None, elemindicator=None):
   # If `periodic` is true, the domain should be a unit hypercube or this test
   # might fail.  The function `f` defined below is C0 continuous on a periodic
   # hypercube and Cinf continuous inside the hypercube.
   if interfaces is None:
     interfaces = domain.interfaces
-  x1, x2, n1, n2 = interfaces.elem_eval( [ geom, function.opposite(geom), geom.normal(), function.opposite(geom.normal()) ], 'gauss2', separate=False )
+  x1, x2, n1, n2 = interfaces.elem_eval([ geom, function.opposite(geom), geom.normal(), function.opposite(geom.normal()) ], 'gauss2', separate=False)
   if not periodic:
-    numpy.testing.assert_array_almost_equal( x1, x2 )
-  numpy.testing.assert_array_almost_equal( n1, -n2 )
+    numpy.testing.assert_array_almost_equal(x1, x2)
+  numpy.testing.assert_array_almost_equal(n1, -n2)
 
   # Test ∫_E f_,i = ∫_∂E f n_i ∀ E in `domain`.
   f = ((0.5 - geom)**2).sum(axis=0)
   if elemindicator is None:
-    elemindicator = domain.basis( 'discont', degree=0 )
-  elemindicator = elemindicator.vector( domain.ndims )
-  lhs = domain.integrate( (elemindicator*f.grad(geom)[None]).sum(axis=1), ischeme='gauss2', geometry=geom )
-  rhs = interfaces.integrate( (-function.jump(elemindicator)*f*function.normal(geom)[None]).sum(axis=1), ischeme='gauss2', geometry=geom )
-  if len( domain.boundary ):
-    rhs += domain.boundary.integrate( (elemindicator*f*function.normal(geom)[None]).sum(axis=1), ischeme='gauss2', geometry=geom )
-  numpy.testing.assert_array_almost_equal( lhs, rhs )
+    elemindicator = domain.basis('discont', degree=0)
+  elemindicator = elemindicator.vector(domain.ndims)
+  lhs = domain.integrate((elemindicator*f.grad(geom)[None]).sum(axis=1), ischeme='gauss2', geometry=geom)
+  rhs = interfaces.integrate((-function.jump(elemindicator)*f*function.normal(geom)[None]).sum(axis=1), ischeme='gauss2', geometry=geom)
+  if len(domain.boundary):
+    rhs += domain.boundary.integrate((elemindicator*f*function.normal(geom)[None]).sum(axis=1), ischeme='gauss2', geometry=geom)
+  numpy.testing.assert_array_almost_equal(lhs, rhs)
 
 
 @parametrize
@@ -156,7 +156,7 @@ class structure2d(TestCase):
     for grp in 'left', 'right', 'top', 'bottom', 'front', 'back':
       bnd = domain.boundary[grp]
       # DISABLED: what does this check? -GJ 14/07/28
-      #verify_connectivity( bnd.structure, geom )
+      #verify_connectivity(bnd.structure, geom)
       xn = bnd.elem_eval(geom.dotnorm(geom), ischeme='gauss1', separate=False)
       numpy.testing.assert_array_less(0, xn, 'inward pointing normals')
 
@@ -171,8 +171,8 @@ class structured_prop_periodic(TestCase):
   def test(self):
     bnames = 'left', 'top', 'front'
     side = bnames[self.sdim]
-    domain, geom = mesh.rectilinear( [2]*self.ndim, periodic=self.periodic )
-    self.assertEqual(list(domain.boundary[side].periodic ), [i if i < self.sdim else i-1 for i in self.periodic if i != self.sdim])
+    domain, geom = mesh.rectilinear([2]*self.ndim, periodic=self.periodic)
+    self.assertEqual(list(domain.boundary[side].periodic), [i if i < self.sdim else i-1 for i in self.periodic if i != self.sdim])
 
 structured_prop_periodic('2d_1_0', ndim=2, periodic=[1], sdim=0)
 structured_prop_periodic('2d_0_1', ndim=2, periodic=[0], sdim=1)
@@ -182,9 +182,9 @@ structured_prop_periodic('3d_0,2_1', ndim=3, periodic=[0,2], sdim=1)
 class picklability(TestCase):
 
   def assert_pickle_dump_load(self, data):
-    script = b'from nutils import *\nimport pickle, base64\npickle.loads( base64.decodebytes( b"""' \
-      + base64.encodebytes( pickle.dumps( data ) ) \
-      + b'""" ) )'
+    script = b'from nutils import *\nimport pickle, base64\npickle.loads(base64.decodebytes(b"""' \
+      + base64.encodebytes(pickle.dumps(data)) \
+      + b'"""))'
     p = subprocess.Popen([sys.executable], stdin=subprocess.PIPE)
     p.communicate(script)
     self.assertEqual(p.wait(), 0, 'unpickling failed')
@@ -206,7 +206,7 @@ class picklability(TestCase):
 class common_refine(TestCase):
 
   def test(self):
-    dom, geom = mesh.rectilinear( [[0,1,2],[0,1,2]] )
+    dom, geom = mesh.rectilinear([[0,1,2],[0,1,2]])
     doms, funs, vals = {}, {}, {}
 
     doms['1'] = dom.refined_by(list(dom)[:1])
@@ -279,7 +279,7 @@ class revolved_hollowcylinder(TestCase):
   def setUp(self):
     super().setUp()
     rzdomain, rzgeom = mesh.rectilinear([[.5,1],2])
-    self.domain, self.geom, self.simplify = rzdomain.revolved( rzgeom )
+    self.domain, self.geom, self.simplify = rzdomain.revolved(rzgeom)
     self.basis = self.domain.basis('std', degree=2)
 
   def test_volume(self):
@@ -409,7 +409,7 @@ class multipatch_hyperrect(TestCase):
 
     self.domain, self.geom = mesh.multipatch(
       patches=[indices[tuple(map(slice, i, numpy.array(i)+2))].ravel().tolist() for i in itertools.product(*map(range, npatches))],
-      patchverts=tuple(itertools.product(*map( range, npatches+1))),
+      patchverts=tuple(itertools.product(*map(range, npatches+1))),
       nelems=4,
     )
 

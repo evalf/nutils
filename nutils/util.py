@@ -51,70 +51,70 @@ def gather(items):
     values.append(value)
   return gathered
 
-def allequal( seq1, seq2 ):
+def allequal(seq1, seq2):
   seq1 = iter(seq1)
   seq2 = iter(seq2)
-  for item1, item2 in zip( seq1, seq2 ):
+  for item1, item2 in zip(seq1, seq2):
     if item1 != item2:
       return False
   if list(seq1) or list(seq2):
     return False
   return True
 
-class NanVec( numpy.ndarray ):
+class NanVec(numpy.ndarray):
   'nan-initialized vector'
 
-  def __new__( cls, length ):
+  def __new__(cls, length):
     vec = numpy.empty(length, dtype=float).view(cls)
     vec[:] = numpy.nan
     return vec
 
   @property
-  def where( self ):
+  def where(self):
     return ~numpy.isnan(self.view(numpy.ndarray))
 
-  def __iand__( self, other ):
+  def __iand__(self, other):
     if self.dtype != float:
       return self.view(numpy.ndarray).__iand__(other)
     where = self.where
-    if numpy.isscalar( other ):
-      self[ where ] = other
+    if numpy.isscalar(other):
+      self[where] = other
     else:
       assert numeric.isarray(other) and other.shape == self.shape
-      self[ where ] = other[ where ]
+      self[where] = other[where]
     return self
 
-  def __and__( self, other ):
+  def __and__(self, other):
     if self.dtype != float:
       return self.view(numpy.ndarray).__and__(other)
-    return self.copy().__iand__( other )
+    return self.copy().__iand__(other)
 
-  def __ior__( self, other ):
+  def __ior__(self, other):
     if self.dtype != float:
       return self.view(numpy.ndarray).__ior__(other)
     wherenot = ~self.where
-    self[ wherenot ] = other if numpy.isscalar( other ) else other[ wherenot ]
+    self[wherenot] = other if numpy.isscalar(other) else other[wherenot]
     return self
 
-  def __or__( self, other ):
+  def __or__(self, other):
     if self.dtype != float:
       return self.view(numpy.ndarray).__or__(other)
-    return self.copy().__ior__( other )
+    return self.copy().__ior__(other)
 
-  def __invert__( self ):
+  def __invert__(self):
     if self.dtype != float:
       return self.view(numpy.ndarray).__invert__()
-    nanvec = NanVec( len(self) )
+    nanvec = NanVec(len(self))
     nanvec[numpy.isnan(self)] = 0
     return nanvec
 
-def regularize( bbox, spacing, xy=numpy.empty((0,2)) ):
-  xy = numpy.asarray( xy )
-  index0 = numeric.floor( bbox[:,0] / (2*spacing) ) * 2 - 1
-  shape = numeric.ceil( bbox[:,1] / (2*spacing) ) * 2 + 2 - index0
-  index = numeric.round( xy / spacing ) - index0
+def regularize(bbox, spacing, xy=numpy.empty((0,2))):
+  xy = numpy.asarray(xy)
+  index0 = numeric.floor(bbox[:,0] / (2*spacing)) * 2 - 1
+  shape = numeric.ceil(bbox[:,1] / (2*spacing)) * 2 + 2 - index0
+  index = numeric.round(xy / spacing) - index0
   keep = numpy.logical_and(numpy.greater_equal(index, 0), numpy.less(index, shape)).all(axis=1)
-  mask = numpy.zeros( shape, dtype=bool )
+  mask = numpy.zeros(shape, dtype=bool)
   for i, ind in enumerate(index):
     if keep[i]:
       if not mask[tuple(ind)]:
@@ -124,11 +124,11 @@ def regularize( bbox, spacing, xy=numpy.empty((0,2)) ):
   coursex = mask[0:-2:2] | mask[1:-1:2] | mask[2::2]
   coarsexy = coursex[:,0:-2:2] | coursex[:,1:-1:2] | coursex[:,2::2]
   vacant, = (~coarsexy).ravel().nonzero()
-  newindex = numpy.array( numpy.unravel_index( vacant, coarsexy.shape ) ).T * 2 + index0 + 1
-  return numpy.concatenate( [ newindex * spacing, xy[keep] ], axis=0 )
+  newindex = numpy.array(numpy.unravel_index(vacant, coarsexy.shape)).T * 2 + index0 + 1
+  return numpy.concatenate([newindex * spacing, xy[keep]], axis=0)
 
-def run( *functions ):
-  print( 'WARNING util.run is deprecated, please use cli.run instead' )
+def run(*functions):
+  print('WARNING util.run is deprecated, please use cli.run instead')
   assert functions
 
   import datetime, inspect, contextlib
@@ -141,8 +141,8 @@ def run( *functions ):
     properties['tbexplore'] = properties.pop('pdb')
 
     if '-h' in sys.argv[1:] or '--help' in sys.argv[1:]:
-      print( 'Usage: %s [FUNC] [ARGS]' % sys.argv[0] )
-      print( '''
+      print('Usage: %s [FUNC] [ARGS]' % sys.argv[0])
+      print('''
     --help                  Display this help
     --nprocs=%(nprocs)-14s Select number of processors
     --outrootdir=%(outrootdir)-10s Define the root directory for output
@@ -155,45 +155,45 @@ def run( *functions ):
     --symlink=%(symlink)-13s Create symlink to latest results
     --recache=%(recache)-13s Overwrite existing cache
     --dot=%(dot)-17s Set graphviz executable
-    --profile=%(profile)-13s Show profile summary at exit''' % properties )
-      for i, func in enumerate( functions ):
+    --profile=%(profile)-13s Show profile summary at exit''' % properties)
+      for i, func in enumerate(functions):
         print()
-        print( 'Arguments for %s%s' % ( func.__name__, '' if i else ' (default)' ) )
+        print('Arguments for %s%s' % (func.__name__, '' if i else ' (default)'))
         print()
-        print( '\n'.join( '  --{}={}'.format( parameter.name, parameter.default )
-          for parameter in inspect.signature( func ).parameters.values()
-            if parameter.kind not in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD) ) )
-      sys.exit( 0 )
+        print('\n'.join('  --{}={}'.format(parameter.name, parameter.default)
+          for parameter in inspect.signature(func).parameters.values()
+            if parameter.kind not in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD)))
+      sys.exit(0)
 
     func = functions[0]
     argv = sys.argv[1:]
-    funcbyname = { func.__name__: func for func in functions }
+    funcbyname = {func.__name__: func for func in functions}
     if argv and argv[0] in funcbyname:
       func = funcbyname[argv[0]]
       argv = argv[1:]
 
-    kwargs = { parameter.name: parameter.default
-      for parameter in inspect.signature( func ).parameters.values()
-        if parameter.kind not in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD) }
+    kwargs = {parameter.name: parameter.default
+      for parameter in inspect.signature(func).parameters.values()
+        if parameter.kind not in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD)}
 
     for arg in argv:
       arg = arg.lstrip('-')
       try:
-        arg, val = arg.split( '=', 1 )
-        val = eval( val, sys._getframe(1).f_globals )
+        arg, val = arg.split('=', 1)
+        val = eval(val, sys._getframe(1).f_globals)
       except ValueError: # split failed
         val = True
       except (SyntaxError,NameError): # eval failed
         pass
-      arg = arg.replace( '-', '_' )
+      arg = arg.replace('-', '_')
       if arg in kwargs:
-        kwargs[ arg ] = val
+        kwargs[arg] = val
       else:
         assert arg in properties, 'invalid argument %r' % arg
         properties[arg] = val
 
-    missing = [ arg for arg, val in kwargs.items() if val is inspect.Parameter.empty ]
-    assert not missing, 'missing mandatory arguments: {}'.format( ', '.join(missing) )
+    missing = [arg for arg, val in kwargs.items() if val is inspect.Parameter.empty]
+    assert not missing, 'missing mandatory arguments: {}'.format(', '.join(missing))
 
     properties['pdb'] = properties.pop('tbexplore')
     stack.enter_context(config(**properties))

@@ -317,7 +317,7 @@ class gmshrect(TestCase):
     numpy.testing.assert_almost_equal(volume, 2, decimal=10)
 
   def test_length(self):
-    length = self.domain.boundary.integrate( 1, geometry=self.geom, ischeme='gauss1')
+    length = self.domain.boundary.integrate(1, geometry=self.geom, ischeme='gauss1')
     numpy.testing.assert_almost_equal(length, 6, decimal=10)
 
   def test_divergence(self):
@@ -328,7 +328,7 @@ class gmshrect(TestCase):
     for group in 'left', 'right':
       with self.subTest(group):
         subdom = self.domain[group]
-        volume = subdom.integrate( 1, geometry=self.geom, ischeme='gauss1')
+        volume = subdom.integrate(1, geometry=self.geom, ischeme='gauss1')
         numpy.testing.assert_almost_equal(volume, 1, decimal=10)
 
   def test_sublength(self):
@@ -461,8 +461,8 @@ class gmshperiodic(TestCase):
     self.domain, self.geom = mesh.gmsh(self.gmshperiodicdata.splitlines())
 
   def test_volume(self):
-    volume = self.domain.integrate( 1, geometry=self.geom, ischeme='gauss1' )
-    numpy.testing.assert_almost_equal( volume, 1, decimal=10 )
+    volume = self.domain.integrate(1, geometry=self.geom, ischeme='gauss1')
+    numpy.testing.assert_almost_equal(volume, 1, decimal=10)
 
   def test_length(self):
     for group, exact_length in ('right',1), ('left',1), ((),2):

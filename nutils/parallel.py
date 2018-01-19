@@ -33,12 +33,12 @@ procid = None # current process id, None for unforked
 def shempty(shape, dtype=float):
   '''create uninitialized array in shared memory'''
 
-  if numeric.isint( shape ):
+  if numeric.isint(shape):
     shape = shape,
   else:
-    assert all( numeric.isint(sh) for sh in shape )
-  dtype = numpy.dtype( dtype )
-  size = ( numpy.product( shape ) if shape else 1 ) * dtype.itemsize
+    assert all(numeric.isint(sh) for sh in shape)
+  dtype = numpy.dtype(dtype)
+  size = (numpy.product(shape) if shape else 1) * dtype.itemsize
   if size == 0:
     return numpy.empty(shape, dtype)
   # `mmap(-1,...)` will allocate *anonymous* memory.  Although linux' man page
@@ -54,7 +54,7 @@ def shzeros(shape, dtype=float):
   array.fill(0)
   return array
 
-def pariter( iterable, nprocs ):
+def pariter(iterable, nprocs):
   '''iterate in parallel
 
   Fork into ``nprocs`` subprocesses, then yield items from iterable such that
@@ -70,7 +70,7 @@ def pariter( iterable, nprocs ):
   As a safety measure nested pariters are blocked by setting the global
   ``procid`` variable; all secundary pariters will be treated like normal
   serial iterators.
-  
+
   Parameters
   ----------
   iterable : iterable
@@ -86,7 +86,7 @@ def pariter( iterable, nprocs ):
   global procid
 
   if procid is not None:
-    log.warning( 'ignoring pariter for already forked process' )
+    log.warning('ignoring pariter for already forked process')
     yield from iterable
     return
 
@@ -100,23 +100,23 @@ def pariter( iterable, nprocs ):
   if not hasattr(os, 'fork'):
     raise NotImplementedError('pariter requires os.fork, which is unavailable on this platform')
 
-  shared_iter = multiprocessing.RawValue( 'i', nprocs ) # shared integer pointing at first unyielded item
+  shared_iter = multiprocessing.RawValue('i', nprocs) # shared integer pointing at first unyielded item
   lock = multiprocessing.Lock() # lock to avoid race conditions in incrementing shared_iter
   children = [] # list of forked processes, non-empty only in primary process
 
   try:
 
-    for procid in range( 1, nprocs ):
+    for procid in range(1, nprocs):
       child_pid = os.fork()
       if not child_pid:
-        signal.signal( signal.SIGINT, signal.SIG_IGN ) # disable sigint (ctrl+c) handler
+        signal.signal(signal.SIGINT, signal.SIG_IGN) # disable sigint (ctrl+c) handler
         break
-      children.append( child_pid )
+      children.append(child_pid)
     else:
       procid = 0
 
     iiter = procid # first index is 0 .. nprocs-1, with shared_iter at nprocs
-    for n, it in enumerate( iterable ):
+    for n, it in enumerate(iterable):
       if n < iiter: # fast forward to iiter
         continue
       assert n == iiter
@@ -133,10 +133,10 @@ def pariter( iterable, nprocs ):
 
     # in child processes print traceback then exit
     excval = sys.exc_info()[1]
-    if isinstance( excval, GeneratorExit ):
-      log.error( 'generator failed with unknown exception' )
-    elif not isinstance( excval, KeyboardInterrupt ):
-      log.error( traceback.format_exc() )
+    if isinstance(excval, GeneratorExit):
+      log.error('generator failed with unknown exception')
+    elif not isinstance(excval, KeyboardInterrupt):
+      log.error(traceback.format_exc())
 
   else:
 
@@ -145,21 +145,21 @@ def pariter( iterable, nprocs ):
   finally:
 
     if procid != 0: # before anything else can fail:
-      os._exit( fail ) # cumminicate exit status to main process
+      os._exit(fail) # cumminicate exit status to main process
 
     procid = None # unset global variable
     totalfail = fail
     while children:
       child_pid, child_status = os.wait()
-      children.remove( child_pid )
+      children.remove(child_pid)
       if child_status:
         totalfail += 1
     if fail: # failure in main process: exception has been reraised
-      log.error( 'pariter failed in {} out of {} processes; reraising exception for main process'.format( totalfail, nprocs ) )
+      log.error('pariter failed in {} out of {} processes; reraising exception for main process'.format(totalfail, nprocs))
     elif totalfail: # failure in child process: raise exception
-      raise Exception( 'pariter failed in {} out of {} processes'.format( totalfail, nprocs ) )
+      raise Exception('pariter failed in {} out of {} processes'.format(totalfail, nprocs))
 
-def parmap( func, iterable, nprocs, shape=(), dtype=float ):
+def parmap(func, iterable, nprocs, shape=(), dtype=float):
   '''parallel equivalent to builtin map function
 
   Produces an array of ``func(item)`` values for all items in ``iterable``.
@@ -186,9 +186,9 @@ def parmap( func, iterable, nprocs, shape=(), dtype=float ):
 
 
   n = len(iterable)
-  out = shzeros( (n,)+shape, dtype=dtype )
-  for i, item in pariter( enumerate(iterable), nprocs=min(n,nprocs) ):
-    out[i] = func( item )
+  out = shzeros((n,)+shape, dtype=dtype)
+  for i, item in pariter(enumerate(iterable), nprocs=min(n,nprocs)):
+    out[i] = func(item)
   return out
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=1

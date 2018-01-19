@@ -27,9 +27,9 @@ To demonstrate this consider the following setup:
 
 >>> from nutils import mesh, function, solver
 >>> ns = function.Namespace()
->>> domain, ns.x = mesh.rectilinear( [4,4] )
->>> ns.basis = domain.basis( 'spline', degree=2 )
->>> cons = domain.boundary['left,top'].project( 0, onto=ns.basis, geometry=ns.x, ischeme='gauss4' )
+>>> domain, ns.x = mesh.rectilinear([4,4])
+>>> ns.basis = domain.basis('spline', degree=2)
+>>> cons = domain.boundary['left,top'].project(0, onto=ns.basis, geometry=ns.x, ischeme='gauss4')
 project > constrained 11/36 dofs, error 0.00e+00/area
 >>> ns.u = 'basis_n ?lhs_n'
 
@@ -40,7 +40,7 @@ the Poisson problem ``u_,kk = f`` we define the residual functional ``res = v,k
 u,k + v f`` and solve for ``res == 0`` using ``solve_linear``:
 
 >>> res = domain.integral('basis_n,i u_,i + basis_n' @ ns, geometry=ns.x, degree=2)
->>> lhs = solver.solve_linear( 'lhs', residual=res, constrain=cons )
+>>> lhs = solver.solve_linear('lhs', residual=res, constrain=cons)
 solve > solving system using sparse direct solver
 
 The coefficients ``lhs`` represent the solution to the Poisson problem.
@@ -117,10 +117,10 @@ class Integral:
   def __neg__(self):
     return Integral([di, -integrand] for di, integrand in self._integrands.items())
 
-  def __sub__( self, other ):
+  def __sub__(self, other):
     return self + (-other)
 
-  def __mul__( self, other ):
+  def __mul__(self, other):
     if not isinstance(other, numbers.Number):
       return NotImplemented
     return Integral([di, integrand * other] for di, integrand in self._integrands.items())
@@ -144,7 +144,7 @@ class Integral:
     return shape
 
 
-class ModelError( Exception ): pass
+class ModelError(Exception): pass
 
 
 def solve_linear(target, residual, constrain=None, *, arguments=None, **solveargs):
@@ -168,22 +168,22 @@ def solve_linear(target, residual, constrain=None, *, arguments=None, **solvearg
   vector
       Array of ``target`` values for which ``residual == 0``'''
 
-  jacobian = residual.derivative( target )
+  jacobian = residual.derivative(target)
   if jacobian.contains(target):
-    raise ModelError( 'problem is not linear' )
+    raise ModelError('problem is not linear')
   assert target not in (arguments or {}), '`target` should not be defined in `arguments`'
   argshape = residual._argshape(target)
   arguments = collections.ChainMap(arguments or {}, {target: numpy.zeros(argshape)})
   res, jac = Integral.multieval(residual, jacobian, arguments=arguments)
-  return jac.solve( -res, constrain=constrain, **solveargs )
+  return jac.solve(-res, constrain=constrain, **solveargs)
 
 
-def solve( gen_lhs_resnorm, tol=1e-10, maxiter=numpy.inf ):
+def solve(gen_lhs_resnorm, tol=1e-10, maxiter=numpy.inf):
   '''execute nonlinear solver
 
   Iterates over nonlinear solver until tolerance is reached. Example::
 
-      lhs = solve( newton( target, residual ), tol=1e-5 )
+      lhs = solve(newton(target, residual), tol=1e-5)
 
   Parameters
   ----------
@@ -206,40 +206,40 @@ def solve( gen_lhs_resnorm, tol=1e-10, maxiter=numpy.inf ):
     inewton = 0
     while resnorm > tol:
       if inewton >= maxiter:
-        raise ModelError( 'tolerance not reached in {} iterations'.format(maxiter) )
-      with log.context( 'iter {0} ({1:.0f}%)'.format( inewton, 100 * numpy.log(resnorm0/resnorm) / numpy.log(resnorm0/tol) ) ):
-        log.info( 'residual: {:.2e}'.format(resnorm) )
+        raise ModelError('tolerance not reached in {} iterations'.format(maxiter))
+      with log.context('iter {0} ({1:.0f}%)'.format(inewton, 100 * numpy.log(resnorm0/resnorm) / numpy.log(resnorm0/tol))):
+        log.info('residual: {:.2e}'.format(resnorm))
         lhs, resnorm = next(gen_lhs_resnorm)
       inewton += 1
   except StopIteration:
-    raise ModelError( 'generator stopped before reaching target tolerance' )
+    raise ModelError('generator stopped before reaching target tolerance')
   else:
-    log.info( 'tolerance reached in {} iterations with residual {:.2e}'.format(inewton, resnorm) )
+    log.info('tolerance reached in {} iterations with residual {:.2e}'.format(inewton, resnorm))
     return lhs
 
 
-def withsolve( f ):
+def withsolve(f):
   '''add a .solve method to (lhs,resnorm) iterators
 
   Introduces the convenient form::
 
-      newton( target, residual ).solve( tol )
+      newton(target, residual).solve(tol)
 
   Shorthand for::
 
-      solve( newton( target, residual ), tol )
+      solve(newton(target, residual), tol)
   '''
 
-  @functools.wraps( f, updated=() )
+  @functools.wraps(f, updated=())
   class wrapper:
-    def __init__( self, *args, **kwargs ):
-      self.iter = f( *args, **kwargs )
-    def __next__( self ):
-      return next( self.iter )
-    def __iter__( self ):
+    def __init__(self, *args, **kwargs):
+      self.iter = f(*args, **kwargs)
+    def __next__(self):
+      return next(self.iter)
+    def __iter__(self):
       return self.iter
-    def solve( self, *args, **kwargs ):
-      return solve( self.iter, *args, **kwargs )
+    def solve(self, *args, **kwargs):
+      return solve(self.iter, *args, **kwargs)
   return wrapper
 
 
@@ -254,7 +254,7 @@ def newton(target, residual, jacobian=None, lhs0=None, constrain=None, nrelax=nu
   An optimal relaxation value is computed based on the following cubic
   assumption::
 
-      | res( lhs + r * dlhs ) |^2 = A + B * r + C * r^2 + D * r^3
+      | res(lhs + r * dlhs) |^2 = A + B * r + C * r^2 + D * r^3
 
   where ``A``, ``B``, ``C`` and ``D`` are determined based on the current and
   updated residual and tangent.
@@ -315,11 +315,11 @@ def newton(target, residual, jacobian=None, lhs0=None, constrain=None, nrelax=nu
     jacobian = residual.derivative(target)
 
   if not jacobian.contains(target):
-    log.info( 'problem is linear' )
+    log.info('problem is linear')
     res, jac = Integral.multieval(residual, jacobian, arguments=collections.ChainMap(arguments or {}, {target: numpy.zeros(argshape)}))
     cons = lhs0.copy()
     cons[~constrain] = numpy.nan
-    lhs = jac.solve( -res, constrain=cons, **solveargs )
+    lhs = jac.solve(-res, constrain=cons, **solveargs)
     yield lhs, 0
     return
 
@@ -330,43 +330,43 @@ def newton(target, residual, jacobian=None, lhs0=None, constrain=None, nrelax=nu
   zcons[~constrain] = numpy.nan
   relax = 1
   while True:
-    resnorm = numpy.linalg.norm( res[~constrain] )
+    resnorm = numpy.linalg.norm(res[~constrain])
     yield lhs, resnorm
-    dlhs = -jac.solve( res, constrain=zcons, **solveargs )
-    relax = min( relax * rebound, 1 )
+    dlhs = -jac.solve(res, constrain=zcons, **solveargs)
+    relax = min(relax * rebound, 1)
     for irelax in itertools.count():
       res, jac = Integral.multieval(residual, jacobian, fcache=fcache, arguments=collections.ChainMap(arguments or {}, {target: lhs+relax*dlhs}))
-      newresnorm = numpy.linalg.norm( res[~constrain] )
+      newresnorm = numpy.linalg.norm(res[~constrain])
       if irelax >= nrelax:
         if newresnorm > resnorm:
-          log.warning( 'failed to decrease residual' )
+          log.warning('failed to decrease residual')
           return
         break
-      if not numpy.isfinite( newresnorm ):
-        log.info( 'failed to evaluate residual ({})'.format( newresnorm ) )
+      if not numpy.isfinite(newresnorm):
+        log.info('failed to evaluate residual ({})'.format(newresnorm))
         newrelax = 0 # replaced by minrelax later
       else:
         r0 = resnorm**2
         d0 = -2 * r0
         r1 = newresnorm**2
-        d1 = 2 * numpy.dot( jac.matvec(dlhs)[~constrain], res[~constrain] )
-        log.info( 'line search: 0[{}]{} {}creased by {:.0f}%'.format( '---+++' if d1 > 0 else '--++--' if r1 > r0 else '------', round(relax,5), 'in' if newresnorm > resnorm else 'de', 100*abs(newresnorm/resnorm-1) ) )
+        d1 = 2 * numpy.dot(jac.matvec(dlhs)[~constrain], res[~constrain])
+        log.info('line search: 0[{}]{} {}creased by {:.0f}%'.format('---+++' if d1 > 0 else '--++--' if r1 > r0 else '------', round(relax,5), 'in' if newresnorm > resnorm else 'de', 100*abs(newresnorm/resnorm-1)))
         if r1 <= r0 and d1 <= 0:
           break
         D = 2*r0 - 2*r1 + d0 + d1
         if D > 0:
           C = 3*r1 - 3*r0 - 2*d0 - d1
-          newrelax = ( numpy.sqrt(C**2-3*d0*D) - C ) / (3*D)
-          log.info( 'minimum based on 3rd order estimation: {:.3f}'.format(newrelax) )
+          newrelax = (numpy.sqrt(C**2-3*d0*D) - C) / (3*D)
+          log.info('minimum based on 3rd order estimation: {:.3f}'.format(newrelax))
         else:
           C = r1 - r0 - d0
           # r1 > r0 => C > 0
           # d1 > 0  => C = r1 - r0 - d0/2 - d0/2 > r1 - r0 - d0/2 - d1/2 = -D/2 > 0
           newrelax = -.5 * d0 / C
-          log.info( 'minimum based on 2nd order estimation: {:.3f}'.format(newrelax) )
+          log.info('minimum based on 2nd order estimation: {:.3f}'.format(newrelax))
         if newrelax > maxrelax:
           break
-      relax *= max( newrelax, minrelax )
+      relax *= max(newrelax, minrelax)
     lhs += relax * dlhs
 
 
@@ -406,8 +406,8 @@ def pseudotime(target, residual, inertia, timestep, lhs0, residual0=None, constr
 
   assert target not in (arguments or {}), '`target` should not be defined in `arguments`'
 
-  jacobian0 = residual.derivative( target )
-  jacobiant = inertia.derivative( target )
+  jacobian0 = residual.derivative(target)
+  jacobiant = inertia.derivative(target)
   if residual0 is not None:
     residual += residual0
 
@@ -426,14 +426,14 @@ def pseudotime(target, residual, inertia, timestep, lhs0, residual0=None, constr
   lhs = lhs0.copy()
   fcache = cache.WrapperCache()
   res, jac = Integral.multieval(residual, jacobian0+jacobiant/timestep, fcache=fcache, arguments=collections.ChainMap(arguments or {}, {target: lhs}))
-  resnorm = resnorm0 = numpy.linalg.norm( res[~constrain] )
+  resnorm = resnorm0 = numpy.linalg.norm(res[~constrain])
   while True:
     yield lhs, resnorm
-    lhs -= jac.solve( res, constrain=zcons, **solveargs )
+    lhs -= jac.solve(res, constrain=zcons, **solveargs)
     thistimestep = timestep * (resnorm0/resnorm)
-    log.info( 'timestep: {:.0e}'.format(thistimestep) )
+    log.info('timestep: {:.0e}'.format(thistimestep))
     res, jac = Integral.multieval(residual, jacobian0+jacobiant/thistimestep, fcache=fcache, arguments=collections.ChainMap(arguments or {}, {target: lhs}))
-    resnorm = numpy.linalg.norm( res[~constrain] )
+    resnorm = numpy.linalg.norm(res[~constrain])
 
 
 def thetamethod(target, residual, inertia, timestep, lhs0, theta, target0='_thetamethod_target0', constrain=None, newtontol=1e-10, *, arguments=None, **newtonargs):

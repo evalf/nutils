@@ -26,32 +26,32 @@ import numpy, numbers, builtins, collections.abc
 
 _abc = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' # indices for einsum
 
-def round( arr ):
-  return numpy.round( arr ).astype( int )
+def round(arr):
+  return numpy.round(arr).astype(int)
 
-def sign( arr ):
-  return numpy.sign( arr ).astype( int )
+def sign(arr):
+  return numpy.sign(arr).astype(int)
 
-def floor( arr ):
-  return numpy.floor( arr ).astype( int )
+def floor(arr):
+  return numpy.floor(arr).astype(int)
 
-def ceil( arr ):
-  return numpy.ceil( arr ).astype( int )
+def ceil(arr):
+  return numpy.ceil(arr).astype(int)
 
-def overlapping( arr, axis=-1, n=2 ):
+def overlapping(arr, axis=-1, n=2):
   'reinterpret data with overlaps'
 
-  arr = numpy.asarray( arr )
+  arr = numpy.asarray(arr)
   if axis < 0:
     axis += arr.ndim
   assert 0 <= axis < arr.ndim
   shape = arr.shape[:axis] + (arr.shape[axis]-n+1,n) + arr.shape[axis+1:]
   strides = arr.strides[:axis] + (arr.strides[axis],arr.strides[axis]) + arr.strides[axis+1:]
-  overlapping = numpy.lib.stride_tricks.as_strided( arr, shape, strides )
+  overlapping = numpy.lib.stride_tricks.as_strided(arr, shape, strides)
   overlapping.flags.writeable = False
   return overlapping
 
-def normdim( ndim, n ):
+def normdim(ndim, n):
   'check bounds and make positive'
 
   assert isint(ndim) and ndim >= 0, 'ndim must be positive integer, got {}'.format(ndim)
@@ -60,36 +60,36 @@ def normdim( ndim, n ):
   assert 0 <= n < ndim, 'argument out of bounds: {} not in [0,{})'.format(n, ndim)
   return n
 
-def get( arr, axis, item ):
+def get(arr, axis, item):
   'take single item from array axis'
 
-  arr = numpy.asarray( arr )
-  axis = normdim( arr.ndim, axis )
-  return arr[ (slice(None),) * axis + (item,) ]
+  arr = numpy.asarray(arr)
+  axis = normdim(arr.ndim, axis)
+  return arr[(slice(None),) * axis + (item,)]
 
-def contract( A, B, axis=-1 ):
+def contract(A, B, axis=-1):
   'contract'
 
-  A = numpy.asarray( A )
-  B = numpy.asarray( B )
+  A = numpy.asarray(A)
+  B = numpy.asarray(B)
 
-  maxdim = max( A.ndim, B.ndim )
+  maxdim = max(A.ndim, B.ndim)
   m = _abc[maxdim-A.ndim:maxdim]
   n = _abc[maxdim-B.ndim:maxdim]
 
-  axes = sorted( [ normdim(maxdim,axis) ] if isinstance(axis,int) else [ normdim(maxdim,ax) for ax in axis ] )
-  o = _abc[:maxdim-len(axes)] if axes == range( maxdim-len(axes), maxdim ) \
-    else ''.join( _abc[a+1:b] for a, b in zip( [-1]+axes, axes+[maxdim] ) if a+1 != b )
+  axes = sorted([normdim(maxdim,axis)] if isinstance(axis,int) else [normdim(maxdim,ax) for ax in axis])
+  o = _abc[:maxdim-len(axes)] if axes == range(maxdim-len(axes), maxdim) \
+    else ''.join(_abc[a+1:b] for a, b in zip([-1]+axes, axes+[maxdim]) if a+1 != b)
 
   return numpy.einsum('{},{}->{}'.format(m,n,o), A, B, optimize=False)
 
-def dot( A, B, axis=-1 ):
+def dot(A, B, axis=-1):
   '''Transform axis of A by contraction with first axis of B and inserting
      remaining axes. Note: with default axis=-1 this leads to multiplication of
      vectors and matrices following linear algebra conventions.'''
 
-  A = numpy.asarray( A )
-  B = numpy.asarray( B )
+  A = numpy.asarray(A)
+  B = numpy.asarray(B)
 
   m = _abc[:A.ndim]
   x = _abc[A.ndim:A.ndim+B.ndim-1]
@@ -100,15 +100,15 @@ def dot( A, B, axis=-1 ):
 
   return numpy.einsum('{},{}->{}'.format(m,n,o), A, B, optimize=False)
 
-def meshgrid( *args ):
+def meshgrid(*args):
   'multi-dimensional meshgrid generalisation'
 
-  args = [ numpy.asarray(arg) for arg in args ]
-  shape = [ len(args) ] + [ arg.size for arg in args if arg.ndim ]
-  dtype = int if all( isintarray(a) for a in args ) else float
-  grid = numpy.empty( shape, dtype=dtype )
+  args = [numpy.asarray(arg) for arg in args]
+  shape = [len(args)] + [arg.size for arg in args if arg.ndim]
+  dtype = int if all(isintarray(a) for a in args) else float
+  grid = numpy.empty(shape, dtype=dtype)
   n = len(shape)-1
-  for i, arg in enumerate( args ):
+  for i, arg in enumerate(args):
     if arg.ndim:
       n -= 1
       grid[i] = arg[(slice(None),)+(numpy.newaxis,)*n]
@@ -117,19 +117,19 @@ def meshgrid( *args ):
   assert n == 0
   return grid
 
-def takediag( A, axis=-2, rmaxis=-1 ):
+def takediag(A, axis=-2, rmaxis=-1):
   axis = normdim(A.ndim, axis)
   rmaxis = normdim(A.ndim, rmaxis)
   assert axis < rmaxis
   fmt = _abc[:rmaxis] + _abc[axis] + _abc[rmaxis:A.ndim-1] + '->' + _abc[:A.ndim-1]
   return numpy.einsum(fmt, A, optimize=False)
 
-def normalize( A, axis=-1 ):
+def normalize(A, axis=-1):
   'devide by normal'
 
-  s = [ slice(None) ] * A.ndim
+  s = [slice(None)] * A.ndim
   s[axis] = numpy.newaxis
-  return A / numpy.linalg.norm( A, axis=axis )[ tuple(s) ]
+  return A / numpy.linalg.norm(A, axis=axis)[tuple(s)]
 
 def diagonalize(arg, axis=-1, newaxis=-1):
   'insert newaxis, place axis on diagonal of axis and newaxis'
@@ -143,28 +143,28 @@ def diagonalize(arg, axis=-1, newaxis=-1):
   diag[:] = arg
   return diagonalized
 
-def eig( A ):
+def eig(A):
   '''If A has repeated eigenvalues, numpy.linalg.eig sometimes fails to produce
   the complete eigenbasis. This function aims to fix that by identifying the
   problem and completing the basis where necessary.'''
 
-  L, V = numpy.linalg.eig( A )
+  L, V = numpy.linalg.eig(A)
 
   # check repeated eigenvalues
-  for index in numpy.ndindex( A.shape[:-2] ):
-    unique, inverse = numpy.unique( L[index], return_inverse=True )
+  for index in numpy.ndindex(A.shape[:-2]):
+    unique, inverse = numpy.unique(L[index], return_inverse=True)
     if len(unique) < len(inverse): # have repeated eigenvalues
-      repeated, = numpy.where( numpy.bincount(inverse) > 1 )
+      repeated, = numpy.where(numpy.bincount(inverse) > 1)
       vectors = V[index].T
       for i in repeated: # indices pointing into unique corresponding to repeated eigenvalues
-        where, = numpy.where( inverse == i ) # corresponding eigenvectors
+        where, = numpy.where(inverse == i) # corresponding eigenvectors
         for j, n in enumerate(where):
           W = vectors[where[:j]]
-          vectors[n] -= numpy.dot( numpy.dot( W, vectors[n] ), W ) # gram schmidt orthonormalization
+          vectors[n] -= numpy.dot(numpy.dot(W, vectors[n]), W) # gram schmidt orthonormalization
           scale = numpy.linalg.norm(vectors[n])
           if scale < 1e-8: # vectors are near linearly dependent
-            u, s, vh = numpy.linalg.svd( A[index] - unique[i] * numpy.eye(len(inverse)) )
-            nnz = numpy.argsort( abs(s) )[:len(where)]
+            u, s, vh = numpy.linalg.svd(A[index] - unique[i] * numpy.eye(len(inverse)))
+            nnz = numpy.argsort(abs(s))[:len(where)]
             vectors[where] = vh[nnz].conj()
             break
           vectors[n] /= scale
@@ -179,23 +179,23 @@ isnumber = lambda a: isinstance(a, (numbers.Number,numpy.generic))
 isintarray = lambda a: isarray(a) and numpy.issubdtype(a.dtype, numpy.integer)
 asobjvector = lambda v: numpy.array((None,)+tuple(v), dtype=object)[1:] # 'None' prevents interpretation of objects as axes
 
-def blockdiag( args ):
-  args = [ numpy.asarray(arg) for arg in args ]
-  args = [ arg[numpy.newaxis,numpy.newaxis] if arg.ndim == 0 else arg for arg in args ]
-  assert all( arg.ndim == 2 for arg in args )
-  shapes = numpy.array([ arg.shape for arg in args ])
-  blockdiag = numpy.zeros( shapes.sum(0) )
-  for arg, (i,j) in zip( args, shapes.cumsum(0) ):
-    blockdiag[ i-arg.shape[0]:i, j-arg.shape[1]:j ] = arg
+def blockdiag(args):
+  args = [numpy.asarray(arg) for arg in args]
+  args = [arg[numpy.newaxis,numpy.newaxis] if arg.ndim == 0 else arg for arg in args]
+  assert all(arg.ndim == 2 for arg in args)
+  shapes = numpy.array([arg.shape for arg in args])
+  blockdiag = numpy.zeros(shapes.sum(0))
+  for arg, (i,j) in zip(args, shapes.cumsum(0)):
+    blockdiag[i-arg.shape[0]:i, j-arg.shape[1]:j] = arg
   return blockdiag
 
-def nanjoin( args, axis=0 ):
-  args = [ numpy.asarray(arg) for arg in args ]
+def nanjoin(args, axis=0):
+  args = [numpy.asarray(arg) for arg in args]
   assert args
   assert axis >= 0
-  shape = list( args[0].shape )
-  shape[axis] = sum( arg.shape[axis] for arg in args ) + len(args) - 1
-  concat = numpy.empty( shape, dtype=float )
+  shape = list(args[0].shape)
+  shape[axis] = sum(arg.shape[axis] for arg in args) + len(args) - 1
+  concat = numpy.empty(shape, dtype=float)
   concat[:] = numpy.nan
   i = 0
   for arg in args:
@@ -204,33 +204,33 @@ def nanjoin( args, axis=0 ):
     i = j + 1
   return concat
 
-def ix( args ):
+def ix(args):
   'version of :func:`numpy.ix_` that allows for scalars'
-  args = tuple( numpy.asarray(arg) for arg in args )
-  assert all( 0 <= arg.ndim <= 1 for arg in args )
-  idims = numpy.cumsum( [0] + [ arg.ndim for arg in args ] )
+  args = tuple(numpy.asarray(arg) for arg in args)
+  assert all(0 <= arg.ndim <= 1 for arg in args)
+  idims = numpy.cumsum([0] + [arg.ndim for arg in args])
   ndims = idims[-1]
-  return [ arg.reshape((1,)*idim+(arg.size,)+(1,)*(ndims-idim-1)) for idim, arg in zip( idims, args ) ]
+  return [arg.reshape((1,)*idim+(arg.size,)+(1,)*(ndims-idim-1)) for idim, arg in zip(idims, args)]
 
-def kronecker( arr, axis, length, pos ):
-  axis = normdim( arr.ndim+1, axis )
-  kron = numpy.zeros( arr.shape[:axis]+(length,)+arr.shape[axis:], arr.dtype )
-  kron[ (slice(None),)*axis + (pos,) ] = arr
+def kronecker(arr, axis, length, pos):
+  axis = normdim(arr.ndim+1, axis)
+  kron = numpy.zeros(arr.shape[:axis]+(length,)+arr.shape[axis:], arr.dtype)
+  kron[(slice(None),)*axis + (pos,)] = arr
   return kron
 
 class Broadcast1D:
-  def __init__( self, arg ):
-    self.arg = numpy.asarray( arg )
+  def __init__(self, arg):
+    self.arg = numpy.asarray(arg)
     self.shape = self.arg.shape
     self.size = self.arg.size
-  def __iter__( self ):
-    return ( (item,) for item in self.arg.flat )
+  def __iter__(self):
+    return ((item,) for item in self.arg.flat)
 
-broadcast = lambda *args: numpy.broadcast( *args ) if len(args) > 1 else Broadcast1D( args[0] )
+broadcast = lambda *args: numpy.broadcast(*args) if len(args) > 1 else Broadcast1D(args[0])
 
-def det_exact( A ):
+def det_exact(A):
   # for some reason, numpy.linalg.det suffers from rounding errors
-  A = numpy.asarray( A )
+  A = numpy.asarray(A)
   assert A.ndim == 2 and A.shape[0] == A.shape[1]
   if len(A) == 0:
     det = 1.
@@ -243,17 +243,17 @@ def det_exact( A ):
     ((a,b,c),(d,e,f),(g,h,i)) = A
     det = a*e*i + b*f*g + c*d*h - c*e*g - b*d*i - a*f*h
   else:
-    raise NotImplementedError( 'shape=' + str(A.shape) )
+    raise NotImplementedError('shape=' + str(A.shape))
   return det
 
-def ext( A ):
+def ext(A):
   """Exterior
   For array of shape (n,n-1) return n-vector ex such that ex.array = 0 and
   det(arr;ex) = ex.ex"""
   A = numpy.asarray(A)
   assert A.ndim == 2 and A.shape[0] == A.shape[1]+1
   if len(A) == 1:
-    ext = numpy.ones( 1 )
+    ext = numpy.ones(1)
   elif len(A) == 2:
     ((a,),(b,)) = A
     ext = numpy.array((b,-a))
@@ -264,12 +264,12 @@ def ext( A ):
     raise NotImplementedError('shape={}'.format(A.shape))
   return ext
 
-def power( a, b ):
-  a = numpy.asarray( a )
-  b = numpy.asarray( b )
+def power(a, b):
+  a = numpy.asarray(a)
+  b = numpy.asarray(b)
   if a.dtype == int and b.dtype == int:
-    b = b.astype( float )
-  return numpy.power( a, b )
+    b = b.astype(float)
+  return numpy.power(a, b)
 
 def serialized(array, nsig, ndec):
   if array.ndim > 0:

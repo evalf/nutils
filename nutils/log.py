@@ -517,7 +517,7 @@ def count( title, start=0, step=1 ):
   for item in itertools.count(start,step):
     with _current_log.context( '{} {}'.format( title, item ) ):
       yield item
-    
+
 def title( f ): # decorator
   '''Decorator, adds title argument with default value equal to the name of the
   decorated function, unless argument already exists. The title value is used
