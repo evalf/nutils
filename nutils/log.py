@@ -27,9 +27,6 @@ stdout as well as to an html formatted log file if so configured.
 import time, warnings, functools, itertools, re, abc, contextlib, html, urllib.parse, os, json, traceback, bdb, inspect, textwrap, builtins
 from . import core, config
 
-warnings.showwarning = lambda message, category, filename, lineno, *args: \
-  warning( '%s: %s\n  In %s:%d' % ( category.__name__, message, filename, lineno ) )
-
 # NOTE: This should match the log levels defined in `nutils/_log/viewer.js`.
 LEVELS = 'error', 'warning', 'user', 'info', 'debug'
 
