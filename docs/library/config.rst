@@ -1,4 +1,4 @@
 Config
 ======
 
-.. autoclass:: nutils.config
+.. automodule:: nutils.config
