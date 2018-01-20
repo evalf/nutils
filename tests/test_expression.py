@@ -303,6 +303,12 @@ class parse(TestCase):
       "1 + 1_ii + 1", "",
       "    ^^^^")
 
+  def test_const_index_pos(self):
+    self.assert_syntax_error(
+      "Length of axis cannot be determined from the expression.",
+      "1_i", "i",
+      "  ^")
+
   # NEG
 
   def test_neg_no_whitspace(self): self.assert_ast('-a2_i', 'i', ('neg', v._a2))
@@ -525,6 +531,18 @@ class parse(TestCase):
       "1 + a3_j ?arg_j + 1", "",
       "    ^^^^^^^^^^^",
       {'arg': (2,)})
+
+  def test_arg_index_pos1(self):
+    self.assert_syntax_error(
+      "Length of axis cannot be determined from the expression.",
+      "?arg_n", "n",
+      "     ^")
+
+  def test_arg_index_pos2(self):
+    self.assert_syntax_error(
+      "Length of axis cannot be determined from the expression.",
+      "?foo_,?bar_n", "n",
+      "           ^")
 
   # SUBSTITUTE
 

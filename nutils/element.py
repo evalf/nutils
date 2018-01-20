@@ -262,11 +262,11 @@ class Reference( cache.Immutable ):
       else self.empty if numpy.less_equal(levels, 0).all() \
       else self.with_children( cref.trim( clevels, maxrefine-1, ndivisions )
             for cref, clevels in zip( self.child_refs, self.child_divide(levels,maxrefine) ) ) if maxrefine > 0 \
-      else self.slice(lambda vertices: numeric.dot(self._linear_bernstein.eval(_points=vertices), levels), ndivisions)
+      else self.slice(lambda vertices: numeric.dot(numeric.poly_eval(self._linear_bernstein[_], vertices), levels), ndivisions)
 
   @cache.property
   def _linear_bernstein(self):
-    return function.Polyval(self.get_poly_coeffs('bernstein', degree=1), function.POINTS, self.ndims)
+    return self.get_poly_coeffs('bernstein', degree=1)
 
   def slice( self, levelfunc, ndivisions ):
     # slice along levelset by recursing over dimensions
