@@ -176,6 +176,7 @@ def call(func, kwargs, scriptname, funcname=None):
       for base, relpath in relpaths:
         with open(os.path.join(base,'log.html'), 'w') as redirlog:
           print('<html><head>', file=redirlog)
+          print('<meta charset="UTF-8"/>', file=redirlog)
           print('<meta http-equiv="cache-control" content="max-age=0" />', file=redirlog)
           print('<meta http-equiv="cache-control" content="no-cache" />', file=redirlog)
           print('<meta http-equiv="expires" content="0" />', file=redirlog)
