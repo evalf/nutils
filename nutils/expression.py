@@ -207,7 +207,7 @@ class _Array:
     # TODO: assert is_valid_lhs_indices(index)
     if len(arrays) == 0:
       raise _IntermediateError('Cannot stack 0 arrays.')
-    if len(set(frozenset(array.indices) - { index } for array in arrays)) != 1:
+    if len(set(frozenset(array.indices) - {index} for array in arrays)) != 1:
       raise _IntermediateError(
         'Cannot stack arrays with unmatched indices (excluding the stack index {!r}): {}.'
         .format(index, ', '.join(array.indices for array in arrays)))
@@ -300,7 +300,7 @@ class _Array:
         continue
       if not isinstance(a, _Length) and not isinstance(b, _Length):
         raise _IntermediateError('Shapes at index {!r} differ: {}, {}.'.format(index, a, b))
-      groups.add(frozenset({ a, b }))
+      groups.add(frozenset({a, b}))
     linked_lengths = self._join_lengths(other, groups)
     return self._simplify_shape(linked_lengths), linked_lengths
 
@@ -452,7 +452,7 @@ class _Array:
         if length in group:
           break
       else:
-        linked_lengths |= frozenset({ frozenset({ length }) })
+        linked_lengths |= frozenset({frozenset({length})})
     return _Array(('append_axis', self.ast, _(length)), self.indices+index, self.shape+(length,), self.summed, linked_lengths)
 
   def transpose(self, indices):

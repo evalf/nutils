@@ -20,7 +20,7 @@ class gauss(TestCase):
       self.integrals = scipy.special.gamma(self.monomials+1.).prod(-1) / scipy.special.gamma(self.ndims+1+self.monomials.sum(-1))
 
   def test_degree(self):
-    for degree in range( 1, self.maxdegree+1 ):
+    for degree in range(1, self.maxdegree+1):
       with self.subTest(degree=degree):
         points, weights = self.ref.getischeme('gauss{}'.format(degree))
         for monomial, integral in zip(self.monomials, self.integrals):

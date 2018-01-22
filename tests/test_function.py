@@ -89,7 +89,7 @@ class check(TestCase):
     for ax1, ax2 in self.pairs:
       self.assertArrayAlmostEqual(decimal=15,
         desired=numeric.takediag(self.n_op_argsfun, ax1+1, ax2+1),
-        actual=function.takediag(self.op_args, ax1, ax2 ).simplified.eval(**self.evalargs))
+        actual=function.takediag(self.op_args, ax1, ax2).simplified.eval(**self.evalargs))
 
   def test_eig(self):
     if self.op_args.dtype == float:

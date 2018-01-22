@@ -16,7 +16,7 @@ forked > [1] user
 forked > [1] info
 exception > ValueError('test',)
   File "??", line ??, in ??
-    raise ValueError( 'test' )
+    raise ValueError('test')
 test.png
 nonexistent.png
 '''
@@ -30,7 +30,7 @@ forked > [1] warning
 forked > [1] user
 exception > ValueError('test',)
   File "??", line ??, in ??
-    raise ValueError( 'test' )
+    raise ValueError('test')
 '''
 
 log_rich_output = '''\
@@ -56,7 +56,7 @@ log_rich_output = '''\
 \033[K\033[1;30mexception\033[0m\r\
 \033[K\033[1;30mexception · \033[1;31mValueError(\'test\',)
   File "??", line ??, in ??
-    raise ValueError( \'test\' )\033[0m
+    raise ValueError(\'test\')\033[0m
 \033[K\033[1;30m\033[0mtest.png
 \033[K\033[1;30m\033[0mnonexistent.png
 \033[K'''
@@ -91,7 +91,7 @@ log_html = '''\
 <div class="context"><div class="title">exception</div><div class="children">
 <div class="item" data-loglevel="0">ValueError(&#x27;test&#x27;,)
   File &quot;??&quot;, line ??, in ??
-    raise ValueError( &#x27;test&#x27; )</div>
+    raise ValueError(&#x27;test&#x27;)</div>
 </div><div class="end"></div></div>
 <div class="item" data-loglevel="3"><a href="test.png" class="plot">test.png</a></div>
 <div class="item" data-loglevel="3">nonexistent.png</div>
@@ -115,35 +115,35 @@ c levels
 c exception
  e ValueError(&#x27;test&#x27;,)
  |   File &quot;??&quot;, line ??, in ??
- |     raise ValueError( &#x27;test&#x27; )
+ |     raise ValueError(&#x27;test&#x27;)
 i <a href="test.png" class="plot">test.png</a>
 i nonexistent.png
 '''
 
 def generate_log():
-  with nutils.log.context( 'iterator' ):
-    for i in nutils.log.iter( 'iter', 'abc' ):
-      nutils.log.info( i )
-  with nutils.log.context( 'empty' ):
-    with nutils.log.context( 'empty' ):
+  with nutils.log.context('iterator'):
+    for i in nutils.log.iter('iter', 'abc'):
+      nutils.log.info(i)
+  with nutils.log.context('empty'):
+    with nutils.log.context('empty'):
       pass
-  with nutils.log.context( 'levels' ):
-    for level in ( 'error', 'warning', 'user', 'info' ):
-      getattr( nutils.log, level )( level )
+  with nutils.log.context('levels'):
+    for level in ('error', 'warning', 'user', 'info'):
+      getattr(nutils.log, level)(level)
   nutils.parallel.procid = 1
-  with nutils.log.context( 'forked' ):
-    for level in ( 'error', 'warning', 'user', 'info' ):
-      getattr( nutils.log, level )( level )
+  with nutils.log.context('forked'):
+    for level in ('error', 'warning', 'user', 'info'):
+      getattr(nutils.log, level)(level)
   nutils.parallel.procid = None
-  with nutils.log.context( 'exception' ):
+  with nutils.log.context('exception'):
     nutils.log.error(
       "ValueError('test',)\n" \
       '  File "??", line ??, in ??\n' \
-      "    raise ValueError( 'test' )")
-  with nutils.core.open_in_outdir( 'test.png', 'w' ) as f:
+      "    raise ValueError('test')")
+  with nutils.core.open_in_outdir('test.png', 'w') as f:
     pass
-  nutils.log.info( 'test.png' )
-  nutils.log.info( 'nonexistent.png' )
+  nutils.log.info('test.png')
+  nutils.log.info('nonexistent.png')
 
 @parametrize
 class logoutput(ContextTestCase):
@@ -152,7 +152,7 @@ class logoutput(ContextTestCase):
     super().setUpContext(stack)
     self.outdir = stack.enter_context(tempfile.TemporaryDirectory())
     if self.progressfile == 'seekable':
-      self.progressfileobj = stack.enter_context(open(os.path.join(self.outdir, 'progress.json'), 'w' ))
+      self.progressfileobj = stack.enter_context(open(os.path.join(self.outdir, 'progress.json'), 'w'))
     elif self.progressfile == 'stream':
       self.progressfileobj = progressfile=io.StringIO()
     else:
