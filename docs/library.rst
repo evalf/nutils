@@ -31,3 +31,4 @@ What follows is an automatically generated API reference.
    library/cli
    library/solver
    library/transform
+   library/warnings
