@@ -62,7 +62,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'nutils'
-copyright = u'2014, Gertjan van Zwieten'
+copyright = u'2014, Evalf'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
@@ -217,7 +217,7 @@ latex_elements = {
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
   ('index', 'nutils.tex', u'nutils Documentation',
-   u'Gertjan van Zwieten', 'manual'),
+   u'Evalf', 'manual'),
 ]
 
 # The name of an image file (relative to this directory) to place at the top of
@@ -247,7 +247,7 @@ latex_documents = [
 # (source start file, name, description, authors, manual section).
 man_pages = [
     ('index', 'nutils', u'nutils Documentation',
-     [u'Gertjan van Zwieten'], 1)
+     [u'Evalf'], 1)
 ]
 
 # If true, show URL addresses after external links.
@@ -261,7 +261,7 @@ man_pages = [
 #  dir menu entry, description, category)
 texinfo_documents = [
   ('index', 'nutils', u'nutils Documentation',
-   u'Gertjan van Zwieten', 'nutils', 'One line description of project.',
+   u'Evalf', 'nutils', 'One line description of project.',
    'Miscellaneous'),
 ]
 
@@ -282,9 +282,9 @@ texinfo_documents = [
 
 # Bibliographic Dublin Core info.
 epub_title = u'nutils'
-epub_author = u'Gertjan van Zwieten'
-epub_publisher = u'Gertjan van Zwieten'
-epub_copyright = u'2014, Gertjan van Zwieten'
+epub_author = u'Evalf'
+epub_publisher = u'Evalf'
+epub_copyright = u'2014, Evalf'
 
 # The basename for the epub file. It defaults to the project name.
 #epub_basename = u'nutils'
