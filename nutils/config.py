@@ -65,21 +65,13 @@ class Config(types.ModuleType):
     if len(args) != 1:
       raise TypeError('{} takes 1 positional argument but {} were given'.format(args[0].__name__ if args else '__call__', len(args)))
     self, = args
-    EMPTY = object()
-    old = {}
+    old = self.__dict__.copy()
     try:
-      for k, new_v in data.items():
-        old_v = getattr(self, k, EMPTY)
-        if old_v is not new_v:
-          old[k] = old_v
-          object.__setattr__(self, k, new_v)
+      self.__dict__.update(data)
       yield
     finally:
-      for k, old_v in old.items():
-        if old_v is EMPTY:
-          object.__delattr__(self, k)
-        else:
-          object.__setattr__(self, k, old_v)
+      self.__dict__.clear()
+      self.__dict__.update(old)
 
   def __str__(self):
     return 'configuration: {}'.format(', '.join('{}={!r}'.format(k, v) for k, v in sorted(self.__dict__.items()) if not k.startswith('_')))
