@@ -26,7 +26,7 @@ solving linear systems. Matrices can be converted to numpy arrays via
 ``toarray`` or scipy matrices via ``toscipy``.
 """
 
-from . import util, numpy, log, numeric
+from . import util, numpy, log, numeric, warnings
 import functools
 
 
@@ -79,7 +79,7 @@ class Matrix( object ):
     return res
 
   def clone( self ):
-    warnings.warn( 'warning: arrays are immutable; clone returns self for backwards compatibility', DeprecationWarning )
+    warnings.deprecation('warning: arrays are immutable; clone returns self for backwards compatibility')
     return self
 
 class ScipyMatrix( Matrix ):

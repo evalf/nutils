@@ -24,8 +24,8 @@ backends. At this point `matplotlib <http://matplotlib.org/>`_ and `vtk
 <http://vtk.org>`_ are supported.
 """
 
-from . import numpy, log, config, core, cache, numeric, _
-import os, warnings, sys, subprocess
+from . import numpy, log, config, core, cache, numeric, warnings, _
+import os, sys, subprocess
 
 
 class BasePlot( object ):
