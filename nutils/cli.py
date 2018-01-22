@@ -25,7 +25,7 @@ python function based arguments specified on the command line.
 """
 
 from . import log, util, config, version, warnings
-import sys, inspect, os, datetime, pdb, signal, subprocess, contextlib, pathlib
+import sys, inspect, os, datetime, pdb, signal, subprocess, contextlib
 
 def _version():
   try:
@@ -69,54 +69,56 @@ def _sigint_handler( mysignal, frame ):
 def run(func, *, skip=1, loaduserconfig=True):
   '''parse command line arguments and call function'''
 
-  with contextlib.ExitStack() as stack:
+  configs = []
+  if loaduserconfig:
+    home = os.path.expanduser('~')
+    configs.append(dict(richoutput=sys.stdout.isatty()))
+    configs.extend(path for path in (os.path.join(home, '.config', 'nutils', 'config'), os.path.join(home, '.nutilsrc')) if os.path.isfile(path))
 
-    if loaduserconfig:
-      stack.enter_context(util.userconfig())
+  params = inspect.signature(func).parameters.values()
 
-    params = inspect.signature(func).parameters.values()
+  if '-h' in sys.argv[skip:] or '--help' in sys.argv[skip:]:
+    print('usage: {} (...)'.format(' '.join(sys.argv[:skip])))
+    print()
+    for param in params:
+      cls = param.default.__class__
+      print('  --{:<20}'.format(param.name + '=' + cls.__name__.upper() if cls != bool else '(no)' + param.name), end=' ')
+      if param.annotation != param.empty:
+        print(param.annotation, end=' ')
+      print('[{}]'.format(param.default))
+    sys.exit(1)
 
-    if '-h' in sys.argv[skip:] or '--help' in sys.argv[skip:]:
-      print('usage: {} (...)'.format(' '.join(sys.argv[:skip])))
-      print()
-      for param in params:
-        cls = param.default.__class__
-        print('  --{:<20}'.format(param.name + '=' + cls.__name__.upper() if cls != bool else '(no)' + param.name), end=' ')
-        if param.annotation != param.empty:
-          print(param.annotation, end=' ')
-        print('[{}]'.format(param.default))
-      sys.exit(1)
+  kwargs = {param.name: param.default for param in params}
+  cli_config = {}
 
-    kwargs = {param.name: param.default for param in params}
-    cli_config = {}
-
-    for arg in sys.argv[skip:]:
-      name, sep, value = arg.lstrip('-').partition('=')
-      if not sep:
-        value = not name.startswith('no')
-        if not value:
-          name = name[2:]
-      if name in kwargs:
-        default = kwargs[name]
-        args = kwargs
-      else:
-        try:
-          default = getattr(config, name)
-        except AttributeError:
-          print('invalid argument {!r}'.format(arg))
-          sys.exit(2)
-        args = cli_config
+  for arg in sys.argv[skip:]:
+    name, sep, value = arg.lstrip('-').partition('=')
+    if not sep:
+      value = not name.startswith('no')
+      if not value:
+        name = name[2:]
+    if name in kwargs:
+      default = kwargs[name]
+      args = kwargs
+    else:
       try:
-        if isinstance(default, bool) and not isinstance(value, bool):
-          raise Exception('boolean value should be specifiec as --{0}/--no{0}'.format(name))
-        args[name] = default.__class__(value)
-      except Exception as e:
-        print('invalid argument for {!r}: {}'.format(name, e))
+        default = getattr(config, name)
+      except AttributeError:
+        print('invalid argument {!r}'.format(arg))
         sys.exit(2)
+      args = cli_config
+    try:
+      if isinstance(default, bool) and not isinstance(value, bool):
+        raise Exception('boolean value should be specifiec as --{0}/--no{0}'.format(name))
+      args[name] = default.__class__(value)
+    except Exception as e:
+      print('invalid argument for {!r}: {}'.format(name, e))
+      sys.exit(2)
 
-    stack.enter_context(config(**cli_config))
+  with config(*configs, **cli_config):
     status = call(func, kwargs, scriptname=os.path.basename(sys.argv[0]), funcname=None if skip==1 else func.__name__)
-    sys.exit(status)
+
+  sys.exit(status)
 
 def choose(*functions, loaduserconfig=True):
   '''parse command line arguments and call one of multiple functions'''

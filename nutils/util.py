@@ -410,20 +410,4 @@ def single_or_multiple(f):
     return retvals
   return wrapped
 
-def userconfig():
-  settings = {}
-  settings['richoutput'] = sys.stdout.isatty()
-  for nutilsrc in pathlib.Path.home()/'.config'/'nutils'/'config', pathlib.Path.home()/'.nutilsrc':
-    if not nutilsrc.is_file():
-      continue
-    try:
-      with nutilsrc.open() as rc:
-        exec(rc.read(), {}, settings)
-    except:
-      exc_value, frames = sys.exc_info()
-      exc_str = '\n'.join( [ repr(exc_value) ] + [ str(f) for f in frames ] )
-      print( 'Skipping .nutilsrc: {}'.format(exc_str) )
-    break
-  return config(**settings)
-
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
