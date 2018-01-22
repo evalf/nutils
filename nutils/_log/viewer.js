@@ -559,18 +559,6 @@ const keydown_handler = function(ev) {
 }
 
 window.addEventListener('load', function() {
-  window.theater = new Theater();
-  window.log = new Log();
-
-  const state = window.history.state || {};
-
-  window.log.init_elements((state.log || {}).collapsed || {});
-
-  if (state.log && Number.isInteger(state.log.loglevel))
-    log.loglevel = state.log.loglevel;
-  else
-    log.loglevel = LEVELS.indexOf('user');
-
   const grid = create_element('div', {'class': 'key_description'});
   const _add_key_description = function(cls, keys, description, _key) {
     grid.appendChild(create_element('div', {'class': cls+' keys', events: {click: ev => { ev.stopPropagation(); ev.preventDefault(); window.dispatchEvent(new KeyboardEvent('keydown', {key: _key})); }}}, keys.join('+')));
@@ -608,13 +596,22 @@ window.addEventListener('load', function() {
       create_element('div', {'class': 'dropdown', events: {click: ev => { ev.stopPropagation(); ev.preventDefault(); }}},
         grid)),
     document.getElementById('log'));
-  document.body.appendChild(theater.root);
-  document.body.appendChild(create_element('div', {'class': 'dropdown-catchall', events: {click: ev => { document.body.classList.remove('droppeddown'); ev.stopPropagation(); ev.preventDefault(); }}}));
 
   window.addEventListener('keydown', keydown_handler);
   window.addEventListener('popstate', ev => apply_state(ev.state || {}));
   window.addEventListener('resize', ev => window.requestAnimationFrame(theater._update_overview_layout.bind(theater)));
 
+  window.theater = new Theater();
+  window.log = new Log();
+  document.body.appendChild(theater.root);
+  document.body.appendChild(create_element('div', {'class': 'dropdown-catchall', events: {click: ev => { document.body.classList.remove('droppeddown'); ev.stopPropagation(); ev.preventDefault(); }}}));
+
+  const state = window.history.state || {};
+  window.log.init_elements((state.log || {}).collapsed || {});
+  if (state.log && Number.isInteger(state.log.loglevel))
+    log.loglevel = state.log.loglevel;
+  else
+    log.loglevel = LEVELS.indexOf('user');
   apply_state(state);
   state_control = 'enabled';
 });
