@@ -20,6 +20,15 @@
 
 import types, contextlib, sys
 
+def load_rcfile(path):
+  settings = {}
+  try:
+    with open(path) as rc:
+      exec(rc.read(), {}, settings)
+  except Exception as e:
+    raise Exception('error loading config from {}'.format(path)) from e
+  return settings
+
 class Config(types.ModuleType):
   '''
   This module holds the Nutils global configuration, stored as (immutable)
@@ -62,12 +71,14 @@ class Config(types.ModuleType):
 
   @contextlib.contextmanager
   def __call__(*args, **data):
-    if len(args) != 1:
-      raise TypeError('{} takes 1 positional argument but {} were given'.format(args[0].__name__ if args else '__call__', len(args)))
-    self, = args
+    if len(args) < 1:
+      raise TypeError('__call__ takes at least 1 positional argument but none were given')
+    self, *configs = args
+    configs.append(data)
     old = self.__dict__.copy()
     try:
-      self.__dict__.update(data)
+      for config in configs:
+        self.__dict__.update(config if isinstance(config, dict) else load_rcfile(config))
       yield
     finally:
       self.__dict__.clear()
