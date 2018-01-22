@@ -294,6 +294,7 @@ class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
     self._print('<title>{}</title>'.format(html.escape(self._title)))
     self._print('<script src="viewer.js"></script>')
     self._print('<link rel="stylesheet" type="text/css" href="viewer.css"/>')
+    self._print('<link rel="icon" sizes="48x48" type="image/png" href="favicon.png"/>')
     body_attrs = ['body']
     if self._scriptname:
       body_attrs.append('data-scriptname="{}"'.format(html.escape(self._scriptname)))

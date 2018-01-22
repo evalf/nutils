@@ -69,6 +69,7 @@ log_html = '''\
 <title>test</title>
 <script src="viewer.js"></script>
 <link rel="stylesheet" type="text/css" href="viewer.css"/>
+<link rel="icon" sizes="48x48" type="image/png" href="favicon.png"/>
 </head><body>
 <div id="log">
 <div class="context"><div class="title">iterator</div><div class="children">

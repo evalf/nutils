@@ -1,0 +1,4 @@
+Warnings
+========
+
+.. automodule:: nutils.warnings

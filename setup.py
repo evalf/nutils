@@ -35,7 +35,7 @@ setup(
   name = 'nutils',
   version = version,
   description = 'Numerical Utilities',
-  author = 'Gertjan van Zwieten and others',
+  author = 'Evalf',
   author_email = 'info@nutils.org',
   url = 'http://nutils.org',
   packages = [ 'nutils' ],
