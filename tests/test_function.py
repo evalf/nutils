@@ -96,7 +96,7 @@ class check(TestCase):
       for ax1, ax2 in self.pairs:
         A = self.op_args.simplified.eval(**self.evalargs)
         L, V = function.eig(self.op_args, axes=(ax1,ax2)).simplified.eval(**self.evalargs)
-        self.assertArrayAlmostEqual(decimal=12,
+        self.assertArrayAlmostEqual(decimal=11,
           actual=(numpy.expand_dims(V,ax2+1) * numpy.expand_dims(L,ax2+2).swapaxes(ax1+1,ax2+2)).sum(ax2+2),
           desired=(numpy.expand_dims(A,ax2+1) * numpy.expand_dims(V,ax2+2).swapaxes(ax1+1,ax2+2)).sum(ax2+2))
 
