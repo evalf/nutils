@@ -141,8 +141,7 @@ class ContextTreeLog( ContextLog ):
     for title in self._context[self._printed_context:]:
       self._print_push_context( title )
       self._printed_context += 1
-    if text is not None:
-      self._print_item( level, text )
+    self._print_item( level, text )
 
   @abc.abstractmethod
   def _print_push_context( self, title ):
