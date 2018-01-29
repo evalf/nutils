@@ -446,6 +446,88 @@ class TeeLog( Log ):
     for log in self.logs:
       log.write( level, text )
 
+class RecordLog(Log):
+  '''
+  Log object that records log messages.  All messages are forwarded to the log
+  that whas active before activating this log (e.g. by ``with RecordLog() as
+  record:``).  The recorded messages can be replayed to the log that's
+  currently active by :meth:`replay`.
+
+  Typical usage is caching expensive operations::
+
+      # compute
+      with RecordLog() as record:
+        result = compute_something_expensive()
+      raw = pickle.dumps((record, result))
+      # reuse
+      record, result = pickle.loads(raw)
+      record.replay()
+
+  .. Note::
+     Instead of using :class:`RecordLog` and :mod:`pickle` manually, as in
+     above example, we advice to use :class:`nutils.cache.FileCache` instead.
+
+  .. Note::
+     Exceptions raised while in a :meth:`context` are not recorded.
+
+  .. Note::
+     Messages dispatched from forks (e.g. inside
+     :meth:`nutils.parallel.pariter`) are not recorded.
+  '''
+
+  def __init__(self):
+    # Replayable log messages.  Each entry is a tuple of `(cmd, *args)`, where
+    # `cmd` is either 'entercontext', 'exitcontext' or 'write'.  See
+    # `self.replay` below.
+    self._messages = []
+    # `self._contexts` is a list of entered context titles.  We keep track of
+    # the titles because we delay appending the 'entercontext' command until
+    # something (nonzero) is written to the log.  This is to exclude progress
+    # information.  The `self._appended_contexts` index tracks the number of
+    # contexts that we have appended to `self._messages`.
+    self._contexts = []
+    self._appended_contexts = 0
+    super().__init__()
+
+  @contextlib.contextmanager
+  def context(self, title):
+    self._contexts.append(title)
+    # We don't append 'entercontext' here.  See `self.__init__`.
+    try:
+      with self._old_log.context(title):
+        yield
+    finally:
+      self._contexts.pop()
+      if self._appended_contexts > len(self._contexts):
+        self._appended_contexts -= 1
+        self._messages.append(('exitcontext',))
+
+  def write(self, level, text):
+    self._old_log.write(level, text)
+    from . import parallel
+    if not parallel.procid:
+      # Append all currently entered contexts that have not been append yet
+      # before appending the 'write' entry.
+      for title in self._contexts[self._appended_contexts:]:
+        self._messages.append(('entercontext', title))
+      self._appended_contexts = len(self._contexts)
+      self._messages.append(('write', level, text))
+
+  def replay(self):
+    '''
+    Replay this recorded log in the log that's currently active.
+    '''
+    contexts = []
+    for cmd, *args in self._messages:
+      if cmd == 'entercontext':
+        context = _current_log.context(*args)
+        context.__enter__()
+        contexts.append(context)
+      elif cmd == 'exitcontext':
+        contexts.pop().__exit__(None, None, None)
+      elif cmd == 'write':
+        _current_log.write(*args)
+
 
 ## INTERNAL FUNCTIONS
 
