@@ -492,6 +492,8 @@ class SimplexReference(Reference):
 
   def _get_poly_coeffs_bernstein(self, degree):
     ndofs = self.get_ndofs(degree)
+    if self.ndims == 0:
+      return numpy.ones((ndofs,), dtype=int)
     coeffs = numpy.zeros((ndofs,)+(degree+1,)*self.ndims, dtype=int)
     for i, p in enumerate(self._integer_barycentric_coordinates(degree)):
       p = p[1:]
@@ -534,6 +536,12 @@ class PointReference(SimplexReference):
 
   def inside(self, point, eps=0):
     return True
+
+  def nvertices_by_level(self, n):
+    return 1
+
+  def child_divide(self, vals, n):
+    return vals,
 
 class LineReference(SimplexReference):
   '1D simplex'
