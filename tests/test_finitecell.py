@@ -46,11 +46,16 @@ class hierarchical(TestCase):
         plt.plot(x, y)
 
 
+@parametrize
 class trimmedboundary(TestCase):
 
   def setUp(self):
     super().setUp()
-    self.domain, self.geom = mesh.rectilinear([[0,1,2],[0,1,2]])
+    if self.boundary:
+      domain, self.geom = mesh.rectilinear([[0,1,2],[0,1,2],[0,1,2]])
+      self.domain = domain.boundary['front']
+    else:
+      self.domain, self.geom = mesh.rectilinear([[0,1,2],[0,1,2]])
     self.left = self.domain[:1].withboundary(leftbnd=...)
     self.leftbasis = self.left.basis('std', degree=1)
     self.right = self.domain[1:].withboundary(rightbnd=...)
@@ -71,6 +76,9 @@ class trimmedboundary(TestCase):
     self.assertTrue(numpy.any(left.elem_eval(function.opposite(self.rightbasis), ischeme='gauss1', separate=False)))
     with self.assertRaises(function.EvaluationError):
       left.elem_eval(self.rightbasis, ischeme='gauss1', separate=False)
+
+trimmedboundary('2darea', boundary=False)
+trimmedboundary('3dsurface', boundary=True)
 
 
 class specialcases_2d(TestCase):
@@ -158,7 +166,15 @@ class cutdomain(TestCase):
 
   def setUp(self):
     super().setUp()
-    self.domain, self.geom = mesh.rectilinear((numpy.linspace(0,1,self.nelems+1),)*self.ndims)
+    domain, geom = mesh.rectilinear((numpy.linspace(0,1,self.nelems+1),)*3)
+    if self.ndims == 3:
+      self.domain = domain
+      self.geom = geom
+    elif self.ndims == 2: # create a 3d boundary instead of a plain 2d domain for added complexity
+      self.domain = domain.boundary['back']
+      self.geom = geom[:2]
+    else:
+      raise Exception('invalid dimension: ndims={}'.format(self.ndims))
     self.radius = numpy.sqrt(.5)
     levelset = self.radius**2 - (self.geom**2).sum(-1)
     self.pos = self.domain.trim(levelset=levelset, maxrefine=self.maxrefine)
