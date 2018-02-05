@@ -24,7 +24,7 @@ can be used set up properties, initiate an output environment, and execute a
 python function based arguments specified on the command line.
 """
 
-from . import log, util, config, version, warnings
+from . import log, util, config, long_version, warnings
 import sys, inspect, os, datetime, pdb, signal, subprocess, contextlib
 
 def _version():
@@ -33,9 +33,9 @@ def _version():
     if subprocess.check_output(['git', 'status', '--untracked-files=no', '--porcelain'], stderr=subprocess.DEVNULL, cwd=os.path.dirname(__file__)):
       githash += '+'
   except:
-    return version
+    return long_version
   else:
-    return '{} (git:{})'.format(version, githash)
+    return '{} (git:{})'.format(long_version, githash)
 
 def _mkbox(*lines):
   width = max(len(line) for line in lines)
