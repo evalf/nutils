@@ -25,6 +25,8 @@ assert sys.version_info >= (3, 3)
 assert LooseVersion(numpy.version.version) >= LooseVersion('1.8'), 'nutils requires numpy 1.8 or higher, got {}'.format(numpy.version.version)
 
 version = '3.0b0'
+version_name = None
+long_version = ('{} "{}"' if version_name else '{}').format(version, version_name)
 
 _ = numpy.newaxis
 __all__ = ['_', 'numpy', 'core', 'numeric', 'element', 'function', 'expression',
