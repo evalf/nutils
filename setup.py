@@ -41,5 +41,6 @@ setup(
   packages = [ 'nutils' ],
   package_data = { 'nutils': ['_log/*'] },
   long_description = long_description,
+  license = 'MIT',
   **extra
 )
