@@ -387,7 +387,7 @@ const Theater = class {
     for (let nrows = 1; nrows <= nplots; nrows += 1) {
       const ncols = Math.ceil(nplots / nrows);
       const size = Math.min(screen_width*screen_width/(ncols*ncols)/plot_aspect, screen_height*screen_height/(nrows*nrows)*plot_aspect);
-      if (size >= optimal_size) {
+      if (size > optimal_size) {
         optimal_nrows = nrows;
         optimal_size = size;
       }
