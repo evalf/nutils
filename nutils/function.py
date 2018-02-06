@@ -414,7 +414,7 @@ def swapaxes(arg, axis1, axis2):
   trans[axis1], trans[axis2] = trans[axis2], trans[axis1]
   return transpose(arg, trans)
 
-asdtype = lambda arg: arg if arg in (bool, int, float) else {'f': float, 'i': int, 'b': bool}[numpy.dtype(arg).kind]
+asdtype = lambda arg: arg if any(arg is dtype for dtype in (bool, int, float)) else {'f': float, 'i': int, 'b': bool}[numpy.dtype(arg).kind]
 asarray = lambda arg: arg if isarray(arg) else Constant(arg) if numeric.isarray(arg) or numpy.asarray(arg).dtype != object else stack(arg, axis=0)
 asarrays = lambda args: tuple(asarray(arg) for arg in args)
 
