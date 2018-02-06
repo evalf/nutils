@@ -2075,8 +2075,7 @@ class HierarchicalTopology(Topology):
     assert not isinstance(basetopo, HierarchicalTopology)
     self.basetopo = basetopo
     self.allelements = tuple(allelements)
-    if precise:
-      self.elements = self.allelements
+    self._precise = precise
     super().__init__(basetopo.ndims)
 
   def getitem(self, item):
@@ -2087,6 +2086,8 @@ class HierarchicalTopology(Topology):
 
   @cache.property
   def elements(self):
+    if self._precise:
+      return self.allelements
     itemelems = []
     for elem in self.allelements:
       try:
