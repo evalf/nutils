@@ -222,7 +222,7 @@ const Log = class {
 
       anchor.id = `plot-${ianchor}`;
       ianchor += 1;
-      theater.add_plot(anchor.href, anchor.id, category, context.dataset.id, context.dataset.label + '/' + filename);
+      theater.add_plot(anchor.href, anchor.id, category, context.dataset.id, (context.dataset.label ? context.dataset.label + '/' : '') + filename);
     }
 
     // Make contexts clickable.
