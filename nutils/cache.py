@@ -40,10 +40,7 @@ def property(f):
       assert dictvalue is not _temp, 'attribute {!r} requested during construction'.format(_name)
       value = dictvalue if dictvalue is not _self else self
     return value
-  def property_setter(self, value):
-    assert _name not in self.__dict__, 'attempting to set attribute {!r} twice'.format(_name)
-    self.__dict__[_name] = value if value is not self else _self
-  return builtins.property(fget=property_getter, fset=property_setter)
+  return builtins.property(property_getter)
 
 class Wrapper:
   'function decorator that caches results by arguments'
