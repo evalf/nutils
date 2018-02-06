@@ -1170,6 +1170,13 @@ class Cross(Array):
     self.axis = axis
     super().__init__(args=(func1,func2), shape=func1.shape, dtype=_jointdtype(func1.dtype, func2.dtype))
 
+  @cache.property
+  def simplified(self):
+    i = numeric.const([1, 2, 0])
+    j = numeric.const([2, 0, 1])
+    return subtract(take(self.func1, i, self.axis) * take(self.func2, j, self.axis),
+                    take(self.func2, i, self.axis) * take(self.func1, j, self.axis)).simplified
+
   def evalf(self, a, b):
     assert a.ndim == b.ndim == self.ndim+1
     return numpy.cross(a, b, axis=self.axis+1)
