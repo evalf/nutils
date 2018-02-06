@@ -2296,12 +2296,14 @@ class Stack(Array):
         krons = Add([krons, kron]).simplified
       elif not iszero(func):
         funcs[ifunc] = func
-    if tuple(funcs) == self.funcs: # avoid recursion
-      assert iszero(krons)
-      return self
     if all(func is None for func in funcs):
       return krons
-    return Add([Stack(funcs, self.axis), krons]).simplified
+    if tuple(funcs) != self.funcs: # avoid recursion
+      return Add([Stack(funcs, self.axis), krons]).simplified
+    assert iszero(krons)
+    if all(func == funcs[0] for func in funcs[1:]):
+      return InsertAxis(funcs[0], self.axis, len(funcs))
+    return self
 
   def evalf(self, *funcs):
     shape = builtins.max(funcs, key=len).shape
