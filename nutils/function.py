@@ -3028,7 +3028,7 @@ def nsymgrad(arg, geom, ndims=0):
   return dotnorm(symgrad(arg, geom, ndims), geom)
 
 def expand_dims(arg, n):
-  return InsertAxis(arg, n, 1)
+  return InsertAxis(arg, numeric.normdim(arg.ndim+1, n), 1)
 
 def trignormal(angle):
   angle = asarray(angle)
