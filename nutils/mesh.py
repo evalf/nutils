@@ -373,8 +373,7 @@ def demo(xmin=0, xmax=1, ymin=0, ymax=1):
   topo = topology.UnstructuredTopology(2, elems)
 
   belems = [elem.edge(0) for elem in elems[:12]]
-  btopos = [topology.UnstructuredTopology(1, subbelems) for subbelems in (belems[0:3], belems[3:6], belems[6:9], belems[9:12])]
-  topo.boundary = topology.UnionTopology(btopos, ['top','left','bottom','right'])
+  topo = topo.withboundary(**{name: topology.UnstructuredTopology(1, subbelems) for name, subbelems in (('top',belems[0:3]), ('left',belems[3:6]), ('bottom',belems[6:9]), ('right',belems[9:12]))})
 
   geom = [.5*(xmin+xmax),.5*(ymin+ymax)] \
        + [.5*(xmax-xmin),.5*(ymax-ymin)] * function.rootcoords(2)
