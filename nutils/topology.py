@@ -36,7 +36,7 @@ out in element loops. For lower level operations topologies can be used as
 """
 
 from . import element, function, util, numpy, parallel, log, config, numeric, cache, transform, warnings, matrix, types, _
-import functools, collections.abc, itertools, functools, operator
+import functools, collections.abc, itertools, functools, operator, pathlib
 
 _identity = lambda x: x
 
@@ -1591,6 +1591,239 @@ class UnstructuredTopology(Topology):
     return self._basis_c0_structured('bernstein', degree)
 
   basis_std = basis_bernstein
+
+class GmshTopology(UnstructuredTopology):
+  'gmsh topology'
+
+  __slots__ = '_connectivity', '_points', 'bgroups', 'igroups', 'pgroups', 'vgroups', 'geom'
+
+  def _script_or_filename(arg):
+    if isinstance(arg, pathlib.Path):
+      with arg.open() as f:
+        return f.read()
+    elif isinstance(arg, str):
+      if arg.startswith('$MeshFormat'):
+        return arg
+      else:
+        with open(arg) as f:
+          return f.read()
+    else:
+      raise ValueError("expected the contents of a Gmsh MSH file (as 'str') or a filename (as 'str' or 'pathlib.Path') but got {!r}".format(arg))
+
+  @types.apply_annotations
+  def __init__(self, script:_script_or_filename, name:types.strictstr=None):
+
+    # split sections
+    sections = {}
+    lines = iter(script.splitlines())
+    for line in lines:
+      line = line.strip()
+      assert line[0]=='$'
+      sname = line[1:]
+      slines = []
+      for sline in lines:
+        sline = sline.strip()
+        if sline=='$End'+sname:
+          break
+        slines.append(sline)
+      sections[sname] = slines
+
+    # discard section MeshFormat
+    sections.pop('MeshFormat', None)
+
+    # parse section PhysicalNames
+    PhysicalNames = sections.pop('PhysicalNames', [0])
+    assert int(PhysicalNames[0]) == len(PhysicalNames)-1
+    tagmapbydim = {}, {}, {}, {} # tagid->tagname dictionary
+    for line in PhysicalNames[1:]:
+      nd, tagid, tagname = line.split(' ', 2)
+      nd = int(nd)
+      tagmapbydim[nd][int(tagid)] = tagname.strip('"')
+
+    # determine the dimension of the mesh
+    ndims = 2 if len(tagmapbydim[3])==0 else 3
+    if ndims==3 and len(tagmapbydim[1])>0:
+      raise NotImplementedError('Physical line groups are not supported in volumetric meshes')
+
+    # parse section Nodes
+    Nodes = sections.pop('Nodes')
+    assert int(Nodes[0]) == len(Nodes)-1
+    nodes = numpy.empty((len(Nodes)-1,3))
+    nodemap = {}
+    for i, line in enumerate(Nodes[1:]):
+      words = line.split()
+      nodemap[int(words[0])] = i
+      nodes[i] = [float(n) for n in words[1:]]
+    assert not numpy.isnan(nodes).any()
+    if ndims==2:
+      assert numpy.all(nodes[:,2]) == 0, 'Non-zero z-coordinates found in 2D mesh.'
+      nodes = nodes[:,:2]
+
+    # parse section Elements
+    Elements = sections.pop('Elements')
+    assert int(Elements[0]) == len(Elements)-1
+    inodesbydim = [],[],[],[] # nelems-list of 4-tuples of node numbers
+    etypesbydim = [],[],[],[]
+    tagnamesbydim = {},{},{},{} # tag->ielems dictionary
+    etype2nd = {15:0, 1:1, 2:2, 4:3, 8:1, 9:2}
+    etype2indices = {15:[0], 1:[0,1], 2:[0,1,2], 4:[0,1,2,3], 8:[0,2,1], 9:[0,3,1,5,4,2]}
+    for line in Elements[1:]:
+      words = line.split()
+      etype = int(words[1])
+      nd = etype2nd[etype]
+      ntags = int(words[2])
+      assert ntags >= 1
+      tagname = tagmapbydim[nd][int(words[3])]
+      inodes = tuple(nodemap[int(nodeid)] for nodeid in words[3+ntags:])
+      if not inodesbydim[nd] or inodesbydim[nd][-1] != inodes: # multiple tags are repeated in consecutive lines
+        inodesbydim[nd].append(inodes)
+        etypesbydim[nd].append(etype )
+      tagnamesbydim[nd].setdefault(tagname, []).append(len(inodesbydim[nd])-1)
+    inodesbydim = [numpy.array(e) if e else numpy.empty((0,nd), dtype=int) for nd, e in enumerate(inodesbydim)]
+    if tagnamesbydim[ndims]:
+      log.info('topology groups:', ', '.join('{} (#{})'.format(n,len(e)) for n, e in tagnamesbydim[ndims].items()))
+
+    # check orientation
+    vinodes = inodesbydim[ndims] # save for geom
+    elemnodes = nodes[vinodes] # nelems x ndims+1 x ndims
+    elemareas = numpy.linalg.det(elemnodes[:,1:ndims+1] - elemnodes[:,:1])
+    assert numpy.all(elemareas > 0)
+
+    vetype = etypesbydim[ndims][0]
+    assert all(etype==vetype for etype in etypesbydim[ndims]), 'all interior elements should be of the same element type'
+
+    # parse section Periodic
+    Periodic = sections.pop('Periodic', [0])
+    nperiodic = int(Periodic[0])
+    renumber = numpy.arange(len(nodes))
+    master = numpy.ones(len(nodes), dtype=bool)
+    n = 0
+    for line in Periodic[1:]:
+      words = line.split()
+      if len(words) == 1:
+        n = int(words[0]) # initialize for counting backwards
+      elif len(words) == 2:
+        islave = nodemap[int(words[0])]
+        imaster = nodemap[int(words[1])]
+        renumber[islave] = renumber[imaster]
+        master[islave] = False
+        n -= 1
+      else:
+        assert len(words) == 3 # discard content
+        assert n == 0 # check if batch of slave/master nodes matches announcement
+        nperiodic -= 1
+    assert nperiodic == 0 # check if number of periodic blocks matches announcement
+    assert n == 0 # check if last batch of slave/master nodes matches announcement
+    renumber = master.cumsum()[renumber]-1
+    inodesbydim = [renumber[e] for e in inodesbydim]
+
+    # warn about unused sections
+    for section in sections:
+      warnings.warn('section {!r} defined but not used'.format(section))
+
+    # create elements
+    simplexref = element.getsimplex(ndims)
+    elements = [element.Element(simplexref, [transform.MapTrans(linear=[[-1,-1],[1,0],[0,1]] if ndims==2 else [[-1,-1,-1],[1,0,0],[0,1,0],[0,0,1]], offset=[1,0,0] if ndims==2 else [1,0,0,0], vertices=inodes[:ndims+1] if not name else [name+str(inode) for inode in inodes[:ndims+1]])])
+      for ielem, inodes in log.enumerate('elem', inodesbydim[ndims])]
+    # create connectivity matrix
+    connectivity = -numpy.ones((len(inodesbydim[ndims]),ndims+1), dtype=int)
+    edges = {} # binodes->(ielem,iedge) dictionary
+    econn = [[1,2],[2,0],[0,1]] if ndims==2 else [[1,2,3],[0,3,2],[0,1,3],[0,2,1]] # consistent with simplex.edge_transforms
+    for ielem, inodes in log.enumerate('elem', inodesbydim[ndims]):
+      for iedge, binodes in enumerate([inodes[ec] for ec in econn]):
+        key = tuple(sorted(binodes))
+        try:
+          jelem, jedge = edges[key]
+        except KeyError:
+          edges[key] = ielem, iedge
+        else:
+          connectivity[ielem][iedge] = jelem
+          connectivity[jelem][jedge] = ielem
+
+    # separate boundary and interface elements by tag
+    tagsbelems = {}
+    tagsielems = {}
+    for name, ibelems in tagnamesbydim[ndims-1].items():
+      for ibelem in ibelems:
+        binodes = inodesbydim[ndims-1][ibelem][:ndims]
+        ielem, iedge = edges[tuple(sorted(binodes))]
+        elem = elements[ielem].edge(iedge)
+        ioppelem = connectivity[ielem][iedge]
+        if ioppelem == -1:
+          tagsbelems.setdefault(name, []).append(elem)
+        else:
+          ioppedge = tuple(connectivity[ioppelem]).index(ielem)
+          tagsielems.setdefault(name, []).append(elem.withopposite(elements[ioppelem].edge(ioppedge)))
+    if tagsbelems:
+      log.info('boundary groups:', ', '.join('{} (#{})'.format(n,len(e)) for n, e in tagsbelems.items()))
+    if tagsielems:
+      log.info('interface groups:', ', '.join('{} (#{})'.format(n,len(e)) for n, e in tagsielems.items()))
+
+    # create points topology and separate point elements by tag
+    tagspelems = {}
+    if tagnamesbydim[0]: # point gorups defined
+      pelems = {inodes[0]: [] for inodes in inodesbydim[0]}
+      pref = element.getsimplex(0)
+      for inodes, elem in zip(inodesbydim[ndims], elements):
+        for ivertex, inode in enumerate(inodes):
+          if inode in pelems:
+            offset = elem.reference.vertices[ivertex]
+            trans = elem.transform + (transform.Matrix(linear=numpy.zeros(shape=(ndims,0)), offset=offset),)
+            pelems[inode].append(element.Element(pref, trans))
+      for name, ipelems in tagnamesbydim[0].items():
+        tagspelems[name] = [pelem for ipelem in ipelems for inode in inodesbydim[0][ipelem] for pelem in pelems[inode]]
+      self._points = UnstructuredTopology(0, sum(pelems.values(), []))
+      log.info('points groups:', ', '.join('{} (#{})'.format(n,len(e)) for n, e in tagspelems.items()))
+    else:
+      self._points = None
+
+    # create boundary, interface, point, volume groups
+    self.bgroups={tagname: UnstructuredTopology(ndims-1, tagbelems) for tagname, tagbelems in tagsbelems.items()}
+    self.igroups={tagname: UnstructuredTopology(ndims-1, tagielems) for tagname, tagielems in tagsielems.items()}
+    self.pgroups={tagname: UnstructuredTopology(0, tagpelems) for tagname, tagpelems in tagspelems.items()}
+    self.vgroups = {}
+    for name, ielems in tagnamesbydim[ndims].items():
+      if len(ielems) == len(elements):
+        self.vgroups[name] = ...
+      elif ielems:
+        refs = numpy.array([None] * len(elements), dtype=object)
+        refs[ielems] = simplexref
+        self.vgroups[name] = tuple(refs)
+
+    super().__init__(ndims, elements)
+    self._connectivity = connectivity
+
+    # create geometry
+    dofs = tuple(map(types.frozenarray, vinodes[:,etype2indices[vetype]]))
+    coeffs = [simplexref.get_poly_coeffs('lagrange', degree=2 if vetype in (8,9) else 1)] * len(dofs)
+    basis = function.polyfunc(coeffs, dofs, len(nodes), (elem.transform for elem in elements), issorted=False)
+    self.geom = (basis[:,_] * nodes).sum(0)
+
+  @property
+  def connectivity(self):
+    return self._connectivity
+
+  def getitem(self, item):
+    if not isinstance(item, str):
+      return super().getitem(item)
+    try:
+      itemrefs = self.vgroups[item]
+    except KeyError:
+      return super().getitem(item)
+    else:
+      return SubsetTopology(self, itemrefs) if itemrefs else super().getitem(item)
+
+  @property
+  def boundary(self):
+    return super().boundary.withgroups(self.bgroups)
+
+  @property
+  def interfaces(self):
+    return super().interfaces.withgroups(self.igroups)
+
+  @property
+  def points(self):
+    return self._points.withgroups(self.pgroups)
 
 class UnionTopology(Topology):
   'grouped topology'
