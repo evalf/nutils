@@ -1367,13 +1367,6 @@ class Add(Array):
     func1, func2 = self.funcs
     return Add([Mask(func1, maskvec, axis), Mask(func2, maskvec, axis)])
 
-  def _multiply(self, other):
-    func1, func2 = self.funcs
-    try1 = func1._multiply(other)
-    try2 = func2._multiply(other)
-    if try1 is not None and try2 is not None:
-      return Add([try1, try2])
-
 class BlockAdd(Array):
   'block addition (used for DG)'
 
