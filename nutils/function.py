@@ -3055,7 +3055,8 @@ def insertaxis(arg, n, length):
   return InsertAxis(arg, n, length)
 
 def stack(args, axis=0):
-  return Stack(_numpy_align(*args), axis)
+  aligned = _numpy_align(*args)
+  return Stack(aligned, numeric.normdim(aligned[0].ndim+1, axis))
 
 def chain(funcs):
   'chain'
