@@ -30,25 +30,6 @@ from . import util, numpy, log, numeric, warnings
 import functools
 
 
-class MyCallback:
-
-  def __init__ (self, matrix, rhs, tol, callback):
-    self.matrix = matrix
-    self.rhs = rhs
-    self.norm = max(numpy.linalg.norm(rhs), 1) # scipy terminates on minimum of relative and absolute residual
-    self.niter = 0
-    self.tol = tol
-    self.callback = callback
-
-  def __call__(self, arg):
-    self.niter += 1
-    # some solvers provide the residual, others the left hand side vector
-    res = float(numpy.linalg.norm(self.rhs - self.matrix * arg) / self.norm if numpy.ndim(arg) == 1 else arg)
-    if self.callback:
-      self.callback(res)
-    with log.context('residual {:.2e} ({:.0f}%)'.format(res, 100. * numpy.log10(res) / numpy.log10(self.tol) if res > 0 else 0)):
-      pass
-
 class Matrix:
   'matrix base class'
 
@@ -153,11 +134,20 @@ class ScipyMatrix(Matrix):
       else:
         M = precon
       assert isinstance(M, scipy.sparse.linalg.LinearOperator)
-      mycallback = MyCallback(matrix=A, rhs=b, tol=tol, callback=callback)
+      norm = max(numpy.linalg.norm(b), 1) # scipy terminates on minimum of relative and absolute residual
+      niter = numpy.array(0)
+      def mycallback(arg):
+        niter[...] += 1
+        # some solvers provide the residual, others the left hand side vector
+        res = float(numpy.linalg.norm(b - A * arg) / norm if numpy.ndim(arg) == 1 else arg)
+        if callback:
+          callback(res)
+        with log.context('residual {:.2e} ({:.0f}%)'.format(res, 100. * numpy.log10(res) / numpy.log10(tol) if res > 0 else 0)):
+          pass
       x, status = solverfun(A, b, M=M, tol=tol, x0=x0, callback=mycallback, **solverargs)
       assert status == 0, '{} solver failed with status {}'.format(solver, status)
-      res = numpy.linalg.norm(b - A * x) / mycallback.norm
-      log.info('solver converged in {} iterations to residual {:.1e}'.format(mycallback.niter, res))
+      res = numpy.linalg.norm(b - A * x) / norm
+      log.info('solver converged in {} iterations to residual {:.1e}'.format(niter, res))
 
     lhs[J] = x
     return lhs
