@@ -198,6 +198,10 @@ class NumpyMatrix(Matrix):
   __div__ = lambda self, other: NumpyMatrix(self.core / other)
   T = property(lambda self: NumpyMatrix(self.core.T))
 
+  def rowsupp(self, tol=0):
+    'return row indices with nonzero/non-small entries'
+    return numpy.greater(abs(self.core), tol).any(axis=1)
+
   @log.title
   def solve(self, b=None, constrain=None, lconstrain=None, rconstrain=None, tol=0):
     'solve'
