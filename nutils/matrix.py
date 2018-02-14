@@ -26,8 +26,8 @@ solving linear systems. Matrices can be converted into other forms suitable for
 external processing via the ``export`` method.
 """
 
-from . import numpy, log, numeric, warnings
-import abc
+from . import numpy, log, numeric, warnings, cache, util
+import abc, sys, ctypes
 
 
 class Backend(metaclass=abc.ABCMeta):
@@ -365,6 +365,180 @@ else:
 
     def submatrix(self, rows, cols):
       return ScipyMatrix(self.core[rows,:][:,cols])
+
+
+## INTEL MKL BACKEND
+
+try:
+  libmkl = ctypes.CDLL({'linux': 'libmkl_rt.so', 'darwin': 'libmkl_rt.dylib', 'win32': 'mkl_rt.dll'}[sys.platform])
+except (OSError, KeyError):
+  pass
+else:
+
+  class c_array:
+    def __init__(self, dtype):
+      self.dtype = dtype
+    def __call__(self, obj):
+      if obj is not None:
+        if not isinstance(obj, numpy.ndarray):
+          obj = numpy.array(obj, dtype=self.dtype)
+        assert obj.flags.c_contiguous and obj.dtype == self.dtype
+        return obj.ctypes
+
+  # typedefs
+  c_int = c_array(numpy.int32)
+  c_long = c_array(numpy.int64)
+  c_double = c_array(numpy.float64)
+
+  class MKL(Backend):
+    '''matrix backend based on Intel's Math Kernel Library'''
+
+    def __init__(self):
+      libmkl.mkl_set_threading_layer(c_long(4)) # use Intel Threading Building Blocks instead op OpenMP
+
+    @staticmethod
+    def assemble(data, index, shape):
+      if len(shape) < 2:
+        return numeric.accumulate(data, index, shape)
+      if len(shape) == 2:
+        return MKLMatrix(data, index, shape)
+      raise Exception('{}d data not supported by scipy backend'.format(len(shape)))
+
+  class Pardiso:
+    '''simple wrapper for libmkl.pardiso
+
+    https://software.intel.com/en-us/mkl-developer-reference-c-pardiso
+    '''
+
+    _pardiso = libmkl.pardiso
+    _errorcodes = {
+      -1: 'input inconsistent',
+      -2: 'not enough memory',
+      -3: 'reordering problem',
+      -4: 'zero pivot, numerical factorization or iterative refinement problem',
+      -5: 'unclassified (internal) error',
+      -6: 'reordering failed (matrix types 11 and 13 only)',
+      -7: 'diagonal matrix is singular',
+      -8: '32-bit integer overflow problem',
+      -9: 'not enough memory for OOC',
+     -10: 'error opening OOC files',
+     -11: 'read/write error with OOC files',
+     -12: 'pardiso_64 called from 32-bit library',
+    }
+
+    class PardisoError(Exception):
+      pass
+
+    def __init__(self):
+      self.pt = numpy.zeros(64, numpy.int64) # handle to data structure
+
+    @util.enforcetypes
+    def __call__(self, *, phase:c_int, iparm:c_int, maxfct:c_int=1, mnum:c_int=1, mtype:c_int=0, n:c_int=0, a:c_double=None, ia:c_int=None, ja:c_int=None, perm:c_int=None, nrhs:c_int=0, msglvl:c_int=0, b:c_double=None, x:c_double=None):
+      error = ctypes.c_int32(1)
+      self._pardiso(self.pt.ctypes, maxfct, mnum, mtype, phase, n, a, ia, ja, perm, nrhs, iparm, msglvl, b, x, ctypes.byref(error))
+      if error.value:
+        raise self.PardisoError(self._errorcodes.get(error.value, 'unknown error {}'.format(error.value)))
+
+    def __del__(self):
+      if self.pt.any(): # release all internal memory for all matrices
+        self(phase=-1, iparm=numpy.zeros(64, dtype=numpy.int32))
+        assert not self.pt.any(), 'it appears that Pardiso failed to release its internal memory'
+
+  class MKLMatrix(Matrix):
+    '''matrix implementation based on sorted coo data'''
+
+    _factors = False
+
+    def __init__(self, data, index, shape):
+      assert index.shape == (2, len(data))
+      if len(data):
+        # sort rows, columns
+        reorder = numpy.lexsort(index[::-1])
+        index = index[:,reorder]
+        data = data[reorder]
+        # sum duplicate entries
+        keep = numpy.empty(len(reorder), dtype=bool)
+        keep[0] = True
+        numpy.not_equal(index[:,1:], index[:,:-1]).any(axis=0, out=keep[1:])
+        if not keep.all():
+          index = index[:,keep]
+          data = numeric.accumulate(data, [keep.cumsum()-1], [index.shape[1]])
+        if not data.all():
+          nz = data.astype(bool)
+          data = data[nz]
+          index = index[:,nz]
+      self.data = numpy.ascontiguousarray(data, dtype=numpy.float64)
+      self.index = numpy.ascontiguousarray(index, dtype=numpy.int32)
+      super().__init__(shape)
+
+    @cache.property
+    def indptr(self):
+      return self.index[0].searchsorted(numpy.arange(self.shape[0]+1)).astype(numpy.int32, copy=False)
+
+    def __add__(self, other):
+      if not isinstance(other, MKLMatrix) or self.shape != other.shape:
+        return NotImplemented
+      return MKLMatrix(numpy.concatenate([self.data, other.data]), numpy.concatenate([self.index, other.index], axis=1), self.shape)
+
+    def __sub__(self, other):
+      if not isinstance(other, MKLMatrix) or self.shape != other.shape:
+        return NotImplemented
+      return MKLMatrix(numpy.concatenate([self.data, -other.data]), numpy.concatenate([self.index, other.index], axis=1), self.shape)
+
+    def __mul__(self, other):
+      if not numeric.isnumber(other):
+        return NotImplemented
+      return MKLMatrix(self.data * other, self.index, self.shape)
+
+    def __neg__(self):
+      return MKLMatrix(-self.data, self.index, self.shape)
+
+    @property
+    def T(self):
+      return MKLMatrix(self.data, self.index[::-1], self.shape[::-1])
+
+    def matvec(self, vec):
+      rows, cols = self.index
+      return numeric.accumulate(self.data * vec[cols], [rows], [self.shape[0]])
+
+    def export(self, form):
+      if form == 'dense':
+        return numeric.accumulate(self.data, self.index, self.shape)
+      if form == 'csr':
+        return self.data, self.index[1], self.indptr
+      if form == 'coo':
+        return self.data, self.index
+      raise NotImplementedError('cannot export MKLMatrix to {!r}'.format(form))
+
+    def submatrix(self, rows, cols):
+      I, J = self.index
+      keep = numpy.logical_and(rows[I], cols[J])
+      csI = rows.cumsum()
+      csJ = cols.cumsum()
+      return MKLMatrix(self.data[keep], numpy.array([csI[I[keep]]-1, csJ[J[keep]]-1]), shape=(csI[-1], csJ[-1]))
+
+    @preparesolvearguments
+    def solve(self, rhs):
+      log.info('solving {0}x{0} system using MKL Pardiso'.format(self.shape[0]))
+      if self._factors:
+        log.info('reusing existing factorization')
+        pardiso, iparm, mtype = self._factors
+        phase = 33 # solve, iterative refinement
+      else:
+        pardiso = Pardiso()
+        iparm = numpy.zeros(64, dtype=numpy.int32) # https://software.intel.com/en-us/mkl-developer-reference-c-pardiso-iparm-parameter
+        iparm[0] = 1 # supply all values in components iparm[1:64]
+        iparm[1] = 2 # fill-in reducing ordering for the input matrix: nested dissection algorithm from the METIS package
+        iparm[9] = 13 # pivoting perturbation threshold 1e-13 (default for nonsymmetric)
+        iparm[10] = 1 # enable scaling vectors (default for nonsymmetric)
+        iparm[12] = 1 # enable improved accuracy using (non-) symmetric weighted matching (default for nonsymmetric)
+        iparm[34] = 1 # zero base indexing
+        mtype = 11 # real and nonsymmetric
+        phase = 13 # analysis, numerical factorization, solve, iterative refinement
+        self._factors = pardiso, iparm, mtype
+      lhs = numpy.empty(self.shape[1], dtype=numpy.float64)
+      pardiso(phase=phase, mtype=mtype, iparm=iparm, n=self.shape[0], nrhs=1, b=rhs, x=lhs, a=self.data, ia=self.indptr, ja=self.index[1])
+      return lhs
 
 
 ## MODULE METHODS
