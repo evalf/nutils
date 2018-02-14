@@ -26,9 +26,34 @@ solving linear systems. Matrices can be converted to numpy arrays via
 ``toarray`` or scipy matrices via ``toscipy``.
 """
 
-from . import util, numpy, log, numeric, warnings
-import functools
+from . import numpy, log, numeric
+import abc
 
+
+class Backend(metaclass=abc.ABCMeta):
+  'backend base class'
+
+  def __enter__(self):
+    if hasattr(self, '_old_backend'):
+      raise RuntimeError('This context manager is not reentrant.')
+    global _current_backend
+    self._old_backend = _current_backend
+    _current_backend = self
+    return self
+
+  def __exit__(self, etype, value, tb):
+    if not hasattr(self, '_old_backend'):
+      raise RuntimeError('This context manager is not yet entered.')
+    global _current_backend
+    _current_backend = self._old_backend
+    del self._old_backend
+
+  @abc.abstractmethod
+  def assemble(self, data, index, shape):
+    '''Assemble a (sparse) tensor based on index-value pairs.
+
+    .. Note:: This function is abstract.
+    '''
 
 class Matrix:
   'matrix base class'
@@ -46,113 +71,15 @@ class Matrix:
     matrix = self.toarray()[numpy.ix_(I,J)]
     return numpy.linalg.cond(matrix)
 
-class ScipyMatrix(Matrix):
-  '''matrix based on any of scipy's sparse matrices'''
 
-  def __init__(self, core):
-    self.core = core
-    super().__init__(core.shape)
+## NUMPY BACKEND
 
-  matvec = lambda self, vec: self.core.dot(vec)
-  toarray = lambda self: self.core.toarray()
-  toscipy = lambda self: self.core
-  __add__ = lambda self, other: ScipyMatrix(self.core + (other.toscipy() if isinstance(other,Matrix) else other))
-  __sub__ = lambda self, other: ScipyMatrix(self.core - (other.toscipy() if isinstance(other,Matrix) else other))
-  __mul__ = lambda self, other: ScipyMatrix(self.core * (other.toscipy() if isinstance(other,Matrix) else other))
-  __radd__ = __add__
-  __rmul__ = __mul__
-  __div__ = lambda self, other: ScipyMatrix(self.core / other)
-  T = property(lambda self: ScipyMatrix(self.core.transpose()))
+class Numpy(Backend):
+  '''matrix backend based on numpy array'''
 
-  def rowsupp(self, tol=0):
-    'return row indices with nonzero/non-small entries'
-
-    supp = numpy.empty(self.shape[0], dtype=bool)
-    for irow in range(self.shape[0]):
-      a, b = self.core.indptr[irow:irow+2]
-      supp[irow] = a != b and numpy.any(numpy.abs(self.core.data[a:b]) > tol)
-    return supp
-
-  @log.title
-  def solve(self, rhs=None, constrain=None, lconstrain=None, rconstrain=None, tol=0, lhs0=None, solver=None, symmetric=False, callback=None, precon=None, **solverargs):
-    'solve'
-
-    import scipy.sparse.linalg
-
-    lhs, I, J = parsecons(constrain, lconstrain, rconstrain, self.shape)
-    A = self.core
-    if not I.all():
-      A = A[I,:]
-    b = (rhs[I] if rhs is not None else 0) - A * lhs
-    if not J.all():
-      A = A[:,J]
-
-    if not b.any():
-      log.info('right hand side is zero')
-      return lhs
-
-    if solver is None:
-      solver = 'spsolve' if tol == 0 else 'cg' if symmetric else 'gmres'
-
-    x0 = lhs0[J] if lhs0 is not None else numpy.zeros(A.shape[0])
-    res0 = numpy.linalg.norm(b - A * x0) / numpy.linalg.norm(b)
-    if res0 < tol:
-      log.info('initial residual is below tolerance')
-      x = x0
-    elif solver == 'spsolve':
-      log.info('solving system using sparse direct solver')
-      x = scipy.sparse.linalg.spsolve(A, b)
-    else:
-      assert tol, 'tolerance must be specified for iterative solver'
-      log.info('solving system using {} iterative solver'.format(solver))
-      solverfun = getattr(scipy.sparse.linalg, solver)
-      # keep scipy from making things circular by shielding the nature of A
-      A = scipy.sparse.linalg.LinearOperator(A.shape, A.__mul__, dtype=float)
-      if isinstance(precon, str):
-        M = self.getprecon(precon, constrain, lconstrain, rconstrain)
-      elif callable(precon):
-        M = precon(A)
-      elif precon is None: # create identity operator, because scipy's native identity operator has circular references
-        M = scipy.sparse.linalg.LinearOperator(A.shape, matvec=lambda x:x, rmatvec=lambda x:x, matmat=lambda x:x, dtype=float)
-      else:
-        M = precon
-      assert isinstance(M, scipy.sparse.linalg.LinearOperator)
-      norm = max(numpy.linalg.norm(b), 1) # scipy terminates on minimum of relative and absolute residual
-      niter = numpy.array(0)
-      def mycallback(arg):
-        niter[...] += 1
-        # some solvers provide the residual, others the left hand side vector
-        res = float(numpy.linalg.norm(b - A * arg) / norm if numpy.ndim(arg) == 1 else arg)
-        if callback:
-          callback(res)
-        with log.context('residual {:.2e} ({:.0f}%)'.format(res, 100. * numpy.log10(res) / numpy.log10(tol) if res > 0 else 0)):
-          pass
-      x, status = solverfun(A, b, M=M, tol=tol, x0=x0, callback=mycallback, **solverargs)
-      assert status == 0, '{} solver failed with status {}'.format(solver, status)
-      res = numpy.linalg.norm(b - A * x) / norm
-      log.info('solver converged in {} iterations to residual {:.1e}'.format(niter, res))
-
-    lhs[J] = x
-    return lhs
-
-  def getprecon(self, name='SPLU', constrain=None, lconstrain=None, rconstrain=None):
-
-    import scipy.sparse.linalg
-
-    name = name.lower()
-    x, I, J = parsecons(constrain, lconstrain, rconstrain, self.shape)
-    A = self.core[I,:][:,J]
-    assert A.shape[0] == A.shape[1], 'constrained matrix must be square'
-    log.info('building {} preconditioner'.format(name))
-    if name == 'splu':
-      precon = scipy.sparse.linalg.splu(A.tocsc()).solve
-    elif name == 'spilu':
-      precon = scipy.sparse.linalg.spilu(A.tocsc(), drop_tol=1e-5, fill_factor=None, drop_rule=None, permc_spec=None, diag_pivot_thresh=None, relax=None, panel_size=None, options=None).solve
-    elif name == 'diag':
-      precon = numpy.reciprocal(A.diagonal()).__mul__
-    else:
-      raise Exception('invalid preconditioner {!r}'.format(name))
-    return scipy.sparse.linalg.LinearOperator(A.shape, precon, dtype=float)
+  def assemble(self, data, index, shape):
+    array = numeric.accumulate(data, index, shape)
+    return NumpyMatrix(array) if len(shape) == 2 else array
 
 class NumpyMatrix(Matrix):
   '''matrix based on numpy array'''
@@ -176,7 +103,7 @@ class NumpyMatrix(Matrix):
     return numpy.greater(abs(self.core), tol).any(axis=1)
 
   @log.title
-  def solve(self, b=None, constrain=None, lconstrain=None, rconstrain=None, tol=0):
+  def solve(self, b=None, constrain=None, lconstrain=None, rconstrain=None, **dummyargs):
     'solve'
 
     if b is None:
@@ -195,25 +122,130 @@ class NumpyMatrix(Matrix):
     return x
 
 
-# UTILITY FUNCTIONS
+## SCIPY BACKEND
 
-def assemble(data, index, shape, force_dense=False):
-  'create data from values and indices'
+try:
+  import scipy.sparse.linalg
+except ImportError:
+  pass
+else:
 
-  if len(shape) == 0:
-    retval = data.sum()
-  elif len(shape) == 2 and not force_dense:
-    import scipy.sparse.linalg
-    csr = scipy.sparse.csr_matrix((data,index), shape)
-    retval = ScipyMatrix(csr)
-  else:
-    flatindex = numpy.dot(numpy.cumprod((1,)+shape[:0:-1])[::-1], index)
-    retval = numpy.bincount(flatindex, data, numpy.prod(shape)).reshape(shape).astype(data.dtype, copy=False)
-    if retval.ndim == 2:
-      retval = NumpyMatrix(retval)
-  assert retval.shape == shape
-  log.debug('assembled {}({})'.format(retval.__class__.__name__, ','.join(str(n) for n in shape)))
-  return retval
+  class Scipy(Backend):
+    '''matrix backend based on scipy's sparse matrices'''
+
+    def assemble(self, data, index, shape):
+      if len(shape) < 2:
+        return numeric.accumulate(data, index, shape)
+      if len(shape) == 2:
+        csr = scipy.sparse.csr_matrix((data, index), shape)
+        return ScipyMatrix(csr)
+      raise Exception('{}d data not supported by scipy backend'.format(len(shape)))
+
+  class ScipyMatrix(Matrix):
+    '''matrix based on any of scipy's sparse matrices'''
+
+    def __init__(self, core):
+      self.core = core
+      super().__init__(core.shape)
+
+    matvec = lambda self, vec: self.core.dot(vec)
+    toarray = lambda self: self.core.toarray()
+    toscipy = lambda self: self.core
+    __add__ = lambda self, other: ScipyMatrix(self.core + (other.toscipy() if isinstance(other,Matrix) else other))
+    __sub__ = lambda self, other: ScipyMatrix(self.core - (other.toscipy() if isinstance(other,Matrix) else other))
+    __mul__ = lambda self, other: ScipyMatrix(self.core * (other.toscipy() if isinstance(other,Matrix) else other))
+    __radd__ = __add__
+    __rmul__ = __mul__
+    __div__ = lambda self, other: ScipyMatrix(self.core / other)
+    T = property(lambda self: ScipyMatrix(self.core.transpose()))
+
+    def rowsupp(self, tol=0):
+      'return row indices with nonzero/non-small entries'
+
+      supp = numpy.empty(self.shape[0], dtype=bool)
+      for irow in range(self.shape[0]):
+        a, b = self.core.indptr[irow:irow+2]
+        supp[irow] = a != b and numpy.any(numpy.abs(self.core.data[a:b]) > tol)
+      return supp
+
+    @log.title
+    def solve(self, rhs=None, constrain=None, lconstrain=None, rconstrain=None, tol=0, lhs0=None, solver=None, symmetric=False, callback=None, precon=None, **solverargs):
+      'solve'
+
+      lhs, I, J = parsecons(constrain, lconstrain, rconstrain, self.shape)
+      A = self.core
+      if not I.all():
+        A = A[I,:]
+      b = (rhs[I] if rhs is not None else 0) - A * lhs
+      if not J.all():
+        A = A[:,J]
+
+      if not b.any():
+        log.info('right hand side is zero')
+        return lhs
+
+      if solver is None:
+        solver = 'spsolve' if tol == 0 else 'cg' if symmetric else 'gmres'
+
+      x0 = lhs0[J] if lhs0 is not None else numpy.zeros(A.shape[0])
+      res0 = numpy.linalg.norm(b - A * x0) / numpy.linalg.norm(b)
+      if res0 < tol:
+        log.info('initial residual is below tolerance')
+        x = x0
+      elif solver == 'spsolve':
+        log.info('solving system using sparse direct solver')
+        x = scipy.sparse.linalg.spsolve(A, b)
+      else:
+        assert tol, 'tolerance must be specified for iterative solver'
+        log.info('solving system using {} iterative solver'.format(solver))
+        solverfun = getattr(scipy.sparse.linalg, solver)
+        # keep scipy from making things circular by shielding the nature of A
+        A = scipy.sparse.linalg.LinearOperator(A.shape, A.__mul__, dtype=float)
+        if isinstance(precon, str):
+          M = self.getprecon(precon, constrain, lconstrain, rconstrain)
+        elif callable(precon):
+          M = precon(A)
+        elif precon is None: # create identity operator, because scipy's native identity operator has circular references
+          M = scipy.sparse.linalg.LinearOperator(A.shape, matvec=lambda x:x, rmatvec=lambda x:x, matmat=lambda x:x, dtype=float)
+        else:
+          M = precon
+        assert isinstance(M, scipy.sparse.linalg.LinearOperator)
+        norm = max(numpy.linalg.norm(b), 1) # scipy terminates on minimum of relative and absolute residual
+        niter = numpy.array(0)
+        def mycallback(arg):
+          niter[...] += 1
+          # some solvers provide the residual, others the left hand side vector
+          res = float(numpy.linalg.norm(b - A * arg) / norm if numpy.ndim(arg) == 1 else arg)
+          if callback:
+            callback(res)
+          with log.context('residual {:.2e} ({:.0f}%)'.format(res, 100. * numpy.log10(res) / numpy.log10(tol) if res > 0 else 0)):
+            pass
+        x, status = solverfun(A, b, M=M, tol=tol, x0=x0, callback=mycallback, **solverargs)
+        assert status == 0, '{} solver failed with status {}'.format(solver, status)
+        res = numpy.linalg.norm(b - A * x) / norm
+        log.info('solver converged in {} iterations to residual {:.1e}'.format(niter, res))
+
+      lhs[J] = x
+      return lhs
+
+    def getprecon(self, name='SPLU', constrain=None, lconstrain=None, rconstrain=None):
+      name = name.lower()
+      x, I, J = parsecons(constrain, lconstrain, rconstrain, self.shape)
+      A = self.core[I,:][:,J]
+      assert A.shape[0] == A.shape[1], 'constrained matrix must be square'
+      log.info('building {} preconditioner'.format(name))
+      if name == 'splu':
+        precon = scipy.sparse.linalg.splu(A.tocsc()).solve
+      elif name == 'spilu':
+        precon = scipy.sparse.linalg.spilu(A.tocsc(), drop_tol=1e-5, fill_factor=None, drop_rule=None, permc_spec=None, diag_pivot_thresh=None, relax=None, panel_size=None, options=None).solve
+      elif name == 'diag':
+        precon = numpy.reciprocal(A.diagonal()).__mul__
+      else:
+        raise Exception('invalid preconditioner {!r}'.format(name))
+      return scipy.sparse.linalg.LinearOperator(A.shape, precon, dtype=float)
+
+
+## INTERNALS
 
 def parsecons(constrain, lconstrain, rconstrain, shape):
   'parse constraints'
@@ -237,6 +269,21 @@ def parsecons(constrain, lconstrain, rconstrain, shape):
   assert numpy.sum(I) == numpy.sum(J), 'constrained matrix is not square: {}x{}'.format(numpy.sum(I), numpy.sum(J))
   x[J] = 0
   return x, I, J
+
+
+## MODULE METHODS
+
+_current_backend = Numpy()
+
+def backend(names):
+  for name in names.lower().split(','):
+    for cls in Backend.__subclasses__():
+      if cls.__name__.lower() == name:
+        return cls()
+  raise RuntimeError('matrix backend {!r} is not available'.format(names))
+
+def assemble(data, index, shape):
+  return _current_backend.assemble(data, index, shape)
 
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

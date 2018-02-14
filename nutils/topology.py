@@ -35,7 +35,7 @@ out in element loops. For lower level operations topologies can be used as
 :mod:`nutils.element` iterators.
 """
 
-from . import element, function, util, numpy, parallel, matrix, log, config, numeric, cache, transform, warnings, _
+from . import element, function, util, numpy, parallel, log, config, numeric, cache, transform, warnings, matrix, _
 import functools, collections.abc, itertools, functools, operator
 
 _identity = lambda x: x
@@ -321,7 +321,7 @@ class Topology:
 
   @log.title
   @util.single_or_multiple
-  def integrate(self, funcs, ischeme='gauss', degree=None, geometry=None, force_dense=False, fcache=None, edit=_identity, *, arguments=None):
+  def integrate(self, funcs, ischeme='gauss', degree=None, geometry=None, fcache=None, edit=_identity, *, arguments=None):
     'integrate'
 
     if degree is not None:
@@ -329,7 +329,11 @@ class Topology:
     iwscale = function.J(geometry, self.ndims) if geometry else 1
     integrands = [function.asarray(edit(func * iwscale)) for func in funcs]
     data_index = self._integrate(integrands, ischeme, fcache, arguments)
-    return [matrix.assemble(data, index, integrand.shape, force_dense) for integrand, (data,index) in zip(integrands, data_index)]
+    for integrand, (data,index) in zip(integrands, data_index):
+      retval = matrix.assemble(data, index, integrand.shape)
+      assert retval.shape == integrand.shape
+      log.debug('assembled {}({})'.format(retval.__class__.__name__, ','.join(str(n) for n in retval.shape)))
+      yield retval
 
   @log.title
   def integral(self, func, ischeme='gauss', degree=None, geometry=None, edit=_identity):
