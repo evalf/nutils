@@ -34,8 +34,6 @@ class Matrix:
   'matrix base class'
 
   def __init__(self, shape):
-    'constructor'
-
     assert len(shape) == 2
     self.shape = shape
 
@@ -44,24 +42,9 @@ class Matrix:
     return numpy.prod(self.shape)
 
   def cond(self, constrain=None, lconstrain=None, rconstrain=None):
-    'condition number'
-
     x, I, J = parsecons(constrain, lconstrain, rconstrain, self.shape)
     matrix = self.toarray()[numpy.ix_(I,J)]
     return numpy.linalg.cond(matrix)
-
-  def res(self, x, b=0, constrain=None, lconstrain=None, rconstrain=None, scaled=True):
-    'residual'
-
-    x0, I, J = parsecons(constrain, lconstrain, rconstrain, self.shape)
-    res = numpy.linalg.norm((self.matvec(x)-b)[I])
-    if scaled:
-      res /= numpy.linalg.norm((self.matvec(x0)-b)[I])
-    return res
-
-  def clone(self):
-    warnings.deprecation('warning: arrays are immutable; clone returns self for backwards compatibility')
-    return self
 
 class ScipyMatrix(Matrix):
   '''matrix based on any of scipy's sparse matrices'''
