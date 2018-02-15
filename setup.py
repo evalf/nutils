@@ -1,10 +1,4 @@
-extra = {}
-try:
-  from setuptools import setup, Extension
-except:
-  from distutils.core import setup, Extension
-else:
-  extra['install_requires'] = ['numpy>=1.12', 'matplotlib>=1.3', 'scipy>=0.13', 'sphinx']
+from setuptools import setup
 
 long_description = """
 The nutils project is a collaborative programming effort aimed at the creation
@@ -41,5 +35,7 @@ setup(
   packages = [ 'nutils' ],
   package_data = { 'nutils': ['_log/*'] },
   long_description = long_description,
-  **extra
+  license = 'MIT',
+  python_requires = '>=3.5',
+  install_requires = ['numpy>=1.12', 'matplotlib>=1.3', 'scipy>=0.13', 'sphinx'],
 )
