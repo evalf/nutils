@@ -103,7 +103,7 @@ class NumpyMatrix(Matrix):
     return numpy.greater(abs(self.core), tol).any(axis=1)
 
   @log.title
-  def solve(self, b=None, constrain=None, lconstrain=None, rconstrain=None, **dummyargs):
+  def solve(self, b=None, constrain=None, lconstrain=None, rconstrain=None):
     'solve'
 
     if b is None:
@@ -169,7 +169,7 @@ else:
       return supp
 
     @log.title
-    def solve(self, rhs=None, constrain=None, lconstrain=None, rconstrain=None, tol=0, lhs0=None, solver=None, symmetric=False, callback=None, precon=None, **solverargs):
+    def solve(self, rhs=None, constrain=None, lconstrain=None, rconstrain=None, solver='spsolve', tol=0, lhs0=None, callback=None, precon=None, **solverargs):
       'solve'
 
       lhs, I, J = parsecons(constrain, lconstrain, rconstrain, self.shape)
@@ -183,9 +183,6 @@ else:
       if not b.any():
         log.info('right hand side is zero')
         return lhs
-
-      if solver is None:
-        solver = 'spsolve' if tol == 0 else 'cg' if symmetric else 'gmres'
 
       x0 = lhs0[J] if lhs0 is not None else numpy.zeros(A.shape[0])
       res0 = numpy.linalg.norm(b - A * x0) / numpy.linalg.norm(b)

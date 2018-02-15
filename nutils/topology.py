@@ -353,7 +353,7 @@ class Topology:
     return onto.dot(weights)
 
   @log.title
-  def project(self, fun, onto, geometry, tol=0, ischeme='gauss', degree=None, droptol=1e-12, exact_boundaries=False, constrain=None, verify=None, ptype='lsqr', precon='diag', edit=_identity, *, arguments=None, **solverargs):
+  def project(self, fun, onto, geometry, ischeme='gauss', degree=None, droptol=1e-12, exact_boundaries=False, constrain=None, verify=None, ptype='lsqr', edit=_identity, *, arguments=None, **solverargs):
     'L2 projection of function onto function space'
 
     log.debug('projection type:', ptype)
@@ -365,7 +365,7 @@ class Topology:
     else:
       constrain = constrain.copy()
     if exact_boundaries:
-      constrain |= self.boundary.project(fun, onto, geometry, constrain=constrain, title='boundaries', ischeme=ischeme, tol=tol, droptol=droptol, ptype=ptype, edit=edit, arguments=arguments)
+      constrain |= self.boundary.project(fun, onto, geometry, constrain=constrain, title='boundaries', ischeme=ischeme, droptol=droptol, ptype=ptype, edit=edit, arguments=arguments)
     assert isinstance(constrain, util.NanVec)
     assert constrain.shape == onto.shape[:1]
 
@@ -393,7 +393,7 @@ class Topology:
       else:
         solvecons = constrain.copy()
         solvecons[~(constrain.where|N)] = 0
-        u = A.solve(b, solvecons, tol=tol, symmetric=True, precon=precon, **solverargs)
+        u = A.solve(b, solvecons, **solverargs)
         constrain[N] = u[N]
         err2 = f2 - numpy.dot(2*b-A.matvec(u), u) # can be negative ~zero due to rounding errors
         avg_error = numpy.sqrt(err2) / area if err2 > 0 else 0
