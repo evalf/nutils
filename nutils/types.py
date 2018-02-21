@@ -906,16 +906,74 @@ class frozenmultiset(collections.abc.Container, metaclass=_frozenmultisetmeta):
 
   __repr__ = __str__ = lambda self: '{}({})'.format(type(self).__name__, list(self.__items))
 
-class frozenarray(collections.abc.Sequence):
+class _frozenarraymeta(CacheMeta):
+  def __getitem__(self, dtype):
+    @_copyname(src=self, suffix='[{}]'.format(_getname(dtype)))
+    def constructor(value):
+      return self(value, dtype=dtype)
+    return constructor
+
+class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
+  '''
+  An immutable version (and drop-in replacement) of :class:`numpy.ndarray`.
+
+  Besides being immutable, the :class:`frozenarray` differs from
+  :class:`numpy.ndarray` in (in)equality tests.  Given two :class:`frozenarray`
+  objects ``a`` and ``b``, the test ``a == b`` returns ``True`` if both arrays
+  are equal in its entirety, including dtype and shape, while the same test
+  with :class:`numpy.ndarray` objects would give a boolean array with
+  element-wise thruth values.
+
+  The constructor with predefined ``dtype`` argument can generated via the
+  notation ``frozenarray[dtype]``.  This is shorthand for ``lambda base:
+  frozenarray(base, dtype=dtype)``.
+
+  Parameters
+  ----------
+  base : :class:`numpy.ndarray` or array-like
+      The array data.
+  dtype
+      The dtype of the array or ``None``.
+  copy : :class:`bool`
+      If ``base`` is a :class:`frozenarray` and the ``dtype`` matches or is
+      ``None``, this argument is ignored.  If ``base`` is a
+      :class:`numpy.ndarray` and the ``dtype`` matches or is ``None`` and
+      ``copy`` is ``False``, ``base`` is stored as is.  Otherwise ``base`` is
+      copied.
+  '''
+
   __slots__ = '__base', '__hash'
+  __cache__ = '__nutils_hash__',
 
   @staticmethod
   def full(shape, fill_value):
     return frozenarray(numpy.lib.stride_tricks.as_strided(fill_value, shape, [0]*len(shape)), copy=False)
 
-  def __new__(cls, base, copy=True, dtype=None):
+  _dtype_order = bool, int, float, complex
+
+  def __new__(cls, base, dtype=None, copy=True):
+    allowdowncast = dtype not in (strictint, strictfloat)
+    if dtype is None:
+      pass
+    elif dtype == bool:
+      dtype = bool
+    elif dtype in (int, strictint):
+      dtype = int
+    elif dtype in (float, strictfloat):
+      dtype = float
+    elif dtype == complex:
+      dtype = complex
+    else:
+      raise ValueError('unsupported dtype: {!r}'.format(dtype))
     if isinstance(base, frozenarray):
-      return base
+      if dtype is None or dtype == base.dtype:
+        return base
+      base = base.__base
+    if not allowdowncast:
+      if not isinstance(base, numpy.ndarray):
+        base = numpy.array(base)
+      if cls._dtype_order.index(base.dtype) > cls._dtype_order.index(dtype):
+        raise ValueError('downcasting {!r} to {!r} is forbidden'.format(base.dtype, dtype))
     self = object.__new__(cls)
     self.__base = numpy.array(base, dtype=dtype) if copy or not isinstance(base, numpy.ndarray) or dtype and dtype != base.dtype else base
     self.__base.flags.writeable = False
@@ -923,11 +981,17 @@ class frozenarray(collections.abc.Sequence):
     return self
 
   @property
+  def __nutils_hash__(self):
+    h = hashlib.sha1('{}.{}\0{} {}'.format(type(self).__module__, type(self).__qualname__, self.__base.shape, self.__base.dtype.str).encode())
+    h.update(self.__base.tobytes())
+    return h.digest()
+
+  @property
   def __array_struct__(self):
     return self.__base.__array_struct__
 
   def __reduce__(self):
-    return frozenarray, (self.__base, False)
+    return frozenarray, (self.__base, None, False)
 
   def __eq__(self, other):
     if self is other:
@@ -1000,6 +1064,7 @@ class frozenarray(collections.abc.Sequence):
   __float__ = lambda self: self.__base.__float__()
   __abs__ = lambda self: self.__base.__abs__()
   __neg__ = lambda self: self.__base.__neg__()
+  __invert__ = lambda self: self.__base.__invert__()
 
   tolist = lambda self, *args, **kwargs: self.__base.tolist(*args, **kwargs)
   copy = lambda self, *args, **kwargs: self.__base.copy(*args, **kwargs)

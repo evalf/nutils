@@ -698,4 +698,148 @@ class frozenmultiset(TestCase):
       with self.subTest(l=l, r=r, disjoint=disjoint):
         self.assertEqual(nutils.types.frozenmultiset(l).isdisjoint(nutils.types.frozenmultiset(r)), disjoint)
 
+class frozenarray(TestCase):
+
+  def _test_constructor(self, src, frozen_dtype):
+    src = list(src)
+    for copy in True, False:
+      for src_type in list, numpy.array, nutils.types.frozenarray:
+        with self.subTest(copy=copy, src_type=src_type):
+          frozen = nutils.types.frozenarray(src_type(src), copy=copy, dtype=frozen_dtype)
+          self.assertIsInstance(frozen, nutils.types.frozenarray)
+          self.assertEqual(frozen.tolist(), src)
+  def _test_constructor_raises(self, src, frozen_dtype, exc_type, exc_regex):
+    src = list(src)
+    for copy in True, False:
+      for src_type in list, numpy.array, nutils.types.frozenarray:
+        with self.subTest(copy=copy, src_type=src_type), self.assertRaisesRegex(exc_type, exc_regex):
+          nutils.types.frozenarray(src_type(src), copy=copy, dtype=frozen_dtype)
+  def test_constructor_bool(self):
+    self._test_constructor((False, True), bool)
+  def test_constructor_int(self):
+    self._test_constructor((0,1), int)
+  def test_constructor_int_upcast(self):
+    self._test_constructor((False,True), int)
+  def test_constructor_int_downcast(self):
+    self._test_constructor((0.,1.), int)
+  def test_constructor_float(self):
+    self._test_constructor((0.,1.), float)
+  def test_constructor_float_upcast(self):
+    self._test_constructor((0,1), float)
+  def test_constructor_float_downcast(self):
+    src = [0.+0j,1.+0j]
+    for copy in True, False:
+      with self.subTest(copy=copy, src_type=list), self.assertRaises(TypeError):
+        nutils.types.frozenarray(src, copy=copy, dtype=float)
+      for src_type in numpy.array, nutils.types.frozenarray:
+        with self.subTest(copy=copy, src_type=src_type), self.assertWarns(numpy.ComplexWarning):
+          nutils.types.frozenarray(src_type(src), copy=copy, dtype=float)
+  def test_constructor_complex(self):
+    self._test_constructor((0+0j,1+1j), complex)
+  def test_constructor_strictint(self):
+    self._test_constructor((0,1), nutils.types.strictint)
+  def test_constructor_strictint_upcast(self):
+    self._test_constructor((False,True), nutils.types.strictint)
+  def test_constructor_strictint_downcast(self):
+    self._test_constructor_raises((0.,1.), nutils.types.strictint, ValueError, '^downcasting .* is forbidden$')
+  def test_constructor_strictfloat(self):
+    self._test_constructor((0.,1.), nutils.types.strictfloat)
+  def test_constructor_strictfloat_upcast(self):
+    self._test_constructor((0,1), nutils.types.strictfloat)
+  def test_constructor_strictfloat_downcast(self):
+    self._test_constructor_raises((0.+0j,1.+0j), nutils.types.strictfloat, ValueError, '^downcasting .* is forbidden$')
+  def test_constructor_invalid_dtype(self):
+    self._test_constructor_raises((0,1), list, ValueError, '^unsupported dtype:')
+
+  def test_clsgetitem(self):
+    src = [0.,1.]
+    frozen = nutils.types.frozenarray[nutils.types.strictfloat](src)
+    self.assertIsInstance(frozen, nutils.types.frozenarray)
+    self.assertEqual(frozen.tolist(), src)
+
+  def test_clsgetitem_invalid(self):
+    src = [0.,1.]
+    with self.assertRaises(ValueError):
+      nutils.types.frozenarray[nutils.types.strictint](src)
+
+  def test_nutils_hash(self):
+    a = nutils.types.frozenarray(numpy.array([[1,2],[3,4]], numpy.int64))
+    b = nutils.types.frozenarray(numpy.array([[1,3],[2,4]], numpy.int64))
+    self.assertNotEqual(nutils.types.nutils_hash(a).hex(), nutils.types.nutils_hash(b).hex())
+    self.assertEqual(nutils.types.nutils_hash(a).hex(), nutils.types.nutils_hash(b.T).hex())
+    self.assertEqual(nutils.types.nutils_hash(a).hex(), '42cc3a5e1216c1f0a9921a61a3a2c67025c98d69')
+    self.assertEqual(nutils.types.nutils_hash(b).hex(), '8f0c9f9a118c42c258f1e69e374aadda99b4be97')
+
+  def test_pickle(self):
+    src = [[1,2],[3,4]]
+    value = pickle.loads(pickle.dumps(nutils.types.frozenarray(src)))
+    self.assertIsInstance(value, nutils.types.frozenarray)
+    self.assertEqual(value, nutils.types.frozenarray(src))
+
+  def test_eq_same_instance(self):
+    a = nutils.types.frozenarray([[1,2],[3,4]], int)
+    self.assertEqual(a, a)
+
+  def test_eq_not_frozenarray(self):
+    a = nutils.types.frozenarray([[1,2],[3,4]], int)
+    self.assertNotEqual(a, [[1,2],[3,4]])
+
+  def test_eq_same_base(self):
+    base = numpy.array([[1,2],[3,4]], int)
+    a = nutils.types.frozenarray(base, copy=False)
+    b = nutils.types.frozenarray(base, copy=False)
+    self.assertEqual(a, b)
+
+  def test_eq_different_array(self):
+    a = nutils.types.frozenarray([[1,2],[3,4]], int)
+    b = nutils.types.frozenarray([[1,3],[2,4]], int)
+    self.assertNotEqual(a, b)
+
+  def test_eq_different_dtype(self):
+    a = nutils.types.frozenarray([[1,2],[3,4]], int)
+    b = nutils.types.frozenarray([[1,2],[3,4]], float)
+    self.assertNotEqual(a, b)
+
+  def test_eq_different_base(self):
+    a = nutils.types.frozenarray([[1,2],[3,4]], int)
+    b = nutils.types.frozenarray([[1,2],[3,4]], int)
+    self.assertEqual(a, b)
+
+  def test_ineq_equal(self):
+    l = nutils.types.frozenarray([1,2], int)
+    r = nutils.types.frozenarray([1,2], int)
+    self.assertFalse(l < r)
+    self.assertTrue(l <= r)
+    self.assertFalse(l > r)
+    self.assertTrue(l >= r)
+
+  def test_ineq_smaller(self):
+    l = nutils.types.frozenarray([1,2], int)
+    r = nutils.types.frozenarray([2,1], int)
+    self.assertTrue(l < r)
+    self.assertTrue(l <= r)
+    self.assertFalse(l > r)
+    self.assertFalse(l >= r)
+
+  def test_ineq_larger(self):
+    l = nutils.types.frozenarray([2,1], int)
+    r = nutils.types.frozenarray([1,2], int)
+    self.assertFalse(l < r)
+    self.assertFalse(l <= r)
+    self.assertTrue(l > r)
+    self.assertTrue(l >= r)
+
+  def test_ineq_incomparable(self):
+    array = nutils.types.frozenarray([1,2], int)
+    for op in operator.lt, operator.le, operator.gt, operator.ge:
+      with self.subTest(op=op), self.assertRaises(TypeError):
+        op(array, 1)
+
+  def test_full(self):
+    self.assertEqual(nutils.types.frozenarray.full([2,3], 1.5), nutils.types.frozenarray([[1.5]*3]*2, float))
+
+  def test_as_numpy_array(self):
+    a = numpy.array(nutils.types.frozenarray([1,2]))
+    self.assertIsInstance(a, numpy.ndarray)
+
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
