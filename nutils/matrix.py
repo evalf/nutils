@@ -55,12 +55,38 @@ class Backend(metaclass=abc.ABCMeta):
     .. Note:: This function is abstract.
     '''
 
-class Matrix:
+class Matrix(metaclass=abc.ABCMeta):
   'matrix base class'
 
   def __init__(self, shape):
     assert len(shape) == 2
     self.shape = shape
+
+  @abc.abstractmethod
+  def __add__(self, other):
+    'add two matrices'
+
+  @abc.abstractmethod
+  def __mul__(self, other):
+    'multiply matrix with a scalar'
+
+  @abc.abstractmethod
+  def __neg__(self, other):
+    'negate matrix'
+
+  def __sub__(self, other):
+    return self.__add__(-other)
+
+  def __rmul__(self, other):
+    return self.__mul__(other)
+
+  def __truediv__(self, other):
+    return self.__mul__(1/other)
+
+  @property
+  @abc.abstractmethod
+  def T(self):
+    'transpose matrix'
 
   @property
   def size(self):
@@ -70,6 +96,14 @@ class Matrix:
     x, I, J = parsecons(constrain, lconstrain, rconstrain, self.shape)
     matrix = self.toarray()[numpy.ix_(I,J)]
     return numpy.linalg.cond(matrix)
+
+  @abc.abstractmethod
+  def rowsupp(self, tol=0):
+    'return row indices with nonzero/non-small entries'
+
+  @abc.abstractmethod
+  def solve(self, rhs=None, constrain=None, lconstrain=None, rconstrain=None):
+    'solve system given right hand side vector and/or constraints'
 
 
 ## NUMPY BACKEND
@@ -89,22 +123,34 @@ class NumpyMatrix(Matrix):
     self.core = core
     super().__init__(core.shape)
 
-  matvec = lambda self, vec: numpy.dot(self.core, vec)
-  toarray = lambda self: self.core
-  __add__ = lambda self, other: NumpyMatrix(self.core + other.toarray())
-  __sub__ = lambda self, other: NumpyMatrix(self.core - other.toarray())
-  __mul__ = lambda self, other: NumpyMatrix(self.core * other)
-  __rmul__ = __mul__
-  __div__ = lambda self, other: NumpyMatrix(self.core / other)
-  T = property(lambda self: NumpyMatrix(self.core.T))
+  def __add__(self, other):
+    if not isinstance(other, NumpyMatrix) or self.shape != other.shape:
+      return NotImplemented
+    return NumpyMatrix(self.core + other.core)
+
+  def __mul__(self, other):
+    if not numeric.isnumber(other):
+      return NotImplemented
+    return NumpyMatrix(self.core * other)
+
+  def __neg__(self):
+    return NumpyMatrix(-self.core)
+
+  @property
+  def T(self):
+    return NumpyMatrix(self.core.T)
+
+  def matvec(self, vec):
+    return numpy.dot(self.core, vec)
+
+  def toarray(self):
+    return self.core
 
   def rowsupp(self, tol=0):
-    'return row indices with nonzero/non-small entries'
     return numpy.greater(abs(self.core), tol).any(axis=1)
 
   @log.title
   def solve(self, b=None, constrain=None, lconstrain=None, rconstrain=None):
-    'solve'
 
     if b is None:
       b = numpy.zeros(self.shape[0])
@@ -148,20 +194,38 @@ else:
       self.core = core
       super().__init__(core.shape)
 
-    matvec = lambda self, vec: self.core.dot(vec)
-    toarray = lambda self: self.core.toarray()
-    toscipy = lambda self: self.core
-    __add__ = lambda self, other: ScipyMatrix(self.core + (other.toscipy() if isinstance(other,Matrix) else other))
-    __sub__ = lambda self, other: ScipyMatrix(self.core - (other.toscipy() if isinstance(other,Matrix) else other))
-    __mul__ = lambda self, other: ScipyMatrix(self.core * (other.toscipy() if isinstance(other,Matrix) else other))
-    __radd__ = __add__
-    __rmul__ = __mul__
-    __div__ = lambda self, other: ScipyMatrix(self.core / other)
-    T = property(lambda self: ScipyMatrix(self.core.transpose()))
+    def __add__(self, other):
+      if not isinstance(other, ScipyMatrix) or self.shape != other.shape:
+        return NotImplemented
+      return ScipyMatrix(self.core + other.core)
+
+    def __sub__(self, other):
+      if not isinstance(other, ScipyMatrix) or self.shape != other.shape:
+        return NotImplemented
+      return ScipyMatrix(self.core - other.core)
+
+    def __mul__(self, other):
+      if not numeric.isnumber(other):
+        return NotImplemented
+      return ScipyMatrix(self.core * other)
+
+    def __neg__(self):
+      return ScipyMatrix(-self.core)
+
+    def matvec(self, vec):
+      return self.core.dot(vec)
+
+    def toarray(self):
+      return self.core.toarray()
+
+    def toscipy(self):
+      return self.core
+
+    @property
+    def T(self):
+      return ScipyMatrix(self.core.transpose())
 
     def rowsupp(self, tol=0):
-      'return row indices with nonzero/non-small entries'
-
       supp = numpy.empty(self.shape[0], dtype=bool)
       for irow in range(self.shape[0]):
         a, b = self.core.indptr[irow:irow+2]
@@ -170,7 +234,6 @@ else:
 
     @log.title
     def solve(self, rhs=None, constrain=None, lconstrain=None, rconstrain=None, solver='spsolve', tol=0, lhs0=None, callback=None, precon=None, **solverargs):
-      'solve'
 
       lhs, I, J = parsecons(constrain, lconstrain, rconstrain, self.shape)
       A = self.core
