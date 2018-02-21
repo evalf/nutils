@@ -906,4 +906,123 @@ class frozenmultiset(collections.abc.Container, metaclass=_frozenmultisetmeta):
 
   __repr__ = __str__ = lambda self: '{}({})'.format(type(self).__name__, list(self.__items))
 
+class frozenarray(collections.abc.Sequence):
+  __slots__ = '__base', '__hash'
+
+  @staticmethod
+  def full(shape, fill_value):
+    return frozenarray(numpy.lib.stride_tricks.as_strided(fill_value, shape, [0]*len(shape)), copy=False)
+
+  def __new__(cls, base, copy=True, dtype=None):
+    if isinstance(base, frozenarray):
+      return base
+    self = object.__new__(cls)
+    self.__base = numpy.array(base, dtype=dtype) if copy or not isinstance(base, numpy.ndarray) or dtype and dtype != base.dtype else base
+    self.__base.flags.writeable = False
+    self.__hash = hash((self.__base.shape, self.__base.dtype, tuple(self.__base.flat[::self.__base.size//32+1]) if self.__base.size else ())) # NOTE special case self.__base.size == 0 necessary for numpy<1.12
+    return self
+
+  @property
+  def __array_struct__(self):
+    return self.__base.__array_struct__
+
+  def __reduce__(self):
+    return frozenarray, (self.__base, False)
+
+  def __eq__(self, other):
+    if self is other:
+      return True
+    if not isinstance(other, frozenarray):
+      return False
+    if self.__base is other.__base:
+      return True
+    if self.__hash != other.__hash or self.__base.dtype != other.__base.dtype or self.__base.shape != other.__base.shape or numpy.not_equal(self.__base, other.__base).any():
+      return False
+    # deduplicate
+    self.__base = other.__base
+    return True
+
+  def __lt__(self, other):
+    if not isinstance(other, frozenarray):
+      return NotImplemented
+    return self != other and (self.dtype < other.dtype
+      or self.dtype == other.dtype and (self.shape < other.shape
+        or self.shape == other.shape and self.__base.tolist() < other.__base.tolist()))
+
+  def __le__(self, other):
+    if not isinstance(other, frozenarray):
+      return NotImplemented
+    return self == other or (self.dtype < other.dtype
+      or self.dtype == other.dtype and (self.shape < other.shape
+        or self.shape == other.shape and self.__base.tolist() < other.__base.tolist()))
+
+  def __gt__(self, other):
+    if not isinstance(other, frozenarray):
+      return NotImplemented
+    return self != other and (self.dtype > other.dtype
+      or self.dtype == other.dtype and (self.shape > other.shape
+        or self.shape == other.shape and self.__base.tolist() > other.__base.tolist()))
+
+  def __ge__(self, other):
+    if not isinstance(other, frozenarray):
+      return NotImplemented
+    return self == other or (self.dtype > other.dtype
+      or self.dtype == other.dtype and (self.shape > other.shape
+        or self.shape == other.shape and self.__base.tolist() > other.__base.tolist()))
+
+  def __getitem__(self, item):
+    retval = self.__base.__getitem__(item)
+    return frozenarray(retval, copy=False) if isinstance(retval, numpy.ndarray) else retval
+
+  dtype = property(lambda self: self.__base.dtype)
+  shape = property(lambda self: self.__base.shape)
+  size = property(lambda self: self.__base.size)
+  ndim = property(lambda self: self.__base.ndim)
+  flat = property(lambda self: self.__base.flat)
+  T = property(lambda self: frozenarray(self.__base.T, copy=False))
+
+  __len__ = lambda self: self.__base.__len__()
+  __repr__ = lambda self: 'frozenarray'+self.__base.__repr__()[5:]
+  __str__ = lambda self: self.__base.__str__()
+  __add__ = lambda self, other: self.__base.__add__(other)
+  __radd__ = lambda self, other: self.__base.__radd__(other)
+  __sub__ = lambda self, other: self.__base.__sub__(other)
+  __rsub__ = lambda self, other: self.__base.__rsub__(other)
+  __mul__ = lambda self, other: self.__base.__mul__(other)
+  __rmul__ = lambda self, other: self.__base.__rmul__(other)
+  __truediv__ = lambda self, other: self.__base.__truediv__(other)
+  __rtruediv__ = lambda self, other: self.__base.__rtruediv__(other)
+  __floordiv__ = lambda self, other: self.__base.__floordiv__(other)
+  __rfloordiv__ = lambda self, other: self.__base.__rfloordiv__(other)
+  __pow__ = lambda self, other: self.__base.__pow__(other)
+  __hash__ = lambda self: self.__hash
+  __int__ = lambda self: self.__base.__int__()
+  __float__ = lambda self: self.__base.__float__()
+  __abs__ = lambda self: self.__base.__abs__()
+  __neg__ = lambda self: self.__base.__neg__()
+
+  tolist = lambda self, *args, **kwargs: self.__base.tolist(*args, **kwargs)
+  copy = lambda self, *args, **kwargs: self.__base.copy(*args, **kwargs)
+  astype = lambda self, *args, **kwargs: self.__base.astype(*args, **kwargs)
+  take = lambda self, *args, **kwargs: self.__base.take(*args, **kwargs)
+  any = lambda self, *args, **kwargs: self.__base.any(*args, **kwargs)
+  all = lambda self, *args, **kwargs: self.__base.all(*args, **kwargs)
+  sum = lambda self, *args, **kwargs: self.__base.sum(*args, **kwargs)
+  min = lambda self, *args, **kwargs: self.__base.min(*args, **kwargs)
+  max = lambda self, *args, **kwargs: self.__base.max(*args, **kwargs)
+  prod = lambda self, *args, **kwargs: self.__base.prod(*args, **kwargs)
+  dot = lambda self, *args, **kwargs: self.__base.dot(*args, **kwargs)
+  swapaxes = lambda self, *args, **kwargs: frozenarray(self.__base.swapaxes(*args, **kwargs), copy=False)
+  ravel = lambda self, *args, **kwargs: frozenarray(self.__base.ravel(*args, **kwargs), copy=False)
+  reshape = lambda self, *args, **kwargs: frozenarray(self.__base.reshape(*args, **kwargs), copy=False)
+  transpose = lambda self, *args, **kwargs: frozenarray(self.__base.transpose(*args, **kwargs), copy=False)
+  cumsum = lambda self, *args, **kwargs: frozenarray(self.__base.cumsum(*args, **kwargs), copy=False)
+  nonzero = lambda self, *args, **kwargs: frozenarray(self.__base.nonzero(*args, **kwargs), copy=False)
+
+  def insertaxis(self, axis, length):
+    base = self.__base
+    return frozenarray(numpy.lib.stride_tricks.as_strided(base,
+      shape=base.shape[:axis]+(length,)+base.shape[axis:],
+      strides=base.strides[:axis]+(0,)+base.strides[axis:]))
+
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

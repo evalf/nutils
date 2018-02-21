@@ -224,7 +224,7 @@ class Points(Evaluable):
   def evalf(self, evalargs):
     points = evalargs['_points']
     assert numeric.isarray(points) and points.ndim == 2
-    return numeric.const(points)
+    return types.frozenarray(points)
 
 POINTS = Points()
 
@@ -592,7 +592,7 @@ class Normal(Array):
 class Constant(Array):
 
   @types.apply_annotations
-  def __init__(self, value:numeric.const):
+  def __init__(self, value:types.frozenarray):
     self.value = value
     super().__init__(args=[], shape=value.shape, dtype=value.dtype)
 
@@ -720,7 +720,7 @@ class InsertAxis(Array):
 
   def evalf(self, func, length):
     length, = length
-    return numeric.const(func).insertaxis(self.axis+1, length)
+    return types.frozenarray(func).insertaxis(self.axis+1, length)
 
   def _derivative(self, var, seen):
     return insertaxis(derivative(self.func, var, seen), self.axis, self.length)
@@ -1160,7 +1160,7 @@ class Interpolate(Array):
   'interpolate uniformly spaced data; stepwise for now'
 
   @types.apply_annotations
-  def __init__(self, x:asarray, xp:numeric.const, fp:numeric.const, left=None, right=None):
+  def __init__(self, x:asarray, xp:types.frozenarray, fp:types.frozenarray, left=None, right=None):
     assert xp.ndim == fp.ndim == 1
     if not numpy.greater(numpy.diff(xp), 0).all():
       warnings.warn('supplied x-values are non-increasing')
@@ -1187,8 +1187,8 @@ class Cross(Array):
 
   @cache.property
   def simplified(self):
-    i = numeric.const([1, 2, 0])
-    j = numeric.const([2, 0, 1])
+    i = types.frozenarray([1, 2, 0])
+    j = types.frozenarray([2, 0, 1])
     return subtract(take(self.func1, i, self.axis) * take(self.func2, j, self.axis),
                     take(self.func2, i, self.axis) * take(self.func1, j, self.axis)).simplified
 
@@ -1634,7 +1634,7 @@ class Take(Array):
   def evalf(self, arr, indices):
     if indices.shape[0] != 1:
       raise NotImplementedError('non element-constant indexing not supported yet')
-    return numeric.const(numpy.take(arr, indices[0], self.axis+1), copy=False)
+    return types.frozenarray(numpy.take(arr, indices[0], self.axis+1), copy=False)
 
   def _derivative(self, var, seen):
     return take(derivative(self.func, var, seen), self.indices, self.axis)
@@ -2630,7 +2630,7 @@ class Unravel(Array):
 class Mask(Array):
 
   @types.apply_annotations
-  def __init__(self, func:asarray, mask:numeric.const, axis:int):
+  def __init__(self, func:asarray, mask:types.frozenarray, axis:int):
     assert len(mask) == func.shape[axis]
     self.func = func
     self.axis = axis
@@ -2771,8 +2771,8 @@ class Polyval(Array):
 
   def evalf(self, cache, points, coeffs):
     assert points.shape[1] == self.points_ndim
-    points = numeric.const(points)
-    coeffs = numeric.const(coeffs)
+    points = types.frozenarray(points)
+    coeffs = types.frozenarray(coeffs)
     for igrad in range(self.ngrad):
       coeffs = cache[numeric.poly_grad](coeffs, self.points_ndim)
     return cache[numeric.poly_eval](coeffs, points)

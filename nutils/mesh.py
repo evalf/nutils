@@ -26,7 +26,7 @@ accompanying geometry function. Meshes can either be generated on the fly, e.g.
 provided at this point; output is handled by the :mod:`nutils.plot` module.
 """
 
-from . import topology, function, util, element, numpy, numeric, transform, log, warnings, _
+from . import topology, function, util, element, numpy, numeric, transform, log, warnings, types, _
 import os, itertools
 
 # MESH GENERATORS
@@ -516,7 +516,7 @@ def gmsh(fname, name=None):
       vgroups[name] = topology.SubsetTopology(topo, refs)
 
   # create geometry
-  dofs = tuple(map(numeric.const, vinodes[:,etype2indices[vetype]]))
+  dofs = tuple(map(types.frozenarray, vinodes[:,etype2indices[vetype]]))
   coeffs = [simplexref.get_poly_coeffs('lagrange', degree=2 if vetype in (8,9) else 1)] * len(dofs)
   basis = function.polyfunc(coeffs, dofs, len(nodes), (elem.transform for elem in elements), issorted=False)
   geom = (basis[:,_] * nodes).sum(0)

@@ -231,7 +231,7 @@ class Reference(cache.Immutable):
     ptype, args = match.groups()
     get = getattr(self, 'getischeme_'+ptype)
     ipoints, iweights = get(eval(args)) if args else get()
-    return numeric.const(ipoints, copy=False), numeric.const(iweights, copy=False) if iweights is not None else None
+    return types.frozenarray(ipoints, copy=False), types.frozenarray(iweights, copy=False) if iweights is not None else None
 
   @classmethod
   def register(cls, ptype, func):
@@ -385,7 +385,7 @@ class EmptyReference(Reference):
 
   @property
   def vertices(self):
-    return numeric.const(numpy.zeros((0, self.ndims)), copy=False)
+    return types.frozenarray(numpy.zeros((0, self.ndims)), copy=False)
 
   __and__ = __sub__ = lambda self, other: self if other.ndims == self.ndims else NotImplemented
   __or__ = lambda self, other: other if other.ndims == self.ndims else NotImplemented
@@ -404,7 +404,7 @@ class RevolutionReference(Reference):
     super().__init__(ndims=1)
 
   def vertices(self):
-    return numeric.const([[0.]]) # NOTE unclear if this is the desired outcome
+    return types.frozenarray([[0.]]) # NOTE unclear if this is the desired outcome
 
   @property
   def edge_transforms(self): # only used in check_edges
@@ -419,7 +419,7 @@ class RevolutionReference(Reference):
     return (transform.Identity(self.ndims), self),
 
   def getischeme(self, ischeme):
-    return numeric.const([[0.]]), numeric.const([2 * numpy.pi])
+    return types.frozenarray([[0.]]), types.frozenarray([2 * numpy.pi])
 
   def inside(self, point, eps=0):
     return True
@@ -429,7 +429,7 @@ class SimplexReference(Reference):
 
   @property
   def vertices(self):
-    return numeric.const(numpy.concatenate([numpy.zeros(self.ndims)[_,:], numpy.eye(self.ndims)], axis=0), copy=False)
+    return types.frozenarray(numpy.concatenate([numpy.zeros(self.ndims)[_,:], numpy.eye(self.ndims)], axis=0), copy=False)
 
   @cache.property
   def edge_refs(self):
@@ -502,7 +502,7 @@ class SimplexReference(Reference):
         if sum(p+q) <= degree:
           coeffs[(i,)+tuple(map(operator.add, p, q))] = (-1)**sum(q)*math.factorial(degree)//(math.factorial(degree-sum(p+q))*util.product(map(math.factorial, p+q)))
     assert i == ndofs - 1
-    return numeric.const(coeffs, copy=False)
+    return types.frozenarray(coeffs, copy=False)
 
   def _get_poly_coeffs_lagrange(self, degree):
     if self.ndims == 0:
@@ -515,16 +515,16 @@ class SimplexReference(Reference):
       coeffs = numpy.zeros((len(P),*[degree+1]*self.ndims), dtype=float)
       for i, p in enumerate(P):
         coeffs[(slice(None),*p)] = coeffs_[i]
-    return numeric.const(coeffs, copy=False)
+    return types.frozenarray(coeffs, copy=False)
 
   def get_edge_dofs(self, degree, iedge):
-    return numeric.const(tuple(i for i, j in enumerate(self._integer_barycentric_coordinates(degree)) if j[iedge] == 0), dtype=int)
+    return types.frozenarray(tuple(i for i, j in enumerate(self._integer_barycentric_coordinates(degree)) if j[iedge] == 0), dtype=int)
 
   def get_dof_transpose_map(self, degree, vertex_transpose_map):
     vertex_transpose_map = tuple(vertex_transpose_map)
     if len(vertex_transpose_map) != self.nverts or set(vertex_transpose_map) != set(range(self.nverts)):
       raise ValueError('invalid vertex indices: {!r}'.format(vertex_transpose_map))
-    return numeric.const(tuple(i for i, j in sorted(enumerate(self._integer_barycentric_coordinates(degree)), key=lambda ij: tuple(map(ij[1].__getitem__, vertex_transpose_map[::-1])))), dtype=int)
+    return types.frozenarray(tuple(i for i, j in sorted(enumerate(self._integer_barycentric_coordinates(degree)), key=lambda ij: tuple(map(ij[1].__getitem__, vertex_transpose_map[::-1])))), dtype=int)
 
 class PointReference(SimplexReference):
   '0D simplex'
@@ -533,7 +533,7 @@ class PointReference(SimplexReference):
     super().__init__(ndims=0)
 
   def getischeme(self, ischeme):
-    return numeric.const(numpy.empty([1,0])), numeric.const([1.])
+    return types.frozenarray(numpy.empty([1,0])), types.frozenarray([1.])
 
   def inside(self, point, eps=0):
     return True
@@ -557,7 +557,7 @@ class LineReference(SimplexReference):
     return x[:,_], w
 
   def getischeme_uniform(self, n):
-    return (numpy.arange(.5,n) / n)[:,_], numeric.const.full([n], 1/n)
+    return (numpy.arange(.5,n) / n)[:,_], types.frozenarray.full([n], 1/n)
 
   def getischeme_bezier(self, np):
     return numpy.linspace(0, 1, np)[:,_], None
@@ -633,7 +633,7 @@ class TriangleReference(SimplexReference):
     coords = C.reshape(2, nn)
     flip = coords.sum(0) > 1
     coords[:,flip] = 1 - coords[::-1,flip]
-    weights = numeric.const.full([nn], .5/nn)
+    weights = types.frozenarray.full([nn], .5/nn)
     return coords.T, weights
 
   def getischeme_bezier(self, np):
@@ -801,7 +801,7 @@ class TensorReference(Reference):
     vertices = numpy.empty((self.ref1.nverts, self.ref2.nverts, self.ndims), dtype=float)
     vertices[:,:,:self.ref1.ndims] = self.ref1.vertices[:,_]
     vertices[:,:,self.ref1.ndims:] = self.ref2.vertices[_,:]
-    return numeric.const(vertices.reshape(self.ref1.nverts*self.ref2.nverts, self.ndims), copy=False)
+    return types.frozenarray(vertices.reshape(self.ref1.nverts*self.ref2.nverts, self.ndims), copy=False)
 
   @property
   def centroid(self):
@@ -863,8 +863,8 @@ class TensorReference(Reference):
     ipoints = numpy.empty((len(ipoints1), len(ipoints2), self.ndims))
     ipoints[:,:,0:self.ref1.ndims] = ipoints1[:,_,:self.ref1.ndims]
     ipoints[:,:,self.ref1.ndims:self.ndims] = ipoints2[_,:,:self.ref2.ndims]
-    iweights = numeric.const((iweights1[:,_] * iweights2[_,:]).ravel(), copy=False) if iweights1 is not None and iweights2 is not None else None
-    return numeric.const(ipoints.reshape(len(ipoints1) * len(ipoints2), self.ndims), copy=False), iweights
+    iweights = types.frozenarray((iweights1[:,_] * iweights2[_,:]).ravel(), copy=False) if iweights1 is not None and iweights2 is not None else None
+    return types.frozenarray(ipoints.reshape(len(ipoints1) * len(ipoints2), self.ndims), copy=False), iweights
 
   @cache.property
   def edge_transforms(self):
@@ -938,7 +938,7 @@ class TensorReference(Reference):
     else:
       dofs1 = range(self.ref1.get_ndofs(degree))
       dofs2 = self.ref2.get_edge_dofs(degree, iedge-self.ref1.nedges)
-    return numeric.const(tuple(d1*nd2+d2 for d1, d2 in itertools.product(dofs1, dofs2)), dtype=int)
+    return types.frozenarray(tuple(d1*nd2+d2 for d1, d2 in itertools.product(dofs1, dofs2)), dtype=int)
 
   @property
   def _flat_refs(self):
@@ -984,13 +984,13 @@ class TensorReference(Reference):
     # `ref_verts`.
     if not numpy.all(numpy.equal(numpy.transpose(verts, perm).ravel(), vertex_transpose_map)):
       raise ValueError('invalid transformation: {!r}'.format(vertex_transpose_map))
-    return numeric.const(numpy.transpose(dofs, perm).ravel())
+    return types.frozenarray(numpy.transpose(dofs, perm).ravel())
 
 class Cone(Reference):
   'cone'
 
   @types.apply_annotations
-  def __init__(self, edgeref, etrans, tip:numeric.const):
+  def __init__(self, edgeref, etrans, tip:types.frozenarray):
     assert etrans.fromdims == edgeref.ndims
     assert etrans.todims == len(tip)
     super().__init__(len(tip))
@@ -1004,7 +1004,7 @@ class Cone(Reference):
 
   @cache.property
   def vertices(self):
-    return numeric.const(numpy.vstack([[self.tip], self.etrans.apply(self.edgeref.vertices)]), copy=False)
+    return types.frozenarray(numpy.vstack([[self.tip], self.etrans.apply(self.edgeref.vertices)]), copy=False)
 
   @cache.property
   def edge_transforms(self):
@@ -1262,7 +1262,7 @@ class MosaicReference(Reference):
   'triangulation'
 
   @types.apply_annotations
-  def __init__(self, baseref, edge_refs:tuple, midpoint:numeric.const):
+  def __init__(self, baseref, edge_refs:tuple, midpoint:types.frozenarray):
     assert len(edge_refs) == baseref.nedges
     assert edge_refs != tuple(baseref.edge_refs)
 
@@ -1317,7 +1317,7 @@ class MosaicReference(Reference):
           index = len(vertices)
           vertices.append(vertex)
         indices.append(index)
-    return numeric.const(vertices)
+    return types.frozenarray(vertices)
 
   def __and__(self, other):
     if other in (self,self.baseref):
@@ -1405,7 +1405,7 @@ def gauss(degree):
     k = numpy.arange(n) + 1
     d = k / numpy.sqrt(4*k**2-1)
     x, w = numpy.linalg.eigh(numpy.diagflat(d,-1)) # eigh operates (by default) on lower triangle
-    _gauss[n] = gaussn = numeric.const((x+1) * .5, copy=False), numeric.const(w[0]**2, copy=False)
+    _gauss[n] = gaussn = types.frozenarray((x+1) * .5, copy=False), types.frozenarray(w[0]**2, copy=False)
   return gaussn
 
 def getsimplex(ndims):

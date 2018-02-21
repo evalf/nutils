@@ -180,7 +180,7 @@ class Bifurcate(TransformItem):
 class Matrix(TransformItem):
 
   @types.apply_annotations
-  def __init__(self, linear:numeric.const, offset:numeric.const):
+  def __init__(self, linear:types.frozenarray, offset:types.frozenarray):
     assert linear.ndim == 2 and linear.dtype == float
     assert offset.ndim == 1 and offset.dtype == float
     assert len(offset) == len(linear)
@@ -190,7 +190,7 @@ class Matrix(TransformItem):
 
   def apply(self, points):
     assert points.shape[-1] == self.fromdims
-    return numeric.const(numpy.dot(points, self.linear.T) + self.offset, copy=False)
+    return types.frozenarray(numpy.dot(points, self.linear.T) + self.offset, copy=False)
 
   def __mul__(self, other):
     assert isinstance(other, Matrix) and self.fromdims == other.todims
@@ -206,13 +206,13 @@ class Matrix(TransformItem):
 class Square(Matrix):
 
   @types.apply_annotations
-  def __init__(self, linear:numeric.const, offset:numeric.const):
+  def __init__(self, linear:types.frozenarray, offset:types.frozenarray):
     assert linear.shape[0] == linear.shape[1]
     self._transform_matrix = {}
     super().__init__(linear, offset)
 
   def invapply(self, points):
-    return numeric.const(numpy.linalg.solve(self.linear, points - self.offset), copy=False)
+    return types.frozenarray(numpy.linalg.solve(self.linear, points - self.offset), copy=False)
 
   @cache.property
   def det(self):
@@ -251,15 +251,15 @@ class Shift(Square):
   det = 1.
 
   @types.apply_annotations
-  def __init__(self, offset:numeric.const):
+  def __init__(self, offset:types.frozenarray):
     assert offset.ndim == 1 and offset.dtype == float
     super().__init__(numpy.eye(len(offset)), offset)
 
   def apply(self, points):
-    return numeric.const(points + self.offset, copy=False)
+    return types.frozenarray(points + self.offset, copy=False)
 
   def invapply(self, points):
-    return numeric.const(points - self.offset, copy=False)
+    return types.frozenarray(points - self.offset, copy=False)
 
   def __str__(self):
     return '{}+x'.format(util.obj2str(self.offset))
@@ -281,16 +281,16 @@ class Identity(Shift):
 class Scale(Square):
 
   @types.apply_annotations
-  def __init__(self, scale:float, offset:numeric.const):
+  def __init__(self, scale:float, offset:types.frozenarray):
     assert offset.ndim == 1 and offset.dtype == float
     self.scale = scale
     super().__init__(numpy.eye(len(offset)) * scale, offset)
 
   def apply(self, points):
-    return numeric.const(self.scale * points + self.offset, copy=False)
+    return types.frozenarray(self.scale * points + self.offset, copy=False)
 
   def invapply(self, points):
-    return numeric.const((points - self.offset) / self.scale, copy=False)
+    return types.frozenarray((points - self.offset) / self.scale, copy=False)
 
   @property
   def det(self):
@@ -308,7 +308,7 @@ class Scale(Square):
 class Updim(Matrix):
 
   @types.apply_annotations
-  def __init__(self, linear:numeric.const, offset:numeric.const, isflipped:bool):
+  def __init__(self, linear:types.frozenarray, offset:types.frozenarray, isflipped:bool):
     assert linear.shape[0] == linear.shape[1] + 1
     self.isflipped = isflipped
     super().__init__(linear, offset)
@@ -316,7 +316,7 @@ class Updim(Matrix):
   @cache.property
   def ext(self):
     ext = numeric.ext(self.linear)
-    return numeric.const(-ext if self.isflipped else ext, copy=False)
+    return types.frozenarray(-ext if self.isflipped else ext, copy=False)
 
   @property
   def flipped(self):
@@ -396,7 +396,7 @@ class Slice(Matrix):
     super().__init__(numpy.eye(fromdims)[self.s], numpy.zeros(todims))
 
   def apply(self, points):
-    return numeric.const(points[:,self.s])
+    return types.frozenarray(points[:,self.s])
 
 class ScaledUpdim(Updim):
 
@@ -478,7 +478,7 @@ class VertexTransform(TransformItem):
 class MapTrans(VertexTransform):
 
   @types.apply_annotations
-  def __init__(self, linear:numeric.const, offset:numeric.const, vertices:numeric.const):
+  def __init__(self, linear:types.frozenarray, offset:types.frozenarray, vertices:types.frozenarray):
     assert len(linear) == len(offset) == len(vertices)
     self.vertices, self.linear, self.offset = map(numpy.array, zip(*sorted(zip(vertices, linear, offset)))) # sort vertices
     super().__init__(self.linear.shape[1])
