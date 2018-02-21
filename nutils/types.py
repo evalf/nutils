@@ -22,7 +22,7 @@
 Module with general purpose types.
 """
 
-import inspect, functools, itertools
+import inspect, functools, hashlib, itertools
 
 def aspreprocessor(apply):
   '''
@@ -253,5 +253,54 @@ def argument_canonicalizer(signature):
   ((1, 4), {'c': 3})
   '''
   return _build_apply_annotations(inspect.Signature(parameters=[param.replace(annotation=param.empty) for param in signature.parameters.values()]))
+
+def nutils_hash(data):
+  '''
+  Compute a stable hash of immutable object ``data``.  The hash is not affected
+  by Python's hash randomization (see :meth:`object.__hash__`).
+
+  Parameters
+  ----------
+  data
+      An immutable object of type :class:`bool`, :class:`int`, :class:`float`,
+      :class:`complex`, :class:`str`, :class:`bytes`, :class:`tuple`,
+      :class:`frozenset`, or :any:`Ellipsis` or :any:`None`, or the type
+      itself, or an object with a ``__nutils_hash__`` attribute.
+
+  Returns
+  -------
+  40 :class:`bytes`
+      The hash of ``data``.
+  '''
+
+  try:
+    return data.__nutils_hash__
+  except AttributeError:
+    pass
+
+  t = type(data)
+  if data is Ellipsis:
+    hargs = ()
+  elif data is None:
+    hargs = ()
+  elif any(data is dtype for dtype in (bool, int, float, complex, str, bytes, tuple, frozenset, type(Ellipsis), type(None))):
+    hargs = hashlib.sha1(data.__name__.encode()).digest(),
+  elif any(t is dtype for dtype in (bool, int, float, complex)):
+    hargs = hashlib.sha1(repr(data).encode()).digest(),
+  elif t is str:
+    hargs = hashlib.sha1(data.encode()).digest(),
+  elif t is bytes:
+    hargs = hashlib.sha1(data).digest(),
+  elif t is tuple:
+    hargs = map(nutils_hash, data)
+  elif t is frozenset:
+    hargs = sorted(map(nutils_hash, data))
+  else:
+    raise TypeError('unhashable type: {!r}'.format(data))
+
+  h = hashlib.sha1(t.__name__.encode()+b'\0')
+  for harg in hargs:
+    h.update(harg)
+  return h.digest()
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
