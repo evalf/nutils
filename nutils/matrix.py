@@ -22,11 +22,11 @@
 The matrix module defines a number of 2D matrix objects, notably the
 :func:`ScipyMatrix` and :func:`NumpyMatrix`. Matrix objects support basic
 addition and subtraction operations and provide a consistent insterface for
-solving linear systems. Matrices can be converted to numpy arrays via
-``toarray`` or scipy matrices via ``toscipy``.
+solving linear systems. Matrices can be converted into other forms suitable for
+external processing via the ``export`` method.
 """
 
-from . import numpy, log, numeric
+from . import numpy, log, numeric, warnings
 import abc
 
 
@@ -92,13 +92,38 @@ class Matrix(metaclass=abc.ABCMeta):
   def size(self):
     return numpy.prod(self.shape)
 
-  @abc.abstractmethod
   def rowsupp(self, tol=0):
     'return row indices with nonzero/non-small entries'
+
+    data, (row, col) = self.export('coo')
+    supp = numpy.zeros(self.shape[0], dtype=bool)
+    supp[row[data > tol]] = True
+    return supp
 
   @abc.abstractmethod
   def solve(self, rhs=None, constrain=None, lconstrain=None, rconstrain=None):
     'solve system given right hand side vector and/or constraints'
+
+  def export(self, form):
+    '''Export matrix data to any of supported forms.
+
+    Args
+    ----
+    form : :class:`str`
+      - "dense" : return matrix as a single dense array
+      - "csr" : return matrix as 3-tuple of (data, indices, indptr)
+      - "coo" : return matrix as 2-tuple of (data, (row, col))
+    '''
+
+    raise NotImplementedError('cannot export {} to {!r}'.format(self.__class__.__name__, form))
+
+  def toarray(self):
+    warnings.deprecation('M.toarray is deprecated; use M.export("dense") instead')
+    return self.export('dense')
+
+  def toscipy(self):
+    warnings.deprecation('M.toscipy is deprecated; use scipy.sparse.csr_matrix(M.export("csr")) instead')
+    return scipy.sparse.csr_matrix(self.export('csr'))
 
 
 ## NUMPY BACKEND
@@ -138,8 +163,16 @@ class NumpyMatrix(Matrix):
   def matvec(self, vec):
     return numpy.dot(self.core, vec)
 
-  def toarray(self):
-    return self.core
+  def export(self, form):
+    if form == 'dense':
+      return self.core
+    if form == 'coo':
+      ij = self.core.nonzero()
+      return self.core[ij], ij
+    if form == 'csr':
+      rows, cols = self.core.nonzero()
+      return self.core[rows, cols], cols, rows.searchsorted(numpy.arange(self.shape[0]+1))
+    raise NotImplementedError('cannot export NumpyMatrix to {!r}'.format(form))
 
   def rowsupp(self, tol=0):
     return numpy.greater(abs(self.core), tol).any(axis=1)
@@ -210,22 +243,20 @@ else:
     def matvec(self, vec):
       return self.core.dot(vec)
 
-    def toarray(self):
-      return self.core.toarray()
-
-    def toscipy(self):
-      return self.core
+    def export(self, form):
+      if form == 'dense':
+        return self.core.toarray()
+      if form == 'csr':
+        csr = self.core.tocsr()
+        return csr.data, csr.indices, csr.indptr
+      if form == 'coo':
+        coo = self.core.tocoo()
+        return coo.data, (coo.row, coo.col)
+      raise NotImplementedError('cannot export NumpyMatrix to {!r}'.format(form))
 
     @property
     def T(self):
       return ScipyMatrix(self.core.transpose())
-
-    def rowsupp(self, tol=0):
-      supp = numpy.empty(self.shape[0], dtype=bool)
-      for irow in range(self.shape[0]):
-        a, b = self.core.indptr[irow:irow+2]
-        supp[irow] = a != b and numpy.any(numpy.abs(self.core.data[a:b]) > tol)
-      return supp
 
     @log.title
     def solve(self, rhs=None, constrain=None, lconstrain=None, rconstrain=None, solver='spsolve', tol=0, lhs0=None, callback=None, precon=None, **solverargs):
