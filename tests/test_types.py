@@ -1,6 +1,7 @@
 from . import *
 import nutils.types
 import inspect
+import numpy
 
 class apply_annotations(TestCase):
 
@@ -383,5 +384,74 @@ class CacheMeta(TestCase):
         self.assertEqual(ncalls, 1)
         self.assertEqual(t.y, 1)
         self.assertEqual(ncalls, 1)
+
+class strictint(TestCase):
+
+  def test_int(self):
+    value = nutils.types.strictint(1)
+    self.assertEqual(value, 1)
+    self.assertEqual(type(value), int)
+
+  def test_numpy_int(self):
+    value = nutils.types.strictint(numpy.int64(1))
+    self.assertEqual(value, 1)
+    self.assertEqual(type(value), int)
+
+  def test_float(self):
+    with self.assertRaises(ValueError):
+      nutils.types.strictint(1.)
+
+  def test_numpy_float(self):
+    with self.assertRaises(ValueError):
+      nutils.types.strictint(numpy.float64(1.))
+
+  def test_complex(self):
+    with self.assertRaises(ValueError):
+      nutils.types.strictint(1+0j)
+
+  def test_str(self):
+    with self.assertRaises(ValueError):
+      nutils.types.strictint('1')
+
+class strictfloat(TestCase):
+
+  def test_int(self):
+    value = nutils.types.strictfloat(1)
+    self.assertEqual(value, 1.)
+    self.assertEqual(type(value), float)
+
+  def test_numpy_int(self):
+    value = nutils.types.strictfloat(numpy.int64(1))
+    self.assertEqual(value, 1.)
+    self.assertEqual(type(value), float)
+
+  def test_float(self):
+    value = nutils.types.strictfloat(1.)
+    self.assertEqual(value, 1.)
+    self.assertEqual(type(value), float)
+
+  def test_numpy_float(self):
+    value = nutils.types.strictfloat(numpy.float64(1.))
+    self.assertEqual(value, 1.)
+    self.assertEqual(type(value), float)
+
+  def test_complex(self):
+    with self.assertRaises(ValueError):
+      nutils.types.strictint(1+0j)
+
+  def test_str(self):
+    with self.assertRaises(ValueError):
+      nutils.types.strictfloat('1.')
+
+class strictstr(TestCase):
+
+  def test_str(self):
+    value = nutils.types.strictstr('spam')
+    self.assertEqual(value, 'spam')
+    self.assertEqual(type(value), str)
+
+  def test_int(self):
+    with self.assertRaises(ValueError):
+      nutils.types.strictstr(1)
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

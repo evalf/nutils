@@ -22,7 +22,8 @@
 Module with general purpose types.
 """
 
-import inspect, functools, hashlib, itertools, abc
+import inspect, functools, hashlib, builtins, numbers, itertools, abc
+import numpy
 
 def aspreprocessor(apply):
   '''
@@ -510,5 +511,92 @@ class CacheMeta(abc.ABCMeta):
           slots.append(cache_attr)
         namespace['__slots__'] = tuple(slots)
     return super().__new__(mcls, name, bases, namespace, **kwargs)
+
+def strictint(value):
+  '''
+  Converts any type that is a subclass of :class:`numbers.Integral` (e.g.
+  :class:`int` and ``numpy.int64``) to :class:`int`, and fails otherwise.
+  Notable differences with the behavior of :class:`int`:
+
+  *   :func:`strictint` does not convert a :class:`str` to an :class:`int`.
+  *   :func:`strictint` does not truncate :class:`float` to an :class:`int`.
+
+  Examples
+  --------
+
+  >>> strictint(1), type(strictint(1))
+  (1, <class 'int'>)
+  >>> strictint(numpy.int64(1)), type(strictint(numpy.int64(1)))
+  (1, <class 'int'>)
+  >>> strictint(1.0)
+  Traceback (most recent call last):
+      ...
+  ValueError: not an integer: 1.0
+  >>> strictint('1')
+  Traceback (most recent call last):
+      ...
+  ValueError: not an integer: '1'
+  '''
+
+  if not isinstance(value, numbers.Integral):
+    raise ValueError('not an integer: {!r}'.format(value))
+  return builtins.int(value)
+
+def strictfloat(value):
+  '''
+  Converts any type that is a subclass of :class:`numbers.Real` (e.g.
+  :class:`float` and ``numpy.float64``) to :class:`float`, and fails
+  otherwise.  Notable difference with the behavior of :class:`float`:
+
+  *   :func:`strictfloat` does not convert a :class:`str` to an :class:`float`.
+
+  Examples
+  --------
+
+  >>> strictfloat(1), type(strictfloat(1))
+  (1.0, <class 'float'>)
+  >>> strictfloat(numpy.float64(1.2)), type(strictfloat(numpy.float64(1.2)))
+  (1.2, <class 'float'>)
+  >>> strictfloat(1.2+3.4j)
+  Traceback (most recent call last):
+      ...
+  ValueError: not a real number: (1.2+3.4j)
+  >>> strictfloat('1.2')
+  Traceback (most recent call last):
+      ...
+  ValueError: not a real number: '1.2'
+  '''
+
+  if not isinstance(value, numbers.Real):
+    raise ValueError('not a real number: {!r}'.format(value))
+  return builtins.float(value)
+
+def strictstr(value):
+  '''
+  Returns ``value`` unmodified if it is a :class:`str`, and fails otherwise.
+  Notable difference with the behavior of :class:`str`:
+
+  *   :func:`strictstr` does not call ``__str__`` methods of objects to
+      automatically convert objects to :class:`str`\\s.
+
+  Examples
+  --------
+
+  Passing a :class:`str` to :func:`strictstr` works:
+
+  >>> strictstr('spam')
+  'spam'
+
+  Passing an :class:`int` will fail:
+
+  >>> strictstr(1)
+  Traceback (most recent call last):
+      ...
+  ValueError: not a 'str': 1
+  '''
+
+  if not isinstance(value, str):
+    raise ValueError("not a 'str': {!r}".format(value))
+  return value
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
