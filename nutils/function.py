@@ -1235,7 +1235,7 @@ class Determinant(Array):
 class Multiply(Array):
 
   @types.apply_annotations
-  def __init__(self, funcs:util.frozenmultiset):
+  def __init__(self, funcs:types.frozenmultiset):
     self.funcs = funcs
     func1, func2 = funcs
     assert isarray(func1) and isarray(func2) and func1.shape == func2.shape
@@ -1322,7 +1322,7 @@ class Multiply(Array):
 class Add(Array):
 
   @types.apply_annotations
-  def __init__(self, funcs:util.frozenmultiset):
+  def __init__(self, funcs:types.frozenmultiset):
     self.funcs = funcs
     func1, func2 = funcs
     assert isarray(func1) and isarray(func2) and func1.shape == func2.shape
@@ -1389,7 +1389,7 @@ class BlockAdd(Array):
   'block addition (used for DG)'
 
   @types.apply_annotations
-  def __init__(self, funcs:util.frozenmultiset):
+  def __init__(self, funcs:types.frozenmultiset):
     self.funcs = funcs
     shapes = set(func.shape for func in funcs)
     assert len(shapes) == 1, 'multiple shapes in BlockAdd'
@@ -1460,7 +1460,7 @@ class BlockAdd(Array):
 class Dot(Array):
 
   @types.apply_annotations
-  def __init__(self, funcs:util.frozenmultiset, axes:tuple):
+  def __init__(self, funcs:types.frozenmultiset, axes:tuple):
     self.funcs = funcs
     func1, func2 = funcs
     assert isarray(func1) and isarray(func2) and func1.shape == func2.shape
