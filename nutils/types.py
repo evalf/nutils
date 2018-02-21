@@ -783,8 +783,58 @@ class frozendict(collections.abc.Mapping, metaclass=_frozendictmeta):
 
   __repr__ = __str__ = lambda self: '{}({})'.format(type(self).__name__, self.__base)
 
-class frozenmultiset(collections.abc.Container):
+class _frozenmultisetmeta(CacheMeta):
+  def __getitem__(self, itemtype):
+    @_copyname(src=self, suffix='[{}]'.format(_getname(itemtype)))
+    def constructor(value):
+      return self(map(itemtype, value))
+    return constructor
+
+class frozenmultiset(collections.abc.Container, metaclass=_frozenmultisetmeta):
+  '''
+  An immutable multiset_.  A multiset is a generalization of a set: items may
+  occur more than once.  Two mutlisets are equal if they have the same set of
+  items and the same item multiplicities.
+
+  A custom item constructor can be supplied via the notation
+  ``frozenmultiset[I]``, with ``I`` the item constructor.  This is shorthand
+  for ``lambda items: frozenmultiset(map(I, items))``.  The item constructor
+  should be any callable that takes one argument.
+
+  .. _multiset: https://en.wikipedia.org/wiki/Multiset
+
+  Examples
+  --------
+
+  >>> a = frozenmultiset(['spam', 'bacon', 'spam'])
+  >>> b = frozenmultiset(['sausage', 'spam'])
+
+  The :class:`frozenmultiset` objects support ``+``, ``-`` and ``&`` operators:
+
+  >>> a + b
+  frozenmultiset(['spam', 'bacon', 'spam', 'sausage', 'spam'])
+  >>> a - b
+  frozenmultiset(['bacon', 'spam'])
+  >>> a & b
+  frozenmultiset(['spam'])
+
+  The order of the items is irrelevant:
+
+  >>> frozenmultiset(['spam', 'spam', 'eggs']) == frozenmultiset(['spam', 'eggs', 'spam'])
+  True
+
+  The multiplicities, however, are not:
+
+  >>> frozenmultiset(['spam', 'spam', 'eggs']) == frozenmultiset(['spam', 'eggs'])
+  False
+
+  .. automethod:: __and__
+  .. automethod:: __add__
+  .. automethod:: __sub__
+  '''
+
   __slots__ = '__items', '__key'
+  __cache__ = '__nutils_hash__',
 
   def __new__(cls, items):
     if isinstance(items, frozenmultiset):
@@ -794,7 +844,20 @@ class frozenmultiset(collections.abc.Container):
     self.__key = frozenset((item, self.__items.count(item)) for item in self.__items)
     return self
 
+  @property
+  def __nutils_hash__(self):
+    h = hashlib.sha1('{}.{}\0'.format(type(self).__module__, type(self).__qualname__).encode())
+    for item in sorted('{:04d}'.format(count).encode()+nutils_hash(item) for item, count in self.__key):
+      h.update(item)
+    return h.digest()
+
   def __and__(self, other):
+    '''
+    Return a :class:`frozenmultiset` with elements from the left and right hand
+    sides with strict positive multiplicity, where the multiplicity is the
+    minimum of multiplicitie of the left and right hand side.
+    '''
+
     items = list(self.__items)
     isect = []
     for item in other:
@@ -806,10 +869,29 @@ class frozenmultiset(collections.abc.Container):
         isect.append(item)
     return frozenmultiset(isect)
 
+  def __add__(self, other):
+    '''
+    Return a :class:`frozenmultiset` with elements from the left and right hand
+    sides with a multiplicity equal to the sum of the left and right hand
+    sides.
+    '''
+
+    return frozenmultiset(self.__items + tuple(other))
+
   def __sub__(self, other):
+    '''
+    Return a :class:`frozenmultiset` with elements from the left hand sides with
+    a multiplicity equal to the difference of the multiplicity of the left and
+    right hand sides, truncated to zero.  Elements with multiplicity zero are
+    omitted.
+    '''
+
     items = list(self.__items)
     for item in other:
-      items.remove(item)
+      try:
+        items.remove(item)
+      except ValueError:
+        pass
     return frozenmultiset(items)
 
   __reduce__ = lambda self: (frozenmultiset, (self.__items,))
@@ -818,9 +900,10 @@ class frozenmultiset(collections.abc.Container):
   __contains__ = lambda self, item: item in self.__items
   __iter__ = lambda self: iter(self.__items)
   __len__ = lambda self: len(self.__items)
-  __bool__ = lambda self: bool(self.__items)
-  __add__ = lambda self, other: frozenmultiset(self.__items + tuple(other))
+  __nonzero__ = lambda self: bool(self.__items)
 
   isdisjoint = lambda self, other: not any(item in self.__items for item in other)
+
+  __repr__ = __str__ = lambda self: '{}({})'.format(type(self).__name__, list(self.__items))
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

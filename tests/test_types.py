@@ -1,6 +1,6 @@
 from . import *
 import nutils.types
-import inspect, pickle
+import inspect, pickle, itertools
 import numpy
 
 class apply_annotations(TestCase):
@@ -601,5 +601,101 @@ class frozendict(TestCase):
   def test_nutils_hash(self):
     frozen = nutils.types.frozendict({'spam': 1, 'eggs': 2.3})
     self.assertEqual(nutils.types.nutils_hash(frozen).hex(), '8cf14f109e54707af9c2e66d7d3cdb755cce8243')
+
+class frozenmultiset(TestCase):
+
+  def test_constructor(self):
+    src = 'spam', 'bacon', 'sausage', 'spam'
+    for name, value in [('tuple', src), ('frozenmultiset', nutils.types.frozenmultiset(src))]:
+      with self.subTest(name=name):
+        frozen = nutils.types.frozenmultiset(value)
+        for item in 'spam', 'bacon', 'sausage':
+          self.assertEqual({k: tuple(frozen).count(k) for k in set(src)}, {'spam':2, 'bacon':1, 'sausage':1})
+
+  def test_clsgetitem(self):
+    src = False, 1, numpy.int64(2)
+    frozen = nutils.types.frozenmultiset[nutils.types.strictint](src)
+    self.assertEqual(set(frozen), {0, 1, 2})
+
+  def test_preserve_order(self):
+    for src in [('spam', 'bacon', 'sausage', 'spam'), ('spam', 'egg', 'spam', 'spam', 'bacon', 'spam')]:
+      with self.subTest(src=src):
+        self.assertEqual(tuple(nutils.types.frozenmultiset(src)), src)
+
+  def test_and(self):
+    for l, r, lar in [[['spam', 'eggs'], ['spam', 'spam', 'eggs'], ['spam', 'eggs']],
+                      [['spam'], ['eggs'], []],
+                      [['spam','spam']]*3]:
+      with self.subTest(l=l, r=r, lar=lar):
+        self.assertEqual(nutils.types.frozenmultiset(l)&nutils.types.frozenmultiset(r), nutils.types.frozenmultiset(lar))
+      with self.subTest(l=r, r=l, lar=lar):
+        self.assertEqual(nutils.types.frozenmultiset(r)&nutils.types.frozenmultiset(l), nutils.types.frozenmultiset(lar))
+
+  def test_sub(self):
+    for l, r, lmr, rml in [[['spam', 'eggs'], ['spam', 'spam', 'eggs'], [], ['spam']],
+                           [['spam'], ['eggs'], ['spam'], ['eggs']],
+                           [['spam'], ['spam'], [], []]]:
+      with self.subTest(l=l, r=r, lmr=lmr):
+        self.assertEqual(nutils.types.frozenmultiset(l)-nutils.types.frozenmultiset(r), nutils.types.frozenmultiset(lmr))
+      with self.subTest(l=r, r=l, lmr=rml):
+        self.assertEqual(nutils.types.frozenmultiset(r)-nutils.types.frozenmultiset(l), nutils.types.frozenmultiset(rml))
+
+  def test_pickle(self):
+    src = 'spam', 'bacon', 'sausage', 'spam'
+    frozen = pickle.loads(pickle.dumps(nutils.types.frozenmultiset(src)))
+    self.assertIsInstance(frozen, nutils.types.frozenmultiset)
+    self.assertEqual(frozen, nutils.types.frozenmultiset(src))
+
+  def test_hash(self):
+    src = 'spam', 'bacon', 'sausage', 'spam'
+    ref = nutils.types.frozenmultiset(src)
+    for perm in itertools.permutations(src):
+      with self.subTest(perm=perm):
+        self.assertEqual(hash(nutils.types.frozenmultiset(src)), hash(ref))
+
+  def test_nutils_hash(self):
+    for perm in itertools.permutations(('spam', 'bacon', 'sausage', 'spam')):
+      with self.subTest(perm=perm):
+        frozen = nutils.types.frozenmultiset(perm)
+        self.assertEqual(nutils.types.nutils_hash(frozen).hex(), 'f3fd9c6d4741af2e67973457ee6308deddcb714c')
+
+  def test_eq(self):
+    src = 'spam', 'bacon', 'sausage', 'spam'
+    ref = nutils.types.frozenmultiset(src)
+    for perm in itertools.permutations(src):
+      with self.subTest(perm=perm):
+        self.assertEqual(nutils.types.frozenmultiset(src), ref)
+
+  def test_contains(self):
+    src = 'spam', 'bacon', 'sausage', 'spam'
+    frozen = nutils.types.frozenmultiset(src)
+    for item in 'spam', 'bacon', 'eggs':
+      with self.subTest(item=item):
+        if item in src:
+          self.assertIn(item, frozen)
+        else:
+          self.assertNotIn(item, frozen)
+
+  def test_len(self):
+    src = 'spam', 'bacon', 'sausage', 'spam'
+    frozen = nutils.types.frozenmultiset(src)
+    self.assertEqual(len(frozen), len(src))
+
+  def test_nonzero(self):
+    self.assertTrue(nutils.types.frozenmultiset(['spam', 'eggs']))
+    self.assertFalse(nutils.types.frozenmultiset([]))
+
+  def test_add(self):
+    l = nutils.types.frozenmultiset(['spam', 'bacon'])
+    r = nutils.types.frozenmultiset(['sausage', 'spam'])
+    lpr = nutils.types.frozenmultiset(['spam', 'bacon', 'sausage', 'spam'])
+    self.assertEqual(l+r, lpr)
+
+  def test_isdisjoint(self):
+    for l, r, disjoint in [[['spam', 'eggs'], ['spam', 'spam', 'eggs'], False],
+                           [['spam'], ['eggs'], True],
+                           [['spam'], ['spam'], False]]:
+      with self.subTest(l=l, r=r, disjoint=disjoint):
+        self.assertEqual(nutils.types.frozenmultiset(l).isdisjoint(nutils.types.frozenmultiset(r)), disjoint)
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
