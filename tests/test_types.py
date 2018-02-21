@@ -467,4 +467,27 @@ class strict(TestCase):
     with self.assertRaises(TypeError):
       nutils.types.strict()
 
+class tupletype(TestCase):
+
+  def test_valid1(self):
+    value = nutils.types.tuple[nutils.types.strictint]([])
+    self.assertEqual(value, ())
+    self.assertEqual(type(value), tuple)
+
+  def test_valid2(self):
+    value = nutils.types.tuple[nutils.types.strictint]([1,2,3])
+    self.assertEqual(value, (1,2,3))
+    self.assertEqual(type(value), tuple)
+
+  def test_invalid(self):
+    with self.assertRaises(ValueError):
+      nutils.types.tuple[nutils.types.strictint]([1, 'spam','eggs'])
+
+  def test_without_item_constructor(self):
+    src = 1,2,3
+    self.assertEqual(nutils.types.tuple(src), tuple(src))
+
+  def test_name(self):
+    self.assertEqual(nutils.types.tuple[nutils.types.strictint].__name__, 'tuple[nutils.types.strictint]')
+
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

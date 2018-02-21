@@ -284,7 +284,7 @@ def nutils_hash(data):
     hargs = ()
   elif data is None:
     hargs = ()
-  elif any(data is dtype for dtype in (bool, int, float, complex, str, bytes, tuple, frozenset, type(Ellipsis), type(None))):
+  elif any(data is dtype for dtype in (bool, int, float, complex, str, bytes, builtins.tuple, frozenset, type(Ellipsis), type(None))):
     hargs = hashlib.sha1(data.__name__.encode()).digest(),
   elif any(t is dtype for dtype in (bool, int, float, complex)):
     hargs = hashlib.sha1(repr(data).encode()).digest(),
@@ -292,7 +292,7 @@ def nutils_hash(data):
     hargs = hashlib.sha1(data.encode()).digest(),
   elif t is bytes:
     hargs = hashlib.sha1(data).digest(),
-  elif t is tuple:
+  elif t is builtins.tuple:
     hargs = map(nutils_hash, data)
   elif t is frozenset:
     hargs = sorted(map(nutils_hash, data))
@@ -654,5 +654,41 @@ class strict(metaclass=_strictmeta):
       ...
   ValueError: expected an object of type 'int' but got '1' with type 'str'
   '''
+
+class _tuplemeta(type):
+  def __getitem__(self, itemtype):
+    @_copyname(src=self, suffix='[{}]'.format(_getname(itemtype)))
+    def constructor(value):
+      return builtins.tuple(map(itemtype, value))
+    return constructor
+  @staticmethod
+  def __call__(*args, **kwargs):
+    return builtins.tuple(*args, **kwargs)
+
+class tuple(builtins.tuple, metaclass=_tuplemeta):
+  '''
+  Wrapper of :class:`tuple` that supports a user-defined item constructor via
+  the notation ``tuple[I]``, with ``I`` the item constructor.  This is
+  shorthand for ``lambda items: tuple(map(I, items))``.  The item constructor
+  should be any callable that takes one argument.
+
+  Examples
+  --------
+
+  A tuple with items processed with :func:`strictint`:
+
+  >>> tuple[strictint]((False, 1, 2, numpy.int64(3)))
+  (0, 1, 2, 3)
+
+  If the item constructor raises an exception, the construction of the
+  :class:`tuple` failes accordingly:
+
+  >>> tuple[strictint]((1, 2, 3.4))
+  Traceback (most recent call last):
+      ...
+  ValueError: not an integer: 3.4
+  '''
+
+  __slots__ = ()
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
