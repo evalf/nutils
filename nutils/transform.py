@@ -126,10 +126,11 @@ def linearfrom(chain, ndims):
 
 ## TRANSFORM ITEMS
 
-class TransformItem(cache.Immutable):
+class TransformItem(types.Singleton):
 
   @types.apply_annotations
   def __init__(self, todims, fromdims:int):
+    super().__init__()
     self.todims = todims
     self.fromdims = fromdims
 

@@ -839,6 +839,7 @@ class frozenarray(TestCase):
     self.assertEqual(nutils.types.frozenarray.full([2,3], 1.5), nutils.types.frozenarray([[1.5]*3]*2, float))
 
   def test_as_numpy_array(self):
+
     a = numpy.array(nutils.types.frozenarray([1,2]))
     self.assertIsInstance(a, numpy.ndarray)
 
@@ -873,5 +874,87 @@ class c_array(TestCase):
   def test_wo_getitem(self):
     with self.assertRaises(TypeError):
       nutils.types.c_array()
+
+class T_Immutable(nutils.types.Immutable):
+  def __init__(self, x, y):
+    pass
+
+class T_Singleton(nutils.types.Singleton):
+  def __init__(self, x, y):
+    pass
+
+@parametrize
+class ImmutableFamily(TestCase):
+
+  def test_pickle(self):
+    T = {nutils.types.Immutable: T_Immutable, nutils.types.Singleton: T_Singleton}[self.cls]
+    a = T(1, 2)
+    b = pickle.loads(pickle.dumps(a))
+    self.assertEqual(a, b)
+
+  def test_eq(self):
+    class T(self.cls):
+      def __init__(self, x, y):
+        pass
+    class U(self.cls):
+      def __init__(self, x, y):
+        pass
+
+    self.assertEqual(T(1, 2), T(1, 2))
+    self.assertNotEqual(T(1, 2), T(2, 1))
+    self.assertNotEqual(T(1, 2), U(1, 2))
+
+  def test_canonical_args(self):
+    class T(self.cls):
+      def __init__(self, x, y, z=3):
+        pass
+
+    self.assertEqual(T(x=1, y=2), T(1, 2, 3))
+
+  def test_preprocessors(self):
+    class T(self.cls):
+      @nutils.types.apply_annotations
+      def __init__(self, x: int):
+        pass
+
+    self.assertEqual(T(1), T('1'))
+    self.assertEqual(T(1), T(x='1'))
+
+  def test_nutils_hash(self):
+    class T(self.cls):
+      def __init__(self, x, y):
+        pass
+    class U(self.cls):
+      def __init__(self, x, y):
+        pass
+
+    self.assertEqual(nutils.types.nutils_hash(T(1, 2)).hex(), nutils.types.nutils_hash(T(1, 2)).hex())
+    self.assertNotEqual(nutils.types.nutils_hash(T(1, 2)).hex(), nutils.types.nutils_hash(T(2, 1)).hex())
+    self.assertNotEqual(nutils.types.nutils_hash(T(1, 2)).hex(), nutils.types.nutils_hash(U(1, 2)).hex())
+    # Since the hash does not include base classes, the hashes of Immutable and Singleton are the same.
+    self.assertEqual(nutils.types.nutils_hash(T(1, 2)).hex(), '6e4dad3d266104acea4c4b1b14f1d285d12f0c93')
+
+  @parametrize.enable_if(lambda cls: cls is nutils.types.Singleton)
+  def test_deduplication(self):
+    class T(self.cls):
+      def __init__(self, x, y):
+        pass
+    class U(self.cls):
+      def __init__(self, x, y):
+        pass
+
+    a = T(1, 2)
+    b = T(1, 2)
+    c = T(2, 1)
+    d = U(1, 2)
+    self.assertIs(a, b)
+    self.assertEqual(a, b)
+    self.assertIsNot(a, c)
+    self.assertNotEqual(a, c)
+    self.assertIsNot(a, d)
+    self.assertNotEqual(a, d)
+
+ImmutableFamily(cls=nutils.types.Immutable)
+ImmutableFamily(cls=nutils.types.Singleton)
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

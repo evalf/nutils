@@ -23,7 +23,7 @@ The cache module.
 """
 
 from . import config, log, types
-import os, sys, numpy, functools, inspect, builtins
+import os, numpy, functools, inspect, builtins
 
 def property(f):
   _self = object()
@@ -101,73 +101,6 @@ class WrapperDummyCache:
 
   def __getitem__(self, func):
     return func
-
-class ImmutableMeta(type):
-
-  _cleanup_threshold = 1000 # number of new instances until next cleanup
-
-  def __init__(cls, *args, **kwargs):
-    super().__init__(*args, **kwargs)
-    cls._cache = {}
-    # Peel off the preprocessors (see `types.aspreprocessor`) and store the
-    # preprocessors and the uncovered init separately.
-    pre_init = []
-    init = cls.__init__
-    while hasattr(init, '__preprocess__'):
-      pre_init.append(init.__preprocess__)
-      init = init.__wrapped__
-    if not pre_init or not getattr(pre_init[-1], 'returns_canonical_arguments', False):
-      pre_init.append(types.argument_canonicalizer(inspect.signature(init)))
-    cls._pre_init = tuple(pre_init)
-    cls._init = init
-
-  def __call__(*args, **kwargs):
-    cls = args[0]
-    # Use `None` as temporary `self` argument, apply preprocessors and
-    # remove the temporary `self`.
-    args = None, *args[1:]
-    for preprocess in cls._pre_init:
-      args, kwargs = preprocess(*args, **kwargs)
-    args = args[1:]
-    assert not kwargs
-    return cls._new(*args)
-
-  def _new(cls, *args):
-    try:
-      self = cls._cache[args]
-    except KeyError:
-      self = cls.__new__(cls)
-      self._args = args
-      self._hash = hash(args)
-      self._init(*args)
-      cls._cache[args] = self
-      if len(cls._cache) > cls._cleanup_threshold:
-        cls._cache = {key: value for key, value in cls._cache.items() if sys.getrefcount(value) > 4}
-        cls._cleanup_threshold = ImmutableMeta._cleanup_threshold + len(cls._cache)
-    return self
-
-class Immutable(metaclass=ImmutableMeta):
-
-  def __init__(self):
-    pass
-
-  def __reduce__(self):
-    return self.__class__._new, self._args
-
-  def __hash__(self):
-    return self._hash
-
-  def __getstate__(self):
-    raise Exception('getstate should never be called')
-
-  def __setstate__(self, state):
-    raise Exception('setstate should never be called')
-
-  def __str__(self):
-    return '{}({})'.format(self.__class__.__name__, ','.join(str(arg) for arg in self._args))
-
-  def edit(self, op):
-    return self.__class__(*[op(arg) for arg in self._args])
 
 class FileCache:
   'cache'
@@ -252,7 +185,7 @@ def replace(func):
       except KeyError:
         replaced = func(obj, *funcargs, **funckwargs)
         if replaced is None:
-          replaced = obj.edit(op) if isinstance(obj, Immutable) else obj
+          replaced = obj.edit(op) if isinstance(obj, types.Immutable) else obj
         cache[obj] = replaced
       return replaced
     retval = op(target)

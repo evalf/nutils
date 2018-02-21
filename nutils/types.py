@@ -22,7 +22,7 @@
 Module with general purpose types.
 """
 
-import inspect, functools, hashlib, builtins, numbers, collections.abc, itertools, abc
+import inspect, functools, hashlib, builtins, numbers, collections.abc, itertools, abc, sys
 import numpy
 
 def aspreprocessor(apply):
@@ -511,6 +511,182 @@ class CacheMeta(abc.ABCMeta):
           slots.append(cache_attr)
         namespace['__slots__'] = tuple(slots)
     return super().__new__(mcls, name, bases, namespace, **kwargs)
+
+class ImmutableMeta(CacheMeta):
+
+  def __new__(mcls, name, bases, namespace, **kwargs):
+    cls = super().__new__(mcls, name, bases, namespace, **kwargs)
+    # Peel off the preprocessors (see `aspreprocessor`) and store the
+    # preprocessors and the uncovered init separately.
+    pre_init = []
+    init = cls.__init__
+    while hasattr(init, '__preprocess__'):
+      pre_init.append(init.__preprocess__)
+      init = init.__wrapped__
+    if not pre_init or not getattr(pre_init[-1], 'returns_canonical_arguments', False):
+      pre_init.append(argument_canonicalizer(inspect.signature(init)))
+    cls._pre_init = tuple(pre_init)
+    cls._init = init
+    return cls
+
+  def __call__(*args, **kwargs):
+    cls = args[0]
+    # Use `None` as temporary `self` argument, apply preprocessors and
+    # remove the temporary `self`.
+    args = None, *args[1:]
+    for preprocess in cls._pre_init:
+      args, kwargs = preprocess(*args, **kwargs)
+    args = args[1:]
+    assert not kwargs
+    return cls._new(*args)
+
+  def _new(cls, *args):
+    self = cls.__new__(cls)
+    self._args = args
+    self._hash = hash(args)
+    self._init(*args)
+    return self
+
+class Immutable(metaclass=ImmutableMeta):
+  '''
+  Base class for immutable types.  This class adds equality tests, traditional
+  hashing (:func:`hash`), nutils hashing (:func:`nutils_hash`) and pickling,
+  all based solely on the (positional) intialization arguments, ``args`` for
+  future reference.  Keyword-only arguments are not supported.  All arguments
+  should be hashable by :func:`nutils_hash`.
+
+  Positional and keyword initialization arguments are canonicalized
+  automatically (by :func:`argument_canonicalizer`).  If the ``__init__``
+  method of a subclass is decorated with preprocessors (see
+  :func:`aspreprocessor`), the preprocessors are applied to the initialization
+  arguments and ``args`` becomes the preprocessed positional part.
+
+  Examples
+  --------
+
+  Consider the following class.
+
+  >>> class Plain(Immutable):
+  ...   def __init__(self, a, b):
+  ...     pass
+
+  Calling ``Plain`` with equivalent positional or keyword arguments produces
+  equal instances:
+
+  >>> Plain(1, 2) == Plain(a=1, b=2)
+  True
+
+  Passing unhashable values to ``Plain`` will fail:
+
+  >>> Plain([1, 2], [3, 4])
+  Traceback (most recent call last):
+      ...
+  TypeError: unhashable type: 'list'
+
+  This can be solved by adding and applying annotations to ``__init__``.  The
+  following class converts its initialization arguments to :class:`tuple`
+  automaticaly:
+
+  >>> class Annotated(Immutable):
+  ...   @apply_annotations
+  ...   def __init__(self, a:tuple, b:tuple):
+  ...     pass
+
+  Calling ``Annotated`` with either :class:`list`\\s of ``1, 2`` and ``3, 4``
+  or :class:`tuple`\\s gives equal instances:
+
+  >>> Annotated([1, 2], [3, 4]) == Annotated((1, 2), (3, 4))
+  True
+  '''
+
+  __slots__ = '_args', '_hash'
+  __cache__ = '__nutils_hash__',
+
+  def __reduce__(self):
+    return self.__class__._new, self._args
+
+  def __hash__(self):
+    return self._hash
+
+  def __eq__(self, other):
+    return self.__class__ is other.__class__ and self._hash == other._hash and self._args == other._args
+
+  @property
+  def __nutils_hash__(self):
+    h = hashlib.sha1('{}.{}\0'.format(type(self).__module__, type(self).__qualname__).encode())
+    for arg in self._args:
+      h.update(nutils_hash(arg))
+    return h.digest()
+
+  def __getstate__(self):
+    raise Exception('getstate should never be called')
+
+  def __setstate__(self, state):
+    raise Exception('setstate should never be called')
+
+  def __str__(self):
+    return '{}({})'.format(self.__class__.__name__, ','.join(str(arg) for arg in self._args))
+
+  def edit(self, op):
+    return self.__class__(*[op(arg) for arg in self._args])
+
+class SingletonMeta(ImmutableMeta):
+
+  _cleanup_threshold = 1000 # number of new instances until next cleanup
+
+  def __new__(mcls, name, bases, namespace, **kwargs):
+    cls = super().__new__(mcls, name, bases, namespace, **kwargs)
+    cls._cache = {}
+    return cls
+
+  def _new(cls, *args):
+    try:
+      self = cls._cache[args]
+    except KeyError:
+      cls._cache[args] = self = super()._new(*args)
+      if len(cls._cache) > cls._cleanup_threshold:
+        cls._cache = {key: value for key, value in cls._cache.items() if sys.getrefcount(value) > 4}
+        cls._cleanup_threshold = SingletonMeta._cleanup_threshold + len(cls._cache)
+    return self
+
+class Singleton(Immutable, metaclass=SingletonMeta):
+  '''
+  Subclass of :class:`Immutable` that creates a single instance per unique set
+  of initialization arguments.
+
+  Examples
+  --------
+
+  Consider the following class.
+
+  >>> class Plain(Singleton):
+  ...   def __init__(self, a, b):
+  ...     pass
+
+  Calling ``Plain`` with equivalent positional or keyword arguments produces
+  one instance:
+
+  >>> Plain(1, 2) is Plain(a=1, b=2)
+  True
+
+  Consider the folling class with annotations.
+
+  >>> class Annotated(Singleton):
+  ...   @apply_annotations
+  ...   def __init__(self, a:tuple, b:tuple):
+  ...     pass
+
+  Calling ``Annotated`` with either :class:`list`\\s of ``1, 2`` and ``3, 4``
+  or :class:`tuple`\\s gives a single instance:
+
+  >>> Annotated([1, 2], [3, 4]) is Annotated((1, 2), (3, 4))
+  True
+  '''
+
+  __slots__ = ()
+
+  __hash__ = Immutable.__hash__
+  __eq__ = object.__eq__
 
 def strictint(value):
   '''

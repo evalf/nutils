@@ -47,11 +47,12 @@ import sys, itertools, functools, operator, inspect, numbers, builtins, re, type
 
 isevaluable = lambda arg: isinstance(arg, Evaluable)
 
-class Evaluable(cache.Immutable):
+class Evaluable(types.Singleton):
   'Base class'
 
   @types.apply_annotations
   def __init__(self, args:tuple):
+    super().__init__()
     assert all(isevaluable(arg) for arg in args)
     self.__args = args
 

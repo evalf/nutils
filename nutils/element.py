@@ -132,11 +132,12 @@ class Element:
 
 ## REFERENCE ELEMENTS
 
-class Reference(cache.Immutable):
+class Reference(types.Singleton):
   'reference element'
 
   @types.apply_annotations
   def __init__(self, ndims:int):
+    super().__init__()
     self.ndims = ndims
 
   @property
