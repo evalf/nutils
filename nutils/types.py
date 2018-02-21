@@ -691,8 +691,56 @@ class tuple(builtins.tuple, metaclass=_tuplemeta):
 
   __slots__ = ()
 
-class frozendict(collections.abc.Mapping):
+class _frozendictmeta(CacheMeta):
+  def __getitem__(self, keyvaluetype):
+    if not isinstance(keyvaluetype, builtins.tuple) or len(keyvaluetype) != 2:
+      raise RuntimeError("expected a 'tuple' of length 2 but got {!r}".format(keyvaluetype))
+    keytype, valuetype = keyvaluetype
+    @_copyname(src=self, suffix='[{},{}]'.format(_getname(keytype), _getname(valuetype)))
+    def constructor(arg):
+      if isinstance(arg, collections.abc.Mapping):
+        items = arg.items()
+      elif isinstance(arg, (collections.abc.MappingView, collections.abc.Iterable)):
+        items = arg
+      else:
+        raise ValueError('expected a mapping or iterable but got {!r}'.format(arg))
+      return self((keytype(key), valuetype(value)) for key, value in items)
+    return constructor
+
+class frozendict(collections.abc.Mapping, metaclass=_frozendictmeta):
+  '''
+  An immutable version of :class:`dict`.  The :class:`frozendict` is hashable
+  and both the keys and values should be hashable as well.
+
+  Custom key and value constructors can be supplied via the ``frozendict[K,V]``
+  notation, with ``K`` the key constructor and ``V`` the value constructor,
+  which is roughly equivalent to ``lambda *args, **kwargs: {K(k): V(v) for k, v
+  in dict(*args, **kwargs).items()}``.
+
+  Examples
+  --------
+
+  A :class:`frozendict` with :func:`strictstr` as key constructor and
+  :func:`strictfloat` as value constructor:
+
+  >>> frozendict[strictstr,strictfloat]({'spam': False})
+  frozendict({'spam': 0.0})
+
+  Similar but with non-strict constructors:
+
+  >>> frozendict[str,float]({None: '1.2'})
+  frozendict({'None': 1.2})
+
+  Applying the strict constructors to invalid data raises an exception:
+
+  >>> frozendict[strictstr,strictfloat]({None: '1.2'})
+  Traceback (most recent call last):
+      ...
+  ValueError: not a 'str': None
+  '''
+
   __slots__ = '__base', '__hash'
+  __cache__ = '__nutils_hash__',
 
   def __new__(cls, base):
     if isinstance(base, frozendict):
@@ -701,6 +749,13 @@ class frozendict(collections.abc.Mapping):
     self.__base = dict(base)
     self.__hash = hash(frozenset(self.__base.items())) # check immutability and precompute hash
     return self
+
+  @property
+  def __nutils_hash__(self):
+    h = hashlib.sha1('{}.{}\0'.format(type(self).__module__, type(self).__qualname__).encode())
+    for item in sorted(nutils_hash(k)+nutils_hash(v) for k, v in self.items()):
+      h.update(item)
+    return h.digest()
 
   def __reduce__(self):
     return frozendict, (self.__base,)
@@ -725,5 +780,7 @@ class frozendict(collections.abc.Mapping):
   __contains__ = lambda self, key: self.__base.__contains__(key)
 
   copy = lambda self: self.__base.copy()
+
+  __repr__ = __str__ = lambda self: '{}({})'.format(type(self).__name__, self.__base)
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

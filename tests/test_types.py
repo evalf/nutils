@@ -1,6 +1,6 @@
 from . import *
 import nutils.types
-import inspect
+import inspect, pickle
 import numpy
 
 class apply_annotations(TestCase):
@@ -489,5 +489,117 @@ class tupletype(TestCase):
 
   def test_name(self):
     self.assertEqual(nutils.types.tuple[nutils.types.strictint].__name__, 'tuple[nutils.types.strictint]')
+
+class frozendict(TestCase):
+
+  def test_constructor(self):
+    src = {'spam': 1, 'eggs': 2.3}
+    for name, value in [('mapping', src), ('mapping_view', src.items()), ('iterable', (item for item in src.items())), ('frozendict', nutils.types.frozendict(src))]:
+      with self.subTest(name):
+        frozen = nutils.types.frozendict(value)
+        self.assertIsInstance(frozen, nutils.types.frozendict)
+        self.assertEqual(dict(frozen), src)
+
+  def test_constructor_invalid(self):
+    with self.assertRaises(ValueError):
+      nutils.types.frozendict(['spam', 'eggs', 1])
+
+  def test_clsgetitem(self):
+    T = nutils.types.frozendict[str, float]
+    src = {1: 2, 'spam': '2.3'}
+    for name, value in [('mapping', src), ('mapping_view', src.items()), ('iterable', (item for item in src.items()))]:
+      with self.subTest(name):
+        frozen = T(value)
+        self.assertIsInstance(frozen, nutils.types.frozendict)
+        self.assertEqual(dict(frozen), {'1': 2., 'spam': 2.3})
+
+  def test_clsgetitem_invalid_types(self):
+    with self.assertRaises(RuntimeError):
+      nutils.types.frozendict[str, float, bool]
+
+  def test_clsgetitem_invalid_value(self):
+    T = nutils.types.frozendict[str, float]
+    with self.assertRaises(ValueError):
+      T(1)
+
+  def test_setitem(self):
+    frozen = nutils.types.frozendict({'spam': 1, 'eggs': 2.3})
+    with self.assertRaises(TypeError):
+      frozen['eggs'] = 3
+
+  def test_delitem(self):
+    frozen = nutils.types.frozendict({'spam': 1, 'eggs': 2.3})
+    with self.assertRaises(TypeError):
+      del frozen['eggs']
+
+  def test_getitem_existing(self):
+    frozen = nutils.types.frozendict({'spam': 1, 'eggs': 2.3})
+    self.assertEqual(frozen['spam'], 1)
+
+  def test_getitem_nonexisting(self):
+    frozen = nutils.types.frozendict({'spam': 1, 'eggs': 2.3})
+    with self.assertRaises(KeyError):
+      frozen['foo']
+
+  def test_contains(self):
+    frozen = nutils.types.frozendict({'spam': 1, 'eggs': 2.3})
+    self.assertIn('spam', frozen)
+    self.assertNotIn('foo', frozen)
+
+  def test_iter(self):
+    src = {'spam': 1, 'eggs': 2.3}
+    frozen = nutils.types.frozendict(src)
+    self.assertEqual(frozenset(frozen), frozenset(src))
+
+  def test_len(self):
+    src = {'spam': 1, 'eggs': 2.3}
+    frozen = nutils.types.frozendict(src)
+    self.assertEqual(len(frozen), len(src))
+
+  def test_hash(self):
+    src = {'spam': 1, 'eggs': 2.3}
+    self.assertEqual(hash(nutils.types.frozendict(src)), hash(nutils.types.frozendict(src)))
+
+  def test_copy(self):
+    src = {'spam': 1, 'eggs': 2.3}
+    copy = nutils.types.frozendict(src).copy()
+    self.assertIsInstance(copy, dict)
+    self.assertEqual(copy, src)
+
+  def test_pickle(self):
+    src = {'spam': 1, 'eggs': 2.3}
+    frozen = pickle.loads(pickle.dumps(nutils.types.frozendict(src)))
+    self.assertIsInstance(frozen, nutils.types.frozendict)
+    self.assertEqual(dict(frozen), src)
+
+  def test_eq_same_id(self):
+    src = {'spam': 1, 'eggs': 2.3}
+    a = nutils.types.frozendict(src)
+    self.assertEqual(a, a)
+
+  def test_eq_other_id(self):
+    src = {'spam': 1, 'eggs': 2.3}
+    a = nutils.types.frozendict(src)
+    b = nutils.types.frozendict(src)
+    self.assertEqual(a, b)
+
+  def test_eq_deduplicated(self):
+    src = {'spam': 1, 'eggs': 2.3}
+    a = nutils.types.frozendict(src)
+    b = nutils.types.frozendict(src)
+    a == b # this replaces `a.__base` with `b.__base`
+    self.assertEqual(a, b)
+
+  def test_ineq_frozendict(self):
+    src = {'spam': 1, 'eggs': 2.3}
+    self.assertNotEqual(nutils.types.frozendict(src), nutils.types.frozendict({'spam': 1}))
+
+  def test_ineq_dict(self):
+    src = {'spam': 1, 'eggs': 2.3}
+    self.assertNotEqual(nutils.types.frozendict(src), src)
+
+  def test_nutils_hash(self):
+    frozen = nutils.types.frozendict({'spam': 1, 'eggs': 2.3})
+    self.assertEqual(nutils.types.nutils_hash(frozen).hex(), '8cf14f109e54707af9c2e66d7d3cdb755cce8243')
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
