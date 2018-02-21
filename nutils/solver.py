@@ -58,7 +58,7 @@ class Integral:
   '''Postponed integral, used for derivative purposes'''
 
   def __init__(self, integrands):
-    self._integrands = util.hashlessdict(integrands)
+    self._integrands = util.hashlessdict((di, f.simplified) for di, f in integrands)
     shapes = {integrand.shape for integrand in self._integrands.values()}
     assert len(shapes) == 1, 'incompatible shapes: {}'.format(' != '.join(str(shape) for shape in shapes))
     self.shape, = shapes
@@ -112,7 +112,7 @@ class Integral:
         integrands[di] += integrand
       except KeyError:
         integrands[di] = integrand
-    return Integral(integrands)
+    return Integral(integrands.items())
 
   def __neg__(self):
     return Integral([di, -integrand] for di, integrand in self._integrands.items())
@@ -135,7 +135,7 @@ class Integral:
   def _argshape(self, name):
     assert isinstance(name, str)
     shapes = {func.shape[:func.ndim-func._nderiv]
-      for func in function.Tuple(self._integrands.values()).simplified.dependencies
+      for func in function.Tuple(self._integrands.values()).dependencies
         if isinstance(func, function.Argument) and func._name == name}
     if not shapes:
       raise KeyError(name)
