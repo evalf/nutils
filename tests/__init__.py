@@ -1,4 +1,4 @@
-import unittest, sys, types, operator, contextlib
+import unittest, sys, types as builtin_types, operator, contextlib
 
 
 class _ParametrizedCollection(type):
@@ -48,7 +48,7 @@ class _ParametrizedCollection(type):
               break
       ns.update(setUp=setUp, __qualname__=cls.__qualname__+':'+name, __module__=cls.__module__, __doc__=cls.__doc__)
       return ns
-    TestCase = types.new_class(name, (cls.__base,), exec_body=populate)
+    TestCase = builtin_types.new_class(name, (cls.__base,), exec_body=populate)
 
     cls.__test_cases.append(TestCase)
     # Add `TestCase` as `name` to this collection.
@@ -68,7 +68,7 @@ def parametrize(TestCase):
   >>> TestSomething(x=1, y=1)
   >>> TestSomething(x=2, y=2)
   '''
-  return types.new_class(TestCase.__name__, (), dict(metaclass=_ParametrizedCollection, base=TestCase))
+  return builtin_types.new_class(TestCase.__name__, (), dict(metaclass=_ParametrizedCollection, base=TestCase))
 
 def _parametrize_enable_if(test):
   def wrapper(func):

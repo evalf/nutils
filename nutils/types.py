@@ -18,17 +18,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-import sys, numpy
-from distutils.version import LooseVersion
+"""
+Module with general purpose types.
+"""
 
-assert sys.version_info >= (3, 5)
-assert LooseVersion(numpy.version.version) >= LooseVersion('1.8'), 'nutils requires numpy 1.8 or higher, got {}'.format(numpy.version.version)
-
-version = '4.0a0'
-version_name = None
-long_version = ('{} "{}"' if version_name else '{}').format(version, version_name)
-
-_ = numpy.newaxis
-__all__ = ['_', 'numpy', 'core', 'numeric', 'element', 'function', 'expression',
-  'mesh', 'plot', 'topology', 'util', 'matrix', 'parallel', 'log',
-  'cache', 'transform', 'solver', 'cli', 'warnings', 'config', 'types']
+# vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
