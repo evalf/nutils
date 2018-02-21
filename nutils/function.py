@@ -1854,7 +1854,7 @@ class Sampled(Array):
   'sampled'
 
   @types.apply_annotations
-  def __init__(self, data:util.frozendict, trans=TRANS):
+  def __init__(self, data:types.frozendict, trans=TRANS):
     self.data = data.copy()
     self.trans = trans
     items = iter(self.data.items())

@@ -202,41 +202,6 @@ class hashlessdict(collections.abc.MutableMapping):
   def copy(self):
     return hashlessdict(self)
 
-class frozendict(collections.abc.Mapping):
-  __slots__ = '__base', '__hash'
-
-  def __new__(cls, base):
-    if isinstance(base, frozendict):
-      return base
-    self = object.__new__(cls)
-    self.__base = dict(base)
-    self.__hash = hash(frozenset(self.__base.items())) # check immutability and precompute hash
-    return self
-
-  def __reduce__(self):
-    return frozendict, (self.__base,)
-
-  def __eq__(self, other):
-    if self is other:
-      return True
-    if not isinstance(other, frozendict):
-      return False
-    if self.__base is other.__base:
-      return True
-    if self.__hash != other.__hash or self.__base != other.__base:
-      return False
-    # deduplicate
-    self.__base = other.__base
-    return True
-
-  __getitem__ = lambda self, item: self.__base.__getitem__(item)
-  __iter__ = lambda self: self.__base.__iter__()
-  __len__ = lambda self: self.__base.__len__()
-  __hash__ = lambda self: self.__hash
-  __contains__ = lambda self, key: self.__base.__contains__(key)
-
-  copy = lambda self: self.__base.copy()
-
 class frozenmultiset(collections.abc.Container):
   __slots__ = '__items', '__key'
 
