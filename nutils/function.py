@@ -1170,6 +1170,13 @@ class Cross(Array):
     self.axis = axis
     super().__init__(args=(func1,func2), shape=func1.shape, dtype=_jointdtype(func1.dtype, func2.dtype))
 
+  @cache.property
+  def simplified(self):
+    i = numeric.const([1, 2, 0])
+    j = numeric.const([2, 0, 1])
+    return subtract(take(self.func1, i, self.axis) * take(self.func2, j, self.axis),
+                    take(self.func2, i, self.axis) * take(self.func1, j, self.axis)).simplified
+
   def evalf(self, a, b):
     assert a.ndim == b.ndim == self.ndim+1
     return numpy.cross(a, b, axis=self.axis+1)
@@ -1359,13 +1366,6 @@ class Add(Array):
   def _mask(self, maskvec, axis):
     func1, func2 = self.funcs
     return Add([Mask(func1, maskvec, axis), Mask(func2, maskvec, axis)])
-
-  def _multiply(self, other):
-    func1, func2 = self.funcs
-    try1 = func1._multiply(other)
-    try2 = func2._multiply(other)
-    if try1 is not None and try2 is not None:
-      return Add([try1, try2])
 
 class BlockAdd(Array):
   'block addition (used for DG)'
@@ -2289,12 +2289,14 @@ class Stack(Array):
         krons = Add([krons, kron]).simplified
       elif not iszero(func):
         funcs[ifunc] = func
-    if tuple(funcs) == self.funcs: # avoid recursion
-      assert iszero(krons)
-      return self
     if all(func is None for func in funcs):
       return krons
-    return Add([Stack(funcs, self.axis), krons]).simplified
+    if tuple(funcs) != self.funcs: # avoid recursion
+      return Add([Stack(funcs, self.axis), krons]).simplified
+    assert iszero(krons)
+    if all(func == funcs[0] for func in funcs[1:]):
+      return InsertAxis(funcs[0], self.axis, len(funcs))
+    return self
 
   def evalf(self, *funcs):
     shape = builtins.max(funcs, key=len).shape
@@ -3028,7 +3030,7 @@ def nsymgrad(arg, geom, ndims=0):
   return dotnorm(symgrad(arg, geom, ndims), geom)
 
 def expand_dims(arg, n):
-  return InsertAxis(arg, n, 1)
+  return InsertAxis(arg, numeric.normdim(arg.ndim+1, n), 1)
 
 def trignormal(angle):
   angle = asarray(angle)
@@ -3053,7 +3055,8 @@ def insertaxis(arg, n, length):
   return InsertAxis(arg, n, length)
 
 def stack(args, axis=0):
-  return Stack(_numpy_align(*args), axis)
+  aligned = _numpy_align(*args)
+  return Stack(aligned, numeric.normdim(aligned[0].ndim+1, axis))
 
 def chain(funcs):
   'chain'
