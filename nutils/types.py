@@ -22,4 +22,21 @@
 Module with general purpose types.
 """
 
+import inspect, functools
+
+def apply_annotations(f, signature=None):
+  if signature is None:
+    signature = inspect.signature(f)
+  annotations = [(param.name, param.annotation) for param in signature.parameters.values() if param.annotation != param.empty]
+  if not annotations:
+    return f
+  @functools.wraps(f)
+  def wrapped(*args, **kwargs):
+    bound = signature.bind(*args, **kwargs)
+    bound.apply_defaults()
+    for name, op in annotations:
+      bound.arguments[name] = op(bound.arguments[name])
+    return f(*bound.args, **bound.kwargs)
+  return wrapped
+
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

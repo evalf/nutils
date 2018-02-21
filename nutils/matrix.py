@@ -26,7 +26,7 @@ solving linear systems. Matrices can be converted into other forms suitable for
 external processing via the ``export`` method.
 """
 
-from . import numpy, log, numeric, warnings, cache, util, config
+from . import numpy, log, numeric, warnings, cache, types, config
 import abc, sys, ctypes
 
 
@@ -449,7 +449,7 @@ else:
     def __init__(self):
       self.pt = numpy.zeros(64, numpy.int64) # handle to data structure
 
-    @util.enforcetypes
+    @types.apply_annotations
     def __call__(self, *, phase:c_int, iparm:c_int, maxfct:c_int=1, mnum:c_int=1, mtype:c_int=0, n:c_int=0, a:c_double=None, ia:c_int=None, ja:c_int=None, perm:c_int=None, nrhs:c_int=0, msglvl:c_int=0, b:c_double=None, x:c_double=None):
       error = ctypes.c_int32(1)
       self._pardiso(self.pt.ctypes, maxfct, mnum, mtype, phase, n, a, ia, ja, perm, nrhs, iparm, msglvl, b, x, ctypes.byref(error))

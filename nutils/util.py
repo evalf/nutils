@@ -277,21 +277,6 @@ class frozenmultiset(collections.abc.Container):
 
   isdisjoint = lambda self, other: not any(item in self.__items for item in other)
 
-def enforcetypes(f, signature=None):
-  if signature is None:
-    signature = inspect.signature(f)
-  annotations = [(param.name, param.annotation) for param in signature.parameters.values() if param.annotation != param.empty]
-  if not annotations:
-    return f
-  @functools.wraps(f)
-  def wrapped(*args, **kwargs):
-    bound = signature.bind(*args, **kwargs)
-    bound.apply_defaults()
-    for name, op in annotations:
-      bound.arguments[name] = op(bound.arguments[name])
-    return f(*bound.args, **bound.kwargs)
-  return wrapped
-
 def obj2str(obj):
   '''compact, lossy string representation of arbitrary object'''
   return '['+','.join(obj2str(item) for item in obj)+']' if isinstance(obj, collections.abc.Iterable) \

@@ -22,7 +22,7 @@
 The cache module.
 """
 
-from . import config, log, numeric, util
+from . import config, log, types
 import os, sys, numpy, functools, inspect, builtins
 
 def property(f):
@@ -115,7 +115,7 @@ class ImmutableMeta(type):
     cls._cache = {}
     cls._init = cls.__init__
     if cls._annotations:
-      cls.__init__ = util.enforcetypes(cls.__init__, signature)
+      cls.__init__ = types.apply_annotations(cls.__init__, signature)
 
   def __call__(cls, *args, **kwargs):
     bound = cls._signature.bind(*args, **kwargs)
