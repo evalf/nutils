@@ -393,7 +393,7 @@ class Topology:
       else:
         solvecons = constrain.copy()
         solvecons[~(constrain.where|N)] = 0
-        u = A.solve(b, solvecons, **solverargs)
+        u = A.solve(b, constrain=solvecons, **solverargs)
         constrain[N] = u[N]
         err2 = f2 - numpy.dot(2*b-A.matvec(u), u) # can be negative ~zero due to rounding errors
         avg_error = numpy.sqrt(err2) / area if err2 > 0 else 0

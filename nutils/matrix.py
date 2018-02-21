@@ -101,8 +101,29 @@ class Matrix(metaclass=abc.ABCMeta):
     return supp
 
   @abc.abstractmethod
-  def solve(self, rhs=None, constrain=None, lconstrain=None, rconstrain=None):
-    'solve system given right hand side vector and/or constraints'
+  def solve(self, rhs=None, *, lhs0=None, constrain=None, rconstrain=None, **solverargs):
+    '''Solve system given right hand side vector and/or constraints.
+
+    Args
+    ----
+    rhs : float vector or None
+        Right hand side vector. `None` implies all zeros.
+    lhs0 : float vector or None
+        Initial values. `None` implies all zeros.
+    constrain : float or boolean array, or None
+        Column constraints. For float values, a number signifies a constraint,
+        NaN signifies a free dof. For boolean, a True value signifies a
+        constraint to the value in `lhs0`, a False value signifies a free dof.
+        `None` implies no constraints.
+    rconstrain : boolean array or None
+        Row constrains. A True value signifies a constrains, a False value a free
+        dof. `None` implies that the constraints follow those defined in
+        `constrain` (by implication the matrix must be square).
+
+    Returns
+    -------
+    Left hand side vector.
+    '''
 
   @abc.abstractmethod
   def submatrix(self, rows, cols):
@@ -138,6 +159,45 @@ class Matrix(metaclass=abc.ABCMeta):
   def toscipy(self):
     warnings.deprecation('M.toscipy is deprecated; use scipy.sparse.csr_matrix(M.export("csr")) instead')
     return scipy.sparse.csr_matrix(self.export('csr'))
+
+def preparesolvearguments(wrapped):
+  '''Make rhs optional, add lhs0, constrain, rconstrain arguments.
+
+  See Matrix.solve.'''
+
+  def solve(self, rhs=None, *, lhs0=None, constrain=None, rconstrain=None, **solverargs):
+    nrows, ncols = self.shape
+    if lhs0 is None:
+      x = numpy.zeros(ncols)
+    else:
+      x = numpy.array(lhs0, dtype=float)
+      assert x.shape == (ncols,)
+    if constrain is None:
+      J = numpy.ones(ncols, dtype=bool)
+    else:
+      assert constrain.shape == (ncols,)
+      if constrain.dtype == bool:
+        J = ~constrain
+      else:
+        J = numpy.isnan(constrain)
+        x[~J] = constrain[~J]
+    if rconstrain is None:
+      assert nrows == ncols
+      I = J
+    else:
+      assert rconstrain.shape == (nrows,) and constrain.dtype == bool
+      I = ~rconstrain
+    assert I.sum() == J.sum(), 'constrained matrix is not square: {}x{}'.format(I.sum(), J.sum())
+    if rhs is None:
+      rhs = 0.
+    b = (rhs - self.matvec(x))[J]
+    if b.any():
+      x[J] += wrapped(self if I.all() and J.all() else self.submatrix(I, J), b, **solverargs)
+      log.info('solver returned with residual {:.0e}'.format(numpy.linalg.norm((rhs - self.matvec(x))[J])))
+    else:
+      log.info('skipping solver because initial vector is exact')
+    return x
+  return log.title(solve)
 
 
 ## NUMPY BACKEND
@@ -191,23 +251,9 @@ class NumpyMatrix(Matrix):
   def rowsupp(self, tol=0):
     return numpy.greater(abs(self.core), tol).any(axis=1)
 
-  @log.title
-  def solve(self, b=None, constrain=None, lconstrain=None, rconstrain=None):
-
-    if b is None:
-      b = numpy.zeros(self.shape[0])
-    else:
-      b = numpy.asarray(b, dtype=float)
-      assert b.ndim == 1, 'right-hand-side has shape {}, expected a vector'.format(b.shape)
-      assert b.shape == self.shape[:1]
-
-    x, I, J = parsecons(constrain, lconstrain, rconstrain, self.shape)
-    if I.all() and J.all():
-      return numpy.linalg.solve(self.core, b)
-
-    data = self.core[I]
-    x[J] = numpy.linalg.solve(data[:,J], b[I] - numpy.dot(data[:,~J], x[~J]))
-    return x
+  @preparesolvearguments
+  def solve(self, rhs):
+    return numpy.linalg.solve(self.core, rhs)
 
   def submatrix(self, rows, cols):
     return NumpyMatrix(self.core[numpy.ix_(rows, cols)])
@@ -275,106 +321,50 @@ else:
     def T(self):
       return ScipyMatrix(self.core.transpose())
 
-    @log.title
-    def solve(self, rhs=None, constrain=None, lconstrain=None, rconstrain=None, solver='spsolve', tol=0, lhs0=None, callback=None, precon=None, **solverargs):
-
-      lhs, I, J = parsecons(constrain, lconstrain, rconstrain, self.shape)
-      A = self.core
-      if not I.all():
-        A = A[I,:]
-      b = (rhs[I] if rhs is not None else 0) - A * lhs
-      if not J.all():
-        A = A[:,J]
-
-      if not b.any():
-        log.info('right hand side is zero')
-        return lhs
-
-      x0 = lhs0[J] if lhs0 is not None else numpy.zeros(A.shape[0])
-      res0 = numpy.linalg.norm(b - A * x0) / numpy.linalg.norm(b)
-      if res0 < tol:
-        log.info('initial residual is below tolerance')
-        x = x0
-      elif solver == 'spsolve':
+    @preparesolvearguments
+    def solve(self, rhs, atol=0, solver='spsolve', callback=None, precon=None, **solverargs):
+      if solver == 'spsolve':
         log.info('solving system using sparse direct solver')
-        x = scipy.sparse.linalg.spsolve(A, b)
-      else:
-        assert tol, 'tolerance must be specified for iterative solver'
-        log.info('solving system using {} iterative solver'.format(solver))
-        solverfun = getattr(scipy.sparse.linalg, solver)
-        # keep scipy from making things circular by shielding the nature of A
-        A = scipy.sparse.linalg.LinearOperator(A.shape, A.__mul__, dtype=float)
-        if isinstance(precon, str):
-          M = self.getprecon(precon, constrain, lconstrain, rconstrain)
-        elif callable(precon):
-          M = precon(A)
-        elif precon is None: # create identity operator, because scipy's native identity operator has circular references
-          M = scipy.sparse.linalg.LinearOperator(A.shape, matvec=lambda x:x, rmatvec=lambda x:x, matmat=lambda x:x, dtype=float)
-        else:
-          M = precon
-        assert isinstance(M, scipy.sparse.linalg.LinearOperator)
-        norm = max(numpy.linalg.norm(b), 1) # scipy terminates on minimum of relative and absolute residual
-        niter = numpy.array(0)
-        def mycallback(arg):
-          niter[...] += 1
-          # some solvers provide the residual, others the left hand side vector
-          res = float(numpy.linalg.norm(b - A * arg) / norm if numpy.ndim(arg) == 1 else arg)
-          if callback:
-            callback(res)
-          with log.context('residual {:.2e} ({:.0f}%)'.format(res, 100. * numpy.log10(res) / numpy.log10(tol) if res > 0 else 0)):
-            pass
-        x, status = solverfun(A, b, M=M, tol=tol, x0=x0, callback=mycallback, **solverargs)
-        assert status == 0, '{} solver failed with status {}'.format(solver, status)
-        res = numpy.linalg.norm(b - A * x) / norm
-        log.info('solver converged in {} iterations to residual {:.1e}'.format(niter, res))
+        return scipy.sparse.linalg.spsolve(self.core, rhs)
+      assert atol, 'tolerance must be specified for iterative solver'
+      rhsnorm = numpy.linalg.norm(rhs)
+      if rhsnorm <= atol:
+        return numpy.zeros(self.shape[1])
+      log.info('solving system using {} iterative solver'.format(solver))
+      solverfun = getattr(scipy.sparse.linalg, solver)
+      myrhs = rhs / rhsnorm # normalize right hand side vector for best control over scipy's stopping criterion
+      mytol = atol / rhsnorm
+      niter = numpy.array(0)
+      def mycallback(arg):
+        niter[...] += 1
+        # some solvers provide the residual, others the left hand side vector
+        res = numpy.linalg.norm(myrhs - self.matvec(arg)) if numpy.ndim(arg) == 1 else float(arg)
+        if callback:
+          callback(res)
+        with log.context('residual {:.2e} ({:.0f}%)'.format(res, 100. * numpy.log10(res) / numpy.log10(mytol) if res > 0 else 0)):
+          pass
+      M = self.getprecon(precon) if isinstance(precon, str) else precon(self.core) if callable(precon) else precon
+      mylhs, status = solverfun(self.core, myrhs, M=M, tol=mytol, callback=mycallback, **solverargs)
+      assert status == 0, '{} solver failed with status {}'.format(solver, status)
+      log.info('solver converged in {} iterations'.format(niter))
+      return mylhs * rhsnorm
 
-      lhs[J] = x
-      return lhs
-
-    def getprecon(self, name='SPLU', constrain=None, lconstrain=None, rconstrain=None):
+    def getprecon(self, name):
       name = name.lower()
-      x, I, J = parsecons(constrain, lconstrain, rconstrain, self.shape)
-      A = self.core[I,:][:,J]
-      assert A.shape[0] == A.shape[1], 'constrained matrix must be square'
+      assert self.shape[0] == self.shape[1], 'constrained matrix must be square'
       log.info('building {} preconditioner'.format(name))
       if name == 'splu':
-        precon = scipy.sparse.linalg.splu(A.tocsc()).solve
+        precon = scipy.sparse.linalg.splu(self.core.tocsc()).solve
       elif name == 'spilu':
-        precon = scipy.sparse.linalg.spilu(A.tocsc(), drop_tol=1e-5, fill_factor=None, drop_rule=None, permc_spec=None, diag_pivot_thresh=None, relax=None, panel_size=None, options=None).solve
+        precon = scipy.sparse.linalg.spilu(self.core.tocsc(), drop_tol=1e-5, fill_factor=None, drop_rule=None, permc_spec=None, diag_pivot_thresh=None, relax=None, panel_size=None, options=None).solve
       elif name == 'diag':
-        precon = numpy.reciprocal(A.diagonal()).__mul__
+        precon = numpy.reciprocal(self.core.diagonal()).__mul__
       else:
         raise Exception('invalid preconditioner {!r}'.format(name))
-      return scipy.sparse.linalg.LinearOperator(A.shape, precon, dtype=float)
+      return scipy.sparse.linalg.LinearOperator(self.shape, precon, dtype=float)
 
     def submatrix(self, rows, cols):
       return ScipyMatrix(self.core[rows,:][:,cols])
-
-
-## INTERNALS
-
-def parsecons(constrain, lconstrain, rconstrain, shape):
-  'parse constraints'
-
-  I = numpy.ones(shape[0], dtype=bool)
-  x = numpy.empty(shape[1])
-  x[:] = numpy.nan
-  if constrain is not None:
-    assert lconstrain is None
-    assert rconstrain is None
-    assert numeric.isarray(constrain)
-    I[:] = numpy.isnan(constrain)
-    x[:] = constrain
-  if lconstrain is not None:
-    assert numeric.isarray(lconstrain)
-    x[:] = lconstrain
-  if rconstrain is not None:
-    assert numeric.isarray(rconstrain)
-    I[:] = rconstrain
-  J = numpy.isnan(x)
-  assert numpy.sum(I) == numpy.sum(J), 'constrained matrix is not square: {}x{}'.format(numpy.sum(I), numpy.sum(J))
-  x[J] = 0
-  return x, I, J
 
 
 ## MODULE METHODS
