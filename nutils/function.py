@@ -42,14 +42,15 @@ possible only via inverting of the geometry function, which is a fundamentally
 expensive and currently unsupported operation.
 """
 
-from . import util, numpy, numeric, log, config, core, cache, transform, expression, warnings, _
-import sys, itertools, functools, operator, inspect, numbers, builtins, re, types, collections.abc, math
+from . import util, types, numpy, numeric, log, config, core, cache, transform, expression, warnings, _
+import sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, collections.abc, math
 
 isevaluable = lambda arg: isinstance(arg, Evaluable)
 
 class Evaluable(cache.Immutable):
   'Base class'
 
+  @types.apply_annotations
   def __init__(self, args:tuple):
     assert all(isevaluable(arg) for arg in args)
     self.__args = args
@@ -229,6 +230,7 @@ POINTS = Points()
 
 class Tuple(Evaluable):
 
+  @types.apply_annotations
   def __init__(self, items:tuple):
     self.items = items
     args = []
@@ -284,11 +286,13 @@ class Tuple(Evaluable):
 
 class TransformChain(Evaluable):
 
+  @types.apply_annotations
   def __init__(self, args:tuple, todims):
     self.todims = todims
     super().__init__(args)
 
 class SelectChain(TransformChain):
+  @types.apply_annotations
   def __init__(self, n, todims=None):
     self.n = n
     super().__init__(args=[EVALARGS], todims=todims)
@@ -302,6 +306,7 @@ OPPTRANS = SelectChain(1)
 
 class PopHead(TransformChain):
 
+  @types.apply_annotations
   def __init__(self, todims:int, trans=TRANS):
     self.trans = trans
     super().__init__(args=[self.trans], todims=todims)
@@ -312,6 +317,7 @@ class PopHead(TransformChain):
 
 class SelectBifurcation(TransformChain):
 
+  @types.apply_annotations
   def __init__(self, trans, first:bool, todims=None):
     self.trans = trans
     self.first = first
@@ -327,6 +333,7 @@ class SelectBifurcation(TransformChain):
 
 class Promote(TransformChain):
 
+  @types.apply_annotations
   def __init__(self, ndims:int, trans):
     self.ndims = ndims
     super().__init__(args=[trans], todims=trans.todims)
@@ -337,6 +344,7 @@ class Promote(TransformChain):
 
 class TailOfTransform(TransformChain):
 
+  @types.apply_annotations
   def __init__(self, trans, depth, todims:int):
     assert isarray(depth)
     assert depth.ndim == 0 and depth.dtype == int
@@ -423,6 +431,7 @@ class Array(Evaluable):
 
   __array_priority__ = 1. # http://stackoverflow.com/questions/7042496/numpy-coercion-problem-for-left-sided-binary-operator/7057530#7057530
 
+  @types.apply_annotations
   def __init__(self, args:tuple, shape:tuple, dtype:asdtype):
     self.shape = tuple(map(self._canonicalize_length, shape))
     self.ndim = len(shape)
@@ -553,6 +562,7 @@ class Array(Evaluable):
 class Normal(Array):
   'normal'
 
+  @types.apply_annotations
   def __init__(self, lgrad:asarray):
     assert lgrad.ndim == 2 and lgrad.shape[0] == lgrad.shape[1]
     self.lgrad = lgrad
@@ -581,6 +591,7 @@ class Normal(Array):
 
 class Constant(Array):
 
+  @types.apply_annotations
   def __init__(self, value:numeric.const):
     self.value = value
     super().__init__(args=[], shape=value.shape, dtype=value.dtype)
@@ -671,6 +682,7 @@ class Constant(Array):
 
 class DofMap(Array):
 
+  @types.apply_annotations
   def __init__(self, dofs:tuple, index:asarray):
     assert index.ndim == 0 and index.dtype == int
     self.dofs = dofs
@@ -688,6 +700,7 @@ class DofMap(Array):
 
 class InsertAxis(Array):
 
+  @types.apply_annotations
   def __init__(self, func:asarray, axis:int, length:asarray):
     assert length.ndim == 0 and length.dtype == int
     assert 0 <= axis <= func.ndim
@@ -779,6 +792,7 @@ class InsertAxis(Array):
 
 class Transpose(Array):
 
+  @types.apply_annotations
   def __init__(self, func:asarray, axes:tuple):
     assert sorted(axes) == list(range(func.ndim))
     self.func = func
@@ -847,6 +861,7 @@ class Transpose(Array):
 
 class Get(Array):
 
+  @types.apply_annotations
   def __init__(self, func:asarray, axis:int, item:asarray):
     assert item.ndim == 0 and item.dtype == int
     self.func = func
@@ -891,6 +906,7 @@ class Get(Array):
 
 class Product(Array):
 
+  @types.apply_annotations
   def __init__(self, func:asarray):
     self.func = func
     super().__init__(args=[func], shape=func.shape[:-1], dtype=func.dtype)
@@ -923,6 +939,7 @@ class Product(Array):
 
 class ApplyTransforms(Array):
 
+  @types.apply_annotations
   def __init__(self, trans, points=POINTS):
     self.trans = trans
     super().__init__(args=[points, trans], shape=[trans.todims], dtype=float)
@@ -937,6 +954,7 @@ class ApplyTransforms(Array):
 
 class LinearFrom(Array):
 
+  @types.apply_annotations
   def __init__(self, trans, fromdims:int):
     super().__init__(args=[trans], shape=(trans.todims, fromdims), dtype=float)
 
@@ -950,6 +968,7 @@ class LinearFrom(Array):
 
 class Inverse(Array):
 
+  @types.apply_annotations
   def __init__(self, func:asarray):
     assert func.ndim >= 2 and func.shape[-1] == func.shape[-2]
     self.func = func
@@ -979,6 +998,7 @@ class Inverse(Array):
 
 class Concatenate(Array):
 
+  @types.apply_annotations
   def __init__(self, funcs:tuple, axis:int=0):
     ndim = funcs[0].ndim
     assert all(isarray(func) and func.ndim == ndim for func in funcs)
@@ -1139,6 +1159,7 @@ class Concatenate(Array):
 class Interpolate(Array):
   'interpolate uniformly spaced data; stepwise for now'
 
+  @types.apply_annotations
   def __init__(self, x:asarray, xp:numeric.const, fp:numeric.const, left=None, right=None):
     assert xp.ndim == fp.ndim == 1
     if not numpy.greater(numpy.diff(xp), 0).all():
@@ -1155,6 +1176,7 @@ class Interpolate(Array):
 
 class Cross(Array):
 
+  @types.apply_annotations
   def __init__(self, func1:asarray, func2:asarray, axis:int):
     assert func1.shape == func2.shape
     assert 0 <= axis < func1.ndim and func2.shape[axis] == 3
@@ -1185,6 +1207,7 @@ class Cross(Array):
 
 class Determinant(Array):
 
+  @types.apply_annotations
   def __init__(self, func:asarray):
     assert isarray(func) and func.ndim >= 2 and func.shape[-1] == func.shape[-2]
     self.func = func
@@ -1211,6 +1234,7 @@ class Determinant(Array):
 
 class Multiply(Array):
 
+  @types.apply_annotations
   def __init__(self, funcs:util.frozenmultiset):
     self.funcs = funcs
     func1, func2 = funcs
@@ -1297,6 +1321,7 @@ class Multiply(Array):
 
 class Add(Array):
 
+  @types.apply_annotations
   def __init__(self, funcs:util.frozenmultiset):
     self.funcs = funcs
     func1, func2 = funcs
@@ -1363,6 +1388,7 @@ class Add(Array):
 class BlockAdd(Array):
   'block addition (used for DG)'
 
+  @types.apply_annotations
   def __init__(self, funcs:util.frozenmultiset):
     self.funcs = funcs
     shapes = set(func.shape for func in funcs)
@@ -1433,6 +1459,7 @@ class BlockAdd(Array):
 
 class Dot(Array):
 
+  @types.apply_annotations
   def __init__(self, funcs:util.frozenmultiset, axes:tuple):
     self.funcs = funcs
     func1, func2 = funcs
@@ -1509,6 +1536,7 @@ class Dot(Array):
 
 class Sum(Array):
 
+  @types.apply_annotations
   def __init__(self, func:asarray, axis:int):
     self.axis = axis
     self.func = func
@@ -1539,6 +1567,7 @@ class Sum(Array):
 
 class TakeDiag(Array):
 
+  @types.apply_annotations
   def __init__(self, func:asarray, axis:int, rmaxis:int):
     assert func.shape[axis] == func.shape[rmaxis]
     assert 0 <= axis < rmaxis < func.ndim
@@ -1571,6 +1600,7 @@ class TakeDiag(Array):
 
 class Take(Array):
 
+  @types.apply_annotations
   def __init__(self, func:asarray, indices:asarray, axis:int):
     assert indices.ndim == 1 and indices.dtype == int
     assert 0 <= axis < func.ndim
@@ -1618,6 +1648,7 @@ class Take(Array):
 
 class Power(Array):
 
+  @types.apply_annotations
   def __init__(self, func:asarray, power:asarray):
     assert func.shape == power.shape
     self.func = func
@@ -1686,6 +1717,7 @@ class Pointwise(Array):
 
   deriv = None
 
+  @types.apply_annotations
   def __init__(self, *args:asarrays):
     retval = self.evalf(*[numpy.ones((), dtype=arg.dtype) for arg in args])
     shapes = set(arg.shape for arg in args)
@@ -1781,6 +1813,7 @@ class Int(Pointwise):
 
 class Sign(Array):
 
+  @types.apply_annotations
   def __init__(self, func:asarray):
     self.func = func
     super().__init__(args=[func], shape=func.shape, dtype=func.dtype)
@@ -1820,6 +1853,7 @@ class Sign(Array):
 class Sampled(Array):
   'sampled'
 
+  @types.apply_annotations
   def __init__(self, data:util.frozendict, trans=TRANS):
     self.data = data.copy()
     self.trans = trans
@@ -1837,6 +1871,7 @@ class Sampled(Array):
 
 class Elemwise(Array):
 
+  @types.apply_annotations
   def __init__(self, data:tuple, index:asarray, dtype:asdtype):
     self.data = data
     ndim = self.data[0].ndim
@@ -1858,6 +1893,7 @@ class Elemwise(Array):
 
 class Eig(Evaluable):
 
+  @types.apply_annotations
   def __init__(self, func:asarray, symmetric:bool=False):
     assert func.ndim >= 2 and func.shape[-1] == func.shape[-2]
     self.symmetric = symmetric
@@ -1885,6 +1921,7 @@ class Eig(Evaluable):
 
 class ArrayFromTuple(Array):
 
+  @types.apply_annotations
   def __init__(self, arrays, index:int, shape:tuple, dtype:asdtype):
     assert isevaluable(arrays)
     assert 0 <= index < len(arrays)
@@ -1899,6 +1936,7 @@ class ArrayFromTuple(Array):
 class Zeros(Array):
   'zero'
 
+  @types.apply_annotations
   def __init__(self, shape:tuple, dtype:asdtype):
     super().__init__(args=[asarray(sh) for sh in shape], shape=shape, dtype=dtype)
 
@@ -1966,6 +2004,7 @@ class Zeros(Array):
 
 class Inflate(Array):
 
+  @types.apply_annotations
   def __init__(self, func:asarray, dofmap:asarray, length:int, axis:int):
     self.func = func
     self.dofmap = dofmap
@@ -2087,6 +2126,7 @@ class Inflate(Array):
 
 class Diagonalize(Array):
 
+  @types.apply_annotations
   def __init__(self, func:asarray, axis=int, newaxis=int):
     assert 0 <= axis < newaxis <= func.ndim
     self.func = func
@@ -2200,6 +2240,7 @@ class Diagonalize(Array):
 class Guard(Array):
   'bar all simplifications'
 
+  @types.apply_annotations
   def __init__(self, fun:asarray):
     self.fun = fun
     super().__init__(args=[fun], shape=fun.shape, dtype=fun.dtype)
@@ -2214,6 +2255,7 @@ class Guard(Array):
 class TrigNormal(Array):
   'cos, sin'
 
+  @types.apply_annotations
   def __init__(self, angle:asarray):
     assert angle.ndim == 0
     self.angle = angle
@@ -2228,6 +2270,7 @@ class TrigNormal(Array):
 class TrigTangent(Array):
   '-sin, cos'
 
+  @types.apply_annotations
   def __init__(self, angle:asarray):
     assert angle.ndim == 0
     self.angle = angle
@@ -2242,6 +2285,7 @@ class TrigTangent(Array):
 class Find(Array):
   'indices of boolean index vector'
 
+  @types.apply_annotations
   def __init__(self, where:asarray):
     assert isarray(where) and where.ndim == 1 and where.dtype == bool
     self.where = where
@@ -2255,6 +2299,7 @@ class Find(Array):
 
 class Stack(Array):
 
+  @types.apply_annotations
   def __init__(self, funcs:tuple, axis:int):
     shapes = set(func.shape for func in funcs if func is not None)
     assert shapes, 'cannot determine shape of stack'
@@ -2411,6 +2456,7 @@ class Argument(DerivativeTargetBase):
       ``0``.
   '''
 
+  @types.apply_annotations
   def __init__(self, name, shape:tuple, nderiv:int=0):
     self._name = name
     self._nderiv = nderiv
@@ -2446,6 +2492,7 @@ class Argument(DerivativeTargetBase):
 class LocalCoords(DerivativeTargetBase):
   'local coords derivative target'
 
+  @types.apply_annotations
   def __init__(self, ndims:int):
     super().__init__(args=[], shape=[ndims], dtype=float)
 
@@ -2454,6 +2501,7 @@ class LocalCoords(DerivativeTargetBase):
 
 class Ravel(Array):
 
+  @types.apply_annotations
   def __init__(self, func:asarray, axis:int):
     assert 0 <= axis < func.ndim-1
     self.func = func
@@ -2544,6 +2592,7 @@ class Ravel(Array):
 
 class Unravel(Array):
 
+  @types.apply_annotations
   def __init__(self, func:asarray, axis:int, shape:tuple):
     assert 0 <= axis < func.ndim
     assert func.shape[axis] == numpy.product(shape)
@@ -2580,6 +2629,7 @@ class Unravel(Array):
 
 class Mask(Array):
 
+  @types.apply_annotations
   def __init__(self, func:asarray, mask:numeric.const, axis:int):
     assert len(mask) == func.shape[axis]
     self.func = func
@@ -2642,6 +2692,7 @@ class Mask(Array):
 
 class FindTransform(Array):
 
+  @types.apply_annotations
   def __init__(self, transforms:tuple, trans):
     self.transforms = transforms
     bits = []
@@ -2670,6 +2721,7 @@ class FindTransform(Array):
 
 class Range(Array):
 
+  @types.apply_annotations
   def __init__(self, length:asarray, offset:asarray=Zeros((), int)):
     assert length.ndim == 0 and length.dtype == int
     assert offset.ndim == 0 and offset.dtype == int
@@ -2702,6 +2754,7 @@ class Polyval(Array):
      incorrect results.
   '''
 
+  @types.apply_annotations
   def __init__(self, coeffs:asarray, points:asarray, ngrad:int=0):
     if points.ndim != 1:
       raise ValueError('argument `points` should have exactly one dimension')
@@ -3465,7 +3518,7 @@ class Namespace:
 
   Attributes
   ----------
-  arg_shapes : :class:`types.MappingProxyType`
+  arg_shapes : :class:`builtin_types.MappingProxyType`
       A readonly map of argument names and shapes.
   default_geometry_name : :class:`str`
       The name of the default geometry.  See argument with the same name.
@@ -3483,6 +3536,7 @@ class Namespace:
   )
   _functions_nargs = {k: len(inspect.signature(v).parameters) for k, v in _functions.items()}
 
+  @types.apply_annotations
   def __init__(self, *, default_geometry_name='x'):
     if not isinstance(default_geometry_name, str):
       raise ValueError('default_geometry_name: Expected a str, got {!r}.'.format(default_geometry_name))
@@ -3490,7 +3544,7 @@ class Namespace:
       raise ValueError('default_geometry_name: Invalid variable name: {!r}.'.format(default_geometry_name))
     super().__setattr__('_attributes', {})
     super().__setattr__('_arg_shapes', {})
-    super().__setattr__('arg_shapes', types.MappingProxyType(self._arg_shapes))
+    super().__setattr__('arg_shapes', builtin_types.MappingProxyType(self._arg_shapes))
     super().__setattr__('default_geometry_name', default_geometry_name)
     super().__init__()
 

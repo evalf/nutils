@@ -108,22 +108,29 @@ class ImmutableMeta(type):
 
   def __init__(cls, *args, **kwargs):
     super().__init__(*args, **kwargs)
-    signature = inspect.signature(cls.__init__)
-    param0, *params = signature.parameters.values()
-    cls._signature = inspect.Signature(params)
-    cls._annotations = [(param.name, param.annotation) for param in params if param.annotation != param.empty]
     cls._cache = {}
-    cls._init = cls.__init__
-    if cls._annotations:
-      cls.__init__ = types.apply_annotations(cls.__init__, signature)
+    # Peel off the preprocessors (see `types.aspreprocessor`) and store the
+    # preprocessors and the uncovered init separately.
+    pre_init = []
+    init = cls.__init__
+    while hasattr(init, '__preprocess__'):
+      pre_init.append(init.__preprocess__)
+      init = init.__wrapped__
+    if not pre_init or not getattr(pre_init[-1], 'returns_canonical_arguments', False):
+      pre_init.append(types.argument_canonicalizer(inspect.signature(init)))
+    cls._pre_init = tuple(pre_init)
+    cls._init = init
 
-  def __call__(cls, *args, **kwargs):
-    bound = cls._signature.bind(*args, **kwargs)
-    bound.apply_defaults()
-    for name, op in cls._annotations:
-      bound.arguments[name] = op(bound.arguments[name])
-    assert not bound.kwargs
-    return cls._new(*bound.args)
+  def __call__(*args, **kwargs):
+    cls = args[0]
+    # Use `None` as temporary `self` argument, apply preprocessors and
+    # remove the temporary `self`.
+    args = None, *args[1:]
+    for preprocess in cls._pre_init:
+      args, kwargs = preprocess(*args, **kwargs)
+    args = args[1:]
+    assert not kwargs
+    return cls._new(*args)
 
   def _new(cls, *args):
     try:

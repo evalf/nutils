@@ -22,7 +22,7 @@
 The transform module.
 """
 
-from . import cache, numeric, util, _
+from . import cache, numeric, util, types, _
 import numpy, collections, itertools, functools, operator
 
 
@@ -128,6 +128,7 @@ def linearfrom(chain, ndims):
 
 class TransformItem(cache.Immutable):
 
+  @types.apply_annotations
   def __init__(self, todims, fromdims:int):
     self.todims = todims
     self.fromdims = fromdims
@@ -163,6 +164,7 @@ class TransformItem(cache.Immutable):
 
 class Bifurcate(TransformItem):
 
+  @types.apply_annotations
   def __init__(self, trans1:canonical, trans2:canonical):
     fromdims = trans1[-1].fromdims + trans2[-1].fromdims
     self.trans1 = trans1 + (Slice(0, trans1[-1].fromdims, fromdims),)
@@ -177,6 +179,7 @@ class Bifurcate(TransformItem):
 
 class Matrix(TransformItem):
 
+  @types.apply_annotations
   def __init__(self, linear:numeric.const, offset:numeric.const):
     assert linear.ndim == 2 and linear.dtype == float
     assert offset.ndim == 1 and offset.dtype == float
@@ -202,6 +205,7 @@ class Matrix(TransformItem):
 
 class Square(Matrix):
 
+  @types.apply_annotations
   def __init__(self, linear:numeric.const, offset:numeric.const):
     assert linear.shape[0] == linear.shape[1]
     self._transform_matrix = {}
@@ -246,6 +250,7 @@ class Shift(Square):
 
   det = 1.
 
+  @types.apply_annotations
   def __init__(self, offset:numeric.const):
     assert offset.ndim == 1 and offset.dtype == float
     super().__init__(numpy.eye(len(offset)), offset)
@@ -275,6 +280,7 @@ class Identity(Shift):
 
 class Scale(Square):
 
+  @types.apply_annotations
   def __init__(self, scale:float, offset:numeric.const):
     assert offset.ndim == 1 and offset.dtype == float
     self.scale = scale
@@ -301,6 +307,7 @@ class Scale(Square):
 
 class Updim(Matrix):
 
+  @types.apply_annotations
   def __init__(self, linear:numeric.const, offset:numeric.const, isflipped:bool):
     assert linear.shape[0] == linear.shape[1] + 1
     self.isflipped = isflipped
@@ -381,6 +388,7 @@ class SimplexChild(Square):
 
 class Slice(Matrix):
 
+  @types.apply_annotations
   def __init__(self, i1:int, i2:int, fromdims:int):
     todims = i2-i1
     assert 0 <= todims <= fromdims
@@ -463,11 +471,13 @@ class TensorChild(Square):
 
 class VertexTransform(TransformItem):
 
+  @types.apply_annotations
   def __init__(self, fromdims:int):
     super().__init__(None, fromdims)
 
 class MapTrans(VertexTransform):
 
+  @types.apply_annotations
   def __init__(self, linear:numeric.const, offset:numeric.const, vertices:numeric.const):
     assert len(linear) == len(offset) == len(vertices)
     self.vertices, self.linear, self.offset = map(numpy.array, zip(*sorted(zip(vertices, linear, offset)))) # sort vertices
@@ -482,6 +492,7 @@ class MapTrans(VertexTransform):
 
 class RootTrans(VertexTransform):
 
+  @types.apply_annotations
   def __init__(self, name, shape:tuple):
     self.I, = numpy.where(shape)
     self.w = numpy.take(shape, self.I)
@@ -501,6 +512,7 @@ class RootTrans(VertexTransform):
 
 class RootTransEdges(VertexTransform):
 
+  @types.apply_annotations
   def __init__(self, name, shape:tuple):
     self.shape = shape
     assert numeric.isarray(name)

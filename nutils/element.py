@@ -28,7 +28,7 @@ have a well defined reference coordinate system, and provide pointsets for
 purposes of integration and sampling.
 """
 
-from . import log, util, numpy, config, numeric, function, cache, transform, warnings, _
+from . import log, util, numpy, config, numeric, function, cache, transform, warnings, types, _
 import re, math, itertools, operator, functools
 
 
@@ -135,6 +135,7 @@ class Element:
 class Reference(cache.Immutable):
   'reference element'
 
+  @types.apply_annotations
   def __init__(self, ndims:int):
     self.ndims = ndims
 
@@ -988,6 +989,7 @@ class TensorReference(Reference):
 class Cone(Reference):
   'cone'
 
+  @types.apply_annotations
   def __init__(self, edgeref, etrans, tip:numeric.const):
     assert etrans.fromdims == edgeref.ndims
     assert etrans.todims == len(tip)
@@ -1119,6 +1121,7 @@ class OwnChildReference(Reference):
 class WithChildrenReference(Reference):
   'base reference with explicit children'
 
+  @types.apply_annotations
   def __init__(self, baseref, child_refs:tuple):
     assert len(child_refs) == baseref.nchildren and any(child_refs) and child_refs != baseref.child_refs
     assert all(isinstance(child_ref,Reference) for child_ref in child_refs)
@@ -1258,6 +1261,7 @@ class WithChildrenReference(Reference):
 class MosaicReference(Reference):
   'triangulation'
 
+  @types.apply_annotations
   def __init__(self, baseref, edge_refs:tuple, midpoint:numeric.const):
     assert len(edge_refs) == baseref.nedges
     assert edge_refs != tuple(baseref.edge_refs)
