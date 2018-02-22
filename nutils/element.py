@@ -32,104 +32,6 @@ from . import log, util, numpy, config, numeric, function, cache, transform, war
 import re, math, itertools, operator, functools
 
 
-## ELEMENT
-
-class Element:
-  'element class'
-
-  __slots__ = 'reference', 'transform', 'opposite'
-
-  def __init__(self, reference, trans, opptrans=None, oriented=False):
-    assert isinstance(reference, Reference)
-    trans = transform.canonical(trans)
-    assert trans[-1].fromdims == reference.ndims and trans[0].todims == None
-    if opptrans is not None:
-      opptrans = transform.canonical(opptrans)
-      assert opptrans[-1].fromdims == reference.ndims and opptrans[0].todims == None
-      if not oriented:
-        vtx1 = transform.apply(trans, reference.vertices)
-        if vtx1 != transform.apply(opptrans, reference.vertices):
-          for ptrans in reference.permutation_transforms:
-            if vtx1 == transform.apply(opptrans + (ptrans,), reference.vertices):
-              opptrans += ptrans,
-              break
-          else:
-            raise Exception('Did not find a conforming permutation for the opposing transformation')
-    self.reference = reference
-    self.transform = trans
-    self.opposite = opptrans or trans
-
-  def withopposite(self, opp, oriented=False):
-    if isinstance(opp, tuple):
-      return Element(self.reference, self.transform, opp, oriented)
-    assert isinstance(opp, Element) and opp.reference == self.reference
-    return Element(self.reference, self.transform, opp.transform, oriented or opp.opposite==self.transform)
-
-  def __mul__(self, other):
-    self_is_iface = self.opposite != self.transform
-    other_is_iface = other.opposite != other.transform
-    trans = transform.Bifurcate(self.transform, other.transform),
-    if self_is_iface != other_is_iface:
-      opptrans = transform.Bifurcate(self.opposite, other.opposite),
-    else:
-      opptrans = None
-    return Element(self.reference * other.reference, trans, opptrans, oriented=True)
-
-  def __getnewargs__(self):
-    return self.reference, self.transform, self.opposite, True
-
-  def __hash__(self):
-    return hash((self.reference, self.transform, self.opposite))
-
-  def __eq__(self, other):
-    return self is other or isinstance(other,Element) \
-      and self.reference == other.reference \
-      and self.transform == other.transform \
-      and self.opposite == other.opposite
-
-  @property
-  def vertices(self):
-    return transform.apply(self.transform, self.reference.vertices)
-
-  @property
-  def ndims(self):
-    return self.reference.ndims
-
-  @property
-  def nverts(self):
-    return self.reference.nverts
-
-  @property
-  def nedges(self):
-    return self.reference.nedges
-
-  @property
-  def edges(self):
-    return [self.edge(i) for i in range(self.nedges)]
-
-  def edge(self, iedge):
-    trans, edge = self.reference.edges[iedge]
-    return Element(edge, self.transform + (trans,), self.opposite and self.opposite + (trans,), oriented=True) if edge else None
-
-  @property
-  def children(self):
-    return [Element(child, self.transform + (trans,), self.opposite and self.opposite + (trans,), oriented=True)
-      for trans, child in self.reference.children if child]
-
-  @property
-  def flipped(self):
-    assert self.opposite, 'element does not define an opposite'
-    return Element(self.reference, self.opposite, self.transform, oriented=True)
-
-  @property
-  def simplices(self):
-    return [Element(reference, self.transform + (trans,), self.opposite and self.opposite + (trans,), oriented=True)
-      for trans, reference in self.reference.simplices]
-
-  def __str__(self):
-    return 'Element({})'.format(self.vertices)
-
-
 ## REFERENCE ELEMENTS
 
 class Reference(types.Singleton):
@@ -373,6 +275,8 @@ class Reference(types.Singleton):
 
   def get_dof_transpose_map(self, degree, vertex_transpose_map):
     raise NotImplementedError
+
+strictreference = types.strict[Reference]
 
 class EmptyReference(Reference):
   'inverse reference element'
@@ -1424,5 +1328,95 @@ def index_or_append(items, item):
 def arglexsort(triangulation):
   return numpy.argsort(numeric.asobjvector(tuple(tri) for tri in triangulation))
 
+
+## ELEMENT
+
+class Element(types.Singleton):
+  'element class'
+
+  __slots__ = 'reference', 'transform', 'opposite'
+
+  @types.aspreprocessor
+  @types.apply_annotations
+  def pre_init(self, reference:strictreference, trans:transform.canonical, opptrans:transform.canonical=None, oriented:bool=False):
+    if opptrans is not None:
+      assert opptrans[-1].fromdims == reference.ndims and opptrans[0].todims == None
+      if not oriented:
+        vtx1 = transform.apply(trans, reference.vertices)
+        if vtx1 != transform.apply(opptrans, reference.vertices):
+          for ptrans in reference.permutation_transforms:
+            if vtx1 == transform.apply(opptrans + (ptrans,), reference.vertices):
+              opptrans += ptrans,
+              break
+          else:
+            raise Exception('Did not find a conforming permutation for the opposing transformation')
+    return (self, reference, trans, opptrans), {}
+
+  @pre_init
+  def __init__(self, reference, trans, opptrans):
+    super().__init__()
+    self.reference = reference
+    self.transform = trans
+    self.opposite = opptrans or trans
+
+  def withopposite(self, opp, oriented=False):
+    if isinstance(opp, tuple):
+      return Element(self.reference, self.transform, opp, oriented)
+    assert isinstance(opp, Element) and opp.reference == self.reference
+    return Element(self.reference, self.transform, opp.transform, oriented or opp.opposite==self.transform)
+
+  def __mul__(self, other):
+    self_is_iface = self.opposite != self.transform
+    other_is_iface = other.opposite != other.transform
+    trans = transform.Bifurcate(self.transform, other.transform),
+    if self_is_iface != other_is_iface:
+      opptrans = transform.Bifurcate(self.opposite, other.opposite),
+    else:
+      opptrans = None
+    return Element(self.reference * other.reference, trans, opptrans, oriented=True)
+
+  @property
+  def vertices(self):
+    return transform.apply(self.transform, self.reference.vertices)
+
+  @property
+  def ndims(self):
+    return self.reference.ndims
+
+  @property
+  def nverts(self):
+    return self.reference.nverts
+
+  @property
+  def nedges(self):
+    return self.reference.nedges
+
+  @property
+  def edges(self):
+    return [self.edge(i) for i in range(self.nedges)]
+
+  def edge(self, iedge):
+    trans, edge = self.reference.edges[iedge]
+    return Element(edge, self.transform + (trans,), self.opposite and self.opposite + (trans,), oriented=True) if edge else None
+
+  @property
+  def children(self):
+    return [Element(child, self.transform + (trans,), self.opposite and self.opposite + (trans,), oriented=True)
+      for trans, child in self.reference.children if child]
+
+  @property
+  def flipped(self):
+    assert self.opposite, 'element does not define an opposite'
+    return Element(self.reference, self.opposite, self.transform, oriented=True)
+
+  @property
+  def simplices(self):
+    return [Element(reference, self.transform + (trans,), self.opposite and self.opposite + (trans,), oriented=True)
+      for trans, reference in self.reference.simplices]
+
+  def __str__(self):
+    return 'Element({})'.format(self.vertices)
+
+strictelement = types.strict[Element]
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
