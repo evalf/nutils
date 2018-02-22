@@ -599,4 +599,60 @@ def strictstr(value):
     raise ValueError("not a 'str': {!r}".format(value))
   return value
 
+def _getname(value):
+  name = []
+  if hasattr(value, '__module__'):
+    name.append(value.__module__)
+  if hasattr(value, '__qualname__'):
+    name.append(value.__qualname__)
+  elif hasattr(value, '__name__'):
+    name.append(value.__name__)
+  else:
+    return str(value)
+  return '.'.join(name)
+
+def _copyname(dst=None, *, src, suffix=''):
+  if dst is None:
+    return functools.partial(_copyname, src=src, suffix=suffix)
+  if hasattr(src, '__name__'):
+    dst.__name__ = src.__name__+suffix
+  if hasattr(src, '__qualname__'):
+    dst.__qualname__ = src.__qualname__+suffix
+  if hasattr(src, '__module__'):
+    dst.__module__ = src.__module__
+  return dst
+
+class _strictmeta(type):
+  def __getitem__(self, cls):
+    def constructor(value):
+      if not isinstance(value, cls):
+        raise ValueError('expected an object of type {!r} but got {!r} with type {!r}'.format(cls.__qualname__, value, type(value).__qualname__))
+      return value
+    constructor.__qualname__ = constructor.__name__ = 'strict[{}]'.format(_getname(cls))
+    return constructor
+  def __call__(*args, **kwargs):
+    raise TypeError("cannot create an instance of class 'strict'")
+
+class strict(metaclass=_strictmeta):
+  '''
+  Type checker.  The function ``strict[cls](value)`` returns ``value``
+  unmodified if ``value`` is an instance of ``cls``, otherwise a
+  :class:`ValueError` is raised.
+
+  Examples
+  --------
+
+  The ``strict[int]`` function passes integers unmodified:
+
+  >>> strict[int](1)
+  1
+
+  Other types fail:
+
+  >>> strict[int]('1')
+  Traceback (most recent call last):
+      ...
+  ValueError: expected an object of type 'int' but got '1' with type 'str'
+  '''
+
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

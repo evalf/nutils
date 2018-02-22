@@ -454,4 +454,17 @@ class strictstr(TestCase):
     with self.assertRaises(ValueError):
       nutils.types.strictstr(1)
 
+class strict(TestCase):
+
+  def test_valid(self):
+    self.assertEqual(nutils.types.strict[int](1), 1)
+
+  def test_invalid(self):
+    with self.assertRaises(ValueError):
+      nutils.types.strict[int]('1')
+
+  def test_call(self):
+    with self.assertRaises(TypeError):
+      nutils.types.strict()
+
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
