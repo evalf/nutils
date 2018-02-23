@@ -40,15 +40,18 @@ import functools, collections.abc, itertools, functools, operator, pathlib
 
 _identity = lambda x: x
 
-class Topology:
+class Topology(types.Singleton):
   'topology base class'
+
+  __slots__ = 'ndims',
+  __cache__ ='edict', 'border_transforms', 'simplex'
 
   # subclass needs to implement: .elements
 
-  def __init__(self, ndims):
-    'constructor'
-
-    assert numeric.isint(ndims) and ndims >= 0
+  @types.apply_annotations
+  def __init__(self, ndims:types.strictint):
+    super().__init__()
+    assert ndims >= 0
     self.ndims = ndims
 
   def __str__(self):
@@ -126,12 +129,12 @@ class Topology:
   def __mul__(self, other):
     return ProductTopology(self, other)
 
-  @cache.property
+  @property
   def edict(self):
     '''transform -> ielement mapping'''
     return {elem.transform: ielem for ielem, elem in enumerate(self)}
 
-  @cache.property
+  @property
   def border_transforms(self):
     border_transforms = set()
     for belem in self.boundary:
@@ -454,7 +457,7 @@ class Topology:
 
     return constrain
 
-  @cache.property
+  @property
   def simplex(self):
     simplices = [simplex for elem in self for simplex in elem.simplices]
     return UnstructuredTopology(self.ndims, simplices)
@@ -725,19 +728,25 @@ class Topology:
     exgeom = function.concatenate(function.bifurcate(geom, function.rootcoords(1)))
     return extopo, exgeom
 
+stricttopology = types.strict[Topology]
+
 class LocateError(Exception):
   pass
 
 class WithGroupsTopology(Topology):
   'item topology'
 
-  def __init__(self, basetopo, vgroups={}, bgroups={}, igroups={}, pgroups={}):
+  __slots__ = 'basetopo', 'vgroups', 'bgroups', 'igroups', 'pgroups'
+  __cache__ = 'refined',
+
+  @types.apply_annotations
+  def __init__(self, basetopo:stricttopology, vgroups:types.frozendict={}, bgroups:types.frozendict={}, igroups:types.frozendict={}, pgroups:types.frozendict={}):
     assert vgroups or bgroups or igroups or pgroups
     self.basetopo = basetopo
-    self.vgroups = vgroups.copy()
-    self.bgroups = bgroups.copy()
-    self.igroups = igroups.copy()
-    self.pgroups = pgroups.copy()
+    self.vgroups = vgroups
+    self.bgroups = bgroups
+    self.igroups = igroups
+    self.pgroups = pgroups
     super().__init__(basetopo.ndims)
     assert all(topo is Ellipsis or isinstance(topo, str) or isinstance(topo, Topology) and topo.ndims == basetopo.ndims and set(self.basetopo.edict).issuperset(topo.edict) for topo in self.vgroups.values())
 
@@ -803,13 +812,16 @@ class WithGroupsTopology(Topology):
   def basis(self, name, *args, **kwargs):
     return self.basetopo.basis(name, *args, **kwargs)
 
-  @cache.property
+  @property
   def refined(self):
     groups = [{name: topo.refined if isinstance(topo,Topology) else topo for name, topo in groups.items()} for groups in (self.vgroups,self.bgroups,self.igroups,self.pgroups)]
     return self.basetopo.refined.withgroups(*groups)
 
 class OppositeTopology(Topology):
   'opposite topology'
+
+  __slots__ = 'basetopo',
+  __cache__ = 'elements',
 
   def __init__(self, basetopo):
     self.basetopo = basetopo
@@ -824,7 +836,7 @@ class OppositeTopology(Topology):
   def __len__(self):
     return len(self.basetopo)
 
-  @cache.property
+  @property
   def elements(self):
     return tuple(self)
 
@@ -833,6 +845,8 @@ class OppositeTopology(Topology):
 
 class EmptyTopology(Topology):
   'empty topology'
+
+  __slots__ = ()
 
   def __iter__(self):
     return iter([])
@@ -854,7 +868,10 @@ class EmptyTopology(Topology):
 class Point(Topology):
   'point'
 
-  def __init__(self, trans, opposite=None):
+  __slots__ = 'elem',
+
+  @types.apply_annotations
+  def __init__(self, trans:transform.stricttransform, opposite:transform.stricttransform=None):
     assert trans[-1].fromdims == 0
     self.elem = element.Element(element.getsimplex(0), trans, opposite, oriented=True)
     super().__init__(ndims=0)
@@ -869,11 +886,15 @@ class Point(Topology):
 class StructuredLine(Topology):
   'structured topology'
 
-  def __init__(self, root, i, j, periodic=False, bnames=None):
+  __slots__ = 'root', 'i', 'j', 'periodic', 'bnames'
+  __cache__ = '_transforms', 'elements', 'boundary', 'interfaces'
+
+  @types.apply_annotations
+  def __init__(self, root:transform.stricttransformitem, i:types.strictint, j:types.strictint, periodic:bool=False, bnames:types.tuple[types.strictstr]=None):
     'constructor'
 
-    assert isinstance(i,int) and isinstance(j,int) and j > i
-    assert not bnames or len(bnames) == 2 and all(isinstance(bname,str) for bname in bnames)
+    assert j > i
+    assert not bnames or len(bnames) == 2
     assert isinstance(root, transform.TransformItem)
     self.root = root
     self.i = i
@@ -882,7 +903,7 @@ class StructuredLine(Topology):
     self.bnames = bnames or ()
     super().__init__(ndims=1)
 
-  @cache.property
+  @property
   def _transforms(self):
     # one extra left and right for opposites, even if periodic=True
     return tuple((self.root, transform.Shift([float(offset)])) for offset in range(self.i-1, self.j+1))
@@ -894,11 +915,11 @@ class StructuredLine(Topology):
   def __len__(self):
     return self.j - self.i
 
-  @cache.property
+  @property
   def elements(self):
     return tuple(self)
 
-  @cache.property
+  @property
   def boundary(self):
     if self.periodic:
       return EmptyTopology(ndims=0)
@@ -907,7 +928,7 @@ class StructuredLine(Topology):
     bnd = Point(transforms[1] + (left,), transforms[0] + (right,)), Point(transforms[-2] + (right,), transforms[-1] + (left,))
     return UnionTopology(bnd, self.bnames)
 
-  @cache.property
+  @property
   def interfaces(self):
     transforms = self._transforms
     right, left = element.LineReference().edge_transforms
@@ -1036,14 +1057,42 @@ class StructuredLine(Topology):
 
     return '{}({}:{})'.format(self.__class__.__name__, self.i, self.j)
 
+class Axis(types.Singleton):
+  __slots__ = ()
+
+class DimAxis(Axis):
+  __slots__ = 'i', 'j', 'isperiodic'
+  isdim = True
+  @types.apply_annotations
+  def __init__(self, i:types.strictint, j:types.strictint, isperiodic:bool):
+    super().__init__()
+    self.i = i
+    self.j = j
+    self.isperiodic = isperiodic
+
+class BndAxis(Axis):
+  __slots__ = 'i', 'j', 'ibound', 'side'
+  isdim = False
+  @types.apply_annotations
+  def __init__(self, i:types.strictint, j:types.strictint, ibound:types.strictint, side:bool):
+    super().__init__()
+    self.i = i
+    self.j = j
+    self.ibound = ibound
+    self.side = side
+
 class StructuredTopology(Topology):
   'structured topology'
 
-  def __init__(self, root, axes, nrefine=0, bnames=None):
+  __slots__ = 'root', 'axes', 'nrefine', 'shape', '_bnames'
+  __cache__ = 'elements', '_transform', '_opposite', 'connectivity', 'boundary', 'interfaces'
+
+  @types.apply_annotations
+  def __init__(self, root:transform.stricttransformitem, axes:types.tuple[types.strict[Axis]], nrefine:types.strictint=0, bnames:types.tuple[types.strictstr]=None):
     'constructor'
 
     self.root = root
-    self.axes = tuple(axes)
+    self.axes = axes
     self.nrefine = nrefine
     self.shape = tuple(axis.j - axis.i for axis in self.axes if axis.isdim)
     if bnames is None:
@@ -1082,7 +1131,7 @@ class StructuredTopology(Topology):
       axes.append(axis)
     return StructuredTopology(self.root, axes, self.nrefine, bnames=self._bnames)
 
-  @cache.property
+  @property
   def elements(self):
     return tuple(self)
 
@@ -1119,12 +1168,12 @@ class StructuredTopology(Topology):
     shape = tuple(axis.j - axis.i for axis in axes if axis.isdim)
     return numeric.asobjvector(transform.canonical([root] + trans + updim) for trans in log.iter('canonical', transforms.flat)).reshape(shape)
 
-  @cache.property
+  @property
   @log.title
   def _transform(self):
     return self.mktransforms(self.axes, self.root, self.nrefine)
 
-  @cache.property
+  @property
   @log.title
   def _opposite(self):
     nbounds = len(self.axes) - self.ndims
@@ -1139,7 +1188,7 @@ class StructuredTopology(Topology):
     reference = util.product(element.getsimplex(1 if axis.isdim else 0) for axis in self.axes)
     return numeric.asobjvector(element.Element(reference, trans, opp, oriented=True) for trans, opp in numpy.broadcast(self._transform, self._opposite)).reshape(self.shape)
 
-  @cache.property
+  @property
   def connectivity(self):
     connectivity = numpy.empty(self.shape+(self.ndims,2), dtype=int)
     connectivity[...] = -1
@@ -1155,7 +1204,7 @@ class StructuredTopology(Topology):
         connectivity[s+(0,...,idim,1)] = ielems[s+(-1,)]
     return connectivity.reshape(len(self), self.ndims*2)
 
-  @cache.property
+  @property
   def boundary(self):
     'boundary'
 
@@ -1176,7 +1225,7 @@ class StructuredTopology(Topology):
       jdim += 1
     return btopo
 
-  @cache.property
+  @property
   def interfaces(self):
     'interfaces'
 
@@ -1429,12 +1478,16 @@ class StructuredTopology(Topology):
 class UnstructuredTopology(Topology):
   'unstructured topology'
 
-  def __init__(self, ndims, elements):
-    self.elements = tuple(elements)
+  __slots__ = 'elements',
+  __cache__ = 'connectivity', 'boundary', 'interfaces'
+
+  @types.apply_annotations
+  def __init__(self, ndims:types.strictint, elements:types.tuple[element.strictelement]):
+    self.elements = elements
     assert all(elem.ndims == ndims for elem in self.elements)
     super().__init__(ndims)
 
-  @cache.property
+  @property
   @log.title
   def connectivity(self):
     edges = {}
@@ -1454,12 +1507,12 @@ class UnstructuredTopology(Topology):
           connectivity[jelem][jedge] = ielem
     return tuple(connectivity)
 
-  @cache.property
+  @property
   def boundary(self):
-    elements = [elem.edge(iedge) for elem, ioppelems in zip(self, self.connectivity) for iedge in numpy.where(ioppelems == -1)[0]]
+    elements = tuple(elem.edge(iedge) for elem, ioppelems in zip(self, self.connectivity) for iedge in numpy.where(numpy.equal(ioppelems, -1))[0])
     return UnstructuredTopology(self.ndims-1, elements)
 
-  @cache.property
+  @property
   def interfaces(self):
     seen = set()
     elements = []
@@ -1828,11 +1881,13 @@ class GmshTopology(UnstructuredTopology):
 class UnionTopology(Topology):
   'grouped topology'
 
-  def __init__(self, topos, names=()):
-    self._topos = tuple(topos)
-    assert all(isinstance(topo, Topology) for topo in self._topos)
+  __slots__ = '_topos', '_names'
+  __cache__ = 'elements',
+
+  @types.apply_annotations
+  def __init__(self, topos:types.tuple[stricttopology], names:types.tuple[types.strictstr]=()):
+    self._topos = topos
     self._names = tuple(names)[:len(self._topos)]
-    assert all(isinstance(name,str) for name in self._names)
     assert len(set(self._names)) == len(self._names), 'duplicate name'
     ndims = self._topos[0].ndims
     assert all(topo.ndims == ndims for topo in self._topos)
@@ -1847,7 +1902,7 @@ class UnionTopology(Topology):
       return UnionTopology(self._topos + (other,), self._names)
     return UnionTopology(self._topos[:len(self._names)] + other._topos + self._topos[len(self._names):], self._names + other._names)
 
-  @cache.property
+  @property
   def elements(self):
     elements = []
     for trans, elems in util.gather((elem.transform, elem) for topo in self._topos for elem in topo):
@@ -1883,11 +1938,15 @@ class UnionTopology(Topology):
 class SubsetTopology(Topology):
   'trimmed'
 
-  def __init__(self, basetopo, refs, newboundary=None):
+  __slots__ = 'refs', 'basetopo', 'newboundary'
+  __cache__ = 'connectivity', 'elements', 'boundary', 'interfaces'
+
+  @types.apply_annotations
+  def __init__(self, basetopo:stricttopology, refs:types.tuple, newboundary=None):
     if newboundary is not None:
       assert isinstance(newboundary, str) or isinstance(newboundary, Topology) and newboundary.ndims == basetopo.ndims-1
     assert len(refs) == len(basetopo)
-    self.refs = tuple(refs)
+    self.refs = refs
     self.basetopo = basetopo
     self.newboundary = newboundary
     super().__init__(basetopo.ndims)
@@ -1909,7 +1968,7 @@ class SubsetTopology(Topology):
       return self.basetopo
     return SubsetTopology(self.basetopo, refs) # TODO boundary
 
-  @cache.property
+  @property
   def connectivity(self):
     mask = numpy.array([bool(ref) for ref in self.refs] + [False]) # trailing false serves to map -1 to -1
     renumber = numpy.cumsum(mask)-1
@@ -1918,7 +1977,7 @@ class SubsetTopology(Topology):
       for ref, ioppelems in zip(self.refs, self.basetopo.connectivity) if ref)
     return connectivity
 
-  @cache.property
+  @property
   def elements(self):
     return tuple(element.Element(ref, elem.transform, elem.opposite) for elem, ref in zip(self.basetopo, self.refs) if ref)
 
@@ -1927,7 +1986,7 @@ class SubsetTopology(Topology):
     elems = [child for elem in self for child in elem.children if child]
     return self.basetopo.refined.subset(elems, self.newboundary.refined if isinstance(self.newboundary,Topology) else self.newboundary, strict=True)
 
-  @cache.property
+  @property
   @log.title
   def boundary(self):
     brefs = [element.EmptyReference(self.ndims-1)] * len(self.basetopo.boundary) # subset of original boundary
@@ -1959,7 +2018,7 @@ class SubsetTopology(Topology):
     trimboundary = OrientedGroupsTopology(self.newboundary if isinstance(self.newboundary,Topology) else self.basetopo.interfaces, newbelems)
     return UnionTopology([trimboundary, origboundary], names=[self.newboundary] if isinstance(self.newboundary,str) else [])
 
-  @cache.property
+  @property
   @log.title
   def interfaces(self):
     irefs = [element.EmptyReference(self.ndims-1)] * len(self.basetopo.interfaces) # subset of original interfaces
@@ -1994,7 +2053,10 @@ class SubsetTopology(Topology):
 class OrientedGroupsTopology(UnstructuredTopology):
   'unstructured topology with undirected semi-overlapping basetopology'
 
-  def __init__(self, basetopo, elems):
+  __slots__ = 'basetopo',
+
+  @types.apply_annotations
+  def __init__(self, basetopo:stricttopology, elems:types.tuple[element.strictelement]):
     self.basetopo = basetopo
     super().__init__(basetopo.ndims, elems)
 
@@ -2018,30 +2080,38 @@ class OrientedGroupsTopology(UnstructuredTopology):
 class RefinedTopology(Topology):
   'refinement'
 
-  def __init__(self, basetopo):
+  __slots__ = 'basetopo',
+  __cache__ = 'elements', 'boundary'
+
+  @types.apply_annotations
+  def __init__(self, basetopo:stricttopology):
     self.basetopo = basetopo
     super().__init__(basetopo.ndims)
 
   def getitem(self, item):
     return self.basetopo.getitem(item).refined
 
-  @cache.property
+  @property
   def elements(self):
     return tuple([child for elem in self.basetopo for child in elem.children])
 
-  @cache.property
+  @property
   def boundary(self):
     return self.basetopo.boundary.refined
 
 class TrimmedTopologyItem(Topology):
   'trimmed topology item'
 
-  def __init__(self, basetopo, refdict):
+  __slots__ = 'basetopo', 'refdict'
+  __cache__ = 'elements',
+
+  @types.apply_annotations
+  def __init__(self, basetopo:stricttopology, refdict):
     self.basetopo = basetopo
     self.refdict = refdict
     super().__init__(basetopo.ndims)
 
-  @cache.property
+  @property
   def elements(self):
     elements = []
     for elem in self.basetopo:
@@ -2053,13 +2123,17 @@ class TrimmedTopologyItem(Topology):
 class TrimmedTopologyBoundaryItem(Topology):
   'trimmed topology boundary item'
 
-  def __init__(self, btopo, trimmed, othertopo):
+  __slots__ = 'btopo', 'trimmed', 'othertopo'
+  __cache__ = 'elements',
+
+  @types.apply_annotations
+  def __init__(self, btopo:stricttopology, trimmed, othertopo):
     self.btopo = btopo
     self.trimmed = trimmed
     self.othertopo = othertopo
     super().__init__(btopo.ndims)
 
-  @cache.property
+  @property
   def elements(self):
     belems = [elem for elem in self.trimmed if elem.opposite in self.btopo.edict]
     if self.othertopo:
@@ -2069,12 +2143,16 @@ class TrimmedTopologyBoundaryItem(Topology):
 class HierarchicalTopology(Topology):
   'collection of nested topology elments'
 
-  def __init__(self, basetopo, allelements, precise):
+  __slots__ = 'basetopo', 'allelements', '_precise'
+  __cache__ = 'elements', 'levels', 'refined', 'boundary', 'interfaces'
+
+  @types.apply_annotations
+  def __init__(self, basetopo:stricttopology, allelements:types.tuple[element.strictelement], precise:bool):
     'constructor'
 
     assert not isinstance(basetopo, HierarchicalTopology)
     self.basetopo = basetopo
-    self.allelements = tuple(allelements)
+    self.allelements = allelements
     self._precise = precise
     super().__init__(basetopo.ndims)
 
@@ -2084,7 +2162,7 @@ class HierarchicalTopology(Topology):
   def hierarchical(self, elements, precise=False):
     return self.basetopo.hierarchical(elements, precise)
 
-  @cache.property
+  @property
   def elements(self):
     if self._precise:
       return self.allelements
@@ -2107,7 +2185,7 @@ class HierarchicalTopology(Topology):
           itemelems.append(element.Element(ref, elem.transform, elem.opposite, oriented=True))
     return itemelems
 
-  @cache.property
+  @property
   @log.title
   def levels(self):
     levels = [self.basetopo]
@@ -2123,12 +2201,12 @@ class HierarchicalTopology(Topology):
         assert elem.transform in levels[nrefine].edict, 'element is not a refinement of basetopo'
     return tuple(levels)
 
-  @cache.property
+  @property
   def refined(self):
     elements = [child for elem in self for child in elem.children]
     return self.basetopo.hierarchical(elements, precise=True)
 
-  @cache.property
+  @property
   @log.title
   def boundary(self):
     'boundary elements'
@@ -2146,7 +2224,7 @@ class HierarchicalTopology(Topology):
         belems.append(element.Element(edge.reference, edge.transform, opptrans, oriented=True))
     return basebtopo.hierarchical(belems, precise=True)
 
-  @cache.property
+  @property
   @log.title
   def interfaces(self):
     'interfaces'
@@ -2266,7 +2344,11 @@ class HierarchicalTopology(Topology):
 class ProductTopology(Topology):
   'product topology'
 
-  def __init__(self, topo1, topo2):
+  __slots__ = 'topo1', 'topo2'
+  __cache__ = 'structure', 'elements', 'boundary', 'interfaces'
+
+  @types.apply_annotations
+  def __init__(self, topo1:stricttopology, topo2:stricttopology):
     self.topo1 = topo1
     self.topo2 = topo2
     super().__init__(topo1.ndims+topo2.ndims)
@@ -2274,11 +2356,11 @@ class ProductTopology(Topology):
   def __len__(self):
     return len(self.topo1) * len(self.topo2)
 
-  @cache.property
+  @property
   def structure(self):
     return self.topo1.structure[(...,)+(_,)*self.topo2.ndims] * self.topo2.structure
 
-  @cache.property
+  @property
   def elements(self):
     return (numpy.array(self.topo1.elements, dtype=object)[:,_] * numpy.array(self.topo2.elements, dtype=object)[_,:]).ravel()
 
@@ -2314,16 +2396,18 @@ class ProductTopology(Topology):
       self.topo2.basis(name, *[arg2 for arg1, arg2 in splitargs], **{name: arg2 for name, arg1, arg2 in splitkwargs}))
     return function.ravel(function.outer(basis1,basis2), axis=0)
 
-  @cache.property
+  @property
   def boundary(self):
     return self.topo1 * self.topo2.boundary + self.topo1.boundary * self.topo2
 
-  @cache.property
+  @property
   def interfaces(self):
     return self.topo1 * self.topo2.interfaces + self.topo1.interfaces * self.topo2
 
 class RevolutionTopology(Topology):
   'topology consisting of a single revolution element'
+
+  __slots__ = 'elements', 'boundary'
 
   def __init__(self):
     self.elements = element.Element(element.RevolutionReference(), [transform.RootTrans('angle',(1,))]),
@@ -2354,7 +2438,7 @@ class Patch(types.Singleton):
   __slots__ = 'topo', 'verts', 'boundaries'
 
   @types.apply_annotations
-  def __init__(self, topo:types.strict[Topology], verts:types.frozenarray, boundaries:types.tuple[types.strict[PatchBoundary]]):
+  def __init__(self, topo:stricttopology, verts:types.frozenarray, boundaries:types.tuple[types.strict[PatchBoundary]]):
     super().__init__()
     self.topo = topo
     self.verts = verts
@@ -2362,6 +2446,9 @@ class Patch(types.Singleton):
 
 class MultipatchTopology(Topology):
   'multipatch topology'
+
+  __slots__ = 'patches',
+  __cache__ = '_patchinterfaces', 'elements', 'boundary', 'interfaces', 'refined'
 
   @staticmethod
   def build_boundarydata(connectivity):
@@ -2394,24 +2481,27 @@ class MultipatchTopology(Topology):
 
     return boundarydata
 
-  def __init__(self, patches):
+  @types.apply_annotations
+  def __init__(self, patches:types.tuple[types.strict[Patch]]):
     'constructor'
 
-    self.patches = tuple(patches)
-
-    self._patchinterfaces = {}
-    for patch in self.patches:
-      for boundary in patch.boundaries:
-        self._patchinterfaces.setdefault(boundary.id, []).append((patch.topo, boundary))
-    self._patchinterfaces = {
-      boundaryid: tuple(data)
-      for boundaryid, data in self._patchinterfaces.items()
-      if len(data) > 1
-    }
+    self.patches = patches
 
     super().__init__(self.patches[0].topo.ndims)
 
-  @cache.property
+  @property
+  def _patchinterfaces(self):
+    patchinterfaces = {}
+    for patch in self.patches:
+      for boundary in patch.boundaries:
+        patchinterfaces.setdefault(boundary.id, []).append((patch.topo, boundary))
+    return {
+      boundaryid: tuple(data)
+      for boundaryid, data in patchinterfaces.items()
+      if len(data) > 1
+    }
+
+  @property
   def elements(self):
     return tuple(itertools.chain.from_iterable(patch.topo for patch in self.patches))
 
@@ -2565,7 +2655,7 @@ class MultipatchTopology(Topology):
     dofs = types.frozenarray(range(npatches), dtype=int)[:,_]
     return function.polyfunc(coeffs, dofs, npatches, ((patch.topo.root,) for patch in self.patches), issorted=False)
 
-  @cache.property
+  @property
   def boundary(self):
     'boundary'
 
@@ -2583,7 +2673,7 @@ class MultipatchTopology(Topology):
     else:
       return UnionTopology(subtopos, subnames)
 
-  @cache.property
+  @property
   def interfaces(self):
     '''interfaces
 
@@ -2626,32 +2716,13 @@ class MultipatchTopology(Topology):
 
     return UnionTopology((intrapatchtopo, interpatchtopo), ('intrapatch', 'interpatch'))
 
-  @cache.property
+  @property
   def refined(self):
     'refine'
 
     return MultipatchTopology(Patch(patch.topo.refined, patch.verts, patch.boundaries) for patch in self.patches)
 
 # UTILITY FUNCTIONS
-
-class DimAxis(types.Singleton):
-  __slots__ = 'i', 'j', 'isperiodic'
-  isdim = True
-  def __init__(self, i:types.strictint, j:types.strictint, isperiodic:bool):
-    super().__init__()
-    self.i = i
-    self.j = j
-    self.isperiodic = isperiodic
-
-class BndAxis(types.Singleton):
-  __slots__ = 'i', 'j', 'ibound', 'side'
-  isdim = False
-  def __init__(self, i:types.strictint, j:types.strictint, ibound:types.strictint, side:bool):
-    super().__init__()
-    self.i = i
-    self.j = j
-    self.ibound = ibound
-    self.side = side
 
 def common_refine(topo1, topo2):
   warnings.deprecation('common_refine(a, b) will be removed in future; use a & b instead')
