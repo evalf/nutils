@@ -104,6 +104,20 @@ class Matrix(metaclass=abc.ABCMeta):
   def solve(self, rhs=None, constrain=None, lconstrain=None, rconstrain=None):
     'solve system given right hand side vector and/or constraints'
 
+  @abc.abstractmethod
+  def submatrix(self, rows, cols):
+    '''Create submatrix from selected rows, columns.
+
+    Args
+    ----
+    rows : boolean/int array selecting rows for keeping
+    cols : boolean/int array selecting columns for keeping
+
+    Returns
+    -------
+    Matrix instance of reduced dimensions
+    '''
+
   def export(self, form):
     '''Export matrix data to any of supported forms.
 
@@ -194,6 +208,9 @@ class NumpyMatrix(Matrix):
     data = self.core[I]
     x[J] = numpy.linalg.solve(data[:,J], b[I] - numpy.dot(data[:,~J], x[~J]))
     return x
+
+  def submatrix(self, rows, cols):
+    return NumpyMatrix(self.core[numpy.ix_(rows, cols)])
 
 
 ## SCIPY BACKEND
@@ -329,6 +346,9 @@ else:
       else:
         raise Exception('invalid preconditioner {!r}'.format(name))
       return scipy.sparse.linalg.LinearOperator(A.shape, precon, dtype=float)
+
+    def submatrix(self, rows, cols):
+      return ScipyMatrix(self.core[rows,:][:,cols])
 
 
 ## INTERNALS
