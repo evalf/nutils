@@ -2610,10 +2610,24 @@ class MultipatchTopology(Topology):
 
 # UTILITY FUNCTIONS
 
-DimAxis = collections.namedtuple('DimAxis', ['i','j','isperiodic'])
-DimAxis.isdim = True
-BndAxis = collections.namedtuple('BndAxis', ['i','j','ibound','side'])
-BndAxis.isdim = False
+class DimAxis(types.Singleton):
+  __slots__ = 'i', 'j', 'isperiodic'
+  isdim = True
+  def __init__(self, i:types.strictint, j:types.strictint, isperiodic:bool):
+    super().__init__()
+    self.i = i
+    self.j = j
+    self.isperiodic = isperiodic
+
+class BndAxis(types.Singleton):
+  __slots__ = 'i', 'j', 'ibound', 'side'
+  isdim = False
+  def __init__(self, i:types.strictint, j:types.strictint, ibound:types.strictint, side:bool):
+    super().__init__()
+    self.i = i
+    self.j = j
+    self.ibound = ibound
+    self.side = side
 
 def common_refine(topo1, topo2):
   warnings.deprecation('common_refine(a, b) will be removed in future; use a & b instead')
