@@ -92,11 +92,6 @@ class Matrix(metaclass=abc.ABCMeta):
   def size(self):
     return numpy.prod(self.shape)
 
-  def cond(self, constrain=None, lconstrain=None, rconstrain=None):
-    x, I, J = parsecons(constrain, lconstrain, rconstrain, self.shape)
-    matrix = self.toarray()[numpy.ix_(I,J)]
-    return numpy.linalg.cond(matrix)
-
   @abc.abstractmethod
   def rowsupp(self, tol=0):
     'return row indices with nonzero/non-small entries'
