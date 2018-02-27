@@ -317,22 +317,18 @@ def newton(target, residual, jacobian=None, lhs0=None, constrain=None, nrelax=nu
   if not jacobian.contains(target):
     log.info('problem is linear')
     res, jac = Integral.multieval(residual, jacobian, arguments=collections.ChainMap(arguments or {}, {target: numpy.zeros(argshape)}))
-    cons = lhs0.copy()
-    cons[~constrain] = numpy.nan
-    lhs = jac.solve(-res, constrain=cons, **solveargs)
+    lhs = jac.solve(-res, lhs0=lhs0, constrain=constrain, **solveargs)
     yield lhs, 0
     return
 
   lhs = lhs0.copy()
   fcache = cache.WrapperCache()
   res, jac = Integral.multieval(residual, jacobian, fcache=fcache, arguments=collections.ChainMap(arguments or {}, {target: lhs}))
-  zcons = numpy.zeros(argshape)
-  zcons[~constrain] = numpy.nan
   relax = 1
   while True:
     resnorm = numpy.linalg.norm(res[~constrain])
     yield lhs, resnorm
-    dlhs = -jac.solve(res, constrain=zcons, **solveargs)
+    dlhs = -jac.solve(res, constrain=constrain, **solveargs)
     relax = min(relax * rebound, 1)
     for irelax in itertools.count():
       res, jac = Integral.multieval(residual, jacobian, fcache=fcache, arguments=collections.ChainMap(arguments or {}, {target: lhs+relax*dlhs}))
@@ -421,15 +417,13 @@ def pseudotime(target, residual, inertia, timestep, lhs0, residual0=None, constr
 
   argshape = residual._argshape(target)
   assert len(argshape) == 1
-  zcons = util.NanVec(argshape[0])
-  zcons[constrain] = 0
   lhs = lhs0.copy()
   fcache = cache.WrapperCache()
   res, jac = Integral.multieval(residual, jacobian0+jacobiant/timestep, fcache=fcache, arguments=collections.ChainMap(arguments or {}, {target: lhs}))
   resnorm = resnorm0 = numpy.linalg.norm(res[~constrain])
   while True:
     yield lhs, resnorm
-    lhs -= jac.solve(res, constrain=zcons, **solveargs)
+    lhs -= jac.solve(res, constrain=constrain, **solveargs)
     thistimestep = timestep * (resnorm0/resnorm)
     log.info('timestep: {:.0e}'.format(thistimestep))
     res, jac = Integral.multieval(residual, jacobian0+jacobiant/thistimestep, fcache=fcache, arguments=collections.ChainMap(arguments or {}, {target: lhs}))
@@ -535,20 +529,16 @@ def optimize(target, functional, droptol=None, lhs0=None, constrain=None, newton
   residual = functional.derivative(target)
   jacobian = residual.derivative(target)
   f0, res, jac = Integral.multieval(functional, residual, jacobian, arguments=collections.ChainMap(arguments or {}, {target: lhs0}))
-  usedofs = ~constrain
-  if droptol is not None:
-    usedofs &= jac.rowsupp(droptol)
-  log.info('optimizing for {}/{} degrees of freedom'.format(usedofs.sum(), len(usedofs)))
-  cons = numpy.zeros(residual.shape)
-  cons[usedofs] = numpy.nan
-  lhs = lhs0 - jac.solve(res, constrain=cons) # residual(lhs0) + jacobian(lhs0) dlhs = 0
+  freezedofs = constrain if droptol is None else constrain | ~jac.rowsupp(droptol)
+  log.info('optimizing for {}/{} degrees of freedom'.format(len(res)-freezedofs.sum(), len(res)))
+  lhs = lhs0 - jac.solve(res, constrain=freezedofs) # residual(lhs0) + jacobian(lhs0) dlhs = 0
   if not jacobian.contains(target): # linear: functional(lhs0+dlhs) = functional(lhs0) + residual(lhs0) dlhs + .5 dlhs jacobian(lhs0) dlhs
     value = f0 + .5 * res.dot(lhs-lhs0)
   else: # nonlinear
     assert newtontol is not None, 'newton tolerance `newtontol` must be specified for nonlinear problems'
-    lhs = newton(target, residual, lhs0=lhs, constrain=~usedofs, arguments=arguments).solve(newtontol)
+    lhs = newton(target, residual, lhs0=lhs, constrain=freezedofs, arguments=arguments).solve(newtontol)
     value = functional.eval(arguments=collections.ChainMap(arguments or {}, {target: lhs}))
-  assert not numpy.isnan(lhs[usedofs]).any(), 'optimization failed (forgot droptol?)'
+  assert numpy.isfinite(lhs).all(), 'optimization failed (forgot droptol?)'
   log.info('optimum: {:.2e}'.format(value))
-  lhs[~(usedofs|constrain)] = numpy.nan
+  lhs[freezedofs & ~constrain] = numpy.nan
   return lhs
