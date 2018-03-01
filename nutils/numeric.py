@@ -507,4 +507,26 @@ def poly_pow(p, n):
     return poly_mul(q, p)
   return q
 
+def accumulate(data, index, shape):
+  '''accumulate scattered data in dense array.
+
+  Accumulates values from ``data`` in an array of shape ``shape`` at positions
+  ``index``, equivalent with:
+
+  >>> def accumulate(data, index, shape):
+  ...   array = numpy.zeros(shape, data.dtype)
+  ...   for v, *ij in zip(data, *index):
+  ...     array[ij] += v
+  ...   return array
+  '''
+
+  ndim = len(shape)
+  assert data.ndim == 1
+  assert len(index) == ndim and all(isintarray(ind) and ind.shape == data.shape for ind in index)
+  if not ndim:
+    return data.sum()
+  retval = numpy.zeros(shape, data.dtype)
+  numpy.add.at(retval, tuple(index), data)
+  return retval
+
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

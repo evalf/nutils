@@ -35,7 +35,7 @@ out in element loops. For lower level operations topologies can be used as
 :mod:`nutils.element` iterators.
 """
 
-from . import element, function, util, numpy, parallel, matrix, log, config, numeric, cache, transform, warnings, _
+from . import element, function, util, numpy, parallel, log, config, numeric, cache, transform, warnings, matrix, _
 import functools, collections.abc, itertools, functools, operator
 
 _identity = lambda x: x
@@ -321,7 +321,7 @@ class Topology:
 
   @log.title
   @util.single_or_multiple
-  def integrate(self, funcs, ischeme='gauss', degree=None, geometry=None, force_dense=False, fcache=None, edit=_identity, *, arguments=None):
+  def integrate(self, funcs, ischeme='gauss', degree=None, geometry=None, fcache=None, edit=_identity, *, arguments=None):
     'integrate'
 
     if degree is not None:
@@ -329,7 +329,11 @@ class Topology:
     iwscale = function.J(geometry, self.ndims) if geometry else 1
     integrands = [function.asarray(edit(func * iwscale)) for func in funcs]
     data_index = self._integrate(integrands, ischeme, fcache, arguments)
-    return [matrix.assemble(data, index, integrand.shape, force_dense) for integrand, (data,index) in zip(integrands, data_index)]
+    for integrand, (data,index) in zip(integrands, data_index):
+      retval = matrix.assemble(data, index, integrand.shape)
+      assert retval.shape == integrand.shape
+      log.debug('assembled {}({})'.format(retval.__class__.__name__, ','.join(str(n) for n in retval.shape)))
+      yield retval
 
   @log.title
   def integral(self, func, ischeme='gauss', degree=None, geometry=None, edit=_identity):
@@ -349,7 +353,7 @@ class Topology:
     return onto.dot(weights)
 
   @log.title
-  def project(self, fun, onto, geometry, tol=0, ischeme='gauss', degree=None, droptol=1e-12, exact_boundaries=False, constrain=None, verify=None, ptype='lsqr', precon='diag', edit=_identity, *, arguments=None, **solverargs):
+  def project(self, fun, onto, geometry, ischeme='gauss', degree=None, droptol=1e-12, exact_boundaries=False, constrain=None, verify=None, ptype='lsqr', edit=_identity, *, arguments=None, **solverargs):
     'L2 projection of function onto function space'
 
     log.debug('projection type:', ptype)
@@ -361,7 +365,7 @@ class Topology:
     else:
       constrain = constrain.copy()
     if exact_boundaries:
-      constrain |= self.boundary.project(fun, onto, geometry, constrain=constrain, title='boundaries', ischeme=ischeme, tol=tol, droptol=droptol, ptype=ptype, edit=edit, arguments=arguments)
+      constrain |= self.boundary.project(fun, onto, geometry, constrain=constrain, title='boundaries', ischeme=ischeme, droptol=droptol, ptype=ptype, edit=edit, arguments=arguments)
     assert isinstance(constrain, util.NanVec)
     assert constrain.shape == onto.shape[:1]
 
@@ -389,7 +393,7 @@ class Topology:
       else:
         solvecons = constrain.copy()
         solvecons[~(constrain.where|N)] = 0
-        u = A.solve(b, solvecons, tol=tol, symmetric=True, precon=precon, **solverargs)
+        u = A.solve(b, constrain=solvecons, **solverargs)
         constrain[N] = u[N]
         err2 = f2 - numpy.dot(2*b-A.matvec(u), u) # can be negative ~zero due to rounding errors
         avg_error = numpy.sqrt(err2) / area if err2 > 0 else 0

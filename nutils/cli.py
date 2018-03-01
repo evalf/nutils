@@ -24,7 +24,7 @@ can be used set up properties, initiate an output environment, and execute a
 python function based arguments specified on the command line.
 """
 
-from . import log, util, config, long_version, warnings
+from . import log, util, config, long_version, warnings, matrix
 import sys, inspect, os, datetime, pdb, signal, subprocess, contextlib
 
 def _version():
@@ -189,7 +189,7 @@ def call(func, kwargs, scriptname, funcname=None):
       log_ = log.TeeLog(log_, log.HtmlLog('log.html', title=scriptname, scriptname=scriptname, funcname=funcname, funcargs=funcargs))
 
     try:
-      with log_, warnings.via(log.warning):
+      with log_, warnings.via(log.warning), matrix.backend(config.matrix):
 
         log.info('nutils v{}'.format(_version()))
         log.info('start {}'.format(starttime.ctime()))

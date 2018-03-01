@@ -387,7 +387,7 @@ def single_or_multiple(f):
   >>> T.square(2)
   4
   >>> T.square([2,3])
-  [4, 9]
+  (4, 9)
 
   Args
   ----
@@ -404,7 +404,7 @@ def single_or_multiple(f):
   def wrapped(self, arg0, *args, **kwargs):
     ismultiple = isinstance(arg0, (list,tuple))
     arg0mod = tuple(arg0) if ismultiple else (arg0,)
-    retvals = f(self, arg0mod, *args, **kwargs)
+    retvals = tuple(f(self, arg0mod, *args, **kwargs))
     if not ismultiple:
       retvals, = retvals
     return retvals

@@ -27,7 +27,7 @@ class module(ContextTestCase):
 
   def test(self):
     with DocTestLog():
-      failcnt, testcnt = _doctest.testmod(importlib.import_module(self.name))
+      failcnt, testcnt = _doctest.testmod(importlib.import_module(self.name), optionflags=_doctest.ELLIPSIS)
       self.assertEqual(failcnt, 0)
 
 @parametrize
@@ -41,7 +41,7 @@ class file(ContextTestCase):
 
   def test(self):
     with DocTestLog():
-      failcnt, testcnt = _doctest.testfile(str(self.path), module_relative=False)
+      failcnt, testcnt = _doctest.testfile(str(self.path), module_relative=False, optionflags=_doctest.ELLIPSIS)
       self.assertEqual(failcnt, 0)
 
 root = pathlib.Path(__file__).parent.parent

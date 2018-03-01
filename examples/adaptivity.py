@@ -43,7 +43,6 @@ class MakePlots( object ):
 
 def main(
     degree: 'number of elements' = 1,
-    solvetol: 'solver tolerance' = 1e-10,
     circle: 'use circular area of interest (default square)' = False,
     uniform: 'use uniform refinement (default adaptive)' = False,
     basistype: 'basis function' = 'std',
@@ -79,8 +78,8 @@ def main(
     rhsprimal = domain.boundary['inside'].integrate( basis * flux, geometry=geom, ischeme='gauss99' )
     rhsdual = domain['aoi'].integrate( basis, geometry=geom, ischeme='gauss5' )
     cons = domain.boundary['outside'].project( exact, ischeme='gauss9', geometry=geom, onto=basis )
-    lhsprimal = matrix.solve( rhsprimal, constrain=cons, tol=solvetol, symmetric=True )
-    lhsdual = matrix.solve( rhsdual, constrain=cons&0, tol=solvetol, symmetric=True )
+    lhsprimal = matrix.solve( rhsprimal, constrain=cons )
+    lhsdual = matrix.solve( rhsdual, constrain=cons&0 )
     primal = basis.dot( lhsprimal )
     dual = basis.dot( lhsdual )
 
@@ -91,7 +90,7 @@ def main(
     finematrix = finedomain.integrate( finelaplace, geometry=geom, ischeme='gauss5' )
     finerhsdual = finedomain['aoi'].integrate( finebasis, geometry=geom, ischeme='gauss5' )
     finecons = finedomain.boundary['outside'].project( 0, ischeme='gauss5', geometry=geom, onto=finebasis )
-    finelhsdual = finematrix.solve( finerhsdual, constrain=finecons, tol=solvetol, symmetric=True )
+    finelhsdual = finematrix.solve( finerhsdual, constrain=finecons )
 
     # evaluate error estimate
     dlhsdual = finelhsdual - finedomain.project( dual, onto=finebasis, geometry=geom, ischeme='gauss5' )
@@ -118,7 +117,7 @@ def main(
 class test(unittest.TestCase):
 
   def test_p1_std(self):
-    lhsprimal, error_est_w = main(degree=1, solvetol=0, circle=False, uniform=False, basistype='std', nrefine=2, figures=False)
+    lhsprimal, error_est_w = main(degree=1, circle=False, uniform=False, basistype='std', nrefine=2, figures=False)
     numeric.assert_allclose64(lhsprimal,
       'eNpVkckNQzEIRBuyJfallijH9N9CbOYrUk5glgeMbbGvV0jXZ9syVb5WhGneQsfW2iegN7BPhY0TSlMS'
       'lTKl2TmtloParBafHafX2tGb3eitnN7tGTI1ShyIuICfYXCMBcAITNwV9izDDLJ3gVxEc8DucgDDWwBs'
@@ -138,7 +137,7 @@ class test(unittest.TestCase):
       'Be02XA==')
 
   def test_p2_spline(self):
-    lhsprimal, error_est_w = main(degree=2, solvetol=0, circle=False, uniform=False, basistype='spline', nrefine=1, figures=False)
+    lhsprimal, error_est_w = main(degree=2, circle=False, uniform=False, basistype='spline', nrefine=1, figures=False)
     numeric.assert_allclose64(lhsprimal,
       'eNpVkFEOg0EEhC/0b4LFcpamj73/FWqNNOkTiZkPow/b83LJ/Cx9bOu+dUvKrcxst65qvJuatGKVVLvx'
       'TXQbN+uJWUQzlMEQzIsRw1APMOwcMMwadkS4WQzFTj+4I7GMVYeRDqqLgFHe3hdMXQ/Dq+Z9F2dAyDEO'
@@ -155,7 +154,7 @@ class test(unittest.TestCase):
       'VO5UVdranJmwj1JpLjM3nIjcdy6hDagX6Gmf0P77vv8BTa37JQ==')
 
   def test_p1_std_circle(self):
-    lhsprimal, error_est_w = main(degree=1, solvetol=0, circle=True, uniform=False, basistype='std', nrefine=1, figures=False)
+    lhsprimal, error_est_w = main(degree=1, circle=True, uniform=False, basistype='std', nrefine=1, figures=False)
     numeric.assert_allclose64(lhsprimal,
       'eNpVj9sNQzEIQxdKpPAyMEvVz+6/QrkQVeoXCHNs0EW2XuDMz9alIvJUZuKnbiPoZxOtXaOWdu1oN5Bz'
       'ngaBgd0HVqNeYGgNUI3mIOrpw4Y3672iyzSt2YhJwXEaNnMmZjxsMe0W0Mk3oPNJ/OZ6XW8VR3HGza5J'
