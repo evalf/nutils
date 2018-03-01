@@ -105,4 +105,5 @@ sys.modules[__name__] = Config(
   selfcheck = False,
   cachedir = 'cache',
   matrix = 'mkl,scipy,numpy',
+  cache = False,
 )

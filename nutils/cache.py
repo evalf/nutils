@@ -23,7 +23,7 @@ The cache module.
 """
 
 from . import config, log, types
-import os, numpy, functools, inspect, builtins, hashlib
+import os, numpy, functools, inspect, builtins, pathlib, pickle, hashlib
 
 def property(f):
   _self = object()
@@ -203,5 +203,134 @@ def replace(func):
     return retval
 
   return wrapped
+
+# Define platform-dependent `_lock_file` function.
+def _lock_file_fallback(f): pass
+
+try:
+  import fcntl
+except ImportError:
+  _lock_file_fcntl = None
+else:
+  # On Linux and BSD (including macOS) we use `flock`, interfaced by Python via
+  # `fcntl.flock`.  The lock is exclusive, tied to the file descriptor (and not
+  # to the process as is `lockf`) and is released automatically when the file
+  # descriptor is closed.
+  def _lock_file_fcntl(f):
+    fcntl.flock(f, fcntl.LOCK_EX)
+
+try:
+  import msvcrt
+except ImportError:
+  _lock_file_msvcrt = None
+else:
+  # On Windows we use `msvcrt.locking`.  We lock the first byte at the current
+  # position of the file.  Like `fcntl.flock` the lock is exclusive, tied to
+  # the file descriptor and released automatically when the file descriptor is
+  # closed.  `msvcrt.locking` tries to lock the file descriptor ten times with
+  # an interval of a second, and raises `OSError` if unsuccessfull.  Hence the
+  # `while: try ... except OSError: pass` construction.
+  def _lock_file_msvcrt(f):
+    while True:
+      try:
+        msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)
+      except OSError:
+        pass
+      else:
+        return
+
+_lock_file = next(filter(None, [_lock_file_fcntl, _lock_file_msvcrt, _lock_file_fallback]))
+
+
+def function(func=None, *, version=0):
+  '''
+  Decorator to wrap a function ``func`` with a memoizing callable.  It is
+  assumed that ``func`` computes its return value based strictly on the
+  arguments.  In other words: calling ``func`` with the same arguments
+  repeatedly, should produce the same return value.  All arguments passed to
+  the decorator should be hashable (by :func:`nutils.types.nutils_hash`).
+
+  Memoization is controlled by the ``nutils.config.cache`` variable.  If
+  ``True``, memoization is enabled: The first time the decorator is called with
+  a unique set of arguments, the decorator calls ``func`` and stores the result
+  on disk in the directory specified by ``nutils.config.cachedir``; when the
+  decorator is called with the same arguments, the result is retrieved from the
+  cache.  If ``False``, the decorator calls ``func`` directly, bypassing the
+  cache.  Note that ``nutils.config.cachedir`` defaults to ``False``.
+
+  Parameters
+  ----------
+  func : :any:`callable`
+      The function to be memoized.
+  version : :class:`int`
+      Optional version number of ``func``.  Increment this if the behavior of
+      ``func`` is changed.  The decorator can be applied as follows:
+
+      >>> @function(version=1)
+      ... def f(x):
+      ...   return x
+
+  Returns
+  -------
+  :any:`callable`
+      A memoized version of ``func``.
+  '''
+
+  if not isinstance(version, int):
+    raise ValueError("'version' should be of type 'int' but got {!r}".format(version))
+  if func is None:
+    return functools.partial(function, version=version)
+
+  # Hash of the full function name (closest thing to a unique representation of
+  # `func`).
+  func_key = hashlib.sha1('{}.{}:{}'.format(func.__module__, func.__qualname__, version).encode()).digest()
+  canonicalize = types.argument_canonicalizer(inspect.signature(func))
+
+  @functools.wraps(func)
+  def wrapper(*args, **kwargs):
+    if not config.cache:
+      return func(*args, **kwargs)
+    args, kwargs = canonicalize(*args, **kwargs)
+    # Hash the function key and the canonicalized arguments and compute the
+    # hexdigest.  This is used to identify cache file `cachefile`.
+    h = hashlib.sha1(func_key)
+    for arg in args:
+      h.update(types.nutils_hash(arg))
+    for hkv in sorted(hashlib.sha1(k.encode()).digest()+types.nutils_hash(v) for k, v in kwargs.items()):
+      h.update(hkv)
+    hkey = h.hexdigest()
+    cachefile = pathlib.Path(config.cachedir)/hkey
+    # Open and lock `cachefile`.  Try to read it and, if successful, unlock
+    # the file (implicitly by closing the file) and return the value.  If
+    # reading fails, e.g. because the file did not exist, call `func`, store
+    # the result, unlock and return.  While not necessary per se, we lock the
+    # file immediately to avoid checking twice if there is a cached value: once
+    # before locking the file, and once after locking, at which point another
+    # party may have written something to the cache already.
+    cachefile.parent.mkdir(parents=True, exist_ok=True)
+    cachefile.touch()
+    with cachefile.open('r+b') as f:
+      log.debug('[cache.function {}] acquiring lock'.format(hkey))
+      _lock_file(f)
+      log.debug('[cache.function {}] lock acquired'.format(hkey))
+      try:
+        value, log_ = pickle.load(f)
+      except (EOFError, pickle.UnpicklingError):
+        log.debug('[cache.function {}] failed to load, cache will be rewritten'.format(hkey))
+        pass
+      else:
+        log.debug('[cache.function {}] load'.format(hkey))
+        log_.replay()
+        return value
+      # Seek back to the beginning, because pickle might have read garbage.
+      f.seek(0)
+      # Disable the cache temporarily to prevent caching subresults *in* `func`.
+      with config(cache=False), log.RecordLog() as log_:
+        value = func(*args, **kwargs)
+      pickle.dump((value, log_), f)
+      log.debug('[cache.function {}] store'.format(hkey))
+      return value
+
+  return wrapper
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
