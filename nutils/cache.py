@@ -23,7 +23,7 @@ The cache module.
 """
 
 from . import config, log, types
-import os, numpy, functools, inspect, builtins
+import os, numpy, functools, inspect, builtins, hashlib
 
 def property(f):
   _self = object()
@@ -94,6 +94,10 @@ class WrapperCache:
     return 'not used' if not count \
       else 'effectivity {}% (hit {}/{} calls over {} functions)'.format(100*hits/count, hits, count, len(self.cache))
 
+  @property
+  def __nutils_hash__(self):
+    return hashlib.sha1(b'nutils.cache.WrapperCache\0').digest()
+
 class WrapperDummyCache:
   'placeholder object'
 
@@ -101,6 +105,12 @@ class WrapperDummyCache:
 
   def __getitem__(self, func):
     return func
+
+  @property
+  def __nutils_hash__(self):
+    # This hash is intentionally the same as `WrapperCache`: Both can be
+    # interchanged without affecting results.
+    return hashlib.sha1(b'nutils.cache.WrapperCache\0').digest()
 
 class FileCache:
   'cache'
