@@ -1,6 +1,21 @@
-from nutils import solver, mesh, function
+from nutils import solver, mesh, function, cache, config, types
 from . import *
-import numpy
+import numpy, contextlib, tempfile
+
+@contextlib.contextmanager
+def tmpcache():
+  with tempfile.TemporaryDirectory() as tmpdir:
+    with config(cache=True, cachedir=str(tmpdir)):
+      yield
+
+def _test_recursion_cache(testcase, solver_iter):
+  read = lambda n: tuple(item for i, item in zip(range(n), solver_iter()))
+  reference = read(5)
+  for lengths in [1,2,3], [1,3,2], [0,3,5]:
+    with tmpcache():
+      for i, length in enumerate(lengths):
+        with testcase.subTest(lengths=lengths, step=i):
+          testcase.assertEqual(read(length), reference[:length])
 
 
 class laplace(TestCase):
@@ -60,8 +75,14 @@ class navierstokes(TestCase):
   def test_newton(self):
     self.assert_resnorm(solver.newton('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons).solve(tol=self.tol, maxiter=2))
 
+  def test_newton_iter(self):
+    _test_recursion_cache(self, lambda: ((types.frozenarray(lhs), resnorm) for lhs, resnorm in solver.newton('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons)))
+
   def test_pseudotime(self):
     self.assert_resnorm(solver.pseudotime('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons, inertia=self.inertia, timestep=1).solve(tol=self.tol, maxiter=3))
+
+  def test_pseudotime_iter(self):
+    _test_recursion_cache(self, lambda: ((types.frozenarray(lhs), resnorm) for lhs, resnorm in solver.pseudotime('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons, inertia=self.inertia, timestep=1)))
 
 
 class optimize(TestCase):

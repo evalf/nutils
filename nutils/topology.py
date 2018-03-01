@@ -2803,6 +2803,7 @@ class Integral(types.Singleton):
 strictintegral = types.strict[Integral]
 
 @types.apply_annotations
+@cache.function
 def eval_integrals(*integrals: types.tuple[strictintegral], fcache=None, arguments:types.frozendict[types.strictstr,types.frozenarray]=None):
   if fcache is None:
     fcache = cache.WrapperCache()
