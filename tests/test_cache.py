@@ -226,3 +226,139 @@ class function(TestCase):
       self.assertFalse(t.is_alive())
       self.assertEqual(ncalls, 1)
       self.assertEqual(nsuccess, 2)
+
+class Recursion(TestCase):
+
+  def test_nocache(self):
+
+    untouched = object()
+
+    class R(cache.Recursion, length=1):
+      def resume(R_self, history):
+        nonlocal received_history
+        received_history =tuple(history)
+        yield from range(0 if not history else history[-1]+1, 10)
+
+    received_history = untouched
+    self.assertEqual(tuple(R()), tuple(range(10)))
+    self.assertEqual(received_history, ())
+
+  def test_cache(self):
+
+    read = lambda iterable, n: tuple(item for i, item in zip(range(n), iterable))
+    untouched = object()
+
+    for length in 1, 2, 3:
+      with self.subTest(length=length), tmpcache():
+
+        class R(cache.Recursion, length=length):
+          def resume(R_self, history):
+            nonlocal received_history
+            received_history = tuple(history)
+            yield from range(0 if not history else history[-1]+1, 10)
+
+        received_history = untouched
+        self.assertEqual(read(R(), 4), tuple(range(4)))
+        self.assertEqual(received_history, ())
+
+        received_history = untouched
+        self.assertEqual(read(R(), 3), tuple(range(3)))
+        self.assertEqual(received_history, untouched)
+
+        received_history = untouched
+        self.assertEqual(read(R(), 6), tuple(range(6)))
+        self.assertEqual(received_history, tuple(range(4-length,4)))
+
+        received_history = untouched
+        self.assertEqual(read(R(), 12), tuple(range(10)))
+        self.assertEqual(received_history, tuple(range(6-length,6)))
+
+        received_history = untouched
+        self.assertEqual(read(R(), 12), tuple(range(10)))
+        self.assertEqual(received_history, untouched)
+
+  def test_corruption(self):
+
+    read = lambda iterable, n: tuple(item for i, item in zip(range(n), iterable))
+    untouched = object()
+
+    class R(cache.Recursion, length=1):
+      def resume(R_self, history):
+        nonlocal received_history
+        received_history = tuple(history)
+        yield from range(0 if not history else history[-1]+1, 10)
+
+    for icorrupted in range(3):
+      for corruption in '', 'bogus':
+        with self.subTest(corruption=corruption, icorrupted=icorrupted), tmpcache() as cachedir:
+
+          received_history = untouched
+          self.assertEqual(read(R(), 4), tuple(range(4)))
+          self.assertEqual(received_history, ())
+
+          cache_files = tuple(cachedir.iterdir())
+          self.assertEqual(len(cache_files), 1)
+          cache_file, = cache_files
+          self.assertTrue((cache_file/'{:04d}'.format(icorrupted)).exists())
+          with (cache_file/'{:04d}'.format(icorrupted)).open('wb') as f:
+            f.write(corruption.encode())
+
+          received_history = untouched
+          self.assertEqual(read(R(), 6), tuple(range(6)))
+          self.assertEqual(received_history, (icorrupted-1,) if icorrupted else ())
+
+  @unittest.skipIf(cache._lock_file is cache._lock_file_fallback, 'platform does not support file locks')
+  def test_concurrent_access(self):
+
+    read = lambda iterable, n: tuple(item for i, item in zip(range(n), iterable))
+    untouched = object()
+
+    class R(cache.Recursion, length=1):
+      def resume(R_self, history):
+        nonlocal received_history
+        received_history = tuple(history)
+        yield from range(0 if not history else history[-1]+1, 10)
+
+    def wrapper(n):
+      nonlocal nsuccess
+      assert read(R(), n) == tuple(range(n))
+      nsuccess += 1
+
+    for ilock in range(3):
+      with self.subTest(ilock=ilock), tmpcache() as cachedir:
+
+        nsuccess = 0
+
+        # Call `wrapper`.  Since the cache is clean `R.resume` should be called with empty history.
+        received_history = untouched
+        wrapper(4)
+        self.assertEqual(received_history, ())
+        self.assertEqual(nsuccess, 1)
+
+        # Find the cache file of iteration `ilock`, obtain a lock and call
+        # `wrapper` in a thread.  `wrapper` should block on acquiring the file
+        # lock in `function.Recursion`.
+        cache_files = tuple(cachedir.iterdir())
+        self.assertEqual(len(cache_files), 1)
+        cache_file = cache_files[0]/'{:04d}'.format(ilock)
+        assert cache_file.exists()
+        with cache_file.open('r+b') as f:
+          cache._lock_file(f)
+
+          # We use `daemon=True` to make sure this thread won't keep the
+          # interpreter alive when something goes wrong with the thread.
+          received_history = untouched
+          t = threading.Thread(target=lambda: wrapper(5), daemon=True)
+          t.start()
+          # Give the thread some time to start.
+          t.join(timeout=1)
+          # Assert the thread is still running, but `R.resume` is not called.
+          self.assertEqual(received_history, untouched)
+          self.assertEqual(nsuccess, 1)
+
+        # The lock has been released by closing the file.  The thread should
+        # continue with loading the cache and ultimately calling `R.resume
+        t.join(timeout=5)
+        self.assertFalse(t.is_alive())
+        self.assertEqual(received_history, (3,))
+        self.assertEqual(nsuccess, 2)

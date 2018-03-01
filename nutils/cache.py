@@ -23,7 +23,7 @@ The cache module.
 """
 
 from . import config, log, types
-import os, numpy, functools, inspect, builtins, pathlib, pickle, hashlib
+import os, numpy, functools, inspect, builtins, pathlib, pickle, itertools, hashlib, abc
 
 def property(f):
   _self = object()
@@ -176,7 +176,8 @@ def replace(func):
 
   Args
   ----
-  func : callable which maps (obj, ...) onto replaced_obj
+  func
+      callable which maps (obj, ...) onto replaced_obj
 
   Returns
   -------
@@ -332,5 +333,168 @@ def function(func=None, *, version=0):
       return value
 
   return wrapper
+
+class _RecursionMeta(types.ImmutableMeta):
+
+  def __new__(mcls, name, bases, namespace, *, length=None, **kwargs):
+    cls = super().__new__(mcls, name, bases, namespace, **kwargs)
+    if length is not None:
+      cls.length = length
+    return cls
+
+  def __init__(cls, name, bases, namespace, *, length=None, **kwargs):
+    super().__init__(name, bases, namespace, **kwargs)
+
+class Recursion(types.Immutable, metaclass=_RecursionMeta):
+  '''
+  Base class for memoized iterators with fixed recursion.  This class describes
+  iterators of the form
+
+  .. math::
+
+      x_i = f(x_{i-1}, x_{i-2}, \\ldots, x_{i-n})
+
+  where :math:`n` is the recursion length.  The iterator is defined by the
+  abstract :meth:`resume` method.  The method takes a single parameter
+  ``history``: a :class:`list` of the last ``length`` items, or less if the
+  iteration is resumed after less than ``length`` iterations.  The method
+  should proceed with yielding the remaining items.  The :meth:`resume` method
+  should follow above definition of the recursion and the generator :math:`f`
+  should be based strictly on the initialization arguments of the subclass.
+  Failing to do so will lead to unpredictable behavior if memoization is
+  enabled.  As this class bases :class:`nutils.types.Immutable`, all
+  initialization arguments should be hashable (by
+  :func:`nutils.types.nutils_hash`).
+
+  The recursion length should be passed as keyword argument when defining the
+  class.  For example::
+
+      class Subclass(Recursion, length=1):
+        def resume(self, history):
+          ...
+
+  Memoization is controlled by the ``nutils.config.cache`` variable.  If
+  ``True``, memoization is enabled: All cached iterations are retrieved from
+  disk and are yielded; if iteration continues, the :meth:`resume` method is
+  called to produce the remaining iterations.  If ``False``, the memoization is
+  disabled and the :meth:`resume` method is called immediately with empty
+  history.
+
+  Note that this class is iterable, but is not an iterator.  Calling
+  :func:`iter` on an instance of this class, e.g. implicitly in a ``for``
+  statement, the returned iterator always starts from scratch.
+
+  Examples
+  --------
+
+  The Fibonacc sequence
+
+  .. math::
+
+      f(x_{i-1}, x_{i-2}) := x_{i-1} + x_{i-2},
+
+  with variable seed values :math:`x_0` and :math:`x_1` can be implemented as
+  follows.
+
+  >>> class Fibonacci(Recursion, length=2):
+  ...   def __init__(self, x0, x1):
+  ...     self.x0 = x0
+  ...     self.x1 = x1
+  ...   def resume(self, history):
+  ...     if len(history) == 0:
+  ...       yield self.x0
+  ...       history.append(self.x0)
+  ...     if len(history) == 1:
+  ...       yield self.x1
+  ...       history.append(self.x1)
+  ...     while True:
+  ...       value = history[-2] + history[-1]
+  ...       yield value
+  ...       history = history[-1], value
+  ...
+  >>> f = iter(Fibonacci(1, 1))
+  >>> for i in range(6):
+  ...   next(f)
+  1
+  1
+  2
+  3
+  5
+  8
+  '''
+
+  __slots__ = ()
+
+  def __iter__(self):
+    length = type(self).length
+    if not config.cache:
+      yield from self.resume([])
+    else:
+      # The hash of `types.Immutable` uniquely defines this `Recursion`, so use
+      # this to identify the cache directory.  All iterations are stored as
+      # separate files, numbered '0000', '0001', ..., in this directory.
+      hkey = self.__nutils_hash__.hex()
+      cachepath = pathlib.Path(config.cachedir) / hkey
+      cachepath.mkdir(exist_ok=True, parents=True)
+      log.debug('[cache.Recursion {}] start iterating'.format(hkey))
+      # The `history` variable is updated while reading from the cache and
+      # truncated to the required length.
+      history = []
+      # The `exhausted` variable controls if we are reading items from the
+      # cache (`False`) or we are computing values and writing to the cache.
+      # Once `exhausted` is `True` we keep it there, even if at some point
+      # there are cached items available.
+      exhausted = False
+      # The `stop` variable indicates if `StopIteration` is raised in `resume`.
+      stop = False
+      for i in itertools.count():
+        cachefile = cachepath/'{:04d}'.format(i)
+        cachefile.touch()
+        with cachefile.open('r+b') as f:
+          log.debug('[cache.Recursion {}.{:04d}] acquiring lock'.format(hkey, i))
+          _lock_file(f)
+          log.debug('[cache.Recursion {}.{:04d}] lock acquired'.format(hkey, i))
+          if not exhausted:
+            try:
+              log_, stop, value = pickle.load(f)
+            except pickle.UnpicklingError:
+              log.debug('[cache.Recursion {}.{:04d}] failed to load, cache will be rewritten from this point'.format(hkey, i))
+            except EOFError:
+              log.debug('[cache.Recursion {}.{:04d}] cache exhausted'.format(hkey, i))
+            else:
+              log.debug('[cache.Recursion {}.{:04d}] load'.format(hkey, i))
+              log_.replay()
+              if stop:
+                return
+              yield value
+              history.append(value)
+              if len(history) > length:
+                history = history[1:]
+              continue
+            exhausted = True
+            resume = self.resume(history)
+            f.seek(0)
+            del history
+          # Disable the cache temporarily to prevent caching subresults *in* `func`.
+          with config(cache=False), log.RecordLog() as log_:
+            try:
+              value = next(resume)
+            except StopIteration:
+              stop = True
+              value = None
+          log.debug('[cache.Recursion {}.{}] store'.format(hkey, i))
+          pickle.dump((log_, stop, value), f)
+          if stop:
+            return
+          yield value
+
+  @abc.abstractmethod
+  def resume(self, history):
+    '''
+    Resume recursion from ``history``.
+
+    .. Note:: This function is abstract.
+    '''
+    raise NotImplementedError
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
