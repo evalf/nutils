@@ -324,19 +324,25 @@ class Topology(types.Singleton):
 
   @log.title
   @util.single_or_multiple
-  def integrate(self, funcs, ischeme='gauss', degree=None, geometry=None, fcache=None, edit=_identity, *, arguments=None):
+  @types.apply_annotations
+  @cache.function
+  def integrate(self, funcs, ischeme='gauss', degree=None, geometry=None, fcache=None, edit=None, *, arguments:types.frozendict[types.strictstr,types.frozenarray]=None):
     'integrate'
 
+    if edit is None:
+      edit = _identity
     if degree is not None:
       ischeme += str(degree)
     iwscale = function.J(geometry, self.ndims) if geometry else 1
     integrands = [function.asarray(edit(func * iwscale)) for func in funcs]
     data_index = self._integrate(integrands, ischeme, fcache, arguments)
+    retvals = []
     for integrand, (data,index) in zip(integrands, data_index):
       retval = matrix.assemble(data, index, integrand.shape)
       assert retval.shape == integrand.shape
       log.debug('assembled {}({})'.format(retval.__class__.__name__, ','.join(str(n) for n in retval.shape)))
-      yield retval
+      retvals.append(retval)
+    return retvals
 
   @log.title
   def integral(self, func, ischeme='gauss', degree=None, geometry=None, edit=_identity):
@@ -355,7 +361,7 @@ class Topology(types.Singleton):
     return onto.dot(weights)
 
   @log.title
-  def project(self, fun, onto, geometry, ischeme='gauss', degree=None, droptol=1e-12, exact_boundaries=False, constrain=None, verify=None, ptype='lsqr', edit=_identity, *, arguments=None, **solverargs):
+  def project(self, fun, onto, geometry, ischeme='gauss', degree=None, droptol=1e-12, exact_boundaries=False, constrain=None, verify=None, ptype='lsqr', edit=None, *, arguments=None, **solverargs):
     'L2 projection of function onto function space'
 
     log.debug('projection type:', ptype)
