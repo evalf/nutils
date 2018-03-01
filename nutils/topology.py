@@ -2723,11 +2723,17 @@ class MultipatchTopology(Topology):
 
 # INTEGRAL
 
-class Integral:
+def identity(value):
+  return value
+
+class Integral(types.Singleton):
   '''Postponed integral, used for derivative purposes'''
 
-  def __init__(self, integrands):
-    self._integrands = util.hashlessdict((di, f.simplified) for di, f in integrands)
+  __slots__ = '_integrands', 'shape'
+
+  @types.apply_annotations
+  def __init__(self, integrands:types.frozendict[identity, function.simplified]):
+    self._integrands = integrands
     shapes = {integrand.shape for integrand in self._integrands.values()}
     assert len(shapes) == 1, 'incompatible shapes: {}'.format(' != '.join(str(shape) for shape in shapes))
     self.shape, = shapes
@@ -2794,11 +2800,13 @@ class Integral:
     shape, = shapes
     return shape
 
-def eval_integrals(*integrals, fcache=None, arguments=None):
-  assert all(isinstance(integral, Integral) for integral in integrals)
+strictintegral = types.strict[Integral]
+
+@types.apply_annotations
+def eval_integrals(*integrals: types.tuple[strictintegral], fcache=None, arguments:types.frozendict[types.strictstr,types.frozenarray]=None):
   if fcache is None:
     fcache = cache.WrapperCache()
-  gather = util.hashlessdict()
+  gather = {}
   for iint, integral in enumerate(integrals):
     for di in integral._integrands:
       gather.setdefault(di, []).append(iint)
