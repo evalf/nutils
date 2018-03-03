@@ -366,8 +366,23 @@ class parse(TestCase):
 
   # EYE
 
-  def test_single_eye(self): self.assert_ast('a2_i δ_ij', 'j', ('sum', ('mul', ('append_axis', v._a2, _(2)), ('eye', _(2))), _(0)))
+  def test_single_eye(self):    self.assert_ast('a2_i δ_ij', 'j', ('sum', ('mul', ('append_axis', v._a2, _(2)), ('eye', _(2))), _(0)))
+  def test_single_eye_v2(self): self.assert_ast('a2_i $_ij', 'j', ('sum', ('mul', ('append_axis', v._a2, _(2)), ('eye', _(2))), _(0)))
   def test_multiple_eye(self): self.assert_ast('δ_ij δ_jk a2_i a2_k', '',
+    ('sum',
+      ('mul',
+        ('sum',
+          ('mul',
+            ('sum',
+              ('mul',
+                ('append_axis', ('eye', _(2)), _(2)),
+                ('transpose', ('append_axis', ('eye', _(2)), _(2)), _((2,0,1)))),
+              _(1)),
+            ('append_axis', v._a2, _(2))),
+          _(0)),
+        v._a2),
+      _(0)))
+  def test_multiple_eye_v2(self): self.assert_ast('δ_ij $_jk a2_i a2_k', '',
     ('sum',
       ('mul',
         ('sum',
