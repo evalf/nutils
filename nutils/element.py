@@ -820,7 +820,10 @@ class TensorReference(Reference):
     return '{}*{}'.format(self.ref1, self.ref2)
 
   def getischeme_vtk(self):
-    if self.ref1.ndims == self.ref2.ndims == 1:
+    if self.ref1.ndims == 0:
+      assert self.ref1.nverts == 1
+      points, weights = self.ref2.getischeme_vtk()
+    elif self.ref1.ndims == self.ref2.ndims == 1:
       points = numpy.empty([2, 2, 2])
       points[...,:1] = self.ref1.vertices[:,_]
       points[0,:,1:] = self.ref2.vertices
