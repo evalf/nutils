@@ -906,11 +906,14 @@ class _ExpressionParser:
         tokens.append(_Token(self.expression[pos], self.expression[pos], pos))
         pos += 1
         continue
+      m = re.match(r'[%s|%s]'%tuple(self.eye_symbols), self.expression[pos:])
+      if m:
+        tokens.append(_Token('eye', m.group(0), pos))
+        pos += m.end()
+        continue
       m = re.match(r'[?]?[a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*', self.expression[pos:])
       if m:
-        if m.group(0) in self.eye_symbols:
-          tokens.append(_Token('eye', m.group(0), pos))
-        elif m.group(0) in self.normal_symbols:
+        if m.group(0) in self.normal_symbols:
           tokens.append(_Token('normal', m.group(0), pos))
         else:
           tokens.append(_Token('variable', m.group(0), pos))
