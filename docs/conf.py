@@ -19,6 +19,7 @@ import sys, os, re
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 
 sys.path.insert(0, os.path.abspath('..'))
+sys.path.insert(0, os.path.abspath('.'))
 
 class Fake(object):
   def __init__( self, **attrs ):
@@ -46,6 +47,7 @@ extensions = [
     'sphinx.ext.mathjax',
     'sphinx.ext.napoleon',
     'sphinx.ext.intersphinx',
+    'remove_annotations',
 ]
 
 # Add any paths that contain templates here, relative to this directory.
