@@ -906,15 +906,22 @@ class _ExpressionParser:
         tokens.append(_Token(self.expression[pos], self.expression[pos], pos))
         pos += 1
         continue
-      m = re.match(r'[?]?[a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*', self.expression[pos:])
-      if m:
-        if m.group(0) in self.eye_symbols:
-          tokens.append(_Token('eye', m.group(0), pos))
-        elif m.group(0) in self.normal_symbols:
-          tokens.append(_Token('normal', m.group(0), pos))
-        else:
-          tokens.append(_Token('variable', m.group(0), pos))
-        pos += m.end()
+      m_variable = re.match(r'[?]?[a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*', self.expression[pos:])
+      m_variable = m_variable.group(0) if m_variable else ''
+      m_eye = _string_startswith(self.expression, self.eye_symbols, start=pos)
+      # Insert eye or normal symbols only if we can't match a longer variable name.
+      if m_eye and len(m_variable) <= len(m_eye):
+        tokens.append(_Token('eye', m_eye, pos))
+        pos += len(m_eye)
+        continue
+      m_normal = _string_startswith(self.expression, self.normal_symbols, start=pos)
+      if m_normal and len(m_variable) <= len(m_normal):
+        tokens.append(_Token('normal', m_normal, pos))
+        pos += len(m_normal)
+        continue
+      if m_variable:
+        tokens.append(_Token('variable', m_variable, pos))
+        pos += len(m_variable)
         continue
       m = re.match(r'[0-9]*[.][0-9]*', self.expression[pos:])
       if m:
@@ -966,6 +973,13 @@ class _ExpressionParser:
     tokens.append(_Token('EOF', '', pos))
     self._tokens = tokens
     self._index = 0
+
+
+def _string_startswith(string, prefixes, start=0):
+  assert not isinstance(prefixes, str)
+  for prefix in prefixes:
+    if string.startswith(prefix, start):
+      return prefix
 
 
 def _replace_lengths(ast, lengths):
