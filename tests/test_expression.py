@@ -54,8 +54,10 @@ functions = dict(func1=1, func2=2, func3=3, funcoverride=1)
 
 class parse(TestCase):
 
-  def assert_ast(self, expression, indices, ast, **parse_kwargs):
-    self.assertEqual(nutils.expression.parse(expression, v, functions, indices, **parse_kwargs)[0], ast)
+  def assert_ast(self, expression, indices, ast, variables=None, **parse_kwargs):
+    if variables is None:
+      variables = v
+    self.assertEqual(nutils.expression.parse(expression, variables, functions, indices, **parse_kwargs)[0], ast)
 
   def assert_syntax_error(self, msg, expression, indices, highlight, arg_shapes={}, exccls=nutils.expression.ExpressionSyntaxError):
     with self.assertRaises(exccls) as cm:
@@ -366,7 +368,11 @@ class parse(TestCase):
 
   # EYE
 
-  def test_single_eye(self): self.assert_ast('a2_i δ_ij', 'j', ('sum', ('mul', ('append_axis', v._a2, _(2)), ('eye', _(2))), _(0)))
+  def test_single_eye(self):
+    for eye in 'δ$':
+      with self.subTest(eye=eye):
+        self.assert_ast('a2_i {}_ij'.format(eye), 'j', ('sum', ('mul', ('append_axis', v._a2, _(2)), ('eye', _(2))), _(0)))
+
   def test_multiple_eye(self): self.assert_ast('δ_ij δ_jk a2_i a2_k', '',
     ('sum',
       ('mul',
@@ -405,6 +411,17 @@ class parse(TestCase):
       "Shapes at index 'k' differ: 2, 3.",
       "1 + δ_ij δ_jk a2_i a3_k + 1", "",
       "    ^^^^^^^^^^^^^^^^^^^")
+
+  def test_variable_startswith_eye(self):
+    b = Array('b', [2,2])
+    δx = Array('δx', [2,2])
+    self.assert_ast('b_ij + δx_ij', 'ij', ('add', _(b), _(δx)), variables=dict(b=b, δx=δx))
+
+  def test_variable_startswith_dollar_eye(self):
+    self.assert_syntax_error(
+      "Expected 2 indices, got 0.",
+      "a22_ij + $x_ij", "ij",
+      "         ^")
 
   # GRAD
 
@@ -485,6 +502,10 @@ class parse(TestCase):
       "Invalid geometry: expected 1 dimension, but 'a22' has 2.",
       "1 + n_a22_i + 1", "",
       "    ^^^^^^")
+
+  def test_variable_startswith_normal(self):
+    nx = Array('nx', [2])
+    self.assert_ast('nx_i', 'i', _(nx), variables=dict(nx=nx))
 
   # VARIABLE LENGTH TESTS
 
