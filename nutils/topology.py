@@ -1323,10 +1323,6 @@ class StructuredTopology(Topology):
     assert mask.shape == tuple(dofshape)
     return function.mask(func, mask.ravel())
 
-  def basis_bspline(self, *args, **kwargs):
-    warnings.deprecation('basis "bspline" has been merged with "spline"')
-    return self.basis_spline(*args, **kwargs)
-
   @staticmethod
   def _localsplinebasis (lknots, p):
 

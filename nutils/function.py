@@ -579,13 +579,6 @@ class Normal(Array):
     nGder = matmat(self, Gder)
     return -matmat(G, inverse(GG), nGder)
 
-class ArrayFunc(Array):
-  'deprecated ArrayFunc alias'
-
-  def __init__(self, args:tuple, shape:tuple):
-    warnings.deprecation('function.ArrayFunc is deprecated; use function.Array instead')
-    super().__init__(args=args, shape=shape, dtype=float)
-
 class Constant(Array):
 
   def __init__(self, value:numeric.const):
@@ -3528,10 +3521,6 @@ class Namespace:
     for k, v in self._attributes.items():
       setattr(ns, k, replace_arguments(v, subs))
     return ns
-
-  def __or__(self, subs):
-    warnings.deprecation('ns | dict(x=y) is deprecated; use ns(x=y) instead')
-    return self(**subs)
 
   def copy_(self, *, default_geometry_name=None):
     '''Return a copy of this namespace.'''
