@@ -19,11 +19,10 @@
 # THE SOFTWARE.
 
 """
-The solver module defines the :class:`Integral` class, which represents an
-unevaluated integral. This is useful for fully automated solution procedures
-such as Newton, that require functional derivatives of an entire functional.
-
-To demonstrate this consider the following setup:
+The solver module defines solvers for problems of the kind ``res = 0`` or
+``∂inertia/∂t + res = 0``, where ``res`` is a
+:class:`nutils.topology.Integral`.  To demonstrate this consider the following
+setup:
 
 >>> from nutils import mesh, function, solver
 >>> ns = function.Namespace()
@@ -50,98 +49,8 @@ In addition to ``solve_linear`` the solver module defines ``newton`` and
 time dependent problems.
 """
 
-from . import function, cache, log, util, numeric
+from . import function, cache, log, numeric, topology
 import numpy, itertools, functools, numbers, collections
-
-
-class Integral:
-  '''Postponed integral, used for derivative purposes'''
-
-  def __init__(self, integrands):
-    self._integrands = util.hashlessdict((di, f.simplified) for di, f in integrands)
-    shapes = {integrand.shape for integrand in self._integrands.values()}
-    assert len(shapes) == 1, 'incompatible shapes: {}'.format(' != '.join(str(shape) for shape in shapes))
-    self.shape, = shapes
-
-  @classmethod
-  def multieval(cls, *integrals, fcache=None, arguments=None):
-    assert all(isinstance(integral, cls) for integral in integrals)
-    if fcache is None:
-      fcache = cache.WrapperCache()
-    gather = util.hashlessdict()
-    for iint, integral in enumerate(integrals):
-      for di in integral._integrands:
-        gather.setdefault(di, []).append(iint)
-    retvals = [None] * len(integrals)
-    for (domain, ischeme), iints in gather.items():
-      for iint, retval in zip(iints, domain.integrate([integrals[iint]._integrands[domain, ischeme] for iint in iints], ischeme=ischeme, fcache=fcache, arguments=arguments)):
-        if retvals[iint] is None:
-          retvals[iint] = retval
-        else:
-          retvals[iint] += retval
-    return retvals
-
-  def eval(self, **kwargs):
-    retval, = self.multieval(self, **kwargs)
-    return retval
-
-  def derivative(self, target):
-    argshape = self._argshape(target)
-    arg = function.Argument(target, argshape)
-    seen = {}
-    return Integral([di, function.derivative(integrand, var=arg, seen=seen)] for di, integrand in self._integrands.items())
-
-  def replace(self, arguments):
-    return Integral([di, function.replace_arguments(integrand, arguments)] for di, integrand in self._integrands.items())
-
-  def contains(self, name):
-    try:
-      self._argshape(name)
-    except KeyError:
-      return False
-    else:
-      return True
-
-  def __add__(self, other):
-    if not isinstance(other, Integral):
-      return NotImplemented
-    assert self.shape == other.shape
-    integrands = self._integrands.copy()
-    for di, integrand in other._integrands.items():
-      try:
-        integrands[di] += integrand
-      except KeyError:
-        integrands[di] = integrand
-    return Integral(integrands.items())
-
-  def __neg__(self):
-    return Integral([di, -integrand] for di, integrand in self._integrands.items())
-
-  def __sub__(self, other):
-    return self + (-other)
-
-  def __mul__(self, other):
-    if not isinstance(other, numbers.Number):
-      return NotImplemented
-    return Integral([di, integrand * other] for di, integrand in self._integrands.items())
-
-  __rmul__ = __mul__
-
-  def __truediv__(self, other):
-    if not isinstance(other, numbers.Number):
-      return NotImplemented
-    return self.__mul__(1/other)
-
-  def _argshape(self, name):
-    assert isinstance(name, str)
-    shapes = {func.shape[:func.ndim-func._nderiv]
-      for func in function.Tuple(self._integrands.values()).dependencies
-        if isinstance(func, function.Argument) and func._name == name}
-    if not shapes:
-      raise KeyError(name)
-    assert len(shapes) == 1, 'inconsistent shapes for argument {!r}'.format(name)
-    shape, = shapes
-    return shape
 
 
 class ModelError(Exception): pass
@@ -154,7 +63,7 @@ def solve_linear(target, residual, constrain=None, *, arguments=None, **solvearg
   ----------
   target : :class:`str`
       Name of the target: a :class:`nutils.function.Argument` in ``residual``.
-  residual : Integral
+  residual : :class:`nutils.topology.Integral`
       Residual integral, depends on ``target``
   constrain : float vector
       Defines the fixed entries of the coefficient vector
@@ -174,7 +83,7 @@ def solve_linear(target, residual, constrain=None, *, arguments=None, **solvearg
   assert target not in (arguments or {}), '`target` should not be defined in `arguments`'
   argshape = residual._argshape(target)
   arguments = collections.ChainMap(arguments or {}, {target: numpy.zeros(argshape)})
-  res, jac = Integral.multieval(residual, jacobian, arguments=arguments)
+  res, jac = topology.eval_integrals(residual, jacobian, arguments=arguments)
   return jac.solve(-res, constrain=constrain, **solveargs)
 
 
@@ -263,7 +172,7 @@ def newton(target, residual, jacobian=None, lhs0=None, constrain=None, nrelax=nu
   ----------
   target : :class:`str`
       Name of the target: a :class:`nutils.function.Argument` in ``residual``.
-  residual : Integral
+  residual : :class:`nutils.topology.Integral`
   lhs0 : vector
       Coefficient vector, starting point of the iterative procedure.
   constrain : boolean or float vector
@@ -316,14 +225,14 @@ def newton(target, residual, jacobian=None, lhs0=None, constrain=None, nrelax=nu
 
   if not jacobian.contains(target):
     log.info('problem is linear')
-    res, jac = Integral.multieval(residual, jacobian, arguments=collections.ChainMap(arguments or {}, {target: numpy.zeros(argshape)}))
+    res, jac = topology.eval_integrals(residual, jacobian, arguments=collections.ChainMap(arguments or {}, {target: numpy.zeros(argshape)}))
     lhs = jac.solve(-res, lhs0=lhs0, constrain=constrain, **solveargs)
     yield lhs, 0
     return
 
   lhs = lhs0.copy()
   fcache = cache.WrapperCache()
-  res, jac = Integral.multieval(residual, jacobian, fcache=fcache, arguments=collections.ChainMap(arguments or {}, {target: lhs}))
+  res, jac = topology.eval_integrals(residual, jacobian, fcache=fcache, arguments=collections.ChainMap(arguments or {}, {target: lhs}))
   relax = 1
   while True:
     resnorm = numpy.linalg.norm(res[~constrain])
@@ -331,7 +240,7 @@ def newton(target, residual, jacobian=None, lhs0=None, constrain=None, nrelax=nu
     dlhs = -jac.solve(res, constrain=constrain, **solveargs)
     relax = min(relax * rebound, 1)
     for irelax in itertools.count():
-      res, jac = Integral.multieval(residual, jacobian, fcache=fcache, arguments=collections.ChainMap(arguments or {}, {target: lhs+relax*dlhs}))
+      res, jac = topology.eval_integrals(residual, jacobian, fcache=fcache, arguments=collections.ChainMap(arguments or {}, {target: lhs+relax*dlhs}))
       newresnorm = numpy.linalg.norm(res[~constrain])
       if irelax >= nrelax:
         if newresnorm > resnorm:
@@ -378,8 +287,8 @@ def pseudotime(target, residual, inertia, timestep, lhs0, residual0=None, constr
   ----------
   target : :class:`str`
       Name of the target: a :class:`nutils.function.Argument` in ``residual``.
-  residual : Integral
-  inertia : Integral
+  residual : :class:`nutils.topology.Integral`
+  inertia : :class:`nutils.topology.Integral`
   timestep : float
       Initial time step, will scale up as residual decreases
   lhs0 : vector
@@ -419,14 +328,14 @@ def pseudotime(target, residual, inertia, timestep, lhs0, residual0=None, constr
   assert len(argshape) == 1
   lhs = lhs0.copy()
   fcache = cache.WrapperCache()
-  res, jac = Integral.multieval(residual, jacobian0+jacobiant/timestep, fcache=fcache, arguments=collections.ChainMap(arguments or {}, {target: lhs}))
+  res, jac = topology.eval_integrals(residual, jacobian0+jacobiant/timestep, fcache=fcache, arguments=collections.ChainMap(arguments or {}, {target: lhs}))
   resnorm = resnorm0 = numpy.linalg.norm(res[~constrain])
   while True:
     yield lhs, resnorm
     lhs -= jac.solve(res, constrain=constrain, **solveargs)
     thistimestep = timestep * (resnorm0/resnorm)
     log.info('timestep: {:.0e}'.format(thistimestep))
-    res, jac = Integral.multieval(residual, jacobian0+jacobiant/thistimestep, fcache=fcache, arguments=collections.ChainMap(arguments or {}, {target: lhs}))
+    res, jac = topology.eval_integrals(residual, jacobian0+jacobiant/thistimestep, fcache=fcache, arguments=collections.ChainMap(arguments or {}, {target: lhs}))
     resnorm = numpy.linalg.norm(res[~constrain])
 
 
@@ -437,15 +346,15 @@ def thetamethod(target, residual, inertia, timestep, lhs0, theta, target0='_thet
   ----------
   target : :class:`str`
       Name of the target: a :class:`nutils.function.Argument` in ``residual``.
-  residual : Integral
-  inertia : Integral
+  residual : :class:`nutils.topology.Integral`
+  inertia : :class:`nutils.topology.Integral`
   timestep : float
       Initial time step, will scale up as residual decreases
   lhs0 : vector
       Coefficient vector, starting point of the iterative procedure.
   theta : float
       Theta value (theta=1 for implicit Euler, theta=0.5 for Crank-Nicolson)
-  residual0 : Integral
+  residual0 : :class:`nutils.topology.Integral`
       Optional additional residual component evaluated in previous timestep
   constrain : boolean or float vector
       Equal length to ``lhs0``, masks the free vector entries as ``False``
@@ -490,7 +399,7 @@ def optimize(target, functional, droptol=None, lhs0=None, constrain=None, newton
   ----------
   target : :class:`str`
       Name of the target: a :class:`nutils.function.Argument` in ``residual``.
-  functional : scalar Integral
+  functional : scalar :class:`nutils.topology.Integral`
       The functional the should be minimized by varying target
   droptol : :class:`float`
       Threshold for leaving entries in the return value at NaN if they do not
@@ -528,7 +437,7 @@ def optimize(target, functional, droptol=None, lhs0=None, constrain=None, newton
       constrain = ~numpy.isnan(constrain)
   residual = functional.derivative(target)
   jacobian = residual.derivative(target)
-  f0, res, jac = Integral.multieval(functional, residual, jacobian, arguments=collections.ChainMap(arguments or {}, {target: lhs0}))
+  f0, res, jac = topology.eval_integrals(functional, residual, jacobian, arguments=collections.ChainMap(arguments or {}, {target: lhs0}))
   freezedofs = constrain if droptol is None else constrain | ~jac.rowsupp(droptol)
   log.info('optimizing for {}/{} degrees of freedom'.format(len(res)-freezedofs.sum(), len(res)))
   lhs = lhs0 - jac.solve(res, constrain=freezedofs) # residual(lhs0) + jacobian(lhs0) dlhs = 0

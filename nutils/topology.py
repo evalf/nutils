@@ -36,7 +36,7 @@ out in element loops. For lower level operations topologies can be used as
 """
 
 from . import element, function, util, numpy, parallel, log, config, numeric, cache, transform, warnings, matrix, types, _
-import functools, collections.abc, itertools, functools, operator, pathlib
+import functools, collections.abc, itertools, functools, operator, numbers, pathlib
 
 _identity = lambda x: x
 
@@ -346,8 +346,7 @@ class Topology(types.Singleton):
       ischeme += str(degree)
     iwscale = function.J(geometry, self.ndims) if geometry else 1
     integrand = edit(func * iwscale)
-    from . import solver
-    return solver.Integral([((self, ischeme), integrand)])
+    return Integral([((self, ischeme), integrand)])
 
   def projection(self, fun, onto, geometry, **kwargs):
     'project and return as function'
@@ -2721,6 +2720,96 @@ class MultipatchTopology(Topology):
     'refine'
 
     return MultipatchTopology(Patch(patch.topo.refined, patch.verts, patch.boundaries) for patch in self.patches)
+
+# INTEGRAL
+
+class Integral:
+  '''Postponed integral, used for derivative purposes'''
+
+  def __init__(self, integrands):
+    self._integrands = util.hashlessdict((di, f.simplified) for di, f in integrands)
+    shapes = {integrand.shape for integrand in self._integrands.values()}
+    assert len(shapes) == 1, 'incompatible shapes: {}'.format(' != '.join(str(shape) for shape in shapes))
+    self.shape, = shapes
+
+  def eval(self, **kwargs):
+    retval, = eval_integrals(self, **kwargs)
+    return retval
+
+  def derivative(self, target):
+    argshape = self._argshape(target)
+    arg = function.Argument(target, argshape)
+    seen = {}
+    return Integral([di, function.derivative(integrand, var=arg, seen=seen)] for di, integrand in self._integrands.items())
+
+  def replace(self, arguments):
+    return Integral([di, function.replace_arguments(integrand, arguments)] for di, integrand in self._integrands.items())
+
+  def contains(self, name):
+    try:
+      self._argshape(name)
+    except KeyError:
+      return False
+    else:
+      return True
+
+  def __add__(self, other):
+    if not isinstance(other, Integral):
+      return NotImplemented
+    assert self.shape == other.shape
+    integrands = self._integrands.copy()
+    for di, integrand in other._integrands.items():
+      try:
+        integrands[di] += integrand
+      except KeyError:
+        integrands[di] = integrand
+    return Integral(integrands.items())
+
+  def __neg__(self):
+    return Integral([di, -integrand] for di, integrand in self._integrands.items())
+
+  def __sub__(self, other):
+    return self + (-other)
+
+  def __mul__(self, other):
+    if not isinstance(other, numbers.Number):
+      return NotImplemented
+    return Integral([di, integrand * other] for di, integrand in self._integrands.items())
+
+  __rmul__ = __mul__
+
+  def __truediv__(self, other):
+    if not isinstance(other, numbers.Number):
+      return NotImplemented
+    return self.__mul__(1/other)
+
+  def _argshape(self, name):
+    assert isinstance(name, str)
+    shapes = {func.shape[:func.ndim-func._nderiv]
+      for func in function.Tuple(self._integrands.values()).dependencies
+        if isinstance(func, function.Argument) and func._name == name}
+    if not shapes:
+      raise KeyError(name)
+    assert len(shapes) == 1, 'inconsistent shapes for argument {!r}'.format(name)
+    shape, = shapes
+    return shape
+
+def eval_integrals(*integrals, fcache=None, arguments=None):
+  assert all(isinstance(integral, Integral) for integral in integrals)
+  if fcache is None:
+    fcache = cache.WrapperCache()
+  gather = util.hashlessdict()
+  for iint, integral in enumerate(integrals):
+    for di in integral._integrands:
+      gather.setdefault(di, []).append(iint)
+  retvals = [None] * len(integrals)
+  for (domain, ischeme), iints in gather.items():
+    for iint, retval in zip(iints, domain.integrate([integrals[iint]._integrands[domain, ischeme] for iint in iints], ischeme=ischeme, fcache=fcache, arguments=arguments)):
+      if retvals[iint] is None:
+        retvals[iint] = retval
+      else:
+        retvals[iint] += retval
+  return retvals
 
 # UTILITY FUNCTIONS
 
