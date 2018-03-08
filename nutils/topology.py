@@ -2278,6 +2278,7 @@ class HierarchicalTopology(Topology):
     return UnstructuredTopology(self.ndims-1, interfaces)
 
   @log.title
+  @cache.function
   def basis(self, name, *args, **kwargs):
     'build hierarchical function space'
 
