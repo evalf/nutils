@@ -2032,6 +2032,11 @@ class Inflate(Array):
   def _get(self, axis, item):
     if axis != self.axis:
       return Inflate(Get(self.func,axis,item), self.dofmap, self.length, self.axis-(axis<self.axis))
+    if self.dofmap.isconstant and item.isconstant:
+      dofmap, = self.dofmap.eval()
+      item, = item.eval()
+      return Get(self.func, axis, tuple(dofmap).index(item)) if item in dofmap \
+        else Zeros(self.shape[:axis]+self.shape[axis+1:], self.dtype)
 
   def _multiply(self, other):
     if isinstance(other, Inflate) and self.axis == other.axis:
