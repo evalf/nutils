@@ -5,6 +5,7 @@ except:
   from distutils.core import setup, Extension
 else:
   extra['install_requires'] = ['numpy>=1.12', 'matplotlib>=1.3', 'scipy>=0.13', 'sphinx']
+  extra['command_options'] = dict(test=dict(test_loader=('setup.py', 'unittest:TestLoader')))
 
 long_description = """
 The nutils project is a collaborative programming effort aimed at the creation
