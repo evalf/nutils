@@ -38,4 +38,7 @@ setup(
   license = 'MIT',
   python_requires = '>=3.5',
   install_requires = ['numpy>=1.12', 'matplotlib>=1.3', 'scipy>=0.13', 'sphinx'],
+  command_options = dict(
+    test=dict(test_loader=('setup.py', 'unittest:TestLoader')),
+  ),
 )
