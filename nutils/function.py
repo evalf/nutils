@@ -2110,11 +2110,8 @@ class Diagonalize(Array):
   def _get(self, i, item):
     if i != self.axis and i != self.newaxis:
       return Diagonalize(Get(self.func, i-(i>self.newaxis), item), self.axis-(i<self.axis), self.newaxis-(i<self.newaxis))
-    if item.isconstant:
-      pos, = item.eval()
-      funcs = [Zeros(self.func.shape[:self.axis]+self.func.shape[self.axis+1:], dtype=self.func.dtype)] * self.func.shape[self.axis]
-      funcs[pos] = Get(self.func, self.axis, item)
-      return Stack(funcs, axis=self.axis if i == self.newaxis else self.newaxis-1)
+    axis = self.axis if i == self.newaxis else self.newaxis-1
+    return Inflate(InsertAxis(Get(self.func, self.axis, item), axis=axis, length=1), [item], length=self.shape[i], axis=axis)
 
   def _inverse(self):
     if self.axis == self.func.ndim-1 and self.newaxis == self.ndim-1:
