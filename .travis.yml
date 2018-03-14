@@ -16,7 +16,7 @@ before_install:
   - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then wget -O python.pkg "$PYTHON_PKG_URL"; sudo installer -pkg python.pkg -target /; rm python.pkg; fi
   - python3 --version
 install:
-  - python3 -m pip install --upgrade . coverage coveralls mkl $FORCE_PYTHON_PKGS
+  - python3 -m pip install --upgrade .[test,mkl] coverage coveralls $FORCE_PYTHON_PKGS
 script:
   - LD_LIBRARY_PATH="$VIRTUAL_ENV/lib" DYLD_LIBRARY_PATH="$VIRTUAL_ENV/lib" python3 -m coverage run -m unittest -b
 after_success:
