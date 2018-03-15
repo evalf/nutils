@@ -276,13 +276,11 @@ def serialized(array, nsig, ndec):
     return '[{}]'.format(','.join(serialized(a, nsig, ndec) for a in array))
   if not numpy.isfinite(array): # nan, inf
     return str(array)
-  a = builtins.round(float(array) * 10**ndec)
-  if a == 0:
-    return '0'
-  while abs(a) >= 10**nsig:
-    a //= 10
+  i = builtins.round(float(array) * 10**ndec)
+  while abs(i) >= 10**nsig:
     ndec -= 1
-  return '{}e{}'.format(a, -ndec)
+    i = builtins.round(float(array) * 10**ndec)
+  return ('{}e{}' if i and ndec else '{}').format(i, -ndec)
 
 def encode64(array, nsig, ndec):
   import zlib, binascii
