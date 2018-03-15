@@ -374,53 +374,28 @@ def pack(a, atol, rtol, dtype):
   n[numpy.isnan(a)] = iinfo.min
   return n[()]
 
-def serialized(array, nsig, ndec):
-  if array.ndim > 0:
-    return '[{}]'.format(','.join(serialized(a, nsig, ndec) for a in array))
-  if not numpy.isfinite(array): # nan, inf
-    return str(array)
-  a = builtins.round(float(array) * 10**ndec)
-  if a == 0:
-    return '0'
-  while abs(a) >= 10**nsig:
-    a //= 10
-    ndec -= 1
-  return '{}e{}'.format(a, -ndec)
-
-def encode64(array, nsig, ndec):
+def assert_allclose64(actual, data=None, atol=2e-15, rtol=2e-3):
   import zlib, binascii
-  assert isinstance(array, numpy.ndarray) and array.dtype == float
-  binary = zlib.compress('{},{},{}'.format(nsig, ndec, serialized(array, nsig, ndec)).encode(), 9)
-  data = binascii.b2a_base64(binary).decode().rstrip()
-  assert_allclose64(array, data)
-  return data
-
-def decode64(data):
-  import zlib, binascii
-  serialized = zlib.decompress(binascii.a2b_base64(data))
-  nsig, ndec, array = eval(serialized, numpy.__dict__)
-  return nsig, ndec, numpy.array(array, dtype=float)
-
-def assert_allclose64(actual, data=None):
   try:
-    nsig, ndec, desired = decode64(data)
+    desired = unpack(numpy.frombuffer(zlib.decompress(binascii.a2b_base64(data)), dtype=numpy.int16), atol, rtol).reshape(actual.shape)
   except Exception as e:
-    status = str(e)
-    nsig = 4
-    ndec = 15
+    status = 'failed to decode data: {}'.format(e),
   else:
-    try:
-      numpy.testing.assert_allclose(actual, desired, atol=1.5*10**-ndec, rtol=10**(1-nsig))
-    except Exception as e:
-      status = str(e)
-    else:
+    error = abs(actual - desired)
+    spacing = numpy.sqrt(atol**2 + (desired*rtol)**2)
+    fail = numpy.logical_xor(numpy.isnan(actual), numpy.isnan(desired))
+    numpy.greater(error, spacing, where=~numpy.isnan(error), out=fail)
+    if not fail.any():
       return
-  status += '\n\nIf this is expected, use the following base64 string to test up to nsig={}, ndec={}:'.format(nsig, ndec)
-  data = encode64(actual, nsig=nsig, ndec=ndec)
-  while data:
-    status += '\n{!r}'.format(data[:80])
-    data = data[80:]
-  raise Exception(status)
+    status = '{}/{} values do not match up to atol={:.2e}, rtol={:.2e}:'.format(fail.sum(), fail.size, atol, rtol),
+    for index in zip(*fail.nonzero()):
+      status += '{} desired: {:+.4e}, actual: {:+.4e}, spacing: {:.1e}'.format(list(index), desired[index], actual[index], spacing[index]),
+  status += 'If this is expected, update the base64 string to:',
+  with warnings.catch_warnings(record=True) as captured_warnings:
+    status += binascii.b2a_base64(zlib.compress(pack(actual, atol, rtol, numpy.int16).tobytes(), 9)).decode().rstrip(),
+  for w in captured_warnings:
+    status += 'Warning: {}'.format(w.message),
+  raise Exception('\n'.join(status))
 
 class const(collections.abc.Sequence):
   __slots__ = '__base', '__hash'

@@ -106,22 +106,17 @@ class test(unittest.TestCase):
 
   def test(self):
     lhs0, lhs = main(nelems=8, init='bubbles', timestep=.01, maxtime=.05, figures=False)
-    numeric.assert_allclose64(lhs0,
-      'eNrdktuthDAMRBsCyYnftazu5+2/hQ3xA0EJCx9YxDmZ8YSOwcfnNGD4P+k4xWDsAlFtF8TOu7BhseSC'
-      'seRmGIVzFANgcfD6k7tuoINfxRTYuwl5dfDqWL1BIYLE5Z+Fo8RpneT00Fe41TqvVhszIAiYtJnenHSm'
-      'bizaqEKebktd4dgp/NC0gJiqxN5hyUeLHmcIkUu1PmfXZlteAxU9gDJoZo9R9iRQTfJ0FnmF0dMrv62w'
-      'gFN9f1Xn/gpTJjqugawseJq/o+10anrlt+QVzsX3gnPMjNYTMd7zvu9JBttLNbzyWuKK5hDnI2TAS+p4'
-      'Xzp958rvwZXVEtc4dKW8sTzLOj8vXV+TO9jKoSfXZltfAw1oN8NvvH9fWJHkhw==')
-    numeric.assert_allclose64(lhs,
-      'eNptlFuy4zAIRDdkV/EQINYyNZ93/1u4kng4zswXJJaPuhuScaFcf4yFf265nNh25eH6c48L1c/3t8qk'
-      '/cU9HeA0zpqNwMhmQz6aoiHiOcoWJ5lZkzo8qNOTwabJwKbii1raiibTbFeyGTARlaDaSBhBPPJBVHip'
-      '5uW0tBWNjCMBcbKgkmZjngnAc09qJYx7Ore22uoaqJZAxXByC1Ae9lB322DKhuA9iM6u7bbCAqJspXIN'
-      'nUffGt2porbM2XWjULh8ptqDqOzabqkr2hzxeWKcVPIzKEXS7w2pofYcKrpyWtIKZgrzSEU6dTj6P9uG'
-      'XzOtMVRq5bOUFYzHnsVaUAAI+98r3PvxjLQnUKGVz5LWNASjaKate3g1JrobgaiIcz2gC8e+bleIz7Sf'
-      '0/7l2KnA47M26EblgxZCCaJ7ErOCJdG+iPJJLEUPJ98/v7JdOd6T4qVy3FnT5R7vrQovZ6UnOQQjnHq8'
-      't66hUxnjM4y561Q/vKkzeJ1Q6Uo9xZmpUzzuZTgJOpgfX7Y3btWztPwkXfmUr9JTnJGTAIPMKUfJenbo'
-      'pjFP0zOrpCuhcpaKirT+xo6ye23rOM082ewGN5KfYXWFV0htrkQ1ah3UWBT12hiYX6skn4OrwCuox2DL'
-      'ahZxWFuN8//2s7agplepd1htsXU1a505Lv/+AgpBcDw=')
+    numeric.assert_allclose64(lhs0, 'eNrdjjEKwlAMhgVv4FgnF3dpfY+ugquTuDjY3cEDCJ08SWfRUs'
+      'RFBDf/P48Kgh28ghS6t1CM1zCBQELyffG4YS6+9HjDCSkOmhvuJAv8UUSn3R5HrblO5vZjuq4AcUamu7'
+      '74o4+ZmYVUeOOBOy7oMWLXLWTKhLWsZMgGNzgUqJDwFTxNbJZ5yZMyqVe1PM3EhvY6bl2qrrNyVhKb0A'
+      '5sE3juoPZMyUMu8+u4Cbay5u/HVF0NSrbOc2v22fmT+AJFl32r')
+    numeric.assert_allclose64(lhs, 'eNotzT1IQlEUwHGIMBycGhuFdAgV877o3eOSBdGioCAhLg4uToF'
+      'L9UBorBcRNgbSLDgJpk09X9x7/Mgi4YU0hIL0FkOaGoKOGXf73XP+ZzNYDu6wlL+AH7InhXygVw4urWd'
+      'YJXCCtnz8tx2WYbtKP/SCU2nJDqmQKX8l0A/tBarowol8l6/0U8ATfMEqHmAJHa0qbmGEyracShcJ+C0'
+      'WZ3Xv4KlHZUtOpKNlsR/FVnJKWpk1O9SpYpzZCiqLyieb3RZU3sK6N0dyH0j45mbJCA6e0jST8J0+58W'
+      'V0NRV0OEYtsEJQz7kV+JW6OoaXID2ZyM+4pqqqyvwBmMoQRQWoMu7fBXWSDbCy+EG7IPNdX7Gddoaw3L'
+      '4G+4gCTe8odbUY+qUoEFyDl9Uuuxk29tUjtJWkiSvxsS1WTSddGuBOjc0ExMe09N0N4d0u0vlBm1dk2j'
+      'GkTG3M15Ts+2i6W4eGYfGL86izcg=')
 
 
 if __name__ == '__main__':

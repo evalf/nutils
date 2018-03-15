@@ -65,16 +65,12 @@ class test(unittest.TestCase):
 
   def test(self):
     lhs0, lhs1 = main(nelems=4, angle=10, figures=False)
-    numeric.assert_allclose64(lhs0,
-      'eNpNUEuOxTAIu1AigQm/s4xm+e5/hVcg1Yy6sJPYFPss1vVD6+/bnCGfbYvdo5GRn60LnKdQCF6oXDp9'
-      'DKxaxKBWBglrgdNBITPxZ5/FwlG42Ys8D6LcRifqM2SEQVIIho7BpP/AOZPTMQYXa6GyNyZhDDoCeK1U'
-      'Kwj15IyeiDh9Fliv9L8Ace3cymgUr7z2DD2UQyAdbAvIpoKYqM+mOTfAGSJivcpW9SHmcS7JadACQ1xO'
-      'B9zhcQdSiSsS3vbOG1KC7o3l7YmvONiGpN4KXfx9uva0bnmDrwuwEUO6nt8v5IR07A==')
-    numeric.assert_allclose64(lhs1,
-      'eNpNUMmNBDAIayhI3Ectq31O/y1MgEi7ygMTbHPoITs/eP4eY/IH/JipdST1+IAd1vKOQoQdNXlyytDh'
-      'Rdj+d24nQnnq46eH2KSjll1eHg4bn0RZHxEcXtTwqKo6QmJiNxB6DdHzEYfA5iPgUB8BGY/z7bACes6V'
-      'NsTUyYXX6P/2qhHdTGcqP3A52ONCpM0YcBeVtgWlmg2BXGlBaA3gyC2p1swCd9vlFPvcCRwpFgiv6p4s'
-      'l5O5KpLm9E76rnGPgAuE85Xy7e1hC7JWxdSD9U/I80niBbVXuxzSBTNYA5n7/H4BmOR06Q==')
+    numeric.assert_allclose64(lhs0, 'eNpjYECAa1e+aE3Qu6Nfa9BlmHoxU/eHgbIRs3Gs8bwLr/S4ja'
+      'yNfxn7mGy/sEz/qNFz4wUmL0xuX/AzEDDWMrlromyKZAxDlg6bbppOw1WXi2nnqy8svSBxwf980Ln3Z9'
+      '+ffXP2+Nm8s6xnT59pOdNzJveM3RnmM/dOS55hOXPn9PbTU0+3nAYAZeQ9sA==')
+    numeric.assert_allclose64(lhs1, 'eNpjYEAAZ21dXWF9WYNug3RDPu1i/RzDYKNfRi7G35R9DVKNko'
+      'y/G+uaiF/qM/hi9NN4pckZk9sX/AwEjLVM7poomyIZw3BIp0/H7q7apb4LD85tvTD1wtrz+87tPRt8Vv'
+      'uc0Lm1Z43PLjmTfGbXmQVn0s/onHl7euNpyTMsZ+6c3n566umW0wB3/jrU')
 
 
 if __name__ == '__main__':

@@ -89,46 +89,29 @@ class test(unittest.TestCase):
 
   def test_tri_p1_refine2(self):
     err, cons, lhs = main(degree=1, maxrefine=2, figures=False)
-    numeric.assert_allclose64(err,
-      'eNoz0TE01Yk2sjAzT9U10zE1MDFN1TWNBQA3pQUL')
-    numeric.assert_allclose64(cons,
-      'eNpdT0EOwyAM+xCRapME8pZphx249v/HEjoqbQcU20G2owVWXufnLGjOIVqAqjlTc3gdYgsL1OaiFXPE'
-      'kP4VwSUm+X/UdqQT2bgdEeEbLwMDLCPEVe3J6tTjIeGHbvLjH6w7e7bL+jeprSOxBDmr+v2Djn3M+wKf'
-      'VEHS')
-    numeric.assert_allclose64(lhs,
-      'eNo1UMmNBEEIS6iQMGcRy2ienX8KO0Dvy5Y5bLADPx9Y4SE7yJBBqDXWVX7ITyC00TmtkWD+I3k8UA/d'
-      'k+p3C5ApIHw2CjgGGTko/7rqoCWvnut81xlVMwfdRGRgGQcHfEiYLfHyGnLFJi5lvc0VvIGvce5U2Ta7'
-      'SLykI/mREu3oJMz1Xtnm2Vb4tcTRvBihRKoFEsRukcC8iDT6Yv/+AR6yS2Q=')
+    numeric.assert_allclose64(err, 'eNp7rF1rCAAFPAG9')
+    numeric.assert_allclose64(cons, 'eNpjaHhnLGTM0PDQkKHhw01TFYaGwlsMDTA43STXhKFBxwTErj'
+      'nHeY6hoe8sQ4PjWZh8rjpDw9ubDA3v1K9eZGg4c56hAQByvx3s')
+    numeric.assert_allclose64(lhs, 'eNoBUACv/5sz7jMSM8oy4TGAMfDZNSQ5MnHazjNHNDI0aTRONJc'
+      '0bTQCNCw0bTPrznzOCc4wzo7No81BzYTN481yzm/ObSdQ0O3Zi9LuJ9XRKtDMzyvPk+wnvw==')
 
   def test_quad_p2_refine2(self):
     err, cons, lhs = main(nelems=4, degree=2, maxrefine=2, figures=False)
-    numeric.assert_allclose64(err,
-      'eNoz0TE01Yk2NbAwSNU11zE0MDZK1TWNBQA28wT6')
-    numeric.assert_allclose64(cons,
-      'eNp1kLEOwzAIRH8oSIA5DN9SdeiQNf8/1pBOlTNYh+6dT9h2CI7X9bkOEjBOimOm60m5jKFRhtqcpZX6'
-      'P8q5wtgyN9gTE+F1z/YMaKY25k/RquBWFiuV0OYyHbsuyjHjaYEFkQWHZOxeR8E5KkDiaduEA92voboN'
-      'wPyugHpWgiSxHF8Dc38cqYX0YDpvB9K17y/9CXCk')
-    numeric.assert_allclose64(lhs,
-      'eNotUcmRBDEIS6hdxSUwsWzts/NPYWzUL2GQLI54FM+fqvq7/FkKwbv2U532rj4Jt30TFlUXV0Xou+KJ'
-      'kH2xvc8bj5X1oJUPShvf4pdnlnFRY897Z+1bPyCDgSB/98eX4W+hzvf4qiKJYsPzkA8nb2cW6oy6VAwC'
-      '5IfXh6APqBeNTzd1raTuBLMaVOM2uFoivsCUgXOWpbZtyOaYKVdpUrUTRbLaJ3fMxlx7VrxCMKtb4ckA'
-      'bVQX7nT3G2mWNDuuCqZzsaUhNHCkUV3KIIHp73RnwzW9R8jTQ97znsDShN4AhzqOXxOWTYcGVSrCjy02'
-      'yXHOT7KO1f8Pzy6Cyw==')
+    numeric.assert_allclose64(err, 'eNpr0kjRAwADegE9')
+    numeric.assert_allclose64(cons, 'eNpjaIi7l6Iw995sJYYGGDyqj2D/MESwWYwR7PXGE0wmmGSYGJ'
+      'owmLyHi/ueRajwOyutDGNPP6t8Dy5z7g7crphzb27fvbLm4rPz189VnAMAG9QxcQ==')
+    numeric.assert_allclose64(lhs, 'eNoBjABz/4g3Xt5kIJ3emyJCybk1szJJMO4vxS9eNGs0mDOMMhE'
+      'y+DFxNGs0+jN0MxwzBDN8NH00STT/M8MzrzOQNJA0aDQxNAA07zOjNz7OX81hzU3NMsiCy9TNdc1bzU7'
+      'NGyPxzszOM866zZfNI94PJALRMc9FzgDO3CKm1L/Ry8+3zlzO7Nvd1KzR5s/XznjO0+ZFww==')
 
   def test_quad_p2_refine3(self):
     err, cons, lhs = main(nelems=4, degree=2, maxrefine=3, figures=False)
-    numeric.assert_allclose64(err,
-      'eNoz0TE01Yk2NTA2TtU11zE0MDJL1TWNBQA24gT7')
-    numeric.assert_allclose64(cons,
-      'eNp1kLEOwzAIRH8oSIA5DN9SdeiQNf8/1pBOlTNYh+6dT9h2CI7X9bkOEjBOimOm60m5jKFRhtqcpZX6'
-      'P8q5wtgyN9gTE+F1z/YMaKY25k/RquBWFiuV0OYyHbsuyjHjaYEFkQWHZOxeR8E5KkDiaduEA92voboN'
-      'wPyugHpWgiSxHF8Dc38cqYX0YDpvB9K17y/9CXCk')
-    numeric.assert_allclose64(lhs,
-      'eNotUsuRxTAIa8jM8BOYWnb2mP5beDb4JAISAhxfgvUnEvmRLRIwPtorK/SjOgnTfRPqmRcpk+sjX+6a'
-      'F8s5PsLSNGs8QSOXzjfr5akGLopvv7hjdz1yS6PDh1/8+I2yuflil3dQEIOvrzk/7LyKDG/r6ELGFxi+'
-      'Wz7E+GD0LP50XZd880pVnwaZdQekYrcXqExguTs41xqy2qgpj3+XdiCGLIqnQjc0qT4xnUtOmzPiiFA6'
-      'ooRPsLnGXKL8qqz3PmpxHrXhWSKlT0wBdEm3anNV7sBxZoi7wgk0ZLZz4Kk9xgkaNQ4Fa7IwT2P1eTw6'
-      'P8NkIG31/wPhOYLe')
+    numeric.assert_allclose64(err, 'eNqr1UjUAwADYAE1')
+    numeric.assert_allclose64(cons, 'eNpjaIi7l6Iw995sJYYGGDyqj2D/MESwWYwR7PXGE0wmmGSYGJ'
+      'owmLyHi/ueRajwOyutDGNPP6t8Dy5z7g7crphzb27fvbLm4rPz189VnAMAG9QxcQ==')
+    numeric.assert_allclose64(lhs, 'eNoBjABz/583Xt5kIJ3emyIwybs1tDJKMO4vxS9eNGw0mDOMMhE'
+      'y+DFxNGs0+jN0MxwzBDN8NH00STQANMMzrzOQNJA0aDQxNAA07zOtNz/OYM1hzU3NIMh/y9TNdc1bzU7'
+      'NGyPvzsvOM866zZfNI94yIwLRMs9FzgDO3CKn1MDRy8+3zlzO7Nvd1KzR5s/XznjOhRRE6A==')
 
 
 if __name__ == '__main__':

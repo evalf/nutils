@@ -118,41 +118,29 @@ class test(unittest.TestCase):
 
   def test_rot0(self):
     lhs0, lhs = main(nelems=3, viscosity=1e-2, timestep=.1, tmax=.05, rotation=0, figures=False)
-    numeric.assert_allclose64(lhs0,
-      'eNo1k8ltwEAIRRuyJfallijH9N9CZj74BIIPHh7YHvbn52Uu+nv1YdK49mWn3kBN4FNkMwJNrX+vPV1S'
-      '175cpVNCOgpxvxlORalpGhKmJdO0fCPUDgkTun8JtRilau3DUCun5LwEJdLIsAYSLPcrR8BiDufY+iK8'
-      'EgREq2GJegQtCkczvgjnSDiuVd/PS92EPlWXyxlfNPCez77VBkBHiZms7XzVb3OLKWlCrXRCqS4A9lpk'
-      'QBqgfRwPAggOngCr5nVcBeQC+7klEqD9utLADbVaCXqEJBRBgdI3szHLK6JDqtiww0qfoTiAodRoN5e5'
-      'a6gpEfIYUrOHk4CCa1EamWA6lXHCLv4J5MxNAif9ngEyMnQPM6BJ/jLJ67CDprdMN3fXpegoPvP3BipX'
-      'krjZKJoM59zumWtYeZRtxvdWYyThtu27ly/3/iMac3qH7N515fLijkl5D47Eag8fkilK0rlXP5RBEG+R'
-      '339o6Mpq')
-    numeric.assert_allclose64(lhs,
-      'eNo1UslxADEIa2h3hvuoJZNn+m8hWHhfMELCIGMP+/PzMkn8vfowBZ34crBdgBcgaQBuDqCJ8u+1YZAu'
-      'o6lWIrYMDgMjGs1Nc6WmtQmX73NGDa2NGD3K0VTtPq9a25S1piIj4UxIpNGMNeQUWNJAYDmTTjKxPoQv'
-      'BYBoNSJRL6Flm2vGh3AuheNE9ZLbVDBxtsGGV1yx5cT1o+gw7Blm7uhcS1V2WY2EgqLH9ol9Rh7HPmbZ'
-      'Wc6f14NhxEgDgPQB/JnXYEzW2WUKIfcLXdfLN9ShDV4Ph4HRgwITv5m9E8o4gu2KDUtUOqjCARtK7Z5D'
-      'Zd5vqJUIeaxT+w+GHcbs+qz0M6EdT713W75AnUFO4gwf2JoBmDoMev06pdwLWPdaZLRiNlqrgmnFUor7'
-      'G5f3HWmCvUORTTjPnn5G2Budw3fcefs3nOW97xQk6cH7Jxr3noOvWHRvz/T7BFoDp5Sw5w0XQpK+ZBHi'
-      'raTtbXk0KlZ2vP39B5jEykU=')
+    numeric.assert_allclose64(lhs0, 'eNoB2AAn/1zIZDfgx2U3W8h2ON3ISTdyx1Q31chkODQ6y8V5x+'
+      '3FFDqHOL85TMaNw+PFKzpsPEs8wcNtwsPDTDyFPS496MKXwenCMD1PPqjGFzf/xgE55shXOXMxmcoZy/'
+      'Q0STWpzu/NUMVCLxzRljriMRnFbMUSxeE66DrXOqvEnMKVxI87VD13O/TCY8HGwjs9nT4KPXPK4cp6Nu'
+      'DKdcrCNuXKmcqnNp7K78pNNtTJLcpvNinK0smSNo3He8c4NpbHqsd+NorFHsWUwynFlsXVw3/ALMDeO1'
+      '/AvcDnPisGcyQ=')
+    numeric.assert_allclose64(lhs, 'eNoB2AAn/6HIbze/x3A3oMgsOOLIVDdrx1432shaODQ6y8V6x+3'
+      'FFDqHOL85TcaNw+PFKzpsPEs8wcNtwsPDTDyFPS496MKXwenCMD1PPvLG3zbdxiM5HMkOOdjM78qVy4A'
+      '07zQpM3/NUMWSMJbPlzpcMhnFbMUSxeE66DrXOqvEnMKVxI87VD13O/TCY8HGwjs9nT4KPUbM3cvrNPX'
+      'LX8ybM07K78kXNQnKcMr+LqXJJMttNBjLo8mX0G7Hscc5N+3HnsdHMmbFscXGw87Fg8W1w4XAPcBcPXT'
+      'AycDnPrEddBk=')
 
   def test_rot1(self):
     lhs0, lhs = main(nelems=3, viscosity=1e-2, timestep=.1, tmax=.05, rotation=1, figures=False)
-    numeric.assert_allclose64(lhs0,
-      'eNo9UkluBEEI+1C3xL68Jcox///CFKYmfQGBy40N9rA/P2+m5N9rT0Qjvux8En3YuCe+HCQoFBEKbkF4'
-      'wiH7pBod1tJ9osQopMZESwPna+myiIpNNPd3mrIcFXiqFXQBxZd02GUqYQvZDmugwZIGAIs5khPrW+EL'
-      'QUG0GpGoF9DyT/6tzGAD4ZioXrKNWmOCyle+NVSqRO2k3LoDKrT5+QbJ3TZRShErSSe2JIy0i/P0APMh'
-      'BmO4AhCiWJL3OpAUO4LnKB6DizfxUhh89rrTpl2qWl9TavcrxxwIy1CM3eLQI7KK68o4yhOWvMa1vgp5'
-      'rEkB6GkAcba4LkrbSfw5lIjhvDcTmYwki6AhfU05x7RmxV5XsqwZzY6zewuTjwuOF33tYjJIC73U3Hkl'
-      'Uq8ZtS/Ed0HiAoDDpJmK92DfoD2/8JZdVcGD9Ix7jXGPrVfynPRNuLclaveo3OAXk3wh82M+CTFNYjU+'
-      'ye8H5sTITg==')
-    numeric.assert_allclose64(lhs,
-      'eNo9ksuNIDEIRBNqS+YPsYzmOPmnsHZV955AULbxo/yReH5WzM6/5U9JxI1LMudv2SPu+8YllsFCFgqR'
-      'I1eamsojY0mFNY+oI5FsNLxC0DiJU9G8dFkJJFaG56QptX6VVm3vHDfRW4mmpBVHLNEQLYfgPB9ITuyv'
-      'Iq8EBbUexL2HgtHv8vwqUpTcAfWxuK/dhnGy2NL8fjnAmA//JNswmGmgYFvBVrNxwjcBtrYjmgyAeqEf'
-      'HdjJ8mncfBo4EKUUTAFWYaYjjP+AW5icDiBl7c3omDqjyfVcRa4qSlqVhs2POqIqf9zt+i6tgGS5NLnq'
-      'jiSkhPQ0oDjrBUVJxQ9lD+Lx1InxrMSa7+Tu8/rOCjBy9pXYvm/EWdl+jWmEsUQqmeSAU1byFaEhlvbn'
-      'zCKoO+iQC7xxdlHJs0akEozLcpPgWfO8pHibxuAy3ymvzStpCRl5fZafBT+z5vX1ZVa02nEaJSNhL3cu'
-      'wB0+/v0H0NrIrg==')
+    numeric.assert_allclose64(lhs0, 'eNoB2AAn/y/JijbexwE4w8d4ON3JYDZwx/Q3KshmOF06o8V3xx'
+      '7G4zmJOPU5FcaNwxfG+DlsPEs8wcNtwsPDTDyFPS496MKXwenCMD1PPoPHWjblx6I5VsjyOSw2LDTcNA'
+      '03LDfJNT42jMV9NmY2zzqkNkTFnMU8xQk7DTsAO83EtsK2xKs7bj2UO/TCY8HGwjs9nT4KPZDPKzB8Nn'
+      'HJKsnFNhM00TOpNtrIDMlPNkY3ZjdxNlnHPceVNi85Ijk5NiPFKcWCNpE7RzuUw9jC98LWw4XCtsHfO3'
+      'O/q7/nPotaZqU=')
+    numeric.assert_allclose64(lhs, 'eNoB2AAn/7XJqzauxwk4E8gSOMjJaDZkxwg4P8hYOF06o8V2xx7'
+      'G5DmGOPU5FcaNwxjG+DlsPEs8wcNtwsPDTDyFPS496MKXwenCMD1PPhfI+TWXx8Q5n8igOfw0wTSTNfQ'
+      '29jZ5Nkc2i8V5Njw2zzrINkPFnMU9xQk7DDsAO83EtsK1xKo7bj2UO/TCY8HGwjs9nT4KPcUzADM5MWv'
+      'J3sk3zI0yhzAwMwrIXcglzI82pjcgy5HHRcfxydA0bTanMy3GNcZOyS45Dzq1w9fDusOyw6rBKMEZPdy'
+      '/N8C9PtY3aIA=')
 
 
 if __name__ == '__main__':
