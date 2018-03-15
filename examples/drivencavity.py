@@ -91,37 +91,36 @@ class test(unittest.TestCase):
   def test_p1(self):
     lhs0, lhs1 = main(nelems=3, viscosity=1e-2, degree=1, warp=False, figures=False)
     numeric.assert_allclose64(lhs0,
-      'eNqFTzkSAzEI+5A9A+KweUsm5f7/Cwt4t0mTCg0SktDBNj4ToH1NGwD3nFgU19RhHFoT4n5NT0IItUig'
-      'DQLOZ/HXA7QOAeECLzEZQJ8qtRdIpGbu+Vzom0qiP2lCLUkza2ZFbXz4tt2VmZe3RLwKpO2m5xn1lK5k'
-      '1OMUiC4yU7JKArUoRQqepzSkwApEe2RMg0yxIjLEK4S+N1c4S6w=')
+      'eNqFj0EOAzEIAz8UJHAIWd5S9dj/f2GBDVVvPWHhiU10iI4XAbw/tAYgnpOwOYSOJa45MS0AC2MychFC'
+      'JYXDzuJvxgGCnJyiDRIA9VS5MsGzjN5TG9TOT9uTRd+w7fA81a5Vk0T2KmQaW8VefD6jFo93OGr+HOCz'
+      '0EaaaICa6Bbqmm7pEn7fWJVLrA==')
     numeric.assert_allclose64(lhs1,
-      'eNpVT7ltBEEMa2gH0P/UYjjc/lvwiPIFF1EQKZKyh/35ORZZ7/HHo33wiHK8xx5tb6CzvCcuQUazuAqC'
-      'osJ9sEUTCtWo9ejC7RXk4A1JEJGMlI/5Ed+F6CpFLZeoUJhyqmDDZP0V5zXNxtW9VlJdQwllDKrIKoQb'
-      'VdkIDdn+T9P27ZaNSxI4cOg2NjLDcF8iVK8ixF8GUiOCl7vaZNDvH5IHS/I=')
+      'eNpVj8ltBTEMQxsaAdqXWoIcp/8WvkUnAXKiQT6Qsj/izxd5Vr0UT+TkKqlJvOSPTQw0xF7KE7DzGofg'
+      '3EdngBy1BmGWdTume5MDQH9HKGvL46+cNMTXULukmvcNOhWlUiZwhH3+zUWL3NafGZKe2ki5oKaq9yAZ'
+      'X0Kcew3x/dQJygf7o4lfFivKJQ0gOfslp4dxejdj/iRAnRlEhGGDvz+PoEvw')
 
   def test_p2(self):
     lhs0, lhs1 = main(nelems=3, viscosity=1e-2, degree=2, warp=False, figures=False)
     numeric.assert_allclose64(lhs0,
-      'eNqVkcsNAyEMRBtaJGzjD7VEOab/FjIeVlFyjLggeJ43y65L/HpY2noNv8aO2r0RNXuNdY0lNXsTqsoD'
-      'LS2i5nOfjU2yJSp9sDXqT/QPP1An4bGORSy/CdOe8NZvZoULSfEDTC74pRtpsQng0xW0Mxe4/XSDkTcQ'
-      'BgkYSeiawUoiMAfMYTTbjrxD0+7QZPuR2ZpAem7OiCx+aJVbE/OzMMMCGFlELYsekdYgFTOnIpocIapI'
-      'I2hy/4IddR4jzyM837kcbbo=')
+      'eNqVj8sNxDAIRBsykvnjWlZ7TP8tbEwy0V5jXxC8YQYbbOOjqX6QD1pRaxcsagfZIOOauwgR7YaUZKPq'
+      'c12Fzh4Vi+zGklgv0Rf+QNnjIoQ1/wmV4t4ltXpXOPsesF/AvD+BBEggCeiTC24wI7iJzb6Rz3dQnK6h'
+      'tRu6Iu+lqffStO5ksm1Wc992apitj6zyJubzoYGEoIGEoCEkIURBEkIUJJnfH/O8bL4=')
     numeric.assert_allclose64(lhs1,
-      'eNpVkUtuBDEIRC/klijzP0uU5dz/CmPALSUru6FcvKJlQdePJOLz6HrAQp9HFsxQ5yMUURfl6MazjWmk'
-      '5tkVU5apbG5tkOqrteqAbRSK2NXZqa1Mg/c3OY/A5uKvpwi1l4vbACWyOhvhM8TT/hKyXwtYg8oVgnlm'
-      'bT8MUbiYB4yJuGmWsLn4z0sr2lMI4QkEcvzjzTarhMytOJw9RXqBx4OgN1ngYr27oH4iHqdgCyTtCbiN'
-      'wEXGW1vITWHrbHUskVcJ0fu3QI2zjWjOyt7Dis/PkmzeOt9sLLrbNXTGa2EdnPDmTUZnp98vZe15Gw==')
+      'eNpVkVtuBSAIRDekCcPbtTT97P63UAFv0n5pYBwOoy7o+tKD/Nm2NkTpZ+uCO+rcSpl1MclubHY+I/Xo'
+      'znYTmQpLV5LMnla8OhDXVhiSq8PHTp3H0S+Y4gk82itMpqBK7RUaPkAPlTFgm+P4X0KJ8QrUCrb0CSFD'
+      'x1wjsnAxDwQNY0wTAkvx35detLeQWjR3Fijwj/dw8GxYGVzFh1P9TSfY2yzxsD5ZUGehkbfgC6S9OhAx'
+      'glAdb2tvUbES3lTHEifeRe39VnvecJxoznxeKL64IXn/yA4ZnC1q3K5pM81IGidnsyPohej7F3rzeSo=')
 
   def test_p1_warped(self):
     lhs0, lhs1 = main(nelems=3, viscosity=1e-2, degree=1, warp=True, figures=False)
     numeric.assert_allclose64(lhs0,
-      'eNqFjrutQzEMQxeyAFN/z/Lwyrv/CpHkpEiVSgIPQVIXbP0RA/yQLQCnL3EIHtJlqqevpPpDXsCFWyCc'
-      'GHKQe4SfGWXAABTpsA8oQbMJO7IFpNtc1rhRjrcz3b/bOHiGmdrdUaloxUX0TtZ9e+XIWBA+DlKzeqKI'
-      'x6Rx+t1eloktx25HGW4GZ+x+qmVPRtVYP9UyQA7P1P3/AnrIS7Y=')
+      'eNqFjsENBDEIAxsKUkgIkFpO99z+WzgI69vnvow8lo00lvahwcwXrRayU2nYDEPaEtmp08Uu0gBagHib'
+      '57HZy3jtQIA4SJYBhCGeZCgfg1316O0TAIE8a3cX/cvi6OnonFIvS6/duUfVm/IhslYcFkRtnAdc63dE'
+      'kECAkMAKYQYrGOnfH4IBS84=')
     numeric.assert_allclose64(lhs1,
-      'eNo9T8utBDEIayiRMH9qWe1x+m9hA5n3TljY2FgXbH22OuezbWkGem4WomfrUsro6SbybD8El/dio3hA'
-      'SowCDJ5TdbMBAslmglLGyzmGMMAn7TXf7DqxbJgLhtolomJikVazcfVq6X9cUl3XE6Ovm5+8OJ+AogEz'
-      '/7XS8QdiXgRR3luxAcw+ZlK3Llj1luJXCXTuKZWRExJV1FLDre3n+RbQ9welMUvq')
+      'eNo9j0sOAzEIQy80SOEPZ6m6nPtfocGZaTZYwfiBXWzXhyykbvLLKnkqiXTfZJetyqnhqjcFGjEfxC0Q'
+      'pVlTWVgxauEOoayYzVWGrAdCzgzHG04SBqw4gypsfho5tI3lclAoLHqsf1ytTogXs9Nit3JvwitGiMhz'
+      'lRqAzBkIWavPrDpCRAIraqsNl8XOLSbrUHg/HFXZgGRXj9XZkRl7+TGs7w+8L0wG')
 
 
 if __name__ == '__main__':
