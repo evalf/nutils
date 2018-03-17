@@ -22,7 +22,7 @@
 The numeric module provides methods that are lacking from the numpy module.
 """
 
-import numpy, numbers, builtins, collections.abc
+import numpy, numbers, builtins, collections.abc, warnings
 
 _abc = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' # indices for einsum
 
@@ -270,6 +270,109 @@ def power(a, b):
   if a.dtype == int and b.dtype == int:
     b = b.astype(float)
   return numpy.power(a, b)
+
+def unpack(n, atol, rtol):
+  '''Convert packed representation to floating point data.
+
+  The packed binary form is a floating point interpretation of signed integer
+  data, such that any integer ``n`` maps onto float ``a`` as follows:
+
+  .. code-block:: none
+
+      a = nan                       if n = -N-1
+      a = -inf                      if n = -N
+      a = sinh(n*rtol)*atol/rtol    if -N < n < N
+      a = +inf                      if n = N,
+
+  where ``N = 2**(nbits-1)-1`` is the largest representable signed integer.
+
+  Note that packing is both order and zero preserving. The transformation is
+  designed such that the spacing around zero equals ``atol``, while the
+  relative spacing for most of the data range is approximately constant at
+  ``rtol``. Precisely, the spacing between a value ``a`` and the adjacent value
+  is ``sqrt(atol**2 + (a*rtol)**2)``. Note that the truncation error equals
+  half the spacing.
+
+  The representable data range depends on the values of ``atol`` and ``rtol``
+  and the bitsize of ``n``. Useful values for different data types are:
+
+  =====  ====  =====  =====
+  dtype  rtol  atol   range
+  =====  ====  =====  =====
+  int8   2e-1  2e-06  4e+05
+  int16  2e-3  2e-15  1e+16
+  int32  2e-7  2e-96  2e+97
+  =====  ====  =====  =====
+
+  Args
+  ----
+  n : int array
+      Integer data.
+  atol : :class:`float`
+      Absolute tolerance.
+  rtol : :class:`float`
+      Relative tolerance.
+
+  Returns
+  -------
+  Float array.
+  '''
+
+  iinfo = numpy.iinfo(n.dtype)
+  assert iinfo.dtype.kind == 'i', 'data should be of signed integer type'
+  a = numpy.asarray(numpy.sinh(n*rtol)*(atol/rtol))
+  a[numpy.equal(n, iinfo.max)] = numpy.inf
+  a[numpy.equal(n, -iinfo.max)] = -numpy.inf
+  a[numpy.equal(n, iinfo.min)] = numpy.nan
+  return a[()]
+
+def pack(a, atol, rtol, dtype):
+  '''Lossy compression of floating point data.
+
+  See :func:`unpack` for the definition of the packed binary form. The converse
+  transformation uses rounding in packed domain to determine the closest
+  matching value. In particular this may lead to values falling outside the
+  representable data range to be clipped to infinity. Some examples of packed
+  truncation:
+
+  >>> def truncate(a, dtype, **tol):
+  ...   return unpack(pack(a, dtype=dtype, **tol), **tol)
+  >>> truncate(0.5, dtype='int16', atol=2e-15, rtol=2e-3)
+  0.5004...
+  >>> truncate(1, dtype='int16', atol=2e-15, rtol=2e-3)
+  0.9998...
+  >>> truncate(2, dtype='int16', atol=2e-15, rtol=2e-3)
+  2.0013...
+  >>> truncate(2, dtype='int16', atol=2e-15, rtol=2e-4)
+  inf
+  >>> truncate(2, dtype='int32', atol=2e-15, rtol=2e-4)
+  2.00013...
+
+  Args
+  ----
+  a : float array
+    Input data.
+  atol : :class:`float`
+    Absolute tolerance.
+  rtol : :class:`float`
+    Relative tolerance.
+  dtype : :class:`str` or numpy dtype
+    Target dtype for packed data.
+
+  Returns
+  -------
+  Integer array.
+  '''
+
+  iinfo = numpy.iinfo(dtype)
+  assert iinfo.dtype.kind == 'i', 'dtype should be a signed integer'
+  amax = numpy.sinh(iinfo.max*rtol)*(atol/rtol)
+  a = numpy.asarray(a)
+  n = numpy.asarray((numpy.arcsinh(a.clip(-amax,amax)*(rtol/atol))/rtol).round().astype(iinfo.dtype))
+  if numpy.logical_and(numpy.equal(abs(n), iinfo.max), numpy.isfinite(a)).any():
+    warnings.warn('some values are clipped to infinity', RuntimeWarning)
+  n[numpy.isnan(a)] = iinfo.min
+  return n[()]
 
 def serialized(array, nsig, ndec):
   if array.ndim > 0:
