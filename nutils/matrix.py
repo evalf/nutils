@@ -157,8 +157,8 @@ class Matrix(metaclass=abc.ABCMeta):
     return self.export('dense')
 
   def toscipy(self):
-    warnings.deprecation('M.toscipy is deprecated; use scipy.sparse.csr_matrix(M.export("csr")) instead')
-    return scipy.sparse.csr_matrix(self.export('csr'))
+    warnings.deprecation('M.toscipy is deprecated; use scipy.sparse.csr_matrix(M.export("csr"), M.shape) instead')
+    return scipy.sparse.csr_matrix(self.export('csr'), self.shape)
 
 def preparesolvearguments(wrapped):
   '''Make rhs optional, add lhs0, constrain, rconstrain arguments.
