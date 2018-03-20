@@ -118,53 +118,37 @@ class test(unittest.TestCase):
 
   def test_p1_std(self):
     lhsprimal, error_est_w = main(degree=1, circle=False, uniform=False, basistype='std', nrefine=2, figures=False)
-    numeric.assert_allclose64(lhsprimal,
-      'eNpVkckNQzEIRBuyJfallijH9N9CbOYrUk5glgeMbbGvV0jXZ9syVb5WhGneQsfW2iegN7BPhY0TSlMS'
-      'lTKl2TmtloParBafHafX2tGb3eitnN7tGTI1ShyIuICfYXCMBcAITNwV9izDDLJ3gVxEc8DucgDDWwBs'
-      '3Ljb69mQ5RTrAO2/65diCbqOpZxMLmula9WS7+ZaUEoFUEmeccIyO7IBneanzlcGJkTI9Lk/SitBvs7J'
-      's+tcVCwTT8Zh3tDwaDlcNZ08F0EKCaORtDvyOhU+md9kr7Fugo9jfK14gcB1kX5UrVQ4ehHH4dAbeX8B'
-      'W2l7pA==')
-    numeric.assert_allclose64(error_est_w,
-      'eNp1VMmRGzEMTGhYhfuIxeWn80/BJADO7GdLD0EQzu4G5UF9/sDz+8cJ4d/Kh9nofMMTkfFvIW4ThX2c'
-      'KNvCm7UcoMKXEEtFE2JUxGLPylpqkf0fR0djmFYQEnQMG1rHUN4OnAHd1lKkLfLUtuA0Ra7YTMopjFke'
-      'Ya5WIqfBrqvJt26E8lRT4FsNGStD08u33LkBcHKb1EVgk7HISF4s0N2nMWIZIdDDhVnPZOJaBTkOyL0j'
-      'kHU9FJJbWZTfyivIew60aGglsZda4YplfbX9gFa0sdNtI0I5psZE/i4GY7/Us0gzpVTr7AYMFw3cyPTI'
-      'glbDJ9jPMYYnDY0LoNipne3OiVkyOjqSUrJvecK4cmoW9tKk3qKxmG6OWCiugJHh1nO0+Dxk0lwriHoB'
-      'PKKD/FohWLzj+GU5QPTOW0Q2Q6ivcBYl6XCfByPatYhqtXDQ8phSldkCbcIiBftygnAGBK4YRp2RLfkT'
-      'Atn7o6VXlyE4GEq6XwhZ9aMIL/EpP1S1ceVBKrFGRICeaHt6aJELtI9mzJrWbY9ERV16DxyJLdxqq0vy'
-      '6Bh2KWSVqR3oKRe+4FfsW0QD8H5N7lrIo4x9l2PtQ8BZn0W/G4S50yVSquHHSqGnY56CZ8uQeYNY+ogo'
-      'uabj0mA9QV7Nd+f6g/Q8KrEJIi2CtpLagdasbuY6o0iNg+9+SC8dCnPuS8mbDRrpW1DLGzHvctBd4e9/'
-      'Be02XA==')
+    numeric.assert_allclose64(lhsprimal, 'eNoBhAB7/2s2sDVfNKMjoMtQypXJlzbjNZk0l9Vkyx3Ka'
+      'snA0gXL18k0yWjKfsn3yGrKrskdybXIfskeycPIdcj3yLXIdcg6yF4ocyhDLHA1JjXGNEs0izNAMs02h'
+      'DYoNq019DSrM+o2pzZTNuM1PDX6M0bUrtEKN802gTYgNpY1rjR90DfOZs630OhqQfw=')
+    numeric.assert_allclose64(error_est_w, 'eNp1kE0oBGEYx/83lNq1a2c/5uu1yUFc7IWkZFkHRVx'
+      'WboqiXERJSpxw29PiwEFauVBq243k6qKQcvKxY2bM7K58RknDM+O8U//mfX/P/3metz9Q+mtiaQnY8AO'
+      'VIvDC/9Obu2uzN+jKRc1y6U1PC3X5mSBQIQMyAwYl2zOkXTJLj8ht3AB1rROvcfitcCXvGhli7QrQrdv'
+      'sK3AQ+uVdgsXNhYAF8pXRtjGntmTcBKa5CcPiXn3EqH5COuNKv/mTah2hBNdIvjGaw+SU/9nZnVaB1D0'
+      'QIX2QmlWbbunx/HlOMxpY0oiwVnM/9129o9mVlQegSL7VOyBG/3rFpm79uCr24PGCLVZvsqQZU5K+YWf'
+      'SEaXQQpu+KIlZUpToYwAYcHKbKBx64kLsqVMuGpVMeeyTR7R3pYsvSDw/J9qOH/L12yeaIVD/KaU2RPc'
+      'pp//Hn31L8LXuZdFbnJTmfS+iKmyHvcpFOKNkxZow0JMDLDWvjktr/J4AjJL+AIyZgFs=')
 
   def test_p2_spline(self):
     lhsprimal, error_est_w = main(degree=2, circle=False, uniform=False, basistype='spline', nrefine=1, figures=False)
-    numeric.assert_allclose64(lhsprimal,
-      'eNpVkFEOg0EEhC/0b4LFcpamj73/FWqNNOkTiZkPow/b83LJ/Cx9bOu+dUvKrcxst65qvJuatGKVVLvx'
-      'TXQbN+uJWUQzlMEQzIsRw1APMOwcMMwadkS4WQzFTj+4I7GMVYeRDqqLgFHe3hdMXQ/Dq+Z9F2dAyDEO'
-      'DWVYKYAvb2tTuPefnN+CW8BuNOtpvqcJJjbWr/Imvku1aUBdJxHvygoct5CVaxdHjw1nMkkfTmUfrakU'
-      'qJs6k2eX0D/np2G5Ae33F29saGg=')
-    numeric.assert_allclose64(error_est_w,
-      'eNp9U0lu7TAMu5ADaB7OUnTZ+1/hy5Lyir8psgghDxRJWQ7q+YLz14cS/PMgHGORAnQy3LrCqd4AAbSX'
-      'kLIqWf/AXnkoIgrheTTZe9PDnIPQzaaEJlO6lARic4Y5FiHktIEuuldjSCNiG/qHiGH2Sy4vM8H2ptM/'
-      'J9wKHyb7JUXwvK0/VkeHAAWiS4K4JXblWzLBWSJEmCVnwGYkjW1CSQeZ03aIJe7DWe5AjipxWYaxGY4Q'
-      'rXPxuqmIvna4++43zq2lcyOX5sCDiTy0Wkdb86V1ZH7JeGkJFFsQAvsAtOKPGpErJw6FvL50FnlUaKlZ'
-      'bFDZ8QaGPqiFBm6/hPTeksBrYbbzpin37wo0HZA0yICdM0r7HJ7JESZqoBj8G6ZQxyMk6y/eVqM6jR1n'
-      'ZK0bvML1O21FC9T9lLreqk5jJwKONayoXclAXm0zuF4uOTUBkbQK8rUL2WSdvbquSazv8aeO5UqKeTti'
-      'vm9HmPGdfty4y4vRG0K2el291Vas7RfFjDIGbBij8VILjIQabXglxEZCvt6UiKBNVvcONd1mBPb5PqT9'
-      'VO5UVdranJmwj1JpLjM3nIjcdy6hDagX6Gmf0P77vv8BTa37JQ==')
+    numeric.assert_allclose64(lhsprimal, 'eNoBbgCR/2s2GTYnNQoz9szZyufJlcl/Ni82OTUuM9jMv'
+      '8rSyYHJrzZgNoQ1LDN1zH3Km8lRyek2rDbKNSo0AMwZylrJF8kpN9w2kjbNM4TKrMkKydfIssm2ySHJw'
+      'ciVyIfJBsnByHfIV8gXydfIlchXyDrIutg53Q==')
+    numeric.assert_allclose64(error_est_w, 'eNpjYMAH5kiUCAXItEvd5rspEywx7dXat0fefeXX+wC'
+      'S2yfi/urv83cSi5+1C4i/bn1pKOjFz8SrIQiSq5VpfPL/UepTkYc/5Lc8O/bCSDT75USh02B9qs9mSpx'
+      '9qinG8aRDjOu50qvQ147isgKBn0Bya6XPP3V+NOPx3Xu7FB9L1j5eJmb16rxIxBuQHN+TQMmMRwqPWBX'
+      'cFOwe+8pESjx9v0WQXwgkxym7SkpYsfnpO9X5D1QVWBUPiMXImLw6J87A4Ke2Q1Hs0UXJTzIr3rCIMjA'
+      'ceJL16JbU6ZeKLza9YRJmYPBWeCaTLlcvMu8lv6i4GAMDq+R1SZ7Xpq92iaW/O/mZgaFYVl+yWTLn7RG'
+      'xYq4SQcwQAgDpQ2yr')
 
   def test_p1_std_circle(self):
     lhsprimal, error_est_w = main(degree=1, circle=True, uniform=False, basistype='std', nrefine=1, figures=False)
-    numeric.assert_allclose64(lhsprimal,
-      'eNpVj9sNQzEIQxdKpPAyMEvVz+6/QrkQVeoXCHNs0EW2XuDMz9alIvJUZuKnbiPoZxOtXaOWdu1oN5Bz'
-      'ngaBgd0HVqNeYGgNUI3mIOrpw4Y3672iyzSt2YhJwXEaNnMmZjxsMe0W0Mk3oPNJ/OZ6XW8VR3HGza5J'
-      '3LyS5vhteTC2mfNzhuFSsCtdnzSfR4i4zpM21H/qJxGjKHl/Aa51TUM=')
-    numeric.assert_allclose64(error_est_w,
-      'eNp9ksltRTEIRRt6SMxDLVGWv/8WYsD5STYRGwQXfADrQ/Z84POfkRq9II+XIvGC6pipv4Am7W4bLCa5'
-      'wTag4OxCoMSpcyLewDj1QGRWO4x1pETPkdJkWKimGaFNf3ChGA2r/HknNXIBwbUJ2/VyvqLguoTCkust'
-      'oKG0WpCxwxRyHo+TwKgBZfYdQYNtcUg3pYkbMVPt6lKr4fPw33wqpstEFN79zyaDLhKJyWaZyX/gMnet'
-      'rLbNhHRGg9CcFRGHLK3bQBL6BlRZWmFV0xFM03e9tJmzHw+8S0vFCwOFXG/0czfPPYbmKDxrysV9r0TH'
-      'G71zQ02hyCbP5FR4Gzv2jd6NVXd3EIFbBxZ9pcMIgr5aRvP7B0q/j4lMb7dH2E/If77EL/v8AhMYnBA=')
+    numeric.assert_allclose64(lhsprimal, 'eNoBUACv/2s2sDVgNHPpoMtQypXJljbgNZM0RtRkyx3Ka'
+      'snMNic25DSm0gnL1sk0yQk3gDaZNcHPYsp+yffIbMq1yR7JtciAyR/JxMh1yPfItch1yDrIoQ4s1w==')
+    numeric.assert_allclose64(error_est_w, 'eNpjYMAHJigyMFQrMDBslGBgCJVlYNCVgYhL3mt6FK9'
+      'S+njh/VMitbKtzwpl+F9OkYTI/bvFwNB+m4FhoTQDgwVQ7yI5iHj8vXq5dDXW+xPvKj6VVpR4ul5+t/h'
+      'kaYjcVmUGhmWqDAwTgepzgXY+kYWIz1SYISmsvOf+OVW9eyWqhx5ckw99ORHohi4VBobG+wwMdx+DVBU'
+      '+evxQRuG+XO/zPKB5W4D2KcszMCx+ApZ7rvPE6uXPpw6SLEA/LAPKrwRiBwlMvwIAHKQ+mQ==')
 
 
 if __name__ == '__main__':

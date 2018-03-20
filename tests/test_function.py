@@ -67,10 +67,11 @@ class check(TestCase):
 
   def test_getitem(self):
     for idim in range(self.op_args.ndim):
-      s = (Ellipsis,) + (slice(None),)*idim + (self.op_args.shape[idim]//2,) + (slice(None),)*(self.op_args.ndim-idim-1)
-      self.assertArrayAlmostEqual(decimal=15,
-        desired=self.n_op_argsfun[s],
-        actual=self.op_args[s].simplified.eval(**self.evalargs))
+      for item in range(self.op_args.shape[idim]):
+        s = (Ellipsis,) + (slice(None),)*idim + (item,) + (slice(None),)*(self.op_args.ndim-idim-1)
+        self.assertArrayAlmostEqual(decimal=15,
+          desired=self.n_op_argsfun[s],
+          actual=self.op_args[s].simplified.eval(**self.evalargs))
 
   def test_transpose(self):
     trans = numpy.arange(self.op_args.ndim,0,-1) % self.op_args.ndim

@@ -22,7 +22,7 @@
 The numeric module provides methods that are lacking from the numpy module.
 """
 
-import numpy, numbers, builtins, collections.abc
+import numpy, numbers, builtins, collections.abc, warnings
 
 _abc = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' # indices for einsum
 
@@ -271,53 +271,131 @@ def power(a, b):
     b = b.astype(float)
   return numpy.power(a, b)
 
-def serialized(array, nsig, ndec):
-  if array.ndim > 0:
-    return '[{}]'.format(','.join(serialized(a, nsig, ndec) for a in array))
-  if not numpy.isfinite(array): # nan, inf
-    return str(array)
-  a = builtins.round(float(array) * 10**ndec)
-  if a == 0:
-    return '0'
-  while abs(a) >= 10**nsig:
-    a //= 10
-    ndec -= 1
-  return '{}e{}'.format(a, -ndec)
+def unpack(n, atol, rtol):
+  '''Convert packed representation to floating point data.
 
-def encode64(array, nsig, ndec):
+  The packed binary form is a floating point interpretation of signed integer
+  data, such that any integer ``n`` maps onto float ``a`` as follows:
+
+  .. code-block:: none
+
+      a = nan                       if n = -N-1
+      a = -inf                      if n = -N
+      a = sinh(n*rtol)*atol/rtol    if -N < n < N
+      a = +inf                      if n = N,
+
+  where ``N = 2**(nbits-1)-1`` is the largest representable signed integer.
+
+  Note that packing is both order and zero preserving. The transformation is
+  designed such that the spacing around zero equals ``atol``, while the
+  relative spacing for most of the data range is approximately constant at
+  ``rtol``. Precisely, the spacing between a value ``a`` and the adjacent value
+  is ``sqrt(atol**2 + (a*rtol)**2)``. Note that the truncation error equals
+  half the spacing.
+
+  The representable data range depends on the values of ``atol`` and ``rtol``
+  and the bitsize of ``n``. Useful values for different data types are:
+
+  =====  ====  =====  =====
+  dtype  rtol  atol   range
+  =====  ====  =====  =====
+  int8   2e-1  2e-06  4e+05
+  int16  2e-3  2e-15  1e+16
+  int32  2e-7  2e-96  2e+97
+  =====  ====  =====  =====
+
+  Args
+  ----
+  n : int array
+      Integer data.
+  atol : :class:`float`
+      Absolute tolerance.
+  rtol : :class:`float`
+      Relative tolerance.
+
+  Returns
+  -------
+  Float array.
+  '''
+
+  iinfo = numpy.iinfo(n.dtype)
+  assert iinfo.dtype.kind == 'i', 'data should be of signed integer type'
+  a = numpy.asarray(numpy.sinh(n*rtol)*(atol/rtol))
+  a[numpy.equal(n, iinfo.max)] = numpy.inf
+  a[numpy.equal(n, -iinfo.max)] = -numpy.inf
+  a[numpy.equal(n, iinfo.min)] = numpy.nan
+  return a[()]
+
+def pack(a, atol, rtol, dtype):
+  '''Lossy compression of floating point data.
+
+  See :func:`unpack` for the definition of the packed binary form. The converse
+  transformation uses rounding in packed domain to determine the closest
+  matching value. In particular this may lead to values falling outside the
+  representable data range to be clipped to infinity. Some examples of packed
+  truncation:
+
+  >>> def truncate(a, dtype, **tol):
+  ...   return unpack(pack(a, dtype=dtype, **tol), **tol)
+  >>> truncate(0.5, dtype='int16', atol=2e-15, rtol=2e-3)
+  0.5004...
+  >>> truncate(1, dtype='int16', atol=2e-15, rtol=2e-3)
+  0.9998...
+  >>> truncate(2, dtype='int16', atol=2e-15, rtol=2e-3)
+  2.0013...
+  >>> truncate(2, dtype='int16', atol=2e-15, rtol=2e-4)
+  inf
+  >>> truncate(2, dtype='int32', atol=2e-15, rtol=2e-4)
+  2.00013...
+
+  Args
+  ----
+  a : float array
+    Input data.
+  atol : :class:`float`
+    Absolute tolerance.
+  rtol : :class:`float`
+    Relative tolerance.
+  dtype : :class:`str` or numpy dtype
+    Target dtype for packed data.
+
+  Returns
+  -------
+  Integer array.
+  '''
+
+  iinfo = numpy.iinfo(dtype)
+  assert iinfo.dtype.kind == 'i', 'dtype should be a signed integer'
+  amax = numpy.sinh(iinfo.max*rtol)*(atol/rtol)
+  a = numpy.asarray(a)
+  n = numpy.asarray((numpy.arcsinh(a.clip(-amax,amax)*(rtol/atol))/rtol).round().astype(iinfo.dtype))
+  if numpy.logical_and(numpy.equal(abs(n), iinfo.max), numpy.isfinite(a)).any():
+    warnings.warn('some values are clipped to infinity', RuntimeWarning)
+  n[numpy.isnan(a)] = iinfo.min
+  return n[()]
+
+def assert_allclose64(actual, data=None, atol=2e-15, rtol=2e-3):
   import zlib, binascii
-  assert isinstance(array, numpy.ndarray) and array.dtype == float
-  binary = zlib.compress('{},{},{}'.format(nsig, ndec, serialized(array, nsig, ndec)).encode(), 9)
-  data = binascii.b2a_base64(binary).decode().rstrip()
-  assert_allclose64(array, data)
-  return data
-
-def decode64(data):
-  import zlib, binascii
-  serialized = zlib.decompress(binascii.a2b_base64(data))
-  nsig, ndec, array = eval(serialized, numpy.__dict__)
-  return nsig, ndec, numpy.array(array, dtype=float)
-
-def assert_allclose64(actual, data=None):
   try:
-    nsig, ndec, desired = decode64(data)
+    desired = unpack(numpy.frombuffer(zlib.decompress(binascii.a2b_base64(data)), dtype=numpy.int16), atol, rtol).reshape(actual.shape)
   except Exception as e:
-    status = str(e)
-    nsig = 4
-    ndec = 15
+    status = 'failed to decode data: {}'.format(e),
   else:
-    try:
-      numpy.testing.assert_allclose(actual, desired, atol=1.5*10**-ndec, rtol=10**(1-nsig))
-    except Exception as e:
-      status = str(e)
-    else:
+    error = abs(actual - desired)
+    spacing = numpy.sqrt(atol**2 + (desired*rtol)**2)
+    fail = numpy.logical_xor(numpy.isnan(actual), numpy.isnan(desired))
+    numpy.greater(error, spacing, where=~numpy.isnan(error), out=fail)
+    if not fail.any():
       return
-  status += '\n\nIf this is expected, use the following base64 string to test up to nsig={}, ndec={}:'.format(nsig, ndec)
-  data = encode64(actual, nsig=nsig, ndec=ndec)
-  while data:
-    status += '\n{!r}'.format(data[:80])
-    data = data[80:]
-  raise Exception(status)
+    status = '{}/{} values do not match up to atol={:.2e}, rtol={:.2e}:'.format(fail.sum(), fail.size, atol, rtol),
+    for index in zip(*fail.nonzero()):
+      status += '{} desired: {:+.4e}, actual: {:+.4e}, spacing: {:.1e}'.format(list(index), desired[index], actual[index], spacing[index]),
+  status += 'If this is expected, update the base64 string to:',
+  with warnings.catch_warnings(record=True) as captured_warnings:
+    status += binascii.b2a_base64(zlib.compress(pack(actual, atol, rtol, numpy.int16).tobytes(), 9)).decode().rstrip(),
+  for w in captured_warnings:
+    status += 'Warning: {}'.format(w.message),
+  raise Exception('\n'.join(status))
 
 class const(collections.abc.Sequence):
   __slots__ = '__base', '__hash'
