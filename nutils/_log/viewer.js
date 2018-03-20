@@ -9,6 +9,9 @@ const create_element = function(tag, options, ...children) {
     if (k === 'events')
       for (name in options[k])
         el.addEventListener(name, options[k][name]);
+    else if (k === 'dataset')
+      for (name in options[k])
+        el.dataset[name] = options[k][name];
     else
       el.setAttribute(k, options[k]);
   for (const child of children)
@@ -343,11 +346,7 @@ const Theater = class {
     update_state();
   }
   _draw_plot() {
-    const plot = document.createElement('img');
-    plot.src = this.href;
-    plot.classList.add('plot');
-    plot.dataset.category = this.info[this.href].category || '';
-    plot.addEventListener('click',this._blur_plot.bind(this));
+    const plot = create_element('img', {src: this.href, 'class': 'plot', dataset: {category: this.info[this.href].category || ''}, events: {click: this._blur_plot.bind(this)}});
     this.root.innerHTML = '';
     this.root.classList.remove('overview');
     this.root.appendChild(plot);
@@ -357,11 +356,7 @@ const Theater = class {
     this.root.classList.add('overview');
     this._update_overview_layout();
     for (const href of this.plots_per_context[this.info[this.href].context]) {
-      const plot = document.createElement('img');
-      plot.src = href;
-      plot.classList.add('plot');
-      plot.dataset.category = this.info[href].category || '';
-      plot.addEventListener('click', this._focus_plot.bind(this));
+      const plot = create_element('img', {src: href, 'class': 'plot', dataset: {category: this.info[href].category || ''}, events: {click: this._focus_plot.bind(this)}});
       this.root.appendChild(plot);
     }
   }
