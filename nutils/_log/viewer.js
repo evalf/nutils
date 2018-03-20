@@ -559,31 +559,33 @@ window.addEventListener('load', function() {
     grid.appendChild(create_element('div', {'class': cls+' keys', events: {click: ev => { ev.stopPropagation(); ev.preventDefault(); window.dispatchEvent(new KeyboardEvent('keydown', {key: _key})); }}}, keys.join('+')));
     grid.appendChild(create_element('div', {'class': cls}, description));
   }
-  _add_key_description('general', ['R'], 'Reload.', 'R');
-  _add_key_description('general', ['L'], 'Load latest.', 'L');
-  _add_key_description('log', ['+'], 'Increase log verbosity.','+');
-  _add_key_description('log', ['-'], 'Decrease log verbosity.','-');
-  _add_key_description('log', ['C'], 'Collapse all contexts.','C');
-  _add_key_description('log', ['E'], 'Expand all contexts.', 'E');
-  _add_key_description('theater', ['TAB'], 'Toggle between overview and focus.', 'Tab');
-  _add_key_description('theater', ['SPACE'], 'Lock to a plot category or unlock.', ' ');
-  _add_key_description('theater', ['LEFT'], 'Show the next plot.', 'ArrowLeft');
-  _add_key_description('theater', ['RIGHT'], 'Show the previous plot.', 'ArrowRight');
-  _add_key_description('theater', ['Q'], 'Open the log at the current plot.', 'Q');
-  _add_key_description('theater', ['ESC'], 'Go back.', 'Escape');
+  _add_key_description('', ['R'], 'Reload.', 'R');
+  _add_key_description('', ['L'], 'Load latest.', 'L');
+  _add_key_description('show-if-log', ['+'], 'Increase log verbosity.','+');
+  _add_key_description('show-if-log', ['-'], 'Decrease log verbosity.','-');
+  _add_key_description('show-if-log', ['C'], 'Collapse all contexts.','C');
+  _add_key_description('show-if-log', ['E'], 'Expand all contexts.', 'E');
+  _add_key_description('show-if-theater', ['TAB'], 'Toggle between overview and focus.', 'Tab');
+  _add_key_description('show-if-theater', ['SPACE'], 'Lock to a plot category or unlock.', ' ');
+  _add_key_description('show-if-theater', ['LEFT'], 'Show the next plot.', 'ArrowLeft');
+  _add_key_description('show-if-theater', ['RIGHT'], 'Show the previous plot.', 'ArrowRight');
+  _add_key_description('show-if-theater', ['Q'], 'Open the log at the current plot.', 'Q');
+  _add_key_description('show-if-theater', ['ESC'], 'Go back.', 'Escape');
 
   document.body.insertBefore(
     create_element('div', {id: 'header'},
       create_element('div', {'class': 'bar'},
+        // logo
         create_element('a', {href: 'http://nutils.org/', title: 'nutils.org'}, create_logo({'class': 'button icon'})),
-        create_element('div', {id: 'header-bar-content', 'class': 'content'},
-          create_element('div', {'class': 'log'},
-            create_element('div', {}, (document.body.dataset.scriptname || '') + ' ' + (document.body.dataset.funcname || '')),
-            create_element('div', {'class': 'icon small-icon-container', id: 'log-level-indicator'})),
-          create_element('div', {'class': 'theater'},
-            create_element('div', {id: 'theater-label', 'class': 'button', title: 'exit theater and open log here', events: {click: ev => { ev.stopPropagation(); ev.preventDefault(); theater._open_log();}}}),
-            create_lock({'class': 'button icon lock', events: {click: ev => { ev.stopPropagation(); ev.preventDefault(); theater.toggle_locked(); }}})),
-          create_element('div', {'class': 'droppeddown'}, 'keyboard shortcuts')),
+        // labels, only one is visible at a time
+        create_element('div', {'class': 'show-if-log hide-if-droppeddown label'}, (document.body.dataset.scriptname || '') + ' ' + (document.body.dataset.funcname || '')),
+        create_element('div', {id: 'theater-label', 'class': 'show-if-theater hide-if-droppeddown button label', title: 'exit theater and open log here', events: {click: ev => { ev.stopPropagation(); ev.preventDefault(); theater._open_log();}}}),
+        create_element('div', {'class': 'show-if-droppeddown label'}, 'keyboard shortcuts'),
+        // log level indicator, visible in log mode
+        create_element('div', {'class': 'show-if-log icon small-icon-container', id: 'log-level-indicator'}),
+        // category lock button, visible in theater mode
+        create_lock({'class': 'show-if-theater button icon lock', events: {click: ev => { ev.stopPropagation(); ev.preventDefault(); theater.toggle_locked(); }}}),
+        // hamburger
         create_element('div', {'class': 'hamburger icon button', events: {click: ev => { document.body.classList.toggle('droppeddown'); ev.stopPropagation(); ev.preventDefault(); }}},
           create_element('div'),
           create_element('div'),
