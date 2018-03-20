@@ -2,7 +2,7 @@ body { font-family: monospace; font-size: 12px; }
 
 a, a:visited, a:hover { color: inherit; text-decoration: underline; }
 
-.button { cursor: pointer; -webkit-tap-highlight-color: transparent; user-select: none; }
+.button { cursor: pointer; -webkit-tap-highlight-color: transparent; user-select: none; -moz-user-select: none; -webkit-user-select: none; }
 
 #header { position: fixed; top: 0px; left: 0px; right: 0px; z-index: 2; }
 #header > .bar { height: 48px; display: grid; grid-template-columns: max-content 1fr max-content; grid-template-rows: 48px; align-items: center; grid-gap: 8px; padding: 0px 8px; }
@@ -35,7 +35,7 @@ body.droppeddown .dropdown-catchall { display: block; position: fixed; top: 0px;
 #header > .dropdown { display: none; max-height: 60%; overflow: auto; }
 body.droppeddown #header > .dropdown { display: block; padding: 20px 10px; }
 #header > .dropdown .key_description { display: grid; grid-template-columns: max-content 1fr; align-items: center; grid-gap: 5px 10px; }
-#header > .dropdown .key_description .keys { display: inline-grid; justify-self: right; cursor: pointer; font-family: monospace; user-select: none; border: 1px solid black; border-radius: 2px; height: 32px; align-items: center; padding: 0px 10px; }
+#header > .dropdown .key_description .keys { display: inline-grid; justify-self: right; cursor: pointer; font-family: monospace; user-select: none; -moz-user-select: none; -webkit-user-select: none; border: 1px solid black; border-radius: 2px; height: 32px; align-items: center; padding: 0px 10px; }
 body[data-show='theater'] #header > .dropdown .key_description > .log { display: none; }
 body:not([data-show='theater']) #header > .dropdown .key_description > .theater { display: none; }
 
@@ -48,7 +48,7 @@ body.droppeddown #header-bar-content > :not(.droppeddown) { display: none; }
 
 
 #log > .cmdline { list-style-position: inside; padding-left: 0px; margin-top: 0px; }
-#log > .cmdline .annotation { user-select: none; color: gray; padding-left: 2ex; }
+#log > .cmdline .annotation { user-select: none; -moz-user-select: none; -webkit-user-select: none; color: gray; padding-left: 2ex; }
 
 #log .item, #log .context > .title { white-space: pre; padding-top: 5px; }
 
