@@ -2039,6 +2039,11 @@ class Inflate(Array):
   def _get(self, axis, item):
     if axis != self.axis:
       return Inflate(Get(self.func,axis,item), self.dofmap, self.length, self.axis-(axis<self.axis))
+    if self.dofmap.isconstant and item.isconstant:
+      dofmap, = self.dofmap.eval()
+      item, = item.eval()
+      return Get(self.func, axis, tuple(dofmap).index(item)) if item in dofmap \
+        else Zeros(self.shape[:axis]+self.shape[axis+1:], self.dtype)
 
   def _multiply(self, other):
     if isinstance(other, Inflate) and self.axis == other.axis:
@@ -2117,11 +2122,8 @@ class Diagonalize(Array):
   def _get(self, i, item):
     if i != self.axis and i != self.newaxis:
       return Diagonalize(Get(self.func, i-(i>self.newaxis), item), self.axis-(i<self.axis), self.newaxis-(i<self.newaxis))
-    if item.isconstant:
-      pos, = item.eval()
-      funcs = [Zeros(self.func.shape[:self.axis]+self.func.shape[self.axis+1:], dtype=self.func.dtype)] * self.func.shape[self.axis]
-      funcs[pos] = Get(self.func, self.axis, item)
-      return Stack(funcs, axis=self.axis if i == self.newaxis else self.newaxis-1)
+    axis = self.axis if i == self.newaxis else self.newaxis-1
+    return Inflate(InsertAxis(Get(self.func, self.axis, item), axis=axis, length=1), [item], length=self.shape[i], axis=axis)
 
   def _inverse(self):
     if self.axis == self.func.ndim-1 and self.newaxis == self.ndim-1:
