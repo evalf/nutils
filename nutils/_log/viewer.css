@@ -86,10 +86,14 @@ body.hide4 #log [data-loglevel='4'] { display: none; }
 #theater.overview { display: grid; background: #eee; padding: 20px; grid-gap: 20px; align-items: center; justify-items: center; }
 body:not([data-show='theater']) #theater { display: none; }
 
-#theater img.plot { object-fit: contain; width: 100%; height: 100%; }
-#theater.overview img.plot { background: white; max-width: 100%; max-height: 100%; width: initial; height: initial; }
-#theater.overview img.plot.selected { border: 2px solid #888; }
-body.theater-locked #theater.overview img.plot.selected_category:not(.selected) { border: 2px solid #ddd; }
+#theater:not(.overview) img.plot { object-fit: contain; width: 100%; height: 100%; }
+#theater.overview img.plot.selected { border: 2px solid #888; margin: -2px; }
+body.theater-locked #theater.overview img.plot.selected_category:not(.selected) { border: 2px solid #ddd; margin: -2px; }
+#theater.overview .plot_container1 { position: relative; width: 100%; height: 100%; }
+#theater.overview .plot_container2 { position: absolute; width: 100%; height: 100%; top: 0px; left: 0px; right: 0px; bottom: 0px; }
+#theater.overview .plot_container3 { height: calc(100% - 20px); display: flex; align-items: center; justify-content: center; }
+#theater.overview .plot { background: white; max-width: 100%; max-height: 100%; }
+#theater.overview .label { position: absolute; width: 100%; left: 0px; right: 0px; bottom: 0px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* vim: sts=2:sw=2:et
  */

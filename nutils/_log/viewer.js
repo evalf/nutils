@@ -357,7 +357,11 @@ const Theater = class {
     this._update_overview_layout();
     for (const href of this.plots_per_context[this.info[this.href].context]) {
       const plot = create_element('img', {src: href, 'class': 'plot', dataset: {category: this.info[href].category || ''}, events: {click: this._focus_plot.bind(this)}});
-      this.root.appendChild(plot);
+      const plot_container3 = create_element('div', {'class': 'plot_container3'}, plot);
+      const plot_container2 = create_element('div', {'class': 'plot_container2'}, plot_container3);
+      if (this.info[href].category)
+        plot_container2.appendChild(create_element('div', {'class': 'label'}, this.info[href].category));
+      this.root.appendChild(create_element('div', {'class': 'plot_container1'}, plot_container2));
     }
   }
   _update_selection() {
