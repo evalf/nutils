@@ -168,11 +168,10 @@ class Topology(types.Singleton):
 
     assert not separate or not asfunction, '"separate" and "asfunction" are mutually exclusive'
     if geometry:
-      iwscale = function.J(geometry, self.ndims)
+      funcs = [func * function.J(geometry, self.ndims) for func in funcs]
       npoints = len(self)
       slices = range(npoints)
     else:
-      iwscale = 1
       slices = []
       npoints = 0
       for elem in log.iter('elem', self):
@@ -186,7 +185,7 @@ class Topology(types.Singleton):
     retvals = []
     idata = []
     for ifunc, func in enumerate(funcs):
-      func = function.asarray(edit(func * iwscale))
+      func = function.asarray(edit(func))
       func = function.zero_argument_derivatives(func)
       retval = zeros((npoints,)+func.shape, dtype=func.dtype)
       idata.extend(function.Tuple([ifunc, function.Tuple(ind), f.simplified]) for ind, f in function.blocks(func))
