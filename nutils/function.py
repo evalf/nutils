@@ -2046,12 +2046,7 @@ class Inflate(Array):
         else Zeros(self.shape[:axis]+self.shape[axis+1:], self.dtype)
 
   def _multiply(self, other):
-    if isinstance(other, Inflate) and self.axis == other.axis:
-      assert self.dofmap == other.dofmap and self.length == other.length
-      take_other = other.func
-    else:
-      take_other = Take(other, self.dofmap, self.axis)
-    return Inflate(Multiply([self.func, take_other]), self.dofmap, self.length, self.axis)
+    return Inflate(Multiply([self.func, Take(other, self.dofmap, self.axis)]), self.dofmap, self.length, self.axis)
 
   def _add(self, other):
     if isinstance(other, Inflate) and self.axis == other.axis and self.dofmap == other.dofmap:
