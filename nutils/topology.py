@@ -193,13 +193,11 @@ class Topology(types.Singleton):
     return [function.elemwise({elem.transform: array for elem, array in zip(self, retval)}, shape=retval.shape) for retval in retvals] if asfunction \
       else retvals
 
-  @log.title
   @util.single_or_multiple
-  def elem_mean(self, funcs, geometry, ischeme, *, arguments=None):
-    'element-wise average'
-
-    retvals = self.elem_eval((1,)+funcs, geometry=geometry, ischeme=ischeme, arguments=arguments)
-    return [v / retvals[0][(slice(None),)+(_,)*(v.ndim-1)] for v in retvals[1:]]
+  def elem_mean(self, funcs, geometry=None, ischeme='gauss', degree=None, **kwargs):
+    ischeme, degree = element.parse_legacy_ischeme(ischeme if degree is None else ischeme + str(degree))
+    area, *integrals = self.integrate_elementwise((1,)+funcs, ischeme=ischeme, degree=degree, geometry=geometry, **kwargs)
+    return [integral / area[(slice(None),)+(_,)*(integral.ndim-1)] for integral in integrals]
 
   @util.single_or_multiple
   def integrate(self, funcs, ischeme='gauss', degree=None, geometry=None, edit=None, *, arguments=None, title='integrate'):
