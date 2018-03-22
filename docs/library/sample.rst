@@ -1,0 +1,4 @@
+Sample
+======
+
+.. automodule:: nutils.sample

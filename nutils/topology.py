@@ -35,7 +35,7 @@ out in element loops. For lower level operations topologies can be used as
 :mod:`nutils.element` iterators.
 """
 
-from . import element, function, util, numpy, parallel, log, config, numeric, cache, transform, warnings, matrix, types, _
+from . import element, function, util, numpy, parallel, log, config, numeric, cache, transform, warnings, matrix, types, sample, _
 import functools, collections.abc, itertools, functools, operator, numbers, pathlib
 
 _identity = lambda x: x
@@ -159,75 +159,39 @@ class Topology(types.Singleton):
     f = getattr(self, 'basis_' + name)
     return f(*args, **kwargs)
 
-  @log.title
+  def sample(self, ischeme, degree):
+    transforms = [(elem.transform, elem.opposite) for elem in self]
+    points = [elem.reference.getpoints(ischeme, degree) for elem in self]
+    offset = numpy.cumsum([0] + [p.npoints for p in points])
+    return sample.Sample(transforms, points, map(numpy.arange, offset[:-1], offset[1:]))
+
   @util.single_or_multiple
-  def elem_eval(self, funcs, ischeme, separate=False, geometry=None, asfunction=False, edit=_identity, *, arguments=None):
+  def elem_eval(self, funcs, ischeme, separate=False, geometry=None, asfunction=False, *, edit=None, title='elem_eval', **kwargs):
     'element-wise evaluation'
 
-    fcache = cache.WrapperCache()
+    if geometry is not None:
+      warnings.deprecation('elem_eval will be removed in future, use integrate_elementwise instead')
+      return self.integrate_elementwise(funcs, ischeme=ischeme, geometry=geometry, asfunction=asfunction, edit=edit, **kwargs)
+    if edit is not None:
+      funcs = [edit(func) for func in funcs]
+    warnings.deprecation('elem_eval will be removed in future, use sample(...).eval instead')
+    sample = self.sample(*element.parse_legacy_ischeme(ischeme))
+    retvals = sample.eval(funcs, title=title, **kwargs)
+    return [sample.asfunction(retval) for retval in retvals] if asfunction \
+      else [[retval[index] for index in sample.index] for retval in retvals] if separate \
+      else retvals
 
-    assert not separate or not asfunction, '"separate" and "asfunction" are mutually exclusive'
-    if geometry:
-      funcs = [func * function.J(geometry, self.ndims) for func in funcs]
-      npoints = len(self)
-      slices = range(npoints)
-    else:
-      slices = []
-      npoints = 0
-      for elem in log.iter('elem', self):
-        ipoints, iweights = ischeme[elem] if isinstance(ischeme,collections.abc.Mapping) else elem.reference.getischeme(ischeme)
-        np = len(ipoints)
-        slices.append(slice(npoints,npoints+np))
-        npoints += np
+  @util.single_or_multiple
+  def integrate_elementwise(self, funcs, *, asfunction=False, **kwargs):
+    'element-wise integration'
 
-    nprocs = min(config.nprocs, len(self))
-    zeros = parallel.shzeros if nprocs > 1 else numpy.zeros
-    retvals = []
-    idata = []
-    for ifunc, func in enumerate(funcs):
-      func = function.asarray(edit(func))
-      func = function.zero_argument_derivatives(func)
-      retval = zeros((npoints,)+func.shape, dtype=func.dtype)
-      idata.extend(function.Tuple([ifunc, function.Tuple(ind), f.simplified]) for ind, f in function.blocks(func))
-      retvals.append(retval)
-    idata = function.Tuple(idata)
-
-    if config.dot:
-      idata.graphviz()
-
-    if arguments is None:
-      arguments = {}
-
-    for ielem, elem in parallel.pariter(log.enumerate('elem', self), nprocs=nprocs):
-      ipoints, iweights = ischeme[elem] if isinstance(ischeme,collections.abc.Mapping) else elem.reference.getischeme(ischeme)
-      s = slices[ielem],
-      try:
-        for ifunc, index, data in idata.eval(_transforms=(elem.transform, elem.opposite), _points=ipoints, _cache=fcache, **arguments):
-          numpy.add.at(retvals[ifunc], s+numpy.ix_(*[ind for (ind,) in index]), numeric.dot(iweights,data) if geometry else data)
-      except function.EvaluationError:
-        warnings.warn('not all functions evaluated successfully')
-        for ifunc, indexfunc, datafunc in idata:
-          index = indexfunc.eval(_transforms=(elem.transform, elem.opposite), _points=ipoints, _cache=fcache, **arguments)
-          try:
-            data = datafunc.eval(_transforms=(elem.transform, elem.opposite), _points=ipoints, _cache=fcache, **arguments)
-          except function.EvaluationError:
-            retvals[ifunc][s+numpy.ix_(*[ind for (ind,) in index])] = numpy.nan
-          else:
-            numpy.add.at(retvals[ifunc], s+numpy.ix_(*[ind for (ind,) in index]), numeric.dot(iweights,data) if geometry else data)
-
-    log.debug('cache', fcache.stats)
-    log.info('created', ', '.join('{}({})'.format(retval.__class__.__name__, ','.join(str(n) for n in retval.shape)) for retval in retvals))
-
-    if asfunction:
-      if geometry:
-        retvals = [function.elemwise({elem.transform: value for elem, value in zip(self, retval)}, shape=retval.shape[1:]) for retval in retvals]
-      else:
-        tsp = [(elem.transform, s, elem.reference.getischeme(ischeme)[0]) for elem, s in zip(self, slices)]
-        retvals = [function.sampled({trans: (types.frozenarray(retval[s], copy=False), points) for trans, s, points in tsp}, self.ndims) for retval in retvals]
-    elif separate:
-      retvals = [[retval[s] for s in slices] for retval in retvals]
-
-    return retvals
+    ielem = self.basis('discont', degree=0)
+    funcs = [function.asarray(func) for func in funcs]
+    with matrix.backend('numpy'):
+      retvals = self.integrate([ielem[(slice(None),)+(_,)*func.ndim] * func for func in funcs], **kwargs)
+    retvals = [retval.export('dense') if len(retval.shape) == 2 else retval for retval in retvals]
+    return [function.elemwise({elem.transform: array for elem, array in zip(self, retval)}, shape=retval.shape) for retval in retvals] if asfunction \
+      else retvals
 
   @log.title
   @util.single_or_multiple

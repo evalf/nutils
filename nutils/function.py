@@ -1973,7 +1973,7 @@ class Sign(Array):
     if iszero(n % 2):
       return ones_like(self)
 
-class Sampled(Array):
+class OldSampled(Array):
   'sampled'
 
   __slots__ = 'data', 'trans'
@@ -1993,6 +1993,38 @@ class Sampled(Array):
     evalpoints = transform.apply(tail, points)
     assert mypoints.shape == evalpoints.shape and numpy.equal(mypoints, evalpoints).all(), 'Illegal point set'
     return myvals
+
+class Sampled(Array):
+  '''Convert sampled data to evaluable array.
+
+  Using the result of :func:`nutils.sample.Sample.eval`, create an evaluable
+  array that upon evaluation recovers the original function in the set of
+  points matching the original sampling.
+
+  Args
+  ----
+  sample : :class:`nutils.sample.Sample`
+      The set of points that the data was sampled on.
+  array :
+      The sampled data.
+  trans : :class:`TransformChain` (optional)
+      The transformation chain that is used to locate the sample points.
+  '''
+
+  __slots__ = 'sample', 'array'
+
+  @types.apply_annotations
+  def __init__(self, sample, array:types.frozenarray, trans:types.strict[TransformChain]=TRANS):
+    assert len(array) == sample.npoints, 'array shape does not match sample: len(array)={}, sample.npoints={}'.format(len(array), sample.npoints)
+    self.sample = sample
+    self.array = array
+    super().__init__(args=[Promote(sample.ndims, trans), POINTS], shape=array.shape[1:], dtype=array.dtype)
+
+  def evalf(self, trans, points):
+    i, head = transform.lookup_item(trans, [trans[0] for trans in self.sample.transforms])
+    assert numpy.equal(transform.apply(head, points), self.sample.points[i].coords).all(), 'illegal point set'
+    index = self.sample.index[i]
+    return self.array[index]
 
 class Elemwise(Array):
 
@@ -3246,7 +3278,8 @@ def rootcoords(ndims):
   return ApplyTransforms(PopHead(ndims))
 
 def sampled(data, ndims):
-  return Sampled(data)
+  warnings.deprecation('function.sampled is deprecated; use domain.sample(...).asfunction instead')
+  return OldSampled(data)
 
 @replace
 def opposite(arg):

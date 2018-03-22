@@ -34,3 +34,4 @@ What follows is an automatically generated API reference.
    library/transform
    library/warnings
    library/points
+   library/sample
