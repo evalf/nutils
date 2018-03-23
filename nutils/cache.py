@@ -25,23 +25,6 @@ The cache module.
 from . import config, log, types
 import os, numpy, functools, inspect, builtins, pathlib, pickle, itertools, hashlib, abc
 
-def property(f):
-  _self = object()
-  _temp = object()
-  _name = f.__name__
-  def property_getter(self):
-    try:
-      dictvalue = self.__dict__[_name]
-    except KeyError:
-      self.__dict__[_name] = _temp # placeholder for detection of cyclic dependencies
-      value = f(self)
-      self.__dict__[_name] = value if value is not self else _self
-    else:
-      assert dictvalue is not _temp, 'attribute {!r} requested during construction'.format(_name)
-      value = dictvalue if dictvalue is not _self else self
-    return value
-  return builtins.property(property_getter)
-
 class Wrapper:
   'function decorator that caches results by arguments'
 
