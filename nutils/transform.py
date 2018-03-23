@@ -141,6 +141,26 @@ class TransformItem(cache.Immutable):
   def swapdown(self, other):
     return None
 
+  def __lt__(self, other):
+    if not isinstance(other, TransformItem):
+      return NotImplemented
+    return self is not other and (type(self).__name__,)+self._args < (type(other).__name__,)+other._args
+
+  def __gt__(self, other):
+    if not isinstance(other, TransformItem):
+      return NotImplemented
+    return self is not other and (type(self).__name__,)+self._args > (type(other).__name__,)+other._args
+
+  def __le__(self, other):
+    if not isinstance(other, TransformItem):
+      return NotImplemented
+    return self is other or (type(self).__name__,)+self._args < (type(other).__name__,)+other._args
+
+  def __ge__(self, other):
+    if not isinstance(other, TransformItem):
+      return NotImplemented
+    return self is other or (type(self).__name__,)+self._args > (type(other).__name__,)+other._args
+
 class Bifurcate(TransformItem):
 
   def __init__(self, trans1:canonical, trans2:canonical):

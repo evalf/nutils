@@ -150,18 +150,6 @@ class Immutable(metaclass=ImmutableMeta):
   def __hash__(self):
     return self._hash
 
-  def __lt__(self, other):
-    return self is not other and (self.__class__.__name__,)+self._args < (other.__class__.__name__,)+other._args
-
-  def __gt__(self, other):
-    return self is not other and (self.__class__.__name__,)+self._args > (other.__class__.__name__,)+other._args
-
-  def __le__(self, other):
-    return self is other or (self.__class__.__name__,)+self._args < (other.__class__.__name__,)+other._args
-
-  def __ge__(self, other):
-    return self is other or (self.__class__.__name__,)+self._args > (other.__class__.__name__,)+other._args
-
   def __getstate__(self):
     raise Exception('getstate should never be called')
 
