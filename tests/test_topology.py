@@ -457,9 +457,9 @@ class elem_eval(TestCase):
     f = function.inverse(function.Guard(function.diagonalize(self.geom))) # fails at x=0 and y=0
     arrays = self.domain.elem_eval(f, ischeme='bezier3', separate=True)
     self.assertIsInstance(arrays, list)
-    self.assertTrue(len(arrays), 4)
+    self.assertEqual(len(arrays), 4)
+    isnan = numpy.zeros((4, 4), dtype=bool) # boolean matrix marking all failing bezier points
+    isnan[0,:] = True
+    isnan[:,0] = True
     for i, array in enumerate(arrays):
-      if i < 3:
-        self.assertTrue(numpy.isnan(array).all())
-      else:
-        self.assertFalse(numpy.isnan(array).any())
+      self.assertTrue(numpy.all(numpy.isnan(array).any(axis=(1,2)).reshape(3,3) == isnan[i//2:,i%2:][:3,:3]))

@@ -1044,7 +1044,7 @@ class Inverse(Array):
     return Inverse(func)
 
   def evalf(self, arr):
-    return numpy.linalg.inv(arr)
+    return numeric.inv(arr)
 
   def _derivative(self, var, seen):
     G = derivative(self.func, var, seen)
