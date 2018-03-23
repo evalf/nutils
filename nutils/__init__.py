@@ -31,4 +31,4 @@ long_version = ('{} "{}"' if version_name else '{}').format(version, version_nam
 _ = numpy.newaxis
 __all__ = ['_', 'numpy', 'core', 'numeric', 'element', 'function', 'expression',
   'mesh', 'plot', 'topology', 'util', 'matrix', 'parallel', 'log',
-  'cache', 'transform', 'solver', 'cli', 'warnings', 'config', 'types']
+  'cache', 'transform', 'solver', 'cli', 'warnings', 'config', 'types', 'points']

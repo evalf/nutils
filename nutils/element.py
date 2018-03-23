@@ -28,7 +28,7 @@ affine transformation. They also have a well defined reference coordinate
 system, and provide pointsets for purposes of integration and sampling.
 """
 
-from . import log, util, numpy, config, numeric, function, cache, transform, warnings, types, _
+from . import log, util, numpy, config, numeric, function, cache, transform, warnings, types, points, _
 import re, math, itertools, operator, functools
 
 
@@ -38,7 +38,7 @@ class Reference(types.Singleton):
   'reference element'
 
   __slots__ = 'ndims',
-  __cache__ = 'connectivity', 'edgechildren', 'ribbons', 'volume', 'centroid', '_linear_bernstein', 'getischeme'
+  __cache__ = 'connectivity', 'edgechildren', 'ribbons', 'volume', 'centroid', '_linear_bernstein', 'getpoints'
 
   @types.apply_annotations
   def __init__(self, ndims:int):
@@ -143,16 +143,12 @@ class Reference(types.Singleton):
     return tuple(ribbons)
 
   def getischeme(self, ischeme):
-    match = re.match('([a-zA-Z]+)(.*)', ischeme)
-    assert match, 'cannot parse integration scheme {!r}'.format(ischeme)
-    ptype, args = match.groups()
-    get = getattr(self, 'getischeme_'+ptype)
-    ipoints, iweights = get(eval(args)) if args else get()
-    return types.frozenarray(ipoints, copy=False), types.frozenarray(iweights, copy=False) if iweights is not None else None
+    ischeme, degree = parse_legacy_ischeme(ischeme)
+    points = self.getpoints(ischeme, degree)
+    return points.coords, getattr(points, 'weights', None)
 
-  @classmethod
-  def register(cls, ptype, func):
-    setattr(cls, 'getischeme_{}'.format(ptype), func)
+  def getpoints(self, ischeme, degree):
+    raise Exception('unsupported ischeme for {}: {!r}'.format(self.__class__.__name__, ischeme))
 
   def with_children(self, child_refs):
     child_refs = tuple(child_refs)
@@ -164,13 +160,12 @@ class Reference(types.Singleton):
 
   @property
   def volume(self):
-    ipoints, iweights = self.getischeme('gauss{}'.format(1))
-    return iweights.sum()
+    return self.getpoints('gauss', 1).weights.sum()
 
   @property
   def centroid(self):
-    ipoints, iweights = self.getischeme('gauss{}'.format(1))
-    return ipoints.T.dot(iweights)/iweights.sum()
+    gauss = self.getpoints('gauss', 1)
+    return gauss.coords.T.dot(gauss.weights) / gauss.weights.sum()
 
   def trim(self, levels, maxrefine, ndivisions):
     'trim element along levelset'
@@ -243,10 +238,10 @@ class Reference(types.Singleton):
     zero = 0
     for trans, edge in self.edges:
       if edge:
-        xe, we = edge.getischeme('gauss1')
-        w_normal = we[:,_] * trans.ext
+        gauss = edge.getpoints('gauss', 1)
+        w_normal = gauss.weights[:,_] * trans.ext
         zero += w_normal.sum(0)
-        volume += numeric.contract(trans.apply(xe), w_normal, axis=0)
+        volume += numeric.contract(trans.apply(gauss.coords), w_normal, axis=0)
     if numpy.greater(abs(zero), tol).any():
       print('divergence check failed: {} != 0'.format(zero))
     if numpy.greater(abs(volume - self.volume), tol).any():
@@ -259,7 +254,7 @@ class Reference(types.Singleton):
     allindices = numpy.arange(npoints)
     if len(ctransforms) == 1:
       assert not ctransforms[0]
-      return ((), self.getischeme('vertex{}'.format(maxrefine))[0], allindices),
+      return ((), self.getpoints('vertex', maxrefine).coords, allindices),
     if maxrefine == 0:
       raise Exception('maxrefine is too low')
     cbins = [[] for ichild in range(self.nchildren)]
@@ -339,7 +334,7 @@ class RevolutionReference(Reference):
   'modify gauss integration to always return a single point'
 
   __slots__ = ()
-  __cache__ = 'getischeme',
+  __cache__ = 'getpoints',
 
   def __init__(self):
     super().__init__(ndims=1)
@@ -359,8 +354,8 @@ class RevolutionReference(Reference):
   def simplices(self):
     return (transform.Identity(self.ndims), self),
 
-  def getischeme(self, ischeme):
-    return types.frozenarray([[0.]]), types.frozenarray([2 * numpy.pi])
+  def getpoints(self, ischeme, degree):
+    return points.CoordsWeightsPoints([[0.]], [2 * numpy.pi])
 
   def inside(self, point, eps=0):
     return True
@@ -397,13 +392,16 @@ class SimplexReference(Reference):
   def ribbons(self):
     return tuple(((iedge1,iedge2),(iedge2+1,iedge1)) for iedge1 in range(self.ndims+1) for iedge2 in range(iedge1,self.ndims))
 
-  def getischeme_vtk(self):
-    return self.vertices, None
-
-  def getischeme_vertex(self, n=0):
-    if n == 0:
-      return self.vertices, None
-    return self.getischeme_bezier(2**n+1)
+  def getpoints(self, ischeme, degree):
+    if ischeme == 'gauss':
+      return points.SimplexGaussPoints(self.ndims, degree if numeric.isint(degree) else sum(degree))
+    if ischeme == 'vtk':
+      return points.SimplexBezierPoints(self.ndims, 2)
+    if ischeme == 'vertex':
+      return points.SimplexBezierPoints(self.ndims, 2**(degree or 0) + 1)
+    if ischeme == 'bezier':
+      return points.SimplexBezierPoints(self.ndims, degree)
+    return super().getpoints(ischeme, degree)
 
   @property
   def simplices(self):
@@ -459,13 +457,13 @@ class PointReference(SimplexReference):
   '0D simplex'
 
   __slots__ = ()
-  __cache__ = 'getischeme',
+  __cache__ = 'getpoints',
 
   def __init__(self):
     super().__init__(ndims=0)
 
-  def getischeme(self, ischeme):
-    return types.frozenarray(numpy.empty([1,0])), types.frozenarray([1.])
+  def getpoints(self, ischeme, degree):
+    return points.CoordsWeightsPoints(numpy.empty([1,0]), [1.])
 
   def inside(self, point, eps=0):
     return True
@@ -485,16 +483,10 @@ class LineReference(SimplexReference):
     self._bernsteincache = [] # TEMPORARY
     super().__init__(ndims=1)
 
-  def getischeme_gauss(self, degree):
-    assert isinstance(degree, int) and degree >= 0
-    x, w = gauss(degree)
-    return x[:,_], w
-
-  def getischeme_uniform(self, n):
-    return (numpy.arange(.5,n) / n)[:,_], types.frozenarray.full([n], 1/n)
-
-  def getischeme_bezier(self, np):
-    return numpy.linspace(0, 1, np)[:,_], None
+  def getpoints(self, ischeme, degree):
+    if ischeme == 'uniform':
+      return points.CoordsUniformPoints(numpy.arange(.5, degree)[:,_] / degree, 1)
+    return super().getpoints(ischeme, degree)
 
   def nvertices_by_level(self, n):
     return 2**n + 1
@@ -517,64 +509,17 @@ class TriangleReference(SimplexReference):
   def __init__(self):
     super().__init__(ndims=2)
 
-  def getischeme_gauss(self, degree):
-    '''get integration scheme
-    http://www.cs.rpi.edu/~flaherje/pdf/fea6.pdf'''
-    if isinstance(degree, tuple):
-      assert len(degree) == self.ndims
-      degree = sum(degree)
-    assert isinstance(degree, int) and degree >= 0
-
-    I = [0,0],
-    J = [1,1],[0,1],[1,0]
-    K = [1,2],[2,0],[0,1],[2,1],[1,0],[0,2]
-
-    icw = [
-      (I, [1/3], 1)
-    ] if degree <= 1 else [
-      (J, [2/3,1/6], 1/3)
-    ] if degree == 2 else [
-      (I, [1/3], -9/16),
-      (J, [3/5,1/5], 25/48),
-    ] if degree == 3 else [
-      (J, [0.816847572980458,0.091576213509771], 0.109951743655322),
-      (J, [0.108103018168070,0.445948490915965], 0.223381589678011),
-    ] if degree == 4 else [
-      (I, [1/3], 0.225),
-      (J, [0.797426985353088,0.101286507323456], 0.125939180544827),
-      (J, [0.059715871789770,0.470142064105115], 0.132394152788506),
-    ] if degree == 5 else [
-      (J, [0.873821971016996,0.063089014491502], 0.050844906370207),
-      (J, [0.501426509658180,0.249286745170910], 0.116786275726379),
-      (K, [0.636502499121399,0.310352451033785,0.053145049844816], 0.082851075618374),
-    ] if degree == 6 else [
-      (I, [1/3.], -0.149570044467671),
-      (J, [0.479308067841924,0.260345966079038], 0.175615257433204),
-      (J, [0.869739794195568,0.065130102902216], 0.053347235608839),
-      (K, [0.638444188569809,0.312865496004875,0.048690315425316], 0.077113760890257),
-    ]
-
-    if degree > 7:
-      warnings.warn('inexact integration for polynomial of degree {}'.format(degree))
-
-    return numpy.concatenate([numpy.take(c,i) for i, c, w in icw], axis=0), \
-           numpy.concatenate([[w*.5] * len(i) for i, c, w in icw])
-
-  def getischeme_uniform(self, n):
-    points = numpy.arange(1./3, n) / n
-    nn = n**2
-    C = numpy.empty([2,n,n])
-    C[0] = points[:,_]
-    C[1] = points[_,:]
-    coords = C.reshape(2, nn)
-    flip = coords.sum(0) > 1
-    coords[:,flip] = 1 - coords[::-1,flip]
-    weights = types.frozenarray.full([nn], .5/nn)
-    return coords.T, weights
-
-  def getischeme_bezier(self, np):
-    points = numpy.linspace(0, 1, np)
-    return numpy.array([[x,y] for i, y in enumerate(points) for x in points[:np-i]]), None
+  def getpoints(self, ischeme, degree):
+    if ischeme == 'uniform':
+      p = numpy.arange(1./3, degree) / degree
+      C = numpy.empty([2, degree, degree])
+      C[0] = p[:,_]
+      C[1] = p[_,:]
+      coords = C.reshape(2, -1)
+      flip = numpy.greater(coords.sum(0), 1)
+      coords[:,flip] = 1 - coords[::-1,flip]
+      return points.CoordsUniformPoints(coords.T, .5)
+    return super().getpoints(ischeme, degree)
 
   def nvertices_by_level(self, n):
     m = 2**n + 1
@@ -631,9 +576,6 @@ class TetrahedronReference(SimplexReference):
     indis = numpy.arange(m)
     return numpy.array([[i,j,k] for k in indis for j in indis[:m-k] for i in indis[:m-j-k]])
 
-  def getischeme_vertex(self, n):
-    return self.getindices_vertex(n)/(2**n), None
-
   def nvertices_by_level(self, n):
     m = 2**n+1
     return ((m+2)*(m+1)*m)//6
@@ -662,70 +604,11 @@ class TetrahedronReference(SimplexReference):
 
     return numpy.array(cvals)
 
-  def getischeme_gauss(self, degree):
-    '''get integration scheme
-    http://www.cs.rpi.edu/~flaherje/pdf/fea6.pdf'''
-    if isinstance(degree, tuple):
-      assert len(degree) == 3
-      degree = sum(degree)
-    assert isinstance(degree, int) and degree >= 0
-
-    I = [0,0,0],
-    J = [1,1,1],[0,1,1],[1,1,0],[1,0,1]
-    K = [0,1,1],[1,0,1],[1,1,0],[1,0,0],[0,1,0],[0,0,1]
-    L = [0,1,1],[1,0,1],[1,1,0],[2,1,1],[1,2,1],[1,1,2],[1,0,2],[0,2,1],[2,1,0],[1,2,0],[0,1,2],[2,0,1]
-
-    icw = [
-      (I, [1/4], 1),
-    ] if degree == 1 else [
-      (J, [0.5854101966249685,0.1381966011250105], 1/4),
-    ] if degree == 2 else [
-      (I, [.25], -.8),
-      (J, [.5,1/6], .45),
-    ] if degree == 3 else [
-      (I, [.25], -.2368/3),
-      (J, [0.7857142857142857,0.0714285714285714], .1372/3),
-      (K, [0.1005964238332008,0.3994035761667992], .448/3),
-    ] if degree == 4 else [
-      (I, [.25], 0.1817020685825351),
-      (J, [0,1/3.], 0.0361607142857143),
-      (J, [8/11.,1/11.], 0.0698714945161738),
-      (K, [0.4334498464263357,0.0665501535736643], 0.0656948493683187),
-    ] if degree == 5 else [
-      (J, [0.3561913862225449,0.2146028712591517], 0.0399227502581679),
-      (J, [0.8779781243961660,0.0406739585346113], 0.0100772110553207),
-      (J, [0.0329863295731731,0.3223378901422757], 0.0553571815436544),
-      (L, [0.2696723314583159,0.0636610018750175,0.6030056647916491], 0.0482142857142857),
-    ] if degree == 6 else [
-      (I, [.25], 0.1095853407966528),
-      (J, [0.7653604230090441,0.0782131923303186],  0.0635996491464850),
-      (J, [0.6344703500082868,0.1218432166639044], -0.3751064406859797),
-      (J, [0.0023825066607383,0.3325391644464206],  0.0293485515784412),
-      (K, [0,.5], 0.0058201058201058),
-      (L, [.2,.1,.6], 0.1653439153439105)
-    ] if degree == 7 else [
-      (I, [.25], -0.2359620398477557),
-      (J, [0.6175871903000830,0.1274709365666390], 0.0244878963560562),
-      (J, [0.9037635088221031,0.0320788303926323], 0.0039485206398261),
-      (K, [0.4502229043567190,0.0497770956432810], 0.0263055529507371),
-      (K, [0.3162695526014501,0.1837304473985499], 0.0829803830550589),
-      (L, [0.0229177878448171,0.2319010893971509,0.5132800333608811], 0.0254426245481023),
-      (L, [0.7303134278075384,0.0379700484718286,0.1937464752488044], 0.0134324384376852),
-    ]
-
-    if degree > 8:
-      warnings.warn('inexact integration for polynomial of degree {}'.format(degree))
-
-    return numpy.concatenate([numpy.take(c,i) for i, c, w in icw], axis=0), \
-           numpy.concatenate([[w/6] * len(i) for i, c, w in icw])
-
 class TensorReference(Reference):
   'tensor reference'
 
   __slots__ = 'ref1', 'ref2'
-  __cache__ = 'vertices', 'edge_transforms', 'ribbons', 'child_transforms', 'getischeme', 'get_poly_coeffs'
-
-  _re_ischeme = re.compile('([a-zA-Z]+)(.*)')
+  __cache__ = 'vertices', 'edge_transforms', 'ribbons', 'child_transforms', 'getpoints', 'get_poly_coeffs'
 
   def __init__(self, ref1, ref2):
     assert not isinstance(ref1, TensorReference)
@@ -761,51 +644,32 @@ class TensorReference(Reference):
   def __str__(self):
     return '{}*{}'.format(self.ref1, self.ref2)
 
-  def getischeme_vtk(self):
+  def getpoints(self, ischeme, degree):
     if self.ref1.ndims == 0:
-      assert self.ref1.nverts == 1
-      points, weights = self.ref2.getischeme_vtk()
-    elif self.ref1.ndims == self.ref2.ndims == 1:
-      points = numpy.empty([2, 2, 2])
-      points[...,:1] = self.ref1.vertices[:,_]
-      points[0,:,1:] = self.ref2.vertices
-      points[1,:,1:] = self.ref2.vertices[::-1]
+      return self.ref2.getpoints(ischeme, degree)
+    if self.ref2.ndims == 0:
+      return self.ref1.getpoints(ischeme, degree)
+    if ischeme != 'vtk':
+      ischeme1, ischeme2 = ischeme.split('*', 1) if '*' in ischeme else (ischeme, ischeme)
+      degree1 = degree if not isinstance(degree, tuple) else degree[0]
+      degree2 = degree if not isinstance(degree, tuple) else degree[1] if len(degree) == 2 else degree[1:]
+      return points.TensorPoints(self.ref1.getpoints(ischeme1, degree1), self.ref2.getpoints(ischeme2, degree2))
+    if self.ref1.ndims == self.ref2.ndims == 1:
+      coords = numpy.empty([2, 2, 2])
+      coords[...,:1] = self.ref1.vertices[:,_]
+      coords[0,:,1:] = self.ref2.vertices
+      coords[1,:,1:] = self.ref2.vertices[::-1]
     elif self.ref1.ndims <= 1 and self.ref2.ndims >= 1:
-      points = numpy.empty([self.ref1.nverts, self.ref2.nverts, self.ndims])
-      points[...,:self.ref1.ndims] = self.ref1.vertices[:,_]
-      points[...,self.ref1.ndims:] = self.ref2.vertices[_,:]
+      coords = numpy.empty([self.ref1.nverts, self.ref2.nverts, self.ndims])
+      coords[...,:self.ref1.ndims] = self.ref1.vertices[:,_]
+      coords[...,self.ref1.ndims:] = self.ref2.vertices[_,:]
     elif self.ref1.ndims >= 1 and self.ref2.ndims <= 1:
-      points = numpy.empty([self.ref2.nverts, self.ref1.nverts, self.ndims])
-      points[...,:self.ref1.ndims] = self.ref1.vertices[_,:]
-      points[...,self.ref1.ndims:] = self.ref2.vertices[:,_]
+      coords = numpy.empty([self.ref2.nverts, self.ref1.nverts, self.ndims])
+      coords[...,:self.ref1.ndims] = self.ref1.vertices[_,:]
+      coords[...,self.ref1.ndims:] = self.ref2.vertices[:,_]
     else:
       raise NotImplementedError
-    return types.frozenarray(points.reshape(self.nverts, self.ndims), copy=False), None
-
-  def getischeme(self, ischeme):
-    if '*' in ischeme:
-      ischeme1, ischeme2 = ischeme.split('*', 1)
-    else:
-      match = self._re_ischeme.match(ischeme)
-      assert match, 'cannot parse integration scheme {!r}'.format(ischeme)
-      ptype, args = match.groups()
-      get = getattr(self, 'getischeme_'+ptype, None)
-      if get:
-        return get(eval(args)) if args else get()
-      if args and ',' in args:
-        args = eval(args)
-        assert len(args) == self.ndims
-        ischeme1 = ptype+','.join(str(n) for n in args[:self.ref1.ndims])
-        ischeme2 = ptype+','.join(str(n) for n in args[self.ref1.ndims:])
-      else:
-        ischeme1 = ischeme2 = ischeme
-    ipoints1, iweights1 = self.ref1.getischeme(ischeme1)
-    ipoints2, iweights2 = self.ref2.getischeme(ischeme2)
-    ipoints = numpy.empty((len(ipoints1), len(ipoints2), self.ndims))
-    ipoints[:,:,0:self.ref1.ndims] = ipoints1[:,_,:self.ref1.ndims]
-    ipoints[:,:,self.ref1.ndims:self.ndims] = ipoints2[_,:,:self.ref2.ndims]
-    iweights = types.frozenarray((iweights1[:,_] * iweights2[_,:]).ravel(), copy=False) if iweights1 is not None and iweights2 is not None else None
-    return types.frozenarray(ipoints.reshape(len(ipoints1) * len(ipoints2), self.ndims), copy=False), iweights
+    return points.CoordsPoints(coords.reshape(self.nverts, self.ndims))
 
   @property
   def edge_transforms(self):
@@ -937,39 +801,19 @@ class Cone(Reference):
       edge_refs.append(getsimplex(0))
     return edge_refs
 
-  def getischeme_gauss(self, degree):
+  def getpoints(self, ischeme, degree):
     if self.nverts == self.ndims+1: # simplex
-      spoints, sweights = getsimplex(self.ndims).getischeme_gauss(degree)
-      offset = self.vertices[0,:]
-      linear = self.vertices[1:,:] - offset
-      points = numpy.dot(spoints, linear) + offset
-      weights = sweights * abs(numpy.linalg.det(linear))
-    else:
-      epoints, eweights = self.edgeref.getischeme('gauss{}'.format(degree))
-      tpoints, tweights = getsimplex(1).getischeme_gauss(degree + self.ndims - 1)
-      tx, = tpoints.T
-      points = (tx[:,_,_] * (self.etrans.apply(epoints)-self.tip)[_,:,:] + self.tip).reshape(-1, self.ndims)
-      wx = tx**(self.ndims-1) * tweights * self.extnorm * self.height
-      weights = (eweights[_,:] * wx[:,_]).ravel()
-    return points, weights
-
-  def getischeme_bezier(self, degree):
-    assert self.nverts == self.ndims+1
-    spoints, none = getsimplex(self.ndims).getischeme_bezier(degree)
-    offset = self.vertices[0,:]
-    linear = self.vertices[1:,:] - offset
-    return numpy.dot(spoints, linear) + offset, None
-
-  def getischeme_vtk(self):
-    if self.nverts == 4 and self.ndims==3: # tetrahedron
-      I = slice(None)
-    elif self.nverts == 5 and self.ndims==3: # pyramid
-      I = numpy.array([1,2,4,3,0])
-    elif self.nverts == 3 and self.ndims==2: # triangle
-      I = slice(None)
-    else:
-      raise Exception('invalid number of points: {}'.format(self.nverts))
-    return self.vertices[I], None
+      simplex = getsimplex(self.ndims)
+      trans = transform.Square((self.etrans.apply(self.edgeref.vertices) - self.tip).T, self.tip)
+      return points.TransformPoints(simplex.getpoints(ischeme, degree), trans)
+    if ischeme == 'gauss':
+      epoints = self.edgeref.getpoints('gauss', degree)
+      tx, tw = gauss(degree + self.ndims - 1)
+      wx = tx**(self.ndims-1) * tw * self.extnorm * self.height
+      return points.CoordsWeightsPoints((tx[:,_,_] * (self.etrans.apply(epoints.coords)-self.tip)[_,:,:] + self.tip).reshape(-1, self.ndims), (epoints.weights[_,:] * wx[:,_]).ravel())
+    if ischeme == 'vtk' and self.nverts == 5 and self.ndims==3: # pyramid
+      return points.CoordsPoints(self.vertices[[1,2,4,3,0]])
+    return super().getpoints(ischeme, degree)
 
   @property
   def simplices(self):
@@ -1007,8 +851,8 @@ class OwnChildReference(Reference):
   def edge_refs(self):
     return [OwnChildReference(edge) for edge in self.baseref.edge_refs]
 
-  def getischeme(self, ischeme):
-    return self.baseref.getischeme(ischeme)
+  def getpoints(self, ischeme, degree):
+    return self.baseref.getpoints(ischeme, degree)
 
   @property
   def simplices(self):
@@ -1086,8 +930,7 @@ class WithChildrenReference(Reference):
     npoints = 0
     for childindex, child in enumerate(self.child_refs):
       if child:
-        points, weights = child.getischeme('vertex{}'.format(i-1))
-        assert weights is None
+        points = child.getpoints('vertex', i-1).coords
         if childindex == ichild:
           rng = numpy.arange(npoints, npoints+len(points))
         npoints += len(points)
@@ -1095,26 +938,10 @@ class WithChildrenReference(Reference):
         rng = numpy.array([],dtype=int)
     return npoints, rng
 
-  def getischeme(self, ischeme):
-    'get integration scheme'
-
-    if ischeme.startswith('vertex'):
-      return self.baseref.getischeme(ischeme)
-
-    allcoords = []
-    allweights = []
-    for trans, ref in self.children:
-      if ref:
-        points, weights = ref.getischeme(ischeme)
-        allcoords.append(trans.apply(points))
-        if weights is not None:
-          allweights.append(weights * abs(float(trans.det)))
-
-    coords = numpy.concatenate(allcoords, axis=0)
-    weights = numpy.concatenate(allweights, axis=0) \
-      if len(allweights) == len(allcoords) else None
-
-    return coords, weights
+  def getpoints(self, ischeme, degree):
+    if ischeme == 'vertex':
+      return self.baseref.getpoints(ischeme, degree)
+    return points.ConcatPoints(points.TransformPoints(ref.getpoints(ischeme, degree), trans) for trans, ref in self.children if ref)
 
   @property
   def simplices(self):
@@ -1264,16 +1091,10 @@ class MosaicReference(Reference):
   def simplices(self):
     return [simplex for subvol in self.subrefs for simplex in subvol.simplices]
 
-  def getischeme(self, ischeme):
-    'get integration scheme'
-
-    if ischeme.startswith('vertex'):
-      return self.baseref.getischeme(ischeme)
-
-    allpoints, allweights = zip(*[subvol.getischeme(ischeme) for subvol in self.subrefs])
-    points = numpy.concatenate(allpoints, axis=0)
-    weights = None if any(w is None for w in allweights) else numpy.concatenate(allweights, axis=0)
-    return points, weights
+  def getpoints(self, ischeme, degree):
+    if ischeme == 'vertex':
+      return self.baseref.getpoints(ischeme, degree)
+    return points.ConcatPoints(subvol.getpoints(ischeme, degree) for subvol in self.subrefs)
 
   def inside(self, point, eps=0):
     return any(subref.inside(point, eps=eps) for subref in self.subrefs)
@@ -1287,20 +1108,19 @@ class MosaicReference(Reference):
   def get_edge_dofs(self, degree, iedge):
     return self.baseref.get_edge_dofs(degree, iedge)
 
-# UTILITY FUNCTIONS
 
-_gauss = []
+## UTILITY FUNCTIONS
+
 def gauss(degree):
-  n = degree // 2
-  while len(_gauss) <= n:
-    _gauss.append(None)
-  gaussn = _gauss[n]
-  if gaussn is None:
-    k = numpy.arange(n) + 1
-    d = k / numpy.sqrt(4*k**2-1)
-    x, w = numpy.linalg.eigh(numpy.diagflat(d,-1)) # eigh operates (by default) on lower triangle
-    _gauss[n] = gaussn = types.frozenarray((x+1) * .5, copy=False), types.frozenarray(w[0]**2, copy=False)
-  return gaussn
+  warnings.deprecation('element.gauss(n) is deprecated; use points.gauss(n//2) instead')
+  return points.gauss(degree//2)
+
+def parse_legacy_ischeme(ischeme):
+  matches = list(map(re.compile('^([a-zA-Z]+)(.*)$').match, ischeme.split('*')))
+  assert all(matches), 'cannot parse integration scheme {!r}'.format(ischeme)
+  ischeme = '*'.join(match.group(1) for match in matches)
+  degree = eval(','.join(match.group(2) or 'None' for match in matches))
+  return ischeme, degree
 
 def getsimplex(ndims):
   Simplex_by_dim = PointReference, LineReference, TriangleReference, TetrahedronReference
