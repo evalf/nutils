@@ -1,8 +1,8 @@
 #! /usr/bin/env python3
 
-from nutils import mesh, plot, cli, function, log, numeric, solver
+from nutils import mesh, util, cli, function, log, numeric, solver, export
 import numpy, unittest
-
+from matplotlib import collections
 
 def main(
     nelems: 'number of elements' = 10,
@@ -39,10 +39,14 @@ def main(
 
   # plot solution
   if figures:
-    points, colors = domain.elem_eval([ns.x, ns.u], ischeme='bezier9', separate=True)
-    with plot.PyPlot('solution', index=nelems) as plt:
-      plt.mesh(points, colors, cmap='jet')
-      plt.colorbar()
+    bezier = domain.sample('bezier', 9)
+    x, u = bezier.eval([ns.x, ns.u])
+    with export.mplfigure('solution') as fig:
+      ax = fig.add_subplot(111, aspect='equal')
+      im = ax.tripcolor(x[:,0], x[:,1], bezier.tri, u, shading='gouraud', cmap='jet')
+      ax.add_collection(collections.LineCollection(x[bezier.hull], colors='k', linewidths=.1))
+      ax.autoscale(enable=True, axis='both', tight=True)
+      fig.colorbar(im)
 
   # evaluate error against exact solution fx fy
   err = domain.integrate('(u - fx fy)^2' @ ns, geometry=ns.x, degree=degree*2)**.5
