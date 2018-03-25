@@ -161,6 +161,14 @@ class Sample(types.Singleton):
 
     return function.Sampled(self, array)
 
+  @property
+  def tri(self):
+    return types.frozenarray(numpy.concatenate([index.take(points.tri) for points, index in zip(self.points, self.index)]), copy=False)
+
+  @property
+  def hull(self):
+    return types.frozenarray(numpy.concatenate([index.take(points.hull) for points, index in zip(self.points, self.index)]), copy=False)
+
 strictsample = types.strict[Sample]
 
 class Integral(types.Singleton):

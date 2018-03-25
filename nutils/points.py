@@ -24,10 +24,24 @@ _ = numpy.newaxis
 
 class Points(types.Singleton):
 
+  __cache__ = 'hull',
+
   @types.apply_annotations
   def __init__(self, npoints:types.strictint, ndims:types.strictint):
     self.npoints = npoints
     self.ndims = ndims
+
+  @property
+  def tri(self):
+    raise Exception('tri not defined')
+
+  @property
+  def hull(self):
+    edges = set()
+    iedges = numpy.array(list(itertools.combinations(range(self.ndims+1), self.ndims)))
+    for tri in self.tri:
+      edges.symmetric_difference_update(map(tuple, numpy.sort(tri[iedges], axis=1)))
+    return numpy.array(sorted(edges))
 
 strictpoints = types.strict[Points]
 
@@ -54,7 +68,7 @@ class CoordsUniformPoints(CoordsPoints):
 
 class TensorPoints(Points):
 
-  __cache__ = 'coords', 'weights'
+  __cache__ = 'coords', 'weights', 'tri', 'hull'
 
   @types.apply_annotations
   def __init__(self, points1:strictpoints, points2:strictpoints):
@@ -73,6 +87,22 @@ class TensorPoints(Points):
   def weights(self):
     return types.frozenarray((self.points1.weights[:,_] * self.points2.weights[_,:]).ravel(), copy=False)
 
+  @property
+  def tri(self):
+    if self.points1.ndims == 1:
+      tri12 = self.points1.tri[:,_,:,_] * self.points2.npoints + self.points2.tri[_,:,_,:] # ntri1 x ntri2 x 2 x ndims
+      return types.frozenarray(numeric.overlapping(tri12.reshape(-1, 2*self.ndims), n=self.ndims+1).reshape(-1, self.ndims+1), copy=False)
+    return super().tri
+
+  @property
+  def hull(self):
+    if self.points1.ndims == 1:
+      hull1 = self.points1.hull[:,_,:,_] * self.points2.npoints + self.points2.tri[_,:,_,:] # 2 x ntri2 x 1 x ndims
+      hull2 = self.points1.tri[:,_,:,_] * self.points2.npoints + self.points2.hull[_,:,_,:] # ntri1 x nhull2 x 2 x ndims-1
+      hull = numpy.concatenate([hull1.reshape(-1, self.ndims), numeric.overlapping(hull2.reshape(-1, 2*(self.ndims-1)), n=self.ndims).reshape(-1, self.ndims)])
+      return types.frozenarray(hull, copy=False)
+    return super().hull
+
 class SimplexGaussPoints(CoordsWeightsPoints):
 
   @types.apply_annotations
@@ -81,10 +111,32 @@ class SimplexGaussPoints(CoordsWeightsPoints):
 
 class SimplexBezierPoints(CoordsPoints):
 
+  __cache__ = 'tri', 'hull'
+
   @types.apply_annotations
-  def __init__(self, ndims:types.strictint, npoints:types.strictint):
-    linspace = numpy.linspace(0, 1, npoints)
-    super().__init__([linspace[list(index)[::-1]] for index in numpy.ndindex(*[npoints] * ndims) if sum(index) < npoints])
+  def __init__(self, ndims:types.strictint, n:types.strictint):
+    self.n = n
+    linspace = numpy.linspace(0, 1, n)
+    super().__init__([linspace[list(index)[::-1]] for index in numpy.ndindex(*[n] * ndims) if sum(index) < n])
+
+  @property
+  def tri(self):
+    if self.ndims == 1:
+      return types.frozenarray(numeric.overlapping(numpy.arange(self.n)), copy=False)
+    if self.ndims == 2:
+      n = self.n
+      vert1 = [((2*n-i+1)*i)//2 + numpy.array([j,j+1,j+n-i]) for i in range(n-1) for j in range(n-i-1)]
+      vert2 = [((2*n-i+1)*i)//2 + numpy.array([j+1,j+n-i+1,j+n-i]) for i in range(n-1) for j in range(n-i-2)]
+      return types.frozenarray(vert1 + vert2, copy=False)
+    return super().tri
+
+  @property
+  def hull(self):
+    if self.ndims == 2:
+      n = self.n
+      hull = numpy.concatenate([numpy.arange(n), numpy.arange(n-1,0,-1).cumsum()+n-1, numpy.arange(n+1,2,-1).cumsum()[::-1]-n-1])
+      return types.frozenarray(numeric.overlapping(hull), copy=False)
+    return super().hull
 
 class TransformPoints(Points):
 
@@ -104,9 +156,17 @@ class TransformPoints(Points):
   def weights(self):
     return self.points.weights * abs(float(self.trans.det))
 
+  @property
+  def tri(self):
+    return self.points.tri
+
+  @property
+  def hull(self):
+    return self.points.hull
+
 class ConcatPoints(Points):
 
-  __cache__ = 'coords', 'weights'
+  __cache__ = 'coords', 'weights', 'tri', 'hull'
 
   @types.apply_annotations
   def __init__(self, allpoints:types.tuple[strictpoints]):
@@ -120,6 +180,21 @@ class ConcatPoints(Points):
   @property
   def weights(self):
     return types.frozenarray(numpy.concatenate([points.weights for points in self.allpoints]), copy=False)
+
+  @property
+  def offset_points(self):
+    n = 0
+    for points in self.allpoints:
+      yield n, points
+      n += points.npoints
+
+  @property
+  def tri(self):
+    return types.frozenarray(numpy.concatenate([points.tri + n for n, points in self.offset_points]), copy=False)
+
+  @property
+  def hull(self):
+    return types.frozenarray(numpy.concatenate([points.hull + n for n, points in self.offset_points]), copy=False)
 
 ## UTILITY FUNCTIONS
 
