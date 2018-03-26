@@ -182,7 +182,7 @@ class Topology(types.Singleton):
       slices = []
       npoints = 0
       for elem in log.iter('elem', self):
-        ipoints, iweights = ischeme[elem] if isinstance(ischeme,collections.abc.Mapping) else fcache[elem.reference.getischeme](ischeme)
+        ipoints, iweights = ischeme[elem] if isinstance(ischeme,collections.abc.Mapping) else elem.reference.getischeme(ischeme)
         np = len(ipoints)
         slices.append(slice(npoints,npoints+np))
         npoints += np
@@ -206,7 +206,7 @@ class Topology(types.Singleton):
       arguments = {}
 
     for ielem, elem in parallel.pariter(log.enumerate('elem', self), nprocs=nprocs):
-      ipoints, iweights = ischeme[elem] if isinstance(ischeme,collections.abc.Mapping) else fcache[elem.reference.getischeme](ischeme)
+      ipoints, iweights = ischeme[elem] if isinstance(ischeme,collections.abc.Mapping) else elem.reference.getischeme(ischeme)
       s = slices[ielem],
       try:
         for ifunc, index, data in idata.eval(_transforms=(elem.transform, elem.opposite), _points=ipoints, _cache=fcache, **arguments):
@@ -229,7 +229,7 @@ class Topology(types.Singleton):
       if geometry:
         retvals = [function.elemwise({elem.transform: value for elem, value in zip(self, retval)}, shape=retval.shape[1:]) for retval in retvals]
       else:
-        tsp = [(elem.transform, s, fcache[elem.reference.getischeme](ischeme)[0]) for elem, s in zip(self, slices)]
+        tsp = [(elem.transform, s, elem.reference.getischeme(ischeme)[0]) for elem, s in zip(self, slices)]
         retvals = [function.sampled({trans: (types.frozenarray(retval[s], copy=False), points) for trans, s, points in tsp}, self.ndims) for retval in retvals]
     elif separate:
       retvals = [[retval[s] for s in slices] for retval in retvals]
@@ -306,7 +306,7 @@ class Topology(types.Singleton):
 
     valueindexfunc = function.Tuple(function.Tuple([value]+list(index)) for value, index in zip(values, indices))
     for ielem, elem in parallel.pariter(log.enumerate('elem', self), nprocs=nprocs):
-      ipoints, iweights = ischeme[elem] if isinstance(ischeme,collections.abc.Mapping) else fcache[elem.reference.getischeme](ischeme)
+      ipoints, iweights = ischeme[elem] if isinstance(ischeme,collections.abc.Mapping) else elem.reference.getischeme(ischeme)
       assert iweights is not None, 'no integration weights found'
       for iblock, (intdata, *indices) in enumerate(valueindexfunc.eval(_transforms=(elem.transform, elem.opposite), _points=ipoints, _cache=fcache, **arguments)):
         s = slice(*offsets[iblock,ielem:ielem+2])
@@ -506,7 +506,7 @@ class Topology(types.Singleton):
     levelset = function.zero_argument_derivatives(levelset).simplified
     if leveltopo is None:
       ischeme = 'vertex{}'.format(maxrefine)
-      refs = [elem.reference.trim(levelset.eval(_transforms=(elem.transform, elem.opposite), _points=fcache[elem.reference.getischeme](ischeme)[0], _cache=fcache, **arguments), maxrefine=maxrefine, ndivisions=ndivisions) for elem in log.iter('elem', self)]
+      refs = [elem.reference.trim(levelset.eval(_transforms=(elem.transform, elem.opposite), _points=elem.reference.getischeme(ischeme)[0], _cache=fcache, **arguments), maxrefine=maxrefine, ndivisions=ndivisions) for elem in log.iter('elem', self)]
     else:
       log.info('collecting leveltopo elements')
       bins = [[] for ielem in range(len(self))]

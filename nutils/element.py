@@ -311,6 +311,7 @@ class RevolutionReference(Reference):
   'modify gauss integration to always return a single point'
 
   __slots__ = ()
+  __cache__ = 'getischeme',
 
   def __init__(self):
     super().__init__(ndims=1)
@@ -445,6 +446,7 @@ class PointReference(SimplexReference):
   '0D simplex'
 
   __slots__ = ()
+  __cache__ = 'getischeme',
 
   def __init__(self):
     super().__init__(ndims=0)
@@ -708,7 +710,7 @@ class TensorReference(Reference):
   'tensor reference'
 
   __slots__ = 'ref1', 'ref2'
-  __cache__ = 'vertices', 'edge_transforms', 'ribbons', 'child_transforms'
+  __cache__ = 'vertices', 'edge_transforms', 'ribbons', 'child_transforms', 'getischeme'
 
   _re_ischeme = re.compile('([a-zA-Z]+)(.*)')
 
