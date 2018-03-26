@@ -341,7 +341,7 @@ class SimplexReference(Reference):
   'simplex reference'
 
   __slots__ = ()
-  __cache__ = 'edge_refs', 'edge_transforms', 'permutation_transforms', 'ribbons'
+  __cache__ = 'edge_refs', 'edge_transforms', 'permutation_transforms', 'ribbons', '_get_poly_coeffs_bernstein', '_get_poly_coeffs_lagrange', '_integer_barycentric_coordinates'
 
   @property
   def vertices(self):
@@ -402,7 +402,7 @@ class SimplexReference(Reference):
       raise ValueError('basis {!r} undefined on {}'.format(basis, type(self).__qualname__))
 
   def _integer_barycentric_coordinates(self, degree):
-    return (
+    return tuple(
       (degree-sum(i),*i[::-1])
       for i in itertools.product(*[range(degree+1)]*self.ndims)
       if sum(i) <= degree)
@@ -410,7 +410,7 @@ class SimplexReference(Reference):
   def _get_poly_coeffs_bernstein(self, degree):
     ndofs = self.get_ndofs(degree)
     if self.ndims == 0:
-      return numpy.ones((ndofs,), dtype=int)
+      return types.frozenarray(numpy.ones((ndofs,), dtype=int), copy=False)
     coeffs = numpy.zeros((ndofs,)+(degree+1,)*self.ndims, dtype=int)
     for i, p in enumerate(self._integer_barycentric_coordinates(degree)):
       p = p[1:]
@@ -710,7 +710,7 @@ class TensorReference(Reference):
   'tensor reference'
 
   __slots__ = 'ref1', 'ref2'
-  __cache__ = 'vertices', 'edge_transforms', 'ribbons', 'child_transforms', 'getischeme'
+  __cache__ = 'vertices', 'edge_transforms', 'ribbons', 'child_transforms', 'getischeme', 'get_poly_coeffs'
 
   _re_ischeme = re.compile('([a-zA-Z]+)(.*)')
 
