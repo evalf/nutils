@@ -128,6 +128,8 @@ def linearfrom(chain, ndims):
 
 class TransformItem(types.Singleton):
 
+  __slots__ = 'todims', 'fromdims'
+
   @types.apply_annotations
   def __init__(self, todims, fromdims:int):
     super().__init__()
@@ -163,7 +165,12 @@ class TransformItem(types.Singleton):
       return NotImplemented
     return self is other or (type(self).__name__,)+self._args > (type(other).__name__,)+other._args
 
+stricttransformitem = types.strict[TransformItem]
+stricttransform = types.tuple[stricttransformitem]
+
 class Bifurcate(TransformItem):
+
+  __slots__ = 'trans1', 'trans2'
 
   @types.apply_annotations
   def __init__(self, trans1:canonical, trans2:canonical):
@@ -179,6 +186,8 @@ class Bifurcate(TransformItem):
     return apply(self.trans1, points), apply(self.trans2, points)
 
 class Matrix(TransformItem):
+
+  __slots__ = 'linear', 'offset'
 
   @types.apply_annotations
   def __init__(self, linear:types.frozenarray, offset:types.frozenarray):
@@ -206,6 +215,9 @@ class Matrix(TransformItem):
 
 class Square(Matrix):
 
+  __slots__ = '_transform_matrix',
+  __cache__ ='det',
+
   @types.apply_annotations
   def __init__(self, linear:types.frozenarray, offset:types.frozenarray):
     assert linear.shape[0] == linear.shape[1]
@@ -215,7 +227,7 @@ class Square(Matrix):
   def invapply(self, points):
     return types.frozenarray(numpy.linalg.solve(self.linear, points - self.offset), copy=False)
 
-  @cache.property
+  @property
   def det(self):
     return numeric.det_exact(self.linear)
 
@@ -249,6 +261,8 @@ class Square(Matrix):
 
 class Shift(Square):
 
+  __slots__ = ()
+
   det = 1.
 
   @types.apply_annotations
@@ -267,6 +281,8 @@ class Shift(Square):
 
 class Identity(Shift):
 
+  __slots__ = ()
+
   def __init__(self, ndims):
     super().__init__(numpy.zeros(ndims))
 
@@ -280,6 +296,8 @@ class Identity(Shift):
     return 'x'
 
 class Scale(Square):
+
+  __slots__ = 'scale',
 
   @types.apply_annotations
   def __init__(self, scale:float, offset:types.frozenarray):
@@ -308,13 +326,16 @@ class Scale(Square):
 
 class Updim(Matrix):
 
+  __slots__ = 'isflipped',
+  __cache__ = 'ext',
+
   @types.apply_annotations
   def __init__(self, linear:types.frozenarray, offset:types.frozenarray, isflipped:bool):
     assert linear.shape[0] == linear.shape[1] + 1
     self.isflipped = isflipped
     super().__init__(linear, offset)
 
-  @cache.property
+  @property
   def ext(self):
     ext = numeric.ext(self.linear)
     return types.frozenarray(-ext if self.isflipped else ext, copy=False)
@@ -328,6 +349,8 @@ class Updim(Matrix):
       return Identity(self.todims), self
 
 class SimplexEdge(Updim):
+
+  __slots__ = 'iedge',
 
   swap = (
     ((1,0), (2,0), (3,0), (7,1)),
@@ -363,6 +386,8 @@ class SimplexEdge(Updim):
 
 class SimplexChild(Square):
 
+  __slots__ = 'ichild',
+
   def __init__(self, ndims, ichild):
     self.ichild = ichild
     if ichild <= ndims:
@@ -389,6 +414,8 @@ class SimplexChild(Square):
 
 class Slice(Matrix):
 
+  __slots__ = 's',
+
   @types.apply_annotations
   def __init__(self, i1:int, i2:int, fromdims:int):
     todims = i2-i1
@@ -401,6 +428,8 @@ class Slice(Matrix):
 
 class ScaledUpdim(Updim):
 
+  __slots__ = 'trans1', 'trans2'
+
   def __init__(self, trans1, trans2):
     assert trans1.todims == trans1.fromdims == trans2.todims == trans2.fromdims + 1
     self.trans1 = trans1
@@ -412,6 +441,8 @@ class ScaledUpdim(Updim):
       return self.trans1, self.trans2
 
 class TensorEdge1(Updim):
+
+  __slots__ = 'trans',
 
   def __init__(self, trans1, ndims2):
     self.trans = trans1
@@ -436,6 +467,8 @@ class TensorEdge1(Updim):
 
 class TensorEdge2(Updim):
 
+  __slots__ = 'trans'
+
   def __init__(self, ndims1, trans2):
     self.trans = trans2
     super().__init__(linear=numeric.blockdiag([numpy.eye(ndims1), trans2.linear]), offset=numpy.concatenate([numpy.zeros(ndims1), trans2.offset]), isflipped=trans2.isflipped^(ndims1%2))
@@ -459,6 +492,9 @@ class TensorEdge2(Updim):
 
 class TensorChild(Square):
 
+  __slots__ = 'trans1', 'trans2'
+  __cache__ = 'det',
+
   def __init__(self, trans1, trans2):
     self.trans1 = trans1
     self.trans2 = trans2
@@ -466,17 +502,21 @@ class TensorChild(Square):
     offset = numpy.concatenate([trans1.offset, trans2.offset])
     super().__init__(linear, offset)
 
-  @cache.property
+  @property
   def det(self):
     return self.trans1.det * self.trans2.det
 
 class VertexTransform(TransformItem):
+
+  __slots__ = ()
 
   @types.apply_annotations
   def __init__(self, fromdims:int):
     super().__init__(None, fromdims)
 
 class MapTrans(VertexTransform):
+
+  __slots__ = 'vertices', 'linear', 'offset'
 
   @types.apply_annotations
   def __init__(self, linear:types.frozenarray, offset:types.frozenarray, vertices:types.frozenarray):
@@ -492,6 +532,8 @@ class MapTrans(VertexTransform):
     return ','.join(str(v) for v in self.vertices)
 
 class RootTrans(VertexTransform):
+
+  __slots__ = 'I', 'w', 'name'
 
   @types.apply_annotations
   def __init__(self, name, shape:tuple):
@@ -512,6 +554,8 @@ class RootTrans(VertexTransform):
     return repr(self.name + '[*]')
 
 class RootTransEdges(VertexTransform):
+
+  __slots__ = 'shape', 'name'
 
   @types.apply_annotations
   def __init__(self, name, shape:tuple):
