@@ -166,4 +166,222 @@ class nutils_hash(TestCase):
     with self.assertRaises(TypeError):
       nutils.types.nutils_hash([])
 
+class CacheMeta(TestCase):
+
+  def test_property(self):
+
+    for withslots in False, True:
+      with self.subTest(withslots=withslots):
+
+        class T(metaclass=nutils.types.CacheMeta):
+          if withslots:
+            __slots__ = ()
+          __cache__ = 'x',
+          @property
+          def x(self):
+            nonlocal ncalls
+            ncalls += 1
+            return 1
+
+        ncalls = 0
+        t = T()
+        self.assertEqual(ncalls, 0)
+        self.assertEqual(t.x, 1)
+        self.assertEqual(ncalls, 1)
+        self.assertEqual(t.x, 1)
+        self.assertEqual(ncalls, 1)
+
+  def test_set_property(self):
+
+    class T(metaclass=nutils.types.CacheMeta):
+      __cache__ = 'x',
+      @property
+      def x(self):
+        return 1
+
+    t = T()
+    with self.assertRaises(AttributeError):
+      t.x = 1
+
+  def test_del_property(self):
+
+    class T(metaclass=nutils.types.CacheMeta):
+      __cache__ = 'x',
+      @property
+      def x(self):
+        return 1
+
+    t = T()
+    with self.assertRaises(AttributeError):
+      del t.x
+
+  def test_method_without_args(self):
+
+    for withslots in False, True:
+      with self.subTest(withslots=withslots):
+
+        class T(metaclass=nutils.types.CacheMeta):
+          if withslots:
+            __slots__ = ()
+          __cache__ = 'x',
+          def x(self):
+            nonlocal ncalls
+            ncalls += 1
+            return 1
+
+        ncalls = 0
+        t = T()
+        self.assertEqual(ncalls, 0)
+        self.assertEqual(t.x(), 1)
+        self.assertEqual(ncalls, 1)
+        self.assertEqual(t.x(), 1)
+        self.assertEqual(ncalls, 1)
+
+  def test_method_with_args(self):
+
+    for withslots in False, True:
+      with self.subTest(withslots=withslots):
+
+        class T(metaclass=nutils.types.CacheMeta):
+          if withslots:
+            __slots__ = ()
+          __cache__ = 'x',
+          def x(self, a, b):
+            nonlocal ncalls
+            ncalls += 1
+            return a + b
+
+        ncalls = 0
+        t = T()
+        self.assertEqual(ncalls, 0)
+        self.assertEqual(t.x(1, 2), 3)
+        self.assertEqual(ncalls, 1)
+        self.assertEqual(t.x(a=1, b=2), 3)
+        self.assertEqual(ncalls, 1)
+        self.assertEqual(t.x(2, 2), 4)
+        self.assertEqual(ncalls, 2)
+        self.assertEqual(t.x(a=2, b=2), 4)
+        self.assertEqual(ncalls, 2)
+        self.assertEqual(t.x(1, 2), 3)
+        self.assertEqual(ncalls, 3)
+
+  def test_method_with_args_and_preprocessors(self):
+
+    for withslots in False, True:
+      with self.subTest(withslots=withslots):
+
+        class T(metaclass=nutils.types.CacheMeta):
+          if withslots:
+            __slots__ = ()
+          __cache__ = 'x',
+          @nutils.types.apply_annotations
+          def x(self, a:int, b:int):
+            nonlocal ncalls
+            ncalls += 1
+            return a + b
+
+        ncalls = 0
+        t = T()
+        self.assertEqual(ncalls, 0)
+        self.assertEqual(t.x(1, 2), 3)
+        self.assertEqual(ncalls, 1)
+        self.assertEqual(t.x(a='1', b='2'), 3)
+        self.assertEqual(ncalls, 1)
+        self.assertEqual(t.x('2', '2'), 4)
+        self.assertEqual(ncalls, 2)
+        self.assertEqual(t.x(a=2, b=2), 4)
+        self.assertEqual(ncalls, 2)
+        self.assertEqual(t.x('1', 2), 3)
+        self.assertEqual(ncalls, 3)
+
+  def test_method_with_kwargs(self):
+
+    for withslots in False, True:
+      with self.subTest(withslots=withslots):
+
+        class T(metaclass=nutils.types.CacheMeta):
+          if withslots:
+            __slots__ = ()
+          __cache__ = 'x',
+          def x(self, a, **kwargs):
+            nonlocal ncalls
+            ncalls += 1
+            return a + sum(kwargs.values())
+
+        ncalls = 0
+        t = T()
+        self.assertEqual(ncalls, 0)
+        self.assertEqual(t.x(1, b=2), 3)
+        self.assertEqual(ncalls, 1)
+        self.assertEqual(t.x(a=1, b=2), 3)
+        self.assertEqual(ncalls, 1)
+        self.assertEqual(t.x(1, b=2, c=3), 6)
+        self.assertEqual(ncalls, 2)
+        self.assertEqual(t.x(a=1, b=2, c=3), 6)
+        self.assertEqual(ncalls, 2)
+
+  def test_subclass_redefined_property(self):
+
+    class T(metaclass=nutils.types.CacheMeta):
+      __cache__ = 'x',
+      @property
+      def x(self):
+        return 1
+
+    class U(T):
+      __cache__ = 'x',
+      @property
+      def x(self):
+        return super().x + 1
+      @property
+      def y(self):
+        return super().x
+
+    u1 = U()
+    self.assertEqual(u1.x, 2)
+    self.assertEqual(u1.y, 1)
+
+    u2 = U()
+    self.assertEqual(u2.y, 1)
+    self.assertEqual(u2.x, 2)
+
+  def test_missing_attribute(self):
+
+    with self.assertRaisesRegex(TypeError, 'Attribute listed in __cache__ is undefined: x'):
+      class T(metaclass=nutils.types.CacheMeta):
+        __cache__ = 'x',
+
+  def test_invalid_attribute(self):
+
+    with self.assertRaisesRegex(TypeError, "Don't know how to cache attribute x: None"):
+      class T(metaclass=nutils.types.CacheMeta):
+        __cache__ = 'x',
+        x = None
+
+  def test_name_mangling(self):
+
+    for withslots in False, True:
+      with self.subTest(withslots=withslots):
+
+        class T(metaclass=nutils.types.CacheMeta):
+          if withslots:
+            __slots__ = ()
+          __cache__ = '__x',
+          @property
+          def __x(self):
+            nonlocal ncalls
+            ncalls += 1
+            return 1
+          @property
+          def y(self):
+            return self.__x
+
+        ncalls = 0
+        t = T()
+        self.assertEqual(ncalls, 0)
+        self.assertEqual(t.y, 1)
+        self.assertEqual(ncalls, 1)
+        self.assertEqual(t.y, 1)
+        self.assertEqual(ncalls, 1)
+
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

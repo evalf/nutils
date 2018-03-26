@@ -22,7 +22,7 @@
 Module with general purpose types.
 """
 
-import inspect, functools, hashlib, itertools
+import inspect, functools, hashlib, itertools, abc
 
 def aspreprocessor(apply):
   '''
@@ -302,5 +302,213 @@ def nutils_hash(data):
   for harg in hargs:
     h.update(harg)
   return h.digest()
+
+class _CacheMeta_property:
+  '''
+  Memoizing property used by :class:`CacheMeta`.
+  '''
+
+  _self = object()
+
+  def __init__(self, fget, cache_attr):
+    self.fget = fget
+    self.cache_attr = cache_attr
+
+  def __get__(self, instance, owner):
+    try:
+      cached_value = getattr(instance, self.cache_attr)
+    except AttributeError:
+      value = self.fget(instance)
+      setattr(instance, self.cache_attr, value if value is not instance else self._self)
+      return value
+    else:
+      return cached_value if cached_value is not self._self else instance
+
+  def __set__(self, instance, value):
+    raise AttributeError("can't set attribute")
+
+  def __delete__(self, instance):
+    raise AttributeError("can't delete attribute")
+
+def _CacheMeta_method(func, cache_attr):
+  '''
+  Memoizing method decorator used by :class:`CacheMeta`.
+  '''
+
+  _self = object()
+
+  orig_func = func
+  signature = inspect.signature(func)
+  if not hasattr(func, '__preprocess__') and len(signature.parameters) == 1 and next(iter(signature.parameters.values())).kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.POSITIONAL_ONLY):
+
+    def wrapper(self):
+      try:
+        cached_value = getattr(self, cache_attr)
+        value = self if cached_value is _self else cached_value
+      except AttributeError:
+        value = func(self)
+        assert hash(value), 'cannot cache function because the return value is not hashable'
+        setattr(self, cache_attr, _self if value is self else value)
+      return value
+
+  else:
+
+    # Peel off the preprocessors (see `aspreprocessor`).
+    preprocessors = []
+    while hasattr(func, '__preprocess__'):
+      preprocessors.append(func.__preprocess__)
+      func = func.__wrapped__
+    if not preprocessors or not getattr(preprocessors[-1], 'returns_canonical_arguments', False):
+      preprocessors.append(argument_canonicalizer(inspect.signature(func)))
+
+    def wrapper(*args, **kwargs):
+      self = args[0]
+
+      # Apply preprocessors.
+      for preprocess in preprocessors:
+        args, kwargs = preprocess(*args, **kwargs)
+      key = args[1:], tuple(sorted(kwargs.items()))
+
+      assert hash(key), 'cannot cache function because arguments are not hashable'
+
+      # Fetch cached value, if any, and return cached value if args match.
+      try:
+        cached_key, cached_value = getattr(self, cache_attr)
+      except AttributeError:
+        pass
+      else:
+        if cached_key == key:
+          return self if cached_value is _self else cached_value
+
+      value = func(*args, **kwargs)
+
+      assert hash(value), 'cannot cache function because the return value is not hashable'
+      setattr(self, cache_attr, (key, _self if value is self else value))
+
+      return value
+
+  wrapper.__name__ = orig_func.__name__
+  wrapper.__signature__ = signature
+  return wrapper
+
+# While we do not use `abc.ABCMeta` in `CacheMeta` itself, we will use it in
+# many classes having `CacheMeta` as a meta(super)class.  To avoid having to
+# write `class MCls(CacheMeta, abc.ABCMeta): pass` everywhere, we simply derive
+# from `abc.ABCMeta` here.
+class CacheMeta(abc.ABCMeta):
+  '''
+  Metaclass that adds caching functionality to properties and methods listed in
+  the special attribute ``__cache__``.  If an attribute is of type
+  :class:`property`, the value of the property will be computed at the first
+  attribute access and served from cache subsequently.  If an attribute is a
+  method, the arguments and return value are cached and the cached value will
+  be used if a subsequent call is made with the same arguments; if not, the
+  cache will be overwritten.  The cache lives in private attributes in the
+  instance.  The metaclass supports the use of ``__slots__``.  If a subclass
+  redefines a cached property or method (in the sense of this metaclass) of a
+  base class, the property or method of the subclass is *not* automatically
+  cached; ``__cache__`` should be used in the subclass explicitly.
+
+  Examples
+  --------
+
+  An example of a class with a cached property:
+
+  >>> class T(metaclass=CacheMeta):
+  ...   __cache__ = 'x',
+  ...   @property
+  ...   def x(self):
+  ...     print('uncached')
+  ...     return 1
+
+  The print statement is added to illustrate when method ``x`` (as defined
+  above) is called:
+
+  >>> t = T()
+  >>> t.x
+  uncached
+  1
+  >>> t.x
+  1
+
+  An example of a class with a cached method:
+
+  >>> class U(metaclass=CacheMeta):
+  ...   __cache__ = 'y',
+  ...   def y(self, a):
+  ...     print('uncached')
+  ...     return a
+
+  Again, the print statement is added to illustrate when the method ``y`` (as defined above) is
+  called:
+
+  >>> u = U()
+  >>> u.y(1)
+  uncached
+  1
+  >>> u.y(1)
+  1
+  >>> u.y(2)
+  uncached
+  2
+  >>> u.y(2)
+  2
+  '''
+
+  def __new__(mcls, name, bases, namespace, **kwargs):
+    # Wrap all properties that should be cached and reserve slots.
+    if '__cache__' in namespace:
+      cache = namespace['__cache__']
+      cache = (cache,) if isinstance(cache, str) else tuple(cache)
+      cache_attrs = []
+      for attr in cache:
+        # Apply name mangling (see https://docs.python.org/3/tutorial/classes.html#private-variables).
+        if attr.startswith('__') and not attr.endswith('__'):
+          attr = '_{}{}'.format(name, attr)
+        # Reserve an attribute for caching property values that is reasonably
+        # unique, by combining the class and attribute names.  The following
+        # artificial situation will fail though, because both the base class
+        # and the subclass have the same name, hence the cached properties
+        # point to the same attribute for caching:
+        #
+        #     Class A(metaclass=CacheMeta):
+        #       __cache__ = 'x',
+        #       @property
+        #       def x(self):
+        #         return 1
+        #
+        #     class A(A):
+        #       __cache__ = 'x',
+        #       @property
+        #       def x(self):
+        #         return super().x + 1
+        #       @property
+        #       def y(self):
+        #         return super().x
+        #
+        # With `a = A()`, `a.x` first caches `1`, then `2` and `a.y` will
+        # return `2`.  On the other hand, `a.y` calls property `x` of the base
+        # class and caches `1` and subsequently `a.x` will return `1` from
+        # cache.
+        cache_attr = '_CacheMeta__cached_property_{}_{}'.format(name, attr)
+        cache_attrs.append(cache_attr)
+        if attr not in namespace:
+          raise TypeError('Attribute listed in __cache__ is undefined: {}'.format(attr))
+        value = namespace[attr]
+        if isinstance(value, property):
+          namespace[attr] = _CacheMeta_property(value.fget, cache_attr)
+        elif inspect.isfunction(value) and not inspect.isgeneratorfunction(value):
+          namespace[attr] = _CacheMeta_method(value, cache_attr)
+        else:
+          raise TypeError("Don't know how to cache attribute {}: {!r}".format(attr, value))
+      if '__slots__' in namespace and cache_attrs:
+        # Add `cache_attrs` to the slots.
+        slots = namespace['__slots__']
+        slots = [slots] if isinstance(slots, str) else list(slots)
+        for cache_attr in cache_attrs:
+          assert cache_attr not in slots, 'Private attribute for caching is listed in __slots__: {}'.format(cache_attr)
+          slots.append(cache_attr)
+        namespace['__slots__'] = tuple(slots)
+    return super().__new__(mcls, name, bases, namespace, **kwargs)
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
