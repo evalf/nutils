@@ -55,7 +55,7 @@ class Backend(metaclass=abc.ABCMeta):
     .. Note:: This function is abstract.
     '''
 
-class Matrix(metaclass=abc.ABCMeta):
+class Matrix(metaclass=types.CacheMeta):
   'matrix base class'
 
   def __init__(self, shape):
@@ -454,6 +454,8 @@ else:
   class MKLMatrix(Matrix):
     '''matrix implementation based on sorted coo data'''
 
+    __cache__ = 'indptr',
+
     _factors = False
 
     def __init__(self, data, index, shape):
@@ -478,7 +480,7 @@ else:
       self.index = numpy.ascontiguousarray(index, dtype=numpy.int32)
       super().__init__(shape)
 
-    @cache.property
+    @property
     def indptr(self):
       return self.index[0].searchsorted(numpy.arange(self.shape[0]+1)).astype(numpy.int32, copy=False)
 
