@@ -22,12 +22,12 @@ class hierarchical(TestCase):
     basis = self.ref2.basis('std', degree=1)
     self.assertEqual(basis.shape, (5,))
     x, y = self.ref2.elem_eval([self.geom[0], basis], ischeme='bezier2', separate=False)
-    self.assertTrue(numpy.equal(y, .25 * numpy.array(
+    self.assertTrue((abs(y - .25 * numpy.array(
       [[4,0,0,0,0],
        [0,4,0,0,0],
        [0,3,2,0,4],
        [0,2,4,0,0],
-       [0,0,0,4,0]])[[0,1,1,2,2,3,3,4]]).all())
+       [0,0,0,4,0]])[[0,1,1,2,2,3,3,4]]) < 1e15).all())
     if makeplots:
       with plot.PyPlot('basis') as plt:
         plt.plot(x, y)
@@ -37,10 +37,10 @@ class hierarchical(TestCase):
     trimmed = self.ref0.trim(levelset, maxrefine=3).refined_by([self.e2]).refined_by([self.e4])
     trimbasis = trimmed.basis('std', degree=1)
     x, y = trimmed.simplex.elem_eval([self.geom[0], trimbasis], ischeme='bezier2', separate=False)
-    self.assertTrue(numpy.equal(y, .125 * numpy.array(
+    self.assertTrue((abs(y - .125 * numpy.array(
       [[8,0,0],
        [0,8,0],
-       [0,7,4]])[[0,1,1,2]]).all())
+       [0,7,4]])[[0,1,1,2]]) < 1e15).all())
     if makeplots:
       with plot.PyPlot('basis') as plt:
         plt.plot(x, y)

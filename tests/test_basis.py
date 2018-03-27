@@ -8,12 +8,24 @@ class basis(TestCase):
   def setUp(self):
     super().setUp()
     self.domain, self.geom = mesh.rectilinear([[0,1,2]]*self.ndims) if self.ndims else mesh.demo()
-    self.basis = self.domain.basis(self.btype, degree=self.degree)
+    for iref in range(self.nrefine):
+      self.domain = self.domain.refined_by(self.domain.elements[:1])
+    self.basis = self.domain.basis(self.btype, degree=self.degree, truncated=self.truncated) if self.nrefine \
+            else self.domain.basis(self.btype, degree=self.degree)
     self.gauss = 'gauss{}'.format(2*self.degree)
 
+  @parametrize.enable_if(lambda btype, **params: btype != 'discont')
+  def test_continuity(self):
+    funcsp = self.basis
+    for regularity in (range(self.degree) if self.btype=='spline' else [0]):
+      elem_jumps = self.domain.interfaces.elem_eval(function.jump(funcsp),ischeme = 'gauss2', separate=False)
+      numpy.testing.assert_almost_equal(elem_jumps,0,decimal=10)
+      funcsp = function.grad(funcsp, self.geom)
+
+  @parametrize.enable_if(lambda truncated, **params: truncated)
   def test_pum(self):
     error = numpy.sqrt(self.domain.integrate((1-self.basis.sum(0))**2, geometry=self.geom, ischeme=self.gauss))
-    numpy.testing.assert_almost_equal(error, 0, decimal=14)
+    numpy.testing.assert_almost_equal(error, 0, decimal=12)
 
   def test_poly(self):
     target = (self.geom**self.degree).sum(-1)
@@ -24,8 +36,42 @@ class basis(TestCase):
 for ndims in range(1, 4):
   for btype in 'discont', 'std', 'spline':
     for degree in range(0 if btype == 'discont' else 1, 4):
-      basis(btype=btype, degree=degree, ndims=ndims)
+      for nrefine in 0, 2:
+        for truncated in [True, False] if nrefine else [True]:
+          basis(btype=btype, degree=degree, ndims=ndims, nrefine=nrefine, truncated=truncated)
 
+class NNZ(matrix.Backend):
+  def assemble(self, data, index, shape):
+    return type('nnzmatrix', (), dict(nnz=len(numpy.unique(numpy.ravel_multi_index(index, shape))), shape=shape))()
+
+@parametrize
+class sparsity(TestCase):
+
+  vals = {
+    1: [60,66,70],
+    2: [3012,3216,3424],
+  }
+
+  def test_sparsity(self):
+    topo, geom = mesh.rectilinear([6]*self.ndim)
+    topo = topo.refined_by(elem.transform for elem in list(topo[1:3]) + list(topo[-2:]))
+
+    ns = function.Namespace()
+    ns.x = geom
+    ns.tbasis = topo.basis('spline', degree=2, truncated=True, tol=1e-14)
+    ns.tnotol = topo.basis('spline', degree=2, truncated=True, tol=0)
+    ns.hbasis = topo.basis('spline', degree=2, truncated=False)
+
+    with matrix.backend('nnz'):
+      tA, tA_tol, hA = topo.integrate([ns.eval_ij('tbasis_i,k tbasis_j,k'), ns.eval_ij('tnotol_i,k tnotol_j,k'), ns.eval_ij('hbasis_i,k hbasis_j,k')], degree=5)
+
+    tA_nnz, tA_tol_nnz, hA_nnz = self.vals[self.ndim]
+    self.assertEqual(tA.nnz, tA_nnz)
+    self.assertEqual(tA_tol.nnz, tA_tol_nnz)
+    self.assertEqual(hA.nnz, hA_nnz)
+
+for ndim in 1, 2:
+  sparsity(ndim=ndim)
 
 @parametrize
 class structured(TestCase):
