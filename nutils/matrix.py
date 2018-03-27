@@ -19,11 +19,11 @@
 # THE SOFTWARE.
 
 """
-The matrix module defines a number of 2D matrix objects, notably the
-:func:`ScipyMatrix` and :func:`NumpyMatrix`. Matrix objects support basic
-addition and subtraction operations and provide a consistent insterface for
-solving linear systems. Matrices can be converted into other forms suitable for
-external processing via the ``export`` method.
+The matrix module defines an abstract :class:`Matrix` object and several
+implementations.  Matrix objects support basic addition and subtraction
+operations and provide a consistent insterface for solving linear systems.
+Matrices can be converted into other forms suitable for external processing via
+the ``export`` method.
 """
 
 from . import numpy, log, numeric, warnings, cache, types, config
@@ -106,23 +106,24 @@ class Matrix(metaclass=types.CacheMeta):
 
     Args
     ----
-    rhs : float vector or None
+    rhs : :class:`float` vector or :any:`None`
         Right hand side vector. `None` implies all zeros.
-    lhs0 : float vector or None
+    lhs0 : class:`float` vector or :any:`None`
         Initial values. `None` implies all zeros.
-    constrain : float or boolean array, or None
+    constrain : :class:`float` or :class:`bool` array, or :any:`None`
         Column constraints. For float values, a number signifies a constraint,
         NaN signifies a free dof. For boolean, a True value signifies a
         constraint to the value in `lhs0`, a False value signifies a free dof.
         `None` implies no constraints.
-    rconstrain : boolean array or None
+    rconstrain : :class:`bool` array or :any:`None`
         Row constrains. A True value signifies a constrains, a False value a free
         dof. `None` implies that the constraints follow those defined in
         `constrain` (by implication the matrix must be square).
 
     Returns
     -------
-    Left hand side vector.
+    :class:`numpy.ndarray`
+        Left hand side vector.
     '''
 
   @abc.abstractmethod
@@ -131,12 +132,13 @@ class Matrix(metaclass=types.CacheMeta):
 
     Args
     ----
-    rows : boolean/int array selecting rows for keeping
-    cols : boolean/int array selecting columns for keeping
+    rows : :class:`bool`/:class:`int` array selecting rows for keeping
+    cols : :class:`bool`/:class:`int` array selecting columns for keeping
 
     Returns
     -------
-    Matrix instance of reduced dimensions
+    :class:`Matrix`
+        Matrix instance of reduced dimensions
     '''
 
   def export(self, form):

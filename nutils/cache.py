@@ -161,7 +161,7 @@ def replace(func):
 
   Returns
   -------
-  callable
+  :any:`callable`
       The method that searches the object to perform the replacements.
   '''
 

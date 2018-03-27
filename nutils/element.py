@@ -19,13 +19,13 @@
 # THE SOFTWARE.
 
 """
-The element module defines reference elements such as the :class:`QuadElement`
-and :class:`TriangularElement`, but also more exotic objects like the
-:class:`TrimmedElement`. A set of (interconnected) elements together form a
-:mod:`nutils.topology`. Elements have edges and children (for refinement), which
-are in turn elements and map onto self by an affine transformation. They also
-have a well defined reference coordinate system, and provide pointsets for
-purposes of integration and sampling.
+The element module defines reference elements such as the
+:class:`LineReference` and :class:`TriangleReference`, but also more exotic
+objects like the :class:`MosaicReference`. A set of (interconnected) elements
+together form a :class:`nutils.topology.Topology`. Elements have edges and
+children (for refinement), which are in turn elements and map onto self by an
+affine transformation. They also have a well defined reference coordinate
+system, and provide pointsets for purposes of integration and sampling.
 """
 
 from . import log, util, numpy, config, numeric, function, cache, transform, warnings, types, _

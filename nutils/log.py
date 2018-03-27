@@ -324,7 +324,7 @@ class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
     '''Write ``text`` with log level ``level`` to the log.
 
     This method makes sure the current context is printed and calls
-    :meth:`_print_item`.
+    :meth:`ContextTreeLog._print_item`.
     '''
     if level not in LEVELS[config.verbose:]:
       return super().write( level, text )
@@ -468,7 +468,7 @@ class RecordLog(Log):
      above example, we advice to use :class:`nutils.cache.FileCache` instead.
 
   .. Note::
-     Exceptions raised while in a :meth:`context` are not recorded.
+     Exceptions raised while in a :meth:`Log.context` are not recorded.
 
   .. Note::
      Messages dispatched from forks (e.g. inside

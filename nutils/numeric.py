@@ -307,7 +307,7 @@ def unpack(n, atol, rtol):
 
   Args
   ----
-  n : int array
+  n : :class:`int` array
       Integer data.
   atol : :class:`float`
       Absolute tolerance.
@@ -316,7 +316,7 @@ def unpack(n, atol, rtol):
 
   Returns
   -------
-  Float array.
+  :class:`float` array
   '''
 
   iinfo = numpy.iinfo(n.dtype)
@@ -351,7 +351,7 @@ def pack(a, atol, rtol, dtype):
 
   Args
   ----
-  a : float array
+  a : :class:`float` array
     Input data.
   atol : :class:`float`
     Absolute tolerance.
@@ -362,7 +362,7 @@ def pack(a, atol, rtol, dtype):
 
   Returns
   -------
-  Integer array.
+  :class:`int` array.
   '''
 
   iinfo = numpy.iinfo(dtype)

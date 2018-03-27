@@ -19,10 +19,7 @@
 # THE SOFTWARE.
 
 """
-The util module provides a collection of general purpose methods. Most
-importantly it provides the :func:`run` method which is the preferred entry
-point of a nutils application, taking care of command line parsing, output dir
-creation and initiation of a log file.
+The util module provides a collection of general purpose methods.
 """
 
 from . import numeric, config
@@ -153,13 +150,14 @@ def single_or_multiple(f):
 
   Args
   ----
-  f: method
+  f: :any:`callable`
       Method that expects a tuple as first positional argument, and that
       returns a list/tuple of the same length.
 
   Returns
   -------
-  Wrapped method.
+  :
+      Wrapped method.
   """
 
   @functools.wraps(f)

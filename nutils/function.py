@@ -1020,6 +1020,10 @@ class LinearFrom(Array):
     return zeros(self.shape+var.shape)
 
 class Inverse(Array):
+  '''
+  Matrix inverse of ``func`` over the last two axes.  All other axes are
+  treated element-wise.
+  '''
 
   __slots__ = 'func',
   __cache__ = 'simplified',
@@ -1843,31 +1847,37 @@ class Pointwise(Array):
     return self.__class__(*[Take(arg, index, axis) for arg in self.args])
 
 class Cos(Pointwise):
+  'Cosine, element-wise.'
   __slots__ = ()
   evalf = numpy.cos
   deriv = lambda x: -Sin(x),
 
 class Sin(Pointwise):
+  'Sine, element-wise.'
   __slots__ = ()
   evalf = numpy.sin
   deriv = Cos,
 
 class Tan(Pointwise):
+  'Tangent, element-wise.'
   __slots__ = ()
   evalf = numpy.tan
   deriv = lambda x: Cos(x)**-2,
 
 class ArcSin(Pointwise):
+  'Inverse sine, element-wise.'
   __slots__ = ()
   evalf = numpy.arcsin
   deriv = lambda x: reciprocal(sqrt(1-x**2)),
 
 class ArcCos(Pointwise):
+  'Inverse cosine, element-wise.'
   __slots__ = ()
   evalf = numpy.arccos
   deriv = lambda x: -reciprocal(sqrt(1-x**2)),
 
 class ArcTan(Pointwise):
+  'Inverse tangent, element-wise.'
   __slots__ = ()
   evalf = numpy.arctan
   deriv = lambda x: reciprocal(1+x**2),
@@ -3681,7 +3691,7 @@ class Namespace:
 
   Attributes
   ----------
-  arg_shapes : :class:`builtin_types.MappingProxyType`
+  arg_shapes : view of :class:`dict`
       A readonly map of argument names and shapes.
   default_geometry_name : :class:`str`
       The name of the default geometry.  See argument with the same name.

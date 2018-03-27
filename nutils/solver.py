@@ -70,7 +70,7 @@ def solve_linear(target:types.strictstr, residual:topology.strictintegral, const
       Name of the target: a :class:`nutils.function.Argument` in ``residual``.
   residual : :class:`nutils.topology.Integral`
       Residual integral, depends on ``target``
-  constrain : float vector
+  constrain : :class:`numpy.ndarray` with dtype :class:`float`
       Defines the fixed entries of the coefficient vector
   arguments : :class:`collections.abc.Mapping`
       Defines the values for :class:`nutils.function.Argument` objects in
@@ -79,7 +79,7 @@ def solve_linear(target:types.strictstr, residual:topology.strictintegral, const
 
   Returns
   -------
-  vector
+  :class:`numpy.ndarray`
       Array of ``target`` values for which ``residual == 0``'''
 
   jacobian = residual.derivative(target)
@@ -103,16 +103,16 @@ def solve(gen_lhs_resnorm, tol:types.strictfloat=1e-10, maxiter:types.strictfloa
 
   Parameters
   ----------
-  gen_lhs_resnorm : generator
+  gen_lhs_resnorm : :class:`collections.abc.Generator`
       Generates (lhs, resnorm) tuples
-  tol : float
+  tol : :class:`float`
       Target residual norm
-  maxiter : int
+  maxiter : :class:`int`
       Maximum number of iterations
 
   Returns
   -------
-  vector
+  :class:`numpy.ndarray`
       Coefficient vector that corresponds to a smaller than ``tol`` residual.
   '''
 
@@ -172,24 +172,24 @@ class newton(RecursionWithSolve, length=1):
   target : :class:`str`
       Name of the target: a :class:`nutils.function.Argument` in ``residual``.
   residual : :class:`nutils.topology.Integral`
-  lhs0 : vector
+  lhs0 : :class:`numpy.ndarray`
       Coefficient vector, starting point of the iterative procedure.
-  constrain : boolean or float vector
+  constrain : :class:`numpy.ndarray` with dtype :class:`bool` or :class:`float`
       Equal length to ``lhs0``, masks the free vector entries as ``False``
       (boolean) or NaN (float). In the remaining positions the values of
       ``lhs0`` are returned unchanged (boolean) or overruled by the values in
       `constrain` (float).
-  nrelax : int
+  nrelax : :class:`int`
       Maximum number of relaxation steps before proceding with the updated
       coefficient vector (by default unlimited).
-  minrelax : float
+  minrelax : :class:`float`
       Lower bound for the relaxation value, to force re-evaluating the
       functional in situation where the parabolic assumption would otherwise
       result in unreasonably small steps.
-  maxrelax : float
+  maxrelax : :class:`float`
       Relaxation value below which relaxation continues, unless ``nrelax`` is
       reached; should be a value less than or equal to 1.
-  rebound : float
+  rebound : :class:`float`
       Factor by which the relaxation value grows after every update until it
       reaches unity.
   arguments : :class:`collections.abc.Mapping`
@@ -199,7 +199,7 @@ class newton(RecursionWithSolve, length=1):
 
   Yields
   ------
-  vector
+  :class:`numpy.ndarray`
       Coefficient vector that approximates residual==0 with increasing accuracy
   '''
 
@@ -324,11 +324,11 @@ class pseudotime(RecursionWithSolve, length=1):
       Name of the target: a :class:`nutils.function.Argument` in ``residual``.
   residual : :class:`nutils.topology.Integral`
   inertia : :class:`nutils.topology.Integral`
-  timestep : float
+  timestep : :class:`float`
       Initial time step, will scale up as residual decreases
-  lhs0 : vector
+  lhs0 : :class:`numpy.ndarray`
       Coefficient vector, starting point of the iterative procedure.
-  constrain : boolean or float vector
+  constrain : :class:`numpy.ndarray` with dtype :class:`bool` or :class:`float`
       Equal length to ``lhs0``, masks the free vector entries as ``False``
       (boolean) or NaN (float). In the remaining positions the values of
       ``lhs0`` are returned unchanged (boolean) or overruled by the values in
@@ -340,7 +340,7 @@ class pseudotime(RecursionWithSolve, length=1):
 
   Yields
   ------
-  vector, float
+  :class:`numpy.ndarray` with dtype :class:`float`
       Tuple of coefficient vector and residual norm
   '''
 
@@ -418,20 +418,20 @@ class thetamethod(RecursionWithSolve, length=1):
       Name of the target: a :class:`nutils.function.Argument` in ``residual``.
   residual : :class:`nutils.topology.Integral`
   inertia : :class:`nutils.topology.Integral`
-  timestep : float
+  timestep : :class:`float`
       Initial time step, will scale up as residual decreases
-  lhs0 : vector
+  lhs0 : :class:`numpy.ndarray`
       Coefficient vector, starting point of the iterative procedure.
-  theta : float
+  theta : :class:`float`
       Theta value (theta=1 for implicit Euler, theta=0.5 for Crank-Nicolson)
   residual0 : :class:`nutils.topology.Integral`
       Optional additional residual component evaluated in previous timestep
-  constrain : boolean or float vector
+  constrain : :class:`numpy.ndarray` with dtype :class:`bool` or :class:`float`
       Equal length to ``lhs0``, masks the free vector entries as ``False``
       (boolean) or NaN (float). In the remaining positions the values of
       ``lhs0`` are returned unchanged (boolean) or overruled by the values in
       `constrain` (float).
-  newtontol : float
+  newtontol : :class:`float`
       Residual tolerance of individual timesteps
   arguments : :class:`collections.abc.Mapping`
       Defines the values for :class:`nutils.function.Argument` objects in
@@ -440,7 +440,7 @@ class thetamethod(RecursionWithSolve, length=1):
 
   Yields
   ------
-  vector
+  :class:`numpy.ndarray`
       Coefficient vector for all timesteps after the initial condition.
   '''
 
@@ -493,20 +493,20 @@ def optimize(target:types.strictstr, functional:topology.strictintegral, droptol
   droptol : :class:`float`
       Threshold for leaving entries in the return value at NaN if they do not
       contribute to the value of the functional.
-  lhs0 : vector
+  lhs0 : :class:`numpy.ndarray`
       Coefficient vector, starting point of the iterative procedure (if
       applicable).
-  constrain : boolean or float vector
+  constrain : :class:`numpy.ndarray` with dtype :class:`bool` or :class:`float`
       Equal length to ``lhs0``, masks the free vector entries as ``False``
       (boolean) or NaN (float). In the remaining positions the values of
       ``lhs0`` are returned unchanged (boolean) or overruled by the values in
       `constrain` (float).
-  newtontol : float
+  newtontol : :class:`float`
       Residual tolerance of Newton procedure (if applicable)
 
   Yields
   ------
-  vector
+  :class:`numpy.ndarray`
       Coefficient vector corresponding to the functional optimum
   '''
 
