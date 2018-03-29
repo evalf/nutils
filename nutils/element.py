@@ -941,6 +941,9 @@ class WithChildrenReference(Reference):
   def getpoints(self, ischeme, degree):
     if ischeme == 'vertex':
       return self.baseref.getpoints(ischeme, degree)
+    if ischeme == 'bezier':
+      childpoints = [points.TransformPoints(ref.getpoints('bezier', degree//2+1), trans) for trans, ref in self.children if ref]
+      return points.ConcatPoints(childpoints, points.find_duplicates(childpoints))
     return points.ConcatPoints(points.TransformPoints(ref.getpoints(ischeme, degree), trans) for trans, ref in self.children if ref)
 
   @property
@@ -1094,7 +1097,9 @@ class MosaicReference(Reference):
   def getpoints(self, ischeme, degree):
     if ischeme == 'vertex':
       return self.baseref.getpoints(ischeme, degree)
-    return points.ConcatPoints(subvol.getpoints(ischeme, degree) for subvol in self.subrefs)
+    subpoints = [subvol.getpoints(ischeme, degree) for subvol in self.subrefs]
+    dups = points.find_duplicates(subpoints) if ischeme == 'bezier' else ()
+    return points.ConcatPoints(subpoints, dups)
 
   def inside(self, point, eps=0):
     return any(subref.inside(point, eps=eps) for subref in self.subrefs)

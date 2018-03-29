@@ -18,13 +18,13 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from . import types, transform, numeric
+from . import types, transform, numeric, util
 import numpy, functools, itertools, warnings
 _ = numpy.newaxis
 
 class Points(types.Singleton):
 
-  __cache__ = 'hull',
+  __cache__ = 'hull', 'onhull'
 
   @types.apply_annotations
   def __init__(self, npoints:types.strictint, ndims:types.strictint):
@@ -42,6 +42,12 @@ class Points(types.Singleton):
     for tri in self.tri:
       edges.symmetric_difference_update(map(tuple, numpy.sort(tri[iedges], axis=1)))
     return numpy.array(sorted(edges))
+
+  @property
+  def onhull(self):
+    onhull = numpy.zeros(self.npoints, dtype=bool)
+    onhull[numpy.ravel(self.hull)] = True # not clear why ravel is necessary but setitem seems to require it
+    return types.frozenarray(onhull, copy=False)
 
 strictpoints = types.strict[Points]
 
@@ -166,35 +172,53 @@ class TransformPoints(Points):
 
 class ConcatPoints(Points):
 
-  __cache__ = 'coords', 'weights', 'tri', 'hull'
+  __cache__ = 'coords', 'weights', 'tri', 'masks'
 
   @types.apply_annotations
-  def __init__(self, allpoints:types.tuple[strictpoints]):
+  def __init__(self, allpoints:types.tuple[strictpoints], duplicates:frozenset=frozenset()):
     self.allpoints = allpoints
-    super().__init__(sum(points.npoints for points in allpoints), allpoints[0].ndims)
+    self.duplicates = duplicates
+    super().__init__(sum(points.npoints for points in allpoints) - sum(len(d)-1 for d in duplicates), allpoints[0].ndims)
+
+  @property
+  def masks(self):
+    masks = [numpy.ones(points.npoints, dtype=bool) for points in self.allpoints]
+    for pairs in self.duplicates:
+      for i, j in pairs[1:]:
+        masks[i][j] = False
+    return tuple(masks)
 
   @property
   def coords(self):
-    return types.frozenarray(numpy.concatenate([points.coords for points in self.allpoints]), copy=False)
+    return types.frozenarray(numpy.concatenate([points.coords[mask] for mask, points in zip(self.masks, self.allpoints)] if self.duplicates else [points.coords for points in self.allpoints]), copy=False)
 
   @property
   def weights(self):
-    return types.frozenarray(numpy.concatenate([points.weights for points in self.allpoints]), copy=False)
-
-  @property
-  def offset_points(self):
-    n = 0
-    for points in self.allpoints:
-      yield n, points
-      n += points.npoints
+    if not self.duplicates:
+      return types.frozenarray(numpy.concatenate([points.weights for points in self.allpoints]), copy=False)
+    weights = [points.weights[mask] for mask, points in zip(self.masks, self.allpoints)]
+    for pairs in self.duplicates:
+      I, J = pairs[0]
+      weights[I][self.masks[I][:J].sum()] += sum(self.allpoints[i].weights[j] for i, j in pairs[1:])
+    return types.frozenarray(numpy.concatenate(weights), copy=False)
 
   @property
   def tri(self):
-    return types.frozenarray(numpy.concatenate([points.tri + n for n, points in self.offset_points]), copy=False)
-
-  @property
-  def hull(self):
-    return types.frozenarray(numpy.concatenate([points.hull + n for n, points in self.offset_points]), copy=False)
+    if not self.duplicates:
+      offsets = util.cumsum(points.npoints for points in self.allpoints)
+      return types.frozenarray(numpy.concatenate([points.tri + offset for offset, points in zip(offsets, self.allpoints)]), copy=False)
+    renumber = []
+    n = 0
+    for mask in self.masks:
+      cumsum = mask.cumsum()
+      renumber.append(cumsum+(n-1))
+      n += cumsum[-1]
+    assert n == self.npoints
+    for pairs in self.duplicates:
+      I, J = pairs[0]
+      for i, j in pairs[1:]:
+        renumber[i][j] = renumber[I][J]
+    return types.frozenarray(numpy.concatenate([renum.take(points.tri) for renum, points in zip(renumber, self.allpoints)]), copy=False)
 
 ## UTILITY FUNCTIONS
 
@@ -312,5 +336,12 @@ def gauss3(degree):
          types.frozenarray(numpy.concatenate([[w/6] * len(i) for i, c, w in icw]), copy=False)
 
 gaussn = None, gauss1, gauss2, gauss3
+
+def find_duplicates(allpoints):
+  coords = {}
+  for i, points in enumerate(allpoints):
+    for j in points.onhull.nonzero()[0]:
+      coords.setdefault(tuple(points.coords[j]), []).append((i, j))
+  return [tuple(pairs) for pairs in coords.values() if len(pairs) > 1]
 
 # vim:sw=2:sts=2:et
