@@ -201,102 +201,16 @@ class Topology(types.Singleton):
     retvals = self.elem_eval((1,)+funcs, geometry=geometry, ischeme=ischeme, arguments=arguments)
     return [v / retvals[0][(slice(None),)+(_,)*(v.ndim-1)] for v in retvals[1:]]
 
-  def _integrate(self, funcs, ischeme, arguments=None):
-
-    if arguments is None:
-      arguments = {}
-
-    # Functions may consist of several blocks, such as originating from
-    # chaining. Here we make a list of all blocks consisting of triplets of
-    # argument id, evaluable index, and evaluable values.
-
-    blocks = [(ifunc, function.Tuple(ind), f.simplified)
-      for ifunc, func in enumerate(funcs)
-        for ind, f in function.blocks(function.zero_argument_derivatives(func))]
-
-    block2func, indices, values = zip(*blocks) if blocks else ([],[],[])
-
-    log.debug('integrating {} distinct blocks'.format('+'.join(
-      str(block2func.count(ifunc)) for ifunc in range(len(funcs)))))
-
-    if config.dot:
-      function.Tuple(values).graphviz()
-
-    fcache = cache.WrapperCache()
-
-    # To allocate (shared) memory for all block data we evaluate indexfunc to
-    # build an nblocks x nelems+1 offset array, and nblocks index lists of
-    # length nelems.
-
-    offsets = numpy.zeros((len(blocks), len(self)+1), dtype=int)
-    if blocks:
-      sizefunc = function.stack([f.size for ifunc, ind, f in blocks]).simplified
-      for ielem, elem in enumerate(self):
-        n, = sizefunc.eval(_transforms=(elem.transform, elem.opposite), _cache=fcache, **arguments)
-        offsets[:,ielem+1] = offsets[:,ielem] + n
-
-    # Since several blocks may belong to the same function, we post process the
-    # offsets to form consecutive intervals in longer arrays. The length of
-    # these arrays is captured in the nfuncs-array nvals.
-
-    nvals = numpy.zeros(len(funcs), dtype=int)
-    for iblock, ifunc in enumerate(block2func):
-      offsets[iblock] += nvals[ifunc]
-      nvals[ifunc] = offsets[iblock,-1]
-
-    # The data_index list contains shared memory index and value arrays for
-    # each function argument.
-
-    nprocs = min(config.nprocs, len(self))
-    empty = parallel.shempty if nprocs > 1 else numpy.empty
-    data_index = [
-      (empty(n, dtype=float),
-        empty((funcs[ifunc].ndim,n), dtype=int))
-            for ifunc, n in enumerate(nvals) ]
-
-    # In a second, parallel element loop, valuefunc is evaluated to fill the
-    # data part of data_index using the offsets array for location. Each
-    # element has its own location so no locks are required. The index part of
-    # data_index is filled in the same loop. It does not use valuefunc data but
-    # benefits from parallel speedup.
-
-    valueindexfunc = function.Tuple(function.Tuple([value]+list(index)) for value, index in zip(values, indices))
-    for ielem, elem in parallel.pariter(log.enumerate('elem', self), nprocs=nprocs):
-      ipoints, iweights = ischeme[elem] if isinstance(ischeme,collections.abc.Mapping) else elem.reference.getischeme(ischeme)
-      assert iweights is not None, 'no integration weights found'
-      for iblock, (intdata, *indices) in enumerate(valueindexfunc.eval(_transforms=(elem.transform, elem.opposite), _points=ipoints, _cache=fcache, **arguments)):
-        s = slice(*offsets[iblock,ielem:ielem+2])
-        data, index = data_index[block2func[iblock]]
-        w_intdata = numeric.dot(iweights, intdata)
-        data[s] = w_intdata.ravel()
-        si = (slice(None),) + (_,) * (w_intdata.ndim-1)
-        for idim, (ii,) in enumerate(indices):
-          index[idim,s].reshape(w_intdata.shape)[...] = ii[si]
-          si = si[:-1]
-
-    return data_index
-
-  @log.title
   @util.single_or_multiple
-  @types.apply_annotations
-  @cache.function
-  def integrate(self, funcs, ischeme='gauss', degree=None, geometry=None, edit=None, *, arguments:types.frozendict[types.strictstr,types.frozenarray]=None):
-    'integrate'
+  def integrate(self, funcs, ischeme='gauss', degree=None, geometry=None, edit=None, *, arguments=None, title='integrate'):
+    'integrate functions'
 
-    if edit is None:
-      edit = _identity
-    if degree is not None:
-      ischeme += str(degree)
-    iwscale = function.J(geometry, self.ndims) if geometry else 1
-    integrands = [function.asarray(edit(func * iwscale)) for func in funcs]
-    data_index = self._integrate(integrands, ischeme, arguments)
-    retvals = []
-    for integrand, (data,index) in zip(integrands, data_index):
-      retval = matrix.assemble(data, index, integrand.shape)
-      assert retval.shape == integrand.shape
-      log.debug('assembled {}({})'.format(retval.__class__.__name__, ','.join(str(n) for n in retval.shape)))
-      retvals.append(retval)
-    return retvals
+    ischeme, degree = element.parse_legacy_ischeme(ischeme if degree is None else ischeme + str(degree))
+    if geometry is not None:
+      funcs = [func * function.J(geometry, self.ndims) for func in funcs]
+    if edit is not None:
+      funcs = [edit(func) for func in funcs]
+    return self.sample(ischeme, degree).integrate(funcs, arguments=arguments, title=title)
 
   @log.title
   def integral(self, func, ischeme='gauss', degree=None, geometry=None, edit=_identity):
