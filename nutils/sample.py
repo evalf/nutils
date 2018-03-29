@@ -19,7 +19,7 @@
 # THE SOFTWARE.
 
 from . import types, points, log, util, function, config, parallel, numeric, cache, matrix
-import numpy
+import numpy, numbers
 
 class Sample(types.Singleton):
 
@@ -111,6 +111,9 @@ class Sample(types.Singleton):
       log.debug('assembled {}({})'.format(retval.__class__.__name__, ','.join(str(n) for n in retval.shape)))
       yield retval
 
+  def integral(self, func):
+    return Integral([(self, func)])
+
   @log.title
   @util.single_or_multiple
   def eval(self, funcs, *, arguments=None):
@@ -158,5 +161,94 @@ class Sample(types.Singleton):
 
     return function.Sampled(self, array)
 
+strictsample = types.strict[Sample]
+
+class Integral(types.Singleton):
+  '''Postponed integral, used for derivative purposes'''
+
+  __slots__ = '_integrands', 'shape'
+
+  @types.apply_annotations
+  def __init__(self, integrands:types.frozendict[strictsample, function.simplified]):
+    self._integrands = integrands
+    shapes = {integrand.shape for integrand in self._integrands.values()}
+    assert len(shapes) == 1, 'incompatible shapes: {}'.format(' != '.join(str(shape) for shape in shapes))
+    self.shape, = shapes
+
+  def eval(self, **kwargs):
+    retval, = eval_integrals(self, **kwargs)
+    return retval
+
+  def derivative(self, target):
+    argshape = self._argshape(target)
+    arg = function.Argument(target, argshape)
+    seen = {}
+    return Integral([di, function.derivative(integrand, var=arg, seen=seen)] for di, integrand in self._integrands.items())
+
+  def replace(self, arguments):
+    return Integral([di, function.replace_arguments(integrand, arguments)] for di, integrand in self._integrands.items())
+
+  def contains(self, name):
+    try:
+      self._argshape(name)
+    except KeyError:
+      return False
+    else:
+      return True
+
+  def __add__(self, other):
+    if not isinstance(other, Integral):
+      return NotImplemented
+    assert self.shape == other.shape
+    integrands = self._integrands.copy()
+    for di, integrand in other._integrands.items():
+      try:
+        integrands[di] += integrand
+      except KeyError:
+        integrands[di] = integrand
+    return Integral(integrands.items())
+
+  def __neg__(self):
+    return Integral([di, -integrand] for di, integrand in self._integrands.items())
+
+  def __sub__(self, other):
+    return self + (-other)
+
+  def __mul__(self, other):
+    if not isinstance(other, numbers.Number):
+      return NotImplemented
+    return Integral([di, integrand * other] for di, integrand in self._integrands.items())
+
+  __rmul__ = __mul__
+
+  def __truediv__(self, other):
+    if not isinstance(other, numbers.Number):
+      return NotImplemented
+    return self.__mul__(1/other)
+
+  def _argshape(self, name):
+    assert isinstance(name, str)
+    shapes = {func.shape[:func.ndim-func._nderiv]
+      for func in function.Tuple(self._integrands.values()).dependencies
+        if isinstance(func, function.Argument) and func._name == name}
+    if not shapes:
+      raise KeyError(name)
+    assert len(shapes) == 1, 'inconsistent shapes for argument {!r}'.format(name)
+    shape, = shapes
+    return shape
+
+strictintegral = types.strict[Integral]
+
+@types.apply_annotations
+@cache.function
+def eval_integrals(*integrals: types.tuple[strictintegral], arguments:types.frozendict[types.strictstr,types.frozenarray]=None):
+  retvals = [None] * len(integrals)
+  for sample, iints in util.gather((di, iint) for iint, integral in enumerate(integrals) for di in integral._integrands):
+    for iint, retval in zip(iints, sample.integrate([integrals[iint]._integrands[sample] for iint in iints], arguments=arguments)):
+      if retvals[iint] is None:
+        retvals[iint] = retval
+      else:
+        retvals[iint] += retval
+  return retvals
 
 # vim:sw=2:sts=2:et

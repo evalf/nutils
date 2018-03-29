@@ -212,15 +212,15 @@ class Topology(types.Singleton):
       funcs = [edit(func) for func in funcs]
     return self.sample(ischeme, degree).integrate(funcs, arguments=arguments, title=title)
 
-  @log.title
-  def integral(self, func, ischeme='gauss', degree=None, geometry=None, edit=_identity):
+  def integral(self, func, ischeme='gauss', degree=None, geometry=None, edit=None):
     'integral'
 
-    if degree is not None:
-      ischeme += str(degree)
-    iwscale = function.J(geometry, self.ndims) if geometry else 1
-    integrand = edit(func * iwscale)
-    return Integral([((self, ischeme), integrand)])
+    ischeme, degree = element.parse_legacy_ischeme(ischeme if degree is None else ischeme + str(degree))
+    if geometry is not None:
+      func = func * function.J(geometry, self.ndims)
+    if edit is not None:
+      funcs = edit(func)
+    return self.sample(ischeme, degree).integral(func)
 
   def projection(self, fun, onto, geometry, **kwargs):
     'project and return as function'
@@ -2315,103 +2315,6 @@ class MultipatchTopology(Topology):
     'refine'
 
     return MultipatchTopology(Patch(patch.topo.refined, patch.verts, patch.boundaries) for patch in self.patches)
-
-# INTEGRAL
-
-def identity(value):
-  return value
-
-class Integral(types.Singleton):
-  '''Postponed integral, used for derivative purposes'''
-
-  __slots__ = '_integrands', 'shape'
-
-  @types.apply_annotations
-  def __init__(self, integrands:types.frozendict[identity, function.simplified]):
-    self._integrands = integrands
-    shapes = {integrand.shape for integrand in self._integrands.values()}
-    assert len(shapes) == 1, 'incompatible shapes: {}'.format(' != '.join(str(shape) for shape in shapes))
-    self.shape, = shapes
-
-  def eval(self, **kwargs):
-    retval, = eval_integrals(self, **kwargs)
-    return retval
-
-  def derivative(self, target):
-    argshape = self._argshape(target)
-    arg = function.Argument(target, argshape)
-    seen = {}
-    return Integral([di, function.derivative(integrand, var=arg, seen=seen)] for di, integrand in self._integrands.items())
-
-  def replace(self, arguments):
-    return Integral([di, function.replace_arguments(integrand, arguments)] for di, integrand in self._integrands.items())
-
-  def contains(self, name):
-    try:
-      self._argshape(name)
-    except KeyError:
-      return False
-    else:
-      return True
-
-  def __add__(self, other):
-    if not isinstance(other, Integral):
-      return NotImplemented
-    assert self.shape == other.shape
-    integrands = self._integrands.copy()
-    for di, integrand in other._integrands.items():
-      try:
-        integrands[di] += integrand
-      except KeyError:
-        integrands[di] = integrand
-    return Integral(integrands.items())
-
-  def __neg__(self):
-    return Integral([di, -integrand] for di, integrand in self._integrands.items())
-
-  def __sub__(self, other):
-    return self + (-other)
-
-  def __mul__(self, other):
-    if not isinstance(other, numbers.Number):
-      return NotImplemented
-    return Integral([di, integrand * other] for di, integrand in self._integrands.items())
-
-  __rmul__ = __mul__
-
-  def __truediv__(self, other):
-    if not isinstance(other, numbers.Number):
-      return NotImplemented
-    return self.__mul__(1/other)
-
-  def _argshape(self, name):
-    assert isinstance(name, str)
-    shapes = {func.shape[:func.ndim-func._nderiv]
-      for func in function.Tuple(self._integrands.values()).dependencies
-        if isinstance(func, function.Argument) and func._name == name}
-    if not shapes:
-      raise KeyError(name)
-    assert len(shapes) == 1, 'inconsistent shapes for argument {!r}'.format(name)
-    shape, = shapes
-    return shape
-
-strictintegral = types.strict[Integral]
-
-@types.apply_annotations
-@cache.function
-def eval_integrals(*integrals: types.tuple[strictintegral], arguments:types.frozendict[types.strictstr,types.frozenarray]=None):
-  gather = {}
-  for iint, integral in enumerate(integrals):
-    for di in integral._integrands:
-      gather.setdefault(di, []).append(iint)
-  retvals = [None] * len(integrals)
-  for (domain, ischeme), iints in gather.items():
-    for iint, retval in zip(iints, domain.integrate([integrals[iint]._integrands[domain, ischeme] for iint in iints], ischeme=ischeme, arguments=arguments)):
-      if retvals[iint] is None:
-        retvals[iint] = retval
-      else:
-        retvals[iint] += retval
-  return retvals
 
 # UTILITY FUNCTIONS
 
