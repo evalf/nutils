@@ -375,20 +375,10 @@ except (OSError, KeyError):
   pass
 else:
 
-  class c_array:
-    def __init__(self, dtype):
-      self.dtype = dtype
-    def __call__(self, obj):
-      if obj is not None:
-        if not isinstance(obj, numpy.ndarray):
-          obj = numpy.array(obj, dtype=self.dtype)
-        assert obj.flags.c_contiguous and obj.dtype == self.dtype
-        return obj.ctypes
-
   # typedefs
-  c_int = c_array(numpy.int32)
-  c_long = c_array(numpy.int64)
-  c_double = c_array(numpy.float64)
+  c_int = types.c_array[numpy.int32]
+  c_long = types.c_array[numpy.int64]
+  c_double = types.c_array[numpy.float64]
 
   try:
     libtbb = ctypes.CDLL({'linux': 'libtbb.so.2', 'darwin': 'libtbb.dylib', 'win32': 'tbb.dll'}[sys.platform])

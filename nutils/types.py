@@ -1090,4 +1090,35 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
       shape=base.shape[:axis]+(length,)+base.shape[axis:],
       strides=base.strides[:axis]+(0,)+base.strides[axis:]))
 
+class _c_arraymeta(type):
+  def __getitem__(self, dtype):
+    def constructor(value):
+      if isinstance(value, numpy.core._internal._ctypes):
+        return value
+      if not isinstance(value, numpy.ndarray):
+        value = numpy.array(value, dtype=dtype)
+      if not value.flags.c_contiguous:
+        raise ValueError('Array is not contiguous.')
+      if value.dtype != dtype:
+        raise ValueError('Expected dtype {} but array has dtype {}.'.format(dtype, value.dtype))
+      return value.ctypes
+    constructor.__qualname__ = constructor.__name__ = 'c_array[{}]'.format(_getname(dtype))
+    return constructor
+  def __call__(*args, **kwargs):
+    raise TypeError("cannot create an instance of class 'c_array'")
+
+class c_array(metaclass=_c_arraymeta):
+  '''
+  Converts an array-like object to a ctypes array with a specific dtype.  The
+  function ``c_array[dtype](array)`` returns ``array`` unmodified if ``array``
+  is already a ctypes array.  If ``array`` is a :class:`numpy.ndarray`, the
+  array is converted if the ``dtype`` is correct and the array is contiguous;
+  otherwise :class:`ValueError` is raised.  Otherwise, ``array`` is first
+  converted to a contiguous :class:`numpy.ndarray` and then converted to ctypes
+  array.  In the first two cases changes made to the ctypes array are reflected
+  by the ``array`` argument: both are essentially views of the same data.  In
+  the third case, changes to either ``array`` or the returned ctypes array are
+  not reflected by the other.
+  '''
+
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

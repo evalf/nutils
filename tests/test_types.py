@@ -1,6 +1,6 @@
 from . import *
 import nutils.types
-import inspect, pickle, itertools
+import inspect, pickle, itertools, ctypes
 import numpy
 
 class apply_annotations(TestCase):
@@ -841,5 +841,37 @@ class frozenarray(TestCase):
   def test_as_numpy_array(self):
     a = numpy.array(nutils.types.frozenarray([1,2]))
     self.assertIsInstance(a, numpy.ndarray)
+
+class c_array(TestCase):
+
+  def test_idempotence(self):
+    a = numpy.array([1,2,3], dtype=numpy.int64)
+    P = nutils.types.c_array[numpy.int64]
+    a_ct = P(a)
+    self.assertEqual(P(a_ct), a_ct)
+
+  def test_list(self):
+    a = [1,2,3]
+    a_ct = nutils.types.c_array[numpy.int64](a)
+    self.assertEqual(ctypes.cast(a_ct, ctypes.POINTER(ctypes.c_int64)).contents.value, 1)
+
+  def test_array(self):
+    a = numpy.array([1,2,3], dtype=numpy.int64)
+    a_ct = nutils.types.c_array[numpy.int64](a)
+    self.assertEqual(ctypes.cast(a_ct, ctypes.POINTER(ctypes.c_int64)).contents.value, 1)
+
+  def test_array_invalid_dtype(self):
+    a = numpy.array([1,2,3], dtype=numpy.int32)
+    with self.assertRaisesRegex(ValueError, '^Expected dtype .* but array has dtype .*\\.$'):
+      a_ct = nutils.types.c_array[numpy.int64](a)
+
+  def test_array_noncontinguous(self):
+    a = numpy.array([[1,2],[3,4]], dtype=numpy.int32).T
+    with self.assertRaisesRegex(ValueError, '^Array is not contiguous\\.$'):
+      a_ct = nutils.types.c_array[numpy.int64](a)
+
+  def test_wo_getitem(self):
+    with self.assertRaises(TypeError):
+      nutils.types.c_array()
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
