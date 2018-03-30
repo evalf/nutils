@@ -169,6 +169,13 @@ class Sample(types.Singleton):
   def hull(self):
     return types.frozenarray(numpy.concatenate([index.take(points.hull) for points, index in zip(self.points, self.index)]), copy=False)
 
+  def subset(self, mask):
+    selection = [ielem for ielem in range(self.nelems) if mask[self.index[ielem]].any()]
+    transforms = [self.transforms[ielem] for ielem in selection]
+    points = [self.points[ielem] for ielem in selection]
+    offset = numpy.cumsum([0] + [p.npoints for p in points])
+    return Sample(transforms, points, map(numpy.arange, offset[:-1], offset[1:]))
+
 strictsample = types.strict[Sample]
 
 class Integral(types.Singleton):
