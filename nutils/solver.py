@@ -254,14 +254,12 @@ class newton(RecursionWithSolve, length=1):
       yield lhs, 0, 1
       return
 
-    fcache = cache.WrapperCache()
-
     if history:
       (lhs, resnorm, relax), = history
-      res, jac = topology.eval_integrals(self.residual, jacobian, fcache=fcache, arguments=collections.ChainMap(self.arguments, {self.target: lhs}))
+      res, jac = topology.eval_integrals(self.residual, jacobian, arguments=collections.ChainMap(self.arguments, {self.target: lhs}))
     else:
       lhs = lhs0
-      res, jac = topology.eval_integrals(self.residual, jacobian, fcache=fcache, arguments=collections.ChainMap(self.arguments, {self.target: lhs}))
+      res, jac = topology.eval_integrals(self.residual, jacobian, arguments=collections.ChainMap(self.arguments, {self.target: lhs}))
       resnorm = numpy.linalg.norm(res[~constrain])
       relax = 1
       yield lhs, resnorm, relax
@@ -271,7 +269,7 @@ class newton(RecursionWithSolve, length=1):
       relax = min(relax * self.rebound, 1)
       for irelax in itertools.count():
         newlhs = lhs+relax*dlhs
-        res, jac = topology.eval_integrals(self.residual, jacobian, fcache=fcache, arguments=collections.ChainMap(self.arguments, {self.target: newlhs}))
+        res, jac = topology.eval_integrals(self.residual, jacobian, arguments=collections.ChainMap(self.arguments, {self.target: newlhs}))
         newresnorm = numpy.linalg.norm(res[~constrain])
         if irelax >= self.nrelax:
           if newresnorm > resnorm:
@@ -383,15 +381,13 @@ class pseudotime(RecursionWithSolve, length=1):
         constrain = ~numpy.isnan(constrain)
     constrain = types.frozenarray(constrain)
 
-    fcache = cache.WrapperCache()
-
     if history:
       (lhs, resnorm, thistimestep), = history
-      res0 = residual.eval(fcache=fcache, arguments=collections.ChainMap(self.arguments, {self.target: lhs0}))
+      res0 = residual.eval(arguments=collections.ChainMap(self.arguments, {self.target: lhs0}))
       resnorm0 = numpy.linalg.norm(res0[~constrain])
-      res, jac = topology.eval_integrals(residual, jacobian0+jacobiant/thistimestep, fcache=fcache, arguments=collections.ChainMap(self.arguments, {self.target: lhs}))
+      res, jac = topology.eval_integrals(residual, jacobian0+jacobiant/thistimestep, arguments=collections.ChainMap(self.arguments, {self.target: lhs}))
     else:
-      res, jac = topology.eval_integrals(residual, jacobian0+jacobiant/self.timestep, fcache=fcache, arguments=collections.ChainMap(self.arguments, {self.target: lhs0}))
+      res, jac = topology.eval_integrals(residual, jacobian0+jacobiant/self.timestep, arguments=collections.ChainMap(self.arguments, {self.target: lhs0}))
       lhs = lhs0
       resnorm = resnorm0 = numpy.linalg.norm(res[~constrain])
       yield lhs, resnorm, self.timestep
@@ -400,7 +396,7 @@ class pseudotime(RecursionWithSolve, length=1):
       lhs -= jac.solve(res, constrain=constrain, **self.solveargs)
       thistimestep = self.timestep * (resnorm0/resnorm)
       log.info('timestep: {:.0e}'.format(thistimestep))
-      res, jac = topology.eval_integrals(residual, jacobian0+jacobiant/thistimestep, fcache=fcache, arguments=collections.ChainMap(self.arguments, {self.target: lhs}))
+      res, jac = topology.eval_integrals(residual, jacobian0+jacobiant/thistimestep, arguments=collections.ChainMap(self.arguments, {self.target: lhs}))
       resnorm = numpy.linalg.norm(res[~constrain])
       yield lhs, resnorm, thistimestep
 

@@ -238,7 +238,7 @@ class Topology(types.Singleton):
     retvals = self.elem_eval((1,)+funcs, geometry=geometry, ischeme=ischeme, arguments=arguments)
     return [v / retvals[0][(slice(None),)+(_,)*(v.ndim-1)] for v in retvals[1:]]
 
-  def _integrate(self, funcs, ischeme, fcache=None, arguments=None):
+  def _integrate(self, funcs, ischeme, arguments=None):
 
     if arguments is None:
       arguments = {}
@@ -259,8 +259,7 @@ class Topology(types.Singleton):
     if config.dot:
       function.Tuple(values).graphviz()
 
-    if fcache is None:
-      fcache = cache.WrapperCache()
+    fcache = cache.WrapperCache()
 
     # To allocate (shared) memory for all block data we evaluate indexfunc to
     # build an nblocks x nelems+1 offset array, and nblocks index lists of
@@ -312,15 +311,13 @@ class Topology(types.Singleton):
           index[idim,s].reshape(w_intdata.shape)[...] = ii[si]
           si = si[:-1]
 
-    log.debug('cache', fcache.stats)
-
     return data_index
 
   @log.title
   @util.single_or_multiple
   @types.apply_annotations
   @cache.function
-  def integrate(self, funcs, ischeme='gauss', degree=None, geometry=None, fcache=None, edit=None, *, arguments:types.frozendict[types.strictstr,types.frozenarray]=None):
+  def integrate(self, funcs, ischeme='gauss', degree=None, geometry=None, edit=None, *, arguments:types.frozendict[types.strictstr,types.frozenarray]=None):
     'integrate'
 
     if edit is None:
@@ -329,7 +326,7 @@ class Topology(types.Singleton):
       ischeme += str(degree)
     iwscale = function.J(geometry, self.ndims) if geometry else 1
     integrands = [function.asarray(edit(func * iwscale)) for func in funcs]
-    data_index = self._integrate(integrands, ischeme, fcache, arguments)
+    data_index = self._integrate(integrands, ischeme, arguments)
     retvals = []
     for integrand, (data,index) in zip(integrands, data_index):
       retval = matrix.assemble(data, index, integrand.shape)
@@ -2525,16 +2522,14 @@ strictintegral = types.strict[Integral]
 
 @types.apply_annotations
 @cache.function
-def eval_integrals(*integrals: types.tuple[strictintegral], fcache=None, arguments:types.frozendict[types.strictstr,types.frozenarray]=None):
-  if fcache is None:
-    fcache = cache.WrapperCache()
+def eval_integrals(*integrals: types.tuple[strictintegral], arguments:types.frozendict[types.strictstr,types.frozenarray]=None):
   gather = {}
   for iint, integral in enumerate(integrals):
     for di in integral._integrands:
       gather.setdefault(di, []).append(iint)
   retvals = [None] * len(integrals)
   for (domain, ischeme), iints in gather.items():
-    for iint, retval in zip(iints, domain.integrate([integrals[iint]._integrands[domain, ischeme] for iint in iints], ischeme=ischeme, fcache=fcache, arguments=arguments)):
+    for iint, retval in zip(iints, domain.integrate([integrals[iint]._integrands[domain, ischeme] for iint in iints], ischeme=ischeme, arguments=arguments)):
       if retvals[iint] is None:
         retvals[iint] = retval
       else:
