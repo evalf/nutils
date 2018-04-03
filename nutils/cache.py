@@ -98,6 +98,9 @@ class FileCache:
   def __init__(self, *args):
     'constructor'
 
+    from . import warnings
+    warnings.deprecation("'nutils.cache.FileCache' is deprecated. Use 'nutils.cache.function' or nutils.cache.Recursion' instead.")
+
     import os, numpy, hashlib, pickle
     serial = pickle.dumps(args, -1)
     self.myhash = hash(serial)
