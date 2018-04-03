@@ -723,7 +723,7 @@ class Topology(types.Singleton):
     angle, = function.rootcoords(1)
     geom, angle = function.bifurcate(geom, angle)
     revgeom = function.concatenate([geom[0] * function.trignormal(angle), geom[1:]])
-    simplify = cache.replace(lambda op: function.zeros(()) if op is angle else None)
+    simplify = function.replace(lambda op: function.zeros(()) if op is angle else None)
     return revdomain, revgeom, simplify
 
   def extruded(self, geom, nelems, periodic=False, bnames=('front','back')):

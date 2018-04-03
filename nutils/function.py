@@ -3058,6 +3058,43 @@ def _inflate_scalar(arg, shape):
     arg = insertaxis(arg, idim, length)
   return arg
 
+def replace(func):
+  '''decorator for deep object replacement
+
+  Generates a deep replacement method for Immutable objects based on a callable
+  that is applied (recursively) on individual constructor arguments.
+
+  Args
+  ----
+  func
+      callable which maps (obj, ...) onto replaced_obj
+
+  Returns
+  -------
+  :any:`callable`
+      The method that searches the object to perform the replacements.
+  '''
+
+  @functools.wraps(func)
+  def wrapped(target, *funcargs, **funckwargs):
+    cache = {}
+    def op(obj):
+      try:
+        replaced = cache[obj]
+      except TypeError: # unhashable
+        replaced = obj
+      except KeyError:
+        replaced = func(obj, *funcargs, **funckwargs)
+        if replaced is None:
+          replaced = obj.edit(op) if isinstance(obj, types.Immutable) else obj
+        cache[obj] = replaced
+      return replaced
+    retval = op(target)
+    del op
+    return retval
+
+  return wrapped
+
 # FUNCTIONS
 
 def isarray(arg):
@@ -3211,14 +3248,14 @@ def rootcoords(ndims):
 def sampled(data, ndims):
   return Sampled(data)
 
-@cache.replace
+@replace
 def opposite(arg):
   if arg is TRANS:
     return OPPTRANS
   if arg is OPPTRANS:
     return TRANS
 
-@cache.replace
+@replace
 def _bifurcate(arg, side):
   if arg in (TRANS, OPPTRANS):
     return SelectBifurcation(arg, side)
@@ -3533,7 +3570,7 @@ def ravel(func, axis):
   axis = numeric.normdim(func.ndim-1, axis)
   return Ravel(func, axis)
 
-@cache.replace
+@replace
 def replace_arguments(value, arguments):
   '''Replace :class:`Argument` objects in ``value``.
 
@@ -3560,7 +3597,7 @@ def replace_arguments(value, arguments):
       v = localgradient(v, ndims)
     return v
 
-@cache.replace
+@replace
 def zero_argument_derivatives(arg):
   if isinstance(arg, Argument) and arg._nderiv > 0:
     return zeros_like(arg)

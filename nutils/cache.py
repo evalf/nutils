@@ -149,41 +149,9 @@ class FileCache:
     return self.myhash
 
 def replace(func):
-  '''decorator for deep object replacement
-
-  Generates a deep replacement method for Immutable objects based on a callable
-  that is applied (recursively) on individual constructor arguments.
-
-  Args
-  ----
-  func
-      callable which maps (obj, ...) onto replaced_obj
-
-  Returns
-  -------
-  :any:`callable`
-      The method that searches the object to perform the replacements.
-  '''
-
-  @functools.wraps(func)
-  def wrapped(target, *funcargs, **funckwargs):
-    cache = {}
-    def op(obj):
-      try:
-        replaced = cache[obj]
-      except TypeError: # unhashable
-        replaced = obj
-      except KeyError:
-        replaced = func(obj, *funcargs, **funckwargs)
-        if replaced is None:
-          replaced = obj.edit(op) if isinstance(obj, types.Immutable) else obj
-        cache[obj] = replaced
-      return replaced
-    retval = op(target)
-    del op
-    return retval
-
-  return wrapped
+  from . import warnings, function
+  warnings.deprecation("'nutils.cache.replace' is moved to 'nutils.function.replace'")
+  return function.replace(func)
 
 # Define platform-dependent `_lock_file` function.
 def _lock_file_fallback(f): pass
