@@ -1,11 +1,11 @@
-from nutils import solver, mesh, function, cache, config, types
+from nutils import solver, mesh, function, cache, types
 from . import *
 import numpy, contextlib, tempfile
 
 @contextlib.contextmanager
 def tmpcache():
   with tempfile.TemporaryDirectory() as tmpdir:
-    with config(cache=True, cachedir=str(tmpdir)):
+    with cache.enable(tmpdir):
       yield
 
 def _test_recursion_cache(testcase, solver_iter):

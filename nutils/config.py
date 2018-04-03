@@ -75,31 +75,6 @@ class Config(types.ModuleType):
 
      Defaults to ``4``: info.
 
-  .. attribute:: cache
-
-     Controls on-disk caching.  If ``True``, functions decorated with
-     :func:`nutils.cache.function` and subclasses of
-     :class:`nutils.cache.Recursion` are automatically cached.  Examples are
-     :meth:`nutils.topology.Topology.integrate` and
-     :class:`nutils.solver.thetamethod`.
-
-     The location of the on-disk cache is defined by :attr:`cachedir`.
-
-     Defaults to ``False``.
-
-  .. attribute:: cachedir
-
-     Defines the location of the on-disk cache (see :attr:`cache`).  Relative
-     paths are relative with respect to the current working directory (see
-     :func:`os.getcwd`).
-
-     .. Note::
-
-        If :attr:`outdir` is empty (the default), :func:`nutils.cli.run` and
-        :func:`nutils.cli.choose` change this value.  See :attr:`outrootdir`.
-
-     Defaults to ``'cache'``.
-
   .. attribute:: outdir
 
      Defines the output directory for the HTML log
@@ -137,6 +112,31 @@ class Config(types.ModuleType):
 
   The following properties are only used in :func:`nutils.cli.run` and
   :func:`nutils.cli.choose`.
+
+  .. attribute:: cache
+
+     Controls on-disk caching.  If ``True``, functions decorated with
+     :func:`nutils.cache.function` and subclasses of
+     :class:`nutils.cache.Recursion` are automatically cached.  Examples are
+     :meth:`nutils.topology.Topology.integrate` and
+     :class:`nutils.solver.thetamethod`.
+
+     The location of the on-disk cache is defined by :attr:`cachedir`.
+
+     Defaults to ``False``.
+
+  .. attribute:: cachedir
+
+     Defines the location of the on-disk cache (see :attr:`cache`).  Relative
+     paths are relative with respect to the current working directory (see
+     :func:`os.getcwd`).
+
+     .. Note::
+
+        If :attr:`outdir` is empty (the default), :func:`nutils.cli.run` and
+        :func:`nutils.cli.choose` change this value.  See :attr:`outrootdir`.
+
+     Defaults to ``'cache'``.
 
   .. attribute:: outrootdir
 

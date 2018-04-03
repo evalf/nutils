@@ -22,8 +22,8 @@
 The cache module.
 """
 
-from . import config, log, types
-import os, numpy, functools, inspect, builtins, pathlib, pickle, itertools, hashlib, abc
+from . import log, types
+import os, numpy, functools, inspect, builtins, pathlib, pickle, itertools, hashlib, abc, contextlib
 
 class Wrapper:
   'function decorator that caches results by arguments'
@@ -98,7 +98,7 @@ class FileCache:
   def __init__(self, *args):
     'constructor'
 
-    from . import warnings
+    from . import warnings, config
     warnings.deprecation("'nutils.cache.FileCache' is deprecated. Use 'nutils.cache.function' or nutils.cache.Recursion' instead.")
 
     import os, numpy, hashlib, pickle
@@ -156,6 +156,33 @@ def replace(func):
   warnings.deprecation("'nutils.cache.replace' is moved to 'nutils.function.replace'")
   return function.replace(func)
 
+_cache = None
+
+@contextlib.contextmanager
+def _cache_context(value):
+  global _cache
+  old_value = _cache
+  try:
+    _cache = value
+    yield
+  finally:
+    _cache = old_value
+
+def enable(cachedir):
+  '''
+  Enable cacheing and set the cache directory to ``cachedir``.  Affects
+  functions decorated with :func:`function` and subclasses of
+  :class:`Recursion`.
+  '''
+  return _cache_context(pathlib.Path(cachedir))
+
+def disable():
+  '''
+  Disable cacheing.  Affects functions decorated with :func:`function` and
+  subclasses of :class:`Recursion`.
+  '''
+  return _cache_context(None)
+
 # Define platform-dependent `_lock_file` function.
 def _lock_file_fallback(f): pass
 
@@ -202,13 +229,14 @@ def function(func=None, *, version=0):
   repeatedly, should produce the same return value.  All arguments passed to
   the decorator should be hashable (by :func:`nutils.types.nutils_hash`).
 
-  Memoization is controlled by the ``nutils.config.cache`` variable.  If
-  ``True``, memoization is enabled: The first time the decorator is called with
-  a unique set of arguments, the decorator calls ``func`` and stores the result
-  on disk in the directory specified by ``nutils.config.cachedir``; when the
-  decorator is called with the same arguments, the result is retrieved from the
-  cache.  If ``False``, the decorator calls ``func`` directly, bypassing the
-  cache.  Note that ``nutils.config.cachedir`` defaults to ``False``.
+  Memoization is controlled by the context managers :func:`enable` and
+  :func:`disable`.  If inside an :func:`enable` context, memoization is
+  enabled: The first time the decorator is called with a unique set of
+  arguments, the decorator calls ``func`` and stores the result on disk in the
+  directory specified by the argument to :func:`enable`; when the decorator is
+  called with the same arguments, the result is retrieved from the cache.  If
+  inside a :func:`disable` context, the decorator calls ``func`` directly,
+  bypassing the cache.  Note that memoization is off by default.
 
   Parameters
   ----------
@@ -240,7 +268,8 @@ def function(func=None, *, version=0):
 
   @functools.wraps(func)
   def wrapper(*args, **kwargs):
-    if not config.cache:
+    global _cache
+    if _cache is None:
       return func(*args, **kwargs)
     args, kwargs = canonicalize(*args, **kwargs)
     # Hash the function key and the canonicalized arguments and compute the
@@ -251,7 +280,7 @@ def function(func=None, *, version=0):
     for hkv in sorted(hashlib.sha1(k.encode()).digest()+types.nutils_hash(v) for k, v in kwargs.items()):
       h.update(hkv)
     hkey = h.hexdigest()
-    cachefile = pathlib.Path(config.cachedir)/hkey
+    cachefile = _cache/hkey
     # Open and lock `cachefile`.  Try to read it and, if successful, unlock
     # the file (implicitly by closing the file) and return the value.  If
     # reading fails, e.g. because the file did not exist, call `func`, store
@@ -277,7 +306,7 @@ def function(func=None, *, version=0):
       # Seek back to the beginning, because pickle might have read garbage.
       f.seek(0)
       # Disable the cache temporarily to prevent caching subresults *in* `func`.
-      with config(cache=False), log.RecordLog() as log_:
+      with disable(), log.RecordLog() as log_:
         value = func(*args, **kwargs)
       pickle.dump((value, log_), f)
       log.debug('[cache.function {}] store'.format(hkey))
@@ -324,11 +353,13 @@ class Recursion(types.Immutable, metaclass=_RecursionMeta):
         def resume(self, history):
           ...
 
-  Memoization is controlled by the ``nutils.config.cache`` variable.  If
-  ``True``, memoization is enabled: All cached iterations are retrieved from
-  disk and are yielded; if iteration continues, the :meth:`resume` method is
-  called to produce the remaining iterations.  If ``False``, the memoization is
-  disabled and the :meth:`resume` method is called immediately with empty
+
+  Memoization is controlled by the context managers :func:`enable` and
+  :func:`disable`.  If inside an :func:`enable` context, memoization is
+  enabled: All cached iterations are retrieved from disk and are yielded; if
+  iteration continues, the :meth:`resume` method is called to produce the
+  remaining iterations.  If inside a :func:`disable` context, the memoization
+  is disabled and the :meth:`resume` method is called immediately with empty
   history.
 
   Note that this class is iterable, but is not an iterator.  Calling
@@ -377,15 +408,16 @@ class Recursion(types.Immutable, metaclass=_RecursionMeta):
   __slots__ = ()
 
   def __iter__(self):
+    global _cache
     length = type(self).length
-    if not config.cache:
+    if _cache is None:
       yield from self.resume([])
     else:
       # The hash of `types.Immutable` uniquely defines this `Recursion`, so use
       # this to identify the cache directory.  All iterations are stored as
       # separate files, numbered '0000', '0001', ..., in this directory.
       hkey = self.__nutils_hash__.hex()
-      cachepath = pathlib.Path(config.cachedir) / hkey
+      cachepath = _cache / hkey
       cachepath.mkdir(exist_ok=True, parents=True)
       log.debug('[cache.Recursion {}] start iterating'.format(hkey))
       # The `history` variable is updated while reading from the cache and
@@ -427,7 +459,7 @@ class Recursion(types.Immutable, metaclass=_RecursionMeta):
             f.seek(0)
             del history
           # Disable the cache temporarily to prevent caching subresults *in* `func`.
-          with config(cache=False), log.RecordLog() as log_:
+          with disable(), log.RecordLog() as log_:
             try:
               value = next(resume)
             except StopIteration:

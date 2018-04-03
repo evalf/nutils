@@ -5,7 +5,7 @@ import sys, contextlib, tempfile, pathlib, threading
 @contextlib.contextmanager
 def tmpcache():
   with tempfile.TemporaryDirectory() as tmpdir:
-    with config(cache=True, cachedir=str(tmpdir)):
+    with cache.enable(tmpdir):
       yield pathlib.Path(tmpdir)
 
 class refcount(TestCase):
