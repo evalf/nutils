@@ -125,7 +125,7 @@ class PyPlot(BasePlot):
       path = self.getpath(name, index, ext)
       paths.append(path)
       with core.open_in_outdir(path, 'wb') as f:
-        self.savefig(f, **kwargs)
+        self.savefig(f, format=ext, **kwargs)
     log.user(' '.join(paths))
 
   def segments(self, points, color='black', **kwargs):
