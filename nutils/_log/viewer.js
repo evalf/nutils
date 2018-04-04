@@ -204,7 +204,7 @@ const Log = class {
 
     // Link anchors to theater.
     let ianchor = 0;
-    for (const anchor of document.querySelectorAll('#log .item > a.plot:only-child')) {
+    for (const anchor of document.querySelectorAll('#log .item > a.plot')) {
       anchor.addEventListener('click', this._plot_clicked);
       const filename = (anchor.innerText.match(/^(.*)[.][^.]+$/) || [null, 'unknown'])[1];
       const category = (filename.match(/^(.*?)[0-9]*$/) || [null, null])[1];
