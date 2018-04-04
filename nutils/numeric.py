@@ -22,6 +22,7 @@
 The numeric module provides methods that are lacking from the numpy module.
 """
 
+from . import types
 import numpy, numbers, builtins, collections.abc, warnings
 
 _abc = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' # indices for einsum
@@ -171,7 +172,7 @@ def eig(A):
 
   return L, V
 
-isarray = lambda a: isinstance(a, (numpy.ndarray, const))
+isarray = lambda a: isinstance(a, (numpy.ndarray, types.frozenarray))
 isboolarray = lambda a: isarray(a) and a.dtype == bool
 isbool = lambda a: isboolarray(a) and a.ndim == 0 or type(a) == bool
 isint = lambda a: isinstance(a, (numbers.Integral,numpy.integer))
@@ -306,7 +307,7 @@ def unpack(n, atol, rtol):
 
   Args
   ----
-  n : int array
+  n : :class:`int` array
       Integer data.
   atol : :class:`float`
       Absolute tolerance.
@@ -315,7 +316,7 @@ def unpack(n, atol, rtol):
 
   Returns
   -------
-  Float array.
+  :class:`float` array
   '''
 
   iinfo = numpy.iinfo(n.dtype)
@@ -350,7 +351,7 @@ def pack(a, atol, rtol, dtype):
 
   Args
   ----
-  a : float array
+  a : :class:`float` array
     Input data.
   atol : :class:`float`
     Absolute tolerance.
@@ -361,7 +362,7 @@ def pack(a, atol, rtol, dtype):
 
   Returns
   -------
-  Integer array.
+  :class:`int` array.
   '''
 
   iinfo = numpy.iinfo(dtype)
@@ -397,125 +398,6 @@ def assert_allclose64(actual, data=None, atol=2e-15, rtol=2e-3):
     status += 'Warning: {}'.format(w.message),
   raise Exception('\n'.join(status))
 
-class const(collections.abc.Sequence):
-  __slots__ = '__base', '__hash'
-
-  @staticmethod
-  def full(shape, fill_value):
-    return const(numpy.lib.stride_tricks.as_strided(fill_value, shape, [0]*len(shape)), copy=False)
-
-  def __new__(cls, base, copy=True, dtype=None):
-    if isinstance(base, const):
-      return base
-    self = object.__new__(cls)
-    self.__base = numpy.array(base, dtype=dtype) if copy or not isinstance(base, numpy.ndarray) or dtype and dtype != base.dtype else base
-    self.__base.flags.writeable = False
-    self.__hash = hash((self.__base.shape, self.__base.dtype, tuple(self.__base.flat[::self.__base.size//32+1]) if self.__base.size else ())) # NOTE special case self.__base.size == 0 necessary for numpy<1.12
-    return self
-
-  @property
-  def __array_struct__(self):
-    return self.__base.__array_struct__
-
-  def __reduce__(self):
-    return const, (self.__base, False)
-
-  def __eq__(self, other):
-    if self is other:
-      return True
-    if not isinstance(other, const):
-      return False
-    if self.__base is other.__base:
-      return True
-    if self.__hash != other.__hash or self.__base.dtype != other.__base.dtype or self.__base.shape != other.__base.shape or numpy.not_equal(self.__base, other.__base).any():
-      return False
-    # deduplicate
-    self.__base = other.__base
-    return True
-
-  def __lt__(self, other):
-    if not isinstance(other, const):
-      return NotImplemented
-    return self != other and (self.dtype < other.dtype
-      or self.dtype == other.dtype and (self.shape < other.shape
-        or self.shape == other.shape and self.__base.tolist() < other.__base.tolist()))
-
-  def __le__(self, other):
-    if not isinstance(other, const):
-      return NotImplemented
-    return self == other or (self.dtype < other.dtype
-      or self.dtype == other.dtype and (self.shape < other.shape
-        or self.shape == other.shape and self.__base.tolist() < other.__base.tolist()))
-
-  def __gt__(self, other):
-    if not isinstance(other, const):
-      return NotImplemented
-    return self != other and (self.dtype > other.dtype
-      or self.dtype == other.dtype and (self.shape > other.shape
-        or self.shape == other.shape and self.__base.tolist() > other.__base.tolist()))
-
-  def __ge__(self, other):
-    if not isinstance(other, const):
-      return NotImplemented
-    return self == other or (self.dtype > other.dtype
-      or self.dtype == other.dtype and (self.shape > other.shape
-        or self.shape == other.shape and self.__base.tolist() > other.__base.tolist()))
-
-  def __getitem__(self, item):
-    retval = self.__base.__getitem__(item)
-    return const(retval, copy=False) if isinstance(retval, numpy.ndarray) else retval
-
-  dtype = property(lambda self: self.__base.dtype)
-  shape = property(lambda self: self.__base.shape)
-  size = property(lambda self: self.__base.size)
-  ndim = property(lambda self: self.__base.ndim)
-  flat = property(lambda self: self.__base.flat)
-  T = property(lambda self: const(self.__base.T, copy=False))
-
-  __len__ = lambda self: self.__base.__len__()
-  __repr__ = lambda self: 'const'+self.__base.__repr__()[5:]
-  __str__ = lambda self: self.__base.__str__()
-  __add__ = lambda self, other: self.__base.__add__(other)
-  __radd__ = lambda self, other: self.__base.__radd__(other)
-  __sub__ = lambda self, other: self.__base.__sub__(other)
-  __rsub__ = lambda self, other: self.__base.__rsub__(other)
-  __mul__ = lambda self, other: self.__base.__mul__(other)
-  __rmul__ = lambda self, other: self.__base.__rmul__(other)
-  __truediv__ = lambda self, other: self.__base.__truediv__(other)
-  __rtruediv__ = lambda self, other: self.__base.__rtruediv__(other)
-  __floordiv__ = lambda self, other: self.__base.__floordiv__(other)
-  __rfloordiv__ = lambda self, other: self.__base.__rfloordiv__(other)
-  __pow__ = lambda self, other: self.__base.__pow__(other)
-  __hash__ = lambda self: self.__hash
-  __int__ = lambda self: self.__base.__int__()
-  __float__ = lambda self: self.__base.__float__()
-  __abs__ = lambda self: self.__base.__abs__()
-  __neg__ = lambda self: self.__base.__neg__()
-
-  tolist = lambda self, *args, **kwargs: self.__base.tolist(*args, **kwargs)
-  copy = lambda self, *args, **kwargs: self.__base.copy(*args, **kwargs)
-  astype = lambda self, *args, **kwargs: self.__base.astype(*args, **kwargs)
-  take = lambda self, *args, **kwargs: self.__base.take(*args, **kwargs)
-  any = lambda self, *args, **kwargs: self.__base.any(*args, **kwargs)
-  all = lambda self, *args, **kwargs: self.__base.all(*args, **kwargs)
-  sum = lambda self, *args, **kwargs: self.__base.sum(*args, **kwargs)
-  min = lambda self, *args, **kwargs: self.__base.min(*args, **kwargs)
-  max = lambda self, *args, **kwargs: self.__base.max(*args, **kwargs)
-  prod = lambda self, *args, **kwargs: self.__base.prod(*args, **kwargs)
-  dot = lambda self, *args, **kwargs: self.__base.dot(*args, **kwargs)
-  swapaxes = lambda self, *args, **kwargs: const(self.__base.swapaxes(*args, **kwargs), copy=False)
-  ravel = lambda self, *args, **kwargs: const(self.__base.ravel(*args, **kwargs), copy=False)
-  reshape = lambda self, *args, **kwargs: const(self.__base.reshape(*args, **kwargs), copy=False)
-  transpose = lambda self, *args, **kwargs: const(self.__base.transpose(*args, **kwargs), copy=False)
-  cumsum = lambda self, *args, **kwargs: const(self.__base.cumsum(*args, **kwargs), copy=False)
-  nonzero = lambda self, *args, **kwargs: const(self.__base.nonzero(*args, **kwargs), copy=False)
-
-  def insertaxis(self, axis, length):
-    base = self.__base
-    return const(numpy.lib.stride_tricks.as_strided(base,
-      shape=base.shape[:axis]+(length,)+base.shape[axis:],
-      strides=base.strides[:axis]+(0,)+base.strides[axis:]))
-
 def binom(n, k):
   a = b = 1
   for i in range(1, k+1):
@@ -530,7 +412,7 @@ def poly_outer_product(left, right):
   outer = numpy.zeros((left.shape[0], right.shape[0], *pshape), dtype=numpy.common_type(left, right))
   a = slice(None)
   outer[(a,a,*(map(slice, left.shape[1:]+right.shape[1:])))] = left[(a,None)+(a,)*nleft+(None,)*nright]*right[(None,a)+(None,)*nleft+(a,)*nright]
-  return const(outer.reshape(left.shape[0] * right.shape[0], *pshape), copy=False)
+  return types.frozenarray(outer.reshape(left.shape[0] * right.shape[0], *pshape), copy=False)
 
 def poly_stack(coeffs):
   coeffs = tuple(coeffs)
@@ -539,7 +421,7 @@ def poly_stack(coeffs):
   dest = numpy.zeros((len(coeffs),)+(n,)*ndim, dtype=float)
   for i, j in enumerate(coeffs):
     dest[(i,*map(slice, j.shape))] = j
-  return const(dest, copy=False)
+  return types.frozenarray(dest, copy=False)
 
 def poly_grad(coeffs, ndim):
   I = range(ndim)
@@ -548,12 +430,12 @@ def poly_grad(coeffs, ndim):
     a = numpy.arange(1, coeffs.shape[-1])
     dcoeffs = [a[tuple(slice(None) if i==j else numpy.newaxis for j in I)] * c for i, c in enumerate(dcoeffs)]
   dcoeffs = numpy.stack(dcoeffs, axis=coeffs.ndim-ndim)
-  return const(dcoeffs, copy=False)
+  return types.frozenarray(dcoeffs, copy=False)
 
 def poly_eval(coeffs, points):
   assert points.ndim == 2
   if coeffs.shape[-1] == 0:
-    return const.full((points.shape[0],)+coeffs.shape[1:coeffs.ndim-points.shape[-1]], 0.)
+    return types.frozenarray.full((points.shape[0],)+coeffs.shape[1:coeffs.ndim-points.shape[-1]], 0.)
   for dim in reversed(range(points.shape[-1])):
     result = numpy.empty((points.shape[0], *coeffs.shape[1:-1]), dtype=float)
     result[:] = coeffs[...,-1]
@@ -562,7 +444,7 @@ def poly_eval(coeffs, points):
       result *= points_dim
       result += coeffs[...,j]
     coeffs = result
-  return const(coeffs, copy=False)
+  return types.frozenarray(coeffs, copy=False)
 
 def poly_mul(p, q):
   assert p.ndim == q.ndim

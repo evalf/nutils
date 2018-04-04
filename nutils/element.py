@@ -19,123 +19,30 @@
 # THE SOFTWARE.
 
 """
-The element module defines reference elements such as the :class:`QuadElement`
-and :class:`TriangularElement`, but also more exotic objects like the
-:class:`TrimmedElement`. A set of (interconnected) elements together form a
-:mod:`nutils.topology`. Elements have edges and children (for refinement), which
-are in turn elements and map onto self by an affine transformation. They also
-have a well defined reference coordinate system, and provide pointsets for
-purposes of integration and sampling.
+The element module defines reference elements such as the
+:class:`LineReference` and :class:`TriangleReference`, but also more exotic
+objects like the :class:`MosaicReference`. A set of (interconnected) elements
+together form a :class:`nutils.topology.Topology`. Elements have edges and
+children (for refinement), which are in turn elements and map onto self by an
+affine transformation. They also have a well defined reference coordinate
+system, and provide pointsets for purposes of integration and sampling.
 """
 
-from . import log, util, numpy, config, numeric, function, cache, transform, warnings, _
+from . import log, util, numpy, config, numeric, function, cache, transform, warnings, types, _
 import re, math, itertools, operator, functools
-
-
-## ELEMENT
-
-class Element:
-  'element class'
-
-  __slots__ = 'reference', 'transform', 'opposite'
-
-  def __init__(self, reference, trans, opptrans=None, oriented=False):
-    assert isinstance(reference, Reference)
-    trans = transform.canonical(trans)
-    assert trans[-1].fromdims == reference.ndims and trans[0].todims == None
-    if opptrans is not None:
-      opptrans = transform.canonical(opptrans)
-      assert opptrans[-1].fromdims == reference.ndims and opptrans[0].todims == None
-      if not oriented:
-        vtx1 = transform.apply(trans, reference.vertices)
-        if vtx1 != transform.apply(opptrans, reference.vertices):
-          for ptrans in reference.permutation_transforms:
-            if vtx1 == transform.apply(opptrans + (ptrans,), reference.vertices):
-              opptrans += ptrans,
-              break
-          else:
-            raise Exception('Did not find a conforming permutation for the opposing transformation')
-    self.reference = reference
-    self.transform = trans
-    self.opposite = opptrans or trans
-
-  def withopposite(self, opp, oriented=False):
-    if isinstance(opp, tuple):
-      return Element(self.reference, self.transform, opp, oriented)
-    assert isinstance(opp, Element) and opp.reference == self.reference
-    return Element(self.reference, self.transform, opp.transform, oriented or opp.opposite==self.transform)
-
-  def __mul__(self, other):
-    self_is_iface = self.opposite != self.transform
-    other_is_iface = other.opposite != other.transform
-    trans = transform.Bifurcate(self.transform, other.transform),
-    if self_is_iface != other_is_iface:
-      opptrans = transform.Bifurcate(self.opposite, other.opposite),
-    else:
-      opptrans = None
-    return Element(self.reference * other.reference, trans, opptrans, oriented=True)
-
-  def __getnewargs__(self):
-    return self.reference, self.transform, self.opposite, True
-
-  def __hash__(self):
-    return hash((self.reference, self.transform, self.opposite))
-
-  def __eq__(self, other):
-    return self is other or isinstance(other,Element) \
-      and self.reference == other.reference \
-      and self.transform == other.transform \
-      and self.opposite == other.opposite
-
-  @property
-  def vertices(self):
-    return transform.apply(self.transform, self.reference.vertices)
-
-  @property
-  def ndims(self):
-    return self.reference.ndims
-
-  @property
-  def nverts(self):
-    return self.reference.nverts
-
-  @property
-  def nedges(self):
-    return self.reference.nedges
-
-  @property
-  def edges(self):
-    return [self.edge(i) for i in range(self.nedges)]
-
-  def edge(self, iedge):
-    trans, edge = self.reference.edges[iedge]
-    return Element(edge, self.transform + (trans,), self.opposite and self.opposite + (trans,), oriented=True) if edge else None
-
-  @property
-  def children(self):
-    return [Element(child, self.transform + (trans,), self.opposite and self.opposite + (trans,), oriented=True)
-      for trans, child in self.reference.children if child]
-
-  @property
-  def flipped(self):
-    assert self.opposite, 'element does not define an opposite'
-    return Element(self.reference, self.opposite, self.transform, oriented=True)
-
-  @property
-  def simplices(self):
-    return [Element(reference, self.transform + (trans,), self.opposite and self.opposite + (trans,), oriented=True)
-      for trans, reference in self.reference.simplices]
-
-  def __str__(self):
-    return 'Element({})'.format(self.vertices)
 
 
 ## REFERENCE ELEMENTS
 
-class Reference(cache.Immutable):
+class Reference(types.Singleton):
   'reference element'
 
+  __slots__ = 'ndims',
+  __cache__ = 'connectivity', 'ribbons', 'volume', 'centroid', '_linear_bernstein', 'getischeme'
+
+  @types.apply_annotations
   def __init__(self, ndims:int):
+    super().__init__()
     self.ndims = ndims
 
   @property
@@ -179,7 +86,7 @@ class Reference(cache.Immutable):
   def children(self):
     return list(zip(self.child_transforms, self.child_refs))
 
-  @cache.property
+  @property
   def connectivity(self):
     # Nested tuple with connectivity information about edges of children:
     # connectivity[ichild][iedge] = ioppchild (interface) or -1 (boundary).
@@ -201,7 +108,7 @@ class Reference(cache.Immutable):
     assert not any(self.child_refs[ichild].edge_refs[iedge] for ichild, iedge in vmap.values()), 'not all boundary elements recovered'
     return tuple(map(tuple, childmap))
 
-  @cache.property
+  @property
   def ribbons(self):
     # tuples of (iedge1,jedge1), (iedge2,jedge2) pairs
     assert self.ndims >= 2
@@ -230,7 +137,7 @@ class Reference(cache.Immutable):
     ptype, args = match.groups()
     get = getattr(self, 'getischeme_'+ptype)
     ipoints, iweights = get(eval(args)) if args else get()
-    return numeric.const(ipoints, copy=False), numeric.const(iweights, copy=False) if iweights is not None else None
+    return types.frozenarray(ipoints, copy=False), types.frozenarray(iweights, copy=False) if iweights is not None else None
 
   @classmethod
   def register(cls, ptype, func):
@@ -244,12 +151,12 @@ class Reference(cache.Immutable):
       return self
     return WithChildrenReference(self, child_refs)
 
-  @cache.property
+  @property
   def volume(self):
     ipoints, iweights = self.getischeme('gauss{}'.format(1))
     return iweights.sum()
 
-  @cache.property
+  @property
   def centroid(self):
     ipoints, iweights = self.getischeme('gauss{}'.format(1))
     return ipoints.T.dot(iweights)/iweights.sum()
@@ -264,7 +171,7 @@ class Reference(cache.Immutable):
             for cref, clevels in zip(self.child_refs, self.child_divide(levels,maxrefine))) if maxrefine > 0 \
       else self.slice(lambda vertices: numeric.dot(numeric.poly_eval(self._linear_bernstein[_], vertices), levels), ndivisions)
 
-  @cache.property
+  @property
   def _linear_bernstein(self):
     return self.get_poly_coeffs('bernstein', degree=1)
 
@@ -372,8 +279,12 @@ class Reference(cache.Immutable):
   def get_dof_transpose_map(self, degree, vertex_transpose_map):
     raise NotImplementedError
 
+strictreference = types.strict[Reference]
+
 class EmptyReference(Reference):
   'inverse reference element'
+
+  __slots__ = ()
 
   volume = 0
 
@@ -384,7 +295,7 @@ class EmptyReference(Reference):
 
   @property
   def vertices(self):
-    return numeric.const(numpy.zeros((0, self.ndims)), copy=False)
+    return types.frozenarray(numpy.zeros((0, self.ndims)), copy=False)
 
   __and__ = __sub__ = lambda self, other: self if other.ndims == self.ndims else NotImplemented
   __or__ = lambda self, other: other if other.ndims == self.ndims else NotImplemented
@@ -399,11 +310,14 @@ class EmptyReference(Reference):
 class RevolutionReference(Reference):
   'modify gauss integration to always return a single point'
 
+  __slots__ = ()
+  __cache__ = 'getischeme',
+
   def __init__(self):
     super().__init__(ndims=1)
 
   def vertices(self):
-    return numeric.const([[0.]]) # NOTE unclear if this is the desired outcome
+    return types.frozenarray([[0.]]) # NOTE unclear if this is the desired outcome
 
   @property
   def edge_transforms(self): # only used in check_edges
@@ -418,7 +332,7 @@ class RevolutionReference(Reference):
     return (transform.Identity(self.ndims), self),
 
   def getischeme(self, ischeme):
-    return numeric.const([[0.]]), numeric.const([2 * numpy.pi])
+    return types.frozenarray([[0.]]), types.frozenarray([2 * numpy.pi])
 
   def inside(self, point, eps=0):
     return True
@@ -426,16 +340,19 @@ class RevolutionReference(Reference):
 class SimplexReference(Reference):
   'simplex reference'
 
+  __slots__ = ()
+  __cache__ = 'edge_refs', 'edge_transforms', 'permutation_transforms', 'ribbons', '_get_poly_coeffs_bernstein', '_get_poly_coeffs_lagrange', '_integer_barycentric_coordinates'
+
   @property
   def vertices(self):
-    return numeric.const(numpy.concatenate([numpy.zeros(self.ndims)[_,:], numpy.eye(self.ndims)], axis=0), copy=False)
+    return types.frozenarray(numpy.concatenate([numpy.zeros(self.ndims)[_,:], numpy.eye(self.ndims)], axis=0), copy=False)
 
-  @cache.property
+  @property
   def edge_refs(self):
     assert self.ndims > 0
     return (getsimplex(self.ndims-1),) * (self.ndims+1)
 
-  @cache.property
+  @property
   def edge_transforms(self):
     assert self.ndims > 0
     return tuple(transform.SimplexEdge(self.ndims, i) for i in range(self.ndims+1))
@@ -448,7 +365,7 @@ class SimplexReference(Reference):
   def child_transforms(self):
     return tuple(transform.SimplexChild(self.ndims, ichild) for ichild in range(2**self.ndims))
 
-  @cache.property
+  @property
   def permutation_transforms(self):
     transforms = []
     for verts in itertools.permutations(tuple(v for v in self.vertices)):
@@ -457,7 +374,7 @@ class SimplexReference(Reference):
       transforms.append(transform.Square(linear.T, offset))
     return tuple(transforms)
 
-  @cache.property
+  @property
   def ribbons(self):
     return tuple(((iedge1,iedge2),(iedge2+1,iedge1)) for iedge1 in range(self.ndims+1) for iedge2 in range(iedge1,self.ndims))
 
@@ -485,7 +402,7 @@ class SimplexReference(Reference):
       raise ValueError('basis {!r} undefined on {}'.format(basis, type(self).__qualname__))
 
   def _integer_barycentric_coordinates(self, degree):
-    return (
+    return tuple(
       (degree-sum(i),*i[::-1])
       for i in itertools.product(*[range(degree+1)]*self.ndims)
       if sum(i) <= degree)
@@ -493,7 +410,7 @@ class SimplexReference(Reference):
   def _get_poly_coeffs_bernstein(self, degree):
     ndofs = self.get_ndofs(degree)
     if self.ndims == 0:
-      return numpy.ones((ndofs,), dtype=int)
+      return types.frozenarray(numpy.ones((ndofs,), dtype=int), copy=False)
     coeffs = numpy.zeros((ndofs,)+(degree+1,)*self.ndims, dtype=int)
     for i, p in enumerate(self._integer_barycentric_coordinates(degree)):
       p = p[1:]
@@ -501,7 +418,7 @@ class SimplexReference(Reference):
         if sum(p+q) <= degree:
           coeffs[(i,)+tuple(map(operator.add, p, q))] = (-1)**sum(q)*math.factorial(degree)//(math.factorial(degree-sum(p+q))*util.product(map(math.factorial, p+q)))
     assert i == ndofs - 1
-    return numeric.const(coeffs, copy=False)
+    return types.frozenarray(coeffs, copy=False)
 
   def _get_poly_coeffs_lagrange(self, degree):
     if self.ndims == 0:
@@ -514,25 +431,28 @@ class SimplexReference(Reference):
       coeffs = numpy.zeros((len(P),*[degree+1]*self.ndims), dtype=float)
       for i, p in enumerate(P):
         coeffs[(slice(None),*p)] = coeffs_[i]
-    return numeric.const(coeffs, copy=False)
+    return types.frozenarray(coeffs, copy=False)
 
   def get_edge_dofs(self, degree, iedge):
-    return numeric.const(tuple(i for i, j in enumerate(self._integer_barycentric_coordinates(degree)) if j[iedge] == 0), dtype=int)
+    return types.frozenarray(tuple(i for i, j in enumerate(self._integer_barycentric_coordinates(degree)) if j[iedge] == 0), dtype=int)
 
   def get_dof_transpose_map(self, degree, vertex_transpose_map):
     vertex_transpose_map = tuple(vertex_transpose_map)
     if len(vertex_transpose_map) != self.nverts or set(vertex_transpose_map) != set(range(self.nverts)):
       raise ValueError('invalid vertex indices: {!r}'.format(vertex_transpose_map))
-    return numeric.const(tuple(i for i, j in sorted(enumerate(self._integer_barycentric_coordinates(degree)), key=lambda ij: tuple(map(ij[1].__getitem__, vertex_transpose_map[::-1])))), dtype=int)
+    return types.frozenarray(tuple(i for i, j in sorted(enumerate(self._integer_barycentric_coordinates(degree)), key=lambda ij: tuple(map(ij[1].__getitem__, vertex_transpose_map[::-1])))), dtype=int)
 
 class PointReference(SimplexReference):
   '0D simplex'
+
+  __slots__ = ()
+  __cache__ = 'getischeme',
 
   def __init__(self):
     super().__init__(ndims=0)
 
   def getischeme(self, ischeme):
-    return numeric.const(numpy.empty([1,0])), numeric.const([1.])
+    return types.frozenarray(numpy.empty([1,0])), types.frozenarray([1.])
 
   def inside(self, point, eps=0):
     return True
@@ -546,6 +466,8 @@ class PointReference(SimplexReference):
 class LineReference(SimplexReference):
   '1D simplex'
 
+  __slots__ = '_bernsteincache',
+
   def __init__(self):
     self._bernsteincache = [] # TEMPORARY
     super().__init__(ndims=1)
@@ -556,7 +478,7 @@ class LineReference(SimplexReference):
     return x[:,_], w
 
   def getischeme_uniform(self, n):
-    return (numpy.arange(.5,n) / n)[:,_], numeric.const.full([n], 1/n)
+    return (numpy.arange(.5,n) / n)[:,_], types.frozenarray.full([n], 1/n)
 
   def getischeme_bezier(self, np):
     return numpy.linspace(0, 1, np)[:,_], None
@@ -576,6 +498,8 @@ class LineReference(SimplexReference):
 
 class TriangleReference(SimplexReference):
   '2D simplex'
+
+  __slots__ = ()
 
   def __init__(self):
     super().__init__(ndims=2)
@@ -632,7 +556,7 @@ class TriangleReference(SimplexReference):
     coords = C.reshape(2, nn)
     flip = coords.sum(0) > 1
     coords[:,flip] = 1 - coords[::-1,flip]
-    weights = numeric.const.full([nn], .5/nn)
+    weights = types.frozenarray.full([nn], .5/nn)
     return coords.T, weights
 
   def getischeme_bezier(self, np):
@@ -681,6 +605,8 @@ class TetrahedronReference(SimplexReference):
   # CHILDREN:
   # d\g e\h f\i i\j e\g g\h g\i h\i
   # a-b b-c d-e g-h b-d b-e d-e e-g
+
+  __slots__ = ()
 
   _children_vertices = [0,1,3,6], [1,2,4,7], [3,4,5,8], [6,7,8,9], [1,3,4,6], [1,4,6,7], [3,4,6,8], [4,6,7,8]
 
@@ -783,6 +709,9 @@ class TetrahedronReference(SimplexReference):
 class TensorReference(Reference):
   'tensor reference'
 
+  __slots__ = 'ref1', 'ref2'
+  __cache__ = 'vertices', 'edge_transforms', 'ribbons', 'child_transforms', 'getischeme', 'get_poly_coeffs'
+
   _re_ischeme = re.compile('([a-zA-Z]+)(.*)')
 
   def __init__(self, ref1, ref2):
@@ -795,12 +724,12 @@ class TensorReference(Reference):
     assert isinstance(other, Reference)
     return TensorReference(self.ref1, self.ref2 * other)
 
-  @cache.property
+  @property
   def vertices(self):
     vertices = numpy.empty((self.ref1.nverts, self.ref2.nverts, self.ndims), dtype=float)
     vertices[:,:,:self.ref1.ndims] = self.ref1.vertices[:,_]
     vertices[:,:,self.ref1.ndims:] = self.ref2.vertices[_,:]
-    return numeric.const(vertices.reshape(self.ref1.nverts*self.ref2.nverts, self.ndims), copy=False)
+    return types.frozenarray(vertices.reshape(self.ref1.nverts*self.ref2.nverts, self.ndims), copy=False)
 
   @property
   def centroid(self):
@@ -862,10 +791,10 @@ class TensorReference(Reference):
     ipoints = numpy.empty((len(ipoints1), len(ipoints2), self.ndims))
     ipoints[:,:,0:self.ref1.ndims] = ipoints1[:,_,:self.ref1.ndims]
     ipoints[:,:,self.ref1.ndims:self.ndims] = ipoints2[_,:,:self.ref2.ndims]
-    iweights = numeric.const((iweights1[:,_] * iweights2[_,:]).ravel(), copy=False) if iweights1 is not None and iweights2 is not None else None
-    return numeric.const(ipoints.reshape(len(ipoints1) * len(ipoints2), self.ndims), copy=False), iweights
+    iweights = types.frozenarray((iweights1[:,_] * iweights2[_,:]).ravel(), copy=False) if iweights1 is not None and iweights2 is not None else None
+    return types.frozenarray(ipoints.reshape(len(ipoints1) * len(ipoints2), self.ndims), copy=False), iweights
 
-  @cache.property
+  @property
   def edge_transforms(self):
     edge_transforms = []
     if self.ref1.ndims:
@@ -883,7 +812,7 @@ class TensorReference(Reference):
       edge_refs.extend(self.ref1 * edge2 for edge2 in self.ref2.edge_refs)
     return tuple(edge_refs)
 
-  @cache.property
+  @property
   def ribbons(self):
     if self.ref1.ndims == 0:
       return self.ref2.ribbons
@@ -906,7 +835,7 @@ class TensorReference(Reference):
                        (jedge1+self.ref1.nedges,jedge2+self.ref1.nedges)) for (iedge1,iedge2), (jedge1,jedge2) in self.ref2.ribbons)
     return tuple(ribbons)
 
-  @cache.property
+  @property
   def child_transforms(self):
     return tuple(transform.TensorChild(trans1, trans2) for trans1 in self.ref1.child_transforms for trans2 in self.ref2.child_transforms)
 
@@ -937,7 +866,7 @@ class TensorReference(Reference):
     else:
       dofs1 = range(self.ref1.get_ndofs(degree))
       dofs2 = self.ref2.get_edge_dofs(degree, iedge-self.ref1.nedges)
-    return numeric.const(tuple(d1*nd2+d2 for d1, d2 in itertools.product(dofs1, dofs2)), dtype=int)
+    return types.frozenarray(tuple(d1*nd2+d2 for d1, d2 in itertools.product(dofs1, dofs2)), dtype=int)
 
   @property
   def _flat_refs(self):
@@ -983,12 +912,16 @@ class TensorReference(Reference):
     # `ref_verts`.
     if not numpy.all(numpy.equal(numpy.transpose(verts, perm).ravel(), vertex_transpose_map)):
       raise ValueError('invalid transformation: {!r}'.format(vertex_transpose_map))
-    return numeric.const(numpy.transpose(dofs, perm).ravel())
+    return types.frozenarray(numpy.transpose(dofs, perm).ravel())
 
 class Cone(Reference):
   'cone'
 
-  def __init__(self, edgeref, etrans, tip:numeric.const):
+  __slots__ = 'edgeref', 'etrans', 'tip', 'extnorm', 'height'
+  __cache__ = 'vertices', 'edge_transforms', 'edge_refs'
+
+  @types.apply_annotations
+  def __init__(self, edgeref, etrans, tip:types.frozenarray):
     assert etrans.fromdims == edgeref.ndims
     assert etrans.todims == len(tip)
     super().__init__(len(tip))
@@ -1000,11 +933,11 @@ class Cone(Reference):
     self.height = numpy.dot(etrans.offset - tip, ext) / self.extnorm
     assert self.height >= 0, 'tip is positioned at the negative side of edge'
 
-  @cache.property
+  @property
   def vertices(self):
-    return numeric.const(numpy.vstack([[self.tip], self.etrans.apply(self.edgeref.vertices)]), copy=False)
+    return types.frozenarray(numpy.vstack([[self.tip], self.etrans.apply(self.edgeref.vertices)]), copy=False)
 
-  @cache.property
+  @property
   def edge_transforms(self):
     edge_transforms = [self.etrans]
     if self.edgeref.ndims > 0:
@@ -1018,7 +951,7 @@ class Cone(Reference):
       edge_transforms.append(transform.Updim(numpy.zeros((1,0)), self.tip, isflipped=not self.etrans.isflipped))
     return edge_transforms
 
-  @cache.property
+  @property
   def edge_refs(self):
     edge_refs = [self.edgeref]
     if self.edgeref.ndims > 0:
@@ -1079,6 +1012,8 @@ class Cone(Reference):
 class OwnChildReference(Reference):
   'forward self as child'
 
+  __slots__ = 'baseref', 'child_refs', 'child_transforms'
+
   def __init__(self, baseref):
     self.baseref = baseref
     self.child_refs = baseref,
@@ -1119,6 +1054,10 @@ class OwnChildReference(Reference):
 class WithChildrenReference(Reference):
   'base reference with explicit children'
 
+  __slots__ = 'baseref', 'child_transforms', 'child_refs'
+  __cache__ = '__extra_edges', 'edge_transforms', 'edge_refs', 'connectivity'
+
+  @types.apply_annotations
   def __init__(self, baseref, child_refs:tuple):
     assert len(child_refs) == baseref.nchildren and any(child_refs) and child_refs != baseref.child_refs
     assert all(isinstance(child_ref,Reference) for child_ref in child_refs)
@@ -1152,7 +1091,7 @@ class WithChildrenReference(Reference):
   __and__ = lambda self, other: self if other == self.baseref else other if isinstance(other,WithChildrenReference) and self == other.baseref else self.baseref.with_children(self_child & other_child for self_child, other_child in zip(self.child_refs, other.child_refs)) if isinstance(other, WithChildrenReference) and other.baseref == self.baseref else NotImplemented
   __or__ = lambda self, other: other if other == self.baseref else self.baseref.with_children(self_child | other_child for self_child, other_child in zip(self.child_refs, other.child_refs)) if isinstance(other, WithChildrenReference) and other.baseref == self.baseref else NotImplemented
 
-  @cache.property
+  @property
   def __extra_edges(self):
     extra_edges = [(ichild, iedge, cref.edge_refs[iedge])
       for ichild, cref in enumerate(self.child_refs) if cref
@@ -1213,12 +1152,12 @@ class WithChildrenReference(Reference):
   def simplices(self):
     return [(trans2*trans1, simplex) for trans2, child in self.children for trans1, simplex in (child.simplices if child else [])]
 
-  @cache.property
+  @property
   def edge_transforms(self):
     return tuple(self.baseref.edge_transforms) \
          + tuple(transform.ScaledUpdim(self.child_transforms[ichild], self.child_refs[ichild].edge_transforms[iedge]) for ichild, iedge, ref in self.__extra_edges)
 
-  @cache.property
+  @property
   def edge_refs(self):
     refs = []
     for etrans, eref in self.baseref.edges:
@@ -1234,7 +1173,7 @@ class WithChildrenReference(Reference):
       refs.append(OwnChildReference(ref))
     return tuple(refs)
 
-  @cache.property
+  @property
   def connectivity(self):
     # same as base implementation but cheaper
     return tuple(tuple(edges[iedge] if iedge < len(edges) and edges[iedge] != -1 and self.child_refs[edges[iedge]] else -1 for iedge in range(self.child_refs[ichild].nedges))
@@ -1258,7 +1197,11 @@ class WithChildrenReference(Reference):
 class MosaicReference(Reference):
   'triangulation'
 
-  def __init__(self, baseref, edge_refs:tuple, midpoint:numeric.const):
+  __slots__ = 'baseref', '_edge_refs', '_midpoint', 'edge_refs', 'edge_transforms'
+  __cache__ = 'vertices', 'subrefs'
+
+  @types.apply_annotations
+  def __init__(self, baseref, edge_refs:tuple, midpoint:types.frozenarray):
     assert len(edge_refs) == baseref.nedges
     assert edge_refs != tuple(baseref.edge_refs)
 
@@ -1301,7 +1244,7 @@ class MosaicReference(Reference):
 
     super().__init__(baseref.ndims)
 
-  @cache.property
+  @property
   def vertices(self):
     vertices = []
     for etrans, eref in self.edges:
@@ -1313,7 +1256,7 @@ class MosaicReference(Reference):
           index = len(vertices)
           vertices.append(vertex)
         indices.append(index)
-    return numeric.const(vertices)
+    return types.frozenarray(vertices)
 
   def __and__(self, other):
     if other in (self,self.baseref):
@@ -1354,7 +1297,7 @@ class MosaicReference(Reference):
   def nvertices_by_level(self, n):
     return self.baseref.nvertices_by_level(n)
 
-  @cache.property
+  @property
   def subrefs(self):
     return [ref.cone(trans,self._midpoint) for trans, ref in zip(self.baseref.edge_transforms, self._edge_refs) if ref]
 
@@ -1401,7 +1344,7 @@ def gauss(degree):
     k = numpy.arange(n) + 1
     d = k / numpy.sqrt(4*k**2-1)
     x, w = numpy.linalg.eigh(numpy.diagflat(d,-1)) # eigh operates (by default) on lower triangle
-    _gauss[n] = gaussn = numeric.const((x+1) * .5, copy=False), numeric.const(w[0]**2, copy=False)
+    _gauss[n] = gaussn = types.frozenarray((x+1) * .5, copy=False), types.frozenarray(w[0]**2, copy=False)
   return gaussn
 
 def getsimplex(ndims):
@@ -1419,5 +1362,95 @@ def index_or_append(items, item):
 def arglexsort(triangulation):
   return numpy.argsort(numeric.asobjvector(tuple(tri) for tri in triangulation))
 
+
+## ELEMENT
+
+class Element(types.Singleton):
+  'element class'
+
+  __slots__ = 'reference', 'transform', 'opposite'
+
+  @types.aspreprocessor
+  @types.apply_annotations
+  def pre_init(self, reference:strictreference, trans:transform.canonical, opptrans:transform.canonical=None, oriented:bool=False):
+    if opptrans is not None:
+      assert opptrans[-1].fromdims == reference.ndims and opptrans[0].todims == None
+      if not oriented:
+        vtx1 = transform.apply(trans, reference.vertices)
+        if vtx1 != transform.apply(opptrans, reference.vertices):
+          for ptrans in reference.permutation_transforms:
+            if vtx1 == transform.apply(opptrans + (ptrans,), reference.vertices):
+              opptrans += ptrans,
+              break
+          else:
+            raise Exception('Did not find a conforming permutation for the opposing transformation')
+    return (self, reference, trans, opptrans), {}
+
+  @pre_init
+  def __init__(self, reference, trans, opptrans):
+    super().__init__()
+    self.reference = reference
+    self.transform = trans
+    self.opposite = opptrans or trans
+
+  def withopposite(self, opp, oriented=False):
+    if isinstance(opp, tuple):
+      return Element(self.reference, self.transform, opp, oriented)
+    assert isinstance(opp, Element) and opp.reference == self.reference
+    return Element(self.reference, self.transform, opp.transform, oriented or opp.opposite==self.transform)
+
+  def __mul__(self, other):
+    self_is_iface = self.opposite != self.transform
+    other_is_iface = other.opposite != other.transform
+    trans = transform.Bifurcate(self.transform, other.transform),
+    if self_is_iface != other_is_iface:
+      opptrans = transform.Bifurcate(self.opposite, other.opposite),
+    else:
+      opptrans = None
+    return Element(self.reference * other.reference, trans, opptrans, oriented=True)
+
+  @property
+  def vertices(self):
+    return transform.apply(self.transform, self.reference.vertices)
+
+  @property
+  def ndims(self):
+    return self.reference.ndims
+
+  @property
+  def nverts(self):
+    return self.reference.nverts
+
+  @property
+  def nedges(self):
+    return self.reference.nedges
+
+  @property
+  def edges(self):
+    return [self.edge(i) for i in range(self.nedges)]
+
+  def edge(self, iedge):
+    trans, edge = self.reference.edges[iedge]
+    return Element(edge, self.transform + (trans,), self.opposite and self.opposite + (trans,), oriented=True) if edge else None
+
+  @property
+  def children(self):
+    return [Element(child, self.transform + (trans,), self.opposite and self.opposite + (trans,), oriented=True)
+      for trans, child in self.reference.children if child]
+
+  @property
+  def flipped(self):
+    assert self.opposite, 'element does not define an opposite'
+    return Element(self.reference, self.opposite, self.transform, oriented=True)
+
+  @property
+  def simplices(self):
+    return [Element(reference, self.transform + (trans,), self.opposite and self.opposite + (trans,), oriented=True)
+      for trans, reference in self.reference.simplices]
+
+  def __str__(self):
+    return 'Element({})'.format(self.vertices)
+
+strictelement = types.strict[Element]
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

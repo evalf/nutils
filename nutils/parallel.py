@@ -73,9 +73,9 @@ def pariter(iterable, nprocs):
 
   Parameters
   ----------
-  iterable : iterable
+  iterable : :class:`collections.abc.Iterable`
       The collection of items to be distributed over processors
-  nprocs : int
+  nprocs : :class:`int`
       Maximum number of processers to use
 
   Yields
@@ -168,15 +168,15 @@ def parmap(func, iterable, nprocs, shape=(), dtype=float):
 
   Parameters
   ----------
-  func : python function
+  func : :any:`callable`
       Takes item from iterable, returns numpy array of ``shape`` and ``dtype``
-  iterable : iterable
+  iterable : :class:`collections.abc.Iterable`
       Collection of items
-  nprocs : int
+  nprocs : :class:`int`
       Maximum number of processers to use
-  shape : tuple
+  shape : :class:`tuple`
       Return shape of ``func``, defaults to scalar
-  dtype : tuple
+  dtype : :class:`tuple`
       Return dtype of ``func``, defaults to float
 
   Returns

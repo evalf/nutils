@@ -19,10 +19,7 @@
 # THE SOFTWARE.
 
 """
-The util module provides a collection of general purpose methods. Most
-importantly it provides the :func:`run` method which is the preferred entry
-point of a nutils application, taking care of command line parsing, output dir
-creation and initiation of a log file.
+The util module provides a collection of general purpose methods.
 """
 
 from . import numeric, config
@@ -127,171 +124,6 @@ def regularize(bbox, spacing, xy=numpy.empty((0,2))):
   newindex = numpy.array(numpy.unravel_index(vacant, coarsexy.shape)).T * 2 + index0 + 1
   return numpy.concatenate([newindex * spacing, xy[keep]], axis=0)
 
-class hashlessdict(collections.abc.MutableMapping):
-  __slots__ = '__keys', '__values'
-
-  def __new__(cls, *args, **kwargs):
-    self = object.__new__(cls)
-    self.__keys = []
-    self.__values = []
-    return self
-
-  def __init__(self, init=()):
-    for key, value in init.items() if isinstance(init, collections.abc.Mapping) else init:
-      self.__keys.append(key)
-      self.__values.append(value)
-
-  def __getitem__(self, key):
-    try:
-      index = self.__keys.index(key)
-    except ValueError as e:
-      raise KeyError(key) from e
-    else:
-      return self.__values[index]
-
-  def __setitem__(self, key, value):
-    try:
-      index = self.__keys.index(key)
-    except ValueError:
-      self.__keys.append(key)
-      self.__values.append(value)
-    else:
-      self.__values[index] = value
-
-  def __delitem__(self, key):
-    try:
-      index = self.__keys.index(key)
-    except ValueError as e:
-      raise KeyError(key) from e
-    else:
-      del self.__keys[index]
-      del self.__values[index]
-
-  def __iter__(self):
-    return iter(self.__keys)
-
-  def __len__(self):
-    return len(self.__keys)
-
-  def __bool__(self):
-    return len(self.__keys) > 0
-
-  def __contains__(self, key):
-    return key in self.__keys
-
-  def __eq__(self, other):
-    return isinstance(other, hashlessdict) and self.__keys == other.__keys and self.__values == other.__values
-
-  def get(self, key, value=None):
-    try:
-      index = self.__keys.index(key)
-    except ValueError:
-      return value
-    else:
-      return self.__values[index]
-
-  def keys(self):
-    return tuple(self.__keys)
-
-  def values(self):
-    return tuple(self.__values)
-
-  def items(self):
-    return zip(self.__keys, self.__values)
-
-  def copy(self):
-    return hashlessdict(self)
-
-class frozendict(collections.abc.Mapping):
-  __slots__ = '__base', '__hash'
-
-  def __new__(cls, base):
-    if isinstance(base, frozendict):
-      return base
-    self = object.__new__(cls)
-    self.__base = dict(base)
-    self.__hash = hash(frozenset(self.__base.items())) # check immutability and precompute hash
-    return self
-
-  def __reduce__(self):
-    return frozendict, (self.__base,)
-
-  def __eq__(self, other):
-    if self is other:
-      return True
-    if not isinstance(other, frozendict):
-      return False
-    if self.__base is other.__base:
-      return True
-    if self.__hash != other.__hash or self.__base != other.__base:
-      return False
-    # deduplicate
-    self.__base = other.__base
-    return True
-
-  __getitem__ = lambda self, item: self.__base.__getitem__(item)
-  __iter__ = lambda self: self.__base.__iter__()
-  __len__ = lambda self: self.__base.__len__()
-  __hash__ = lambda self: self.__hash
-  __contains__ = lambda self, key: self.__base.__contains__(key)
-
-  copy = lambda self: self.__base.copy()
-
-class frozenmultiset(collections.abc.Container):
-  __slots__ = '__items', '__key'
-
-  def __new__(cls, items):
-    if isinstance(items, frozenmultiset):
-      return items
-    self = object.__new__(cls)
-    self.__items = tuple(items)
-    self.__key = frozenset((item, self.__items.count(item)) for item in self.__items)
-    return self
-
-  def __and__(self, other):
-    items = list(self.__items)
-    isect = []
-    for item in other:
-      try:
-        items.remove(item)
-      except ValueError:
-        pass
-      else:
-        isect.append(item)
-    return frozenmultiset(isect)
-
-  def __sub__(self, other):
-    items = list(self.__items)
-    for item in other:
-      items.remove(item)
-    return frozenmultiset(items)
-
-  __reduce__ = lambda self: (frozenmultiset, (self.__items,))
-  __hash__ = lambda self: hash(self.__key)
-  __eq__ = lambda self, other: isinstance(other, frozenmultiset) and self.__key == other.__key
-  __contains__ = lambda self, item: item in self.__items
-  __iter__ = lambda self: iter(self.__items)
-  __len__ = lambda self: len(self.__items)
-  __bool__ = lambda self: bool(self.__items)
-  __add__ = lambda self, other: frozenmultiset(self.__items + tuple(other))
-
-  isdisjoint = lambda self, other: not any(item in self.__items for item in other)
-
-def enforcetypes(f, signature=None):
-  if signature is None:
-    signature = inspect.signature(f)
-  annotations = [(param.name, param.annotation) for param in signature.parameters.values() if param.annotation != param.empty]
-  if not annotations:
-    return f
-  @functools.wraps(f)
-  def wrapped(*args, **kwargs):
-    bound = signature.bind(*args, **kwargs)
-    bound.apply_defaults()
-    for name, op in annotations:
-      bound.arguments[name] = op(bound.arguments[name])
-    return f(*bound.args, **bound.kwargs)
-  return wrapped
-
 def obj2str(obj):
   '''compact, lossy string representation of arbitrary object'''
   return '['+','.join(obj2str(item) for item in obj)+']' if isinstance(obj, collections.abc.Iterable) \
@@ -318,13 +150,14 @@ def single_or_multiple(f):
 
   Args
   ----
-  f: method
+  f: :any:`callable`
       Method that expects a tuple as first positional argument, and that
       returns a list/tuple of the same length.
 
   Returns
   -------
-  Wrapped method.
+  :
+      Wrapped method.
   """
 
   @functools.wraps(f)

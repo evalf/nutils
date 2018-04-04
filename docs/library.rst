@@ -26,6 +26,7 @@ What follows is an automatically generated API reference.
    library/numeric
    library/parallel
    library/util
+   library/types
    library/plot
    library/cache
    library/cli

@@ -58,10 +58,10 @@ class structured_line(TestCase):
     elif self.btype == 'std':
       ndofs = self.nelems*self.degree+(1 if not self.periodic else 0) if self.degree else self.nelems
       c = numpy.random.random((ndofs,))
-      f = self.Bbernstein.dot(function.elemwise(dict(zip(self.transforms, numeric.const([[c[(i*self.degree+j)%ndofs if self.degree else i] for j in range(self.degree+1)] for i in range(self.nelems)]))), (self.degree+1,)))
+      f = self.Bbernstein.dot(function.elemwise(dict(zip(self.transforms, types.frozenarray([[c[(i*self.degree+j)%ndofs if self.degree else i] for j in range(self.degree+1)] for i in range(self.nelems)]))), (self.degree+1,)))
     elif self.btype == 'discont':
       ndofs = self.nelems*(self.degree+1)
-      c = numeric.const(numpy.random.random((ndofs,)))
+      c = types.frozenarray(numpy.random.random((ndofs,)))
       f = self.Bbernstein.dot(function.elemwise(dict(zip(self.transforms, c.reshape(self.nelems, self.degree+1))), (self.degree+1,)))
     basis = self.domain.basis(self.btype, degree=self.degree)
     pc = self.domain.project(f, onto=basis, geometry=self.x, ischeme='gauss', degree=2*self.degree)

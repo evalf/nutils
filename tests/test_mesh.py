@@ -1,12 +1,65 @@
 from nutils import *
+import tempfile, pathlib, os
 from . import *
+
+class gmsh_init(TestCase):
+
+  gmshdata = '''\
+$MeshFormat
+2.2 0 8
+$EndMeshFormat
+$PhysicalNames
+1
+2 1 "v"
+$EndPhysicalNames
+$Nodes
+3
+1 0 0 0
+2 1 0 0
+3 0 1 0
+$EndNodes
+$Elements
+1
+1 2 2 1 0 1 2 3
+$EndElements
+'''
+
+  def test_file_str(self):
+    try:
+      with tempfile.NamedTemporaryFile('w', delete=False) as f:
+        f.write(self.gmshdata)
+      domain, geom = mesh.gmsh(str(f.name))
+    finally:
+      os.remove(str(f.name))
+    self.assertEqual(len(domain), 1)
+
+  def test_file_pathlib(self):
+    try:
+      with tempfile.NamedTemporaryFile('w', delete=False) as f:
+        f.write(self.gmshdata)
+      domain, geom = mesh.gmsh(pathlib.Path(f.name))
+    finally:
+      os.remove(str(f.name))
+    self.assertEqual(len(domain), 1)
+
+  def test_data_str(self):
+    domain, geom = mesh.gmsh(self.gmshdata)
+    self.assertEqual(len(domain), 1)
+
+  def test_data_str_invalid(self):
+    with self.assertRaises(OSError):
+      mesh.gmsh('This is not a MSH file.')
+
+  def test_invalid(self):
+    with self.assertRaises(ValueError):
+      mesh.gmsh(None)
 
 @parametrize
 class gmsh(TestCase):
 
   def setUp(self):
     super().setUp()
-    self.domain, self.geom = mesh.gmsh(self.gmshdata.splitlines())
+    self.domain, self.geom = mesh.gmsh(self.gmshdata)
 
   def test_volume(self):
     volume = self.domain.integrate(1, geometry=self.geom, ischeme='gauss1')
@@ -310,7 +363,7 @@ class gmshrect(TestCase):
 
   def setUp(self):
     super().setUp()
-    self.domain, self.geom = mesh.gmsh(self.gmshrectdata.splitlines())
+    self.domain, self.geom = mesh.gmsh(self.gmshrectdata)
 
   def test_volume(self):
     volume = self.domain.integrate(1, geometry=self.geom, ischeme='gauss1')
@@ -458,7 +511,7 @@ class gmshperiodic(TestCase):
 
   def setUp(self):
     super().setUp()
-    self.domain, self.geom = mesh.gmsh(self.gmshperiodicdata.splitlines())
+    self.domain, self.geom = mesh.gmsh(self.gmshperiodicdata)
 
   def test_volume(self):
     volume = self.domain.integrate(1, geometry=self.geom, ischeme='gauss1')

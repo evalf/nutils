@@ -21,6 +21,16 @@ test.png
 nonexistent.png
 '''
 
+log_stdout_short = '''\
+iterator > iter 0 (0%) > a
+iterator > iter 1 (33%) > b
+iterator > iter 2 (67%) > c
+levels > error
+levels > warning
+levels > user
+levels > info
+'''
+
 log_stdout3 = '''\
 levels > error
 levels > warning
@@ -121,7 +131,7 @@ i <a href="test.png" class="plot">test.png</a>
 i nonexistent.png
 '''
 
-def generate_log():
+def generate_log(short=False):
   with nutils.log.context('iterator'):
     for i in nutils.log.iter('iter', 'abc'):
       nutils.log.info(i)
@@ -131,6 +141,8 @@ def generate_log():
   with nutils.log.context('levels'):
     for level in ('error', 'warning', 'user', 'info'):
       getattr(nutils.log, level)(level)
+  if short:
+    return
   nutils.parallel.procid = 1
   with nutils.log.context('forked'):
     for level in ('error', 'warning', 'user', 'info'):
@@ -209,6 +221,28 @@ class tee_stdout_html(ContextTestCase):
       generate_log()
     self.assertEqual(stream_stdout.getvalue(), log_stdout)
     self.assertEqual(stream_html.getvalue(), log_html)
+
+class recordlog(ContextTestCase):
+
+  def setUpContext(self, stack):
+    super().setUpContext(stack)
+    self.outdir = stack.enter_context(tempfile.TemporaryDirectory())
+    stack.enter_context(nutils.config(
+      outdir=self.outdir,
+      verbose=len(nutils.log.LEVELS),
+    ))
+
+  def test(self):
+    stream_passthrough_stdout = io.StringIO()
+    with nutils.log.StdoutLog(stream_passthrough_stdout), nutils.log.RecordLog() as record:
+      generate_log(short=True)
+    with self.subTest('pass-through'):
+      self.assertEqual(stream_passthrough_stdout.getvalue(), log_stdout_short)
+    stream_replay_stdout = io.StringIO()
+    with nutils.log.StdoutLog(stream_replay_stdout):
+      record.replay()
+    with self.subTest('replay'):
+      self.assertEqual(stream_replay_stdout.getvalue(), log_stdout_short)
 
 class html_post_mortem(ContextTestCase):
 

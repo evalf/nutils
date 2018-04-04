@@ -456,7 +456,7 @@ class elemwise(TestCase):
     self.domain, geom = mesh.rectilinear([5])
     self.transforms = tuple(sorted(elem.transform for elem in self.domain))
     self.index = function.FindTransform(self.transforms, function.TRANS)
-    self.data = tuple(map(numeric.const, (
+    self.data = tuple(map(types.frozenarray, (
       numpy.arange(1, dtype=float).reshape(1,1),
       numpy.arange(2, dtype=float).reshape(1,2),
       numpy.arange(3, dtype=float).reshape(3,1),

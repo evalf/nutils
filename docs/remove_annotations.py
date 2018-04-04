@@ -18,17 +18,22 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-import sys, numpy
-from distutils.version import LooseVersion
+import inspect
 
-assert sys.version_info >= (3, 5)
-assert LooseVersion(numpy.version.version) >= LooseVersion('1.8'), 'nutils requires numpy 1.8 or higher, got {}'.format(numpy.version.version)
+def process_signature(self, objtype, fullname, object, options, args, retann):
+  if objtype in ('function', 'class', 'method'):
+    signature = inspect.signature(object)
+  else:
+    return
+  # Drop annotations from signature.
+  signature = signature.replace(parameters=(param.replace(annotation=param.empty) for param in signature.parameters.values()),
+                                return_annotation=inspect.Signature.empty)
+  # Return a string representation of args and of the return annotation.  Note
+  # that `str(signature)` would have included the return annotation if we
+  # hadn't removed it above.
+  return str(signature).replace('\\', '\\\\'), ''
 
-version = '4.0a0'
-version_name = None
-long_version = ('{} "{}"' if version_name else '{}').format(version, version_name)
+def setup(app):
+  app.connect('autodoc-process-signature', process_signature)
 
-_ = numpy.newaxis
-__all__ = ['_', 'numpy', 'core', 'numeric', 'element', 'function', 'expression',
-  'mesh', 'plot', 'topology', 'util', 'matrix', 'parallel', 'log',
-  'cache', 'transform', 'solver', 'cli', 'warnings', 'config', 'types']
+# vim: sts=2:sw=2:et

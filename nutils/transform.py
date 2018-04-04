@@ -22,7 +22,7 @@
 The transform module.
 """
 
-from . import cache, numeric, util, _
+from . import cache, numeric, util, types, _
 import numpy, collections, itertools, functools, operator
 
 
@@ -126,9 +126,13 @@ def linearfrom(chain, ndims):
 
 ## TRANSFORM ITEMS
 
-class TransformItem(cache.Immutable):
+class TransformItem(types.Singleton):
 
+  __slots__ = 'todims', 'fromdims'
+
+  @types.apply_annotations
   def __init__(self, todims, fromdims:int):
+    super().__init__()
     self.todims = todims
     self.fromdims = fromdims
 
@@ -141,8 +145,34 @@ class TransformItem(cache.Immutable):
   def swapdown(self, other):
     return None
 
+  def __lt__(self, other):
+    if not isinstance(other, TransformItem):
+      return NotImplemented
+    return self is not other and (type(self).__name__,)+self._args < (type(other).__name__,)+other._args
+
+  def __gt__(self, other):
+    if not isinstance(other, TransformItem):
+      return NotImplemented
+    return self is not other and (type(self).__name__,)+self._args > (type(other).__name__,)+other._args
+
+  def __le__(self, other):
+    if not isinstance(other, TransformItem):
+      return NotImplemented
+    return self is other or (type(self).__name__,)+self._args < (type(other).__name__,)+other._args
+
+  def __ge__(self, other):
+    if not isinstance(other, TransformItem):
+      return NotImplemented
+    return self is other or (type(self).__name__,)+self._args > (type(other).__name__,)+other._args
+
+stricttransformitem = types.strict[TransformItem]
+stricttransform = types.tuple[stricttransformitem]
+
 class Bifurcate(TransformItem):
 
+  __slots__ = 'trans1', 'trans2'
+
+  @types.apply_annotations
   def __init__(self, trans1:canonical, trans2:canonical):
     fromdims = trans1[-1].fromdims + trans2[-1].fromdims
     self.trans1 = trans1 + (Slice(0, trans1[-1].fromdims, fromdims),)
@@ -157,7 +187,10 @@ class Bifurcate(TransformItem):
 
 class Matrix(TransformItem):
 
-  def __init__(self, linear:numeric.const, offset:numeric.const):
+  __slots__ = 'linear', 'offset'
+
+  @types.apply_annotations
+  def __init__(self, linear:types.frozenarray, offset:types.frozenarray):
     assert linear.ndim == 2 and linear.dtype == float
     assert offset.ndim == 1 and offset.dtype == float
     assert len(offset) == len(linear)
@@ -167,7 +200,7 @@ class Matrix(TransformItem):
 
   def apply(self, points):
     assert points.shape[-1] == self.fromdims
-    return numeric.const(numpy.dot(points, self.linear.T) + self.offset, copy=False)
+    return types.frozenarray(numpy.dot(points, self.linear.T) + self.offset, copy=False)
 
   def __mul__(self, other):
     assert isinstance(other, Matrix) and self.fromdims == other.todims
@@ -182,15 +215,19 @@ class Matrix(TransformItem):
 
 class Square(Matrix):
 
-  def __init__(self, linear:numeric.const, offset:numeric.const):
+  __slots__ = '_transform_matrix',
+  __cache__ ='det',
+
+  @types.apply_annotations
+  def __init__(self, linear:types.frozenarray, offset:types.frozenarray):
     assert linear.shape[0] == linear.shape[1]
     self._transform_matrix = {}
     super().__init__(linear, offset)
 
   def invapply(self, points):
-    return numeric.const(numpy.linalg.solve(self.linear, points - self.offset), copy=False)
+    return types.frozenarray(numpy.linalg.solve(self.linear, points - self.offset), copy=False)
 
-  @cache.property
+  @property
   def det(self):
     return numeric.det_exact(self.linear)
 
@@ -224,22 +261,27 @@ class Square(Matrix):
 
 class Shift(Square):
 
+  __slots__ = ()
+
   det = 1.
 
-  def __init__(self, offset:numeric.const):
+  @types.apply_annotations
+  def __init__(self, offset:types.frozenarray):
     assert offset.ndim == 1 and offset.dtype == float
     super().__init__(numpy.eye(len(offset)), offset)
 
   def apply(self, points):
-    return numeric.const(points + self.offset, copy=False)
+    return types.frozenarray(points + self.offset, copy=False)
 
   def invapply(self, points):
-    return numeric.const(points - self.offset, copy=False)
+    return types.frozenarray(points - self.offset, copy=False)
 
   def __str__(self):
     return '{}+x'.format(util.obj2str(self.offset))
 
 class Identity(Shift):
+
+  __slots__ = ()
 
   def __init__(self, ndims):
     super().__init__(numpy.zeros(ndims))
@@ -255,16 +297,19 @@ class Identity(Shift):
 
 class Scale(Square):
 
-  def __init__(self, scale:float, offset:numeric.const):
+  __slots__ = 'scale',
+
+  @types.apply_annotations
+  def __init__(self, scale:float, offset:types.frozenarray):
     assert offset.ndim == 1 and offset.dtype == float
     self.scale = scale
     super().__init__(numpy.eye(len(offset)) * scale, offset)
 
   def apply(self, points):
-    return numeric.const(self.scale * points + self.offset, copy=False)
+    return types.frozenarray(self.scale * points + self.offset, copy=False)
 
   def invapply(self, points):
-    return numeric.const((points - self.offset) / self.scale, copy=False)
+    return types.frozenarray((points - self.offset) / self.scale, copy=False)
 
   @property
   def det(self):
@@ -281,15 +326,19 @@ class Scale(Square):
 
 class Updim(Matrix):
 
-  def __init__(self, linear:numeric.const, offset:numeric.const, isflipped:bool):
+  __slots__ = 'isflipped',
+  __cache__ = 'ext',
+
+  @types.apply_annotations
+  def __init__(self, linear:types.frozenarray, offset:types.frozenarray, isflipped:bool):
     assert linear.shape[0] == linear.shape[1] + 1
     self.isflipped = isflipped
     super().__init__(linear, offset)
 
-  @cache.property
+  @property
   def ext(self):
     ext = numeric.ext(self.linear)
-    return numeric.const(-ext if self.isflipped else ext, copy=False)
+    return types.frozenarray(-ext if self.isflipped else ext, copy=False)
 
   @property
   def flipped(self):
@@ -300,6 +349,8 @@ class Updim(Matrix):
       return Identity(self.todims), self
 
 class SimplexEdge(Updim):
+
+  __slots__ = 'iedge',
 
   swap = (
     ((1,0), (2,0), (3,0), (7,1)),
@@ -335,6 +386,8 @@ class SimplexEdge(Updim):
 
 class SimplexChild(Square):
 
+  __slots__ = 'ichild',
+
   def __init__(self, ndims, ichild):
     self.ichild = ichild
     if ichild <= ndims:
@@ -361,6 +414,9 @@ class SimplexChild(Square):
 
 class Slice(Matrix):
 
+  __slots__ = 's',
+
+  @types.apply_annotations
   def __init__(self, i1:int, i2:int, fromdims:int):
     todims = i2-i1
     assert 0 <= todims <= fromdims
@@ -368,9 +424,11 @@ class Slice(Matrix):
     super().__init__(numpy.eye(fromdims)[self.s], numpy.zeros(todims))
 
   def apply(self, points):
-    return numeric.const(points[:,self.s])
+    return types.frozenarray(points[:,self.s])
 
 class ScaledUpdim(Updim):
+
+  __slots__ = 'trans1', 'trans2'
 
   def __init__(self, trans1, trans2):
     assert trans1.todims == trans1.fromdims == trans2.todims == trans2.fromdims + 1
@@ -383,6 +441,8 @@ class ScaledUpdim(Updim):
       return self.trans1, self.trans2
 
 class TensorEdge1(Updim):
+
+  __slots__ = 'trans',
 
   def __init__(self, trans1, ndims2):
     self.trans = trans1
@@ -407,6 +467,8 @@ class TensorEdge1(Updim):
 
 class TensorEdge2(Updim):
 
+  __slots__ = 'trans'
+
   def __init__(self, ndims1, trans2):
     self.trans = trans2
     super().__init__(linear=numeric.blockdiag([numpy.eye(ndims1), trans2.linear]), offset=numpy.concatenate([numpy.zeros(ndims1), trans2.offset]), isflipped=trans2.isflipped^(ndims1%2))
@@ -430,6 +492,9 @@ class TensorEdge2(Updim):
 
 class TensorChild(Square):
 
+  __slots__ = 'trans1', 'trans2'
+  __cache__ = 'det',
+
   def __init__(self, trans1, trans2):
     self.trans1 = trans1
     self.trans2 = trans2
@@ -437,18 +502,24 @@ class TensorChild(Square):
     offset = numpy.concatenate([trans1.offset, trans2.offset])
     super().__init__(linear, offset)
 
-  @cache.property
+  @property
   def det(self):
     return self.trans1.det * self.trans2.det
 
 class VertexTransform(TransformItem):
 
+  __slots__ = ()
+
+  @types.apply_annotations
   def __init__(self, fromdims:int):
     super().__init__(None, fromdims)
 
 class MapTrans(VertexTransform):
 
-  def __init__(self, linear:numeric.const, offset:numeric.const, vertices:numeric.const):
+  __slots__ = 'vertices', 'linear', 'offset'
+
+  @types.apply_annotations
+  def __init__(self, linear:types.frozenarray, offset:types.frozenarray, vertices:types.frozenarray):
     assert len(linear) == len(offset) == len(vertices)
     self.vertices, self.linear, self.offset = map(numpy.array, zip(*sorted(zip(vertices, linear, offset)))) # sort vertices
     super().__init__(self.linear.shape[1])
@@ -462,6 +533,9 @@ class MapTrans(VertexTransform):
 
 class RootTrans(VertexTransform):
 
+  __slots__ = 'I', 'w', 'name'
+
+  @types.apply_annotations
   def __init__(self, name, shape:tuple):
     self.I, = numpy.where(shape)
     self.w = numpy.take(shape, self.I)
@@ -481,6 +555,9 @@ class RootTrans(VertexTransform):
 
 class RootTransEdges(VertexTransform):
 
+  __slots__ = 'shape', 'name'
+
+  @types.apply_annotations
   def __init__(self, name, shape:tuple):
     self.shape = shape
     assert numeric.isarray(name)

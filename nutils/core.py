@@ -30,7 +30,7 @@ def open_in_outdir(file, *args, **kwargs):
   '''open a file relative to the ``outdirfd`` or ``outdir`` property
 
   Wrapper around :func:`open` that opens a file relative to either the
-  ``outdirfd`` property (if supported, see :func:`os.supports_dir_fd`) or
+  ``outdirfd`` property (if supported, see :any:`os.supports_dir_fd`) or
   ``outdir``.  Takes the same arguments as :func:`open`.
   '''
 

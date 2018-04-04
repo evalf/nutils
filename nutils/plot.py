@@ -460,24 +460,16 @@ class PyPlotVideo(PyPlot):
 
   Parameters
   ----------
-  clearfigure: bool, default: True
-      If True clears the matplotlib figure after writing each frame.
+  clearfigure: :class:`bool`, default: :any:`True`
+      If :any:`True` clears the matplotlib figure after writing each frame.
 
-  framerate: int, float, default: 24
+  framerate: :class:`int`, :class:`float`, default: ``24``
       Framerate in frames per second of the generated video.
 
-  videotype: str, default: 'webm' unless overriden by property ``videotype``
+  videotype: :class:`str`, default: ``'webm'`` unless overriden by property ``videotype``
       Video type of the generated video.  Note that not every video type
       supports playback before the video has been finalized, i.e. before
       ``close`` has been called.
-
-  Nutils properties
-  -----------------
-  videotype
-      see parameter with the same name
-  videoencoder: str, default: 'ffmpeg'
-      Name or path of the video encoder.  The video encoder should take the
-      same arguments as 'ffmpeg'.
 
   Examples
   --------

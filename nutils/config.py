@@ -56,6 +56,140 @@ class Config(types.ModuleType):
   .. Important::
      The configuration is not thread-safe: changing the configuration inside a
      thread changes the process wide configuration.
+
+  The following configuration properties are used in Nutils.
+
+  .. attribute:: nprocs
+
+     Controls the number of processes to use for computing integrals
+     (:meth:`nutils.topology.Topology.integrate`) and a few other expensive and
+     parallelizable functions.
+
+     Defaults to ``1``.
+
+  .. attribute:: verbose
+
+     Controls the level of verbosity of loggers.  Log entries with a level
+     higher than :attr:`verbose` are omitted.  The levels are ``1``: error,
+     ``2``: warning, ``3``: user, ``4``: info and ``5``: debug.
+
+     Defaults to ``4``: info.
+
+  .. attribute:: outdir
+
+     Defines the output directory for the HTML log
+     (:class:`nutils.log.HtmlLog`) and plots.  Relative
+     paths are relative with respect to the current working directory (see
+     :func:`os.getcwd`).
+
+     .. Note::
+
+        If :attr:`outdir` is empty (the default), :func:`nutils.cli.run` and
+        :func:`nutils.cli.choose` change this value.  See :attr:`outrootdir`.
+
+     Defaults to ``''``.
+
+  .. attribute:: outdirfd
+
+     Used internally.  Do not touch.
+
+     Defaults to ``None``.
+
+  .. attribute:: dot
+
+     If ``True``, :meth:`nutils.topology.Topology.elem_eval` and
+     :meth:`nutils.topology.Topology.integrate` log a visualization of the
+     function tree that is being evaluated or integrated.
+
+     Defaults to ``False``.
+
+  .. attribute:: imagetype
+
+     A comma-separated list of (file extensions of) image types.
+     :class:`nutils.plot.PyPlot` generates figures for all listed types.
+
+     Defaults to ``'png'``.
+
+  The following properties are only used in :func:`nutils.cli.run` and
+  :func:`nutils.cli.choose`.
+
+  .. attribute:: cache
+
+     Controls on-disk caching.  If ``True``, functions decorated with
+     :func:`nutils.cache.function` and subclasses of
+     :class:`nutils.cache.Recursion` are automatically cached.  Examples are
+     :meth:`nutils.topology.Topology.integrate` and
+     :class:`nutils.solver.thetamethod`.
+
+     The location of the on-disk cache is defined by :attr:`cachedir`.
+
+     Defaults to ``False``.
+
+  .. attribute:: cachedir
+
+     Defines the location of the on-disk cache (see :attr:`cache`).  Relative
+     paths are relative with respect to the current working directory (see
+     :func:`os.getcwd`).
+
+     .. Note::
+
+        If :attr:`outdir` is empty (the default), :func:`nutils.cli.run` and
+        :func:`nutils.cli.choose` change this value.  See :attr:`outrootdir`.
+
+     Defaults to ``'cache'``.
+
+  .. attribute:: outrootdir
+
+     Defines the root directory for the HTML log and plots.  This property is
+     used to override :attr:`outdir`, if empty, to
+     ``'<outrootdir>/<scriptname>/<YY/MM/DD/HH-MM-SS>/'``.  Likewise,
+     if :attr:`outdir` is empty, the :attr:`cachedir` property is redefined to
+     ``'<outrootdir>/<scriptname>/cache/'``.
+
+     Defaults to ``'~/public_html'``
+
+  .. attribute:: symlink
+
+     If not empty, but :attr:`outdir` is empty, the symlinks
+     ``'<outrootdir>/<symlink>'`` and ``'<outrootdir>/<scriptname>/<symlink>'``
+     will be created, both pointing to
+     ``'<outrootdir>/<scriptname>/<YY/MM/DD/HH-MM-SS>/log.html'``.
+
+     Defaults to ``''``.
+
+  .. attribute:: richoutput
+
+     Controls whether or not the console logger should output rich text
+     (:class:`nutils.log.RichOutputLog`) or plain text
+     (:class:`nutils.log.StdoutLog`).
+
+     Defaults to ``True`` if ``sys.stdout`` is attached to a terminal (i.e.
+     ``sys.stdout.isatty()`` returns true), otherwise ``False``.
+
+  .. attribute:: htmloutput
+
+     If ``True`` the HTML logger (:class:`nutils.log.HtmlLog`) is enabled and
+     written to ``'log.html'`` inside the directory defined by :attr:`outdir`.
+     With the default configuration the log will be generated in
+     ``'~/public_html/<scriptname>/<YY/MM/DD/HH-MM-SS>/log.html'``
+
+     Defaults to ``True``.
+
+  .. attribute:: pdb
+
+     If ``True`` the debugger will be invoked when an exception reaches
+     :func:`nutils.cli.run` or :func:`nutils.cli.choose`.
+
+     Defaults to ``False``.
+
+  .. attribute:: matrix
+
+     A comma-separated list of matrix backends.  The first one available is
+     activated.  The names — the case is irrelevant – correspond to subclasses
+     of :class:`nutils.matrix.Backend`.  Use
+     ``nutils.matrix.Backend.__subclasses__()`` to list the available backends.
+
+     Defauls to ``'mkl,scipy,numpy'``.
   '''
 
   def __init__(*args, **data):
@@ -99,10 +233,8 @@ sys.modules[__name__] = Config(
   pdb = False,
   imagetype = 'png',
   symlink = '',
-  recache = False,
   dot = False,
-  profile = False,
-  selfcheck = False,
   cachedir = 'cache',
   matrix = 'mkl,scipy,numpy',
+  cache = False,
 )

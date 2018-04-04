@@ -19,14 +19,14 @@
 # THE SOFTWARE.
 
 """
-The matrix module defines a number of 2D matrix objects, notably the
-:func:`ScipyMatrix` and :func:`NumpyMatrix`. Matrix objects support basic
-addition and subtraction operations and provide a consistent insterface for
-solving linear systems. Matrices can be converted into other forms suitable for
-external processing via the ``export`` method.
+The matrix module defines an abstract :class:`Matrix` object and several
+implementations.  Matrix objects support basic addition and subtraction
+operations and provide a consistent insterface for solving linear systems.
+Matrices can be converted into other forms suitable for external processing via
+the ``export`` method.
 """
 
-from . import numpy, log, numeric, warnings, cache, util, config
+from . import numpy, log, numeric, warnings, cache, types, config
 import abc, sys, ctypes
 
 
@@ -55,7 +55,7 @@ class Backend(metaclass=abc.ABCMeta):
     .. Note:: This function is abstract.
     '''
 
-class Matrix(metaclass=abc.ABCMeta):
+class Matrix(metaclass=types.CacheMeta):
   'matrix base class'
 
   def __init__(self, shape):
@@ -106,23 +106,24 @@ class Matrix(metaclass=abc.ABCMeta):
 
     Args
     ----
-    rhs : float vector or None
+    rhs : :class:`float` vector or :any:`None`
         Right hand side vector. `None` implies all zeros.
-    lhs0 : float vector or None
+    lhs0 : class:`float` vector or :any:`None`
         Initial values. `None` implies all zeros.
-    constrain : float or boolean array, or None
+    constrain : :class:`float` or :class:`bool` array, or :any:`None`
         Column constraints. For float values, a number signifies a constraint,
         NaN signifies a free dof. For boolean, a True value signifies a
         constraint to the value in `lhs0`, a False value signifies a free dof.
         `None` implies no constraints.
-    rconstrain : boolean array or None
+    rconstrain : :class:`bool` array or :any:`None`
         Row constrains. A True value signifies a constrains, a False value a free
         dof. `None` implies that the constraints follow those defined in
         `constrain` (by implication the matrix must be square).
 
     Returns
     -------
-    Left hand side vector.
+    :class:`numpy.ndarray`
+        Left hand side vector.
     '''
 
   @abc.abstractmethod
@@ -131,12 +132,13 @@ class Matrix(metaclass=abc.ABCMeta):
 
     Args
     ----
-    rows : boolean/int array selecting rows for keeping
-    cols : boolean/int array selecting columns for keeping
+    rows : :class:`bool`/:class:`int` array selecting rows for keeping
+    cols : :class:`bool`/:class:`int` array selecting columns for keeping
 
     Returns
     -------
-    Matrix instance of reduced dimensions
+    :class:`Matrix`
+        Matrix instance of reduced dimensions
     '''
 
   def export(self, form):
@@ -375,20 +377,10 @@ except (OSError, KeyError):
   pass
 else:
 
-  class c_array:
-    def __init__(self, dtype):
-      self.dtype = dtype
-    def __call__(self, obj):
-      if obj is not None:
-        if not isinstance(obj, numpy.ndarray):
-          obj = numpy.array(obj, dtype=self.dtype)
-        assert obj.flags.c_contiguous and obj.dtype == self.dtype
-        return obj.ctypes
-
   # typedefs
-  c_int = c_array(numpy.int32)
-  c_long = c_array(numpy.int64)
-  c_double = c_array(numpy.float64)
+  c_int = types.c_array[numpy.int32]
+  c_long = types.c_array[numpy.int64]
+  c_double = types.c_array[numpy.float64]
 
   try:
     libtbb = ctypes.CDLL({'linux': 'libtbb.so.2', 'darwin': 'libtbb.dylib', 'win32': 'tbb.dll'}[sys.platform])
@@ -449,7 +441,7 @@ else:
     def __init__(self):
       self.pt = numpy.zeros(64, numpy.int64) # handle to data structure
 
-    @util.enforcetypes
+    @types.apply_annotations
     def __call__(self, *, phase:c_int, iparm:c_int, maxfct:c_int=1, mnum:c_int=1, mtype:c_int=0, n:c_int=0, a:c_double=None, ia:c_int=None, ja:c_int=None, perm:c_int=None, nrhs:c_int=0, msglvl:c_int=0, b:c_double=None, x:c_double=None):
       error = ctypes.c_int32(1)
       self._pardiso(self.pt.ctypes, maxfct, mnum, mtype, phase, n, a, ia, ja, perm, nrhs, iparm, msglvl, b, x, ctypes.byref(error))
@@ -463,6 +455,8 @@ else:
 
   class MKLMatrix(Matrix):
     '''matrix implementation based on sorted coo data'''
+
+    __cache__ = 'indptr',
 
     _factors = False
 
@@ -488,7 +482,7 @@ else:
       self.index = numpy.ascontiguousarray(index, dtype=numpy.int32)
       super().__init__(shape)
 
-    @cache.property
+    @property
     def indptr(self):
       return self.index[0].searchsorted(numpy.arange(self.shape[0]+1)).astype(numpy.int32, copy=False)
 
