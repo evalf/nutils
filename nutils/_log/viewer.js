@@ -206,7 +206,7 @@ const Log = class {
     let ianchor = 0;
     for (const anchor of document.querySelectorAll('#log .item > a.plot:only-child')) {
       anchor.addEventListener('click', this._plot_clicked);
-      const filename = (anchor.href.match(/([^\/]*)[.][^.]+$/) || [null, 'unknown'])[1];
+      const filename = (anchor.innerText.match(/^(.*)[.][^.]+$/) || [null, 'unknown'])[1];
       const category = (filename.match(/^(.*?)[0-9]*$/) || [null, null])[1];
 
       let context = null;
