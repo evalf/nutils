@@ -306,7 +306,7 @@ class HtmlLog( HtmlInsertAnchor, ContextTreeLog ):
     if self._funcargs:
       self._print('<ul class="cmdline">')
       for name, value, annotation in self._funcargs:
-        self._print(('  <li>{}={}<span class="annotation">{}</span></li>' if annotation else '<li>{}={}</li>').format(*(html.escape(str(v)) for v in (name, value, annotation))))
+        self._print(('  <li>{}={}<span class="annotation">{}</span></li>' if annotation is not inspect.Parameter.empty else '<li>{}={}</li>').format(*(html.escape(str(v)) for v in (name, value, annotation))))
       self._print('</ul>')
     super().__enter__()
     return self
