@@ -9,6 +9,9 @@ const create_element = function(tag, options, ...children) {
     if (k === 'events')
       for (name in options[k])
         el.addEventListener(name, options[k][name]);
+    else if (k === 'dataset')
+      for (name in options[k])
+        el.dataset[name] = options[k][name];
     else
       el.setAttribute(k, options[k]);
   for (const child of children)
@@ -204,9 +207,9 @@ const Log = class {
 
     // Link anchors to theater.
     let ianchor = 0;
-    for (const anchor of document.querySelectorAll('#log .item > a.plot:only-child')) {
+    for (const anchor of document.querySelectorAll('#log .item > a.plot')) {
       anchor.addEventListener('click', this._plot_clicked);
-      const filename = (anchor.href.match(/([^\/]*)[.][^.]+$/) || [null, 'unknown'])[1];
+      const filename = (anchor.innerText.match(/^(.*)[.][^.]+$/) || [null, 'unknown'])[1];
       const category = (filename.match(/^(.*?)[0-9]*$/) || [null, null])[1];
 
       let context = null;
@@ -222,7 +225,7 @@ const Log = class {
 
       anchor.id = `plot-${ianchor}`;
       ianchor += 1;
-      theater.add_plot(anchor.href, anchor.id, category, context.dataset.id, context.dataset.label + '/' + filename);
+      theater.add_plot(anchor.href, anchor.id, category, context.dataset.id, (context.dataset.label ? context.dataset.label + '/' : '') + filename);
     }
 
     // Make contexts clickable.
@@ -343,11 +346,7 @@ const Theater = class {
     update_state();
   }
   _draw_plot() {
-    const plot = document.createElement('img');
-    plot.src = this.href;
-    plot.classList.add('plot');
-    plot.dataset.category = this.info[this.href].category || '';
-    plot.addEventListener('click',this._blur_plot.bind(this));
+    const plot = create_element('img', {src: this.href, 'class': 'plot', dataset: {category: this.info[this.href].category || ''}, events: {click: this._blur_plot.bind(this)}});
     this.root.innerHTML = '';
     this.root.classList.remove('overview');
     this.root.appendChild(plot);
@@ -357,12 +356,12 @@ const Theater = class {
     this.root.classList.add('overview');
     this._update_overview_layout();
     for (const href of this.plots_per_context[this.info[this.href].context]) {
-      const plot = document.createElement('img');
-      plot.src = href;
-      plot.classList.add('plot');
-      plot.dataset.category = this.info[href].category || '';
-      plot.addEventListener('click', this._focus_plot.bind(this));
-      this.root.appendChild(plot);
+      const plot = create_element('img', {src: href, 'class': 'plot', dataset: {category: this.info[href].category || ''}, events: {click: this._focus_plot.bind(this)}});
+      const plot_container3 = create_element('div', {'class': 'plot_container3'}, plot);
+      const plot_container2 = create_element('div', {'class': 'plot_container2'}, plot_container3);
+      if (this.info[href].category)
+        plot_container2.appendChild(create_element('div', {'class': 'label'}, this.info[href].category));
+      this.root.appendChild(create_element('div', {'class': 'plot_container1'}, plot_container2));
     }
   }
   _update_selection() {
@@ -387,7 +386,7 @@ const Theater = class {
     for (let nrows = 1; nrows <= nplots; nrows += 1) {
       const ncols = Math.ceil(nplots / nrows);
       const size = Math.min(screen_width*screen_width/(ncols*ncols)/plot_aspect, screen_height*screen_height/(nrows*nrows)*plot_aspect);
-      if (size >= optimal_size) {
+      if (size > optimal_size) {
         optimal_nrows = nrows;
         optimal_size = size;
       }
@@ -564,31 +563,33 @@ window.addEventListener('load', function() {
     grid.appendChild(create_element('div', {'class': cls+' keys', events: {click: ev => { ev.stopPropagation(); ev.preventDefault(); window.dispatchEvent(new KeyboardEvent('keydown', {key: _key})); }}}, keys.join('+')));
     grid.appendChild(create_element('div', {'class': cls}, description));
   }
-  _add_key_description('general', ['R'], 'Reload.', 'R');
-  _add_key_description('general', ['L'], 'Load latest.', 'L');
-  _add_key_description('log', ['+'], 'Increase log verbosity.','+');
-  _add_key_description('log', ['-'], 'Decrease log verbosity.','-');
-  _add_key_description('log', ['C'], 'Collapse all contexts.','C');
-  _add_key_description('log', ['E'], 'Expand all contexts.', 'E');
-  _add_key_description('theater', ['TAB'], 'Toggle between overview and focus.', 'Tab');
-  _add_key_description('theater', ['SPACE'], 'Lock to a plot category or unlock.', ' ');
-  _add_key_description('theater', ['LEFT'], 'Show the next plot.', 'ArrowLeft');
-  _add_key_description('theater', ['RIGHT'], 'Show the previous plot.', 'ArrowRight');
-  _add_key_description('theater', ['Q'], 'Open the log at the current plot.', 'Q');
-  _add_key_description('theater', ['ESC'], 'Go back.', 'Escape');
+  _add_key_description('', ['R'], 'Reload.', 'R');
+  _add_key_description('', ['L'], 'Load latest.', 'L');
+  _add_key_description('show-if-log', ['+'], 'Increase log verbosity.','+');
+  _add_key_description('show-if-log', ['-'], 'Decrease log verbosity.','-');
+  _add_key_description('show-if-log', ['C'], 'Collapse all contexts.','C');
+  _add_key_description('show-if-log', ['E'], 'Expand all contexts.', 'E');
+  _add_key_description('show-if-theater', ['TAB'], 'Toggle between overview and focus.', 'Tab');
+  _add_key_description('show-if-theater', ['SPACE'], 'Lock to a plot category or unlock.', ' ');
+  _add_key_description('show-if-theater', ['LEFT'], 'Show the next plot.', 'ArrowLeft');
+  _add_key_description('show-if-theater', ['RIGHT'], 'Show the previous plot.', 'ArrowRight');
+  _add_key_description('show-if-theater', ['Q'], 'Open the log at the current plot.', 'Q');
+  _add_key_description('show-if-theater', ['ESC'], 'Go back.', 'Escape');
 
   document.body.insertBefore(
     create_element('div', {id: 'header'},
       create_element('div', {'class': 'bar'},
+        // logo
         create_element('a', {href: 'http://nutils.org/', title: 'nutils.org'}, create_logo({'class': 'button icon'})),
-        create_element('div', {id: 'header-bar-content', 'class': 'content'},
-          create_element('div', {'class': 'log'},
-            create_element('div', {}, (document.body.dataset.scriptname || '') + ' ' + (document.body.dataset.funcname || '')),
-            create_element('div', {'class': 'icon small-icon-container', id: 'log-level-indicator'})),
-          create_element('div', {'class': 'theater'},
-            create_element('div', {id: 'theater-label', 'class': 'button', title: 'exit theater and open log here', events: {click: ev => { ev.stopPropagation(); ev.preventDefault(); theater._open_log();}}}),
-            create_lock({'class': 'button icon lock', events: {click: ev => { ev.stopPropagation(); ev.preventDefault(); theater.toggle_locked(); }}})),
-          create_element('div', {'class': 'droppeddown'}, 'keyboard shortcuts')),
+        // labels, only one is visible at a time
+        create_element('div', {'class': 'show-if-log hide-if-droppeddown label'}, (document.body.dataset.scriptname || '') + ' ' + (document.body.dataset.funcname || '')),
+        create_element('div', {id: 'theater-label', 'class': 'show-if-theater hide-if-droppeddown button label', title: 'exit theater and open log here', events: {click: ev => { ev.stopPropagation(); ev.preventDefault(); theater._open_log();}}}),
+        create_element('div', {'class': 'show-if-droppeddown label'}, 'keyboard shortcuts'),
+        // log level indicator, visible in log mode
+        create_element('div', {'class': 'show-if-log icon small-icon-container', id: 'log-level-indicator'}),
+        // category lock button, visible in theater mode
+        create_lock({'class': 'show-if-theater button icon lock', events: {click: ev => { ev.stopPropagation(); ev.preventDefault(); theater.toggle_locked(); }}}),
+        // hamburger
         create_element('div', {'class': 'hamburger icon button', events: {click: ev => { document.body.classList.toggle('droppeddown'); ev.stopPropagation(); ev.preventDefault(); }}},
           create_element('div'),
           create_element('div'),
