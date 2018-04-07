@@ -129,8 +129,6 @@ class Reference(types.Singleton):
     assert not transforms
     return tuple(ribbons)
 
-  permutation_transforms = ()
-
   def getischeme(self, ischeme):
     match = re.match('([a-zA-Z]+)(.*)', ischeme)
     assert match, 'cannot parse integration scheme {!r}'.format(ischeme)
@@ -276,9 +274,6 @@ class Reference(types.Singleton):
   def get_edge_dofs(self, degree, iedge):
     raise NotImplementedError
 
-  def get_dof_transpose_map(self, degree, vertex_transpose_map):
-    raise NotImplementedError
-
 strictreference = types.strict[Reference]
 
 class EmptyReference(Reference):
@@ -341,7 +336,7 @@ class SimplexReference(Reference):
   'simplex reference'
 
   __slots__ = ()
-  __cache__ = 'edge_refs', 'edge_transforms', 'permutation_transforms', 'ribbons', '_get_poly_coeffs_bernstein', '_get_poly_coeffs_lagrange', '_integer_barycentric_coordinates'
+  __cache__ = 'edge_refs', 'edge_transforms', 'ribbons', '_get_poly_coeffs_bernstein', '_get_poly_coeffs_lagrange', '_integer_barycentric_coordinates'
 
   @property
   def vertices(self):
@@ -364,15 +359,6 @@ class SimplexReference(Reference):
   @property
   def child_transforms(self):
     return tuple(transform.SimplexChild(self.ndims, ichild) for ichild in range(2**self.ndims))
-
-  @property
-  def permutation_transforms(self):
-    transforms = []
-    for verts in itertools.permutations(tuple(v for v in self.vertices)):
-      offset = verts[0]
-      linear = verts[1:]-verts[0]
-      transforms.append(transform.Square(linear.T, offset))
-    return tuple(transforms)
 
   @property
   def ribbons(self):
@@ -435,12 +421,6 @@ class SimplexReference(Reference):
 
   def get_edge_dofs(self, degree, iedge):
     return types.frozenarray(tuple(i for i, j in enumerate(self._integer_barycentric_coordinates(degree)) if j[iedge] == 0), dtype=int)
-
-  def get_dof_transpose_map(self, degree, vertex_transpose_map):
-    vertex_transpose_map = tuple(vertex_transpose_map)
-    if len(vertex_transpose_map) != self.nverts or set(vertex_transpose_map) != set(range(self.nverts)):
-      raise ValueError('invalid vertex indices: {!r}'.format(vertex_transpose_map))
-    return types.frozenarray(tuple(i for i, j in sorted(enumerate(self._integer_barycentric_coordinates(degree)), key=lambda ij: tuple(map(ij[1].__getitem__, vertex_transpose_map[::-1])))), dtype=int)
 
 class PointReference(SimplexReference):
   '0D simplex'
@@ -876,44 +856,6 @@ class TensorReference(Reference):
       else:
         yield ref
 
-  def get_dof_transpose_map(self, degree, vertex_transpose_map):
-    vertex_transpose_map = tuple(vertex_transpose_map)
-    if len(vertex_transpose_map) != self.nverts:
-      raise ValueError('invalid vertex indices: {!r}'.format(vertex_transpose_map))
-    refs = tuple(ref for ref in self._flat_refs if ref.nverts > 1)
-
-    # Let `ref_verts[i]` be a permutation of `range(refs[i].nverts)`.  The
-    # `vertex_transpose_map` should be the tensor product of the
-    # `ref_verts[i]*vertex_strides[i]` for all `i`, permuted by `perm` and
-    # flattened.  The `ref_strides` recovers the original structure from the
-    # permuted and flattened `vertex_transpose_map`.  We reverse engineer the
-    # per ref vertices, `ref_verts`, and permutation of the references, `perm`,
-    # and apply the same permutation and flattening to the tensor product of
-    # the dofs.
-
-    stride = 1
-    vertex_strides = []
-    for ref in refs[::-1]:
-      vertex_strides.insert(0, stride)
-      stride *= ref.nverts
-
-    verts = numpy.array(0, dtype=int)
-    dofs = numpy.array(0, dtype=int)
-    ref_strides = []
-    for ref, stride in zip(refs, vertex_strides):
-      ref_idx = [vertex_transpose_map.index(i*stride) for i in range(ref.nverts)]
-      ref_verts = numpy.argsort(ref_idx)
-      verts = verts[...,None]*len(ref_verts)+ref_verts
-      ref_dofs = ref.get_dof_transpose_map(degree, ref_verts)
-      dofs = dofs[...,None]*len(ref_dofs)+ref_dofs
-      ref_strides.append(ref_idx[ref_verts[1]]-ref_idx[ref_verts[0]])
-    perm = numpy.argsort(ref_strides)[::-1]
-    # Verify that `vertex_transpose_map` is in fact a tensor product of the
-    # `ref_verts`.
-    if not numpy.all(numpy.equal(numpy.transpose(verts, perm).ravel(), vertex_transpose_map)):
-      raise ValueError('invalid transformation: {!r}'.format(vertex_transpose_map))
-    return types.frozenarray(numpy.transpose(dofs, perm).ravel())
-
 class Cone(Reference):
   'cone'
 
@@ -1048,9 +990,6 @@ class OwnChildReference(Reference):
   def get_edge_dofs(self, degree, iedge):
     return self.baseref.get_edge_dofs(degree, iedge)
 
-  def get_dof_transpose_map(self, degree, vertex_transpose_map):
-    return self.baseref.get_dof_transpose_map(degree, vertex_transpose_map)
-
 class WithChildrenReference(Reference):
   'base reference with explicit children'
 
@@ -1075,10 +1014,6 @@ class WithChildrenReference(Reference):
   @property
   def vertices(self):
     return self.baseref.vertices
-
-  @property
-  def permutation_transforms(self):
-    return self.baseref.permutation_transforms
 
   def nvertices_by_level(self, n):
     return self.baseref.nvertices_by_level(n)
@@ -1190,9 +1125,6 @@ class WithChildrenReference(Reference):
 
   def get_edge_dofs(self, degree, iedge):
     return self.baseref.get_edge_dofs(degree, iedge)
-
-  def get_dof_transpose_map(self, degree, vertex_transpose_map):
-    return self.baseref.get_dof_transpose_map(degree, vertex_transpose_map)
 
 class MosaicReference(Reference):
   'triangulation'
@@ -1328,10 +1260,6 @@ class MosaicReference(Reference):
   def get_edge_dofs(self, degree, iedge):
     return self.baseref.get_edge_dofs(degree, iedge)
 
-  def get_dof_transpose_map(self, degree, vertex_transpose_map):
-    return self.baseref.get_dof_transpose_map(degree, vertex_transpose_map)
-
-
 # UTILITY FUNCTIONS
 
 _gauss = []
@@ -1370,34 +1298,16 @@ class Element(types.Singleton):
 
   __slots__ = 'reference', 'transform', 'opposite'
 
-  @types.aspreprocessor
   @types.apply_annotations
-  def pre_init(self, reference:strictreference, trans:transform.canonical, opptrans:transform.canonical=None, oriented:bool=False):
-    if opptrans is not None:
-      assert opptrans[-1].fromdims == reference.ndims and opptrans[0].todims == None
-      if not oriented:
-        vtx1 = transform.apply(trans, reference.vertices)
-        if vtx1 != transform.apply(opptrans, reference.vertices):
-          for ptrans in reference.permutation_transforms:
-            if vtx1 == transform.apply(opptrans + (ptrans,), reference.vertices):
-              opptrans += ptrans,
-              break
-          else:
-            raise Exception('Did not find a conforming permutation for the opposing transformation')
-    return (self, reference, trans, opptrans), {}
-
-  @pre_init
-  def __init__(self, reference, trans, opptrans):
+  def __init__(self, reference:strictreference, trans:transform.canonical, opptrans:transform.canonical=None):
     super().__init__()
     self.reference = reference
     self.transform = trans
     self.opposite = opptrans or trans
 
-  def withopposite(self, opp, oriented=False):
-    if isinstance(opp, tuple):
-      return Element(self.reference, self.transform, opp, oriented)
+  def withopposite(self, opp):
     assert isinstance(opp, Element) and opp.reference == self.reference
-    return Element(self.reference, self.transform, opp.transform, oriented or opp.opposite==self.transform)
+    return Element(self.reference, self.transform, opp.transform)
 
   def __mul__(self, other):
     self_is_iface = self.opposite != self.transform
@@ -1407,7 +1317,7 @@ class Element(types.Singleton):
       opptrans = transform.Bifurcate(self.opposite, other.opposite),
     else:
       opptrans = None
-    return Element(self.reference * other.reference, trans, opptrans, oriented=True)
+    return Element(self.reference * other.reference, trans, opptrans)
 
   @property
   def vertices(self):
@@ -1431,21 +1341,21 @@ class Element(types.Singleton):
 
   def edge(self, iedge):
     trans, edge = self.reference.edges[iedge]
-    return Element(edge, self.transform + (trans,), self.opposite and self.opposite + (trans,), oriented=True) if edge else None
+    return Element(edge, self.transform + (trans,), self.opposite and self.opposite + (trans,)) if edge else None
 
   @property
   def children(self):
-    return [Element(child, self.transform + (trans,), self.opposite and self.opposite + (trans,), oriented=True)
+    return [Element(child, self.transform + (trans,), self.opposite and self.opposite + (trans,))
       for trans, child in self.reference.children if child]
 
   @property
   def flipped(self):
     assert self.opposite, 'element does not define an opposite'
-    return Element(self.reference, self.opposite, self.transform, oriented=True)
+    return Element(self.reference, self.opposite, self.transform)
 
   @property
   def simplices(self):
-    return [Element(reference, self.transform + (trans,), self.opposite and self.opposite + (trans,), oriented=True)
+    return [Element(reference, self.transform + (trans,), self.opposite and self.opposite + (trans,))
       for trans, reference in self.reference.simplices]
 
   def __str__(self):

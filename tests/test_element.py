@@ -55,22 +55,6 @@ class elem(TestCase):
             self.ref.child_transforms[ichild] * self.ref.child_refs[ichild].edge_transforms[iedge],
             (self.ref.child_transforms[ioppchild] * self.ref.child_refs[ioppchild].edge_transforms[ioppedge]).flipped)
 
-  @parametrize.enable_if(lambda ref, **kwargs: isinstance(ref, (element.SimplexReference, element.TensorReference)))
-  def test_dof_transpose_map(self):
-    nverts = []
-    ref = self.ref
-    while isinstance(ref, element.TensorReference):
-      nverts.append(ref.ref1.nverts)
-      ref = ref.ref2
-    nverts.append(ref.nverts)
-    for perm_ref_order, *perms_refs in itertools.product(*(itertools.permutations(range(n)) for n in [len(nverts)]+nverts)):
-      j = numpy.arange(self.ref.nverts).reshape(nverts)
-      for k, perm in enumerate(perms_refs):
-        j = numpy.take(j, perm, axis=k)
-      j = tuple(numpy.transpose(j, perm_ref_order).ravel())
-      with self.subTest(perm_ref_order=perm_ref_order, perms_refs=perms_refs):
-        self.assertEqual(j, tuple(self.ref.get_dof_transpose_map(1, j)))
-
 elem('point', ref=element.PointReference(), exactcentroid=numpy.zeros((0,)))
 elem('point2', ref=element.PointReference()**2, exactcentroid=numpy.zeros((0,)))
 elem('line', ref=element.LineReference(), exactcentroid=[.5])

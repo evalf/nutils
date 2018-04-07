@@ -90,10 +90,10 @@ class test(unittest.TestCase):
   def test_tri_p1_refine2(self):
     err, cons, lhs = main(degree=1, maxrefine=2, figures=False)
     numeric.assert_allclose64(err, 'eNp7rF1rCAAFPAG9')
-    numeric.assert_allclose64(cons, 'eNpjaHhnLGTM0PDQkKHhw01TFYaGwlsMDTA43STXhKFBxwTErj'
-      'nHeY6hoe8sQ4PjWZh8rjpDw9ubDA3v1K9eZGg4c56hAQByvx3s')
-    numeric.assert_allclose64(lhs, 'eNoBUACv/5sz7jMSM8oy4TGAMfDZNSQ5MnHazjNHNDI0aTRONJc'
-      '0bTQCNCw0bTPrznzOCc4wzo7No81BzYTN481yzm/ObSdQ0O3Zi9LuJ9XRKtDMzyvPk+wnvw==')
+    numeric.assert_allclose64(cons, 'eNp7ZyxkzNDw0JCh4cNNhgZTlcJbDA0wON2EoSHXRMcExK45x3'
+      'mOoaHvLEOD41mEilz1t0Bd79QZGq5ePHMeJAIAhC0d7A==')
+    numeric.assert_allclose64(lhs, 'eNoBUACv/+4zEjObM+ExyjLw2YAxNSRx2jkyzjNHNGk0MjSXNE4'
+      '0bTQsNAI0bTN8zgnO686OzTDOQc2jzYTNcs7jzW/ObSft2VDQ7ieL0tXRzM8q0CvPl2Invw==')
 
   def test_quad_p2_refine2(self):
     err, cons, lhs = main(nelems=4, degree=2, maxrefine=2, figures=False)

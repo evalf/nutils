@@ -82,29 +82,25 @@ class unstructured_topology(TestCase):
 
   def as_simplices(self, elem):
     '''convert rectangular or cubic ``elem`` to simplices'''
-    offset = elem.transform[-1]
-    root = elem.transform[:-1]
-    coords = offset.apply(elem.reference.vertices)
+    coords = elem.reference.vertices
     if self.ndims == 1:
-      return [elem]
+      indices = [0,1],
     elif self.ndims == 2:
-      indices = [[0,1,2],[1,3,2]]
-      ref = element.TriangleReference()
+      indices = [0,1,2], [1,2,3]
     elif self.ndims == 3:
-      indices = [[0,1,2,8], [1,3,2,8], [4,5,6,8], [5,7,6,8],
-                 [0,1,4,8], [1,5,4,8], [2,3,6,8], [3,7,6,8],
-                 [0,2,4,8], [2,6,4,8], [1,3,5,8], [3,7,5,8]]
-      coords = numpy.concatenate([coords, offset.apply(numpy.mean(elem.reference.vertices, 0)[_])], axis=0)
-      ref = element.TetrahedronReference()
-    for i in indices:
-      random.shuffle(i)
-    random.shuffle(indices)
-    return [element.Element(ref, root + (transform.Square((coords[i[1:]]-coords[i[0]]).T, coords[i[0]]),)) for i in indices]
+      coords = numpy.concatenate([coords, numpy.mean(coords, 0)[_]], axis=0)
+      indices = [0,1,2,8], [1,2,3,8], [4,5,6,8], [5,6,7,8], [0,1,4,8], [1,4,5,8], [2,3,6,8], [3,6,7,8], [0,2,4,8], [2,4,6,8], [1,3,5,8], [3,5,7,8]
+    simplex = element.getsimplex(elem.ndims)
+    return [element.Element(simplex, elem.transform + (transform.Square((coords[i[1:]]-coords[i[0]]).T, coords[i[0]]),)) for i in indices]
 
   def setUp(self):
     random.seed(0, version=2)
 
-    domain, geom = mesh.rectilinear([numpy.linspace(0, 1, 3 if self.ndims == 3 else 5)]*self.ndims)
+    verts = numpy.linspace(0, 1, 3 if self.ndims == 3 else 5)
+    domain, geom = mesh.rectilinear([verts] * self.ndims)
+    nverts = len(verts)**self.ndims
+    if self.ndims == 3 and self.variant in ('simplex', 'mixed'):
+      nverts += len(domain)
     if self.variant == 'tensor':
       domain = topology.UnstructuredTopology(domain.ndims, domain)
     elif self.variant == 'simplex':
@@ -114,6 +110,7 @@ class unstructured_topology(TestCase):
     elif self.variant == 'demo':
       domain, geom = mesh.demo()
       assert self.ndims == domain.ndims
+      nverts = len(numpy.unique(domain.basetopo.simplices))
     else:
       raise ValueError('variant: {!r}'.format(self.variant))
 
@@ -125,10 +122,11 @@ class unstructured_topology(TestCase):
     self.domain = domain
     self.basis = basis
     self.geom = geom
+    self.nverts = nverts
 
   @parametrize.enable_if(lambda btype, **params: btype not in {'bubble', 'discont'} and degree == 1)
   def test_ndofs(self):
-    self.assertEqual(len(self.basis), len(set(v for elem in self.domain for v in elem.vertices)))
+    self.assertEqual(len(self.basis), self.nverts)
 
   @parametrize.enable_if(lambda btype, **params: btype not in {'bubble'})
   def test_pum_sum(self):

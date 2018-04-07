@@ -211,6 +211,8 @@ class Matrix(TransformItem):
       else Matrix(linear, offset)
 
   def __str__(self):
+    if not hasattr(self, 'offset') or not hasattr(self, 'linear'):
+      return '<uninitialized>'
     return util.obj2str(self.offset) + ''.join('+{}*x{}'.format(util.obj2str(v), i) for i, v in enumerate(self.linear.T))
 
 class Square(Matrix):
@@ -258,6 +260,12 @@ class Square(Matrix):
           M[tuple(slice(n) for n in M_power.shape)+powers] += M_power
       self._transform_matrix[degree] = M
     return numpy.einsum('jk,ik', M.reshape([(degree+1)**self.fromdims]*2), coeffs.reshape(coeffs.shape[0],-1)).reshape(coeffs.shape)
+
+class Simplex(Square):
+
+  @types.apply_annotations
+  def __init__(self, coords:types.frozenarray):
+    super().__init__((coords[1:]-coords[0]).T, coords[0])
 
 class Shift(Square):
 
@@ -505,6 +513,14 @@ class TensorChild(Square):
   @property
   def det(self):
     return self.trans1.det * self.trans2.det
+
+class Identifier(TransformItem):
+
+  __slots__ = ()
+
+  @types.apply_annotations
+  def __init__(self, ndims:int, *args):
+    super().__init__(None, ndims)
 
 class VertexTransform(TransformItem):
 
