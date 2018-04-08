@@ -44,7 +44,7 @@ class Topology(types.Singleton):
   'topology base class'
 
   __slots__ = 'ndims',
-  __cache__ ='edict', 'border_transforms', 'simplex'
+  __cache__ ='edict', 'border_transforms', 'simplex', 'boundary', 'interfaces'
 
   # subclass needs to implement: .elements
 
@@ -732,6 +732,38 @@ class Topology(types.Singleton):
     extopo = self * StructuredLine(root, i=0, j=nelems, periodic=periodic, bnames=bnames)
     exgeom = function.concatenate(function.bifurcate(geom, function.rootcoords(1)))
     return extopo, exgeom
+
+  @property
+  @log.title
+  def boundary(self):
+    belems = []
+    for ielem, ioppelems in enumerate(self.connectivity):
+      elem = self.elements[ielem]
+      for edge, ioppelem in zip(elem.edges, ioppelems):
+        if edge:
+          if ioppelem == -1:
+            belems.append(edge)
+          else:
+            ioppedge = tuple(self.connectivity[ioppelem]).index(ielem)
+            ref = edge.reference - self.elements[ioppelem].reference.edge_refs[ioppedge]
+            if ref:
+              belems.append(element.Element(ref, edge.transform))
+    return UnstructuredTopology(self.ndims-1, belems)
+
+  @property
+  @log.title
+  def interfaces(self):
+    ielems = []
+    for ielem, ioppelems in enumerate(self.connectivity):
+      elem = self.elements[ielem]
+      for edge, ioppelem in zip(elem.edges, ioppelems):
+        if edge and -1 < ioppelem < ielem:
+          ioppedge = tuple(self.connectivity[ioppelem]).index(ielem)
+          oppedge = self.elements[ioppelem].edge(ioppedge)
+          ref = oppedge and edge.reference & oppedge.reference
+          if ref:
+            ielems.append(element.Element(ref, edge.transform, oppedge.transform))
+    return UnstructuredTopology(self.ndims-1, ielems)
 
 stricttopology = types.strict[Topology]
 
@@ -1484,7 +1516,7 @@ class UnstructuredTopology(Topology):
   'unstructured topology'
 
   __slots__ = 'elements',
-  __cache__ = 'connectivity', 'boundary', 'interfaces'
+  __cache__ = 'connectivity',
 
   @types.apply_annotations
   def __init__(self, ndims:types.strictint, elements:types.tuple[element.strictelement]):
@@ -1511,30 +1543,6 @@ class UnstructuredTopology(Topology):
           connectivity[ielem][iedge] = jelem
           connectivity[jelem][jedge] = ielem
     return tuple(connectivity)
-
-  @property
-  def boundary(self):
-    elements = tuple(elem.edge(iedge) for elem, ioppelems in zip(self, self.connectivity) for iedge in numpy.where(numpy.equal(ioppelems, -1))[0])
-    return UnstructuredTopology(self.ndims-1, elements)
-
-  @property
-  def interfaces(self):
-    seen = set()
-    elements = []
-    for ielem, ioppelems in enumerate(self.connectivity):
-      elem = self.elements[ielem]
-      for iedge, ioppelem in enumerate(ioppelems):
-        if ioppelem == -1:
-          continue
-        try:
-          seen.remove((ielem, iedge))
-        except KeyError:
-          ioppedge = tuple(self.connectivity[ioppelem]).index(ielem)
-          oppelem = self.elements[ioppelem]
-          elements.append(elem.edge(iedge).withopposite(oppelem.edge(ioppedge)))
-          seen.add((ioppelem, ioppedge))
-    assert not seen
-    return UnstructuredTopology(self.ndims-1, elements)
 
   def basis_bubble(self):
     'bubble from vertices'
@@ -1767,60 +1775,37 @@ class SubsetTopology(Topology):
     return self.basetopo.refined.subset(elems, self.newboundary.refined if isinstance(self.newboundary,Topology) else self.newboundary, strict=True)
 
   @property
-  @log.title
   def boundary(self):
-    brefs = [element.EmptyReference(self.ndims-1)] * len(self.basetopo.boundary) # subset of original boundary
-    newbelems = [] # newly formed boundary elements
-    connectivity = self.basetopo.connectivity
-    elements = self.basetopo.elements
     baseboundary = self.basetopo.boundary
-    for ielem, ioppelems in enumerate(connectivity):
-      ref = self.refs[ielem]
-      if not ref:
-        continue
-      elem = elements[ielem]
-      newbelems.extend(element.Element(edge, elem.transform + (etrans,), elem.transform + (etrans.flipped,)) for etrans, edge in ref.edges[elem.reference.nedges:])
-      for iedge, ioppelem in enumerate(ioppelems):
-        bref = ref.edge_refs[iedge]
-        if not bref:
-          continue
-        if ioppelem == -1:
-          index = baseboundary.edict[transform.canonical(elem.transform + (ref.edge_transforms[iedge],))]
-          brefs[index] = bref # by construction, bref must be equal or subset of original
-        else:
-          ioppedge = tuple(connectivity[ioppelem]).index(ielem)
-          oppref = self.refs[ioppelem]
-          if oppref:
-            bref -= oppref.edge_refs[ioppedge]
-          if bref:
-            newbelems.append(element.Element(bref, elem.transform + (ref.edge_transforms[iedge],), elements[ioppelem].edge(ioppedge).transform))
+    brefs = [None] * len(baseboundary)
+    trimmed = []
+    for belem in super().boundary:
+      try:
+        ibelem = baseboundary.edict[belem.transform]
+      except KeyError:
+        trimmed.append(belem)
+      else:
+        brefs[ibelem] = belem.reference
     origboundary = SubsetTopology(baseboundary, brefs)
-    trimboundary = OrientedGroupsTopology(self.newboundary if isinstance(self.newboundary,Topology) else self.basetopo.interfaces, newbelems)
+    if isinstance(self.newboundary, Topology):
+      trimmedbrefs = [None] * len(self.newboundary)
+      for belem in trimmed:
+        trimmedbrefs[self.newboundary.edict[belem.transform]] = belem.reference
+      trimboundary = SubsetTopology(self.newboundary, trimmedbrefs)
+    else:
+      trimboundary = OrientedGroupsTopology(self.basetopo.interfaces, trimmed)
     return UnionTopology([trimboundary, origboundary], names=[self.newboundary] if isinstance(self.newboundary,str) else [])
 
   @property
-  @log.title
   def interfaces(self):
-    irefs = [element.EmptyReference(self.ndims-1)] * len(self.basetopo.interfaces) # subset of original interfaces
-    connectivity = self.basetopo.connectivity
-    elements = self.basetopo.elements
     baseinterfaces = self.basetopo.interfaces
-    for ielem, ioppelems in enumerate(connectivity):
-      ref = self.refs[ielem]
-      if not ref:
-        continue # edge is empty
-      elem = elements[ielem]
-      for iedge, ioppelem in enumerate(ioppelems):
-        if ioppelem == -1:
-          continue # edge lies on the boundary
-        oppref = self.refs[ioppelem]
-        if not oppref:
-          continue # edge is empty
-        index = baseinterfaces.edict.get(transform.canonical(elem.transform + (ref.edge_transforms[iedge],)))
-        if index is None:
-          continue # edge is not oriented with an interface; rely on connectivity to also yield flipped element
-        ioppedge = tuple(connectivity[ioppelem]).index(ielem)
-        irefs[index] = ref.edge_refs[iedge] & oppref.edge_refs[ioppedge]
+    irefs = [None] * len(baseinterfaces)
+    for ielem in super().interfaces:
+      try:
+        iielem = baseinterfaces.edict[ielem.transform]
+      except KeyError:
+        iielem = baseinterfaces.edict[ielem.opposite]
+      irefs[iielem] = ielem.reference
     return SubsetTopology(baseinterfaces, irefs)
 
   @log.title
