@@ -728,7 +728,7 @@ class Topology(types.Singleton):
 
   def extruded(self, geom, nelems, periodic=False, bnames=('front','back')):
     assert geom.ndim == 1
-    root = transform.RootTrans('extrude', shape=[nelems if periodic else 0])
+    root = transform.Identifier(self.ndims+1, 'extrude')
     extopo = self * StructuredLine(root, i=0, j=nelems, periodic=periodic, bnames=bnames)
     exgeom = function.concatenate(function.bifurcate(geom, function.rootcoords(1)))
     return extopo, exgeom
@@ -2162,7 +2162,7 @@ class RevolutionTopology(Topology):
   __slots__ = 'elements', 'boundary'
 
   def __init__(self):
-    self.elements = element.Element(element.RevolutionReference(), [transform.RootTrans('angle',(1,))]),
+    self.elements = element.Element(element.RevolutionReference(), [transform.Identifier(1, 'angle')]),
     self.boundary = EmptyTopology(ndims=0)
     super().__init__(ndims=1)
 

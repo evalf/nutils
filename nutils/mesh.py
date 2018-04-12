@@ -54,13 +54,7 @@ def rectilinear(richshape, periodic=(), name='rect'):
       shape.append(len(v)-1)
       uniform = False
 
-  if isinstance(name, str):
-    wrap = tuple(sh if i in periodic else 0 for i, sh in enumerate(shape))
-    root = transform.RootTrans(name, wrap)
-  else:
-    assert all((name.take(0,i) == name.take(2,i)).all() for i in periodic)
-    root = transform.RootTransEdges(name, shape)
-
+  root = transform.Identifier(ndims, name)
   axes = [topology.DimAxis(0,n,idim in periodic) for idim, n in enumerate(shape)]
   topo = topology.StructuredTopology(root, axes)
 
@@ -89,7 +83,7 @@ def line(nodes, periodic=False, bnames=None):
     scale = (nodes[-1]-nodes[0]) / nelems
     offset = nodes[0]
     uniform = numpy.equal(nodes, offset + numpy.arange(nelems+1) * scale).all()
-  root = transform.RootTrans('rect', shape=[nelems if periodic else 0])
+  root = transform.Identifier(1, 'line')
   domain = topology.StructuredLine(root, 0, nelems, periodic=periodic, bnames=bnames)
   geom = function.rootcoords(1) * scale + offset if uniform else domain.basis('std', degree=1, periodic=False).dot(nodes)
   return domain, geom
