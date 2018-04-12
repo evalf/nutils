@@ -310,7 +310,7 @@ class general(TestCase):
     super().setUp()
     self.domain, self.geom = mesh.rectilinear([3,4,5], periodic=[] if self.periodic is False else [self.periodic])
     if not self.isstructured:
-      self.domain = topology.UnstructuredTopology(self.domain.ndims, tuple(self.domain))
+      self.domain = topology.ConnectedTopology(self.domain.ndims, self.domain.elements, self.domain.connectivity)
 
   def test_connectivity(self):
     nboundaries = 0
@@ -323,7 +323,7 @@ class general(TestCase):
           ioppedge = tuple(self.domain.connectivity[ioppelem]).index(ielem)
           edge = self.domain.elements[ielem].edge(iedge)
           oppedge = self.domain.elements[ioppelem].edge(ioppedge)
-          self.assertCountEqual(edge.vertices, oppedge.vertices, 'edges do not match: {}, {}'.format(edge, oppedge))
+          self.assertEqual(edge.reference, oppedge.reference)
           ninterfaces += .5
     self.assertEqual(nboundaries, len(self.domain.boundary), 'incompatible number of boundaries')
     self.assertEqual(ninterfaces, len(self.domain.interfaces), 'incompatible number of interfaces')

@@ -765,6 +765,73 @@ class Topology(types.Singleton):
             ielems.append(element.Element(ref, edge.transform, oppedge.transform))
     return UnstructuredTopology(self.ndims-1, ielems)
 
+  def basis_spline(self, degree):
+    assert degree == 1
+    return self.basis('std', degree)
+
+  def basis_discont(self, degree):
+    'discontinuous shape functions'
+
+    assert numeric.isint(degree) and degree >= 0
+    coeffs = []
+    nmap = []
+    ndofs = 0
+    for elem in self:
+      elemcoeffs = elem.reference.get_poly_coeffs('bernstein', degree=degree)
+      coeffs.append(elemcoeffs)
+      nmap.append(types.frozenarray(ndofs + numpy.arange(len(elemcoeffs)), copy=False))
+      ndofs += len(elemcoeffs)
+    degrees = set(n-1 for c in coeffs for n in c.shape[1:])
+    return function.polyfunc(coeffs, nmap, ndofs, (elem.transform for elem in self), issorted=False)
+
+  def _basis_c0_structured(self, name, degree):
+    'C^0-continuous shape functions with lagrange stucture'
+
+    assert numeric.isint(degree) and degree >= 0
+
+    if degree == 0:
+      raise ValueError('Cannot build a C^0-continuous basis of degree 0.  Use basis \'discont\' instead.')
+
+    coeffs = [elem.reference.get_poly_coeffs(name, degree=degree) for elem in self]
+    offsets = numpy.cumsum([0] + [len(c) for c in coeffs])
+    dofmap = numpy.repeat(-1, offsets[-1])
+    for ielem, ioppelems in enumerate(self.connectivity):
+      for iedge, jelem in enumerate(ioppelems): # loop over element neighbors and merge dofs
+        if jelem < ielem:
+          continue # either there is no neighbor along iedge or situation will be inspected from the other side
+        jedge = self.connectivity[jelem].tolist().index(ielem)
+        idofs = offsets[ielem] + self.elements[ielem].reference.get_edge_dofs(degree, iedge)
+        jdofs = offsets[jelem] + self.elements[jelem].reference.get_edge_dofs(degree, jedge)
+        for idof, jdof in zip(idofs, jdofs):
+          while dofmap[idof] != -1:
+            idof = dofmap[idof]
+          while dofmap[jdof] != -1:
+            jdof = dofmap[jdof]
+          if idof != jdof:
+            dofmap[max(idof, jdof)] = min(idof, jdof) # create left-looking pointer
+    # assign dof numbers left-to-right
+    ndofs = 0
+    for i, n in enumerate(dofmap):
+      if n == -1:
+        dofmap[i] = ndofs
+        ndofs += 1
+      else:
+        dofmap[i] = dofmap[n]
+
+    elem_slices = map(slice, offsets[:-1], offsets[1:])
+    dofs = tuple(types.frozenarray(dofmap[s]) for s in elem_slices)
+    return function.polyfunc(coeffs, dofs, ndofs, (elem.transform for elem in self), issorted=False)
+
+  def basis_lagrange(self, degree):
+    'lagrange shape functions'
+    return self._basis_c0_structured('lagrange', degree)
+
+  def basis_bernstein(self, degree):
+    'bernstein shape functions'
+    return self._basis_c0_structured('bernstein', degree)
+
+  basis_std = basis_bernstein
+
 stricttopology = types.strict[Topology]
 
 class LocateError(Exception):
@@ -1239,7 +1306,7 @@ class StructuredTopology(Topology):
       if idim in self.periodic:
         connectivity[s+(-1,...,idim,0)] = ielems[s+(0,)]
         connectivity[s+(0,...,idim,1)] = ielems[s+(-1,)]
-    return connectivity.reshape(len(self), self.ndims*2)
+    return types.frozenarray(connectivity.reshape(len(self), self.ndims*2), copy=False)
 
   @property
   def boundary(self):
@@ -1516,142 +1583,47 @@ class UnstructuredTopology(Topology):
   'unstructured topology'
 
   __slots__ = 'elements',
-  __cache__ = 'connectivity',
 
   @types.apply_annotations
   def __init__(self, ndims:types.strictint, elements:types.tuple[element.strictelement]):
+    assert all(elem.ndims == ndims for elem in elements)
     self.elements = elements
-    assert all(elem.ndims == ndims for elem in self.elements)
     super().__init__(ndims)
 
-  @property
-  @log.title
-  def connectivity(self):
-    edges = {}
-    connectivity = []
-    for ielem, elem in log.enumerate('elem', self):
-      connectivity.append(-numpy.ones(elem.nedges, dtype=int))
-      for iedge, belem in enumerate(elem.edges):
-        belemcoords = belem.vertices
-        edgekey = tuple(sorted(belemcoords))
-        try:
-          jelem, jedge = edges.pop(edgekey)
-        except KeyError:
-          edges[edgekey] = ielem, iedge
-        else:
-          # TODO assert transformation equivalence
-          connectivity[ielem][iedge] = jelem
-          connectivity[jelem][jedge] = ielem
-    return tuple(connectivity)
+class ConnectedTopology(UnstructuredTopology):
+  'unstructured topology with connectivity'
 
-  def basis_bubble(self):
-    'bubble from vertices'
+  __slots__ = 'connectivity',
 
-    assert self.ndims == 2
-    coeffs = types.frozenarray([[[1,-1, 0, 0], [-1,  0,  0, 0], [0,  0, 0, 0], [0, 0, 0, 0]],
-                                [[0, 0, 0, 0], [ 1,  0,  0, 0], [0,  0, 0, 0], [0, 0, 0, 0]],
-                                [[0, 1, 0, 0], [ 0,  0,  0, 0], [0,  0, 0, 0], [0, 0, 0, 0]],
-                                [[0, 0, 0, 0], [ 0, 27,-27, 0], [0,-27, 0, 0], [0, 0, 0, 0]]])
+  @types.apply_annotations
+  def __init__(self, ndims:types.strictint, elements:types.tuple[element.strictelement], connectivity):
+    assert len(connectivity) == len(elements)
+    self.connectivity = connectivity
+    super().__init__(ndims, elements)
 
-    nmap = []
-    dofmap = {}
-    for ielem, elem in enumerate(self):
-      assert isinstance(elem.reference, element.TriangleReference)
-      assert elem.nverts == 3
-      dofs = numpy.empty(4, dtype=int)
-      for i, v in enumerate(elem.vertices):
-        dof = dofmap.get(v)
-        if dof is None:
-          dof = len(self) + len(dofmap)
-          dofmap[v] = dof
-        dofs[i] = dof
-      dofs[3] = ielem
-      nmap.append(types.frozenarray(dofs, copy=False))
-    ndofs = len(self)+len(dofmap)
-
-    return function.polyfunc([coeffs]*len(self), nmap, ndofs, (elem.transform for elem in self), issorted=False)
-
-  def basis_spline(self, degree):
-    assert degree == 1
-    return self.basis('std', degree)
-
-  def basis_discont(self, degree):
-    'discontinuous shape functions'
-
-    assert numeric.isint(degree) and degree >= 0
-    coeffs = []
-    nmap = []
-    ndofs = 0
-    for elem in self:
-      elemcoeffs = elem.reference.get_poly_coeffs('bernstein', degree=degree)
-      coeffs.append(elemcoeffs)
-      nmap.append(types.frozenarray(ndofs + numpy.arange(len(elemcoeffs)), copy=False))
-      ndofs += len(elemcoeffs)
-    degrees = set(n-1 for c in coeffs for n in c.shape[1:])
-    return function.polyfunc(coeffs, nmap, ndofs, (elem.transform for elem in self), issorted=False)
-
-  def _basis_c0_structured(self, name, degree):
-    'C^0-continuous shape functions with lagrange stucture'
-
-    assert numeric.isint(degree) and degree >= 0
-
-    if degree == 0:
-      raise ValueError('Cannot build a C^0-continuous basis of degree 0.  Use basis \'discont\' instead.')
-
-    coeffs = [elem.reference.get_poly_coeffs(name, degree=degree) for elem in self]
-    offsets = numpy.cumsum([0] + [len(c) for c in coeffs])
-    dofmap = numpy.repeat(-1, offsets[-1])
-    for ielem, ioppelems in enumerate(self.connectivity):
-      for iedge, jelem in enumerate(ioppelems): # loop over element neighbors and merge dofs
-        if jelem < ielem:
-          continue # either there is no neighbor along iedge or situation will be inspected from the other side
-        jedge = self.connectivity[jelem].tolist().index(ielem)
-        idofs = offsets[ielem] + self.elements[ielem].reference.get_edge_dofs(degree, iedge)
-        jdofs = offsets[jelem] + self.elements[jelem].reference.get_edge_dofs(degree, jedge)
-        for idof, jdof in zip(idofs, jdofs):
-          while dofmap[idof] != -1:
-            idof = dofmap[idof]
-          while dofmap[jdof] != -1:
-            jdof = dofmap[jdof]
-          if idof != jdof:
-            dofmap[max(idof, jdof)] = min(idof, jdof) # create left-looking pointer
-    # assign dof numbers left-to-right
-    ndofs = 0
-    for i, n in enumerate(dofmap):
-      if n == -1:
-        dofmap[i] = ndofs
-        ndofs += 1
-      else:
-        dofmap[i] = dofmap[n]
-
-    elem_slices = map(slice, offsets[:-1], offsets[1:])
-    dofs = tuple(types.frozenarray(dofmap[s]) for s in elem_slices)
-    return function.polyfunc(coeffs, dofs, ndofs, (elem.transform for elem in self), issorted=False)
-
-  def basis_lagrange(self, degree):
-    'lagrange shape functions'
-    return self._basis_c0_structured('lagrange', degree)
-
-  def basis_bernstein(self, degree):
-    'bernstein shape functions'
-    return self._basis_c0_structured('bernstein', degree)
-
-  basis_std = basis_bernstein
-
-class SimplexTopology(UnstructuredTopology):
+class SimplexTopology(Topology):
   'simpex topology'
 
-  __slots__ = 'simplices',
+  __slots__ = 'simplices', 'transforms'
   __cache__ = 'connectivity'
 
   @types.apply_annotations
   def __init__(self, simplices:types.frozenarray[types.strictint], transforms:types.tuple[transform.stricttransform]):
     assert simplices.ndim == 2 and len(simplices) == len(transforms)
-    ndims = simplices.shape[1] - 1
     self.simplices = simplices
-    simplexref = element.getsimplex(ndims)
-    elements = [element.Element(simplexref, trans) for trans in transforms]
-    super().__init__(ndims, elements)
+    self.transforms = transforms
+    super().__init__(simplices.shape[1]-1)
+
+  def __len__(self):
+    return len(self.simplices)
+
+  def __iter__(self):
+    simplexref = element.getsimplex(self.ndims)
+    return (element.Element(simplexref, trans) for trans in self.transforms)
+
+  @property
+  def elements(self):
+    return tuple(self)
 
   @property
   def connectivity(self):
@@ -1667,6 +1639,21 @@ class SimplexTopology(UnstructuredTopology):
     connectivity[ielems,iedges] = jelems
     connectivity[jelems,jedges] = ielems
     return types.frozenarray(connectivity, copy=False)
+
+  def basis_bubble(self):
+    'bubble from vertices'
+
+    bernstein = element.getsimplex(self.ndims).get_poly_coeffs('bernstein', degree=1)
+    bubble = functools.reduce(numeric.poly_mul, bernstein)
+    coeffs = numpy.zeros((len(bernstein)+1,) + bubble.shape)
+    coeffs[(slice(-1),)+(slice(2),)*self.ndims] = bernstein
+    coeffs[-1] = bubble
+    coeffs[:-1] -= bubble / (self.ndims+1)
+    coeffs = types.frozenarray(coeffs, copy=False)
+    nverts = self.simplices.max() + 1
+    ndofs = nverts + len(self)
+    nmap = [types.frozenarray(numpy.hstack([idofs, nverts+ielem]), copy=False) for ielem, idofs in enumerate(self.simplices)]
+    return function.polyfunc([coeffs] * len(self), nmap, ndofs, self.transforms, issorted=False)
 
 class UnionTopology(Topology):
   'grouped topology'
