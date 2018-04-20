@@ -744,7 +744,7 @@ class Topology(types.Singleton):
           if ioppelem == -1:
             belems.append(edge)
           else:
-            ioppedge = tuple(self.connectivity[ioppelem]).index(ielem)
+            ioppedge = self.connectivity[ioppelem].index(ielem)
             ref = edge.reference - self.elements[ioppelem].reference.edge_refs[ioppedge]
             if ref:
               belems.append(element.Element(ref, edge.transform))
@@ -758,7 +758,7 @@ class Topology(types.Singleton):
       elem = self.elements[ielem]
       for edge, ioppelem in zip(elem.edges, ioppelems):
         if edge and -1 < ioppelem < ielem:
-          ioppedge = tuple(self.connectivity[ioppelem]).index(ielem)
+          ioppedge = self.connectivity[ioppelem].index(ielem)
           oppedge = self.elements[ioppelem].edge(ioppedge)
           ref = oppedge and edge.reference & oppedge.reference
           if ref:
@@ -799,7 +799,7 @@ class Topology(types.Singleton):
       for iedge, jelem in enumerate(ioppelems): # loop over element neighbors and merge dofs
         if jelem < ielem:
           continue # either there is no neighbor along iedge or situation will be inspected from the other side
-        jedge = self.connectivity[jelem].tolist().index(ielem)
+        jedge = self.connectivity[jelem].index(ielem)
         idofs = offsets[ielem] + self.elements[ielem].reference.get_edge_dofs(degree, iedge)
         jdofs = offsets[jelem] + self.elements[jelem].reference.get_edge_dofs(degree, jedge)
         for idof, jdof in zip(idofs, jdofs):
@@ -1750,7 +1750,7 @@ class SubsetTopology(Topology):
     mask = numpy.array([bool(ref) for ref in self.refs] + [False]) # trailing false serves to map -1 to -1
     renumber = numpy.cumsum(mask)-1
     renumber[~mask] = -1
-    return tuple(tuple(renumber.take(ioppelems)) + (-1,) * (ref.nedges - len(ioppelems)) for ref, ioppelems in zip(self.refs, self.basetopo.connectivity) if ref)
+    return tuple(types.frozenarray(renumber.take(ioppelems).tolist() + [-1] * (ref.nedges - len(ioppelems))) for ref, ioppelems in zip(self.refs, self.basetopo.connectivity) if ref)
 
   @property
   def elements(self):
@@ -2008,7 +2008,7 @@ class HierarchicalTopology(Topology):
           # refined elements.
           continue
         # Find the edge of `neighbor` between `neighbor` and `elem`.
-        ineighboredge = tuple(level.connectivity[ineighbor]).index(ielem)
+        ineighboredge = level.connectivity[ineighbor].index(ielem)
         if not tail and (ielem, ielemedge) > (ineighbor, ineighboredge):
           # `neighbor` itself, not a parent of, exists in this topology (`tail`
           # is empty).  To make sure we add this interface only once we

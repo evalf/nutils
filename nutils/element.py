@@ -90,7 +90,7 @@ class Reference(types.Singleton):
   def connectivity(self):
     # Nested tuple with connectivity information about edges of children:
     # connectivity[ichild][iedge] = ioppchild (interface) or -1 (boundary).
-    childmap = [[-1] * child.nedges for child in self.child_refs]
+    connectivity = [-numpy.ones(child.nedges, dtype=int) for child in self.child_refs]
     vmap = {}
     for ichild, (ctrans, cref) in enumerate(self.children):
       for iedge, etrans in enumerate(cref.edge_transforms):
@@ -100,13 +100,13 @@ class Reference(types.Singleton):
         except KeyError:
           vmap[v] = ichild, iedge
         else:
-          childmap[jchild][jedge] = ichild
-          childmap[ichild][iedge] = jchild
+          connectivity[jchild][jedge] = ichild
+          connectivity[ichild][iedge] = jchild
     for etrans, eref in self.edges:
       for ctrans in eref.child_transforms:
         vmap.pop(etrans * ctrans, None)
     assert not any(self.child_refs[ichild].edge_refs[iedge] for ichild, iedge in vmap.values()), 'not all boundary elements recovered'
-    return tuple(map(tuple, childmap))
+    return tuple(types.frozenarray(c, copy=False) for c in connectivity)
 
   @property
   def ribbons(self):
@@ -1111,7 +1111,7 @@ class WithChildrenReference(Reference):
   @property
   def connectivity(self):
     # same as base implementation but cheaper
-    return tuple(tuple(edges[iedge] if iedge < len(edges) and edges[iedge] != -1 and self.child_refs[edges[iedge]] else -1 for iedge in range(self.child_refs[ichild].nedges))
+    return tuple(types.frozenarray([edges[iedge] if iedge < len(edges) and edges[iedge] != -1 and self.child_refs[edges[iedge]] else -1 for iedge in range(self.child_refs[ichild].nedges)])
       for ichild, edges in enumerate(self.baseref.connectivity))
 
   def inside(self, point, eps=0):
