@@ -530,7 +530,7 @@ class Topology(types.Singleton):
 
   def subset(self, elements, newboundary=None, strict=False):
     'intersection'
-    refs = [element.EmptyReference(self.ndims)] * len(self)
+    refs = [elem.reference.empty for elem in self]
     for elem in elements:
       try:
         ielem = self.edict[elem.transform]
@@ -1719,7 +1719,7 @@ class SubsetTopology(Topology):
   __cache__ = 'connectivity', 'elements', 'boundary', 'interfaces'
 
   @types.apply_annotations
-  def __init__(self, basetopo:stricttopology, refs:types.tuple, newboundary=None):
+  def __init__(self, basetopo:stricttopology, refs:types.tuple[element.strictreference], newboundary=None):
     if newboundary is not None:
       assert isinstance(newboundary, str) or isinstance(newboundary, Topology) and newboundary.ndims == basetopo.ndims-1
     assert len(refs) == len(basetopo)
@@ -1764,7 +1764,7 @@ class SubsetTopology(Topology):
   @property
   def boundary(self):
     baseboundary = self.basetopo.boundary
-    brefs = [None] * len(baseboundary)
+    brefs = [belem.reference.empty for belem in baseboundary]
     trimmed = []
     for belem in super().boundary:
       try:
@@ -1775,7 +1775,7 @@ class SubsetTopology(Topology):
         brefs[ibelem] = belem.reference
     origboundary = SubsetTopology(baseboundary, brefs)
     if isinstance(self.newboundary, Topology):
-      trimmedbrefs = [None] * len(self.newboundary)
+      trimmedbrefs = [belem.reference.empty for belem in self.newboundary]
       for belem in trimmed:
         trimmedbrefs[self.newboundary.edict[belem.transform]] = belem.reference
       trimboundary = SubsetTopology(self.newboundary, trimmedbrefs)
@@ -1786,7 +1786,7 @@ class SubsetTopology(Topology):
   @property
   def interfaces(self):
     baseinterfaces = self.basetopo.interfaces
-    irefs = [None] * len(baseinterfaces)
+    irefs = [ielem.reference.empty for ielem in baseinterfaces]
     for ielem in super().interfaces:
       try:
         iielem = baseinterfaces.edict[ielem.transform]

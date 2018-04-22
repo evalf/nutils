@@ -499,12 +499,13 @@ def gmsh(fname, name='gmsh'):
 
   if tagnamesbydim[ndims]: # create volume groups
     vgroups = {}
+    simplex = element.getsimplex(ndims)
     for name, ielems in tagnamesbydim[ndims].items():
       if len(ielems) == len(topo):
         vgroups[name] = ...
       elif ielems:
-        refs = numpy.array([None] * len(topo), dtype=object)
-        refs[ielems] = element.getsimplex(ndims)
+        refs = numpy.array([simplex.empty] * len(topo), dtype=object)
+        refs[ielems] = simplex
         vgroups[name] = topology.SubsetTopology(topo, refs)
     topo = topo.withgroups(vgroups=vgroups)
     log.info('volume groups:', ', '.join('{} (#{})'.format(n, len(e)) for n, e in tagnamesbydim[ndims].items()))

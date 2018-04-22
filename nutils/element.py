@@ -58,7 +58,7 @@ class Reference(types.Singleton):
 
   @property
   def empty(self):
-    return EmptyReference(self.ndims)
+    return EmptyLike(self)
 
   def __mul__(self, other):
     assert isinstance(other, Reference)
@@ -276,21 +276,41 @@ class Reference(types.Singleton):
 
 strictreference = types.strict[Reference]
 
-class EmptyReference(Reference):
+class EmptyLike(Reference):
   'inverse reference element'
 
-  __slots__ = ()
+  __slots__ = 'baseref',
 
   volume = 0
 
-  edge_transforms = ()
-  edge_refs = ()
-  child_transforms = ()
-  child_refs = ()
+  @property
+  def empty(self):
+    return self
+
+  @types.apply_annotations
+  def __init__(self, baseref:strictreference):
+    self.baseref = baseref
+    super().__init__(baseref.ndims)
 
   @property
   def vertices(self):
-    return types.frozenarray(numpy.zeros((0, self.ndims)), copy=False)
+    return self.baseref.vertices
+
+  @property
+  def edge_transforms(self):
+    return self.baseref.edge_transforms
+
+  @property
+  def edge_refs(self):
+    return tuple(eref.empty for eref in self.baseref.edge_refs)
+
+  @property
+  def child_transforms(self):
+    return self.baseref.child_transforms
+
+  @property
+  def child_refs(self):
+    return tuple(cref.empty for cref in self.baseref.child_refs)
 
   __and__ = __sub__ = lambda self, other: self if other.ndims == self.ndims else NotImplemented
   __or__ = lambda self, other: other if other.ndims == self.ndims else NotImplemented
@@ -1102,7 +1122,7 @@ class WithChildrenReference(Reference):
           ctrans_, etrans_ = etrans.swapup(ctrans)
           ichild = self.baseref.child_transforms.index(ctrans_)
           cref = self.child_refs[ichild]
-          children.append(cref.edge_refs[cref.edge_transforms.index(etrans_)] if cref else EmptyReference(self.ndims-1))
+          children.append(cref.edge_refs[cref.edge_transforms.index(etrans_)])
       refs.append(eref.with_children(children))
     for ichild, iedge, ref in self.__extra_edges:
       refs.append(OwnChildReference(ref))
@@ -1110,9 +1130,7 @@ class WithChildrenReference(Reference):
 
   @property
   def connectivity(self):
-    # same as base implementation but cheaper
-    return tuple(types.frozenarray([edges[iedge] if iedge < len(edges) and edges[iedge] != -1 and self.child_refs[edges[iedge]] else -1 for iedge in range(self.child_refs[ichild].nedges)])
-      for ichild, edges in enumerate(self.baseref.connectivity))
+    return tuple(types.frozenarray(edges.tolist() + [-1] * (self.child_refs[ichild].nedges - len(edges))) for ichild, edges in enumerate(self.baseref.connectivity))
 
   def inside(self, point, eps=0):
     return any(cref.inside(ctrans.invapply(point), eps=eps) for ctrans, cref in self.children)
@@ -1155,9 +1173,9 @@ class MosaicReference(Reference):
       newedges = [(etrans1, etrans2, edge) for (etrans1,orig), new in zip(baseref.edges, edge_refs) for etrans2, edge in new.edges[orig.nedges:]]
       for (iedge1,iedge2), (jedge1,jedge2) in baseref.ribbons:
         Ei = edge_refs[iedge1]
-        ei = Ei.edge_refs[iedge2] if Ei else EmptyReference(Ei.ndims-1)
+        ei = Ei.edge_refs[iedge2]
         Ej = edge_refs[jedge1]
-        ej = Ej.edge_refs[jedge2] if Ej else EmptyReference(Ej.ndims-1)
+        ej = Ej.edge_refs[jedge2]
         ejsubi = ej - ei
         if ejsubi:
           newedges.append((self.edge_transforms[jedge1], Ej.edge_transforms[jedge2], ejsubi))
@@ -1180,14 +1198,10 @@ class MosaicReference(Reference):
   def vertices(self):
     vertices = []
     for etrans, eref in self.edges:
-      indices = []
-      for vertex in etrans.apply(eref.vertices).tolist():
-        try:
-          index = vertices.index(vertex)
-        except ValueError:
-          index = len(vertices)
-          vertices.append(vertex)
-        indices.append(index)
+      if eref:
+        for vertex in etrans.apply(eref.vertices):
+          if vertex not in vertices:
+            vertices.append(vertex)
     return types.frozenarray(vertices)
 
   def __and__(self, other):

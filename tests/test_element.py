@@ -50,6 +50,7 @@ class elem(TestCase):
     for ichild, edges in enumerate(self.ref.connectivity):
       for iedge, ioppchild in enumerate(edges):
         if ioppchild != -1:
+          self.assertIn(ichild, self.ref.connectivity[ioppchild])
           ioppedge = self.ref.connectivity[ioppchild].index(ichild)
           self.assertEqual(
             self.ref.child_transforms[ichild] * self.ref.child_refs[ichild].edge_transforms[iedge],
@@ -64,5 +65,6 @@ elem('square', ref=element.LineReference()**2, exactcentroid=[.5]*2)
 elem('hexagon', ref=element.LineReference()**3, exactcentroid=[.5]*3)
 elem('prism1', ref=element.TriangleReference()*element.LineReference(), exactcentroid=[1/3,1/3,1/2])
 elem('prism2', ref=element.LineReference()*element.TriangleReference(), exactcentroid=[1/2,1/3,1/3])
-elem('withchildren1', ref=element.WithChildrenReference(element.LineReference()**2, [element.LineReference()**2,element.EmptyReference(2),element.EmptyReference(2),element.EmptyReference(2)]), exactcentroid=[1/4,1/4])
-elem('withchildren2', ref=element.WithChildrenReference(element.LineReference()**2, [element.LineReference()**2,element.LineReference()**2,element.EmptyReference(2),element.EmptyReference(2)]), exactcentroid=[1/4,1/2])
+quad = element.LineReference()**2
+elem('withchildren1', ref=element.WithChildrenReference(quad, [quad,quad.empty,quad.empty,quad.empty]), exactcentroid=[1/4,1/4])
+elem('withchildren2', ref=element.WithChildrenReference(quad, [quad,quad,quad.empty,quad.empty]), exactcentroid=[1/4,1/2])
