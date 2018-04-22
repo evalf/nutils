@@ -91,6 +91,14 @@ class gmsh(TestCase):
     assert set(boundary1.edict) == set(boundary2.edict)
     assert all(boundary2.elements[boundary2.edict[elem.transform]].reference == elem.reference for elem in boundary1)
 
+  def test_refinesubset(self):
+    domain = topology.SubsetTopology(self.domain, [elem.reference if ielem % 2 else elem.reference.empty for ielem, elem in enumerate(self.domain)])
+    boundary1 = domain.refined.boundary
+    boundary2 = domain.boundary.refined
+    assert len(boundary1) == len(boundary2) == len(domain.boundary) * element.getsimplex(domain.ndims-1).nchildren
+    assert set(boundary1.edict) == set(boundary2.edict)
+    assert all(boundary2.elements[boundary2.edict[elem.transform]].reference == elem.reference for elem in boundary1)
+
 # gmsh geo 2D:
 #
 # Point(1) = {0,0,0,.5};

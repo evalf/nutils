@@ -384,9 +384,9 @@ class SimplexEdge(Updim):
     # prioritize decending transformations, i.e. change scale << updim to updim << scale
     if isinstance(other, SimplexChild):
       key = other.ichild, self.iedge
-      for iedge, children in enumerate(self.swap):
+      for iedge, children in enumerate(self.swap[:self.todims+1]):
         try:
-          ichild = children.index(key)
+          ichild = children[:2**self.fromdims].index(key)
         except ValueError:
           pass
         else:
@@ -417,7 +417,7 @@ class SimplexChild(Square):
       linear = (-.5,0,-.5), (-.5,-.5,0), (.5,.5,.5)
       offset = .5, .5, 0
     else:
-      raise NotImplementedError
+      raise NotImplementedError('SimplexChild(ndims={}, ichild={})'.format(ndims, ichild))
     super().__init__(linear, offset)
 
 class Slice(Matrix):

@@ -1833,7 +1833,7 @@ class RefinedTopology(Topology):
   'refinement'
 
   __slots__ = 'basetopo',
-  __cache__ = 'elements', 'boundary'
+  __cache__ = 'elements', 'boundary', 'connectivity'
 
   @types.apply_annotations
   def __init__(self, basetopo:stricttopology):
@@ -1850,6 +1850,22 @@ class RefinedTopology(Topology):
   @property
   def boundary(self):
     return self.basetopo.boundary.refined
+
+  @property
+  def connectivity(self):
+    offsets = numpy.cumsum([0] + [elem.reference.nchildren for elem in self.basetopo])
+    connectivity = [offset + edges for offset, elem in zip(offsets, self.basetopo) for edges in elem.reference.connectivity]
+    for ielem, edges in enumerate(self.basetopo.connectivity):
+      for iedge, jelem in enumerate(edges):
+        if jelem == -1:
+          for ichild, ichildedge in self.elements[ielem].reference.edgechildren[iedge]:
+            connectivity[offsets[ielem]+ichild][ichildedge] = -1
+        elif jelem < ielem:
+          jedge = self.basetopo.connectivity[jelem].index(ielem)
+          for (ichild, ichildedge), (jchild, jchildedge) in zip(self.elements[ielem].reference.edgechildren[iedge], self.elements[jelem].reference.edgechildren[jedge]):
+            connectivity[offsets[ielem]+ichild][ichildedge] = offsets[jelem]+jchild
+            connectivity[offsets[jelem]+jchild][jchildedge] = offsets[ielem]+ichild
+    return tuple(types.frozenarray(c, copy=False) for c in connectivity)
 
 class TrimmedTopologyItem(Topology):
   'trimmed topology item'

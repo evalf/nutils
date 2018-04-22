@@ -56,6 +56,14 @@ class elem(TestCase):
             self.ref.child_transforms[ichild] * self.ref.child_refs[ichild].edge_transforms[iedge],
             (self.ref.child_transforms[ioppchild] * self.ref.child_refs[ioppchild].edge_transforms[ioppedge]).flipped)
 
+  @parametrize.enable_if(lambda ref, **kwargs: ref.ndims >= 1)
+  def test_edgechildren(self):
+    for iedge, edgechildren in enumerate(self.ref.edgechildren):
+      for ichild, (jchild, jedge) in enumerate(edgechildren):
+        self.assertEqual(
+          self.ref.edge_transforms[iedge] * self.ref.edge_refs[iedge].child_transforms[ichild],
+          self.ref.child_transforms[jchild] * self.ref.child_refs[jchild].edge_transforms[jedge])
+
 elem('point', ref=element.PointReference(), exactcentroid=numpy.zeros((0,)))
 elem('point2', ref=element.PointReference()**2, exactcentroid=numpy.zeros((0,)))
 elem('line', ref=element.LineReference(), exactcentroid=[.5])

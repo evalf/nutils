@@ -38,7 +38,7 @@ class Reference(types.Singleton):
   'reference element'
 
   __slots__ = 'ndims',
-  __cache__ = 'connectivity', 'ribbons', 'volume', 'centroid', '_linear_bernstein', 'getischeme'
+  __cache__ = 'connectivity', 'edgechildren', 'ribbons', 'volume', 'centroid', '_linear_bernstein', 'getischeme'
 
   @types.apply_annotations
   def __init__(self, ndims:int):
@@ -107,6 +107,19 @@ class Reference(types.Singleton):
         vmap.pop(etrans * ctrans, None)
     assert not any(self.child_refs[ichild].edge_refs[iedge] for ichild, iedge in vmap.values()), 'not all boundary elements recovered'
     return tuple(types.frozenarray(c, copy=False) for c in connectivity)
+
+  @property
+  def edgechildren(self):
+    edgechildren = []
+    for iedge, (etrans, eref) in enumerate(self.edges):
+      children = []
+      for ichild, ctrans in enumerate(eref.child_transforms):
+        ctrans_, etrans_ = etrans.swapup(ctrans)
+        ichild_ = self.child_transforms.index(ctrans_)
+        iedge_ = self.child_refs[ichild].edge_transforms.index(etrans_)
+        children.append((ichild_, iedge_))
+      edgechildren.append(types.frozenarray(children))
+    return tuple(edgechildren)
 
   @property
   def ribbons(self):
