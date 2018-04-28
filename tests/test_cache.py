@@ -14,10 +14,12 @@ class refcount(TestCase):
     self.x = object()
     self.d = {'referenced': self.x, 'dangling': object()}
 
+  @unittest.skipIf(not hasattr(sys, 'getrefcount'), 'python implementation has no sys.getrefcount')
   def test_noremove(self):
     keep = set(k for k, v in self.d.items() if sys.getrefcount(v) > 3)
     assert keep == {'referenced', 'dangling'}
 
+  @unittest.skipIf(not hasattr(sys, 'getrefcount'), 'python implementation has no sys.getrefcount')
   def test_remove(self):
     keep = set(k for k, v in self.d.items() if sys.getrefcount(v) > 4)
     assert keep == {'referenced'}

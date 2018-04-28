@@ -645,13 +645,24 @@ class Immutable(metaclass=ImmutableMeta):
   def edit(self, op):
     return self.__class__(*[op(arg) for arg in self._args])
 
-class SingletonMeta(ImmutableMeta):
+if hasattr(sys, 'getrefcount'):
+  class _weakref_dict(dict):
+    __cleanup_threshold = 1000 # number of new instances until next cleanup
+    def __setitem__(self, item, value):
+      super().__setitem__(item, value)
+      if len(self) > self.__cleanup_threshold:
+        for key in tuple(key for key, value in self.items() if sys.getrefcount(value) <= 4):
+          del self[key]
+        self.__cleanup_threshold = __class__.__cleanup_threshold + len(self)
+else:
+  import weakref
+  _weakref_dict = weakref.WeakValueDictionary
 
-  _cleanup_threshold = 1000 # number of new instances until next cleanup
+class SingletonMeta(ImmutableMeta):
 
   def __new__(mcls, name, bases, namespace, **kwargs):
     cls = super().__new__(mcls, name, bases, namespace, **kwargs)
-    cls._cache = {}
+    cls._cache = _weakref_dict()
     return cls
 
   def _new(cls, *args):
@@ -659,9 +670,6 @@ class SingletonMeta(ImmutableMeta):
       self = cls._cache[args]
     except KeyError:
       cls._cache[args] = self = super()._new(*args)
-      if len(cls._cache) > cls._cleanup_threshold:
-        cls._cache = {key: value for key, value in cls._cache.items() if sys.getrefcount(value) > 4}
-        cls._cleanup_threshold = SingletonMeta._cleanup_threshold + len(cls._cache)
     return self
 
 class Singleton(Immutable, metaclass=SingletonMeta):
