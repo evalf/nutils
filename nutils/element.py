@@ -780,7 +780,7 @@ class TensorReference(Reference):
       points[...,self.ref1.ndims:] = self.ref2.vertices[:,_]
     else:
       raise NotImplementedError
-    return points.reshape(self.nverts, self.ndims), None
+    return types.frozenarray(points.reshape(self.nverts, self.ndims), copy=False), None
 
   def getischeme(self, ischeme):
     if '*' in ischeme:
