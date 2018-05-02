@@ -4,19 +4,6 @@ import numpy, copy, sys, pickle, subprocess, base64, itertools, os
 
 grid = numpy.linspace(0., 1., 4)
 
-def neighbor(elem1, elem2):
-  elem1_vertices = set(elem1.vertices)
-  ncommon = sum(v in elem1_vertices for v in elem2.vertices)
-  if not ncommon:
-    return -1
-  if elem1.ndims == elem2.ndims == 1:
-    return {2:0,1:1}[ncommon]
-  if elem1.ndims == elem2.ndims == 2:
-    return {4:0,2:1,1:2}[ncommon]
-  if elem1.ndims == elem2.ndims == 3:
-    return {8:0,4:1,2:2,1:3}[ncommon]
-  raise NotImplementedError('%s, %s' % (elem1.reference, elem2.reference))
-
 def verify_connectivity(structure, geom):
   (e00,e01), (e10,e11) = structure
 
@@ -100,49 +87,6 @@ class elem_project(TestCase):
 for ndims in range(1, 4):
   for degree in [2] if ndims == 3 else range(1, 4):
     elem_project(ndims=ndims, degree=degree)
-
-
-@parametrize
-class connectivity(TestCase):
-
-  def test_check1d(self):
-    domain = mesh.rectilinear(1*(grid,), periodic=[0] if self.periodic else [])[0]
-    elem = domain.structure
-    self.assertEqual(neighbor(elem[0], elem[0]), 0, 'Failed to identify codim 0 neighbors')
-    self.assertEqual(neighbor(elem[1], elem[2]), 1, 'Failed to identify codim 1 neighbors')
-    if self.periodic:
-      self.assertEqual(neighbor(elem[0], elem[2]), 1, 'Failed to identify periodicity neighbors')
-    else:
-      self.assertEqual(neighbor(elem[0], elem[2]), -1, 'Failed to identify non-neighbors')
-
-  def test_check2d(self):
-    domain = mesh.rectilinear(2*(grid,), periodic=[0] if self.periodic else [])[0]
-    elem = domain.structure
-    self.assertEqual(neighbor(elem[0,0], elem[0,0]), 0, 'Failed to identify codim 0 neighbors')
-    self.assertEqual(neighbor(elem[1,1], elem[1,2]), 1, 'Failed to identify codim 1 neighbors')
-    self.assertEqual(neighbor(elem[0,0], elem[1,1]), 2, 'Failed to identify codim 2 neighbors')
-    self.assertEqual(neighbor(elem[1,1], elem[0,0]), 2, 'Failed to identify codim 2 neighbors')
-    if self.periodic:
-      self.assertEqual(neighbor(elem[2,1], elem[0,1]), 1, 'Failed to identify periodicity neighbors')
-      self.assertEqual(neighbor(elem[2,1], elem[0,0]), 2, 'Failed to identify periodicity neighbors')
-    else:
-      self.assertEqual(neighbor(elem[2,1], elem[0,1]), -1, 'Failed to identify non-neighbors')
-
-  def test_check3d(self):
-    domain = mesh.rectilinear(3*(grid,), periodic=[0] if self.periodic else [])[0]
-    elem = domain.structure
-    self.assertEqual(neighbor(elem[1,1,1], elem[1,1,1]), 0, 'Failed to identify codim 0 neighbors')
-    self.assertEqual(neighbor(elem[1,1,1], elem[1,1,2]), 1, 'Failed to identify codim 1 neighbors')
-    self.assertEqual(neighbor(elem[1,1,1], elem[1,2,2]), 2, 'Failed to identify codim 2 neighbors')
-    self.assertEqual(neighbor(elem[1,1,1], elem[2,2,2]), 3, 'Failed to identify codim 3 neighbors')
-    if self.periodic:
-      self.assertEqual(neighbor(elem[0,2,2], elem[2,2,2]), 1, 'Failed to identify periodicity neighbors')
-      self.assertEqual(neighbor(elem[0,2,2], elem[2,1,2]), 2, 'Failed to identify periodicity neighbors')
-    else:
-      self.assertEqual(neighbor(elem[0,2,2], elem[2,2,2]), -1, 'Failed to identify non-neighbors')
-
-connectivity(periodic=True)
-connectivity(periodic=False)
 
 
 class structure2d(TestCase):
@@ -310,7 +254,7 @@ class general(TestCase):
     super().setUp()
     self.domain, self.geom = mesh.rectilinear([3,4,5], periodic=[] if self.periodic is False else [self.periodic])
     if not self.isstructured:
-      self.domain = topology.UnstructuredTopology(self.domain.ndims, tuple(self.domain))
+      self.domain = topology.ConnectedTopology(self.domain.ndims, self.domain.elements, self.domain.connectivity)
 
   def test_connectivity(self):
     nboundaries = 0
@@ -323,7 +267,7 @@ class general(TestCase):
           ioppedge = tuple(self.domain.connectivity[ioppelem]).index(ielem)
           edge = self.domain.elements[ielem].edge(iedge)
           oppedge = self.domain.elements[ioppelem].edge(ioppedge)
-          self.assertCountEqual(edge.vertices, oppedge.vertices, 'edges do not match: {}, {}'.format(edge, oppedge))
+          self.assertEqual(edge.reference, oppedge.reference)
           ninterfaces += .5
     self.assertEqual(nboundaries, len(self.domain.boundary), 'incompatible number of boundaries')
     self.assertEqual(ninterfaces, len(self.domain.interfaces), 'incompatible number of interfaces')

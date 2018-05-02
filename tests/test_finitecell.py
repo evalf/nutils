@@ -85,13 +85,20 @@ class specialcases_2d(TestCase):
 
   eps = .0001
 
+  def check_connectivity(self, connectivity):
+    for ielem, ioppelems in enumerate(connectivity):
+      for ioppelem in ioppelems:
+        if ioppelem != -1:
+          self.assertIn(ielem, connectivity[ioppelem])
+
   def setUp(self):
     super().setUp()
     self.domain, self.geom = mesh.rectilinear([[0,.5,1]]*2)
 
   def test_almost_all_positive(self):
     x, y = self.geom
-    self.domain.trim((x-y) * (x-y+.25), maxrefine=1)
+    dom = self.domain.trim((x-y) * (x-y+.25), maxrefine=1)
+    self.check_connectivity(dom.connectivity)
 
   def test_inter_elem(self):
     x, y = self.geom
@@ -99,7 +106,9 @@ class specialcases_2d(TestCase):
       for perturb, how in (0,'mid'), (1,'pos'), (-1,'neg'), (xi-.5,'ramp'), (xi-eta,'tilt'):
         for maxrefine in 0, 1, 2:
           with self.subTest(direction=direction, how=how, maxrefine=maxrefine):
-            self.domain.trim(eta-.75+self.eps*perturb, maxrefine=maxrefine).check_boundary(self.geom, elemwise=True, print=self.fail)
+            dom = self.domain.trim(eta-.75+self.eps*perturb, maxrefine=maxrefine)
+            dom.check_boundary(self.geom, elemwise=True, print=self.fail)
+            self.check_connectivity(dom.connectivity)
 
   def test_intra_elem(self):
     x, y = self.geom
@@ -109,8 +118,24 @@ class specialcases_2d(TestCase):
           with self.subTest(direction=('x' if xi is x else 'y'), how=how, maxrefine=maxrefine):
             pos = self.domain.trim(eta-.5+self.eps*perturb, maxrefine=maxrefine)
             pos.check_boundary(self.geom, elemwise=True, print=self.fail)
+            self.check_connectivity(pos.connectivity)
             neg = self.domain - pos
             neg.check_boundary(self.geom, elemwise=True, print=self.fail)
+            self.check_connectivity(neg.connectivity)
+
+  def test_inter_intra1(self):
+    x, y = self.geom
+    ttopo = self.domain.trim((x-.5)*(x-.75), maxrefine=2)
+    self.check_connectivity(ttopo.connectivity)
+    self.assertEqual(len(ttopo.boundary), 14)
+    self.assertEqual(len(ttopo.interfaces), 2)
+
+  def test_inter_intra2(self):
+    x, y = self.geom
+    ttopo = self.domain.trim((x-.25)*(x-.5), maxrefine=2)
+    self.check_connectivity(ttopo.connectivity)
+    self.assertEqual(len(ttopo.boundary), 14)
+    self.assertEqual(len(ttopo.interfaces), 2)
 
 class specialcases_3d(TestCase):
 

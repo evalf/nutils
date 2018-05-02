@@ -50,26 +50,19 @@ class elem(TestCase):
     for ichild, edges in enumerate(self.ref.connectivity):
       for iedge, ioppchild in enumerate(edges):
         if ioppchild != -1:
+          self.assertIn(ichild, self.ref.connectivity[ioppchild])
           ioppedge = self.ref.connectivity[ioppchild].index(ichild)
           self.assertEqual(
             self.ref.child_transforms[ichild] * self.ref.child_refs[ichild].edge_transforms[iedge],
             (self.ref.child_transforms[ioppchild] * self.ref.child_refs[ioppchild].edge_transforms[ioppedge]).flipped)
 
-  @parametrize.enable_if(lambda ref, **kwargs: isinstance(ref, (element.SimplexReference, element.TensorReference)))
-  def test_dof_transpose_map(self):
-    nverts = []
-    ref = self.ref
-    while isinstance(ref, element.TensorReference):
-      nverts.append(ref.ref1.nverts)
-      ref = ref.ref2
-    nverts.append(ref.nverts)
-    for perm_ref_order, *perms_refs in itertools.product(*(itertools.permutations(range(n)) for n in [len(nverts)]+nverts)):
-      j = numpy.arange(self.ref.nverts).reshape(nverts)
-      for k, perm in enumerate(perms_refs):
-        j = numpy.take(j, perm, axis=k)
-      j = tuple(numpy.transpose(j, perm_ref_order).ravel())
-      with self.subTest(perm_ref_order=perm_ref_order, perms_refs=perms_refs):
-        self.assertEqual(j, tuple(self.ref.get_dof_transpose_map(1, j)))
+  @parametrize.enable_if(lambda ref, **kwargs: ref.ndims >= 1)
+  def test_edgechildren(self):
+    for iedge, edgechildren in enumerate(self.ref.edgechildren):
+      for ichild, (jchild, jedge) in enumerate(edgechildren):
+        self.assertEqual(
+          self.ref.edge_transforms[iedge] * self.ref.edge_refs[iedge].child_transforms[ichild],
+          self.ref.child_transforms[jchild] * self.ref.child_refs[jchild].edge_transforms[jedge])
 
 elem('point', ref=element.PointReference(), exactcentroid=numpy.zeros((0,)))
 elem('point2', ref=element.PointReference()**2, exactcentroid=numpy.zeros((0,)))
@@ -80,5 +73,6 @@ elem('square', ref=element.LineReference()**2, exactcentroid=[.5]*2)
 elem('hexagon', ref=element.LineReference()**3, exactcentroid=[.5]*3)
 elem('prism1', ref=element.TriangleReference()*element.LineReference(), exactcentroid=[1/3,1/3,1/2])
 elem('prism2', ref=element.LineReference()*element.TriangleReference(), exactcentroid=[1/2,1/3,1/3])
-elem('withchildren1', ref=element.WithChildrenReference(element.LineReference()**2, [element.LineReference()**2,element.EmptyReference(2),element.EmptyReference(2),element.EmptyReference(2)]), exactcentroid=[1/4,1/4])
-elem('withchildren2', ref=element.WithChildrenReference(element.LineReference()**2, [element.LineReference()**2,element.LineReference()**2,element.EmptyReference(2),element.EmptyReference(2)]), exactcentroid=[1/4,1/2])
+quad = element.LineReference()**2
+elem('withchildren1', ref=element.WithChildrenReference(quad, [quad,quad.empty,quad.empty,quad.empty]), exactcentroid=[1/4,1/4])
+elem('withchildren2', ref=element.WithChildrenReference(quad, [quad,quad,quad.empty,quad.empty]), exactcentroid=[1/4,1/2])

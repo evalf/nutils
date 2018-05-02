@@ -17,7 +17,7 @@ class check(TestCase):
     else:
       raise Exception('invalid ndim {!r}'.format(self.ndim))
     self.elem, = self.domain
-    self.iface = element.Element(self.elem.edge(0).reference, self.elem.edge(0).transform, self.elem.edge(1).transform, oriented=True)
+    self.iface = element.Element(self.elem.edge(0).reference, self.elem.edge(0).transform, self.elem.edge(1).transform)
     self.ifpoints, ifweights = self.iface.reference.getischeme('uniform2')
     self.basis = self.domain.basis('spline', degree=(1,2)[:self.ndim])
 

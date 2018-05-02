@@ -211,6 +211,8 @@ class Matrix(TransformItem):
       else Matrix(linear, offset)
 
   def __str__(self):
+    if not hasattr(self, 'offset') or not hasattr(self, 'linear'):
+      return '<uninitialized>'
     return util.obj2str(self.offset) + ''.join('+{}*x{}'.format(util.obj2str(v), i) for i, v in enumerate(self.linear.T))
 
 class Square(Matrix):
@@ -258,6 +260,12 @@ class Square(Matrix):
           M[tuple(slice(n) for n in M_power.shape)+powers] += M_power
       self._transform_matrix[degree] = M
     return numpy.einsum('jk,ik', M.reshape([(degree+1)**self.fromdims]*2), coeffs.reshape(coeffs.shape[0],-1)).reshape(coeffs.shape)
+
+class Simplex(Square):
+
+  @types.apply_annotations
+  def __init__(self, coords:types.frozenarray):
+    super().__init__((coords[1:]-coords[0]).T, coords[0])
 
 class Shift(Square):
 
@@ -376,9 +384,9 @@ class SimplexEdge(Updim):
     # prioritize decending transformations, i.e. change scale << updim to updim << scale
     if isinstance(other, SimplexChild):
       key = other.ichild, self.iedge
-      for iedge, children in enumerate(self.swap):
+      for iedge, children in enumerate(self.swap[:self.todims+1]):
         try:
-          ichild = children.index(key)
+          ichild = children[:2**self.fromdims].index(key)
         except ValueError:
           pass
         else:
@@ -409,7 +417,7 @@ class SimplexChild(Square):
       linear = (-.5,0,-.5), (-.5,-.5,0), (.5,.5,.5)
       offset = .5, .5, 0
     else:
-      raise NotImplementedError
+      raise NotImplementedError('SimplexChild(ndims={}, ichild={})'.format(ndims, ichild))
     super().__init__(linear, offset)
 
 class Slice(Matrix):
@@ -506,78 +514,12 @@ class TensorChild(Square):
   def det(self):
     return self.trans1.det * self.trans2.det
 
-class VertexTransform(TransformItem):
+class Identifier(TransformItem):
 
   __slots__ = ()
 
   @types.apply_annotations
-  def __init__(self, fromdims:int):
-    super().__init__(None, fromdims)
-
-class MapTrans(VertexTransform):
-
-  __slots__ = 'vertices', 'linear', 'offset'
-
-  @types.apply_annotations
-  def __init__(self, linear:types.frozenarray, offset:types.frozenarray, vertices:types.frozenarray):
-    assert len(linear) == len(offset) == len(vertices)
-    self.vertices, self.linear, self.offset = map(numpy.array, zip(*sorted(zip(vertices, linear, offset)))) # sort vertices
-    super().__init__(self.linear.shape[1])
-
-  def apply(self, points):
-    barycentric = numpy.dot(points, self.linear.T) + self.offset
-    return tuple(tuple((v,float(c)) for v, c in zip(self.vertices, coord) if c) for coord in barycentric)
-
-  def __str__(self):
-    return ','.join(str(v) for v in self.vertices)
-
-class RootTrans(VertexTransform):
-
-  __slots__ = 'I', 'w', 'name'
-
-  @types.apply_annotations
-  def __init__(self, name, shape:tuple):
-    self.I, = numpy.where(shape)
-    self.w = numpy.take(shape, self.I)
-    self.name = name
-    super().__init__(len(shape))
-
-  def apply(self, coords):
-    coords = numpy.asarray(coords)
-    assert coords.ndim == 2
-    if self.I.size:
-      coords = coords.copy()
-      coords[:,self.I] %= self.w
-    return tuple(self.name + str(c) for c in coords.tolist())
-
-  def __str__(self):
-    return repr(self.name + '[*]')
-
-class RootTransEdges(VertexTransform):
-
-  __slots__ = 'shape', 'name'
-
-  @types.apply_annotations
-  def __init__(self, name, shape:tuple):
-    self.shape = shape
-    assert numeric.isarray(name)
-    assert name.shape == (3,)*len(shape)
-    self.name = name.copy()
-    super().__init__(len(shape))
-
-  def apply(self, coords):
-    assert coords.ndim == 2
-    labels = []
-    for coord in coords.T.frac.T:
-      right = (coord[:,1]==1) & (coord[:,0]==self.shape)
-      left = coord[:,0]==0
-      where = (1+right)-left
-      s = '{}[{}]'.format(self.name[tuple(where)], ','.join(str(n) if d == 1 else '{}/{}'.format(n, d) for n, d in coord[where==1]))
-      labels.append(s)
-    return labels
-
-  def __str__(self):
-    return repr(','.join(self.name.flat)+'*')
-
+  def __init__(self, ndims:int, *args):
+    super().__init__(None, ndims)
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

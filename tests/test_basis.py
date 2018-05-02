@@ -80,66 +80,58 @@ structured_line(variant='periodic', btype='spline', degree=0, nelems=1)
 @parametrize
 class unstructured_topology(TestCase):
 
-  def as_simplices(self, elem):
-    '''convert rectangular or cubic ``elem`` to simplices'''
-    offset = elem.transform[-1]
-    root = elem.transform[:-1]
-    coords = offset.apply(elem.reference.vertices)
-    if self.ndims == 1:
-      return [elem]
-    elif self.ndims == 2:
-      indices = [[0,1,2],[1,3,2]]
-      ref = element.TriangleReference()
-    elif self.ndims == 3:
-      indices = [[0,1,2,8], [1,3,2,8], [4,5,6,8], [5,7,6,8],
-                 [0,1,4,8], [1,5,4,8], [2,3,6,8], [3,7,6,8],
-                 [0,2,4,8], [2,6,4,8], [1,3,5,8], [3,7,5,8]]
-      coords = numpy.concatenate([coords, offset.apply(numpy.mean(elem.reference.vertices, 0)[_])], axis=0)
-      ref = element.TetrahedronReference()
-    for i in indices:
-      random.shuffle(i)
-    random.shuffle(indices)
-    return [element.Element(ref, root + (transform.Square((coords[i[1:]]-coords[i[0]]).T, coords[i[0]]),)) for i in indices]
-
   def setUp(self):
-    random.seed(0, version=2)
-
-    domain, geom = mesh.rectilinear([numpy.linspace(0, 1, 3 if self.ndims == 3 else 5)]*self.ndims)
     if self.variant == 'tensor':
-      domain = topology.UnstructuredTopology(domain.ndims, domain)
-    elif self.variant == 'simplex':
-      domain = topology.UnstructuredTopology(domain.ndims, itertools.chain.from_iterable(map(self.as_simplices, domain)))
-    elif self.variant == 'mixed':
-      domain = topology.UnstructuredTopology(domain.ndims, itertools.chain.from_iterable([elem] if i % 2 else self.as_simplices(elem) for i, elem in enumerate(domain)))
-    elif self.variant == 'demo':
+      structured, geom = mesh.rectilinear([numpy.linspace(0, 1, 5-i) for i in range(self.ndims)])
+      domain = topology.ConnectedTopology(structured.ndims, structured.elements, structured.connectivity)
+      nverts = numpy.product([5-i for i in range(self.ndims)])
+    elif self.variant == 'demo' and self.ndims == 2:
       domain, geom = mesh.demo()
-      assert self.ndims == domain.ndims
+      nverts = len(numpy.unique(domain.basetopo.simplices))
+    elif self.variant == 'simplex':
+      numpy.random.seed(0)
+      nverts = 20
+      simplices = numeric.overlapping(numpy.arange(nverts), n=self.ndims+1)
+      coords = numpy.random.normal(size=(nverts, self.ndims))
+      root = transform.Identifier(self.ndims, 'test')
+      domain = topology.SimplexTopology(simplices, [(root, transform.Simplex(c)) for c in coords[simplices]])
+      geom = function.rootcoords(self.ndims)
     else:
-      raise ValueError('variant: {!r}'.format(self.variant))
-
-    if self.btype == 'bubble':
-      basis = domain.basis(self.btype)
-    else:
-      basis = domain.basis(self.btype, degree=self.degree)
-
+      raise NotImplementedError
     self.domain = domain
-    self.basis = basis
+    self.basis = domain.basis(self.btype) if self.btype == 'bubble' else domain.basis(self.btype, degree=self.degree)
     self.geom = geom
+    self.nverts = nverts
 
-  @parametrize.enable_if(lambda btype, **params: btype not in {'bubble', 'discont'} and degree == 1)
+  @parametrize.enable_if(lambda btype, **params: btype in {'bubble', 'discont'} or degree == 1)
   def test_ndofs(self):
-    self.assertEqual(len(self.basis), len(set(v for elem in self.domain for v in elem.vertices)))
+    if self.btype == 'bubble':
+      ndofs = self.nverts + len(self.domain)
+    elif self.btype == 'discont':
+      if self.variant == 'tensor':
+        dofs_per_elem = (self.degree+1)**self.ndims
+      else:
+        dofs_per_elem = 1
+        for idim in range(self.ndims):
+          dofs_per_elem *= self.degree + idim + 1
+        for idim in range(self.ndims):
+          dofs_per_elem //= idim + 1
+      ndofs = len(self.domain) * dofs_per_elem
+    elif self.degree == 1:
+      ndofs = self.nverts
+    else:
+      raise NotImplementedError
+    self.assertEqual(len(self.basis), ndofs)
 
-  @parametrize.enable_if(lambda btype, **params: btype not in {'bubble'})
   def test_pum_sum(self):
     # Note that this test holds for btype 'lagrange' as well, although the
     # basis functions are not confined to range [0,1].
     error = numpy.sqrt(self.domain.integrate((1-self.basis.sum(0))**2, geometry=self.geom, ischeme='gauss', degree=2*self.degree))
     numpy.testing.assert_almost_equal(error, 0, decimal=12)
 
-  @parametrize.enable_if(lambda btype, **params: btype not in {'lagrange', 'bubble'})
+  @parametrize.enable_if(lambda btype, **params: btype != 'lagrange')
   def test_pum_range(self):
-    values = self.domain.elem_eval(self.basis, geometry=self.geom, ischeme='gauss{}'.format(2*self.degree), separate=False)
+    values = self.domain.elem_eval(self.basis, ischeme='gauss{}'.format(2*self.degree), separate=False)
     self.assertTrue((values > 0-1e-10).all())
     self.assertTrue((values < 1+1e-10).all())
 
@@ -152,7 +144,7 @@ class unstructured_topology(TestCase):
     numpy.testing.assert_almost_equal(error, 0, decimal=12)
 
 for ndims in range(1,4):
-  for btype in ['discont', 'bernstein', 'lagrange', 'std']:
-    for degree in range(0 if btype == 'discont' else 1, 4):
-      for variant in {1: ['simplex'], 2: ['simplex', 'tensor', 'mixed', 'demo'], 3: ['simplex', 'tensor']}[ndims]:
+  for variant in {1: ['simplex'], 2: ['simplex', 'tensor', 'demo'], 3: ['simplex', 'tensor']}[ndims]:
+    for btype in ['discont', 'bernstein', 'lagrange', 'std', 'bubble'][:5 if variant in ('simplex', 'demo') else 4]:
+      for degree in [0,1,2,3] if btype == 'discont' else [1] if btype == 'bubble' else [1,2,3]:
         unstructured_topology(ndims=ndims, btype=btype, degree=degree, variant=variant)
