@@ -242,12 +242,12 @@ class cutdomain(TestCase):
         point = p * .5**numpy.arange(self.domain.ndims)
         r = numpy.linalg.norm(point)
         try:
-          ptopo = self.pos.locate(curvegeom, points=[point])
+          sample = self.pos.locate(curvegeom, [point])
         except topology.LocateError:
           self.assertGreater(r, self.radius)
         else:
           self.assertLessEqual(r, self.radius)
-          x, = ptopo.elem_eval(curvegeom, 'gauss1')
+          x, = sample.eval(curvegeom)
           numpy.testing.assert_almost_equal(x, point)
 
 cutdomain('sphere', ndims=3, nelems=2, maxrefine=3, errtol=6e-3)

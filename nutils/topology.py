@@ -35,7 +35,7 @@ out in element loops. For lower level operations topologies can be used as
 :mod:`nutils.element` iterators.
 """
 
-from . import element, function, util, numpy, parallel, log, config, numeric, cache, transform, warnings, matrix, types, sample, _
+from . import element, function, util, numpy, parallel, log, config, numeric, cache, transform, warnings, matrix, types, sample, points, _
 import functools, collections.abc, itertools, functools, operator, numbers, pathlib
 
 _identity = lambda x: x
@@ -511,25 +511,25 @@ class Topology(types.Singleton):
         used[dofs] = True
     return function.mask(basis, used)
 
-  def locate(self, geom, points, ischeme='vertex', scale=1, tol=1e-12, eps=0, maxiter=100, *, arguments=None):
+  def locate(self, geom, coords, ischeme='vertex', scale=1, tol=1e-12, eps=0, maxiter=100, *, arguments=None):
     nprocs = min(config.nprocs, len(self))
     if arguments is None:
       arguments = {}
     if geom.ndim == 0:
       geom = geom[_]
-      points = points[...,_]
+      coords = coords[...,_]
     assert geom.shape == (self.ndims,)
-    points = numpy.asarray(points, dtype=float)
-    assert points.ndim == 2 and points.shape[1] == self.ndims
+    coords = numpy.asarray(coords, dtype=float)
+    assert coords.ndim == 2 and coords.shape[1] == self.ndims
     vertices = self.elem_eval(geom, ischeme=ischeme, separate=True, arguments=arguments)
     bboxes = numpy.array([numpy.mean(v,axis=0) * (1-scale) + numpy.array([numpy.min(v,axis=0), numpy.max(v,axis=0)]) * scale
       for v in vertices]) # nelems x {min,max} x ndims
     vref = element.getsimplex(0)
-    ielems = parallel.shempty(len(points), dtype=int)
-    xis = parallel.shempty((len(points),len(geom)), dtype=float)
-    for ipoint, point in parallel.pariter(log.enumerate('point', points), nprocs=nprocs):
-      ielemcandidates, = numpy.logical_and(numpy.greater_equal(point, bboxes[:,0,:]), numpy.less_equal(point, bboxes[:,1,:])).all(axis=-1).nonzero()
-      for ielem in sorted(ielemcandidates, key=lambda i: numpy.linalg.norm(bboxes[i].mean(0)-point)):
+    ielems = parallel.shempty(len(coords), dtype=int)
+    xis = parallel.shempty((len(coords),len(geom)), dtype=float)
+    for ipoint, coord in parallel.pariter(log.enumerate('point', coords), nprocs=nprocs):
+      ielemcandidates, = numpy.logical_and(numpy.greater_equal(coord, bboxes[:,0,:]), numpy.less_equal(coord, bboxes[:,1,:])).all(axis=-1).nonzero()
+      for ielem in sorted(ielemcandidates, key=lambda i: numpy.linalg.norm(bboxes[i].mean(0)-coord)):
         converged = False
         elem = self.elements[ielem]
         xi, w = elem.reference.getischeme('gauss1')
@@ -537,28 +537,31 @@ class Topology(types.Singleton):
         J = function.localgradient(geom, self.ndims)
         geom_J = function.Tuple((function.zero_argument_derivatives(geom), function.zero_argument_derivatives(J))).simplified
         for iiter in range(maxiter):
-          point_xi, J_xi = geom_J.eval(_transforms=(elem.transform, elem.opposite), _points=xi, **arguments)
-          err = numpy.linalg.norm(point - point_xi)
+          coord_xi, J_xi = geom_J.eval(_transforms=(elem.transform, elem.opposite), _points=xi, **arguments)
+          err = numpy.linalg.norm(coord - coord_xi)
           if err < tol:
             converged = True
             break
           if iiter and err > prev_err:
             break
           prev_err = err
-          xi += numpy.linalg.solve(J_xi, point - point_xi)
+          xi += numpy.linalg.solve(J_xi, coord - coord_xi)
         if converged and elem.reference.inside(xi[0], eps=eps):
           ielems[ipoint] = ielem
           xis[ipoint], = xi
           break
       else:
-        raise LocateError('failed to locate point: {}'.format(point))
-
-    pelems = []
-    for ielem, xi in zip(ielems, xis):
+        raise LocateError('failed to locate point: {}'.format(coord))
+    transforms = []
+    points_ = []
+    index = []
+    for ielem in numpy.unique(ielems):
       elem = self.elements[ielem]
-      trans = transform.Matrix(numpy.empty((len(xi), 0)), xi)
-      pelems.append(element.Element(vref, elem.transform + (trans,), elem.opposite and elem.opposite + (trans,)))
-    return UnstructuredTopology(0, pelems)
+      w, = numpy.equal(ielems, ielem).nonzero()
+      transforms.append((elem.transform, elem.opposite))
+      points_.append(points.CoordsPoints(xis[w]))
+      index.append(w)
+    return sample.Sample(transforms, points_, index)
 
   def supp(self, basis, mask=None):
     if mask is None:
