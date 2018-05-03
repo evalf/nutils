@@ -153,12 +153,6 @@ class Topology(types.Singleton):
       yield topo
       topo = topo.refined
 
-  stdfunc     = lambda self, *args, **kwargs: self.basis('std', *args, **kwargs)
-  linearfunc  = lambda self, *args, **kwargs: self.basis('std', degree=1, *args, **kwargs)
-  splinefunc  = lambda self, *args, **kwargs: self.basis('spline', *args, **kwargs)
-  bubblefunc  = lambda self, *args, **kwargs: self.basis('bubble', *args, **kwargs)
-  discontfunc = lambda self, *args, **kwargs: self.basis('discont', *args, **kwargs)
-
   def basis(self, name, *args, **kwargs):
     if self.ndims == 0:
       return function.asarray([1])

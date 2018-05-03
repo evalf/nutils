@@ -65,7 +65,7 @@ def rectilinear(richshape, periodic=(), name='rect'):
       scale = scale[0]
     geom = function.rootcoords(ndims) * scale + offset
   else:
-    funcsp = topo.splinefunc(degree=1, periodic=())
+    funcsp = topo.basis('spline', degree=1, periodic=())
     coords = numeric.meshgrid(*richshape).reshape(ndims, -1)
     geom = (funcsp * coords).sum(-1)
 
@@ -300,7 +300,7 @@ def multipatch(patches, nelems, patchverts=None, name='multipatch'):
   # join patch topologies, geometries
 
   topo = topology.MultipatchTopology(tuple(map(topology.Patch, topos, patches, boundarydata)))
-  funcsp = topo.splinefunc(degree=1, patchcontinuous=False)
+  funcsp = topo.basis('spline', degree=1, patchcontinuous=False)
   geom = (funcsp * numpy.concatenate(coords, axis=1)).sum(-1)
 
   return topo, geom
@@ -528,7 +528,7 @@ def fromfunc(func, nelems, ndims, degree=1):
     nelems = [nelems]
   assert len(nelems) == func.__code__.co_argcount
   topo, ref = rectilinear([numpy.linspace(0,1,n+1) for n in nelems])
-  funcsp = topo.splinefunc(degree=degree).vector(ndims)
+  funcsp = topo.basis('spline', degree=degree).vector(ndims)
   coords = topo.projection(func, onto=funcsp, coords=ref, exact_boundaries=True)
   return topo, coords
 
