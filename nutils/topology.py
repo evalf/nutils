@@ -1867,47 +1867,6 @@ class RefinedTopology(Topology):
             connectivity[offsets[jelem]+jchild][jchildedge] = offsets[ielem]+ichild
     return tuple(types.frozenarray(c, copy=False) for c in connectivity)
 
-class TrimmedTopologyItem(Topology):
-  'trimmed topology item'
-
-  __slots__ = 'basetopo', 'refdict'
-  __cache__ = 'elements',
-
-  @types.apply_annotations
-  def __init__(self, basetopo:stricttopology, refdict):
-    self.basetopo = basetopo
-    self.refdict = refdict
-    super().__init__(basetopo.ndims)
-
-  @property
-  def elements(self):
-    elements = []
-    for elem in self.basetopo:
-      ref = elem.reference & self.refdict[elem.transform]
-      if ref:
-        elements.append(element.Element(ref, elem.transform, elem.opposite))
-    return elements
-
-class TrimmedTopologyBoundaryItem(Topology):
-  'trimmed topology boundary item'
-
-  __slots__ = 'btopo', 'trimmed', 'othertopo'
-  __cache__ = 'elements',
-
-  @types.apply_annotations
-  def __init__(self, btopo:stricttopology, trimmed, othertopo):
-    self.btopo = btopo
-    self.trimmed = trimmed
-    self.othertopo = othertopo
-    super().__init__(btopo.ndims)
-
-  @property
-  def elements(self):
-    belems = [elem for elem in self.trimmed if elem.opposite in self.btopo.edict]
-    if self.othertopo:
-      belems.extend(self.othertopo)
-    return belems
-
 class HierarchicalTopology(Topology):
   'collection of nested topology elments'
 
