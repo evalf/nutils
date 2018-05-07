@@ -1125,10 +1125,8 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
   def full(shape, fill_value):
     return frozenarray(numpy.lib.stride_tricks.as_strided(fill_value, shape, [0]*len(shape)), copy=False)
 
-  _dtype_order = bool, int, float, complex
-
   def __new__(cls, base, dtype=None, copy=True):
-    allowdowncast = dtype not in (strictint, strictfloat)
+    isstrict = dtype in (strictint, strictfloat)
     if dtype is None:
       pass
     elif dtype == bool:
@@ -1145,10 +1143,11 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
       if dtype is None or dtype == base.dtype:
         return base
       base = base.__base
-    if not allowdowncast:
+    if isstrict:
       if not isinstance(base, numpy.ndarray):
         base = numpy.array(base)
-      if cls._dtype_order.index(base.dtype) > cls._dtype_order.index(dtype):
+        copy = False
+      if base.dtype == complex or base.dtype == float and dtype == int:
         raise ValueError('downcasting {!r} to {!r} is forbidden'.format(base.dtype, dtype))
     self = object.__new__(cls)
     self.__base = numpy.array(base, dtype=dtype) if copy or not isinstance(base, numpy.ndarray) or dtype and dtype != base.dtype else base
