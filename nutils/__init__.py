@@ -32,4 +32,4 @@ _ = numpy.newaxis
 __all__ = ['_', 'numpy', 'core', 'numeric', 'element', 'function', 'expression',
   'mesh', 'plot', 'topology', 'util', 'matrix', 'parallel', 'log',
   'cache', 'transform', 'solver', 'cli', 'warnings', 'config', 'types', 'points',
-  'sample']
+  'sample', 'export']
