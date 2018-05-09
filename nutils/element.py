@@ -802,18 +802,17 @@ class Cone(Reference):
     return edge_refs
 
   def getpoints(self, ischeme, degree):
-    if self.nverts == self.ndims+1: # simplex
-      simplex = getsimplex(self.ndims)
-      trans = transform.Square((self.etrans.apply(self.edgeref.vertices) - self.tip).T, self.tip)
-      return points.TransformPoints(simplex.getpoints(ischeme, degree), trans)
     if ischeme == 'gauss':
+      if self.nverts == self.ndims+1: # use optimal gauss schemes for simplex-like cones
+        trans = transform.Square((self.etrans.apply(self.edgeref.vertices) - self.tip).T, self.tip)
+        return points.TransformPoints(getsimplex(self.ndims).getpoints(ischeme, degree), trans)
       epoints = self.edgeref.getpoints('gauss', degree)
       tx, tw = gauss(degree + self.ndims - 1)
       wx = tx**(self.ndims-1) * tw * self.extnorm * self.height
       return points.CoordsWeightsPoints((tx[:,_,_] * (self.etrans.apply(epoints.coords)-self.tip)[_,:,:] + self.tip).reshape(-1, self.ndims), (epoints.weights[_,:] * wx[:,_]).ravel())
     if ischeme == 'vtk' and self.nverts == 5 and self.ndims==3: # pyramid
       return points.CoordsPoints(self.vertices[[1,2,4,3,0]])
-    return super().getpoints(ischeme, degree)
+    return points.ConePoints(self.edgeref.getpoints(ischeme, degree), self.etrans, self.tip)
 
   @property
   def simplices(self):

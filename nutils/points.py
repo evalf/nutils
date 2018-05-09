@@ -33,7 +33,9 @@ class Points(types.Singleton):
 
   @property
   def tri(self):
-    raise Exception('tri not defined')
+    if self.ndims == 0 and self.npoints == 1:
+      return types.frozenarray([[0]])
+    raise Exception('tri not defined for {}'.format(self))
 
   @property
   def hull(self):
@@ -219,6 +221,26 @@ class ConcatPoints(Points):
       for i, j in pairs[1:]:
         renumber[i][j] = renumber[I][J]
     return types.frozenarray(numpy.concatenate([renum.take(points.tri) for renum, points in zip(renumber, self.allpoints)]), copy=False)
+
+class ConePoints(Points):
+
+  __cache__ = 'coords', 'tri'
+
+  @types.apply_annotations
+  def __init__(self, edgepoints:strictpoints, edgeref:transform.stricttransformitem, tip:types.frozenarray):
+    self.edgepoints = edgepoints
+    self.edgeref = edgeref
+    self.tip = tip
+    super().__init__(edgepoints.npoints+1, edgepoints.ndims+1)
+
+  @property
+  def coords(self):
+    return types.frozenarray(numpy.concatenate([self.edgeref.apply(self.edgepoints.coords), self.tip[_,:]]), copy=False)
+
+  @property
+  def tri(self):
+    tri = numpy.concatenate([self.edgepoints.tri, [[self.edgepoints.npoints]]*len(self.edgepoints.tri)], axis=1)
+    return types.frozenarray(tri, copy=False)
 
 ## UTILITY FUNCTIONS
 
