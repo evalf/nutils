@@ -2117,12 +2117,16 @@ class ProductTopology(Topology):
 
   @types.apply_annotations
   def __init__(self, topo1:stricttopology, topo2:stricttopology):
+    assert not isinstance(topo1, ProductTopology)
     self.topo1 = topo1
     self.topo2 = topo2
     super().__init__(topo1.ndims+topo2.ndims)
 
   def __len__(self):
     return len(self.topo1) * len(self.topo2)
+
+  def __mul__(self, other):
+    return ProductTopology(self.topo1, self.topo2 * other)
 
   @property
   def structure(self):
@@ -2151,12 +2155,7 @@ class ProductTopology(Topology):
       else self.topo1[item[:self.topo1.ndims]] * self.topo2[item[self.topo1.ndims:]]
 
   def basis(self, name, *args, **kwargs):
-    def _split(arg):
-      if isinstance(arg, (list,tuple)):
-        assert len(arg) == self.ndims
-        return arg[:self.topo1.ndims], arg[self.topo1.ndims:]
-      else:
-        return arg, arg
+    _split = lambda arg: (arg[0], arg[1:] if len(arg) > 2 else arg[1]) if isinstance(arg, (list,tuple)) else (arg, arg)
     splitargs = [_split(arg) for arg in args]
     splitkwargs = [(name,)+_split(arg) for name, arg in kwargs.items()]
     basis1, basis2 = function.bifurcate(
