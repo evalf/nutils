@@ -318,6 +318,8 @@ class _CacheMeta_property:
     self.__doc__ = prop.__doc__
 
   def __get__(self, instance, owner):
+    if instance is None:
+      return self
     try:
       cached_value = getattr(instance, self.cache_attr)
     except AttributeError:
