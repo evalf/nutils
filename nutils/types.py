@@ -311,9 +311,11 @@ class _CacheMeta_property:
 
   _self = object()
 
-  def __init__(self, fget, cache_attr):
-    self.fget = fget
+  def __init__(self, prop, cache_attr):
+    assert isinstance(prop, property)
+    self.fget = prop.fget
     self.cache_attr = cache_attr
+    self.__doc__ = prop.__doc__
 
   def __get__(self, instance, owner):
     try:
@@ -389,6 +391,7 @@ def _CacheMeta_method(func, cache_attr):
       return value
 
   wrapper.__name__ = orig_func.__name__
+  wrapper.__doc__ = orig_func.__doc__
   wrapper.__signature__ = signature
   return wrapper
 
@@ -497,7 +500,7 @@ class CacheMeta(abc.ABCMeta):
           raise TypeError('Attribute listed in __cache__ is undefined: {}'.format(attr))
         value = namespace[attr]
         if isinstance(value, property):
-          namespace[attr] = _CacheMeta_property(value.fget, cache_attr)
+          namespace[attr] = _CacheMeta_property(value, cache_attr)
         elif inspect.isfunction(value) and not inspect.isgeneratorfunction(value):
           namespace[attr] = _CacheMeta_method(value, cache_attr)
         else:
