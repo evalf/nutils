@@ -170,4 +170,50 @@ def single_or_multiple(f):
     return retvals
   return wrapped
 
+def positional_only(*names, keep_varpositional=False):
+  '''Add var-positional arguments to function signature.
+
+  Python has no explicit syntax for defining positional-only parameters, but
+  the effect can be achieved by using a var-positional argument and unpacking
+  it inside the function body. The :func:`positional_only` decorator adds a
+  check for the number of positional arguments provided, and updates the
+  function signature to reflect this design. It requires that the first
+  argument is var-positional, precluding positional-or-keyword arguments.
+
+  Example:
+
+  >>> @positional_only('x')
+  ... def f(*args, **kwargs):
+  ...   x, = args
+  >>> inspect.signature(f)
+  <Signature (x, /, **kwargs)>
+
+  >>> @positional_only('x', keep_varpositional=True)
+  ... def f(*args, **kwargs):
+  ...   x, *args = args
+  >>> inspect.signature(f)
+  <Signature (x, /, *args, **kwargs)>
+
+  Args
+  ----
+  names : variable argument list of :class:`str`
+      Names of the positional-only arguments, in order.
+  keep_varpositional : :class:`bool` (default: False)
+      If True, retain the var_positional argument.
+  '''
+
+  def wrapper(f):
+    signature = inspect.signature(f)
+    parameters = list(signature.parameters.values())
+    assert parameters[0].kind == inspect.Parameter.VAR_POSITIONAL
+    parameters[:1-keep_varpositional] = [inspect.Parameter(name, inspect.Parameter.POSITIONAL_ONLY) for name in names]
+    @functools.wraps(f)
+    def wrapped(*args, **kwargs):
+      if len(args) < len(names) or not keep_varpositional and len(args) > len(names):
+        raise TypeError('expected {} {} positional arguments, got {}'.format('at least' if keep_varpositional else 'exactly', len(names), len(args)))
+      return f(*args, **kwargs)
+    wrapped.__signature__ = signature.replace(parameters=parameters)
+    return wrapped
+  return wrapper
+
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
