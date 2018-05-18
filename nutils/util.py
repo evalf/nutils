@@ -136,7 +136,10 @@ def run(*functions):
 
   with contextlib.ExitStack() as stack:
 
-    stack.enter_context(userconfig())
+    home = os.path.expanduser('~')
+    configs = [dict(richoutput=sys.stdout.isatty())]
+    configs += [path for path in (os.path.join(home, '.config', 'nutils', 'config'), os.path.join(home, '.nutilsrc')) if os.path.isfile(path)]
+    stack.enter_context(config(*configs))
     properties = {k: v for k, v in vars(config).items() if not k.startswith('_')}
     properties['tbexplore'] = properties.pop('pdb')
 
