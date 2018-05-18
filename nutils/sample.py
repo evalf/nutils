@@ -18,10 +18,62 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
+'''
+The sample module defines the :class:`Sample` class, which represents a
+collection of discrete points on a topology and is typically formed via
+:func:`nutils.topology.Topology.sample`. Any function evaluation starts from
+this sampling step, which drops element information and other topological
+properties such as boundaries and groups, but retains point positions and
+(optionally) integration weights. Evaluation is performed by subsequent calls
+to :func:`Sample.integrate`, :func:`Sample.integral` or :func:`Sample.eval`.
+
+Besides the location of points, :class:`Sample` also keeps track of point
+connectivity through its :attr:`Sample.tri` and :attr:`Sample.hull`
+properties, representing a (n-dimensional) triangulation of the interior and
+boundary, respectively. Availability of these properties depends on the
+selected sample points, and is typically used in combination with the "bezier"
+set.
+
+In addition to :class:`Sample`, the sample module defines the :class:`Integral`
+class which represents postponed integration. Integrals are internally
+represented as pairs of :class:`Sample` and :class:`nutils.function.Array`
+objects. Evaluation proceeds via either the :func:`Integral.eval` method, or
+the :func:`eval_integrals` function. The latter can also be used to evaluate
+multiple integrals simultaneously, which has the advantage that it can
+efficiently combine common substructures.
+'''
+
 from . import types, points, log, util, function, config, parallel, numeric, cache, matrix
 import numpy, numbers
 
 class Sample(types.Singleton):
+  '''Collection of points on a topology.
+
+  The :class:`Sample` class represents a collection of discrete points on a
+  topology and is typically formed via :func:`nutils.topology.Topology.sample`.
+  Any function evaluation starts from this sampling step, which drops element
+  information and other topological properties such as boundaries and groups,
+  but retains point positions and (optionally) integration weights. Evaluation
+  is performed by subsequent calls to :func:`integrate`, :func:`integral` or
+  :func:`eval`.
+
+  Besides the location of points, ``Sample`` also keeps track of point
+  connectivity through its :attr:`tri` and :attr:`hull` properties,
+  representing a (n-dimensional) triangulation of the interior and boundary,
+  respectively. Availability of these properties depends on the selected sample
+  points, and is typically used in combination with the "bezier" set.
+
+  Args
+  ----
+  transforms : :class:`tuple` or transformation chains
+      List of transformation chains leading to local coordinate systems that
+      contain points.
+  points : :class:`tuple` of point sets
+      List of point sets matching ``transforms``.
+  index : :class:`tuple` of integer arrays
+      List of indices matching ``transforms``, defining the order on which
+      points show up in the evaluation.
+  '''
 
   @types.apply_annotations
   def __init__(self, transforms:tuple, points:types.tuple[points.strictpoints], index:types.tuple[types.frozenarray[types.strictint]]):
@@ -37,7 +89,15 @@ class Sample(types.Singleton):
   @util.single_or_multiple
   @cache.function
   def integrate(self, funcs, *, arguments=None):
-    'integrate functions'
+    '''Integrate functions.
+
+    Args
+    ----
+    funcs : :class:`nutils.function.Array` object or :class:`tuple` thereof.
+        The integrand(s).
+    arguments : :class:`dict` (default: None)
+        Optional arguments for function evaluation.
+    '''
 
     if arguments is None:
       arguments = {}
@@ -112,12 +172,28 @@ class Sample(types.Singleton):
       yield retval
 
   def integral(self, func):
+    '''Create Integral object for postponed integration.
+
+    Args
+    ----
+    func : :class:`nutils.function.Array`
+        Integrand.
+    '''
+
     return Integral([(self, func)])
 
   @log.title
   @util.single_or_multiple
   def eval(self, funcs, *, arguments=None):
-    'sample function in discrete points'
+    '''Evaluate function.
+
+    Args
+    ----
+    funcs : :class:`nutils.function.Array` object or :class:`tuple` thereof.
+        The integrand(s).
+    arguments : :class:`dict` (default: None)
+        Optional arguments for function evaluation.
+    '''
 
     if arguments is None:
       arguments = {}
@@ -163,13 +239,45 @@ class Sample(types.Singleton):
 
   @property
   def tri(self):
+    '''Triangulation of interior.
+
+    A two-dimensional integer array with ``ndims+1`` columns, of which every
+    row defines a simplex by mapping vertices into the list of points.
+    '''
+
     return types.frozenarray(numpy.concatenate([index.take(points.tri) for points, index in zip(self.points, self.index)]), copy=False)
 
   @property
   def hull(self):
+    '''Triangulation of the exterior hull.
+
+    A two-dimensional integer array with ``ndims`` columns, of which every row
+    defines a simplex by mapping vertices into the list of points. Note that
+    the hull often does contain internal element boundaries as the
+    triangulations originating from separate elements are disconnected.
+    '''
+
     return types.frozenarray(numpy.concatenate([index.take(points.hull) for points, index in zip(self.points, self.index)]), copy=False)
 
   def subset(self, mask):
+    '''Reduce the number of points.
+
+    Simple selection mechanism that returns a reduced Sample based on a
+    selection mask. Points that are marked True will still be part of the new
+    subset; points marked False may be dropped but this is not guaranteed. The
+    point order of the original Sample is preserved.
+
+    Args
+    ----
+    mask : :class:`bool` array.
+        Boolean mask that selects all points that should remain. The resulting
+        Sample may contain more points than this, but not less.
+
+    Returns
+    -------
+    subset : :class:`Sample`
+    '''
+
     selection = [ielem for ielem in range(self.nelems) if mask[self.index[ielem]].any()]
     transforms = [self.transforms[ielem] for ielem in selection]
     points = [self.points[ielem] for ielem in selection]
@@ -179,7 +287,27 @@ class Sample(types.Singleton):
 strictsample = types.strict[Sample]
 
 class Integral(types.Singleton):
-  '''Postponed integral, used for derivative purposes'''
+  '''Postponed integration.
+
+  The :class:`Integral` class represents postponed integration. Integrals are
+  internally represented as pairs of :class:`Sample` and
+  :class:`nutils.function.Array` objects. Evaluation proceeds via either the
+  :func:`eval` method, or the :func:`eval_integrals` function. The latter can
+  also be used to evaluate multiple integrals simultaneously, which has the
+  advantage that it can efficiently combine common substructures.
+
+  Integrals support basic arithmetic such as summation, subtraction, and scalar
+  multiplication and division. It also supports differentiation via the
+  :func:`derivative` method. This makes Integral particularly well suited for
+  use in combination with the :mod:`nutils.solver` module which provides linear
+  and non-linear solvers.
+
+  Args
+  ----
+  integrands : :class:`dict`
+      Dictionary representing a sum of integrals, where every key-value pair
+      binds together the sample set and the integrand.
+  '''
 
   __slots__ = '_integrands', 'shape'
 
@@ -191,19 +319,71 @@ class Integral(types.Singleton):
     self.shape, = shapes
 
   def eval(self, **kwargs):
+    '''Evaluate integral.
+
+    Equivalent to :func:`eval_integrals` (self, ...).
+    '''
+
     retval, = eval_integrals(self, **kwargs)
     return retval
 
   def derivative(self, target):
+    '''Differentiate integral.
+
+    Return an Integral in which all integrands are differentiated with respect
+    to a target. This is typically used in combination with
+    :class:`nutils.function.Namespace`, in which targets are denoted with a
+    question mark (e.g. ``'?dofs_n'`` corresponds to target ``'dofs'``).
+
+    Args
+    ----
+    target : :class:`str`
+        Name of the derivative target.
+
+    Returns
+    -------
+    derivative : :class:`Integral`
+    '''
+
     argshape = self._argshape(target)
     arg = function.Argument(target, argshape)
     seen = {}
     return Integral([di, function.derivative(integrand, var=arg, seen=seen)] for di, integrand in self._integrands.items())
 
   def replace(self, arguments):
+    '''Return copy with arguments applied.
+
+    Return a copy of self in which all all arguments are edited into the
+    integrands. The effect is that ``self.eval(..., arguments=args)`` is
+    equivalent to ``self.replace(args).eval(...)``. Note, however, that after
+    the replacement it is no longer possible to take derivatives against any of
+    the targets in ``arguments``.
+
+    Args
+    ----
+    arguments : :class:`dict`
+        Arguments for function evaluation.
+
+    Returns
+    -------
+    replaced : :class:`Integral`
+    '''
+
     return Integral([di, function.replace_arguments(integrand, arguments)] for di, integrand in self._integrands.items())
 
   def contains(self, name):
+    '''Test if target occurs in any of the integrands.
+
+    Args
+    ----
+    name : :class:`str`
+        Target name.
+
+    Returns
+    _______
+    iscontained : :class:`bool`
+    '''
+
     try:
       self._argshape(name)
     except KeyError:
@@ -257,6 +437,25 @@ strictintegral = types.strict[Integral]
 @types.apply_annotations
 @cache.function
 def eval_integrals(*integrals: types.tuple[strictintegral], arguments:types.frozendict[types.strictstr,types.frozenarray]=None):
+  '''Evaluate integrals.
+
+  Evaluate one or several postponed integrals. By evaluating them
+  simultaneously, rather than using :func:`Integral.eval` on each integral
+  individually, integrations will be grouped per Sample and jointly executed,
+  potentially increasing efficiency.
+
+  Args
+  ----
+  integrals : :class:`tuple` of integrals
+      Integrals to be evaluated.
+  arguments : :class:`dict` (default: None)
+      Optional arguments for function evaluation.
+
+  Returns
+  -------
+  results : :class:`tuple` of arrays and/or :class:`nutils.matrix.Matrix` objects.
+  '''
+
   retvals = [None] * len(integrals)
   for sample, iints in util.gather((di, iint) for iint, integral in enumerate(integrals) for di in integral._integrands):
     for iint, retval in zip(iints, sample.integrate([integrals[iint]._integrands[sample] for iint in iints], arguments=arguments)):

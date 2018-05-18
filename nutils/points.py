@@ -18,11 +18,42 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
+'''
+The points module defines the :class:`Points` base class, which bundles point
+coordinates, point weights, a local triangulation and a hull triangulation. The
+module provides several different implementations such as :class:`TensorPoints`
+and :class:`SimplexGaussPoints` that reflect the variety of elements in the
+:mod:`nutils.element` module.
+'''
+
 from . import types, transform, numeric, util
 import numpy, functools, itertools, warnings
 _ = numpy.newaxis
 
 class Points(types.Singleton):
+  '''Collection of points on an element.
+
+  The :class:`Points` base class bundles point coordinates, point weights,
+  a local triangulation and hull triangulation. Of these only the coordinates
+  are mandatory, and should be provided by the derived class in the form of the
+  ``coords`` attribute. Of the remaining properties only :func:`hull` has a
+  functional base implementation that relies on the availability of ``tri``.
+
+  .. attribute:: coords
+
+    Coordinates of the points as a :class:`float` array.
+
+  .. attribute:: weights
+
+    Weights of the points as a :class:`float` array.
+
+  Args
+  ----
+  npoints : :class:`int`
+    Number of discrete points.
+  ndims : :class:`int`
+    Number of spatial dimensions.
+  '''
 
   __cache__ = 'hull', 'onhull'
 
@@ -33,12 +64,24 @@ class Points(types.Singleton):
 
   @property
   def tri(self):
+    '''Triangulation of interior.
+
+    A two-dimensional integer array with ``ndims+1`` columns, of which every
+    row defines a simplex by mapping vertices into the list of points.
+    '''
+
     if self.ndims == 0 and self.npoints == 1:
       return types.frozenarray([[0]])
     raise Exception('tri not defined for {}'.format(self))
 
   @property
   def hull(self):
+    '''Triangulation of the exterior hull.
+
+    A two-dimensional integer array with ``ndims`` columns, of which every row
+    defines a simplex by mapping vertices into the list of points.
+    '''
+
     edges = set()
     iedges = numpy.array(list(itertools.combinations(range(self.ndims+1), self.ndims)))
     for tri in self.tri:
@@ -47,6 +90,12 @@ class Points(types.Singleton):
 
   @property
   def onhull(self):
+    '''Boolean mask marking boundary points.
+
+    The array of length ``npoints`` is ``True`` where the corresponding point
+    is part of the :attr:`hull`, and ``False`` where it is not.
+    '''
+
     onhull = numpy.zeros(self.npoints, dtype=bool)
     onhull[numpy.ravel(self.hull)] = True # not clear why ravel is necessary but setitem seems to require it
     return types.frozenarray(onhull, copy=False)
@@ -54,6 +103,7 @@ class Points(types.Singleton):
 strictpoints = types.strict[Points]
 
 class CoordsPoints(Points):
+  '''Manually supplied points.'''
 
   @types.apply_annotations
   def __init__(self, coords:types.frozenarray[float]):
@@ -61,6 +111,7 @@ class CoordsPoints(Points):
     super().__init__(*coords.shape)
 
 class CoordsWeightsPoints(CoordsPoints):
+  '''Manually supplied points and weights.'''
 
   @types.apply_annotations
   def __init__(self, coords:types.frozenarray[float], weights:types.frozenarray[float]):
@@ -68,6 +119,7 @@ class CoordsWeightsPoints(CoordsPoints):
     super().__init__(coords)
 
 class CoordsUniformPoints(CoordsPoints):
+  '''Manually supplied points with uniform weights.'''
 
   @types.apply_annotations
   def __init__(self, coords:types.frozenarray[float], volume:float):
@@ -75,6 +127,7 @@ class CoordsUniformPoints(CoordsPoints):
     super().__init__(coords)
 
 class TensorPoints(Points):
+  '''Tensor product of two Points instances.'''
 
   __cache__ = 'coords', 'weights', 'tri', 'hull'
 
@@ -98,6 +151,14 @@ class TensorPoints(Points):
   @property
   def tri(self):
     if self.points1.ndims == 1:
+      # For an n-dimensional simplex with vertices a0,a1,..,an, the extruded
+      # element has vertices a0,a1,..,an,b0,b1,..,bn. These can be divided in
+      # simplices by selecting a0,a1,..,an,b0; a1,..,an,b0,n1; and so on until
+      # an,b0,b1,..,bn; resulting in n+1 n+1-dimensional simplices. In the
+      # algorithm below this is achieved by first taking the tensorial product
+      # of triangulations and raveling, effectively achieving vectorized
+      # concatenation. The overlapping vertex subsets then follow directly from
+      # numeric.overlapping.
       tri12 = self.points1.tri[:,_,:,_] * self.points2.npoints + self.points2.tri[_,:,_,:] # ntri1 x ntri2 x 2 x ndims
       return types.frozenarray(numeric.overlapping(tri12.reshape(-1, 2*self.ndims), n=self.ndims+1).reshape(-1, self.ndims+1), copy=False)
     return super().tri
@@ -107,17 +168,21 @@ class TensorPoints(Points):
     if self.points1.ndims == 1:
       hull1 = self.points1.hull[:,_,:,_] * self.points2.npoints + self.points2.tri[_,:,_,:] # 2 x ntri2 x 1 x ndims
       hull2 = self.points1.tri[:,_,:,_] * self.points2.npoints + self.points2.hull[_,:,_,:] # ntri1 x nhull2 x 2 x ndims-1
+      # The subdivision of hull2 into simplices follows identical logic to that
+      # used in the construction of self.tri.
       hull = numpy.concatenate([hull1.reshape(-1, self.ndims), numeric.overlapping(hull2.reshape(-1, 2*(self.ndims-1)), n=self.ndims).reshape(-1, self.ndims)])
       return types.frozenarray(hull, copy=False)
     return super().hull
 
 class SimplexGaussPoints(CoordsWeightsPoints):
+  '''Gauss quadrature points on a simplex.'''
 
   @types.apply_annotations
   def __init__(self, ndims:types.strictint, degree:types.strictint):
     super().__init__(*gaussn[ndims](degree))
 
 class SimplexBezierPoints(CoordsPoints):
+  '''Bezier points on a simplex.'''
 
   __cache__ = 'tri', 'hull'
 
@@ -147,6 +212,7 @@ class SimplexBezierPoints(CoordsPoints):
     return super().hull
 
 class TransformPoints(Points):
+  '''Affinely transformed Points.'''
 
   __cache__ = 'coords', 'weights'
 
@@ -173,6 +239,11 @@ class TransformPoints(Points):
     return self.points.hull
 
 class ConcatPoints(Points):
+  '''Concatenation of several Points objects.
+
+  An optional ``duplicates`` argument lists all points that are equal,
+  triggering deduplication and resulting in a smaller total point count.
+  '''
 
   __cache__ = 'coords', 'weights', 'tri', 'masks'
 
@@ -223,6 +294,13 @@ class ConcatPoints(Points):
     return types.frozenarray(numpy.concatenate([renum.take(points.tri) for renum, points in zip(renumber, self.allpoints)]), copy=False)
 
 class ConePoints(Points):
+  '''Affinely transformed lower-dimensional points plus tip.
+
+  The point count is incremented by one regardless of the nature of the point
+  set; no effort is made to introduce extra points between base plane and tip.
+  Likewise, the simplex count stays equal, with all simplices obtaining an
+  extra vertex in tip.
+  '''
 
   __cache__ = 'coords', 'tri'
 

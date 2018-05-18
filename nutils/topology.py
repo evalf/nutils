@@ -160,6 +160,8 @@ class Topology(types.Singleton):
     return f(*args, **kwargs)
 
   def sample(self, ischeme, degree):
+    'Create sample.'
+
     transforms = [(elem.transform, elem.opposite) for elem in self]
     points = [elem.reference.getpoints(ischeme, degree) for elem in self]
     offset = numpy.cumsum([0] + [p.npoints for p in points])
@@ -512,6 +514,55 @@ class Topology(types.Singleton):
     return function.mask(basis, used)
 
   def locate(self, geom, coords, ischeme='vertex', scale=1, tol=1e-12, eps=0, maxiter=100, *, arguments=None):
+    '''Create a sample based on physical coordinates.
+
+    In a finite element application, functions are commonly evaluated in points
+    that are defined on the topology. The reverse, finding a point on the
+    topology based on a function value, is often a nonlinear process and as
+    such involves Newton iterations. The ``locate`` function facilitates this
+    search process and produces a :class:`nutils.sample.Sample` instance that
+    can be used for the subsequent evaluation of any function in the given
+    physical points.
+
+    Example:
+
+    >>> from . import mesh
+    >>> domain, geom = mesh.rectilinear([2,1])
+    >>> sample = domain.locate(geom, [[1.5, .5]])
+    >>> sample.eval(geom).tolist()
+    [[1.5, 0.5]]
+
+    Locate has a long list of arguments that can be used to steer the nonlinear
+    search process, but the default values should be fine for reasonably
+    standard situations.
+
+    Args
+    ----
+    geom : 1-dimensional :class:`nutils.function.Array`
+        Geometry function of length ``ndims``.
+    coords : 2-dimensional :class:`float` array
+        Array of coordinates with ``ndims`` columns.
+    ischeme : :class:`str` (default: "vertex")
+        Sample points used to determine bounding boxes.
+    scale : :class:`float` (default: 1)
+        Bounding box amplification factor, useful when element shapes are
+        distorted. Setting this to >1 can increase computational effort but is
+        otherwise harmless.
+    tol : :class:`float` (default: 1e-12)
+        Newton tolerance.
+    eps : :class:`float` (default: 0)
+        Epsilon radius around element within which a point is considered to be
+        inside.
+    maxiter : :class:`int` (default: 100)
+        Maximum allowed number of Newton iterations.
+    arguments : :class:`dict` (default: None)
+        Arguments for function evaluation.
+
+    Returns
+    -------
+    located : :class:`nutils.sample.Sample`
+    '''
+
     nprocs = min(config.nprocs, len(self))
     if arguments is None:
       arguments = {}
