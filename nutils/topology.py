@@ -1525,7 +1525,7 @@ class SimplexTopology(Topology):
   'simpex topology'
 
   __slots__ = 'simplices', 'transforms'
-  __cache__ = 'connectivity'
+  __cache__ = 'connectivity', 'elements'
 
   @types.apply_annotations
   def __init__(self, simplices:types.frozenarray[types.strictint], transforms:types.tuple[transform.stricttransform]):
