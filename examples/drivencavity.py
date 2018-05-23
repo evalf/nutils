@@ -1,23 +1,38 @@
 #! /usr/bin/env python3
 
-from nutils import mesh, plot, cli, log, function, numeric, solver, _
+from nutils import mesh, cli, log, function, numeric, solver, util, export
 import numpy, unittest
+from matplotlib import collections
 
 
 @log.title
-def postprocess(domain, ns):
+def postprocess(name, domain, ns, every=.05, spacing=.01, **arguments):
 
   # confirm that velocity is pointwise divergence-free
-  div = domain.integrate('(u_k,k)^2' @ ns, geometry=ns.x, degree=9)**.5
+  div = domain.integrate('(u_k,k)^2' @ ns, geometry=ns.x, degree=9, arguments=arguments)**.5
   log.info('velocity divergence: {:.2e}'.format(div))
 
-  # plot velocity field as streamlines, pressure field as contours
-  x, u, p = domain.elem_eval([ ns.x, ns.u, ns.p ], ischeme='bezier9', separate=True)
-  with plot.PyPlot('flow') as plt:
-    tri = plt.mesh(x, mergetol=1e-5)
-    plt.tricontour(tri, p, every=.01, linestyles='solid', alpha=.333)
-    plt.colorbar()
-    plt.streamplot(tri, u, spacing=.01, linewidth=-10, color='k', zorder=9)
+  # compute streamlines
+  ns = ns.copy_()
+  ns.streambasis = domain.basis('std', degree=2)[1:] # remove first dof to obtain non-singular system
+  ns.stream = 'streambasis_n ?streamdofs_n'
+  sqr = domain.integral('(u_0 - stream_,1)^2 + (u_1 + stream_,0)^2' @ ns, geometry=ns.x, degree=4)
+  arguments['streamdofs'] = solver.optimize('streamdofs', sqr, arguments=arguments)
+
+  # plot velocity as field, pressure as contours, streamlines as dashed
+  bezier = domain.sample('bezier', 9)
+  x, u, p, stream = bezier.eval([ns.x, function.norm2(ns.u), ns.p, ns.stream], arguments=arguments)
+  with export.mplfigure(name) as fig:
+    ax = fig.add_axes([.1,.1,.8,.8], yticks=[], aspect='equal')
+    ax.add_collection(collections.LineCollection(x[bezier.hull], colors='w', linewidths=.5, alpha=.2))
+    ax.tricontour(x[:,0], x[:,1], bezier.tri, stream, 16, colors='k', linestyles='dotted', linewidths=.5, zorder=9)
+    caxu = fig.add_axes([.1,.1,.03,.8], title='velocity')
+    imu = ax.tripcolor(x[:,0], x[:,1], bezier.tri, u, shading='gouraud', cmap='jet')
+    fig.colorbar(imu, cax=caxu)
+    caxu.yaxis.set_ticks_position('left')
+    caxp = fig.add_axes([.87,.1,.03,.8], title='pressure')
+    imp = ax.tricontour(x[:,0], x[:,1], bezier.tri, p, 16, cmap='gray', linestyles='solid')
+    fig.colorbar(imp, cax=caxp)
 
 
 def main(
@@ -65,7 +80,7 @@ def main(
   ns.p = 'pbasis_n ?lhs_n'
   ns.l = 'lbasis_n ?lhs_n'
   ns.sigma_ij = 'viscosity (u_i,j + u_j,i) - p δ_ij'
-  ns.c = 5 * (degree+1) / domain.boundary.elem_eval(1, geometry=ns.x, ischeme='gauss2', asfunction=True)
+  ns.c = 5 * (degree+1) / domain.boundary.integrate_elementwise(1, geometry=ns.x, degree=2, asfunction=True)
   ns.nietzsche_ni = 'viscosity (c ubasis_ni - (ubasis_ni,j + ubasis_nj,i) n_j)'
   ns.top = domain.boundary.indicator('top')
   ns.utop_i = 'top <n_1, -n_0>_i'
@@ -75,13 +90,13 @@ def main(
   res += domain.boundary.integral('nietzsche_ni (u_i - utop_i)' @ ns, geometry=ns.x, degree=2*(degree+1))
   lhs0 = solver.solve_linear('lhs', res)
   if figures:
-    postprocess(domain, ns(lhs=lhs0))
+    postprocess('stokes', domain, ns, lhs=lhs0)
 
   # solve navier-stokes flow
   res += domain.integral('density ubasis_ni u_i,j u_j' @ ns, geometry=ns.x, degree=3*(degree+1))
   lhs1 = solver.newton('lhs', res, lhs0=lhs0).solve(tol=1e-10)
   if figures:
-    postprocess(domain, ns(lhs=lhs1))
+    postprocess('navierstokes', domain, ns, lhs=lhs1)
 
   return lhs0, lhs1
 

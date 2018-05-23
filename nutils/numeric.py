@@ -172,6 +172,28 @@ def eig(A):
 
   return L, V
 
+def inv(A):
+  '''Matrix inverse.
+
+  Fully equivalent to :func:`numpy.linalg.inv`, with the exception that upon
+  singular systems :func:`inv` does not raise a ``LinAlgError``, but rather
+  issues a ``RuntimeWarning`` and returns NaN (not a number) values. For
+  arguments of dimension >2 the return array contains NaN values only for those
+  entries that correspond to singular matrices.
+  '''
+
+  try:
+    Ainv = numpy.linalg.inv(A)
+  except numpy.linalg.LinAlgError:
+    warnings.warn('not all functions evaluated successfully', RuntimeWarning)
+    Ainv = numpy.empty(A.shape, dtype=float)
+    for index in numpy.ndindex(A.shape[:-2]):
+      try:
+        Ainv[index] = numpy.linalg.inv(A[index])
+      except numpy.linalg.LinAlgError:
+        pass
+  return Ainv
+
 isarray = lambda a: isinstance(a, (numpy.ndarray, types.frozenarray))
 isboolarray = lambda a: isarray(a) and a.dtype == bool
 isbool = lambda a: isboolarray(a) and a.ndim == 0 or type(a) == bool

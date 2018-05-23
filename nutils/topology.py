@@ -35,7 +35,7 @@ out in element loops. For lower level operations topologies can be used as
 :mod:`nutils.element` iterators.
 """
 
-from . import element, function, util, numpy, parallel, log, config, numeric, cache, transform, warnings, matrix, types, _
+from . import element, function, util, numpy, parallel, log, config, numeric, cache, transform, warnings, matrix, types, sample, points, _
 import functools, collections.abc, itertools, functools, operator, numbers, pathlib
 
 _identity = lambda x: x
@@ -153,206 +153,74 @@ class Topology(types.Singleton):
       yield topo
       topo = topo.refined
 
-  stdfunc     = lambda self, *args, **kwargs: self.basis('std', *args, **kwargs)
-  linearfunc  = lambda self, *args, **kwargs: self.basis('std', degree=1, *args, **kwargs)
-  splinefunc  = lambda self, *args, **kwargs: self.basis('spline', *args, **kwargs)
-  bubblefunc  = lambda self, *args, **kwargs: self.basis('bubble', *args, **kwargs)
-  discontfunc = lambda self, *args, **kwargs: self.basis('discont', *args, **kwargs)
-
   def basis(self, name, *args, **kwargs):
     if self.ndims == 0:
       return function.asarray([1])
     f = getattr(self, 'basis_' + name)
     return f(*args, **kwargs)
 
-  @log.title
+  def sample(self, ischeme, degree):
+    'Create sample.'
+
+    transforms = [(elem.transform, elem.opposite) for elem in self]
+    points = [elem.reference.getpoints(ischeme, degree) for elem in self]
+    offset = numpy.cumsum([0] + [p.npoints for p in points])
+    return sample.Sample(transforms, points, map(numpy.arange, offset[:-1], offset[1:]))
+
   @util.single_or_multiple
-  def elem_eval(self, funcs, ischeme, separate=False, geometry=None, asfunction=False, edit=_identity, *, arguments=None):
+  def elem_eval(self, funcs, ischeme, separate=False, geometry=None, asfunction=False, *, edit=None, title='elem_eval', **kwargs):
     'element-wise evaluation'
 
-    fcache = cache.WrapperCache()
+    if geometry is not None:
+      warnings.deprecation('elem_eval will be removed in future, use integrate_elementwise instead')
+      return self.integrate_elementwise(funcs, ischeme=ischeme, geometry=geometry, asfunction=asfunction, edit=edit, **kwargs)
+    if edit is not None:
+      funcs = [edit(func) for func in funcs]
+    warnings.deprecation('elem_eval will be removed in future, use sample(...).eval instead')
+    sample = self.sample(*element.parse_legacy_ischeme(ischeme))
+    retvals = sample.eval(funcs, title=title, **kwargs)
+    return [sample.asfunction(retval) for retval in retvals] if asfunction \
+      else [[retval[index] for index in sample.index] for retval in retvals] if separate \
+      else retvals
 
-    assert not separate or not asfunction, '"separate" and "asfunction" are mutually exclusive'
-    if geometry:
-      iwscale = function.J(geometry, self.ndims)
-      npoints = len(self)
-      slices = range(npoints)
-    else:
-      iwscale = 1
-      slices = []
-      npoints = 0
-      for elem in log.iter('elem', self):
-        ipoints, iweights = ischeme[elem] if isinstance(ischeme,collections.abc.Mapping) else elem.reference.getischeme(ischeme)
-        np = len(ipoints)
-        slices.append(slice(npoints,npoints+np))
-        npoints += np
-
-    nprocs = min(config.nprocs, len(self))
-    zeros = parallel.shzeros if nprocs > 1 else numpy.zeros
-    retvals = []
-    idata = []
-    for ifunc, func in enumerate(funcs):
-      func = function.asarray(edit(func * iwscale))
-      func = function.zero_argument_derivatives(func)
-      retval = zeros((npoints,)+func.shape, dtype=func.dtype)
-      idata.extend(function.Tuple([ifunc, function.Tuple(ind), f.simplified]) for ind, f in function.blocks(func))
-      retvals.append(retval)
-    idata = function.Tuple(idata)
-
-    if config.dot:
-      idata.graphviz()
-
-    if arguments is None:
-      arguments = {}
-
-    for ielem, elem in parallel.pariter(log.enumerate('elem', self), nprocs=nprocs):
-      ipoints, iweights = ischeme[elem] if isinstance(ischeme,collections.abc.Mapping) else elem.reference.getischeme(ischeme)
-      s = slices[ielem],
-      try:
-        for ifunc, index, data in idata.eval(_transforms=(elem.transform, elem.opposite), _points=ipoints, _cache=fcache, **arguments):
-          numpy.add.at(retvals[ifunc], s+numpy.ix_(*[ind for (ind,) in index]), numeric.dot(iweights,data) if geometry else data)
-      except function.EvaluationError:
-        warnings.warn('not all functions evaluated successfully')
-        for ifunc, indexfunc, datafunc in idata:
-          index = indexfunc.eval(_transforms=(elem.transform, elem.opposite), _points=ipoints, _cache=fcache, **arguments)
-          try:
-            data = datafunc.eval(_transforms=(elem.transform, elem.opposite), _points=ipoints, _cache=fcache, **arguments)
-          except function.EvaluationError:
-            retvals[ifunc][s+numpy.ix_(*[ind for (ind,) in index])] = numpy.nan
-          else:
-            numpy.add.at(retvals[ifunc], s+numpy.ix_(*[ind for (ind,) in index]), numeric.dot(iweights,data) if geometry else data)
-
-    log.debug('cache', fcache.stats)
-    log.info('created', ', '.join('{}({})'.format(retval.__class__.__name__, ','.join(str(n) for n in retval.shape)) for retval in retvals))
-
-    if asfunction:
-      if geometry:
-        retvals = [function.elemwise({elem.transform: value for elem, value in zip(self, retval)}, shape=retval.shape[1:]) for retval in retvals]
-      else:
-        tsp = [(elem.transform, s, elem.reference.getischeme(ischeme)[0]) for elem, s in zip(self, slices)]
-        retvals = [function.sampled({trans: (types.frozenarray(retval[s], copy=False), points) for trans, s, points in tsp}, self.ndims) for retval in retvals]
-    elif separate:
-      retvals = [[retval[s] for s in slices] for retval in retvals]
-
-    return retvals
-
-  @log.title
   @util.single_or_multiple
-  def elem_mean(self, funcs, geometry, ischeme, *, arguments=None):
-    'element-wise average'
+  def integrate_elementwise(self, funcs, *, asfunction=False, **kwargs):
+    'element-wise integration'
 
-    retvals = self.elem_eval((1,)+funcs, geometry=geometry, ischeme=ischeme, arguments=arguments)
-    return [v / retvals[0][(slice(None),)+(_,)*(v.ndim-1)] for v in retvals[1:]]
+    ielem = self.basis('discont', degree=0)
+    funcs = [function.asarray(func) for func in funcs]
+    with matrix.backend('numpy'):
+      retvals = self.integrate([ielem[(slice(None),)+(_,)*func.ndim] * func for func in funcs], **kwargs)
+    retvals = [retval.export('dense') if len(retval.shape) == 2 else retval for retval in retvals]
+    return [function.elemwise({elem.transform: array for elem, array in zip(self, retval)}, shape=retval.shape) for retval in retvals] if asfunction \
+      else retvals
 
-  def _integrate(self, funcs, ischeme, fcache=None, arguments=None):
-
-    if arguments is None:
-      arguments = {}
-
-    # Functions may consist of several blocks, such as originating from
-    # chaining. Here we make a list of all blocks consisting of triplets of
-    # argument id, evaluable index, and evaluable values.
-
-    blocks = [(ifunc, function.Tuple(ind), f.simplified)
-      for ifunc, func in enumerate(funcs)
-        for ind, f in function.blocks(function.zero_argument_derivatives(func))]
-
-    block2func, indices, values = zip(*blocks) if blocks else ([],[],[])
-
-    log.debug('integrating {} distinct blocks'.format('+'.join(
-      str(block2func.count(ifunc)) for ifunc in range(len(funcs)))))
-
-    if config.dot:
-      function.Tuple(values).graphviz()
-
-    if fcache is None:
-      fcache = cache.WrapperCache()
-
-    # To allocate (shared) memory for all block data we evaluate indexfunc to
-    # build an nblocks x nelems+1 offset array, and nblocks index lists of
-    # length nelems.
-
-    offsets = numpy.zeros((len(blocks), len(self)+1), dtype=int)
-    if blocks:
-      sizefunc = function.stack([f.size for ifunc, ind, f in blocks]).simplified
-      for ielem, elem in enumerate(self):
-        n, = sizefunc.eval(_transforms=(elem.transform, elem.opposite), _cache=fcache, **arguments)
-        offsets[:,ielem+1] = offsets[:,ielem] + n
-
-    # Since several blocks may belong to the same function, we post process the
-    # offsets to form consecutive intervals in longer arrays. The length of
-    # these arrays is captured in the nfuncs-array nvals.
-
-    nvals = numpy.zeros(len(funcs), dtype=int)
-    for iblock, ifunc in enumerate(block2func):
-      offsets[iblock] += nvals[ifunc]
-      nvals[ifunc] = offsets[iblock,-1]
-
-    # The data_index list contains shared memory index and value arrays for
-    # each function argument.
-
-    nprocs = min(config.nprocs, len(self))
-    empty = parallel.shempty if nprocs > 1 else numpy.empty
-    data_index = [
-      (empty(n, dtype=float),
-        empty((funcs[ifunc].ndim,n), dtype=int))
-            for ifunc, n in enumerate(nvals) ]
-
-    # In a second, parallel element loop, valuefunc is evaluated to fill the
-    # data part of data_index using the offsets array for location. Each
-    # element has its own location so no locks are required. The index part of
-    # data_index is filled in the same loop. It does not use valuefunc data but
-    # benefits from parallel speedup.
-
-    valueindexfunc = function.Tuple(function.Tuple([value]+list(index)) for value, index in zip(values, indices))
-    for ielem, elem in parallel.pariter(log.enumerate('elem', self), nprocs=nprocs):
-      ipoints, iweights = ischeme[elem] if isinstance(ischeme,collections.abc.Mapping) else elem.reference.getischeme(ischeme)
-      assert iweights is not None, 'no integration weights found'
-      for iblock, (intdata, *indices) in enumerate(valueindexfunc.eval(_transforms=(elem.transform, elem.opposite), _points=ipoints, _cache=fcache, **arguments)):
-        s = slice(*offsets[iblock,ielem:ielem+2])
-        data, index = data_index[block2func[iblock]]
-        w_intdata = numeric.dot(iweights, intdata)
-        data[s] = w_intdata.ravel()
-        si = (slice(None),) + (_,) * (w_intdata.ndim-1)
-        for idim, (ii,) in enumerate(indices):
-          index[idim,s].reshape(w_intdata.shape)[...] = ii[si]
-          si = si[:-1]
-
-    log.debug('cache', fcache.stats)
-
-    return data_index
-
-  @log.title
   @util.single_or_multiple
-  @types.apply_annotations
-  @cache.function
-  def integrate(self, funcs, ischeme='gauss', degree=None, geometry=None, fcache=None, edit=None, *, arguments:types.frozendict[types.strictstr,types.frozenarray]=None):
-    'integrate'
+  def elem_mean(self, funcs, geometry=None, ischeme='gauss', degree=None, **kwargs):
+    ischeme, degree = element.parse_legacy_ischeme(ischeme if degree is None else ischeme + str(degree))
+    area, *integrals = self.integrate_elementwise((1,)+funcs, ischeme=ischeme, degree=degree, geometry=geometry, **kwargs)
+    return [integral / area[(slice(None),)+(_,)*(integral.ndim-1)] for integral in integrals]
 
-    if edit is None:
-      edit = _identity
-    if degree is not None:
-      ischeme += str(degree)
-    iwscale = function.J(geometry, self.ndims) if geometry else 1
-    integrands = [function.asarray(edit(func * iwscale)) for func in funcs]
-    data_index = self._integrate(integrands, ischeme, fcache, arguments)
-    retvals = []
-    for integrand, (data,index) in zip(integrands, data_index):
-      retval = matrix.assemble(data, index, integrand.shape)
-      assert retval.shape == integrand.shape
-      log.debug('assembled {}({})'.format(retval.__class__.__name__, ','.join(str(n) for n in retval.shape)))
-      retvals.append(retval)
-    return retvals
+  @util.single_or_multiple
+  def integrate(self, funcs, ischeme='gauss', degree=None, geometry=None, edit=None, *, arguments=None, title='integrate'):
+    'integrate functions'
 
-  @log.title
-  def integral(self, func, ischeme='gauss', degree=None, geometry=None, edit=_identity):
+    ischeme, degree = element.parse_legacy_ischeme(ischeme if degree is None else ischeme + str(degree))
+    if geometry is not None:
+      funcs = [func * function.J(geometry, self.ndims) for func in funcs]
+    if edit is not None:
+      funcs = [edit(func) for func in funcs]
+    return self.sample(ischeme, degree).integrate(funcs, arguments=arguments, title=title)
+
+  def integral(self, func, ischeme='gauss', degree=None, geometry=None, edit=None):
     'integral'
 
-    if degree is not None:
-      ischeme += str(degree)
-    iwscale = function.J(geometry, self.ndims) if geometry else 1
-    integrand = edit(func * iwscale)
-    return Integral([((self, ischeme), integrand)])
+    ischeme, degree = element.parse_legacy_ischeme(ischeme if degree is None else ischeme + str(degree))
+    if geometry is not None:
+      func = func * function.J(geometry, self.ndims)
+    if edit is not None:
+      funcs = edit(func)
+    return self.sample(ischeme, degree).integral(func)
 
   def projection(self, fun, onto, geometry, **kwargs):
     'project and return as function'
@@ -645,25 +513,74 @@ class Topology(types.Singleton):
         used[dofs] = True
     return function.mask(basis, used)
 
-  def locate(self, geom, points, ischeme='vertex', scale=1, tol=1e-12, eps=0, maxiter=100, *, arguments=None):
+  def locate(self, geom, coords, ischeme='vertex', scale=1, tol=1e-12, eps=0, maxiter=100, *, arguments=None):
+    '''Create a sample based on physical coordinates.
+
+    In a finite element application, functions are commonly evaluated in points
+    that are defined on the topology. The reverse, finding a point on the
+    topology based on a function value, is often a nonlinear process and as
+    such involves Newton iterations. The ``locate`` function facilitates this
+    search process and produces a :class:`nutils.sample.Sample` instance that
+    can be used for the subsequent evaluation of any function in the given
+    physical points.
+
+    Example:
+
+    >>> from . import mesh
+    >>> domain, geom = mesh.rectilinear([2,1])
+    >>> sample = domain.locate(geom, [[1.5, .5]])
+    >>> sample.eval(geom).tolist()
+    [[1.5, 0.5]]
+
+    Locate has a long list of arguments that can be used to steer the nonlinear
+    search process, but the default values should be fine for reasonably
+    standard situations.
+
+    Args
+    ----
+    geom : 1-dimensional :class:`nutils.function.Array`
+        Geometry function of length ``ndims``.
+    coords : 2-dimensional :class:`float` array
+        Array of coordinates with ``ndims`` columns.
+    ischeme : :class:`str` (default: "vertex")
+        Sample points used to determine bounding boxes.
+    scale : :class:`float` (default: 1)
+        Bounding box amplification factor, useful when element shapes are
+        distorted. Setting this to >1 can increase computational effort but is
+        otherwise harmless.
+    tol : :class:`float` (default: 1e-12)
+        Newton tolerance.
+    eps : :class:`float` (default: 0)
+        Epsilon radius around element within which a point is considered to be
+        inside.
+    maxiter : :class:`int` (default: 100)
+        Maximum allowed number of Newton iterations.
+    arguments : :class:`dict` (default: None)
+        Arguments for function evaluation.
+
+    Returns
+    -------
+    located : :class:`nutils.sample.Sample`
+    '''
+
     nprocs = min(config.nprocs, len(self))
     if arguments is None:
       arguments = {}
     if geom.ndim == 0:
       geom = geom[_]
-      points = points[...,_]
+      coords = coords[...,_]
     assert geom.shape == (self.ndims,)
-    points = numpy.asarray(points, dtype=float)
-    assert points.ndim == 2 and points.shape[1] == self.ndims
+    coords = numpy.asarray(coords, dtype=float)
+    assert coords.ndim == 2 and coords.shape[1] == self.ndims
     vertices = self.elem_eval(geom, ischeme=ischeme, separate=True, arguments=arguments)
     bboxes = numpy.array([numpy.mean(v,axis=0) * (1-scale) + numpy.array([numpy.min(v,axis=0), numpy.max(v,axis=0)]) * scale
       for v in vertices]) # nelems x {min,max} x ndims
     vref = element.getsimplex(0)
-    ielems = parallel.shempty(len(points), dtype=int)
-    xis = parallel.shempty((len(points),len(geom)), dtype=float)
-    for ipoint, point in parallel.pariter(log.enumerate('point', points), nprocs=nprocs):
-      ielemcandidates, = numpy.logical_and(numpy.greater_equal(point, bboxes[:,0,:]), numpy.less_equal(point, bboxes[:,1,:])).all(axis=-1).nonzero()
-      for ielem in sorted(ielemcandidates, key=lambda i: numpy.linalg.norm(bboxes[i].mean(0)-point)):
+    ielems = parallel.shempty(len(coords), dtype=int)
+    xis = parallel.shempty((len(coords),len(geom)), dtype=float)
+    for ipoint, coord in parallel.pariter(log.enumerate('point', coords), nprocs=nprocs):
+      ielemcandidates, = numpy.logical_and(numpy.greater_equal(coord, bboxes[:,0,:]), numpy.less_equal(coord, bboxes[:,1,:])).all(axis=-1).nonzero()
+      for ielem in sorted(ielemcandidates, key=lambda i: numpy.linalg.norm(bboxes[i].mean(0)-coord)):
         converged = False
         elem = self.elements[ielem]
         xi, w = elem.reference.getischeme('gauss1')
@@ -671,28 +588,31 @@ class Topology(types.Singleton):
         J = function.localgradient(geom, self.ndims)
         geom_J = function.Tuple((function.zero_argument_derivatives(geom), function.zero_argument_derivatives(J))).simplified
         for iiter in range(maxiter):
-          point_xi, J_xi = geom_J.eval(_transforms=(elem.transform, elem.opposite), _points=xi, **arguments)
-          err = numpy.linalg.norm(point - point_xi)
+          coord_xi, J_xi = geom_J.eval(_transforms=(elem.transform, elem.opposite), _points=xi, **arguments)
+          err = numpy.linalg.norm(coord - coord_xi)
           if err < tol:
             converged = True
             break
           if iiter and err > prev_err:
             break
           prev_err = err
-          xi += numpy.linalg.solve(J_xi, point - point_xi)
+          xi += numpy.linalg.solve(J_xi, coord - coord_xi)
         if converged and elem.reference.inside(xi[0], eps=eps):
           ielems[ipoint] = ielem
           xis[ipoint], = xi
           break
       else:
-        raise LocateError('failed to locate point: {}'.format(point))
-
-    pelems = []
-    for ielem, xi in zip(ielems, xis):
+        raise LocateError('failed to locate point: {}'.format(coord))
+    transforms = []
+    points_ = []
+    index = []
+    for ielem in numpy.unique(ielems):
       elem = self.elements[ielem]
-      trans = transform.Matrix(numpy.empty((len(xi), 0)), xi)
-      pelems.append(element.Element(vref, elem.transform + (trans,), elem.opposite and elem.opposite + (trans,)))
-    return UnstructuredTopology(0, pelems)
+      w, = numpy.equal(ielems, ielem).nonzero()
+      transforms.append((elem.transform, elem.opposite))
+      points_.append(points.CoordsPoints(xis[w]))
+      index.append(w)
+    return sample.Sample(transforms, points_, index)
 
   def supp(self, basis, mask=None):
     if mask is None:
@@ -1867,47 +1787,6 @@ class RefinedTopology(Topology):
             connectivity[offsets[jelem]+jchild][jchildedge] = offsets[ielem]+ichild
     return tuple(types.frozenarray(c, copy=False) for c in connectivity)
 
-class TrimmedTopologyItem(Topology):
-  'trimmed topology item'
-
-  __slots__ = 'basetopo', 'refdict'
-  __cache__ = 'elements',
-
-  @types.apply_annotations
-  def __init__(self, basetopo:stricttopology, refdict):
-    self.basetopo = basetopo
-    self.refdict = refdict
-    super().__init__(basetopo.ndims)
-
-  @property
-  def elements(self):
-    elements = []
-    for elem in self.basetopo:
-      ref = elem.reference & self.refdict[elem.transform]
-      if ref:
-        elements.append(element.Element(ref, elem.transform, elem.opposite))
-    return elements
-
-class TrimmedTopologyBoundaryItem(Topology):
-  'trimmed topology boundary item'
-
-  __slots__ = 'btopo', 'trimmed', 'othertopo'
-  __cache__ = 'elements',
-
-  @types.apply_annotations
-  def __init__(self, btopo:stricttopology, trimmed, othertopo):
-    self.btopo = btopo
-    self.trimmed = trimmed
-    self.othertopo = othertopo
-    super().__init__(btopo.ndims)
-
-  @property
-  def elements(self):
-    belems = [elem for elem in self.trimmed if elem.opposite in self.btopo.edict]
-    if self.othertopo:
-      belems.extend(self.othertopo)
-    return belems
-
 class HierarchicalTopology(Topology):
   'collection of nested topology elments'
 
@@ -2117,12 +1996,16 @@ class ProductTopology(Topology):
 
   @types.apply_annotations
   def __init__(self, topo1:stricttopology, topo2:stricttopology):
+    assert not isinstance(topo1, ProductTopology)
     self.topo1 = topo1
     self.topo2 = topo2
     super().__init__(topo1.ndims+topo2.ndims)
 
   def __len__(self):
     return len(self.topo1) * len(self.topo2)
+
+  def __mul__(self, other):
+    return ProductTopology(self.topo1, self.topo2 * other)
 
   @property
   def structure(self):
@@ -2151,12 +2034,7 @@ class ProductTopology(Topology):
       else self.topo1[item[:self.topo1.ndims]] * self.topo2[item[self.topo1.ndims:]]
 
   def basis(self, name, *args, **kwargs):
-    def _split(arg):
-      if isinstance(arg, (list,tuple)):
-        assert len(arg) == self.ndims
-        return arg[:self.topo1.ndims], arg[self.topo1.ndims:]
-      else:
-        return arg, arg
+    _split = lambda arg: (arg[0], arg[1:] if len(arg) > 2 else arg[1]) if isinstance(arg, (list,tuple)) else (arg, arg)
     splitargs = [_split(arg) for arg in args]
     splitkwargs = [(name,)+_split(arg) for name, arg in kwargs.items()]
     basis1, basis2 = function.bifurcate(
@@ -2489,105 +2367,6 @@ class MultipatchTopology(Topology):
     'refine'
 
     return MultipatchTopology(Patch(patch.topo.refined, patch.verts, patch.boundaries) for patch in self.patches)
-
-# INTEGRAL
-
-def identity(value):
-  return value
-
-class Integral(types.Singleton):
-  '''Postponed integral, used for derivative purposes'''
-
-  __slots__ = '_integrands', 'shape'
-
-  @types.apply_annotations
-  def __init__(self, integrands:types.frozendict[identity, function.simplified]):
-    self._integrands = integrands
-    shapes = {integrand.shape for integrand in self._integrands.values()}
-    assert len(shapes) == 1, 'incompatible shapes: {}'.format(' != '.join(str(shape) for shape in shapes))
-    self.shape, = shapes
-
-  def eval(self, **kwargs):
-    retval, = eval_integrals(self, **kwargs)
-    return retval
-
-  def derivative(self, target):
-    argshape = self._argshape(target)
-    arg = function.Argument(target, argshape)
-    seen = {}
-    return Integral([di, function.derivative(integrand, var=arg, seen=seen)] for di, integrand in self._integrands.items())
-
-  def replace(self, arguments):
-    return Integral([di, function.replace_arguments(integrand, arguments)] for di, integrand in self._integrands.items())
-
-  def contains(self, name):
-    try:
-      self._argshape(name)
-    except KeyError:
-      return False
-    else:
-      return True
-
-  def __add__(self, other):
-    if not isinstance(other, Integral):
-      return NotImplemented
-    assert self.shape == other.shape
-    integrands = self._integrands.copy()
-    for di, integrand in other._integrands.items():
-      try:
-        integrands[di] += integrand
-      except KeyError:
-        integrands[di] = integrand
-    return Integral(integrands.items())
-
-  def __neg__(self):
-    return Integral([di, -integrand] for di, integrand in self._integrands.items())
-
-  def __sub__(self, other):
-    return self + (-other)
-
-  def __mul__(self, other):
-    if not isinstance(other, numbers.Number):
-      return NotImplemented
-    return Integral([di, integrand * other] for di, integrand in self._integrands.items())
-
-  __rmul__ = __mul__
-
-  def __truediv__(self, other):
-    if not isinstance(other, numbers.Number):
-      return NotImplemented
-    return self.__mul__(1/other)
-
-  def _argshape(self, name):
-    assert isinstance(name, str)
-    shapes = {func.shape[:func.ndim-func._nderiv]
-      for func in function.Tuple(self._integrands.values()).dependencies
-        if isinstance(func, function.Argument) and func._name == name}
-    if not shapes:
-      raise KeyError(name)
-    assert len(shapes) == 1, 'inconsistent shapes for argument {!r}'.format(name)
-    shape, = shapes
-    return shape
-
-strictintegral = types.strict[Integral]
-
-@types.apply_annotations
-@cache.function
-def eval_integrals(*integrals: types.tuple[strictintegral], fcache=None, arguments:types.frozendict[types.strictstr,types.frozenarray]=None):
-  if fcache is None:
-    fcache = cache.WrapperCache()
-  gather = {}
-  for iint, integral in enumerate(integrals):
-    for di in integral._integrands:
-      gather.setdefault(di, []).append(iint)
-  retvals = [None] * len(integrals)
-  for (domain, ischeme), iints in gather.items():
-    for iint, retval in zip(iints, domain.integrate([integrals[iint]._integrands[domain, ischeme] for iint in iints], ischeme=ischeme, fcache=fcache, arguments=arguments)):
-      if retvals[iint] is None:
-        retvals[iint] = retval
-      else:
-        retvals[iint] += retval
-  return retvals
 
 # UTILITY FUNCTIONS
 

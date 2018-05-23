@@ -1,7 +1,8 @@
 #! /usr/bin/env python3
 
 from nutils import *
-import unittest
+import numpy, unittest
+from matplotlib import collections
 
 
 def main(
@@ -54,35 +55,21 @@ def main(
   # vizualize result
   ns = ns(lhs=lhs)
   if figures:
+    bezier = domain.sample('bezier', 5)
     vonmises = 'sqrt(stress_ij stress_ij - stress_ii stress_jj / 2)' @ ns
-    x, colors = domain.simplex.elem_eval([ns.x, vonmises], ischeme='bezier5', separate=True)
-    with plot.PyPlot('solution') as plt:
-      plt.mesh(x, colors, cmap='jet')
-      plt.colorbar()
+    x, colors = bezier.eval([ns.x, vonmises])
+    with export.mplfigure('solution') as fig:
+      ax = fig.add_subplot(111, aspect='equal')
+      ax.autoscale(enable=True, axis='both', tight=True)
+      im = ax.tripcolor(x[:,0], x[:,1], bezier.tri, colors, shading='gouraud', cmap='jet')
+      ax.add_collection(collections.LineCollection(x[bezier.hull], colors='k', linewidths=.5, alpha=.1))
+      fig.colorbar(im)
 
   # evaluate error
   err = numpy.sqrt(domain.integrate(['uerr_k uerr_k' @ ns, 'uerr_i,j uerr_i,j' @ ns], geometry=ns.x0, degree=max(degree,3)*2))
   log.user('errors: L2={:.2e}, H1={:.2e}'.format(*err))
 
   return err, cons, lhs
-
-
-def conv(degree=1, nrefine=4):
-
-  l2err, h1err = numpy.array([main(nelems=2**(1+irefine), degree=degree)[0] for irefine in log.range('refine', nrefine)]).T
-  h = .5**numpy.arange(nrefine)
-
-  with plot.PyPlot('convergence') as plt:
-    plt.subplot(211)
-    plt.loglog(h, l2err, 'k*--')
-    plt.slope_triangle(h, l2err)
-    plt.ylabel('L2 error')
-    plt.grid(True)
-    plt.subplot(212)
-    plt.loglog(h, h1err, 'k*--')
-    plt.slope_triangle(h, h1err)
-    plt.ylabel('H1 error')
-    plt.grid(True)
 
 
 class test(unittest.TestCase):
@@ -115,4 +102,4 @@ class test(unittest.TestCase):
 
 
 if __name__ == '__main__':
-  cli.choose(main, conv)
+  cli.run(main)

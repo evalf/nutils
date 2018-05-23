@@ -34,6 +34,7 @@ class BasePlot:
   def __init__ (self, name=None, ndigits=0, index=None):
     'constructor'
 
+    warnings.deprecation('plot is deprecated, use export instead (see examples)')
     self.name = name
     self.index = index
     self.ndigits = ndigits

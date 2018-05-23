@@ -1,16 +1,19 @@
 #! /usr/bin/env python3
 
 from nutils import *
-import unittest
+import numpy, unittest
+from matplotlib import collections, colors
 
 
 def makeplots(name, domain, ns):
-  from matplotlib import colors
-  X, energy = domain.simplex.elem_eval([ns.X, ns.energy], ischeme='bezier3', separate=True)
-  with plot.PyPlot(name, ndigits=0) as plt:
-    plt.mesh(X, energy, triangulate='bezier', cmap='jet', norm=colors.LogNorm())
-    plt.colorbar()
-    plt.axis('equal')
+  bezier = domain.sample('bezier', 5)
+  X, energy = bezier.eval([ns.X, ns.energy])
+  with export.mplfigure(name) as fig:
+    ax = fig.add_subplot(111, aspect='equal')
+    ax.autoscale(enable=True, axis='both', tight=True)
+    im = ax.tripcolor(X[:,0], X[:,1], bezier.tri, energy, shading='gouraud', cmap='jet', norm=colors.LogNorm())
+    ax.add_collection(collections.LineCollection(X[bezier.hull], colors='k', linewidths=.5, alpha=.1))
+    fig.colorbar(im)
 
 
 def main(

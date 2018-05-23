@@ -1,44 +1,47 @@
 #! /usr/bin/env python3
 
 from nutils import *
-import fractions, unittest
+import unittest
+from matplotlib import collections, patches
 
 
-class MakePlots( object ):
+class MakePlots:
 
-  def __init__( self, geom, exact, optimalrate ):
+  def __init__(self, geom, optimalrate, aoicenter, aoiarea, aoicircle):
     self.geom = geom
-    self.exact = exact
-    self.index = 0
     self.ndofs = []
     self.error_exact = []
     self.error_estimate = []
     self.optimalrate = optimalrate
+    if aoicircle:
+      self.aoipatch = patches.Circle
+      self.aoiargs = aoicenter, numpy.sqrt(aoiarea/numpy.pi)
+    else:
+      self.aoipatch = patches.Rectangle
+      self.aoiargs = numpy.array(aoicenter) - aoiarea**.5/2, aoiarea**.5, aoiarea**.5
+    self.index = 0
 
-  def __call__( self, domain, sol, ndofs, error_estimate ):
+  def __call__(self, domain, sol, ndofs, error_estimate, error_exact):
     self.index += 1
-
-    error_exact = domain['aoi'].integrate( self.exact - sol, geometry=self.geom, ischeme='gauss9' )
-    log.user( 'error estimate: %.2e (%.1f%% accurate)' % ( error_estimate, 100.*error_estimate/error_exact ) )
-
-    points, colors = domain.elem_eval( [ self.geom, sol ], ischeme='bezier9', separate=True )
-    aoi = domain['aoi'].boundary.elem_eval( self.geom, ischeme='bezier2', separate=True )
-    with plot.PyPlot( 'sol', index=self.index ) as plt:
-      plt.mesh( points, colors )
-      plt.colorbar()
-      plt.segments( aoi )
-
-    self.ndofs.append( ndofs )
-    self.error_exact.append( error_exact )
-    self.error_estimate.append( error_estimate )
-    with plot.PyPlot( 'conv', index=self.index ) as plt:
-      plt.loglog( self.ndofs, self.error_exact, 'k-^', label='exact' )
-      plt.loglog( self.ndofs, self.error_estimate, 'k--', label='estimate' )
-      plt.slope_marker( ndofs, min( error_exact, error_estimate ), slope=-self.optimalrate )
-      plt.legend( loc=3, frameon=False )
-      plt.grid()
-      plt.xlabel( 'degrees of freedom' )
-      plt.ylabel( 'error' )
+    bezier = domain.sample('bezier', 9)
+    x, colors = bezier.eval([self.geom, sol])
+    with export.mplfigure('sol{}'.format(self.index)) as fig:
+      ax = fig.add_subplot(111, aspect='equal')
+      im = ax.tripcolor(x[:,0], x[:,1], bezier.tri, colors, shading='gouraud', cmap='jet')
+      ax.add_collection(collections.LineCollection(x[bezier.hull], colors='k', linewidths=.1))
+      ax.add_patch(self.aoipatch(*self.aoiargs, facecolor='none', edgecolor='k', linewidth=1, linestyle='dashed'))
+      ax.autoscale(enable=True, axis='both', tight=True)
+      fig.colorbar(im)
+    self.ndofs.append(ndofs)
+    self.error_exact.append(error_exact)
+    self.error_estimate.append(error_estimate)
+    optimal = numpy.power(self.ndofs, -self.optimalrate, dtype=float)
+    with export.mplfigure('conv{}'.format(self.index)) as fig:
+      ax = fig.add_subplot(111, xlabel='degrees of freedom')
+      ax.loglog(self.ndofs, self.error_exact, '-', label='error')
+      ax.loglog(self.ndofs, self.error_estimate, '--', label='error estimate')
+      ax.loglog(self.ndofs, optimal / optimal[-1] * self.error_exact[-1], ':', label='optimal rate: {}'.format(round(self.optimalrate, 3)))
+      ax.legend(loc=3, frameon=False)
 
 
 def main(
@@ -51,55 +54,57 @@ def main(
   ):
 
   # construct domain
-  verts = numpy.linspace( -1, 1, 7 )
-  basetopo, geom = mesh.rectilinear( [verts,verts] )
-  aoi = basetopo.trim( .04 - ((geom+.5)**2).sum(-1), maxrefine=5 ) if circle else basetopo[1:2,1:2]
-  domain = ( basetopo.withboundary( outside=... )
-           - basetopo[3:,:3].withboundary( inside=... ) ).withsubdomain( aoi=aoi )
+  verts = numpy.linspace(-1, 1, 7)
+  basetopo, geom = mesh.rectilinear([verts, verts])
+  aoi = basetopo.trim(1/9/numpy.pi - ((geom+.5)**2).sum(-1), maxrefine=5) if circle else basetopo[1:2,1:2]
+  domain = (basetopo.withboundary(outside=...) - basetopo[3:,:3].withboundary(inside=...)).withsubdomain(aoi=aoi)
 
   # construct exact sulution (used for boundary conditions and error evaluation)
-  exact = ( geom**2 ).sum(-1)**(1./3) * function.sin( (2./3) * function.arctan2(-geom[1],-geom[0]) )
-  flux = exact.ngrad( geom )
+  exact = (geom**2).sum(-1)**(1./3) * function.sin((2/3) * function.arctan2(-geom[1], -geom[0]))
+  flux = exact.ngrad(geom)
 
   # sanity check
-  harmonicity = numpy.sqrt( domain.integrate( exact.laplace(geom)**2, geometry=geom, ischeme='gauss9' ) )
-  log.info( 'exact solution lsqr harmonicity:', harmonicity )
+  harmonicity = numpy.sqrt(domain.integrate(exact.laplace(geom)**2, geometry=geom, degree=9))
+  log.info('exact solution lsqr harmonicity:', harmonicity)
 
   # prepare plotting
-  makeplots = MakePlots( geom, exact, fractions.Fraction(2 if uniform else degree*3,3) ) if figures else lambda *args, **kwargs: None
+  makeplots = MakePlots(geom, 2/3 if uniform else degree, [-.5, -.5], 1/9, circle) if figures else lambda *args: None
 
   # start adaptive refinement
-  for irefine in log.count( 'level', start=1 ):
+  for irefine in log.count('level', start=1):
 
     # construct, solve course domain primal/dual problem
-    basis = domain.basis( basistype, degree=degree )
-    laplace = function.outer( basis.grad(geom) ).sum(-1)
-    matrix = domain.integrate( laplace, geometry=geom, ischeme='gauss5' )
-    rhsprimal = domain.boundary['inside'].integrate( basis * flux, geometry=geom, ischeme='gauss99' )
-    rhsdual = domain['aoi'].integrate( basis, geometry=geom, ischeme='gauss5' )
-    cons = domain.boundary['outside'].project( exact, ischeme='gauss9', geometry=geom, onto=basis )
-    lhsprimal = matrix.solve( rhsprimal, constrain=cons )
-    lhsdual = matrix.solve( rhsdual, constrain=cons&0 )
-    primal = basis.dot( lhsprimal )
-    dual = basis.dot( lhsdual )
+    basis = domain.basis(basistype, degree=degree)
+    laplace = function.outer(basis.grad(geom)).sum(-1)
+    matrix = domain.integrate(laplace, geometry=geom, degree=5)
+    rhsprimal = domain.boundary['inside'].integrate(basis * flux, geometry=geom, degree=99)
+    rhsdual = domain['aoi'].integrate(basis, geometry=geom, degree=5)
+    cons = domain.boundary['outside'].project(exact, degree=9, geometry=geom, onto=basis)
+    lhsprimal = matrix.solve(rhsprimal, constrain=cons)
+    lhsdual = matrix.solve(rhsdual, constrain=cons&0)
+    primal = basis.dot(lhsprimal)
+    dual = basis.dot(lhsdual)
 
     # construct, solve refined domain primal/dual problem
     finedomain = domain.refined
-    finebasis = finedomain.basis( basistype, degree=degree )
-    finelaplace = function.outer( finebasis.grad(geom) ).sum(-1)
-    finematrix = finedomain.integrate( finelaplace, geometry=geom, ischeme='gauss5' )
-    finerhsdual = finedomain['aoi'].integrate( finebasis, geometry=geom, ischeme='gauss5' )
-    finecons = finedomain.boundary['outside'].project( 0, ischeme='gauss5', geometry=geom, onto=finebasis )
-    finelhsdual = finematrix.solve( finerhsdual, constrain=finecons )
+    finebasis = finedomain.basis(basistype, degree=degree)
+    finelaplace = function.outer(finebasis.grad(geom)).sum(-1)
+    finematrix = finedomain.integrate(finelaplace, geometry=geom, degree=5)
+    finerhsdual = finedomain['aoi'].integrate(finebasis, geometry=geom, degree=5)
+    finecons = finedomain.boundary['outside'].project(0, degree=5, geometry=geom, onto=finebasis)
+    finelhsdual = finematrix.solve(finerhsdual, constrain=finecons)
 
     # evaluate error estimate
-    dlhsdual = finelhsdual - finedomain.project( dual, onto=finebasis, geometry=geom, ischeme='gauss5' )
+    dlhsdual = finelhsdual - finedomain.project(dual, onto=finebasis, geometry=geom, degree=5)
     ddualw = finebasis * dlhsdual
-    error_est_w = finedomain.boundary['inside'].integrate( ddualw * flux, geometry=geom, ischeme='gauss99' )
-    error_est_w -= finedomain.integrate( ( ddualw.grad(geom) * primal.grad(geom) ).sum(-1), geometry=geom, ischeme='gauss5' )
+    error_est_w = finedomain.boundary['inside'].integrate(ddualw * flux, geometry=geom, degree=99)
+    error_est_w -= finedomain.integrate((ddualw.grad(geom) * primal.grad(geom) ).sum(-1), geometry=geom, degree=5)
+    error_estimate = abs(error_est_w).sum()
+    error_exact = domain['aoi'].integrate(exact - primal, geometry=geom, degree=99)
+    log.user('error estimate: {:.2e} ({:.1f}% accurate)'.format(error_estimate, 100.*error_estimate/error_exact))
 
     # plot solution and error convergence
-    makeplots( domain, primal, len(lhsprimal), error_estimate=abs(error_est_w).sum() )
+    makeplots(domain, primal, len(lhsprimal), error_estimate, error_exact)
 
     if irefine >= nrefine:
       break
@@ -109,7 +114,7 @@ def main(
       domain = domain.refined
     else:
       mask = error_est_w**2 > numpy.mean(error_est_w**2)
-      domain = domain.refined_by( elem.transform[:-1] for elem in domain.refined.supp( finebasis, mask ) )
+      domain = domain.refined_by(elem.transform[:-1] for elem in domain.refined.supp(finebasis, mask))
 
   return lhsprimal, error_est_w
 
@@ -145,10 +150,10 @@ class test(unittest.TestCase):
     lhsprimal, error_est_w = main(degree=1, circle=True, uniform=False, basistype='std', nrefine=1, figures=False)
     numeric.assert_allclose64(lhsprimal, 'eNoBUACv/2s2sDVgNHPpoMtQypXJljbgNZM0RtRkyx3Ka'
       'snMNic25DSm0gnL1sk0yQk3gDaZNcHPYsp+yffIbMq1yR7JtciAyR/JxMh1yPfItch1yDrIoQ4s1w==')
-    numeric.assert_allclose64(error_est_w, 'eNpjYMAHJigyMFQrMDBslGBgCJVlYNCVgYhL3mt6FK9'
-      'S+njh/VMitbKtzwpl+F9OkYTI/bvFwNB+m4FhoTQDgwVQ7yI5iHj8vXq5dDXW+xPvKj6VVpR4ul5+t/h'
-      'kaYjcVmUGhmWqDAwTgepzgXY+kYWIz1SYISmsvOf+OVW9eyWqhx5ckw99ORHohi4VBobG+wwMdx+DVBU'
-      '+evxQRuG+XO/zPKB5W4D2KcszMCx+ApZ7rvPE6uXPpw6SLEA/LAPKrwRiBwlMvwIAHKQ+mQ==')
+    numeric.assert_allclose64(error_est_w, 'eNpjYMAHIhUZGFwUGBgqJBgYJGUZGD5IQ8QD7s15ZKL'
+      'S8/jW/SkilrL7nunJeL0MloTIqd9mYNgExGlAtb/lGRhS5SDiU+7lylmrCdw/edf76S2FoKcF8g3iIVD'
+      'zqpUZGHJUGRhCgHYZAO1cLgsRT1BIlLyu9P7+JNXUexaq/x/MlJ/4MkSGgcFPhYFh730GBoknIFWrHok'
+      '/eiC/RO7kcyOgeZVA+54D8X2w3OrnyU9KXxo/Y5E8Ic7AkAWUzwViFglMvwIAeXg9bw==')
 
 
 if __name__ == '__main__':

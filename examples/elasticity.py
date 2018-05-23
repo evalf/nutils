@@ -1,7 +1,8 @@
 #! /usr/bin/env python3
 
-from nutils import mesh, plot, cli, log, function, numeric, solver
+from nutils import mesh, util, cli, log, function, numeric, solver, export
 import numpy, unittest
+from matplotlib import collections
 
 
 def main(
@@ -42,10 +43,14 @@ def main(
 
   # plot solution
   if figures:
-    points, colors = domain.elem_eval([ns.x, ns.stress[0,1]], ischeme='bezier3', separate=True)
-    with plot.PyPlot('stress', ndigits=0) as plt:
-      plt.mesh(points, colors, tight=False)
-      plt.colorbar()
+    bezier = domain.sample('bezier', 3)
+    x, stress = bezier.eval([ns.x, ns.stress[0,1]])
+    with export.mplfigure('stress') as fig:
+      ax = fig.add_subplot(111, aspect='equal')
+      ax.autoscale(enable=True, axis='both', tight=True)
+      im = ax.tripcolor(x[:,0], x[:,1], bezier.tri, stress, shading='gouraud', cmap='jet')
+      ax.add_collection(collections.LineCollection(x[bezier.hull], colors='k', linewidths=.5, alpha=.1))
+      fig.colorbar(im)
 
   return lhs, cons
 

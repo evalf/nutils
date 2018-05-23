@@ -1,0 +1,4 @@
+Points
+======
+
+.. automodule:: nutils.points

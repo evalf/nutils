@@ -311,11 +311,15 @@ class _CacheMeta_property:
 
   _self = object()
 
-  def __init__(self, fget, cache_attr):
-    self.fget = fget
+  def __init__(self, prop, cache_attr):
+    assert isinstance(prop, property)
+    self.fget = prop.fget
     self.cache_attr = cache_attr
+    self.__doc__ = prop.__doc__
 
   def __get__(self, instance, owner):
+    if instance is None:
+      return self
     try:
       cached_value = getattr(instance, self.cache_attr)
     except AttributeError:
@@ -389,6 +393,7 @@ def _CacheMeta_method(func, cache_attr):
       return value
 
   wrapper.__name__ = orig_func.__name__
+  wrapper.__doc__ = orig_func.__doc__
   wrapper.__signature__ = signature
   return wrapper
 
@@ -497,7 +502,7 @@ class CacheMeta(abc.ABCMeta):
           raise TypeError('Attribute listed in __cache__ is undefined: {}'.format(attr))
         value = namespace[attr]
         if isinstance(value, property):
-          namespace[attr] = _CacheMeta_property(value.fget, cache_attr)
+          namespace[attr] = _CacheMeta_property(value, cache_attr)
         elif inspect.isfunction(value) and not inspect.isgeneratorfunction(value):
           namespace[attr] = _CacheMeta_method(value, cache_attr)
         else:
@@ -1125,10 +1130,8 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
   def full(shape, fill_value):
     return frozenarray(numpy.lib.stride_tricks.as_strided(fill_value, shape, [0]*len(shape)), copy=False)
 
-  _dtype_order = bool, int, float, complex
-
   def __new__(cls, base, dtype=None, copy=True):
-    allowdowncast = dtype not in (strictint, strictfloat)
+    isstrict = dtype in (strictint, strictfloat)
     if dtype is None:
       pass
     elif dtype == bool:
@@ -1145,10 +1148,11 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
       if dtype is None or dtype == base.dtype:
         return base
       base = base.__base
-    if not allowdowncast:
+    if isstrict:
       if not isinstance(base, numpy.ndarray):
         base = numpy.array(base)
-      if cls._dtype_order.index(base.dtype) > cls._dtype_order.index(dtype):
+        copy = False
+      if base.dtype == complex or base.dtype == float and dtype == int:
         raise ValueError('downcasting {!r} to {!r} is forbidden'.format(base.dtype, dtype))
     self = object.__new__(cls)
     self.__base = numpy.array(base, dtype=dtype) if copy or not isinstance(base, numpy.ndarray) or dtype and dtype != base.dtype else base

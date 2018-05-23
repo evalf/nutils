@@ -1,43 +1,47 @@
 #! /usr/bin/env python3
 
-from nutils import mesh, util, cli, log, function, plot, numeric, solver, _
+from nutils import mesh, util, cli, log, function, numeric, solver, export
 import numpy, unittest
+from matplotlib import collections, patches, ticker
 
 
 class MakePlots:
 
   def __init__(self, domain, ns, timestep, rotation, bbox=((-2,6),(-3,3))):
     self.bbox = numpy.asarray(bbox)
-    self.plotdomain = domain.select(function.min(*(ns.x-self.bbox[:,0])*(self.bbox[:,1]-ns.x)), 'bezier3')
     self.ns = ns
-    self.every = .01
+    self.locator = ticker.MultipleLocator(.01)
     self.index = 0
     self.timestep = timestep
     self.rotation = rotation
     self.spacing = .075
-    self.xy = util.regularize(self.bbox, self.spacing)
-    x = domain.elem_eval(ns.x, ischeme='bezier5', separate=True)
-    inflow = domain.boundary['inflow'].elem_eval(ns.x, ischeme='bezier5', separate=True)
-    with plot.PyPlot('mesh', ndigits=0) as plt:
-      plt.mesh(x)
-      plt.rectangle(self.bbox[:,0], *(self.bbox[:,1] - self.bbox[:,0]), ec='green')
-      plt.segments(inflow, colors='red')
+    self.xgrd = util.regularize(self.bbox, self.spacing)
+    bezier = domain.sample('bezier', 5)
+    x = bezier.eval(ns.x)
+    inflow = domain.boundary['inflow'].sample('bezier', 5)
+    xin = inflow.eval(ns.x)
+    with export.mplfigure('mesh') as fig:
+      ax = fig.add_subplot(111, aspect='equal')
+      ax.add_collection(collections.LineCollection(x[bezier.hull], colors='k', linewidths=.1))
+      ax.add_patch(patches.Rectangle(self.bbox[:,0], *(self.bbox[:,1] - self.bbox[:,0]), fc='none', ec='green'))
+      ax.add_collection(collections.LineCollection(xin[inflow.tri], colors='r', linewidths=1))
+      ax.autoscale(enable=True, axis='both', tight=True)
+    self.bezier = bezier.subset((x > self.bbox[:,0]).all(axis=1) & (x < self.bbox[:,1]).all(axis=1))
+    self.interpolate = util.tri_interpolator(self.bezier.tri, self.bezier.eval(ns.x), mergetol=1e-5)
 
-  def __call__(self, lhs):
+  def __call__(self, **arguments):
     angle = self.index * self.timestep * self.rotation
-    ns = self.ns(lhs=lhs)
-    x, u, normu, p = self.plotdomain.elem_eval([ns.x, ns.u, function.norm2(ns.u), ns.p], ischeme='bezier9', separate=True)
-    with plot.PyPlot('flow', index=self.index) as plt:
-      plt.axes([0,0,1,1], yticks=[], xticks=[], frame_on=False)
-      tri = plt.mesh(x, normu, mergetol=1e-5, cmap='jet')
-      plt.clim(0, 1.5)
-      plt.tricontour(tri, p, every=self.every, cmap='gray', linestyles='solid', alpha=.8)
-      uv = plot.interpolate(tri, self.xy, u)
-      plt.vectors(self.xy, uv, zorder=9, pivot='mid', stems=False)
-      plt.plot(0, 0, 'k', marker=(3,2,angle*180/numpy.pi-90), markersize=20)
-      plt.xlim(self.bbox[0])
-      plt.ylim(self.bbox[1])
-    self.xy = util.regularize(self.bbox, self.spacing, self.xy + uv * self.timestep)
+    x, u, normu, p = self.bezier.eval([self.ns.x, self.ns.u, function.norm2(self.ns.u), self.ns.p], arguments=arguments)
+    ugrd = numeric.normalize(self.interpolate[self.xgrd](u), axis=1)
+    with export.mplfigure('flow{}'.format(self.index)) as fig:
+      ax = fig.add_axes([0,0,1,1], yticks=[], xticks=[], frame_on=False, xlim=self.bbox[0], ylim=self.bbox[1])
+      im = ax.tripcolor(x[:,0], x[:,1], self.bezier.tri, normu, shading='gouraud', cmap='jet')
+      im.set_clim(0, 1.5)
+      ax.add_collection(collections.LineCollection(x[self.bezier.hull], colors='k', linewidths=.5, alpha=.1))
+      ax.tricontour(x[:,0], x[:,1], self.bezier.tri, p, locator=self.locator, cmap='gray', linestyles='solid')
+      ax.quiver(self.xgrd[:,0], self.xgrd[:,1], ugrd[:,0], ugrd[:,1], angles='xy', width=1e-3, headwidth=3e3, headlength=5e3, headaxislength=2e3, zorder=9)
+      ax.plot(0, 0, 'k', marker=(3,2,angle*180/numpy.pi-90), markersize=20)
+    self.xgrd = util.regularize(self.bbox, self.spacing, self.xgrd + ugrd * self.timestep)
     self.index += 1
 
 
@@ -77,8 +81,8 @@ def main(
   J = ns.x.grad(x0)
   detJ = function.determinant(J)
   ns.unbasis, ns.utbasis, ns.pbasis = function.chain([ # compatible spaces using piola transformation
-    domain.basis('spline', degree=(degree+1,degree), removedofs=((0,),None))[:,_] * J[:,0] / detJ,
-    domain.basis('spline', degree=(degree,degree+1))[:,_] * J[:,1] / detJ,
+    domain.basis('spline', degree=(degree+1,degree), removedofs=((0,),None))[:,numpy.newaxis] * J[:,0] / detJ,
+    domain.basis('spline', degree=(degree,degree+1))[:,numpy.newaxis] * J[:,1] / detJ,
     domain.basis('spline', degree=degree) / detJ,
   ])
   ns.ubasis_ni = 'unbasis_ni + utbasis_ni'
@@ -105,9 +109,9 @@ def main(
 
   # solve unsteady navier-stokes equations, starting from stationary oseen flow
   lhs0 = solver.solve_linear('lhs', res+oseen, constrain=cons)
-  makeplots = MakePlots(domain, ns, timestep=timestep, rotation=rotation) if figures else lambda *args: None
+  makeplots = MakePlots(domain, ns, timestep=timestep, rotation=rotation) if figures else lambda **args: None
   for istep, lhs in log.enumerate('timestep', solver.impliciteuler('lhs', residual=res+convec, inertia=inertia, lhs0=lhs0, timestep=timestep, constrain=cons, newtontol=1e-10)):
-    makeplots(lhs)
+    makeplots(lhs=lhs)
     if istep * timestep >= tmax:
       break
 

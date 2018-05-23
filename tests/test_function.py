@@ -270,7 +270,10 @@ class check(TestCase):
       f = self.op(*(*self.args[:iarg], (x*self.basis).sum(-1), *self.args[iarg+1:]))
       fx0, fx1, Jx0 = self.domain.elem_eval([f, function.replace_arguments(f, dict(x=x+dx)),function.derivative(f, x)], ischeme='gauss1', arguments=dict(x=x0))
       fx1approx = fx0 + numeric.contract(Jx0, dx, range(Jx0.ndim-dx.ndim, Jx0.ndim))
-      self.assertArrayAlmostEqual(fx1approx, fx1, decimal=12)
+      if f.dtype in (int, bool):
+        self.assertEqual(fx1approx.tolist(), fx1.tolist())
+      else:
+        self.assertArrayAlmostEqual(fx1approx, fx1, decimal=12)
 
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_gradient(self):

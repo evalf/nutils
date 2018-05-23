@@ -33,3 +33,6 @@ What follows is an automatically generated API reference.
    library/solver
    library/transform
    library/warnings
+   library/points
+   library/sample
+   library/export

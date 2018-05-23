@@ -1,22 +1,31 @@
 #! /usr/bin/python3
 
-from nutils import mesh, cli, log, function, plot, numeric, solver, _
+from nutils import mesh, cli, log, function, plot, numeric, solver, util, export
 import numpy, unittest
+from matplotlib import collections
 
 
 class MakePlots:
 
-  def __init__(self, domain):
-    self.domain = domain
+  def __init__(self, domain, ns):
+    self.sample = domain.sample('bezier', 7)
+    self.ns = ns
     self.index = 0
 
-  def __call__(self, ns):
+  def __call__(self, **arguments):
     self.index += 1
-    xp, up = self.domain.elem_eval([ns.x, ns.u], ischeme='bezier7', separate=True)
-    with plot.PyPlot('solution', index=self.index) as plt:
-      plt.mesh(xp, up)
-      plt.clim(0, 1)
-      plt.colorbar()
+    x, u = self.sample.eval([self.ns.x, self.ns.u], arguments=arguments)
+    with export.mplfigure('solution{}'.format(self.index)) as fig:
+      ax = fig.add_subplot(111)
+      if self.sample.ndims == 1:
+        ax.add_collection(collections.LineCollection(numpy.array([x[:,0], u]).T[self.sample.tri], colors='k'))
+      elif self.sample.ndims == 2:
+        ax.set_aspect('equal')
+        im = ax.tripcolor(x[:,0], x[:,1], self.sample.tri, u, shading='gouraud', cmap='jet')
+        ax.add_collection(collections.LineCollection(x[self.sample.hull], colors='k', linewidths=.5, alpha=.1))
+        fig.colorbar(im)
+      ax.autoscale(axis='x', tight=True)
+      ax.autoscale(axis='y', tight=self.sample.ndims>1)
 
 
 def main(
@@ -29,29 +38,32 @@ def main(
     figures: 'create figures' = True,
  ):
 
-  # construct mesh, basis
-  ns = function.Namespace()
-  domain, ns.x = mesh.rectilinear([numpy.linspace(0,1,nelems+1)]*ndims, periodic=range(ndims))
-  ns.basis = domain.basis('discont', degree=degree)
-  ns.u = 'basis_n ?lhs_n'
-
-  # construct initial condition (centered gaussian)
-  lhs0 = domain.project('exp(-?y_i ?y_i)(y_i = 5 (x_i - 0.5_i))' @ ns, onto=ns.basis, geometry=ns.x, degree=5)
+  # construct mesh
+  domain, geom = mesh.rectilinear([numpy.linspace(0,1,nelems+1)]*ndims, periodic=range(ndims))
 
   # prepare residual
+  ns = function.Namespace()
+  ns.x = geom
+  ns.basis = domain.basis('discont', degree=degree)
+  ns.u = 'basis_n ?lhs_n'
   ns.f = '.5 u^2'
   ns.C = 1
+
+  # construct residual and inertia vector
   res = domain.integral('-basis_n,0 f' @ ns, geometry=ns.x, degree=5)
   res += domain.interfaces.integral('-[basis_n] n_0 ({f} - .5 C [u] n_0)' @ ns, geometry=ns.x, degree=5)
   inertia = domain.integral('basis_n u' @ ns, geometry=ns.x, degree=5)
 
+  # construct initial condition (centered gaussian)
+  lhs0 = domain.project('exp(-?y_i ?y_i)(y_i = 5 (x_i - 0.5_i))' @ ns, onto=ns.basis, geometry=ns.x, degree=5)
+
   # prepare plotting
-  makeplots = MakePlots(domain) if figures else lambda ns: None
+  makeplots = MakePlots(domain, ns) if figures else lambda **args: None
 
   # start time stepping
   timestep = timescale/nelems
   for itime, lhs in log.enumerate('timestep', solver.impliciteuler('lhs', res, inertia, timestep, lhs0, newtontol=tol)):
-    makeplots(ns(lhs=lhs))
+    makeplots(lhs=lhs)
     if endtime and itime * timestep >= endtime:
       break
 

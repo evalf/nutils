@@ -124,6 +124,106 @@ def regularize(bbox, spacing, xy=numpy.empty((0,2))):
   newindex = numpy.array(numpy.unravel_index(vacant, coarsexy.shape)).T * 2 + index0 + 1
   return numpy.concatenate([newindex * spacing, xy[keep]], axis=0)
 
+def tri_merge(tri, x, mergetol=0):
+  '''Create connected triangulation by connecting (near) identical points.
+
+  Based on a set of coordinates ``x``, create a modified copy of ``tri`` with
+  any occurrence of ``j`` replaced by ``i`` if ``x[i]`` equals ``x[j]`` within
+  specified tolerance. The result is a triangulation that remains valid for any
+  associated data vector that follows the same equality relations.
+
+  Example:
+
+  >>> x = [0,0], [1,0], [0,1], [1,0], [1,1] # note: x[1] == x[3])
+  >>> tri = [0,1,2], [2,3,4]
+  >>> tri_merge(tri, x)
+  array([[0, 1, 2],
+         [2, 1, 4]])
+
+  Args
+  ----
+  x : :class:`float` array
+      Vertex coordinates.
+  tri : :class:`int` array
+      Triangulation.
+  mergetol : :class:`float` (optional, default 0)
+      Distance within which two points are considered equal. If mergetol == 0
+      then points are considered equal if and only if their coordinates are
+      identical. If mergetol > 0 (required scipy) then points are considered
+      equal if they are within euclidian distance < mergetol. If mergetol < 0
+      then tri is returned unchanged.
+
+  Returns
+  -------
+  merged_tri : :class:`int` array
+  '''
+
+  tri = numpy.asarray(tri)
+  x = numpy.asarray(x)
+  assert tri.dtype == int
+  assert x.ndim == tri.ndim == 2
+  assert tri.shape[1] == x.shape[1] + 1
+  if mergetol < 0:
+    return tri
+  if mergetol == 0:
+    order = numpy.lexsort(x.T)
+    keep = numpy.concatenate([[True], numpy.diff(x[order], axis=0).any(axis=1)])
+    renumber = numpy.empty(len(x), dtype=int)
+    renumber[order] = order[keep][keep.cumsum()-1]
+  else:
+    import scipy.spatial
+    renumber = numpy.arange(len(x))
+    for i, j in sorted(scipy.spatial.cKDTree(x).query_pairs(mergetol)):
+      assert i < j
+      renumber[j] = renumber[i]
+  return renumber[tri]
+
+class tri_interpolator:
+  '''Interpolate function values defined in triangulation vertices.
+
+  Convenience object that implements 2D interpolation on top of matplotlib's
+  triangulation routines. Unlike matplotlib's own ``LinearTriInterpolator``,
+  the ``tri_interpolator`` allows for interpolation of multi-dimensional
+  arrays, as well as repeated interpolations of different vertex values.
+  
+  The arguments are identical to :func:`tri_merge`.
+
+  After instantiation of the interpolator object, interpolation coordinates are
+  specified via the object's getitem operator. The resulting callable performs
+  the interpolation:
+
+  >>> trix = [0,0], [1,0], [0,1], [1,1] # vertex coordinates
+  >>> triu = 0, 0, 10, 0 # vertex values
+  >>> interpolate = tri_interpolator([[0,1,2],[1,3,2]], trix)
+  >>> x = [.1,.1], [.1,.9], [.9,.9] # interpolation coordinates
+  >>> u = interpolate[x](triu) # interpolated values
+  '''
+
+  def __init__(self, tri, x, mergetol=0):
+    x = numpy.asarray(x)
+    assert x.ndim == 2
+    if x.shape[1] != 2:
+      raise NotImplementedError('only 2D interpolation is supported for now')
+    import matplotlib.tri
+    self.mpltri = matplotlib.tri.Triangulation(x[:,0], x[:,1], tri_merge(tri, x, mergetol))
+  def __getitem__(self, x):
+    x = numpy.asarray(x)
+    assert x.shape[-1] == 2
+    itri = self.mpltri.get_trifinder()(x[...,0].ravel(), x[...,1].ravel())
+    inside = itri != -1
+    itri = itri[inside]
+    plane_coords = numpy.concatenate([x.reshape(-1, 2)[inside], numpy.ones([len(itri), 1])], axis=1)
+    def interpolate(vtri):
+      vtri = numpy.asarray(vtri)
+      assert vtri.shape[0] == len(self.mpltri.x)
+      vx = numpy.empty(x.shape[:-1] + vtri.shape[1:])
+      vx[...] = numpy.nan
+      for vx_items, vtri_items in zip(vx.reshape(len(inside), -1).T, vtri.reshape(len(vtri), -1).T):
+        plane_coeffs = self.mpltri.calculate_plane_coefficients(vtri_items)
+        vx_items[inside] = numeric.contract(plane_coords, plane_coeffs[itri], axis=1)
+      return vx
+    return interpolate
+
 def obj2str(obj):
   '''compact, lossy string representation of arbitrary object'''
   return '['+','.join(obj2str(item) for item in obj)+']' if isinstance(obj, collections.abc.Iterable) \
@@ -169,5 +269,51 @@ def single_or_multiple(f):
       retvals, = retvals
     return retvals
   return wrapped
+
+def positional_only(*names, keep_varpositional=False):
+  '''Add var-positional arguments to function signature.
+
+  Python has no explicit syntax for defining positional-only parameters, but
+  the effect can be achieved by using a var-positional argument and unpacking
+  it inside the function body. The :func:`positional_only` decorator adds a
+  check for the number of positional arguments provided, and updates the
+  function signature to reflect this design. It requires that the first
+  argument is var-positional, precluding positional-or-keyword arguments.
+
+  Example:
+
+  >>> @positional_only('x')
+  ... def f(*args, **kwargs):
+  ...   x, = args
+  >>> inspect.signature(f)
+  <Signature (x, /, **kwargs)>
+
+  >>> @positional_only('x', keep_varpositional=True)
+  ... def f(*args, **kwargs):
+  ...   x, *args = args
+  >>> inspect.signature(f)
+  <Signature (x, /, *args, **kwargs)>
+
+  Args
+  ----
+  names : variable argument list of :class:`str`
+      Names of the positional-only arguments, in order.
+  keep_varpositional : :class:`bool` (default: False)
+      If True, retain the var_positional argument.
+  '''
+
+  def wrapper(f):
+    signature = inspect.signature(f)
+    parameters = list(signature.parameters.values())
+    assert parameters[0].kind == inspect.Parameter.VAR_POSITIONAL
+    parameters[:1-keep_varpositional] = [inspect.Parameter(name, inspect.Parameter.POSITIONAL_ONLY) for name in names]
+    @functools.wraps(f)
+    def wrapped(*args, **kwargs):
+      if len(args) < len(names) or not keep_varpositional and len(args) > len(names):
+        raise TypeError('expected {} {} positional arguments, got {}'.format('at least' if keep_varpositional else 'exactly', len(names), len(args)))
+      return f(*args, **kwargs)
+    wrapped.__signature__ = signature.replace(parameters=parameters)
+    return wrapped
+  return wrapper
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

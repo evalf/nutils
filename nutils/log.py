@@ -66,7 +66,7 @@ class Log( metaclass=abc.ABCMeta ):
     del self._old_log
 
   @abc.abstractmethod
-  def context( self, title ):
+  def context(self, title, mayskip=False):
     '''Return a context manager that adds a contextual layer named ``title``.
 
     .. Note:: This function is abstract.
@@ -94,18 +94,18 @@ class ContextLog( Log ):
     self._context = []
     super().__init__()
 
-  def _push_context( self, title ):
-    self._context.append( title )
+  def _push_context(self, title, mayskip):
+    self._context.append(title)
 
   def _pop_context( self ):
     self._context.pop()
 
   @contextlib.contextmanager
-  def context( self, title ):
+  def context(self, title, mayskip=False):
     '''Return a context manager that adds a contextual layer named ``title``.
 
     The list of currently active contexts is stored in :attr:`_context`.'''
-    self._push_context( title )
+    self._push_context(title, mayskip)
     try:
       yield
     finally:
@@ -228,13 +228,13 @@ class RichOutputLog( StdoutLog ):
     else:
       return '\033[K\033[1;30m{}\033[{};3{}m{}\033[0m'.format( string[:n], boldid, colorid, string[n:] )
 
-  def _push_context( self, title ):
-    super()._push_context( title )
+  def _push_context(self, title, mayskip):
+    super()._push_context(title, mayskip)
     from . import parallel
     if parallel.procid:
       return
     t = time.time()
-    if t >= self._progressupdate:
+    if not mayskip or t >= self._progressupdate:
       self._progressupdate = t + self._progressinterval
       print(self._mkstr('progress', None), end='\r', file=self.stream)
 
@@ -396,8 +396,8 @@ class IndentLog( HtmlInsertAnchor, ContextTreeLog ):
       self._print_progress( level, text )
       self._progressupdate = 0
 
-  def _push_context( self, title ):
-    super()._push_context( title )
+  def _push_context(self, title, mayskip):
+    super()._push_context(title, mayskip)
     if not self._progressfile:
       return
     from . import parallel
@@ -436,10 +436,10 @@ class TeeLog( Log ):
     self._stack.__exit__( *exc_info )
 
   @contextlib.contextmanager
-  def context( self, title ):
+  def context(self, title, mayskip=False):
     with contextlib.ExitStack() as stack:
       for log in self.logs:
-        stack.enter_context( log.context( title ) )
+        stack.enter_context(log.context(title, mayskip))
       yield
 
   def write( self, level, text ):
@@ -490,11 +490,11 @@ class RecordLog(Log):
     super().__init__()
 
   @contextlib.contextmanager
-  def context(self, title):
+  def context(self, title, mayskip=False):
     self._contexts.append(title)
     # We don't append 'entercontext' here.  See `self.__init__`.
     try:
-      with self._old_log.context(title):
+      with self._old_log.context(title, mayskip):
         yield
     finally:
       self._contexts.pop()
@@ -563,7 +563,7 @@ def range( title, *args ):
 
   items = builtins.range(*args)
   for index, item in builtins.enumerate(items):
-    with _current_log.context('{} {} ({:.0f}%)'.format(title, item, index*100/len(items))):
+    with _current_log.context('{} {} ({:.0f}%)'.format(title, item, index*100/len(items)), mayskip=index):
       yield item
 
 def iter( title, iterable, length=None ):
@@ -576,7 +576,7 @@ def iter( title, iterable, length=None ):
     text = '{} {}'.format( title, index )
     if length:
       text += ' ({:.0f}%)'.format( 100 * index / length )
-    with _current_log.context( text ):
+    with _current_log.context(text, mayskip=index):
       try:
         yield next(it)
       except StopIteration:
@@ -596,8 +596,8 @@ def zip( title, *iterables ):
 def count( title, start=0, step=1 ):
   '''Progress logger identical to itertools.count'''
 
-  for item in itertools.count(start,step):
-    with _current_log.context( '{} {}'.format( title, item ) ):
+  for item in itertools.count(start, step):
+    with _current_log.context('{} {}'.format(title, item), mayskip=item!=start):
       yield item
 
 def title( f ): # decorator
@@ -621,8 +621,8 @@ def title( f ): # decorator
       return f( *args, **kwargs )
   return wrapped
 
-def context( title ):
-  return _current_log.context( title )
+def context(title, mayskip=False):
+  return _current_log.context(title, mayskip)
 
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

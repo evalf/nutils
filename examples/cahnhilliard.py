@@ -1,36 +1,36 @@
 #! /usr/bin/env python3
 
-from nutils import mesh, plot, cli, log, function, numeric, numeric, solver
+from nutils import mesh, util, cli, log, function, numeric, numeric, solver, sample, export
 import numpy, unittest
+from matplotlib import collections
 
 
-class MakePlots( object ):
+class MakePlots:
 
-  def __init__(self, domain, nsteps, namespace):
-    self.domain = domain
+  def __init__(self, namespace, sample, energy, nsteps):
     self.namespace = namespace
-    self.energies = numpy.empty((nsteps, 4))
+    self.sample = sample
+    self.energy = energy
+    self.energies = numpy.empty((nsteps+1, len(energy)))
     self.index = 0
 
-  def __call__(self, lhs):
-    ns = self.namespace(lhs=lhs)
-    self.energies[self.index,:2] = self.domain.integrate(['(c^2 - 1)^2 / 2 epsilon^2' @ ns, '.5 c_,k c_,k' @ ns], geometry=ns.x, degree=4)
-    self.energies[self.index,2] = self.domain.boundary.integrate('abs(ewall) + ewall c' @ ns, geometry=ns.x, degree=4)
-    self.energies[self.index,3] = self.energies[self.index,:3].sum()
-    x, c = self.domain.elem_eval([ns.x, ns.c], ischeme='bezier4', separate=True)
-    with plot.PyPlot('flow', index=self.index) as plt:
-      plt.axes(yticks=[], xticks=[])
-      plt.mesh(x, c)
-      plt.colorbar()
-      plt.clim(-1, 1)
-      plt.axes([.07,.05,.35,.25], yticks=[], xticks=[], axisbg='w').patch.set_alpha(.8)
-      for energy, name in zip(self.energies[:self.index+1].T, ['mixture','interface','wall','total']):
-        plt.plot(numpy.arange(len(energy))[::-1], energy[::-1], '-o', markevery=self.index+1, label=name)
-      plt.legend( numpoints=1, frameon=False, fontsize=8 )
-      plt.xlim(0, len(self.energies))
-      plt.ylim(0, self.energies[0,3])
-      plt.xlabel('time')
-      plt.ylabel('energy')
+  def __call__(self, **arguments):
+    self.energies[self.index] = sample.eval_integrals(*self.energy.values(), arguments=arguments)
+    x, c = self.sample.eval([self.namespace.x, self.namespace.c], arguments=arguments)
+    with export.mplfigure('flow{}'.format(self.index)) as fig:
+      ax = fig.add_subplot(111, yticks=[], xticks=[], aspect='equal')
+      im = ax.tripcolor(x[:,0], x[:,1], self.sample.tri, c, shading='gouraud', cmap='jet')
+      im.set_clim(-1, 1)
+      ax.autoscale(enable=True, axis='both', tight=True)
+      if self.sample.nelems <= 4096:
+        ax.add_collection(collections.LineCollection(x[self.sample.hull], colors='k', linewidths=.5, alpha=.1))
+      fig.colorbar(im)
+      box = fig.add_axes([.07,.05,.35,.25], yticks=[], xticks=[], xlim=(0, len(self.energies)), ylim=(0, self.energies[0].sum()), xlabel='time', ylabel='energy')
+      box.patch.set_alpha(.8)
+      for i, label in enumerate(self.energy):
+        box.plot(self.energies[:self.index+1,i], '-o', markevery=[self.index], label=label)
+      box.plot(self.energies[:self.index+1].sum(1), '-o', markevery=[self.index], label='total')
+      box.legend(numpoints=1, frameon=False, fontsize=8)
     self.index += 1
 
 
@@ -51,22 +51,16 @@ def main(
   elif epsilon < mineps:
     log.warning('epsilon under crititical threshold: {} < {}'.format(epsilon, mineps))
 
-  # create namespace
-  ns = function.Namespace()
-  ns.epsilon = epsilon
-  ns.ewall = .5 * numpy.cos( theta * numpy.pi / 180 )
-
   # construct mesh
   xnodes = ynodes = numpy.linspace(0,1,nelems+1)
-  domain, ns.x = mesh.rectilinear( [ xnodes, ynodes ] )
+  domain, geom = mesh.rectilinear([xnodes, ynodes])
 
-  # prepare bases
-  ns.cbasis, ns.mubasis = function.chain([
-    domain.basis('spline', degree=2),
-    domain.basis('spline', degree=2)
-  ])
-
-  # polulate namespace
+  # create namespace
+  ns = function.Namespace()
+  ns.x = geom
+  ns.epsilon = epsilon
+  ns.ewall = .5 * numpy.cos(theta * numpy.pi / 180)
+  ns.cbasis, ns.mubasis = function.chain([domain.basis('spline', degree=2)] * 2)
   ns.c = 'cbasis_n ?lhs_n'
   ns.c0 = 'cbasis_n ?lhs0_n'
   ns.mu = 'mubasis_n ?lhs_n'
@@ -84,7 +78,13 @@ def main(
     sqr = domain.integral('(c - cbubble1 - cbubble2 - 1)^2 + mu^2' @ ns, geometry=ns.x, degree=4)
     lhs0 = solver.optimize('lhs', sqr)
   else:
-    raise Exception( 'unknown init %r' % init )
+    raise Exception('unknown init {!r}'.format(init))
+
+  # construct energy breakdown
+  energy = {
+    'mixture': domain.integral('(c^2 - 1)^2 / 2 epsilon^2' @ ns, geometry=ns.x, degree=4),
+    'interfaces': domain.integral('.5 c_,k c_,k' @ ns, geometry=ns.x, degree=4),
+    'wall': domain.boundary.integral('abs(ewall) + ewall c' @ ns, geometry=ns.x, degree=4)}
 
   # construct residual
   res = domain.integral('epsilon^2 cbasis_n,k mu_,k + mubasis_n (mu + f) - mubasis_n,k c_,k' @ ns, geometry=ns.x, degree=4)
@@ -93,9 +93,9 @@ def main(
 
   # solve time dependent problem
   nsteps = numeric.round(maxtime/timestep)
-  makeplots = MakePlots(domain, nsteps, ns) if figures else lambda *args: None
+  makeplots = MakePlots(ns, domain.sample('bezier', 9), energy, nsteps) if figures else lambda **args: None
   for istep, lhs in log.enumerate('timestep', solver.impliciteuler('lhs', target0='lhs0', residual=res, inertia=inertia, timestep=timestep, lhs0=lhs0)):
-    makeplots(lhs)
+    makeplots(lhs=lhs)
     if istep == nsteps:
       break
 

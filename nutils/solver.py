@@ -21,7 +21,7 @@
 """
 The solver module defines solvers for problems of the kind ``res = 0`` or
 ``∂inertia/∂t + res = 0``, where ``res`` is a
-:class:`nutils.topology.Integral`.  To demonstrate this consider the following
+:class:`nutils.sample.Integral`.  To demonstrate this consider the following
 setup:
 
 >>> from nutils import mesh, function, solver
@@ -49,7 +49,7 @@ In addition to ``solve_linear`` the solver module defines ``newton`` and
 time dependent problems.
 """
 
-from . import function, cache, log, numeric, topology, types
+from . import function, cache, log, numeric, sample, types
 import numpy, itertools, functools, numbers, collections
 
 
@@ -61,14 +61,14 @@ class ModelError(Exception): pass
 
 @types.apply_annotations
 @cache.function
-def solve_linear(target:types.strictstr, residual:topology.strictintegral, constrain:types.frozenarray=None, *, arguments:argdict={}, solveargs:types.frozendict={}):
+def solve_linear(target:types.strictstr, residual:sample.strictintegral, constrain:types.frozenarray=None, *, arguments:argdict={}, solveargs:types.frozendict={}):
   '''solve linear problem
 
   Parameters
   ----------
   target : :class:`str`
       Name of the target: a :class:`nutils.function.Argument` in ``residual``.
-  residual : :class:`nutils.topology.Integral`
+  residual : :class:`nutils.sample.Integral`
       Residual integral, depends on ``target``
   constrain : :class:`numpy.ndarray` with dtype :class:`float`
       Defines the fixed entries of the coefficient vector
@@ -88,7 +88,7 @@ def solve_linear(target:types.strictstr, residual:topology.strictintegral, const
   assert target not in arguments, '`target` should not be defined in `arguments`'
   argshape = residual._argshape(target)
   arguments = collections.ChainMap(arguments, {target: numpy.zeros(argshape)})
-  res, jac = topology.eval_integrals(residual, jacobian, arguments=arguments)
+  res, jac = sample.eval_integrals(residual, jacobian, arguments=arguments)
   return jac.solve(-res, constrain=constrain, **solveargs)
 
 
@@ -171,7 +171,7 @@ class newton(RecursionWithSolve, length=1):
   ----------
   target : :class:`str`
       Name of the target: a :class:`nutils.function.Argument` in ``residual``.
-  residual : :class:`nutils.topology.Integral`
+  residual : :class:`nutils.sample.Integral`
   lhs0 : :class:`numpy.ndarray`
       Coefficient vector, starting point of the iterative procedure.
   constrain : :class:`numpy.ndarray` with dtype :class:`bool` or :class:`float`
@@ -204,7 +204,7 @@ class newton(RecursionWithSolve, length=1):
   '''
 
   @types.apply_annotations
-  def __init__(self, target:types.strictstr, residual:topology.strictintegral, jacobian:topology.strictintegral=None, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, nrelax:types.strictint=None, minrelax:types.strictfloat=.1, maxrelax:types.strictfloat=.9, rebound:types.strictfloat=2**.5, arguments:argdict={}, solveargs:types.frozendict={}):
+  def __init__(self, target:types.strictstr, residual:sample.strictintegral, jacobian:sample.strictintegral=None, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, nrelax:types.strictint=None, minrelax:types.strictfloat=.1, maxrelax:types.strictfloat=.9, rebound:types.strictfloat=2**.5, arguments:argdict={}, solveargs:types.frozendict={}):
     super().__init__()
 
     if target in arguments:
@@ -249,19 +249,17 @@ class newton(RecursionWithSolve, length=1):
       if history:
         return
       log.info('problem is linear')
-      res, jac = topology.eval_integrals(self.residual, jacobian, arguments=collections.ChainMap(self.arguments, {self.target: numpy.zeros(argshape)}))
+      res, jac = sample.eval_integrals(self.residual, jacobian, arguments=collections.ChainMap(self.arguments, {self.target: numpy.zeros(argshape)}))
       lhs = jac.solve(-res, lhs0=lhs0, constrain=constrain, **self.solveargs)
       yield lhs, 0, 1
       return
 
-    fcache = cache.WrapperCache()
-
     if history:
       (lhs, resnorm, relax), = history
-      res, jac = topology.eval_integrals(self.residual, jacobian, fcache=fcache, arguments=collections.ChainMap(self.arguments, {self.target: lhs}))
+      res, jac = sample.eval_integrals(self.residual, jacobian, arguments=collections.ChainMap(self.arguments, {self.target: lhs}))
     else:
       lhs = lhs0
-      res, jac = topology.eval_integrals(self.residual, jacobian, fcache=fcache, arguments=collections.ChainMap(self.arguments, {self.target: lhs}))
+      res, jac = sample.eval_integrals(self.residual, jacobian, arguments=collections.ChainMap(self.arguments, {self.target: lhs}))
       resnorm = numpy.linalg.norm(res[~constrain])
       relax = 1
       yield lhs, resnorm, relax
@@ -271,7 +269,7 @@ class newton(RecursionWithSolve, length=1):
       relax = min(relax * self.rebound, 1)
       for irelax in itertools.count():
         newlhs = lhs+relax*dlhs
-        res, jac = topology.eval_integrals(self.residual, jacobian, fcache=fcache, arguments=collections.ChainMap(self.arguments, {self.target: newlhs}))
+        res, jac = sample.eval_integrals(self.residual, jacobian, arguments=collections.ChainMap(self.arguments, {self.target: newlhs}))
         newresnorm = numpy.linalg.norm(res[~constrain])
         if irelax >= self.nrelax:
           if newresnorm > resnorm:
@@ -322,8 +320,8 @@ class pseudotime(RecursionWithSolve, length=1):
   ----------
   target : :class:`str`
       Name of the target: a :class:`nutils.function.Argument` in ``residual``.
-  residual : :class:`nutils.topology.Integral`
-  inertia : :class:`nutils.topology.Integral`
+  residual : :class:`nutils.sample.Integral`
+  inertia : :class:`nutils.sample.Integral`
   timestep : :class:`float`
       Initial time step, will scale up as residual decreases
   lhs0 : :class:`numpy.ndarray`
@@ -345,7 +343,7 @@ class pseudotime(RecursionWithSolve, length=1):
   '''
 
   @types.apply_annotations
-  def __init__(self, target:types.strictstr, residual:topology.strictintegral, inertia:topology.strictintegral, timestep:types.strictfloat, lhs0:types.frozenarray[types.strictfloat], residual0:topology.strictintegral=None, constrain:types.frozenarray=None, arguments:argdict={}, solveargs:types.frozendict={}):
+  def __init__(self, target:types.strictstr, residual:sample.strictintegral, inertia:sample.strictintegral, timestep:types.strictfloat, lhs0:types.frozenarray[types.strictfloat], residual0:sample.strictintegral=None, constrain:types.frozenarray=None, arguments:argdict={}, solveargs:types.frozendict={}):
     super().__init__()
 
     assert target not in arguments, '`target` should not be defined in `arguments`'
@@ -383,15 +381,13 @@ class pseudotime(RecursionWithSolve, length=1):
         constrain = ~numpy.isnan(constrain)
     constrain = types.frozenarray(constrain)
 
-    fcache = cache.WrapperCache()
-
     if history:
       (lhs, resnorm, thistimestep), = history
-      res0 = residual.eval(fcache=fcache, arguments=collections.ChainMap(self.arguments, {self.target: lhs0}))
+      res0 = residual.eval(arguments=collections.ChainMap(self.arguments, {self.target: lhs0}))
       resnorm0 = numpy.linalg.norm(res0[~constrain])
-      res, jac = topology.eval_integrals(residual, jacobian0+jacobiant/thistimestep, fcache=fcache, arguments=collections.ChainMap(self.arguments, {self.target: lhs}))
+      res, jac = sample.eval_integrals(residual, jacobian0+jacobiant/thistimestep, arguments=collections.ChainMap(self.arguments, {self.target: lhs}))
     else:
-      res, jac = topology.eval_integrals(residual, jacobian0+jacobiant/self.timestep, fcache=fcache, arguments=collections.ChainMap(self.arguments, {self.target: lhs0}))
+      res, jac = sample.eval_integrals(residual, jacobian0+jacobiant/self.timestep, arguments=collections.ChainMap(self.arguments, {self.target: lhs0}))
       lhs = lhs0
       resnorm = resnorm0 = numpy.linalg.norm(res[~constrain])
       yield lhs, resnorm, self.timestep
@@ -400,7 +396,7 @@ class pseudotime(RecursionWithSolve, length=1):
       lhs -= jac.solve(res, constrain=constrain, **self.solveargs)
       thistimestep = self.timestep * (resnorm0/resnorm)
       log.info('timestep: {:.0e}'.format(thistimestep))
-      res, jac = topology.eval_integrals(residual, jacobian0+jacobiant/thistimestep, fcache=fcache, arguments=collections.ChainMap(self.arguments, {self.target: lhs}))
+      res, jac = sample.eval_integrals(residual, jacobian0+jacobiant/thistimestep, arguments=collections.ChainMap(self.arguments, {self.target: lhs}))
       resnorm = numpy.linalg.norm(res[~constrain])
       yield lhs, resnorm, thistimestep
 
@@ -416,15 +412,15 @@ class thetamethod(RecursionWithSolve, length=1):
   ----------
   target : :class:`str`
       Name of the target: a :class:`nutils.function.Argument` in ``residual``.
-  residual : :class:`nutils.topology.Integral`
-  inertia : :class:`nutils.topology.Integral`
+  residual : :class:`nutils.sample.Integral`
+  inertia : :class:`nutils.sample.Integral`
   timestep : :class:`float`
       Initial time step, will scale up as residual decreases
   lhs0 : :class:`numpy.ndarray`
       Coefficient vector, starting point of the iterative procedure.
   theta : :class:`float`
       Theta value (theta=1 for implicit Euler, theta=0.5 for Crank-Nicolson)
-  residual0 : :class:`nutils.topology.Integral`
+  residual0 : :class:`nutils.sample.Integral`
       Optional additional residual component evaluated in previous timestep
   constrain : :class:`numpy.ndarray` with dtype :class:`bool` or :class:`float`
       Equal length to ``lhs0``, masks the free vector entries as ``False``
@@ -445,7 +441,7 @@ class thetamethod(RecursionWithSolve, length=1):
   '''
 
   @types.apply_annotations
-  def __init__(self, target:types.strictstr, residual:topology.strictintegral, inertia:topology.strictintegral, timestep:types.strictfloat, lhs0:types.frozenarray, theta:types.strictfloat, target0:types.strictstr='_thetamethod_target0', constrain:types.frozenarray=None, newtontol:types.strictfloat=1e-10, arguments:argdict={}, newtonargs:types.frozendict={}):
+  def __init__(self, target:types.strictstr, residual:sample.strictintegral, inertia:sample.strictintegral, timestep:types.strictfloat, lhs0:types.frozenarray, theta:types.strictfloat, target0:types.strictstr='_thetamethod_target0', constrain:types.frozenarray=None, newtontol:types.strictfloat=1e-10, arguments:argdict={}, newtonargs:types.frozendict={}):
     super().__init__()
 
     assert target != target0, '`target` should not be equal to `target0`'
@@ -481,14 +477,14 @@ cranknicolson = functools.partial(thetamethod, theta=0.5)
 @log.title
 @types.apply_annotations
 @cache.function
-def optimize(target:types.strictstr, functional:topology.strictintegral, droptol:types.strictfloat=None, lhs0:types.frozenarray=None, constrain:types.frozenarray=None, newtontol:types.strictfloat=None, *, arguments:argdict={}):
+def optimize(target:types.strictstr, functional:sample.strictintegral, droptol:types.strictfloat=None, lhs0:types.frozenarray=None, constrain:types.frozenarray=None, newtontol:types.strictfloat=None, *, arguments:argdict={}):
   '''find the minimizer of a given functional
 
   Parameters
   ----------
   target : :class:`str`
       Name of the target: a :class:`nutils.function.Argument` in ``residual``.
-  functional : scalar :class:`nutils.topology.Integral`
+  functional : scalar :class:`nutils.sample.Integral`
       The functional the should be minimized by varying target
   droptol : :class:`float`
       Threshold for leaving entries in the return value at NaN if they do not
@@ -526,7 +522,7 @@ def optimize(target:types.strictstr, functional:topology.strictintegral, droptol
       constrain = ~numpy.isnan(constrain)
   residual = functional.derivative(target)
   jacobian = residual.derivative(target)
-  f0, res, jac = topology.eval_integrals(functional, residual, jacobian, arguments=collections.ChainMap(arguments, {target: lhs0}))
+  f0, res, jac = sample.eval_integrals(functional, residual, jacobian, arguments=collections.ChainMap(arguments, {target: lhs0}))
   freezedofs = constrain if droptol is None else constrain | ~jac.rowsupp(droptol)
   log.info('optimizing for {}/{} degrees of freedom'.format(len(res)-freezedofs.sum(), len(res)))
   lhs = lhs0 - jac.solve(res, constrain=freezedofs) # residual(lhs0) + jacobian(lhs0) dlhs = 0
