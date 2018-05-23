@@ -24,6 +24,11 @@ class module(ContextTestCase):
     stack.enter_context(warnings.catch_warnings())
     warnings.simplefilter('ignore')
     stack.enter_context(nutils.config(log=stack.enter_context(DocTestLog())))
+    import numpy
+    printoptions = numpy.get_printoptions()
+    if 'legacy' in printoptions:
+      stack.callback(numpy.set_printoptions, **printoptions)
+      numpy.set_printoptions(legacy='1.13')
 
   def test(self):
     with DocTestLog():
