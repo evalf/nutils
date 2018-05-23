@@ -399,6 +399,7 @@ else:
         libtbb._ZN3tbb19task_scheduler_init10initializeEim(ctypes.byref(self.tbbhandle), ctypes.c_int(config.nprocs), ctypes.c_int(2))
       else:
         self.tbbhandle = None
+      return self
 
     def __exit__(self, etype, value, tb):
       if self.tbbhandle:
