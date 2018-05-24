@@ -185,13 +185,13 @@ def inv(A):
   try:
     Ainv = numpy.linalg.inv(A)
   except numpy.linalg.LinAlgError:
-    warnings.warn('not all functions evaluated successfully', RuntimeWarning)
+    warnings.warn('singular matrix', RuntimeWarning)
     Ainv = numpy.empty(A.shape, dtype=float)
     for index in numpy.ndindex(A.shape[:-2]):
       try:
         Ainv[index] = numpy.linalg.inv(A[index])
       except numpy.linalg.LinAlgError:
-        pass
+        Ainv[index] = numpy.nan
   return Ainv
 
 isarray = lambda a: isinstance(a, (numpy.ndarray, types.frozenarray))
