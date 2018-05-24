@@ -165,11 +165,7 @@ class Sample(types.Singleton):
           index[idim,s].reshape(w_intdata.shape)[...] = ii[si]
           si = si[:-1]
 
-    for func, (data,index) in zip(funcs, data_index):
-      retval = matrix.assemble(data, index, func.shape)
-      assert retval.shape == func.shape
-      log.debug('assembled {}({})'.format(retval.__class__.__name__, ','.join(str(n) for n in retval.shape)))
-      yield retval
+    return [matrix.assemble(data, index, func.shape) for func, (data,index) in log.zip('assembling', funcs, data_index)]
 
   def integral(self, func):
     '''Create Integral object for postponed integration.
