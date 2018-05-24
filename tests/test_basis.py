@@ -60,6 +60,24 @@ class structured(TestCase):
     basis = self.domain.basis('spline', degree=(2,1))
     self.assertEqual(len(basis), 4*4)
 
+  def test_knotvalues(self):
+    # test refinement of knotvalues[0] -> [0,1/2,1]
+    basis = self.domain.basis('spline', degree=2, knotvalues=[[0,1],[0,1/3,2/3,1]])
+
+  def test_knotmultiplicities(self):
+    # test refinement of knotmultiplicities[0] -> [3,1,3]
+    basis = self.domain.basis('spline', degree=2, knotmultiplicities=[[3,3],[3,1,1,3]])
+    self.assertEqual(len(basis), 4*5)
+    basis = self.domain.basis('spline', degree=2, knotmultiplicities=[[3,3],[3,2,1,3]])
+    self.assertEqual(len(basis), 4*6)
+
+  def test_continuity(self):
+    # test refinement of knotmultiplicities[0] -> [3,1,3]
+    basis = self.domain.basis('spline', degree=2, continuity=0)
+    self.assertEqual(len(basis), 5*7)
+    basis = self.domain.basis('spline', degree=2, continuity=0, knotmultiplicities=[[3,3],None])
+    self.assertEqual(len(basis), 5*7)
+
 structured(product=False)
 structured(product=True)
 
