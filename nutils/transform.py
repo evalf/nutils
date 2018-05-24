@@ -127,6 +127,17 @@ def linearfrom(chain, ndims):
 ## TRANSFORM ITEMS
 
 class TransformItem(types.Singleton):
+  '''Affine transformation.
+
+  Base class for transformations of the type ``A x + b``.
+
+  Args
+  ----
+  todims : :class:`int`
+      Dimension of the affine transformation domain.
+  fromdims : :class:`int`
+      Dimension of the affine transformation range.
+  '''
 
   __slots__ = 'todims', 'fromdims'
 

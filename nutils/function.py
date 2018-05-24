@@ -321,6 +321,10 @@ class Tuple(Evaluable):
 # TRANSFORMCHAIN
 
 class TransformChain(Evaluable):
+  '''Chain of affine transformations.
+
+  Evaluates to a tuple of :class:`nutils.transform.TransformItem` objects.
+  '''
 
   __slots__ = 'todims',
 
