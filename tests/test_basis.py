@@ -28,6 +28,43 @@ for ndims in range(1, 4):
 
 
 @parametrize
+class structured(TestCase):
+
+  def setUp(self):
+    if self.product:
+      self.domain, geom = mesh.rectilinear([2,3])
+    else:
+      domain1, geom1 = mesh.rectilinear([2])
+      domain2, geom2 = mesh.rectilinear([3])
+      self.domain = domain1 * domain2
+
+  def test_std_equalorder(self):
+    for p in range(1, 3):
+      basis = self.domain.basis('std', degree=p)
+      self.assertEqual(len(basis), (3+2*(p-1))*(4+3*(p-1)))
+
+  def test_spline_equalorder(self):
+    for p in range(1, 3):
+      basis = self.domain.basis('spline', degree=p)
+      self.assertEqual(len(basis), (2+p)*(3+p))
+
+  def test_std_mixedorder(self):
+    basis = self.domain.basis('std', degree=(1,2))
+    self.assertEqual(len(basis), 3*7)
+    basis = self.domain.basis('std', degree=(2,1))
+    self.assertEqual(len(basis), 5*4)
+
+  def test_spline_mixedorder(self):
+    basis = self.domain.basis('spline', degree=(1,2))
+    self.assertEqual(len(basis), 3*5)
+    basis = self.domain.basis('spline', degree=(2,1))
+    self.assertEqual(len(basis), 4*4)
+
+structured(product=False)
+structured(product=True)
+
+
+@parametrize
 class structured_line(TestCase):
 
   def setUp(self):

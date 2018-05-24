@@ -1378,8 +1378,8 @@ class StructuredTopology(Topology):
   def basis_spline(self, degree, knotvalues=None, knotmultiplicities=None, periodic=None, removedofs=None):
     'spline basis'
 
-    if removedofs == None:
-      removedofs = [None] * self.ndims
+    if removedofs is None or isinstance(removedofs[0], int):
+      removedofs = [removedofs] * self.ndims
     else:
       assert len(removedofs) == self.ndims
 
@@ -2034,7 +2034,11 @@ class ProductTopology(Topology):
       else self.topo1[item[:self.topo1.ndims]] * self.topo2[item[self.topo1.ndims:]]
 
   def basis(self, name, *args, **kwargs):
-    _split = lambda arg: (arg[0], arg[1:] if len(arg) > 2 else arg[1]) if isinstance(arg, (list,tuple)) else (arg, arg)
+    def _split(arg):
+      if not numpy.iterable(arg):
+        return arg, arg
+      assert len(arg) == self.ndims
+      return tuple(a[0] if all(ai == a[0] for ai in a[1:]) else a for a in (arg[:self.topo1.ndims], arg[self.topo1.ndims:]))
     splitargs = [_split(arg) for arg in args]
     splitkwargs = [(name,)+_split(arg) for name, arg in kwargs.items()]
     basis1, basis2 = function.bifurcate(
