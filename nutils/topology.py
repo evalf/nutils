@@ -187,10 +187,10 @@ class Topology(types.Singleton):
   def integrate_elementwise(self, funcs, *, asfunction=False, **kwargs):
     'element-wise integration'
 
-    ielem = self.basis('discont', degree=0)
-    funcs = [function.asarray(func) for func in funcs]
+    transforms, ielems = zip(*sorted((elem.transform, ielem) for ielem, elem in enumerate(self)))
+    ielem = function.get(ielems, iax=0, item=function.FindTransform(transforms, function.TRANS))
     with matrix.backend('numpy'):
-      retvals = self.integrate([ielem[(slice(None),)+(_,)*func.ndim] * func for func in funcs], **kwargs)
+      retvals = self.integrate([function.Inflate(function.asarray(func)[_], dofmap=ielem[_], length=len(self), axis=0) for func in funcs], **kwargs)
     retvals = [retval.export('dense') if len(retval.shape) == 2 else retval for retval in retvals]
     return [function.elemwise({elem.transform: array for elem, array in zip(self, retval)}, shape=retval.shape) for retval in retvals] if asfunction \
       else retvals
@@ -1268,7 +1268,7 @@ class StructuredTopology(Topology):
     assert len(itopos) == self.ndims
     return UnionTopology(itopos, names=['dir{}'.format(idim) for idim in range(self.ndims)])
 
-  def _basis_spline(self, degree, knotvalues=None, knotmultiplicities=None, periodic=None):
+  def _basis_spline(self, degree, knotvalues=None, knotmultiplicities=None, continuity=-1, periodic=None):
     'spline with structure information'
 
     if periodic is None:
@@ -1277,13 +1277,22 @@ class StructuredTopology(Topology):
     if numeric.isint(degree):
       degree = [degree]*self.ndims
 
-    assert len(degree)==self.ndims
+    assert len(degree) == self.ndims
 
-    if knotvalues is None:
-      knotvalues = [None]*self.ndims
+    if knotvalues is None or isinstance(knotvalues[0], (int,float)):
+      knotvalues = [knotvalues] * self.ndims
+    else:
+      assert len(knotvalues) == self.ndims
 
-    if knotmultiplicities is None:
-      knotmultiplicities = [None]*self.ndims
+    if knotmultiplicities is None or isinstance(knotmultiplicities[0], int):
+      knotmultiplicities = [knotmultiplicities] * self.ndims
+    else:
+      assert len(knotmultiplicities) == self.ndims
+
+    if not numpy.iterable(continuity):
+      continuity = [continuity] * self.ndims
+    else:
+      assert len(continuity) == self.ndims
 
     vertex_structure = numpy.array(0)
     stdelems = []
@@ -1295,21 +1304,37 @@ class StructuredTopology(Topology):
       n = self.shape[idim]
       isperiodic = idim in periodic
 
+      c = continuity[idim]
+      if c < 0:
+        c += p
+      assert 0 <= c < p
+
       k = knotvalues[idim]
       if k is None: #Defaults to uniform spacing
         k = numpy.arange(n+1)
       else:
-        k = numpy.asarray(k)
+        k = numpy.array(k)
+        while len(k) < n+1:
+          k_ = numpy.empty(len(k)*2-1)
+          k_[::2] = k
+          k_[1::2] = (k[:-1] + k[1:]) / 2
+          k = k_
+        assert len(k) == n+1, 'knot values do not match the topology size'
 
       m = knotmultiplicities[idim]
       if m is None: #Defaults to open spline without internal repetitions
-        m = numpy.array([p+1]+[1]*(n-1)+[p+1]) if not isperiodic else numpy.ones(n+1,dtype=int)
+        m = numpy.repeat(p-c, n+1)
+        if not isperiodic:
+          m[0] = m[-1] = p+1
       else:
-        m = numpy.array(m) #Make copy to prevent overwriting of data
-
-      assert min(m)>0 and max(m)<=p+1, 'Incorrect multiplicity encountered'
-      assert len(k)==len(m), 'Length mismatch between knots vector and knot multiplicities vector'
-      assert len(k)==n+1, 'Knot vector size does not match the topology size'
+        m = numpy.array(m)
+        assert min(m) >0 and max(m) <= p+1, 'incorrect multiplicity encountered'
+        while len(m) < n+1:
+          m_ = numpy.empty(len(m)*2-1, dtype=int)
+          m_[::2] = m
+          m_[1::2] = p-c
+          m = m_
+        assert len(m) == n+1, 'knot multiplicity do not match the topology size'
 
       if not isperiodic:
         nd = sum(m)-p-1
@@ -1375,15 +1400,15 @@ class StructuredTopology(Topology):
     dofmap = [types.frozenarray(vertex_structure[S].ravel(), copy=False) for S in itertools.product(*slices)]
     return coeffs, dofmap, dofshape
 
-  def basis_spline(self, degree, knotvalues=None, knotmultiplicities=None, periodic=None, removedofs=None):
+  def basis_spline(self, degree, removedofs=None, **kwargs):
     'spline basis'
 
-    if removedofs == None:
-      removedofs = [None] * self.ndims
+    if removedofs is None or isinstance(removedofs[0], int):
+      removedofs = [removedofs] * self.ndims
     else:
       assert len(removedofs) == self.ndims
 
-    coeffs, dofmap, dofshape = self._basis_spline(degree=degree, knotvalues=knotvalues, knotmultiplicities=knotmultiplicities, periodic=periodic)
+    coeffs, dofmap, dofshape = self._basis_spline(degree=degree, **kwargs)
     func = function.polyfunc(coeffs, dofmap, util.product(dofshape), (elem.transform for elem in self), issorted=False)
     if not any(removedofs):
       return func
@@ -2034,7 +2059,11 @@ class ProductTopology(Topology):
       else self.topo1[item[:self.topo1.ndims]] * self.topo2[item[self.topo1.ndims:]]
 
   def basis(self, name, *args, **kwargs):
-    _split = lambda arg: (arg[0], arg[1:] if len(arg) > 2 else arg[1]) if isinstance(arg, (list,tuple)) else (arg, arg)
+    def _split(arg):
+      if not numpy.iterable(arg):
+        return arg, arg
+      assert len(arg) == self.ndims
+      return tuple(a[0] if all(ai == a[0] for ai in a[1:]) else a for a in (arg[:self.topo1.ndims], arg[self.topo1.ndims:]))
     splitargs = [_split(arg) for arg in args]
     splitkwargs = [(name,)+_split(arg) for name, arg in kwargs.items()]
     basis1, basis2 = function.bifurcate(
