@@ -49,7 +49,7 @@ In addition to ``solve_linear`` the solver module defines ``newton`` and
 time dependent problems.
 """
 
-from . import function, cache, log, numeric, sample, types, util
+from . import function, cache, log, numeric, sample, types, util, matrix
 import numpy, itertools, functools, numbers, collections
 
 
@@ -305,6 +305,175 @@ class newton(RecursionWithSolve, length=1):
       yield numpy.array(lhs), types.attributes(resnorm=resnorm, relax=relax)
 
 
+class minimize(RecursionWithSolve, length=1):
+  '''iteratively minimize nonlinear functional by gradient descent
+
+  Generates targets such that residual approaches 0 using Newton procedure with
+  line search based on the energy. Suitable to be used inside ``solve``.
+
+  An optimal relaxation value is computed based on the following assumption::
+
+      energy(lhs + r * dlhs) = A + B * r + C * r^2 + D * r^3 + E * r^4 + F * r^5
+
+  where ``A``, ``B``, ``C``, ``D``, ``E`` and ``F`` are determined based on the
+  current and new energy, residual and tangent. If this value is found to be
+  close to 1 (``> maxrelax``) then the newton update is accepted.
+
+  Parameters
+  ----------
+  target : :class:`str`
+      Name of the target: a :class:`nutils.function.Argument` in ``residual``.
+  residual : :class:`nutils.sample.Integral`
+  lhs0 : :class:`numpy.ndarray`
+      Coefficient vector, starting point of the iterative procedure.
+  constrain : :class:`numpy.ndarray` with dtype :class:`bool` or :class:`float`
+      Equal length to ``lhs0``, masks the free vector entries as ``False``
+      (boolean) or NaN (float). In the remaining positions the values of
+      ``lhs0`` are returned unchanged (boolean) or overruled by the values in
+      `constrain` (float).
+  nrelax : :class:`int`
+      Maximum number of relaxation steps before proceding with the updated
+      coefficient vector (by default unlimited).
+  minrelax : :class:`float`
+      Lower bound for the relaxation value, to force re-evaluating the
+      functional in situation where the parabolic assumption would otherwise
+      result in unreasonably small steps.
+  maxrelax : :class:`float`
+      Relaxation value below which relaxation continues, unless ``nrelax`` is
+      reached; should be a value less than or equal to 1.
+  rebound : :class:`float`
+      Factor by which the relaxation value grows after every update until it
+      reaches unity.
+  droptol : :class:`float`
+      Threshold for leaving entries in the return value at NaN if they do not
+      contribute to the value of the functional.
+  minderiv : :class:`float`
+      Only consider local minima for which ``f'' > f * minderiv``.
+  arguments : :class:`collections.abc.Mapping`
+      Defines the values for :class:`nutils.function.Argument` objects in
+      `residual`.  The ``target`` should not be present in ``arguments``.
+      Optional.
+
+  Yields
+  ------
+  :class:`numpy.ndarray`
+      Coefficient vector that approximates residual==0 with increasing accuracy
+  '''
+
+  @types.apply_annotations
+  def __init__(self, target:types.strictstr, energy:sample.strictintegral, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, nrelax:types.strictint=None, minrelax:types.strictfloat=.01, maxrelax:types.strictfloat=2/3, rebound:types.strictfloat=2., droptol:types.strictfloat=None, minderiv=1e-10, arguments:argdict={}, solveargs:types.frozendict={}):
+    super().__init__()
+
+    if target in arguments:
+      raise ValueError('`target` should not be defined in `arguments`')
+    self.target = target
+    if energy.shape != ():
+      raise ValueError('`energy` should be scalar')
+    argshape = energy._argshape(self.target)
+    self.energy = energy
+    self.residual = energy.derivative(target)
+    self.jacobian = self.residual.derivative(target)
+    if lhs0 is None:
+      self.lhs0 = types.frozenarray.full(argshape, fill_value=0.)
+    elif lhs0.shape == argshape:
+      self.lhs0 = lhs0
+    else:
+      raise ValueError('expected `lhs0` with shape {} but got {}'.format(argshape, lhs0.shape))
+    if constrain is None:
+      self.constrain = types.frozenarray.full(argshape, fill_value=False)
+    elif constrain.shape != argshape:
+      raise ValueError('expected `constrain` with shape {} but got {}'.format(argshape, constrain.shape))
+    elif constrain.dtype == float:
+      self.constrain = types.frozenarray(~numpy.isnan(constrain), copy=False)
+      self.lhs0 = types.frozenarray(numpy.choose(self.constrain, [self.lhs0, constrain]), copy=False)
+    elif constrain.dtype == bool:
+      self.constrain = constrain
+    else:
+      raise ValueError('`constrain` should have dtype bool or float but got {}'.format(constrain.dtype))
+    self.nrelax = nrelax
+    self.minrelax = minrelax
+    self.maxrelax = maxrelax
+    self.rebound = rebound
+    self.droptol = droptol
+    self.minderiv = minderiv
+    self.arguments = arguments
+    self.solveargs = solveargs
+    self.islinear = not self.jacobian.contains(self.target)
+
+  def _eval(self, lhs):
+    arguments = {self.target: lhs}
+    arguments.update(self.arguments)
+    return sample.eval_integrals(self.energy, self.residual, self.jacobian, arguments=arguments)
+
+  def resume(self, history):
+    if history:
+      lhs, info = history[-1]
+      if self.droptol is not None:
+        lhs = numpy.choose(numpy.isnan(lhs), [lhs, self.lhs0])
+      nrg, res, jac = self._eval(lhs)
+      assert nrg == info.energy
+      resnorm = numpy.linalg.norm(res[~self.constrain])
+      assert resnorm == info.resnorm
+      relax = info.relax
+    else:
+      lhs = self.lhs0
+      nrg, res, jac = self._eval(lhs)
+      resnorm = numpy.linalg.norm(res[~self.constrain])
+      relax = 1
+      nosupp = self.droptol is not None and ~(jac.rowsupp(self.droptol)|self.constrain)
+      yield _nan_at(lhs, nosupp), types.attributes(resnorm=resnorm, energy=nrg, relax=relax, shift=0)
+
+    while resnorm:
+      nosupp = self.droptol is not None and ~(jac.rowsupp(self.droptol)|self.constrain)
+      dlhs = -jac.solve(res, constrain=self.constrain|nosupp)
+      if self.islinear:
+        yield _nan_at(lhs+dlhs, nosupp), types.attributes(resnorm=0, energy=nrg+.5*res.dot(dlhs), relax=1, shift=0)
+        return
+      shift = 0
+      while res.dot(dlhs) > 0:
+        shift += res.dot(res) / res.dot(dlhs)
+        log.warning('negative eigenvalue detected; shifting spectrum by {:.2e}'.format(shift))
+        dlhs = -(jac + shift * matrix.eye(len(dlhs))).solve(res, constrain=self.constrain|nosupp)
+      for irelax in itertools.count() if self.nrelax is None else range(self.nrelax):
+        newlhs = lhs+relax*dlhs
+        newnrg, newres, newjac = self._eval(newlhs)
+        resnorm = numpy.linalg.norm(newres[~self.constrain])
+        if not numpy.isfinite(newnrg):
+          log.info('energy {} / {}'.format(newnrg, round(relax, 5)))
+          relax *= self.minrelax
+          continue
+        # To determine optimal relaxation we create a polynomial estimation for the energy:
+        #   P(x) = A + B (x/relax) + C (x/relax)^2 + D (x/relax)^3 + E (x/relax)^4 + F (x/relax)^5 ~= nrg(lhs+x*dlhs)
+        # We determine A, B, C, D, E and F based on the following constraints:
+        #   P(0) = nrg(lhs)
+        #   P'(0) = res(lhs).dlhs
+        #   P''(0) = dlhs.jac(lhs).dlhs
+        #   P(relax) = nrg(lhs+relax*dlhs)
+        #   P'(relax) = res(lhs+relax*dlhs).dlhs
+        #   P''(relax) = dlhs.jac(lhs+relax*dlhs).dlhs
+        A = nrg
+        B = res.dot(dlhs) * relax
+        C = .5 * jac.matvec(dlhs).dot(dlhs) * relax**2
+        D = 10 * newnrg - 4 * newres.dot(dlhs) * relax + 0.25 * newjac.matvec(dlhs).dot(dlhs) * relax**2 - 10 * A - 6 * B - 3 * C
+        E = 5 * newnrg - newres.dot(dlhs) * relax - 5 * A - 4 * B - 3 * C - 2 * D
+        F = newnrg - A - B - C - D - E
+        # Minimizing P:
+        #   B + 2 C (x/relax) + 3 D (x/relax)^2 + 4 E (x/relax)^3 + 5 F (x/relax)^4 = 0
+        #   C + 3 D (x/relax) + 6 E (x/relax)^2 + 10 F (x/relax)^3 > eps
+        roots = [r.real for r in numpy.roots([5*F,4*E,3*D,2*C,B]) if not r.imag and r > 0 and C+r*(3*D+r*(6*E+r*10*F)) > A*self.minderiv]
+        scale = min(roots) if roots else numpy.inf
+        log.info('energy {:+.2f}% / {} with minimum at x{}'.format(100*(newnrg/nrg-1), round(relax, 5), round(scale, 2)))
+        if scale > self.maxrelax:
+          relax = min(relax * min(scale, self.rebound), 1)
+          break
+        relax *= max(scale, self.minrelax)
+      else:
+        log.warning('failed to', 'decrease' if newnrg > nrg else 'optimize', 'energy')
+      yield _nan_at(newlhs, nosupp), types.attributes(resnorm=resnorm, energy=newnrg, relax=relax, shift=shift)
+      nrg, res, jac = newnrg, newres, newjac
+      lhs = numpy.choose(nosupp, [newlhs, self.lhs0])
+
+
 class pseudotime(RecursionWithSolve, length=1):
   '''iteratively solve nonlinear problem by pseudo time stepping
 
@@ -469,9 +638,7 @@ cranknicolson = functools.partial(thetamethod, theta=0.5)
 
 
 @log.title
-@types.apply_annotations
-@cache.function
-def optimize(target:types.strictstr, functional:sample.strictintegral, droptol:types.strictfloat=None, lhs0:types.frozenarray=None, constrain:types.frozenarray=None, newtontol:types.strictfloat=None, *, arguments:argdict={}):
+def optimize(target:types.strictstr, functional:sample.strictintegral, *, newtontol:types.strictfloat=0., **kwargs):
   '''find the minimizer of a given functional
 
   Parameters
@@ -480,19 +647,10 @@ def optimize(target:types.strictstr, functional:sample.strictintegral, droptol:t
       Name of the target: a :class:`nutils.function.Argument` in ``residual``.
   functional : scalar :class:`nutils.sample.Integral`
       The functional the should be minimized by varying target
-  droptol : :class:`float`
-      Threshold for leaving entries in the return value at NaN if they do not
-      contribute to the value of the functional.
-  lhs0 : :class:`numpy.ndarray`
-      Coefficient vector, starting point of the iterative procedure (if
-      applicable).
-  constrain : :class:`numpy.ndarray` with dtype :class:`bool` or :class:`float`
-      Equal length to ``lhs0``, masks the free vector entries as ``False``
-      (boolean) or NaN (float). In the remaining positions the values of
-      ``lhs0`` are returned unchanged (boolean) or overruled by the values in
-      `constrain` (float).
   newtontol : :class:`float`
       Residual tolerance of Newton procedure (if applicable)
+  **kwargs
+      Additional arguments for :class:`minimize`
 
   Yields
   ------
@@ -500,33 +658,15 @@ def optimize(target:types.strictstr, functional:sample.strictintegral, droptol:t
       Coefficient vector corresponding to the functional optimum
   '''
 
-  assert target not in arguments, '`target` should not be defined in `arguments`'
-  assert len(functional.shape) == 0, 'functional should be scalar'
-  argshape = functional._argshape(target)
-  if lhs0 is None:
-    lhs0 = numpy.zeros(argshape)
-  else:
-    assert numeric.isarray(lhs0) and lhs0.dtype == float and lhs0.shape == argshape, 'invalid lhs0 argument'
-  if constrain is None:
-    constrain = numpy.zeros(argshape, dtype=bool)
-  else:
-    assert numeric.isarray(constrain) and constrain.dtype in (bool,float) and constrain.shape == argshape, 'invalid constrain argument'
-    if constrain.dtype == float:
-      lhs0 = numpy.choose(numpy.isnan(constrain), [constrain, lhs0])
-      constrain = ~numpy.isnan(constrain)
-  residual = functional.derivative(target)
-  jacobian = residual.derivative(target)
-  f0, res, jac = sample.eval_integrals(functional, residual, jacobian, arguments=collections.ChainMap(arguments, {target: lhs0}))
-  freezedofs = constrain if droptol is None else constrain | ~jac.rowsupp(droptol)
-  log.info('optimizing for {}/{} degrees of freedom'.format(len(res)-freezedofs.sum(), len(res)))
-  lhs = lhs0 - jac.solve(res, constrain=freezedofs) # residual(lhs0) + jacobian(lhs0) dlhs = 0
-  if not jacobian.contains(target): # linear: functional(lhs0+dlhs) = functional(lhs0) + residual(lhs0) dlhs + .5 dlhs jacobian(lhs0) dlhs
-    value = f0 + .5 * res.dot(lhs-lhs0)
-  else: # nonlinear
-    assert newtontol is not None, 'newton tolerance `newtontol` must be specified for nonlinear problems'
-    lhs = newton(target, residual, lhs0=lhs, constrain=freezedofs, arguments=arguments).solve(newtontol)
-    value = functional.eval(arguments=collections.ChainMap(arguments, {target: lhs}))
-  assert numpy.isfinite(lhs).all(), 'optimization failed (forgot droptol?)'
-  log.info('optimum: {:.2e}'.format(value))
-  lhs[freezedofs & ~constrain] = numpy.nan
+  lhs = minimize(target, functional, **kwargs).solve(newtontol)
+  log.info('constrained {}/{} dofs'.format(len(lhs)-numpy.isnan(lhs).sum(), len(lhs)))
   return lhs
+
+
+## HELPER FUNCTIONS
+
+def _nan_at(vec, where):
+  copy = vec.copy()
+  if where is not False:
+    copy[where] = numpy.nan
+  return copy

@@ -105,9 +105,9 @@ class optimize(TestCase):
   def test_nonlinear(self):
     ns = self.ns
     ns.u = 'ubasis_n ?dofs_n'
-    ns.fu = 'u + u^3'
-    err = self.domain.boundary['bottom'].integral(ns.eval_('(fu - 2)^2'), geometry=ns.geom, degree=2)
-    cons = solver.optimize('dofs', err, droptol=1e-15, newtontol=1e-10)
+    ns.fu = 'u + .25 u^3'
+    err = self.domain.boundary['bottom'].integral(ns.eval_('(fu - 1.25)^2'), geometry=ns.geom, degree=6)
+    cons = solver.optimize('dofs', err, droptol=1e-15, newtontol=1e-15)
     isnan = numpy.isnan(cons)
     self.assertTrue(numpy.equal(isnan, [0,1,1,0,1,1,0,1,1]).all())
     numpy.testing.assert_almost_equal(cons[~isnan], 1, decimal=15)
