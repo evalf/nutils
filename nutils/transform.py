@@ -361,6 +361,10 @@ class Updim(Matrix):
     if isinstance(other, Identity):
       return Identity(self.todims), self
 
+  def swapdown(self, other):
+    if isinstance(other, TensorChild):
+      return ScaledUpdim(other, self), Identity(self.fromdims)
+
 class SimplexEdge(Updim):
 
   __slots__ = 'iedge',
