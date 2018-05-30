@@ -156,16 +156,16 @@ class newton(RecursionWithSolve, length=1):
   '''iteratively solve nonlinear problem by gradient descent
 
   Generates targets such that residual approaches 0 using Newton procedure with
-  line search based on a residual integral. Suitable to be used inside
-  ``solve``.
+  line search based on the residual norm. Suitable to be used inside ``solve``.
 
   An optimal relaxation value is computed based on the following cubic
   assumption::
 
-      | res(lhs + r * dlhs) |^2 = A + B * r + C * r^2 + D * r^3
+      |res(lhs + r * dlhs)|^2 = A + B * r + C * r^2 + D * r^3
 
-  where ``A``, ``B``, ``C`` and ``D`` are determined based on the current and
-  updated residual and tangent.
+  where ``A``, ``B``, ``C`` and ``D`` are determined based on the current
+  residual and tangent, the new residual, and the new tangent. If this value is
+  found to be close to 1 (``> maxrelax``) then the newton update is accepted.
 
   Parameters
   ----------
@@ -204,103 +204,107 @@ class newton(RecursionWithSolve, length=1):
   '''
 
   @types.apply_annotations
-  def __init__(self, target:types.strictstr, residual:sample.strictintegral, jacobian:sample.strictintegral=None, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, nrelax:types.strictint=None, minrelax:types.strictfloat=.1, maxrelax:types.strictfloat=.9, rebound:types.strictfloat=2**.5, arguments:argdict={}, solveargs:types.frozendict={}):
+  def __init__(self, target:types.strictstr, residual:sample.strictintegral, jacobian:sample.strictintegral=None, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, nrelax:types.strictint=None, minrelax:types.strictfloat=.01, maxrelax:types.strictfloat=2/3, rebound:types.strictfloat=2., arguments:argdict={}, solveargs:types.frozendict={}):
     super().__init__()
 
     if target in arguments:
       raise ValueError('`target` should not be defined in `arguments`')
     self.target = target
+    argshape = residual._argshape(self.target)
+    if residual.shape != argshape:
+      raise ValueError('expected `residual` with shape {} but got {}'.format(argshape, residual.shape))
     self.residual = residual
-    self.jacobian = jacobian
-    self.lhs0 = lhs0
-    self.constrain = constrain
-    self.nrelax = float('inf') if nrelax is None else nrelax
+    if jacobian is None:
+      self.jacobian = residual.derivative(target)
+    elif jacobian.shape == argshape * 2:
+      self.jacobian = jacobian
+    else:
+      raise ValueError('expected `jacobian` with shape {} but got {}'.format(argshape * 2, jacobian.shape))
+    if lhs0 is None:
+      self.lhs0 = types.frozenarray.full(argshape, fill_value=0.)
+    elif lhs0.shape == argshape:
+      self.lhs0 = lhs0
+    else:
+      raise ValueError('expected `lhs0` with shape {} but got {}'.format(argshape, lhs0.shape))
+    if constrain is None:
+      self.constrain = types.frozenarray.full(argshape, fill_value=False)
+    elif constrain.shape != argshape:
+      raise ValueError('expected `constrain` with shape {} but got {}'.format(argshape, constrain.shape))
+    elif constrain.dtype == float:
+      self.constrain = types.frozenarray(~numpy.isnan(constrain), copy=False)
+      self.lhs0 = types.frozenarray(numpy.choose(self.constrain, [self.lhs0, constrain]), copy=False)
+    elif constrain.dtype == bool:
+      self.constrain = constrain
+    else:
+      raise ValueError('`constrain` should have dtype bool or float but got {}'.format(constrain.dtype))
+    self.nrelax = nrelax
     self.minrelax = minrelax
     self.maxrelax = maxrelax
     self.rebound = rebound
     self.arguments = arguments
     self.solveargs = solveargs
 
+  def _eval(self, lhs):
+    arguments = {self.target: lhs}
+    arguments.update(self.arguments)
+    return sample.eval_integrals(self.residual, self.jacobian, arguments=arguments)
+
   def resume(self, history):
 
-    lhs0 = self.lhs0
-    if lhs0 is None:
-      lhs0 = numpy.zeros(self.residual.shape)
-    elif lhs0.shape != self.residual.shape:
-      raise ValueError('expected `lhs0` with shape {} but got {}'.format(self.residual.shape, lhs0.shape))
-
-    constrain = self.constrain
-    if constrain is None:
-      constrain = numpy.zeros(self.residual.shape, dtype=bool)
-    else:
-      if constrain.dtype not in (bool, float):
-        raise ValueError('`constrain` should have dtype bool or float but got {}'.format(constrain.dtype))
-      if constrain.shape != self.residual.shape:
-        raise ValueError('expected `constrain` with shape {} but got {}'.format(self.residual.shape, constrain.shape))
-      if constrain.dtype == float:
-        lhs0 = numpy.choose(numpy.isnan(constrain), [constrain, lhs0])
-        constrain = ~numpy.isnan(constrain)
-    constrain = types.frozenarray(constrain)
-
-    argshape = self.residual._argshape(self.target)
-    jacobian = self.residual.derivative(self.target) if self.jacobian is None else self.jacobian
-
-    if not jacobian.contains(self.target):
-      if history:
-        return
-      log.info('problem is linear')
-      res, jac = sample.eval_integrals(self.residual, jacobian, arguments=collections.ChainMap(self.arguments, {self.target: numpy.zeros(argshape)}))
-      lhs = jac.solve(-res, lhs0=lhs0, constrain=constrain, **self.solveargs)
-      yield lhs, 0, 1
+    if not self.jacobian.contains(self.target):
+      if not history:
+        log.info('problem is linear')
+        res, jac = self._eval(self.lhs0)
+        lhs = self.lhs0 - jac.solve(res, constrain=self.constrain, **self.solveargs)
+        yield lhs, 0, 1
       return
 
     if history:
-      (lhs, resnorm, relax), = history
-      res, jac = sample.eval_integrals(self.residual, jacobian, arguments=collections.ChainMap(self.arguments, {self.target: lhs}))
+      lhs, resnorm, relax = history[-1]
+      res, jac = self._eval(lhs)
     else:
-      lhs = lhs0
-      res, jac = sample.eval_integrals(self.residual, jacobian, arguments=collections.ChainMap(self.arguments, {self.target: lhs}))
-      resnorm = numpy.linalg.norm(res[~constrain])
+      lhs = self.lhs0
+      res, jac = self._eval(lhs)
+      resnorm = numpy.linalg.norm(res[~self.constrain])
       relax = 1
       yield lhs, resnorm, relax
 
     while True:
-      dlhs = -jac.solve(res, constrain=constrain, **self.solveargs)
-      relax = min(relax * self.rebound, 1)
-      for irelax in itertools.count():
+      dlhs = -jac.solve(res, constrain=self.constrain, **self.solveargs) # dlhs corresponds to an unrelaxed newton update
+      for irelax in itertools.count() if self.nrelax is None else range(self.nrelax):
         newlhs = lhs+relax*dlhs
-        res, jac = sample.eval_integrals(self.residual, jacobian, arguments=collections.ChainMap(self.arguments, {self.target: newlhs}))
-        newresnorm = numpy.linalg.norm(res[~constrain])
-        if irelax >= self.nrelax:
-          if newresnorm > resnorm:
-            log.warning('failed to decrease residual')
-            return
-          break
+        res, jac = self._eval(newlhs)
+        newresnorm = numpy.linalg.norm(res[~self.constrain])
         if not numpy.isfinite(newresnorm):
-          log.info('failed to evaluate residual ({})'.format(newresnorm))
-          newrelax = 0 # replaced by self.minrelax later
-        else:
-          r0 = resnorm**2
-          d0 = -2 * r0
-          r1 = newresnorm**2
-          d1 = 2 * numpy.dot(jac.matvec(dlhs)[~constrain], res[~constrain])
-          log.info('line search: 0[{}]{} {}creased by {:.0f}%'.format('---+++' if d1 > 0 else '--++--' if r1 > r0 else '------', round(relax,5), 'in' if newresnorm > resnorm else 'de', 100*abs(newresnorm/resnorm-1)))
-          if r1 <= r0 and d1 <= 0:
-            break
-          D = 2*r0 - 2*r1 + d0 + d1
-          if D > 0:
-            C = 3*r1 - 3*r0 - 2*d0 - d1
-            newrelax = (numpy.sqrt(C**2-3*d0*D) - C) / (3*D)
-            log.info('minimum based on 3rd order estimation: {:.3f}'.format(newrelax))
-          else:
-            C = r1 - r0 - d0
-            # r1 > r0 => C > 0
-            # d1 > 0  => C = r1 - r0 - d0/2 - d0/2 > r1 - r0 - d0/2 - d1/2 = -D/2 > 0
-            newrelax = -.5 * d0 / C
-            log.info('minimum based on 2nd order estimation: {:.3f}'.format(newrelax))
-          if newrelax > self.maxrelax:
-            break
-        relax *= max(newrelax, self.minrelax)
+          log.info('residual norm {} / {}'.format(newresnorm, round(relax, 5)))
+          relax *= self.minrelax
+          continue
+        # To determine optimal relaxation we create a polynomial estimation for the residual norm:
+        #   P(x) = A + B (x/relax) + C (x/relax)^2 + D (x/relax)^3 ~= |res(lhs+x*dlhs)|^2
+        # We determine A, B, C and D based on the following constraints:
+        #   P(0) = |res(lhs)|^2
+        #   P'(0) = 2 res(lhs).jac(lhs).dlhs = -2 |res(lhs)|^2
+        #   P(relax) = |res(lhs+relax*dlhs)|^2
+        #   P'(relax) = 2 res(lhs+relax*dlhs).jac(lhs+relax*dlhs).dlhs
+        A = resnorm**2
+        B = -2 * A * relax
+        C = 3 * newresnorm**2 - 2 * numpy.dot(jac.matvec(dlhs)[~self.constrain], res[~self.constrain]) * relax - 3 * A - 2 * B
+        D = newresnorm**2 - A - B - C
+        # Minimizing P:
+        #   B + 2 C (x/relax) + 3 D (x/relax)^2 = 0 => x/relax = (-C +/- sqrt(C^2 - 3 B D)) / (3 D)
+        # Special case 1: largest root is negative
+        #   -C / (3 D) + sqrt(C^2 - 3 B D) / abs(3 D) < 0 <=> sqrt(C^2 - 3 B D) < C * sign(D) <=> D < 0 & C < 0
+        # Special case 2: smallest root is positive
+        #   -C / (3 D) - sqrt(C^2 - 3 B D) / abs(3 D) > 0 <=> sqrt(C^2 - 3 B D) < -C * sign(D) <=> D < 0 & C > 0
+        discriminant = C**2 - 3 * B * D
+        scale = numpy.inf if discriminant < 0 or D < 0 and C < 0 else (numpy.sqrt(discriminant) - C) / (3 * D) if D else -B / (2 * C)
+        log.info('residual norm {:+.2f}% / {} with minimum at x{}'.format(100*(newresnorm/resnorm-1), round(relax, 5), round(scale, 2)))
+        if newresnorm < resnorm and scale > self.maxrelax:
+          relax = min(relax * min(scale, self.rebound), 1)
+          break
+        relax *= max(scale, self.minrelax)
+      else:
+        log.warning('failed to', 'decrease' if newresnorm > resnorm else 'optimize', 'residual')
       lhs, resnorm = newlhs, newresnorm
       yield lhs, resnorm, relax
 
