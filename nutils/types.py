@@ -519,7 +519,9 @@ class CacheMeta(abc.ABCMeta):
 
 class ImmutableMeta(CacheMeta):
 
-  def __new__(mcls, name, bases, namespace, **kwargs):
+  def __new__(mcls, name, bases, namespace, *, version=0, **kwargs):
+    if not isinstance(version, int):
+      raise ValueError("'version' should be of type 'int' but got {!r}".format(version))
     cls = super().__new__(mcls, name, bases, namespace, **kwargs)
     # Peel off the preprocessors (see `aspreprocessor`) and store the
     # preprocessors and the uncovered init separately.
@@ -532,7 +534,11 @@ class ImmutableMeta(CacheMeta):
       pre_init.append(argument_canonicalizer(inspect.signature(init)))
     cls._pre_init = tuple(pre_init)
     cls._init = init
+    cls._version = version
     return cls
+
+  def __init__(cls, name, bases, namespace, *, version=0, **kwargs):
+    super().__init__(name, bases, namespace, **kwargs)
 
   def __call__(*args, **kwargs):
     cls = args[0]
@@ -618,7 +624,7 @@ class Immutable(metaclass=ImmutableMeta):
 
   @property
   def __nutils_hash__(self):
-    h = hashlib.sha1('{}.{}\0'.format(type(self).__module__, type(self).__qualname__).encode())
+    h = hashlib.sha1('{}.{}:{}\0'.format(type(self).__module__, type(self).__qualname__, type(self)._version).encode())
     for arg in self._args:
       h.update(nutils_hash(arg))
     return h.digest()
