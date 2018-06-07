@@ -567,5 +567,11 @@ def backend(names):
 def assemble(data, index, shape):
   return _current_backend.assemble(data, index, shape)
 
+def diag(d):
+  assert d.ndim == 1
+  return assemble(d, index=numpy.arange(len(d))[numpy.newaxis].repeat(2, axis=0), shape=d.shape*2)
+
+def eye(n):
+  return diag(numpy.ones(n))
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
