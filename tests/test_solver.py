@@ -76,13 +76,13 @@ class navierstokes(TestCase):
     self.assert_resnorm(solver.newton('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons).solve(tol=self.tol, maxiter=2))
 
   def test_newton_iter(self):
-    _test_recursion_cache(self, lambda: ((types.frozenarray(lhs), resnorm) for lhs, resnorm in solver.newton('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons, nrelax=1)))
+    _test_recursion_cache(self, lambda: ((types.frozenarray(lhs), info.resnorm) for lhs, info in solver.newton('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons, nrelax=1)))
 
   def test_pseudotime(self):
     self.assert_resnorm(solver.pseudotime('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons, inertia=self.inertia, timestep=1).solve(tol=self.tol, maxiter=3))
 
   def test_pseudotime_iter(self):
-    _test_recursion_cache(self, lambda: ((types.frozenarray(lhs), resnorm) for lhs, resnorm in solver.pseudotime('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons, inertia=self.inertia, timestep=1)))
+    _test_recursion_cache(self, lambda: ((types.frozenarray(lhs), info.resnorm) for lhs, info in solver.pseudotime('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons, inertia=self.inertia, timestep=1)))
 
 
 class optimize(TestCase):

@@ -1307,4 +1307,17 @@ class c_array(metaclass=_c_arraymeta):
   not reflected by the other.
   '''
 
+class attributes:
+  '''
+  Dictionary-like container with attributes instead of keys, instantiated using
+  keyword arguments:
+
+  >>> A = attributes(foo=10, bar=True)
+  >>> A.foo
+  10
+  '''
+
+  def __init__(self, **args):
+    self.__dict__.update(args)
+
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

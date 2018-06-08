@@ -49,7 +49,7 @@ In addition to ``solve_linear`` the solver module defines ``newton`` and
 time dependent problems.
 """
 
-from . import function, cache, log, numeric, sample, types
+from . import function, cache, log, numeric, sample, types, util
 import numpy, itertools, functools, numbers, collections
 
 
@@ -116,7 +116,8 @@ def solve(gen_lhs_resnorm, tol:types.strictfloat=0., maxiter:types.strictfloat=f
       Coefficient vector that corresponds to a smaller than ``tol`` residual.
   '''
 
-  for iiter, (lhs, resnorm) in log.enumerate('iter', gen_lhs_resnorm):
+  for iiter, (lhs, info) in log.enumerate('iter', gen_lhs_resnorm):
+    resnorm = info.resnorm
     if resnorm <= tol or iiter > maxiter:
       break
     if not iiter:
@@ -249,14 +250,17 @@ class newton(RecursionWithSolve, length=1):
 
   def resume(self, history):
     if history:
-      lhs, resnorm, relax = history[-1]
+      lhs, info = history[-1]
       res, jac = self._eval(lhs)
+      resnorm = numpy.linalg.norm(res[~self.constrain])
+      assert resnorm == info.resnorm
+      relax = info.relax
     else:
       lhs = self.lhs0
       res, jac = self._eval(lhs)
       resnorm = numpy.linalg.norm(res[~self.constrain])
       relax = 1
-      yield numpy.array(lhs), resnorm, relax
+      yield numpy.array(lhs), types.attributes(resnorm=resnorm, relax=relax)
 
     while resnorm:
       dlhs = -jac.solve(res, constrain=self.constrain, **self.solveargs) # dlhs corresponds to an unrelaxed newton update
@@ -298,11 +302,7 @@ class newton(RecursionWithSolve, length=1):
       else:
         log.warning('failed to', 'decrease' if newresnorm > resnorm else 'optimize', 'residual')
       lhs, resnorm = newlhs, newresnorm
-      yield numpy.array(lhs), resnorm, relax
-
-  def __iter__(self):
-    for lhs, resnorm, relax in super().__iter__():
-      yield lhs, resnorm
+      yield numpy.array(lhs), types.attributes(resnorm=resnorm, relax=relax)
 
 
 class pseudotime(RecursionWithSolve, length=1):
@@ -378,15 +378,17 @@ class pseudotime(RecursionWithSolve, length=1):
     constrain = types.frozenarray(constrain)
 
     if history:
-      (lhs, resnorm, thistimestep), = history
+      lhs, info = history[-1]
       res0 = residual.eval(arguments=collections.ChainMap(self.arguments, {self.target: lhs0}))
       resnorm0 = numpy.linalg.norm(res0[~constrain])
-      res, jac = sample.eval_integrals(residual, jacobian0+jacobiant/thistimestep, arguments=collections.ChainMap(self.arguments, {self.target: lhs}))
+      res, jac = sample.eval_integrals(residual, jacobian0+jacobiant/info.timestep, arguments=collections.ChainMap(self.arguments, {self.target: lhs}))
+      resnorm = numpy.linalg.norm(res[~constrain])
+      assert resnorm == info.resnorm
     else:
       res, jac = sample.eval_integrals(residual, jacobian0+jacobiant/self.timestep, arguments=collections.ChainMap(self.arguments, {self.target: lhs0}))
       lhs = lhs0
       resnorm = resnorm0 = numpy.linalg.norm(res[~constrain])
-      yield lhs, resnorm, self.timestep
+      yield lhs, types.attributes(resnorm=resnorm, timestep=self.timestep)
 
     while True:
       lhs -= jac.solve(res, constrain=constrain, **self.solveargs)
@@ -394,11 +396,7 @@ class pseudotime(RecursionWithSolve, length=1):
       log.info('timestep: {:.0e}'.format(thistimestep))
       res, jac = sample.eval_integrals(residual, jacobian0+jacobiant/thistimestep, arguments=collections.ChainMap(self.arguments, {self.target: lhs}))
       resnorm = numpy.linalg.norm(res[~constrain])
-      yield lhs, resnorm, thistimestep
-
-  def __iter__(self):
-    for lhs, resnorm, timestep in super().__iter__():
-      yield lhs, resnorm
+      yield lhs, types.attributes(resnorm=resnorm, timestep=thistimestep)
 
 
 class thetamethod(RecursionWithSolve, length=1):
