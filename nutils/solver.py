@@ -94,7 +94,7 @@ def solve_linear(target:types.strictstr, residual:sample.strictintegral, constra
 
 @types.apply_annotations
 @cache.function
-def solve(gen_lhs_resnorm, tol:types.strictfloat=1e-10, maxiter:types.strictfloat=float('inf')):
+def solve(gen_lhs_resnorm, tol:types.strictfloat=0., maxiter:types.strictfloat=float('inf')):
   '''execute nonlinear solver
 
   Iterates over nonlinear solver until tolerance is reached. Example::
@@ -116,23 +116,20 @@ def solve(gen_lhs_resnorm, tol:types.strictfloat=1e-10, maxiter:types.strictfloa
       Coefficient vector that corresponds to a smaller than ``tol`` residual.
   '''
 
-  gen_lhs_resnorm = iter(gen_lhs_resnorm)
-  try:
-    lhs, resnorm = next(gen_lhs_resnorm)
-    resnorm0 = resnorm
-    inewton = 0
-    while resnorm > tol:
-      if inewton >= maxiter:
-        raise ModelError('tolerance not reached in {} iterations'.format(maxiter))
-      with log.context('iter {0} ({1:.0f}%)'.format(inewton, 100 * numpy.log(resnorm0/resnorm) / numpy.log(resnorm0/tol))):
-        log.info('residual: {:.2e}'.format(resnorm))
-        lhs, resnorm = next(gen_lhs_resnorm)
-      inewton += 1
-  except StopIteration:
-    raise ModelError('generator stopped before reaching target tolerance')
-  else:
-    log.info('tolerance reached in {} iterations with residual {:.2e}'.format(inewton, resnorm))
-    return lhs
+  for iiter, (lhs, resnorm) in log.enumerate('iter', gen_lhs_resnorm):
+    if resnorm <= tol or iiter > maxiter:
+      break
+    if not iiter:
+      resnorm0 = resnorm
+    elif tol:
+      log.info('residual: {:.2e} ({:.0f}%)'.format(resnorm, 100 * numpy.log(resnorm0/resnorm) / numpy.log(resnorm0/tol)))
+    else:
+      raise ModelError('nonlinear problem requires a nonzero tolerance')
+  if resnorm > tol:
+    raise ModelError('failed to reach target tolerance')
+  elif resnorm:
+    log.info('tolerance reached in {} iterations with residual {:.2e}'.format(iiter, resnorm))
+  return lhs
 
 
 class RecursionWithSolve(cache.Recursion):
@@ -243,6 +240,7 @@ class newton(RecursionWithSolve, length=1):
     self.rebound = rebound
     self.arguments = arguments
     self.solveargs = solveargs
+    self.islinear = not self.jacobian.contains(self.target)
 
   def _eval(self, lhs):
     arguments = {self.target: lhs}
@@ -250,15 +248,6 @@ class newton(RecursionWithSolve, length=1):
     return sample.eval_integrals(self.residual, self.jacobian, arguments=arguments)
 
   def resume(self, history):
-
-    if not self.jacobian.contains(self.target):
-      if not history:
-        log.info('problem is linear')
-        res, jac = self._eval(self.lhs0)
-        lhs = self.lhs0 - jac.solve(res, constrain=self.constrain, **self.solveargs)
-        yield lhs, 0, 1
-      return
-
     if history:
       lhs, resnorm, relax = history[-1]
       res, jac = self._eval(lhs)
@@ -267,12 +256,15 @@ class newton(RecursionWithSolve, length=1):
       res, jac = self._eval(lhs)
       resnorm = numpy.linalg.norm(res[~self.constrain])
       relax = 1
-      yield lhs, resnorm, relax
+      yield numpy.array(lhs), resnorm, relax
 
-    while True:
+    while resnorm:
       dlhs = -jac.solve(res, constrain=self.constrain, **self.solveargs) # dlhs corresponds to an unrelaxed newton update
       for irelax in itertools.count() if self.nrelax is None else range(self.nrelax):
         newlhs = lhs+relax*dlhs
+        if self.islinear:
+          newresnorm = 0.
+          break
         res, jac = self._eval(newlhs)
         newresnorm = numpy.linalg.norm(res[~self.constrain])
         if not numpy.isfinite(newresnorm):
@@ -306,7 +298,7 @@ class newton(RecursionWithSolve, length=1):
       else:
         log.warning('failed to', 'decrease' if newresnorm > resnorm else 'optimize', 'residual')
       lhs, resnorm = newlhs, newresnorm
-      yield lhs, resnorm, relax
+      yield numpy.array(lhs), resnorm, relax
 
   def __iter__(self):
     for lhs, resnorm, relax in super().__iter__():
