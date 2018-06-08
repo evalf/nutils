@@ -1245,6 +1245,12 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
   __abs__ = lambda self: self.__base.__abs__()
   __neg__ = lambda self: self.__base.__neg__()
   __invert__ = lambda self: self.__base.__invert__()
+  __or__ = lambda self, other: self.__base.__or__(other)
+  __ror__ = lambda self, other: self.__base.__ror__(other)
+  __and__ = lambda self, other: self.__base.__and__(other)
+  __rand__ = lambda self, other: self.__base.__rand__(other)
+  __xor__ = lambda self, other: self.__base.__xor__(other)
+  __rxor__ = lambda self, other: self.__base.__rxor__(other)
 
   tolist = lambda self, *args, **kwargs: self.__base.tolist(*args, **kwargs)
   copy = lambda self, *args, **kwargs: self.__base.copy(*args, **kwargs)
