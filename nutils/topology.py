@@ -156,6 +156,11 @@ class Topology(types.Singleton):
   def basis(self, name, *args, **kwargs):
     if self.ndims == 0:
       return function.asarray([1])
+    split = name.split('-', 1)
+    if len(split) == 2 and split[0] in ('h', 'th'):
+      name = split[1] # default to non-hierarchical bases
+      if split[0] == 'th':
+        kwargs.pop('truncation_tolerance', None)
     f = getattr(self, 'basis_' + name)
     return f(*args, **kwargs)
 
@@ -1945,7 +1950,7 @@ class HierarchicalTopology(Topology):
 
   @log.title
   @cache.function
-  def basis(self, name, *args, tol=0, truncated=False, **kwargs):
+  def basis(self, name, *args, truncation_tolerance=1e-15, **kwargs):
     '''Create hierarchical basis.
 
     The ``basis`` function constructs the refined hierarchical basis based on
@@ -1972,29 +1977,31 @@ class HierarchicalTopology(Topology):
     ----
     name : :class:`str`
       Type of basis functions (``'discont'``, ``'std'``, ``'spline'``) as
-      provided by the base topology.
-    tol : :class:`float`
+      provided by the base topology, with prefix ``'h-'`` for a classical
+      hierarchical basis and prefix ``'th-'`` for a truncated hierarchical
+      basis. For backwards compatibility the ``'h-`` prefix is optional but
+      omitting it triggers a deprecation warning.
+    truncation_tolerance : :class:`float` (default 1e-15)
       The tolerance is used to determine the support of the truncated basis
       functions. Because the support of the functions changes, a check needs to
       be carried out on which elements it still has support and on which it
       does not. If ``tol=0``, no check is carried out, which may affect
       sparsity.
-    truncated : :class:`bool`
-      ``True`` for the truncated hierarchical basis or ``False`` for the
-      classical hierarchical basis.
 
     Returns
     -------
     basis : :class:`nutils.function.Array`
     '''
 
-    if not (truncated or tol==0):
-      tol = 0
-      warnings.warn('Nonzero tolerance argument omitted for non-truncated bases')
-
-    # use topology base class implementation for discontinuous bases
-    if name == 'discont':
-      return super().basis(name, *args, **kwargs)
+    split = name.split('-', 1)
+    if len(split) != 2 or split[0] not in ('h', 'th'):
+      if name == 'discont':
+        return super().basis(name, *args, **kwargs)
+      warnings.deprecation('hierarchically refined bases will need to be specified using the h- or th- prefix in future')
+      truncated = False
+    else:
+      name = split[1]
+      truncated = split[0] == 'th'
 
     #############################
     # Constructing funtion sets #
@@ -2062,7 +2069,7 @@ class HierarchicalTopology(Topology):
         if myactive.any():
           funcpoly = truncpoly[myactive]
           funcdof = dof_renumber[h][mydofs[myactive]]
-          ind = (abs(funcpoly) > tol).any(axis=tuple(range(1,funcpoly.ndim)))
+          ind = (abs(funcpoly) > truncation_tolerance).any(axis=tuple(range(1,funcpoly.ndim)))
           trans_dofs.extend(funcdof[ind])
           trans_coeffs.extend(funcpoly[ind])
 

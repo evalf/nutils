@@ -10,8 +10,7 @@ class basis(TestCase):
     self.domain, self.geom = mesh.rectilinear([[0,1,2]]*self.ndims) if self.ndims else mesh.demo()
     for iref in range(self.nrefine):
       self.domain = self.domain.refined_by(self.domain.elements[:1])
-    self.basis = self.domain.basis(self.btype, degree=self.degree, truncated=self.truncated) if self.nrefine \
-            else self.domain.basis(self.btype, degree=self.degree)
+    self.basis = self.domain.basis(self.btype, degree=self.degree)
     self.gauss = 'gauss{}'.format(2*self.degree)
 
   @parametrize.enable_if(lambda btype, **params: btype != 'discont')
@@ -22,7 +21,7 @@ class basis(TestCase):
       numpy.testing.assert_almost_equal(elem_jumps,0,decimal=10)
       funcsp = function.grad(funcsp, self.geom)
 
-  @parametrize.enable_if(lambda truncated, **params: truncated)
+  @parametrize.enable_if(lambda btype, **params: not btype.startswith('h-'))
   def test_pum(self):
     error = numpy.sqrt(self.domain.integrate((1-self.basis.sum(0))**2, geometry=self.geom, ischeme=self.gauss))
     numpy.testing.assert_almost_equal(error, 0, decimal=12)
@@ -34,11 +33,10 @@ class basis(TestCase):
     numpy.testing.assert_almost_equal(error, 0, decimal=12)
 
 for ndims in range(1, 4):
-  for btype in 'discont', 'std', 'spline':
+  for btype in 'discont', 'h-std', 'th-std', 'h-spline', 'th-spline':
     for degree in range(0 if btype == 'discont' else 1, 4):
       for nrefine in 0, 2:
-        for truncated in [True, False] if nrefine else [True]:
-          basis(btype=btype, degree=degree, ndims=ndims, nrefine=nrefine, truncated=truncated)
+        basis(btype=btype, degree=degree, ndims=ndims, nrefine=nrefine)
 
 class NNZ(matrix.Backend):
   def assemble(self, data, index, shape):
@@ -58,9 +56,9 @@ class sparsity(TestCase):
 
     ns = function.Namespace()
     ns.x = geom
-    ns.tbasis = topo.basis('spline', degree=2, truncated=True, tol=1e-14)
-    ns.tnotol = topo.basis('spline', degree=2, truncated=True, tol=0)
-    ns.hbasis = topo.basis('spline', degree=2, truncated=False)
+    ns.tbasis = topo.basis('th-spline', degree=2, truncation_tolerance=1e-14)
+    ns.tnotol = topo.basis('th-spline', degree=2, truncation_tolerance=0)
+    ns.hbasis = topo.basis('h-spline', degree=2)
 
     with matrix.backend('nnz'):
       tA, tA_tol, hA = topo.integrate([ns.eval_ij('tbasis_i,k tbasis_j,k'), ns.eval_ij('tnotol_i,k tnotol_j,k'), ns.eval_ij('hbasis_i,k hbasis_j,k')], degree=5)

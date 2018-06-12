@@ -154,19 +154,19 @@ class common_refine(TestCase):
     doms, funs, vals = {}, {}, {}
 
     doms['1'] = dom.refined_by(list(dom)[:1])
-    funs['1'] = doms['1'].basis('std', degree=1, truncated=True)
+    funs['1'] = doms['1'].basis('th-std', degree=1)
     vals['1'] = 0.375,0.25,0.375,0.9375,0.5,0.25,0.5,0.25,0.0625,0.125,0.125,0.25
 
     doms['234'] = dom.refined_by(list(dom)[1:])
-    funs['234'] = doms['234'].basis('std', degree=1, truncated=True)
+    funs['234'] = doms['234'].basis('th-std', degree=1)
     vals['234'] = 0.25,0.375,0.375,0.5625,0.125,0.0625,0.25,0.125,0.25,0.125,0.125,0.25,0.25,0.25,0.125,0.0625,0.125,0.125,0.125,0.0625
 
     doms['123'] = dom.refined_by(list(dom)[:-1])
-    funs['123'] = doms['123'].basis('std', degree=1, truncated=True)
+    funs['123'] = doms['123'].basis('th-std', degree=1)
     vals['123'] = 0.5625,0.375,0.375,0.25,0.0625,0.125,0.125,0.125,0.0625,0.125,0.25,0.25,0.25,0.125,0.125,0.25,0.125,0.25,0.0625,0.125
 
     doms['4'] = dom.refined_by(list(dom)[-1:])
-    funs['4'] = doms['4'].basis('std', degree=1, truncated=True)
+    funs['4'] = doms['4'].basis('th-std', degree=1)
     vals['4'] = 0.25,0.5,0.25,0.5,0.9375,0.375,0.25,0.375,0.25,0.125,0.125,0.0625
 
     for a, b, n in ('1', '234', 16), ('1', '4', 10), ('123', '234', 16):
