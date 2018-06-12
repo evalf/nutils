@@ -33,11 +33,6 @@ def apply(chain, points):
     points = trans.apply(points)
   return points
 
-def transform_poly(trans, coeffs):
-  for item in trans:
-    coeffs = item.transform_poly(coeffs)
-  return coeffs
-
 def n_ascending(chain):
   # number of ascending transform items counting from root (0). this is a
   # temporary hack required to deal with Bifurcate/Slice; as soon as we have
