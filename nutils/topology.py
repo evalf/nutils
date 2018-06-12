@@ -1953,40 +1953,40 @@ class HierarchicalTopology(Topology):
   def basis(self, name, *args, truncation_tolerance=1e-15, **kwargs):
     '''Create hierarchical basis.
 
-    The ``basis`` function constructs the refined hierarchical basis based on
-    the refined topology structure. This can either be the classical or
-    truncated hierarchical basis. The difference between these bases is the way
-    basis functions which overlap multiple hierarchical levels are defined. In
-    the classical hierarchical basis the basis functions are equal to their
-    corresponding basis functions in the uniform basis of the same hierarchical
-    level. In the truncated hierarchical basis functions overlapping multiple
-    levels are truncated, meaning their support on finer domains is reduced.
-    This truncation has two fundamental effects.
+    A hierarchical basis is constructed from bases on different levels of
+    uniform refinement. Two different types of hierarchical bases are
+    supported:
 
-    * The truncated hierarchical basis form partition of unity
-    * The sparsity of the system matrices is decreased compared to classical bases.
+    1. Classical -- Starting from the set of all basis functions originating
+    from all levels of uniform refinement, only those basis functions are
+    selected for which at least one supporting element is part of the
+    hierarchical topology.
 
-    The placement of basis funcions is based on the linear combination of basis
-    functions that construct the basis function of a coarser level. Truncated
-    functions are built by only using the functions in this linear combination
-    which are not active in the basis. See `Giannelli et al. 2012
-    <https://pdfs.semanticscholar.org/a858/aa68da617ad9d41de021f6807cc422002258.pdf>`_
-    for more information on truncated hierarchical refinement.
+    2. Truncated -- Like classical, but with basis functions modified such that
+    the area of support is reduced. An additional effect of this procedure is
+    that it restores partition of unity. The spanned function space remains
+    unchanged.
+
+    Truncation is based on linear combinations of basis functions, where fine
+    level basis functions are used to reduce the support of coarser level basis
+    functions. See `Giannelli et al. 2012`_ for more information on truncated
+    hierarchical refinement.
+
+    .. _`Giannelli et al. 2012`: https://pdfs.semanticscholar.org/a858/aa68da617ad9d41de021f6807cc422002258.pdf
 
     Args
     ----
     name : :class:`str`
-      Type of basis functions (``'discont'``, ``'std'``, ``'spline'``) as
-      provided by the base topology, with prefix ``'h-'`` for a classical
-      hierarchical basis and prefix ``'th-'`` for a truncated hierarchical
-      basis. For backwards compatibility the ``'h-`` prefix is optional but
-      omitting it triggers a deprecation warning.
+      Type of basis function as provided by the base topology, with prefix
+      ``h-`` (``h-std``, ``h-spline``) for a classical hierarchical basis and
+      prefix ``th-`` (``th-std``, ``th-spline``) for a truncated hierarchical
+      basis. For backwards compatibility the ``h-`` prefix is optional, but
+      omitting it triggers a deprecation warning as this behaviour will be
+      removed in future.
     truncation_tolerance : :class:`float` (default 1e-15)
-      The tolerance is used to determine the support of the truncated basis
-      functions. Because the support of the functions changes, a check needs to
-      be carried out on which elements it still has support and on which it
-      does not. If ``tol=0``, no check is carried out, which may affect
-      sparsity.
+      In order to benefit from the extra sparsity resulting from truncation,
+      vanishing polynomials need to be actively identified and removed from the
+      basis. The ``trunctation_tolerance`` offers control over this threshold.
 
     Returns
     -------
