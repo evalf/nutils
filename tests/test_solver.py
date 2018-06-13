@@ -65,7 +65,7 @@ class navierstokes(TestCase):
 
   def assert_resnorm(self, lhs):
     res = self.residual.eval(arguments=dict(dofs=lhs))
-    resnorm = numpy.linalg.norm(res[~self.cons.where])
+    resnorm = numpy.linalg.norm(res[numpy.isnan(self.cons)])
     self.assertLess(resnorm, self.tol)
 
   def test_direct(self):
@@ -83,6 +83,68 @@ class navierstokes(TestCase):
 
   def test_pseudotime_iter(self):
     _test_recursion_cache(self, lambda: ((types.frozenarray(lhs), info.resnorm) for lhs, info in solver.pseudotime('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons, inertia=self.inertia, timestep=1)))
+
+
+class finitestrain(TestCase):
+
+  def setUp(self):
+    super().setUp()
+    domain, geom = mesh.rectilinear([numpy.linspace(0,1,9)] * 2)
+    ubasis = domain.basis('std', degree=2).vector(2)
+    u = ubasis.dot(function.Argument('dofs', [len(ubasis)]))
+    Geom = geom * [1.1, 1] + u
+    self.cons = solver.minimize('dofs', domain.boundary['left,right'].integral((u**2).sum(0), degree=4), droptol=1e-15).solve()
+    self.boolcons = ~numpy.isnan(self.cons)
+    strain = .5 * (function.outer(Geom.grad(geom), axis=1).sum(0) - function.eye(2))
+    self.energy = domain.integral(function.trace(strain)**2 + 2 * (strain**2).sum([0,1]), geometry=geom, degree=6)
+    self.residual = self.energy.derivative('dofs')
+    self.tol = 1e-10
+
+  def assert_resnorm(self, lhs):
+    res = self.residual.eval(arguments=dict(dofs=lhs))
+    resnorm = numpy.linalg.norm(res[~self.boolcons])
+    self.assertLess(resnorm, self.tol)
+
+  def test_direct(self):
+    with self.assertRaises(solver.ModelError):
+      self.assert_resnorm(solver.solve_linear('dofs', residual=self.residual, constrain=self.cons))
+
+  def test_newton(self):
+    self.assert_resnorm(solver.newton('dofs', residual=self.residual, constrain=self.cons).solve(tol=self.tol, maxiter=3))
+
+  def test_newton_boolcons(self):
+    self.assert_resnorm(solver.newton('dofs', residual=self.residual, constrain=self.boolcons).solve(tol=self.tol, maxiter=3))
+
+  def test_newton_iter(self):
+    _test_recursion_cache(self, lambda: ((types.frozenarray(lhs), info.resnorm) for lhs, info in solver.newton('dofs', residual=self.residual, constrain=self.cons, nrelax=1)))
+
+  def test_minimize(self):
+    self.assert_resnorm(solver.minimize('dofs', energy=self.energy, constrain=self.cons).solve(tol=self.tol, maxiter=3))
+
+  def test_minimize_boolcons(self):
+    self.assert_resnorm(solver.minimize('dofs', energy=self.energy, constrain=self.boolcons).solve(tol=self.tol, maxiter=3))
+
+  def test_minimize_iter(self):
+    _test_recursion_cache(self, lambda: ((types.frozenarray(lhs), info.resnorm) for lhs, info in solver.minimize('dofs', energy=self.energy, constrain=self.cons)))
+
+  def test_nonlinear_diagonalshift(self):
+    nelems = 10
+    domain, geom = mesh.rectilinear([nelems,1])
+    geom *= [2*numpy.pi/nelems, 1]
+    ubasis = domain.basis('spline', degree=2).vector(2)
+    u = ubasis.dot(function.Argument('dofs', [len(ubasis)]))
+    Geom = [.5 * geom[0], geom[1] + function.cos(geom[0])] + u # compress by 50% and buckle
+    cons = solver.minimize('dofs', domain.boundary['left,right'].integral((u**2).sum(0), degree=4), droptol=1e-15).solve()
+    strain = .5 * (function.outer(Geom.grad(geom), axis=1).sum(0) - function.eye(2))
+    energy = domain.integral(function.trace(strain)**2 + 2 * (strain**2).sum([0,1]), geometry=geom, degree=6)
+    nshift = 0
+    for iiter, (lhs, info) in enumerate(solver.minimize('dofs', energy, constrain=cons)):
+      self.assertLess(iiter, 28)
+      if info.shift:
+        nshift += 1
+      if info.resnorm < self.tol:
+        break
+    self.assertEqual(nshift, 13)
 
 
 class optimize(TestCase):
