@@ -2326,8 +2326,7 @@ class Diagonalize(Array):
   def _get(self, i, item):
     if i != self.axis and i != self.newaxis:
       return Diagonalize(Get(self.func, i-(i>self.newaxis), item), self.axis-(i<self.axis), self.newaxis-(i<self.newaxis))
-    axis = self.axis if i == self.newaxis else self.newaxis-1
-    return Inflate(InsertAxis(Get(self.func, self.axis, item), axis=axis, length=1), [item], length=self.shape[i], axis=axis)
+    return kronecker(Get(self.func, self.axis, item), axis=self.axis if i == self.newaxis else self.newaxis-1, length=self.shape[i], pos=item)
 
   def _inverse(self):
     if self.axis == self.func.ndim-1 and self.newaxis == self.ndim-1:
