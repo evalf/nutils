@@ -92,10 +92,8 @@ def solve_linear(target:types.strictstr, residual:sample.strictintegral, constra
   return jac.solve(-res, constrain=constrain, **solveargs)
 
 
-@types.apply_annotations
-@cache.function
-def solve(gen_lhs_resnorm, tol:types.strictfloat=0., maxiter:types.strictfloat=float('inf')):
-  '''execute nonlinear solver
+def solve(gen_lhs_resnorm, tol=0., maxiter=float('inf')):
+  '''execute nonlinear solver, return lhs
 
   Iterates over nonlinear solver until tolerance is reached. Example::
 
@@ -116,6 +114,20 @@ def solve(gen_lhs_resnorm, tol:types.strictfloat=0., maxiter:types.strictfloat=f
       Coefficient vector that corresponds to a smaller than ``tol`` residual.
   '''
 
+  lhs, info = solve_withinfo(gen_lhs_resnorm, tol=tol, maxiter=maxiter)
+  return lhs
+
+
+@types.apply_annotations
+@cache.function
+def solve_withinfo(gen_lhs_resnorm, tol:types.strictfloat=0., maxiter:types.strictfloat=float('inf')):
+  '''execute nonlinear solver, return lhs and info
+
+  Like :func:`solve`, but return a 2-tuple of the solution and the
+  corresponding info object which holds information about the final residual
+  norm and other generator-dependent information.
+  '''
+
   for iiter, (lhs, info) in log.enumerate('iter', gen_lhs_resnorm):
     resnorm = info.resnorm
     if resnorm <= tol or iiter > maxiter:
@@ -130,7 +142,7 @@ def solve(gen_lhs_resnorm, tol:types.strictfloat=0., maxiter:types.strictfloat=f
     raise ModelError('failed to reach target tolerance')
   elif resnorm:
     log.info('tolerance reached in {} iterations with residual {:.2e}'.format(iiter, resnorm))
-  return lhs
+  return lhs, info
 
 
 class RecursionWithSolve(cache.Recursion):
@@ -147,6 +159,7 @@ class RecursionWithSolve(cache.Recursion):
 
   __slots__ = ()
 
+  solve_withinfo = solve_withinfo
   solve = solve
 
 
