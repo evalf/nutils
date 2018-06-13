@@ -156,6 +156,11 @@ class Topology(types.Singleton):
   def basis(self, name, *args, **kwargs):
     if self.ndims == 0:
       return function.asarray([1])
+    split = name.split('-', 1)
+    if len(split) == 2 and split[0] in ('h', 'th'):
+      name = split[1] # default to non-hierarchical bases
+      if split[0] == 'th':
+        kwargs.pop('truncation_tolerance', None)
     f = getattr(self, 'basis_' + name)
     return f(*args, **kwargs)
 
@@ -1945,73 +1950,141 @@ class HierarchicalTopology(Topology):
 
   @log.title
   @cache.function
-  def basis(self, name, *args, **kwargs):
-    'build hierarchical function space'
+  def basis(self, name, *args, truncation_tolerance=1e-15, **kwargs):
+    '''Create hierarchical basis.
 
-    # The law: a basis function is retained if all elements of self can
-    # evaluate it through cascade, and at least one element of self can
-    # evaluate it directly.
+    A hierarchical basis is constructed from bases on different levels of
+    uniform refinement. Two different types of hierarchical bases are
+    supported:
 
-    # Procedure: per refinement level, track which basis functions have at
-    # least one supporting element coinsiding with self ('touched') and no
-    # supporting element finer than self ('supported').
+    1. Classical -- Starting from the set of all basis functions originating
+    from all levels of uniform refinement, only those basis functions are
+    selected for which at least one supporting element is part of the
+    hierarchical topology.
 
-    dofs_coeffs = []
-    renumber = []
-    supports = []
-    length = 0
+    2. Truncated -- Like classical, but with basis functions modified such that
+    the area of support is reduced. An additional effect of this procedure is
+    that it restores partition of unity. The spanned function space remains
+    unchanged.
 
-    for topo in log.iter('level', self.levels):
+    Truncation is based on linear combinations of basis functions, where fine
+    level basis functions are used to reduce the support of coarser level basis
+    functions. See `Giannelli et al. 2012`_ for more information on truncated
+    hierarchical refinement.
 
-      basis = topo.basis(name, *args, **kwargs) # shape functions for current level
+    .. _`Giannelli et al. 2012`: https://pdfs.semanticscholar.org/a858/aa68da617ad9d41de021f6807cc422002258.pdf
 
-      supported = numpy.ones(len(basis), dtype=bool) # True if dof is fully contained in self or parents
-      touchtopo = numpy.zeros(len(basis), dtype=bool) # True if dof touches at least one elem in self
+    Args
+    ----
+    name : :class:`str`
+      Type of basis function as provided by the base topology, with prefix
+      ``h-`` (``h-std``, ``h-spline``) for a classical hierarchical basis and
+      prefix ``th-`` (``th-std``, ``th-spline``) for a truncated hierarchical
+      basis. For backwards compatibility the ``h-`` prefix is optional, but
+      omitting it triggers a deprecation warning as this behaviour will be
+      removed in future.
+    truncation_tolerance : :class:`float` (default 1e-15)
+      In order to benefit from the extra sparsity resulting from truncation,
+      vanishing polynomials need to be actively identified and removed from the
+      basis. The ``trunctation_tolerance`` offers control over this threshold.
 
-      (axes,func), = function.blocks(basis)
-      dofmap, = axes
-      if isinstance(func, function.Polyval):
-        coeffs = func.coeffs
-        assert coeffs.ndim == 1+self.ndims
-      elif func.isconstant:
-        assert func.ndim == 1
-        coeffs = func[(slice(None),*(_,)*self.ndims)]
-      else:
-        raise ValueError
+    Returns
+    -------
+    basis : :class:`nutils.function.Array`
+    '''
 
-      for elem in topo:
+    split = name.split('-', 1)
+    if len(split) != 2 or split[0] not in ('h', 'th'):
+      if name == 'discont':
+        return super().basis(name, *args, **kwargs)
+      warnings.deprecation('hierarchically refined bases will need to be specified using the h- or th- prefix in future')
+      truncated = False
+    else:
+      name = split[1]
+      truncated = split[0] == 'th'
+
+    # 1. identify active (supported) and passive (unsupported) basis functions
+    ubasis_dofscoeffs = []
+    ubasis_active = []
+    ubasis_passive = []
+    for ltopo in self.levels:
+      ubasis = ltopo.basis(name, *args, **kwargs)
+      ((ubasis_dofmap,), ubasis_func), = function.blocks(ubasis)
+      ubasis_dofscoeffs.append(function.Tuple((ubasis_dofmap, ubasis_func.coeffs)))
+      on_current, on_coarser = on_ = numpy.zeros((2, len(ubasis)), dtype=bool)
+      for elem in ltopo:
         trans = elem.transform
-        idofs, = dofmap.eval(_transforms=(elem.transform, elem.opposite))
-        if trans in self.edict:
-          touchtopo[idofs] = True
-        elif transform.lookup(trans, self.edict):
-          supported[idofs] = False
+        lookup = transform.lookup(trans, self.edict)
+        if lookup:
+          ubasis_idofs, = ubasis_dofmap.eval(_transforms=(trans,))
+          head, tail = lookup
+          on_[1 if tail else 0, ubasis_idofs] = True
+      ubasis_active.append((on_current & ~on_coarser))
+      ubasis_passive.append(on_coarser)
 
-      support = supported & touchtopo
-      supports.append(support)
-      cumsum_support = numpy.cumsum(support)
-      renumber.append(cumsum_support+(length-1))
-      length += cumsum_support[-1]
-      dofs_coeffs.append(function.Tuple((dofmap, coeffs)))
+    # 2. create consecutive numbering for all active basis functions
+    ndofs = 0
+    dof_renumber = []
+    for myactive in ubasis_active:
+      r = myactive.cumsum() + (ndofs-1)
+      dof_renumber.append(r)
+      ndofs = r[-1]+1
 
-    dofs = []
-    coeffs = []
-    transforms = tuple(sorted(elem.transform for elem in self))
-    for trans in transforms:
-      hcoeffs = []
-      hdofs = []
-      ibase, tail = transform.lookup_item(trans, self.basetopo.edict)
-      for ilevel in range(len(tail)+1):
-        (idofs,), (icoeffs,) = dofs_coeffs[ilevel].eval(_transforms=(trans,))
-        isupport = supports[ilevel][idofs]
-        if not isupport.any():
-          continue
-        hdofs.extend(map(renumber[ilevel].__getitem__, idofs[isupport]))
-        hcoeffs.extend(transform.transform_poly(tail[ilevel:], icoeffs[isupport]))
-      dofs.append(types.frozenarray(hdofs))
-      coeffs.append(numeric.poly_stack(hcoeffs))
+    # 3. construct hierarchical polynomials
+    hbasis_transforms = tuple(sorted(elem.transform for elem in self))
+    hbasis_dofs = []
+    hbasis_coeffs = []
+    projectcache = {}
 
-    return function.polyfunc(coeffs, dofs, length, transforms, issorted=True)
+    for hbasis_trans in hbasis_transforms:
+
+      head, tail = transform.lookup(hbasis_trans, self.basetopo.edict) # len(tail) == level of the hierarchical element
+      trans_dofs = []
+      trans_coeffs = []
+
+      if not truncated: # classical hierarchical basis
+
+        for h in range(len(tail)+1): # loop from coarse to fine
+          (mydofs,), (mypoly,) = ubasis_dofscoeffs[h].eval(_transforms=(hbasis_trans,))
+
+          myactive = ubasis_active[h][mydofs]
+          if myactive.any():
+            trans_dofs.append(dof_renumber[h][mydofs[myactive]])
+            trans_coeffs.append(mypoly[myactive])
+
+          if h < len(tail):
+            trans_coeffs = [tail[h].transform_poly(c) for c in trans_coeffs]
+
+      else: # truncated hierarchical basis
+
+        for h in reversed(range(len(tail)+1)): # loop from fine to coarse
+          (mydofs,), (mypoly,) = ubasis_dofscoeffs[h].eval(_transforms=(hbasis_trans,))
+
+          truncpoly = mypoly if h == len(tail) \
+            else numpy.tensordot(numpy.tensordot(tail[h].transform_poly(mypoly), project[...,mypassive], self.ndims), truncpoly[mypassive], 1)
+
+          myactive = ubasis_active[h][mydofs] & numpy.greater(abs(truncpoly), truncation_tolerance).any(axis=tuple(range(1,truncpoly.ndim)))
+          if myactive.any():
+            trans_dofs.append(dof_renumber[h][mydofs[myactive]])
+            trans_coeffs.append(truncpoly[myactive])
+
+          mypassive = ubasis_passive[h][mydofs]
+          if not mypassive.any():
+            break
+
+          try: # construct least-squares projection matrix
+            project = projectcache[mypoly]
+          except KeyError:
+            P = mypoly.reshape(len(mypoly), -1)
+            U, S, V = numpy.linalg.svd(P) # (U * S).dot(V[:len(S)]) == P
+            project = (V.T[:,:len(S)] / S).dot(U.T).reshape(mypoly.shape[1:]+mypoly.shape[:1])
+            projectcache[mypoly] = project
+
+      # add the dofs and coefficients to the hierarchical basis
+      hbasis_dofs.append(numpy.concatenate(trans_dofs))
+      hbasis_coeffs.append(numeric.poly_concatenate(trans_coeffs))
+
+    return function.polyfunc(hbasis_coeffs, hbasis_dofs, ndofs, hbasis_transforms, issorted=True)
 
 class ProductTopology(Topology):
   'product topology'

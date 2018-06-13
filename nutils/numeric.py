@@ -436,14 +436,10 @@ def poly_outer_product(left, right):
   outer[(a,a,*(map(slice, left.shape[1:]+right.shape[1:])))] = left[(a,None)+(a,)*nleft+(None,)*nright]*right[(None,a)+(None,)*nleft+(a,)*nright]
   return types.frozenarray(outer.reshape(left.shape[0] * right.shape[0], *pshape), copy=False)
 
-def poly_stack(coeffs):
-  coeffs = tuple(coeffs)
-  n = max(icoeffs.shape[0] for icoeffs in coeffs)
-  ndim = coeffs[0].ndim
-  dest = numpy.zeros((len(coeffs),)+(n,)*ndim, dtype=float)
-  for i, j in enumerate(coeffs):
-    dest[(i,*map(slice, j.shape))] = j
-  return types.frozenarray(dest, copy=False)
+def poly_concatenate(coeffs):
+  n = max(c.shape[1] for c in coeffs)
+  coeffs = [numpy.pad(c, [(0,0)]+[(0,n-c.shape[1])]*(c.ndim-1), 'constant', constant_values=0) if c.shape[1] < n else c for c in coeffs]
+  return numpy.concatenate(coeffs)
 
 def poly_grad(coeffs, ndim):
   I = range(ndim)
