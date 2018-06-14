@@ -519,7 +519,9 @@ class CacheMeta(abc.ABCMeta):
 
 class ImmutableMeta(CacheMeta):
 
-  def __new__(mcls, name, bases, namespace, **kwargs):
+  def __new__(mcls, name, bases, namespace, *, version=0, **kwargs):
+    if not isinstance(version, int):
+      raise ValueError("'version' should be of type 'int' but got {!r}".format(version))
     cls = super().__new__(mcls, name, bases, namespace, **kwargs)
     # Peel off the preprocessors (see `aspreprocessor`) and store the
     # preprocessors and the uncovered init separately.
@@ -532,7 +534,11 @@ class ImmutableMeta(CacheMeta):
       pre_init.append(argument_canonicalizer(inspect.signature(init)))
     cls._pre_init = tuple(pre_init)
     cls._init = init
+    cls._version = version
     return cls
+
+  def __init__(cls, name, bases, namespace, *, version=0, **kwargs):
+    super().__init__(name, bases, namespace, **kwargs)
 
   def __call__(*args, **kwargs):
     cls = args[0]
@@ -618,7 +624,7 @@ class Immutable(metaclass=ImmutableMeta):
 
   @property
   def __nutils_hash__(self):
-    h = hashlib.sha1('{}.{}\0'.format(type(self).__module__, type(self).__qualname__).encode())
+    h = hashlib.sha1('{}.{}:{}\0'.format(type(self).__module__, type(self).__qualname__, type(self)._version).encode())
     for arg in self._args:
       h.update(nutils_hash(arg))
     return h.digest()
@@ -1245,6 +1251,12 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
   __abs__ = lambda self: self.__base.__abs__()
   __neg__ = lambda self: self.__base.__neg__()
   __invert__ = lambda self: self.__base.__invert__()
+  __or__ = lambda self, other: self.__base.__or__(other)
+  __ror__ = lambda self, other: self.__base.__ror__(other)
+  __and__ = lambda self, other: self.__base.__and__(other)
+  __rand__ = lambda self, other: self.__base.__rand__(other)
+  __xor__ = lambda self, other: self.__base.__xor__(other)
+  __rxor__ = lambda self, other: self.__base.__rxor__(other)
 
   tolist = lambda self, *args, **kwargs: self.__base.tolist(*args, **kwargs)
   copy = lambda self, *args, **kwargs: self.__base.copy(*args, **kwargs)
@@ -1300,5 +1312,18 @@ class c_array(metaclass=_c_arraymeta):
   the third case, changes to either ``array`` or the returned ctypes array are
   not reflected by the other.
   '''
+
+class attributes:
+  '''
+  Dictionary-like container with attributes instead of keys, instantiated using
+  keyword arguments:
+
+  >>> A = attributes(foo=10, bar=True)
+  >>> A.foo
+  10
+  '''
+
+  def __init__(self, **args):
+    self.__dict__.update(args)
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

@@ -924,6 +924,9 @@ class ImmutableFamily(TestCase):
     class T(self.cls):
       def __init__(self, x, y):
         pass
+    class T1(self.cls, version=1):
+      def __init__(self, x, y):
+        pass
     class U(self.cls):
       def __init__(self, x, y):
         pass
@@ -932,7 +935,8 @@ class ImmutableFamily(TestCase):
     self.assertNotEqual(nutils.types.nutils_hash(T(1, 2)).hex(), nutils.types.nutils_hash(T(2, 1)).hex())
     self.assertNotEqual(nutils.types.nutils_hash(T(1, 2)).hex(), nutils.types.nutils_hash(U(1, 2)).hex())
     # Since the hash does not include base classes, the hashes of Immutable and Singleton are the same.
-    self.assertEqual(nutils.types.nutils_hash(T(1, 2)).hex(), '6e4dad3d266104acea4c4b1b14f1d285d12f0c93')
+    self.assertEqual(nutils.types.nutils_hash(T(1, 2)).hex(), '8c3ba8f0d9eb054ab192f4e4e2ba7442564bdf85')
+    self.assertEqual(nutils.types.nutils_hash(T1(1, 2)).hex(), 'bab4ee65b5189f544a4242f0e386af76cfa6e31d')
 
   @parametrize.enable_if(lambda cls: cls is nutils.types.Singleton)
   def test_deduplication(self):

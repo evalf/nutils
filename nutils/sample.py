@@ -87,8 +87,9 @@ class Sample(types.Singleton):
 
   @log.title
   @util.single_or_multiple
+  @types.apply_annotations
   @cache.function
-  def integrate(self, funcs, *, arguments=None):
+  def integrate(self, funcs, *, arguments:types.frozendict[types.strictstr,types.frozenarray]=None):
     '''Integrate functions.
 
     Args

@@ -1312,7 +1312,7 @@ class StructuredTopology(Topology):
       c = continuity[idim]
       if c < 0:
         c += p
-      assert 0 <= c < p
+      assert -1 <= c < p
 
       k = knotvalues[idim]
       if k is None: #Defaults to uniform spacing
