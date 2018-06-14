@@ -1319,11 +1319,15 @@ class attributes:
   keyword arguments:
 
   >>> A = attributes(foo=10, bar=True)
+  >>> A
+  attributes(bar=True, foo=10)
   >>> A.foo
   10
   '''
 
   def __init__(self, **args):
     self.__dict__.update(args)
+  def __repr__(self):
+    return 'attributes({})'.format(', '.join(map('{0[0]}={0[1]!r}'.format, sorted(self.__dict__.items()))))
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
