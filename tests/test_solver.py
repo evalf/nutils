@@ -154,32 +154,25 @@ class optimize(TestCase):
     self.ns = function.Namespace()
     self.domain, self.ns.geom = mesh.rectilinear([2,2])
     self.ns.ubasis = self.domain.basis('std', degree=1)
+    self.ns.u = 'ubasis_n ?dofs_n'
 
   def test_linear(self):
-    ns = self.ns
-    ns.u = 'ubasis_n ?dofs_n'
-    err = self.domain.boundary['bottom'].integral(ns.eval_('(u - 1)^2'), geometry=ns.geom, degree=2)
+    err = self.domain.boundary['bottom'].integral('(u - 1)^2' @ self.ns, degree=2)
     cons = solver.optimize('dofs', err, droptol=1e-15)
-    isnan = numpy.isnan(cons)
-    self.assertTrue(numpy.equal(isnan, [0,1,1,0,1,1,0,1,1]).all())
-    numpy.testing.assert_almost_equal(cons[~isnan], 1, decimal=15)
+    numpy.testing.assert_almost_equal(cons, numpy.take([1,numpy.nan], [0,1,1,0,1,1,0,1,1]), decimal=15)
 
   def test_nonlinear(self):
-    ns = self.ns
-    ns.u = 'ubasis_n ?dofs_n'
-    ns.fu = 'u + .25 u^3'
-    err = self.domain.boundary['bottom'].integral(ns.eval_('(fu - 1.25)^2'), geometry=ns.geom, degree=6)
+    err = self.domain.boundary['bottom'].integral('(u + .25 u^3 - 1.25)^2' @ self.ns, geometry=self.ns.geom, degree=6)
     cons = solver.optimize('dofs', err, droptol=1e-15, newtontol=1e-15)
-    isnan = numpy.isnan(cons)
-    self.assertTrue(numpy.equal(isnan, [0,1,1,0,1,1,0,1,1]).all())
-    numpy.testing.assert_almost_equal(cons[~isnan], 1, decimal=15)
+    numpy.testing.assert_almost_equal(cons, numpy.take([1,numpy.nan], [0,1,1,0,1,1,0,1,1]), decimal=15)
 
   def test_nonlinear_multipleroots(self):
-    ns = self.ns
-    ns.u = 'ubasis_n ?dofs_n'
-    ns.gu = 'u + u^2'
-    err = self.domain.boundary['bottom'].integral(ns.eval_('(gu - .75)^2'), geometry=ns.geom, degree=2)
-    cons = solver.optimize('dofs', err, droptol=1e-15, lhs0=numpy.ones(len(ns.ubasis)), newtontol=1e-10)
-    isnan = numpy.isnan(cons)
-    self.assertTrue(numpy.equal(isnan, [0,1,1,0,1,1,0,1,1]).all())
-    numpy.testing.assert_almost_equal(cons[~isnan], .5, decimal=15)
+    err = self.domain.boundary['bottom'].integral('(u + u^2 - .75)^2' @ self.ns, degree=2)
+    cons = solver.optimize('dofs', err, droptol=1e-15, lhs0=numpy.ones(len(self.ns.ubasis)), newtontol=1e-10)
+    numpy.testing.assert_almost_equal(cons, numpy.take([.5,numpy.nan], [0,1,1,0,1,1,0,1,1]), decimal=15)
+
+  def test_nanres(self):
+    err = self.domain.integral('(sqrt(1 - u) - .5)^2' @ self.ns, degree=2)
+    for gen in solver.minimize('dofs', err), solver.newton('dofs', err.derivative('dofs')):
+      dofs = gen.solve(1e-10, maxiter=12)
+      numpy.testing.assert_almost_equal(dofs, .75)
