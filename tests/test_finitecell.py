@@ -52,33 +52,37 @@ class trimmedboundary(TestCase):
   def setUp(self):
     super().setUp()
     if self.boundary:
-      domain, self.geom = mesh.rectilinear([[0,1,2],[0,1,2],[0,1,2]])
-      self.domain = domain.boundary['front']
+      domain0, self.geom = mesh.rectilinear([2,2,2])
+      self.domain0 = domain0.boundary['front']
     else:
-      self.domain, self.geom = mesh.rectilinear([[0,1,2],[0,1,2]])
-    self.left = self.domain[:1].withboundary(leftbnd=...)
-    self.leftbasis = self.left.basis('std', degree=1)
-    self.right = self.domain[1:].withboundary(rightbnd=...)
-    self.rightbasis = self.right.basis('std', degree=1)
-    self.trimmed = self.domain - self.right
+      self.domain0, self.geom = mesh.rectilinear([2,2])
+    if self.gridline:
+      self.domain1 = self.domain0 - self.domain0[1:].withboundary(trimmed='left')
+    else:
+      self.domain1 = self.domain0.trim(1.25 - self.geom[0], maxrefine=1)
+    self.domain2 = self.domain1.refined_by(self.domain0[:,1:])
 
   def test_boundary_length(self):
-    self.assertEqual(self.trimmed.boundary.integrate(function.J(self.geom), ischeme='gauss1'), 6)
+    self.assertEqual(self.domain2.boundary.integrate(function.J(self.geom), ischeme='gauss1'), 6 if self.gridline else 6.5)
 
   def test_trimmed_boundary_length(self):
-    self.assertEqual(self.trimmed.boundary['rightbnd'].integrate(function.J(self.geom), ischeme='gauss1'), 2)
+    self.assertEqual(self.domain2.boundary['trimmed'].integrate(function.J(self.geom), ischeme='gauss1'), 2)
 
+  @parametrize.enable_if(lambda gridline, **params: gridline)
   def test_trimmed_boundary(self):
-    left = self.trimmed.boundary['rightbnd']
-    self.assertTrue(numpy.any(left.elem_eval(self.leftbasis, ischeme='gauss1', separate=False)))
+    trimmed = self.domain2.boundary['trimmed']
+    leftbasis = self.domain0[:1].basis('std', degree=1)
+    self.assertTrue(numpy.any(trimmed.elem_eval(leftbasis, ischeme='gauss1', separate=False)))
     with self.assertRaises(function.EvaluationError):
-      left.elem_eval(function.opposite(self.leftbasis), ischeme='gauss1', separate=False)
-    self.assertTrue(numpy.any(left.elem_eval(function.opposite(self.rightbasis), ischeme='gauss1', separate=False)))
+      trimmed.elem_eval(function.opposite(leftbasis), ischeme='gauss1', separate=False)
+    rightbasis = self.domain0[1:].basis('std', degree=1)
+    self.assertTrue(numpy.any(trimmed.elem_eval(function.opposite(rightbasis), ischeme='gauss1', separate=False)))
     with self.assertRaises(function.EvaluationError):
-      left.elem_eval(self.rightbasis, ischeme='gauss1', separate=False)
+      trimmed.elem_eval(rightbasis, ischeme='gauss1', separate=False)
 
-trimmedboundary('2darea', boundary=False)
-trimmedboundary('3dsurface', boundary=True)
+for boundary in True, False:
+  for gridline in True, False:
+    trimmedboundary(boundary=boundary, gridline=gridline)
 
 
 class specialcases_2d(TestCase):
