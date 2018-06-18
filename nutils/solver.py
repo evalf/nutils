@@ -444,6 +444,18 @@ class minimize(RecursionWithSolve, length=1):
         return
       shift = 0
       while res.dot(dlhs) > 0:
+        # Energy is locally increasing, an adjustment is required to maintain
+        # gradient descent. Because the minimum Rayleigh quotient of a matrix
+        # equals its smallest eigenvalue, we have:
+        #   mineig(invjac) < res.invjac.res/res.res = -dlhs.res/res.res < 0
+        # We aim to modify jac by adding a sufficiently large diagonal term
+        #   modjac = jac + shift eye
+        # Knowing that modjac becomes SPD if shift > -mineig(jac), we know that
+        # res.invmodjac.res > 0 for shift sufficiently large. Since mineig(jac)
+        # is unknown, and a complete push to SPD is typically not required for
+        # positivity, an iterative procedure is used to shift the spectrum in
+        # steps, using the available upper bound for mineig(invjac) as a
+        # reciprocal lower bound for at least one negative eigenvalue of jac.
         shift += res.dot(res) / res.dot(dlhs)
         log.warning('negative eigenvalue detected; shifting spectrum by {:.2e}'.format(shift))
         dlhs = -(jac + shift * matrix.eye(len(dlhs))).solve(res, constrain=self.constrain|nosupp)
