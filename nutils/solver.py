@@ -691,7 +691,7 @@ def optimize(target:types.strictstr, functional:sample.strictintegral, *, newton
       Coefficient vector corresponding to the functional optimum
   '''
 
-  lhs = minimize(target, functional, **kwargs).solve(newtontol)
+  lhs = newton(target, functional.derivative(target), **kwargs).solve(newtontol)
   log.info('constrained {}/{} dofs'.format(len(lhs)-numpy.isnan(lhs).sum(), len(lhs)))
   return lhs
 
