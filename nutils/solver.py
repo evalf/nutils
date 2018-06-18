@@ -203,6 +203,9 @@ class newton(RecursionWithSolve, length=1):
   rebound : :class:`float`
       Factor by which the relaxation value grows after every update until it
       reaches unity.
+  droptol : :class:`float`
+      Threshold for leaving entries in the return value at NaN if they do not
+      contribute to the value of the functional.
   arguments : :class:`collections.abc.Mapping`
       Defines the values for :class:`nutils.function.Argument` objects in
       `residual`.  The ``target`` should not be present in ``arguments``.
@@ -215,7 +218,7 @@ class newton(RecursionWithSolve, length=1):
   '''
 
   @types.apply_annotations
-  def __init__(self, target:types.strictstr, residual:sample.strictintegral, jacobian:sample.strictintegral=None, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, nrelax:types.strictint=None, minrelax:types.strictfloat=.01, maxrelax:types.strictfloat=2/3, rebound:types.strictfloat=2., arguments:argdict={}, solveargs:types.frozendict={}):
+  def __init__(self, target:types.strictstr, residual:sample.strictintegral, jacobian:sample.strictintegral=None, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, nrelax:types.strictint=None, minrelax:types.strictfloat=.01, maxrelax:types.strictfloat=2/3, droptol:types.strictfloat=None, rebound:types.strictfloat=2., arguments:argdict={}, solveargs:types.frozendict={}):
     super().__init__()
 
     if target in arguments:
@@ -252,6 +255,7 @@ class newton(RecursionWithSolve, length=1):
     self.minrelax = minrelax
     self.maxrelax = maxrelax
     self.rebound = rebound
+    self.droptol = droptol
     self.arguments = arguments
     self.solveargs = solveargs
     self.islinear = not self.jacobian.contains(self.target)
@@ -264,6 +268,8 @@ class newton(RecursionWithSolve, length=1):
   def resume(self, history):
     if history:
       lhs, info = history[-1]
+      if self.droptol is not None:
+        lhs = numpy.choose(numpy.isnan(lhs), [lhs, self.lhs0])
       res, jac = self._eval(lhs)
       resnorm = numpy.linalg.norm(res[~self.constrain])
       assert resnorm == info.resnorm
@@ -273,15 +279,17 @@ class newton(RecursionWithSolve, length=1):
       res, jac = self._eval(lhs)
       resnorm = numpy.linalg.norm(res[~self.constrain])
       relax = 1
-      yield numpy.array(lhs), types.attributes(resnorm=resnorm, relax=relax)
+      nosupp = self.droptol is not None and ~(jac.rowsupp(self.droptol)|self.constrain)
+      yield _nan_at(lhs, nosupp), types.attributes(resnorm=resnorm, relax=relax)
 
     while resnorm:
-      dlhs = -jac.solve(res, constrain=self.constrain, **self.solveargs) # dlhs corresponds to an unrelaxed newton update
+      nosupp = self.droptol is not None and ~(jac.rowsupp(self.droptol)|self.constrain)
+      dlhs = -jac.solve(res, constrain=self.constrain|nosupp)
+      if self.islinear:
+        yield _nan_at(lhs+dlhs, nosupp), types.attributes(resnorm=0, relax=1)
+        return
       for irelax in itertools.count() if self.nrelax is None else range(self.nrelax):
         newlhs = lhs+relax*dlhs
-        if self.islinear:
-          newresnorm = 0.
-          break
         res, jac = self._eval(newlhs)
         newresnorm = numpy.linalg.norm(res[~self.constrain])
         if not numpy.isfinite(newresnorm):
@@ -314,8 +322,8 @@ class newton(RecursionWithSolve, length=1):
         relax *= max(scale, self.minrelax)
       else:
         log.warning('failed to', 'decrease' if newresnorm > resnorm else 'optimize', 'residual')
+      yield _nan_at(newlhs, nosupp), types.attributes(resnorm=newresnorm, relax=relax)
       lhs, resnorm = newlhs, newresnorm
-      yield numpy.array(lhs), types.attributes(resnorm=resnorm, relax=relax)
 
 
 class minimize(RecursionWithSolve, length=1):
