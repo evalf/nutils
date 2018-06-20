@@ -368,8 +368,6 @@ class minimize(RecursionWithSolve, length=1):
   droptol : :class:`float`
       Threshold for leaving entries in the return value at NaN if they do not
       contribute to the value of the functional.
-  minderiv : :class:`float`
-      Only consider local minima for which ``f'' > f * minderiv``.
   arguments : :class:`collections.abc.Mapping`
       Defines the values for :class:`nutils.function.Argument` objects in
       `residual`.  The ``target`` should not be present in ``arguments``.
@@ -382,7 +380,7 @@ class minimize(RecursionWithSolve, length=1):
   '''
 
   @types.apply_annotations
-  def __init__(self, target:types.strictstr, energy:sample.strictintegral, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, nrelax:types.strictint=None, minrelax:types.strictfloat=.01, maxrelax:types.strictfloat=2/3, rebound:types.strictfloat=2., droptol:types.strictfloat=None, minderiv=1e-10, arguments:argdict={}, solveargs:types.frozendict={}):
+  def __init__(self, target:types.strictstr, energy:sample.strictintegral, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, nrelax:types.strictint=None, minrelax:types.strictfloat=.01, maxrelax:types.strictfloat=2/3, rebound:types.strictfloat=2., droptol:types.strictfloat=None, arguments:argdict={}, solveargs:types.frozendict={}):
     super().__init__()
 
     if target in arguments:
@@ -416,7 +414,6 @@ class minimize(RecursionWithSolve, length=1):
     self.maxrelax = maxrelax
     self.rebound = rebound
     self.droptol = droptol
-    self.minderiv = minderiv
     self.arguments = arguments
     self.solveargs = solveargs
     self.islinear = not self.jacobian.contains(self.target)
@@ -492,10 +489,9 @@ class minimize(RecursionWithSolve, length=1):
         F = newnrg - A - B - C - D - E
         # Minimizing P:
         #   B + 2 C (x/relax) + 3 D (x/relax)^2 + 4 E (x/relax)^3 + 5 F (x/relax)^4 = 0
-        #   C + 3 D (x/relax) + 6 E (x/relax)^2 + 10 F (x/relax)^3 > eps
-        roots = [r.real for r in numpy.roots([5*F,4*E,3*D,2*C,B]) if not r.imag and r > 0 and C+r*(3*D+r*(6*E+r*10*F)) > A*self.minderiv]
+        roots = [r.real for r in numpy.roots([5*F,4*E,3*D,2*C,B]) if not r.imag and r > 0 and A+r*(B+r*(C+r*(D+r*(E+r*F)))) < nrg]
         scale = min(roots) if roots else numpy.inf
-        log.info('energy {:+.2f}% / {} with minimum at x{}'.format(100*(newnrg/nrg-1), round(relax, 5), round(scale, 2)))
+        log.info('energy {:+.1e} / {} with minimum at x{}'.format(newnrg-nrg, round(relax, 5), round(scale, 2)))
         if scale > self.maxrelax:
           relax = min(relax * min(scale, self.rebound), 1)
           break
