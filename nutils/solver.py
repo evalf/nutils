@@ -537,64 +537,72 @@ class pseudotime(RecursionWithSolve, length=1):
   '''
 
   @types.apply_annotations
-  def __init__(self, target:types.strictstr, residual:sample.strictintegral, inertia:sample.strictintegral, timestep:types.strictfloat, lhs0:types.frozenarray[types.strictfloat], residual0:sample.strictintegral=None, constrain:types.frozenarray=None, arguments:argdict={}, solveargs:types.frozendict={}):
+  def __init__(self, target:types.strictstr, residual:sample.strictintegral, inertia:sample.strictintegral, timestep:types.strictfloat, lhs0:types.frozenarray[types.strictfloat]=None, residual0:sample.strictintegral=None, constrain:types.frozenarray=None, arguments:argdict={}, solveargs:types.frozendict={}):
     super().__init__()
 
-    assert target not in arguments, '`target` should not be defined in `arguments`'
-
+    if target in arguments:
+      raise ValueError('`target` should not be defined in `arguments`')
     self.target = target
+    argshape = residual._argshape(self.target)
+    if residual.shape != argshape:
+      raise ValueError('expected `residual` with shape {} but got {}'.format(argshape, residual.shape))
     self.residual = residual
+    self.jacobian0 = residual.derivative(target)
+    if residual0 is not None:
+      self.residual += residual0
+    if inertia.shape != argshape:
+      raise ValueError('expected `inertia` with shape {} but got {}'.format(argshape, inertia.shape))
     self.inertia = inertia
+    self.jacobiant = inertia.derivative(target)
+    if lhs0 is None:
+      self.lhs0 = types.frozenarray.full(argshape, fill_value=0.)
+    elif lhs0.shape == argshape:
+      self.lhs0 = lhs0
+    else:
+      raise ValueError('expected `lhs0` with shape {} but got {}'.format(argshape, lhs0.shape))
+    if constrain is None:
+      self.constrain = types.frozenarray.full(argshape, fill_value=False)
+    elif constrain.shape != argshape:
+      raise ValueError('expected `constrain` with shape {} but got {}'.format(argshape, constrain.shape))
+    elif constrain.dtype == float:
+      self.constrain = types.frozenarray(~numpy.isnan(constrain), copy=False)
+      self.lhs0 = types.frozenarray(numpy.choose(self.constrain, [self.lhs0, constrain]), copy=False)
+    elif constrain.dtype == bool:
+      self.constrain = constrain
+    else:
+      raise ValueError('`constrain` should have dtype bool or float but got {}'.format(constrain.dtype))
     self.timestep = timestep
-    self.lhs0 = lhs0
-    self.residual0 = residual0
-    self.constrain = constrain
     self.arguments = arguments
     self.solveargs = solveargs
 
+  def _eval(self, lhs, timestep):
+    arguments = {self.target: lhs}
+    arguments.update(self.arguments)
+    return sample.eval_integrals(self.residual, self.jacobian0+self.jacobiant/timestep, arguments=arguments)
+
   def resume(self, history):
-
-    jacobian0 = self.residual.derivative(self.target)
-    jacobiant = self.inertia.derivative(self.target)
-    residual = self.residual
-    if self.residual0 is not None:
-      residual += self.residual0
-    inertia = self.inertia
-
-    argshape = residual._argshape(self.target)
-    assert len(argshape) == 1
-
-    lhs0 = self.lhs0.copy()
-    constrain = self.constrain
-    if constrain is None:
-      constrain = numpy.zeros(residual.shape, dtype=bool)
-    else:
-      assert numeric.isarray(constrain) and constrain.dtype in (bool,float) and constrain.shape == residual.shape, 'invalid constrain argument'
-      if constrain.dtype == float:
-        lhs0 = numpy.choose(numpy.isnan(constrain), [constrain, lhs0])
-        constrain = ~numpy.isnan(constrain)
-    constrain = types.frozenarray(constrain)
-
     if history:
       lhs, info = history[-1]
-      res0 = residual.eval(arguments=collections.ChainMap(self.arguments, {self.target: lhs0}))
-      resnorm0 = numpy.linalg.norm(res0[~constrain])
-      res, jac = sample.eval_integrals(residual, jacobian0+jacobiant/info.timestep, arguments=collections.ChainMap(self.arguments, {self.target: lhs}))
-      resnorm = numpy.linalg.norm(res[~constrain])
+      resnorm0 = info.resnorm0
+      timestep = info.timestep
+      res, jac = self._eval(lhs, timestep)
+      resnorm = numpy.linalg.norm(res[~self.constrain])
       assert resnorm == info.resnorm
     else:
-      res, jac = sample.eval_integrals(residual, jacobian0+jacobiant/self.timestep, arguments=collections.ChainMap(self.arguments, {self.target: lhs0}))
-      lhs = lhs0
-      resnorm = resnorm0 = numpy.linalg.norm(res[~constrain])
-      yield lhs, types.attributes(resnorm=resnorm, timestep=self.timestep)
+      lhs = self.lhs0
+      timestep = self.timestep
+      res, jac = self._eval(lhs, timestep)
+      resnorm = resnorm0 = numpy.linalg.norm(res[~self.constrain])
+      yield numpy.array(lhs), types.attributes(resnorm=resnorm, timestep=timestep, resnorm0=resnorm0)
 
+    lhs = numpy.array(lhs)
     while True:
-      lhs -= jac.solve(res, constrain=constrain, **self.solveargs)
-      thistimestep = self.timestep * (resnorm0/resnorm)
-      log.info('timestep: {:.0e}'.format(thistimestep))
-      res, jac = sample.eval_integrals(residual, jacobian0+jacobiant/thistimestep, arguments=collections.ChainMap(self.arguments, {self.target: lhs}))
-      resnorm = numpy.linalg.norm(res[~constrain])
-      yield lhs, types.attributes(resnorm=resnorm, timestep=thistimestep)
+      lhs -= jac.solve(res, constrain=self.constrain, **self.solveargs)
+      timestep = self.timestep * (resnorm0/resnorm)
+      log.info('timestep: {:.0e}'.format(timestep))
+      res, jac = self._eval(lhs, timestep)
+      resnorm = numpy.linalg.norm(res[~self.constrain])
+      yield lhs.copy(), types.attributes(resnorm=resnorm, timestep=timestep, resnorm0=resnorm0)
 
 
 class thetamethod(RecursionWithSolve, length=1):
