@@ -583,7 +583,6 @@ class Array(Evaluable):
   _determinant = lambda self: None
   _inverse = lambda self: None
   _takediag = lambda self, axis, rmaxis: None
-  _kronecker = lambda self, axis, length, pos: None
   _diagonalize = lambda self, axis, newaxis: None
   _product = lambda self: None
   _sign = lambda self: None
@@ -1210,9 +1209,6 @@ class Concatenate(Array):
     if self.axis != axis:
       return Concatenate([Diagonalize(func, axis, newaxis) for func in self.funcs], self.axis+(newaxis<=self.axis))
 
-  def _kronecker(self, axis, length, pos):
-    return Concatenate([kronecker(func,axis,length,pos) for func in self.funcs], self.axis+(axis<=self.axis))
-
   def _mask(self, maskvec, axis):
     if axis != self.axis:
       return Concatenate([Mask(func,maskvec,axis) for func in self.funcs], self.axis)
@@ -1523,9 +1519,6 @@ class BlockAdd(Array):
 
   def _multiply(self, other):
     return BlockAdd([multiply(func, other) for func in self.funcs])
-
-  def _kronecker(self, axis, length, pos):
-    return BlockAdd([kronecker(func, axis, length, pos) for func in self.funcs])
 
   def _mask(self, maskvec, axis):
     return BlockAdd([Mask(func, maskvec, axis) for func in self.funcs])
@@ -2159,9 +2152,6 @@ class Zeros(Array):
   def _power(self, n):
     return self
 
-  def _kronecker(self, axis, length, pos):
-    return Zeros(self.shape[:axis]+(length,)+self.shape[axis:], dtype=self.dtype)
-
   def _mask(self, maskvec, axis):
     return Zeros(self.shape[:axis] + (maskvec.sum(),) + self.shape[axis+1:], dtype=self.dtype)
 
@@ -2284,9 +2274,6 @@ class Inflate(Array):
     if axis == self.axis:
       return arr
     return Inflate(arr, self.dofmap, self.length, self.axis-(axis<self.axis))
-
-  def _kronecker(self, axis, length, pos):
-    return Inflate(kronecker(self.func,axis,length,pos), self.dofmap, self.length, self.axis+(axis<=self.axis))
 
   def _unravel(self, axis, shape):
     if axis != self.axis:
@@ -2628,9 +2615,6 @@ class Ravel(Array):
     funcaxes = [ax+(ax>self.axis) for ax in axes]
     funcaxes = funcaxes[:ravelaxis+1] + [self.axis+1] + funcaxes[ravelaxis+1:]
     return Ravel(Transpose(self.func, funcaxes), ravelaxis)
-
-  def _kronecker(self, axis, length, pos):
-    return Ravel(kronecker(self.func, axis+(axis>self.axis), length, pos), self.axis+(axis<=self.axis))
 
   def _takediag(self, axis, rmaxis):
     if not {self.axis, self.axis+1} & {axis, rmaxis}:
