@@ -101,6 +101,14 @@ class check(TestCase):
           actual=(numpy.expand_dims(V,ax2+1) * numpy.expand_dims(L,ax2+2).swapaxes(ax1+1,ax2+2)).sum(ax2+2),
           desired=(numpy.expand_dims(A,ax2+1) * numpy.expand_dims(V,ax2+2).swapaxes(ax1+1,ax2+2)).sum(ax2+2))
 
+  def test_inv(self):
+    for ax1, ax2 in self.pairs:
+      trans = [i for i in range(self.n_op_argsfun.ndim) if i not in (ax1+1,ax2+1)] + [ax1+1,ax2+1]
+      invtrans = list(map(trans.index, range(len(trans))))
+      self.assertArrayAlmostEqual(decimal=15,
+        desired=numeric.inv(self.n_op_argsfun.transpose(trans)).transpose(invtrans),
+        actual=function.inverse(self.op_args, axes=(ax1,ax2)).simplified.eval(**self.evalargs))
+
   def test_take(self):
     indices = [-1,0]
     for iax, sh in enumerate(self.op_args.shape):
@@ -356,13 +364,13 @@ _check('inverse232', lambda a: function.inverse(a,(0,2)), lambda a: numpy.linalg
 _check('inverse323', lambda a: function.inverse(a,(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(-3,-2)).swapaxes(-3,-2), [(3,2,3)])
 _check('repeat', lambda a: function.repeat(a,3,1), lambda a: numpy.repeat(a,3,-2), [(2,1,2)])
 _check('diagonalize', lambda a: function.diagonalize(a,1,3), lambda a: numeric.diagonalize(a,2,4), [(2,2,2,2)])
-_check('multiply', function.multiply, numpy.multiply, [(3,1),(1,3)])
-_check('divide', function.divide, numpy.divide, [(3,1),(1,3)], low=-2, high=-1)
+_check('multiply', function.multiply, numpy.multiply, [(3,1),(3,3)])
+_check('divide', function.divide, lambda a, b: a * b**-1, [(3,3),(1,3)], low=-2, high=-1)
 _check('divide2', lambda a: function.asarray(a)/2, lambda a: a/2, [(3,1)])
 _check('add', function.add, numpy.add, [(3,1),(1,3)])
 _check('subtract', function.subtract, numpy.subtract, [(3,1),(1,3)])
-_check('product2', lambda a,b: function.multiply(a,b).sum(-2), lambda a,b: (a*b).sum(-2), [(2,3,1),(1,3,2)])
-_check('cross', lambda a,b: function.cross(a,b,-2), lambda a,b: numpy.cross(a,b,axis=-2), [(2,3,1),(1,3,2)])
+_check('product2', lambda a,b: function.multiply(a,b).sum(-2), lambda a,b: (a*b).sum(-2), [(2,3,2),(1,3,2)])
+_check('cross', lambda a,b: function.cross(a,b,-2), lambda a,b: numpy.cross(a,b,axis=-2), [(2,3,1),(2,3,2)])
 _check('min', lambda a,b: function.min(a,b), numpy.minimum, [(3,1),(1,3)])
 _check('max', lambda a,b: function.max(a,b), numpy.maximum, [(3,1),(1,3)])
 _check('equal', lambda a,b: function.equal(a,b), numpy.equal, [(3,1),(1,3)])
