@@ -1960,8 +1960,8 @@ class HierarchicalTopology(Topology):
           continue
         # Create and add the interface between `elem` and `neighbor`.
         elemedge = elem.edges[ielemedge]
-        neighboredge = neighbor.edges[ineighboredge]
-        interfaces.append(element.Element(elemedge.reference, elemedge.transform, neighboredge.transform))
+        if elemedge:
+          interfaces.append(elemedge.withopposite(neighbor.edges[ineighboredge]))
     return UnstructuredTopology(self.ndims-1, interfaces)
 
   @log.title
