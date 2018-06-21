@@ -133,7 +133,7 @@ class check(TestCase):
   def test_concatenate(self):
     for idim in range(self.op_args.ndim):
       self.assertArrayAlmostEqual(decimal=15,
-        desired=numpy.concatenate([self.n_op_argsfun, self.shapearg[_].repeat(len(self.points),0)], axis=idim+1),
+        desired=numpy.concatenate([self.n_op_argsfun, self.shapearg[_].repeat(len(self.n_op_argsfun),0)], axis=idim+1),
         actual=function.concatenate([self.op_args, self.shapearg], axis=idim).simplified.eval(**self.evalargs))
 
   def test_getslice(self):
@@ -257,10 +257,11 @@ class check(TestCase):
     while not numpy.all(good):
       fdpoints = self.points[_,_,:,:] + D[:,:,_,:] * eps
       tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
-      F = tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:])
-      fdgrad = numpy.zeros(F.shape[1:], bool) if F.dtype.kind == 'b' else (F[1]-F[0])/eps
-      fdgrad = fdgrad.transpose(numpy.roll(numpy.arange(F.ndim-1),-1))
-      error = fdgrad - exact
+      if len(tmp) == 1 or tmp.dtype.kind == 'b':
+        error = exact
+      else:
+        fdgrad, = numpy.diff(tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:]), axis=0) / eps
+        error = exact - fdgrad.transpose(numpy.roll(numpy.arange(fdgrad.ndim),-1))
       good |= numpy.less(abs(error / exact), 1e-8)
       good |= numpy.less(abs(error), 1e-14)
       eps *= .8
@@ -292,10 +293,11 @@ class check(TestCase):
     while not numpy.all(good):
       fdpoints = self.find(self.geom.eval(**self.evalargs)[_,_,:,:] + D[:,:,_,:] * eps, self.points[_,_,:,:])
       tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
-      F = tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:])
-      fdgrad = numpy.zeros(F.shape[1:], bool) if F.dtype.kind == 'b' else (F[1]-F[0])/eps
-      fdgrad = fdgrad.transpose(numpy.roll(numpy.arange(F.ndim-1),-1))
-      error = fdgrad - exact
+      if len(tmp) == 1 or tmp.dtype.kind == 'b':
+        error = exact
+      else:
+        fdgrad, = numpy.diff(tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:]), axis=0) / eps
+        error = exact - fdgrad.transpose(numpy.roll(numpy.arange(fdgrad.ndim),-1))
       good |= numpy.less(abs(error / exact), 1e-8)
       good |= numpy.less(abs(error), 1e-14)
       eps *= .8
@@ -312,10 +314,11 @@ class check(TestCase):
     while not numpy.all(good):
       fdpoints = self.find(self.geom.eval(**self.evalargs)[_,_,_,_,:,:] + DD[:,:,:,:,_,:] * eps, self.points[_,_,_,_,:,:])
       tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
-      F = tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:])
-      fddgrad = numpy.zeros(F.shape[2:], bool) if F.dtype.kind == 'b' else ((F[1,1]-F[1,0])-(F[0,1]-F[0,0]))/(eps**2)
-      fddgrad = fddgrad.transpose(numpy.roll(numpy.arange(F.ndim-2),-2))
-      error = fddgrad - exact
+      if len(tmp) == 1 or tmp.dtype.kind == 'b':
+        error = exact
+      else:
+        (fddgrad,), = numpy.diff(numpy.diff(tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:]), axis=1), axis=0) / eps**2
+        error = exact - fddgrad.transpose(numpy.roll(numpy.arange(fddgrad.ndim),-2))
       good |= numpy.less(abs(error / exact), 1e-4)
       good |= numpy.less(abs(error), 1e-14)
       eps *= .8
@@ -323,7 +326,8 @@ class check(TestCase):
         self.fail('double gradient failed to reach tolerance ({}/{})'.format((~good).sum(), good.size))
 
 _check = lambda name, op, n_op, shapes, hasgrad=True, pass_geom=False, ndim=2, low=-1, high=1: check(name, op=op, n_op=n_op, shapes=shapes, hasgrad=hasgrad, pass_geom=pass_geom, ndim=ndim, low=low, high=high)
-_check('const', lambda f: function.asarray(f), lambda a: a, [(2,3,2)])
+_check('identity', lambda f: function.asarray(f), lambda a: a, [(2,3,2)])
+_check('const', lambda f: function.asarray([[1.,2.],[3.,4.]]), lambda a: numpy.array([[[1.,2.],[3.,4.]]]), [(2,3,2)])
 _check('sin', function.sin, numpy.sin, [(3,)])
 _check('cos', function.cos, numpy.cos, [(3,)])
 _check('tan', function.tan, numpy.tan, [(3,)])
