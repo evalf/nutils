@@ -220,37 +220,12 @@ class newton(RecursionWithSolve, length=1):
   @types.apply_annotations
   def __init__(self, target:types.strictstr, residual:sample.strictintegral, jacobian:sample.strictintegral=None, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, nrelax:types.strictint=None, minrelax:types.strictfloat=.01, maxrelax:types.strictfloat=2/3, droptol:types.strictfloat=None, rebound:types.strictfloat=2., arguments:argdict={}, solveargs:types.frozendict={}):
     super().__init__()
-
     if target in arguments:
       raise ValueError('`target` should not be defined in `arguments`')
     self.target = target
-    argshape = residual._argshape(self.target)
-    if residual.shape != argshape:
-      raise ValueError('expected `residual` with shape {} but got {}'.format(argshape, residual.shape))
     self.residual = residual
-    if jacobian is None:
-      self.jacobian = residual.derivative(target)
-    elif jacobian.shape == argshape * 2:
-      self.jacobian = jacobian
-    else:
-      raise ValueError('expected `jacobian` with shape {} but got {}'.format(argshape * 2, jacobian.shape))
-    if lhs0 is None:
-      self.lhs0 = types.frozenarray.full(argshape, fill_value=0.)
-    elif lhs0.shape == argshape:
-      self.lhs0 = lhs0
-    else:
-      raise ValueError('expected `lhs0` with shape {} but got {}'.format(argshape, lhs0.shape))
-    if constrain is None:
-      self.constrain = types.frozenarray.full(argshape, fill_value=False)
-    elif constrain.shape != argshape:
-      raise ValueError('expected `constrain` with shape {} but got {}'.format(argshape, constrain.shape))
-    elif constrain.dtype == float:
-      self.constrain = types.frozenarray(~numpy.isnan(constrain), copy=False)
-      self.lhs0 = types.frozenarray(numpy.choose(self.constrain, [self.lhs0, constrain]), copy=False)
-    elif constrain.dtype == bool:
-      self.constrain = constrain
-    else:
-      raise ValueError('`constrain` should have dtype bool or float but got {}'.format(constrain.dtype))
+    self.jacobian = _derivative(residual, target, jacobian)
+    self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, residual.shape)
     self.nrelax = nrelax
     self.minrelax = minrelax
     self.maxrelax = maxrelax
@@ -382,33 +357,15 @@ class minimize(RecursionWithSolve, length=1):
   @types.apply_annotations
   def __init__(self, target:types.strictstr, energy:sample.strictintegral, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, nrelax:types.strictint=None, minrelax:types.strictfloat=.01, maxrelax:types.strictfloat=2/3, rebound:types.strictfloat=2., droptol:types.strictfloat=None, arguments:argdict={}, solveargs:types.frozendict={}):
     super().__init__()
-
     if target in arguments:
       raise ValueError('`target` should not be defined in `arguments`')
-    self.target = target
     if energy.shape != ():
       raise ValueError('`energy` should be scalar')
-    argshape = energy._argshape(self.target)
+    self.target = target
     self.energy = energy
     self.residual = energy.derivative(target)
-    self.jacobian = self.residual.derivative(target)
-    if lhs0 is None:
-      self.lhs0 = types.frozenarray.full(argshape, fill_value=0.)
-    elif lhs0.shape == argshape:
-      self.lhs0 = lhs0
-    else:
-      raise ValueError('expected `lhs0` with shape {} but got {}'.format(argshape, lhs0.shape))
-    if constrain is None:
-      self.constrain = types.frozenarray.full(argshape, fill_value=False)
-    elif constrain.shape != argshape:
-      raise ValueError('expected `constrain` with shape {} but got {}'.format(argshape, constrain.shape))
-    elif constrain.dtype == float:
-      self.constrain = types.frozenarray(~numpy.isnan(constrain), copy=False)
-      self.lhs0 = types.frozenarray(numpy.choose(self.constrain, [self.lhs0, constrain]), copy=False)
-    elif constrain.dtype == bool:
-      self.constrain = constrain
-    else:
-      raise ValueError('`constrain` should have dtype bool or float but got {}'.format(constrain.dtype))
+    self.jacobian = _derivative(self.residual, target)
+    self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, self.residual.shape)
     self.nrelax = nrelax
     self.minrelax = minrelax
     self.maxrelax = maxrelax
@@ -416,7 +373,7 @@ class minimize(RecursionWithSolve, length=1):
     self.droptol = droptol
     self.arguments = arguments
     self.solveargs = solveargs
-    self.islinear = not self.jacobian.contains(self.target)
+    self.islinear = not self.jacobian.contains(target)
 
   def _eval(self, lhs):
     arguments = {self.target: lhs}
@@ -539,36 +496,16 @@ class pseudotime(RecursionWithSolve, length=1):
   @types.apply_annotations
   def __init__(self, target:types.strictstr, residual:sample.strictintegral, inertia:sample.strictintegral, timestep:types.strictfloat, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, arguments:argdict={}, solveargs:types.frozendict={}):
     super().__init__()
-
     if target in arguments:
       raise ValueError('`target` should not be defined in `arguments`')
+    if inertia.shape != residual.shape:
+      raise ValueError('expected `inertia` with shape {} but got {}'.format(residual.shape, inertia.shape))
     self.target = target
-    argshape = residual._argshape(self.target)
-    if residual.shape != argshape:
-      raise ValueError('expected `residual` with shape {} but got {}'.format(argshape, residual.shape))
     self.residual = residual
-    self.jacobian0 = residual.derivative(target)
-    if inertia.shape != argshape:
-      raise ValueError('expected `inertia` with shape {} but got {}'.format(argshape, inertia.shape))
+    self.jacobian = _derivative(residual, target)
     self.inertia = inertia
-    self.jacobiant = inertia.derivative(target)
-    if lhs0 is None:
-      self.lhs0 = types.frozenarray.full(argshape, fill_value=0.)
-    elif lhs0.shape == argshape:
-      self.lhs0 = lhs0
-    else:
-      raise ValueError('expected `lhs0` with shape {} but got {}'.format(argshape, lhs0.shape))
-    if constrain is None:
-      self.constrain = types.frozenarray.full(argshape, fill_value=False)
-    elif constrain.shape != argshape:
-      raise ValueError('expected `constrain` with shape {} but got {}'.format(argshape, constrain.shape))
-    elif constrain.dtype == float:
-      self.constrain = types.frozenarray(~numpy.isnan(constrain), copy=False)
-      self.lhs0 = types.frozenarray(numpy.choose(self.constrain, [self.lhs0, constrain]), copy=False)
-    elif constrain.dtype == bool:
-      self.constrain = constrain
-    else:
-      raise ValueError('`constrain` should have dtype bool or float but got {}'.format(constrain.dtype))
+    self.jacobiant = _derivative(inertia, target)
+    self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, residual.shape)
     self.timestep = timestep
     self.arguments = arguments
     self.solveargs = solveargs
@@ -576,7 +513,7 @@ class pseudotime(RecursionWithSolve, length=1):
   def _eval(self, lhs, timestep):
     arguments = {self.target: lhs}
     arguments.update(self.arguments)
-    return sample.eval_integrals(self.residual, self.jacobian0+self.jacobiant/timestep, arguments=arguments)
+    return sample.eval_integrals(self.residual, self.jacobian+self.jacobiant/timestep, arguments=arguments)
 
   def resume(self, history):
     if history:
@@ -705,3 +642,31 @@ def _nan_at(vec, where):
   if where is not False:
     copy[where] = numpy.nan
   return copy
+
+def _parse_lhs_cons(lhs0, constrain, shape):
+  if lhs0 is None:
+    lhs0 = types.frozenarray.full(shape, fill_value=0.)
+  elif lhs0.shape == shape:
+    lhs0 = types.frozenarray(lhs0)
+  else:
+    raise ValueError('expected `lhs0` with shape {} but got {}'.format(shape, lhs0.shape))
+  if constrain is None:
+    constrain = types.frozenarray.full(shape, fill_value=False)
+  elif constrain.shape != shape:
+    raise ValueError('expected `constrain` with shape {} but got {}'.format(shape, constrain.shape))
+  elif constrain.dtype == float:
+    isnan = numpy.isnan(constrain)
+    lhs0 = types.frozenarray(numpy.choose(isnan, [constrain, lhs0]), copy=False)
+    constrain = types.frozenarray(~isnan, copy=False)
+  elif constrain.dtype == bool:
+    constrain = types.frozenarray(constrain)
+  else:
+    raise ValueError('`constrain` should have dtype bool or float but got {}'.format(constrain.dtype))
+  return lhs0, constrain
+
+def _derivative(residual, target, jacobian=None):
+  if jacobian is None:
+    jacobian = residual.derivative(target)
+  if jacobian.shape != residual.shape * 2:
+    raise ValueError('expected `jacobian` with shape {} but got {}'.format(inertia.shape * 2, jacobian.shape))
+  return jacobian
