@@ -2077,7 +2077,7 @@ class Eig(Evaluable):
     return Eig(func, self.symmetric)
 
   def evalf(self, arr):
-    return (numpy.linalg.eigh if self.symmetric else numeric.eig)(arr)
+    return (numpy.linalg.eigh if self.symmetric else numpy.linalg.eig)(arr)
 
 class ArrayFromTuple(Array):
 
