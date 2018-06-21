@@ -537,7 +537,7 @@ class pseudotime(RecursionWithSolve, length=1):
   '''
 
   @types.apply_annotations
-  def __init__(self, target:types.strictstr, residual:sample.strictintegral, inertia:sample.strictintegral, timestep:types.strictfloat, lhs0:types.frozenarray[types.strictfloat]=None, residual0:sample.strictintegral=None, constrain:types.frozenarray=None, arguments:argdict={}, solveargs:types.frozendict={}):
+  def __init__(self, target:types.strictstr, residual:sample.strictintegral, inertia:sample.strictintegral, timestep:types.strictfloat, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, arguments:argdict={}, solveargs:types.frozendict={}):
     super().__init__()
 
     if target in arguments:
@@ -548,8 +548,6 @@ class pseudotime(RecursionWithSolve, length=1):
       raise ValueError('expected `residual` with shape {} but got {}'.format(argshape, residual.shape))
     self.residual = residual
     self.jacobian0 = residual.derivative(target)
-    if residual0 is not None:
-      self.residual += residual0
     if inertia.shape != argshape:
       raise ValueError('expected `inertia` with shape {} but got {}'.format(argshape, inertia.shape))
     self.inertia = inertia
