@@ -9,7 +9,7 @@ geometry and mesh refinement', Computer Methods in Applied Mechanics and
 Engineering, Elsevier, 2005, 194, 4135-4195.
 """
 
-from nutils import cli, mesh, function, util, log, solver, export
+from nutils import *
 import numpy, unittest
 from matplotlib import collections
 
@@ -21,7 +21,6 @@ def main(
     nu: "poisson's ratio" = 0.3,
     T: 'far field traction' = 10,
     nr: 'number of h-refinements' = 2,
-    figures: 'create figures' = True,
   ):
 
   ns = function.Namespace()
@@ -83,16 +82,15 @@ def main(
     ns = ns(lhs=lhs)
 
     # post-processing
-    if figures:
-      bezier = domain.sample('bezier', 8)
-      x, stressxx = bezier.eval([ns.x, ns.stress[0,0]])
-      with export.mplfigure('solution{}'.format(irefine)) as fig:
-        ax = fig.add_subplot(111, aspect='equal')
-        im = ax.tripcolor(x[:,0], x[:,1], bezier.tri, stressxx, shading='gouraud', cmap='jet')
-        im.set_clim(numpy.nanmin(stressxx),numpy.nanmax(stressxx))
-        ax.add_collection(collections.LineCollection(x[bezier.hull], colors='k', linewidths=.1))
-        ax.autoscale(enable=True, axis='both', tight=True)
-        fig.colorbar(im)
+    bezier = domain.sample('bezier', 8)
+    x, stressxx = bezier.eval([ns.x, ns.stress[0,0]])
+    with export.mplfigure('solution{}'.format(irefine)) as fig:
+      ax = fig.add_subplot(111, aspect='equal')
+      im = ax.tripcolor(x[:,0], x[:,1], bezier.tri, stressxx, shading='gouraud', cmap='jet')
+      im.set_clim(numpy.nanmin(stressxx),numpy.nanmax(stressxx))
+      ax.add_collection(collections.LineCollection(x[bezier.hull], colors='k', linewidths=.1))
+      ax.autoscale(enable=True, axis='both', tight=True)
+      fig.colorbar(im)
 
     # compute the L2-norm of the error in the stress
     err = domain.integrate('(?dstress_ij ?dstress_ij)(dstress_ij = stress_ij - stressexact_ij)' @ ns, geometry=ns.x, ischeme='gauss9')**.5
@@ -101,11 +99,10 @@ def main(
     hmax = max(domain.integrate_elementwise(1, degree=2, geometry=ns.x))**.5
     convergence.append((hmax, err))
 
-  if figures:
-    with export.mplfigure('convergence') as fig:
-      ax = fig.add_subplot(111, xlabel='mesh parameter', title='L2 error of stress')
-      ax.loglog(*numpy.array(convergence).T, 'k*--')
-      ax.grid(True)
+  with export.mplfigure('convergence') as fig:
+    ax = fig.add_subplot(111, xlabel='mesh parameter', title='L2 error of stress')
+    ax.loglog(*numpy.array(convergence).T, 'k*--')
+    ax.grid(True)
 
   return convergence
 
@@ -113,11 +110,11 @@ def main(
 class test(unittest.TestCase):
 
   def test1(self):
-    conv = main(nr=2, figures=False)
+    conv = main(nr=2)
     numpy.testing.assert_almost_equal(conv, [[2.77449, 3.917807], [1.793076, 2.930154], [1.041247, 1.476470]], decimal=6)
 
   def test2(self):
-    conv = main(L=3, R=1.5, E=1e6, nu=0.4, T=15, nr=3, figures=False)
+    conv = main(L=3, R=1.5, E=1e6, nu=0.4, T=15, nr=3)
     numpy.testing.assert_almost_equal(conv, [[1.902403, 6.005827], [1.140464, 3.374952], [0.645049, 1.060993], [0.346868, 0.254238]], decimal=6)
 
 

@@ -50,7 +50,6 @@ def main(
     uniform: 'use uniform refinement (default adaptive)' = False,
     basistype: 'basis function' = 'h-std',
     nrefine: 'maximum allowed number of refinements' = 7,
-    figures: 'create figures' = True,
   ):
 
   # construct domain
@@ -68,7 +67,7 @@ def main(
   log.info('exact solution lsqr harmonicity:', harmonicity)
 
   # prepare plotting
-  makeplots = MakePlots(geom, 2/3 if uniform else degree, [-.5, -.5], 1/9, circle) if figures else lambda *args: None
+  makeplots = MakePlots(geom, 2/3 if uniform else degree, [-.5, -.5], 1/9, circle)
 
   # start adaptive refinement
   for irefine in log.count('level', start=1):
@@ -122,7 +121,7 @@ def main(
 class test(unittest.TestCase):
 
   def test_p1_h_std(self):
-    lhsprimal, error_est_w = main(degree=1, circle=False, uniform=False, basistype='h-std', nrefine=2, figures=False)
+    lhsprimal, error_est_w = main(degree=1, circle=False, uniform=False, basistype='h-std', nrefine=2)
     numeric.assert_allclose64(lhsprimal, 'eNoBhAB7/2s2sDVfNKMjoMtQypXJlzbjNZk0l9Vkyx3Ka'
       'snA0gXL18k0yWjKfsn3yGrKrskdybXIfskeycPIdcj3yLXIdcg6yF4ocyhDLHA1JjXGNEs0izNAMs02h'
       'DYoNq019DSrM+o2pzZTNuM1PDX6M0bUrtEKN802gTYgNpY1rjR90DfOZs630OhqQfw=')
@@ -135,7 +134,7 @@ class test(unittest.TestCase):
       'pp//Hn31L8LXuZdFbnJTmfS+iKmyHvcpFOKNkxZow0JMDLDWvjktr/J4AjJL+AIyZgFs=')
 
   def test_p1_th_std(self):
-    lhsprimal, error_est_w = main(degree=1, circle=False, uniform=False, basistype='th-std', nrefine=2, figures=False)
+    lhsprimal, error_est_w = main(degree=1, circle=False, uniform=False, basistype='th-std', nrefine=2)
     numeric.assert_allclose64(lhsprimal, 'eNoBhAB7/2s2sDVfNKMjoMtQypXJlzbjNZk0l9Vkyx3Ka'
       'snA0gXL18k0yWjKfsn3yGrKrskdybXIfskeycPIdcj3yLXIdcg6yCQ1PzVdNbE2ZDYDNoE1wDRoM802h'
       'DYoNq019DShM+o2pzZTNuM1PDX2M9bS7MsKN802gTYgNpY1rjR90EbLUcucyv1wQqw=')
@@ -148,7 +147,7 @@ class test(unittest.TestCase):
       '0ikCHrPCbQrk60Q+yT2SWKAk/uqi0/dFhOUUlBgZvYIj+e/LqSabcJplKoD4bGQYGAEjUgPU=')
 
   def test_p2_h_spline(self):
-    lhsprimal, error_est_w = main(degree=2, circle=False, uniform=False, basistype='h-spline', nrefine=1, figures=False)
+    lhsprimal, error_est_w = main(degree=2, circle=False, uniform=False, basistype='h-spline', nrefine=1)
     numeric.assert_allclose64(lhsprimal, 'eNoBbgCR/2s2GTYnNQoz9szZyufJlcl/Ni82OTUuM9jMv'
       '8rSyYHJrzZgNoQ1LDN1zH3Km8lRyek2rDbKNSo0AMwZylrJF8kpN9w2kjbNM4TKrMkKydfIssm2ySHJw'
       'ciVyIfJBsnByHfIV8gXydfIlchXyDrIutg53Q==')
@@ -160,7 +159,7 @@ class test(unittest.TestCase):
       'xYq4SQcwQAgDpQ2yr')
 
   def test_p1_h_std_circle(self):
-    lhsprimal, error_est_w = main(degree=1, circle=True, uniform=False, basistype='h-std', nrefine=1, figures=False)
+    lhsprimal, error_est_w = main(degree=1, circle=True, uniform=False, basistype='h-std', nrefine=1)
     numeric.assert_allclose64(lhsprimal, 'eNoBUACv/2s2sDVgNHPpoMtQypXJljbgNZM0RtRkyx3Ka'
       'snMNic25DSm0gnL1sk0yQk3gDaZNcHPYsp+yffIbMq1yR7JtciAyR/JxMh1yPfItch1yDrIoQ4s1w==')
     numeric.assert_allclose64(error_est_w, 'eNpjYMAHIhUZGFwUGBgqJBgYJGUZGD5IQ8QD7s15ZKL'

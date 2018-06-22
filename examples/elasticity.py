@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 
-from nutils import mesh, util, cli, log, function, numeric, solver, export
+from nutils import *
 import numpy, unittest
 from matplotlib import collections
 
@@ -10,7 +10,6 @@ def main(
     lmbda: 'first lamé constant' = 1.,
     mu: 'second lamé constant' = 1.,
     degree: 'polynomial degree' = 2,
-    figures: 'create figures' = True,
     solvetol: 'solver tolerance' = 1e-10,
  ):
 
@@ -42,15 +41,14 @@ def main(
   ns = ns(lhs=lhs)
 
   # plot solution
-  if figures:
-    bezier = domain.sample('bezier', 3)
-    x, stress = bezier.eval([ns.x, ns.stress[0,1]])
-    with export.mplfigure('stress') as fig:
-      ax = fig.add_subplot(111, aspect='equal')
-      ax.autoscale(enable=True, axis='both', tight=True)
-      im = ax.tripcolor(x[:,0], x[:,1], bezier.tri, stress, shading='gouraud', cmap='jet')
-      ax.add_collection(collections.LineCollection(x[bezier.hull], colors='k', linewidths=.5, alpha=.1))
-      fig.colorbar(im)
+  bezier = domain.sample('bezier', 3)
+  x, stress = bezier.eval([ns.x, ns.stress[0,1]])
+  with export.mplfigure('stress') as fig:
+    ax = fig.add_subplot(111, aspect='equal')
+    ax.autoscale(enable=True, axis='both', tight=True)
+    im = ax.tripcolor(x[:,0], x[:,1], bezier.tri, stress, shading='gouraud', cmap='jet')
+    ax.add_collection(collections.LineCollection(x[bezier.hull], colors='k', linewidths=.5, alpha=.1))
+    fig.colorbar(im)
 
   return lhs, cons
 
@@ -58,13 +56,13 @@ def main(
 class test(unittest.TestCase):
 
   def test_p1(self):
-    lhs, cons = main(nelems=4, degree=1, figures=False, solvetol=0)
+    lhs, cons = main(nelems=4, degree=1, solvetol=0)
     numeric.assert_allclose64(lhs, 'eNpjYICBFGMxYyEgTjFebDLBpB2IF5tkmKaYJgJxhukPOIRrYBA'
       '1CjJgYFh3/vXZMiMVQwaGO+e6zvYY2QBZR86VnO2FsorPAgAXLB7S')
     numeric.assert_allclose64(cons, 'eNpjYICDBnzwhykMMhCpAwEBQ08XYg==')
 
   def test_p2(self):
-    lhs, cons = main(nelems=4, degree=2, figures=False, solvetol=0)
+    lhs, cons = main(nelems=4, degree=2, solvetol=0)
     numeric.assert_allclose64(lhs, 'eNpjYECAPKNKw3lAWGmYZyRlwmfyxviNMZ+JlAmvKZcpMxBymfK'
       'abjXdYroZCLcAWT+QIJIxDGcMAwyY9f5e3HDe5Fyc0XvDQv3+C4LnFp3tMPpg+F2f84LAuYqzrUasRuf'
       '1DS/8Plt9tsvol+ErfbELbOfKzgIAw+QzeA==')

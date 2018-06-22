@@ -11,7 +11,6 @@ def main(
     radius: 'cut-out radius' = .5,
     degree: 'polynomial degree' = 1,
     poisson: 'poisson ratio' = .25,
-    figures: 'create figures' = True,
   ):
 
   ns = function.Namespace(default_geometry_name='x0')
@@ -54,16 +53,15 @@ def main(
 
   # vizualize result
   ns = ns(lhs=lhs)
-  if figures:
-    bezier = domain.sample('bezier', 5)
-    vonmises = 'sqrt(stress_ij stress_ij - stress_ii stress_jj / 2)' @ ns
-    x, colors = bezier.eval([ns.x, vonmises])
-    with export.mplfigure('solution') as fig:
-      ax = fig.add_subplot(111, aspect='equal')
-      ax.autoscale(enable=True, axis='both', tight=True)
-      im = ax.tripcolor(x[:,0], x[:,1], bezier.tri, colors, shading='gouraud', cmap='jet')
-      ax.add_collection(collections.LineCollection(x[bezier.hull], colors='k', linewidths=.5, alpha=.1))
-      fig.colorbar(im)
+  bezier = domain.sample('bezier', 5)
+  vonmises = 'sqrt(stress_ij stress_ij - stress_ii stress_jj / 2)' @ ns
+  x, colors = bezier.eval([ns.x, vonmises])
+  with export.mplfigure('solution') as fig:
+    ax = fig.add_subplot(111, aspect='equal')
+    ax.autoscale(enable=True, axis='both', tight=True)
+    im = ax.tripcolor(x[:,0], x[:,1], bezier.tri, colors, shading='gouraud', cmap='jet')
+    ax.add_collection(collections.LineCollection(x[bezier.hull], colors='k', linewidths=.5, alpha=.1))
+    fig.colorbar(im)
 
   # evaluate error
   err = numpy.sqrt(domain.integrate(['uerr_k uerr_k' @ ns, 'uerr_i,j uerr_i,j' @ ns], geometry=ns.x0, degree=max(degree,3)*2))
@@ -75,7 +73,7 @@ def main(
 class test(unittest.TestCase):
 
   def test_tri_p1_refine2(self):
-    err, cons, lhs = main(degree=1, maxrefine=2, figures=False)
+    err, cons, lhs = main(degree=1, maxrefine=2)
     numeric.assert_allclose64(err, 'eNp7rF1rCAAFPAG9')
     numeric.assert_allclose64(cons, 'eNp7ZyxkzNDw0JCh4cNNhgZTlcJbDA0wON2EoSHXRMcExK45x3'
       'mOoaHvLEOD41mEilz1t0Bd79QZGq5ePHMeJAIAhC0d7A==')
@@ -83,7 +81,7 @@ class test(unittest.TestCase):
       '0bTQsNAI0bTN8zgnO686OzTDOQc2jzYTNcs7jzW/ObSft2VDQ7ieL0tXRzM8q0CvPl2Invw==')
 
   def test_quad_p2_refine2(self):
-    err, cons, lhs = main(nelems=4, degree=2, maxrefine=2, figures=False)
+    err, cons, lhs = main(nelems=4, degree=2, maxrefine=2)
     numeric.assert_allclose64(err, 'eNpr0kjRAwADegE9')
     numeric.assert_allclose64(cons, 'eNpjaIi7l6Iw995sJYYGGDyqj2D/MESwWYwR7PXGE0wmmGSYGJ'
       'owmLyHi/ueRajwOyutDGNPP6t8Dy5z7g7crphzb27fvbLm4rPz189VnAMAG9QxcQ==')
@@ -92,7 +90,7 @@ class test(unittest.TestCase):
       'NGyPxzszOM866zZfNI94PJALRMc9FzgDO3CKm1L/Ry8+3zlzO7Nvd1KzR5s/XznjO0+ZFww==')
 
   def test_quad_p2_refine3(self):
-    err, cons, lhs = main(nelems=4, degree=2, maxrefine=3, figures=False)
+    err, cons, lhs = main(nelems=4, degree=2, maxrefine=3)
     numeric.assert_allclose64(err, 'eNqr1UjUAwADYAE1')
     numeric.assert_allclose64(cons, 'eNpjaIi7l6Iw995sJYYGGDyqj2D/MESwWYwR7PXGE0wmmGSYGJ'
       'owmLyHi/ueRajwOyutDGNPP6t8Dy5z7g7crphzb27fvbLm4rPz189VnAMAG9QxcQ==')

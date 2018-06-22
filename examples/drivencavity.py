@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 
-from nutils import mesh, cli, log, function, numeric, solver, util, export
+from nutils import *
 import numpy, unittest
 from matplotlib import collections
 
@@ -41,7 +41,6 @@ def main(
     density: 'fluid density' = 1,
     degree: 'polynomial degree' = 2,
     warp: 'warp domain (downward bend)' = False,
-    figures: 'create figures' = True,
   ):
 
   log.user( 'reynolds number: {:.1f}'.format(density / viscosity) ) # based on unit length and velocity
@@ -89,14 +88,12 @@ def main(
   res = domain.integral('ubasis_ni,j sigma_ij + pbasis_n (u_k,k + l) + lbasis_n p' @ ns, geometry=ns.x, degree=2*(degree+1))
   res += domain.boundary.integral('nietzsche_ni (u_i - utop_i)' @ ns, geometry=ns.x, degree=2*(degree+1))
   lhs0 = solver.solve_linear('lhs', res)
-  if figures:
-    postprocess('stokes', domain, ns, lhs=lhs0)
+  postprocess('stokes', domain, ns, lhs=lhs0)
 
   # solve navier-stokes flow
   res += domain.integral('density ubasis_ni u_i,j u_j' @ ns, geometry=ns.x, degree=3*(degree+1))
   lhs1 = solver.newton('lhs', res, lhs0=lhs0).solve(tol=1e-10)
-  if figures:
-    postprocess('navierstokes', domain, ns, lhs=lhs1)
+  postprocess('navierstokes', domain, ns, lhs=lhs1)
 
   return lhs0, lhs1
 
@@ -104,14 +101,14 @@ def main(
 class test(unittest.TestCase):
 
   def test_p1(self):
-    lhs0, lhs1 = main(nelems=3, viscosity=1e-2, degree=1, warp=False, figures=False)
+    lhs0, lhs1 = main(nelems=3, viscosity=1e-2, degree=1, warp=False)
     numeric.assert_allclose64(lhs0, 'eNpTvPBI3/o0t1mzds/pltM65opQ/n196QvcZh4XO03MTHbolZ'
       '8+dVrxwlP9rycVL03Xjbm45tQfrZc37M/LGLBcFVc/aPDk/H3dzEtL9EJMGRgAJt4mPA==')
     numeric.assert_allclose64(lhs1, 'eNoBUgCt/6nOuTGJy4M1SCzJy4zLCjcsLk3PCst/Nlcx9M2DNe'
       'DPgDR+NB7UG8wVzSwuPc6ByezUQiudMKTL/y4AL73NLS6jLUov8s4zzXoscdMJMSo2AABO+yTF')
 
   def test_p2(self):
-    lhs0, lhs1 = main(nelems=3, viscosity=1e-2, degree=2, warp=False, figures=False)
+    lhs0, lhs1 = main(nelems=3, viscosity=1e-2, degree=2, warp=False)
     numeric.assert_allclose64(lhs0, 'eNp7ZmB71sY46VSq2dLzludvnMo20jFHsJ7BZaXObzbedDrVbJ'
       'nBjPM1ZkuNGaAg6nyGQcvJ6DPPDHzP+JnMPsltwKl1/DyrYcPJUxf0LuXqvDkzzYgBDsz0L+lOvixinH'
       'X26/nvVy0Nfp9rMGNgAADUrDbX')
@@ -120,7 +117,7 @@ class test(unittest.TestCase):
       'MsaS6lLkLOajM9LDgwWNBzzOvOMTBCMHnXnDHFzcDTYDCgKo0vLzcAACOlOuU=')
 
   def test_p1_warped(self):
-    lhs0, lhs1 = main(nelems=3, viscosity=1e-2, degree=1, warp=True, figures=False)
+    lhs0, lhs1 = main(nelems=3, viscosity=1e-2, degree=1, warp=True)
     numeric.assert_allclose64(lhs0, 'eNozv9CjZ35a2axMx/P0jdPq5uZQ/kn9zVeVzewubjHhNjmk53'
       'P662nzC75ad0/evZSv+/1846n3WluvK51PNhC86q1xz2DueWXdiZc4DepNGRgALu0l4g==')
     numeric.assert_allclose64(lhs1, 'eNoBUgCt/67OazGNy5M1fy2Oy+XL+ja0LqzO8sqmNlIxfM6TNc'

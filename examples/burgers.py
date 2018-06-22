@@ -1,6 +1,6 @@
 #! /usr/bin/python3
 
-from nutils import mesh, cli, log, function, plot, numeric, solver, util, export
+from nutils import *
 import numpy, unittest
 from matplotlib import collections
 
@@ -35,7 +35,6 @@ def main(
     tol: 'solver tolerance' = 1e-5,
     ndims: 'spatial dimension' = 1,
     endtime: 'end time, 0 for no end time' = 0,
-    figures: 'create figures' = True,
  ):
 
   # construct mesh
@@ -58,7 +57,7 @@ def main(
   lhs0 = domain.project('exp(-?y_i ?y_i)(y_i = 5 (x_i - 0.5_i))' @ ns, onto=ns.basis, geometry=ns.x, degree=5)
 
   # prepare plotting
-  makeplots = MakePlots(domain, ns) if figures else lambda **args: None
+  makeplots = MakePlots(domain, ns)
 
   # start time stepping
   timestep = timescale/nelems
@@ -73,21 +72,21 @@ def main(
 class test(unittest.TestCase):
 
   def test_1d_p1(self):
-    res, lhs = main(ndims=1, nelems=10, timescale=.1, degree=1, endtime=.01, figures=False)
+    res, lhs = main(ndims=1, nelems=10, timescale=.1, degree=1, endtime=.01)
     numeric.assert_allclose64(res, 'eNoBKADX/0EjOSuY1xUtjC+JMNcyNDNLMwgzw81EzUHM8cy0zsD'
       'P89i20xgrvNxPhBPC')
     numeric.assert_allclose64(lhs, 'eNrbocann6u3yqjTyMLUwfSw2TWzKPNM8+9mH8wyTMNNZxptMir'
       'W49ffpwYAI6cOVA==')
 
   def test_1d_p2(self):
-    res, lhs = main(ndims=1, nelems=10, timescale=.1, degree=2, endtime=.01, figures=False)
+    res, lhs = main(ndims=1, nelems=10, timescale=.1, degree=2, endtime=.01)
     numeric.assert_allclose64(res, 'eNoBPADD/6kgyiOI2Pspriq7K4cuhC9sMLsxNjKXMpkyPDJ/MfD'
       'PPM5yzTjNd83azV3PMdBa0a7TNdXK2FXXL9xP31+mHuU=')
     numeric.assert_allclose64(lhs, 'eNrr0c7SrtWfrD/d4JHRE6Ofxj6mnqaKZofNDpjZmQeYB5pHmL8'
       'we23mb5ZvWmjKY/LV6KPRFIMZ+o368dp92gCxZxZG')
 
   def test_2d_p1(self):
-    res, lhs = main(ndims=2, nelems=4, timescale=.1, degree=1, endtime=.01, figures=False)
+    res, lhs = main(ndims=2, nelems=4, timescale=.1, degree=1, endtime=.01)
     numeric.assert_allclose64(res, 'eNoBgAB//yYduB+R2yHZjyYvKJvWV9YvKI8mV9ab1rgfJh0h2ZH'
       'b7CVvKBklqycdLpUvmy4/MJUvHS4/MJsubyjsJasnGSX12mPYVh5+4LzRMNBI0oPQMNC80YPQSNJj2PX'
       'afuBWHivbtdjS4kHgQ9Tu0kDZk9fu0kPUk9dA2bXYK9tB4NLih2hBgw==')

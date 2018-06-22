@@ -23,7 +23,6 @@ def main(
     angle: 'bend angle (degrees)' = 20,
     restol: 'residual tolerance' = 1e-10,
     trim: 'create circular-shaped hole' = False,
-    figures: 'create figures' = True,
  ):
 
   ns = function.Namespace()
@@ -50,16 +49,14 @@ def main(
 
   energy = domain.integral('energy' @ ns, geometry=ns.x, degree=7)
   lhs0 = solver.optimize('lhs', energy, constrain=cons)
-  if figures:
-    makeplots('linear', domain, ns(lhs=lhs0))
+  makeplots('linear', domain, ns(lhs=lhs0))
 
   ns.strain_ij = '.5 (u_i,j + u_j,i + u_k,i u_k,j)'
   ns.energy = 'lmbda strain_ii strain_jj + 2 mu strain_ij strain_ij'
 
   energy = domain.integral('energy' @ ns, geometry=ns.x, degree=7)
   lhs1 = solver.optimize('lhs', energy, lhs0=lhs0, constrain=cons, newtontol=restol)
-  if figures:
-    makeplots('nonlinear', domain, ns(lhs=lhs1))
+  makeplots('nonlinear', domain, ns(lhs=lhs1))
 
   return lhs0, lhs1
 
@@ -67,7 +64,7 @@ def main(
 class test(unittest.TestCase):
 
   def test(self):
-    lhs0, lhs1 = main(nelems=4, angle=10, figures=False)
+    lhs0, lhs1 = main(nelems=4, angle=10)
     numeric.assert_allclose64(lhs0, 'eNpjYECAa1e+aE3Qu6Nfa9BlmHoxU/eHgbIRs3Gs8bwLr/S4ja'
       'yNfxn7mGy/sEz/qNFz4wUmL0xuX/AzEDDWMrlromyKZAxDlg6bbppOw1WXi2nnqy8svSBxwf980Ln3Z9'
       '+ffXP2+Nm8s6xnT59pOdNzJveM3RnmM/dOS55hOXPn9PbTU0+3nAYAZeQ9sA==')
