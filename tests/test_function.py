@@ -325,7 +325,10 @@ class check(TestCase):
       if eps < 1e-10:
         self.fail('double gradient failed to reach tolerance ({}/{})'.format((~good).sum(), good.size))
 
-_check = lambda name, op, n_op, shapes, hasgrad=True, pass_geom=False, ndim=2, low=-1, high=1: check(name, op=op, n_op=n_op, shapes=shapes, hasgrad=hasgrad, pass_geom=pass_geom, ndim=ndim, low=low, high=high)
+def _check(name, op, n_op, shapes, hasgrad=True, pass_geom=False, ndim=2, low=-1, high=1):
+  check(name, op=op, n_op=n_op, shapes=shapes, hasgrad=hasgrad, pass_geom=pass_geom, ndim=ndim, low=low, high=high)
+  check(name+':guard', op=lambda *args: op(*map(function.Guard, args)), n_op=n_op, shapes=shapes, hasgrad=hasgrad, pass_geom=pass_geom, ndim=ndim, low=low, high=high)
+
 _check('identity', lambda f: function.asarray(f), lambda a: a, [(2,3,2)])
 _check('const', lambda f: function.asarray([[1.,2.],[3.,4.]]), lambda a: numpy.array([[[1.,2.],[3.,4.]]]), [(2,3,2)])
 _check('sin', function.sin, numpy.sin, [(3,)])
