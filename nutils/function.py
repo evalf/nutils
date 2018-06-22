@@ -1182,10 +1182,6 @@ class Cross(Array):
     return cross(self.func1[ext], derivative(self.func2, var, seen), axis=self.axis) \
          - cross(self.func2[ext], derivative(self.func1, var, seen), axis=self.axis)
 
-  def _take(self, index, axis):
-    if axis != self.axis:
-      return Cross(Take(self.func1, index, axis), Take(self.func2, index, axis), self.axis)
-
 class Determinant(Array):
 
   def __init__(self, func:asarray):
