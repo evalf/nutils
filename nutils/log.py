@@ -24,12 +24,11 @@ The log module provides print methods ``debug``, ``info``, ``user``,
 stdout as well as to an html formatted log file if so configured.
 """
 
-import time, functools, itertools, re, abc, contextlib, html, urllib.parse, os, json, traceback, bdb, inspect, textwrap, builtins
+import time, functools, itertools, io, abc, contextlib, html, urllib.parse, os, json, traceback, bdb, inspect, textwrap, builtins
 from . import core, config, warnings
 
-# NOTE: This should match the log levels defined in `nutils/_log/viewer.js`.
-LEVELS = 'error', 'warning', 'user', 'info', 'debug'
-
+LEVELS = 'error', 'warning', 'user', 'info', 'debug' # NOTE this should match the log levels defined in `nutils/_log/viewer.js`
+VIEWABLE = 'jpg', 'png', 'svg', 'txt', 'mp4', 'webm' # file types that can be viewed in the theater
 
 ## LOG
 
@@ -78,6 +77,29 @@ class Log(metaclass=abc.ABCMeta):
 
     .. Note:: This function is abstract.
     '''
+
+  @abc.abstractmethod
+  def open(self, filename, mode, level):
+    '''Create file object.'''
+
+class DataLog(Log):
+  '''Output only data.'''
+
+  def __init__(self, outdir):
+    self.outdir = outdir
+    super().__init__()
+
+  @contextlib.contextmanager
+  def context(self, title, mayskip=False):
+    yield
+
+  def write(self, level, text):
+    pass
+
+  @contextlib.contextmanager
+  def open(self, filename, mode, level):
+    with builtins.open(os.path.join(self.outdir, filename), mode) as f:
+      yield f
 
 class ContextLog(Log):
   '''Base class for loggers that keep track of the current list of contexts.
@@ -191,6 +213,11 @@ class StdoutLog(ContextLog):
       s = self._mkstr(level, text)
       print(s, end='\n' if endl else '', file=self.stream)
 
+  @contextlib.contextmanager
+  def open(self, filename, mode, level):
+    yield _devnull(filename)
+    self.write(level, filename)
+
 class RichOutputLog(StdoutLog):
   '''Output rich (colored,unicode) text to stream.'''
 
@@ -238,29 +265,7 @@ class RichOutputLog(StdoutLog):
       self._progressupdate = t + self._progressinterval
       print(self._mkstr('progress', None), end='\r', file=self.stream)
 
-class HtmlInsertAnchor(Log):
-  '''Mix-in class for HTML-based loggers that inserts anchor tags for paths.
-
-  .. automethod:: _insert_anchors
-  '''
-
-  def _path2href(self, match):
-    if match.group(0) not in core.listoutdir():
-      return match.group(0)
-    filename = html.unescape(match.group(0))
-    ext = html.unescape(match.group(1))
-    whitelist = ['.jpg','.png','.svg','.txt','.mp4','.webm'] + list(getattr(config, 'plot_extensions', []))
-    fmt = '<a href="{href}"' + (' class="plot"' if ext in whitelist else '') + '>{name}</a>'
-    return fmt.format(href=urllib.parse.quote(filename), name=html.escape(filename))
-
-  def _insert_anchors(self, level, escaped_text):
-    '''Insert anchors for all paths in ``escaped_text``.
-
-    .. Note:: ``escaped_text`` should be valid html (e.g. the result of ``html.escape(text)``).
-    '''
-    return re.sub(r'\b\w+([.]\w+)\b', self._path2href, escaped_text)
-
-class HtmlLog(HtmlInsertAnchor, ContextTreeLog):
+class HtmlLog(ContextTreeLog):
   '''Output html nested lists.'''
 
   def __init__(self, file, *, title='nutils', scriptname=None, funcname=None, funcargs=None):
@@ -281,7 +286,7 @@ class HtmlLog(HtmlInsertAnchor, ContextTreeLog):
     logpath = os.path.join(os.path.dirname(__file__), '_log')
     for filename in os.listdir(logpath):
       if not filename.startswith('.'):
-        with open(os.path.join(logpath, filename), 'rb') as src, core.open_in_outdir(filename, 'wb') as dst:
+        with builtins.open(os.path.join(logpath, filename), 'rb') as src, core.open_in_outdir(filename, 'wb') as dst:
           dst.write(src.read())
     # Write header.
     if self._file:
@@ -328,9 +333,10 @@ class HtmlLog(HtmlInsertAnchor, ContextTreeLog):
     self._print('</div><div class="end"></div></div>')
     self._flush()
 
-  def _print_item(self, level, text):
-    escaped_text = self._insert_anchors(level, html.escape(text))
-    self._print('<div class="item" data-loglevel="{}">{}</div>'.format(LEVELS.index(level), escaped_text))
+  def _print_item(self, level, text, escape=True):
+    if escape:
+      text = html.escape(text)
+    self._print('<div class="item" data-loglevel="{}">{}</div>'.format(LEVELS.index(level), text))
     self._flush()
 
   def write_post_mortem(self, etype, value, tb):
@@ -351,7 +357,14 @@ class HtmlLog(HtmlInsertAnchor, ContextTreeLog):
     self._print('</div>')
     self._flush()
 
-class IndentLog(HtmlInsertAnchor, ContextTreeLog):
+  @contextlib.contextmanager
+  def open(self, filename, mode, level):
+    with core.open_in_outdir(filename, mode) as f:
+      yield f
+    fmt = '<a href="{href}"' + (' class="plot"' if filename.split('.')[-1] in VIEWABLE else '') + '>{name}</a>'
+    self._print_item(level, fmt.format(href=urllib.parse.quote(filename), name=html.escape(filename)), escape=False)
+
+class IndentLog(ContextTreeLog):
   '''Output indented html snippets.'''
 
   def __init__(self, file, *, progressfile=None, progressinterval=None):
@@ -376,8 +389,9 @@ class IndentLog(HtmlInsertAnchor, ContextTreeLog):
   def _print_pop_context(self):
     self._prefix = self._prefix[:-1]
 
-  def _print_item(self, level, text):
-    text = self._insert_anchors(level, html.escape(text))
+  def _print_item(self, level, text, escape=True):
+    if escape:
+      text = html.escape(text)
     level = html.escape(level[0])
     for line in text.splitlines():
       self._print('{}{} {}'.format(self._prefix, level, line))
@@ -408,6 +422,13 @@ class IndentLog(HtmlInsertAnchor, ContextTreeLog):
     self._progressfile.write('\n')
     self._progressfile.flush()
 
+  @contextlib.contextmanager
+  def open(self, filename, mode, level):
+    with core.open_in_outdir(filename, mode) as f:
+      yield f
+    fmt = '<a href="{href}"' + (' class="plot"' if filename.split('.')[-1] in VIEWABLE else '') + '>{name}</a>'
+    self._print_item(level, fmt.format(href=urllib.parse.quote(filename), name=html.escape(filename)), escape=False)
+
 class TeeLog(Log):
   '''Simultaneously interface multiple logs'''
 
@@ -436,6 +457,11 @@ class TeeLog(Log):
   def write(self, level, text):
     for log in self.logs:
       log.write(level, text)
+
+  @contextlib.contextmanager
+  def open(self, filename, mode, level):
+    with contextlib.ExitStack() as stack:
+      yield _multistream(stack.enter_context(log.open(filename, mode, level)) for log in self.logs)
 
 class RecordLog(Log):
   '''
@@ -504,6 +530,16 @@ class RecordLog(Log):
       self._appended_contexts = len(self._contexts)
       self._messages.append(('write', level, text))
 
+  @contextlib.contextmanager
+  def open(self, filename, mode, level):
+    for title in self._contexts[self._appended_contexts:]:
+      self._messages.append(('entercontext', title))
+    self._appended_contexts = len(self._contexts)
+    data = io.BytesIO() if 'b' in mode else io.StringIO()
+    with self._old_log.open(filename, mode, level) as f:
+      yield _multistream([f, data])
+    self._messages.append(('open', filename, mode, level, data.getValue()))
+
   def replay(self):
     '''
     Replay this recorded log in the log that's currently active.
@@ -518,7 +554,10 @@ class RecordLog(Log):
         contexts.pop().__exit__(None, None, None)
       elif cmd == 'write':
         _current_log.write(*args)
-
+      elif cmd == 'open':
+        filename, mode, level, data = args
+        with _current_log.open(filename, mode, level) as f:
+          f.write(data)
 
 ## INTERNAL FUNCTIONS
 
@@ -540,6 +579,22 @@ def _len(iterable):
 def _print(level, *args):
   return _current_log.write(level, ' '.join(str(arg) for arg in args))
 
+class _multistream(io.IOBase):
+  def __init__(self, streams):
+    self.streams = tuple(streams)
+  def __bool__(self):
+    return any(self.streams)
+  def write(self, data):
+    for stream in self.streams:
+      stream.write(data)
+
+class _devnull(io.IOBase):
+  def __init__(self, name):
+    self.name = name
+  def __bool__(self):
+    return False
+  def write(self, data):
+    pass
 
 ## MODULE-ONLY METHODS
 
@@ -615,5 +670,7 @@ def title(f): # decorator
 def context(title, mayskip=False):
   return _current_log.context(title, mayskip)
 
+def open(filename, mode, *, level='user'):
+  return _current_log.open(filename, mode, level)
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

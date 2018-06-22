@@ -153,9 +153,8 @@ def generate_log(short=False):
       "ValueError('test',)\n" \
       '  File "??", line ??, in ??\n' \
       "    raise ValueError('test')")
-  with nutils.core.open_in_outdir('test.png', 'w') as f:
+  with nutils.log.open('test.png', 'wb', level='info') as f:
     pass
-  nutils.log.info('test.png')
   nutils.log.info('nonexistent.png')
 
 @parametrize

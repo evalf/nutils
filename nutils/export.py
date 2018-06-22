@@ -18,7 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from . import config, log, core, util
+from . import config, log, util
 import contextlib, numpy
 
 @contextlib.contextmanager
@@ -43,17 +43,15 @@ def mplfigure(*args, **kwargs):
   '''
 
   name, = args
-  formats = config.imagetype.split(',')
+  import matplotlib.backends.backend_agg
+  fig = matplotlib.figure.Figure(**kwargs)
+  matplotlib.backends.backend_agg.FigureCanvas(fig) # sets reference via fig.set_canvas
   with log.context(name):
-    import matplotlib.backends.backend_agg
-    fig = matplotlib.figure.Figure(**kwargs)
-    matplotlib.backends.backend_agg.FigureCanvas(fig) # sets reference via fig.set_canvas
     yield fig
-    for fmt in formats:
-      with log.context(fmt), core.open_in_outdir(name+'.'+fmt, 'wb') as f:
-        fig.savefig(f, format=fmt)
-    fig.set_canvas(None) # break circular reference
-  log.user(', '.join(name+'.'+fmt for fmt in formats))
+  for fmt in config.imagetype.split(','):
+    with log.open(name+'.'+fmt, 'wb') as f:
+      fig.savefig(f, format=fmt)
+  fig.set_canvas(None) # break circular reference
 
 @util.positional_only('name', 'tri', 'x')
 def vtk(*args, **kwargs):
@@ -134,20 +132,18 @@ def vtk(*args, **kwargs):
     raise Exception('invalid array data type: {}'.format(', '.join(invalid_dtype)))
 
   name_vtk = name + '.vtk'
-  with log.context(name_vtk), core.open_in_outdir(name_vtk, 'wb') as vtk:
+  with log.open(name_vtk, 'wb') as vtk:
     vtk.write(b'# vtk DataFile Version 3.0\nvtk output\nBINARY\nDATASET UNSTRUCTURED_GRID\n')
     vtk.write('POINTS {} {}\n'.format(len(points), vtkdtype[points.dtype]).encode('ascii'))
-    points.tofile(vtk)
+    vtk.write(points.tobytes())
     vtk.write('CELLS {} {}\n'.format(len(t_cells), t_cells.size).encode('ascii'))
-    t_cells.tofile(vtk)
+    vtk.write(t_cells.tobytes())
     vtk.write('CELL_TYPES {}\n'.format(len(cells)).encode('ascii'))
-    numpy.array(celltype, dtype='>u4').repeat(len(cells)).tofile(vtk)
+    vtk.write(numpy.array(celltype, dtype='>u4').repeat(len(cells)).tobytes())
     for n, arrays in gathered:
       vtk.write('{}_DATA {}\n'.format('POINT' if n == len(points) else 'CELL', n).encode('ascii'))
       for name, array in arrays:
         vtk.write(vtkndim[array.ndim].format(name, vtkdtype[array.dtype]).encode('ascii'))
-        numpy.pad(array, [[0,0]] + [[0,3-n] for n in array.shape[1:]], mode='constant').tofile(vtk)
-
-  log.user(name_vtk)
+        vtk.write(numpy.pad(array, [[0,0]] + [[0,3-n] for n in array.shape[1:]], mode='constant').tobytes())
 
 # vim:sw=2:sts=2:et
