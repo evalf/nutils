@@ -1035,7 +1035,7 @@ class StructuredLine(Topology):
     nelems = len(self)
     if periodic:
       if nelems == 1: # periodicity on one element can only mean a constant
-        coeffs = [self._spline_coeffs(0, n)]
+        coeffs = list(self._spline_coeffs(0, n))
         dofs = types.frozenarray([[0]], copy=False)
       else:
         coeffs = list(self._spline_coeffs(p, n)[p-1:p]) * nelems
