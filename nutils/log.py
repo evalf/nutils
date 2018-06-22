@@ -269,12 +269,9 @@ class HtmlLog(ContextTreeLog):
   '''Output html nested lists.'''
 
   def __init__(self, file, *, title='nutils', scriptname=None, funcname=None, funcargs=None):
-    if isinstance(file, (str, bytes)):
-      self._file = file = core.open_in_outdir(file, 'w')
-    else:
-      self._file = None
-    self._print = functools.partial(print, file=file)
-    self._flush = file.flush
+    self._file = core.open_in_outdir(file, 'w')
+    self._print = functools.partial(print, file=self._file)
+    self._flush = self._file.flush
     self._title = title
     self._scriptname = scriptname
     self._funcname = funcname
@@ -289,8 +286,7 @@ class HtmlLog(ContextTreeLog):
         with builtins.open(os.path.join(logpath, filename), 'rb') as src, core.open_in_outdir(filename, 'wb') as dst:
           dst.write(src.read())
     # Write header.
-    if self._file:
-      self._file.__enter__()
+    self._file.__enter__()
     self._print('<!DOCTYPE html>')
     self._print('<html><head>')
     self._print('<meta charset="UTF-8"/>')
@@ -322,8 +318,7 @@ class HtmlLog(ContextTreeLog):
     self._print('</div>') # id="log"
     # Write footer.
     self._print('</body></html>')
-    if self._file:
-      self._file.__exit__(etype, value, tb)
+    self._file.__exit__(etype, value, tb)
 
   def _print_push_context(self, title):
     self._print('<div class="context"><div class="title">{}</div><div class="children">'.format(html.escape(title)))
@@ -368,9 +363,9 @@ class IndentLog(ContextTreeLog):
   '''Output indented html snippets.'''
 
   def __init__(self, file, *, progressfile=None, progressinterval=None):
-    self._logfile = file
-    self._print = functools.partial(print, file=file)
-    self._flush = file.flush
+    self._logfile = core.open_in_outdir(file, 'w')
+    self._print = functools.partial(print, file=self._logfile)
+    self._flush = self._logfile.flush
     self._prefix = ''
     self._progressfile = progressfile
     if self._progressfile:
@@ -379,6 +374,14 @@ class IndentLog(ContextTreeLog):
       # Progress update interval in seconds.
       self._progressinterval = progressinterval or getattr(config, 'progressinterval', 1)
     super().__init__()
+
+  def __enter__(self):
+    self._logfile.__enter__()
+    super().__enter__()
+
+  def __exit__(self, etype, value, tb):
+    super().__exit__(etype, value, tb)
+    self._logfile.__exit__(etype, value, tb)
 
   def _print_push_context(self, title):
     title = title.replace('\n', '').replace('\r', '')

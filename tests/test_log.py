@@ -178,20 +178,24 @@ class logoutput(ContextTestCase):
     ))
 
   def test(self):
-    stream = io.StringIO()
     kwargs = dict(title='test') if self.logcls == nutils.log.HtmlLog else {}
     if self.progressfileobj is not None:
       kwargs.update(progressfile=self.progressfileobj)
     with contextlib.ExitStack() as stack:
-      if self.replace_sys_stdout:
-        stack.callback(setattr, sys, 'stdout', sys.stdout)
-        sys.stdout = stream
-        log_ = self.logcls(**kwargs)
+      if issubclass(self.logcls, (nutils.log.HtmlLog, nutils.log.IndentLog)):
+        with self.logcls('log.html', **kwargs):
+          generate_log()
+        with open(os.path.join(self.outdir, 'log.html')) as stream:
+          value = stream.read()
       else:
-        log_ = self.logcls(stream, **kwargs)
-      stack.enter_context(log_)
-      generate_log()
-    self.assertEqual(stream.getvalue(), self.logout)
+        stream = io.StringIO()
+        if self.replace_sys_stdout:
+          stack.callback(setattr, sys, 'stdout', sys.stdout)
+          sys.stdout = stream
+        with self.logcls(stream, **kwargs):
+          generate_log()
+        value = stream.getvalue()
+    self.assertEqual(value, self.logout)
 
 _logoutput = lambda name, logcls, logout, verbose=len(nutils.log.LEVELS), progressfile=False, replace_sys_stdout=False: logoutput(name, logcls=logcls, logout=logout, verbose=verbose, progressfile=progressfile, replace_sys_stdout=replace_sys_stdout)
 _logoutput('stdout', nutils.log.StdoutLog, log_stdout)
@@ -215,11 +219,11 @@ class tee_stdout_html(ContextTestCase):
 
   def test(self):
     stream_stdout = io.StringIO()
-    stream_html = io.StringIO()
-    with nutils.log.TeeLog(nutils.log.StdoutLog(stream_stdout), nutils.log.HtmlLog(stream_html, title='test')):
+    with nutils.log.TeeLog(nutils.log.StdoutLog(stream_stdout), nutils.log.HtmlLog('log.html', title='test')):
       generate_log()
     self.assertEqual(stream_stdout.getvalue(), log_stdout)
-    self.assertEqual(stream_html.getvalue(), log_html)
+    with open(os.path.join(self.outdir, 'log.html')) as stream_html:
+      self.assertEqual(stream_html.read(), log_html)
 
 class recordlog(ContextTestCase):
 
@@ -264,11 +268,11 @@ def generate_exception(level=0):
   else:
     generate_exception(level+1)
 ''', virtual_module)
-    stream = io.StringIO()
     with self.assertRaises(TestException):
-      with nutils.log.HtmlLog(stream, title='test'):
+      with nutils.log.HtmlLog('log.html', title='test'):
         virtual_module['generate_exception']()
-    self.assertIn('<div class="post-mortem">', stream.getvalue())
+    with open(os.path.join(self.outdir, 'log.html')) as stream:
+      self.assertIn('<div class="post-mortem">', stream.read())
 
 class move_outdir(ContextTestCase):
 
@@ -288,10 +292,10 @@ class move_outdir(ContextTestCase):
   @unittest.skipIf(not nutils.util.supports_outdirfd, 'outdirfd is not supported on this platform')
   def test(self):
     os.rename(self.outdira, self.outdirb)
-    stream = io.StringIO()
-    with nutils.log.HtmlLog(stream, title='test'):
+    with nutils.log.HtmlLog('log.html', title='test'):
       generate_log()
-    self.assertEqual(stream.getvalue(), log_html)
+    with open(os.path.join(self.outdirb, 'log.html')) as stream:
+      self.assertEqual(stream.read(), log_html)
 
 class log_context_manager(TestCase):
 
