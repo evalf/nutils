@@ -109,6 +109,15 @@ class check(TestCase):
           desired=numpy.take(self.n_op_argsfun, indices, axis=iax+1),
           actual=function.take(self.op_args, indices, axis=iax).simplified.eval(**self.evalargs))
 
+  def test_inflate(self):
+    for iax, sh in enumerate(self.op_args.shape):
+      dofmap = function.Constant(numpy.arange(sh) * 2)
+      desired = numpy.zeros(self.n_op_argsfun.shape[:iax+1] + (sh*2-1,) + self.n_op_argsfun.shape[iax+2:], dtype=self.n_op_argsfun.dtype)
+      desired[(slice(None),)*(iax+1)+(slice(None,None,2),)] = self.n_op_argsfun
+      self.assertArrayAlmostEqual(decimal=15,
+        desired=desired,
+        actual=function.Inflate(self.op_args, dofmap=dofmap, length=sh*2-1, axis=iax).simplified.eval(**self.evalargs))
+
   def test_diagonalize(self):
     for axis in range(self.op_args.ndim):
       for newaxis in range(axis+1, self.op_args.ndim+1):
