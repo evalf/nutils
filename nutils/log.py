@@ -320,15 +320,6 @@ class HtmlLog(HtmlInsertAnchor, ContextTreeLog):
     if self._file:
       self._file.__exit__(etype, value, tb)
 
-  def write(self, level, text):
-    '''Write ``text`` with log level ``level`` to the log.
-
-    This method makes sure the current context is printed and calls
-    :meth:`ContextTreeLog._print_item`.
-    '''
-    if level not in LEVELS[config.verbose:]:
-      return super().write(level, text)
-
   def _print_push_context(self, title):
     self._print('<div class="context"><div class="title">{}</div><div class="children">'.format(html.escape(title)))
     self._flush()
