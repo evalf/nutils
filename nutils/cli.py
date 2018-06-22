@@ -154,19 +154,16 @@ def call(func, kwargs, scriptname, funcname=None):
       outrootdir = os.path.expanduser(config.outrootdir)
       ymdt = starttime.strftime('%Y/%m/%d/%H-%M-%S/')
       outdir = os.path.join(outrootdir, scriptname, ymdt)
-      stack.enter_context(config(outdir=outdir, cachedir=os.path.join(outrootdir, scriptname, 'cache')))
+      stack.enter_context(config(cachedir=os.path.join(outrootdir, scriptname, 'cache')))
       relpaths = (outrootdir, os.path.join(scriptname, ymdt)), (os.path.join(outrootdir, scriptname), ymdt)
-    os.makedirs(outdir) # asserts nonexistence
-
-    if util.supports_outdirfd:
-      stack.enter_context(config(outdirfd=os.open(outdir, flags=os.O_RDONLY)))
-      stack.callback(os.close, config.outdirfd)
 
     symlink = config.symlink
     if symlink:
       for base, relpath in relpaths:
         target = os.path.join(base, symlink)
-        if os.path.islink(target):
+        if not os.path.isdir(base):
+          os.makedirs(base)
+        elif os.path.islink(target):
           os.remove(target)
         os.symlink(relpath, target)
 
@@ -186,7 +183,7 @@ def call(func, kwargs, scriptname, funcname=None):
           print('</head></html>', file=redirlog)
 
       funcargs = [(parameter.name, kwargs.get(parameter.name,parameter.default), parameter.annotation) for parameter in inspect.signature(func).parameters.values()]
-      log_ = log.TeeLog(log_, log.HtmlLog('log.html', title=scriptname, scriptname=scriptname, funcname=funcname, funcargs=funcargs))
+      log_ = log.TeeLog(log_, log.HtmlLog(outdir, title=scriptname, scriptname=scriptname, funcname=funcname, funcargs=funcargs))
 
     try:
       with log_, warnings.via(log.warning), matrix.backend(config.matrix), cache.enable(config.cachedir) if config.cache else cache.disable():

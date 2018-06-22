@@ -187,12 +187,12 @@ class Evaluable(types.Singleton):
 
     imgtype = config.imagetype
     imgpath = 'dot_{}.{}'.format(hashlib.sha1(imgdata).hexdigest(), imgtype)
-    if not os.path.exists(imgpath):
-      with core.open_in_outdir(imgpath, 'w') as img:
-        with subprocess.Popen([dotpath,'-T'+imgtype], stdin=subprocess.PIPE, stdout=img) as dot:
-          dot.communicate(imgdata)
-
-    log.info(imgpath)
+    with log.open(imgpath, 'wb', level='info', exists='skip') as img:
+      if img:
+        status = subprocess.run([dotpath,'-T'+imgtype], input=imgdata, stdout=subprocess.PIPE)
+        if status.returncode:
+          log.warning('graphviz failed for error code', status.returncode)
+        img.write(status.stdout)
 
   def stackstr(self, nlines=-1):
     'print stack'

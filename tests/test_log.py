@@ -73,14 +73,16 @@ log_rich_output = '''\
 
 log_html = '''\
 <!DOCTYPE html>
-<html><head>
+<html>
+<head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no"/>
 <title>test</title>
-<script src="viewer.js"></script>
-<link rel="stylesheet" type="text/css" href="viewer.css"/>
-<link rel="icon" sizes="48x48" type="image/png" href="favicon.png"/>
-</head><body>
+<script src="0b95171a2ed51cd6fedadc00a96397741219d2d6.js"></script>
+<link rel="stylesheet" type="text/css" href="7eaa783bda20788dc3f5c4bf953fcf73cefc6265.css"/>
+<link rel="icon" sizes="48x48" type="image/png" href="1e8377c360c7a152793d936d03b0ea9e2fcb742b.png"/>
+</head>
+<body>
 <div id="log">
 <div class="context"><div class="title">iterator</div><div class="children">
 <div class="context"><div class="title">iter 0 (0%)</div><div class="children">
@@ -163,27 +165,16 @@ class logoutput(ContextTestCase):
   def setUpContext(self, stack):
     super().setUpContext(stack)
     self.outdir = stack.enter_context(tempfile.TemporaryDirectory())
-    if self.progressfile == 'seekable':
-      self.progressfileobj = stack.enter_context(open(os.path.join(self.outdir, 'progress.json'), 'w'))
-    elif self.progressfile == 'stream':
-      self.progressfileobj = progressfile=io.StringIO()
-    else:
-      self.progressfileobj = None
     stack.enter_context(nutils.config(
-      outdir=self.outdir,
       verbose=self.verbose,
-      # Make sure all progress information is written, regardless the speed of
-      # this computer.
-      progressinterval=-1,
+      progressinterval=-1, # make sure all progress information is written, regardless the speed of this computer
     ))
 
   def test(self):
     kwargs = dict(title='test') if self.logcls == nutils.log.HtmlLog else {}
-    if self.progressfileobj is not None:
-      kwargs.update(progressfile=self.progressfileobj)
     with contextlib.ExitStack() as stack:
       if issubclass(self.logcls, (nutils.log.HtmlLog, nutils.log.IndentLog)):
-        with self.logcls('log.html', **kwargs):
+        with self.logcls(self.outdir, **kwargs):
           generate_log()
         with open(os.path.join(self.outdir, 'log.html')) as stream:
           value = stream.read()
@@ -197,29 +188,23 @@ class logoutput(ContextTestCase):
         value = stream.getvalue()
     self.assertEqual(value, self.logout)
 
-_logoutput = lambda name, logcls, logout, verbose=len(nutils.log.LEVELS), progressfile=False, replace_sys_stdout=False: logoutput(name, logcls=logcls, logout=logout, verbose=verbose, progressfile=progressfile, replace_sys_stdout=replace_sys_stdout)
+_logoutput = lambda name, logcls, logout, verbose=len(nutils.log.LEVELS), replace_sys_stdout=False: logoutput(name, logcls=logcls, logout=logout, verbose=verbose, replace_sys_stdout=replace_sys_stdout)
 _logoutput('stdout', nutils.log.StdoutLog, log_stdout)
 _logoutput('stdout-replace-sys-stdout', nutils.log.StdoutLog, log_stdout, replace_sys_stdout=True)
 _logoutput('stdout-verbose3', nutils.log.StdoutLog, log_stdout3, verbose=3)
 _logoutput('rich_output', nutils.log.RichOutputLog, log_rich_output)
 _logoutput('html', nutils.log.HtmlLog, log_html)
 _logoutput('indent', nutils.log.IndentLog, log_indent)
-_logoutput('indent-progress-seekable', nutils.log.IndentLog, log_indent, progressfile='seekable')
-_logoutput('indent-progress-stream', nutils.log.IndentLog, log_indent, progressfile='stream')
 
 class tee_stdout_html(ContextTestCase):
 
   def setUpContext(self, stack):
     super().setUpContext(stack)
     self.outdir = stack.enter_context(tempfile.TemporaryDirectory())
-    stack.enter_context(nutils.config(
-      outdir=self.outdir,
-      verbose=len(nutils.log.LEVELS),
-    ))
 
   def test(self):
     stream_stdout = io.StringIO()
-    with nutils.log.TeeLog(nutils.log.StdoutLog(stream_stdout), nutils.log.HtmlLog('log.html', title='test')):
+    with nutils.log.TeeLog(nutils.log.StdoutLog(stream_stdout), nutils.log.HtmlLog(self.outdir, title='test')):
       generate_log()
     self.assertEqual(stream_stdout.getvalue(), log_stdout)
     with open(os.path.join(self.outdir, 'log.html')) as stream_html:
@@ -252,10 +237,6 @@ class html_post_mortem(ContextTestCase):
   def setUpContext(self, stack):
     super().setUpContext(stack)
     self.outdir = stack.enter_context(tempfile.TemporaryDirectory())
-    stack.enter_context(nutils.config(
-      outdir=self.outdir,
-      verbose=len(nutils.log.LEVELS),
-    ))
 
   def test(self):
     class TestException(Exception): pass
@@ -269,7 +250,7 @@ def generate_exception(level=0):
     generate_exception(level+1)
 ''', virtual_module)
     with self.assertRaises(TestException):
-      with nutils.log.HtmlLog('log.html', title='test'):
+      with nutils.log.HtmlLog(self.outdir, title='test'):
         virtual_module['generate_exception']()
     with open(os.path.join(self.outdir, 'log.html')) as stream:
       self.assertIn('<div class="post-mortem">', stream.read())
@@ -281,18 +262,11 @@ class move_outdir(ContextTestCase):
     tmpdir = stack.enter_context(tempfile.TemporaryDirectory())
     self.outdira = os.path.join(tmpdir, 'a')
     self.outdirb = os.path.join(tmpdir, 'b')
-    os.mkdir(self.outdira)
-    self.outdirfd = os.open(self.outdira, flags=os.O_RDONLY)
-    stack.callback(os.close, self.outdirfd)
-    stack.enter_context(nutils.config(
-      outdirfd=self.outdirfd,
-      verbose=len(nutils.log.LEVELS),
-    ))
 
   @unittest.skipIf(not nutils.util.supports_outdirfd, 'outdirfd is not supported on this platform')
   def test(self):
-    os.rename(self.outdira, self.outdirb)
-    with nutils.log.HtmlLog('log.html', title='test'):
+    with nutils.log.HtmlLog(self.outdira, title='test'):
+      os.rename(self.outdira, self.outdirb)
       generate_log()
     with open(os.path.join(self.outdirb, 'log.html')) as stream:
       self.assertEqual(stream.read(), log_html)

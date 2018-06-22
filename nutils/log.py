@@ -24,11 +24,20 @@ The log module provides print methods ``debug``, ``info``, ``user``,
 stdout as well as to an html formatted log file if so configured.
 """
 
-import time, functools, itertools, io, abc, contextlib, html, urllib.parse, os, json, traceback, bdb, inspect, textwrap, builtins
+import time, functools, itertools, io, abc, contextlib, html, urllib.parse, os, json, traceback, bdb, inspect, textwrap, builtins, hashlib
 from . import core, config, warnings
 
 LEVELS = 'error', 'warning', 'user', 'info', 'debug' # NOTE this should match the log levels defined in `nutils/_log/viewer.js`
 VIEWABLE = 'jpg', 'png', 'svg', 'txt', 'mp4', 'webm' # file types that can be viewed in the theater
+HTMLHEAD = '''\
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no"/>
+<title>{title}</title>
+<script src="{viewer_js}"></script>
+<link rel="stylesheet" type="text/css" href="{viewer_css}"/>
+<link rel="icon" sizes="48x48" type="image/png" href="{favicon_png}"/>
+</head>'''
 
 ## LOG
 
@@ -79,15 +88,23 @@ class Log(metaclass=abc.ABCMeta):
     '''
 
   @abc.abstractmethod
-  def open(self, filename, mode, level):
+  def open(self, filename, mode, level, exists):
     '''Create file object.'''
 
 class DataLog(Log):
   '''Output only data.'''
 
   def __init__(self, outdir):
-    self.outdir = outdir
+    self.outdir = _makedirs(outdir, exist_ok=True)
     super().__init__()
+
+  def __enter__(self):
+    super().__enter__()
+    self._open = self.outdir.__enter__()
+
+  def __exit__(self, etype, value, tb):
+    super().__exit__(etype, value, tb)
+    self.outdir.__exit__(etype, value, tb)
 
   @contextlib.contextmanager
   def context(self, title, mayskip=False):
@@ -97,8 +114,8 @@ class DataLog(Log):
     pass
 
   @contextlib.contextmanager
-  def open(self, filename, mode, level):
-    with builtins.open(os.path.join(self.outdir, filename), mode) as f:
+  def open(self, filename, mode, level, exists):
+    with self._open(filename, mode, exists) as f:
       yield f
 
 class ContextLog(Log):
@@ -214,7 +231,7 @@ class StdoutLog(ContextLog):
       print(s, end='\n' if endl else '', file=self.stream)
 
   @contextlib.contextmanager
-  def open(self, filename, mode, level):
+  def open(self, filename, mode, level, exists):
     yield _devnull(filename)
     self.write(level, filename)
 
@@ -268,10 +285,8 @@ class RichOutputLog(StdoutLog):
 class HtmlLog(ContextTreeLog):
   '''Output html nested lists.'''
 
-  def __init__(self, file, *, title='nutils', scriptname=None, funcname=None, funcargs=None):
-    self._file = core.open_in_outdir(file, 'w')
-    self._print = functools.partial(print, file=self._file)
-    self._flush = self._file.flush
+  def __init__(self, outdir, *, title='nutils', scriptname=None, funcname=None, funcargs=None):
+    self._outdir = _makedirs(outdir, exist_ok=True)
     self._title = title
     self._scriptname = scriptname
     self._funcname = funcname
@@ -279,36 +294,35 @@ class HtmlLog(ContextTreeLog):
     super().__init__()
 
   def __enter__(self):
+    super().__enter__()
+    self._open = self._outdir.__enter__()
     # Copy dependencies.
-    logpath = os.path.join(os.path.dirname(__file__), '_log')
-    for filename in os.listdir(logpath):
-      if not filename.startswith('.'):
-        with builtins.open(os.path.join(logpath, filename), 'rb') as src, core.open_in_outdir(filename, 'wb') as dst:
-          dst.write(src.read())
+    paths = {}
+    for filename in 'favicon.png', 'viewer.css', 'viewer.js':
+      with builtins.open(os.path.join(os.path.dirname(__file__), '_log', filename), 'rb') as src:
+        data = src.read()
+      with self._open(hashlib.sha1(data).hexdigest() + '.' + filename.split('.')[1], 'wb', exists='skip') as dst:
+        dst.write(data)
+      paths[filename.replace('.', '_')] = dst.name
     # Write header.
+    self._file = self._open('log.html', 'w', exists='rename')
     self._file.__enter__()
     self._print('<!DOCTYPE html>')
-    self._print('<html><head>')
-    self._print('<meta charset="UTF-8"/>')
-    self._print('<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no"/>')
-    self._print('<title>{}</title>'.format(html.escape(self._title)))
-    self._print('<script src="viewer.js"></script>')
-    self._print('<link rel="stylesheet" type="text/css" href="viewer.css"/>')
-    self._print('<link rel="icon" sizes="48x48" type="image/png" href="favicon.png"/>')
-    body_attrs = ['body']
+    self._print('<html>')
+    self._print(HTMLHEAD.format(title=html.escape(self._title), **paths))
+    body_attrs = []
     if self._scriptname:
-      body_attrs.append('data-scriptname="{}"'.format(html.escape(self._scriptname)))
-      body_attrs.append('data-latest="../../../../log.html"')
+      body_attrs.append(('data-scriptname', html.escape(self._scriptname)))
+      body_attrs.append(('data-latest', '../../../../log.html'))
     if self._funcname:
-      body_attrs.append('data-funcname="{}"'.format(html.escape(self._funcname)))
-    self._print('</head><{}>'.format(' '.join(body_attrs)))
+      body_attrs.append(('data-funcname', html.escape(self._funcname)))
+    self._print(''.join(['<body'] + [' {}="{}"'.format(*item) for item in body_attrs] + ['>']))
     self._print('<div id="log">')
     if self._funcargs:
       self._print('<ul class="cmdline">')
       for name, value, annotation in self._funcargs:
         self._print(('  <li>{}={}<span class="annotation">{}</span></li>' if annotation is not inspect.Parameter.empty else '<li>{}={}</li>').format(*(html.escape(str(v)) for v in (name, value, annotation))))
       self._print('</ul>')
-    super().__enter__()
     return self
 
   def __exit__(self, etype, value, tb):
@@ -319,20 +333,23 @@ class HtmlLog(ContextTreeLog):
     # Write footer.
     self._print('</body></html>')
     self._file.__exit__(etype, value, tb)
+    self._outdir.__exit__(etype, value, tb)
+
+  def _print(self, *args, flush=False):
+    print(*args, file=self._file)
+    if flush:
+      self._file.flush()
 
   def _print_push_context(self, title):
-    self._print('<div class="context"><div class="title">{}</div><div class="children">'.format(html.escape(title)))
-    self._flush()
+    self._print('<div class="context"><div class="title">{}</div><div class="children">'.format(html.escape(title)), flush=True)
 
   def _print_pop_context(self):
-    self._print('</div><div class="end"></div></div>')
-    self._flush()
+    self._print('</div><div class="end"></div></div>', flush=True)
 
   def _print_item(self, level, text, escape=True):
     if escape:
       text = html.escape(text)
-    self._print('<div class="item" data-loglevel="{}">{}</div>'.format(LEVELS.index(level), text))
-    self._flush()
+    self._print('<div class="item" data-loglevel="{}">{}</div>'.format(LEVELS.index(level), text), flush=True)
 
   def write_post_mortem(self, etype, value, tb):
     'write exception nfo to html log'
@@ -349,44 +366,47 @@ class HtmlLog(ContextTreeLog):
         for line in code_context:
           self._print(html.escape(textwrap.fill(line.strip(), initial_indent='>>> ', subsequent_indent='    ', width=80)))
       self._print()
-    self._print('</div>')
-    self._flush()
+    self._print('</div>', flush=True)
 
   @contextlib.contextmanager
-  def open(self, filename, mode, level):
-    with core.open_in_outdir(filename, mode) as f:
+  def open(self, filename, mode, level, exists):
+    with self._open(filename, mode, exists) as f:
       yield f
     fmt = '<a href="{href}"' + (' class="plot"' if filename.split('.')[-1] in VIEWABLE else '') + '>{name}</a>'
-    self._print_item(level, fmt.format(href=urllib.parse.quote(filename), name=html.escape(filename)), escape=False)
+    self._print_item(level, fmt.format(href=urllib.parse.quote(f.name), name=html.escape(filename)), escape=False)
 
 class IndentLog(ContextTreeLog):
   '''Output indented html snippets.'''
 
-  def __init__(self, file, *, progressfile=None, progressinterval=None):
-    self._logfile = core.open_in_outdir(file, 'w')
-    self._print = functools.partial(print, file=self._logfile)
-    self._flush = self._logfile.flush
+  def __init__(self, outdir, *, progressinterval=None):
+    self._outdir = _makedirs(outdir, exist_ok=True)
     self._prefix = ''
-    self._progressfile = progressfile
-    if self._progressfile:
-      # Timestamp at which a new progress line may be written.
-      self._progressupdate = 0
-      # Progress update interval in seconds.
-      self._progressinterval = progressinterval or getattr(config, 'progressinterval', 1)
+    self._progressupdate = 0 # progress update interval in seconds
+    self._progressinterval = progressinterval or getattr(config, 'progressinterval', 1)
     super().__init__()
 
   def __enter__(self):
-    self._logfile.__enter__()
     super().__enter__()
+    self._open = self._outdir.__enter__()
+    self._logfile = self._open('log.html', 'w', exists='overwrite')
+    self._logfile.__enter__()
+    self._progressfile = self._open('progress.json', 'w', exists='overwrite') # timestamp at which a new progress line may be written
+    self._progressfile.__enter__()
 
   def __exit__(self, etype, value, tb):
     super().__exit__(etype, value, tb)
+    self._progressfile.__exit__(etype, value, tb)
     self._logfile.__exit__(etype, value, tb)
+    self._outdir.__exit__(etype, value, tb)
+
+  def _print(self, *args, flush=False):
+    print(*args, file=self._logfile)
+    if flush:
+      self._logfile.flush()
 
   def _print_push_context(self, title):
     title = title.replace('\n', '').replace('\r', '')
-    self._print('{}c {}'.format(self._prefix, html.escape(title)))
-    self._flush()
+    self._print('{}c {}'.format(self._prefix, html.escape(title)), flush=True)
     self._prefix += ' '
 
   def _print_pop_context(self):
@@ -397,17 +417,13 @@ class IndentLog(ContextTreeLog):
       text = html.escape(text)
     level = html.escape(level[0])
     for line in text.splitlines():
-      self._print('{}{} {}'.format(self._prefix, level, line))
+      self._print('{}{} {}'.format(self._prefix, level, line), flush=True)
       level = '|'
-    self._flush()
-    if self._progressfile:
-      self._print_progress(level, text)
-      self._progressupdate = 0
+    self._print_progress(level, text)
+    self._progressupdate = 0
 
   def _push_context(self, title, mayskip):
     super()._push_context(title, mayskip)
-    if not self._progressfile:
-      return
     from . import parallel
     if parallel.procid:
       return
@@ -418,19 +434,18 @@ class IndentLog(ContextTreeLog):
     self._progressupdate = t + self._progressinterval
 
   def _print_progress(self, level, text):
-    if self._progressfile.seekable():
-      self._progressfile.seek(0)
-      self._progressfile.truncate(0)
+    self._progressfile.seek(0)
+    self._progressfile.truncate(0)
     json.dump(dict(logpos=self._logfile.tell(), context=self._context, text=text, level=level), self._progressfile)
     self._progressfile.write('\n')
     self._progressfile.flush()
 
   @contextlib.contextmanager
-  def open(self, filename, mode, level):
-    with core.open_in_outdir(filename, mode) as f:
+  def open(self, filename, mode, level, exists):
+    with self._open(filename, mode, exists) as f:
       yield f
     fmt = '<a href="{href}"' + (' class="plot"' if filename.split('.')[-1] in VIEWABLE else '') + '>{name}</a>'
-    self._print_item(level, fmt.format(href=urllib.parse.quote(filename), name=html.escape(filename)), escape=False)
+    self._print_item(level, fmt.format(href=urllib.parse.quote(f.name), name=html.escape(filename)), escape=False)
 
 class TeeLog(Log):
   '''Simultaneously interface multiple logs'''
@@ -462,9 +477,9 @@ class TeeLog(Log):
       log.write(level, text)
 
   @contextlib.contextmanager
-  def open(self, filename, mode, level):
+  def open(self, filename, mode, level, exists):
     with contextlib.ExitStack() as stack:
-      yield _multistream(stack.enter_context(log.open(filename, mode, level)) for log in self.logs)
+      yield _multistream(stack.enter_context(log.open(filename, mode, level, exists)) for log in self.logs)
 
 class RecordLog(Log):
   '''
@@ -534,14 +549,14 @@ class RecordLog(Log):
       self._messages.append(('write', level, text))
 
   @contextlib.contextmanager
-  def open(self, filename, mode, level):
+  def open(self, filename, mode, level, exists):
     for title in self._contexts[self._appended_contexts:]:
       self._messages.append(('entercontext', title))
     self._appended_contexts = len(self._contexts)
     data = io.BytesIO() if 'b' in mode else io.StringIO()
     with self._old_log.open(filename, mode, level) as f:
       yield _multistream([f, data])
-    self._messages.append(('open', filename, mode, level, data.getValue()))
+    self._messages.append(('open', filename, mode, level, exists, data.getValue()))
 
   def replay(self):
     '''
@@ -558,8 +573,8 @@ class RecordLog(Log):
       elif cmd == 'write':
         _current_log.write(*args)
       elif cmd == 'open':
-        filename, mode, level, data = args
-        with _current_log.open(filename, mode, level) as f:
+        filename, mode, level, exists, data = args
+        with _current_log.open(filename, mode, level, exists) as f:
           f.write(data)
 
 ## INTERNAL FUNCTIONS
@@ -598,6 +613,37 @@ class _devnull(io.IOBase):
     return False
   def write(self, data):
     pass
+
+class _makedirs:
+  def __init__(self, path, exist_ok=False):
+    self.path = path
+    self.exist_ok = exist_ok
+    super().__init__()
+  def __enter__(self):
+    os.makedirs(self.path, exist_ok=self.exist_ok)
+    if os.open in os.supports_dir_fd and os.listdir in os.supports_fd:
+      self.path = os.open(self.path, flags=os.O_RDONLY)
+    return self.open
+  def __exit__(self, etype, value, tb):
+    if isinstance(self.path, int):
+      os.close(self.path)
+  def _open(self, name, *args):
+    return os.open(name, *args, dir_fd=self.path) if isinstance(self.path, int) \
+      else os.open(os.path.join(self.path, name), *args)
+  def open(self, filename, mode, exists):
+    if mode not in ('w', 'wb'):
+      raise ValueError('invalid mode: {!r}'.format(mode))
+    if exists not in ('overwrite', 'rename', 'skip'):
+      raise ValueError('invalid exists: {!r}'.format(exists))
+    if exists != 'overwrite':
+      listdir = set(os.listdir(self.path))
+      if filename in listdir:
+        if exists == 'skip':
+          return _devnull(filename)
+        for filename in map('-{}'.join(os.path.splitext(filename)).format, itertools.count(1)):
+          if filename not in listdir:
+            break
+    return builtins.open(filename, mode, opener=self._open)
 
 ## MODULE-ONLY METHODS
 
@@ -673,7 +719,29 @@ def title(f): # decorator
 def context(title, mayskip=False):
   return _current_log.context(title, mayskip)
 
-def open(filename, mode, *, level='user'):
-  return _current_log.open(filename, mode, level)
+def open(filename, mode, *, level='user', exists='rename'):
+  '''Open file in logger-controlled directory.
+
+  Args
+  ----
+  filename : :class:`str`
+  mode : :class:`str`
+      Should be either ``'w'`` (text) or ``'wb'`` (binary data).
+  level : :class:`str`
+      Log level in which the filename is displayed. Default: ``'user'``.
+  exists : :class:`str`
+      Determines how existence of ``filename`` in the output directory should
+      be handled. Valid values are:
+
+      *   ``'overwrite'``: open the file and remove current contents.
+
+      *   ``'rename'``: change the filename by adding the smallest positive
+          suffix ``n`` for which ``filename-n.ext`` does not exist.
+
+      *   ``'skip'``: return a dummy file object, which tests as ``False`` to
+          allow content creation to be skipped altogether.
+  '''
+
+  return _current_log.open(filename, mode, level, exists)
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
