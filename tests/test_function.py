@@ -320,6 +320,8 @@ def _check(name, op, n_op, shapes, hasgrad=True, pass_geom=False, ndim=2, low=-1
 
 _check('identity', lambda f: function.asarray(f), lambda a: a, [(2,3,2)])
 _check('const', lambda f: function.asarray([[1.,2.],[3.,4.]]), lambda a: numpy.array([[[1.,2.],[3.,4.]]]), [(2,3,2)])
+_check('zeros', lambda f: function.zeros([2,2]), lambda a: numpy.zeros([1,2,2]), [(2,3,2)])
+_check('ones', lambda f: function.ones([2,2]), lambda a: numpy.ones([1,2,2]), [(2,3,2)])
 _check('sin', function.sin, numpy.sin, [(3,)])
 _check('cos', function.cos, numpy.cos, [(3,)])
 _check('tan', function.tan, numpy.tan, [(3,)])
