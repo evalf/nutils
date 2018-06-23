@@ -75,26 +75,6 @@ class Config(types.ModuleType):
 
      Defaults to ``4``: info.
 
-  .. attribute:: outdir
-
-     Defines the output directory for the HTML log
-     (:class:`nutils.log.HtmlLog`) and plots.  Relative
-     paths are relative with respect to the current working directory (see
-     :func:`os.getcwd`).
-
-     .. Note::
-
-        If :attr:`outdir` is empty (the default), :func:`nutils.cli.run` and
-        :func:`nutils.cli.choose` change this value.  See :attr:`outrootdir`.
-
-     Defaults to ``''``.
-
-  .. attribute:: outdirfd
-
-     Used internally.  Do not touch.
-
-     Defaults to ``None``.
-
   .. attribute:: dot
 
      If ``True``, :meth:`nutils.topology.Topology.elem_eval` and
@@ -113,47 +93,43 @@ class Config(types.ModuleType):
   The following properties are only used in :func:`nutils.cli.run` and
   :func:`nutils.cli.choose`.
 
+  .. attribute:: outrootdir
+
+     Defines the root directory for general output.
+
+     Defaults to ``'~/public_html'``
+
+  .. attribute:: outdir
+
+     Defines the output directory for the HTML log
+     (:class:`nutils.log.HtmlLog`) and plots.  Relative
+     paths are relative with respect to the current working directory (see
+     :func:`os.getcwd`).
+
+     Defaults to ``'<outrootdir>/<scriptname>/<YY/MM/DD/HH-MM-SS>'``
+
   .. attribute:: cache
 
      Controls on-disk caching.  If ``True``, functions decorated with
-     :func:`nutils.cache.function` and subclasses of
-     :class:`nutils.cache.Recursion` are automatically cached.  Examples are
-     :meth:`nutils.topology.Topology.integrate` and
-     :class:`nutils.solver.thetamethod`.
-
-     The location of the on-disk cache is defined by :attr:`cachedir`.
+     :func:`nutils.cache.function` (e.g.
+     :meth:`nutils.topology.Topology.integrate`) and subclasses of
+     :class:`nutils.cache.Recursion` (e.g. :class:`nutils.solver.thetamethod`)
+     are automatically cached.
 
      Defaults to ``False``.
 
   .. attribute:: cachedir
 
-     Defines the location of the on-disk cache (see :attr:`cache`).  Relative
-     paths are relative with respect to the current working directory (see
-     :func:`os.getcwd`).
-
-     .. Note::
-
-        If :attr:`outdir` is empty (the default), :func:`nutils.cli.run` and
-        :func:`nutils.cli.choose` change this value.  See :attr:`outrootdir`.
+     Defines the location of the on-disk cache (see :attr:`cache`) relative to
+     ``<outrootdir>/<scriptname>``.
 
      Defaults to ``'cache'``.
 
-  .. attribute:: outrootdir
-
-     Defines the root directory for the HTML log and plots.  This property is
-     used to override :attr:`outdir`, if empty, to
-     ``'<outrootdir>/<scriptname>/<YY/MM/DD/HH-MM-SS>/'``.  Likewise,
-     if :attr:`outdir` is empty, the :attr:`cachedir` property is redefined to
-     ``'<outrootdir>/<scriptname>/cache/'``.
-
-     Defaults to ``'~/public_html'``
-
   .. attribute:: symlink
 
-     If not empty, but :attr:`outdir` is empty, the symlinks
-     ``'<outrootdir>/<symlink>'`` and ``'<outrootdir>/<scriptname>/<symlink>'``
-     will be created, both pointing to
-     ``'<outrootdir>/<scriptname>/<YY/MM/DD/HH-MM-SS>/log.html'``.
+     If not empty, the symlinks ``'<outrootdir>/<symlink>'`` and
+     ``'<outrootdir>/<scriptname>/<symlink>'`` will be created, both pointing
+     to ``'<outrootdir>/<scriptname>/<YY/MM/DD/HH-MM-SS>'``.
 
      Defaults to ``''``.
 
@@ -169,9 +145,7 @@ class Config(types.ModuleType):
   .. attribute:: htmloutput
 
      If ``True`` the HTML logger (:class:`nutils.log.HtmlLog`) is enabled and
-     written to ``'log.html'`` inside the directory defined by :attr:`outdir`.
-     With the default configuration the log will be generated in
-     ``'~/public_html/<scriptname>/<YY/MM/DD/HH-MM-SS>/log.html'``
+     written to ``'<outrootdir>/<scriptname>/<YY/MM/DD/HH-MM-SS>/log.html'``
 
      Defaults to ``True``.
 
@@ -226,7 +200,6 @@ sys.modules[__name__] = Config(
   nprocs = 1,
   outrootdir = '~/public_html',
   outdir = '',
-  outdirfd = None,
   verbose = 4,
   richoutput = False,
   htmloutput = True,

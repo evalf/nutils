@@ -147,15 +147,10 @@ def call(func, kwargs, scriptname, funcname=None):
 
     stack.callback(signal.signal, signal.SIGINT, signal.signal(signal.SIGINT, _sigint_handler))
 
-    outdir = os.path.expanduser(config.outdir)
-    if outdir:
-      relpaths = ()
-    else:
-      outrootdir = os.path.expanduser(config.outrootdir)
-      ymdt = starttime.strftime('%Y/%m/%d/%H-%M-%S/')
-      outdir = os.path.join(outrootdir, scriptname, ymdt)
-      stack.enter_context(config(cachedir=os.path.join(outrootdir, scriptname, 'cache')))
-      relpaths = (outrootdir, os.path.join(scriptname, ymdt)), (os.path.join(outrootdir, scriptname), ymdt)
+    outrootdir = os.path.expanduser(config.outrootdir)
+    ymdt = starttime.strftime('%Y/%m/%d/%H-%M-%S/')
+    outdir = config.outdir or os.path.join(outrootdir, scriptname, ymdt)
+    relpaths = (outrootdir, os.path.join(scriptname, ymdt)), (os.path.join(outrootdir, scriptname), ymdt)
 
     symlink = config.symlink
     if symlink:
@@ -168,6 +163,8 @@ def call(func, kwargs, scriptname, funcname=None):
         os.symlink(relpath, target)
 
     log_ = log.RichOutputLog() if config.richoutput else log.StdoutLog()
+    cache_ = cache.enable(os.path.join(outrootdir, scriptname, config.cachedir)) if config.cache else cache.disable()
+    matrix_ = matrix.backend(config.matrix)
 
     if config.htmloutput:
       for base, relpath in relpaths:
@@ -182,11 +179,11 @@ def call(func, kwargs, scriptname, funcname=None):
           print('<meta http-equiv="refresh" content="0;URL={}" />'.format(os.path.join(relpath,'log.html')), file=redirlog)
           print('</head></html>', file=redirlog)
 
-      funcargs = [(parameter.name, kwargs.get(parameter.name,parameter.default), parameter.annotation) for parameter in inspect.signature(func).parameters.values()]
+      funcargs = [(param.name, kwargs.get(param.name, param.default), param.annotation) for param in inspect.signature(func).parameters.values()]
       log_ = log.TeeLog(log_, log.HtmlLog(outdir, title=scriptname, scriptname=scriptname, funcname=funcname, funcargs=funcargs))
 
     try:
-      with log_, warnings.via(log.warning), matrix.backend(config.matrix), cache.enable(config.cachedir) if config.cache else cache.disable():
+      with log_, cache_, matrix_, warnings.via(log.warning):
 
         log.info('nutils v{}'.format(_version()))
         log.info('start {}'.format(starttime.ctime()))

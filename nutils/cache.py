@@ -101,11 +101,11 @@ class FileCache:
     from . import warnings, config
     warnings.deprecation("'nutils.cache.FileCache' is deprecated. Use 'nutils.cache.function' or nutils.cache.Recursion' instead.")
 
-    import os, numpy, hashlib, pickle
+    import os, sys, numpy, hashlib, pickle
     serial = pickle.dumps(args, -1)
     self.myhash = hash(serial)
     hexhash = hashlib.md5(serial).hexdigest()
-    cachedir = config.cachedir
+    cachedir = os.path.join(os.path.expanduser(config.outrootdir), os.path.basename(sys.argv[0]), config.cachedir) # backwards compatibility hack
     if not os.path.exists(cachedir):
       os.makedirs(cachedir)
     path = os.path.join(cachedir, hexhash)
