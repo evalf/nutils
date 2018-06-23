@@ -41,7 +41,7 @@ HTMLHEAD = '''\
 
 ## LOG
 
-class Log(metaclass=abc.ABCMeta):
+class Log(contextlib.ExitStack, metaclass=abc.ABCMeta):
   '''
   Base class for log objects.  A subclass should define a :meth:`context`
   method that returns a context manager which adds a contextual layer and a
@@ -55,23 +55,20 @@ class Log(metaclass=abc.ABCMeta):
     global _current_log
     self._old_log = _current_log
     _current_log = self
-    return self
+    return super().__enter__()
 
   def __exit__(self, etype, value, tb):
     if not hasattr(self, '_old_log'):
       raise RuntimeError('This context manager is not yet entered.')
-    if etype in (KeyboardInterrupt,SystemExit,bdb.BdbQuit):
+    if etype in (KeyboardInterrupt, SystemExit, bdb.BdbQuit):
       self.write('error', 'killed by user')
     elif etype is not None:
-      try:
-        msg = ''.join(traceback.format_exception(etype, value, tb))
-      except Exception as e:
-        msg = '{} (traceback failed: {})'.format(value, e)
-      self.write('error', msg)
+      self.write_post_mortem(etype, value, tb)
     # Restore the old log instance.
     global _current_log
     _current_log = self._old_log
     del self._old_log
+    super().__exit__(etype, value, tb)
 
   @abc.abstractmethod
   def context(self, title, mayskip=False):
@@ -87,6 +84,13 @@ class Log(metaclass=abc.ABCMeta):
     .. Note:: This function is abstract.
     '''
 
+  def write_post_mortem(self, etype, value, tb):
+    try:
+      msg = ''.join(traceback.format_exception(etype, value, tb))
+    except Exception as e:
+      msg = '{} (traceback failed: {})'.format(value, e)
+    self.write('error', msg)
+
   @abc.abstractmethod
   def open(self, filename, mode, level, exists):
     '''Create file object.'''
@@ -95,16 +99,12 @@ class DataLog(Log):
   '''Output only data.'''
 
   def __init__(self, outdir):
-    self.outdir = _makedirs(outdir, exist_ok=True)
+    self.outdir = outdir
     super().__init__()
 
   def __enter__(self):
-    super().__enter__()
-    self._open = self.outdir.__enter__()
-
-  def __exit__(self, etype, value, tb):
-    super().__exit__(etype, value, tb)
-    self.outdir.__exit__(etype, value, tb)
+    self._open = self.enter_context(_makedirs(self.outdir, exist_ok=True))
+    return super().__enter__()
 
   @contextlib.contextmanager
   def context(self, title, mayskip=False):
@@ -249,10 +249,9 @@ class RichOutputLog(StdoutLog):
     # Progress update interval in seconds.
     self._progressinterval = progressinterval or getattr(config, 'progressinterval', 0.1)
 
-  def __exit__(self, *exc_info):
-    # Clear the progress line.
-    print(end='\033[K', file=self.stream)
-    super().__exit__(*exc_info)
+  def __enter__(self):
+    self.callback(print, end='\033[K', file=self.stream) # clear the progress line
+    return super().__enter__()
 
   def _mkstr(self, level, text):
     if text is not None:
@@ -286,7 +285,7 @@ class HtmlLog(ContextTreeLog):
   '''Output html nested lists.'''
 
   def __init__(self, outdir, *, title='nutils', scriptname=None, funcname=None, funcargs=None):
-    self._outdir = _makedirs(outdir, exist_ok=True)
+    self._outdir = outdir
     self._title = title
     self._scriptname = scriptname
     self._funcname = funcname
@@ -294,8 +293,7 @@ class HtmlLog(ContextTreeLog):
     super().__init__()
 
   def __enter__(self):
-    super().__enter__()
-    self._open = self._outdir.__enter__()
+    self._open = self.enter_context(_makedirs(self._outdir, exist_ok=True))
     # Copy dependencies.
     paths = {}
     for filename in 'favicon.png', 'viewer.css', 'viewer.js':
@@ -305,8 +303,7 @@ class HtmlLog(ContextTreeLog):
         dst.write(data)
       paths[filename.replace('.', '_')] = dst.name
     # Write header.
-    self._file = self._open('log.html', 'w', exists='rename')
-    self._file.__enter__()
+    self._file = self.enter_context(self._open('log.html', 'w', exists='rename'))
     self._print('<!DOCTYPE html>')
     self._print('<html>')
     self._print(HTMLHEAD.format(title=html.escape(self._title), **paths))
@@ -323,17 +320,8 @@ class HtmlLog(ContextTreeLog):
       for name, value, annotation in self._funcargs:
         self._print(('  <li>{}={}<span class="annotation">{}</span></li>' if annotation is not inspect.Parameter.empty else '<li>{}={}</li>').format(*(html.escape(str(v)) for v in (name, value, annotation))))
       self._print('</ul>')
-    return self
-
-  def __exit__(self, etype, value, tb):
-    super().__exit__(etype, value, tb)
-    if etype not in (None,KeyboardInterrupt,SystemExit,bdb.BdbQuit):
-      self.write_post_mortem(etype, value, tb)
-    self._print('</div>') # id="log"
-    # Write footer.
-    self._print('</body></html>')
-    self._file.__exit__(etype, value, tb)
-    self._outdir.__exit__(etype, value, tb)
+    self.callback(self._print, '</div></body></html>')
+    return super().__enter__()
 
   def _print(self, *args, flush=False):
     print(*args, file=self._file)
@@ -354,6 +342,7 @@ class HtmlLog(ContextTreeLog):
   def write_post_mortem(self, etype, value, tb):
     'write exception nfo to html log'
 
+    super().write_post_mortem(etype, value, tb)
     _fmt = lambda obj: '=' + ''.join(s.strip() for s in repr(obj).split('\n'))
     self._print('<div class="post-mortem">')
     self._print('EXHAUSTIVE STACK TRACE')
@@ -379,25 +368,17 @@ class IndentLog(ContextTreeLog):
   '''Output indented html snippets.'''
 
   def __init__(self, outdir, *, progressinterval=None):
-    self._outdir = _makedirs(outdir, exist_ok=True)
+    self._outdir = outdir
     self._prefix = ''
     self._progressupdate = 0 # progress update interval in seconds
     self._progressinterval = progressinterval or getattr(config, 'progressinterval', 1)
     super().__init__()
 
   def __enter__(self):
-    super().__enter__()
-    self._open = self._outdir.__enter__()
-    self._logfile = self._open('log.html', 'w', exists='overwrite')
-    self._logfile.__enter__()
-    self._progressfile = self._open('progress.json', 'w', exists='overwrite') # timestamp at which a new progress line may be written
-    self._progressfile.__enter__()
-
-  def __exit__(self, etype, value, tb):
-    super().__exit__(etype, value, tb)
-    self._progressfile.__exit__(etype, value, tb)
-    self._logfile.__exit__(etype, value, tb)
-    self._outdir.__exit__(etype, value, tb)
+    self._open = self.enter_context(_makedirs(self._outdir, exist_ok=True))
+    self._logfile = self.enter_context(self._open('log.html', 'w', exists='overwrite'))
+    self._progressfile = self.enter_context(self._open('progress.json', 'w', exists='overwrite'))
+    return super().__enter__()
 
   def _print(self, *args, flush=False):
     print(*args, file=self._logfile)
@@ -452,18 +433,12 @@ class TeeLog(Log):
 
   def __init__(self, *logs):
     self.logs = logs
+    super().__init__()
 
   def __enter__(self):
-    self._stack = contextlib.ExitStack()
-    self._stack.__enter__()
     for log in self.logs:
-      self._stack.enter_context(log)
-    super().__enter__()
-    return self
-
-  def __exit__(self, *exc_info):
-    super().__exit__(*exc_info)
-    self._stack.__exit__(*exc_info)
+      self.enter_context(log)
+    return super().__enter__()
 
   @contextlib.contextmanager
   def context(self, title, mayskip=False):

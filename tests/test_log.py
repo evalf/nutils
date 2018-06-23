@@ -108,8 +108,7 @@ log_html = '''\
 </div><div class="end"></div></div>
 <div class="item" data-loglevel="3"><a href="test.png" class="plot">test.png</a></div>
 <div class="item" data-loglevel="3">nonexistent.png</div>
-</div>
-</body></html>
+</div></body></html>
 '''
 
 log_indent = '''\
