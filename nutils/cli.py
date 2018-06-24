@@ -142,77 +142,71 @@ def call(func, kwargs, scriptname, funcname=None):
   '''set up compute environment and call function'''
 
   starttime = datetime.datetime.now()
+  outrootdir = os.path.expanduser(config.outrootdir)
+  ymdt = starttime.strftime('%Y/%m/%d/%H-%M-%S/')
+  outdir = config.outdir or os.path.join(outrootdir, scriptname, ymdt)
 
-  with contextlib.ExitStack() as stack:
-
-    stack.callback(signal.signal, signal.SIGINT, signal.signal(signal.SIGINT, _sigint_handler))
-
-    outrootdir = os.path.expanduser(config.outrootdir)
-    ymdt = starttime.strftime('%Y/%m/%d/%H-%M-%S/')
-    outdir = config.outdir or os.path.join(outrootdir, scriptname, ymdt)
-    relpaths = (outrootdir, os.path.join(scriptname, ymdt)), (os.path.join(outrootdir, scriptname), ymdt)
-
-    symlink = config.symlink
-    if symlink:
-      for base, relpath in relpaths:
-        target = os.path.join(base, symlink)
-        if not os.path.isdir(base):
-          os.makedirs(base)
-        elif os.path.islink(target):
-          os.remove(target)
-        os.symlink(relpath, target)
-
-    log_ = log.RichOutputLog() if config.richoutput else log.StdoutLog()
-    cache_ = cache.enable(os.path.join(outrootdir, scriptname, config.cachedir)) if config.cache else cache.disable()
-    matrix_ = matrix.backend(config.matrix)
-
+  for base, relpath in (outrootdir, os.path.join(scriptname, ymdt)), (os.path.join(outrootdir, scriptname), ymdt):
+    if not os.path.isdir(base):
+      os.makedirs(base)
+    if config.symlink:
+      target = os.path.join(base, config.symlink)
+      if os.path.islink(target):
+        os.remove(target)
+      os.symlink(relpath, target, target_is_directory=True)
     if config.htmloutput:
-      for base, relpath in relpaths:
-        with open(os.path.join(base,'log.html'), 'w') as redirlog:
-          print('<html><head>', file=redirlog)
-          print('<meta charset="UTF-8"/>', file=redirlog)
-          print('<meta http-equiv="cache-control" content="max-age=0" />', file=redirlog)
-          print('<meta http-equiv="cache-control" content="no-cache" />', file=redirlog)
-          print('<meta http-equiv="expires" content="0" />', file=redirlog)
-          print('<meta http-equiv="expires" content="Tue, 01 Jan 1980 1:00:00 GMT" />', file=redirlog)
-          print('<meta http-equiv="pragma" content="no-cache" />', file=redirlog)
-          print('<meta http-equiv="refresh" content="0;URL={}" />'.format(os.path.join(relpath,'log.html')), file=redirlog)
-          print('</head></html>', file=redirlog)
+      with open(os.path.join(base,'log.html'), 'w') as redirlog:
+        print('<html><head>', file=redirlog)
+        print('<meta charset="UTF-8"/>', file=redirlog)
+        print('<meta http-equiv="cache-control" content="max-age=0" />', file=redirlog)
+        print('<meta http-equiv="cache-control" content="no-cache" />', file=redirlog)
+        print('<meta http-equiv="expires" content="0" />', file=redirlog)
+        print('<meta http-equiv="expires" content="Tue, 01 Jan 1980 1:00:00 GMT" />', file=redirlog)
+        print('<meta http-equiv="pragma" content="no-cache" />', file=redirlog)
+        print('<meta http-equiv="refresh" content="0;URL={}" />'.format(os.path.join(relpath,'log.html')), file=redirlog)
+        print('</head></html>', file=redirlog)
 
-      funcargs = [(param.name, kwargs.get(param.name, param.default), param.annotation) for param in inspect.signature(func).parameters.values()]
-      log_ = log.TeeLog(log_, log.HtmlLog(outdir, title=scriptname, scriptname=scriptname, funcname=funcname, funcargs=funcargs))
+  cache_ = cache.enable(os.path.join(outrootdir, scriptname, config.cachedir)) if config.cache else cache.disable()
+  matrix_ = matrix.backend(config.matrix)
+  log_ = log.RichOutputLog() if config.richoutput else log.StdoutLog()
+  if config.htmloutput:
+    funcargs = [(param.name, kwargs.get(param.name, param.default), param.annotation) for param in inspect.signature(func).parameters.values()]
+    log_ = log.TeeLog(log_, log.HtmlLog(outdir, title=scriptname, scriptname=scriptname, funcname=funcname, funcargs=funcargs))
 
-    try:
-      with log_, cache_, matrix_, warnings.via(log.warning):
+  try:
+    old_sigint_handler = signal.signal(signal.SIGINT, _sigint_handler)
+    with log_, cache_, matrix_, warnings.via(log.warning):
 
-        log.info('nutils v{}'.format(_version()))
-        log.info('start {}'.format(starttime.ctime()))
+      log.info('nutils v{}'.format(_version()))
+      log.info('start {}'.format(starttime.ctime()))
 
-        func(**kwargs)
+      func(**kwargs)
 
-        endtime = datetime.datetime.now()
-        minutes, seconds = divmod((endtime-starttime).seconds, 60)
-        hours, minutes = divmod(minutes, 60)
+      endtime = datetime.datetime.now()
+      minutes, seconds = divmod((endtime-starttime).seconds, 60)
+      hours, minutes = divmod(minutes, 60)
 
-        log.info('finish {}'.format(endtime.ctime()))
-        log.info('elapsed {:.0f}:{:02.0f}:{:02.0f}'.format(hours, minutes, seconds))
+      log.info('finish {}'.format(endtime.ctime()))
+      log.info('elapsed {:.0f}:{:02.0f}:{:02.0f}'.format(hours, minutes, seconds))
 
-    except (KeyboardInterrupt,SystemExit,pdb.bdb.BdbQuit):
-      return 1
-    except:
-      if config.pdb:
-        try:
-          del log_
-        except NameError:
-          pass
-        print(_mkbox(
-          'YOUR PROGRAM HAS DIED. The Python debugger',
-          'allows you to examine its post-mortem state',
-          'to figure out why this happened. Type "h"',
-          'for an overview of commands to get going.'))
-        pdb.post_mortem()
-      return 2
-    else:
-      return 0
+  except (KeyboardInterrupt,SystemExit,pdb.bdb.BdbQuit):
+    return 1
+  except:
+    if config.pdb:
+      try:
+        del log_
+      except NameError:
+        pass
+      print(_mkbox(
+        'YOUR PROGRAM HAS DIED. The Python debugger',
+        'allows you to examine its post-mortem state',
+        'to figure out why this happened. Type "h"',
+        'for an overview of commands to get going.'))
+      pdb.post_mortem()
+    return 2
+  else:
+    return 0
+  finally:
+    signal.signal(signal.SIGINT, old_sigint_handler) # restore handler
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
