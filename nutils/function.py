@@ -718,6 +718,9 @@ class Constant(Array):
   def _mask(self, maskvec, axis):
     return Constant(self.value[(slice(None),)*axis+(numpy.asarray(maskvec),)])
 
+  def _determinant(self):
+    return Constant(numpy.linalg.det(self.value))
+
 class DofMap(Array):
 
   __slots__ = 'dofs', 'index'
@@ -1058,6 +1061,9 @@ class Inverse(Array):
   def _eig(self, symmetric):
     eigval, eigvec = Eig(self.func, symmetric)
     return Tuple((reciprocal(eigval), eigvec))
+
+  def _determinant(self):
+    return reciprocal(Determinant(self.func))
 
 class Concatenate(Array):
 
@@ -2157,6 +2163,9 @@ class Zeros(Array):
 
   def _ravel(self, axis):
     return Zeros(self.shape[:axis] + (self.shape[axis]*self.shape[axis+1],) + self.shape[axis+2:], self.dtype)
+
+  def _determinant(self):
+    return Zeros(self.shape[:-2], self.dtype)
 
 class Inflate(Array):
 
