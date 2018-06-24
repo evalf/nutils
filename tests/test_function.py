@@ -200,6 +200,12 @@ class check(TestCase):
       desired=self.n_op_argsfun**3,
       actual=(self.op_args**3).simplified.eval(**self.evalargs))
 
+  def test_sign(self):
+    if self.n_op_argsfun.dtype.kind != 'b':
+      self.assertArrayAlmostEqual(decimal=15,
+        desired=numpy.sign(self.n_op_argsfun),
+        actual=function.sign(self.op_args).simplified.eval(**self.evalargs))
+
   def test_mask(self):
     for idim in range(self.op_args.ndim):
       if self.op_args.shape[idim] <= 1:
