@@ -109,6 +109,12 @@ class check(TestCase):
         desired=numeric.inv(self.n_op_argsfun.transpose(trans)).transpose(invtrans),
         actual=function.inverse(self.op_args, axes=(ax1,ax2)).simplified.eval(**self.evalargs))
 
+  def test_determinant(self):
+    for ax1, ax2 in self.pairs:
+      self.assertArrayAlmostEqual(decimal=11,
+        desired=numpy.linalg.det(self.n_op_argsfun.transpose([i for i in range(self.n_op_argsfun.ndim) if i not in (ax1+1,ax2+1)] + [ax1+1,ax2+1])),
+        actual=function.determinant(self.op_args, axes=(ax1,ax2)).simplified.eval(**self.evalargs))
+
   def test_take(self):
     indices = [-1,0]
     for iax, sh in enumerate(self.op_args.shape):
