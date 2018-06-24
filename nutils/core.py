@@ -19,37 +19,13 @@
 # THE SOFTWARE.
 
 """
-The core module provides a collection of low level constructs that have no
-dependencies on other nutils modules. Primarily for internal use.
+The core module is deprecated.
 """
 
-import sys, functools, os
-from . import config
+from . import log, warnings
 
 def open_in_outdir(file, *args, **kwargs):
-  '''open a file relative to the ``outdirfd`` or ``outdir`` property
-
-  Wrapper around :func:`open` that opens a file relative to either the
-  ``outdirfd`` property (if supported, see :any:`os.supports_dir_fd`) or
-  ``outdir``.  Takes the same arguments as :func:`open`.
-  '''
-
-  assert 'opener' not in kwargs
-  if config.outdirfd is not None:
-    kwargs['opener'] = functools.partial(os.open, dir_fd=config.outdirfd)
-  elif config.outdir:
-    file = os.path.join(os.path.expanduser(config.outdir), file)
-  return open(file, *args, **kwargs)
-
-def listoutdir():
-  '''list files in ``outdirfd`` or ``outdir`` property'''
-
-  if config.outdirfd is not None:
-    return os.listdir(config.outdirfd)
-  elif config.outdir:
-    return os.listdir(os.path.expanduser(config.outdir))
-  else:
-    return os.listdir()
-
+  warnings.deprecation('core.open_in_outdir is deprecated, use log.open instead')
+  return log.open(file, *args, **kwargs)
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
