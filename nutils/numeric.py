@@ -22,8 +22,8 @@
 The numeric module provides methods that are lacking from the numpy module.
 """
 
-from . import types
-import numpy, numbers, builtins, collections.abc, warnings
+from . import types, warnings
+import numpy, numbers, builtins, collections.abc
 
 _abc = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' # indices for einsum
 
@@ -145,32 +145,8 @@ def diagonalize(arg, axis=-1, newaxis=-1):
   return diagonalized
 
 def eig(A):
-  '''If A has repeated eigenvalues, numpy.linalg.eig sometimes fails to produce
-  the complete eigenbasis. This function aims to fix that by identifying the
-  problem and completing the basis where necessary.'''
-
-  L, V = numpy.linalg.eig(A)
-
-  # check repeated eigenvalues
-  for index in numpy.ndindex(A.shape[:-2]):
-    unique, inverse = numpy.unique(L[index], return_inverse=True)
-    if len(unique) < len(inverse): # have repeated eigenvalues
-      repeated, = numpy.where(numpy.bincount(inverse) > 1)
-      vectors = V[index].T
-      for i in repeated: # indices pointing into unique corresponding to repeated eigenvalues
-        where, = numpy.where(inverse == i) # corresponding eigenvectors
-        for j, n in enumerate(where):
-          W = vectors[where[:j]]
-          vectors[n] -= numpy.dot(numpy.dot(W, vectors[n]), W) # gram schmidt orthonormalization
-          scale = numpy.linalg.norm(vectors[n])
-          if scale < 1e-8: # vectors are near linearly dependent
-            u, s, vh = numpy.linalg.svd(A[index] - unique[i] * numpy.eye(len(inverse)))
-            nnz = numpy.argsort(abs(s))[:len(where)]
-            vectors[where] = vh[nnz].conj()
-            break
-          vectors[n] /= scale
-
-  return L, V
+  warnings.deprecation('numeric.eig is deprecated; use numpy.linalg.eig instead')
+  return numpy.linalg.eig(A)
 
 def inv(A):
   '''Matrix inverse.
