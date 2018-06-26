@@ -147,6 +147,7 @@ class finitestrain(TestCase):
     self.assertEqual(nshift, 13)
 
 
+@parametrize
 class optimize(TestCase):
 
   def setUp(self):
@@ -155,24 +156,27 @@ class optimize(TestCase):
     self.domain, self.ns.geom = mesh.rectilinear([2,2])
     self.ns.ubasis = self.domain.basis('std', degree=1)
     self.ns.u = 'ubasis_n ?dofs_n'
+    self.optimize = solver.optimize if not self.minimize else lambda *args, newtontol=0, **kwargs: solver.minimize(*args, **kwargs).solve(newtontol)
 
   def test_linear(self):
     err = self.domain.boundary['bottom'].integral('(u - 1)^2' @ self.ns, degree=2)
-    cons = solver.optimize('dofs', err, droptol=1e-15)
+    cons = self.optimize('dofs', err, droptol=1e-15)
     numpy.testing.assert_almost_equal(cons, numpy.take([1,numpy.nan], [0,1,1,0,1,1,0,1,1]), decimal=15)
 
   def test_nonlinear(self):
     err = self.domain.boundary['bottom'].integral('(u + .25 u^3 - 1.25)^2' @ self.ns, geometry=self.ns.geom, degree=6)
-    cons = solver.optimize('dofs', err, droptol=1e-15, newtontol=1e-15)
+    cons = self.optimize('dofs', err, droptol=1e-15, newtontol=1e-15)
     numpy.testing.assert_almost_equal(cons, numpy.take([1,numpy.nan], [0,1,1,0,1,1,0,1,1]), decimal=15)
 
   def test_nonlinear_multipleroots(self):
     err = self.domain.boundary['bottom'].integral('(u + u^2 - .75)^2' @ self.ns, degree=2)
-    cons = solver.optimize('dofs', err, droptol=1e-15, lhs0=numpy.ones(len(self.ns.ubasis)), newtontol=1e-10)
+    cons = self.optimize('dofs', err, droptol=1e-15, lhs0=numpy.ones(len(self.ns.ubasis)), newtontol=1e-10)
     numpy.testing.assert_almost_equal(cons, numpy.take([.5,numpy.nan], [0,1,1,0,1,1,0,1,1]), decimal=15)
 
   def test_nanres(self):
     err = self.domain.integral('(sqrt(1 - u) - .5)^2' @ self.ns, degree=2)
-    for gen in solver.minimize('dofs', err), solver.newton('dofs', err.derivative('dofs')):
-      dofs = gen.solve(1e-10, maxiter=12)
-      numpy.testing.assert_almost_equal(dofs, .75)
+    dofs = self.optimize('dofs', err, newtontol=1e-10)
+    numpy.testing.assert_almost_equal(dofs, .75)
+
+optimize(minimize=False)
+optimize(minimize=True)
