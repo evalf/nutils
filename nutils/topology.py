@@ -168,7 +168,8 @@ class Topology(types.Singleton):
     'Create sample.'
 
     transforms = [(elem.transform, elem.opposite) for elem in self]
-    points = [elem.reference.getpoints(ischeme, degree) for elem in self]
+    points = [ischeme(elem.reference, degree) for elem in self] if callable(ischeme) \
+        else [elem.reference.getpoints(ischeme, degree) for elem in self]
     offset = numpy.cumsum([0] + [p.npoints for p in points])
     return sample.Sample(transforms, points, map(numpy.arange, offset[:-1], offset[1:]))
 
