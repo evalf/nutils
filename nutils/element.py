@@ -339,8 +339,9 @@ class RevolutionReference(Reference):
   def __init__(self):
     super().__init__(ndims=1)
 
+  @property
   def vertices(self):
-    return types.frozenarray([[0.]]) # NOTE unclear if this is the desired outcome
+    return types.frozenarray([[0.]])
 
   @property
   def edge_transforms(self): # only used in check_edges
@@ -351,6 +352,14 @@ class RevolutionReference(Reference):
     return PointReference(), PointReference()
 
   @property
+  def child_transforms(self):
+    return transform.Identity(1),
+
+  @property
+  def child_refs(self):
+    return self,
+
+  @property
   def simplices(self):
     return (transform.Identity(self.ndims), self),
 
@@ -359,6 +368,15 @@ class RevolutionReference(Reference):
 
   def inside(self, point, eps=0):
     return True
+
+  def nvertices_by_level(self, n):
+    return 1
+
+  def child_divide(self, vals, n):
+    return vals,
+
+  def get_poly_coeffs(self, basis, **kwargs):
+    return numpy.ones((1,1)) # single, constant basis function
 
 class SimplexReference(Reference):
   'simplex reference'
