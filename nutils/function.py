@@ -1097,6 +1097,15 @@ class Concatenate(Array):
       return zeros_like(self)
     if len(funcs) == 1:
       return funcs[0]
+    if all(isinstance(func, Inflate) or iszero(func) for func in funcs):
+      (dofmap, axis), *other = set((func.dofmap, func.axis) for func in funcs if isinstance(func, Inflate))
+      if not other and axis != self.axis:
+        # This is an Inflate-specific simplification that shouldn't appear
+        # here, but currently cannot appear anywhere else due to design
+        # choices. We need it here to fix a regression while awaiting a full
+        # rewrite of this module to fundamentally take care of the issue.
+        concat_blocks = Concatenate([Take(func, dofmap, axis) for func in funcs], self.axis)
+        return Inflate(concat_blocks, dofmap=dofmap, length=self.shape[axis], axis=axis).simplified
     return Concatenate(funcs, self.axis)
 
   def evalf(self, *arrays):
