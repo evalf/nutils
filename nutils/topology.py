@@ -2157,10 +2157,16 @@ class RevolutionTopology(Topology):
 
   __slots__ = 'elements', 'boundary'
 
+  connectivity = numpy.empty([1,0], dtype=int)
+
   def __init__(self):
     self.elements = element.Element(element.RevolutionReference(), [transform.Identifier(1, 'angle')]),
     self.boundary = EmptyTopology(ndims=0)
     super().__init__(ndims=1)
+
+  @property
+  def refined(self):
+    return self
 
   def basis(self, name, *args, **kwargs):
     return function.asarray([1])
