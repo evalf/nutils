@@ -177,74 +177,78 @@ class common_refine(TestCase):
           testvals = common.integrate(funs[c], geometry=geom, ischeme='gauss1')
           numpy.testing.assert_array_almost_equal(testvals, vals[c])
 
-
-class revolved_circle(TestCase):
+@parametrize
+class revolved(TestCase):
 
   def setUp(self):
     super().setUp()
-    rdomain, rgeom = mesh.rectilinear([2])
-    self.domain, self.geom, self.simplify = rdomain.revolved(rgeom)
+    if self.domtype == 'circle':
+      self.domain0, self.geom0 = mesh.rectilinear([2])
+      self.exact_volume = 4 * numpy.pi
+      self.exact_surface = 4 * numpy.pi
+      self.exact_groups = {}
+    elif self.domtype == 'cylinder':
+      self.domain0, self.geom0 = mesh.rectilinear([1,2])
+      self.exact_volume = 2 * numpy.pi
+      self.exact_surface = 6 * numpy.pi
+      self.exact_groups = dict(right=4*numpy.pi, left=0)
+    elif self.domtype == 'hollowcylinder':
+      self.domain0, self.geom0 = mesh.rectilinear([[.5,1],2])
+      self.exact_volume = 1.5 * numpy.pi
+      self.exact_surface = 7.5 * numpy.pi
+      self.exact_groups = dict(right=4*numpy.pi, left=2*numpy.pi)
+    else:
+      raise Exception('unknown domain type {!r}'.format(self.domtype))
+    self.domain, self.geom, self.simplify = self.domain0.revolved(self.geom0)
+    if self.refined:
+      self.domain = self.domain.refined
+      self.domain0 = self.domain0.refined
 
   def test_simplified(self):
-    integrand = function.norm2(self.geom) * function.jacobian(self.geom, ndims=1)
+    ndims = 1 if self.domain.ndims == 2 else self.domain.ndims # unfortunately ndims = domain.ndims-1 is currently broken for domain.ndims > 2
+    integrand = function.norm2(self.geom) * function.jacobian(self.geom, ndims=ndims)
     self.assertNotEqual(integrand, self.simplify(integrand))
     vals1, vals2 = self.domain.elem_eval([ integrand, self.simplify(integrand)], ischeme='uniform2')
     numpy.testing.assert_array_almost_equal(vals1, vals2)
 
-  def test_circle_area(self):
-    vol = self.domain.integrate(1, geometry=self.geom, ischeme='gauss1', edit=self.simplify) / numpy.pi
-    numpy.testing.assert_array_almost_equal(vol, 4)
-
-  def test_circle_circumference(self):
-    surf = self.domain.boundary.integrate(1, geometry=self.geom, ischeme='gauss1', edit=self.simplify) / numpy.pi
-    numpy.testing.assert_array_almost_equal(surf, 4)
-
-
-class revolved_cylinder(TestCase):
-
-  def setUp(self):
-    super().setUp()
-    rzdomain, rzgeom = mesh.rectilinear([1,2])
-    self.domain, self.geom, self.simplify = rzdomain.revolved(rzgeom)
+  def test_revolved(self):
+    self.assertEqual(len(self.domain), len(self.domain0))
 
   def test_volume(self):
-    vol = self.domain.integrate(1, geometry=self.geom, ischeme='gauss1', edit=self.simplify) / numpy.pi
-    numpy.testing.assert_array_almost_equal(vol, 2)
+    vol = self.domain.integrate(1, geometry=self.geom, ischeme='gauss1', edit=self.simplify)
+    numpy.testing.assert_array_almost_equal(vol, self.exact_volume)
+
+  def test_volume_bydiv(self):
+    boundary = self.domain.boundary
+    if self.domtype != 'hollowcylinder':
+      boundary = boundary['bottom,right,top']
+    v = boundary.integrate(self.geom.dotnorm(self.geom), geometry=self.geom, ischeme='gauss1', edit=self.simplify) / self.domain.ndims
+    numpy.testing.assert_array_almost_equal(v, self.exact_volume)
 
   def test_surface(self):
-    for name, exact in ('full',6), ('right',4), ('left',0):
-      with self.subTest(name):
-        surf = self.domain.boundary[name if name != 'full' else ()].integrate(1, geometry=self.geom, ischeme='gauss1', edit=self.simplify) / numpy.pi
-        numpy.testing.assert_array_almost_equal(surf, exact)
+    surf = self.domain.boundary.integrate(1, geometry=self.geom, ischeme='gauss1', edit=self.simplify)
+    numpy.testing.assert_array_almost_equal(surf, self.exact_surface)
 
+  def test_surface_groups(self):
+    for name, exact_surface in self.exact_groups.items():
+      surf = self.domain.boundary[name].integrate(1, geometry=self.geom, ischeme='gauss1', edit=self.simplify)
+      numpy.testing.assert_array_almost_equal(surf, exact_surface)
 
-class revolved_hollowcylinder(TestCase):
+  def test_basis(self):
+    basis = self.domain.basis('std', degree=1)
+    values = self.domain.sample('uniform', 2).eval(basis).sum(1)
+    numpy.testing.assert_array_almost_equal(values, 1)
 
-  def setUp(self):
-    super().setUp()
-    rzdomain, rzgeom = mesh.rectilinear([[.5,1],2])
-    self.domain, self.geom, self.simplify = rzdomain.revolved(rzgeom)
-    self.basis = self.domain.basis('std', degree=2)
+  def test_trim(self):
+    r = function.norm2(self.geom[:2])
+    trimmed = self.domain.trim(r - .75, maxrefine=1)
+    volume = trimmed.integrate(1, geometry=self.geom, degree=1)
+    self.assertGreater(volume, 0)
+    self.assertLess(volume, self.exact_volume)
 
-  def test_volume(self):
-    v = self.domain.integrate(1, geometry=self.geom, ischeme='gauss1', edit=self.simplify) / numpy.pi
-    numpy.testing.assert_array_almost_equal(v, 1.5)
-
-  def test_volume2(self):
-    v = self.domain.boundary.integrate(self.geom.dotnorm(self.geom)/3, geometry=self.geom, ischeme='gauss1', edit=self.simplify) / numpy.pi
-    numpy.testing.assert_array_almost_equal(v, 1.5)
-
-  def test_surface(self):
-    for name, exact in ('full',7.5), ('right',4), ('left',2):
-      with self.subTest(name):
-        surf = self.domain.boundary[name if name != 'full' else ()].integrate(1, geometry=self.geom, ischeme='gauss9', edit=self.simplify) / numpy.pi
-        numpy.testing.assert_array_almost_equal(surf, exact)
-
-  def test_basistype(self):
-    self.assertIsInstance(self.basis.simplified, function.Inflate)
-
-  def test_dofcount(self):
-    self.assertEqual(len(self.basis), 3*5)
+for domtype in 'circle', 'cylinder', 'hollowcylinder':
+  for refined in False, True:
+    revolved(domtype=domtype, refined=refined)
 
 
 @parametrize
