@@ -39,7 +39,7 @@ def main(
   # plot solution
   bezier = domain.sample('bezier', 9)
   x, u = bezier.eval([ns.x, ns.u])
-  with export.mplfigure('solution') as fig:
+  with export.mplfigure('solution.png') as fig:
     ax = fig.add_subplot(111, aspect='equal')
     im = ax.tripcolor(x[:,0], x[:,1], bezier.tri, u, shading='gouraud', cmap='jet')
     ax.add_collection(collections.LineCollection(x[bezier.hull], colors='k', linewidths=.1))

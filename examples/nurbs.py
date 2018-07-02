@@ -84,7 +84,7 @@ def main(
     # post-processing
     bezier = domain.sample('bezier', 8)
     x, stressxx = bezier.eval([ns.x, ns.stress[0,0]])
-    with export.mplfigure('solution{}'.format(irefine)) as fig:
+    with export.mplfigure('solution{}.png'.format(irefine)) as fig:
       ax = fig.add_subplot(111, aspect='equal')
       im = ax.tripcolor(x[:,0], x[:,1], bezier.tri, stressxx, shading='gouraud', cmap='jet')
       im.set_clim(numpy.nanmin(stressxx),numpy.nanmax(stressxx))
@@ -99,7 +99,7 @@ def main(
     hmax = max(domain.integrate_elementwise(1, degree=2, geometry=ns.x))**.5
     convergence.append((hmax, err))
 
-  with export.mplfigure('convergence') as fig:
+  with export.mplfigure('convergence.png') as fig:
     ax = fig.add_subplot(111, xlabel='mesh parameter', title='L2 error of stress')
     ax.loglog(*numpy.array(convergence).T, 'k*--')
     ax.grid(True)

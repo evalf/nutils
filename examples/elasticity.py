@@ -43,7 +43,7 @@ def main(
   # plot solution
   bezier = domain.sample('bezier', 3)
   x, stress = bezier.eval([ns.x, ns.stress[0,1]])
-  with export.mplfigure('stress') as fig:
+  with export.mplfigure('stress.png') as fig:
     ax = fig.add_subplot(111, aspect='equal')
     ax.autoscale(enable=True, axis='both', tight=True)
     im = ax.tripcolor(x[:,0], x[:,1], bezier.tri, stress, shading='gouraud', cmap='jet')

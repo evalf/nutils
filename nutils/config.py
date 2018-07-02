@@ -90,6 +90,13 @@ class Config(types.ModuleType):
 
      Defaults to ``'png'``.
 
+     .. deprecated:: 4.0
+
+        Instead of :class:`nutils.plot.PyPlot` the new
+        :func:`nutils.export.mplfigure` helper should be used.  The latter
+        requires a filename with extension and ignores the :attr:`imagetype`
+        attribute.
+
   The following properties are only used in :func:`nutils.cli.run` and
   :func:`nutils.cli.choose`.
 

@@ -56,7 +56,7 @@ def main(
   bezier = domain.sample('bezier', 5)
   vonmises = 'sqrt(stress_ij stress_ij - stress_ii stress_jj / 2)' @ ns
   x, colors = bezier.eval([ns.x, vonmises])
-  with export.mplfigure('solution') as fig:
+  with export.mplfigure('solution.png') as fig:
     ax = fig.add_subplot(111, aspect='equal')
     ax.autoscale(enable=True, axis='both', tight=True)
     im = ax.tripcolor(x[:,0], x[:,1], bezier.tri, colors, shading='gouraud', cmap='jet')

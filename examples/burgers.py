@@ -15,7 +15,7 @@ class MakePlots:
   def __call__(self, **arguments):
     self.index += 1
     x, u = self.sample.eval([self.ns.x, self.ns.u], arguments=arguments)
-    with export.mplfigure('solution{}'.format(self.index)) as fig:
+    with export.mplfigure('solution{}.png'.format(self.index)) as fig:
       ax = fig.add_subplot(111)
       if self.sample.ndims == 1:
         ax.add_collection(collections.LineCollection(numpy.array([x[:,0], u]).T[self.sample.tri], colors='k'))

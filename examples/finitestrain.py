@@ -8,7 +8,7 @@ from matplotlib import collections, colors
 def makeplots(name, domain, ns):
   bezier = domain.sample('bezier', 5)
   X, energy = bezier.eval([ns.X, ns.energy])
-  with export.mplfigure(name) as fig:
+  with export.mplfigure(name+'.png') as fig:
     ax = fig.add_subplot(111, aspect='equal')
     ax.autoscale(enable=True, axis='both', tight=True)
     im = ax.tripcolor(X[:,0], X[:,1], bezier.tri, energy, shading='gouraud', cmap='jet', norm=colors.LogNorm())

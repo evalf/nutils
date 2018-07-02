@@ -18,7 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from . import config, log, util
+from . import config, log, util, warnings
 import contextlib, numpy
 
 @contextlib.contextmanager
@@ -48,8 +48,13 @@ def mplfigure(*args, **kwargs):
   matplotlib.backends.backend_agg.FigureCanvas(fig) # sets reference via fig.set_canvas
   with log.context(name):
     yield fig
-  for fmt in config.imagetype.split(','):
-    with log.open(name+'.'+fmt, 'wb') as f:
+  if name.endswith(('.png', '.jpg', '.jpeg', '.tiff')):
+    names_formats = [(name, name.split('.')[-1])]
+  else:
+    warnings.deprecation('`config.imagetype` is deprecated. Please pass a filename with extension, e.g. {!r}.'.format(name+'.png'))
+    names_formats = [(name+'.'+fmt, fmt) for fmt in config.imagetype.split(',')]
+  for name, fmt in names_formats:
+    with log.open(name, 'wb') as f:
       fig.savefig(f, format=fmt)
   fig.set_canvas(None) # break circular reference
 

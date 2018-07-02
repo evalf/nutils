@@ -17,7 +17,7 @@ class MakePlots:
   def __call__(self, **arguments):
     self.energies[self.index] = sample.eval_integrals(*self.energy.values(), arguments=arguments)
     x, c = self.sample.eval([self.namespace.x, self.namespace.c], arguments=arguments)
-    with export.mplfigure('flow{}'.format(self.index)) as fig:
+    with export.mplfigure('flow{}.png'.format(self.index)) as fig:
       ax = fig.add_subplot(111, yticks=[], xticks=[], aspect='equal')
       im = ax.tripcolor(x[:,0], x[:,1], self.sample.tri, c, shading='gouraud', cmap='jet')
       im.set_clim(-1, 1)

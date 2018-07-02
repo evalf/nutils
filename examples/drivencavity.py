@@ -22,7 +22,7 @@ def postprocess(name, domain, ns, every=.05, spacing=.01, **arguments):
   # plot velocity as field, pressure as contours, streamlines as dashed
   bezier = domain.sample('bezier', 9)
   x, u, p, stream = bezier.eval([ns.x, function.norm2(ns.u), ns.p, ns.stream], arguments=arguments)
-  with export.mplfigure(name) as fig:
+  with export.mplfigure(name+'.png') as fig:
     ax = fig.add_axes([.1,.1,.8,.8], yticks=[], aspect='equal')
     ax.add_collection(collections.LineCollection(x[bezier.hull], colors='w', linewidths=.5, alpha=.2))
     ax.tricontour(x[:,0], x[:,1], bezier.tri, stream, 16, colors='k', linestyles='dotted', linewidths=.5, zorder=9)
