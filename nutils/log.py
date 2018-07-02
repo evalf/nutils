@@ -28,7 +28,6 @@ import time, functools, itertools, io, abc, contextlib, html, urllib.parse, os, 
 from . import core, config, warnings
 
 LEVELS = 'error', 'warning', 'user', 'info', 'debug' # NOTE this should match the log levels defined in `nutils/_log/viewer.js`
-VIEWABLE = 'jpg', 'png', 'svg', 'txt', 'mp4', 'webm' # file types that can be viewed in the theater
 HTMLHEAD = '''\
 <head>
 <meta charset="UTF-8"/>
@@ -361,8 +360,7 @@ class HtmlLog(ContextTreeLog):
   def open(self, filename, mode, level, exists):
     with self._open(filename, mode, exists) as f:
       yield f
-    fmt = '<a href="{href}"' + (' class="plot"' if filename.split('.')[-1] in VIEWABLE else '') + '>{name}</a>'
-    self._print_item(level, fmt.format(href=urllib.parse.quote(f.name), name=html.escape(filename)), escape=False)
+    self._print_item(level, '<a href="{href}">{name}</a>'.format(href=urllib.parse.quote(f.name), name=html.escape(filename)), escape=False)
 
 class IndentLog(ContextTreeLog):
   '''Output indented html snippets.'''
@@ -425,8 +423,7 @@ class IndentLog(ContextTreeLog):
   def open(self, filename, mode, level, exists):
     with self._open(filename, mode, exists) as f:
       yield f
-    fmt = '<a href="{href}"' + (' class="plot"' if filename.split('.')[-1] in VIEWABLE else '') + '>{name}</a>'
-    self._print_item(level, fmt.format(href=urllib.parse.quote(f.name), name=html.escape(filename)), escape=False)
+    self._print_item(level, '<a href="{href}">{name}</a>'.format(href=urllib.parse.quote(f.name), name=html.escape(filename)), escape=False)
 
 class TeeLog(Log):
   '''Simultaneously interface multiple logs'''

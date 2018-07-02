@@ -78,7 +78,7 @@ log_html = '''\
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no"/>
 <title>test</title>
-<script src="0b95171a2ed51cd6fedadc00a96397741219d2d6.js"></script>
+<script src="ec07ff6f8ef5e06450e5076ece49d404de00e3be.js"></script>
 <link rel="stylesheet" type="text/css" href="7eaa783bda20788dc3f5c4bf953fcf73cefc6265.css"/>
 <link rel="icon" sizes="48x48" type="image/png" href="1e8377c360c7a152793d936d03b0ea9e2fcb742b.png"/>
 </head>
@@ -106,7 +106,7 @@ log_html = '''\
   File &quot;??&quot;, line ??, in ??
     raise ValueError(&#x27;test&#x27;)</div>
 </div><div class="end"></div></div>
-<div class="item" data-loglevel="3"><a href="test.png" class="plot">test.png</a></div>
+<div class="item" data-loglevel="3"><a href="test.png">test.png</a></div>
 <div class="item" data-loglevel="3">nonexistent.png</div>
 </div></body></html>
 '''
@@ -128,7 +128,7 @@ c exception
  e ValueError(&#x27;test&#x27;,)
  |   File &quot;??&quot;, line ??, in ??
  |     raise ValueError(&#x27;test&#x27;)
-i <a href="test.png" class="plot">test.png</a>
+i <a href="test.png">test.png</a>
 i nonexistent.png
 '''
 

@@ -97,6 +97,9 @@ const create_log_level_icon = function(level, options) {
 
 // NOTE: This should match the log levels defined in `nutils/log.py`.
 const LEVELS = ['error', 'warning', 'user', 'info', 'debug'];
+const VIEWABLE = ['.jpg', '.jpeg', '.png', '.svg'];
+// Make sure `VIEWABLE.filter(suffix => filename.endsWith(suffix))[0]` is always the longest match.
+VIEWABLE.sort((a, b) => b.length - a.length);
 
 const Log = class {
   constructor() {
@@ -205,12 +208,18 @@ const Log = class {
       }
     }
 
-    // Link anchors to theater.
+    // Link viewable anchors to theater.
     let ianchor = 0;
-    for (const anchor of document.querySelectorAll('#log .item > a.plot')) {
+    for (const anchor of document.querySelectorAll('#log .item > a')) {
+      const filename = anchor.innerText;
+      const suffix = VIEWABLE.filter(suffix => filename.endsWith(suffix));
+      if (!suffix.length)
+        continue;
+      const stem = filename.slice(0, filename.length - suffix[0].length);
+      if (!stem)
+        continue;
+      const category = (stem.match(/^(.*?)[0-9]*$/) || [null, null])[1];
       anchor.addEventListener('click', this._plot_clicked);
-      const filename = (anchor.innerText.match(/^(.*)[.][^.]+$/) || [null, 'unknown'])[1];
-      const category = (filename.match(/^(.*?)[0-9]*$/) || [null, null])[1];
 
       let context = null;
       let parent = anchor.parentElement;
@@ -225,7 +234,7 @@ const Log = class {
 
       anchor.id = `plot-${ianchor}`;
       ianchor += 1;
-      theater.add_plot(anchor.href, anchor.id, category, context.dataset.id, (context.dataset.label ? context.dataset.label + '/' : '') + filename);
+      theater.add_plot(anchor.href, anchor.id, category, context.dataset.id, (context.dataset.label ? context.dataset.label + '/' : '') + stem);
     }
 
     // Make contexts clickable.
