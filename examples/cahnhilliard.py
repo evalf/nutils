@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 
-from nutils import mesh, util, cli, log, function, numeric, numeric, solver, sample, export
+from nutils import *
 import numpy, unittest
 from matplotlib import collections
 
@@ -17,7 +17,7 @@ class MakePlots:
   def __call__(self, **arguments):
     self.energies[self.index] = sample.eval_integrals(*self.energy.values(), arguments=arguments)
     x, c = self.sample.eval([self.namespace.x, self.namespace.c], arguments=arguments)
-    with export.mplfigure('flow{}'.format(self.index)) as fig:
+    with export.mplfigure('flow.png') as fig:
       ax = fig.add_subplot(111, yticks=[], xticks=[], aspect='equal')
       im = ax.tripcolor(x[:,0], x[:,1], self.sample.tri, c, shading='gouraud', cmap='jet')
       im.set_clim(-1, 1)
@@ -41,7 +41,6 @@ def main(
     maxtime: 'end time' = 1.,
     theta: 'contact angle (degrees)' = 90,
     init: 'initial condition (random/bubbles)' = 'random',
-    figures: 'create figures' = True,
   ):
 
   mineps = 1./nelems
@@ -93,7 +92,7 @@ def main(
 
   # solve time dependent problem
   nsteps = numeric.round(maxtime/timestep)
-  makeplots = MakePlots(ns, domain.sample('bezier', 9), energy, nsteps) if figures else lambda **args: None
+  makeplots = MakePlots(ns, domain.sample('bezier', 9), energy, nsteps)
   for istep, lhs in log.enumerate('timestep', solver.impliciteuler('lhs', target0='lhs0', residual=res, inertia=inertia, timestep=timestep, lhs0=lhs0)):
     makeplots(lhs=lhs)
     if istep == nsteps:
@@ -105,7 +104,7 @@ def main(
 class test(unittest.TestCase):
 
   def test(self):
-    lhs0, lhs = main(nelems=8, init='bubbles', timestep=.01, maxtime=.05, figures=False)
+    lhs0, lhs = main(nelems=8, init='bubbles', timestep=.01, maxtime=.05)
     numeric.assert_allclose64(lhs0, 'eNrdjjEKwlAMhgVv4FgnF3dpfY+ugquTuDjY3cEDCJ08SWfRUs'
       'RFBDf/P48Kgh28ghS6t1CM1zCBQELyffG4YS6+9HjDCSkOmhvuJAv8UUSn3R5HrblO5vZjuq4AcUamu7'
       '74o4+ZmYVUeOOBOy7oMWLXLWTKhLWsZMgGNzgUqJDwFTxNbJZ5yZMyqVe1PM3EhvY6bl2qrrNyVhKb0A'

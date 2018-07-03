@@ -39,18 +39,6 @@ class BasePlot:
     self.index = index
     self.ndigits = ndigits
 
-  def getpath(self, name, index, ext):
-    if name is None:
-      name = self.name
-    if index is None:
-      index = self.index
-    if self.ndigits and index is None:
-      index = _getnextindex(name, ext)
-    if index is not None:
-      name += str(index).rjust(self.ndigits, '0')
-    name += '.' + ext
-    return name
-
   def __enter__(self):
     'enter with block'
 
@@ -121,13 +109,15 @@ class PyPlot(BasePlot):
     'save images'
 
     assert self._fig, 'figure is closed'
-    paths = []
+    if name is None:
+      name = self.name
+    if index is None:
+      index = self.index
+    if index is not None:
+      name += str(index).rjust(self.ndigits, '0')
     for ext in self.imgtype.split(','):
-      path = self.getpath(name, index, ext)
-      paths.append(path)
-      with core.open_in_outdir(path, 'wb') as f:
+      with log.open(name + '.' + ext, 'wb', exists='rename' if self.ndigits and index is None else 'overwrite') as f:
         self.savefig(f, format=ext, **kwargs)
-    log.user(' '.join(paths))
 
   def segments(self, points, color='black', **kwargs):
     'plot line'
@@ -505,9 +495,9 @@ class PyPlotVideo(PyPlot):
     self._clearfigure = clearfigure
     if videotype is None:
       videotype = getattr(config, 'videotype', 'webm')
-    path = self.getpath(name, None, videotype)
-    with core.open_in_outdir(path, 'wb') as f:
-      log.user(path)
+    if name is None:
+      name = self.name
+    with log.open(name + '.' + videotype, 'wb') as f:
       self._encoder = subprocess.Popen([
           getattr(config, 'videoencoder', 'ffmpeg'),
           '-loglevel', 'quiet',
@@ -566,10 +556,14 @@ class DataFile(BasePlot):
     self.lines = []
 
   def save(self, name=None, index=None):
-    path = self.getpath(name, index, self.ext)
-    with core.open_in_outdir(path, 'w') as fout:
+    if name is None:
+      name = self.name
+    if index is None:
+      index = self.index
+    if index is not None:
+      name += str(index).rjust(self.ndigits, '0')
+    with log.open(name + '.' + self.ext, 'wb', exists='rename' if self.ndigits and index is None else 'overwrite') as fout:
       fout.writelines(self.lines)
-    log.user(path)
 
   def printline(self, line):
     self.lines.append(line + '\n')
@@ -623,8 +617,13 @@ class VTKFile(BasePlot):
 
   def save(self, name=None, index=None):
     assert self._mesh is not None, 'Grid not specified'
-    path = self.getpath(name, index, 'vtk')
-    with core.open_in_outdir(path, 'wb') as vtk:
+    if name is None:
+      name = self.name
+    if index is None:
+      index = self.index
+    if index is not None:
+      name += str(index).rjust(self.ndigits, '0')
+    with log.open(name + '.vtk', 'wb', exists='rename' if self.ndigits and index is None else 'overwrite') as vtk:
       if sys.version_info.major == 2:
         write = vtk.write
       else:
@@ -679,8 +678,6 @@ class VTKFile(BasePlot):
             raise Exception('Unsupported data dimension')
 
           self._writearray(vtk, data)
-
-    log.user(path)
 
   def rectilineargrid(self, coords):
     """set rectilinear grid"""
@@ -760,15 +757,6 @@ class VTKFile(BasePlot):
 
 
 ## INTERNAL HELPER FUNCTIONS
-
-def _getnextindex(name, ext):
-  index = 0
-  for filename in core.listoutdir():
-    if filename.startswith(name) and filename.endswith('.'+ext):
-      num = filename[len(name):-len(ext)-1]
-      if num.isdigit():
-        index = max(index, int(num)+1)
-  return index
 
 def _triangulate_quad(n, m):
   ind = numpy.arange(n*m).reshape(n, m)

@@ -15,6 +15,9 @@ class DocTestLog(nutils.log.ContextLog):
       s = self._mkstr(level, text)
       print(s, end='\n' if endl else '')
 
+  def open(self, filename, *args, level, **kwargs):
+    pass
+
 
 @parametrize
 class module(ContextTestCase):

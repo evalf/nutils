@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 
-from nutils import mesh, util, cli, log, function, numeric, solver, export
+from nutils import *
 import numpy, unittest
 from matplotlib import collections, patches, ticker
 
@@ -20,11 +20,11 @@ class MakePlots:
     x = bezier.eval(ns.x)
     inflow = domain.boundary['inflow'].sample('bezier', 5)
     xin = inflow.eval(ns.x)
-    with export.mplfigure('mesh') as fig:
+    with export.mplfigure('mesh.png') as fig:
       ax = fig.add_subplot(111, aspect='equal')
       ax.add_collection(collections.LineCollection(x[bezier.hull], colors='k', linewidths=.1))
       ax.add_patch(patches.Rectangle(self.bbox[:,0], *(self.bbox[:,1] - self.bbox[:,0]), fc='none', ec='green'))
-      ax.add_collection(collections.LineCollection(xin[inflow.tri], colors='r', linewidths=1))
+      ax.add_collection(collections.LineCollection(xin.take(inflow.tri,0), colors='r', linewidths=1))
       ax.autoscale(enable=True, axis='both', tight=True)
     self.bezier = bezier.subset((x > self.bbox[:,0]).all(axis=1) & (x < self.bbox[:,1]).all(axis=1))
     self.interpolate = util.tri_interpolator(self.bezier.tri, self.bezier.eval(ns.x), mergetol=1e-5)
@@ -33,7 +33,7 @@ class MakePlots:
     angle = self.index * self.timestep * self.rotation
     x, u, normu, p = self.bezier.eval([self.ns.x, self.ns.u, function.norm2(self.ns.u), self.ns.p], arguments=arguments)
     ugrd = numeric.normalize(self.interpolate[self.xgrd](u), axis=1)
-    with export.mplfigure('flow{}'.format(self.index)) as fig:
+    with export.mplfigure('flow.png') as fig:
       ax = fig.add_axes([0,0,1,1], yticks=[], xticks=[], frame_on=False, xlim=self.bbox[0], ylim=self.bbox[1])
       im = ax.tripcolor(x[:,0], x[:,1], self.bezier.tri, normu, shading='gouraud', cmap='jet')
       im.set_clim(0, 1.5)
@@ -55,7 +55,6 @@ def main(
     maxradius: 'approximate domain size' = 25,
     tmax: 'end time' = numpy.inf,
     degree: 'polynomial degree' = 2,
-    figures: 'create figures' = True,
   ):
 
   log.user('reynolds number: {:.1f}'.format(density / viscosity)) # based on unit length and velocity
@@ -109,7 +108,7 @@ def main(
 
   # solve unsteady navier-stokes equations, starting from stationary oseen flow
   lhs0 = solver.solve_linear('lhs', res+oseen, constrain=cons)
-  makeplots = MakePlots(domain, ns, timestep=timestep, rotation=rotation) if figures else lambda **args: None
+  makeplots = MakePlots(domain, ns, timestep=timestep, rotation=rotation)
   for istep, lhs in log.enumerate('timestep', solver.impliciteuler('lhs', residual=res+convec, inertia=inertia, lhs0=lhs0, timestep=timestep, constrain=cons, newtontol=1e-10)):
     makeplots(lhs=lhs)
     if istep * timestep >= tmax:
@@ -121,7 +120,7 @@ def main(
 class test(unittest.TestCase):
 
   def test_rot0(self):
-    lhs0, lhs = main(nelems=3, viscosity=1e-2, timestep=.1, tmax=.05, rotation=0, figures=False)
+    lhs0, lhs = main(nelems=3, viscosity=1e-2, timestep=.1, tmax=.05, rotation=0)
     numeric.assert_allclose64(lhs0, 'eNoB2AAn/1zIZDfgx2U3W8h2ON3ISTdyx1Q31chkODQ6y8V5x+'
       '3FFDqHOL85TMaNw+PFKzpsPEs8wcNtwsPDTDyFPS496MKXwenCMD1PPqjGFzf/xgE55shXOXMxmcoZy/'
       'Q0STWpzu/NUMVCLxzRljriMRnFbMUSxeE66DrXOqvEnMKVxI87VD13O/TCY8HGwjs9nT4KPXPK4cp6Nu'
@@ -134,7 +133,7 @@ class test(unittest.TestCase):
       'AycDnPrEddBk=')
 
   def test_rot1(self):
-    lhs0, lhs = main(nelems=3, viscosity=1e-2, timestep=.1, tmax=.05, rotation=1, figures=False)
+    lhs0, lhs = main(nelems=3, viscosity=1e-2, timestep=.1, tmax=.05, rotation=1)
     numeric.assert_allclose64(lhs0, 'eNoB2AAn/y/JijbexwE4w8d4ON3JYDZwx/Q3KshmOF06o8V3xx'
       '7G4zmJOPU5FcaNwxfG+DlsPEs8wcNtwsPDTDyFPS496MKXwenCMD1PPoPHWjblx6I5VsjyOSw2LDTcNA'
       '03LDfJNT42jMV9NmY2zzqkNkTFnMU8xQk7DTsAO83EtsK2xKs7bj2UO/TCY8HGwjs9nT4KPZDPKzB8Nn'

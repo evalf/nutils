@@ -96,7 +96,7 @@ class vtk(TestCase):
         raise Exception('not supported: ndims={}, ctype={}, cdims={}'.format(self.ndims, self.ctype, self.cdims))
 
   def test_data(self):
-    with tempfile.TemporaryDirectory() as outdir, config(outdir=outdir):
+    with tempfile.TemporaryDirectory() as outdir, log.DataLog(outdir):
       kwargs = {}
       if self.p is not None:
         kwargs['p'] = self.p

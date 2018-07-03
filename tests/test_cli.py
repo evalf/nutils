@@ -44,7 +44,9 @@ class run(ContextTestCase):
     symlink = sys.platform not in ('win32', 'cygwin')
     if symlink:
       args.append('--symlink=xyz')
+    oldlog = nutils.log._current_log
     status, output = self._cli(*args)
+    self.assertEqual(nutils.log._current_log, oldlog)
     with self.subTest('outdir'):
       self.assertTrue(os.path.isdir(os.path.join(self.outrootdir,self.scriptname)), 'output directory not found')
     if symlink:
