@@ -535,6 +535,8 @@ def fromfunc(func, nelems, ndims, degree=1):
 def demo(xmin=0, xmax=1, ymin=0, ymax=1):
   'demo triangulation of a rectangle'
 
+  warnings.deprecation('mesh.demo will be removed in future, use mesh.unitsquare instead')
+
   phi = numpy.arange(1.5, 13) * (2*numpy.pi) / 12
   P = numpy.array([numpy.cos(phi), numpy.sin(phi)])
   P /= abs(P).max(axis=0)
@@ -550,5 +552,64 @@ def demo(xmin=0, xmax=1, ymin=0, ymax=1):
   belems = [elem.edge(2) for elem in topo.elements[:12]]
   topo = topo.withboundary(**{name: topology.UnstructuredTopology(1, subbelems) for name, subbelems in (('top',belems[0:3]), ('left',belems[3:6]), ('bottom',belems[6:9]), ('right',belems[9:12]))})
   return topo, function.rootcoords(2)
+
+def unitsquare(nelems, etype):
+  '''Unit square mesh.
+
+  Args
+  ----
+  nelems : :class:`int`
+      Number of elements along boundary
+  etype : :class:`str`
+      Type of element used for meshing. Supported are:
+
+      * ``"square"``: structured mesh of squares.
+
+      * ``"triangle"``: unstructured mesh of triangles.
+
+      * ``"mixed"``: unstructured mesh of triangles and squares.
+
+  Returns
+  -------
+  :class:`nutils.topology.Topology`:
+      The structured/unstructured topology.
+  :class:`nutils.function.Array`:
+      The geometry function.
+  '''
+
+  root = transform.Identifier(2, 'unitsquare')
+
+  if etype == 'square':
+    topo = topology.StructuredTopology(root, [topology.DimAxis(0, nelems, False)] * 2)
+
+  elif etype in ('triangle', 'mixed'):
+    simplices = numpy.concatenate([
+      numpy.take([i*(nelems+1)+j, i*(nelems+1)+j+1, (i+1)*(nelems+1)+j, (i+1)*(nelems+1)+j+1], [[0,1,2],[1,2,3]] if i%2==j%2 else [[0,1,3],[0,2,3]], axis=0)
+        for i in range(nelems) for j in range(nelems)])
+
+    v = numpy.arange(nelems+1, dtype=float)
+    coords = numeric.meshgrid(v, v).reshape(2,-1).T
+    topo = topology.SimplexTopology(simplices, [(root, transform.Simplex(coords[s])) for s in simplices])
+
+    if etype == 'mixed':
+      elems = list(topo)
+      square = element.getsimplex(1)**2
+      connectivity = list(topo.connectivity)
+      isquares = [i * nelems + j for i in range(nelems) for j in range(nelems) if i%2==j%3]
+      for n in sorted(isquares, reverse=True):
+        i, j = divmod(n, nelems)
+        elems[n*2:(n+1)*2] = element.Element(square, (root, transform.Shift([float(i),float(j)]))),
+        connectivity[n*2:(n+1)*2] = numpy.concatenate(connectivity[n*2:(n+1)*2])[[3,2,4,1] if i%2==j%2 else [3,2,0,5]],
+        connectivity = [c-numpy.greater(c,n*2) for c in connectivity]
+      topo = topology.ConnectedTopology(2, elems, tuple(types.frozenarray(c, copy=False) for c in connectivity))
+
+    x, y = topo.boundary.elem_mean(function.rootcoords(2), degree=1).T
+    bgroups = dict(left=x==0, right=x==nelems, bottom=y==0, top=y==nelems)
+    topo = topo.withboundary(**{name: topology.UnstructuredTopology(1, [belem for i, belem in enumerate(topo.boundary) if mask[i]]) for name, mask in bgroups.items()})
+
+  else:
+    raise Exception('invalid element type {!r}'.format(etype))
+
+  return topo, function.rootcoords(2) / nelems
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=1

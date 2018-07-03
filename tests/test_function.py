@@ -454,11 +454,12 @@ class commutativity(TestCase):
     self.assertEqual(function.add(self.A, self.B) * function.dot(self.A, self.B, axes=[0]), function.dot(self.B, self.A, axes=[0]) * function.add(self.B, self.A))
 
 
+@parametrize
 class sampled(TestCase):
 
   def setUp(self):
     super().setUp()
-    self.domain, geom = mesh.demo()
+    self.domain, geom = mesh.unitsquare(4, self.etype)
     basis = self.domain.basis('std', degree=1)
     numpy.random.seed(0)
     self.f = basis.dot(numpy.random.uniform(size=len(basis)))
@@ -474,6 +475,9 @@ class sampled(TestCase):
   def test_pointset(self):
     with self.assertRaises(function.EvaluationError):
       self.domain.integrate(self.f_sampled, ischeme='uniform2')
+
+for etype in 'square', 'triangle', 'mixed':
+  sampled(etype=etype)
 
 
 class piecewise(TestCase):

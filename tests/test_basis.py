@@ -7,7 +7,7 @@ class basis(TestCase):
 
   def setUp(self):
     super().setUp()
-    self.domain, self.geom = mesh.rectilinear([[0,1,2]]*self.ndims) if self.ndims else mesh.demo()
+    self.domain, self.geom = mesh.rectilinear([[0,1,2]]*self.ndims)
     for iref in range(self.nrefine):
       self.domain = self.domain.refined_by(self.domain.elements[:1])
     self.basis = self.domain.basis(self.btype, degree=self.degree)
@@ -180,13 +180,13 @@ structured_line(variant='periodic', btype='spline', degree=0, nelems=1)
 class unstructured_topology(TestCase):
 
   def setUp(self):
-    if self.variant == 'tensor':
+    if self.ndims == 2:
+      domain, geom = mesh.unitsquare(4, self.variant)
+      nverts = 25
+    elif self.variant == 'tensor':
       structured, geom = mesh.rectilinear([numpy.linspace(0, 1, 5-i) for i in range(self.ndims)])
       domain = topology.ConnectedTopology(structured.ndims, structured.elements, structured.connectivity)
       nverts = numpy.product([5-i for i in range(self.ndims)])
-    elif self.variant == 'demo' and self.ndims == 2:
-      domain, geom = mesh.demo()
-      nverts = len(numpy.unique(domain.basetopo.simplices))
     elif self.variant == 'simplex':
       numpy.random.seed(0)
       nverts = 20
@@ -207,15 +207,10 @@ class unstructured_topology(TestCase):
     if self.btype == 'bubble':
       ndofs = self.nverts + len(self.domain)
     elif self.btype == 'discont':
-      if self.variant == 'tensor':
-        dofs_per_elem = (self.degree+1)**self.ndims
-      else:
-        dofs_per_elem = 1
-        for idim in range(self.ndims):
-          dofs_per_elem *= self.degree + idim + 1
-        for idim in range(self.ndims):
-          dofs_per_elem //= idim + 1
-      ndofs = len(self.domain) * dofs_per_elem
+      ndofs_by_ref = {
+        element.getsimplex(1)**self.ndims: (self.degree+1)**self.ndims,
+        element.getsimplex(self.ndims): numpy.product(self.degree+numpy.arange(self.ndims)+1) // numpy.product(numpy.arange(self.ndims)+1)}
+      ndofs = sum(ndofs_by_ref[elem.reference] for elem in self.domain)
     elif self.degree == 1:
       ndofs = self.nverts
     else:
@@ -242,8 +237,8 @@ class unstructured_topology(TestCase):
     error = numpy.sqrt(self.domain.integrate((target-projection)**2, geometry=self.geom, ischeme='gauss', degree=2*self.degree))
     numpy.testing.assert_almost_equal(error, 0, decimal=12)
 
-for ndims in range(1,4):
-  for variant in {1: ['simplex'], 2: ['simplex', 'tensor', 'demo'], 3: ['simplex', 'tensor']}[ndims]:
-    for btype in ['discont', 'bernstein', 'lagrange', 'std', 'bubble'][:5 if variant in ('simplex', 'demo') else 4]:
+for ndims in 1, 2, 3:
+  for variant in ['simplex', 'tensor'] if ndims != 2 else ['triangle', 'square', 'mixed']:
+    for btype in ['discont', 'bernstein', 'lagrange', 'std', 'bubble'][:5 if variant in ('simplex', 'triangle') else 4]:
       for degree in [0,1,2,3] if btype == 'discont' else [1] if btype == 'bubble' else [1,2,3]:
         unstructured_topology(ndims=ndims, btype=btype, degree=degree, variant=variant)
