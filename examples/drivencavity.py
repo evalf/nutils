@@ -1,30 +1,73 @@
 #! /usr/bin/env python3
+#
+# In this script we solve the stationary Stokes and Navier-Stokes on a unit
+# square domain, with no-slip left, bottom and right boundaries and a top
+# boundary that is moving at unit velocity in positive x-direction.
+#
+# .. math::
+#
+#    u &= 0, 0    &    & Γ_{\rm left,bottom,right}
+#
+#    u &= 1, 0    &    & Γ_{\rm top}
 
-from nutils import *
-import numpy, unittest
-from matplotlib import collections
+import nutils, numpy, matplotlib.collections
 
+def main(nelems: 'number of elements' = 12,
+         etype: 'type of elements (square/triangle/mixed)' = 'square',
+         degree: 'polynomial degree for velocity' = 3,
+         reynolds: 'reynolds number' = 1e-3):
 
-@log.title
-def postprocess(name, domain, ns, every=.05, spacing=.01, **arguments):
+  domain, geom = nutils.mesh.unitsquare(nelems, etype)
 
-  # confirm that velocity is pointwise divergence-free
-  div = domain.integrate('(u_k,k)^2' @ ns, geometry=ns.x, degree=9, arguments=arguments)**.5
-  log.info('velocity divergence: {:.2e}'.format(div))
+  # create namespace
+  ns = nutils.function.Namespace()
+  ns.Re = reynolds
+  ns.x = geom
+  ns.ubasis, ns.pbasis = nutils.function.chain([
+    domain.basis('std', degree=degree).vector(2),
+    domain.basis('std', degree=degree-1),
+  ])
+  ns.u_i = 'ubasis_ni ?lhs_n'
+  ns.p = 'pbasis_n ?lhs_n'
+  ns.stress_ij = 'Re (u_i,j + u_j,i) - p δ_ij'
+
+  # boundary conditions
+  sqr = domain.boundary.integral('u_k u_k' @ ns, degree=degree*2, geometry=ns.x)
+  wallcons = nutils.solver.optimize('lhs', sqr, droptol=1e-15)
+
+  sqr = domain.boundary['top'].integral('(u_0 - 1)^2' @ ns, degree=degree*2, geometry=ns.x)
+  lidcons = nutils.solver.optimize('lhs', sqr, droptol=1e-15)
+
+  cons = numpy.choose(numpy.isnan(lidcons), [lidcons, wallcons])
+  cons[-1] = 0 # pressure point constraint
+
+  res = domain.integral('ubasis_ni,j stress_ij + pbasis_n u_k,k' @ ns, geometry=ns.x, degree=degree*2)
+  with nutils.log.context('stokes'):
+    lhs0 = nutils.solver.solve_linear('lhs', res, constrain=cons)
+    postprocess(domain, ns, lhs=lhs0)
+
+  res += domain.integral('ubasis_ni u_i,j u_j' @ ns, geometry=ns.x, degree=degree*3)
+  with nutils.log.context('navierstokes'):
+    lhs1 = nutils.solver.newton('lhs', res, lhs0=lhs0, constrain=cons).solve(tol=1e-10)
+    postprocess(domain, ns, lhs=lhs1)
+
+  return lhs0, lhs1
+
+def postprocess(domain, ns, every=.05, spacing=.01, **arguments):
 
   # compute streamlines
   ns = ns.copy_()
   ns.streambasis = domain.basis('std', degree=2)[1:] # remove first dof to obtain non-singular system
   ns.stream = 'streambasis_n ?streamdofs_n'
   sqr = domain.integral('(u_0 - stream_,1)^2 + (u_1 + stream_,0)^2' @ ns, geometry=ns.x, degree=4)
-  arguments['streamdofs'] = solver.optimize('streamdofs', sqr, arguments=arguments)
+  arguments['streamdofs'] = nutils.solver.optimize('streamdofs', sqr, arguments=arguments)
 
   # plot velocity as field, pressure as contours, streamlines as dashed
   bezier = domain.sample('bezier', 9)
-  x, u, p, stream = bezier.eval([ns.x, function.norm2(ns.u), ns.p, ns.stream], arguments=arguments)
-  with export.mplfigure(name+'.png') as fig:
+  x, u, p, stream = bezier.eval([ns.x, nutils.function.norm2(ns.u), ns.p, ns.stream], arguments=arguments)
+  with nutils.export.mplfigure('flow.jpg') as fig:
     ax = fig.add_axes([.1,.1,.8,.8], yticks=[], aspect='equal')
-    ax.add_collection(collections.LineCollection(x[bezier.hull], colors='w', linewidths=.5, alpha=.2))
+    ax.add_collection(matplotlib.collections.LineCollection(x[bezier.hull], colors='w', linewidths=.5, alpha=.2))
     ax.tricontour(x[:,0], x[:,1], bezier.tri, stream, 16, colors='k', linestyles='dotted', linewidths=.5, zorder=9)
     caxu = fig.add_axes([.1,.1,.03,.8], title='velocity')
     imu = ax.tripcolor(x[:,0], x[:,1], bezier.tri, u, shading='gouraud', cmap='jet')
@@ -34,95 +77,44 @@ def postprocess(name, domain, ns, every=.05, spacing=.01, **arguments):
     imp = ax.tricontour(x[:,0], x[:,1], bezier.tri, p, 16, cmap='gray', linestyles='solid')
     fig.colorbar(imp, cax=caxp)
 
+if __name__ == '__main__':
+  nutils.cli.run(main)
 
-def main(
-    nelems: 'number of elements' = 12,
-    viscosity: 'fluid viscosity' = 1e-3,
-    density: 'fluid density' = 1,
-    degree: 'polynomial degree' = 2,
-    warp: 'warp domain (downward bend)' = False,
-  ):
+# Once a simulation is developed and tested, it is good practice to save a few
+# strategicly chosen return values for routine regression testing. The
+# `numeric` module facilitates this by providing base64 conversion tools for
+# numerical data to make it suitable for incorporation in the script.
 
-  log.user( 'reynolds number: {:.1f}'.format(density / viscosity) ) # based on unit length and velocity
-
-  # create namespace
-  ns = function.Namespace()
-  ns.viscosity = viscosity
-  ns.density = density
-
-  # construct mesh
-  verts = numpy.linspace( 0, 1, nelems+1 )
-  domain, ns.x0 = mesh.rectilinear( [verts,verts] )
-
-  # construct bases
-  ns.uxbasis, ns.uybasis, ns.pbasis, ns.lbasis = function.chain([
-    domain.basis( 'spline', degree=(degree+1,degree), removedofs=((0,-1),None) ),
-    domain.basis( 'spline', degree=(degree,degree+1), removedofs=(None,(0,-1)) ),
-    domain.basis( 'spline', degree=degree ),
-    [1], # lagrange multiplier
-  ])
-  ns.ubasis_ni = '<uxbasis_n, uybasis_n>_i'
-
-  # construct geometry
-  if not warp:
-    ns.x = ns.x0
-  else:
-    xi, eta = ns.x0
-    ns.x = (eta+2) * function.rotmat(xi*.4)[:,1] - (0,2) # slight downward bend
-    ns.J_ij = 'x_i,x0_j'
-    ns.detJ = function.determinant(ns.J)
-    ns.ubasis_ni = 'ubasis_nj J_ij / detJ' # piola transform
-    ns.pbasis_n = 'pbasis_n / detJ'
-
-  # populate namespace
-  ns.u_i = 'ubasis_ni ?lhs_n'
-  ns.p = 'pbasis_n ?lhs_n'
-  ns.l = 'lbasis_n ?lhs_n'
-  ns.sigma_ij = 'viscosity (u_i,j + u_j,i) - p δ_ij'
-  ns.c = 5 * (degree+1) / domain.boundary.integrate_elementwise(1, geometry=ns.x, degree=2, asfunction=True)
-  ns.nietzsche_ni = 'viscosity (c ubasis_ni - (ubasis_ni,j + ubasis_nj,i) n_j)'
-  ns.top = domain.boundary.indicator('top')
-  ns.utop_i = 'top <n_1, -n_0>_i'
-
-  # solve stokes flow
-  res = domain.integral('ubasis_ni,j sigma_ij + pbasis_n (u_k,k + l) + lbasis_n p' @ ns, geometry=ns.x, degree=2*(degree+1))
-  res += domain.boundary.integral('nietzsche_ni (u_i - utop_i)' @ ns, geometry=ns.x, degree=2*(degree+1))
-  lhs0 = solver.solve_linear('lhs', res)
-  postprocess('stokes', domain, ns, lhs=lhs0)
-
-  # solve navier-stokes flow
-  res += domain.integral('density ubasis_ni u_i,j u_j' @ ns, geometry=ns.x, degree=3*(degree+1))
-  lhs1 = solver.newton('lhs', res, lhs0=lhs0).solve(tol=1e-10)
-  postprocess('navierstokes', domain, ns, lhs=lhs1)
-
-  return lhs0, lhs1
-
+import unittest
 
 class test(unittest.TestCase):
 
-  def test_p1(self):
-    lhs0, lhs1 = main(nelems=3, viscosity=1e-2, degree=1, warp=False)
-    numeric.assert_allclose64(lhs0, 'eNpTvPBI3/o0t1mzds/pltM65opQ/n196QvcZh4XO03MTHbolZ'
-      '8+dVrxwlP9rycVL03Xjbm45tQfrZc37M/LGLBcFVc/aPDk/H3dzEtL9EJMGRgAJt4mPA==')
-    numeric.assert_allclose64(lhs1, 'eNoBUgCt/6nOuTGJy4M1SCzJy4zLCjcsLk3PCst/Nlcx9M2DNe'
-      'DPgDR+NB7UG8wVzSwuPc6ByezUQiudMKTL/y4AL73NLS6jLUov8s4zzXoscdMJMSo2AABO+yTF')
+  def test_square(self):
+    lhs0, lhs1 = main(nelems=3, etype='square', reynolds=1e-2, degree=3)
+    nutils.numeric.assert_allclose64(lhs0, 'eNp1zj1IQlEUB/BrCJKEQxLRFNFQxvN1vTcpo'
+      'qWhzZaGElr7WKOGirApiIaipcEKoiXCpaKEiCKnhjznXX1PejaEJGGFRCCiCH153YrXOXCG3+F'
+      'w/oT8rZFeQpaVqDGVmjHNxEKSJmxM2rOIal1aDlsxKyK+gF/asZbHEA5gDmL6FduuWRnHsAQXc'
+      'ABEXeGP/5rVrdUPqyxWma1q2ih3u1g7/+JnPf3+BiYtr5ToBGvm33yNd/C3pLTrTi9d9Y2yCku'
+      'xU2Z6pa17CqpKMzTo+6AbdLJmc3eupC7axKFmF7NiR5c2aBpiUYugAxUcRk/Nmgyn2MVXsME83'
+      'INblRZW6hMFfIA6CMRvbotonTgL7/ACWQjBfjwcT8MT6HAJSxCEI8hAvroxIQZ7cA7FX+3ET3C'
+      'gG1Ucxz5sRDu2IMctTONQNVkFbNW5iScGIT8HbdXq')
+    nutils.numeric.assert_allclose64(lhs1, 'eNptzktoU0EUBuC7KeLGguKioS4MBdPekNyZS'
+      'WIwEihowVVBxJW0pYuiFgpiXSh0F0ltELvoC2zAVuorRuiTJlRLC6Hof2cml0wwCxVqCl1XFOq'
+      'i4p27LPlXP985HI5hHM/1i4aRMzvVL7VqOs4j5VMhS9un8k2ZkEnZLL+271v3mLYb8oG4KuKiR'
+      '0yGtkk6om1MODzLH/Ma/xZK0b+eXROveJzX7Vs8ZcXYUFTbkYiJp7yFb9i3VTO765m/fFL+5IM'
+      '8ZBfFHJvybCD4WvVWi86BZPIsj3j3Gv3cKKXKUDhJovQ7TbBhdsrSdjl4xcqSbtrEZukM7VDa3'
+      'ge2wnHSRAt0lmboSFjbCfNMuGItkH7aSxdpi9Q2c+Gf80JFgpdIHxkgdaJtt3aufFq2iRXxUPq'
+      'chLfnV63yLT/Pd2CKLXqfadsL9DmGmLeruPPl42diN/44jyV8wBuMogvteIe827MYxwTWkMOiK'
+      '1k8QxrTbl9xZQpPMIzn2EDR3cgjg5dYxzYKKIHjDzbx252sY9mdHuKHaRj/AYh1yFc=')
 
-  def test_p2(self):
-    lhs0, lhs1 = main(nelems=3, viscosity=1e-2, degree=2, warp=False)
-    numeric.assert_allclose64(lhs0, 'eNp7ZmB71sY46VSq2dLzludvnMo20jFHsJ7BZaXObzbedDrVbJ'
-      'nBjPM1ZkuNGaAg6nyGQcvJ6DPPDHzP+JnMPsltwKl1/DyrYcPJUxf0LuXqvDkzzYgBDsz0L+lOvixinH'
-      'X26/nvVy0Nfp9rMGNgAADUrDbX')
-    numeric.assert_allclose64(lhs1, 'eNoBhAB7/3Axm8zRM23KHDbJzyrMAs7DzOY2yM/vLvfJ8TQ/N8'
-      'AvSc5FMkjKwTaQzlo0K8scNuwwLDKfNWQzcCLOzCs1jTEA0FcxA8kLzcAvU81jMz/JVTELMUjOLDL+ye'
-      'MsaS6lLkLOajM9LDgwWNBzzOvOMTBCMHnXnDHFzcDTYDCgKo0vLzcAACOlOuU=')
-
-  def test_p1_warped(self):
-    lhs0, lhs1 = main(nelems=3, viscosity=1e-2, degree=1, warp=True)
-    numeric.assert_allclose64(lhs0, 'eNozv9CjZ35a2axMx/P0jdPq5uZQ/kn9zVeVzewubjHhNjmk53'
-      'P662nzC75ad0/evZSv+/1846n3WluvK51PNhC86q1xz2DueWXdiZc4DepNGRgALu0l4g==')
-    numeric.assert_allclose64(lhs1, 'eNoBUgCt/67OazGNy5M1fy2Oy+XL+ja0LqzO8sqmNlIxfM6TNc'
-      'fPoTRQNCrU98sHzrQul81aycHY6dfjL4PLpC5YLsfN7S+BLMEu3s74zF0pHdKIMWQ2AAB5wCwp')
-
-
-if __name__ == '__main__':
-  cli.run(main)
+  def test_mixed(self):
+    lhs0, lhs1 = main(nelems=3, etype='mixed', reynolds=1e-2, degree=2)
+    nutils.numeric.assert_allclose64(lhs0, 'eNpjYICAiRePnWdg0D736SyIF3P2nK6VYSWQH'
+      'WS+1SjI3MAkyLz6rMbZI2BZhXMJZxyMNp/xMbwMFA8yLzNhYNh6YdUFiElzzykYgGg94yBzkH6'
+      'oBQwvLm80YmA4r6dkCOYZq5h4GZUYgdg8QHKbJpA2OHhp8zmQiM8Vp6tpV03PMp1TPQ/ipwPJc'
+      'IOtZyAmvT69Bcy6BOXHnM0+m3w28ezmM+ZnY88EnW0/O+vs2bO7zq48W352FdA8ABC3SoM=')
+    nutils.numeric.assert_allclose64(lhs1, 'eNpjYICA1RezLjIwPD639hyIl31umX6vgQGQH'
+      'WTuaRhkLmYcZB54bvvZq2dBsofPqZ4tMoo4o22oaxJkHmReasLAsOrihAsQkxzOJl0B0TJAOZB'
+      '+qAUMtZefGzIwxOjtNgDxfho9MbI1UjcCsV/pMTA802VgqDNYqrsEbL+I7nGD0/o655ouMIFN3'
+      'QLUqWSUcQZiEvMZbrA7npyG8IXPyJ2RPiN65ubpn6dPn+Y9I3XG4AwfUMzlDPuZ60A9AH73RT0'
+      '=')
