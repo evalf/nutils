@@ -19,13 +19,11 @@ class MakePlots:
     else:
       self.aoipatch = patches.Rectangle
       self.aoiargs = numpy.array(aoicenter) - aoiarea**.5/2, aoiarea**.5, aoiarea**.5
-    self.index = 0
 
   def __call__(self, domain, sol, ndofs, error_estimate, error_exact):
-    self.index += 1
     bezier = domain.sample('bezier', 9)
     x, colors = bezier.eval([self.geom, sol])
-    with export.mplfigure('sol{}.png'.format(self.index)) as fig:
+    with export.mplfigure('sol.png') as fig:
       ax = fig.add_subplot(111, aspect='equal')
       im = ax.tripcolor(x[:,0], x[:,1], bezier.tri, colors, shading='gouraud', cmap='jet')
       ax.add_collection(collections.LineCollection(x[bezier.hull], colors='k', linewidths=.1))
@@ -36,7 +34,7 @@ class MakePlots:
     self.error_exact.append(error_exact)
     self.error_estimate.append(error_estimate)
     optimal = numpy.power(self.ndofs, -self.optimalrate, dtype=float)
-    with export.mplfigure('conv{}.png'.format(self.index)) as fig:
+    with export.mplfigure('conv.png') as fig:
       ax = fig.add_subplot(111, xlabel='degrees of freedom')
       ax.loglog(self.ndofs, self.error_exact, '-', label='error')
       ax.loglog(self.ndofs, self.error_estimate, '--', label='error estimate')

@@ -33,7 +33,7 @@ class MakePlots:
     angle = self.index * self.timestep * self.rotation
     x, u, normu, p = self.bezier.eval([self.ns.x, self.ns.u, function.norm2(self.ns.u), self.ns.p], arguments=arguments)
     ugrd = numeric.normalize(self.interpolate[self.xgrd](u), axis=1)
-    with export.mplfigure('flow{}.png'.format(self.index)) as fig:
+    with export.mplfigure('flow.png') as fig:
       ax = fig.add_axes([0,0,1,1], yticks=[], xticks=[], frame_on=False, xlim=self.bbox[0], ylim=self.bbox[1])
       im = ax.tripcolor(x[:,0], x[:,1], self.bezier.tri, normu, shading='gouraud', cmap='jet')
       im.set_clim(0, 1.5)
