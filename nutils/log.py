@@ -65,10 +65,6 @@ class Log(metaclass=abc.ABCMeta):
   def __exit__(self, etype, value, tb):
     if not hasattr(self, '_stack'):
       raise RuntimeError('This context manager is not yet entered.')
-    if etype in (KeyboardInterrupt, SystemExit, bdb.BdbQuit):
-      self.write('error', 'killed by user')
-    elif etype is not None:
-      self.write_post_mortem(etype, value, tb)
     try:
       return self._stack.__exit__(etype, value, tb)
     finally:
@@ -90,13 +86,6 @@ class Log(metaclass=abc.ABCMeta):
 
     .. Note:: This function is abstract.
     '''
-
-  def write_post_mortem(self, etype, value, tb):
-    try:
-      msg = ''.join(traceback.format_exception(etype, value, tb))
-    except Exception as e:
-      msg = '{} (traceback failed: {})'.format(value, e)
-    self.write('error', msg)
 
   @abc.abstractmethod
   def open(self, filename, mode, level, exists):
@@ -225,6 +214,22 @@ class StdoutLog(ContextLog):
     self.stream = stream
     super().__init__()
 
+  def _write_post_mortem(self, etype, value, tb):
+    if etype is None:
+      return
+    elif etype in (KeyboardInterrupt, SystemExit, bdb.BdbQuit):
+      self.write('error', 'killed by user')
+    else:
+      try:
+        msg = ''.join(traceback.format_exception(etype, value, tb))
+      except Exception as e:
+        msg = '{} (traceback failed: {})'.format(value, e)
+      self.write('error', msg)
+
+  def _init_context(self, stack):
+    stack.push(self._write_post_mortem)
+    super()._init_context(stack)
+
   def _mkstr(self, level, text):
     return ' > '.join(self._context + ([text] if text is not None else []))
 
@@ -328,6 +333,7 @@ class HtmlLog(ContextTreeLog):
         self._print(('  <li>{}={}<span class="annotation">{}</span></li>' if annotation is not inspect.Parameter.empty else '<li>{}={}</li>').format(*(html.escape(str(v)) for v in (name, value, annotation))))
       self._print('</ul>')
     stack.callback(self._print, '</div></body></html>')
+    stack.push(self._write_post_mortem)
     return super()._init_context(stack)
 
   def _print(self, *args, flush=False):
@@ -346,10 +352,21 @@ class HtmlLog(ContextTreeLog):
       text = html.escape(text)
     self._print('<div class="item" data-loglevel="{}">{}</div>'.format(LEVELS.index(level), text), flush=True)
 
-  def write_post_mortem(self, etype, value, tb):
+  def _write_post_mortem(self, etype, value, tb):
     'write exception nfo to html log'
 
-    super().write_post_mortem(etype, value, tb)
+    if etype is None:
+      return
+    if etype in (KeyboardInterrupt, SystemExit, bdb.BdbQuit):
+      self.write('error', 'killed by user')
+      return
+
+    try:
+      msg = ''.join(traceback.format_exception(etype, value, tb))
+    except Exception as e:
+      msg = '{} (traceback failed: {})'.format(value, e)
+    self.write('error', msg)
+
     _fmt = lambda obj: '=' + ''.join(s.strip() for s in repr(obj).split('\n'))
     self._print('<div class="post-mortem">')
     self._print('EXHAUSTIVE STACK TRACE')
@@ -380,10 +397,23 @@ class IndentLog(ContextTreeLog):
     self._progressinterval = progressinterval or getattr(config, 'progressinterval', 1)
     super().__init__()
 
+  def _write_post_mortem(self, etype, value, tb):
+    if etype is None:
+      return
+    elif etype in (KeyboardInterrupt, SystemExit, bdb.BdbQuit):
+      self.write('error', 'killed by user')
+    else:
+      try:
+        msg = ''.join(traceback.format_exception(etype, value, tb))
+      except Exception as e:
+        msg = '{} (traceback failed: {})'.format(value, e)
+      self.write('error', msg)
+
   def _init_context(self, stack):
     self._open = stack.enter_context(_makedirs(self._outdir, exist_ok=True))
     self._logfile = stack.enter_context(self._open('log.html', 'w', exists='overwrite'))
     self._progressfile = stack.enter_context(self._open('progress.json', 'w', exists='overwrite'))
+    stack.push(self._write_post_mortem)
     super()._init_context(stack)
 
   def _print(self, *args, flush=False):
