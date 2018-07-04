@@ -215,9 +215,9 @@ class StdoutLog(ContextLog):
     super().__init__()
 
   def _write_post_mortem(self, etype, value, tb):
-    if etype is None:
+    if etype in (None, SystemExit):
       return
-    elif etype in (KeyboardInterrupt, SystemExit, bdb.BdbQuit):
+    elif etype in (KeyboardInterrupt, bdb.BdbQuit):
       self.write('error', 'killed by user')
     else:
       try:
@@ -355,9 +355,9 @@ class HtmlLog(ContextTreeLog):
   def _write_post_mortem(self, etype, value, tb):
     'write exception nfo to html log'
 
-    if etype is None:
+    if etype in (None, SystemExit):
       return
-    if etype in (KeyboardInterrupt, SystemExit, bdb.BdbQuit):
+    if etype in (KeyboardInterrupt, bdb.BdbQuit):
       self.write('error', 'killed by user')
       return
 
@@ -398,9 +398,9 @@ class IndentLog(ContextTreeLog):
     super().__init__()
 
   def _write_post_mortem(self, etype, value, tb):
-    if etype is None:
+    if etype in (None, SystemExit):
       return
-    elif etype in (KeyboardInterrupt, SystemExit, bdb.BdbQuit):
+    elif etype in (KeyboardInterrupt, bdb.BdbQuit):
       self.write('error', 'killed by user')
     else:
       try:
