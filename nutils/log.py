@@ -24,7 +24,7 @@ The log module provides print methods ``debug``, ``info``, ``user``,
 stdout as well as to an html formatted log file if so configured.
 """
 
-import time, functools, itertools, io, abc, contextlib, html, urllib.parse, os, json, traceback, bdb, inspect, textwrap, builtins, hashlib
+import time, functools, itertools, io, abc, contextlib, html, urllib.parse, os, json, traceback, bdb, inspect, textwrap, builtins, hashlib, sys
 from . import core, config, warnings
 
 LEVELS = 'error', 'warning', 'user', 'info', 'debug' # NOTE this should match the log levels defined in `nutils/_log/viewer.js`
@@ -40,7 +40,7 @@ HTMLHEAD = '''\
 
 ## LOG
 
-class Log(contextlib.ExitStack, metaclass=abc.ABCMeta):
+class Log(metaclass=abc.ABCMeta):
   '''
   Base class for log objects.  A subclass should define a :meth:`context`
   method that returns a context manager which adds a contextual layer and a
@@ -48,26 +48,34 @@ class Log(contextlib.ExitStack, metaclass=abc.ABCMeta):
   '''
 
   def __enter__(self):
-    if hasattr(self, '_old_log'):
+    if hasattr(self, '_stack'):
       raise RuntimeError('This context manager is not reentrant.')
-    # Replace the current log object with `self` and remember the old instance.
-    global _current_log
-    self._old_log = _current_log
-    _current_log = self
-    return super().__enter__()
+    stack = contextlib.ExitStack()
+    try:
+      self._init_context(stack)
+      # Replace the current log object with `self` and restore at exit.
+      stack.callback(_set_current_log, _current_log)
+      _set_current_log(self)
+    except:
+      stack.__exit__(*sys.exc_info())
+      raise
+    self._stack = stack
+    return self
 
   def __exit__(self, etype, value, tb):
-    if not hasattr(self, '_old_log'):
+    if not hasattr(self, '_stack'):
       raise RuntimeError('This context manager is not yet entered.')
     if etype in (KeyboardInterrupt, SystemExit, bdb.BdbQuit):
       self.write('error', 'killed by user')
     elif etype is not None:
       self.write_post_mortem(etype, value, tb)
-    # Restore the old log instance.
-    global _current_log
-    _current_log = self._old_log
-    del self._old_log
-    super().__exit__(etype, value, tb)
+    try:
+      return self._stack.__exit__(etype, value, tb)
+    finally:
+      del self._stack
+
+  def _init_context(self, stack):
+    pass
 
   @abc.abstractmethod
   def context(self, title, mayskip=False):
@@ -101,9 +109,9 @@ class DataLog(Log):
     self.outdir = outdir
     super().__init__()
 
-  def __enter__(self):
-    self._open = self.enter_context(_makedirs(self.outdir, exist_ok=True))
-    return super().__enter__()
+  def _init_context(self, stack):
+    self._open = stack.enter_context(_makedirs(self.outdir, exist_ok=True))
+    super()._init_context(stack)
 
   @contextlib.contextmanager
   def context(self, title, mayskip=False):
@@ -248,9 +256,9 @@ class RichOutputLog(StdoutLog):
     # Progress update interval in seconds.
     self._progressinterval = progressinterval or getattr(config, 'progressinterval', 0.1)
 
-  def __enter__(self):
-    self.callback(print, end='\033[K', file=self.stream) # clear the progress line
-    return super().__enter__()
+  def _init_context(self, stack):
+    stack.callback(print, end='\033[K', file=self.stream) # clear the progress line
+    super()._init_context(stack)
 
   def _mkstr(self, level, text):
     if text is not None:
@@ -291,8 +299,8 @@ class HtmlLog(ContextTreeLog):
     self._funcargs = funcargs
     super().__init__()
 
-  def __enter__(self):
-    self._open = self.enter_context(_makedirs(self._outdir, exist_ok=True))
+  def _init_context(self, stack):
+    self._open = stack.enter_context(_makedirs(self._outdir, exist_ok=True))
     # Copy dependencies.
     paths = {}
     for filename in 'favicon.png', 'viewer.css', 'viewer.js':
@@ -302,7 +310,7 @@ class HtmlLog(ContextTreeLog):
         dst.write(data)
       paths[filename.replace('.', '_')] = dst.name
     # Write header.
-    self._file = self.enter_context(self._open('log.html', 'w', exists='rename'))
+    self._file = stack.enter_context(self._open('log.html', 'w', exists='rename'))
     self._print('<!DOCTYPE html>')
     self._print('<html>')
     self._print(HTMLHEAD.format(title=html.escape(self._title), **paths))
@@ -319,8 +327,8 @@ class HtmlLog(ContextTreeLog):
       for name, value, annotation in self._funcargs:
         self._print(('  <li>{}={}<span class="annotation">{}</span></li>' if annotation is not inspect.Parameter.empty else '<li>{}={}</li>').format(*(html.escape(str(v)) for v in (name, value, annotation))))
       self._print('</ul>')
-    self.callback(self._print, '</div></body></html>')
-    return super().__enter__()
+    stack.callback(self._print, '</div></body></html>')
+    return super()._init_context(stack)
 
   def _print(self, *args, flush=False):
     print(*args, file=self._file)
@@ -372,11 +380,11 @@ class IndentLog(ContextTreeLog):
     self._progressinterval = progressinterval or getattr(config, 'progressinterval', 1)
     super().__init__()
 
-  def __enter__(self):
-    self._open = self.enter_context(_makedirs(self._outdir, exist_ok=True))
-    self._logfile = self.enter_context(self._open('log.html', 'w', exists='overwrite'))
-    self._progressfile = self.enter_context(self._open('progress.json', 'w', exists='overwrite'))
-    return super().__enter__()
+  def _init_context(self, stack):
+    self._open = stack.enter_context(_makedirs(self._outdir, exist_ok=True))
+    self._logfile = stack.enter_context(self._open('log.html', 'w', exists='overwrite'))
+    self._progressfile = stack.enter_context(self._open('progress.json', 'w', exists='overwrite'))
+    super()._init_context(stack)
 
   def _print(self, *args, flush=False):
     print(*args, file=self._logfile)
@@ -432,10 +440,10 @@ class TeeLog(Log):
     self.logs = logs
     super().__init__()
 
-  def __enter__(self):
+  def _init_context(self, stack):
     for log in self.logs:
-      self.enter_context(log)
-    return super().__enter__()
+      stack.enter_context(log)
+    super()._init_context(stack)
 
   @contextlib.contextmanager
   def context(self, title, mayskip=False):
@@ -496,12 +504,23 @@ class RecordLog(Log):
     self._appended_contexts = 0
     super().__init__()
 
+  def __enter__(self):
+    self._writethrough_log = _current_log
+    return super().__enter__()
+
+  def __exit__(self, *exc_info):
+    try:
+      del self._writethrough_log
+    except AttributeError:
+      pass
+    return super().__exit__(*exc_info)
+
   @contextlib.contextmanager
   def context(self, title, mayskip=False):
     self._contexts.append(title)
     # We don't append 'entercontext' here.  See `self.__init__`.
     try:
-      with self._old_log.context(title, mayskip):
+      with self._writethrough_log.context(title, mayskip):
         yield
     finally:
       self._contexts.pop()
@@ -510,7 +529,7 @@ class RecordLog(Log):
         self._messages.append(('exitcontext',))
 
   def write(self, level, text):
-    self._old_log.write(level, text)
+    self._writethrough_log.write(level, text)
     from . import parallel
     if not parallel.procid:
       # Append all currently entered contexts that have not been append yet
@@ -526,7 +545,7 @@ class RecordLog(Log):
       self._messages.append(('entercontext', title))
     self._appended_contexts = len(self._contexts)
     data = io.BytesIO() if 'b' in mode else io.StringIO()
-    with self._old_log.open(filename, mode, level) as f:
+    with self._writethrough_log.open(filename, mode, level) as f:
       yield _multistream([f, data])
     self._messages.append(('open', filename, mode, level, exists, data.getValue()))
 
@@ -554,6 +573,10 @@ class RecordLog(Log):
 # Reference to the current log instance.  This is updated by the `Log`'s
 # context manager, see `Log` base class.
 _current_log = None
+
+def _set_current_log(new_log):
+  global _current_log
+  _current_log = new_log
 
 # Set a default log instance.
 StdoutLog().__enter__()
