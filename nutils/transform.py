@@ -465,9 +465,15 @@ class TensorEdge1(Updim):
     # prioritize ascending transformations, i.e. change updim << scale to scale << updim
     if isinstance(other, TensorChild) and self.trans.fromdims == other.trans1.todims:
       swapped = self.trans.swapup(other.trans1)
-      if swapped:
-        child, edge = swapped
-        return TensorChild(child, other.trans2), TensorEdge1(edge, other.trans2.fromdims)
+      trans2 = other.trans2
+    elif not self.trans.fromdims:
+      swapped = self.trans.swapup(SimplexChild(0, 0))
+      trans2 = other
+    else:
+      swapped = None
+    if swapped:
+      child, edge = swapped
+      return TensorChild(child, trans2), TensorEdge1(edge, trans2.fromdims)
 
   def swapdown(self, other):
     # prioritize ascending transformations, i.e. change scale << updim to updim << scale
@@ -475,7 +481,7 @@ class TensorEdge1(Updim):
       swapped = self.trans.swapdown(other.trans1)
       if swapped:
         edge, child = swapped
-        return TensorEdge1(edge, other.trans2.todims), TensorChild(child, other.trans2)
+        return TensorEdge1(edge, other.trans2.todims), TensorChild(child, other.trans2) if child.fromdims else other.trans2
       return ScaledUpdim(other, self), Identity(self.fromdims)
 
 class TensorEdge2(Updim):
@@ -490,9 +496,15 @@ class TensorEdge2(Updim):
     # prioritize ascending transformations, i.e. change updim << scale to scale << updim
     if isinstance(other, TensorChild) and self.trans.fromdims == other.trans2.todims:
       swapped = self.trans.swapup(other.trans2)
-      if swapped:
-        child, edge = swapped
-        return TensorChild(other.trans1, child), TensorEdge2(other.trans1.fromdims, edge)
+      trans1 = other.trans1
+    elif not self.trans.fromdims:
+      swapped = self.trans.swapup(SimplexChild(0, 0))
+      trans1 = other
+    else:
+      swapped = None
+    if swapped:
+      child, edge = swapped
+      return TensorChild(trans1, child), TensorEdge2(trans1.fromdims, edge)
 
   def swapdown(self, other):
     # prioritize ascending transformations, i.e. change scale << updim to updim << scale
@@ -500,7 +512,7 @@ class TensorEdge2(Updim):
       swapped = self.trans.swapdown(other.trans2)
       if swapped:
         edge, child = swapped
-        return TensorEdge2(other.trans1.todims, edge), TensorChild(other.trans1, child)
+        return TensorEdge2(other.trans1.todims, edge), TensorChild(other.trans1, child) if child.fromdims else other.trans1
       return ScaledUpdim(other, self), Identity(self.fromdims)
 
 class TensorChild(Square):
@@ -509,6 +521,7 @@ class TensorChild(Square):
   __cache__ = 'det',
 
   def __init__(self, trans1, trans2):
+    assert trans1.fromdims and trans2.fromdims
     self.trans1 = trans1
     self.trans2 = trans2
     linear = numeric.blockdiag([trans1.linear, trans2.linear])

@@ -62,7 +62,7 @@ class Reference(types.Singleton):
 
   def __mul__(self, other):
     assert isinstance(other, Reference)
-    return TensorReference(self, other)
+    return self if not other.ndims else other if not self.ndims else TensorReference(self, other)
 
   def __pow__(self, n):
     assert numeric.isint(n) and n >= 0
