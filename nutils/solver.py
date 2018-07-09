@@ -631,7 +631,8 @@ def optimize(target:types.strictstr, functional:sample.strictintegral, *, newton
   '''
 
   lhs = newton(target, functional.derivative(target), **kwargs).solve(newtontol)
-  log.info('constrained {}/{} dofs'.format(len(lhs)-numpy.isnan(lhs).sum(), len(lhs)))
+  optimum = functional.eval(arguments=dict([(target, numpy.choose(numpy.isnan(lhs), [lhs, 0]))], **kwargs.get('arguments', {})))
+  log.info('constrained {}/{} dofs, optimum value {:.2e}'.format(len(lhs)-numpy.isnan(lhs).sum(), len(lhs), optimum))
   return lhs
 
 
