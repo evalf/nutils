@@ -48,7 +48,7 @@ def mplfigure(*args, **kwargs):
   matplotlib.backends.backend_agg.FigureCanvas(fig) # sets reference via fig.set_canvas
   with log.context(name):
     yield fig
-  if name.endswith(('.png', '.jpg', '.jpeg', '.tiff')):
+  if '.' in name:
     names_formats = [(name, name.split('.')[-1])]
   else:
     warnings.deprecation('`config.imagetype` is deprecated. Please pass a filename with extension, e.g. {!r}.'.format(name+'.png'))
