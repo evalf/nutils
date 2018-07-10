@@ -47,7 +47,7 @@ extensions = [
     'sphinx.ext.mathjax',
     'sphinx.ext.napoleon',
     'sphinx.ext.intersphinx',
-    'remove_annotations',
+    'sphinx_mods',
 ]
 
 # Add any paths that contain templates here, relative to this directory.
