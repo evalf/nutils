@@ -259,7 +259,7 @@ class newton(RecursionWithSolve, length=1):
 
     while resnorm:
       nosupp = self.droptol is not None and ~(jac.rowsupp(self.droptol)|self.constrain)
-      dlhs = -jac.solve(res, constrain=self.constrain|nosupp)
+      dlhs = -jac.solve(res, constrain=self.constrain|nosupp, **self.solveargs)
       if self.islinear:
         yield _nan_at(lhs+dlhs, nosupp), types.attributes(resnorm=0, relax=1)
         return
@@ -400,7 +400,7 @@ class minimize(RecursionWithSolve, length=1):
 
     while resnorm:
       nosupp = self.droptol is not None and ~(jac.rowsupp(self.droptol)|self.constrain)
-      dlhs = -jac.solve(res, constrain=self.constrain|nosupp)
+      dlhs = -jac.solve(res, constrain=self.constrain|nosupp, **self.solveargs)
       if self.islinear:
         yield _nan_at(lhs+dlhs, nosupp), types.attributes(resnorm=0, energy=nrg+.5*res.dot(dlhs), relax=1, shift=0)
         return
@@ -420,7 +420,7 @@ class minimize(RecursionWithSolve, length=1):
         # reciprocal lower bound for at least one negative eigenvalue of jac.
         shift += res.dot(res) / res.dot(dlhs)
         log.warning('negative eigenvalue detected; shifting spectrum by {:.2e}'.format(shift))
-        dlhs = -(jac + shift * matrix.eye(len(dlhs))).solve(res, constrain=self.constrain|nosupp)
+        dlhs = -(jac + shift * matrix.eye(len(dlhs))).solve(res, constrain=self.constrain|nosupp, **self.solveargs)
       for irelax in itertools.count() if self.nrelax is None else range(self.nrelax):
         newlhs = lhs+relax*dlhs
         newnrg, newres, newjac = self._eval(newlhs)
