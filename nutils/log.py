@@ -167,7 +167,7 @@ class ContextTreeLog(ContextLog):
       self._printed_context -= 1
       self._print_pop_context()
 
-  def write(self, level, text):
+  def write(self, level, text, **kwargs):
     '''Write ``text`` with log level ``level`` to the log.
 
     This method makes sure the current context is printed and calls
@@ -179,7 +179,7 @@ class ContextTreeLog(ContextLog):
     for title in self._context[self._printed_context:]:
       self._print_push_context(title)
       self._printed_context += 1
-    self._print_item(level, text)
+    self._print_item(level, text, **kwargs)
 
   @abc.abstractmethod
   def _print_push_context(self, title):
@@ -360,7 +360,7 @@ class HtmlLog(ContextTreeLog):
   def open(self, filename, mode, level, exists):
     with self._open(filename, mode, exists) as f:
       yield f
-    self._print_item(level, '<a href="{href}">{name}</a>'.format(href=urllib.parse.quote(f.name), name=html.escape(filename)), escape=False)
+    self.write(level, '<a href="{href}">{name}</a>'.format(href=urllib.parse.quote(f.name), name=html.escape(filename)), escape=False)
 
 class IndentLog(ContextTreeLog):
   '''Output indented html snippets.'''
