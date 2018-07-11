@@ -251,6 +251,17 @@ for domtype in 'circle', 'cylinder', 'hollowcylinder':
     revolved(domtype=domtype, refined=refined)
 
 
+class refined(TestCase):
+
+  def test_boundary(self):
+    domain, geom = mesh.rectilinear([1])
+    u = domain.basis('std', degree=1).dot([0,1])
+    p, = domain.boundary['right'].sample('uniform', 1).eval(u.ngrad(geom))
+    self.assertEqual(p, 1)
+    p, = domain.refined.boundary['right'].sample('uniform', 1).eval(u.ngrad(geom))
+    self.assertEqual(p, 1)
+
+
 @parametrize
 class general(TestCase):
 
