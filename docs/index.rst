@@ -30,6 +30,7 @@ Contents
 .. toctree::
 
    intro
+   generated/examples
    wiki
    library
 

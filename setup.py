@@ -43,7 +43,7 @@ setup(
   tests_require = tests_require,
   extras_require = dict(
     test=tests_require,
-    docs=['Sphinx'],
+    docs=['Sphinx>=1.6'],
     mkl=['mkl'],
   ),
   command_options = dict(
