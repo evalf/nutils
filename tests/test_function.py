@@ -101,6 +101,12 @@ class check(TestCase):
           actual=(numpy.expand_dims(V,ax2+1) * numpy.expand_dims(L,ax2+2).swapaxes(ax1+1,ax2+2)).sum(ax2+2),
           desired=(numpy.expand_dims(A,ax2+1) * numpy.expand_dims(V,ax2+2).swapaxes(ax1+1,ax2+2)).sum(ax2+2))
 
+  def test_determinant(self):
+    for ax1, ax2 in self.pairs:
+      self.assertArrayAlmostEqual(decimal=11,
+        desired=numpy.linalg.det(self.n_op_argsfun.transpose([i for i in range(self.n_op_argsfun.ndim) if i not in (ax1+1,ax2+1)] + [ax1+1,ax2+1])),
+        actual=function.determinant(self.op_args, axes=(ax1,ax2)).simplified.eval(**self.evalargs))
+
   def test_take(self):
     indices = [-1,0]
     for iax, sh in enumerate(self.op_args.shape):
@@ -108,6 +114,15 @@ class check(TestCase):
         self.assertArrayAlmostEqual(decimal=15,
           desired=numpy.take(self.n_op_argsfun, indices, axis=iax+1),
           actual=function.take(self.op_args, indices, axis=iax).simplified.eval(**self.evalargs))
+
+  def test_inflate(self):
+    for iax, sh in enumerate(self.op_args.shape):
+      dofmap = function.Constant(numpy.arange(sh) * 2)
+      desired = numpy.zeros(self.n_op_argsfun.shape[:iax+1] + (sh*2-1,) + self.n_op_argsfun.shape[iax+2:], dtype=self.n_op_argsfun.dtype)
+      desired[(slice(None),)*(iax+1)+(slice(None,None,2),)] = self.n_op_argsfun
+      self.assertArrayAlmostEqual(decimal=15,
+        desired=desired,
+        actual=function.Inflate(self.op_args, dofmap=dofmap, length=sh*2-1, axis=iax).simplified.eval(**self.evalargs))
 
   def test_diagonalize(self):
     for axis in range(self.op_args.ndim):
@@ -125,7 +140,7 @@ class check(TestCase):
   def test_concatenate(self):
     for idim in range(self.op_args.ndim):
       self.assertArrayAlmostEqual(decimal=15,
-        desired=numpy.concatenate([self.n_op_argsfun, self.shapearg[_].repeat(len(self.points),0)], axis=idim+1),
+        desired=numpy.concatenate([self.n_op_argsfun, self.shapearg[_].repeat(len(self.n_op_argsfun),0)], axis=idim+1),
         actual=function.concatenate([self.op_args, self.shapearg], axis=idim).simplified.eval(**self.evalargs))
 
   def test_getslice(self):
@@ -176,6 +191,12 @@ class check(TestCase):
     self.assertArrayAlmostEqual(decimal=13,
       desired=self.n_op_argsfun**3,
       actual=(self.op_args**3).simplified.eval(**self.evalargs))
+
+  def test_sign(self):
+    if self.n_op_argsfun.dtype.kind != 'b':
+      self.assertArrayAlmostEqual(decimal=15,
+        desired=numpy.sign(self.n_op_argsfun),
+        actual=function.sign(self.op_args).simplified.eval(**self.evalargs))
 
   def test_mask(self):
     for idim in range(self.op_args.ndim):
@@ -249,10 +270,11 @@ class check(TestCase):
     while not numpy.all(good):
       fdpoints = self.points[_,_,:,:] + D[:,:,_,:] * eps
       tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
-      F = tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:])
-      fdgrad = numpy.zeros(F.shape[1:], bool) if F.dtype.kind == 'b' else (F[1]-F[0])/eps
-      fdgrad = fdgrad.transpose(numpy.roll(numpy.arange(F.ndim-1),-1))
-      error = fdgrad - exact
+      if len(tmp) == 1 or tmp.dtype.kind == 'b':
+        error = exact
+      else:
+        fdgrad, = numpy.diff(tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:]), axis=0) / eps
+        error = exact - fdgrad.transpose(numpy.roll(numpy.arange(fdgrad.ndim),-1))
       good |= numpy.less(abs(error / exact), 1e-8)
       good |= numpy.less(abs(error), 1e-14)
       eps *= .8
@@ -281,10 +303,11 @@ class check(TestCase):
     while not numpy.all(good):
       fdpoints = self.find(self.geom.eval(**self.evalargs)[_,_,:,:] + D[:,:,_,:] * eps, self.points[_,_,:,:])
       tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
-      F = tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:])
-      fdgrad = numpy.zeros(F.shape[1:], bool) if F.dtype.kind == 'b' else (F[1]-F[0])/eps
-      fdgrad = fdgrad.transpose(numpy.roll(numpy.arange(F.ndim-1),-1))
-      error = fdgrad - exact
+      if len(tmp) == 1 or tmp.dtype.kind == 'b':
+        error = exact
+      else:
+        fdgrad, = numpy.diff(tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:]), axis=0) / eps
+        error = exact - fdgrad.transpose(numpy.roll(numpy.arange(fdgrad.ndim),-1))
       good |= numpy.less(abs(error / exact), 1e-8)
       good |= numpy.less(abs(error), 1e-14)
       eps *= .8
@@ -301,18 +324,25 @@ class check(TestCase):
     while not numpy.all(good):
       fdpoints = self.find(self.geom.eval(**self.evalargs)[_,_,_,_,:,:] + DD[:,:,:,:,_,:] * eps, self.points[_,_,_,_,:,:])
       tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
-      F = tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:])
-      fddgrad = numpy.zeros(F.shape[2:], bool) if F.dtype.kind == 'b' else ((F[1,1]-F[1,0])-(F[0,1]-F[0,0]))/(eps**2)
-      fddgrad = fddgrad.transpose(numpy.roll(numpy.arange(F.ndim-2),-2))
-      error = fddgrad - exact
+      if len(tmp) == 1 or tmp.dtype.kind == 'b':
+        error = exact
+      else:
+        (fddgrad,), = numpy.diff(numpy.diff(tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:]), axis=1), axis=0) / eps**2
+        error = exact - fddgrad.transpose(numpy.roll(numpy.arange(fddgrad.ndim),-2))
       good |= numpy.less(abs(error / exact), 1e-4)
       good |= numpy.less(abs(error), 1e-14)
       eps *= .8
       if eps < 1e-10:
         self.fail('double gradient failed to reach tolerance ({}/{})'.format((~good).sum(), good.size))
 
-_check = lambda name, op, n_op, shapes, hasgrad=True, pass_geom=False, ndim=2, low=-1, high=1: check(name, op=op, n_op=n_op, shapes=shapes, hasgrad=hasgrad, pass_geom=pass_geom, ndim=ndim, low=low, high=high)
-_check('const', lambda f: function.asarray(f), lambda a: a, [(2,3,2)])
+def _check(name, op, n_op, shapes, hasgrad=True, pass_geom=False, ndim=2, low=-1, high=1):
+  check(name, op=op, n_op=n_op, shapes=shapes, hasgrad=hasgrad, pass_geom=pass_geom, ndim=ndim, low=low, high=high)
+  check(name+':guard', op=lambda *args: op(*map(function.Guard, args)), n_op=n_op, shapes=shapes, hasgrad=hasgrad, pass_geom=pass_geom, ndim=ndim, low=low, high=high)
+
+_check('identity', lambda f: function.asarray(f), lambda a: a, [(2,3,2)])
+_check('const', lambda f: function.asarray([[1.,2.],[3.,4.]]), lambda a: numpy.array([[[1.,2.],[3.,4.]]]), [(2,3,2)])
+_check('zeros', lambda f: function.zeros([2,2]), lambda a: numpy.zeros([1,2,2]), [(2,3,2)])
+_check('ones', lambda f: function.ones([2,2]), lambda a: numpy.ones([1,2,2]), [(2,3,2)])
 _check('sin', function.sin, numpy.sin, [(3,)])
 _check('cos', function.cos, numpy.cos, [(3,)])
 _check('tan', function.tan, numpy.tan, [(3,)])
@@ -338,7 +368,8 @@ _check('product', lambda a: function.product(a,1), lambda a: numpy.product(a,-2)
 _check('norm2', lambda a: function.norm2(a,1), lambda a: (a**2).sum(-2)**.5, [(2,3,2)])
 _check('norm2scalar', lambda a: function.norm2(a,1), lambda a: abs(a.sum(-2)), [(3,1,3)])
 _check('sum', lambda a: function.sum(a,1), lambda a: a.sum(-2), [(2,3,2)])
-_check('transpose', lambda a: function.transpose(a,[0,2,1]), lambda a: a.transpose([0,1,3,2]), [(2,3,2)])
+_check('transpose1', lambda a: function.transpose(a,[0,2,1]), lambda a: a.transpose([0,1,3,2]), [(2,3,2)])
+_check('transpose2', lambda a: function.transpose(a,[1,2,0]), lambda a: a.transpose([0,2,3,1]), [(2,3,2)])
 _check('expand_dims', lambda a: function.expand_dims(a,1), lambda a: numpy.expand_dims(a,2), [(2,3)])
 _check('get', lambda a: function.get(a,1,1), lambda a: a[...,1,:], [(2,3,2)])
 _check('getvar', lambda a: function.get(function.Constant([[1,2],[3,4]]),1,function.Int(a)%2), lambda a: numpy.array([[1,2],[3,4]])[:,a.astype(int)%2].T, [()])
@@ -357,6 +388,7 @@ _check('multiply', function.multiply, numpy.multiply, [(3,1),(1,3)])
 _check('divide', function.divide, numpy.divide, [(3,1),(1,3)], low=-2, high=-1)
 _check('divide2', lambda a: function.asarray(a)/2, lambda a: a/2, [(3,1)])
 _check('add', function.add, numpy.add, [(3,1),(1,3)])
+_check('blockadd', lambda a, b: function.BlockAdd(function._numpy_align(a, b)), numpy.add, [(3,1),(1,3)])
 _check('subtract', function.subtract, numpy.subtract, [(3,1),(1,3)])
 _check('product2', lambda a,b: function.multiply(a,b).sum(-2), lambda a,b: (a*b).sum(-2), [(2,3,1),(1,3,2)])
 _check('cross', lambda a,b: function.cross(a,b,-2), lambda a,b: numpy.cross(a,b,axis=-2), [(2,3,1),(1,3,2)])
@@ -367,8 +399,8 @@ _check('greater', lambda a,b: function.greater(a,b), numpy.greater, [(3,1),(1,3)
 _check('less', lambda a,b: function.less(a,b), numpy.less, [(3,1),(1,3)])
 _check('arctan2', function.arctan2, numpy.arctan2, [(3,1),(1,3)])
 _check('stack', lambda a,b: function.stack([a,b]), lambda a,b: numpy.concatenate([a[...,_,:],b[...,_,:]], axis=-2), [(3,),(3,)])
-_check('concatenate1', lambda a,b: function.concatenate([a,b],axis=0), lambda a,b: numpy.concatenate([a,b], axis=-2), [(3,2),(2,2)])
-_check('concatenate2', lambda a,b: function.concatenate([a,b],axis=1), lambda a,b: numpy.concatenate([a,b], axis=-1), [(3,2),(3,1)])
+_check('concatenate1', lambda a,b: function.concatenate([a,b],axis=0), lambda a,b: numpy.concatenate([a,b], axis=-2), [(4,6),(2,6)])
+_check('concatenate2', lambda a,b: function.concatenate([a,b],axis=1), lambda a,b: numpy.concatenate([a,b], axis=-1), [(4,3),(4,1)])
 _check('eig', lambda a: function.eig(a+a.T,symmetric=True)[1], lambda a: numpy.linalg.eigh(a+a.swapaxes(1,2))[1], [(3,3)], hasgrad=False)
 _check('trignormal', lambda a: function.trignormal(a), lambda a: numpy.array([numpy.cos(a), numpy.sin(a)]).T, [()])
 _check('trigtangent', lambda a: function.trigtangent(a), lambda a: numpy.array([-numpy.sin(a), numpy.cos(a)]).T, [()])
