@@ -1,4 +1,0 @@
-Transform
-=========
-
-.. automodule:: nutils.transform

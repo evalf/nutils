@@ -1,4 +1,0 @@
-Types
-=====
-
-.. automodule:: nutils.types

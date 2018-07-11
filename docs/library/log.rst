@@ -1,4 +1,0 @@
-Log
-===
-
-.. automodule:: nutils.log

@@ -194,6 +194,34 @@ class ExampleDocDirective(docutils.parsers.rst.Directive):
 
     return nodes
 
+def generate_api(app):
+  logger = sphinx.util.logging.getLogger(__name__)
+
+  nutils = project_root/'nutils'
+  dst_root = pathlib.Path(app.srcdir)/'generated'/'api'
+  dst_root.mkdir(parents=True, exist_ok=True)
+
+  toc = []
+  for src in sorted(nutils.glob('**/*.py')):
+    if src == nutils/'__init__.py':
+      continue
+    module = '.'.join((src.parent if src.name == '__init__.py' else src.with_suffix('')).relative_to(nutils).parts)
+    logger.info('generating api... {}'.format(module))
+    dst = dst_root/(module+'.rst')
+    toc.append(dst)
+    with dst.open('w') as f:
+      print_rst_autogen_header(file=f, src=src)
+      print_rst_h1(module, file=f)
+      print('.. automodule:: {}'.format('nutils.{}'.format(module)), file=f)
+    copy_utime(src, dst)
+
+  logger.info('generating api index...')
+  index = dst_root.with_suffix('.rst')
+  with index.open('w') as f:
+    print_rst_autogen_header(file=f)
+    print_rst_h1('API reference', file=f)
+    print_rst_toctree(toc, relative_to=index, maxdepth=1, file=f)
+
 def remove_generated(app, exception):
   logger = sphinx.util.logging.getLogger(__name__)
   generated = pathlib.Path(app.srcdir)/'generated'
@@ -201,6 +229,8 @@ def remove_generated(app, exception):
 
 def setup(app):
   app.connect('autodoc-process-signature', process_signature)
+
+  app.connect('builder-inited', generate_api)
 
   app.connect('builder-inited', generate_examples)
   app.add_directive('exampledoc', ExampleDocDirective)

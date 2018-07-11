@@ -32,7 +32,7 @@ Contents
    intro
    generated/examples
    wiki
-   library
+   generated/api
 
 
 Indices and tables

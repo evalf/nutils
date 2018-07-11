@@ -1,4 +1,0 @@
-Config
-======
-
-.. automodule:: nutils.config
