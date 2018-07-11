@@ -18,9 +18,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-import inspect, pathlib, shutil, os
+import inspect, pathlib, shutil, os, runpy, urllib.parse, shlex
 import docutils.nodes, docutils.parsers.rst, docutils.statemachine
-import sphinx.util.logging, sphinx.util.docutils
+import sphinx.util.logging, sphinx.util.docutils, sphinx.addnodes
+import nutils.log, nutils.matrix
 
 project_root = pathlib.Path(__file__).parent.parent.resolve()
 
@@ -172,6 +173,21 @@ class ExampleDocDirective(docutils.parsers.rst.Directive):
           with sphinx.util.docutils.switch_source_input(self.state, contents):
             node = docutils.nodes.container()
             self.state.nested_parse(contents, 0, node)
+          # Process sh roles.  Add links to logs.
+          for sh_node in node.traverse(docutils.nodes.literal):
+            if 'nutils_sh' not in sh_node:
+              continue
+            cmdline = sh_node.get('nutils_sh')
+            cmdline_parts = tuple(shlex.split(cmdline))
+            if cmdline_parts[:2] != ('python3', src.name):
+              logger.warn('Not creating a log for {}.'.format(cmdline))
+              continue
+            log_link = sphinx.addnodes.only(expr='html')
+            log_link.append(docutils.nodes.inline('', ' '))
+            xref = sphinx.addnodes.pending_xref('', reftype='nutils-log', refdomain='std', reftarget=cmdline_parts[2:], script=src)
+            xref += docutils.nodes.inline('', '(view log)', classes=['nutils-log-link'])
+            log_link += xref
+            sh_node.parent.insert(sh_node.parent.index(sh_node)+1, log_link)
           nodes.extend(node.children)
         else:
           # Collect all source lines.
@@ -193,6 +209,65 @@ class ExampleDocDirective(docutils.parsers.rst.Directive):
           nodes.append(literal)
 
     return nodes
+
+def role_sh(name, rawtext, text, lineno, inliner, options={}, context=[]):
+  return [docutils.nodes.literal('', text, nutils_sh=text)], []
+
+def create_log(app, env, node, contnode):
+  logger = sphinx.util.logging.getLogger(__name__)
+
+  if node['reftype'] == 'nutils-log':
+    script = node.get('script')
+    scriptname = str(script.relative_to(project_root))
+
+    cmdline_args = node['reftarget']
+    cmdline = ' '.join(map(shlex.quote, [scriptname, *cmdline_args]))
+
+    target = '_logs/{}/index'.format(urllib.parse.quote(cmdline, safe='').replace('%', '+'))
+
+    dst_log = (pathlib.Path(app.builder.outdir)/target).parent
+    if dst_log.exists() and dst_log.stat().st_mtime > script.stat().st_mtime:
+      logger.debug('Skip building log of {cmdline} because it already exists and '
+                   'is newer than {script}.  Please touch {script} to force a rebuild.'
+                   .format(script=scriptname, cmdline=cmdline))
+    else:
+      if dst_log.exists():
+        logger.debug('purging old log files... {}'.format(dst_log))
+        shutil.rmtree(str(dst_log))
+      else:
+        dst_log.parent.mkdir(parents=True, exist_ok=True)
+      logger.info('creating log... {}'.format(cmdline))
+      script_dict = runpy.run_path(str(script), run_name='__log_builder__')
+      # Parse cmdline.
+      params = inspect.signature(script_dict['main']).parameters.values()
+      kwargs = {param.name: param.default for param in params}
+      for arg in cmdline_args:
+        if not arg:
+          continue
+        name, sep, value = arg.lstrip('-').partition('=')
+        if not sep:
+          value = not name.startswith('no')
+          if not value:
+            name = name[2:]
+        if name not in kwargs:
+          logger.error('unkown argument {!r}'.format(name))
+          return
+        default = kwargs[name]
+        try:
+          if isinstance(default, bool) and not isinstance(value, bool):
+            raise Exception('boolean value should be specifiec as --{0}/--no{0}'.format(name))
+          kwargs[name] = default.__class__(value)
+        except Exception as e:
+          logger.error('invalid argument for {!r}: {}'.format(name, e))
+          return
+      # Run script.
+      with nutils.log.HtmlLog(str(dst_log)), nutils.matrix.backend('scipy'):
+        script_dict['main'](**kwargs)
+      (dst_log/'log.html').rename(dst_log/'index.html')
+
+    refnode = docutils.nodes.reference('', '', internal=False, refuri=app.builder.get_relative_uri(env.docname, target))
+    refnode.append(contnode)
+    return refnode
 
 def generate_api(app):
   logger = sphinx.util.logging.getLogger(__name__)
@@ -234,6 +309,8 @@ def setup(app):
 
   app.connect('builder-inited', generate_examples)
   app.add_directive('exampledoc', ExampleDocDirective)
+  app.add_role('sh', role_sh)
+  app.connect('missing-reference', create_log)
 
   app.connect('build-finished', remove_generated)
 

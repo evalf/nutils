@@ -21,16 +21,6 @@ import sys, os, re
 sys.path.insert(0, os.path.abspath('..'))
 sys.path.insert(0, os.path.abspath('.'))
 
-class Fake(object):
-  def __init__( self, **attrs ):
-    self.__dict__.update( attrs )
-  def __getattr__( self, attr ):
-    return None
-
-sys.modules[ 'numpy' ] = Fake(version=Fake(version='1.8'), dtype=lambda o: None, ndarray=Fake, empty=lambda *args, **kwargs: None, pi=3.14)
-sys.modules[ 'scipy' ] = Fake()
-sys.modules[ 'matplotlib' ] = Fake()
-
 # -- General configuration ------------------------------------------------
 
 # If your documentation needs a minimal Sphinx version, state it here.
