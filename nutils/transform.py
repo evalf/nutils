@@ -107,26 +107,21 @@ def lookup_item(chain, transforms):
   item = transforms[head] if isinstance(transforms, collections.Mapping) else transforms.index(head)
   return item, tail
 
-def linearfrom(chain, ndims):
-  if chain and ndims < chain[-1].fromdims:
-    for i in reversed(range(len(chain))):
-      if chain[i].todims == ndims:
-        chain = chain[:i]
-        break
-    else:
-      raise Exception('failed to find {}D coordinate system'.format(ndims))
+def linearfrom(chain, fromdims):
+  todims = chain[0].todims if chain else fromdims
+  while chain and fromdims < chain[-1].fromdims:
+    chain = chain[:-1]
   if not chain:
-    return numpy.eye(ndims)
+    assert todims == fromdims
+    return numpy.eye(fromdims)
   linear = numpy.eye(chain[-1].fromdims)
-  for trans in reversed(chain):
-    linear = numpy.dot(trans.linear, linear)
-    if trans.todims == trans.fromdims + 1:
-      linear = numpy.concatenate([linear, trans.ext[:,_]], axis=1)
-  n, m = linear.shape
-  if m >= ndims:
-    return linear[:,:ndims]
-  return numpy.concatenate([linear, numpy.zeros((n,ndims-m))], axis=1)
-
+  for transitem in reversed(uppermost(chain)):
+    linear = numpy.dot(transitem.linear, linear)
+    if transitem.todims == transitem.fromdims + 1:
+      linear = numpy.concatenate([linear, transitem.ext[:,_]], axis=1)
+  assert linear.shape[0] == todims
+  return linear[:,:fromdims] if linear.shape[1] >= fromdims \
+    else numpy.concatenate([linear, numpy.zeros((todims, fromdims-linear.shape[1]))], axis=1)
 
 ## TRANSFORM ITEMS
 
