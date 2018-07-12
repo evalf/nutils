@@ -64,22 +64,29 @@ def canonical(chain):
       i += 1
   return tuple(items)
 
-def promote(chain, ndims):
-  # swap transformations such that ndims is reached as soon as possible, and
-  # then maintained as long as possible (i.e. proceeds as canonical).
+def uppermost(chain):
+  # bring to highest ndims possible
   n = n_ascending(chain)
-  assert ndims >= chain[n-1].fromdims
+  if n < 2:
+    return tuple(chain)
   items = list(chain)
   i = n
-  while items[i-1].fromdims < ndims:
+  while items[i-1].todims < items[0].todims:
     swapped = items[i-2].swapup(items[i-1])
     if swapped:
       items[i-2:i] = swapped
       i += i < n
     else:
       i -= 1
-  assert items[i-1].fromdims == ndims
-  return canonical(items[:i]) + tuple(items[i:])
+  return tuple(items)
+
+def promote(chain, ndims):
+  # swap transformations such that ndims is reached as soon as possible, and
+  # then maintained as long as possible (i.e. proceeds as canonical).
+  for i, item in enumerate(chain): # NOTE possible efficiency gain using bisection
+    if item.fromdims == ndims:
+      return canonical(chain[:i+1]) + uppermost(chain[i+1:])
+  return chain # NOTE at this point promotion essentially failed, maybe it's better to raise an exception
 
 def lookup(chain, transforms):
   if not transforms:
