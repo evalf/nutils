@@ -110,7 +110,7 @@ def linearfrom(chain, fromdims):
     assert todims == fromdims
     return numpy.eye(fromdims)
   linear = numpy.eye(chain[-1].fromdims)
-  for transitem in reversed(canonical(chain)):
+  for transitem in reversed(uppermost(chain)):
     linear = numpy.dot(transitem.linear, linear)
     if transitem.todims == transitem.fromdims + 1:
       linear = numpy.concatenate([linear, transitem.ext[:,_]], axis=1)
