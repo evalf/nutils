@@ -60,9 +60,8 @@ def canonical(chain):
   return tuple(items)
 
 def promote(chain, ndims):
-  # split chain into chain1 and chain2 such that chain == chain1 << chain2 and
-  # chain1.fromdims == chain2.todims == ndims, where chain1 is canonical and
-  # chain2 climbs to ndims as fast as possible.
+  # swap transformations such that ndims is reached as soon as possible, and
+  # then maintained as long as possible (i.e. proceeds as canonical).
   n = n_ascending(chain)
   assert ndims >= chain[n-1].fromdims
   items = list(chain)
@@ -75,7 +74,7 @@ def promote(chain, ndims):
     else:
       i -= 1
   assert items[i-1].fromdims == ndims
-  return canonical(items[:i]), tuple(items[i:])
+  return canonical(items[:i]) + tuple(items[i:])
 
 def lookup(chain, transforms):
   if not transforms:
@@ -83,12 +82,10 @@ def lookup(chain, transforms):
   for trans in transforms:
     ndims = trans[-1].fromdims
     break
-  head, tail = promote(chain, ndims)
-  while head:
-    if head in transforms:
-      return head, tail
-    tail = head[-1:] + tail
-    head = head[:-1]
+  chain = promote(chain, ndims)
+  for i in range(len(chain), 0, -1):
+    if chain[i-1].fromdims == ndims and chain[:i] in transforms:
+      return chain[:i], chain[i:]
 
 def lookup_item(chain, transforms):
   head_tail = lookup(chain, transforms)
