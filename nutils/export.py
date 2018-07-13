@@ -58,6 +58,37 @@ def mplfigure(*args, **kwargs):
       fig.savefig(f, format=fmt)
   fig.set_canvas(None) # break circular reference
 
+def triplot(name, points, values=None, *, tri=None, hull=None, cmap='jet', clim=None, linewidth=.1, linecolor='k'):
+  if (tri is None) != (values is None):
+    raise Exception('tri and values can only be specified jointly')
+  with mplfigure(name) as fig:
+    ax = fig.add_subplot(111)
+    if points.shape[1] == 1:
+      if tri is not None:
+        import matplotlib.collections
+        ax.add_collection(matplotlib.collections.LineCollection(numpy.array([points[:,0], values]).T[tri]))
+      if hull is not None:
+        for x in points[hull[:,0],0]:
+          ax.axvline(x, color=linecolor, linewidth=linewidth)
+      ax.autoscale(enable=True, axis='x', tight=True)
+      if clim is None:
+        ax.autoscale(enable=True, axis='y', tight=False)
+      else:
+        ax.set_ylim(clim)
+    elif points.shape[1] == 2:
+      ax.set_aspect('equal')
+      if tri is not None:
+        im = ax.tripcolor(points[:,0], points[:,1], tri, values, shading='gouraud', cmap=cmap, rasterized=True)
+        if clim is not None:
+          im.set_clim(clim)
+        fig.colorbar(im)
+      if hull is not None:
+        import matplotlib.collections
+        ax.add_collection(matplotlib.collections.LineCollection(points[hull], colors=linecolor, linewidths=linewidth, alpha=1 if tri is None else .5))
+      ax.autoscale(enable=True, axis='both', tight=True)
+    else:
+      raise Exception('invalid spatial dimension: {}'.format(points.shape[1]))
+
 @util.positional_only('name', 'tri', 'x')
 def vtk(*args, **kwargs):
   '''Export data to a VTK file.
