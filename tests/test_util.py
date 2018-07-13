@@ -49,3 +49,14 @@ tri(mergetol=-1)
 tri(mergetol=0)
 tri(mergetol=.1)
 tri(mergetol=2)
+
+class linreg(TestCase):
+
+  def test_linear(self):
+    a = numpy.array([[0,1],[-1,0]])
+    b = numpy.array([[0,1],[0,1]])
+    linreg = util.linear_regressor()
+    ab0, ab1, ab2 = [linreg.add(x, a * x + b) for x in range(3)]
+    self.assertTrue(numpy.isnan(ab0).all())
+    self.assertEqual([a.tolist(), b.tolist()], ab1.tolist())
+    self.assertEqual([a.tolist(), b.tolist()], ab2.tolist())
