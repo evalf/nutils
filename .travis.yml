@@ -1,5 +1,9 @@
 language: python
 sudo: false
+env:
+  global:
+    - OMP_NUM_THREADS=1
+    - VECLIB_MAXIMUM_THREADS=1
 matrix:
   include:
     - os: linux
