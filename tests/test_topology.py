@@ -302,6 +302,30 @@ class revolved_hollowcylinder(TestCase):
   def test_dofcount(self):
     self.assertEqual(len(self.basis), 3*5)
 
+_refined_refs = dict(
+  line=element.LineReference(),
+  quadrilateral=element.LineReference()**2,
+  hexahedron=element.LineReference()**3,
+  triangle=element.TriangleReference(),
+  tetrahedron=element.TetrahedronReference())
+
+@parametrize
+class refined(TestCase):
+
+  def test_boundary_gradient(self):
+    ref = _refined_refs[self.etype]
+    elem = element.Element(ref, (transform.RootTrans('test', (0,)*ref.ndims),))
+    domain = topology.UnstructuredTopology(ref.ndims, (elem,))
+    geom = function.rootcoords(ref.ndims)
+    basis = domain.basis('std', degree=1)
+    u = domain.projection(geom.sum(), onto=basis, geometry=geom, degree=2)
+    g = domain.refine(self.ref1).boundary.refine(self.ref2).elem_eval(u.grad(geom), ischeme='uniform1')
+    numpy.testing.assert_allclose(g, 1)
+
+for etype in _refined_refs:
+  for ref1 in 0, 1:
+    for ref2 in 0, 1:
+      refined(etype=etype, ref1=ref1, ref2=ref2)
 
 @parametrize
 class general(TestCase):
