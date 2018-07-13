@@ -1,170 +1,92 @@
 #! /usr/bin/env python3
 
-from nutils import *
-import unittest
-from matplotlib import collections, patches
+import nutils, numpy
 
+def main(etype: 'type of elements (square/triangle/mixed)' = 'square',
+         btype: 'type of basis function (h/th-std/spline)' = 'h-std',
+         degree: 'polynomial degree' = 2,
+         nrefine: 'number of refinement steps (-1 for unlimited)' = -1):
 
-class MakePlots:
+  domain, geom = nutils.mesh.unitsquare(2, etype)
 
-  def __init__(self, geom, optimalrate, aoicenter, aoiarea, aoicircle):
-    self.geom = geom
-    self.ndofs = []
-    self.error_exact = []
-    self.error_estimate = []
-    self.optimalrate = optimalrate
-    if aoicircle:
-      self.aoipatch = patches.Circle
-      self.aoiargs = aoicenter, numpy.sqrt(aoiarea/numpy.pi)
-    else:
-      self.aoipatch = patches.Rectangle
-      self.aoiargs = numpy.array(aoicenter) - aoiarea**.5/2, aoiarea**.5, aoiarea**.5
+  x, y = geom * 2 - 1
+  exact = (x**2 + y**2)**(1/3) * nutils.function.cos(nutils.function.arctan2(y+x, y-x) * (2/3))
+  domain = domain.trim(exact-1e-15, maxrefine=0)
+  linreg = nutils.util.linear_regressor()
 
-  def __call__(self, domain, sol, ndofs, error_estimate, error_exact):
+  for irefine in nutils.log.count('level'):
+
+    ns = nutils.function.Namespace()
+    ns.x = geom
+    ns.basis = domain.basis(btype, degree=degree)
+    ns.u = 'basis_n ?lhs_n'
+    ns.du = ns.u - exact
+
+    sqr = domain.boundary['trimmed'].integral('u^2' @ ns, geometry=ns.x, degree=degree*2)
+    cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15)
+
+    sqr = domain.boundary.integral('du^2' @ ns, geometry=ns.x, degree=7)
+    cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15, constrain=cons)
+
+    res = domain.integral('basis_n,k u_,k' @ ns, geometry=ns.x, degree=degree*2)
+    lhs = nutils.solver.solve_linear('lhs', res, constrain=cons)
+
+    ndofs = len(ns.basis)
+    error = numpy.sqrt(domain.integrate(['du^2' @ ns, 'du_,k du_,k' @ ns], geometry=ns.x, degree=7, arguments=dict(lhs=lhs)))
+    rate, offset = linreg.add(numpy.log(len(ns.basis)), numpy.log(error))
+    nutils.log.user('ndofs: {ndofs}, L2 error: {error[0]:.2e} ({rate[0]:.2f}), H1 error: {error[1]:.2e} ({rate[1]:.2f})'.format(ndofs=len(ns.basis), error=error, rate=rate))
+
     bezier = domain.sample('bezier', 9)
-    x, colors = bezier.eval([self.geom, sol])
-    with export.mplfigure('sol.png') as fig:
-      ax = fig.add_subplot(111, aspect='equal')
-      im = ax.tripcolor(x[:,0], x[:,1], bezier.tri, colors, shading='gouraud', cmap='jet')
-      ax.add_collection(collections.LineCollection(x[bezier.hull], colors='k', linewidths=.1))
-      ax.add_patch(self.aoipatch(*self.aoiargs, facecolor='none', edgecolor='k', linewidth=1, linestyle='dashed'))
-      ax.autoscale(enable=True, axis='both', tight=True)
-      fig.colorbar(im)
-    self.ndofs.append(ndofs)
-    self.error_exact.append(error_exact)
-    self.error_estimate.append(error_estimate)
-    optimal = numpy.power(self.ndofs, -self.optimalrate, dtype=float)
-    with export.mplfigure('conv.png') as fig:
-      ax = fig.add_subplot(111, xlabel='degrees of freedom')
-      ax.loglog(self.ndofs, self.error_exact, '-', label='error')
-      ax.loglog(self.ndofs, self.error_estimate, '--', label='error estimate')
-      ax.loglog(self.ndofs, optimal / optimal[-1] * self.error_exact[-1], ':', label='optimal rate: {}'.format(round(self.optimalrate, 3)))
-      ax.legend(loc=3, frameon=False)
+    x, u, du = bezier.eval([ns.x, ns.u, ns.du], arguments=dict(lhs=lhs))
+    nutils.export.triplot('sol.jpg', x, u, tri=bezier.tri, hull=bezier.hull)
+    nutils.export.triplot('err.jpg', x, du, tri=bezier.tri, hull=bezier.hull)
 
-
-def main(
-    degree: 'number of elements' = 1,
-    circle: 'use circular area of interest (default square)' = False,
-    uniform: 'use uniform refinement (default adaptive)' = False,
-    basistype: 'basis function' = 'h-std',
-    nrefine: 'maximum allowed number of refinements' = 7,
-  ):
-
-  # construct domain
-  verts = numpy.linspace(-1, 1, 7)
-  basetopo, geom = mesh.rectilinear([verts, verts])
-  aoi = basetopo.trim(1/9/numpy.pi - ((geom+.5)**2).sum(-1), maxrefine=5) if circle else basetopo[1:2,1:2]
-  domain = (basetopo.withboundary(outside=...) - basetopo[3:,:3].withboundary(inside=...)).withsubdomain(aoi=aoi)
-
-  # construct exact sulution (used for boundary conditions and error evaluation)
-  exact = (geom**2).sum(-1)**(1./3) * function.sin((2/3) * function.arctan2(-geom[1], -geom[0]))
-  flux = exact.ngrad(geom)
-
-  # sanity check
-  harmonicity = numpy.sqrt(domain.integrate(exact.laplace(geom)**2, geometry=geom, degree=9))
-  log.info('exact solution lsqr harmonicity:', harmonicity)
-
-  # prepare plotting
-  makeplots = MakePlots(geom, 2/3 if uniform else degree, [-.5, -.5], 1/9, circle)
-
-  # start adaptive refinement
-  for irefine in log.count('level', start=1):
-
-    # construct, solve course domain primal/dual problem
-    basis = domain.basis(basistype, degree=degree)
-    laplace = function.outer(basis.grad(geom)).sum(-1)
-    matrix = domain.integrate(laplace, geometry=geom, degree=5)
-    rhsprimal = domain.boundary['inside'].integrate(basis * flux, geometry=geom, degree=99)
-    rhsdual = domain['aoi'].integrate(basis, geometry=geom, degree=5)
-    cons = domain.boundary['outside'].project(exact, degree=9, geometry=geom, onto=basis)
-    lhsprimal = matrix.solve(rhsprimal, constrain=cons)
-    lhsdual = matrix.solve(rhsdual, constrain=cons&0)
-    primal = basis.dot(lhsprimal)
-    dual = basis.dot(lhsdual)
-
-    # construct, solve refined domain primal/dual problem
-    finedomain = domain.refined
-    finebasis = finedomain.basis(basistype, degree=degree)
-    finelaplace = function.outer(finebasis.grad(geom)).sum(-1)
-    finematrix = finedomain.integrate(finelaplace, geometry=geom, degree=5)
-    finerhsdual = finedomain['aoi'].integrate(finebasis, geometry=geom, degree=5)
-    finecons = finedomain.boundary['outside'].project(0, degree=5, geometry=geom, onto=finebasis)
-    finelhsdual = finematrix.solve(finerhsdual, constrain=finecons)
-
-    # evaluate error estimate
-    dlhsdual = finelhsdual - finedomain.project(dual, onto=finebasis, geometry=geom, degree=5)
-    ddualw = finebasis * dlhsdual
-    error_est_w = finedomain.boundary['inside'].integrate(ddualw * flux, geometry=geom, degree=99)
-    error_est_w -= finedomain.integrate((ddualw.grad(geom) * primal.grad(geom) ).sum(-1), geometry=geom, degree=5)
-    error_estimate = abs(error_est_w).sum()
-    error_exact = domain['aoi'].integrate(exact - primal, geometry=geom, degree=99)
-    log.user('error estimate: {:.2e} ({:.1f}% accurate)'.format(error_estimate, 100.*error_estimate/error_exact))
-
-    # plot solution and error convergence
-    makeplots(domain, primal, len(lhsprimal), error_estimate, error_exact)
-
-    if irefine >= nrefine:
+    if irefine == nrefine:
       break
 
-    # refine mesh
-    if uniform:
-      domain = domain.refined
-    else:
-      mask = error_est_w**2 > numpy.mean(error_est_w**2)
-      domain = domain.refined_by(elem.transform[:-1] for elem in domain.refined.supp(finebasis, mask))
+    refdom = domain.refined
+    ns.refbasis = refdom.basis(btype, degree=degree)
+    indicator = refdom.integrate('refbasis_n,k u_,k' @ ns, geometry=ns.x, degree=degree*2, arguments=dict(lhs=lhs))
+    indicator -= refdom.boundary.integrate('refbasis_n u_,k n_k' @ ns, geometry=ns.x, degree=degree*2, arguments=dict(lhs=lhs))
+    mask = indicator**2 > numpy.mean(indicator**2)
 
-  return lhsprimal, error_est_w
+    domain = domain.refined_by(elem.transform[:-1] for elem in domain.refined.supp(ns.refbasis, mask))
 
+  return ndofs, error, rate, lhs
+
+if __name__ == '__main__':
+  nutils.cli.run(main)
+
+import unittest
 
 class test(unittest.TestCase):
 
-  def test_p1_h_std(self):
-    lhsprimal, error_est_w = main(degree=1, circle=False, uniform=False, basistype='h-std', nrefine=2)
-    numeric.assert_allclose64(lhsprimal, 'eNoBhAB7/2s2sDVfNKMjoMtQypXJlzbjNZk0l9Vkyx3Ka'
-      'snA0gXL18k0yWjKfsn3yGrKrskdybXIfskeycPIdcj3yLXIdcg6yF4ocyhDLHA1JjXGNEs0izNAMs02h'
-      'DYoNq019DSrM+o2pzZTNuM1PDX6M0bUrtEKN802gTYgNpY1rjR90DfOZs630OhqQfw=')
-    numeric.assert_allclose64(error_est_w, 'eNp1kE0oBGEYx/83lNq1a2c/5uu1yUFc7IWkZFkHRVx'
-      'WboqiXERJSpxw29PiwEFauVBq243k6qKQcvKxY2bM7K58RknDM+O8U//mfX/P/3metz9Q+mtiaQnY8AO'
-      'VIvDC/9Obu2uzN+jKRc1y6U1PC3X5mSBQIQMyAwYl2zOkXTJLj8ht3AB1rROvcfitcCXvGhli7QrQrdv'
-      'sK3AQ+uVdgsXNhYAF8pXRtjGntmTcBKa5CcPiXn3EqH5COuNKv/mTah2hBNdIvjGaw+SU/9nZnVaB1D0'
-      'QIX2QmlWbbunx/HlOMxpY0oiwVnM/9129o9mVlQegSL7VOyBG/3rFpm79uCr24PGCLVZvsqQZU5K+YWf'
-      'SEaXQQpu+KIlZUpToYwAYcHKbKBx64kLsqVMuGpVMeeyTR7R3pYsvSDw/J9qOH/L12yeaIVD/KaU2RPc'
-      'pp//Hn31L8LXuZdFbnJTmfS+iKmyHvcpFOKNkxZow0JMDLDWvjktr/J4AjJL+AIyZgFs=')
+  def test_square_quadratic(self):
+    ndofs, error, rate, lhs = main(nrefine=2, etype='square', degree=2)
+    self.assertEqual(ndofs, 149)
+    numpy.testing.assert_almost_equal(error, [0.00104, 0.05495], decimal=5)
+    numpy.testing.assert_almost_equal(rate, [-1.066, -0.478], decimal=3)
+    nutils.numeric.assert_allclose64(lhs, 'eNo1jyFrQnEUxd/qTH4FeciEFf3fc/7NNBwsOI'
+      'wmMSz5wGA2zaDFtPT8Bi8Iq6bBZJuCRdC4Z1OEgdgeGHbCdtM9F845v9vhkK+MfOw//BE5Vnnr'
+      'n6RC1DDAt1Tkty5zdQv+pm4DVOUJgszV5Bhq27oQR3TYR5NnXvuCj5niASW+M2XGHmfI4QcjJl'
+      'zwjmPMLcE9u3xhni207REnFNjgGjc4uJ09Y4kr7vEl3cIYM6QIXdE2ZpjgDXuskVdSjzFX5Usl'
+      'clP7tIk8DWUu1Fnw/8RTeZZK76o9FV0QRG6jhpMIRiI864NLpWg7USSiLLGpy6ocuoNr29xy+q'
+      'SPX7TTY6M=')
 
-  def test_p1_th_std(self):
-    lhsprimal, error_est_w = main(degree=1, circle=False, uniform=False, basistype='th-std', nrefine=2)
-    numeric.assert_allclose64(lhsprimal, 'eNoBhAB7/2s2sDVfNKMjoMtQypXJlzbjNZk0l9Vkyx3Ka'
-      'snA0gXL18k0yWjKfsn3yGrKrskdybXIfskeycPIdcj3yLXIdcg6yCQ1PzVdNbE2ZDYDNoE1wDRoM802h'
-      'DYoNq019DShM+o2pzZTNuM1PDX2M9bS7MsKN802gTYgNpY1rjR90EbLUcucyv1wQqw=')
-    numeric.assert_allclose64(error_est_w, 'eNpjYMAN3BVuyDEwzBVnYOCRZWD4IA0R3XXf4U2S5JE'
-      'Hzi855D492yqj9qpckoFhM1ClvAIDQ4QcSM3EZwKK/54Zy9uKBQF1PQGKK4LFzz+/Ir/yxXag2PmHQPO'
-      'fgcQSnnJI/5fml/knVi3FwNAAVMcOtC0DLNf+4q5EiVjOi39iH0WBYkD5/UB8Vgy3m78B5epFJ4i1Al2'
-      'dATTHRH6ZuLo8SGb1C6C7HjAwGAPxPiBuew4SXfQs/NWFh09f6ChMe2GsYP1y/cNfIvskQTKdjxkY3gD'
-      'VTb/PwOAGpLUegUQFnu0VdHssJMyg0CgyT2HaS7dH00SFnoBkdgN1WQJd/x1oWyUQOwNF9wNdEQqWzXm'
-      '9Syhcxu2ti/ybFzwKj577y6c8/fzIVfq1nLS0lxRIxR9gqAQCXcwANEMGqP8EMNSigPxicLj/Ed/xaYK'
-      '0ikCHrPCbQrk60Q+yT2SWKAk/uqi0/dFhOUUlBgZvYIj+e/LqSabcJplKoD4bGQYGAEjUgPU=')
+  def test_triangle_quadratic(self):
+    ndofs, error, rate, lhs = main(nrefine=2, etype='triangle', degree=2)
+    self.assertEqual(ndofs, 98)
+    numpy.testing.assert_almost_equal(error, [0.00219, 0.08451], decimal=5)
+    numpy.testing.assert_almost_equal(rate, [-1.111, -0.548], decimal=3)
+    nutils.numeric.assert_allclose64(lhs, 'eNoljS0Og1AQhB9JazhGg0S9/QsGWw8hyAaBaM'
+      'BxAEQNZ+AWNRhMRdMDIBpMTWUtBtl9sJMVs5mdr+KO7/yjIwc0sy8x13yjM71hAmMGOnGKRueK'
+      'kdTy5VA+3MtLLtKrD/USiS8tPzXZsjF7diDXkuIEM8fa7/oCZXRKqjghDzPdA+a0QGEFC+v+St'
+      'tsrBWcRnhAg4IjLJvPKaMVEtoZpS1UB/RUf+Q6Og8=')
 
-  def test_p2_h_spline(self):
-    lhsprimal, error_est_w = main(degree=2, circle=False, uniform=False, basistype='h-spline', nrefine=1)
-    numeric.assert_allclose64(lhsprimal, 'eNoBbgCR/2s2GTYnNQoz9szZyufJlcl/Ni82OTUuM9jMv'
-      '8rSyYHJrzZgNoQ1LDN1zH3Km8lRyek2rDbKNSo0AMwZylrJF8kpN9w2kjbNM4TKrMkKydfIssm2ySHJw'
-      'ciVyIfJBsnByHfIV8gXydfIlchXyDrIutg53Q==')
-    numeric.assert_allclose64(error_est_w, 'eNpjYMAH5kiUCAXItEvd5rspEywx7dXat0fefeXX+wC'
-      'S2yfi/urv83cSi5+1C4i/bn1pKOjFz8SrIQiSq5VpfPL/UepTkYc/5Lc8O/bCSDT75USh02B9qs9mSpx'
-      '9qinG8aRDjOu50qvQ147isgKBn0Bya6XPP3V+NOPx3Xu7FB9L1j5eJmb16rxIxBuQHN+TQMmMRwqPWBX'
-      'cFOwe+8pESjx9v0WQXwgkxym7SkpYsfnpO9X5D1QVWBUPiMXImLw6J87A4Ke2Q1Hs0UXJTzIr3rCIMjA'
-      'ceJL16JbU6ZeKLza9YRJmYPBWeCaTLlcvMu8lv6i4GAMDq+R1SZ7Xpq92iaW/O/mZgaFYVl+yWTLn7RG'
-      'xYq4SQcwQAgDpQ2yr')
-
-  def test_p1_h_std_circle(self):
-    lhsprimal, error_est_w = main(degree=1, circle=True, uniform=False, basistype='h-std', nrefine=1)
-    numeric.assert_allclose64(lhsprimal, 'eNoBUACv/2s2sDVgNHPpoMtQypXJljbgNZM0RtRkyx3Ka'
-      'snMNic25DSm0gnL1sk0yQk3gDaZNcHPYsp+yffIbMq1yR7JtciAyR/JxMh1yPfItch1yDrIoQ4s1w==')
-    numeric.assert_allclose64(error_est_w, 'eNpjYMAHIhUZGFwUGBgqJBgYJGUZGD5IQ8QD7s15ZKL'
-      'S8/jW/SkilrL7nunJeL0MloTIqd9mYNgExGlAtb/lGRhS5SDiU+7lylmrCdw/edf76S2FoKcF8g3iIVD'
-      'zqpUZGHJUGRhCgHYZAO1cLgsRT1BIlLyu9P7+JNXUexaq/x/MlJ/4MkSGgcFPhYFh730GBoknIFWrHok'
-      '/eiC/RO7kcyOgeZVA+54D8X2w3OrnyU9KXxo/Y5E8Ic7AkAWUzwViFglMvwIAeXg9bw==')
-
-
-if __name__ == '__main__':
-  cli.run(main)
+  def test_mixed_linear(self):
+    ndofs, error, rate, lhs = main(nrefine=2, etype='mixed', degree=1)
+    self.assertEqual(ndofs, 34)
+    numpy.testing.assert_almost_equal(error, [0.00714, 0.18546], decimal=5)
+    numpy.testing.assert_almost_equal(rate, [-1.143, -0.545], decimal=3)
+    nutils.numeric.assert_allclose64(lhs, 'eNrLNltnpmlabcphLm7GAATZ5vfMjppnm8P41a'
+      'Yg+Wyzlbo7DUH8yCs+F3wuRF6JuXTx3E7DmEsMDCt1AXoBFaA=')
