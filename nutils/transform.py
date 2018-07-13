@@ -59,23 +59,29 @@ def canonical(chain):
       i += 1
   return tuple(items)
 
-def promote(chain, ndims):
-  # split chain into chain1 and chain2 such that chain == chain1 << chain2 and
-  # chain1.fromdims == chain2.todims == ndims, where chain1 is canonical and
-  # chain2 climbs to ndims as fast as possible.
+def uppermost(chain):
+  # bring to highest ndims possible
   n = n_ascending(chain)
-  assert ndims >= chain[n-1].fromdims
+  if n < 2:
+    return tuple(chain)
   items = list(chain)
   i = n
-  while items[i-1].fromdims < ndims:
+  while items[i-1].todims < items[0].todims:
     swapped = items[i-2].swapup(items[i-1])
     if swapped:
       items[i-2:i] = swapped
       i += i < n
     else:
       i -= 1
-  assert items[i-1].fromdims == ndims
-  return canonical(items[:i]), tuple(items[i:])
+  return tuple(items)
+
+def promote(chain, ndims):
+  # swap transformations such that ndims is reached as soon as possible, and
+  # then maintained as long as possible (i.e. proceeds as canonical).
+  for i, item in enumerate(chain): # NOTE possible efficiency gain using bisection
+    if item.fromdims == ndims:
+      return canonical(chain[:i+1]) + uppermost(chain[i+1:])
+  return chain # NOTE at this point promotion essentially failed, maybe it's better to raise an exception
 
 def lookup(chain, transforms):
   if not transforms:
@@ -83,12 +89,10 @@ def lookup(chain, transforms):
   for trans in transforms:
     ndims = trans[-1].fromdims
     break
-  head, tail = promote(chain, ndims)
-  while head:
-    if head in transforms:
-      return head, tail
-    tail = head[-1:] + tail
-    head = head[:-1]
+  chain = promote(chain, ndims)
+  for i in range(len(chain), 0, -1):
+    if chain[i-1].fromdims == ndims and chain[:i] in transforms:
+      return chain[:i], chain[i:]
 
 def lookup_item(chain, transforms):
   head_tail = lookup(chain, transforms)
@@ -106,7 +110,7 @@ def linearfrom(chain, fromdims):
     assert todims == fromdims
     return numpy.eye(fromdims)
   linear = numpy.eye(chain[-1].fromdims)
-  for transitem in reversed(canonical(chain)):
+  for transitem in reversed(uppermost(chain)):
     linear = numpy.dot(transitem.linear, linear)
     if transitem.todims == transitem.fromdims + 1:
       linear = numpy.concatenate([linear, transitem.ext[:,_]], axis=1)

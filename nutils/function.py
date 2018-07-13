@@ -388,8 +388,7 @@ class Promote(TransformChain):
     super().__init__(args=[trans], todims=trans.todims)
 
   def evalf(self, trans):
-    head, tail = transform.promote(trans, self.ndims)
-    return head + tail
+    return transform.promote(trans, self.ndims)
 
 class TailOfTransform(TransformChain):
 

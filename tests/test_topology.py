@@ -251,15 +251,32 @@ for domtype in 'circle', 'cylinder', 'hollowcylinder':
     revolved(domtype=domtype, refined=refined)
 
 
+_refined_refs = dict(
+  line=element.LineReference(),
+  quadrilateral=element.LineReference()**2,
+  hexahedron=element.LineReference()**3,
+  triangle=element.TriangleReference(),
+  tetrahedron=element.TetrahedronReference())
+
+@parametrize
 class refined(TestCase):
 
-  def test_boundary(self):
-    domain, geom = mesh.rectilinear([1])
-    u = domain.basis('std', degree=1).dot([0,1])
-    p, = domain.boundary['right'].sample('uniform', 1).eval(u.ngrad(geom))
-    self.assertEqual(p, 1)
-    p, = domain.refined.boundary['right'].sample('uniform', 1).eval(u.ngrad(geom))
-    self.assertEqual(p, 1)
+  def test_boundary_gradient(self):
+    ref = _refined_refs[self.etype]
+    elem = element.Element(ref, (transform.Identifier(ref.ndims),))
+    domain = topology.ConnectedTopology(ref.ndims, (elem,), ((-1,)*ref.nedges,)).refine(self.ref0)
+    geom = function.rootcoords(ref.ndims)
+    basis = domain.basis('std', degree=1)
+    u = domain.projection(geom.sum(), onto=basis, geometry=geom, degree=2)
+    bpoints = domain.refine(self.ref1).boundary.refine(self.ref2).sample('uniform', 1)
+    g = bpoints.eval(u.grad(geom))
+    numpy.testing.assert_allclose(g, 1)
+
+for etype in _refined_refs:
+  for ref0 in 0, 1:
+    for ref1 in 0, 1:
+      for ref2 in 0, 1:
+        refined(etype=etype, ref0=ref0, ref1=ref1, ref2=ref2)
 
 
 @parametrize
