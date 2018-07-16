@@ -1,150 +1,127 @@
 #! /usr/bin/env python3
 
-from nutils import *
-import numpy, unittest
-from matplotlib import collections, patches, ticker
+import nutils, numpy
+import matplotlib.collections
 
-
-class MakePlots:
-
-  def __init__(self, domain, ns, timestep, rotation, bbox=((-2,6),(-3,3))):
-    self.bbox = numpy.asarray(bbox)
-    self.ns = ns
-    self.locator = ticker.MultipleLocator(.01)
-    self.index = 0
-    self.timestep = timestep
-    self.rotation = rotation
-    self.spacing = .075
-    self.xgrd = util.regularize(self.bbox, self.spacing)
-    bezier = domain.sample('bezier', 5)
-    x = bezier.eval(ns.x)
-    inflow = domain.boundary['inflow'].sample('bezier', 5)
-    xin = inflow.eval(ns.x)
-    with export.mplfigure('mesh.png') as fig:
-      ax = fig.add_subplot(111, aspect='equal')
-      ax.add_collection(collections.LineCollection(x[bezier.hull], colors='k', linewidths=.1))
-      ax.add_patch(patches.Rectangle(self.bbox[:,0], *(self.bbox[:,1] - self.bbox[:,0]), fc='none', ec='green'))
-      ax.add_collection(collections.LineCollection(xin.take(inflow.tri,0), colors='r', linewidths=1))
-      ax.autoscale(enable=True, axis='both', tight=True)
-    self.bezier = bezier.subset((x > self.bbox[:,0]).all(axis=1) & (x < self.bbox[:,1]).all(axis=1))
-    self.interpolate = util.tri_interpolator(self.bezier.tri, self.bezier.eval(ns.x), mergetol=1e-5)
-
-  def __call__(self, **arguments):
-    angle = self.index * self.timestep * self.rotation
-    x, u, normu, p = self.bezier.eval([self.ns.x, self.ns.u, function.norm2(self.ns.u), self.ns.p], arguments=arguments)
-    ugrd = numeric.normalize(self.interpolate[self.xgrd](u), axis=1)
-    with export.mplfigure('flow.png') as fig:
-      ax = fig.add_axes([0,0,1,1], yticks=[], xticks=[], frame_on=False, xlim=self.bbox[0], ylim=self.bbox[1])
-      im = ax.tripcolor(x[:,0], x[:,1], self.bezier.tri, normu, shading='gouraud', cmap='jet')
-      im.set_clim(0, 1.5)
-      ax.add_collection(collections.LineCollection(x[self.bezier.hull], colors='k', linewidths=.5, alpha=.1))
-      ax.tricontour(x[:,0], x[:,1], self.bezier.tri, p, locator=self.locator, cmap='gray', linestyles='solid')
-      ax.quiver(self.xgrd[:,0], self.xgrd[:,1], ugrd[:,0], ugrd[:,1], angles='xy', width=1e-3, headwidth=3e3, headlength=5e3, headaxislength=2e3, zorder=9)
-      ax.plot(0, 0, 'k', marker=(3,2,angle*180/numpy.pi-90), markersize=20)
-    self.xgrd = util.regularize(self.bbox, self.spacing, self.xgrd + ugrd * self.timestep)
-    self.index += 1
-
-
-def main(
-    nelems: 'number of elements' = 12,
-    viscosity: 'fluid viscosity' = 1e-2,
-    density: 'fluid density' = 1,
-    tol: 'solver tolerance' = 1e-12,
-    rotation: 'cylinder rotation speed' = 0,
-    timestep: 'time step' = 1/24,
-    maxradius: 'approximate domain size' = 25,
-    tmax: 'end time' = numpy.inf,
-    degree: 'polynomial degree' = 2,
-  ):
-
-  log.user('reynolds number: {:.1f}'.format(density / viscosity)) # based on unit length and velocity
-
-  # create namespace
-  ns = function.Namespace()
-  ns.uinf = 1, 0
-  ns.density = density
-  ns.viscosity = viscosity
+def main(nelems: 'number of elements' = 12,
+         reynolds: 'reynolds number' = 100.,
+         rotation: 'cylinder rotation speed' = 0.,
+         timestep: 'time step' = 1/24,
+         maxradius: 'approximate domain size' = 50.,
+         endtime: 'end time' = numpy.inf,
+         degree: 'polynomial degree' = 2):
 
   # construct mesh
   rscale = numpy.pi / nelems
   melems = numpy.ceil(numpy.log(2*maxradius) / rscale).astype(int)
-  log.info('creating {}x{} mesh, outer radius {:.2f}'.format(melems, 2*nelems, .5*numpy.exp(rscale*melems)))
-  domain, x0 = mesh.rectilinear([range(melems+1),numpy.linspace(0,2*numpy.pi,2*nelems+1)], periodic=(1,))
-  rho, phi = x0
-  phi += 1e-3 # tiny nudge (0.057 deg) to break element symmetry
-  radius = .5 * function.exp(rscale * rho)
-  ns.x = radius * function.trigtangent(phi)
-  domain = domain.withboundary(inner='left', inflow=domain.boundary['right'].select(-ns.uinf.dotnorm(ns.x), ischeme='gauss1'))
+  nutils.log.info('creating {}x{} mesh, outer radius {:.2f}'.format(melems, 2*nelems, .5*numpy.exp(rscale*melems)))
+  domain, geom = nutils.mesh.rectilinear([range(melems+1),numpy.linspace(0,2*numpy.pi,2*nelems+1)], periodic=(1,))
+  domain = domain.withboundary(inner='left', outer='right')
 
-  # prepare bases (using piola transformation to maintain u/p compatibility)
-  J = ns.x.grad(x0)
-  detJ = function.determinant(J)
-  ns.unbasis, ns.utbasis, ns.pbasis = function.chain([ # compatible spaces using piola transformation
-    domain.basis('spline', degree=(degree+1,degree), removedofs=((0,),None))[:,numpy.newaxis] * J[:,0] / detJ,
-    domain.basis('spline', degree=(degree,degree+1))[:,numpy.newaxis] * J[:,1] / detJ,
-    domain.basis('spline', degree=degree) / detJ,
-  ])
-  ns.ubasis_ni = 'unbasis_ni + utbasis_ni'
+  ns = nutils.function.Namespace()
+  ns.uinf = 1, 0
+  ns.r = .5 * nutils.function.exp(rscale * geom[0])
 
-  # populate namespace
+  s = .01
+  ns.Re = reynolds# * (1 + s - nutils.function.power(s, 1-geom[0]/melems))
+
+  ns.phi = geom[1] + 2/3 * numpy.pi / nelems # nudge to break element symmetry
+  ns.x_i = 'r <-cos(phi), -sin(phi)>_i'
+  ns.J = ns.x.grad(geom)
+  ns.unbasis, ns.utbasis, ns.pbasis = nutils.function.chain([ # compatible spaces using piola transformation
+    domain.basis('spline', degree=(degree,degree-1), removedofs=((0,),None)),
+    domain.basis('spline', degree=(degree-1,degree)),
+    domain.basis('spline', degree=degree-1),
+  ]) / nutils.function.determinant(ns.J)
+  ns.ubasis_ni = 'unbasis_n J_i0 + utbasis_n J_i1'
   ns.u_i = 'ubasis_ni ?lhs_n'
   ns.p = 'pbasis_n ?lhs_n'
-  ns.sigma_ij = 'viscosity (u_i,j + u_j,i) - p δ_ij'
-  ns.hinner = 2 * numpy.pi / nelems
-  ns.c = 5 * (degree+1) / ns.hinner
-  ns.nietzsche_ni = 'viscosity (c ubasis_ni - (ubasis_ni,j + ubasis_nj,i) n_j)'
-  ns.ucyl = -.5 * rotation * function.trignormal(phi)
+  ns.sigma_ij = '(u_i,j + u_j,i) / Re - p δ_ij'
+  ns.N = 5 * degree * nelems / numpy.pi
+  ns.rotation = rotation
+  ns.uwall_i = '0.5 rotation <sin(phi), -cos(phi)>_i'
 
   # create residual vector components
-  res = domain.integral('ubasis_ni,j sigma_ij + pbasis_n u_k,k' @ ns, geometry=ns.x, degree=2*(degree+1))
-  res += domain.boundary['inner'].integral('nietzsche_ni (u_i - ucyl_i)' @ ns, geometry=ns.x, degree=2*(degree+1))
-  oseen = domain.integral('density ubasis_ni u_i,j uinf_j' @ ns, geometry=ns.x, degree=2*(degree+1))
-  convec = domain.integral('density ubasis_ni u_i,j u_j' @ ns, geometry=ns.x, degree=3*(degree+1))
-  inertia = domain.integral('density ubasis_ni u_i' @ ns, geometry=ns.x, degree=2*(degree+1))
+  res = domain.integral('ubasis_ni,j sigma_ij + pbasis_n u_k,k' @ ns, geometry=ns.x, degree=9)
+  res += domain.boundary['inner'].integral('(N ubasis_ni - (ubasis_ni,j + ubasis_nj,i) n_j) (u_i - uwall_i) / Re' @ ns, geometry=ns.x, degree=9)
+  oseen = domain.integral('ubasis_ni u_i,j uinf_j' @ ns, geometry=ns.x, degree=9)
+  convec = domain.integral('ubasis_ni u_i,j u_j' @ ns, geometry=ns.x, degree=9)
+  inertia = domain.integral('ubasis_ni u_i' @ ns, geometry=ns.x, degree=9)
 
   # constrain full velocity vector at inflow
-  sqr = domain.boundary['inflow'].integral('(u_i - uinf_i) (u_i - uinf_i)' @ ns, geometry=ns.x, degree=9)
-  cons = solver.optimize('lhs', sqr, droptol=1e-15)
+  #sqr = domain.boundary['outer'].integral('(u_i - uinf_i) (u_i - uinf_i)' @ ns, degree=9)
+  sqr = domain.boundary['outer'].integral('(u_i - uinf_i) (u_i - uinf_i)' @ ns * nutils.function.min(0, 'uinf_k n_k' @ ns), degree=9)
+  cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15)
+  #cons[-1] = 0
 
-  # solve unsteady navier-stokes equations, starting from stationary oseen flow
-  lhs0 = solver.solve_linear('lhs', res+oseen, constrain=cons)
-  makeplots = MakePlots(domain, ns, timestep=timestep, rotation=rotation)
-  for istep, lhs in log.enumerate('timestep', solver.impliciteuler('lhs', residual=res+convec, inertia=inertia, lhs0=lhs0, timestep=timestep, constrain=cons, newtontol=1e-10)):
-    makeplots(lhs=lhs)
-    if istep * timestep >= tmax:
+  lhs0 = nutils.solver.solve_linear('lhs', res, constrain=cons)
+
+  bbox = numpy.array([[-2,6],[-3,3]])
+  bezier0 = domain.sample('bezier', 5)
+  bezier = bezier0.subset((bezier0.eval((ns.x-bbox[:,0]) * (bbox[:,1]-ns.x)) > 0).all(axis=1))
+  interpolate = nutils.util.tri_interpolator(bezier.tri, bezier.eval(ns.x), mergetol=1e-5)
+
+  spacing = .075
+  xgrd = nutils.util.regularize(bbox, spacing)
+
+  for istep, lhs in nutils.log.enumerate('timestep', nutils.solver.impliciteuler('lhs', residual=res+convec, inertia=inertia, lhs0=lhs0, timestep=timestep, constrain=cons, newtontol=1e-10)):
+
+    x, u, div, re, detJ = bezier0.eval([ns.x, ns.u, 'u_k,k'@ns, ns.Re, nutils.function.determinant(ns.J)], arguments=dict(lhs=lhs))
+    nutils.export.triplot('divergence.jpg', x, div, tri=bezier0.tri, hull=bezier0.hull)
+    nutils.export.triplot('u0.jpg', x, u[:,0], tri=bezier0.tri, hull=bezier0.hull)
+    nutils.export.triplot('u1.jpg', x, u[:,1], tri=bezier0.tri, hull=bezier0.hull)
+    nutils.export.triplot('re.jpg', x, re, tri=bezier0.tri, hull=bezier0.hull)
+    nutils.export.triplot('detJ.jpg', x, detJ, tri=bezier0.tri, hull=bezier0.hull)
+
+    t = istep * timestep
+    x, u, normu, p, Re = bezier.eval([ns.x, ns.u, nutils.function.norm2(ns.u), ns.p, ns.Re], arguments=dict(lhs=lhs))
+    ugrd = interpolate[xgrd](u)
+
+    with nutils.export.mplfigure('flow.jpg') as fig:
+      ax = fig.add_axes([0,0,1,1], yticks=[], xticks=[], frame_on=False, xlim=bbox[0], ylim=bbox[1])
+      im = ax.tripcolor(x[:,0], x[:,1], bezier.tri, p, shading='gouraud', cmap='jet')
+      ax.add_collection(matplotlib.collections.LineCollection(x[bezier.hull], colors='k', linewidths=.1, alpha=.5))
+      ax.quiver(xgrd[:,0], xgrd[:,1], ugrd[:,0], ugrd[:,1], angles='xy', width=1e-3, headwidth=3e3, headlength=5e3, headaxislength=2e3, zorder=9)
+      ax.plot(0, 0, 'k', marker=(3,2,t*rotation*180/numpy.pi-90), markersize=20)
+      cax = fig.add_axes([0.8, 0.1, 0.02, 0.8])
+      fig.colorbar(im, cax=cax)
+
+    if t >= endtime:
       break
+
+    xgrd = nutils.util.regularize(bbox, spacing, xgrd + ugrd * timestep)
 
   return lhs0, lhs
 
+if __name__ == '__main__':
+  nutils.cli.run(main)
+
+import unittest
 
 class test(unittest.TestCase):
 
   def test_rot0(self):
-    lhs0, lhs = main(nelems=3, viscosity=1e-2, timestep=.1, tmax=.05, rotation=0)
-    numeric.assert_allclose64(lhs0, 'eNoB2AAn/1zIZDfgx2U3W8h2ON3ISTdyx1Q31chkODQ6y8V5x+'
-      '3FFDqHOL85TMaNw+PFKzpsPEs8wcNtwsPDTDyFPS496MKXwenCMD1PPqjGFzf/xgE55shXOXMxmcoZy/'
-      'Q0STWpzu/NUMVCLxzRljriMRnFbMUSxeE66DrXOqvEnMKVxI87VD13O/TCY8HGwjs9nT4KPXPK4cp6Nu'
-      'DKdcrCNuXKmcqnNp7K78pNNtTJLcpvNinK0smSNo3He8c4NpbHqsd+NorFHsWUwynFlsXVw3/ALMDeO1'
-      '/AvcDnPisGcyQ=')
-    numeric.assert_allclose64(lhs, 'eNoB2AAn/6HIbze/x3A3oMgsOOLIVDdrx1432shaODQ6y8V6x+3'
-      'FFDqHOL85TcaNw+PFKzpsPEs8wcNtwsPDTDyFPS496MKXwenCMD1PPvLG3zbdxiM5HMkOOdjM78qVy4A'
-      '07zQpM3/NUMWSMJbPlzpcMhnFbMUSxeE66DrXOqvEnMKVxI87VD13O/TCY8HGwjs9nT4KPUbM3cvrNPX'
-      'LX8ybM07K78kXNQnKcMr+LqXJJMttNBjLo8mX0G7Hscc5N+3HnsdHMmbFscXGw87Fg8W1w4XAPcBcPXT'
-      'AycDnPrEddBk=')
+    lhs0, lhs = main(nelems=3, reynolds=1e-2, timestep=.1, endtime=.05, rotation=0)
+    nutils.numeric.assert_allclose64(lhs0, 'eNoB2AAn/0nRvS+1MHguQNBiz7bLOTUiNvIzw'
+      '8oByg3IwzjkOTY3NcdgxmDE6zvmPCk6AsTKw57BYzrDQJ/BFsQ5wSXA3TxTyHdBt8LFvzsxHzI'
+      '9MMTO980C0Cc1HTY0NNXKAsoqzJw4kTnfN1LHqcbKyBc7mjzZOpDE38PkxkY9/D40P8vAnsONw'
+      'xc9ckDoP75CiL/7v7U74MPmwi7FpDxwPe0+u8FzwEDErz9cQAhCC8LXv/w9kkIFQ25FVESaPEt'
+      'F0UVaRoNJ+kalSfhGJkqbSVtNcE0IsoFPoE0LTkLyaJA=')
+    nutils.numeric.assert_allclose64(lhs, 'eNoB2AAn/0rRvC+0MH0uQtBhz7jLODUgNvgzxc'
+      'r/yQ7IwzjiOTw3NsdexmLE6zvjPDg6AsTJw57BYzrDQJ/BFsQ5wSXA3TxTyHdBt8LFvzsxHzI+'
+      'MMfO9s3/zyg1HDY0NNjKAcomzJw4kTnfN1THqcbHyBc7mTzZOpfE38PhxkQ9+z4zP8nAm8OLwx'
+      'c9ckDoP75CiL/7v5871MPUwgnFljxoPcM+g8FewI/DkT9JQMJBwsAhv4fGXkLeQhBFcUNkv9xE'
+      'eUUeRixJDEb2SCFC4klJSQhNIk0IskRPQk24TYBVaVU=')
 
   def test_rot1(self):
-    lhs0, lhs = main(nelems=3, viscosity=1e-2, timestep=.1, tmax=.05, rotation=1)
-    numeric.assert_allclose64(lhs0, 'eNoB2AAn/y/JijbexwE4w8d4ON3JYDZwx/Q3KshmOF06o8V3xx'
-      '7G4zmJOPU5FcaNwxfG+DlsPEs8wcNtwsPDTDyFPS496MKXwenCMD1PPoPHWjblx6I5VsjyOSw2LDTcNA'
-      '03LDfJNT42jMV9NmY2zzqkNkTFnMU8xQk7DTsAO83EtsK2xKs7bj2UO/TCY8HGwjs9nT4KPZDPKzB8Nn'
-      'HJKsnFNhM00TOpNtrIDMlPNkY3ZjdxNlnHPceVNi85Ijk5NiPFKcWCNpE7RzuUw9jC98LWw4XCtsHfO3'
-      'O/q7/nPotaZqU=')
-    numeric.assert_allclose64(lhs, 'eNoB2AAn/7XJqzauxwk4E8gSOMjJaDZkxwg4P8hYOF06o8V2xx7'
-      'G5DmGOPU5FcaNwxjG+DlsPEs8wcNtwsPDTDyFPS496MKXwenCMD1PPhfI+TWXx8Q5n8igOfw0wTSTNfQ'
-      '29jZ5Nkc2i8V5Njw2zzrINkPFnMU9xQk7DDsAO83EtsK1xKo7bj2UO/TCY8HGwjs9nT4KPcUzADM5MWv'
-      'J3sk3zI0yhzAwMwrIXcglzI82pjcgy5HHRcfxydA0bTanMy3GNcZOyS45Dzq1w9fDusOyw6rBKMEZPdy'
-      '/N8C9PtY3aIA=')
-
-
-if __name__ == '__main__':
-  cli.run(main)
+    lhs0, lhs = main(nelems=3, reynolds=1e-2, timestep=.1, endtime=.05, rotation=1)
+    nutils.numeric.assert_allclose64(lhs0, 'eNoB2AAn/0nRvS+1MHguQNBiz7bLOTUiNvIzw'
+      '8oByg3IwzjkOTY3NcdgxmDE6zvmPCk6AsTKw57BYzrDQJ/BFsQ5wSXA3TxTyHdBt8LFvyQ0YTT'
+      '1M/kygzJRM742OjdgNnAyU82VNP04zjlmOMXH+cbqyTQ7pzz5OqnE8cM9x089/z43P87ArMOaw'
+      'xc9ckDoP75CiL/7v7U74MPmwi7FpDxwPe0+u8FzwEDErz9cQAhCC8LXv/w9kkIFQ25FVESaPEt'
+      'F0UVaRoNJ+kalSfhGJkqbSVtNcE0IsoFPoE0LTlkWaMs=')
+    nutils.numeric.assert_allclose64(lhs, 'eNoB2AAn/03Rvi+0MHouQNBhz7rLOTUgNvYzxM'
+      'r/yQ/IwzjiOTs3NsdexmLE6zvjPDg6AsTJw57BYzrDQJ/BFsQ5wSXA3TxTyHdBt8LFvyU0YTT1'
+      'M/kygzJRM782OjdgNncyUs2TNP04zjlmOMfH+MblyTQ7pjz5OrHE8MM5x0w9/j42P8zAqcOYwx'
+      'c9ckDoP75CiL/7v5g7z8PUwgzFlzxnPb4+fcFdwJjDkj9IQL5BtsAgvyvHX0LdQg5FbENfv91E'
+      'eUUdRixJCEb1SB1C4klJSQdNIU0IskRPQk24TftIaAU=')

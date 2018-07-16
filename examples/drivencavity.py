@@ -15,7 +15,7 @@ import nutils, numpy, matplotlib.collections
 def main(nelems: 'number of elements' = 12,
          etype: 'type of elements (square/triangle/mixed)' = 'square',
          degree: 'polynomial degree for velocity' = 3,
-         reynolds: 'reynolds number' = 1e-3):
+         reynolds: 'reynolds number' = 1000.):
 
   domain, geom = nutils.mesh.unitsquare(nelems, etype)
 
@@ -29,7 +29,7 @@ def main(nelems: 'number of elements' = 12,
   ])
   ns.u_i = 'ubasis_ni ?lhs_n'
   ns.p = 'pbasis_n ?lhs_n'
-  ns.stress_ij = 'Re (u_i,j + u_j,i) - p δ_ij'
+  ns.stress_ij = '(u_i,j + u_j,i) / Re - p δ_ij'
 
   # boundary conditions
   sqr = domain.boundary.integral('u_k u_k' @ ns, degree=degree*2, geometry=ns.x)
@@ -90,7 +90,7 @@ import unittest
 class test(unittest.TestCase):
 
   def test_square(self):
-    lhs0, lhs1 = main(nelems=3, etype='square', reynolds=1e-2, degree=3)
+    lhs0, lhs1 = main(nelems=3, etype='square', reynolds=100, degree=3)
     nutils.numeric.assert_allclose64(lhs0, 'eNp1zj1IQlEUB/BrCJKEQxLRFNFQxvN1vTcpo'
       'qWhzZaGElr7WKOGirApiIaipcEKoiXCpaKEiCKnhjznXX1PejaEJGGFRCCiCH153YrXOXCG3+F'
       'w/oT8rZFeQpaVqDGVmjHNxEKSJmxM2rOIal1aDlsxKyK+gF/asZbHEA5gDmL6FduuWRnHsAQXc'
@@ -108,7 +108,7 @@ class test(unittest.TestCase):
       '1k8QxrTbl9xZQpPMIzn2EDR3cgjg5dYxzYKKIHjDzbx252sY9mdHuKHaRj/AYh1yFc=')
 
   def test_mixed(self):
-    lhs0, lhs1 = main(nelems=3, etype='mixed', reynolds=1e-2, degree=2)
+    lhs0, lhs1 = main(nelems=3, etype='mixed', reynolds=100, degree=2)
     nutils.numeric.assert_allclose64(lhs0, 'eNpjYICAiRePnWdg0D736SyIF3P2nK6VYSWQH'
       'WS+1SjI3MAkyLz6rMbZI2BZhXMJZxyMNp/xMbwMFA8yLzNhYNh6YdUFiElzzykYgGg94yBzkH6'
       'oBQwvLm80YmA4r6dkCOYZq5h4GZUYgdg8QHKbJpA2OHhp8zmQiM8Vp6tpV03PMp1TPQ/ipwPJc'

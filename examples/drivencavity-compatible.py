@@ -33,7 +33,7 @@ def postprocess(domain, ns, every=.05, spacing=.01, **arguments):
 
 def main(nelems: 'number of elements' = 12,
          degree: 'polynomial degree for velocity' = 2,
-         reynolds: 'reynolds number' = 1e-3):
+         reynolds: 'reynolds number' = 1000.):
 
   # construct mesh
   verts = numpy.linspace(0, 1, nelems+1)
@@ -53,12 +53,12 @@ def main(nelems: 'number of elements' = 12,
   ns.u_i = 'ubasis_ni ?lhs_n'
   ns.p = 'pbasis_n ?lhs_n'
   ns.l = 'lbasis_n ?lhs_n'
-  ns.stress_ij = 'Re (u_i,j + u_j,i) - p δ_ij'
+  ns.stress_ij = '(u_i,j + u_j,i) / Re - p δ_ij'
   ns.uwall = domain.boundary.indicator('top'), 0
-  ns.k = 5 * degree * nelems * reynolds # nietzsche constant
+  ns.N = 5 * degree * nelems # nietzsche constant
 
   res = domain.integral('ubasis_ni,j stress_ij + pbasis_n (u_k,k + l) + lbasis_n p' @ ns, geometry=ns.x, degree=2*degree)
-  res += domain.boundary.integral('(k ubasis_ni - Re (ubasis_ni,j + ubasis_nj,i) n_j) (u_i - uwall_i)' @ ns, geometry=ns.x, degree=2*degree)
+  res += domain.boundary.integral('(N ubasis_ni - (ubasis_ni,j + ubasis_nj,i) n_j) (u_i - uwall_i) / Re' @ ns, geometry=ns.x, degree=2*degree)
   with nutils.log.context('stokes'):
     lhs0 = nutils.solver.solve_linear('lhs', res)
     postprocess(domain, ns, lhs=lhs0)
@@ -74,14 +74,14 @@ def main(nelems: 'number of elements' = 12,
 class test(unittest.TestCase):
 
   def test_p1(self):
-    lhs0, lhs1 = main(nelems=3, reynolds=1e-2, degree=2)
+    lhs0, lhs1 = main(nelems=3, reynolds=100, degree=2)
     nutils.numeric.assert_allclose64(lhs0, 'eNpTvPBI3/o0t1mzds/pltM65opQ/n196QvcZh4XO03MTHbolZ'
       '8+dVrxwlP9rycVL03Xjbm45tQfrZc37M/LGLBcFVc/aPDk/H3dzEtL9EJMGRgAJt4mPA==')
     nutils.numeric.assert_allclose64(lhs1, 'eNoBUgCt/6nOuTGJy4M1SCzJy4zLCjcsLk3PCst/Nlcx9M2DNe'
       'DPgDR+NB7UG8wVzSwuPc6ByezUQiudMKTL/y4AL73NLS6jLUov8s4zzXoscdMJMSo2AABO+yTF')
 
   def test_p2(self):
-    lhs0, lhs1 = main(nelems=3, reynolds=1e-2, degree=3)
+    lhs0, lhs1 = main(nelems=3, reynolds=100, degree=3)
     nutils.numeric.assert_allclose64(lhs0, 'eNp7ZmB71sY46VSq2dLzludvnMo20jFHsJ7BZaXObzbedDrVbJ'
       'nBjPM1ZkuNGaAg6nyGQcvJ6DPPDHzP+JnMPsltwKl1/DyrYcPJUxf0LuXqvDkzzYgBDsz0L+lOvixinH'
       'X26/nvVy0Nfp9rMGNgAADUrDbX')
