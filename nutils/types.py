@@ -523,6 +523,10 @@ class ImmutableMeta(CacheMeta):
     if not isinstance(version, int):
       raise ValueError("'version' should be of type 'int' but got {!r}".format(version))
     cls = super().__new__(mcls, name, bases, namespace, **kwargs)
+    # Since we redefine `__call__` here and `inspect.signature(cls)` looks at
+    # `cls.__signature__` and if absent the signature of `__call__`, we
+    # explicitly copy the signature of `<cls instance>.__init__` to `cls`.
+    cls.__signature__ = inspect.signature(cls.__init__.__get__(object(), object))
     # Peel off the preprocessors (see `aspreprocessor`) and store the
     # preprocessors and the uncovered init separately.
     pre_init = []
