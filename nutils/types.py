@@ -1087,7 +1087,7 @@ class frozenmultiset(collections.abc.Container, metaclass=_frozenmultisetmeta):
   __contains__ = lambda self, item: item in self.__items
   __iter__ = lambda self: iter(self.__items)
   __len__ = lambda self: len(self.__items)
-  __nonzero__ = lambda self: bool(self.__items)
+  __bool__ = lambda self: bool(self.__items)
 
   isdisjoint = lambda self, other: not any(item in self.__items for item in other)
 
