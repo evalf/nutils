@@ -349,7 +349,8 @@ epub_exclude_files = ['search.html']
 #epub_use_index = True
 
 autodoc_member_order = 'bysource'
-autodoc_default_flags = [ 'members' ]
+autodoc_default_flags = [ 'members', 'special-members', 'show-inheritance' ]
+autodoc_inherit_docstrings = False # i.e. don't document implementations of abstract methods (if the implementation does not have a docstring)
 
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3', None),
