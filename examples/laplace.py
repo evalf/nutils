@@ -105,7 +105,11 @@ def main(nelems: 'number of elements along edge' = 10,
   return cons, lhs, err
 
 # If the script is executed (as upposed to imported as a module), ``cli.run``
-# calls the main function with parameters provided from the command line.
+# calls the main function with parameters provided from the command line.  To
+# run this script type :sh:`python3 laplace.py` in a terminal.  All arguments
+# of the main function are available on the command line.  For example, to
+# change argument ``etype`` to ``'mixed'`` type :sh:`python3 laplace.py
+# etype=mixed`.
 
 if __name__ == '__main__':
   nutils.cli.run(main)

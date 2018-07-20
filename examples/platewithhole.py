@@ -56,6 +56,11 @@ def main(nelems: 'number of elementsa long edge' = 9,
 if __name__ == '__main__':
   nutils.cli.run(main)
 
+# To run this script type :sh:`python3 platewithhole.py` in a terminal.  All
+# arguments of the main function are available on the command line.  For
+# example, to change argument ``etype`` to ``'mixed'`` type :sh:`python3
+# platewithhole.py etype=mixed`.
+
 import unittest
 
 class test(unittest.TestCase):

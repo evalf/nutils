@@ -80,6 +80,8 @@ def postprocess(domain, ns, every=.05, spacing=.01, **arguments):
 if __name__ == '__main__':
   nutils.cli.run(main)
 
+# To run this script type :sh:`python3 drivencavity.py` in a terminal.
+#
 # Once a simulation is developed and tested, it is good practice to save a few
 # strategicly chosen return values for routine regression testing. The
 # `numeric` module facilitates this by providing base64 conversion tools for

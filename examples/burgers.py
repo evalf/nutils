@@ -43,6 +43,9 @@ def main(nelems: 'number of elements' = 20,
 if __name__ == '__main__':
   nutils.cli.run(main)
 
+# To run this script until 0.5 seconds type :sh:`python3 burgers.py
+# endtime=0.5` in a terminal.
+
 import unittest
 
 class test(unittest.TestCase):

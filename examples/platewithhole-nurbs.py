@@ -85,6 +85,9 @@ def main(
 if __name__ == '__main__':
   nutils.cli.run(main)
 
+# To run this script type :sh:`python3 platewithhole-nurbs.py` in a terminal.
+# All arguments of the main function are available on the command line.
+
 import unittest
 
 class test(unittest.TestCase):
